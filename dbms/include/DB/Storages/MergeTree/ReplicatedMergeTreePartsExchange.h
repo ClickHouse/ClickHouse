@@ -28,8 +28,8 @@ private:
 
 	MergeTreeData::DataPartPtr findPart(const String & name)
 	{
-		MergeTreeData::DataPartPtr part = data.getContainingPart(name, true);
-		if (part && part->name == name)
+		MergeTreeData::DataPartPtr part = data.getPartIfExists(name);
+		if (part)
 			return part;
 		throw Exception("No part " + name + " in table");
 	}

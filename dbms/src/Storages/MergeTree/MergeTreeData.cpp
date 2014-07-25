@@ -781,20 +781,12 @@ void MergeTreeData::delayInsertIfNeeded()
 	}
 }
 
-MergeTreeData::DataPartPtr MergeTreeData::getContainingPart(const String & part_name, bool including_inactive)
+MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const String & part_name)
 {
 	MutableDataPartPtr tmp_part(new DataPart(*this));
 	ActiveDataPartSet::parsePartName(part_name, *tmp_part);
 
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
-
-	if (including_inactive)
-	{
-		Poco::ScopedLock<Poco::FastMutex> lock(all_data_parts_mutex);
-		DataParts::iterator it = all_data_parts.lower_bound(tmp_part);
-		if (it != all_data_parts.end() && (*it)->name == part_name)
-			return *it;
-	}
 
 	/// Кусок может покрываться только предыдущим или следующим в data_parts.
 	DataParts::iterator it = data_parts.lower_bound(tmp_part);
@@ -813,6 +805,19 @@ MergeTreeData::DataPartPtr MergeTreeData::getContainingPart(const String & part_
 		if ((*it)->contains(*tmp_part))
 			return *it;
 	}
+
+	return nullptr;
+}
+
+MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const String & part_name)
+{
+	MutableDataPartPtr tmp_part(new DataPart(*this));
+	ActiveDataPartSet::parsePartName(part_name, *tmp_part);
+
+	Poco::ScopedLock<Poco::FastMutex> lock(all_data_parts_mutex);
+	DataParts::iterator it = all_data_parts.lower_bound(tmp_part);
+	if (it != all_data_parts.end() && (*it)->name == part_name)
+		return *it;
 
 	return nullptr;
 }

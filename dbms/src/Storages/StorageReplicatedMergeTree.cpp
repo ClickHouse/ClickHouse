@@ -362,7 +362,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 	for (const String & missing_name : expected_parts)
 	{
 		/// Если локально не хватает какого-то куска, но есть покрывающий его кусок, можно заменить в ZK недостающий покрывающим.
-		auto containing = data.getContainingPart(missing_name);
+		auto containing = data.getActiveContainingPart(missing_name);
 		if (containing)
 		{
 			LOG_ERROR(log, "Ignoring missing local part " << missing_name << " because part " << containing->name << " exists");
@@ -759,7 +759,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 		entry.type == LogEntry::MERGE_PARTS)
 	{
 		/// Если у нас уже есть этот кусок или покрывающий его кусок, ничего делать не нужно.
-		MergeTreeData::DataPartPtr containing_part = data.getContainingPart(entry.new_part_name, true);
+		MergeTreeData::DataPartPtr containing_part = data.getActiveContainingPart(entry.new_part_name);
 
 		/// Даже если кусок есть локально, его (в исключительных случаях) может не быть в zookeeper.
 		if (containing_part && zookeeper->exists(replica_path + "/parts/" + containing_part->name))
@@ -785,7 +785,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 		bool have_all_parts = true;
 		for (const String & name : entry.parts_to_merge)
 		{
-			MergeTreeData::DataPartPtr part = data.getContainingPart(name);
+			MergeTreeData::DataPartPtr part = data.getActiveContainingPart(name);
 			if (!part)
 			{
 				have_all_parts = false;
@@ -1052,7 +1052,7 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 						{
 							for (const String & name : entry.parts_to_merge)
 							{
-								MergeTreeData::DataPartPtr part = data.getContainingPart(name);
+								MergeTreeData::DataPartPtr part = data.getActiveContainingPart(name);
 								if (!part || part->name != name)
 									continue;
 								if (part->size_in_bytes > data.settings.max_bytes_to_merge_parts_small)
@@ -1340,7 +1340,7 @@ void StorageReplicatedMergeTree::partCheckThread()
 			LOG_WARNING(log, "Checking part " << part_name);
 			ProfileEvents::increment(ProfileEvents::ReplicatedPartChecks);
 
-			auto part = data.getContainingPart(part_name);
+			auto part = data.getActiveContainingPart(part_name);
 			String part_path = replica_path + "/parts/" + part_name;
 
 			/// Этого или покрывающего куска у нас нет.

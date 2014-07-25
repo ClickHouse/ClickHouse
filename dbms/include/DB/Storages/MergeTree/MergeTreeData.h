@@ -589,12 +589,13 @@ public:
 	  */
 	void delayInsertIfNeeded();
 
-	/** Если !including_inactive:
-	  *   Возвращает активный кусок с указанным именем или кусок, покрывающий его. Если такого нет, возвращает nullptr.
-	  * Если including_inactive:
-	  *   Если среди all_data_parts есть кусок с именем part_name, возвращает его. Иначе делает то же, что при !including_inactive.
+	/** Возвращает активный кусок с указанным именем или кусок, покрывающий его. Если такого нет, возвращает nullptr.
 	  */
-	DataPartPtr getContainingPart(const String & part_name, bool including_inactive = false);
+	DataPartPtr getActiveContainingPart(const String & part_name);
+
+	/** Возвращает кусок с таким именем (активный или не активный). Если нету, nullptr.
+	  */
+	DataPartPtr getPartIfExists(const String & part_name);
 
 	/** Переименовывает временный кусок в постоянный и добавляет его в рабочий набор.
 	  * Если increment!=nullptr, индекс куска берется из инкремента. Иначе индекс куска не меняется.
