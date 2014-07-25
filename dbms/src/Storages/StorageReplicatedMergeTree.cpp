@@ -1039,7 +1039,7 @@ bool StorageReplicatedMergeTree::queueTask(BackgroundProcessingPool::Context & p
 
 void StorageReplicatedMergeTree::mergeSelectingThread()
 {
-	pullLogsToQueue();
+	bool need_pull = true;
 
 	while (!shutdown_called && is_leader_node)
 	{
@@ -1047,6 +1047,14 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 
 		try
 		{
+			if (need_pull)
+			{
+				/// Нужно загрузить новую запись в очередь перед тем, как выбирать куски для слияния.
+				///  (чтобы кусок добавился в virtual_parts).
+				pullLogsToQueue();
+				need_pull = false;
+			}
+
 			size_t merges_queued = 0;
 			/// Есть ли в очереди или в фоновом потоке мердж крупных кусков.
 			bool has_big_merge = context.getBackgroundPool().getCounter("replicated big merges") > 0;
@@ -1106,11 +1114,9 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 					entry.parts_to_merge.push_back(part->name);
 				}
 
-				zookeeper->create(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential);
+				need_pull = true;
 
-				/// Нужно загрузить новую запись в очередь перед тем, как в следующий раз выбирать куски для слияния.
-				///  (чтобы кусок добавился в virtual_parts).
-				pullLogsToQueue();
+				zookeeper->create(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential);
 
 				String month_name = parts[0]->name.substr(0, 6);
 				for (size_t i = 0; i + 1 < parts.size(); ++i)
