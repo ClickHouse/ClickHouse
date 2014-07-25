@@ -589,12 +589,13 @@ public:
 	  */
 	void delayInsertIfNeeded();
 
-	/** Если !including_inactive:
-	  *   Возвращает активный кусок с указанным именем или кусок, покрывающий его. Если такого нет, возвращает nullptr.
-	  * Если including_inactive:
-	  *   Если среди all_data_parts есть кусок с именем part_name, возвращает его. Иначе делает то же, что при !including_inactive.
+	/** Возвращает активный кусок с указанным именем или кусок, покрывающий его. Если такого нет, возвращает nullptr.
 	  */
-	DataPartPtr getContainingPart(const String & part_name, bool including_inactive = false);
+	DataPartPtr getActiveContainingPart(const String & part_name);
+
+	/** Возвращает кусок с таким именем (активный или не активный). Если нету, nullptr.
+	  */
+	DataPartPtr getPartIfExists(const String & part_name);
 
 	/** Переименовывает временный кусок в постоянный и добавляет его в рабочий набор.
 	  * Если increment!=nullptr, индекс куска берется из инкремента. Иначе индекс куска не меняется.
@@ -617,9 +618,17 @@ public:
 	  */
 	void renameAndDetachPart(DataPartPtr part, const String & prefix);
 
-	/** Удалить неактуальные куски. Возвращает имена удаленных кусков.
+	/** Возвращает старые неактуальные куски, которые можно удалить. Одновременно удаляет их из списка кусков, но не с диска.
 	  */
-	Strings clearOldParts();
+	DataPartsVector grabOldParts();
+
+	/** Обращает изменения, сделанные grabOldParts().
+	  */
+	void addOldParts(const DataPartsVector & parts);
+
+	/** Удалить неактуальные куски.
+	  */
+	void clearOldParts();
 
 	/** После вызова dropAllData больше ничего вызывать нельзя.
 	  * Удаляет директорию с данными и сбрасывает кеши разжатых блоков и засечек.
@@ -702,9 +711,6 @@ private:
 
 	/// Загрузить множество кусков с данными с диска. Вызывается один раз - при создании объекта.
 	void loadDataParts();
-
-	/// Определить, не битые ли данные в директории. Проверяет индекс и засечеки, но не сами данные.
-	bool isBrokenPart(const String & path);
 
 	/** Выражение, преобразующее типы столбцов.
 	  * Если преобразований типов нет, out_expression=nullptr.
