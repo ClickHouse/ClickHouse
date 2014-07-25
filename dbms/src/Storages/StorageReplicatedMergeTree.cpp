@@ -170,6 +170,7 @@ void StorageReplicatedMergeTree::createTable()
 	zookeeper->create(zookeeper_path + "/log", "", zkutil::CreateMode::Persistent);
 	zookeeper->create(zookeeper_path + "/blocks", "", zkutil::CreateMode::Persistent);
 	zookeeper->create(zookeeper_path + "/block_numbers", "", zkutil::CreateMode::Persistent);
+	zookeeper->create(zookeeper_path + "/nonincrement_block_numbers", "", zkutil::CreateMode::Persistent);
 	zookeeper->create(zookeeper_path + "/leader_election", "", zkutil::CreateMode::Persistent);
 	zookeeper->create(zookeeper_path + "/temp", "", zkutil::CreateMode::Persistent);
 	zookeeper->create(zookeeper_path + "/flags", "", zkutil::CreateMode::Persistent);
@@ -1122,9 +1123,8 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 					/// Уберем больше не нужные отметки о несуществующих блоках.
 					for (UInt64 number = parts[i]->right + 1; number <= parts[i + 1]->left - 1; ++number)
 					{
-						String path = zookeeper_path + "/block_numbers/" + month_name + "/block-" + padIndex(number);
-
-						zookeeper->tryRemove(path);
+						zookeeper->tryRemove(zookeeper_path +              "/block_numbers/" + month_name + "/block-" + padIndex(number));
+						zookeeper->tryRemove(zookeeper_path + "/nonincrement_block_numbers/" + month_name + "/block-" + padIndex(number));
 					}
 				}
 
@@ -1409,13 +1409,7 @@ void StorageReplicatedMergeTree::partCheckThread()
 							LOG_ERROR(log, "No replica has part covering " << part_name);
 							ProfileEvents::increment(ProfileEvents::ReplicatedPartChecksFailed);
 
-							/** Если ни у кого нет такого куска, удалим его из нашей очереди.
-							  *
-							  * Еще можно было бы добавить его в block_numbers, чтобы он не мешал слияниям,
-							  *  но если так сделать, ZooKeeper почему-то пропустит один номер для автоинкремента,
-							  *  и в номерах блоков все равно останется дырка.
-							  * TODO: можно это исправить, сделав две директории block_numbers: для автоинкрементных и ручных нод.
-							  */
+							/// Если ни у кого нет такого куска, удалим его из нашей очереди.
 
 							bool was_in_queue = false;
 
@@ -1442,10 +1436,24 @@ void StorageReplicatedMergeTree::partCheckThread()
 							}
 
 							if (was_in_queue)
+							{
 								/** Такая ситуация возможна, если на всех репликах, где был кусок, он испортился.
 								  * Например, у реплики, которая только что его записала, отключили питание, и данные не записались из кеша на диск.
 								  */
 								LOG_ERROR(log, "Part " << part_name << " is lost forever. Say goodbye to a piece of data!");
+
+								/** Нужно добавить отсутствующий кусок в block_numbers, чтобы он не мешал слияниям.
+								  * Вот только в сам block_numbers мы его добавить не можем - если так сделать,
+								  *  ZooKeeper зачем-то пропустит один номер для автоинкремента,
+								  *  и в номерах блоков все равно останется дырка.
+								  * Специально из-за этого приходится отдельно иметь nonincrement_block_numbers.
+								  */
+								zookeeper->createIfNotExists(zookeeper_path + "/nonincrement_block_numbers", "");
+								zookeeper->createIfNotExists(zookeeper_path + "/nonincrement_block_numbers/" + part_name.substr(0, 6), "");
+								AbandonableLockInZooKeeper::createAbandonedIfNotExists(
+									zookeeper_path + "/nonincrement_block_numbers/" + part_name.substr(0, 6) + "/block-" + padIndex(part_info.left),
+									*zookeeper);
+							}
 						}
 					}
 				}
@@ -1542,9 +1550,11 @@ bool StorageReplicatedMergeTree::canMergeParts(const MergeTreeData::DataPartPtr 
 	/// Можно слить куски, если все номера между ними заброшены - не соответствуют никаким блокам.
 	for (UInt64 number = left->right + 1; number <= right->left - 1; ++number)
 	{
-		String path = zookeeper_path + "/block_numbers/" + month_name + "/block-" + padIndex(number);
+		String path1 = zookeeper_path +              "/block_numbers/" + month_name + "/block-" + padIndex(number);
+		String path2 = zookeeper_path + "/nonincrement_block_numbers/" + month_name + "/block-" + padIndex(number);
 
-		if (AbandonableLockInZooKeeper::check(path, *zookeeper) != AbandonableLockInZooKeeper::ABANDONED)
+		if (AbandonableLockInZooKeeper::check(path1, *zookeeper) != AbandonableLockInZooKeeper::ABANDONED &&
+			AbandonableLockInZooKeeper::check(path2, *zookeeper) != AbandonableLockInZooKeeper::ABANDONED)
 			return false;
 	}
 
