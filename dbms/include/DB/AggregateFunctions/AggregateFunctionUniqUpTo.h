@@ -1,9 +1,7 @@
 #pragma once
 
-#include <city.h>
-#include <type_traits>
-
-#include <DB/AggregateFunctions/AggregateFunctionUniq.h>
+#include <DB/AggregateFunctions/IUnaryAggregateFunction.h>
+#include <DB/DataTypes/DataTypesNumberFixed.h>
 
 
 namespace DB
@@ -18,14 +16,12 @@ namespace DB
   * Для строк используется некриптографическая хэш-функция, за счёт чего рассчёт может быть немного неточным.
   */
 
-constexpr UInt32 uniq_upto_max_threshold = 1000;	/// TODO Большое значение оставлено для экспериментов. Уменьшить.
-
-
 template <typename T>
 struct AggregateFunctionUniqUpToData
 {
 	UInt32 count = 0;
 	T data[0];	/// Данные идут после конца структуры. При вставке, делается линейный поиск.
+
 
 	size_t size() const
 	{
@@ -75,7 +71,7 @@ struct AggregateFunctionUniqUpToData
 		UInt32 rhs_count;
 		readVarUInt(rhs_count, rb);
 
-		if (rhs_count > uniq_upto_max_threshold)
+		if (rhs_count > threshold + 1)
 			throw Poco::Exception("Cannot read AggregateFunctionUniqUpToData: too large count.");
 
 		for (size_t i = 0; i < rhs_count; ++i)
@@ -85,46 +81,35 @@ struct AggregateFunctionUniqUpToData
 			insert(x, threshold);
 		}
 	}
+
+
+	void addOne(const IColumn & column, size_t row_num, UInt32 threshold)
+	{
+		insert(static_cast<const ColumnVector<T> &>(column).getData()[row_num], threshold);
+	}
 };
 
 
 /// Для строк, запоминаются их хэши.
 template <>
-struct AggregateFunctionUniqUpToData<String> : AggregateFunctionUniqUpToData<UInt64> {};
-
-
-namespace detail
+struct AggregateFunctionUniqUpToData<String> : AggregateFunctionUniqUpToData<UInt64>
 {
-	/** Структура для делегации работы по добавлению одного элемента в агрегатные функции uniq.
-	  * Используется для частичной специализации для добавления строк.
-	  */
-	template <typename T>
-	struct OneAdderUpTo
+	void addOne(const IColumn & column, size_t row_num, UInt32 threshold)
 	{
-		static void addOne(AggregateFunctionUniqUpToData<T> & data, const IColumn & column, size_t row_num, UInt32 threshold)
-		{
-			data.insert(static_cast<const ColumnVector<T> &>(column).getData()[row_num], threshold);
-		}
-	};
+		/// Имейте ввиду, что вычисление приближённое.
+		StringRef value = column.getDataAt(row_num);
+		insert(CityHash64(value.data, value.size), threshold);
+	}
+};
 
-	template <>
-	struct OneAdderUpTo<String>
-	{
-		static void addOne(AggregateFunctionUniqUpToData<String> & data, const IColumn & column, size_t row_num, UInt32 threshold)
-		{
-			/// Имейте ввиду, что вычисление приближённое.
-			StringRef value = column.getDataAt(row_num);
-			data.insert(CityHash64(value.data, value.size), threshold);
-		}
-	};
-}
 
+constexpr UInt32 uniq_upto_max_threshold = 100;
 
 template <typename T>
 class AggregateFunctionUniqUpTo final : public IUnaryAggregateFunction<AggregateFunctionUniqUpToData<T>, AggregateFunctionUniqUpTo<T> >
 {
 private:
-	UInt32 threshold = 0;
+	UInt32 threshold = 5;	/// Значение по-умолчанию, если параметр не указан.
 
 public:
 	size_t sizeOfData() const
@@ -150,9 +135,6 @@ public:
 
 		threshold = apply_visitor(FieldVisitorConvertToNumber<UInt32>(), params[0]);
 
-		if (threshold == 0)
-			throw Exception("Parameter for aggregate function " + getName() + " must be greater than zero.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-
 		if (threshold > uniq_upto_max_threshold)
 			throw Exception("Too large parameter for aggregate function " + getName() + ". Maximum: " + toString(uniq_upto_max_threshold),
 				ErrorCodes::ARGUMENT_OUT_OF_BOUND);
@@ -160,7 +142,7 @@ public:
 
 	void addOne(AggregateDataPtr place, const IColumn & column, size_t row_num) const
 	{
-		detail::OneAdderUpTo<T>::addOne(this->data(place), column, row_num, threshold);
+		this->data(place).addOne(column, row_num, threshold);
 	}
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
