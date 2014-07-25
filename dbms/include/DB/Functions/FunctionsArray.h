@@ -1175,7 +1175,6 @@ private:
 			HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(UInt128)> > ValuesToIndices;
 
 		ValuesToIndices indices;
-		StringRefs keys(count);
 		size_t prev_off = 0;
 		for (size_t i = 0; i < offsets.size(); ++i)
 		{
@@ -1183,7 +1182,7 @@ private:
 			size_t off = offsets[i];
 			for (size_t j = prev_off; j < off; ++j)
 			{
-				res_values[j] = ++indices[hash128(j, count, columns, keys)];
+				res_values[j] = ++indices[hash128(j, count, columns)];
 			}
 			prev_off = off;
 		}
