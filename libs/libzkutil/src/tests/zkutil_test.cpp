@@ -65,7 +65,8 @@ int main(int argc, char ** argv)
 			return 2;
 		}
 
-		Logger::root().setChannel(new Poco::ConsoleChannel(std::cerr));
+		Poco::AutoPtr<Poco::ConsoleChannel> channel = new Poco::ConsoleChannel(std::cerr);
+		Logger::root().setChannel(channel);
 		Logger::root().setLevel("trace");
 
 		zkutil::ZooKeeper zk(argv[1]);

@@ -24,7 +24,8 @@ int main(int argc, char ** argv)
 {
 	try
 	{
-		Logger::root().setChannel(new Poco::ConsoleChannel(std::cout));
+		Poco::AutoPtr<Poco::ConsoleChannel> channel = new Poco::ConsoleChannel(std::cerr);
+		Logger::root().setChannel(channel);
 		Logger::root().setLevel("trace");
 
 		/// Заранее инициализируем DateLUT, чтобы первая инициализация потом не влияла на измеряемую скорость выполнения.

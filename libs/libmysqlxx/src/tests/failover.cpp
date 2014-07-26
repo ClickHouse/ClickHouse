@@ -15,12 +15,13 @@ int main()
 {
 	App app;
 	app.loadConfiguration("failover.xml");
-	
-	Logger::root().setChannel(new Poco::ConsoleChannel(std::cout));
+
+	Poco::AutoPtr<Poco::ConsoleChannel> channel = new Poco::ConsoleChannel(std::cerr);
+	Logger::root().setChannel(channel);
 	Logger::root().setLevel("trace");
-	
+
 	mysqlxx::PoolWithFailover pool("mysql_goals");
-	
+
 	for (size_t i = 0; i < 10; ++i)
 	{
 		mysqlxx::PoolWithFailover::Entry conn = pool.Get();
@@ -29,6 +30,6 @@ int main()
 		mysqlxx::UseQueryResult R = Q.use();
 		std::cout << R.fetch_row()[0] << std::endl;
 	}
-	
+
 	return 0;
 }
