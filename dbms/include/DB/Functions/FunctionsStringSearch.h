@@ -249,7 +249,7 @@ namespace Regexps
 	struct Holder;
 	struct Deleter;
 
-	using Regexp = OptimizedRegularExpression;
+	using Regexp = OptimizedRegularExpressionImpl<false>;
 	using KnownRegexps = std::map<String, std::unique_ptr<Holder>>;
 	using Pointer = std::unique_ptr<Regexp, Deleter>;
 
@@ -410,7 +410,7 @@ struct ExtractImpl
 			unsigned count = regexp->match(reinterpret_cast<const char *>(&data[prev_offset]), cur_offset - prev_offset - 1, matches, capture + 1);
 			if (count > capture && matches[capture].offset != std::string::npos)
 			{
-				const OptimizedRegularExpression::Match & match = matches[capture];
+				const auto & match = matches[capture];
 				res_data.resize(res_offset + match.length + 1);
 				memcpy(&res_data[res_offset], &data[prev_offset + match.offset], match.length);
 				res_offset += match.length;
@@ -508,7 +508,7 @@ struct ReplaceRegexpImpl
 
 				if (searcher.Match(input, start_pos, input.length(), re2::RE2::Anchor::UNANCHORED, matches, capture))
 				{
-					const re2::StringPiece & match = matches[0];
+					const auto & match = matches[0];
 					size_t char_to_copy = (match.data() - input.data()) - start_pos;
 
 					/// Копируем данные без изменения
@@ -590,7 +590,7 @@ struct ReplaceRegexpImpl
 
 				if (searcher.Match(input, start_pos, input.length(), re2::RE2::Anchor::UNANCHORED, matches, capture))
 				{
-					const re2::StringPiece & match = matches[0];
+					const auto & match = matches[0];
 					size_t char_to_copy = (match.data() - input.data()) - start_pos;
 
 					/// Копируем данные без изменения
@@ -664,7 +664,7 @@ struct ReplaceRegexpImpl
 
 			if (searcher.Match(input, start_pos, input.length(), re2::RE2::Anchor::UNANCHORED, matches, capture))
 			{
-				const re2::StringPiece & match = matches[0];
+				const auto & match = matches[0];
 				size_t char_to_copy = (match.data() - input.data()) - start_pos;
 
 				/// Копируем данные без изменения
