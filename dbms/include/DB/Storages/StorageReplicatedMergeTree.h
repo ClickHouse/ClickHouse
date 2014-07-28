@@ -6,6 +6,7 @@
 #include <DB/Storages/MergeTree/MergeTreeDataWriter.h>
 #include <DB/Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreePartsExchange.h>
+#include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <zkutil/ZooKeeper.h>
 #include <zkutil/LeaderElection.h>
 #include <statdaemons/threadpool.hpp>
@@ -49,6 +50,18 @@ public:
 	bool supportsPrewhere() const override { return data.supportsPrewhere(); }
 
 	const NamesAndTypesList & getColumnsList() const override { return data.getColumnsList(); }
+
+	NameAndTypePair getColumn(const String &column_name) const
+	{
+		if (column_name == "_replicated") return NameAndTypePair("_replicated", new DataTypeUInt8);
+		return data.getColumn(column_name);
+	}
+
+	bool hasColumn(const String &column_name) const
+	{
+		if (column_name == "_replicated") return true;
+		return data.hasColumn(column_name);
+	}
 
 	BlockInputStreams read(
 		const Names & column_names,

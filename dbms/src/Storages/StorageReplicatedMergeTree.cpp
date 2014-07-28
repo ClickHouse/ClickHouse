@@ -6,6 +6,7 @@
 #include <DB/IO/WriteBufferFromOStream.h>
 #include <DB/IO/ReadBufferFromString.h>
 #include <DB/Interpreters/InterpreterAlterQuery.h>
+#include <DB/Common/VirtualColumnUtils.h>
 #include <time.h>
 
 namespace DB
@@ -546,6 +547,7 @@ void StorageReplicatedMergeTree::clearOldParts()
 			MergeTreeData::DataPartPtr part = parts.back();
 
 			LOG_DEBUG(log, "Removing " << part->name);
+
 			zkutil::Ops ops;
 			ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + part->name + "/columns", -1));
 			ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + part->name + "/checksums", -1));
@@ -1782,11 +1784,60 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 		size_t max_block_size,
 		unsigned threads)
 {
-	BlockInputStreams res = reader.read(column_names, query, settings, processed_stage, max_block_size, threads);
+	Names virt_column_names;
+	Names real_column_names;
+	for (const auto & it : column_names)
+		if (it == "_replicated")
+			virt_column_names.push_back(it);
+		else
+			real_column_names.push_back(it);
 
-	if (unreplicated_reader)
+	Block virtual_columns_block;
+	ColumnUInt8 * column = new ColumnUInt8(2);
+	ColumnPtr column_ptr = column;
+	column->getData()[0] = 0;
+	column->getData()[1] = 1;
+	virtual_columns_block.insert(ColumnWithNameAndType(column_ptr, new DataTypeUInt8, "_replicated"));
+
+	BlockInputStreamPtr virtual_columns;
+
+	/// Если запрошен хотя бы один виртуальный столбец, пробуем индексировать
+	if (!virt_column_names.empty())
+		virtual_columns = VirtualColumnUtils::getVirtualColumnsBlocks(query->clone(), virtual_columns_block, context);
+	else /// Иначе, считаем допустимыми все возможные значения
+		virtual_columns = new OneBlockInputStream(virtual_columns_block);
+
+	std::multiset<UInt8> values = VirtualColumnUtils::extractSingleValueFromBlocks<UInt8>(virtual_columns, "_replicated");
+
+	BlockInputStreams res;
+
+	if (values.count(1))
 	{
-		BlockInputStreams res2 = unreplicated_reader->read(column_names, query, settings, processed_stage, max_block_size, threads);
+		res = reader.read(real_column_names, query, settings, processed_stage, max_block_size, threads);
+
+		for (auto & virtual_column : virt_column_names)
+		{
+			if (virtual_column == "_replicated")
+			{
+				for (auto & stream : res)
+					stream = new AddingConstColumnBlockInputStream<UInt8>(stream, new DataTypeUInt8, 1, "_replicated");
+			}
+		}
+	}
+
+	if (unreplicated_reader && values.count(0))
+	{
+		BlockInputStreams res2 = unreplicated_reader->read(real_column_names, query, settings, processed_stage, max_block_size, threads);
+
+		for (auto & virtual_column : virt_column_names)
+		{
+			if (virtual_column == "_replicated")
+			{
+				for (auto & stream : res2)
+					stream = new AddingConstColumnBlockInputStream<UInt8>(stream, new DataTypeUInt8, 0, "_replicated");
+			}
+		}
+
 		res.insert(res.begin(), res2.begin(), res2.end());
 	}
 
