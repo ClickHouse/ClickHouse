@@ -81,6 +81,8 @@ public:
 	  */
 	void drop() override;
 
+	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name);
+
 	bool supportsIndexForIn() const override { return true; }
 
 	/// Добавить кусок в очередь кусков, чьи данные нужно проверить в фоновом потоке.

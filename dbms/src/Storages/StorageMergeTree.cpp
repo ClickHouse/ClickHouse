@@ -93,7 +93,7 @@ void StorageMergeTree::rename(const String & new_path_to_db, const String & new_
 {
 	std::string new_full_path = new_path_to_db + escapeForFileName(new_table_name) + '/';
 
-	data.setPath(new_full_path);
+	data.setPath(new_full_path, true);
 
 	path = new_path_to_db;
 	name = new_table_name;

@@ -653,7 +653,7 @@ public:
 	  * Сбрасывает кеши разжатых блоков и засечек.
 	  * Нужно вызывать под залоченным lockStructureForAlter().
 	  */
-	void setPath(const String & full_path);
+	void setPath(const String & full_path, bool move_data);
 
 	/* Проверить, что такой ALTER можно выполнить:
 	 *  - Есть все нужные столбцы.

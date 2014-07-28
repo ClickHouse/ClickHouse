@@ -2009,6 +2009,21 @@ void StorageReplicatedMergeTree::drop()
 	data.dropAllData();
 }
 
+void StorageReplicatedMergeTree::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
+{
+	std::string new_full_path = new_path_to_db + escapeForFileName(new_table_name) + '/';
+
+	data.setPath(new_full_path, true);
+	if (unreplicated_data)
+		unreplicated_data->setPath(new_full_path + "unreplicated/", false);
+
+	database_name = new_database_name;
+	table_name = new_table_name;
+	full_path = new_full_path;
+
+	/// TODO: Можно обновить названия логгеров.
+}
+
 void StorageReplicatedMergeTree::LogEntry::writeText(WriteBuffer & out) const
 {
 	writeString("format version: 1\n", out);

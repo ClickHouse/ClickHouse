@@ -317,12 +317,16 @@ void MergeTreeData::clearOldParts()
 	}
 }
 
-void MergeTreeData::setPath(const String & new_full_path)
+void MergeTreeData::setPath(const String & new_full_path, bool move_data)
 {
-	Poco::File(full_path).renameTo(new_full_path);
-	full_path = new_full_path;
+	if (move_data)
+	{
+		Poco::File(full_path).renameTo(new_full_path);
+		/// Если данные перемещать не нужно, значит их переместил кто-то другой. Расчитываем, что он еще и сбросил кеши.
+		context.resetCaches();
+	}
 
-	context.resetCaches();
+	full_path = new_full_path;
 }
 
 void MergeTreeData::dropAllData()
