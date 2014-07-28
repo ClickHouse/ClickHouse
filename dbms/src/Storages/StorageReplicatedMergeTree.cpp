@@ -6,6 +6,7 @@
 #include <DB/IO/WriteBufferFromOStream.h>
 #include <DB/IO/ReadBufferFromString.h>
 #include <DB/Interpreters/InterpreterAlterQuery.h>
+#include <DB/Common/VirtualColumnUtils.h>
 #include <time.h>
 
 namespace DB
@@ -461,7 +462,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 	for (MergeTreeData::DataPartPtr part : unexpected_parts)
 	{
 		LOG_ERROR(log, "Renaming unexpected part " << part->name << " to ignored_" + part->name);
-		data.renameAndDetachPart(part, "ignored_");
+		data.renameAndDetachPart(part, "ignored_", true);
 	}
 }
 
@@ -511,6 +512,12 @@ void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(MergeTreeData::DataP
 		checksums.checkEqual(part->checksums, true);
 	}
 
+	if (zookeeper->exists(replica_path + "/parts/" + part->name))
+	{
+		LOG_ERROR(log, "checkPartAndAddToZooKeeper: node " << replica_path + "/parts/" + part->name << " already exists");
+		return;
+	}
+
 	ops.push_back(new zkutil::Op::Check(
 		zookeeper_path + "/columns",
 		expected_columns_version));
@@ -533,6 +540,8 @@ void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(MergeTreeData::DataP
 
 void StorageReplicatedMergeTree::clearOldParts()
 {
+	auto table_lock = lockStructure(false);
+
 	MergeTreeData::DataPartsVector parts = data.grabOldParts();
 	size_t count = parts.size();
 
@@ -544,6 +553,8 @@ void StorageReplicatedMergeTree::clearOldParts()
 		while (!parts.empty())
 		{
 			MergeTreeData::DataPartPtr part = parts.back();
+
+			LOG_DEBUG(log, "Removing " << part->name);
 
 			zkutil::Ops ops;
 			ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + part->name + "/columns", -1));
@@ -832,7 +843,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 				}
 			}
 
-			auto table_lock = lockStructure(true);
+			auto table_lock = lockStructure(false);
 
 			MergeTreeData::Transaction transaction;
 			MergeTreeData::DataPartPtr part = merger.mergeParts(parts, entry.new_part_name, &transaction);
@@ -841,6 +852,10 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 			checkPartAndAddToZooKeeper(part, ops);
 
 			zookeeper->multi(ops);
+
+			/** При ZCONNECTIONLOSS или ZOPERATIONTIMEOUT можем зря откатить локальные изменения кусков.
+			  * Это не проблема, потому что в таком случае слияние останется в очереди, и мы попробуем снова.
+			  */
 			transaction.commit();
 			merge_selecting_event.set();
 
@@ -1194,6 +1209,8 @@ void StorageReplicatedMergeTree::alterThread()
 					changed = true;
 			}
 
+			MergeTreeData::DataParts parts;
+
 			/// Если описание столбцов изменилось, обновим структуру таблицы локально.
 			if (changed)
 			{
@@ -1207,6 +1224,9 @@ void StorageReplicatedMergeTree::alterThread()
 						unreplicated_data->setColumnsList(columns);
 					columns_version = stat.version;
 					LOG_INFO(log, "Applied changes to table.");
+
+					/// Нужно получить список кусков под блокировкой таблицы, чтобы избежать race condition с мерджем.
+					parts = data.getDataParts();
 				}
 				else
 				{
@@ -1222,7 +1242,10 @@ void StorageReplicatedMergeTree::alterThread()
 
 				int changed_parts = 0;
 
-				auto parts = data.getDataParts();
+				if (!changed)
+					parts = data.getDataParts();
+
+				auto table_lock = lockStructure(false);
 
 				for (const MergeTreeData::DataPartPtr & part : parts)
 				{
@@ -1379,7 +1402,7 @@ void StorageReplicatedMergeTree::partCheckThread()
 					ActiveDataPartSet::parsePartName(part_name, part_info);
 
 					/** Будем проверять только куски, не полученные в результате слияния.
-					  * Для кусков, полученных в результате слияния такая проверка была бы некорректной,
+					  * Для кусков, полученных в результате слияния, такая проверка была бы некорректной,
 					  *  потому что слитого куска может еще ни у кого не быть.
 					  */
 					if (part_info.left == part_info.right)
@@ -1461,6 +1484,8 @@ void StorageReplicatedMergeTree::partCheckThread()
 			/// У нас есть этот кусок, и он активен.
 			else if (part->name == part_name)
 			{
+				auto table_lock = lockStructure(false);
+
 				/// Если кусок есть в ZooKeeper, сверим его данные с его чексуммами, а их с ZooKeeper.
 				if (zookeeper->exists(replica_path + "/parts/" + part_name))
 				{
@@ -1781,11 +1806,60 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 		size_t max_block_size,
 		unsigned threads)
 {
-	BlockInputStreams res = reader.read(column_names, query, settings, processed_stage, max_block_size, threads);
+	Names virt_column_names;
+	Names real_column_names;
+	for (const auto & it : column_names)
+		if (it == "_replicated")
+			virt_column_names.push_back(it);
+		else
+			real_column_names.push_back(it);
 
-	if (unreplicated_reader)
+	Block virtual_columns_block;
+	ColumnUInt8 * column = new ColumnUInt8(2);
+	ColumnPtr column_ptr = column;
+	column->getData()[0] = 0;
+	column->getData()[1] = 1;
+	virtual_columns_block.insert(ColumnWithNameAndType(column_ptr, new DataTypeUInt8, "_replicated"));
+
+	BlockInputStreamPtr virtual_columns;
+
+	/// Если запрошен хотя бы один виртуальный столбец, пробуем индексировать
+	if (!virt_column_names.empty())
+		virtual_columns = VirtualColumnUtils::getVirtualColumnsBlocks(query->clone(), virtual_columns_block, context);
+	else /// Иначе, считаем допустимыми все возможные значения
+		virtual_columns = new OneBlockInputStream(virtual_columns_block);
+
+	std::multiset<UInt8> values = VirtualColumnUtils::extractSingleValueFromBlocks<UInt8>(virtual_columns, "_replicated");
+
+	BlockInputStreams res;
+
+	if (values.count(1))
 	{
-		BlockInputStreams res2 = unreplicated_reader->read(column_names, query, settings, processed_stage, max_block_size, threads);
+		res = reader.read(real_column_names, query, settings, processed_stage, max_block_size, threads);
+
+		for (auto & virtual_column : virt_column_names)
+		{
+			if (virtual_column == "_replicated")
+			{
+				for (auto & stream : res)
+					stream = new AddingConstColumnBlockInputStream<UInt8>(stream, new DataTypeUInt8, 1, "_replicated");
+			}
+		}
+	}
+
+	if (unreplicated_reader && values.count(0))
+	{
+		BlockInputStreams res2 = unreplicated_reader->read(real_column_names, query, settings, processed_stage, max_block_size, threads);
+
+		for (auto & virtual_column : virt_column_names)
+		{
+			if (virtual_column == "_replicated")
+			{
+				for (auto & stream : res2)
+					stream = new AddingConstColumnBlockInputStream<UInt8>(stream, new DataTypeUInt8, 0, "_replicated");
+			}
+		}
+
 		res.insert(res.begin(), res2.begin(), res2.end());
 	}
 
@@ -1933,6 +2007,21 @@ void StorageReplicatedMergeTree::drop()
 	}
 
 	data.dropAllData();
+}
+
+void StorageReplicatedMergeTree::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
+{
+	std::string new_full_path = new_path_to_db + escapeForFileName(new_table_name) + '/';
+
+	data.setPath(new_full_path, true);
+	if (unreplicated_data)
+		unreplicated_data->setPath(new_full_path + "unreplicated/", false);
+
+	database_name = new_database_name;
+	table_name = new_table_name;
+	full_path = new_full_path;
+
+	/// TODO: Можно обновить названия логгеров.
 }
 
 void StorageReplicatedMergeTree::LogEntry::writeText(WriteBuffer & out) const

@@ -50,6 +50,16 @@ public:
 
 	const NamesAndTypesList & getColumnsList() const { return data.getColumnsList(); }
 
+	NameAndTypePair getColumn(const String &column_name) const
+	{
+		return data.getColumn(column_name);
+	}
+
+	bool hasColumn(const String &column_name) const
+	{
+		return data.hasColumn(column_name);
+	}
+
 	BlockInputStreams read(
 		const Names & column_names,
 		ASTPtr query,
@@ -69,7 +79,7 @@ public:
 
 	void drop() override;
 
-	void rename(const String & new_path_to_db, const String & new_name);
+	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name);
 
 	void alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context);
 

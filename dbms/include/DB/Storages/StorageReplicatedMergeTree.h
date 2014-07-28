@@ -6,6 +6,7 @@
 #include <DB/Storages/MergeTree/MergeTreeDataWriter.h>
 #include <DB/Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreePartsExchange.h>
+#include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <zkutil/ZooKeeper.h>
 #include <zkutil/LeaderElection.h>
 #include <statdaemons/threadpool.hpp>
@@ -50,6 +51,18 @@ public:
 
 	const NamesAndTypesList & getColumnsList() const override { return data.getColumnsList(); }
 
+	NameAndTypePair getColumn(const String &column_name) const
+	{
+		if (column_name == "_replicated") return NameAndTypePair("_replicated", new DataTypeUInt8);
+		return data.getColumn(column_name);
+	}
+
+	bool hasColumn(const String &column_name) const
+	{
+		if (column_name == "_replicated") return true;
+		return data.hasColumn(column_name);
+	}
+
 	BlockInputStreams read(
 		const Names & column_names,
 		ASTPtr query,
@@ -67,6 +80,8 @@ public:
 	/** Удаляет реплику из ZooKeeper. Если других реплик нет, удаляет всю таблицу из ZooKeeper.
 	  */
 	void drop() override;
+
+	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name);
 
 	bool supportsIndexForIn() const override { return true; }
 

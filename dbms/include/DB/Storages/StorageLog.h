@@ -154,7 +154,7 @@ public:
 	BlockOutputStreamPtr write(
 		ASTPtr query);
 
-	void rename(const String & new_path_to_db, const String & new_name);
+	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name);
 
 protected:
 	String path;

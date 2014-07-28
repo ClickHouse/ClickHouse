@@ -523,15 +523,15 @@ size_t StorageLog::marksCount()
 }
 
 
-void StorageLog::rename(const String & new_path_to_db, const String & new_name)
+void StorageLog::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
 {
 	Poco::ScopedWriteRWLock lock(rwlock);
 
 	/// Переименовываем директорию с данными.
-	Poco::File(path + escapeForFileName(name)).renameTo(new_path_to_db + escapeForFileName(new_name));
+	Poco::File(path + escapeForFileName(name)).renameTo(new_path_to_db + escapeForFileName(new_table_name));
 
 	path = new_path_to_db;
-	name = new_name;
+	name = new_table_name;
 
 	for (Files_t::iterator it = files.begin(); it != files.end(); ++it)
 	{

@@ -145,7 +145,7 @@ static ASTPtr buildWhereExpression(const ASTs & functions)
 BlockInputStreamPtr getVirtualColumnsBlocks(ASTPtr query, const Block & input, const Context & context)
 {
 	const ASTSelectQuery & select = typeid_cast<ASTSelectQuery & >(*query);
-	if (!select.where_expression)
+	if (!select.where_expression && !select.prewhere_expression)
 		return new OneBlockInputStream(input);
 
 	ASTPtr new_query = new ASTSelectQuery();
@@ -164,7 +164,10 @@ BlockInputStreamPtr getVirtualColumnsBlocks(ASTPtr query, const Block & input, c
 		select_list.children.push_back(new ASTIdentifier(StringRange(), columns[i]));
 
 	std::vector<ASTPtr> functions;
-	extractFunctions(select.where_expression, columns, functions);
+	if (select.where_expression)
+		extractFunctions(select.where_expression, columns, functions);
+	if (select.prewhere_expression)
+		extractFunctions(select.prewhere_expression, columns, functions);
 	new_select.where_expression = buildWhereExpression(functions);
 
 	if (new_select.select_expression_list)

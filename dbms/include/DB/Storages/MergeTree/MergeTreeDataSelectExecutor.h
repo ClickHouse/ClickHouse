@@ -55,7 +55,8 @@ private:
 		size_t max_block_size,
 		bool use_uncompressed_cache,
 		ExpressionActionsPtr prewhere_actions,
-		const String & prewhere_column);
+		const String & prewhere_column,
+		bool add_virtual_column);
 
 	BlockInputStreams spreadMarkRangesAmongThreadsFinal(
 		RangesInDataParts parts,
@@ -64,7 +65,8 @@ private:
 		size_t max_block_size,
 		bool use_uncompressed_cache,
 		ExpressionActionsPtr prewhere_actions,
-		const String & prewhere_column);
+		const String & prewhere_column,
+		bool add_virtual_column);
 
 	/// Создать выражение "Sign == 1".
 	void createPositiveSignCondition(ExpressionActionsPtr & out_expression, String & out_column);

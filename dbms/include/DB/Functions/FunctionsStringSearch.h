@@ -3,6 +3,7 @@
 #include <Poco/Mutex.h>
 
 #include <statdaemons/OptimizedRegularExpression.h>
+#include <statdaemons/stdext.h>
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>
@@ -12,6 +13,9 @@
 #include <DB/Functions/IFunction.h>
 #include <re2/re2.h>
 #include <re2/stringpiece.h>
+
+#include <mutex>
+#include <stack>
 
 namespace DB
 {
@@ -240,38 +244,80 @@ inline bool likePatternIsStrstr(const String & pattern, String & res)
 }
 
 
-struct Regexps
+namespace Regexps
 {
-	typedef std::map<String, OptimizedRegularExpression> KnownRegexps;
+	struct Holder;
+	struct Deleter;
 
-	static const OptimizedRegularExpression & get(const std::string & pattern)
+	using Regexp = OptimizedRegularExpressionImpl<false>;
+	using KnownRegexps = std::map<String, std::unique_ptr<Holder>>;
+	using Pointer = std::unique_ptr<Regexp, Deleter>;
+
+	///	Container for regular expressions with embedded mutex for safe addition and removal
+	struct Holder
 	{
-		/// В GCC thread safe statics.
-		static KnownRegexps known_regexps;
-		static Poco::FastMutex mutex;
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		std::mutex mutex;
+		std::stack<std::unique_ptr<Regexp>> stack;
 
-		KnownRegexps::const_iterator it = known_regexps.find(pattern);
-		if (known_regexps.end() == it)
-			it = known_regexps.insert(std::make_pair(pattern, OptimizedRegularExpression(pattern))).first;
+		/**	Extracts and returns a pointer from the collection if it's not empty,
+		*	creates a new one by calling provided f() otherwise.
+		*/
+		template <typename Factory> Pointer get(Factory && f);
+	};
 
-		return it->second;
+	/**	Specialized deleter for std::unique_ptr.
+	*	Returns underlying pointer back to holder thus reclaiming its ownership.
+	*/
+	struct Deleter
+	{
+		Holder * holder;
+
+		Deleter(Holder * holder = nullptr) : holder{holder} {}
+
+		void operator()(Regexp * owning_ptr) const
+		{
+			std::lock_guard<std::mutex> lock{holder->mutex};
+			holder->stack.emplace(owning_ptr);
+		}
+
+	};
+
+	template <typename Factory>
+	inline Pointer Holder::get(Factory && f)
+	{
+		std::lock_guard<std::mutex> lock{mutex};
+
+		if (stack.empty())
+			return { f(), this };
+
+		auto regexp = stack.top().release();
+		stack.pop();
+
+		return { regexp, this };
 	}
 
-	static const OptimizedRegularExpression & getLike(const std::string & pattern)
+	template <bool like>
+	inline Regexp createRegexp(const std::string & pattern) { return pattern; }
+	template <>
+	inline Regexp createRegexp<true>(const std::string & pattern) { return likePatternToRegexp(pattern); }
+
+	template <bool like = false>
+	inline Pointer get(const std::string & pattern)
 	{
-		/// В GCC thread safe statics.
+		/// C++11 has thread-safe function-local statics on most modern compilers.
 		static KnownRegexps known_regexps;
-		static Poco::FastMutex mutex;
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		static std::mutex mutex;
+		std::lock_guard<std::mutex> lock{mutex};
 
-		KnownRegexps::const_iterator it = known_regexps.find(pattern);
+		auto it = known_regexps.find(pattern);
 		if (known_regexps.end() == it)
- 			it = known_regexps.insert(std::make_pair(pattern, OptimizedRegularExpression(likePatternToRegexp(pattern)))).first;
+			it = known_regexps.emplace(pattern, stdext::make_unique<Holder>()).first;
 
-		return it->second;
+		return it->second->get([&pattern] {
+			return new Regexp{createRegexp<like>(pattern)};
+		});
 	}
-};
+}
 
 
 /** like - использовать выражения LIKE, если true; использовать выражения re2, если false.
@@ -325,17 +371,17 @@ struct MatchImpl
 		}
 		else
 		{
-			const OptimizedRegularExpression & regexp = like ? Regexps::getLike(pattern) : Regexps::get(pattern);
+			const auto & regexp = Regexps::get<like>(pattern);
 			size_t size = offsets.size();
 			for (size_t i = 0; i < size; ++i)
-				res[i] = revert ^ regexp.match(reinterpret_cast<const char *>(&data[i != 0 ? offsets[i - 1] : 0]), (i != 0 ? offsets[i] - offsets[i - 1] : offsets[0]) - 1);
+				res[i] = revert ^ regexp->match(reinterpret_cast<const char *>(&data[i != 0 ? offsets[i - 1] : 0]), (i != 0 ? offsets[i] - offsets[i - 1] : offsets[0]) - 1);
 		}
 	}
 
 	static void constant(const std::string & data, const std::string & pattern, UInt8 & res)
 	{
-		const OptimizedRegularExpression & regexp = like ? Regexps::getLike(pattern) : Regexps::get(pattern);
-		res = revert ^ regexp.match(data);
+		const auto & regexp = Regexps::get<like>(pattern);
+		res = revert ^ regexp->match(data);
 	}
 };
 
@@ -349,9 +395,9 @@ struct ExtractImpl
 		res_data.reserve(data.size() / 5);
 		res_offsets.resize(offsets.size());
 
-		const OptimizedRegularExpression & regexp = Regexps::get(pattern);
+		const auto & regexp = Regexps::get(pattern);
 
-		unsigned capture = regexp.getNumberOfSubpatterns() > 0 ? 1 : 0;
+		unsigned capture = regexp->getNumberOfSubpatterns() > 0 ? 1 : 0;
 		OptimizedRegularExpression::MatchVec matches;
 		matches.reserve(capture + 1);
 		size_t prev_offset = 0;
@@ -361,10 +407,10 @@ struct ExtractImpl
 		{
 			size_t cur_offset = offsets[i];
 
-			unsigned count = regexp.match(reinterpret_cast<const char *>(&data[prev_offset]), cur_offset - prev_offset - 1, matches, capture + 1);
+			unsigned count = regexp->match(reinterpret_cast<const char *>(&data[prev_offset]), cur_offset - prev_offset - 1, matches, capture + 1);
 			if (count > capture && matches[capture].offset != std::string::npos)
 			{
-				const OptimizedRegularExpression::Match & match = matches[capture];
+				const auto & match = matches[capture];
 				res_data.resize(res_offset + match.length + 1);
 				memcpy(&res_data[res_offset], &data[prev_offset + match.offset], match.length);
 				res_offset += match.length;
@@ -462,7 +508,7 @@ struct ReplaceRegexpImpl
 
 				if (searcher.Match(input, start_pos, input.length(), re2::RE2::Anchor::UNANCHORED, matches, capture))
 				{
-					const re2::StringPiece & match = matches[0];
+					const auto & match = matches[0];
 					size_t char_to_copy = (match.data() - input.data()) - start_pos;
 
 					/// Копируем данные без изменения
@@ -544,7 +590,7 @@ struct ReplaceRegexpImpl
 
 				if (searcher.Match(input, start_pos, input.length(), re2::RE2::Anchor::UNANCHORED, matches, capture))
 				{
-					const re2::StringPiece & match = matches[0];
+					const auto & match = matches[0];
 					size_t char_to_copy = (match.data() - input.data()) - start_pos;
 
 					/// Копируем данные без изменения
@@ -618,7 +664,7 @@ struct ReplaceRegexpImpl
 
 			if (searcher.Match(input, start_pos, input.length(), re2::RE2::Anchor::UNANCHORED, matches, capture))
 			{
-				const re2::StringPiece & match = matches[0];
+				const auto & match = matches[0];
 				size_t char_to_copy = (match.data() - input.data()) - start_pos;
 
 				/// Копируем данные без изменения

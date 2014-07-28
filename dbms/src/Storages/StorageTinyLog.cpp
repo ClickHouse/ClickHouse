@@ -353,13 +353,13 @@ void StorageTinyLog::addFile(const String & column_name, const IDataType & type,
 }
 
 
-void StorageTinyLog::rename(const String & new_path_to_db, const String & new_name)
+void StorageTinyLog::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
 {
 	/// Переименовываем директорию с данными.
-	Poco::File(path + escapeForFileName(name)).renameTo(new_path_to_db + escapeForFileName(new_name));
+	Poco::File(path + escapeForFileName(name)).renameTo(new_path_to_db + escapeForFileName(new_table_name));
 
 	path = new_path_to_db;
-	name = new_name;
+	name = new_table_name;
 
 	for (Files_t::iterator it = files.begin(); it != files.end(); ++it)
 		it->second.data_file = Poco::File(path + escapeForFileName(name) + '/' + Poco::Path(it->second.data_file.path()).getFileName());

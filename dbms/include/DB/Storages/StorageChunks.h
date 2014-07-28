@@ -62,7 +62,7 @@ public:
 	}
 	
 	/// Переименование испортило бы целостность количества ссылок из таблиц ChunkRef.
-	void rename(const String & new_path_to_db, const String & new_name)
+	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
 	{
 		throw Exception("Table doesn't support renaming", ErrorCodes::NOT_IMPLEMENTED);
 	}

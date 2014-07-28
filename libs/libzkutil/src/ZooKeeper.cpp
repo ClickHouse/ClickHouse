@@ -366,6 +366,9 @@ int32_t ZooKeeper::trySet(const std::string & path, const std::string & data,
 
 int32_t ZooKeeper::multiImpl(const Ops & ops_, OpResultsPtr * out_results_)
 {
+	if (ops_.empty())
+		return ZOK;
+
 	size_t count = ops_.size();
 	OpResultsPtr out_results(new OpResults(count));
 
