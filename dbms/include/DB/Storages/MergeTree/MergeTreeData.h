@@ -10,6 +10,7 @@
 #include <DB/IO/ReadBufferFromString.h>
 #include <DB/IO/WriteBufferFromFile.h>
 #include <DB/Common/escapeForFileName.h>
+#include <DB/DataTypes/DataTypeString.h>
 #include <Poco/RWLock.h>
 
 
@@ -572,6 +573,18 @@ public:
 
 	const NamesAndTypesList & getColumnsList() const { return *columns; }
 
+	NameAndTypePair getColumn(const String &column_name) const
+	{
+		if (column_name == "_part") return NameAndTypePair("_part", new DataTypeString);
+		return getRealColumn(column_name);
+	}
+
+	bool hasColumn(const String &column_name) const
+	{
+		if (column_name == "_part") return true;
+		return hasRealColumn(column_name);
+	}
+
 	String getFullPath() const { return full_path; }
 
 	String getLogName() const { return log_name; }
@@ -615,8 +628,9 @@ public:
 	void replaceParts(const DataPartsVector & remove, const DataPartsVector & add, bool clear_without_timeout);
 
 	/** Переименовывает кусок в prefix_кусок и убирает его из рабочего набора.
+	  * Если restore_covered, добавляет в рабочий набор неактивные куски, слиянием которых получен удаляемый кусок.
 	  */
-	void renameAndDetachPart(DataPartPtr part, const String & prefix);
+	void renameAndDetachPart(DataPartPtr part, const String & prefix, bool restore_covered = false);
 
 	/** Возвращает старые неактуальные куски, которые можно удалить. Одновременно удаляет их из списка кусков, но не с диска.
 	  */
