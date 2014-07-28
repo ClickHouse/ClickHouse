@@ -50,6 +50,16 @@ public:
 
 	const NamesAndTypesList & getColumnsList() const { return data.getColumnsList(); }
 
+	NameAndTypePair getColumn(const String &column_name) const
+	{
+		return data.getColumn(column_name);
+	}
+
+	bool hasColumn(const String &column_name) const
+	{
+		return data.hasColumn(column_name);
+	}
+
 	BlockInputStreams read(
 		const Names & column_names,
 		ASTPtr query,

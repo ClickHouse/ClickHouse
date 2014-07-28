@@ -10,6 +10,7 @@
 #include <DB/IO/ReadBufferFromString.h>
 #include <DB/IO/WriteBufferFromFile.h>
 #include <DB/Common/escapeForFileName.h>
+#include <DB/DataTypes/DataTypeString.h>
 #include <Poco/RWLock.h>
 
 
@@ -571,6 +572,18 @@ public:
 	}
 
 	const NamesAndTypesList & getColumnsList() const { return *columns; }
+
+	NameAndTypePair getColumn(const String &column_name) const
+	{
+		if (column_name == "_part") return NameAndTypePair("_part", new DataTypeString);
+		return getRealColumn(column_name);
+	}
+
+	bool hasColumn(const String &column_name) const
+	{
+		if (column_name == "_part") return true;
+		return hasRealColumn(column_name);
+	}
 
 	String getFullPath() const { return full_path; }
 
