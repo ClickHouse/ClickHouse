@@ -191,7 +191,7 @@ public:
 	  * В этой функции нужно переименовать директорию с данными, если она есть.
 	  * Вызывается при заблокированной на запись структуре таблицы.
 	  */
-	virtual void rename(const String & new_path_to_db, const String & new_name)
+	virtual void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
 	{
 		throw Exception("Method rename is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}

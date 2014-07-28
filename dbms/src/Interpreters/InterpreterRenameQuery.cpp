@@ -59,8 +59,9 @@ void InterpreterRenameQuery::execute()
 
 		context.assertTableDoesntExist(to_database_name, to_table_name);
 
+		/// Уведомляем таблицу о том, что она переименовывается. Если таблица не поддерживает переименование - кинется исключение.
 
-		table->rename(path + "data/" + to_database_name_escaped + "/", to_table_name);
+		table->rename(path + "data/" + to_database_name_escaped + "/", to_database_name, to_table_name);
 
 		/// Пишем новый файл с метаданными.
 		{
