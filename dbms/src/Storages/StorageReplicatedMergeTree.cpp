@@ -512,6 +512,12 @@ void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(MergeTreeData::DataP
 		checksums.checkEqual(part->checksums, true);
 	}
 
+	if (zookeeper->exists(replica_path + "/parts/" + part->name))
+	{
+		LOG_ERROR(log, "checkPartAndAddToZooKeeper: node " << replica_path + "/parts/" + part->name << " already exists");
+		return;
+	}
+
 	ops.push_back(new zkutil::Op::Check(
 		zookeeper_path + "/columns",
 		expected_columns_version));
@@ -534,6 +540,8 @@ void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(MergeTreeData::DataP
 
 void StorageReplicatedMergeTree::clearOldParts()
 {
+	auto table_lock = lockStructure(false);
+
 	MergeTreeData::DataPartsVector parts = data.grabOldParts();
 	size_t count = parts.size();
 
@@ -835,7 +843,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 				}
 			}
 
-			auto table_lock = lockStructure(true);
+			auto table_lock = lockStructure(false);
 
 			MergeTreeData::Transaction transaction;
 			MergeTreeData::DataPartPtr part = merger.mergeParts(parts, entry.new_part_name, &transaction);
@@ -844,6 +852,10 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 			checkPartAndAddToZooKeeper(part, ops);
 
 			zookeeper->multi(ops);
+
+			/** При ZCONNECTIONLOSS или ZOPERATIONTIMEOUT можем зря откатить локальные изменения кусков.
+			  * Это не проблема, потому что в таком случае слияние останется в очереди, и мы попробуем снова.
+			  */
 			transaction.commit();
 			merge_selecting_event.set();
 
@@ -1197,6 +1209,8 @@ void StorageReplicatedMergeTree::alterThread()
 					changed = true;
 			}
 
+			MergeTreeData::DataParts parts;
+
 			/// Если описание столбцов изменилось, обновим структуру таблицы локально.
 			if (changed)
 			{
@@ -1210,6 +1224,9 @@ void StorageReplicatedMergeTree::alterThread()
 						unreplicated_data->setColumnsList(columns);
 					columns_version = stat.version;
 					LOG_INFO(log, "Applied changes to table.");
+
+					/// Нужно получить список кусков под блокировкой таблицы, чтобы избежать race condition с мерджем.
+					parts = data.getDataParts();
 				}
 				else
 				{
@@ -1225,7 +1242,10 @@ void StorageReplicatedMergeTree::alterThread()
 
 				int changed_parts = 0;
 
-				auto parts = data.getDataParts();
+				if (!changed)
+					parts = data.getDataParts();
+
+				auto table_lock = lockStructure(false);
 
 				for (const MergeTreeData::DataPartPtr & part : parts)
 				{
@@ -1382,7 +1402,7 @@ void StorageReplicatedMergeTree::partCheckThread()
 					ActiveDataPartSet::parsePartName(part_name, part_info);
 
 					/** Будем проверять только куски, не полученные в результате слияния.
-					  * Для кусков, полученных в результате слияния такая проверка была бы некорректной,
+					  * Для кусков, полученных в результате слияния, такая проверка была бы некорректной,
 					  *  потому что слитого куска может еще ни у кого не быть.
 					  */
 					if (part_info.left == part_info.right)
@@ -1464,6 +1484,8 @@ void StorageReplicatedMergeTree::partCheckThread()
 			/// У нас есть этот кусок, и он активен.
 			else if (part->name == part_name)
 			{
+				auto table_lock = lockStructure(false);
+
 				/// Если кусок есть в ZooKeeper, сверим его данные с его чексуммами, а их с ZooKeeper.
 				if (zookeeper->exists(replica_path + "/parts/" + part_name))
 				{

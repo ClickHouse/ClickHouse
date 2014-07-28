@@ -251,6 +251,10 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 {
 	LOG_DEBUG(log, "Merging " << parts.size() << " parts: from " << parts.front()->name << " to " << parts.back()->name << " into " << merged_name);
 
+	String merged_dir = data.getFullPath() + merged_name;
+	if (Poco::File(merged_dir).exists())
+		throw Exception("Directory " + merged_dir + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
+
 	NameSet union_columns_set;
 	for (const MergeTreeData::DataPartPtr & part : parts)
 	{

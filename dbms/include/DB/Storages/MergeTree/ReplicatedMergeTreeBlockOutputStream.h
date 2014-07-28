@@ -18,6 +18,7 @@ public:
 	void write(const Block & block) override
 	{
 		auto part_blocks = storage.writer.splitBlockIntoParts(block);
+
 		for (auto & current_block : part_blocks)
 		{
 			storage.data.delayInsertIfNeeded();
