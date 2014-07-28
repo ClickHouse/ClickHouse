@@ -461,7 +461,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 	for (MergeTreeData::DataPartPtr part : unexpected_parts)
 	{
 		LOG_ERROR(log, "Renaming unexpected part " << part->name << " to ignored_" + part->name);
-		data.renameAndDetachPart(part, "ignored_");
+		data.renameAndDetachPart(part, "ignored_", true);
 	}
 }
 
@@ -545,6 +545,7 @@ void StorageReplicatedMergeTree::clearOldParts()
 		{
 			MergeTreeData::DataPartPtr part = parts.back();
 
+			LOG_DEBUG(log, "Removing " << part->name);
 			zkutil::Ops ops;
 			ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + part->name + "/columns", -1));
 			ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + part->name + "/checksums", -1));

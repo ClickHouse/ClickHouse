@@ -716,14 +716,67 @@ void MergeTreeData::replaceParts(const DataPartsVector & remove, const DataParts
 	}
 }
 
-void MergeTreeData::renameAndDetachPart(DataPartPtr part, const String & prefix)
+void MergeTreeData::renameAndDetachPart(DataPartPtr part, const String & prefix, bool restore_covered)
 {
+	LOG_INFO(log, "Renaming " << part->name << " to " << prefix << part->name << " and detaching it.");
+
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 	Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
+
 	if (!all_data_parts.erase(part))
 		throw Exception("No such data part", ErrorCodes::NO_SUCH_DATA_PART);
+
 	data_parts.erase(part);
 	part->renameAddPrefix(prefix);
+
+	if (restore_covered)
+	{
+		auto it = all_data_parts.lower_bound(part);
+		Strings restored;
+		bool error = false;
+
+		UInt64 pos = part->left;
+
+		if (it != all_data_parts.begin())
+		{
+			--it;
+			if (part->contains(**it))
+			{
+				if ((*it)->left != part->left)
+					error = true;
+				data_parts.insert(*it);
+				pos = (*it)->right + 1;
+				restored.push_back((*it)->name);
+			}
+			else
+				error = true;
+			++it;
+		}
+		else
+			error = true;
+
+		for (; it != all_data_parts.end() && part->contains(**it); ++it)
+		{
+			if ((*it)->left < pos)
+				continue;
+			if ((*it)->left > pos)
+				error = true;
+			data_parts.insert(*it);
+			pos = (*it)->right + 1;
+			restored.push_back((*it)->name);
+		}
+
+		if (pos != part->right + 1)
+			error = true;
+
+		for (const String & name : restored)
+		{
+			LOG_INFO(log, "Activated part " << name);
+		}
+
+		if (error)
+			LOG_ERROR(log, "The set of parts restored in place of " << part->name << " looks incomplete. There might or might not be a data loss.");
+	}
 }
 
 MergeTreeData::DataParts MergeTreeData::getDataParts()
