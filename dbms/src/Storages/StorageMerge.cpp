@@ -80,23 +80,19 @@ BlockInputStreams StorageMerge::read(
 		table_locks.push_back(table->lockStructure(false));
 
 	Block virtual_columns_block = getBlockWithVirtualColumns(selected_tables);
-	BlockInputStreamPtr virtual_columns;
 
 	/// Если запрошен хотя бы один виртуальный столбец, пробуем индексировать
 	if (!virt_column_names.empty())
-		virtual_columns = VirtualColumnUtils::getVirtualColumnsBlocks(query->clone(), virtual_columns_block, context);
-	else /// Иначе, считаем допустимыми все возможные значения
-		virtual_columns = new OneBlockInputStream(virtual_columns_block);
+		VirtualColumnUtils::filterBlockWithQuery(query->clone(), virtual_columns_block, context);
 
-	std::multiset<String> values = VirtualColumnUtils::extractSingleValueFromBlocks<String>(virtual_columns, _table_column_name);
-	bool all_inclusive = (values.size() == virtual_columns_block.rows());
+	std::multiset<String> values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, _table_column_name);
 
 	for (size_t i = 0, size = selected_tables.size(); i < size; ++i)
 	{
 		StoragePtr table = selected_tables[i];
 		auto & table_lock = table_locks[i];
 
-		if (!all_inclusive && values.find(table->getTableName()) == values.end())
+		if (values.find(table->getTableName()) == values.end())
 			continue;
 
 		/// Если в запросе только виртуальные столбцы, надо запросить хотя бы один любой другой.

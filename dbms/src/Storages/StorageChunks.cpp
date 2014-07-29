@@ -55,13 +55,9 @@ BlockInputStreams StorageChunks::read(
 		return read(0, std::numeric_limits<size_t>::max(), column_names, query, settings, processed_stage, max_block_size, threads);
 
 	Block virtual_columns_block = getBlockWithVirtualColumns();
-	BlockInputStreamPtr virtual_columns =
-		VirtualColumnUtils::getVirtualColumnsBlocks(query->clone(), virtual_columns_block, context);
-	std::multiset<String> values = VirtualColumnUtils::extractSingleValueFromBlocks<String>(virtual_columns, _table_column_name);
-	bool all_inclusive = (values.size() == virtual_columns_block.rows());
-
-	if (all_inclusive)
+	if (!VirtualColumnUtils::filterBlockWithQuery(query->clone(), virtual_columns_block, context))
 		return read(0, std::numeric_limits<size_t>::max(), column_names, query, settings, processed_stage, max_block_size, threads);
+	std::multiset<String> values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, _table_column_name);
 
 	BlockInputStreams res;
 	for (const auto & it : values)

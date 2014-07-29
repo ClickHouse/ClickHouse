@@ -130,23 +130,19 @@ BlockInputStreams StorageChunkMerger::read(
 			has_virtual_column = true;
 
 	Block virtual_columns_block = getBlockWithVirtualColumns(selected_tables);
-	BlockInputStreamPtr virtual_columns;
 
 	/// Если запрошен хотя бы один виртуальный столбец, пробуем индексировать
 	if (has_virtual_column)
-		virtual_columns = VirtualColumnUtils::getVirtualColumnsBlocks(query->clone(), virtual_columns_block, context);
-	else /// Иначе, считаем допустимыми все возможные значения
-		virtual_columns = new OneBlockInputStream(virtual_columns_block);
+		VirtualColumnUtils::filterBlockWithQuery(query->clone(), virtual_columns_block, context);
 
-	std::multiset<String> values = VirtualColumnUtils::extractSingleValueFromBlocks<String>(virtual_columns, _table_column_name);
-	bool all_inclusive = (values.size() == virtual_columns_block.rows());
+	std::multiset<String> values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, _table_column_name);
 
 	for (size_t i = 0; i < selected_tables.size(); ++i)
 	{
 		StoragePtr table = selected_tables[i];
 		auto table_lock = table_locks[i];
 
-		if (table->getName() != "Chunks" && !all_inclusive && values.find(table->getTableName()) == values.end())
+		if (table->getName() != "Chunks" && values.find(table->getTableName()) == values.end())
 			continue;
 
 		/// Список виртуальных столбцов, которые мы заполним сейчас и список столбцов, которые передадим дальше
