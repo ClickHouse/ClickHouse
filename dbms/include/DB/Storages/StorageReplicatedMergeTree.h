@@ -88,6 +88,9 @@ public:
 	/// Добавить кусок в очередь кусков, чьи данные нужно проверить в фоновом потоке.
 	void enqueuePartForCheck(const String & name);
 
+	MergeTreeData & getData() { return data; }
+	MergeTreeData * getUnreplicatedData() { return unreplicated_data.get(); }
+
 private:
 	friend class ReplicatedMergeTreeBlockOutputStream;
 
