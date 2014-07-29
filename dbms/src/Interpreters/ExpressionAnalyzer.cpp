@@ -279,7 +279,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 		NamesAndTypesList::const_iterator it = findColumn(function_string);
 		if (columns.end() != it)
 		{
-			ASTIdentifier * ast_id = new ASTIdentifier(node->range, std::string(node->range.first, node->range.second));
+			ASTIdentifier * ast_id = new ASTIdentifier(node->range, function_string);
 			ast = ast_id;
 			current_asts.insert(ast);
 			replaced = true;

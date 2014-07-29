@@ -10,6 +10,7 @@
 #include <DB/Interpreters/loadMetadata.h>
 #include <DB/Storages/StorageSystemNumbers.h>
 #include <DB/Storages/StorageSystemTables.h>
+#include <DB/Storages/StorageSystemParts.h>
 #include <DB/Storages/StorageSystemDatabases.h>
 #include <DB/Storages/StorageSystemProcesses.h>
 #include <DB/Storages/StorageSystemEvents.h>
@@ -402,6 +403,7 @@ int Server::main(const std::vector<std::string> & args)
 	global_context->addTable("system", "one",		StorageSystemOne::create("one"));
 	global_context->addTable("system", "numbers", 	StorageSystemNumbers::create("numbers"));
 	global_context->addTable("system", "tables", 	StorageSystemTables::create("tables", *global_context));
+	global_context->addTable("system", "parts", 	StorageSystemParts::create("parts", *global_context));
 	global_context->addTable("system", "databases", StorageSystemDatabases::create("databases", *global_context));
 	global_context->addTable("system", "processes", StorageSystemProcesses::create("processes", *global_context));
 	global_context->addTable("system", "events", 	StorageSystemEvents::create("events"));

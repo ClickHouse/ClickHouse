@@ -85,6 +85,8 @@ public:
 
 	bool supportsIndexForIn() const override { return true; }
 
+	MergeTreeData & getData() { return data; }
+
 private:
 	String path;
 	String name;
