@@ -62,6 +62,10 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 		else
 			virt_column_names.push_back(name);
 
+	/// Если в запросе только виртуальные столбцы, надо запросить хотя бы один любой другой.
+	if (real_column_names.size() == 0)
+		real_column_names.push_back(ExpressionActions::getSmallestColumn(data.getColumnsList()));
+
 	Block virtual_columns_block = getBlockWithVirtualColumns(parts);
 
 	/// Если запрошен хотя бы один виртуальный столбец, пробуем индексировать
