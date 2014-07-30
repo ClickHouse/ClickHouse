@@ -1829,34 +1829,37 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 
 	BlockInputStreams res;
 
-	if (values.count(1))
+	size_t part_index = 0;
+
+	if (unreplicated_reader && values.count(0))
 	{
-		res = reader.read(real_column_names, query, settings, processed_stage, max_block_size, threads);
+		res = unreplicated_reader->read(
+			real_column_names, query, settings, processed_stage, max_block_size, threads, &part_index);
 
 		for (auto & virtual_column : virt_column_names)
 		{
 			if (virtual_column == "_replicated")
 			{
 				for (auto & stream : res)
-					stream = new AddingConstColumnBlockInputStream<UInt8>(stream, new DataTypeUInt8, 1, "_replicated");
+					stream = new AddingConstColumnBlockInputStream<UInt8>(stream, new DataTypeUInt8, 0, "_replicated");
 			}
 		}
 	}
 
-	if (unreplicated_reader && values.count(0))
+	if (values.count(1))
 	{
-		BlockInputStreams res2 = unreplicated_reader->read(real_column_names, query, settings, processed_stage, max_block_size, threads);
+		auto res2 = reader.read(real_column_names, query, settings, processed_stage, max_block_size, threads, &part_index);
 
 		for (auto & virtual_column : virt_column_names)
 		{
 			if (virtual_column == "_replicated")
 			{
 				for (auto & stream : res2)
-					stream = new AddingConstColumnBlockInputStream<UInt8>(stream, new DataTypeUInt8, 0, "_replicated");
+					stream = new AddingConstColumnBlockInputStream<UInt8>(stream, new DataTypeUInt8, 1, "_replicated");
 			}
 		}
 
-		res.insert(res.begin(), res2.begin(), res2.end());
+		res.insert(res.end(), res2.begin(), res2.end());
 	}
 
 	return res;

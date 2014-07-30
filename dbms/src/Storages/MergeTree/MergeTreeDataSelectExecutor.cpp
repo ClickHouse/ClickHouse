@@ -39,8 +39,13 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	const Settings & settings,
 	QueryProcessingStage::Enum & processed_stage,
 	size_t max_block_size,
-	unsigned threads)
+	unsigned threads,
+	size_t * part_index)
 {
+	size_t part_index_var = 0;
+	if (!part_index)
+		part_index = &part_index_var;
+
 	MergeTreeData::DataPartsVector parts;
 
 	{
@@ -50,11 +55,12 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 	/// Если в запросе есть ограничения на виртуальный столбец _part, выберем только подходящие под него куски.
 	Names virt_column_names, real_column_names;
-	for (const auto & it : column_names_to_return)
-		if (it != "_part")
-			real_column_names.push_back(it);
+	for (const String & name : column_names_to_return)
+		if (name != "_part" &&
+			name != "_part_index")
+			real_column_names.push_back(name);
 		else
-			virt_column_names.push_back(it);
+			virt_column_names.push_back(name);
 
 	Block virtual_columns_block = getBlockWithVirtualColumns(parts);
 
@@ -190,7 +196,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	for (size_t i = 0; i < parts.size(); ++i)
 	{
 		MergeTreeData::DataPartPtr & part = parts[i];
-		RangesInDataPart ranges(part);
+		RangesInDataPart ranges(part, (*part_index)++);
 		ranges.ranges = markRangesFromPkRange(part->index, key_condition);
 
 		if (!ranges.ranges.empty())
@@ -227,7 +233,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 			settings.use_uncompressed_cache,
 			prewhere_actions,
 			prewhere_column,
-			!virt_column_names.empty());
+			virt_column_names);
 	}
 	else
 	{
@@ -239,7 +245,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 			settings.use_uncompressed_cache,
 			prewhere_actions,
 			prewhere_column,
-			!virt_column_names.empty());
+			virt_column_names);
 	}
 
 	if (select.sample_size)
@@ -264,7 +270,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 	bool use_uncompressed_cache,
 	ExpressionActionsPtr prewhere_actions,
 	const String & prewhere_column,
-	bool add_virtual_column)
+	const Names & virt_columns)
 {
 	/// На всякий случай перемешаем куски.
 	std::random_shuffle(parts.begin(), parts.end());
@@ -316,52 +322,54 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 					marks_in_part - need_marks < min_marks_for_concurrent_read)
 					need_marks = marks_in_part;
 
+				MarkRanges ranges_to_get_from_part;
+
 				/// Возьмем весь кусок, если он достаточно мал.
 				if (marks_in_part <= need_marks)
 				{
 					/// Восстановим порядок отрезков.
 					std::reverse(part.ranges.begin(), part.ranges.end());
 
-					streams.push_back(new MergeTreeBlockInputStream(
-						data.getFullPath() + part.data_part->name + '/', max_block_size, column_names, data,
-						part.data_part, part.ranges, use_uncompressed_cache,
-						prewhere_actions, prewhere_column));
-					if (add_virtual_column)
-						streams.back() = new AddingConstColumnBlockInputStream<String>(
-							streams.back(), new DataTypeString, part.data_part->name, "_part");
+					ranges_to_get_from_part = part.ranges;
+
 					need_marks -= marks_in_part;
 					parts.pop_back();
 					sum_marks_in_parts.pop_back();
-					continue;
 				}
-
-				MarkRanges ranges_to_get_from_part;
-
-				/// Цикл по отрезкам куска.
-				while (need_marks > 0)
+				else
 				{
-					if (part.ranges.empty())
-						throw Exception("Unexpected end of ranges while spreading marks among threads", ErrorCodes::LOGICAL_ERROR);
+					/// Цикл по отрезкам куска.
+					while (need_marks > 0)
+					{
+						if (part.ranges.empty())
+							throw Exception("Unexpected end of ranges while spreading marks among threads", ErrorCodes::LOGICAL_ERROR);
 
-					MarkRange & range = part.ranges.back();
-					size_t marks_in_range = range.end - range.begin;
+						MarkRange & range = part.ranges.back();
+						size_t marks_in_range = range.end - range.begin;
 
-					size_t marks_to_get_from_range = std::min(marks_in_range, need_marks);
-					ranges_to_get_from_part.push_back(MarkRange(range.begin, range.begin + marks_to_get_from_range));
-					range.begin += marks_to_get_from_range;
-					marks_in_part -= marks_to_get_from_range;
-					need_marks -= marks_to_get_from_range;
-					if (range.begin == range.end)
-						part.ranges.pop_back();
+						size_t marks_to_get_from_range = std::min(marks_in_range, need_marks);
+						ranges_to_get_from_part.push_back(MarkRange(range.begin, range.begin + marks_to_get_from_range));
+						range.begin += marks_to_get_from_range;
+						marks_in_part -= marks_to_get_from_range;
+						need_marks -= marks_to_get_from_range;
+						if (range.begin == range.end)
+							part.ranges.pop_back();
+					}
 				}
 
 				streams.push_back(new MergeTreeBlockInputStream(
 					data.getFullPath() + part.data_part->name + '/', max_block_size, column_names, data,
 					part.data_part, ranges_to_get_from_part, use_uncompressed_cache,
 					prewhere_actions, prewhere_column));
-				if (add_virtual_column)
-					streams.back() = new AddingConstColumnBlockInputStream<String>(
-						streams.back(), new DataTypeString, part.data_part->name, "_part");
+				for (const String & virt_column : virt_columns)
+				{
+					if (virt_column == "_part")
+						streams.back() = new AddingConstColumnBlockInputStream<String>(
+							streams.back(), new DataTypeString, part.data_part->name, "_part");
+					else if (virt_column == "_part_index")
+						streams.back() = new AddingConstColumnBlockInputStream<UInt64>(
+							streams.back(), new DataTypeUInt64, part.part_index_in_query, "_part_index");
+				}
 			}
 
 			if (streams.size() == 1)
@@ -385,7 +393,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 	bool use_uncompressed_cache,
 	ExpressionActionsPtr prewhere_actions,
 	const String & prewhere_column,
-	bool add_virtual_column)
+	const Names & virt_columns)
 {
 	size_t sum_marks = 0;
 	for (size_t i = 0; i < parts.size(); ++i)
@@ -409,9 +417,15 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 			data.getFullPath() + part.data_part->name + '/', max_block_size, column_names, data,
 			part.data_part, part.ranges, use_uncompressed_cache,
 			prewhere_actions, prewhere_column);
-		if (add_virtual_column)
-			source_stream = new AddingConstColumnBlockInputStream<String>(
-				source_stream, new DataTypeString, part.data_part->name, "_part");
+		for (const String & virt_column : virt_columns)
+		{
+			if (virt_column == "_part")
+				source_stream = new AddingConstColumnBlockInputStream<String>(
+					source_stream, new DataTypeString, part.data_part->name, "_part");
+			else if (virt_column == "_part_index")
+				source_stream = new AddingConstColumnBlockInputStream<UInt64>(
+					source_stream, new DataTypeUInt64, part.part_index_in_query, "_part_index");
+		}
 
 		to_collapse.push_back(new ExpressionBlockInputStream(source_stream, data.getPrimaryExpression()));
 	}
