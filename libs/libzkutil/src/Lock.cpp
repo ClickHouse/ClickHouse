@@ -70,14 +70,16 @@ Lock::Status Lock::check()
 {
 	Status status = checkImpl();
 	if ((locked && status != LOCKED_BY_ME) || (!locked && (status != UNLOCKED && status != LOCKED_BY_OTHER)))
-		throw zkutil::KeeperException("Incompability of local state and state in zookeeper. Local is " + locked ? "locked" : "unlocked" + ". Zookeeper state is " + status2String(status));
+		throw zkutil::KeeperException(std::string("Incompability of local state and state in zookeeper. Local is ") + (locked ? "locked" : "unlocked") + ". Zookeeper state is " + status2String(status));
+	return status;
 }
 
 Lock::Status Lock::checkImpl()
 {
 	Stat stat;
-	int32_t code = zookeeper->tryGet(lock_path, &stat);
-	if (code = ZNONODE)
+	std::string dummy;
+	int32_t code = zookeeper->tryGet(lock_path, dummy, &stat);
+	if (code == ZNONODE)
 		return UNLOCKED;
 	else if (code == ZOK)
 	{
