@@ -57,15 +57,12 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 			virt_column_names.push_back(it);
 
 	Block virtual_columns_block = getBlockWithVirtualColumns(parts);
-	BlockInputStreamPtr virtual_columns;
 
 	/// Если запрошен хотя бы один виртуальный столбец, пробуем индексировать
 	if (!virt_column_names.empty())
-		virtual_columns = VirtualColumnUtils::getVirtualColumnsBlocks(query->clone(), virtual_columns_block, data.context);
-	else /// Иначе, считаем допустимыми все возможные значения
-		virtual_columns = new OneBlockInputStream(virtual_columns_block);
+		VirtualColumnUtils::filterBlockWithQuery(query->clone(), virtual_columns_block, data.context);
 
-	std::multiset<String> values = VirtualColumnUtils::extractSingleValueFromBlocks<String>(virtual_columns, "_part");
+	std::multiset<String> values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
 
 	data.check(real_column_names);
 	processed_stage = QueryProcessingStage::FetchColumns;

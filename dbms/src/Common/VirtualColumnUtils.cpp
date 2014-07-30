@@ -91,7 +91,7 @@ void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & va
 }
 
 /// Проверка, что функция зависит только от заданных столбцов
-static bool isValidFunction(ASTPtr expression, const std::vector<String> & columns)
+static bool isValidFunction(ASTPtr expression, const NameSet & columns)
 {
 	for (size_t i = 0; i < expression->children.size(); ++i)
 		if (!isValidFunction(expression->children[i], columns))
@@ -100,18 +100,13 @@ static bool isValidFunction(ASTPtr expression, const std::vector<String> & colum
 	if (const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(&* expression))
 	{
 		if (identifier->kind == ASTIdentifier::Kind::Column)
-		{
-			for (size_t i = 0; i < columns.size(); ++i)
-				if (columns[i] == identifier->name)
-					return true;
-			return false;
-		}
+			return columns.count(identifier->name);
 	}
 	return true;
 }
 
 /// Извлечь все подфункции главной конъюнкции, но зависящие только от заданных столбцов
-static void extractFunctions(ASTPtr expression, const std::vector<String> & columns, std::vector<ASTPtr> & result)
+static void extractFunctions(ASTPtr expression, const NameSet & columns, std::vector<ASTPtr> & result)
 {
 	if (const ASTFunction * function = typeid_cast<const ASTFunction *>(&* expression))
 	{
@@ -142,42 +137,48 @@ static ASTPtr buildWhereExpression(const ASTs & functions)
 	return new_query;
 }
 
-BlockInputStreamPtr getVirtualColumnsBlocks(ASTPtr query, const Block & input, const Context & context)
+bool filterBlockWithQuery(ASTPtr query, Block & block, const Context & context)
 {
 	const ASTSelectQuery & select = typeid_cast<ASTSelectQuery & >(*query);
 	if (!select.where_expression && !select.prewhere_expression)
-		return new OneBlockInputStream(input);
+		return false;
 
-	ASTPtr new_query = new ASTSelectQuery();
+	NameSet columns;
+	for (const auto & it : block.getColumnsList())
+		columns.insert(it.name);
 
-	/// Вычисляем имена виртуальных столбцов
-	std::vector<String> columns;
-	for (const auto & it : input.getColumnsList())
-		columns.push_back(it.name);
-
-	/// Формируем запрос и записываем имена виртуальных столбцов
-	ASTSelectQuery & new_select = typeid_cast<ASTSelectQuery & >(*new_query);
-
-	new_select.select_expression_list = new ASTExpressionList();
-	ASTExpressionList & select_list = typeid_cast<ASTExpressionList & >(*new_select.select_expression_list);
-	for (size_t i = 0; i < columns.size(); ++i)
-		select_list.children.push_back(new ASTIdentifier(StringRange(), columns[i]));
-
+	/// Составим выражение, вычисляющее выражения в WHERE и PREWHERE, зависящие только от имеющихся столбцов.
 	std::vector<ASTPtr> functions;
 	if (select.where_expression)
 		extractFunctions(select.where_expression, columns, functions);
 	if (select.prewhere_expression)
 		extractFunctions(select.prewhere_expression, columns, functions);
-	new_select.where_expression = buildWhereExpression(functions);
+	ASTPtr expression_ast = buildWhereExpression(functions);
+	if (!expression_ast)
+		return false;
 
-	if (new_select.select_expression_list)
-		new_select.children.push_back(new_select.select_expression_list);
-	if (new_select.where_expression)
-		new_select.children.push_back(new_select.where_expression);
+	/// Распарсим и вычислим выражение.
+	ExpressionAnalyzer analyzer(expression_ast, context, block.getColumnsList());
+	ExpressionActionsPtr actions = analyzer.getActions(false);
+	actions->execute(block);
 
-	/// Возвращаем результат выполнения нового запроса на блоке виртуальных столбцов
-	return InterpreterSelectQuery(new_query, context, columns, input.getColumnsList(),
-		QueryProcessingStage::Complete, 0, new OneBlockInputStream(input)).execute();
+	/// Отфильтруем блок.
+	String filter_column_name = expression_ast->getColumnName();
+	ColumnPtr filter_column = block.getByName(filter_column_name).column;
+	if (IColumnConst * const_column = dynamic_cast<IColumnConst *>(&*filter_column))
+		filter_column = const_column->convertToFullColumn();
+	const IColumn::Filter & filter = dynamic_cast<ColumnUInt8 &>(*filter_column).getData();
+
+	if (std::accumulate(filter.begin(), filter.end(), 0ul) == filter.size())
+		return false;
+
+	for (size_t i = 0; i < block.columns(); ++i)
+	{
+		ColumnPtr & column = block.getByPosition(i).column;
+		column = column->filter(filter);
+	}
+
+	return true;
 }
 
 }

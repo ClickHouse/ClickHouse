@@ -1821,15 +1821,11 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 	column->getData()[1] = 1;
 	virtual_columns_block.insert(ColumnWithNameAndType(column_ptr, new DataTypeUInt8, "_replicated"));
 
-	BlockInputStreamPtr virtual_columns;
-
 	/// Если запрошен хотя бы один виртуальный столбец, пробуем индексировать
 	if (!virt_column_names.empty())
-		virtual_columns = VirtualColumnUtils::getVirtualColumnsBlocks(query->clone(), virtual_columns_block, context);
-	else /// Иначе, считаем допустимыми все возможные значения
-		virtual_columns = new OneBlockInputStream(virtual_columns_block);
+		VirtualColumnUtils::filterBlockWithQuery(query->clone(), virtual_columns_block, context);
 
-	std::multiset<UInt8> values = VirtualColumnUtils::extractSingleValueFromBlocks<UInt8>(virtual_columns, "_replicated");
+	std::multiset<UInt8> values = VirtualColumnUtils::extractSingleValueFromBlock<UInt8>(virtual_columns_block, "_replicated");
 
 	BlockInputStreams res;
 
