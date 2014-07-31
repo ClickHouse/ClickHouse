@@ -220,6 +220,9 @@ private:
 	void normalizeTree();
 	void normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts, std::string current_alias);
 
+	///	Eliminates injective function calls from group by statement
+	void eliminateInjectives();
+
 	/// Превратить перечисление значений или подзапрос в ASTSet. node - функция in или notIn.
 	void makeSet(ASTFunction * node, const Block & sample_block);
 

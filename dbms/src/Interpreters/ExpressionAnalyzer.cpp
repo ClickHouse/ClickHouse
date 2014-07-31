@@ -37,6 +37,27 @@ namespace DB
 {
 
 
+/**	Calls to these functions in the GROUP BY statement would be
+  *	replaced by their immediate argument.
+  */
+const std::unordered_set<String> injectiveFunctionNames{
+	"negate",
+	"bitNot",
+	"reverse",
+	"reverseUTF8",
+	"toString",
+	"toFixedString",
+	"toStringCutToZero",
+	"IPv4NumToString",
+	"IPv4StringToNum",
+	"hex",
+	"unhex",
+	"bitmaskToList",
+	"bitmaskToArray",
+	"tuple",
+	"regionToName",
+};
+
 void ExpressionAnalyzer::init()
 {
 	select_query = typeid_cast<ASTSelectQuery *>(&*ast);
@@ -46,6 +67,9 @@ void ExpressionAnalyzer::init()
 
 	/// Common subexpression elimination. Rewrite rules.
 	normalizeTree();
+
+	///	GROUP BY injective function elimination
+	eliminateInjectives();
 
 	/// array_join_alias_to_name, array_join_result_to_source.
 	getArrayJoinedColumns();
@@ -395,6 +419,40 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 	current_asts.erase(initial_ast);
 	current_asts.erase(ast);
 	finished_asts[initial_ast] = ast;
+}
+
+
+void ExpressionAnalyzer::eliminateInjectives()
+{
+	if (!(select_query && select_query->group_expression_list))
+		return;
+
+	/** lookup GROUP BY expressions, identify injective function calls,
+	  *	replace them by their arguments.
+	  */
+	auto & group_exprs = select_query->group_expression_list->children;
+	for (size_t i = 0; i < group_exprs.size(); ++i)
+	{
+		const auto function = typeid_cast<ASTFunction*>(group_exprs[i].get());
+		if (!function)
+			continue;
+
+		///	assert function is injective
+		if (!injectiveFunctionNames.count(function->name))
+			continue;
+
+		///	copy arguments shared pointer in order to ensure lifetime
+		auto args_ast = std::move(function->arguments);
+
+		///	replace function call by its first argument
+		group_exprs[i] = args_ast->children.front();
+
+		///	copy remaining arguments
+		group_exprs.insert(std::end(group_exprs), ++std::begin(args_ast->children), std::end(args_ast->children));
+
+		///	take a step back to ensure complete unfolding
+		i -= 1;
+	}
 }
 
 
@@ -1034,9 +1092,8 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 								throw Exception("lambda argument declarations must be identifiers", ErrorCodes::TYPE_MISMATCH);
 
 							String arg_name = identifier->name;
-							NameAndTypePair arg(arg_name, lambda_type->getArgumentTypes()[j]);
 
-							lambda_arguments.push_back(arg);
+							lambda_arguments.emplace_back(arg_name, lambda_type->getArgumentTypes()[j]);
 						}
 
 						actions_stack.pushLevel(lambda_arguments);
