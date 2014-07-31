@@ -469,11 +469,6 @@ void ExpressionAnalyzer::eliminateInjectives()
 				std::back_inserter(group_exprs), is_literal
 			);
 		}
-		else if (is_literal(group_exprs[i]))
-		{
-			remove_expr_at_index(i);
-			i -= 1;
-		}
 	}
 }
 
