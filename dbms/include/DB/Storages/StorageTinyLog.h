@@ -61,6 +61,9 @@ class TinyLogBlockOutputStream : public IBlockOutputStream
 {
 public:
 	TinyLogBlockOutputStream(StorageTinyLog & storage_);
+
+	~TinyLogBlockOutputStream();
+
 	void write(const Block & block);
 	void writeSuffix();
 private:
@@ -91,6 +94,8 @@ private:
 
 	void addStream(const String & name, const IDataType & type, size_t level = 0);
 	void writeData(const String & name, const IDataType & type, const IColumn & column, OffsetColumns & offset_columns, size_t level = 0);
+
+	void updateFileSizes(const FileStreams::const_iterator & begin, const FileStreams::const_iterator & end);
 };
 
 
@@ -131,6 +136,7 @@ public:
 	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name);
 
 	bool checkData() const override;
+
 private:
 	String path;
 	String name;
@@ -146,17 +152,18 @@ private:
 	typedef std::map<String, ColumnData> Files_t;
 	Files_t files;
 
+	std::string size_file_path;
+	
 	/// хранит размеры всех столбцов, чтобы проверять не побились ли они
 	using SizeFile = Poco::AutoPtr<Poco::Util::XMLConfiguration>;
 	SizeFile size_file;
+	SizeFile & sizeFile() { return size_file; }
 
 	Logger * log;
 
 	StorageTinyLog(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, bool attach, size_t max_compress_block_size_);
 	
 	void addFile(const String & column_name, const IDataType & type, size_t level = 0);
-
-	void updateSize(const std::string & column_name);
 };
 
 }
