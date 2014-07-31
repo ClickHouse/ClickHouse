@@ -127,18 +127,26 @@ void ExpressionAnalyzer::analyzeAggregation()
 			{
 				getRootActions(group_asts[i], true, false, temp_actions);
 
-				NameAndTypePair key;
-				key.name = group_asts[i]->getColumnName();
-				key.type = temp_actions->getSampleBlock().has(key.name)
-					? temp_actions->getSampleBlock().getByName(key.name).type
-					: throw Exception("Unknown identifier (in GROUP BY): " + key.name, ErrorCodes::UNKNOWN_IDENTIFIER);
+				const auto & column_name = group_asts[i]->getColumnName();
+				const auto & block = temp_actions->getSampleBlock();
 
+				if (!block.has(column_name))
+					throw Exception("Unknown identifier (in GROUP BY): " + column_name, ErrorCodes::UNKNOWN_IDENTIFIER);
+
+				const auto & col = block.getByName(column_name);
+
+				/// constant expressions have non-null column pointer at this stage
+				if (const auto is_constexpr = col.column)
+					continue;
+
+				NameAndTypePair key{column_name, col.type};
 				aggregation_keys.push_back(key);
 
 				if (!unique_keys.count(key.name))
 				{
-					aggregated_columns.push_back(key);
 					unique_keys.insert(key.name);
+					/// key is no longer needed, therefore we can save a little by moving it
+					aggregated_columns.push_back(std::move(key));
 				}
 			}
 		}
@@ -427,31 +435,49 @@ void ExpressionAnalyzer::eliminateInjectives()
 	if (!(select_query && select_query->group_expression_list))
 		return;
 
-	/** lookup GROUP BY expressions, identify injective function calls,
-	  *	replace them by their arguments.
-	  */
+	const auto is_literal = [] (const ASTPtr& ast) {
+		return typeid_cast<const ASTLiteral*>(ast.get());
+	};
+
 	auto & group_exprs = select_query->group_expression_list->children;
+
+	/// removes expression at index idx by making it last one and calling .pop_back()
+	const auto remove_expr_at_index = [&group_exprs] (const size_t idx) {
+		if (idx < group_exprs.size() - 1)
+			group_exprs[idx] = std::move(group_exprs.back());
+
+		group_exprs.pop_back();
+	};
+
+	/// iterate each GROUP BY expression, eliminate injective function calls and literals
 	for (size_t i = 0; i < group_exprs.size(); ++i)
 	{
-		const auto function = typeid_cast<ASTFunction*>(group_exprs[i].get());
-		if (!function)
-			continue;
+		if (const auto function = typeid_cast<ASTFunction*>(group_exprs[i].get()))
+		{
+			/// assert function is injective
+			if (!injectiveFunctionNames.count(function->name))
+				continue;
 
-		/// assert function is injective
-		if (!injectiveFunctionNames.count(function->name))
-			continue;
+			/// copy shared pointer to args in order to ensure lifetime
+			auto args_ast = function->arguments;
 
-		/// copy arguments shared pointer in order to ensure lifetime
-		auto args_ast = std::move(function->arguments);
+			/** remove function call and take a step back to ensure
+			  * next iteration does not skip not yet processed data
+			  */
+			remove_expr_at_index(i);
+			i -= 1;
 
-		/// replace function call by its first argument
-		group_exprs[i] = args_ast->children.front();
-
-		/// copy remaining arguments
-		group_exprs.insert(std::end(group_exprs), ++std::begin(args_ast->children), std::end(args_ast->children));
-
-		/// take a step back to ensure complete unfolding
-		i -= 1;
+			/// copy non-literal arguments
+			std::remove_copy_if(
+				std::begin(args_ast->children), std::end(args_ast->children),
+				std::back_inserter(group_exprs), is_literal
+			);
+		}
+		else if (is_literal(group_exprs[i]))
+		{
+			remove_expr_at_index(i);
+			i -= 1;
+		}
 	}
 }
 
