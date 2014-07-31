@@ -248,6 +248,9 @@ public:
 	/// Поддерживается ли индекс в секции IN
 	virtual bool supportsIndexForIn() const { return false; };
 
+	/// проверяет валидность данных
+	virtual bool checkData() const { throw DB::Exception("Check query is not supported for " + getName() + " storage"); }
+
 protected:
 	IStorage() : is_dropped(false) {}
 

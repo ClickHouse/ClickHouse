@@ -264,7 +264,10 @@ void TinyLogBlockOutputStream::writeSuffix()
 {
 	/// Заканчиваем запись.
 	for (FileStreams::iterator it = streams.begin(); it != streams.end(); ++it)
+	{
 		it->second->finalize();
+		storage.updateSize(it->first);
+	}
 
 	streams.clear();
 }
@@ -286,7 +289,9 @@ void TinyLogBlockOutputStream::write(const Block & block)
 
 
 StorageTinyLog::StorageTinyLog(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, bool attach, size_t max_compress_block_size_)
-	: path(path_), name(name_), columns(columns_), max_compress_block_size(max_compress_block_size_)
+	: path(path_), name(name_), columns(columns_),
+		max_compress_block_size(max_compress_block_size_), size_file(new Poco::Util::XMLConfiguration(path + "sizes.txt")),
+		log(&Logger::get("StorageTinyLog"))
 {
 	if (columns->empty())
 		throw Exception("Empty list of columns passed to StorageTinyLog constructor", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
@@ -393,5 +398,29 @@ void StorageTinyLog::drop()
 		if (it->second.data_file.exists())
 			it->second.data_file.remove();
 }
+
+bool StorageTinyLog::checkData() const
+{
+	bool size_is_wrong = false;
+	for (auto & pair : files)
+	{
+		auto & file = pair.second.data_file;
+		size_t expected_size = std::stoull(size_file->getString(pair.first + ".size"));
+		size_t real_size = file.getSize();
+		if (real_size != expected_size)
+		{
+			LOG_ERROR(log, "Size of " << file.path() << "is wrong. Size is " << real_size << " but should be " << expected_size);
+			size_is_wrong = true;
+		}
+	}
+	return size_is_wrong;
+}
+
+void StorageTinyLog::updateSize(const std::string & column_name)
+{
+	auto & file = files[column_name].data_file;
+	size_file->setString(column_name + ".size", std::to_string(file.getSize()));
+}
+
 
 }

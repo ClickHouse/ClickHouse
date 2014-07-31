@@ -12,6 +12,7 @@
 #include <DB/Storages/IStorage.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
+#include <Poco/Util/XMLConfiguration.h>
 
 
 namespace DB
@@ -129,6 +130,7 @@ public:
 	
 	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name);
 
+	bool checkData() const override;
 private:
 	String path;
 	String name;
@@ -144,9 +146,17 @@ private:
 	typedef std::map<String, ColumnData> Files_t;
 	Files_t files;
 
+	/// хранит размеры всех столбцов, чтобы проверять не побились ли они
+	using SizeFile = Poco::AutoPtr<Poco::Util::XMLConfiguration>;
+	SizeFile size_file;
+
+	Logger * log;
+
 	StorageTinyLog(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, bool attach, size_t max_compress_block_size_);
 	
 	void addFile(const String & column_name, const IDataType & type, size_t level = 0);
+
+	void updateSize(const std::string & column_name);
 };
 
 }
