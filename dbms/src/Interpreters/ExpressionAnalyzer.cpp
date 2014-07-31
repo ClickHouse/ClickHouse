@@ -449,7 +449,7 @@ void ExpressionAnalyzer::eliminateInjectives()
 		group_exprs.pop_back();
 	};
 
-	/// iterate each GROUP BY expression, eliminate injective function calls and literals
+	/// iterate over each GROUP BY expression, eliminate injective function calls and literals
 	for (size_t i = 0; i < group_exprs.size(); ++i)
 	{
 		if (const auto function = typeid_cast<ASTFunction*>(group_exprs[i].get()))
