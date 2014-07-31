@@ -135,10 +135,6 @@ void ExpressionAnalyzer::analyzeAggregation()
 
 				const auto & col = block.getByName(column_name);
 
-				/// constant expressions have non-null column pointer at this stage
-				if (const auto is_constexpr = col.column)
-					continue;
-
 				NameAndTypePair key{column_name, col.type};
 				aggregation_keys.push_back(key);
 
@@ -449,7 +445,7 @@ void ExpressionAnalyzer::eliminateInjectives()
 		group_exprs.pop_back();
 	};
 
-	/// iterate each GROUP BY expression, eliminate injective function calls and literals
+	/// iterate over each GROUP BY expression, eliminate injective function calls and literals
 	for (size_t i = 0; i < group_exprs.size(); ++i)
 	{
 		if (const auto function = typeid_cast<ASTFunction*>(group_exprs[i].get()))
@@ -472,11 +468,6 @@ void ExpressionAnalyzer::eliminateInjectives()
 				std::begin(args_ast->children), std::end(args_ast->children),
 				std::back_inserter(group_exprs), is_literal
 			);
-		}
-		else if (is_literal(group_exprs[i]))
-		{
-			remove_expr_at_index(i);
-			i -= 1;
 		}
 	}
 }
