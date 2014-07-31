@@ -135,10 +135,6 @@ void ExpressionAnalyzer::analyzeAggregation()
 
 				const auto & col = block.getByName(column_name);
 
-				/// constant expressions have non-null column pointer at this stage
-				if (const auto is_constexpr = col.column)
-					continue;
-
 				NameAndTypePair key{column_name, col.type};
 				aggregation_keys.push_back(key);
 
