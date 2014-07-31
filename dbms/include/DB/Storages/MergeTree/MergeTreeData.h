@@ -11,6 +11,7 @@
 #include <DB/IO/WriteBufferFromFile.h>
 #include <DB/Common/escapeForFileName.h>
 #include <DB/DataTypes/DataTypeString.h>
+#include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <Poco/RWLock.h>
 
 
@@ -576,12 +577,14 @@ public:
 	NameAndTypePair getColumn(const String &column_name) const
 	{
 		if (column_name == "_part") return NameAndTypePair("_part", new DataTypeString);
+		if (column_name == "_part_index") return NameAndTypePair("_part_index", new DataTypeUInt64);
 		return getRealColumn(column_name);
 	}
 
 	bool hasColumn(const String &column_name) const
 	{
 		if (column_name == "_part") return true;
+		if (column_name == "_part_index") return true;
 		return hasRealColumn(column_name);
 	}
 

@@ -15,6 +15,7 @@ public:
 	MergeTreeDataSelectExecutor(MergeTreeData & data_);
 
 	/** При чтении, выбирается набор кусков, покрывающий нужный диапазон индекса.
+	  * Если inout_part_index != nullptr, из этого счетчика берутся значения для виртуального столбца _part_index.
 	  */
 	BlockInputStreams read(
 		const Names & column_names,
@@ -22,7 +23,8 @@ public:
 		const Settings & settings,
 		QueryProcessingStage::Enum & processed_stage,
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
-		unsigned threads = 1);
+		unsigned threads = 1,
+		size_t * inout_part_index = nullptr);
 
 private:
 	MergeTreeData & data;
@@ -32,12 +34,13 @@ private:
 	struct RangesInDataPart
 	{
 		MergeTreeData::DataPartPtr data_part;
+		size_t part_index_in_query;
 		MarkRanges ranges;
 
 		RangesInDataPart() {}
 
-		RangesInDataPart(MergeTreeData::DataPartPtr data_part_)
-			: data_part(data_part_)
+		RangesInDataPart(MergeTreeData::DataPartPtr data_part_, size_t part_index_in_query_)
+			: data_part(data_part_), part_index_in_query(part_index_in_query_)
 		{
 		}
 	};
@@ -56,7 +59,7 @@ private:
 		bool use_uncompressed_cache,
 		ExpressionActionsPtr prewhere_actions,
 		const String & prewhere_column,
-		bool add_virtual_column);
+		const Names & virt_columns);
 
 	BlockInputStreams spreadMarkRangesAmongThreadsFinal(
 		RangesInDataParts parts,
@@ -66,7 +69,7 @@ private:
 		bool use_uncompressed_cache,
 		ExpressionActionsPtr prewhere_actions,
 		const String & prewhere_column,
-		bool add_virtual_column);
+		const Names & virt_columns);
 
 	/// Создать выражение "Sign == 1".
 	void createPositiveSignCondition(ExpressionActionsPtr & out_expression, String & out_column);
