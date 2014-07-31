@@ -59,9 +59,6 @@ private:
 	OptimizedRegularExpression table_name_regexp;
 	const Context & context;
 	
-	/// Название виртуального столбца, отвечающего за имя таблицы, из которой идет чтение. (Например "_table")
-	String _table_column_name;
-	
 	StorageMerge(
 		const std::string & name_,
 		NamesAndTypesListPtr columns_,

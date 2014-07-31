@@ -42,6 +42,8 @@ public:
 	bool supportsPrewhere() const { return true; }
 
 	const NamesAndTypesList & getColumnsList() const { return *columns; }
+	NameAndTypePair getColumn(const String &column_name) const;
+	bool hasColumn(const String &column_name) const;
 
 	bool isRemote() const { return true; }
 	/// Сохранить временные таблицы, чтобы при следующем вызове метода read переслать их на удаленные серверы.

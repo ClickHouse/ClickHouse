@@ -2,6 +2,7 @@
 #include <DB/Storages/StorageMerge.h>
 #include <DB/Common/VirtualColumnUtils.h>
 #include <DB/Interpreters/InterpreterAlterQuery.h>
+#include <DB/Storages/VirtualColumnFactory.h>
 
 namespace DB
 {
@@ -14,7 +15,6 @@ StorageMerge::StorageMerge(
 	const Context & context_)
 	: name(name_), columns(columns_), source_database(source_database_), table_name_regexp(table_name_regexp_), context(context_)
 {
-	_table_column_name = "_table" + VirtualColumnUtils::chooseSuffix(getColumnsList(), "_table");
 }
 
 StoragePtr StorageMerge::create(
@@ -27,16 +27,18 @@ StoragePtr StorageMerge::create(
 	return (new StorageMerge(name_, columns_, source_database_, table_name_regexp_, context_))->thisPtr();
 }
 
-NameAndTypePair StorageMerge::getColumn(const String &column_name) const
+NameAndTypePair StorageMerge::getColumn(const String & column_name) const
 {
-	if (column_name == _table_column_name) return NameAndTypePair(_table_column_name, new DataTypeString);
+	auto type = VirtualColumnFactory::tryGetType(column_name);
+	if (type)
+		return NameAndTypePair(column_name, type);
+
 	return getRealColumn(column_name);
 }
 
-bool StorageMerge::hasColumn(const String &column_name) const
+bool StorageMerge::hasColumn(const String & column_name) const
 {
-	if (column_name == _table_column_name) return true;
-	return hasRealColumn(column_name);
+	return VirtualColumnFactory::hasColumn(column_name) || hasRealColumn(column_name);
 }
 
 BlockInputStreams StorageMerge::read(
@@ -51,7 +53,7 @@ BlockInputStreams StorageMerge::read(
 
 	Names virt_column_names, real_column_names;
 	for (const auto & it : column_names)
-		if (it != _table_column_name)
+		if (it != "_table")
 			real_column_names.push_back(it);
 		else
 			virt_column_names.push_back(it);
@@ -85,7 +87,7 @@ BlockInputStreams StorageMerge::read(
 	if (!virt_column_names.empty())
 		VirtualColumnUtils::filterBlockWithQuery(query->clone(), virtual_columns_block, context);
 
-	std::multiset<String> values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, _table_column_name);
+	std::multiset<String> values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_table");
 
 	for (size_t i = 0, size = selected_tables.size(); i < size; ++i)
 	{
@@ -101,7 +103,7 @@ BlockInputStreams StorageMerge::read(
 
 		/// Подменяем виртуальный столбец на его значение
 		ASTPtr modified_query_ast = query->clone();
-		VirtualColumnUtils::rewriteEntityInAst(modified_query_ast, _table_column_name, table->getTableName());
+		VirtualColumnUtils::rewriteEntityInAst(modified_query_ast, "_table", table->getTableName());
 
 		BlockInputStreams source_streams = table->read(
 			real_column_names,
@@ -116,10 +118,10 @@ BlockInputStreams StorageMerge::read(
 
 		for (auto & virtual_column : virt_column_names)
 		{
-			if (virtual_column == _table_column_name)
+			if (virtual_column == "_table")
 			{
 				for (auto & stream : source_streams)
-					stream = new AddingConstColumnBlockInputStream<String>(stream, new DataTypeString, table->getTableName(), _table_column_name);
+					stream = new AddingConstColumnBlockInputStream<String>(stream, new DataTypeString, table->getTableName(), "_table");
 			}
 		}
 
@@ -141,7 +143,7 @@ BlockInputStreams StorageMerge::read(
 Block StorageMerge::getBlockWithVirtualColumns(const std::vector<StoragePtr> & selected_tables) const
 {
 	Block res;
-	ColumnWithNameAndType _table(new ColumnString, new DataTypeString, _table_column_name);
+	ColumnWithNameAndType _table(new ColumnString, new DataTypeString, "_table");
 
 	for (StorageVector::const_iterator it = selected_tables.begin(); it != selected_tables.end(); ++it)
 		_table.column->insert((*it)->getTableName());
