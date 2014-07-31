@@ -34,7 +34,8 @@ struct AggregateFunctionUniqUpToData
 		if (count > threshold)
 			return;
 
-		for (size_t i = 0; i < count; ++i)
+		size_t limit = std::min(count, threshold);
+		for (size_t i = 0; i < limit; ++i)
 			if (data[i] == x)
 				return;
 
@@ -55,14 +56,16 @@ struct AggregateFunctionUniqUpToData
 			return;
 		}
 
-		for (size_t i = 0; i < rhs.count; ++i)
+		size_t limit = std::min(rhs.count, threshold);
+		for (size_t i = 0; i < limit; ++i)
 			insert(rhs.data[i], threshold);
 	}
 
-	void write(WriteBuffer & wb) const
+	void write(WriteBuffer & wb, UInt32 threshold) const
 	{
 		writeVarUInt(count, wb);
-		for (size_t i = 0; i < count; ++i)
+		size_t limit = std::min(count, threshold);
+		for (size_t i = 0; i < limit; ++i)
 			writeBinary(data[i], wb);
 	}
 
@@ -74,7 +77,8 @@ struct AggregateFunctionUniqUpToData
 		if (rhs_count > threshold + 1)
 			throw Poco::Exception("Cannot read AggregateFunctionUniqUpToData: too large count.");
 
-		for (size_t i = 0; i < rhs_count; ++i)
+		size_t limit = std::min(rhs_count, threshold);
+		for (size_t i = 0; i < limit; ++i)
 		{
 			T x;
 			readBinary(x, rb);
@@ -152,7 +156,7 @@ public:
 
 	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
 	{
-		this->data(place).write(buf);
+		this->data(place).write(buf, threshold);
 	}
 
 	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
