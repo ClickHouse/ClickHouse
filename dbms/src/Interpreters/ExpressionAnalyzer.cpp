@@ -37,8 +37,8 @@ namespace DB
 {
 
 
-/**	Calls to these functions in the GROUP BY statement would be
-  *	replaced by their immediate argument.
+/** Calls to these functions in the GROUP BY statement would be
+  * replaced by their immediate argument.
   */
 const std::unordered_set<String> injectiveFunctionNames{
 	"negate",
@@ -68,7 +68,7 @@ void ExpressionAnalyzer::init()
 	/// Common subexpression elimination. Rewrite rules.
 	normalizeTree();
 
-	///	GROUP BY injective function elimination
+	/// GROUP BY injective function elimination
 	eliminateInjectives();
 
 	/// array_join_alias_to_name, array_join_result_to_source.
@@ -437,20 +437,20 @@ void ExpressionAnalyzer::eliminateInjectives()
 		if (!function)
 			continue;
 
-		///	assert function is injective
+		/// assert function is injective
 		if (!injectiveFunctionNames.count(function->name))
 			continue;
 
-		///	copy arguments shared pointer in order to ensure lifetime
+		/// copy arguments shared pointer in order to ensure lifetime
 		auto args_ast = std::move(function->arguments);
 
-		///	replace function call by its first argument
+		/// replace function call by its first argument
 		group_exprs[i] = args_ast->children.front();
 
-		///	copy remaining arguments
+		/// copy remaining arguments
 		group_exprs.insert(std::end(group_exprs), ++std::begin(args_ast->children), std::end(args_ast->children));
 
-		///	take a step back to ensure complete unfolding
+		/// take a step back to ensure complete unfolding
 		i -= 1;
 	}
 }
