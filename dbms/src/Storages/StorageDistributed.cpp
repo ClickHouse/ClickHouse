@@ -4,6 +4,7 @@
 #include <DB/DataStreams/RemoveColumnsBlockInputStream.h>
 
 #include <DB/Storages/StorageDistributed.h>
+#include <DB/Storages/VirtualColumnFactory.h>
 
 #include <Poco/Net/NetworkInterface.h>
 #include <DB/Client/ConnectionPool.h>
@@ -138,6 +139,20 @@ void StorageDistributed::alter(const AlterCommands & params, const String & data
 	auto lock = lockStructureForAlter();
 	params.apply(*columns);
 	InterpreterAlterQuery::updateMetadata(database_name, table_name, *columns, context);
+}
+
+NameAndTypePair StorageDistributed::getColumn(const String & column_name) const
+{
+	auto type = VirtualColumnFactory::tryGetType(column_name);
+	if (type)
+		return NameAndTypePair(column_name, type);
+
+	return getRealColumn(column_name);
+}
+
+bool StorageDistributed::hasColumn(const String & column_name) const
+{
+	return VirtualColumnFactory::hasColumn(column_name) || hasRealColumn(column_name);
 }
 
 }
