@@ -1118,6 +1118,20 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 												true, false, has_big_merge, can_merge))
 					break;
 
+				bool all_in_zk = true;
+				for (const auto & part : parts)
+				{
+					/// Если о каком-то из кусков нет информации в ZK, не будем сливать.
+					if (!zookeeper->exists(replica_path + "/parts/" + part->name))
+					{
+						LOG_WARNING(log, "Part " << part->name << " exists locally but not in ZooKeeper.");
+						enqueuePartForCheck(part->name);
+						all_in_zk = false;
+					}
+				}
+				if (!all_in_zk)
+					break;
+
 				LogEntry entry;
 				entry.type = LogEntry::MERGE_PARTS;
 				entry.source_replica = replica_name;
@@ -1565,11 +1579,6 @@ bool StorageReplicatedMergeTree::canMergeParts(const MergeTreeData::DataPartPtr 
 	/// Если какой-то из кусков уже собираются слить в больший, не соглашаемся его сливать.
 	if (virtual_parts.getContainingPart(left->name) != left->name ||
 		virtual_parts.getContainingPart(right->name) != right->name)
-		return false;
-
-	/// Если о каком-то из кусков нет информации в ZK, не будем сливать.
-	if (!zookeeper->exists(replica_path + "/parts/" + left->name) ||
-		!zookeeper->exists(replica_path + "/parts/" + right->name))
 		return false;
 
 	String month_name = left->name.substr(0, 6);
