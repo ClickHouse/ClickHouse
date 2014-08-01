@@ -12,6 +12,7 @@
 #include <DB/Storages/IStorage.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
+#include <DB/Common/FileChecker.h>
 #include <Poco/Util/XMLConfiguration.h>
 
 
@@ -56,7 +57,6 @@ private:
 	void readData(const String & name, const IDataType & type, IColumn & column, size_t limit, size_t level = 0, bool read_offsets = true);
 };
 
-
 class TinyLogBlockOutputStream : public IBlockOutputStream
 {
 public:
@@ -94,8 +94,6 @@ private:
 
 	void addStream(const String & name, const IDataType & type, size_t level = 0);
 	void writeData(const String & name, const IDataType & type, const IColumn & column, OffsetColumns & offset_columns, size_t level = 0);
-
-	void updateFileSizes(const FileStreams::const_iterator & begin, const FileStreams::const_iterator & end);
 };
 
 
@@ -137,6 +135,15 @@ public:
 
 	bool checkData() const override;
 
+	/// Данные столбца
+	struct ColumnData
+	{
+		Poco::File data_file;
+	};
+	typedef std::map<String, ColumnData> Files_t;
+
+	Files_t & getFiles();
+
 private:
 	String path;
 	String name;
@@ -144,20 +151,9 @@ private:
 
 	size_t max_compress_block_size;
 
-	/// Данные столбца
-	struct ColumnData
-	{
-		Poco::File data_file;
-	};
-	typedef std::map<String, ColumnData> Files_t;
 	Files_t files;
 
-	std::string size_file_path;
-	
-	/// хранит размеры всех столбцов, чтобы проверять не побились ли они
-	using SizeFile = Poco::AutoPtr<Poco::Util::XMLConfiguration>;
-	SizeFile size_file;
-	SizeFile & sizeFile() { return size_file; }
+	FileChecker<StorageTinyLog> file_checker;
 
 	Logger * log;
 

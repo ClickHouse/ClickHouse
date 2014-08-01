@@ -266,7 +266,12 @@ void TinyLogBlockOutputStream::writeSuffix()
 	for (FileStreams::iterator it = streams.begin(); it != streams.end(); ++it)
 		it->second->finalize();
 
-	updateFileSizes(streams.begin(), streams.end());
+	/// @TODO лишнее копирование. Можно б было использовать boost::transform_iterator, если б он работал с C++11 lambda
+	std::vector<std::string> column_names;
+	for (auto & pair : streams)
+		column_names.push_back(pair.first);
+
+	storage.file_checker.update(column_names.begin(), column_names.end());
 
 	streams.clear();
 }
@@ -289,7 +294,8 @@ void TinyLogBlockOutputStream::write(const Block & block)
 
 StorageTinyLog::StorageTinyLog(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, bool attach, size_t max_compress_block_size_)
 	: path(path_), name(name_), columns(columns_),
-		max_compress_block_size(max_compress_block_size_), size_file(new Poco::Util::XMLConfiguration()),
+		max_compress_block_size(max_compress_block_size_),
+		file_checker(path + escapeForFileName(name) + '/' + "sizes.txt", *this),
 		log(&Logger::get("StorageTinyLog"))
 {
 	if (columns->empty())
@@ -305,17 +311,6 @@ StorageTinyLog::StorageTinyLog(const std::string & path_, const std::string & na
 
 	for (NamesAndTypesList::const_iterator it = columns->begin(); it != columns->end(); ++it)
 		addFile(it->name, *it->type);
-
-	try
-	{
-		size_file_path = full_path + "sizes.txt";
-		size_file->load(size_file_path);
-	}
-	catch (const Poco::FileNotFoundException & e)
-	{
-		/// нормальная ситуация, для старых таблиц файла не существует
-		size_file->loadEmpty("yandex");
-	}
 }
 
 StoragePtr StorageTinyLog::create(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, bool attach, size_t max_compress_block_size_)
@@ -375,7 +370,7 @@ void StorageTinyLog::rename(const String & new_path_to_db, const String & new_da
 
 	path = new_path_to_db;
 	name = new_table_name;
-	size_file_path = path + escapeForFileName(name) + "/" + "sizes.txt";
+	file_checker.setPath(path + escapeForFileName(name) + "/" + "sizes.txt");
 
 	for (Files_t::iterator it = files.begin(); it != files.end(); ++it)
 		it->second.data_file = Poco::File(path + escapeForFileName(name) + '/' + Poco::Path(it->second.data_file.path()).getFileName());
@@ -412,35 +407,12 @@ void StorageTinyLog::drop()
 
 bool StorageTinyLog::checkData() const
 {
-	bool sizes_are_correct = true;
-	for (auto & pair : files)
-	{
-		if (size_file->has(pair.first))
-		{
-			auto & file = pair.second.data_file;
-			size_t expected_size = std::stoull(size_file->getString(pair.first + ".size"));
-			size_t real_size = file.getSize();
-			if (real_size != expected_size)
-			{
-				LOG_ERROR(log, "Size of " << file.path() << "is wrong. Size is " << real_size << " but should be " << expected_size);
-				sizes_are_correct = false;
-			}
-		}
-	}
-	return sizes_are_correct;
+	return file_checker.check();
 }
 
-void TinyLogBlockOutputStream::updateFileSizes(const FileStreams::const_iterator & begin,
-					const FileStreams::const_iterator & end)
+StorageTinyLog::Files_t & StorageTinyLog::getFiles()
 {
-	auto & size_file = storage.sizeFile();
-	for (auto it = begin; it != end; ++it)
-	{
-		auto & column_name = it->first;
-		auto & file = storage.files[column_name].data_file;
-		size_file->setString(column_name + ".size", std::to_string(file.getSize()));
-	}
-	size_file->save(storage.size_file_path);
+	return files;
 }
 
 TinyLogBlockOutputStream::~TinyLogBlockOutputStream()
