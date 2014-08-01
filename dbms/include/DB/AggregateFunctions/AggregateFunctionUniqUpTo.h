@@ -17,9 +17,9 @@ namespace DB
   */
 
 template <typename T>
-struct AggregateFunctionUniqUpToData
+struct __attribute__((__packed__)) AggregateFunctionUniqUpToData
 {
-	UInt32 count = 0;
+	UInt8 count = 0;
 	T data[0];	/// Данные идут после конца структуры. При вставке, делается линейный поиск.
 
 
@@ -29,7 +29,7 @@ struct AggregateFunctionUniqUpToData
 	}
 
 	/// threshold - для скольки элементов есть место в data.
-	void insert(T x, UInt32 threshold)
+	void insert(T x, UInt8 threshold)
 	{
 		if (count > threshold)
 			return;
@@ -45,7 +45,7 @@ struct AggregateFunctionUniqUpToData
 		++count;
 	}
 
-	void merge(const AggregateFunctionUniqUpToData<T> & rhs, UInt32 threshold)
+	void merge(const AggregateFunctionUniqUpToData<T> & rhs, UInt8 threshold)
 	{
 		if (count > threshold)
 			return;
@@ -61,18 +61,16 @@ struct AggregateFunctionUniqUpToData
 			insert(rhs.data[i], threshold);
 	}
 
-	void write(WriteBuffer & wb, UInt32 threshold) const
+	void write(WriteBuffer & wb, UInt8 threshold) const
 	{
-		writeVarUInt(count, wb);
 		size_t limit = std::min(count, threshold);
-		for (size_t i = 0; i < limit; ++i)
-			writeBinary(data[i], wb);
+		wb.write(reinterpret_cast<const char *>(this), sizeof(*this) + limit * sizeof(data[0]));
 	}
 
-	void readAndMerge(ReadBuffer & rb, UInt32 threshold)
+	void readAndMerge(ReadBuffer & rb, UInt8 threshold)
 	{
-		UInt32 rhs_count;
-		readVarUInt(rhs_count, rb);
+		UInt8 rhs_count;
+		readBinary(rhs_count, rb);
 
 		if (rhs_count > threshold + 1)
 			throw Poco::Exception("Cannot read AggregateFunctionUniqUpToData: too large count.");
@@ -87,7 +85,7 @@ struct AggregateFunctionUniqUpToData
 	}
 
 
-	void addOne(const IColumn & column, size_t row_num, UInt32 threshold)
+	void addOne(const IColumn & column, size_t row_num, UInt8 threshold)
 	{
 		insert(static_cast<const ColumnVector<T> &>(column).getData()[row_num], threshold);
 	}
@@ -98,7 +96,7 @@ struct AggregateFunctionUniqUpToData
 template <>
 struct AggregateFunctionUniqUpToData<String> : AggregateFunctionUniqUpToData<UInt64>
 {
-	void addOne(const IColumn & column, size_t row_num, UInt32 threshold)
+	void addOne(const IColumn & column, size_t row_num, UInt8 threshold)
 	{
 		/// Имейте ввиду, что вычисление приближённое.
 		StringRef value = column.getDataAt(row_num);
@@ -107,13 +105,13 @@ struct AggregateFunctionUniqUpToData<String> : AggregateFunctionUniqUpToData<UIn
 };
 
 
-constexpr UInt32 uniq_upto_max_threshold = 100;
+constexpr UInt8 uniq_upto_max_threshold = 100;
 
 template <typename T>
 class AggregateFunctionUniqUpTo final : public IUnaryAggregateFunction<AggregateFunctionUniqUpToData<T>, AggregateFunctionUniqUpTo<T> >
 {
 private:
-	UInt32 threshold = 5;	/// Значение по-умолчанию, если параметр не указан.
+	UInt8 threshold = 5;	/// Значение по-умолчанию, если параметр не указан.
 
 public:
 	size_t sizeOfData() const
@@ -137,7 +135,7 @@ public:
 		if (params.size() != 1)
 			throw Exception("Aggregate function " + getName() + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		threshold = apply_visitor(FieldVisitorConvertToNumber<UInt32>(), params[0]);
+		threshold = apply_visitor(FieldVisitorConvertToNumber<UInt64>(), params[0]);
 
 		if (threshold > uniq_upto_max_threshold)
 			throw Exception("Too large parameter for aggregate function " + getName() + ". Maximum: " + toString(uniq_upto_max_threshold),
