@@ -151,11 +151,13 @@ public:
 		if (params.size() != 1)
 			throw Exception("Aggregate function " + getName() + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		threshold = apply_visitor(FieldVisitorConvertToNumber<UInt64>(), params[0]);
+		UInt64 threshold_param = apply_visitor(FieldVisitorConvertToNumber<UInt64>(), params[0]);
 
-		if (threshold > uniq_upto_max_threshold)
+		if (threshold_param > uniq_upto_max_threshold)
 			throw Exception("Too large parameter for aggregate function " + getName() + ". Maximum: " + toString(uniq_upto_max_threshold),
 				ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+		threshold = threshold_param;
 	}
 
 	void addOne(AggregateDataPtr place, const IColumn & column, size_t row_num) const
