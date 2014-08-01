@@ -36,3 +36,4 @@ for m in parts:
 			print s1
 		else:
 			raise Exception('invalid parts intersection: ' + s1 + ' and ' + s2)
+	print
