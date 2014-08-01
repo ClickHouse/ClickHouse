@@ -30,7 +30,7 @@ for m in parts:
 		if x1 >= x2 and y1 <= y2 and l1 < l2 and (x1, y1) != (x2, y2): # 2 contains 1
 			pass
 		elif x1 > y2: # 1 is to the right of 2
-			if x1 != y2 + 1:
+			if x1 != y2 + 1 and y1 != -1:
 				print # чтобы на глаз было видно пропущенные номера
 			(x2, y2, l2, s2) = (x1, y1, l1, s1)
 			print s1
