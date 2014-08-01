@@ -37,7 +37,7 @@ static const double DISK_USAGE_COEFFICIENT_TO_RESERVE = 1.4;
 /// 5) С ростом логарифма суммарного размера кусочков в мердже увеличиваем требование сбалансированности
 
 bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & parts, String & merged_name, size_t available_disk_space,
-	bool merge_anything_for_old_months, bool aggressive, bool only_small, const AllowedMergingPredicate & can_merge)
+	bool merge_anything_for_old_months, bool aggressive, bool only_small, const AllowedMergingPredicate & can_merge_callback)
 {
 	MergeTreeData::DataParts data_parts = data.getDataParts();
 
@@ -65,6 +65,19 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 
 	if (only_small)
 		cur_max_bytes_to_merge_parts = data.settings.max_bytes_to_merge_parts_small;
+
+	/// Мемоизация для функции can_merge_callback. Результат вызова can_merge_callback для этого куска и предыдущего в data_parts.
+	std::map<MergeTreeData::DataPartPtr, bool> can_merge_with_previous;
+	auto can_merge = [&can_merge_with_previous, &can_merge_callback]
+		(const MergeTreeData::DataPartPtr & first, const MergeTreeData::DataPartPtr & second) -> bool
+	{
+		auto it = can_merge_with_previous.find(second);
+		if (it != can_merge_with_previous.end())
+			return it->second;
+		bool res = can_merge_callback(first, second);
+		can_merge_with_previous[second] = res;
+		return res;
+	};
 
 	/// Найдем суммарный размер еще не пройденных кусков (то есть всех).
 	size_t size_in_bytes_of_remaining_parts = 0;
