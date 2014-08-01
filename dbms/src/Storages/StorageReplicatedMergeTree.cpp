@@ -1521,7 +1521,9 @@ void StorageReplicatedMergeTree::partCheckThread()
 					}
 				}
 				/// Если куска нет в ZooKeeper, удалим его локально.
-				else
+				/// Возможно, кусок кто-то только что записал, и еще не успел добавить в ZK.
+				/// Поэтому удаляем только если кусок старый (не очень надежно).
+				else if (part->modification_time + 5 * 60 < time(0))
 				{
 					ProfileEvents::increment(ProfileEvents::ReplicatedPartChecksFailed);
 
