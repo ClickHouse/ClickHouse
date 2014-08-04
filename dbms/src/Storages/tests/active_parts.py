@@ -23,14 +23,14 @@ for s in sys.stdin.read().split():
 		parts[m1] = []
 	parts[m1].append((i1, i2, l, s))
 
-for m in parts:
-	parts[m].sort(key=lambda (i1, i2, l, s): (i1, -i2, -l))
+for m, ps in sorted(parts.items()):
+	ps.sort(key=lambda (i1, i2, l, s): (i1, -i2, -l))
 	(x2, y2, l2, s2) = (-1, -1, -1, -1)
-	for x1, y1, l1, s1 in parts[m]:
+	for x1, y1, l1, s1 in ps:
 		if x1 >= x2 and y1 <= y2 and l1 < l2 and (x1, y1) != (x2, y2): # 2 contains 1
 			pass
 		elif x1 > y2: # 1 is to the right of 2
-			if x1 != y2 + 1 and y1 != -1:
+			if x1 != y2 + 1 and y2 != -1:
 				print # чтобы на глаз было видно пропущенные номера
 			(x2, y2, l2, s2) = (x1, y1, l1, s1)
 			print s1
