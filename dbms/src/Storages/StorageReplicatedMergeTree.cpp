@@ -1892,10 +1892,11 @@ bool StorageReplicatedMergeTree::optimize()
 {
 	/// Померджим какие-нибудь куски из директории unreplicated.
 	/// TODO: Мерджить реплицируемые куски тоже.
-	/// TODO: Не давать вызывать это из нескольких потоков сразу: один кусок может принять участие в нескольких несовместимых слияниях.
 
 	if (!unreplicated_data)
 		return false;
+
+	Poco::ScopedLock<Poco::FastMutex> lock(unreplicated_mutex);
 
 	unreplicated_data->clearOldParts();
 

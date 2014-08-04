@@ -248,6 +248,7 @@ private:
 	std::unique_ptr<MergeTreeData> unreplicated_data;
 	std::unique_ptr<MergeTreeDataSelectExecutor> unreplicated_reader;
 	std::unique_ptr<MergeTreeDataMerger> unreplicated_merger;
+	Poco::FastMutex unreplicated_mutex; /// Для мерджей и удаления нереплицируемых кусков.
 
 	/// Потоки:
 
