@@ -36,6 +36,8 @@ public:
 	
 	String source_database_name;
 	String source_table_name;
+
+	bool checkData() const override;
 	
 private:
 	String name;
