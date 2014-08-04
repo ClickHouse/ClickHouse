@@ -189,7 +189,7 @@ StoragePtr StorageFactory::get(
 	}
 	else if (endsWith(name, "MergeTree"))
 	{
-		/** Движки [Replicated][Summing|Collapsing]MergeTree  (6 комбинаций)
+		/** Движки [Replicated][Summing|Collapsing|Aggregating|]MergeTree  (8 комбинаций)
 		  * В качестве аргумента для движка должно быть указано:
 		  *  - (для Replicated) Путь к таблице в ZooKeeper
 		  *  - (для Replicated) Имя реплики в ZooKeeper
