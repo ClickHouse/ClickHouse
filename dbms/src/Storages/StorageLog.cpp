@@ -678,6 +678,8 @@ BlockOutputStreamPtr StorageLog::write(
 
 bool StorageLog::checkData() const
 {
+	Poco::ScopedReadRWLock lock(const_cast<Poco::RWLock &>(rwlock));
+
 	std::vector<Poco::File> column_files;
 	for (auto & pair : files)
 		column_files.push_back(pair.second.data_file);

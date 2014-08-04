@@ -218,6 +218,7 @@ void StorageChunks::appendChunkToIndex(const std::string & chunk_name, size_t ma
 	writeStringBinary(chunk_name, index);
 	writeIntBinary<UInt64>(mark, index);
 	index.next();
+	file_checker.update(Poco::File(index_path));
 }
 
 void StorageChunks::dropThis()
@@ -233,6 +234,20 @@ void StorageChunks::dropThis()
 	
 	InterpreterDropQuery interpreter(query_ptr, context);
 	interpreter.execute();
+}
+
+bool StorageChunks::checkData() const
+{
+	/// Не будем проверять refcount.txt
+	/// Так как он не влияет на валидность данных
+
+	bool index_file_is_ok;
+	{
+		Poco::ScopedReadRWLock lock(const_cast<Poco::RWLock &>(rwlock));
+		String index_path = path + escapeForFileName(name) + "/chunks.chn";
+		index_file_is_ok = file_checker.check(Poco::File(index_path));
+	}
+	return DB::StorageLog::checkData() && index_file_is_ok;
 }
 
 }
