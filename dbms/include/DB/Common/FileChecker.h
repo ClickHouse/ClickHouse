@@ -33,13 +33,17 @@ public:
 
 	using Files = std::vector<Poco::File>;
 
+	void update(const Poco::File & file)
+	{
+		updateTree(file);
+		saveTree();
+	}
+
 	void update(const Files::iterator & begin, const Files::iterator & end)
 	{
 		for (auto it = begin; it != end; ++it)
-			files_info.put(std::string("yandex.") + escapeForFileName(Poco::Path(it->path()).getFileName()) + ".size", std::to_string(it->getSize()));
-
-		boost::property_tree::write_xml(files_info_path, files_info, std::locale(),
-										boost::property_tree::xml_parser::xml_writer_settings<char>('\t', 1));
+			updateTree(*it);
+		saveTree();
 	}
 
 	bool check(const Files::iterator & begin, const Files::iterator & end) const
@@ -47,24 +51,41 @@ public:
 		bool sizes_are_correct = true;
 		for (auto it = begin; it != end; ++it)
 		{
-			auto & file = *it;
-			std::string filename = escapeForFileName(Poco::Path(it->path()).getFileName());
-			auto file_size = files_info.get_optional<std::string>(std::string("yandex.") + filename + ".size");
-			if (file_size)
-			{
-				size_t expected_size = std::stoull(*file_size);
-				size_t real_size = file.getSize();
-				if (real_size != expected_size)
-				{
-					LOG_ERROR(log, "Size of " << file.path() << "is wrong. Size is " << real_size << " but should be " << expected_size);
-					sizes_are_correct = false;
-				}
-			}
+			sizes_are_correct &= check(*it);
 		}
 		return sizes_are_correct;
 	}
 
+	bool check(const Poco::File & file) const
+	{
+		std::string filename = escapeForFileName(Poco::Path(file.path()).getFileName());
+		auto file_size = files_info.get_optional<std::string>(std::string("yandex.") + filename + ".size");
+		bool correct = true;
+		if (file_size)
+		{
+			size_t expected_size = std::stoull(*file_size);
+			size_t real_size = file.getSize();
+			if (real_size != expected_size)
+			{
+				LOG_ERROR(log, "Size of " << file.path() << "is wrong. Size is " << real_size << " but should be " << expected_size);
+				correct = false;
+			}
+		}
+		return correct;
+	}
+
 private:
+	void updateTree(const Poco::File & file)
+	{
+		files_info.put(std::string("yandex.") + escapeForFileName(Poco::Path(file.path()).getFileName()) + ".size", std::to_string(file.getSize()));
+	}
+
+	void saveTree()
+	{
+		boost::property_tree::write_xml(files_info_path, files_info, std::locale(),
+										boost::property_tree::xml_parser::xml_writer_settings<char>('\t', 1));
+	}
+
 	std::string files_info_path;
 
 	using PropertyTree = boost::property_tree::ptree;

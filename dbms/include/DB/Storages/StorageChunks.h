@@ -69,6 +69,8 @@ public:
 
 	Block getBlockWithVirtualColumns() const;
 
+	bool checkData() const override;
+
 protected:
 	/// Виртуальная функция из StorageLog
 	/// По номеру засечки получить имя таблицы, из которой идет чтение и номер последней засечки из этой таблицы.
