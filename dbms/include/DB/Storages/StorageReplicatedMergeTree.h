@@ -140,6 +140,7 @@ private:
 		Strings parts_to_merge;
 
 		FuturePartTaggerPtr future_part_tagger;
+		bool currently_executing = false;
 
 		void addResultToVirtualParts(StorageReplicatedMergeTree & storage)
 		{

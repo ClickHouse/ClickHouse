@@ -340,7 +340,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 	to->writePrefix();
 
 	size_t rows_written = 0;
-	size_t initial_reservation = disk_reservation->getSize();
+	size_t initial_reservation = disk_reservation ? disk_reservation->getSize() : 0;
 
 	Block block;
 	while (!canceled && (block = merged_stream->read()))
