@@ -1,11 +1,11 @@
-CREATE TABLE check_query_tiny_log (UInt32 N, String S) Engine = TinyLog;
+DROP TABLE IF EXISTS check_query_tiny_log;
 
-INSERT INTO check_query_tiny_log VALUES (1, "A"), (2, "B"), (3, "C")
+CREATE TABLE check_query_tiny_log (N UInt32, S String) Engine = TinyLog;
 
-DROP TABLE check_query_tiny_log;
+INSERT INTO check_query_tiny_log VALUES (1, 'A'), (2, 'B'), (3, 'C')
 
-CREATE TABLE check_query_log (UInt32 N, String S) Engine = Log;
+DROP TABLE IF EXISTS check_query_log;
 
-INSERT INTO check_query_log VALUES (1, "A"), (2, "B"), (3, "C")
+CREATE TABLE check_query_log (N UInt32,S String) Engine = Log;
 
-DROP TABLE check_query_log;
+INSERT INTO check_query_log VALUES (1, 'A'), (2, 'B'), (3, 'C')
