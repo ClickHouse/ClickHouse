@@ -199,6 +199,13 @@ void HTTPHandler::trySendExceptionToClient(std::stringstream & s,
 			  * Также стоит иметь ввиду, что мы могли уже отправить код 200.
 			  */
 
+			/** Если данные есть в буфере, но их ещё не отправили, то и не будем отправлять */
+			if (used_output.out->count() - used_output.out->offset() == 0)
+			{
+				used_output.out_maybe_compressed->position() = used_output.out_maybe_compressed->buffer().begin();
+				used_output.out->position() = used_output.out->buffer().begin();
+			}
+
 			std::string exception_message = s.str();
 			writeString(exception_message, *used_output.out_maybe_compressed);
 			writeChar('\n', *used_output.out_maybe_compressed);
