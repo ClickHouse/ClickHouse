@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DB/Storages/MergeTree/MergeTreeData.h>
+#include <DB/Storages/MergeTree/DiskSpaceMonitor.h>
 
 namespace DB
 {
@@ -34,9 +35,13 @@ public:
 		bool only_small,
 		const AllowedMergingPredicate & can_merge);
 
-	/// Сливает куски.
+	/** Сливает куски.
+	  * Если reservation != nullptr, то и дело уменьшает размер зарезервированного места
+	  *  приблизительно пропорционально количеству уже выписанных данных.
+	  */
 	MergeTreeData::DataPartPtr mergeParts(
-		const MergeTreeData::DataPartsVector & parts, const String & merged_name, MergeTreeData::Transaction * out_transaction = nullptr);
+		const MergeTreeData::DataPartsVector & parts, const String & merged_name,
+		MergeTreeData::Transaction * out_transaction = nullptr, DiskSpaceMonitor::Reservation * disk_reservation = nullptr);
 
 	/// Примерное количество места на диске, нужное для мерджа. С запасом.
 	size_t estimateDiskSpaceForMerge(const MergeTreeData::DataPartsVector & parts);

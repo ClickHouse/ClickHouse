@@ -4,6 +4,7 @@ namespace DB
 {
 
 size_t DiskSpaceMonitor::reserved_bytes;
-Poco::FastMutex DiskSpaceMonitor::reserved_bytes_mutex;
+size_t DiskSpaceMonitor::reservation_count;
+Poco::FastMutex DiskSpaceMonitor::mutex;
 
 }

@@ -26,15 +26,24 @@ public:
 		{
 			try
 			{
-				Poco::ScopedLock<Poco::FastMutex> lock(DiskSpaceMonitor::reserved_bytes_mutex);
+				Poco::ScopedLock<Poco::FastMutex> lock(DiskSpaceMonitor::mutex);
 				if (DiskSpaceMonitor::reserved_bytes < size)
 				{
 					DiskSpaceMonitor::reserved_bytes = 0;
-					LOG_ERROR(&Logger::get("DiskSpaceMonitor"), "Unbalanced reservations; it's a bug");
+					LOG_ERROR(&Logger::get("DiskSpaceMonitor"), "Unbalanced reservations size; it's a bug");
 				}
 				else
 				{
 					DiskSpaceMonitor::reserved_bytes -= size;
+				}
+
+				if (DiskSpaceMonitor::reservation_count == 0)
+				{
+					LOG_ERROR(&Logger::get("DiskSpaceMonitor"), "Unbalanced reservation count; it's a bug");
+				}
+				else
+				{
+					--DiskSpaceMonitor::reservation_count;
 				}
 			}
 			catch (...)
@@ -42,11 +51,26 @@ public:
 				tryLogCurrentException("~DiskSpaceMonitor");
 			}
 		}
+
+		/// Изменить количество зарезервированного места. При увеличении не делается проверка, что места достаточно.
+		void update(size_t new_size)
+		{
+			Poco::ScopedLock<Poco::FastMutex> lock(DiskSpaceMonitor::mutex);
+			DiskSpaceMonitor::reserved_bytes -= size;
+			size = new_size;
+			DiskSpaceMonitor::reserved_bytes += size;
+		}
+
+		size_t getSize() const
+		{
+			return size;
+		}
 	private:
 		Reservation(size_t size_) : size(size_)
 		{
-			Poco::ScopedLock<Poco::FastMutex> lock(DiskSpaceMonitor::reserved_bytes_mutex);
+			Poco::ScopedLock<Poco::FastMutex> lock(DiskSpaceMonitor::mutex);
 			DiskSpaceMonitor::reserved_bytes += size;
+			++DiskSpaceMonitor::reservation_count;
 		}
 		size_t size;
 	};
@@ -65,7 +89,7 @@ public:
 		/// Зарезервируем дополнительно 30 МБ. Когда я тестировал, statvfs показывал на несколько мегабайт больше свободного места, чем df.
 		res -= std::min(res, 30 * (1ul << 20));
 
-		Poco::ScopedLock<Poco::FastMutex> lock(reserved_bytes_mutex);
+		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
 
 		if (reserved_bytes > res)
 			res = 0;
@@ -73,6 +97,18 @@ public:
 			res -= reserved_bytes;
 
 		return res;
+	}
+
+	static size_t getReservedSpace()
+	{
+		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		return reserved_bytes;
+	}
+
+	static size_t getReservationCount()
+	{
+		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		return reservation_count;
 	}
 
 	/// Если места (приблизительно) недостаточно, бросает исключение.
@@ -87,7 +123,8 @@ public:
 
 private:
 	static size_t reserved_bytes;
-	static Poco::FastMutex reserved_bytes_mutex;
+	static size_t reservation_count;
+	static Poco::FastMutex mutex;
 };
 
 }
