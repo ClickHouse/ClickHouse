@@ -1,9 +1,15 @@
 #pragma once
 
 #include <Yandex/logger_useful.h>
+#include <DB/Columns/IColumn.h>
 #include <Poco/AutoPtr.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <string>
+#include <Poco/File.h>
+#include <DB/Common/escapeForFileName.h>
+
+namespace DB
+{
 
 /// хранит размеры всех столбцов, и может проверять не побились ли столбцы
 template <class Storage>
@@ -28,27 +34,26 @@ public:
 		files_info_path = file_info_path_;
 	}
 
-	template <class Iterator>
-	void update(const Iterator & begin, const Iterator & end)
+	using Files = std::vector<Poco::File>;
+
+	void update(const Files::iterator & begin, const Files::iterator & end)
 	{
 		for (auto it = begin; it != end; ++it)
-		{
-			auto & column_name = *it;
-			auto & file = storage.getFiles()[column_name].data_file;
-			files_info->setString(column_name + ".size", std::to_string(file.getSize()));
-		}
+			files_info->setString(escapeForFileName(Poco::Path(it->path()).getFileName()) + ".size", std::to_string(it->getSize()));
+
 		files_info->save(files_info_path);
 	}
 
-	bool check() const
+	bool check(const Files::iterator & begin, const Files::iterator & end) const
 	{
 		bool sizes_are_correct = true;
-		for (auto & pair : storage.getFiles())
+		for (auto it = begin; it != end; ++it)
 		{
-			if (files_info->has(pair.first))
+			auto & file = *it;
+			std::string filename = escapeForFileName(Poco::Path(it->path()).getFileName());
+			if (files_info->has(filename))
 			{
-				auto & file = pair.second.data_file;
-				size_t expected_size = std::stoull(files_info->getString(pair.first + ".size"));
+				size_t expected_size = std::stoull(files_info->getString(filename + ".size"));
 				size_t real_size = file.getSize();
 				if (real_size != expected_size)
 				{
@@ -69,3 +74,5 @@ private:
 	Storage & storage;
 	Logger * log;
 };
+
+}

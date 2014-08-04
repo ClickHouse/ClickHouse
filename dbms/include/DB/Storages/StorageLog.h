@@ -13,6 +13,7 @@
 #include <DB/Storages/IStorage.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
+#include <DB/Common/FileChecker.h>
 
 
 namespace DB
@@ -80,6 +81,8 @@ class LogBlockOutputStream : public IBlockOutputStream
 {
 public:
 	LogBlockOutputStream(StorageLog & storage_);
+	~LogBlockOutputStream() { writeSuffix(); }
+
 	void write(const Block & block);
 	void writeSuffix();
 private:
@@ -156,6 +159,22 @@ public:
 
 	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name);
 
+	/// Данные столбца
+	struct ColumnData
+	{
+		/// Задает номер столбца в файле с засечками.
+		/// Не обязательно совпадает с номером столбца среди столбцов таблицы: здесь нумеруются также столбцы с длинами массивов.
+		size_t column_index;
+
+		Poco::File data_file;
+		Marks marks;
+	};
+	typedef std::map<String, ColumnData> Files_t;
+
+	Files_t & getFiles() { return files; }
+
+	bool checkData() const override;
+
 protected:
 	String path;
 	String name;
@@ -195,18 +214,8 @@ protected:
 		unsigned threads = 1);
 	
 private:
-	/// Данные столбца
-	struct ColumnData
-	{
-		/// Задает номер столбца в файле с засечками.
-		/// Не обязательно совпадает с номером столбца среди столбцов таблицы: здесь нумеруются также столбцы с длинами массивов.
-		size_t column_index;
-		
-		Poco::File data_file;
-		Marks marks;
-	};
-	typedef std::map<String, ColumnData> Files_t;
 	Files_t files; /// name -> data
+
 	Names column_names; /// column_index -> name
 	
 	Poco::File marks_file;
@@ -217,6 +226,8 @@ private:
 	bool loaded_marks;
 
 	size_t max_compress_block_size;
+
+	FileChecker<StorageLog> file_checker;
 
 	/** Для обычных столбцов, в засечках указано количество строчек в блоке.
 	  * Для столбцов-массивов и вложенных структур, есть более одной группы засечек, соответствующих разным файлам:

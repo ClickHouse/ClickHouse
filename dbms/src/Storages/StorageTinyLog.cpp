@@ -266,12 +266,11 @@ void TinyLogBlockOutputStream::writeSuffix()
 	for (FileStreams::iterator it = streams.begin(); it != streams.end(); ++it)
 		it->second->finalize();
 
-	/// @TODO лишнее копирование. Можно б было использовать boost::transform_iterator, если б он работал с C++11 lambda
-	std::vector<std::string> column_names;
+	std::vector<Poco::File> column_files;
 	for (auto & pair : streams)
-		column_names.push_back(pair.first);
+		column_files.push_back(storage.files[pair.first].data_file);
 
-	storage.file_checker.update(column_names.begin(), column_names.end());
+	storage.file_checker.update(column_files.begin(), column_files.end());
 
 	streams.clear();
 }
@@ -407,7 +406,11 @@ void StorageTinyLog::drop()
 
 bool StorageTinyLog::checkData() const
 {
-	return file_checker.check();
+	std::vector<Poco::File> column_files;
+	for (auto & pair : files)
+		column_files.push_back(pair.second.data_file);
+
+	return file_checker.check(column_files.begin(), column_files.end());
 }
 
 StorageTinyLog::Files_t & StorageTinyLog::getFiles()

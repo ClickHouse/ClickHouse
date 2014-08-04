@@ -281,6 +281,13 @@ void LogBlockOutputStream::writeSuffix()
 	for (FileStreams::iterator it = streams.begin(); it != streams.end(); ++it)
 		it->second->finalize();
 
+	std::vector<Poco::File> column_files;
+	for (auto & pair : streams)
+		column_files.push_back(storage.files[pair.first].data_file);
+	column_files.push_back(storage.marks_file);
+
+	storage.file_checker.update(column_files.begin(), column_files.end());
+
 	streams.clear();
 }
 
@@ -403,7 +410,8 @@ void LogBlockOutputStream::writeMarks(MarksForColumns marks)
 
 
 StorageLog::StorageLog(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, size_t max_compress_block_size_)
-	: path(path_), name(name_), columns(columns_), loaded_marks(false), max_compress_block_size(max_compress_block_size_)
+	: path(path_), name(name_), columns(columns_), loaded_marks(false), max_compress_block_size(max_compress_block_size_),
+	file_checker(path + escapeForFileName(name) + '/' + "sizes.txt", *this)
 {
 	if (columns->empty())
 		throw Exception("Empty list of columns passed to StorageLog constructor", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
@@ -532,6 +540,7 @@ void StorageLog::rename(const String & new_path_to_db, const String & new_databa
 
 	path = new_path_to_db;
 	name = new_table_name;
+	file_checker.setPath(path + escapeForFileName(name) + '/' + "sizes.txt");
 
 	for (Files_t::iterator it = files.begin(); it != files.end(); ++it)
 	{
@@ -667,5 +676,13 @@ BlockOutputStreamPtr StorageLog::write(
 	return new LogBlockOutputStream(*this);
 }
 
+bool StorageLog::checkData() const
+{
+	std::vector<Poco::File> column_files;
+	for (auto & pair : files)
+		column_files.push_back(pair.second.data_file);
+	column_files.push_back(marks_file);
+	return file_checker.check(column_files.begin(), column_files.end());
+}
 
 }
