@@ -990,11 +990,12 @@ bool StorageReplicatedMergeTree::queueTask(BackgroundProcessingPool::Context & p
 		{
 			for (LogEntries::iterator it = queue.begin(); it != queue.end(); ++it)
 			{
-				if (shouldExecuteLogEntry(*it))
+				if (!it->currently_executing && shouldExecuteLogEntry(*it))
 				{
 					entry = *it;
 					entry.tagPartAsFuture(*this);
-					queue.erase(it);
+					queue.splice(queue.end(), queue, it);
+					it->currently_executing = true;
 					have_work = true;
 					break;
 				}
@@ -1014,14 +1015,15 @@ bool StorageReplicatedMergeTree::queueTask(BackgroundProcessingPool::Context & p
 
 	try
 	{
-		success = executeLogEntry(entry, pool_context);
-
-		if (success)
+		if (executeLogEntry(entry, pool_context))
 		{
 			auto code = zookeeper->tryRemove(replica_path + "/queue/" + entry.znode_name);
+
 			if (code != ZOK)
 				LOG_ERROR(log, "Couldn't remove " << replica_path + "/queue/" + entry.znode_name << ": "
-					<< zkutil::ZooKeeper::error2string(code) + ". There must be a bug somewhere. Ignoring it.");
+					<< zkutil::ZooKeeper::error2string(code) + ". This shouldn't happen often.");
+
+			success = true;
 		}
 
 		exception = false;
@@ -1039,12 +1041,21 @@ bool StorageReplicatedMergeTree::queueTask(BackgroundProcessingPool::Context & p
 		tryLogCurrentException(__PRETTY_FUNCTION__);
 	}
 
-	if (!success)
+	/// Удалим задание из очереди или отметим, что мы его больше не выполняем.
+	/// Нельзя просто обратиться по заранее сохраненному итератору, потому что задание мог успеть удалить кто-то другой.
+	entry.future_part_tagger = nullptr;
+	Poco::ScopedLock<Poco::FastMutex> lock(queue_mutex);
+	for (LogEntries::iterator it = queue.end(); it != queue.begin();)
 	{
-		/// Добавим действие, которое не получилось выполнить, в конец очереди.
-		entry.future_part_tagger = nullptr;
-		Poco::ScopedLock<Poco::FastMutex> lock(queue_mutex);
-		queue.push_back(entry);
+		--it;
+		if (it->znode_name == entry.znode_name)
+		{
+			if (success)
+				queue.erase(it);
+			else
+				it->currently_executing = false;
+			break;
+		}
 	}
 
 	/// Если не было исключения, не нужно спать.
@@ -1453,15 +1464,11 @@ void StorageReplicatedMergeTree::partCheckThread()
 							{
 								Poco::ScopedLock<Poco::FastMutex> lock(queue_mutex);
 
-								/** NOTE: Не удалятся записи в очереди, которые сейчас выполняются.
-								* Они пофейлятся и положат кусок снова в очередь на проверку.
-								* Расчитываем, что это редкая ситуация.
-								*/
 								for (LogEntries::iterator it = queue.begin(); it != queue.end(); )
 								{
 									if (it->new_part_name == part_name)
 									{
-										zookeeper->remove(replica_path + "/queue/" + it->znode_name);
+										zookeeper->tryRemove(replica_path + "/queue/" + it->znode_name);
 										queue.erase(it++);
 										was_in_queue = true;
 									}
@@ -1892,10 +1899,11 @@ bool StorageReplicatedMergeTree::optimize()
 {
 	/// Померджим какие-нибудь куски из директории unreplicated.
 	/// TODO: Мерджить реплицируемые куски тоже.
-	/// TODO: Не давать вызывать это из нескольких потоков сразу: один кусок может принять участие в нескольких несовместимых слияниях.
 
 	if (!unreplicated_data)
 		return false;
+
+	Poco::ScopedLock<Poco::FastMutex> lock(unreplicated_mutex);
 
 	unreplicated_data->clearOldParts();
 

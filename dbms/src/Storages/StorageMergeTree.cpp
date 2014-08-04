@@ -180,7 +180,7 @@ bool StorageMergeTree::merge(bool aggressive, BackgroundProcessingPool::Context 
 		}
 	}
 
-	merger.mergeParts(merging_tagger->parts, merged_name);
+	merger.mergeParts(merging_tagger->parts, merged_name, nullptr, &*merging_tagger->reserved_space);
 
 	return true;
 }
