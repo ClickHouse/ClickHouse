@@ -85,7 +85,9 @@ void TCPHandler::runImpl()
 	
 	sendHello();
 
-	connection_context.setProgressCallback(boost::bind(&TCPHandler::updateProgress, this, _1, _2));
+	connection_context.setProgressCallback([this] (const size_t rows, const size_t bytes) {
+		return this->updateProgress(rows, bytes);
+	});
 
 	while (1)
 	{

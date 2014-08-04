@@ -194,10 +194,10 @@ void formatAST(const ASTSelectQuery 		& ast, std::ostream & s, size_t indent, bo
 		one_line
 			? formatAST(*ast.group_expression_list, s, indent, hilite, one_line)
 			: formatExpressionListMultiline(typeid_cast<const ASTExpressionList &>(*ast.group_expression_list), s, indent, hilite);
-
-		if (ast.group_by_with_totals)
-			s << (hilite ? hilite_keyword : "") << nl_or_ws << indent_str << (one_line ? "" : "    ") << "WITH TOTALS" << (hilite ? hilite_none : "");
 	}
+
+	if (ast.group_by_with_totals)
+		s << (hilite ? hilite_keyword : "") << nl_or_ws << indent_str << (one_line ? "" : "    ") << "WITH TOTALS" << (hilite ? hilite_none : "");
 
 	if (ast.having_expression)
 	{

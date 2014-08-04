@@ -198,18 +198,18 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 			return false;
 
 		ws.ignore(pos, end);
+	}
 
-		/// WITH TOTALS
-		if (s_with.ignore(pos, end, expected))
-		{
-			ws.ignore(pos, end);
-			if (!s_totals.ignore(pos, end, expected))
-				return false;
+	/// WITH TOTALS
+	if (s_with.ignore(pos, end, expected))
+	{
+		ws.ignore(pos, end);
+		if (!s_totals.ignore(pos, end, expected))
+			return false;
 
-			select_query->group_by_with_totals = true;
+		select_query->group_by_with_totals = true;
 
-			ws.ignore(pos, end);
-		}
+		ws.ignore(pos, end);
 	}
 
 	/// HAVING expr
