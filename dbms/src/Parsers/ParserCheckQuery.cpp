@@ -3,7 +3,6 @@
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ExpressionElementParsers.h>
 #include <DB/Parsers/ASTCheckQuery.h>
-#include </home/kartavyy/metrica/metrica/src/programs/███████████/src/data.h>
 
 using namespace DB;
 
