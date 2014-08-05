@@ -46,28 +46,27 @@ public:
 		saveTree();
 	}
 
-	bool check(const Files::iterator & begin, const Files::iterator & end) const
+	/// Проверяем файлы, параметры которых указаны в sizes.txt
+	bool check() const
 	{
-		bool sizes_are_correct = true;
-		for (auto it = begin; it != end; ++it)
-		{
-			sizes_are_correct &= check(*it);
-		}
-		return sizes_are_correct;
-	}
-
-	bool check(const Poco::File & file) const
-	{
-		std::string filename = escapeForFileName(Poco::Path(file.path()).getFileName());
-		auto file_size = files_info.get_optional<std::string>(std::string("yandex.") + filename + ".size");
 		bool correct = true;
-		if (file_size)
+		for (auto & node : files_info.get_child("yandex"))
 		{
-			size_t expected_size = std::stoull(*file_size);
+			std::string filename = unescapeForFileName(node.first);
+			size_t expected_size = std::stoull(node.second.get<std::string>("size"));
+
+			Poco::File file(Poco::Path(files_info_path).parent().toString() + "/" + filename);
+			if (!file.exists())
+			{
+				LOG_ERROR(log, "File " << file.path() << " doesn't exists");
+				correct = false;
+				continue;
+			}
+
 			size_t real_size = file.getSize();
 			if (real_size != expected_size)
 			{
-				LOG_ERROR(log, "Size of " << file.path() << "is wrong. Size is " << real_size << " but should be " << expected_size);
+				LOG_ERROR(log, "Size of " << file.path() << " is wrong. Size is " << real_size << " but should be " << expected_size);
 				correct = false;
 			}
 		}

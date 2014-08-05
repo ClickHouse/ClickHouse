@@ -680,11 +680,7 @@ bool StorageLog::checkData() const
 {
 	Poco::ScopedReadRWLock lock(const_cast<Poco::RWLock &>(rwlock));
 
-	std::vector<Poco::File> column_files;
-	for (auto & pair : files)
-		column_files.push_back(pair.second.data_file);
-	column_files.push_back(marks_file);
-	return file_checker.check(column_files.begin(), column_files.end());
+	return file_checker.check();
 }
 
 }

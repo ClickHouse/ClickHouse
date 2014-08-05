@@ -406,11 +406,7 @@ void StorageTinyLog::drop()
 
 bool StorageTinyLog::checkData() const
 {
-	std::vector<Poco::File> column_files;
-	for (auto & pair : files)
-		column_files.push_back(pair.second.data_file);
-
-	return file_checker.check(column_files.begin(), column_files.end());
+	return file_checker.check();
 }
 
 StorageTinyLog::Files_t & StorageTinyLog::getFiles()
