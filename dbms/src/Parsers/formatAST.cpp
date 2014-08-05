@@ -70,6 +70,7 @@ void formatAST(const IAST & ast, std::ostream & s, size_t indent, bool hilite, b
 	DISPATCH(AlterQuery)
 	DISPATCH(ShowProcesslistQuery)
 	DISPATCH(Join)
+	DISPATCH(CheckQuery)
 //	DISPATCH(MultiQuery)
 	else
 		throw Exception("Unknown element in AST: " + ast.getID()
@@ -766,6 +767,27 @@ void formatAST(const ASTJoin & ast, std::ostream & s, size_t indent, bool hilite
 	s << (hilite ? hilite_keyword : "") << " USING " << (hilite ? hilite_none : "");
 
 	formatAST(*ast.using_expr_list, s, indent, hilite, one_line, need_parens);
+}
+
+void formatAST(const ASTCheckQuery & ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
+{
+	std::string nl_or_nothing = one_line ? "" : "\n";
+
+	std::string indent_str = one_line ? "" : std::string(4 * indent, ' ');
+	std::string nl_or_ws = one_line ? " " : "\n";
+
+	s << (hilite ? hilite_keyword : "") << indent_str << "CHECK TABLE " << (hilite ? hilite_none : "");
+
+	if (!ast.table.empty())
+	{
+		if (!ast.database.empty())
+		{
+			s << (hilite ? hilite_keyword : "") << indent_str << ast.database << (hilite ? hilite_none : "");
+			s << ".";
+		}
+		s << (hilite ? hilite_keyword : "") << indent_str << ast.table << (hilite ? hilite_none : "");
+	}
+	s << nl_or_ws;
 }
 
 /*
