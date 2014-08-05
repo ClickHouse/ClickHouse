@@ -111,7 +111,7 @@ private:
 		{
 			try
 			{
-				Poco::ScopedLock<Poco::FastMutex> lock(storage.queue_mutex);
+				std::unique_lock<std::mutex> lock(storage.queue_mutex);
 				if (!storage.future_parts.erase(part))
 					throw Exception("Untagging already untagged future part " + part + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
 			}
@@ -126,25 +126,29 @@ private:
 
 	struct LogEntry
 	{
+		typedef Poco::SharedPtr<LogEntry> Ptr;
+
 		enum Type
 		{
-			GET_PART,
-			MERGE_PARTS,
+			GET_PART,    /// Получить кусок с другой реплики.
+			MERGE_PARTS, /// Слить куски.
+			DROP_RANGE,  /// Удалить куски в указанном месяце в указанном диапазоне номеров.
 		};
 
 		String znode_name;
 
 		Type type;
 		String source_replica; /// Пустая строка значит, что эта запись была добавлена сразу в очередь, а не скопирована из лога.
-		String new_part_name;
+		String new_part_name; /// Для DROP_RANGE имя несуществующего куска. Нужно удалить все куски, покрытые им.
 		Strings parts_to_merge;
 
 		FuturePartTaggerPtr future_part_tagger;
-		bool currently_executing = false;
+		bool currently_executing = false; /// Доступ под queue_mutex.
+		std::condition_variable execution_complete; /// Пробуждается когда currently_executing становится false.
 
 		void addResultToVirtualParts(StorageReplicatedMergeTree & storage)
 		{
-			if (type == MERGE_PARTS || type == GET_PART)
+			if (type == MERGE_PARTS || type == GET_PART || type == DROP_RANGE)
 				storage.virtual_parts.add(new_part_name);
 		}
 
@@ -167,17 +171,19 @@ private:
 			return s;
 		}
 
-		static LogEntry parse(const String & s)
+		static Ptr parse(const String & s)
 		{
 			ReadBufferFromString in(s);
-			LogEntry res;
-			res.readText(in);
+			Ptr res = new LogEntry;
+			res->readText(in);
 			assertEOF(in);
 			return res;
 		}
 	};
 
-	typedef std::list<LogEntry> LogEntries;
+	typedef LogEntry::Ptr LogEntryPtr;
+
+	typedef std::list<LogEntryPtr> LogEntries;
 
 	typedef std::set<String> StringSet;
 	typedef std::list<String> StringList;
@@ -195,7 +201,7 @@ private:
 	  * В ZK записи в хронологическом порядке. Здесь - не обязательно.
 	  */
 	LogEntries queue;
-	Poco::FastMutex queue_mutex;
+	std::mutex queue_mutex;
 
 	/** Куски, которые появятся в результате действий, выполняемых прямо сейчас фоновыми потоками (этих действий нет в очереди).
 	  * Использовать под залоченным queue_mutex.
@@ -380,6 +386,8 @@ private:
 	  * Возвращает, получилось ли выполнить. Если не получилось, запись нужно положить в конец очереди.
 	  */
 	bool executeLogEntry(const LogEntry & entry, BackgroundProcessingPool::Context & pool_context);
+
+	bool executeDropRange(const LogEntry & entry);
 
 	/** Обновляет очередь.
 	  */

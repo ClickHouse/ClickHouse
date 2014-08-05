@@ -673,23 +673,23 @@ void StorageReplicatedMergeTree::clearOldBlocks()
 
 void StorageReplicatedMergeTree::loadQueue()
 {
-	Poco::ScopedLock<Poco::FastMutex> lock(queue_mutex);
+	std::unique_lock<std::mutex> lock(queue_mutex);
 
 	Strings children = zookeeper->getChildren(replica_path + "/queue");
 	std::sort(children.begin(), children.end());
 	for (const String & child : children)
 	{
 		String s = zookeeper->get(replica_path + "/queue/" + child);
-		LogEntry entry = LogEntry::parse(s);
-		entry.znode_name = child;
-		entry.addResultToVirtualParts(*this);
+		LogEntryPtr entry = LogEntry::parse(s);
+		entry->znode_name = child;
+		entry->addResultToVirtualParts(*this);
 		queue.push_back(entry);
 	}
 }
 
 void StorageReplicatedMergeTree::pullLogsToQueue(zkutil::EventPtr next_update_event)
 {
-	Poco::ScopedLock<Poco::FastMutex> lock(queue_mutex);
+	std::unique_lock<std::mutex> lock(queue_mutex);
 
 	String index_str = zookeeper->get(replica_path + "/log_pointer");
 	UInt64 index;
@@ -716,7 +716,7 @@ void StorageReplicatedMergeTree::pullLogsToQueue(zkutil::EventPtr next_update_ev
 		++count;
 		++index;
 
-		LogEntry entry = LogEntry::parse(entry_str);
+		LogEntryPtr entry = LogEntry::parse(entry_str);
 
 		/// Одновременно добавим запись в очередь и продвинем указатель на лог.
 		zkutil::Ops ops;
@@ -727,8 +727,8 @@ void StorageReplicatedMergeTree::pullLogsToQueue(zkutil::EventPtr next_update_ev
 		auto results = zookeeper->multi(ops);
 
 		String path_created = dynamic_cast<zkutil::Op::Create &>(ops[0]).getPathCreated();
-		entry.znode_name = path_created.substr(path_created.find_last_of('/') + 1);
-		entry.addResultToVirtualParts(*this);
+		entry->znode_name = path_created.substr(path_created.find_last_of('/') + 1);
+		entry->addResultToVirtualParts(*this);
 		queue.push_back(entry);
 	}
 
@@ -778,6 +778,9 @@ bool StorageReplicatedMergeTree::shouldExecuteLogEntry(const LogEntry & entry)
 
 bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, BackgroundProcessingPool::Context & pool_context)
 {
+	if (entry.type == LogEntry::DROP_RANGE)
+		return executeDropRange(entry);
+
 	if (entry.type == LogEntry::GET_PART ||
 		entry.type == LogEntry::MERGE_PARTS)
 	{
@@ -893,19 +896,19 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 			  */
 			try
 			{
-				Poco::ScopedLock<Poco::FastMutex> lock(queue_mutex);
+				std::unique_lock<std::mutex> lock(queue_mutex);
 
 				/// Найдем действие по объединению этого куска с другими. Запомним других.
 				StringSet parts_for_merge;
 				LogEntries::iterator merge_entry;
 				for (LogEntries::iterator it = queue.begin(); it != queue.end(); ++it)
 				{
-					if (it->type == LogEntry::MERGE_PARTS)
+					if ((*it)->type == LogEntry::MERGE_PARTS)
 					{
-						if (std::find(it->parts_to_merge.begin(), it->parts_to_merge.end(), entry.new_part_name)
-							!= it->parts_to_merge.end())
+						if (std::find((*it)->parts_to_merge.begin(), (*it)->parts_to_merge.end(), entry.new_part_name)
+							!= (*it)->parts_to_merge.end())
 						{
-							parts_for_merge = StringSet(it->parts_to_merge.begin(), it->parts_to_merge.end());
+							parts_for_merge = StringSet((*it)->parts_to_merge.begin(), (*it)->parts_to_merge.end());
 							merge_entry = it;
 							break;
 						}
@@ -923,8 +926,8 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 						if (it0 == merge_entry)
 							break;
 
-						if ((it0->type == LogEntry::MERGE_PARTS || it0->type == LogEntry::GET_PART)
-							&& parts_for_merge.count(it0->new_part_name))
+						if (((*it0)->type == LogEntry::MERGE_PARTS || (*it0)->type == LogEntry::GET_PART)
+							&& parts_for_merge.count((*it0)->new_part_name))
 						{
 							queue.splice(queue.end(), queue, it0, it);
 						}
@@ -956,6 +959,71 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 	return true;
 }
 
+bool StorageReplicatedMergeTree::executeDropRange(const StorageReplicatedMergeTree::LogEntry & entry)
+{
+	LOG_INFO(log, "Removing parts covered by " << entry.new_part_name << ".");
+
+	{
+		LogEntries to_wait;
+		size_t removed_entries = 0;
+
+		/// Удалим из очереди операции с кусками, содержащимися в удаляемом диапазоне.
+		std::unique_lock<std::mutex> lock(queue_mutex);
+		for (LogEntries::iterator it = queue.begin(); it != queue.end();)
+		{
+			if (((*it)->type == LogEntry::GET_PART || (*it)->type == LogEntry::MERGE_PARTS) &&
+				ActiveDataPartSet::contains(entry.new_part_name, (*it)->new_part_name))
+			{
+				if ((*it)->currently_executing)
+					to_wait.push_back(*it);
+				auto code = zookeeper->tryRemove(replica_path + "/queue/" + (*it)->znode_name);
+				if (code != ZOK)
+					LOG_INFO(log, "Couldn't remove " << replica_path + "/queue/" + (*it)->znode_name << ": "
+						<< zkutil::ZooKeeper::error2string(code));
+				queue.erase(it++);
+				++removed_entries;
+			}
+			else
+				++it;
+		}
+
+		LOG_DEBUG(log, "Removed " << removed_entries << " entries from queue. "
+			"Waiting for " << to_wait.size() << " entries that are currently executing.");
+
+		/// Дождемся завершения операций с кусками, содержащимися в удаляемом диапазоне.
+		{
+			std::unique_lock<std::mutex> lock(queue_mutex);
+			for (LogEntryPtr & entry : to_wait)
+				entry->execution_complete.wait(lock, [&entry] { return !entry->currently_executing; });
+		}
+	}
+
+	LOG_DEBUG(log, "Removing parts.");
+	size_t removed_parts = 0;
+
+	/// Удалим куски, содержащиеся в удаляемом диапазоне.
+	auto parts = data.getDataParts();
+	for (const auto & part : parts)
+	{
+		if (!ActiveDataPartSet::contains(entry.new_part_name, part->name))
+			continue;
+		LOG_DEBUG(log, "Removing part " << part->name);
+		++removed_parts;
+
+		zkutil::Ops ops;
+		ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + part->name + "/columns", -1));
+		ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + part->name + "/checksums", -1));
+		ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + part->name, -1));
+		zookeeper->multi(ops);
+
+		data.replaceParts({part}, {}, false);
+	}
+
+	LOG_INFO(log, "Finished removing parts covered by " << entry.new_part_name << ".");
+
+	return true;
+}
+
 void StorageReplicatedMergeTree::queueUpdatingThread()
 {
 	while (!shutdown_called)
@@ -979,24 +1047,22 @@ void StorageReplicatedMergeTree::queueUpdatingThread()
 
 bool StorageReplicatedMergeTree::queueTask(BackgroundProcessingPool::Context & pool_context)
 {
-	LogEntry entry;
-	bool have_work = false;
+	LogEntryPtr entry;
 
 	try
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock(queue_mutex);
+		std::unique_lock<std::mutex> lock(queue_mutex);
 		bool empty = queue.empty();
 		if (!empty)
 		{
 			for (LogEntries::iterator it = queue.begin(); it != queue.end(); ++it)
 			{
-				if (!it->currently_executing && shouldExecuteLogEntry(*it))
+				if (!(*it)->currently_executing && shouldExecuteLogEntry(**it))
 				{
 					entry = *it;
-					entry.tagPartAsFuture(*this);
+					entry->tagPartAsFuture(*this);
 					queue.splice(queue.end(), queue, it);
-					it->currently_executing = true;
-					have_work = true;
+					entry->currently_executing = true;
 					break;
 				}
 			}
@@ -1007,7 +1073,7 @@ bool StorageReplicatedMergeTree::queueTask(BackgroundProcessingPool::Context & p
 		tryLogCurrentException(__PRETTY_FUNCTION__);
 	}
 
-	if (!have_work)
+	if (!entry)
 		return false;
 
 	bool exception = true;
@@ -1015,12 +1081,12 @@ bool StorageReplicatedMergeTree::queueTask(BackgroundProcessingPool::Context & p
 
 	try
 	{
-		if (executeLogEntry(entry, pool_context))
+		if (executeLogEntry(*entry, pool_context))
 		{
-			auto code = zookeeper->tryRemove(replica_path + "/queue/" + entry.znode_name);
+			auto code = zookeeper->tryRemove(replica_path + "/queue/" + entry->znode_name);
 
 			if (code != ZOK)
-				LOG_ERROR(log, "Couldn't remove " << replica_path + "/queue/" + entry.znode_name << ": "
+				LOG_ERROR(log, "Couldn't remove " << replica_path + "/queue/" + entry->znode_name << ": "
 					<< zkutil::ZooKeeper::error2string(code) + ". This shouldn't happen often.");
 
 			success = true;
@@ -1041,20 +1107,25 @@ bool StorageReplicatedMergeTree::queueTask(BackgroundProcessingPool::Context & p
 		tryLogCurrentException(__PRETTY_FUNCTION__);
 	}
 
-	/// Удалим задание из очереди или отметим, что мы его больше не выполняем.
-	/// Нельзя просто обратиться по заранее сохраненному итератору, потому что задание мог успеть удалить кто-то другой.
-	entry.future_part_tagger = nullptr;
-	Poco::ScopedLock<Poco::FastMutex> lock(queue_mutex);
-	for (LogEntries::iterator it = queue.end(); it != queue.begin();)
+	entry->future_part_tagger = nullptr;
+
+	std::unique_lock<std::mutex> lock(queue_mutex);
+
+	entry->currently_executing = false;
+	entry->execution_complete.notify_all();
+
+	if (success)
 	{
-		--it;
-		if (it->znode_name == entry.znode_name)
+		/// Удалим задание из очереди.
+		/// Нельзя просто обратиться по заранее сохраненному итератору, потому что задание мог успеть удалить кто-то другой.
+		for (LogEntries::iterator it = queue.end(); it != queue.begin();)
 		{
-			if (success)
+			--it;
+			if (*it == entry)
+			{
 				queue.erase(it);
-			else
-				it->currently_executing = false;
-			break;
+				break;
+			}
 		}
 	}
 
@@ -1086,17 +1157,17 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 
 			if (!has_big_merge)
 			{
-				Poco::ScopedLock<Poco::FastMutex> lock(queue_mutex);
+				std::unique_lock<std::mutex> lock(queue_mutex);
 
 				for (const auto & entry : queue)
 				{
-					if (entry.type == LogEntry::MERGE_PARTS)
+					if (entry->type == LogEntry::MERGE_PARTS)
 					{
 						++merges_queued;
 
 						if (!has_big_merge)
 						{
-							for (const String & name : entry.parts_to_merge)
+							for (const String & name : entry->parts_to_merge)
 							{
 								MergeTreeData::DataPartPtr part = data.getActiveContainingPart(name);
 								if (!part || part->name != name)
@@ -1338,14 +1409,14 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
 {
 	String part_path = replica_path + "/parts/" + part_name;
 
-	LogEntry log_entry;
-	log_entry.type = LogEntry::GET_PART;
-	log_entry.source_replica = "";
-	log_entry.new_part_name = part_name;
+	LogEntryPtr log_entry = new LogEntry;
+	log_entry->type = LogEntry::GET_PART;
+	log_entry->source_replica = "";
+	log_entry->new_part_name = part_name;
 
 	zkutil::Ops ops;
 	ops.push_back(new zkutil::Op::Create(
-		replica_path + "/queue/queue-", log_entry.toString(), zookeeper->getDefaultACL(),
+		replica_path + "/queue/queue-", log_entry->toString(), zookeeper->getDefaultACL(),
 		zkutil::CreateMode::PersistentSequential));
 	ops.push_back(new zkutil::Op::Remove(part_path + "/checksums", -1));
 	ops.push_back(new zkutil::Op::Remove(part_path + "/columns", -1));
@@ -1353,11 +1424,11 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
 	auto results = zookeeper->multi(ops);
 
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock(queue_mutex);
+		std::unique_lock<std::mutex> lock(queue_mutex);
 
 		String path_created = dynamic_cast<zkutil::Op::Create &>(ops[0]).getPathCreated();
-		log_entry.znode_name = path_created.substr(path_created.find_last_of('/') + 1);
-		log_entry.addResultToVirtualParts(*this);
+		log_entry->znode_name = path_created.substr(path_created.find_last_of('/') + 1);
+		log_entry->addResultToVirtualParts(*this);
 		queue.push_back(log_entry);
 	}
 }
@@ -1462,13 +1533,13 @@ void StorageReplicatedMergeTree::partCheckThread()
 							bool was_in_queue = false;
 
 							{
-								Poco::ScopedLock<Poco::FastMutex> lock(queue_mutex);
+								std::unique_lock<std::mutex> lock(queue_mutex);
 
 								for (LogEntries::iterator it = queue.begin(); it != queue.end(); )
 								{
-									if (it->new_part_name == part_name)
+									if ((*it)->new_part_name == part_name)
 									{
-										zookeeper->tryRemove(replica_path + "/queue/" + it->znode_name);
+										zookeeper->tryRemove(replica_path + "/queue/" + (*it)->znode_name);
 										queue.erase(it++);
 										was_in_queue = true;
 									}
@@ -2065,6 +2136,10 @@ void StorageReplicatedMergeTree::LogEntry::writeText(WriteBuffer & out) const
 			writeString("into\n", out);
 			writeString(new_part_name, out);
 			break;
+		case DROP_RANGE:
+			writeString("drop\n", out);
+			writeString(new_part_name, out);
+			break;
 	}
 	writeString("\n", out);
 }
@@ -2097,6 +2172,11 @@ void StorageReplicatedMergeTree::LogEntry::readText(ReadBuffer & in)
 				break;
 			parts_to_merge.push_back(s);
 		}
+		readString(new_part_name, in);
+	}
+	else if (type_str == "drop")
+	{
+		type = DROP_RANGE;
 		readString(new_part_name, in);
 	}
 	assertString("\n", in);
