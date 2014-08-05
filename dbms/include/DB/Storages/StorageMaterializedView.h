@@ -15,6 +15,9 @@ public:
 	std::string getName() const { return "MaterializedView"; }
 	std::string getInnerTableName() const { return  ".inner." + table_name; }
 
+	NameAndTypePair getColumn(const String &column_name) const;
+	bool hasColumn(const String &column_name) const;
+
 	BlockOutputStreamPtr write(ASTPtr query);
 	void drop() override;
 	bool optimize();

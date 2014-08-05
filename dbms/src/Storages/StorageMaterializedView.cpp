@@ -5,6 +5,7 @@
 #include <DB/Interpreters/InterpreterDropQuery.h>
 
 #include <DB/Storages/StorageMaterializedView.h>
+#include <DB/Storages/VirtualColumnFactory.h>
 
 
 namespace DB
@@ -59,6 +60,20 @@ StorageMaterializedView::StorageMaterializedView(const String & table_name_, con
 		InterpreterCreateQuery create_interpreter(ast_create_query, context);
 		data = create_interpreter.execute();
 	}
+}
+
+NameAndTypePair StorageMaterializedView::getColumn(const String & column_name) const
+{
+	auto type = VirtualColumnFactory::tryGetType(column_name);
+	if (type)
+		return NameAndTypePair(column_name, type);
+
+	return getRealColumn(column_name);
+}
+
+bool StorageMaterializedView::hasColumn(const String & column_name) const
+{
+	return VirtualColumnFactory::hasColumn(column_name) || hasRealColumn(column_name);
 }
 
 BlockInputStreams StorageMaterializedView::read(
