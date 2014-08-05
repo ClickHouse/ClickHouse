@@ -50,26 +50,27 @@ public:
 	bool check() const
 	{
 		bool correct = true;
-		for (auto & node : files_info.get_child("yandex"))
-		{
-			std::string filename = unescapeForFileName(node.first);
-			size_t expected_size = std::stoull(node.second.get<std::string>("size"));
-
-			Poco::File file(Poco::Path(files_info_path).parent().toString() + "/" + filename);
-			if (!file.exists())
+		if (!files_info.empty())
+			for (auto & node : files_info.get_child("yandex"))
 			{
-				LOG_ERROR(log, "File " << file.path() << " doesn't exists");
-				correct = false;
-				continue;
-			}
+				std::string filename = unescapeForFileName(node.first);
+				size_t expected_size = std::stoull(node.second.get<std::string>("size"));
 
-			size_t real_size = file.getSize();
-			if (real_size != expected_size)
-			{
-				LOG_ERROR(log, "Size of " << file.path() << " is wrong. Size is " << real_size << " but should be " << expected_size);
-				correct = false;
+				Poco::File file(Poco::Path(files_info_path).parent().toString() + "/" + filename);
+				if (!file.exists())
+				{
+					LOG_ERROR(log, "File " << file.path() << " doesn't exists");
+					correct = false;
+					continue;
+				}
+
+				size_t real_size = file.getSize();
+				if (real_size != expected_size)
+				{
+					LOG_ERROR(log, "Size of " << file.path() << " is wrong. Size is " << real_size << " but should be " << expected_size);
+					correct = false;
+				}
 			}
-		}
 		return correct;
 	}
 
