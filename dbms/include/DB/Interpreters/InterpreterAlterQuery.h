@@ -22,11 +22,14 @@ public:
 	/** Изменяет список столбцов в метаданных таблицы на диске. Нужно вызывать под TableStructureLock соответствующей таблицы.
 	  */
 	static void updateMetadata(const String & database, const String & table, const NamesAndTypesList & columns, Context & context);
-
-	static AlterCommands parseAlter(const ASTAlterQuery::ParameterContainer & params, const DataTypeFactory & data_type_factory);
 private:
+	typedef std::vector<Field> Partitions;
+
 	ASTPtr query_ptr;
 	
 	Context context;
+
+	static void parseAlter(const ASTAlterQuery::ParameterContainer & params, const DataTypeFactory & data_type_factory,
+		AlterCommands & out_commands, Partitions & out_partitions_to_drop);
 };
 }
