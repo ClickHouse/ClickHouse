@@ -103,27 +103,37 @@ struct Stream
 		readIntBinary(mrk_mark.offset_in_compressed_file, mrk_hashing_buf);
 		readIntBinary(mrk_mark.offset_in_decompressed_block, mrk_hashing_buf);
 
+		bool has_alternative_mark = false;
+		MarkInCompressedFile alternative_data_mark;
 		MarkInCompressedFile data_mark;
 
+		/// Если засечка должна быть ровно на границе блоков, нам подходит и засечка, указывающая на конец предыдущего блока,
+		///  и на начало следующего.
 		if (uncompressed_hashing_buf.position() == uncompressed_hashing_buf.buffer().end())
 		{
-			/// Если засечка должна быть ровно на границе блоков, нам подходит и засечка, указывающая на конец предыдущего блока,
-			///  и на начало следующего.
-			data_mark.offset_in_compressed_file = compressed_hashing_buf.count() - uncompressing_buf.getSizeCompressed();
-			data_mark.offset_in_decompressed_block = uncompressed_hashing_buf.offset();
+			/// Получим засечку, указывающую на конец предыдущего блока.
+			has_alternative_mark = true;
+			alternative_data_mark.offset_in_compressed_file = compressed_hashing_buf.count() - uncompressing_buf.getSizeCompressed();
+			alternative_data_mark.offset_in_decompressed_block = uncompressed_hashing_buf.offset();
 
-			if (mrk_mark == data_mark)
+			if (mrk_mark == alternative_data_mark)
 				return;
 
 			uncompressed_hashing_buf.next();
+
+			/// В конце файла compressed_hashing_buf.count() указывает на конец файла даже до вызова next(),
+			///  и только что выполненная проверка работает неправильно. Для простоты не будем проверять последнюю засечку.
+			if (uncompressed_hashing_buf.eof())
+				return;
 		}
 
 		data_mark.offset_in_compressed_file = compressed_hashing_buf.count() - uncompressing_buf.getSizeCompressed();
 		data_mark.offset_in_decompressed_block = uncompressed_hashing_buf.offset();
 
 		if (mrk_mark != data_mark)
-			throw Exception("Incorrect mark: " + data_mark.toString() + " in data, " + mrk_mark.toString() + " in .mrk file",
-							ErrorCodes::INCORRECT_MARK);
+			throw Exception("Incorrect mark: " + data_mark.toString() +
+				(has_alternative_mark ? " or " + alternative_data_mark.toString() : "") + " in data, " +
+				mrk_mark.toString() + " in .mrk file", ErrorCodes::INCORRECT_MARK);
 	}
 
 	void assertEnd(MergeTreeData::DataPart::Checksums & checksums)
