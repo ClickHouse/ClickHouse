@@ -294,7 +294,7 @@ void TinyLogBlockOutputStream::write(const Block & block)
 StorageTinyLog::StorageTinyLog(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, bool attach, size_t max_compress_block_size_)
 	: path(path_), name(name_), columns(columns_),
 		max_compress_block_size(max_compress_block_size_),
-		file_checker(path + escapeForFileName(name) + '/' + "sizes.txt", *this),
+		file_checker(path + escapeForFileName(name) + '/' + "sizes.json", *this),
 		log(&Logger::get("StorageTinyLog"))
 {
 	if (columns->empty())
@@ -369,7 +369,7 @@ void StorageTinyLog::rename(const String & new_path_to_db, const String & new_da
 
 	path = new_path_to_db;
 	name = new_table_name;
-	file_checker.setPath(path + escapeForFileName(name) + "/" + "sizes.txt");
+	file_checker.setPath(path + escapeForFileName(name) + "/" + "sizes.json");
 
 	for (Files_t::iterator it = files.begin(); it != files.end(); ++it)
 		it->second.data_file = Poco::File(path + escapeForFileName(name) + '/' + Poco::Path(it->second.data_file.path()).getFileName());
