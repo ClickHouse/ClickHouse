@@ -9,7 +9,8 @@ namespace DB
  *  ALTER TABLE [db.]name_type
  *  	ADD COLUMN col_name type [AFTER col_after],
  * 		DROP COLUMN col_drop,
- * 		MODIFY COLUMN col_name type
+ * 		MODIFY COLUMN col_name type,
+ * 		DROP PARTITION partition
  * 		...
  */
 
@@ -18,9 +19,10 @@ class ASTAlterQuery : public IAST
 public:
 	enum ParameterType
 	{
-		ADD,
-		DROP,
-		MODIFY,
+		ADD_COLUMN,
+		DROP_COLUMN,
+		MODIFY_COLUMN,
+		DROP_PARTITION,
 		NO_TYPE
 	};
 
@@ -40,18 +42,35 @@ public:
 		  */
 		ASTPtr column;
 
+		/** В запросе DROP PARTITION здесь хранится имя partition'а.
+		  */
+		ASTPtr partition;
+
 		/// deep copy
 		void clone(Parameters & p) const
 		{
 			p.type = type;
-			p.column = column->clone();
 			p.name_type = name_type->clone();
+			p.column = column->clone();
+			p.partition = partition->clone();
 		}
 	};
 	typedef std::vector<Parameters> ParameterContainer;
 	ParameterContainer parameters;
 	String database;
 	String table;
+
+
+	void addParameters(const Parameters & params)
+	{
+		parameters.push_back(params);
+		if (params.name_type)
+			children.push_back(params.name_type);
+		if (params.column)
+			children.push_back(params.column);
+		if (params.partition)
+			children.push_back(params.partition);
+	}
 
 
 	ASTAlterQuery(StringRange range_ = StringRange()) : IAST(range_) {};

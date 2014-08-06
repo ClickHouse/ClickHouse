@@ -49,7 +49,7 @@ AlterCommands InterpreterAlterQuery::parseAlter(
 		res.push_back(AlterCommand());
 		AlterCommand & command = res.back();
 
-		if (params.type == ASTAlterQuery::ADD)
+		if (params.type == ASTAlterQuery::ADD_COLUMN)
 		{
 			command.type = AlterCommand::ADD;
 
@@ -63,12 +63,12 @@ AlterCommands InterpreterAlterQuery::parseAlter(
 			if (params.column)
 				command.after_column = typeid_cast<const ASTIdentifier &>(*params.column).name;
 		}
-		else if (params.type == ASTAlterQuery::DROP)
+		else if (params.type == ASTAlterQuery::DROP_COLUMN)
 		{
 			command.type = AlterCommand::DROP;
 			command.column_name = typeid_cast<const ASTIdentifier &>(*(params.column)).name;
 		}
-		else if (params.type == ASTAlterQuery::MODIFY)
+		else if (params.type == ASTAlterQuery::MODIFY_COLUMN)
 		{
 			command.type = AlterCommand::MODIFY;
 

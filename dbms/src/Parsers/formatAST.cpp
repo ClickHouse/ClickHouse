@@ -721,7 +721,7 @@ void formatAST(const ASTAlterQuery 			& ast, std::ostream & s, size_t indent, bo
 	{
 		const ASTAlterQuery::Parameters &p = ast.parameters[i];
 
-		if (p.type == ASTAlterQuery::ADD)
+		if (p.type == ASTAlterQuery::ADD_COLUMN)
 		{
 			s << (hilite ? hilite_keyword : "") << indent_str << "ADD COLUMN " << (hilite ? hilite_none : "");
 			formatAST(*p.name_type, s, indent, hilite, true);
@@ -733,15 +733,20 @@ void formatAST(const ASTAlterQuery 			& ast, std::ostream & s, size_t indent, bo
 				formatAST(*p.column, s, indent, hilite, one_line);
 			}
 		}
-		else if (p.type == ASTAlterQuery::DROP)
+		else if (p.type == ASTAlterQuery::DROP_COLUMN)
 		{
 			s << (hilite ? hilite_keyword : "") << indent_str << "DROP COLUMN " << (hilite ? hilite_none : "");
 			formatAST(*p.column, s, indent, hilite, true);
 		}
-		else if (p.type == ASTAlterQuery::MODIFY)
+		else if (p.type == ASTAlterQuery::MODIFY_COLUMN)
 		{
 			s << (hilite ? hilite_keyword : "") << indent_str << "MODIFY COLUMN " << (hilite ? hilite_none : "");
 			formatAST(*p.name_type, s, indent, hilite, true);
+		}
+		else if (p.type == ASTAlterQuery::DROP_PARTITION)
+		{
+			s << (hilite ? hilite_keyword : "") << indent_str << "DROP PARTITION " << (hilite ? hilite_none : "");
+			formatAST(*p.partition, s, indent, hilite, true);
 		}
 		else
 			throw Exception("Unexpected type of ALTER", ErrorCodes::UNEXPECTED_AST_STRUCTURE);

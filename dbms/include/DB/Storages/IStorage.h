@@ -205,6 +205,13 @@ public:
 		throw Exception("Method alter is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
+	/** Выполнить запрос DROP PARTITION.
+	  */
+	virtual void dropPartition(const Field & partition)
+	{
+		throw Exception("Method dropPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+	}
+
 	/** Выполнить какую-либо фоновую работу. Например, объединение кусков в таблице типа MergeTree.
 	  * Возвращает - была ли выполнена какая-либо работа.
 	  */
