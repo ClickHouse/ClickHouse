@@ -92,7 +92,7 @@ void InterpreterAlterQuery::parseAlter(
 		}
 		else if (params.type == ASTAlterQuery::DROP_PARTITION)
 		{
-			const Field & partition = dynamic_cast<ASTLiteral &>(params.partition).value;
+			const Field & partition = dynamic_cast<const ASTLiteral &>(*params.partition).value;
 			out_partitions_to_drop.push_back(partition);
 		}
 		else
