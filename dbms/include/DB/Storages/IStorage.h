@@ -207,7 +207,7 @@ public:
 
 	/** Выполнить запрос DROP PARTITION.
 	  */
-	virtual void dropPartition(const Field & partition)
+	virtual void dropPartition(const Field & partition, bool detach)
 	{
 		throw Exception("Method dropPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}

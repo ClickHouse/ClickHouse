@@ -23,13 +23,31 @@ public:
 	  */
 	static void updateMetadata(const String & database, const String & table, const NamesAndTypesList & columns, Context & context);
 private:
-	typedef std::vector<Field> Partitions;
+	struct PartitionCommand
+	{
+		enum Type
+		{
+			DROP_PARTITION,
+		};
+
+		Type type;
+
+		Field partition;
+		bool detach; /// true для DETACH PARTITION.
+
+		static PartitionCommand dropPartition(const Field & partition, bool detach)
+		{
+			return {DROP_PARTITION, partition, detach};
+		}
+	};
+
+	typedef std::vector<PartitionCommand> PartitionCommands;
 
 	ASTPtr query_ptr;
 	
 	Context context;
 
 	static void parseAlter(const ASTAlterQuery::ParameterContainer & params, const DataTypeFactory & data_type_factory,
-		AlterCommands & out_commands, Partitions & out_partitions_to_drop);
+		AlterCommands & out_alter_commands, PartitionCommands & out_partition_commands);
 };
 }

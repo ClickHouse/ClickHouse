@@ -28,26 +28,7 @@ public:
 			time_t min_date_time = DateLUT::instance().fromDayNum(DayNum_t(current_block.min_date));
 			String month_name = toString(Date2OrderedIdentifier(min_date_time) / 100);
 
-			String month_path = storage.zookeeper_path + "/block_numbers/" + month_name;
-			if (!storage.zookeeper->exists(month_path))
-			{
-				/// Создадим в block_numbers ноду для месяца и пропустим в ней 200 значений инкремента.
-				/// Нужно, чтобы в будущем при необходимости можно было добавить данные в начало.
-				zkutil::Ops ops;
-				auto acl = storage.zookeeper->getDefaultACL();
-				ops.push_back(new zkutil::Op::Create(month_path, "", acl, zkutil::CreateMode::Persistent));
-				for (size_t i = 0; i < 200; ++i)
-				{
-					ops.push_back(new zkutil::Op::Create(month_path + "/skip_increment", "", acl, zkutil::CreateMode::Persistent));
-					ops.push_back(new zkutil::Op::Remove(month_path + "/skip_increment", -1));
-				}
-				/// Игнорируем ошибки - не получиться могло только если кто-то еще выполнил эту строчку раньше нас.
-				storage.zookeeper->tryMulti(ops);
-			}
-
-			AbandonableLockInZooKeeper block_number_lock(
-				storage.zookeeper_path + "/block_numbers/" + month_name + "/block-",
-				storage.zookeeper_path + "/temp", *storage.zookeeper);
+			AbandonableLockInZooKeeper block_number_lock = storage.allocateBlockNumber(month_name);
 
 			UInt64 part_number = block_number_lock.getNumber();
 

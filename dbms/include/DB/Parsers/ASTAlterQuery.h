@@ -29,7 +29,7 @@ public:
 	struct Parameters
 	{
 		Parameters() : type(NO_TYPE) {}
-		int type;
+		int type = NO_TYPE;
 
 		/** В запросе ADD COLUMN здесь хранится имя и тип добавляемого столбца
 		  *  В запросе DROP это поле не используется
@@ -45,6 +45,7 @@ public:
 		/** В запросе DROP PARTITION здесь хранится имя partition'а.
 		  */
 		ASTPtr partition;
+		bool detach = false; /// true для DETACH PARTITION.
 
 		/// deep copy
 		void clone(Parameters & p) const
@@ -53,6 +54,7 @@ public:
 			p.name_type = name_type->clone();
 			p.column = column->clone();
 			p.partition = partition->clone();
+			p.detach = detach;
 		}
 	};
 	typedef std::vector<Parameters> ParameterContainer;

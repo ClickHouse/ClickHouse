@@ -630,10 +630,10 @@ public:
 	  */
 	void replaceParts(const DataPartsVector & remove, const DataPartsVector & add, bool clear_without_timeout);
 
-	/** Переименовывает кусок в prefix_кусок и убирает его из рабочего набора.
+	/** Переименовывает кусок в detached/prefix_кусок и забывает про него. Данные не будут удалены в clearOldParts.
 	  * Если restore_covered, добавляет в рабочий набор неактивные куски, слиянием которых получен удаляемый кусок.
 	  */
-	void renameAndDetachPart(DataPartPtr part, const String & prefix, bool restore_covered = false);
+	void renameAndDetachPart(DataPartPtr part, const String & prefix = "", bool restore_covered = false);
 
 	/** Возвращает старые неактуальные куски, которые можно удалить. Одновременно удаляет их из списка кусков, но не с диска.
 	  */

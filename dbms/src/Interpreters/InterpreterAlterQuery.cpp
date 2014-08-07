@@ -33,21 +33,27 @@ void InterpreterAlterQuery::execute()
 	ASTAlterQuery & alter = typeid_cast<ASTAlterQuery &>(*query_ptr);
 	String & table_name = alter.table;
 	String database_name = alter.database.empty() ? context.getCurrentDatabase() : alter.database;
-	AlterCommands commands;
-	Partitions partitions_to_drop;
-	parseAlter(alter.parameters, context.getDataTypeFactory(), commands, partitions_to_drop);
+	AlterCommands alter_commands;
+	PartitionCommands partition_commands;
+	parseAlter(alter.parameters, context.getDataTypeFactory(), alter_commands, partition_commands);
 
 	StoragePtr table = context.getTable(database_name, table_name);
 
-	for (const Field & partition : partitions_to_drop)
-		table->dropPartition(partition);
+	for (const PartitionCommand & command : partition_commands)
+	{
+		if (command.type == PartitionCommand::DROP_PARTITION)
+			table->dropPartition(command.partition, command.detach);
+		else
+			throw Exception("Bad PartitionCommand::Type: " + toString(command.type), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+	}
 
-	table->alter(commands, database_name, table_name, context);
+	if (!alter_commands.empty())
+		table->alter(alter_commands, database_name, table_name, context);
 }
 
 void InterpreterAlterQuery::parseAlter(
 	const ASTAlterQuery::ParameterContainer & params_container, const DataTypeFactory & data_type_factory,
-	AlterCommands & out_commands, Partitions & out_partitions_to_drop)
+	AlterCommands & out_alter_commands, PartitionCommands & out_partition_commands)
 {
 	for (const auto & params : params_container)
 	{
@@ -66,7 +72,7 @@ void InterpreterAlterQuery::parseAlter(
 			if (params.column)
 				command.after_column = typeid_cast<const ASTIdentifier &>(*params.column).name;
 
-			out_commands.push_back(command);
+			out_alter_commands.push_back(command);
 		}
 		else if (params.type == ASTAlterQuery::DROP_COLUMN)
 		{
@@ -74,7 +80,7 @@ void InterpreterAlterQuery::parseAlter(
 			command.type = AlterCommand::DROP;
 			command.column_name = typeid_cast<const ASTIdentifier &>(*(params.column)).name;
 
-			out_commands.push_back(command);
+			out_alter_commands.push_back(command);
 		}
 		else if (params.type == ASTAlterQuery::MODIFY_COLUMN)
 		{
@@ -88,12 +94,12 @@ void InterpreterAlterQuery::parseAlter(
 			command.column_name = ast_name_type.name;
 			command.data_type = data_type_factory.get(type_string);
 
-			out_commands.push_back(command);
+			out_alter_commands.push_back(command);
 		}
 		else if (params.type == ASTAlterQuery::DROP_PARTITION)
 		{
 			const Field & partition = dynamic_cast<const ASTLiteral &>(*params.partition).value;
-			out_partitions_to_drop.push_back(partition);
+			out_partition_commands.push_back(PartitionCommand::dropPartition(partition, params.detach));
 		}
 		else
 			throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);

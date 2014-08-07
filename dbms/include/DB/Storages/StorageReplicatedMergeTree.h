@@ -6,6 +6,7 @@
 #include <DB/Storages/MergeTree/MergeTreeDataWriter.h>
 #include <DB/Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreePartsExchange.h>
+#include "MergeTree/AbandonableLockInZooKeeper.h"
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <zkutil/ZooKeeper.h>
 #include <zkutil/LeaderElection.h>
@@ -77,6 +78,8 @@ public:
 
 	void alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context) override;
 
+	void dropPartition(const Field & partition, bool detach) override;
+
 	/** Удаляет реплику из ZooKeeper. Если других реплик нет, удаляет всю таблицу из ZooKeeper.
 	  */
 	void drop() override;
@@ -139,8 +142,12 @@ private:
 
 		Type type;
 		String source_replica; /// Пустая строка значит, что эта запись была добавлена сразу в очередь, а не скопирована из лога.
+
 		String new_part_name; /// Для DROP_RANGE имя несуществующего куска. Нужно удалить все куски, покрытые им.
+
 		Strings parts_to_merge;
+
+		bool detach = false; /// Для DROP_RANGE, true значит, что куски нужно не удалить, а перенести в директорию detached.
 
 		FuturePartTaggerPtr future_part_tagger;
 		bool currently_executing = false; /// Доступ под queue_mutex.
@@ -269,6 +276,7 @@ private:
 	/// Поток, выбирающий куски для слияния.
 	std::thread merge_selecting_thread;
 	Poco::Event merge_selecting_event;
+	std::mutex merge_selecting_mutex; /// Берется на каждую итерацию выбора кусков для слияния.
 
 	/// Поток, удаляющий старые куски, записи в логе и блоки.
 	std::thread cleanup_thread;
@@ -433,6 +441,15 @@ private:
 	/** Скачать указанный кусок с указанной реплики.
 	  */
 	void fetchPart(const String & part_name, const String & replica_name);
+
+	///
+
+	AbandonableLockInZooKeeper allocateBlockNumber(const String & month_name);
+
+	/** Дождаться, пока все реплики, включая эту, выполнят указанное действие из лога.
+	  * Если одновременно с этим добавляются реплики, может не дождаться добавленную реплику.
+	  */
+	void waitForAllReplicasToProcessLogEntry(const String & log_znode_path, const LogEntry & entry);
 };
 
 }

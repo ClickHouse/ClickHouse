@@ -961,7 +961,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 
 bool StorageReplicatedMergeTree::executeDropRange(const StorageReplicatedMergeTree::LogEntry & entry)
 {
-	LOG_INFO(log, "Removing parts covered by " << entry.new_part_name << ".");
+	LOG_INFO(log, (entry.detach ? "Detaching" : "Removing") << " parts inside " << entry.new_part_name << ".");
 
 	{
 		LogEntries to_wait;
@@ -998,7 +998,7 @@ bool StorageReplicatedMergeTree::executeDropRange(const StorageReplicatedMergeTr
 		}
 	}
 
-	LOG_DEBUG(log, "Removing parts.");
+	LOG_DEBUG(log, (entry.detach ? "Detaching" : "Removing") << " parts.");
 	size_t removed_parts = 0;
 
 	/// Удалим куски, содержащиеся в удаляемом диапазоне.
@@ -1010,16 +1010,40 @@ bool StorageReplicatedMergeTree::executeDropRange(const StorageReplicatedMergeTr
 		LOG_DEBUG(log, "Removing part " << part->name);
 		++removed_parts;
 
+		/// Если кусок удалять не нужно, надежнее переместить директорию до изменений в ZooKeeper.
+		if (entry.detach)
+			data.renameAndDetachPart(part);
+
 		zkutil::Ops ops;
 		ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + part->name + "/columns", -1));
 		ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + part->name + "/checksums", -1));
 		ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + part->name, -1));
 		zookeeper->multi(ops);
 
-		data.replaceParts({part}, {}, false);
+		/// Если кусок нужно удалить не нужно, надежнее удалить директорию после изменений в ZooKeeper.
+		if (!entry.detach)
+			data.replaceParts({part}, {}, false);
 	}
 
-	LOG_INFO(log, "Finished removing parts covered by " << entry.new_part_name << ".");
+	LOG_INFO(log, (entry.detach ? "Detached" : "Removed") << removed_parts << " parts inside " << entry.new_part_name << ".");
+
+	if (unreplicated_data)
+	{
+		removed_parts = 0;
+		parts = unreplicated_data->getDataParts();
+		for (const auto & part : parts)
+		{
+			if (!ActiveDataPartSet::contains(entry.new_part_name, part->name))
+				continue;
+			LOG_DEBUG(log, "Removing unreplicated part " << part->name);
+			++removed_parts;
+
+			if (entry.detach)
+				unreplicated_data->renameAndDetachPart(part, "");
+			else
+				unreplicated_data->replaceParts({part}, {}, false);
+		}
+	}
 
 	return true;
 }
@@ -1143,6 +1167,8 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 
 		try
 		{
+			std::unique_lock<std::mutex> merge_selecting_lock(merge_selecting_mutex);
+
 			if (need_pull)
 			{
 				/// Нужно загрузить новую запись в очередь перед тем, как выбирать куски для слияния.
@@ -1265,6 +1291,9 @@ void StorageReplicatedMergeTree::cleanupThread()
 		try
 		{
 			clearOldParts();
+
+			if (unreplicated_data)
+				unreplicated_data->clearOldParts();
 
 			if (is_leader_node)
 			{
@@ -1989,7 +2018,8 @@ bool StorageReplicatedMergeTree::optimize()
 	return true;
 }
 
-void StorageReplicatedMergeTree::alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context)
+void StorageReplicatedMergeTree::alter(const AlterCommands & params,
+	const String & database_name, const String & table_name, Context & context)
 {
 	LOG_DEBUG(log, "Doing ALTER");
 
@@ -2077,6 +2107,90 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params, const Strin
 	LOG_DEBUG(log, "ALTER finished");
 }
 
+static bool isValidMonthName(const String & s)
+{
+	if (s.size() != 6)
+		return false;
+	if (!std::all_of(s.begin(), s.end(), isdigit))
+		return false;
+	DayNum_t date = DateLUT::instance().toDayNum(OrderedIdentifier2Date(s + "01"));
+	/// Не можем просто сравнить date с нулем, потому что 0 тоже валидный DayNum.
+	return s == toString(Date2OrderedIdentifier(DateLUT::instance().fromDayNum(date)) / 100);
+}
+
+/// Название воображаемого куска, покрывающего все возможные куски в указанном месяце с номерами в указанном диапазоне.
+static String getFakePartNameForDrop(const String & month_name, UInt64 left, UInt64 right)
+{
+	/// Диапазон дат - весь месяц.
+	DateLUT & lut = DateLUT::instance();
+	time_t start_time = OrderedIdentifier2Date(month_name + "01");
+	DayNum_t left_date = lut.toDayNum(start_time);
+	DayNum_t right_date = DayNum_t(static_cast<size_t>(left_date) + lut.daysInMonth(start_time) - 1);
+
+	/// Уровень - right-left+1: кусок не мог образоваться в результате такого или большего количества слияний.
+	return ActiveDataPartSet::getPartName(left_date, right_date, left, right, right - left + 1);
+}
+
+void StorageReplicatedMergeTree::dropPartition(const Field & field, bool detach)
+{
+	String month_name;
+
+	if (field.getType() == Field::Types::UInt64)
+		month_name = toString(field.get<UInt64>());
+	else
+		month_name = field.safeGet<String>();
+
+	if (!isValidMonthName(month_name))
+		throw Exception("Invalid partition format: " + month_name + ". Partition should consist of 6 digits: YYYYMM",
+						ErrorCodes::INVALID_PARTITION_NAME);
+
+	/// TODO: Делать запрос в лидера по TCP.
+	if (!is_leader_node)
+		throw Exception("DROP PARTITION can only be done on leader replica.", ErrorCodes::NOT_LEADER);
+
+
+	/** Пропустим один номер в block_numbers для удаляемого месяца, и будем удалять только куски до этого номера.
+	  * Это запретит мерджи удаляемых кусков с новыми вставляемыми данными.
+	  * Инвариант: в логе не появятся слияния удаляемых кусков с другими кусками.
+	  * NOTE: Если понадобится аналогично поддержать запрос DROP PART, для него придется придумать какой-нибудь новый механизм,
+	  *        чтобы гарантировать этот инвариант.
+	  */
+	UInt64 right;
+
+	{
+		AbandonableLockInZooKeeper block_number_lock = allocateBlockNumber(month_name);
+		right = block_number_lock.getNumber();
+		block_number_lock.unlock();
+	}
+
+	/// Такого никогда не должно происходить.
+	if (right == 0)
+		return;
+	--right;
+
+	String fake_part_name = getFakePartNameForDrop(month_name, 0, right);
+
+	/** Запретим выбирать для слияния удаляемые куски - сделаем вид, что их всех уже собираются слить в fake_part_name.
+	  * Инвариант: после появления в логе записи DROP_RANGE, в логе не появятся слияния удаляемых кусков.
+	  */
+	{
+		std::unique_lock<std::mutex> merge_selecting_lock(merge_selecting_mutex);
+
+		virtual_parts.add(fake_part_name);
+	}
+
+	/// Наконец, добившись нужны инвариантов, можно положить запись в лог.
+	LogEntry entry;
+	entry.type = LogEntry::DROP_RANGE;
+	entry.source_replica = replica_name;
+	entry.new_part_name = fake_part_name;
+	entry.detach = detach;
+	String log_znode_path = zookeeper->create(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential);
+
+	/// Дождемся, пока все реплики выполнят дроп.
+	waitForAllReplicasToProcessLogEntry(log_znode_path, entry);
+}
+
 void StorageReplicatedMergeTree::drop()
 {
 	if (!zookeeper)
@@ -2114,6 +2228,86 @@ void StorageReplicatedMergeTree::rename(const String & new_path_to_db, const Str
 	/// TODO: Можно обновить названия логгеров.
 }
 
+AbandonableLockInZooKeeper StorageReplicatedMergeTree::allocateBlockNumber(const String & month_name)
+{
+	String month_path = zookeeper_path + "/block_numbers/" + month_name;
+	if (!zookeeper->exists(month_path))
+	{
+		/// Создадим в block_numbers ноду для месяца и пропустим в ней 200 значений инкремента.
+		/// Нужно, чтобы в будущем при необходимости можно было добавить данные в начало.
+		zkutil::Ops ops;
+		auto acl = zookeeper->getDefaultACL();
+		ops.push_back(new zkutil::Op::Create(month_path, "", acl, zkutil::CreateMode::Persistent));
+		for (size_t i = 0; i < 200; ++i)
+		{
+			ops.push_back(new zkutil::Op::Create(month_path + "/skip_increment", "", acl, zkutil::CreateMode::Persistent));
+			ops.push_back(new zkutil::Op::Remove(month_path + "/skip_increment", -1));
+		}
+		/// Игнорируем ошибки - не получиться могло только если кто-то еще выполнил эту строчку раньше нас.
+		zookeeper->tryMulti(ops);
+	}
+
+	return AbandonableLockInZooKeeper(
+		zookeeper_path + "/block_numbers/" + month_name + "/block-",
+		zookeeper_path + "/temp", *zookeeper);
+}
+
+void StorageReplicatedMergeTree::waitForAllReplicasToProcessLogEntry(const String & log_znode_path, const LogEntry & entry)
+{
+	UInt64 log_index = parse<UInt64>(log_znode_path.substr(log_znode_path.size() - 10));
+	String log_entry_str = entry.toString();
+
+	Strings replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
+	for (const String & replica : replicas)
+	{
+		/// Дождемся, пока запись попадет в очередь реплики.
+		while (true)
+		{
+			zkutil::EventPtr event = new Poco::Event;
+
+			String pointer = zookeeper->get(zookeeper_path + "/replicas/" + replica + "/log_pointer", nullptr, event);
+			if (!pointer.empty() && parse<UInt64>(pointer) > log_index)
+				break;
+
+			event->wait();
+		}
+
+		/// Найдем запись в очереди реплики.
+		Strings queue_entries = zookeeper->getChildren(zookeeper_path + "/replicas/" + replica + "/queue");
+		String entry_to_wait_for;
+
+		for (const String & entry_name : queue_entries)
+		{
+			String queue_entry_str;
+			auto code = zookeeper->tryGet(zookeeper_path + "/replicas/" + replica + "/queue/" + entry_name, queue_entry_str);
+			if (code == ZOK && queue_entry_str == log_entry_str)
+			{
+				entry_to_wait_for = entry_name;
+				break;
+			}
+		}
+
+		/// Пока искали запись, ее уже выполнили и удалили.
+		if (entry_to_wait_for.empty())
+			continue;
+
+		/// Дождемся, пока запись исчезнет из очереди реплики.
+		while (true)
+		{
+			zkutil::EventPtr event = new Poco::Event;
+
+			String unused;
+			/// get вместо exists, чтобы не утек watch, если ноды уже нет.
+			auto code = zookeeper->tryGet(zookeeper_path + "/replicas/" + replica + "/queue/" + entry_to_wait_for, unused, nullptr, event);
+			if (code == ZNONODE)
+				break;
+
+			event->wait();
+		}
+	}
+}
+
+
 void StorageReplicatedMergeTree::LogEntry::writeText(WriteBuffer & out) const
 {
 	writeString("format version: 1\n", out);
@@ -2137,7 +2331,10 @@ void StorageReplicatedMergeTree::LogEntry::writeText(WriteBuffer & out) const
 			writeString(new_part_name, out);
 			break;
 		case DROP_RANGE:
-			writeString("drop\n", out);
+			if (detach)
+				writeString("detach\n", out);
+			else
+				writeString("drop\n", out);
 			writeString(new_part_name, out);
 			break;
 	}
@@ -2174,9 +2371,10 @@ void StorageReplicatedMergeTree::LogEntry::readText(ReadBuffer & in)
 		}
 		readString(new_part_name, in);
 	}
-	else if (type_str == "drop")
+	else if (type_str == "drop" || type_str == "detach")
 	{
 		type = DROP_RANGE;
+		detach = type_str == "detach";
 		readString(new_part_name, in);
 	}
 	assertString("\n", in);
