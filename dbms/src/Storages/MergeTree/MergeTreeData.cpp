@@ -707,8 +707,6 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
 
 void MergeTreeData::replaceParts(const DataPartsVector & remove, const DataPartsVector & add, bool clear_without_timeout)
 {
-	LOG_TRACE(log, "Removing " << remove.size() << " parts and adding " << add.size() << " parts.");
-
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 
 	for (const DataPartPtr & part : remove)

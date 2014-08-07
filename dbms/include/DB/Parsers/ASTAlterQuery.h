@@ -23,6 +23,7 @@ public:
 		DROP_COLUMN,
 		MODIFY_COLUMN,
 		DROP_PARTITION,
+		ATTACH_PARTITION,
 		NO_TYPE
 	};
 
@@ -47,14 +48,16 @@ public:
 		ASTPtr partition;
 		bool detach = false; /// true для DETACH PARTITION.
 
+		bool part = false; /// true для ATTACH [UNREPLICATED] PART
+		bool unreplicated = false; /// true для ATTACH UNREPLICATED ...
+
 		/// deep copy
 		void clone(Parameters & p) const
 		{
-			p.type = type;
+			p = *this;
 			p.name_type = name_type->clone();
 			p.column = column->clone();
 			p.partition = partition->clone();
-			p.detach = detach;
 		}
 	};
 	typedef std::vector<Parameters> ParameterContainer;

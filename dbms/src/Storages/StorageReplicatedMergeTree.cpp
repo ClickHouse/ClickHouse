@@ -991,11 +991,8 @@ bool StorageReplicatedMergeTree::executeDropRange(const StorageReplicatedMergeTr
 			"Waiting for " << to_wait.size() << " entries that are currently executing.");
 
 		/// Дождемся завершения операций с кусками, содержащимися в удаляемом диапазоне.
-		{
-			std::unique_lock<std::mutex> lock(queue_mutex);
-			for (LogEntryPtr & entry : to_wait)
-				entry->execution_complete.wait(lock, [&entry] { return !entry->currently_executing; });
-		}
+		for (LogEntryPtr & entry : to_wait)
+			entry->execution_complete.wait(lock, [&entry] { return !entry->currently_executing; });
 	}
 
 	LOG_DEBUG(log, (entry.detach ? "Detaching" : "Removing") << " parts.");
@@ -1020,15 +1017,17 @@ bool StorageReplicatedMergeTree::executeDropRange(const StorageReplicatedMergeTr
 		ops.push_back(new zkutil::Op::Remove(replica_path + "/parts/" + part->name, -1));
 		zookeeper->multi(ops);
 
-		/// Если кусок нужно удалить не нужно, надежнее удалить директорию после изменений в ZooKeeper.
+		/// Если кусок нужно удалить, надежнее удалить директорию после изменений в ZooKeeper.
 		if (!entry.detach)
 			data.replaceParts({part}, {}, false);
 	}
 
-	LOG_INFO(log, (entry.detach ? "Detached" : "Removed") << removed_parts << " parts inside " << entry.new_part_name << ".");
+	LOG_INFO(log, (entry.detach ? "Detached " : "Removed ") << removed_parts << " parts inside " << entry.new_part_name << ".");
 
 	if (unreplicated_data)
 	{
+		Poco::ScopedLock<Poco::FastMutex> unreplicated_lock(unreplicated_mutex);
+
 		removed_parts = 0;
 		parts = unreplicated_data->getDataParts();
 		for (const auto & part : parts)
@@ -2179,16 +2178,22 @@ void StorageReplicatedMergeTree::dropPartition(const Field & field, bool detach)
 		virtual_parts.add(fake_part_name);
 	}
 
-	/// Наконец, добившись нужны инвариантов, можно положить запись в лог.
+	/// Наконец, добившись нужных инвариантов, можно положить запись в лог.
 	LogEntry entry;
 	entry.type = LogEntry::DROP_RANGE;
 	entry.source_replica = replica_name;
 	entry.new_part_name = fake_part_name;
 	entry.detach = detach;
 	String log_znode_path = zookeeper->create(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential);
+	entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
 
 	/// Дождемся, пока все реплики выполнят дроп.
 	waitForAllReplicasToProcessLogEntry(log_znode_path, entry);
+}
+
+void StorageReplicatedMergeTree::attachPartition(const Field& partition, bool unreplicated, bool part)
+{
+	throw Exception("Not implemented", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 void StorageReplicatedMergeTree::drop()
@@ -2254,12 +2259,16 @@ AbandonableLockInZooKeeper StorageReplicatedMergeTree::allocateBlockNumber(const
 
 void StorageReplicatedMergeTree::waitForAllReplicasToProcessLogEntry(const String & log_znode_path, const LogEntry & entry)
 {
+	LOG_DEBUG(log, "Waiting for all replicas to process " << entry.znode_name);
+
 	UInt64 log_index = parse<UInt64>(log_znode_path.substr(log_znode_path.size() - 10));
 	String log_entry_str = entry.toString();
 
 	Strings replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
 	for (const String & replica : replicas)
 	{
+		LOG_DEBUG(log, "Waiting for " << replica << " to pull " << entry.znode_name << " to queue");
+
 		/// Дождемся, пока запись попадет в очередь реплики.
 		while (true)
 		{
@@ -2271,6 +2280,8 @@ void StorageReplicatedMergeTree::waitForAllReplicasToProcessLogEntry(const Strin
 
 			event->wait();
 		}
+
+		LOG_DEBUG(log, "Looking for " << entry.znode_name << " in " << replica << " queue");
 
 		/// Найдем запись в очереди реплики.
 		Strings queue_entries = zookeeper->getChildren(zookeeper_path + "/replicas/" + replica + "/queue");
@@ -2291,6 +2302,8 @@ void StorageReplicatedMergeTree::waitForAllReplicasToProcessLogEntry(const Strin
 		if (entry_to_wait_for.empty())
 			continue;
 
+		LOG_DEBUG(log, "Waiting for " << entry_to_wait_for << " to disappear from " << replica << " queue");
+
 		/// Дождемся, пока запись исчезнет из очереди реплики.
 		while (true)
 		{
@@ -2305,6 +2318,8 @@ void StorageReplicatedMergeTree::waitForAllReplicasToProcessLogEntry(const Strin
 			event->wait();
 		}
 	}
+
+	LOG_DEBUG(log, "Finished waiting for all replicas to process " << entry.znode_name);
 }
 
 

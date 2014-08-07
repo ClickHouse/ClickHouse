@@ -24,6 +24,9 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & e
 
 	ParserString s_drop("DROP", true, true);
 	ParserString s_detach("DETACH", true, true);
+	ParserString s_attach("ATTACH", true, true);
+	ParserString s_unreplicated("UNREPLICATED", true, true);
+	ParserString s_part("PART", true, true);
 	ParserString s_partition("PARTITION", true, true);
 	ParserString s_comma(",");
 
@@ -135,6 +138,28 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & e
 
 			params.type = ASTAlterQuery::DROP_PARTITION;
 			params.detach = true;
+		}
+		else if (s_attach.ignore(pos, end, expected))
+		{
+			ws.ignore(pos, end);
+
+			if (s_unreplicated.ignore(pos, end, expected))
+			{
+				params.unreplicated = true;
+				ws.ignore(pos, end);
+			}
+
+			if (s_part.ignore(pos, end, expected))
+				params.part = true;
+			else if (!s_partition.ignore(pos, end, expected))
+				return false;
+
+			ws.ignore(pos, end);
+
+			if (!parser_literal.parse(pos, end, params.partition, expected))
+				return false;
+
+			params.type = ASTAlterQuery::ATTACH_PARTITION;
 		}
 		else if (s_modify.ignore(pos, end, expected))
 		{

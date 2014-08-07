@@ -79,6 +79,7 @@ public:
 	void alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context) override;
 
 	void dropPartition(const Field & partition, bool detach) override;
+	void attachPartition(const Field & partition, bool unreplicated, bool part) override;
 
 	/** Удаляет реплику из ZooKeeper. Если других реплик нет, удаляет всю таблицу из ZooKeeper.
 	  */

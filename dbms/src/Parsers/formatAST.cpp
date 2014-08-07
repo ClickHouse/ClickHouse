@@ -745,7 +745,14 @@ void formatAST(const ASTAlterQuery 			& ast, std::ostream & s, size_t indent, bo
 		}
 		else if (p.type == ASTAlterQuery::DROP_PARTITION)
 		{
-			s << (hilite ? hilite_keyword : "") << indent_str << "DROP PARTITION " << (hilite ? hilite_none : "");
+			s << (hilite ? hilite_keyword : "") << indent_str << (p.detach ? "DETACH" : "DROP") << " PARTITION "
+				<< (hilite ? hilite_none : "");
+			formatAST(*p.partition, s, indent, hilite, true);
+		}
+		else if (p.type == ASTAlterQuery::ATTACH_PARTITION)
+		{
+			s << (hilite ? hilite_keyword : "") << indent_str << "ATTACH " << (p.unreplicated ? "UNREPLICATED" : "")
+				<< (p.part ? " PART " : " PARTITION ") << (hilite ? hilite_none : "");
 			formatAST(*p.partition, s, indent, hilite, true);
 		}
 		else

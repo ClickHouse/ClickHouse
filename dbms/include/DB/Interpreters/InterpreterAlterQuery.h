@@ -28,6 +28,7 @@ private:
 		enum Type
 		{
 			DROP_PARTITION,
+			ATTACH_PARTITION,
 		};
 
 		Type type;
@@ -35,9 +36,17 @@ private:
 		Field partition;
 		bool detach; /// true для DETACH PARTITION.
 
+		bool unreplicated;
+		bool part;
+
 		static PartitionCommand dropPartition(const Field & partition, bool detach)
 		{
 			return {DROP_PARTITION, partition, detach};
+		}
+
+		static PartitionCommand attachPartition(const Field & partition, bool unreplicated, bool part)
+		{
+			return {ATTACH_PARTITION, partition, false, part, unreplicated};
 		}
 	};
 
