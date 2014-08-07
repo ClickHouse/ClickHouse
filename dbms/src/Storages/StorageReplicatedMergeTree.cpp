@@ -2290,8 +2290,8 @@ void StorageReplicatedMergeTree::waitForAllReplicasToProcessLogEntry(const Strin
 		for (const String & entry_name : queue_entries)
 		{
 			String queue_entry_str;
-			auto code = zookeeper->tryGet(zookeeper_path + "/replicas/" + replica + "/queue/" + entry_name, queue_entry_str);
-			if (code == ZOK && queue_entry_str == log_entry_str)
+			bool exists = zookeeper->tryGet(zookeeper_path + "/replicas/" + replica + "/queue/" + entry_name, queue_entry_str);
+			if (exists && queue_entry_str == log_entry_str)
 			{
 				entry_to_wait_for = entry_name;
 				break;
@@ -2311,8 +2311,7 @@ void StorageReplicatedMergeTree::waitForAllReplicasToProcessLogEntry(const Strin
 
 			String unused;
 			/// get вместо exists, чтобы не утек watch, если ноды уже нет.
-			auto code = zookeeper->tryGet(zookeeper_path + "/replicas/" + replica + "/queue/" + entry_to_wait_for, unused, nullptr, event);
-			if (code == ZNONODE)
+			if (!zookeeper->tryGet(zookeeper_path + "/replicas/" + replica + "/queue/" + entry_to_wait_for, unused, nullptr, event))
 				break;
 
 			event->wait();
