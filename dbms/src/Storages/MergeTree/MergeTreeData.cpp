@@ -41,6 +41,7 @@ MergeTreeData::MergeTreeData(
 {
 	/// создаём директорию, если её нет
 	Poco::File(full_path).createDirectories();
+	Poco::File(full_path + "detached").createDirectory();
 
 	/// инициализируем описание сортировки
 	sort_descr.reserve(primary_expr_ast->children.size());
@@ -104,6 +105,7 @@ void MergeTreeData::loadDataParts()
 		if (0 == file_name.compare(0, strlen("tmp_"), "tmp_"))
 			continue;
 
+		/// TODO: Это можно удалить, если нигде больше не осталось директорий old_* (их давно никто не пишет).
 		if (0 == file_name.compare(0, strlen("old_"), "old_"))
 		{
 			String new_file_name = file_name.substr(strlen("old_"));
@@ -705,8 +707,6 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
 
 void MergeTreeData::replaceParts(const DataPartsVector & remove, const DataPartsVector & add, bool clear_without_timeout)
 {
-	LOG_TRACE(log, "Removing " << remove.size() << " parts and adding " << add.size() << " parts.");
-
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 
 	for (const DataPartPtr & part : remove)
@@ -731,7 +731,7 @@ void MergeTreeData::renameAndDetachPart(DataPartPtr part, const String & prefix,
 		throw Exception("No such data part", ErrorCodes::NO_SUCH_DATA_PART);
 
 	data_parts.erase(part);
-	part->renameAddPrefix(prefix);
+	part->renameAddPrefix("detached/" + prefix);
 
 	if (restore_covered)
 	{

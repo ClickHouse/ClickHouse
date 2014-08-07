@@ -6,6 +6,7 @@
 #include <DB/Storages/MergeTree/MergeTreeDataWriter.h>
 #include <DB/Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreePartsExchange.h>
+#include "MergeTree/AbandonableLockInZooKeeper.h"
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <zkutil/ZooKeeper.h>
 #include <zkutil/LeaderElection.h>
@@ -77,6 +78,9 @@ public:
 
 	void alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context) override;
 
+	void dropPartition(const Field & partition, bool detach) override;
+	void attachPartition(const Field & partition, bool unreplicated, bool part) override;
+
 	/** Удаляет реплику из ZooKeeper. Если других реплик нет, удаляет всю таблицу из ZooKeeper.
 	  */
 	void drop() override;
@@ -111,7 +115,7 @@ private:
 		{
 			try
 			{
-				Poco::ScopedLock<Poco::FastMutex> lock(storage.queue_mutex);
+				std::unique_lock<std::mutex> lock(storage.queue_mutex);
 				if (!storage.future_parts.erase(part))
 					throw Exception("Untagging already untagged future part " + part + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
 			}
@@ -126,25 +130,33 @@ private:
 
 	struct LogEntry
 	{
+		typedef Poco::SharedPtr<LogEntry> Ptr;
+
 		enum Type
 		{
-			GET_PART,
-			MERGE_PARTS,
+			GET_PART,    /// Получить кусок с другой реплики.
+			MERGE_PARTS, /// Слить куски.
+			DROP_RANGE,  /// Удалить куски в указанном месяце в указанном диапазоне номеров.
 		};
 
 		String znode_name;
 
 		Type type;
 		String source_replica; /// Пустая строка значит, что эта запись была добавлена сразу в очередь, а не скопирована из лога.
-		String new_part_name;
+
+		String new_part_name; /// Для DROP_RANGE имя несуществующего куска. Нужно удалить все куски, покрытые им.
+
 		Strings parts_to_merge;
 
+		bool detach = false; /// Для DROP_RANGE, true значит, что куски нужно не удалить, а перенести в директорию detached.
+
 		FuturePartTaggerPtr future_part_tagger;
-		bool currently_executing = false;
+		bool currently_executing = false; /// Доступ под queue_mutex.
+		std::condition_variable execution_complete; /// Пробуждается когда currently_executing становится false.
 
 		void addResultToVirtualParts(StorageReplicatedMergeTree & storage)
 		{
-			if (type == MERGE_PARTS || type == GET_PART)
+			if (type == MERGE_PARTS || type == GET_PART || type == DROP_RANGE)
 				storage.virtual_parts.add(new_part_name);
 		}
 
@@ -167,17 +179,19 @@ private:
 			return s;
 		}
 
-		static LogEntry parse(const String & s)
+		static Ptr parse(const String & s)
 		{
 			ReadBufferFromString in(s);
-			LogEntry res;
-			res.readText(in);
+			Ptr res = new LogEntry;
+			res->readText(in);
 			assertEOF(in);
 			return res;
 		}
 	};
 
-	typedef std::list<LogEntry> LogEntries;
+	typedef LogEntry::Ptr LogEntryPtr;
+
+	typedef std::list<LogEntryPtr> LogEntries;
 
 	typedef std::set<String> StringSet;
 	typedef std::list<String> StringList;
@@ -195,7 +209,7 @@ private:
 	  * В ZK записи в хронологическом порядке. Здесь - не обязательно.
 	  */
 	LogEntries queue;
-	Poco::FastMutex queue_mutex;
+	std::mutex queue_mutex;
 
 	/** Куски, которые появятся в результате действий, выполняемых прямо сейчас фоновыми потоками (этих действий нет в очереди).
 	  * Использовать под залоченным queue_mutex.
@@ -263,6 +277,7 @@ private:
 	/// Поток, выбирающий куски для слияния.
 	std::thread merge_selecting_thread;
 	Poco::Event merge_selecting_event;
+	std::mutex merge_selecting_mutex; /// Берется на каждую итерацию выбора кусков для слияния.
 
 	/// Поток, удаляющий старые куски, записи в логе и блоки.
 	std::thread cleanup_thread;
@@ -381,6 +396,8 @@ private:
 	  */
 	bool executeLogEntry(const LogEntry & entry, BackgroundProcessingPool::Context & pool_context);
 
+	bool executeDropRange(const LogEntry & entry);
+
 	/** Обновляет очередь.
 	  */
 	void queueUpdatingThread();
@@ -425,6 +442,15 @@ private:
 	/** Скачать указанный кусок с указанной реплики.
 	  */
 	void fetchPart(const String & part_name, const String & replica_name);
+
+	///
+
+	AbandonableLockInZooKeeper allocateBlockNumber(const String & month_name);
+
+	/** Дождаться, пока все реплики, включая эту, выполнят указанное действие из лога.
+	  * Если одновременно с этим добавляются реплики, может не дождаться добавленную реплику.
+	  */
+	void waitForAllReplicasToProcessLogEntry(const String & log_znode_path, const LogEntry & entry);
 };
 
 }

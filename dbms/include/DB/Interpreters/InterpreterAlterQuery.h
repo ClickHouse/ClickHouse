@@ -22,11 +22,41 @@ public:
 	/** Изменяет список столбцов в метаданных таблицы на диске. Нужно вызывать под TableStructureLock соответствующей таблицы.
 	  */
 	static void updateMetadata(const String & database, const String & table, const NamesAndTypesList & columns, Context & context);
-
-	static AlterCommands parseAlter(const ASTAlterQuery::ParameterContainer & params, const DataTypeFactory & data_type_factory);
 private:
+	struct PartitionCommand
+	{
+		enum Type
+		{
+			DROP_PARTITION,
+			ATTACH_PARTITION,
+		};
+
+		Type type;
+
+		Field partition;
+		bool detach; /// true для DETACH PARTITION.
+
+		bool unreplicated;
+		bool part;
+
+		static PartitionCommand dropPartition(const Field & partition, bool detach)
+		{
+			return {DROP_PARTITION, partition, detach};
+		}
+
+		static PartitionCommand attachPartition(const Field & partition, bool unreplicated, bool part)
+		{
+			return {ATTACH_PARTITION, partition, false, part, unreplicated};
+		}
+	};
+
+	typedef std::vector<PartitionCommand> PartitionCommands;
+
 	ASTPtr query_ptr;
 	
 	Context context;
+
+	static void parseAlter(const ASTAlterQuery::ParameterContainer & params, const DataTypeFactory & data_type_factory,
+		AlterCommands & out_alter_commands, PartitionCommands & out_partition_commands);
 };
 }
