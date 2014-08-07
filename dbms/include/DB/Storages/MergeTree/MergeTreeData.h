@@ -110,7 +110,7 @@ struct MergeTreeSettings
 	double insert_delay_step = 1.1;
 
 	/// Для скольки последних блоков хранить хеши в ZooKeeper.
-	size_t replicated_deduplication_window = 1000;
+	size_t replicated_deduplication_window = 100;
 
 	/// Хранить примерно столько последних записей в логе в ZooKeeper, даже если они никому уже не нужны.
 	/// Не влияет на работу таблиц; используется только чтобы успеть посмотреть на лог в ZooKeeper глазами прежде, чем его очистят.
