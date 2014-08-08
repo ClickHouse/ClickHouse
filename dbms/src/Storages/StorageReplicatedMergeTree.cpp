@@ -868,6 +868,10 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 			zkutil::Ops ops;
 			checkPartAndAddToZooKeeper(part, ops);
 
+			/** TODO: Переименование нового куска лучше делать здесь, а не пятью строчками выше,
+			  *  чтобы оно было как можно ближе к zookeeper->multi.
+			  */
+
 			zookeeper->multi(ops);
 
 			/** При ZCONNECTIONLOSS или ZOPERATIONTIMEOUT можем зря откатить локальные изменения кусков.
@@ -1807,11 +1811,11 @@ void StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 
 	MergeTreeData::MutableDataPartPtr part = fetcher.fetchPart(part_name, zookeeper_path + "/replicas/" + replica_name, host, port);
 
+	zkutil::Ops ops;
+	checkPartAndAddToZooKeeper(part, ops, part_name);
+
 	MergeTreeData::Transaction transaction;
 	auto removed_parts = data.renameTempPartAndReplace(part, nullptr, &transaction);
-
-	zkutil::Ops ops;
-	checkPartAndAddToZooKeeper(part, ops);
 
 	zookeeper->multi(ops);
 	transaction.commit();

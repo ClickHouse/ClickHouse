@@ -33,6 +33,7 @@ public:
 			UInt64 part_number = block_number_lock.getNumber();
 
 			MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block, part_number);
+			String part_name = ActiveDataPartSet::getPartName(part->left_date, part->right_date, part->left, part->right, part->level);
 
 			/// Если в запросе не указан ID, возьмем в качестве ID хеш от данных. То есть, не вставляем одинаковые данные дважды.
 			/// NOTE: Если такая дедупликация не нужна, можно вместо этого оставлять block_id пустым.
@@ -42,13 +43,10 @@ public:
 
 			LOG_DEBUG(log, "Wrote block " << part_number << " with ID " << block_id << ", " << current_block.block.rows() << " rows");
 
-			MergeTreeData::Transaction transaction; /// Если не получится добавить кусок в ZK, снова уберем его из рабочего набора.
-			storage.data.renameTempPartAndAdd(part, nullptr, &transaction);
-
 			StorageReplicatedMergeTree::LogEntry log_entry;
 			log_entry.type = StorageReplicatedMergeTree::LogEntry::GET_PART;
 			log_entry.source_replica = storage.replica_name;
-			log_entry.new_part_name = part->name;
+			log_entry.new_part_name = part_name;
 
 			/// Одновременно добавим информацию о куске во все нужные места в ZooKeeper и снимем block_number_lock.
 			zkutil::Ops ops;
@@ -75,13 +73,16 @@ public:
 					storage.zookeeper->getDefaultACL(),
 					zkutil::CreateMode::Persistent));
 			}
-			storage.checkPartAndAddToZooKeeper(part, ops);
+			storage.checkPartAndAddToZooKeeper(part, ops, part_name);
 			ops.push_back(new zkutil::Op::Create(
 				storage.zookeeper_path + "/log/log-",
 				log_entry.toString(),
 				storage.zookeeper->getDefaultACL(),
 				zkutil::CreateMode::PersistentSequential));
 			block_number_lock.getUnlockOps(ops);
+
+			MergeTreeData::Transaction transaction; /// Если не получится добавить кусок в ZK, снова уберем его из рабочего набора.
+			storage.data.renameTempPartAndAdd(part, nullptr, &transaction);
 
 			try
 			{
