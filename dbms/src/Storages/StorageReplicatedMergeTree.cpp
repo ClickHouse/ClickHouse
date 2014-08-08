@@ -402,7 +402,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 					 + toString(parts_to_fetch.size()) + " missing parts";
 	bool insane =
 		parts_to_add.size() > 2 ||
-		unexpected_parts.size() > 2 ||
+		unexpected_parts.size() > 3 ||
 		expected_parts.size() > 5 ||
 		parts_to_fetch.size() > 30;
 
