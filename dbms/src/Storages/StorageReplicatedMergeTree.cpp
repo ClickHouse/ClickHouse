@@ -833,8 +833,8 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 			}
 			if (part->name != name)
 			{
-				LOG_ERROR(log, "Log and parts set look inconsistent: " << name << " is covered by " << part->name
-					<< " but should be merged into " << entry.new_part_name);
+				LOG_WARNING(log, "Part " << name << " is covered by " << part->name
+					<< " but should be merged into " << entry.new_part_name << ". This shouldn't happen often.");
 				have_all_parts = false;
 				break;
 			}
