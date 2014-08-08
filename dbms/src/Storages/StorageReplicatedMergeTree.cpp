@@ -401,10 +401,10 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 					 + toString(expected_parts.size()) + " missing obsolete parts, "
 					 + toString(parts_to_fetch.size()) + " missing parts";
 	bool insane =
-		parts_to_add.size() > 2 ||
-		unexpected_parts.size() > 3 ||
-		expected_parts.size() > 5 ||
-		parts_to_fetch.size() > 30;
+		parts_to_add.size() > data.settings.replicated_max_unexpectedly_merged_parts ||
+		unexpected_parts.size() > data.settings.replicated_max_unexpected_parts ||
+		expected_parts.size() > data.settings.replicated_max_missing_obsolete_parts ||
+		parts_to_fetch.size() > data.settings.replicated_max_missing_active_parts;
 
 	if (insane && !skip_sanity_checks)
 	{

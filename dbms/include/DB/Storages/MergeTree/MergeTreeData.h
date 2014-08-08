@@ -115,6 +115,12 @@ struct MergeTreeSettings
 	/// Хранить примерно столько последних записей в логе в ZooKeeper, даже если они никому уже не нужны.
 	/// Не влияет на работу таблиц; используется только чтобы успеть посмотреть на лог в ZooKeeper глазами прежде, чем его очистят.
 	size_t replicated_logs_to_keep = 100;
+
+	/// Максимальное количество ошибок при загрузке кусков, при котором ReplicatedMergeTree соглашается запускаться.
+	size_t replicated_max_unexpected_parts = 3;
+	size_t replicated_max_unexpectedly_merged_parts = 2;
+	size_t replicated_max_missing_obsolete_parts = 5;
+	size_t replicated_max_missing_active_parts = 20;
 };
 
 class MergeTreeData : public ITableDeclaration
