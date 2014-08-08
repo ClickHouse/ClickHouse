@@ -293,6 +293,7 @@ private:
 
 	/// Поток, обрабатывающий переподключение к ZooKeeper при истечении сессии (очень маловероятное событие).
 	std::thread restarting_thread;
+	Poco::Event restarting_event;
 
 	/// Поток, следящий за изменениями списка столбцов в ZooKeeper и обновляющий куски в соответствии с этими изменениями.
 	std::thread alter_thread;
@@ -311,7 +312,6 @@ private:
 	Poco::Event shutdown_event;
 	/// Нужно ли завершить restarting_thread.
 	volatile bool permanent_shutdown_called = false;
-	Poco::Event permanent_shutdown_event;
 
 	StorageReplicatedMergeTree(
 		const String & zookeeper_path_,

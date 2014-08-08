@@ -52,7 +52,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 			std::bind(&StorageReplicatedMergeTree::enqueuePartForCheck, this, std::placeholders::_1)),
 	reader(data), writer(data), merger(data), fetcher(data),
 	log(&Logger::get(database_name_ + "." + table_name + " (StorageReplicatedMergeTree)")),
-	shutdown_event(false), permanent_shutdown_event(false)
+	shutdown_event(false)
 {
 	if (!zookeeper)
 	{
@@ -1117,6 +1117,15 @@ void StorageReplicatedMergeTree::queueUpdatingThread()
 
 			queue_updating_event->wait();
 		}
+		catch (zkutil::KeeperException & e)
+		{
+			if (e.code == ZINVALIDSTATE)
+				restarting_event.set();
+
+			tryLogCurrentException(__PRETTY_FUNCTION__);
+
+			queue_updating_event->tryWait(ERROR_SLEEP_MS);
+		}
 		catch (...)
 		{
 			tryLogCurrentException(__PRETTY_FUNCTION__);
@@ -1842,7 +1851,7 @@ void StorageReplicatedMergeTree::shutdown()
 	}
 
 	permanent_shutdown_called = true;
-	permanent_shutdown_event.set();
+	restarting_event.set();
 	restarting_thread.join();
 
 	endpoint_holder = nullptr;
@@ -1891,7 +1900,7 @@ void StorageReplicatedMergeTree::goReadOnly()
 
 	is_read_only = true;
 	permanent_shutdown_called = true;
-	permanent_shutdown_event.set();
+	restarting_event.set();
 
 	partialShutdown();
 }
@@ -1942,7 +1951,7 @@ void StorageReplicatedMergeTree::restartingThread()
 				startup();
 			}
 
-			permanent_shutdown_event.tryWait(60 * 1000);
+			restarting_event.tryWait(60 * 1000);
 		}
 	}
 	catch (...)
