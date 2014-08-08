@@ -63,12 +63,14 @@ public:
 	void add(const String & name);
 	String getContainingPart(const String & name) const;
 
-	Strings getParts() const;
+	Strings getParts() const; /// В порядке возрастания месяца и номера блока.
+
+	size_t size() const;
 
 	static String getPartName(DayNum_t left_date, DayNum_t right_date, UInt64 left_id, UInt64 right_id, UInt64 level);
 
 	/// Возвращает true если имя директории совпадает с форматом имени директории кусочков
-	static bool isPartDirectory(const String & dir_name, Poco::RegularExpression::MatchVec & matches);
+	static bool isPartDirectory(const String & dir_name, Poco::RegularExpression::MatchVec * out_matches = nullptr);
 
 	/// Кладет в DataPart данные из имени кусочка.
 	static void parsePartName(const String & file_name, Part & part, const Poco::RegularExpression::MatchVec * matches = nullptr);

@@ -82,6 +82,12 @@ Strings ActiveDataPartSet::getParts() const
 	return res;
 }
 
+size_t ActiveDataPartSet::size() const
+{
+	Poco::ScopedLock<Poco::Mutex> lock(mutex);
+	return parts.size();
+}
+
 
 
 String ActiveDataPartSet::getPartName(DayNum_t left_date, DayNum_t right_date, UInt64 left_id, UInt64 right_id, UInt64 level)
@@ -110,10 +116,14 @@ String ActiveDataPartSet::getPartName(DayNum_t left_date, DayNum_t right_date, U
 	return res;
 }
 
-bool ActiveDataPartSet::isPartDirectory(const String & dir_name, Poco::RegularExpression::MatchVec & matches)
+bool ActiveDataPartSet::isPartDirectory(const String & dir_name, Poco::RegularExpression::MatchVec * out_matches)
 {
+	Poco::RegularExpression::MatchVec matches;
 	static Poco::RegularExpression file_name_regexp("^(\\d{8})_(\\d{8})_(\\d+)_(\\d+)_(\\d+)");
-	return (file_name_regexp.match(dir_name, 0, matches) && 6 == matches.size());
+	bool res = (file_name_regexp.match(dir_name, 0, matches) && 6 == matches.size());
+	if (out_matches)
+		*out_matches = matches;
+	return res;
 }
 
 void ActiveDataPartSet::parsePartName(const String & file_name, Part & part, const Poco::RegularExpression::MatchVec * matches_p)
@@ -121,7 +131,7 @@ void ActiveDataPartSet::parsePartName(const String & file_name, Part & part, con
 	Poco::RegularExpression::MatchVec match_vec;
 	if (!matches_p)
 	{
-		if (!isPartDirectory(file_name, match_vec))
+		if (!isPartDirectory(file_name, &match_vec))
 			throw Exception("Unexpected part name: " + file_name, ErrorCodes::BAD_DATA_PART_NAME);
 		matches_p = &match_vec;
 	}

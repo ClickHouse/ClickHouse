@@ -110,8 +110,8 @@ MergeTreeData::MutableDataPartPtr ReplicatedMergeTreePartsFetcher::fetchPart(
 
 	ActiveDataPartSet::parsePartName(part_name, *new_data_part);
 	new_data_part->modification_time = time(0);
-	new_data_part->loadColumns();
-	new_data_part->loadChecksums();
+	new_data_part->loadColumns(true);
+	new_data_part->loadChecksums(true);
 	new_data_part->loadIndex();
 
 	new_data_part->checksums.checkEqual(checksums, false);

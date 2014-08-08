@@ -346,6 +346,10 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 
 				need_second_distinct_pass = streams.size() > 1;
 			}
+			else if (query.group_by_with_totals && !aggregate_final)
+			{
+				executeTotalsAndHaving(streams, false, nullptr, aggregate_overflow_row);
+			}
 
 			if (has_order_by)
 				executeOrder(streams);

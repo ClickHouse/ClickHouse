@@ -17,6 +17,8 @@ const auto ERROR_SLEEP_MS = 1000;
 const auto MERGE_SELECTING_SLEEP_MS = 5 * 1000;
 const auto CLEANUP_SLEEP_MS = 30 * 1000;
 
+const auto RESERVED_BLOCK_NUMBERS = 200;
+
 /// Преобразовать число в строку формате суффиксов автоинкрементных нод в ZooKeeper.
 static String padIndex(UInt64 index)
 {
@@ -174,7 +176,6 @@ void StorageReplicatedMergeTree::createTable()
 	zookeeper->create(zookeeper_path + "/nonincrement_block_numbers", "", zkutil::CreateMode::Persistent);
 	zookeeper->create(zookeeper_path + "/leader_election", "", zkutil::CreateMode::Persistent);
 	zookeeper->create(zookeeper_path + "/temp", "", zkutil::CreateMode::Persistent);
-	zookeeper->create(zookeeper_path + "/flags", "", zkutil::CreateMode::Persistent);
 	/// Создадим replicas в последнюю очередь, чтобы нельзя было добавить реплику, пока все остальные ноды не созданы.
 	zookeeper->create(zookeeper_path + "/replicas", "", zkutil::CreateMode::Persistent);
 }
@@ -242,6 +243,7 @@ void StorageReplicatedMergeTree::createReplica()
 	zookeeper->create(replica_path + "/log_pointer", "", zkutil::CreateMode::Persistent);
 	zookeeper->create(replica_path + "/queue", "", zkutil::CreateMode::Persistent);
 	zookeeper->create(replica_path + "/parts", "", zkutil::CreateMode::Persistent);
+	zookeeper->create(replica_path + "/flags", "", zkutil::CreateMode::Persistent);
 
 	/** Нужно изменить данные ноды /replicas на что угодно, чтобы поток, удаляющий старые записи в логе,
 	  *  споткнулся об это изменение и не удалил записи, которые мы еще не прочитали.
@@ -399,10 +401,10 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 					 + toString(expected_parts.size()) + " missing obsolete parts, "
 					 + toString(parts_to_fetch.size()) + " missing parts";
 	bool insane =
-		parts_to_add.size() > 2 ||
-		unexpected_parts.size() > 2 ||
-		expected_parts.size() > 20 ||
-		parts_to_fetch.size() > 2;
+		parts_to_add.size() > data.settings.replicated_max_unexpectedly_merged_parts ||
+		unexpected_parts.size() > data.settings.replicated_max_unexpected_parts ||
+		expected_parts.size() > data.settings.replicated_max_missing_obsolete_parts ||
+		parts_to_fetch.size() > data.settings.replicated_max_missing_active_parts;
 
 	if (insane && !skip_sanity_checks)
 	{
@@ -475,8 +477,11 @@ void StorageReplicatedMergeTree::initVirtualParts()
 	}
 }
 
-void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(MergeTreeData::DataPartPtr part, zkutil::Ops & ops)
+void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(MergeTreeData::DataPartPtr part, zkutil::Ops & ops, String part_name)
 {
+	if (part_name.empty())
+		part_name = part->name;
+
 	check(part->columns);
 	int expected_columns_version = columns_version;
 
@@ -488,22 +493,22 @@ void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(MergeTreeData::DataP
 	{
 		zkutil::Stat stat_before, stat_after;
 		String columns_str;
-		if (!zookeeper->tryGet(zookeeper_path + "/replicas/" + replica + "/parts/" + part->name + "/columns", columns_str, &stat_before))
+		if (!zookeeper->tryGet(zookeeper_path + "/replicas/" + replica + "/parts/" + part_name + "/columns", columns_str, &stat_before))
 			continue;
 		if (columns_str != expected_columns_str)
 		{
-			LOG_INFO(log, "Not checking checksums of part " << part->name << " with replica " << replica
+			LOG_INFO(log, "Not checking checksums of part " << part_name << " with replica " << replica
 				<< " because columns are different");
 			continue;
 		}
 		String checksums_str;
 		/// Проверим, что версия ноды со столбцами не изменилась, пока мы читали checksums.
 		/// Это гарантирует, что столбцы и чексуммы относятся к одним и тем же данным.
-		if (!zookeeper->tryGet(zookeeper_path + "/replicas/" + replica + "/parts/" + part->name + "/checksums", checksums_str) ||
-			!zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/parts/" + part->name + "/columns", &stat_after) ||
+		if (!zookeeper->tryGet(zookeeper_path + "/replicas/" + replica + "/parts/" + part_name + "/checksums", checksums_str) ||
+			!zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/parts/" + part_name + "/columns", &stat_after) ||
 			stat_before.version != stat_after.version)
 		{
-			LOG_INFO(log, "Not checking checksums of part " << part->name << " with replica " << replica
+			LOG_INFO(log, "Not checking checksums of part " << part_name << " with replica " << replica
 				<< " because part changed while we were reading its checksums");
 			continue;
 		}
@@ -512,9 +517,9 @@ void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(MergeTreeData::DataP
 		checksums.checkEqual(part->checksums, true);
 	}
 
-	if (zookeeper->exists(replica_path + "/parts/" + part->name))
+	if (zookeeper->exists(replica_path + "/parts/" + part_name))
 	{
-		LOG_ERROR(log, "checkPartAndAddToZooKeeper: node " << replica_path + "/parts/" + part->name << " already exists");
+		LOG_ERROR(log, "checkPartAndAddToZooKeeper: node " << replica_path + "/parts/" + part_name << " already exists");
 		return;
 	}
 
@@ -522,17 +527,17 @@ void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(MergeTreeData::DataP
 		zookeeper_path + "/columns",
 		expected_columns_version));
 	ops.push_back(new zkutil::Op::Create(
-		replica_path + "/parts/" + part->name,
+		replica_path + "/parts/" + part_name,
 		"",
 		zookeeper->getDefaultACL(),
 		zkutil::CreateMode::Persistent));
 	ops.push_back(new zkutil::Op::Create(
-		replica_path + "/parts/" + part->name + "/columns",
+		replica_path + "/parts/" + part_name + "/columns",
 		part->columns.toString(),
 		zookeeper->getDefaultACL(),
 		zkutil::CreateMode::Persistent));
 	ops.push_back(new zkutil::Op::Create(
-		replica_path + "/parts/" + part->name + "/checksums",
+		replica_path + "/parts/" + part_name + "/checksums",
 		part->checksums.toString(),
 		zookeeper->getDefaultACL(),
 		zkutil::CreateMode::Persistent));
@@ -749,7 +754,8 @@ void StorageReplicatedMergeTree::pullLogsToQueue(zkutil::EventPtr next_update_ev
 
 bool StorageReplicatedMergeTree::shouldExecuteLogEntry(const LogEntry & entry)
 {
-	if ((entry.type == LogEntry::MERGE_PARTS || entry.type == LogEntry::GET_PART) && future_parts.count(entry.new_part_name))
+	if ((entry.type == LogEntry::MERGE_PARTS || entry.type == LogEntry::GET_PART || entry.type == LogEntry::ATTACH_PART)
+		&& future_parts.count(entry.new_part_name))
 	{
 		LOG_DEBUG(log, "Not executing log entry for part " << entry.new_part_name <<
 			" because another log entry for the same part is being processed. This shouldn't happen often.");
@@ -779,10 +785,14 @@ bool StorageReplicatedMergeTree::shouldExecuteLogEntry(const LogEntry & entry)
 bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, BackgroundProcessingPool::Context & pool_context)
 {
 	if (entry.type == LogEntry::DROP_RANGE)
-		return executeDropRange(entry);
+	{
+		executeDropRange(entry);
+		return true;
+	}
 
 	if (entry.type == LogEntry::GET_PART ||
-		entry.type == LogEntry::MERGE_PARTS)
+		entry.type == LogEntry::MERGE_PARTS ||
+		entry.type == LogEntry::ATTACH_PART)
 	{
 		/// Если у нас уже есть этот кусок или покрывающий его кусок, ничего делать не нужно.
 		MergeTreeData::DataPartPtr containing_part = data.getActiveContainingPart(entry.new_part_name);
@@ -805,6 +815,10 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 	{
 		do_fetch = true;
 	}
+	else if (entry.type == LogEntry::ATTACH_PART)
+	{
+		do_fetch = !executeAttachPart(entry);
+	}
 	else if (entry.type == LogEntry::MERGE_PARTS)
 	{
 		MergeTreeData::DataPartsVector parts;
@@ -819,8 +833,8 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 			}
 			if (part->name != name)
 			{
-				LOG_ERROR(log, "Log and parts set look inconsistent: " << name << " is covered by " << part->name
-					<< " but should be merged into " << entry.new_part_name);
+				LOG_WARNING(log, "Part " << name << " is covered by " << part->name
+					<< " but should be merged into " << entry.new_part_name << ". This shouldn't happen often.");
 				have_all_parts = false;
 				break;
 			}
@@ -853,6 +867,10 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 
 			zkutil::Ops ops;
 			checkPartAndAddToZooKeeper(part, ops);
+
+			/** TODO: Переименование нового куска лучше делать здесь, а не пятью строчками выше,
+			  *  чтобы оно было как можно ближе к zookeeper->multi.
+			  */
 
 			zookeeper->multi(ops);
 
@@ -959,7 +977,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 	return true;
 }
 
-bool StorageReplicatedMergeTree::executeDropRange(const StorageReplicatedMergeTree::LogEntry & entry)
+void StorageReplicatedMergeTree::executeDropRange(const StorageReplicatedMergeTree::LogEntry & entry)
 {
 	LOG_INFO(log, (entry.detach ? "Detaching" : "Removing") << " parts inside " << entry.new_part_name << ".");
 
@@ -1019,7 +1037,7 @@ bool StorageReplicatedMergeTree::executeDropRange(const StorageReplicatedMergeTr
 
 		/// Если кусок нужно удалить, надежнее удалить директорию после изменений в ZooKeeper.
 		if (!entry.detach)
-			data.replaceParts({part}, {}, false);
+			data.replaceParts({part}, {}, true);
 	}
 
 	LOG_INFO(log, (entry.detach ? "Detached " : "Removed ") << removed_parts << " parts inside " << entry.new_part_name << ".");
@@ -1043,6 +1061,48 @@ bool StorageReplicatedMergeTree::executeDropRange(const StorageReplicatedMergeTr
 				unreplicated_data->replaceParts({part}, {}, false);
 		}
 	}
+}
+
+bool StorageReplicatedMergeTree::executeAttachPart(const StorageReplicatedMergeTree::LogEntry & entry)
+{
+	String source_path = (entry.attach_unreplicated ? "unreplicated/" : "detached/") + entry.source_part_name;
+
+	LOG_INFO(log, "Attaching part " << entry.source_part_name << " from " << source_path << " as " << entry.new_part_name);
+
+	if (!Poco::File(data.getFullPath() + source_path).exists())
+	{
+		LOG_INFO(log, "No part at " << source_path << ". Will fetch it instead");
+		return false;
+	}
+
+	LOG_DEBUG(log, "Checking data");
+	MergeTreeData::MutableDataPartPtr part = data.loadPartAndFixMetadata(source_path);
+
+	zkutil::Ops ops;
+	checkPartAndAddToZooKeeper(part, ops, entry.new_part_name);
+
+	if (entry.attach_unreplicated && unreplicated_data)
+	{
+		MergeTreeData::DataPartPtr unreplicated_part = unreplicated_data->getPartIfExists(entry.source_part_name);
+		if (unreplicated_part)
+			unreplicated_data->detachPartInPlace(unreplicated_part);
+		else
+			LOG_WARNING(log, "Unreplicated part " << entry.source_part_name << " is already detached");
+	}
+
+	zookeeper->multi(ops);
+
+	/// NOTE: Не можем использовать renameTempPartAndAdd, потому что кусок не временный - если что-то пойдет не так, его не нужно удалять.
+	part->renameTo(entry.new_part_name);
+	part->name = entry.new_part_name;
+	ActiveDataPartSet::parsePartName(part->name, *part);
+
+	data.attachPart(part);
+
+	LOG_INFO(log, "Finished attaching part " << entry.new_part_name);
+
+	/// На месте удаленных кусков могут появиться новые, с другими данными.
+	context.resetCaches();
 
 	return true;
 }
@@ -1622,8 +1682,12 @@ void StorageReplicatedMergeTree::partCheckThread()
 						if (part->columns != zk_columns)
 							throw Exception("Columns of local part " + part_name + " are different from ZooKeeper");
 
+						MergeTreePartChecker::Settings settings;
+						settings.setIndexGranularity(data.index_granularity);
+						settings.setRequireChecksums(true);
+						settings.setRequireColumnFiles(true);
 						MergeTreePartChecker::checkDataPart(
-							data.getFullPath() + part_name, data.index_granularity, true, context.getDataTypeFactory());
+							data.getFullPath() + part_name, settings, context.getDataTypeFactory());
 
 						LOG_INFO(log, "Part " << part_name << " looks good.");
 					}
@@ -1747,11 +1811,11 @@ void StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 
 	MergeTreeData::MutableDataPartPtr part = fetcher.fetchPart(part_name, zookeeper_path + "/replicas/" + replica_name, host, port);
 
+	zkutil::Ops ops;
+	checkPartAndAddToZooKeeper(part, ops, part_name);
+
 	MergeTreeData::Transaction transaction;
 	auto removed_parts = data.renameTempPartAndReplace(part, nullptr, &transaction);
-
-	zkutil::Ops ops;
-	checkPartAndAddToZooKeeper(part, ops);
 
 	zookeeper->multi(ops);
 	transaction.commit();
@@ -2132,12 +2196,7 @@ static String getFakePartNameForDrop(const String & month_name, UInt64 left, UIn
 
 void StorageReplicatedMergeTree::dropPartition(const Field & field, bool detach)
 {
-	String month_name;
-
-	if (field.getType() == Field::Types::UInt64)
-		month_name = toString(field.get<UInt64>());
-	else
-		month_name = field.safeGet<String>();
+	String month_name = field.getType() == Field::Types::UInt64 ? toString(field.get<UInt64>()) : field.safeGet<String>();
 
 	if (!isValidMonthName(month_name))
 		throw Exception("Invalid partition format: " + month_name + ". Partition should consist of 6 digits: YYYYMM",
@@ -2188,12 +2247,101 @@ void StorageReplicatedMergeTree::dropPartition(const Field & field, bool detach)
 	entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
 
 	/// Дождемся, пока все реплики выполнят дроп.
-	waitForAllReplicasToProcessLogEntry(log_znode_path, entry);
+	waitForAllReplicasToProcessLogEntry(entry);
 }
 
-void StorageReplicatedMergeTree::attachPartition(const Field& partition, bool unreplicated, bool part)
+void StorageReplicatedMergeTree::attachPartition(const Field & field, bool unreplicated, bool attach_part)
 {
-	throw Exception("Not implemented", ErrorCodes::NOT_IMPLEMENTED);
+	String partition = field.getType() == Field::Types::UInt64 ? toString(field.get<UInt64>()) : field.safeGet<String>();
+
+	if (!attach_part && !isValidMonthName(partition))
+		throw Exception("Invalid partition format: " + partition + ". Partition should consist of 6 digits: YYYYMM",
+						ErrorCodes::INVALID_PARTITION_NAME);
+
+	String source_dir = (unreplicated ? "unreplicated/" : "detached/");
+
+	/// Составим список кусков, которые нужно добавить.
+	Strings parts;
+	if (attach_part)
+	{
+		parts.push_back(partition);
+	}
+	else
+	{
+		LOG_DEBUG(log, "Looking for parts for partition " << partition << " in " << source_dir);
+		ActiveDataPartSet active_parts;
+		for (Poco::DirectoryIterator it = Poco::DirectoryIterator(full_path + source_dir); it != Poco::DirectoryIterator(); ++it)
+		{
+			String name = it.name();
+			if (!ActiveDataPartSet::isPartDirectory(name))
+				continue;
+			if (name.substr(0, partition.size()) != partition)
+				continue;
+			LOG_DEBUG(log, "Found part " << name);
+			active_parts.add(name);
+		}
+		LOG_DEBUG(log, active_parts.size() << " of them are active");
+		parts = active_parts.getParts();
+	}
+
+	/// Синхронно проверим, что добавляемые куски существуют и не испорчены хотя бы на этой реплике. Запишем checksums.txt, если его нет.
+	LOG_DEBUG(log, "Checking parts");
+	for (const String & part : parts)
+	{
+		LOG_DEBUG(log, "Checking part " << part);
+		data.loadPartAndFixMetadata(source_dir + part);
+	}
+
+	/// Выделим добавляемым кускам максимальные свободные номера, меньшие RESERVED_BLOCK_NUMBERS.
+	/// NOTE: Проверка свободности номеров никак не синхронизируется. Выполнять несколько запросов ATTACH/DETACH/DROP одновременно нельзя.
+	UInt64 min_used_number = RESERVED_BLOCK_NUMBERS;
+
+	{
+		auto existing_parts = data.getDataParts();
+		for (const auto & part : existing_parts)
+		{
+			min_used_number = std::min(min_used_number, part->left);
+		}
+	}
+
+	if (parts.size() > min_used_number)
+		throw Exception("Not enough free small block numbers for attaching parts: "
+			+ toString(parts.size()) + " needed, " + toString(min_used_number) + " available", ErrorCodes::NOT_ENOUGH_BLOCK_NUMBERS);
+
+	/// Добавим записи в лог.
+	std::reverse(parts.begin(), parts.end());
+	std::list<LogEntry> entries;
+	zkutil::Ops ops;
+	for (const String & part_name : parts)
+	{
+		ActiveDataPartSet::Part part;
+		ActiveDataPartSet::parsePartName(part_name, part);
+		part.left = part.right = --min_used_number;
+		String new_part_name = ActiveDataPartSet::getPartName(part.left_date, part.right_date, part.left, part.right, part.level);
+
+		LOG_INFO(log, "Will attach " << part_name << " as " << new_part_name);
+
+		entries.emplace_back();
+		LogEntry & entry = entries.back();
+		entry.type = LogEntry::ATTACH_PART;
+		entry.source_replica = replica_name;
+		entry.source_part_name = part_name;
+		entry.new_part_name = new_part_name;
+		entry.attach_unreplicated = unreplicated;
+		ops.push_back(new zkutil::Op::Create(
+			zookeeper_path + "/log/log-", entry.toString(), zookeeper->getDefaultACL(), zkutil::CreateMode::PersistentSequential));
+	}
+
+	LOG_DEBUG(log, "Adding attaches to log");
+	zookeeper->multi(ops);
+	size_t i = 0;
+	for (LogEntry & entry : entries)
+	{
+		String log_znode_path = dynamic_cast<zkutil::Op::Create &>(ops[i++]).getPathCreated();
+		entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
+
+		waitForAllReplicasToProcessLogEntry(entry);
+	}
 }
 
 void StorageReplicatedMergeTree::drop()
@@ -2243,7 +2391,7 @@ AbandonableLockInZooKeeper StorageReplicatedMergeTree::allocateBlockNumber(const
 		zkutil::Ops ops;
 		auto acl = zookeeper->getDefaultACL();
 		ops.push_back(new zkutil::Op::Create(month_path, "", acl, zkutil::CreateMode::Persistent));
-		for (size_t i = 0; i < 200; ++i)
+		for (size_t i = 0; i < RESERVED_BLOCK_NUMBERS; ++i)
 		{
 			ops.push_back(new zkutil::Op::Create(month_path + "/skip_increment", "", acl, zkutil::CreateMode::Persistent));
 			ops.push_back(new zkutil::Op::Remove(month_path + "/skip_increment", -1));
@@ -2257,11 +2405,11 @@ AbandonableLockInZooKeeper StorageReplicatedMergeTree::allocateBlockNumber(const
 		zookeeper_path + "/temp", *zookeeper);
 }
 
-void StorageReplicatedMergeTree::waitForAllReplicasToProcessLogEntry(const String & log_znode_path, const LogEntry & entry)
+void StorageReplicatedMergeTree::waitForAllReplicasToProcessLogEntry(const LogEntry & entry)
 {
 	LOG_DEBUG(log, "Waiting for all replicas to process " << entry.znode_name);
 
-	UInt64 log_index = parse<UInt64>(log_znode_path.substr(log_znode_path.size() - 10));
+	UInt64 log_index = parse<UInt64>(entry.znode_name.substr(entry.znode_name.size() - 10));
 	String log_entry_str = entry.toString();
 
 	Strings replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
@@ -2351,6 +2499,16 @@ void StorageReplicatedMergeTree::LogEntry::writeText(WriteBuffer & out) const
 				writeString("drop\n", out);
 			writeString(new_part_name, out);
 			break;
+		case ATTACH_PART:
+			writeString("attach\n", out);
+			if (attach_unreplicated)
+				writeString("unreplicated\n", out);
+			else
+				writeString("detached\n", out);
+			writeString(source_part_name, out);
+			writeString("\ninto\n", out);
+			writeString(new_part_name, out);
+			break;
 	}
 	writeString("\n", out);
 }
@@ -2389,6 +2547,22 @@ void StorageReplicatedMergeTree::LogEntry::readText(ReadBuffer & in)
 	{
 		type = DROP_RANGE;
 		detach = type_str == "detach";
+		readString(new_part_name, in);
+	}
+	else if (type_str == "attach")
+	{
+		type = ATTACH_PART;
+		String source_type;
+		readString(source_type, in);
+		if (source_type == "unreplicated")
+			attach_unreplicated = true;
+		else if (source_type == "detached")
+			attach_unreplicated = false;
+		else
+			throw Exception("Bad format: expected 'unreplicated' or 'detached', found '" + source_type + "'", ErrorCodes::CANNOT_PARSE_TEXT);
+		assertString("\n", in);
+		readString(source_part_name, in);
+		assertString("\ninto\n", in);
 		readString(new_part_name, in);
 	}
 	assertString("\n", in);

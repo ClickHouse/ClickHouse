@@ -137,6 +137,7 @@ private:
 			GET_PART,    /// Получить кусок с другой реплики.
 			MERGE_PARTS, /// Слить куски.
 			DROP_RANGE,  /// Удалить куски в указанном месяце в указанном диапазоне номеров.
+			ATTACH_PART, /// Перенести кусок из директории detached или unreplicated.
 		};
 
 		String znode_name;
@@ -144,11 +145,19 @@ private:
 		Type type;
 		String source_replica; /// Пустая строка значит, что эта запись была добавлена сразу в очередь, а не скопирована из лога.
 
-		String new_part_name; /// Для DROP_RANGE имя несуществующего куска. Нужно удалить все куски, покрытые им.
+		/// Имя куска, получающегося в результате.
+		/// Для DROP_RANGE имя несуществующего куска. Нужно удалить все куски, покрытые им.
+		String new_part_name;
 
 		Strings parts_to_merge;
 
-		bool detach = false; /// Для DROP_RANGE, true значит, что куски нужно не удалить, а перенести в директорию detached.
+		/// Для DROP_RANGE, true значит, что куски нужно не удалить, а перенести в директорию detached.
+		bool detach = false;
+
+		/// Для ATTACH_PART имя куска в директории detached или unreplicated.
+		String source_part_name;
+		/// Нужно переносить из директории unreplicated, а не detached.
+		bool attach_unreplicated;
 
 		FuturePartTaggerPtr future_part_tagger;
 		bool currently_executing = false; /// Доступ под queue_mutex.
@@ -156,13 +165,13 @@ private:
 
 		void addResultToVirtualParts(StorageReplicatedMergeTree & storage)
 		{
-			if (type == MERGE_PARTS || type == GET_PART || type == DROP_RANGE)
+			if (type == MERGE_PARTS || type == GET_PART || type == DROP_RANGE || type == ATTACH_PART)
 				storage.virtual_parts.add(new_part_name);
 		}
 
 		void tagPartAsFuture(StorageReplicatedMergeTree & storage)
 		{
-			if (type == MERGE_PARTS || type == GET_PART)
+			if (type == MERGE_PARTS || type == GET_PART || type == ATTACH_PART)
 				future_part_tagger = new FuturePartTagger(new_part_name, storage);
 		}
 
@@ -362,7 +371,7 @@ private:
 	  * Кладет в ops действия, добавляющие данные о куске в ZooKeeper.
 	  * Вызывать под TableStructureLock.
 	  */
-	void checkPartAndAddToZooKeeper(MergeTreeData::DataPartPtr part, zkutil::Ops & ops);
+	void checkPartAndAddToZooKeeper(MergeTreeData::DataPartPtr part, zkutil::Ops & ops, String name_override = "");
 
 	/// Убирает кусок из ZooKeeper и добавляет в очередь задание скачать его. Предполагается это делать с битыми кусками.
 	void removePartAndEnqueueFetch(const String & part_name);
@@ -396,7 +405,8 @@ private:
 	  */
 	bool executeLogEntry(const LogEntry & entry, BackgroundProcessingPool::Context & pool_context);
 
-	bool executeDropRange(const LogEntry & entry);
+	void executeDropRange(const LogEntry & entry);
+	bool executeAttachPart(const LogEntry & entry); /// Возвращает false, если куска нет, и его нужно забрать с другой реплики.
 
 	/** Обновляет очередь.
 	  */
@@ -450,7 +460,7 @@ private:
 	/** Дождаться, пока все реплики, включая эту, выполнят указанное действие из лога.
 	  * Если одновременно с этим добавляются реплики, может не дождаться добавленную реплику.
 	  */
-	void waitForAllReplicasToProcessLogEntry(const String & log_znode_path, const LogEntry & entry);
+	void waitForAllReplicasToProcessLogEntry(const LogEntry & entry);
 };
 
 }
