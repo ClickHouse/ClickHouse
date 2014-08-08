@@ -174,7 +174,6 @@ void StorageReplicatedMergeTree::createTable()
 	zookeeper->create(zookeeper_path + "/nonincrement_block_numbers", "", zkutil::CreateMode::Persistent);
 	zookeeper->create(zookeeper_path + "/leader_election", "", zkutil::CreateMode::Persistent);
 	zookeeper->create(zookeeper_path + "/temp", "", zkutil::CreateMode::Persistent);
-	zookeeper->create(zookeeper_path + "/flags", "", zkutil::CreateMode::Persistent);
 	/// Создадим replicas в последнюю очередь, чтобы нельзя было добавить реплику, пока все остальные ноды не созданы.
 	zookeeper->create(zookeeper_path + "/replicas", "", zkutil::CreateMode::Persistent);
 }
@@ -242,6 +241,7 @@ void StorageReplicatedMergeTree::createReplica()
 	zookeeper->create(replica_path + "/log_pointer", "", zkutil::CreateMode::Persistent);
 	zookeeper->create(replica_path + "/queue", "", zkutil::CreateMode::Persistent);
 	zookeeper->create(replica_path + "/parts", "", zkutil::CreateMode::Persistent);
+	zookeeper->create(replica_path + "/flags", "", zkutil::CreateMode::Persistent);
 
 	/** Нужно изменить данные ноды /replicas на что угодно, чтобы поток, удаляющий старые записи в логе,
 	  *  споткнулся об это изменение и не удалил записи, которые мы еще не прочитали.
