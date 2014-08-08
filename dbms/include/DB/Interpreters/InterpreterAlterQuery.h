@@ -46,7 +46,7 @@ private:
 
 		static PartitionCommand attachPartition(const Field & partition, bool unreplicated, bool part)
 		{
-			return {ATTACH_PARTITION, partition, false, part, unreplicated};
+			return {ATTACH_PARTITION, partition, false, unreplicated, part};
 		}
 	};
 

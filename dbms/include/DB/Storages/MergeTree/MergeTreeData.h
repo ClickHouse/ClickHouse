@@ -307,15 +307,20 @@ public:
 			Poco::File(to).remove(true);
 		}
 
-		/// Переименовывает кусок, дописав к имени префикс.
-		void renameAddPrefix(const String & prefix) const
+		void renameTo(const String & new_name) const
 		{
 			String from = storage.full_path + name + "/";
-			String to = storage.full_path + prefix + name + "/";
+			String to = storage.full_path + new_name + "/";
 
 			Poco::File f(from);
 			f.setLastModified(Poco::Timestamp::fromEpochTime(time(0)));
 			f.renameTo(to);
+		}
+
+		/// Переименовывает кусок, дописав к имени префикс.
+		void renameAddPrefix(const String & prefix) const
+		{
+			renameTo(prefix + name);
 		}
 
 		/// Загрузить индекс и вычислить размер. Если size=0, вычислить его тоже.
@@ -344,12 +349,12 @@ public:
 		}
 
 		/// Прочитать контрольные суммы, если есть.
-		void loadChecksums()
+		void loadChecksums(bool require)
 		{
 			String path = storage.full_path + name + "/checksums.txt";
 			if (!Poco::File(path).exists())
 			{
-				if (storage.require_part_metadata)
+				if (require)
 					throw Exception("No checksums.txt in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 
 				return;
@@ -359,16 +364,21 @@ public:
 				assertEOF(file);
 		}
 
-		void loadColumns()
+		void loadColumns(bool require)
 		{
 			String path = storage.full_path + name + "/columns.txt";
 			if (!Poco::File(path).exists())
 			{
-				if (storage.require_part_metadata)
+				if (require)
 					throw Exception("No columns.txt in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
-				columns = *storage.columns;
 
 				/// Если нет файла со списком столбцов, запишем его.
+				for (const NameAndTypePair & column : *storage.columns)
+				{
+					if (Poco::File(storage.full_path + name + "/" + escapeForFileName(column.name) + ".bin").exists())
+						columns.push_back(column);
+				}
+
 				{
 					WriteBufferFromFile out(path + ".tmp", 4096);
 					columns.writeText(out);
@@ -382,7 +392,7 @@ public:
 			columns.readText(file, storage.context.getDataTypeFactory());
 		}
 
-		void checkNotBroken()
+		void checkNotBroken(bool require_part_metadata)
 		{
 			String path = storage.full_path + name;
 
@@ -391,7 +401,7 @@ public:
 				if (!checksums.files.count("primary.idx"))
 					throw Exception("No checksum for primary.idx", ErrorCodes::NO_FILE_IN_DATA_PART);
 
-				if (storage.require_part_metadata)
+				if (require_part_metadata)
 				{
 					for (const NameAndTypePair & it : columns)
 					{
@@ -625,15 +635,23 @@ public:
 	  */
 	DataPartsVector renameTempPartAndReplace(MutableDataPartPtr part, Increment * increment = nullptr, Transaction * out_transaction = nullptr);
 
-	/** Убирает из рабочего набора куски remove и добавляет куски add.
+	/** Убирает из рабочего набора куски remove и добавляет куски add. add должны уже быть в all_data_parts.
 	  * Если clear_without_timeout, данные будут удалены при следующем clearOldParts, игнорируя old_parts_lifetime.
 	  */
 	void replaceParts(const DataPartsVector & remove, const DataPartsVector & add, bool clear_without_timeout);
 
+	/** Добавляет новый кусок в список известных кусков и в рабочий набор.
+	  */
+	void attachPart(DataPartPtr part);
+
 	/** Переименовывает кусок в detached/prefix_кусок и забывает про него. Данные не будут удалены в clearOldParts.
 	  * Если restore_covered, добавляет в рабочий набор неактивные куски, слиянием которых получен удаляемый кусок.
 	  */
-	void renameAndDetachPart(DataPartPtr part, const String & prefix = "", bool restore_covered = false);
+	void renameAndDetachPart(DataPartPtr part, const String & prefix = "", bool restore_covered = false, bool move_to_detached = true);
+
+	/** Убирает кусок из списка кусков (включая all_data_parts), но не перемещщает директорию.
+	  */
+	void detachPartInPlace(DataPartPtr part);
 
 	/** Возвращает старые неактуальные куски, которые можно удалить. Одновременно удаляет их из списка кусков, но не с диска.
 	  */
@@ -684,6 +702,9 @@ public:
 
 	ExpressionActionsPtr getPrimaryExpression() const { return primary_expr; }
 	SortDescription getSortDescription() const { return sort_descr; }
+
+	/// Проверить, что кусок не сломан и посчитать для него чексуммы, если их нет.
+	MutableDataPartPtr loadPartAndFixMetadata(const String & relative_path);
 
 	const Context & context;
 	const String date_column_name;
