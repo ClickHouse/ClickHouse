@@ -22,7 +22,7 @@ protected:
 class ParserParenthesisExpression : public IParserBase
 {
 protected:
-	const char * getName() const { return "expression in parenthesis"; }
+	const char * getName() const { return "parenthesized expression"; }
 	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected);
 };
 

@@ -482,15 +482,21 @@ void ZooKeeper::tryRemoveRecursive(const std::string & path)
 
 ZooKeeper::~ZooKeeper()
 {
+	LOG_INFO(&Logger::get("~ZooKeeper"), "Closing ZooKeeper session");
+
 	int code = zookeeper_close(impl);
 	if (code != ZOK)
 	{
 		LOG_ERROR(&Logger::get("~ZooKeeper"), "Failed to close ZooKeeper session: " << zerror(code));
 	}
 
+	LOG_INFO(&Logger::get("~ZooKeeper"), "Removing " << watch_store.size() << " watches");
+
 	/// удаляем WatchWithEvent которые уже никогда не будут обработаны
 	for (WatchWithEvent * watch : watch_store)
 		delete watch;
+
+	LOG_INFO(&Logger::get("~ZooKeeper"), "Removed watches");
 }
 
 ZooKeeperPtr ZooKeeper::startNewSession() const
