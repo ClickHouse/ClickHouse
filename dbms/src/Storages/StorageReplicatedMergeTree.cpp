@@ -1044,6 +1044,9 @@ bool StorageReplicatedMergeTree::executeDropRange(const StorageReplicatedMergeTr
 		}
 	}
 
+	/// На месте удаленных кусков могут появиться новые, с другими данными.
+	context.resetCaches();
+
 	return true;
 }
 
