@@ -19,7 +19,7 @@ public:
 		Settings & setVerbose(bool verbose_) { verbose = verbose_; return *this; }
 		Settings & setRequireChecksums(bool require_checksums_) { require_checksums = require_checksums_; return *this; }
 		Settings & setRequireColumnFiles(bool require_column_files_) { require_column_files = require_column_files_; return *this; }
-		Settings & setIndexGranularity(bool index_granularity_) { index_granularity = index_granularity_; return *this; }
+		Settings & setIndexGranularity(size_t index_granularity_) { index_granularity = index_granularity_; return *this; }
 	};
 
 	/** Полностью проверяет данные кусочка:
