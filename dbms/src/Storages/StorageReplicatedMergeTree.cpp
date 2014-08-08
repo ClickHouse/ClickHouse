@@ -1065,9 +1065,9 @@ bool StorageReplicatedMergeTree::executeAttachPart(const StorageReplicatedMergeT
 
 	LOG_INFO(log, "Attaching part " << entry.source_part_name << " from " << source_path << " as " << entry.new_part_name);
 
-	if (!Poco::File(data.getFullPath() + source_path).isDirectory())
+	if (!Poco::File(data.getFullPath() + source_path).exists())
 	{
-		LOG_INFO(log, "No such directory. Will fetch " << entry.new_part_name << " instead");
+		LOG_INFO(log, "No part at " << source_path << ". Will fetch it instead");
 		return false;
 	}
 
