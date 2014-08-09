@@ -221,7 +221,7 @@ struct NegateImpl
 
 	static inline ResultType apply(A a)
 	{
-		return -a;
+		return -static_cast<ResultType>(a);
 	}
 };
 
