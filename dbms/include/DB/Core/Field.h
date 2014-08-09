@@ -582,11 +582,39 @@ private:
 		writeQuoted(x, wb);
 		return res;
 	}
+
+	/** В отличие от writeFloatText (и writeQuoted), если число после форматирования выглядит целым, всё равно добавляет десятичную точку.
+	  * - для того, чтобы это число могло обратно распарситься как Float64 парсером запроса (иначе распарсится как целое).
+	  *
+	  * При этом, не оставляет завершающие нули справа.
+	  *
+	  * NOTE: При таком roundtrip-е, точность может теряться.
+	  */
+	static inline String formatFloat(Float64 x)
+	{
+		char tmp[24];
+		int res = std::snprintf(tmp, 23, "%.*g", WRITE_HELPERS_DEFAULT_FLOAT_PRECISION, x);
+
+		if (res >= 23 || res <= 0)
+			throw Exception("Cannot print float or double number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
+
+		size_t string_size = res;
+
+		tmp[23] = '\0';
+		if (string_size == strspn(tmp, "-0123456789"))
+		{
+			tmp[string_size] = '.';
+			++string_size;
+		}
+
+		return {tmp, string_size};
+	}
+
 public:
 	String operator() (const Null 		& x) const { return "NULL"; }
 	String operator() (const UInt64 	& x) const { return formatQuoted(x); }
 	String operator() (const Int64 		& x) const { return formatQuoted(x); }
-	String operator() (const Float64 	& x) const { return formatQuoted(x); }
+	String operator() (const Float64 	& x) const { return formatFloat(x); }
 	String operator() (const String 	& x) const { return formatQuoted(x); }
 
 	String operator() (const Array 		& x) const
@@ -689,7 +717,7 @@ namespace DB
 {
 	class ReadBuffer;
 	class WriteBuffer;
-	
+
 	/// Предполагается что у всех элементов массива одинаковый тип.
 	inline void readBinary(Array & x, ReadBuffer & buf)
 	{
@@ -745,7 +773,7 @@ namespace DB
 			};
 		}
 	}
-	
+
 	inline void readText(Array & x, ReadBuffer & buf) 			{ throw Exception("Cannot read Array.", ErrorCodes::NOT_IMPLEMENTED); }
 	inline void readQuoted(Array & x, ReadBuffer & buf) 		{ throw Exception("Cannot read Array.", ErrorCodes::NOT_IMPLEMENTED); }
 
@@ -758,7 +786,7 @@ namespace DB
 			type = x.front().getType();
 		DB::writeBinary(type, buf);
 		DB::writeBinary(size, buf);
-		
+
 		for (Array::const_iterator it = x.begin(); it != x.end(); ++it)
 		{
 			switch (type)
@@ -792,13 +820,13 @@ namespace DB
 			};
 		}
 	}
-	
+
 	inline void writeText(const Array & x, WriteBuffer & buf)
 	{
 		DB::String res = apply_visitor(DB::FieldVisitorToString(), DB::Field(x));
 		buf.write(res.data(), res.size());
 	}
-	
+
 	inline void writeQuoted(const Array & x, WriteBuffer & buf) { throw Exception("Cannot write Array quoted.", ErrorCodes::NOT_IMPLEMENTED); }
 }
 
