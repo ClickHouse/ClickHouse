@@ -181,6 +181,7 @@ FunctionPtr FunctionFactory::get(
 
 	else if (name == "hostName")					return new FunctionHostName;
 	else if (name == "visibleWidth")				return new FunctionVisibleWidth;
+	else if (name == "bar")							return new FunctionBar;
 	else if (name == "toTypeName")					return new FunctionToTypeName;
 	else if (name == "blockSize")					return new FunctionBlockSize;
 	else if (name == "sleep")						return new FunctionSleep;
