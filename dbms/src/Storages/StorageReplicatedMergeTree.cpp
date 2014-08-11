@@ -45,8 +45,9 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	const MergeTreeSettings & settings_)
 	:
 	context(context_), zookeeper(context.getZooKeeper()), database_name(database_name_),
-	table_name(name_), full_path(path_ + escapeForFileName(table_name) + '/'), zookeeper_path(zookeeper_path_),
-	replica_name(replica_name_),
+	table_name(name_), full_path(path_ + escapeForFileName(table_name) + '/'),
+	zookeeper_path(context.getMacros().expand(zookeeper_path_)),
+	replica_name(context.getMacros().expand(replica_name_)),
 	data(	full_path, columns_, context_, primary_expr_ast_, date_column_name_, sampling_expression_,
 			index_granularity_, mode_, sign_column_, settings_, database_name_ + "." + table_name, true,
 			std::bind(&StorageReplicatedMergeTree::enqueuePartForCheck, this, std::placeholders::_1)),

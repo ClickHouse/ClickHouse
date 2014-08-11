@@ -9,6 +9,7 @@
 #include <Yandex/logger_useful.h>
 
 #include <DB/Core/NamesAndTypes.h>
+#include <DB/Common/Macros.h>
 #include <DB/IO/UncompressedCache.h>
 #include <DB/Storages/MarkCache.h>
 #include <DB/DataStreams/FormatFactory.h>
@@ -95,8 +96,9 @@ struct ContextShared
 	ViewDependencies view_dependencies;						/// Текущие зависимости
 	ConfigurationPtr users_config;							/// Конфиг с секциями users, profiles и quotas.
 	InterserverIOHandler interserver_io_handler;			/// Обработчик для межсерверной передачи данных.
-	String default_replica_name;							/// Имя реплики из конфига.
+	String default_replica_name;							/// Имя реплики из конфига. DEPRECATED
 	BackgroundProcessingPoolPtr background_pool;			/// Пул потоков для фоновой работы, выполняемой таблицами.
+	Macros macros;											/// Подстановки из конфига.
 
 	/// Кластеры для distributed таблиц
 	/// Создаются при создании Distributed таблиц, так как нужно дождаться пока будут выставлены Settings
@@ -241,6 +243,9 @@ public:
 	/// Имя этой реплики из конфига.
 	String getDefaultReplicaName() const;
 	void setDefaultReplicaName(const String & name);
+
+	const Macros & getMacros() const;
+	void setMacros(Macros && macros);
 
 	Settings getSettings() const;
 	void setSettings(const Settings & settings_);

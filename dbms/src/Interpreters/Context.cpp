@@ -459,6 +459,17 @@ void Context::setDefaultReplicaName(const String & name)
 	shared->default_replica_name = name;
 }
 
+const Macros& Context::getMacros() const
+{
+	return shared->macros;
+}
+
+void Context::setMacros(Macros && macros)
+{
+	/// Полагаемся, что это присваивание происходит один раз при старте сервера. Если это не так, нужно использовать мьютекс.
+	shared->macros = macros;
+}
+
 
 Context & Context::getSessionContext()
 {
