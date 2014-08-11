@@ -236,6 +236,19 @@ void ZooKeeper::createIfNotExists(const std::string & path, const std::string & 
 		throw KeeperException(code, path);
 }
 
+void ZooKeeper::createAncestors(const std::string & path)
+{
+	size_t pos = 1;
+	while (true)
+	{
+		pos = path.find('/', pos);
+		if (pos == std::string::npos)
+			break;
+		createIfNotExists(path.substr(0, pos), "");
+		++pos;
+	}
+}
+
 int32_t ZooKeeper::removeImpl(const std::string & path, int32_t version)
 {
 	int32_t code = zoo_delete(impl, path.c_str(), version);

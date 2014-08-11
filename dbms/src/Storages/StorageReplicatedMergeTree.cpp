@@ -157,6 +157,8 @@ void StorageReplicatedMergeTree::createTableIfNotExists()
 
 	LOG_DEBUG(log, "Creating table " << zookeeper_path);
 
+	zookeeper->createAncestors(zookeeper_path);
+
 	/// Запишем метаданные таблицы, чтобы реплики могли сверять с ними параметры таблицы.
 	std::stringstream metadata;
 	metadata << "metadata format version: 1" << std::endl;
