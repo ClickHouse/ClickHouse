@@ -332,7 +332,7 @@ private:
 
 	/** Создает минимальный набор нод в ZooKeeper.
 	  */
-	void createTable();
+	void createTableIfNotExists();
 
 	/** Создает реплику в ZooKeeper и добавляет в очередь все, что нужно, чтобы догнать остальные реплики.
 	  */

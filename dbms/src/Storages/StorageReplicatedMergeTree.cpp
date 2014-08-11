@@ -69,8 +69,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
 	if (!attach)
 	{
-		if (!zookeeper->exists(zookeeper_path))
-			createTable();
+		createTableIfNotExists();
 
 		checkTableStructure(false);
 		createReplica();
@@ -151,11 +150,12 @@ static String formattedAST(const ASTPtr & ast)
 	return ss.str();
 }
 
-void StorageReplicatedMergeTree::createTable()
+void StorageReplicatedMergeTree::createTableIfNotExists()
 {
-	LOG_DEBUG(log, "Creating table " << zookeeper_path);
+	if (zookeeper->exists(zookeeper_path))
+		return;
 
-	zookeeper->create(zookeeper_path, "", zkutil::CreateMode::Persistent);
+	LOG_DEBUG(log, "Creating table " << zookeeper_path);
 
 	/// Запишем метаданные таблицы, чтобы реплики могли сверять с ними параметры таблицы.
 	std::stringstream metadata;
@@ -167,17 +167,31 @@ void StorageReplicatedMergeTree::createTable()
 	metadata << "sign column: " << data.sign_column << std::endl;
 	metadata << "primary key: " << formattedAST(data.primary_expr_ast) << std::endl;
 
-	zookeeper->create(zookeeper_path + "/metadata", metadata.str(), zkutil::CreateMode::Persistent);
-	zookeeper->create(zookeeper_path + "/columns", data.getColumnsList().toString(), zkutil::CreateMode::Persistent);
+	zkutil::Ops ops;
+	ops.push_back(new zkutil::Op::Create(zookeeper_path, "",
+										 zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
+	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/metadata", metadata.str(),
+										 zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
+	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/columns", data.getColumnsList().toString(),
+										 zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
+	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/log", "",
+										 zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
+	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/blocks", "",
+										 zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
+	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/block_numbers", "",
+										 zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
+	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/nonincrement_block_numbers", "",
+										 zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
+	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/leader_election", "",
+										 zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
+	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/temp", "",
+										 zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
+	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/replicas", "",
+										 zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
 
-	zookeeper->create(zookeeper_path + "/log", "", zkutil::CreateMode::Persistent);
-	zookeeper->create(zookeeper_path + "/blocks", "", zkutil::CreateMode::Persistent);
-	zookeeper->create(zookeeper_path + "/block_numbers", "", zkutil::CreateMode::Persistent);
-	zookeeper->create(zookeeper_path + "/nonincrement_block_numbers", "", zkutil::CreateMode::Persistent);
-	zookeeper->create(zookeeper_path + "/leader_election", "", zkutil::CreateMode::Persistent);
-	zookeeper->create(zookeeper_path + "/temp", "", zkutil::CreateMode::Persistent);
-	/// Создадим replicas в последнюю очередь, чтобы нельзя было добавить реплику, пока все остальные ноды не созданы.
-	zookeeper->create(zookeeper_path + "/replicas", "", zkutil::CreateMode::Persistent);
+	auto code = zookeeper->tryMulti(ops);
+	if (code != ZOK && code != ZNODEEXISTS)
+		throw zkutil::KeeperException(code);
 }
 
 /** Проверить, что список столбцов и настройки таблицы совпадают с указанными в ZK (/metadata).
@@ -230,81 +244,120 @@ void StorageReplicatedMergeTree::createReplica()
 {
 	LOG_DEBUG(log, "Creating replica " << replica_path);
 
-	/** Запомним список других реплик.
-	  * NOTE: Здесь есть race condition. Если почти одновременно добавить нескольких реплик, сразу же начиная в них писать,
-	  *       небольшая часть данных может не реплицироваться.
-	  */
-	Strings replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
-
-	/// Создадим пустую реплику.
-	zookeeper->create(replica_path, "", zkutil::CreateMode::Persistent);
-	zookeeper->create(replica_path + "/columns", data.getColumnsList().toString(), zkutil::CreateMode::Persistent);
-	zookeeper->create(replica_path + "/host", "", zkutil::CreateMode::Persistent);
-	zookeeper->create(replica_path + "/log_pointer", "", zkutil::CreateMode::Persistent);
-	zookeeper->create(replica_path + "/queue", "", zkutil::CreateMode::Persistent);
-	zookeeper->create(replica_path + "/parts", "", zkutil::CreateMode::Persistent);
-	zookeeper->create(replica_path + "/flags", "", zkutil::CreateMode::Persistent);
+	/// Создадим пустую реплику. Ноду columns создадим в конце - будем использовать ее в качестве признака, что создание реплики завершено.
+	zkutil::Ops ops;
+	ops.push_back(new zkutil::Op::Create(replica_path, "", zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
+	ops.push_back(new zkutil::Op::Create(replica_path + "/host", "", zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
+	ops.push_back(new zkutil::Op::Create(replica_path + "/log_pointer", "", zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
+	ops.push_back(new zkutil::Op::Create(replica_path + "/queue", "", zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
+	ops.push_back(new zkutil::Op::Create(replica_path + "/parts", "", zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
+	ops.push_back(new zkutil::Op::Create(replica_path + "/flags", "", zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
+	zookeeper->multi(ops);
 
 	/** Нужно изменить данные ноды /replicas на что угодно, чтобы поток, удаляющий старые записи в логе,
 	  *  споткнулся об это изменение и не удалил записи, которые мы еще не прочитали.
 	  */
 	zookeeper->set(zookeeper_path + "/replicas", "last added replica: " + replica_name);
 
-	if (replicas.empty())
+	Strings replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
+
+	/** "Эталонная" реплика, у которой мы возьмем информацию о множестве кусков, очередь и указатель на лог.
+	  * Возьмем случайную из реплик, созданных раньше этой.
+	  */
+	String source_replica;
+
+	Stat stat;
+	zookeeper->exists(replica_path, &stat);
+	auto my_create_time = stat.czxid;
+
+	std::random_shuffle(replicas.begin(), replicas.end());
+	for (const String & replica : replicas)
 	{
-		LOG_DEBUG(log, "No other replicas");
-		return;
+		if (!zookeeper->exists(zookeeper_path + "/replicas/" + replica, &stat))
+			throw Exception("Replica " + zookeeper_path + "/replicas/" + replica + " was removed from right under our feet.",
+							ErrorCodes::NO_SUCH_REPLICA);
+		if (stat.czxid < my_create_time)
+		{
+			source_replica = replica;
+			break;
+		}
 	}
 
-	/// "Эталонная" реплика, у которой мы возьмем информацию о множестве кусков, очередь и указатель на лог.
-	String source_replica = replicas[rand() % replicas.size()];
-
-	LOG_INFO(log, "Will mimic " << source_replica);
-
-	String source_path = zookeeper_path + "/replicas/" + source_replica;
-
-	/// Порядок следующих трех действий важен. Записи в логе могут продублироваться, но не могут потеряться.
-
-	/// Скопируем у эталонной реплики ссылку на лог.
-	zookeeper->set(replica_path + "/log_pointer", zookeeper->get(source_path + "/log_pointer"));
-
-	/// Запомним очередь эталонной реплики.
-	Strings source_queue_names = zookeeper->getChildren(source_path + "/queue");
-	std::sort(source_queue_names.begin(), source_queue_names.end());
-	Strings source_queue;
-	for (const String & entry_name : source_queue_names)
+	if (source_replica.empty())
 	{
-		String entry;
-		if (!zookeeper->tryGet(source_path + "/queue/" + entry_name, entry))
-			continue;
-		source_queue.push_back(entry);
+		LOG_INFO(log, "This is the first replica");
+	}
+	else
+	{
+		LOG_INFO(log, "Will mimic " << source_replica);
+
+		String source_path = zookeeper_path + "/replicas/" + source_replica;
+
+		/** Если эталонная реплика еще не до конца создана, подождем.
+		  * NOTE: Если при ее создании что-то пошло не так, можем провисеть тут вечно.
+		  *       Можно создавать на время создания эфемерную ноду, чтобы быть уверенным, что реплика создается, а не заброшена.
+		  *       То же можно делать и для таблицы. Можно автоматически удалять ноду реплики/таблицы,
+		  *        если видно, что она создана не до конца, а создающий ее умер.
+		  */
+		while (!zookeeper->exists(source_path + "/columns"))
+		{
+			LOG_INFO(log, "Waiting for replica " << source_path << " to be fully created");
+
+			zkutil::EventPtr event = new Poco::Event;
+			if (zookeeper->exists(source_path + "/columns", nullptr, event))
+			{
+				LOG_WARNING(log, "Oops, a watch has leaked");
+				break;
+			}
+
+			event->wait();
+		}
+
+		/// Порядок следующих трех действий важен. Записи в логе могут продублироваться, но не могут потеряться.
+
+		/// Скопируем у эталонной реплики ссылку на лог.
+		zookeeper->set(replica_path + "/log_pointer", zookeeper->get(source_path + "/log_pointer"));
+
+		/// Запомним очередь эталонной реплики.
+		Strings source_queue_names = zookeeper->getChildren(source_path + "/queue");
+		std::sort(source_queue_names.begin(), source_queue_names.end());
+		Strings source_queue;
+		for (const String & entry_name : source_queue_names)
+		{
+			String entry;
+			if (!zookeeper->tryGet(source_path + "/queue/" + entry_name, entry))
+				continue;
+			source_queue.push_back(entry);
+		}
+
+		/// Добавим в очередь задания на получение всех активных кусков, которые есть у эталонной реплики.
+		Strings parts = zookeeper->getChildren(source_path + "/parts");
+		ActiveDataPartSet active_parts_set;
+		for (const String & part : parts)
+		{
+			active_parts_set.add(part);
+		}
+		Strings active_parts = active_parts_set.getParts();
+		for (const String & name : active_parts)
+		{
+			LogEntry log_entry;
+			log_entry.type = LogEntry::GET_PART;
+			log_entry.source_replica = "";
+			log_entry.new_part_name = name;
+
+			zookeeper->create(replica_path + "/queue/queue-", log_entry.toString(), zkutil::CreateMode::PersistentSequential);
+		}
+		LOG_DEBUG(log, "Queued " << active_parts.size() << " parts to be fetched");
+
+		/// Добавим в очередь содержимое очереди эталонной реплики.
+		for (const String & entry : source_queue)
+		{
+			zookeeper->create(replica_path + "/queue/queue-", entry, zkutil::CreateMode::PersistentSequential);
+		}
+		LOG_DEBUG(log, "Copied " << source_queue.size() << " queue entries");
 	}
 
-	/// Добавим в очередь задания на получение всех активных кусков, которые есть у эталонной реплики.
-	Strings parts = zookeeper->getChildren(source_path + "/parts");
-	ActiveDataPartSet active_parts_set;
-	for (const String & part : parts)
-	{
-		active_parts_set.add(part);
-	}
-	Strings active_parts = active_parts_set.getParts();
-	for (const String & name : active_parts)
-	{
-		LogEntry log_entry;
-		log_entry.type = LogEntry::GET_PART;
-		log_entry.source_replica = "";
-		log_entry.new_part_name = name;
-
-		zookeeper->create(replica_path + "/queue/queue-", log_entry.toString(), zkutil::CreateMode::PersistentSequential);
-	}
-	LOG_DEBUG(log, "Queued " << active_parts.size() << " parts to be fetched");
-
-	/// Добавим в очередь содержимое очереди эталонной реплики.
-	for (const String & entry : source_queue)
-	{
-		zookeeper->create(replica_path + "/queue/queue-", entry, zkutil::CreateMode::PersistentSequential);
-	}
-	LOG_DEBUG(log, "Copied " << source_queue.size() << " queue entries");
+	zookeeper->create(replica_path + "/columns", data.getColumnsList().toString(), zkutil::CreateMode::Persistent);
 }
 
 void StorageReplicatedMergeTree::activateReplica()
