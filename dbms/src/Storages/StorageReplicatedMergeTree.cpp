@@ -60,7 +60,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 		if (!attach)
 			throw Exception("Can't create replicated table without ZooKeeper", ErrorCodes::NO_ZOOKEEPER);
 
-		goReadOnly();
+		goReadOnlyPermanently();
 		return;
 	}
 
@@ -1950,7 +1950,7 @@ void StorageReplicatedMergeTree::partialShutdown()
 	LOG_TRACE(log, "Threads finished");
 }
 
-void StorageReplicatedMergeTree::goReadOnly()
+void StorageReplicatedMergeTree::goReadOnlyPermanently()
 {
 	LOG_INFO(log, "Going to read-only mode");
 
@@ -1961,33 +1961,55 @@ void StorageReplicatedMergeTree::goReadOnly()
 	partialShutdown();
 }
 
-void StorageReplicatedMergeTree::startup()
+bool StorageReplicatedMergeTree::tryStartup()
 {
-	shutdown_called = false;
-	shutdown_event.reset();
+	try
+	{
+		activateReplica();
 
-	merger.uncancelAll();
-	if (unreplicated_merger)
-		unreplicated_merger->uncancelAll();
+		leader_election = new zkutil::LeaderElection(zookeeper_path + "/leader_election", *zookeeper,
+			std::bind(&StorageReplicatedMergeTree::becomeLeader, this), replica_name);
 
-	activateReplica();
+		/// Все, что выше, может бросить KeeperException, если что-то не так с ZK.
+		/// Все, что ниже, не должно бросать исключений.
 
-	leader_election = new zkutil::LeaderElection(zookeeper_path + "/leader_election", *zookeeper,
-		std::bind(&StorageReplicatedMergeTree::becomeLeader, this), replica_name);
+		shutdown_called = false;
+		shutdown_event.reset();
 
-	queue_updating_thread = std::thread(&StorageReplicatedMergeTree::queueUpdatingThread, this);
-	cleanup_thread = std::thread(&StorageReplicatedMergeTree::cleanupThread, this);
-	alter_thread = std::thread(&StorageReplicatedMergeTree::alterThread, this);
-	part_check_thread = std::thread(&StorageReplicatedMergeTree::partCheckThread, this);
-	queue_task_handle = context.getBackgroundPool().addTask(
-		std::bind(&StorageReplicatedMergeTree::queueTask, this, std::placeholders::_1));
+		merger.uncancelAll();
+		if (unreplicated_merger)
+			unreplicated_merger->uncancelAll();
+
+		queue_updating_thread = std::thread(&StorageReplicatedMergeTree::queueUpdatingThread, this);
+		cleanup_thread = std::thread(&StorageReplicatedMergeTree::cleanupThread, this);
+		alter_thread = std::thread(&StorageReplicatedMergeTree::alterThread, this);
+		part_check_thread = std::thread(&StorageReplicatedMergeTree::partCheckThread, this);
+		queue_task_handle = context.getBackgroundPool().addTask(
+			std::bind(&StorageReplicatedMergeTree::queueTask, this, std::placeholders::_1));
+		return true;
+	}
+	catch (zkutil::KeeperException & e)
+	{
+		replica_is_active_node = nullptr;
+		leader_election = nullptr;
+		LOG_ERROR(log, "Couldn't start replication: " << e.what() << ", " << e.displayText() << ", stack trace:\n"
+			<< e.getStackTrace().toString());
+		return false;
+	}
+	catch (...)
+	{
+		replica_is_active_node = nullptr;
+		leader_election = nullptr;
+		throw;
+	}
 }
 
 void StorageReplicatedMergeTree::restartingThread()
 {
 	try
 	{
-		startup();
+		while (!permanent_shutdown_called && !tryStartup())
+			restarting_event.tryWait(10 * 1000);
 
 		while (!permanent_shutdown_called)
 		{
@@ -1995,16 +2017,28 @@ void StorageReplicatedMergeTree::restartingThread()
 			{
 				LOG_WARNING(log, "ZooKeeper session has expired. Switching to a new session.");
 
-				/// Запретим писать в таблицу, пока подменяем zookeeper.
-				LOG_TRACE(log, "Locking INSERTs");
-				auto structure_lock = lockDataForAlter();
-				LOG_TRACE(log, "Locked INSERTs");
+				{
+					/// Запретим писать в таблицу, пока подменяем zookeeper.
+					auto structure_lock = lockDataForAlter();
 
-				partialShutdown();
+					partialShutdown();
 
-				zookeeper = context.getZooKeeper();
+					zookeeper = context.getZooKeeper();
 
-				startup();
+					is_read_only = true;
+				}
+
+				while (!permanent_shutdown_called && !tryStartup())
+					restarting_event.tryWait(10 * 1000);
+
+				if (permanent_shutdown_called)
+					break;
+
+				{
+					auto structure_lock = lockDataForAlter();
+
+					is_read_only = false;
+				}
 			}
 
 			restarting_event.tryWait(60 * 1000);
@@ -2013,8 +2047,8 @@ void StorageReplicatedMergeTree::restartingThread()
 	catch (...)
 	{
 		tryLogCurrentException("StorageReplicatedMergeTree::restartingThread");
-		LOG_ERROR(log, "Exception in restartingThread. The storage will be read-only until server restart.");
-		goReadOnly();
+		LOG_ERROR(log, "Unexpected exception in restartingThread. The storage will be read-only until server restart.");
+		goReadOnlyPermanently();
 		LOG_DEBUG(log, "restarting thread finished");
 		return;
 	}
@@ -2158,6 +2192,9 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 
 	{
 		auto table_lock = lockStructureForAlter();
+
+		if (is_read_only)
+			throw Exception("Can't ALTER read-only table", ErrorCodes::TABLE_IS_READ_ONLY);
 
 		data.checkAlter(params);
 
@@ -2411,8 +2448,8 @@ void StorageReplicatedMergeTree::attachPartition(const Field & field, bool unrep
 
 void StorageReplicatedMergeTree::drop()
 {
-	if (!zookeeper)
-		throw Exception("Can't drop replicated table without ZooKeeper", ErrorCodes::NO_ZOOKEEPER);
+	if (is_read_only)
+		throw Exception("Can't drop read-only replicated table (need to drop data in ZooKeeper as well)", ErrorCodes::TABLE_IS_READ_ONLY);
 
 	shutdown();
 
