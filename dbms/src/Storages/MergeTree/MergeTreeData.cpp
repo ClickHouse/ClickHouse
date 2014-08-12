@@ -153,7 +153,7 @@ void MergeTreeData::loadDataParts()
 			if (part->level == 0)
 			{
 				/// Восстановить куски нулевого уровня невозможно.
-				LOG_ERROR(log, "Removing broken part " << full_path + file_name << " because is't impossible to repair.");
+				LOG_ERROR(log, "Removing broken part " << full_path + file_name << " because it's impossible to repair.");
 				broken_parts_to_remove.push_back(part);
 			}
 			else

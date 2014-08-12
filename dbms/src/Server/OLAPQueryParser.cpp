@@ -166,7 +166,7 @@ QueryParseResult QueryParser::parse(std::istream & s)
 			else if (settings_child_nodes->item(i)->nodeName() == "max_threads_per_counter")
 			{
 				/** Выставить локальное ограничение на максимальное количество обрабатываемых запросов
-					* Оно может быть больше, чем ограничение по-умолчанию.
+					* Оно может быть больше, чем ограничение по умолчанию.
 					*/
 				result.max_threads_per_counter = DB::parse<unsigned>(settings_child_nodes->item(i)->innerText());
 			}

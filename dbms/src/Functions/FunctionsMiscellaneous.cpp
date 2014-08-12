@@ -226,7 +226,7 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 	}
 	else if (const ColumnTuple * col = typeid_cast<const ColumnTuple *>(&*column))
 	{
-		/// Посчитаем видимую ширину для каждого вложенного столбца по-отдельности, и просуммируем.
+		/// Посчитаем видимую ширину для каждого вложенного столбца по отдельности, и просуммируем.
 		Block nested_block = col->getData();
 		size_t columns = nested_block.columns();
 

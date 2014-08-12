@@ -68,7 +68,7 @@ void TCPHandler::runImpl()
 		throw;
 	}
 
-	/// При соединении может быть указана БД по-умолчанию.
+	/// При соединении может быть указана БД по умолчанию.
 	if (!default_database.empty())
 	{
 		if (!connection_context.isDatabaseExist(default_database))
