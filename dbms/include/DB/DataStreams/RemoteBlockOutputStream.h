@@ -14,8 +14,8 @@ namespace DB
 class RemoteBlockOutputStream : public IBlockOutputStream
 {
 public:
-	RemoteBlockOutputStream(Connection & connection_, const String & query_)
-		: connection(connection_), query(query_)
+	RemoteBlockOutputStream(Connection & connection_, const String & query_, Settings * settings_ = nullptr)
+		: connection(connection_), query(query_), settings(settings_)
 	{
 	}
 
@@ -26,7 +26,7 @@ public:
 	  */
 	Block sendQueryAndGetSampleBlock()
 	{
-		connection.sendQuery(query);
+		connection.sendQuery(query, "", QueryProcessingStage::Complete, settings);
 		sent_query = true;
 
 		Connection::Packet packet = connection.receivePacket();
@@ -95,6 +95,7 @@ public:
 private:
 	Connection & connection;
 	String query;
+	Settings * settings;
 	Block sample_block;
 
 	bool sent_query = false;
