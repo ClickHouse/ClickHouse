@@ -236,6 +236,19 @@ void ZooKeeper::createIfNotExists(const std::string & path, const std::string & 
 		throw KeeperException(code, path);
 }
 
+void ZooKeeper::createAncestors(const std::string & path)
+{
+	size_t pos = 1;
+	while (true)
+	{
+		pos = path.find('/', pos);
+		if (pos == std::string::npos)
+			break;
+		createIfNotExists(path.substr(0, pos), "");
+		++pos;
+	}
+}
+
 int32_t ZooKeeper::removeImpl(const std::string & path, int32_t version)
 {
 	int32_t code = zoo_delete(impl, path.c_str(), version);
@@ -368,6 +381,12 @@ int32_t ZooKeeper::multiImpl(const Ops & ops_, OpResultsPtr * out_results_)
 {
 	if (ops_.empty())
 		return ZOK;
+
+	/// Workaround ошибки в сишном клиенте ZooKeeper. Если сессия истекла, zoo_multi иногда падает с segfault.
+	/// Наверно, здесь есть race condition, и возможен segfault, если сессия истечет между этой проверкой и zoo_multi.
+	/// TODO: Посмотреть, не исправлено ли это в последней версии клиента, и исправить.
+	if (expired())
+		return ZINVALIDSTATE;
 
 	size_t count = ops_.size();
 	OpResultsPtr out_results(new OpResults(count));

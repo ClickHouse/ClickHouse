@@ -84,6 +84,10 @@ public:
 	 */
 	void createIfNotExists(const std::string & path, const std::string & data);
 
+	/** Создает всех еще не существующих предков ноды, с пустыми данными. Саму указанную ноду не создает.
+	  */
+	void createAncestors(const std::string & path);
+
 	/** Удалить ноду, если ее версия равна version (если -1, подойдет любая версия).
 	  */
 	void remove(const std::string & path, int32_t version = -1);
