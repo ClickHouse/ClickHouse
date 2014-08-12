@@ -5,6 +5,7 @@
 
 #include <DB/Storages/StorageDistributed.h>
 #include <DB/Storages/VirtualColumnFactory.h>
+#include <DB/Storages/Distributed/DistributedBlockOutputStream.h>
 
 #include <Poco/Net/NetworkInterface.h>
 #include <DB/Client/ConnectionPool.h>
@@ -23,12 +24,18 @@ StorageDistributed::StorageDistributed(
 	const String & remote_database_,
 	const String & remote_table_,
 	Cluster & cluster_,
-	const Context & context_)
+	const Context & context_,
+	const ASTPtr & sharding_key_)
 	: name(name_), columns(columns_),
 	remote_database(remote_database_), remote_table(remote_table_),
 	context(context_),
-	cluster(cluster_)
+	cluster(cluster_),
+	sharding_key(sharding_key_),
+	write_enabled(cluster.getLocalNodesNum() + cluster.pools.size() < 2 || sharding_key_)
 {
+	for (auto & shard_info : cluster.shard_info_vec) {
+		std::cout << "shard '" << shard_info.dir_name << "' with weight " << shard_info.weight << std::endl;
+	}
 }
 
 StoragePtr StorageDistributed::create(
@@ -37,10 +44,11 @@ StoragePtr StorageDistributed::create(
 	const String & remote_database_,
 	const String & remote_table_,
 	const String & cluster_name,
-	Context & context_)
+	Context & context_,
+	const ASTPtr & sharding_key_)
 {
 	context_.initClusters();
-	return (new StorageDistributed(name_, columns_, remote_database_, remote_table_, context_.getCluster(cluster_name), context_))->thisPtr();
+	return (new StorageDistributed(name_, columns_, remote_database_, remote_table_, context_.getCluster(cluster_name), context_, sharding_key_))->thisPtr();
 }
 
 
@@ -50,9 +58,10 @@ StoragePtr StorageDistributed::create(
 	const String & remote_database_,
 	const String & remote_table_,
 	SharedPtr<Cluster> & owned_cluster_,
-	Context & context_)
+	Context & context_,
+	const ASTPtr & sharding_key_)
 {
-	auto res = new StorageDistributed(name_, columns_, remote_database_, remote_table_, *owned_cluster_, context_);
+	auto res = new StorageDistributed(name_, columns_, remote_database_, remote_table_, *owned_cluster_, context_, sharding_key_);
 
 	/// Захватываем владение объектом-кластером.
 	res->owned_cluster = owned_cluster_;
@@ -132,6 +141,21 @@ BlockInputStreams StorageDistributed::read(
 
 	external_tables.clear();
 	return res;
+}
+
+BlockOutputStreamPtr StorageDistributed::write(ASTPtr query)
+{
+	if (!write_enabled)
+		throw Exception{
+			"Method write is not supported by storage " + getName() + " with no sharding key provided",
+			ErrorCodes::NOT_IMPLEMENTED
+		};
+
+	return new DistributedBlockOutputStream{
+		*this, this->cluster,
+		sharding_key ? ExpressionAnalyzer(sharding_key, context, *columns).getActions(false) : nullptr,
+		sharding_key ? sharding_key->getColumnName() : std::string{}
+	};
 }
 
 void StorageDistributed::alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context)

@@ -29,6 +29,14 @@ public:
 	/// Соединения с удалёнными серверами.
 	ConnectionPools pools;
 
+	struct ShardInfo
+	{
+		std::string dir_name;
+		int weight;
+	};
+	std::vector<ShardInfo> shard_info_vec;
+	std::vector<size_t> slot_to_shard;
+
 	/// используеться для выставления ограничения на размер таймаута
 	static Poco::Timespan saturate(const Poco::Timespan & v, const Poco::Timespan & limit);
 
@@ -56,6 +64,7 @@ private:
 		String password;
 
 		Address(const String & config_prefix);
+		Address(const String & host, int port, const String & config_prefix);
 		Address(const String & host_port_, const String & user_, const String & password_);
 	};
 

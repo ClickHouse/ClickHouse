@@ -7,6 +7,7 @@
 namespace DB
 {
 
+
 Cluster::Address::Address(const String & config_prefix)
 {
 	Poco::Util::AbstractConfiguration & config = Poco::Util::Application::instance().config();
@@ -17,6 +18,14 @@ Cluster::Address::Address(const String & config_prefix)
 	password = config.getString(config_prefix + ".password", "");
 }
 
+Cluster::Address::Address(const String & host, const int port, const String & config_prefix)
+: host_port(host, port)
+{
+	Poco::Util::AbstractConfiguration & config = Poco::Util::Application::instance().config();
+
+	user = config.getString(config_prefix + ".user", "default");
+	password = config.getString(config_prefix + ".password", "");
+}
 
 Cluster::Address::Address(const String & host_port_, const String & user_, const String & password_)
 	: user(user_), password(password_)
@@ -53,11 +62,18 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 
 	String config_prefix = cluster_name + ".";
 
-	for (Poco::Util::AbstractConfiguration::Keys::const_iterator it = config_keys.begin(); it != config_keys.end(); ++it)
+	for (auto it = config_keys.begin(); it != config_keys.end(); ++it)
 	{
 		if (0 == strncmp(it->c_str(), "node", strlen("node")))
 		{
-			addresses.push_back(Address(config_prefix + *it));
+			const auto & prefix = config_prefix + *it;
+			const auto & host = config.getString(prefix + ".host");
+			const auto port = config.getInt(prefix + ".port");
+			const auto weight = config.getInt(prefix + ".weight", 1);
+
+			addresses.emplace_back(host, port, prefix);
+			slot_to_shard.insert(std::end(slot_to_shard), weight, shard_info_vec.size());
+			shard_info_vec.push_back({host + ':' + std::to_string(port), weight});
 		}
 		else if (0 == strncmp(it->c_str(), "shard", strlen("shard")))
 		{
@@ -67,13 +83,33 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 			addresses_with_failover.push_back(Addresses());
 			Addresses & replica_addresses = addresses_with_failover.back();
 
-			for (Poco::Util::AbstractConfiguration::Keys::const_iterator jt = replica_keys.begin(); jt != replica_keys.end(); ++jt)
+			const auto & partial_prefix = config_prefix + *it + ".";
+			const auto weight = config.getInt(partial_prefix + ".weight", 1);
+			std::string dir_name{};
+
+			auto first = false;
+			for (auto jt = replica_keys.begin(); jt != replica_keys.end(); ++jt)
 			{
+				if (0 == strncmp(jt->data(), "weight", strlen("weight")))
+					continue;
+
+				if (!first) first = true;
+
 				if (0 == strncmp(jt->c_str(), "replica", strlen("replica")))
-					replica_addresses.push_back(Address(config_prefix + *it + "." + *jt));
+				{
+					const auto & prefix = partial_prefix + *jt;
+					const auto & host = config.getString(prefix + ".host");
+					const auto port = config.getInt(prefix + ".port");
+
+					replica_addresses.emplace_back(host, port, prefix);
+					dir_name += (first ? "" : ",") + host + ':' + std::to_string(port);
+				}
 				else
 					throw Exception("Unknown element in config: " + *jt, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
 			}
+
+			slot_to_shard.insert(std::end(slot_to_shard), weight, shard_info_vec.size());
+			shard_info_vec.push_back({dir_name, weight});
 		}
 		else
 			throw Exception("Unknown element in config: " + *it, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);

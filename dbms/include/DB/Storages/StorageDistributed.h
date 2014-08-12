@@ -25,7 +25,8 @@ public:
 		const String & remote_database_,	/// БД на удалённых серверах.
 		const String & remote_table_,		/// Имя таблицы на удалённых серверах.
 		const String & cluster_name,
-		Context & context_);
+		Context & context_,
+		const ASTPtr & sharding_key_ = nullptr);
 
 	static StoragePtr create(
 		const std::string & name_,			/// Имя таблицы.
@@ -33,7 +34,8 @@ public:
 		const String & remote_database_,	/// БД на удалённых серверах.
 		const String & remote_table_,		/// Имя таблицы на удалённых серверах.
 		SharedPtr<Cluster> & owned_cluster_,
-		Context & context_);
+		Context & context_,
+		const ASTPtr & sharding_key_ = nullptr);
 
 	std::string getName() const { return "Distributed"; }
 	std::string getTableName() const { return name; }
@@ -57,11 +59,15 @@ public:
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
 		unsigned threads = 1);
 
+	virtual BlockOutputStreamPtr write(ASTPtr query) override;
+
 	void drop() override {}
 	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) { name = new_table_name; }
 	/// в подтаблицах добавлять и удалять столбы нужно вручную
 	/// структура подтаблиц не проверяется
 	void alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context);
+
+	const ASTPtr & getShardingKey() const { return sharding_key; }
 
 private:
 	StorageDistributed(
@@ -70,7 +76,8 @@ private:
 		const String & remote_database_,
 		const String & remote_table_,
 		Cluster & cluster_,
-		const Context & context_);
+		const Context & context_,
+		const ASTPtr & sharding_key_ = nullptr);
 
 	/// Создает копию запроса, меняет имена базы данных и таблицы.
 	ASTPtr rewriteQuery(ASTPtr query);
@@ -91,6 +98,9 @@ private:
 
 	/// Соединения с удалёнными серверами.
 	Cluster & cluster;
+
+	ASTPtr sharding_key;
+	bool write_enabled;
 };
 
 }
