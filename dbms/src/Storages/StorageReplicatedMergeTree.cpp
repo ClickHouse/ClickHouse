@@ -72,7 +72,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	{
 		createTableIfNotExists();
 
-		checkTableStructure(false);
+		checkTableStructure(false, false);
 		createReplica();
 	}
 	else
@@ -87,7 +87,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 				<< replica_path << "/flags/force_restore_data).");
 		}
 
-		checkTableStructure(skip_sanity_checks);
+		checkTableStructure(skip_sanity_checks, true);
 		checkParts(skip_sanity_checks);
 	}
 
@@ -200,7 +200,7 @@ void StorageReplicatedMergeTree::createTableIfNotExists()
 /** Проверить, что список столбцов и настройки таблицы совпадают с указанными в ZK (/metadata).
 	* Если нет - бросить исключение.
 	*/
-void StorageReplicatedMergeTree::checkTableStructure(bool skip_sanity_checks)
+void StorageReplicatedMergeTree::checkTableStructure(bool skip_sanity_checks, bool allow_alter)
 {
 	String metadata_str = zookeeper->get(zookeeper_path + "/metadata");
 	ReadBufferFromString buf(metadata_str);
@@ -227,7 +227,7 @@ void StorageReplicatedMergeTree::checkTableStructure(bool skip_sanity_checks)
 	columns_version = stat.version;
 	if (columns != data.getColumnsList())
 	{
-		if (data.getColumnsList().sizeOfDifference(columns) <= 2 || skip_sanity_checks)
+		if (allow_alter && (data.getColumnsList().sizeOfDifference(columns) <= 2 || skip_sanity_checks))
 		{
 			LOG_WARNING(log, "Table structure in ZooKeeper is a little different from local table structure. Assuming ALTER.");
 
@@ -237,7 +237,7 @@ void StorageReplicatedMergeTree::checkTableStructure(bool skip_sanity_checks)
 		}
 		else
 		{
-			throw Exception("Table structure in ZooKeeper is very different from local table structure.",
+			throw Exception("Table structure in ZooKeeper is too different from local table structure.",
 							ErrorCodes::INCOMPATIBLE_COLUMNS);
 		}
 	}

@@ -345,7 +345,7 @@ private:
 	/** Проверить, что список столбцов и настройки таблицы совпадают с указанными в ZK (/metadata).
 	  * Если нет - бросить исключение.
 	  */
-	void checkTableStructure(bool skip_sanity_checks);
+	void checkTableStructure(bool skip_sanity_checks, bool allow_alter);
 
 	/** Проверить, что множество кусков соответствует тому, что в ZK (/replicas/me/parts/).
 	  * Если каких-то кусков, описанных в ZK нет локально, бросить исключение.
