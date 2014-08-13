@@ -10,6 +10,8 @@
 #include <Poco/Net/NetworkInterface.h>
 #include <DB/Client/ConnectionPool.h>
 
+#include <DB/Common/escapeForFileName.h>
+
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/InterpreterAlterQuery.h>
 #include <boost/bind.hpp>
@@ -25,16 +27,22 @@ StorageDistributed::StorageDistributed(
 	const String & remote_table_,
 	Cluster & cluster_,
 	const Context & context_,
-	const ASTPtr & sharding_key_)
+	const ASTPtr & sharding_key_,
+	const String & data_path_)
 	: name(name_), columns(columns_),
 	remote_database(remote_database_), remote_table(remote_table_),
-	context(context_),
-	cluster(cluster_),
-	sharding_key(sharding_key_),
-	write_enabled(cluster.getLocalNodesNum() + cluster.pools.size() < 2 || sharding_key_)
+	context(context_), cluster(cluster_),
+	sharding_key_expr(sharding_key_ ? ExpressionAnalyzer(sharding_key_, context, *columns).getActions(false) : nullptr),
+	sharding_key_column_name(sharding_key_ ? sharding_key_->getColumnName() : String{}),
+	write_enabled(cluster.getLocalNodesNum() + cluster.pools.size() < 2 || sharding_key_),
+	path(data_path_ + escapeForFileName(name) + '/')
 {
+	std::cout << "table `" << name << "` in " << path << std::endl;
 	for (auto & shard_info : cluster.shard_info_vec) {
-		std::cout << "shard '" << shard_info.dir_name << "' with weight " << shard_info.weight << std::endl;
+		std::cout
+			<< "\twill write to " << path + shard_info.dir_name
+			<< " with weight " << shard_info.weight
+			<< std::endl;
 	}
 }
 
@@ -45,10 +53,16 @@ StoragePtr StorageDistributed::create(
 	const String & remote_table_,
 	const String & cluster_name,
 	Context & context_,
-	const ASTPtr & sharding_key_)
+	const ASTPtr & sharding_key_,
+	const String & data_path_)
 {
 	context_.initClusters();
-	return (new StorageDistributed(name_, columns_, remote_database_, remote_table_, context_.getCluster(cluster_name), context_, sharding_key_))->thisPtr();
+
+	return (new StorageDistributed{
+		name_, columns_, remote_database_, remote_table_,
+		context_.getCluster(cluster_name), context_,
+		sharding_key_, data_path_
+	})->thisPtr();
 }
 
 
@@ -58,10 +72,12 @@ StoragePtr StorageDistributed::create(
 	const String & remote_database_,
 	const String & remote_table_,
 	SharedPtr<Cluster> & owned_cluster_,
-	Context & context_,
-	const ASTPtr & sharding_key_)
+	Context & context_)
 {
-	auto res = new StorageDistributed(name_, columns_, remote_database_, remote_table_, *owned_cluster_, context_, sharding_key_);
+	auto res = new StorageDistributed{
+		name_, columns_, remote_database_,
+		remote_table_, *owned_cluster_, context_
+	};
 
 	/// Захватываем владение объектом-кластером.
 	res->owned_cluster = owned_cluster_;
@@ -151,11 +167,7 @@ BlockOutputStreamPtr StorageDistributed::write(ASTPtr query)
 			ErrorCodes::NOT_IMPLEMENTED
 		};
 
-	return new DistributedBlockOutputStream{
-		*this, this->cluster,
-		sharding_key ? ExpressionAnalyzer(sharding_key, context, *columns).getActions(false) : nullptr,
-		sharding_key ? sharding_key->getColumnName() : std::string{}
-	};
+	return new DistributedBlockOutputStream{*this, this->cluster, query};
 }
 
 void StorageDistributed::alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context)

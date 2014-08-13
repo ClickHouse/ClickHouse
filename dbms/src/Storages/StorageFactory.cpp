@@ -188,7 +188,7 @@ StoragePtr StorageFactory::get(
 		const auto & sharding_key = args.size() == 4 ? args[3] : nullptr;
 
 		return StorageDistributed::create(
-			table_name, columns, remote_database, remote_table, cluster_name, context, sharding_key
+			table_name, columns, remote_database, remote_table, cluster_name, context, sharding_key, data_path
 		);
 	}
 	else if (endsWith(name, "MergeTree"))
