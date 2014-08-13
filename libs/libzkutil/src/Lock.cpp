@@ -13,7 +13,7 @@ bool Lock::tryLock()
 	{
 		size_t attempt;
 		std::string dummy;
-		int32_t code = zookeeper->tryCreateWithRetries(lock_path, "", zkutil::CreateMode::Ephemeral, dummy, &attempt);
+		int32_t code = zookeeper->tryCreateWithRetries(lock_path, lock_message, zkutil::CreateMode::Ephemeral, dummy, &attempt);
 
 		if (code == ZNODEEXISTS)
 		{

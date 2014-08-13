@@ -11,8 +11,8 @@ namespace zkutil
 	public:
 		/// lock_prefix - относительный путь до блокировки в ZK. Начинается со слеша
 		/// lock_name - имя ноды блокировки в ZK
-		Lock(zkutil::ZooKeeperPtr zk, const std::string & lock_prefix_, const std::string & lock_name_) :
-			zookeeper(zk), lock_path(lock_prefix_ + "/" + lock_name_), log(&Logger::get("zkutil::Lock"))
+		Lock(zkutil::ZooKeeperPtr zk, const std::string & lock_prefix_, const std::string & lock_name_, const std::string & lock_message_ = "") :
+			zookeeper(zk), lock_path(lock_prefix_ + "/" + lock_name_), lock_message(lock_message_), log(&Logger::get("zkutil::Lock"))
 		{
 			zookeeper->createIfNotExists(lock_prefix_, "");
 		}
@@ -54,6 +54,7 @@ namespace zkutil
 		Status checkImpl();
 		zkutil::ZooKeeperPtr zookeeper;
 		std::string lock_path;
+		std::string lock_message;
 		Logger * log;
 		bool locked = false;
 	};
