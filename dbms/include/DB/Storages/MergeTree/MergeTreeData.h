@@ -100,7 +100,7 @@ struct MergeTreeSettings
 	size_t max_rows_to_use_cache = 1024 * 1024;
 
 	/// Через сколько секунд удалять ненужные куски.
-	time_t old_parts_lifetime = 5 * 60;
+	time_t old_parts_lifetime = 8 * 60;
 
 	/// Если в таблице хотя бы столько активных кусков, искусственно замедлять вставки в таблицу.
 	size_t parts_to_delay_insert = 150;
@@ -576,6 +576,9 @@ public:
 					bool require_part_metadata_,
 					BrokenPartCallback broken_part_callback_ = &MergeTreeData::doNothing);
 
+	/// Загрузить множество кусков с данными с диска. Вызывается один раз - сразу после создания объекта.
+	void loadDataParts(bool skip_sanity_checks);
+
 	std::string getModePrefix() const;
 
 	bool supportsSampling() const { return !!sampling_expression; }
@@ -752,9 +755,6 @@ private:
 	  */
 	DataParts all_data_parts;
 	Poco::FastMutex all_data_parts_mutex;
-
-	/// Загрузить множество кусков с данными с диска. Вызывается один раз - при создании объекта.
-	void loadDataParts();
 
 	/** Выражение, преобразующее типы столбцов.
 	  * Если преобразований типов нет, out_expression=nullptr.

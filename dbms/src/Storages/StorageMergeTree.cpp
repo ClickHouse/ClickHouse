@@ -27,6 +27,7 @@ StorageMergeTree::StorageMergeTree(const String & path_, const String & database
 {
 	increment.fixIfBroken(data.getMaxDataPartIndex());
 
+	data.loadDataParts(false);
 	data.clearOldParts();
 }
 

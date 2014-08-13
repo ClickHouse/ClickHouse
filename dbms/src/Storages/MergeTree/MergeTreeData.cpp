@@ -56,8 +56,6 @@ MergeTreeData::MergeTreeData(
 
 	ExpressionActionsPtr projected_expr = ExpressionAnalyzer(primary_expr_ast, context, *columns).getActions(true);
 	primary_key_sample = projected_expr->getSampleBlock();
-
-	loadDataParts();
 }
 
 UInt64 MergeTreeData::getMaxDataPartIndex()
@@ -85,7 +83,7 @@ std::string MergeTreeData::getModePrefix() const
 }
 
 
-void MergeTreeData::loadDataParts()
+void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 {
 	LOG_DEBUG(log, "Loading data parts");
 
@@ -121,6 +119,8 @@ void MergeTreeData::loadDataParts()
 	}
 
 	DataPartsVector broken_parts_to_remove;
+	DataPartsVector broken_parts_to_detach;
+	size_t suspicious_broken_parts = 0;
 
 	Poco::RegularExpression::MatchVec matches;
 	for (const String & file_name : part_file_names)
@@ -163,6 +163,7 @@ void MergeTreeData::loadDataParts()
 				int contained_parts = 0;
 
 				LOG_ERROR(log, "Part " << full_path + file_name << " is broken. Looking for parts to replace it.");
+				++suspicious_broken_parts;
 
 				for (const String & contained_name : part_file_names)
 				{
@@ -186,8 +187,9 @@ void MergeTreeData::loadDataParts()
 				}
 				else
 				{
-					LOG_ERROR(log, "Not removing broken part " << full_path + file_name
+					LOG_ERROR(log, "Detaching broken part " << full_path + file_name
 						<< " because it covers less than 2 parts. You need to resolve this manually");
+					broken_parts_to_detach.push_back(part);
 				}
 			}
 
@@ -199,12 +201,14 @@ void MergeTreeData::loadDataParts()
 		data_parts.insert(part);
 	}
 
-	if (broken_parts_to_remove.size() > 2)
-		throw Exception("Suspiciously many (" + toString(broken_parts_to_remove.size()) + ") broken parts to remove.",
+	if (suspicious_broken_parts > 5 && !skip_sanity_checks)
+		throw Exception("Suspiciously many (" + toString(suspicious_broken_parts) + ") broken parts to remove.",
 			ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS);
 
 	for (const auto & part : broken_parts_to_remove)
 		part->remove();
+	for (const auto & part : broken_parts_to_detach)
+		part->renameAddPrefix("detached/");
 
 	all_data_parts = data_parts;
 

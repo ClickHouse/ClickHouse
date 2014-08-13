@@ -55,6 +55,23 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	log(&Logger::get(database_name_ + "." + table_name + " (StorageReplicatedMergeTree)")),
 	shutdown_event(false)
 {
+	if (!zookeeper_path.empty() && *zookeeper_path.rbegin() == '/')
+		zookeeper_path.erase(zookeeper_path.end() - 1);
+	replica_path = zookeeper_path + "/replicas/" + replica_name;
+
+	bool skip_sanity_checks = false;
+
+	if (zookeeper && zookeeper->exists(replica_path + "/flags/force_restore_data"))
+	{
+		skip_sanity_checks = true;
+		zookeeper->remove(replica_path + "/flags/force_restore_data");
+
+		LOG_WARNING(log, "Skipping the limits on severity of changes to data parts and columns (flag "
+			<< replica_path << "/flags/force_restore_data).");
+	}
+
+	data.loadDataParts(skip_sanity_checks);
+
 	if (!zookeeper)
 	{
 		if (!attach)
@@ -63,10 +80,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 		goReadOnlyPermanently();
 		return;
 	}
-
-	if (!zookeeper_path.empty() && *zookeeper_path.rbegin() == '/')
-		zookeeper_path.erase(zookeeper_path.end() - 1);
-	replica_path = zookeeper_path + "/replicas/" + replica_name;
 
 	if (!attach)
 	{
@@ -77,16 +90,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	}
 	else
 	{
-		bool skip_sanity_checks = false;
-		if (zookeeper->exists(replica_path + "/flags/force_restore_data"))
-		{
-			skip_sanity_checks = true;
-			zookeeper->remove(replica_path + "/flags/force_restore_data");
-
-			LOG_WARNING(log, "Skipping the limits on severity of changes to data parts and columns (flag "
-				<< replica_path << "/flags/force_restore_data).");
-		}
-
 		checkTableStructure(skip_sanity_checks, true);
 		checkParts(skip_sanity_checks);
 	}
@@ -444,6 +447,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 		}
 		else
 		{
+			LOG_ERROR(log, "Fetching missing part " << missing_name);
 			parts_to_fetch.push_back(missing_name);
 		}
 	}
@@ -1986,6 +1990,7 @@ bool StorageReplicatedMergeTree::tryStartup()
 		part_check_thread = std::thread(&StorageReplicatedMergeTree::partCheckThread, this);
 		queue_task_handle = context.getBackgroundPool().addTask(
 			std::bind(&StorageReplicatedMergeTree::queueTask, this, std::placeholders::_1));
+		queue_task_handle->wake();
 		return true;
 	}
 	catch (zkutil::KeeperException & e)
