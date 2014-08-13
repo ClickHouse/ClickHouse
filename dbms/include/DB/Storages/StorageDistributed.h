@@ -87,9 +87,6 @@ private:
 		const ASTPtr & sharding_key_ = nullptr,
 		const String & data_path_ = String{});
 
-	/// Создает копию запроса, меняет имена базы данных и таблицы.
-	ASTPtr rewriteQuery(ASTPtr query);
-
 	void createDirectoryMonitors();
 
 	void directoryMonitorFunc(const std::string & path);

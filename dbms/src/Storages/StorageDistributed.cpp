@@ -20,6 +20,46 @@
 namespace DB
 {
 
+namespace {
+	template <typename ASTType>
+	inline std::string queryToString(const ASTPtr & query)
+	{
+		const auto & select = typeid_cast<const ASTType &>(*query);
+
+		std::ostringstream s;
+		formatAST(select, s, 0, false, true);
+
+		return s.str();
+	}
+
+	inline ASTPtr rewrite(const std::string & name, const ASTSelectQuery &, const ASTIdentifier::Kind kind)
+	{
+		return new ASTIdentifier{{}, name, kind};
+	}
+
+	inline const std::string & rewrite(const std::string & name, const ASTInsertQuery &, ASTIdentifier::Kind)
+	{
+		return name;
+	}
+
+	/// Создает копию запроса, меняет имена базы данных и таблицы.
+	template <typename ASTType>
+	inline ASTPtr rewriteQuery(const ASTPtr & query, const std::string & database, const std::string & table)
+	{		
+		/// Создаем копию запроса.
+		auto modified_query_ast = query->clone();
+
+		/// Меняем имена таблицы и базы данных
+		auto & modified_query = typeid_cast<ASTType &>(*modified_query_ast);
+		modified_query.database = rewrite(database, modified_query, ASTIdentifier::Database);
+		modified_query.table = rewrite(table, modified_query, ASTIdentifier::Table);
+
+		/// copy elision and RVO will work as intended, but let's be more explicit
+		return std::move(modified_query_ast);
+	}
+}
+
+
 StorageDistributed::StorageDistributed(
 	const std::string & name_,
 	NamesAndTypesListPtr columns_,
@@ -87,27 +127,6 @@ StoragePtr StorageDistributed::create(
 	return res->thisPtr();
 }
 
-ASTPtr StorageDistributed::rewriteQuery(ASTPtr query)
-{
-	/// Создаем копию запроса.
-	ASTPtr modified_query_ast = query->clone();
-
-	/// Меняем имена таблицы и базы данных
-	ASTSelectQuery & select = typeid_cast<ASTSelectQuery &>(*modified_query_ast);
-	select.database = new ASTIdentifier(StringRange(), remote_database, ASTIdentifier::Database);
-	select.table 	= new ASTIdentifier(StringRange(), remote_table, 	ASTIdentifier::Table);
-
-	return modified_query_ast;
-}
-
-static String selectToString(ASTPtr query)
-{
-	ASTSelectQuery & select = typeid_cast<ASTSelectQuery &>(*query);
-	std::stringstream s;
-	formatAST(select, s, 0, false, true);
-	return s.str();
-}
-
 BlockInputStreams StorageDistributed::read(
 	const Names & column_names,
 	ASTPtr query,
@@ -126,20 +145,17 @@ BlockInputStreams StorageDistributed::read(
 		: QueryProcessingStage::WithMergeableState;
 
 	BlockInputStreams res;
-	ASTPtr modified_query_ast = rewriteQuery(query);
+	const auto & modified_query_ast = rewriteQuery<ASTSelectQuery>(
+		query, remote_database, remote_table
+	);
+	const auto & modified_query = queryToString<ASTSelectQuery>(modified_query_ast);
 
 	/// Цикл по шардам.
 	for (auto & conn_pool : cluster.pools)
-	{
-		String modified_query = selectToString(modified_query_ast);
-
-		res.push_back(new RemoteBlockInputStream(
-			conn_pool,
-			modified_query,
-			&new_settings,
-			external_tables,
-			processed_stage));
-	}
+		res.emplace_back(new RemoteBlockInputStream{
+			conn_pool, modified_query, &new_settings,
+			external_tables, processed_stage
+		});
 
 	/// Добавляем запросы к локальному ClickHouse.
 	if (cluster.getLocalNodesNum() > 0)
@@ -169,7 +185,12 @@ BlockOutputStreamPtr StorageDistributed::write(ASTPtr query)
 			ErrorCodes::NOT_IMPLEMENTED
 		};
 
-	return new DistributedBlockOutputStream{*this, this->cluster, query};
+	return new DistributedBlockOutputStream{
+		*this, this->cluster,
+		queryToString<ASTInsertQuery>(rewriteQuery<ASTInsertQuery>(
+			query, remote_database, remote_table
+		))
+	};
 }
 
 void StorageDistributed::alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context)
@@ -219,7 +240,7 @@ void StorageDistributed::createDirectoryMonitor(const std::string & name)
 	directory_monitor_threads.emplace(
 		name, 
 		std::thread{
-			&StorageDistributed::directoryMonitorFunc, this, path + name
+			&StorageDistributed::directoryMonitorFunc, this, path + name + '/'
 		}
 	);
 }

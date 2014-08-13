@@ -1,6 +1,13 @@
 #pragma once
 
 #include <DB/Storages/StorageDistributed.h>
+
+#include <DB/IO/WriteBufferFromFile.h>
+#include <DB/IO/CompressedWriteBuffer.h>
+#include <DB/DataStreams/NativeBlockOutputStream.h>
+
+#include <statdaemons/Increment.h>
+
 #include <iostream>
 
 namespace DB
@@ -9,8 +16,8 @@ namespace DB
 class DistributedBlockOutputStream : public IBlockOutputStream
 {
 public:
-	DistributedBlockOutputStream(StorageDistributed & storage, Cluster & cluster, const ASTPtr & query)
-	: storage(storage), cluster(cluster), query(query)
+	DistributedBlockOutputStream(StorageDistributed & storage, Cluster & cluster, const std::string & query_string)
+	: storage(storage), cluster(cluster), query_string(query_string)
 	{
 	}
 
@@ -62,17 +69,28 @@ private:
 	void writeImpl(const Block & block, const size_t shard_id = 0)
 	{
 		const auto & dir_name = cluster.shard_info_vec[shard_id].dir_name;
+		const auto & path = storage.getPath() + dir_name + '/';
 
 		/// ensure shard subdirectory creation and notify storage if necessary
-		if (Poco::File(storage.getPath() + dir_name).createDirectory())
+		if (Poco::File(path).createDirectory())
 			storage.createDirectoryMonitor(dir_name);
 
+
 		std::cout << "dummy write block of " << block.bytes() << " bytes to shard " << shard_id << std::endl;
+
+		const auto number = Increment(path + "increment").get(true);
+		const auto block_file_path = path + std::to_string(number);
+
+		DB::WriteBufferFromFile out{block_file_path};
+		DB::CompressedWriteBuffer compress{out};
+		DB::NativeBlockOutputStream stream{compress};
+
+		DB::writeStringBinary(query_string, out);
 	}
 
 	StorageDistributed & storage;
 	Cluster & cluster;
-	ASTPtr query;
+	std::string query_string;
 };
 
 }
