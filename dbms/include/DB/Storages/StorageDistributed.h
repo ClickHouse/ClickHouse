@@ -67,9 +67,14 @@ public:
 	/// структура подтаблиц не проверяется
 	void alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context);
 
+	virtual void shutdown() override;
+
 	const ExpressionActionsPtr & getShardingKeyExpr() const { return sharding_key_expr; }
 	const String & getShardingKeyColumnName() const { return sharding_key_column_name; }
 	const String & getPath() const { return path; }
+
+	/// create directory monitor thread by subdirectory name
+	void createDirectoryMonitor(const std::string & name);
 
 private:
 	StorageDistributed(
@@ -84,6 +89,10 @@ private:
 
 	/// Создает копию запроса, меняет имена базы данных и таблицы.
 	ASTPtr rewriteQuery(ASTPtr query);
+
+	void createDirectoryMonitors();
+
+	void directoryMonitorFunc(const std::string & path);
 
 	String name;
 	NamesAndTypesListPtr columns;
@@ -106,6 +115,9 @@ private:
 	String sharding_key_column_name;
 	bool write_enabled;
 	String path;
+
+	std::atomic<bool> quit{false};
+	std::unordered_map<std::string, std::thread> directory_monitor_threads;
 };
 
 }

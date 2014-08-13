@@ -44,6 +44,8 @@ StorageDistributed::StorageDistributed(
 			<< " with weight " << shard_info.weight
 			<< std::endl;
 	}
+
+	createDirectoryMonitors();
 }
 
 StoragePtr StorageDistributed::create(
@@ -177,6 +179,14 @@ void StorageDistributed::alter(const AlterCommands & params, const String & data
 	InterpreterAlterQuery::updateMetadata(database_name, table_name, *columns, context);
 }
 
+void StorageDistributed::shutdown()
+{
+	quit.store(true, std::memory_order_relaxed);
+
+	for (auto & name_thread_pair : directory_monitor_threads)
+		name_thread_pair.second.join();
+}
+
 NameAndTypePair StorageDistributed::getColumn(const String & column_name) const
 {
 	auto type = VirtualColumnFactory::tryGetType(column_name);
@@ -189,6 +199,40 @@ NameAndTypePair StorageDistributed::getColumn(const String & column_name) const
 bool StorageDistributed::hasColumn(const String & column_name) const
 {
 	return VirtualColumnFactory::hasColumn(column_name) || hasRealColumn(column_name);
+}
+
+void StorageDistributed::createDirectoryMonitors()
+{
+	Poco::File(path).createDirectory();
+
+	Poco::DirectoryIterator end;
+	for (Poco::DirectoryIterator it(path); it != end; ++it)
+		if (it->isDirectory())
+			createDirectoryMonitor(it.name());
+}
+
+void StorageDistributed::createDirectoryMonitor(const std::string & name)
+{
+	if (directory_monitor_threads.count(name))
+		return;
+
+	directory_monitor_threads.emplace(
+		name, 
+		std::thread{
+			&StorageDistributed::directoryMonitorFunc, this, path + name
+		}
+	);
+}
+
+void StorageDistributed::directoryMonitorFunc(const std::string & path)
+{
+	std::cout << "created monitor for directory " << path << std::endl;
+
+	while (!quit.load(std::memory_order_relaxed))
+	{
+	}
+
+	std::cout << "exiting monitor for directory " << path << std::endl;
 }
 
 }

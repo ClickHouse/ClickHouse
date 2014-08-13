@@ -44,7 +44,7 @@ private:
 
 		for (size_t row = 0; row < block.rows(); ++row)
 		{
-			const auto target_block_idx = key_column->get64(row) % total_weight;
+			const auto target_block_idx = cluster.slot_to_shard[key_column->get64(row) % total_weight];
 			auto & target_block = get_target_block(target_block_idx)->second;;
 
 			for (size_t col = 0; col < block.columns(); ++col)
@@ -59,9 +59,15 @@ private:
 			writeImpl(shard_block_pair.second, shard_block_pair.first);
 	}
 
-	void writeImpl(const Block & block, const size_t shard_num = 0)
+	void writeImpl(const Block & block, const size_t shard_id = 0)
 	{
-		std::cout << "dummy write block of " << block.bytes() << " bytes to shard " << shard_num << std::endl;
+		const auto & dir_name = cluster.shard_info_vec[shard_id].dir_name;
+
+		/// ensure shard subdirectory creation and notify storage if necessary
+		if (Poco::File(storage.getPath() + dir_name).createDirectory())
+			storage.createDirectoryMonitor(dir_name);
+
+		std::cout << "dummy write block of " << block.bytes() << " bytes to shard " << shard_id << std::endl;
 	}
 
 	StorageDistributed & storage;
