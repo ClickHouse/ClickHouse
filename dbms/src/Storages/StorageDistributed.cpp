@@ -24,20 +24,32 @@ namespace {
 	template <typename ASTType>
 	inline std::string queryToString(const ASTPtr & query)
 	{
-		const auto & select = typeid_cast<const ASTType &>(*query);
+		const auto & query_ast = typeid_cast<const ASTType &>(*query);
 
 		std::ostringstream s;
-		formatAST(select, s, 0, false, true);
+		formatAST(query_ast, s, 0, false, true);
 
 		return s.str();
 	}
 
-	inline ASTPtr rewrite(const std::string & name, const ASTSelectQuery &, const ASTIdentifier::Kind kind)
+	/// select and insert query have different types for database and table, hence two specializations
+	template <typename ASTType> struct rewrite_traits;
+	template <> struct rewrite_traits<ASTSelectQuery> { using type = ASTPtr; };
+	template <> struct rewrite_traits<ASTInsertQuery> { using type = const std::string &; };
+
+	template <typename ASTType>
+	typename rewrite_traits<ASTType>::type rewrite(const std::string & name, const ASTIdentifier::Kind kind) = delete;
+
+	/// select query has database and table names as AST pointers
+	template <>
+	inline ASTPtr rewrite<ASTSelectQuery>(const std::string & name, const ASTIdentifier::Kind kind)
 	{
 		return new ASTIdentifier{{}, name, kind};
 	}
 
-	inline const std::string & rewrite(const std::string & name, const ASTInsertQuery &, ASTIdentifier::Kind)
+	/// insert query has database and table names as bare strings
+	template <>
+	inline const std::string & rewrite<ASTInsertQuery>(const std::string & name, ASTIdentifier::Kind)
 	{
 		return name;
 	}
@@ -51,8 +63,8 @@ namespace {
 
 		/// Меняем имена таблицы и базы данных
 		auto & modified_query = typeid_cast<ASTType &>(*modified_query_ast);
-		modified_query.database = rewrite(database, modified_query, ASTIdentifier::Database);
-		modified_query.table = rewrite(table, modified_query, ASTIdentifier::Table);
+		modified_query.database = rewrite<ASTType>(database, ASTIdentifier::Database);
+		modified_query.table = rewrite<ASTType>(table, ASTIdentifier::Table);
 
 		/// copy elision and RVO will work as intended, but let's be more explicit
 		return std::move(modified_query_ast);
