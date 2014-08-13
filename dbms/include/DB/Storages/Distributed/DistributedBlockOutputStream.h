@@ -75,8 +75,6 @@ private:
 		if (Poco::File(path).createDirectory())
 			storage.createDirectoryMonitor(dir_name);
 
-		std::cout << "dummy write block of " << block.bytes() << " bytes to shard " << shard_id << std::endl;
-
 		const auto number = Increment(path + "increment").get(true);
 		const auto block_file_path = path + std::to_string(number);
 

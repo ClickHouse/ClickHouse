@@ -14,8 +14,11 @@
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/InterpreterAlterQuery.h>
-#include <boost/bind.hpp>
+
 #include <DB/Core/Field.h>
+
+#include <boost/algorithm/string/find_iterator.hpp>
+#include <boost/algorithm/string/finder.hpp>
 
 namespace DB
 {
@@ -252,14 +255,34 @@ void StorageDistributed::createDirectoryMonitor(const std::string & name)
 	directory_monitor_threads.emplace(
 		name, 
 		std::thread{
-			&StorageDistributed::directoryMonitorFunc, this, path + name + '/'
+			&StorageDistributed::directoryMonitorFunc, this, name
 		}
 	);
 }
 
-void StorageDistributed::directoryMonitorFunc(const std::string & path)
+void StorageDistributed::directoryMonitorFunc(const std::string & name)
 {
+	const auto path = this->path + name + '/';
 	std::cout << "created monitor for directory " << path << std::endl;
+
+	ConnectionPools pools;
+	for (auto it = boost::make_split_iterator(name, boost::first_finder(",")); it != decltype(it){}; ++it)
+	{
+		const auto & address = boost::copy_range<std::string>(*it);
+
+		/// lookup end of hostname
+		const auto host_end = strchr(address.data(), ':');
+		if (!host_end)
+			throw Exception{"Shard address '" + address + "' does not contain port"};
+
+		const std::string host{address.data(), host_end};
+		const auto port = DB::parse<UInt16>(host_end + 1);
+
+		pools.emplace_back(new ConnectionPool(1, host, port, remote_database, "default", "", getName() + '_' + name));
+		std::cout << "\taddress " << host << " port " << port << std::endl;
+	}
+
+	auto pool = pools.size() == 1 ? pools[0] : new ConnectionPoolWithFailover(pools, DB::LoadBalancing::RANDOM);
 
 	while (!quit.load(std::memory_order_relaxed))
 	{

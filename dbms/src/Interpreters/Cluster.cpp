@@ -87,13 +87,11 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 			const auto weight = config.getInt(partial_prefix + ".weight", 1);
 			std::string dir_name{};
 
-			auto first = false;
+			auto first = true;
 			for (auto jt = replica_keys.begin(); jt != replica_keys.end(); ++jt)
 			{
 				if (0 == strncmp(jt->data(), "weight", strlen("weight")))
 					continue;
-
-				if (!first) first = true;
 
 				if (0 == strncmp(jt->c_str(), "replica", strlen("replica")))
 				{
@@ -103,6 +101,8 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 
 					replica_addresses.emplace_back(host, port, prefix);
 					dir_name += (first ? "" : ",") + host + ':' + std::to_string(port);
+
+					if (first) first = false;
 				}
 				else
 					throw Exception("Unknown element in config: " + *jt, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
