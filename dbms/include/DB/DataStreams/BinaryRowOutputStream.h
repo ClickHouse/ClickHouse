@@ -20,6 +20,8 @@ public:
 	void writeField(const Field & field);
 	void writeRowEndDelimiter();
 
+	void flush() { ostr.next(); }
+
 protected:
 	WriteBuffer & ostr;
 	const Block sample;

@@ -18,8 +18,8 @@ namespace DB
 class PushingToViewsBlockOutputStream : public IBlockOutputStream
 {
 public:
-	PushingToViewsBlockOutputStream(String database_, String table_, const Context &context_, ASTPtr query_ptr_)
-		:database(database_), table(table_), context(context_), query_ptr(query_ptr_)
+	PushingToViewsBlockOutputStream(String database_, String table_, const Context & context_, ASTPtr query_ptr_)
+		: database(database_), table(table_), context(context_), query_ptr(query_ptr_)
 	{
 		if (database.empty())
 			database = context.getCurrentDatabase();

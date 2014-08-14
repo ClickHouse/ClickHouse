@@ -17,6 +17,8 @@ public:
 	void write(const Block & block);
 	void writePrefix() { row_output->writePrefix(); }
 	void writeSuffix() { row_output->writeSuffix(); }
+
+	void flush() { row_output->flush(); }
 	
 	void setRowsBeforeLimit(size_t rows_before_limit);
 	void setTotals(const Block & totals);

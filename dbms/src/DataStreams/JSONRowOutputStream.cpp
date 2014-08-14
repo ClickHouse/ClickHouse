@@ -10,7 +10,7 @@ using Poco::SharedPtr;
 
 
 JSONRowOutputStream::JSONRowOutputStream(WriteBuffer & ostr_, const Block & sample_)
-	: ostr(ostr_), field_number(0), row_count(0), applied_limit(false), rows_before_limit(0)
+	: dst_ostr(ostr_), ostr(dst_ostr), field_number(0), row_count(0), applied_limit(false), rows_before_limit(0)
 {
 	NamesAndTypesList columns(sample_.getColumnsList());
 	fields.assign(columns.begin(), columns.end());

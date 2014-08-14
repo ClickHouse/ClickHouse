@@ -32,6 +32,9 @@ public:
 	virtual void writePrefix() {};				/// разделитель перед началом результата
 	virtual void writeSuffix() {};				/// разделитель после конца результата
 
+	/** Сбросить имеющиеся буферы для записи. */
+	virtual void flush() {}
+
 	/** Методы для установки дополнительной информации для вывода в поддерживающих её форматах.
 	  */
 	virtual void setRowsBeforeLimit(size_t rows_before_limit) {}
