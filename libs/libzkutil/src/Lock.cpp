@@ -93,7 +93,7 @@ Lock::Status Lock::checkImpl()
 		}
 	}
 	else
-		throw KeeperException(code);
+		throw KeeperException(code, lock_path);
 }
 
 std::string Lock::status2String(Status status)
