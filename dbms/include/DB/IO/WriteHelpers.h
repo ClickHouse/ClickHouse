@@ -149,7 +149,7 @@ inline void writeJSONString(const char * begin, const char * end, WriteBuffer & 
 			case '\t':
 				writeChar('\\', buf);
 				writeChar('t', buf);
-				break; 
+				break;
 			case '\\':
 				writeChar('\\', buf);
 				writeChar('\\', buf);
@@ -167,10 +167,10 @@ inline void writeJSONString(const char * begin, const char * end, WriteBuffer & 
 				{
 					char higher_half = (*it) >> 4;
 					char lower_half = (*it) & 0xF;
-					
+
 					writeCString("\\u00", buf);
 					writeChar('0' + higher_half, buf);
-					
+
 					if (0 <= lower_half && lower_half <= 9)
 						writeChar('0' + lower_half, buf);
 					else
@@ -282,7 +282,6 @@ inline void writeQuotedString(const String & s, WriteBuffer & buf)
 	writeAnyQuotedString<'\''>(s, buf);
 }
 
-/// Совместимо с JSON.
 inline void writeDoubleQuotedString(const String & s, WriteBuffer & buf)
 {
 	writeAnyQuotedString<'"'>(s, buf);
@@ -335,7 +334,7 @@ inline void writeDateText(DayNum_t date, WriteBuffer & buf)
 	s[6] += values.month % 10;
 	s[8] += values.day_of_month / 10;
 	s[9] += values.day_of_month % 10;
-	
+
 	buf.write(s, 10);
 }
 
