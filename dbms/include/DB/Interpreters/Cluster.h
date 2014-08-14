@@ -33,7 +33,6 @@ public:
 	{
 		std::string dir_name;
 		int weight;
-		bool internal_replication;
 	};
 	std::vector<ShardInfo> shard_info_vec;
 	std::vector<size_t> slot_to_shard;
@@ -67,7 +66,7 @@ public:
 		Address(const String & host_port_, const String & user_, const String & password_);
 	};
 
-	static bool isLocal(const Address & address);
+	static bool addressIsLocal(const Poco::Net::SocketAddress & address);
 
 // private:
 	/// Массив шардов. Каждый шард - адреса одного сервера.

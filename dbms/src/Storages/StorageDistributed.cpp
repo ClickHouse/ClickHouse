@@ -259,7 +259,9 @@ void StorageDistributed::directoryMonitorFunc(const std::string & name)
 	const auto & path = this->path + name + '/';
 	std::cout << "created monitor for directory " << path << std::endl;
 
-	// ConnectionPools pools;
+	auto is_local = false;
+	ConnectionPools pools;
+
 	for (auto it = boost::make_split_iterator(name, boost::first_finder(",")); it != decltype(it){}; ++it)
 	{
 		const auto & address = boost::copy_range<std::string>(*it);
@@ -270,25 +272,42 @@ void StorageDistributed::directoryMonitorFunc(const std::string & name)
 			throw Exception{"Shard address '" + address + "' does not match to 'user[:password]@host:port' pattern"};
 
 		const auto has_pw = colon < user_pw_end;
-		const auto host_end = has_pw ? colon : strchr(user_pw_end + 1, ':');
+		const auto host_end = has_pw ? strchr(user_pw_end + 1, ':') : colon;
 		if (!host_end)
 			throw Exception{"Shard address '" + address + "' does not contain port"};
 
-		const std::string user{address.data(), has_pw ? colon : user_pw_end};
-		const auto password = has_pw ? std::string{colon + 1, user_pw_end} : std::string{};
-		const std::string host{user_pw_end + 1, host_end};
+		const auto user = unescapeForFileName({address.data(), has_pw ? colon : user_pw_end});
+		const auto password = has_pw ? unescapeForFileName({colon + 1, user_pw_end}) : std::string{};
+		const auto host = unescapeForFileName({user_pw_end + 1, host_end});
 		const auto port = DB::parse<UInt16>(host_end + 1);
 
-		// pools.emplace_back(new ConnectionPool(1, host, port, remote_database, "default", "", getName() + '_' + name));
 		std::cout
 			<< "\taddress " << host
 			<< " port " << port
 			<< " user " << user
 			<< " password " << password
 			<< std::endl;
+
+		if (Cluster::addressIsLocal({host, port}))
+		{
+			is_local = true;
+			break;
+		}
+
+		pools.emplace_back(new ConnectionPool{
+			1, host, port, "",
+			user, password, context.getDataTypeFactory(),
+			getName() + '_' + name
+		});
 	}
 
-	// auto pool = pools.size() == 1 ? pools[0] : new ConnectionPoolWithFailover(pools, DB::LoadBalancing::RANDOM);
+	std::cout << "local? " << std::boolalpha << is_local << std::endl;
+	const auto pool = is_local
+		? (pools.size() == 1
+			? pools[0]
+			: new ConnectionPoolWithFailover(pools, DB::LoadBalancing::RANDOM)
+			)
+		: nullptr;
 
 	while (!quit.load(std::memory_order_relaxed))
 	{

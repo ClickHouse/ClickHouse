@@ -1,4 +1,5 @@
 #include <DB/Interpreters/Cluster.h>
+#include <DB/Common/escapeForFileName.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Net/NetworkInterface.h>
@@ -38,8 +39,10 @@ namespace
 	inline std::string addressToDirName(const Cluster::Address & address)
 	{
 		return
-			address.user + (address.password.empty() ? "" : (':' + address.password)) + '@' +
-			address.host_port.host().toString() + ':' + std::to_string(address.host_port.port());
+			escapeForFileName(address.user) +
+			(address.password.empty() ? "" : (':' + escapeForFileName(address.password))) + '@' +
+			escapeForFileName(address.host_port.host().toString()) + ':' +
+			std::to_string(address.host_port.port());
 	}
 }
 
@@ -72,11 +75,12 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 		{
 			const auto & prefix = config_prefix + *it;
 			const auto weight = config.getInt(prefix + ".weight", 1);
-			const auto internal_replication = config.getBool(prefix + ".internal_replication", false);
+			if (weight == 0)
+				continue;
 
 			addresses.emplace_back(prefix);
 			slot_to_shard.insert(std::end(slot_to_shard), weight, shard_info_vec.size());
-			shard_info_vec.push_back({addressToDirName(addresses.back()), weight, internal_replication});
+			shard_info_vec.push_back({addressToDirName(addresses.back()), weight});
 		}
 		else if (0 == strncmp(it->c_str(), "shard", strlen("shard")))
 		{
@@ -88,14 +92,18 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 
 			const auto & partial_prefix = config_prefix + *it + ".";
 			const auto weight = config.getInt(partial_prefix + ".weight", 1);
-			const auto internal_replication = config.getBool(partial_prefix + ".internal_replication", false);
+			if (weight == 0)
+				continue;
+
+			// const auto internal_replication = config.getBool(partial_prefix + ".internal_replication", false);
 
 			std::string dir_name{};
 
 			auto first = true;
 			for (auto jt = replica_keys.begin(); jt != replica_keys.end(); ++jt)
 			{
-				if (0 == strncmp(jt->data(), "weight", strlen("weight")))
+				if (0 == strncmp(jt->data(), "weight", strlen("weight")) ||
+					0 == strncmp(jt->data(), "internal_replication", strlen("internal_replication")))
 					continue;
 
 				if (0 == strncmp(jt->c_str(), "replica", strlen("replica")))
@@ -111,7 +119,7 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 			}
 
 			slot_to_shard.insert(std::end(slot_to_shard), weight, shard_info_vec.size());
-			shard_info_vec.push_back({dir_name, weight, internal_replication});
+			shard_info_vec.push_back({dir_name, weight});
 		}
 		else
 			throw Exception("Unknown element in config: " + *it, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
@@ -130,7 +138,7 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 				bool has_local_replics = false;
 				for (Addresses::const_iterator jt = it->begin(); jt != it->end(); ++jt)
 				{
-					if (isLocal(*jt))
+					if (addressIsLocal(jt->host_port))
 					{
 						has_local_replics = true;
 						break;
@@ -156,7 +164,7 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 		{
 			for (Addresses::const_iterator it = addresses.begin(); it != addresses.end(); ++it)
 			{
-				if (isLocal(*it))
+				if (addressIsLocal(it->host_port))
 				{
 					++local_nodes_num;
 				}
@@ -215,20 +223,20 @@ Poco::Timespan Cluster::saturate(const Poco::Timespan & v, const Poco::Timespan 
 }
 
 
-bool Cluster::isLocal(const Address & address)
+bool Cluster::addressIsLocal(const Poco::Net::SocketAddress & address)
 {
 	///	Если среди реплик существует такая, что:
 	/// - её порт совпадает с портом, который слушает сервер;
 	/// - её хост резолвится в набор адресов, один из которых совпадает с одним из адресов сетевых интерфейсов сервера
 	/// то нужно всегда ходить на этот шард без межпроцессного взаимодействия
-	UInt16 clickhouse_port = Poco::Util::Application::instance().config().getInt("tcp_port", 0);
-	static Poco::Net::NetworkInterface::NetworkInterfaceList interfaces = Poco::Net::NetworkInterface::list();
+	const UInt16 clickhouse_port = Poco::Util::Application::instance().config().getInt("tcp_port", 0);
+	static auto interfaces = Poco::Net::NetworkInterface::list();
 
-	if (clickhouse_port == address.host_port.port() &&
+	if (clickhouse_port == address.port() &&
 		interfaces.end() != std::find_if(interfaces.begin(), interfaces.end(),
-			[&](const Poco::Net::NetworkInterface & interface) { return interface.address() == address.host_port.host(); }))
+			[&](const Poco::Net::NetworkInterface & interface) { return interface.address() == address.host(); }))
 	{
-		LOG_INFO(&Poco::Util::Application::instance().logger(), "Replica with address " << address.host_port.toString() << " will be processed as local.");
+		LOG_INFO(&Poco::Util::Application::instance().logger(), "Replica with address " << address.toString() << " will be processed as local.");
 		return true;
 	}
 	return false;
