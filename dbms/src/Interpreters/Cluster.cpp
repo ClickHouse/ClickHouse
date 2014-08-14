@@ -10,18 +10,12 @@ namespace DB
 
 Cluster::Address::Address(const String & config_prefix)
 {
-	Poco::Util::AbstractConfiguration & config = Poco::Util::Application::instance().config();
-	host_port = Poco::Net::SocketAddress(config.getString(config_prefix + ".host"),
-		config.getInt(config_prefix + ".port"));
+	auto & config = Poco::Util::Application::instance().config();
 
-	user = config.getString(config_prefix + ".user", "default");
-	password = config.getString(config_prefix + ".password", "");
-}
-
-Cluster::Address::Address(const String & host, const int port, const String & config_prefix)
-: host_port(host, port)
-{
-	Poco::Util::AbstractConfiguration & config = Poco::Util::Application::instance().config();
+	host_port = Poco::Net::SocketAddress(
+		config.getString(config_prefix + ".host"),
+		config.getInt(config_prefix + ".port")
+	);
 
 	user = config.getString(config_prefix + ".user", "default");
 	password = config.getString(config_prefix + ".password", "");
@@ -37,6 +31,16 @@ Cluster::Address::Address(const String & host_port_, const String & user_, const
 		host_port = Poco::Net::SocketAddress(host_port_);
 	else
 		host_port = Poco::Net::SocketAddress(host_port_, default_port);
+}
+
+namespace
+{
+	inline std::string addressToDirName(const Cluster::Address & address)
+	{
+		return
+			address.user + (address.password.empty() ? "" : (':' + address.password)) + '@' +
+			address.host_port.host().toString() + ':' + std::to_string(address.host_port.port());
+	}
 }
 
 
@@ -60,31 +64,32 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 	Poco::Util::AbstractConfiguration::Keys config_keys;
 	config.keys(cluster_name, config_keys);
 
-	String config_prefix = cluster_name + ".";
+	const auto & config_prefix = cluster_name + ".";
 
 	for (auto it = config_keys.begin(); it != config_keys.end(); ++it)
 	{
 		if (0 == strncmp(it->c_str(), "node", strlen("node")))
 		{
 			const auto & prefix = config_prefix + *it;
-			const auto & host = config.getString(prefix + ".host");
-			const auto port = config.getInt(prefix + ".port");
 			const auto weight = config.getInt(prefix + ".weight", 1);
+			const auto internal_replication = config.getBool(prefix + ".internal_replication", false);
 
-			addresses.emplace_back(host, port, prefix);
+			addresses.emplace_back(prefix);
 			slot_to_shard.insert(std::end(slot_to_shard), weight, shard_info_vec.size());
-			shard_info_vec.push_back({host + ':' + std::to_string(port), weight});
+			shard_info_vec.push_back({addressToDirName(addresses.back()), weight, internal_replication});
 		}
 		else if (0 == strncmp(it->c_str(), "shard", strlen("shard")))
 		{
 			Poco::Util::AbstractConfiguration::Keys replica_keys;
 			config.keys(config_prefix + *it, replica_keys);
 
-			addresses_with_failover.push_back(Addresses());
+			addresses_with_failover.emplace_back();
 			Addresses & replica_addresses = addresses_with_failover.back();
 
 			const auto & partial_prefix = config_prefix + *it + ".";
 			const auto weight = config.getInt(partial_prefix + ".weight", 1);
+			const auto internal_replication = config.getBool(partial_prefix + ".internal_replication", false);
+
 			std::string dir_name{};
 
 			auto first = true;
@@ -95,12 +100,9 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 
 				if (0 == strncmp(jt->c_str(), "replica", strlen("replica")))
 				{
-					const auto & prefix = partial_prefix + *jt;
-					const auto & host = config.getString(prefix + ".host");
-					const auto port = config.getInt(prefix + ".port");
+					replica_addresses.emplace_back(partial_prefix + *jt);
 
-					replica_addresses.emplace_back(host, port, prefix);
-					dir_name += (first ? "" : ",") + host + ':' + std::to_string(port);
+					dir_name += (first ? "" : ",") + addressToDirName(replica_addresses.back());
 
 					if (first) first = false;
 				}
@@ -109,7 +111,7 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 			}
 
 			slot_to_shard.insert(std::end(slot_to_shard), weight, shard_info_vec.size());
-			shard_info_vec.push_back({dir_name, weight});
+			shard_info_vec.push_back({dir_name, weight, internal_replication});
 		}
 		else
 			throw Exception("Unknown element in config: " + *it, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
@@ -135,7 +137,7 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 					}
 					else
 					{
-						replicas.push_back(new ConnectionPool(
+						replicas.emplace_back(new ConnectionPool(
 							settings.distributed_connections_pool_size,
 							jt->host_port.host().toString(), jt->host_port.port(), "", jt->user, jt->password, data_type_factory, "server", Protocol::Compression::Enable,
 							saturate(settings.connect_timeout_with_failover_ms, settings.limits.max_execution_time),
@@ -147,7 +149,7 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 				if (has_local_replics)
 					++local_nodes_num;
 				else
-					pools.push_back(new ConnectionPoolWithFailover(replicas, settings.load_balancing, settings.connections_with_failover_max_tries));
+					pools.emplace_back(new ConnectionPoolWithFailover(replicas, settings.load_balancing, settings.connections_with_failover_max_tries));
 			}
 		}
 		else if (addresses.size())
@@ -160,7 +162,7 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 				}
 				else
 				{
-					pools.push_back(new ConnectionPool(
+					pools.emplace_back(new ConnectionPool(
 						settings.distributed_connections_pool_size,
 						it->host_port.host().toString(), it->host_port.port(), "", it->user, it->password, data_type_factory, "server", Protocol::Compression::Enable,
 						saturate(settings.connect_timeout, settings.limits.max_execution_time),
@@ -181,8 +183,8 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 	{
 		Addresses current;
 		for (size_t j = 0; j < names[i].size(); ++j)
-			current.push_back(Address(names[i][j], username, password));
-		addresses_with_failover.push_back(current);
+			current.emplace_back(names[i][j], username, password);
+		addresses_with_failover.emplace_back(current);
 	}
 
 	for (AddressesWithFailover::const_iterator it = addresses_with_failover.begin(); it != addresses_with_failover.end(); ++it)
@@ -192,14 +194,14 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 
 		for (Addresses::const_iterator jt = it->begin(); jt != it->end(); ++jt)
 		{
-			replicas.push_back(new ConnectionPool(
+			replicas.emplace_back(new ConnectionPool(
 				settings.distributed_connections_pool_size,
 				jt->host_port.host().toString(), jt->host_port.port(), "", jt->user, jt->password, data_type_factory, "server", Protocol::Compression::Enable,
 				saturate(settings.connect_timeout_with_failover_ms, settings.limits.max_execution_time),
 				saturate(settings.receive_timeout, settings.limits.max_execution_time),
 				saturate(settings.send_timeout, settings.limits.max_execution_time)));
 		}
-		pools.push_back(new ConnectionPoolWithFailover(replicas, settings.load_balancing, settings.connections_with_failover_max_tries));
+		pools.emplace_back(new ConnectionPoolWithFailover(replicas, settings.load_balancing, settings.connections_with_failover_max_tries));
 	}
 }
 

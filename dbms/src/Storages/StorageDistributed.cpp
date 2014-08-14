@@ -93,12 +93,6 @@ StorageDistributed::StorageDistributed(
 	path(data_path_ + escapeForFileName(name) + '/')
 {
 	std::cout << "table `" << name << "` in " << path << std::endl;
-	for (auto & shard_info : cluster.shard_info_vec) {
-		std::cout
-			<< "\twill write to " << path + shard_info.dir_name
-			<< " with weight " << shard_info.weight
-			<< std::endl;
-	}
 
 	createDirectoryMonitors();
 }
@@ -262,27 +256,39 @@ void StorageDistributed::createDirectoryMonitor(const std::string & name)
 
 void StorageDistributed::directoryMonitorFunc(const std::string & name)
 {
-	const auto path = this->path + name + '/';
+	const auto & path = this->path + name + '/';
 	std::cout << "created monitor for directory " << path << std::endl;
 
-	ConnectionPools pools;
+	// ConnectionPools pools;
 	for (auto it = boost::make_split_iterator(name, boost::first_finder(",")); it != decltype(it){}; ++it)
 	{
 		const auto & address = boost::copy_range<std::string>(*it);
 
-		/// lookup end of hostname
-		const auto host_end = strchr(address.data(), ':');
+		const auto user_pw_end = strchr(address.data(), '@');
+		const auto colon = strchr(address.data(), ':');
+		if (!user_pw_end || !colon)
+			throw Exception{"Shard address '" + address + "' does not match to 'user[:password]@host:port' pattern"};
+
+		const auto has_pw = colon < user_pw_end;
+		const auto host_end = has_pw ? colon : strchr(user_pw_end + 1, ':');
 		if (!host_end)
 			throw Exception{"Shard address '" + address + "' does not contain port"};
 
-		const std::string host{address.data(), host_end};
+		const std::string user{address.data(), has_pw ? colon : user_pw_end};
+		const auto password = has_pw ? std::string{colon + 1, user_pw_end} : std::string{};
+		const std::string host{user_pw_end + 1, host_end};
 		const auto port = DB::parse<UInt16>(host_end + 1);
 
-		pools.emplace_back(new ConnectionPool(1, host, port, remote_database, "default", "", getName() + '_' + name));
-		std::cout << "\taddress " << host << " port " << port << std::endl;
+		// pools.emplace_back(new ConnectionPool(1, host, port, remote_database, "default", "", getName() + '_' + name));
+		std::cout
+			<< "\taddress " << host
+			<< " port " << port
+			<< " user " << user
+			<< " password " << password
+			<< std::endl;
 	}
 
-	auto pool = pools.size() == 1 ? pools[0] : new ConnectionPoolWithFailover(pools, DB::LoadBalancing::RANDOM);
+	// auto pool = pools.size() == 1 ? pools[0] : new ConnectionPoolWithFailover(pools, DB::LoadBalancing::RANDOM);
 
 	while (!quit.load(std::memory_order_relaxed))
 	{

@@ -33,6 +33,7 @@ public:
 	{
 		std::string dir_name;
 		int weight;
+		bool internal_replication;
 	};
 	std::vector<ShardInfo> shard_info_vec;
 	std::vector<size_t> slot_to_shard;
@@ -40,7 +41,6 @@ public:
 	/// используеться для выставления ограничения на размер таймаута
 	static Poco::Timespan saturate(const Poco::Timespan & v, const Poco::Timespan & limit);
 
-private:
 	struct Address
 	{
 		/** В конфиге адреса либо находятся в узлах <node>:
@@ -64,12 +64,12 @@ private:
 		String password;
 
 		Address(const String & config_prefix);
-		Address(const String & host, int port, const String & config_prefix);
 		Address(const String & host_port_, const String & user_, const String & password_);
 	};
 
 	static bool isLocal(const Address & address);
 
+// private:
 	/// Массив шардов. Каждый шард - адреса одного сервера.
 	typedef std::vector<Address> Addresses;
 
