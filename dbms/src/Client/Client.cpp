@@ -441,7 +441,7 @@ private:
 		if (exit_strings.end() != exit_strings.find(line))
 			return false;
 
-		block_std_out = nullptr;
+		resetOutput();
 
 		watch.restart();
 
@@ -642,6 +642,14 @@ private:
 	}
 
 
+	/** Сбросить все данные, что ещё остались в буферах. */
+	void resetOutput()
+	{
+		block_std_out = nullptr;
+		std_out.next();
+	}
+
+
 	/** Получает и обрабатывает пакеты из сервера.
 	  * Также следит, не требуется ли прервать выполнение запроса.
 	  */
@@ -780,6 +788,11 @@ private:
 			written_first_block = true;
 		}
 
+		/** Это обычно приводит к тому, что полученный блок данных выводится клиенту.
+		  * Но не всегда. Например, JSONRowOutputStream пишет данные сначала в WriteBufferValidUTF8,
+		  *  которые ещё немного буферизует данные перед записью в std_out.
+		  * Поэтому, вызов std_out.next() может записать не все данные.
+		  */
 		std_out.next();
 	}
 
@@ -859,6 +872,8 @@ private:
 
 	void onException(const Exception & e)
 	{
+		resetOutput();
+
 		std::cerr << "Received exception from server:" << std::endl
 			<< "Code: " << e.code() << ". " << e.displayText();
 	}
@@ -876,7 +891,7 @@ private:
 		if (block_std_out)
 			block_std_out->writeSuffix();
 
-		std_out.next();
+		resetOutput();
 
 		if (is_interactive && !written_first_block)
 			std::cout << "Ok." << std::endl;
