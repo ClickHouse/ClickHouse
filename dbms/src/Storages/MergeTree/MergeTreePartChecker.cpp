@@ -4,6 +4,7 @@
 #include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
+#include <DB/DataTypes/DataTypeAggregateFunction.h>
 #include <DB/IO/CompressedReadBuffer.h>
 #include <DB/IO/HashingReadBuffer.h>
 #include <DB/Columns/ColumnsNumber.h>
@@ -14,6 +15,8 @@ namespace DB
 
 struct Stream
 {
+	static const size_t UNKNOWN = std::numeric_limits<size_t>::max();
+
 	DataTypePtr type;
 	String path;
 	String name;
@@ -33,6 +36,12 @@ struct Stream
 	bool marksEOF()
 	{
 		return mrk_hashing_buf.eof();
+	}
+
+	void ignore()
+	{
+		uncompressed_hashing_buf.ignore(std::numeric_limits<size_t>::max());
+		mrk_hashing_buf.ignore(std::numeric_limits<size_t>::max());
 	}
 
 	size_t read(size_t rows)
@@ -197,6 +206,12 @@ static size_t checkColumn(const String & path, const String & name, DataTypePtr 
 
 			return rows;
 		}
+		else if (dynamic_cast<const DataTypeAggregateFunction *>(&*type))
+		{
+			Stream data_stream(path, escapeForFileName(name), type);
+			data_stream.ignore();
+			return Stream::UNKNOWN;
+		}
 		else
 		{
 			Stream data_stream(path, escapeForFileName(name), type);
@@ -211,7 +226,10 @@ static size_t checkColumn(const String & path, const String & name, DataTypePtr 
 
 				size_t cur_rows = data_stream.read(settings.index_granularity);
 
-				rows += cur_rows;
+				if (cur_rows == Stream::UNKNOWN)
+					rows = Stream::UNKNOWN;
+				else
+					rows += cur_rows;
 				if (cur_rows < settings.index_granularity)
 					break;
 			}
@@ -260,8 +278,8 @@ void MergeTreePartChecker::checkDataPart(String path, const Settings & settings,
 		checksums_data.files["primary.idx"] = MergeTreeData::DataPart::Checksums::Checksum(primary_idx_size, hashing_buf.getHash());
 	}
 
-	bool first = true;
-	size_t rows = 0;
+	String any_column_name;
+	size_t rows = Stream::UNKNOWN;
 	ExceptionPtr first_exception;
 
 	for (const NameAndTypePair & column : columns)
@@ -283,15 +301,18 @@ void MergeTreePartChecker::checkDataPart(String path, const Settings & settings,
 			}
 
 			size_t cur_rows = checkColumn(path, column.name, column.type, settings, checksums_data);
-			if (first)
+			if (cur_rows != Stream::UNKNOWN)
 			{
-				rows = cur_rows;
-				first = false;
-			}
-			else if (rows != cur_rows)
-			{
-				throw Exception("Different number of rows in columns " + columns.begin()->name + " and " + column.name,
-								ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+				if (rows == Stream::UNKNOWN)
+				{
+					rows = cur_rows;
+					any_column_name = column.name;
+				}
+				else if (rows != cur_rows)
+				{
+					throw Exception("Different number of rows in columns " + any_column_name + " and " + column.name,
+									ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+				}
 			}
 
 			ok = true;
@@ -315,7 +336,7 @@ void MergeTreePartChecker::checkDataPart(String path, const Settings & settings,
 			std::cerr << " ok" << std::endl;
 	}
 
-	if (first)
+	if (rows == Stream::UNKNOWN)
 		throw Exception("No columns", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
 
 	if (primary_idx_size % ((rows - 1) / settings.index_granularity + 1))
