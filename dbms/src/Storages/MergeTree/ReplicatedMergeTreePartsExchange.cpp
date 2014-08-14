@@ -73,8 +73,15 @@ MergeTreeData::MutableDataPartPtr ReplicatedMergeTreePartsFetcher::fetchPart(
 	ReadBufferFromHTTP in(host, port, params);
 
 	String part_path = data.getFullPath() + "tmp_" + part_name + "/";
-	if (!Poco::File(part_path).createDirectory())
-		throw Exception("Directory " + part_path + " already exists");
+	Poco::File part_file(part_path);
+
+	if (part_file.exists())
+	{
+		LOG_ERROR(log, "Directory " + part_path + " already exists. Removing.");
+		part_file.remove(true);
+	}
+
+	part_file.createDirectory();
 
 	MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data);
 	new_data_part->name = "tmp_" + part_name;
