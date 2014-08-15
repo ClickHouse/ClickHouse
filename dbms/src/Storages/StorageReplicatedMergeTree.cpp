@@ -101,9 +101,13 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	if (Poco::File(unreplicated_path).exists())
 	{
 		LOG_INFO(log, "Have unreplicated data");
+
 		unreplicated_data.reset(new MergeTreeData(unreplicated_path, columns_, context_, primary_expr_ast_,
 			date_column_name_, sampling_expression_, index_granularity_, mode_, sign_column_, settings_,
 			database_name_ + "." + table_name + "[unreplicated]", false));
+
+		unreplicated_data->loadDataParts(skip_sanity_checks);
+
 		unreplicated_reader.reset(new MergeTreeDataSelectExecutor(*unreplicated_data));
 		unreplicated_merger.reset(new MergeTreeDataMerger(*unreplicated_data));
 	}
