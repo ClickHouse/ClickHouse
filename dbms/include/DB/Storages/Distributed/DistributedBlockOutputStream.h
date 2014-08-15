@@ -26,9 +26,9 @@ public:
 	virtual void write(const Block & block) override
 	{
 		if (storage.getShardingKeyExpr() && storage.cluster.shard_info_vec.size() > 1)
-			writeSplit(block, block);
-		else
-			writeImpl(block);
+			return writeSplit(block, block);
+
+		writeImpl(block);
 	}
 
 private:
