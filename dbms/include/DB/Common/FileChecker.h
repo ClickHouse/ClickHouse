@@ -9,7 +9,7 @@
 #include <DB/Common/escapeForFileName.h>
 
 #include <boost/property_tree/ptree.hpp>
-#include <boost/property_tree/xml_parser.hpp>
+#include <boost/property_tree/json_parser.hpp>
 
 namespace DB
 {
@@ -23,7 +23,7 @@ public:
 		files_info_path(file_info_path_), files_info(), storage(storage_), log(&Logger::get("FileChecker"))
 	{
 		if (Poco::File(files_info_path).exists())
-			boost::property_tree::read_xml(files_info_path, files_info);
+			boost::property_tree::read_json(files_info_path, files_info);
 	}
 
 	void setPath(const std::string & file_info_path_)
@@ -46,7 +46,7 @@ public:
 		saveTree();
 	}
 
-	/// Проверяем файлы, параметры которых указаны в sizes.txt
+	/// Проверяем файлы, параметры которых указаны в sizes.json
 	bool check() const
 	{
 		bool correct = true;
@@ -82,8 +82,7 @@ private:
 
 	void saveTree()
 	{
-		boost::property_tree::write_xml(files_info_path, files_info, std::locale(),
-										boost::property_tree::xml_parser::xml_writer_settings<char>('\t', 1));
+		boost::property_tree::write_json(files_info_path, files_info, std::locale());
 	}
 
 	std::string files_info_path;

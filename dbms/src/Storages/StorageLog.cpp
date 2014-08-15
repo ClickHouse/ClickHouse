@@ -411,7 +411,7 @@ void LogBlockOutputStream::writeMarks(MarksForColumns marks)
 
 StorageLog::StorageLog(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, size_t max_compress_block_size_)
 	: path(path_), name(name_), columns(columns_), loaded_marks(false), max_compress_block_size(max_compress_block_size_),
-	file_checker(path + escapeForFileName(name) + '/' + "sizes.txt", *this)
+	file_checker(path + escapeForFileName(name) + '/' + "sizes.json", *this)
 {
 	if (columns->empty())
 		throw Exception("Empty list of columns passed to StorageLog constructor", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
@@ -540,7 +540,7 @@ void StorageLog::rename(const String & new_path_to_db, const String & new_databa
 
 	path = new_path_to_db;
 	name = new_table_name;
-	file_checker.setPath(path + escapeForFileName(name) + '/' + "sizes.txt");
+	file_checker.setPath(path + escapeForFileName(name) + '/' + "sizes.json");
 
 	for (Files_t::iterator it = files.begin(); it != files.end(); ++it)
 	{
