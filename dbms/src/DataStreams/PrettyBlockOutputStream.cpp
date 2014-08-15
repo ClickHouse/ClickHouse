@@ -140,7 +140,7 @@ void PrettyBlockOutputStream::write(const Block & block_)
 		const ColumnWithNameAndType & col = block.getByPosition(i);
 
 		if (!no_escapes)
-			writeCString("\033[1;37m", ostr);
+			writeCString("\033[1m", ostr);
 
 		if (col.type->isNumeric())
 		{

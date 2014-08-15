@@ -19,7 +19,7 @@ namespace DB
 {
 
 
-static const char * hilite_keyword = "\033[1;37m";
+static const char * hilite_keyword = "\033[1m";
 static const char * hilite_identifier = "\033[0;36m";
 static const char * hilite_function = "\033[0;33m";
 static const char * hilite_operator = "\033[1;33m";
