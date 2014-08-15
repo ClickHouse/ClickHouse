@@ -79,8 +79,12 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 				continue;
 
 			addresses.emplace_back(prefix);
+
 			slot_to_shard.insert(std::end(slot_to_shard), weight, shard_info_vec.size());
-			shard_info_vec.push_back({addressToDirName(addresses.back()), weight});
+			if (const auto is_local = isLocal(addresses.back()))
+				shard_info_vec.push_back({{}, weight, is_local });
+			else
+				shard_info_vec.push_back({{addressToDirName(addresses.back())}, weight, is_local});
 		}
 		else if (0 == strncmp(it->c_str(), "shard", strlen("shard")))
 		{
@@ -95,9 +99,14 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 			if (weight == 0)
 				continue;
 
-			// const auto internal_replication = config.getBool(partial_prefix + ".internal_replication", false);
+			const auto internal_replication = config.getBool(partial_prefix + ".internal_replication", false);
 
-			std::string dir_name{};
+			/** in case of internal_replication we will be appending names to
+			 *  the first element of vector, therefore we need first element
+			 *  created in advance; otherwise we will just .emplace_back
+			 */
+			std::vector<std::string> dir_names(internal_replication);
+			auto has_local_node = false;
 
 			auto first = true;
 			for (auto jt = replica_keys.begin(); jt != replica_keys.end(); ++jt)
@@ -110,16 +119,26 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 				{
 					replica_addresses.emplace_back(partial_prefix + *jt);
 
-					dir_name += (first ? "" : ",") + addressToDirName(replica_addresses.back());
+					if (isLocal(replica_addresses.back()))
+					{
+						has_local_node = true;
+					}
+					else
+					{
+						if (internal_replication)
+							dir_names.front() += (first ? "" : ",") + addressToDirName(replica_addresses.back());
+						else
+							dir_names.emplace_back(addressToDirName(replica_addresses.back()));
 
-					if (first) first = false;
+						if (first) first = false;
+					}
 				}
 				else
 					throw Exception("Unknown element in config: " + *jt, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
 			}
 
 			slot_to_shard.insert(std::end(slot_to_shard), weight, shard_info_vec.size());
-			shard_info_vec.push_back({dir_name, weight});
+			shard_info_vec.push_back({std::move(dir_names), weight, has_local_node});
 		}
 		else
 			throw Exception("Unknown element in config: " + *it, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
@@ -138,7 +157,7 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 				bool has_local_replics = false;
 				for (Addresses::const_iterator jt = it->begin(); jt != it->end(); ++jt)
 				{
-					if (addressIsLocal(jt->host_port))
+					if (isLocal(*jt))
 					{
 						has_local_replics = true;
 						break;
@@ -164,7 +183,7 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 		{
 			for (Addresses::const_iterator it = addresses.begin(); it != addresses.end(); ++it)
 			{
-				if (addressIsLocal(it->host_port))
+				if (isLocal(*it))
 				{
 					++local_nodes_num;
 				}
@@ -223,7 +242,7 @@ Poco::Timespan Cluster::saturate(const Poco::Timespan & v, const Poco::Timespan 
 }
 
 
-bool Cluster::addressIsLocal(const Poco::Net::SocketAddress & address)
+bool Cluster::isLocal(const Address & address)
 {
 	///	Если среди реплик существует такая, что:
 	/// - её порт совпадает с портом, который слушает сервер;
@@ -232,11 +251,11 @@ bool Cluster::addressIsLocal(const Poco::Net::SocketAddress & address)
 	const UInt16 clickhouse_port = Poco::Util::Application::instance().config().getInt("tcp_port", 0);
 	static auto interfaces = Poco::Net::NetworkInterface::list();
 
-	if (clickhouse_port == address.port() &&
+	if (clickhouse_port == address.host_port.port() &&
 		interfaces.end() != std::find_if(interfaces.begin(), interfaces.end(),
-			[&](const Poco::Net::NetworkInterface & interface) { return interface.address() == address.host(); }))
+			[&](const Poco::Net::NetworkInterface & interface) { return interface.address() == address.host_port.host(); }))
 	{
-		LOG_INFO(&Poco::Util::Application::instance().logger(), "Replica with address " << address.toString() << " will be processed as local.");
+		LOG_INFO(&Poco::Util::Application::instance().logger(), "Replica with address " << address.host_port.toString() << " will be processed as local.");
 		return true;
 	}
 	return false;

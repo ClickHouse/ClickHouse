@@ -18,6 +18,9 @@ namespace DB
   */
 class StorageDistributed : public IStorage
 {
+	friend class DistributedBlockOutputStream;
+	friend class DirectoryMonitor;
+
 public:
 	static StoragePtr create(
 		const std::string & name_,			/// Имя таблицы.
@@ -73,8 +76,6 @@ public:
 	const String & getShardingKeyColumnName() const { return sharding_key_column_name; }
 	const String & getPath() const { return path; }
 
-	/// create directory monitor thread by subdirectory name
-	void createDirectoryMonitor(const std::string & name);
 
 private:
 	StorageDistributed(
@@ -83,20 +84,22 @@ private:
 		const String & remote_database_,
 		const String & remote_table_,
 		Cluster & cluster_,
-		const Context & context_,
+		Context & context_,
 		const ASTPtr & sharding_key_ = nullptr,
 		const String & data_path_ = String{});
 
-	void createDirectoryMonitors();
 
-	void directoryMonitorFunc(const std::string & path);
+	/// create directory monitor thread by subdirectory name
+	void createDirectoryMonitor(const std::string & name);
+	/// create directory monitors for each existing subdirectory
+	void createDirectoryMonitors();
 
 	String name;
 	NamesAndTypesListPtr columns;
 	String remote_database;
 	String remote_table;
 
-	const Context & context;
+	Context & context;
 
 	/// Временные таблицы, которые необходимо отправить на сервер. Переменная очищается после каждого вызова метода read
 	/// Для подготовки к отправке нужно использовтаь метод storeExternalTables

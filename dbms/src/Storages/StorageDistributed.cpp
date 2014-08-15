@@ -1,15 +1,11 @@
-#include <DB/Parsers/formatAST.h>
-
 #include <DB/DataStreams/RemoteBlockInputStream.h>
 #include <DB/DataStreams/RemoveColumnsBlockInputStream.h>
 
 #include <DB/Storages/StorageDistributed.h>
 #include <DB/Storages/VirtualColumnFactory.h>
 #include <DB/Storages/Distributed/DistributedBlockOutputStream.h>
-
-#include <Poco/Net/NetworkInterface.h>
-#include <DB/Client/ConnectionPool.h>
-
+#include <DB/Storages/Distributed/DirectoryMonitor.h>
+#include <DB/Storages/Distributed/queryToString.h>
 #include <DB/Common/escapeForFileName.h>
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>
@@ -17,24 +13,10 @@
 
 #include <DB/Core/Field.h>
 
-#include <boost/algorithm/string/find_iterator.hpp>
-#include <boost/algorithm/string/finder.hpp>
-
 namespace DB
 {
 
 namespace {
-	template <typename ASTType>
-	inline std::string queryToString(const ASTPtr & query)
-	{
-		const auto & query_ast = typeid_cast<const ASTType &>(*query);
-
-		std::ostringstream s;
-		formatAST(query_ast, s, 0, false, true);
-
-		return s.str();
-	}
-
 	/// select and insert query have different types for database and table, hence two specializations
 	template <typename ASTType> struct rewrite_traits;
 	template <> struct rewrite_traits<ASTSelectQuery> { using type = ASTPtr; };
@@ -81,7 +63,7 @@ StorageDistributed::StorageDistributed(
 	const String & remote_database_,
 	const String & remote_table_,
 	Cluster & cluster_,
-	const Context & context_,
+	Context & context_,
 	const ASTPtr & sharding_key_,
 	const String & data_path_)
 	: name(name_), columns(columns_),
@@ -92,8 +74,6 @@ StorageDistributed::StorageDistributed(
 	write_enabled(cluster.getLocalNodesNum() + cluster.pools.size() < 2 || sharding_key_),
 	path(data_path_ + escapeForFileName(name) + '/')
 {
-	std::cout << "table `" << name << "` in " << path << std::endl;
-
 	createDirectoryMonitors();
 }
 
@@ -194,12 +174,9 @@ BlockOutputStreamPtr StorageDistributed::write(ASTPtr query)
 			ErrorCodes::NOT_IMPLEMENTED
 		};
 
-	return new DistributedBlockOutputStream{
-		*this, this->cluster,
-		queryToString<ASTInsertQuery>(rewriteQuery<ASTInsertQuery>(
-			query, remote_database, remote_table
-		))
-	};
+	const auto & modified_query = rewriteQuery<ASTInsertQuery>(query, remote_database, remote_table);
+
+	return new DistributedBlockOutputStream{*this, modified_query};
 }
 
 void StorageDistributed::alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context)
@@ -219,9 +196,8 @@ void StorageDistributed::shutdown()
 
 NameAndTypePair StorageDistributed::getColumn(const String & column_name) const
 {
-	auto type = VirtualColumnFactory::tryGetType(column_name);
-	if (type)
-		return NameAndTypePair(column_name, type);
+	if (const auto & type = VirtualColumnFactory::tryGetType(column_name))
+		return { column_name, type };
 
 	return getRealColumn(column_name);
 }
@@ -231,89 +207,28 @@ bool StorageDistributed::hasColumn(const String & column_name) const
 	return VirtualColumnFactory::hasColumn(column_name) || hasRealColumn(column_name);
 }
 
-void StorageDistributed::createDirectoryMonitors()
-{
-	Poco::File(path).createDirectory();
-
-	Poco::DirectoryIterator end;
-	for (Poco::DirectoryIterator it(path); it != end; ++it)
-		if (it->isDirectory())
-			createDirectoryMonitor(it.name());
-}
-
 void StorageDistributed::createDirectoryMonitor(const std::string & name)
 {
 	if (directory_monitor_threads.count(name))
 		return;
 
 	directory_monitor_threads.emplace(
-		name, 
-		std::thread{
-			&StorageDistributed::directoryMonitorFunc, this, name
+		name,
+		std::thread{[this, name] {
+			DirectoryMonitor monitor{*this, name};
+			monitor.run();
 		}
-	);
+	});
 }
 
-void StorageDistributed::directoryMonitorFunc(const std::string & name)
+void StorageDistributed::createDirectoryMonitors()
 {
-	const auto & path = this->path + name + '/';
-	std::cout << "created monitor for directory " << path << std::endl;
+	Poco::File{path}.createDirectory();
 
-	auto is_local = false;
-	ConnectionPools pools;
-
-	for (auto it = boost::make_split_iterator(name, boost::first_finder(",")); it != decltype(it){}; ++it)
-	{
-		const auto & address = boost::copy_range<std::string>(*it);
-
-		const auto user_pw_end = strchr(address.data(), '@');
-		const auto colon = strchr(address.data(), ':');
-		if (!user_pw_end || !colon)
-			throw Exception{"Shard address '" + address + "' does not match to 'user[:password]@host:port' pattern"};
-
-		const auto has_pw = colon < user_pw_end;
-		const auto host_end = has_pw ? strchr(user_pw_end + 1, ':') : colon;
-		if (!host_end)
-			throw Exception{"Shard address '" + address + "' does not contain port"};
-
-		const auto user = unescapeForFileName({address.data(), has_pw ? colon : user_pw_end});
-		const auto password = has_pw ? unescapeForFileName({colon + 1, user_pw_end}) : std::string{};
-		const auto host = unescapeForFileName({user_pw_end + 1, host_end});
-		const auto port = DB::parse<UInt16>(host_end + 1);
-
-		std::cout
-			<< "\taddress " << host
-			<< " port " << port
-			<< " user " << user
-			<< " password " << password
-			<< std::endl;
-
-		if (Cluster::addressIsLocal({host, port}))
-		{
-			is_local = true;
-			break;
-		}
-
-		pools.emplace_back(new ConnectionPool{
-			1, host, port, "",
-			user, password, context.getDataTypeFactory(),
-			getName() + '_' + name
-		});
-	}
-
-	std::cout << "local? " << std::boolalpha << is_local << std::endl;
-	const auto pool = is_local
-		? (pools.size() == 1
-			? pools[0]
-			: new ConnectionPoolWithFailover(pools, DB::LoadBalancing::RANDOM)
-			)
-		: nullptr;
-
-	while (!quit.load(std::memory_order_relaxed))
-	{
-	}
-
-	std::cout << "exiting monitor for directory " << path << std::endl;
+	Poco::DirectoryIterator end;
+	for (Poco::DirectoryIterator it{path}; it != end; ++it)
+		if (it->isDirectory())
+			createDirectoryMonitor(it.name());
 }
 
 }
