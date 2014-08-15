@@ -78,10 +78,10 @@ Lock::Status Lock::checkImpl()
 {
 	Stat stat;
 	std::string dummy;
-	int32_t code = zookeeper->tryGet(lock_path, dummy, &stat);
-	if (code == ZNONODE)
+	bool result = zookeeper->tryGet(lock_path, dummy, &stat);
+	if (!result)
 		return UNLOCKED;
-	else if (code == ZOK)
+	else
 	{
 		if (stat.ephemeralOwner == zookeeper->getClientID())
 		{
@@ -92,8 +92,6 @@ Lock::Status Lock::checkImpl()
 			return LOCKED_BY_OTHER;
 		}
 	}
-	else
-		throw KeeperException(code, lock_path);
 }
 
 std::string Lock::status2String(Status status)
