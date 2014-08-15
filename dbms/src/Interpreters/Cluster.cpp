@@ -102,10 +102,9 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 			const auto internal_replication = config.getBool(partial_prefix + ".internal_replication", false);
 
 			/** in case of internal_replication we will be appending names to
-			 *  the first element of vector, therefore we need first element
-			 *  created in advance; otherwise we will just .emplace_back
+			 *  the first element of vector; otherwise we will just .emplace_back
 			 */
-			std::vector<std::string> dir_names(internal_replication);
+			std::vector<std::string> dir_names{};
 			auto has_local_node = false;
 
 			auto first = true;
@@ -126,7 +125,13 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 					else
 					{
 						if (internal_replication)
-							dir_names.front() += (first ? "" : ",") + addressToDirName(replica_addresses.back());
+						{
+							auto dir_name = addressToDirName(replica_addresses.back());
+							if (first)
+								dir_names.emplace_back(std::move(dir_name));
+							else
+								dir_names.front() += "," + dir_name;
+						}
 						else
 							dir_names.emplace_back(addressToDirName(replica_addresses.back()));
 

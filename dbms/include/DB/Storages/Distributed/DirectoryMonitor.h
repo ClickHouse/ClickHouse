@@ -10,7 +10,7 @@ namespace DB
 
 namespace
 {
-	template <typename F> ConnectionPools createPoolsForAddresses(const std::string & name, F && f)
+	template <typename PoolFactory> ConnectionPools createPoolsForAddresses(const std::string & name, PoolFactory && factory)
 	{
 		ConnectionPools pools;
 
@@ -33,7 +33,7 @@ namespace
 			const auto host = unescapeForFileName({user_pw_end + 1, host_end});
 			const auto port = DB::parse<UInt16>(host_end + 1);
 
-			pools.emplace_back(f(host, port, user, password));
+			pools.emplace_back(factory(host, port, user, password));
 		}
 
 		/// just to be explicit
