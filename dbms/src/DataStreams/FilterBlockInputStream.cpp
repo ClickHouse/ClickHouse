@@ -88,6 +88,15 @@ Block FilterBlockInputStream::readImpl()
 		if (filtered_rows == 0)
 			continue;
 
+		/// Если через фильтр проходят все строчки.
+		if (filtered_rows == filter.size())
+		{
+			/// Заменим столбец с фильтром на константу.
+			res.getByPosition(filter_column).column = new ColumnConstUInt8(filtered_rows, 1);
+			/// Остальные столбцы трогать не нужно.
+			return res;
+		}
+
 		/// Фильтруем остальные столбцы.
 		for (size_t i = 0; i < columns; ++i)
 		{
