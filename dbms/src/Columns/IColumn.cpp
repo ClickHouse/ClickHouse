@@ -22,7 +22,7 @@ size_t countBytesInFilter(const IColumn::Filter & filt)
 	const Int8 * end64 = pos + filt.size() / 64 * 64;
 
 	for (; pos < end64; pos += 64)
-		count += __builtin_popcount(
+		count += __builtin_popcountll(
 			static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(
 				_mm_loadu_si128(reinterpret_cast<const __m128i *>(pos)),
 				zero16)))
