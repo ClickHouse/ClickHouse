@@ -232,9 +232,11 @@ public:
 		const UInt8 * filt_end_sse = filt_pos + size / 16 * 16;
 		const T * data_pos = &data[0];
 
+		const __m128i zero16 = _mm_set1_epi8(0);
+
 		while (filt_pos < filt_end_sse)
 		{
-			int mask = _mm_movemask_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos)));
+			int mask = _mm_movemask_epi8(_mm_cmpgt_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos)), zero16));
 
 			if (0 == mask)
 			{
