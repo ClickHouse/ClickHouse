@@ -248,6 +248,12 @@ public:
 		if (required_capacity > capacity())
 			reserve(round_up_to_power_of_two(required_capacity));
 
+		insert_assume_reserved(from_begin, from_end);
+	}
+
+	template <typename It1, typename It2>
+	void insert_assume_reserved(It1 from_begin, It2 from_end)
+	{
 		size_t bytes_to_copy = byte_size(from_end - from_begin);
 		memcpy(c_end, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
 		c_end += bytes_to_copy;
