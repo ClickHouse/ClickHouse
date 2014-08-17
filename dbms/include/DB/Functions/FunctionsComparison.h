@@ -50,23 +50,54 @@ struct NumComparisonImpl
 {
 	static void vector_vector(const PODArray<A> & a, const PODArray<B> & b, PODArray<UInt8> & c)
 	{
+		/** GCC 4.8.2 векторизует цикл только если его записать в такой форме.
+		  * В данном случае, если сделать цикл по индексу массива (код будет выглядеть проще),
+		  *  цикл не будет векторизовываться.
+		  */
+
 		size_t size = a.size();
-		for (size_t i = 0; i < size; ++i)
-			c[i] = Op::apply(a[i], b[i]);
+		const A * a_pos = &a[0];
+		const B * b_pos = &b[0];
+		UInt8 * c_pos = &c[0];
+		const A * a_end = a_pos + size;
+
+		while (a_pos < a_end)
+		{
+			*c_pos = Op::apply(*a_pos, *b_pos);
+			++a_pos;
+			++b_pos;
+			++c_pos;
+		}
 	}
 
 	static void vector_constant(const PODArray<A> & a, B b, PODArray<UInt8> & c)
 	{
 		size_t size = a.size();
-		for (size_t i = 0; i < size; ++i)
-			c[i] = Op::apply(a[i], b);
+		const A * a_pos = &a[0];
+		UInt8 * c_pos = &c[0];
+		const A * a_end = a_pos + size;
+
+		while (a_pos < a_end)
+		{
+			*c_pos = Op::apply(*a_pos, b);
+			++a_pos;
+			++c_pos;
+		}
 	}
 
 	static void constant_vector(A a, const PODArray<B> & b, PODArray<UInt8> & c)
 	{
 		size_t size = b.size();
-		for (size_t i = 0; i < size; ++i)
-			c[i] = Op::apply(a, b[i]);
+		const B * b_pos = &b[0];
+		UInt8 * c_pos = &c[0];
+		const B * b_end = b_pos + size;
+
+		while (b_pos < b_end)
+		{
+			*c_pos = Op::apply(a, *b_pos);
+			++b_pos;
+			++c_pos;
+		}
 	}
 
 	static void constant_constant(A a, B b, UInt8 & c)
