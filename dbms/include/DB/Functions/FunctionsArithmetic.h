@@ -14,7 +14,7 @@ namespace DB
   */
 
 template<typename A, typename B, typename Op>
-struct BinaryOperationImpl
+struct BinaryOperationImplBase
 {
 	typedef typename Op::ResultType ResultType;
 
@@ -43,6 +43,11 @@ struct BinaryOperationImpl
 	{
 		c = Op::apply(a, b);
 	}
+};
+
+template<typename A, typename B, typename Op>
+struct BinaryOperationImpl : BinaryOperationImplBase<A, B, Op>
+{
 };
 
 template<typename A, typename Op>
@@ -569,5 +574,141 @@ typedef FunctionBinaryArithmetic<BitShiftLeftImpl,		NameBitShiftLeft> 		Function
 typedef FunctionBinaryArithmetic<BitShiftRightImpl,		NameBitShiftRight> 		FunctionBitShiftRight;
 
 
+
+/// Оптимизации для целочисленного деления на константу.
+
+#define LIBDIVIDE_USE_SSE2 1
+#include <libdivide.h>
+
+
+template <typename A, typename B>
+struct DivideIntegralByConstantImpl
+	: BinaryOperationImplBase<A, B, DivideIntegralImpl<A, B>>
+{
+	typedef typename DivideIntegralImpl<A, B>::ResultType ResultType;
+
+	static void vector_constant(const PODArray<A> & a, B b, PODArray<ResultType> & c)
+	{
+		if (unlikely(b == 0))
+			throw Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-compare"
+
+		if (unlikely(std::is_signed<B>::value && b == -1))
+		{
+			size_t size = a.size();
+			for (size_t i = 0; i < size; ++i)
+				c[i] = -c[i];
+			return;
+		}
+
+#pragma GCC diagnostic pop
+
+		libdivide::divider<A> divider(b);
+
+		size_t size = a.size();
+		const A * a_pos = &a[0];
+		const A * a_end = a_pos + size;
+		ResultType * c_pos = &c[0];
+		static constexpr size_t values_per_sse_register = 16 / sizeof(A);
+		const A * a_end_sse = a_pos + size / values_per_sse_register * values_per_sse_register;
+
+		while (a_pos < a_end_sse)
+		{
+			_mm_storeu_si128(reinterpret_cast<__m128i *>(c_pos),
+				_mm_loadu_si128(reinterpret_cast<const __m128i *>(a_pos)) / divider);
+
+			a_pos += values_per_sse_register;
+			c_pos += values_per_sse_register;
+		}
+
+		while (a_pos < a_end)
+		{
+			*c_pos = *a_pos / divider;
+			++a_pos;
+			++c_pos;
+		}
+	}
+};
+
+template <typename A, typename B>
+struct ModuloByConstantImpl
+	: BinaryOperationImplBase<A, B, ModuloImpl<A, B>>
+{
+	typedef typename ModuloImpl<A, B>::ResultType ResultType;
+
+	static void vector_constant(const PODArray<A> & a, B b, PODArray<ResultType> & c)
+	{
+		if (unlikely(b == 0))
+			throw Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-compare"
+
+		if (unlikely((std::is_signed<B>::value && b == -1) || b == 1))
+		{
+			size_t size = a.size();
+			for (size_t i = 0; i < size; ++i)
+				c[i] = 0;
+			return;
+		}
+
+#pragma GCC diagnostic pop
+
+		libdivide::divider<A> divider(b);
+
+		/// Тут не удалось сделать так, чтобы SSE вариант из libdivide давал преимущество.
+		size_t size = a.size();
+		for (size_t i = 0; i < size; ++i)
+			c[i] = a[i] - (a[i] / divider) * b;	/// NOTE: возможно, не сохраняется семантика деления с остатком отрицательных чисел.
+	}
+};
+
+
+/** Прописаны специализации для деления чисел типа UInt64 и UInt32 на числа той же знаковости.
+  * Можно дополнить до всех возможных комбинаций, но потребуется больше кода.
+  */
+
+template <> struct BinaryOperationImpl<UInt64, UInt8, 	DivideIntegralImpl<UInt64, UInt8>> 	: DivideIntegralByConstantImpl<UInt64, UInt8> {};
+template <> struct BinaryOperationImpl<UInt64, UInt16,	DivideIntegralImpl<UInt64, UInt16>> : DivideIntegralByConstantImpl<UInt64, UInt16> {};
+template <> struct BinaryOperationImpl<UInt64, UInt32, 	DivideIntegralImpl<UInt64, UInt32>> : DivideIntegralByConstantImpl<UInt64, UInt32> {};
+template <> struct BinaryOperationImpl<UInt64, UInt64, 	DivideIntegralImpl<UInt64, UInt64>> : DivideIntegralByConstantImpl<UInt64, UInt64> {};
+
+template <> struct BinaryOperationImpl<UInt32, UInt8, 	DivideIntegralImpl<UInt32, UInt8>> 	: DivideIntegralByConstantImpl<UInt32, UInt8> {};
+template <> struct BinaryOperationImpl<UInt32, UInt16, 	DivideIntegralImpl<UInt32, UInt16>> : DivideIntegralByConstantImpl<UInt32, UInt16> {};
+template <> struct BinaryOperationImpl<UInt32, UInt32, 	DivideIntegralImpl<UInt32, UInt32>> : DivideIntegralByConstantImpl<UInt32, UInt32> {};
+template <> struct BinaryOperationImpl<UInt32, UInt64, 	DivideIntegralImpl<UInt32, UInt64>> : DivideIntegralByConstantImpl<UInt32, UInt64> {};
+
+template <> struct BinaryOperationImpl<Int64, Int8, 	DivideIntegralImpl<Int64, Int8>> 	: DivideIntegralByConstantImpl<Int64, Int8> {};
+template <> struct BinaryOperationImpl<Int64, Int16, 	DivideIntegralImpl<Int64, Int16>> 	: DivideIntegralByConstantImpl<Int64, Int16> {};
+template <> struct BinaryOperationImpl<Int64, Int32, 	DivideIntegralImpl<Int64, Int32>> 	: DivideIntegralByConstantImpl<Int64, Int32> {};
+template <> struct BinaryOperationImpl<Int64, Int64, 	DivideIntegralImpl<Int64, Int64>> 	: DivideIntegralByConstantImpl<Int64, Int64> {};
+
+template <> struct BinaryOperationImpl<Int32, Int8, 	DivideIntegralImpl<Int32, Int8>> 	: DivideIntegralByConstantImpl<Int32, Int8> {};
+template <> struct BinaryOperationImpl<Int32, Int16, 	DivideIntegralImpl<Int32, Int16>> 	: DivideIntegralByConstantImpl<Int32, Int16> {};
+template <> struct BinaryOperationImpl<Int32, Int32, 	DivideIntegralImpl<Int32, Int32>> 	: DivideIntegralByConstantImpl<Int32, Int32> {};
+template <> struct BinaryOperationImpl<Int32, Int64, 	DivideIntegralImpl<Int32, Int64>> 	: DivideIntegralByConstantImpl<Int32, Int64> {};
+
+
+template <> struct BinaryOperationImpl<UInt64, UInt8, 	ModuloImpl<UInt64, UInt8>> 	: ModuloByConstantImpl<UInt64, UInt8> {};
+template <> struct BinaryOperationImpl<UInt64, UInt16,	ModuloImpl<UInt64, UInt16>> : ModuloByConstantImpl<UInt64, UInt16> {};
+template <> struct BinaryOperationImpl<UInt64, UInt32, 	ModuloImpl<UInt64, UInt32>> : ModuloByConstantImpl<UInt64, UInt32> {};
+template <> struct BinaryOperationImpl<UInt64, UInt64, 	ModuloImpl<UInt64, UInt64>> : ModuloByConstantImpl<UInt64, UInt64> {};
+
+template <> struct BinaryOperationImpl<UInt32, UInt8, 	ModuloImpl<UInt32, UInt8>> 	: ModuloByConstantImpl<UInt32, UInt8> {};
+template <> struct BinaryOperationImpl<UInt32, UInt16, 	ModuloImpl<UInt32, UInt16>> : ModuloByConstantImpl<UInt32, UInt16> {};
+template <> struct BinaryOperationImpl<UInt32, UInt32, 	ModuloImpl<UInt32, UInt32>> : ModuloByConstantImpl<UInt32, UInt32> {};
+template <> struct BinaryOperationImpl<UInt32, UInt64, 	ModuloImpl<UInt32, UInt64>> : ModuloByConstantImpl<UInt32, UInt64> {};
+
+template <> struct BinaryOperationImpl<Int64, Int8, 	ModuloImpl<Int64, Int8>> 	: ModuloByConstantImpl<Int64, Int8> {};
+template <> struct BinaryOperationImpl<Int64, Int16, 	ModuloImpl<Int64, Int16>> 	: ModuloByConstantImpl<Int64, Int16> {};
+template <> struct BinaryOperationImpl<Int64, Int32, 	ModuloImpl<Int64, Int32>> 	: ModuloByConstantImpl<Int64, Int32> {};
+template <> struct BinaryOperationImpl<Int64, Int64, 	ModuloImpl<Int64, Int64>> 	: ModuloByConstantImpl<Int64, Int64> {};
+
+template <> struct BinaryOperationImpl<Int32, Int8, 	ModuloImpl<Int32, Int8>> 	: ModuloByConstantImpl<Int32, Int8> {};
+template <> struct BinaryOperationImpl<Int32, Int16, 	ModuloImpl<Int32, Int16>> 	: ModuloByConstantImpl<Int32, Int16> {};
+template <> struct BinaryOperationImpl<Int32, Int32, 	ModuloImpl<Int32, Int32>> 	: ModuloByConstantImpl<Int32, Int32> {};
+template <> struct BinaryOperationImpl<Int32, Int64, 	ModuloImpl<Int32, Int64>> 	: ModuloByConstantImpl<Int32, Int64> {};
 
 }
