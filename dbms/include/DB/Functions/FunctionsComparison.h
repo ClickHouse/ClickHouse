@@ -34,37 +34,50 @@ namespace DB
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wsign-compare"
 
-template<typename A, typename B>
-struct EqualsNumImpl
+template <typename A, typename B> struct EqualsOp 			{ static UInt8 apply(A a, B b) { return a == b; } };
+template <typename A, typename B> struct NotEqualsOp 		{ static UInt8 apply(A a, B b) { return a != b; } };
+template <typename A, typename B> struct LessOp 			{ static UInt8 apply(A a, B b) { return a < b; 	} };
+template <typename A, typename B> struct GreaterOp 			{ static UInt8 apply(A a, B b) { return a > b; 	} };
+template <typename A, typename B> struct LessOrEqualsOp 	{ static UInt8 apply(A a, B b) { return a <= b; } };
+template <typename A, typename B> struct GreaterOrEqualsOp 	{ static UInt8 apply(A a, B b) { return a >= b; } };
+
+#pragma GCC diagnostic pop
+
+
+
+template<typename A, typename B, typename Op>
+struct NumComparisonImpl
 {
 	static void vector_vector(const PODArray<A> & a, const PODArray<B> & b, PODArray<UInt8> & c)
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
-			c[i] = a[i] == b[i];
+			c[i] = Op::apply(a[i], b[i]);
 	}
 
 	static void vector_constant(const PODArray<A> & a, B b, PODArray<UInt8> & c)
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
-			c[i] = a[i] == b;
+			c[i] = Op::apply(a[i], b);
 	}
 
 	static void constant_vector(A a, const PODArray<B> & b, PODArray<UInt8> & c)
 	{
 		size_t size = b.size();
 		for (size_t i = 0; i < size; ++i)
-			c[i] = a == b[i];
+			c[i] = Op::apply(a, b[i]);
 	}
 
 	static void constant_constant(A a, B b, UInt8 & c)
 	{
-		c = a == b;
+		c = Op::apply(a, b);
 	}
 };
 
-struct EqualsStringImpl
+
+template <typename Op>
+struct StringComparisonImpl
 {
 	static void string_vector_string_vector(
 		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
@@ -73,10 +86,18 @@ struct EqualsStringImpl
 	{
 		size_t size = a_offsets.size();
 		for (size_t i = 0; i < size; ++i)
-			c[i] = (i == 0)
-				? (a_offsets[0] == b_offsets[0] && !memcmp(&a_data[0], &b_data[0], a_offsets[0] - 1))
-				: (a_offsets[i] - a_offsets[i - 1] == b_offsets[i] - b_offsets[i - 1]
-					&& !memcmp(&a_data[a_offsets[i - 1]], &b_data[b_offsets[i - 1]], a_offsets[i] - a_offsets[i - 1] - 1));
+		{
+			if (i == 0)
+			{
+				/// Завершающий ноль в меньшей по длине строке входит в сравнение.
+				c[i] = Op::apply(memcmp(&a_data[0], &b_data[0], std::min(a_offsets[0], b_offsets[0])), 0);
+			}
+			else
+			{
+				c[i] = Op::apply(memcmp(&a_data[a_offsets[i - 1]], &b_data[b_offsets[i - 1]],
+					std::min(a_offsets[i] - a_offsets[i - 1], b_offsets[i] - b_offsets[i - 1])), 0);
+			}
+		}
 	}
 
 	static void string_vector_fixed_string_vector(
@@ -86,10 +107,19 @@ struct EqualsStringImpl
 	{
 		size_t size = a_offsets.size();
 		for (size_t i = 0; i < size; ++i)
-			c[i] = (i == 0)
-				? (a_offsets[0] == b_n + 1 && !memcmp(&a_data[0], &b_data[0], b_n))
-				: (a_offsets[i] - a_offsets[i - 1] == b_n + 1
-					&& !memcmp(&a_data[a_offsets[i - 1]], &b_data[b_n * i], b_n));
+		{
+			if (i == 0)
+			{
+				int res = memcmp(&a_data[0], &b_data[0], std::min(a_offsets[0] - 1, b_n));
+				c[i] = Op::apply(res, 0) || (res == 0 && Op::apply(a_offsets[0], b_n + 1));
+			}
+			else
+			{
+				int res = memcmp(&a_data[a_offsets[i - 1]], &b_data[i * b_n],
+					std::min(a_offsets[i] - a_offsets[i - 1] - 1, b_n));
+				c[i] = Op::apply(res, 0) || (res == 0 && Op::apply(a_offsets[i] - a_offsets[i - 1], b_n + 1));
+			}
+		}
 	}
 
 	static void string_vector_constant(
@@ -101,10 +131,17 @@ struct EqualsStringImpl
 		ColumnString::Offset_t b_n = b.size();
 		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
 		for (size_t i = 0; i < size; ++i)
-			c[i] = (i == 0)
-				? (a_offsets[0] == b_n + 1 && !memcmp(&a_data[0], b_data, b_n))
-				: (a_offsets[i] - a_offsets[i - 1] == b_n + 1
-					&& !memcmp(&a_data[a_offsets[i - 1]], b_data, b_n));
+		{
+			if (i == 0)
+			{
+				c[i] = Op::apply(memcmp(&a_data[0], b_data, std::min(a_offsets[0], b_n + 1)), 0);
+			}
+			else
+			{
+				c[i] = Op::apply(memcmp(&a_data[a_offsets[i - 1]], b_data,
+					std::min(a_offsets[i] - a_offsets[i - 1], b_n + 1)), 0);
+			}
+		}
 	}
 
 	static void fixed_string_vector_string_vector(
@@ -114,10 +151,19 @@ struct EqualsStringImpl
 	{
 		size_t size = b_offsets.size();
 		for (size_t i = 0; i < size; ++i)
-			c[i] = (i == 0)
-				? (b_offsets[0] == a_n + 1 && !memcmp(&b_data[0], &a_data[0], a_n))
-				: (b_offsets[i] - b_offsets[i - 1] == a_n + 1
-					&& !memcmp(&b_data[b_offsets[i - 1]], &a_data[a_n * i], a_n));
+		{
+			if (i == 0)
+			{
+				int res = memcmp(&a_data[0], &b_data[0], std::min(b_offsets[0] - 1, a_n));
+				c[i] = Op::apply(res, 0) || (res == 0 && Op::apply(a_n + 1, b_offsets[0]));
+			}
+			else
+			{
+				int res = memcmp(&a_data[i * a_n], &b_data[b_offsets[i - 1]],
+					std::min(b_offsets[i] - b_offsets[i - 1] - 1, a_n));
+				c[i] = Op::apply(res, 0) || (res == 0 && Op::apply(a_n + 1, b_offsets[i] - b_offsets[i - 1]));
+			}
+		}
 	}
 
 	static void fixed_string_vector_fixed_string_vector(
@@ -127,7 +173,10 @@ struct EqualsStringImpl
 	{
 		size_t size = a_data.size();
 		for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
-			c[j] = a_n == b_n && !memcmp(&a_data[i], &b_data[i], a_n);
+		{
+			int res = memcmp(&a_data[i], &b_data[i], std::min(a_n, b_n));
+			c[j] = Op::apply(res, 0) || (res == 0 && Op::apply(a_n, b_n));
+		}
 	}
 
 	static void fixed_string_vector_constant(
@@ -139,7 +188,10 @@ struct EqualsStringImpl
 		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
 		ColumnString::Offset_t b_n = b.size();
 		for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
-			c[j] = a_n == b_n && !memcmp(&a_data[i], b_data, a_n);
+		{
+			int res = memcmp(&a_data[i], b_data, std::min(a_n, b_n));
+			c[j] = Op::apply(res, 0) || (res == 0 && Op::apply(a_n, b_n));
+		}
 	}
 
 	static void constant_string_vector(
@@ -151,10 +203,17 @@ struct EqualsStringImpl
 		ColumnString::Offset_t a_n = a.size();
 		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
 		for (size_t i = 0; i < size; ++i)
-			c[i] = (i == 0)
-				? (b_offsets[0] == a_n + 1 && !memcmp(&b_data[0], a_data, a_n))
-				: (b_offsets[i] - b_offsets[i - 1] == a_n + 1
-					&& !memcmp(&b_data[b_offsets[i - 1]], a_data, a_n));
+		{
+			if (i == 0)
+			{
+				c[i] = Op::apply(memcmp(a_data, &b_data[0], std::min(b_offsets[0], a_n + 1)), 0);
+			}
+			else
+			{
+				c[i] = Op::apply(memcmp(a_data, &b_data[b_offsets[i - 1]],
+					std::min(b_offsets[i] - b_offsets[i - 1], a_n + 1)), 0);
+			}
+		}
 	}
 
 	static void constant_fixed_string_vector(
@@ -166,7 +225,10 @@ struct EqualsStringImpl
 		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
 		ColumnString::Offset_t a_n = a.size();
 		for (size_t i = 0, j = 0; i < size; i += b_n, ++j)
-			c[j] = a_n == b_n && !memcmp(&b_data[i], a_data, b_n);
+		{
+			int res = memcmp(a_data, &b_data[i], std::min(a_n, b_n));
+			c[j] = Op::apply(res, 0) || (res == 0 && Op::apply(b_n, a_n));
+		}
 	}
 
 	static void constant_constant(
@@ -174,41 +236,14 @@ struct EqualsStringImpl
 		const std::string & b,
 		UInt8 & c)
 	{
-		c = a == b;
+		c = Op::apply(memcmp(a.data(), b.data(), std::min(a.size(), b.size()) + 1), 0);
 	}
 };
 
-template<typename A, typename B>
-struct NotEqualsNumImpl
-{
-	static void vector_vector(const PODArray<A> & a, const PODArray<B> & b, PODArray<UInt8> & c)
-	{
-		size_t size = a.size();
-		for (size_t i = 0; i < size; ++i)
-			c[i] = a[i] != b[i];
-	}
 
-	static void vector_constant(const PODArray<A> & a, B b, PODArray<UInt8> & c)
-	{
-		size_t size = a.size();
-		for (size_t i = 0; i < size; ++i)
-			c[i] = a[i] != b;
-	}
-
-	static void constant_vector(A a, const PODArray<B> & b, PODArray<UInt8> & c)
-	{
-		size_t size = b.size();
-		for (size_t i = 0; i < size; ++i)
-			c[i] = a != b[i];
-	}
-
-	static void constant_constant(A a, B b, UInt8 & c)
-	{
-		c = a != b;
-	}
-};
-
-struct NotEqualsStringImpl
+/// Сравнения на равенство/неравенство реализованы несколько более эффективно.
+template <bool positive>
+struct StringEqualsImpl
 {
 	static void string_vector_string_vector(
 		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
@@ -217,7 +252,7 @@ struct NotEqualsStringImpl
 	{
 		size_t size = a_offsets.size();
 		for (size_t i = 0; i < size; ++i)
-			c[i] = !((i == 0)
+			c[i] = positive == ((i == 0)
 				? (a_offsets[0] == b_offsets[0] && !memcmp(&a_data[0], &b_data[0], a_offsets[0] - 1))
 				: (a_offsets[i] - a_offsets[i - 1] == b_offsets[i] - b_offsets[i - 1]
 					&& !memcmp(&a_data[a_offsets[i - 1]], &b_data[b_offsets[i - 1]], a_offsets[i] - a_offsets[i - 1] - 1)));
@@ -230,7 +265,7 @@ struct NotEqualsStringImpl
 	{
 		size_t size = a_offsets.size();
 		for (size_t i = 0; i < size; ++i)
-			c[i] = !((i == 0)
+			c[i] = positive == ((i == 0)
 				? (a_offsets[0] == b_n + 1 && !memcmp(&a_data[0], &b_data[0], b_n))
 				: (a_offsets[i] - a_offsets[i - 1] == b_n + 1
 					&& !memcmp(&a_data[a_offsets[i - 1]], &b_data[b_n * i], b_n)));
@@ -245,25 +280,12 @@ struct NotEqualsStringImpl
 		ColumnString::Offset_t b_n = b.size();
 		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
 		for (size_t i = 0; i < size; ++i)
-			c[i] = !((i == 0)
+			c[i] = positive == ((i == 0)
 				? (a_offsets[0] == b_n + 1 && !memcmp(&a_data[0], b_data, b_n))
 				: (a_offsets[i] - a_offsets[i - 1] == b_n + 1
 					&& !memcmp(&a_data[a_offsets[i - 1]], b_data, b_n)));
 	}
 
-	static void fixed_string_vector_string_vector(
-		const ColumnString::Chars_t & a_data, ColumnString::Offset_t a_n,
-		const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
-		PODArray<UInt8> & c)
-	{
-		size_t size = b_offsets.size();
-		for (size_t i = 0; i < size; ++i)
-			c[i] = !((i == 0)
-				? (b_offsets[0] == a_n + 1 && !memcmp(&b_data[0], &a_data[0], a_n))
-				: (b_offsets[i] - b_offsets[i - 1] == a_n + 1
-					&& !memcmp(&b_data[b_offsets[i - 1]], &a_data[a_n * i], a_n)));
-	}
-
 	static void fixed_string_vector_fixed_string_vector(
 		const ColumnString::Chars_t & a_data, ColumnString::Offset_t a_n,
 		const ColumnString::Chars_t & b_data, ColumnString::Offset_t b_n,
@@ -271,7 +293,7 @@ struct NotEqualsStringImpl
 	{
 		size_t size = a_data.size();
 		for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
-			c[j] = !(a_n == b_n && !memcmp(&a_data[i], &b_data[i], a_n));
+			c[j] = positive == (a_n == b_n && !memcmp(&a_data[i], &b_data[i], a_n));
 	}
 
 	static void fixed_string_vector_constant(
@@ -283,34 +305,7 @@ struct NotEqualsStringImpl
 		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
 		ColumnString::Offset_t b_n = b.size();
 		for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
-			c[j] = !(a_n == b_n && !memcmp(&a_data[i], b_data, a_n));
-	}
-
-	static void constant_string_vector(
-		const std::string & a,
-		const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
-		PODArray<UInt8> & c)
-	{
-		size_t size = b_offsets.size();
-		ColumnString::Offset_t a_n = a.size();
-		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
-		for (size_t i = 0; i < size; ++i)
-			c[i] = !((i == 0)
-				? (b_offsets[0] == a_n + 1 && !memcmp(&b_data[0], a_data, a_n))
-				: (b_offsets[i] - b_offsets[i - 1] == a_n + 1
-					&& !memcmp(&b_data[b_offsets[i - 1]], a_data, a_n)));
-	}
-
-	static void constant_fixed_string_vector(
-		const std::string & a,
-		const ColumnString::Chars_t & b_data, ColumnString::Offset_t b_n,
-		PODArray<UInt8> & c)
-	{
-		size_t size = b_data.size();
-		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
-		ColumnString::Offset_t a_n = a.size();
-		for (size_t i = 0, j = 0; i < size; i += b_n, ++j)
-			c[j] = !(a_n == b_n && !memcmp(&b_data[i], a_data, b_n));
+			c[j] = positive == (a_n == b_n && !memcmp(&a_data[i], b_data, a_n));
 	}
 
 	static void constant_constant(
@@ -318,108 +313,7 @@ struct NotEqualsStringImpl
 		const std::string & b,
 		UInt8 & c)
 	{
-		c = !(a == b);
-	}
-};
-
-template<typename A, typename B>
-struct LessNumImpl
-{
-	static void vector_vector(const PODArray<A> & a, const PODArray<B> & b, PODArray<UInt8> & c)
-	{
-		size_t size = a.size();
-		for (size_t i = 0; i < size; ++i)
-			c[i] = a[i] < b[i];
-	}
-
-	static void vector_constant(const PODArray<A> & a, B b, PODArray<UInt8> & c)
-	{
-		size_t size = a.size();
-		for (size_t i = 0; i < size; ++i)
-			c[i] = a[i] < b;
-	}
-
-	static void constant_vector(A a, const PODArray<B> & b, PODArray<UInt8> & c)
-	{
-		size_t size = b.size();
-		for (size_t i = 0; i < size; ++i)
-			c[i] = a < b[i];
-	}
-
-	static void constant_constant(A a, B b, UInt8 & c)
-	{
-		c = a < b;
-	}
-};
-
-struct LessStringImpl
-{
-	static void string_vector_string_vector(
-		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
-		const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
-		PODArray<UInt8> & c)
-	{
-		size_t size = a_offsets.size();
-		for (size_t i = 0; i < size; ++i)
-		{
-			if (i == 0)
-			{
-				int res = memcmp(&a_data[0], &b_data[0], std::min(a_offsets[0], b_offsets[0]) - 1);
-				c[i] = res < 0 || (res == 0 && a_offsets[0] < b_offsets[0]);
-			}
-			else
-			{
-				int res = memcmp(&a_data[a_offsets[i - 1]], &b_data[b_offsets[i - 1]],
-					std::min(a_offsets[i] - a_offsets[i - 1], b_offsets[i] - b_offsets[i - 1]) - 1);
-				c[i] = res < 0 || (res == 0 && a_offsets[i] - a_offsets[i - 1] < b_offsets[i] - b_offsets[i - 1]);
-			}
-		}
-	}
-
-	static void string_vector_fixed_string_vector(
-		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
-		const ColumnString::Chars_t & b_data, ColumnString::Offset_t b_n,
-		PODArray<UInt8> & c)
-	{
-		size_t size = a_offsets.size();
-		for (size_t i = 0; i < size; ++i)
-		{
-			if (i == 0)
-			{
-				int res = memcmp(&a_data[0], &b_data[0], std::min(a_offsets[0] - 1, b_n));
-				c[i] = res < 0 || (res == 0 && a_offsets[0] < b_n + 1);
-			}
-			else
-			{
-				int res = memcmp(&a_data[a_offsets[i - 1]], &b_data[i * b_n],
-					std::min(a_offsets[i] - a_offsets[i - 1] - 1, b_n));
-				c[i] = res < 0 || (res == 0 && a_offsets[i] - a_offsets[i - 1] < b_n + 1);
-			}
-		}
-	}
-
-	static void string_vector_constant(
-		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
-		const std::string & b,
-		PODArray<UInt8> & c)
-	{
-		size_t size = a_offsets.size();
-		ColumnString::Offset_t b_n = b.size();
-		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
-		for (size_t i = 0; i < size; ++i)
-		{
-			if (i == 0)
-			{
-				int res = memcmp(&a_data[0], b_data, std::min(a_offsets[0] - 1, b_n));
-				c[i] = res < 0 || (res == 0 && a_offsets[0] < b_n + 1);
-			}
-			else
-			{
-				int res = memcmp(&a_data[a_offsets[i - 1]], b_data,
-					std::min(a_offsets[i] - a_offsets[i - 1] - 1, b_n));
-				c[i] = res < 0 || (res == 0 && a_offsets[i] - a_offsets[i - 1] < b_n + 1);
-			}
-		}
+		c = positive == (a == b);
 	}
 
 	static void fixed_string_vector_string_vector(
@@ -427,49 +321,7 @@ struct LessStringImpl
 		const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
 		PODArray<UInt8> & c)
 	{
-		size_t size = b_offsets.size();
-		for (size_t i = 0; i < size; ++i)
-		{
-			if (i == 0)
-			{
-				int res = memcmp(&a_data[0], &b_data[0], std::min(b_offsets[0] - 1, a_n));
-				c[i] = res < 0 || (res == 0 && a_n + 1 < b_offsets[0]);
-			}
-			else
-			{
-				int res = memcmp(&a_data[i * a_n], &b_data[b_offsets[i - 1]],
-					std::min(b_offsets[i] - b_offsets[i - 1] - 1, a_n));
-				c[i] = res < 0 || (res == 0 && a_n + 1 < b_offsets[i] - b_offsets[i - 1]);
-			}
-		}
-	}
-
-	static void fixed_string_vector_fixed_string_vector(
-		const ColumnString::Chars_t & a_data, ColumnString::Offset_t a_n,
-		const ColumnString::Chars_t & b_data, ColumnString::Offset_t b_n,
-		PODArray<UInt8> & c)
-	{
-		size_t size = a_data.size();
-		for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
-		{
-			int res = memcmp(&a_data[i], &b_data[i], std::min(a_n, b_n));
-			c[j] = res < 0 || (res == 0 && a_n < b_n);
-		}
-	}
-
-	static void fixed_string_vector_constant(
-		const ColumnString::Chars_t & a_data, ColumnString::Offset_t a_n,
-		const std::string & b,
-		PODArray<UInt8> & c)
-	{
-		size_t size = a_data.size();
-		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
-		ColumnString::Offset_t b_n = b.size();
-		for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
-		{
-			int res = memcmp(&a_data[i], b_data, std::min(a_n, b_n));
-			c[j] = res < 0 || (res == 0 && a_n < b_n);
-		}
+		string_vector_fixed_string_vector(b_data, b_offsets, a_data, a_n, c);
 	}
 
 	static void constant_string_vector(
@@ -477,23 +329,7 @@ struct LessStringImpl
 		const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
 		PODArray<UInt8> & c)
 	{
-		size_t size = b_offsets.size();
-		ColumnString::Offset_t a_n = a.size();
-		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
-		for (size_t i = 0; i < size; ++i)
-		{
-			if (i == 0)
-			{
-				int res = memcmp(a_data, &b_data[0], std::min(b_offsets[0] - 1, a_n));
-				c[i] = res < 0 || (res == 0 && a_n + 1 < b_offsets[0]);
-			}
-			else
-			{
-				int res = memcmp(a_data, &b_data[b_offsets[i - 1]],
-					std::min(b_offsets[i] - b_offsets[i - 1] - 1, a_n));
-				c[i] = res < 0 || (res == 0 && a_n + 1 < b_offsets[i] - b_offsets[i - 1]);
-			}
-		}
+		string_vector_constant(b_data, b_offsets, a, c);
 	}
 
 	static void constant_fixed_string_vector(
@@ -501,626 +337,20 @@ struct LessStringImpl
 		const ColumnString::Chars_t & b_data, ColumnString::Offset_t b_n,
 		PODArray<UInt8> & c)
 	{
-		size_t size = b_data.size();
-		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
-		ColumnString::Offset_t a_n = a.size();
-		for (size_t i = 0, j = 0; i < size; i += b_n, ++j)
-		{
-			int res = memcmp(a_data, &b_data[i], std::min(a_n, b_n));
-			c[j] = res < 0 || (res == 0 && b_n < a_n);
-		}
-	}
-
-	static void constant_constant(
-		const std::string & a,
-		const std::string & b,
-		UInt8 & c)
-	{
-		c = a < b;
-	}
-};
-
-template<typename A, typename B>
-struct GreaterNumImpl
-{
-	static void vector_vector(const PODArray<A> & a, const PODArray<B> & b, PODArray<UInt8> & c)
-	{
-		size_t size = a.size();
-		for (size_t i = 0; i < size; ++i)
-			c[i] = a[i] > b[i];
-	}
-
-	static void vector_constant(const PODArray<A> & a, B b, PODArray<UInt8> & c)
-	{
-		size_t size = a.size();
-		for (size_t i = 0; i < size; ++i)
-			c[i] = a[i] > b;
-	}
-
-	static void constant_vector(A a, const PODArray<B> & b, PODArray<UInt8> & c)
-	{
-		size_t size = b.size();
-		for (size_t i = 0; i < size; ++i)
-			c[i] = a > b[i];
-	}
-
-	static void constant_constant(A a, B b, UInt8 & c)
-	{
-		c = a > b;
-	}
-};
-
-struct GreaterStringImpl
-{
-	static void string_vector_string_vector(
-		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
-		const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
-		PODArray<UInt8> & c)
-	{
-		size_t size = a_offsets.size();
-		for (size_t i = 0; i < size; ++i)
-		{
-			if (i == 0)
-			{
-				int res = memcmp(&a_data[0], &b_data[0], std::min(a_offsets[0], b_offsets[0]) - 1);
-				c[i] = res > 0 || (res == 0 && a_offsets[0] > b_offsets[0]);
-			}
-			else
-			{
-				int res = memcmp(&a_data[a_offsets[i - 1]], &b_data[b_offsets[i - 1]],
-					std::min(a_offsets[i] - a_offsets[i - 1], b_offsets[i] - b_offsets[i - 1]) - 1);
-				c[i] = res > 0 || (res == 0 && a_offsets[i] - a_offsets[i - 1] > b_offsets[i] - b_offsets[i - 1]);
-			}
-		}
-	}
-
-	static void string_vector_fixed_string_vector(
-		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
-		const ColumnString::Chars_t & b_data, ColumnString::Offset_t b_n,
-		PODArray<UInt8> & c)
-	{
-		size_t size = a_offsets.size();
-		for (size_t i = 0; i < size; ++i)
-		{
-			if (i == 0)
-			{
-				int res = memcmp(&a_data[0], &b_data[0], std::min(a_offsets[0] - 1, b_n));
-				c[i] = res > 0 || (res == 0 && a_offsets[0] > b_n + 1);
-			}
-			else
-			{
-				int res = memcmp(&a_data[a_offsets[i - 1]], &b_data[i * b_n],
-					std::min(a_offsets[i] - a_offsets[i - 1] - 1, b_n));
-				c[i] = res > 0 || (res == 0 && a_offsets[i] - a_offsets[i - 1] > b_n + 1);
-			}
-		}
-	}
-
-	static void string_vector_constant(
-		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
-		const std::string & b,
-		PODArray<UInt8> & c)
-	{
-		size_t size = a_offsets.size();
-		ColumnString::Offset_t b_n = b.size();
-		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
-		for (size_t i = 0; i < size; ++i)
-		{
-			if (i == 0)
-			{
-				int res = memcmp(&a_data[0], b_data, std::min(a_offsets[0] - 1, b_n));
-				c[i] = res > 0 || (res == 0 && a_offsets[0] > b_n + 1);
-			}
-			else
-			{
-				int res = memcmp(&a_data[a_offsets[i - 1]], b_data,
-					std::min(a_offsets[i] - a_offsets[i - 1] - 1, b_n));
-				c[i] = res > 0 || (res == 0 && a_offsets[i] - a_offsets[i - 1] > b_n + 1);
-			}
-		}
-	}
-
-	static void fixed_string_vector_string_vector(
-		const ColumnString::Chars_t & a_data, ColumnString::Offset_t a_n,
-		const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
-		PODArray<UInt8> & c)
-	{
-		size_t size = b_offsets.size();
-		for (size_t i = 0; i < size; ++i)
-		{
-			if (i == 0)
-			{
-				int res = memcmp(&a_data[0], &b_data[0], std::min(b_offsets[0] - 1, a_n));
-				c[i] = res > 0 || (res == 0 && a_n + 1 > b_offsets[0]);
-			}
-			else
-			{
-				int res = memcmp(&a_data[i * a_n], &b_data[b_offsets[i - 1]],
-					std::min(b_offsets[i] - b_offsets[i - 1] - 1, a_n));
-				c[i] = res > 0 || (res == 0 && a_n + 1 > b_offsets[i] - b_offsets[i - 1]);
-			}
-		}
-	}
-
-	static void fixed_string_vector_fixed_string_vector(
-		const ColumnString::Chars_t & a_data, ColumnString::Offset_t a_n,
-		const ColumnString::Chars_t & b_data, ColumnString::Offset_t b_n,
-		PODArray<UInt8> & c)
-	{
-		size_t size = a_data.size();
-		for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
-		{
-			int res = memcmp(&a_data[i], &b_data[i], std::min(a_n, b_n));
-			c[j] = res > 0 || (res == 0 && a_n > b_n);
-		}
-	}
-
-	static void fixed_string_vector_constant(
-		const ColumnString::Chars_t & a_data, ColumnString::Offset_t a_n,
-		const std::string & b,
-		PODArray<UInt8> & c)
-	{
-		size_t size = a_data.size();
-		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
-		ColumnString::Offset_t b_n = b.size();
-		for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
-		{
-			int res = memcmp(&a_data[i], b_data, std::min(a_n, b_n));
-			c[j] = res > 0 || (res == 0 && a_n > b_n);
-		}
-	}
-
-	static void constant_string_vector(
-		const std::string & a,
-		const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
-		PODArray<UInt8> & c)
-	{
-		size_t size = b_offsets.size();
-		ColumnString::Offset_t a_n = a.size();
-		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
-		for (size_t i = 0; i < size; ++i)
-		{
-			if (i == 0)
-			{
-				int res = memcmp(a_data, &b_data[0], std::min(b_offsets[0] - 1, a_n));
-				c[i] = res > 0 || (res == 0 && a_n + 1 > b_offsets[0]);
-			}
-			else
-			{
-				int res = memcmp(a_data, &b_data[b_offsets[i - 1]],
-					std::min(b_offsets[i] - b_offsets[i - 1] - 1, a_n));
-				c[i] = res > 0 || (res == 0 && a_n + 1 > b_offsets[i] - b_offsets[i - 1]);
-			}
-		}
-	}
-
-	static void constant_fixed_string_vector(
-		const std::string & a,
-		const ColumnString::Chars_t & b_data, ColumnString::Offset_t b_n,
-		PODArray<UInt8> & c)
-	{
-		size_t size = b_data.size();
-		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
-		ColumnString::Offset_t a_n = a.size();
-		for (size_t i = 0, j = 0; i < size; i += b_n, ++j)
-		{
-			int res = memcmp(a_data, &b_data[i], std::min(a_n, b_n));
-			c[j] = res > 0 || (res == 0 && b_n > a_n);
-		}
-	}
-
-	static void constant_constant(
-		const std::string & a,
-		const std::string & b,
-		UInt8 & c)
-	{
-		c = a > b;
-	}
-};
-
-template<typename A, typename B>
-struct LessOrEqualsNumImpl
-{
-	static void vector_vector(const PODArray<A> & a, const PODArray<B> & b, PODArray<UInt8> & c)
-	{
-		size_t size = a.size();
-		for (size_t i = 0; i < size; ++i)
-			c[i] = a[i] <= b[i];
-	}
-
-	static void vector_constant(const PODArray<A> & a, B b, PODArray<UInt8> & c)
-	{
-		size_t size = a.size();
-		for (size_t i = 0; i < size; ++i)
-			c[i] = a[i] <= b;
-	}
-
-	static void constant_vector(A a, const PODArray<B> & b, PODArray<UInt8> & c)
-	{
-		size_t size = b.size();
-		for (size_t i = 0; i < size; ++i)
-			c[i] = a <= b[i];
-	}
-
-	static void constant_constant(A a, B b, UInt8 & c)
-	{
-		c = a <= b;
-	}
-};
-
-struct LessOrEqualsStringImpl
-{
-	static void string_vector_string_vector(
-		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
-		const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
-		PODArray<UInt8> & c)
-	{
-		size_t size = a_offsets.size();
-		for (size_t i = 0; i < size; ++i)
-		{
-			if (i == 0)
-			{
-				int res = memcmp(&a_data[0], &b_data[0], std::min(a_offsets[0], b_offsets[0]) - 1);
-				c[i] = !(res > 0 || (res == 0 && a_offsets[0] > b_offsets[0]));
-			}
-			else
-			{
-				int res = memcmp(&a_data[a_offsets[i - 1]], &b_data[b_offsets[i - 1]],
-					std::min(a_offsets[i] - a_offsets[i - 1], b_offsets[i] - b_offsets[i - 1]) - 1);
-				c[i] = !(res > 0 || (res == 0 && a_offsets[i] - a_offsets[i - 1] > b_offsets[i] - b_offsets[i - 1]));
-			}
-		}
-	}
-
-	static void string_vector_fixed_string_vector(
-		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
-		const ColumnString::Chars_t & b_data, ColumnString::Offset_t b_n,
-		PODArray<UInt8> & c)
-	{
-		size_t size = a_offsets.size();
-		for (size_t i = 0; i < size; ++i)
-		{
-			if (i == 0)
-			{
-				int res = memcmp(&a_data[0], &b_data[0], std::min(a_offsets[0] - 1, b_n));
-				c[i] = !(res > 0 || (res == 0 && a_offsets[0] > b_n + 1));
-			}
-			else
-			{
-				int res = memcmp(&a_data[a_offsets[i - 1]], &b_data[i * b_n],
-					std::min(a_offsets[i] - a_offsets[i - 1] - 1, b_n));
-				c[i] = !(res > 0 || (res == 0 && a_offsets[i] - a_offsets[i - 1] > b_n + 1));
-			}
-		}
-	}
-
-	static void string_vector_constant(
-		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
-		const std::string & b,
-		PODArray<UInt8> & c)
-	{
-		size_t size = a_offsets.size();
-		ColumnString::Offset_t b_n = b.size();
-		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
-		for (size_t i = 0; i < size; ++i)
-		{
-			if (i == 0)
-			{
-				int res = memcmp(&a_data[0], b_data, std::min(a_offsets[0] - 1, b_n));
-				c[i] = !(res > 0 || (res == 0 && a_offsets[0] > b_n + 1));
-			}
-			else
-			{
-				int res = memcmp(&a_data[a_offsets[i - 1]], b_data,
-					std::min(a_offsets[i] - a_offsets[i - 1] - 1, b_n));
-				c[i] = !(res > 0 || (res == 0 && a_offsets[i] - a_offsets[i - 1] > b_n + 1));
-			}
-		}
-	}
-
-	static void fixed_string_vector_string_vector(
-		const ColumnString::Chars_t & a_data, ColumnString::Offset_t a_n,
-		const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
-		PODArray<UInt8> & c)
-	{
-		size_t size = b_offsets.size();
-		for (size_t i = 0; i < size; ++i)
-		{
-			if (i == 0)
-			{
-				int res = memcmp(&a_data[0], &b_data[0], std::min(b_offsets[0] - 1, a_n));
-				c[i] = !(res > 0 || (res == 0 && a_n + 1 > b_offsets[0]));
-			}
-			else
-			{
-				int res = memcmp(&a_data[i * a_n], &b_data[b_offsets[i - 1]],
-					std::min(b_offsets[i] - b_offsets[i - 1] - 1, a_n));
-				c[i] = !(res > 0 || (res == 0 && a_n + 1 > b_offsets[i] - b_offsets[i - 1]));
-			}
-		}
-	}
-
-	static void fixed_string_vector_fixed_string_vector(
-		const ColumnString::Chars_t & a_data, ColumnString::Offset_t a_n,
-		const ColumnString::Chars_t & b_data, ColumnString::Offset_t b_n,
-		PODArray<UInt8> & c)
-	{
-		size_t size = a_data.size();
-		for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
-		{
-			int res = memcmp(&a_data[i], &b_data[i], std::min(a_n, b_n));
-			c[j] = !(res > 0 || (res == 0 && a_n > b_n));
-		}
-	}
-
-	static void fixed_string_vector_constant(
-		const ColumnString::Chars_t & a_data, ColumnString::Offset_t a_n,
-		const std::string & b,
-		PODArray<UInt8> & c)
-	{
-		size_t size = a_data.size();
-		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
-		ColumnString::Offset_t b_n = b.size();
-		for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
-		{
-			int res = memcmp(&a_data[i], b_data, std::min(a_n, b_n));
-			c[j] = !(res > 0 || (res == 0 && a_n > b_n));
-		}
-	}
-
-	static void constant_string_vector(
-		const std::string & a,
-		const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
-		PODArray<UInt8> & c)
-	{
-		size_t size = b_offsets.size();
-		ColumnString::Offset_t a_n = a.size();
-		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
-		for (size_t i = 0; i < size; ++i)
-		{
-			if (i == 0)
-			{
-				int res = memcmp(a_data, &b_data[0], std::min(b_offsets[0] - 1, a_n));
-				c[i] = !(res > 0 || (res == 0 && a_n + 1 > b_offsets[0]));
-			}
-			else
-			{
-				int res = memcmp(a_data, &b_data[b_offsets[i - 1]],
-					std::min(b_offsets[i] - b_offsets[i - 1] - 1, a_n));
-				c[i] = !(res > 0 || (res == 0 && a_n + 1 > b_offsets[i] - b_offsets[i - 1]));
-			}
-		}
-	}
-
-	static void constant_fixed_string_vector(
-		const std::string & a,
-		const ColumnString::Chars_t & b_data, ColumnString::Offset_t b_n,
-		PODArray<UInt8> & c)
-	{
-		size_t size = b_data.size();
-		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
-		ColumnString::Offset_t a_n = a.size();
-		for (size_t i = 0, j = 0; i < size; i += b_n, ++j)
-		{
-			int res = memcmp(a_data, &b_data[i], std::min(a_n, b_n));
-			c[j] = !(res > 0 || (res == 0 && b_n > a_n));
-		}
-	}
-
-	static void constant_constant(
-		const std::string & a,
-		const std::string & b,
-		UInt8 & c)
-	{
-		c = a <= b;
-	}
-};
-
-template<typename A, typename B>
-struct GreaterOrEqualsNumImpl
-{
-	static void vector_vector(const PODArray<A> & a, const PODArray<B> & b, PODArray<UInt8> & c)
-	{
-		size_t size = a.size();
-		for (size_t i = 0; i < size; ++i)
-			c[i] = a[i] >= b[i];
-	}
-
-	static void vector_constant(const PODArray<A> & a, B b, PODArray<UInt8> & c)
-	{
-		size_t size = a.size();
-		for (size_t i = 0; i < size; ++i)
-			c[i] = a[i] >= b;
-	}
-
-	static void constant_vector(A a, const PODArray<B> & b, PODArray<UInt8> & c)
-	{
-		size_t size = b.size();
-		for (size_t i = 0; i < size; ++i)
-			c[i] = a >= b[i];
-	}
-
-	static void constant_constant(A a, B b, UInt8 & c)
-	{
-		c = a >= b;
-	}
-};
-
-struct GreaterOrEqualsStringImpl
-{
-	static void string_vector_string_vector(
-		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
-		const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
-		PODArray<UInt8> & c)
-	{
-		size_t size = a_offsets.size();
-		for (size_t i = 0; i < size; ++i)
-		{
-			if (i == 0)
-			{
-				int res = memcmp(&a_data[0], &b_data[0], std::min(a_offsets[0], b_offsets[0]) - 1);
-				c[i] = !(res < 0 || (res == 0 && a_offsets[0] < b_offsets[0]));
-			}
-			else
-			{
-				int res = memcmp(&a_data[a_offsets[i - 1]], &b_data[b_offsets[i - 1]],
-					std::min(a_offsets[i] - a_offsets[i - 1], b_offsets[i] - b_offsets[i - 1]) - 1);
-				c[i] = !(res < 0 || (res == 0 && a_offsets[i] - a_offsets[i - 1] < b_offsets[i] - b_offsets[i - 1]));
-			}
-		}
-	}
-
-	static void string_vector_fixed_string_vector(
-		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
-		const ColumnString::Chars_t & b_data, ColumnString::Offset_t b_n,
-		PODArray<UInt8> & c)
-	{
-		size_t size = a_offsets.size();
-		for (size_t i = 0; i < size; ++i)
-		{
-			if (i == 0)
-			{
-				int res = memcmp(&a_data[0], &b_data[0], std::min(a_offsets[0] - 1, b_n));
-				c[i] = !(res < 0 || (res == 0 && a_offsets[0] < b_n + 1));
-			}
-			else
-			{
-				int res = memcmp(&a_data[a_offsets[i - 1]], &b_data[i * b_n],
-					std::min(a_offsets[i] - a_offsets[i - 1] - 1, b_n));
-				c[i] = !(res < 0 || (res == 0 && a_offsets[i] - a_offsets[i - 1] < b_n + 1));
-			}
-		}
-	}
-
-	static void string_vector_constant(
-		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
-		const std::string & b,
-		PODArray<UInt8> & c)
-	{
-		size_t size = a_offsets.size();
-		ColumnString::Offset_t b_n = b.size();
-		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
-		for (size_t i = 0; i < size; ++i)
-		{
-			if (i == 0)
-			{
-				int res = memcmp(&a_data[0], b_data, std::min(a_offsets[0] - 1, b_n));
-				c[i] = !(res < 0 || (res == 0 && a_offsets[0] < b_n + 1));
-			}
-			else
-			{
-				int res = memcmp(&a_data[a_offsets[i - 1]], b_data,
-					std::min(a_offsets[i] - a_offsets[i - 1] - 1, b_n));
-				c[i] = !(res < 0 || (res == 0 && a_offsets[i] - a_offsets[i - 1] < b_n + 1));
-			}
-		}
-	}
-
-	static void fixed_string_vector_string_vector(
-		const ColumnString::Chars_t & a_data, ColumnString::Offset_t a_n,
-		const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
-		PODArray<UInt8> & c)
-	{
-		size_t size = b_offsets.size();
-		for (size_t i = 0; i < size; ++i)
-		{
-			if (i == 0)
-			{
-				int res = memcmp(&a_data[0], &b_data[0], std::min(b_offsets[0] - 1, a_n));
-				c[i] = !(res < 0 || (res == 0 && a_n + 1 < b_offsets[0]));
-			}
-			else
-			{
-				int res = memcmp(&a_data[i * a_n], &b_data[b_offsets[i - 1]],
-					std::min(b_offsets[i] - b_offsets[i - 1] - 1, a_n));
-				c[i] = !(res < 0 || (res == 0 && a_n + 1 < b_offsets[i] - b_offsets[i - 1]));
-			}
-		}
-	}
-
-	static void fixed_string_vector_fixed_string_vector(
-		const ColumnString::Chars_t & a_data, ColumnString::Offset_t a_n,
-		const ColumnString::Chars_t & b_data, ColumnString::Offset_t b_n,
-		PODArray<UInt8> & c)
-	{
-		size_t size = a_data.size();
-		for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
-		{
-			int res = memcmp(&a_data[i], &b_data[i], std::min(a_n, b_n));
-			c[j] = !(res < 0 || (res == 0 && a_n < b_n));
-		}
-	}
-
-	static void fixed_string_vector_constant(
-		const ColumnString::Chars_t & a_data, ColumnString::Offset_t a_n,
-		const std::string & b,
-		PODArray<UInt8> & c)
-	{
-		size_t size = a_data.size();
-		const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
-		ColumnString::Offset_t b_n = b.size();
-		for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
-		{
-			int res = memcmp(&a_data[i], b_data, std::min(a_n, b_n));
-			c[j] = !(res < 0 || (res == 0 && a_n < b_n));
-		}
-	}
-
-	static void constant_string_vector(
-		const std::string & a,
-		const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
-		PODArray<UInt8> & c)
-	{
-		size_t size = b_offsets.size();
-		ColumnString::Offset_t a_n = a.size();
-		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
-		for (size_t i = 0; i < size; ++i)
-		{
-			if (i == 0)
-			{
-				int res = memcmp(a_data, &b_data[0], std::min(b_offsets[0] - 1, a_n));
-				c[i] = !(res < 0 || (res == 0 && a_n + 1 < b_offsets[0]));
-			}
-			else
-			{
-				int res = memcmp(a_data, &b_data[b_offsets[i - 1]],
-					std::min(b_offsets[i] - b_offsets[i - 1] - 1, a_n));
-				c[i] = !(res < 0 || (res == 0 && a_n + 1 < b_offsets[i] - b_offsets[i - 1]));
-			}
-		}
-	}
-
-	static void constant_fixed_string_vector(
-		const std::string & a,
-		const ColumnString::Chars_t & b_data, ColumnString::Offset_t b_n,
-		PODArray<UInt8> & c)
-	{
-		size_t size = b_data.size();
-		const UInt8 * a_data = reinterpret_cast<const UInt8 *>(a.data());
-		ColumnString::Offset_t a_n = a.size();
-		for (size_t i = 0, j = 0; i < size; i += b_n, ++j)
-		{
-			int res = memcmp(a_data, &b_data[i], std::min(a_n, b_n));
-			c[j] = !(res < 0 || (res == 0 && b_n < a_n));
-		}
-	}
-
-	static void constant_constant(
-		const std::string & a,
-		const std::string & b,
-		UInt8 & c)
-	{
-		c = a >= b;
+		fixed_string_vector_constant(b_data, b_n, a, c);
 	}
 };
 
 
-#pragma GCC diagnostic pop
+template <typename A, typename B>
+struct StringComparisonImpl<EqualsOp<A, B>> : StringEqualsImpl<true> {};
+
+template <typename A, typename B>
+struct StringComparisonImpl<NotEqualsOp<A, B>> : StringEqualsImpl<false> {};
 
 
 template <
-	template <typename, typename> class NumImpl,
-	typename StringImpl,
+	template <typename, typename> class Op,
 	typename Name>
 class FunctionComparison : public IFunction
 {
@@ -1136,7 +366,7 @@ private:
 
 			ColumnUInt8::Container_t & vec_res = col_res->getData();
 			vec_res.resize(col_left->getData().size());
-			NumImpl<T0, T1>::vector_vector(col_left->getData(), col_right->getData(), vec_res);
+			NumComparisonImpl<T0, T1, Op<T0, T1>>::vector_vector(col_left->getData(), col_right->getData(), vec_res);
 
 			return true;
 		}
@@ -1147,7 +377,7 @@ private:
 
 			ColumnUInt8::Container_t & vec_res = col_res->getData();
 			vec_res.resize(col_left->getData().size());
-			NumImpl<T0, T1>::vector_constant(col_left->getData(), col_right->getData(), vec_res);
+			NumComparisonImpl<T0, T1, Op<T0, T1>>::vector_constant(col_left->getData(), col_right->getData(), vec_res);
 
 			return true;
 		}
@@ -1165,14 +395,14 @@ private:
 
 			ColumnUInt8::Container_t & vec_res = col_res->getData();
 			vec_res.resize(col_left->size());
-			NumImpl<T0, T1>::constant_vector(col_left->getData(), col_right->getData(), vec_res);
+			NumComparisonImpl<T0, T1, Op<T0, T1>>::constant_vector(col_left->getData(), col_right->getData(), vec_res);
 
 			return true;
 		}
 		else if (ColumnConst<T1> * col_right = typeid_cast<ColumnConst<T1> *>(&*block.getByPosition(arguments[1]).column))
 		{
 			UInt8 res = 0;
-			NumImpl<T0, T1>::constant_constant(col_left->getData(), col_right->getData(), res);
+			NumComparisonImpl<T0, T1, Op<T0, T1>>::constant_constant(col_left->getData(), col_right->getData(), res);
 
 			ColumnConstUInt8 * col_res = new ColumnConstUInt8(col_left->size(), res);
 			block.getByPosition(result).column = col_res;
@@ -1237,6 +467,8 @@ private:
 		ColumnFixedString * c1_fixed_string = typeid_cast<ColumnFixedString *>(c1);
 		ColumnConstString * c0_const = typeid_cast<ColumnConstString *>(c0);
 		ColumnConstString * c1_const = typeid_cast<ColumnConstString *>(c1);
+
+		using StringImpl = StringComparisonImpl<Op<int, int>>;
 
 		if (c0_const && c1_const)
 		{
@@ -1359,11 +591,11 @@ struct NameGreater 			{ static const char * get() { return "greater"; } };
 struct NameLessOrEquals 	{ static const char * get() { return "lessOrEquals"; } };
 struct NameGreaterOrEquals 	{ static const char * get() { return "greaterOrEquals"; } };
 
-typedef FunctionComparison<EqualsNumImpl, 			EqualsStringImpl, 			NameEquals>				FunctionEquals;
-typedef FunctionComparison<NotEqualsNumImpl, 		NotEqualsStringImpl, 		NameNotEquals>			FunctionNotEquals;
-typedef FunctionComparison<LessNumImpl, 			LessStringImpl, 			NameLess>				FunctionLess;
-typedef FunctionComparison<GreaterNumImpl, 			GreaterStringImpl, 			NameGreater>			FunctionGreater;
-typedef FunctionComparison<LessOrEqualsNumImpl, 	LessOrEqualsStringImpl, 	NameLessOrEquals>		FunctionLessOrEquals;
-typedef FunctionComparison<GreaterOrEqualsNumImpl,	GreaterOrEqualsStringImpl, 	NameGreaterOrEquals>	FunctionGreaterOrEquals;
+typedef FunctionComparison<EqualsOp, 			NameEquals>				FunctionEquals;
+typedef FunctionComparison<NotEqualsOp, 		NameNotEquals>			FunctionNotEquals;
+typedef FunctionComparison<LessOp, 				NameLess>				FunctionLess;
+typedef FunctionComparison<GreaterOp, 			NameGreater>			FunctionGreater;
+typedef FunctionComparison<LessOrEqualsOp, 		NameLessOrEquals>		FunctionLessOrEquals;
+typedef FunctionComparison<GreaterOrEqualsOp,	NameGreaterOrEquals>	FunctionGreaterOrEquals;
 
 }
