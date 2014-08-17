@@ -4,6 +4,7 @@
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Functions/IFunction.h>
+#include <DB/Common/HashTable/Hash.h>
 #include <stats/IntHash.h>
 
 
@@ -13,14 +14,14 @@ namespace DB
 /** Функции генерации псевдослучайных чисел.
   * Функция может быть вызвана без аргументов или с одним аргументом.
   * Аргумент игнорируется и служит лишь для того, чтобы несколько вызовов одной функции считались разными и не склеивались.
-  * 
+  *
   * Пример:
   * SELECT rand(), rand() - выдаст два одинаковых столбца.
   * SELECT rand(1), rand(2) - выдаст два разных столбца.
   *
   * Некриптографические генераторы:
-  * 
-  * rand   - linear congruental generator 0 .. 2^31 - 1.
+  *
+  * rand   - linear congruental generator 0 .. 2^32 - 1.
   * rand64 - комбинирует несколько значений rand, чтобы получить значения из диапазона 0 .. 2^64 - 1.
   *
   * В качестве затравки используют время.
@@ -30,31 +31,74 @@ namespace DB
 
 namespace detail
 {
-	void seed(drand48_data & rand_state, intptr_t additional_seed)
+	struct LinearCongruentialGenerator
+	{
+		/// Константы из man lrand48_r.
+		static constexpr UInt64 a = 0x5DEECE66D;
+		static constexpr UInt64 c = 0xB;
+
+		/// А эта - из head -c8 /dev/urandom | xxd -p
+		UInt64 current = 0x09826f4a081cee35ULL;
+
+		LinearCongruentialGenerator() {}
+		LinearCongruentialGenerator(UInt64 value) : current(value) {}
+
+		void seed(UInt64 value)
+		{
+			current = value;
+		}
+
+		UInt32 next()
+		{
+			current = current * a + c;
+			return current >> 16;
+		}
+	};
+
+	void seed(LinearCongruentialGenerator & generator, intptr_t additional_seed)
 	{
 		struct timespec times;
 		if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &times))
 			throwFromErrno("Cannot clock_gettime.", ErrorCodes::CANNOT_CLOCK_GETTIME);
 
-		srand48_r(intHash32<0>(times.tv_nsec ^ intHash32<0>(additional_seed)), &rand_state);
+		generator.seed(intHash64(times.tv_nsec ^ intHash64(additional_seed)));
 	}
 }
 
 struct RandImpl
 {
 	typedef UInt32 ReturnType;
-	
+
 	static void execute(PODArray<ReturnType> & res)
 	{
-		drand48_data rand_state;
-		detail::seed(rand_state, reinterpret_cast<intptr_t>(&res[0]));
-		
+		detail::LinearCongruentialGenerator generator0;
+		detail::LinearCongruentialGenerator generator1;
+		detail::LinearCongruentialGenerator generator2;
+		detail::LinearCongruentialGenerator generator3;
+
+		detail::seed(generator0, 0xfb4121280b2ab902ULL + reinterpret_cast<intptr_t>(&res[0]));
+		detail::seed(generator1, 0x0121cf76df39c673ULL + reinterpret_cast<intptr_t>(&res[0]));
+		detail::seed(generator2, 0x17ae86e3a19a602fULL + reinterpret_cast<intptr_t>(&res[0]));
+		detail::seed(generator3, 0x8b6e16da7e06d622ULL + reinterpret_cast<intptr_t>(&res[0]));
+
 		size_t size = res.size();
-		for (size_t i = 0; i < size; ++i)
+		ReturnType * pos = &res[0];
+		ReturnType * end = pos + size;
+		ReturnType * end4 = pos + size / 4 * 4;
+
+		while (pos < end4)
 		{
-			long rand_res;
-			lrand48_r(&rand_state, &rand_res);
-			res[i] = rand_res;
+			pos[0] = generator0.next();
+			pos[1] = generator1.next();
+			pos[2] = generator2.next();
+			pos[3] = generator3.next();
+			pos += 4;
+		}
+
+		while (pos < end)
+		{
+			pos[0] = generator0.next();
+			++pos;
 		}
 	}
 };
@@ -65,21 +109,32 @@ struct Rand64Impl
 
 	static void execute(PODArray<ReturnType> & res)
 	{
-		drand48_data rand_state;
-		detail::seed(rand_state, reinterpret_cast<intptr_t>(&res[0]));
+		detail::LinearCongruentialGenerator generator0;
+		detail::LinearCongruentialGenerator generator1;
+		detail::LinearCongruentialGenerator generator2;
+		detail::LinearCongruentialGenerator generator3;
+
+		detail::seed(generator0, 0xfb4121280b2ab902ULL + reinterpret_cast<intptr_t>(&res[0]));
+		detail::seed(generator1, 0x0121cf76df39c673ULL + reinterpret_cast<intptr_t>(&res[0]));
+		detail::seed(generator2, 0x17ae86e3a19a602fULL + reinterpret_cast<intptr_t>(&res[0]));
+		detail::seed(generator3, 0x8b6e16da7e06d622ULL + reinterpret_cast<intptr_t>(&res[0]));
 
 		size_t size = res.size();
-		for (size_t i = 0; i < size; ++i)
+		ReturnType * pos = &res[0];
+		ReturnType * end = pos + size;
+		ReturnType * end2 = pos + size / 2 * 2;
+
+		while (pos < end2)
 		{
-			long rand_res1;
-			long rand_res2;
-			long rand_res3;
-			
-			lrand48_r(&rand_state, &rand_res1);
-			lrand48_r(&rand_state, &rand_res2);
-			lrand48_r(&rand_state, &rand_res3);
-			
-			res[i] = rand_res1 ^ (rand_res2 << 18) ^ (rand_res3 << 33);
+			pos[0] = (static_cast<UInt64>(generator0.next()) << 32) | generator1.next();
+			pos[1] = (static_cast<UInt64>(generator2.next()) << 32) | generator3.next();
+			pos += 2;
+		}
+
+		while (pos < end)
+		{
+			pos[0] = (static_cast<UInt64>(generator0.next()) << 32) | generator1.next();
+			++pos;
 		}
 	}
 };
@@ -90,7 +145,7 @@ class FunctionRandom : public IFunction
 {
 private:
 	typedef typename Impl::ReturnType ToType;
-	
+
 public:
 	/// Получить имя функции.
 	String getName() const
