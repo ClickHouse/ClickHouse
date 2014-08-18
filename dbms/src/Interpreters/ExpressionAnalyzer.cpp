@@ -1028,7 +1028,6 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 						ColumnWithNameAndType fake_column;
 						fake_column.name = node->getColumnName();
 						fake_column.type = new DataTypeUInt8;
-						fake_column.column = new ColumnConstUInt8(1, 0);
 						actions_stack.addAction(ExpressionAction::addColumn(fake_column));
 						getActionsImpl(node->arguments->children.at(0), no_subqueries, only_consts, actions_stack);
 					}
