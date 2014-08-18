@@ -161,8 +161,7 @@ public:
 
 	void insertDefault()
 	{
-		data->insertDefault();
-		getOffsets().push_back(getOffsets().size() == 0 ? 1 : (getOffsets().back() + 1));
+		getOffsets().push_back(getOffsets().size() == 0 ? 0 : getOffsets().back());
 	}
 
 	ColumnPtr filter(const Filter & filt) const
