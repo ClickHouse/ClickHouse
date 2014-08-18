@@ -4,6 +4,7 @@
 #include <DB/Columns/IColumn.h>
 #include <Poco/AutoPtr.h>
 #include <Poco/Util/XMLConfiguration.h>
+#include <Poco/Path.h>
 #include <string>
 #include <Poco/File.h>
 #include <DB/Common/escapeForFileName.h>
@@ -21,6 +22,9 @@ public:
 	FileChecker(const std::string &file_info_path_, Storage & storage_) :
 		files_info_path(file_info_path_), storage(storage_), log(&Logger::get("FileChecker"))
 	{
+		Poco::Path path(files_info_path);
+		tmp_files_info_path = path.parent().toString() + "tmp_" + path.getFileName();
+
 		std::ifstream istr(files_info_path);
 		files_info.parse(istr);
 	}
@@ -81,11 +85,24 @@ private:
 
 	void saveTree()
 	{
-		std::ofstream file(files_info_path, std::ofstream::trunc);
+		std::ofstream file(tmp_files_info_path, std::ofstream::trunc);
 		file  << files_info.write(jsonxx::JSON);
+		file.close();
+
+		std::string old_file_name = files_info_path + ".old";
+		Poco::File new_file(files_info_path);
+		if (new_file.exists())
+		{
+			new_file.renameTo(old_file_name);
+			Poco::File(tmp_files_info_path).renameTo(files_info_path);
+			Poco::File(old_file_name).remove();
+		}
+		else
+			Poco::File(tmp_files_info_path).renameTo(files_info_path);
 	}
 
 	std::string files_info_path;
+	std::string tmp_files_info_path;
 
 	jsonxx::Object files_info;
 
