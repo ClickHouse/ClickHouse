@@ -172,7 +172,9 @@ struct __attribute__((__packed__)) SingleValueDataString
 					free(large_data);
 
 				size = rhs_size;
-				buf.read(small_data, size);
+
+				if (size > 0)
+					buf.read(small_data, size);
 			}
 			else
 			{
@@ -207,7 +209,9 @@ struct __attribute__((__packed__)) SingleValueDataString
 				free(large_data);
 
 			size = value_size;
-			memcpy(small_data, value.data, size);
+
+			if (size > 0)
+				memcpy(small_data, value.data, size);
 		}
 		else
 		{
