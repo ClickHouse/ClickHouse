@@ -13,43 +13,39 @@
 
 #include <DB/Core/Field.h>
 
+#include <statdaemons/stdext.h>
+
 namespace DB
 {
 
 namespace {
-	/// select and insert query have different types for database and table, hence two specializations
-	template <typename ASTType> struct rewrite_traits;
-	template <> struct rewrite_traits<ASTSelectQuery> { using type = ASTPtr; };
-	template <> struct rewrite_traits<ASTInsertQuery> { using type = const std::string &; };
-
-	template <typename ASTType>
-	typename rewrite_traits<ASTType>::type rewrite(const std::string & name, const ASTIdentifier::Kind kind) = delete;
+	template <typename ASTType> inline void rewriteImpl(ASTType &, const std::string &, const std::string &) = delete;
 
 	/// select query has database and table names as AST pointers
-	template <>
-	inline ASTPtr rewrite<ASTSelectQuery>(const std::string & name, const ASTIdentifier::Kind kind)
+	template <> inline void rewriteImpl<ASTSelectQuery>(ASTSelectQuery & query, const std::string & database, const std::string & table)
 	{
-		return new ASTIdentifier{{}, name, kind};
+		query.database = new ASTIdentifier{{}, database, ASTIdentifier::Database};
+		query.table = new ASTIdentifier{{}, table, ASTIdentifier::Table};
 	}
 
 	/// insert query has database and table names as bare strings
-	template <>
-	inline const std::string & rewrite<ASTInsertQuery>(const std::string & name, ASTIdentifier::Kind)
+	template <> inline void rewriteImpl<ASTInsertQuery>(ASTInsertQuery & query, const std::string & database, const std::string & table)
 	{
-		return name;
+		query.database = database;
+		query.table = table;
+		/// make sure query is not INSERT SELECT
+		query.select = nullptr;
 	}
 
 	/// Создает копию запроса, меняет имена базы данных и таблицы.
 	template <typename ASTType>
 	inline ASTPtr rewriteQuery(const ASTPtr & query, const std::string & database, const std::string & table)
-	{		
+	{
 		/// Создаем копию запроса.
 		auto modified_query_ast = query->clone();
 
 		/// Меняем имена таблицы и базы данных
-		auto & modified_query = typeid_cast<ASTType &>(*modified_query_ast);
-		modified_query.database = rewrite<ASTType>(database, ASTIdentifier::Database);
-		modified_query.table = rewrite<ASTType>(table, ASTIdentifier::Table);
+		rewriteImpl(typeid_cast<ASTType &>(*modified_query_ast), database, table);
 
 		/// copy elision and RVO will work as intended, but let's be more explicit
 		return std::move(modified_query_ast);
@@ -174,7 +170,8 @@ BlockOutputStreamPtr StorageDistributed::write(ASTPtr query)
 			ErrorCodes::NOT_IMPLEMENTED
 		};
 
-	const auto & modified_query = rewriteQuery<ASTInsertQuery>(query, remote_database, remote_table);
+	auto modified_query = rewriteQuery<ASTInsertQuery>(query, remote_database, remote_table);
+	static_cast<ASTInsertQuery &>(*modified_query).select = nullptr;
 
 	return new DistributedBlockOutputStream{*this, modified_query};
 }
@@ -188,10 +185,7 @@ void StorageDistributed::alter(const AlterCommands & params, const String & data
 
 void StorageDistributed::shutdown()
 {
-	quit.store(true, std::memory_order_relaxed);
-
-	for (auto & name_thread_pair : directory_monitor_threads)
-		name_thread_pair.second.join();
+	directory_monitors.clear();
 }
 
 NameAndTypePair StorageDistributed::getColumn(const String & column_name) const
@@ -209,16 +203,7 @@ bool StorageDistributed::hasColumn(const String & column_name) const
 
 void StorageDistributed::createDirectoryMonitor(const std::string & name)
 {
-	if (directory_monitor_threads.count(name))
-		return;
-
-	directory_monitor_threads.emplace(
-		name,
-		std::thread{[this, name] {
-			DirectoryMonitor monitor{*this, name};
-			monitor.run();
-		}
-	});
+	directory_monitors.emplace(name, stdext::make_unique<DirectoryMonitor>(*this, name));
 }
 
 void StorageDistributed::createDirectoryMonitors()
@@ -229,6 +214,12 @@ void StorageDistributed::createDirectoryMonitors()
 	for (Poco::DirectoryIterator it{path}; it != end; ++it)
 		if (it->isDirectory())
 			createDirectoryMonitor(it.name());
+}
+
+void StorageDistributed::requireDirectoryMonitor(const std::string & name)
+{
+	if (!directory_monitors.count(name))
+		createDirectoryMonitor(name);
 }
 
 }

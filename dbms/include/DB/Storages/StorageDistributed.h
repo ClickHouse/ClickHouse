@@ -93,6 +93,8 @@ private:
 	void createDirectoryMonitor(const std::string & name);
 	/// create directory monitors for each existing subdirectory
 	void createDirectoryMonitors();
+	/// ensure directory monitor creationg
+	void requireDirectoryMonitor(const std::string & name);
 
 	String name;
 	NamesAndTypesListPtr columns;
@@ -116,8 +118,8 @@ private:
 	bool write_enabled;
 	String path;
 
-	std::atomic<bool> quit{false};
-	std::unordered_map<std::string, std::thread> directory_monitor_threads;
+	class DirectoryMonitor;
+	std::unordered_map<std::string, std::unique_ptr<DirectoryMonitor>> directory_monitors;
 };
 
 }

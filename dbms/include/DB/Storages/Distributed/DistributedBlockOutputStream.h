@@ -51,7 +51,7 @@ private:
 			return it;
 		};
 
-		for (size_t row = 0; row < block.rows(); ++row)
+		for (size_t row = 0; row < block.rowsInFirstColumn(); ++row)
 		{
 			const auto target_block_idx = storage.cluster.slot_to_shard[key_column->get64(row) % total_weight];
 			auto & target_block = get_target_block(target_block_idx)->second;;
@@ -94,7 +94,7 @@ private:
 		 *  and keep monitor thread out from reading incomplete data
 		 */
 		std::string first_file_tmp_path{};
-		std::string first_file_path{};
+
 		auto first = true;
 		const auto & query_string = queryToString<ASTInsertQuery>(query_ast);
 
@@ -103,13 +103,15 @@ private:
 		{
 			const auto & path = storage.getPath() + dir_name + '/';
 
-			/// ensure shard subdirectory creation and notify storage if necessary
+			/// ensure shard subdirectory creation and notify storage
 			if (Poco::File(path).createDirectory())
-				storage.createDirectoryMonitor(dir_name);
+				storage.requireDirectoryMonitor(dir_name);
 
 			const auto & file_name = std::to_string(Increment(path + "increment.txt").get(true)) + ".bin";
 			const auto & block_file_path = path + file_name;
 
+			/** on first iteration write block to a temporary directory for subsequent hardlinking to ensure
+			 *  the inode is not freed until we're done */
 			if (first)
 			{
 				first = false;
@@ -118,7 +120,6 @@ private:
 				Poco::File(tmp_path).createDirectory();
 				const auto & block_file_tmp_path = tmp_path + file_name;
 
-				first_file_path = block_file_path;
 				first_file_tmp_path = block_file_tmp_path;
 
 				DB::WriteBufferFromFile out{block_file_tmp_path};
@@ -131,11 +132,14 @@ private:
 				stream.write(block);
 				stream.writeSuffix();
 			}
-			else if (link(first_file_tmp_path.data(), block_file_path.data()))
+
+			if (link(first_file_tmp_path.data(), block_file_path.data()))
 				throw Exception{"Could not link " + block_file_path + " to " + first_file_tmp_path};
 		}
 
-		Poco::File(first_file_tmp_path).renameTo(first_file_path);
+		/** remove the temporary file, enabling the OS to reclaim inode after all threads
+		 *  have removed their corresponding files */
+		Poco::File(first_file_tmp_path).remove();
 	}
 
 	StorageDistributed & storage;

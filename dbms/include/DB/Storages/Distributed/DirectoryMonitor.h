@@ -4,6 +4,8 @@
 #include <DB/Common/escapeForFileName.h>
 #include <boost/algorithm/string/find_iterator.hpp>
 #include <boost/algorithm/string/finder.hpp>
+#include <thread>
+#include <mutex>
 
 namespace DB
 {
@@ -41,7 +43,7 @@ namespace
 	}
 }
 
-class DirectoryMonitor
+class StorageDistributed::DirectoryMonitor
 {
 public:
 	DirectoryMonitor(StorageDistributed & storage, const std::string & name)
@@ -51,29 +53,42 @@ public:
 	{
 	}
 
-	void run()
+	~DirectoryMonitor()
 	{
-		while (!storage.quit.load(std::memory_order_relaxed))
 		{
-			auto no_work = true;
-			auto exception = false;
-
-			try
-			{
-				no_work = !findFiles();
-			}
-			catch (...)
-			{
-				exception = true;
-				tryLogCurrentException(getLoggerName().data());
-			}
-
-			if (no_work || exception)
-				std::this_thread::sleep_for(sleep_time);
+			std::lock_guard<std::mutex> lock{mutex};
+			quit = true;
 		}
+		cond.notify_one();
+		thread.join();
 	}
 
 private:
+	void run()
+	{
+		std::unique_lock<std::mutex> lock{mutex};
+
+		const auto quit_requested = [this] { return quit; };
+
+		while (!quit_requested())
+		{
+			auto do_sleep = true;
+
+			try
+			{
+				do_sleep = !findFiles();
+			}
+			catch (...)
+			{
+				do_sleep = true;
+				tryLogCurrentException(getLoggerName().data());
+			}
+
+			if (do_sleep)
+				cond.wait_for(lock, sleep_time, quit_requested);
+		}
+	}
+
 	ConnectionPoolPtr createPool(const std::string & name)
 	{
 		const auto pool_factory = [this, &name] (const std::string & host, const UInt16 port, const std::string & user, const std::string & password) {
@@ -108,7 +123,7 @@ private:
 
 		for (const auto & file : files)
 		{
-			if (storage.quit.load(std::memory_order_relaxed))
+			if (quit)
 				return true;
 
 			processFile(file.second);
@@ -171,8 +186,11 @@ private:
 	ConnectionPoolPtr pool;
 	std::string path;
 	std::chrono::milliseconds sleep_time;
-
+	bool quit{false};
+	std::mutex mutex;
+	std::condition_variable cond;
 	Logger * log;
+	std::thread thread{&DirectoryMonitor::run, this};
 };
 
 }
