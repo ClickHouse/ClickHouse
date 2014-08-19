@@ -40,7 +40,8 @@ namespace DB
 /** Calls to these functions in the GROUP BY statement would be
   * replaced by their immediate argument.
   */
-const std::unordered_set<String> injectiveFunctionNames{
+const std::unordered_set<String> injective_function_names
+{
 	"negate",
 	"bitNot",
 	"reverse",
@@ -68,7 +69,7 @@ void ExpressionAnalyzer::init()
 	/// Common subexpression elimination. Rewrite rules.
 	normalizeTree();
 
-	/// GROUP BY injective function elimination
+	/// GROUP BY injective function elimination.
 	optimizeGroupBy();
 
 	/// array_join_alias_to_name, array_join_result_to_source.
@@ -455,7 +456,8 @@ void ExpressionAnalyzer::optimizeGroupBy()
 	auto & group_exprs = select_query->group_expression_list->children;
 
 	/// removes expression at index idx by making it last one and calling .pop_back()
-	const auto remove_expr_at_index = [&group_exprs] (const size_t idx) {
+	const auto remove_expr_at_index = [&group_exprs] (const size_t idx)
+	{
 		if (idx < group_exprs.size() - 1)
 			group_exprs[idx] = std::move(group_exprs.back());
 
@@ -468,7 +470,7 @@ void ExpressionAnalyzer::optimizeGroupBy()
 		if (const auto function = typeid_cast<ASTFunction*>(group_exprs[i].get()))
 		{
 			/// assert function is injective
-			if (!injectiveFunctionNames.count(function->name))
+			if (!injective_function_names.count(function->name))
 			{
 				++i;
 				continue;
