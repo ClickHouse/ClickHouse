@@ -87,7 +87,8 @@ public:
 		if (s != offsets.size())
 			throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-		return new ColumnConst<T>(offsets.back(), data, data_type);
+		size_t replicated_size = 0 == s ? 0 : offsets.back();
+		return new ColumnConst<T>(replicated_size, data, data_type);
 	}
 
 	size_t byteSize() const { return sizeof(data) + sizeof(s); }

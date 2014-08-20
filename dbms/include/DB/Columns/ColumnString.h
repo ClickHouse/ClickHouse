@@ -31,8 +31,8 @@ private:
 
 	/// Размер, включая завершающий нулевой байт.
 	size_t __attribute__((__always_inline__)) sizeAt(size_t i) const	{ return i == 0 ? offsets[0] : (offsets[i] - offsets[i - 1]); }
-	
-public:	
+
+public:
 	/** Создать пустой столбец строк */
 	ColumnString() {}
 
@@ -78,7 +78,7 @@ public:
 		const String & s = DB::get<const String &>(x);
 		size_t old_size = chars.size();
 		size_t size_to_append = s.size() + 1;
-		
+
 		chars.resize(old_size + size_to_append);
 		memcpy(&chars[old_size], s.c_str(), size_to_append);
 		offsets.push_back((offsets.size() == 0 ? 0 : offsets.back()) + size_to_append);
@@ -90,7 +90,7 @@ public:
 		size_t old_size = chars.size();
 		size_t size_to_append = src.sizeAt(n);
 		size_t offset = src.offsetAt(n);
-		
+
 		chars.resize(old_size + size_to_append);
 		memcpy(&chars[old_size], &src.chars[offset], size_to_append);
 		offsets.push_back((offsets.size() == 0 ? 0 : offsets.back()) + size_to_append);
@@ -132,7 +132,7 @@ public:
 
 		res_->chars.resize(nested_length);
 		memcpy(&res_->chars[0], &chars[nested_offset], nested_length);
-		
+
 		Offsets_t & res_offsets = res_->offsets;
 
 		if (start == 0)
@@ -173,7 +173,7 @@ public:
 		{
 			if (!filt[i])
 				continue;
-			
+
 			size_t string_offset = i == 0 ? 0 : offsets[i - 1];
 			size_t string_size = offsets[i] - string_offset;
 
@@ -248,12 +248,12 @@ public:
 			reinterpret_cast<const char *>(&chars[offsetAt(n)]),
 			reinterpret_cast<const char *>(&rhs.chars[rhs.offsetAt(m)]));
 	}
-	
+
 	/// Версия compareAt для locale-sensitive сравнения строк
 	int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, const Collator & collator) const
 	{
 		const ColumnString & rhs = static_cast<const ColumnString &>(rhs_);
-		
+
 		return collator.compare(
 			reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n),
 			reinterpret_cast<const char *>(&rhs.chars[rhs.offsetAt(m)]), rhs.sizeAt(m));
@@ -305,9 +305,9 @@ public:
 	{
 		const ColumnString & parent;
 		const Collator & collator;
-		
+
 		lessWithCollation(const ColumnString & parent_, const Collator & collator_) : parent(parent_), collator(collator_) {}
-		
+
 		bool operator()(size_t lhs, size_t rhs) const
 		{
 			int res = collator.compare(
@@ -353,6 +353,9 @@ public:
 
 		ColumnString * res_ = new ColumnString;
 		ColumnPtr res = res_;
+
+		if (0 == col_size)
+			return res;
 
 		Chars_t & res_chars = res_->chars;
 		Offsets_t & res_offsets = res_->offsets;

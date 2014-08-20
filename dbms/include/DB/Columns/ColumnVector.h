@@ -296,6 +296,9 @@ public:
 		if (size != offsets.size())
 			throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
+		if (0 == size)
+			return new Self;
+
 		Self * res_ = new Self;
 		ColumnPtr res = res_;
 		typename Self::Container_t & res_data = res_->getData();

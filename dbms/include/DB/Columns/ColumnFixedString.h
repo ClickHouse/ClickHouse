@@ -48,12 +48,12 @@ public:
 	{
 		return true;
 	}
-	
+
 	size_t byteSize() const
 	{
 		return chars.size() + sizeof(n);
 	}
-	
+
 	Field operator[](size_t index) const
 	{
 		return String(reinterpret_cast<const char *>(&chars[n * index]), n);
@@ -75,7 +75,7 @@ public:
 
 		if (s.size() > n)
 			throw Exception("Too large string '" + s + "' for FixedString column", ErrorCodes::TOO_LARGE_STRING_SIZE);
-		
+
 		size_t old_size = chars.size();
 		chars.resize_fill(old_size + n);
 		memcpy(&chars[old_size], s.data(), s.size());
@@ -222,7 +222,10 @@ public:
 
 		ColumnFixedString * res_ = new ColumnFixedString(n);
 		ColumnPtr res = res_;
-		
+
+		if (0 == col_size)
+			return res;
+
 		Chars_t & res_chars = res_->chars;
 		res_chars.reserve(n * offsets.back());
 
