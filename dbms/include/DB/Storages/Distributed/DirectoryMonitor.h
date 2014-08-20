@@ -2,6 +2,7 @@
 
 #include <DB/DataStreams/RemoteBlockOutputStream.h>
 #include <DB/Common/escapeForFileName.h>
+#include <DB/Storages/StorageDistributed.h>
 #include <boost/algorithm/string/find_iterator.hpp>
 #include <boost/algorithm/string/finder.hpp>
 #include <thread>
@@ -12,7 +13,8 @@ namespace DB
 
 namespace
 {
-	template <typename PoolFactory> ConnectionPools createPoolsForAddresses(const std::string & name, PoolFactory && factory)
+	template <typename PoolFactory>
+	ConnectionPools createPoolsForAddresses(const std::string & name, PoolFactory && factory)
 	{
 		ConnectionPools pools;
 
@@ -91,12 +93,12 @@ private:
 
 	ConnectionPoolPtr createPool(const std::string & name)
 	{
-		const auto pool_factory = [this, &name] (const std::string & host, const UInt16 port, const std::string & user, const std::string & password) {
+		const auto pool_factory = [this, &name] (const std::string & host, const UInt16 port, const std::string & user, const std::string & password)
+		{
 			return new ConnectionPool{
 				1, host, port, "",
 				user, password, storage.context.getDataTypeFactory(),
-				storage.getName() + '_' + name
-			};
+				storage.getName() + '_' + name};
 		};
 
 		auto pools = createPoolsForAddresses(name, pool_factory);

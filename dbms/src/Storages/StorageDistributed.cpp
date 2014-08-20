@@ -103,8 +103,7 @@ StoragePtr StorageDistributed::create(
 {
 	auto res = new StorageDistributed{
 		name_, columns_, remote_database_,
-		remote_table_, *owned_cluster_, context_
-	};
+		remote_table_, *owned_cluster_, context_};
 
 	/// Захватываем владение объектом-кластером.
 	res->owned_cluster = owned_cluster_;
@@ -131,16 +130,14 @@ BlockInputStreams StorageDistributed::read(
 
 	BlockInputStreams res;
 	const auto & modified_query_ast = rewriteQuery<ASTSelectQuery>(
-		query, remote_database, remote_table
-	);
+		query, remote_database, remote_table);
 	const auto & modified_query = queryToString<ASTSelectQuery>(modified_query_ast);
 
 	/// Цикл по шардам.
 	for (auto & conn_pool : cluster.pools)
 		res.emplace_back(new RemoteBlockInputStream{
 			conn_pool, modified_query, &new_settings,
-			external_tables, processed_stage
-		});
+			external_tables, processed_stage});
 
 	/// Добавляем запросы к локальному ClickHouse.
 	if (cluster.getLocalNodesNum() > 0)
@@ -151,10 +148,10 @@ BlockInputStreams StorageDistributed::read(
 			if (!new_context.tryGetExternalTable(it.first))
 				new_context.addExternalTable(it.first, it.second);
 
-		for(size_t i = 0; i < cluster.getLocalNodesNum(); ++i)
+		for (size_t i = 0; i < cluster.getLocalNodesNum(); ++i)
 		{
 			InterpreterSelectQuery interpreter(modified_query_ast, new_context, processed_stage);
-				res.push_back(interpreter.execute());
+			res.push_back(interpreter.execute());
 		}
 	}
 
@@ -167,8 +164,7 @@ BlockOutputStreamPtr StorageDistributed::write(ASTPtr query)
 	if (!write_enabled)
 		throw Exception{
 			"Method write is not supported by storage " + getName() + " with no sharding key provided",
-			ErrorCodes::NOT_IMPLEMENTED
-		};
+			ErrorCodes::NOT_IMPLEMENTED};
 
 	auto modified_query = rewriteQuery<ASTInsertQuery>(query, remote_database, remote_table);
 	static_cast<ASTInsertQuery &>(*modified_query).select = nullptr;
