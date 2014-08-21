@@ -31,6 +31,7 @@ public:
 
 	struct ShardInfo
 	{
+		/// contains names of directories for asynchronous write to StorageDistributed
 		std::vector<std::string> dir_names;
 		int weight;
 		bool has_local_node;

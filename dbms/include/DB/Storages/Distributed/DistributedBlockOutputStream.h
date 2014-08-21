@@ -9,63 +9,68 @@
 #include <DB/Interpreters/InterpreterInsertQuery.h>
 
 #include <statdaemons/Increment.h>
+#include <statdaemons/stdext.h>
 
 #include <iostream>
 
 namespace DB
 {
 
+/** Запись асинхронная - данные сначала записываются на локальную файловую систему, а потом отправляются на удалённые серверы.
+ *  Если Distributed таблица использует более одного шарда, то для того, чтобы поддерживалась запись,
+ *  при создании таблицы должен быть указан дополнительный параметр у ENGINE - ключ шардирования.
+ *  Ключ шардирования - произвольное выражение от столбцов. Например, rand() или UserID.
+ *  При записи блок данных разбивается по остатку от деления ключа шардирования на суммарный вес шардов,
+ *  и полученные блоки пишутся в сжатом Native формате в отдельные директории для отправки.
+ *  Для каждого адреса назначения (каждой директории с данными для отправки), в StorageDistributed создаётся отдельный поток,
+ *  который следит за директорией и отправляет данные. */
 class DistributedBlockOutputStream : public IBlockOutputStream
 {
 public:
 	DistributedBlockOutputStream(StorageDistributed & storage, const ASTPtr & query_ast)
-	: storage(storage), query_ast(query_ast)
+		: storage(storage), query_ast(query_ast)
 	{
 	}
 
-	virtual void write(const Block & block) override
+	void write(const Block & block) override
 	{
 		if (storage.getShardingKeyExpr() && storage.cluster.shard_info_vec.size() > 1)
-			return writeSplit(block, block);
+			return writeSplit(block);
 
 		writeImpl(block);
 	}
 
 private:
-	void writeSplit(const Block & block, Block block_with_key)
+	void writeSplit(const Block & block)
 	{
+		auto block_with_key = block;
 		storage.getShardingKeyExpr()->execute(block_with_key);
 
 		const auto & key_column = block_with_key.getByName(storage.getShardingKeyColumnName()).column;
 		const auto total_weight = storage.cluster.slot_to_shard.size();
 
 		/// shard => block mapping
-		std::unordered_map<size_t, Block> target_blocks;
-		/// return iterator to target block, creating one if necessary
-		const auto get_target_block = [&target_blocks, &block] (const size_t idx) {
-			const auto it = target_blocks.find(idx);
+		std::vector<std::unique_ptr<Block>> target_blocks(storage.cluster.shard_info_vec.size());
 
-			if (it == std::end(target_blocks))
-				return target_blocks.emplace(idx, block.cloneEmpty()).first;
+		const auto num_cols = block.columns();
+		std::vector<const IColumn*> columns(num_cols);
+		for (size_t i = 0; i < columns.size(); ++i)
+			columns[i] = block.getByPosition(i).column;
 
-			return it;
-		};
-
-		for (size_t row = 0; row < block.rowsInFirstColumn(); ++row)
+		for (size_t num_rows = block.rowsInFirstColumn(), row = 0; row < num_rows; ++row)
 		{
 			const auto target_block_idx = storage.cluster.slot_to_shard[key_column->get64(row) % total_weight];
-			auto & target_block = get_target_block(target_block_idx)->second;;
+			auto & target_block = target_blocks[target_block_idx];
+			if (!target_block)
+				target_block = stdext::make_unique<Block>(block.cloneEmpty());
 
-			for (size_t col = 0; col < block.columns(); ++col)
-			{
-				target_block.getByPosition(col).column->insertFrom(
-					*block.getByPosition(col).column, row
-				);
-			}
+			for (size_t col = 0; col < num_cols; ++col)
+				target_block->getByPosition(col).column->insertFrom(*columns[col], row);
 		}
 
-		for (const auto & shard_block_pair : target_blocks)
-			writeImpl(shard_block_pair.second, shard_block_pair.first);
+		for (size_t i = 0; i < target_blocks.size(); ++i)
+			if (const auto & target_block = target_blocks[i])
+				writeImpl(*target_block, i);
 	}
 
 	void writeImpl(const Block & block, const size_t shard_id = 0)
@@ -74,6 +79,7 @@ private:
 		if (shard_info.has_local_node)
 			writeToLocal(block);
 
+		/// dir_names is empty if shard has only local addresses
 		if (!shard_info.dir_names.empty())
 			writeToShard(block, shard_info.dir_names);
 	}
@@ -107,7 +113,7 @@ private:
 			if (Poco::File(path).createDirectory())
 				storage.requireDirectoryMonitor(dir_name);
 
-			const auto & file_name = std::to_string(Increment(path + "increment.txt").get(true)) + ".bin";
+			const auto & file_name = toString(Increment{path + "increment.txt"}.get(true)) + ".bin";
 			const auto & block_file_path = path + file_name;
 
 			/** on first iteration write block to a temporary directory for subsequent hardlinking to ensure
@@ -122,11 +128,11 @@ private:
 
 				first_file_tmp_path = block_file_tmp_path;
 
-				DB::WriteBufferFromFile out{block_file_tmp_path};
-				DB::CompressedWriteBuffer compress{out};
-				DB::NativeBlockOutputStream stream{compress};
+				WriteBufferFromFile out{block_file_tmp_path};
+				CompressedWriteBuffer compress{out};
+				NativeBlockOutputStream stream{compress};
 
-				DB::writeStringBinary(query_string, out);
+				writeStringBinary(query_string, out);
 
 				stream.writePrefix();
 				stream.write(block);
@@ -134,7 +140,7 @@ private:
 			}
 
 			if (link(first_file_tmp_path.data(), block_file_path.data()))
-				throw Exception{"Could not link " + block_file_path + " to " + first_file_tmp_path};
+				throwFromErrno("Could not link " + block_file_path + " to " + first_file_tmp_path);
 		}
 
 		/** remove the temporary file, enabling the OS to reclaim inode after all threads

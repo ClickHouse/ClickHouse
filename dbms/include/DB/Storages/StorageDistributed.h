@@ -62,7 +62,7 @@ public:
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
 		unsigned threads = 1);
 
-	virtual BlockOutputStreamPtr write(ASTPtr query) override;
+	BlockOutputStreamPtr write(ASTPtr query) override;
 
 	void drop() override {}
 	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) { name = new_table_name; }
@@ -70,7 +70,7 @@ public:
 	/// структура подтаблиц не проверяется
 	void alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context);
 
-	virtual void shutdown() override;
+	void shutdown() override;
 
 	const ExpressionActionsPtr & getShardingKeyExpr() const { return sharding_key_expr; }
 	const String & getShardingKeyColumnName() const { return sharding_key_column_name; }
@@ -93,7 +93,7 @@ private:
 	void createDirectoryMonitor(const std::string & name);
 	/// create directory monitors for each existing subdirectory
 	void createDirectoryMonitors();
-	/// ensure directory monitor creationg
+	/// ensure directory monitor creation
 	void requireDirectoryMonitor(const std::string & name);
 
 	String name;

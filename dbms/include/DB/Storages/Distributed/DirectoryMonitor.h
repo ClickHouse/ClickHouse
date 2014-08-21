@@ -25,33 +25,40 @@ namespace
 			const auto user_pw_end = strchr(address.data(), '@');
 			const auto colon = strchr(address.data(), ':');
 			if (!user_pw_end || !colon)
-				throw Exception{"Shard address '" + address + "' does not match to 'user[:password]@host:port' pattern"};
+				throw Exception{
+					"Shard address '" + address + "' does not match to 'user[:password]@host:port' pattern",
+					ErrorCodes::INCORRECT_FILE_NAME
+				};
 
 			const auto has_pw = colon < user_pw_end;
 			const auto host_end = has_pw ? strchr(user_pw_end + 1, ':') : colon;
 			if (!host_end)
-				throw Exception{"Shard address '" + address + "' does not contain port"};
+				throw Exception{
+					"Shard address '" + address + "' does not contain port",
+					ErrorCodes::INCORRECT_FILE_NAME
+				};
 
 			const auto user = unescapeForFileName({address.data(), has_pw ? colon : user_pw_end});
 			const auto password = has_pw ? unescapeForFileName({colon + 1, user_pw_end}) : std::string{};
 			const auto host = unescapeForFileName({user_pw_end + 1, host_end});
-			const auto port = DB::parse<UInt16>(host_end + 1);
+			const auto port = parse<UInt16>(host_end + 1);
 
 			pools.emplace_back(factory(host, port, user, password));
 		}
 
-		/// just to be explicit
-		return std::move(pools);
+		return pools;
 	}
 }
 
+/** Implementation for StorageDistributed::DirectoryMonitor nested class.
+ *  This type is not designed for standalone use. */
 class StorageDistributed::DirectoryMonitor
 {
 public:
 	DirectoryMonitor(StorageDistributed & storage, const std::string & name)
-	: storage(storage), pool{createPool(name)}, path{storage.path + name + '/'}
-	, sleep_time{storage.context.getSettingsRef().distributed_directory_monitor_sleep_time_ms.totalMilliseconds()}
-	, log{&Logger::get(getLoggerName())}
+		: storage(storage), pool{createPool(name)}, path{storage.path + name + '/'}
+		, sleep_time{storage.context.getSettingsRef().distributed_directory_monitor_sleep_time_ms.totalMilliseconds()}
+		, log{&Logger::get(getLoggerName())}
 	{
 	}
 
@@ -93,8 +100,8 @@ private:
 
 	ConnectionPoolPtr createPool(const std::string & name)
 	{
-		const auto pool_factory = [this, &name] (const std::string & host, const UInt16 port, const std::string & user, const std::string & password)
-		{
+		const auto pool_factory = [this, &name] (const std::string & host, const UInt16 port,
+												 const std::string & user, const std::string & password) {
 			return new ConnectionPool{
 				1, host, port, "",
 				user, password, storage.context.getDataTypeFactory(),
@@ -103,7 +110,7 @@ private:
 
 		auto pools = createPoolsForAddresses(name, pool_factory);
 
-		return pools.size() == 1 ? pools.front() : new ConnectionPoolWithFailover(pools, DB::LoadBalancing::RANDOM);
+		return pools.size() == 1 ? pools.front() : new ConnectionPoolWithFailover(pools, LoadBalancing::RANDOM);
 	}
 
 	bool findFiles()
@@ -117,7 +124,7 @@ private:
 			Poco::Path file_path{file_path_str};
 
 			if (!it->isDirectory() && 0 == strncmp(file_path.getExtension().data(), "bin", strlen("bin")))
-				files[DB::parse<UInt64>(file_path.getBaseName())] = file_path_str;
+				files[parse<UInt64>(file_path.getBaseName())] = file_path_str;
 		}
 
 		if (files.empty())
@@ -141,12 +148,12 @@ private:
 
 		try
 		{
-			DB::ReadBufferFromFile in{file_path};
+			ReadBufferFromFile in{file_path};
 
 			std::string insert_query;
-			DB::readStringBinary(insert_query, in);
+			readStringBinary(insert_query, in);
 
-			DB::RemoteBlockOutputStream remote{*connection, insert_query};
+			RemoteBlockOutputStream remote{*connection, insert_query};
 
 			remote.writePrefix();
 			remote.writePrepared(in);
@@ -165,11 +172,12 @@ private:
 				const auto & path = file_path.substr(0, last_path_separator_pos + 1);
 				const auto & file_name = file_path.substr(last_path_separator_pos + 1);
 				const auto & broken_path = path + "broken/";
+				const auto & broken_file_path = broken_path + file_name;
 
 				Poco::File{broken_path}.createDirectory();
-				Poco::File{file_path}.moveTo(broken_path + file_name);
+				Poco::File{file_path}.renameTo(broken_file_path);
 
-				LOG_ERROR(log, "Moved `" << file_path << "` to broken/ directory");
+				LOG_ERROR(log, "Renamed `" << file_path << "` to `" << broken_file_path << '`');
 			}
 
 			throw;
@@ -180,7 +188,8 @@ private:
 		LOG_TRACE(log, "Finished processing `" << file_path << '`');
 	}
 
-	std::string getLoggerName() const {
+	std::string getLoggerName() const
+	{
 		return storage.name + '.' + storage.getName() + ".DirectoryMonitor";
 	}
 

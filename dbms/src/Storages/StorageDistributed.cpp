@@ -18,18 +18,21 @@
 namespace DB
 {
 
-namespace {
-	template <typename ASTType> inline void rewriteImpl(ASTType &, const std::string &, const std::string &) = delete;
+namespace
+{
+	template <typename ASTType> void rewriteImpl(ASTType &, const std::string &, const std::string &) = delete;
 
 	/// select query has database and table names as AST pointers
-	template <> inline void rewriteImpl<ASTSelectQuery>(ASTSelectQuery & query, const std::string & database, const std::string & table)
+	template <> inline void rewriteImpl<ASTSelectQuery>(ASTSelectQuery & query,
+														const std::string & database, const std::string & table)
 	{
 		query.database = new ASTIdentifier{{}, database, ASTIdentifier::Database};
 		query.table = new ASTIdentifier{{}, table, ASTIdentifier::Table};
 	}
 
 	/// insert query has database and table names as bare strings
-	template <> inline void rewriteImpl<ASTInsertQuery>(ASTInsertQuery & query, const std::string & database, const std::string & table)
+	template <> inline void rewriteImpl<ASTInsertQuery>(ASTInsertQuery & query,
+														const std::string & database, const std::string & table)
 	{
 		query.database = database;
 		query.table = table;
@@ -47,8 +50,7 @@ namespace {
 		/// Меняем имена таблицы и базы данных
 		rewriteImpl(typeid_cast<ASTType &>(*modified_query_ast), database, table);
 
-		/// copy elision and RVO will work as intended, but let's be more explicit
-		return std::move(modified_query_ast);
+		return modified_query_ast;
 	}
 }
 
@@ -163,13 +165,15 @@ BlockOutputStreamPtr StorageDistributed::write(ASTPtr query)
 {
 	if (!write_enabled)
 		throw Exception{
-			"Method write is not supported by storage " + getName() + " with no sharding key provided",
-			ErrorCodes::NOT_IMPLEMENTED};
+			"Method write is not supported by storage " + getName() +
+			" with more than one shard and no sharding key provided",
+			ErrorCodes::STORAGE_REQUIRES_PARAMETER
+		};
 
-	auto modified_query = rewriteQuery<ASTInsertQuery>(query, remote_database, remote_table);
-	static_cast<ASTInsertQuery &>(*modified_query).select = nullptr;
-
-	return new DistributedBlockOutputStream{*this, modified_query};
+	return new DistributedBlockOutputStream{
+		*this,
+		rewriteQuery<ASTInsertQuery>(query, remote_database, remote_table)
+	};
 }
 
 void StorageDistributed::alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context)
