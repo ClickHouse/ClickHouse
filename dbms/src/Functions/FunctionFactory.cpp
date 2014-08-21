@@ -31,217 +31,225 @@ FunctionPtr FunctionFactory::get(
 	const String & name,
 	const Context & context) const
 {
-	/// Немного неоптимально.
+	static const std::unordered_map<
+		std::string,
+		std::function<IFunction* (const Context & context)>> functions =
+	{
+#define F [](const Context & context)
+		{"plus", 			F { return new FunctionPlus; } },
+		{"minus", 			F { return new FunctionMinus; } },
+		{"multiply", 		F { return new FunctionMultiply; } },
+		{"divide", 			F { return new FunctionDivideFloating; } },
+		{"intDiv", 			F { return new FunctionDivideIntegral; } },
+		{"modulo", 			F { return new FunctionModulo; } },
+		{"negate", 			F { return new FunctionNegate; } },
+		{"bitAnd", 			F { return new FunctionBitAnd; } },
+		{"bitOr", 			F { return new FunctionBitOr; } },
+		{"bitXor", 			F { return new FunctionBitXor; } },
+		{"bitNot", 			F { return new FunctionBitNot; } },
+		{"bitShiftLeft", 	F { return new FunctionBitShiftLeft; } },
+		{"bitShiftRight", 	F { return new FunctionBitShiftRight; } },
 
-		 if (name == "plus")						return new FunctionPlus;
-	else if (name == "minus")						return new FunctionMinus;
-	else if (name == "multiply")					return new FunctionMultiply;
-	else if (name == "divide")						return new FunctionDivideFloating;
-	else if (name == "intDiv")						return new FunctionDivideIntegral;
-	else if (name == "modulo")						return new FunctionModulo;
-	else if (name == "negate")						return new FunctionNegate;
-	else if (name == "bitAnd")						return new FunctionBitAnd;
-	else if (name == "bitOr")						return new FunctionBitOr;
-	else if (name == "bitXor")						return new FunctionBitXor;
-	else if (name == "bitNot")						return new FunctionBitNot;
-	else if (name == "bitShiftLeft")				return new FunctionBitShiftLeft;
-	else if (name == "bitShiftRight")				return new FunctionBitShiftRight;
+		{"equals", 			F { return new FunctionEquals; } },
+		{"notEquals", 		F { return new FunctionNotEquals; } },
+		{"less", 			F { return new FunctionLess; } },
+		{"greater", 		F { return new FunctionGreater; } },
+		{"lessOrEquals", 	F { return new FunctionLessOrEquals; } },
+		{"greaterOrEquals", F { return new FunctionGreaterOrEquals; } },
 
-	else if (name == "equals")						return new FunctionEquals;
-	else if (name == "notEquals")					return new FunctionNotEquals;
-	else if (name == "less")						return new FunctionLess;
-	else if (name == "greater")						return new FunctionGreater;
-	else if (name == "lessOrEquals")				return new FunctionLessOrEquals;
-	else if (name == "greaterOrEquals")			return new FunctionGreaterOrEquals;
+		{"and", 			F { return new FunctionAnd; } },
+		{"or", 				F { return new FunctionOr; } },
+		{"xor", 			F { return new FunctionXor; } },
+		{"not", 			F { return new FunctionNot; } },
 
-	else if (name == "and")							return new FunctionAnd;
-	else if (name == "or")							return new FunctionOr;
-	else if (name == "xor")							return new FunctionXor;
-	else if (name == "not")							return new FunctionNot;
+		{"roundToExp2", 	F { return new FunctionRoundToExp2; } },
+		{"roundDuration", 	F { return new FunctionRoundDuration; } },
+		{"roundAge", 		F { return new FunctionRoundAge; } },
 
-	else if (name == "roundToExp2")				return new FunctionRoundToExp2;
-	else if (name == "roundDuration")				return new FunctionRoundDuration;
-	else if (name == "roundAge")					return new FunctionRoundAge;
+		{"empty", 				F { return new FunctionEmpty; } },
+		{"notEmpty", 			F { return new FunctionNotEmpty; } },
+		{"length", 				F { return new FunctionLength; } },
+		{"lengthUTF8", 			F { return new FunctionLengthUTF8; } },
+		{"lower", 				F { return new FunctionLower; } },
+		{"upper", 				F { return new FunctionUpper; } },
+		{"lowerUTF8", 			F { return new FunctionLowerUTF8; } },
+		{"upperUTF8", 			F { return new FunctionUpperUTF8; } },
+		{"reverse", 			F { return new FunctionReverse; } },
+		{"reverseUTF8", 		F { return new FunctionReverseUTF8; } },
+		{"concat", 				F { return new FunctionConcat; } },
+		{"substring", 			F { return new FunctionSubstring; } },
+		{"replaceOne", 			F { return new FunctionReplaceOne; } },
+		{"replaceAll", 			F { return new FunctionReplaceAll; } },
+		{"replaceRegexpOne", 	F { return new FunctionReplaceRegexpOne; } },
+		{"replaceRegexpAll", 	F { return new FunctionReplaceRegexpAll; } },
+		{"substringUTF8", 		F { return new FunctionSubstringUTF8; } },
 
-	else if (name == "empty")						return new FunctionEmpty;
-	else if (name == "notEmpty")					return new FunctionNotEmpty;
-	else if (name == "length")						return new FunctionLength;
-	else if (name == "lengthUTF8")					return new FunctionLengthUTF8;
-	else if (name == "lower")						return new FunctionLower;
-	else if (name == "upper")						return new FunctionUpper;
-	else if (name == "lowerUTF8")					return new FunctionLowerUTF8;
-	else if (name == "upperUTF8")					return new FunctionUpperUTF8;
-	else if (name == "reverse")						return new FunctionReverse;
-	else if (name == "reverseUTF8")				return new FunctionReverseUTF8;
-	else if (name == "concat")						return new FunctionConcat;
-	else if (name == "substring")					return new FunctionSubstring;
-	else if (name == "replaceOne")					return new FunctionReplaceOne;
-	else if (name == "replaceAll")					return new FunctionReplaceAll;
-	else if (name == "replaceRegexpOne")			return new FunctionReplaceRegexpOne;
-	else if (name == "replaceRegexpAll")			return new FunctionReplaceRegexpAll;
-	else if (name == "substringUTF8")				return new FunctionSubstringUTF8;
+		{"toUInt8", 			F { return new FunctionToUInt8; } },
+		{"toUInt16", 			F { return new FunctionToUInt16; } },
+		{"toUInt32", 			F { return new FunctionToUInt32; } },
+		{"toUInt64", 			F { return new FunctionToUInt64; } },
+		{"toInt8", 				F { return new FunctionToInt8; } },
+		{"toInt16", 			F { return new FunctionToInt16; } },
+		{"toInt32", 			F { return new FunctionToInt32; } },
+		{"toInt64", 			F { return new FunctionToInt64; } },
+		{"toFloat32", 			F { return new FunctionToFloat32; } },
+		{"toFloat64", 			F { return new FunctionToFloat64; } },
+		{"toDate", 				F { return new FunctionToDate; } },
+		{"toDateTime", 			F { return new FunctionToDateTime; } },
+		{"toString", 			F { return new FunctionToString; } },
+		{"toFixedString", 		F { return new FunctionToFixedString; } },
+		{"toStringCutToZero", 	F { return new FunctionToStringCutToZero; } },
 
-	else if (name == "toUInt8")						return new FunctionToUInt8;
-	else if (name == "toUInt16")					return new FunctionToUInt16;
-	else if (name == "toUInt32")					return new FunctionToUInt32;
-	else if (name == "toUInt64")					return new FunctionToUInt64;
-	else if (name == "toInt8")						return new FunctionToInt8;
-	else if (name == "toInt16")						return new FunctionToInt16;
-	else if (name == "toInt32")						return new FunctionToInt32;
-	else if (name == "toInt64")						return new FunctionToInt64;
-	else if (name == "toFloat32")					return new FunctionToFloat32;
-	else if (name == "toFloat64")					return new FunctionToFloat64;
-	else if (name == "toDate")						return new FunctionToDate;
-	else if (name == "toDateTime")					return new FunctionToDateTime;
-	else if (name == "toString")					return new FunctionToString;
-	else if (name == "toFixedString")				return new FunctionToFixedString;
-	else if (name == "toStringCutToZero")			return new FunctionToStringCutToZero;
+		{"reinterpretAsUInt8",		F { return new FunctionReinterpretAsUInt8; } },
+		{"reinterpretAsUInt16", 	F { return new FunctionReinterpretAsUInt16; } },
+		{"reinterpretAsUInt32", 	F { return new FunctionReinterpretAsUInt32; } },
+		{"reinterpretAsUInt64", 	F { return new FunctionReinterpretAsUInt64; } },
+		{"reinterpretAsInt8", 		F { return new FunctionReinterpretAsInt8; } },
+		{"reinterpretAsInt16", 		F { return new FunctionReinterpretAsInt16; } },
+		{"reinterpretAsInt32", 		F { return new FunctionReinterpretAsInt32; } },
+		{"reinterpretAsInt64", 		F { return new FunctionReinterpretAsInt64; } },
+		{"reinterpretAsFloat32", 	F { return new FunctionReinterpretAsFloat32; } },
+		{"reinterpretAsFloat64", 	F { return new FunctionReinterpretAsFloat64; } },
+		{"reinterpretAsDate", 		F { return new FunctionReinterpretAsDate; } },
+		{"reinterpretAsDateTime", 	F { return new FunctionReinterpretAsDateTime; } },
+		{"reinterpretAsString", 	F { return new FunctionReinterpretAsString; } },
 
-	else if (name == "reinterpretAsUInt8")			return new FunctionReinterpretAsUInt8;
-	else if (name == "reinterpretAsUInt16")		return new FunctionReinterpretAsUInt16;
-	else if (name == "reinterpretAsUInt32")		return new FunctionReinterpretAsUInt32;
-	else if (name == "reinterpretAsUInt64")		return new FunctionReinterpretAsUInt64;
-	else if (name == "reinterpretAsInt8")			return new FunctionReinterpretAsInt8;
-	else if (name == "reinterpretAsInt16")			return new FunctionReinterpretAsInt16;
-	else if (name == "reinterpretAsInt32")			return new FunctionReinterpretAsInt32;
-	else if (name == "reinterpretAsInt64")			return new FunctionReinterpretAsInt64;
-	else if (name == "reinterpretAsFloat32")		return new FunctionReinterpretAsFloat32;
-	else if (name == "reinterpretAsFloat64")		return new FunctionReinterpretAsFloat64;
-	else if (name == "reinterpretAsDate")			return new FunctionReinterpretAsDate;
-	else if (name == "reinterpretAsDateTime")		return new FunctionReinterpretAsDateTime;
-	else if (name == "reinterpretAsString")		return new FunctionReinterpretAsString;
+		{"toYear", 				F { return new FunctionToYear; } },
+		{"toMonth",				F { return new FunctionToMonth; } },
+		{"toDayOfMonth", 		F { return new FunctionToDayOfMonth; } },
+		{"toDayOfWeek", 		F { return new FunctionToDayOfWeek; } },
+		{"toHour", 				F { return new FunctionToHour; } },
+		{"toMinute", 			F { return new FunctionToMinute; } },
+		{"toSecond", 			F { return new FunctionToSecond; } },
+		{"toMonday", 			F { return new FunctionToMonday; } },
+		{"toStartOfMonth", 		F { return new FunctionToStartOfMonth; } },
+		{"toStartOfQuarter", 	F { return new FunctionToStartOfQuarter; } },
+		{"toStartOfYear", 		F { return new FunctionToStartOfYear; } },
+		{"toStartOfMinute", 	F { return new FunctionToStartOfMinute; } },
+		{"toStartOfHour", 		F { return new FunctionToStartOfHour; } },
+		{"toRelativeYearNum", 	F { return new FunctionToRelativeYearNum; } },
+		{"toRelativeMonthNum", 	F { return new FunctionToRelativeMonthNum; } },
+		{"toRelativeWeekNum", 	F { return new FunctionToRelativeWeekNum; } },
+		{"toRelativeDayNum", 	F { return new FunctionToRelativeDayNum; } },
+		{"toRelativeHourNum", 	F { return new FunctionToRelativeHourNum; } },
+		{"toRelativeMinuteNum", F { return new FunctionToRelativeMinuteNum; } },
+		{"toRelativeSecondNum", F { return new FunctionToRelativeSecondNum; } },
+		{"toTime", 				F { return new FunctionToTime; } },
+		{"now", 				F { return new FunctionNow; } },
+		{"timeSlot", 			F { return new FunctionTimeSlot; } },
+		{"timeSlots", 			F { return new FunctionTimeSlots; } },
 
-	else if (name == "toYear")						return new FunctionToYear;
-	else if (name == "toMonth")						return new FunctionToMonth;
-	else if (name == "toDayOfMonth")				return new FunctionToDayOfMonth;
-	else if (name == "toDayOfWeek")				return new FunctionToDayOfWeek;
-	else if (name == "toHour")						return new FunctionToHour;
-	else if (name == "toMinute")					return new FunctionToMinute;
-	else if (name == "toSecond")					return new FunctionToSecond;
-	else if (name == "toMonday")					return new FunctionToMonday;
-	else if (name == "toStartOfMonth")				return new FunctionToStartOfMonth;
-	else if (name == "toStartOfQuarter")			return new FunctionToStartOfQuarter;
-	else if (name == "toStartOfYear")				return new FunctionToStartOfYear;
-	else if (name == "toStartOfMinute")			return new FunctionToStartOfMinute;
-	else if (name == "toStartOfHour")				return new FunctionToStartOfHour;
-	else if (name == "toRelativeYearNum")			return new FunctionToRelativeYearNum;
-	else if (name == "toRelativeMonthNum")			return new FunctionToRelativeMonthNum;
-	else if (name == "toRelativeWeekNum")			return new FunctionToRelativeWeekNum;
-	else if (name == "toRelativeDayNum")			return new FunctionToRelativeDayNum;
-	else if (name == "toRelativeHourNum")			return new FunctionToRelativeHourNum;
-	else if (name == "toRelativeMinuteNum")			return new FunctionToRelativeMinuteNum;
-	else if (name == "toRelativeSecondNum")			return new FunctionToRelativeSecondNum;
-	else if (name == "toTime")						return new FunctionToTime;
-	else if (name == "now")							return new FunctionNow;
-	else if (name == "timeSlot")					return new FunctionTimeSlot;
-	else if (name == "timeSlots")					return new FunctionTimeSlots;
+		{"position", 			F { return new FunctionPosition; } },
+		{"positionUTF8", 		F { return new FunctionPositionUTF8; } },
+		{"match", 				F { return new FunctionMatch; } },
+		{"like", 				F { return new FunctionLike; } },
+		{"notLike", 			F { return new FunctionNotLike; } },
+		{"extract", 			F { return new FunctionExtract; } },
+		{"extractAll", 			F { return new FunctionExtractAll; } },
 
-	else if (name == "position")					return new FunctionPosition;
-	else if (name == "positionUTF8")				return new FunctionPositionUTF8;
-	else if (name == "match")						return new FunctionMatch;
-	else if (name == "like")						return new FunctionLike;
-	else if (name == "notLike")						return new FunctionNotLike;
-	else if (name == "extract")						return new FunctionExtract;
-	else if (name == "extractAll")					return new FunctionExtractAll;
+		{"halfMD5", 			F { return new FunctionHalfMD5; } },
+		{"sipHash64", 			F { return new FunctionSipHash64; } },
+		{"cityHash64", 			F { return new FunctionCityHash64; } },
+		{"intHash32", 			F { return new FunctionIntHash32; } },
+		{"intHash64", 			F { return new FunctionIntHash64; } },
 
-	else if (name == "halfMD5")						return new FunctionHalfMD5;
-	else if (name == "sipHash64")					return new FunctionSipHash64;
-	else if (name == "cityHash64")					return new FunctionCityHash64;
-	else if (name == "intHash32")					return new FunctionIntHash32;
-	else if (name == "intHash64")					return new FunctionIntHash64;
+		{"IPv4NumToString", 	F { return new FunctionIPv4NumToString; } },
+		{"IPv4StringToNum", 	F { return new FunctionIPv4StringToNum; } },
+		{"hex", 				F { return new FunctionHex; } },
+		{"unhex", 				F { return new FunctionUnhex; } },
+		{"bitmaskToList", 		F { return new FunctionBitmaskToList; } },
+		{"bitmaskToArray",		F { return new FunctionBitmaskToArray; } },
 
-	else if (name == "IPv4NumToString")			return new FunctionIPv4NumToString;
-	else if (name == "IPv4StringToNum")			return new FunctionIPv4StringToNum;
-	else if (name == "hex")							return new FunctionHex;
-	else if (name == "unhex")						return new FunctionUnhex;
-	else if (name == "bitmaskToList")				return new FunctionBitmaskToList;
-	else if (name == "bitmaskToArray")				return new FunctionBitmaskToArray;
+		{"rand", 				F { return new FunctionRand; } },
+		{"rand64", 				F { return new FunctionRand64; } },
 
-	else if (name == "rand")						return new FunctionRand;
-	else if (name == "rand64")						return new FunctionRand64;
+		{"protocol", 					F { return new FunctionProtocol; } },
+		{"domain", 						F { return new FunctionDomain; } },
+		{"domainWithoutWWW", 			F { return new FunctionDomainWithoutWWW; } },
+		{"topLevelDomain", 				F { return new FunctionTopLevelDomain; } },
+		{"path", 						F { return new FunctionPath; } },
+		{"queryString", 				F { return new FunctionQueryString; } },
+		{"fragment", 					F { return new FunctionFragment; } },
+		{"queryStringAndFragment", 		F { return new FunctionQueryStringAndFragment; } },
+		{"extractURLParameter", 		F { return new FunctionExtractURLParameter; } },
+		{"extractURLParameters", 		F { return new FunctionExtractURLParameters; } },
+		{"extractURLParameterNames", 	F { return new FunctionExtractURLParameterNames; } },
+		{"URLHierarchy", 				F { return new FunctionURLHierarchy; } },
+		{"URLPathHierarchy", 			F { return new FunctionURLPathHierarchy; } },
+		{"cutWWW", 						F { return new FunctionCutWWW; } },
+		{"cutQueryString", 				F { return new FunctionCutQueryString; } },
+		{"cutFragment", 				F { return new FunctionCutFragment; } },
+		{"cutQueryStringAndFragment", 	F { return new FunctionCutQueryStringAndFragment; } },
+		{"cutURLParameter", 			F { return new FunctionCutURLParameter; } },
 
-	else if (name == "protocol")					return new FunctionProtocol;
-	else if (name == "domain")						return new FunctionDomain;
-	else if (name == "domainWithoutWWW")			return new FunctionDomainWithoutWWW;
-	else if (name == "topLevelDomain")				return new FunctionTopLevelDomain;
-	else if (name == "path")						return new FunctionPath;
-	else if (name == "queryString")				return new FunctionQueryString;
-	else if (name == "fragment")					return new FunctionFragment;
-	else if (name == "queryStringAndFragment")		return new FunctionQueryStringAndFragment;
-	else if (name == "extractURLParameter")		return new FunctionExtractURLParameter;
-	else if (name == "extractURLParameters")		return new FunctionExtractURLParameters;
-	else if (name == "extractURLParameterNames")		return new FunctionExtractURLParameterNames;
-	else if (name == "URLHierarchy")				return new FunctionURLHierarchy;
-	else if (name == "URLPathHierarchy")				return new FunctionURLPathHierarchy;
-	else if (name == "cutWWW")						return new FunctionCutWWW;
-	else if (name == "cutQueryString")				return new FunctionCutQueryString;
-	else if (name == "cutFragment")				return new FunctionCutFragment;
-	else if (name == "cutQueryStringAndFragment")	return new FunctionCutQueryStringAndFragment;
-	else if (name == "cutURLParameter")			return new FunctionCutURLParameter;
+		{"hostName", 			F { return new FunctionHostName; } },
+		{"visibleWidth", 		F { return new FunctionVisibleWidth; } },
+		{"bar", 				F { return new FunctionBar; } },
+		{"toTypeName", 			F { return new FunctionToTypeName; } },
+		{"blockSize", 			F { return new FunctionBlockSize; } },
+		{"sleep", 				F { return new FunctionSleep; } },
+		{"materialize", 		F { return new FunctionMaterialize; } },
+		{"ignore", 				F { return new FunctionIgnore; } },
+		{"arrayJoin", 			F { return new FunctionArrayJoin; } },
 
-	else if (name == "hostName")					return new FunctionHostName;
-	else if (name == "visibleWidth")				return new FunctionVisibleWidth;
-	else if (name == "toTypeName")					return new FunctionToTypeName;
-	else if (name == "blockSize")					return new FunctionBlockSize;
-	else if (name == "sleep")						return new FunctionSleep;
-	else if (name == "materialize")				return new FunctionMaterialize;
-	else if (name == "ignore")						return new FunctionIgnore;
-	else if (name == "arrayJoin")					return new FunctionArrayJoin;
+		{"tuple", 				F { return new FunctionTuple; } },
+		{"tupleElement", 		F { return new FunctionTupleElement; } },
+		{"in", 					F { return new FunctionIn(false, false); } },
+		{"notIn", 				F { return new FunctionIn(true, false); } },
+		{"globalIn", 			F { return new FunctionIn(false, true); } },
+		{"globalNotIn", 		F { return new FunctionIn(true, true); } },
 
-	else if (name == "tuple")						return new FunctionTuple;
-	else if (name == "tupleElement")				return new FunctionTupleElement;
-	else if (name == "in")							return new FunctionIn(false, false);
-	else if (name == "notIn")						return new FunctionIn(true, false);
-	else if (name == "globalIn")					return new FunctionIn(false, true);
-	else if (name == "globalNotIn")					return new FunctionIn(true, true);
+		{"array", 				F { return new FunctionArray; } },
+		{"arrayElement", 		F { return new FunctionArrayElement; } },
+		{"has", 				F { return new FunctionHas; } },
+		{"indexOf", 			F { return new FunctionIndexOf; } },
+		{"countEqual", 			F { return new FunctionCountEqual; } },
+		{"arrayEnumerate", 		F { return new FunctionArrayEnumerate; } },
+		{"arrayEnumerateUniq", 	F { return new FunctionArrayEnumerateUniq; } },
 
-	else if (name == "array")						return new FunctionArray;
-	else if (name == "arrayElement")				return new FunctionArrayElement;
-	else if (name == "has")							return new FunctionHas;
-	else if (name == "indexOf")						return new FunctionIndexOf;
-	else if (name == "countEqual")					return new FunctionCountEqual;
-	else if (name == "arrayEnumerate")				return new FunctionArrayEnumerate;
-	else if (name == "arrayEnumerateUniq")			return new FunctionArrayEnumerateUniq;
+		{"arrayMap", 			F { return new FunctionArrayMap; } },
+		{"arrayFilter", 		F { return new FunctionArrayFilter; } },
+		{"arrayCount", 			F { return new FunctionArrayCount; } },
+		{"arrayExists", 		F { return new FunctionArrayExists; } },
+		{"arrayAll", 			F { return new FunctionArrayAll; } },
+		{"arraySum", 			F { return new FunctionArraySum; } },
 
-	else if (name == "arrayMap")					return new FunctionArrayMap;
-	else if (name == "arrayFilter")				return new FunctionArrayFilter;
-	else if (name == "arrayCount")					return new FunctionArrayCount;
-	else if (name == "arrayExists")				return new FunctionArrayExists;
-	else if (name == "arrayAll")					return new FunctionArrayAll;
-	else if (name == "arraySum")					return new FunctionArraySum;
+		{"alphaTokens", 		F { return new FunctionAlphaTokens; } },
+		{"splitByChar", 		F { return new FunctionSplitByChar; } },
+		{"splitByString", 		F { return new FunctionSplitByString; } },
 
-	else if (name == "alphaTokens")				return new FunctionAlphaTokens;
-	else if (name == "splitByChar")				return new FunctionSplitByChar;
-	else if (name == "splitByString")				return new FunctionSplitByString;
+		{"if", 					F { return new FunctionIf; } },
 
-	else if (name == "if")							return new FunctionIf;
+		{"regionToCity", 			F { return new FunctionRegionToCity(context.getDictionaries().getRegionsHierarchies()); } },
+		{"regionToArea", 			F { return new FunctionRegionToArea(context.getDictionaries().getRegionsHierarchies()); } },
+		{"regionToCountry", 		F { return new FunctionRegionToCountry(context.getDictionaries().getRegionsHierarchies()); } },
+		{"regionToContinent", 		F { return new FunctionRegionToContinent(context.getDictionaries().getRegionsHierarchies()); } },
+		{"OSToRoot", 				F { return new FunctionOSToRoot(context.getDictionaries().getTechDataHierarchy()); } },
+		{"SEToRoot", 				F { return new FunctionSEToRoot(context.getDictionaries().getTechDataHierarchy()); } },
+		{"categoryToRoot", 			F { return new FunctionCategoryToRoot(context.getDictionaries().getCategoriesHierarchy()); } },
+		{"categoryToSecondLevel", 	F { return new FunctionCategoryToSecondLevel(context.getDictionaries().getCategoriesHierarchy()); } },
+		{"regionIn", 				F { return new FunctionRegionIn(context.getDictionaries().getRegionsHierarchies()); } },
+		{"OSIn", 					F { return new FunctionOSIn(context.getDictionaries().getTechDataHierarchy()); } },
+		{"SEIn", 					F { return new FunctionSEIn(context.getDictionaries().getTechDataHierarchy()); } },
+		{"categoryIn", 				F { return new FunctionCategoryIn(context.getDictionaries().getCategoriesHierarchy()); } },
+		{"regionHierarchy", 		F { return new FunctionRegionHierarchy(context.getDictionaries().getRegionsHierarchies()); } },
+		{"OSHierarchy", 			F { return new FunctionOSHierarchy(context.getDictionaries().getTechDataHierarchy()); } },
+		{"SEHierarchy", 			F { return new FunctionSEHierarchy(context.getDictionaries().getTechDataHierarchy()); } },
+		{"categoryHierarchy", 		F { return new FunctionCategoryHierarchy(context.getDictionaries().getCategoriesHierarchy()); } },
+		{"regionToName", 			F { return new FunctionRegionToName(context.getDictionaries().getRegionsNames()); } },
 
-	else if (name == "regionToCity")				return new FunctionRegionToCity(context.getDictionaries().getRegionsHierarchies());
-	else if (name == "regionToArea")				return new FunctionRegionToArea(context.getDictionaries().getRegionsHierarchies());
-	else if (name == "regionToCountry")			return new FunctionRegionToCountry(context.getDictionaries().getRegionsHierarchies());
-	else if (name == "regionToContinent")			return new FunctionRegionToContinent(context.getDictionaries().getRegionsHierarchies());
-	else if (name == "OSToRoot")					return new FunctionOSToRoot(context.getDictionaries().getTechDataHierarchy());
-	else if (name == "SEToRoot")					return new FunctionSEToRoot(context.getDictionaries().getTechDataHierarchy());
-	else if (name == "categoryToRoot")				return new FunctionCategoryToRoot(context.getDictionaries().getCategoriesHierarchy());
-	else if (name == "categoryToSecondLevel")		return new FunctionCategoryToSecondLevel(context.getDictionaries().getCategoriesHierarchy());
-	else if (name == "regionIn")					return new FunctionRegionIn(context.getDictionaries().getRegionsHierarchies());
-	else if (name == "OSIn")						return new FunctionOSIn(context.getDictionaries().getTechDataHierarchy());
-	else if (name == "SEIn")						return new FunctionSEIn(context.getDictionaries().getTechDataHierarchy());
-	else if (name == "categoryIn")					return new FunctionCategoryIn(context.getDictionaries().getCategoriesHierarchy());
-	else if (name == "regionHierarchy")			return new FunctionRegionHierarchy(context.getDictionaries().getRegionsHierarchies());
-	else if (name == "OSHierarchy")				return new FunctionOSHierarchy(context.getDictionaries().getTechDataHierarchy());
-	else if (name == "SEHierarchy")				return new FunctionSEHierarchy(context.getDictionaries().getTechDataHierarchy());
-	else if (name == "categoryHierarchy")			return new FunctionCategoryHierarchy(context.getDictionaries().getCategoriesHierarchy());
-	else if (name == "regionToName")				return new FunctionRegionToName(context.getDictionaries().getRegionsNames());
+		{"visitParamHas", 			F { return new FunctionVisitParamHas; } },
+		{"visitParamExtractUInt", 	F { return new FunctionVisitParamExtractUInt; } },
+		{"visitParamExtractInt", 	F { return new FunctionVisitParamExtractInt; } },
+		{"visitParamExtractFloat", 	F { return new FunctionVisitParamExtractFloat; } },
+		{"visitParamExtractBool", 	F { return new FunctionVisitParamExtractBool; } },
+		{"visitParamExtractRaw", 	F { return new FunctionVisitParamExtractRaw; } },
+		{"visitParamExtractString", F { return new FunctionVisitParamExtractString; } },
+	};
 
-	else if (name == "visitParamHas")				return new FunctionVisitParamHas;
-	else if (name == "visitParamExtractUInt")		return new FunctionVisitParamExtractUInt;
-	else if (name == "visitParamExtractInt")		return new FunctionVisitParamExtractInt;
-	else if (name == "visitParamExtractFloat")		return new FunctionVisitParamExtractFloat;
-	else if (name == "visitParamExtractBool")		return new FunctionVisitParamExtractBool;
-	else if (name == "visitParamExtractRaw")		return new FunctionVisitParamExtractRaw;
-	else if (name == "visitParamExtractString")	return new FunctionVisitParamExtractString;
-
+	auto it = functions.find(name);
+	if (functions.end() != it)
+		return it->second(context);
 	else
 		throw Exception("Unknown function " + name, ErrorCodes::UNKNOWN_FUNCTION);
 }

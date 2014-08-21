@@ -206,7 +206,7 @@ void Aggregator::executeImpl(
 		if (overflow && !overflow_row)
 			continue;
 
-		/// Если вставили новый ключ - инициализируем состояния агрегатных функций, и возможно, что-нибудь связанное с ключём.
+		/// Если вставили новый ключ - инициализируем состояния агрегатных функций, и возможно, что-нибудь связанное с ключом.
 		if (inserted)
 		{
 			method.onNewKey(it, keys_size, i, keys, *aggregates_pool);

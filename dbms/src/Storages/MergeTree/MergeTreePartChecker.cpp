@@ -4,6 +4,7 @@
 #include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
+#include <DB/DataTypes/DataTypeAggregateFunction.h>
 #include <DB/IO/CompressedReadBuffer.h>
 #include <DB/IO/HashingReadBuffer.h>
 #include <DB/Columns/ColumnsNumber.h>
@@ -14,6 +15,8 @@ namespace DB
 
 struct Stream
 {
+	static const size_t UNKNOWN = std::numeric_limits<size_t>::max();
+
 	DataTypePtr type;
 	String path;
 	String name;
@@ -33,6 +36,12 @@ struct Stream
 	bool marksEOF()
 	{
 		return mrk_hashing_buf.eof();
+	}
+
+	void ignore()
+	{
+		uncompressed_hashing_buf.ignore(std::numeric_limits<size_t>::max());
+		mrk_hashing_buf.ignore(std::numeric_limits<size_t>::max());
 	}
 
 	size_t read(size_t rows)
@@ -97,7 +106,7 @@ struct Stream
 		return size / sizeof(UInt64);
 	}
 
-	void assertMark(bool strict)
+	void assertMark()
 	{
 		MarkInCompressedFile mrk_mark;
 		readIntBinary(mrk_mark.offset_in_compressed_file, mrk_hashing_buf);
@@ -152,7 +161,7 @@ struct Stream
 };
 
 /// Возвращает количество строк. Добавляет в checksums чексуммы всех файлов столбца.
-static size_t checkColumn(const String & path, const String & name, DataTypePtr type, size_t index_granularity, bool strict,
+static size_t checkColumn(const String & path, const String & name, DataTypePtr type, const MergeTreePartChecker::Settings & settings,
 						  MergeTreeData::DataPart::Checksums & checksums)
 {
 	size_t rows = 0;
@@ -171,10 +180,10 @@ static size_t checkColumn(const String & path, const String & name, DataTypePtr 
 				if (sizes_stream.marksEOF())
 					break;
 
-				sizes_stream.assertMark(strict);
-				data_stream.assertMark(strict);
+				sizes_stream.assertMark();
+				data_stream.assertMark();
 
-				size_t cur_rows = sizes_stream.readUInt64(index_granularity, sizes);
+				size_t cur_rows = sizes_stream.readUInt64(settings.index_granularity, sizes);
 
 				size_t sum = 0;
 				for (size_t i = 0; i < cur_rows; ++i)
@@ -188,7 +197,7 @@ static size_t checkColumn(const String & path, const String & name, DataTypePtr 
 				data_stream.read(sum);
 
 				rows += cur_rows;
-				if (cur_rows < index_granularity)
+				if (cur_rows < settings.index_granularity)
 					break;
 			}
 
@@ -196,6 +205,12 @@ static size_t checkColumn(const String & path, const String & name, DataTypePtr 
 			data_stream.assertEnd(checksums);
 
 			return rows;
+		}
+		else if (dynamic_cast<const DataTypeAggregateFunction *>(&*type))
+		{
+			Stream data_stream(path, escapeForFileName(name), type);
+			data_stream.ignore();
+			return Stream::UNKNOWN;
 		}
 		else
 		{
@@ -207,12 +222,15 @@ static size_t checkColumn(const String & path, const String & name, DataTypePtr 
 				if (data_stream.marksEOF())
 					break;
 
-				data_stream.assertMark(strict);
+				data_stream.assertMark();
 
-				size_t cur_rows = data_stream.read(index_granularity);
+				size_t cur_rows = data_stream.read(settings.index_granularity);
 
-				rows += cur_rows;
-				if (cur_rows < index_granularity)
+				if (cur_rows == Stream::UNKNOWN)
+					rows = Stream::UNKNOWN;
+				else
+					rows += cur_rows;
+				if (cur_rows < settings.index_granularity)
 					break;
 			}
 
@@ -228,8 +246,8 @@ static size_t checkColumn(const String & path, const String & name, DataTypePtr 
 	}
 }
 
-void MergeTreePartChecker::checkDataPart(String path, size_t index_granularity, bool strict, const DataTypeFactory & data_type_factory,
-	bool verbose)
+void MergeTreePartChecker::checkDataPart(String path, const Settings & settings, const DataTypeFactory & data_type_factory,
+										 MergeTreeData::DataPart::Checksums * out_checksums)
 {
 	if (!path.empty() && *path.rbegin() != '/')
 		path += "/";
@@ -243,7 +261,7 @@ void MergeTreePartChecker::checkDataPart(String path, size_t index_granularity, 
 		assertEOF(buf);
 	}
 
-	if (strict || Poco::File(path + "checksums.txt").exists())
+	if (settings.require_checksums || Poco::File(path + "checksums.txt").exists())
 	{
 		ReadBufferFromFile buf(path + "checksums.txt");
 		checksums_txt.readText(buf);
@@ -260,13 +278,13 @@ void MergeTreePartChecker::checkDataPart(String path, size_t index_granularity, 
 		checksums_data.files["primary.idx"] = MergeTreeData::DataPart::Checksums::Checksum(primary_idx_size, hashing_buf.getHash());
 	}
 
-	bool first = true;
-	size_t rows = 0;
+	String any_column_name;
+	size_t rows = Stream::UNKNOWN;
 	ExceptionPtr first_exception;
 
 	for (const NameAndTypePair & column : columns)
 	{
-		if (verbose)
+		if (settings.verbose)
 		{
 			std::cerr << column.name << ":";
 			std::cerr.flush();
@@ -275,30 +293,33 @@ void MergeTreePartChecker::checkDataPart(String path, size_t index_granularity, 
 		bool ok = false;
 		try
 		{
-			if (!strict && !Poco::File(path + escapeForFileName(column.name) + ".bin").exists())
+			if (!settings.require_column_files && !Poco::File(path + escapeForFileName(column.name) + ".bin").exists())
 			{
-				if (verbose)
+				if (settings.verbose)
 					std::cerr << " no files" << std::endl;
 				continue;
 			}
 
-			size_t cur_rows = checkColumn(path, column.name, column.type, index_granularity, strict, checksums_data);
-			if (first)
+			size_t cur_rows = checkColumn(path, column.name, column.type, settings, checksums_data);
+			if (cur_rows != Stream::UNKNOWN)
 			{
-				rows = cur_rows;
-				first = false;
-			}
-			else if (rows != cur_rows)
-			{
-				throw Exception("Different number of rows in columns " + columns.begin()->name + " and " + column.name,
-								ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+				if (rows == Stream::UNKNOWN)
+				{
+					rows = cur_rows;
+					any_column_name = column.name;
+				}
+				else if (rows != cur_rows)
+				{
+					throw Exception("Different number of rows in columns " + any_column_name + " and " + column.name,
+									ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+				}
 			}
 
 			ok = true;
 		}
 		catch (...)
 		{
-			if (!verbose)
+			if (!settings.verbose)
 				throw;
 			ExceptionPtr e = cloneCurrentException();
 			if (!first_exception)
@@ -311,18 +332,18 @@ void MergeTreePartChecker::checkDataPart(String path, size_t index_granularity, 
 			 std::cerr << std::endl;
 		}
 
-		if (verbose && ok)
+		if (settings.verbose && ok)
 			std::cerr << " ok" << std::endl;
 	}
 
-	if (first)
+	if (rows == Stream::UNKNOWN)
 		throw Exception("No columns", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
 
-	if (primary_idx_size % ((rows - 1) / index_granularity + 1))
+	if (primary_idx_size % ((rows - 1) / settings.index_granularity + 1))
 		throw Exception("primary.idx size (" + toString(primary_idx_size) + ") not divisible by number of marks ("
-			+ toString(rows) + "/" + toString(index_granularity) + " rounded up)", ErrorCodes::CORRUPTED_DATA);
+			+ toString(rows) + "/" + toString(settings.index_granularity) + " rounded up)", ErrorCodes::CORRUPTED_DATA);
 
-	if (strict || !checksums_txt.files.empty())
+	if (settings.require_checksums || !checksums_txt.files.empty())
 		checksums_txt.checkEqual(checksums_data, true);
 
 	if (first_exception)

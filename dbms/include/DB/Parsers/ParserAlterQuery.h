@@ -10,6 +10,7 @@ namespace DB
   * 	[ADD COLUMN col_name type [AFTER col_after],]
   *		[DROP COLUMN col_drop, ...]
   * 	[MODIFY COLUMN col_modify type, ...]
+  * 	[DROP PARTITION partition, ...]
   */
 class ParserAlterQuery : public IParserBase
 {

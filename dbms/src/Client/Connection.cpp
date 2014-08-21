@@ -284,14 +284,17 @@ void Connection::sendData(const Block & block, const String & name)
 }
 
 
-void Connection::sendPreparedData(ReadBuffer & input, const String & name)
+void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String & name)
 {
 	writeVarUInt(Protocol::Client::Data, *out);
 
 	if (server_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)
 		writeStringBinary(name, *out);
 
-	copyData(input, *out);
+	if (0 == size)
+		copyData(input, *out);
+	else
+		copyData(input, *out, size);
 	out->next();
 }
 

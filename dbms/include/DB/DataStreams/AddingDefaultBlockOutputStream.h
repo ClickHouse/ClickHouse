@@ -33,6 +33,8 @@ public:
 		output->write(res);
 	}
 
+	void flush() { output->flush(); }
+
 private:
 	BlockOutputStreamPtr output;
 	NamesAndTypesListPtr required_columns;

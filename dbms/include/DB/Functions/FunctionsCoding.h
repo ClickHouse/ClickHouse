@@ -375,7 +375,7 @@ public:
 				prev_offset = new_offset;
 			}
 
-			if (out_offsets.back() != out_vec.size())
+			if (!out_offsets.empty() && out_offsets.back() != out_vec.size())
 				throw Exception("Column size mismatch (internal logical error)", ErrorCodes::LOGICAL_ERROR);
 
 			return true;
@@ -436,7 +436,7 @@ public:
 				prev_offset = new_offset;
 			}
 
-			if (out_offsets.back() != out_vec.size())
+			if (!out_offsets.empty() && out_offsets.back() != out_vec.size())
 				throw Exception("Column size mismatch (internal logical error)", ErrorCodes::LOGICAL_ERROR);
 
 			return true;
@@ -742,7 +742,7 @@ public:
 			}
 			out_vec.resize(pos - begin);
 
-			if (out_offsets.back() != out_vec.size())
+			if (!out_offsets.empty() && out_offsets.back() != out_vec.size())
 				throw Exception("Column size mismatch (internal logical error)", ErrorCodes::LOGICAL_ERROR);
 
 			return true;
@@ -797,7 +797,7 @@ public:
 			}
 			out_vec.resize(pos - begin);
 
-			if (out_offsets.back() != out_vec.size())
+			if (!out_offsets.empty() && out_offsets.back() != out_vec.size())
 				throw Exception("Column size mismatch (internal logical error)", ErrorCodes::LOGICAL_ERROR);
 
 			return true;

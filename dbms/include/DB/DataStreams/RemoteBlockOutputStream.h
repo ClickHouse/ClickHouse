@@ -14,8 +14,8 @@ namespace DB
 class RemoteBlockOutputStream : public IBlockOutputStream
 {
 public:
-	RemoteBlockOutputStream(Connection & connection_, const String & query_)
-		: connection(connection_), query(query_)
+	RemoteBlockOutputStream(Connection & connection_, const String & query_, Settings * settings_ = nullptr)
+		: connection(connection_), query(query_), settings(settings_)
 	{
 	}
 
@@ -26,7 +26,7 @@ public:
 	  */
 	Block sendQueryAndGetSampleBlock()
 	{
-		connection.sendQuery(query);
+		connection.sendQuery(query, "", QueryProcessingStage::Complete, settings);
 		sent_query = true;
 
 		Connection::Packet packet = connection.receivePacket();
@@ -64,12 +64,12 @@ public:
 
 
 	/// Отправить блок данных, который уже был заранее сериализован (и, если надо, сжат), который следует прочитать из input-а.
-	void writePrepared(ReadBuffer & input)
+	void writePrepared(ReadBuffer & input, size_t size = 0)
 	{
 		if (!sent_query)
 			sendQueryAndGetSampleBlock();	/// Никак не можем использовать sample_block.
 
-		connection.sendPreparedData(input);
+		connection.sendPreparedData(input, size);
 	}
 
 
@@ -95,6 +95,7 @@ public:
 private:
 	Connection & connection;
 	String query;
+	Settings * settings;
 	Block sample_block;
 
 	bool sent_query = false;

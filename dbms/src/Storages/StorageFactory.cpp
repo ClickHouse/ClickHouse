@@ -176,16 +176,20 @@ StoragePtr StorageFactory::get(
 
 		ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
 
-		if (args.size() != 3)
-			throw Exception("Storage Distributed requires 3 parameters"
-				" - name of configuration section with list of remote servers, name of remote database, name of remote table.",
+		if (args.size() != 3 && args.size() != 4)
+			throw Exception("Storage Distributed requires 3 or 4 parameters"
+				" - name of configuration section with list of remote servers, name of remote database, name of remote table,"
+				" sharding key expression (optional).",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 		String cluster_name 	= typeid_cast<ASTIdentifier &>(*args[0]).name;
 		String remote_database 	= typeid_cast<ASTIdentifier &>(*args[1]).name;
 		String remote_table 	= typeid_cast<ASTIdentifier &>(*args[2]).name;
 
-		return StorageDistributed::create(table_name, columns, remote_database, remote_table, cluster_name, context);
+		const auto & sharding_key = args.size() == 4 ? args[3] : nullptr;
+
+		return StorageDistributed::create(
+			table_name, columns, remote_database, remote_table, cluster_name, context, sharding_key, data_path);
 	}
 	else if (endsWith(name, "MergeTree"))
 	{

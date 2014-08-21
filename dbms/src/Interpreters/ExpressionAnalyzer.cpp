@@ -40,7 +40,8 @@ namespace DB
 /** Calls to these functions in the GROUP BY statement would be
   * replaced by their immediate argument.
   */
-const std::unordered_set<String> injectiveFunctionNames{
+const std::unordered_set<String> injective_function_names
+{
 	"negate",
 	"bitNot",
 	"reverse",
@@ -68,8 +69,8 @@ void ExpressionAnalyzer::init()
 	/// Common subexpression elimination. Rewrite rules.
 	normalizeTree();
 
-	/// GROUP BY injective function elimination
-	eliminateInjectives();
+	/// GROUP BY injective function elimination.
+	optimizeGroupBy();
 
 	/// array_join_alias_to_name, array_join_result_to_source.
 	getArrayJoinedColumns();
@@ -122,7 +123,7 @@ void ExpressionAnalyzer::analyzeAggregation()
 		if (select_query->group_expression_list)
 		{
 			NameSet unique_keys;
-			const ASTs & group_asts = select_query->group_expression_list->children;
+			auto & group_asts = select_query->group_expression_list->children;
 			for (size_t i = 0; i < group_asts.size(); ++i)
 			{
 				getRootActions(group_asts[i], true, false, temp_actions);
@@ -135,6 +136,17 @@ void ExpressionAnalyzer::analyzeAggregation()
 
 				const auto & col = block.getByName(column_name);
 
+				/// constant expressions have non-null column pointer at this stage
+				if (const auto is_constexpr = col.column)
+				{
+					if (i < group_asts.size() - 1)
+						group_asts[i] = std::move(group_asts.back());
+
+					group_asts.pop_back();
+					i -= 1;
+					continue;
+				}
+
 				NameAndTypePair key{column_name, col.type};
 				aggregation_keys.push_back(key);
 
@@ -144,6 +156,12 @@ void ExpressionAnalyzer::analyzeAggregation()
 					/// key is no longer needed, therefore we can save a little by moving it
 					aggregated_columns.push_back(std::move(key));
 				}
+			}
+
+			if (group_asts.empty())
+			{
+				select_query->group_expression_list = nullptr;
+				has_aggregation = select_query->having_expression || aggregate_descriptions.size();
 			}
 		}
 
@@ -426,7 +444,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 }
 
 
-void ExpressionAnalyzer::eliminateInjectives()
+void ExpressionAnalyzer::optimizeGroupBy()
 {
 	if (!(select_query && select_query->group_expression_list))
 		return;
@@ -438,7 +456,8 @@ void ExpressionAnalyzer::eliminateInjectives()
 	auto & group_exprs = select_query->group_expression_list->children;
 
 	/// removes expression at index idx by making it last one and calling .pop_back()
-	const auto remove_expr_at_index = [&group_exprs] (const size_t idx) {
+	const auto remove_expr_at_index = [&group_exprs] (const size_t idx)
+	{
 		if (idx < group_exprs.size() - 1)
 			group_exprs[idx] = std::move(group_exprs.back());
 
@@ -446,13 +465,16 @@ void ExpressionAnalyzer::eliminateInjectives()
 	};
 
 	/// iterate over each GROUP BY expression, eliminate injective function calls and literals
-	for (size_t i = 0; i < group_exprs.size(); ++i)
+	for (size_t i = 0; i < group_exprs.size();)
 	{
 		if (const auto function = typeid_cast<ASTFunction*>(group_exprs[i].get()))
 		{
 			/// assert function is injective
-			if (!injectiveFunctionNames.count(function->name))
+			if (!injective_function_names.count(function->name))
+			{
+				++i;
 				continue;
+			}
 
 			/// copy shared pointer to args in order to ensure lifetime
 			auto args_ast = function->arguments;
@@ -461,7 +483,6 @@ void ExpressionAnalyzer::eliminateInjectives()
 			  * next iteration does not skip not yet processed data
 			  */
 			remove_expr_at_index(i);
-			i -= 1;
 
 			/// copy non-literal arguments
 			std::remove_copy_if(
@@ -469,7 +490,19 @@ void ExpressionAnalyzer::eliminateInjectives()
 				std::back_inserter(group_exprs), is_literal
 			);
 		}
+		else if (is_literal(group_exprs[i]))
+		{
+			remove_expr_at_index(i);
+		}
+		else
+		{
+			/// if neither a function nor literal - advance to next expression
+			++i;
+		}
 	}
+
+	if (group_exprs.empty())
+		select_query->group_expression_list = nullptr;
 }
 
 
@@ -997,7 +1030,6 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 						ColumnWithNameAndType fake_column;
 						fake_column.name = node->getColumnName();
 						fake_column.type = new DataTypeUInt8;
-						fake_column.column = new ColumnConstUInt8(1, 0);
 						actions_stack.addAction(ExpressionAction::addColumn(fake_column));
 						getActionsImpl(node->arguments->children.at(0), no_subqueries, only_consts, actions_stack);
 					}

@@ -26,7 +26,7 @@ struct StringRef
 
 typedef std::vector<StringRef> StringRefs;
 
-inline bool operator==(StringRef lhs, StringRef rhs)
+inline bool operator== (StringRef lhs, StringRef rhs)
 {
 	/// Так почему-то быстрее, чем return lhs.size == rhs.size && 0 == memcmp(lhs.data, rhs.data, lhs.size);
 
@@ -40,18 +40,21 @@ inline bool operator==(StringRef lhs, StringRef rhs)
 	return true;
 }
 
-inline bool operator!=(StringRef lhs, StringRef rhs)
+inline bool operator!= (StringRef lhs, StringRef rhs)
 {
 	return !(lhs == rhs);
 }
 
-inline bool operator<(StringRef lhs, StringRef rhs)
+inline bool operator< (StringRef lhs, StringRef rhs)
 {
 	int cmp = memcmp(lhs.data, rhs.data, std::min(lhs.size, rhs.size));
-	if (cmp == 0)
-		return lhs.size < rhs.size;
-	else
-		return cmp < 0;
+	return cmp < 0 || (cmp == 0 && lhs.size < rhs.size);
+}
+
+inline bool operator> (StringRef lhs, StringRef rhs)
+{
+	int cmp = memcmp(lhs.data, rhs.data, std::min(lhs.size, rhs.size));
+	return cmp > 0 || (cmp == 0 && lhs.size > rhs.size);
 }
 
 

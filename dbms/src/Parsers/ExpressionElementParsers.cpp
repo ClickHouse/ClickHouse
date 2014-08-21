@@ -77,7 +77,7 @@ bool ParserParenthesisExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, E
 	/// пустое выражение в скобках недопустимо
 	if (expr_list.children.empty())
 	{
-		expected = "not empty list of expressions in parenthesis";
+		expected = "non-empty parenthesized list of expressions";
 		return false;
 	}
 

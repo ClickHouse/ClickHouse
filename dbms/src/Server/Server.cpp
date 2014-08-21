@@ -373,6 +373,9 @@ int Server::main(const std::vector<std::string> & args)
 	if (config().has("replica_name"))
 		global_context->setDefaultReplicaName(config().getString("replica_name"));
 
+	if (config().has("macros"))
+		global_context->setMacros(Macros(config(), "macros"));
+
 	std::string users_config_path = config().getString("users_config", config().getString("config-file", "config.xml"));
 	auto users_config_reloader = stdext::make_unique<UsersConfigReloader>(users_config_path, global_context.get());
 

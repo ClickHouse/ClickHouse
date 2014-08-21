@@ -161,8 +161,7 @@ public:
 
 	void insertDefault()
 	{
-		data->insertDefault();
-		getOffsets().push_back(getOffsets().size() == 0 ? 1 : (getOffsets().back() + 1));
+		getOffsets().push_back(getOffsets().size() == 0 ? 0 : getOffsets().back());
 	}
 
 	ColumnPtr filter(const Filter & filt) const
@@ -387,6 +386,10 @@ private:
 			throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
 		ColumnPtr res = cloneEmpty();
+
+		if (0 == col_size)
+			return res;
+
 		ColumnArray & res_ = typeid_cast<ColumnArray &>(*res);
 
 		const typename ColumnVector<T>::Container_t & cur_data = typeid_cast<const ColumnVector<T> &>(*data).getData();
@@ -431,6 +434,10 @@ private:
 			throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
 		ColumnPtr res = cloneEmpty();
+
+		if (0 == col_size)
+			return res;
+
 		ColumnArray & res_ = typeid_cast<ColumnArray &>(*res);
 
 		const ColumnString & cur_string = typeid_cast<const ColumnString &>(*data);

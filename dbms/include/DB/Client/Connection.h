@@ -97,7 +97,8 @@ public:
 	void sendExternalTablesData(ExternalTablesData & data);
 
 	/// Отправить блок данных, который уже был заранее сериализован (и, если надо, сжат), который следует прочитать из input-а.
-	void sendPreparedData(ReadBuffer & input, const String & name = "");
+	/// можно передать размер сериализованного/сжатого блока.
+	void sendPreparedData(ReadBuffer & input, size_t size,  const String & name = "");
 
 	/// Проверить, есть ли данные, которые можно прочитать.
 	bool poll(size_t timeout_microseconds = 0);

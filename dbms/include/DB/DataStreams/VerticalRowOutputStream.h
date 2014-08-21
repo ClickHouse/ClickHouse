@@ -25,6 +25,8 @@ public:
 	void writeRowStartDelimiter();
 	void writeRowBetweenDelimiter();
 
+	void flush() { ostr.next(); }
+
 private:
 	WriteBuffer & ostr;
 	const Block sample;
