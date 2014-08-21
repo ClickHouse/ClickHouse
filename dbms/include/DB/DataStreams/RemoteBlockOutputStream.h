@@ -64,12 +64,12 @@ public:
 
 
 	/// Отправить блок данных, который уже был заранее сериализован (и, если надо, сжат), который следует прочитать из input-а.
-	void writePrepared(ReadBuffer & input)
+	void writePrepared(ReadBuffer & input, size_t size = 0)
 	{
 		if (!sent_query)
 			sendQueryAndGetSampleBlock();	/// Никак не можем использовать sample_block.
 
-		connection.sendPreparedData(input);
+		connection.sendPreparedData(input, size);
 	}
 
 
