@@ -402,6 +402,7 @@ int Server::main(const std::vector<std::string> & args)
 
 	global_context->addTable("system", "one",		StorageSystemOne::create("one"));
 	global_context->addTable("system", "numbers", 	StorageSystemNumbers::create("numbers"));
+	global_context->addTable("system", "numbers_mt", StorageSystemNumbers::create("numbers_mt", true));
 	global_context->addTable("system", "tables", 	StorageSystemTables::create("tables", *global_context));
 	global_context->addTable("system", "parts", 	StorageSystemParts::create("parts", *global_context));
 	global_context->addTable("system", "databases", StorageSystemDatabases::create("databases", *global_context));

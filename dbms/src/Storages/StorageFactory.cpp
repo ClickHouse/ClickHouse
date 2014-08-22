@@ -311,22 +311,6 @@ StoragePtr StorageFactory::get(
 				columns, context, primary_expr_list, date_column_name,
 				sampling_expression, index_granularity, mode, sign_column_name);
 	}
-	else if (name == "SystemNumbers")
-	{
-		if (columns->size() != 1 || columns->begin()->name != "number" || columns->begin()->type->getName() != "UInt64")
-			throw Exception("Storage SystemNumbers only allows one column with name 'number' and type 'UInt64'",
-				ErrorCodes::ILLEGAL_COLUMN);
-
-		return StorageSystemNumbers::create(table_name);
-	}
-	else if (name == "SystemOne")
-	{
-		if (columns->size() != 1 || columns->begin()->name != "dummy" || columns->begin()->type->getName() != "UInt8")
-			throw Exception("Storage SystemOne only allows one column with name 'dummy' and type 'UInt8'",
-				ErrorCodes::ILLEGAL_COLUMN);
-
-		return StorageSystemOne::create(table_name);
-	}
 	else
 		throw Exception("Unknown storage " + name, ErrorCodes::UNKNOWN_STORAGE);
 }
