@@ -164,7 +164,7 @@ void ExpressionAction::prepare(Block & sample_block)
 		if (type == COPY_COLUMN)
 			result_type = sample_block.getByName(source_name).type;
 
-		execute(sample_block);
+		sample_block.insert(ColumnWithNameAndType(sample_block.getByName(source_name).column, result_type, result_name));
 	}
 }
 
@@ -366,24 +366,27 @@ void ExpressionActions::checkLimits(Block & block) const
 	const Limits & limits = settings.limits;
 	if (limits.max_temporary_columns && block.columns() > limits.max_temporary_columns)
 		throw Exception("Too many temporary columns: " + block.dumpNames()
-		+ ". Maximum: " + toString(limits.max_temporary_columns),
-						ErrorCodes::TOO_MUCH_TEMPORARY_COLUMNS);
+			+ ". Maximum: " + toString(limits.max_temporary_columns),
+			ErrorCodes::TOO_MUCH_TEMPORARY_COLUMNS);
 
-	size_t non_const_columns = 0;
-	for (size_t i = 0, size = block.columns(); i < size; ++i)
-		if (block.getByPosition(i).column && !block.getByPosition(i).column->isConst())
-			++non_const_columns;
-
-	if (limits.max_temporary_non_const_columns && non_const_columns > limits.max_temporary_non_const_columns)
+	if (limits.max_temporary_non_const_columns)
 	{
-		std::stringstream list_of_non_const_columns;
+		size_t non_const_columns = 0;
 		for (size_t i = 0, size = block.columns(); i < size; ++i)
-			if (!block.getByPosition(i).column->isConst())
-				list_of_non_const_columns << (i == 0 ? "" : ", ") << block.getByPosition(i).name;
+			if (block.getByPosition(i).column && !block.getByPosition(i).column->isConst())
+				++non_const_columns;
 
-			throw Exception("Too many temporary non-const columns: " + list_of_non_const_columns.str()
-			+ ". Maximum: " + toString(limits.max_temporary_non_const_columns),
-							ErrorCodes::TOO_MUCH_TEMPORARY_NON_CONST_COLUMNS);
+		if (non_const_columns > limits.max_temporary_non_const_columns)
+		{
+			std::stringstream list_of_non_const_columns;
+			for (size_t i = 0, size = block.columns(); i < size; ++i)
+				if (!block.getByPosition(i).column->isConst())
+					list_of_non_const_columns << (i == 0 ? "" : ", ") << block.getByPosition(i).name;
+
+				throw Exception("Too many temporary non-const columns: " + list_of_non_const_columns.str()
+					+ ". Maximum: " + toString(limits.max_temporary_non_const_columns),
+					ErrorCodes::TOO_MUCH_TEMPORARY_NON_CONST_COLUMNS);
+		}
 	}
 }
 
@@ -600,7 +603,6 @@ void ExpressionActions::finalize(const Names & output_columns)
 				}
 
 				unmodified_columns.erase(out);
-
 				needed_columns.erase(out);
 			}
 
@@ -638,6 +640,7 @@ void ExpressionActions::finalize(const Names & output_columns)
 	optimize();
 	checkLimits(sample_block);
 }
+
 
 std::string ExpressionActions::getID() const
 {
