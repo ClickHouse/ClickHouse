@@ -12,6 +12,7 @@
 #include <statdaemons/stdext.h>
 
 #include <iostream>
+#include <type_traits>
 
 namespace DB
 {
@@ -48,11 +49,17 @@ private:
 		const auto num_shards = cluster.shard_info_vec.size();
 		std::vector<IColumn::Filter> filters(num_shards);
 
+		/** Деление отрицательного числа с остатком на положительное, в C++ даёт отрицательный остаток.
+		  * Для данной задачи это не подходит. Поэтому, будем обрабатывать знаковые типы как беззнаковые.
+		  * Это даёт уже что-то совсем не похожее на деление с остатком, но подходящее для данной задачи.
+		  */
+		using UnsignedT = typename std::make_unsigned<T>::type;
+
 		/// const columns contain only one value, therefore we do not need to read it at every iteration
 		if (column->isConst())
 		{
 			const auto data = typeid_cast<const ColumnConst<T> *>(column)->getData();
-			const auto shard_num = cluster.slot_to_shard[data % total_weight];
+			const auto shard_num = cluster.slot_to_shard[static_cast<UnsignedT>(data) % total_weight];
 
 			for (size_t i = 0; i < num_shards; ++i)
 				filters[i].assign(num_rows, static_cast<UInt8>(shard_num == i));
@@ -65,7 +72,7 @@ private:
 			{
 				filters[i].resize(num_rows);
 				for (size_t j = 0; j < num_rows; ++j)
-					filters[i][j] = cluster.slot_to_shard[data[j] % total_weight] == i;
+					filters[i][j] = cluster.slot_to_shard[static_cast<UnsignedT>(data[j]) % total_weight] == i;
 			}
 		}
 
