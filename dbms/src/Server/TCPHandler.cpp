@@ -42,7 +42,7 @@ void TCPHandler::runImpl()
 	socket().setReceiveTimeout(global_settings.receive_timeout);
 	socket().setSendTimeout(global_settings.send_timeout);
 	socket().setNoDelay(true);
-	
+
 	in = new ReadBufferFromPocoSocket(socket());
 	out = new WriteBufferFromPocoSocket(socket());
 
@@ -82,7 +82,7 @@ void TCPHandler::runImpl()
 
 		connection_context.setCurrentDatabase(default_database);
 	}
-	
+
 	sendHello();
 
 	connection_context.setProgressCallback([this] (const size_t rows, const size_t bytes) {
@@ -98,7 +98,7 @@ void TCPHandler::runImpl()
 		/// Если требуется завершить работу, или клиент отсоединился.
 		if (Daemon::instance().isCancelled() || in->eof())
 			break;
-		
+
 		Stopwatch watch;
 		state.reset();
 
@@ -106,7 +106,7 @@ void TCPHandler::runImpl()
 		  * Клиент сможет его принять, если оно не произошло во время отправки другого пакета и клиент ещё не разорвал соединение.
 		  */
 		SharedPtr<Exception> exception;
-		
+
 		try
 		{
 			/// Восстанавливаем контекст запроса.
@@ -271,7 +271,7 @@ void TCPHandler::processOrdinaryQuery()
 		while (true)
 		{
 			Block block;
-			
+
 			while (true)
 			{
 				if (isQueryCancelled())
@@ -288,7 +288,7 @@ void TCPHandler::processOrdinaryQuery()
 						after_send_progress.restart();
 						sendProgress();
 					}
-				
+
 					if (async_in.poll(query_context.getSettingsRef().interactive_delay / 1000))
 					{
 						/// Есть следующий блок результата.
@@ -308,8 +308,8 @@ void TCPHandler::processOrdinaryQuery()
 				sendProfileInfo();
 				sendProgress();
 			}
-			
-			sendData(block);			
+
+			sendData(block);
 			if (!block)
 				break;
 		}

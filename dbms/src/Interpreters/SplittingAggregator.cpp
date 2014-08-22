@@ -1,7 +1,5 @@
 #include <iomanip>
 
-#include <statdaemons/Stopwatch.h>
-
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnFixedString.h>
 
@@ -14,8 +12,6 @@ namespace DB
 
 void SplittingAggregator::execute(BlockInputStreamPtr stream, ManyAggregatedDataVariants & results)
 {
-	//Stopwatch watch;
-
 	/// Читаем все данные
 	while (Block block = stream->read())
 	{
@@ -90,10 +86,6 @@ void SplittingAggregator::execute(BlockInputStreamPtr stream, ManyAggregatedData
 
 		/// Параллельно вычисляем хэши и ключи.
 
-	//	LOG_TRACE(log, "Calculating keys and hashes.");
-
-	//	watch.start();
-
 		for (size_t thread_no = 0; thread_no < threads; ++thread_no)
 			pool.schedule(boost::bind(&SplittingAggregator::calculateHashesThread, this,
 				boost::ref(block),
@@ -106,12 +98,7 @@ void SplittingAggregator::execute(BlockInputStreamPtr stream, ManyAggregatedData
 
 		rethrowFirstException(exceptions);
 
-	//	LOG_TRACE(log, "Calculated keys and hashes in " << std::fixed << std::setprecision(2) << watch.elapsedSeconds() << " sec.");
-	//	watch.restart();
-
 		/// Параллельно агрегируем в независимые хэш-таблицы
-
-	//	LOG_TRACE(log, "Parallel aggregating.");
 
 		for (size_t thread_no = 0; thread_no < threads; ++thread_no)
 			pool.schedule(boost::bind(&SplittingAggregator::aggregateThread, this,
@@ -124,8 +111,6 @@ void SplittingAggregator::execute(BlockInputStreamPtr stream, ManyAggregatedData
 		pool.wait();
 
 		rethrowFirstException(exceptions);
-
-	//	LOG_TRACE(log, "Parallel aggregated in " << std::fixed << std::setprecision(2) << watch.elapsedSeconds() << " sec.");
 
 		/// Проверка ограничений
 

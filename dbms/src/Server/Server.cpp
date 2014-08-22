@@ -370,9 +370,6 @@ int Server::main(const std::vector<std::string> & args)
 		global_context->setInterserverIOHost(this_host, port);
 	}
 
-	if (config().has("replica_name"))
-		global_context->setDefaultReplicaName(config().getString("replica_name"));
-
 	if (config().has("macros"))
 		global_context->setMacros(Macros(config(), "macros"));
 
