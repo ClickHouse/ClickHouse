@@ -6,7 +6,7 @@ namespace DB
 
 void registerFunctionsRound(FunctionFactory & factory)
 {
-	#define F [](const Context & context)
+	#define F [](const Context & context) -> IFunction*
 
 	factory.registerFunction("roundToExp2", 	F { return new FunctionRoundToExp2; });
 	factory.registerFunction("roundDuration", 	F { return new FunctionRoundDuration; });

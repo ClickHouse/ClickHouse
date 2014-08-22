@@ -6,7 +6,7 @@ namespace DB
 
 void registerFunctionsFormatting(FunctionFactory & factory)
 {
-	#define F [](const Context & context)
+	#define F [](const Context & context) -> IFunction*
 
 	factory.registerFunction("bitmaskToList", 	F { return new FunctionBitmaskToList; });
 

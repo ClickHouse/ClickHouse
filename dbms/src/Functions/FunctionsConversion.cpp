@@ -6,7 +6,7 @@ namespace DB
 
 void registerFunctionsConversion(FunctionFactory & factory)
 {
-	#define F [](const Context & context)
+	#define F [](const Context & context) -> IFunction*
 
 	factory.registerFunction("toUInt8", 		F { return new FunctionToUInt8; });
 	factory.registerFunction("toUInt16", 		F { return new FunctionToUInt16; });

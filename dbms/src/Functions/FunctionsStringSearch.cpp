@@ -6,7 +6,7 @@ namespace DB
 
 void registerFunctionsStringSearch(FunctionFactory & factory)
 {
-	#define F [](const Context & context)
+	#define F [](const Context & context) -> IFunction*
 
 	factory.registerFunction("replaceOne", 			F { return new FunctionReplaceOne; });
 	factory.registerFunction("replaceAll", 			F { return new FunctionReplaceAll; });

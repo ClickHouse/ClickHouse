@@ -6,7 +6,7 @@ namespace DB
 
 void registerFunctionsStringArray(FunctionFactory & factory)
 {
-	#define F [](const Context & context)
+	#define F [](const Context & context) -> IFunction*
 
 	factory.registerFunction("extractAll", 		F { return new FunctionExtractAll; });
 	factory.registerFunction("alphaTokens", 	F { return new FunctionAlphaTokens; });

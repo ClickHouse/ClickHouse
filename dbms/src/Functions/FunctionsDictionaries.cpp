@@ -6,7 +6,7 @@ namespace DB
 
 void registerFunctionsDictionaries(FunctionFactory & factory)
 {
-	#define F [](const Context & context)
+	#define F [](const Context & context) -> IFunction*
 
 	factory.registerFunction("regionToCity",
 		F { return new FunctionRegionToCity(context.getDictionaries().getRegionsHierarchies()); });

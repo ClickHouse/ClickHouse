@@ -6,7 +6,7 @@ namespace DB
 
 void registerFunctionsString(FunctionFactory & factory)
 {
-	#define F [](const Context & context)
+	#define F [](const Context & context) -> IFunction*
 
 	factory.registerFunction("empty", 			F { return new FunctionEmpty; });
 	factory.registerFunction("notEmpty", 		F { return new FunctionNotEmpty; });

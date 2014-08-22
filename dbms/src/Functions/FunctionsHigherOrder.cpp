@@ -6,7 +6,7 @@ namespace DB
 
 void registerFunctionsHigherOrder(FunctionFactory & factory)
 {
-	#define F [](const Context & context)
+	#define F [](const Context & context) -> IFunction*
 
 	factory.registerFunction("arrayMap", 		F { return new FunctionArrayMap; });
 	factory.registerFunction("arrayFilter", 	F { return new FunctionArrayFilter; });

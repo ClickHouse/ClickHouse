@@ -6,7 +6,7 @@ namespace DB
 
 void registerFunctionsCoding(FunctionFactory & factory)
 {
-	#define F [](const Context & context)
+	#define F [](const Context & context) -> IFunction*
 
 	factory.registerFunction("toStringCutToZero", 	F { return new FunctionToStringCutToZero; });
 	factory.registerFunction("IPv4NumToString", 	F { return new FunctionIPv4NumToString; });

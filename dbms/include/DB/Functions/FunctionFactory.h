@@ -17,7 +17,7 @@ class Context;
 class FunctionFactory
 {
 private:
-	typedef std::function<IFunction* (const Context & context)> Creator;
+	typedef IFunction* (*Creator)(const Context & context);	/// Не std::function, так как меньше indirection и размер объекта.
 	std::unordered_map<String, Creator> functions;
 
 public:

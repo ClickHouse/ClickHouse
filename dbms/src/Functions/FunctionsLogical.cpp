@@ -6,7 +6,7 @@ namespace DB
 
 void registerFunctionsLogical(FunctionFactory & factory)
 {
-	#define F [](const Context & context)
+	#define F [](const Context & context) -> IFunction*
 
 	factory.registerFunction("and", F { return new FunctionAnd; });
 	factory.registerFunction("or", 	F { return new FunctionOr; });

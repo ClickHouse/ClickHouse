@@ -6,7 +6,7 @@ namespace DB
 
 void registerFunctionsReinterpret(FunctionFactory & factory)
 {
-	#define F [](const Context & context)
+	#define F [](const Context & context) -> IFunction*
 
 	factory.registerFunction("reinterpretAsUInt8",		F { return new FunctionReinterpretAsUInt8; });
 	factory.registerFunction("reinterpretAsUInt16", 	F { return new FunctionReinterpretAsUInt16; });

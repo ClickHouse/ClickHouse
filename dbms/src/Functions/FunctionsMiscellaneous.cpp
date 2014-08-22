@@ -305,7 +305,7 @@ namespace DB
 
 void registerFunctionsMiscellaneous(FunctionFactory & factory)
 {
-	#define F [](const Context & context)
+	#define F [](const Context & context) -> IFunction*
 
 	factory.registerFunction("hostName", 		F { return new FunctionHostName; });
 	factory.registerFunction("visibleWidth", 	F { return new FunctionVisibleWidth; });

@@ -7,7 +7,7 @@ namespace DB
 
 void registerFunctionsHashing(FunctionFactory & factory)
 {
-	#define F [](const Context & context)
+	#define F [](const Context & context) -> IFunction*
 
 	factory.registerFunction("halfMD5", 	F { return new FunctionHalfMD5; });
 	factory.registerFunction("sipHash64", 	F { return new FunctionSipHash64; });

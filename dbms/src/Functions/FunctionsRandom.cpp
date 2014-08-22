@@ -6,7 +6,7 @@ namespace DB
 
 void registerFunctionsRandom(FunctionFactory & factory)
 {
-	#define F [](const Context & context)
+	#define F [](const Context & context) -> IFunction*
 
 	factory.registerFunction("rand", 	F { return new FunctionRand; });
 	factory.registerFunction("rand64", 	F { return new FunctionRand64; });

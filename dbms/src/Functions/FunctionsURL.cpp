@@ -6,7 +6,7 @@ namespace DB
 
 void registerFunctionsURL(FunctionFactory & factory)
 {
-	#define F [](const Context & context)
+	#define F [](const Context & context) -> IFunction*
 
 	factory.registerFunction("protocol", 					F { return new FunctionProtocol; });
 	factory.registerFunction("domain", 						F { return new FunctionDomain; });

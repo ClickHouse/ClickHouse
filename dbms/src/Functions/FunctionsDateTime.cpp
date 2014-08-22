@@ -6,7 +6,7 @@ namespace DB
 
 void registerFunctionsDateTime(FunctionFactory & factory)
 {
-	#define F [](const Context & context)
+	#define F [](const Context & context) -> IFunction*
 
 	factory.registerFunction("toYear", 				F { return new FunctionToYear; });
 	factory.registerFunction("toMonth",				F { return new FunctionToMonth; });

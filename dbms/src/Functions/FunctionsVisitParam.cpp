@@ -6,7 +6,7 @@ namespace DB
 
 void registerFunctionsVisitParam(FunctionFactory & factory)
 {
-	#define F [](const Context & context)
+	#define F [](const Context & context) -> IFunction*
 
 	factory.registerFunction("visitParamHas", 				F { return new FunctionVisitParamHas; });
 	factory.registerFunction("visitParamExtractUInt", 		F { return new FunctionVisitParamExtractUInt; });

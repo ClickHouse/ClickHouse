@@ -6,7 +6,7 @@ namespace DB
 
 void registerFunctionsComparison(FunctionFactory & factory)
 {
-	#define F [](const Context & context)
+	#define F [](const Context & context) -> IFunction*
 
 	factory.registerFunction("equals", 			F { return new FunctionEquals; });
 	factory.registerFunction("notEquals", 		F { return new FunctionNotEquals; });

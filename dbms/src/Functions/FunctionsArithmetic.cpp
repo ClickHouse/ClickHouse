@@ -6,7 +6,7 @@ namespace DB
 
 void registerFunctionsArithmetic(FunctionFactory & factory)
 {
-	#define F [](const Context & context)
+	#define F [](const Context & context) -> IFunction*
 
 	factory.registerFunction("plus", 			F { return new FunctionPlus; });
 	factory.registerFunction("minus", 			F { return new FunctionMinus; });
