@@ -238,49 +238,51 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 		  *  выбрасывать ненужные столбцы с учетом всего запроса. В ненужных частях запроса не будем выполнять подзапросы.
 		  */
 
-		ExpressionActionsChain chain;
-
-		need_aggregate = query_analyzer->hasAggregation();
-
-		query_analyzer->appendArrayJoin(chain, !first_stage);
-		query_analyzer->appendJoin(chain, !first_stage);
-
-		if (query_analyzer->appendWhere(chain, !first_stage))
 		{
-			has_where = true;
-			before_where = chain.getLastActions();
+			ExpressionActionsChain chain;
+
+			need_aggregate = query_analyzer->hasAggregation();
+
+			query_analyzer->appendArrayJoin(chain, !first_stage);
+			query_analyzer->appendJoin(chain, !first_stage);
+
+			if (query_analyzer->appendWhere(chain, !first_stage))
+			{
+				has_where = true;
+				before_where = chain.getLastActions();
+				chain.addStep();
+			}
+
+			if (need_aggregate)
+			{
+				query_analyzer->appendGroupBy(chain, !first_stage);
+				query_analyzer->appendAggregateFunctionsArguments(chain, !first_stage);
+				before_aggregation = chain.getLastActions();
+
+				chain.finalize();
+				chain.clear();
+
+				if (query_analyzer->appendHaving(chain, !second_stage))
+				{
+					has_having = true;
+					before_having = chain.getLastActions();
+					chain.addStep();
+				}
+			}
+
+			/// Если есть агрегация, выполняем выражения в SELECT и ORDER BY на инициировавшем сервере, иначе - на серверах-источниках.
+			query_analyzer->appendSelect(chain, need_aggregate ? !second_stage : !first_stage);
+			selected_columns = chain.getLastStep().required_output;
+			has_order_by = query_analyzer->appendOrderBy(chain, need_aggregate ? !second_stage : !first_stage);
+			before_order_and_select = chain.getLastActions();
 			chain.addStep();
-		}
 
-		if (need_aggregate)
-		{
-			query_analyzer->appendGroupBy(chain, !first_stage);
-			query_analyzer->appendAggregateFunctionsArguments(chain, !first_stage);
-			before_aggregation = chain.getLastActions();
+			query_analyzer->appendProjectResult(chain, !second_stage);
+			final_projection = chain.getLastActions();
 
 			chain.finalize();
 			chain.clear();
-
-			if (query_analyzer->appendHaving(chain, !second_stage))
-			{
-				has_having = true;
-				before_having = chain.getLastActions();
-				chain.addStep();
-			}
 		}
-
-		/// Если есть агрегация, выполняем выражения в SELECT и ORDER BY на инициировавшем сервере, иначе - на серверах-источниках.
-		query_analyzer->appendSelect(chain, need_aggregate ? !second_stage : !first_stage);
-		selected_columns = chain.getLastStep().required_output;
-		has_order_by = query_analyzer->appendOrderBy(chain, need_aggregate ? !second_stage : !first_stage);
-		before_order_and_select = chain.getLastActions();
-		chain.addStep();
-
-		query_analyzer->appendProjectResult(chain, !second_stage);
-		final_projection = chain.getLastActions();
-
-		chain.finalize();
-		chain.clear();
 
 		/// Перед выполнением HAVING уберем из блока лишние столбцы (в основном, ключи агрегации).
 		if (has_having)
