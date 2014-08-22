@@ -20,7 +20,7 @@ namespace
 
 		for (auto it = boost::make_split_iterator(name, boost::first_finder(",")); it != decltype(it){}; ++it)
 		{
-			const auto & address = boost::copy_range<std::string>(*it);
+			const auto address = boost::copy_range<std::string>(*it);
 
 			const auto user_pw_end = strchr(address.data(), '@');
 			const auto colon = strchr(address.data(), ':');
@@ -65,8 +65,8 @@ public:
 	~DirectoryMonitor()
 	{
 		{
-			std::lock_guard<std::mutex> lock{mutex};
 			quit = true;
+			std::lock_guard<std::mutex> lock{mutex};
 		}
 		cond.notify_one();
 		thread.join();
