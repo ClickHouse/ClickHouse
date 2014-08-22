@@ -57,8 +57,8 @@ typedef std::vector<DatabaseAndTableName> Dependencies;
   */
 struct ContextShared
 {
-	Logger * log;											/// Логгер.
-	
+	Logger * log = &Logger::get("Context");					/// Логгер.
+
 	struct AfterDestroy
 	{
 		Logger * log;
@@ -70,7 +70,7 @@ struct ContextShared
 			LOG_INFO(log, "Uninitialized shared context.");
 #endif
 		}
-	} after_destroy;
+	} after_destroy {log};
 
 	mutable Poco::Mutex mutex;								/// Для доступа и модификации разделяемых объектов.
 
@@ -106,8 +106,6 @@ struct ContextShared
 
 	bool shutdown_called = false;
 
-
-	ContextShared() : log(&Logger::get("Context")), after_destroy(log) {};
 
 	~ContextShared()
 	{
@@ -229,7 +227,7 @@ public:
 
 	/// Возвращает отцепленную таблицу.
 	StoragePtr detachTable(const String & database_name, const String & table_name);
-	
+
 	void detachDatabase(const String & database_name);
 
 	String getCurrentDatabase() const;

@@ -1,8 +1,8 @@
 #pragma once
 
-#include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/Columns/ColumnString.h>
+#include <DB/Columns/ColumnFixedString.h>
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Functions/IFunction.h>
