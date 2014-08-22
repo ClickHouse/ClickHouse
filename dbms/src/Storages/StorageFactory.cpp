@@ -268,11 +268,7 @@ StoragePtr StorageFactory::get(
 				throw Exception("Replica name must be a string literal", ErrorCodes::BAD_ARGUMENTS);
 
 			if (replica_name.empty())
-			{
-				replica_name = context.getDefaultReplicaName();
-				if (replica_name.empty())
-					throw Exception("No replica name in config", ErrorCodes::NO_REPLICA_NAME_GIVEN);
-			}
+				throw Exception("No replica name in config", ErrorCodes::NO_REPLICA_NAME_GIVEN);
 
 			args.erase(args.begin(), args.begin() + 2);
 		}

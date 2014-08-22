@@ -96,7 +96,6 @@ struct ContextShared
 	ViewDependencies view_dependencies;						/// Текущие зависимости
 	ConfigurationPtr users_config;							/// Конфиг с секциями users, profiles и quotas.
 	InterserverIOHandler interserver_io_handler;			/// Обработчик для межсерверной передачи данных.
-	String default_replica_name;							/// Имя реплики из конфига. DEPRECATED
 	BackgroundProcessingPoolPtr background_pool;			/// Пул потоков для фоновой работы, выполняемой таблицами.
 	Macros macros;											/// Подстановки из конфига.
 
@@ -237,10 +236,6 @@ public:
 
 	String getDefaultFormat() const;	/// Если default_format не задан - возвращается некоторый глобальный формат по-умолчанию.
 	void setDefaultFormat(const String & name);
-
-	/// Имя этой реплики из конфига.
-	String getDefaultReplicaName() const;
-	void setDefaultReplicaName(const String & name);
 
 	const Macros & getMacros() const;
 	void setMacros(Macros && macros);
