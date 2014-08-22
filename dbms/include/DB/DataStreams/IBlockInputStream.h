@@ -63,7 +63,6 @@ public:
 	BlockInputStreams & getChildren() { return children; }
 	
 	void dumpTree(std::ostream & ostr, size_t indent = 0, size_t multiplier = 1);
-	void dumpTreeWithProfile(std::ostream & ostr, size_t indent = 0);
 
 	/// Получить листовые источники (не считая этот).
 	BlockInputStreams getLeaves();
