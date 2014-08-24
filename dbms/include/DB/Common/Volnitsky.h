@@ -21,7 +21,7 @@
   * - ищем её в хэш-таблице, если нашли - достаём смещение из хэш-таблицы и сравниваем строку побайтово;
   * - если сравнить не получилось - проверяем следующую ячейку хэш-таблицы из цепочки разрешения коллизий;
   * - если не нашли, пропускаем в haystack почти размер needle байт;
-  * 
+  *
   * Используется невыровненный доступ к памяти.
   */
 class Volnitsky
@@ -35,7 +35,7 @@ private:
 	const char * needle_end;
 	size_t step;				/// Насколько двигаемся, если n-грамма из haystack не нашлась в хэш-таблице.
 
-	static const size_t hash_size = 64 * 1024;	/// Обычно помещается в L1-кэш, хотя занимает его целиком.
+	static const size_t hash_size = 64 * 1024;	/// Помещается в L2-кэш.
 	offset_t hash[hash_size];	/// Хэш-таблица.
 
 	bool fallback;				/// Нужно ли использовать fallback алгоритм.
@@ -57,7 +57,7 @@ public:
 		}
 		else
 			fallback = false;
-		
+
 		memset(hash, 0, hash_size * sizeof(hash[0]));
 
 		for (int i = needle_size - sizeof(ngram_t); i >= 0; --i)
