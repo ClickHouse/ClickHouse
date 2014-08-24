@@ -91,7 +91,7 @@ struct AggregationMethodKey64
 
 	/** Разместить дополнительные данные, если это необходимо, в случае, когда в хэш-таблицу был вставлен новый ключ.
 	  */
-	void onNewKey(iterator & it, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
+	static void onNewKey(iterator & it, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
 	{
 	}
 
@@ -139,7 +139,7 @@ struct AggregationMethodString
 	static AggregateDataPtr & getAggregateData(Mapped & value) 				{ return value; }
 	static const AggregateDataPtr & getAggregateData(const Mapped & value) 	{ return value; }
 
-	void onNewKey(iterator & it, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
+	static void onNewKey(iterator & it, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
 	{
 		it->first.data = pool.insert(it->first.data, it->first.size);
 	}
@@ -186,7 +186,7 @@ struct AggregationMethodFixedString
 	static AggregateDataPtr & getAggregateData(Mapped & value) 				{ return value; }
 	static const AggregateDataPtr & getAggregateData(const Mapped & value) 	{ return value; }
 
-	void onNewKey(iterator & it, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
+	static void onNewKey(iterator & it, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
 	{
 		it->first.data = pool.insert(it->first.data, it->first.size);
 	}
@@ -226,7 +226,7 @@ struct AggregationMethodKeys128
 	static AggregateDataPtr & getAggregateData(Mapped & value) 				{ return value; }
 	static const AggregateDataPtr & getAggregateData(const Mapped & value) 	{ return value; }
 
-	void onNewKey(iterator & it, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
+	static void onNewKey(iterator & it, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
 	{
 	}
 
@@ -271,7 +271,7 @@ struct AggregationMethodHashed
 	static AggregateDataPtr & getAggregateData(Mapped & value) 				{ return value.second; }
 	static const AggregateDataPtr & getAggregateData(const Mapped & value) 	{ return value.second; }
 
-	void onNewKey(iterator & it, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
+	static void onNewKey(iterator & it, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
 	{
 		it->second.first = placeKeysInPool(i, keys_size, keys, pool);
 	}
@@ -308,7 +308,7 @@ struct AggregatedDataVariants : private boost::noncopyable
 
 	size_t keys_size;	/// Количество ключей NOTE нужно ли это поле?
 	Sizes key_sizes;	/// Размеры ключей, если ключи фиксированной длины
-	
+
 	/// Пулы для состояний агрегатных функций. Владение потом будет передано в ColumnAggregateFunction.
 	Arenas aggregates_pools;
 	Arena * aggregates_pool;	/// Пул, который сейчас используется для аллокации.
@@ -322,7 +322,7 @@ struct AggregatedDataVariants : private boost::noncopyable
 	std::unique_ptr<AggregationMethodFixedString> 	key_fixed_string;
 	std::unique_ptr<AggregationMethodKeys128> 		keys128;
 	std::unique_ptr<AggregationMethodHashed> 		hashed;
-	
+
 	enum Type
 	{
 		EMPTY 				= 0,
@@ -465,7 +465,7 @@ public:
 
 protected:
 	friend struct AggregatedDataVariants;
-	
+
 	ColumnNumbers keys;
 	Names key_names;
 	AggregateDescriptions aggregates;
