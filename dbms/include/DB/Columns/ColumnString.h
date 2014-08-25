@@ -152,36 +152,105 @@ public:
 
 	ColumnPtr filter(const Filter & filt) const
 	{
-		size_t size = offsets.size();
+		const size_t size = offsets.size();
 		if (size != filt.size())
 			throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
 		if (size == 0)
 			return new ColumnString;
 
-		ColumnString * res_ = new ColumnString;
-		ColumnPtr res = res_;
+		auto res = new ColumnString;
 
-		Chars_t & res_chars = res_->chars;
-		Offsets_t & res_offsets = res_->offsets;
+		Chars_t & res_chars = res->chars;
+		Offsets_t & res_offsets = res->offsets;
 		res_chars.reserve(chars.size());
 		res_offsets.reserve(size);
 
-		Offset_t current_new_offset = 0;
+		Offset_t current_offset = 0;
 
-		for (size_t i = 0; i < size; ++i)
+		auto filt_pos = &filt[0];
+		const auto filt_end = filt_pos + size;
+		const auto filt_end_aligned = filt_pos + size / 16 * 16;
+
+		auto offsets_pos = &offsets[0];
+		const auto offsets_begin = offsets_pos;
+
+		const auto zero16 = _mm_set1_epi8(0);
+
+		/// copy string ending at *end_offset_ptr
+		const auto copy_string = [&] (const Offset_t * offset_ptr) {
+			const auto offset = offset_ptr == offsets_begin ? 0 : offset_ptr[-1];
+			const auto size = *offset_ptr - offset;
+
+			current_offset += size;
+			res_offsets.push_back(current_offset);
+
+			const auto chars_size_old = res_chars.size();
+			res_chars.resize(chars_size_old + size);
+			memcpy(&res_chars[chars_size_old], &chars[offset], size);
+		};
+
+		while (filt_pos < filt_end_aligned)
 		{
-			if (!filt[i])
-				continue;
+			const auto mask = _mm_movemask_epi8(_mm_cmpgt_epi8(
+				_mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos)),
+				zero16));
 
-			size_t string_offset = i == 0 ? 0 : offsets[i - 1];
-			size_t string_size = offsets[i] - string_offset;
+			if (mask == 0)
+			{
+				/// 16 consecutive rows do not pass the filter
+			}
+			else if (mask == 0xffff)
+			{
+				/// 16 consecutive rows pass the filter
+				const auto first = offsets_pos == offsets_begin;
 
-			current_new_offset += string_size;
-			res_offsets.push_back(current_new_offset);
+				const auto chunk_offset = first ? 0 : offsets_pos[-1];
+				const auto chunk_size = offsets_pos[16 - 1] - chunk_offset;
 
-			res_chars.resize(res_chars.size() + string_size);
-			memcpy(&res_chars[res_chars.size() - string_size], &chars[string_offset], string_size);
+				const auto offsets_size_old = res_offsets.size();
+				res_offsets.resize(offsets_size_old + 16);
+				memcpy(&res_offsets[offsets_size_old], offsets_pos, 16 * sizeof(Offset_t));
+
+				if (!first)
+				{
+					/// difference between current and actual offset
+					const auto diff_offset = chunk_offset - current_offset;
+
+					if (diff_offset > 0)
+					{
+						const auto res_offsets_pos = &res_offsets[offsets_size_old];
+
+						/// adjust offsets
+						for (size_t i = 0; i < 16; ++i)
+							res_offsets_pos[i] -= diff_offset;
+					}
+				}
+				current_offset += chunk_size;
+
+				/// copy characters for 16 strings at once
+				const auto chars_size_old = res_chars.size();
+				res_chars.resize(chars_size_old + chunk_size);
+				memcpy(&res_chars[chars_size_old], &chars[chunk_offset], chunk_size);
+			}
+			else
+			{
+				for (size_t i = 0; i < 16; ++i)
+					if (filt_pos[i])
+						copy_string(offsets_pos + i);
+			}
+
+			filt_pos += 16;
+			offsets_pos += 16;
+		}
+
+		while (filt_pos < filt_end)
+		{
+			if (*filt_pos)
+				copy_string(offsets_pos);
+
+			++filt_pos;
+			++offsets_pos;
 		}
 
 		return res;
