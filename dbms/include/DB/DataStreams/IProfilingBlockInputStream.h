@@ -21,8 +21,7 @@ namespace DB
 struct BlockStreamProfileInfo
 {
 	bool started = false;
-	Stopwatch work_stopwatch;	/// Время вычислений (выполнения функции read())
-	Stopwatch total_stopwatch;	/// Время с учётом ожидания
+	Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};	/// Время с учётом ожидания
 	
 	String stream_name;			/// Короткое имя потока, для которого собирается информация
 
@@ -48,7 +47,6 @@ struct BlockStreamProfileInfo
 	bool hasAppliedLimit() const;
 
 	void update(Block & block);
-	void print(std::ostream & ostr) const;	
 	
 	/// Методы для бинарной [де]сериализации
 	void read(ReadBuffer & in);

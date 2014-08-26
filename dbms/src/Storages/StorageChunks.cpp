@@ -218,6 +218,7 @@ void StorageChunks::appendChunkToIndex(const std::string & chunk_name, size_t ma
 	writeStringBinary(chunk_name, index);
 	writeIntBinary<UInt64>(mark, index);
 	index.next();
+	file_checker.update(Poco::File(index_path));
 }
 
 void StorageChunks::dropThis()

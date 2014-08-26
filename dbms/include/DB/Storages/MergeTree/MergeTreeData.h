@@ -100,7 +100,7 @@ struct MergeTreeSettings
 	size_t max_rows_to_use_cache = 1024 * 1024;
 
 	/// Через сколько секунд удалять ненужные куски.
-	time_t old_parts_lifetime = 5 * 60;
+	time_t old_parts_lifetime = 8 * 60;
 
 	/// Если в таблице хотя бы столько активных кусков, искусственно замедлять вставки в таблицу.
 	size_t parts_to_delay_insert = 150;
@@ -110,11 +110,17 @@ struct MergeTreeSettings
 	double insert_delay_step = 1.1;
 
 	/// Для скольки последних блоков хранить хеши в ZooKeeper.
-	size_t replicated_deduplication_window = 1000;
+	size_t replicated_deduplication_window = 100;
 
 	/// Хранить примерно столько последних записей в логе в ZooKeeper, даже если они никому уже не нужны.
 	/// Не влияет на работу таблиц; используется только чтобы успеть посмотреть на лог в ZooKeeper глазами прежде, чем его очистят.
 	size_t replicated_logs_to_keep = 100;
+
+	/// Максимальное количество ошибок при загрузке кусков, при котором ReplicatedMergeTree соглашается запускаться.
+	size_t replicated_max_unexpected_parts = 3;
+	size_t replicated_max_unexpectedly_merged_parts = 2;
+	size_t replicated_max_missing_obsolete_parts = 5;
+	size_t replicated_max_missing_active_parts = 20;
 };
 
 class MergeTreeData : public ITableDeclaration
@@ -307,15 +313,20 @@ public:
 			Poco::File(to).remove(true);
 		}
 
-		/// Переименовывает кусок, дописав к имени префикс.
-		void renameAddPrefix(const String & prefix) const
+		void renameTo(const String & new_name) const
 		{
 			String from = storage.full_path + name + "/";
-			String to = storage.full_path + prefix + name + "/";
+			String to = storage.full_path + new_name + "/";
 
 			Poco::File f(from);
 			f.setLastModified(Poco::Timestamp::fromEpochTime(time(0)));
 			f.renameTo(to);
+		}
+
+		/// Переименовывает кусок, дописав к имени префикс.
+		void renameAddPrefix(const String & prefix) const
+		{
+			renameTo(prefix + name);
 		}
 
 		/// Загрузить индекс и вычислить размер. Если size=0, вычислить его тоже.
@@ -344,12 +355,12 @@ public:
 		}
 
 		/// Прочитать контрольные суммы, если есть.
-		void loadChecksums()
+		void loadChecksums(bool require)
 		{
 			String path = storage.full_path + name + "/checksums.txt";
 			if (!Poco::File(path).exists())
 			{
-				if (storage.require_part_metadata)
+				if (require)
 					throw Exception("No checksums.txt in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 
 				return;
@@ -359,16 +370,21 @@ public:
 				assertEOF(file);
 		}
 
-		void loadColumns()
+		void loadColumns(bool require)
 		{
 			String path = storage.full_path + name + "/columns.txt";
 			if (!Poco::File(path).exists())
 			{
-				if (storage.require_part_metadata)
+				if (require)
 					throw Exception("No columns.txt in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
-				columns = *storage.columns;
 
 				/// Если нет файла со списком столбцов, запишем его.
+				for (const NameAndTypePair & column : *storage.columns)
+				{
+					if (Poco::File(storage.full_path + name + "/" + escapeForFileName(column.name) + ".bin").exists())
+						columns.push_back(column);
+				}
+
 				{
 					WriteBufferFromFile out(path + ".tmp", 4096);
 					columns.writeText(out);
@@ -382,7 +398,7 @@ public:
 			columns.readText(file, storage.context.getDataTypeFactory());
 		}
 
-		void checkNotBroken()
+		void checkNotBroken(bool require_part_metadata)
 		{
 			String path = storage.full_path + name;
 
@@ -391,7 +407,7 @@ public:
 				if (!checksums.files.count("primary.idx"))
 					throw Exception("No checksum for primary.idx", ErrorCodes::NO_FILE_IN_DATA_PART);
 
-				if (storage.require_part_metadata)
+				if (require_part_metadata)
 				{
 					for (const NameAndTypePair & it : columns)
 					{
@@ -560,6 +576,9 @@ public:
 					bool require_part_metadata_,
 					BrokenPartCallback broken_part_callback_ = &MergeTreeData::doNothing);
 
+	/// Загрузить множество кусков с данными с диска. Вызывается один раз - сразу после создания объекта.
+	void loadDataParts(bool skip_sanity_checks);
+
 	std::string getModePrefix() const;
 
 	bool supportsSampling() const { return !!sampling_expression; }
@@ -625,15 +644,23 @@ public:
 	  */
 	DataPartsVector renameTempPartAndReplace(MutableDataPartPtr part, Increment * increment = nullptr, Transaction * out_transaction = nullptr);
 
-	/** Убирает из рабочего набора куски remove и добавляет куски add.
+	/** Убирает из рабочего набора куски remove и добавляет куски add. add должны уже быть в all_data_parts.
 	  * Если clear_without_timeout, данные будут удалены при следующем clearOldParts, игнорируя old_parts_lifetime.
 	  */
 	void replaceParts(const DataPartsVector & remove, const DataPartsVector & add, bool clear_without_timeout);
 
-	/** Переименовывает кусок в prefix_кусок и убирает его из рабочего набора.
+	/** Добавляет новый кусок в список известных кусков и в рабочий набор.
+	  */
+	void attachPart(DataPartPtr part);
+
+	/** Переименовывает кусок в detached/prefix_кусок и забывает про него. Данные не будут удалены в clearOldParts.
 	  * Если restore_covered, добавляет в рабочий набор неактивные куски, слиянием которых получен удаляемый кусок.
 	  */
-	void renameAndDetachPart(DataPartPtr part, const String & prefix, bool restore_covered = false);
+	void renameAndDetachPart(DataPartPtr part, const String & prefix = "", bool restore_covered = false, bool move_to_detached = true);
+
+	/** Убирает кусок из списка кусков (включая all_data_parts), но не перемещщает директорию.
+	  */
+	void detachPartInPlace(DataPartPtr part);
 
 	/** Возвращает старые неактуальные куски, которые можно удалить. Одновременно удаляет их из списка кусков, но не с диска.
 	  */
@@ -685,6 +712,9 @@ public:
 	ExpressionActionsPtr getPrimaryExpression() const { return primary_expr; }
 	SortDescription getSortDescription() const { return sort_descr; }
 
+	/// Проверить, что кусок не сломан и посчитать для него чексуммы, если их нет.
+	MutableDataPartPtr loadPartAndFixMetadata(const String & relative_path);
+
 	const Context & context;
 	const String date_column_name;
 	const ASTPtr sampling_expression;
@@ -725,9 +755,6 @@ private:
 	  */
 	DataParts all_data_parts;
 	Poco::FastMutex all_data_parts_mutex;
-
-	/// Загрузить множество кусков с данными с диска. Вызывается один раз - при создании объекта.
-	void loadDataParts();
 
 	/** Выражение, преобразующее типы столбцов.
 	  * Если преобразований типов нет, out_expression=nullptr.

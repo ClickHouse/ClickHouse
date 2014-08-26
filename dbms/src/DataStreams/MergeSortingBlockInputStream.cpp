@@ -18,7 +18,7 @@ Block MergeSortingBlockInputStream::readImpl()
 
 	if (has_been_read)
 		return Block();
-	
+
 	has_been_read = true;
 
 	Blocks blocks;
@@ -38,15 +38,15 @@ Block MergeSortingBlockInputStream::merge(Blocks & blocks)
 
 	if (blocks.size() == 1)
 		return blocks[0];
-	
+
 	Stopwatch watch;
 
 	LOG_DEBUG(log, "Merge sorting");
-	
+
 	CursorImpls cursors(blocks.size());
 
 	bool has_collation = false;
-	
+
 	size_t i = 0;
 	for (Blocks::const_iterator it = blocks.begin(); it != blocks.end(); ++it, ++i)
 	{
@@ -56,20 +56,22 @@ Block MergeSortingBlockInputStream::merge(Blocks & blocks)
 		cursors[i] = SortCursorImpl(*it, description);
 		has_collation |= cursors[i].has_collation;
 	}
-	
+
 	Block merged;
-	
+
 	if (has_collation)
 		merged = mergeImpl<SortCursorWithCollation>(blocks, cursors);
 	else
 		merged = mergeImpl<SortCursor>(blocks, cursors);
-	
+
+	watch.stop();
+
 	LOG_DEBUG(log, std::fixed << std::setprecision(2)
 		<< "Merge sorted " << blocks.size() << " blocks, " << merged.rows() << " rows"
 		<< " in " << watch.elapsedSeconds() << " sec., "
 		<< merged.rows() / watch.elapsedSeconds() << " rows/sec., "
 		<< merged.bytes() / 1000000.0 / watch.elapsedSeconds() << " MiB/sec.");
-	
+
 	return merged;
 }
 
@@ -78,13 +80,13 @@ Block MergeSortingBlockInputStream::mergeImpl(Blocks & blocks, CursorImpls & cur
 {
 	Block merged = blocks[0].cloneEmpty();
 	size_t num_columns = blocks[0].columns();
-	
+
 	typedef std::priority_queue<TSortCursor> Queue;
 	Queue queue;
-	
+
 	for (size_t i = 0; i < cursors.size(); ++i)
 		queue.push(TSortCursor(&cursors[i]));
-	
+
 	ColumnPlainPtrs merged_columns;
 	for (size_t i = 0; i < num_columns; ++i)	/// TODO: reserve
 		merged_columns.push_back(&*merged.getByPosition(i).column);

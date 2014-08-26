@@ -16,6 +16,8 @@ public:
 	TabSeparatedBlockOutputStream(WriteBuffer & ostr_) : ostr(ostr_) {}
 	void write(const Block & block);
 
+	void flush() { ostr.next(); }
+
 private:
 	WriteBuffer & ostr;
 };

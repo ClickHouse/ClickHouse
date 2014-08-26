@@ -29,7 +29,7 @@ void PrettyCompactBlockOutputStream::writeHeader(
 				writeCString("─", ostr);
 
 			if (!no_escapes)
-				writeCString("\033[1;37m", ostr);
+				writeCString("\033[1m", ostr);
 			writeEscapedString(col.name, ostr);
 			if (!no_escapes)
 				writeCString("\033[0m", ostr);
@@ -37,7 +37,7 @@ void PrettyCompactBlockOutputStream::writeHeader(
 		else
 		{
 			if (!no_escapes)
-				writeCString("\033[1;37m", ostr);
+				writeCString("\033[1m", ostr);
 			writeEscapedString(col.name, ostr);
 			if (!no_escapes)
 				writeCString("\033[0m", ostr);
@@ -75,7 +75,7 @@ void PrettyCompactBlockOutputStream::writeRow(
 	const Widths_t & name_widths)
 {
 	size_t columns = max_widths.size();
-	
+
 	writeCString("│ ", ostr);
 
 	for (size_t j = 0; j < columns; ++j)
@@ -90,7 +90,7 @@ void PrettyCompactBlockOutputStream::writeRow(
 			size_t width = get<UInt64>((*block.getByPosition(columns + j).column)[row_id]);
 			for (size_t k = 0; k < max_widths[j] - width; ++k)
 				writeChar(' ', ostr);
-				
+
 			col.type->serializeTextEscaped((*col.column)[row_id], ostr);
 		}
 		else
@@ -113,16 +113,16 @@ void PrettyCompactBlockOutputStream::write(const Block & block_)
 		total_rows += block_.rows();
 		return;
 	}
-	
+
 	/// Будем вставлять сюда столбцы с вычисленными значениями видимых длин.
 	Block block = block_;
-	
+
 	size_t rows = block.rows();
 
 	Widths_t max_widths;
 	Widths_t name_widths;
 	calculateWidths(block, max_widths, name_widths);
-	
+
 	writeHeader(block, max_widths, name_widths);
 
 	for (size_t i = 0; i < rows && total_rows + i < max_rows; ++i)

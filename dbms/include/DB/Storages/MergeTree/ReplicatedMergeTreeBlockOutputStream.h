@@ -28,30 +28,12 @@ public:
 			time_t min_date_time = DateLUT::instance().fromDayNum(DayNum_t(current_block.min_date));
 			String month_name = toString(Date2OrderedIdentifier(min_date_time) / 100);
 
-			String month_path = storage.zookeeper_path + "/block_numbers/" + month_name;
-			if (!storage.zookeeper->exists(month_path))
-			{
-				/// Создадим в block_numbers ноду для месяца и пропустим в ней 200 значений инкремента.
-				/// Нужно, чтобы в будущем при необходимости можно было добавить данные в начало.
-				zkutil::Ops ops;
-				auto acl = storage.zookeeper->getDefaultACL();
-				ops.push_back(new zkutil::Op::Create(month_path, "", acl, zkutil::CreateMode::Persistent));
-				for (size_t i = 0; i < 200; ++i)
-				{
-					ops.push_back(new zkutil::Op::Create(month_path + "/skip_increment", "", acl, zkutil::CreateMode::Persistent));
-					ops.push_back(new zkutil::Op::Remove(month_path + "/skip_increment", -1));
-				}
-				/// Игнорируем ошибки - не получиться могло только если кто-то еще выполнил эту строчку раньше нас.
-				storage.zookeeper->tryMulti(ops);
-			}
-
-			AbandonableLockInZooKeeper block_number_lock(
-				storage.zookeeper_path + "/block_numbers/" + month_name + "/block-",
-				storage.zookeeper_path + "/temp", *storage.zookeeper);
+			AbandonableLockInZooKeeper block_number_lock = storage.allocateBlockNumber(month_name);
 
 			UInt64 part_number = block_number_lock.getNumber();
 
 			MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block, part_number);
+			String part_name = ActiveDataPartSet::getPartName(part->left_date, part->right_date, part->left, part->right, part->level);
 
 			/// Если в запросе не указан ID, возьмем в качестве ID хеш от данных. То есть, не вставляем одинаковые данные дважды.
 			/// NOTE: Если такая дедупликация не нужна, можно вместо этого оставлять block_id пустым.
@@ -61,13 +43,10 @@ public:
 
 			LOG_DEBUG(log, "Wrote block " << part_number << " with ID " << block_id << ", " << current_block.block.rows() << " rows");
 
-			MergeTreeData::Transaction transaction; /// Если не получится добавить кусок в ZK, снова уберем его из рабочего набора.
-			storage.data.renameTempPartAndAdd(part, nullptr, &transaction);
-
 			StorageReplicatedMergeTree::LogEntry log_entry;
 			log_entry.type = StorageReplicatedMergeTree::LogEntry::GET_PART;
 			log_entry.source_replica = storage.replica_name;
-			log_entry.new_part_name = part->name;
+			log_entry.new_part_name = part_name;
 
 			/// Одновременно добавим информацию о куске во все нужные места в ZooKeeper и снимем block_number_lock.
 			zkutil::Ops ops;
@@ -94,13 +73,16 @@ public:
 					storage.zookeeper->getDefaultACL(),
 					zkutil::CreateMode::Persistent));
 			}
-			storage.checkPartAndAddToZooKeeper(part, ops);
+			storage.checkPartAndAddToZooKeeper(part, ops, part_name);
 			ops.push_back(new zkutil::Op::Create(
 				storage.zookeeper_path + "/log/log-",
 				log_entry.toString(),
 				storage.zookeeper->getDefaultACL(),
 				zkutil::CreateMode::PersistentSequential));
 			block_number_lock.getUnlockOps(ops);
+
+			MergeTreeData::Transaction transaction; /// Если не получится добавить кусок в ZK, снова уберем его из рабочего набора.
+			storage.data.renameTempPartAndAdd(part, nullptr, &transaction);
 
 			try
 			{

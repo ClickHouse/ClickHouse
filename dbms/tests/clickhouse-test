@@ -34,6 +34,10 @@ ERRORS=0
 
 if [ "$1" == "--zookeeper" ]; then
 	ZOOKEEPER=1
+	shift
+elif [ "$1" == "--no-zookeeper" ]; then
+	ZOOKEEPER=0
+	shift
 elif grep -q '<zookeeper' /etc/clickhouse-server/config-preprocessed.xml; then
 	ZOOKEEPER=1
 else

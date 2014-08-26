@@ -82,4 +82,10 @@ const StorageChunks & StorageChunkRef::getSource() const
 	return *chunks;
 }
 
+bool StorageChunkRef::checkData() const
+{
+	return getSource().checkData();
+}
+
+
 }

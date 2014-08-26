@@ -49,6 +49,16 @@
 
 #include <DB/Common/ExternalTable.h>
 
+
+/// http://en.wikipedia.org/wiki/ANSI_escape_code
+#define SAVE_CURSOR_POSITION "\033[s"
+#define RESTORE_CURSOR_POSITION "\033[u"
+#define CLEAR_TO_END_OF_LINE "\033[K"
+/// Эти коды, возможно, поддерживаются не везде.
+#define DISABLE_LINE_WRAPPING "\033[?7l"
+#define ENABLE_LINE_WRAPPING "\033[?7h"
+
+
 /** Клиент командной строки СУБД ClickHouse.
   */
 
@@ -61,11 +71,7 @@ using Poco::SharedPtr;
 class Client : public Poco::Util::Application
 {
 public:
-	Client() : is_interactive(true), stdin_is_not_tty(false),
-		format_max_block_size(0), std_in(STDIN_FILENO), std_out(STDOUT_FILENO), processed_rows(0),
-		rows_read_on_server(0), bytes_read_on_server(0), written_progress_chars(0), written_first_block(false)
-	{
-	}
+	Client() {}
 
 private:
 	typedef std::unordered_set<String> StringSet;
@@ -77,24 +83,24 @@ private:
 		"q", "й", "\\q", "\\Q", "\\й", "\\Й", ":q", "Жй"
 	};
 
-	bool is_interactive;				/// Использовать readline интерфейс или batch режим.
-	bool stdin_is_not_tty;				/// stdin - не терминал.
+	bool is_interactive = true;			/// Использовать readline интерфейс или batch режим.
+	bool stdin_is_not_tty = false;		/// stdin - не терминал.
 
 	SharedPtr<Connection> connection;	/// Соединение с БД.
 	String query;						/// Текущий запрос.
 
 	String format;						/// Формат вывода результата в консоль.
-	size_t format_max_block_size;		/// Максимальный размер блока при выводе в консоль.
+	size_t format_max_block_size = 0;	/// Максимальный размер блока при выводе в консоль.
 	String insert_format;				/// Формат данных для INSERT-а при чтении их из stdin в batch режиме
-	size_t insert_format_max_block_size; /// Максимальный размер блока при чтении данных INSERT-а.
+	size_t insert_format_max_block_size = 0; /// Максимальный размер блока при чтении данных INSERT-а.
 
 	Context context;
 
 	/// Чтение из stdin для batch режима
-	ReadBufferFromFileDescriptor std_in;
+	ReadBufferFromFileDescriptor std_in {STDIN_FILENO};
 
 	/// Вывод в консоль
-	WriteBufferFromFileDescriptor std_out;
+	WriteBufferFromFileDescriptor std_out {STDOUT_FILENO};
 	BlockOutputStreamPtr block_std_out;
 
 	String home_path;
@@ -105,7 +111,7 @@ private:
 	String history_file;
 
 	/// Строк прочитано или записано.
-	size_t processed_rows;
+	size_t processed_rows = 0;
 
 	/// Распарсенный запрос. Оттуда берутся некоторые настройки (формат).
 	ASTPtr parsed_query;
@@ -115,10 +121,10 @@ private:
 
 	Stopwatch watch;
 
-	size_t rows_read_on_server;
-	size_t bytes_read_on_server;
-	size_t written_progress_chars;
-	bool written_first_block;
+	size_t rows_read_on_server = 0;
+	size_t bytes_read_on_server = 0;
+	size_t written_progress_chars = 0;
+	bool written_first_block = false;
 
 	/// Информация о внешних таблицах
 	std::list<ExternalTable> external_tables;
@@ -441,7 +447,7 @@ private:
 		if (exit_strings.end() != exit_strings.find(line))
 			return false;
 
-		block_std_out = nullptr;
+		resetOutput();
 
 		watch.restart();
 
@@ -642,6 +648,14 @@ private:
 	}
 
 
+	/** Сбросить все данные, что ещё остались в буферах. */
+	void resetOutput()
+	{
+		block_std_out = nullptr;
+		std_out.next();
+	}
+
+
 	/** Получает и обрабатывает пакеты из сервера.
 	  * Также следит, не требуется ли прервать выполнение запроса.
 	  */
@@ -747,12 +761,7 @@ private:
 	void onData(Block & block)
 	{
 		if (written_progress_chars)
-		{
-			for (size_t i = 0; i < written_progress_chars; ++i)
-				std::cerr << "\b \b";
-
-			written_progress_chars = 0;
-		}
+			clearProgress();
 
 		if (!block)
 			return;
@@ -780,7 +789,8 @@ private:
 			written_first_block = true;
 		}
 
-		std_out.next();
+		/// Полученный блок данных сразу выводится клиенту.
+		block_std_out->flush();
 	}
 
 
@@ -804,8 +814,18 @@ private:
 	}
 
 
+	void clearProgress()
+	{
+		std::cerr << RESTORE_CURSOR_POSITION CLEAR_TO_END_OF_LINE;
+		written_progress_chars = 0;
+	}
+
+
 	void writeProgress()
 	{
+		if (!is_interactive)
+			return;
+
 		static size_t increment = 0;
 		static const char * indicators[8] =
 		{
@@ -816,30 +836,30 @@ private:
 			"\033[1;34m←\033[0m",
 			"\033[1;35m↖\033[0m",
 			"\033[1;36m↑\033[0m",
-			"\033[1;37m↗\033[0m",
+			"\033[1m↗\033[0m",
 		};
 
-		if (is_interactive)
-		{
-			std::cerr << std::string(written_progress_chars, '\b');
+		if (written_progress_chars)
+			clearProgress();
+		else
+			std::cerr << SAVE_CURSOR_POSITION;
 
-			std::stringstream message;
-			message << indicators[increment % 8]
-				<< std::fixed << std::setprecision(3)
-				<< " Progress: " << rows_read_on_server << " rows, " << bytes_read_on_server / 1000000.0 << " MB";
+		std::stringstream message;
+		message << indicators[increment % 8]
+			<< std::fixed << std::setprecision(3)
+			<< " Progress: " << rows_read_on_server << " rows, " << bytes_read_on_server / 1000000.0 << " MB";
 
-			size_t elapsed_ns = watch.elapsed();
-			if (elapsed_ns)
-				message << " ("
-					<< rows_read_on_server * 1000000000.0 / elapsed_ns << " rows/s., "
-					<< bytes_read_on_server * 1000.0 / elapsed_ns << " MB/s.) ";
-			else
-				message << ". ";
+		size_t elapsed_ns = watch.elapsed();
+		if (elapsed_ns)
+			message << " ("
+				<< rows_read_on_server * 1000000000.0 / elapsed_ns << " rows/s., "
+				<< bytes_read_on_server * 1000.0 / elapsed_ns << " MB/s.) ";
+		else
+			message << ". ";
 
-			written_progress_chars = message.str().size() - 13;
-			std::cerr << message.rdbuf();
-			++increment;
-		}
+		written_progress_chars = message.str().size() - 13;
+		std::cerr << DISABLE_LINE_WRAPPING << message.rdbuf() << ENABLE_LINE_WRAPPING;
+		++increment;
 	}
 
 
@@ -859,6 +879,8 @@ private:
 
 	void onException(const Exception & e)
 	{
+		resetOutput();
+
 		std::cerr << "Received exception from server:" << std::endl
 			<< "Code: " << e.code() << ". " << e.displayText();
 	}
@@ -876,7 +898,7 @@ private:
 		if (block_std_out)
 			block_std_out->writeSuffix();
 
-		std_out.next();
+		resetOutput();
 
 		if (is_interactive && !written_first_block)
 			std::cout << "Ok." << std::endl;

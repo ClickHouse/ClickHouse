@@ -2,8 +2,6 @@
 
 #include <set>
 
-#include <statdaemons/Stopwatch.h>
-
 #include <Yandex/logger_useful.h>
 
 #include <DB/Core/ColumnNumbers.h>

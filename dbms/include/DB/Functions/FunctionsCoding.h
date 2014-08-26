@@ -4,10 +4,12 @@
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
+#include <DB/DataTypes/DataTypeArray.h>
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnFixedString.h>
+#include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Functions/IFunction.h>
 
@@ -375,7 +377,7 @@ public:
 				prev_offset = new_offset;
 			}
 
-			if (out_offsets.back() != out_vec.size())
+			if (!out_offsets.empty() && out_offsets.back() != out_vec.size())
 				throw Exception("Column size mismatch (internal logical error)", ErrorCodes::LOGICAL_ERROR);
 
 			return true;
@@ -436,7 +438,7 @@ public:
 				prev_offset = new_offset;
 			}
 
-			if (out_offsets.back() != out_vec.size())
+			if (!out_offsets.empty() && out_offsets.back() != out_vec.size())
 				throw Exception("Column size mismatch (internal logical error)", ErrorCodes::LOGICAL_ERROR);
 
 			return true;
@@ -742,7 +744,7 @@ public:
 			}
 			out_vec.resize(pos - begin);
 
-			if (out_offsets.back() != out_vec.size())
+			if (!out_offsets.empty() && out_offsets.back() != out_vec.size())
 				throw Exception("Column size mismatch (internal logical error)", ErrorCodes::LOGICAL_ERROR);
 
 			return true;
@@ -797,7 +799,7 @@ public:
 			}
 			out_vec.resize(pos - begin);
 
-			if (out_offsets.back() != out_vec.size())
+			if (!out_offsets.empty() && out_offsets.back() != out_vec.size())
 				throw Exception("Column size mismatch (internal logical error)", ErrorCodes::LOGICAL_ERROR);
 
 			return true;

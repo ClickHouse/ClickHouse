@@ -12,6 +12,8 @@
 #include <DB/Storages/IStorage.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
+#include <DB/Common/FileChecker.h>
+#include <Poco/Util/XMLConfiguration.h>
 
 
 namespace DB
@@ -55,11 +57,13 @@ private:
 	void readData(const String & name, const IDataType & type, IColumn & column, size_t limit, size_t level = 0, bool read_offsets = true);
 };
 
-
 class TinyLogBlockOutputStream : public IBlockOutputStream
 {
 public:
 	TinyLogBlockOutputStream(StorageTinyLog & storage_);
+
+	~TinyLogBlockOutputStream();
+
 	void write(const Block & block);
 	void writeSuffix();
 private:
@@ -129,12 +133,7 @@ public:
 	
 	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name);
 
-private:
-	String path;
-	String name;
-	NamesAndTypesListPtr columns;
-
-	size_t max_compress_block_size;
+	bool checkData() const override;
 
 	/// Данные столбца
 	struct ColumnData
@@ -142,7 +141,21 @@ private:
 		Poco::File data_file;
 	};
 	typedef std::map<String, ColumnData> Files_t;
+
+	Files_t & getFiles();
+
+private:
+	String path;
+	String name;
+	NamesAndTypesListPtr columns;
+
+	size_t max_compress_block_size;
+
 	Files_t files;
+
+	FileChecker<StorageTinyLog> file_checker;
+
+	Logger * log;
 
 	StorageTinyLog(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, bool attach, size_t max_compress_block_size_);
 	

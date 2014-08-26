@@ -29,10 +29,19 @@ public:
 	/// Соединения с удалёнными серверами.
 	ConnectionPools pools;
 
+	struct ShardInfo
+	{
+		/// contains names of directories for asynchronous write to StorageDistributed
+		std::vector<std::string> dir_names;
+		int weight;
+		size_t num_local_nodes;
+	};
+	std::vector<ShardInfo> shard_info_vec;
+	std::vector<size_t> slot_to_shard;
+
 	/// используеться для выставления ограничения на размер таймаута
 	static Poco::Timespan saturate(const Poco::Timespan & v, const Poco::Timespan & limit);
 
-private:
 	struct Address
 	{
 		/** В конфиге адреса либо находятся в узлах <node>:
@@ -59,6 +68,7 @@ private:
 		Address(const String & host_port_, const String & user_, const String & password_);
 	};
 
+private:
 	static bool isLocal(const Address & address);
 
 	/// Массив шардов. Каждый шард - адреса одного сервера.

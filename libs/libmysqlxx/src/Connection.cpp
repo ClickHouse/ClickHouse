@@ -69,7 +69,7 @@ void Connection::connect(const char* db,
 	if (!mysql_real_connect(&driver, server, user, password, db, port, nullptr, driver.client_flag))
 		throw ConnectionFailed(errorMessage(&driver), mysql_errno(&driver));
 
-	/// Установим кодировки по-умолчанию - UTF-8.
+	/// Установим кодировки по умолчанию - UTF-8.
 	if (mysql_set_character_set(&driver, "UTF8"))
 		throw ConnectionFailed(errorMessage(&driver), mysql_errno(&driver));
 

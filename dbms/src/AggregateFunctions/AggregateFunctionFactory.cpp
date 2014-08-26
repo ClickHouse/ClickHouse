@@ -1,9 +1,7 @@
 #include <DB/AggregateFunctions/AggregateFunctionCount.h>
 #include <DB/AggregateFunctions/AggregateFunctionSum.h>
 #include <DB/AggregateFunctions/AggregateFunctionAvg.h>
-#include <DB/AggregateFunctions/AggregateFunctionAny.h>
-#include <DB/AggregateFunctions/AggregateFunctionAnyLast.h>
-#include <DB/AggregateFunctions/AggregateFunctionsMinMax.h>
+#include <DB/AggregateFunctions/AggregateFunctionsMinMaxAny.h>
 #include <DB/AggregateFunctions/AggregateFunctionsArgMinMax.h>
 #include <DB/AggregateFunctions/AggregateFunctionUniq.h>
 #include <DB/AggregateFunctions/AggregateFunctionUniqUpTo.h>
@@ -69,6 +67,7 @@ static IAggregateFunction * createWithNumericType(const IDataType & argument_typ
 		return nullptr;
 }
 
+
 template<template <typename, typename> class AggregateFunctionTemplate, template <typename> class Data>
 static IAggregateFunction * createWithNumericType(const IDataType & argument_type)
 {
@@ -87,18 +86,48 @@ static IAggregateFunction * createWithNumericType(const IDataType & argument_typ
 }
 
 
+/// min, max, any, anyLast
+template<template <typename> class AggregateFunctionTemplate, template <typename> class Data>
+static IAggregateFunction * createAggregateFunctionSingleValue(const String & name, const DataTypes & argument_types)
+{
+	if (argument_types.size() != 1)
+		throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+	const IDataType & argument_type = *argument_types[0];
+
+	     if (typeid_cast<const DataTypeUInt8 	*>(&argument_type))	return new AggregateFunctionTemplate<Data<SingleValueDataFixed<UInt8>>>;
+	else if (typeid_cast<const DataTypeUInt16 	*>(&argument_type))	return new AggregateFunctionTemplate<Data<SingleValueDataFixed<UInt16>>>;
+	else if (typeid_cast<const DataTypeUInt32 	*>(&argument_type))	return new AggregateFunctionTemplate<Data<SingleValueDataFixed<UInt32>>>;
+	else if (typeid_cast<const DataTypeUInt64 	*>(&argument_type))	return new AggregateFunctionTemplate<Data<SingleValueDataFixed<UInt64>>>;
+	else if (typeid_cast<const DataTypeInt8 	*>(&argument_type))	return new AggregateFunctionTemplate<Data<SingleValueDataFixed<Int8>>>;
+	else if (typeid_cast<const DataTypeInt16 	*>(&argument_type))	return new AggregateFunctionTemplate<Data<SingleValueDataFixed<Int16>>>;
+	else if (typeid_cast<const DataTypeInt32 	*>(&argument_type))	return new AggregateFunctionTemplate<Data<SingleValueDataFixed<Int32>>>;
+	else if (typeid_cast<const DataTypeInt64 	*>(&argument_type))	return new AggregateFunctionTemplate<Data<SingleValueDataFixed<Int64>>>;
+	else if (typeid_cast<const DataTypeFloat32 *>(&argument_type))	return new AggregateFunctionTemplate<Data<SingleValueDataFixed<Float32>>>;
+	else if (typeid_cast<const DataTypeFloat64 *>(&argument_type))	return new AggregateFunctionTemplate<Data<SingleValueDataFixed<Float64>>>;
+	else if (typeid_cast<const DataTypeDate 	*>(&argument_type))
+		return new AggregateFunctionTemplate<Data<SingleValueDataFixed<DataTypeDate::FieldType>>>;
+	else if (typeid_cast<const DataTypeDateTime*>(&argument_type))
+		return new AggregateFunctionTemplate<Data<SingleValueDataFixed<DataTypeDateTime::FieldType>>>;
+	else if (typeid_cast<const DataTypeString*>(&argument_type))
+		return new AggregateFunctionTemplate<Data<SingleValueDataString>>;
+	else
+		return new AggregateFunctionTemplate<Data<SingleValueDataGeneric>>;
+}
+
+
 AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const DataTypes & argument_types, int recursion_level) const
 {
 	if (name == "count")
 		return new AggregateFunctionCount;
 	else if (name == "any")
-		return new AggregateFunctionAny;
+		return createAggregateFunctionSingleValue<AggregateFunctionsSingleValue, AggregateFunctionAnyData>(name, argument_types);
 	else if (name == "anyLast")
-		return new AggregateFunctionAnyLast;
+		return createAggregateFunctionSingleValue<AggregateFunctionsSingleValue, AggregateFunctionAnyLastData>(name, argument_types);
 	else if (name == "min")
-		return new AggregateFunctionMin;
+		return createAggregateFunctionSingleValue<AggregateFunctionsSingleValue, AggregateFunctionMinData>(name, argument_types);
 	else if (name == "max")
-		return new AggregateFunctionMax;
+		return createAggregateFunctionSingleValue<AggregateFunctionsSingleValue, AggregateFunctionMaxData>(name, argument_types);
 	else if (name == "argMin")
 		return new AggregateFunctionArgMin;
 	else if (name == "argMax")

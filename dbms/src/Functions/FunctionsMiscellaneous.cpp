@@ -1,5 +1,6 @@
 #include <math.h>
 
+#include <DB/Functions/FunctionFactory.h>
 #include <DB/Functions/FunctionsArithmetic.h>
 #include <DB/Functions/FunctionsMiscellaneous.h>
 
@@ -226,7 +227,7 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 	}
 	else if (const ColumnTuple * col = typeid_cast<const ColumnTuple *>(&*column))
 	{
-		/// Посчитаем видимую ширину для каждого вложенного столбца по-отдельности, и просуммируем.
+		/// Посчитаем видимую ширину для каждого вложенного столбца по отдельности, и просуммируем.
 		Block nested_block = col->getData();
 		size_t columns = nested_block.columns();
 
@@ -294,6 +295,36 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 	   throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
 			+ " of argument of function " + getName(),
 			ErrorCodes::ILLEGAL_COLUMN);
+}
+
+}
+
+
+namespace DB
+{
+
+void registerFunctionsMiscellaneous(FunctionFactory & factory)
+{
+	#define F [](const Context & context) -> IFunction*
+
+	factory.registerFunction("hostName", 		F { return new FunctionHostName; });
+	factory.registerFunction("visibleWidth", 	F { return new FunctionVisibleWidth; });
+	factory.registerFunction("toTypeName", 		F { return new FunctionToTypeName; });
+	factory.registerFunction("blockSize", 		F { return new FunctionBlockSize; });
+	factory.registerFunction("sleep", 			F { return new FunctionSleep; });
+	factory.registerFunction("materialize", 	F { return new FunctionMaterialize; });
+	factory.registerFunction("ignore", 			F { return new FunctionIgnore; });
+	factory.registerFunction("arrayJoin", 		F { return new FunctionArrayJoin; });
+	factory.registerFunction("bar", 			F { return new FunctionBar; });
+
+	factory.registerFunction("tuple", 			F { return new FunctionTuple; });
+	factory.registerFunction("tupleElement", 	F { return new FunctionTupleElement; });
+	factory.registerFunction("in", 				F { return new FunctionIn(false, false); });
+	factory.registerFunction("notIn", 			F { return new FunctionIn(true, false); });
+	factory.registerFunction("globalIn", 		F { return new FunctionIn(false, true); });
+	factory.registerFunction("globalNotIn", 	F { return new FunctionIn(true, true); });
+
+	#undef F
 }
 
 }

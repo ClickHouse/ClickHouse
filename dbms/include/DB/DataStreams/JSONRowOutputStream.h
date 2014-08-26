@@ -25,6 +25,8 @@ public:
 	void writeRowEndDelimiter();
 	void writePrefix();
 	void writeSuffix();
+
+	void flush() { ostr.next(); dst_ostr.next(); }
 	
 	void setRowsBeforeLimit(size_t rows_before_limit_)
 	{
@@ -41,7 +43,8 @@ protected:
 	virtual void writeTotals();
 	virtual void writeExtremes();
 	
-	WriteBufferValidUTF8 ostr;
+	WriteBuffer & dst_ostr;
+	WriteBufferValidUTF8 ostr;	/// Валидирует и пишет в dst_ostr.
 	size_t field_number;
 	size_t row_count;
 	bool applied_limit;

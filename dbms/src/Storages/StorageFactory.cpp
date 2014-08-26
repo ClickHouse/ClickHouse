@@ -176,20 +176,24 @@ StoragePtr StorageFactory::get(
 
 		ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
 
-		if (args.size() != 3)
-			throw Exception("Storage Distributed requires 3 parameters"
-				" - name of configuration section with list of remote servers, name of remote database, name of remote table.",
+		if (args.size() != 3 && args.size() != 4)
+			throw Exception("Storage Distributed requires 3 or 4 parameters"
+				" - name of configuration section with list of remote servers, name of remote database, name of remote table,"
+				" sharding key expression (optional).",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 		String cluster_name 	= typeid_cast<ASTIdentifier &>(*args[0]).name;
 		String remote_database 	= typeid_cast<ASTIdentifier &>(*args[1]).name;
 		String remote_table 	= typeid_cast<ASTIdentifier &>(*args[2]).name;
 
-		return StorageDistributed::create(table_name, columns, remote_database, remote_table, cluster_name, context);
+		const auto & sharding_key = args.size() == 4 ? args[3] : nullptr;
+
+		return StorageDistributed::create(
+			table_name, columns, remote_database, remote_table, cluster_name, context, sharding_key, data_path);
 	}
 	else if (endsWith(name, "MergeTree"))
 	{
-		/** Движки [Replicated][Summing|Collapsing]MergeTree  (6 комбинаций)
+		/** Движки [Replicated][Summing|Collapsing|Aggregating|]MergeTree  (8 комбинаций)
 		  * В качестве аргумента для движка должно быть указано:
 		  *  - (для Replicated) Путь к таблице в ZooKeeper
 		  *  - (для Replicated) Имя реплики в ZooKeeper
@@ -264,11 +268,7 @@ StoragePtr StorageFactory::get(
 				throw Exception("Replica name must be a string literal", ErrorCodes::BAD_ARGUMENTS);
 
 			if (replica_name.empty())
-			{
-				replica_name = context.getDefaultReplicaName();
-				if (replica_name.empty())
-					throw Exception("No replica name in config", ErrorCodes::NO_REPLICA_NAME_GIVEN);
-			}
+				throw Exception("No replica name in config", ErrorCodes::NO_REPLICA_NAME_GIVEN);
 
 			args.erase(args.begin(), args.begin() + 2);
 		}
@@ -310,22 +310,6 @@ StoragePtr StorageFactory::get(
 			return StorageMergeTree::create(data_path, database_name, table_name,
 				columns, context, primary_expr_list, date_column_name,
 				sampling_expression, index_granularity, mode, sign_column_name);
-	}
-	else if (name == "SystemNumbers")
-	{
-		if (columns->size() != 1 || columns->begin()->name != "number" || columns->begin()->type->getName() != "UInt64")
-			throw Exception("Storage SystemNumbers only allows one column with name 'number' and type 'UInt64'",
-				ErrorCodes::ILLEGAL_COLUMN);
-
-		return StorageSystemNumbers::create(table_name);
-	}
-	else if (name == "SystemOne")
-	{
-		if (columns->size() != 1 || columns->begin()->name != "dummy" || columns->begin()->type->getName() != "UInt8")
-			throw Exception("Storage SystemOne only allows one column with name 'dummy' and type 'UInt8'",
-				ErrorCodes::ILLEGAL_COLUMN);
-
-		return StorageSystemOne::create(table_name);
 	}
 	else
 		throw Exception("Unknown storage " + name, ErrorCodes::UNKNOWN_STORAGE);

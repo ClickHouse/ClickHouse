@@ -19,7 +19,7 @@ namespace DB
 {
 
 
-static const char * hilite_keyword = "\033[1;37m";
+static const char * hilite_keyword = "\033[1m";
 static const char * hilite_identifier = "\033[0;36m";
 static const char * hilite_function = "\033[0;33m";
 static const char * hilite_operator = "\033[1;33m";
@@ -70,6 +70,7 @@ void formatAST(const IAST & ast, std::ostream & s, size_t indent, bool hilite, b
 	DISPATCH(AlterQuery)
 	DISPATCH(ShowProcesslistQuery)
 	DISPATCH(Join)
+	DISPATCH(CheckQuery)
 //	DISPATCH(MultiQuery)
 	else
 		throw Exception("Unknown element in AST: " + ast.getID()
@@ -720,7 +721,7 @@ void formatAST(const ASTAlterQuery 			& ast, std::ostream & s, size_t indent, bo
 	{
 		const ASTAlterQuery::Parameters &p = ast.parameters[i];
 
-		if (p.type == ASTAlterQuery::ADD)
+		if (p.type == ASTAlterQuery::ADD_COLUMN)
 		{
 			s << (hilite ? hilite_keyword : "") << indent_str << "ADD COLUMN " << (hilite ? hilite_none : "");
 			formatAST(*p.name_type, s, indent, hilite, true);
@@ -732,15 +733,27 @@ void formatAST(const ASTAlterQuery 			& ast, std::ostream & s, size_t indent, bo
 				formatAST(*p.column, s, indent, hilite, one_line);
 			}
 		}
-		else if (p.type == ASTAlterQuery::DROP)
+		else if (p.type == ASTAlterQuery::DROP_COLUMN)
 		{
 			s << (hilite ? hilite_keyword : "") << indent_str << "DROP COLUMN " << (hilite ? hilite_none : "");
 			formatAST(*p.column, s, indent, hilite, true);
 		}
-		else if (p.type == ASTAlterQuery::MODIFY)
+		else if (p.type == ASTAlterQuery::MODIFY_COLUMN)
 		{
 			s << (hilite ? hilite_keyword : "") << indent_str << "MODIFY COLUMN " << (hilite ? hilite_none : "");
 			formatAST(*p.name_type, s, indent, hilite, true);
+		}
+		else if (p.type == ASTAlterQuery::DROP_PARTITION)
+		{
+			s << (hilite ? hilite_keyword : "") << indent_str << (p.detach ? "DETACH" : "DROP") << " PARTITION "
+				<< (hilite ? hilite_none : "");
+			formatAST(*p.partition, s, indent, hilite, true);
+		}
+		else if (p.type == ASTAlterQuery::ATTACH_PARTITION)
+		{
+			s << (hilite ? hilite_keyword : "") << indent_str << "ATTACH " << (p.unreplicated ? "UNREPLICATED" : "")
+				<< (p.part ? " PART " : " PARTITION ") << (hilite ? hilite_none : "");
+			formatAST(*p.partition, s, indent, hilite, true);
 		}
 		else
 			throw Exception("Unexpected type of ALTER", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
@@ -766,6 +779,27 @@ void formatAST(const ASTJoin & ast, std::ostream & s, size_t indent, bool hilite
 	s << (hilite ? hilite_keyword : "") << " USING " << (hilite ? hilite_none : "");
 
 	formatAST(*ast.using_expr_list, s, indent, hilite, one_line, need_parens);
+}
+
+void formatAST(const ASTCheckQuery & ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
+{
+	std::string nl_or_nothing = one_line ? "" : "\n";
+
+	std::string indent_str = one_line ? "" : std::string(4 * indent, ' ');
+	std::string nl_or_ws = one_line ? " " : "\n";
+
+	s << (hilite ? hilite_keyword : "") << indent_str << "CHECK TABLE " << (hilite ? hilite_none : "");
+
+	if (!ast.table.empty())
+	{
+		if (!ast.database.empty())
+		{
+			s << (hilite ? hilite_keyword : "") << indent_str << ast.database << (hilite ? hilite_none : "");
+			s << ".";
+		}
+		s << (hilite ? hilite_keyword : "") << indent_str << ast.table << (hilite ? hilite_none : "");
+	}
+	s << nl_or_ws;
 }
 
 /*

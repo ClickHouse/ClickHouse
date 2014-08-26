@@ -18,6 +18,8 @@ public:
 	void write(const Block & block);
 	void writeSuffix();
 
+	void flush() { ostr.next(); }
+
 	void setTotals(const Block & totals_) { totals = totals_; }
 	void setExtremes(const Block & extremes_) { extremes = extremes_; }
 

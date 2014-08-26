@@ -9,6 +9,7 @@
 #include <Yandex/logger_useful.h>
 
 #include <DB/Core/NamesAndTypes.h>
+#include <DB/Common/Macros.h>
 #include <DB/IO/UncompressedCache.h>
 #include <DB/Storages/MarkCache.h>
 #include <DB/DataStreams/FormatFactory.h>
@@ -56,8 +57,8 @@ typedef std::vector<DatabaseAndTableName> Dependencies;
   */
 struct ContextShared
 {
-	Logger * log;											/// Логгер.
-	
+	Logger * log = &Logger::get("Context");					/// Логгер.
+
 	struct AfterDestroy
 	{
 		Logger * log;
@@ -69,7 +70,7 @@ struct ContextShared
 			LOG_INFO(log, "Uninitialized shared context.");
 #endif
 		}
-	} after_destroy;
+	} after_destroy {log};
 
 	mutable Poco::Mutex mutex;								/// Для доступа и модификации разделяемых объектов.
 
@@ -95,8 +96,8 @@ struct ContextShared
 	ViewDependencies view_dependencies;						/// Текущие зависимости
 	ConfigurationPtr users_config;							/// Конфиг с секциями users, profiles и quotas.
 	InterserverIOHandler interserver_io_handler;			/// Обработчик для межсерверной передачи данных.
-	String default_replica_name;							/// Имя реплики из конфига.
 	BackgroundProcessingPoolPtr background_pool;			/// Пул потоков для фоновой работы, выполняемой таблицами.
+	Macros macros;											/// Подстановки из конфига.
 
 	/// Кластеры для distributed таблиц
 	/// Создаются при создании Distributed таблиц, так как нужно дождаться пока будут выставлены Settings
@@ -104,8 +105,6 @@ struct ContextShared
 
 	bool shutdown_called = false;
 
-
-	ContextShared() : log(&Logger::get("Context")), after_destroy(log) {};
 
 	~ContextShared()
 	{
@@ -227,7 +226,7 @@ public:
 
 	/// Возвращает отцепленную таблицу.
 	StoragePtr detachTable(const String & database_name, const String & table_name);
-	
+
 	void detachDatabase(const String & database_name);
 
 	String getCurrentDatabase() const;
@@ -238,9 +237,8 @@ public:
 	String getDefaultFormat() const;	/// Если default_format не задан - возвращается некоторый глобальный формат по-умолчанию.
 	void setDefaultFormat(const String & name);
 
-	/// Имя этой реплики из конфига.
-	String getDefaultReplicaName() const;
-	void setDefaultReplicaName(const String & name);
+	const Macros & getMacros() const;
+	void setMacros(Macros && macros);
 
 	Settings getSettings() const;
 	void setSettings(const Settings & settings_);

@@ -10,6 +10,7 @@
 #include <DB/Interpreters/Context.h>
 #include <DB/Client/ConnectionPoolWithFailover.h>
 
+
 namespace DB
 {
 
@@ -448,15 +449,15 @@ void Context::setDefaultFormat(const String & name)
 	default_format = name;
 }
 
-String Context::getDefaultReplicaName() const
+const Macros& Context::getMacros() const
 {
-	return shared->default_replica_name;
+	return shared->macros;
 }
 
-void Context::setDefaultReplicaName(const String & name)
+void Context::setMacros(Macros && macros)
 {
 	/// Полагаемся, что это присваивание происходит один раз при старте сервера. Если это не так, нужно использовать мьютекс.
-	shared->default_replica_name = name;
+	shared->macros = macros;
 }
 
 

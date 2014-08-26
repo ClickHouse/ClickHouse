@@ -91,31 +91,6 @@ void IBlockInputStream::dumpTree(std::ostream & ostr, size_t indent, size_t mult
 }
 
 
-void IBlockInputStream::dumpTreeWithProfile(std::ostream & ostr, size_t indent)
-{
-	ostr << indent + 1 << ". " << getShortName() << "." << std::endl;
-
-	/// Для красоты
-	size_t width = log10(indent + 1) + 4 + getShortName().size();
-	for (size_t i = 0; i < width; ++i)
-		ostr << "─";
-	ostr << std::endl;
-
-	/// Информация профайлинга, если есть
-	if (IProfilingBlockInputStream * profiling = dynamic_cast<IProfilingBlockInputStream *>(this))
-	{
-		if (profiling->getInfo().blocks != 0)
-		{
-			profiling->getInfo().print(ostr);
-			ostr << std::endl;
-		}
-	}
-	
-	for (BlockInputStreams::iterator it = children.begin(); it != children.end(); ++it)
-		(*it)->dumpTreeWithProfile(ostr, indent + 1);
-}
-
-
 String IBlockInputStream::getShortName() const
 {
 	String res = getName();

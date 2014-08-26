@@ -1,6 +1,6 @@
 #include <DB/Functions/IFunction.h>
-#include "NumberTraits.h"
 #include <DB/Columns/ColumnString.h>
+#include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/IO/WriteBufferFromVector.h>
 #include <DB/IO/WriteBufferFromString.h>

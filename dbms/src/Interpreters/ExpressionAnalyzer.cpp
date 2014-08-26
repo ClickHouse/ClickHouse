@@ -40,7 +40,8 @@ namespace DB
 /** Calls to these functions in the GROUP BY statement would be
   * replaced by their immediate argument.
   */
-const std::unordered_set<String> injectiveFunctionNames{
+const std::unordered_set<String> injective_function_names
+{
 	"negate",
 	"bitNot",
 	"reverse",
@@ -68,7 +69,7 @@ void ExpressionAnalyzer::init()
 	/// Common subexpression elimination. Rewrite rules.
 	normalizeTree();
 
-	/// GROUP BY injective function elimination
+	/// GROUP BY injective function elimination.
 	optimizeGroupBy();
 
 	/// array_join_alias_to_name, array_join_result_to_source.
@@ -455,7 +456,8 @@ void ExpressionAnalyzer::optimizeGroupBy()
 	auto & group_exprs = select_query->group_expression_list->children;
 
 	/// removes expression at index idx by making it last one and calling .pop_back()
-	const auto remove_expr_at_index = [&group_exprs] (const size_t idx) {
+	const auto remove_expr_at_index = [&group_exprs] (const size_t idx)
+	{
 		if (idx < group_exprs.size() - 1)
 			group_exprs[idx] = std::move(group_exprs.back());
 
@@ -463,13 +465,16 @@ void ExpressionAnalyzer::optimizeGroupBy()
 	};
 
 	/// iterate over each GROUP BY expression, eliminate injective function calls and literals
-	for (size_t i = 0; i < group_exprs.size(); ++i)
+	for (size_t i = 0; i < group_exprs.size();)
 	{
 		if (const auto function = typeid_cast<ASTFunction*>(group_exprs[i].get()))
 		{
 			/// assert function is injective
-			if (!injectiveFunctionNames.count(function->name))
+			if (!injective_function_names.count(function->name))
+			{
+				++i;
 				continue;
+			}
 
 			/// copy shared pointer to args in order to ensure lifetime
 			auto args_ast = function->arguments;
@@ -478,7 +483,6 @@ void ExpressionAnalyzer::optimizeGroupBy()
 			  * next iteration does not skip not yet processed data
 			  */
 			remove_expr_at_index(i);
-			i -= 1;
 
 			/// copy non-literal arguments
 			std::remove_copy_if(
@@ -489,7 +493,11 @@ void ExpressionAnalyzer::optimizeGroupBy()
 		else if (is_literal(group_exprs[i]))
 		{
 			remove_expr_at_index(i);
-			i -= 1;
+		}
+		else
+		{
+			/// if neither a function nor literal - advance to next expression
+			++i;
 		}
 	}
 
@@ -1022,7 +1030,6 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 						ColumnWithNameAndType fake_column;
 						fake_column.name = node->getColumnName();
 						fake_column.type = new DataTypeUInt8;
-						fake_column.column = new ColumnConstUInt8(1, 0);
 						actions_stack.addAction(ExpressionAction::addColumn(fake_column));
 						getActionsImpl(node->arguments->children.at(0), no_subqueries, only_consts, actions_stack);
 					}

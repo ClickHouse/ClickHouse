@@ -23,11 +23,17 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & e
 	ParserString s_modify("MODIFY", true, true);
 
 	ParserString s_drop("DROP", true, true);
+	ParserString s_detach("DETACH", true, true);
+	ParserString s_attach("ATTACH", true, true);
+	ParserString s_unreplicated("UNREPLICATED", true, true);
+	ParserString s_part("PART", true, true);
+	ParserString s_partition("PARTITION", true, true);
 	ParserString s_comma(",");
 
 	ParserIdentifier table_parser;
 	ParserCompoundIdentifier parser_name;
 	ParserCompoundNameTypePair parser_name_type;
+	ParserLiteral parser_literal;
 
 	ASTPtr table;
 	ASTPtr database;
@@ -75,7 +81,8 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & e
 		if (s_add.ignore(pos, end, expected))
 		{
 			ws.ignore(pos, end);
-			s_column.ignore(pos, end, expected);
+			if (!s_column.ignore(pos, end, expected))
+				return false;
 			ws.ignore(pos, end);
 
 			parser_name_type.parse(pos, end, params.name_type, expected);
@@ -89,29 +96,84 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & e
 					return false;
 			}
 
-			params.type = ASTAlterQuery::ADD;
+			params.type = ASTAlterQuery::ADD_COLUMN;
 		}
 		else if (s_drop.ignore(pos, end, expected))
 		{
 			ws.ignore(pos, end);
-			s_column.ignore(pos, end, expected);
+
+			if (s_partition.ignore(pos, end, expected))
+			{
+				ws.ignore(pos, end);
+
+				if (!parser_literal.parse(pos, end, params.partition, expected))
+					return false;
+
+				params.type = ASTAlterQuery::DROP_PARTITION;
+			}
+			else if (s_column.ignore(pos, end, expected))
+			{
+				ws.ignore(pos, end);
+
+				if (!parser_name.parse(pos, end, params.column, expected))
+					return false;
+
+				params.type = ASTAlterQuery::DROP_COLUMN;
+				params.detach = false;
+			}
+			else
+				return false;
+		}
+		else if (s_detach.ignore(pos, end, expected))
+		{
 			ws.ignore(pos, end);
 
-			parser_name.parse(pos, end, params.column, expected);
+			if (!s_partition.ignore(pos, end, expected))
+				return false;
 
-			params.type = ASTAlterQuery::DROP;
+			ws.ignore(pos, end);
+
+			if (!parser_literal.parse(pos, end, params.partition, expected))
+				return false;
+
+			params.type = ASTAlterQuery::DROP_PARTITION;
+			params.detach = true;
+		}
+		else if (s_attach.ignore(pos, end, expected))
+		{
+			ws.ignore(pos, end);
+
+			if (s_unreplicated.ignore(pos, end, expected))
+			{
+				params.unreplicated = true;
+				ws.ignore(pos, end);
+			}
+
+			if (s_part.ignore(pos, end, expected))
+				params.part = true;
+			else if (!s_partition.ignore(pos, end, expected))
+				return false;
+
+			ws.ignore(pos, end);
+
+			if (!parser_literal.parse(pos, end, params.partition, expected))
+				return false;
+
+			params.type = ASTAlterQuery::ATTACH_PARTITION;
 		}
 		else if (s_modify.ignore(pos, end, expected))
 		{
 			ws.ignore(pos, end);
-			s_column.ignore(pos, end, expected);
+			if (!s_column.ignore(pos, end, expected))
+				return false;
 			ws.ignore(pos, end);
 
-			parser_name_type.parse(pos, end, params.name_type, expected);
+			if (!parser_name_type.parse(pos, end, params.name_type, expected))
+				return false;
 
 			ws.ignore(pos, end);
 
-			params.type = ASTAlterQuery::MODIFY;
+			params.type = ASTAlterQuery::MODIFY_COLUMN;
 		}
 		else
 			return false;
@@ -124,7 +186,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & e
 			parsing_finished = true;
 		}
 
-		query->parameters.push_back(params);
+		query->addParameters(params);
 	}
 	while (!parsing_finished);
 

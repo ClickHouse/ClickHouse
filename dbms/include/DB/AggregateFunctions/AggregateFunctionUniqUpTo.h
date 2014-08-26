@@ -19,8 +19,15 @@ namespace DB
 template <typename T>
 struct __attribute__((__packed__)) AggregateFunctionUniqUpToData
 {
+	/** Если count == threshold + 1 - это значит, что "переполнилось" (значений больше threshold).
+	  * В этом случае (например, после вызова функции merge), массив data не обязательно содержит инициализированные значения
+	  * - пример: объединяем состояние, в котором мало значений, с другим состоянием, которое переполнилось;
+	  *   тогда выставляем count в threshold + 1, а значения из другого состояния не копируем.
+	  */
 	UInt8 count = 0;
-	T data[0];	/// Данные идут после конца структуры. При вставке, делается линейный поиск.
+
+	/// Данные идут после конца структуры. При вставке, делается линейный поиск.
+	T data[0];
 
 
 	size_t size() const
@@ -31,17 +38,20 @@ struct __attribute__((__packed__)) AggregateFunctionUniqUpToData
 	/// threshold - для скольки элементов есть место в data.
 	void insert(T x, UInt8 threshold)
 	{
+		/// Состояние уже переполнено - ничего делать не нужно.
 		if (count > threshold)
 			return;
 
-		size_t limit = std::min(count, threshold);
-		for (size_t i = 0; i < limit; ++i)
+		/// Линейный поиск совпадающего элемента.
+		for (size_t i = 0; i < count; ++i)
 			if (data[i] == x)
 				return;
 
+		/// Не нашли совпадающий элемент. Если есть место ещё для одного элемента - вставляем его.
 		if (count < threshold)
 			data[count] = x;
 
+		/// После увеличения count, состояние может оказаться переполненным.
 		++count;
 	}
 
@@ -52,19 +62,22 @@ struct __attribute__((__packed__)) AggregateFunctionUniqUpToData
 
 		if (rhs.count > threshold)
 		{
+			/// Если rhs переполнено, то выставляем у текущего состояния count тоже переполненным.
 			count = rhs.count;
 			return;
 		}
 
-		size_t limit = std::min(rhs.count, threshold);
-		for (size_t i = 0; i < limit; ++i)
+		for (size_t i = 0; i < rhs.count; ++i)
 			insert(rhs.data[i], threshold);
 	}
 
 	void write(WriteBuffer & wb, UInt8 threshold) const
 	{
-		size_t limit = std::min(count, threshold);
-		wb.write(reinterpret_cast<const char *>(this), sizeof(*this) + limit * sizeof(data[0]));
+		writeBinary(count, wb);
+
+		/// Пишем значения, только если состояние не переполнено. Иначе они не нужны, а важен только факт того, что состояние переполнено.
+		if (count <= threshold)
+			wb.write(reinterpret_cast<const char *>(this), count * sizeof(data[0]));
 	}
 
 	void readAndMerge(ReadBuffer & rb, UInt8 threshold)
@@ -72,11 +85,14 @@ struct __attribute__((__packed__)) AggregateFunctionUniqUpToData
 		UInt8 rhs_count;
 		readBinary(rhs_count, rb);
 
-		if (rhs_count > threshold + 1)
-			throw Poco::Exception("Cannot read AggregateFunctionUniqUpToData: too large count.");
+		if (rhs_count > threshold)
+		{
+			/// Если rhs переполнено, то выставляем у текущего состояния count тоже переполненным.
+			count = rhs_count;
+			return;
+		}
 
-		size_t limit = std::min(rhs_count, threshold);
-		for (size_t i = 0; i < limit; ++i)
+		for (size_t i = 0; i < rhs_count; ++i)
 		{
 			T x;
 			readBinary(x, rb);
@@ -135,11 +151,13 @@ public:
 		if (params.size() != 1)
 			throw Exception("Aggregate function " + getName() + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		threshold = apply_visitor(FieldVisitorConvertToNumber<UInt64>(), params[0]);
+		UInt64 threshold_param = apply_visitor(FieldVisitorConvertToNumber<UInt64>(), params[0]);
 
-		if (threshold > uniq_upto_max_threshold)
+		if (threshold_param > uniq_upto_max_threshold)
 			throw Exception("Too large parameter for aggregate function " + getName() + ". Maximum: " + toString(uniq_upto_max_threshold),
 				ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+		threshold = threshold_param;
 	}
 
 	void addOne(AggregateDataPtr place, const IColumn & column, size_t row_num) const

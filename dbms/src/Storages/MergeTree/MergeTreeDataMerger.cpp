@@ -1,6 +1,7 @@
 #include <DB/Storages/MergeTree/MergeTreeDataMerger.h>
 #include <DB/Storages/MergeTree/MergeTreeBlockInputStream.h>
 #include <DB/Storages/MergeTree/MergedBlockOutputStream.h>
+#include <DB/Storages/MergeTree/DiskSpaceMonitor.h>
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
 #include <DB/DataStreams/MergingSortedBlockInputStream.h>
 #include <DB/DataStreams/CollapsingSortedBlockInputStream.h>
@@ -37,7 +38,7 @@ static const double DISK_USAGE_COEFFICIENT_TO_RESERVE = 1.4;
 /// 5) С ростом логарифма суммарного размера кусочков в мердже увеличиваем требование сбалансированности
 
 bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & parts, String & merged_name, size_t available_disk_space,
-	bool merge_anything_for_old_months, bool aggressive, bool only_small, const AllowedMergingPredicate & can_merge)
+	bool merge_anything_for_old_months, bool aggressive, bool only_small, const AllowedMergingPredicate & can_merge_callback)
 {
 	MergeTreeData::DataParts data_parts = data.getDataParts();
 
@@ -65,6 +66,19 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 
 	if (only_small)
 		cur_max_bytes_to_merge_parts = data.settings.max_bytes_to_merge_parts_small;
+
+	/// Мемоизация для функции can_merge_callback. Результат вызова can_merge_callback для этого куска и предыдущего в data_parts.
+	std::map<MergeTreeData::DataPartPtr, bool> can_merge_with_previous;
+	auto can_merge = [&can_merge_with_previous, &can_merge_callback]
+		(const MergeTreeData::DataPartPtr & first, const MergeTreeData::DataPartPtr & second) -> bool
+	{
+		auto it = can_merge_with_previous.find(second);
+		if (it != can_merge_with_previous.end())
+			return it->second;
+		bool res = can_merge_callback(first, second);
+		can_merge_with_previous[second] = res;
+		return res;
+	};
 
 	/// Найдем суммарный размер еще не пройденных кусков (то есть всех).
 	size_t size_in_bytes_of_remaining_parts = 0;
@@ -187,7 +201,9 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 					{
 						disk_space_warning_time = now;
 						LOG_WARNING(log, "Won't merge parts from " << first_part->name << " to " << last_part->name
-							<< " because not enough free space: " << available_disk_space << " free and unreserved, "
+							<< " because not enough free space: " << available_disk_space << " free and unreserved "
+							<< "(" << DiskSpaceMonitor::getReservedSpace() << " reserved in "
+							<< DiskSpaceMonitor::getReservationCount() << " chunks), "
 							<< cur_sum << " required now (+" << static_cast<int>((DISK_USAGE_COEFFICIENT_TO_SELECT - 1.0) * 100)
 							<< "% on overhead); suppressing similar warnings for the next hour");
 					}
@@ -247,7 +263,8 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 
 /// parts должны быть отсортированы.
 MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
-	const MergeTreeData::DataPartsVector & parts, const String & merged_name, MergeTreeData::Transaction * out_transaction)
+	const MergeTreeData::DataPartsVector & parts, const String & merged_name,
+	MergeTreeData::Transaction * out_transaction, DiskSpaceMonitor::Reservation * disk_reservation)
 {
 	LOG_DEBUG(log, "Merging " << parts.size() << " parts: from " << parts.front()->name << " to " << parts.back()->name << " into " << merged_name);
 
@@ -277,12 +294,15 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 	  */
 	BlockInputStreams src_streams;
 
+	size_t sum_rows_approx = 0;
+
 	for (size_t i = 0; i < parts.size(); ++i)
 	{
 		MarkRanges ranges(1, MarkRange(0, parts[i]->size));
 		src_streams.push_back(new ExpressionBlockInputStream(new MergeTreeBlockInputStream(
 			data.getFullPath() + parts[i]->name + '/', DEFAULT_MERGE_BLOCK_SIZE, union_column_names, data,
 			parts[i], ranges, false, nullptr, ""), data.getPrimaryExpression()));
+		sum_rows_approx += parts[i]->size * data.index_granularity;
 	}
 
 	/// Порядок потоков важен: при совпадении ключа элементы идут в порядке номера потока-источника.
@@ -319,9 +339,18 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 	merged_stream->readPrefix();
 	to->writePrefix();
 
+	size_t rows_written = 0;
+	size_t initial_reservation = disk_reservation ? disk_reservation->getSize() : 0;
+
 	Block block;
 	while (!canceled && (block = merged_stream->read()))
+	{
+		rows_written += block.rows();
 		to->write(block);
+
+		if (disk_reservation)
+			disk_reservation->update(static_cast<size_t>((1 - std::min(1., 1. * rows_written / sum_rows_approx)) * initial_reservation));
+	}
 
 	if (canceled)
 		throw Exception("Canceled merging parts", ErrorCodes::ABORTED);

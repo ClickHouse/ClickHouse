@@ -198,4 +198,8 @@ public:
 };
 
 
+/// Считает, сколько байт в filt больше нуля.
+size_t countBytesInFilter(const IColumn::Filter & filt);
+
+
 }

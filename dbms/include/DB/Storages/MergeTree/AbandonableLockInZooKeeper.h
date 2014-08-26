@@ -13,7 +13,7 @@ namespace DB
   * При вызове деструктора или завершении сессии в ZooKeeper, переходит в состояние ABANDONED.
   *  (В том числе при падении программы)
   */
-class AbandonableLockInZooKeeper
+class AbandonableLockInZooKeeper : private boost::noncopyable
 {
 public:
 	enum State
@@ -34,6 +34,14 @@ public:
 		path = zookeeper.create(path_prefix, holder_path, zkutil::CreateMode::PersistentSequential);
 	}
 
+	AbandonableLockInZooKeeper(AbandonableLockInZooKeeper && rhs)
+		: zookeeper(rhs.zookeeper)
+	{
+		std::swap(path_prefix, rhs.path_prefix);
+		std::swap(path, rhs.path);
+		std::swap(holder_path, rhs.holder_path);
+	}
+
 	String getPath()
 	{
 		return path;
@@ -49,6 +57,7 @@ public:
 	{
 		zookeeper.remove(path);
 		zookeeper.remove(holder_path);
+		holder_path = "";
 	}
 
 	/// Добавляет в список действия, эквивалентные unlock().
@@ -60,6 +69,9 @@ public:
 
 	~AbandonableLockInZooKeeper()
 	{
+		if (holder_path.empty())
+			return;
+
 		try
 		{
 			zookeeper.tryRemove(holder_path);

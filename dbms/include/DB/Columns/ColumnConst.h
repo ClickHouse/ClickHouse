@@ -32,11 +32,11 @@ class ColumnConst final : public IColumnConst
 public:
 	typedef T Type;
 	typedef typename NearestFieldType<T>::Type FieldType;
-	
+
 	/// Для ColumnConst<Array> data_type_ должен быть ненулевым.
 	/// Для ColumnConst<String> data_type_ должен быть ненулевым, если тип данных FixedString.
 	ColumnConst(size_t s_, const T & data_, DataTypePtr data_type_ = DataTypePtr()) : s(s_), data(data_), data_type(data_type_) {}
-	
+
 	std::string getName() const { return "ColumnConst<" + TypeName<T>::get() + ">"; }
 	bool isNumeric() const { return IsNumber<T>::value; }
 	bool isFixed() const { return IsNumber<T>::value; }
@@ -50,7 +50,7 @@ public:
 	{
 		return new ColumnConst<T>(length, data, data_type);
 	}
-	
+
 	void insert(const Field & x)
 	{
 		if (x.get<FieldType>() != FieldType(data))
@@ -71,20 +71,15 @@ public:
 				ErrorCodes::CANNOT_INSERT_ELEMENT_INTO_CONSTANT_COLUMN);
 		++s;
 	}
-	
+
 	void insertDefault() { ++s; }
 
 	ColumnPtr filter(const Filter & filt) const
 	{
 		if (s != filt.size())
 			throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
-		
-		size_t new_size = 0;
-		for (Filter::const_iterator it = filt.begin(); it != filt.end(); ++it)
-			if (*it)
-				++new_size;
-			
-		return new ColumnConst<T>(new_size, data, data_type);
+
+		return new ColumnConst<T>(countBytesInFilter(filt), data, data_type);
 	}
 
 	ColumnPtr replicate(const Offsets_t & offsets) const
@@ -92,7 +87,8 @@ public:
 		if (s != offsets.size())
 			throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-		return new ColumnConst<T>(offsets.back(), data, data_type);
+		size_t replicated_size = 0 == s ? 0 : offsets.back();
+		return new ColumnConst<T>(replicated_size, data, data_type);
 	}
 
 	size_t byteSize() const { return sizeof(data) + sizeof(s); }

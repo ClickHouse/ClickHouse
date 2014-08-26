@@ -5,6 +5,7 @@
 #include <DB/Storages/MergeTree/MergeTreeReader.h>
 #include <DB/Storages/MergeTree/MergeTreeBlockInputStream.h>
 #include <DB/Storages/MergeTree/MergedBlockOutputStream.h>
+#include <DB/Storages/MergeTree/MergeTreePartChecker.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTNameTypePair.h>
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
@@ -41,6 +42,7 @@ MergeTreeData::MergeTreeData(
 {
 	/// создаём директорию, если её нет
 	Poco::File(full_path).createDirectories();
+	Poco::File(full_path + "detached").createDirectory();
 
 	/// инициализируем описание сортировки
 	sort_descr.reserve(primary_expr_ast->children.size());
@@ -54,8 +56,6 @@ MergeTreeData::MergeTreeData(
 
 	ExpressionActionsPtr projected_expr = ExpressionAnalyzer(primary_expr_ast, context, *columns).getActions(true);
 	primary_key_sample = projected_expr->getSampleBlock();
-
-	loadDataParts();
 }
 
 UInt64 MergeTreeData::getMaxDataPartIndex()
@@ -83,7 +83,7 @@ std::string MergeTreeData::getModePrefix() const
 }
 
 
-void MergeTreeData::loadDataParts()
+void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 {
 	LOG_DEBUG(log, "Loading data parts");
 
@@ -104,6 +104,7 @@ void MergeTreeData::loadDataParts()
 		if (0 == file_name.compare(0, strlen("tmp_"), "tmp_"))
 			continue;
 
+		/// TODO: Это можно удалить, если нигде больше не осталось директорий old_* (их давно никто не пишет).
 		if (0 == file_name.compare(0, strlen("old_"), "old_"))
 		{
 			String new_file_name = file_name.substr(strlen("old_"));
@@ -118,11 +119,13 @@ void MergeTreeData::loadDataParts()
 	}
 
 	DataPartsVector broken_parts_to_remove;
+	DataPartsVector broken_parts_to_detach;
+	size_t suspicious_broken_parts = 0;
 
 	Poco::RegularExpression::MatchVec matches;
 	for (const String & file_name : part_file_names)
 	{
-		if (!ActiveDataPartSet::isPartDirectory(file_name, matches))
+		if (!ActiveDataPartSet::isPartDirectory(file_name, &matches))
 			continue;
 
 		MutableDataPartPtr part = std::make_shared<DataPart>(*this);
@@ -133,10 +136,10 @@ void MergeTreeData::loadDataParts()
 
 		try
 		{
-			part->loadColumns();
-			part->loadChecksums();
+			part->loadColumns(require_part_metadata);
+			part->loadChecksums(require_part_metadata);
 			part->loadIndex();
-			part->checkNotBroken();
+			part->checkNotBroken(require_part_metadata);
 		}
 		catch (...)
 		{
@@ -150,7 +153,7 @@ void MergeTreeData::loadDataParts()
 			if (part->level == 0)
 			{
 				/// Восстановить куски нулевого уровня невозможно.
-				LOG_ERROR(log, "Removing broken part " << full_path + file_name << " because is't impossible to repair.");
+				LOG_ERROR(log, "Removing broken part " << full_path + file_name << " because it's impossible to repair.");
 				broken_parts_to_remove.push_back(part);
 			}
 			else
@@ -160,12 +163,13 @@ void MergeTreeData::loadDataParts()
 				int contained_parts = 0;
 
 				LOG_ERROR(log, "Part " << full_path + file_name << " is broken. Looking for parts to replace it.");
+				++suspicious_broken_parts;
 
 				for (const String & contained_name : part_file_names)
 				{
 					if (contained_name == file_name)
 						continue;
-					if (!ActiveDataPartSet::isPartDirectory(contained_name, matches))
+					if (!ActiveDataPartSet::isPartDirectory(contained_name, &matches))
 						continue;
 					DataPart contained_part(*this);
 					ActiveDataPartSet::parsePartName(contained_name, contained_part, &matches);
@@ -183,8 +187,9 @@ void MergeTreeData::loadDataParts()
 				}
 				else
 				{
-					LOG_ERROR(log, "Not removing broken part " << full_path + file_name
+					LOG_ERROR(log, "Detaching broken part " << full_path + file_name
 						<< " because it covers less than 2 parts. You need to resolve this manually");
+					broken_parts_to_detach.push_back(part);
 				}
 			}
 
@@ -196,12 +201,14 @@ void MergeTreeData::loadDataParts()
 		data_parts.insert(part);
 	}
 
-	if (broken_parts_to_remove.size() > 2)
-		throw Exception("Suspiciously many (" + toString(broken_parts_to_remove.size()) + ") broken parts to remove.",
+	if (suspicious_broken_parts > 5 && !skip_sanity_checks)
+		throw Exception("Suspiciously many (" + toString(suspicious_broken_parts) + ") broken parts to remove.",
 			ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS);
 
 	for (const auto & part : broken_parts_to_remove)
 		part->remove();
+	for (const auto & part : broken_parts_to_detach)
+		part->renameAddPrefix("detached/");
 
 	all_data_parts = data_parts;
 
@@ -705,8 +712,6 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
 
 void MergeTreeData::replaceParts(const DataPartsVector & remove, const DataPartsVector & add, bool clear_without_timeout)
 {
-	LOG_TRACE(log, "Removing " << remove.size() << " parts and adding " << add.size() << " parts.");
-
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 
 	for (const DataPartPtr & part : remove)
@@ -720,7 +725,17 @@ void MergeTreeData::replaceParts(const DataPartsVector & remove, const DataParts
 	}
 }
 
-void MergeTreeData::renameAndDetachPart(DataPartPtr part, const String & prefix, bool restore_covered)
+void MergeTreeData::attachPart(DataPartPtr part)
+{
+	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
+	Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
+
+	if (!all_data_parts.insert(part).second)
+		throw Exception("Part " + part->name + " is already attached", ErrorCodes::DUPLICATE_DATA_PART);
+	data_parts.insert(part);
+}
+
+void MergeTreeData::renameAndDetachPart(DataPartPtr part, const String & prefix, bool restore_covered, bool move_to_detached)
 {
 	LOG_INFO(log, "Renaming " << part->name << " to " << prefix << part->name << " and detaching it.");
 
@@ -731,7 +746,8 @@ void MergeTreeData::renameAndDetachPart(DataPartPtr part, const String & prefix,
 		throw Exception("No such data part", ErrorCodes::NO_SUCH_DATA_PART);
 
 	data_parts.erase(part);
-	part->renameAddPrefix(prefix);
+	if (move_to_detached || !prefix.empty())
+		part->renameAddPrefix((move_to_detached ? "detached/" : "") + prefix);
 
 	if (restore_covered)
 	{
@@ -781,6 +797,11 @@ void MergeTreeData::renameAndDetachPart(DataPartPtr part, const String & prefix,
 		if (error)
 			LOG_ERROR(log, "The set of parts restored in place of " << part->name << " looks incomplete. There might or might not be a data loss.");
 	}
+}
+
+void MergeTreeData::detachPartInPlace(DataPartPtr part)
+{
+	renameAndDetachPart(part, "", false, false);
 }
 
 MergeTreeData::DataParts MergeTreeData::getDataParts()
@@ -877,6 +898,41 @@ MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const String & part_na
 		return *it;
 
 	return nullptr;
+}
+
+MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const String & relative_path)
+{
+	MutableDataPartPtr part = std::make_shared<DataPart>(*this);
+	part->name = relative_path;
+
+	/// Раньше список столбцов записывался неправильно. Удалим его и создадим заново.
+	if (Poco::File(full_path + relative_path + "/columns.txt").exists())
+		Poco::File(full_path + relative_path + "/columns.txt").remove();
+
+	part->loadColumns(false);
+	part->loadChecksums(false);
+	part->loadIndex();
+	part->checkNotBroken(false);
+
+	part->modification_time = Poco::File(full_path + relative_path).getLastModified().epochTime();
+
+	/// Если нет файла с чексуммами, посчитаем чексуммы и запишем. Заодно проверим данные.
+	if (part->checksums.empty())
+	{
+		MergeTreePartChecker::Settings settings;
+		settings.setIndexGranularity(index_granularity);
+		settings.setRequireColumnFiles(true);
+		MergeTreePartChecker::checkDataPart(full_path + relative_path, settings, context.getDataTypeFactory(), &part->checksums);
+
+		{
+			WriteBufferFromFile out(full_path + relative_path + "/checksums.txt.tmp", 4096);
+			part->checksums.writeText(out);
+		}
+
+		Poco::File(full_path + relative_path + "/checksums.txt.tmp").renameTo(full_path + relative_path + "/checksums.txt");
+	}
+
+	return part;
 }
 
 

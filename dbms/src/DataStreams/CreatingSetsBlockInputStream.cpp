@@ -111,6 +111,8 @@ void CreatingSetsBlockInputStream::create(SubqueryForSet & subquery)
 	size_t rows = 0;
 	size_t bytes = 0;
 
+	watch.stop();
+
 	subquery.source->getLeafRowsBytes(rows, bytes);
 
 	size_t head_rows = 0;

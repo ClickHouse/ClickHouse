@@ -370,8 +370,8 @@ int Server::main(const std::vector<std::string> & args)
 		global_context->setInterserverIOHost(this_host, port);
 	}
 
-	if (config().has("replica_name"))
-		global_context->setDefaultReplicaName(config().getString("replica_name"));
+	if (config().has("macros"))
+		global_context->setMacros(Macros(config(), "macros"));
 
 	std::string users_config_path = config().getString("users_config", config().getString("config-file", "config.xml"));
 	auto users_config_reloader = stdext::make_unique<UsersConfigReloader>(users_config_path, global_context.get());
@@ -402,6 +402,7 @@ int Server::main(const std::vector<std::string> & args)
 
 	global_context->addTable("system", "one",		StorageSystemOne::create("one"));
 	global_context->addTable("system", "numbers", 	StorageSystemNumbers::create("numbers"));
+	global_context->addTable("system", "numbers_mt", StorageSystemNumbers::create("numbers_mt", true));
 	global_context->addTable("system", "tables", 	StorageSystemTables::create("tables", *global_context));
 	global_context->addTable("system", "parts", 	StorageSystemParts::create("parts", *global_context));
 	global_context->addTable("system", "databases", StorageSystemDatabases::create("databases", *global_context));

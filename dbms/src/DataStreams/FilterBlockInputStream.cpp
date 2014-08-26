@@ -41,7 +41,7 @@ Block FilterBlockInputStream::readImpl()
 		/** Если фильтр - константа (например, написано WHERE 1),
 		  *  то либо вернём пустой блок, либо вернём блок без изменений.
 		  */
-		ColumnConstUInt8 * column_const = typeid_cast<ColumnConstUInt8 *>(&*column);
+		const ColumnConstUInt8 * column_const = typeid_cast<const ColumnConstUInt8 *>(&*column);
 		if (column_const)
 		{
 			if (!column_const->getData())
@@ -50,52 +50,73 @@ Block FilterBlockInputStream::readImpl()
 			return res;
 		}
 
-		ColumnUInt8 * column_vec = typeid_cast<ColumnUInt8 *>(&*column);
+		const ColumnUInt8 * column_vec = typeid_cast<const ColumnUInt8 *>(&*column);
 		if (!column_vec)
 			throw Exception("Illegal type " + column->getName() + " of column for filter. Must be ColumnUInt8 or ColumnConstUInt8.", ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
 
-		IColumn::Filter & filter = column_vec->getData();
+		const IColumn::Filter & filter = column_vec->getData();
 
-		/// Если кроме столбца с фильтром ничего нет.
-		if (columns == 1)
-		{
-			/// То посчитаем в нём количество единичек.
-			size_t filtered_rows = 0;
-			for (size_t i = 0, size = filter.size(); i < size; ++i)
-				if (filter[i])
-					++filtered_rows;
-
-			/// Если текущий блок полностью отфильтровался - перейдём к следующему.
-			if (filtered_rows == 0)
-				continue;
-
-			/// Заменяем этот столбец на столбец с константой 1, нужного размера.
-			res.getByPosition(filter_column).column = new ColumnConstUInt8(filtered_rows, 1);
-
-			return res;
-		}
-
-		/// Общий случай - фильтруем остальные столбцы.
+		/** Выясним, сколько строк будет в результате.
+		  * Для этого отфильтруем первый попавшийся неконстантный столбец
+		  *  или же посчитаем количество выставленных байт в фильтре.
+		  */
+		size_t first_non_constant_column = 0;
 		for (size_t i = 0; i < columns; ++i)
 		{
-			if (i != static_cast<size_t>(filter_column))
+			if (!res.getByPosition(i).column->isConst())
 			{
-				ColumnWithNameAndType & current_column = res.getByPosition(i);
-				current_column.column = current_column.column->filter(filter);
-				if (current_column.column->empty())
+				first_non_constant_column = i;
+
+				if (first_non_constant_column != static_cast<size_t>(filter_column))
 					break;
 			}
 		}
 
-		/// Любой столбец - не являющийся фильтром.
-		IColumn & any_not_filter_column = *res.getByPosition(filter_column == 0 ? 1 : 0).column;
+		size_t filtered_rows = 0;
+		if (first_non_constant_column != static_cast<size_t>(filter_column))
+		{
+			ColumnWithNameAndType & current_column = res.getByPosition(first_non_constant_column);
+			current_column.column = current_column.column->filter(filter);
+			filtered_rows = current_column.column->size();
+		}
+		else
+		{
+			filtered_rows = countBytesInFilter(filter);
+		}
 
 		/// Если текущий блок полностью отфильтровался - перейдём к следующему.
-		if (any_not_filter_column.empty())
+		if (filtered_rows == 0)
 			continue;
 
-		/// Сам столбец с фильтром заменяем на столбец с константой 1, так как после фильтрации в нём ничего другого не останется.
-		res.getByPosition(filter_column).column = new ColumnConstUInt8(any_not_filter_column.size(), 1);
+		/// Если через фильтр проходят все строчки.
+		if (filtered_rows == filter.size())
+		{
+			/// Заменим столбец с фильтром на константу.
+			res.getByPosition(filter_column).column = new ColumnConstUInt8(filtered_rows, 1);
+			/// Остальные столбцы трогать не нужно.
+			return res;
+		}
+
+		/// Фильтруем остальные столбцы.
+		for (size_t i = 0; i < columns; ++i)
+		{
+			ColumnWithNameAndType & current_column = res.getByPosition(i);
+
+			if (i == static_cast<size_t>(filter_column))
+			{
+				/// Сам столбец с фильтром заменяем на столбец с константой 1, так как после фильтрации в нём ничего другого не останется.
+				current_column.column = new ColumnConstUInt8(filtered_rows, 1);
+				continue;
+			}
+
+			if (i == first_non_constant_column)
+				continue;
+
+			if (current_column.column->isConst())
+				current_column.column = current_column.column->cut(0, filtered_rows);
+			else
+				current_column.column = current_column.column->filter(filter);
+		}
 
 		return res;
 	}

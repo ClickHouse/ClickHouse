@@ -70,6 +70,9 @@ struct Settings
 	  * TODO: Сейчас применяется только при запуске сервера. Можно сделать изменяемым динамически. */ \
 	M(SettingUInt64, background_pool_size, DBMS_DEFAULT_BACKGROUND_POOL_SIZE) \
 	\
+	/** Sleep time for StorageDistributed DirectoryMonitors in case there is no work or exception has been thrown */ \
+	M(SettingMilliseconds, distributed_directory_monitor_sleep_time_ms, DBMS_DISTRIBUTED_DIRECTORY_MONITOR_SLEEP_TIME_MS) \
+	\
 	M(SettingLoadBalancing, load_balancing, LoadBalancing::RANDOM) \
 	\
 	M(SettingTotalsMode, totals_mode, TotalsMode::BEFORE_HAVING) \

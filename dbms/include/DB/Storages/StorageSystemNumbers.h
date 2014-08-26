@@ -3,27 +3,12 @@
 #include <Poco/SharedPtr.h>
 
 #include <DB/Storages/IStorage.h>
-#include <DB/DataStreams/IProfilingBlockInputStream.h>
 
 
 namespace DB
 {
 
 using Poco::SharedPtr;
-
-
-class NumbersBlockInputStream : public IProfilingBlockInputStream
-{
-public:
-	NumbersBlockInputStream(size_t block_size_);
-	String getName() const { return "NumbersBlockInputStream"; }
-	String getID() const { return "Numbers"; }
-protected:
-	Block readImpl();
-private:
-	size_t block_size;
-	UInt64 next;
-};
 
 
 /** Реализует хранилище для системной таблицы Numbers.
@@ -33,7 +18,7 @@ private:
 class StorageSystemNumbers : public IStorage
 {
 public:
-	static StoragePtr create(const std::string & name_);
+	static StoragePtr create(const std::string & name_, bool multithreaded_ = false);
 	
 	std::string getName() const { return "SystemNumbers"; }
 	std::string getTableName() const { return name; }
@@ -51,8 +36,9 @@ public:
 private:
 	const std::string name;
 	NamesAndTypesList columns;
+	bool multithreaded;
 	
-	StorageSystemNumbers(const std::string & name_);
+	StorageSystemNumbers(const std::string & name_, bool multithreaded_);
 };
 
 }

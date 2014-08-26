@@ -266,6 +266,12 @@ void TinyLogBlockOutputStream::writeSuffix()
 	for (FileStreams::iterator it = streams.begin(); it != streams.end(); ++it)
 		it->second->finalize();
 
+	std::vector<Poco::File> column_files;
+	for (auto & pair : streams)
+		column_files.push_back(storage.files[pair.first].data_file);
+
+	storage.file_checker.update(column_files.begin(), column_files.end());
+
 	streams.clear();
 }
 
@@ -286,15 +292,18 @@ void TinyLogBlockOutputStream::write(const Block & block)
 
 
 StorageTinyLog::StorageTinyLog(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, bool attach, size_t max_compress_block_size_)
-	: path(path_), name(name_), columns(columns_), max_compress_block_size(max_compress_block_size_)
+	: path(path_), name(name_), columns(columns_),
+		max_compress_block_size(max_compress_block_size_),
+		file_checker(path + escapeForFileName(name) + '/' + "sizes.json", *this),
+		log(&Logger::get("StorageTinyLog"))
 {
 	if (columns->empty())
 		throw Exception("Empty list of columns passed to StorageTinyLog constructor", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
 
+	String full_path = path + escapeForFileName(name) + '/';
 	if (!attach)
 	{
 		/// создаём файлы, если их нет
-		String full_path = path + escapeForFileName(name) + '/';
 		if (0 != mkdir(full_path.c_str(), S_IRWXU | S_IRWXG | S_IRWXO) && errno != EEXIST)
 			throwFromErrno("Cannot create directory " + full_path, ErrorCodes::CANNOT_CREATE_DIRECTORY);
 	}
@@ -360,6 +369,7 @@ void StorageTinyLog::rename(const String & new_path_to_db, const String & new_da
 
 	path = new_path_to_db;
 	name = new_table_name;
+	file_checker.setPath(path + escapeForFileName(name) + "/" + "sizes.json");
 
 	for (Files_t::iterator it = files.begin(); it != files.end(); ++it)
 		it->second.data_file = Poco::File(path + escapeForFileName(name) + '/' + Poco::Path(it->second.data_file.path()).getFileName());
@@ -392,6 +402,21 @@ void StorageTinyLog::drop()
 	for (Files_t::iterator it = files.begin(); it != files.end(); ++it)
 		if (it->second.data_file.exists())
 			it->second.data_file.remove();
+}
+
+bool StorageTinyLog::checkData() const
+{
+	return file_checker.check();
+}
+
+StorageTinyLog::Files_t & StorageTinyLog::getFiles()
+{
+	return files;
+}
+
+TinyLogBlockOutputStream::~TinyLogBlockOutputStream()
+{
+	writeSuffix();
 }
 
 }

@@ -7,7 +7,9 @@
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>
+#include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/Columns/ColumnString.h>
+#include <DB/Columns/ColumnFixedString.h>
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Common/Volnitsky.h>
 #include <DB/Functions/IFunction.h>

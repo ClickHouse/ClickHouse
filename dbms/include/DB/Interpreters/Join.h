@@ -1,7 +1,5 @@
 #pragma once
 
-#include <statdaemons/Stopwatch.h>
-
 #include <Yandex/logger_useful.h>
 
 #include <DB/Parsers/ASTJoin.h>

@@ -180,6 +180,8 @@ int main(int argc, char ** argv)
 
 					DB::assertString("set", in);
 					DB::skipWhitespaceIfAny(in);
+					DB::assertString(path, in);
+					DB::skipWhitespaceIfAny(in);
 					readMaybeQuoted(data, in);
 					DB::skipWhitespaceIfAny(in);
 
