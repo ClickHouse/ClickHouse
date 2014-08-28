@@ -187,7 +187,7 @@ public:
 			res_offsets.push_back(current_offset);
 
 			const auto chars_size_old = res_chars.size();
-			res_chars.resize(chars_size_old + size);
+			res_chars.resize_assume_reserved(chars_size_old + size);
 			memcpy(&res_chars[chars_size_old], &chars[offset], size);
 		};
 
