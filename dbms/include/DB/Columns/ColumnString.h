@@ -160,6 +160,7 @@ public:
 			return new ColumnString;
 
 		auto res = new ColumnString;
+		ColumnPtr res_{res};
 
 		Chars_t & res_chars = res->chars;
 		Offsets_t & res_offsets = res->offsets;
@@ -168,14 +169,14 @@ public:
 
 		Offset_t current_offset = 0;
 
-		auto filt_pos = &filt[0];
+		const UInt8 * filt_pos = &filt[0];
 		const auto filt_end = filt_pos + size;
 		const auto filt_end_aligned = filt_pos + size / 16 * 16;
 
 		auto offsets_pos = &offsets[0];
 		const auto offsets_begin = offsets_pos;
 
-		const auto zero16 = _mm_set1_epi8(0);
+		const __m128i zero16 = _mm_setzero_si128();
 
 		/// copy string ending at *end_offset_ptr
 		const auto copy_string = [&] (const Offset_t * offset_ptr) {
@@ -253,7 +254,7 @@ public:
 			++offsets_pos;
 		}
 
-		return res;
+		return res_;
 	}
 
 	ColumnPtr permute(const Permutation & perm, size_t limit) const
