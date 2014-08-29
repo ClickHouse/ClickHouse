@@ -16,7 +16,7 @@
 #include <DB/Columns/ColumnNested.h>
 
 #include <DB/Storages/StorageTinyLog.h>
-
+#include <Poco/DirectoryIterator.h>
 
 #define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION 	".bin"
 
@@ -59,6 +59,12 @@ Block TinyLogBlockInputStream::readImpl()
 		finished = true;
 		streams.clear();
 		return res;
+	}
+
+	{
+		/// если в папке нет файлов, то это значит, что таблица пока пуста
+		if (Poco::DirectoryIterator(storage.full_path()) == Poco::DirectoryIterator())
+			return res;
 	}
 
 	/// Если файлы не открыты, то открываем их.

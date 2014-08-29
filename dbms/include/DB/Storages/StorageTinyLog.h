@@ -144,6 +144,8 @@ public:
 
 	Files_t & getFiles();
 
+	std::string full_path() { return path + escapeForFileName(name) + '/';} 
+
 private:
 	String path;
 	String name;
