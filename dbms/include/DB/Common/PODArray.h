@@ -211,6 +211,11 @@ public:
 	void resize(size_t n)
 	{
 		reserve(n);
+		resize_assume_reserved(n);
+	}
+
+	void resize_assume_reserved(const size_t n)
+	{
 		c_end = c_start + byte_size(n);
 	}
 
