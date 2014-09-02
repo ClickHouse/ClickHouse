@@ -232,7 +232,7 @@ public:
 		const UInt8 * filt_end_sse = filt_pos + size / 16 * 16;
 		const T * data_pos = &data[0];
 
-		const __m128i zero16 = _mm_set1_epi8(0);
+		const __m128i zero16 = _mm_setzero_si128();
 
 		while (filt_pos < filt_end_sse)
 		{
