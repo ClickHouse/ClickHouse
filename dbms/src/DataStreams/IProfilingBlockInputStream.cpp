@@ -18,7 +18,7 @@ void BlockStreamProfileInfo::read(ReadBuffer & in)
 	readVarUInt(bytes, in);
 	readBinary(applied_limit, in);
 	readVarUInt(rows_before_limit, in);
-	readBinary(calculated_rows_before_limit, in);	
+	readBinary(calculated_rows_before_limit, in);
 }
 
 
@@ -46,13 +46,13 @@ bool BlockStreamProfileInfo::hasAppliedLimit() const
 	if (!calculated_rows_before_limit)
 		calculateRowsBeforeLimit();
 	return applied_limit;
-}	
+}
 
 
 void BlockStreamProfileInfo::update(Block & block)
 {
 	++blocks;
-	rows += block.rows();
+	rows += block.rowsInFirstColumn();
 	bytes += block.bytes();
 
 	if (column_names.empty())
@@ -76,7 +76,7 @@ void BlockStreamProfileInfo::collectInfosForStreamsWithName(const String & name,
 void BlockStreamProfileInfo::calculateRowsBeforeLimit() const
 {
 	calculated_rows_before_limit = true;
-	
+
 	/// есть ли Limit?
 	BlockStreamProfileInfos limits;
 	collectInfosForStreamsWithName("Limit", limits);
@@ -99,63 +99,6 @@ void BlockStreamProfileInfo::calculateRowsBeforeLimit() const
 }
 
 
-void BlockStreamProfileInfo::print(std::ostream & ostr) const
-{
-	UInt64 elapsed 			= work_stopwatch.elapsed();
-	UInt64 nested_elapsed	= 0;
-	double elapsed_seconds	= work_stopwatch.elapsedSeconds();
-	double nested_elapsed_seconds = 0;
-	
-	UInt64 nested_rows 		= 0;
-	UInt64 nested_blocks 	= 0;
-	UInt64 nested_bytes 	= 0;
-	
-	if (!nested_infos.empty())
-	{
-		for (BlockStreamProfileInfos::const_iterator it = nested_infos.begin(); it != nested_infos.end(); ++it)
-		{
-			if ((*it)->work_stopwatch.elapsed() > nested_elapsed)
-			{
-				nested_elapsed = (*it)->work_stopwatch.elapsed();
-				nested_elapsed_seconds = (*it)->work_stopwatch.elapsedSeconds();
-			}
-			
-			nested_rows 	+= (*it)->rows;
-			nested_blocks	+= (*it)->blocks;
-			nested_bytes 	+= (*it)->bytes;
-		}
-	}
-	
-	ostr 	<< std::fixed << std::setprecision(2)
-			<< "Columns: " << column_names << std::endl
-			<< "Elapsed:        " << elapsed_seconds << " sec. "
-			<< "(" << elapsed * 100.0 / total_stopwatch.elapsed() << "%), " << std::endl;
-
-	if (!nested_infos.empty())
-	{
-		double self_percents = (elapsed - nested_elapsed) * 100.0 / total_stopwatch.elapsed();
-		
-		ostr<< "Elapsed (self): " << (elapsed_seconds - nested_elapsed_seconds) << " sec. "
-			<< "(" << (self_percents >= 50 ? "\033[1;31m" : (self_percents >= 10 ? "\033[1;33m" : ""))	/// Раскраска больших значений
-				<< self_percents << "%"
-				<< (self_percents >= 10 ? "\033[0m" : "") << "), " << std::endl
-			<< "Rows (in):      " << nested_rows << ", per second: " << nested_rows / elapsed_seconds << ", " << std::endl
-			<< "Blocks (in):    " << nested_blocks << ", per second: " << nested_blocks / elapsed_seconds << ", " << std::endl
-			<< "                " << nested_bytes / 1000000.0 << " MB (memory), "
-				<< nested_bytes * 1000 / elapsed << " MB/s (memory), " << std::endl;
-
-		if (self_percents > 0.1)
-			ostr << "Rows per second (in, self): " << (nested_rows / (elapsed_seconds - nested_elapsed_seconds))
-				<< ", " << (elapsed - nested_elapsed) / nested_rows << " ns/row, " << std::endl;
-	}
-		
-	ostr 	<< "Rows (out):     " << rows << ", per second: " << rows / elapsed_seconds << ", " << std::endl
-			<< "Blocks (out):   " << blocks << ", per second: " << blocks / elapsed_seconds << ", " << std::endl
-			<< "                " << bytes / 1000000.0 << " MB (memory), " << bytes * 1000 / elapsed << " MB/s (memory), " << std::endl
-			<< "Average block size (out): " << rows / blocks << "." << std::endl;
-}
-
-
 Block IProfilingBlockInputStream::read()
 {
 	if (!info.started)
@@ -166,7 +109,7 @@ Block IProfilingBlockInputStream::read()
 		for (BlockInputStreams::const_iterator it = children.begin(); it != children.end(); ++it)
 			if (const IProfilingBlockInputStream * child = dynamic_cast<const IProfilingBlockInputStream *>(&**it))
 				info.nested_infos.push_back(&child->info);
-		
+
 		info.started = true;
 	}
 
@@ -175,9 +118,7 @@ Block IProfilingBlockInputStream::read()
 	if (is_cancelled)
 		return res;
 
-	info.work_stopwatch.start();
 	res = readImpl();
-	info.work_stopwatch.stop();
 
 /*	if (res)
 	{
@@ -194,7 +135,7 @@ Block IProfilingBlockInputStream::read()
 				std::cerr << ", ";
 			std::cerr << res.getByPosition(i).name << " (" << res.getByPosition(i).column->size() << ")";
 		}
-		
+
 		std::cerr << std::endl;
 	}*/
 
@@ -225,7 +166,7 @@ Block IProfilingBlockInputStream::read()
 		cancel();
 	}
 
-	progress(res.rows(), res.bytes());
+	progress(res.rowsInFirstColumn(), res.bytes());
 
 	return res;
 }
@@ -269,7 +210,7 @@ void IProfilingBlockInputStream::updateExtremes(Block & block)
 		for (size_t i = 0; i < columns; ++i)
 		{
 			ColumnPtr & column = extremes.getByPosition(i).column;
-			
+
 			Field min_value = (*column)[0];
 			Field max_value = (*column)[1];
 
@@ -330,9 +271,6 @@ bool IProfilingBlockInputStream::checkLimits()
 
 void IProfilingBlockInputStream::checkQuota(Block & block)
 {
-	time_t current_time = time(0);
-	double total_elapsed = info.total_stopwatch.elapsedSeconds();
-
 	switch (limits.mode)
 	{
 		case LIMITS_TOTAL:
@@ -340,15 +278,20 @@ void IProfilingBlockInputStream::checkQuota(Block & block)
 			break;
 
 		case LIMITS_CURRENT:
-			quota->checkAndAddResultRowsBytes(current_time, block.rows(), block.bytes());
+		{
+			time_t current_time = time(0);
+			double total_elapsed = info.total_stopwatch.elapsedSeconds();
+
+			quota->checkAndAddResultRowsBytes(current_time, block.rowsInFirstColumn(), block.bytes());
 			quota->checkAndAddExecutionTime(current_time, Poco::Timespan((total_elapsed - prev_elapsed) * 1000000.0));
+
+			prev_elapsed = total_elapsed;
 			break;
+		}
 
 		default:
 			throw Exception("Logical error: unknown limits mode.", ErrorCodes::LOGICAL_ERROR);
 	}
-
-	prev_elapsed = total_elapsed;
 }
 
 
@@ -366,10 +309,9 @@ void IProfilingBlockInputStream::progressImpl(size_t rows, size_t bytes)
 				cancel();
 
 			/// Общее количество данных, обработанных во всех листовых источниках, возможно, на удалённых серверах.
-			
+
 			size_t total_rows = process_list_elem->rows_processed;
 			size_t total_bytes = process_list_elem->bytes_processed;
-			double total_elapsed = info.total_stopwatch.elapsedSeconds();
 
 			/** Проверяем ограничения на объём данных для чтения, скорость выполнения запроса, квоту на объём данных для чтения.
 			  * NOTE: Может быть, имеет смысл сделать, чтобы они проверялись прямо в ProcessList?
@@ -389,13 +331,17 @@ void IProfilingBlockInputStream::progressImpl(size_t rows, size_t bytes)
 					throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
 			}
 
-			if (limits.min_execution_speed
-				&& total_elapsed > limits.timeout_before_checking_execution_speed.totalMicroseconds() / 1000000.0
-				&& total_rows / total_elapsed < limits.min_execution_speed)
+			if (limits.min_execution_speed)
 			{
-				throw Exception("Query is executing too slow: " + toString(total_rows / total_elapsed)
-					+ " rows/sec., minimum: " + toString(limits.min_execution_speed),
-					ErrorCodes::TOO_SLOW);
+				double total_elapsed = info.total_stopwatch.elapsedSeconds();
+
+				if (total_elapsed > limits.timeout_before_checking_execution_speed.totalMicroseconds() / 1000000.0
+					&& total_rows / total_elapsed < limits.min_execution_speed)
+				{
+					throw Exception("Query is executing too slow: " + toString(total_rows / total_elapsed)
+						+ " rows/sec., minimum: " + toString(limits.min_execution_speed),
+						ErrorCodes::TOO_SLOW);
+				}
 			}
 
 			if (quota != nullptr && limits.mode == LIMITS_TOTAL)
@@ -405,7 +351,7 @@ void IProfilingBlockInputStream::progressImpl(size_t rows, size_t bytes)
 		}
 	}
 }
-	
+
 
 const BlockStreamProfileInfo & IProfilingBlockInputStream::getInfo() const
 {
@@ -427,7 +373,7 @@ void IProfilingBlockInputStream::cancel()
 void IProfilingBlockInputStream::setProgressCallback(ProgressCallback callback)
 {
 	progress_callback = callback;
-	
+
 	for (BlockInputStreams::iterator it = children.begin(); it != children.end(); ++it)
 		if (IProfilingBlockInputStream * child = dynamic_cast<IProfilingBlockInputStream *>(&**it))
 			child->setProgressCallback(callback);

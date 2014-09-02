@@ -85,86 +85,124 @@ void ExpressionAction::prepare(Block & sample_block)
 {
 //	std::cerr << "preparing: " << toString() << std::endl;
 
-	if (type == APPLY_FUNCTION)
+	switch (type)
 	{
-		if (sample_block.has(result_name))
-			throw Exception("Column '" + result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
-
-		bool all_const = true;
-
-		ColumnNumbers arguments(argument_names.size());
-		for (size_t i = 0; i < argument_names.size(); ++i)
+		case APPLY_FUNCTION:
 		{
-			arguments[i] = sample_block.getPositionByName(argument_names[i]);
-			ColumnPtr col = sample_block.getByPosition(arguments[i]).column;
-			if (!col || !col->isConst())
-				all_const = false;
-		}
+			if (sample_block.has(result_name))
+				throw Exception("Column '" + result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
 
-		ColumnNumbers prerequisites(prerequisite_names.size());
-		for (size_t i = 0; i < prerequisite_names.size(); ++i)
-		{
-			prerequisites[i] = sample_block.getPositionByName(prerequisite_names[i]);
-			ColumnPtr col = sample_block.getByPosition(prerequisites[i]).column;
-			if (!col || !col->isConst())
-				all_const = false;
-		}
+			bool all_const = true;
 
-		ColumnPtr new_column;
-
-		/// Если все аргументы и требуемые столбцы - константы, выполним функцию.
-		if (all_const)
-		{
-			ColumnWithNameAndType new_column;
-			new_column.name = result_name;
-			new_column.type = result_type;
-			sample_block.insert(new_column);
-
-			size_t result_position = sample_block.getPositionByName(result_name);
-			function->execute(sample_block, arguments, prerequisites, result_position);
-
-			/// Если получилась не константа, на всякий случай будем считать результат неизвестным.
-			ColumnWithNameAndType & col = sample_block.getByPosition(result_position);
-			if (!col.column->isConst())
+			ColumnNumbers arguments(argument_names.size());
+			for (size_t i = 0; i < argument_names.size(); ++i)
 			{
-				col.column = nullptr;
+				arguments[i] = sample_block.getPositionByName(argument_names[i]);
+				ColumnPtr col = sample_block.getByPosition(arguments[i]).column;
+				if (!col || !col->isConst())
+					all_const = false;
 			}
-		}
-		else
-		{
-			sample_block.insert(ColumnWithNameAndType(nullptr, result_type, result_name));
-		}
-	}
-	else if (type == ARRAY_JOIN)
-	{
-		for (NameSet::iterator it = array_joined_columns.begin(); it != array_joined_columns.end(); ++it)
-		{
-			ColumnWithNameAndType & current = sample_block.getByName(*it);
-			const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(&*current.type);
-			if (!array_type)
-				throw Exception("ARRAY JOIN requires array argument", ErrorCodes::TYPE_MISMATCH);
-			current.type = array_type->getNestedType();
-			current.column = nullptr;
-		}
-	}
-	else if (type == JOIN)
-	{
-		for (const auto & col : columns_added_by_join)
-			sample_block.insert(ColumnWithNameAndType(col.type->createColumn(), col.type, col.name));
-	}
-	else if (type == ADD_COLUMN)
-	{
-		if (sample_block.has(result_name))
-			throw Exception("Column '" + result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
 
-		sample_block.insert(ColumnWithNameAndType(added_column, result_type, result_name));
-	}
-	else
-	{
-		if (type == COPY_COLUMN)
+			ColumnNumbers prerequisites(prerequisite_names.size());
+			for (size_t i = 0; i < prerequisite_names.size(); ++i)
+			{
+				prerequisites[i] = sample_block.getPositionByName(prerequisite_names[i]);
+				ColumnPtr col = sample_block.getByPosition(prerequisites[i]).column;
+				if (!col || !col->isConst())
+					all_const = false;
+			}
+
+			ColumnPtr new_column;
+
+			/// Если все аргументы и требуемые столбцы - константы, выполним функцию.
+			if (all_const)
+			{
+				ColumnWithNameAndType new_column;
+				new_column.name = result_name;
+				new_column.type = result_type;
+				sample_block.insert(new_column);
+
+				size_t result_position = sample_block.getPositionByName(result_name);
+				function->execute(sample_block, arguments, prerequisites, result_position);
+
+				/// Если получилась не константа, на всякий случай будем считать результат неизвестным.
+				ColumnWithNameAndType & col = sample_block.getByPosition(result_position);
+				if (!col.column->isConst())
+					col.column = nullptr;
+			}
+			else
+			{
+				sample_block.insert(ColumnWithNameAndType(nullptr, result_type, result_name));
+			}
+
+			break;
+		}
+
+		case ARRAY_JOIN:
+		{
+			for (NameSet::iterator it = array_joined_columns.begin(); it != array_joined_columns.end(); ++it)
+			{
+				ColumnWithNameAndType & current = sample_block.getByName(*it);
+				const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(&*current.type);
+				if (!array_type)
+					throw Exception("ARRAY JOIN requires array argument", ErrorCodes::TYPE_MISMATCH);
+				current.type = array_type->getNestedType();
+				current.column = nullptr;
+			}
+
+			break;
+		}
+
+		case JOIN:
+		{
+			for (const auto & col : columns_added_by_join)
+				sample_block.insert(ColumnWithNameAndType(col.type->createColumn(), col.type, col.name));
+
+			break;
+		}
+
+		case PROJECT:
+		{
+			Block new_block;
+
+			for (size_t i = 0; i < projection.size(); ++i)
+			{
+				const std::string & name = projection[i].first;
+				const std::string & alias = projection[i].second;
+				ColumnWithNameAndType column = sample_block.getByName(name);
+				if (alias != "")
+					column.name = alias;
+				new_block.insert(column);
+			}
+
+			sample_block.swap(new_block);
+			break;
+		}
+
+		case REMOVE_COLUMN:
+		{
+			sample_block.erase(source_name);
+			break;
+		}
+
+		case ADD_COLUMN:
+		{
+			if (sample_block.has(result_name))
+				throw Exception("Column '" + result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
+
+			sample_block.insert(ColumnWithNameAndType(added_column, result_type, result_name));
+			break;
+		}
+
+		case COPY_COLUMN:
+		{
 			result_type = sample_block.getByName(source_name).type;
+			sample_block.insert(ColumnWithNameAndType(sample_block.getByName(source_name).column, result_type, result_name));
+			break;
+		}
 
-		execute(sample_block);
+		default:
+			throw Exception("Unknown action type", ErrorCodes::UNKNOWN_ACTION);
 	}
 }
 
@@ -366,24 +404,27 @@ void ExpressionActions::checkLimits(Block & block) const
 	const Limits & limits = settings.limits;
 	if (limits.max_temporary_columns && block.columns() > limits.max_temporary_columns)
 		throw Exception("Too many temporary columns: " + block.dumpNames()
-		+ ". Maximum: " + toString(limits.max_temporary_columns),
-						ErrorCodes::TOO_MUCH_TEMPORARY_COLUMNS);
+			+ ". Maximum: " + toString(limits.max_temporary_columns),
+			ErrorCodes::TOO_MUCH_TEMPORARY_COLUMNS);
 
-	size_t non_const_columns = 0;
-	for (size_t i = 0, size = block.columns(); i < size; ++i)
-		if (block.getByPosition(i).column && !block.getByPosition(i).column->isConst())
-			++non_const_columns;
-
-	if (limits.max_temporary_non_const_columns && non_const_columns > limits.max_temporary_non_const_columns)
+	if (limits.max_temporary_non_const_columns)
 	{
-		std::stringstream list_of_non_const_columns;
+		size_t non_const_columns = 0;
 		for (size_t i = 0, size = block.columns(); i < size; ++i)
-			if (!block.getByPosition(i).column->isConst())
-				list_of_non_const_columns << (i == 0 ? "" : ", ") << block.getByPosition(i).name;
+			if (block.getByPosition(i).column && !block.getByPosition(i).column->isConst())
+				++non_const_columns;
 
-			throw Exception("Too many temporary non-const columns: " + list_of_non_const_columns.str()
-			+ ". Maximum: " + toString(limits.max_temporary_non_const_columns),
-							ErrorCodes::TOO_MUCH_TEMPORARY_NON_CONST_COLUMNS);
+		if (non_const_columns > limits.max_temporary_non_const_columns)
+		{
+			std::stringstream list_of_non_const_columns;
+			for (size_t i = 0, size = block.columns(); i < size; ++i)
+				if (!block.getByPosition(i).column->isConst())
+					list_of_non_const_columns << (i == 0 ? "" : ", ") << block.getByPosition(i).name;
+
+				throw Exception("Too many temporary non-const columns: " + list_of_non_const_columns.str()
+					+ ". Maximum: " + toString(limits.max_temporary_non_const_columns),
+					ErrorCodes::TOO_MUCH_TEMPORARY_NON_CONST_COLUMNS);
+		}
 	}
 }
 
@@ -600,7 +641,6 @@ void ExpressionActions::finalize(const Names & output_columns)
 				}
 
 				unmodified_columns.erase(out);
-
 				needed_columns.erase(out);
 			}
 
@@ -638,6 +678,7 @@ void ExpressionActions::finalize(const Names & output_columns)
 	optimize();
 	checkLimits(sample_block);
 }
+
 
 std::string ExpressionActions::getID() const
 {

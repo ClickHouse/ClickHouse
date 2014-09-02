@@ -8,8 +8,9 @@
 #include <string>
 #include <Poco/File.h>
 #include <DB/Common/escapeForFileName.h>
-#include <jsonxx.h>
-#include <fstream>
+
+#include <boost/property_tree/ptree.hpp>
+#include <boost/property_tree/json_parser.hpp>
 
 namespace DB
 {
@@ -20,13 +21,13 @@ class FileChecker
 {
 public:
 	FileChecker(const std::string &file_info_path_, Storage & storage_) :
-		files_info_path(file_info_path_), storage(storage_), log(&Logger::get("FileChecker"))
+		files_info_path(file_info_path_), files_info(), storage(storage_), log(&Logger::get("FileChecker"))
 	{
 		Poco::Path path(files_info_path);
 		tmp_files_info_path = path.parent().toString() + "tmp_" + path.getFileName();
 
-		std::ifstream istr(files_info_path);
-		files_info.parse(istr);
+		if (Poco::File(files_info_path).exists())
+			boost::property_tree::read_json(files_info_path, files_info);
 	}
 
 	void setPath(const std::string & file_info_path_)
@@ -53,47 +54,46 @@ public:
 	bool check() const
 	{
 		bool correct = true;
-		for (auto & node : files_info.kv_map())
-		{
-			std::string filename = unescapeForFileName(node.first);
-			size_t expected_size = std::stoull(node.second->get<jsonxx::Object>().get<std::string>("size"));
-
-			Poco::File file(Poco::Path(files_info_path).parent().toString() + "/" + filename);
-			if (!file.exists())
+		if (!files_info.empty())
+			for (auto & node : files_info.get_child("yandex"))
 			{
-				LOG_ERROR(log, "File " << file.path() << " doesn't exists");
-				correct = false;
-				continue;
-			}
+				std::string filename = unescapeForFileName(node.first);
+				size_t expected_size = std::stoull(node.second.get<std::string>("size"));
 
-			size_t real_size = file.getSize();
-			if (real_size != expected_size)
-			{
-				LOG_ERROR(log, "Size of " << file.path() << " is wrong. Size is " << real_size << " but should be " << expected_size);
-				correct = false;
+				Poco::File file(Poco::Path(files_info_path).parent().toString() + "/" + filename);
+				if (!file.exists())
+				{
+					LOG_ERROR(log, "File " << file.path() << " doesn't exists");
+					correct = false;
+					continue;
+				}
+
+				size_t real_size = file.getSize();
+				if (real_size != expected_size)
+				{
+					LOG_ERROR(log, "Size of " << file.path() << " is wrong. Size is " << real_size << " but should be " << expected_size);
+					correct = false;
+				}
 			}
-		}
 		return correct;
 	}
 
 private:
 	void updateTree(const Poco::File & file)
 	{
-		files_info.import(escapeForFileName(Poco::Path(file.path()).getFileName()),
-											jsonxx::Object("size", std::to_string(file.getSize())));
+		files_info.put(std::string("yandex.") + escapeForFileName(Poco::Path(file.path()).getFileName()) + ".size", std::to_string(file.getSize()));
 	}
 
 	void saveTree()
 	{
-		std::ofstream file(tmp_files_info_path, std::ofstream::trunc);
-		file  << files_info.write(jsonxx::JSON);
-		file.close();
+		boost::property_tree::write_json(tmp_files_info_path, files_info, std::locale());
 
-		std::string old_file_name = files_info_path + ".old";
-		Poco::File new_file(files_info_path);
-		if (new_file.exists())
+		Poco::File current_file(files_info_path);
+
+		if (current_file.exists())
 		{
-			new_file.renameTo(old_file_name);
+			std::string old_file_name = files_info_path + ".old";
+			current_file.renameTo(old_file_name);
 			Poco::File(tmp_files_info_path).renameTo(files_info_path);
 			Poco::File(old_file_name).remove();
 		}
@@ -104,7 +104,8 @@ private:
 	std::string files_info_path;
 	std::string tmp_files_info_path;
 
-	jsonxx::Object files_info;
+	using PropertyTree = boost::property_tree::ptree;
+	PropertyTree files_info;
 
 	Storage & storage;
 	Logger * log;

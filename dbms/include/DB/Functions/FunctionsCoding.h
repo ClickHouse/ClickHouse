@@ -4,10 +4,12 @@
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
+#include <DB/DataTypes/DataTypeArray.h>
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnFixedString.h>
+#include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Functions/IFunction.h>
 

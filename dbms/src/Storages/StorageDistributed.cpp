@@ -20,35 +20,30 @@ namespace DB
 
 namespace
 {
-	template <typename ASTType> void rewriteImpl(ASTType &, const std::string &, const std::string &) = delete;
-
 	/// select query has database and table names as AST pointers
-	template <> inline void rewriteImpl<ASTSelectQuery>(ASTSelectQuery & query,
-														const std::string & database, const std::string & table)
+	/// Создает копию запроса, меняет имена базы данных и таблицы.
+	inline ASTPtr rewriteSelectQuery(const ASTPtr & query, const std::string & database, const std::string & table)
 	{
-		query.database = new ASTIdentifier{{}, database, ASTIdentifier::Database};
-		query.table = new ASTIdentifier{{}, table, ASTIdentifier::Table};
+		auto modified_query_ast = query->clone();
+
+		auto & actual_query = typeid_cast<ASTSelectQuery &>(*modified_query_ast);
+		actual_query.database = new ASTIdentifier{{}, database, ASTIdentifier::Database};
+		actual_query.table = new ASTIdentifier{{}, table, ASTIdentifier::Table};
+
+		return modified_query_ast;
 	}
 
 	/// insert query has database and table names as bare strings
-	template <> inline void rewriteImpl<ASTInsertQuery>(ASTInsertQuery & query,
-														const std::string & database, const std::string & table)
-	{
-		query.database = database;
-		query.table = table;
-		/// make sure query is not INSERT SELECT
-		query.select = nullptr;
-	}
-
 	/// Создает копию запроса, меняет имена базы данных и таблицы.
-	template <typename ASTType>
-	inline ASTPtr rewriteQuery(const ASTPtr & query, const std::string & database, const std::string & table)
+	inline ASTPtr rewriteInsertQuery(const ASTPtr & query, const std::string & database, const std::string & table)
 	{
-		/// Создаем копию запроса.
 		auto modified_query_ast = query->clone();
 
-		/// Меняем имена таблицы и базы данных
-		rewriteImpl(typeid_cast<ASTType &>(*modified_query_ast), database, table);
+		auto & actual_query = typeid_cast<ASTInsertQuery &>(*modified_query_ast);
+		actual_query.database = database;
+		actual_query.table = table;
+		/// make sure query is not INSERT SELECT
+		actual_query.select = nullptr;
 
 		return modified_query_ast;
 	}
@@ -131,9 +126,9 @@ BlockInputStreams StorageDistributed::read(
 		: QueryProcessingStage::WithMergeableState;
 
 	BlockInputStreams res;
-	const auto & modified_query_ast = rewriteQuery<ASTSelectQuery>(
+	const auto & modified_query_ast = rewriteSelectQuery(
 		query, remote_database, remote_table);
-	const auto & modified_query = queryToString<ASTSelectQuery>(modified_query_ast);
+	const auto & modified_query = queryToString(modified_query_ast);
 
 	/// Цикл по шардам.
 	for (auto & conn_pool : cluster.pools)
@@ -172,7 +167,7 @@ BlockOutputStreamPtr StorageDistributed::write(ASTPtr query)
 
 	return new DistributedBlockOutputStream{
 		*this,
-		rewriteQuery<ASTInsertQuery>(query, remote_database, remote_table)
+		rewriteInsertQuery(query, remote_database, remote_table)
 	};
 }
 

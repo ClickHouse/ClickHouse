@@ -105,7 +105,7 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 			 *  the first element of vector; otherwise we will just .emplace_back
 			 */
 			std::vector<std::string> dir_names{};
-			auto has_local_node = false;
+			size_t num_local_nodes = 0;
 
 			auto first = true;
 			for (auto jt = replica_keys.begin(); jt != replica_keys.end(); ++jt)
@@ -120,7 +120,7 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 
 					if (isLocal(replica_addresses.back()))
 					{
-						has_local_node = true;
+						++num_local_nodes;
 					}
 					else
 					{
@@ -143,7 +143,7 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 			}
 
 			slot_to_shard.insert(std::end(slot_to_shard), weight, shard_info_vec.size());
-			shard_info_vec.push_back({std::move(dir_names), weight, has_local_node});
+			shard_info_vec.push_back({std::move(dir_names), weight, num_local_nodes});
 		}
 		else
 			throw Exception("Unknown element in config: " + *it, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);

@@ -184,7 +184,7 @@ void MergingSortedBlockInputStream::fetchNextBlock(const TSortCursor & current, 
 void MergingSortedBlockInputStream::readSuffixImpl()
 {
 	const BlockStreamProfileInfo & profile_info = getInfo();
-	double seconds = profile_info.work_stopwatch.elapsedSeconds();
+	double seconds = profile_info.total_stopwatch.elapsedSeconds();
 	LOG_DEBUG(log, std::fixed << std::setprecision(2)
 		<< "Merge sorted " << profile_info.blocks << " blocks, " << profile_info.rows << " rows"
 		<< " in " << seconds << " sec., "
