@@ -55,7 +55,7 @@ public:
 	{
 		bool correct = true;
 		if (!files_info.empty())
-			for (auto & node : files_info)
+			for (auto & node : files_info.get_child("yandex"))
 			{
 				std::string filename = unescapeForFileName(node.first);
 				size_t expected_size = std::stoull(node.second.get<std::string>("size"));
@@ -81,7 +81,7 @@ public:
 private:
 	void updateTree(const Poco::File & file)
 	{
-		files_info.put(escapeForFileName(Poco::Path(file.path()).getFileName()) + ".size", std::to_string(file.getSize()));
+		files_info.put(std::string("yandex.") + escapeForFileName(Poco::Path(file.path()).getFileName()) + ".size", std::to_string(file.getSize()));
 	}
 
 	void saveTree()
