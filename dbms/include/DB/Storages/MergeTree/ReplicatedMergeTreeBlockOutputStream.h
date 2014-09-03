@@ -21,7 +21,11 @@ public:
 
 		for (auto & current_block : part_blocks)
 		{
-			storage.data.delayInsertIfNeeded();
+			if (storage.zookeeper->expired())
+				throw Exception("ZooKeeper session has been expired.", ErrorCodes::NO_ZOOKEEPER);
+
+			/// TODO Можно ли здесь не блокировать структуру таблицы?
+			storage.data.delayInsertIfNeeded(&storage.restarting_event);
 
 			++block_index;
 			String block_id = insert_id.empty() ? "" : insert_id + "__" + toString(block_index);

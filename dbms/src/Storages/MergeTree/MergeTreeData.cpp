@@ -844,7 +844,7 @@ size_t MergeTreeData::getMaxPartsCountForMonth()
 	return res;
 }
 
-void MergeTreeData::delayInsertIfNeeded()
+void MergeTreeData::delayInsertIfNeeded(Poco::Event * until)
 {
 	size_t parts_count = getMaxPartsCountForMonth();
 	if (parts_count > settings.parts_to_delay_insert)
@@ -854,8 +854,12 @@ void MergeTreeData::delayInsertIfNeeded()
 		delay = std::min(delay, DBMS_MAX_DELAY_OF_INSERT);
 
 		LOG_INFO(log, "Delaying inserting block by "
-			<< std::fixed << std::setprecision(4) << delay << "s because there are " << parts_count << " parts");
-		std::this_thread::sleep_for(std::chrono::duration<double>(delay));
+			<< std::fixed << std::setprecision(4) << delay << " sec. because there are " << parts_count << " parts");
+
+		if (until)
+			until->tryWait(delay * 1000);
+		else
+			std::this_thread::sleep_for(std::chrono::duration<double>(delay));
 	}
 }
 
