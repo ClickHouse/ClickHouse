@@ -17,12 +17,12 @@ public:
 
 	void write(const Block & block) override
 	{
+		assertSessionIsNotExpired();
 		auto part_blocks = storage.writer.splitBlockIntoParts(block);
 
 		for (auto & current_block : part_blocks)
 		{
-			if (storage.zookeeper->expired())
-				throw Exception("ZooKeeper session has been expired.", ErrorCodes::NO_ZOOKEEPER);
+			assertSessionIsNotExpired();
 
 			/// TODO Можно ли здесь не блокировать структуру таблицы?
 			storage.data.delayInsertIfNeeded(&storage.restarting_event);
@@ -145,6 +145,14 @@ private:
 	size_t block_index;
 
 	Logger * log;
+
+
+	/// Позволяет проверить, что сессия в ZooKeeper ещё жива.
+	void assertSessionIsNotExpired()
+	{
+		if (storage.zookeeper->expired())
+			throw Exception("ZooKeeper session has been expired.", ErrorCodes::NO_ZOOKEEPER);
+	}
 };
 
 }

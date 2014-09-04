@@ -2026,16 +2026,9 @@ void StorageReplicatedMergeTree::restartingThread()
 			{
 				LOG_WARNING(log, "ZooKeeper session has expired. Switching to a new session.");
 
-				{
-					/// Запретим писать в таблицу, пока подменяем zookeeper.
-					auto structure_lock = lockDataForAlter();
-
-					partialShutdown();
-
-					zookeeper = context.getZooKeeper();
-
-					is_read_only = true;
-				}
+				partialShutdown();
+				zookeeper = context.getZooKeeper();
+				is_read_only = true;
 
 				while (!permanent_shutdown_called && !tryStartup())
 					restarting_event.tryWait(10 * 1000);
@@ -2043,11 +2036,7 @@ void StorageReplicatedMergeTree::restartingThread()
 				if (permanent_shutdown_called)
 					break;
 
-				{
-					auto structure_lock = lockDataForAlter();
-
-					is_read_only = false;
-				}
+				is_read_only = false;
 			}
 
 			restarting_event.tryWait(60 * 1000);
