@@ -15,7 +15,7 @@ public:
 	KeeperException(int32_t code_)
 		: DB::Exception(zerror(code_)), code(code_) {}
 	KeeperException(int32_t code_, const std::string & path_)
-		: DB::Exception(std::string(zerror(code_)) + " path: " + path_), code(code_) {}
+		: DB::Exception(std::string(zerror(code_)) + ", path: " + path_), code(code_) {}
 	KeeperException(const KeeperException & exc) : DB::Exception(exc), code(exc.code) {}
 
 	const char * name() const throw() { return "zkutil::KeeperException"; }

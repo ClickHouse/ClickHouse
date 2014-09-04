@@ -303,6 +303,66 @@ public:
 };
 
 
+class FunctionToday : public IFunction
+{
+public:
+	/// Получить имя функции.
+	String getName() const
+	{
+		return "today";
+	}
+
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnType(const DataTypes & arguments) const
+	{
+		if (arguments.size() != 0)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ toString(arguments.size()) + ", should be 0.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		return new DataTypeDate;
+	}
+
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		block.getByPosition(result).column = new ColumnConstUInt16(
+			block.rowsInFirstColumn(),
+			DateLUT::instance().toDayNum(time(0)));
+	}
+};
+
+
+class FunctionYesterday : public IFunction
+{
+public:
+	/// Получить имя функции.
+	String getName() const
+	{
+		return "yesterday";
+	}
+
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnType(const DataTypes & arguments) const
+	{
+		if (arguments.size() != 0)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ toString(arguments.size()) + ", should be 0.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		return new DataTypeDate;
+	}
+
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		block.getByPosition(result).column = new ColumnConstUInt16(
+			block.rowsInFirstColumn(),
+			DateLUT::instance().toDayNum(time(0)) - 1);
+	}
+};
+
+
 class FunctionTimeSlot : public IFunction
 {
 public:

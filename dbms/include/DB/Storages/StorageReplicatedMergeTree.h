@@ -453,8 +453,6 @@ private:
 	  */
 	void fetchPart(const String & part_name, const String & replica_name);
 
-	///
-
 	AbandonableLockInZooKeeper allocateBlockNumber(const String & month_name);
 
 	/** Дождаться, пока все реплики, включая эту, выполнят указанное действие из лога.
