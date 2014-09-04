@@ -30,6 +30,8 @@ void registerFunctionsDateTime(FunctionFactory & factory)
 	factory.registerFunction("toRelativeSecondNum", F { return new FunctionToRelativeSecondNum; });
 	factory.registerFunction("toTime", 				F { return new FunctionToTime; });
 	factory.registerFunction("now", 				F { return new FunctionNow; });
+	factory.registerFunction("today", 				F { return new FunctionToday; });
+	factory.registerFunction("yesterday", 			F { return new FunctionYesterday; });
 	factory.registerFunction("timeSlot", 			F { return new FunctionTimeSlot; });
 	factory.registerFunction("timeSlots", 			F { return new FunctionTimeSlots; });
 
