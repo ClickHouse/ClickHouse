@@ -24,7 +24,7 @@ public:
 	  * date_column_name 	- имя столбца с датой;
 	  * index_granularity 	- на сколько строчек пишется одно значение индекса.
 	  */
-	static StoragePtr create(const String & path_, const String & database_name_, const String & name_,
+	static StoragePtr create(const String & path_, const String & database_name_, const String & table_name_,
 		NamesAndTypesListPtr columns_,
 		Context & context_,
 		ASTPtr & primary_expr_ast_,
@@ -43,7 +43,7 @@ public:
 		return data.getModePrefix() + "MergeTree";
 	}
 
-	std::string getTableName() const { return name; }
+	std::string getTableName() const { return table_name; }
 	bool supportsSampling() const { return data.supportsSampling(); }
 	bool supportsFinal() const { return data.supportsFinal(); }
 	bool supportsPrewhere() const { return data.supportsPrewhere(); }
@@ -89,10 +89,12 @@ public:
 
 private:
 	String path;
-	String name;
+	String database_name;
+	String table_name;
 	String full_path;
 	Increment increment;
 
+	Context & context;
 	BackgroundProcessingPool & background_pool;
 
 	MergeTreeData data;
@@ -151,7 +153,7 @@ private:
 
 	typedef Poco::SharedPtr<CurrentlyMergingPartsTagger> CurrentlyMergingPartsTaggerPtr;
 
-	StorageMergeTree(const String & path_, const String & database_name_, const String & name_,
+	StorageMergeTree(const String & path_, const String & database_name_, const String & table_name_,
 					NamesAndTypesListPtr columns_,
 					Context & context_,
 					ASTPtr & primary_expr_ast_,

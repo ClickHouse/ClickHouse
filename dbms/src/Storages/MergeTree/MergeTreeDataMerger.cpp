@@ -263,9 +263,11 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 
 /// parts должны быть отсортированы.
 MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
-	const MergeTreeData::DataPartsVector & parts, const String & merged_name,
+	const MergeTreeData::DataPartsVector & parts, const String & merged_name, MergeList::Entry & merge_entry,
 	MergeTreeData::Transaction * out_transaction, DiskSpaceMonitor::Reservation * disk_reservation)
 {
+	merge_entry->num_parts = parts.size();
+
 	LOG_DEBUG(log, "Merging " << parts.size() << " parts: from " << parts.front()->name << " to " << parts.back()->name << " into " << merged_name);
 
 	String merged_dir = data.getFullPath() + merged_name;
@@ -278,6 +280,9 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 		Poco::ScopedReadRWLock part_lock(part->columns_lock);
 		Names part_columns = part->columns.getNames();
 		union_columns_set.insert(part_columns.begin(), part_columns.end());
+
+		merge_entry->total_size_bytes += part->size_in_bytes;
+		merge_entry->total_size_marks += part->size;
 	}
 
 	NamesAndTypesList columns_list = data.getColumnsList();
@@ -345,8 +350,17 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 	Block block;
 	while (!canceled && (block = merged_stream->read()))
 	{
-		rows_written += block.rows();
+		const auto rows = block.rows();
+		const auto bytes = block.bytes();
+
+		merge_entry->rows_read += rows;
+		merge_entry->bytes_read += bytes;
+
+		rows_written += rows;
 		to->write(block);
+
+		merge_entry->rows_written += rows;
+		merge_entry->bytes_written += bytes;
 
 		if (disk_reservation)
 			disk_reservation->update(static_cast<size_t>((1 - std::min(1., 1. * rows_written / sum_rows_approx)) * initial_reservation));
