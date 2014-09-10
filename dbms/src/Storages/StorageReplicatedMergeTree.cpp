@@ -1488,6 +1488,7 @@ void StorageReplicatedMergeTree::alterThread()
 				else
 				{
 					changed = false;
+					columns_version = stat.version;
 				}
 			}
 
