@@ -29,6 +29,16 @@ static String padIndex(UInt64 index)
 }
 
 
+/// Используется для проверки, выставили ли ноду is_active мы, или нет.
+static String generateActiveNodeIdentifier()
+{
+	struct timespec times;
+	if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &times))
+		throwFromErrno("Cannot clock_gettime.", ErrorCodes::CANNOT_CLOCK_GETTIME);
+	return toString(times.tv_nsec + times.tv_sec + getpid());
+}
+
+
 StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	const String & zookeeper_path_,
 	const String & replica_name_,
@@ -113,11 +123,9 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	}
 
 	/// Сгенерируем этому экземпляру случайный идентификатор.
-	struct timespec times;
-	if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &times))
-		throwFromErrno("Cannot clock_gettime.", ErrorCodes::CANNOT_CLOCK_GETTIME);
-	active_node_identifier = toString(times.tv_nsec);
+	active_node_identifier = generateActiveNodeIdentifier();
 
+	/// В этом потоке реплика будет активирована.
 	restarting_thread = std::thread(&StorageReplicatedMergeTree::restartingThread, this);
 }
 
@@ -387,7 +395,8 @@ void StorageReplicatedMergeTree::activateReplica()
 
 	/// Одновременно объявим, что эта реплика активна, и обновим хост.
 	zkutil::Ops ops;
-	ops.push_back(new zkutil::Op::Create(replica_path + "/is_active", "", zookeeper->getDefaultACL(), zkutil::CreateMode::Ephemeral));
+	ops.push_back(new zkutil::Op::Create(replica_path + "/is_active",
+		active_node_identifier, zookeeper->getDefaultACL(), zkutil::CreateMode::Ephemeral));
 	ops.push_back(new zkutil::Op::SetData(replica_path + "/host", host.str(), -1));
 
 	try
@@ -536,9 +545,7 @@ void StorageReplicatedMergeTree::initVirtualParts()
 {
 	auto parts = data.getDataParts();
 	for (const auto & part : parts)
-	{
 		virtual_parts.add(part->name);
-	}
 }
 
 void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(MergeTreeData::DataPartPtr part, zkutil::Ops & ops, String part_name)
@@ -974,7 +981,6 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 			/** Если не получилось скачать кусок, нужный для какого-то мерджа, лучше не пытаться получить другие куски для этого мерджа,
 			  * а попытаться сразу получить помердженный кусок. Чтобы так получилось, переместим действия для получения остальных кусков
 			  * для этого мерджа в конец очереди.
-			  *
 			  */
 			try
 			{
@@ -1998,8 +2004,19 @@ bool StorageReplicatedMergeTree::tryStartup()
 		queue_task_handle->wake();
 		return true;
 	}
-	catch (zkutil::KeeperException & e)
+	catch (const zkutil::KeeperException & e)
 	{
+		replica_is_active_node = nullptr;
+		leader_election = nullptr;
+		LOG_ERROR(log, "Couldn't start replication: " << e.what() << ", " << e.displayText() << ", stack trace:\n"
+			<< e.getStackTrace().toString());
+		return false;
+	}
+	catch (const Exception & e)
+	{
+		if (e.code() != ErrorCodes::REPLICA_IS_ALREADY_ACTIVE)
+			throw;
+
 		replica_is_active_node = nullptr;
 		leader_election = nullptr;
 		LOG_ERROR(log, "Couldn't start replication: " << e.what() << ", " << e.displayText() << ", stack trace:\n"
@@ -2018,9 +2035,11 @@ void StorageReplicatedMergeTree::restartingThread()
 {
 	try
 	{
+		/// Запуск реплики при старте сервера/создании таблицы.
 		while (!permanent_shutdown_called && !tryStartup())
 			restarting_event.tryWait(10 * 1000);
 
+		/// Цикл перезапуска реплики при истечении сессии с ZK.
 		while (!permanent_shutdown_called)
 		{
 			if (zookeeper->expired())
