@@ -29,13 +29,13 @@ if (${num_extra_args} GREATER 0)
 endif()
 
 add_custom_target(${daemonname}-init.target ALL
-    COMMAND sed -e 's,[@]DAEMON[@],${daemonname},g' < ${PROJECT_SOURCE_DIR}/tools/init.d/template > ${CMAKE_CURRENT_BINARY_DIR}/${daemonname}-metrika-yandex
-    COMMAND sed -i 's,[@]CRONFILE[@],${daemonname}-metrika-yandex,g' ${CMAKE_CURRENT_BINARY_DIR}/${daemonname}-metrika-yandex
-    COMMAND chmod a+x ${CMAKE_CURRENT_BINARY_DIR}/${daemonname}-metrika-yandex
+    COMMAND sed -e 's,[@]DAEMON[@],${daemonname},g' < ${PROJECT_SOURCE_DIR}/tools/init.d/template > ${CMAKE_CURRENT_BINARY_DIR}/${package_name}
+    COMMAND sed -i 's,[@]CRONFILE[@],${package_name},g' ${CMAKE_CURRENT_BINARY_DIR}/${package_name}
+    COMMAND chmod a+x ${CMAKE_CURRENT_BINARY_DIR}/${package_name}
     COMMENT "Building ${daemonname}"
 )
 INSTALL(
-    FILES ${CMAKE_CURRENT_BINARY_DIR}/${daemonname}-metrika-yandex
+    FILES ${CMAKE_CURRENT_BINARY_DIR}/${package_name}
     DESTINATION /etc/init.d
     PERMISSIONS OWNER_EXECUTE OWNER_READ GROUP_EXECUTE GROUP_READ WORLD_EXECUTE WORLD_READ
 )
