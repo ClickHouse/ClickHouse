@@ -36,6 +36,17 @@
 	M(ReplicatedPartChecks,				"Replicated part checks") \
 	M(ReplicatedPartChecksFailed,		"Replicated part checks failed") \
 	\
+	M(ZooKeeperInit,					"ZooKeeper session init") \
+	M(ZooKeeperTransactions,			"ZooKeeper transaction (all types)") \
+	M(ZooKeeperGetChildren,				"ZooKeeper get children") \
+	M(ZooKeeperCreate,					"ZooKeeper create") \
+	M(ZooKeeperRemove,					"ZooKeeper remove") \
+	M(ZooKeeperExists,					"ZooKeeper exists") \
+	M(ZooKeeperGet,						"ZooKeeper get") \
+	M(ZooKeeperSet,						"ZooKeeper set") \
+	M(ZooKeeperMulti,					"ZooKeeper multi") \
+	M(ZooKeeperExceptions,				"ZooKeeper exceptions") \
+	\
 	M(END, "")
 
 namespace ProfileEvents

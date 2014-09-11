@@ -1,6 +1,7 @@
 #include <zkutil/ZooKeeper.h>
 #include <boost/make_shared.hpp>
 #include <Yandex/logger_useful.h>
+#include <DB/Common/ProfileEvents.h>
 #include <boost/bind.hpp>
 
 namespace zkutil
@@ -67,6 +68,7 @@ void ZooKeeper::init(const std::string & hosts_, int32_t sessionTimeoutMs_)
 	sessionTimeoutMs = sessionTimeoutMs_;
 
 	impl = zookeeper_init(hosts.c_str(), nullptr, sessionTimeoutMs, nullptr, nullptr, 0);
+	ProfileEvents::increment(ProfileEvents::ZooKeeperInit);
 
 	if (!impl)
 		throw KeeperException("Fail to initialize zookeeper. Hosts are " + hosts);
@@ -148,6 +150,8 @@ int32_t ZooKeeper::getChildrenImpl(const std::string & path, Strings & res,
 	int code;
 	Stat stat;
 	code = zoo_wget_children2(impl, path.c_str(), callbackForEvent(watch), watchForEvent(watch), &strings, &stat);
+	ProfileEvents::increment(ProfileEvents::ZooKeeperGetChildren);
+	ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
 
 	if (code == ZOK)
 	{
@@ -189,6 +193,8 @@ int32_t ZooKeeper::createImpl(const std::string & path, const std::string & data
 	char * name_buffer = new char[name_buffer_size];
 
 	code = zoo_create(impl, path.c_str(), data.c_str(), data.size(), getDefaultACL(), mode,  name_buffer, name_buffer_size);
+	ProfileEvents::increment(ProfileEvents::ZooKeeperCreate);
+	ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
 
 	if (code == ZOK)
 	{
@@ -252,6 +258,8 @@ void ZooKeeper::createAncestors(const std::string & path)
 int32_t ZooKeeper::removeImpl(const std::string & path, int32_t version)
 {
 	int32_t code = zoo_delete(impl, path.c_str(), version);
+	ProfileEvents::increment(ProfileEvents::ZooKeeperRemove);
+	ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
 	return code;
 }
 
@@ -287,6 +295,8 @@ int32_t ZooKeeper::existsImpl(const std::string & path, Stat * stat_, EventPtr w
 	int32_t code;
 	Stat stat;
 	code = zoo_wexists(impl, path.c_str(), callbackForEvent(watch), watchForEvent(watch), &stat);
+	ProfileEvents::increment(ProfileEvents::ZooKeeperExists);
+	ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
 
 	if (code == ZOK)
 	{
@@ -316,6 +326,8 @@ int32_t ZooKeeper::getImpl(const std::string & path, std::string & res, Stat * s
 	int32_t code;
 	Stat stat;
 	code = zoo_wget(impl, path.c_str(), callbackForEvent(watch), watchForEvent(watch), buffer, &buffer_len, &stat);
+	ProfileEvents::increment(ProfileEvents::ZooKeeperGet);
+	ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
 
 	if (code == ZOK)
 	{
@@ -352,6 +364,9 @@ int32_t ZooKeeper::setImpl(const std::string & path, const std::string & data,
 {
 	Stat stat;
 	int32_t code = zoo_set2(impl, path.c_str(), data.c_str(), data.length(), version, &stat);
+	ProfileEvents::increment(ProfileEvents::ZooKeeperSet);
+	ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
+
 	if (code == ZOK)
 	{
 		if (stat_)
@@ -398,6 +413,8 @@ int32_t ZooKeeper::multiImpl(const Ops & ops_, OpResultsPtr * out_results_)
 		ops.push_back(*(op.data));
 
 	int32_t code = zoo_multi(impl, ops.size(), ops.data(), out_results->data());
+	ProfileEvents::increment(ProfileEvents::ZooKeeperMulti);
+	ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
 
 	if (out_results_)
 		*out_results_ = out_results;
