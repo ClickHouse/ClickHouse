@@ -162,6 +162,7 @@ public:
 	static const size_t SEQUENTIAL_SUFFIX_SIZE = 64;
 private:
 	friend struct WatchWithEvent;
+	friend class EphemeralNodeHolder;
 
 	void init(const std::string & hosts, int32_t sessionTimeoutMs);
 	void removeChildrenRecursive(const std::string & path);
@@ -255,7 +256,10 @@ public:
 		{
 			zookeeper.tryRemove(path);
 		}
-		catch (KeeperException) {}
+		catch (const KeeperException & e)
+		{
+			LOG_ERROR(zookeeper.log, "~EphemeralNodeHolder(): " << e.displayText());
+		}
 	}
 
 private:

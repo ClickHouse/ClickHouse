@@ -1299,6 +1299,34 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 {
 	bool need_pull = true;
 
+	/** Может много времени тратиться на определение, можно ли мерджить два рядом стоящих куска.
+	  * Два рядом стоящих куска можно мерджить, если все номера блоков между их номерами не используются ("заброшены", abandoned).
+	  * Это значит, что между этими кусками не может быть вставлен другой кусок.
+	  *
+	  * Но если номера соседних блоков отличаются достаточно сильно (обычно, если между ними много "заброшенных" блоков),
+	  *  то делается слишком много чтений из ZooKeeper, чтобы узнать, можно ли их мерджить.
+	  *
+	  * Воспользуемся утверждением, что если пару кусков можно мерджить, то всегда будет можно мерджить,
+	  *  и будем запоминать это состояние, чтобы не делать много раз одинаковые запросы в ZooKeeper.
+	  *
+	  * TODO Интересно, как это сочетается с DROP PARTITION и затем ATTACH PARTITION.
+	  */
+	std::set<std::pair<std::string, std::string>> memoized_parts_that_could_be_merged;
+
+	auto can_merge = [&memoized_parts_that_could_be_merged, this]
+		(const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right) -> bool
+	{
+		auto key = std::make_pair(left->name, right->name);
+		if (memoized_parts_that_could_be_merged.count(key))
+			return true;
+
+		bool res = canMergeParts(left, right);
+		if (res)
+			memoized_parts_that_could_be_merged.insert(key);
+
+		return res;
+	};
+
 	while (!shutdown_called && is_leader_node)
 	{
 		bool success = false;
@@ -1355,8 +1383,6 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 				MergeTreeData::DataPartsVector parts;
 
 				String merged_name;
-				auto can_merge = std::bind(
-					&StorageReplicatedMergeTree::canMergeParts, this, std::placeholders::_1, std::placeholders::_2);
 
 				if (!merger.selectPartsToMerge(parts, merged_name, MergeTreeDataMerger::NO_LIMIT,
 												false, false, has_big_merge, can_merge) &&
@@ -1834,7 +1860,7 @@ bool StorageReplicatedMergeTree::canMergeParts(const MergeTreeData::DataPartPtr 
 	String month_name = left->name.substr(0, 6);
 
 	/// Можно слить куски, если все номера между ними заброшены - не соответствуют никаким блокам.
-	for (UInt64 number = left->right + 1; number <= right->left - 1; ++number)
+	for (UInt64 number = left->right + 1; number <= right->left - 1; ++number)	/// Номера блоков больше нуля.
 	{
 		String path1 = zookeeper_path +              "/block_numbers/" + month_name + "/block-" + padIndex(number);
 		String path2 = zookeeper_path + "/nonincrement_block_numbers/" + month_name + "/block-" + padIndex(number);
