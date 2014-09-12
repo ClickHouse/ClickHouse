@@ -112,6 +112,9 @@ private:
 			parent.have_space.signal();
 		}
 
+		Element * operator->() { return &*it; }
+		const Element * operator->() const { return &*it; }
+
 		Element & get() { return *it; }
 		const Element & get() const { return *it; }
 	};
@@ -167,23 +170,13 @@ public:
 	}
 
 	/// Количество одновременно выполняющихся запросов.
-	size_t size() const
-	{
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-		return cur_size;
-	}
+	size_t size() const { return cur_size; }
 
 	/// Получить текущее состояние (копию) списка запросов.
 	Containter get() const
 	{
-		Containter res;
-
-		{
-			Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-			res = cont;
-		}
-
-		return res;
+		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		return cont;
 	}
 
 	void setMaxSize(size_t max_size_)

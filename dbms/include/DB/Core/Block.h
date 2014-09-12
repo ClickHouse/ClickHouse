@@ -3,6 +3,7 @@
 #include <vector>
 #include <map>
 #include <list>
+#include <initializer_list>
 
 #include <DB/Core/ColumnWithNameAndType.h>
 #include <DB/Core/NamesAndTypes.h>
@@ -32,7 +33,16 @@ private:
 	IndexByName_t index_by_name;
 
 public:
-	Block() {}
+	Block() = default;
+	Block(std::initializer_list<ColumnWithNameAndType> il) : data{il}
+	{
+		index_by_position.reserve(il.size());
+		for (auto it = std::begin(data); it != std::end(data); ++it)
+		{
+			index_by_name[it->name] = it;
+			index_by_position.push_back(it);
+		}
+	}
 
 	/// нужны, чтобы правильно скопировались индексы
 	Block(const Block & other);

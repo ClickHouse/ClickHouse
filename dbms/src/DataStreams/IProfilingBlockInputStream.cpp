@@ -353,12 +353,6 @@ void IProfilingBlockInputStream::progressImpl(size_t rows, size_t bytes)
 }
 
 
-const BlockStreamProfileInfo & IProfilingBlockInputStream::getInfo() const
-{
-	return info;
-}
-
-
 void IProfilingBlockInputStream::cancel()
 {
 	if (!__sync_bool_compare_and_swap(&is_cancelled, false, true))

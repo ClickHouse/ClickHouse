@@ -19,11 +19,11 @@ class MergeList
 		const std::string table;
 		const std::string result_part_name;
 		std::uint64_t num_parts{};
-		std::uint64_t total_size_bytes{};
+		std::uint64_t total_size_bytes_compressed{};
 		std::uint64_t total_size_marks{};
-		std::uint64_t bytes_read{};
+		std::uint64_t bytes_read_uncompressed{};
 		std::uint64_t rows_read{};
-		std::uint64_t bytes_written{};
+		std::uint64_t bytes_written_uncompressed{};
 		std::uint64_t rows_written{};
 
 		MergeInfo(const std::string & database, const std::string & table, const std::string & result_part_name)
