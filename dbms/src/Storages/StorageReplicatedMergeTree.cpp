@@ -1458,7 +1458,7 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 			merge_selecting_event.tryWait(MERGE_SELECTING_SLEEP_MS);
 	}
 
-	LOG_DEBUG(log, "merge selecting thread finished");
+	LOG_DEBUG(log, "Merge selecting thread finished");
 }
 
 void StorageReplicatedMergeTree::cleanupThread()
