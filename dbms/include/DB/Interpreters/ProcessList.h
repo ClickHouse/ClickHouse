@@ -59,8 +59,8 @@ public:
 		bool update(size_t rows, size_t bytes) volatile
 		{
 			/// x86 atomic operations on properly aligned integral values
-			rows_processed = rows;
-			rows_processed = bytes;
+			rows_processed += rows;
+			rows_processed += bytes;
 			return !is_cancelled;
 		}
 	};
