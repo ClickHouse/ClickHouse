@@ -37,7 +37,7 @@
 	M(ReplicatedPartChecksFailed,		"Replicated part checks failed") \
 	\
 	M(ZooKeeperInit,					"ZooKeeper session init") \
-	M(ZooKeeperTransactions,			"ZooKeeper transaction (all types)") \
+	M(ZooKeeperTransactions,			"ZooKeeper transactions all types") \
 	M(ZooKeeperGetChildren,				"ZooKeeper get children") \
 	M(ZooKeeperCreate,					"ZooKeeper create") \
 	M(ZooKeeperRemove,					"ZooKeeper remove") \
