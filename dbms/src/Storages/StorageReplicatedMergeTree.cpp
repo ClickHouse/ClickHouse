@@ -1306,8 +1306,8 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 	  * Но если номера соседних блоков отличаются достаточно сильно (обычно, если между ними много "заброшенных" блоков),
 	  *  то делается слишком много чтений из ZooKeeper, чтобы узнать, можно ли их мерджить.
 	  *
-	  * Воспользуемся утверждением, что если пару кусков можно мерджить, то всегда будет можно мерджить,
-	  *  и будем запоминать это состояние, чтобы не делать много раз одинаковые запросы в ZooKeeper.
+	  * Воспользуемся утверждением, что если пару кусков было можно мерджить, и их мердж ещё не запланирован,
+	  *  то и сейчас их можно мерджить, и будем запоминать это состояние, чтобы не делать много раз одинаковые запросы в ZooKeeper.
 	  *
 	  * TODO Интересно, как это сочетается с DROP PARTITION и затем ATTACH PARTITION.
 	  */
@@ -1316,15 +1316,30 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 	auto can_merge = [&memoized_parts_that_could_be_merged, this]
 		(const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right) -> bool
 	{
+		/// Если какой-то из кусков уже собираются слить в больший, не соглашаемся его сливать.
+		if (virtual_parts.getContainingPart(left->name) != left->name ||
+			virtual_parts.getContainingPart(right->name) != right->name)
+			return false;
+
 		auto key = std::make_pair(left->name, right->name);
 		if (memoized_parts_that_could_be_merged.count(key))
 			return true;
 
-		bool res = canMergeParts(left, right);
-		if (res)
-			memoized_parts_that_could_be_merged.insert(key);
+		String month_name = left->name.substr(0, 6);
 
-		return res;
+		/// Можно слить куски, если все номера между ними заброшены - не соответствуют никаким блокам.
+		for (UInt64 number = left->right + 1; number <= right->left - 1; ++number)	/// Номера блоков больше нуля.
+		{
+			String path1 = zookeeper_path +              "/block_numbers/" + month_name + "/block-" + padIndex(number);
+			String path2 = zookeeper_path + "/nonincrement_block_numbers/" + month_name + "/block-" + padIndex(number);
+
+			if (AbandonableLockInZooKeeper::check(path1, *zookeeper) != AbandonableLockInZooKeeper::ABANDONED &&
+				AbandonableLockInZooKeeper::check(path2, *zookeeper) != AbandonableLockInZooKeeper::ABANDONED)
+				return false;
+		}
+
+		memoized_parts_that_could_be_merged.insert(key);
+		return true;
 	};
 
 	while (!shutdown_called && is_leader_node)
@@ -1410,9 +1425,7 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 				entry.new_part_name = merged_name;
 
 				for (const auto & part : parts)
-				{
 					entry.parts_to_merge.push_back(part->name);
-				}
 
 				need_pull = true;
 
@@ -1431,7 +1444,7 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 
 				success = true;
 			}
-			while(false);
+			while (false);
 		}
 		catch (...)
 		{
@@ -1849,29 +1862,6 @@ void StorageReplicatedMergeTree::partCheckThread()
 	}
 }
 
-
-bool StorageReplicatedMergeTree::canMergeParts(const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right)
-{
-	/// Если какой-то из кусков уже собираются слить в больший, не соглашаемся его сливать.
-	if (virtual_parts.getContainingPart(left->name) != left->name ||
-		virtual_parts.getContainingPart(right->name) != right->name)
-		return false;
-
-	String month_name = left->name.substr(0, 6);
-
-	/// Можно слить куски, если все номера между ними заброшены - не соответствуют никаким блокам.
-	for (UInt64 number = left->right + 1; number <= right->left - 1; ++number)	/// Номера блоков больше нуля.
-	{
-		String path1 = zookeeper_path +              "/block_numbers/" + month_name + "/block-" + padIndex(number);
-		String path2 = zookeeper_path + "/nonincrement_block_numbers/" + month_name + "/block-" + padIndex(number);
-
-		if (AbandonableLockInZooKeeper::check(path1, *zookeeper) != AbandonableLockInZooKeeper::ABANDONED &&
-			AbandonableLockInZooKeeper::check(path2, *zookeeper) != AbandonableLockInZooKeeper::ABANDONED)
-			return false;
-	}
-
-	return true;
-}
 
 void StorageReplicatedMergeTree::becomeLeader()
 {

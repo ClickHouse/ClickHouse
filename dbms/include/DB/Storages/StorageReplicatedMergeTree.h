@@ -440,9 +440,6 @@ private:
 	  */
 	void restartingThread();
 
-	/// Вызывается во время выбора кусков для слияния.
-	bool canMergeParts(const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right);
-
 	/// Обмен кусками.
 
 	/** Возвращает пустую строку, если куска ни у кого нет.
