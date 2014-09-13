@@ -184,9 +184,12 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 
 			/// Если отрезок валидный, то он самый длинный валидный, начинающийся тут.
 			if (cur_len >= min_len
-				&& (static_cast<double>(cur_max) / (cur_sum - cur_max) < ratio
+				&& (/// Достаточная равномерность размеров или пошедшее время
+					static_cast<double>(cur_max) / (cur_sum - cur_max) < ratio
 					/// За старый месяц объединяем что угодно, если разрешено и если этому куску хотя бы 5 дней
 					|| (is_old_month && merge_anything_for_old_months && cur_age_in_sec > 3600 * 24 * 5)
+					/// Или достаточно много мелких кусков
+					|| cur_len > static_cast<int>(data.settings.max_parts_to_merge_at_once)
 					/// Если слияние "агрессивное", то сливаем что угодно
 					|| aggressive))
 			{
