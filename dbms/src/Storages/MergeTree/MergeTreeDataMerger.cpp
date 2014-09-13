@@ -20,22 +20,23 @@ static const double DISK_USAGE_COEFFICIENT_TO_SELECT = 1.6;
 static const double DISK_USAGE_COEFFICIENT_TO_RESERVE = 1.4;
 
 
-/// Выбираем отрезок из не более чем max_parts_to_merge_at_once кусков так, чтобы максимальный размер был меньше чем в max_size_ratio_to_merge_parts раз больше суммы остальных.
+/// Выбираем отрезок из не более чем max_parts_to_merge_at_once (или несколько больше, см merge_more_parts_if_sum_bytes_is_less_than)
+///  кусков так, чтобы максимальный размер был меньше чем в max_size_ratio_to_merge_parts раз больше суммы остальных.
 /// Это обеспечивает в худшем случае время O(n log n) на все слияния, независимо от выбора сливаемых кусков, порядка слияния и добавления.
-/// При max_parts_to_merge_at_once >= log(max_bytes_to_merge_parts)/log(max_size_ratio_to_merge_parts),
+/// При max_parts_to_merge_at_once >= log(max_bytes_to_merge_parts) / log(max_size_ratio_to_merge_parts),
 /// несложно доказать, что всегда будет что сливать, пока количество кусков больше
-/// log(max_bytes_to_merge_parts)/log(max_size_ratio_to_merge_parts)*(количество кусков размером больше max_bytes_to_merge_parts).
+/// log(max_bytes_to_merge_parts) / log(max_size_ratio_to_merge_parts) * (количество кусков размером больше max_bytes_to_merge_parts).
 /// Дальше эвристики.
 /// Будем выбирать максимальный по включению подходящий отрезок.
 /// Из всех таких выбираем отрезок с минимальным максимумом размера.
 /// Из всех таких выбираем отрезок с минимальным минимумом размера.
 /// Из всех таких выбираем отрезок с максимальной длиной.
 /// Дополнительно:
-/// 1) с 1:00 до 5:00 ограничение сверху на размер куска в основном потоке увеличивается в несколько раз
-/// 2) в зависимоти от возраста кусков меняется допустимая неравномерность при слиянии
-/// 3) Молодые куски крупного размера (примерно больше 1 Гб) можно сливать не меньше чем по три
-/// 4) Если в одном из потоков идет мердж крупных кусков, то во втором сливать только маленькие кусочки
-/// 5) С ростом логарифма суммарного размера кусочков в мердже увеличиваем требование сбалансированности
+/// 1) С 1:00 до 5:00 ограничение сверху на размер куска в основном потоке увеличивается в несколько раз.
+/// 2) В зависимоти от возраста кусков меняется допустимая неравномерность при слиянии.
+/// 3) Молодые куски крупного размера (примерно больше 1 ГБ) можно сливать не меньше чем по три.
+/// 4) Если в одном из потоков идет мердж крупных кусков, то во втором сливать только маленькие кусочки.
+/// 5) С ростом логарифма суммарного размера кусочков в мердже увеличиваем требование сбалансированности.
 
 bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & parts, String & merged_name, size_t available_disk_space,
 	bool merge_anything_for_old_months, bool aggressive, bool only_small, const AllowedMergingPredicate & can_merge_callback)
@@ -128,7 +129,9 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 
 		/// Правый конец отрезка.
 		MergeTreeData::DataParts::iterator jt = it;
-		for (; cur_len < static_cast<int>(data.settings.max_parts_to_merge_at_once);)
+		while (cur_len < static_cast<int>(data.settings.max_parts_to_merge_at_once)
+			|| (cur_len < static_cast<int>(data.settings.max_parts_to_merge_at_once_if_small)
+				&& cur_sum < data.settings.merge_more_parts_if_sum_bytes_is_less_than))
 		{
 			const MergeTreeData::DataPartPtr & prev_part = *jt;
 			++jt;

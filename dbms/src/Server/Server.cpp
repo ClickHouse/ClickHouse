@@ -85,8 +85,6 @@ private:
 			prev_counters[i] = counter;
 
 			std::string key{ProfileEvents::getDescription(static_cast<ProfileEvents::Event>(i))};
-			std::replace(std::begin(key), std::end(key), ' ', '_');
-
 			key_vals.emplace_back(event_path_prefix + key, counter_increment);
 		}
 

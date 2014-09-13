@@ -8,53 +8,57 @@
   */
 
 #define APPLY_FOR_EVENTS(M) \
-	M(Query, 							"Queries") \
-	M(SelectQuery, 						"Select queries") \
-	M(InsertQuery, 						"Insert queries") \
-	M(FileOpen, 						"File opens") \
-	M(Seek, 							"Seeks") \
-	M(ReadBufferFromFileDescriptorRead, "ReadBufferFromFileDescriptor reads") \
-	M(ReadCompressedBytes, 				"Read compressed bytes") \
-	M(CompressedReadBufferBlocks, 		"Read decompressed blocks") \
-	M(CompressedReadBufferBytes, 		"Read decompressed bytes") \
-	M(UncompressedCacheHits, 			"Uncompressed cache hits") \
-	M(UncompressedCacheMisses, 			"Uncompressed cache misses") \
-	M(UncompressedCacheWeightLost,		"Uncompressed cache weight lost") \
-	M(IOBufferAllocs, 					"IO buffers allocations") \
-	M(IOBufferAllocBytes, 				"IO buffers allocated bytes") \
-	M(ArenaAllocChunks, 				"Arena allocated chunks") \
-	M(ArenaAllocBytes, 					"Arena allocated bytes") \
-	M(FunctionExecute, 					"Function executes") \
-	M(MarkCacheHits, 					"Mark cache hits") \
-	M(MarkCacheMisses, 					"Mark cache misses") \
+	M(Query) \
+	M(SelectQuery) \
+	M(InsertQuery) \
+	M(FileOpen) \
+	M(Seek) \
+	M(ReadBufferFromFileDescriptorRead) \
+	M(ReadCompressedBytes) \
+	M(CompressedReadBufferBlocks) \
+	M(CompressedReadBufferBytes) \
+	M(UncompressedCacheHits) \
+	M(UncompressedCacheMisses) \
+	M(UncompressedCacheWeightLost) \
+	M(IOBufferAllocs) \
+	M(IOBufferAllocBytes) \
+	M(ArenaAllocChunks) \
+	M(ArenaAllocBytes) \
+	M(FunctionExecute) \
+	M(MarkCacheHits) \
+	M(MarkCacheMisses) \
 	\
-	M(ReplicatedPartFetches, 			"Replicated part fetches") \
-	M(ReplicatedPartFailedFetches,		"Replicated part fetches failed") \
-	M(ObsoleteReplicatedParts,			"Replicated parts rendered obsolete by fetches") \
-	M(ReplicatedPartMerges,				"Replicated part merges") \
-	M(ReplicatedPartFetchesOfMerged,	"Replicated part merges replaced with fetches") \
-	M(ReplicatedPartChecks,				"Replicated part checks") \
-	M(ReplicatedPartChecksFailed,		"Replicated part checks failed") \
+	M(ReplicatedPartFetches) \
+	M(ReplicatedPartFailedFetches) \
+	M(ObsoleteReplicatedParts) \
+	M(ReplicatedPartMerges) \
+	M(ReplicatedPartFetchesOfMerged) \
+	M(ReplicatedPartChecks) \
+	M(ReplicatedPartChecksFailed) \
 	\
-	M(ZooKeeperInit,					"ZooKeeper session init") \
-	M(ZooKeeperTransactions,			"ZooKeeper transactions all types") \
-	M(ZooKeeperGetChildren,				"ZooKeeper get children") \
-	M(ZooKeeperCreate,					"ZooKeeper create") \
-	M(ZooKeeperRemove,					"ZooKeeper remove") \
-	M(ZooKeeperExists,					"ZooKeeper exists") \
-	M(ZooKeeperGet,						"ZooKeeper get") \
-	M(ZooKeeperSet,						"ZooKeeper set") \
-	M(ZooKeeperMulti,					"ZooKeeper multi") \
-	M(ZooKeeperExceptions,				"ZooKeeper exceptions") \
+	M(DelayedInserts) \
+	M(RejectedInserts) \
+	M(DelayedInsertsMilliseconds) \
 	\
-	M(END, "")
+	M(ZooKeeperInit) \
+	M(ZooKeeperTransactions) \
+	M(ZooKeeperGetChildren) \
+	M(ZooKeeperCreate) \
+	M(ZooKeeperRemove) \
+	M(ZooKeeperExists) \
+	M(ZooKeeperGet) \
+	M(ZooKeeperSet) \
+	M(ZooKeeperMulti) \
+	M(ZooKeeperExceptions) \
+	\
+	M(END)
 
 namespace ProfileEvents
 {
 	/// Виды событий.
 	enum Event
 	{
-	#define M(NAME, DESCRIPTION) NAME,
+	#define M(NAME) NAME,
 		APPLY_FOR_EVENTS(M)
 	#undef M
 	};
@@ -65,7 +69,7 @@ namespace ProfileEvents
 	{
 		static const char * descriptions[] =
 		{
-		#define M(NAME, DESCRIPTION) DESCRIPTION,
+		#define M(NAME) #NAME,
 			APPLY_FOR_EVENTS(M)
 		#undef M
 		};

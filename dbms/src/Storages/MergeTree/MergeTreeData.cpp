@@ -853,7 +853,13 @@ void MergeTreeData::delayInsertIfNeeded(Poco::Event * until)
 		delay /= 1000;
 
 		if (delay > DBMS_MAX_DELAY_OF_INSERT)
+		{
+			ProfileEvents::increment(ProfileEvents::RejectedInserts);
 			throw Exception("Too much parts. Merges are processing significantly slower than inserts.", ErrorCodes::TOO_MUCH_PARTS);
+		}
+
+		ProfileEvents::increment(ProfileEvents::DelayedInserts);
+		ProfileEvents::increment(ProfileEvents::DelayedInsertsMilliseconds, delay * 1000);
 
 		LOG_INFO(log, "Delaying inserting block by "
 			<< std::fixed << std::setprecision(4) << delay << " sec. because there are " << parts_count << " parts");

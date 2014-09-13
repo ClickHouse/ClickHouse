@@ -13,8 +13,6 @@ namespace DB
   * unlock() разблокирует ее (UNLOCKED).
   * При вызове деструктора или завершении сессии в ZooKeeper, переходит в состояние ABANDONED.
   *  (В том числе при падении программы).
-  *
-  * Из состояния ABANDONED не может перейти ни в какое другое состояние.
   */
 class AbandonableLockInZooKeeper : private boost::noncopyable
 {
