@@ -19,6 +19,7 @@
 #include <DB/DataTypes/DataTypeFactory.h>
 #include <DB/Storages/StorageFactory.h>
 #include <DB/Storages/MergeTree/BackgroundProcessingPool.h>
+#include <DB/Storages/MergeTree/MergeList.h>
 #include <DB/TableFunctions/TableFunctionFactory.h>
 #include <DB/Interpreters/Settings.h>
 #include <DB/Interpreters/Users.h>
@@ -93,6 +94,7 @@ struct ContextShared
 	mutable UncompressedCachePtr uncompressed_cache;		/// Кэш разжатых блоков.
 	mutable MarkCachePtr mark_cache;						/// Кэш засечек в сжатых файлах.
 	ProcessList process_list;								/// Исполняющиеся в данный момент запросы.
+	MergeList merge_list;									/// Список выполняемых мерджей (для (Replicated)?MergeTree)
 	ViewDependencies view_dependencies;						/// Текущие зависимости
 	ConfigurationPtr users_config;							/// Конфиг с секциями users, profiles и quotas.
 	InterserverIOHandler interserver_io_handler;			/// Обработчик для межсерверной передачи данных.
@@ -304,6 +306,9 @@ public:
 	/// Список всех запросов.
 	ProcessList & getProcessList()											{ return shared->process_list; }
 	const ProcessList & getProcessList() const								{ return shared->process_list; }
+
+	MergeList & getMergeList() { return shared->merge_list; }
+	const MergeList & getMergeList() const { return shared->merge_list; }
 
 	/// Создать кэш разжатых блоков указанного размера. Это можно сделать только один раз.
 	void setUncompressedCache(size_t max_size_in_bytes);

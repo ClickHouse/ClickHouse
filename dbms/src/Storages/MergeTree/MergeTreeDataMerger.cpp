@@ -269,9 +269,11 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 
 /// parts должны быть отсортированы.
 MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
-	const MergeTreeData::DataPartsVector & parts, const String & merged_name,
+	const MergeTreeData::DataPartsVector & parts, const String & merged_name, MergeList::Entry & merge_entry,
 	MergeTreeData::Transaction * out_transaction, DiskSpaceMonitor::Reservation * disk_reservation)
 {
+	merge_entry->num_parts = parts.size();
+
 	LOG_DEBUG(log, "Merging " << parts.size() << " parts: from " << parts.front()->name << " to " << parts.back()->name << " into " << merged_name);
 
 	String merged_dir = data.getFullPath() + merged_name;
@@ -284,6 +286,9 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 		Poco::ScopedReadRWLock part_lock(part->columns_lock);
 		Names part_columns = part->columns.getNames();
 		union_columns_set.insert(part_columns.begin(), part_columns.end());
+
+		merge_entry->total_size_bytes_compressed += part->size_in_bytes;
+		merge_entry->total_size_marks += part->size;
 	}
 
 	NamesAndTypesList columns_list = data.getColumnsList();
@@ -305,54 +310,64 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 	for (size_t i = 0; i < parts.size(); ++i)
 	{
 		MarkRanges ranges(1, MarkRange(0, parts[i]->size));
-		src_streams.push_back(new ExpressionBlockInputStream(new MergeTreeBlockInputStream(
+
+		auto input = stdext::make_unique<MergeTreeBlockInputStream>(
 			data.getFullPath() + parts[i]->name + '/', DEFAULT_MERGE_BLOCK_SIZE, union_column_names, data,
-			parts[i], ranges, false, nullptr, ""), data.getPrimaryExpression()));
+			parts[i], ranges, false, nullptr, "");
+		input->setProgressCallback([&merge_entry] (const std::size_t rows, const std::size_t bytes) {
+			merge_entry->rows_read += rows;
+			merge_entry->bytes_read_uncompressed += bytes;
+		});
+
+		src_streams.push_back(new ExpressionBlockInputStream(input.release(), data.getPrimaryExpression()));
 		sum_rows_approx += parts[i]->size * data.index_granularity;
 	}
 
 	/// Порядок потоков важен: при совпадении ключа элементы идут в порядке номера потока-источника.
 	/// В слитом куске строки с одинаковым ключом должны идти в порядке возрастания идентификатора исходного куска,
 	///  то есть (примерного) возрастания времени вставки.
-	BlockInputStreamPtr merged_stream;
+	std::unique_ptr<IProfilingBlockInputStream> merged_stream;
 
 	switch (data.mode)
 	{
 		case MergeTreeData::Ordinary:
-			merged_stream = new MergingSortedBlockInputStream(src_streams, data.getSortDescription(), DEFAULT_MERGE_BLOCK_SIZE);
+			merged_stream = stdext::make_unique<MergingSortedBlockInputStream>(src_streams, data.getSortDescription(), DEFAULT_MERGE_BLOCK_SIZE);
 			break;
 
 		case MergeTreeData::Collapsing:
-			merged_stream = new CollapsingSortedBlockInputStream(src_streams, data.getSortDescription(), data.sign_column, DEFAULT_MERGE_BLOCK_SIZE);
+			merged_stream = stdext::make_unique<CollapsingSortedBlockInputStream>(src_streams, data.getSortDescription(), data.sign_column, DEFAULT_MERGE_BLOCK_SIZE);
 			break;
 
 		case MergeTreeData::Summing:
-			merged_stream = new SummingSortedBlockInputStream(src_streams, data.getSortDescription(), DEFAULT_MERGE_BLOCK_SIZE);
+			merged_stream = stdext::make_unique<SummingSortedBlockInputStream>(src_streams, data.getSortDescription(), DEFAULT_MERGE_BLOCK_SIZE);
 			break;
 
 		case MergeTreeData::Aggregating:
-			merged_stream = new AggregatingSortedBlockInputStream(src_streams, data.getSortDescription(), DEFAULT_MERGE_BLOCK_SIZE);
+			merged_stream = stdext::make_unique<AggregatingSortedBlockInputStream>(src_streams, data.getSortDescription(), DEFAULT_MERGE_BLOCK_SIZE);
 			break;
 
 		default:
 			throw Exception("Unknown mode of operation for MergeTreeData: " + toString(data.mode), ErrorCodes::LOGICAL_ERROR);
 	}
 
-	String new_part_tmp_path = data.getFullPath() + "tmp_" + merged_name + "/";
+	const String new_part_tmp_path = data.getFullPath() + "tmp_" + merged_name + "/";
 
-	MergedBlockOutputStreamPtr to = new MergedBlockOutputStream(data, new_part_tmp_path, union_columns);
+	MergedBlockOutputStream to{data, new_part_tmp_path, union_columns};
 
 	merged_stream->readPrefix();
-	to->writePrefix();
+	to.writePrefix();
 
 	size_t rows_written = 0;
-	size_t initial_reservation = disk_reservation ? disk_reservation->getSize() : 0;
+	const size_t initial_reservation = disk_reservation ? disk_reservation->getSize() : 0;
 
 	Block block;
 	while (!canceled && (block = merged_stream->read()))
 	{
 		rows_written += block.rows();
-		to->write(block);
+		to.write(block);
+
+		merge_entry->rows_written = merged_stream->getInfo().rows;
+		merge_entry->bytes_written_uncompressed = merged_stream->getInfo().bytes;
 
 		if (disk_reservation)
 			disk_reservation->update(static_cast<size_t>((1 - std::min(1., 1. * rows_written / sum_rows_approx)) * initial_reservation));
@@ -363,14 +378,14 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 
 	merged_stream->readSuffix();
 	new_data_part->columns = union_columns;
-	new_data_part->checksums = to->writeSuffixAndGetChecksums();
-	new_data_part->index.swap(to->getIndex());
+	new_data_part->checksums = to.writeSuffixAndGetChecksums();
+	new_data_part->index.swap(to.getIndex());
 
 	/// Для удобства, даже CollapsingSortedBlockInputStream не может выдать ноль строк.
-	if (0 == to->marksCount())
+	if (0 == to.marksCount())
 		throw Exception("Empty part after merge", ErrorCodes::LOGICAL_ERROR);
 
-	new_data_part->size = to->marksCount();
+	new_data_part->size = to.marksCount();
 	new_data_part->modification_time = time(0);
 	new_data_part->size_in_bytes = MergeTreeData::DataPart::calcTotalSize(new_part_tmp_path);
 

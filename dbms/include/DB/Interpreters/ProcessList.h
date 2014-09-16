@@ -32,7 +32,7 @@ public:
 		String user;
 		String query_id;
 		Poco::Net::IPAddress ip_address;
-		
+
 		Stopwatch watch;
 
 		volatile size_t rows_processed = 0;
@@ -41,7 +41,7 @@ public:
 		MemoryTracker memory_tracker;
 
 		bool is_cancelled = false;
-		
+
 
 		Element(const String & query_, const String & user_,
 			const String & query_id_, const Poco::Net::IPAddress & ip_address_,
@@ -58,8 +58,9 @@ public:
 
 		bool update(size_t rows, size_t bytes) volatile
 		{
-			__sync_add_and_fetch(&rows_processed, rows);
-			__sync_add_and_fetch(&bytes_processed, bytes);
+			/// x86 atomic operations on properly aligned integral values
+			rows_processed += rows;
+			rows_processed += bytes;
 			return !is_cancelled;
 		}
 	};
@@ -74,7 +75,7 @@ public:
 private:
 	mutable Poco::FastMutex mutex;
 	mutable Poco::Condition have_space;		/// Количество одновременно выполняющихся запросов стало меньше максимального.
-	
+
 	Containter cont;
 	size_t cur_size;		/// В C++03 std::list::size не O(1).
 	size_t max_size;		/// Если 0 - не ограничено. Иначе, если пытаемся добавить больше - кидается исключение.
@@ -110,6 +111,9 @@ private:
 			--parent.cur_size;
 			parent.have_space.signal();
 		}
+
+		Element * operator->() { return &*it; }
+		const Element * operator->() const { return &*it; }
 
 		Element & get() { return *it; }
 		const Element & get() const { return *it; }
@@ -166,23 +170,13 @@ public:
 	}
 
 	/// Количество одновременно выполняющихся запросов.
-	size_t size() const
-	{
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-		return cur_size;
-	}
+	size_t size() const { return cur_size; }
 
 	/// Получить текущее состояние (копию) списка запросов.
 	Containter get() const
 	{
-		Containter res;
-
-		{
-			Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-			res = cont;
-		}
-
-		return res;
+		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+		return cont;
 	}
 
 	void setMaxSize(size_t max_size_)
