@@ -1,4 +1,5 @@
 #include <DB/Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <DB/Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
@@ -8,7 +9,6 @@
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Common/VirtualColumnUtils.h>
 
-#include <DB/Parsers/formatAST.h>
 
 namespace DB
 {
@@ -110,7 +110,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	ExpressionActionsPtr filter_expression;
 
 	ASTSelectQuery & select = *typeid_cast<ASTSelectQuery*>(&*query);
-	optimizeWhereToPrewhere(select);
+	MergeTreeWhereOptimizer{data, parts}.optimize(select);
 
 	if (select.sample_size)
 	{
@@ -537,126 +537,6 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPkRange(const MergeTreeDat
 	}
 
 	return res;
-}
-
-void MergeTreeDataSelectExecutor::optimizeWhereToPrewhere(ASTSelectQuery & select)
-{
-	if (!select.where_expression)
-		return;
-
-	const auto conjunction = typeid_cast<ASTFunction *>(select.where_expression.get());
-	if (!(conjunction && conjunction->name == "and"))
-		return;
-
-	const auto threshold = 10;
-
-	/// Copy primary key column names into a hashset for fast lookup
-	std::unordered_set<std::string> primary_key_columns{};
-	for (const auto column : data.getPrimaryExpression()->getRequiredColumnsWithTypes())
-		primary_key_columns.insert(column.name);
-
-	/// Determines whether a condition is "good" in specific terms defined below
-	const auto is_good = [&primary_key_columns] (const IAST * condition) {
-		const auto fun = typeid_cast<const ASTFunction *>(condition);
-		if (!fun)
-			return false;
-
-		/** We are only considering conditions of form `equals(one, another)` or `one = another`,
-		  * especially if either `one` or `another` is ASTIdentifier */
-		if (fun->name != "equals")
-			return false;
-
-		const auto args = static_cast<const ASTExpressionList *>(fun->arguments.get());
-		auto left_arg = args->children.front().get();
-		auto right_arg = args->children.back().get();
-
-		/// try to ensure left_arg points to ASTIdentifier
-		if (!typeid_cast<const ASTIdentifier *>(left_arg) && typeid_cast<const ASTIdentifier *>(right_arg))
-			std::swap(left_arg, right_arg);
-
-		if (const auto identifier = typeid_cast<const ASTIdentifier *>(left_arg))
-		{
-			/// if the identifier is part of the primary key, the condition is not "good"
-			if (primary_key_columns.count(identifier->name))
-				return false;
-
-			/// condition may be "good" if only right_arg is a constant and its value is outside the threshold
-			if (const auto literal = typeid_cast<const ASTLiteral *>(right_arg))
-			{
-				const auto & field = literal->value;
-				const auto type = field.getType();
-
-				/// check the value with respect to threshold
-				if (type == Field::Types::UInt64)
-				{
-					const auto value = field.get<UInt64>();
-					return value > threshold;
-				}
-				else if (type == Field::Types::Int64)
-				{
-					const auto value = field.get<Int64>();
-					return value < -threshold || threshold < value;
-				}
-				else if (type == Field::Types::Float64)
-				{
-					const auto value = field.get<Float64>();
-					return value < threshold || threshold < value;
-				}
-			}
-		}
-
-		return false;
-	};
-
-	std::set<size_t> good_conditions{};
-	std::set<size_t> viable_conditions{};
-
-	const auto conditions = typeid_cast<ASTExpressionList *>(conjunction->arguments.get());
-
-	const auto remove_condition_at_index = [conditions] (const size_t idx) {
-		if (idx < conditions->children.size())
-			conditions->children[idx] = std::move(conditions->children.back());
-		conditions->children.pop_back();
-	};
-
-	for (size_t i = 0; i < conditions->children.size();)
-	{
-		const auto condition = conditions->children[i].get();
-
-		/// linearize sub-conjunctions
-		if (const auto fun = typeid_cast<ASTFunction *>(condition))
-		{
-			if (fun->name == "and")
-			{
-				const auto sub_conditions = typeid_cast<ASTExpressionList *>(fun->arguments.get());
-
-				for (auto & child : sub_conditions->children)
-					conditions->children.push_back(std::move(child));
-
-				/// remove the condition corresponding to conjunction
-				remove_condition_at_index(i);
-
-				/// continue iterating without increment to ensure the just added conditions are processed
-				continue;
-			}
-		}
-
-		/// identify condition as either "good" or not
-		(is_good(condition) ? good_conditions : viable_conditions).insert(i);
-		++i;
-	}
-
-	std::cout << "good conditions:\n";
-	for (const auto i : good_conditions) {
-		formatAST(*conditions->children[i], std::cout);
-		std::cout << std::endl;
-	}
-
-	std::cout << "\nviable conditions:\n";
-	for (const auto i : viable_conditions) {
-		formatAST(*conditions->children[i], std::cout);
-		std::cout << std::endl;
-	}
 }
 
 }
