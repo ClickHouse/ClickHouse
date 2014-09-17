@@ -15,6 +15,12 @@ public:
 		: storage(storage_), insert_id(insert_id_), block_index(0),
 		log(&Logger::get(storage.data.getLogName() + " (Replicated OutputStream)")) {}
 
+	void writePrefix() override
+	{
+		/// TODO Можно ли здесь не блокировать структуру таблицы?
+		storage.data.delayInsertIfNeeded(&storage.restarting_event);
+	}
+
 	void write(const Block & block) override
 	{
 		assertSessionIsNotExpired();
@@ -23,9 +29,6 @@ public:
 		for (auto & current_block : part_blocks)
 		{
 			assertSessionIsNotExpired();
-
-			/// TODO Можно ли здесь не блокировать структуру таблицы?
-			storage.data.delayInsertIfNeeded(&storage.restarting_event);
 
 			++block_index;
 			String block_id = insert_id.empty() ? "" : insert_id + "__" + toString(block_index);
