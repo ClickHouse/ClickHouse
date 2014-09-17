@@ -12,11 +12,6 @@ public:
 	MergeTreeBlockOutputStream(StorageMergeTree & storage_)
 		: storage(storage_) {}
 
-	void writePrefix()
-	{
-		storage.data.throwIfTooMuchParts();
-	}
-
 	void write(const Block & block)
 	{
 		auto part_blocks = storage.writer.splitBlockIntoParts(block);

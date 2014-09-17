@@ -844,12 +844,6 @@ size_t MergeTreeData::getMaxPartsCountForMonth()
 	return res;
 }
 
-void MergeTreeData::throwIfTooMuchParts()
-{
-	ProfileEvents::increment(ProfileEvents::RejectedInserts);
-	throw Exception("Too much parts. Merges are processing significantly slower than inserts.", ErrorCodes::TOO_MUCH_PARTS);
-}
-
 void MergeTreeData::delayInsertIfNeeded(Poco::Event * until)
 {
 	size_t parts_count = getMaxPartsCountForMonth();
@@ -859,7 +853,10 @@ void MergeTreeData::delayInsertIfNeeded(Poco::Event * until)
 		delay /= 1000;
 
 		if (delay > DBMS_MAX_DELAY_OF_INSERT)
-			delay = DBMS_MAX_DELAY_OF_INSERT;
+		{
+			ProfileEvents::increment(ProfileEvents::RejectedInserts);
+			throw Exception("Too much parts. Merges are processing significantly slower than inserts.", ErrorCodes::TOO_MUCH_PARTS);
+		}
 
 		ProfileEvents::increment(ProfileEvents::DelayedInserts);
 		ProfileEvents::increment(ProfileEvents::DelayedInsertsMilliseconds, delay * 1000);
