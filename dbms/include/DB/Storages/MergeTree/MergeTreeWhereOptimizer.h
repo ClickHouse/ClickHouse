@@ -19,13 +19,14 @@ namespace DB
 
 class MergeTreeWhereOptimizer
 {
-	static const auto threshold = 10;
+	static constexpr auto threshold = 10;
+	static constexpr auto and_function_name = "and";
+	static constexpr auto equals_function_name = "equals";
 
 public:
 	MergeTreeWhereOptimizer(const MergeTreeData & data, const MergeTreeData::DataPartsVector & parts)
-		: data(data)
 	{
-		fillPrimaryKeyColumns();
+		fillPrimaryKeyColumns(data);
 		calculateColumnSizes(parts);
 	}
 
@@ -36,85 +37,11 @@ public:
 		if (!select.where_expression || select.prewhere_expression)
 			return;
 
-		const auto conjunction = typeid_cast<ASTFunction *>(select.where_expression.get());
-		if (!(conjunction && conjunction->name == "and"))
-			return;
-
-		/// column size => index of condition which uses said row
-		std::map<size_t, size_t> good_conditions{};
-		/// index of condition
-		std::set<size_t> viable_conditions{};
-
-		const auto conditions = typeid_cast<ASTExpressionList *>(conjunction->arguments.get());
-
-		const auto remove_condition_at_index = [conditions] (const size_t idx) {
-			if (idx < conditions->children.size())
-				conditions->children[idx] = std::move(conditions->children.back());
-			conditions->children.pop_back();
-		};
-
-		for (size_t i = 0; i < conditions->children.size();)
-		{
-			const auto condition = conditions->children[i].get();
-
-			/// linearize sub-conjunctions
-			if (const auto fun = typeid_cast<ASTFunction *>(condition))
-			{
-				if (fun->name == "and")
-				{
-					const auto sub_conditions = typeid_cast<ASTExpressionList *>(fun->arguments.get());
-
-					for (auto & child : sub_conditions->children)
-						conditions->children.push_back(std::move(child));
-
-					/// remove the condition corresponding to conjunction
-					remove_condition_at_index(i);
-
-					/// continue iterating without increment to ensure the just added conditions are processed
-					continue;
-				}
-			}
-
-			/// identify condition as either "good" or not
-			std::string column_name{};
-			if (is_condition_good(condition, column_name))
-				good_conditions.emplace(column_sizes[column_name], i);
-			else
-				viable_conditions.emplace(i);
-
-			++i;
-		}
-
-		std::cout << "good conditions:\n";
-		for (const auto size_index_pair : good_conditions) {
-			std::cout << "condition with size " << size_index_pair.first << ' ';
-			formatAST(*conditions->children[size_index_pair.second], std::cout);
-			std::cout << std::endl;
-		}
-
-		std::cout << "\nviable conditions:\n";
-		for (const auto i : viable_conditions) {
-			formatAST(*conditions->children[i], std::cout);
-			std::cout << std::endl;
-		}
-
-		if (!good_conditions.empty())
-		{
-			const auto idx = good_conditions.begin()->second;
-			select.prewhere_expression = std::move(conditions->children[idx]);
-
-			/** Remove selected condition from conjunction if only two conditions were present,
-			  * replace conjunction with the only remaining argument otherwise. */
-			if (conditions->children.size() == 2)
-				select.where_expression = std::move(conditions->children[idx == 0 ? 1 : 0]);
-			else
-				remove_condition_at_index(idx);
-		}
-		else if (!viable_conditions.empty())
-		{
-			/// @todo implement not-"good" condition transformation
-
-		}
+		const auto fun = typeid_cast<ASTFunction *>(select.where_expression.get());
+		if (fun && fun->name == and_function_name)
+			optimizeAnd(select, fun);
+		else
+			optimizeArbitrary(select);
 
 		std::cout << "(possibly) transformed query is: ";
 		formatAST(select, std::cout);
@@ -122,7 +49,7 @@ public:
 	}
 
 private:
-	void fillPrimaryKeyColumns()
+	void fillPrimaryKeyColumns(const MergeTreeData & data)
 	{
 		for (const auto column : data.getPrimaryExpression()->getRequiredColumnsWithTypes())
 			primary_key_columns.insert(column.name);
@@ -144,7 +71,80 @@ private:
 		}
 	}
 
-	bool is_condition_good(const IAST * condition, std::string & column_name)
+	void optimizeAnd(ASTSelectQuery & select, ASTFunction * const fun)
+	{
+		/// column size => index of condition which uses said row
+		std::map<size_t, size_t> good_conditions{};
+		/// index of condition
+		std::set<size_t> viable_conditions{};
+
+		const auto conditions = typeid_cast<ASTExpressionList *>(fun->arguments.get());
+
+		/// remove condition by swapping it with the last one and calling ::pop_back()
+		const auto remove_condition_at_index = [conditions] (const size_t idx) {
+			if (idx < conditions->children.size())
+				conditions->children[idx] = std::move(conditions->children.back());
+			conditions->children.pop_back();
+		};
+
+		/// linearize conjunction and divide conditions into "good" and not-"good" ones
+		for (size_t i = 0; i < conditions->children.size();)
+		{
+			const auto condition = conditions->children[i].get();
+
+			/// linearize sub-conjunctions
+			if (const auto fun = typeid_cast<ASTFunction *>(condition))
+			{
+				if (fun->name == and_function_name)
+				{
+					const auto sub_conditions = typeid_cast<ASTExpressionList *>(fun->arguments.get());
+
+					for (auto & child : sub_conditions->children)
+						conditions->children.push_back(std::move(child));
+
+					/// remove the condition corresponding to conjunction
+					remove_condition_at_index(i);
+
+					/// continue iterating without increment to ensure the just added conditions are processed
+					continue;
+				}
+			}
+
+			/// identify condition as either "good" or not
+			std::string column_name{};
+			if (isConditionGood(condition, column_name))
+				good_conditions.emplace(column_sizes[column_name], i);
+			else
+				viable_conditions.emplace(i);
+
+			++i;
+		}
+
+		/// if there are "good" conditions - select the one with the least compressed size
+		if (!good_conditions.empty())
+		{
+			const auto idx = good_conditions.begin()->second;
+			select.prewhere_expression = std::move(conditions->children[idx]);
+
+			/** Replace conjunction with the only remaining argument if only two conditions were presentotherwise,
+			 *  remove selected condition from conjunction otherwise. */
+			if (conditions->children.size() == 2)
+				select.where_expression = std::move(conditions->children[idx == 0 ? 1 : 0]);
+			else
+				remove_condition_at_index(idx);
+		}
+		else if (!viable_conditions.empty())
+		{
+			/// @todo implement not-"good" condition transformation
+		}
+	}
+
+	void optimizeArbitrary(ASTSelectQuery & select)
+	{
+	}
+
+
+	bool isConditionGood(const IAST * condition, std::string & column_name)
 	{
 		const auto fun = typeid_cast<const ASTFunction *>(condition);
 		if (!fun)
@@ -152,7 +152,7 @@ private:
 
 		/** We are only considering conditions of form `equals(one, another)` or `one = another`,
 		  * especially if either `one` or `another` is ASTIdentifier */
-		if (fun->name != "equals")
+		if (fun->name != equals_function_name)
 			return false;
 
 		const auto args = static_cast<const ASTExpressionList *>(fun->arguments.get());
@@ -199,7 +199,6 @@ private:
 		return false;
 	}
 
-	const MergeTreeData & data;
 	std::unordered_set<std::string> primary_key_columns{};
 	std::unordered_map<std::string, std::size_t> column_sizes{};
 	std::size_t total_size{};
