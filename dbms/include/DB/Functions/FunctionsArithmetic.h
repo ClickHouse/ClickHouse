@@ -285,9 +285,9 @@ template <typename DataType> struct IsNumeric
 	static constexpr auto value = IsIntegral<DataType>::value || IsFloating<DataType>::value;
 };
 
-template <typename DataType> struct IsDate { static constexpr auto value = false; };
-template <> struct IsDate<DataTypeDate> { static constexpr auto value = true; };
-template <> struct IsDate<DataTypeDateTime> { static constexpr auto value = true; };
+template <typename DataType> struct IsDateOrDateTime { static constexpr auto value = false; };
+template <> struct IsDateOrDateTime<DataTypeDate> { static constexpr auto value = true; };
+template <> struct IsDateOrDateTime<DataTypeDateTime> { static constexpr auto value = true; };
 
 /** Returns appropriate result type for binary operator on dates:
  *  Date + Integral -> Date
@@ -306,10 +306,10 @@ struct DateBinaryOperationTraits
 	using ResultDataType =
 		If<std::is_same<Op, PlusImpl<T0, T1>>::value,
 			Then<
-				If<IsDate<LeftDataType>::value && IsIntegral<RightDataType>::value,
+				If<IsDateOrDateTime<LeftDataType>::value && IsIntegral<RightDataType>::value,
 					Then<LeftDataType>,
 					Else<
-						If<IsIntegral<LeftDataType>::value && IsDate<RightDataType>::value,
+						If<IsIntegral<LeftDataType>::value && IsDateOrDateTime<RightDataType>::value,
 							Then<RightDataType>,
 							Else<InvalidType>
 						>
@@ -319,7 +319,7 @@ struct DateBinaryOperationTraits
 			Else<
 				If<std::is_same<Op, MinusImpl<T0, T1>>::value,
 					Then<
-						If<IsDate<LeftDataType>::value,
+						If<IsDateOrDateTime<LeftDataType>::value,
 							Then<
 								If<std::is_same<LeftDataType, RightDataType>::value,
 									Then<DataTypeInt32>,
@@ -346,7 +346,7 @@ template <template <typename, typename> class Operation, typename LeftDataType, 
 struct BinaryOperationTraits
 {
 	using ResultDataType =
-		If<IsDate<LeftDataType>::value || IsDate<RightDataType>::value,
+		If<IsDateOrDateTime<LeftDataType>::value || IsDateOrDateTime<RightDataType>::value,
 			Then<
 				typename DateBinaryOperationTraits<
 					Operation, LeftDataType, RightDataType
@@ -423,7 +423,7 @@ private:
 
 	/// Overload for date operations
 	template <typename LeftDataType, typename RightDataType, typename ColumnType,
-			  typename std::enable_if<IsDate<LeftDataType>::value || IsDate<RightDataType>::value>::type * = nullptr>
+			  typename std::enable_if<IsDateOrDateTime<LeftDataType>::value || IsDateOrDateTime<RightDataType>::value>::type * = nullptr>
 	bool executeRightType(Block & block, const ColumnNumbers & arguments, const size_t result, const ColumnType * col_left)
 	{
 		if (!typeid_cast<const RightDataType *>(block.getByPosition(arguments[1]).type.get()))
@@ -526,7 +526,7 @@ private:
 	}
 
 	template <typename LeftDataType,
-			  typename std::enable_if<IsDate<LeftDataType>::value>::type * = nullptr>
+			  typename std::enable_if<IsDateOrDateTime<LeftDataType>::value>::type * = nullptr>
 	bool executeLeftType(Block & block, const ColumnNumbers & arguments, const size_t result)
 	{
 		if (!typeid_cast<const LeftDataType *>(block.getByPosition(arguments[0]).type.get()))
