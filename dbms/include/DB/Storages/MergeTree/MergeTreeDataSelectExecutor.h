@@ -75,6 +75,8 @@ private:
 	void createPositiveSignCondition(ExpressionActionsPtr & out_expression, String & out_column);
 
 	MarkRanges markRangesFromPkRange(const MergeTreeData::DataPart::Index & index, PKCondition & key_condition);
+
+	void optimizeWhereToPrewhere(ASTSelectQuery & select);
 };
 
 }
