@@ -82,10 +82,13 @@ struct MergeTreeSettings
 	size_t max_parts_to_merge_at_once_if_small = 100;
 
 	/// Куски настолько большого размера объединять нельзя вообще.
-	size_t max_bytes_to_merge_parts = 25ul * 1024 * 1024 * 1024;
+	size_t max_bytes_to_merge_parts = 10ul * 1024 * 1024 * 1024;
 
 	/// Не больше половины потоков одновременно могут выполнять слияния, в которых участвует хоть один кусок хотя бы такого размера.
 	size_t max_bytes_to_merge_parts_small = 250 * 1024 * 1024;
+
+	/// Куски настолько большого размера в сумме, объединять нельзя вообще.
+	size_t max_sum_bytes_to_merge_parts = 25ul * 1024 * 1024 * 1024;
 
 	/// Во столько раз ночью увеличиваем коэффициент.
 	size_t merge_parts_at_night_inc = 10;

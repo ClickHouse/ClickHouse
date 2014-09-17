@@ -101,7 +101,7 @@ public:
 	}
 
 
-	int getNumberOfThreads() const
+	size_t getNumberOfThreads() const
 	{
 		return size;
 	}

@@ -1,3 +1,4 @@
+#include <statdaemons/ext/range.hpp>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreePartsExchange.h>
@@ -892,6 +893,14 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 	}
 	else if (entry.type == LogEntry::MERGE_PARTS)
 	{
+		std::stringstream log_message;
+		log_message << "Executing log entry to merge parts ";
+		for (auto i : ext::range(0, entry.parts_to_merge.size()))
+			log_message << (i != 0 ? ", " : "") << entry.parts_to_merge[i];
+		log_message << " to " << entry.new_part_name;
+
+		LOG_TRACE(log, log_message.rdbuf());
+
 		MergeTreeData::DataPartsVector parts;
 		bool have_all_parts = true;
 		for (const String & name : entry.parts_to_merge)
@@ -1359,11 +1368,17 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 				need_pull = false;
 			}
 
-			size_t merges_queued = 0;
-			/// Есть ли в очереди или в фоновом потоке мердж крупных кусков.
-			bool has_big_merge = context.getBackgroundPool().getCounter("replicated big merges") > 0;
+			/** Сколько в очереди или в фоновом потоке мерджей крупных кусков.
+			  * Если их больше половины от размера пула потоков для мерджа, то можно мерджить только мелкие куски.
+			  */
+			auto & background_pool = context.getBackgroundPool();
 
-			if (!has_big_merge)
+			size_t big_merges_current = background_pool.getCounter("replicated big merges");
+			size_t max_number_of_big_merges = background_pool.getNumberOfThreads() / 2;
+			size_t merges_queued = 0;
+			size_t big_merges_queued = 0;
+
+			if (big_merges_current < max_number_of_big_merges)
 			{
 				std::unique_lock<std::mutex> lock(queue_mutex);
 
@@ -1373,16 +1388,17 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 					{
 						++merges_queued;
 
-						if (!has_big_merge)
+						if (big_merges_current + big_merges_queued < max_number_of_big_merges)
 						{
 							for (const String & name : entry->parts_to_merge)
 							{
 								MergeTreeData::DataPartPtr part = data.getActiveContainingPart(name);
 								if (!part || part->name != name)
 									continue;
+
 								if (part->size_in_bytes > data.settings.max_bytes_to_merge_parts_small)
 								{
-									has_big_merge = true;
+									++big_merges_queued;
 									break;
 								}
 							}
@@ -1391,20 +1407,32 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 				}
 			}
 
+			bool only_small = big_merges_current + big_merges_queued >= max_number_of_big_merges;
+
+			LOG_TRACE(log, "Currently executing big merges: " << big_merges_current
+				<< ". Queued big merges: " << big_merges_queued
+				<< ". All merges in queue: " << merges_queued
+				<< ". Max number of big merges: " << max_number_of_big_merges
+				<< (only_small ? ". So, will select only small parts to merge." : "."));
+
 			do
 			{
 				if (merges_queued >= data.settings.max_replicated_merges_in_queue)
+				{
+					LOG_TRACE(log, "Number of queued merges is greater than max_replicated_merges_in_queue, so won't select new parts to merge.");
 					break;
+				}
 
 				MergeTreeData::DataPartsVector parts;
 
 				String merged_name;
 
-				if (!merger.selectPartsToMerge(parts, merged_name, MergeTreeDataMerger::NO_LIMIT,
-												false, false, has_big_merge, can_merge) &&
-					!merger.selectPartsToMerge(parts, merged_name, MergeTreeDataMerger::NO_LIMIT,
-												true, false, has_big_merge, can_merge))
+				if (   !merger.selectPartsToMerge(parts, merged_name, MergeTreeDataMerger::NO_LIMIT, false, false, only_small, can_merge)
+					&& !merger.selectPartsToMerge(parts, merged_name, MergeTreeDataMerger::NO_LIMIT, true, false, only_small, can_merge))
+				{
+					LOG_INFO(log, "No parts to merge");
 					break;
+				}
 
 				bool all_in_zk = true;
 				for (const auto & part : parts)

@@ -156,12 +156,13 @@ bool StorageMergeTree::merge(bool aggressive, BackgroundProcessingPool::Context 
 		auto can_merge = std::bind(&StorageMergeTree::canMergeParts, this, std::placeholders::_1, std::placeholders::_2);
 		/// Если слияние запущено из пула потоков, и хотя бы половина потоков сливает большие куски,
 		///  не будем сливать большие куски.
-		int big_merges = background_pool.getCounter("big merges");
+		size_t big_merges = background_pool.getCounter("big merges");
 		bool only_small = pool_context && big_merges * 2 >= background_pool.getNumberOfThreads();
 
 		if (!merger.selectPartsToMerge(parts, merged_name, disk_space, false, aggressive, only_small, can_merge) &&
 			!merger.selectPartsToMerge(parts, merged_name, disk_space,  true, aggressive, only_small, can_merge))
 		{
+			LOG_INFO(log, "No parts to merge");
 			return false;
 		}
 
