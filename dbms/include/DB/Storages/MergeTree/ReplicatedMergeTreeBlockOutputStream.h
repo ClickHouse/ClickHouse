@@ -15,6 +15,11 @@ public:
 		: storage(storage_), insert_id(insert_id_), block_index(0),
 		log(&Logger::get(storage.data.getLogName() + " (Replicated OutputStream)")) {}
 
+	void writePrefix()
+	{
+		storage.data.throwIfTooMuchParts();
+	}
+
 	void write(const Block & block) override
 	{
 		assertSessionIsNotExpired();

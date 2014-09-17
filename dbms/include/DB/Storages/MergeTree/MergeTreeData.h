@@ -637,6 +637,7 @@ public:
 	  * Если передано until - проснуться раньше, если наступило событие.
 	  */
 	void delayInsertIfNeeded(Poco::Event * until = nullptr);
+	void throwIfTooMuchParts();
 
 	/** Возвращает активный кусок с указанным именем или кусок, покрывающий его. Если такого нет, возвращает nullptr.
 	  */
