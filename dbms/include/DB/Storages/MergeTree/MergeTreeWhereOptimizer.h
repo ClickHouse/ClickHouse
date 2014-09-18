@@ -7,6 +7,7 @@
 #include <DB/Parsers/ASTLiteral.h>
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Common/escapeForFileName.h>
+#include <statdaemons/stdext.h>
 #include <unordered_map>
 #include <set>
 #include <cstddef>
@@ -20,6 +21,7 @@ namespace DB
 class MergeTreeWhereOptimizer
 {
 	static constexpr auto threshold = 10;
+	static constexpr auto max_column_relative_size = 0.25f;
 	static constexpr auto and_function_name = "and";
 	static constexpr auto equals_function_name = "equals";
 
@@ -32,14 +34,12 @@ public:
 
 	void optimize(ASTSelectQuery & select)
 	{
-		/** @todo consider relaxing requirement on the absence of prewhere_expression
-		  * by transforming it to conjunction form if it is not already. */
-		if (!select.where_expression || select.prewhere_expression)
+		if (!select.where_expression)
 			return;
 
-		const auto fun = typeid_cast<ASTFunction *>(select.where_expression.get());
-		if (fun && fun->name == and_function_name)
-			optimizeAnd(select, fun);
+		const auto function = typeid_cast<ASTFunction *>(select.where_expression.get());
+		if (function && function->name == and_function_name)
+			optimizeAnd(select, function);
 		else
 			optimizeArbitrary(select);
 
@@ -78,29 +78,27 @@ private:
 		/// index of condition
 		std::set<size_t> viable_conditions{};
 
-		const auto conditions = typeid_cast<ASTExpressionList *>(fun->arguments.get());
+		auto & conditions = fun->arguments->children;
 
 		/// remove condition by swapping it with the last one and calling ::pop_back()
-		const auto remove_condition_at_index = [conditions] (const size_t idx) {
-			if (idx < conditions->children.size())
-				conditions->children[idx] = std::move(conditions->children.back());
-			conditions->children.pop_back();
+		const auto remove_condition_at_index = [&conditions] (const size_t idx) {
+			if (idx < conditions.size())
+				conditions[idx] = std::move(conditions.back());
+			conditions.pop_back();
 		};
 
 		/// linearize conjunction and divide conditions into "good" and not-"good" ones
-		for (size_t i = 0; i < conditions->children.size();)
+		for (size_t i = 0; i < conditions.size();)
 		{
-			const auto condition = conditions->children[i].get();
+			const auto condition = conditions[i].get();
 
 			/// linearize sub-conjunctions
-			if (const auto fun = typeid_cast<ASTFunction *>(condition))
+			if (const auto function = typeid_cast<ASTFunction *>(condition))
 			{
-				if (fun->name == and_function_name)
+				if (function->name == and_function_name)
 				{
-					const auto sub_conditions = typeid_cast<ASTExpressionList *>(fun->arguments.get());
-
-					for (auto & child : sub_conditions->children)
-						conditions->children.push_back(std::move(child));
+					for (auto & child : function->arguments->children)
+						conditions.emplace_back(std::move(child));
 
 					/// remove the condition corresponding to conjunction
 					remove_condition_at_index(i);
@@ -124,12 +122,12 @@ private:
 		if (!good_conditions.empty())
 		{
 			const auto idx = good_conditions.begin()->second;
-			select.prewhere_expression = std::move(conditions->children[idx]);
+			addConditionTo(conditions[idx], select.prewhere_expression);
 
 			/** Replace conjunction with the only remaining argument if only two conditions were presentotherwise,
 			 *  remove selected condition from conjunction otherwise. */
-			if (conditions->children.size() == 2)
-				select.where_expression = std::move(conditions->children[idx == 0 ? 1 : 0]);
+			if (conditions.size() == 2)
+				select.where_expression = std::move(conditions[idx == 0 ? 1 : 0]);
 			else
 				remove_condition_at_index(idx);
 		}
@@ -143,21 +141,49 @@ private:
 	{
 	}
 
+	void addConditionTo(ASTPtr condition, ASTPtr & ast)
+	{
+		/** if there already are some conditions - either combine them using conjunction
+		 *  or add new argument to existing conjunction; just set ast to condition otherwise. */
+		if (ast)
+		{
+			const auto function = typeid_cast<ASTFunction *>(ast.get());
+			if (function && function->name == and_function_name)
+			{
+				/// add new argument to the conjunction
+				function->arguments->children.emplace_back(std::move(condition));
+			}
+			else
+			{
+				/// create a conjunction which will host old condition and the one being added
+				auto conjunction = stdext::make_unique<ASTFunction>();
+				conjunction->name = and_function_name;
+				conjunction->arguments = stdext::make_unique<ASTExpressionList>().release();
+				conjunction->children.push_back(conjunction->arguments);
+
+				conjunction->arguments->children.emplace_back(std::move(ast));
+				conjunction->arguments->children.emplace_back(std::move(condition));
+
+				ast = conjunction.release();
+			}
+		}
+		else
+			ast = std::move(condition);
+	}
 
 	bool isConditionGood(const IAST * condition, std::string & column_name)
 	{
-		const auto fun = typeid_cast<const ASTFunction *>(condition);
-		if (!fun)
+		const auto function = typeid_cast<const ASTFunction *>(condition);
+		if (!function)
 			return false;
 
-		/** We are only considering conditions of form `equals(one, another)` or `one = another`,
+		/** we are only considering conditions of form `equals(one, another)` or `one = another`,
 		  * especially if either `one` or `another` is ASTIdentifier */
-		if (fun->name != equals_function_name)
+		if (function->name != equals_function_name)
 			return false;
 
-		const auto args = static_cast<const ASTExpressionList *>(fun->arguments.get());
-		auto left_arg = args->children.front().get();
-		auto right_arg = args->children.back().get();
+		auto left_arg = function->arguments->children.front().get();
+		auto right_arg = function->arguments->children.back().get();
 
 		/// try to ensure left_arg points to ASTIdentifier
 		if (!typeid_cast<const ASTIdentifier *>(left_arg) && typeid_cast<const ASTIdentifier *>(right_arg))
