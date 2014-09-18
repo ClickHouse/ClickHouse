@@ -1,5 +1,6 @@
 #pragma once
 
+#include <statdaemons/Stopwatch.h>
 #include <statdaemons/stdext.h>
 #include <list>
 #include <mutex>
@@ -18,6 +19,8 @@ class MergeList
 		const std::string database;
 		const std::string table;
 		const std::string result_part_name;
+		Stopwatch watch;
+		Float64 progress{};
 		std::uint64_t num_parts{};
 		std::uint64_t total_size_bytes_compressed{};
 		std::uint64_t total_size_marks{};
@@ -25,6 +28,7 @@ class MergeList
 		std::uint64_t rows_read{};
 		std::uint64_t bytes_written_uncompressed{};
 		std::uint64_t rows_written{};
+
 
 		MergeInfo(const std::string & database, const std::string & table, const std::string & result_part_name)
 			: database{database}, table{table}, result_part_name{result_part_name}

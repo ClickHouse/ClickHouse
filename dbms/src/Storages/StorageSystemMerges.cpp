@@ -13,6 +13,8 @@ StorageSystemMerges::StorageSystemMerges(const std::string & name, const Context
 	, columns{
 		{ "database", new DataTypeString },
 		{ "table", new DataTypeString },
+		{ "elapsed", new DataTypeFloat64 },
+		{ "progress", new DataTypeFloat64 },
 		{ "num_parts", new DataTypeUInt64 },
 		{ "result_part_name", new DataTypeString },
 		{ "total_size_bytes_compressed", new DataTypeUInt64 },
@@ -39,6 +41,8 @@ BlockInputStreams StorageSystemMerges::read(
 
 	ColumnWithNameAndType col_database{new ColumnString, new DataTypeString, "database"};
 	ColumnWithNameAndType col_table{new ColumnString, new DataTypeString, "table"};
+	ColumnWithNameAndType col_elapsed{new ColumnFloat64, new DataTypeFloat64, "elapsed"};
+	ColumnWithNameAndType col_progress{new ColumnFloat64, new DataTypeFloat64, "progress"};
 	ColumnWithNameAndType col_num_parts{new ColumnUInt64, new DataTypeUInt64, "num_parts"};
 	ColumnWithNameAndType col_result_part_name{new ColumnString, new DataTypeString, "result_part_name"};
 	ColumnWithNameAndType col_total_size_bytes_compressed{new ColumnUInt64, new DataTypeUInt64, "total_size_bytes_compressed"};
@@ -52,6 +56,8 @@ BlockInputStreams StorageSystemMerges::read(
 	{
 		col_database.column->insert(merge.database);
 		col_table.column->insert(merge.table);
+		col_elapsed.column->insert(merge.watch.elapsedSeconds());
+		col_progress.column->insert(merge.progress);
 		col_num_parts.column->insert(merge.num_parts);
 		col_result_part_name.column->insert(merge.result_part_name);
 		col_total_size_bytes_compressed.column->insert(merge.total_size_bytes_compressed);
@@ -64,14 +70,16 @@ BlockInputStreams StorageSystemMerges::read(
 
 	Block block{
 		col_database,
-		col_num_parts,
 		col_table,
-		col_total_size_bytes_compressed,
+		col_elapsed,
+		col_progress,
+		col_num_parts,
 		col_result_part_name,
-		col_bytes_read_uncompressed,
+		col_total_size_bytes_compressed,
 		col_total_size_marks,
-		col_bytes_written_uncompressed,
+		col_bytes_read_uncompressed,
 		col_rows_read,
+		col_bytes_written_uncompressed,
 		col_rows_written
 	};
 
