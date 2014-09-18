@@ -58,9 +58,6 @@ public:
 
 		bool update(size_t rows, size_t bytes) volatile
 		{
-			/** operator+= may not be atomic (in contrary to operator++)
-			 *  because it first requires to read original value from the memory,
-			 *  add increment value and then store new value back to memory. */
 			__sync_add_and_fetch(&rows_processed, rows);
 			__sync_add_and_fetch(&bytes_processed, bytes);
 			return !is_cancelled;
