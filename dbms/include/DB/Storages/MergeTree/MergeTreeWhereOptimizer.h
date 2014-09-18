@@ -10,6 +10,7 @@
 #include <statdaemons/stdext.h>
 #include <unordered_map>
 #include <map>
+#include <limits>
 #include <cstddef>
 
 namespace DB
@@ -24,20 +25,23 @@ class MergeTreeWhereOptimizer
 	static constexpr auto equals_function_name = "equals";
 
 public:
-	MergeTreeWhereOptimizer(const MergeTreeData & data, const MergeTreeData::DataPartsVector & parts)
+	MergeTreeWhereOptimizer(const MergeTreeData & data, const MergeTreeData::DataPartsVector & parts,
+							const Names & column_names)
 	{
 		fillPrimaryKeyColumns(data);
-		calculateColumnSizes(parts);
+		calculateColumnSizes(parts, column_names);
 	}
 
-	void optimize(ASTSelectQuery & select)
+	void optimize(ASTSelectQuery & select) const
 	{
 		if (!select.where_expression)
 			return;
 
 		const auto function = typeid_cast<ASTFunction *>(select.where_expression.get());
 		if (function && function->name == and_function_name)
-			optimize(select, function);
+			optimizeConjunction(select, function);
+		else
+			optimizeArbitrary(select);
 	}
 
 private:
@@ -47,25 +51,32 @@ private:
 			primary_key_columns.insert(column.name);
 	}
 
-	void calculateColumnSizes(const MergeTreeData::DataPartsVector & parts)
+	void calculateColumnSizes(const MergeTreeData::DataPartsVector & parts, const Names & column_names)
 	{
 		for (const auto & part : parts)
 		{
-			for (const auto & file : part->checksums.files)
-			{
-				const auto file_name = unescapeForFileName(file.first);
-				const auto column_name = file_name.substr(0, file_name.find_last_of('.'));
+			const Poco::ScopedWriteRWLock lock{part->columns_lock};
+			auto & files = part->checksums.files;
 
-				column_sizes[column_name] += file.second.file_size;
+			for (const auto & column_name : column_names)
+			{
+				const auto it = files.find(column_name);
+				const auto column_size = it == std::end(files) ? 0 : it->second.file_size;
+
+				column_sizes[column_name] += column_size;
+				total_column_size += column_size;
 			}
 		}
 	}
 
-	void optimize(ASTSelectQuery & select, ASTFunction * const fun)
+	void optimizeConjunction(ASTSelectQuery & select, ASTFunction * const fun) const
 	{
-		/// column size => index of condition which uses said row
-		std::map<size_t, size_t> good_conditions{};
-		std::map<size_t, size_t> viable_conditions{};
+		/// used as max possible size and indicator that appropriate condition has not been found
+		const auto no_such_condition = std::numeric_limits<std::size_t>::max();
+
+		/// { first: condition index, second: summary column size }
+		std::pair<std::size_t, std::size_t> lightest_good_condition{no_such_condition, no_such_condition};
+		std::pair<std::size_t, std::size_t> lightest_viable_condition{no_such_condition, no_such_condition};
 
 		auto & conditions = fun->arguments->children;
 
@@ -77,9 +88,9 @@ private:
 		};
 
 		/// linearize conjunction and divide conditions into "good" and not-"good" ones
-		for (std::size_t i = 0; i < conditions.size();)
+		for (std::size_t idx = 0; idx < conditions.size();)
 		{
-			const auto condition = conditions[i].get();
+			const auto condition = conditions[idx].get();
 
 			IdentifierNameSet identifiers{};
 			condition->collectIdentifierNames(identifiers);
@@ -96,7 +107,7 @@ private:
 							conditions.emplace_back(std::move(child));
 
 						/// remove the condition corresponding to conjunction
-						remove_condition_at_index(i);
+						remove_condition_at_index(idx);
 
 						/// continue iterating without increment to ensure the just added conditions are processed
 						continue;
@@ -104,67 +115,89 @@ private:
 				}
 
 				/// calculate size of columns involved in condition
-				std::size_t cond_columns_size{};
-				for (const auto & identifier : identifiers)
-					cond_columns_size += column_sizes[identifier];
+				const auto cond_columns_size = getIdentifiersColumnSize(identifiers);
 
 				/// place condition either in good or viable conditions set
-				(isConditionGood(condition) ? good_conditions : viable_conditions).emplace(cond_columns_size, i);
+				auto & good_or_viable_condition = isConditionGood(condition) ? lightest_good_condition : lightest_viable_condition;
+				if (good_or_viable_condition.second > cond_columns_size)
+				{
+					good_or_viable_condition.first = idx;
+					good_or_viable_condition.second = cond_columns_size;
+				}
 			}
 
-			++i;
+			++idx;
 		}
 
-		const auto move_condition_to_prewhere = [&] (const std::size_t cond_idx) {
-			addConditionTo(conditions[cond_idx], select.prewhere_expression);
+		const auto move_condition_to_prewhere = [&] (const std::size_t idx) {
+			addConditionTo(conditions[idx], select.prewhere_expression);
 
 			/** Replace conjunction with the only remaining argument if only two conditions were presentotherwise,
 			 *  remove selected condition from conjunction otherwise. */
 			if (conditions.size() == 2)
-				select.where_expression = std::move(conditions[cond_idx == 0 ? 1 : 0]);
+				select.where_expression = std::move(conditions[idx == 0 ? 1 : 0]);
 			else
-				remove_condition_at_index(cond_idx);
+				remove_condition_at_index(idx);
 		};
 
 		/// if there are "good" conditions - select the one with the least compressed size
-		if (!good_conditions.empty())
+		if (lightest_good_condition.first != no_such_condition)
 		{
-			move_condition_to_prewhere(good_conditions.begin()->second);
+			move_condition_to_prewhere(lightest_good_condition.first);
 		}
-		else if (!viable_conditions.empty())
+		else if (lightest_viable_condition.first != no_such_condition)
 		{
-			/// find all columns used in query
-			IdentifierNameSet identifiers{};
-			if (select.select_expression_list) select.select_expression_list->collectIdentifierNames(identifiers);
-			if (select.sample_size) select.sample_size->collectIdentifierNames(identifiers);
-			if (select.prewhere_expression) select.prewhere_expression->collectIdentifierNames(identifiers);
-			if (select.where_expression) select.where_expression->collectIdentifierNames(identifiers);
-			if (select.group_expression_list) select.group_expression_list->collectIdentifierNames(identifiers);
-			if (select.having_expression) select.having_expression->collectIdentifierNames(identifiers);
-			if (select.order_expression_list) select.order_expression_list->collectIdentifierNames(identifiers);
-			std::size_t total_column_size{};
+			if (total_column_size != 0)
+			{
+				/// calculate relative size of condition's columns
+				const auto cond_columns_size = lightest_viable_condition.second;
+				const auto columns_relative_size = static_cast<float>(cond_columns_size) / total_column_size;
 
-			/// calculate size of columns involved in query
-			for (const auto & identifier : identifiers)
-				total_column_size += column_sizes[identifier];
+				/// do nothing if it exceeds max relative size
+				if (columns_relative_size > max_columns_relative_size)
+					return;
+			}
 
-			/// calculate relative size of condition's columns
-			const auto cond_columns_size = viable_conditions.begin()->first;
+			move_condition_to_prewhere(lightest_viable_condition.first);
+		}
+	}
+
+	void optimizeArbitrary(ASTSelectQuery & select) const
+	{
+		auto & condition = select.where_expression;
+
+		IdentifierNameSet identifiers{};
+		condition->collectIdentifierNames(identifiers);
+
+		if (!hasNonPrimaryKeyColumns(identifiers))
+			return;
+
+		/// if condition is not "good" - check that it can be moved
+		if (!isConditionGood(condition.get()) && total_column_size != 0)
+		{
+			const auto cond_columns_size = getIdentifiersColumnSize(identifiers);
 			const auto columns_relative_size = static_cast<float>(cond_columns_size) / total_column_size;
 
-			/// do nothing if it exceeds max relative size
 			if (columns_relative_size > max_columns_relative_size)
 				return;
-
-			move_condition_to_prewhere(viable_conditions.begin()->second);
 		}
+
+		/// add the condition to PREWHERE, remove it from WHERE
+		addConditionTo(std::move(condition), select.prewhere_expression);
+		condition = nullptr;
 	}
 
-	void optimizeArbitrary(ASTSelectQuery & select)
+	std::size_t getIdentifiersColumnSize(const IdentifierNameSet & identifiers) const
 	{
+		std::size_t size{};
+
+		for (const auto & identifier : identifiers)
+			size += column_sizes.find(identifier)->second;
+
+		return size;
 	}
 
-	void addConditionTo(ASTPtr condition, ASTPtr & ast)
+	void addConditionTo(ASTPtr condition, ASTPtr & ast) const
 	{
 		/** if there already are some conditions - either combine them using conjunction
 		 *  or add new argument to existing conjunction; just set ast to condition otherwise. */
@@ -252,6 +285,7 @@ private:
 
 	std::unordered_set<std::string> primary_key_columns{};
 	std::unordered_map<std::string, std::size_t> column_sizes{};
+	std::size_t total_column_size{};
 };
 
 

@@ -110,7 +110,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	ExpressionActionsPtr filter_expression;
 
 	ASTSelectQuery & select = *typeid_cast<ASTSelectQuery*>(&*query);
-	MergeTreeWhereOptimizer{data, parts}.optimize(select);
+	MergeTreeWhereOptimizer{data, parts, column_names_to_read}.optimize(select);
 
 	if (select.sample_size)
 	{
