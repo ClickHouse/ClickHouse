@@ -48,12 +48,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	if (!part_index)
 		part_index = &part_index_var;
 
-	MergeTreeData::DataPartsVector parts;
-
-	{
-		auto parts_set = data.getDataParts();
-		parts.assign(parts_set.begin(), parts_set.end());
-	}
+	MergeTreeData::DataPartsVector parts = data.getDataPartsVector();
 
 	/// Если в запросе есть ограничения на виртуальный столбец _part, выберем только подходящие под него куски.
 	Names virt_column_names, real_column_names;
@@ -110,7 +105,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	ExpressionActionsPtr filter_expression;
 
 	ASTSelectQuery & select = *typeid_cast<ASTSelectQuery*>(&*query);
-	MergeTreeWhereOptimizer{data, parts, column_names_to_read}.optimize(select);
+	MergeTreeWhereOptimizer{select, data, column_names_to_read};
 
 	if (select.sample_size)
 	{

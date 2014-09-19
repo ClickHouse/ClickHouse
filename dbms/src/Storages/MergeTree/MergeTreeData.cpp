@@ -254,6 +254,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 		}
 	}
 
+	calculateColumnSizes();
+
 	LOG_DEBUG(log, "Loaded data parts (" << data_parts.size() << " items)");
 }
 
@@ -340,6 +342,7 @@ void MergeTreeData::dropAllData()
 {
 	data_parts.clear();
 	all_data_parts.clear();
+	column_sizes.clear();
 
 	context.resetCaches();
 
@@ -672,6 +675,7 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
 		}
 		res.push_back(*it);
 		(*it)->remove_time = time(0);
+		removePartContributionToColumnSizes(*it);
 		data_parts.erase(it++); /// Да, ++, а не --.
 	}
 	std::reverse(res.begin(), res.end()); /// Нужно получить куски в порядке возрастания.
@@ -686,6 +690,7 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
 		}
 		res.push_back(*it);
 		(*it)->remove_time = time(0);
+		removePartContributionToColumnSizes(*it);
 		data_parts.erase(it++);
 	}
 
@@ -696,6 +701,7 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
 	else
 	{
 		data_parts.insert(part);
+		addPartContributionToColumnSizes(part);
 	}
 
 	all_data_parts.insert(part);
@@ -717,11 +723,13 @@ void MergeTreeData::replaceParts(const DataPartsVector & remove, const DataParts
 	for (const DataPartPtr & part : remove)
 	{
 		part->remove_time = clear_without_timeout ? 0 : time(0);
+		removePartContributionToColumnSizes(part);
 		data_parts.erase(part);
 	}
 	for (const DataPartPtr & part : add)
 	{
 		data_parts.insert(part);
+		addPartContributionToColumnSizes(part);
 	}
 }
 
@@ -745,6 +753,7 @@ void MergeTreeData::renameAndDetachPart(DataPartPtr part, const String & prefix,
 	if (!all_data_parts.erase(part))
 		throw Exception("No such data part", ErrorCodes::NO_SUCH_DATA_PART);
 
+	removePartContributionToColumnSizes(part);
 	data_parts.erase(part);
 	if (move_to_detached || !prefix.empty())
 		part->renameAddPrefix((move_to_detached ? "detached/" : "") + prefix);
@@ -765,6 +774,7 @@ void MergeTreeData::renameAndDetachPart(DataPartPtr part, const String & prefix,
 				if ((*it)->left != part->left)
 					error = true;
 				data_parts.insert(*it);
+				addPartContributionToColumnSizes(*it);
 				pos = (*it)->right + 1;
 				restored.push_back((*it)->name);
 			}
@@ -782,6 +792,7 @@ void MergeTreeData::renameAndDetachPart(DataPartPtr part, const String & prefix,
 			if ((*it)->left > pos)
 				error = true;
 			data_parts.insert(*it);
+			addPartContributionToColumnSizes(*it);
 			pos = (*it)->right + 1;
 			restored.push_back((*it)->name);
 		}
@@ -809,6 +820,13 @@ MergeTreeData::DataParts MergeTreeData::getDataParts()
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 
 	return data_parts;
+}
+
+MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector()
+{
+	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
+
+	return {std::begin(data_parts), std::end(data_parts)};
 }
 
 MergeTreeData::DataParts MergeTreeData::getAllDataParts()
@@ -1085,6 +1103,48 @@ void MergeTreeData::DataPart::Checksums::writeText(WriteBuffer & out) const
 			DB::writeText(sum.uncompressed_hash.second, out);
 			DB::writeString("\n", out);
 		}
+	}
+}
+
+void MergeTreeData::calculateColumnSizes()
+{
+	column_sizes.clear();
+
+	for (const auto & part : data_parts)
+		addPartContributionToColumnSizes(part);
+}
+
+void MergeTreeData::addPartContributionToColumnSizes(const DataPartPtr & part)
+{
+	const auto & files = part->checksums.files;
+
+	for (const auto & column : *columns)
+	{
+		const auto escaped_name = escapeForFileName(column.name);
+		const auto bin_file_name = escaped_name + ".bin";
+		const auto mrk_file_name = escaped_name + ".mrk";
+
+		auto & column_size = column_sizes[column.name];
+
+		if (files.count(bin_file_name)) column_size += files.find(bin_file_name)->second.file_size;
+		if (files.count(mrk_file_name)) column_size += files.find(mrk_file_name)->second.file_size;
+	}
+}
+
+void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part)
+{
+	const auto & files = part->checksums.files;
+
+	for (const auto & column : *columns)
+	{
+		const auto escaped_name = escapeForFileName(column.name);
+		const auto bin_file_name = escaped_name + ".bin";
+		const auto mrk_file_name = escaped_name + ".mrk";
+
+		auto & column_size = column_sizes[column.name];
+
+		if (files.count(bin_file_name)) column_size -= files.find(bin_file_name)->second.file_size;
+		if (files.count(mrk_file_name)) column_size -= files.find(mrk_file_name)->second.file_size;
 	}
 }
 

@@ -25,13 +25,17 @@ class MergeTreeWhereOptimizer
 	static constexpr auto equals_function_name = "equals";
 
 public:
-	MergeTreeWhereOptimizer(const MergeTreeData & data, const MergeTreeData::DataPartsVector & parts,
-							const Names & column_names)
+	MergeTreeWhereOptimizer(const MergeTreeWhereOptimizer&) = delete;
+	MergeTreeWhereOptimizer& operator=(const MergeTreeWhereOptimizer&) = delete;
+
+	MergeTreeWhereOptimizer(ASTSelectQuery & select, const MergeTreeData & data, const Names & column_names)
 	{
 		fillPrimaryKeyColumns(data);
-		calculateColumnSizes(parts, column_names);
+		calculateColumnSizes(data, column_names);
+		optimize(select);
 	}
 
+private:
 	void optimize(ASTSelectQuery & select) const
 	{
 		if (!select.where_expression)
@@ -44,28 +48,20 @@ public:
 			optimizeArbitrary(select);
 	}
 
-private:
 	void fillPrimaryKeyColumns(const MergeTreeData & data)
 	{
 		for (const auto column : data.getPrimaryExpression()->getRequiredColumnsWithTypes())
 			primary_key_columns.insert(column.name);
 	}
 
-	void calculateColumnSizes(const MergeTreeData::DataPartsVector & parts, const Names & column_names)
+	void calculateColumnSizes(const MergeTreeData & data, const Names & column_names)
 	{
-		for (const auto & part : parts)
+		for (const auto & column_name : column_names)
 		{
-			const Poco::ScopedWriteRWLock lock{part->columns_lock};
-			auto & files = part->checksums.files;
+			const auto column_size = data.getColumnSize(column_name);
 
-			for (const auto & column_name : column_names)
-			{
-				const auto it = files.find(column_name);
-				const auto column_size = it == std::end(files) ? 0 : it->second.file_size;
-
-				column_sizes[column_name] += column_size;
-				total_column_size += column_size;
-			}
+			column_sizes[column_name] = column_size;
+			total_column_size += column_size;
 		}
 	}
 
@@ -140,13 +136,14 @@ private:
 				remove_condition_at_index(idx);
 		};
 
-		/// if there are "good" conditions - select the one with the least compressed size
+		/// if there is a "good" condition - move it to PREWHERE
 		if (lightest_good_condition.first != no_such_condition)
 		{
 			move_condition_to_prewhere(lightest_good_condition.first);
 		}
 		else if (lightest_viable_condition.first != no_such_condition)
 		{
+			/// check that the relative column size is less than max
 			if (total_column_size != 0)
 			{
 				/// calculate relative size of condition's columns

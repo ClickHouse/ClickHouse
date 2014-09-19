@@ -630,6 +630,7 @@ public:
 	/** Возвращает копию списка, чтобы снаружи можно было не заботиться о блокировках.
 	  */
 	DataParts getDataParts();
+	DataPartsVector getDataPartsVector();
 	DataParts getAllDataParts();
 
 	/** Максимальное количество кусков в одном месяце.
@@ -732,6 +733,12 @@ public:
 	/// Проверить, что кусок не сломан и посчитать для него чексуммы, если их нет.
 	MutableDataPartPtr loadPartAndFixMetadata(const String & relative_path);
 
+	size_t getColumnSize(const std::string & name) const
+	{
+		const auto it = column_sizes.find(name);
+		return it == std::end(column_sizes) ? 0 : it->second;
+	}
+
 	const Context & context;
 	const String date_column_name;
 	const ASTPtr sampling_expression;
@@ -756,6 +763,7 @@ private:
 	String full_path;
 
 	NamesAndTypesListPtr columns;
+	std::unordered_map<std::string, size_t> column_sizes;
 
 	BrokenPartCallback broken_part_callback;
 
@@ -781,6 +789,10 @@ private:
 	  */
 	void createConvertExpression(DataPartPtr part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
 		ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map);
+
+	void calculateColumnSizes();
+	void addPartContributionToColumnSizes(const DataPartPtr & part);
+	void removePartContributionToColumnSizes(const DataPartPtr & part);
 };
 
 }
