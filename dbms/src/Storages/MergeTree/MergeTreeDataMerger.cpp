@@ -92,7 +92,7 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 		cur_max_bytes_to_merge_parts = data.settings.max_bytes_to_merge_parts_small;
 
 	LOG_TRACE(log, "Max bytes to merge parts: " << cur_max_bytes_to_merge_parts
-		<< " " << (only_small ? "(only small)" : (tonight ? "(tonight)" : "")) << ".");
+		<< (only_small ? " (only small)" : (tonight ? " (tonight)" : "")) << ".");
 
 	/// Мемоизация для функции can_merge_callback. Результат вызова can_merge_callback для этого куска и предыдущего в data_parts.
 	std::map<MergeTreeData::DataPartPtr, bool> can_merge_with_previous;
