@@ -40,6 +40,9 @@ public:
 		if (Protocol::Server::Data == packet.type)
 		{
 			sample_block = packet.block;
+
+			if (!sample_block)
+				throw Exception("Logical error: empty block received as table structure", ErrorCodes::LOGICAL_ERROR);
 		}
 		else if (Protocol::Server::Exception == packet.type)
 		{
@@ -54,6 +57,9 @@ public:
 
 	void write(const Block & block) override
 	{
+		if (!sample_block)
+			throw Exception("You must call IBlockOutputStream::writePrefix before IBlockOutputStream::write", ErrorCodes::LOGICAL_ERROR);
+
 		if (!blocksHaveEqualStructure(block, sample_block))
 		{
 			std::stringstream message;
