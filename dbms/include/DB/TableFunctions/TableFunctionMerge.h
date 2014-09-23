@@ -8,7 +8,7 @@
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTLiteral.h>
 #include <DB/TableFunctions/ITableFunction.h>
-#include <DB/Interpreters/evaluateDatabaseName.h>
+#include <DB/Interpreters/reinterpretAsIdentifier.h>
 
 
 namespace DB
@@ -41,7 +41,7 @@ public:
 				" - name of source database and regexp for table names.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		String source_database 		= evaluateDatabaseName(args[0], context);
+		String source_database 		= reinterpretAsIdentifier(args[0], context).name;
 		String table_name_regexp	= safeGet<const String &>(typeid_cast<ASTLiteral &>(*args[1]).value);
 
 		/// В InterpreterSelectQuery будет создан ExpressionAnalzyer, который при обработке запроса наткнется на этот Identifier.
