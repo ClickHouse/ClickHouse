@@ -735,6 +735,8 @@ public:
 
 	size_t getColumnSize(const std::string & name) const
 	{
+		Poco::ScopedLock<Poco::FastMutex> lock{data_parts_mutex};
+
 		const auto it = column_sizes.find(name);
 		return it == std::end(column_sizes) ? 0 : it->second;
 	}
@@ -763,6 +765,7 @@ private:
 	String full_path;
 
 	NamesAndTypesListPtr columns;
+	/// Актуальные размеры столбцов в сжатом виде
 	std::unordered_map<std::string, size_t> column_sizes;
 
 	BrokenPartCallback broken_part_callback;
@@ -772,7 +775,7 @@ private:
 
 	/** Актуальное множество кусков с данными. */
 	DataParts data_parts;
-	Poco::FastMutex data_parts_mutex;
+	mutable Poco::FastMutex data_parts_mutex;
 
 	/** Множество всех кусков с данными, включая уже слитые в более крупные, но ещё не удалённые. Оно обычно небольшое (десятки элементов).
 	  * Ссылки на кусок есть отсюда, из списка актуальных кусков и из каждого потока чтения, который его сейчас использует.
@@ -790,7 +793,9 @@ private:
 	void createConvertExpression(DataPartPtr part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
 		ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map);
 
+	/// Рассчитывает размеры столбцов в сжатом виде для текущего состояния data_parts
 	void calculateColumnSizes();
+	/// Добавляет или вычитывает вклад part в размеры столбцов в сжатом виде
 	void addPartContributionToColumnSizes(const DataPartPtr & part);
 	void removePartContributionToColumnSizes(const DataPartPtr & part);
 };

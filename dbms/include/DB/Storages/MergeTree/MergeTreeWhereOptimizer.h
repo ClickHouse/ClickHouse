@@ -17,6 +17,15 @@ namespace DB
 {
 
 
+/** Identifies WHERE expressions that can be placed in PREWHERE by calculating respective
+ *  sizes of columns used in particular expression and identifying "good" conditions of
+ *  form "column_name = constant", where "constant" is outside some `threshold` specified in advance.
+ *
+ *  If there are "good" conditions present in WHERE, the one with minimal summary column size is
+ *  transferred to PREWHERE.
+ *  Otherwise any condition with minimal summary column size can be transferred to PREWHERE, if only
+ *  its relative size (summary column size divided by query column size) is less than `max_columns_relative_size`.
+ */
 class MergeTreeWhereOptimizer
 {
 	static constexpr auto threshold = 10;
