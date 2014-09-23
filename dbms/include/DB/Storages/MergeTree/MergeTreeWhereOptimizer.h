@@ -198,7 +198,8 @@ private:
 		std::size_t size{};
 
 		for (const auto & identifier : identifiers)
-			size += column_sizes.find(identifier)->second;
+			if (column_sizes.count(identifier))
+				size += column_sizes.find(identifier)->second;
 
 		return size;
 	}
