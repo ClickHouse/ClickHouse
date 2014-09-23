@@ -11,6 +11,7 @@
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
 #include <DB/DataStreams/copyData.h>
 #include <DB/IO/WriteBufferFromFile.h>
+#include <DB/DataTypes/DataTypeDate.h>
 #include <algorithm>
 
 
@@ -40,6 +41,25 @@ MergeTreeData::MergeTreeData(
 	broken_part_callback(broken_part_callback_),
 	log_name(log_name_), log(&Logger::get(log_name + " (Data)"))
 {
+	/// Проверяем, что столбец с датой существует и имеет тип Date.
+	{
+		auto it = columns->begin();
+		for (; it != columns->end(); ++it)
+		{
+			if (it->name == date_column_name)
+			{
+				if (!typeid_cast<const DataTypeDate *>(&*it->type))
+					throw Exception("Date column (" + date_column_name + ") for storage of MergeTree family must have type Date."
+						" Provided column of type " + it->type->getName() + "."
+						" You may have separate column with type " + it->type->getName() + ".", ErrorCodes::BAD_TYPE_OF_FIELD);
+				break;
+			}
+		}
+
+		if (it == columns->end())
+			throw Exception("Date column (" + date_column_name + ") does not exist in table declaration.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+	}
+
 	/// создаём директорию, если её нет
 	Poco::File(full_path).createDirectories();
 	Poco::File(full_path + "detached").createDirectory();
