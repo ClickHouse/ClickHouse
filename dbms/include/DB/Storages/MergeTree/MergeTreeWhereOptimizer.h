@@ -98,7 +98,7 @@ private:
 			const auto condition = conditions[idx].get();
 
 			IdentifierNameSet identifiers{};
-			condition->collectIdentifierNames(identifiers);
+			collectIdentifiersNoSubqueries(condition, identifiers);
 
 			/// do not take into consideration the conditions consisting only of primary key columns
 			if (hasNonPrimaryKeyColumns(identifiers))
@@ -173,7 +173,7 @@ private:
 		auto & condition = select.where_expression;
 
 		IdentifierNameSet identifiers{};
-		condition->collectIdentifierNames(identifiers);
+		collectIdentifiersNoSubqueries(condition, identifiers);
 
 		if (!hasNonPrimaryKeyColumns(identifiers))
 			return;
@@ -287,6 +287,18 @@ private:
 		}
 
 		return false;
+	}
+
+	static void collectIdentifiersNoSubqueries(const IAST * const ast, IdentifierNameSet & set)
+	{
+		if (const auto identifier = typeid_cast<const ASTIdentifier *>(ast))
+			return (void) set.insert(identifier->name);
+
+		if (typeid_cast<const ASTSelectQuery *>(ast))
+			return;
+
+		for (const auto & child : ast->children)
+			collectIdentifiersNoSubqueries(child.get(), set);
 	}
 
 	std::unordered_set<std::string> primary_key_columns{};
