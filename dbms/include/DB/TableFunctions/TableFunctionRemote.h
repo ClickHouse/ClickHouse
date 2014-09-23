@@ -4,6 +4,8 @@
 #include <DB/Storages/StorageDistributed.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/DataStreams/RemoteBlockInputStream.h>
+#include <DB/Interpreters/evaluateDatabaseName.h>
+
 
 struct data;
 namespace DB
@@ -42,7 +44,7 @@ public:
 			throw Exception(err, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 		String descripton	 	= safeGet<const String &>(typeid_cast<ASTLiteral &>(*args[0]).value);
-		String remote_database 	= typeid_cast<ASTIdentifier &>(*args[1]).name;
+		String remote_database 	= evaluateDatabaseName(args[1], context);
 		String remote_table 	= args.size() % 2 ? typeid_cast<ASTIdentifier &>(*args[2]).name : "";
 		String username = args.size() >= 4
 			? safeGet<const String &>(typeid_cast<ASTLiteral &>(*args[args.size() - 2]).value) : "default";

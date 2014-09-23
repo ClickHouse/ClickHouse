@@ -307,6 +307,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
 {
 	#define F [](const Context & context) -> IFunction*
 
+	factory.registerFunction("currentDatabase", F { return new FunctionCurrentDatabase{context.getCurrentDatabase()}; });
 	factory.registerFunction("hostName", 		F { return new FunctionHostName; });
 	factory.registerFunction("visibleWidth", 	F { return new FunctionVisibleWidth; });
 	factory.registerFunction("toTypeName", 		F { return new FunctionToTypeName; });

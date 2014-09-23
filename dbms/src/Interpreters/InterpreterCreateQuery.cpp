@@ -177,7 +177,8 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 			throw Exception("Incorrect CREATE query: required ENGINE.", ErrorCodes::ENGINE_REQUIRED);
 
 		res = context.getStorageFactory().get(
-			storage_name, data_path, table_name, database_name, context.getGlobalContext(), query_ptr, columns, create.attach);
+			storage_name, data_path, table_name, database_name, context,
+			context.getGlobalContext(), query_ptr, columns, create.attach);
 
 		/// Проверка наличия метаданных таблицы на диске и создание метаданных
 		if (!assume_metadata_exists && !create.is_temporary)
