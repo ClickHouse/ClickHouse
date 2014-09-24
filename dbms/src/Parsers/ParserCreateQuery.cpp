@@ -103,6 +103,11 @@ bool ParserNameTypePairList::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expect
 	return ParserList(ParserPtr(new ParserNameTypePair), ParserPtr(new ParserString(",")), false).parse(pos, end, node, expected);
 }
 
+bool ParserColumnDeclarationList::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
+{
+	return ParserList{ParserPtr{new ParserColumnDeclaration}, ParserPtr{new ParserString{","}}, false}.parse(pos, end, node, expected);
+}
+
 
 bool ParserEngine::parseImpl(Pos & pos, Pos end, ASTPtr & storage, Expected & expected)
 {
@@ -155,7 +160,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 	ParserString s_populate("POPULATE", true, true);
 	ParserEngine engine_p;
 	ParserIdentifier name_p;
-	ParserNameTypePairList columns_p;
+	ParserColumnDeclarationList columns_p;
 
 	ASTPtr database;
 	ASTPtr table;
