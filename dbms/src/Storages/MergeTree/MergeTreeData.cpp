@@ -287,27 +287,24 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts()
 
 	/// Если метод уже вызван из другого потока (или если all_data_parts прямо сейчас меняют), то можно ничего не делать.
 	if (!lock.lock(&all_data_parts_mutex))
+	{
+		LOG_TRACE(log, "grabOldParts: all_data_parts is locked");
 		return res;
+	}
 
 	/// Удаляем временные директории старше суток.
-	Strings all_file_names;
 	Poco::DirectoryIterator end;
-	for (Poco::DirectoryIterator it(full_path); it != end; ++it)
-		all_file_names.push_back(it.name());
-
-	for (const String & file_name : all_file_names)
+	for (Poco::DirectoryIterator it{full_path}; it != end; ++it)
 	{
-		if (0 == file_name.compare(0, strlen("tmp_"), "tmp_"))
+		if (0 == it.name().compare(0, strlen("tmp_"), "tmp_"))
 		{
-			Poco::File tmp_dir(full_path + file_name);
+			Poco::File tmp_dir(full_path + it.name());
 
 			if (tmp_dir.isDirectory() && tmp_dir.getLastModified().epochTime() + 86400 < time(0))
 			{
-				LOG_WARNING(log, "Removing temporary directory " << full_path << file_name);
-				Poco::File(full_path + file_name).remove(true);
+				LOG_WARNING(log, "Removing temporary directory " << full_path << it.name());
+				Poco::File(full_path + it.name()).remove(true);
 			}
-
-			continue;
 		}
 	}
 

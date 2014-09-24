@@ -23,6 +23,7 @@ StorageSystemParts::StorageSystemParts(const std::string & name_, const Context 
 	columns.push_back(NameAndTypePair("bytes",				new DataTypeUInt64));
 	columns.push_back(NameAndTypePair("modification_time",	new DataTypeDateTime));
 	columns.push_back(NameAndTypePair("remove_time",		new DataTypeDateTime));
+	columns.push_back(NameAndTypePair("refcount",			new DataTypeUInt32));
 
 	columns.push_back(NameAndTypePair("database", 			new DataTypeString));
 	columns.push_back(NameAndTypePair("table", 				new DataTypeString));
@@ -151,6 +152,7 @@ BlockInputStreams StorageSystemParts::read(
 	ColumnPtr bytes_column = new ColumnUInt64;
 	ColumnPtr modification_time_column = new ColumnUInt32;
 	ColumnPtr remove_time_column = new ColumnUInt32;
+	ColumnPtr refcount_column = new ColumnUInt32;
 
 	for (size_t i = 0; i < filtered_database_column->size();)
 	{
@@ -212,6 +214,7 @@ BlockInputStreams StorageSystemParts::read(
 				bytes_column->insert(static_cast<size_t>(part->size_in_bytes));
 				modification_time_column->insert(part->modification_time);
 				remove_time_column->insert(part->remove_time);
+				refcount_column->insert(part.use_count());
 			}
 		}
 	}
@@ -225,6 +228,7 @@ BlockInputStreams StorageSystemParts::read(
 	block.insert(ColumnWithNameAndType(bytes_column, new DataTypeUInt64, "bytes"));
 	block.insert(ColumnWithNameAndType(modification_time_column, new DataTypeDateTime, "modification_time"));
 	block.insert(ColumnWithNameAndType(remove_time_column, new DataTypeDateTime, "remove_time"));
+	block.insert(ColumnWithNameAndType(refcount_column, new DataTypeUInt32, "refcount"));
 	block.insert(ColumnWithNameAndType(database_column, new DataTypeString, "database"));
 	block.insert(ColumnWithNameAndType(table_column, new DataTypeString, "table"));
 	block.insert(ColumnWithNameAndType(engine_column, new DataTypeString, "engine"));

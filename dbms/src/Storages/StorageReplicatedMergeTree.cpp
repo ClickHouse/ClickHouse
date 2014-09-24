@@ -623,7 +623,10 @@ void StorageReplicatedMergeTree::clearOldParts()
 	size_t count = parts.size();
 
 	if (!count)
+	{
+		LOG_TRACE(log, "No old parts");
 		return;
+	}
 
 	try
 	{
@@ -647,6 +650,7 @@ void StorageReplicatedMergeTree::clearOldParts()
 	}
 	catch (...)
 	{
+		tryLogCurrentException(__PRETTY_FUNCTION__);
 		data.addOldParts(parts);
 		throw;
 	}
@@ -1515,7 +1519,7 @@ void StorageReplicatedMergeTree::cleanupThread()
 		shutdown_event.tryWait(CLEANUP_SLEEP_MS);
 	}
 
-	LOG_DEBUG(log, "cleanup thread finished");
+	LOG_DEBUG(log, "Cleanup thread finished");
 }
 
 void StorageReplicatedMergeTree::alterThread()
