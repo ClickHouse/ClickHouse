@@ -234,7 +234,8 @@ int32_t ZooKeeper::tryCreateWithRetries(const std::string& path, const std::stri
 
 void ZooKeeper::createIfNotExists(const std::string & path, const std::string & data)
 {
-	int32_t code = retry(boost::bind(&ZooKeeper::tryCreate, this, boost::ref(path), boost::ref(data), zkutil::CreateMode::Persistent));
+	std::string pathCreated;
+	int32_t code = retry(boost::bind(&ZooKeeper::createImpl, this, boost::ref(path), boost::ref(data), zkutil::CreateMode::Persistent, boost::ref(pathCreated)));
 
 	if (code == ZOK || code == ZNODEEXISTS)
 		return;
