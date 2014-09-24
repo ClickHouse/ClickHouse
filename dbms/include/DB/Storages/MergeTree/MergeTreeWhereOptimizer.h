@@ -6,6 +6,7 @@
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTLiteral.h>
 #include <DB/Parsers/ASTExpressionList.h>
+#include <DB/Parsers/ASTSubquery.h>
 #include <DB/Common/escapeForFileName.h>
 #include <statdaemons/stdext.h>
 #include <unordered_map>
@@ -295,7 +296,7 @@ private:
 		if (const auto identifier = typeid_cast<const ASTIdentifier *>(ast))
 			return (void) set.insert(identifier->name);
 
-		if (typeid_cast<const ASTSelectQuery *>(ast))
+		if (typeid_cast<const ASTSubquery *>(ast))
 			return;
 
 		for (const auto & child : ast->children)
