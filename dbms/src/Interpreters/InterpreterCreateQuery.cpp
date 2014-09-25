@@ -21,6 +21,7 @@
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/InterpreterCreateQuery.h>
+#include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/DataTypes/DataTypeNested.h>
 
 
@@ -236,16 +237,20 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 
 NamesAndTypesList InterpreterCreateQuery::parseColumns(ASTPtr expression_list, const DataTypeFactory & data_type_factory)
 {
-	NamesAndTypesList columns;
+	/// list of table columns in correct order
+	NamesAndTypesList columns{};
+	/// list of processed columns for type-deduction
+	NamesAndTypesList processed_columns{};
+
 	auto & columns_list = typeid_cast<ASTExpressionList &>(*expression_list);
 
 	/// List of columns requiring type-deduction or default_expression type-check
-	using postprocess_column = std::pair<NameAndTypePair *, const ASTColumnDeclaration *>;
+	using postprocess_column = std::pair<NameAndTypePair *, ASTColumnDeclaration *>;
 	std::vector<postprocess_column> postprocess_columns{};
 
-	for (const auto & ast : columns_list.children)
+	for (auto & ast : columns_list.children)
 	{
-		const auto & col_decl = typeid_cast<const ASTColumnDeclaration &>(*ast);
+		auto & col_decl = typeid_cast<ASTColumnDeclaration &>(*ast);
 		/// deduce type from default_expression if no type specified
 		if (col_decl.type)
 		{
@@ -253,6 +258,8 @@ NamesAndTypesList InterpreterCreateQuery::parseColumns(ASTPtr expression_list, c
 			columns.emplace_back(
 				col_decl.name,
 				data_type_factory.get({ type_range.first, type_range.second }));
+
+			processed_columns.emplace_back(columns.back());
 		}
 		else
 			columns.emplace_back(col_decl.name, nullptr);
@@ -264,16 +271,31 @@ NamesAndTypesList InterpreterCreateQuery::parseColumns(ASTPtr expression_list, c
 		}
 	}
 
+	/// @todo check for presence of cycles in default_expressions, throw if detected
 	/// deduce type or wrap default_expression in conversion-function if necessary
 	for (auto & column : postprocess_columns)
 	{
 		const auto name_and_type_ptr = column.first;
 		const auto col_decl_ptr = column.second;
 
-		/// @todo deduce real type
+		/// deduce real type
+		auto type = deduceType(col_decl_ptr->default_expression, processed_columns);
 
-		if (!col_decl_ptr->type)
-			name_and_type_ptr->type = data_type_factory.get("UInt32");
+		if (!name_and_type_ptr->type)
+			name_and_type_ptr->type = type;
+		else if (typeid(*name_and_type_ptr->type) != typeid(*type))
+		{
+			/// wrap default_expression in a type-conversion function
+			col_decl_ptr->default_expression = makeASTFunction(
+				"to" + name_and_type_ptr->type->getName(),
+				col_decl_ptr->default_expression);
+
+			col_decl_ptr->children.clear();
+			col_decl_ptr->children.push_back(col_decl_ptr->type);
+			col_decl_ptr->children.push_back(col_decl_ptr->default_expression);
+		}
+
+		processed_columns.emplace_back(*name_and_type_ptr);
 	}
 
 	return *DataTypeNested::expandNestedColumns(columns);
@@ -305,6 +327,13 @@ ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns)
 	}
 
 	return columns_list_ptr;
+}
+
+DataTypePtr InterpreterCreateQuery::deduceType(const ASTPtr & expr, const NamesAndTypesList & columns) const
+{
+	const auto actions = ExpressionAnalyzer{expr, context, columns}.getActions(false);
+
+	return actions->getSampleBlock().getByName(expr->getColumnName()).type;
 }
 
 }
