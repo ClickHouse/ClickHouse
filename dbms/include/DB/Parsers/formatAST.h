@@ -18,6 +18,7 @@
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTLiteral.h>
 #include <DB/Parsers/ASTNameTypePair.h>
+#include <DB/Parsers/ASTColumnDeclaration.h>
 #include <DB/Parsers/ASTAsterisk.h>
 #include <DB/Parsers/ASTOrderByElement.h>
 #include <DB/Parsers/ASTSubquery.h>
@@ -53,6 +54,7 @@ void formatAST(const ASTFunction 		& ast, std::ostream & s, size_t indent = 0, b
 void formatAST(const ASTIdentifier 		& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false, bool need_parens = false);
 void formatAST(const ASTLiteral 		& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false, bool need_parens = false);
 void formatAST(const ASTNameTypePair	& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false, bool need_parens = false);
+void formatAST(const ASTColumnDeclaration	& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false, bool need_parens = false);
 void formatAST(const ASTAsterisk		& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false, bool need_parens = false);
 void formatAST(const ASTOrderByElement	& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false, bool need_parens = false);
 void formatAST(const ASTSubquery		& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false, bool need_parens = false);

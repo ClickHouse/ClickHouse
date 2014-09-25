@@ -3,6 +3,7 @@
 #include <DB/Parsers/IParserBase.h>
 #include <DB/Parsers/ExpressionElementParsers.h>
 #include <DB/Parsers/ASTNameTypePair.h>
+#include <DB/Parsers/ASTColumnDeclaration.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/CommonParsers.h>
 
@@ -132,10 +133,11 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, Pos end, ASTPtr 
 		!s_materialized.check(pos, end, expected) &&
 		!s_alias.check(pos, end, expected))
 	{
-		/// reject sole column name without type
 		if (type_parser.parse(pos, end, type, expected))
 			ws.ignore(pos, end, expected);
-	} else pos = fallback_pos;
+	}
+	else
+		pos = fallback_pos;
 
 	/// parse {DEFAULT, MATERIALIZED, ALIAS}
 	String default_specifier;
@@ -158,22 +160,26 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, Pos end, ASTPtr 
 	}
 	else if (!type)
 	{
+		/// reject sole column name without type
 		pos = begin;
 		return false;
 	}
 
-	/// @todo remove this
-	if (!type) {
-		const auto no_type = "NO_TYPE";
-		auto pos = no_type;
-		type_parser.parse(pos, no_type + std::strlen(no_type), type, expected);
+	const auto column_declaration = new ASTColumnDeclaration{StringRange{begin, pos}};
+	node = column_declaration;
+	column_declaration->name = typeid_cast<ASTIdentifier &>(*name).name;
+	if (type)
+	{
+		column_declaration->type = type;
+		column_declaration->children.push_back(std::move(type));
 	}
 
-	const auto name_type_pair = new ASTNameTypePair{StringRange{begin, pos}};
-	node = name_type_pair;
-	name_type_pair->name = typeid_cast<ASTIdentifier &>(*name).name;
-	name_type_pair->type = type;
-	name_type_pair->children.push_back(std::move(type));
+	if (default_expression)
+	{
+		column_declaration->default_specifier = default_specifier;
+		column_declaration->default_expression = default_expression;
+		column_declaration->children.push_back(std::move(default_expression));
+	}
 
 	return true;
 }

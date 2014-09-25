@@ -11,6 +11,7 @@
 
 #include <DB/Parsers/ASTCreateQuery.h>
 #include <DB/Parsers/ASTNameTypePair.h>
+#include <DB/Parsers/ASTColumnDeclaration.h>
 
 #include <DB/Storages/StorageLog.h>
 #include <DB/Storages/StorageSystemNumbers.h>
@@ -236,41 +237,71 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 NamesAndTypesList InterpreterCreateQuery::parseColumns(ASTPtr expression_list, const DataTypeFactory & data_type_factory)
 {
 	NamesAndTypesList columns;
-	ASTExpressionList & columns_list = typeid_cast<ASTExpressionList &>(*expression_list);
-	for (const ASTPtr & ast : columns_list.children)
+	auto & columns_list = typeid_cast<ASTExpressionList &>(*expression_list);
+
+	/// List of columns requiring type-deduction or default_expression type-check
+	using postprocess_column = std::pair<NameAndTypePair *, const ASTColumnDeclaration *>;
+	std::vector<postprocess_column> postprocess_columns{};
+
+	for (const auto & ast : columns_list.children)
 	{
-		const ASTNameTypePair & name_and_type_pair = typeid_cast<const ASTNameTypePair &>(*ast);
-		StringRange type_range = name_and_type_pair.type->range;
-		columns.push_back(NameAndTypePair(
-			name_and_type_pair.name,
-			data_type_factory.get(String(type_range.first, type_range.second - type_range.first))));
+		const auto & col_decl = typeid_cast<const ASTColumnDeclaration &>(*ast);
+		/// deduce type from default_expression if no type specified
+		if (col_decl.type)
+		{
+			const auto & type_range = col_decl.type->range;
+			columns.emplace_back(
+				col_decl.name,
+				data_type_factory.get({ type_range.first, type_range.second }));
+		}
+		else
+			columns.emplace_back(col_decl.name, nullptr);
+
+		/// add column to postprocess if there is either no type or a default_expression specified
+		if (!col_decl.type || col_decl.default_expression)
+		{
+			postprocess_columns.emplace_back(&columns.back(), &col_decl);
+		}
 	}
-	columns = *DataTypeNested::expandNestedColumns(columns);
-	return columns;
+
+	/// deduce type or wrap default_expression in conversion-function if necessary
+	for (auto & column : postprocess_columns)
+	{
+		const auto name_and_type_ptr = column.first;
+		const auto col_decl_ptr = column.second;
+
+		/// @todo deduce real type
+
+		if (!col_decl_ptr->type)
+			name_and_type_ptr->type = data_type_factory.get("UInt32");
+	}
+
+	return *DataTypeNested::expandNestedColumns(columns);
 }
 
 ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns)
 {
-	ASTPtr columns_list_ptr = new ASTExpressionList;
+	ASTPtr columns_list_ptr{new ASTExpressionList};
 	ASTExpressionList & columns_list = typeid_cast<ASTExpressionList &>(*columns_list_ptr);
 
-	for (const NameAndTypePair & it : columns)
+	for (const auto & column : columns)
 	{
-		ASTPtr name_and_type_pair_ptr = new ASTNameTypePair;
-		ASTNameTypePair & name_and_type_pair = typeid_cast<ASTNameTypePair &>(*name_and_type_pair_ptr);
-		name_and_type_pair.name = it.name;
-		StringPtr type_name = new String(it.type->getName());
+		const auto column_declaration = new ASTColumnDeclaration;
+		ASTPtr column_declaration_ptr{column_declaration};
+
+		column_declaration->name = column.name;
+
+		StringPtr type_name{new String(column.type->getName())};
+		auto pos = type_name->data();
+		const auto end = pos + type_name->size();
 
 		ParserIdentifierWithOptionalParameters storage_p;
-		Expected expected = "";
-		const char * pos = type_name->data();
-		const char * end = pos + type_name->size();
-
-		if (!storage_p.parse(pos, end, name_and_type_pair.type, expected))
+		Expected expected{""};
+		if (!storage_p.parse(pos, end, column_declaration->type, expected))
 			throw Exception("Cannot parse data type.", ErrorCodes::SYNTAX_ERROR);
 
-		name_and_type_pair.type->query_string = type_name;
-		columns_list.children.push_back(name_and_type_pair_ptr);
+		column_declaration->type->query_string = type_name;
+		columns_list.children.push_back(column_declaration_ptr);
 	}
 
 	return columns_list_ptr;
