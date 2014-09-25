@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DB/Parsers/ASTWithAlias.h>
+#include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Functions/IFunction.h>
 #include <DB/AggregateFunctions/IAggregateFunction.h>
 #include <DB/IO/WriteBufferFromString.h>
@@ -80,5 +81,21 @@ public:
 		return res;
 	}
 };
+
+
+template <typename... Args>
+ASTPtr makeASTFunction(const String & name, Args &&... args)
+{
+	const auto function = new ASTFunction{};
+	ASTPtr result{function};
+
+	function->name = name;
+	function->arguments = new ASTExpressionList{};
+	function->children.push_back(function->arguments);
+
+	function->arguments->children = { std::forward<Args>(args)... };
+
+	return result;
+}
 
 }
