@@ -133,6 +133,10 @@ bool ParserIdentifier::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & e
 		ReadBuffer buf(const_cast<char *>(pos), end - pos, 0);
 		String s;
 		readBackQuotedString(s, buf);
+
+		if (s.empty())	/// Не разрешены идентификаторы "пустая строка".
+			return false;
+
 		pos += buf.count();
 		node = new ASTIdentifier(StringRange(begin, pos), s);
 		return true;
