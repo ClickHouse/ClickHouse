@@ -81,10 +81,9 @@ MergeTreeData::MergeTreeData(
 UInt64 MergeTreeData::getMaxDataPartIndex()
 {
 	UInt64 max_part_id = 0;
-	for (DataParts::iterator it = data_parts.begin(); it != data_parts.end(); ++it)
-	{
-		max_part_id = std::max(max_part_id, (*it)->right);
-	}
+	for (const auto & part : data_parts)
+		max_part_id = std::max(max_part_id, part->right);
+
 	return max_part_id;
 }
 
