@@ -118,7 +118,7 @@ void StorageMergeTree::alter(const AlterCommands & params, const String & databa
 
 	MergeTreeData::DataParts parts = data.getDataParts();
 	std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions;
-	for (MergeTreeData::DataPartPtr part : parts)
+	for (const MergeTreeData::DataPartPtr & part : parts)
 	{
 		auto transaction = data.alterDataPart(part, new_columns);
 		if (transaction)

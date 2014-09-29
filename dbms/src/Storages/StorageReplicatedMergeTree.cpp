@@ -493,7 +493,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 	}
 
 	/// Добавим в ZK информацию о кусках, покрывающих недостающие куски.
-	for (MergeTreeData::DataPartPtr part : parts_to_add)
+	for (const MergeTreeData::DataPartPtr & part : parts_to_add)
 	{
 		LOG_ERROR(log, "Adding unexpected local part to ZooKeeper: " << part->name);
 
@@ -535,7 +535,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 	}
 
 	/// Удалим лишние локальные куски.
-	for (MergeTreeData::DataPartPtr part : unexpected_parts)
+	for (const MergeTreeData::DataPartPtr & part : unexpected_parts)
 	{
 		LOG_ERROR(log, "Renaming unexpected part " << part->name << " to ignored_" + part->name);
 		data.renameAndDetachPart(part, "ignored_", true);
@@ -549,7 +549,7 @@ void StorageReplicatedMergeTree::initVirtualParts()
 		virtual_parts.add(part->name);
 }
 
-void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(MergeTreeData::DataPartPtr part, zkutil::Ops & ops, String part_name)
+void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(const MergeTreeData::DataPartPtr & part, zkutil::Ops & ops, String part_name)
 {
 	if (part_name.empty())
 		part_name = part->name;
@@ -632,7 +632,7 @@ void StorageReplicatedMergeTree::clearOldParts()
 	{
 		while (!parts.empty())
 		{
-			MergeTreeData::DataPartPtr part = parts.back();
+			MergeTreeData::DataPartPtr & part = parts.back();
 
 			LOG_DEBUG(log, "Removing " << part->name);
 

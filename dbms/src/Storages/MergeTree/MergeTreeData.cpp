@@ -335,7 +335,7 @@ void MergeTreeData::clearOldParts()
 {
 	auto parts_to_remove = grabOldParts();
 
-	for (DataPartPtr part : parts_to_remove)
+	for (const DataPartPtr & part : parts_to_remove)
 	{
 		LOG_DEBUG(log, "Removing part " << part->name);
 		part->remove();
@@ -390,7 +390,7 @@ void MergeTreeData::checkAlter(const AlterCommands & params)
 	createConvertExpression(nullptr, *columns, new_columns, unused_expression, unused_map);
 }
 
-void MergeTreeData::createConvertExpression(DataPartPtr part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
+void MergeTreeData::createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
 	ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map)
 {
 	out_expression = nullptr;
@@ -464,7 +464,8 @@ void MergeTreeData::createConvertExpression(DataPartPtr part, const NamesAndType
 	}
 }
 
-MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(DataPartPtr part, const NamesAndTypesList & new_columns, bool skip_sanity_checks)
+MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
+	const DataPartPtr & part, const NamesAndTypesList & new_columns, bool skip_sanity_checks)
 {
 	ExpressionActionsPtr expression;
 	AlterDataPartTransactionPtr transaction(new AlterDataPartTransaction(part)); /// Блокирует изменение куска.
@@ -624,7 +625,7 @@ MergeTreeData::AlterDataPartTransaction::~AlterDataPartTransaction()
 }
 
 
-void MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr part, Increment * increment, Transaction * out_transaction)
+void MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr & part, Increment * increment, Transaction * out_transaction)
 {
 	auto removed = renameTempPartAndReplace(part, increment, out_transaction);
 	if (!removed.empty())
@@ -635,7 +636,7 @@ void MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr part, Increment * in
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
-	MutableDataPartPtr part, Increment * increment, Transaction * out_transaction)
+	MutableDataPartPtr & part, Increment * increment, Transaction * out_transaction)
 {
 	if (out_transaction && out_transaction->data)
 		throw Exception("Using the same MergeTreeData::Transaction for overlapping transactions is invalid");
@@ -749,7 +750,7 @@ void MergeTreeData::replaceParts(const DataPartsVector & remove, const DataParts
 	}
 }
 
-void MergeTreeData::attachPart(DataPartPtr part)
+void MergeTreeData::attachPart(const DataPartPtr & part)
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 	Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
@@ -759,7 +760,7 @@ void MergeTreeData::attachPart(DataPartPtr part)
 	data_parts.insert(part);
 }
 
-void MergeTreeData::renameAndDetachPart(DataPartPtr part, const String & prefix, bool restore_covered, bool move_to_detached)
+void MergeTreeData::renameAndDetachPart(const DataPartPtr & part, const String & prefix, bool restore_covered, bool move_to_detached)
 {
 	LOG_INFO(log, "Renaming " << part->name << " to " << prefix << part->name << " and detaching it.");
 
@@ -826,7 +827,7 @@ void MergeTreeData::renameAndDetachPart(DataPartPtr part, const String & prefix,
 	}
 }
 
-void MergeTreeData::detachPartInPlace(DataPartPtr part)
+void MergeTreeData::detachPartInPlace(const DataPartPtr & part)
 {
 	renameAndDetachPart(part, "", false, false);
 }
