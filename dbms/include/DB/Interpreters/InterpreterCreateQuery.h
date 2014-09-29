@@ -2,6 +2,7 @@
 
 #include <DB/Storages/IStorage.h>
 #include <DB/Interpreters/Context.h>
+#include <DB/Storages/ColumnDefault.h>
 
 
 namespace DB
@@ -27,7 +28,8 @@ public:
 
 private:
 	/// AST в список столбцов с типами. Столбцы типа Nested развернуты в список настоящих столбцов.
-	NamesAndTypesList parseColumns(ASTPtr expression_list, const DataTypeFactory & data_type_factory);
+	using ColumnsAndDefaults = std::pair<NamesAndTypesList, ColumnDefaults>;
+	ColumnsAndDefaults parseColumns(ASTPtr expression_list, const DataTypeFactory & data_type_factory);
 
 	DataTypePtr deduceType(const ASTPtr & expr, const NamesAndTypesList & columns) const;
 

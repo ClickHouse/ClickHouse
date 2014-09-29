@@ -89,6 +89,7 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 	StoragePtr res;
 	String storage_name;
 	NamesAndTypesListPtr columns = new NamesAndTypesList;
+	ColumnDefaults column_defaults{};
 
 	StoragePtr as_storage;
 	IStorage::TableStructureReadLockPtr as_storage_lock;
@@ -117,7 +118,9 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 		/// Получаем список столбцов
 		if (create.columns)
 		{
-			columns = new NamesAndTypesList(parseColumns(create.columns, context.getDataTypeFactory()));
+			auto && columns_and_defaults = parseColumns(create.columns, context.getDataTypeFactory());
+			columns = new NamesAndTypesList{std::move(columns_and_defaults.first)};
+			column_defaults = std::move(columns_and_defaults.second);
 		}
 		else if (!create.as_table.empty())
 			columns = new NamesAndTypesList(as_storage->getColumnsList());
@@ -235,10 +238,12 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 	return res;
 }
 
-NamesAndTypesList InterpreterCreateQuery::parseColumns(ASTPtr expression_list, const DataTypeFactory & data_type_factory)
+InterpreterCreateQuery::ColumnsAndDefaults InterpreterCreateQuery::parseColumns(
+	ASTPtr expression_list, const DataTypeFactory & data_type_factory)
 {
 	/// list of table columns in correct order
 	NamesAndTypesList columns{};
+	ColumnDefaults defaults{};
 
 	auto & columns_list = typeid_cast<ASTExpressionList &>(*expression_list);
 
@@ -292,7 +297,13 @@ NamesAndTypesList InterpreterCreateQuery::parseColumns(ASTPtr expression_list, c
 				default_expr_list->children.emplace_back(set_alias(col_decl.default_expression->clone(), tmp_column_name));
 			}
 			else
+			{
 				default_expr_list->children.emplace_back(set_alias(col_decl.default_expression->clone(), col_decl.name));
+				defaults.emplace(col_decl.name, ColumnDefault{
+					columnDefaultTypeFromString(col_decl.default_specifier),
+					col_decl.default_expression
+				});
+			}
 		}
 	}
 
@@ -325,10 +336,15 @@ NamesAndTypesList InterpreterCreateQuery::parseColumns(ASTPtr expression_list, c
 			}
 			else
 				name_and_type_ptr->type = block.getByName(name_and_type_ptr->name).type;
+
+			defaults.emplace(col_decl_ptr->name, ColumnDefault{
+				columnDefaultTypeFromString(col_decl_ptr->default_specifier),
+				col_decl_ptr->default_expression
+			});
 		}
 	}
 
-	return *DataTypeNested::expandNestedColumns(columns);
+	return { *DataTypeNested::expandNestedColumns(columns), defaults };
 }
 
 ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns)
