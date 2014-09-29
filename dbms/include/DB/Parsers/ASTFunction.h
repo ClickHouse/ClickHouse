@@ -98,4 +98,21 @@ ASTPtr makeASTFunction(const String & name, Args &&... args)
 	return result;
 }
 
+
+template <typename... Args>
+ASTPtr makeASTFunction(const String & name, const StringRange & function_range,
+	const StringRange & arguments_range, Args &&... args)
+{
+	const auto function = new ASTFunction{function_range};
+	ASTPtr result{function};
+
+	function->name = name;
+	function->arguments = new ASTExpressionList{arguments_range};
+	function->children.push_back(function->arguments);
+
+	function->arguments->children = { std::forward<Args>(args)... };
+
+	return result;
+}
+
 }

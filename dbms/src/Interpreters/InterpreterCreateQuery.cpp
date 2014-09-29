@@ -239,63 +239,93 @@ NamesAndTypesList InterpreterCreateQuery::parseColumns(ASTPtr expression_list, c
 {
 	/// list of table columns in correct order
 	NamesAndTypesList columns{};
-	/// list of processed columns for type-deduction
-	NamesAndTypesList processed_columns{};
 
 	auto & columns_list = typeid_cast<ASTExpressionList &>(*expression_list);
 
-	/// List of columns requiring type-deduction or default_expression type-check
 	using postprocess_column = std::pair<NameAndTypePair *, ASTColumnDeclaration *>;
-	std::vector<postprocess_column> postprocess_columns{};
+	/// Columns requiring type-deduction or default_expression type-check
+	std::vector<postprocess_column> defaulted_columns{};
+
+	/** all default_expressions as a single expression list,
+	 *  mixed with conversion-columns for each explicitly specified type */
+	ASTPtr default_expr_list{new ASTExpressionList};
+	default_expr_list->children.reserve(columns_list.children.size());
+
+	/// helper for setting aliases and chaining result to other functions
+	const auto set_alias = [] (ASTPtr ast, const String & alias) {
+		dynamic_cast<ASTWithAlias &>(*ast).alias = alias;
+
+		return ast;
+	};
 
 	for (auto & ast : columns_list.children)
 	{
 		auto & col_decl = typeid_cast<ASTColumnDeclaration &>(*ast);
-		/// deduce type from default_expression if no type specified
+
 		if (col_decl.type)
 		{
 			const auto & type_range = col_decl.type->range;
-			columns.emplace_back(
-				col_decl.name,
+			columns.emplace_back(col_decl.name,
 				data_type_factory.get({ type_range.first, type_range.second }));
-
-			processed_columns.emplace_back(columns.back());
 		}
 		else
 			columns.emplace_back(col_decl.name, nullptr);
 
-		/// add column to postprocess if there is either no type or a default_expression specified
-		if (!col_decl.type || col_decl.default_expression)
+		/// add column to postprocessing if there is a default_expression specified
+		if (col_decl.default_expression)
 		{
-			postprocess_columns.emplace_back(&columns.back(), &col_decl);
+			defaulted_columns.emplace_back(&columns.back(), &col_decl);
+
+			/** for columns with explicitly-specified type create two expressions:
+			 *	1. default_expression aliased as column name with _tmp suffix
+			 *	2. conversion of expression (1) to explicitly-specified type alias as column name */
+			if (col_decl.type)
+			{
+				const auto tmp_column_name = col_decl.name + "_tmp";
+				const auto & final_column_name = col_decl.name;
+				const auto conversion_function_name = "to" + columns.back().type->getName();
+
+				default_expr_list->children.emplace_back(set_alias(
+					makeASTFunction(conversion_function_name, ASTPtr{new ASTIdentifier{{}, tmp_column_name}}),
+					final_column_name));
+
+				default_expr_list->children.emplace_back(set_alias(col_decl.default_expression->clone(), tmp_column_name));
+			}
+			else
+				default_expr_list->children.emplace_back(set_alias(col_decl.default_expression->clone(), col_decl.name));
 		}
 	}
 
-	/// @todo check for presence of cycles in default_expressions, throw if detected
-	/// deduce type or wrap default_expression in conversion-function if necessary
-	for (auto & column : postprocess_columns)
+	/// set missing types and wrap default_expression's in a conversion-function if necessary
+	if (!defaulted_columns.empty())
 	{
-		const auto name_and_type_ptr = column.first;
-		const auto col_decl_ptr = column.second;
+		const auto actions = ExpressionAnalyzer{default_expr_list, context, columns}.getActions(true);
+		const auto block = actions->getSampleBlock();
 
-		/// deduce real type
-		auto type = deduceType(col_decl_ptr->default_expression, processed_columns);
-
-		if (!name_and_type_ptr->type)
-			name_and_type_ptr->type = type;
-		else if (typeid(*name_and_type_ptr->type) != typeid(*type))
+		for (auto & column : defaulted_columns)
 		{
-			/// wrap default_expression in a type-conversion function
-			col_decl_ptr->default_expression = makeASTFunction(
-				"to" + name_and_type_ptr->type->getName(),
-				col_decl_ptr->default_expression);
+			const auto name_and_type_ptr = column.first;
+			const auto col_decl_ptr = column.second;
 
-			col_decl_ptr->children.clear();
-			col_decl_ptr->children.push_back(col_decl_ptr->type);
-			col_decl_ptr->children.push_back(col_decl_ptr->default_expression);
+			if (name_and_type_ptr->type)
+			{
+				const auto & tmp_column = block.getByName(col_decl_ptr->name + "_tmp");
+
+				/// type mismatch between explicitly specified and deduced type, add conversion
+				if (typeid(*name_and_type_ptr->type) != typeid(*tmp_column.type))
+				{
+					col_decl_ptr->default_expression = makeASTFunction(
+						"to" + name_and_type_ptr->type->getName(),
+						col_decl_ptr->default_expression);
+
+					col_decl_ptr->children.clear();
+					col_decl_ptr->children.push_back(col_decl_ptr->type);
+					col_decl_ptr->children.push_back(col_decl_ptr->default_expression);
+				}
+			}
+			else
+				name_and_type_ptr->type = block.getByName(name_and_type_ptr->name).type;
 		}
-
-		processed_columns.emplace_back(*name_and_type_ptr);
 	}
 
 	return *DataTypeNested::expandNestedColumns(columns);
