@@ -11,15 +11,33 @@
 namespace DB
 {
 
-StoragePtr StorageMaterializedView::create(const String & table_name_, const String & database_name_,
-	Context & context_, ASTPtr & query_, NamesAndTypesListPtr columns_, bool attach_)
+StoragePtr StorageMaterializedView::create(
+	const String & table_name_,
+	const String & database_name_,
+	Context & context_,
+	ASTPtr & query_,
+	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & alias_columns_,
+	const ColumnDefaults & column_defaults_,
+	bool attach_)
 {
-	return (new StorageMaterializedView(table_name_, database_name_, context_, query_, columns_, attach_))->thisPtr();
+	return (new StorageMaterializedView{
+		table_name_, database_name_, context_, query_,
+		columns_, alias_columns_, column_defaults_,
+		attach_
+	})->thisPtr();
 }
 
-StorageMaterializedView::StorageMaterializedView(const String & table_name_, const String & database_name_,
-	Context & context_, ASTPtr & query_, NamesAndTypesListPtr columns_,	bool attach_):
-	StorageView(table_name_, database_name_, context_, query_, columns_)
+StorageMaterializedView::StorageMaterializedView(
+	const String & table_name_,
+	const String & database_name_,
+	Context & context_,
+	ASTPtr & query_,
+	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & alias_columns_,
+	const ColumnDefaults & column_defaults_,
+	bool attach_)
+	: StorageView{table_name_, database_name_, context_, query_, columns_, alias_columns_, column_defaults_}
 {
 	ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*query_);
 

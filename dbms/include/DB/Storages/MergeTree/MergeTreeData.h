@@ -580,6 +580,8 @@ public:
 	  * require_part_metadata - обязательно ли в директории с куском должны быть checksums.txt и columns.txt
 	  */
 	MergeTreeData(	const String & full_path_, NamesAndTypesListPtr columns_,
+					const NamesAndTypesList & alias_columns_,
+					const ColumnDefaults & column_defaults_,
 					const Context & context_,
 					ASTPtr & primary_expr_ast_,
 					const String & date_column_name_,
@@ -613,14 +615,14 @@ public:
 	{
 		if (column_name == "_part") return NameAndTypePair("_part", new DataTypeString);
 		if (column_name == "_part_index") return NameAndTypePair("_part_index", new DataTypeUInt64);
-		return getRealColumn(column_name);
+		return ITableDeclaration::getColumn(column_name);
 	}
 
 	bool hasColumn(const String &column_name) const
 	{
 		if (column_name == "_part") return true;
 		if (column_name == "_part_index") return true;
-		return hasRealColumn(column_name);
+		return ITableDeclaration::hasColumn(column_name);
 	}
 
 	String getFullPath() const { return full_path; }

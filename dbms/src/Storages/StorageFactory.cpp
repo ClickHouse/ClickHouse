@@ -72,15 +72,23 @@ StoragePtr StorageFactory::get(
 	Context & context,
 	ASTPtr & query,
 	NamesAndTypesListPtr columns,
+	const NamesAndTypesList & alias_columns,
+	const ColumnDefaults & column_defaults,
 	bool attach) const
 {
 	if (name == "Log")
 	{
-		return StorageLog::create(data_path, table_name, columns, context.getSettings().max_compress_block_size);
+		return StorageLog::create(
+			data_path, table_name,
+			columns, alias_columns, column_defaults,
+			context.getSettings().max_compress_block_size);
 	}
 	else if (name == "Chunks")
 	{
-		return StorageChunks::create(data_path, table_name, database_name, columns, context, attach);
+		return StorageChunks::create(
+			data_path, table_name, database_name,
+			columns, alias_columns, column_defaults,
+			context, attach);
 	}
 	else if (name == "ChunkRef")
 	{
@@ -88,11 +96,16 @@ StoragePtr StorageFactory::get(
 	}
 	else if (name == "View")
 	{
-		return StorageView::create(table_name, database_name, context, query, columns);
+		return StorageView::create(
+			table_name, database_name, context, query,
+			columns, alias_columns, column_defaults);
 	}
 	else if (name == "MaterializedView")
 	{
-		return StorageMaterializedView::create(table_name, database_name, context, query, columns, attach);
+		return StorageMaterializedView::create(
+			table_name, database_name, context, query,
+			columns, alias_columns, column_defaults,
+			attach);
 	}
 	else if (name == "ChunkMerger")
 	{
@@ -118,8 +131,12 @@ StoragePtr StorageFactory::get(
 			if (args.size() > 3)
 				destination_name_prefix = typeid_cast<ASTIdentifier &>(*args[3]).name;
 
-			return StorageChunkMerger::create(database_name, table_name, columns, source_database, source_table_name_regexp, destination_name_prefix, chunks_to_merge, context);
-		} while(false);
+			return StorageChunkMerger::create(
+				database_name, table_name,
+				columns, alias_columns, column_defaults,
+				source_database, source_table_name_regexp,
+				destination_name_prefix, chunks_to_merge, context);
+		} while (false);
 
 		throw Exception("Storage ChunkMerger requires from 3 to 4 parameters:"
 			" source database, regexp for source table names, number of chunks to merge, [destination tables name prefix].",
@@ -127,15 +144,18 @@ StoragePtr StorageFactory::get(
 	}
 	else if (name == "TinyLog")
 	{
-		return StorageTinyLog::create(data_path, table_name, columns, attach, context.getSettings().max_compress_block_size);
+		return StorageTinyLog::create(
+			data_path, table_name,
+			columns, alias_columns, column_defaults,
+			attach, context.getSettings().max_compress_block_size);
 	}
 	else if (name == "Memory")
 	{
-		return StorageMemory::create(table_name, columns);
+		return StorageMemory::create(table_name, columns, alias_columns, column_defaults);
 	}
 	else if (name == "Null")
 	{
-		return StorageNull::create(table_name, columns);
+		return StorageNull::create(table_name, columns, alias_columns, column_defaults);
 	}
 	else if (name == "Merge")
 	{
@@ -159,7 +179,9 @@ StoragePtr StorageFactory::get(
 		String source_database 		= reinterpretAsIdentifier(args[0], local_context).name;
 		String table_name_regexp	= safeGet<const String &>(typeid_cast<ASTLiteral &>(*args[1]).value);
 
-		return StorageMerge::create(table_name, columns, source_database, table_name_regexp, context);
+		return StorageMerge::create(
+			table_name, columns, alias_columns, column_defaults,
+			source_database, table_name_regexp, context);
 	}
 	else if (name == "Distributed")
 	{
@@ -188,7 +210,9 @@ StoragePtr StorageFactory::get(
 		const auto & sharding_key = args.size() == 4 ? args[3] : nullptr;
 
 		return StorageDistributed::create(
-			table_name, columns, remote_database, remote_table, cluster_name, context, sharding_key, data_path);
+			table_name, columns, alias_columns, column_defaults,
+			remote_database, remote_table, cluster_name,
+			context, sharding_key, data_path);
 	}
 	else if (endsWith(name, "MergeTree"))
 	{
@@ -302,12 +326,16 @@ StoragePtr StorageFactory::get(
 			throw Exception("Index granularity must be a positive integer", ErrorCodes::BAD_ARGUMENTS);
 
 		if (replicated)
-			return StorageReplicatedMergeTree::create(zookeeper_path, replica_name, attach, data_path, database_name, table_name,
-				columns, context, primary_expr_list, date_column_name,
+			return StorageReplicatedMergeTree::create(
+				zookeeper_path, replica_name, attach, data_path, database_name, table_name,
+				columns, alias_columns, column_defaults,
+				context, primary_expr_list, date_column_name,
 				sampling_expression, index_granularity, mode, sign_column_name);
 		else
-			return StorageMergeTree::create(data_path, database_name, table_name,
-				columns, context, primary_expr_list, date_column_name,
+			return StorageMergeTree::create(
+				data_path, database_name, table_name,
+				columns, alias_columns, column_defaults,
+				context, primary_expr_list, date_column_name,
 				sampling_expression, index_granularity, mode, sign_column_name);
 	}
 	else

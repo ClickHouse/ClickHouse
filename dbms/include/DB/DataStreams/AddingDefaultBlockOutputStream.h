@@ -5,6 +5,8 @@
 #include <DB/DataStreams/IBlockOutputStream.h>
 #include <DB/Columns/ColumnConst.h>
 
+#include <DB/Storages/ColumnDefault.h>
+#include <DB/Interpreters/Context.h>
 
 
 namespace DB
@@ -19,15 +21,18 @@ class AddingDefaultBlockOutputStream : public IBlockOutputStream
 public:
 	AddingDefaultBlockOutputStream(
 		BlockOutputStreamPtr output_,
-		NamesAndTypesListPtr required_columns_)
-		: output(output_), required_columns(required_columns_)
+		NamesAndTypesListPtr required_columns_,
+		const ColumnDefaults & column_defaults_,
+		const Context & context_)
+		: output(output_), required_columns(required_columns_),
+		  column_defaults(column_defaults_), context(context_)
 	{
 	}
 
 	void write(const Block & block) override
 	{
 		Block res = block;
-		res.addDefaults(required_columns);
+		res.addDefaults(required_columns, column_defaults, context);
 		output->write(res);
 	}
 
@@ -39,6 +44,8 @@ public:
 private:
 	BlockOutputStreamPtr output;
 	NamesAndTypesListPtr required_columns;
+	const ColumnDefaults & column_defaults;
+	Context context;
 };
 
 

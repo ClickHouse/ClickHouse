@@ -7,19 +7,25 @@
 namespace DB
 {
 
-StorageMergeTree::StorageMergeTree(const String & path_, const String & database_name_, const String & table_name_,
-				NamesAndTypesListPtr columns_,
-				Context & context_,
-				ASTPtr & primary_expr_ast_,
-				const String & date_column_name_,
-				const ASTPtr & sampling_expression_, /// nullptr, если семплирование не поддерживается.
-				size_t index_granularity_,
-				MergeTreeData::Mode mode_,
-				const String & sign_column_,
-				const MergeTreeSettings & settings_)
-	: path(path_), database_name(database_name_), table_name(table_name_), full_path(path + escapeForFileName(table_name) + '/'),
+StorageMergeTree::StorageMergeTree(
+	const String & path_,
+	const String & database_name_,
+	const String & table_name_,
+	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & alias_columns_,
+	const ColumnDefaults & column_defaults_,
+	Context & context_,
+	ASTPtr & primary_expr_ast_,
+	const String & date_column_name_,
+	const ASTPtr & sampling_expression_, /// nullptr, если семплирование не поддерживается.
+	size_t index_granularity_,
+	MergeTreeData::Mode mode_,
+	const String & sign_column_,
+	const MergeTreeSettings & settings_)
+	: IStorage{alias_columns_, column_defaults_},
+	path(path_), database_name(database_name_), table_name(table_name_), full_path(path + escapeForFileName(table_name) + '/'),
 	increment(full_path + "increment.txt"), context(context_), background_pool(context_.getBackgroundPool()),
-	data(full_path, columns_, context_, primary_expr_ast_, date_column_name_, sampling_expression_,
+	data(full_path, columns_, alias_columns_, column_defaults_, context_, primary_expr_ast_, date_column_name_, sampling_expression_,
 	index_granularity_,mode_, sign_column_, settings_, database_name_ + "." + table_name, false),
 	reader(data), writer(data), merger(data),
 	log(&Logger::get(database_name_ + "." + table_name + " (StorageMergeTree)")),
@@ -34,6 +40,8 @@ StorageMergeTree::StorageMergeTree(const String & path_, const String & database
 StoragePtr StorageMergeTree::create(
 	const String & path_, const String & database_name_, const String & table_name_,
 	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & alias_columns_,
+	const ColumnDefaults & column_defaults_,
 	Context & context_,
 	ASTPtr & primary_expr_ast_,
 	const String & date_column_name_,
@@ -43,9 +51,12 @@ StoragePtr StorageMergeTree::create(
 	const String & sign_column_,
 	const MergeTreeSettings & settings_)
 {
-	StorageMergeTree * res = new StorageMergeTree(
-		path_, database_name_, table_name_, columns_, context_, primary_expr_ast_, date_column_name_,
-		sampling_expression_, index_granularity_, mode_, sign_column_, settings_);
+	auto res = new StorageMergeTree{
+		path_, database_name_, table_name_,
+		columns_, alias_columns_, column_defaults_,
+		context_, primary_expr_ast_, date_column_name_,
+		sampling_expression_, index_granularity_, mode_, sign_column_, settings_
+	};
 	StoragePtr res_ptr = res->thisPtr();
 
 	res->merge_task_handle = res->background_pool.addTask(std::bind(&StorageMergeTree::mergeTask, res, std::placeholders::_1));

@@ -28,6 +28,8 @@ public:
 		bool attach,
 		const String & path_, const String & database_name_, const String & name_,
 		NamesAndTypesListPtr columns_,
+		const NamesAndTypesList & alias_columns_,
+		const ColumnDefaults & column_defaults_,
 		Context & context_,
 		ASTPtr & primary_expr_ast_,
 		const String & date_column_name_,
@@ -52,13 +54,13 @@ public:
 
 	const NamesAndTypesList & getColumnsList() const override { return data.getColumnsList(); }
 
-	NameAndTypePair getColumn(const String &column_name) const
+	NameAndTypePair getColumn(const String & column_name) const
 	{
 		if (column_name == "_replicated") return NameAndTypePair("_replicated", new DataTypeUInt8);
 		return data.getColumn(column_name);
 	}
 
-	bool hasColumn(const String &column_name) const
+	bool hasColumn(const String & column_name) const
 	{
 		if (column_name == "_replicated") return true;
 		return data.hasColumn(column_name);
@@ -319,6 +321,8 @@ private:
 		bool attach,
 		const String & path_, const String & database_name_, const String & name_,
 		NamesAndTypesListPtr columns_,
+		const NamesAndTypesList & alias_columns_,
+		const ColumnDefaults & column_defaults_,
 		Context & context_,
 		ASTPtr & primary_expr_ast_,
 		const String & date_column_name_,

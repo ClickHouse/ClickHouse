@@ -21,4 +21,12 @@ public:
 	void setAlias(const String & to) override 		{ alias = to; }
 };
 
+/// helper for setting aliases and chaining result to other functions
+inline ASTPtr setAlias(ASTPtr ast, const String & alias) {
+	dynamic_cast<ASTWithAlias &>(*ast).alias = alias;
+
+	return ast;
+};
+
+
 }

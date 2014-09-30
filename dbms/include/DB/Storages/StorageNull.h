@@ -15,9 +15,13 @@ namespace DB
 class StorageNull : public IStorage
 {
 public:
-	static StoragePtr create(const std::string & name_, NamesAndTypesListPtr columns_)
+	static StoragePtr create(
+		const std::string & name_,
+		NamesAndTypesListPtr columns_,
+		const NamesAndTypesList & alias_columns_,
+		const ColumnDefaults & column_defaults_)
 	{
-		return (new StorageNull(name_, columns_))->thisPtr();
+		return (new StorageNull{name_, columns_, alias_columns_, column_defaults_})->thisPtr();
 	}
 
 	std::string getName() const { return "Null"; }
@@ -48,8 +52,12 @@ private:
 	String name;
 	NamesAndTypesListPtr columns;
 
-    StorageNull(const std::string & name_, NamesAndTypesListPtr columns_)
-		: name(name_), columns(columns_) {}
+    StorageNull(
+		const std::string & name_,
+		NamesAndTypesListPtr columns_,
+		const NamesAndTypesList & alias_columns_,
+		const ColumnDefaults & column_defaults_)
+		: IStorage{alias_columns_, column_defaults_}, name(name_), columns(columns_) {}
 };
 
 }

@@ -24,8 +24,13 @@ public:
 	  * date_column_name 	- имя столбца с датой;
 	  * index_granularity 	- на сколько строчек пишется одно значение индекса.
 	  */
-	static StoragePtr create(const String & path_, const String & database_name_, const String & table_name_,
+	static StoragePtr create(
+		const String & path_,
+		const String & database_name_,
+		const String & table_name_,
 		NamesAndTypesListPtr columns_,
+		const NamesAndTypesList & alias_columns_,
+		const ColumnDefaults & column_defaults_,
 		Context & context_,
 		ASTPtr & primary_expr_ast_,
 		const String & date_column_name_,
@@ -50,12 +55,12 @@ public:
 
 	const NamesAndTypesList & getColumnsList() const { return data.getColumnsList(); }
 
-	NameAndTypePair getColumn(const String &column_name) const
+	NameAndTypePair getColumn(const String & column_name) const
 	{
 		return data.getColumn(column_name);
 	}
 
-	bool hasColumn(const String &column_name) const
+	bool hasColumn(const String & column_name) const
 	{
 		return data.hasColumn(column_name);
 	}
@@ -153,16 +158,21 @@ private:
 
 	typedef Poco::SharedPtr<CurrentlyMergingPartsTagger> CurrentlyMergingPartsTaggerPtr;
 
-	StorageMergeTree(const String & path_, const String & database_name_, const String & table_name_,
-					NamesAndTypesListPtr columns_,
-					Context & context_,
-					ASTPtr & primary_expr_ast_,
-					const String & date_column_name_,
-					const ASTPtr & sampling_expression_, /// nullptr, если семплирование не поддерживается.
-					size_t index_granularity_,
-					MergeTreeData::Mode mode_,
-					const String & sign_column_,
-					const MergeTreeSettings & settings_);
+	StorageMergeTree(
+		const String & path_,
+		const String & database_name_,
+		const String & table_name_,
+		NamesAndTypesListPtr columns_,
+		const NamesAndTypesList & alias_columns_,
+		const ColumnDefaults & column_defaults_,
+		Context & context_,
+		ASTPtr & primary_expr_ast_,
+		const String & date_column_name_,
+		const ASTPtr & sampling_expression_, /// nullptr, если семплирование не поддерживается.
+		size_t index_granularity_,
+		MergeTreeData::Mode mode_,
+		const String & sign_column_,
+		const MergeTreeSettings & settings_);
 
 	/** Определяет, какие куски нужно объединять, и объединяет их.
 	  * Если aggressive - выбрать куски, не обращая внимание на соотношение размеров и их новизну (для запроса OPTIMIZE).

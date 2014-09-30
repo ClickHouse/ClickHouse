@@ -48,7 +48,8 @@ public:
 		/// Нам необходимо его пометить как имя базы данных, поскольку по умолчанию стоит значение column
 		typeid_cast<ASTIdentifier &>(*args[0]).kind = ASTIdentifier::Database;
 
-		return StorageMerge::create(getName(), chooseColumns(source_database, table_name_regexp, context), source_database, table_name_regexp, context);
+		return StorageMerge::create(getName(), chooseColumns(source_database, table_name_regexp, context),
+			source_database, table_name_regexp, context);
 	}
 
 private:

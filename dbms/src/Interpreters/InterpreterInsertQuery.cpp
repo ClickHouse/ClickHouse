@@ -75,7 +75,10 @@ void InterpreterInsertQuery::execute(ReadBuffer * remaining_data_istr)
 	table->write(query_ptr);
 
 	/// Создаем кортеж из нескольких стримов, в которые будем писать данные.
-	BlockOutputStreamPtr out = new AddingDefaultBlockOutputStream(new PushingToViewsBlockOutputStream(query.database, query.table, context, query_ptr), required_columns);
+	BlockOutputStreamPtr out{new AddingDefaultBlockOutputStream{
+		new PushingToViewsBlockOutputStream{query.database, query.table, context, query_ptr},
+		required_columns, table->column_defaults, context
+	}};
 
 	/// Какой тип запроса: INSERT VALUES | INSERT FORMAT | INSERT SELECT?
 	if (!query.select)
@@ -128,7 +131,10 @@ BlockIO InterpreterInsertQuery::execute()
 	table->write(query_ptr);
 
 	/// Создаем кортеж из нескольких стримов, в которые будем писать данные.
-	BlockOutputStreamPtr out = new AddingDefaultBlockOutputStream(new PushingToViewsBlockOutputStream(query.database, query.table, context, query_ptr), required_columns);
+	BlockOutputStreamPtr out{new AddingDefaultBlockOutputStream{
+		new PushingToViewsBlockOutputStream{query.database, query.table, context, query_ptr},
+		required_columns, table->column_defaults, context
+	}};
 
 	BlockIO res;
 	res.out_sample = getSampleBlock();

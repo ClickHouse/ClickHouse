@@ -21,6 +21,8 @@ namespace DB
 
 MergeTreeData::MergeTreeData(
 	const String & full_path_, NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & alias_columns_,
+	const ColumnDefaults & column_defaults_,
 	const Context & context_,
 	ASTPtr & primary_expr_ast_,
 	const String & date_column_name_, const ASTPtr & sampling_expression_,
@@ -31,7 +33,7 @@ MergeTreeData::MergeTreeData(
 	const String & log_name_,
 	bool require_part_metadata_,
 	BrokenPartCallback broken_part_callback_)
-	: context(context_),
+	: ITableDeclaration{alias_columns_, column_defaults_}, context(context_),
 	date_column_name(date_column_name_), sampling_expression(sampling_expression_),
 	index_granularity(index_granularity_),
 	mode(mode_), sign_column(sign_column_),

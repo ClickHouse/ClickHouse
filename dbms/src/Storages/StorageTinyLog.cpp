@@ -297,11 +297,18 @@ void TinyLogBlockOutputStream::write(const Block & block)
 }
 
 
-StorageTinyLog::StorageTinyLog(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, bool attach, size_t max_compress_block_size_)
-	: path(path_), name(name_), columns(columns_),
-		max_compress_block_size(max_compress_block_size_),
-		file_checker(path + escapeForFileName(name) + '/' + "sizes.json", *this),
-		log(&Logger::get("StorageTinyLog"))
+StorageTinyLog::StorageTinyLog(
+	const std::string & path_,
+	const std::string & name_,
+	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & alias_columns_,
+	const ColumnDefaults & column_defaults_,
+	bool attach,
+	size_t max_compress_block_size_)
+	: IStorage{alias_columns_, column_defaults_}, path(path_), name(name_), columns(columns_),
+	max_compress_block_size(max_compress_block_size_),
+	file_checker(path + escapeForFileName(name) + '/' + "sizes.json", *this),
+	log(&Logger::get("StorageTinyLog"))
 {
 	if (columns->empty())
 		throw Exception("Empty list of columns passed to StorageTinyLog constructor", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
@@ -318,9 +325,20 @@ StorageTinyLog::StorageTinyLog(const std::string & path_, const std::string & na
 		addFile(it->name, *it->type);
 }
 
-StoragePtr StorageTinyLog::create(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, bool attach, size_t max_compress_block_size_)
+StoragePtr StorageTinyLog::create(
+	const std::string & path_,
+	const std::string & name_,
+	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & alias_columns_,
+	const ColumnDefaults & column_defaults_,
+	bool attach,
+	size_t max_compress_block_size_)
 {
-	return (new StorageTinyLog(path_, name_, columns_, attach, max_compress_block_size_))->thisPtr();
+	return (new StorageTinyLog{
+		path_, name_,
+		columns_, alias_columns_, column_defaults_,
+		attach, max_compress_block_size_
+	})->thisPtr();
 }
 
 

@@ -25,6 +25,15 @@ public:
 		const String & table_name_regexp_,	/// Регексп имён таблиц-источников.
 		const Context & context_);			/// Известные таблицы.
 
+	static StoragePtr create(
+		const std::string & name_,			/// Имя таблицы.
+		NamesAndTypesListPtr columns_,		/// Список столбцов.
+		const NamesAndTypesList & alias_columns_,
+		const ColumnDefaults & column_defaults_,
+		const String & source_database_,	/// В какой БД искать таблицы-источники.
+		const String & table_name_regexp_,	/// Регексп имён таблиц-источников.
+		const Context & context_);			/// Известные таблицы.
+
 	std::string getName() const { return "Merge"; }
 	std::string getTableName() const { return name; }
 	bool supportsSampling() const { return true; }
@@ -46,7 +55,7 @@ public:
 
 	void drop() override {}
 	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) { name = new_table_name; }
-	
+
 	/// в подтаблицах добавлять и удалять столбы нужно вручную
 	/// структура подтаблиц не проверяется
 	void alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context);
@@ -58,10 +67,19 @@ private:
 	String source_database;
 	OptimizedRegularExpression table_name_regexp;
 	const Context & context;
-	
+
 	StorageMerge(
 		const std::string & name_,
 		NamesAndTypesListPtr columns_,
+		const String & source_database_,
+		const String & table_name_regexp_,
+		const Context & context_);
+
+	StorageMerge(
+		const std::string & name_,
+		NamesAndTypesListPtr columns_,
+		const NamesAndTypesList & alias_columns_,
+		const ColumnDefaults & column_defaults_,
 		const String & source_database_,
 		const String & table_name_regexp_,
 		const Context & context_);

@@ -40,16 +40,37 @@ NameAndTypePair ITableDeclaration::getRealColumn(const String & column_name) con
 	throw Exception("There is no column " + column_name + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 }
 
+NameAndTypePair ITableDeclaration::getAliasColumn(const String & column_name) const
+{
+	for (auto & column : alias_columns)
+		if (column.name == column_name)
+			return column;
+
+	throw Exception("There is no column " + column_name + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+}
+
+bool ITableDeclaration::hasAliasColumn(const String & column_name) const
+{
+	for (auto & column : alias_columns)
+		if (column.name == column_name)
+			return true;
+
+	return false;
+}
 
 bool ITableDeclaration::hasColumn(const String & column_name) const
 {
-	return hasRealColumn(column_name); /// По умолчанию считаем, что виртуальных столбцов в сторадже нет.
+	return hasRealColumn(column_name) || hasAliasColumn(column_name); /// По умолчанию считаем, что виртуальных столбцов в сторадже нет.
 }
-
 
 NameAndTypePair ITableDeclaration::getColumn(const String & column_name) const
 {
-	return getRealColumn(column_name); /// По умолчанию считаем, что виртуальных столбцов в сторадже нет.
+	const auto it = column_defaults.find(column_name);
+
+	if (it == std::end(column_defaults) || it->second.type == ColumnDefaultType::Default)
+		return getRealColumn(column_name); /// По умолчанию считаем, что виртуальных столбцов в сторадже нет.
+
+	return getAliasColumn(column_name);
 }
 
 

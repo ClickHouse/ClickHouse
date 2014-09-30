@@ -13,7 +13,22 @@ StorageMerge::StorageMerge(
 	const String & source_database_,
 	const String & table_name_regexp_,
 	const Context & context_)
-	: name(name_), columns(columns_), source_database(source_database_), table_name_regexp(table_name_regexp_), context(context_)
+	: name(name_), columns(columns_), source_database(source_database_),
+	  table_name_regexp(table_name_regexp_), context(context_)
+{
+}
+
+StorageMerge::StorageMerge(
+	const std::string & name_,
+	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & alias_columns_,
+	const ColumnDefaults & column_defaults_,
+	const String & source_database_,
+	const String & table_name_regexp_,
+	const Context & context_)
+	: IStorage{alias_columns_, column_defaults_},
+	name(name_), columns(columns_), source_database(source_database_),
+	table_name_regexp(table_name_regexp_), context(context_)
 {
 }
 
@@ -24,7 +39,25 @@ StoragePtr StorageMerge::create(
 	const String & table_name_regexp_,
 	const Context & context_)
 {
-	return (new StorageMerge(name_, columns_, source_database_, table_name_regexp_, context_))->thisPtr();
+	return (new StorageMerge{
+		name_, columns_,
+		source_database_, table_name_regexp_, context_
+	})->thisPtr();
+}
+
+StoragePtr StorageMerge::create(
+	const std::string & name_,
+	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & alias_columns_,
+	const ColumnDefaults & column_defaults_,
+	const String & source_database_,
+	const String & table_name_regexp_,
+	const Context & context_)
+{
+	return (new StorageMerge{
+		name_, columns_, alias_columns_, column_defaults_,
+		source_database_, table_name_regexp_, context_
+	})->thisPtr();
 }
 
 NameAndTypePair StorageMerge::getColumn(const String & column_name) const
@@ -33,12 +66,12 @@ NameAndTypePair StorageMerge::getColumn(const String & column_name) const
 	if (type)
 		return NameAndTypePair(column_name, type);
 
-	return getRealColumn(column_name);
+	return IStorage::getColumn(column_name);
 }
 
 bool StorageMerge::hasColumn(const String & column_name) const
 {
-	return VirtualColumnFactory::hasColumn(column_name) || hasRealColumn(column_name);
+	return VirtualColumnFactory::hasColumn(column_name) || IStorage::hasColumn(column_name);
 }
 
 BlockInputStreams StorageMerge::read(
@@ -173,4 +206,3 @@ void StorageMerge::alter(const AlterCommands & params, const String & database_n
 }
 
 }
-

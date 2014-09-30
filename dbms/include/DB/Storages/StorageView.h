@@ -10,8 +10,14 @@ namespace DB
 class StorageView : public IStorage {
 
 public:
-	static StoragePtr create(const String & table_name_, const String & database_name_,
-		Context & context_,	ASTPtr & query_, NamesAndTypesListPtr columns_);
+	static StoragePtr create(
+		const String & table_name_,
+		const String & database_name_,
+		Context & context_,
+		ASTPtr & query_,
+		NamesAndTypesListPtr columns_,
+		const NamesAndTypesList & alias_columns_,
+		const ColumnDefaults & column_defaults_);
 
 	virtual std::string getName() const { return "View"; }
 	virtual std::string getTableName() const { return table_name; }
@@ -37,8 +43,14 @@ protected:
 	Context & context;
 	NamesAndTypesListPtr columns;
 
-	StorageView(const String & table_name_, const String & database_name_,
-		Context & context_,	ASTPtr & query_, NamesAndTypesListPtr columns_);
+	StorageView(
+		const String & table_name_,
+		const String & database_name_,
+		Context & context_,
+		ASTPtr & query_,
+		NamesAndTypesListPtr columns_,
+		const NamesAndTypesList & alias_columns_,
+		const ColumnDefaults & column_defaults_);
 };
 
 }

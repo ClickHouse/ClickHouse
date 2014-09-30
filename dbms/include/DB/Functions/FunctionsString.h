@@ -12,6 +12,7 @@
 #include <DB/Columns/ColumnFixedString.h>
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Functions/IFunction.h>
+#include <statdaemons/ext/range.hpp>
 
 
 namespace DB
@@ -973,13 +974,16 @@ public:
 				+ toString(arguments.size()) + ", should be 2.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		if (!typeid_cast<const DataTypeString *>(&*arguments[0]) && !typeid_cast<const DataTypeFixedString *>(&*arguments[0]))
-			throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName(),
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-		if (!typeid_cast<const DataTypeString *>(&*arguments[1]) && !typeid_cast<const DataTypeFixedString *>(&*arguments[1]))
-			throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName(),
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		for (const auto arg_idx : ext::range(0, arguments.size()))
+		{
+			const auto arg = arguments[arg_idx].get();
+			if (!typeid_cast<const DataTypeString *>(arg) &&
+				!typeid_cast<const DataTypeFixedString *>(arg))
+				throw Exception{
+					"Illegal type " + arg->getName() + " of argument " + std::to_string(arg_idx) + " of function " + getName(),
+					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+				};
+		}
 
 		return new DataTypeString;
 	}

@@ -25,6 +25,8 @@ public:
 	static StoragePtr create(
 		const std::string & name_,			/// Имя таблицы.
 		NamesAndTypesListPtr columns_,		/// Список столбцов.
+		const NamesAndTypesList & alias_columns_,
+		const ColumnDefaults & column_defaults_,
 		const String & remote_database_,	/// БД на удалённых серверах.
 		const String & remote_table_,		/// Имя таблицы на удалённых серверах.
 		const String & cluster_name,
@@ -81,6 +83,18 @@ private:
 	StorageDistributed(
 		const std::string & name_,
 		NamesAndTypesListPtr columns_,
+		const String & remote_database_,
+		const String & remote_table_,
+		Cluster & cluster_,
+		Context & context_,
+		const ASTPtr & sharding_key_ = nullptr,
+		const String & data_path_ = String{});
+
+	StorageDistributed(
+		const std::string & name_,
+		NamesAndTypesListPtr columns_,
+		const NamesAndTypesList & alias_columns_,
+		const ColumnDefaults & column_defaults_,
 		const String & remote_database_,
 		const String & remote_table_,
 		Cluster & cluster_,

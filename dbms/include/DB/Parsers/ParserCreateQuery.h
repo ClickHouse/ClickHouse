@@ -2,6 +2,7 @@
 
 #include <DB/Parsers/IParserBase.h>
 #include <DB/Parsers/ExpressionElementParsers.h>
+#include <DB/Parsers/ExpressionListParsers.h>
 #include <DB/Parsers/ASTNameTypePair.h>
 #include <DB/Parsers/ASTColumnDeclaration.h>
 #include <DB/Parsers/ASTIdentifier.h>
@@ -114,7 +115,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, Pos end, ASTPtr 
 	ParserString s_default{"DEFAULT"};
 	ParserString s_materialized{"MATERIALIZED"};
 	ParserString s_alias{"ALIAS"};
-	ParserExpressionElement expr_parser;
+	ParserTernaryOperatorExpression expr_parser;
 
 	const auto begin = pos;
 	const auto reset_pos_and_return = [&pos, begin] {

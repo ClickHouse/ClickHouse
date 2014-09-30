@@ -4,6 +4,7 @@
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/Core/Exception.h>
 #include <DB/Core/Block.h>
+#include <DB/Storages/ColumnDefault.h>
 
 namespace DB
 {
@@ -35,6 +36,9 @@ public:
 	/** Присутствует ли реальный (невиртуальный) столбец с таким именем.
 	  */
 	virtual bool hasRealColumn(const String & column_name) const;
+
+	NameAndTypePair getAliasColumn(const String & column_name) const;
+	bool hasAliasColumn(const String & column_name) const;
 
 	/** Получить описание любого столбца по его имени.
 	  */
@@ -69,7 +73,15 @@ public:
 	  */
 	void check(const Block & block, bool need_all = false) const;
 
-	virtual ~ITableDeclaration() {}
+	virtual ~ITableDeclaration() = default;
+
+	ITableDeclaration() = default;
+	ITableDeclaration(const NamesAndTypesList & alias_columns, const ColumnDefaults & column_defaults)
+		: alias_columns{alias_columns}, column_defaults{column_defaults}
+	{}
+
+	NamesAndTypesList alias_columns{};
+	ColumnDefaults column_defaults{};
 };
 
 }

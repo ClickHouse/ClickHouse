@@ -9,6 +9,7 @@
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
+#include <DB/Storages/ColumnDefault.h>
 #include "ColumnsWithNameAndType.h"
 
 
@@ -19,6 +20,8 @@ namespace DB
   * Содержит также метаданные (типы) столбцов и их имена.
   * Позволяет вставлять, удалять столбцы в любом порядке, менять порядок столбцов.
   */
+
+class Context;
 
 class Block
 {
@@ -54,6 +57,7 @@ public:
 	void insert(size_t position, const ColumnWithNameAndType & elem);
 	/// вставить столбец в конец
 	void insert(const ColumnWithNameAndType & elem);
+	void insertDefault(const String & name, const DataTypePtr & type);
 	/// вставить столбец в конец, если столбца с таким именем ещё нет
 	void insertUnique(const ColumnWithNameAndType & elem);
 	/// удалить столбец в заданной позиции
@@ -62,6 +66,8 @@ public:
 	void erase(const String & name);
 	/// Добавляет в блок недостающие столбцы со значениями по-умолчанию
 	void addDefaults(NamesAndTypesListPtr required_columns);
+	void addDefaults(NamesAndTypesListPtr required_columns,
+		const ColumnDefaults & column_defaults, const Context & context);
 
 	ColumnWithNameAndType & getByPosition(size_t position);
 	const ColumnWithNameAndType & getByPosition(size_t position) const;

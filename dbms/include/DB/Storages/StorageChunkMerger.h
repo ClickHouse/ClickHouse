@@ -8,7 +8,7 @@
 
 namespace DB
 {
-	
+
 /** То и дело объединяет таблицы, подходящие под регэксп, в таблицы типа Chunks.
   * После объндинения заменяет исходные таблицы таблицами типа ChunkRef.
   * При чтении ведет себя как таблица типа Merge.
@@ -21,18 +21,20 @@ public:
 		const std::string & this_database_,/// Имя БД для этой таблицы.
 		const std::string & name_,			/// Имя таблицы.
 		NamesAndTypesListPtr columns_,		/// Список столбцов.
+		const NamesAndTypesList & alias_columns_,
+		const ColumnDefaults & column_defaults_,
 		const String & source_database_,	/// В какой БД искать таблицы-источники.
 		const String & table_name_regexp_,	/// Регексп имён таблиц-источников.
 		const std::string & destination_name_prefix_, /// Префикс имен создаваемых таблиц типа Chunks.
 		size_t chunks_to_merge_,			/// Сколько чанков сливать в одну группу.
 		Context & context_);			/// Известные таблицы.
-	
+
 	std::string getName() const { return "ChunkMerger"; }
 	std::string getTableName() const { return name; }
-	
+
 	const NamesAndTypesList & getColumnsList() const { return *columns; }
-	NameAndTypePair getColumn(const String &column_name) const;
-	bool hasColumn(const String &column_name) const;
+	NameAndTypePair getColumn(const String & column_name) const;
+	bool hasColumn(const String & column_name) const;
 
 	BlockInputStreams read(
 		const Names & column_names,
@@ -45,9 +47,9 @@ public:
 	void shutdown();
 
 	Block getBlockWithVirtualColumns(const Storages & selected_tables) const;
-	
+
 	~StorageChunkMerger();
-	
+
 private:
 	String this_database;
 	String name;
@@ -58,13 +60,13 @@ private:
 	size_t chunks_to_merge;
 	Context & context;
 	Settings settings;
-	
+
 	boost::thread merge_thread;
 	Poco::Event cancel_merge_thread;
-	
+
 	Logger * log;
 	volatile bool shutdown_called;
-	
+
 	/// Название виртуального столбца, отвечающего за имя таблицы, из которой идет чтение. (Например "_table")
 	String _table_column_name;
 
@@ -72,12 +74,14 @@ private:
 		const std::string & this_database_,
 		const std::string & name_,
 		NamesAndTypesListPtr columns_,
+		const NamesAndTypesList & alias_columns_,
+		const ColumnDefaults & column_defaults_,
 		const String & source_database_,
 		const String & table_name_regexp_,
 		const std::string & destination_name_prefix_,
 		size_t chunks_to_merge_,
 		Context & context_);
-	
+
 	void mergeThread();
 	bool maybeMergeSomething();
 	Storages selectChunksToMerge();
@@ -88,5 +92,5 @@ private:
 	/// Нужно смотреть, залочив mutex из контекста.
 	static TableNames currently_written_groups;
 };
-	
+
 }

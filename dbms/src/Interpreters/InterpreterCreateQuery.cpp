@@ -89,6 +89,7 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 	StoragePtr res;
 	String storage_name;
 	NamesAndTypesListPtr columns = new NamesAndTypesList;
+	NamesAndTypesList alias_columns{};
 	ColumnDefaults column_defaults{};
 
 	StoragePtr as_storage;
@@ -118,7 +119,8 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 		/// Получаем список столбцов
 		if (create.columns)
 		{
-			auto && columns_and_defaults = parseColumns(create.columns, context.getDataTypeFactory());
+			auto && columns_and_defaults = parseColumns(create.columns);
+			alias_columns = removeAliasColumns(columns_and_defaults);
 			columns = new NamesAndTypesList{std::move(columns_and_defaults.first)};
 			column_defaults = std::move(columns_and_defaults.second);
 		}
@@ -134,7 +136,7 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 			throw Exception("Incorrect CREATE query: required list of column descriptions or AS section or SELECT.", ErrorCodes::INCORRECT_QUERY);
 
 		/// Даже если в запросе был список столбцов, на всякий случай приведем его к стандартному виду (развернем Nested).
-		ASTPtr new_columns = formatColumns(*columns);
+		ASTPtr new_columns = formatColumns(*columns, alias_columns, column_defaults);
 		if (create.columns)
 		{
 			auto it = std::find(create.children.begin(), create.children.end(), create.columns);
@@ -183,7 +185,8 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 
 		res = context.getStorageFactory().get(
 			storage_name, data_path, table_name, database_name, context,
-			context.getGlobalContext(), query_ptr, columns, create.attach);
+			context.getGlobalContext(), query_ptr,
+			columns, alias_columns, column_defaults, create.attach);
 
 		/// Проверка наличия метаданных таблицы на диске и создание метаданных
 		if (!assume_metadata_exists && !create.is_temporary)
@@ -238,32 +241,23 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 	return res;
 }
 
-InterpreterCreateQuery::ColumnsAndDefaults InterpreterCreateQuery::parseColumns(
-	ASTPtr expression_list, const DataTypeFactory & data_type_factory)
+InterpreterCreateQuery::ColumnsAndDefaults InterpreterCreateQuery::parseColumns(ASTPtr expression_list)
 {
+	auto & column_list_ast = typeid_cast<ASTExpressionList &>(*expression_list);
+
 	/// list of table columns in correct order
-	NamesAndTypesList columns{};
+	NamesAndTypesList columns{}, known_type_columns{};
 	ColumnDefaults defaults{};
 
-	auto & columns_list = typeid_cast<ASTExpressionList &>(*expression_list);
-
-	using postprocess_column = std::pair<NameAndTypePair *, ASTColumnDeclaration *>;
 	/// Columns requiring type-deduction or default_expression type-check
-	std::vector<postprocess_column> defaulted_columns{};
+	std::vector<std::pair<NameAndTypePair *, ASTColumnDeclaration *>> defaulted_columns{};
 
 	/** all default_expressions as a single expression list,
 	 *  mixed with conversion-columns for each explicitly specified type */
 	ASTPtr default_expr_list{new ASTExpressionList};
-	default_expr_list->children.reserve(columns_list.children.size());
+	default_expr_list->children.reserve(column_list_ast.children.size());
 
-	/// helper for setting aliases and chaining result to other functions
-	const auto set_alias = [] (ASTPtr ast, const String & alias) {
-		dynamic_cast<ASTWithAlias &>(*ast).alias = alias;
-
-		return ast;
-	};
-
-	for (auto & ast : columns_list.children)
+	for (auto & ast : column_list_ast.children)
 	{
 		auto & col_decl = typeid_cast<ASTColumnDeclaration &>(*ast);
 
@@ -271,7 +265,8 @@ InterpreterCreateQuery::ColumnsAndDefaults InterpreterCreateQuery::parseColumns(
 		{
 			const auto & type_range = col_decl.type->range;
 			columns.emplace_back(col_decl.name,
-				data_type_factory.get({ type_range.first, type_range.second }));
+				context.getDataTypeFactory().get({ type_range.first, type_range.second }));
+			known_type_columns.emplace_back(columns.back());
 		}
 		else
 			columns.emplace_back(col_decl.name, nullptr);
@@ -290,18 +285,18 @@ InterpreterCreateQuery::ColumnsAndDefaults InterpreterCreateQuery::parseColumns(
 				const auto & final_column_name = col_decl.name;
 				const auto conversion_function_name = "to" + columns.back().type->getName();
 
-				default_expr_list->children.emplace_back(set_alias(
+				default_expr_list->children.emplace_back(setAlias(
 					makeASTFunction(conversion_function_name, ASTPtr{new ASTIdentifier{{}, tmp_column_name}}),
 					final_column_name));
 
-				default_expr_list->children.emplace_back(set_alias(col_decl.default_expression->clone(), tmp_column_name));
+				default_expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), tmp_column_name));
 			}
 			else
 			{
-				default_expr_list->children.emplace_back(set_alias(col_decl.default_expression->clone(), col_decl.name));
+				default_expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), col_decl.name));
 				defaults.emplace(col_decl.name, ColumnDefault{
 					columnDefaultTypeFromString(col_decl.default_specifier),
-					col_decl.default_expression
+					setAlias(col_decl.default_expression, col_decl.name)
 				});
 			}
 		}
@@ -310,7 +305,7 @@ InterpreterCreateQuery::ColumnsAndDefaults InterpreterCreateQuery::parseColumns(
 	/// set missing types and wrap default_expression's in a conversion-function if necessary
 	if (!defaulted_columns.empty())
 	{
-		const auto actions = ExpressionAnalyzer{default_expr_list, context, columns}.getActions(true);
+		const auto actions = ExpressionAnalyzer{default_expr_list, context, known_type_columns}.getActions(true);
 		const auto block = actions->getSampleBlock();
 
 		for (auto & column : defaulted_columns)
@@ -339,12 +334,34 @@ InterpreterCreateQuery::ColumnsAndDefaults InterpreterCreateQuery::parseColumns(
 
 			defaults.emplace(col_decl_ptr->name, ColumnDefault{
 				columnDefaultTypeFromString(col_decl_ptr->default_specifier),
-				col_decl_ptr->default_expression
+				setAlias(col_decl_ptr->default_expression, col_decl_ptr->name)
 			});
 		}
 	}
 
 	return { *DataTypeNested::expandNestedColumns(columns), defaults };
+}
+
+NamesAndTypesList InterpreterCreateQuery::removeAliasColumns(ColumnsAndDefaults & columns_and_defaults)
+{
+	auto & columns = columns_and_defaults.first;
+	auto & defaults = columns_and_defaults.second;
+
+	NamesAndTypesList alias_columns{};
+
+	for (auto it = std::begin(columns); it != std::end(columns);)
+	{
+		const auto jt = defaults.find(it->name);
+		if (jt != std::end(defaults) && jt->second.type != ColumnDefaultType::Default)
+		{
+			alias_columns.push_back(*it);
+			it = columns.erase(it);
+		}
+		else
+			++it;
+	}
+
+	return alias_columns;
 }
 
 ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns)
@@ -375,11 +392,45 @@ ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns)
 	return columns_list_ptr;
 }
 
-DataTypePtr InterpreterCreateQuery::deduceType(const ASTPtr & expr, const NamesAndTypesList & columns) const
+ASTPtr InterpreterCreateQuery::formatColumns(NamesAndTypesList columns,
+	const NamesAndTypesList & alias_columns,
+	const ColumnDefaults & column_defaults)
 {
-	const auto actions = ExpressionAnalyzer{expr, context, columns}.getActions(false);
+	columns.insert(std::end(columns), std::begin(alias_columns), std::end(alias_columns));
 
-	return actions->getSampleBlock().getByName(expr->getColumnName()).type;
+	ASTPtr columns_list_ptr{new ASTExpressionList};
+	ASTExpressionList & columns_list = typeid_cast<ASTExpressionList &>(*columns_list_ptr);
+
+	for (const auto & column : columns)
+	{
+		const auto column_declaration = new ASTColumnDeclaration;
+		ASTPtr column_declaration_ptr{column_declaration};
+
+		column_declaration->name = column.name;
+
+		StringPtr type_name{new String(column.type->getName())};
+		auto pos = type_name->data();
+		const auto end = pos + type_name->size();
+
+		ParserIdentifierWithOptionalParameters storage_p;
+		Expected expected{""};
+		if (!storage_p.parse(pos, end, column_declaration->type, expected))
+			throw Exception("Cannot parse data type.", ErrorCodes::SYNTAX_ERROR);
+
+		column_declaration->type->query_string = type_name;
+
+		const auto it = column_defaults.find(column.name);
+		if (it != std::end(column_defaults))
+		{
+			column_declaration->default_specifier = toString(it->second.type);
+			column_declaration->default_expression = setAlias(it->second.expression->clone(), "");
+		}
+
+		columns_list.children.push_back(column_declaration_ptr);
+	}
+
+	return columns_list_ptr;
 }
+
 
 }

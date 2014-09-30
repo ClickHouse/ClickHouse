@@ -53,14 +53,44 @@ void MemoryBlockOutputStream::write(const Block & block)
 }
 
 
-StorageMemory::StorageMemory(const std::string & name_, NamesAndTypesListPtr columns_)
+StorageMemory::StorageMemory(
+	const std::string & name_,
+	NamesAndTypesListPtr columns_)
 	: name(name_), columns(columns_)
 {
 }
 
-StoragePtr StorageMemory::create(const std::string & name_, NamesAndTypesListPtr columns_)
+
+StorageMemory::StorageMemory(
+	const std::string & name_,
+	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & alias_columns_,
+	const ColumnDefaults & column_defaults_)
+	: IStorage{alias_columns_, column_defaults_},
+	name(name_), columns(columns_)
 {
-	return (new StorageMemory(name_, columns_))->thisPtr();
+}
+
+
+StoragePtr StorageMemory::create(
+	const std::string & name_,
+	NamesAndTypesListPtr columns_)
+{
+	return (new StorageMemory{
+		name_, columns_
+	})->thisPtr();
+}
+
+StoragePtr StorageMemory::create(
+	const std::string & name_,
+	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & alias_columns_,
+	const ColumnDefaults & column_defaults_)
+{
+	return (new StorageMemory{
+		name_, columns_,
+		alias_columns_, column_defaults_
+	})->thisPtr();
 }
 
 
@@ -78,7 +108,7 @@ BlockInputStreams StorageMemory::read(
 	Poco::ScopedLock<Poco::FastMutex> lock(mutex);
 
 	size_t size = data.size();
-	
+
 	if (threads > size)
 		threads = size;
 
@@ -91,14 +121,14 @@ BlockInputStreams StorageMemory::read(
 
 		std::advance(begin, thread * size / threads);
 		std::advance(end, (thread + 1) * size / threads);
-		
+
 		res.push_back(new MemoryBlockInputStream(column_names, begin, end));
 	}
-	
+
 	return res;
 }
 
-	
+
 BlockOutputStreamPtr StorageMemory::write(
 	ASTPtr query)
 {

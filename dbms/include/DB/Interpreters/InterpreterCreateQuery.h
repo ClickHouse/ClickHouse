@@ -25,13 +25,18 @@ public:
 
 	/// Список столбцов с типами в AST.
 	static ASTPtr formatColumns(const NamesAndTypesList & columns);
+	static ASTPtr formatColumns(
+		NamesAndTypesList columns,
+		const NamesAndTypesList & alias_columns,
+		const ColumnDefaults & column_defaults);
 
 private:
 	/// AST в список столбцов с типами. Столбцы типа Nested развернуты в список настоящих столбцов.
 	using ColumnsAndDefaults = std::pair<NamesAndTypesList, ColumnDefaults>;
-	ColumnsAndDefaults parseColumns(ASTPtr expression_list, const DataTypeFactory & data_type_factory);
+	ColumnsAndDefaults parseColumns(ASTPtr expression_list);
 
-	DataTypePtr deduceType(const ASTPtr & expr, const NamesAndTypesList & columns) const;
+	/// removes alias columns from the columns list and return them in a separate list
+	static NamesAndTypesList removeAliasColumns(ColumnsAndDefaults & columns_and_defaults);
 
 	ASTPtr query_ptr;
 	Context context;

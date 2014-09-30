@@ -29,7 +29,7 @@ public:
 	String getName() const { return "TinyLogBlockInputStream"; }
 
 	String getID() const;
-	
+
 protected:
 	Block readImpl();
 private:
@@ -89,7 +89,7 @@ private:
 
 	typedef std::map<std::string, std::unique_ptr<Stream> > FileStreams;
 	FileStreams streams;
-	
+
 	typedef std::set<std::string> OffsetColumns;
 
 	void addStream(const String & name, const IDataType & type, size_t level = 0);
@@ -111,7 +111,14 @@ public:
 	  *  состоящую из указанных столбцов.
 	  * Если не указано attach - создать директорию, если её нет.
 	  */
-	static StoragePtr create(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, bool attach, size_t max_compress_block_size_ = DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
+	static StoragePtr create(
+		const std::string & path_,
+		const std::string & name_,
+		NamesAndTypesListPtr columns_,
+		const NamesAndTypesList & alias_columns_,
+		const ColumnDefaults & column_defaults_,
+		bool attach,
+		size_t max_compress_block_size_ = DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
 
 	std::string getName() const { return "TinyLog"; }
 	std::string getTableName() const { return name; }
@@ -130,7 +137,7 @@ public:
 		ASTPtr query);
 
 	void drop() override;
-	
+
 	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name);
 
 	bool checkData() const override;
@@ -144,7 +151,7 @@ public:
 
 	Files_t & getFiles();
 
-	std::string full_path() { return path + escapeForFileName(name) + '/';} 
+	std::string full_path() { return path + escapeForFileName(name) + '/';}
 
 private:
 	String path;
@@ -159,8 +166,15 @@ private:
 
 	Logger * log;
 
-	StorageTinyLog(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, bool attach, size_t max_compress_block_size_);
-	
+	StorageTinyLog(
+		const std::string & path_,
+		const std::string & name_,
+		NamesAndTypesListPtr columns_,
+		const NamesAndTypesList & alias_columns_,
+		const ColumnDefaults & column_defaults_,
+		bool attach,
+		size_t max_compress_block_size_);
+
 	void addFile(const String & column_name, const IDataType & type, size_t level = 0);
 };
 

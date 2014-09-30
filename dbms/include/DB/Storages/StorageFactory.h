@@ -23,6 +23,8 @@ public:
 		Context & context,
 		ASTPtr & query,
 		NamesAndTypesListPtr columns,
+		const NamesAndTypesList & alias_columns,
+		const ColumnDefaults & column_defaults,
 		bool attach) const;
 };
 

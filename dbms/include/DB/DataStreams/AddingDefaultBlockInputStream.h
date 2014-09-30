@@ -5,6 +5,7 @@
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/Columns/ColumnConst.h>
 
+#include <DB/Storages/ColumnDefault.h>
 
 
 namespace DB
@@ -19,8 +20,11 @@ class AddingDefaultBlockInputStream : public IProfilingBlockInputStream
 public:
 	AddingDefaultBlockInputStream(
 		BlockInputStreamPtr input_,
-		NamesAndTypesListPtr required_columns_)
-		: required_columns(required_columns_)
+		NamesAndTypesListPtr required_columns_,
+		const ColumnDefaults & column_defaults_,
+		const Context & context_)
+		: required_columns(required_columns_),
+		  column_defaults(column_defaults_), context(context_)
 	{
 		children.push_back(input_);
 	}
@@ -45,12 +49,14 @@ protected:
 		Block res = children.back()->read();
 		if (!res)
 			return res;
-		res.addDefaults(required_columns);
+		res.addDefaults(required_columns, column_defaults, context);
 		return res;
 	}
 
 private:
 	NamesAndTypesListPtr required_columns;
+	const ColumnDefaults & column_defaults;
+	Context context;
 };
 
 }

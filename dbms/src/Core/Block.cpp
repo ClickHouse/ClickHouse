@@ -8,6 +8,12 @@
 #include <DB/Columns/ColumnArray.h>
 #include <DB/DataTypes/DataTypeNested.h>
 
+#include <DB/Parsers/ASTExpressionList.h>
+#include <DB/Interpreters/ExpressionAnalyzer.h>
+#include <statdaemons/stdext.h>
+
+#include <DB/Parsers/formatAST.h>
+
 
 namespace DB
 {
@@ -21,18 +27,42 @@ Block::Block(const Block & other)
 
 void Block::addDefaults(NamesAndTypesListPtr required_columns)
 {
-	for (NamesAndTypesList::const_iterator it = required_columns->begin(); it != required_columns->end(); ++it)
+	for (const auto & column : *required_columns)
+		if (!has(column.name))
+			insertDefault(column.name, column.type);
+}
+
+void Block::addDefaults(NamesAndTypesListPtr required_columns,
+	const ColumnDefaults & column_defaults, const Context & context)
+{
+	ASTPtr default_expr_list{stdext::make_unique<ASTExpressionList>().release()};
+
+	for (const auto & column : *required_columns)
 	{
-		if (!has(it->name))
-		{
-			ColumnWithNameAndType col;
-			col.name = it->name;
-			col.type = it->type;
-			col.column = dynamic_cast<IColumnConst &>(*it->type->createConstColumn(
-				rows(), it->type->getDefault())).convertToFullColumn();
-			insert(col);
-		}
+		if (has(column.name))
+			continue;
+
+		const auto it = column_defaults.find(column.name);
+
+		if (it == column_defaults.end())
+			insertDefault(column.name, column.type);
+		else
+			default_expr_list->children.emplace_back(it->second.expression);
 	}
+
+	/// nothing to evaluate
+	if (default_expr_list->children.empty())
+		return;
+
+	/** ExpressionAnalyzer eliminates "unused" columns, in order to ensure theri safety
+	 *	we are going to operate on a copy instead of original block */
+	Block copy_block{*this};
+	/// evaluate default values for defaulted columns
+	ExpressionAnalyzer{default_expr_list, context, *required_columns}.getActions(true)->execute(copy_block);
+
+	/// move evaluated columns to original block
+	for (auto & column_name_type : copy_block.getColumns())
+		insert(std::move(column_name_type));
 }
 
 Block & Block::operator= (const Block & other)
@@ -81,6 +111,16 @@ void Block::insert(const ColumnWithNameAndType & elem)
 	index_by_name[elem.name] = it;
 	index_by_position.push_back(it);
 }
+
+void Block::insertDefault(const String & name, const DataTypePtr & type)
+{
+	insert({
+		dynamic_cast<IColumnConst &>(*type->createConstColumn(rows(),
+			type->getDefault())).convertToFullColumn(),
+		type, name
+	});
+}
+
 
 
 void Block::insertUnique(const ColumnWithNameAndType & elem)

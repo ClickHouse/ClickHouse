@@ -64,11 +64,11 @@ private:
 			if (offset)
 				plain.seek(offset);
 		}
-		
+
 		ReadBufferFromFile plain;
 		CompressedReadBuffer compressed;
 	};
-	
+
 	typedef std::map<std::string, std::unique_ptr<Stream> > FileStreams;
 	FileStreams streams;
 
@@ -97,7 +97,7 @@ private:
 		{
 			plain_offset = Poco::File(data_path).getSize();
 		}
-		
+
 		WriteBufferFromFile plain;
 		CompressedWriteBuffer compressed;
 
@@ -111,12 +111,12 @@ private:
 	};
 
 	typedef std::vector<std::pair<size_t, Mark> > MarksForColumns;
-	
+
 	typedef std::map<std::string, std::unique_ptr<Stream> > FileStreams;
 	FileStreams streams;
-	
+
 	typedef std::set<std::string> OffsetColumns;
-	
+
 	WriteBufferFromFile marks_stream; /// Объявлен ниже lock, чтобы файл открывался при захваченном rwlock.
 
 	void addStream(const String & name, const IDataType & type, size_t level = 0);
@@ -139,8 +139,14 @@ public:
 	  *  (корректность имён и путей не проверяется)
 	  *  состоящую из указанных столбцов; создать файлы, если их нет.
 	  */
-	static StoragePtr create(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, size_t max_compress_block_size_ = DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
-	
+	static StoragePtr create(
+		const std::string & path_,
+		const std::string & name_,
+		NamesAndTypesListPtr columns_,
+		const NamesAndTypesList & alias_columns_,
+		const ColumnDefaults & column_defaults_,
+		size_t max_compress_block_size_ = DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
+
 	std::string getName() const { return "Log"; }
 	std::string getTableName() const { return name; }
 
@@ -193,16 +199,22 @@ protected:
 		throw Exception("There is no column " + _table_column_name + " in table " + getTableName(), ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 	}
 
-	StorageLog(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, size_t max_compress_block_size_);
-	
+	StorageLog(
+		const std::string & path_,
+		const std::string & name_,
+		NamesAndTypesListPtr columns_,
+		const NamesAndTypesList & alias_columns_,
+		const ColumnDefaults & column_defaults_,
+		size_t max_compress_block_size_);
+
 	/// Прочитать файлы с засечками, если они ещё не прочитаны.
 	/// Делается лениво, чтобы при большом количестве таблиц, сервер быстро стартовал.
 	/// Нельзя вызывать с залоченным на запись rwlock.
 	void loadMarks();
-	
+
 	/// Можно вызывать при любом состоянии rwlock.
 	size_t marksCount();
-	
+
 	BlockInputStreams read(
 		size_t from_mark,
 		size_t to_mark,
@@ -212,14 +224,14 @@ protected:
 		QueryProcessingStage::Enum & processed_stage,
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
 		unsigned threads = 1);
-	
+
 private:
 	Files_t files; /// name -> data
 
 	Names column_names; /// column_index -> name
-	
+
 	Poco::File marks_file;
-	
+
 	/// Порядок добавления файлов не должен меняться: он соответствует порядку столбцов в файле с засечками.
 	void addFile(const String & column_name, const IDataType & type, size_t level = 0);
 

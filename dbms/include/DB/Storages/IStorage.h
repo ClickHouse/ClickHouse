@@ -62,7 +62,7 @@ public:
 	/** Возвращает true, если хранилище поддерживает запросы с секцией FINAL.
 	 */
 	virtual bool supportsFinal() const { return false; }
-	
+
 	/** Возвращает true, если хранилище поддерживает запросы с секцией PREWHERE.
 	 */
 	virtual bool supportsPrewhere() const { return false; }
@@ -245,7 +245,7 @@ public:
 	virtual void shutdown() {}
 
 	/** Возвращает владеющий указатель на себя.
-	  */ 
+	  */
 	std::shared_ptr<IStorage> thisPtr()
 	{
 		std::shared_ptr<IStorage> res = this_ptr.lock();
@@ -257,7 +257,7 @@ public:
 		return res;
 	}
 
-	bool is_dropped;
+	bool is_dropped{false};
 
 	/// Поддерживается ли индекс в секции IN
 	virtual bool supportsIndexForIn() const { return false; };
@@ -266,7 +266,7 @@ public:
 	virtual bool checkData() const { throw DB::Exception("Check query is not supported for " + getName() + " storage"); }
 
 protected:
-	IStorage() : is_dropped(false) {}
+	using ITableDeclaration::ITableDeclaration;
 
 private:
 	std::weak_ptr<IStorage> this_ptr;

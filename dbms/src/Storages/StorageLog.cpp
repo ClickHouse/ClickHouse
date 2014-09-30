@@ -409,8 +409,16 @@ void LogBlockOutputStream::writeMarks(MarksForColumns marks)
 }
 
 
-StorageLog::StorageLog(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, size_t max_compress_block_size_)
-	: path(path_), name(name_), columns(columns_), loaded_marks(false), max_compress_block_size(max_compress_block_size_),
+StorageLog::StorageLog(
+	const std::string & path_,
+	const std::string & name_,
+	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & alias_columns_,
+	const ColumnDefaults & column_defaults_,
+	size_t max_compress_block_size_)
+	: IStorage{alias_columns_, column_defaults_},
+	path(path_), name(name_), columns(columns_),
+	loaded_marks(false), max_compress_block_size(max_compress_block_size_),
 	file_checker(path + escapeForFileName(name) + '/' + "sizes.json", *this)
 {
 	if (columns->empty())
@@ -425,9 +433,19 @@ StorageLog::StorageLog(const std::string & path_, const std::string & name_, Nam
 	marks_file = Poco::File(path + escapeForFileName(name) + '/' + DBMS_STORAGE_LOG_MARKS_FILE_NAME);
 }
 
-StoragePtr StorageLog::create(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, size_t max_compress_block_size_)
+StoragePtr StorageLog::create(
+	const std::string & path_,
+	const std::string & name_,
+	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & alias_columns_,
+	const ColumnDefaults & column_defaults_,
+	size_t max_compress_block_size_)
 {
-	return (new StorageLog(path_, name_, columns_, max_compress_block_size_))->thisPtr();
+	return (new StorageLog{
+		path_, name_,
+		columns_, alias_columns_, column_defaults_,
+		max_compress_block_size_
+	})->thisPtr();
 }
 
 
