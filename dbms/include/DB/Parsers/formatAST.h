@@ -73,4 +73,12 @@ void formatAST(const ASTShowProcesslistQuery 	& ast, std::ostream & s,
 String formatColumnsForCreateQuery(NamesAndTypesList & columns);
 String backQuoteIfNeed(const String & x);
 
+inline String queryToString(const ASTPtr & query)
+{
+	std::ostringstream out;
+	formatAST(*query, out, 0, false, true);
+
+	return out.str();
+}
+
 }

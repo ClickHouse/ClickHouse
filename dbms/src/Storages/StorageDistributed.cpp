@@ -5,7 +5,6 @@
 #include <DB/Storages/VirtualColumnFactory.h>
 #include <DB/Storages/Distributed/DistributedBlockOutputStream.h>
 #include <DB/Storages/Distributed/DirectoryMonitor.h>
-#include <DB/Storages/Distributed/queryToString.h>
 #include <DB/Common/escapeForFileName.h>
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>
