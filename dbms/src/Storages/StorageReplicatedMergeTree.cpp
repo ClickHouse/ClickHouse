@@ -1731,7 +1731,7 @@ void StorageReplicatedMergeTree::partCheckThread()
 					part_name = parts_to_check_queue.front();
 				}
 			}
-			if (part_name.empty())
+			if (part_name.empty())	/// TODO Здесь race condition?
 			{
 				parts_to_check_event.wait();
 				continue;

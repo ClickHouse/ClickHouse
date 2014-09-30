@@ -524,6 +524,8 @@ public:
 		friend class MergeTreeData;
 
 		MergeTreeData * data = nullptr;
+
+		/// Что делать для отката операции.
 		DataPartsVector removed_parts;
 		DataPartsVector added_parts;
 	};
@@ -652,7 +654,7 @@ public:
 	DataPartPtr getPartIfExists(const String & part_name);
 
 	/** Переименовывает временный кусок в постоянный и добавляет его в рабочий набор.
-	  * Если increment!=nullptr, индекс куска берется из инкремента. Иначе индекс куска не меняется.
+	  * Если increment != nullptr, индекс куска берется из инкремента. Иначе индекс куска не меняется.
 	  * Предполагается, что кусок не пересекается с существующими.
 	  * Если out_transaction не nullptr, присваивает туда объект, позволяющий откатить добавление куска (но не переименование).
 	  */

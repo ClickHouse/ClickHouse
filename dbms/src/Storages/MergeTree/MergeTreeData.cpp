@@ -310,8 +310,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts()
 	time_t now = time(0);
 	for (DataParts::iterator it = all_data_parts.begin(); it != all_data_parts.end();)
 	{
-		int ref_count = it->use_count();
-		if (ref_count == 1 && /// После этого ref_count не может увеличиться.
+		if (it->unique() && /// После этого ref_count не может увеличиться.
 			(*it)->remove_time < now &&
 			now - (*it)->remove_time > settings.old_parts_lifetime)
 		{
@@ -639,7 +638,7 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
 	MutableDataPartPtr & part, Increment * increment, Transaction * out_transaction)
 {
 	if (out_transaction && out_transaction->data)
-		throw Exception("Using the same MergeTreeData::Transaction for overlapping transactions is invalid");
+		throw Exception("Using the same MergeTreeData::Transaction for overlapping transactions is invalid", ErrorCodes::LOGICAL_ERROR);
 
 	LOG_TRACE(log, "Renaming " << part->name << ".");
 
