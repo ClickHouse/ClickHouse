@@ -106,7 +106,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 	ASTSelectQuery & select = *typeid_cast<ASTSelectQuery*>(&*query);
 	if (settings.merge_tree_optimize_where)
-		MergeTreeWhereOptimizer{select, data, column_names_to_return};
+		MergeTreeWhereOptimizer{select, data, column_names_to_return, log};
 
 	if (select.sample_size)
 	{
