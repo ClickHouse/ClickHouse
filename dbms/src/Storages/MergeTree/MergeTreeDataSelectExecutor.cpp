@@ -105,7 +105,6 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	ExpressionActionsPtr filter_expression;
 
 	ASTSelectQuery & select = *typeid_cast<ASTSelectQuery*>(&*query);
-	std::cout << "setting.merge_tree_optimize_where = " << settings.merge_tree_optimize_where << std::endl;
 	if (settings.merge_tree_optimize_where)
 		MergeTreeWhereOptimizer{select, data, column_names_to_return};
 
