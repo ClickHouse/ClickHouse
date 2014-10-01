@@ -1654,6 +1654,7 @@ void StorageReplicatedMergeTree::alterThread()
 				force_recheck_parts = false;
 			}
 
+			parts.clear();
 			alter_thread_event->wait();
 		}
 		catch (...)
