@@ -96,7 +96,6 @@ private:
 		ColumnWithNameAndType default_type_column{new ColumnString, new DataTypeString, "default_type" };
 		ColumnWithNameAndType default_expression_column{new ColumnString, new DataTypeString, "default_expression" };;
 
-		auto has_defaults = false;
 		for (const auto column : columns)
 		{
 			name_column.column->insert(column.name);
@@ -110,18 +109,14 @@ private:
 			}
 			else
 			{
-				has_defaults = true;
 				default_type_column.column->insert(toString(it->second.type));
 				default_expression_column.column->insert(queryToString(
 					setAlias(it->second.expression->clone(), "")));
 			}
 		}
 
-
 		return new OneBlockInputStream{
-			has_defaults
-			? Block{name_column, type_column, default_type_column, default_expression_column}
-			: Block{name_column, type_column}
+			{name_column, type_column, default_type_column, default_expression_column}
 		};
 	}
 };
