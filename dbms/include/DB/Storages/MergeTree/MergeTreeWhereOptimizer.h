@@ -204,7 +204,7 @@ private:
 
 	void swapConditions(ASTPtr & from, ASTPtr & to) const
 	{
-		LOG_DEBUG(log, "MergeTreeWhereOptimizer: condition `" << from << "` move to PREWHERE");
+		LOG_DEBUG(log, "MergeTreeWhereOptimizer: condition `" << from << "` moved to PREWHERE");
 
 		std::swap(from, to);
 	}
