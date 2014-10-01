@@ -214,7 +214,9 @@ BlockInputStreams StorageSystemParts::read(
 				bytes_column->insert(static_cast<size_t>(part->size_in_bytes));
 				modification_time_column->insert(part->modification_time);
 				remove_time_column->insert(part->remove_time);
-				refcount_column->insert(part.use_count());
+
+				/// В выводимом refcount, для удобства, не учиытываем тот, что привнесён локальными переменными all_parts, active_parts.
+				refcount_column->insert(part.use_count() - (active_parts.count(part) ? 2 : 1));
 			}
 		}
 	}
