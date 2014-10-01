@@ -73,6 +73,9 @@ struct Settings
 	/** Sleep time for StorageDistributed DirectoryMonitors in case there is no work or exception has been thrown */ \
 	M(SettingMilliseconds, distributed_directory_monitor_sleep_time_ms, DBMS_DISTRIBUTED_DIRECTORY_MONITOR_SLEEP_TIME_MS) \
 	\
+	/** Allows disabling WHERE to PREWHERE optimization in SELECT queries from MergeTree */ \
+	M(SettingBool, merge_tree_optimize_where, false) \
+	\
 	M(SettingLoadBalancing, load_balancing, LoadBalancing::RANDOM) \
 	\
 	M(SettingTotalsMode, totals_mode, TotalsMode::BEFORE_HAVING) \
