@@ -123,18 +123,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 		if (0 == file_name.compare(0, strlen("tmp_"), "tmp_"))
 			continue;
 
-		/// TODO: Это можно удалить, если нигде больше не осталось директорий old_* (их давно никто не пишет).
-		if (0 == file_name.compare(0, strlen("old_"), "old_"))
-		{
-			String new_file_name = file_name.substr(strlen("old_"));
-			LOG_WARNING(log, "Renaming " << file_name << " to " << new_file_name << " for compatibility reasons");
-			Poco::File(full_path + file_name).renameTo(full_path + new_file_name);
-			part_file_names.push_back(new_file_name);
-		}
-		else
-		{
-			part_file_names.push_back(file_name);
-		}
+		part_file_names.push_back(file_name);
 	}
 
 	DataPartsVector broken_parts_to_remove;
