@@ -66,19 +66,29 @@ namespace DB
 
 struct MergeTreeSettings
 {
+	/** Настройки слияний. */
+
 	/// Опеределяет, насколько разбалансированные объединения мы готовы делать.
-	/// Чем больше, тем более разбалансированные. Желательно, чтобы было больше, чем 1/max_parts_to_merge_at_once.
+	/// Чем больше, тем более разбалансированные. Желательно, чтобы было больше, чем 1 / max_parts_to_merge_at_once.
 	double size_ratio_coefficient_to_merge_parts = 0.25;
 
 	/// Сколько за раз сливать кусков.
 	/// Трудоемкость выбора кусков O(N * max_parts_to_merge_at_once).
 	size_t max_parts_to_merge_at_once = 10;
 
+	/// Но пока суммарный размер кусков слишком маленький (меньше такого количества байт), можно сливать и больше кусков за раз.
+	/// Это сделано, чтобы быстрее сливать очень уж маленькие куски, которых может быстро накопиться много.
+	size_t merge_more_parts_if_sum_bytes_is_less_than = 100 * 1024 * 1024;
+	size_t max_parts_to_merge_at_once_if_small = 100;
+
 	/// Куски настолько большого размера объединять нельзя вообще.
-	size_t max_bytes_to_merge_parts = 25ul * 1024 * 1024 * 1024;
+	size_t max_bytes_to_merge_parts = 10ul * 1024 * 1024 * 1024;
 
 	/// Не больше половины потоков одновременно могут выполнять слияния, в которых участвует хоть один кусок хотя бы такого размера.
 	size_t max_bytes_to_merge_parts_small = 250 * 1024 * 1024;
+
+	/// Куски настолько большого размера в сумме, объединять нельзя вообще.
+	size_t max_sum_bytes_to_merge_parts = 25ul * 1024 * 1024 * 1024;
 
 	/// Во столько раз ночью увеличиваем коэффициент.
 	size_t merge_parts_at_night_inc = 10;
@@ -88,6 +98,11 @@ struct MergeTreeSettings
 
 	/// Если из одного файла читается хотя бы столько строк, чтение можно распараллелить.
 	size_t min_rows_for_concurrent_read = 20 * 8192;
+
+	/// Через сколько секунд удалять ненужные куски.
+	time_t old_parts_lifetime = 8 * 60;
+
+	/** Настройки чтения и работы с индексом. */
 
 	/// Можно пропускать чтение более чем стольки строк ценой одного seek по файлу.
 	size_t min_rows_for_seek = 5 * 8192;
@@ -99,8 +114,7 @@ struct MergeTreeSettings
 	/// (Чтобы большие запросы не вымывали кэш.)
 	size_t max_rows_to_use_cache = 1024 * 1024;
 
-	/// Через сколько секунд удалять ненужные куски.
-	time_t old_parts_lifetime = 8 * 60;
+	/** Настройки вставок. */
 
 	/// Если в таблице хотя бы столько активных кусков, искусственно замедлять вставки в таблицу.
 	size_t parts_to_delay_insert = 150;
@@ -108,6 +122,8 @@ struct MergeTreeSettings
 	/// Если в таблице parts_to_delay_insert + k кусков, спать insert_delay_step^k миллисекунд перед вставкой каждого блока.
 	/// Таким образом, скорость вставок автоматически замедлится примерно до скорости слияний.
 	double insert_delay_step = 1.1;
+
+	/** Настройки репликации. */
 
 	/// Для скольки последних блоков хранить хеши в ZooKeeper.
 	size_t replicated_deduplication_window = 100;
@@ -122,6 +138,7 @@ struct MergeTreeSettings
 	size_t replicated_max_missing_obsolete_parts = 5;
 	size_t replicated_max_missing_active_parts = 20;
 };
+
 
 class MergeTreeData : public ITableDeclaration
 {
@@ -291,7 +308,7 @@ public:
 		}
 
 		/// Вычисляем сумарный размер всей директории со всеми файлами
-		static size_t calcTotalSize(const String &from)
+		static size_t calcTotalSize(const String & from)
 		{
 			Poco::File cur(from);
 			if (cur.isFile())
@@ -507,6 +524,8 @@ public:
 		friend class MergeTreeData;
 
 		MergeTreeData * data = nullptr;
+
+		/// Что делать для отката операции.
 		DataPartsVector removed_parts;
 		DataPartsVector added_parts;
 	};
@@ -614,6 +633,7 @@ public:
 	/** Возвращает копию списка, чтобы снаружи можно было не заботиться о блокировках.
 	  */
 	DataParts getDataParts();
+	DataPartsVector getDataPartsVector();
 	DataParts getAllDataParts();
 
 	/** Максимальное количество кусков в одном месяце.
@@ -634,16 +654,16 @@ public:
 	DataPartPtr getPartIfExists(const String & part_name);
 
 	/** Переименовывает временный кусок в постоянный и добавляет его в рабочий набор.
-	  * Если increment!=nullptr, индекс куска берется из инкремента. Иначе индекс куска не меняется.
+	  * Если increment != nullptr, индекс куска берется из инкремента. Иначе индекс куска не меняется.
 	  * Предполагается, что кусок не пересекается с существующими.
 	  * Если out_transaction не nullptr, присваивает туда объект, позволяющий откатить добавление куска (но не переименование).
 	  */
-	void renameTempPartAndAdd(MutableDataPartPtr part, Increment * increment = nullptr, Transaction * out_transaction = nullptr);
+	void renameTempPartAndAdd(MutableDataPartPtr & part, Increment * increment = nullptr, Transaction * out_transaction = nullptr);
 
 	/** То же, что renameTempPartAndAdd, но кусок может покрывать существующие куски.
 	  * Удаляет и возвращает все куски, покрытые добавляемым (в возрастающем порядке).
 	  */
-	DataPartsVector renameTempPartAndReplace(MutableDataPartPtr part, Increment * increment = nullptr, Transaction * out_transaction = nullptr);
+	DataPartsVector renameTempPartAndReplace(MutableDataPartPtr & part, Increment * increment = nullptr, Transaction * out_transaction = nullptr);
 
 	/** Убирает из рабочего набора куски remove и добавляет куски add. add должны уже быть в all_data_parts.
 	  * Если clear_without_timeout, данные будут удалены при следующем clearOldParts, игнорируя old_parts_lifetime.
@@ -652,16 +672,16 @@ public:
 
 	/** Добавляет новый кусок в список известных кусков и в рабочий набор.
 	  */
-	void attachPart(DataPartPtr part);
+	void attachPart(const DataPartPtr & part);
 
 	/** Переименовывает кусок в detached/prefix_кусок и забывает про него. Данные не будут удалены в clearOldParts.
 	  * Если restore_covered, добавляет в рабочий набор неактивные куски, слиянием которых получен удаляемый кусок.
 	  */
-	void renameAndDetachPart(DataPartPtr part, const String & prefix = "", bool restore_covered = false, bool move_to_detached = true);
+	void renameAndDetachPart(const DataPartPtr & part, const String & prefix = "", bool restore_covered = false, bool move_to_detached = true);
 
 	/** Убирает кусок из списка кусков (включая all_data_parts), но не перемещщает директорию.
 	  */
-	void detachPartInPlace(DataPartPtr part);
+	void detachPartInPlace(const DataPartPtr & part);
 
 	/** Возвращает старые неактуальные куски, которые можно удалить. Одновременно удаляет их из списка кусков, но не с диска.
 	  */
@@ -699,7 +719,7 @@ public:
 	  * Если измененных столбцов подозрительно много, и !skip_sanity_checks, бросает исключение.
 	  * Если никаких действий над данными не требуется, возвращает nullptr.
 	  */
-	AlterDataPartTransactionPtr alterDataPart(DataPartPtr part, const NamesAndTypesList & new_columns, bool skip_sanity_checks = false);
+	AlterDataPartTransactionPtr alterDataPart(const DataPartPtr & part, const NamesAndTypesList & new_columns, bool skip_sanity_checks = false);
 
 	/// Нужно вызывать под залоченным lockStructureForAlter().
 	void setColumnsList(const NamesAndTypesList & new_columns) { columns = new NamesAndTypesList(new_columns); }
@@ -715,6 +735,14 @@ public:
 
 	/// Проверить, что кусок не сломан и посчитать для него чексуммы, если их нет.
 	MutableDataPartPtr loadPartAndFixMetadata(const String & relative_path);
+
+	size_t getColumnSize(const std::string & name) const
+	{
+		Poco::ScopedLock<Poco::FastMutex> lock{data_parts_mutex};
+
+		const auto it = column_sizes.find(name);
+		return it == std::end(column_sizes) ? 0 : it->second;
+	}
 
 	const Context & context;
 	const String date_column_name;
@@ -740,6 +768,8 @@ private:
 	String full_path;
 
 	NamesAndTypesListPtr columns;
+	/// Актуальные размеры столбцов в сжатом виде
+	std::unordered_map<std::string, size_t> column_sizes;
 
 	BrokenPartCallback broken_part_callback;
 
@@ -748,7 +778,7 @@ private:
 
 	/** Актуальное множество кусков с данными. */
 	DataParts data_parts;
-	Poco::FastMutex data_parts_mutex;
+	mutable Poco::FastMutex data_parts_mutex;
 
 	/** Множество всех кусков с данными, включая уже слитые в более крупные, но ещё не удалённые. Оно обычно небольшое (десятки элементов).
 	  * Ссылки на кусок есть отсюда, из списка актуальных кусков и из каждого потока чтения, который его сейчас использует.
@@ -763,8 +793,14 @@ private:
 	  * Файлы, которые нужно удалить, в out_rename_map отображаются в пустую строку.
 	  * Если !part, просто проверяет, что все нужные преобразования типов допустимы.
 	  */
-	void createConvertExpression(DataPartPtr part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
+	void createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
 		ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map);
+
+	/// Рассчитывает размеры столбцов в сжатом виде для текущего состояния data_parts
+	void calculateColumnSizes();
+	/// Добавляет или вычитывает вклад part в размеры столбцов в сжатом виде
+	void addPartContributionToColumnSizes(const DataPartPtr & part);
+	void removePartContributionToColumnSizes(const DataPartPtr & part);
 };
 
 }

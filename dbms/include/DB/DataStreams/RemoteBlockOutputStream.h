@@ -20,23 +20,34 @@ public:
 	}
 
 
-	/** Отправляет запрос и получает блок-пример, описывающий структуру таблицы.
-	  * Он нужен, чтобы знать, какие блоки передавать в метод write.
-	  * Вызывайте только перед write.
-	  */
-	Block sendQueryAndGetSampleBlock()
+	/// Можно вызывать после writePrefix, чтобы получить структуру таблицы.
+	Block getSampleBlock() const
 	{
+		return sample_block;
+	}
+
+
+	void writePrefix() override
+	{
+		/** Отправляет запрос и получает блок-пример, описывающий структуру таблицы.
+		  * Он нужен, чтобы знать, какие блоки передавать в метод write.
+		  */
+
 		connection.sendQuery(query, "", QueryProcessingStage::Complete, settings);
-		sent_query = true;
 
 		Connection::Packet packet = connection.receivePacket();
 
 		if (Protocol::Server::Data == packet.type)
-			return sample_block = packet.block;
+		{
+			sample_block = packet.block;
+
+			if (!sample_block)
+				throw Exception("Logical error: empty block received as table structure", ErrorCodes::LOGICAL_ERROR);
+		}
 		else if (Protocol::Server::Exception == packet.type)
 		{
 			packet.exception->rethrow();
-			return Block();
+			return;
 		}
 		else
 			throw Exception("Unexpected packet from server (expected Data or Exception, got "
@@ -44,10 +55,10 @@ public:
 	}
 
 
-	void write(const Block & block)
+	void write(const Block & block) override
 	{
-		if (!sent_query)
-			sendQueryAndGetSampleBlock();
+		if (!sample_block)
+			throw Exception("You must call IBlockOutputStream::writePrefix before IBlockOutputStream::write", ErrorCodes::LOGICAL_ERROR);
 
 		if (!blocksHaveEqualStructure(block, sample_block))
 		{
@@ -66,14 +77,12 @@ public:
 	/// Отправить блок данных, который уже был заранее сериализован (и, если надо, сжат), который следует прочитать из input-а.
 	void writePrepared(ReadBuffer & input, size_t size = 0)
 	{
-		if (!sent_query)
-			sendQueryAndGetSampleBlock();	/// Никак не можем использовать sample_block.
-
+		/// Не можем использовать sample_block.
 		connection.sendPreparedData(input, size);
 	}
 
 
-	void writeSuffix()
+	void writeSuffix() override
 	{
 		/// Пустой блок означает конец данных.
 		connection.sendData(Block());
@@ -97,8 +106,6 @@ private:
 	String query;
 	Settings * settings;
 	Block sample_block;
-
-	bool sent_query = false;
 };
 
 }

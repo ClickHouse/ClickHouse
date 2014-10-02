@@ -12,6 +12,8 @@ void registerFunctionsDictionaries(FunctionFactory & factory)
 		F { return new FunctionRegionToCity(context.getDictionaries().getRegionsHierarchies()); });
 	factory.registerFunction("regionToArea",
 		F { return new FunctionRegionToArea(context.getDictionaries().getRegionsHierarchies()); });
+	factory.registerFunction("regionToDistrict",
+		F { return new FunctionRegionToDistrict(context.getDictionaries().getRegionsHierarchies()); });
 	factory.registerFunction("regionToCountry",
 		F { return new FunctionRegionToCountry(context.getDictionaries().getRegionsHierarchies()); });
 	factory.registerFunction("regionToContinent",

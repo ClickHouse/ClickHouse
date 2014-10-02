@@ -38,9 +38,7 @@ public:
 			output = storage->write(query_ptr);
 	}
 
-	String getName() const { return "PushingToViewsBlockOutputStream"; }
-
-	void write(const Block & block)
+	void write(const Block & block) override
 	{
 		for (size_t i = 0; i < children.size(); ++i)
 		{
@@ -51,7 +49,19 @@ public:
 		}
 
 		if (output)
-			output->write(block); 
+			output->write(block);
+	}
+
+	void writePrefix() override
+	{
+		if (output)
+			output->writePrefix();
+	}
+
+	void writeSuffix() override
+	{
+		if (output)
+			output->writeSuffix();
 	}
 
 private:

@@ -22,7 +22,7 @@ struct BlockStreamProfileInfo
 {
 	bool started = false;
 	Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};	/// Время с учётом ожидания
-	
+
 	String stream_name;			/// Короткое имя потока, для которого собирается информация
 
 	size_t rows = 0;
@@ -47,14 +47,14 @@ struct BlockStreamProfileInfo
 	bool hasAppliedLimit() const;
 
 	void update(Block & block);
-	
+
 	/// Методы для бинарной [де]сериализации
 	void read(ReadBuffer & in);
 	void write(WriteBuffer & out) const;
-	
+
 private:
 	void calculateRowsBeforeLimit() const;
-	
+
 	/// Для этих полей сделаем accessor'ы, т.к. их необходимо предварительно вычислять.
 	mutable bool applied_limit = false;					/// Применялся ли LIMIT
 	mutable size_t rows_before_limit = 0;
@@ -80,7 +80,7 @@ public:
 	void readSuffix();
 
 	/// Получить информацию о скорости выполнения.
-	const BlockStreamProfileInfo & getInfo() const;
+	const BlockStreamProfileInfo & getInfo() const { return info; }
 
 	/** Получить "тотальные" значения.
 	  * Реализация по-умолчанию берёт их из себя или из первого дочернего источника, в котором они есть.
@@ -88,7 +88,7 @@ public:
 	  * Тотальных значений может не быть - тогда возвращается пустой блок.
 	  */
 	virtual const Block & getTotals();
-	
+
 	/// То же самое для минимумов и максимумов.
 	const Block & getExtremes() const;
 
@@ -152,7 +152,7 @@ public:
 	struct LocalLimits
 	{
 		LimitsMode mode;
-		
+
 		size_t max_rows_to_read;
 		size_t max_bytes_to_read;
 		OverflowMode read_overflow_mode;
@@ -207,7 +207,7 @@ protected:
 	Block extremes;
 
 	/// Ограничения и квоты.
-	
+
 	LocalLimits limits;
 
 	QuotaForIntervals * quota = nullptr;	/// Если nullptr - квота не используется.

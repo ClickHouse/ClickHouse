@@ -15,6 +15,7 @@
 #include <DB/Storages/StorageSystemProcesses.h>
 #include <DB/Storages/StorageSystemEvents.h>
 #include <DB/Storages/StorageSystemOne.h>
+#include <DB/Storages/StorageSystemMerges.h>
 
 #include "Server.h"
 #include "HTTPHandler.h"
@@ -85,8 +86,6 @@ private:
 			prev_counters[i] = counter;
 
 			std::string key{ProfileEvents::getDescription(static_cast<ProfileEvents::Event>(i))};
-			std::replace(std::begin(key), std::end(key), ' ', '_');
-
 			key_vals.emplace_back(event_path_prefix + key, counter_increment);
 		}
 
@@ -408,6 +407,7 @@ int Server::main(const std::vector<std::string> & args)
 	global_context->addTable("system", "databases", StorageSystemDatabases::create("databases", *global_context));
 	global_context->addTable("system", "processes", StorageSystemProcesses::create("processes", *global_context));
 	global_context->addTable("system", "events", 	StorageSystemEvents::create("events"));
+	global_context->addTable("system", "merges",	StorageSystemMerges::create("merges", *global_context));
 
 	global_context->setCurrentDatabase(config().getString("default_database", "default"));
 

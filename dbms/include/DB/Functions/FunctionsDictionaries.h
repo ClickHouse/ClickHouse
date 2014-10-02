@@ -48,6 +48,11 @@ struct RegionToAreaImpl
 	static UInt32 apply(UInt32 x, const RegionsHierarchy & hierarchy) { return hierarchy.toArea(x); }
 };
 
+struct RegionToDistrictImpl
+{
+	static UInt32 apply(UInt32 x, const RegionsHierarchy & hierarchy) { return hierarchy.toDistrict(x); }
+};
+
 struct RegionToCountryImpl
 {
 	static UInt32 apply(UInt32 x, const RegionsHierarchy & hierarchy) { return hierarchy.toCountry(x); }
@@ -480,6 +485,7 @@ public:
 
 struct NameRegionToCity 	{ static const char * get() { return "regionToCity"; } };
 struct NameRegionToArea 	{ static const char * get() { return "regionToArea"; } };
+struct NameRegionToDistrict { static const char * get() { return "regionToDistrict"; } };
 struct NameRegionToCountry 	{ static const char * get() { return "regionToCountry"; } };
 struct NameRegionToContinent{ static const char * get() { return "regionToContient"; } };
 struct NameOSToRoot 		{ static const char * get() { return "OSToRoot"; } };
@@ -503,6 +509,9 @@ typedef FunctionTransformWithDictionary
 
 typedef FunctionTransformWithDictionary
 	<UInt32, RegionToAreaImpl,	RegionsHierarchyGetter,	NameRegionToArea> FunctionRegionToArea;
+
+typedef FunctionTransformWithDictionary
+	<UInt32, RegionToDistrictImpl, RegionsHierarchyGetter, NameRegionToDistrict> FunctionRegionToDistrict;
 
 typedef FunctionTransformWithDictionary
 	<UInt32, RegionToCountryImpl, RegionsHierarchyGetter, NameRegionToCountry> FunctionRegionToCountry;

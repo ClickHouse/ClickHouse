@@ -371,7 +371,7 @@ private:
 	  * Кладет в ops действия, добавляющие данные о куске в ZooKeeper.
 	  * Вызывать под TableStructureLock.
 	  */
-	void checkPartAndAddToZooKeeper(MergeTreeData::DataPartPtr part, zkutil::Ops & ops, String name_override = "");
+	void checkPartAndAddToZooKeeper(const MergeTreeData::DataPartPtr & part, zkutil::Ops & ops, String name_override = "");
 
 	/// Убирает кусок из ZooKeeper и добавляет в очередь задание скачать его. Предполагается это делать с битыми кусками.
 	void removePartAndEnqueueFetch(const String & part_name);
@@ -439,9 +439,6 @@ private:
 	/** Когда сессия в ZooKeeper протухает, переходит на новую.
 	  */
 	void restartingThread();
-
-	/// Вызывается во время выбора кусков для слияния.
-	bool canMergeParts(const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right);
 
 	/// Обмен кусками.
 

@@ -1,4 +1,5 @@
 #include <DB/Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <DB/Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
@@ -7,6 +8,7 @@
 #include <DB/DataStreams/CollapsingFinalBlockInputStream.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Common/VirtualColumnUtils.h>
+
 
 namespace DB
 {
@@ -46,12 +48,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	if (!part_index)
 		part_index = &part_index_var;
 
-	MergeTreeData::DataPartsVector parts;
-
-	{
-		auto parts_set = data.getDataParts();
-		parts.assign(parts_set.begin(), parts_set.end());
-	}
+	MergeTreeData::DataPartsVector parts = data.getDataPartsVector();
 
 	/// Если в запросе есть ограничения на виртуальный столбец _part, выберем только подходящие под него куски.
 	Names virt_column_names, real_column_names;
@@ -108,6 +105,10 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	ExpressionActionsPtr filter_expression;
 
 	ASTSelectQuery & select = *typeid_cast<ASTSelectQuery*>(&*query);
+	if (settings.optimize_move_to_prewhere)
+		if (select.where_expression && !select.prewhere_expression)
+			MergeTreeWhereOptimizer{select, data, column_names_to_return, log};
+
 	if (select.sample_size)
 	{
 		double size = apply_visitor(FieldVisitorConvertToNumber<double>(),

@@ -226,8 +226,8 @@ size_t Block::rowsInFirstColumn() const
 size_t Block::bytes() const
 {
 	size_t res = 0;
-	for (size_t i = 0; i < columns(); ++i)
-		res += getByPosition(i).column->byteSize();
+	for (const auto & col : data)
+		res += col.column->byteSize();
 
 	return res;
 }

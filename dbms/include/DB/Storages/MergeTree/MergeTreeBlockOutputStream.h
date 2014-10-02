@@ -12,13 +12,16 @@ public:
 	MergeTreeBlockOutputStream(StorageMergeTree & storage_)
 		: storage(storage_) {}
 
-	void write(const Block & block)
+	void writePrefix() override
+	{
+		storage.data.delayInsertIfNeeded();
+	}
+
+	void write(const Block & block) override
 	{
 		auto part_blocks = storage.writer.splitBlockIntoParts(block);
 		for (auto & current_block : part_blocks)
 		{
-			storage.data.delayInsertIfNeeded();
-
 			UInt64 temp_index = storage.increment.get();
 			MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block, temp_index);
 			storage.data.renameTempPartAndAdd(part, &storage.increment);

@@ -58,8 +58,6 @@ public:
 		}
 	};
 
-	ActiveDataPartSet();
-
 	void add(const String & name);
 	String getContainingPart(const String & name) const;
 

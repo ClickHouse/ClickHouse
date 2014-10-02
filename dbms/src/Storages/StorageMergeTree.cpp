@@ -7,7 +7,7 @@
 namespace DB
 {
 
-StorageMergeTree::StorageMergeTree(const String & path_, const String & database_name_, const String & name_,
+StorageMergeTree::StorageMergeTree(const String & path_, const String & database_name_, const String & table_name_,
 				NamesAndTypesListPtr columns_,
 				Context & context_,
 				ASTPtr & primary_expr_ast_,
@@ -17,12 +17,12 @@ StorageMergeTree::StorageMergeTree(const String & path_, const String & database
 				MergeTreeData::Mode mode_,
 				const String & sign_column_,
 				const MergeTreeSettings & settings_)
-	: path(path_), name(name_), full_path(path + escapeForFileName(name) + '/'), increment(full_path + "increment.txt"),
-	background_pool(context_.getBackgroundPool()),
+	: path(path_), database_name(database_name_), table_name(table_name_), full_path(path + escapeForFileName(table_name) + '/'),
+	increment(full_path + "increment.txt"), context(context_), background_pool(context_.getBackgroundPool()),
 	data(full_path, columns_, context_, primary_expr_ast_, date_column_name_, sampling_expression_,
-	index_granularity_,mode_, sign_column_, settings_, database_name_ + "." + name, false),
+	index_granularity_,mode_, sign_column_, settings_, database_name_ + "." + table_name, false),
 	reader(data), writer(data), merger(data),
-	log(&Logger::get(database_name_ + "." + name + " (StorageMergeTree)")),
+	log(&Logger::get(database_name_ + "." + table_name + " (StorageMergeTree)")),
 	shutdown_called(false)
 {
 	increment.fixIfBroken(data.getMaxDataPartIndex());
@@ -32,7 +32,7 @@ StorageMergeTree::StorageMergeTree(const String & path_, const String & database
 }
 
 StoragePtr StorageMergeTree::create(
-	const String & path_, const String & database_name_, const String & name_,
+	const String & path_, const String & database_name_, const String & table_name_,
 	NamesAndTypesListPtr columns_,
 	Context & context_,
 	ASTPtr & primary_expr_ast_,
@@ -44,7 +44,7 @@ StoragePtr StorageMergeTree::create(
 	const MergeTreeSettings & settings_)
 {
 	StorageMergeTree * res = new StorageMergeTree(
-		path_, database_name_, name_, columns_, context_, primary_expr_ast_, date_column_name_,
+		path_, database_name_, table_name_, columns_, context_, primary_expr_ast_, date_column_name_,
 		sampling_expression_, index_granularity_, mode_, sign_column_, settings_);
 	StoragePtr res_ptr = res->thisPtr();
 
@@ -97,7 +97,7 @@ void StorageMergeTree::rename(const String & new_path_to_db, const String & new_
 	data.setPath(new_full_path, true);
 
 	path = new_path_to_db;
-	name = new_table_name;
+	table_name = new_table_name;
 	full_path = new_full_path;
 
 	increment.setPath(full_path + "increment.txt");
@@ -118,7 +118,7 @@ void StorageMergeTree::alter(const AlterCommands & params, const String & databa
 
 	MergeTreeData::DataParts parts = data.getDataParts();
 	std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions;
-	for (MergeTreeData::DataPartPtr part : parts)
+	for (const MergeTreeData::DataPartPtr & part : parts)
 	{
 		auto transaction = data.alterDataPart(part, new_columns);
 		if (transaction)
@@ -156,12 +156,13 @@ bool StorageMergeTree::merge(bool aggressive, BackgroundProcessingPool::Context 
 		auto can_merge = std::bind(&StorageMergeTree::canMergeParts, this, std::placeholders::_1, std::placeholders::_2);
 		/// Если слияние запущено из пула потоков, и хотя бы половина потоков сливает большие куски,
 		///  не будем сливать большие куски.
-		int big_merges = background_pool.getCounter("big merges");
+		size_t big_merges = background_pool.getCounter("big merges");
 		bool only_small = pool_context && big_merges * 2 >= background_pool.getNumberOfThreads();
 
 		if (!merger.selectPartsToMerge(parts, merged_name, disk_space, false, aggressive, only_small, can_merge) &&
 			!merger.selectPartsToMerge(parts, merged_name, disk_space,  true, aggressive, only_small, can_merge))
 		{
+			LOG_INFO(log, "No parts to merge");
 			return false;
 		}
 
@@ -181,7 +182,8 @@ bool StorageMergeTree::merge(bool aggressive, BackgroundProcessingPool::Context 
 		}
 	}
 
-	merger.mergeParts(merging_tagger->parts, merged_name, nullptr, &*merging_tagger->reserved_space);
+	const auto & merge_entry = context.getMergeList().insert(database_name, table_name, merged_name);
+	merger.mergeParts(merging_tagger->parts, merged_name, *merge_entry, nullptr, &*merging_tagger->reserved_space);
 
 	return true;
 }

@@ -1,3 +1,4 @@
+#include <statdaemons/ext/range.hpp>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreePartsExchange.h>
@@ -26,6 +27,16 @@ static String padIndex(UInt64 index)
 	while (index_str.size() < 10)
 		index_str = '0' + index_str;
 	return index_str;
+}
+
+
+/// Используется для проверки, выставили ли ноду is_active мы, или нет.
+static String generateActiveNodeIdentifier()
+{
+	struct timespec times;
+	if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &times))
+		throwFromErrno("Cannot clock_gettime.", ErrorCodes::CANNOT_CLOCK_GETTIME);
+	return toString(times.tv_nsec + times.tv_sec + getpid());
 }
 
 
@@ -113,11 +124,9 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	}
 
 	/// Сгенерируем этому экземпляру случайный идентификатор.
-	struct timespec times;
-	if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &times))
-		throwFromErrno("Cannot clock_gettime.", ErrorCodes::CANNOT_CLOCK_GETTIME);
-	active_node_identifier = toString(times.tv_nsec);
+	active_node_identifier = generateActiveNodeIdentifier();
 
+	/// В этом потоке реплика будет активирована.
 	restarting_thread = std::thread(&StorageReplicatedMergeTree::restartingThread, this);
 }
 
@@ -387,7 +396,8 @@ void StorageReplicatedMergeTree::activateReplica()
 
 	/// Одновременно объявим, что эта реплика активна, и обновим хост.
 	zkutil::Ops ops;
-	ops.push_back(new zkutil::Op::Create(replica_path + "/is_active", "", zookeeper->getDefaultACL(), zkutil::CreateMode::Ephemeral));
+	ops.push_back(new zkutil::Op::Create(replica_path + "/is_active",
+		active_node_identifier, zookeeper->getDefaultACL(), zkutil::CreateMode::Ephemeral));
 	ops.push_back(new zkutil::Op::SetData(replica_path + "/host", host.str(), -1));
 
 	try
@@ -483,7 +493,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 	}
 
 	/// Добавим в ZK информацию о кусках, покрывающих недостающие куски.
-	for (MergeTreeData::DataPartPtr part : parts_to_add)
+	for (const MergeTreeData::DataPartPtr & part : parts_to_add)
 	{
 		LOG_ERROR(log, "Adding unexpected local part to ZooKeeper: " << part->name);
 
@@ -525,7 +535,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 	}
 
 	/// Удалим лишние локальные куски.
-	for (MergeTreeData::DataPartPtr part : unexpected_parts)
+	for (const MergeTreeData::DataPartPtr & part : unexpected_parts)
 	{
 		LOG_ERROR(log, "Renaming unexpected part " << part->name << " to ignored_" + part->name);
 		data.renameAndDetachPart(part, "ignored_", true);
@@ -536,12 +546,10 @@ void StorageReplicatedMergeTree::initVirtualParts()
 {
 	auto parts = data.getDataParts();
 	for (const auto & part : parts)
-	{
 		virtual_parts.add(part->name);
-	}
 }
 
-void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(MergeTreeData::DataPartPtr part, zkutil::Ops & ops, String part_name)
+void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(const MergeTreeData::DataPartPtr & part, zkutil::Ops & ops, String part_name)
 {
 	if (part_name.empty())
 		part_name = part->name;
@@ -615,13 +623,16 @@ void StorageReplicatedMergeTree::clearOldParts()
 	size_t count = parts.size();
 
 	if (!count)
+	{
+		LOG_TRACE(log, "No old parts");
 		return;
+	}
 
 	try
 	{
 		while (!parts.empty())
 		{
-			MergeTreeData::DataPartPtr part = parts.back();
+			MergeTreeData::DataPartPtr & part = parts.back();
 
 			LOG_DEBUG(log, "Removing " << part->name);
 
@@ -639,6 +650,7 @@ void StorageReplicatedMergeTree::clearOldParts()
 	}
 	catch (...)
 	{
+		tryLogCurrentException(__PRETTY_FUNCTION__);
 		data.addOldParts(parts);
 		throw;
 	}
@@ -885,6 +897,14 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 	}
 	else if (entry.type == LogEntry::MERGE_PARTS)
 	{
+		std::stringstream log_message;
+		log_message << "Executing log entry to merge parts ";
+		for (auto i : ext::range(0, entry.parts_to_merge.size()))
+			log_message << (i != 0 ? ", " : "") << entry.parts_to_merge[i];
+		log_message << " to " << entry.new_part_name;
+
+		LOG_TRACE(log, log_message.rdbuf());
+
 		MergeTreeData::DataPartsVector parts;
 		bool have_all_parts = true;
 		for (const String & name : entry.parts_to_merge)
@@ -926,8 +946,9 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 
 			auto table_lock = lockStructure(false);
 
+			const auto & merge_entry = context.getMergeList().insert(database_name, table_name, entry.new_part_name);
 			MergeTreeData::Transaction transaction;
-			MergeTreeData::DataPartPtr part = merger.mergeParts(parts, entry.new_part_name, &transaction);
+			MergeTreeData::DataPartPtr part = merger.mergeParts(parts, entry.new_part_name, *merge_entry, &transaction);
 
 			zkutil::Ops ops;
 			checkPartAndAddToZooKeeper(part, ops);
@@ -974,7 +995,6 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 			/** Если не получилось скачать кусок, нужный для какого-то мерджа, лучше не пытаться получить другие куски для этого мерджа,
 			  * а попытаться сразу получить помердженный кусок. Чтобы так получилось, переместим действия для получения остальных кусков
 			  * для этого мерджа в конец очереди.
-			  *
 			  */
 			try
 			{
@@ -1293,6 +1313,49 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 {
 	bool need_pull = true;
 
+	/** Может много времени тратиться на определение, можно ли мерджить два рядом стоящих куска.
+	  * Два рядом стоящих куска можно мерджить, если все номера блоков между их номерами не используются ("заброшены", abandoned).
+	  * Это значит, что между этими кусками не может быть вставлен другой кусок.
+	  *
+	  * Но если номера соседних блоков отличаются достаточно сильно (обычно, если между ними много "заброшенных" блоков),
+	  *  то делается слишком много чтений из ZooKeeper, чтобы узнать, можно ли их мерджить.
+	  *
+	  * Воспользуемся утверждением, что если пару кусков было можно мерджить, и их мердж ещё не запланирован,
+	  *  то и сейчас их можно мерджить, и будем запоминать это состояние, чтобы не делать много раз одинаковые запросы в ZooKeeper.
+	  *
+	  * TODO Интересно, как это сочетается с DROP PARTITION и затем ATTACH PARTITION.
+	  */
+	std::set<std::pair<std::string, std::string>> memoized_parts_that_could_be_merged;
+
+	auto can_merge = [&memoized_parts_that_could_be_merged, this]
+		(const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right) -> bool
+	{
+		/// Если какой-то из кусков уже собираются слить в больший, не соглашаемся его сливать.
+		if (virtual_parts.getContainingPart(left->name) != left->name ||
+			virtual_parts.getContainingPart(right->name) != right->name)
+			return false;
+
+		auto key = std::make_pair(left->name, right->name);
+		if (memoized_parts_that_could_be_merged.count(key))
+			return true;
+
+		String month_name = left->name.substr(0, 6);
+
+		/// Можно слить куски, если все номера между ними заброшены - не соответствуют никаким блокам.
+		for (UInt64 number = left->right + 1; number <= right->left - 1; ++number)	/// Номера блоков больше нуля.
+		{
+			String path1 = zookeeper_path +              "/block_numbers/" + month_name + "/block-" + padIndex(number);
+			String path2 = zookeeper_path + "/nonincrement_block_numbers/" + month_name + "/block-" + padIndex(number);
+
+			if (AbandonableLockInZooKeeper::check(path1, *zookeeper) != AbandonableLockInZooKeeper::ABANDONED &&
+				AbandonableLockInZooKeeper::check(path2, *zookeeper) != AbandonableLockInZooKeeper::ABANDONED)
+				return false;
+		}
+
+		memoized_parts_that_could_be_merged.insert(key);
+		return true;
+	};
+
 	while (!shutdown_called && is_leader_node)
 	{
 		bool success = false;
@@ -1309,11 +1372,17 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 				need_pull = false;
 			}
 
-			size_t merges_queued = 0;
-			/// Есть ли в очереди или в фоновом потоке мердж крупных кусков.
-			bool has_big_merge = context.getBackgroundPool().getCounter("replicated big merges") > 0;
+			/** Сколько в очереди или в фоновом потоке мерджей крупных кусков.
+			  * Если их больше половины от размера пула потоков для мерджа, то можно мерджить только мелкие куски.
+			  */
+			auto & background_pool = context.getBackgroundPool();
 
-			if (!has_big_merge)
+			size_t big_merges_current = background_pool.getCounter("replicated big merges");
+			size_t max_number_of_big_merges = background_pool.getNumberOfThreads() / 2;
+			size_t merges_queued = 0;
+			size_t big_merges_queued = 0;
+
+			if (big_merges_current < max_number_of_big_merges)
 			{
 				std::unique_lock<std::mutex> lock(queue_mutex);
 
@@ -1323,16 +1392,17 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 					{
 						++merges_queued;
 
-						if (!has_big_merge)
+						if (big_merges_current + big_merges_queued < max_number_of_big_merges)
 						{
 							for (const String & name : entry->parts_to_merge)
 							{
 								MergeTreeData::DataPartPtr part = data.getActiveContainingPart(name);
 								if (!part || part->name != name)
 									continue;
+
 								if (part->size_in_bytes > data.settings.max_bytes_to_merge_parts_small)
 								{
-									has_big_merge = true;
+									++big_merges_queued;
 									break;
 								}
 							}
@@ -1341,22 +1411,32 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 				}
 			}
 
+			bool only_small = big_merges_current + big_merges_queued >= max_number_of_big_merges;
+
+			LOG_TRACE(log, "Currently executing big merges: " << big_merges_current
+				<< ". Queued big merges: " << big_merges_queued
+				<< ". All merges in queue: " << merges_queued
+				<< ". Max number of big merges: " << max_number_of_big_merges
+				<< (only_small ? ". So, will select only small parts to merge." : "."));
+
 			do
 			{
 				if (merges_queued >= data.settings.max_replicated_merges_in_queue)
+				{
+					LOG_TRACE(log, "Number of queued merges is greater than max_replicated_merges_in_queue, so won't select new parts to merge.");
 					break;
+				}
 
 				MergeTreeData::DataPartsVector parts;
 
 				String merged_name;
-				auto can_merge = std::bind(
-					&StorageReplicatedMergeTree::canMergeParts, this, std::placeholders::_1, std::placeholders::_2);
 
-				if (!merger.selectPartsToMerge(parts, merged_name, MergeTreeDataMerger::NO_LIMIT,
-												false, false, has_big_merge, can_merge) &&
-					!merger.selectPartsToMerge(parts, merged_name, MergeTreeDataMerger::NO_LIMIT,
-												true, false, has_big_merge, can_merge))
+				if (   !merger.selectPartsToMerge(parts, merged_name, MergeTreeDataMerger::NO_LIMIT, false, false, only_small, can_merge)
+					&& !merger.selectPartsToMerge(parts, merged_name, MergeTreeDataMerger::NO_LIMIT, true, false, only_small, can_merge))
+				{
+					LOG_INFO(log, "No parts to merge");
 					break;
+				}
 
 				bool all_in_zk = true;
 				for (const auto & part : parts)
@@ -1378,9 +1458,7 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 				entry.new_part_name = merged_name;
 
 				for (const auto & part : parts)
-				{
 					entry.parts_to_merge.push_back(part->name);
-				}
 
 				need_pull = true;
 
@@ -1399,7 +1477,7 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 
 				success = true;
 			}
-			while(false);
+			while (false);
 		}
 		catch (...)
 		{
@@ -1413,7 +1491,7 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 			merge_selecting_event.tryWait(MERGE_SELECTING_SLEEP_MS);
 	}
 
-	LOG_DEBUG(log, "merge selecting thread finished");
+	LOG_DEBUG(log, "Merge selecting thread finished");
 }
 
 void StorageReplicatedMergeTree::cleanupThread()
@@ -1441,7 +1519,7 @@ void StorageReplicatedMergeTree::cleanupThread()
 		shutdown_event.tryWait(CLEANUP_SLEEP_MS);
 	}
 
-	LOG_DEBUG(log, "cleanup thread finished");
+	LOG_DEBUG(log, "Cleanup thread finished");
 }
 
 void StorageReplicatedMergeTree::alterThread()
@@ -1452,57 +1530,75 @@ void StorageReplicatedMergeTree::alterThread()
 	{
 		try
 		{
+			/** Имеем описание столбцов в ZooKeeper, общее для всех реплик (Пример: /clickhouse/tables/02-06/visits/columns),
+			  *  а также описание столбцов в локальном файле с метаданными (data.getColumnsList()).
+			  *
+			  * Если эти описания отличаются - нужно сделать ALTER.
+			  *
+			  * Если запомненная версия ноды (columns_version) отличается от версии в ZK,
+			  *  то описание столбцов в ZK не обязательно отличается от локального
+			  *  - такое может быть при цикле из ALTER-ов, который в целом, ничего не меняет.
+			  * В этом случае, надо обновить запомненный номер версии,
+			  *  а также всё-равно проверить структуру кусков, и, при необходимости, сделать ALTER.
+			  *
+			  * Запомненный номер версии нужно обновить после обновления метаданных, под блокировкой.
+			  * Этот номер версии проверяется на соответствие актуальному при INSERT-е.
+			  * То есть, так добиваемся, чтобы вставлялись блоки с правильной структурой.
+			  *
+			  * При старте сервера, мог быть не завершён предыдущий ALTER.
+			  * Поэтому, в первый раз, независимо от изменений, проверяем структуру всех part-ов,
+			  *  (Пример: /clickhouse/tables/02-06/visits/replicas/example02-06-1.yandex.ru/parts/20140806_20140831_131664_134988_3296/columns)
+			  *  и делаем ALTER, если необходимо.
+			  *
+			  * TODO: Слишком сложно, всё переделать.
+			  */
+
 			zkutil::Stat stat;
 			String columns_str = zookeeper->get(zookeeper_path + "/columns", &stat, alter_thread_event);
 			NamesAndTypesList columns = NamesAndTypesList::parse(columns_str, context.getDataTypeFactory());
 
-			bool changed = false;
-
-			/// Проверим, что описание столбцов изменилось.
-			/// Чтобы не останавливать лишний раз все запросы в таблицу, проверим сначала под локом на чтение.
-			{
-				auto table_lock = lockStructure(false);
-				if (columns != data.getColumnsList())
-					changed = true;
-			}
+			bool changed_version = (stat.version != columns_version);
 
 			MergeTreeData::DataParts parts;
 
 			/// Если описание столбцов изменилось, обновим структуру таблицы локально.
-			if (changed)
+			if (changed_version)
 			{
 				auto table_lock = lockStructureForAlter();
+
 				if (columns != data.getColumnsList())
 				{
 					LOG_INFO(log, "Columns list changed in ZooKeeper. Applying changes locally.");
+
 					InterpreterAlterQuery::updateMetadata(database_name, table_name, columns, context);
 					data.setColumnsList(columns);
 					if (unreplicated_data)
 						unreplicated_data->setColumnsList(columns);
-					columns_version = stat.version;
 					LOG_INFO(log, "Applied changes to table.");
-
-					/// Нужно получить список кусков под блокировкой таблицы, чтобы избежать race condition с мерджем.
-					parts = data.getDataParts();
 				}
 				else
 				{
-					changed = false;
+					LOG_INFO(log, "Columns version changed in ZooKeeper, but data wasn't changed. It's like cyclic ALTERs.");
 				}
+
+				/// Нужно получить список кусков под блокировкой таблицы, чтобы избежать race condition с мерджем.
+				parts = data.getDataParts();
+
+				columns_version = stat.version;
 			}
 
 			/// Обновим куски.
-			if (changed || force_recheck_parts)
+			if (changed_version || force_recheck_parts)
 			{
-				if (changed)
+				auto table_lock = lockStructure(false);
+
+				if (changed_version)
 					LOG_INFO(log, "ALTER-ing parts");
 
 				int changed_parts = 0;
 
-				if (!changed)
+				if (!changed_version)
 					parts = data.getDataParts();
-
-				auto table_lock = lockStructure(false);
 
 				for (const MergeTreeData::DataPartPtr & part : parts)
 				{
@@ -1544,13 +1640,21 @@ void StorageReplicatedMergeTree::alterThread()
 					}
 				}
 
+				/// Список столбцов для конкретной реплики.
 				zookeeper->set(replica_path + "/columns", columns.toString());
 
-				if (changed || changed_parts != 0)
-					LOG_INFO(log, "ALTER-ed " << changed_parts << " parts");
+				if (changed_version)
+				{
+					if (changed_parts != 0)
+						LOG_INFO(log, "ALTER-ed " << changed_parts << " parts");
+					else
+						LOG_INFO(log, "No parts ALTER-ed");
+				}
+
 				force_recheck_parts = false;
 			}
 
+			parts.clear();
 			alter_thread_event->wait();
 		}
 		catch (...)
@@ -1563,7 +1667,7 @@ void StorageReplicatedMergeTree::alterThread()
 		}
 	}
 
-	LOG_DEBUG(log, "alter thread finished");
+	LOG_DEBUG(log, "Alter thread finished");
 }
 
 void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_name)
@@ -1628,7 +1732,7 @@ void StorageReplicatedMergeTree::partCheckThread()
 					part_name = parts_to_check_queue.front();
 				}
 			}
-			if (part_name.empty())
+			if (part_name.empty())	/// TODO Здесь race condition?
 			{
 				parts_to_check_event.wait();
 				continue;
@@ -1817,29 +1921,6 @@ void StorageReplicatedMergeTree::partCheckThread()
 }
 
 
-bool StorageReplicatedMergeTree::canMergeParts(const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right)
-{
-	/// Если какой-то из кусков уже собираются слить в больший, не соглашаемся его сливать.
-	if (virtual_parts.getContainingPart(left->name) != left->name ||
-		virtual_parts.getContainingPart(right->name) != right->name)
-		return false;
-
-	String month_name = left->name.substr(0, 6);
-
-	/// Можно слить куски, если все номера между ними заброшены - не соответствуют никаким блокам.
-	for (UInt64 number = left->right + 1; number <= right->left - 1; ++number)
-	{
-		String path1 = zookeeper_path +              "/block_numbers/" + month_name + "/block-" + padIndex(number);
-		String path2 = zookeeper_path + "/nonincrement_block_numbers/" + month_name + "/block-" + padIndex(number);
-
-		if (AbandonableLockInZooKeeper::check(path1, *zookeeper) != AbandonableLockInZooKeeper::ABANDONED &&
-			AbandonableLockInZooKeeper::check(path2, *zookeeper) != AbandonableLockInZooKeeper::ABANDONED)
-			return false;
-	}
-
-	return true;
-}
-
 void StorageReplicatedMergeTree::becomeLeader()
 {
 	LOG_INFO(log, "Became leader");
@@ -1997,8 +2078,19 @@ bool StorageReplicatedMergeTree::tryStartup()
 		queue_task_handle->wake();
 		return true;
 	}
-	catch (zkutil::KeeperException & e)
+	catch (const zkutil::KeeperException & e)
 	{
+		replica_is_active_node = nullptr;
+		leader_election = nullptr;
+		LOG_ERROR(log, "Couldn't start replication: " << e.what() << ", " << e.displayText() << ", stack trace:\n"
+			<< e.getStackTrace().toString());
+		return false;
+	}
+	catch (const Exception & e)
+	{
+		if (e.code() != ErrorCodes::REPLICA_IS_ALREADY_ACTIVE)
+			throw;
+
 		replica_is_active_node = nullptr;
 		leader_election = nullptr;
 		LOG_ERROR(log, "Couldn't start replication: " << e.what() << ", " << e.displayText() << ", stack trace:\n"
@@ -2017,25 +2109,20 @@ void StorageReplicatedMergeTree::restartingThread()
 {
 	try
 	{
+		/// Запуск реплики при старте сервера/создании таблицы.
 		while (!permanent_shutdown_called && !tryStartup())
 			restarting_event.tryWait(10 * 1000);
 
+		/// Цикл перезапуска реплики при истечении сессии с ZK.
 		while (!permanent_shutdown_called)
 		{
 			if (zookeeper->expired())
 			{
 				LOG_WARNING(log, "ZooKeeper session has expired. Switching to a new session.");
 
-				{
-					/// Запретим писать в таблицу, пока подменяем zookeeper.
-					auto structure_lock = lockDataForAlter();
-
-					partialShutdown();
-
-					zookeeper = context.getZooKeeper();
-
-					is_read_only = true;
-				}
+				partialShutdown();
+				zookeeper = context.getZooKeeper();
+				is_read_only = true;
 
 				while (!permanent_shutdown_called && !tryStartup())
 					restarting_event.tryWait(10 * 1000);
@@ -2043,11 +2130,7 @@ void StorageReplicatedMergeTree::restartingThread()
 				if (permanent_shutdown_called)
 					break;
 
-				{
-					auto structure_lock = lockDataForAlter();
-
-					is_read_only = false;
-				}
+				is_read_only = false;
 			}
 
 			restarting_event.tryWait(60 * 1000);
@@ -2185,7 +2268,8 @@ bool StorageReplicatedMergeTree::optimize()
 	if (!unreplicated_merger->selectPartsToMerge(parts, merged_name, 0, true, true, false, always_can_merge))
 		return false;
 
-	unreplicated_merger->mergeParts(parts, merged_name);
+	const auto & merge_entry = context.getMergeList().insert(database_name, table_name, merged_name);
+	unreplicated_merger->mergeParts(parts, merged_name, *merge_entry);
 	return true;
 }
 
@@ -2225,6 +2309,7 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 	/// Подпишемся на изменения столбцов, чтобы перестать ждать, если кто-то еще сделает ALTER.
 	if (!zookeeper->exists(zookeeper_path + "/columns", &stat, alter_query_event))
 		throw Exception(zookeeper_path + "/columns doesn't exist", ErrorCodes::NOT_FOUND_NODE);
+
 	if (stat.version != new_columns_version)
 	{
 		LOG_WARNING(log, zookeeper_path + "/columns changed before this ALTER finished; "
@@ -2255,6 +2340,7 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 
 			if (!zookeeper->exists(zookeeper_path + "/columns", &stat))
 				throw Exception(zookeeper_path + "/columns doesn't exist", ErrorCodes::NOT_FOUND_NODE);
+
 			if (stat.version != new_columns_version)
 			{
 				LOG_WARNING(log, zookeeper_path + "/columns changed before ALTER finished; "

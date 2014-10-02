@@ -98,7 +98,7 @@ void InterpreterInsertQuery::execute(ReadBuffer * remaining_data_istr)
 		  */
 
 		ConcatReadBuffer istr(buffers);
-		Block sample = table->getSampleBlock();
+		Block sample = getSampleBlock();
 
 		in = context.getFormatFactory().getInput(format, istr, sample, context.getSettings().max_insert_block_size, context.getDataTypeFactory());
 		copyData(*in, *out);

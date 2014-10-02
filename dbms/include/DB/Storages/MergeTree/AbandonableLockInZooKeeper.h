@@ -2,6 +2,7 @@
 
 #include <zkutil/ZooKeeper.h>
 #include <DB/Core/Exception.h>
+#include <DB/IO/ReadHelpers.h>
 
 
 namespace DB
@@ -11,7 +12,7 @@ namespace DB
   * При создании создает неэфемерную инкрементную ноду и помечает ее как заблокированную (LOCKED).
   * unlock() разблокирует ее (UNLOCKED).
   * При вызове деструктора или завершении сессии в ZooKeeper, переходит в состояние ABANDONED.
-  *  (В том числе при падении программы)
+  *  (В том числе при падении программы).
   */
 class AbandonableLockInZooKeeper : private boost::noncopyable
 {
@@ -32,6 +33,9 @@ public:
 
 		/// Запишем в основную ноду путь к вспомогательной.
 		path = zookeeper.create(path_prefix, holder_path, zkutil::CreateMode::PersistentSequential);
+
+		if (path.size() <= path_prefix.size())
+			throw Exception("Logical error: name of sequential node is shorter than prefix.", ErrorCodes::LOGICAL_ERROR);
 	}
 
 	AbandonableLockInZooKeeper(AbandonableLockInZooKeeper && rhs)
@@ -42,15 +46,15 @@ public:
 		std::swap(holder_path, rhs.holder_path);
 	}
 
-	String getPath()
+	String getPath() const
 	{
 		return path;
 	}
 
 	/// Распарсить число в конце пути.
-	UInt64 getNumber()
+	UInt64 getNumber() const
 	{
-		return static_cast<UInt64>(atol(path.substr(path_prefix.size()).c_str()));
+		return parse<UInt64>(path.c_str() + path_prefix.size(), path.size() - path_prefix.size());
 	}
 
 	void unlock()

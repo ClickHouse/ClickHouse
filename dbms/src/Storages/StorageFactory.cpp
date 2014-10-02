@@ -6,6 +6,7 @@
 #include <DB/Parsers/ASTLiteral.h>
 
 #include <DB/Interpreters/Context.h>
+#include <DB/Interpreters/reinterpretAsIdentifier.h>
 
 #include <DB/Storages/StorageLog.h>
 #include <DB/Storages/StorageTinyLog.h>
@@ -23,9 +24,6 @@
 #include <DB/Storages/StorageChunkRef.h>
 #include <DB/Storages/StorageChunkMerger.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
-
-#include <DB/DataTypes/DataTypeArray.h>
-#include <DB/DataTypes/DataTypeNested.h>
 
 
 namespace DB
@@ -70,6 +68,7 @@ StoragePtr StorageFactory::get(
 	const String & data_path,
 	const String & table_name,
 	const String & database_name,
+	Context & local_context,
 	Context & context,
 	ASTPtr & query,
 	NamesAndTypesListPtr columns,
@@ -109,7 +108,7 @@ StoragePtr StorageFactory::get(
 			if (args.size() < 3 || args.size() > 4)
 				break;
 
-			String source_database = typeid_cast<ASTIdentifier &>(*args[0]).name;
+			String source_database = reinterpretAsIdentifier(args[0], local_context).name;
 			String source_table_name_regexp = safeGet<const String &>(typeid_cast<ASTLiteral &>(*args[1]).value);
 			size_t chunks_to_merge = safeGet<UInt64>(typeid_cast<ASTLiteral &>(*args[2]).value);
 
@@ -157,7 +156,7 @@ StoragePtr StorageFactory::get(
 				" - name of source database and regexp for table names.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		String source_database 		= typeid_cast<ASTIdentifier &>(*args[0]).name;
+		String source_database 		= reinterpretAsIdentifier(args[0], local_context).name;
 		String table_name_regexp	= safeGet<const String &>(typeid_cast<ASTLiteral &>(*args[1]).value);
 
 		return StorageMerge::create(table_name, columns, source_database, table_name_regexp, context);
@@ -183,7 +182,7 @@ StoragePtr StorageFactory::get(
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 		String cluster_name 	= typeid_cast<ASTIdentifier &>(*args[0]).name;
-		String remote_database 	= typeid_cast<ASTIdentifier &>(*args[1]).name;
+		String remote_database 	= reinterpretAsIdentifier(args[1], local_context).name;
 		String remote_table 	= typeid_cast<ASTIdentifier &>(*args[2]).name;
 
 		const auto & sharding_key = args.size() == 4 ? args[3] : nullptr;

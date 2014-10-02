@@ -11,6 +11,7 @@
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
 #include <DB/DataStreams/copyData.h>
 #include <DB/IO/WriteBufferFromFile.h>
+#include <DB/DataTypes/DataTypeDate.h>
 #include <algorithm>
 
 
@@ -40,6 +41,25 @@ MergeTreeData::MergeTreeData(
 	broken_part_callback(broken_part_callback_),
 	log_name(log_name_), log(&Logger::get(log_name + " (Data)"))
 {
+	/// Проверяем, что столбец с датой существует и имеет тип Date.
+	{
+		auto it = columns->begin();
+		for (; it != columns->end(); ++it)
+		{
+			if (it->name == date_column_name)
+			{
+				if (!typeid_cast<const DataTypeDate *>(&*it->type))
+					throw Exception("Date column (" + date_column_name + ") for storage of MergeTree family must have type Date."
+						" Provided column of type " + it->type->getName() + "."
+						" You may have separate column with type " + it->type->getName() + ".", ErrorCodes::BAD_TYPE_OF_FIELD);
+				break;
+			}
+		}
+
+		if (it == columns->end())
+			throw Exception("Date column (" + date_column_name + ") does not exist in table declaration.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+	}
+
 	/// создаём директорию, если её нет
 	Poco::File(full_path).createDirectories();
 	Poco::File(full_path + "detached").createDirectory();
@@ -61,10 +81,9 @@ MergeTreeData::MergeTreeData(
 UInt64 MergeTreeData::getMaxDataPartIndex()
 {
 	UInt64 max_part_id = 0;
-	for (DataParts::iterator it = data_parts.begin(); it != data_parts.end(); ++it)
-	{
-		max_part_id = std::max(max_part_id, (*it)->right);
-	}
+	for (const auto & part : data_parts)
+		max_part_id = std::max(max_part_id, part->right);
+
 	return max_part_id;
 }
 
@@ -104,18 +123,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 		if (0 == file_name.compare(0, strlen("tmp_"), "tmp_"))
 			continue;
 
-		/// TODO: Это можно удалить, если нигде больше не осталось директорий old_* (их давно никто не пишет).
-		if (0 == file_name.compare(0, strlen("old_"), "old_"))
-		{
-			String new_file_name = file_name.substr(strlen("old_"));
-			LOG_WARNING(log, "Renaming " << file_name << " to " << new_file_name << " for compatibility reasons");
-			Poco::File(full_path + file_name).renameTo(full_path + new_file_name);
-			part_file_names.push_back(new_file_name);
-		}
-		else
-		{
-			part_file_names.push_back(file_name);
-		}
+		part_file_names.push_back(file_name);
 	}
 
 	DataPartsVector broken_parts_to_remove;
@@ -254,6 +262,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 		}
 	}
 
+	calculateColumnSizes();
+
 	LOG_DEBUG(log, "Loaded data parts (" << data_parts.size() << " items)");
 }
 
@@ -265,35 +275,31 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts()
 
 	/// Если метод уже вызван из другого потока (или если all_data_parts прямо сейчас меняют), то можно ничего не делать.
 	if (!lock.lock(&all_data_parts_mutex))
+	{
+		LOG_TRACE(log, "grabOldParts: all_data_parts is locked");
 		return res;
+	}
 
 	/// Удаляем временные директории старше суток.
-	Strings all_file_names;
 	Poco::DirectoryIterator end;
-	for (Poco::DirectoryIterator it(full_path); it != end; ++it)
-		all_file_names.push_back(it.name());
-
-	for (const String & file_name : all_file_names)
+	for (Poco::DirectoryIterator it{full_path}; it != end; ++it)
 	{
-		if (0 == file_name.compare(0, strlen("tmp_"), "tmp_"))
+		if (0 == it.name().compare(0, strlen("tmp_"), "tmp_"))
 		{
-			Poco::File tmp_dir(full_path + file_name);
+			Poco::File tmp_dir(full_path + it.name());
 
 			if (tmp_dir.isDirectory() && tmp_dir.getLastModified().epochTime() + 86400 < time(0))
 			{
-				LOG_WARNING(log, "Removing temporary directory " << full_path << file_name);
-				Poco::File(full_path + file_name).remove(true);
+				LOG_WARNING(log, "Removing temporary directory " << full_path << it.name());
+				Poco::File(full_path + it.name()).remove(true);
 			}
-
-			continue;
 		}
 	}
 
 	time_t now = time(0);
 	for (DataParts::iterator it = all_data_parts.begin(); it != all_data_parts.end();)
 	{
-		int ref_count = it->use_count();
-		if (ref_count == 1 && /// После этого ref_count не может увеличиться.
+		if (it->unique() && /// После этого ref_count не может увеличиться.
 			(*it)->remove_time < now &&
 			now - (*it)->remove_time > settings.old_parts_lifetime)
 		{
@@ -317,7 +323,7 @@ void MergeTreeData::clearOldParts()
 {
 	auto parts_to_remove = grabOldParts();
 
-	for (DataPartPtr part : parts_to_remove)
+	for (const DataPartPtr & part : parts_to_remove)
 	{
 		LOG_DEBUG(log, "Removing part " << part->name);
 		part->remove();
@@ -340,6 +346,7 @@ void MergeTreeData::dropAllData()
 {
 	data_parts.clear();
 	all_data_parts.clear();
+	column_sizes.clear();
 
 	context.resetCaches();
 
@@ -371,7 +378,7 @@ void MergeTreeData::checkAlter(const AlterCommands & params)
 	createConvertExpression(nullptr, *columns, new_columns, unused_expression, unused_map);
 }
 
-void MergeTreeData::createConvertExpression(DataPartPtr part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
+void MergeTreeData::createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
 	ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map)
 {
 	out_expression = nullptr;
@@ -445,7 +452,8 @@ void MergeTreeData::createConvertExpression(DataPartPtr part, const NamesAndType
 	}
 }
 
-MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(DataPartPtr part, const NamesAndTypesList & new_columns, bool skip_sanity_checks)
+MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
+	const DataPartPtr & part, const NamesAndTypesList & new_columns, bool skip_sanity_checks)
 {
 	ExpressionActionsPtr expression;
 	AlterDataPartTransactionPtr transaction(new AlterDataPartTransaction(part)); /// Блокирует изменение куска.
@@ -605,7 +613,7 @@ MergeTreeData::AlterDataPartTransaction::~AlterDataPartTransaction()
 }
 
 
-void MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr part, Increment * increment, Transaction * out_transaction)
+void MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr & part, Increment * increment, Transaction * out_transaction)
 {
 	auto removed = renameTempPartAndReplace(part, increment, out_transaction);
 	if (!removed.empty())
@@ -616,10 +624,10 @@ void MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr part, Increment * in
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
-	MutableDataPartPtr part, Increment * increment, Transaction * out_transaction)
+	MutableDataPartPtr & part, Increment * increment, Transaction * out_transaction)
 {
 	if (out_transaction && out_transaction->data)
-		throw Exception("Using the same MergeTreeData::Transaction for overlapping transactions is invalid");
+		throw Exception("Using the same MergeTreeData::Transaction for overlapping transactions is invalid", ErrorCodes::LOGICAL_ERROR);
 
 	LOG_TRACE(log, "Renaming " << part->name << ".");
 
@@ -672,6 +680,7 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
 		}
 		res.push_back(*it);
 		(*it)->remove_time = time(0);
+		removePartContributionToColumnSizes(*it);
 		data_parts.erase(it++); /// Да, ++, а не --.
 	}
 	std::reverse(res.begin(), res.end()); /// Нужно получить куски в порядке возрастания.
@@ -686,6 +695,7 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
 		}
 		res.push_back(*it);
 		(*it)->remove_time = time(0);
+		removePartContributionToColumnSizes(*it);
 		data_parts.erase(it++);
 	}
 
@@ -696,6 +706,7 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
 	else
 	{
 		data_parts.insert(part);
+		addPartContributionToColumnSizes(part);
 	}
 
 	all_data_parts.insert(part);
@@ -717,15 +728,17 @@ void MergeTreeData::replaceParts(const DataPartsVector & remove, const DataParts
 	for (const DataPartPtr & part : remove)
 	{
 		part->remove_time = clear_without_timeout ? 0 : time(0);
+		removePartContributionToColumnSizes(part);
 		data_parts.erase(part);
 	}
 	for (const DataPartPtr & part : add)
 	{
 		data_parts.insert(part);
+		addPartContributionToColumnSizes(part);
 	}
 }
 
-void MergeTreeData::attachPart(DataPartPtr part)
+void MergeTreeData::attachPart(const DataPartPtr & part)
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 	Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
@@ -735,7 +748,7 @@ void MergeTreeData::attachPart(DataPartPtr part)
 	data_parts.insert(part);
 }
 
-void MergeTreeData::renameAndDetachPart(DataPartPtr part, const String & prefix, bool restore_covered, bool move_to_detached)
+void MergeTreeData::renameAndDetachPart(const DataPartPtr & part, const String & prefix, bool restore_covered, bool move_to_detached)
 {
 	LOG_INFO(log, "Renaming " << part->name << " to " << prefix << part->name << " and detaching it.");
 
@@ -745,6 +758,7 @@ void MergeTreeData::renameAndDetachPart(DataPartPtr part, const String & prefix,
 	if (!all_data_parts.erase(part))
 		throw Exception("No such data part", ErrorCodes::NO_SUCH_DATA_PART);
 
+	removePartContributionToColumnSizes(part);
 	data_parts.erase(part);
 	if (move_to_detached || !prefix.empty())
 		part->renameAddPrefix((move_to_detached ? "detached/" : "") + prefix);
@@ -765,6 +779,7 @@ void MergeTreeData::renameAndDetachPart(DataPartPtr part, const String & prefix,
 				if ((*it)->left != part->left)
 					error = true;
 				data_parts.insert(*it);
+				addPartContributionToColumnSizes(*it);
 				pos = (*it)->right + 1;
 				restored.push_back((*it)->name);
 			}
@@ -782,6 +797,7 @@ void MergeTreeData::renameAndDetachPart(DataPartPtr part, const String & prefix,
 			if ((*it)->left > pos)
 				error = true;
 			data_parts.insert(*it);
+			addPartContributionToColumnSizes(*it);
 			pos = (*it)->right + 1;
 			restored.push_back((*it)->name);
 		}
@@ -799,7 +815,7 @@ void MergeTreeData::renameAndDetachPart(DataPartPtr part, const String & prefix,
 	}
 }
 
-void MergeTreeData::detachPartInPlace(DataPartPtr part)
+void MergeTreeData::detachPartInPlace(const DataPartPtr & part)
 {
 	renameAndDetachPart(part, "", false, false);
 }
@@ -809,6 +825,13 @@ MergeTreeData::DataParts MergeTreeData::getDataParts()
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 
 	return data_parts;
+}
+
+MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector()
+{
+	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
+
+	return DataPartsVector(std::begin(data_parts), std::end(data_parts));
 }
 
 MergeTreeData::DataParts MergeTreeData::getAllDataParts()
@@ -851,7 +874,15 @@ void MergeTreeData::delayInsertIfNeeded(Poco::Event * until)
 	{
 		double delay = std::pow(settings.insert_delay_step, parts_count - settings.parts_to_delay_insert);
 		delay /= 1000;
-		delay = std::min(delay, DBMS_MAX_DELAY_OF_INSERT);
+
+		if (delay > DBMS_MAX_DELAY_OF_INSERT)
+		{
+			ProfileEvents::increment(ProfileEvents::RejectedInserts);
+			throw Exception("Too much parts. Merges are processing significantly slower than inserts.", ErrorCodes::TOO_MUCH_PARTS);
+		}
+
+		ProfileEvents::increment(ProfileEvents::DelayedInserts);
+		ProfileEvents::increment(ProfileEvents::DelayedInsertsMilliseconds, delay * 1000);
 
 		LOG_INFO(log, "Delaying inserting block by "
 			<< std::fixed << std::setprecision(4) << delay << " sec. because there are " << parts_count << " parts");
@@ -1077,6 +1108,48 @@ void MergeTreeData::DataPart::Checksums::writeText(WriteBuffer & out) const
 			DB::writeText(sum.uncompressed_hash.second, out);
 			DB::writeString("\n", out);
 		}
+	}
+}
+
+void MergeTreeData::calculateColumnSizes()
+{
+	column_sizes.clear();
+
+	for (const auto & part : data_parts)
+		addPartContributionToColumnSizes(part);
+}
+
+void MergeTreeData::addPartContributionToColumnSizes(const DataPartPtr & part)
+{
+	const auto & files = part->checksums.files;
+
+	for (const auto & column : *columns)
+	{
+		const auto escaped_name = escapeForFileName(column.name);
+		const auto bin_file_name = escaped_name + ".bin";
+		const auto mrk_file_name = escaped_name + ".mrk";
+
+		auto & column_size = column_sizes[column.name];
+
+		if (files.count(bin_file_name)) column_size += files.find(bin_file_name)->second.file_size;
+		if (files.count(mrk_file_name)) column_size += files.find(mrk_file_name)->second.file_size;
+	}
+}
+
+void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part)
+{
+	const auto & files = part->checksums.files;
+
+	for (const auto & column : *columns)
+	{
+		const auto escaped_name = escapeForFileName(column.name);
+		const auto bin_file_name = escaped_name + ".bin";
+		const auto mrk_file_name = escaped_name + ".mrk";
+
+		auto & column_size = column_sizes[column.name];
+
+		if (files.count(bin_file_name)) column_size -= files.find(bin_file_name)->second.file_size;
+		if (files.count(mrk_file_name)) column_size -= files.find(mrk_file_name)->second.file_size;
 	}
 }
 

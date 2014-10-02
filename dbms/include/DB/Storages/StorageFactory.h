@@ -19,6 +19,7 @@ public:
 		const String & data_path,
 		const String & table_name,
 		const String & database_name,
+		Context & local_context,
 		Context & context,
 		ASTPtr & query,
 		NamesAndTypesListPtr columns,

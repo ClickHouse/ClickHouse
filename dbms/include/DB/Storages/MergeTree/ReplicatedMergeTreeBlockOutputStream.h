@@ -15,17 +15,20 @@ public:
 		: storage(storage_), insert_id(insert_id_), block_index(0),
 		log(&Logger::get(storage.data.getLogName() + " (Replicated OutputStream)")) {}
 
+	void writePrefix() override
+	{
+		/// TODO Можно ли здесь не блокировать структуру таблицы?
+		storage.data.delayInsertIfNeeded(&storage.restarting_event);
+	}
+
 	void write(const Block & block) override
 	{
+		assertSessionIsNotExpired();
 		auto part_blocks = storage.writer.splitBlockIntoParts(block);
 
 		for (auto & current_block : part_blocks)
 		{
-			if (storage.zookeeper->expired())
-				throw Exception("ZooKeeper session has been expired.", ErrorCodes::NO_ZOOKEEPER);
-
-			/// TODO Можно ли здесь не блокировать структуру таблицы?
-			storage.data.delayInsertIfNeeded(&storage.restarting_event);
+			assertSessionIsNotExpired();
 
 			++block_index;
 			String block_id = insert_id.empty() ? "" : insert_id + "__" + toString(block_index);
@@ -145,6 +148,14 @@ private:
 	size_t block_index;
 
 	Logger * log;
+
+
+	/// Позволяет проверить, что сессия в ZooKeeper ещё жива.
+	void assertSessionIsNotExpired()
+	{
+		if (storage.zookeeper->expired())
+			throw Exception("ZooKeeper session has been expired.", ErrorCodes::NO_ZOOKEEPER);
+	}
 };
 
 }

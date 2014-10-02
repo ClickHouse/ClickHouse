@@ -241,11 +241,15 @@ void TCPHandler::readData(const Settings & global_settings)
 
 void TCPHandler::processInsertQuery(const Settings & global_settings)
 {
+	/** Сделано выше остальных строк, чтобы в случае, когда функция writePrefix кидает эксепшен,
+	  *  клиент получил эксепшен до того, как начнёт отправлять данные.
+	  */
+	state.io.out->writePrefix();
+
 	/// Отправляем клиенту блок - структура таблицы.
 	Block block = state.io.out_sample;
 	sendData(block);
 
-	state.io.out->writePrefix();
 	readData(global_settings);
 	state.io.out->writeSuffix();
 }

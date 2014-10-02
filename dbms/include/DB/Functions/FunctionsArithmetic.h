@@ -1,6 +1,8 @@
 #pragma once
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypeDate.h>
+#include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/Functions/IFunction.h>
 #include <DB/Functions/NumberTraits.h>
 
@@ -13,42 +15,43 @@ namespace DB
   * Битовые функции: |, &, ^, ~.
   */
 
-template<typename A, typename B, typename Op>
+template<typename A, typename B, typename Op, typename ResultType_ = typename Op::ResultType>
 struct BinaryOperationImplBase
 {
-	typedef typename Op::ResultType ResultType;
+	typedef ResultType_ ResultType;
 
 	static void vector_vector(const PODArray<A> & a, const PODArray<B> & b, PODArray<ResultType> & c)
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
-			c[i] = Op::apply(a[i], b[i]);
+			c[i] = Op::template apply<ResultType>(a[i], b[i]);
 	}
 
 	static void vector_constant(const PODArray<A> & a, B b, PODArray<ResultType> & c)
 	{
 		size_t size = a.size();
 		for (size_t i = 0; i < size; ++i)
-			c[i] = Op::apply(a[i], b);
+			c[i] = Op::template apply<ResultType>(a[i], b);
 	}
 
 	static void constant_vector(A a, const PODArray<B> & b, PODArray<ResultType> & c)
 	{
 		size_t size = b.size();
 		for (size_t i = 0; i < size; ++i)
-			c[i] = Op::apply(a, b[i]);
+			c[i] = Op::template apply<ResultType>(a, b[i]);
 	}
 
 	static void constant_constant(A a, B b, ResultType & c)
 	{
-		c = Op::apply(a, b);
+		c = Op::template apply<ResultType>(a, b);
 	}
 };
 
-template<typename A, typename B, typename Op>
-struct BinaryOperationImpl : BinaryOperationImplBase<A, B, Op>
+template<typename A, typename B, typename Op, typename ResultType = typename Op::ResultType>
+struct BinaryOperationImpl : BinaryOperationImplBase<A, B, Op, ResultType>
 {
 };
+
 
 template<typename A, typename Op>
 struct UnaryOperationImpl
@@ -74,21 +77,24 @@ struct PlusImpl
 {
 	typedef typename NumberTraits::ResultOfAdditionMultiplication<A, B>::Type ResultType;
 
-	static inline ResultType apply(A a, B b)
+	template <typename Result = ResultType>
+	static inline Result apply(A a, B b)
 	{
 		/// Далее везде, static_cast - чтобы не было неправильного результата в выражениях вида Int64 c = UInt32(a) * Int32(-1).
-		return static_cast<ResultType>(a) + b;
+		return static_cast<Result>(a) + b;
 	}
 };
+
 
 template<typename A, typename B>
 struct MultiplyImpl
 {
 	typedef typename NumberTraits::ResultOfAdditionMultiplication<A, B>::Type ResultType;
 
-	static inline ResultType apply(A a, B b)
+	template <typename Result = ResultType>
+	static inline Result apply(A a, B b)
 	{
-		return static_cast<ResultType>(a) * b;
+		return static_cast<Result>(a) * b;
 	}
 };
 
@@ -97,9 +103,10 @@ struct MinusImpl
 {
 	typedef typename NumberTraits::ResultOfSubtraction<A, B>::Type ResultType;
 
-	static inline ResultType apply(A a, B b)
+	template <typename Result = ResultType>
+	static inline Result apply(A a, B b)
 	{
-		return static_cast<ResultType>(a) - b;
+		return static_cast<Result>(a) - b;
 	}
 };
 
@@ -108,9 +115,10 @@ struct DivideFloatingImpl
 {
 	typedef typename NumberTraits::ResultOfFloatingPointDivision<A, B>::Type ResultType;
 
-	static inline ResultType apply(A a, B b)
+	template <typename Result = ResultType>
+	static inline Result apply(A a, B b)
 	{
-		return static_cast<ResultType>(a) / b;
+		return static_cast<Result>(a) / b;
 	}
 };
 
@@ -139,10 +147,11 @@ struct DivideIntegralImpl
 {
 	typedef typename NumberTraits::ResultOfIntegerDivision<A, B>::Type ResultType;
 
-	static inline ResultType apply(A a, B b)
+	template <typename Result = ResultType>
+	static inline Result apply(A a, B b)
 	{
 		throwIfDivisionLeadsToFPE(a, b);
-		return static_cast<ResultType>(a) / b;
+		return static_cast<Result>(a) / b;
 	}
 };
 
@@ -151,7 +160,8 @@ struct ModuloImpl
 {
 	typedef typename NumberTraits::ResultOfModulo<A, B>::Type ResultType;
 
-	static inline ResultType apply(A a, B b)
+	template <typename Result = ResultType>
+	static inline Result apply(A a, B b)
 	{
 		throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<A>::Type(b));
 		return typename NumberTraits::ToInteger<A>::Type(a)
@@ -164,10 +174,11 @@ struct BitAndImpl
 {
 	typedef typename NumberTraits::ResultOfBit<A, B>::Type ResultType;
 
-	static inline ResultType apply(A a, B b)
+	template <typename Result = ResultType>
+	static inline Result apply(A a, B b)
 	{
-		return static_cast<ResultType>(a)
-			& static_cast<ResultType>(b);
+		return static_cast<Result>(a)
+			& static_cast<Result>(b);
 	}
 };
 
@@ -176,10 +187,11 @@ struct BitOrImpl
 {
 	typedef typename NumberTraits::ResultOfBit<A, B>::Type ResultType;
 
-	static inline ResultType apply(A a, B b)
+	template <typename Result = ResultType>
+	static inline Result apply(A a, B b)
 	{
-		return static_cast<ResultType>(a)
-			| static_cast<ResultType>(b);
+		return static_cast<Result>(a)
+			| static_cast<Result>(b);
 	}
 };
 
@@ -188,10 +200,11 @@ struct BitXorImpl
 {
 	typedef typename NumberTraits::ResultOfBit<A, B>::Type ResultType;
 
-	static inline ResultType apply(A a, B b)
+	template <typename Result = ResultType>
+	static inline Result apply(A a, B b)
 	{
-		return static_cast<ResultType>(a)
-			^ static_cast<ResultType>(b);
+		return static_cast<Result>(a)
+			^ static_cast<Result>(b);
 	}
 };
 
@@ -200,10 +213,11 @@ struct BitShiftLeftImpl
 {
 	typedef typename NumberTraits::ResultOfBit<A, B>::Type ResultType;
 
-	static inline ResultType apply(A a, B b)
+	template <typename Result = ResultType>
+	static inline Result apply(A a, B b)
 	{
-		return static_cast<ResultType>(a)
-			<< static_cast<ResultType>(b);
+		return static_cast<Result>(a)
+			<< static_cast<Result>(b);
 	}
 };
 
@@ -212,10 +226,11 @@ struct BitShiftRightImpl
 {
 	typedef typename NumberTraits::ResultOfBit<A, B>::Type ResultType;
 
-	static inline ResultType apply(A a, B b)
+	template <typename Result = ResultType>
+	static inline Result apply(A a, B b)
 	{
-		return static_cast<ResultType>(a)
-			>> static_cast<ResultType>(b);
+		return static_cast<Result>(a)
+			>> static_cast<Result>(b);
 	}
 };
 
@@ -242,20 +257,142 @@ struct BitNotImpl
 };
 
 
+/// this one is just for convenience
+template <bool B, typename T1, typename T2> using If = typename std::conditional<B, T1, T2>::type;
+/// these ones for better semantics
+template <typename T> using Then = T;
+template <typename T> using Else = T;
+
+/// Used to indicate undefined operation
+struct InvalidType;
+
+template <typename DataType> struct IsIntegral { static constexpr auto value = false; };
+template <> struct IsIntegral<DataTypeUInt8> { static constexpr auto value = true; };
+template <> struct IsIntegral<DataTypeUInt16> { static constexpr auto value = true; };
+template <> struct IsIntegral<DataTypeUInt32> { static constexpr auto value = true; };
+template <> struct IsIntegral<DataTypeUInt64> { static constexpr auto value = true; };
+template <> struct IsIntegral<DataTypeInt8> { static constexpr auto value = true; };
+template <> struct IsIntegral<DataTypeInt16> { static constexpr auto value = true; };
+template <> struct IsIntegral<DataTypeInt32> { static constexpr auto value = true; };
+template <> struct IsIntegral<DataTypeInt64> { static constexpr auto value = true; };
+
+template <typename DataType> struct IsFloating { static constexpr auto value = false; };
+template <> struct IsFloating<DataTypeFloat32> { static constexpr auto value = true; };
+template <> struct IsFloating<DataTypeFloat64> { static constexpr auto value = true; };
+
+template <typename DataType> struct IsNumeric
+{
+	static constexpr auto value = IsIntegral<DataType>::value || IsFloating<DataType>::value;
+};
+
+template <typename DataType> struct IsDateOrDateTime { static constexpr auto value = false; };
+template <> struct IsDateOrDateTime<DataTypeDate> { static constexpr auto value = true; };
+template <> struct IsDateOrDateTime<DataTypeDateTime> { static constexpr auto value = true; };
+
+/** Returns appropriate result type for binary operator on dates:
+ *  Date + Integral -> Date
+ *  Integral + Date -> Date
+ *  Date - Date     -> Int32
+ *  Date - Integral -> Date
+ *  All other operations are not defined and return InvalidType, operations on
+ *  distinct date types are also undefined (e.g. DataTypeDate - DataTypeDateTime) */
+template <template <typename, typename> class Operation, typename LeftDataType, typename RightDataType>
+struct DateBinaryOperationTraits
+{
+	using T0 = typename LeftDataType::FieldType;
+	using T1 = typename RightDataType::FieldType;
+	using Op = Operation<T0, T1>;
+
+	using ResultDataType =
+		If<std::is_same<Op, PlusImpl<T0, T1>>::value,
+			Then<
+				If<IsDateOrDateTime<LeftDataType>::value && IsIntegral<RightDataType>::value,
+					Then<LeftDataType>,
+					Else<
+						If<IsIntegral<LeftDataType>::value && IsDateOrDateTime<RightDataType>::value,
+							Then<RightDataType>,
+							Else<InvalidType>
+						>
+					>
+				>
+			>,
+			Else<
+				If<std::is_same<Op, MinusImpl<T0, T1>>::value,
+					Then<
+						If<IsDateOrDateTime<LeftDataType>::value,
+							Then<
+								If<std::is_same<LeftDataType, RightDataType>::value,
+									Then<DataTypeInt32>,
+									Else<
+										If<IsIntegral<RightDataType>::value,
+											Then<LeftDataType>,
+											Else<InvalidType>
+										>
+									>
+								>
+							>,
+							Else<InvalidType>
+						>
+					>,
+					Else<InvalidType>
+				>
+			>
+		>;
+};
+
+
+/// Decides among date and numeric operations
+template <template <typename, typename> class Operation, typename LeftDataType, typename RightDataType>
+struct BinaryOperationTraits
+{
+	using ResultDataType =
+		If<IsDateOrDateTime<LeftDataType>::value || IsDateOrDateTime<RightDataType>::value,
+			Then<
+				typename DateBinaryOperationTraits<
+					Operation, LeftDataType, RightDataType
+				>::ResultDataType
+			>,
+			Else<
+				typename DataTypeFromFieldType<
+					typename Operation<
+						typename LeftDataType::FieldType,
+						typename RightDataType::FieldType
+					>::ResultType
+				>::Type
+			>
+		>;
+};
+
 
 template <template <typename, typename> class Op, typename Name>
 class FunctionBinaryArithmetic : public IFunction
 {
 private:
-	template <typename T0, typename T1>
+	/// Overload for InvalidType
+	template <typename ResultDataType,
+			  typename std::enable_if<std::is_same<ResultDataType, InvalidType>::value>::type * = nullptr>
+	bool checkRightTypeImpl(DataTypePtr & type_res) const
+	{
+		return false;
+	}
+
+	/// Overload for well-defined operations
+	template <typename ResultDataType,
+			  typename std::enable_if<!std::is_same<ResultDataType, InvalidType>::value>::type * = nullptr>
+	bool checkRightTypeImpl(DataTypePtr & type_res) const
+	{
+		type_res = new ResultDataType;
+		return true;
+	}
+
+	template <typename LeftDataType, typename RightDataType>
 	bool checkRightType(const DataTypes & arguments, DataTypePtr & type_res) const
 	{
-		if (typeid_cast<const T1 *>(&*arguments[1]))
-		{
-			type_res = new typename DataTypeFromFieldType<
-				typename Op<typename T0::FieldType, typename T1::FieldType>::ResultType>::Type;
-			return true;
-		}
+		using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
+
+		if (typeid_cast<const RightDataType *>(&*arguments[1]))
+			return checkRightTypeImpl<ResultDataType>(type_res);
+
 		return false;
 	}
 
@@ -264,7 +401,9 @@ private:
 	{
 		if (typeid_cast<const T0 *>(&*arguments[0]))
 		{
-			if (	checkRightType<T0, DataTypeUInt8>(arguments, type_res)
+			if (	checkRightType<T0, DataTypeDate>(arguments, type_res)
+				||  checkRightType<T0, DataTypeDateTime>(arguments, type_res)
+				||	checkRightType<T0, DataTypeUInt8>(arguments, type_res)
 				||	checkRightType<T0, DataTypeUInt16>(arguments, type_res)
 				||	checkRightType<T0, DataTypeUInt32>(arguments, type_res)
 				||	checkRightType<T0, DataTypeUInt64>(arguments, type_res)
@@ -282,33 +421,74 @@ private:
 		return false;
 	}
 
-
-	template <typename T0, typename T1>
-	bool executeRightType(Block & block, const ColumnNumbers & arguments, size_t result, const ColumnVector<T0> * col_left)
+	/// Overload for date operations
+	template <typename LeftDataType, typename RightDataType, typename ColumnType,
+			  typename std::enable_if<IsDateOrDateTime<LeftDataType>::value || IsDateOrDateTime<RightDataType>::value>::type * = nullptr>
+	bool executeRightType(Block & block, const ColumnNumbers & arguments, const size_t result, const ColumnType * col_left)
 	{
-		if (ColumnVector<T1> * col_right = typeid_cast<ColumnVector<T1> *>(&*block.getByPosition(arguments[1]).column))
-		{
-			typedef typename Op<T0, T1>::ResultType ResultType;
+		if (!typeid_cast<const RightDataType *>(block.getByPosition(arguments[1]).type.get()))
+			return false;
 
-			ColumnVector<ResultType> * col_res = new ColumnVector<ResultType>;
+		using ResultDataType = typename DateBinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
+
+		return executeRightTypeDispatch<LeftDataType, RightDataType, ResultDataType>(
+			block, arguments, result, col_left);
+	}
+
+	/// Overload for numeric operations
+	template <typename LeftDataType, typename RightDataType, typename ColumnType,
+			  typename T0 = typename LeftDataType::FieldType, typename T1 = typename RightDataType::FieldType,
+			  typename std::enable_if<IsNumeric<LeftDataType>::value && IsNumeric<RightDataType>::value>::type * = nullptr>
+	bool executeRightType(Block & block, const ColumnNumbers & arguments, const size_t result, const ColumnType * col_left)
+	{
+		return executeRightTypeImpl<T0, T1>(block, arguments, result, col_left);
+	}
+
+	/// Overload for InvalidType
+	template <typename LeftDataType, typename RightDataType, typename ResultDataType, typename ColumnType,
+			  typename std::enable_if<std::is_same<ResultDataType, InvalidType>::value>::type * = nullptr>
+	bool executeRightTypeDispatch(Block & block, const ColumnNumbers & arguments, const size_t result,
+								  const ColumnType * col_left)
+	{
+		return false;
+	}
+
+	/// Overload for well-defined operations
+	template <typename LeftDataType, typename RightDataType, typename ResultDataType, typename ColumnType,
+			  typename std::enable_if<!std::is_same<ResultDataType, InvalidType>::value>::type * = nullptr>
+	bool executeRightTypeDispatch(Block & block, const ColumnNumbers & arguments, const size_t result,
+								  const ColumnType * col_left)
+	{
+		using T0 = typename LeftDataType::FieldType;
+		using T1 = typename RightDataType::FieldType;
+		using ResultType = typename ResultDataType::FieldType;
+
+		return executeRightTypeImpl<T0, T1, ResultType>(block, arguments, result, col_left);
+	}
+
+	/// ColumnVector overload
+	template <typename T0, typename T1, typename ResultType = typename Op<T0, T1>::ResultType>
+	bool executeRightTypeImpl(Block & block, const ColumnNumbers & arguments, size_t result, const ColumnVector<T0> * col_left)
+	{
+		if (auto col_right = typeid_cast<ColumnVector<T1> *>(block.getByPosition(arguments[1]).column.get()))
+		{
+			auto col_res = new ColumnVector<ResultType>;
 			block.getByPosition(result).column = col_res;
 
-			typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
+			auto & vec_res = col_res->getData();
 			vec_res.resize(col_left->getData().size());
-			BinaryOperationImpl<T0, T1, Op<T0, T1> >::vector_vector(col_left->getData(), col_right->getData(), vec_res);
+			BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>::vector_vector(col_left->getData(), col_right->getData(), vec_res);
 
 			return true;
 		}
-		else if (ColumnConst<T1> * col_right = typeid_cast<ColumnConst<T1> *>(&*block.getByPosition(arguments[1]).column))
+		else if (auto col_right = typeid_cast<ColumnConst<T1> *>(block.getByPosition(arguments[1]).column.get()))
 		{
-			typedef typename Op<T0, T1>::ResultType ResultType;
-
-			ColumnVector<ResultType> * col_res = new ColumnVector<ResultType>;
+			auto col_res = new ColumnVector<ResultType>;
 			block.getByPosition(result).column = col_res;
 
-			typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
+			auto & vec_res = col_res->getData();
 			vec_res.resize(col_left->getData().size());
-			BinaryOperationImpl<T0, T1, Op<T0, T1> >::vector_constant(col_left->getData(), col_right->getData(), vec_res);
+			BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>::vector_constant(col_left->getData(), col_right->getData(), vec_res);
 
 			return true;
 		}
@@ -316,30 +496,27 @@ private:
 		return false;
 	}
 
-	template <typename T0, typename T1>
-	bool executeConstRightType(Block & block, const ColumnNumbers & arguments, size_t result, const ColumnConst<T0> * col_left)
+	/// ColumnConst overload
+	template <typename T0, typename T1, typename ResultType = typename Op<T0, T1>::ResultType>
+	bool executeRightTypeImpl(Block & block, const ColumnNumbers & arguments, size_t result, const ColumnConst<T0> * col_left)
 	{
-		if (ColumnVector<T1> * col_right = typeid_cast<ColumnVector<T1> *>(&*block.getByPosition(arguments[1]).column))
+		if (auto col_right = typeid_cast<ColumnVector<T1> *>(block.getByPosition(arguments[1]).column.get()))
 		{
-			typedef typename Op<T0, T1>::ResultType ResultType;
-
-			ColumnVector<ResultType> * col_res = new ColumnVector<ResultType>;
+			auto col_res = new ColumnVector<ResultType>;
 			block.getByPosition(result).column = col_res;
 
-			typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
+			auto & vec_res = col_res->getData();
 			vec_res.resize(col_left->size());
-			BinaryOperationImpl<T0, T1, Op<T0, T1> >::constant_vector(col_left->getData(), col_right->getData(), vec_res);
+			BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>::constant_vector(col_left->getData(), col_right->getData(), vec_res);
 
 			return true;
 		}
-		else if (ColumnConst<T1> * col_right = typeid_cast<ColumnConst<T1> *>(&*block.getByPosition(arguments[1]).column))
+		else if (auto col_right = typeid_cast<ColumnConst<T1> *>(block.getByPosition(arguments[1]).column.get()))
 		{
-			typedef typename Op<T0, T1>::ResultType ResultType;
-
 			ResultType res = 0;
-			BinaryOperationImpl<T0, T1, Op<T0, T1> >::constant_constant(col_left->getData(), col_right->getData(), res);
+			BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>::constant_constant(col_left->getData(), col_right->getData(), res);
 
-			ColumnConst<ResultType> * col_res = new ColumnConst<ResultType>(col_left->size(), res);
+			auto col_res = new ColumnConst<ResultType>(col_left->size(), res);
 			block.getByPosition(result).column = col_res;
 
 			return true;
@@ -348,39 +525,52 @@ private:
 		return false;
 	}
 
-	template <typename T0>
-	bool executeLeftType(Block & block, const ColumnNumbers & arguments, size_t result)
+	template <typename LeftDataType,
+			  typename std::enable_if<IsDateOrDateTime<LeftDataType>::value>::type * = nullptr>
+	bool executeLeftType(Block & block, const ColumnNumbers & arguments, const size_t result)
 	{
-		if (ColumnVector<T0> * col_left = typeid_cast<ColumnVector<T0> *>(&*block.getByPosition(arguments[0]).column))
+		if (!typeid_cast<const LeftDataType *>(block.getByPosition(arguments[0]).type.get()))
+			return false;
+
+		return executeLeftTypeDispatch<LeftDataType>(block, arguments, result);
+	}
+
+	template <typename LeftDataType,
+			  typename std::enable_if<IsNumeric<LeftDataType>::value>::type * = nullptr>
+	bool executeLeftType(Block & block, const ColumnNumbers & arguments, const size_t result)
+	{
+		return executeLeftTypeDispatch<LeftDataType>(block, arguments, result);
+	}
+
+	template <typename LeftDataType>
+	bool executeLeftTypeDispatch(Block & block, const ColumnNumbers & arguments, const size_t result)
+	{
+		using T0 = typename LeftDataType::FieldType;
+
+		if (	executeLeftTypeImpl<LeftDataType, ColumnVector<T0>>(block, arguments, result)
+			||	executeLeftTypeImpl<LeftDataType, ColumnConst<T0>>(block, arguments, result))
+			return true;
+
+		return false;
+	}
+
+	template <typename LeftDataType, typename ColumnType>
+	bool executeLeftTypeImpl(Block & block, const ColumnNumbers & arguments, const size_t result)
+	{
+		if (auto col_left = typeid_cast<ColumnType *>(block.getByPosition(arguments[0]).column.get()))
 		{
-			if (	executeRightType<T0, UInt8>(block, arguments, result, col_left)
-				||	executeRightType<T0, UInt16>(block, arguments, result, col_left)
-				||	executeRightType<T0, UInt32>(block, arguments, result, col_left)
-				||	executeRightType<T0, UInt64>(block, arguments, result, col_left)
-				||	executeRightType<T0, Int8>(block, arguments, result, col_left)
-				||	executeRightType<T0, Int16>(block, arguments, result, col_left)
-				||	executeRightType<T0, Int32>(block, arguments, result, col_left)
-				||	executeRightType<T0, Int64>(block, arguments, result, col_left)
-				||	executeRightType<T0, Float32>(block, arguments, result, col_left)
-				||	executeRightType<T0, Float64>(block, arguments, result, col_left))
-				return true;
-			else
-				throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
-					+ " of second argument of function " + getName(),
-					ErrorCodes::ILLEGAL_COLUMN);
-		}
-		else if (ColumnConst<T0> * col_left = typeid_cast<ColumnConst<T0> *>(&*block.getByPosition(arguments[0]).column))
-		{
-			if (	executeConstRightType<T0, UInt8>(block, arguments, result, col_left)
-				||	executeConstRightType<T0, UInt16>(block, arguments, result, col_left)
-				||	executeConstRightType<T0, UInt32>(block, arguments, result, col_left)
-				||	executeConstRightType<T0, UInt64>(block, arguments, result, col_left)
-				||	executeConstRightType<T0, Int8>(block, arguments, result, col_left)
-				||	executeConstRightType<T0, Int16>(block, arguments, result, col_left)
-				||	executeConstRightType<T0, Int32>(block, arguments, result, col_left)
-				||	executeConstRightType<T0, Int64>(block, arguments, result, col_left)
-				||	executeConstRightType<T0, Float32>(block, arguments, result, col_left)
-				||	executeConstRightType<T0, Float64>(block, arguments, result, col_left))
+			if (	executeRightType<LeftDataType, DataTypeDate>(block, arguments, result, col_left)
+				||  executeRightType<LeftDataType, DataTypeDateTime>(block, arguments, result, col_left)
+				||	executeRightType<LeftDataType, DataTypeUInt8>(block, arguments, result, col_left)
+				||	executeRightType<LeftDataType, DataTypeUInt16>(block, arguments, result, col_left)
+				||	executeRightType<LeftDataType, DataTypeUInt32>(block, arguments, result, col_left)
+				||	executeRightType<LeftDataType, DataTypeUInt64>(block, arguments, result, col_left)
+				||	executeRightType<LeftDataType, DataTypeInt8>(block, arguments, result, col_left)
+				||	executeRightType<LeftDataType, DataTypeInt16>(block, arguments, result, col_left)
+				||	executeRightType<LeftDataType, DataTypeInt32>(block, arguments, result, col_left)
+				||	executeRightType<LeftDataType, DataTypeInt64>(block, arguments, result, col_left)
+				||	executeRightType<LeftDataType, DataTypeFloat32>(block, arguments, result, col_left)
+				||	executeRightType<LeftDataType, DataTypeFloat64>(block, arguments, result, col_left))
 				return true;
 			else
 				throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
@@ -408,7 +598,9 @@ public:
 
 		DataTypePtr type_res;
 
-		if (!(	checkLeftType<DataTypeUInt8>(arguments, type_res)
+		if (!(	checkLeftType<DataTypeDate>(arguments, type_res)
+			||	checkLeftType<DataTypeDateTime>(arguments, type_res)
+			||	checkLeftType<DataTypeUInt8>(arguments, type_res)
 			||	checkLeftType<DataTypeUInt16>(arguments, type_res)
 			||	checkLeftType<DataTypeUInt32>(arguments, type_res)
 			||	checkLeftType<DataTypeUInt64>(arguments, type_res)
@@ -427,16 +619,18 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (!(	executeLeftType<UInt8>(block, arguments, result)
-			||	executeLeftType<UInt16>(block, arguments, result)
-			||	executeLeftType<UInt32>(block, arguments, result)
-			||	executeLeftType<UInt64>(block, arguments, result)
-			||	executeLeftType<Int8>(block, arguments, result)
-			||	executeLeftType<Int16>(block, arguments, result)
-			||	executeLeftType<Int32>(block, arguments, result)
-			||	executeLeftType<Int64>(block, arguments, result)
-			||	executeLeftType<Float32>(block, arguments, result)
-			||	executeLeftType<Float64>(block, arguments, result)))
+		if (!(  executeLeftType<DataTypeDate>(block, arguments, result)
+			||  executeLeftType<DataTypeDateTime>(block, arguments, result)
+			||  executeLeftType<DataTypeUInt8>(block, arguments, result)
+			||	executeLeftType<DataTypeUInt16>(block, arguments, result)
+			||	executeLeftType<DataTypeUInt32>(block, arguments, result)
+			||	executeLeftType<DataTypeUInt64>(block, arguments, result)
+			||	executeLeftType<DataTypeInt8>(block, arguments, result)
+			||	executeLeftType<DataTypeInt16>(block, arguments, result)
+			||	executeLeftType<DataTypeInt32>(block, arguments, result)
+			||	executeLeftType<DataTypeInt64>(block, arguments, result)
+			||	executeLeftType<DataTypeFloat32>(block, arguments, result)
+			||	executeLeftType<DataTypeFloat64>(block, arguments, result)))
 		   throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
 				+ " of first argument of function " + getName(),
 				ErrorCodes::ILLEGAL_COLUMN);

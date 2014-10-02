@@ -73,6 +73,35 @@ static inline void stringWidthConstant(const String & data, UInt64 & res)
 	res = stringWidth(reinterpret_cast<const UInt8 *>(data.data()), reinterpret_cast<const UInt8 *>(data.data()) + data.size());
 }
 
+class FunctionCurrentDatabase : public IFunction
+{
+	const String name;
+
+public:
+	explicit FunctionCurrentDatabase(const String & name) : name(name) {}
+
+	String getName() const {
+		return "currentDatabase";
+	}
+
+	DataTypePtr getReturnType(const DataTypes & arguments) const
+	{
+		if (arguments.size() != 0)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ toString(arguments.size()) + ", should be 0.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		return new DataTypeString;
+	}
+
+	void execute(Block & block, const ColumnNumbers & arguments, const size_t result)
+	{
+		block.getByPosition(result).column = new ColumnConstString{
+			block.rowsInFirstColumn(), name
+		};
+	}
+};
+
 /// Получить имя хоста. (Оно - константа, вычисляется один раз за весь запрос.)
 class FunctionHostName : public IFunction
 {
