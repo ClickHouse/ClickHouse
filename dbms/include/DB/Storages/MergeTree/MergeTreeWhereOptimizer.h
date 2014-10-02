@@ -86,8 +86,8 @@ private:
 
 		/// remove condition by swapping it with the last one and calling ::pop_back()
 		const auto remove_condition_at_index = [&conditions] (const std::size_t idx) {
-			if (idx < conditions.size())
-				conditions[idx] = std::move(conditions.back());
+			if (idx < conditions.size() - 1)
+				std::swap(conditions[idx], conditions.back());
 			conditions.pop_back();
 		};
 
