@@ -271,7 +271,18 @@ void StorageReplicatedMergeTree::createReplica()
 	ops.push_back(new zkutil::Op::Create(replica_path + "/queue", "", zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
 	ops.push_back(new zkutil::Op::Create(replica_path + "/parts", "", zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
 	ops.push_back(new zkutil::Op::Create(replica_path + "/flags", "", zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
-	zookeeper->multi(ops);
+
+	try
+	{
+		zookeeper->multi(ops);
+	}
+	catch (const zkutil::KeeperException & e)
+	{
+		if (e.code == ZNODEEXISTS)
+			throw Exception("Replica " + replica_path + " is already exist.", ErrorCodes::REPLICA_IS_ALREADY_EXIST);
+
+		throw;
+	}
 
 	/** Нужно изменить данные ноды /replicas на что угодно, чтобы поток, удаляющий старые записи в логе,
 	  *  споткнулся об это изменение и не удалил записи, которые мы еще не прочитали.
@@ -404,7 +415,7 @@ void StorageReplicatedMergeTree::activateReplica()
 	{
 		zookeeper->multi(ops);
 	}
-	catch (zkutil::KeeperException & e)
+	catch (const zkutil::KeeperException & e)
 	{
 		if (e.code == ZNODEEXISTS)
 			throw Exception("Replica " + replica_path + " appears to be already active. If you're sure it's not, "
@@ -1201,7 +1212,7 @@ void StorageReplicatedMergeTree::queueUpdatingThread()
 
 			queue_updating_event->wait();
 		}
-		catch (zkutil::KeeperException & e)
+		catch (const zkutil::KeeperException & e)
 		{
 			if (e.code == ZINVALIDSTATE)
 				restarting_event.set();
