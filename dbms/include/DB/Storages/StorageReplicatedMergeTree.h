@@ -38,7 +38,7 @@ public:
 		const MergeTreeSettings & settings_ = MergeTreeSettings());
 
 	void shutdown() override;
-	~StorageReplicatedMergeTree();
+	~StorageReplicatedMergeTree() override;
 
 	std::string getName() const override
 	{
@@ -52,13 +52,13 @@ public:
 
 	const NamesAndTypesList & getColumnsList() const override { return data.getColumnsList(); }
 
-	NameAndTypePair getColumn(const String &column_name) const
+	NameAndTypePair getColumn(const String & column_name) const override
 	{
 		if (column_name == "_replicated") return NameAndTypePair("_replicated", new DataTypeUInt8);
 		return data.getColumn(column_name);
 	}
 
-	bool hasColumn(const String &column_name) const
+	bool hasColumn(const String & column_name) const override
 	{
 		if (column_name == "_replicated") return true;
 		return data.hasColumn(column_name);
@@ -85,7 +85,7 @@ public:
 	  */
 	void drop() override;
 
-	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name);
+	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
 
 	bool supportsIndexForIn() const override { return true; }
 

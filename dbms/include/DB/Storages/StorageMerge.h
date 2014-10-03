@@ -25,16 +25,16 @@ public:
 		const String & table_name_regexp_,	/// Регексп имён таблиц-источников.
 		const Context & context_);			/// Известные таблицы.
 
-	std::string getName() const { return "Merge"; }
-	std::string getTableName() const { return name; }
-	bool supportsSampling() const { return true; }
+	std::string getName() const override { return "Merge"; }
+	std::string getTableName() const override { return name; }
+	bool supportsSampling() const override { return true; }
 
 	/// Проверка откладывается до метода read. Там проверяется поддержка PREWHERE у использующихся таблиц.
-	bool supportsPrewhere() const { return true; }
+	bool supportsPrewhere() const override { return true; }
 
-	const NamesAndTypesList & getColumnsList() const { return *columns; }
-	NameAndTypePair getColumn(const String &column_name) const;
-	bool hasColumn(const String &column_name) const;
+	const NamesAndTypesList & getColumnsList() const override { return *columns; }
+	NameAndTypePair getColumn(const String & column_name) const override;
+	bool hasColumn(const String & column_name) const override;
 
 	BlockInputStreams read(
 		const Names & column_names,
@@ -42,16 +42,15 @@ public:
 		const Settings & settings,
 		QueryProcessingStage::Enum & processed_stage,
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
-		unsigned threads = 1);
+		unsigned threads = 1) override;
 
 	void drop() override {}
-	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) { name = new_table_name; }
+	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override { name = new_table_name; }
 	
 	/// в подтаблицах добавлять и удалять столбы нужно вручную
 	/// структура подтаблиц не проверяется
-	void alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context);
+	void alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context) override;
 
-	Block getBlockWithVirtualColumns(const std::vector<StoragePtr> & selected_tables) const;
 private:
 	String name;
 	NamesAndTypesListPtr columns;
@@ -67,6 +66,8 @@ private:
 		const Context & context_);
 
 	void getSelectedTables(StorageVector & selected_tables) const;
+
+	Block getBlockWithVirtualColumns(const StorageVector & selected_tables) const;
 };
 
 }

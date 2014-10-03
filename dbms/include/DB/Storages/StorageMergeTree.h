@@ -35,27 +35,27 @@ public:
 		const String & sign_column_ = "",
 		const MergeTreeSettings & settings_ = MergeTreeSettings());
 
-	void shutdown();
-	~StorageMergeTree();
+	void shutdown() override;
+	~StorageMergeTree() override;
 
-	std::string getName() const
+	std::string getName() const override
 	{
 		return data.getModePrefix() + "MergeTree";
 	}
 
-	std::string getTableName() const { return table_name; }
-	bool supportsSampling() const { return data.supportsSampling(); }
-	bool supportsFinal() const { return data.supportsFinal(); }
-	bool supportsPrewhere() const { return data.supportsPrewhere(); }
+	std::string getTableName() const override { return table_name; }
+	bool supportsSampling() const override { return data.supportsSampling(); }
+	bool supportsFinal() const override { return data.supportsFinal(); }
+	bool supportsPrewhere() const override { return data.supportsPrewhere(); }
 
-	const NamesAndTypesList & getColumnsList() const { return data.getColumnsList(); }
+	const NamesAndTypesList & getColumnsList() const override { return data.getColumnsList(); }
 
-	NameAndTypePair getColumn(const String &column_name) const
+	NameAndTypePair getColumn(const String & column_name) const override
 	{
 		return data.getColumn(column_name);
 	}
 
-	bool hasColumn(const String &column_name) const
+	bool hasColumn(const String & column_name) const override
 	{
 		return data.hasColumn(column_name);
 	}
@@ -66,22 +66,22 @@ public:
 		const Settings & settings,
 		QueryProcessingStage::Enum & processed_stage,
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
-		unsigned threads = 1);
+		unsigned threads = 1) override;
 
-	BlockOutputStreamPtr write(ASTPtr query);
+	BlockOutputStreamPtr write(ASTPtr query) override;
 
 	/** Выполнить очередной шаг объединения кусков.
 	  */
-	bool optimize()
+	bool optimize() override
 	{
 		return merge(true);
 	}
 
 	void drop() override;
 
-	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name);
+	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
 
-	void alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context);
+	void alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context) override;
 
 	bool supportsIndexForIn() const override { return true; }
 

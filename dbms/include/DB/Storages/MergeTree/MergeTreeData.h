@@ -606,20 +606,23 @@ public:
 
 	UInt64 getMaxDataPartIndex();
 
-	std::string getTableName() const {
-		throw Exception("Logical error: calling method getTableName of not a table.",	ErrorCodes::LOGICAL_ERROR);
+	std::string getTableName() const
+	{
+		throw Exception("Logical error: calling method getTableName of not a table.", ErrorCodes::LOGICAL_ERROR);
 	}
 
 	const NamesAndTypesList & getColumnsList() const { return *columns; }
 
-	NameAndTypePair getColumn(const String &column_name) const
+	NameAndTypePair getColumn(const String & column_name) const
 	{
-		if (column_name == "_part") return NameAndTypePair("_part", new DataTypeString);
-		if (column_name == "_part_index") return NameAndTypePair("_part_index", new DataTypeUInt64);
+		if (column_name == "_part")
+			return NameAndTypePair("_part", new DataTypeString);
+		if (column_name == "_part_index")
+			return NameAndTypePair("_part_index", new DataTypeUInt64);
 		return getRealColumn(column_name);
 	}
 
-	bool hasColumn(const String &column_name) const
+	bool hasColumn(const String & column_name) const
 	{
 		if (column_name == "_part") return true;
 		if (column_name == "_part_index") return true;

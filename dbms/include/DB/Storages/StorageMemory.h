@@ -64,10 +64,10 @@ friend class MemoryBlockOutputStream;
 public:
 	static StoragePtr create(const std::string & name_, NamesAndTypesListPtr columns_);
 
-	std::string getName() const { return "Memory"; }
-	std::string getTableName() const { return name; }
+	std::string getName() const override { return "Memory"; }
+	std::string getTableName() const override { return name; }
 
-	const NamesAndTypesList & getColumnsList() const { return *columns; }
+	const NamesAndTypesList & getColumnsList() const override { return *columns; }
 
 	size_t getSize() const { return data.size(); }
 
@@ -77,13 +77,12 @@ public:
 		const Settings & settings,
 		QueryProcessingStage::Enum & processed_stage,
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
-		unsigned threads = 1);
+		unsigned threads = 1) override;
 
-	BlockOutputStreamPtr write(
-		ASTPtr query);
+	BlockOutputStreamPtr write(ASTPtr query) override;
 
 	void drop() override;
-	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) { name = new_table_name; }
+	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override { name = new_table_name; }
 
 private:
 	String name;

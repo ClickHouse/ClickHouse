@@ -27,12 +27,12 @@ public:
 		size_t chunks_to_merge_,			/// Сколько чанков сливать в одну группу.
 		Context & context_);			/// Известные таблицы.
 	
-	std::string getName() const { return "ChunkMerger"; }
-	std::string getTableName() const { return name; }
+	std::string getName() const override { return "ChunkMerger"; }
+	std::string getTableName() const override { return name; }
 	
-	const NamesAndTypesList & getColumnsList() const { return *columns; }
-	NameAndTypePair getColumn(const String &column_name) const;
-	bool hasColumn(const String &column_name) const;
+	const NamesAndTypesList & getColumnsList() const override { return *columns; }
+	NameAndTypePair getColumn(const String & column_name) const override;
+	bool hasColumn(const String & column_name) const override;
 
 	BlockInputStreams read(
 		const Names & column_names,
@@ -40,13 +40,11 @@ public:
 		const Settings & settings,
 		QueryProcessingStage::Enum & processed_stage,
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
-		unsigned threads = 1);
+		unsigned threads = 1) override;
 
-	void shutdown();
+	void shutdown() override;
 
-	Block getBlockWithVirtualColumns(const Storages & selected_tables) const;
-	
-	~StorageChunkMerger();
+	~StorageChunkMerger() override;
 	
 private:
 	String this_database;
@@ -77,11 +75,13 @@ private:
 		const std::string & destination_name_prefix_,
 		size_t chunks_to_merge_,
 		Context & context_);
-	
+
 	void mergeThread();
 	bool maybeMergeSomething();
 	Storages selectChunksToMerge();
 	bool mergeChunks(const Storages & chunks);
+
+	Block getBlockWithVirtualColumns(const Storages & selected_tables) const;
 
 	typedef std::set<std::string> TableNames;
 	/// Какие таблицы типа Chunks сейчас пишет хоть один ChunkMerger.

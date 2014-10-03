@@ -29,7 +29,7 @@ public:
 	void addReference();
 	void removeReference();
 	
-	std::string getName() const { return "Chunks"; }
+	std::string getName() const override { return "Chunks"; }
 	
 	BlockInputStreams read(
 		const Names & column_names,
@@ -37,7 +37,7 @@ public:
 		const Settings & settings,
 		QueryProcessingStage::Enum & processed_stage,
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
-		unsigned threads = 1);
+		unsigned threads = 1) override;
 
 	BlockInputStreams readFromChunk(
 		const std::string & chunk_name,
@@ -48,26 +48,23 @@ public:
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
 		unsigned threads = 1);
 
-	NameAndTypePair getColumn(const String &column_name) const;
-	bool hasColumn(const String &column_name) const;
+	NameAndTypePair getColumn(const String & column_name) const override;
+	bool hasColumn(const String & column_name) const override;
 
 	BlockOutputStreamPtr writeToNewChunk(
 		const std::string & chunk_name);
 	
 	/// Если бы запись была разрешена, непонятно, как назвать новый чанк.
-	BlockOutputStreamPtr write(
-		ASTPtr query)
+	BlockOutputStreamPtr write(ASTPtr query) override
 	{
 		throw Exception("Table doesn't support writing", ErrorCodes::NOT_IMPLEMENTED);
 	}
 	
 	/// Переименование испортило бы целостность количества ссылок из таблиц ChunkRef.
-	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
+	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override
 	{
 		throw Exception("Table doesn't support renaming", ErrorCodes::NOT_IMPLEMENTED);
 	}
-
-	Block getBlockWithVirtualColumns() const;
 
 protected:
 	/// Виртуальная функция из StorageLog
@@ -103,6 +100,8 @@ private:
 	
 	void loadIndex();
 	void appendChunkToIndex(const std::string & chunk_name, size_t mark);
+
+	Block getBlockWithVirtualColumns() const;
 };
 	
 }
