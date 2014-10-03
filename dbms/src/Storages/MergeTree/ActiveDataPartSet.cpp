@@ -6,8 +6,6 @@
 namespace DB
 {
 
-ActiveDataPartSet::ActiveDataPartSet() {}
-
 void ActiveDataPartSet::add(const String & name)
 {
 	Poco::ScopedLock<Poco::Mutex> lock(mutex);

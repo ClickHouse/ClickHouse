@@ -139,6 +139,7 @@ struct MergeTreeSettings
 	size_t replicated_max_missing_active_parts = 20;
 };
 
+
 class MergeTreeData : public ITableDeclaration
 {
 public:
@@ -307,7 +308,7 @@ public:
 		}
 
 		/// Вычисляем сумарный размер всей директории со всеми файлами
-		static size_t calcTotalSize(const String &from)
+		static size_t calcTotalSize(const String & from)
 		{
 			Poco::File cur(from);
 			if (cur.isFile())
@@ -523,6 +524,8 @@ public:
 		friend class MergeTreeData;
 
 		MergeTreeData * data = nullptr;
+
+		/// Что делать для отката операции.
 		DataPartsVector removed_parts;
 		DataPartsVector added_parts;
 	};
@@ -653,16 +656,16 @@ public:
 	DataPartPtr getPartIfExists(const String & part_name);
 
 	/** Переименовывает временный кусок в постоянный и добавляет его в рабочий набор.
-	  * Если increment!=nullptr, индекс куска берется из инкремента. Иначе индекс куска не меняется.
+	  * Если increment != nullptr, индекс куска берется из инкремента. Иначе индекс куска не меняется.
 	  * Предполагается, что кусок не пересекается с существующими.
 	  * Если out_transaction не nullptr, присваивает туда объект, позволяющий откатить добавление куска (но не переименование).
 	  */
-	void renameTempPartAndAdd(MutableDataPartPtr part, Increment * increment = nullptr, Transaction * out_transaction = nullptr);
+	void renameTempPartAndAdd(MutableDataPartPtr & part, Increment * increment = nullptr, Transaction * out_transaction = nullptr);
 
 	/** То же, что renameTempPartAndAdd, но кусок может покрывать существующие куски.
 	  * Удаляет и возвращает все куски, покрытые добавляемым (в возрастающем порядке).
 	  */
-	DataPartsVector renameTempPartAndReplace(MutableDataPartPtr part, Increment * increment = nullptr, Transaction * out_transaction = nullptr);
+	DataPartsVector renameTempPartAndReplace(MutableDataPartPtr & part, Increment * increment = nullptr, Transaction * out_transaction = nullptr);
 
 	/** Убирает из рабочего набора куски remove и добавляет куски add. add должны уже быть в all_data_parts.
 	  * Если clear_without_timeout, данные будут удалены при следующем clearOldParts, игнорируя old_parts_lifetime.
@@ -671,16 +674,16 @@ public:
 
 	/** Добавляет новый кусок в список известных кусков и в рабочий набор.
 	  */
-	void attachPart(DataPartPtr part);
+	void attachPart(const DataPartPtr & part);
 
 	/** Переименовывает кусок в detached/prefix_кусок и забывает про него. Данные не будут удалены в clearOldParts.
 	  * Если restore_covered, добавляет в рабочий набор неактивные куски, слиянием которых получен удаляемый кусок.
 	  */
-	void renameAndDetachPart(DataPartPtr part, const String & prefix = "", bool restore_covered = false, bool move_to_detached = true);
+	void renameAndDetachPart(const DataPartPtr & part, const String & prefix = "", bool restore_covered = false, bool move_to_detached = true);
 
 	/** Убирает кусок из списка кусков (включая all_data_parts), но не перемещщает директорию.
 	  */
-	void detachPartInPlace(DataPartPtr part);
+	void detachPartInPlace(const DataPartPtr & part);
 
 	/** Возвращает старые неактуальные куски, которые можно удалить. Одновременно удаляет их из списка кусков, но не с диска.
 	  */
@@ -718,7 +721,7 @@ public:
 	  * Если измененных столбцов подозрительно много, и !skip_sanity_checks, бросает исключение.
 	  * Если никаких действий над данными не требуется, возвращает nullptr.
 	  */
-	AlterDataPartTransactionPtr alterDataPart(DataPartPtr part, const NamesAndTypesList & new_columns, bool skip_sanity_checks = false);
+	AlterDataPartTransactionPtr alterDataPart(const DataPartPtr & part, const NamesAndTypesList & new_columns, bool skip_sanity_checks = false);
 
 	/// Нужно вызывать под залоченным lockStructureForAlter().
 	void setColumnsList(const NamesAndTypesList & new_columns) { columns = new NamesAndTypesList(new_columns); }
@@ -792,7 +795,7 @@ private:
 	  * Файлы, которые нужно удалить, в out_rename_map отображаются в пустую строку.
 	  * Если !part, просто проверяет, что все нужные преобразования типов допустимы.
 	  */
-	void createConvertExpression(DataPartPtr part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
+	void createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
 		ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map);
 
 	/// Рассчитывает размеры столбцов в сжатом виде для текущего состояния data_parts

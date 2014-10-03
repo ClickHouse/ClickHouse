@@ -282,7 +282,18 @@ void StorageReplicatedMergeTree::createReplica()
 	ops.push_back(new zkutil::Op::Create(replica_path + "/queue", "", zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
 	ops.push_back(new zkutil::Op::Create(replica_path + "/parts", "", zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
 	ops.push_back(new zkutil::Op::Create(replica_path + "/flags", "", zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
-	zookeeper->multi(ops);
+
+	try
+	{
+		zookeeper->multi(ops);
+	}
+	catch (const zkutil::KeeperException & e)
+	{
+		if (e.code == ZNODEEXISTS)
+			throw Exception("Replica " + replica_path + " is already exist.", ErrorCodes::REPLICA_IS_ALREADY_EXIST);
+
+		throw;
+	}
 
 	/** Нужно изменить данные ноды /replicas на что угодно, чтобы поток, удаляющий старые записи в логе,
 	  *  споткнулся об это изменение и не удалил записи, которые мы еще не прочитали.
@@ -415,7 +426,7 @@ void StorageReplicatedMergeTree::activateReplica()
 	{
 		zookeeper->multi(ops);
 	}
-	catch (zkutil::KeeperException & e)
+	catch (const zkutil::KeeperException & e)
 	{
 		if (e.code == ZNODEEXISTS)
 			throw Exception("Replica " + replica_path + " appears to be already active. If you're sure it's not, "
@@ -504,7 +515,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 	}
 
 	/// Добавим в ZK информацию о кусках, покрывающих недостающие куски.
-	for (MergeTreeData::DataPartPtr part : parts_to_add)
+	for (const MergeTreeData::DataPartPtr & part : parts_to_add)
 	{
 		LOG_ERROR(log, "Adding unexpected local part to ZooKeeper: " << part->name);
 
@@ -546,7 +557,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 	}
 
 	/// Удалим лишние локальные куски.
-	for (MergeTreeData::DataPartPtr part : unexpected_parts)
+	for (const MergeTreeData::DataPartPtr & part : unexpected_parts)
 	{
 		LOG_ERROR(log, "Renaming unexpected part " << part->name << " to ignored_" + part->name);
 		data.renameAndDetachPart(part, "ignored_", true);
@@ -560,7 +571,7 @@ void StorageReplicatedMergeTree::initVirtualParts()
 		virtual_parts.add(part->name);
 }
 
-void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(MergeTreeData::DataPartPtr part, zkutil::Ops & ops, String part_name)
+void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(const MergeTreeData::DataPartPtr & part, zkutil::Ops & ops, String part_name)
 {
 	if (part_name.empty())
 		part_name = part->name;
@@ -634,13 +645,16 @@ void StorageReplicatedMergeTree::clearOldParts()
 	size_t count = parts.size();
 
 	if (!count)
+	{
+		LOG_TRACE(log, "No old parts");
 		return;
+	}
 
 	try
 	{
 		while (!parts.empty())
 		{
-			MergeTreeData::DataPartPtr part = parts.back();
+			MergeTreeData::DataPartPtr & part = parts.back();
 
 			LOG_DEBUG(log, "Removing " << part->name);
 
@@ -658,6 +672,7 @@ void StorageReplicatedMergeTree::clearOldParts()
 	}
 	catch (...)
 	{
+		tryLogCurrentException(__PRETTY_FUNCTION__);
 		data.addOldParts(parts);
 		throw;
 	}
@@ -1208,7 +1223,7 @@ void StorageReplicatedMergeTree::queueUpdatingThread()
 
 			queue_updating_event->wait();
 		}
-		catch (zkutil::KeeperException & e)
+		catch (const zkutil::KeeperException & e)
 		{
 			if (e.code == ZINVALIDSTATE)
 				restarting_event.set();
@@ -1526,7 +1541,7 @@ void StorageReplicatedMergeTree::cleanupThread()
 		shutdown_event.tryWait(CLEANUP_SLEEP_MS);
 	}
 
-	LOG_DEBUG(log, "cleanup thread finished");
+	LOG_DEBUG(log, "Cleanup thread finished");
 }
 
 void StorageReplicatedMergeTree::alterThread()
@@ -1537,58 +1552,75 @@ void StorageReplicatedMergeTree::alterThread()
 	{
 		try
 		{
+			/** Имеем описание столбцов в ZooKeeper, общее для всех реплик (Пример: /clickhouse/tables/02-06/visits/columns),
+			  *  а также описание столбцов в локальном файле с метаданными (data.getColumnsList()).
+			  *
+			  * Если эти описания отличаются - нужно сделать ALTER.
+			  *
+			  * Если запомненная версия ноды (columns_version) отличается от версии в ZK,
+			  *  то описание столбцов в ZK не обязательно отличается от локального
+			  *  - такое может быть при цикле из ALTER-ов, который в целом, ничего не меняет.
+			  * В этом случае, надо обновить запомненный номер версии,
+			  *  а также всё-равно проверить структуру кусков, и, при необходимости, сделать ALTER.
+			  *
+			  * Запомненный номер версии нужно обновить после обновления метаданных, под блокировкой.
+			  * Этот номер версии проверяется на соответствие актуальному при INSERT-е.
+			  * То есть, так добиваемся, чтобы вставлялись блоки с правильной структурой.
+			  *
+			  * При старте сервера, мог быть не завершён предыдущий ALTER.
+			  * Поэтому, в первый раз, независимо от изменений, проверяем структуру всех part-ов,
+			  *  (Пример: /clickhouse/tables/02-06/visits/replicas/example02-06-1.yandex.ru/parts/20140806_20140831_131664_134988_3296/columns)
+			  *  и делаем ALTER, если необходимо.
+			  *
+			  * TODO: Слишком сложно, всё переделать.
+			  */
+
 			zkutil::Stat stat;
 			String columns_str = zookeeper->get(zookeeper_path + "/columns", &stat, alter_thread_event);
 			NamesAndTypesList columns = NamesAndTypesList::parse(columns_str, context.getDataTypeFactory());
 
-			bool changed = false;
-
-			/// Проверим, что описание столбцов изменилось.
-			/// Чтобы не останавливать лишний раз все запросы в таблицу, проверим сначала под локом на чтение.
-			{
-				auto table_lock = lockStructure(false);
-				if (columns != data.getColumnsList())
-					changed = true;
-			}
+			bool changed_version = (stat.version != columns_version);
 
 			MergeTreeData::DataParts parts;
 
 			/// Если описание столбцов изменилось, обновим структуру таблицы локально.
-			if (changed)
+			if (changed_version)
 			{
 				auto table_lock = lockStructureForAlter();
+
 				if (columns != data.getColumnsList())
 				{
 					LOG_INFO(log, "Columns list changed in ZooKeeper. Applying changes locally.");
+
 					InterpreterAlterQuery::updateMetadata(database_name, table_name, columns, context);
 					data.setColumnsList(columns);
 					if (unreplicated_data)
 						unreplicated_data->setColumnsList(columns);
-					columns_version = stat.version;
 					LOG_INFO(log, "Applied changes to table.");
-
-					/// Нужно получить список кусков под блокировкой таблицы, чтобы избежать race condition с мерджем.
-					parts = data.getDataParts();
 				}
 				else
 				{
-					changed = false;
-					columns_version = stat.version;
+					LOG_INFO(log, "Columns version changed in ZooKeeper, but data wasn't changed. It's like cyclic ALTERs.");
 				}
+
+				/// Нужно получить список кусков под блокировкой таблицы, чтобы избежать race condition с мерджем.
+				parts = data.getDataParts();
+
+				columns_version = stat.version;
 			}
 
 			/// Обновим куски.
-			if (changed || force_recheck_parts)
+			if (changed_version || force_recheck_parts)
 			{
-				if (changed)
+				auto table_lock = lockStructure(false);
+
+				if (changed_version)
 					LOG_INFO(log, "ALTER-ing parts");
 
 				int changed_parts = 0;
 
-				if (!changed)
+				if (!changed_version)
 					parts = data.getDataParts();
-
-				auto table_lock = lockStructure(false);
 
 				for (const MergeTreeData::DataPartPtr & part : parts)
 				{
@@ -1630,13 +1662,21 @@ void StorageReplicatedMergeTree::alterThread()
 					}
 				}
 
+				/// Список столбцов для конкретной реплики.
 				zookeeper->set(replica_path + "/columns", columns.toString());
 
-				if (changed || changed_parts != 0)
-					LOG_INFO(log, "ALTER-ed " << changed_parts << " parts");
+				if (changed_version)
+				{
+					if (changed_parts != 0)
+						LOG_INFO(log, "ALTER-ed " << changed_parts << " parts");
+					else
+						LOG_INFO(log, "No parts ALTER-ed");
+				}
+
 				force_recheck_parts = false;
 			}
 
+			parts.clear();
 			alter_thread_event->wait();
 		}
 		catch (...)
@@ -1649,7 +1689,7 @@ void StorageReplicatedMergeTree::alterThread()
 		}
 	}
 
-	LOG_DEBUG(log, "alter thread finished");
+	LOG_DEBUG(log, "Alter thread finished");
 }
 
 void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_name)
@@ -1714,7 +1754,7 @@ void StorageReplicatedMergeTree::partCheckThread()
 					part_name = parts_to_check_queue.front();
 				}
 			}
-			if (part_name.empty())
+			if (part_name.empty())	/// TODO Здесь race condition?
 			{
 				parts_to_check_event.wait();
 				continue;
@@ -2291,6 +2331,7 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 	/// Подпишемся на изменения столбцов, чтобы перестать ждать, если кто-то еще сделает ALTER.
 	if (!zookeeper->exists(zookeeper_path + "/columns", &stat, alter_query_event))
 		throw Exception(zookeeper_path + "/columns doesn't exist", ErrorCodes::NOT_FOUND_NODE);
+
 	if (stat.version != new_columns_version)
 	{
 		LOG_WARNING(log, zookeeper_path + "/columns changed before this ALTER finished; "
@@ -2321,6 +2362,7 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 
 			if (!zookeeper->exists(zookeeper_path + "/columns", &stat))
 				throw Exception(zookeeper_path + "/columns doesn't exist", ErrorCodes::NOT_FOUND_NODE);
+
 			if (stat.version != new_columns_version)
 			{
 				LOG_WARNING(log, zookeeper_path + "/columns changed before ALTER finished; "

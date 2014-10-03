@@ -81,4 +81,7 @@ inline String queryToString(const ASTPtr & query)
 	return out.str();
 }
 
+inline std::ostream & operator<<(std::ostream & os, const IAST & ast) { return formatAST(ast, os, 0, false, true), os; }
+inline std::ostream & operator<<(std::ostream & os, const ASTPtr & ast) { return formatAST(*ast, os, 0, false, true), os; }
+
 }

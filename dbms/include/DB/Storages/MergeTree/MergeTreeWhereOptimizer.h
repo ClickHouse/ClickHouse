@@ -6,6 +6,8 @@
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTLiteral.h>
 #include <DB/Parsers/ASTExpressionList.h>
+#include <DB/Parsers/ASTSubquery.h>
+#include <DB/Parsers/formatAST.h>
 #include <DB/Common/escapeForFileName.h>
 #include <statdaemons/stdext.h>
 #include <unordered_map>
@@ -37,9 +39,12 @@ public:
 	MergeTreeWhereOptimizer(const MergeTreeWhereOptimizer&) = delete;
 	MergeTreeWhereOptimizer& operator=(const MergeTreeWhereOptimizer&) = delete;
 
-	MergeTreeWhereOptimizer(ASTSelectQuery & select, const MergeTreeData & data, const Names & column_names)
+	MergeTreeWhereOptimizer(
+		ASTSelectQuery & select, const MergeTreeData & data,
+		const Names & column_names, Logger * log)
+		: primary_key_columns{toUnorderedSet(data.getPrimaryExpression()->getRequiredColumnsWithTypes())},
+		table_columns{toUnorderedSet(data.getColumnsList())}, log{log}
 	{
-		fillPrimaryKeyColumns(data);
 		calculateColumnSizes(data, column_names);
 		optimize(select);
 	}
@@ -47,7 +52,7 @@ public:
 private:
 	void optimize(ASTSelectQuery & select) const
 	{
-		if (!select.where_expression)
+		if (!select.where_expression || select.prewhere_expression)
 			return;
 
 		const auto function = typeid_cast<ASTFunction *>(select.where_expression.get());
@@ -55,12 +60,6 @@ private:
 			optimizeConjunction(select, function);
 		else
 			optimizeArbitrary(select);
-	}
-
-	void fillPrimaryKeyColumns(const MergeTreeData & data)
-	{
-		for (const auto column : data.getPrimaryExpression()->getRequiredColumnsWithTypes())
-			primary_key_columns.insert(column.name);
 	}
 
 	void calculateColumnSizes(const MergeTreeData & data, const Names & column_names)
@@ -87,8 +86,8 @@ private:
 
 		/// remove condition by swapping it with the last one and calling ::pop_back()
 		const auto remove_condition_at_index = [&conditions] (const std::size_t idx) {
-			if (idx < conditions.size())
-				conditions[idx] = std::move(conditions.back());
+			if (idx < conditions.size() - 1)
+				std::swap(conditions[idx], conditions.back());
 			conditions.pop_back();
 		};
 
@@ -101,7 +100,7 @@ private:
 			collectIdentifiersNoSubqueries(condition, identifiers);
 
 			/// do not take into consideration the conditions consisting only of primary key columns
-			if (hasNonPrimaryKeyColumns(identifiers))
+			if (hasNonPrimaryKeyColumns(identifiers) && isSubsetOfTableColumns(identifiers))
 			{
 				/// linearize sub-conjunctions
 				if (const auto function = typeid_cast<ASTFunction *>(condition))
@@ -135,7 +134,7 @@ private:
 		}
 
 		const auto move_condition_to_prewhere = [&] (const std::size_t idx) {
-			addConditionTo(conditions[idx], select.prewhere_expression);
+			swapConditions(conditions[idx], select.prewhere_expression);
 
 			/** Replace conjunction with the only remaining argument if only two conditions were presentotherwise,
 			 *  remove selected condition from conjunction otherwise. */
@@ -175,7 +174,7 @@ private:
 		IdentifierNameSet identifiers{};
 		collectIdentifiersNoSubqueries(condition, identifiers);
 
-		if (!hasNonPrimaryKeyColumns(identifiers))
+		if (!hasNonPrimaryKeyColumns(identifiers) || !isSubsetOfTableColumns(identifiers))
 			return;
 
 		/// if condition is not "good" - check that it can be moved
@@ -189,8 +188,7 @@ private:
 		}
 
 		/// add the condition to PREWHERE, remove it from WHERE
-		addConditionTo(std::move(condition), select.prewhere_expression);
-		condition = nullptr;
+		swapConditions(condition, select.prewhere_expression);
 	}
 
 	std::size_t getIdentifiersColumnSize(const IdentifierNameSet & identifiers) const
@@ -204,42 +202,11 @@ private:
 		return size;
 	}
 
-	void addConditionTo(ASTPtr condition, ASTPtr & ast) const
+	void swapConditions(ASTPtr & from, ASTPtr & to) const
 	{
-		/** if there already are some conditions - either combine them using conjunction
-		 *  or add new argument to existing conjunction; just set ast to condition otherwise. */
-		if (ast)
-		{
-			const auto function = typeid_cast<ASTFunction *>(ast.get());
-			if (function && function->name == and_function_name)
-			{
-				/// add new argument to the conjunction
-				function->arguments->children.emplace_back(std::move(condition));
-			}
-			else
-			{
-				/// create a conjunction which will host old condition and the one being added
-				auto conjunction = stdext::make_unique<ASTFunction>();
-				conjunction->name = and_function_name;
-				conjunction->arguments = stdext::make_unique<ASTExpressionList>().release();
-				conjunction->children.push_back(conjunction->arguments);
+		LOG_DEBUG(log, "MergeTreeWhereOptimizer: condition `" << from << "` moved to PREWHERE");
 
-				conjunction->arguments->children.emplace_back(std::move(ast));
-				conjunction->arguments->children.emplace_back(std::move(condition));
-
-				ast = conjunction.release();
-			}
-		}
-		else
-			ast = std::move(condition);
-	}
-
-	bool hasNonPrimaryKeyColumns(const IdentifierNameSet & identifiers) const {
-		for (const auto & identifier : identifiers)
-			if (primary_key_columns.count(identifier) == 0)
-				return true;
-
-		return false;
+		std::swap(from, to);
 	}
 
 	bool isConditionGood(const IAST * condition) const
@@ -295,14 +262,44 @@ private:
 		if (const auto identifier = typeid_cast<const ASTIdentifier *>(ast))
 			return (void) set.insert(identifier->name);
 
-		if (typeid_cast<const ASTSelectQuery *>(ast))
+		if (typeid_cast<const ASTSubquery *>(ast))
 			return;
 
 		for (const auto & child : ast->children)
 			collectIdentifiersNoSubqueries(child.get(), set);
 	}
 
-	std::unordered_set<std::string> primary_key_columns{};
+	using string_set_t = std::unordered_set<std::string>;
+
+	static string_set_t toUnorderedSet(const NamesAndTypesList & columns)
+	{
+		string_set_t result{};
+
+		for (const auto column : columns)
+			result.insert(column.name);
+
+		return result;
+	}
+
+	bool hasNonPrimaryKeyColumns(const IdentifierNameSet & identifiers) const {
+		for (const auto & identifier : identifiers)
+			if (primary_key_columns.count(identifier) == 0)
+				return true;
+
+		return false;
+	}
+
+	bool isSubsetOfTableColumns(const IdentifierNameSet & identifiers) const {
+		for (const auto & identifier : identifiers)
+			if (table_columns.count(identifier) == 0)
+				return false;
+
+		return true;
+	}
+
+	string_set_t primary_key_columns{};
+	string_set_t table_columns{};
+	Logger * log;
 	std::unordered_map<std::string, std::size_t> column_sizes{};
 	std::size_t total_column_size{};
 };

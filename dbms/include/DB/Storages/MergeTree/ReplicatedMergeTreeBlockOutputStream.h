@@ -125,7 +125,7 @@ public:
 						+ zkutil::ZooKeeper::error2string(code), ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
 				}
 			}
-			catch (zkutil::KeeperException & e)
+			catch (const zkutil::KeeperException & e)
 			{
 				/** Если потерялось соединение, и мы не знаем, применились ли изменения, нельзя удалять локальный кусок:
 				  *  если изменения применились, в /blocks/ появился вставленный блок, и его нельзя будет вставить снова.

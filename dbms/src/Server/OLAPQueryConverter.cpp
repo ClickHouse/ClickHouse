@@ -472,8 +472,6 @@ void QueryConverter::fillNumericAttributeMap()
 	M("ClientTimeMinute",     "toMinute(ClientEventTime)")
 	M("ClientTimeSecond",     "toSecond(ClientEventTime)")
 	
-	M("EndURLHash",           "NormalizedEndURLHash")
-	M("RefererHash",          "NormalizedRefererHash")
 	M("SearchPhraseHash",     "SearchPhraseHash")
 	M("RefererDomainHash",    "RefererDomainHash")
 	M("StartURLHash",         "NormalizedStartURLHash")
