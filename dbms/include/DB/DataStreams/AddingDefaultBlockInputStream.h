@@ -29,6 +29,11 @@ public:
 		children.push_back(input_);
 	}
 
+	AddingDefaultBlockInputStream(BlockInputStreamPtr input_, NamesAndTypesListPtr required_columns_, const Context & context_)
+		: AddingDefaultBlockInputStream{input_, required_columns, {}, context}
+	{
+	}
+
 	String getName() const { return "AddingDefaultBlockInputStream"; }
 
 	String getID() const

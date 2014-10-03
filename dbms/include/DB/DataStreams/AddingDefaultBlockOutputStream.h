@@ -29,6 +29,12 @@ public:
 	{
 	}
 
+	AddingDefaultBlockOutputStream(BlockOutputStreamPtr output_, NamesAndTypesListPtr required_columns_, const Context & context_)
+		: AddingDefaultBlockOutputStream{output_, required_columns_, {}, context_}
+	{
+	}
+
+
 	void write(const Block & block) override
 	{
 		Block res = block;
