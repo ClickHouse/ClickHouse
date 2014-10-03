@@ -60,8 +60,15 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 			virt_column_names.push_back(name);
 
 	/// Если в запросе только виртуальные столбцы, надо запросить хотя бы один любой другой.
-	if (real_column_names.size() == 0)
+	if (real_column_names.empty())
 		real_column_names.push_back(ExpressionActions::getSmallestColumn(data.getColumnsList()));
+
+	ASTSelectQuery & select = *typeid_cast<ASTSelectQuery*>(&*query);
+
+	/// Try transferring some condition from WHERE to PREWHERE if enabled and viable
+	if (settings.optimize_move_to_prewhere)
+		if (select.where_expression && !select.prewhere_expression)
+			MergeTreeWhereOptimizer{select, data, column_names_to_return, log};
 
 	Block virtual_columns_block = getBlockWithVirtualColumns(parts);
 
@@ -103,11 +110,6 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	typedef Poco::SharedPtr<ASTFunction> ASTFunctionPtr;
 	ASTFunctionPtr filter_function;
 	ExpressionActionsPtr filter_expression;
-
-	ASTSelectQuery & select = *typeid_cast<ASTSelectQuery*>(&*query);
-	if (settings.optimize_move_to_prewhere)
-		if (select.where_expression && !select.prewhere_expression)
-			MergeTreeWhereOptimizer{select, data, column_names_to_return, log};
 
 	if (select.sample_size)
 	{
