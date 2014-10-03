@@ -21,6 +21,7 @@ public:
 		const std::string & this_database_,/// Имя БД для этой таблицы.
 		const std::string & name_,			/// Имя таблицы.
 		NamesAndTypesListPtr columns_,		/// Список столбцов.
+		const NamesAndTypesList & materialized_columns_,
 		const NamesAndTypesList & alias_columns_,
 		const ColumnDefaults & column_defaults_,
 		const String & source_database_,	/// В какой БД искать таблицы-источники.
@@ -74,6 +75,7 @@ private:
 		const std::string & this_database_,
 		const std::string & name_,
 		NamesAndTypesListPtr columns_,
+		const NamesAndTypesList & materialized_columns_,
 		const NamesAndTypesList & alias_columns_,
 		const ColumnDefaults & column_defaults_,
 		const String & source_database_,

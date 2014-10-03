@@ -64,9 +64,10 @@ StorageMemory::StorageMemory(
 StorageMemory::StorageMemory(
 	const std::string & name_,
 	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & materialized_columns_,
 	const NamesAndTypesList & alias_columns_,
 	const ColumnDefaults & column_defaults_)
-	: IStorage{alias_columns_, column_defaults_},
+	: IStorage{materialized_columns_, alias_columns_, column_defaults_},
 	name(name_), columns(columns_)
 {
 }
@@ -84,12 +85,13 @@ StoragePtr StorageMemory::create(
 StoragePtr StorageMemory::create(
 	const std::string & name_,
 	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & materialized_columns_,
 	const NamesAndTypesList & alias_columns_,
 	const ColumnDefaults & column_defaults_)
 {
 	return (new StorageMemory{
 		name_, columns_,
-		alias_columns_, column_defaults_
+		materialized_columns_, alias_columns_, column_defaults_
 	})->thisPtr();
 }
 

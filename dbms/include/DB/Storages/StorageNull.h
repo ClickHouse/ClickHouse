@@ -18,10 +18,11 @@ public:
 	static StoragePtr create(
 		const std::string & name_,
 		NamesAndTypesListPtr columns_,
+		const NamesAndTypesList & materialized_columns_,
 		const NamesAndTypesList & alias_columns_,
 		const ColumnDefaults & column_defaults_)
 	{
-		return (new StorageNull{name_, columns_, alias_columns_, column_defaults_})->thisPtr();
+		return (new StorageNull{name_, columns_, materialized_columns_, alias_columns_, column_defaults_})->thisPtr();
 	}
 
 	std::string getName() const { return "Null"; }
@@ -55,9 +56,10 @@ private:
     StorageNull(
 		const std::string & name_,
 		NamesAndTypesListPtr columns_,
+		const NamesAndTypesList & materialized_columns_,
 		const NamesAndTypesList & alias_columns_,
 		const ColumnDefaults & column_defaults_)
-		: IStorage{alias_columns_, column_defaults_}, name(name_), columns(columns_) {}
+		: IStorage{materialized_columns_, alias_columns_, column_defaults_}, name(name_), columns(columns_) {}
 };
 
 }

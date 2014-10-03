@@ -25,6 +25,7 @@ public:
 	static StoragePtr create(
 		const std::string & name_,			/// Имя таблицы.
 		NamesAndTypesListPtr columns_,		/// Список столбцов.
+		const NamesAndTypesList & materialized_columns_,
 		const NamesAndTypesList & alias_columns_,
 		const ColumnDefaults & column_defaults_,
 		const String & remote_database_,	/// БД на удалённых серверах.
@@ -93,6 +94,7 @@ private:
 	StorageDistributed(
 		const std::string & name_,
 		NamesAndTypesListPtr columns_,
+		const NamesAndTypesList & materialized_columns_,
 		const NamesAndTypesList & alias_columns_,
 		const ColumnDefaults & column_defaults_,
 		const String & remote_database_,

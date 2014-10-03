@@ -40,18 +40,18 @@ NameAndTypePair ITableDeclaration::getRealColumn(const String & column_name) con
 	throw Exception("There is no column " + column_name + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 }
 
-NameAndTypePair ITableDeclaration::getAliasColumn(const String & column_name) const
+NameAndTypePair ITableDeclaration::getMaterializedColumn(const String & column_name) const
 {
-	for (auto & column : alias_columns)
+	for (auto & column : materialized_columns)
 		if (column.name == column_name)
 			return column;
 
 	throw Exception("There is no column " + column_name + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 }
 
-bool ITableDeclaration::hasAliasColumn(const String & column_name) const
+bool ITableDeclaration::hasMaterializedColumn(const String & column_name) const
 {
-	for (auto & column : alias_columns)
+	for (auto & column : materialized_columns)
 		if (column.name == column_name)
 			return true;
 
@@ -60,7 +60,7 @@ bool ITableDeclaration::hasAliasColumn(const String & column_name) const
 
 bool ITableDeclaration::hasColumn(const String & column_name) const
 {
-	return hasRealColumn(column_name) || hasAliasColumn(column_name); /// По умолчанию считаем, что виртуальных столбцов в сторадже нет.
+	return hasRealColumn(column_name) || hasMaterializedColumn(column_name); /// По умолчанию считаем, что виртуальных столбцов в сторадже нет.
 }
 
 NameAndTypePair ITableDeclaration::getColumn(const String & column_name) const
@@ -70,16 +70,19 @@ NameAndTypePair ITableDeclaration::getColumn(const String & column_name) const
 	if (it == std::end(column_defaults) || it->second.type == ColumnDefaultType::Default)
 		return getRealColumn(column_name); /// По умолчанию считаем, что виртуальных столбцов в сторадже нет.
 
-	return getAliasColumn(column_name);
+	return getMaterializedColumn(column_name);
 }
 
 
 const DataTypePtr ITableDeclaration::getDataTypeByName(const String & column_name) const
 {
-	const NamesAndTypesList & names_and_types = getColumnsList();
-	for (NamesAndTypesList::const_iterator it = names_and_types.begin(); it != names_and_types.end(); ++it)
-		if (it->name == column_name)
-			return it->type;
+	for (const auto & column : getColumnsList())
+		if (column.name == column_name)
+			return column.type;
+
+	for (const auto & column : materialized_columns)
+		if (column.name == column_name)
+			return column.type;
 
 	throw Exception("There is no column " + column_name + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 }
@@ -118,20 +121,30 @@ static std::string listOfColumns(const NamesAndTypesList & available_columns)
 
 typedef google::dense_hash_map<StringRef, const IDataType *, StringRefHash> NamesAndTypesMap;
 
+static NamesAndTypesMap & getColumnsMapImpl(NamesAndTypesMap & res) { return res; }
 
-static NamesAndTypesMap getColumnsMap(const NamesAndTypesList & available_columns)
+template <typename Arg, typename... Args>
+static NamesAndTypesMap & getColumnsMapImpl(NamesAndTypesMap & res, const Arg & arg, const Args &... args)
+{
+	static_assert(std::is_same<Arg, NamesAndTypesList>::value, "getColumnsMap requires arguments of type NamesAndTypesList");
+
+	for (const auto & column : arg)
+		res.insert({column.name, column.type.get()});
+
+	return getColumnsMapImpl(res, args...);
+}
+
+template <typename... Args>
+static NamesAndTypesMap getColumnsMap(const Args &... args)
 {
 	NamesAndTypesMap res;
 	res.set_empty_key(StringRef());
 
-	for (NamesAndTypesList::const_iterator it = available_columns.begin(); it != available_columns.end(); ++it)
-		res.insert(NamesAndTypesMap::value_type(it->name, &*it->type));
-
-	return res;
+	return getColumnsMapImpl(res, args...);
 }
 
 
-void ITableDeclaration::check(const Names & column_names) const
+void ITableDeclaration::check(const Names & column_names, const bool all_columns) const
 {
 	const NamesAndTypesList & available_columns = getColumnsList();
 
@@ -139,7 +152,9 @@ void ITableDeclaration::check(const Names & column_names) const
 		throw Exception("Empty list of columns queried. There are columns: " + listOfColumns(available_columns),
 			ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED);
 
-	const NamesAndTypesMap & columns_map = getColumnsMap(available_columns);
+	const auto columns_map = all_columns ?
+		getColumnsMap(available_columns, materialized_columns) :
+		getColumnsMap(available_columns);
 
 	typedef google::dense_hash_set<StringRef, StringRefHash> UniqueStrings;
 	UniqueStrings unique_names;
@@ -159,10 +174,12 @@ void ITableDeclaration::check(const Names & column_names) const
 }
 
 
-void ITableDeclaration::check(const NamesAndTypesList & columns) const
+void ITableDeclaration::check(const NamesAndTypesList & columns, const bool all_columns) const
 {
 	const NamesAndTypesList & available_columns = getColumnsList();
-	const NamesAndTypesMap & columns_map = getColumnsMap(available_columns);
+	const auto columns_map = all_columns ?
+		getColumnsMap(available_columns, materialized_columns) :
+		getColumnsMap(available_columns);
 
 	typedef google::dense_hash_set<StringRef, StringRefHash> UniqueStrings;
 	UniqueStrings unique_names;
@@ -187,10 +204,12 @@ void ITableDeclaration::check(const NamesAndTypesList & columns) const
 }
 
 
-void ITableDeclaration::check(const NamesAndTypesList & columns, const Names & column_names) const
+void ITableDeclaration::check(const NamesAndTypesList & columns, const Names & column_names, const bool all_columns) const
 {
 	const NamesAndTypesList & available_columns = getColumnsList();
-	const NamesAndTypesMap & available_columns_map = getColumnsMap(available_columns);
+	const auto available_columns_map = all_columns ?
+		getColumnsMap(available_columns, materialized_columns) :
+		getColumnsMap(available_columns);
 	const NamesAndTypesMap & provided_columns_map = getColumnsMap(columns);
 
 	if (column_names.empty())
@@ -224,10 +243,13 @@ void ITableDeclaration::check(const NamesAndTypesList & columns, const Names & c
 }
 
 
-void ITableDeclaration::check(const Block & block, bool need_all) const
+void ITableDeclaration::check(const Block & block, bool need_all, const bool all_columns) const
 {
 	const NamesAndTypesList & available_columns = getColumnsList();
-	const NamesAndTypesMap & columns_map = getColumnsMap(available_columns);
+	const auto columns_map = all_columns ?
+		getColumnsMap(available_columns, materialized_columns) :
+		getColumnsMap(available_columns);
+
 
 	typedef std::unordered_set<String> NameSet;
 	NameSet names_in_block;

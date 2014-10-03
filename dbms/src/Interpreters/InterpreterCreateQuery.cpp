@@ -89,6 +89,7 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 	StoragePtr res;
 	String storage_name;
 	NamesAndTypesListPtr columns = new NamesAndTypesList;
+	NamesAndTypesList materialized_columns{};
 	NamesAndTypesList alias_columns{};
 	ColumnDefaults column_defaults{};
 
@@ -120,7 +121,8 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 		if (create.columns)
 		{
 			auto && columns_and_defaults = parseColumns(create.columns);
-			alias_columns = removeAliasColumns(columns_and_defaults);
+			materialized_columns = removeAndReturnColumns(columns_and_defaults, ColumnDefaultType::Materialized);
+			alias_columns = removeAndReturnColumns(columns_and_defaults, ColumnDefaultType::Alias);
 			columns = new NamesAndTypesList{std::move(columns_and_defaults.first)};
 			column_defaults = std::move(columns_and_defaults.second);
 		}
@@ -136,7 +138,7 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 			throw Exception("Incorrect CREATE query: required list of column descriptions or AS section or SELECT.", ErrorCodes::INCORRECT_QUERY);
 
 		/// Даже если в запросе был список столбцов, на всякий случай приведем его к стандартному виду (развернем Nested).
-		ASTPtr new_columns = formatColumns(*columns, alias_columns, column_defaults);
+		ASTPtr new_columns = formatColumns(*columns, materialized_columns, alias_columns, column_defaults);
 		if (create.columns)
 		{
 			auto it = std::find(create.children.begin(), create.children.end(), create.columns);
@@ -185,8 +187,8 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 
 		res = context.getStorageFactory().get(
 			storage_name, data_path, table_name, database_name, context,
-			context.getGlobalContext(), query_ptr,
-			columns, alias_columns, column_defaults, create.attach);
+			context.getGlobalContext(), query_ptr, columns,
+			materialized_columns, alias_columns, column_defaults, create.attach);
 
 		/// Проверка наличия метаданных таблицы на диске и создание метаданных
 		if (!assume_metadata_exists && !create.is_temporary)
@@ -342,26 +344,27 @@ InterpreterCreateQuery::ColumnsAndDefaults InterpreterCreateQuery::parseColumns(
 	return { *DataTypeNested::expandNestedColumns(columns), defaults };
 }
 
-NamesAndTypesList InterpreterCreateQuery::removeAliasColumns(ColumnsAndDefaults & columns_and_defaults)
+NamesAndTypesList InterpreterCreateQuery::removeAndReturnColumns(ColumnsAndDefaults & columns_and_defaults,
+	const ColumnDefaultType type)
 {
 	auto & columns = columns_and_defaults.first;
 	auto & defaults = columns_and_defaults.second;
 
-	NamesAndTypesList alias_columns{};
+	NamesAndTypesList removed{};
 
 	for (auto it = std::begin(columns); it != std::end(columns);)
 	{
 		const auto jt = defaults.find(it->name);
-		if (jt != std::end(defaults) && jt->second.type != ColumnDefaultType::Default)
+		if (jt != std::end(defaults) && jt->second.type == type)
 		{
-			alias_columns.push_back(*it);
+			removed.push_back(*it);
 			it = columns.erase(it);
 		}
 		else
 			++it;
 	}
 
-	return alias_columns;
+	return removed;
 }
 
 ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns)
@@ -393,9 +396,11 @@ ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns)
 }
 
 ASTPtr InterpreterCreateQuery::formatColumns(NamesAndTypesList columns,
+	const NamesAndTypesList & materialized_columns,
 	const NamesAndTypesList & alias_columns,
 	const ColumnDefaults & column_defaults)
 {
+	columns.insert(std::end(columns), std::begin(materialized_columns), std::end(materialized_columns));
 	columns.insert(std::end(columns), std::begin(alias_columns), std::end(alias_columns));
 
 	ASTPtr columns_list_ptr{new ASTExpressionList};

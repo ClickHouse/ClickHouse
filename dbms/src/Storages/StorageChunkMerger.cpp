@@ -30,6 +30,7 @@ StoragePtr StorageChunkMerger::create(
 	const std::string & this_database_,
 	const std::string & name_,
 	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & materialized_columns_,
 	const NamesAndTypesList & alias_columns_,
 	const ColumnDefaults & column_defaults_,
 	const String & source_database_,
@@ -39,7 +40,7 @@ StoragePtr StorageChunkMerger::create(
 	Context & context_)
 {
 	return (new StorageChunkMerger{
-		this_database_, name_, columns_, alias_columns_, column_defaults_,
+		this_database_, name_, columns_, materialized_columns_, alias_columns_, column_defaults_,
 		source_database_, table_name_regexp_, destination_name_prefix_,
 		chunks_to_merge_, context_
 	})->thisPtr();
@@ -227,6 +228,7 @@ StorageChunkMerger::StorageChunkMerger(
 	const std::string & this_database_,
 	const std::string & name_,
 	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & materialized_columns_,
 	const NamesAndTypesList & alias_columns_,
 	const ColumnDefaults & column_defaults_,
 	const String & source_database_,
@@ -234,7 +236,7 @@ StorageChunkMerger::StorageChunkMerger(
 	const std::string & destination_name_prefix_,
 	size_t chunks_to_merge_,
 	Context & context_)
-	: IStorage{alias_columns_, column_defaults_},
+	: IStorage{materialized_columns_, alias_columns_, column_defaults_},
 	this_database(this_database_), name(name_), columns(columns_), source_database(source_database_),
 	table_name_regexp(table_name_regexp_), destination_name_prefix(destination_name_prefix_), chunks_to_merge(chunks_to_merge_),
 	context(context_), settings(context.getSettings()),

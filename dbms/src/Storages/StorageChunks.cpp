@@ -16,14 +16,15 @@ StoragePtr StorageChunks::create(
 	const std::string & name_,
 	const std::string & database_name_,
 	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & materialized_columns_,
 	const NamesAndTypesList & alias_columns_,
 	const ColumnDefaults & column_defaults_,
 	Context & context_,
 	bool attach)
 {
 	return (new StorageChunks{
-		path_, name_, database_name_,
-		columns_, alias_columns_, column_defaults_,
+		path_, name_, database_name_, columns_,
+		materialized_columns_, alias_columns_, column_defaults_,
 		context_, attach
 	})->thisPtr();
 }
@@ -136,12 +137,15 @@ StorageChunks::StorageChunks(
 	const std::string & name_,
 	const std::string & database_name_,
 	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & materialized_columns_,
 	const NamesAndTypesList & alias_columns_,
 	const ColumnDefaults & column_defaults_,
 	Context & context_,
 	bool attach)
 	:
-	StorageLog(path_, name_, columns_, alias_columns_, column_defaults_, context_.getSettings().max_compress_block_size),
+	StorageLog(path_, name_, columns_,
+			   materialized_columns_, alias_columns_, column_defaults_,
+			   context_.getSettings().max_compress_block_size),
 	database_name(database_name_),
 	reference_counter(path_ + escapeForFileName(name_) + "/refcount.txt"),
 	context(context_),
@@ -179,7 +183,7 @@ NameAndTypePair StorageChunks::getColumn(const String &column_name) const
 bool StorageChunks::hasColumn(const String &column_name) const
 {
 	if (column_name == _table_column_name) return true;
-	return hasRealColumn(column_name);
+	return IStorage::hasColumn(column_name);
 }
 
 std::pair<String, size_t> StorageChunks::getTableFromMark(size_t mark) const

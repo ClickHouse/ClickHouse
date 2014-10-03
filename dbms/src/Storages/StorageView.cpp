@@ -16,12 +16,13 @@ StoragePtr StorageView::create(
 	Context & context_,
 	ASTPtr & query_,
 	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & materialized_columns_,
 	const NamesAndTypesList & alias_columns_,
 	const ColumnDefaults & column_defaults_)
 {
 	return (new StorageView{
 		table_name_, database_name_, context_, query_,
-		columns_, alias_columns_, column_defaults_
+		columns_, materialized_columns_, alias_columns_, column_defaults_
 	})->thisPtr();
 }
 
@@ -32,9 +33,10 @@ StorageView::StorageView(
 	Context & context_,
 	ASTPtr & query_,
 	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & materialized_columns_,
 	const NamesAndTypesList & alias_columns_,
 	const ColumnDefaults & column_defaults_)
-	: IStorage{alias_columns_, column_defaults}, table_name(table_name_),
+	: IStorage{materialized_columns_, alias_columns_, column_defaults}, table_name(table_name_),
 	database_name(database_name_), context(context_), columns(columns_)
 {
 	ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*query_);

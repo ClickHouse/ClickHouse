@@ -46,6 +46,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	bool attach,
 	const String & path_, const String & database_name_, const String & name_,
 	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & materialized_columns_,
 	const NamesAndTypesList & alias_columns_,
 	const ColumnDefaults & column_defaults_,
 	Context & context_,
@@ -56,15 +57,17 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	MergeTreeData::Mode mode_,
 	const String & sign_column_,
 	const MergeTreeSettings & settings_)
-	: IStorage{alias_columns_, column_defaults_}, context(context_),
+    : IStorage{materialized_columns_, alias_columns_, column_defaults_}, context(context_),
 	zookeeper(context.getZooKeeper()), database_name(database_name_),
 	table_name(name_), full_path(path_ + escapeForFileName(table_name) + '/'),
 	zookeeper_path(context.getMacros().expand(zookeeper_path_)),
 	replica_name(context.getMacros().expand(replica_name_)),
-	data(	full_path, columns_, alias_columns_, column_defaults_, context_,
-			primary_expr_ast_, date_column_name_, sampling_expression_,
-			index_granularity_, mode_, sign_column_, settings_, database_name_ + "." + table_name, true,
-			std::bind(&StorageReplicatedMergeTree::enqueuePartForCheck, this, std::placeholders::_1)),
+	data(full_path, columns_,
+		 materialized_columns_, alias_columns_, column_defaults_,
+		 context_, primary_expr_ast_, date_column_name_,
+		 sampling_expression_, index_granularity_, mode_, sign_column_,
+		 settings_, database_name_ + "." + table_name, true,
+		 std::bind(&StorageReplicatedMergeTree::enqueuePartForCheck, this, std::placeholders::_1)),
 	reader(data), writer(data), merger(data), fetcher(data),
 	log(&Logger::get(database_name_ + "." + table_name + " (StorageReplicatedMergeTree)")),
 	shutdown_event(false)
@@ -116,7 +119,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	{
 		LOG_INFO(log, "Have unreplicated data");
 
-		unreplicated_data.reset(new MergeTreeData(unreplicated_path, columns_, alias_columns_, column_defaults_,
+		unreplicated_data.reset(new MergeTreeData(unreplicated_path, columns_,
+			materialized_columns_, alias_columns_, column_defaults_,
 			context_, primary_expr_ast_,
 			date_column_name_, sampling_expression_, index_granularity_, mode_, sign_column_, settings_,
 			database_name_ + "." + table_name + "[unreplicated]", false));
@@ -140,6 +144,7 @@ StoragePtr StorageReplicatedMergeTree::create(
 	bool attach,
 	const String & path_, const String & database_name_, const String & name_,
 	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & materialized_columns_,
 	const NamesAndTypesList & alias_columns_,
 	const ColumnDefaults & column_defaults_,
 	Context & context_,
@@ -154,7 +159,7 @@ StoragePtr StorageReplicatedMergeTree::create(
 	auto res = new StorageReplicatedMergeTree{
 		zookeeper_path_, replica_name_, attach,
 		path_, database_name_, name_,
-		columns_, alias_columns_, column_defaults_,
+		columns_, materialized_columns_, alias_columns_, column_defaults_,
 		context_, primary_expr_ast_, date_column_name_,
 		sampling_expression_, index_granularity_, mode_,
 		sign_column_, settings_

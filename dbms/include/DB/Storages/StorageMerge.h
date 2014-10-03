@@ -28,6 +28,7 @@ public:
 	static StoragePtr create(
 		const std::string & name_,			/// Имя таблицы.
 		NamesAndTypesListPtr columns_,		/// Список столбцов.
+		const NamesAndTypesList & materialized_columns_,
 		const NamesAndTypesList & alias_columns_,
 		const ColumnDefaults & column_defaults_,
 		const String & source_database_,	/// В какой БД искать таблицы-источники.
@@ -78,6 +79,7 @@ private:
 	StorageMerge(
 		const std::string & name_,
 		NamesAndTypesListPtr columns_,
+		const NamesAndTypesList & materialized_columns_,
 		const NamesAndTypesList & alias_columns_,
 		const ColumnDefaults & column_defaults_,
 		const String & source_database_,

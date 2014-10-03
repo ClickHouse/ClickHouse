@@ -12,6 +12,7 @@ StorageMergeTree::StorageMergeTree(
 	const String & database_name_,
 	const String & table_name_,
 	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & materialized_columns_,
 	const NamesAndTypesList & alias_columns_,
 	const ColumnDefaults & column_defaults_,
 	Context & context_,
@@ -22,11 +23,14 @@ StorageMergeTree::StorageMergeTree(
 	MergeTreeData::Mode mode_,
 	const String & sign_column_,
 	const MergeTreeSettings & settings_)
-	: IStorage{alias_columns_, column_defaults_},
+    : IStorage{materialized_columns_, alias_columns_, column_defaults_},
 	path(path_), database_name(database_name_), table_name(table_name_), full_path(path + escapeForFileName(table_name) + '/'),
 	increment(full_path + "increment.txt"), context(context_), background_pool(context_.getBackgroundPool()),
-	data(full_path, columns_, alias_columns_, column_defaults_, context_, primary_expr_ast_, date_column_name_, sampling_expression_,
-	index_granularity_,mode_, sign_column_, settings_, database_name_ + "." + table_name, false),
+	data(full_path, columns_,
+		 materialized_columns_, alias_columns_, column_defaults_,
+		 context_, primary_expr_ast_, date_column_name_,
+		 sampling_expression_, index_granularity_,mode_, sign_column_,
+		 settings_, database_name_ + "." + table_name, false),
 	reader(data), writer(data), merger(data),
 	log(&Logger::get(database_name_ + "." + table_name + " (StorageMergeTree)")),
 	shutdown_called(false)
@@ -40,6 +44,7 @@ StorageMergeTree::StorageMergeTree(
 StoragePtr StorageMergeTree::create(
 	const String & path_, const String & database_name_, const String & table_name_,
 	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & materialized_columns_,
 	const NamesAndTypesList & alias_columns_,
 	const ColumnDefaults & column_defaults_,
 	Context & context_,
@@ -53,7 +58,7 @@ StoragePtr StorageMergeTree::create(
 {
 	auto res = new StorageMergeTree{
 		path_, database_name_, table_name_,
-		columns_, alias_columns_, column_defaults_,
+		columns_, materialized_columns_, alias_columns_, column_defaults_,
 		context_, primary_expr_ast_, date_column_name_,
 		sampling_expression_, index_granularity_, mode_, sign_column_, settings_
 	};

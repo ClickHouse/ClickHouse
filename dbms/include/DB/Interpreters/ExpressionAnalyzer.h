@@ -210,9 +210,11 @@ private:
 	  */
 	void collectJoinedColumns(NameSet & joined_columns, NamesAndTypesList & joined_columns_name_type);
 
+	void addStorageAliases();
+
 	/** Создать словарь алиасов.
 	  */
-	void createAliasesDict(ASTPtr & ast, int ignore_levels = 0);
+	void addASTAliases(ASTPtr & ast, int ignore_levels = 0);
 
 	/** Для узлов-звёздочек - раскрыть их в список всех столбцов.
 	  * Для узлов-литералов - подставить алиасы.

@@ -63,8 +63,10 @@ void ExpressionAnalyzer::init()
 {
 	select_query = typeid_cast<ASTSelectQuery *>(&*ast);
 
+	addStorageAliases();
+
 	/// Создаёт словарь aliases: alias -> ASTPtr
-	createAliasesDict(ast);
+	addASTAliases(ast);
 
 	/// Common subexpression elimination. Rewrite rules.
 	normalizeTree();
@@ -235,9 +237,19 @@ NamesAndTypesList::iterator ExpressionAnalyzer::findColumn(const String & name, 
 }
 
 
+void ExpressionAnalyzer::addStorageAliases()
+{
+	if (!storage)
+		return;
+
+	for (const auto & alias : storage->alias_columns)
+		aliases[alias.name] = storage->column_defaults[alias.name].expression;
+}
+
+
 /// ignore_levels - алиасы в скольки верхних уровнях поддерева нужно игнорировать.
 /// Например, при ignore_levels=1 ast не может быть занесен в словарь, но его дети могут.
-void ExpressionAnalyzer::createAliasesDict(ASTPtr & ast, int ignore_levels)
+void ExpressionAnalyzer::addASTAliases(ASTPtr & ast, int ignore_levels)
 {
 	ASTSelectQuery * select = typeid_cast<ASTSelectQuery *>(&*ast);
 
@@ -252,7 +264,7 @@ void ExpressionAnalyzer::createAliasesDict(ASTPtr & ast, int ignore_levels)
 			new_ignore_levels = 2;
 
 		if (!typeid_cast<ASTSelectQuery *>(&*child))
-			createAliasesDict(child, new_ignore_levels);
+			addASTAliases(child, new_ignore_levels);
 	}
 
 	if (ignore_levels > 0)
@@ -1683,17 +1695,33 @@ void ExpressionAnalyzer::collectUsedColumns()
 			++it;
 	}
 
-	/// Возможно, среди неизвестных столбцов есть виртуальные. Удаляем их из списка неизвестных и добавляем
-	/// в columns list, чтобы при дальнейшей обработке запроса они воспринимались как настоящие.
-	for (NameSet::iterator it = unknown_required_columns.begin(); it != unknown_required_columns.end();)
+	for (NamesAndTypesList::iterator it = columns.begin(); it != columns.end();)
 	{
-		if (storage && storage->hasColumn(*it))
+		unknown_required_columns.erase(it->name);
+
+		if (!required.count(it->name))
 		{
-			columns.push_back(storage->getColumn(*it));
-			unknown_required_columns.erase(it++);
+			required.erase(it->name);
+			columns.erase(it++);
 		}
 		else
 			++it;
+	}
+
+	/// Возможно, среди неизвестных столбцов есть виртуальные. Удаляем их из списка неизвестных и добавляем
+	/// в columns list, чтобы при дальнейшей обработке запроса они воспринимались как настоящие.
+	if (storage)
+	{
+		for (auto it = unknown_required_columns.begin(); it != unknown_required_columns.end();)
+		{
+			if (storage->hasColumn(*it))
+			{
+				columns.push_back(storage->getColumn(*it));
+				unknown_required_columns.erase(it++);
+			}
+			else
+				++it;
+		}
 	}
 }
 

@@ -143,6 +143,7 @@ public:
 		const std::string & path_,
 		const std::string & name_,
 		NamesAndTypesListPtr columns_,
+		const NamesAndTypesList & materialized_columns_,
 		const NamesAndTypesList & alias_columns_,
 		const ColumnDefaults & column_defaults_,
 		size_t max_compress_block_size_ = DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
@@ -203,6 +204,7 @@ protected:
 		const std::string & path_,
 		const std::string & name_,
 		NamesAndTypesListPtr columns_,
+		const NamesAndTypesList & materialized_columns_,
 		const NamesAndTypesList & alias_columns_,
 		const ColumnDefaults & column_defaults_,
 		size_t max_compress_block_size_);

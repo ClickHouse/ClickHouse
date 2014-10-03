@@ -27,6 +27,7 @@ public:
 	static ASTPtr formatColumns(const NamesAndTypesList & columns);
 	static ASTPtr formatColumns(
 		NamesAndTypesList columns,
+		const NamesAndTypesList & materialized_columns,
 		const NamesAndTypesList & alias_columns,
 		const ColumnDefaults & column_defaults);
 
@@ -35,8 +36,8 @@ private:
 	using ColumnsAndDefaults = std::pair<NamesAndTypesList, ColumnDefaults>;
 	ColumnsAndDefaults parseColumns(ASTPtr expression_list);
 
-	/// removes alias columns from the columns list and return them in a separate list
-	static NamesAndTypesList removeAliasColumns(ColumnsAndDefaults & columns_and_defaults);
+	/// removes columns from the columns list and return them in a separate list
+	static NamesAndTypesList removeAndReturnColumns(ColumnsAndDefaults & columns_and_defaults, ColumnDefaultType type);
 
 	ASTPtr query_ptr;
 	Context context;

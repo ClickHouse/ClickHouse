@@ -36,7 +36,7 @@ BlockInputStreams StorageSystemOne::read(
 	col.type = new DataTypeUInt8;
 	col.column = new ColumnConstUInt8(1, 0);
 	block.insert(col);
-	
+
 	return BlockInputStreams(1, new OneBlockInputStream(block));
 }
 

@@ -583,6 +583,7 @@ public:
 	  * require_part_metadata - обязательно ли в директории с куском должны быть checksums.txt и columns.txt
 	  */
 	MergeTreeData(	const String & full_path_, NamesAndTypesListPtr columns_,
+					const NamesAndTypesList & materialized_columns_,
 					const NamesAndTypesList & alias_columns_,
 					const ColumnDefaults & column_defaults_,
 					const Context & context_,

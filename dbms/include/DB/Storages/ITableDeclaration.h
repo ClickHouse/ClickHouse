@@ -37,8 +37,8 @@ public:
 	  */
 	virtual bool hasRealColumn(const String & column_name) const;
 
-	NameAndTypePair getAliasColumn(const String & column_name) const;
-	bool hasAliasColumn(const String & column_name) const;
+	NameAndTypePair getMaterializedColumn(const String & column_name) const;
+	bool hasMaterializedColumn(const String & column_name) const;
 
 	/** Получить описание любого столбца по его имени.
 	  */
@@ -57,29 +57,36 @@ public:
 	/** Проверить, что все запрошенные имена есть в таблице и заданы корректно.
 	  * (список имён не пустой и имена не повторяются)
 	  */
-	void check(const Names & column_names) const;
+	void check(const Names & column_names, bool all_columns = false) const;
 
 	/** Проверить, что все запрошенные имена есть в таблице и имеют правильные типы.
 	  */
-	void check(const NamesAndTypesList & columns) const;
+	void check(const NamesAndTypesList & columns, bool all_columns = false) const;
 
 	/** Проверить, что все имена из пересечения names и columns есть в таблице и имеют одинаковые типы.
 	  */
-	void check(const NamesAndTypesList & columns, const Names & column_names) const;
+	void check(const NamesAndTypesList & columns, const Names & column_names, bool all_columns = false) const;
 
 	/** Проверить, что блок с данными для записи содержит все столбцы таблицы с правильными типами,
 	  *  содержит только столбцы таблицы, и все столбцы различны.
 	  * Если need_all, еще проверяет, что все столбцы таблицы есть в блоке.
 	  */
-	void check(const Block & block, bool need_all = false) const;
+	void check(const Block & block, bool need_all = false, bool all_columns = false) const;
+
 
 	virtual ~ITableDeclaration() = default;
 
 	ITableDeclaration() = default;
-	ITableDeclaration(const NamesAndTypesList & alias_columns, const ColumnDefaults & column_defaults)
-		: alias_columns{alias_columns}, column_defaults{column_defaults}
+	ITableDeclaration(
+		const NamesAndTypesList & materialized_columns,
+		const NamesAndTypesList & alias_columns,
+		const ColumnDefaults & column_defaults)
+		: materialized_columns{materialized_columns},
+		  alias_columns{alias_columns},
+		  column_defaults{column_defaults}
 	{}
 
+	NamesAndTypesList materialized_columns{};
 	NamesAndTypesList alias_columns{};
 	ColumnDefaults column_defaults{};
 };

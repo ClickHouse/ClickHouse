@@ -21,12 +21,13 @@ StorageMerge::StorageMerge(
 StorageMerge::StorageMerge(
 	const std::string & name_,
 	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & materialized_columns_,
 	const NamesAndTypesList & alias_columns_,
 	const ColumnDefaults & column_defaults_,
 	const String & source_database_,
 	const String & table_name_regexp_,
 	const Context & context_)
-	: IStorage{alias_columns_, column_defaults_},
+	: IStorage{materialized_columns_, alias_columns_, column_defaults_},
 	name(name_), columns(columns_), source_database(source_database_),
 	table_name_regexp(table_name_regexp_), context(context_)
 {
@@ -48,6 +49,7 @@ StoragePtr StorageMerge::create(
 StoragePtr StorageMerge::create(
 	const std::string & name_,
 	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & materialized_columns_,
 	const NamesAndTypesList & alias_columns_,
 	const ColumnDefaults & column_defaults_,
 	const String & source_database_,
@@ -55,7 +57,7 @@ StoragePtr StorageMerge::create(
 	const Context & context_)
 {
 	return (new StorageMerge{
-		name_, columns_, alias_columns_, column_defaults_,
+		name_, columns_, materialized_columns_, alias_columns_, column_defaults_,
 		source_database_, table_name_regexp_, context_
 	})->thisPtr();
 }

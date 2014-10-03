@@ -17,13 +17,14 @@ StoragePtr StorageMaterializedView::create(
 	Context & context_,
 	ASTPtr & query_,
 	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & materialized_columns_,
 	const NamesAndTypesList & alias_columns_,
 	const ColumnDefaults & column_defaults_,
 	bool attach_)
 {
 	return (new StorageMaterializedView{
 		table_name_, database_name_, context_, query_,
-		columns_, alias_columns_, column_defaults_,
+		columns_, materialized_columns_, alias_columns_, column_defaults_,
 		attach_
 	})->thisPtr();
 }
@@ -34,10 +35,11 @@ StorageMaterializedView::StorageMaterializedView(
 	Context & context_,
 	ASTPtr & query_,
 	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & materialized_columns_,
 	const NamesAndTypesList & alias_columns_,
 	const ColumnDefaults & column_defaults_,
 	bool attach_)
-	: StorageView{table_name_, database_name_, context_, query_, columns_, alias_columns_, column_defaults_}
+	: StorageView{table_name_, database_name_, context_, query_, columns_, materialized_columns_, alias_columns_, column_defaults_}
 {
 	ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*query_);
 
@@ -91,7 +93,7 @@ NameAndTypePair StorageMaterializedView::getColumn(const String & column_name) c
 
 bool StorageMaterializedView::hasColumn(const String & column_name) const
 {
-	return VirtualColumnFactory::hasColumn(column_name) || hasRealColumn(column_name);
+	return VirtualColumnFactory::hasColumn(column_name) || IStorage::hasColumn(column_name);
 }
 
 BlockInputStreams StorageMaterializedView::read(

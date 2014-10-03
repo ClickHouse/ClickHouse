@@ -72,6 +72,7 @@ StorageDistributed::StorageDistributed(
 StorageDistributed::StorageDistributed(
 	const std::string & name_,
 	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & materialized_columns_,
 	const NamesAndTypesList & alias_columns_,
 	const ColumnDefaults & column_defaults_,
 	const String & remote_database_,
@@ -80,7 +81,7 @@ StorageDistributed::StorageDistributed(
 	Context & context_,
 	const ASTPtr & sharding_key_,
 	const String & data_path_)
-	: IStorage{alias_columns_, column_defaults_},
+	: IStorage{materialized_columns_, alias_columns_, column_defaults_},
 	name(name_), columns(columns_),
 	remote_database(remote_database_), remote_table(remote_table_),
 	context(context_), cluster(cluster_),
@@ -95,6 +96,7 @@ StorageDistributed::StorageDistributed(
 StoragePtr StorageDistributed::create(
 	const std::string & name_,
 	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & materialized_columns_,
 	const NamesAndTypesList & alias_columns_,
 	const ColumnDefaults & column_defaults_,
 	const String & remote_database_,
@@ -107,7 +109,8 @@ StoragePtr StorageDistributed::create(
 	context_.initClusters();
 
 	return (new StorageDistributed{
-		name_, columns_, alias_columns_, column_defaults_,
+		name_, columns_,
+		materialized_columns_, alias_columns_, column_defaults_,
 		remote_database_, remote_table_,
 		context_.getCluster(cluster_name), context_,
 		sharding_key_, data_path_
@@ -219,7 +222,7 @@ NameAndTypePair StorageDistributed::getColumn(const String & column_name) const
 
 bool StorageDistributed::hasColumn(const String & column_name) const
 {
-	return VirtualColumnFactory::hasColumn(column_name) || hasRealColumn(column_name);
+	return VirtualColumnFactory::hasColumn(column_name) || IStorage::hasColumn(column_name);
 }
 
 void StorageDistributed::createDirectoryMonitor(const std::string & name)

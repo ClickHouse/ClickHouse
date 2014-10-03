@@ -15,6 +15,7 @@ public:
 		Context & context_,
 		ASTPtr & query_,
 		NamesAndTypesListPtr columns_,
+		const NamesAndTypesList & materialized_columns_,
 		const NamesAndTypesList & alias_columns_,
 		const ColumnDefaults & column_defaults_,
 		bool attach_);
@@ -46,6 +47,7 @@ private:
 		Context & context_,
 		ASTPtr & query_,
 		NamesAndTypesListPtr columns_,
+		const NamesAndTypesList & materialized_columns_,
 		const NamesAndTypesList & alias_columns_,
 		const ColumnDefaults & column_defaults_,
 		bool attach_);
