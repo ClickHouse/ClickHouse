@@ -175,9 +175,13 @@ private:
  			std::cerr << "Code: " << e.code() << ". " << text << std::endl << std::endl;
 
 			/// Если есть стек-трейс на сервере, то не будем писать стек-трейс на клиенте.
-			if (std::string::npos == text.find("Stack trace"))
+			/// Также не будем писать стек-трейс в случае сетевых ошибок.
+			if (e.code() != ErrorCodes::NETWORK_ERROR
+				&& std::string::npos == text.find("Stack trace"))
+			{
 				std::cerr << "Stack trace:" << std::endl
 					<< e.getStackTrace().toString();
+			}
 
 			/// В случае нулевого кода исключения, надо всё-равно вернуть ненулевой код возврата.
 			return e.code() ? e.code() : -1;
