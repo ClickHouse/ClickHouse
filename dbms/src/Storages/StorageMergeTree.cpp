@@ -229,7 +229,7 @@ void StorageMergeTree::dropPartition(const Field & partition, bool detach)
 
 	for (const auto & part : parts)
 	{
-		if (part->left_month == part->right_month && part->left_month == month)
+		if (!(part->left_month == part->right_month && part->left_month == month))
 			continue;
 
 		LOG_DEBUG(log, "Removing part " << part->name);
