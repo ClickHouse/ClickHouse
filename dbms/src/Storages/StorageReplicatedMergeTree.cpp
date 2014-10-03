@@ -1155,6 +1155,8 @@ void StorageReplicatedMergeTree::executeDropRange(const StorageReplicatedMergeTr
 			else
 				unreplicated_data->replaceParts({part}, {}, false);
 		}
+
+		LOG_INFO(log, (entry.detach ? "Detached " : "Removed ") << removed_parts << " parts inside " << entry.new_part_name << " (in unreplicated data).");
 	}
 }
 
@@ -2378,16 +2380,6 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 	LOG_DEBUG(log, "ALTER finished");
 }
 
-static bool isValidMonthName(const String & s)
-{
-	if (s.size() != 6)
-		return false;
-	if (!std::all_of(s.begin(), s.end(), isdigit))
-		return false;
-	DayNum_t date = DateLUT::instance().toDayNum(OrderedIdentifier2Date(s + "01"));
-	/// Не можем просто сравнить date с нулем, потому что 0 тоже валидный DayNum.
-	return s == toString(Date2OrderedIdentifier(DateLUT::instance().fromDayNum(date)) / 100);
-}
 
 /// Название воображаемого куска, покрывающего все возможные куски в указанном месяце с номерами в указанном диапазоне.
 static String getFakePartNameForDrop(const String & month_name, UInt64 left, UInt64 right)
@@ -2404,11 +2396,7 @@ static String getFakePartNameForDrop(const String & month_name, UInt64 left, UIn
 
 void StorageReplicatedMergeTree::dropPartition(const Field & field, bool detach)
 {
-	String month_name = field.getType() == Field::Types::UInt64 ? toString(field.get<UInt64>()) : field.safeGet<String>();
-
-	if (!isValidMonthName(month_name))
-		throw Exception("Invalid partition format: " + month_name + ". Partition should consist of 6 digits: YYYYMM",
-						ErrorCodes::INVALID_PARTITION_NAME);
+	String month_name = MergeTreeData::getMonthName(field);
 
 	/// TODO: Делать запрос в лидера по TCP.
 	if (!is_leader_node)
@@ -2460,11 +2448,12 @@ void StorageReplicatedMergeTree::dropPartition(const Field & field, bool detach)
 
 void StorageReplicatedMergeTree::attachPartition(const Field & field, bool unreplicated, bool attach_part)
 {
-	String partition = field.getType() == Field::Types::UInt64 ? toString(field.get<UInt64>()) : field.safeGet<String>();
+	String partition;
 
-	if (!attach_part && !isValidMonthName(partition))
-		throw Exception("Invalid partition format: " + partition + ". Partition should consist of 6 digits: YYYYMM",
-						ErrorCodes::INVALID_PARTITION_NAME);
+	if (attach_part)
+		partition = field.getType() == Field::Types::UInt64 ? toString(field.get<UInt64>()) : field.safeGet<String>();
+	else
+		partition = MergeTreeData::getMonthName(field);
 
 	String source_dir = (unreplicated ? "unreplicated/" : "detached/");
 

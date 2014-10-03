@@ -214,4 +214,29 @@ bool StorageMergeTree::canMergeParts(const MergeTreeData::DataPartPtr & left, co
 	return !currently_merging.count(left) && !currently_merging.count(right);
 }
 
+
+void StorageMergeTree::dropPartition(const Field & partition, bool detach)
+{
+	DayNum_t month = MergeTreeData::getMonthDayNum(partition);
+
+	size_t removed_parts = 0;
+	MergeTreeData::DataParts parts = data.getDataParts();
+
+	for (const auto & part : parts)
+	{
+		if (part->left_month == part->right_month && part->left_month == month)
+			continue;
+
+		LOG_DEBUG(log, "Removing part " << part->name);
+		++removed_parts;
+
+		if (detach)
+			data.renameAndDetachPart(part, "");
+		else
+			data.replaceParts({part}, {}, false);
+	}
+
+	LOG_INFO(log, (detach ? "Detached " : "Removed ") << removed_parts << " parts inside " << apply_visitor(FieldVisitorToString(), partition) << ".");
+}
+
 }

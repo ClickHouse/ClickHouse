@@ -747,6 +747,10 @@ public:
 		return it == std::end(column_sizes) ? 0 : it->second;
 	}
 
+	/// Для ATTACH/DETACH/DROP PARTITION.
+	static String getMonthName(const Field & partition);
+	static DayNum_t getMonthDayNum(const Field & partition);
+
 	const Context & context;
 	const String date_column_name;
 	const ASTPtr sampling_expression;
