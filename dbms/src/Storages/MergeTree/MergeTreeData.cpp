@@ -939,6 +939,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const St
 {
 	MutableDataPartPtr part = std::make_shared<DataPart>(*this);
 	part->name = relative_path;
+	ActiveDataPartSet::parsePartName(Poco::Path(relative_path).getFileName(), *part);
 
 	/// Раньше список столбцов записывался неправильно. Удалим его и создадим заново.
 	if (Poco::File(full_path + relative_path + "/columns.txt").exists())
