@@ -13,6 +13,7 @@
 #include <DB/IO/ReadBuffer.h>
 #include <DB/IO/BufferWithOwnMemory.h>
 #include <DB/IO/CompressedStream.h>
+#include <DB/IO/WriteHelpers.h>
 
 
 namespace DB
@@ -42,13 +43,26 @@ protected:
 		own_compressed_buffer.resize(QUICKLZ_HEADER_SIZE);
 		compressed_in->readStrict(&own_compressed_buffer[0], QUICKLZ_HEADER_SIZE);
 
-		size_t size_compressed = qlz_size_compressed(&own_compressed_buffer[0]);
+		UInt8 method = own_compressed_buffer[0];	/// См. CompressedWriteBuffer.h
+		size_t size_compressed;
+
+		if (method < 4)
+		{
+			size_compressed = qlz_size_compressed(&own_compressed_buffer[0]);
+			size_decompressed = qlz_size_decompressed(&own_compressed_buffer[0]);
+		}
+		else if (method == 0x82)
+		{
+			size_compressed = *reinterpret_cast<const UInt32 *>(&own_compressed_buffer[1]);
+			size_decompressed = *reinterpret_cast<const UInt32 *>(&own_compressed_buffer[5]);
+		}
+		else
+			throw Exception("Unknown compression method: " + toString(method), ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
+
 		if (size_compressed > DBMS_MAX_COMPRESSED_SIZE)
 			throw Exception("Too large size_compressed. Most likely corrupted data.", ErrorCodes::TOO_LARGE_SIZE_COMPRESSED);
 
 		ProfileEvents::increment(ProfileEvents::ReadCompressedBytes, size_compressed + sizeof(checksum));
-
-		size_decompressed = qlz_size_decompressed(&own_compressed_buffer[0]);
 
 		/// Находится ли сжатый блок целиком в буфере compressed_in?
 		if (compressed_in->offset() >= QUICKLZ_HEADER_SIZE &&
@@ -76,16 +90,22 @@ protected:
 		ProfileEvents::increment(ProfileEvents::CompressedReadBufferBlocks);
 		ProfileEvents::increment(ProfileEvents::CompressedReadBufferBytes, size_decompressed);
 
-		/// Старший бит первого байта определяет использованный метод сжатия.
-		if ((compressed_buffer[0] & 0x80) == 0)
+		UInt8 method = compressed_buffer[0];	/// См. CompressedWriteBuffer.h
+
+		if (method < 4)
 		{
 			if (!qlz_state)
 				qlz_state = new qlz_state_decompress;
 
 			qlz_decompress(&compressed_buffer[0], to, qlz_state);
 		}
+		else if (method == 0x82)
+		{
+			if (LZ4_decompress_fast(&compressed_buffer[QUICKLZ_HEADER_SIZE], to, size_decompressed) < 0)
+				throw Exception("Cannot LZ4_decompress_fast", ErrorCodes::CORRUPTED_DATA);
+		}
 		else
-			LZ4_decompress_fast(&compressed_buffer[QUICKLZ_HEADER_SIZE], to, size_decompressed);
+			throw Exception("Unknown compression method: " + toString(method), ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
 	}
 
 public:
