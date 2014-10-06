@@ -6,6 +6,7 @@
 #include <DB/Common/SipHash.h>
 #include <DB/Common/Arena.h>
 #include <DB/Common/UInt128.h>
+#include <DB/Core/Defines.h>
 #include <DB/Core/StringRef.h>
 #include <DB/Columns/IColumn.h>
 #include <DB/Common/HashTable/HashMap.h>
@@ -22,7 +23,7 @@ typedef std::vector<size_t> Sizes;
 
 
 /// Записать набор ключей фиксированной длины в UInt128, уложив их подряд (при допущении, что они помещаются).
-static inline UInt128 __attribute__((__always_inline__)) pack128(
+static inline UInt128 ALWAYS_INLINE pack128(
 	size_t i, size_t keys_size, const ConstColumnPlainPtrs & key_columns, const Sizes & key_sizes)
 {
 	union
@@ -45,7 +46,7 @@ static inline UInt128 __attribute__((__always_inline__)) pack128(
 
 
 /// Хэшировать набор ключей в UInt128.
-static inline UInt128 __attribute__((__always_inline__)) hash128(
+static inline UInt128 ALWAYS_INLINE hash128(
 	size_t i, size_t keys_size, const ConstColumnPlainPtrs & key_columns, StringRefs & keys)
 {
 	UInt128 key;
@@ -65,7 +66,7 @@ static inline UInt128 __attribute__((__always_inline__)) hash128(
 
 
 /// То же самое, но без возврата ссылок на данные ключей.
-static inline UInt128 __attribute__((__always_inline__)) hash128(
+static inline UInt128 ALWAYS_INLINE hash128(
 	size_t i, size_t keys_size, const ConstColumnPlainPtrs & key_columns)
 {
 	UInt128 key;
@@ -85,7 +86,7 @@ static inline UInt128 __attribute__((__always_inline__)) hash128(
 
 
 /// Скопировать ключи в пул. Потом разместить в пуле StringRef-ы на них и вернуть указатель на первый.
-static inline StringRef * __attribute__((__always_inline__)) placeKeysInPool(
+static inline StringRef * ALWAYS_INLINE placeKeysInPool(
 	size_t i, size_t keys_size, StringRefs & keys, Arena & pool)
 {
 	for (size_t j = 0; j < keys_size; ++j)
@@ -104,7 +105,7 @@ static inline StringRef * __attribute__((__always_inline__)) placeKeysInPool(
 
 
 /// Скопировать ключи в пул. Потом разместить в пуле StringRef-ы на них и вернуть указатель на первый.
-static inline StringRef * __attribute__((__always_inline__)) extractKeysAndPlaceInPool(
+static inline StringRef * ALWAYS_INLINE extractKeysAndPlaceInPool(
 	size_t i, size_t keys_size, const ConstColumnPlainPtrs & key_columns, StringRefs & keys, Arena & pool)
 {
 	for (size_t j = 0; j < keys_size; ++j)
