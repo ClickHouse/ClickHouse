@@ -128,8 +128,6 @@ BlockInputStreams StorageSystemParts::read(
 		block.insert(ColumnWithNameAndType(active_column, new DataTypeUInt8, "active"));
 	}
 
-	std::cerr << block.dumpStructure();
-
 	/// Отфильтруем блок со столбцами database, table, engine, replicated и active.
 	VirtualColumnUtils::filterBlockWithQuery(query->clone(), block, context);
 
