@@ -24,9 +24,9 @@ public:
 	/// Основное имя типа (например, UInt64).
 	virtual std::string getName() const = 0;
 
-	/// Является ли тип числовым.
+	/// Является ли тип числовым. Дата и дата-с-временем тоже считаются такими.
 	virtual bool isNumeric() const { return false; }
-	
+
 	/// Если тип числовой, уместны ли с ним все арифметические операции и приведение типов.
 	/// true для чисел, false для даты и даты-с-временем.
 	virtual bool behavesAsNumber() const { return false; }

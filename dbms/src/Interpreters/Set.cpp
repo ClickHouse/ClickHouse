@@ -213,8 +213,82 @@ bool Set::insertFromBlock(Block & block, bool create_ordered_set)
 }
 
 
+/** Чтобы корректно работали выражения вида 1.0 IN (1).
+  */
+static Field convertToType(const Field & src, const IDataType & type)
+{
+	if (type.behavesAsNumber())
+	{
+		if (   typeid_cast<const DataTypeUInt8 *>(&type)
+			|| typeid_cast<const DataTypeUInt16 *>(&type)
+			|| typeid_cast<const DataTypeUInt32 *>(&type)
+			|| typeid_cast<const DataTypeUInt64 *>(&type))
+		{
+			if (src.getType() == Field::Types::Int64)
+				throw Exception("Type mismatch in IN section: " + type.getName() + " at left, signed literal at right");
+
+			if (src.getType() == Field::Types::Float64)
+				throw Exception("Type mismatch in IN section: " + type.getName() + " at left, floating point literal at right");
+
+			if (src.getType() == Field::Types::UInt64)
+				return src;
+
+			throw Exception("Type mismatch in IN section: " + type.getName() + " at left, " + Field::Types::toString(src.getType()) + " literal at right");
+		}
+		else if (typeid_cast<const DataTypeInt8 *>(&type)
+			|| typeid_cast<const DataTypeInt16 *>(&type)
+			|| typeid_cast<const DataTypeInt32 *>(&type)
+			|| typeid_cast<const DataTypeInt64 *>(&type))
+		{
+			std::cerr << "int case\n";
+
+			if (src.getType() == Field::Types::Float64)
+				throw Exception("Type mismatch in IN section: " + type.getName() + " at left, floating point literal at right");
+
+			if (src.getType() == Field::Types::UInt64)
+			{
+				std::cerr << "rhs is uint\n";
+				return Field(src.get<Int64>());
+			}
+
+			if (src.getType() == Field::Types::Int64)
+			{
+				std::cerr << "rhs is int\n";
+				return src;
+			}
+
+			throw Exception("Type mismatch in IN section: " + type.getName() + " at left, " + Field::Types::toString(src.getType()) + " literal at right");
+		}
+		else if (typeid_cast<const DataTypeFloat32 *>(&type)
+			|| typeid_cast<const DataTypeFloat64 *>(&type))
+		{
+			if (src.getType() == Field::Types::UInt64)
+				return Field(Float64(src.get<UInt64>()));
+
+			if (src.getType() == Field::Types::Int64)
+				return Field(Float64(src.get<Int64>()));
+
+			if (src.getType() == Field::Types::Float64)
+				return src;
+
+			throw Exception("Type mismatch in IN section: " + type.getName() + " at left, " + Field::Types::toString(src.getType()) + " literal at right");
+		}
+	}
+
+	/// В остальных случаях, приведение типа не осуществляется.
+	return src;
+}
+
+
 void Set::createFromAST(DataTypes & types, ASTPtr node, bool create_ordered_set)
 {
+	/** NOTE:
+	  * На данный момент в секции IN не поддерживаются выражения (вызовы функций), кроме кортежей.
+	  * То есть, например, не поддерживаются массивы. А по хорошему, хотелось бы поддерживать.
+	  * Для этого можно сделать constant folding с помощью ExpressionAnalyzer/ExpressionActions.
+	  * Но при этом, конечно же, не забыть про производительность работы с крупными множествами.
+	  */
+
 	data_types = types;
 
 	/// Засунем множество в блок.
@@ -235,7 +309,7 @@ void Set::createFromAST(DataTypes & types, ASTPtr node, bool create_ordered_set)
 		if (data_types.size() == 1)
 		{
 			if (ASTLiteral * lit = typeid_cast<ASTLiteral *>(&**it))
-				block.getByPosition(0).column->insert(lit->value);
+				block.getByPosition(0).column->insert(convertToType(lit->value, *data_types[0]));
 			else
 				throw Exception("Incorrect element of set. Must be literal.", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
 		}
@@ -251,7 +325,7 @@ void Set::createFromAST(DataTypes & types, ASTPtr node, bool create_ordered_set)
 			for (size_t j = 0; j < tuple_size; ++j)
 			{
 				if (ASTLiteral * lit = typeid_cast<ASTLiteral *>(&*func->arguments->children[j]))
-					block.getByPosition(j).column->insert(lit->value);
+					block.getByPosition(j).column->insert(convertToType(lit->value, *data_types[j]));
 				else
 					throw Exception("Incorrect element of tuple in set. Must be literal.", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
 			}
@@ -333,6 +407,8 @@ void Set::executeOrdinary(const ConstColumnPlainPtrs & key_columns, ColumnUInt8:
 
 	if (type == KEY_64)
 	{
+		std::cerr << "KEY64 case\n";
+
 		const SetUInt64 & set = *key64;
 		const IColumn & column = *key_columns[0];
 
