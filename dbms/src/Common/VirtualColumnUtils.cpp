@@ -97,7 +97,7 @@ static bool isValidFunction(ASTPtr expression, const NameSet & columns)
 		if (!isValidFunction(expression->children[i], columns))
 			return false;
 
-	if (const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(&* expression))
+	if (const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(&*expression))
 	{
 		if (identifier->kind == ASTIdentifier::Kind::Column)
 			return columns.count(identifier->name);
@@ -108,7 +108,7 @@ static bool isValidFunction(ASTPtr expression, const NameSet & columns)
 /// Извлечь все подфункции главной конъюнкции, но зависящие только от заданных столбцов
 static void extractFunctions(ASTPtr expression, const NameSet & columns, std::vector<ASTPtr> & result)
 {
-	const ASTFunction * function = typeid_cast<const ASTFunction *>(&* expression);
+	const ASTFunction * function = typeid_cast<const ASTFunction *>(&*expression);
 	if (function && function->name == "and")
 	{
 		for (size_t i = 0; i < function->arguments->children.size(); ++i)

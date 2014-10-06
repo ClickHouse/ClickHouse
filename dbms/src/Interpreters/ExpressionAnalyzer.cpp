@@ -459,7 +459,7 @@ void ExpressionAnalyzer::optimizeGroupBy()
 	const auto remove_expr_at_index = [&group_exprs] (const size_t idx)
 	{
 		if (idx < group_exprs.size() - 1)
-			group_exprs[idx] = std::move(group_exprs.back());
+			std::swap(group_exprs[idx], group_exprs.back());
 
 		group_exprs.pop_back();
 	};

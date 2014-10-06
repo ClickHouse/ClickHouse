@@ -16,6 +16,9 @@
 #include <DB/Storages/StorageSystemEvents.h>
 #include <DB/Storages/StorageSystemOne.h>
 #include <DB/Storages/StorageSystemMerges.h>
+#include <DB/Storages/StorageSystemSettings.h>
+#include <DB/Storages/StorageSystemZooKeeper.h>
+#include <DB/Storages/StorageSystemReplicas.h>
 
 #include "Server.h"
 #include "HTTPHandler.h"
@@ -352,8 +355,12 @@ int Server::main(const std::vector<std::string> & args)
 	global_context->setGlobalContext(*global_context);
 	global_context->setPath(config().getString("path"));
 
+	bool has_zookeeper = false;
 	if (config().has("zookeeper"))
+	{
 		global_context->setZooKeeper(new zkutil::ZooKeeper(config(), "zookeeper"));
+		has_zookeeper = true;
+	}
 
 	if (config().has("interserver_http_port"))
 	{
@@ -406,8 +413,13 @@ int Server::main(const std::vector<std::string> & args)
 	global_context->addTable("system", "parts", 	StorageSystemParts::create("parts", *global_context));
 	global_context->addTable("system", "databases", StorageSystemDatabases::create("databases", *global_context));
 	global_context->addTable("system", "processes", StorageSystemProcesses::create("processes", *global_context));
+	global_context->addTable("system", "settings", 	StorageSystemSettings::create("settings", *global_context));
 	global_context->addTable("system", "events", 	StorageSystemEvents::create("events"));
 	global_context->addTable("system", "merges",	StorageSystemMerges::create("merges", *global_context));
+	global_context->addTable("system", "replicas",	StorageSystemReplicas::create("replicas", *global_context));
+
+	if (has_zookeeper)
+		global_context->addTable("system", "zookeeper", StorageSystemZooKeeper::create("zookeeper", *global_context));
 
 	global_context->setCurrentDatabase(config().getString("default_database", "default"));
 

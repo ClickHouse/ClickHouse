@@ -39,13 +39,14 @@ StoragePtr StorageChunkMerger::create(
 	return (new StorageChunkMerger(this_database_, name_, columns_, source_database_, table_name_regexp_, destination_name_prefix_, chunks_to_merge_, context_))->thisPtr();
 }
 
-NameAndTypePair StorageChunkMerger::getColumn(const String &column_name) const
+NameAndTypePair StorageChunkMerger::getColumn(const String & column_name) const
 {
-	if (column_name == _table_column_name) return NameAndTypePair(_table_column_name, new DataTypeString);
+	if (column_name == _table_column_name)
+		return NameAndTypePair(_table_column_name, new DataTypeString);
 	return getRealColumn(column_name);
 }
 
-bool StorageChunkMerger::hasColumn(const String &column_name) const
+bool StorageChunkMerger::hasColumn(const String & column_name) const
 {
 	if (column_name == _table_column_name) return true;
 	return hasRealColumn(column_name);

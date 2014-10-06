@@ -77,7 +77,7 @@ struct __attribute__((__packed__)) AggregateFunctionUniqUpToData
 
 		/// Пишем значения, только если состояние не переполнено. Иначе они не нужны, а важен только факт того, что состояние переполнено.
 		if (count <= threshold)
-			wb.write(reinterpret_cast<const char *>(this), count * sizeof(data[0]));
+			wb.write(reinterpret_cast<const char *>(&data[0]), count * sizeof(data[0]));
 	}
 
 	void readAndMerge(ReadBuffer & rb, UInt8 threshold)

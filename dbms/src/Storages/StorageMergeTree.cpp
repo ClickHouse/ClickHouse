@@ -214,4 +214,96 @@ bool StorageMergeTree::canMergeParts(const MergeTreeData::DataPartPtr & left, co
 	return !currently_merging.count(left) && !currently_merging.count(right);
 }
 
+
+void StorageMergeTree::dropPartition(const Field & partition, bool detach)
+{
+	/** TODO В этот момент могут идти мерджи кусков в удаляемой партиции.
+	  * Когда эти мерджи завершатся, то часть данных из удаляемой партиции "оживёт".
+	  * Было бы удобно прерывать все мерджи.
+	  */
+
+	DayNum_t month = MergeTreeData::getMonthDayNum(partition);
+
+	size_t removed_parts = 0;
+	MergeTreeData::DataParts parts = data.getDataParts();
+
+	for (const auto & part : parts)
+	{
+		if (!(part->left_month == part->right_month && part->left_month == month))
+			continue;
+
+		LOG_DEBUG(log, "Removing part " << part->name);
+		++removed_parts;
+
+		if (detach)
+			data.renameAndDetachPart(part, "");
+		else
+			data.replaceParts({part}, {}, false);
+	}
+
+	LOG_INFO(log, (detach ? "Detached " : "Removed ") << removed_parts << " parts inside " << apply_visitor(FieldVisitorToString(), partition) << ".");
+}
+
+
+void StorageMergeTree::attachPartition(const Field & field, bool unreplicated, bool part)
+{
+	if (unreplicated)
+		throw Exception("UNREPLICATED option for ATTACH has meaning only for ReplicatedMergeTree", ErrorCodes::BAD_ARGUMENTS);
+
+	String partition;
+
+	if (part)
+		partition = field.getType() == Field::Types::UInt64 ? toString(field.get<UInt64>()) : field.safeGet<String>();
+	else
+		partition = MergeTreeData::getMonthName(field);
+
+	String source_dir = "detached/";
+
+	/// Составим список кусков, которые нужно добавить.
+	Strings parts;
+	if (part)
+	{
+		parts.push_back(partition);
+	}
+	else
+	{
+		LOG_DEBUG(log, "Looking for parts for partition " << partition << " in " << source_dir);
+		ActiveDataPartSet active_parts;
+		for (Poco::DirectoryIterator it = Poco::DirectoryIterator(full_path + source_dir); it != Poco::DirectoryIterator(); ++it)
+		{
+			String name = it.name();
+			if (!ActiveDataPartSet::isPartDirectory(name))
+				continue;
+			if (name.substr(0, partition.size()) != partition)
+				continue;
+			LOG_DEBUG(log, "Found part " << name);
+			active_parts.add(name);
+		}
+		LOG_DEBUG(log, active_parts.size() << " of them are active");
+		parts = active_parts.getParts();
+	}
+
+	for (const auto & source_part_name : parts)
+	{
+		String source_path = source_dir + source_part_name;
+
+		LOG_DEBUG(log, "Checking data");
+		MergeTreeData::MutableDataPartPtr part = data.loadPartAndFixMetadata(source_path);
+
+		UInt64 index = increment.get();
+		String new_part_name = ActiveDataPartSet::getPartName(part->left_date, part->right_date, index, index, 0);
+		part->renameTo(new_part_name);
+		part->name = new_part_name;
+		ActiveDataPartSet::parsePartName(part->name, *part);
+
+		LOG_INFO(log, "Attaching part " << source_part_name << " from " << source_path << " as " << new_part_name);
+		data.attachPart(part);
+
+		LOG_INFO(log, "Finished attaching part " << new_part_name);
+	}
+
+	/// На месте удаленных кусков могут появиться новые, с другими данными.
+	context.resetCaches();
+}
+
 }

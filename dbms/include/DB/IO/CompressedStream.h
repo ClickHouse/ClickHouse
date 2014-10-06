@@ -13,12 +13,12 @@ namespace DB
 
 namespace CompressionMethod
 {
-	/** Метод сжатия */	
+	/** Метод сжатия */
 	enum Enum
 	{
-		QuickLZ = 0,
-		LZ4		= 1,
-		LZ4HC	= 2,	/// Формат такой же, как у LZ4. Разница только при сжатии.
+		QuickLZ,
+		LZ4,
+		LZ4HC,		/// Формат такой же, как у LZ4. Разница только при сжатии.
 	};
 }
 

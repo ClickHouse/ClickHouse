@@ -12,14 +12,14 @@ namespace DB
 using Poco::SharedPtr;
 
 
-/** Реализует системную таблицу tables, которая позволяет получить информацию о всех таблицах.
+/** Реализует системную таблицу settings, которая позволяет получить информацию о текущих настройках.
   */
-class StorageSystemParts : public IStorage
+class StorageSystemSettings : public IStorage
 {
 public:
 	static StoragePtr create(const std::string & name_, const Context & context_);
 
-	std::string getName() const  override{ return "SystemParts"; }
+	std::string getName() const override { return "SystemSettings"; }
 	std::string getTableName() const override { return name; }
 
 	const NamesAndTypesList & getColumnsList() const override { return columns; }
@@ -37,7 +37,7 @@ private:
 	const Context & context;
 	NamesAndTypesList columns;
 
-	StorageSystemParts(const std::string & name_, const Context & context_);
+	StorageSystemSettings(const std::string & name_, const Context & context_);
 };
 
 }

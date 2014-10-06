@@ -271,7 +271,18 @@ void StorageReplicatedMergeTree::createReplica()
 	ops.push_back(new zkutil::Op::Create(replica_path + "/queue", "", zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
 	ops.push_back(new zkutil::Op::Create(replica_path + "/parts", "", zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
 	ops.push_back(new zkutil::Op::Create(replica_path + "/flags", "", zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
-	zookeeper->multi(ops);
+
+	try
+	{
+		zookeeper->multi(ops);
+	}
+	catch (const zkutil::KeeperException & e)
+	{
+		if (e.code == ZNODEEXISTS)
+			throw Exception("Replica " + replica_path + " is already exist.", ErrorCodes::REPLICA_IS_ALREADY_EXIST);
+
+		throw;
+	}
 
 	/** Нужно изменить данные ноды /replicas на что угодно, чтобы поток, удаляющий старые записи в логе,
 	  *  споткнулся об это изменение и не удалил записи, которые мы еще не прочитали.
@@ -404,7 +415,7 @@ void StorageReplicatedMergeTree::activateReplica()
 	{
 		zookeeper->multi(ops);
 	}
-	catch (zkutil::KeeperException & e)
+	catch (const zkutil::KeeperException & e)
 	{
 		if (e.code == ZNODEEXISTS)
 			throw Exception("Replica " + replica_path + " appears to be already active. If you're sure it's not, "
@@ -1128,7 +1139,7 @@ void StorageReplicatedMergeTree::executeDropRange(const StorageReplicatedMergeTr
 
 	if (unreplicated_data)
 	{
-		Poco::ScopedLock<Poco::FastMutex> unreplicated_lock(unreplicated_mutex);
+		std::lock_guard<std::mutex> unreplicated_lock(unreplicated_mutex);
 
 		removed_parts = 0;
 		parts = unreplicated_data->getDataParts();
@@ -1144,6 +1155,8 @@ void StorageReplicatedMergeTree::executeDropRange(const StorageReplicatedMergeTr
 			else
 				unreplicated_data->replaceParts({part}, {}, false);
 		}
+
+		LOG_INFO(log, (entry.detach ? "Detached " : "Removed ") << removed_parts << " parts inside " << entry.new_part_name << " (in unreplicated data).");
 	}
 }
 
@@ -1201,7 +1214,7 @@ void StorageReplicatedMergeTree::queueUpdatingThread()
 
 			queue_updating_event->wait();
 		}
-		catch (zkutil::KeeperException & e)
+		catch (const zkutil::KeeperException & e)
 		{
 			if (e.code == ZINVALIDSTATE)
 				restarting_event.set();
@@ -1218,7 +1231,7 @@ void StorageReplicatedMergeTree::queueUpdatingThread()
 		}
 	}
 
-	LOG_DEBUG(log, "queue updating thread finished");
+	LOG_DEBUG(log, "Queue updating thread finished");
 }
 
 bool StorageReplicatedMergeTree::queueTask(BackgroundProcessingPool::Context & pool_context)
@@ -1700,7 +1713,7 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
 
 void StorageReplicatedMergeTree::enqueuePartForCheck(const String & name)
 {
-	Poco::ScopedLock<Poco::FastMutex> lock(parts_to_check_mutex);
+	std::lock_guard<std::mutex> lock(parts_to_check_mutex);
 
 	if (parts_to_check_set.count(name))
 		return;
@@ -1718,7 +1731,7 @@ void StorageReplicatedMergeTree::partCheckThread()
 			/// Достанем из очереди кусок для проверки.
 			String part_name;
 			{
-				Poco::ScopedLock<Poco::FastMutex> lock(parts_to_check_mutex);
+				std::lock_guard<std::mutex> lock(parts_to_check_mutex);
 				if (parts_to_check_queue.empty())
 				{
 					if (!parts_to_check_set.empty())
@@ -1900,7 +1913,7 @@ void StorageReplicatedMergeTree::partCheckThread()
 
 			/// Удалим кусок из очереди.
 			{
-				Poco::ScopedLock<Poco::FastMutex> lock(parts_to_check_mutex);
+				std::lock_guard<std::mutex> lock(parts_to_check_mutex);
 				if (parts_to_check_queue.empty() || parts_to_check_queue.front() != part_name)
 				{
 					LOG_ERROR(log, "Someone changed parts_to_check_queue.front(). This is a bug.");
@@ -2141,7 +2154,7 @@ void StorageReplicatedMergeTree::restartingThread()
 		tryLogCurrentException("StorageReplicatedMergeTree::restartingThread");
 		LOG_ERROR(log, "Unexpected exception in restartingThread. The storage will be read-only until server restart.");
 		goReadOnlyPermanently();
-		LOG_DEBUG(log, "restarting thread finished");
+		LOG_DEBUG(log, "Restarting thread finished");
 		return;
 	}
 
@@ -2155,7 +2168,7 @@ void StorageReplicatedMergeTree::restartingThread()
 		tryLogCurrentException("StorageReplicatedMergeTree::restartingThread");
 	}
 
-	LOG_DEBUG(log, "restarting thread finished");
+	LOG_DEBUG(log, "Restarting thread finished");
 }
 
 StorageReplicatedMergeTree::~StorageReplicatedMergeTree()
@@ -2258,7 +2271,7 @@ bool StorageReplicatedMergeTree::optimize()
 	if (!unreplicated_data)
 		return false;
 
-	Poco::ScopedLock<Poco::FastMutex> lock(unreplicated_mutex);
+	std::lock_guard<std::mutex> lock(unreplicated_mutex);
 
 	unreplicated_data->clearOldParts();
 
@@ -2367,16 +2380,6 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 	LOG_DEBUG(log, "ALTER finished");
 }
 
-static bool isValidMonthName(const String & s)
-{
-	if (s.size() != 6)
-		return false;
-	if (!std::all_of(s.begin(), s.end(), isdigit))
-		return false;
-	DayNum_t date = DateLUT::instance().toDayNum(OrderedIdentifier2Date(s + "01"));
-	/// Не можем просто сравнить date с нулем, потому что 0 тоже валидный DayNum.
-	return s == toString(Date2OrderedIdentifier(DateLUT::instance().fromDayNum(date)) / 100);
-}
 
 /// Название воображаемого куска, покрывающего все возможные куски в указанном месяце с номерами в указанном диапазоне.
 static String getFakePartNameForDrop(const String & month_name, UInt64 left, UInt64 right)
@@ -2393,11 +2396,7 @@ static String getFakePartNameForDrop(const String & month_name, UInt64 left, UIn
 
 void StorageReplicatedMergeTree::dropPartition(const Field & field, bool detach)
 {
-	String month_name = field.getType() == Field::Types::UInt64 ? toString(field.get<UInt64>()) : field.safeGet<String>();
-
-	if (!isValidMonthName(month_name))
-		throw Exception("Invalid partition format: " + month_name + ". Partition should consist of 6 digits: YYYYMM",
-						ErrorCodes::INVALID_PARTITION_NAME);
+	String month_name = MergeTreeData::getMonthName(field);
 
 	/// TODO: Делать запрос в лидера по TCP.
 	if (!is_leader_node)
@@ -2449,11 +2448,12 @@ void StorageReplicatedMergeTree::dropPartition(const Field & field, bool detach)
 
 void StorageReplicatedMergeTree::attachPartition(const Field & field, bool unreplicated, bool attach_part)
 {
-	String partition = field.getType() == Field::Types::UInt64 ? toString(field.get<UInt64>()) : field.safeGet<String>();
+	String partition;
 
-	if (!attach_part && !isValidMonthName(partition))
-		throw Exception("Invalid partition format: " + partition + ". Partition should consist of 6 digits: YYYYMM",
-						ErrorCodes::INVALID_PARTITION_NAME);
+	if (attach_part)
+		partition = field.getType() == Field::Types::UInt64 ? toString(field.get<UInt64>()) : field.safeGet<String>();
+	else
+		partition = MergeTreeData::getMonthName(field);
 
 	String source_dir = (unreplicated ? "unreplicated/" : "detached/");
 
@@ -2763,6 +2763,65 @@ void StorageReplicatedMergeTree::LogEntry::readText(ReadBuffer & in)
 		readString(new_part_name, in);
 	}
 	assertString("\n", in);
+}
+
+
+void StorageReplicatedMergeTree::getStatus(Status & res)
+{
+	res.is_leader = is_leader_node;
+	res.is_readonly = is_read_only;
+	res.is_session_expired = zookeeper->expired();
+
+	{
+		std::lock_guard<std::mutex> lock(queue_mutex);
+		res.future_parts = future_parts.size();
+		res.queue_size = queue.size();
+
+		res.inserts_in_queue = 0;
+		res.merges_in_queue = 0;
+
+		for (const LogEntryPtr & entry : queue)
+		{
+			if (entry->type == LogEntry::GET_PART)
+				++res.inserts_in_queue;
+			if (entry->type == LogEntry::MERGE_PARTS)
+				++res.merges_in_queue;
+		}
+	}
+
+	{
+		std::lock_guard<std::mutex> lock(parts_to_check_mutex);
+		res.parts_to_check = parts_to_check_set.size();
+	}
+
+	res.zookeeper_path = zookeeper_path;
+	res.replica_name = replica_name;
+	res.replica_path = replica_path;
+	res.columns_version = columns_version;
+
+	if (res.is_session_expired)
+	{
+		res.log_max_index = 0;
+		res.log_pointer = 0;
+		res.total_replicas = 0;
+		res.active_replicas = 0;
+	}
+	else
+	{
+		auto log_entries = zookeeper->getChildren(zookeeper_path + "/log");
+		const String & last_log_entry = *std::max_element(log_entries.begin(), log_entries.end());
+		res.log_max_index = parse<UInt64>(last_log_entry.substr(strlen("log-")));
+
+		res.log_pointer = parse<UInt64>(zookeeper->get(replica_path + "/log_pointer"));
+
+		auto all_replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
+		res.total_replicas = all_replicas.size();
+
+		res.active_replicas = 0;
+		for (const String & replica : all_replicas)
+			if (zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
+				++res.active_replicas;
+	}
 }
 
 }

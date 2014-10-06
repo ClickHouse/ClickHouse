@@ -939,6 +939,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const St
 {
 	MutableDataPartPtr part = std::make_shared<DataPart>(*this);
 	part->name = relative_path;
+	ActiveDataPartSet::parsePartName(Poco::Path(relative_path).getFileName(), *part);
 
 	/// Раньше список столбцов записывался неправильно. Удалим его и создадим заново.
 	if (Poco::File(full_path + relative_path + "/columns.txt").exists())
@@ -1151,6 +1152,38 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
 		if (files.count(bin_file_name)) column_size -= files.find(bin_file_name)->second.file_size;
 		if (files.count(mrk_file_name)) column_size -= files.find(mrk_file_name)->second.file_size;
 	}
+}
+
+
+static std::pair<String, DayNum_t> getMonthNameAndDayNum(const Field & partition)
+{
+	String month_name = partition.getType() == Field::Types::UInt64
+		? toString(partition.get<UInt64>())
+		: partition.safeGet<String>();
+
+	if (month_name.size() != 6 || !std::all_of(month_name.begin(), month_name.end(), isdigit))
+		throw Exception("Invalid partition format: " + month_name + ". Partition should consist of 6 digits: YYYYMM",
+			ErrorCodes::INVALID_PARTITION_NAME);
+
+	DayNum_t date = DateLUT::instance().toDayNum(OrderedIdentifier2Date(month_name + "01"));
+
+	/// Не можем просто сравнить date с нулем, потому что 0 тоже валидный DayNum.
+	if (month_name != toString(Date2OrderedIdentifier(DateLUT::instance().fromDayNum(date)) / 100))
+		throw Exception("Invalid partition format: " + month_name + " doesn't look like month.",
+			ErrorCodes::INVALID_PARTITION_NAME);
+
+	return std::make_pair(month_name, date);
+}
+
+
+String MergeTreeData::getMonthName(const Field & partition)
+{
+	return getMonthNameAndDayNum(partition).first;
+}
+
+DayNum_t MergeTreeData::getMonthDayNum(const Field & partition)
+{
+	return getMonthNameAndDayNum(partition).second;
 }
 
 }

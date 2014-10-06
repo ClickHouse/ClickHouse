@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DB/Core/Field.h>
+#include <DB/IO/WriteHelpers.h>
 #include <Poco/Timespan.h>
 
 
@@ -25,6 +26,11 @@ struct SettingUInt64
 
 	operator UInt64() const { return value; }
 	SettingUInt64 & operator= (UInt64 x) { set(x); return *this; }
+
+	String toString() const
+	{
+		return DB::toString(value);
+	}
 
 	void set(UInt64 x)
 	{
@@ -69,6 +75,11 @@ struct SettingSeconds
 	SettingSeconds & operator= (Poco::Timespan x) { set(x); return *this; }
 
 	Poco::Timespan::TimeDiff totalSeconds() const { return value.totalSeconds(); }
+
+	String toString() const
+	{
+		return DB::toString(totalSeconds());
+	}
 
 	void set(Poco::Timespan x)
 	{
@@ -117,6 +128,11 @@ struct SettingMilliseconds
 
 	Poco::Timespan::TimeDiff totalMilliseconds() const { return value.totalMilliseconds(); }
 
+	String toString() const
+	{
+		return DB::toString(totalMilliseconds());
+	}
+
 	void set(Poco::Timespan x)
 	{
 		value = x;
@@ -162,6 +178,11 @@ struct SettingFloat
 	operator float() const { return value; }
 	SettingFloat & operator= (float x) { set(x); return *this; }
 
+	String toString() const
+	{
+		return DB::toString(value);
+	}
+
 	void set(float x)
 	{
 		value = x;
@@ -200,7 +221,7 @@ struct SettingFloat
 
 	void write(WriteBuffer & buf) const
 	{
-		writeBinary(toString(value), buf);
+		writeBinary(toString(), buf);
 	}
 };
 

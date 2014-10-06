@@ -20,10 +20,10 @@ public:
 		return (new StorageNull(name_, columns_))->thisPtr();
 	}
 
-	std::string getName() const { return "Null"; }
-	std::string getTableName() const { return name; }
+	std::string getName() const override { return "Null"; }
+	std::string getTableName() const override { return name; }
 
-	const NamesAndTypesList & getColumnsList() const { return *columns; }
+	const NamesAndTypesList & getColumnsList() const override { return *columns; }
 
 	BlockInputStreams read(
 		const Names & column_names,
@@ -31,18 +31,17 @@ public:
 		const Settings & settings,
 		QueryProcessingStage::Enum & processed_stage,
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
-		unsigned threads = 1)
+		unsigned threads = 1) override
 	{
 		return { new NullBlockInputStream };
 	}
 
-	BlockOutputStreamPtr write(
-		ASTPtr query)
+	BlockOutputStreamPtr write(ASTPtr query) override
 	{
 		return new NullBlockOutputStream;
 	}
 
-	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) { name = new_table_name; }
+	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override { name = new_table_name; }
 
 private:
 	String name;

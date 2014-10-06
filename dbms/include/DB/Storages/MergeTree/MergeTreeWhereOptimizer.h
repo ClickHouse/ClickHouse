@@ -86,8 +86,8 @@ private:
 
 		/// remove condition by swapping it with the last one and calling ::pop_back()
 		const auto remove_condition_at_index = [&conditions] (const std::size_t idx) {
-			if (idx < conditions.size())
-				conditions[idx] = std::move(conditions.back());
+			if (idx < conditions.size() - 1)
+				std::swap(conditions[idx], conditions.back());
 			conditions.pop_back();
 		};
 
@@ -134,12 +134,21 @@ private:
 		}
 
 		const auto move_condition_to_prewhere = [&] (const std::size_t idx) {
-			swapConditions(conditions[idx], select.prewhere_expression);
+			select.prewhere_expression = conditions[idx];
+			select.children.push_back(select.prewhere_expression);
+			LOG_DEBUG(log, "MergeTreeWhereOptimizer: condition `" << select.prewhere_expression << "` moved to PREWHERE");
 
-			/** Replace conjunction with the only remaining argument if only two conditions were presentotherwise,
+			/** Replace conjunction with the only remaining argument if only two conditions were present,
 			 *  remove selected condition from conjunction otherwise. */
 			if (conditions.size() == 2)
+			{
+				/// find old where_expression in children of select
+				const auto it = std::find(std::begin(select.children), std::end(select.children), select.where_expression);
+				/// replace where_expression with the remaining argument
 				select.where_expression = std::move(conditions[idx == 0 ? 1 : 0]);
+				/// overwrite child entry with the new where_expression
+				*it = select.where_expression;
+			}
 			else
 				remove_condition_at_index(idx);
 		};
@@ -188,7 +197,8 @@ private:
 		}
 
 		/// add the condition to PREWHERE, remove it from WHERE
-		swapConditions(condition, select.prewhere_expression);
+		std::swap(select.prewhere_expression, condition);
+		LOG_DEBUG(log, "MergeTreeWhereOptimizer: condition `" << select.prewhere_expression << "` moved to PREWHERE");
 	}
 
 	std::size_t getIdentifiersColumnSize(const IdentifierNameSet & identifiers) const
@@ -200,13 +210,6 @@ private:
 				size += column_sizes.find(identifier)->second;
 
 		return size;
-	}
-
-	void swapConditions(ASTPtr & from, ASTPtr & to) const
-	{
-		LOG_DEBUG(log, "MergeTreeWhereOptimizer: condition `" << from << "` moved to PREWHERE");
-
-		std::swap(from, to);
 	}
 
 	bool isConditionGood(const IAST * condition) const

@@ -40,19 +40,19 @@ public:
 		SharedPtr<Cluster> & owned_cluster_,
 		Context & context_);
 
-	std::string getName() const { return "Distributed"; }
-	std::string getTableName() const { return name; }
-	bool supportsSampling() const { return true; }
-	bool supportsFinal() const { return true; }
-	bool supportsPrewhere() const { return true; }
+	std::string getName() const override { return "Distributed"; }
+	std::string getTableName() const override { return name; }
+	bool supportsSampling() const override { return true; }
+	bool supportsFinal() const override { return true; }
+	bool supportsPrewhere() const override { return true; }
 
-	const NamesAndTypesList & getColumnsList() const { return *columns; }
-	NameAndTypePair getColumn(const String &column_name) const;
-	bool hasColumn(const String &column_name) const;
+	const NamesAndTypesList & getColumnsList() const override { return *columns; }
+	NameAndTypePair getColumn(const String & column_name) const override;
+	bool hasColumn(const String & column_name) const override;
 
-	bool isRemote() const { return true; }
+	bool isRemote() const override { return true; }
 	/// Сохранить временные таблицы, чтобы при следующем вызове метода read переслать их на удаленные серверы.
-	void storeExternalTables(const Tables & tables_) { external_tables = tables_; }
+	void storeExternalTables(const Tables & tables_) override { external_tables = tables_; }
 
 	BlockInputStreams read(
 		const Names & column_names,
@@ -60,15 +60,15 @@ public:
 		const Settings & settings,
 		QueryProcessingStage::Enum & processed_stage,
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
-		unsigned threads = 1);
+		unsigned threads = 1) override;
 
 	BlockOutputStreamPtr write(ASTPtr query) override;
 
 	void drop() override {}
-	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) { name = new_table_name; }
+	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override { name = new_table_name; }
 	/// в подтаблицах добавлять и удалять столбы нужно вручную
 	/// структура подтаблиц не проверяется
-	void alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context);
+	void alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context) override;
 
 	void shutdown() override;
 

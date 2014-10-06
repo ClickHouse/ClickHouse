@@ -162,15 +162,17 @@ StorageChunks::StorageChunks(
 	_table_column_name = "_table" + VirtualColumnUtils::chooseSuffix(getColumnsList(), "_table");
 }
 
-NameAndTypePair StorageChunks::getColumn(const String &column_name) const
+NameAndTypePair StorageChunks::getColumn(const String & column_name) const
 {
-	if (column_name == _table_column_name) return NameAndTypePair(_table_column_name, new DataTypeString);
+	if (column_name == _table_column_name)
+		return NameAndTypePair(_table_column_name, new DataTypeString);
 	return getRealColumn(column_name);
 }
 
-bool StorageChunks::hasColumn(const String &column_name) const
+bool StorageChunks::hasColumn(const String & column_name) const
 {
-	if (column_name == _table_column_name) return true;
+	if (column_name == _table_column_name)
+		return true;
 	return hasRealColumn(column_name);
 }
 

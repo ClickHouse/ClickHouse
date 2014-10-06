@@ -38,7 +38,7 @@ public:
 		const MergeTreeSettings & settings_ = MergeTreeSettings());
 
 	void shutdown() override;
-	~StorageReplicatedMergeTree();
+	~StorageReplicatedMergeTree() override;
 
 	std::string getName() const override
 	{
@@ -52,13 +52,13 @@ public:
 
 	const NamesAndTypesList & getColumnsList() const override { return data.getColumnsList(); }
 
-	NameAndTypePair getColumn(const String &column_name) const
+	NameAndTypePair getColumn(const String & column_name) const override
 	{
 		if (column_name == "_replicated") return NameAndTypePair("_replicated", new DataTypeUInt8);
 		return data.getColumn(column_name);
 	}
 
-	bool hasColumn(const String &column_name) const
+	bool hasColumn(const String & column_name) const override
 	{
 		if (column_name == "_replicated") return true;
 		return data.hasColumn(column_name);
@@ -85,7 +85,7 @@ public:
 	  */
 	void drop() override;
 
-	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name);
+	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
 
 	bool supportsIndexForIn() const override { return true; }
 
@@ -94,6 +94,30 @@ public:
 
 	MergeTreeData & getData() { return data; }
 	MergeTreeData * getUnreplicatedData() { return unreplicated_data.get(); }
+
+
+	/** Для системной таблицы replicas. */
+	struct Status
+	{
+		bool is_leader;
+		bool is_readonly;
+		bool is_session_expired;
+		UInt32 future_parts;
+		UInt32 parts_to_check;
+		String zookeeper_path;
+		String replica_name;
+		String replica_path;
+		Int32 columns_version;
+		UInt32 queue_size;
+		UInt32 inserts_in_queue;
+		UInt32 merges_in_queue;
+		UInt64 log_max_index;
+		UInt64 log_pointer;
+		UInt8 total_replicas;
+		UInt8 active_replicas;
+	};
+
+	void getStatus(Status & res);
 
 private:
 	friend class ReplicatedMergeTreeBlockOutputStream;
@@ -231,7 +255,7 @@ private:
 	  */
 	StringSet parts_to_check_set;
 	StringList parts_to_check_queue;
-	Poco::FastMutex parts_to_check_mutex;
+	std::mutex parts_to_check_mutex;
 	Poco::Event parts_to_check_event;
 
 	String database_name;
@@ -272,7 +296,7 @@ private:
 	std::unique_ptr<MergeTreeData> unreplicated_data;
 	std::unique_ptr<MergeTreeDataSelectExecutor> unreplicated_reader;
 	std::unique_ptr<MergeTreeDataMerger> unreplicated_merger;
-	Poco::FastMutex unreplicated_mutex; /// Для мерджей и удаления нереплицируемых кусков.
+	std::mutex unreplicated_mutex; /// Для мерджей и удаления нереплицируемых кусков.
 
 	/// Потоки:
 

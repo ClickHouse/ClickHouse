@@ -111,12 +111,17 @@ public:
 	  *  состоящую из указанных столбцов.
 	  * Если не указано attach - создать директорию, если её нет.
 	  */
-	static StoragePtr create(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, bool attach, size_t max_compress_block_size_ = DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
+	static StoragePtr create(
+		const std::string & path_,
+		const std::string & name_,
+		NamesAndTypesListPtr columns_,
+		bool attach,
+		size_t max_compress_block_size_ = DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
 
-	std::string getName() const { return "TinyLog"; }
-	std::string getTableName() const { return name; }
+	std::string getName() const override { return "TinyLog"; }
+	std::string getTableName() const override { return name; }
 
-	const NamesAndTypesList & getColumnsList() const { return *columns; }
+	const NamesAndTypesList & getColumnsList() const override { return *columns; }
 
 	BlockInputStreams read(
 		const Names & column_names,
@@ -124,14 +129,13 @@ public:
 		const Settings & settings,
 		QueryProcessingStage::Enum & processed_stage,
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
-		unsigned threads = 1);
+		unsigned threads = 1) override;
 
-	BlockOutputStreamPtr write(
-		ASTPtr query);
+	BlockOutputStreamPtr write(ASTPtr query) override;
 
 	void drop() override;
 	
-	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name);
+	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
 
 	bool checkData() const override;
 
