@@ -240,22 +240,14 @@ static Field convertToType(const Field & src, const IDataType & type)
 			|| typeid_cast<const DataTypeInt32 *>(&type)
 			|| typeid_cast<const DataTypeInt64 *>(&type))
 		{
-			std::cerr << "int case\n";
-
 			if (src.getType() == Field::Types::Float64)
 				throw Exception("Type mismatch in IN section: " + type.getName() + " at left, floating point literal at right");
 
 			if (src.getType() == Field::Types::UInt64)
-			{
-				std::cerr << "rhs is uint\n";
 				return Field(src.get<Int64>());
-			}
 
 			if (src.getType() == Field::Types::Int64)
-			{
-				std::cerr << "rhs is int\n";
 				return src;
-			}
 
 			throw Exception("Type mismatch in IN section: " + type.getName() + " at left, " + Field::Types::toString(src.getType()) + " literal at right");
 		}
@@ -407,8 +399,6 @@ void Set::executeOrdinary(const ConstColumnPlainPtrs & key_columns, ColumnUInt8:
 
 	if (type == KEY_64)
 	{
-		std::cerr << "KEY64 case\n";
-
 		const SetUInt64 & set = *key64;
 		const IColumn & column = *key_columns[0];
 
