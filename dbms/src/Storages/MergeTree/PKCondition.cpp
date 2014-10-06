@@ -99,7 +99,11 @@ void PKCondition::traverseAST(ASTPtr & node, Block & block_with_constants)
 			for (size_t i = 0; i < args.size(); ++i)
 			{
 				traverseAST(args[i], block_with_constants);
-				if (i)
+
+				/** Первая часть условия - для корректной поддержки функций and и or произвольной арности
+				  * - в этом случае добавляется n - 1 элементов (где n - количество аргументов).
+				  */
+				if (i != 0 || element.function == RPNElement::FUNCTION_NOT)
 					rpn.push_back(element);
 			}
 
