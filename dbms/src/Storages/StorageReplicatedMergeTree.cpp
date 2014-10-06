@@ -1139,7 +1139,7 @@ void StorageReplicatedMergeTree::executeDropRange(const StorageReplicatedMergeTr
 
 	if (unreplicated_data)
 	{
-		Poco::ScopedLock<Poco::FastMutex> unreplicated_lock(unreplicated_mutex);
+		std::lock_guard<std::mutex> unreplicated_lock(unreplicated_mutex);
 
 		removed_parts = 0;
 		parts = unreplicated_data->getDataParts();
@@ -1231,7 +1231,7 @@ void StorageReplicatedMergeTree::queueUpdatingThread()
 		}
 	}
 
-	LOG_DEBUG(log, "queue updating thread finished");
+	LOG_DEBUG(log, "Queue updating thread finished");
 }
 
 bool StorageReplicatedMergeTree::queueTask(BackgroundProcessingPool::Context & pool_context)
@@ -1713,7 +1713,7 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
 
 void StorageReplicatedMergeTree::enqueuePartForCheck(const String & name)
 {
-	Poco::ScopedLock<Poco::FastMutex> lock(parts_to_check_mutex);
+	std::lock_guard<std::mutex> lock(parts_to_check_mutex);
 
 	if (parts_to_check_set.count(name))
 		return;
@@ -1731,7 +1731,7 @@ void StorageReplicatedMergeTree::partCheckThread()
 			/// Достанем из очереди кусок для проверки.
 			String part_name;
 			{
-				Poco::ScopedLock<Poco::FastMutex> lock(parts_to_check_mutex);
+				std::lock_guard<std::mutex> lock(parts_to_check_mutex);
 				if (parts_to_check_queue.empty())
 				{
 					if (!parts_to_check_set.empty())
@@ -1913,7 +1913,7 @@ void StorageReplicatedMergeTree::partCheckThread()
 
 			/// Удалим кусок из очереди.
 			{
-				Poco::ScopedLock<Poco::FastMutex> lock(parts_to_check_mutex);
+				std::lock_guard<std::mutex> lock(parts_to_check_mutex);
 				if (parts_to_check_queue.empty() || parts_to_check_queue.front() != part_name)
 				{
 					LOG_ERROR(log, "Someone changed parts_to_check_queue.front(). This is a bug.");
@@ -2154,7 +2154,7 @@ void StorageReplicatedMergeTree::restartingThread()
 		tryLogCurrentException("StorageReplicatedMergeTree::restartingThread");
 		LOG_ERROR(log, "Unexpected exception in restartingThread. The storage will be read-only until server restart.");
 		goReadOnlyPermanently();
-		LOG_DEBUG(log, "restarting thread finished");
+		LOG_DEBUG(log, "Restarting thread finished");
 		return;
 	}
 
@@ -2168,7 +2168,7 @@ void StorageReplicatedMergeTree::restartingThread()
 		tryLogCurrentException("StorageReplicatedMergeTree::restartingThread");
 	}
 
-	LOG_DEBUG(log, "restarting thread finished");
+	LOG_DEBUG(log, "Restarting thread finished");
 }
 
 StorageReplicatedMergeTree::~StorageReplicatedMergeTree()
@@ -2271,7 +2271,7 @@ bool StorageReplicatedMergeTree::optimize()
 	if (!unreplicated_data)
 		return false;
 
-	Poco::ScopedLock<Poco::FastMutex> lock(unreplicated_mutex);
+	std::lock_guard<std::mutex> lock(unreplicated_mutex);
 
 	unreplicated_data->clearOldParts();
 
@@ -2763,6 +2763,65 @@ void StorageReplicatedMergeTree::LogEntry::readText(ReadBuffer & in)
 		readString(new_part_name, in);
 	}
 	assertString("\n", in);
+}
+
+
+void StorageReplicatedMergeTree::getStatus(Status & res)
+{
+	res.is_leader = is_leader_node;
+	res.is_readonly = is_read_only;
+	res.is_session_expired = zookeeper->expired();
+
+	{
+		std::lock_guard<std::mutex> lock(queue_mutex);
+		res.future_parts = future_parts.size();
+		res.queue_size = queue.size();
+
+		res.inserts_in_queue = 0;
+		res.merges_in_queue = 0;
+
+		for (const LogEntryPtr & entry : queue)
+		{
+			if (entry->type == LogEntry::GET_PART)
+				++res.inserts_in_queue;
+			if (entry->type == LogEntry::MERGE_PARTS)
+				++res.merges_in_queue;
+		}
+	}
+
+	{
+		std::lock_guard<std::mutex> lock(parts_to_check_mutex);
+		res.parts_to_check = parts_to_check_set.size();
+	}
+
+	res.zookeeper_path = zookeeper_path;
+	res.replica_name = replica_name;
+	res.replica_path = replica_path;
+	res.columns_version = columns_version;
+
+	if (res.is_session_expired)
+	{
+		res.log_max_index = 0;
+		res.log_pointer = 0;
+		res.total_replicas = 0;
+		res.active_replicas = 0;
+	}
+	else
+	{
+		auto log_entries = zookeeper->getChildren(zookeeper_path + "/log");
+		const String & last_log_entry = *std::max_element(log_entries.begin(), log_entries.end());
+		res.log_max_index = parse<UInt64>(last_log_entry.substr(strlen("log-")));
+
+		res.log_pointer = parse<UInt64>(zookeeper->get(replica_path + "/log_pointer"));
+
+		auto all_replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
+		res.total_replicas = all_replicas.size();
+
+		res.active_replicas = 0;
+		for (const String & replica : all_replicas)
+			if (zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
+				++res.active_replicas;
+	}
 }
 
 }

@@ -3,7 +3,6 @@
 #include <Poco/SharedPtr.h>
 
 #include <DB/Storages/IStorage.h>
-#include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/Interpreters/Context.h>
 
 
@@ -19,7 +18,7 @@ class StorageSystemProcesses : public IStorage
 {
 public:
 	static StoragePtr create(const std::string & name_, const Context & context_);
-	
+
 	std::string getName() const override { return "SystemProcesses"; }
 	std::string getTableName() const override { return name; }
 
@@ -37,7 +36,7 @@ private:
 	const std::string name;
 	const Context & context;
 	NamesAndTypesList columns;
-	
+
 	StorageSystemProcesses(const std::string & name_, const Context & context_);
 };
 

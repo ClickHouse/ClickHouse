@@ -18,6 +18,7 @@
 #include <DB/Storages/StorageSystemMerges.h>
 #include <DB/Storages/StorageSystemSettings.h>
 #include <DB/Storages/StorageSystemZooKeeper.h>
+#include <DB/Storages/StorageSystemReplicas.h>
 
 #include "Server.h"
 #include "HTTPHandler.h"
@@ -415,6 +416,7 @@ int Server::main(const std::vector<std::string> & args)
 	global_context->addTable("system", "settings", 	StorageSystemSettings::create("settings", *global_context));
 	global_context->addTable("system", "events", 	StorageSystemEvents::create("events"));
 	global_context->addTable("system", "merges",	StorageSystemMerges::create("merges", *global_context));
+	global_context->addTable("system", "replicas",	StorageSystemReplicas::create("replicas", *global_context));
 
 	if (has_zookeeper)
 		global_context->addTable("system", "zookeeper", StorageSystemZooKeeper::create("zookeeper", *global_context));

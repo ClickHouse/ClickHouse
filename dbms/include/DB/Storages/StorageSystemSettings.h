@@ -3,7 +3,6 @@
 #include <Poco/SharedPtr.h>
 
 #include <DB/Storages/IStorage.h>
-#include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/Interpreters/Context.h>
 
 
