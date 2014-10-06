@@ -16,6 +16,7 @@
 #include <DB/Storages/StorageSystemEvents.h>
 #include <DB/Storages/StorageSystemOne.h>
 #include <DB/Storages/StorageSystemMerges.h>
+#include <DB/Storages/StorageSystemSettings.h>
 
 #include "Server.h"
 #include "HTTPHandler.h"
@@ -406,6 +407,7 @@ int Server::main(const std::vector<std::string> & args)
 	global_context->addTable("system", "parts", 	StorageSystemParts::create("parts", *global_context));
 	global_context->addTable("system", "databases", StorageSystemDatabases::create("databases", *global_context));
 	global_context->addTable("system", "processes", StorageSystemProcesses::create("processes", *global_context));
+	global_context->addTable("system", "settings", 	StorageSystemSettings::create("settings", *global_context));
 	global_context->addTable("system", "events", 	StorageSystemEvents::create("events"));
 	global_context->addTable("system", "merges",	StorageSystemMerges::create("merges", *global_context));
 

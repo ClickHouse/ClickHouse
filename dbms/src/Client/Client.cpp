@@ -1020,13 +1020,8 @@ public:
 		if (options.count(#NAME)) \
 			context.setSetting(#NAME, options[#NAME].as<std::string>());
 		APPLY_FOR_SETTINGS(EXTRACT_SETTING)
+		APPLY_FOR_LIMITS(EXTRACT_SETTING)
 #undef EXTRACT_SETTING
-
-#define EXTRACT_LIMIT(TYPE, NAME, DEFAULT) \
-		if (options.count(#NAME)) \
-			context.setSetting(#NAME, options[#NAME].as<std::string>());
-		APPLY_FOR_LIMITS(EXTRACT_LIMIT)
-#undef EXTRACT_LIMIT
 
 		/// Сохраняем полученные данные во внутренний конфиг
 		if (options.count("config-file"))
