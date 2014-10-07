@@ -750,7 +750,7 @@ void formatAST(const ASTAlterQuery 			& ast, std::ostream & s, size_t indent, bo
 		if (p.type == ASTAlterQuery::ADD_COLUMN)
 		{
 			s << (hilite ? hilite_keyword : "") << indent_str << "ADD COLUMN " << (hilite ? hilite_none : "");
-			formatAST(*p.name_type, s, indent, hilite, true);
+			formatAST(*p.col_decl, s, indent, hilite, true);
 
 			/// AFTER
 			if (p.column)
@@ -767,7 +767,7 @@ void formatAST(const ASTAlterQuery 			& ast, std::ostream & s, size_t indent, bo
 		else if (p.type == ASTAlterQuery::MODIFY_COLUMN)
 		{
 			s << (hilite ? hilite_keyword : "") << indent_str << "MODIFY COLUMN " << (hilite ? hilite_none : "");
-			formatAST(*p.name_type, s, indent, hilite, true);
+			formatAST(*p.col_decl, s, indent, hilite, true);
 		}
 		else if (p.type == ASTAlterQuery::DROP_PARTITION)
 		{

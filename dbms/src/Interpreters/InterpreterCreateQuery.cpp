@@ -296,10 +296,6 @@ InterpreterCreateQuery::ColumnsAndDefaults InterpreterCreateQuery::parseColumns(
 			else
 			{
 				default_expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), col_decl.name));
-				defaults.emplace(col_decl.name, ColumnDefault{
-					columnDefaultTypeFromString(col_decl.default_specifier),
-					setAlias(col_decl.default_expression, col_decl.name)
-				});
 			}
 		}
 	}

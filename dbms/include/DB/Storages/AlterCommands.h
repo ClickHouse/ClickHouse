@@ -38,7 +38,7 @@ struct AlterCommand
 	{
 		if (type == ADD)
 		{
-			if (std::count_if(columns.begin(), columns.end(), std::bind(namesEqual, column_name, std::placeholders::_1)))
+			if (std::count_if(columns.begin(), columns.end(), std::bind(namesEqual, std::cref(column_name), std::placeholders::_1)))
 				throw Exception("Cannot add column " + column_name + ": column with this name already exisits.",
 					DB::ErrorCodes::ILLEGAL_COLUMN);
 
@@ -54,7 +54,7 @@ struct AlterCommand
 				/// Например "fruits.bananas"
 				/// одинаковыми считаются имена, если они совпадают целиком или name_without_dot совпадает с частью имени до точки
 				NamesAndTypesList::reverse_iterator reverse_insert_it = std::find_if(columns.rbegin(), columns.rend(),
-					std::bind(namesEqual, after_column, std::placeholders::_1));
+					std::bind(namesEqual, std::cref(after_column), std::placeholders::_1));
 
 				if (reverse_insert_it == columns.rend())
 					throw Exception("Wrong column name. Cannot find column " + column_name + " to insert after",
@@ -77,7 +77,8 @@ struct AlterCommand
 			NamesAndTypesList::iterator column_it;
 			do
 			{
-				column_it = std::find_if(columns.begin(), columns.end(), std::bind(namesEqual, column_name, std::placeholders::_1));
+				column_it = std::find_if(columns.begin(), columns.end(),
+					std::bind(namesEqual, std::cref(column_name), std::placeholders::_1));
 
 				if (column_it == columns.end())
 				{
@@ -94,7 +95,7 @@ struct AlterCommand
 		else if (type == MODIFY)
 		{
 			NamesAndTypesList::iterator column_it = std::find_if(columns.begin(), columns.end(),
-				std::bind(namesEqual, column_name, std::placeholders::_1) );
+				std::bind(namesEqual, std::cref(column_name), std::placeholders::_1) );
 			if (column_it == columns.end())
 				throw Exception("Wrong column name. Cannot find column " + column_name + " to modify.",
 								DB::ErrorCodes::ILLEGAL_COLUMN);

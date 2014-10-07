@@ -53,10 +53,12 @@ private:
 	typedef std::vector<PartitionCommand> PartitionCommands;
 
 	ASTPtr query_ptr;
-	
+
 	Context context;
 
 	static void parseAlter(const ASTAlterQuery::ParameterContainer & params, const DataTypeFactory & data_type_factory,
 		AlterCommands & out_alter_commands, PartitionCommands & out_partition_commands);
+
+	static void validateColumnChanges(ASTAlterQuery::ParameterContainer & params, const StoragePtr & table, const Context & context);
 };
 }

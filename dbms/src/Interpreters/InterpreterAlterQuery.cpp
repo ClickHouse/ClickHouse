@@ -1,5 +1,6 @@
 #include <DB/Interpreters/InterpreterAlterQuery.h>
 #include <DB/Interpreters/InterpreterCreateQuery.h>
+#include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Parsers/ASTAlterQuery.h>
 #include <DB/Parsers/ASTCreateQuery.h>
 #include <DB/Parsers/ASTExpressionList.h>
@@ -30,14 +31,15 @@ InterpreterAlterQuery::InterpreterAlterQuery(ASTPtr query_ptr_, Context & contex
 
 void InterpreterAlterQuery::execute()
 {
-	ASTAlterQuery & alter = typeid_cast<ASTAlterQuery &>(*query_ptr);
-	String & table_name = alter.table;
+	auto & alter = typeid_cast<ASTAlterQuery &>(*query_ptr);
+	const String & table_name = alter.table;
 	String database_name = alter.database.empty() ? context.getCurrentDatabase() : alter.database;
+	StoragePtr table = context.getTable(database_name, table_name);
+	validateColumnChanges(alter.parameters, table, context);
+
 	AlterCommands alter_commands;
 	PartitionCommands partition_commands;
 	parseAlter(alter.parameters, context.getDataTypeFactory(), alter_commands, partition_commands);
-
-	StoragePtr table = context.getTable(database_name, table_name);
 
 	for (const PartitionCommand & command : partition_commands)
 	{
@@ -64,11 +66,11 @@ void InterpreterAlterQuery::parseAlter(
 			AlterCommand command;
 			command.type = AlterCommand::ADD;
 
-			const ASTNameTypePair & ast_name_type = typeid_cast<const ASTNameTypePair &>(*params.name_type);
-			StringRange type_range = ast_name_type.type->range;
+			const auto & ast_col_decl = typeid_cast<const ASTColumnDeclaration &>(*params.col_decl);
+			StringRange type_range = ast_col_decl.type->range;
 			String type_string = String(type_range.first, type_range.second - type_range.first);
 
-			command.column_name = ast_name_type.name;
+			command.column_name = ast_col_decl.name;
 			command.data_type = data_type_factory.get(type_string);
 
 			if (params.column)
@@ -89,11 +91,11 @@ void InterpreterAlterQuery::parseAlter(
 			AlterCommand command;
 			command.type = AlterCommand::MODIFY;
 
-			const ASTNameTypePair & ast_name_type = typeid_cast<const ASTNameTypePair &>(*params.name_type);
-			StringRange type_range = ast_name_type.type->range;
+			const auto & ast_col_decl = typeid_cast<const ASTColumnDeclaration &>(*params.col_decl);
+			StringRange type_range = ast_col_decl.type->range;
 			String type_string = String(type_range.first, type_range.second - type_range.first);
 
-			command.column_name = ast_name_type.name;
+			command.column_name = ast_col_decl.name;
 			command.data_type = data_type_factory.get(type_string);
 
 			out_alter_commands.push_back(command);
@@ -110,6 +112,141 @@ void InterpreterAlterQuery::parseAlter(
 		}
 		else
 			throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
+	}
+}
+
+void InterpreterAlterQuery::validateColumnChanges(ASTAlterQuery::ParameterContainer & params_container, const StoragePtr & table, const Context & context)
+{
+	auto columns = table->getColumnsList();
+	columns.insert(std::end(columns), std::begin(table->materialized_columns), std::end(table->materialized_columns));
+	columns.insert(std::end(columns), std::begin(table->alias_columns), std::end(table->alias_columns));
+	auto defaults = table->column_defaults;
+
+	std::vector<std::pair<IDataType *, ASTColumnDeclaration *>> defaulted_columns{};
+
+	ASTPtr default_expr_list{new ASTExpressionList};
+	default_expr_list->children.reserve(table->column_defaults.size());
+
+	for (auto & params : params_container)
+	{
+		if (params.type == ASTAlterQuery::ADD_COLUMN || params.type == ASTAlterQuery::MODIFY_COLUMN)
+		{
+			auto & col_decl = typeid_cast<ASTColumnDeclaration &>(*params.col_decl);
+			const auto & column_name = col_decl.name;
+
+			if (params.type == ASTAlterQuery::MODIFY_COLUMN)
+			{
+				const auto it = std::find_if(std::begin(columns), std::end(columns),
+					std::bind(AlterCommand::namesEqual, std::cref(column_name), std::placeholders::_1));
+
+				if (it == std::end(columns))
+					throw Exception("Wrong column name. Cannot find column " + column_name + " to modify.",
+									DB::ErrorCodes::ILLEGAL_COLUMN);
+
+				columns.erase(it);
+				defaults.erase(column_name);
+			}
+
+			if (col_decl.type)
+			{
+				const StringRange & type_range = col_decl.type->range;
+				columns.emplace_back(col_decl.name,
+					context.getDataTypeFactory().get({type_range.first, type_range.second}));
+			}
+
+			if (col_decl.default_expression)
+			{
+
+				if (col_decl.type)
+				{
+					const auto tmp_column_name = col_decl.name + "_tmp";
+					const auto & final_column_name = col_decl.name;
+					const auto conversion_function_name = "to" + columns.back().type->getName();
+
+					default_expr_list->children.emplace_back(setAlias(
+						makeASTFunction(conversion_function_name, ASTPtr{new ASTIdentifier{{}, tmp_column_name}}),
+						final_column_name));
+
+					default_expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), tmp_column_name));
+
+					defaulted_columns.emplace_back(columns.back().type.get(), &col_decl);
+				}
+				else
+				{
+					default_expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), col_decl.name));
+
+					defaulted_columns.emplace_back(nullptr, &col_decl);
+				}
+			}
+		}
+		else if (params.type == ASTAlterQuery::DROP_COLUMN)
+		{
+			const auto & column_name = typeid_cast<const ASTIdentifier &>(*(params.column)).name;
+
+			auto found = false;
+			for (auto it = std::begin(columns); it != std::end(columns);)
+				if (AlterCommand::namesEqual(column_name, *it))
+				{
+					found = true;
+					it = columns.erase(it);
+				}
+				else
+					++it;
+
+			for (auto it = std::begin(defaults); it != std::end(defaults);)
+				if (AlterCommand::namesEqual(column_name, { it->first, nullptr }))
+					it = defaults.erase(it);
+				else
+					++it;
+
+			if (!found)
+				throw Exception("Wrong column name. Cannot find column " + column_name + " to drop.",
+								DB::ErrorCodes::ILLEGAL_COLUMN);
+		}
+	}
+
+	for (const auto & col_def : defaults)
+		default_expr_list->children.emplace_back(setAlias(col_def.second.expression->clone(), col_def.first));
+
+	const auto actions = ExpressionAnalyzer{default_expr_list, context, columns}.getActions(true);
+	const auto block = actions->getSampleBlock();
+
+	for (auto & column : defaulted_columns)
+	{
+		const auto type_ptr = column.first;
+		const auto col_decl_ptr = column.second;
+
+		if (type_ptr)
+		{
+			const auto & tmp_column = block.getByName(col_decl_ptr->name + "_tmp");
+
+			/// type mismatch between explicitly specified and deduced type, add conversion
+			if (typeid(*type_ptr) != typeid(*tmp_column.type))
+			{
+				col_decl_ptr->default_expression = makeASTFunction(
+					"to" + type_ptr->getName(),
+					col_decl_ptr->default_expression);
+
+				col_decl_ptr->children.clear();
+				col_decl_ptr->children.push_back(col_decl_ptr->type);
+				col_decl_ptr->children.push_back(col_decl_ptr->default_expression);
+			}
+		}
+		else
+		{
+			col_decl_ptr->type = new ASTIdentifier{};
+			col_decl_ptr->query_string = new String{block.getByName(col_decl_ptr->name).type->getName()};
+			col_decl_ptr->range = {
+				col_decl_ptr->query_string->data(),
+				col_decl_ptr->query_string->data() + col_decl_ptr->query_string->size()
+			};
+			static_cast<ASTIdentifier &>(*col_decl_ptr->type).name = *col_decl_ptr->query_string;
+		}
+
+		defaults.emplace(col_decl_ptr->name, ColumnDefault{
+			columnDefaultTypeFromString(col_decl_ptr->default_specifier),
+			setAlias(col_decl_ptr->default_expression, col_decl_ptr->name)
+		});
 	}
 }
 

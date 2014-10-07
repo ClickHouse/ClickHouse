@@ -7,6 +7,7 @@
 #include <DB/Parsers/ASTColumnDeclaration.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/CommonParsers.h>
+#include <Poco/String.h>
 
 
 namespace DB
@@ -112,9 +113,9 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, Pos end, ASTPtr 
 	NameParser name_parser;
 	ParserIdentifierWithOptionalParameters type_parser;
 	ParserWhiteSpaceOrComments ws;
-	ParserString s_default{"DEFAULT"};
-	ParserString s_materialized{"MATERIALIZED"};
-	ParserString s_alias{"ALIAS"};
+	ParserString s_default{"DEFAULT", true, true};
+	ParserString s_materialized{"MATERIALIZED", true, true};
+	ParserString s_alias{"ALIAS", true, true};
 	ParserTernaryOperatorExpression expr_parser;
 
 	const auto begin = pos;
@@ -152,7 +153,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, Pos end, ASTPtr 
 		s_materialized.ignore(pos, end, expected) ||
 		s_alias.ignore(pos, end, expected))
 	{
-		default_specifier.assign(pos_before_specifier, pos);
+		default_specifier = Poco::toUpper(std::string{pos_before_specifier, pos});
 
 		/// should be followed by an expression
 		ws.ignore(pos, end, expected);
