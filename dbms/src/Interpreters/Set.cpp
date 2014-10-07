@@ -277,7 +277,8 @@ static Field convertToType(const Field & src, const IDataType & type)
 
 				if ((is_int8 && value > uint8_t(std::numeric_limits<int8_t>::max()))
 					|| (is_int16 && value > uint16_t(std::numeric_limits<int16_t>::max()))
-					|| (is_int32 && value > uint32_t(std::numeric_limits<int32_t>::max())))
+					|| (is_int32 && value > uint32_t(std::numeric_limits<int32_t>::max()))
+					|| (is_int64 && value > uint64_t(std::numeric_limits<int64_t>::max())))
 					throw Exception("Value (" + toString(value) + ") in IN section is out of range of type " + type.getName() + " at left");
 
 				return Field(Int64(value));
