@@ -336,12 +336,12 @@ public:
 	ColumnPtr & getDataPtr() { return data; }
 	const ColumnPtr & getDataPtr() const { return data; }
 
-	Offsets_t & __attribute__((__always_inline__)) getOffsets()
+	Offsets_t & ALWAYS_INLINE getOffsets()
 	{
 		return static_cast<ColumnOffsets_t &>(*offsets.get()).getData();
 	}
 
-	const Offsets_t & __attribute__((__always_inline__)) getOffsets() const
+	const Offsets_t & ALWAYS_INLINE getOffsets() const
 	{
 		return static_cast<const ColumnOffsets_t &>(*offsets.get()).getData();
 	}
@@ -373,8 +373,8 @@ private:
 	ColumnPtr data;
 	ColumnPtr offsets;	/// Смещения могут быть разделяемыми для нескольких столбцов - для реализации вложенных структур данных.
 
-	size_t __attribute__((__always_inline__)) offsetAt(size_t i) const	{ return i == 0 ? 0 : getOffsets()[i - 1]; }
-	size_t __attribute__((__always_inline__)) sizeAt(size_t i) const	{ return i == 0 ? getOffsets()[0] : (getOffsets()[i] - getOffsets()[i - 1]); }
+	size_t ALWAYS_INLINE offsetAt(size_t i) const	{ return i == 0 ? 0 : getOffsets()[i - 1]; }
+	size_t ALWAYS_INLINE sizeAt(size_t i) const	{ return i == 0 ? getOffsets()[0] : (getOffsets()[i] - getOffsets()[i - 1]); }
 
 
 	/// Размножить значения, если вложенный столбец - ColumnArray<T>.

@@ -185,7 +185,13 @@ template <typename T> StringRef getDataAtImpl(const T & data)
 	return StringRef(reinterpret_cast<const char *>(&data), sizeof(data));
 }
 
-template <typename T> UInt64 get64Impl(const T & data)
+
+template <typename T> UInt64 get64IntImpl(const T & data)
+{
+	return data;
+}
+
+template <typename T> UInt64 get64FloatImpl(const T & data)
 {
 	union
 	{
@@ -209,16 +215,16 @@ template <> inline StringRef ColumnConst<Int64		>::getDataAt(size_t n) const { r
 template <> inline StringRef ColumnConst<Float32	>::getDataAt(size_t n) const { return getDataAtImpl(data); }
 template <> inline StringRef ColumnConst<Float64	>::getDataAt(size_t n) const { return getDataAtImpl(data); }
 
-template <> inline UInt64 ColumnConst<UInt8		>::get64(size_t n) const { return get64Impl(data); }
-template <> inline UInt64 ColumnConst<UInt16	>::get64(size_t n) const { return get64Impl(data); }
-template <> inline UInt64 ColumnConst<UInt32	>::get64(size_t n) const { return get64Impl(data); }
-template <> inline UInt64 ColumnConst<UInt64	>::get64(size_t n) const { return get64Impl(data); }
-template <> inline UInt64 ColumnConst<Int8		>::get64(size_t n) const { return get64Impl(data); }
-template <> inline UInt64 ColumnConst<Int16		>::get64(size_t n) const { return get64Impl(data); }
-template <> inline UInt64 ColumnConst<Int32		>::get64(size_t n) const { return get64Impl(data); }
-template <> inline UInt64 ColumnConst<Int64		>::get64(size_t n) const { return get64Impl(data); }
-template <> inline UInt64 ColumnConst<Float32	>::get64(size_t n) const { return get64Impl(data); }
-template <> inline UInt64 ColumnConst<Float64	>::get64(size_t n) const { return get64Impl(data); }
+template <> inline UInt64 ColumnConst<UInt8		>::get64(size_t n) const { return get64IntImpl(data); }
+template <> inline UInt64 ColumnConst<UInt16	>::get64(size_t n) const { return get64IntImpl(data); }
+template <> inline UInt64 ColumnConst<UInt32	>::get64(size_t n) const { return get64IntImpl(data); }
+template <> inline UInt64 ColumnConst<UInt64	>::get64(size_t n) const { return get64IntImpl(data); }
+template <> inline UInt64 ColumnConst<Int8		>::get64(size_t n) const { return get64IntImpl(data); }
+template <> inline UInt64 ColumnConst<Int16		>::get64(size_t n) const { return get64IntImpl(data); }
+template <> inline UInt64 ColumnConst<Int32		>::get64(size_t n) const { return get64IntImpl(data); }
+template <> inline UInt64 ColumnConst<Int64		>::get64(size_t n) const { return get64IntImpl(data); }
+template <> inline UInt64 ColumnConst<Float32	>::get64(size_t n) const { return get64FloatImpl(data); }
+template <> inline UInt64 ColumnConst<Float64	>::get64(size_t n) const { return get64FloatImpl(data); }
 
 
 template <typename T> StringRef ColumnConst<T>::getDataAtWithTerminatingZero(size_t n) const
