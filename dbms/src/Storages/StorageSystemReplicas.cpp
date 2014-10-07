@@ -60,6 +60,20 @@ BlockInputStreams StorageSystemReplicas::read(
 					replicated_tables[db.first][table.first] = table.second;
 	}
 
+	/// Нужны ли столбцы, требующие для вычисления хождение в ZooKeeper.
+	bool with_zk_fields = false;
+	for (const auto & name : column_names)
+	{
+		if (   name == "log_max_index"
+			|| name == "log_pointer"
+			|| name == "total_replicas"
+			|| name == "active_replicas")
+		{
+			with_zk_fields = true;
+			break;
+		}
+	}
+
 	ColumnWithNameAndType col_database			{ new ColumnString,	new DataTypeString,	"database"};
 	ColumnWithNameAndType col_name				{ new ColumnString,	new DataTypeString,	"name"};
 	ColumnWithNameAndType col_engine			{ new ColumnString,	new DataTypeString,	"engine"};
@@ -89,7 +103,7 @@ BlockInputStreams StorageSystemReplicas::read(
 			col_engine.column->insert(table.second->getName());
 
 			StorageReplicatedMergeTree::Status status;
-			typeid_cast<StorageReplicatedMergeTree &>(*table.second).getStatus(status);
+			typeid_cast<StorageReplicatedMergeTree &>(*table.second).getStatus(status, with_zk_fields);
 
 			col_is_leader			.column->insert(UInt64(status.is_leader));
 			col_is_readonly			.column->insert(UInt64(status.is_readonly));
