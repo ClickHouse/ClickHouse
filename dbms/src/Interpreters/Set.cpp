@@ -214,15 +214,37 @@ bool Set::insertFromBlock(Block & block, bool create_ordered_set)
 
 
 /** Чтобы корректно работали выражения вида 1.0 IN (1).
+  * Проверяет совместимость типов, проверяет попадание значений в диапазон допустимых значений типа, делает преобразование типа.
+  * Код слегка дурацкий.
   */
 static Field convertToType(const Field & src, const IDataType & type)
 {
 	if (type.behavesAsNumber())
 	{
-		if (   typeid_cast<const DataTypeUInt8 *>(&type)
-			|| typeid_cast<const DataTypeUInt16 *>(&type)
-			|| typeid_cast<const DataTypeUInt32 *>(&type)
-			|| typeid_cast<const DataTypeUInt64 *>(&type))
+		bool is_uint8 	= false;
+		bool is_uint16 	= false;
+		bool is_uint32 	= false;
+		bool is_uint64 	= false;
+		bool is_int8 	= false;
+		bool is_int16 	= false;
+		bool is_int32 	= false;
+		bool is_int64 	= false;
+		bool is_float32 = false;
+		bool is_float64 = false;
+
+		false
+			|| (is_uint8 	= typeid_cast<const DataTypeUInt8 *		>(&type))
+			|| (is_uint16 	= typeid_cast<const DataTypeUInt16 *	>(&type))
+			|| (is_uint32 	= typeid_cast<const DataTypeUInt32 *	>(&type))
+			|| (is_uint64 	= typeid_cast<const DataTypeUInt64 *	>(&type))
+			|| (is_int8 	= typeid_cast<const DataTypeInt8 *		>(&type))
+			|| (is_int16 	= typeid_cast<const DataTypeInt16 *		>(&type))
+			|| (is_int32 	= typeid_cast<const DataTypeInt32 *		>(&type))
+			|| (is_int64 	= typeid_cast<const DataTypeInt64 *		>(&type))
+			|| (is_float32 	= typeid_cast<const DataTypeFloat32 *	>(&type))
+			|| (is_float64 	= typeid_cast<const DataTypeFloat64 *	>(&type));
+
+		if (is_uint8 || is_uint16 || is_uint32 || is_uint64)
 		{
 			if (src.getType() == Field::Types::Int64)
 				throw Exception("Type mismatch in IN section: " + type.getName() + " at left, signed literal at right");
@@ -231,28 +253,51 @@ static Field convertToType(const Field & src, const IDataType & type)
 				throw Exception("Type mismatch in IN section: " + type.getName() + " at left, floating point literal at right");
 
 			if (src.getType() == Field::Types::UInt64)
-				return src;
+			{
+				UInt64 value = src.get<const UInt64 &>();
+				if ((is_uint8 && value > std::numeric_limits<uint8_t>::max())
+					|| (is_uint16 && value > std::numeric_limits<uint16_t>::max())
+					|| (is_uint32 && value > std::numeric_limits<uint32_t>::max()))
+					throw Exception("Value (" + toString(value) + ") in IN section is out of range of type " + type.getName() + " at left");
 
-			throw Exception("Type mismatch in IN section: " + type.getName() + " at left, " + Field::Types::toString(src.getType()) + " literal at right");
+				return src;
+			}
+
+			throw Exception("Type mismatch in IN section: " + type.getName() + " at left, "
+				+ Field::Types::toString(src.getType()) + " literal at right");
 		}
-		else if (typeid_cast<const DataTypeInt8 *>(&type)
-			|| typeid_cast<const DataTypeInt16 *>(&type)
-			|| typeid_cast<const DataTypeInt32 *>(&type)
-			|| typeid_cast<const DataTypeInt64 *>(&type))
+		else if (is_int8 || is_int16 || is_int32 || is_int64)
 		{
 			if (src.getType() == Field::Types::Float64)
 				throw Exception("Type mismatch in IN section: " + type.getName() + " at left, floating point literal at right");
 
 			if (src.getType() == Field::Types::UInt64)
-				return Field(src.get<Int64>());
+			{
+				UInt64 value = src.get<const UInt64 &>();
+
+				if ((is_int8 && value > uint8_t(std::numeric_limits<int8_t>::max()))
+					|| (is_int16 && value > uint16_t(std::numeric_limits<int16_t>::max()))
+					|| (is_int32 && value > uint32_t(std::numeric_limits<int32_t>::max())))
+					throw Exception("Value (" + toString(value) + ") in IN section is out of range of type " + type.getName() + " at left");
+
+				return Field(Int64(value));
+			}
 
 			if (src.getType() == Field::Types::Int64)
-				return src;
+			{
+				Int64 value = src.get<const Int64 &>();
+				if ((is_int8 && (value < std::numeric_limits<int8_t>::min() || value > std::numeric_limits<int8_t>::max()))
+					|| (is_int16 && (value < std::numeric_limits<int16_t>::min() || value > std::numeric_limits<int16_t>::max()))
+					|| (is_int32 && (value < std::numeric_limits<int32_t>::min() || value > std::numeric_limits<int32_t>::max())))
+					throw Exception("Value (" + toString(value) + ") in IN section is out of range of type " + type.getName() + " at left");
 
-			throw Exception("Type mismatch in IN section: " + type.getName() + " at left, " + Field::Types::toString(src.getType()) + " literal at right");
+				return src;
+			}
+
+			throw Exception("Type mismatch in IN section: " + type.getName() + " at left, "
+				+ Field::Types::toString(src.getType()) + " literal at right");
 		}
-		else if (typeid_cast<const DataTypeFloat32 *>(&type)
-			|| typeid_cast<const DataTypeFloat64 *>(&type))
+		else if (is_float32 || is_float64)
 		{
 			if (src.getType() == Field::Types::UInt64)
 				return Field(Float64(src.get<UInt64>()));
@@ -263,7 +308,8 @@ static Field convertToType(const Field & src, const IDataType & type)
 			if (src.getType() == Field::Types::Float64)
 				return src;
 
-			throw Exception("Type mismatch in IN section: " + type.getName() + " at left, " + Field::Types::toString(src.getType()) + " literal at right");
+			throw Exception("Type mismatch in IN section: " + type.getName() + " at left, "
+				+ Field::Types::toString(src.getType()) + " literal at right");
 		}
 	}
 
