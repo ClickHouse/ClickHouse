@@ -13,12 +13,16 @@ public:
 	static StoragePtr create(const String & table_name_, const String & database_name_,
 		Context & context_,	ASTPtr & query_, NamesAndTypesListPtr columns_);
 
-	virtual std::string getName() const override { return "View"; }
-	virtual std::string getTableName() const override { return table_name; }
+	std::string getName() const override { return "View"; }
+	std::string getTableName() const override { return table_name; }
 	const NamesAndTypesList & getColumnsList() const override { return *columns; }
 	DB::ASTPtr getInnerQuery() const { return inner_query.clone(); };
 
-	virtual BlockInputStreams read(
+	/// Пробрасывается внутрь запроса и решается на его уровне.
+	bool supportsSampling() const override { return true; }
+	bool supportsFinal() 	const override { return true; }
+
+	BlockInputStreams read(
 		const Names & column_names,
 		ASTPtr query,
 		const Settings & settings,
@@ -26,7 +30,7 @@ public:
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
 		unsigned threads = 1) override;
 
-	virtual void drop() override;
+	void drop() override;
 
 protected:
 	String select_database_name;

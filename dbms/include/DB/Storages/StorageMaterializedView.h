@@ -18,6 +18,10 @@ public:
 	NameAndTypePair getColumn(const String & column_name) const override;
 	bool hasColumn(const String & column_name) const override;
 
+	bool supportsSampling() const override { return data->supportsSampling(); }
+	bool supportsFinal() 	const override { return data->supportsFinal(); }
+	bool supportsPrewhere() const override { return data->supportsPrewhere(); }
+
 	BlockOutputStreamPtr write(ASTPtr query) override;
 	void drop() override;
 	bool optimize() override;
