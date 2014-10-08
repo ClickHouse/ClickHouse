@@ -134,7 +134,7 @@ BlockInputStreams StorageChunkMerger::read(
 
 	/// Если запрошен хотя бы один виртуальный столбец, пробуем индексировать
 	if (has_virtual_column)
-		VirtualColumnUtils::filterBlockWithQuery(query->clone(), virtual_columns_block, context);
+		VirtualColumnUtils::filterBlockWithQuery(query, virtual_columns_block, context);
 
 	std::multiset<String> values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, _table_column_name);
 

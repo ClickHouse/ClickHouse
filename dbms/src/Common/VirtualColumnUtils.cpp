@@ -136,6 +136,7 @@ static ASTPtr buildWhereExpression(const ASTs & functions)
 
 bool filterBlockWithQuery(ASTPtr query, Block & block, const Context & context)
 {
+	query = query->clone();
 	const ASTSelectQuery & select = typeid_cast<ASTSelectQuery & >(*query);
 	if (!select.where_expression && !select.prewhere_expression)
 		return false;

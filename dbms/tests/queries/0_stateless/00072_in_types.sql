@@ -5,7 +5,6 @@ SELECT
     1.1 IN (1, -1),
     1.0 IN (3, 1., -1),
     1 IN (3, 2, 1),
-    -1 IN (255),
     toInt16(-1) IN (255),
     materialize(-1) IN (-1),
     materialize(-1) IN (1, -1, 2),
@@ -13,5 +12,4 @@ SELECT
     materialize(1.1) IN (1, -1),
     materialize(1.0) IN (3, 1., -1),
     materialize(1) IN (3, 2, 1),
-    materialize(-1) IN (255),
     materialize(toInt16(-1)) IN (255);
