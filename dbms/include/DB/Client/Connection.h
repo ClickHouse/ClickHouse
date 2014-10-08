@@ -18,6 +18,8 @@
 
 #include <DB/Interpreters/Settings.h>
 
+#include <atomic>
+
 
 namespace DB
 {
@@ -54,7 +56,7 @@ public:
 		server_version_major(0), server_version_minor(0), server_revision(0),
 		query_id(""), compression(compression_), data_type_factory(data_type_factory_),
 		connect_timeout(connect_timeout_), receive_timeout(receive_timeout_), send_timeout(send_timeout_),
-		log(&Logger::get("Connection (" + Poco::Net::SocketAddress(host, port).toString() + ")"))
+		log_wrapper(host, port)
 	{
 		/// Соединеняемся не сразу, а при первой необходимости.
 
@@ -162,7 +164,29 @@ private:
 	SharedPtr<WriteBuffer> maybe_compressed_out;
 	BlockOutputStreamPtr block_out;
 
-	Logger * log;
+	/// логгер, создаваемый лениво, чтобы не обращаться к DNS в конструкторе
+	class LoggerWrapper
+	{
+	public:
+		LoggerWrapper(std::string & host_, size_t port_) : log(nullptr), host(host_), port(port_)
+		{
+		}
+
+		Logger * get()
+		{
+			if (!log)
+				log = &Logger::get("Connection (" + Poco::Net::SocketAddress(host, port).toString() + ")");
+
+			return log;
+		}
+
+	private:
+		std::atomic<Logger *> log;
+		std::string host;
+		size_t port;
+	};
+
+	LoggerWrapper log_wrapper;
 
 	void connect();
 	void sendHello();
