@@ -62,7 +62,7 @@ BlockInputStreams StorageSystemParts::read(
 		block.insert(ColumnWithNameAndType(database_column, new DataTypeString, "database"));
 
 		/// Отфильтруем блок со столбцом database.
-		VirtualColumnUtils::filterBlockWithQuery(query->clone(), block, context);
+		VirtualColumnUtils::filterBlockWithQuery(query, block, context);
 
 		if (!block.rows())
 			return BlockInputStreams();
@@ -129,7 +129,7 @@ BlockInputStreams StorageSystemParts::read(
 	}
 
 	/// Отфильтруем блок со столбцами database, table, engine, replicated и active.
-	VirtualColumnUtils::filterBlockWithQuery(query->clone(), block, context);
+	VirtualColumnUtils::filterBlockWithQuery(query, block, context);
 
 	if (!block.rows())
 		return BlockInputStreams();

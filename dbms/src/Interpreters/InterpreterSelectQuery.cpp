@@ -203,10 +203,6 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	/** Вынем данные из Storage. from_stage - до какой стадии запрос был выполнен в Storage. */
 	QueryProcessingStage::Enum from_stage = executeFetchColumns(streams);
 
-	/** Если данных нет. */
-	if (streams.empty())
-		return new NullBlockInputStream;
-
 	LOG_TRACE(log, QueryProcessingStage::toString(from_stage) << " -> " << QueryProcessingStage::toString(to_stage));
 
 	if (to_stage > QueryProcessingStage::FetchColumns)
@@ -283,6 +279,14 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 			chain.finalize();
 			chain.clear();
 		}
+
+		/** Если данных нет.
+		  * Эта проверка специально вынесена чуть ниже, чем она могла бы быть (сразу после executeFetchColumns),
+		  *  чтобы запрос был проанализирован, и в нём могли бы быть обнаружены ошибки (например, несоответствия типов).
+		  * Иначе мог бы вернуться пустой результат на некорректный запрос.
+		  */
+		if (streams.empty())
+			return new NullBlockInputStream;
 
 		/// Перед выполнением HAVING уберем из блока лишние столбцы (в основном, ключи агрегации).
 		if (has_having)
@@ -379,6 +383,10 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 			executeLimit(streams);
 		}
 	}
+
+	/** Если данных нет. */
+	if (streams.empty())
+		return new NullBlockInputStream;
 
 	executeUnion(streams);
 

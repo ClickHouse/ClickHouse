@@ -117,7 +117,8 @@ public:
 		UInt8 active_replicas;
 	};
 
-	void getStatus(Status & res);
+	/// Получить статус таблицы. Если with_zk_fields = false - не заполнять поля, требующие запросов в ZK.
+	void getStatus(Status & res, bool with_zk_fields = true);
 
 private:
 	friend class ReplicatedMergeTreeBlockOutputStream;

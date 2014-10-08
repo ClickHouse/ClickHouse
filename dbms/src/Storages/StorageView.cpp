@@ -61,8 +61,20 @@ BlockInputStreams StorageView::read(
 	size_t max_block_size,
 	unsigned threads)
 {
+	ASTPtr inner_query_clone = getInnerQuery();
+	ASTSelectQuery & inner_select = static_cast<ASTSelectQuery &>(*inner_query_clone);
+	const ASTSelectQuery & outer_select = typeid_cast<const ASTSelectQuery &>(*query);
+
+	/// Пробрасываем внутрь SAMPLE и FINAL, если они есть во внешнем запросе и их нет во внутреннем.
+
+	if (outer_select.sample_size && !inner_select.sample_size)
+		inner_select.sample_size = outer_select.sample_size;
+
+	if (outer_select.final && !inner_select.final)
+		inner_select.final = outer_select.final;
+
 	return BlockInputStreams(1,
-		InterpreterSelectQuery(getInnerQuery(), context, column_names).execute());
+		InterpreterSelectQuery(inner_query_clone, context, column_names).execute());
 }
 
 

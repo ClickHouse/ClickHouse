@@ -2208,7 +2208,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 
 	/// Если запрошен хотя бы один виртуальный столбец, пробуем индексировать
 	if (!virt_column_names.empty())
-		VirtualColumnUtils::filterBlockWithQuery(query->clone(), virtual_columns_block, context);
+		VirtualColumnUtils::filterBlockWithQuery(query, virtual_columns_block, context);
 
 	std::multiset<UInt8> values = VirtualColumnUtils::extractSingleValueFromBlock<UInt8>(virtual_columns_block, "_replicated");
 
@@ -2766,7 +2766,7 @@ void StorageReplicatedMergeTree::LogEntry::readText(ReadBuffer & in)
 }
 
 
-void StorageReplicatedMergeTree::getStatus(Status & res)
+void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
 {
 	res.is_leader = is_leader_node;
 	res.is_readonly = is_read_only;
@@ -2799,7 +2799,7 @@ void StorageReplicatedMergeTree::getStatus(Status & res)
 	res.replica_path = replica_path;
 	res.columns_version = columns_version;
 
-	if (res.is_session_expired)
+	if (res.is_session_expired || !with_zk_fields)
 	{
 		res.log_max_index = 0;
 		res.log_pointer = 0;
@@ -2809,10 +2809,19 @@ void StorageReplicatedMergeTree::getStatus(Status & res)
 	else
 	{
 		auto log_entries = zookeeper->getChildren(zookeeper_path + "/log");
-		const String & last_log_entry = *std::max_element(log_entries.begin(), log_entries.end());
-		res.log_max_index = parse<UInt64>(last_log_entry.substr(strlen("log-")));
 
-		res.log_pointer = parse<UInt64>(zookeeper->get(replica_path + "/log_pointer"));
+		if (log_entries.empty())
+		{
+			res.log_max_index = 0;
+		}
+		else
+		{
+			const String & last_log_entry = *std::max_element(log_entries.begin(), log_entries.end());
+			res.log_max_index = parse<UInt64>(last_log_entry.substr(strlen("log-")));
+		}
+
+		String log_pointer_str = zookeeper->get(replica_path + "/log_pointer");
+		res.log_pointer = log_pointer_str.empty() ? 0 : parse<UInt64>(log_pointer_str);
 
 		auto all_replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
 		res.total_replicas = all_replicas.size();
