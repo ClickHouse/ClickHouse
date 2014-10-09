@@ -125,6 +125,40 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 			return false;
 	}
 
+	/** FINAL и SAMPLE может быть здесь или после всех JOIN-ов
+	  *  (второй вариант был изначально сделан по ошибке, и его приходится поддерживать).
+	  */
+	auto parse_final_and_sample = [&]() -> bool
+	{
+		/// FINAL
+		if (!select_query->final
+			&& s_final.ignore(pos, end, expected))
+		{
+			select_query->final = true;
+
+			ws.ignore(pos, end);
+		}
+
+		/// SAMPLE number
+		if (!select_query->sample_size
+			&& s_sample.ignore(pos, end, expected))
+		{
+			ws.ignore(pos, end);
+
+			ParserNumber num;
+
+			if (!num.parse(pos, end, select_query->sample_size, expected))
+				return false;
+
+			ws.ignore(pos, end);
+		}
+
+		return true;
+	};
+
+	if (!parse_final_and_sample())
+		return false;
+
 	/// ARRAY JOIN expr list
 	if (s_array.ignore(pos, end, expected))
 	{
@@ -144,26 +178,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 	/// [GLOBAL] ANY|ALL INNER|LEFT JOIN (subquery) USING (tuple)
 	join.parse(pos, end, select_query->join, expected);
 
-	/// FINAL
-	if (s_final.ignore(pos, end, expected))
-	{
-		select_query->final = true;
-
-		ws.ignore(pos, end);
-	}
-
-	/// SAMPLE number
-	if (s_sample.ignore(pos, end, expected))
-	{
-		ws.ignore(pos, end);
-
-		ParserNumber num;
-
-		if (!num.parse(pos, end, select_query->sample_size, expected))
-			return false;
-
-		ws.ignore(pos, end);
-	}
+	if (!parse_final_and_sample())
+		return false;
 
 	/// PREWHERE expr
 	if (s_prewhere.ignore(pos, end, expected))
