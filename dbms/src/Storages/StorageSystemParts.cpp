@@ -16,6 +16,7 @@ namespace DB
 StorageSystemParts::StorageSystemParts(const std::string & name_, const Context & context_)
 	: name(name_), context(context_)
 {
+	columns.push_back(NameAndTypePair("partition", 			new DataTypeString));
 	columns.push_back(NameAndTypePair("name", 				new DataTypeString));
 	columns.push_back(NameAndTypePair("replicated",			new DataTypeUInt8));
 	columns.push_back(NameAndTypePair("active",				new DataTypeUInt8));
@@ -143,6 +144,7 @@ BlockInputStreams StorageSystemParts::read(
 	ColumnPtr database_column = new ColumnString;
 	ColumnPtr table_column = new ColumnString;
 	ColumnPtr engine_column = new ColumnString;
+	ColumnPtr partition_column = new ColumnString;
 	ColumnPtr name_column = new ColumnString;
 	ColumnPtr replicated_column = new ColumnUInt8;
 	ColumnPtr active_column = new ColumnUInt8;
@@ -205,6 +207,11 @@ BlockInputStreams StorageSystemParts::read(
 				database_column->insert(database);
 				table_column->insert(table);
 				engine_column->insert(engine);
+
+				mysqlxx::Date partition_date {part->left_month};
+				String partition = toString(partition_date.year()) + (partition_date.month() < 10 ? "0" : "") + toString(partition_date.month());
+				partition_column->insert(partition);
+
 				name_column->insert(part->name);
 				replicated_column->insert(replicated);
 				active_column->insert(static_cast<UInt64>(!need[replicated][0] || active_parts.count(part)));
@@ -221,17 +228,18 @@ BlockInputStreams StorageSystemParts::read(
 
 	block.clear();
 
-	block.insert(ColumnWithNameAndType(name_column, new DataTypeString, "name"));
-	block.insert(ColumnWithNameAndType(replicated_column, new DataTypeUInt8, "replicated"));
-	block.insert(ColumnWithNameAndType(active_column, new DataTypeUInt8, "active"));
-	block.insert(ColumnWithNameAndType(marks_column, new DataTypeUInt64, "marks"));
-	block.insert(ColumnWithNameAndType(bytes_column, new DataTypeUInt64, "bytes"));
-	block.insert(ColumnWithNameAndType(modification_time_column, new DataTypeDateTime, "modification_time"));
-	block.insert(ColumnWithNameAndType(remove_time_column, new DataTypeDateTime, "remove_time"));
-	block.insert(ColumnWithNameAndType(refcount_column, new DataTypeUInt32, "refcount"));
-	block.insert(ColumnWithNameAndType(database_column, new DataTypeString, "database"));
-	block.insert(ColumnWithNameAndType(table_column, new DataTypeString, "table"));
-	block.insert(ColumnWithNameAndType(engine_column, new DataTypeString, "engine"));
+	block.insert(ColumnWithNameAndType(partition_column, 			new DataTypeString, 	"partition"));
+	block.insert(ColumnWithNameAndType(name_column, 				new DataTypeString, 	"name"));
+	block.insert(ColumnWithNameAndType(replicated_column, 			new DataTypeUInt8,		"replicated"));
+	block.insert(ColumnWithNameAndType(active_column, 				new DataTypeUInt8, 		"active"));
+	block.insert(ColumnWithNameAndType(marks_column, 				new DataTypeUInt64, 	"marks"));
+	block.insert(ColumnWithNameAndType(bytes_column, 				new DataTypeUInt64, 	"bytes"));
+	block.insert(ColumnWithNameAndType(modification_time_column, 	new DataTypeDateTime, 	"modification_time"));
+	block.insert(ColumnWithNameAndType(remove_time_column, 			new DataTypeDateTime, 	"remove_time"));
+	block.insert(ColumnWithNameAndType(refcount_column, 			new DataTypeUInt32, 	"refcount"));
+	block.insert(ColumnWithNameAndType(database_column, 			new DataTypeString, 	"database"));
+	block.insert(ColumnWithNameAndType(table_column, 				new DataTypeString, 	"table"));
+	block.insert(ColumnWithNameAndType(engine_column, 				new DataTypeString, 	"engine"));
 
 	return BlockInputStreams(1, new OneBlockInputStream(block));
 }
