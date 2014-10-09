@@ -130,13 +130,21 @@ BlockInputStreams StorageSystemZooKeeper::read(
 
 	zkutil::ZooKeeperPtr zookeeper = context.getZooKeeper();
 
+	/// Во всех случаях кроме корня, path не должен заканчиваться на слеш.
+	if (path != "/" && path.back() == '/')
+		path.resize(path.size() - 1);
+
 	zkutil::Strings nodes = zookeeper->getChildren(path);
+
+	String path_part = path;
+	if (path == "/")
+		path_part.clear();
 
 	for (const String & node : nodes)
 	{
 		String value;
 		zkutil::Stat stat;
-		if (!zookeeper->tryGet(path + '/' + node, value, &stat))
+		if (!zookeeper->tryGet(path_part + '/' + node, value, &stat))
 			continue;	/// Ноду успели удалить.
 
 		col_name.column->insert(node);
