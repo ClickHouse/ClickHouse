@@ -62,7 +62,7 @@ void ZooKeeper::processEvent(zhandle_t * zh, int type, int state, const char * p
 
 void ZooKeeper::init(const std::string & hosts_, int32_t sessionTimeoutMs_)
 {
-	log = &Logger::get("ZooKeeper"); 
+	log = &Logger::get("ZooKeeper");
 	zoo_set_debug_level(ZOO_LOG_LEVEL_ERROR);
 	hosts = hosts_;
 	sessionTimeoutMs = sessionTimeoutMs_;
@@ -341,7 +341,10 @@ int32_t ZooKeeper::getImpl(const std::string & path, std::string & res, Stat * s
 		if (stat_)
 			*stat_ = stat;
 
-		res = std::string(buffer, buffer_len);
+		if (buffer_len < 0)		/// Такое бывает, если в ноде в ZK лежит NULL. Не будем отличать его от пустой строки.
+			res.clear();
+		else
+			res.assign(buffer, buffer_len);
 	}
 	return code;
 }
