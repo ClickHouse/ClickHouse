@@ -2833,4 +2833,39 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
 	}
 }
 
+
+void StorageReplicatedMergeTree::fetchPartition(const Field & partition, bool unreplicated, const String & from_)
+{
+	String from = from_;
+	if (*from.rbegin() == '/')
+		from.erase(from.end() - 1);
+
+    if (unreplicated)
+		throw Exception("Not implemented", ErrorCodes::NOT_IMPLEMENTED);	/// TODO
+
+	/// Список реплик шарда-источника.
+	zkutil::Strings replicas = zookeeper->getChildren(from + "/replicas");
+
+	/// Оставим только активные реплики.
+	zkutil::Strings active_replicas;
+	active_replicas.reserve(replicas.size());
+
+	for (const String & replica : replicas)
+		if (zookeeper->exists(from + "/replicas/" + replica + "/is_active"))
+			active_replicas.push_back(replica);
+
+	if (active_replicas.empty())
+		throw Exception("No active replicas for shard " + from/* TODO ErrorCodes */);
+
+	/** Надо выбрать лучшую (наиболее актуальную) реплику.
+	  * Это реплика с максимальным log_pointer, затем с минимальным queue.
+	  * NOTE Это не совсем лучший критерий. Для скачивания старых партиций это не имеет смысла,
+	  *  и было бы неплохо уметь выбирать реплику, ближайшую по сети.
+	  */
+
+
+	/// Выясним, какие куски есть на указанном шарде.
+}
+
+
 }

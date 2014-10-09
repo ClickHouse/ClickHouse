@@ -219,6 +219,13 @@ public:
 		throw Exception("Method attachPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
+	/** Выполнить запрос FETCH [UNREPLICATED] PARTITION.
+	  */
+	virtual void fetchPartition(const Field & partition, bool unreplicated, const String & from)
+	{
+		throw Exception("Method fetchPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+	}
+
 	/** Выполнить какую-либо фоновую работу. Например, объединение кусков в таблице типа MergeTree.
 	  * Возвращает - была ли выполнена какая-либо работа.
 	  */

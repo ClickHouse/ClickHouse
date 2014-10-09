@@ -5,6 +5,7 @@
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ExpressionElementParsers.h>
 #include <DB/Parsers/ASTAlterQuery.h>
+#include <DB/Parsers/ASTLiteral.h>
 
 namespace DB
 {
@@ -25,15 +26,18 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & e
 	ParserString s_drop("DROP", true, true);
 	ParserString s_detach("DETACH", true, true);
 	ParserString s_attach("ATTACH", true, true);
+	ParserString s_fetch("FETCH", true, true);
 	ParserString s_unreplicated("UNREPLICATED", true, true);
 	ParserString s_part("PART", true, true);
 	ParserString s_partition("PARTITION", true, true);
+	ParserString s_from("FROM", true, true);
 	ParserString s_comma(",");
 
 	ParserIdentifier table_parser;
 	ParserCompoundIdentifier parser_name;
 	ParserCompoundNameTypePair parser_name_type;
 	ParserLiteral parser_literal;
+	ParserStringLiteral parser_string_literal;
 
 	ASTPtr table;
 	ASTPtr database;
@@ -160,6 +164,38 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & e
 				return false;
 
 			params.type = ASTAlterQuery::ATTACH_PARTITION;
+		}
+		else if (s_fetch.ignore(pos, end, expected))
+		{
+			ws.ignore(pos, end);
+
+			if (s_unreplicated.ignore(pos, end, expected))
+			{
+				params.unreplicated = true;
+				ws.ignore(pos, end);
+			}
+
+			if (!s_partition.ignore(pos, end, expected))
+				return false;
+
+			ws.ignore(pos, end);
+
+			if (!parser_literal.parse(pos, end, params.partition, expected))
+				return false;
+
+			ws.ignore(pos, end);
+
+			if (!s_from.ignore(pos, end, expected))
+				return false;
+
+			ws.ignore(pos, end);
+
+			ASTPtr ast_from;
+			if (!parser_string_literal.parse(pos, end, ast_from, expected))
+				return false;
+
+			params.from = typeid_cast<const ASTLiteral &>(*ast_from).value.get<const String &>();
+			params.type = ASTAlterQuery::FETCH_PARTITION;
 		}
 		else if (s_modify.ignore(pos, end, expected))
 		{

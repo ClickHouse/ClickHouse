@@ -24,6 +24,7 @@ public:
 		MODIFY_COLUMN,
 		DROP_PARTITION,
 		ATTACH_PARTITION,
+		FETCH_PARTITION,
 		NO_TYPE
 	};
 
@@ -50,6 +51,10 @@ public:
 
 		bool part = false; /// true для ATTACH [UNREPLICATED] PART
 		bool unreplicated = false; /// true для ATTACH UNREPLICATED ...
+
+		/** Для FETCH PARTITION - путь в ZK к шарду, с которого скачивать партицию.
+		  */
+		String from;
 
 		/// deep copy
 		void clone(Parameters & p) const

@@ -11,6 +11,7 @@ namespace DB
 
 
 /** Позволяет добавить или удалить столбец в таблице.
+  * Также позволяет осуществить манипуляции с партициями таблиц семейства MergeTree.
   */
 class InterpreterAlterQuery
 {
@@ -29,6 +30,7 @@ private:
 		{
 			DROP_PARTITION,
 			ATTACH_PARTITION,
+			FETCH_PARTITION,
 		};
 
 		Type type;
@@ -39,6 +41,8 @@ private:
 		bool unreplicated;
 		bool part;
 
+		String from; /// Для FETCH PARTITION - путь в ZK к шарду, с которого скачивать партицию.
+
 		static PartitionCommand dropPartition(const Field & partition, bool detach)
 		{
 			return {DROP_PARTITION, partition, detach};
@@ -47,6 +51,11 @@ private:
 		static PartitionCommand attachPartition(const Field & partition, bool unreplicated, bool part)
 		{
 			return {ATTACH_PARTITION, partition, false, unreplicated, part};
+		}
+
+		static PartitionCommand fetchPartition(const Field & partition, bool unreplicated, const String & from)
+		{
+			return {FETCH_PARTITION, partition, false, unreplicated, false, from};
 		}
 	};
 

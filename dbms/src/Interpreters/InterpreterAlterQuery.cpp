@@ -41,12 +41,23 @@ void InterpreterAlterQuery::execute()
 
 	for (const PartitionCommand & command : partition_commands)
 	{
-		if (command.type == PartitionCommand::DROP_PARTITION)
-			table->dropPartition(command.partition, command.detach);
-		else if (command.type == PartitionCommand::ATTACH_PARTITION)
-			table->attachPartition(command.partition, command.unreplicated, command.part);
-		else
-			throw Exception("Bad PartitionCommand::Type: " + toString(command.type), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+		switch (command.type)
+		{
+			case PartitionCommand::DROP_PARTITION:
+				table->dropPartition(command.partition, command.detach);
+				break;
+
+			case PartitionCommand::ATTACH_PARTITION:
+				table->attachPartition(command.partition, command.unreplicated, command.part);
+				break;
+
+			case PartitionCommand::FETCH_PARTITION:
+				table->fetchPartition(command.partition, command.unreplicated, command.from);
+				break;
+
+			default:
+				throw Exception("Bad PartitionCommand::Type: " + toString(command.type), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+		}
 	}
 
 	if (!alter_commands.empty())
@@ -107,6 +118,11 @@ void InterpreterAlterQuery::parseAlter(
 		{
 			const Field & partition = dynamic_cast<const ASTLiteral &>(*params.partition).value;
 			out_partition_commands.push_back(PartitionCommand::attachPartition(partition, params.unreplicated, params.part));
+		}
+		else if (params.type == ASTAlterQuery::FETCH_PARTITION)
+		{
+			const Field & partition = dynamic_cast<const ASTLiteral &>(*params.partition).value;
+			out_partition_commands.push_back(PartitionCommand::fetchPartition(partition, params.unreplicated, params.from));
 		}
 		else
 			throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
