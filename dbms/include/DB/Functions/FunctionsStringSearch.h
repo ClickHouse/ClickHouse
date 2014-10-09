@@ -211,7 +211,7 @@ inline bool likePatternIsStrstr(const String & pattern, String & res)
 {
 	res = "";
 
-	if (pattern.size() < 2 || *pattern.begin() != '%' || *pattern.rbegin() != '%')
+	if (pattern.size() < 2 || pattern.front() != '%' || pattern.back() != '%')
 		return false;
 
 	res.reserve(pattern.size() * 2);

@@ -66,8 +66,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	log(&Logger::get(database_name_ + "." + table_name + " (StorageReplicatedMergeTree)")),
 	shutdown_event(false)
 {
-	if (!zookeeper_path.empty() && *zookeeper_path.rbegin() == '/')
-		zookeeper_path.erase(zookeeper_path.end() - 1);
+	if (!zookeeper_path.empty() && zookeeper_path.back() == '/')
+		zookeeper_path.resize(zookeeper_path.size() - 1);
 	replica_path = zookeeper_path + "/replicas/" + replica_name;
 
 	bool skip_sanity_checks = false;
@@ -2837,8 +2837,8 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
 void StorageReplicatedMergeTree::fetchPartition(const Field & partition, bool unreplicated, const String & from_)
 {
 	String from = from_;
-	if (*from.rbegin() == '/')
-		from.erase(from.end() - 1);
+	if (from.back() == '/')
+		from.resize(from.size() - 1);
 
     if (unreplicated)
 		throw Exception("Not implemented", ErrorCodes::NOT_IMPLEMENTED);	/// TODO

@@ -249,7 +249,7 @@ static size_t checkColumn(const String & path, const String & name, DataTypePtr 
 void MergeTreePartChecker::checkDataPart(String path, const Settings & settings, const DataTypeFactory & data_type_factory,
 										 MergeTreeData::DataPart::Checksums * out_checksums)
 {
-	if (!path.empty() && *path.rbegin() != '/')
+	if (!path.empty() && path.back() != '/')
 		path += "/";
 
 	NamesAndTypesList columns;
