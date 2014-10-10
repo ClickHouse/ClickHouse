@@ -362,11 +362,8 @@ void StorageReplicatedMergeTree::createReplica()
 
 		/// Добавим в очередь задания на получение всех активных кусков, которые есть у эталонной реплики.
 		Strings parts = zookeeper->getChildren(source_path + "/parts");
-		ActiveDataPartSet active_parts_set;
-		for (const String & part : parts)
-		{
-			active_parts_set.add(part);
-		}
+		ActiveDataPartSet active_parts_set(parts);
+
 		Strings active_parts = active_parts_set.getParts();
 		for (const String & name : active_parts)
 		{
@@ -2836,9 +2833,13 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
 
 void StorageReplicatedMergeTree::fetchPartition(const Field & partition, bool unreplicated, const String & from_)
 {
+	String partition_str = MergeTreeData::getMonthName(partition);
+
 	String from = from_;
 	if (from.back() == '/')
 		from.resize(from.size() - 1);
+
+	LOG_INFO(log, "Will fetch partition " << partition_str << " from shard " << from_);
 
     if (unreplicated)
 		throw Exception("Not implemented", ErrorCodes::NOT_IMPLEMENTED);	/// TODO
@@ -2858,13 +2859,48 @@ void StorageReplicatedMergeTree::fetchPartition(const Field & partition, bool un
 		throw Exception("No active replicas for shard " + from/* TODO ErrorCodes */);
 
 	/** Надо выбрать лучшую (наиболее актуальную) реплику.
-	  * Это реплика с максимальным log_pointer, затем с минимальным queue.
+	  * Это реплика с максимальным log_pointer, затем с минимальным размером queue.
 	  * NOTE Это не совсем лучший критерий. Для скачивания старых партиций это не имеет смысла,
 	  *  и было бы неплохо уметь выбирать реплику, ближайшую по сети.
+	  * NOTE Разумеется, здесь есть data race-ы. Можно решить ретраями.
 	  */
+	Int64 max_log_pointer = -1;
+	UInt64 min_queue_size = std::numeric_limits<UInt64>::max();
+	String best_replica;
 
+	for (const String & replica : active_replicas)
+	{
+		String replica_path = from + "/replicas/" + replica;
 
-	/// Выясним, какие куски есть на указанном шарде.
+		String log_pointer_str = zookeeper->get(replica_path + "/log_pointer");
+		Int64 log_pointer = log_pointer_str.empty() ? 0 : parse<UInt64>(log_pointer_str);
+
+		zkutil::Stat stat;
+		zookeeper->get(replica_path + "/queue", &stat);
+		size_t queue_size = stat.numChildren;
+
+		if (log_pointer > max_log_pointer
+			|| (log_pointer == max_log_pointer && queue_size < min_queue_size))
+		{
+			max_log_pointer = log_pointer;
+			min_queue_size = queue_size;
+			best_replica = replica;
+		}
+	}
+
+	if (best_replica.empty())
+		throw Exception("Logical error: cannot choose best replica.", ErrorCodes::LOGICAL_ERROR);
+
+	LOG_INFO(log, "Found " << replicas.size() << " replicas, " << active_replicas.size() << " of them are active."
+		<< " Selected " << best_replica << " to fetch from.");
+
+	/// Выясним, какие куски есть на лучшей реплике.
+
+	Strings parts = zookeeper->getChildren(replica_path + "/parts");
+	ActiveDataPartSet active_parts_set(parts);
+	Strings active_parts = active_parts_set.getParts();
+
+	/// TODO
 }
 
 

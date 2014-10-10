@@ -16,6 +16,9 @@ namespace DB
 class ActiveDataPartSet
 {
 public:
+	ActiveDataPartSet() {}
+	ActiveDataPartSet(const Strings & names);
+
 	struct Part
 	{
 		DayNum_t left_date;
@@ -80,6 +83,8 @@ private:
 
 	mutable Poco::Mutex mutex;
 	Parts parts;
+
+	void addImpl(const String & name);
 };
 
 }

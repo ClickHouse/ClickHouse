@@ -6,10 +6,22 @@
 namespace DB
 {
 
+ActiveDataPartSet::ActiveDataPartSet(const Strings & names)
+{
+	for (const auto & name : names)
+		addImpl(name);
+}
+
+
 void ActiveDataPartSet::add(const String & name)
 {
 	Poco::ScopedLock<Poco::Mutex> lock(mutex);
+	addImpl(name);
+}
 
+
+void ActiveDataPartSet::addImpl(const String & name)
+{
 	if (getContainingPart(name) != "")
 		return;
 
@@ -19,6 +31,7 @@ void ActiveDataPartSet::add(const String & name)
 
 	/// Куски, содержащиеся в part, идут в data_parts подряд, задевая место, куда вставился бы сам part.
 	Parts::iterator it = parts.lower_bound(part);
+
 	/// Пойдем влево.
 	while (it != parts.begin())
 	{
@@ -30,6 +43,7 @@ void ActiveDataPartSet::add(const String & name)
 		}
 		parts.erase(it++);
 	}
+
 	/// Пойдем вправо.
 	while (it != parts.end() && part.contains(*it))
 	{
@@ -38,6 +52,7 @@ void ActiveDataPartSet::add(const String & name)
 
 	parts.insert(part);
 }
+
 
 String ActiveDataPartSet::getContainingPart(const String & part_name) const
 {
@@ -67,25 +82,25 @@ String ActiveDataPartSet::getContainingPart(const String & part_name) const
 	return "";
 }
 
+
 Strings ActiveDataPartSet::getParts() const
 {
 	Poco::ScopedLock<Poco::Mutex> lock(mutex);
 
 	Strings res;
+	res.reserve(parts.size());
 	for (const Part & part : parts)
-	{
 		res.push_back(part.name);
-	}
 
 	return res;
 }
+
 
 size_t ActiveDataPartSet::size() const
 {
 	Poco::ScopedLock<Poco::Mutex> lock(mutex);
 	return parts.size();
 }
-
 
 
 String ActiveDataPartSet::getPartName(DayNum_t left_date, DayNum_t right_date, UInt64 left_id, UInt64 right_id, UInt64 level)
@@ -114,6 +129,7 @@ String ActiveDataPartSet::getPartName(DayNum_t left_date, DayNum_t right_date, U
 	return res;
 }
 
+
 bool ActiveDataPartSet::isPartDirectory(const String & dir_name, Poco::RegularExpression::MatchVec * out_matches)
 {
 	Poco::RegularExpression::MatchVec matches;
@@ -123,6 +139,7 @@ bool ActiveDataPartSet::isPartDirectory(const String & dir_name, Poco::RegularEx
 		*out_matches = matches;
 	return res;
 }
+
 
 void ActiveDataPartSet::parsePartName(const String & file_name, Part & part, const Poco::RegularExpression::MatchVec * matches_p)
 {
@@ -147,6 +164,7 @@ void ActiveDataPartSet::parsePartName(const String & file_name, Part & part, con
 	part.left_month = date_lut.toFirstDayNumOfMonth(part.left_date);
 	part.right_month = date_lut.toFirstDayNumOfMonth(part.right_date);
 }
+
 
 bool ActiveDataPartSet::contains(const String & outer_part_name, const String & inner_part_name)
 {
