@@ -613,7 +613,7 @@ public:
 		throw Exception("Logical error: calling method getTableName of not a table.",	ErrorCodes::LOGICAL_ERROR);
 	}
 
-	const NamesAndTypesList & getColumnsList() const { return *columns; }
+	const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
 
 	NameAndTypePair getColumn(const String &column_name) const
 	{

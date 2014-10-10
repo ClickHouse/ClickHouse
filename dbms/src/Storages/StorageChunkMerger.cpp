@@ -369,7 +369,7 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 
 	/// Объединим множества столбцов сливаемых чанков.
 	ColumnsMap known_columns_types;
-	for (const NameAndTypePair & column : *columns)
+	for (const NameAndTypePair & column : getColumnsList())
 		known_columns_types.insert(std::make_pair(column.name, column.type));
 
 	NamesAndTypesListPtr required_columns = new NamesAndTypesList;

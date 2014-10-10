@@ -17,7 +17,7 @@ public:
 	std::string getName() const { return "ChunkRef"; }
 	std::string getTableName() const { return name; }
 
-	const NamesAndTypesList & getColumnsList() const { return getSource().getColumnsList(); }
+	const NamesAndTypesList & getColumnsListImpl() const override { return getSource().getColumnsListAsterisk(); }
 	/// В таблице, на которую мы ссылаемся, могут быть виртуальные столбцы.
 	NameAndTypePair getColumn(const String &column_name) const { return getSource().getColumn(column_name); };
 	bool hasColumn(const String &column_name) const { return getSource().hasColumn(column_name); };

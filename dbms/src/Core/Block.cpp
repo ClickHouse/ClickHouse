@@ -54,13 +54,13 @@ void Block::addDefaults(NamesAndTypesListPtr required_columns,
 	if (default_expr_list->children.empty())
 		return;
 
-	/** ExpressionAnalyzer eliminates "unused" columns, in order to ensure theri safety
-	 *	we are going to operate on a copy instead of original block */
+	/** ExpressionAnalyzer eliminates "unused" columns, in order to ensure their safety
+	 *	we are going to operate on a copy instead of  the original block */
 	Block copy_block{*this};
 	/// evaluate default values for defaulted columns
 	ExpressionAnalyzer{default_expr_list, context, *required_columns}.getActions(true)->execute(copy_block);
 
-	/// move evaluated columns to original block
+	/// move evaluated columns to the original block
 	for (auto & column_name_type : copy_block.getColumns())
 		insert(std::move(column_name_type));
 }

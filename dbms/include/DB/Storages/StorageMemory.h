@@ -76,7 +76,7 @@ public:
 	std::string getName() const { return "Memory"; }
 	std::string getTableName() const { return name; }
 
-	const NamesAndTypesList & getColumnsList() const { return *columns; }
+	const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
 
 	size_t getSize() const { return data.size(); }
 

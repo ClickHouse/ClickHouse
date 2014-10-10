@@ -250,8 +250,8 @@ LogBlockOutputStream::LogBlockOutputStream(StorageLog & storage_)
 	: storage(storage_),
 	lock(storage.rwlock), marks_stream(storage.marks_file.path(), 4096, O_APPEND | O_CREAT | O_WRONLY)
 {
-	for (NamesAndTypesList::const_iterator it = storage.columns->begin(); it != storage.columns->end(); ++it)
-		addStream(it->name, *it->type);
+	for (const auto & column : storage.getColumnsList())
+		addStream(column.name, *column.type);
 }
 
 
@@ -428,8 +428,8 @@ StorageLog::StorageLog(
 	/// создаём файлы, если их нет
 	Poco::File(path + escapeForFileName(name) + '/').createDirectories();
 
-	for (NamesAndTypesList::const_iterator it = columns->begin(); it != columns->end(); ++it)
-		addFile(it->name, *it->type);
+	for (const auto & column : getColumnsList())
+		addFile(column.name, *column.type);
 
 	marks_file = Poco::File(path + escapeForFileName(name) + '/' + DBMS_STORAGE_LOG_MARKS_FILE_NAME);
 }

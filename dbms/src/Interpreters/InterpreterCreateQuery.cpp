@@ -127,7 +127,12 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 			column_defaults = std::move(columns_and_defaults.second);
 		}
 		else if (!create.as_table.empty())
-			columns = new NamesAndTypesList(as_storage->getColumnsList());
+		{
+			columns = new NamesAndTypesList(as_storage->getColumnsListAsterisk());
+			materialized_columns = as_storage->materialized_columns;
+			alias_columns = as_storage->alias_columns;
+			column_defaults = as_storage->column_defaults;
+		}
 		else if (create.select)
 		{
 			columns = new NamesAndTypesList;

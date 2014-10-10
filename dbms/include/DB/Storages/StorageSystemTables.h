@@ -19,11 +19,11 @@ class StorageSystemTables : public IStorage
 {
 public:
 	static StoragePtr create(const std::string & name_, const Context & context_);
-	
+
 	std::string getName() const { return "SystemTables"; }
 	std::string getTableName() const { return name; }
 
-	const NamesAndTypesList & getColumnsList() const { return columns; }
+	const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
 
 	BlockInputStreams read(
 		const Names & column_names,
@@ -37,7 +37,7 @@ private:
 	const std::string name;
 	const Context & context;
 	NamesAndTypesList columns;
-	
+
 	StorageSystemTables(const std::string & name_, const Context & context_);
 };
 

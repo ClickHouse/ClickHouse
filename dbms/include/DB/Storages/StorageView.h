@@ -22,7 +22,7 @@ public:
 
 	virtual std::string getName() const { return "View"; }
 	virtual std::string getTableName() const { return table_name; }
-	const NamesAndTypesList & getColumnsList() const { return *columns; }
+	const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
 	DB::ASTPtr getInnerQuery() const { return inner_query.clone(); };
 
 	virtual BlockInputStreams read(

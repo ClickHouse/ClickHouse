@@ -1,5 +1,6 @@
 #include <DB/IO/ConcatReadBuffer.h>
 
+#include <DB/DataStreams/ProhibitColumnsBlockOutputStream.h>
 #include <DB/DataStreams/AddingDefaultBlockOutputStream.h>
 #include <DB/DataStreams/MaterializingBlockInputStream.h>
 #include <DB/DataStreams/PushingToViewsBlockOutputStream.h>
@@ -67,7 +68,8 @@ void InterpreterInsertQuery::execute(ReadBuffer * remaining_data_istr)
 
 	auto table_lock = table->lockStructure(true);
 
-	BlockInputStreamPtr in;
+	/** @note looks suspicious, first we ask to create block from NamesAndTypesList (internally in ITableDeclaration),
+	 *  then we compose the same list from the resulting block */
 	NamesAndTypesListPtr required_columns = new NamesAndTypesList(table->getSampleBlock().getColumnsList());
 
 	/// Надо убедиться, что запрос идет в таблицу, которая поддерживает вставку.
@@ -75,14 +77,19 @@ void InterpreterInsertQuery::execute(ReadBuffer * remaining_data_istr)
 	table->write(query_ptr);
 
 	/// Создаем кортеж из нескольких стримов, в которые будем писать данные.
-	BlockOutputStreamPtr out{new AddingDefaultBlockOutputStream{
-		new PushingToViewsBlockOutputStream{query.database, query.table, context, query_ptr},
-		required_columns, table->column_defaults, context
-	}};
+	BlockOutputStreamPtr out{
+		new ProhibitColumnsBlockOutputStream{
+			new AddingDefaultBlockOutputStream{
+				new PushingToViewsBlockOutputStream{query.database, query.table, context, query_ptr},
+				required_columns, table->column_defaults, context
+			}, table->materialized_columns
+		}
+	};
 
 	/// Какой тип запроса: INSERT VALUES | INSERT FORMAT | INSERT SELECT?
 	if (!query.select)
 	{
+
 		String format = query.format;
 		if (format.empty())
 			format = "Values";
@@ -103,13 +110,17 @@ void InterpreterInsertQuery::execute(ReadBuffer * remaining_data_istr)
 		ConcatReadBuffer istr(buffers);
 		Block sample = getSampleBlock();
 
-		in = context.getFormatFactory().getInput(format, istr, sample, context.getSettings().max_insert_block_size, context.getDataTypeFactory());
+		BlockInputStreamPtr in{
+			context.getFormatFactory().getInput(
+				format, istr, sample, context.getSettings().max_insert_block_size,
+				context.getDataTypeFactory())
+		};
 		copyData(*in, *out);
 	}
 	else
 	{
 		InterpreterSelectQuery interpreter_select(query.select, context);
-		in = interpreter_select.execute();
+		BlockInputStreamPtr in{interpreter_select.execute()};
 		in = new MaterializingBlockInputStream(in);
 
 		copyData(*in, *out);
@@ -131,10 +142,14 @@ BlockIO InterpreterInsertQuery::execute()
 	table->write(query_ptr);
 
 	/// Создаем кортеж из нескольких стримов, в которые будем писать данные.
-	BlockOutputStreamPtr out{new AddingDefaultBlockOutputStream{
-		new PushingToViewsBlockOutputStream{query.database, query.table, context, query_ptr},
-		required_columns, table->column_defaults, context
-	}};
+	BlockOutputStreamPtr out{
+		new ProhibitColumnsBlockOutputStream{
+			new AddingDefaultBlockOutputStream{
+				new PushingToViewsBlockOutputStream{query.database, query.table, context, query_ptr},
+				required_columns, table->column_defaults, context
+			}, table->materialized_columns
+		}
+	};
 
 	BlockIO res;
 	res.out_sample = getSampleBlock();

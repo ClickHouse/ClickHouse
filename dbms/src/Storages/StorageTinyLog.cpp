@@ -194,8 +194,8 @@ void TinyLogBlockInputStream::readData(const String & name, const IDataType & ty
 TinyLogBlockOutputStream::TinyLogBlockOutputStream(StorageTinyLog & storage_)
 	: storage(storage_)
 {
-	for (NamesAndTypesList::const_iterator it = storage.columns->begin(); it != storage.columns->end(); ++it)
-		addStream(it->name, *it->type);
+	for (const auto & col : storage.getColumnsList())
+		addStream(col.name, *col.type);
 }
 
 
@@ -323,8 +323,8 @@ StorageTinyLog::StorageTinyLog(
 			throwFromErrno("Cannot create directory " + full_path, ErrorCodes::CANNOT_CREATE_DIRECTORY);
 	}
 
-	for (NamesAndTypesList::const_iterator it = columns->begin(); it != columns->end(); ++it)
-		addFile(it->name, *it->type);
+	for (const auto & col : getColumnsList())
+		addFile(col.name, *col.type);
 }
 
 StoragePtr StorageTinyLog::create(

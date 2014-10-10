@@ -23,7 +23,8 @@ public:
 
 	/** Получить список имён и типов столбцов таблицы, только невиртуальные.
 	  */
-	virtual const NamesAndTypesList & getColumnsList() const = 0;
+	NamesAndTypesList getColumnsList() const;
+	const NamesAndTypesList & getColumnsListAsterisk() const { return getColumnsListImpl(); }
 
 	/** Получить список имён столбцов таблицы, только невиртуальные.
 	  */
@@ -57,21 +58,21 @@ public:
 	/** Проверить, что все запрошенные имена есть в таблице и заданы корректно.
 	  * (список имён не пустой и имена не повторяются)
 	  */
-	void check(const Names & column_names, bool all_columns = false) const;
+	void check(const Names & column_names) const;
 
 	/** Проверить, что все запрошенные имена есть в таблице и имеют правильные типы.
 	  */
-	void check(const NamesAndTypesList & columns, bool all_columns = false) const;
+	void check(const NamesAndTypesList & columns) const;
 
 	/** Проверить, что все имена из пересечения names и columns есть в таблице и имеют одинаковые типы.
 	  */
-	void check(const NamesAndTypesList & columns, const Names & column_names, bool all_columns = false) const;
+	void check(const NamesAndTypesList & columns, const Names & column_names) const;
 
 	/** Проверить, что блок с данными для записи содержит все столбцы таблицы с правильными типами,
 	  *  содержит только столбцы таблицы, и все столбцы различны.
 	  * Если need_all, еще проверяет, что все столбцы таблицы есть в блоке.
 	  */
-	void check(const Block & block, bool need_all = false, bool all_columns = false) const;
+	void check(const Block & block, bool need_all = false) const;
 
 
 	virtual ~ITableDeclaration() = default;
@@ -89,6 +90,9 @@ public:
 	NamesAndTypesList materialized_columns{};
 	NamesAndTypesList alias_columns{};
 	ColumnDefaults column_defaults{};
+
+private:
+	virtual const NamesAndTypesList & getColumnsListImpl() const = 0;
 };
 
 }

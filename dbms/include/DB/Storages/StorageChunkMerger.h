@@ -33,7 +33,7 @@ public:
 	std::string getName() const { return "ChunkMerger"; }
 	std::string getTableName() const { return name; }
 
-	const NamesAndTypesList & getColumnsList() const { return *columns; }
+	const NamesAndTypesList & getColumnsListImpl() const { return *columns; }
 	NameAndTypePair getColumn(const String & column_name) const;
 	bool hasColumn(const String & column_name) const;
 

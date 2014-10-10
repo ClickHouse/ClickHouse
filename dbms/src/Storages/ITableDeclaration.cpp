@@ -11,6 +11,15 @@
 namespace DB
 {
 
+NamesAndTypesList ITableDeclaration::getColumnsList() const
+{
+	auto columns = getColumnsListImpl();
+	columns.insert(std::end(columns), std::begin(materialized_columns), std::end(materialized_columns));
+
+	return columns;
+}
+
+
 bool ITableDeclaration::hasRealColumn(const String & column_name) const
 {
 	const NamesAndTypesList & real_columns = getColumnsList();
@@ -60,17 +69,12 @@ bool ITableDeclaration::hasMaterializedColumn(const String & column_name) const
 
 bool ITableDeclaration::hasColumn(const String & column_name) const
 {
-	return hasRealColumn(column_name) || hasMaterializedColumn(column_name); /// По умолчанию считаем, что виртуальных столбцов в сторадже нет.
+	return hasRealColumn(column_name); /// По умолчанию считаем, что виртуальных столбцов в сторадже нет.
 }
 
 NameAndTypePair ITableDeclaration::getColumn(const String & column_name) const
 {
-	const auto it = column_defaults.find(column_name);
-
-	if (it == std::end(column_defaults) || it->second.type == ColumnDefaultType::Default)
-		return getRealColumn(column_name); /// По умолчанию считаем, что виртуальных столбцов в сторадже нет.
-
-	return getMaterializedColumn(column_name);
+	return getRealColumn(column_name); /// По умолчанию считаем, что виртуальных столбцов в сторадже нет.
 }
 
 
@@ -144,7 +148,7 @@ static NamesAndTypesMap getColumnsMap(const Args &... args)
 }
 
 
-void ITableDeclaration::check(const Names & column_names, const bool all_columns) const
+void ITableDeclaration::check(const Names & column_names) const
 {
 	const NamesAndTypesList & available_columns = getColumnsList();
 
@@ -152,9 +156,7 @@ void ITableDeclaration::check(const Names & column_names, const bool all_columns
 		throw Exception("Empty list of columns queried. There are columns: " + listOfColumns(available_columns),
 			ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED);
 
-	const auto columns_map = all_columns ?
-		getColumnsMap(available_columns, materialized_columns) :
-		getColumnsMap(available_columns);
+	const auto columns_map = getColumnsMap(available_columns);
 
 	typedef google::dense_hash_set<StringRef, StringRefHash> UniqueStrings;
 	UniqueStrings unique_names;
@@ -174,12 +176,10 @@ void ITableDeclaration::check(const Names & column_names, const bool all_columns
 }
 
 
-void ITableDeclaration::check(const NamesAndTypesList & columns, const bool all_columns) const
+void ITableDeclaration::check(const NamesAndTypesList & columns) const
 {
 	const NamesAndTypesList & available_columns = getColumnsList();
-	const auto columns_map = all_columns ?
-		getColumnsMap(available_columns, materialized_columns) :
-		getColumnsMap(available_columns);
+	const auto columns_map = getColumnsMap(available_columns);
 
 	typedef google::dense_hash_set<StringRef, StringRefHash> UniqueStrings;
 	UniqueStrings unique_names;
@@ -204,12 +204,10 @@ void ITableDeclaration::check(const NamesAndTypesList & columns, const bool all_
 }
 
 
-void ITableDeclaration::check(const NamesAndTypesList & columns, const Names & column_names, const bool all_columns) const
+void ITableDeclaration::check(const NamesAndTypesList & columns, const Names & column_names) const
 {
 	const NamesAndTypesList & available_columns = getColumnsList();
-	const auto available_columns_map = all_columns ?
-		getColumnsMap(available_columns, materialized_columns) :
-		getColumnsMap(available_columns);
+	const auto available_columns_map = getColumnsMap(available_columns);
 	const NamesAndTypesMap & provided_columns_map = getColumnsMap(columns);
 
 	if (column_names.empty())
@@ -243,13 +241,10 @@ void ITableDeclaration::check(const NamesAndTypesList & columns, const Names & c
 }
 
 
-void ITableDeclaration::check(const Block & block, bool need_all, const bool all_columns) const
+void ITableDeclaration::check(const Block & block, bool need_all) const
 {
 	const NamesAndTypesList & available_columns = getColumnsList();
-	const auto columns_map = all_columns ?
-		getColumnsMap(available_columns, materialized_columns) :
-		getColumnsMap(available_columns);
-
+	const auto columns_map = getColumnsMap(available_columns);
 
 	typedef std::unordered_set<String> NameSet;
 	NameSet names_in_block;
