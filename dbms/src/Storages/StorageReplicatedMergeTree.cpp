@@ -2945,6 +2945,9 @@ void StorageReplicatedMergeTree::fetchPartition(const Field & partition, bool un
 					parts_to_fetch_partition.push_back(part);
 
 			parts_to_fetch = std::move(parts_to_fetch_partition);
+
+			if (parts_to_fetch.empty())
+				throw Exception("Partition " + partition_str + " on " + best_replica_path + " doesn't exist", ErrorCodes::PARTITION_DOESNT_EXIST);
 		}
 		else
 		{

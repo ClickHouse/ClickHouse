@@ -73,7 +73,8 @@ MergeTreeData::MutableDataPartPtr ReplicatedMergeTreePartsFetcher::fetchPart(
 		std::make_pair("compress", "false")};
 	ReadBufferFromHTTP in(host, port, params);
 
-	String part_path = data.getFullPath() + (to_detached ? "detached/" : "") + "tmp_" + part_name + "/";
+	String full_part_name = String(to_detached ? "detached/" : "") + "tmp_" + part_name;
+	String part_path = data.getFullPath() + full_part_name + "/";
 	Poco::File part_file(part_path);
 
 	if (part_file.exists())
@@ -85,7 +86,7 @@ MergeTreeData::MutableDataPartPtr ReplicatedMergeTreePartsFetcher::fetchPart(
 	part_file.createDirectory();
 
 	MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data);
-	new_data_part->name = "tmp_" + part_name;
+	new_data_part->name = full_part_name;
 	new_data_part->is_temp = true;
 
 	size_t files;
