@@ -1,8 +1,8 @@
 #include <DB/IO/ConcatReadBuffer.h>
 
 #include <DB/DataStreams/ProhibitColumnsBlockOutputStream.h>
+#include <DB/DataStreams/MaterializingBlockOutputStream.h>
 #include <DB/DataStreams/AddingDefaultBlockOutputStream.h>
-#include <DB/DataStreams/MaterializingBlockInputStream.h>
 #include <DB/DataStreams/PushingToViewsBlockOutputStream.h>
 #include <DB/DataStreams/copyData.h>
 
@@ -35,11 +35,12 @@ StoragePtr InterpreterInsertQuery::getTable()
 Block InterpreterInsertQuery::getSampleBlock()
 {
 	ASTInsertQuery & query = typeid_cast<ASTInsertQuery &>(*query_ptr);
-	Block db_sample = getTable()->getSampleBlock();
 
 	/// Если в запросе не указана информация о столбцах
 	if (!query.columns)
-		return db_sample;
+		return getTable()->getSampleBlockNonMaterialized();
+
+	Block db_sample = getTable()->getSampleBlock();
 
 	/// Формируем блок, основываясь на именах столбцов из запроса
 	Block res;
@@ -70,7 +71,7 @@ void InterpreterInsertQuery::execute(ReadBuffer * remaining_data_istr)
 
 	/** @note looks suspicious, first we ask to create block from NamesAndTypesList (internally in ITableDeclaration),
 	 *  then we compose the same list from the resulting block */
-	NamesAndTypesListPtr required_columns = new NamesAndTypesList(table->getSampleBlock().getColumnsList());
+	NamesAndTypesListPtr required_columns = new NamesAndTypesList(table->getColumnsList());
 
 	/// Надо убедиться, что запрос идет в таблицу, которая поддерживает вставку.
 	/// TODO Плохо - исправить.
@@ -80,9 +81,12 @@ void InterpreterInsertQuery::execute(ReadBuffer * remaining_data_istr)
 	BlockOutputStreamPtr out{
 		new ProhibitColumnsBlockOutputStream{
 			new AddingDefaultBlockOutputStream{
-				new PushingToViewsBlockOutputStream{query.database, query.table, context, query_ptr},
+				new MaterializingBlockOutputStream{
+					new PushingToViewsBlockOutputStream{query.database, query.table, context, query_ptr}
+				},
 				required_columns, table->column_defaults, context
-			}, table->materialized_columns
+			},
+			table->materialized_columns
 		}
 	};
 
@@ -121,7 +125,6 @@ void InterpreterInsertQuery::execute(ReadBuffer * remaining_data_istr)
 	{
 		InterpreterSelectQuery interpreter_select(query.select, context);
 		BlockInputStreamPtr in{interpreter_select.execute()};
-		in = new MaterializingBlockInputStream(in);
 
 		copyData(*in, *out);
 	}
@@ -135,7 +138,7 @@ BlockIO InterpreterInsertQuery::execute()
 
 	auto table_lock = table->lockStructure(true);
 
-	NamesAndTypesListPtr required_columns = new NamesAndTypesList(table->getSampleBlock().getColumnsList());
+	NamesAndTypesListPtr required_columns = new NamesAndTypesList(table->getColumnsList());
 
 	/// Надо убедиться, что запрос идет в таблицу, которая поддерживает вставку.
 	/// TODO Плохо - исправить.
@@ -145,9 +148,12 @@ BlockIO InterpreterInsertQuery::execute()
 	BlockOutputStreamPtr out{
 		new ProhibitColumnsBlockOutputStream{
 			new AddingDefaultBlockOutputStream{
-				new PushingToViewsBlockOutputStream{query.database, query.table, context, query_ptr},
+				new MaterializingBlockOutputStream{
+					new PushingToViewsBlockOutputStream{query.database, query.table, context, query_ptr}
+				},
 				required_columns, table->column_defaults, context
-			}, table->materialized_columns
+			},
+			table->materialized_columns
 		}
 	};
 
@@ -163,7 +169,6 @@ BlockIO InterpreterInsertQuery::execute()
 	{
 		InterpreterSelectQuery interpreter_select(query.select, context);
 		BlockInputStreamPtr in = interpreter_select.execute();
-		in = new MaterializingBlockInputStream(in);
 		copyData(*in, *out);
 	}
 

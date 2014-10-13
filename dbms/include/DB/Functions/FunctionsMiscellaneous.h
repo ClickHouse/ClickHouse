@@ -123,7 +123,8 @@ public:
 		return new DataTypeString;
 	}
 
-	/// Выполнить функцию над блоком.
+	/** Выполнить функцию над блоком. convertToFullColumn вызывается для того, чтобы в случае
+	 *	распределенного выполнения запроса каждый сервер возвращал свое имя хоста. */
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		block.getByPosition(result).column = ColumnConstString(

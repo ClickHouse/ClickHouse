@@ -11,11 +11,12 @@ namespace DB
 class ProhibitColumnsBlockOutputStream : public IBlockOutputStream
 {
 public:
-	ProhibitColumnsBlockOutputStream(BlockOutputStreamPtr output, const NamesAndTypesList & columns)
+	ProhibitColumnsBlockOutputStream(const BlockOutputStreamPtr & output, const NamesAndTypesList & columns)
 		: output{output}, columns{columns}
 	{
 	}
 
+private:
 	void write(const Block & block) override
 	{
         for (const auto & column : columns)
@@ -25,12 +26,11 @@ public:
 		output->write(block);
 	}
 
-	void flush() { output->flush(); }
+	void flush() override { output->flush(); }
 
 	void writePrefix() override { output->writePrefix(); }
 	void writeSuffix() override { output->writeSuffix(); }
 
-private:
 	BlockOutputStreamPtr output;
 	NamesAndTypesList columns;
 };

@@ -84,10 +84,6 @@ const DataTypePtr ITableDeclaration::getDataTypeByName(const String & column_nam
 		if (column.name == column_name)
 			return column.type;
 
-	for (const auto & column : materialized_columns)
-		if (column.name == column_name)
-			return column.type;
-
 	throw Exception("There is no column " + column_name + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 }
 
@@ -95,16 +91,20 @@ const DataTypePtr ITableDeclaration::getDataTypeByName(const String & column_nam
 Block ITableDeclaration::getSampleBlock() const
 {
 	Block res;
-	const NamesAndTypesList & names_and_types = getColumnsList();
 
-	for (NamesAndTypesList::const_iterator it = names_and_types.begin(); it != names_and_types.end(); ++it)
-	{
-		ColumnWithNameAndType col;
-		col.name = it->name;
-		col.type = it->type;
-		col.column = col.type->createColumn();
-		res.insert(col);
-	}
+	for (const auto & col : getColumnsList())
+		res.insert({ col.type->createColumn(), col.type, col.name });
+
+	return res;
+}
+
+
+Block ITableDeclaration::getSampleBlockNonMaterialized() const
+{
+	Block res;
+
+	for (const auto & col : getColumnsListAsterisk())
+		res.insert({ col.type->createColumn(), col.type, col.name });
 
 	return res;
 }
