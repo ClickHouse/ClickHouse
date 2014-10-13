@@ -62,6 +62,8 @@ public:
 	};
 
 	void add(const String & name);
+
+	/// Если не найдено - возвращает пустую строку.
 	String getContainingPart(const String & name) const;
 
 	Strings getParts() const; /// В порядке возрастания месяца и номера блока.

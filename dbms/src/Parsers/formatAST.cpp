@@ -710,10 +710,10 @@ void formatAST(const ASTAlterQuery 			& ast, std::ostream & s, size_t indent, bo
 	{
 		if (!ast.database.empty())
 		{
-			s << (hilite ? hilite_keyword : "") << indent_str << ast.database << (hilite ? hilite_none : "");
+			s << indent_str << ast.database;
 			s << ".";
 		}
-		s << (hilite ? hilite_keyword : "") << indent_str << ast.table << (hilite ? hilite_none : "");
+		s << indent_str << ast.table;
 	}
 	s << nl_or_ws;
 
@@ -754,6 +754,14 @@ void formatAST(const ASTAlterQuery 			& ast, std::ostream & s, size_t indent, bo
 			s << (hilite ? hilite_keyword : "") << indent_str << "ATTACH " << (p.unreplicated ? "UNREPLICATED " : "")
 				<< (p.part ? "PART " : "PARTITION ") << (hilite ? hilite_none : "");
 			formatAST(*p.partition, s, indent, hilite, true);
+		}
+		else if (p.type == ASTAlterQuery::FETCH_PARTITION)
+		{
+			s << (hilite ? hilite_keyword : "") << indent_str << "FETCH " << (p.unreplicated ? "UNREPLICATED " : "")
+				<< "PARTITION " << (hilite ? hilite_none : "");
+			formatAST(*p.partition, s, indent, hilite, true);
+			s << (hilite ? hilite_keyword : "") << " FROM " << (hilite ? hilite_none : "")
+				<< mysqlxx::quote << p.from;
 		}
 		else
 			throw Exception("Unexpected type of ALTER", ErrorCodes::UNEXPECTED_AST_STRUCTURE);

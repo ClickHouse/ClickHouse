@@ -64,7 +64,8 @@ MergeTreeData::MutableDataPartPtr ReplicatedMergeTreePartsFetcher::fetchPart(
 	const String & part_name,
 	const String & replica_path,
 	const String & host,
-	int port)
+	int port,
+	bool to_detached)
 {
 	ReadBufferFromHTTP::Params params = {
 		std::make_pair("endpoint", "ReplicatedMergeTree:" + replica_path),
@@ -72,7 +73,7 @@ MergeTreeData::MutableDataPartPtr ReplicatedMergeTreePartsFetcher::fetchPart(
 		std::make_pair("compress", "false")};
 	ReadBufferFromHTTP in(host, port, params);
 
-	String part_path = data.getFullPath() + "tmp_" + part_name + "/";
+	String part_path = data.getFullPath() + (to_detached ? "detached/" : "") + "tmp_" + part_name + "/";
 	Poco::File part_file(part_path);
 
 	if (part_file.exists())

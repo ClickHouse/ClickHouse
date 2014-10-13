@@ -111,19 +111,15 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
 	data_parts.clear();
 
-	Strings all_file_names;
+	Strings part_file_names;
 	Poco::DirectoryIterator end;
 	for (Poco::DirectoryIterator it(full_path); it != end; ++it)
-		all_file_names.push_back(it.name());
-
-	Strings part_file_names;
-	for (const String & file_name : all_file_names)
 	{
-		/// Удаляем временные директории старше суток.
-		if (0 == file_name.compare(0, strlen("tmp_"), "tmp_"))
+		/// Пропускаем временные директории старше суток.
+		if (0 == it.name().compare(0, strlen("tmp_"), "tmp_"))
 			continue;
 
-		part_file_names.push_back(file_name);
+		part_file_names.push_back(it.name());
 	}
 
 	DataPartsVector broken_parts_to_remove;

@@ -40,12 +40,13 @@ class ReplicatedMergeTreePartsFetcher
 public:
 	ReplicatedMergeTreePartsFetcher(MergeTreeData & data_) : data(data_), log(&Logger::get("ReplicatedMergeTreePartsFetcher")) {}
 
-	/// Скачивает кусок в tmp_директорию.
+	/// Скачивает кусок в tmp_директорию. Если to_detached - скачивает в директорию detached.
 	MergeTreeData::MutableDataPartPtr fetchPart(
 		const String & part_name,
 		const String & replica_path,
 		const String & host,
-		int port);
+		int port,
+		bool to_detached = false);
 
 private:
 	MergeTreeData & data;

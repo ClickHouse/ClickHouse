@@ -473,8 +473,9 @@ private:
 	String findReplicaHavingPart(const String & part_name, bool active);
 
 	/** Скачать указанный кусок с указанной реплики.
+	  * Если to_detached, то кусок помещается в директорию detached.
 	  */
-	void fetchPart(const String & part_name, const String & replica_name);
+	void fetchPart(const String & part_name, const String & replica_path, bool to_detached = false);
 
 	AbandonableLockInZooKeeper allocateBlockNumber(const String & month_name);
 

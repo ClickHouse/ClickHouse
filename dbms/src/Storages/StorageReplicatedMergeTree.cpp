@@ -993,7 +993,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 				ProfileEvents::increment(ProfileEvents::ReplicatedPartFailedFetches);
 				throw Exception("No active replica has part " + entry.new_part_name, ErrorCodes::NO_REPLICA_HAS_PART);
 			}
-			fetchPart(entry.new_part_name, replica);
+			fetchPart(entry.new_part_name, zookeeper_path + "/replicas/" + replica);
 
 			if (entry.type == LogEntry::MERGE_PARTS)
 				ProfileEvents::increment(ProfileEvents::ReplicatedPartFetchesOfMerged);
@@ -1955,16 +1955,18 @@ String StorageReplicatedMergeTree::findReplicaHavingPart(const String & part_nam
 	return "";
 }
 
-void StorageReplicatedMergeTree::fetchPart(const String & part_name, const String & replica_name)
+void StorageReplicatedMergeTree::fetchPart(const String & part_name, const String & replica_path, bool to_detached)
 {
-	LOG_DEBUG(log, "Fetching part " << part_name << " from " << replica_name);
+	LOG_DEBUG(log, "Fetching part " << part_name << " from " << replica_path);
 
-	auto table_lock = lockStructure(true);
+	TableStructureReadLockPtr table_lock;
+	if (!to_detached)
+		table_lock = lockStructure(true);
 
 	String host;
 	int port;
 
-	String host_port_str = zookeeper->get(zookeeper_path + "/replicas/" + replica_name + "/host");
+	String host_port_str = zookeeper->get(replica_path + "/host");
 	ReadBufferFromString buf(host_port_str);
 	assertString("host: ", buf);
 	readString(host, buf);
@@ -1973,27 +1975,34 @@ void StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 	assertString("\n", buf);
 	assertEOF(buf);
 
-	MergeTreeData::MutableDataPartPtr part = fetcher.fetchPart(part_name, zookeeper_path + "/replicas/" + replica_name, host, port);
+	MergeTreeData::MutableDataPartPtr part = fetcher.fetchPart(part_name, replica_path, host, port, to_detached);
 
-	zkutil::Ops ops;
-	checkPartAndAddToZooKeeper(part, ops, part_name);
-
-	MergeTreeData::Transaction transaction;
-	auto removed_parts = data.renameTempPartAndReplace(part, nullptr, &transaction);
-
-	zookeeper->multi(ops);
-	transaction.commit();
-	merge_selecting_event.set();
-
-	for (const auto & removed_part : removed_parts)
+	if (!to_detached)
 	{
-		LOG_DEBUG(log, "Part " << removed_part->name << " is rendered obsolete by fetching part " << part_name);
-		ProfileEvents::increment(ProfileEvents::ObsoleteReplicatedParts);
+		zkutil::Ops ops;
+		checkPartAndAddToZooKeeper(part, ops, part_name);
+
+		MergeTreeData::Transaction transaction;
+		auto removed_parts = data.renameTempPartAndReplace(part, nullptr, &transaction);
+
+		zookeeper->multi(ops);
+		transaction.commit();
+		merge_selecting_event.set();
+
+		for (const auto & removed_part : removed_parts)
+		{
+			LOG_DEBUG(log, "Part " << removed_part->name << " is rendered obsolete by fetching part " << part_name);
+			ProfileEvents::increment(ProfileEvents::ObsoleteReplicatedParts);
+		}
+	}
+	else
+	{
+		Poco::File(data.getFullPath() + "detached/tmp_" + part_name).renameTo(data.getFullPath() + "detached/" + part_name);
 	}
 
 	ProfileEvents::increment(ProfileEvents::ReplicatedPartFetches);
 
-	LOG_DEBUG(log, "Fetched part " << part_name << " from " << replica_name);
+	LOG_DEBUG(log, "Fetched part " << part_name << " from " << replica_name << (to_detached ? " (to 'detached' directory)" : ""));
 }
 
 void StorageReplicatedMergeTree::shutdown()
@@ -2841,6 +2850,14 @@ void StorageReplicatedMergeTree::fetchPartition(const Field & partition, bool un
 
 	LOG_INFO(log, "Will fetch partition " << partition_str << " from shard " << from_);
 
+	/** Проверим, что в директории detached (куда мы будем записывать скаченные куски) ещё нет такой партиции.
+	  * Ненадёжно (есть race condition) - такая партиция может появиться чуть позже.
+	  */
+	Poco::DirectoryIterator dir_end;
+	for (Poco::DirectoryIterator dir_it{data.getFullPath() + "detached/"}; dir_it != dir_end; ++dir_it)
+		if (0 == dir_it.name().compare(0, partition_str.size(), partition_str))
+			throw Exception("Detached partition " + partition_str + " is already exists.", ErrorCodes::PARTITION_ALREADY_EXISTS);
+
     if (unreplicated)
 		throw Exception("Not implemented", ErrorCodes::NOT_IMPLEMENTED);	/// TODO
 
@@ -2856,7 +2873,7 @@ void StorageReplicatedMergeTree::fetchPartition(const Field & partition, bool un
 			active_replicas.push_back(replica);
 
 	if (active_replicas.empty())
-		throw Exception("No active replicas for shard " + from/* TODO ErrorCodes */);
+		throw Exception("No active replicas for shard " + from, ErrorCodes::NO_ACTIVE_REPLICAS);
 
 	/** Надо выбрать лучшую (наиболее актуальную) реплику.
 	  * Это реплика с максимальным log_pointer, затем с минимальным размером queue.
@@ -2870,13 +2887,13 @@ void StorageReplicatedMergeTree::fetchPartition(const Field & partition, bool un
 
 	for (const String & replica : active_replicas)
 	{
-		String replica_path = from + "/replicas/" + replica;
+		String current_replica_path = from + "/replicas/" + replica;
 
-		String log_pointer_str = zookeeper->get(replica_path + "/log_pointer");
+		String log_pointer_str = zookeeper->get(current_replica_path + "/log_pointer");
 		Int64 log_pointer = log_pointer_str.empty() ? 0 : parse<UInt64>(log_pointer_str);
 
 		zkutil::Stat stat;
-		zookeeper->get(replica_path + "/queue", &stat);
+		zookeeper->get(current_replica_path + "/queue", &stat);
 		size_t queue_size = stat.numChildren;
 
 		if (log_pointer > max_log_pointer
@@ -2894,13 +2911,74 @@ void StorageReplicatedMergeTree::fetchPartition(const Field & partition, bool un
 	LOG_INFO(log, "Found " << replicas.size() << " replicas, " << active_replicas.size() << " of them are active."
 		<< " Selected " << best_replica << " to fetch from.");
 
+	String best_replica_path = from + "/replicas/" + best_replica;
+
 	/// Выясним, какие куски есть на лучшей реплике.
 
-	Strings parts = zookeeper->getChildren(replica_path + "/parts");
-	ActiveDataPartSet active_parts_set(parts);
-	Strings active_parts = active_parts_set.getParts();
+	/** Пытаемся скачать эти куски.
+	  * Часть из них могла удалиться из-за мерджа.
+	  * В этом случае, обновляем информацию о доступных кусках и пробуем снова.
+	  */
 
-	/// TODO
+	unsigned try_no = 0;
+	Strings missing_parts;
+	do
+	{
+		if (try_no)
+			LOG_INFO(log, "Some of parts (" << missing_parts.size() << ") are missing. Will try to fetch covering parts.");
+
+		if (try_no >= 5)
+			throw Exception("Too much retries to fetch parts from " + best_replica_path, ErrorCodes::TOO_MUCH_RETRIES_TO_FETCH_PARTS);
+
+		Strings parts = zookeeper->getChildren(best_replica_path + "/parts");
+		ActiveDataPartSet active_parts_set(parts);
+		Strings parts_to_fetch;
+
+		if (missing_parts.empty())
+		{
+			parts_to_fetch = active_parts_set.getParts();
+
+			/// Оставляем только куски нужной партиции.
+			Strings parts_to_fetch_partition;
+			for (const String & part : parts_to_fetch)
+				if (0 == part.compare(0, partition_str.size(), partition_str))
+					parts_to_fetch_partition.push_back(part);
+
+			parts_to_fetch = std::move(parts_to_fetch_partition);
+		}
+		else
+		{
+			for (const String & missing_part : missing_parts)
+			{
+				String containing_part = active_parts_set.getContainingPart(missing_part);
+				if (!containing_part.empty())
+					parts_to_fetch.push_back(containing_part);
+				else
+					LOG_WARNING(log, "Part " << missing_part << " on replica " << best_replica_path << " has been vanished.");
+			}
+		}
+
+		LOG_INFO(log, "Parts to fetch: " << parts_to_fetch.size());
+
+		missing_parts.clear();
+		for (const String & part : parts_to_fetch)
+		{
+			try
+			{
+				fetchPart(part, best_replica_path, true);
+			}
+			catch (const DB::Exception & e)
+			{
+				if (e.code() != ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER)
+					throw;
+
+				LOG_INFO(log, e.displayText());
+				missing_parts.push_back(part);
+			}
+		}
+
+		++try_no;
+	} while (!missing_parts.empty());
 }
 
 
