@@ -47,15 +47,22 @@ Block MergeSortingBlockInputStream::merge(Blocks & blocks)
 
 	bool has_collation = false;
 
-	size_t i = 0;
-	for (Blocks::const_iterator it = blocks.begin(); it != blocks.end(); ++it, ++i)
+	size_t nonempty_blocks = 0;
+	for (Blocks::const_iterator it = blocks.begin(); it != blocks.end(); ++it)
 	{
-		if (!*it)
+		if (it->rowsInFirstColumn() == 0)
 			continue;
 
-		cursors[i] = SortCursorImpl(*it, description);
-		has_collation |= cursors[i].has_collation;
+		cursors[nonempty_blocks] = SortCursorImpl(*it, description);
+		has_collation |= cursors[nonempty_blocks].has_collation;
+
+		++nonempty_blocks;
 	}
+
+	if (nonempty_blocks == 0)
+		return Block();
+
+	cursors.resize(nonempty_blocks);
 
 	Block merged;
 

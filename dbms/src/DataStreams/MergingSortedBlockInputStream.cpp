@@ -22,7 +22,7 @@ void MergingSortedBlockInputStream::init(Block & merged_block, ColumnPlainPtrs &
 
 			*it = children[i]->read();
 
-			if (!*it)
+			if (it->rowsInFirstColumn() == 0)
 				continue;
 
 			if (!num_columns)
@@ -31,7 +31,7 @@ void MergingSortedBlockInputStream::init(Block & merged_block, ColumnPlainPtrs &
 			cursors[i] = SortCursorImpl(*it, description, i);
 			has_collation |= cursors[i].has_collation;
 		}
-		
+
 		if (has_collation)
 			initQueue(queue_with_collation);
 		else
