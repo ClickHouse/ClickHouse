@@ -25,9 +25,8 @@ public:
 
 private:
 	StorageReplicatedMergeTree & storage;
-	std::thread thread;
 	Logger * log;
-
+	std::thread thread;
 
 	void run();
 	void iterate();

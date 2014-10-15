@@ -7,8 +7,8 @@ namespace DB
 
 ReplicatedMergeTreeCleanupThread::ReplicatedMergeTreeCleanupThread(StorageReplicatedMergeTree & storage_)
 	: storage(storage_),
-	thread([this] { run(); }),
-	log(&Logger::get(storage.database_name + "." + storage.table_name + " (StorageReplicatedMergeTree, CleanupThread)")) {}
+	log(&Logger::get(storage.database_name + "." + storage.table_name + " (StorageReplicatedMergeTree, CleanupThread)")),
+	thread([this] { run(); }) {}
 
 
 void ReplicatedMergeTreeCleanupThread::run()
