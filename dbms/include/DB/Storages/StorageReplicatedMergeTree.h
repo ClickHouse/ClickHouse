@@ -5,7 +5,9 @@
 #include <DB/Storages/MergeTree/MergeTreeDataMerger.h>
 #include <DB/Storages/MergeTree/MergeTreeDataWriter.h>
 #include <DB/Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <DB/Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreePartsExchange.h>
+#include <DB/Storages/MergeTree/ReplicatedMergeTreeCleanupThread.h>
 #include "MergeTree/AbandonableLockInZooKeeper.h"
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <zkutil/ZooKeeper.h>
@@ -123,107 +125,11 @@ public:
 
 private:
 	friend class ReplicatedMergeTreeBlockOutputStream;
+	friend class ReplicatedMergeTreeCleanupThread;
+	friend class ReplicatedMergeTreeLogEntry;
+	friend class FuturePartTagger;
 
-	/// Добавляет кусок в множество future_parts.
-	struct FuturePartTagger
-	{
-		String part;
-		StorageReplicatedMergeTree & storage;
-
-		FuturePartTagger(const String & part_, StorageReplicatedMergeTree & storage_)
-			: part(part_), storage(storage_)
-		{
-			if (!storage.future_parts.insert(part).second)
-				throw Exception("Tagging already tagged future part " + part + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
-		}
-
-		~FuturePartTagger()
-		{
-			try
-			{
-				std::unique_lock<std::mutex> lock(storage.queue_mutex);
-				if (!storage.future_parts.erase(part))
-					throw Exception("Untagging already untagged future part " + part + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
-			}
-			catch (...)
-			{
-				tryLogCurrentException(__PRETTY_FUNCTION__);
-			}
-		}
-	};
-
-	typedef Poco::SharedPtr<FuturePartTagger> FuturePartTaggerPtr;
-
-	struct LogEntry
-	{
-		typedef Poco::SharedPtr<LogEntry> Ptr;
-
-		enum Type
-		{
-			GET_PART,    /// Получить кусок с другой реплики.
-			MERGE_PARTS, /// Слить куски.
-			DROP_RANGE,  /// Удалить куски в указанном месяце в указанном диапазоне номеров.
-			ATTACH_PART, /// Перенести кусок из директории detached или unreplicated.
-		};
-
-		String znode_name;
-
-		Type type;
-		String source_replica; /// Пустая строка значит, что эта запись была добавлена сразу в очередь, а не скопирована из лога.
-
-		/// Имя куска, получающегося в результате.
-		/// Для DROP_RANGE имя несуществующего куска. Нужно удалить все куски, покрытые им.
-		String new_part_name;
-
-		Strings parts_to_merge;
-
-		/// Для DROP_RANGE, true значит, что куски нужно не удалить, а перенести в директорию detached.
-		bool detach = false;
-
-		/// Для ATTACH_PART имя куска в директории detached или unreplicated.
-		String source_part_name;
-		/// Нужно переносить из директории unreplicated, а не detached.
-		bool attach_unreplicated;
-
-		FuturePartTaggerPtr future_part_tagger;
-		bool currently_executing = false; /// Доступ под queue_mutex.
-		std::condition_variable execution_complete; /// Пробуждается когда currently_executing становится false.
-
-		void addResultToVirtualParts(StorageReplicatedMergeTree & storage)
-		{
-			if (type == MERGE_PARTS || type == GET_PART || type == DROP_RANGE || type == ATTACH_PART)
-				storage.virtual_parts.add(new_part_name);
-		}
-
-		void tagPartAsFuture(StorageReplicatedMergeTree & storage)
-		{
-			if (type == MERGE_PARTS || type == GET_PART || type == ATTACH_PART)
-				future_part_tagger = new FuturePartTagger(new_part_name, storage);
-		}
-
-		void writeText(WriteBuffer & out) const;
-		void readText(ReadBuffer & in);
-
-		String toString() const
-		{
-			String s;
-			{
-				WriteBufferFromString out(s);
-				writeText(out);
-			}
-			return s;
-		}
-
-		static Ptr parse(const String & s)
-		{
-			ReadBufferFromString in(s);
-			Ptr res = new LogEntry;
-			res->readText(in);
-			assertEOF(in);
-			return res;
-		}
-	};
-
+	typedef ReplicatedMergeTreeLogEntry LogEntry;
 	typedef LogEntry::Ptr LogEntryPtr;
 
 	typedef std::list<LogEntryPtr> LogEntries;
@@ -315,7 +221,7 @@ private:
 	std::mutex merge_selecting_mutex; /// Берется на каждую итерацию выбора кусков для слияния.
 
 	/// Поток, удаляющий старые куски, записи в логе и блоки.
-	std::thread cleanup_thread;
+	std::unique_ptr<ReplicatedMergeTreeCleanupThread> cleanup_thread;
 
 	/// Поток, обрабатывающий переподключение к ZooKeeper при истечении сессии (очень маловероятное событие).
 	std::thread restarting_thread;
@@ -402,14 +308,6 @@ private:
 	/// Убирает кусок из ZooKeeper и добавляет в очередь задание скачать его. Предполагается это делать с битыми кусками.
 	void removePartAndEnqueueFetch(const String & part_name);
 
-	void clearOldParts();
-
-	/// Удалить из ZooKeeper старые записи в логе.
-	void clearOldLogs();
-
-	/// Удалить из ZooKeeper старые хеши блоков. Это делает ведущая реплика.
-	void clearOldBlocks();
-
 	/// Выполнение заданий из очереди.
 
 	/** Кладет в queue записи из ZooKeeper (/replicas/me/queue/).
@@ -450,10 +348,6 @@ private:
 	  */
 	void mergeSelectingThread();
 
-	/** Удаляет устаревшие данные.
-	  */
-	void cleanupThread();
-
 	/** Делает локальный ALTER, когда список столбцов в ZooKeeper меняется.
 	  */
 	void alterThread();
@@ -483,6 +377,14 @@ private:
 	  * Если одновременно с этим добавляются реплики, может не дождаться добавленную реплику.
 	  */
 	void waitForAllReplicasToProcessLogEntry(const LogEntry & entry);
+
+
+	/// Преобразовать число в строку формате суффиксов автоинкрементных нод в ZooKeeper.
+	static String padIndex(UInt64 index)
+	{
+		String index_str = toString(index);
+		return std::string(10 - index_str.size(), '0') + index_str;
+	}
 };
 
 }
