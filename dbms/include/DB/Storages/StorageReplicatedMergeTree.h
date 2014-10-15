@@ -82,7 +82,7 @@ public:
 
 	void dropPartition(const Field & partition, bool detach) override;
 	void attachPartition(const Field & partition, bool unreplicated, bool part) override;
-	void fetchPartition(const Field & partition, bool unreplicated, const String & from) override;
+	void fetchPartition(const Field & partition, const String & from) override;
 
 	/** Удаляет реплику из ZooKeeper. Если других реплик нет, удаляет всю таблицу из ZooKeeper.
 	  */

@@ -169,12 +169,6 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & e
 		{
 			ws.ignore(pos, end);
 
-			if (s_unreplicated.ignore(pos, end, expected))
-			{
-				params.unreplicated = true;
-				ws.ignore(pos, end);
-			}
-
 			if (!s_partition.ignore(pos, end, expected))
 				return false;
 

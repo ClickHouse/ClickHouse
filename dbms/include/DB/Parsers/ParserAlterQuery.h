@@ -11,7 +11,7 @@ namespace DB
   *		[DROP COLUMN col_drop, ...]
   * 	[MODIFY COLUMN col_modify type, ...]
   * 	[DROP|DETACH|ATTACH [UNREPLICATED] PARTITION|PART partition, ...]
-  * 	[FETCH [UNREPLICATED] PARTITION partition FROM ...]
+  * 	[FETCH PARTITION partition FROM ...]
   */
 class ParserAlterQuery : public IParserBase
 {

@@ -221,7 +221,7 @@ public:
 
 	/** Выполнить запрос FETCH [UNREPLICATED] PARTITION.
 	  */
-	virtual void fetchPartition(const Field & partition, bool unreplicated, const String & from)
+	virtual void fetchPartition(const Field & partition, const String & from)
 	{
 		throw Exception("Method fetchPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}

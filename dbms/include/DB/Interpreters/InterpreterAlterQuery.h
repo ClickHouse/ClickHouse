@@ -53,9 +53,9 @@ private:
 			return {ATTACH_PARTITION, partition, false, unreplicated, part};
 		}
 
-		static PartitionCommand fetchPartition(const Field & partition, bool unreplicated, const String & from)
+		static PartitionCommand fetchPartition(const Field & partition, const String & from)
 		{
-			return {FETCH_PARTITION, partition, false, unreplicated, false, from};
+			return {FETCH_PARTITION, partition, false, false, false, from};
 		}
 	};
 

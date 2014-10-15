@@ -137,6 +137,8 @@ struct MergeTreeSettings
 	size_t replicated_max_unexpectedly_merged_parts = 2;
 	size_t replicated_max_missing_obsolete_parts = 5;
 	size_t replicated_max_missing_active_parts = 20;
+	/// Если отношение количества ошибок к общему количеству кусков меньше указанного значения, то всё-равно можно запускаться.
+	double replicated_max_ratio_of_wrong_parts = 0.05;
 };
 
 

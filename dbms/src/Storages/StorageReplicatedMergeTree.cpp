@@ -2243,7 +2243,6 @@ void StorageReplicatedMergeTree::dropPartition(const Field & field, bool detach)
 	if (!is_leader_node)
 		throw Exception("DROP PARTITION can only be done on leader replica.", ErrorCodes::NOT_LEADER);
 
-
 	/** Пропустим один номер в block_numbers для удаляемого месяца, и будем удалять только куски до этого номера.
 	  * Это запретит мерджи удаляемых кусков с новыми вставляемыми данными.
 	  * Инвариант: в логе не появятся слияния удаляемых кусков с другими кусками.
@@ -2313,7 +2312,7 @@ void StorageReplicatedMergeTree::attachPartition(const Field & field, bool unrep
 			String name = it.name();
 			if (!ActiveDataPartSet::isPartDirectory(name))
 				continue;
-			if (name.substr(0, partition.size()) != partition)
+			if (0 != name.compare(0, partition.size(), partition))
 				continue;
 			LOG_DEBUG(log, "Found part " << name);
 			active_parts.add(name);
@@ -2576,7 +2575,7 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
 }
 
 
-void StorageReplicatedMergeTree::fetchPartition(const Field & partition, bool unreplicated, const String & from_)
+void StorageReplicatedMergeTree::fetchPartition(const Field & partition, const String & from_)
 {
 	String partition_str = MergeTreeData::getMonthName(partition);
 
@@ -2593,9 +2592,6 @@ void StorageReplicatedMergeTree::fetchPartition(const Field & partition, bool un
 	for (Poco::DirectoryIterator dir_it{data.getFullPath() + "detached/"}; dir_it != dir_end; ++dir_it)
 		if (0 == dir_it.name().compare(0, partition_str.size(), partition_str))
 			throw Exception("Detached partition " + partition_str + " is already exists.", ErrorCodes::PARTITION_ALREADY_EXISTS);
-
-    if (unreplicated)
-		throw Exception("Not implemented", ErrorCodes::NOT_IMPLEMENTED);	/// TODO
 
 	/// Список реплик шарда-источника.
 	zkutil::Strings replicas = zookeeper->getChildren(from + "/replicas");

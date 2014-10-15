@@ -52,7 +52,7 @@ void InterpreterAlterQuery::execute()
 				break;
 
 			case PartitionCommand::FETCH_PARTITION:
-				table->fetchPartition(command.partition, command.unreplicated, command.from);
+				table->fetchPartition(command.partition, command.from);
 				break;
 
 			default:
@@ -122,7 +122,7 @@ void InterpreterAlterQuery::parseAlter(
 		else if (params.type == ASTAlterQuery::FETCH_PARTITION)
 		{
 			const Field & partition = dynamic_cast<const ASTLiteral &>(*params.partition).value;
-			out_partition_commands.push_back(PartitionCommand::fetchPartition(partition, params.unreplicated, params.from));
+			out_partition_commands.push_back(PartitionCommand::fetchPartition(partition, params.from));
 		}
 		else
 			throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
