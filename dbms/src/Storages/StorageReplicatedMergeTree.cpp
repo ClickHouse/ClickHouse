@@ -472,22 +472,30 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 					 + toString(parts_to_add.size()) + " unexpectedly merged parts, "
 					 + toString(expected_parts.size()) + " missing obsolete parts, "
 					 + toString(parts_to_fetch.size()) + " missing parts";
-	bool insane =
-		parts_to_add.size() > data.settings.replicated_max_unexpectedly_merged_parts ||
-		unexpected_parts.size() > data.settings.replicated_max_unexpected_parts ||
-		expected_parts.size() > data.settings.replicated_max_missing_obsolete_parts ||
-		parts_to_fetch.size() > data.settings.replicated_max_missing_active_parts;
 
-	if (insane && !skip_sanity_checks)
-	{
-		throw Exception("The local set of parts of table " + getTableName() + " doesn't look like the set of parts in ZooKeeper. "
-			+ sanity_report,
-			ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS);
-	}
+	/** Можно автоматически синхронизировать данные,
+	  * если количество ошибок каждого из четырёх типов не больше соответствующих порогов,
+	  * или если отношение общего количества ошибок к общему количеству кусков (минимальному - в локальной файловой системе или в ZK)
+	  *  не больше некоторого отношения (например 5%).
+	  */
+
+	size_t min_parts_local_or_expected = std::min(expected_parts_vec.size(), parts.size());
+
+	bool insane =
+		(parts_to_add.size() > data.settings.replicated_max_unexpectedly_merged_parts
+			|| unexpected_parts.size() > data.settings.replicated_max_unexpected_parts
+			|| expected_parts.size() > data.settings.replicated_max_missing_obsolete_parts
+			|| parts_to_fetch.size() > data.settings.replicated_max_missing_active_parts)
+		&& ((parts_to_add.size() + unexpected_parts.size() + expected_parts.size() + parts_to_fetch.size())
+			> min_parts_local_or_expected * data.settings.replicated_max_ratio_of_wrong_parts);
 
 	if (insane)
 	{
-		LOG_WARNING(log, sanity_report);
+		if (skip_sanity_checks)
+			LOG_WARNING(log, sanity_report);
+		else
+			throw Exception("The local set of parts of table " + getTableName() + " doesn't look like the set of parts in ZooKeeper. "
+				+ sanity_report, ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS);
 	}
 
 	/// Добавим в ZK информацию о кусках, покрывающих недостающие куски.
