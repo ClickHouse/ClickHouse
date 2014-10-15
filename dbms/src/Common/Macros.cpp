@@ -17,10 +17,16 @@ Macros::Macros(const Poco::Util::AbstractConfiguration & config, const String & 
 	}
 }
 
-String Macros::expand(const String & s) const
+String Macros::expand(const String & s, size_t level) const
 {
 	if (s.find('{') == String::npos)
 		return s;
+
+	if (level && s.size() > 65536)
+		throw Exception("Too long string while expanding macros", ErrorCodes::SYNTAX_ERROR);
+
+	if (level >= 10)
+		throw Exception("Too deep recursion while expanding macros: '" + s + "'", ErrorCodes::SYNTAX_ERROR);
 
 	String res;
 	size_t pos = 0;
@@ -41,7 +47,7 @@ String Macros::expand(const String & s) const
 		++begin;
 		size_t end = s.find('}', begin);
 		if (end == String::npos)
-			throw Exception("Unbalanced { and } in string with macros: \"" + s + "\"", ErrorCodes::SYNTAX_ERROR);
+			throw Exception("Unbalanced { and } in string with macros: '" + s + "'", ErrorCodes::SYNTAX_ERROR);
 
 		String macro_name = s.substr(begin, end - begin);
 
@@ -54,7 +60,7 @@ String Macros::expand(const String & s) const
 		pos = end + 1;
 	}
 
-	return res;
+	return expand(res, level + 1);
 }
 
 }
