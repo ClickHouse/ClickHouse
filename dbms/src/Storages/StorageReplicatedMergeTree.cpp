@@ -2371,13 +2371,15 @@ void StorageReplicatedMergeTree::attachPartition(const Field & field, bool unrep
 
 	LOG_DEBUG(log, "Adding attaches to log");
 	zookeeper->multi(ops);
+
 	size_t i = 0;
 	for (LogEntry & entry : entries)
 	{
-		String log_znode_path = dynamic_cast<zkutil::Op::Create &>(ops[i++]).getPathCreated();
+		String log_znode_path = dynamic_cast<zkutil::Op::Create &>(ops[i]).getPathCreated();
 		entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
 
 		waitForAllReplicasToProcessLogEntry(entry);
+		++i;
 	}
 }
 
