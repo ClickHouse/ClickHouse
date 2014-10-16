@@ -44,10 +44,11 @@ void Block::addDefaults(NamesAndTypesListPtr required_columns,
 
 		const auto it = column_defaults.find(column.name);
 
+		/// expressions must be cloned to prevent modification by ExpressionAnalyzer
 		if (it == column_defaults.end())
 			insertDefault(column.name, column.type);
 		else
-			default_expr_list->children.emplace_back(it->second.expression);
+			default_expr_list->children.emplace_back(it->second.expression->clone());
 	}
 
 	/// nothing to evaluate

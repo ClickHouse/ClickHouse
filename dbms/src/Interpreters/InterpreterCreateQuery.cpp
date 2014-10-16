@@ -128,7 +128,7 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 		}
 		else if (!create.as_table.empty())
 		{
-			columns = new NamesAndTypesList(as_storage->getColumnsListAsterisk());
+			columns = new NamesAndTypesList(as_storage->getColumnsListNonMaterialized());
 			materialized_columns = as_storage->materialized_columns;
 			alias_columns = as_storage->alias_columns;
 			column_defaults = as_storage->column_defaults;

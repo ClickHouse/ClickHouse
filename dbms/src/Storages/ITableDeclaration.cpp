@@ -103,7 +103,7 @@ Block ITableDeclaration::getSampleBlockNonMaterialized() const
 {
 	Block res;
 
-	for (const auto & col : getColumnsListAsterisk())
+	for (const auto & col : getColumnsListNonMaterialized())
 		res.insert({ col.type->createColumn(), col.type, col.name });
 
 	return res;

@@ -360,8 +360,11 @@ void MergeTreeData::dropAllData()
 void MergeTreeData::checkAlter(const AlterCommands & params)
 {
 	/// Проверим, что указанные преобразования можно совершить над списком столбцов без учета типов.
-	NamesAndTypesList new_columns = *columns;
-	params.apply(new_columns);
+	auto new_columns = *columns;
+	auto new_materialized_columns = materialized_columns;
+	auto new_alias_columns = alias_columns;
+	auto new_column_defaults = column_defaults;
+	params.apply(new_columns, new_materialized_columns, new_alias_columns, new_column_defaults);
 
 	/// Список столбцов, которые нельзя трогать.
 	/// sampling_expression можно не учитывать, потому что он обязан содержаться в первичном ключе.

@@ -21,7 +21,13 @@ public:
 
 	/** Изменяет список столбцов в метаданных таблицы на диске. Нужно вызывать под TableStructureLock соответствующей таблицы.
 	  */
-	static void updateMetadata(const String & database, const String & table, const NamesAndTypesList & columns, Context & context);
+	static void updateMetadata(const String & database,
+		const String & table,
+		const NamesAndTypesList & columns,
+		const NamesAndTypesList & materialized_columns,
+		const NamesAndTypesList & alias_columns,
+		const ColumnDefaults & column_defaults,
+		Context & context);
 private:
 	struct PartitionCommand
 	{
@@ -58,7 +64,6 @@ private:
 
 	static void parseAlter(const ASTAlterQuery::ParameterContainer & params, const DataTypeFactory & data_type_factory,
 		AlterCommands & out_alter_commands, PartitionCommands & out_partition_commands);
-
-	static void validateColumnChanges(ASTAlterQuery::ParameterContainer & params, const StoragePtr & table, const Context & context);
 };
+
 }

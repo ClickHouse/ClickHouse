@@ -203,8 +203,9 @@ BlockOutputStreamPtr StorageDistributed::write(ASTPtr query)
 void StorageDistributed::alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context)
 {
 	auto lock = lockStructureForAlter();
-	params.apply(*columns);
-	InterpreterAlterQuery::updateMetadata(database_name, table_name, *columns, context);
+	params.apply(*columns, materialized_columns, alias_columns, column_defaults);
+	InterpreterAlterQuery::updateMetadata(database_name, table_name,
+		*columns, materialized_columns, alias_columns, column_defaults, context);
 }
 
 void StorageDistributed::shutdown()

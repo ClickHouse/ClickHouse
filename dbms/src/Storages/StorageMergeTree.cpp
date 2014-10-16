@@ -129,8 +129,12 @@ void StorageMergeTree::alter(const AlterCommands & params, const String & databa
 
 	data.checkAlter(params);
 
-	NamesAndTypesList new_columns = data.getColumnsList();
-	params.apply(new_columns);
+	auto new_columns = data.getColumnsListNonMaterialized();
+	auto new_materialized_columns = data.materialized_columns;
+	auto new_alias_columns = data.alias_columns;
+	auto new_column_defaults = data.column_defaults;
+	
+	params.apply(new_columns, new_materialized_columns, new_alias_columns, new_column_defaults);
 
 	MergeTreeData::DataParts parts = data.getDataParts();
 	std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions;
@@ -143,8 +147,17 @@ void StorageMergeTree::alter(const AlterCommands & params, const String & databa
 
 	auto table_hard_lock = lockStructureForAlter();
 
-	InterpreterAlterQuery::updateMetadata(database_name, table_name, new_columns, context);
+	InterpreterAlterQuery::updateMetadata(database_name, table_name, new_columns,
+		new_materialized_columns, new_alias_columns, new_column_defaults, context);
+
+	materialized_columns = new_materialized_columns;
+	alias_columns = new_alias_columns;
+	column_defaults = new_column_defaults;
+
 	data.setColumnsList(new_columns);
+	data.materialized_columns = std::move(new_materialized_columns);
+	data.alias_columns = std::move(new_alias_columns);
+	data.column_defaults = std::move(new_column_defaults);
 
 	for (auto & transaction : transactions)
 	{

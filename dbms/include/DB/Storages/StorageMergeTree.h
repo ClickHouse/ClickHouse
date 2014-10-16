@@ -54,7 +54,7 @@ public:
 	bool supportsFinal() const { return data.supportsFinal(); }
 	bool supportsPrewhere() const { return data.supportsPrewhere(); }
 
-	const NamesAndTypesList & getColumnsListImpl() const override { return data.getColumnsListAsterisk(); }
+	const NamesAndTypesList & getColumnsListImpl() const override { return data.getColumnsListNonMaterialized(); }
 
 	NameAndTypePair getColumn(const String & column_name) const
 	{

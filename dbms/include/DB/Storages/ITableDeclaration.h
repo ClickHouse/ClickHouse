@@ -24,7 +24,7 @@ public:
 	/** Получить список имён и типов столбцов таблицы, только невиртуальные.
 	  */
 	NamesAndTypesList getColumnsList() const;
-	const NamesAndTypesList & getColumnsListAsterisk() const { return getColumnsListImpl(); }
+	const NamesAndTypesList & getColumnsListNonMaterialized() const { return getColumnsListImpl(); }
 
 	/** Получить список имён столбцов таблицы, только невиртуальные.
 	  */

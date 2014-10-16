@@ -26,7 +26,7 @@ namespace std
 
 namespace DB
 {
-	inline ColumnDefaultType columnDefaultTypeFromString(const String& str)
+	inline ColumnDefaultType columnDefaultTypeFromString(const String & str)
 	{
 		static const std::unordered_map<String, ColumnDefaultType> map{
 			{ "DEFAULT", ColumnDefaultType::Default },

@@ -207,7 +207,7 @@ void StorageReplicatedMergeTree::createTableIfNotExists()
 										 zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
 	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/metadata", metadata.str(),
 										 zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
-	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/columns", data.getColumnsList().toString(),
+	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/columns", data.getColumnsListNonMaterialized().toString(),
 										 zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
 	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/log", "",
 										 zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
@@ -256,16 +256,23 @@ void StorageReplicatedMergeTree::checkTableStructure(bool skip_sanity_checks, bo
 
 	zkutil::Stat stat;
 	auto columns = NamesAndTypesList::parse(zookeeper->get(zookeeper_path + "/columns", &stat), context.getDataTypeFactory());
+	NamesAndTypesList materialized_columns;
+	NamesAndTypesList alias_columns;
+	ColumnDefaults column_defaults;
 	columns_version = stat.version;
-	if (columns != data.getColumnsList())
+	if (columns != data.getColumnsListNonMaterialized())
 	{
-		if (allow_alter && (data.getColumnsList().sizeOfDifference(columns) <= 2 || skip_sanity_checks))
+		if (allow_alter && (data.getColumnsListNonMaterialized().sizeOfDifference(columns) <= 2 || skip_sanity_checks))
 		{
 			LOG_WARNING(log, "Table structure in ZooKeeper is a little different from local table structure. Assuming ALTER.");
 
 			/// Без всяких блокировок, потому что таблица еще не создана.
-			InterpreterAlterQuery::updateMetadata(database_name, table_name, columns, context);
+			InterpreterAlterQuery::updateMetadata(database_name, table_name, columns,
+				materialized_columns, alias_columns, column_defaults, context);
 			data.setColumnsList(columns);
+			data.materialized_columns = std::move(materialized_columns);
+			data.alias_columns = std::move(alias_columns);
+			data.column_defaults = std::move(column_defaults);
 		}
 		else
 		{
@@ -403,7 +410,7 @@ void StorageReplicatedMergeTree::createReplica()
 		LOG_DEBUG(log, "Copied " << source_queue.size() << " queue entries");
 	}
 
-	zookeeper->create(replica_path + "/columns", data.getColumnsList().toString(), zkutil::CreateMode::Persistent);
+	zookeeper->create(replica_path + "/columns", data.getColumnsListNonMaterialized().toString(), zkutil::CreateMode::Persistent);
 }
 
 void StorageReplicatedMergeTree::activateReplica()
@@ -1583,6 +1590,9 @@ void StorageReplicatedMergeTree::alterThread()
 			zkutil::Stat stat;
 			String columns_str = zookeeper->get(zookeeper_path + "/columns", &stat, alter_thread_event);
 			NamesAndTypesList columns = NamesAndTypesList::parse(columns_str, context.getDataTypeFactory());
+			NamesAndTypesList materialized_columns;
+			NamesAndTypesList alias_columns;
+			ColumnDefaults column_defaults;
 
 			bool changed_version = (stat.version != columns_version);
 
@@ -1593,12 +1603,22 @@ void StorageReplicatedMergeTree::alterThread()
 			{
 				auto table_lock = lockStructureForAlter();
 
-				if (columns != data.getColumnsList())
+				if (columns != data.getColumnsListNonMaterialized())
 				{
 					LOG_INFO(log, "Columns list changed in ZooKeeper. Applying changes locally.");
 
-					InterpreterAlterQuery::updateMetadata(database_name, table_name, columns, context);
+					InterpreterAlterQuery::updateMetadata(database_name, table_name, columns,
+						materialized_columns, alias_columns, column_defaults, context);
+
+					this->materialized_columns = materialized_columns;
+					this->alias_columns = alias_columns;
+					this->column_defaults = column_defaults;
+					
 					data.setColumnsList(columns);
+					data.materialized_columns = std::move(materialized_columns);
+					data.alias_columns = std::move(alias_columns);
+					data.column_defaults = std::move(column_defaults);
+
 					if (unreplicated_data)
 						unreplicated_data->setColumnsList(columns);
 					LOG_INFO(log, "Applied changes to table.");
@@ -2306,6 +2326,9 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 	LOG_DEBUG(log, "Doing ALTER");
 
 	NamesAndTypesList new_columns;
+	NamesAndTypesList new_materialized_columns;
+	NamesAndTypesList new_alias_columns;
+	ColumnDefaults new_column_defaults;
 	String new_columns_str;
 	int new_columns_version;
 	zkutil::Stat stat;
@@ -2318,8 +2341,11 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 
 		data.checkAlter(params);
 
-		new_columns = data.getColumnsList();
-		params.apply(new_columns);
+		new_columns = data.getColumnsListNonMaterialized();
+		new_materialized_columns = data.materialized_columns;
+		new_alias_columns = data.alias_columns;
+		new_column_defaults = data.column_defaults;
+		params.apply(new_columns, new_materialized_columns, new_alias_columns, new_column_defaults);
 
 		new_columns_str = new_columns.toString();
 
