@@ -1,8 +1,10 @@
 #pragma once
+
 #include <zkutil/Types.h>
 #include <zkutil/KeeperException.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <unordered_set>
+#include <future>
 #include <Yandex/logger_useful.h>
 
 
@@ -153,6 +155,18 @@ public:
 	  * Например, можно вызвать одновременно дважды для одной ноды, и результат будет тот же, как если вызвать один раз.
 	  */
 	void tryRemoveRecursive(const std::string & path);
+
+
+	/** Асинхронный интерфейс (не доделано). */
+	struct ValueAndStat
+	{
+		std::string value;
+		Stat stat;
+	};
+
+	typedef std::packaged_task<ValueAndStat (int rc, const char * value, int value_len, const Stat * stat)> GetTask;
+	std::unique_ptr<GetTask> asyncGet(const std::string & path, EventPtr watch = nullptr);
+
 
 	static std::string error2string(int32_t code);
 
