@@ -6,11 +6,12 @@ try
 {
 	zkutil::ZooKeeper zookeeper{"localhost:2181"};
 
-	auto task = zookeeper.asyncGet(argc <= 1 ? "/" : argv[1]);
-	auto future = task->get_future();
+	auto future = zookeeper.asyncGetChildren(argc <= 1 ? "/" : argv[1]);
 	auto res = future.get();
 
-	std::cerr << res.value << ", " << res.stat.numChildren << '\n';
+	for (const auto & child : res)
+		std::cerr << child << '\n';
+
 	return 0;
 }
 catch (const Poco::Exception & e)

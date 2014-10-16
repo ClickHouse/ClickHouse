@@ -350,34 +350,6 @@ int32_t ZooKeeper::getImpl(const std::string & path, std::string & res, Stat * s
 	return code;
 }
 
-
-std::unique_ptr<ZooKeeper::GetTask> ZooKeeper::asyncGet(const std::string & path, EventPtr watch)
-{
-	std::unique_ptr<GetTask> task { new GetTask(
-		[path] (int rc, const char * value, int value_len, const Stat * stat)
-		{
-			if (rc != ZOK)
-				throw KeeperException(rc, path);
-
-			return ValueAndStat{ {value, size_t(value_len)}, *stat };
-		})};
-
-	int32_t code = zoo_aget(
-		impl, path.c_str(), !watch.isNull(),
-		[] (int rc, const char * value, int value_len, const Stat * stat, const void * data)
-		{
-			auto & task = const_cast<GetTask &>(*reinterpret_cast<const GetTask *>(data));
-			task(rc, value, value_len, stat);
-		},
-		task.get());
-
-	if (code != ZOK)
-		throw KeeperException(code, path);
-
-	return task;
-}
-
-
 std::string ZooKeeper::get(const std::string & path, Stat * stat, EventPtr watch)
 {
 	std::string res;
@@ -615,6 +587,116 @@ bool ZooKeeper::expired()
 int64_t ZooKeeper::getClientID()
 {
 	return zoo_client_id(impl)->client_id;
+}
+
+
+ZooKeeper::GetFuture ZooKeeper::asyncGet(const std::string & path)
+{
+	GetFuture future {
+		[path] (int rc, const char * value, int value_len, const Stat * stat)
+		{
+			if (rc != ZOK)
+				throw KeeperException(rc, path);
+
+			return ValueAndStat{ {value, size_t(value_len)}, *stat };
+		}};
+
+	int32_t code = zoo_aget(
+		impl, path.c_str(), 0,
+		[] (int rc, const char * value, int value_len, const Stat * stat, const void * data)
+		{
+			auto & task = const_cast<GetFuture::Task &>(*reinterpret_cast<const GetFuture::Task *>(data));
+			task(rc, value, value_len, stat);
+		},
+		future.task.get());
+
+	if (code != ZOK)
+		throw KeeperException(code, path);
+
+	return future;
+}
+
+ZooKeeper::TryGetFuture ZooKeeper::asyncTryGet(const std::string & path)
+{
+	TryGetFuture future {
+		[path] (int rc, const char * value, int value_len, const Stat * stat)
+		{
+			if (rc != ZOK && rc != ZNONODE)
+				throw KeeperException(rc, path);
+
+			return ValueAndStatAndExists{ {value, size_t(value_len)}, *stat, rc != ZNONODE };
+		}};
+
+	int32_t code = zoo_aget(
+		impl, path.c_str(), 0,
+		[] (int rc, const char * value, int value_len, const Stat * stat, const void * data)
+		{
+			auto & task = const_cast<TryGetFuture::Task &>(*reinterpret_cast<const TryGetFuture::Task *>(data));
+			task(rc, value, value_len, stat);
+		},
+		future.task.get());
+
+	if (code != ZOK)
+		throw KeeperException(code, path);
+
+	return future;
+}
+
+ZooKeeper::ExistsFuture ZooKeeper::asyncExists(const std::string & path)
+{
+	ExistsFuture future {
+		[path] (int rc, const Stat * stat)
+		{
+			if (rc != ZOK && rc != ZNONODE)
+				throw KeeperException(rc, path);
+
+			return StatAndExists{ *stat, rc != ZNONODE };
+		}};
+
+	int32_t code = zoo_aexists(
+		impl, path.c_str(), 0,
+		[] (int rc, const Stat * stat, const void * data)
+		{
+			auto & task = const_cast<ExistsFuture::Task &>(*reinterpret_cast<const ExistsFuture::Task *>(data));
+			task(rc, stat);
+		},
+		future.task.get());
+
+	if (code != ZOK)
+		throw KeeperException(code, path);
+
+	return future;
+}
+
+ZooKeeper::GetChildrenFuture ZooKeeper::asyncGetChildren(const std::string & path)
+{
+	GetChildrenFuture future {
+		[path] (int rc, const String_vector * strings)
+		{
+			if (rc != ZOK)
+				throw KeeperException(rc, path);
+
+			Strings res;
+			res.resize(strings->count);
+			for (int i = 0; i < strings->count; ++i)
+				res[i] = std::string(strings->data[i]);
+
+			return res;
+		}};
+
+	int32_t code = zoo_aget_children(
+		impl, path.c_str(), 0,
+		[] (int rc, const String_vector * strings, const void * data)
+		{
+			auto & task = const_cast<GetChildrenFuture::Task &>(*reinterpret_cast<const GetChildrenFuture::Task *>(data));
+			task(rc, strings);
+		},
+		future.task.get());
+
+	if (code != ZOK)
+		throw KeeperException(code, path);
+
+	return future;
 }
 
 }

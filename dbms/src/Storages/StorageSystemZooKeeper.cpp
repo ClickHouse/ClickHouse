@@ -140,15 +140,21 @@ BlockInputStreams StorageSystemZooKeeper::read(
 	if (path == "/")
 		path_part.clear();
 
+	std::vector<zkutil::ZooKeeper::TryGetFuture> futures;
+	futures.reserve(nodes.size());
 	for (const String & node : nodes)
+		futures.push_back(zookeeper->asyncTryGet(path_part + '/' + node));
+
+	for (size_t i = 0, size = nodes.size(); i < size; ++i)
 	{
-		String value;
-		zkutil::Stat stat;
-		if (!zookeeper->tryGet(path_part + '/' + node, value, &stat))
+		auto res = futures[i].get();
+		if (!res.exists)
 			continue;	/// Ноду успели удалить.
 
-		col_name.column->insert(node);
-		col_value.column->insert(value);
+		const zkutil::Stat & stat = res.stat;
+
+		col_name.column->insert(nodes[i]);
+		col_value.column->insert(res.value);
 		col_czxid.column->insert(stat.czxid);
 		col_mzxid.column->insert(stat.mzxid);
 		col_ctime.column->insert(UInt64(stat.ctime / 1000));

@@ -157,15 +157,77 @@ public:
 	void tryRemoveRecursive(const std::string & path);
 
 
-	/** Асинхронный интерфейс (не доделано). */
+	/** Асинхронный интерфейс (реализовано небольшое подмножество операций).
+	  *
+	  * Использование:
+	  *
+	  * // Эти вызовы не блокируются.
+	  * auto future1 = zk.asyncGet("/path1");
+	  * auto future2 = zk.asyncGet("/path2");
+	  * ...
+	  *
+	  * // Эти вызовы могут заблокироваться до выполнения операции.
+	  * auto result1 = future1.get();
+	  * auto result2 = future2.get();
+	  *
+	  * future не должна быть уничтожена до получения результата.
+	  * Результат обязательно необходимо получать.
+	  */
+
+	template <typename Result, typename... TaskParams>
+	class Future
+	{
+	friend class ZooKeeper;
+	private:
+		using Task = std::packaged_task<Result (TaskParams...)>;
+		using TaskPtr = std::unique_ptr<Task>;
+
+		TaskPtr task;
+
+		template <typename... Args>
+		Future(Args &&... args) : task(new Task(std::forward<Args>(args)...)) {}
+
+	public:
+		Result get()
+		{
+			return task->get_future().get();
+		}
+	};
+
+
 	struct ValueAndStat
 	{
 		std::string value;
 		Stat stat;
 	};
 
-	typedef std::packaged_task<ValueAndStat (int rc, const char * value, int value_len, const Stat * stat)> GetTask;
-	std::unique_ptr<GetTask> asyncGet(const std::string & path, EventPtr watch = nullptr);
+	using GetFuture = Future<ValueAndStat, int, const char *, int, const Stat *>;
+	GetFuture asyncGet(const std::string & path);
+
+
+	struct ValueAndStatAndExists
+	{
+		std::string value;
+		Stat stat;
+		bool exists;
+	};
+
+	using TryGetFuture = Future<ValueAndStatAndExists, int, const char *, int, const Stat *>;
+	TryGetFuture asyncTryGet(const std::string & path);
+
+
+	struct StatAndExists
+	{
+		Stat stat;
+		bool exists;
+	};
+
+	using ExistsFuture = Future<StatAndExists, int, const Stat *>;
+	ExistsFuture asyncExists(const std::string & path);
+
+
+	using GetChildrenFuture = Future<Strings, int, const String_vector *>;
+	GetChildrenFuture asyncGetChildren(const std::string & path);
 
 
 	static std::string error2string(int32_t code);
