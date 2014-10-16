@@ -65,9 +65,11 @@ public:
 	/// удалить столбец с заданным именем
 	void erase(const String & name);
 	/// Добавляет в блок недостающие столбцы со значениями по-умолчанию
-	void addDefaults(NamesAndTypesListPtr required_columns);
-	void addDefaults(NamesAndTypesListPtr required_columns,
-		const ColumnDefaults & column_defaults, const Context & context);
+	void addDefaults(const NamesAndTypesList & required_columns);
+	void addDefaults(const NamesAndTypesList & required_columns,
+		const ColumnDefaults & column_defaults,
+		const Context & context,
+		bool only_explicitly_defaulted = false);
 
 	ColumnWithNameAndType & getByPosition(size_t position);
 	const ColumnWithNameAndType & getByPosition(size_t position) const;

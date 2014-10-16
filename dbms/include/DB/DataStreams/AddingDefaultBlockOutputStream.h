@@ -38,7 +38,7 @@ public:
 	void write(const Block & block) override
 	{
 		Block res = block;
-		res.addDefaults(required_columns, column_defaults, context);
+		res.addDefaults(*required_columns, column_defaults, context);
 		output->write(res);
 	}
 

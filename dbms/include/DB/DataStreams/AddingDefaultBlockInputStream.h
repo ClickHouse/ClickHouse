@@ -54,7 +54,7 @@ protected:
 		Block res = children.back()->read();
 		if (!res)
 			return res;
-		res.addDefaults(required_columns, column_defaults, context);
+		res.addDefaults(*required_columns, column_defaults, context);
 		return res;
 	}
 
