@@ -84,11 +84,11 @@ int main(int argc, char ** argv)
 
 		boost::threadpool::pool pool(inputs.size() + forks.size());
 
-		pool.schedule(boost::bind(inputThread, inputs[0], out1, boost::ref(wb), boost::ref(mutex)));
-		pool.schedule(boost::bind(inputThread, inputs[1], out2, boost::ref(wb), boost::ref(mutex)));
+		pool.schedule(std::bind(inputThread, inputs[0], out1, std::ref(wb), std::ref(mutex)));
+		pool.schedule(std::bind(inputThread, inputs[1], out2, std::ref(wb), std::ref(mutex)));
 
 		for (size_t i = 0; i < forks.size(); ++i)
-			pool.schedule(boost::bind(forkThread, forks[i]));
+			pool.schedule(std::bind(forkThread, forks[i]));
 
 		pool.wait();
 	}

@@ -87,11 +87,11 @@ void SplittingAggregator::execute(BlockInputStreamPtr stream, ManyAggregatedData
 		/// Параллельно вычисляем хэши и ключи.
 
 		for (size_t thread_no = 0; thread_no < threads; ++thread_no)
-			pool.schedule(boost::bind(&SplittingAggregator::calculateHashesThread, this,
-				boost::ref(block),
+			pool.schedule(std::bind(&SplittingAggregator::calculateHashesThread, this,
+				std::ref(block),
 				rows * thread_no / threads,
 				rows * (thread_no + 1) / threads,
-				boost::ref(exceptions[thread_no]),
+				std::ref(exceptions[thread_no]),
 				current_memory_tracker));
 
 		pool.wait();
@@ -101,11 +101,11 @@ void SplittingAggregator::execute(BlockInputStreamPtr stream, ManyAggregatedData
 		/// Параллельно агрегируем в независимые хэш-таблицы
 
 		for (size_t thread_no = 0; thread_no < threads; ++thread_no)
-			pool.schedule(boost::bind(&SplittingAggregator::aggregateThread, this,
-				boost::ref(block),
-				boost::ref(*results[thread_no]),
+			pool.schedule(std::bind(&SplittingAggregator::aggregateThread, this,
+				std::ref(block),
+				std::ref(*results[thread_no]),
 				thread_no,
-				boost::ref(exceptions[thread_no]),
+				std::ref(exceptions[thread_no]),
 				current_memory_tracker));
 
 		pool.wait();
@@ -131,11 +131,11 @@ void SplittingAggregator::convertToBlocks(ManyAggregatedDataVariants & data_vari
 	/// Параллельно конвертируем в блоки.
 
 	for (size_t thread_no = 0; thread_no < threads; ++thread_no)
-		pool.schedule(boost::bind(&SplittingAggregator::convertToBlockThread, this,
-			boost::ref(*data_variants[thread_no]),
-			boost::ref(blocks[thread_no]),
+		pool.schedule(std::bind(&SplittingAggregator::convertToBlockThread, this,
+			std::ref(*data_variants[thread_no]),
+			std::ref(blocks[thread_no]),
 			final,
-			boost::ref(exceptions[thread_no]),
+			std::ref(exceptions[thread_no]),
 			current_memory_tracker));
 
 	pool.wait();

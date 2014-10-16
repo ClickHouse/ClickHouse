@@ -42,7 +42,7 @@ struct AlignedBuffer
 {
 	int size;
 	char * data;
-	
+
 	AlignedBuffer(int size_)
 	{
 		size_t page = sysconf(_SC_PAGESIZE);
@@ -51,7 +51,7 @@ struct AlignedBuffer
 		if (!data)
 			throwFromErrno("memalign failed");
 	}
-	
+
 	~AlignedBuffer()
 	{
 		free(data);
@@ -63,15 +63,15 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
 	try
 	{
 		AlignedBuffer direct_buf(block_size);
-		
+
 		std::vector<char> simple_buf(block_size);
-		
+
 		char * buf;
 		if ((mode & MODE_DIRECT))
 			buf = direct_buf.data;
 		else
 			buf = &simple_buf[0];
-		
+
 		drand48_data rand_data;
 
 		timespec times;
@@ -86,7 +86,7 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
 			lrand48_r(&rand_data, &rand_result1);
 			lrand48_r(&rand_data, &rand_result2);
 			lrand48_r(&rand_data, &rand_result3);
-			
+
 			for (size_t j = 0; j + 3 < block_size; j += 3)
 			{
 				long r;
@@ -149,7 +149,7 @@ int mainImpl(int argc, char ** argv)
 	block_size = Poco::NumberParser::parseUnsigned64(argv[5]);
 	threads = Poco::NumberParser::parseUnsigned(argv[6]);
 	count = Poco::NumberParser::parseUnsigned(argv[7]);
-	
+
 	for (int i = 0; argv[2][i]; ++i)
 	{
 		char c = argv[2][i];
@@ -174,7 +174,7 @@ int mainImpl(int argc, char ** argv)
 				throw Poco::Exception("Invalid mode");
 		}
 	}
-	
+
 	boost::threadpool::pool pool(threads);
 
 	int fd = open(file_name, ((mode & MODE_READ) ? O_RDONLY : O_WRONLY) | ((mode & MODE_DIRECT) ? O_DIRECT : 0) | ((mode & MODE_SYNC) ? O_SYNC : 0));
@@ -185,11 +185,11 @@ int mainImpl(int argc, char ** argv)
 	Exceptions exceptions(threads);
 
 	Stopwatch watch;
-	
+
 	for (size_t i = 0; i < threads; ++i)
-		pool.schedule(boost::bind(thread, fd, mode, min_offset, max_offset, block_size, count, boost::ref(exceptions[i])));
+		pool.schedule(std::bind(thread, fd, mode, min_offset, max_offset, block_size, count, std::ref(exceptions[i])));
 	pool.wait();
-	
+
 	fsync(fd);
 
 	for (size_t i = 0; i < threads; ++i)
@@ -213,7 +213,7 @@ int mainImpl(int argc, char ** argv)
 		<< ", " << count * threads / watch.elapsedSeconds() << " ops/sec."
 		<< ", " << count * threads * block_size / watch.elapsedSeconds() / 1000000 << " MB/sec."
 		<< std::endl;
-	
+
     return 0;
 }
 

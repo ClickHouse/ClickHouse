@@ -1,8 +1,9 @@
+#include <functional>
 #include <zkutil/ZooKeeper.h>
 #include <boost/make_shared.hpp>
 #include <Yandex/logger_useful.h>
 #include <DB/Common/ProfileEvents.h>
-#include <boost/bind.hpp>
+
 
 namespace zkutil
 {
@@ -176,7 +177,7 @@ Strings ZooKeeper::getChildren(
 int32_t ZooKeeper::tryGetChildren(const std::string & path, Strings & res,
 								Stat * stat_, EventPtr watch)
 {
-	int32_t code = retry(boost::bind(&ZooKeeper::getChildrenImpl, this, boost::ref(path), boost::ref(res), stat_, watch));
+	int32_t code = retry(std::bind(&ZooKeeper::getChildrenImpl, this, std::ref(path), std::ref(res), stat_, watch));
 
 	if (!(	code == ZOK ||
 			code == ZNONODE))
@@ -232,16 +233,16 @@ int32_t ZooKeeper::tryCreate(const std::string & path, const std::string & data,
 	return tryCreate(path, data, mode, pathCreated);
 }
 
-int32_t ZooKeeper::tryCreateWithRetries(const std::string& path, const std::string& data, int32_t mode, std::string& pathCreated, size_t* attempt)
+int32_t ZooKeeper::tryCreateWithRetries(const std::string & path, const std::string & data, int32_t mode, std::string & pathCreated, size_t* attempt)
 {
-	return retry(boost::bind(&ZooKeeper::tryCreate, this, boost::ref(path), boost::ref(data), mode, boost::ref(pathCreated)), attempt);
+	return retry([&path, &data, mode, &pathCreated, this] { return tryCreate(path, data, mode, pathCreated); });
 }
 
 
 void ZooKeeper::createIfNotExists(const std::string & path, const std::string & data)
 {
 	std::string pathCreated;
-	int32_t code = retry(boost::bind(&ZooKeeper::createImpl, this, boost::ref(path), boost::ref(data), zkutil::CreateMode::Persistent, boost::ref(pathCreated)));
+	int32_t code = retry(std::bind(&ZooKeeper::createImpl, this, std::ref(path), std::ref(data), zkutil::CreateMode::Persistent, std::ref(pathCreated)));
 
 	if (code == ZOK || code == ZNODEEXISTS)
 		return;
@@ -288,7 +289,7 @@ int32_t ZooKeeper::tryRemove(const std::string & path, int32_t version)
 
 int32_t ZooKeeper::tryRemoveWithRetries(const std::string & path, int32_t version, size_t * attempt)
 {
-	int32_t code = retry(boost::bind(&ZooKeeper::removeImpl, this, boost::ref(path), version), attempt);
+	int32_t code = retry(std::bind(&ZooKeeper::removeImpl, this, std::ref(path), version), attempt);
 	if (!(	code == ZOK ||
 			code == ZNONODE ||
 			code == ZBADVERSION ||
@@ -316,7 +317,7 @@ int32_t ZooKeeper::existsImpl(const std::string & path, Stat * stat_, EventPtr w
 
 bool ZooKeeper::exists(const std::string & path, Stat * stat_, EventPtr watch)
 {
-	int32_t code = retry(boost::bind(&ZooKeeper::existsImpl, this, path, stat_, watch));
+	int32_t code = retry(std::bind(&ZooKeeper::existsImpl, this, path, stat_, watch));
 
 	if (!(	code == ZOK ||
 			code == ZNONODE))
@@ -360,7 +361,7 @@ std::string ZooKeeper::get(const std::string & path, Stat * stat, EventPtr watch
 
 bool ZooKeeper::tryGet(const std::string & path, std::string & res, Stat * stat_, EventPtr watch)
 {
-	int32_t code = retry(boost::bind(&ZooKeeper::getImpl, this, boost::ref(path), boost::ref(res), stat_, watch));
+	int32_t code = retry(std::bind(&ZooKeeper::getImpl, this, std::ref(path), std::ref(res), stat_, watch));
 
 	if (!(	code == ZOK ||
 			code == ZNONODE))
@@ -455,7 +456,7 @@ int32_t ZooKeeper::tryMulti(const Ops & ops_, OpResultsPtr * out_results_)
 
 int32_t ZooKeeper::tryMultiWithRetries(const Ops & ops, OpResultsPtr * out_results, size_t * attempt)
 {
-	int32_t code = retry(boost::bind(&ZooKeeper::multiImpl, this, boost::ref(ops), out_results), attempt);
+	int32_t code = retry(std::bind(&ZooKeeper::multiImpl, this, std::ref(ops), out_results), attempt);
 	if (!(code == ZOK ||
 		code == ZNONODE ||
 		code == ZNODEEXISTS ||

@@ -3,7 +3,6 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Net/NetworkInterface.h>
-#include <boost/bind.hpp>
 
 namespace DB
 {

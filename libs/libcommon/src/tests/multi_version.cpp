@@ -1,7 +1,7 @@
 #include <string.h>
 #include <iostream>
 #include <statdaemons/threadpool.hpp>
-#include <boost/bind.hpp>
+#include <functional>
 #include <Yandex/MultiVersion.h>
 
 
@@ -28,7 +28,7 @@ int main(int argc, char ** argv)
 	{
 		const char * s1 = "Hello!";
 		const char * s2 = "Goodbye!";
-		
+
 		size_t n = 1000;
 		MV x(new T(s1));
 		Results results(n);
@@ -36,8 +36,8 @@ int main(int argc, char ** argv)
 		boost::threadpool::pool tp(8);
 		for (size_t i = 0; i < n; ++i)
 		{
-			tp.schedule(boost::bind(thread1, boost::ref(x), boost::ref(results[i])));
-			tp.schedule(boost::bind(thread2, boost::ref(x), (rand() % 2) ? s1 : s2));
+			tp.schedule(std::bind(thread1, std::ref(x), std::ref(results[i])));
+			tp.schedule(std::bind(thread2, std::ref(x), (rand() % 2) ? s1 : s2));
 		}
 		tp.wait();
 
@@ -50,6 +50,6 @@ int main(int argc, char ** argv)
 		std::cerr << e.message() << std::endl;
 		throw;
 	}
-	
+
 	return 0;
 }

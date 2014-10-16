@@ -113,7 +113,7 @@ protected:
 	void next()
 	{
 		ready.reset();
-		pool.schedule(boost::bind(&AsynchronousBlockInputStream::calculate, this, current_memory_tracker));
+		pool.schedule(std::bind(&AsynchronousBlockInputStream::calculate, this, current_memory_tracker));
 	}
 
 

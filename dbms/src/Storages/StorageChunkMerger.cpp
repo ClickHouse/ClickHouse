@@ -232,7 +232,7 @@ StorageChunkMerger::StorageChunkMerger(
 	context(context_), settings(context.getSettings()),
 	log(&Logger::get("StorageChunkMerger")), shutdown_called(false)
 {
-	merge_thread = boost::thread(&StorageChunkMerger::mergeThread, this);
+	merge_thread = std::thread([this] { mergeThread(); });
 	_table_column_name = "_table" + VirtualColumnUtils::chooseSuffix(getColumnsList(), "_table");
 }
 

@@ -1,5 +1,3 @@
-#include <boost/bind.hpp>
-
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnConst.h>
 

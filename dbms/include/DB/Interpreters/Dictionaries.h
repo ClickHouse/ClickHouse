@@ -1,6 +1,6 @@
 #pragma once
 
-#include <boost/thread.hpp>
+#include <thread>
 
 #include <Poco/SharedPtr.h>
 
@@ -30,7 +30,7 @@ private:
 	/// Периодичность обновления справочников, в секундах.
 	int reload_period;
 
-	boost::thread reloading_thread;
+	std::thread reloading_thread;
 	Poco::Event destroy;
 
 	Logger * log;
@@ -139,7 +139,7 @@ public:
 		log(&Logger::get("Dictionaries"))
 	{
 		reloadImpl();
-		reloading_thread = boost::thread(&Dictionaries::reloadPeriodically, this);
+		reloading_thread = std::thread([this] { reloadPeriodically(); });
 	}
 
 	~Dictionaries()
@@ -157,12 +157,12 @@ public:
 	{
 		return tech_data_hierarchy.get();
 	}
-	
+
 	MultiVersion<CategoriesHierarchy>::Version getCategoriesHierarchy() const
 	{
 		return categories_hierarchy.get();
 	}
-	
+
 	MultiVersion<RegionsNames>::Version getRegionsNames() const
 	{
 		return regions_names.get();

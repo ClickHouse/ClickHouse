@@ -8,7 +8,7 @@
 
 namespace DB
 {
-	
+
 /** То и дело объединяет таблицы, подходящие под регэксп, в таблицы типа Chunks.
   * После объндинения заменяет исходные таблицы таблицами типа ChunkRef.
   * При чтении ведет себя как таблица типа Merge.
@@ -26,10 +26,10 @@ public:
 		const std::string & destination_name_prefix_, /// Префикс имен создаваемых таблиц типа Chunks.
 		size_t chunks_to_merge_,			/// Сколько чанков сливать в одну группу.
 		Context & context_);			/// Известные таблицы.
-	
+
 	std::string getName() const override { return "ChunkMerger"; }
 	std::string getTableName() const override { return name; }
-	
+
 	const NamesAndTypesList & getColumnsList() const override { return *columns; }
 	NameAndTypePair getColumn(const String & column_name) const override;
 	bool hasColumn(const String & column_name) const override;
@@ -45,7 +45,7 @@ public:
 	void shutdown() override;
 
 	~StorageChunkMerger() override;
-	
+
 private:
 	String this_database;
 	String name;
@@ -56,13 +56,13 @@ private:
 	size_t chunks_to_merge;
 	Context & context;
 	Settings settings;
-	
-	boost::thread merge_thread;
+
+	std::thread merge_thread;
 	Poco::Event cancel_merge_thread;
-	
+
 	Logger * log;
 	volatile bool shutdown_called;
-	
+
 	/// Название виртуального столбца, отвечающего за имя таблицы, из которой идет чтение. (Например "_table")
 	String _table_column_name;
 
@@ -88,5 +88,5 @@ private:
 	/// Нужно смотреть, залочив mutex из контекста.
 	static TableNames currently_written_groups;
 };
-	
+
 }

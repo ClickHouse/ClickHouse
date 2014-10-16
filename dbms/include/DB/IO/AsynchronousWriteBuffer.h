@@ -16,7 +16,7 @@ namespace DB
 {
 
 using Poco::SharedPtr;
-	
+
 
 /** Записывает данные асинхронно с помощью двойной буферизации.
   */
@@ -51,7 +51,7 @@ private:
 		swapBuffers();
 
 		/// Данные будут записываться в отельном потоке.
-		pool.schedule(boost::bind(&AsynchronousWriteBuffer::thread, this));
+		pool.schedule([this] { thread(); });
 	}
 
 public:

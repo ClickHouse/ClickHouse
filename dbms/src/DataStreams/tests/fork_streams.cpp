@@ -109,8 +109,8 @@ int main(int argc, char ** argv)
 		BlockOutputStreamPtr out1 = format_factory.getOutput("TabSeparated", ob1, out_sample);
 		BlockOutputStreamPtr out2 = format_factory.getOutput("TabSeparated", ob2, out_sample);
 
-		boost::thread thr1(thread1, in1, out1, boost::ref(ob1));
-		boost::thread thr2(thread2, in2, out2, boost::ref(ob2));
+		std::thread thr1(std::bind(thread1, in1, out1, std::ref(ob1)));
+		std::thread thr2(std::bind(thread2, in2, out2, std::ref(ob2)));
 
 		fork.run();
 

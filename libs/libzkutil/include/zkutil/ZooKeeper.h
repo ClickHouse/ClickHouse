@@ -175,7 +175,7 @@ private:
 	static void processEvent(zhandle_t * zh, int type, int state, const char * path, void *watcherCtx);
 
 	template <class T>
-	int32_t retry(const T & operation, size_t * attempt = nullptr)
+	int32_t retry(T && operation, size_t * attempt = nullptr)
 	{
 		int32_t code = operation();
 		if (attempt)
@@ -187,7 +187,7 @@ private:
 
 			/// если потеряно соединение подождем timeout/3, авось восстановится
 			if (code == ZCONNECTIONLOSS)
-				usleep(sessionTimeoutMs*1000/3);
+				usleep(sessionTimeoutMs * 1000 / 3);
 
 			LOG_WARNING(log, "Error on attempt " << i << ": " << error2string(code)  << ". Retry");
 			code = operation();

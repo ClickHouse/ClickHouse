@@ -6,7 +6,6 @@
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTNameTypePair.h>
 #include <DB/Interpreters/Context.h>
-#include <boost/bind.hpp>
 
 namespace DB
 {

@@ -37,7 +37,7 @@ public:
 		: has_been_read(false), final(final_), max_threads(max_threads_), pool(std::min(max_threads, inputs_.size()))
 	{
 		children.insert(children.end(), inputs_.begin(), inputs_.end());
-		
+
 		aggregator = new Aggregator(key_names, aggregates, overflow_row_, max_rows_to_group_by_, group_by_overflow_mode_);
 	}
 
@@ -76,8 +76,8 @@ protected:
 		for (size_t i = 0, size = many_data.size(); i < size; ++i)
 		{
 			many_data[i] = new AggregatedDataVariants;
-			pool.schedule(boost::bind(&ParallelAggregatingBlockInputStream::calculate, this,
-				boost::ref(children[i]), boost::ref(*many_data[i]), boost::ref(exceptions[i]), current_memory_tracker));
+			pool.schedule(std::bind(&ParallelAggregatingBlockInputStream::calculate, this,
+				std::ref(children[i]), std::ref(*many_data[i]), std::ref(exceptions[i]), current_memory_tracker));
 		}
 		pool.wait();
 

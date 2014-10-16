@@ -1,15 +1,15 @@
 #include <iostream>
 #include <stdlib.h>
 #include <vector>
-#include <boost/shared_ptr.hpp>
+#include <memory>
 
 
 struct C
 {
 	volatile int data;
-	
+
 	C(int n = 0) : data(n) {}
-	
+
 	C(const C & x)
 	{
 		*this = x;
@@ -37,7 +37,7 @@ C f2()
 {
 	C x;
 	++x.data;
-	
+
 	return x;
 }
 
@@ -45,7 +45,7 @@ C f3()
 {
 	if (rand() % 10 == 0)
 		return C(123);
-	
+
 	C x;
 	++x.data;
 
@@ -154,7 +154,7 @@ C f12()
 C f13()
 {
 	C x;
-	
+
 	if (rand() % 2)
 		x = f1();
 	else
@@ -218,7 +218,7 @@ struct IFactory
 	virtual ~IFactory() {}
 };
 
-typedef boost::shared_ptr<IFactory> FactoryPtr;
+typedef std::unique_ptr<IFactory> FactoryPtr;
 
 
 struct Factory1 : IFactory
@@ -241,7 +241,7 @@ struct Factory3 : IFactory
 			factory = FactoryPtr(new Factory1);
 		else
 			factory = FactoryPtr(new Factory2);
-		
+
 		return factory->get();
 	}
 };
@@ -250,7 +250,7 @@ struct Factory3 : IFactory
 int main(int argc, char ** argv)
 {
 	srand(time(0));
-	
+
 	std::cerr << "f1: " << f1().data << std::endl;
 	std::cerr << "f2: " << f2().data << std::endl;
 	std::cerr << "f3: " << f3().data << std::endl;
