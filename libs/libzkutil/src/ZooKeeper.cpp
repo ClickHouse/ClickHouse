@@ -610,6 +610,9 @@ ZooKeeper::GetFuture ZooKeeper::asyncGet(const std::string & path)
 		},
 		future.task.get());
 
+	ProfileEvents::increment(ProfileEvents::ZooKeeperGet);
+	ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
+
 	if (code != ZOK)
 		throw KeeperException(code, path);
 
@@ -636,6 +639,9 @@ ZooKeeper::TryGetFuture ZooKeeper::asyncTryGet(const std::string & path)
 		},
 		future.task.get());
 
+	ProfileEvents::increment(ProfileEvents::ZooKeeperGet);
+	ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
+
 	if (code != ZOK)
 		throw KeeperException(code, path);
 
@@ -661,6 +667,9 @@ ZooKeeper::ExistsFuture ZooKeeper::asyncExists(const std::string & path)
 			task(rc, stat);
 		},
 		future.task.get());
+
+	ProfileEvents::increment(ProfileEvents::ZooKeeperExists);
+	ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
 
 	if (code != ZOK)
 		throw KeeperException(code, path);
@@ -692,6 +701,9 @@ ZooKeeper::GetChildrenFuture ZooKeeper::asyncGetChildren(const std::string & pat
 			task(rc, strings);
 		},
 		future.task.get());
+
+	ProfileEvents::increment(ProfileEvents::ZooKeeperGetChildren);
+	ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
 
 	if (code != ZOK)
 		throw KeeperException(code, path);
