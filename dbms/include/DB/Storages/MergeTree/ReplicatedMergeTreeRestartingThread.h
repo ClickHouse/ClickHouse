@@ -47,12 +47,13 @@ public:
 private:
 	StorageReplicatedMergeTree & storage;
 	Logger * log;
-	std::thread thread;
 	Poco::Event wakeup_event;
 	volatile bool need_stop = false;
 
 	/// Случайные данные, которые мы записали в /replicas/me/is_active.
 	String active_node_identifier;
+
+	std::thread thread;
 
 	void run();
 
