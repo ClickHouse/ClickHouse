@@ -1053,6 +1053,16 @@ public:
 int main(int argc, char ** argv)
 {
 	DB::Client client;
-	client.init(argc, argv);
+
+	try
+	{
+		client.init(argc, argv);
+	}
+	catch (const boost::program_options::error & e)
+	{
+		std::cerr << "Bad arguments: " << e.what() << std::endl;
+		return 1;
+	}
+
 	return client.run();
 }
