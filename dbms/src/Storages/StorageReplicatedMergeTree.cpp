@@ -20,16 +20,6 @@ const auto MERGE_SELECTING_SLEEP_MS = 5 * 1000;
 const auto RESERVED_BLOCK_NUMBERS = 200;
 
 
-/// Используется для проверки, выставили ли ноду is_active мы, или нет.
-static String generateActiveNodeIdentifier()
-{
-	struct timespec times;
-	if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &times))
-		throwFromErrno("Cannot clock_gettime.", ErrorCodes::CANNOT_CLOCK_GETTIME);
-	return toString(times.tv_nsec + times.tv_sec + getpid());
-}
-
-
 StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	const String & zookeeper_path_,
 	const String & replica_name_,
@@ -78,7 +68,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 		if (!attach)
 			throw Exception("Can't create replicated table without ZooKeeper", ErrorCodes::NO_ZOOKEEPER);
 
-		goReadOnlyPermanently();
+		is_read_only = true;
 		return;
 	}
 
@@ -96,7 +86,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	}
 
 	initVirtualParts();
-	loadQueue();
 
 	String unreplicated_path = full_path + "unreplicated/";
 	if (Poco::File(unreplicated_path).exists())
@@ -113,12 +102,12 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 		unreplicated_merger.reset(new MergeTreeDataMerger(*unreplicated_data));
 	}
 
-	/// Сгенерируем этому экземпляру случайный идентификатор.
-	active_node_identifier = generateActiveNodeIdentifier();
+	loadQueue();
 
 	/// В этом потоке реплика будет активирована.
-	restarting_thread = std::thread(&StorageReplicatedMergeTree::restartingThread, this);
+	restarting_thread.reset(new ReplicatedMergeTreeRestartingThread(*this));
 }
+
 
 StoragePtr StorageReplicatedMergeTree::create(
 	const String & zookeeper_path_,
@@ -138,13 +127,16 @@ StoragePtr StorageReplicatedMergeTree::create(
 	StorageReplicatedMergeTree * res = new StorageReplicatedMergeTree(zookeeper_path_, replica_name_, attach,
 		path_, database_name_, name_, columns_, context_, primary_expr_ast_, date_column_name_, sampling_expression_,
 		index_granularity_, mode_, sign_column_, settings_);
+
 	StoragePtr res_ptr = res->thisPtr();
+
 	if (!res->is_read_only)
 	{
 		String endpoint_name = "ReplicatedMergeTree:" + res->replica_path;
 		InterserverIOEndpointPtr endpoint = new ReplicatedMergeTreePartsServer(res->data, *res);
 		res->endpoint_holder = new InterserverIOEndpointHolder(endpoint_name, endpoint, res->context.getInterserverIOHandler());
 	}
+
 	return res_ptr;
 }
 
@@ -377,42 +369,6 @@ void StorageReplicatedMergeTree::createReplica()
 	zookeeper->create(replica_path + "/columns", data.getColumnsList().toString(), zkutil::CreateMode::Persistent);
 }
 
-void StorageReplicatedMergeTree::activateReplica()
-{
-	std::stringstream host;
-	host << "host: " << context.getInterserverIOHost() << std::endl;
-	host << "port: " << context.getInterserverIOPort() << std::endl;
-
-	/** Если нода отмечена как активная, но отметка сделана в этом же экземпляре, удалим ее.
-	  * Такое возможно только при истечении сессии в ZooKeeper.
-	  * Здесь есть небольшой race condition (можем удалить не ту ноду, для которой сделали tryGet),
-	  *  но он крайне маловероятен при нормальном использовании.
-	  */
-	String data;
-	if (zookeeper->tryGet(replica_path + "/is_active", data) && data == active_node_identifier)
-		zookeeper->tryRemove(replica_path + "/is_active");
-
-	/// Одновременно объявим, что эта реплика активна, и обновим хост.
-	zkutil::Ops ops;
-	ops.push_back(new zkutil::Op::Create(replica_path + "/is_active",
-		active_node_identifier, zookeeper->getDefaultACL(), zkutil::CreateMode::Ephemeral));
-	ops.push_back(new zkutil::Op::SetData(replica_path + "/host", host.str(), -1));
-
-	try
-	{
-		zookeeper->multi(ops);
-	}
-	catch (const zkutil::KeeperException & e)
-	{
-		if (e.code == ZNODEEXISTS)
-			throw Exception("Replica " + replica_path + " appears to be already active. If you're sure it's not, "
-				"try again in a minute or remove znode " + replica_path + "/is_active manually", ErrorCodes::REPLICA_IS_ALREADY_ACTIVE);
-
-		throw;
-	}
-
-	replica_is_active_node = zkutil::EphemeralNodeHolder::existing(replica_path + "/is_active", *zookeeper);
-}
 
 void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 {
@@ -1075,7 +1031,7 @@ void StorageReplicatedMergeTree::queueUpdatingThread()
 		catch (const zkutil::KeeperException & e)
 		{
 			if (e.code == ZINVALIDSTATE)
-				restarting_event.set();
+				restarting_thread->wakeup();
 
 			tryLogCurrentException(__PRETTY_FUNCTION__);
 
@@ -1841,176 +1797,15 @@ void StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 
 void StorageReplicatedMergeTree::shutdown()
 {
-	if (permanent_shutdown_called)
+	if (restarting_thread)
 	{
-		if (restarting_thread.joinable())
-			restarting_thread.join();
-		return;
+		restarting_thread->stop();
+		restarting_thread.reset();
 	}
-
-	permanent_shutdown_called = true;
-	restarting_event.set();
-	restarting_thread.join();
 
 	endpoint_holder = nullptr;
 }
 
-void StorageReplicatedMergeTree::partialShutdown()
-{
-	leader_election = nullptr;
-	shutdown_called = true;
-	shutdown_event.set();
-	merge_selecting_event.set();
-	queue_updating_event->set();
-	alter_thread_event->set();
-	alter_query_event->set();
-	parts_to_check_event.set();
-	replica_is_active_node = nullptr;
-
-	merger.cancelAll();
-	if (unreplicated_merger)
-		unreplicated_merger->cancelAll();
-
-	LOG_TRACE(log, "Waiting for threads to finish");
-	if (is_leader_node)
-	{
-		is_leader_node = false;
-		if (merge_selecting_thread.joinable())
-			merge_selecting_thread.join();
-	}
-	if (queue_updating_thread.joinable())
-		queue_updating_thread.join();
-
-	cleanup_thread.reset();
-
-	if (alter_thread.joinable())
-		alter_thread.join();
-	if (part_check_thread.joinable())
-		part_check_thread.join();
-	if (queue_task_handle)
-		context.getBackgroundPool().removeTask(queue_task_handle);
-	queue_task_handle.reset();
-	LOG_TRACE(log, "Threads finished");
-}
-
-void StorageReplicatedMergeTree::goReadOnlyPermanently()
-{
-	LOG_INFO(log, "Going to read-only mode");
-
-	is_read_only = true;
-	permanent_shutdown_called = true;
-	restarting_event.set();
-
-	partialShutdown();
-}
-
-bool StorageReplicatedMergeTree::tryStartup()
-{
-	try
-	{
-		activateReplica();
-
-		leader_election = new zkutil::LeaderElection(zookeeper_path + "/leader_election", *zookeeper,
-			std::bind(&StorageReplicatedMergeTree::becomeLeader, this), replica_name);
-
-		/// Все, что выше, может бросить KeeperException, если что-то не так с ZK.
-		/// Все, что ниже, не должно бросать исключений.
-
-		shutdown_called = false;
-		shutdown_event.reset();
-
-		merger.uncancelAll();
-		if (unreplicated_merger)
-			unreplicated_merger->uncancelAll();
-
-		queue_updating_thread = std::thread(&StorageReplicatedMergeTree::queueUpdatingThread, this);
-		cleanup_thread.reset(new ReplicatedMergeTreeCleanupThread(*this));
-		alter_thread = std::thread(&StorageReplicatedMergeTree::alterThread, this);
-		part_check_thread = std::thread(&StorageReplicatedMergeTree::partCheckThread, this);
-		queue_task_handle = context.getBackgroundPool().addTask(
-			std::bind(&StorageReplicatedMergeTree::queueTask, this, std::placeholders::_1));
-		queue_task_handle->wake();
-		return true;
-	}
-	catch (const zkutil::KeeperException & e)
-	{
-		replica_is_active_node = nullptr;
-		leader_election = nullptr;
-		LOG_ERROR(log, "Couldn't start replication: " << e.what() << ", " << e.displayText() << ", stack trace:\n"
-			<< e.getStackTrace().toString());
-		return false;
-	}
-	catch (const Exception & e)
-	{
-		if (e.code() != ErrorCodes::REPLICA_IS_ALREADY_ACTIVE)
-			throw;
-
-		replica_is_active_node = nullptr;
-		leader_election = nullptr;
-		LOG_ERROR(log, "Couldn't start replication: " << e.what() << ", " << e.displayText() << ", stack trace:\n"
-			<< e.getStackTrace().toString());
-		return false;
-	}
-	catch (...)
-	{
-		replica_is_active_node = nullptr;
-		leader_election = nullptr;
-		throw;
-	}
-}
-
-void StorageReplicatedMergeTree::restartingThread()
-{
-	try
-	{
-		/// Запуск реплики при старте сервера/создании таблицы.
-		while (!permanent_shutdown_called && !tryStartup())
-			restarting_event.tryWait(10 * 1000);
-
-		/// Цикл перезапуска реплики при истечении сессии с ZK.
-		while (!permanent_shutdown_called)
-		{
-			if (zookeeper->expired())
-			{
-				LOG_WARNING(log, "ZooKeeper session has expired. Switching to a new session.");
-
-				partialShutdown();
-				zookeeper = context.getZooKeeper();
-				is_read_only = true;
-
-				while (!permanent_shutdown_called && !tryStartup())
-					restarting_event.tryWait(10 * 1000);
-
-				if (permanent_shutdown_called)
-					break;
-
-				is_read_only = false;
-			}
-
-			restarting_event.tryWait(60 * 1000);
-		}
-	}
-	catch (...)
-	{
-		tryLogCurrentException("StorageReplicatedMergeTree::restartingThread");
-		LOG_ERROR(log, "Unexpected exception in restartingThread. The storage will be read-only until server restart.");
-		goReadOnlyPermanently();
-		LOG_DEBUG(log, "Restarting thread finished");
-		return;
-	}
-
-	try
-	{
-		endpoint_holder = nullptr;
-		partialShutdown();
-	}
-	catch (...)
-	{
-		tryLogCurrentException("StorageReplicatedMergeTree::restartingThread");
-	}
-
-	LOG_DEBUG(log, "Restarting thread finished");
-}
 
 StorageReplicatedMergeTree::~StorageReplicatedMergeTree()
 {
@@ -2020,7 +1815,7 @@ StorageReplicatedMergeTree::~StorageReplicatedMergeTree()
 	}
 	catch(...)
 	{
-		tryLogCurrentException("~StorageReplicatedMergeTree");
+		tryLogCurrentException(__PRETTY_FUNCTION__);
 	}
 }
 

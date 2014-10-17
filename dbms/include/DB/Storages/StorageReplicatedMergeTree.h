@@ -8,7 +8,8 @@
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreePartsExchange.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeCleanupThread.h>
-#include "MergeTree/AbandonableLockInZooKeeper.h"
+#include <DB/Storages/MergeTree/ReplicatedMergeTreeRestartingThread.h>
+#include <DB/Storages/MergeTree/AbandonableLockInZooKeeper.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <zkutil/ZooKeeper.h>
 #include <zkutil/LeaderElection.h>
@@ -125,6 +126,7 @@ public:
 
 private:
 	friend class ReplicatedMergeTreeBlockOutputStream;
+	friend class ReplicatedMergeTreeRestartingThread;
 	friend class ReplicatedMergeTreeCleanupThread;
 	friend class ReplicatedMergeTreeLogEntry;
 	friend class FuturePartTagger;
@@ -183,10 +185,6 @@ private:
 	  */
 	int columns_version = -1;
 
-	/** Случайные данные, которые мы записали в /replicas/me/is_active.
-	  */
-	String active_node_identifier;
-
 	/** Является ли эта реплика "ведущей". Ведущая реплика выбирает куски для слияния.
 	  */
 	bool is_leader_node = false;
@@ -223,9 +221,8 @@ private:
 	/// Поток, удаляющий старые куски, записи в логе и блоки.
 	std::unique_ptr<ReplicatedMergeTreeCleanupThread> cleanup_thread;
 
-	/// Поток, обрабатывающий переподключение к ZooKeeper при истечении сессии (очень маловероятное событие).
-	std::thread restarting_thread;
-	Poco::Event restarting_event;
+	/// Поток, обрабатывающий переподключение к ZooKeeper при истечении сессии.
+	std::unique_ptr<ReplicatedMergeTreeRestartingThread> restarting_thread;
 
 	/// Поток, следящий за изменениями списка столбцов в ZooKeeper и обновляющий куски в соответствии с этими изменениями.
 	std::thread alter_thread;
@@ -242,8 +239,6 @@ private:
 	/// Нужно ли завершить фоновые потоки (кроме restarting_thread).
 	volatile bool shutdown_called = false;
 	Poco::Event shutdown_event;
-	/// Нужно ли завершить restarting_thread.
-	volatile bool permanent_shutdown_called = false;
 
 	StorageReplicatedMergeTree(
 		const String & zookeeper_path_,
@@ -270,10 +265,6 @@ private:
 	  */
 	void createReplica();
 
-	/** Отметить в ZooKeeper, что эта реплика сейчас активна.
-	  */
-	void activateReplica();
-
 	/** Проверить, что список столбцов и настройки таблицы совпадают с указанными в ZK (/metadata).
 	  * Если нет - бросить исключение.
 	  */
@@ -288,13 +279,6 @@ private:
 
 	/// Положить все куски из data в virtual_parts.
 	void initVirtualParts();
-
-	/// Запустить или остановить фоновые потоки. Используется для частичной переинициализации при пересоздании сессии в ZooKeeper.
-	bool tryStartup(); /// Возвращает false, если недоступен ZooKeeper.
-	void partialShutdown();
-
-	/// Запретить запись в таблицу и завершить все фоновые потоки.
-	void goReadOnlyPermanently();
 
 
 	/** Проверить, что чексумма куска совпадает с чексуммой того же куска на какой-нибудь другой реплике.
@@ -355,10 +339,6 @@ private:
 	/** Проверяет целостность кусков.
 	  */
 	void partCheckThread();
-
-	/** Когда сессия в ZooKeeper протухает, переходит на новую.
-	  */
-	void restartingThread();
 
 	/// Обмен кусками.
 

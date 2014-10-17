@@ -18,7 +18,7 @@ public:
 	void writePrefix() override
 	{
 		/// TODO Можно ли здесь не блокировать структуру таблицы?
-		storage.data.delayInsertIfNeeded(&storage.restarting_event);
+		storage.data.delayInsertIfNeeded(&storage.restarting_thread->getWakeupEvent());
 	}
 
 	void write(const Block & block) override
