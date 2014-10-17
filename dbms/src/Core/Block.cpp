@@ -34,8 +34,7 @@ void Block::addDefaults(const NamesAndTypesList & required_columns)
 
 void Block::addDefaults(const NamesAndTypesList & required_columns,
 	const ColumnDefaults & column_defaults,
-	const Context & context,
-	const bool only_explicitly_defaulted)
+	const Context & context)
 {
 	ASTPtr default_expr_list{stdext::make_unique<ASTExpressionList>().release()};
 
@@ -47,10 +46,10 @@ void Block::addDefaults(const NamesAndTypesList & required_columns,
 		const auto it = column_defaults.find(column.name);
 
 		/// expressions must be cloned to prevent modification by the ExpressionAnalyzer
-		if (it != column_defaults.end())
-			default_expr_list->children.emplace_back(it->second.expression->clone());
-		else if (only_explicitly_defaulted)
+		if (it == column_defaults.end())
 			insertDefault(column.name, column.type);
+		else
+			default_expr_list->children.emplace_back(it->second.expression->clone());
 	}
 
 	/// nothing to evaluate
@@ -66,6 +65,38 @@ void Block::addDefaults(const NamesAndTypesList & required_columns,
 	/// move evaluated columns to the original block
 	for (auto & column_name_type : copy_block.getColumns())
 		insert(std::move(column_name_type));
+}
+
+void Block::addAllDefaults(const NamesAndTypesList & required_columns,
+	const ColumnDefaults & column_defaults,
+	const Context & context)
+{
+	ASTPtr default_expr_list{stdext::make_unique<ASTExpressionList>().release()};
+
+	for (const auto & column_default : column_defaults)
+	{
+		if (has(column_default.first))
+			continue;
+
+		/// expressions must be cloned to prevent modification by the ExpressionAnalyzer
+		default_expr_list->children.emplace_back(column_default.second.expression->clone());
+	}
+
+	/// nothing to evaluate
+	if (default_expr_list->children.empty())
+		return;
+
+	/** ExpressionAnalyzer eliminates "unused" columns, in order to ensure their safety
+	 *	we are going to operate on a copy instead of  the original block */
+	Block copy_block{*this};
+	/// evaluate default values for defaulted columns
+	ExpressionAnalyzer{default_expr_list, context, required_columns}.getActions(true)->execute(copy_block);
+
+	/// move evaluated columns to the original block only if required
+	for (auto & column_name_type : required_columns) {
+		if (copy_block.has(column_name_type.name))
+			insert(std::move(copy_block.getByName(column_name_type.name)));
+	}
 }
 
 Block & Block::operator= (const Block & other)

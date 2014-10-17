@@ -123,7 +123,7 @@ namespace DB
 				column_defaults.erase(column_name);
 			else if (default_expression && !had_default_expr)
 				column_defaults.emplace(column_name, ColumnDefault{default_type, default_expression});
-			else
+			else if (had_default_expr)
 				column_defaults[column_name].expression = default_expression;
 		}
 		else

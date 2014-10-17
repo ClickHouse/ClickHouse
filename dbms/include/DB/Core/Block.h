@@ -68,8 +68,10 @@ public:
 	void addDefaults(const NamesAndTypesList & required_columns);
 	void addDefaults(const NamesAndTypesList & required_columns,
 		const ColumnDefaults & column_defaults,
-		const Context & context,
-		bool only_explicitly_defaulted = false);
+		const Context & context);
+	void addAllDefaults(const NamesAndTypesList & required_columns,
+		const ColumnDefaults & column_defaults,
+		const Context & context);
 
 	ColumnWithNameAndType & getByPosition(size_t position);
 	const ColumnWithNameAndType & getByPosition(size_t position) const;

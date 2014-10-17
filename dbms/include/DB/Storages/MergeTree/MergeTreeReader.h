@@ -161,6 +161,7 @@ public:
 			size_t pos = 0;	/// Позиция, куда надо вставить недостающий столбец.
 			for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it, ++pos)
 			{
+				/// insert default values only for columns without default expressions
 				if (!res.has(it->name) && storage.column_defaults.count(it->name) == 0)
 				{
 					ColumnWithNameAndType column;
@@ -193,8 +194,8 @@ public:
 				}
 			}
 
-			/// evaluate defaulted values
-			res.addDefaults(columns, storage.column_defaults, storage.context, true);
+			/// evaluate defaulted columns
+			res.addAllDefaults(columns, storage.column_defaults, storage.context);
 		}
 		catch (const Exception & e)
 		{
