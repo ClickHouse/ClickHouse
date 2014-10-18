@@ -35,6 +35,7 @@
 	M(ReplicatedPartFetchesOfMerged) \
 	M(ReplicatedPartChecks) \
 	M(ReplicatedPartChecksFailed) \
+	M(ReplicatedDataLoss) \
 	\
 	M(DelayedInserts) \
 	M(RejectedInserts) \

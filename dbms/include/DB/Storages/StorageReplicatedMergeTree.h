@@ -358,6 +358,10 @@ private:
 	  */
 	void waitForAllReplicasToProcessLogEntry(const LogEntry & entry);
 
+	/** Дождаться, пока указанная реплика выполнит указанное действие из лога.
+	  */
+	void waitForReplicaToProcessLogEntry(const String & replica_name, const LogEntry & entry);
+
 
 	/// Преобразовать число в строку формате суффиксов автоинкрементных нод в ZooKeeper.
 	static String padIndex(UInt64 index)

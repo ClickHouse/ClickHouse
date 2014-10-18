@@ -19,10 +19,9 @@ static String generateActiveNodeIdentifier()
 ReplicatedMergeTreeRestartingThread::ReplicatedMergeTreeRestartingThread(StorageReplicatedMergeTree & storage_)
 	: storage(storage_),
 	log(&Logger::get(storage.database_name + "." + storage.table_name + " (StorageReplicatedMergeTree, CleanupThread)")),
+	active_node_identifier(generateActiveNodeIdentifier()),
 	thread([this] { run(); })
 {
-	/// Сгенерируем этому экземпляру случайный идентификатор.
-	active_node_identifier = generateActiveNodeIdentifier();
 }
 
 

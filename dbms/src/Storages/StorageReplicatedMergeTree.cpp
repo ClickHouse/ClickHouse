@@ -140,6 +140,7 @@ StoragePtr StorageReplicatedMergeTree::create(
 	return res_ptr;
 }
 
+
 static String formattedAST(const ASTPtr & ast)
 {
 	if (!ast)
@@ -148,6 +149,7 @@ static String formattedAST(const ASTPtr & ast)
 	formatAST(*ast, ss, 0, false, true);
 	return ss.str();
 }
+
 
 void StorageReplicatedMergeTree::createTableIfNotExists()
 {
@@ -195,6 +197,7 @@ void StorageReplicatedMergeTree::createTableIfNotExists()
 		throw zkutil::KeeperException(code);
 }
 
+
 /** Проверить, что список столбцов и настройки таблицы совпадают с указанными в ZK (/metadata).
 	* Если нет - бросить исключение.
 	*/
@@ -240,6 +243,7 @@ void StorageReplicatedMergeTree::checkTableStructure(bool skip_sanity_checks, bo
 		}
 	}
 }
+
 
 void StorageReplicatedMergeTree::createReplica()
 {
@@ -504,12 +508,14 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 	}
 }
 
+
 void StorageReplicatedMergeTree::initVirtualParts()
 {
 	auto parts = data.getDataParts();
 	for (const auto & part : parts)
 		virtual_parts.add(part->name);
 }
+
 
 void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(const MergeTreeData::DataPartPtr & part, zkutil::Ops & ops, String part_name)
 {
@@ -577,6 +583,7 @@ void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(const MergeTreeData:
 		zkutil::CreateMode::Persistent));
 }
 
+
 void StorageReplicatedMergeTree::loadQueue()
 {
 	std::unique_lock<std::mutex> lock(queue_mutex);
@@ -592,6 +599,7 @@ void StorageReplicatedMergeTree::loadQueue()
 		queue.push_back(entry);
 	}
 }
+
 
 void StorageReplicatedMergeTree::pullLogsToQueue(zkutil::EventPtr next_update_event)
 {
@@ -653,6 +661,7 @@ void StorageReplicatedMergeTree::pullLogsToQueue(zkutil::EventPtr next_update_ev
 	LOG_DEBUG(log, "Pulled " << count << " entries to queue: log-" << padIndex(first_index) << " - log-" << padIndex(index - 1));
 }
 
+
 bool StorageReplicatedMergeTree::shouldExecuteLogEntry(const LogEntry & entry)
 {
 	if ((entry.type == LogEntry::MERGE_PARTS || entry.type == LogEntry::GET_PART || entry.type == LogEntry::ATTACH_PART)
@@ -682,6 +691,7 @@ bool StorageReplicatedMergeTree::shouldExecuteLogEntry(const LogEntry & entry)
 
 	return true;
 }
+
 
 bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, BackgroundProcessingPool::Context & pool_context)
 {
@@ -805,11 +815,29 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 		try
 		{
 			replica = findReplicaHavingPart(entry.new_part_name, true);
+
+			if (replica.empty() && entry.type == LogEntry::ATTACH_PART)
+			{
+				/** Если ATTACH - куска может не быть, потому что реплика, на которой кусок есть, ещё сама не успела его прицепить.
+				  * В таком случае, надо подождать этого.
+				  */
+
+				/// Кусок должен быть на реплике-инициаторе.
+				if (entry.source_replica.empty() || entry.source_replica == replica_name)
+					throw Exception("Logical error: no source replica specified for ATTACH_PART log entry;"
+						" or trying to fetch part on source replica", ErrorCodes::LOGICAL_ERROR);
+
+				/// Подождём, пока реплика-инициатор подцепит кусок.
+				waitForReplicaToProcessLogEntry(entry.source_replica, entry);
+				replica = findReplicaHavingPart(entry.new_part_name, true);
+			}
+
 			if (replica.empty())
 			{
 				ProfileEvents::increment(ProfileEvents::ReplicatedPartFailedFetches);
 				throw Exception("No active replica has part " + entry.new_part_name, ErrorCodes::NO_REPLICA_HAS_PART);
 			}
+
 			fetchPart(entry.new_part_name, zookeeper_path + "/replicas/" + replica);
 
 			if (entry.type == LogEntry::MERGE_PARTS)
@@ -885,6 +913,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 
 	return true;
 }
+
 
 void StorageReplicatedMergeTree::executeDropRange(const StorageReplicatedMergeTree::LogEntry & entry)
 {
@@ -974,6 +1003,7 @@ void StorageReplicatedMergeTree::executeDropRange(const StorageReplicatedMergeTr
 	}
 }
 
+
 bool StorageReplicatedMergeTree::executeAttachPart(const StorageReplicatedMergeTree::LogEntry & entry)
 {
 	String source_path = (entry.attach_unreplicated ? "unreplicated/" : "detached/") + entry.source_part_name;
@@ -1018,6 +1048,7 @@ bool StorageReplicatedMergeTree::executeAttachPart(const StorageReplicatedMergeT
 	return true;
 }
 
+
 void StorageReplicatedMergeTree::queueUpdatingThread()
 {
 	while (!shutdown_called)
@@ -1047,6 +1078,7 @@ void StorageReplicatedMergeTree::queueUpdatingThread()
 
 	LOG_DEBUG(log, "Queue updating thread finished");
 }
+
 
 bool StorageReplicatedMergeTree::queueTask(BackgroundProcessingPool::Context & pool_context)
 {
@@ -1135,6 +1167,7 @@ bool StorageReplicatedMergeTree::queueTask(BackgroundProcessingPool::Context & p
 	/// Если не было исключения, не нужно спать.
 	return !exception;
 }
+
 
 void StorageReplicatedMergeTree::mergeSelectingThread()
 {
@@ -1470,6 +1503,7 @@ void StorageReplicatedMergeTree::alterThread()
 	LOG_DEBUG(log, "Alter thread finished");
 }
 
+
 void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_name)
 {
 	String part_path = replica_path + "/parts/" + part_name;
@@ -1497,6 +1531,7 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
 		queue.push_back(log_entry);
 	}
 }
+
 
 void StorageReplicatedMergeTree::enqueuePartForCheck(const String & name)
 {
@@ -1620,7 +1655,8 @@ void StorageReplicatedMergeTree::partCheckThread()
 								/** Такая ситуация возможна, если на всех репликах, где был кусок, он испортился.
 								  * Например, у реплики, которая только что его записала, отключили питание, и данные не записались из кеша на диск.
 								  */
-								LOG_ERROR(log, "Part " << part_name << " is lost forever. Say goodbye to a piece of data!");
+								LOG_ERROR(log, "Part " << part_name << " is lost forever.");
+								ProfileEvents::increment(ProfileEvents::ReplicatedDataLoss);
 
 								/** Нужно добавить отсутствующий кусок в block_numbers, чтобы он не мешал слияниям.
 								  * Вот только в сам block_numbers мы его добавить не можем - если так сделать,
@@ -1728,6 +1764,7 @@ void StorageReplicatedMergeTree::becomeLeader()
 	merge_selecting_thread = std::thread(&StorageReplicatedMergeTree::mergeSelectingThread, this);
 }
 
+
 String StorageReplicatedMergeTree::findReplicaHavingPart(const String & part_name, bool active)
 {
 	Strings replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
@@ -1744,6 +1781,7 @@ String StorageReplicatedMergeTree::findReplicaHavingPart(const String & part_nam
 
 	return "";
 }
+
 
 void StorageReplicatedMergeTree::fetchPart(const String & part_name, const String & replica_path, bool to_detached)
 {
@@ -1795,6 +1833,7 @@ void StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 	LOG_DEBUG(log, "Fetched part " << part_name << " from " << replica_name << (to_detached ? " (to 'detached' directory)" : ""));
 }
 
+
 void StorageReplicatedMergeTree::shutdown()
 {
 	if (restarting_thread)
@@ -1818,6 +1857,7 @@ StorageReplicatedMergeTree::~StorageReplicatedMergeTree()
 		tryLogCurrentException(__PRETTY_FUNCTION__);
 	}
 }
+
 
 BlockInputStreams StorageReplicatedMergeTree::read(
 		const Names & column_names,
@@ -1886,6 +1926,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 	return res;
 }
 
+
 BlockOutputStreamPtr StorageReplicatedMergeTree::write(ASTPtr query)
 {
 	if (is_read_only)
@@ -1898,6 +1939,7 @@ BlockOutputStreamPtr StorageReplicatedMergeTree::write(ASTPtr query)
 
 	return new ReplicatedMergeTreeBlockOutputStream(*this, insert_id);
 }
+
 
 bool StorageReplicatedMergeTree::optimize()
 {
@@ -1921,6 +1963,7 @@ bool StorageReplicatedMergeTree::optimize()
 	unreplicated_merger->mergeParts(parts, merged_name, *merge_entry);
 	return true;
 }
+
 
 void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 	const String & database_name, const String & table_name, Context & context)
@@ -2030,6 +2073,7 @@ static String getFakePartNameForDrop(const String & month_name, UInt64 left, UIn
 	return ActiveDataPartSet::getPartName(left_date, right_date, left, right, right - left + 1);
 }
 
+
 void StorageReplicatedMergeTree::dropPartition(const Field & field, bool detach)
 {
 	String month_name = MergeTreeData::getMonthName(field);
@@ -2080,6 +2124,7 @@ void StorageReplicatedMergeTree::dropPartition(const Field & field, bool detach)
 	/// Дождемся, пока все реплики выполнят дроп.
 	waitForAllReplicasToProcessLogEntry(entry);
 }
+
 
 void StorageReplicatedMergeTree::attachPartition(const Field & field, bool unreplicated, bool attach_part)
 {
@@ -2178,6 +2223,7 @@ void StorageReplicatedMergeTree::attachPartition(const Field & field, bool unrep
 	}
 }
 
+
 void StorageReplicatedMergeTree::drop()
 {
 	if (is_read_only)
@@ -2200,6 +2246,7 @@ void StorageReplicatedMergeTree::drop()
 	data.dropAllData();
 }
 
+
 void StorageReplicatedMergeTree::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
 {
 	std::string new_full_path = new_path_to_db + escapeForFileName(new_table_name) + '/';
@@ -2214,6 +2261,7 @@ void StorageReplicatedMergeTree::rename(const String & new_path_to_db, const Str
 
 	/// TODO: Можно обновить названия логгеров.
 }
+
 
 AbandonableLockInZooKeeper StorageReplicatedMergeTree::allocateBlockNumber(const String & month_name)
 {
@@ -2239,68 +2287,73 @@ AbandonableLockInZooKeeper StorageReplicatedMergeTree::allocateBlockNumber(const
 		zookeeper_path + "/temp", *zookeeper);
 }
 
+
 void StorageReplicatedMergeTree::waitForAllReplicasToProcessLogEntry(const LogEntry & entry)
 {
 	LOG_DEBUG(log, "Waiting for all replicas to process " << entry.znode_name);
 
+	Strings replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
+	for (const String & replica : replicas)
+		waitForReplicaToProcessLogEntry(replica, entry);
+
+	LOG_DEBUG(log, "Finished waiting for all replicas to process " << entry.znode_name);
+}
+
+
+void StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(const String & replica, const LogEntry & entry)
+{
 	UInt64 log_index = parse<UInt64>(entry.znode_name.substr(entry.znode_name.size() - 10));
 	String log_entry_str = entry.toString();
 
-	Strings replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
-	for (const String & replica : replicas)
+	LOG_DEBUG(log, "Waiting for " << replica << " to pull " << entry.znode_name << " to queue");
+
+	/// Дождемся, пока запись попадет в очередь реплики.
+	while (true)
 	{
-		LOG_DEBUG(log, "Waiting for " << replica << " to pull " << entry.znode_name << " to queue");
+		zkutil::EventPtr event = new Poco::Event;
 
-		/// Дождемся, пока запись попадет в очередь реплики.
-		while (true)
+		String pointer = zookeeper->get(zookeeper_path + "/replicas/" + replica + "/log_pointer", nullptr, event);
+		if (!pointer.empty() && parse<UInt64>(pointer) > log_index)
+			break;
+
+		event->wait();
+	}
+
+	LOG_DEBUG(log, "Looking for " << entry.znode_name << " in " << replica << " queue");
+
+	/// Найдем запись в очереди реплики.
+	Strings queue_entries = zookeeper->getChildren(zookeeper_path + "/replicas/" + replica + "/queue");
+	String entry_to_wait_for;
+
+	for (const String & entry_name : queue_entries)
+	{
+		String queue_entry_str;
+		bool exists = zookeeper->tryGet(zookeeper_path + "/replicas/" + replica + "/queue/" + entry_name, queue_entry_str);
+		if (exists && queue_entry_str == log_entry_str)
 		{
-			zkutil::EventPtr event = new Poco::Event;
-
-			String pointer = zookeeper->get(zookeeper_path + "/replicas/" + replica + "/log_pointer", nullptr, event);
-			if (!pointer.empty() && parse<UInt64>(pointer) > log_index)
-				break;
-
-			event->wait();
-		}
-
-		LOG_DEBUG(log, "Looking for " << entry.znode_name << " in " << replica << " queue");
-
-		/// Найдем запись в очереди реплики.
-		Strings queue_entries = zookeeper->getChildren(zookeeper_path + "/replicas/" + replica + "/queue");
-		String entry_to_wait_for;
-
-		for (const String & entry_name : queue_entries)
-		{
-			String queue_entry_str;
-			bool exists = zookeeper->tryGet(zookeeper_path + "/replicas/" + replica + "/queue/" + entry_name, queue_entry_str);
-			if (exists && queue_entry_str == log_entry_str)
-			{
-				entry_to_wait_for = entry_name;
-				break;
-			}
-		}
-
-		/// Пока искали запись, ее уже выполнили и удалили.
-		if (entry_to_wait_for.empty())
-			continue;
-
-		LOG_DEBUG(log, "Waiting for " << entry_to_wait_for << " to disappear from " << replica << " queue");
-
-		/// Дождемся, пока запись исчезнет из очереди реплики.
-		while (true)
-		{
-			zkutil::EventPtr event = new Poco::Event;
-
-			String unused;
-			/// get вместо exists, чтобы не утек watch, если ноды уже нет.
-			if (!zookeeper->tryGet(zookeeper_path + "/replicas/" + replica + "/queue/" + entry_to_wait_for, unused, nullptr, event))
-				break;
-
-			event->wait();
+			entry_to_wait_for = entry_name;
+			break;
 		}
 	}
 
-	LOG_DEBUG(log, "Finished waiting for all replicas to process " << entry.znode_name);
+	/// Пока искали запись, ее уже выполнили и удалили.
+	if (entry_to_wait_for.empty())
+		return;
+
+	LOG_DEBUG(log, "Waiting for " << entry_to_wait_for << " to disappear from " << replica << " queue");
+
+	/// Дождемся, пока запись исчезнет из очереди реплики.
+	while (true)
+	{
+		zkutil::EventPtr event = new Poco::Event;
+
+		String unused;
+		/// get вместо exists, чтобы не утек watch, если ноды уже нет.
+		if (!zookeeper->tryGet(zookeeper_path + "/replicas/" + replica + "/queue/" + entry_to_wait_for, unused, nullptr, event))
+			break;
+
+		event->wait();
+	}
 }
 
 
