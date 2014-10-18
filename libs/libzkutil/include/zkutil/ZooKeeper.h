@@ -248,7 +248,7 @@ private:
 	void tryRemoveChildrenRecursive(const std::string & path);
 	void * watchForEvent(EventPtr event);
 	watcher_fn callbackForEvent(EventPtr event);
-	static void processEvent(zhandle_t * zh, int type, int state, const char * path, void *watcherCtx);
+	static void processEvent(zhandle_t * zh, int type, int state, const char * path, void * watcherCtx);
 
 	template <class T>
 	int32_t retry(T && operation, size_t * attempt = nullptr)

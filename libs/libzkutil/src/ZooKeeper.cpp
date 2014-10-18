@@ -42,11 +42,11 @@ struct WatchWithEvent
 	}
 };
 
-void ZooKeeper::processEvent(zhandle_t * zh, int type, int state, const char * path, void *watcherCtx)
+void ZooKeeper::processEvent(zhandle_t * zh, int type, int state, const char * path, void * watcherCtx)
 {
 	if (watcherCtx)
 	{
-		WatchWithEvent * watch = reinterpret_cast<WatchWithEvent *>(watcherCtx);
+		WatchWithEvent * watch = static_cast<WatchWithEvent *>(watcherCtx);
 		watch->process(zh, type, state, path);
 
 		/// Гарантируется, что не-ZOO_SESSION_EVENT событие придет ровно один раз (https://issues.apache.org/jira/browse/ZOOKEEPER-890).
@@ -130,7 +130,7 @@ void * ZooKeeper::watchForEvent(EventPtr event)
 				LOG_ERROR(log, "There are " << watch_store.size() << " active watches. There must be a leak somewhere.");
 			}
 		}
-		return reinterpret_cast<void *>(res);
+		return res;
 	}
 	else
 	{
@@ -605,7 +605,7 @@ ZooKeeper::GetFuture ZooKeeper::asyncGet(const std::string & path)
 		impl, path.c_str(), 0,
 		[] (int rc, const char * value, int value_len, const Stat * stat, const void * data)
 		{
-			auto & task = const_cast<GetFuture::Task &>(*reinterpret_cast<const GetFuture::Task *>(data));
+			auto & task = const_cast<GetFuture::Task &>(*static_cast<const GetFuture::Task *>(data));
 			task(rc, value, value_len, stat);
 		},
 		future.task.get());
@@ -634,7 +634,7 @@ ZooKeeper::TryGetFuture ZooKeeper::asyncTryGet(const std::string & path)
 		impl, path.c_str(), 0,
 		[] (int rc, const char * value, int value_len, const Stat * stat, const void * data)
 		{
-			auto & task = const_cast<TryGetFuture::Task &>(*reinterpret_cast<const TryGetFuture::Task *>(data));
+			auto & task = const_cast<TryGetFuture::Task &>(*static_cast<const TryGetFuture::Task *>(data));
 			task(rc, value, value_len, stat);
 		},
 		future.task.get());
@@ -663,7 +663,7 @@ ZooKeeper::ExistsFuture ZooKeeper::asyncExists(const std::string & path)
 		impl, path.c_str(), 0,
 		[] (int rc, const Stat * stat, const void * data)
 		{
-			auto & task = const_cast<ExistsFuture::Task &>(*reinterpret_cast<const ExistsFuture::Task *>(data));
+			auto & task = const_cast<ExistsFuture::Task &>(*static_cast<const ExistsFuture::Task *>(data));
 			task(rc, stat);
 		},
 		future.task.get());
@@ -697,7 +697,7 @@ ZooKeeper::GetChildrenFuture ZooKeeper::asyncGetChildren(const std::string & pat
 		impl, path.c_str(), 0,
 		[] (int rc, const String_vector * strings, const void * data)
 		{
-			auto & task = const_cast<GetChildrenFuture::Task &>(*reinterpret_cast<const GetChildrenFuture::Task *>(data));
+			auto & task = const_cast<GetChildrenFuture::Task &>(*static_cast<const GetChildrenFuture::Task *>(data));
 			task(rc, strings);
 		},
 		future.task.get());
