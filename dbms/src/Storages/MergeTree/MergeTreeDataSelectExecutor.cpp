@@ -200,9 +200,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	/// Найдем, какой диапазон читать из каждого куска.
 	size_t sum_marks = 0;
 	size_t sum_ranges = 0;
-	for (size_t i = 0; i < parts.size(); ++i)
+	for (auto & part : parts)
 	{
-		MergeTreeData::DataPartPtr & part = parts[i];
 		RangesInDataPart ranges(part, (*part_index)++);
 		ranges.ranges = markRangesFromPkRange(part->index, key_condition);
 
@@ -211,10 +210,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 			parts_with_ranges.push_back(ranges);
 
 			sum_ranges += ranges.ranges.size();
-			for (size_t j = 0; j < ranges.ranges.size(); ++j)
-			{
-				sum_marks += ranges.ranges[j].end - ranges.ranges[j].begin;
-			}
+			for (const auto & range : ranges.ranges)
+				sum_marks += range.end - range.begin;
 		}
 	}
 
@@ -256,15 +253,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	}
 
 	if (select.sample_size)
-	{
-		for (size_t i = 0; i < res.size(); ++i)
-		{
-			BlockInputStreamPtr original_stream = res[i];
-			BlockInputStreamPtr expression_stream = new ExpressionBlockInputStream(original_stream, filter_expression);
-			BlockInputStreamPtr filter_stream = new FilterBlockInputStream(expression_stream, filter_function->getColumnName());
-			res[i] = filter_stream;
-		}
-	}
+		for (auto & stream : res)
+			stream = new FilterBlockInputStream(new ExpressionBlockInputStream(stream, filter_expression), filter_function->getColumnName());
 
 	return res;
 }
