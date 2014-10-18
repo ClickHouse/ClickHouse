@@ -62,7 +62,7 @@ public:
 	/** Возвращает true, если хранилище поддерживает запросы с секцией FINAL.
 	 */
 	virtual bool supportsFinal() const { return false; }
-	
+
 	/** Возвращает true, если хранилище поддерживает запросы с секцией PREWHERE.
 	 */
 	virtual bool supportsPrewhere() const { return false; }
@@ -207,21 +207,21 @@ public:
 
 	/** Выполнить запрос (DROP|DETACH) PARTITION.
 	  */
-	virtual void dropPartition(const Field & partition, bool detach)
+	virtual void dropPartition(const Field & partition, bool detach, const Settings & settings)
 	{
 		throw Exception("Method dropPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
 	/** Выполнить запрос ATTACH [UNREPLICATED] (PART|PARTITION).
 	  */
-	virtual void attachPartition(const Field & partition, bool unreplicated, bool part)
+	virtual void attachPartition(const Field & partition, bool unreplicated, bool part, const Settings & settings)
 	{
 		throw Exception("Method attachPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	/** Выполнить запрос FETCH [UNREPLICATED] PARTITION.
+	/** Выполнить запрос FETCH PARTITION.
 	  */
-	virtual void fetchPartition(const Field & partition, const String & from)
+	virtual void fetchPartition(const Field & partition, const String & from, const Settings & settings)
 	{
 		throw Exception("Method fetchPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
@@ -252,7 +252,7 @@ public:
 	virtual void shutdown() {}
 
 	/** Возвращает владеющий указатель на себя.
-	  */ 
+	  */
 	std::shared_ptr<IStorage> thisPtr()
 	{
 		std::shared_ptr<IStorage> res = this_ptr.lock();

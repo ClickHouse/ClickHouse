@@ -2074,7 +2074,7 @@ static String getFakePartNameForDrop(const String & month_name, UInt64 left, UIn
 }
 
 
-void StorageReplicatedMergeTree::dropPartition(const Field & field, bool detach)
+void StorageReplicatedMergeTree::dropPartition(const Field & field, bool detach, const Settings & settings)
 {
 	String month_name = MergeTreeData::getMonthName(field);
 
@@ -2121,12 +2121,18 @@ void StorageReplicatedMergeTree::dropPartition(const Field & field, bool detach)
 	String log_znode_path = zookeeper->create(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential);
 	entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
 
-	/// Дождемся, пока все реплики выполнят дроп.
-	waitForAllReplicasToProcessLogEntry(entry);
+	/// Если надо - дожидаемся выполнения операции на себе или на всех репликах.
+	if (settings.replication_alter_partitions_sync != 0)
+	{
+		if (settings.replication_alter_partitions_sync == 1)
+			waitForReplicaToProcessLogEntry(replica_name, entry);
+		else
+			waitForAllReplicasToProcessLogEntry(entry);
+	}
 }
 
 
-void StorageReplicatedMergeTree::attachPartition(const Field & field, bool unreplicated, bool attach_part)
+void StorageReplicatedMergeTree::attachPartition(const Field & field, bool unreplicated, bool attach_part, const Settings & settings)
 {
 	String partition;
 
@@ -2174,11 +2180,10 @@ void StorageReplicatedMergeTree::attachPartition(const Field & field, bool unrep
 	UInt64 min_used_number = RESERVED_BLOCK_NUMBERS;
 
 	{
+		/// TODO Это необходимо лишь в пределах одного месяца.
 		auto existing_parts = data.getDataParts();
 		for (const auto & part : existing_parts)
-		{
 			min_used_number = std::min(min_used_number, part->left);
-		}
 	}
 
 	if (parts.size() > min_used_number)
@@ -2212,14 +2217,22 @@ void StorageReplicatedMergeTree::attachPartition(const Field & field, bool unrep
 	LOG_DEBUG(log, "Adding attaches to log");
 	zookeeper->multi(ops);
 
-	size_t i = 0;
-	for (LogEntry & entry : entries)
+	/// Если надо - дожидаемся выполнения операции на себе или на всех репликах.
+	if (settings.replication_alter_partitions_sync != 0)
 	{
-		String log_znode_path = dynamic_cast<zkutil::Op::Create &>(ops[i]).getPathCreated();
-		entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
+		size_t i = 0;
+		for (LogEntry & entry : entries)
+		{
+			String log_znode_path = dynamic_cast<zkutil::Op::Create &>(ops[i]).getPathCreated();
+			entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
 
-		waitForAllReplicasToProcessLogEntry(entry);
-		++i;
+			if (settings.replication_alter_partitions_sync == 1)
+				waitForReplicaToProcessLogEntry(replica_name, entry);
+			else
+				waitForAllReplicasToProcessLogEntry(entry);
+
+			++i;
+		}
 	}
 }
 
@@ -2425,7 +2438,7 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
 }
 
 
-void StorageReplicatedMergeTree::fetchPartition(const Field & partition, const String & from_)
+void StorageReplicatedMergeTree::fetchPartition(const Field & partition, const String & from_, const Settings & settings)
 {
 	String partition_str = MergeTreeData::getMonthName(partition);
 

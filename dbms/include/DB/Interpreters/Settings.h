@@ -76,6 +76,9 @@ struct Settings
 	/** Allows disabling WHERE to PREWHERE optimization in SELECT queries from MergeTree */ \
 	M(SettingBool, optimize_move_to_prewhere, false) \
 	\
+	/** Ожидать выполнения действий по манипуляции с партициями. 0 - не ждать, 1 - ждать выполнения только у себя, 2 - ждать всех. */ \
+	M(SettingUInt64, replication_alter_partitions_sync, 1) \
+	\
 	M(SettingLoadBalancing, load_balancing, LoadBalancing::RANDOM) \
 	\
 	M(SettingTotalsMode, totals_mode, TotalsMode::BEFORE_HAVING) \

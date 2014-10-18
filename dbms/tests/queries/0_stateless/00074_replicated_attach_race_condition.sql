@@ -1,3 +1,5 @@
+SET replication_alter_partitions_sync = 2;
+
 DROP TABLE IF EXISTS test.attach_r1;
 DROP TABLE IF EXISTS test.attach_r2;
 
@@ -17,8 +19,6 @@ SELECT * WHERE sleep(0.05); -- заменить на что-нибудь пол�
 SELECT d FROM test.attach_r2 ORDER BY d;
 
 ALTER TABLE test.attach_r1 ATTACH PARTITION 201402;
-
-SELECT * WHERE sleep(0.05); -- заменить на что-нибудь получше
 
 SELECT d FROM test.attach_r1 ORDER BY d;
 SELECT d FROM test.attach_r2 ORDER BY d;

@@ -215,7 +215,7 @@ bool StorageMergeTree::canMergeParts(const MergeTreeData::DataPartPtr & left, co
 }
 
 
-void StorageMergeTree::dropPartition(const Field & partition, bool detach)
+void StorageMergeTree::dropPartition(const Field & partition, bool detach, const Settings & settings)
 {
 	/** TODO В этот момент могут идти мерджи кусков в удаляемой партиции.
 	  * Когда эти мерджи завершатся, то часть данных из удаляемой партиции "оживёт".
@@ -245,7 +245,7 @@ void StorageMergeTree::dropPartition(const Field & partition, bool detach)
 }
 
 
-void StorageMergeTree::attachPartition(const Field & field, bool unreplicated, bool part)
+void StorageMergeTree::attachPartition(const Field & field, bool unreplicated, bool part, const Settings & settings)
 {
 	if (unreplicated)
 		throw Exception("UNREPLICATED option for ATTACH has meaning only for ReplicatedMergeTree", ErrorCodes::BAD_ARGUMENTS);

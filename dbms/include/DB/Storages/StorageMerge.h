@@ -46,7 +46,7 @@ public:
 
 	void drop() override {}
 	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override { name = new_table_name; }
-	
+
 	/// в подтаблицах добавлять и удалять столбы нужно вручную
 	/// структура подтаблиц не проверяется
 	void alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context) override;
@@ -57,7 +57,7 @@ private:
 	String source_database;
 	OptimizedRegularExpression table_name_regexp;
 	const Context & context;
-	
+
 	StorageMerge(
 		const std::string & name_,
 		NamesAndTypesListPtr columns_,

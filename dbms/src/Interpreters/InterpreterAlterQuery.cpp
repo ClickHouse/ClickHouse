@@ -42,15 +42,15 @@ void InterpreterAlterQuery::execute()
 		switch (command.type)
 		{
 			case PartitionCommand::DROP_PARTITION:
-				table->dropPartition(command.partition, command.detach);
+				table->dropPartition(command.partition, command.detach, context.getSettingsRef());
 				break;
 
 			case PartitionCommand::ATTACH_PARTITION:
-				table->attachPartition(command.partition, command.unreplicated, command.part);
+				table->attachPartition(command.partition, command.unreplicated, command.part, context.getSettingsRef());
 				break;
 
 			case PartitionCommand::FETCH_PARTITION:
-				table->fetchPartition(command.partition, command.from);
+				table->fetchPartition(command.partition, command.from, context.getSettingsRef());
 				break;
 
 			default:

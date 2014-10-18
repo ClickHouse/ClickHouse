@@ -77,8 +77,8 @@ public:
 		return merge(true);
 	}
 
-	void dropPartition(const Field & partition, bool detach) override;
-	void attachPartition(const Field & partition, bool unreplicated, bool part) override;
+	void dropPartition(const Field & partition, bool detach, const Settings & settings) override;
+	void attachPartition(const Field & partition, bool unreplicated, bool part, const Settings & settings) override;
 
 	void drop() override;
 
