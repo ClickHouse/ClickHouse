@@ -110,8 +110,7 @@ private:
 			else
 			{
 				default_type_column.column->insert(toString(it->second.type));
-				default_expression_column.column->insert(queryToString(
-					setAlias(it->second.expression->clone(), "")));
+				default_expression_column.column->insert(queryToString(it->second.expression));
 			}
 		}
 

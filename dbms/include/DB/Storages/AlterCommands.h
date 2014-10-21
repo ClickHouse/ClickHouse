@@ -41,7 +41,18 @@ struct AlterCommand
 			   NamesAndTypesList & materialized_columns,
 			   NamesAndTypesList & alias_columns,
 			   ColumnDefaults & column_defaults) const;
+
+	AlterCommand() = default;
+	AlterCommand(const Type type, const String & column_name, const DataTypePtr & data_type,
+				 const ColumnDefaultType default_type, const ASTPtr & default_expression,
+				 const String & after_column = String{})
+		: type{type}, column_name{column_name}, data_type{data_type}, default_type{default_type},
+		default_expression{default_expression}, after_column{after_column}
+	{}
 };
+
+class IStorage;
+class Context;
 
 class AlterCommands : public std::vector<AlterCommand>
 {
@@ -50,6 +61,8 @@ public:
 			   NamesAndTypesList & materialized_columns,
 			   NamesAndTypesList & alias_columns,
 			   ColumnDefaults & column_defaults) const;
+
+	void validate(IStorage * table, const Context & context);
 };
 
 }

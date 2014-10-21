@@ -133,15 +133,18 @@ void StorageMergeTree::alter(const AlterCommands & params, const String & databa
 	auto new_materialized_columns = data.materialized_columns;
 	auto new_alias_columns = data.alias_columns;
 	auto new_column_defaults = data.column_defaults;
-	
+
 	params.apply(new_columns, new_materialized_columns, new_alias_columns, new_column_defaults);
+
+	auto columns_for_parts = new_columns;
+	columns_for_parts.insert(std::end(columns_for_parts),
+		std::begin(new_materialized_columns), std::end(new_materialized_columns));
 
 	MergeTreeData::DataParts parts = data.getDataParts();
 	std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions;
 	for (const MergeTreeData::DataPartPtr & part : parts)
 	{
-		auto transaction = data.alterDataPart(part, new_columns);
-		if (transaction)
+		if (auto transaction = data.alterDataPart(part, columns_for_parts))
 			transactions.push_back(std::move(transaction));
 	}
 

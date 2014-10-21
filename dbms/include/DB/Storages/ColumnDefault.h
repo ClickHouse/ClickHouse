@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DB/Parsers/IAST.h>
+#include <DB/Parsers/formatAST.h>
 #include <unordered_map>
 
 namespace DB
@@ -56,5 +57,17 @@ namespace DB
 		ASTPtr expression;
 	};
 
-	using ColumnDefaults = std::unordered_map<String, ColumnDefault>;
+	inline bool operator==(const ColumnDefault & lhs, const ColumnDefault & rhs)
+	{
+		return lhs.type == rhs.type && queryToString(lhs.expression) == queryToString(rhs.expression);
+	}
+
+	struct ColumnDefaults : public std::unordered_map<String, ColumnDefault>
+	{
+		using std::unordered_map<String, ColumnDefault>::unordered_map;
+
+		/// @todo implement (de)serialization
+		String toString() const { return {}; }
+		static ColumnDefaults parse(const String & str) { return {}; }
+	};
 }

@@ -9,7 +9,6 @@
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
-#include <DB/Storages/ColumnDefault.h>
 #include "ColumnsWithNameAndType.h"
 
 
@@ -22,6 +21,7 @@ namespace DB
   */
 
 class Context;
+struct ColumnDefaults;
 
 class Block
 {
@@ -67,9 +67,6 @@ public:
 	/// Добавляет в блок недостающие столбцы со значениями по-умолчанию
 	void addDefaults(const NamesAndTypesList & required_columns);
 	void addDefaults(const NamesAndTypesList & required_columns,
-		const ColumnDefaults & column_defaults,
-		const Context & context);
-	void addAllDefaults(const NamesAndTypesList & required_columns,
 		const ColumnDefaults & column_defaults,
 		const Context & context);
 

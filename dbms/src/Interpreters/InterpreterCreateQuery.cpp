@@ -337,7 +337,7 @@ InterpreterCreateQuery::ColumnsAndDefaults InterpreterCreateQuery::parseColumns(
 
 			defaults.emplace(col_decl_ptr->name, ColumnDefault{
 				columnDefaultTypeFromString(col_decl_ptr->default_specifier),
-				setAlias(col_decl_ptr->default_expression, col_decl_ptr->name)
+				col_decl_ptr->default_expression
 			});
 		}
 	}
@@ -429,7 +429,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(NamesAndTypesList columns,
 		if (it != std::end(column_defaults))
 		{
 			column_declaration->default_specifier = toString(it->second.type);
-			column_declaration->default_expression = setAlias(it->second.expression->clone(), "");
+			column_declaration->default_expression = it->second.expression->clone();
 		}
 
 		columns_list.children.push_back(column_declaration_ptr);

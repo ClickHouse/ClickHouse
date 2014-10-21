@@ -5,6 +5,8 @@
 
 #include <DB/Core/Block.h>
 
+#include <DB/Storages/ColumnDefault.h>
+
 #include <DB/Columns/ColumnArray.h>
 #include <DB/DataTypes/DataTypeNested.h>
 
@@ -49,7 +51,8 @@ void Block::addDefaults(const NamesAndTypesList & required_columns,
 		if (it == column_defaults.end())
 			insertDefault(column.name, column.type);
 		else
-			default_expr_list->children.emplace_back(it->second.expression->clone());
+			default_expr_list->children.emplace_back(
+				setAlias(it->second.expression->clone(), it->first));
 	}
 
 	/// nothing to evaluate
@@ -65,38 +68,6 @@ void Block::addDefaults(const NamesAndTypesList & required_columns,
 	/// move evaluated columns to the original block
 	for (auto & column_name_type : copy_block.getColumns())
 		insert(std::move(column_name_type));
-}
-
-void Block::addAllDefaults(const NamesAndTypesList & required_columns,
-	const ColumnDefaults & column_defaults,
-	const Context & context)
-{
-	ASTPtr default_expr_list{stdext::make_unique<ASTExpressionList>().release()};
-
-	for (const auto & column_default : column_defaults)
-	{
-		if (has(column_default.first))
-			continue;
-
-		/// expressions must be cloned to prevent modification by the ExpressionAnalyzer
-		default_expr_list->children.emplace_back(column_default.second.expression->clone());
-	}
-
-	/// nothing to evaluate
-	if (default_expr_list->children.empty())
-		return;
-
-	/** ExpressionAnalyzer eliminates "unused" columns, in order to ensure their safety
-	 *	we are going to operate on a copy instead of  the original block */
-	Block copy_block{*this};
-	/// evaluate default values for defaulted columns
-	ExpressionAnalyzer{default_expr_list, context, required_columns}.getActions(true)->execute(copy_block);
-
-	/// move evaluated columns to the original block only if required
-	for (auto & column_name_type : required_columns) {
-		if (copy_block.has(column_name_type.name))
-			insert(std::move(copy_block.getByName(column_name_type.name)));
-	}
 }
 
 Block & Block::operator= (const Block & other)

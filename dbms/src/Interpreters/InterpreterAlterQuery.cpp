@@ -50,8 +50,12 @@ void InterpreterAlterQuery::execute()
 			throw Exception("Bad PartitionCommand::Type: " + toString(command.type), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 	}
 
-	if (!alter_commands.empty())
-		table->alter(alter_commands, database_name, table_name, context);
+	if (alter_commands.empty())
+		return;
+
+	alter_commands.validate(table.get(), context);
+
+	table->alter(alter_commands, database_name, table_name, context);
 }
 
 void InterpreterAlterQuery::parseAlter(
@@ -77,7 +81,7 @@ void InterpreterAlterQuery::parseAlter(
 			if (ast_col_decl.default_expression)
 			{
 				command.default_type = columnDefaultTypeFromString(ast_col_decl.default_specifier);
-				command.default_expression = setAlias(ast_col_decl.default_expression, ast_col_decl.name);
+				command.default_expression = ast_col_decl.default_expression;
 			}
 
 			if (params.column)
@@ -111,7 +115,7 @@ void InterpreterAlterQuery::parseAlter(
 			if (ast_col_decl.default_expression)
 			{
 				command.default_type = columnDefaultTypeFromString(ast_col_decl.default_specifier);
-				command.default_expression = setAlias(ast_col_decl.default_expression, ast_col_decl.name);
+				command.default_expression = ast_col_decl.default_expression;
 			}
 
 			out_alter_commands.push_back(command);

@@ -108,6 +108,7 @@ protected:
 
 		if (!reader)
 		{
+			/// @todo resolve missing columns
 			UncompressedCache * uncompressed_cache = use_uncompressed_cache ? storage.context.getUncompressedCache() : NULL;
 			reader.reset(new MergeTreeReader(path, owned_data_part->name, columns, uncompressed_cache, storage, all_mark_ranges));
 			if (prewhere_actions)

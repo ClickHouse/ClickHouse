@@ -381,7 +381,11 @@ void MergeTreeData::checkAlter(const AlterCommands & params)
 	/// Проверим, что преобразования типов возможны.
 	ExpressionActionsPtr unused_expression;
 	NameToNameMap unused_map;
-	createConvertExpression(nullptr, *columns, new_columns, unused_expression, unused_map);
+
+	/// augment plain columns with materialized columns for convert expression creation
+	new_columns.insert(std::end(new_columns),
+		std::begin(new_materialized_columns), std::end(new_materialized_columns));
+	createConvertExpression(nullptr, getColumnsList(), new_columns, unused_expression, unused_map);
 }
 
 void MergeTreeData::createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,

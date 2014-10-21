@@ -209,6 +209,12 @@ void StorageReplicatedMergeTree::createTableIfNotExists()
 										 zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
 	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/columns", data.getColumnsListNonMaterialized().toString(),
 										 zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
+	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/materialized_columns", data.materialized_columns.toString(),
+										 zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
+	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/alias_columns", data.alias_columns.toString(),
+										 zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
+	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/column_defaults", data.column_defaults.toString(),
+										 zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
 	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/log", "",
 										 zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
 	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/blocks", "",
@@ -256,13 +262,21 @@ void StorageReplicatedMergeTree::checkTableStructure(bool skip_sanity_checks, bo
 
 	zkutil::Stat stat;
 	auto columns = NamesAndTypesList::parse(zookeeper->get(zookeeper_path + "/columns", &stat), context.getDataTypeFactory());
-	NamesAndTypesList materialized_columns;
-	NamesAndTypesList alias_columns;
-	ColumnDefaults column_defaults;
+	auto materialized_columns = NamesAndTypesList::parse(
+		zookeeper->get(zookeeper_path + "/materialized_columns", &stat), context.getDataTypeFactory());
+	auto alias_columns = NamesAndTypesList::parse(
+		zookeeper->get(zookeeper_path + "/alias_columns", &stat), context.getDataTypeFactory());
+	auto column_defaults = ColumnDefaults::parse(zookeeper->get(zookeeper_path + "/column_defaults", &stat));
 	columns_version = stat.version;
-	if (columns != data.getColumnsListNonMaterialized())
+	if (columns != data.getColumnsListNonMaterialized() ||
+		materialized_columns != data.materialized_columns ||
+		alias_columns != data.alias_columns ||
+		column_defaults != data.column_defaults)
 	{
-		if (allow_alter && (data.getColumnsListNonMaterialized().sizeOfDifference(columns) <= 2 || skip_sanity_checks))
+		if (allow_alter &&
+			(skip_sanity_checks ||
+			 data.getColumnsListNonMaterialized().sizeOfDifference(columns) +
+			 data.materialized_columns.sizeOfDifference(materialized_columns) <= 2))
 		{
 			LOG_WARNING(log, "Table structure in ZooKeeper is a little different from local table structure. Assuming ALTER.");
 
@@ -411,6 +425,9 @@ void StorageReplicatedMergeTree::createReplica()
 	}
 
 	zookeeper->create(replica_path + "/columns", data.getColumnsListNonMaterialized().toString(), zkutil::CreateMode::Persistent);
+	zookeeper->create(replica_path + "/materialized_columns", data.materialized_columns.toString(), zkutil::CreateMode::Persistent);
+	zookeeper->create(replica_path + "/alias_columns", data.alias_columns.toString(), zkutil::CreateMode::Persistent);
+	zookeeper->create(replica_path + "/column_defaults", data.column_defaults.toString(), zkutil::CreateMode::Persistent);
 }
 
 void StorageReplicatedMergeTree::activateReplica()
@@ -631,6 +648,15 @@ void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(const MergeTreeData:
 
 	ops.push_back(new zkutil::Op::Check(
 		zookeeper_path + "/columns",
+		expected_columns_version));
+	ops.push_back(new zkutil::Op::Check(
+		zookeeper_path + "/materialized_columns",
+		expected_columns_version));
+	ops.push_back(new zkutil::Op::Check(
+		zookeeper_path + "/alias_columns",
+		expected_columns_version));
+	ops.push_back(new zkutil::Op::Check(
+		zookeeper_path + "/column_defaults",
 		expected_columns_version));
 	ops.push_back(new zkutil::Op::Create(
 		replica_path + "/parts/" + part_name,
@@ -1588,10 +1614,15 @@ void StorageReplicatedMergeTree::alterThread()
 			  */
 
 			zkutil::Stat stat;
-			String columns_str = zookeeper->get(zookeeper_path + "/columns", &stat, alter_thread_event);
+			const String columns_str = zookeeper->get(zookeeper_path + "/columns", &stat, alter_thread_event);
+			const String materialized_columns_str = zookeeper->get(zookeeper_path + "/materialized_columns",
+				&stat, alter_thread_event);
+			const String alias_columns_str = zookeeper->get(zookeeper_path + "/alias_columns",
+				&stat, alter_thread_event);
 			NamesAndTypesList columns = NamesAndTypesList::parse(columns_str, context.getDataTypeFactory());
-			NamesAndTypesList materialized_columns;
-			NamesAndTypesList alias_columns;
+			NamesAndTypesList materialized_columns = NamesAndTypesList::parse(
+				materialized_columns_str, context.getDataTypeFactory());
+			NamesAndTypesList alias_columns = NamesAndTypesList::parse(alias_columns_str, context.getDataTypeFactory());
 			ColumnDefaults column_defaults;
 
 			bool changed_version = (stat.version != columns_version);
@@ -1603,24 +1634,45 @@ void StorageReplicatedMergeTree::alterThread()
 			{
 				auto table_lock = lockStructureForAlter();
 
-				if (columns != data.getColumnsListNonMaterialized())
+				const auto columns_changed = columns != data.getColumnsListNonMaterialized();
+				const auto materialized_columns_changed = materialized_columns != data.materialized_columns;
+				const auto alias_columns_changed = alias_columns != data.alias_columns;
+				const auto column_defaults_changed = false;
+
+				if (columns_changed || materialized_columns_changed || alias_columns_changed ||
+					column_defaults_changed)
 				{
 					LOG_INFO(log, "Columns list changed in ZooKeeper. Applying changes locally.");
 
 					InterpreterAlterQuery::updateMetadata(database_name, table_name, columns,
 						materialized_columns, alias_columns, column_defaults, context);
 
-					this->materialized_columns = materialized_columns;
-					this->alias_columns = alias_columns;
-					this->column_defaults = column_defaults;
-					
-					data.setColumnsList(columns);
-					data.materialized_columns = std::move(materialized_columns);
-					data.alias_columns = std::move(alias_columns);
-					data.column_defaults = std::move(column_defaults);
+					if (columns_changed)
+					{
+						data.setColumnsList(columns);
 
-					if (unreplicated_data)
-						unreplicated_data->setColumnsList(columns);
+						if (unreplicated_data)
+							unreplicated_data->setColumnsList(columns);
+					}
+
+					if (materialized_columns_changed)
+					{
+						this->materialized_columns = materialized_columns;
+						data.materialized_columns = std::move(materialized_columns);
+					}
+
+					if (alias_columns_changed)
+					{
+						this->alias_columns = alias_columns;
+						data.alias_columns = std::move(alias_columns);
+					}
+
+					if (column_defaults_changed)
+					{
+						this->column_defaults = column_defaults;
+						data.column_defaults = std::move(column_defaults);
+					}
+
 					LOG_INFO(log, "Applied changes to table.");
 				}
 				else
@@ -1647,12 +1699,14 @@ void StorageReplicatedMergeTree::alterThread()
 				if (!changed_version)
 					parts = data.getDataParts();
 
+				const auto columns_plus_materialized = data.getColumnsList();
+
 				for (const MergeTreeData::DataPartPtr & part : parts)
 				{
 					/// Обновим кусок и запишем результат во временные файлы.
 					/// TODO: Можно пропускать проверку на слишком большие изменения, если в ZooKeeper есть, например,
 					///  нода /flags/force_alter.
-					auto transaction = data.alterDataPart(part, columns);
+					auto transaction = data.alterDataPart(part, columns_plus_materialized);
 
 					if (!transaction)
 						continue;
@@ -1676,7 +1730,7 @@ void StorageReplicatedMergeTree::alterThread()
 
 					for (const MergeTreeData::DataPartPtr & part : parts)
 					{
-						auto transaction = unreplicated_data->alterDataPart(part, columns);
+						auto transaction = unreplicated_data->alterDataPart(part, columns_plus_materialized);
 
 						if (!transaction)
 							continue;
@@ -1689,6 +1743,9 @@ void StorageReplicatedMergeTree::alterThread()
 
 				/// Список столбцов для конкретной реплики.
 				zookeeper->set(replica_path + "/columns", columns.toString());
+				zookeeper->set(replica_path + "/materialized_columns", materialized_columns.toString());
+				zookeeper->set(replica_path + "/alias_columns", alias_columns.toString());
+				zookeeper->set(replica_path + "/column_defaults", column_defaults.toString());
 
 				if (changed_version)
 				{
@@ -2330,6 +2387,9 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 	NamesAndTypesList new_alias_columns;
 	ColumnDefaults new_column_defaults;
 	String new_columns_str;
+	String new_materialized_columns_str;
+	String new_alias_columns_str;
+	String new_column_defaults_str;
 	int new_columns_version;
 	zkutil::Stat stat;
 
@@ -2348,9 +2408,15 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 		params.apply(new_columns, new_materialized_columns, new_alias_columns, new_column_defaults);
 
 		new_columns_str = new_columns.toString();
+		new_materialized_columns_str = new_materialized_columns.toString();
+		new_alias_columns_str = new_alias_columns.toString();
+		new_column_defaults_str = new_column_defaults.toString();
 
 		/// Делаем ALTER.
 		zookeeper->set(zookeeper_path + "/columns", new_columns_str, -1, &stat);
+		zookeeper->set(zookeeper_path + "/materialized_columns", new_materialized_columns_str, -1, &stat);
+		zookeeper->set(zookeeper_path + "/alias_columns", new_alias_columns_str, -1, &stat);
+		zookeeper->set(zookeeper_path + "/column_defaults", new_column_defaults_str, -1, &stat);
 
 		new_columns_version = stat.version;
 	}

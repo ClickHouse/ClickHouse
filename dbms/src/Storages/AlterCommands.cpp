@@ -1,6 +1,9 @@
 #include <DB/Storages/AlterCommands.h>
+#include <DB/Storages/IStorage.h>
 #include <DB/DataTypes/DataTypeNested.h>
 #include <DB/DataTypes/DataTypeArray.h>
+#include <DB/Interpreters/Context.h>
+#include <DB/Interpreters/ExpressionAnalyzer.h>
 
 namespace DB
 {
@@ -54,7 +57,7 @@ namespace DB
 				add_column(materialized_columns);
 			else if (default_type == ColumnDefaultType::Alias)
 				add_column(alias_columns);
-			else 
+			else
 				throw Exception{"Unknown ColumnDefaultType value", ErrorCodes::LOGICAL_ERROR};
 
 			if (default_expression)
@@ -139,7 +142,7 @@ namespace DB
 		auto new_materialized_columns = materialized_columns;
 		auto new_alias_columns = alias_columns;
 		auto new_column_defaults = column_defaults;
-		
+
 		for (const AlterCommand & command : *this)
 			command.apply(new_columns, new_materialized_columns, new_alias_columns, new_column_defaults);
 
@@ -147,5 +150,154 @@ namespace DB
 		materialized_columns = std::move(new_materialized_columns);
 		alias_columns = std::move(new_alias_columns);
 		column_defaults = std::move(new_column_defaults);
+	}
+
+	void AlterCommands::validate(IStorage * table, const Context & context)
+	{
+		auto lock = table->lockDataForAlter();
+
+		auto columns = table->getColumnsList();
+		columns.insert(std::end(columns), std::begin(table->alias_columns), std::end(table->alias_columns));
+		auto defaults = table->column_defaults;
+
+		lock.reset();
+
+		std::vector<std::pair<String, AlterCommand *>> defaulted_columns{};
+
+		ASTPtr default_expr_list{new ASTExpressionList};
+		default_expr_list->children.reserve(defaults.size());
+
+		for (AlterCommand & command : *this)
+		{
+			if (command.type == AlterCommand::ADD || command.type == AlterCommand::MODIFY)
+			{
+				if (command.type == AlterCommand::MODIFY)
+				{
+					const auto it = std::find_if(std::begin(columns), std::end(columns),
+						std::bind(AlterCommand::namesEqual, std::cref(command.column_name), std::placeholders::_1));
+
+					if (it == std::end(columns))
+						throw Exception("Wrong column name. Cannot find column " + command.column_name + " to modify.",
+										DB::ErrorCodes::ILLEGAL_COLUMN);
+
+					columns.erase(it);
+					defaults.erase(command.column_name);
+				}
+
+				if (command.data_type)
+					columns.emplace_back(command.column_name, command.data_type);
+
+				if (command.default_expression)
+				{
+					if (command.data_type)
+					{
+						const auto & column_name = command.column_name;
+						const auto tmp_column_name = column_name + "_tmp";
+						const auto conversion_function_name = "to" + command.data_type->getName();
+
+						default_expr_list->children.emplace_back(setAlias(
+							makeASTFunction(conversion_function_name, ASTPtr{new ASTIdentifier{{}, tmp_column_name}}),
+							column_name));
+
+						default_expr_list->children.emplace_back(setAlias(command.default_expression->clone(), tmp_column_name));
+
+						defaulted_columns.emplace_back(command.column_name, &command);
+					}
+					else
+					{
+						default_expr_list->children.emplace_back(
+							setAlias(command.default_expression->clone(), command.column_name));
+
+						defaulted_columns.emplace_back(command.column_name, &command);
+					}
+				}
+			}
+			else if (command.type == AlterCommand::DROP)
+			{
+				auto found = false;
+				for (auto it = std::begin(columns); it != std::end(columns);)
+					if (AlterCommand::namesEqual(command.column_name, *it))
+					{
+						found = true;
+						it = columns.erase(it);
+					}
+					else
+						++it;
+
+				for (auto it = std::begin(defaults); it != std::end(defaults);)
+					if (AlterCommand::namesEqual(command.column_name, { it->first, nullptr }))
+						it = defaults.erase(it);
+					else
+						++it;
+
+				if (!found)
+					throw Exception("Wrong column name. Cannot find column " + command.column_name + " to drop.",
+						DB::ErrorCodes::ILLEGAL_COLUMN);
+			}
+		}
+
+		/** Existing defaulted columns may require default expression extensions with a type conversion,
+		 *  therefore we add them to defaulted_columns to allow further processing */
+		for (const auto & col_def : defaults)
+		{
+			const auto & column_name = col_def.first;
+			const auto column_it = std::find_if(columns.begin(), columns.end(), [&] (const NameAndTypePair & name_type) {
+				return AlterCommand::namesEqual(column_name, name_type);
+			});
+			const auto tmp_column_name = column_name + "_tmp";
+			const auto conversion_function_name = "to" + column_it->type->getName();
+
+			default_expr_list->children.emplace_back(setAlias(
+				makeASTFunction(conversion_function_name, ASTPtr{new ASTIdentifier{{}, tmp_column_name}}),
+				column_name));
+
+			default_expr_list->children.emplace_back(setAlias(col_def.second.expression->clone(), tmp_column_name));
+
+			defaulted_columns.emplace_back(column_name, nullptr);
+		}
+
+		const auto actions = ExpressionAnalyzer{default_expr_list, context, columns}.getActions(true);
+		const auto block = actions->getSampleBlock();
+
+		/// set deduced types, modify default expression if necessary
+		for (auto & defaulted_column : defaulted_columns)
+		{
+			const auto & column_name = defaulted_column.first;
+			const auto command_ptr = defaulted_column.second;
+			const auto & column = block.getByName(column_name);
+
+			/// default expression on old column
+			if (!command_ptr)
+			{
+				const auto & tmp_column = block.getByName(column_name + "_tmp");
+
+				// column not specified explicitly in the ALTER query may require default_expression modification
+				if (typeid(*column.type) != typeid(*tmp_column.type))
+				{
+					const auto it = defaults.find(column_name);
+					this->push_back(AlterCommand{
+						AlterCommand::MODIFY, column_name, column.type, it->second.type,
+						makeASTFunction("to" + column.type->getName(), it->second.expression),
+					});
+				}
+			}
+			else if (command_ptr && command_ptr->data_type)
+			{
+				const auto & tmp_column = block.getByName(column_name + "_tmp");
+
+				/// type mismatch between explicitly specified and deduced type, add conversion
+				if (typeid(*column.type) != typeid(*tmp_column.type))
+				{
+					command_ptr->default_expression = makeASTFunction(
+						"to" + column.type->getName(),
+						command_ptr->default_expression->clone());
+				}
+			}
+			else
+			{
+				/// just set deduced type
+				command_ptr->data_type = column.type;
+			}
+		}
 	}
 }

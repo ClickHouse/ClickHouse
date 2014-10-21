@@ -124,7 +124,7 @@ public:
 				storage.reportBrokenPart(part_name);
 
 			/// Более хорошая диагностика.
-			throw Exception(e.message() + " (while reading from part " + path + " from mark " + toString(from_mark) + " to "
+			throw Exception(e.message() +  "\n(while reading from part " + path + " from mark " + toString(from_mark) + " to "
 				+ toString(to_mark) + ")", e.code());
 		}
 		catch (...)
@@ -195,12 +195,13 @@ public:
 			}
 
 			/// evaluate defaulted columns
-			res.addAllDefaults(columns, storage.column_defaults, storage.context);
+			res.addDefaults(columns, storage.column_defaults, storage.context);
 		}
 		catch (const Exception & e)
 		{
 			/// Более хорошая диагностика.
-			throw Exception(e.message() + " (while reading from part " + path + ")", e.code());
+			throw Exception(e.message() + '\n' + e.getStackTrace().toString()
+				+ "\n(while reading from part " + path + ")", e.code());
 		}
 	}
 
