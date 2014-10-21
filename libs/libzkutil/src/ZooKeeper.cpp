@@ -90,20 +90,31 @@ struct ZooKeeperArgs
 		config.keys(config_name, keys);
 		std::string node_key = "node";
 
+		std::vector<std::string> hosts_strings;
+
 		session_timeout_ms = DEFAULT_SESSION_TIMEOUT;
 		for (const auto & key : keys)
 		{
 			if (key == node_key || key.compare(0, node_key.size(), node_key) == 0)
 			{
-				if (hosts.size())
-					hosts += std::string(",");
-				hosts += config.getString(config_name + "." + key + ".host") + ":" + config.getString(config_name + "." + key + ".port");
+				hosts_strings.push_back(
+					config.getString(config_name + "." + key + ".host") + ":" + config.getString(config_name + "." + key + ".port"));
 			}
 			else if (key == "session_timeout_ms")
 			{
 				session_timeout_ms = config.getInt(config_name + "." + key);
 			}
 			else throw KeeperException(std::string("Unknown key ") + key + " in config file");
+		}
+
+		/// перемешиваем порядок хостов, чтобы сделать нагрузку на zookeeper более равномерной
+		std::random_shuffle(hosts_strings.begin(), hosts_strings.end());
+
+		for (auto & host : hosts_strings)
+		{
+			if (hosts.size())
+				hosts += ",";
+			hosts += host;
 		}
 	}
 

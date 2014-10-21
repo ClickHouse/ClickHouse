@@ -697,6 +697,17 @@ void ExpressionAnalyzer::makeExplicitSet(ASTFunction * node, const Block & sampl
 
 		if (left_arg_tuple && left_arg_tuple->name == "tuple")
 		{
+			for (const auto & arg : left_arg_tuple->arguments->children)
+			{
+				const auto & data_type = sample_block.getByName(arg->getColumnName()).type;
+
+				/// @note prevent crash in query: SELECT (1, [1]) in (1, 1)
+				if (const auto array = typeid_cast<const DataTypeArray * >(data_type.get()))
+					throw Exception("Incorrect element of tuple: " + array->getName(), ErrorCodes::INCORRECT_ELEMENT_OF_SET);
+
+				set_element_types.push_back(data_type);
+			}
+
 			for (ASTs::const_iterator it = left_arg_tuple->arguments->children.begin();
 				it != left_arg_tuple->arguments->children.end();
 				++it)
