@@ -707,11 +707,6 @@ void ExpressionAnalyzer::makeExplicitSet(ASTFunction * node, const Block & sampl
 
 				set_element_types.push_back(data_type);
 			}
-
-			for (ASTs::const_iterator it = left_arg_tuple->arguments->children.begin();
-				it != left_arg_tuple->arguments->children.end();
-				++it)
-				set_element_types.push_back(sample_block.getByName((*it)->getColumnName()).type);
 		}
 		else
 		{
