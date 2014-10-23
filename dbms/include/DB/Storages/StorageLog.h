@@ -148,6 +148,12 @@ public:
 		const ColumnDefaults & column_defaults_,
 		size_t max_compress_block_size_ = DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
 
+	static StoragePtr create(
+		const std::string & path_,
+		const std::string & name_,
+		NamesAndTypesListPtr columns_,
+		size_t max_compress_block_size_ = DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
+
 	std::string getName() const { return "Log"; }
 	std::string getTableName() const { return name; }
 

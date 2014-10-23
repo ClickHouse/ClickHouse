@@ -4,7 +4,6 @@
 #include <DB/Parsers/formatAST.h>
 #include <DB/Parsers/ExpressionListParsers.h>
 #include <DB/IO/WriteBufferFromString.h>
-#include <statdaemons/ext/range.hpp>
 #include <unordered_map>
 
 namespace DB

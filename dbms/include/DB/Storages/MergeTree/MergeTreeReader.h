@@ -10,6 +10,7 @@
 #include <DB/IO/CompressedReadBufferFromFile.h>
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnNested.h>
+#include <DB/Interpreters/evaluateMissingDefaults.h>
 
 
 namespace DB
@@ -195,7 +196,7 @@ public:
 			}
 
 			/// evaluate defaulted columns
-			res.addDefaults(columns, storage.column_defaults, storage.context);
+			evaluateMissingDefaults(res, columns, storage.column_defaults, storage.context);
 		}
 		catch (const Exception & e)
 		{

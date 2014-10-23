@@ -66,9 +66,6 @@ public:
 	void erase(const String & name);
 	/// Добавляет в блок недостающие столбцы со значениями по-умолчанию
 	void addDefaults(const NamesAndTypesList & required_columns);
-	void addDefaults(const NamesAndTypesList & required_columns,
-		const ColumnDefaults & column_defaults,
-		const Context & context);
 
 	ColumnWithNameAndType & getByPosition(size_t position);
 	const ColumnWithNameAndType & getByPosition(size_t position) const;

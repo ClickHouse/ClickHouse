@@ -7,6 +7,7 @@
 
 #include <DB/Storages/ColumnDefault.h>
 #include <DB/Interpreters/Context.h>
+#include <DB/Interpreters/evaluateMissingDefaults.h>
 
 
 namespace DB
@@ -38,7 +39,8 @@ public:
 	void write(const Block & block) override
 	{
 		Block res = block;
-		res.addDefaults(*required_columns, column_defaults, context);
+		evaluateMissingDefaults(res, *required_columns, column_defaults, context);
+		res.addDefaults(*required_columns);
 		output->write(res);
 	}
 

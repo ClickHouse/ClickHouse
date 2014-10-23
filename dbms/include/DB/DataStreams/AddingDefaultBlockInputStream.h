@@ -3,6 +3,7 @@
 #include <Poco/SharedPtr.h>
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
+#include <DB/Interpreters/evaluateMissingDefaults.h>
 #include <DB/Columns/ColumnConst.h>
 
 #include <DB/Storages/ColumnDefault.h>
@@ -54,7 +55,8 @@ protected:
 		Block res = children.back()->read();
 		if (!res)
 			return res;
-		res.addDefaults(*required_columns, column_defaults, context);
+		evaluateMissingDefaults(res, *required_columns, column_defaults, context);
+		res.addDefaults(*required_columns);
 		return res;
 	}
 

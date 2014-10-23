@@ -34,42 +34,6 @@ void Block::addDefaults(const NamesAndTypesList & required_columns)
 			insertDefault(column.name, column.type);
 }
 
-void Block::addDefaults(const NamesAndTypesList & required_columns,
-	const ColumnDefaults & column_defaults,
-	const Context & context)
-{
-	ASTPtr default_expr_list{stdext::make_unique<ASTExpressionList>().release()};
-
-	for (const auto & column : required_columns)
-	{
-		if (has(column.name))
-			continue;
-
-		const auto it = column_defaults.find(column.name);
-
-		/// expressions must be cloned to prevent modification by the ExpressionAnalyzer
-		if (it == column_defaults.end())
-			insertDefault(column.name, column.type);
-		else
-			default_expr_list->children.emplace_back(
-				setAlias(it->second.expression->clone(), it->first));
-	}
-
-	/// nothing to evaluate
-	if (default_expr_list->children.empty())
-		return;
-
-	/** ExpressionAnalyzer eliminates "unused" columns, in order to ensure their safety
-	 *	we are going to operate on a copy instead of  the original block */
-	Block copy_block{*this};
-	/// evaluate default values for defaulted columns
-	ExpressionAnalyzer{default_expr_list, context, required_columns}.getActions(true)->execute(copy_block);
-
-	/// move evaluated columns to the original block
-	for (auto & column_name_type : copy_block.getColumns())
-		insert(std::move(column_name_type));
-}
-
 Block & Block::operator= (const Block & other)
 {
 	data = other.data;
