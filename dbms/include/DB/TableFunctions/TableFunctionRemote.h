@@ -31,9 +31,8 @@ public:
 	{
 		ASTs & args_func = typeid_cast<ASTFunction &>(*ast_function).children;
 
-		const char * err = "Storage Distributed requires 2 to 5 parameters"
-				" - name of configuration section with list of remote servers, name of remote database {,|.} name of remote table, "
-				"[username, password].";
+		const char * err = "Table function remote requires 2 to 5 parameters: "
+			"addresses pattern, name of remote database, name of remote table, [username, password].";
 
 		if (args_func.size() != 1)
 			throw Exception(err, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
