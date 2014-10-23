@@ -2,6 +2,9 @@
 
 #include <DB/Parsers/IAST.h>
 #include <DB/Parsers/formatAST.h>
+#include <DB/Parsers/ExpressionListParsers.h>
+#include <DB/IO/WriteBufferFromString.h>
+#include <statdaemons/ext/range.hpp>
 #include <unordered_map>
 
 namespace DB
@@ -67,7 +70,67 @@ namespace DB
 		using std::unordered_map<String, ColumnDefault>::unordered_map;
 
 		/// @todo implement (de)serialization
-		String toString() const { return {}; }
-		static ColumnDefaults parse(const String & str) { return {}; }
+		String toString() const
+		{
+			String s;
+			WriteBufferFromString buf{s};
+
+			writeString("column defaults format version: 1\n", buf);
+			writeText(size(), buf);
+			writeString(" columns:\n", buf);
+
+			for (const auto & column_default : *this)
+			{
+				writeBackQuotedString(column_default.first, buf);
+				writeChar(' ', buf);
+				writeString(DB::toString(column_default.second.type), buf);
+				writeChar('\t', buf);
+				writeString(queryToString(column_default.second.expression), buf);
+				writeChar('\n', buf);
+			}
+
+			return s;
+		}
+
+		static ColumnDefaults parse(const String & str) {
+			ReadBufferFromString buf{str};
+			ColumnDefaults defaults{};
+
+			assertString("column defaults format version: 1\n", buf);
+			size_t count{};
+			readText(count, buf);
+			assertString(" columns:\n", buf);
+
+			ParserTernaryOperatorExpression expr_parser;
+
+			for (size_t i = 0; i < count; ++i)
+			{
+				String column_name;
+				readBackQuotedString(column_name, buf);
+				assertString(" ", buf);
+
+				String default_type_str;
+				readString(default_type_str, buf);
+				const auto default_type = columnDefaultTypeFromString(default_type_str);
+				assertString("\t", buf);
+
+				String default_expr_str;
+				readText(default_expr_str, buf);
+				assertString("\n", buf);
+
+				ASTPtr default_expr;
+				Expected expected{};
+				auto begin = default_expr_str.data();
+				const auto end = begin + default_expr_str.size();
+				if (!expr_parser.parse(begin, end, default_expr, expected))
+					throw Exception{"Could not parse default expression", DB::ErrorCodes::CANNOT_PARSE_TEXT};
+
+				defaults.emplace(column_name, ColumnDefault{default_type, default_expr});
+			}
+
+			assertEOF(buf);
+
+			return defaults;
+		}
 	};
 }

@@ -1619,11 +1619,13 @@ void StorageReplicatedMergeTree::alterThread()
 				&stat, alter_thread_event);
 			const String alias_columns_str = zookeeper->get(zookeeper_path + "/alias_columns",
 				&stat, alter_thread_event);
+			const String column_defaults_str = zookeeper->get(zookeeper_path + "/column_defaults",
+				&stat, alter_thread_event);
 			NamesAndTypesList columns = NamesAndTypesList::parse(columns_str, context.getDataTypeFactory());
 			NamesAndTypesList materialized_columns = NamesAndTypesList::parse(
 				materialized_columns_str, context.getDataTypeFactory());
 			NamesAndTypesList alias_columns = NamesAndTypesList::parse(alias_columns_str, context.getDataTypeFactory());
-			ColumnDefaults column_defaults;
+			ColumnDefaults column_defaults = ColumnDefaults::parse(column_defaults_str);
 
 			bool changed_version = (stat.version != columns_version);
 
@@ -1637,7 +1639,7 @@ void StorageReplicatedMergeTree::alterThread()
 				const auto columns_changed = columns != data.getColumnsListNonMaterialized();
 				const auto materialized_columns_changed = materialized_columns != data.materialized_columns;
 				const auto alias_columns_changed = alias_columns != data.alias_columns;
-				const auto column_defaults_changed = false;
+				const auto column_defaults_changed = column_defaults != data.column_defaults;
 
 				if (columns_changed || materialized_columns_changed || alias_columns_changed ||
 					column_defaults_changed)
@@ -2444,9 +2446,18 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 		while (!shutdown_called)
 		{
 			String replica_columns_str;
+			String replica_materialized_columns_str;
+			String replica_alias_columns_str;
+			String replica_column_defaults_str;
 
 			/// Реплику могли успеть удалить.
-			if (!zookeeper->tryGet(zookeeper_path + "/replicas/" + replica + "/columns", replica_columns_str, &stat))
+			if (!zookeeper->tryGet(zookeeper_path + "/replicas/" + replica + "/columns", replica_columns_str, &stat) ||
+				!zookeeper->tryGet(zookeeper_path + "/replicas/" + replica + "/materialized_columns",
+								   replica_materialized_columns_str, &stat) ||
+				!zookeeper->tryGet(zookeeper_path + "/replicas/" + replica + "/alias_columns",
+								   replica_alias_columns_str, &stat) ||
+				!zookeeper->tryGet(zookeeper_path + "/replicas/" + replica + "/column_defaults",
+								   replica_column_defaults_str, &stat))
 			{
 				LOG_WARNING(log, replica << " was removed");
 				break;
@@ -2454,11 +2465,23 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 
 			int replica_columns_version = stat.version;
 
-			if (replica_columns_str == new_columns_str)
+			if (replica_columns_str == new_columns_str &&
+				replica_materialized_columns_str == new_materialized_columns_str &&
+				replica_alias_columns_str == new_alias_columns_str &&
+				replica_column_defaults_str == new_column_defaults_str)
 				break;
 
 			if (!zookeeper->exists(zookeeper_path + "/columns", &stat))
 				throw Exception(zookeeper_path + "/columns doesn't exist", ErrorCodes::NOT_FOUND_NODE);
+
+			if (!zookeeper->exists(zookeeper_path + "/materialized_columns", &stat))
+				throw Exception(zookeeper_path + "/materialized_columns doesn't exist", ErrorCodes::NOT_FOUND_NODE);
+
+			if (!zookeeper->exists(zookeeper_path + "/alias_columns", &stat))
+				throw Exception(zookeeper_path + "/alias_columns doesn't exist", ErrorCodes::NOT_FOUND_NODE);
+
+			if (!zookeeper->exists(zookeeper_path + "/column_defaults", &stat))
+				throw Exception(zookeeper_path + "/column_defaults doesn't exist", ErrorCodes::NOT_FOUND_NODE);
 
 			if (stat.version != new_columns_version)
 			{
@@ -2467,7 +2490,13 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 				return;
 			}
 
-			if (!zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/columns", &stat, alter_query_event))
+			if (!zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/columns", &stat, alter_query_event) ||
+				!zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/materialized_columns",
+								   &stat, alter_query_event) ||
+				!zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/alias_columns",
+								   &stat, alter_query_event) ||
+				!zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/column_defaults",
+								   &stat, alter_query_event))
 			{
 				LOG_WARNING(log, replica << " was removed");
 				break;
