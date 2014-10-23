@@ -46,7 +46,7 @@ protected:
 		UInt8 method = own_compressed_buffer[0];	/// См. CompressedWriteBuffer.h
 		size_t size_compressed;
 
-		if (method < 4)
+		if (method < 4 || method == 71)		/// 71 - для совместимости с когда-то давно записанными файлами.
 		{
 			size_compressed = qlz_size_compressed(&own_compressed_buffer[0]);
 			size_decompressed = qlz_size_decompressed(&own_compressed_buffer[0]);
@@ -92,7 +92,7 @@ protected:
 
 		UInt8 method = compressed_buffer[0];	/// См. CompressedWriteBuffer.h
 
-		if (method < 4)
+		if (method < 4 || method == 71)		/// 71 - для совместимости с когда-то давно записанными файлами.
 		{
 			if (!qlz_state)
 				qlz_state = new qlz_state_decompress;
