@@ -23,6 +23,7 @@
 #include <DB/Parsers/ASTSubquery.h>
 #include <DB/Parsers/ASTAlterQuery.h>
 #include <DB/Parsers/ASTShowProcesslistQuery.h>
+#include <DB/Parsers/ASTSet.h>
 #include <DB/Parsers/ASTJoin.h>
 #include <DB/Parsers/ASTCheckQuery.h>
 //#include <DB/Parsers/ASTMultiQuery.h>
@@ -57,6 +58,7 @@ void formatAST(const ASTAsterisk		& ast, std::ostream & s, size_t indent = 0, bo
 void formatAST(const ASTOrderByElement	& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false, bool need_parens = false);
 void formatAST(const ASTSubquery		& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false, bool need_parens = false);
 void formatAST(const ASTAlterQuery 		& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false, bool need_parens = false);
+void formatAST(const ASTSet 			& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false, bool need_parens = false);
 void formatAST(const ASTJoin 			& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false, bool need_parens = false);
 void formatAST(const ASTCheckQuery 		& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false, bool need_parens = false);
 //void formatAST(const ASTMultiQuery 		& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false, bool need_parens = false);

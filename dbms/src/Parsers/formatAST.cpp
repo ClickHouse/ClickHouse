@@ -69,6 +69,7 @@ void formatAST(const IAST & ast, std::ostream & s, size_t indent, bool hilite, b
 	DISPATCH(Subquery)
 	DISPATCH(AlterQuery)
 	DISPATCH(ShowProcesslistQuery)
+	DISPATCH(Set)
 	DISPATCH(Join)
 	DISPATCH(CheckQuery)
 //	DISPATCH(MultiQuery)
@@ -771,6 +772,16 @@ void formatAST(const ASTAlterQuery 			& ast, std::ostream & s, size_t indent, bo
 
 		s << nl_or_ws;
 	}
+}
+
+void formatAST(const ASTSet & ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
+{
+	/** Подготовленное множество. В пользовательских запросах такого не бывает, но такое бывает после промежуточных преобразований запроса.
+	  * Выведем его не по-настоящему (это не будет корректным запросом, но покажет, что здесь было множество).
+	  */
+	s << (hilite ? hilite_keyword : "")
+		<< "(...)"
+		<< (hilite ? hilite_none : "");
 }
 
 void formatAST(const ASTJoin & ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
