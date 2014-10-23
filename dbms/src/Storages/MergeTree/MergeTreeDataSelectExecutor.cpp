@@ -110,16 +110,18 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	typedef Poco::SharedPtr<ASTFunction> ASTFunctionPtr;
 	ASTFunctionPtr filter_function;
 	ExpressionActionsPtr filter_expression;
+	double relative_sample_size = 0;
 
 	if (select.sample_size)
 	{
-		double size = apply_visitor(FieldVisitorConvertToNumber<double>(),
+		relative_sample_size = apply_visitor(FieldVisitorConvertToNumber<double>(),
 			typeid_cast<ASTLiteral&>(*select.sample_size).value);
 
-		if (size < 0)
+		if (relative_sample_size < 0)
 			throw Exception("Negative sample size", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-		if (size > 1)
+		/// Переводим абсолютную величину сэмплирования (вида SAMPLE 1000000 - сколько строк прочитать) в относительную (какую долю данных читать).
+		if (relative_sample_size > 1)
 		{
 			size_t requested_count = apply_visitor(FieldVisitorConvertToNumber<UInt64>(), typeid_cast<ASTLiteral&>(*select.sample_size).value);
 
@@ -136,11 +138,18 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 			}
 			total_count *= data.index_granularity;
 
-			size = std::min(1., static_cast<double>(requested_count) / total_count);
+			relative_sample_size = std::min(1., static_cast<double>(requested_count) / total_count);
 
-			LOG_DEBUG(log, "Selected relative sample size: " << size);
+			LOG_DEBUG(log, "Selected relative sample size: " << relative_sample_size);
 		}
 
+		/// SAMPLE 1 - то же, что и отсутствие SAMPLE.
+		if (relative_sample_size == 1)
+			relative_sample_size = 0;
+	}
+
+	if (relative_sample_size != 0)
+	{
 		UInt64 sampling_column_max = 0;
 		DataTypePtr type = data.getPrimaryExpression()->getSampleBlock().getByName(data.sampling_expression->getColumnName()).type;
 
@@ -156,7 +165,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 			throw Exception("Invalid sampling column type in storage parameters: " + type->getName() + ". Must be unsigned integer type.", ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
 
 		/// Добавим условие, чтобы отсечь еще что-нибудь при повторном просмотре индекса.
-		sampling_column_value_limit = static_cast<UInt64>(size * sampling_column_max);
+		sampling_column_value_limit = static_cast<UInt64>(relative_sample_size * sampling_column_max);
 		if (!key_condition.addCondition(data.sampling_expression->getColumnName(),
 			Range::createRightBounded(sampling_column_value_limit, true)))
 			throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
@@ -252,7 +261,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 			virt_column_names);
 	}
 
-	if (select.sample_size)
+	if (relative_sample_size != 0)
 		for (auto & stream : res)
 			stream = new FilterBlockInputStream(new ExpressionBlockInputStream(stream, filter_expression), filter_function->getColumnName());
 
