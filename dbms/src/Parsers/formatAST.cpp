@@ -486,6 +486,15 @@ void formatAST(const ASTFunction 			& ast, std::ostream & s, size_t indent, bool
 				if (0 == strcmp(ast.name.c_str(), func[0]))
 				{
 					s << (hilite ? hilite_operator : "") << func[1] << (hilite ? hilite_none : "");
+
+					/** Особо дурацкий случай. Если у нас унарный минус перед литералом, являющимся отрицательным числом:
+					  * "-(-1)" или "- -1", то это нельзя форматировать как --1, так как это будет воспринято как комментарий.
+					  * Вместо этого, добавим пробел.
+					  * PS. Нельзя просто попросить добавить скобки - см. formatAST для ASTLiteral.
+					  */
+					if (ast.name == "negate" && typeid_cast<const ASTLiteral *>(&*ast.arguments->children[0]))
+						s << ' ';
+
 					formatAST(*ast.arguments, s, indent, hilite, one_line, true);
 					written = true;
 				}
