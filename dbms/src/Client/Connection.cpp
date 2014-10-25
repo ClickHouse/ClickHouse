@@ -470,7 +470,7 @@ Progress Connection::receiveProgress()
 	//LOG_TRACE(log_wrapper.get(), "Receiving progress (" << getServerAddress() << ")");
 
 	Progress progress;
-	progress.read(*in);
+	progress.read(*in, server_revision);
 	return progress;
 }
 

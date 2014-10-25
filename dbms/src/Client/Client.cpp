@@ -28,6 +28,8 @@
 #include <DB/Core/Types.h>
 #include <DB/Core/QueryProcessingStage.h>
 
+#include <DB/Common/formatReadable.h>
+
 #include <DB/IO/ReadBufferFromFileDescriptor.h>
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
 #include <DB/IO/WriteBufferFromString.h>
@@ -121,8 +123,9 @@ private:
 
 	Stopwatch watch;
 
-	size_t rows_read_on_server = 0;
-	size_t bytes_read_on_server = 0;
+	/// С сервера периодически приходит информация, о том, сколько прочитано данных за прошедшее время.
+	Progress progress;
+
 	size_t written_progress_chars = 0;
 	bool written_first_block = false;
 
@@ -470,8 +473,7 @@ private:
 			return true;
 
 		processed_rows = 0;
-		rows_read_on_server = 0;
-		bytes_read_on_server = 0;
+		progress.reset();
 		written_progress_chars = 0;
 		written_first_block = false;
 
@@ -511,7 +513,7 @@ private:
 			std::cout << std::endl
 				<< processed_rows << " rows in set. Elapsed: " << watch.elapsedSeconds() << " sec. ";
 
-			if (rows_read_on_server >= 1000)
+			if (progress.rows >= 1000)
 				writeFinalProgress();
 
 			std::cout << std::endl << std::endl;
@@ -809,11 +811,9 @@ private:
 	}
 
 
-	void onProgress(const Progress & progress)
+	void onProgress(const Progress & value)
 	{
-		rows_read_on_server += progress.rows;
-		bytes_read_on_server += progress.bytes;
-
+		progress.increment(value);
 		writeProgress();
 	}
 
@@ -851,13 +851,20 @@ private:
 		std::stringstream message;
 		message << indicators[increment % 8]
 			<< std::fixed << std::setprecision(3)
-			<< " Progress: " << rows_read_on_server << " rows, " << bytes_read_on_server / 1000000.0 << " MB";
+			<< " Progress: ";
+
+		if (progress.total_rows)
+			message << (100.0 * progress.rows / progress.total_rows) << "%, ";
+
+		message
+			<< formatReadableQuantity(progress.rows) << " rows, "
+			<< formatReadableSizeWithDecimalSuffix(progress.bytes);
 
 		size_t elapsed_ns = watch.elapsed();
 		if (elapsed_ns)
 			message << " ("
-				<< rows_read_on_server * 1000000000.0 / elapsed_ns << " rows/s., "
-				<< bytes_read_on_server * 1000.0 / elapsed_ns << " MB/s.) ";
+				<< formatReadableQuantity(progress.rows * 1000000000.0 / elapsed_ns) << " rows/s., "
+				<< formatReadableSizeWithDecimalSuffix(progress.bytes * 1000000000.0 / elapsed_ns) << "/s.) ";
 		else
 			message << ". ";
 
@@ -869,13 +876,15 @@ private:
 
 	void writeFinalProgress()
 	{
-		std::cout << "Processed " << rows_read_on_server << " rows, " << bytes_read_on_server / 1000000.0 << " MB";
+		std::cout << "Processed "
+			<< formatReadableQuantity(progress.rows) << " rows, "
+			<< formatReadableSizeWithDecimalSuffix(progress.bytes);
 
 		size_t elapsed_ns = watch.elapsed();
 		if (elapsed_ns)
 			std::cout << " ("
-				<< rows_read_on_server * 1000000000.0 / elapsed_ns << " rows/s., "
-				<< bytes_read_on_server * 1000.0 / elapsed_ns << " MB/s.) ";
+				<< formatReadableQuantity(progress.rows * 1000000000.0 / elapsed_ns) << " rows/s., "
+				<< formatReadableSizeWithDecimalSuffix(progress.bytes * 1000000000.0 / elapsed_ns) << "/s.) ";
 		else
 			std::cout << ". ";
 	}

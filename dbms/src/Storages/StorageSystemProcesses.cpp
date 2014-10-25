@@ -17,6 +17,7 @@ StorageSystemProcesses::StorageSystemProcesses(const std::string & name_, const 
 		{ "elapsed", 		new DataTypeFloat64	},
 		{ "rows_read", 		new DataTypeUInt64	},
 		{ "bytes_read",		new DataTypeUInt64	},
+		{ "total_rows_approx", new DataTypeUInt64 },
 		{ "memory_usage",	new DataTypeUInt64	},
 		{ "query", 			new DataTypeString	},
 		{ "query_id", 		new DataTypeString	}
@@ -42,20 +43,19 @@ BlockInputStreams StorageSystemProcesses::read(
 	ColumnWithNameAndType col_elapsed{new ColumnFloat64, new DataTypeFloat64, "elapsed"};
 	ColumnWithNameAndType col_rows_read{new ColumnUInt64, new DataTypeUInt64, "rows_read"};
 	ColumnWithNameAndType col_bytes_read{new ColumnUInt64, new DataTypeUInt64, "bytes_read"};
+	ColumnWithNameAndType col_total_rows_approx{new ColumnUInt64, new DataTypeUInt64, "total_rows_approx"};
 	ColumnWithNameAndType col_memory_usage{new ColumnUInt64, new DataTypeUInt64, "memory_usage"};
 	ColumnWithNameAndType col_query{new ColumnString, new DataTypeString, "query"};
 	ColumnWithNameAndType col_query_id{new ColumnString, new DataTypeString, "query_id"};
 
 	for (const auto & process : context.getProcessList().get())
 	{
-		const size_t rows_read = process.rows_processed;
-		const size_t bytes_read = process.bytes_processed;
-
 		col_user.column->insert(process.user);
 		col_address.column->insert(process.ip_address.toString());
 		col_elapsed.column->insert(process.watch.elapsedSeconds());
-		col_rows_read.column->insert(rows_read);
-		col_bytes_read.column->insert(bytes_read);
+		col_rows_read.column->insert(process.progress.rows);
+		col_bytes_read.column->insert(process.progress.bytes);
+		col_total_rows_approx.column->insert(process.progress.total_rows);
 		col_memory_usage.column->insert(static_cast<UInt64>(process.memory_tracker.get()));
 		col_query.column->insert(process.query);
 		col_query_id.column->insert(process.query_id);
@@ -67,6 +67,7 @@ BlockInputStreams StorageSystemProcesses::read(
 		col_elapsed,
 		col_rows_read,
 		col_bytes_read,
+		col_total_rows_approx,
 		col_memory_usage,
 		col_query,
 		col_query_id

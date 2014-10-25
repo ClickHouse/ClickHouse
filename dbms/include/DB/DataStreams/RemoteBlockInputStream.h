@@ -66,7 +66,7 @@ public:
 	/** Отменяем умолчальное уведомление о прогрессе,
 	  * так как колбэк прогресса вызывается самостоятельно.
 	  */
-	void progress(size_t rows, size_t bytes) {}
+	void progress(const Progress & value) override {}
 
 
 	void cancel()
@@ -156,7 +156,7 @@ protected:
 					  *  ограничений (например, минимальная скорость выполнения запроса)
 					  *  и квот (например, на количество строчек для чтения).
 					  */
-					progressImpl(packet.progress.rows, packet.progress.bytes);
+					progressImpl(packet.progress);
 
 					if (!was_cancelled && !finished && isCancelled())
 						cancel();

@@ -166,7 +166,7 @@ Block IProfilingBlockInputStream::read()
 		cancel();
 	}
 
-	progress(res.rowsInFirstColumn(), res.bytes());
+	progress(Progress(res.rowsInFirstColumn(), res.bytes()));
 
 	return res;
 }
@@ -295,36 +295,45 @@ void IProfilingBlockInputStream::checkQuota(Block & block)
 }
 
 
-void IProfilingBlockInputStream::progressImpl(size_t rows, size_t bytes)
+void IProfilingBlockInputStream::progressImpl(const Progress & value)
 {
 	/// Данные для прогресса берутся из листовых источников.
 	if (children.empty())
 	{
 		if (progress_callback)
-			progress_callback(rows, bytes);
+			progress_callback(value);
 
 		if (process_list_elem)
 		{
-			if (!process_list_elem->update(rows, bytes))
+			if (!process_list_elem->update(value))
 				cancel();
 
-			/// Общее количество данных, обработанных во всех листовых источниках, возможно, на удалённых серверах.
+			/// Общее количество данных, обработанных или предполагаемых к обработке во всех листовых источниках, возможно, на удалённых серверах.
 
-			size_t total_rows = process_list_elem->rows_processed;
-			size_t total_bytes = process_list_elem->bytes_processed;
+			size_t rows_processed = process_list_elem->progress.rows;
+			size_t bytes_processed = process_list_elem->progress.bytes;
+
+			size_t total_rows_estimate = std::max(process_list_elem->progress.rows, process_list_elem->progress.total_rows);
 
 			/** Проверяем ограничения на объём данных для чтения, скорость выполнения запроса, квоту на объём данных для чтения.
 			  * NOTE: Может быть, имеет смысл сделать, чтобы они проверялись прямо в ProcessList?
 			  */
 
 			if (limits.mode == LIMITS_TOTAL
-				&& ((limits.max_rows_to_read && total_rows > limits.max_rows_to_read)
-					|| (limits.max_bytes_to_read && total_bytes > limits.max_bytes_to_read)))
+				&& ((limits.max_rows_to_read && total_rows_estimate > limits.max_rows_to_read)
+					|| (limits.max_bytes_to_read && bytes_processed > limits.max_bytes_to_read)))
 			{
 				if (limits.read_overflow_mode == OverflowMode::THROW)
-					throw Exception("Limit for rows to read exceeded: read " + toString(total_rows)
-						+ " rows, maximum: " + toString(limits.max_rows_to_read),
-						ErrorCodes::TOO_MUCH_ROWS);
+				{
+					if (limits.max_rows_to_read && total_rows_estimate > limits.max_rows_to_read)
+						throw Exception("Limit for rows to read exceeded: " + toString(total_rows_estimate)
+							+ " rows read (or to read), maximum: " + toString(limits.max_rows_to_read),
+							ErrorCodes::TOO_MUCH_ROWS);
+					else
+						throw Exception("Limit for (uncompressed) bytes to read exceeded: " + toString(bytes_processed)
+							+ " bytes read, maximum: " + toString(limits.max_bytes_to_read),
+							ErrorCodes::TOO_MUCH_ROWS);
+				}
 				else if (limits.read_overflow_mode == OverflowMode::BREAK)
 					cancel();
 				else
@@ -336,9 +345,9 @@ void IProfilingBlockInputStream::progressImpl(size_t rows, size_t bytes)
 				double total_elapsed = info.total_stopwatch.elapsedSeconds();
 
 				if (total_elapsed > limits.timeout_before_checking_execution_speed.totalMicroseconds() / 1000000.0
-					&& total_rows / total_elapsed < limits.min_execution_speed)
+					&& rows_processed / total_elapsed < limits.min_execution_speed)
 				{
-					throw Exception("Query is executing too slow: " + toString(total_rows / total_elapsed)
+					throw Exception("Query is executing too slow: " + toString(rows_processed / total_elapsed)
 						+ " rows/sec., minimum: " + toString(limits.min_execution_speed),
 						ErrorCodes::TOO_SLOW);
 				}
@@ -346,7 +355,7 @@ void IProfilingBlockInputStream::progressImpl(size_t rows, size_t bytes)
 
 			if (quota != nullptr && limits.mode == LIMITS_TOTAL)
 			{
-				quota->checkAndAddReadRowsBytes(time(0), rows, bytes);
+				quota->checkAndAddReadRowsBytes(time(0), value.rows, value.bytes);
 			}
 		}
 	}

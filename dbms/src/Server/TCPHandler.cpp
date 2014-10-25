@@ -1,7 +1,5 @@
 #include <iomanip>
 
-#include <boost/bind.hpp>
-
 #include <Poco/Net/NetException.h>
 
 #include <Yandex/Revision.h>
@@ -85,9 +83,7 @@ void TCPHandler::runImpl()
 
 	sendHello();
 
-	connection_context.setProgressCallback([this] (const size_t rows, const size_t bytes) {
-		return this->updateProgress(rows, bytes);
-	});
+	connection_context.setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
 
 	while (1)
 	{
@@ -125,6 +121,7 @@ void TCPHandler::runImpl()
 			/// Очищаем, так как, получая данные внешних таблиц, мы получили пустой блок.
 			/// А значит, stream помечен как cancelled и читать из него нельзя.
 			state.block_in = nullptr;
+			state.maybe_compressed_in = nullptr;	/// Для более корректного учёта MemoryTracker-ом.
 
 			/// Обрабатываем Query
 			state.io = executeQuery(state.query, query_context, false, state.stage);
@@ -286,7 +283,7 @@ void TCPHandler::processOrdinaryQuery()
 				}
 				else
 				{
-					if (state.rows_processed && after_send_progress.elapsed() / 1000 >= query_context.getSettingsRef().interactive_delay)
+					if (state.progress.rows && after_send_progress.elapsed() / 1000 >= query_context.getSettingsRef().interactive_delay)
 					{
 						/// Прошло некоторое время и есть прогресс.
 						after_send_progress.restart();
@@ -691,21 +688,17 @@ void TCPHandler::sendEndOfStream()
 }
 
 
-void TCPHandler::updateProgress(size_t rows, size_t bytes)
+void TCPHandler::updateProgress(const Progress & value)
 {
-	__sync_fetch_and_add(&state.rows_processed, rows);
-	__sync_fetch_and_add(&state.bytes_processed, bytes);
+	state.progress.incrementPiecewiseAtomically(value);
 }
 
 
 void TCPHandler::sendProgress()
 {
-	size_t rows_processed = __sync_fetch_and_and(&state.rows_processed, 0);
-	size_t bytes_processed = __sync_fetch_and_and(&state.bytes_processed, 0);
-
 	writeVarUInt(Protocol::Server::Progress, *out);
-	Progress progress(rows_processed, bytes_processed);
-	progress.write(*out);
+	Progress increment = state.progress.fetchAndResetPiecewiseAtomically();
+	increment.write(*out, client_revision);
 	out->next();
 }
 

@@ -5,6 +5,7 @@
 #include <statdaemons/Stopwatch.h>
 
 #include <DB/Core/Names.h>
+#include <DB/Core/Progress.h>
 
 #include <DB/Interpreters/Limits.h>
 #include <DB/Interpreters/Quota.h>
@@ -109,8 +110,8 @@ public:
 	  * - проверяются ограничения и квоты, которые должны быть проверены не в рамках одного источника,
 	  *   а над общим количеством потраченных ресурсов во всех источниках сразу (информация в ProcessList-е).
 	  */
-	virtual void progress(size_t rows, size_t bytes) { progressImpl(rows, bytes); }
-	void progressImpl(size_t rows, size_t bytes);
+	virtual void progress(const Progress & value) { progressImpl(value); }
+	void progressImpl(const Progress & value);
 
 
 	/** Установить указатель на элемент списка процессов.

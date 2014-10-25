@@ -68,8 +68,16 @@ public:
 			columns = owned_data_part->columns.addTypes(column_names);
 		}
 
+		/// Оценим общее количество строк - для прогресс-бара.
+		for (const auto & range : all_mark_ranges)
+			total_rows += range.end - range.begin;
+		total_rows *= storage.index_granularity;
+
 		LOG_TRACE(log, "Reading " << all_mark_ranges.size() << " ranges from part " << owned_data_part->name
-			<< ", up to " << (all_mark_ranges.back().end - all_mark_ranges.front().begin) * storage.index_granularity
+			<< ", approx. " << total_rows
+			<< (all_mark_ranges.size() > 1
+				? ", up to " + toString((all_mark_ranges.back().end - all_mark_ranges.front().begin) * storage.index_granularity)
+				: "")
 			<< " rows starting from " << all_mark_ranges.front().begin * storage.index_granularity);
 	}
 
@@ -97,7 +105,7 @@ public:
 
 protected:
 	/// Будем вызывать progressImpl самостоятельно.
-	void progress(size_t rows, size_t bytes) {}
+	void progress(const Progress & value) override {}
 
 	Block readImpl()
 	{
@@ -108,6 +116,10 @@ protected:
 
 		if (!reader)
 		{
+			/// Отправим информацию о том, что собираемся читать примерно столько-то строк.
+			/// NOTE В конструкторе это делать не получилось бы, потому что тогда ещё не установлен progress_callback.
+			progressImpl(Progress(0, 0, total_rows));
+
 			UncompressedCache * uncompressed_cache = use_uncompressed_cache ? storage.context.getUncompressedCache() : NULL;
 			reader.reset(new MergeTreeReader(path, owned_data_part->name, columns, uncompressed_cache, storage, all_mark_ranges));
 			if (prewhere_actions)
@@ -135,7 +147,7 @@ protected:
 					if (range.begin == range.end)
 						remaining_mark_ranges.pop_back();
 				}
-				progressImpl(res.rows(), res.bytes());
+				progressImpl(Progress(res.rows(), res.bytes()));
 				pre_reader->fillMissingColumns(res);
 
 				/// Вычислим выражение в PREWHERE.
@@ -164,7 +176,7 @@ protected:
 						reader->readRange(range.begin, range.end, res);
 					}
 
-					progressImpl(0, res.bytes() - pre_bytes);
+					progressImpl(Progress(0, res.bytes() - pre_bytes));
 				}
 				else if (ColumnUInt8 * column_vec = typeid_cast<ColumnUInt8 *>(&*column))
 				{
@@ -216,7 +228,7 @@ protected:
 						continue;
 					}
 
-					progressImpl(0, res.bytes() - pre_bytes);
+					progressImpl(Progress(0, res.bytes() - pre_bytes));
 
 					post_filter.resize(post_filter_pos);
 
@@ -259,7 +271,7 @@ protected:
 					remaining_mark_ranges.pop_back();
 			}
 
-			progressImpl(res.rows(), res.bytes());
+			progressImpl(Progress(res.rows(), res.bytes()));
 
 			reader->fillMissingColumns(res);
 		}
@@ -297,6 +309,7 @@ private:
 	ExpressionActionsPtr prewhere_actions;
 	String prewhere_column;
 	bool remove_prewhere_column;
+	size_t total_rows = 0;	/// Приблизительное общее количество строк - для прогресс-бара.
 
 	Logger * log;
 };

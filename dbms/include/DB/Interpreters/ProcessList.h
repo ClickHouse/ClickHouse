@@ -8,6 +8,7 @@
 #include <Poco/Net/IPAddress.h>
 #include <statdaemons/Stopwatch.h>
 #include <DB/Core/Defines.h>
+#include <DB/Core/Progress.h>
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 #include <DB/Common/MemoryTracker.h>
@@ -35,8 +36,7 @@ public:
 
 		Stopwatch watch;
 
-		volatile size_t rows_processed = 0;
-		volatile size_t bytes_processed = 0;
+		Progress progress;
 
 		MemoryTracker memory_tracker;
 
@@ -56,10 +56,9 @@ public:
 			current_memory_tracker = nullptr;
 		}
 
-		bool update(size_t rows, size_t bytes) volatile
+		bool update(const Progress & value)
 		{
-			__sync_add_and_fetch(&rows_processed, rows);
-			__sync_add_and_fetch(&bytes_processed, bytes);
+			progress.incrementPiecewiseAtomically(value);
 			return !is_cancelled;
 		}
 	};
