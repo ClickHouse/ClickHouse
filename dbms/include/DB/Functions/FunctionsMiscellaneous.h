@@ -20,6 +20,7 @@
 #include <DB/Columns/ColumnTuple.h>
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnReplicated.h>
+#include <DB/Common/UnicodeBar.h>
 #include <DB/Functions/IFunction.h>
 
 
@@ -672,47 +673,6 @@ private:
 		return apply_visitor(FieldVisitorConvertToNumber<T>(), column[0]);
 	}
 
-	static constexpr size_t BAR_CHAR_SIZE = strlen("█");
-
-	template <typename T>
-	static Float64 barWidth(T x, Int64 min, Int64 max, Float64 max_width)
-	{
-		if (x <= min)
-			return 0;
-
-		if (x >= max)
-			return max_width;
-
-		return (x - min) * max_width / (max - min);
-	}
-
-	static size_t barWidthInBytes(Float64 width)
-	{
-		return ceil(width - 1.0 / 8) * BAR_CHAR_SIZE;
-	}
-
-	/// В dst должно быть место для barWidthInBytes(width) символов и завершающего нуля.
-	static void renderBar(Float64 width, char * dst)
-	{
-		size_t floor_width = floor(width);
-
-		for (size_t i = 0; i < floor_width; ++i)
-		{
-			memcpy(dst, "█", BAR_CHAR_SIZE);
-			dst += BAR_CHAR_SIZE;
-		}
-
-		size_t remainder = floor((width - floor_width) * 8);
-
-		if (remainder)
-		{
-			memcpy(dst, &"▏▎▍▌▋▋▊▉"[(remainder - 1) * BAR_CHAR_SIZE], BAR_CHAR_SIZE);
-			dst += BAR_CHAR_SIZE;
-		}
-
-		*dst = 0;
-	}
-
 	template <typename T>
 	static void fill(const PODArray<T> & src, ColumnString::Chars_t & dst_chars, ColumnString::Offsets_t & dst_offsets,
 		Int64 min, Int64 max, Float64 max_width)
@@ -721,14 +681,14 @@ private:
 		size_t current_offset = 0;
 
 		dst_offsets.resize(size);
-		dst_chars.reserve(size * (barWidthInBytes(max_width) + 1));	/// строки 0-terminated.
+		dst_chars.reserve(size * (UnicodeBar::getWidthInBytes(max_width) + 1));	/// строки 0-terminated.
 
 		for (size_t i = 0; i < size; ++i)
 		{
-			Float64 width = barWidth(src[i], min, max, max_width);
-			size_t next_size = current_offset + barWidthInBytes(width) + 1;
+			Float64 width = UnicodeBar::getWidth(src[i], min, max, max_width);
+			size_t next_size = current_offset + UnicodeBar::getWidthInBytes(width) + 1;
 			dst_chars.resize(next_size);
-			renderBar(width, reinterpret_cast<char *>(&dst_chars[current_offset]));
+			UnicodeBar::render(width, reinterpret_cast<char *>(&dst_chars[current_offset]));
 			current_offset = next_size;
 			dst_offsets[i] = current_offset;
 		}
@@ -738,9 +698,9 @@ private:
 	static void fill(T src, String & dst_chars,
 		Int64 min, Int64 max, Float64 max_width)
 	{
-		Float64 width = barWidth(src, min, max, max_width);
-		dst_chars.resize(barWidthInBytes(width));
-		renderBar(width, &dst_chars[0]);
+		Float64 width = UnicodeBar::getWidth(src, min, max, max_width);
+		dst_chars.resize(UnicodeBar::getWidthInBytes(width));
+		UnicodeBar::render(width, &dst_chars[0]);
 	}
 
 	template <typename T>

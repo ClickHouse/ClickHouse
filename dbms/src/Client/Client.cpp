@@ -28,8 +28,6 @@
 #include <DB/Core/Types.h>
 #include <DB/Core/QueryProcessingStage.h>
 
-#include <DB/Common/formatReadable.h>
-
 #include <DB/IO/ReadBufferFromFileDescriptor.h>
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
 #include <DB/IO/WriteBufferFromString.h>
@@ -50,6 +48,8 @@
 #include "InterruptListener.h"
 
 #include <DB/Common/ExternalTable.h>
+#include <DB/Common/UnicodeBar.h>
+#include <DB/Common/formatReadable.h>
 
 
 /// http://en.wikipedia.org/wiki/ANSI_escape_code
@@ -88,6 +88,8 @@ private:
 	bool is_interactive = true;			/// Использовать readline интерфейс или batch режим.
 	bool stdin_is_not_tty = false;		/// stdin - не терминал.
 
+	winsize terminal_size {};			/// Размер терминала - для вывода прогресс-бара.
+
 	SharedPtr<Connection> connection;	/// Соединение с БД.
 	String query;						/// Текущий запрос.
 
@@ -125,6 +127,7 @@ private:
 
 	/// С сервера периодически приходит информация, о том, сколько прочитано данных за прошедшее время.
 	Progress progress;
+	bool show_progress_bar = false;
 
 	size_t written_progress_chars = 0;
 	bool written_first_block = false;
@@ -366,6 +369,9 @@ private:
 
 				try
 				{
+					/// Выясняем размер терминала.
+					ioctl(0, TIOCGWINSZ, &terminal_size);
+
 					if (!process(query))
 						break;
 				}
@@ -474,6 +480,7 @@ private:
 
 		processed_rows = 0;
 		progress.reset();
+		show_progress_bar = false;
 		written_progress_chars = 0;
 		written_first_block = false;
 
@@ -853,9 +860,6 @@ private:
 			<< std::fixed << std::setprecision(3)
 			<< " Progress: ";
 
-		if (progress.total_rows)
-			message << (100.0 * progress.rows / progress.total_rows) << "%, ";
-
 		message
 			<< formatReadableQuantity(progress.rows) << " rows, "
 			<< formatReadableSizeWithDecimalSuffix(progress.bytes);
@@ -868,8 +872,31 @@ private:
 		else
 			message << ". ";
 
-		written_progress_chars = message.str().size() - 13;
-		std::cerr << DISABLE_LINE_WRAPPING << message.rdbuf() << ENABLE_LINE_WRAPPING;
+		written_progress_chars = message.str().size() - (increment % 8 == 7 ? 10 : 13);
+		std::cerr << DISABLE_LINE_WRAPPING << message.rdbuf();
+
+		/** Если известно приблизительное общее число строк, которых нужно обработать - можно вывести прогрессбар.
+		  * Чтобы не было "мерцания", выводим его только если с момента начала выполнения запроса прошло хотя бы пол секунды,
+		  *  и если к этому моменту запрос обработан менее чем наполовину.
+		  */
+		ssize_t width_of_progress_bar = static_cast<ssize_t>(terminal_size.ws_col) - written_progress_chars - strlen(" 99%");
+
+		if (show_progress_bar
+			|| (width_of_progress_bar > 0
+				&& progress.total_rows
+				&& elapsed_ns > 500000000
+				&& progress.rows * 2 < progress.total_rows))
+		{
+			show_progress_bar = true;
+
+			std::string bar = UnicodeBar::render(UnicodeBar::getWidth(progress.rows, 0, progress.total_rows, width_of_progress_bar));
+			std::cerr << "\033[0;32m" << bar << "\033[0m";
+			if (width_of_progress_bar > static_cast<ssize_t>(bar.size() / UNICODE_BAR_CHAR_SIZE))
+				std::cerr << std::string(width_of_progress_bar - bar.size() / UNICODE_BAR_CHAR_SIZE, ' ');
+			std::cerr << ' ' << (99 * progress.rows / progress.total_rows) << '%';	/// Чуть-чуть занижаем процент, чтобы не показывать 100%.
+		}
+
+		std::cerr << ENABLE_LINE_WRAPPING;
 		++increment;
 	}
 
