@@ -889,11 +889,13 @@ private:
 		{
 			show_progress_bar = true;
 
-			std::string bar = UnicodeBar::render(UnicodeBar::getWidth(progress.rows, 0, progress.total_rows, width_of_progress_bar));
+			size_t total_rows_corrected = std::max(progress.rows, progress.total_rows);
+
+			std::string bar = UnicodeBar::render(UnicodeBar::getWidth(progress.rows, 0, total_rows_corrected, width_of_progress_bar));
 			std::cerr << "\033[0;32m" << bar << "\033[0m";
 			if (width_of_progress_bar > static_cast<ssize_t>(bar.size() / UNICODE_BAR_CHAR_SIZE))
 				std::cerr << std::string(width_of_progress_bar - bar.size() / UNICODE_BAR_CHAR_SIZE, ' ');
-			std::cerr << ' ' << (99 * progress.rows / progress.total_rows) << '%';	/// Чуть-чуть занижаем процент, чтобы не показывать 100%.
+			std::cerr << ' ' << (99 * progress.rows / total_rows_corrected) << '%';	/// Чуть-чуть занижаем процент, чтобы не показывать 100%.
 		}
 
 		std::cerr << ENABLE_LINE_WRAPPING;
