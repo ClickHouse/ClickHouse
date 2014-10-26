@@ -55,9 +55,14 @@ public:
 protected:
 	Block readImpl()
 	{
+		Block res;
+
+		if (has_been_read)
+			return res;
+		has_been_read = true;
+
 		std::lock_guard<std::mutex> lock(buffer.mutex);
 
-		Block res;
 		if (!buffer.data)
 			return res;
 
@@ -74,6 +79,7 @@ protected:
 private:
 	NameSet column_names;
 	StorageBuffer::Buffer & buffer;
+	bool has_been_read = false;
 };
 
 
