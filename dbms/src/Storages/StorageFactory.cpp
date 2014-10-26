@@ -11,6 +11,7 @@
 #include <DB/Storages/StorageLog.h>
 #include <DB/Storages/StorageTinyLog.h>
 #include <DB/Storages/StorageMemory.h>
+#include <DB/Storages/StorageBuffer.h>
 #include <DB/Storages/StorageNull.h>
 #include <DB/Storages/StorageMerge.h>
 #include <DB/Storages/StorageMergeTree.h>
@@ -189,6 +190,46 @@ StoragePtr StorageFactory::get(
 
 		return StorageDistributed::create(
 			table_name, columns, remote_database, remote_table, cluster_name, context, sharding_key, data_path);
+	}
+	else if (name == "Buffer")
+	{
+		/** Buffer(db, table, num_buckets, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes)
+		  *
+		  * db, table - в какую таблицу сбрасывать данные из буфера.
+		  * num_buckets - уровень параллелизма.
+		  * min_time, max_time, min_rows, max_rows, min_bytes, max_bytes - условия вытеснения из буфера.
+		  */
+
+		ASTs & args_func = typeid_cast<ASTFunction &>(*typeid_cast<ASTCreateQuery &>(*query).storage).children;
+
+		if (args_func.size() != 1)
+			throw Exception("Storage Buffer requires 9 parameters: "
+				" destination database, destination table, num_buckets, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
+
+		if (args.size() != 9)
+			throw Exception("Storage Buffer requires 9 parameters: "
+				" destination_database, destination_table, num_buckets, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		String destination_database = reinterpretAsIdentifier(args[0], local_context).name;
+		String destination_table 	= typeid_cast<ASTIdentifier &>(*args[1]).name;
+
+		size_t num_buckets = apply_visitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[2]).value);
+
+		time_t min_time = apply_visitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[3]).value);
+		time_t max_time = apply_visitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[4]).value);
+		size_t min_rows = apply_visitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[5]).value);
+		size_t max_rows = apply_visitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[6]).value);
+		size_t min_bytes = apply_visitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[7]).value);
+		size_t max_bytes = apply_visitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[8]).value);
+
+		return StorageBuffer::create(
+			table_name, columns, context,
+			num_buckets, {min_time, min_rows, min_bytes}, {max_time, max_rows, max_bytes},
+			destination_database, destination_table);
 	}
 	else if (endsWith(name, "MergeTree"))
 	{

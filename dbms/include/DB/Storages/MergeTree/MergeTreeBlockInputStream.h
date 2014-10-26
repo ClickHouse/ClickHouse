@@ -41,10 +41,10 @@ public:
 			///  (от storage ожидают получить только столбцы таблицы).
 			remove_prewhere_column = !pre_name_set.count(prewhere_column);
 			Names post_column_names;
-			for (size_t i = 0; i < column_names.size(); ++i)
+			for (const auto & name : column_names)
 			{
-				if (!pre_name_set.count(column_names[i]))
-					post_column_names.push_back(column_names[i]);
+				if (!pre_name_set.count(name))
+					post_column_names.push_back(name);
 			}
 			column_names = post_column_names;
 		}

@@ -24,13 +24,13 @@ public:
 		std::stringstream res;
 		res << "Memory(" << &*begin << ", " << &*end;
 
-		for (size_t i = 0; i < column_names.size(); ++i)
-			res << ", " << column_names[i];
+		for (const auto & name : column_names)
+			res << ", " << name;
 
 		res << ")";
 		return res.str();
 	}
-	
+
 protected:
 	Block readImpl();
 private:
@@ -92,7 +92,7 @@ private:
 	BlocksList data;
 
 	Poco::FastMutex mutex;
-	
+
 	StorageMemory(const std::string & name_, NamesAndTypesListPtr columns_);
 };
 
