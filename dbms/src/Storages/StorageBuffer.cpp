@@ -228,8 +228,16 @@ void StorageBuffer::shutdown()
 	if (flush_thread.joinable())
 		flush_thread.join();
 
+	optimize();
+}
+
+
+bool StorageBuffer::optimize()
+{
 	for (auto & buf : buffers)
 		flushBuffer(buf, false);
+
+	return true;
 }
 
 
