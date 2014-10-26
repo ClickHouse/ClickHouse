@@ -79,7 +79,10 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 	Block select_sample;
 	/// Для таблиц типа view, чтобы получить столбцы, может понадобиться sample_block.
 	if (create.select && (!create.attach || (!create.columns && (create.is_view || create.is_materialized_view))))
-		select_sample = InterpreterSelectQuery(create.select, context).getSampleBlock();
+	{
+		interpreter_select = new InterpreterSelectQuery(create.select, context);
+		select_sample = interpreter_select->getSampleBlock();
+	}
 
 	StoragePtr res;
 	String storage_name;
