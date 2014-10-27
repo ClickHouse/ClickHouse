@@ -11,6 +11,7 @@ void registerFunctionsURL(FunctionFactory & factory)
 	factory.registerFunction("protocol", 					F { return new FunctionProtocol; });
 	factory.registerFunction("domain", 						F { return new FunctionDomain; });
 	factory.registerFunction("domainWithoutWWW", 			F { return new FunctionDomainWithoutWWW; });
+	factory.registerFunction("firstSignificantSubdomain",	F { return new FunctionFirstSignificantSubdomain; });
 	factory.registerFunction("topLevelDomain", 				F { return new FunctionTopLevelDomain; });
 	factory.registerFunction("path", 						F { return new FunctionPath; });
 	factory.registerFunction("queryString", 				F { return new FunctionQueryString; });
@@ -21,6 +22,7 @@ void registerFunctionsURL(FunctionFactory & factory)
 	factory.registerFunction("extractURLParameterNames", 	F { return new FunctionExtractURLParameterNames; });
 	factory.registerFunction("URLHierarchy", 				F { return new FunctionURLHierarchy; });
 	factory.registerFunction("URLPathHierarchy", 			F { return new FunctionURLPathHierarchy; });
+	factory.registerFunction("cutToFirstSignificantSubdomain", F { return new FunctionCutToFirstSignificantSubdomain; });
 	factory.registerFunction("cutWWW", 						F { return new FunctionCutWWW; });
 	factory.registerFunction("cutQueryString", 				F { return new FunctionCutQueryString; });
 	factory.registerFunction("cutFragment", 				F { return new FunctionCutFragment; });
