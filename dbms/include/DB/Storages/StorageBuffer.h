@@ -19,10 +19,10 @@ namespace DB
   * При чтении, читает как из своих буферов, так и из подчинённой таблицы.
   *
   * Буфер представляет собой набор из num_shards блоков.
-  * При записи, выбирается номер блока по остатку от деления ThreadNumber на num_buckets (или один из других),
+  * При записи, выбирается номер блока по остатку от деления ThreadNumber на num_shards (или один из других),
   *  и в соответствующий блок добавляются строчки.
   * При использовании блока, он блокируется некоторым mutex-ом. Если при записи, соответствующий блок уже занят
-  *  - пробуем заблокировать следующий по кругу блок, и так не более num_buckets раз (далее блокируемся).
+  *  - пробуем заблокировать следующий по кругу блок, и так не более num_shards раз (далее блокируемся).
   * Пороги проверяются при вставке, а также, периодически, в фоновом потоке (чтобы реализовать пороги по времени).
   * Пороги действуют независимо для каждого shard-а. Каждый shard может быть сброшен независимо от других.
   * Если в таблицу вставляется блок, который сам по себе превышает max-пороги, то он записывается сразу в подчинённую таблицу без буферизации.
@@ -78,8 +78,7 @@ public:
 	bool supportsFinal() const override { return true; }
 	bool supportsPrewhere() const override { return true; }
 
-	/// в подтаблицах добавлять и удалять столбы нужно вручную
-	/// структура подтаблиц не проверяется
+	/// Структура подчинённой таблицы не проверяется и не изменяется.
 	void alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context) override;
 
 private:
@@ -118,6 +117,9 @@ private:
 	/// Сбросить буфер. Если выставлено check_thresholds - сбрасывает только если превышены пороги.
 	void flushBuffer(Buffer & buffer, bool check_thresholds);
 	bool checkThresholds(Buffer & buffer, time_t current_time, size_t additional_rows = 0, size_t additional_bytes = 0);
+
+	/// Аргумент table передаётся, так как иногда вычисляется заранее. Он должен соответствовать destination-у.
+	void writeBlockToDestination(const Block & block, StoragePtr table);
 
 	Poco::Event shutdown_event;
 	void flushThread();
