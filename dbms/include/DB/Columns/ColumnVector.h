@@ -86,7 +86,8 @@ public:
 	typedef PODArray<value_type> Container_t;
 
 	ColumnVector() {}
-	ColumnVector(size_t n) : data(n) {}
+	ColumnVector(const size_t n) : data{n} {}
+	ColumnVector(const size_t n, const value_type x) : data{n, x} {}
 
 	bool isNumeric() const { return IsNumber<T>::value; }
 	bool isFixed() const { return IsNumber<T>::value; }
