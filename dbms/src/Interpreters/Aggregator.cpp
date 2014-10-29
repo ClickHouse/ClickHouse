@@ -125,7 +125,18 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
 
 	/// Если есть один числовой ключ, который помещается в 64 бита
 	if (keys_size == 1 && key_columns[0]->isNumeric())
-		return AggregatedDataVariants::KEY_64;
+	{
+		size_t size_of_field = key_columns[0]->sizeOfField();
+		if (size_of_field == 1)
+			return AggregatedDataVariants::KEY_8;
+		if (size_of_field == 2)
+			return AggregatedDataVariants::KEY_16;
+		if (size_of_field == 4)
+			return AggregatedDataVariants::KEY_32;
+		if (size_of_field == 8)
+			return AggregatedDataVariants::KEY_64;
+		throw Exception("Logical error: numeric column has sizeOfField not in 1, 2, 4, 8.", ErrorCodes::LOGICAL_ERROR);
+	}
 
 	/// Если ключи помещаются в 128 бит, будем использовать хэш-таблицу по упакованным в 128-бит ключам
 	if (keys_fit_128_bits)
@@ -167,8 +178,12 @@ void Aggregator::createAggregateStates(AggregateDataPtr & aggregate_data) const
 }
 
 
+/** Интересно - если убрать noinline, то gcc зачем-то инлайнит эту функцию, и производительность уменьшается (~10%).
+  * (Возможно из-за того, что после инлайна этой функции, перестают инлайниться более внутренние функции.)
+  * Инлайнить не имеет смысла, так как внутренний цикл находится целиком внутри этой функции.
+  */
 template <typename Method>
-void Aggregator::executeImpl(
+void NO_INLINE Aggregator::executeImpl(
 	Method & method,
 	Arena * aggregates_pool,
 	size_t rows,
@@ -226,7 +241,7 @@ void Aggregator::executeImpl(
 
 
 template <typename Method>
-void Aggregator::convertToBlockImpl(
+void NO_INLINE Aggregator::convertToBlockImpl(
 	Method & method,
 	ColumnPlainPtrs & key_columns,
 	AggregateColumnsData & aggregate_columns,
@@ -262,7 +277,7 @@ void Aggregator::convertToBlockImpl(
 
 
 template <typename Method>
-void Aggregator::mergeDataImpl(
+void NO_INLINE Aggregator::mergeDataImpl(
 	Method & method_dst,
 	Method & method_src) const
 {
@@ -294,7 +309,7 @@ void Aggregator::mergeDataImpl(
 
 
 template <typename Method>
-void Aggregator::mergeStreamsImpl(
+void NO_INLINE Aggregator::mergeStreamsImpl(
 	Method & method,
 	Arena * aggregates_pool,
 	size_t start_row,
@@ -336,7 +351,7 @@ void Aggregator::mergeStreamsImpl(
 
 
 template <typename Method>
-void Aggregator::destroyImpl(
+void NO_INLINE Aggregator::destroyImpl(
 	Method & method) const
 {
 	for (typename Method::const_iterator it = method.data.begin(); it != method.data.end(); ++it)
@@ -372,7 +387,13 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 
 	/// Запоминаем столбцы, с которыми будем работать
 	for (size_t i = 0; i < keys_size; ++i)
+	{
 		key_columns[i] = block.getByPosition(keys[i]).column;
+
+		if (key_columns[i]->isConst())
+			throw Exception("Constants is not allowed as GROUP BY keys"
+				" (but all of them must be eliminated in ExpressionAnalyzer)", ErrorCodes::ILLEGAL_COLUMN);
+	}
 
 	for (size_t i = 0; i < aggregates_size; ++i)
 	{
@@ -434,7 +455,16 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 
 	AggregateDataPtr overflow_row_ptr = overflow_row ? result.without_key : nullptr;
 
-	if (result.type == AggregatedDataVariants::KEY_64)
+	if (result.type == AggregatedDataVariants::KEY_8)
+		executeImpl(*result.key8, result.aggregates_pool, rows, key_columns, aggregate_columns,
+			result.key_sizes, key, no_more_keys, overflow_row_ptr);
+	else if (result.type == AggregatedDataVariants::KEY_16)
+		executeImpl(*result.key16, result.aggregates_pool, rows, key_columns, aggregate_columns,
+			result.key_sizes, key, no_more_keys, overflow_row_ptr);
+	else if (result.type == AggregatedDataVariants::KEY_32)
+		executeImpl(*result.key32, result.aggregates_pool, rows, key_columns, aggregate_columns,
+			result.key_sizes, key, no_more_keys, overflow_row_ptr);
+	else if (result.type == AggregatedDataVariants::KEY_64)
 		executeImpl(*result.key64, result.aggregates_pool, rows, key_columns, aggregate_columns,
 			result.key_sizes, key, no_more_keys, overflow_row_ptr);
 	else if (result.type == AggregatedDataVariants::KEY_STRING)
@@ -590,7 +620,16 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants, bool fi
 
 		size_t start_row = overflow_row ? 1 : 0;
 
-		if (data_variants.type == AggregatedDataVariants::KEY_64)
+		if (data_variants.type == AggregatedDataVariants::KEY_8)
+			convertToBlockImpl(*data_variants.key8, key_columns, aggregate_columns,
+							final_aggregate_columns, data_variants.key_sizes, start_row, final);
+		else if (data_variants.type == AggregatedDataVariants::KEY_16)
+			convertToBlockImpl(*data_variants.key16, key_columns, aggregate_columns,
+							final_aggregate_columns, data_variants.key_sizes, start_row, final);
+		else if (data_variants.type == AggregatedDataVariants::KEY_32)
+			convertToBlockImpl(*data_variants.key32, key_columns, aggregate_columns,
+							final_aggregate_columns, data_variants.key_sizes, start_row, final);
+		else if (data_variants.type == AggregatedDataVariants::KEY_64)
 			convertToBlockImpl(*data_variants.key64, key_columns, aggregate_columns,
 							final_aggregate_columns, data_variants.key_sizes, start_row, final);
 		else if (data_variants.type == AggregatedDataVariants::KEY_STRING)
@@ -694,7 +733,13 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 			current_data = nullptr;
 		}
 
-		if (res->type == AggregatedDataVariants::KEY_64)
+		if (res->type == AggregatedDataVariants::KEY_8)
+			mergeDataImpl(*res->key8, *current.key8);
+		else if (res->type == AggregatedDataVariants::KEY_16)
+			mergeDataImpl(*res->key16, *current.key16);
+		else if (res->type == AggregatedDataVariants::KEY_32)
+			mergeDataImpl(*res->key32, *current.key32);
+		else if (res->type == AggregatedDataVariants::KEY_64)
 			mergeDataImpl(*res->key64, *current.key64);
 		else if (res->type == AggregatedDataVariants::KEY_STRING)
 			mergeDataImpl(*res->key_string, *current.key_string);
@@ -782,7 +827,13 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 
 		size_t start_row = overflow_row ? 1 : 0;
 
-		if (result.type == AggregatedDataVariants::KEY_64)
+		if (result.type == AggregatedDataVariants::KEY_8)
+			mergeStreamsImpl(*result.key8, result.aggregates_pool, start_row, rows, key_columns, aggregate_columns, key_sizes, key);
+		else if (result.type == AggregatedDataVariants::KEY_16)
+			mergeStreamsImpl(*result.key16, result.aggregates_pool, start_row, rows, key_columns, aggregate_columns, key_sizes, key);
+		else if (result.type == AggregatedDataVariants::KEY_32)
+			mergeStreamsImpl(*result.key32, result.aggregates_pool, start_row, rows, key_columns, aggregate_columns, key_sizes, key);
+		else if (result.type == AggregatedDataVariants::KEY_64)
 			mergeStreamsImpl(*result.key64, result.aggregates_pool, start_row, rows, key_columns, aggregate_columns, key_sizes, key);
 		else if (result.type == AggregatedDataVariants::KEY_STRING)
 			mergeStreamsImpl(*result.key_string, result.aggregates_pool, start_row, rows, key_columns, aggregate_columns, key_sizes, key);
@@ -818,7 +869,13 @@ void Aggregator::destroyAllAggregateStates(AggregatedDataVariants & result)
 					aggregate_functions[i]->destroy(res_data + offsets_of_aggregate_states[i]);
 	}
 
-	if (result.type == AggregatedDataVariants::KEY_64)
+	if (result.type == AggregatedDataVariants::KEY_8)
+		destroyImpl(*result.key8);
+	else if (result.type == AggregatedDataVariants::KEY_16)
+		destroyImpl(*result.key16);
+	else if (result.type == AggregatedDataVariants::KEY_32)
+		destroyImpl(*result.key32);
+	else if (result.type == AggregatedDataVariants::KEY_64)
 		destroyImpl(*result.key64);
 	else if (result.type == AggregatedDataVariants::KEY_STRING)
 		destroyImpl(*result.key_string);

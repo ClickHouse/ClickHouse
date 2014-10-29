@@ -7,7 +7,8 @@
 namespace DB
 {
 
-class StorageView : public IStorage {
+class StorageView : public IStorage
+{
 
 public:
 	static StoragePtr create(const String & table_name_, const String & database_name_,
@@ -16,7 +17,7 @@ public:
 	std::string getName() const override { return "View"; }
 	std::string getTableName() const override { return table_name; }
 	const NamesAndTypesList & getColumnsList() const override { return *columns; }
-	DB::ASTPtr getInnerQuery() const { return inner_query.clone(); };
+	ASTPtr getInnerQuery() const { return inner_query.clone(); };
 
 	/// Пробрасывается внутрь запроса и решается на его уровне.
 	bool supportsSampling() const override { return true; }

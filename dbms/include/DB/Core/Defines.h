@@ -69,3 +69,4 @@
 #define DBMS_DISTRIBUTED_DIRECTORY_MONITOR_SLEEP_TIME_MS		100
 
 #define ALWAYS_INLINE 	__attribute__((__always_inline__))
+#define NO_INLINE 		__attribute__((__noinline__))
