@@ -88,9 +88,9 @@ public:
 			auto begin = reinterpret_cast<char *>(&vec_res[0]);
 			auto pos = begin;
 
-			for (size_t i = 0; i < vec_in.size(); i += ipv6_fixed_string_length)
+			for (size_t offset = 0, i = 0; offset < vec_in.size(); offset += ipv6_fixed_string_length, ++i)
 			{
-				inet_ntop(AF_INET6, &vec_in[i], pos, INET6_ADDRSTRLEN);
+				inet_ntop(AF_INET6, &vec_in[offset], pos, INET6_ADDRSTRLEN);
 				pos = static_cast<char *>(memchr(pos, 0, INET6_ADDRSTRLEN)) + 1;
 				offsets_res[i] = pos - begin;
 			}
