@@ -69,9 +69,9 @@ template <size_t key_bits>
 struct HashTableFixedGrower
 {
 	size_t bufSize() const				{ return 1 << key_bits; }
-	size_t mask() const					{ return bufSize() - 1; }
 	size_t place(size_t x) const 		{ return x; }
-	size_t next(size_t pos) const		{ __builtin_unreachable(); return pos; }
+	/// Тут можно было бы написать __builtin_unreachable(), но компилятор не до конца всё оптимизирует, и получается менее эффективно.
+	size_t next(size_t pos) const		{ return pos + 1; }
 	bool overflow(size_t elems) const	{ return false; }
 
 	void increaseSize() { __builtin_unreachable(); }
@@ -82,9 +82,26 @@ struct HashTableFixedGrower
 typedef HashMap<UInt64, AggregateDataPtr, TrivialHash, HashTableFixedGrower<8>> AggregatedDataWithUInt8Key;
 typedef HashMap<UInt64, AggregateDataPtr, TrivialHash, HashTableFixedGrower<16>> AggregatedDataWithUInt16Key;
 
-template <typename FieldType> struct AggregatedDataWithUIntKey { using Type = AggregatedDataWithUInt64Key; };
-template <> struct AggregatedDataWithUIntKey<UInt8> { using Type = AggregatedDataWithUInt8Key; };
-template <> struct AggregatedDataWithUIntKey<UInt16> { using Type = AggregatedDataWithUInt16Key; };
+template <typename FieldType>
+struct AggregatedDataWithUIntKey
+{
+	using Type = AggregatedDataWithUInt64Key;
+	static constexpr bool never_overflows = false;
+};
+
+template <>
+struct AggregatedDataWithUIntKey<UInt8>
+{
+	using Type = AggregatedDataWithUInt8Key;
+	static constexpr bool never_overflows = true;	/// Говорит о том, что в результате агрегации не может быть много записей.
+};
+
+template <>
+struct AggregatedDataWithUIntKey<UInt16>
+{
+	using Type = AggregatedDataWithUInt16Key;
+	static constexpr bool never_overflows = true;
+};
 
 
 /// Для случая, когда есть один числовой ключ.
@@ -96,6 +113,8 @@ struct AggregationMethodOneNumber
 	typedef typename Data::mapped_type Mapped;
 	typedef typename Data::iterator iterator;
 	typedef typename Data::const_iterator const_iterator;
+
+	static constexpr bool never_overflows = AggregatedDataWithUIntKey<FieldType>::never_overflows;
 
 	Data data;
 
@@ -148,6 +167,8 @@ struct AggregationMethodString
 	typedef Data::iterator iterator;
 	typedef Data::const_iterator const_iterator;
 
+	static constexpr bool never_overflows = false;
+
 	Data data;
 
 	const ColumnString::Offsets_t * offsets;
@@ -194,6 +215,8 @@ struct AggregationMethodFixedString
 	typedef Data::mapped_type Mapped;
 	typedef Data::iterator iterator;
 	typedef Data::const_iterator const_iterator;
+
+	static constexpr bool never_overflows = false;
 
 	Data data;
 
@@ -242,6 +265,8 @@ struct AggregationMethodKeys128
 	typedef Data::iterator iterator;
 	typedef Data::const_iterator const_iterator;
 
+	static constexpr bool never_overflows = false;
+
 	Data data;
 
 	void init(ConstColumnPlainPtrs & key_columns)
@@ -286,6 +311,8 @@ struct AggregationMethodHashed
 	typedef Data::mapped_type Mapped;
 	typedef Data::iterator iterator;
 	typedef Data::const_iterator const_iterator;
+
+	static constexpr bool never_overflows = false;
 
 	Data data;
 

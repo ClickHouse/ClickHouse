@@ -206,7 +206,7 @@ void NO_INLINE Aggregator::executeImpl(
 		/// Получаем ключ для вставки в хэш-таблицу.
 		typename Method::Key key = method.getKey(key_columns, keys_size, i, key_sizes, keys);
 
-		if (!no_more_keys)	/// Вставляем.
+		if (Method::never_overflows || !no_more_keys)	/// Вставляем.
 			method.data.emplace(key, it, inserted);
 		else
 		{
@@ -218,7 +218,7 @@ void NO_INLINE Aggregator::executeImpl(
 		}
 
 		/// Если ключ не поместился, и данные не надо агрегировать в отдельную строку, то делать нечего.
-		if (overflow && !overflow_row)
+		if (!Method::never_overflows && overflow && !overflow_row)
 			continue;
 
 		/// Если вставили новый ключ - инициализируем состояния агрегатных функций, и возможно, что-нибудь связанное с ключом.
@@ -231,7 +231,7 @@ void NO_INLINE Aggregator::executeImpl(
 			createAggregateStates(aggregate_data);
 		}
 
-		AggregateDataPtr value = !overflow ? Method::getAggregateData(it->second) : overflow_row;
+		AggregateDataPtr value = (Method::never_overflows || !overflow) ? Method::getAggregateData(it->second) : overflow_row;
 
 		/// Добавляем значения в агрегатные функции.
 		for (size_t j = 0; j < aggregates_size; ++j)

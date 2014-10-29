@@ -455,7 +455,7 @@ public:
 	const_iterator begin() const
 	{
 		if (this->hasZero())
-			return const_iterator(this, this->zeroValue());
+			return iteratorToZero();
 
 		const Cell * ptr = buf;
 		while (ptr < buf + grower.bufSize() && ptr->isZero(*this))
@@ -467,7 +467,7 @@ public:
 	iterator begin()
 	{
 		if (this->hasZero())
-			return iterator(this, this->zeroValue());
+			return iteratorToZero();
 
 		Cell * ptr = buf;
 		while (ptr < buf + grower.bufSize() && ptr->isZero(*this))
@@ -481,6 +481,10 @@ public:
 
 
 protected:
+	const_iterator iteratorToZero() const 	{ return const_iterator(this, this->zeroValue()); }
+	iterator iteratorToZero() 				{ return iterator(this, this->zeroValue()); }
+
+
 	/// Если ключ нулевой - вставить его в специальное место и вернуть true.
 	bool emplaceIfZero(Key x, iterator & it, bool & inserted)
 	{
@@ -490,17 +494,17 @@ protected:
 
 		if (Cell::isZero(x, *this))
 		{
+			it = iteratorToZero();
 			if (!this->hasZero())
 			{
 				++m_size;
 				this->setHasZero();
+				it.ptr->setHash(hash(x));
 				inserted = true;
 			}
 			else
 				inserted = false;
 
-			it = begin();
-			it.ptr->setHash(hash(x));
 			return true;
 		}
 
@@ -545,7 +549,7 @@ public:
 
 		if (res.second)
 			res.first.ptr->setMapped(x);
-		
+
 		return res;
 	}
 
@@ -583,7 +587,7 @@ public:
 	iterator find(Key x)
 	{
 		if (Cell::isZero(x, *this))
-			return this->hasZero() ? begin() : end();
+			return this->hasZero() ? iteratorToZero() : end();
 
 		size_t place_value = findCell(x, grower.place(hash(x)));
 
@@ -594,7 +598,7 @@ public:
 	const_iterator find(Key x) const
 	{
 		if (Cell::isZero(x, *this))
-			return this->hasZero() ? begin() : end();
+			return this->hasZero() ? iteratorToZero() : end();
 
 		size_t place_value = findCell(x, grower.place(hash(x)));
 
