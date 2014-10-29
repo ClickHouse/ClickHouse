@@ -48,7 +48,10 @@ void SplittingAggregator::execute(BlockInputStreamPtr stream, ManyAggregatedData
 			method = chooseAggregationMethod(key_columns, key_sizes);
 
 		/// Подготавливаем массивы, куда будут складываться ключи или хэши от ключей.
-		if (method == AggregatedDataVariants::KEY_64)
+		if (method == AggregatedDataVariants::KEY_8			/// TODO не использовать SplittingAggregator для маленьких ключей.
+			|| method == AggregatedDataVariants::KEY_16
+			|| method == AggregatedDataVariants::KEY_32
+			|| method == AggregatedDataVariants::KEY_64)
 		{
 			keys64.resize(rows);
 		}
@@ -96,7 +99,7 @@ void SplittingAggregator::execute(BlockInputStreamPtr stream, ManyAggregatedData
 
 		pool.wait();
 
-		rethrowFirstException(exceptions);
+		rethrowFirstException(exceptions);		/// TODO Заменить на future, packaged_task
 
 		/// Параллельно агрегируем в независимые хэш-таблицы
 
@@ -150,14 +153,17 @@ void SplittingAggregator::calculateHashesThread(Block & block, size_t begin, siz
 
 	try
 	{
-		if (method == AggregatedDataVariants::KEY_64)
+		if (method == AggregatedDataVariants::KEY_8
+			|| method == AggregatedDataVariants::KEY_16
+			|| method == AggregatedDataVariants::KEY_32
+			|| method == AggregatedDataVariants::KEY_64)
 		{
 			const IColumn & column = *key_columns[0];
 
 			for (size_t i = begin; i < end; ++i)
 			{
-				keys64[i] = column.get64(i);
-				thread_nums[i] = intHash32<0xd1f93e3190506c7cULL>(keys64[i]) % threads;
+				keys64[i] = column.get64(i);											/// TODO Убрать виртуальный вызов
+				thread_nums[i] = intHash32<0xd1f93e3190506c7cULL>(keys64[i]) % threads;	/// TODO более эффективная хэш-функция
 			}
 		}
 		else if (method == AggregatedDataVariants::KEY_STRING)
@@ -216,6 +222,45 @@ void SplittingAggregator::calculateHashesThread(Block & block, size_t begin, siz
 }
 
 
+template <typename FieldType>
+void SplittingAggregator::aggregateOneNumber(AggregatedDataVariants & result, size_t thread_no, bool no_more_keys)
+{
+	AggregatedDataWithUInt64Key & res = result.key64->data;
+
+	for (size_t i = 0; i < rows; ++i)
+	{
+		if (thread_nums[i] != thread_no)
+			continue;
+
+		/// Берём ключ
+		UInt64 key = keys64[i];
+
+		AggregatedDataWithUInt64Key::iterator it;
+		bool inserted;
+
+		if (!no_more_keys)
+			res.emplace(key, it, inserted);
+		else
+		{
+			inserted = false;
+			it = res.find(key);
+			if (res.end() == it)
+				continue;
+		}
+
+		if (inserted)
+		{
+			it->second = result.aggregates_pool->alloc(total_size_of_aggregate_states);
+			createAggregateStates(it->second);
+		}
+
+		/// Добавляем значения
+		for (size_t j = 0; j < aggregates_size; ++j)
+			aggregate_functions[j]->add(it->second + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
+	}
+}
+
+
 void SplittingAggregator::aggregateThread(
 	Block & block, AggregatedDataVariants & result, size_t thread_no, ExceptionPtr & exception, MemoryTracker * memory_tracker)
 {
@@ -233,42 +278,14 @@ void SplittingAggregator::aggregateThread(
 		bool no_more_keys = max_rows_to_group_by && size_of_all_results > max_rows_to_group_by;
 		size_t old_result_size = result.size();
 
-		if (method == AggregatedDataVariants::KEY_64)
-		{
-			AggregatedDataWithUInt64Key & res = result.key64->data;
-
-			for (size_t i = 0; i < rows; ++i)
-			{
-				if (thread_nums[i] != thread_no)
-					continue;
-
-				/// Берём ключ
-				UInt64 key = keys64[i];
-
-				AggregatedDataWithUInt64Key::iterator it;
-				bool inserted;
-
-				if (!no_more_keys)
-					res.emplace(key, it, inserted);
-				else
-				{
-					inserted = false;
-					it = res.find(key);
-					if (res.end() == it)
-						continue;
-				}
-
-				if (inserted)
-				{
-					it->second = result.aggregates_pool->alloc(total_size_of_aggregate_states);
-					createAggregateStates(it->second);
-				}
-
-				/// Добавляем значения
-				for (size_t j = 0; j < aggregates_size; ++j)
-					aggregate_functions[j]->add(it->second + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
-			}
-		}
+		if (method == AggregatedDataVariants::KEY_8)
+			aggregateOneNumber<UInt8>(result, thread_no, no_more_keys);
+		else if (method == AggregatedDataVariants::KEY_16)
+			aggregateOneNumber<UInt16>(result, thread_no, no_more_keys);
+		else if (method == AggregatedDataVariants::KEY_32)
+			aggregateOneNumber<UInt32>(result, thread_no, no_more_keys);
+		else if (method == AggregatedDataVariants::KEY_64)
+			aggregateOneNumber<UInt64>(result, thread_no, no_more_keys);
 		else if (method == AggregatedDataVariants::KEY_STRING)
 		{
 			AggregatedDataWithStringKey & res = result.key_string->data;

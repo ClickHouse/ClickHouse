@@ -94,6 +94,9 @@ private:
 	void calculateHashesThread(Block & block, size_t begin, size_t end, ExceptionPtr & exception, MemoryTracker * memory_tracker);
 	void aggregateThread(Block & block, AggregatedDataVariants & result, size_t thread_no, ExceptionPtr & exception, MemoryTracker * memory_tracker);
 	void convertToBlockThread(AggregatedDataVariants & data_variant, Block & block, bool final, ExceptionPtr & exception, MemoryTracker * memory_tracker);
+
+	template <typename FieldType>
+	void aggregateOneNumber(AggregatedDataVariants & result, size_t thread_no, bool no_more_keys);
 };
 
 

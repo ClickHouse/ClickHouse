@@ -77,7 +77,7 @@ template <> struct CompareHelper<Float64> : public FloatCompareHelper<Float64> {
 /** Шаблон столбцов, которые используют для хранения простой массив.
   */
 template <typename T>
-class ColumnVector : public IColumn
+class ColumnVector final : public IColumn
 {
 private:
 	typedef ColumnVector<T> Self;

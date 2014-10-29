@@ -34,9 +34,9 @@ BlockInputStreams StorageSystemOne::read(
 	ColumnWithNameAndType col;
 	col.name = "dummy";
 	col.type = new DataTypeUInt8;
-	col.column = new ColumnConstUInt8(1, 0);
+	col.column = ColumnConstUInt8(1, 0).convertToFullColumn();
 	block.insert(col);
-	
+
 	return BlockInputStreams(1, new OneBlockInputStream(block));
 }
 
