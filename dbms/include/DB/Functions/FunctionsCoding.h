@@ -121,6 +121,68 @@ public:
 	}
 };
 
+class FunctionIPv6StringToNum : public IFunction
+{
+public:
+	String getName() const { return "IPv6StringToNum"; }
+
+	DataTypePtr getReturnType(const DataTypes & arguments) const
+	{
+		if (arguments.size() != 1)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+			+ toString(arguments.size()) + ", should be 1.",
+							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
+			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
+			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		return new DataTypeFixedString{ipv6_fixed_string_length};
+	}
+
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		const ColumnPtr & column = block.getByPosition(arguments[0]).column;
+
+		if (const auto col_in = typeid_cast<const ColumnString *>(&*column))
+		{
+		    const auto col_res = new ColumnFixedString{ipv6_fixed_string_length};
+			block.getByPosition(result).column = col_res;
+
+			auto & vec_res = col_res->getChars();
+			vec_res.resize(col_in->size() * ipv6_fixed_string_length);
+
+			const ColumnString::Chars_t & vec_src = col_in->getChars();
+			const ColumnString::Offsets_t & offsets_src = col_in->getOffsets();
+			size_t src_offset = 0;
+
+			for (size_t out_offset = 0, i = 0;
+				 out_offset < vec_res.size();
+				 out_offset += ipv6_fixed_string_length, ++i)
+			{
+				inet_pton(AF_INET6, reinterpret_cast<const char* >(&vec_src[src_offset]), &vec_res[out_offset]);
+				src_offset = offsets_src[i];
+			}
+		}
+		else if (const auto col_in = typeid_cast<const ColumnConstString *>(&*column))
+		{
+			String out(ipv6_fixed_string_length, 0);
+			inet_pton(AF_INET6, col_in->getData().data(), &out[0]);
+
+			block.getByPosition(result).column = new ColumnConst<String>{
+				col_in->size(),
+				out,
+				new DataTypeFixedString{ipv6_fixed_string_length}
+			};
+		}
+		else
+			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+			+ " of argument of function " + getName(),
+							ErrorCodes::ILLEGAL_COLUMN);
+	}
+};
+
+
 class FunctionIPv4NumToString : public IFunction
 {
 public:
@@ -247,7 +309,7 @@ public:
 		return new DataTypeUInt32;
 	}
 
-	static inline bool isDigit(char c)
+	static bool isDigit(char c)
 	{
 		return c >= '0' && c <= '9';
 	}
