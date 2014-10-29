@@ -30,7 +30,7 @@ class SipHash
 private:
 	typedef uint64_t u64;
 	typedef uint8_t u8;
-	
+
 	/// Состояние.
 	u64 v0;
 	u64 v1;
@@ -131,7 +131,7 @@ public:
 	}
 
 	/// Получить результат в некотором виде. Это можно сделать только один раз!
-	
+
 	void get128(char * out)
 	{
 		finalize();
@@ -158,7 +158,14 @@ public:
 #undef SIPROUND
 
 
-inline uint64_t sipHash64(const char * data, size_t size)
+inline void sipHash128(const char * data, const size_t size, char * out)
+{
+	SipHash hash;
+	hash.update(data, size);
+	hash.get128(out);
+}
+
+inline uint64_t sipHash64(const char * data, const size_t size)
 {
 	SipHash hash;
 	hash.update(data, size);

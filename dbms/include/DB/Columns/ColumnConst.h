@@ -140,6 +140,9 @@ public:
 		max = FieldType(data);
 	}
 
+	DataTypePtr & getDataType() { return data_type; }
+	const DataTypePtr & getDataType() const { return data_type; }
+
 private:
 	size_t s;
 	T data;

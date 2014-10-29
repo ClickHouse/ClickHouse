@@ -12,6 +12,7 @@
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Functions/IFunction.h>
+#include <arpa/inet.h>
 
 
 namespace DB
@@ -34,6 +35,91 @@ namespace DB
 
 /// Включая нулевой символ в конце.
 #define MAX_UINT_HEX_LENGTH 20
+
+const auto ipv6_fixed_string_length = 16;
+
+class FunctionIPv6NumToString : public IFunction
+{
+public:
+	String getName() const { return "IPv6NumToString"; }
+
+	DataTypePtr getReturnType(const DataTypes & arguments) const
+	{
+		if (arguments.size() != 1)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+			+ toString(arguments.size()) + ", should be 1.",
+			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		const auto ptr = typeid_cast<const DataTypeFixedString *>(arguments[0].get());
+		if (!ptr || ptr->getN() != ipv6_fixed_string_length)
+			throw Exception("Illegal type " + arguments[0]->getName() +
+							" of argument of function " + getName() +
+							", expected FixedString(" + toString(ipv6_fixed_string_length) + ")",
+							ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		return new DataTypeString;
+	}
+
+	void execute(Block & block, const ColumnNumbers & arguments, const size_t result)
+	{
+		const auto & col_name_type = block.getByPosition(arguments[0]);
+		const ColumnPtr & column = col_name_type.column;
+
+		if (const auto col_in = typeid_cast<const ColumnFixedString *>(column.get()))
+		{
+			if (col_in->getN() != ipv6_fixed_string_length)
+				throw Exception("Illegal type " + col_name_type.type->getName() +
+								" of column " + col_in->getName() +
+								" argument of function " + getName() +
+								", expected FixedString(" + toString(ipv6_fixed_string_length) + ")",
+								ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+			const auto size = col_in->size();
+			const auto & vec_in = col_in->getChars();
+
+			auto col_res = new ColumnString;
+			block.getByPosition(result).column = col_res;
+
+			ColumnString::Chars_t & vec_res = col_res->getChars();
+			ColumnString::Offsets_t & offsets_res = col_res->getOffsets();
+			vec_res.resize(size * INET6_ADDRSTRLEN);
+			offsets_res.resize(size);
+
+			auto begin = reinterpret_cast<char *>(&vec_res[0]);
+			auto pos = begin;
+
+			for (size_t i = 0; i < vec_in.size(); i += ipv6_fixed_string_length)
+			{
+				inet_ntop(AF_INET6, &vec_in[i], pos, INET6_ADDRSTRLEN);
+				pos = static_cast<char *>(memchr(pos, 0, INET6_ADDRSTRLEN)) + 1;
+				offsets_res[i] = pos - begin;
+			}
+
+			vec_res.resize(pos - begin);
+		}
+		else if (const auto col_in = typeid_cast<const ColumnConst<String> *>(column.get()))
+		{
+			const auto data_type_fixed_string = typeid_cast<const DataTypeFixedString *>(col_in->getDataType().get());
+			if (!data_type_fixed_string || data_type_fixed_string->getN() != ipv6_fixed_string_length)
+				throw Exception("Illegal type " + col_name_type.type->getName() +
+								" of column " + col_in->getName() +
+								" argument of function " + getName() +
+								", expected FixedString(" + toString(ipv6_fixed_string_length) + ")",
+								ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+			const auto & data_in = col_in->getData();
+
+			char buf[INET6_ADDRSTRLEN];
+			inet_ntop(AF_INET6, data_in.data(), buf, sizeof(buf));
+
+			block.getByPosition(result).column = new ColumnConstString{col_in->size(), buf};
+		}
+		else
+			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+			+ " of argument of function " + getName(),
+			ErrorCodes::ILLEGAL_COLUMN);
+	}
+};
 
 class FunctionIPv4NumToString : public IFunction
 {
@@ -108,7 +194,7 @@ public:
 			ColumnString::Chars_t & vec_res = col_res->getChars();
 			ColumnString::Offsets_t & offsets_res = col_res->getOffsets();
 
-			vec_res.resize(vec_in.size() * 16); /// самое длинное значение: 255.255.255.255\0
+			vec_res.resize(vec_in.size() * INET_ADDRSTRLEN); /// самое длинное значение: 255.255.255.255\0
 			offsets_res.resize(vec_in.size());
 			char * begin = reinterpret_cast<char *>(&vec_res[0]);
 			char * pos = begin;
