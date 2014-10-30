@@ -23,6 +23,11 @@ public:
 	const char * className() const throw() { return "zkutil::KeeperException"; }
 	KeeperException * clone() const { return new KeeperException(*this); }
 
+	/// при этих ошибках надо переинициализировать сессию с zookeeper
+	bool isUnrecoverable() const
+	{
+		return code == ZINVALIDSTATE || code == ZSESSIONEXPIRED;
+	}
 	int32_t code;
 
 private:
@@ -30,6 +35,7 @@ private:
 	{
 		ProfileEvents::increment(ProfileEvents::ZooKeeperExceptions);
 	}
+
 };
 
 };
