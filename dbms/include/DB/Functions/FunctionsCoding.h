@@ -12,7 +12,10 @@
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Functions/IFunction.h>
+
 #include <arpa/inet.h>
+#include <statdaemons/ext/range.hpp>
+#include <array>
 
 
 namespace DB
@@ -36,7 +39,7 @@ namespace DB
 /// Включая нулевой символ в конце.
 #define MAX_UINT_HEX_LENGTH 20
 
-const auto ipv6_fixed_string_length = 16;
+const auto ipv6_string_length = 16;
 
 class FunctionIPv6NumToString : public IFunction
 {
@@ -51,13 +54,132 @@ public:
 			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 		const auto ptr = typeid_cast<const DataTypeFixedString *>(arguments[0].get());
-		if (!ptr || ptr->getN() != ipv6_fixed_string_length)
+		if (!ptr || ptr->getN() != ipv6_string_length)
 			throw Exception("Illegal type " + arguments[0]->getName() +
 							" of argument of function " + getName() +
-							", expected FixedString(" + toString(ipv6_fixed_string_length) + ")",
+							", expected FixedString(" + toString(ipv6_string_length) + ")",
 							ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
 		return new DataTypeString;
+	}
+
+	/// integer logarithm, return ceil(log(value, base)) (the smallest integer greater or equal  than log(value, base)
+	static constexpr uint32_t int_log(const uint32_t value, const uint32_t base, const bool carry = false)
+	{
+		return value >= base ? 1 + int_log(value / base, base, value % base || carry) : value % base > 1 || carry;
+	}
+
+	/// mapping of digits up to base 16
+	static constexpr auto && digits = "0123456789abcdef";
+
+	/// print integer in desired base, faster than sprintf
+	template <uint32_t base, typename T, uint32_t buffer_size = sizeof(T) * int_log(256, base)>
+	static void print_integer(char *& out, T value)
+	{
+		if (value == 0)
+			*out++ = '0';
+		else
+		{
+			char buf[buffer_size];
+			auto ptr = buf;
+
+			while (value > 0)
+			{
+				*ptr++ = digits[value % base];
+				value /= base;
+			}
+
+			while (ptr != buf)
+				*out++ = *--ptr;
+		}
+	}
+
+	/// print IPv4 address as %u.%u.%u.%u
+	static void ipv4_format(const unsigned char * src, char *& out)
+	{
+		constexpr auto size = sizeof(UInt32);
+
+		for (const auto i : ext::range(0, size))
+		{
+			print_integer<10, UInt8>(out, src[i]);
+
+			if (i != size - 1)
+				*out++ = '.';
+		}
+	}
+
+	/** rewritten inet_ntop6 from http://www.cs.cmu.edu/afs/cs/academic/class/15213-f00/unpv12e/libfree/inet_ntop.c
+	 *	performs significantly faster than the reference implementation due to the absence of sprintf calls,
+	 *	bounds checking, unnecessary string copying and length calculation */
+	static const void ipv6_format(const unsigned char * src, char *& out)
+	{
+		struct { int base, len; } best{-1}, cur{-1};
+		std::array<uint16_t, ipv6_string_length / sizeof(uint16_t)> words{};
+
+		/** Preprocess:
+		 *	Copy the input (bytewise) array into a wordwise array.
+		 *	Find the longest run of 0x00's in src[] for :: shorthanding. */
+		for (const auto i : ext::range(0, ipv6_string_length))
+			words[i / 2] |= src[i] << ((1 - (i % 2)) << 3);
+
+		for (const auto i : ext::range(0, words.size()))
+		{
+			if (words[i] == 0) {
+				if (cur.base == -1)
+					cur.base = i, cur.len = 1;
+				else
+					cur.len++;
+			}
+			else
+			{
+				if (cur.base != -1)
+				{
+					if (best.base == -1 || cur.len > best.len)
+						best = cur;
+					cur.base = -1;
+				}
+			}
+		}
+
+		if (cur.base != -1)
+		{
+			if (best.base == -1 || cur.len > best.len)
+				best = cur;
+		}
+
+		if (best.base != -1 && best.len < 2)
+			best.base = -1;
+
+		/// Format the result.
+		for (const int i : ext::range(0, words.size()))
+		{
+			/// Are we inside the best run of 0x00's?
+			if (best.base != -1 && i >= best.base && i < (best.base + best.len))
+			{
+				if (i == best.base)
+					*out++ = ':';
+				continue;
+			}
+
+			/// Are we following an initial run of 0x00s or any real hex?
+			if (i != 0)
+				*out++ = ':';
+
+			/// Is this address an encapsulated IPv4?
+			if (i == 6 && best.base == 0 && (best.len == 6 || (best.len == 5 && words[5] == 0xffffu)))
+			{
+				ipv4_format(src + 12, out);
+				break;
+			}
+
+			print_integer<16>(out, words[i]);
+		}
+
+		/// Was it a trailing run of 0x00's?
+		if (best.base != -1 && (best.base + best.len) == words.size())
+			*out++ = ':';
+
+		*out++ = '\0';
 	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, const size_t result)
@@ -67,11 +189,11 @@ public:
 
 		if (const auto col_in = typeid_cast<const ColumnFixedString *>(column.get()))
 		{
-			if (col_in->getN() != ipv6_fixed_string_length)
+			if (col_in->getN() != ipv6_string_length)
 				throw Exception("Illegal type " + col_name_type.type->getName() +
 								" of column " + col_in->getName() +
 								" argument of function " + getName() +
-								", expected FixedString(" + toString(ipv6_fixed_string_length) + ")",
+								", expected FixedString(" + toString(ipv6_string_length) + ")",
 								ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
 			const auto size = col_in->size();
@@ -88,10 +210,9 @@ public:
 			auto begin = reinterpret_cast<char *>(&vec_res[0]);
 			auto pos = begin;
 
-			for (size_t offset = 0, i = 0; offset < vec_in.size(); offset += ipv6_fixed_string_length, ++i)
+			for (size_t offset = 0, i = 0; offset < vec_in.size(); offset += ipv6_string_length, ++i)
 			{
-				inet_ntop(AF_INET6, &vec_in[offset], pos, INET6_ADDRSTRLEN);
-				pos = static_cast<char *>(memchr(pos, 0, INET6_ADDRSTRLEN)) + 1;
+				ipv6_format(&vec_in[offset], pos);
 				offsets_res[i] = pos - begin;
 			}
 
@@ -100,17 +221,18 @@ public:
 		else if (const auto col_in = typeid_cast<const ColumnConst<String> *>(column.get()))
 		{
 			const auto data_type_fixed_string = typeid_cast<const DataTypeFixedString *>(col_in->getDataType().get());
-			if (!data_type_fixed_string || data_type_fixed_string->getN() != ipv6_fixed_string_length)
+			if (!data_type_fixed_string || data_type_fixed_string->getN() != ipv6_string_length)
 				throw Exception("Illegal type " + col_name_type.type->getName() +
 								" of column " + col_in->getName() +
 								" argument of function " + getName() +
-								", expected FixedString(" + toString(ipv6_fixed_string_length) + ")",
+								", expected FixedString(" + toString(ipv6_string_length) + ")",
 								ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
 			const auto & data_in = col_in->getData();
 
 			char buf[INET6_ADDRSTRLEN];
-			inet_ntop(AF_INET6, data_in.data(), buf, sizeof(buf));
+			char * dst = buf;
+			ipv6_format(reinterpret_cast<const unsigned char *>(data_in.data()), dst);
 
 			block.getByPosition(result).column = new ColumnConstString{col_in->size(), buf};
 		}
@@ -137,7 +259,7 @@ public:
 			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
 			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeFixedString{ipv6_fixed_string_length};
+		return new DataTypeFixedString{ipv6_string_length};
 	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
@@ -146,11 +268,11 @@ public:
 
 		if (const auto col_in = typeid_cast<const ColumnString *>(&*column))
 		{
-		    const auto col_res = new ColumnFixedString{ipv6_fixed_string_length};
+		    const auto col_res = new ColumnFixedString{ipv6_string_length};
 			block.getByPosition(result).column = col_res;
 
 			auto & vec_res = col_res->getChars();
-			vec_res.resize(col_in->size() * ipv6_fixed_string_length);
+			vec_res.resize(col_in->size() * ipv6_string_length);
 
 			const ColumnString::Chars_t & vec_src = col_in->getChars();
 			const ColumnString::Offsets_t & offsets_src = col_in->getOffsets();
@@ -158,7 +280,7 @@ public:
 
 			for (size_t out_offset = 0, i = 0;
 				 out_offset < vec_res.size();
-				 out_offset += ipv6_fixed_string_length, ++i)
+				 out_offset += ipv6_string_length, ++i)
 			{
 				inet_pton(AF_INET6, reinterpret_cast<const char* >(&vec_src[src_offset]), &vec_res[out_offset]);
 				src_offset = offsets_src[i];
@@ -166,13 +288,13 @@ public:
 		}
 		else if (const auto col_in = typeid_cast<const ColumnConstString *>(&*column))
 		{
-			String out(ipv6_fixed_string_length, 0);
+			String out(ipv6_string_length, 0);
 			inet_pton(AF_INET6, col_in->getData().data(), &out[0]);
 
 			block.getByPosition(result).column = new ColumnConst<String>{
 				col_in->size(),
 				out,
-				new DataTypeFixedString{ipv6_fixed_string_length}
+				new DataTypeFixedString{ipv6_string_length}
 			};
 		}
 		else
