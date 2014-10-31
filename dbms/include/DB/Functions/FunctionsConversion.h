@@ -453,7 +453,11 @@ public:
 			if (column_const->getData().size() > n)
 				throw Exception("String too long for type FixedString(" + toString(n) + ")",
 					ErrorCodes::TOO_LARGE_STRING_SIZE);
-			block.getByPosition(result).column = new ColumnConst<String>(column_const->size(), column_const->getData(), new DataTypeFixedString(n));
+
+			auto resized_string = column_const->getData();
+			resized_string.resize(n);
+
+			block.getByPosition(result).column = new ColumnConst<String>(column_const->size(), std::move(resized_string), new DataTypeFixedString(n));
 		}
 		else if(const ColumnString * column_string = typeid_cast<const ColumnString *>(&*column))
 		{

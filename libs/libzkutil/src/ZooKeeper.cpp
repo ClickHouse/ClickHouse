@@ -246,7 +246,7 @@ int32_t ZooKeeper::tryCreate(const std::string & path, const std::string & data,
 
 int32_t ZooKeeper::tryCreateWithRetries(const std::string & path, const std::string & data, int32_t mode, std::string & pathCreated, size_t* attempt)
 {
-	return retry([&path, &data, mode, &pathCreated, this] { return tryCreate(path, data, mode, pathCreated); });
+	return retry([&path, &data, mode, &pathCreated, this] { return tryCreate(path, data, mode, pathCreated); }, attempt);
 }
 
 
