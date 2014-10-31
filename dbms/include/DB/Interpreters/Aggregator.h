@@ -118,14 +118,14 @@ struct AggregationMethodOneNumber
 
 	Data data;
 
-	const ColumnVector<FieldType> * column;
+	const FieldType * column;
 
 	/** Вызывается в начале обработки каждого блока.
 	  * Устанавливает переменные, необходимые для остальных методов, вызываемых во внутренних циклах.
 	  */
 	void init(ConstColumnPlainPtrs & key_columns)
 	{
-		column = static_cast<const ColumnVector<FieldType> *>(key_columns[0]);
+		column = &static_cast<const ColumnVector<FieldType> *>(key_columns[0])->getData()[0];
 	}
 
 	/// Достать из ключевых столбцов ключ для вставки в хэш-таблицу.
@@ -136,7 +136,7 @@ struct AggregationMethodOneNumber
 		const Sizes & key_sizes,	/// Если ключи фиксированной длины - их длины. Не используется в методах агрегации по ключам переменной длины.
 		StringRefs & keys) const	/// Сюда могут быть записаны ссылки на данные ключей в столбцах. Они могут быть использованы в дальнейшем.
 	{
-		return column->get64(i);
+		return get64(column[i]);
 	}
 
 	/// Из значения в хэш-таблице получить AggregateDataPtr.
@@ -155,7 +155,40 @@ struct AggregationMethodOneNumber
 	{
 		static_cast<ColumnVector<FieldType> *>(key_columns[0])->insertData(reinterpret_cast<const char *>(&it->first), sizeof(it->first));
 	}
+
+private:
+	UInt64 get64(FieldType x) const
+	{
+		return x;
+	}
 };
+
+template <>
+inline UInt64 AggregationMethodOneNumber<Float64>::get64(Float64 x) const
+{
+	union
+	{
+		Float64 src;
+		UInt64 res;
+	};
+
+	src = x;
+	return res;
+}
+
+template <>
+inline UInt64 AggregationMethodOneNumber<Float32>::get64(Float32 x) const
+{
+	union
+	{
+		Float32 src;
+		UInt64 res;
+	};
+
+	res = 0;
+	src = x;
+	return res;
+}
 
 
 /// Для случая, когда есть один строковый ключ.
