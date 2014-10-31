@@ -283,19 +283,14 @@ public:
 			}
 
 			if (len == 0 || value > 255 || (i < size - 1 && *src != '.'))
-			{
-				memset(dst, 0, size);
 				return false;
-			}
+
 			bytes[i] = value;
 			++src;
 		}
 
 		if (src[-1] != '\0')
-		{
-			memset(dst, 0, size);
 			return false;
-		}
 
 		memcpy(dst, bytes, sizeof(bytes));
 		return true;
@@ -304,14 +299,10 @@ public:
 	/// slightly altered implementation from http://svn.apache.org/repos/asf/apr/apr/trunk/network_io/unix/inet_pton.c
 	static void ipv6_scan(const char *  src, unsigned char * dst)
 	{
-		const auto clear_dst = [dst] {
-			memset(dst, '\0', ipv6_bytes_length);
-		};
-
 		/// Leading :: requires some special handling.
 		if (*src == ':')
 			if (*++src != ':')
-				return clear_dst();
+				return;
 
 		/// get integer value for a hexademical char digit, or -1
 		const auto number_by_char = [] (const char ch) {
@@ -344,7 +335,7 @@ public:
 				val <<= 4;
 				val |= num;
 				if (val > 0xffffu)
-					return clear_dst();
+					return;
 
 				saw_xdigit = 1;
 				continue;
@@ -356,14 +347,14 @@ public:
 				if (!saw_xdigit)
 				{
 					if (colonp)
-						return clear_dst();
+						return;
 
 					colonp = tp;
 					continue;
 				}
 
 				if (tp + sizeof(uint16_t) > endp)
-					return clear_dst();
+					return;
 
 				*tp++ = static_cast<unsigned char>((val >> 8) & 0xffu);
 				*tp++ = static_cast<unsigned char>(val & 0xffu);
@@ -375,20 +366,20 @@ public:
 			if (ch == '.' && (tp + ipv4_bytes_length) <= endp)
 			{
 				if (!ipv4_scan(curtok, tp))
-					return clear_dst();
+					return;
 
 				tp += ipv4_bytes_length;
 				saw_xdigit = false;
 				break;	/* '\0' was seen by ipv4_scan(). */
 			}
 
-			return clear_dst();
+			return;
 		}
 
 		if (saw_xdigit)
 		{
 			if (tp + sizeof(uint16_t) > endp)
-				return clear_dst();
+				return;
 
 			*tp++ = static_cast<unsigned char>((val >> 8) & 0xffu);
 			*tp++ = static_cast<unsigned char>(val & 0xffu);
@@ -411,7 +402,7 @@ public:
 		}
 
 		if (tp != endp)
-			return clear_dst();
+			return;
 
 		memcpy(dst, tmp, sizeof(tmp));
 	}
