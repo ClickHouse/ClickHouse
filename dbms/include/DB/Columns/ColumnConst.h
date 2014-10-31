@@ -19,7 +19,7 @@ using Poco::SharedPtr;
 class IColumnConst : public IColumn
 {
 public:
-	bool isConst() const { return true; }
+	bool isConst() const override { return true; }
 	virtual ColumnPtr convertToFullColumn() const = 0;
 };
 
@@ -37,21 +37,21 @@ public:
 	/// Для ColumnConst<String> data_type_ должен быть ненулевым, если тип данных FixedString.
 	ColumnConst(size_t s_, const T & data_, DataTypePtr data_type_ = DataTypePtr()) : s(s_), data(data_), data_type(data_type_) {}
 
-	std::string getName() const { return "ColumnConst<" + TypeName<T>::get() + ">"; }
-	bool isNumeric() const { return IsNumber<T>::value; }
-	bool isFixed() const { return IsNumber<T>::value; }
-	size_t sizeOfField() const { return sizeof(T); }
-	ColumnPtr cloneResized(size_t s_) const { return new ColumnConst(s_, data); }
-	size_t size() const { return s; }
-	Field operator[](size_t n) const { return FieldType(data); }
-	void get(size_t n, Field & res) const { res = FieldType(data); }
+	std::string getName() const override { return "ColumnConst<" + TypeName<T>::get() + ">"; }
+	bool isNumeric() const override { return IsNumber<T>::value; }
+	bool isFixed() const override { return IsNumber<T>::value; }
+	size_t sizeOfField() const override { return sizeof(T); }
+	ColumnPtr cloneResized(size_t s_) const override { return new ColumnConst(s_, data); }
+	size_t size() const override { return s; }
+	Field operator[](size_t n) const override { return FieldType(data); }
+	void get(size_t n, Field & res) const override { res = FieldType(data); }
 
-	ColumnPtr cut(size_t start, size_t length) const
+	ColumnPtr cut(size_t start, size_t length) const override
 	{
 		return new ColumnConst<T>(length, data, data_type);
 	}
 
-	void insert(const Field & x)
+	void insert(const Field & x) override
 	{
 		if (x.get<FieldType>() != FieldType(data))
 			throw Exception("Cannot insert different element into constant column " + getName(),
@@ -59,12 +59,12 @@ public:
 		++s;
 	}
 
-	void insertData(const char * pos, size_t length)
+	void insertData(const char * pos, size_t length) override
 	{
 		throw Exception("Cannot insert element into constant column " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	void insertFrom(const IColumn & src, size_t n)
+	void insertFrom(const IColumn & src, size_t n) override
 	{
 		if (data != static_cast<const ColumnConst<T> &>(src).data)
 			throw Exception("Cannot insert different element into constant column " + getName(),
@@ -72,9 +72,9 @@ public:
 		++s;
 	}
 
-	void insertDefault() { ++s; }
+	void insertDefault() override { ++s; }
 
-	ColumnPtr filter(const Filter & filt) const
+	ColumnPtr filter(const Filter & filt) const override
 	{
 		if (s != filt.size())
 			throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
@@ -82,7 +82,7 @@ public:
 		return new ColumnConst<T>(countBytesInFilter(filt), data, data_type);
 	}
 
-	ColumnPtr replicate(const Offsets_t & offsets) const
+	ColumnPtr replicate(const Offsets_t & offsets) const override
 	{
 		if (s != offsets.size())
 			throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
@@ -91,9 +91,9 @@ public:
 		return new ColumnConst<T>(replicated_size, data, data_type);
 	}
 
-	size_t byteSize() const { return sizeof(data) + sizeof(s); }
+	size_t byteSize() const override { return sizeof(data) + sizeof(s); }
 
-	ColumnPtr permute(const Permutation & perm, size_t limit) const
+	ColumnPtr permute(const Permutation & perm, size_t limit) const override
 	{
 		if (limit == 0)
 			limit = s;
@@ -106,7 +106,7 @@ public:
 		return new ColumnConst<T>(limit, data, data_type);
 	}
 
-	int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const
+	int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
 	{
 		const ColumnConst<T> & rhs = static_cast<const ColumnConst<T> &>(rhs_);
 		return data < rhs.data	/// TODO: правильное сравнение NaN-ов в константных столбцах.
@@ -116,25 +116,25 @@ public:
 				: 1);
 	}
 
-	void getPermutation(bool reverse, size_t limit, Permutation & res) const
+	void getPermutation(bool reverse, size_t limit, Permutation & res) const override
 	{
 		res.resize(s);
 		for (size_t i = 0; i < s; ++i)
 			res[i] = i;
 	}
 
-	StringRef getDataAt(size_t n) const;
-	StringRef getDataAtWithTerminatingZero(size_t n) const;
-	UInt64 get64(size_t n) const;
+	StringRef getDataAt(size_t n) const override;
+	StringRef getDataAtWithTerminatingZero(size_t n) const override;
+	UInt64 get64(size_t n) const override;
 
 	/** Более эффективные методы манипуляции */
 	T & getData() { return data; }
 	const T & getData() const { return data; }
 
 	/** Преобразование из константы в полноценный столбец */
-	ColumnPtr convertToFullColumn() const;
+	ColumnPtr convertToFullColumn() const override;
 
-	void getExtremes(Field & min, Field & max) const
+	void getExtremes(Field & min, Field & max) const override
 	{
 		min = FieldType(data);
 		max = FieldType(data);

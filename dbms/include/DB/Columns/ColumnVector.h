@@ -89,42 +89,42 @@ public:
 	ColumnVector(const size_t n) : data{n} {}
 	ColumnVector(const size_t n, const value_type x) : data{n, x} {}
 
-	bool isNumeric() const { return IsNumber<T>::value; }
-	bool isFixed() const { return IsNumber<T>::value; }
+	bool isNumeric() const override { return IsNumber<T>::value; }
+	bool isFixed() const override { return IsNumber<T>::value; }
 
-	size_t sizeOfField() const { return sizeof(T); }
+	size_t sizeOfField() const override { return sizeof(T); }
 
-	size_t size() const
+	size_t size() const override
 	{
 		return data.size();
 	}
 
-	StringRef getDataAt(size_t n) const
+	StringRef getDataAt(size_t n) const override
 	{
 		return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
 	}
 
-	void insertFrom(const IColumn & src, size_t n)
+	void insertFrom(const IColumn & src, size_t n) override
 	{
 		data.push_back(static_cast<const Self &>(src).getData()[n]);
 	}
 
-	void insertData(const char * pos, size_t length)
+	void insertData(const char * pos, size_t length) override
 	{
 		data.push_back(*reinterpret_cast<const T *>(pos));
 	}
 
-	void insertDefault()
+	void insertDefault() override
 	{
 		data.push_back(T());
 	}
 
-	size_t byteSize() const
+	size_t byteSize() const override
 	{
 		return data.size() * sizeof(data[0]);
 	}
 
-	int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const
+	int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
 	{
 		return CompareHelper<T>::compare(data[n], static_cast<const Self &>(rhs_).data[m], nan_direction_hint);
 	}
@@ -143,7 +143,7 @@ public:
 		bool operator()(size_t lhs, size_t rhs) const { return CompareHelper<T>::greater(parent.data[lhs], parent.data[rhs]); }
 	};
 
-	void getPermutation(bool reverse, size_t limit, Permutation & res) const
+	void getPermutation(bool reverse, size_t limit, Permutation & res) const override
 	{
 		size_t s = data.size();
 		res.resize(s);
@@ -169,36 +169,36 @@ public:
 		}
 	}
 
-	void reserve(size_t n)
+	void reserve(size_t n) override
 	{
 		data.reserve(n);
 	}
 
-	std::string getName() const { return "ColumnVector<" + TypeName<T>::get() + ">"; }
+	std::string getName() const override { return "ColumnVector<" + TypeName<T>::get() + ">"; }
 
-	ColumnPtr cloneEmpty() const
+	ColumnPtr cloneEmpty() const override
 	{
 		return new ColumnVector<T>;
 	}
 
-	Field operator[](size_t n) const
+	Field operator[](size_t n) const override
 	{
 		return typename NearestFieldType<T>::Type(data[n]);
 	}
 
-	void get(size_t n, Field & res) const
+	void get(size_t n, Field & res) const override
 	{
 		res = typename NearestFieldType<T>::Type(data[n]);
 	}
 
-	UInt64 get64(size_t n) const;
+	UInt64 get64(size_t n) const override;
 
-	void insert(const Field & x)
+	void insert(const Field & x) override
 	{
 		data.push_back(DB::get<typename NearestFieldType<T>::Type>(x));
 	}
 
-	ColumnPtr cut(size_t start, size_t length) const
+	ColumnPtr cut(size_t start, size_t length) const override
 	{
 		if (start + length > data.size())
 			throw Exception("Parameters start = "
@@ -212,7 +212,7 @@ public:
 		return res;
 	}
 
-	ColumnPtr filter(const IColumn::Filter & filt) const
+	ColumnPtr filter(const IColumn::Filter & filt) const override
 	{
 		size_t size = data.size();
 		if (size != filt.size())
@@ -270,7 +270,7 @@ public:
 		return res;
 	}
 
-	ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const
+	ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const override
 	{
 		size_t size = data.size();
 
@@ -291,7 +291,7 @@ public:
 		return res;
 	}
 
-	ColumnPtr replicate(const IColumn::Offsets_t & offsets) const
+	ColumnPtr replicate(const IColumn::Offsets_t & offsets) const override
 	{
 		size_t size = data.size();
 		if (size != offsets.size())
@@ -318,7 +318,7 @@ public:
 		return res;
 	}
 
-	void getExtremes(Field & min, Field & max) const
+	void getExtremes(Field & min, Field & max) const override
 	{
 		size_t size = data.size();
 

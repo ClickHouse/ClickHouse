@@ -27,49 +27,49 @@ public:
 	/** Создать пустой столбец строк фиксированной длины n */
 	ColumnFixedString(size_t n_) : n(n_) {}
 
-	std::string getName() const { return "ColumnFixedString"; }
+	std::string getName() const override { return "ColumnFixedString"; }
 
-	ColumnPtr cloneEmpty() const
+	ColumnPtr cloneEmpty() const override
 	{
 		return new ColumnFixedString(n);
 	}
 
-	size_t size() const
+	size_t size() const override
 	{
 		return chars.size() / n;
 	}
 
-	size_t sizeOfField() const
+	size_t sizeOfField() const override
 	{
 		return n;
 	}
 
-	bool isFixed() const
+	bool isFixed() const override
 	{
 		return true;
 	}
 
-	size_t byteSize() const
+	size_t byteSize() const override
 	{
 		return chars.size() + sizeof(n);
 	}
 
-	Field operator[](size_t index) const
+	Field operator[](size_t index) const override
 	{
 		return String(reinterpret_cast<const char *>(&chars[n * index]), n);
 	}
 
-	void get(size_t index, Field & res) const
+	void get(size_t index, Field & res) const override
 	{
 		res.assignString(reinterpret_cast<const char *>(&chars[n * index]), n);
 	}
 
-	StringRef getDataAt(size_t index) const
+	StringRef getDataAt(size_t index) const override
 	{
 		return StringRef(&chars[n * index], n);
 	}
 
-	void insert(const Field & x)
+	void insert(const Field & x) override
 	{
 		const String & s = DB::get<const String &>(x);
 
@@ -81,7 +81,7 @@ public:
 		memcpy(&chars[old_size], s.data(), s.size());
 	}
 
-	void insertFrom(const IColumn & src_, size_t index)
+	void insertFrom(const IColumn & src_, size_t index) override
 	{
 		const ColumnFixedString & src = static_cast<const ColumnFixedString &>(src_);
 
@@ -93,7 +93,7 @@ public:
 		memcpy(&chars[old_size], &src.chars[n * index], n);
 	}
 
-	void insertData(const char * pos, size_t length)
+	void insertData(const char * pos, size_t length) override
 	{
 		if (length > n)
 			throw Exception("Too large string for FixedString column", ErrorCodes::TOO_LARGE_STRING_SIZE);
@@ -103,12 +103,12 @@ public:
 		memcpy(&chars[old_size], pos, length);
 	}
 
-	void insertDefault()
+	void insertDefault() override
 	{
 		chars.resize_fill(chars.size() + n);
 	}
 
-	int compareAt(size_t p1, size_t p2, const IColumn & rhs_, int nan_direction_hint) const
+	int compareAt(size_t p1, size_t p2, const IColumn & rhs_, int nan_direction_hint) const override
 	{
 		const ColumnFixedString & rhs = static_cast<const ColumnFixedString &>(rhs_);
 		return memcmp(&chars[p1 * n], &rhs.chars[p2 * n], n);
@@ -127,7 +127,7 @@ public:
 		}
 	};
 
-	void getPermutation(bool reverse, size_t limit, Permutation & res) const
+	void getPermutation(bool reverse, size_t limit, Permutation & res) const override
 	{
 		size_t s = size();
 		res.resize(s);
@@ -153,7 +153,7 @@ public:
 		}
 	}
 
-	ColumnPtr cut(size_t start, size_t length) const
+	ColumnPtr cut(size_t start, size_t length) const override
 	{
 		ColumnFixedString * res_ = new ColumnFixedString(n);
 		ColumnPtr res = res_;
@@ -162,7 +162,7 @@ public:
 		return res;
 	}
 
-	ColumnPtr filter(const IColumn::Filter & filt) const
+	ColumnPtr filter(const IColumn::Filter & filt) const override
 	{
 		size_t col_size = size();
 		if (col_size != filt.size())
@@ -185,7 +185,7 @@ public:
 		return res;
 	}
 
-	ColumnPtr permute(const Permutation & perm, size_t limit) const
+	ColumnPtr permute(const Permutation & perm, size_t limit) const override
 	{
 		size_t col_size = size();
 
@@ -214,7 +214,7 @@ public:
 		return res;
 	}
 
-	ColumnPtr replicate(const Offsets_t & offsets) const
+	ColumnPtr replicate(const Offsets_t & offsets) const override
 	{
 		size_t col_size = size();
 		if (col_size != offsets.size())
@@ -243,7 +243,7 @@ public:
 		return res;
 	}
 
-	void getExtremes(Field & min, Field & max) const
+	void getExtremes(Field & min, Field & max) const override
 	{
 		min = String();
 		max = String();

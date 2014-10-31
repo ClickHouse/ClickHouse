@@ -47,7 +47,7 @@ public:
 		}
 	}
 
-	std::string getName() const
+	std::string getName() const override
 	{
 		std::string res;
 		{
@@ -63,7 +63,7 @@ public:
 		return "ColumnNested(" + res + ")";
 	}
 
-	ColumnPtr cloneEmpty() const
+	ColumnPtr cloneEmpty() const override
 	{
 		Columns res(data.size());
 		for (size_t i = 0; i < data.size(); ++i)
@@ -71,32 +71,32 @@ public:
 		return new ColumnNested(res);
 	}
 
-	size_t size() const
+	size_t size() const override
 	{
 		return getOffsets().size();
 	}
 
-	Field operator[](size_t n) const
+	Field operator[](size_t n) const override
 	{
 		throw Exception("Method operator[] is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	void get(size_t n, Field & res) const
+	void get(size_t n, Field & res) const override
 	{
 		throw Exception("Method get is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	StringRef getDataAt(size_t n) const
+	StringRef getDataAt(size_t n) const override
 	{
 		throw Exception("Method getDataAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	void insertData(const char * pos, size_t length)
+	void insertData(const char * pos, size_t length) override
 	{
 		throw Exception("Method insertData is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	ColumnPtr cut(size_t start, size_t length) const
+	ColumnPtr cut(size_t start, size_t length) const override
 	{
 		if (length == 0)
 			return new ColumnNested(data);
@@ -131,12 +131,12 @@ public:
 		return res;
 	}
 
-	void insert(const Field & x)
+	void insert(const Field & x) override
 	{
 		throw Exception("Method insert is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	void insertFrom(const IColumn & src_, size_t n)
+	void insertFrom(const IColumn & src_, size_t n) override
 	{
 		const ColumnNested & src = static_cast<const ColumnNested &>(src_);
 
@@ -158,14 +158,14 @@ public:
 		getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + size);
 	}
 
-	void insertDefault()
+	void insertDefault() override
 	{
 		for (size_t i = 0; i < data.size(); ++i)
 			data[i]->insertDefault();
 		getOffsets().push_back(getOffsets().size() == 0 ? 1 : (getOffsets().back() + 1));
 	}
 
-	ColumnPtr filter(const Filter & filt) const
+	ColumnPtr filter(const Filter & filt) const override
 	{
 		size_t size = getOffsets().size();
 		if (size != filt.size())
@@ -205,12 +205,12 @@ public:
 		return res;
 	}
 
-	ColumnPtr replicate(const Offsets_t & offsets) const
+	ColumnPtr replicate(const Offsets_t & offsets) const override
 	{
 		throw Exception("Replication of ColumnNested is not implemented.", ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	ColumnPtr permute(const Permutation & perm, size_t limit) const
+	ColumnPtr permute(const Permutation & perm, size_t limit) const override
 	{
 		size_t size = getOffsets().size();
 		if (size != perm.size())
@@ -255,24 +255,24 @@ public:
 		return res;
 	}
 
-	int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const
+	int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
 	{
 		throw Exception("Method compareAt is not supported for ColumnNested.", ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	void getPermutation(bool reverse, size_t limit, Permutation & res) const
+	void getPermutation(bool reverse, size_t limit, Permutation & res) const override
 	{
 		throw Exception("Method getPermutation is not supported for ColumnNested.", ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	void reserve(size_t n)
+	void reserve(size_t n) override
 	{
 		getOffsets().reserve(n);
 		for (Columns::iterator it = data.begin(); it != data.end(); ++it)
 			(*it)->reserve(n);
 	}
 
-	size_t byteSize() const
+	size_t byteSize() const override
 	{
 		size_t size = getOffsets().size() * sizeof(getOffsets()[0]);
 		for (Columns::const_iterator it = data.begin(); it != data.end(); ++it)
@@ -280,7 +280,7 @@ public:
 		return size;
 	}
 
-	void getExtremes(Field & min, Field & max) const
+	void getExtremes(Field & min, Field & max) const override
 	{
 		throw Exception("Method getExtremes is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
@@ -288,9 +288,6 @@ public:
 	/** Более эффективные методы манипуляции */
 	Columns & getData() { return data; }
 	const Columns & getData() const { return data; }
-
-// 	ColumnPtr & getDataPtr() { return data; }
-// 	const ColumnPtr & getDataPtr() const { return data; }
 
 	Offsets_t & ALWAYS_INLINE getOffsets()
 	{
