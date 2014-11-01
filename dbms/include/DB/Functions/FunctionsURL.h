@@ -113,6 +113,94 @@ struct ExtractDomain
 	}
 };
 
+struct ExtractFirstSignificantSubdomain
+{
+	static size_t getReserveLengthForElement() { return 10; }
+
+	static void execute(const Pos data, const size_t size, Pos & res_data, size_t & res_size, Pos * out_domain_end = nullptr)
+	{
+		res_data = data;
+		res_size = 0;
+
+		Pos tmp;
+		size_t domain_length;
+		ExtractDomain<true>::execute(data, size, tmp, domain_length);
+
+		if (domain_length == 0)
+			return;
+
+		if (out_domain_end)
+			*out_domain_end = tmp + domain_length;
+
+		/// cut useless dot
+		if (tmp[domain_length - 1] == '.')
+			--domain_length;
+
+		res_data = tmp;
+		res_size = domain_length;
+
+		auto begin = tmp;
+		auto end = begin + domain_length;
+		const char * last_3_periods[3]{};
+		auto pos = static_cast<const char *>(memchr(begin, '.', domain_length));
+
+		while (pos)
+		{
+			last_3_periods[2] = last_3_periods[1];
+			last_3_periods[1] = last_3_periods[0];
+			last_3_periods[0] = pos;
+			pos = static_cast<const char *>(memchr(pos + 1, '.', end - pos - 1));
+		}
+
+		if (!last_3_periods[0])
+			return;
+
+		if (!last_3_periods[1])
+		{
+			res_size = last_3_periods[0] - begin;
+			return;
+		}
+
+		if (!last_3_periods[2])
+			last_3_periods[2] = begin - 1;
+
+		if (!strncmp(last_3_periods[1] + 1, "com", 3) ||
+			!strncmp(last_3_periods[1] + 1, "net", 3) ||
+			!strncmp(last_3_periods[1] + 1, "org", 3) ||
+			!strncmp(last_3_periods[1] + 1, "co", 2))
+		{
+			res_data += last_3_periods[2] + 1 - begin;
+			res_size = last_3_periods[1] - last_3_periods[2] - 1;
+			return;
+		}
+
+		res_data += last_3_periods[1] + 1 - begin;
+		res_size = last_3_periods[0] - last_3_periods[1] - 1;
+	}
+};
+
+struct CutToFirstSignificantSubdomain
+{
+	static size_t getReserveLengthForElement() { return 15; }
+
+	static void execute(const Pos data, const size_t size, Pos & res_data, size_t & res_size)
+	{
+		res_data = data;
+		res_size = 0;
+
+		Pos tmp_data;
+		size_t tmp_length;
+		Pos domain_end;
+		ExtractFirstSignificantSubdomain::execute(data, size, tmp_data, tmp_length, &domain_end);
+
+		if (tmp_length == 0)
+			return;
+
+		res_data = tmp_data;
+		res_size = domain_end - tmp_data;
+	}
+};
+
 struct ExtractTopLevelDomain
 {
 	static size_t getReserveLengthForElement() { return 5; }
@@ -839,11 +927,14 @@ struct CutSubstringImpl
 struct NameProtocol 					{ static const char * get() { return "protocol"; } };
 struct NameDomain 						{ static const char * get() { return "domain"; } };
 struct NameDomainWithoutWWW 			{ static const char * get() { return "domainWithoutWWW"; } };
+struct NameFirstSignificantSubdomain	{ static const char * get() { return "firstSignificantSubdomain"; } };
 struct NameTopLevelDomain 				{ static const char * get() { return "topLevelDomain"; } };
 struct NamePath 						{ static const char * get() { return "path"; } };
 struct NameQueryString					{ static const char * get() { return "queryString"; } };
 struct NameFragment 					{ static const char * get() { return "fragment"; } };
 struct NameQueryStringAndFragment		{ static const char * get() { return "queryStringAndFragment"; } };
+
+struct NameCutToFirstSignificantSubdomain { static const char * get() { return "cutToFirstSignificantSubdomain"; } };
 
 struct NameCutWWW 						{ static const char * get() { return "cutWWW"; } };
 struct NameCutQueryString				{ static const char * get() { return "cutQueryString"; } };
@@ -856,11 +947,14 @@ struct NameCutURLParameter 				{ static const char * get() { return "cutURLParam
 typedef FunctionStringToString<ExtractSubstringImpl<ExtractProtocol>, 			NameProtocol>	 		FunctionProtocol;
 typedef FunctionStringToString<ExtractSubstringImpl<ExtractDomain<false> >, 		NameDomain>	 			FunctionDomain;
 typedef FunctionStringToString<ExtractSubstringImpl<ExtractDomain<true>  >, 		NameDomainWithoutWWW>	FunctionDomainWithoutWWW;
+typedef FunctionStringToString<ExtractSubstringImpl<ExtractFirstSignificantSubdomain>, NameFirstSignificantSubdomain>	FunctionFirstSignificantSubdomain;
 typedef FunctionStringToString<ExtractSubstringImpl<ExtractTopLevelDomain>, 		NameTopLevelDomain>		FunctionTopLevelDomain;
 typedef FunctionStringToString<ExtractSubstringImpl<ExtractPath>, 				NamePath>				FunctionPath;
 typedef FunctionStringToString<ExtractSubstringImpl<ExtractQueryString<true> >, 	NameQueryString>		FunctionQueryString;
 typedef FunctionStringToString<ExtractSubstringImpl<ExtractFragment<true> >, 		NameFragment>			FunctionFragment;
 typedef FunctionStringToString<ExtractSubstringImpl<ExtractQueryStringAndFragment<true> >, NameQueryStringAndFragment>	FunctionQueryStringAndFragment;
+
+typedef FunctionStringToString<ExtractSubstringImpl<CutToFirstSignificantSubdomain>, NameCutToFirstSignificantSubdomain> FunctionCutToFirstSignificantSubdomain;
 
 typedef FunctionStringToString<CutSubstringImpl<ExtractWWW>, 						NameCutWWW>				FunctionCutWWW;
 typedef FunctionStringToString<CutSubstringImpl<ExtractQueryString<false> >, 		NameCutQueryString>		FunctionCutQueryString;

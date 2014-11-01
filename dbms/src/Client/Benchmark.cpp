@@ -239,9 +239,8 @@ private:
 		Stopwatch watch;
 		RemoteBlockInputStream stream(connection, query, nullptr);
 
-		size_t read_rows = 0;
-		size_t read_bytes = 0;
-		stream.setProgressCallback([&](size_t rows_inc, size_t bytes_inc) { read_rows += rows_inc; read_bytes += bytes_inc; });
+		Progress progress;
+		stream.setProgressCallback([&progress](const Progress & value) { progress.incrementPiecewiseAtomically(value); });
 
 		stream.readPrefix();
 		while (Block block = stream.read())
@@ -253,8 +252,8 @@ private:
 		double seconds = watch.elapsedSeconds();
 
 		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-		info_per_interval.add(seconds, read_rows, read_bytes, info.rows, info.bytes);
-		info_total.add(seconds, read_rows, read_bytes, info.rows, info.bytes);
+		info_per_interval.add(seconds, progress.rows, progress.bytes, info.rows, info.bytes);
+		info_total.add(seconds, progress.rows, progress.bytes, info.rows, info.bytes);
 	}
 
 

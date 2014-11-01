@@ -4,6 +4,7 @@
 #include <Yandex/DateLUT.h>
 
 #include <mysqlxx/Date.h>
+#include <iomanip>
 
 
 namespace mysqlxx
@@ -177,12 +178,15 @@ public:
 
 inline std::ostream & operator<< (std::ostream & ostr, const DateTime & datetime)
 {
-	return ostr << datetime.year()
-		<< '-' << (datetime.month() / 10) 	<< (datetime.month() % 10)
+	ostr << std::setfill('0') << std::setw(4) <<  datetime.year();
+
+	ostr << '-' << (datetime.month() / 10) 	<< (datetime.month() % 10)
 		<< '-' << (datetime.day() / 10) 	<< (datetime.day() % 10)
 		<< ' ' << (datetime.hour() / 10) 	<< (datetime.hour() % 10)
 		<< ':' << (datetime.minute() / 10) 	<< (datetime.minute() % 10)
 		<< ':' << (datetime.second() / 10) 	<< (datetime.second() % 10);
+
+	return ostr;
 }
 
 }

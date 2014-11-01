@@ -288,6 +288,95 @@ struct ArraySumImpl
 	}
 };
 
+struct ArrayFirstImpl
+{
+	static bool needBoolean() { return false; }
+	static bool needExpression() { return true; }
+	static bool needOneArray() { return false; }
+
+	static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
+	{
+		return array_element;
+	}
+
+	static ColumnPtr execute(const ColumnArray * array, ColumnPtr mapped)
+	{
+		auto column_filter = typeid_cast<ColumnVector<UInt8> *>(&*mapped);
+		if (!column_filter)
+			throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
+
+		const auto & filter = column_filter->getData();
+		const auto & offsets = array->getOffsets();
+		const auto & data = array->getData();
+		ColumnPtr out{data.cloneEmpty()};
+
+		size_t pos{};
+		for (size_t i = 0; i < offsets.size(); ++i)
+		{
+			auto exists = false;
+			for (; pos < offsets[i]; ++pos)
+			{
+				if (filter[pos])
+				{
+					out->insert(data[pos]);
+					exists = true;
+					pos = offsets[i];
+					break;
+				}
+			}
+
+			if (!exists)
+				out->insertDefault();
+		}
+
+		return out;
+	}
+};
+
+struct ArrayFirstIndexImpl
+{
+	static bool needBoolean() { return false; }
+	static bool needExpression() { return true; }
+	static bool needOneArray() { return false; }
+
+	static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
+	{
+		return new DataTypeUInt32;
+	}
+
+	static ColumnPtr execute(const ColumnArray * array, ColumnPtr mapped)
+	{
+		auto column_filter = typeid_cast<ColumnVector<UInt8> *>(&*mapped);
+		if (!column_filter)
+			throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
+
+		const auto & filter = column_filter->getData();
+		const auto & offsets = array->getOffsets();
+		auto out_column = new ColumnVector<UInt32>{offsets.size()};
+		ColumnPtr out_column_ptr{out_column};
+		auto & out_index = out_column->getData();
+
+		size_t pos{};
+		for (size_t i = 0; i < offsets.size(); ++i)
+		{
+			UInt32 index{};
+			for (size_t idx{1}; pos < offsets[i]; ++pos, ++idx)
+			{
+				if (filter[pos])
+				{
+					index = idx;
+					pos = offsets[i];
+					break;
+				}
+			}
+
+			out_index[i] = index;
+		}
+
+		return out_column_ptr;
+	}
+};
+
 template <typename Impl, typename Name>
 class FunctionArrayMapped : public IFunction
 {
@@ -508,6 +597,8 @@ struct NameArrayCount	{ static const char * get() { return "arrayCount"; } };
 struct NameArrayExists	{ static const char * get() { return "arrayExists"; } };
 struct NameArrayAll		{ static const char * get() { return "arrayAll"; } };
 struct NameArraySum		{ static const char * get() { return "arraySum"; } };
+struct NameArrayFirst	{ static const char * get() { return "arrayFirst"; } };
+struct NameArrayFirstIndex	{ static const char * get() { return "arrayFirstIndex"; } };
 
 typedef FunctionArrayMapped<ArrayMapImpl, 		NameArrayMap>		FunctionArrayMap;
 typedef FunctionArrayMapped<ArrayFilterImpl, 	NameArrayFilter>	FunctionArrayFilter;
@@ -515,5 +606,7 @@ typedef FunctionArrayMapped<ArrayCountImpl, 	NameArrayCount>		FunctionArrayCount
 typedef FunctionArrayMapped<ArrayExistsImpl, 	NameArrayExists>	FunctionArrayExists;
 typedef FunctionArrayMapped<ArrayAllImpl,	 	NameArrayAll>		FunctionArrayAll;
 typedef FunctionArrayMapped<ArraySumImpl,	 	NameArraySum>		FunctionArraySum;
+typedef FunctionArrayMapped<ArrayFirstImpl,	 	NameArrayFirst>		FunctionArrayFirst;
+typedef FunctionArrayMapped<ArrayFirstIndexImpl,	 	NameArrayFirstIndex>		FunctionArrayFirstIndex;
 
 }

@@ -22,6 +22,7 @@
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnFixedString.h>
 #include <DB/Columns/ColumnAggregateFunction.h>
+#include <DB/Columns/ColumnVector.h>
 
 
 
@@ -53,25 +54,78 @@ typedef HashMap<UInt128, AggregateDataPtr, UInt128Hash> AggregatedDataWithKeys12
 typedef HashMap<UInt128, std::pair<StringRef*, AggregateDataPtr>, UInt128TrivialHash> AggregatedDataHashed;
 
 
-/// Для случая, когда есть один числовой ключ.
-struct AggregationMethodKey64
+/// Специализации для UInt8, UInt16.
+struct TrivialHash
 {
-	typedef AggregatedDataWithUInt64Key Data;
-	typedef Data::key_type Key;
-	typedef Data::mapped_type Mapped;
-	typedef Data::iterator iterator;
-	typedef Data::const_iterator const_iterator;
+	template <typename T>
+	size_t operator() (T key) const
+	{
+		return key;
+	}
+};
+
+/// Превращает хэш-таблицу в что-то типа lookup-таблицы. Остаётся неоптимальность - в ячейках хранятся ключи.
+template <size_t key_bits>
+struct HashTableFixedGrower
+{
+	size_t bufSize() const				{ return 1 << key_bits; }
+	size_t place(size_t x) const 		{ return x; }
+	/// Тут можно было бы написать __builtin_unreachable(), но компилятор не до конца всё оптимизирует, и получается менее эффективно.
+	size_t next(size_t pos) const		{ return pos + 1; }
+	bool overflow(size_t elems) const	{ return false; }
+
+	void increaseSize() { __builtin_unreachable(); }
+	void set(size_t num_elems) {}
+	void setBufSize(size_t buf_size_) {}
+};
+
+typedef HashMap<UInt64, AggregateDataPtr, TrivialHash, HashTableFixedGrower<8>> AggregatedDataWithUInt8Key;
+typedef HashMap<UInt64, AggregateDataPtr, TrivialHash, HashTableFixedGrower<16>> AggregatedDataWithUInt16Key;
+
+template <typename FieldType>
+struct AggregatedDataWithUIntKey
+{
+	using Type = AggregatedDataWithUInt64Key;
+	static constexpr bool never_overflows = false;
+};
+
+template <>
+struct AggregatedDataWithUIntKey<UInt8>
+{
+	using Type = AggregatedDataWithUInt8Key;
+	static constexpr bool never_overflows = true;	/// Говорит о том, что в результате агрегации не может быть много записей.
+};
+
+template <>
+struct AggregatedDataWithUIntKey<UInt16>
+{
+	using Type = AggregatedDataWithUInt16Key;
+	static constexpr bool never_overflows = true;
+};
+
+
+/// Для случая, когда есть один числовой ключ.
+template <typename FieldType>	/// UInt8/16/32/64 для любых типов соответствующей битности.
+struct AggregationMethodOneNumber
+{
+	typedef typename AggregatedDataWithUIntKey<FieldType>::Type Data;
+	typedef typename Data::key_type Key;
+	typedef typename Data::mapped_type Mapped;
+	typedef typename Data::iterator iterator;
+	typedef typename Data::const_iterator const_iterator;
+
+	static constexpr bool never_overflows = AggregatedDataWithUIntKey<FieldType>::never_overflows;
 
 	Data data;
 
-	const IColumn * column;
+	const FieldType * column;
 
 	/** Вызывается в начале обработки каждого блока.
 	  * Устанавливает переменные, необходимые для остальных методов, вызываемых во внутренних циклах.
 	  */
 	void init(ConstColumnPlainPtrs & key_columns)
 	{
-		column = key_columns[0];
+		column = &static_cast<const ColumnVector<FieldType> *>(key_columns[0])->getData()[0];
 	}
 
 	/// Достать из ключевых столбцов ключ для вставки в хэш-таблицу.
@@ -82,7 +136,7 @@ struct AggregationMethodKey64
 		const Sizes & key_sizes,	/// Если ключи фиксированной длины - их длины. Не используется в методах агрегации по ключам переменной длины.
 		StringRefs & keys) const	/// Сюда могут быть записаны ссылки на данные ключей в столбцах. Они могут быть использованы в дальнейшем.
 	{
-		return column->get64(i);
+		return get64(column[i]);
 	}
 
 	/// Из значения в хэш-таблице получить AggregateDataPtr.
@@ -99,9 +153,42 @@ struct AggregationMethodKey64
 	  */
 	static void insertKeyIntoColumns(const_iterator & it, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
 	{
-		key_columns[0]->insertData(reinterpret_cast<const char *>(&it->first), sizeof(it->first));
+		static_cast<ColumnVector<FieldType> *>(key_columns[0])->insertData(reinterpret_cast<const char *>(&it->first), sizeof(it->first));
+	}
+
+private:
+	UInt64 get64(FieldType x) const
+	{
+		return x;
 	}
 };
+
+template <>
+inline UInt64 AggregationMethodOneNumber<Float64>::get64(Float64 x) const
+{
+	union
+	{
+		Float64 src;
+		UInt64 res;
+	};
+
+	src = x;
+	return res;
+}
+
+template <>
+inline UInt64 AggregationMethodOneNumber<Float32>::get64(Float32 x) const
+{
+	union
+	{
+		Float32 src;
+		UInt64 res;
+	};
+
+	res = 0;
+	src = x;
+	return res;
+}
 
 
 /// Для случая, когда есть один строковый ключ.
@@ -112,6 +199,8 @@ struct AggregationMethodString
 	typedef Data::mapped_type Mapped;
 	typedef Data::iterator iterator;
 	typedef Data::const_iterator const_iterator;
+
+	static constexpr bool never_overflows = false;
 
 	Data data;
 
@@ -160,6 +249,8 @@ struct AggregationMethodFixedString
 	typedef Data::iterator iterator;
 	typedef Data::const_iterator const_iterator;
 
+	static constexpr bool never_overflows = false;
+
 	Data data;
 
 	size_t n;
@@ -207,6 +298,8 @@ struct AggregationMethodKeys128
 	typedef Data::iterator iterator;
 	typedef Data::const_iterator const_iterator;
 
+	static constexpr bool never_overflows = false;
+
 	Data data;
 
 	void init(ConstColumnPlainPtrs & key_columns)
@@ -251,6 +344,8 @@ struct AggregationMethodHashed
 	typedef Data::mapped_type Mapped;
 	typedef Data::iterator iterator;
 	typedef Data::const_iterator const_iterator;
+
+	static constexpr bool never_overflows = false;
 
 	Data data;
 
@@ -317,7 +412,10 @@ struct AggregatedDataVariants : private boost::noncopyable
 	  */
 	AggregatedDataWithoutKey without_key = nullptr;
 
-	std::unique_ptr<AggregationMethodKey64> 		key64;
+	std::unique_ptr<AggregationMethodOneNumber<UInt8>>	key8;
+	std::unique_ptr<AggregationMethodOneNumber<UInt16>>	key16;
+	std::unique_ptr<AggregationMethodOneNumber<UInt32>>	key32;
+	std::unique_ptr<AggregationMethodOneNumber<UInt64>>	key64;
 	std::unique_ptr<AggregationMethodString> 		key_string;
 	std::unique_ptr<AggregationMethodFixedString> 	key_fixed_string;
 	std::unique_ptr<AggregationMethodKeys128> 		keys128;
@@ -325,13 +423,16 @@ struct AggregatedDataVariants : private boost::noncopyable
 
 	enum Type
 	{
-		EMPTY 				= 0,
-		WITHOUT_KEY 		= 1,
-		KEY_64				= 2,
-		KEY_STRING			= 3,
-		KEY_FIXED_STRING 	= 4,
-		KEYS_128			= 5,
-		HASHED				= 6,
+		EMPTY = 0,
+		WITHOUT_KEY,
+		KEY_8,
+		KEY_16,
+		KEY_32,
+		KEY_64,
+		KEY_STRING,
+		KEY_FIXED_STRING,
+		KEYS_128,
+		HASHED,
 	};
 	Type type = EMPTY;
 
@@ -348,11 +449,14 @@ struct AggregatedDataVariants : private boost::noncopyable
 		{
 			case EMPTY:				break;
 			case WITHOUT_KEY:		break;
-			case KEY_64:			key64			.reset(new AggregationMethodKey64); 		break;
-			case KEY_STRING:		key_string		.reset(new AggregationMethodString); 		break;
-			case KEY_FIXED_STRING:	key_fixed_string.reset(new AggregationMethodFixedString); 	break;
-			case KEYS_128:			keys128			.reset(new AggregationMethodKeys128); 		break;
-			case HASHED:			hashed			.reset(new AggregationMethodHashed);	 	break;
+			case KEY_8:				key8			.reset(new decltype(key8)::element_type); 			break;
+			case KEY_16:			key16			.reset(new decltype(key16)::element_type); 			break;
+			case KEY_32:			key32			.reset(new decltype(key32)::element_type); 			break;
+			case KEY_64:			key64			.reset(new decltype(key64)::element_type); 			break;
+			case KEY_STRING:		key_string		.reset(new decltype(key_string)::element_type); 	break;
+			case KEY_FIXED_STRING:	key_fixed_string.reset(new decltype(key_fixed_string)::element_type); break;
+			case KEYS_128:			keys128			.reset(new decltype(keys128)::element_type); 		break;
+			case HASHED:			hashed			.reset(new decltype(hashed)::element_type);	 		break;
 
 			default:
 				throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
@@ -365,6 +469,9 @@ struct AggregatedDataVariants : private boost::noncopyable
 		{
 			case EMPTY:				return 0;
 			case WITHOUT_KEY:		return 1;
+			case KEY_8:				return key8->data.size() 				+ (without_key != nullptr);
+			case KEY_16:			return key16->data.size() 				+ (without_key != nullptr);
+			case KEY_32:			return key32->data.size() 				+ (without_key != nullptr);
 			case KEY_64:			return key64->data.size() 				+ (without_key != nullptr);
 			case KEY_STRING:		return key_string->data.size() 			+ (without_key != nullptr);
 			case KEY_FIXED_STRING:	return key_fixed_string->data.size() 	+ (without_key != nullptr);
@@ -382,6 +489,9 @@ struct AggregatedDataVariants : private boost::noncopyable
 		{
 			case EMPTY:				return "EMPTY";
 			case WITHOUT_KEY:		return "WITHOUT_KEY";
+			case KEY_8:				return "KEY_8";
+			case KEY_16:			return "KEY_16";
+			case KEY_32:			return "KEY_32";
 			case KEY_64:			return "KEY_64";
 			case KEY_STRING:		return "KEY_STRING";
 			case KEY_FIXED_STRING:	return "KEY_FIXED_STRING";

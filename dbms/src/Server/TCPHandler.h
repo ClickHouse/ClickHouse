@@ -23,8 +23,8 @@ struct QueryState
 	/// Идентификатор запроса.
 	String query_id;
 
-	QueryProcessingStage::Enum stage;
-	Protocol::Compression::Enum compression;
+	QueryProcessingStage::Enum stage = QueryProcessingStage::Complete;
+	Protocol::Compression::Enum compression = Protocol::Compression::Disable;
 
 	/// Откуда читать данные для INSERT-а.
 	SharedPtr<ReadBuffer> maybe_compressed_in;
@@ -40,24 +40,29 @@ struct QueryState
 	BlockIO io;
 
 	/// Отменен ли запрос
-	bool is_cancelled;
+	bool is_cancelled = false;
 	/// Пустой или нет
-	bool is_empty;
+	bool is_empty = true;
 	/// Данные были отправлены.
-	bool sent_all_data;
+	bool sent_all_data = false;
 	/// Запрос на вставку или нет.
-	bool is_insert;
+	bool is_insert = false;
 
 	/// Для вывода прогресса - разница после предыдущей отправки прогресса.
-	volatile size_t rows_processed;
-	volatile size_t bytes_processed;
+	Progress progress;
 
 
-	QueryState() : query_id(""), stage(QueryProcessingStage::Complete), compression(Protocol::Compression::Disable),
-		is_cancelled(false), is_empty(true), sent_all_data(false), is_insert(false), rows_processed(0), bytes_processed(0) {}
-	
 	void reset()
 	{
+		/** process_list_entry также включает/выключает учёт памяти MemoryTracker-ом.
+		  * Члены maybe_compressed_in, block_in, maybe_compressed_out, block_out
+		  *  могли быть инициализированы до io, и выделенная в них память могла не быть учтена MemoryTracker-ом.
+		  * Если эти члены будут уничтожены раньше, то освобождение памяти будет учтено MemoryTracker-ом,
+		  *  и вычисленный расход памяти может оказаться отрицательным (это не проблема, но некрасиво).
+		  * Поэтому, сначала уничтожим process_list_entry.
+		  */
+		io.process_list_entry = nullptr;
+
 		*this = QueryState();
 	}
 
@@ -133,7 +138,7 @@ private:
 	bool isQueryCancelled();
 
 	/// Эта функция вызывается из разных потоков.
-	void updateProgress(size_t rows, size_t bytes);
+	void updateProgress(const Progress & value);
 
 	/// Вывести информацию о скорости выполнения SELECT запроса.
 	void logProfileInfo(Stopwatch & watch, IBlockInputStream & in);

@@ -113,21 +113,21 @@ public:
 		return res;
 	}
 
- 	std::string getName() const { return "ColumnAggregateFunction"; }
+	std::string getName() const override { return "ColumnAggregateFunction"; }
 
-	size_t sizeOfField() const { return sizeof(getData()[0]); }
+	size_t sizeOfField() const override { return sizeof(getData()[0]); }
 
-	size_t size() const
+	size_t size() const override
 	{
 		return getData().size();
 	}
 
- 	ColumnPtr cloneEmpty() const
- 	{
+	ColumnPtr cloneEmpty() const override
+	{
 		return new ColumnAggregateFunction(holder->func, Arenas(1, new Arena));
 	};
 
-	Field operator[](size_t n) const
+	Field operator[](size_t n) const override
 	{
 		Field field = String();
 		{
@@ -137,7 +137,7 @@ public:
 		return field;
 	}
 
-	void get(size_t n, Field & res) const
+	void get(size_t n, Field & res) const override
 	{
 		res = String();
 		{
@@ -146,17 +146,17 @@ public:
 		}
 	}
 
-	StringRef getDataAt(size_t n) const
+	StringRef getDataAt(size_t n) const override
 	{
 		return StringRef(reinterpret_cast<const char *>(&getData()[n]), sizeof(getData()[n]));
 	}
 
-	void insertData(const char * pos, size_t length)
+	void insertData(const char * pos, size_t length) override
 	{
 		getData().push_back(*reinterpret_cast<const AggregateDataPtr *>(pos));
 	}
 
-	void insertFrom(const IColumn & src, size_t n)
+	void insertFrom(const IColumn & src, size_t n) override
 	{
 		getData().push_back(static_cast<const ColumnAggregateFunction &>(src).getData()[n]);
 	}
@@ -167,7 +167,7 @@ public:
 		holder.get()->func.get()->merge(getData().back(), static_cast<const ColumnAggregateFunction &>(src).getData()[n]);
 	}
 
-	void insert(const Field & x)
+	void insert(const Field & x) override
 	{
 		IAggregateFunction * function = holder.get()->func;
 
@@ -177,17 +177,17 @@ public:
 		function->deserializeMerge(getData().back(), read_buffer);
 	}
 
-	void insertDefault()
+	void insertDefault() override
 	{
 		throw Exception("Method insertDefault is not supported for ColumnAggregateFunction.", ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	size_t byteSize() const
+	size_t byteSize() const override
 	{
 		return getData().size() * sizeof(getData()[0]);
 	}
 
-	ColumnPtr cut(size_t start, size_t length) const
+	ColumnPtr cut(size_t start, size_t length) const override
 	{
 		if (start + length > getData().size())
 			throw Exception("Parameters start = "
@@ -205,7 +205,7 @@ public:
 		return res;
 	}
 
-	ColumnPtr filter(const Filter & filter) const
+	ColumnPtr filter(const Filter & filter) const override
 	{
 		size_t size = getData().size();
 		if (size != filter.size())
@@ -225,7 +225,7 @@ public:
 		return res;
 	}
 
-	ColumnPtr permute(const Permutation & perm, size_t limit) const
+	ColumnPtr permute(const Permutation & perm, size_t limit) const override
 	{
 		size_t size = getData().size();
 
@@ -247,22 +247,22 @@ public:
 		return res;
 	}
 
-	ColumnPtr replicate(const Offsets_t & offsets) const
+	ColumnPtr replicate(const Offsets_t & offsets) const override
 	{
 		throw Exception("Method replicate is not supported for ColumnAggregateFunction.", ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	void getExtremes(Field & min, Field & max) const
+	void getExtremes(Field & min, Field & max) const override
 	{
 		throw Exception("Method getExtremes is not supported for ColumnAggregateFunction.", ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const
+	int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
 	{
 		return 0;
 	}
 
-	void getPermutation(bool reverse, size_t limit, Permutation & res) const
+	void getPermutation(bool reverse, size_t limit, Permutation & res) const override
 	{
 		size_t s = getData().size();
 		res.resize(s);

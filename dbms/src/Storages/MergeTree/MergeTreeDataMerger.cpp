@@ -350,11 +350,13 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 		auto input = stdext::make_unique<MergeTreeBlockInputStream>(
 			data.getFullPath() + parts[i]->name + '/', DEFAULT_MERGE_BLOCK_SIZE, union_column_names, data,
 			parts[i], ranges, false, nullptr, "");
-		input->setProgressCallback([&merge_entry, rows_total] (const std::size_t rows, const std::size_t bytes) {
-			const auto new_rows_read = __sync_add_and_fetch(&merge_entry->rows_read, rows);
-			merge_entry->progress = static_cast<Float64>(new_rows_read) / rows_total;
-			__sync_add_and_fetch(&merge_entry->bytes_read_uncompressed, bytes);
-		});
+
+		input->setProgressCallback([&merge_entry, rows_total] (const Progress & value)
+			{
+				const auto new_rows_read = __sync_add_and_fetch(&merge_entry->rows_read, value.rows);
+				merge_entry->progress = static_cast<Float64>(new_rows_read) / rows_total;
+				__sync_add_and_fetch(&merge_entry->bytes_read_uncompressed, value.bytes);
+			});
 
 		src_streams.push_back(new ExpressionBlockInputStream(input.release(), data.getPrimaryExpression()));
 		sum_rows_approx += parts[i]->size * data.index_granularity;

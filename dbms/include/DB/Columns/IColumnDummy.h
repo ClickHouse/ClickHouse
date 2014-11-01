@@ -17,30 +17,30 @@ public:
 
 	virtual ColumnPtr cloneDummy(size_t s_) const = 0;
 
-	ColumnPtr cloneResized(size_t s_) const { return cloneDummy(s_); }
-	bool isConst() const { return true; }
-	size_t size() const { return s; }
-	void insertDefault() { ++s; }
-	size_t byteSize() const { return 0; }
-	int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const { return 0; }
+	ColumnPtr cloneResized(size_t s_) const override { return cloneDummy(s_); }
+	bool isConst() const override { return true; }
+	size_t size() const override { return s; }
+	void insertDefault() override { ++s; }
+	size_t byteSize() const override { return 0; }
+	int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override { return 0; }
 
-	Field operator[](size_t n) const { throw Exception("Cannot get value from " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
-	void get(size_t n, Field & res) const { throw Exception("Cannot get value from " + getName(), ErrorCodes::NOT_IMPLEMENTED); };
-	void insert(const Field & x) { throw Exception("Cannot insert element into " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
-	StringRef getDataAt(size_t n) const { throw Exception("Method getDataAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
-	void insertData(const char * pos, size_t length) { throw Exception("Method insertData is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
+	Field operator[](size_t n) const override { throw Exception("Cannot get value from " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
+	void get(size_t n, Field & res) const override { throw Exception("Cannot get value from " + getName(), ErrorCodes::NOT_IMPLEMENTED); };
+	void insert(const Field & x) override { throw Exception("Cannot insert element into " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
+	StringRef getDataAt(size_t n) const override { throw Exception("Method getDataAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
+	void insertData(const char * pos, size_t length) override { throw Exception("Method insertData is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
 
-	void getExtremes(Field & min, Field & max) const
+	void getExtremes(Field & min, Field & max) const override
 	{
 		throw Exception("Method getExtremes is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	ColumnPtr cut(size_t start, size_t length) const
+	ColumnPtr cut(size_t start, size_t length) const override
 	{
 		return cloneDummy(length);
 	}
 
-	ColumnPtr filter(const Filter & filt) const
+	ColumnPtr filter(const Filter & filt) const override
 	{
 		size_t new_size = 0;
 		for (Filter::const_iterator it = filt.begin(); it != filt.end(); ++it)
@@ -50,7 +50,7 @@ public:
 			return cloneDummy(new_size);
 	}
 
-	ColumnPtr permute(const Permutation & perm, size_t limit) const
+	ColumnPtr permute(const Permutation & perm, size_t limit) const override
 	{
 		if (s != perm.size())
 			throw Exception("Size of permutation doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
@@ -58,14 +58,14 @@ public:
 		return cloneDummy(limit ? std::min(s, limit) : s);
 	}
 
-	void getPermutation(bool reverse, size_t limit, Permutation & res) const
+	void getPermutation(bool reverse, size_t limit, Permutation & res) const override
 	{
 		res.resize(s);
 		for (size_t i = 0; i < s; ++i)
 			res[i] = i;
 	}
 
-	ColumnPtr replicate(const Offsets_t & offsets) const
+	ColumnPtr replicate(const Offsets_t & offsets) const override
 	{
 		if (s != offsets.size())
 			throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);

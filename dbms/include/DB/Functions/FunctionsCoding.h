@@ -13,6 +13,10 @@
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Functions/IFunction.h>
 
+#include <arpa/inet.h>
+#include <statdaemons/ext/range.hpp>
+#include <array>
+
 
 namespace DB
 {
@@ -34,6 +38,426 @@ namespace DB
 
 /// Включая нулевой символ в конце.
 #define MAX_UINT_HEX_LENGTH 20
+
+const auto ipv4_bytes_length = 4;
+const auto ipv6_bytes_length = 16;
+
+class FunctionIPv6NumToString : public IFunction
+{
+public:
+	String getName() const { return "IPv6NumToString"; }
+
+	DataTypePtr getReturnType(const DataTypes & arguments) const
+	{
+		if (arguments.size() != 1)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+			+ toString(arguments.size()) + ", should be 1.",
+			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		const auto ptr = typeid_cast<const DataTypeFixedString *>(arguments[0].get());
+		if (!ptr || ptr->getN() != ipv6_bytes_length)
+			throw Exception("Illegal type " + arguments[0]->getName() +
+							" of argument of function " + getName() +
+							", expected FixedString(" + toString(ipv6_bytes_length) + ")",
+							ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		return new DataTypeString;
+	}
+
+	/// integer logarithm, return ceil(log(value, base)) (the smallest integer greater or equal  than log(value, base)
+	static constexpr uint32_t int_log(const uint32_t value, const uint32_t base, const bool carry = false)
+	{
+		return value >= base ? 1 + int_log(value / base, base, value % base || carry) : value % base > 1 || carry;
+	}
+
+	/// mapping of digits up to base 16
+	static constexpr auto && digits = "0123456789abcdef";
+
+	/// print integer in desired base, faster than sprintf
+	template <uint32_t base, typename T, uint32_t buffer_size = sizeof(T) * int_log(256, base)>
+	static void print_integer(char *& out, T value)
+	{
+		if (value == 0)
+			*out++ = '0';
+		else
+		{
+			char buf[buffer_size];
+			auto ptr = buf;
+
+			while (value > 0)
+			{
+				*ptr++ = digits[value % base];
+				value /= base;
+			}
+
+			while (ptr != buf)
+				*out++ = *--ptr;
+		}
+	}
+
+	/// print IPv4 address as %u.%u.%u.%u
+	static void ipv4_format(const unsigned char * src, char *& dst)
+	{
+		constexpr auto size = sizeof(UInt32);
+
+		for (const auto i : ext::range(0, size))
+		{
+			print_integer<10, UInt8>(dst, src[i]);
+
+			if (i != size - 1)
+				*dst++ = '.';
+		}
+	}
+
+	/** rewritten inet_ntop6 from http://svn.apache.org/repos/asf/apr/apr/trunk/network_io/unix/inet_pton.c
+	 *	performs significantly faster than the reference implementation due to the absence of sprintf calls,
+	 *	bounds checking, unnecessary string copying and length calculation */
+	static const void ipv6_format(const unsigned char * src, char *& dst)
+	{
+		struct { int base, len; } best{-1}, cur{-1};
+		std::array<uint16_t, ipv6_bytes_length / sizeof(uint16_t)> words{};
+
+		/** Preprocess:
+		 *	Copy the input (bytewise) array into a wordwise array.
+		 *	Find the longest run of 0x00's in src[] for :: shorthanding. */
+		for (const auto i : ext::range(0, ipv6_bytes_length))
+			words[i / 2] |= src[i] << ((1 - (i % 2)) << 3);
+
+		for (const auto i : ext::range(0, words.size()))
+		{
+			if (words[i] == 0) {
+				if (cur.base == -1)
+					cur.base = i, cur.len = 1;
+				else
+					cur.len++;
+			}
+			else
+			{
+				if (cur.base != -1)
+				{
+					if (best.base == -1 || cur.len > best.len)
+						best = cur;
+					cur.base = -1;
+				}
+			}
+		}
+
+		if (cur.base != -1)
+		{
+			if (best.base == -1 || cur.len > best.len)
+				best = cur;
+		}
+
+		if (best.base != -1 && best.len < 2)
+			best.base = -1;
+
+		/// Format the result.
+		for (const int i : ext::range(0, words.size()))
+		{
+			/// Are we inside the best run of 0x00's?
+			if (best.base != -1 && i >= best.base && i < (best.base + best.len))
+			{
+				if (i == best.base)
+					*dst++ = ':';
+				continue;
+			}
+
+			/// Are we following an initial run of 0x00s or any real hex?
+			if (i != 0)
+				*dst++ = ':';
+
+			/// Is this address an encapsulated IPv4?
+			if (i == 6 && best.base == 0 && (best.len == 6 || (best.len == 5 && words[5] == 0xffffu)))
+			{
+				ipv4_format(src + 12, dst);
+				break;
+			}
+
+			print_integer<16>(dst, words[i]);
+		}
+
+		/// Was it a trailing run of 0x00's?
+		if (best.base != -1 && (best.base + best.len) == words.size())
+			*dst++ = ':';
+
+		*dst++ = '\0';
+	}
+
+	void execute(Block & block, const ColumnNumbers & arguments, const size_t result)
+	{
+		const auto & col_name_type = block.getByPosition(arguments[0]);
+		const ColumnPtr & column = col_name_type.column;
+
+		if (const auto col_in = typeid_cast<const ColumnFixedString *>(column.get()))
+		{
+			if (col_in->getN() != ipv6_bytes_length)
+				throw Exception("Illegal type " + col_name_type.type->getName() +
+								" of column " + col_in->getName() +
+								" argument of function " + getName() +
+								", expected FixedString(" + toString(ipv6_bytes_length) + ")",
+								ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+			const auto size = col_in->size();
+			const auto & vec_in = col_in->getChars();
+
+			auto col_res = new ColumnString;
+			block.getByPosition(result).column = col_res;
+
+			ColumnString::Chars_t & vec_res = col_res->getChars();
+			ColumnString::Offsets_t & offsets_res = col_res->getOffsets();
+			vec_res.resize(size * INET6_ADDRSTRLEN);
+			offsets_res.resize(size);
+
+			auto begin = reinterpret_cast<char *>(&vec_res[0]);
+			auto pos = begin;
+
+			for (size_t offset = 0, i = 0; offset < vec_in.size(); offset += ipv6_bytes_length, ++i)
+			{
+				ipv6_format(&vec_in[offset], pos);
+				offsets_res[i] = pos - begin;
+			}
+
+			vec_res.resize(pos - begin);
+		}
+		else if (const auto col_in = typeid_cast<const ColumnConst<String> *>(column.get()))
+		{
+			const auto data_type_fixed_string = typeid_cast<const DataTypeFixedString *>(col_in->getDataType().get());
+			if (!data_type_fixed_string || data_type_fixed_string->getN() != ipv6_bytes_length)
+				throw Exception("Illegal type " + col_name_type.type->getName() +
+								" of column " + col_in->getName() +
+								" argument of function " + getName() +
+								", expected FixedString(" + toString(ipv6_bytes_length) + ")",
+								ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+			const auto & data_in = col_in->getData();
+
+			char buf[INET6_ADDRSTRLEN];
+			char * dst = buf;
+			ipv6_format(reinterpret_cast<const unsigned char *>(data_in.data()), dst);
+
+			block.getByPosition(result).column = new ColumnConstString{col_in->size(), buf};
+		}
+		else
+			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+			+ " of argument of function " + getName(),
+			ErrorCodes::ILLEGAL_COLUMN);
+	}
+};
+
+class FunctionIPv6StringToNum : public IFunction
+{
+public:
+	String getName() const { return "IPv6StringToNum"; }
+
+	DataTypePtr getReturnType(const DataTypes & arguments) const
+	{
+		if (arguments.size() != 1)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+			+ toString(arguments.size()) + ", should be 1.",
+							ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
+			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
+			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		return new DataTypeFixedString{ipv6_bytes_length};
+	}
+
+
+	static bool isDigit(char c) { return c >= '0' && c <= '9'; }
+
+	static bool ipv4_scan(const char * src, unsigned char * dst)
+	{
+		constexpr auto size = sizeof(UInt32);
+		char bytes[size]{};
+
+		for (const auto i : ext::range(0, size))
+		{
+			UInt32 value = 0;
+			size_t len = 0;
+			while (isDigit(*src) && len <= 3)
+			{
+				value = value * 10 + (*src - '0');
+				++len;
+				++src;
+			}
+
+			if (len == 0 || value > 255 || (i < size - 1 && *src != '.'))
+			{
+				memset(dst, 0, size);
+				return false;
+			}
+			bytes[i] = value;
+			++src;
+		}
+
+		if (src[-1] != '\0')
+		{
+			memset(dst, 0, size);
+			return false;
+		}
+
+		memcpy(dst, bytes, sizeof(bytes));
+		return true;
+	}
+
+	/// slightly altered implementation from http://svn.apache.org/repos/asf/apr/apr/trunk/network_io/unix/inet_pton.c
+	static void ipv6_scan(const char *  src, unsigned char * dst)
+	{
+		const auto clear_dst = [dst] {
+			memset(dst, '\0', ipv6_bytes_length);
+		};
+
+		/// Leading :: requires some special handling.
+		if (*src == ':')
+			if (*++src != ':')
+				return clear_dst();
+
+		/// get integer value for a hexademical char digit, or -1
+		const auto number_by_char = [] (const char ch) {
+			if ('A' <= ch && ch <= 'F')
+				return 10 + ch - 'A';
+
+			if ('a' <= ch && ch <= 'f')
+				return 10 + ch - 'a';
+
+			if ('0' <= ch && ch <= '9')
+				return ch - '0';
+
+			return -1;
+		};
+
+		unsigned char tmp[ipv6_bytes_length]{};
+		auto tp = tmp;
+		auto endp = tp + ipv6_bytes_length;
+		auto curtok = src;
+		auto saw_xdigit = false;
+		uint16_t val{};
+		unsigned char * colonp = nullptr;
+
+		while (const auto ch = *src++)
+		{
+			const auto num = number_by_char(ch);
+
+			if (num != -1)
+			{
+				val <<= 4;
+				val |= num;
+				if (val > 0xffffu)
+					return clear_dst();
+
+				saw_xdigit = 1;
+				continue;
+			}
+
+			if (ch == ':')
+			{
+				curtok = src;
+				if (!saw_xdigit)
+				{
+					if (colonp)
+						return clear_dst();
+
+					colonp = tp;
+					continue;
+				}
+
+				if (tp + sizeof(uint16_t) > endp)
+					return clear_dst();
+
+				*tp++ = static_cast<unsigned char>((val >> 8) & 0xffu);
+				*tp++ = static_cast<unsigned char>(val & 0xffu);
+				saw_xdigit = false;
+				val = 0;
+				continue;
+			}
+
+			if (ch == '.' && (tp + ipv4_bytes_length) <= endp)
+			{
+				if (!ipv4_scan(curtok, tp))
+					return clear_dst();
+
+				tp += ipv4_bytes_length;
+				saw_xdigit = false;
+				break;	/* '\0' was seen by ipv4_scan(). */
+			}
+
+			return clear_dst();
+		}
+
+		if (saw_xdigit)
+		{
+			if (tp + sizeof(uint16_t) > endp)
+				return clear_dst();
+
+			*tp++ = static_cast<unsigned char>((val >> 8) & 0xffu);
+			*tp++ = static_cast<unsigned char>(val & 0xffu);
+		}
+
+		if (colonp)
+		{
+			/*
+			 * Since some memmove()'s erroneously fail to handle
+			 * overlapping regions, we'll do the shift by hand.
+			 */
+			const auto n = tp - colonp;
+
+			for (int i = 1; i <= n; i++)
+			{
+				endp[- i] = colonp[n - i];
+				colonp[n - i] = 0;
+			}
+			tp = endp;
+		}
+
+		if (tp != endp)
+			return clear_dst();
+
+		memcpy(dst, tmp, sizeof(tmp));
+	}
+
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		const ColumnPtr & column = block.getByPosition(arguments[0]).column;
+
+		if (const auto col_in = typeid_cast<const ColumnString *>(&*column))
+		{
+		    const auto col_res = new ColumnFixedString{ipv6_bytes_length};
+			block.getByPosition(result).column = col_res;
+
+			auto & vec_res = col_res->getChars();
+			vec_res.resize(col_in->size() * ipv6_bytes_length);
+
+			const ColumnString::Chars_t & vec_src = col_in->getChars();
+			const ColumnString::Offsets_t & offsets_src = col_in->getOffsets();
+			size_t src_offset = 0;
+
+			for (size_t out_offset = 0, i = 0;
+				 out_offset < vec_res.size();
+				 out_offset += ipv6_bytes_length, ++i)
+			{
+				ipv6_scan(reinterpret_cast<const char* >(&vec_src[src_offset]), &vec_res[out_offset]);
+				src_offset = offsets_src[i];
+			}
+		}
+		else if (const auto col_in = typeid_cast<const ColumnConstString *>(&*column))
+		{
+			String out(ipv6_bytes_length, 0);
+			ipv6_scan(col_in->getData().data(), reinterpret_cast<unsigned char *>(&out[0]));
+
+			block.getByPosition(result).column = new ColumnConst<String>{
+				col_in->size(),
+				out,
+				new DataTypeFixedString{ipv6_bytes_length}
+			};
+		}
+		else
+			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+			+ " of argument of function " + getName(),
+							ErrorCodes::ILLEGAL_COLUMN);
+	}
+};
+
 
 class FunctionIPv4NumToString : public IFunction
 {
@@ -108,7 +532,7 @@ public:
 			ColumnString::Chars_t & vec_res = col_res->getChars();
 			ColumnString::Offsets_t & offsets_res = col_res->getOffsets();
 
-			vec_res.resize(vec_in.size() * 16); /// самое длинное значение: 255.255.255.255\0
+			vec_res.resize(vec_in.size() * INET_ADDRSTRLEN); /// самое длинное значение: 255.255.255.255\0
 			offsets_res.resize(vec_in.size());
 			char * begin = reinterpret_cast<char *>(&vec_res[0]);
 			char * pos = begin;
@@ -161,7 +585,7 @@ public:
 		return new DataTypeUInt32;
 	}
 
-	static inline bool isDigit(char c)
+	static bool isDigit(char c)
 	{
 		return c >= '0' && c <= '9';
 	}

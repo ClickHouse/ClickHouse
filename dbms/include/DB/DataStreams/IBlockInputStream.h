@@ -5,6 +5,7 @@
 #include <Poco/SharedPtr.h>
 
 #include <DB/Core/Block.h>
+#include <DB/Core/Progress.h>
 #include <DB/Storages/IStorage.h>
 
 
@@ -18,7 +19,7 @@ using Poco::SharedPtr;
   * Функция принимает количество строк в последнем блоке, количество байт в последнем блоке.
   * Следует иметь ввиду, что колбэк может вызываться из разных потоков.
   */
-typedef std::function<void(size_t, size_t)> ProgressCallback;
+typedef std::function<void(const Progress & progress)> ProgressCallback;
 
 
 /** Интерфейс потока для чтения данных по блокам из БД.
@@ -29,9 +30,9 @@ class IBlockInputStream : private boost::noncopyable
 public:
 	typedef SharedPtr<IBlockInputStream> BlockInputStreamPtr;
 	typedef std::vector<BlockInputStreamPtr> BlockInputStreams;
-	
+
 	IBlockInputStream() {}
-	
+
 	/** Прочитать следующий блок.
 	  * Если блоков больше нет - вернуть пустой блок (для которого operator bool возвращает false).
 	  */
@@ -61,7 +62,7 @@ public:
 	virtual String getID() const = 0;
 
 	BlockInputStreams & getChildren() { return children; }
-	
+
 	void dumpTree(std::ostream & ostr, size_t indent = 0, size_t multiplier = 1);
 
 	/// Получить листовые источники (не считая этот).

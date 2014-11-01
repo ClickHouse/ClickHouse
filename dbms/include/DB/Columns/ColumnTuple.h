@@ -25,22 +25,20 @@ public:
 		for (size_t i = 0; i < size; ++i)
 			columns[i] = data.getByPosition(i).column;
 	}
-	
-	std::string getName() const { return "Tuple"; }
-	
-	SharedPtr<IColumn> cloneEmpty() const
+
+	std::string getName() const override { return "Tuple"; }
+
+	SharedPtr<IColumn> cloneEmpty() const override
 	{
 		return new ColumnTuple(data.cloneEmpty());
 	}
 
-	size_t size() const
+	size_t size() const override
 	{
 		return data.rows();
 	}
 
-	bool empty() const { return size() == 0; }
-
-	Field operator[](size_t n) const
+	Field operator[](size_t n) const override
 	{
 		Array res;
 
@@ -50,7 +48,7 @@ public:
 		return res;
 	}
 
-	void get(size_t n, Field & res) const
+	void get(size_t n, Field & res) const override
 	{
 		size_t size = columns.size();
 		res = Array(size);
@@ -59,17 +57,17 @@ public:
 			columns[i]->get(n, res_arr[i]);
 	}
 
-	StringRef getDataAt(size_t n) const
+	StringRef getDataAt(size_t n) const override
 	{
 		throw Exception("Method getDataAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	void insertData(const char * pos, size_t length)
+	void insertData(const char * pos, size_t length) override
 	{
 		throw Exception("Method insertData is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	void insert(const Field & x)
+	void insert(const Field & x) override
 	{
 		const Array & arr = DB::get<const Array &>(x);
 
@@ -81,36 +79,36 @@ public:
 			columns[i]->insert(arr[i]);
 	}
 
-	void insertFrom(const IColumn & src_, size_t n)
+	void insertFrom(const IColumn & src_, size_t n) override
 	{
 		const ColumnTuple & src = static_cast<const ColumnTuple &>(src_);
-		
+
 		size_t size = columns.size();
 		if (src.columns.size() != size)
 			throw Exception("Cannot insert value of different size into tuple", ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE);
-			
+
 		for (size_t i = 0; i < size; ++i)
 			columns[i]->insertFrom(*src.columns[i], n);
 	}
 
-	void insertDefault()
+	void insertDefault() override
 	{
 		for (Columns::iterator it = columns.begin(); it != columns.end(); ++it)
 			(*it)->insertDefault();
 	}
 
 
-	ColumnPtr cut(size_t start, size_t length) const
+	ColumnPtr cut(size_t start, size_t length) const override
 	{
 		Block res_block = data.cloneEmpty();
-		
+
 		for (size_t i = 0; i < columns.size(); ++i)
 			res_block.getByPosition(i).column = data.getByPosition(i).column->cut(start, length);
 
 		return new ColumnTuple(res_block);
 	}
 
-	ColumnPtr filter(const Filter & filt) const
+	ColumnPtr filter(const Filter & filt) const override
 	{
 		Block res_block = data.cloneEmpty();
 
@@ -120,7 +118,7 @@ public:
 		return new ColumnTuple(res_block);
 	}
 
-	ColumnPtr permute(const Permutation & perm, size_t limit) const
+	ColumnPtr permute(const Permutation & perm, size_t limit) const override
 	{
 		Block res_block = data.cloneEmpty();
 
@@ -129,8 +127,8 @@ public:
 
 		return new ColumnTuple(res_block);
 	}
-	
-	ColumnPtr replicate(const Offsets_t & offsets) const
+
+	ColumnPtr replicate(const Offsets_t & offsets) const override
 	{
 		Block res_block = data.cloneEmpty();
 
@@ -140,13 +138,13 @@ public:
 		return new ColumnTuple(res_block);
 	}
 
-	int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
+	int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override
 	{
 		size_t size = columns.size();
 		for (size_t i = 0; i < size; ++i)
 			if (int res = columns[i]->compareAt(n, m, *static_cast<const ColumnTuple &>(rhs).columns[i], nan_direction_hint))
 				return res;
-		
+
 		return 0;
 	}
 
@@ -175,7 +173,7 @@ public:
 		}
 	};
 
-	void getPermutation(bool reverse, size_t limit, Permutation & res) const
+	void getPermutation(bool reverse, size_t limit, Permutation & res) const override
 	{
 		size_t rows = size();
 		res.resize(rows);
@@ -201,13 +199,13 @@ public:
 		}
 	}
 
-	void reserve(size_t n)
+	void reserve(size_t n) override
 	{
 		for (Columns::iterator it = columns.begin(); it != columns.end(); ++it)
 			(*it)->reserve(n);
 	}
 
-	size_t byteSize() const
+	size_t byteSize() const override
 	{
 		size_t res = 0;
 		for (Columns::const_iterator it = columns.begin(); it != columns.end(); ++it)
@@ -215,7 +213,7 @@ public:
 		return res;
 	}
 
-	void getExtremes(Field & min, Field & max) const
+	void getExtremes(Field & min, Field & max) const override
 	{
 		throw Exception("Method getExtremes is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}

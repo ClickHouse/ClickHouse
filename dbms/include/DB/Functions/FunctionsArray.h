@@ -2,6 +2,10 @@
 
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypeDate.h>
+#include <DB/DataTypes/DataTypeDateTime.h>
+#include <DB/DataTypes/DataTypeString.h>
+
 
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnString.h>
@@ -1190,6 +1194,43 @@ private:
 };
 
 
+template <typename Type> struct TypeToColumnType { using ColumnType = ColumnVector<Type>; };
+template <> struct TypeToColumnType<String> { using ColumnType = ColumnString; };
+
+template <typename DataType> struct DataTypeToName : TypeName<typename DataType::FieldType> { };
+template <> struct DataTypeToName<DataTypeDate> { static std::string get() { return "Date"; } };
+template <> struct DataTypeToName<DataTypeDateTime> { static std::string get() { return "DateTime"; } };
+
+template <typename DataType>
+struct EmptyArray : public IFunction
+{
+	String getName() const
+	{
+		return "emptyArray" + DataTypeToName<DataType>::get();
+	}
+
+	DataTypePtr getReturnType(const DataTypes & arguments) const
+	{
+		if (arguments.size() != 0)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ toString(arguments.size()) + ", should be 0.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		return new DataTypeArray{new DataType{}};
+	}
+
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		using UnderlyingColumnType = typename TypeToColumnType<typename DataType::FieldType>::ColumnType;
+
+		block.getByPosition(result).column = new ColumnArray{
+			new UnderlyingColumnType,
+			new ColumnArray::ColumnOffsets_t{block.rowsInFirstColumn(), 0}
+		};
+	}
+};
+
+
 struct NameHas			{ static const char * get() { return "has"; } };
 struct NameIndexOf		{ static const char * get() { return "indexOf"; } };
 struct NameCountEqual	{ static const char * get() { return "countEqual"; } };
@@ -1197,6 +1238,20 @@ struct NameCountEqual	{ static const char * get() { return "countEqual"; } };
 typedef FunctionArrayIndex<IndexToOne, 		NameHas>	FunctionHas;
 typedef FunctionArrayIndex<IndexIdentity, 	NameIndexOf>	FunctionIndexOf;
 typedef FunctionArrayIndex<IndexCount, 	NameCountEqual>	FunctionCountEqual;
+
+using FunctionEmptyArrayUInt8 = EmptyArray<DataTypeUInt8>;
+using FunctionEmptyArrayUInt16 = EmptyArray<DataTypeUInt16>;
+using FunctionEmptyArrayUInt32 = EmptyArray<DataTypeUInt32>;
+using FunctionEmptyArrayUInt64 = EmptyArray<DataTypeUInt64>;
+using FunctionEmptyArrayInt8 = EmptyArray<DataTypeInt8>;
+using FunctionEmptyArrayInt16 = EmptyArray<DataTypeInt16>;
+using FunctionEmptyArrayInt32 = EmptyArray<DataTypeInt32>;
+using FunctionEmptyArrayInt64 = EmptyArray<DataTypeInt64>;
+using FunctionEmptyArrayFloat32 = EmptyArray<DataTypeFloat32>;
+using FunctionEmptyArrayFloat64 = EmptyArray<DataTypeFloat64>;
+using FunctionEmptyArrayDate = EmptyArray<DataTypeDate>;
+using FunctionEmptyArrayDateTime = EmptyArray<DataTypeDateTime>;
+using FunctionEmptyArrayString = EmptyArray<DataTypeString>;
 
 
 }

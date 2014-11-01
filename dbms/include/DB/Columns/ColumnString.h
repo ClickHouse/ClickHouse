@@ -36,44 +36,44 @@ public:
 	/** Создать пустой столбец строк */
 	ColumnString() {}
 
-	std::string getName() const { return "ColumnString"; }
+	std::string getName() const override { return "ColumnString"; }
 
-	size_t size() const
+	size_t size() const override
 	{
 		return offsets.size();
 	}
 
-	size_t byteSize() const
+	size_t byteSize() const override
 	{
 		return chars.size() + offsets.size() * sizeof(offsets[0]);
 	}
 
-	ColumnPtr cloneEmpty() const
+	ColumnPtr cloneEmpty() const override
 	{
 		return new ColumnString;
 	}
 
-	Field operator[](size_t n) const
+	Field operator[](size_t n) const override
 	{
 		return Field(&chars[offsetAt(n)], sizeAt(n) - 1);
 	}
 
-	void get(size_t n, Field & res) const
+	void get(size_t n, Field & res) const override
 	{
 		res.assignString(&chars[offsetAt(n)], sizeAt(n) - 1);
 	}
 
-	StringRef getDataAt(size_t n) const
+	StringRef getDataAt(size_t n) const override
 	{
 		return StringRef(&chars[offsetAt(n)], sizeAt(n) - 1);
 	}
 
-	StringRef getDataAtWithTerminatingZero(size_t n) const
+	StringRef getDataAtWithTerminatingZero(size_t n) const override
 	{
 		return StringRef(&chars[offsetAt(n)], sizeAt(n));
 	}
 
-	void insert(const Field & x)
+	void insert(const Field & x) override
 	{
 		const String & s = DB::get<const String &>(x);
 		size_t old_size = chars.size();
@@ -84,7 +84,7 @@ public:
 		offsets.push_back((offsets.size() == 0 ? 0 : offsets.back()) + size_to_append);
 	}
 
-	void insertFrom(const IColumn & src_, size_t n)
+	void insertFrom(const IColumn & src_, size_t n) override
 	{
 		const ColumnString & src = static_cast<const ColumnString &>(src_);
 		size_t old_size = chars.size();
@@ -96,7 +96,7 @@ public:
 		offsets.push_back((offsets.size() == 0 ? 0 : offsets.back()) + size_to_append);
 	}
 
-	void insertData(const char * pos, size_t length)
+	void insertData(const char * pos, size_t length) override
 	{
 		size_t old_size = chars.size();
 
@@ -106,7 +106,7 @@ public:
 		offsets.push_back((offsets.size() == 0 ? 0 : offsets.back()) + length + 1);
 	}
 
-	void insertDataWithTerminatingZero(const char * pos, size_t length)
+	void insertDataWithTerminatingZero(const char * pos, size_t length) override
 	{
 		size_t old_size = chars.size();
 
@@ -115,7 +115,7 @@ public:
 		offsets.push_back((offsets.size() == 0 ? 0 : offsets.back()) + length);
 	}
 
-	ColumnPtr cut(size_t start, size_t length) const
+	ColumnPtr cut(size_t start, size_t length) const override
 	{
 		if (length == 0)
 			return new ColumnString;
@@ -150,7 +150,7 @@ public:
 		return res;
 	}
 
-	ColumnPtr filter(const Filter & filt) const
+	ColumnPtr filter(const Filter & filt) const override
 	{
 		const size_t size = offsets.size();
 		if (size != filt.size())
@@ -257,7 +257,7 @@ public:
 		return res_;
 	}
 
-	ColumnPtr permute(const Permutation & perm, size_t limit) const
+	ColumnPtr permute(const Permutation & perm, size_t limit) const override
 	{
 		size_t size = offsets.size();
 
@@ -300,13 +300,13 @@ public:
 		return res;
 	}
 
-	void insertDefault()
+	void insertDefault() override
 	{
 		chars.push_back(0);
 		offsets.push_back(offsets.size() == 0 ? 1 : (offsets.back() + 1));
 	}
 
-	int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const
+	int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
 	{
 		const ColumnString & rhs = static_cast<const ColumnString &>(rhs_);
 
@@ -344,7 +344,7 @@ public:
 		}
 	};
 
-	void getPermutation(bool reverse, size_t limit, Permutation & res) const
+	void getPermutation(bool reverse, size_t limit, Permutation & res) const override
 	{
 		size_t s = offsets.size();
 		res.resize(s);
@@ -415,7 +415,7 @@ public:
 		}
 	}
 
-	ColumnPtr replicate(const Offsets_t & replicate_offsets) const
+	ColumnPtr replicate(const Offsets_t & replicate_offsets) const override
 	{
 		size_t col_size = size();
 		if (col_size != replicate_offsets.size())
@@ -457,13 +457,13 @@ public:
 		return res;
 	}
 
-	void reserve(size_t n)
+	void reserve(size_t n) override
 	{
 		offsets.reserve(n);
 		chars.reserve(n * DBMS_APPROX_STRING_SIZE);
 	}
 
-	void getExtremes(Field & min, Field & max) const
+	void getExtremes(Field & min, Field & max) const override
 	{
 		min = String();
 		max = String();

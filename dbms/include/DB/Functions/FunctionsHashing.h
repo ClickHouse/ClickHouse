@@ -1,6 +1,7 @@
 #pragma once
 
 #include <openssl/md5.h>
+#include <openssl/sha.h>
 #include <city.h>
 
 #include <Poco/ByteOrder.h>
@@ -64,11 +65,78 @@ struct HalfMD5Impl
 	}
 };
 
+struct MD5Impl
+{
+	static constexpr auto name = "MD5";
+	static constexpr auto length = 16;
+
+	static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
+	{
+		MD5_CTX ctx;
+		MD5_Init(&ctx);
+		MD5_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
+		MD5_Final(out_char_data, &ctx);
+	}
+};
+
+struct SHA1Impl
+{
+	static constexpr auto name = "SHA1";
+	static constexpr auto length = 20;
+
+	static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
+	{
+		SHA_CTX ctx;
+		SHA1_Init(&ctx);
+		SHA1_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
+		SHA1_Final(out_char_data, &ctx);
+	}
+};
+
+struct SHA224Impl
+{
+	static constexpr auto name = "SHA224";
+	static constexpr auto length = 28;
+
+	static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
+	{
+		SHA256_CTX ctx;
+		SHA224_Init(&ctx);
+		SHA224_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
+		SHA224_Final(out_char_data, &ctx);
+	}
+};
+
+struct SHA256Impl
+{
+	static constexpr auto name = "SHA256";
+	static constexpr auto length = 32;
+
+	static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
+	{
+		SHA256_CTX ctx;
+		SHA256_Init(&ctx);
+		SHA256_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
+		SHA256_Final(out_char_data, &ctx);
+	}
+};
+
 struct SipHash64Impl
 {
 	static UInt64 apply(const char * begin, size_t size)
 	{
 		return sipHash64(begin, size);
+	}
+};
+
+struct SipHash128Impl
+{
+	static constexpr auto name = "SipHash128";
+	static constexpr auto length = 16;
+
+	static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
+	{
+		sipHash128(begin, size, reinterpret_cast<char*>(out_char_data));
 	}
 };
 
@@ -147,6 +215,72 @@ public:
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
 					+ " of first argument of function " + Name::get(),
+				ErrorCodes::ILLEGAL_COLUMN);
+	}
+};
+
+
+template <typename Impl>
+class FunctionStringHashFixedString : public IFunction
+{
+public:
+	/// Получить имя функции.
+	String getName() const
+	{
+		return Impl::name;
+	}
+
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnType(const DataTypes & arguments) const
+	{
+		if (arguments.size() != 1)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ toString(arguments.size()) + ", should be 1.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
+			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		return new DataTypeFixedString{Impl::length};
+	}
+
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		if (const ColumnString * col_from = typeid_cast<const ColumnString *>(&*block.getByPosition(arguments[0]).column))
+		{
+			auto col_to = new ColumnFixedString{Impl::length};
+			block.getByPosition(result).column = col_to;
+
+			const typename ColumnString::Chars_t & data = col_from->getChars();
+			const typename ColumnString::Offsets_t & offsets = col_from->getOffsets();
+			auto & chars_to = col_to->getChars();
+			const auto size = offsets.size();
+			chars_to.resize(size * Impl::length);
+
+			for (size_t i = 0; i < size; ++i)
+				Impl::apply(
+					reinterpret_cast<const char *>(&data[i == 0 ? 0 : offsets[i - 1]]),
+					i == 0 ? offsets[i] - 1 : (offsets[i] - 1 - offsets[i - 1]),
+					&chars_to[i * Impl::length]);
+		}
+		else if (const ColumnConstString * col_from = typeid_cast<const ColumnConstString *>(&*block.getByPosition(arguments[0]).column))
+		{
+			const auto & data = col_from->getData();
+
+			String hash(Impl::length, 0);
+			Impl::apply(data.data(), data.size(), reinterpret_cast<unsigned char *>(&hash[0]));
+
+			block.getByPosition(result).column = new ColumnConst<String>{
+				col_from->size(),
+				hash,
+				new DataTypeFixedString{Impl::length}
+			};
+		}
+		else
+			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+					+ " of first argument of function " + getName(),
 				ErrorCodes::ILLEGAL_COLUMN);
 	}
 };
@@ -465,6 +599,10 @@ typedef FunctionStringHash64<HalfMD5Impl,		NameHalfMD5> 		FunctionHalfMD5;
 typedef FunctionStringHash64<SipHash64Impl,		NameSipHash64> 		FunctionSipHash64;
 typedef FunctionIntHash<IntHash32Impl,			NameIntHash32> 		FunctionIntHash32;
 typedef FunctionIntHash<IntHash64Impl,			NameIntHash64> 		FunctionIntHash64;
-
+typedef FunctionStringHashFixedString<MD5Impl>						FunctionMD5;
+typedef FunctionStringHashFixedString<SHA1Impl>						FunctionSHA1;
+typedef FunctionStringHashFixedString<SHA224Impl>					FunctionSHA224;
+typedef FunctionStringHashFixedString<SHA256Impl>					FunctionSHA256;
+typedef FunctionStringHashFixedString<SipHash128Impl>				FunctionSipHash128;
 
 }

@@ -42,19 +42,19 @@ public:
 		}
 	}
 
-	std::string getName() const { return "ColumnArray(" + data->getName() + ")"; }
+	std::string getName() const override { return "ColumnArray(" + data->getName() + ")"; }
 
-	ColumnPtr cloneEmpty() const
+	ColumnPtr cloneEmpty() const override
 	{
 		return new ColumnArray(data->cloneEmpty());
 	}
 
-	size_t size() const
+	size_t size() const override
 	{
 		return getOffsets().size();
 	}
 
-	Field operator[](size_t n) const
+	Field operator[](size_t n) const override
 	{
 		size_t offset = offsetAt(n);
 		size_t size = sizeAt(n);
@@ -66,7 +66,7 @@ public:
 		return res;
 	}
 
-	void get(size_t n, Field & res) const
+	void get(size_t n, Field & res) const override
 	{
 		size_t offset = offsetAt(n);
 		size_t size = sizeAt(n);
@@ -77,7 +77,7 @@ public:
 			data->get(offset + i, res_arr[i]);
 	}
 
-	StringRef getDataAt(size_t n) const
+	StringRef getDataAt(size_t n) const override
 	{
 		/** Работает для массивов значений фиксированной длины.
 		  * Для массивов строк и массивов массивов полученный кусок памяти может не взаимно-однозначно соответствовать элементам.
@@ -87,7 +87,7 @@ public:
 		return StringRef(begin.data, end.data - begin.data);
 	}
 
-	void insertData(const char * pos, size_t length)
+	void insertData(const char * pos, size_t length) override
 	{
 		/** Аналогично - только для массивов значений фиксированной длины.
 		  */
@@ -98,14 +98,17 @@ public:
 		size_t field_size = data_->sizeOfField();
 
 		const char * end = pos + length;
-		for (; pos + field_size <= end; pos += field_size)
+		size_t elems = 0;
+		for (; pos + field_size <= end; pos += field_size, ++elems)
 			data_->insertData(pos, field_size);
 
 		if (pos != end)
 			throw Exception("Incorrect length argument for method ColumnArray::insertData", ErrorCodes::BAD_ARGUMENTS);
+
+		getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + elems);
 	}
 
-	ColumnPtr cut(size_t start, size_t length) const
+	ColumnPtr cut(size_t start, size_t length) const override
 	{
 		if (length == 0)
 			return new ColumnArray(data);
@@ -138,7 +141,7 @@ public:
 		return res;
 	}
 
-	void insert(const Field & x)
+	void insert(const Field & x) override
 	{
 		const Array & array = DB::get<const Array &>(x);
 		size_t size = array.size();
@@ -147,7 +150,7 @@ public:
 		getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + size);
 	}
 
-	void insertFrom(const IColumn & src_, size_t n)
+	void insertFrom(const IColumn & src_, size_t n) override
 	{
 		const ColumnArray & src = static_cast<const ColumnArray &>(src_);
 		size_t size = src.sizeAt(n);
@@ -159,12 +162,12 @@ public:
 		getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + size);
 	}
 
-	void insertDefault()
+	void insertDefault() override
 	{
 		getOffsets().push_back(getOffsets().size() == 0 ? 0 : getOffsets().back());
 	}
 
-	ColumnPtr filter(const Filter & filt) const
+	ColumnPtr filter(const Filter & filt) const override
 	{
 		size_t size = getOffsets().size();
 		if (size != filt.size())
@@ -203,7 +206,7 @@ public:
 		return res;
 	}
 
-	ColumnPtr permute(const Permutation & perm, size_t limit) const
+	ColumnPtr permute(const Permutation & perm, size_t limit) const override
 	{
 		size_t size = getOffsets().size();
 
@@ -241,7 +244,7 @@ public:
 		return res;
 	}
 
-	int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const final
+	int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
 	{
 		const ColumnArray & rhs = static_cast<const ColumnArray &>(rhs_);
 
@@ -276,7 +279,7 @@ public:
 		}
 	};
 
-	void getPermutation(bool reverse, size_t limit, Permutation & res) const
+	void getPermutation(bool reverse, size_t limit, Permutation & res) const override
 	{
 		size_t s = size();
 		if (limit >= s)
@@ -302,18 +305,18 @@ public:
 		}
 	}
 
-	void reserve(size_t n)
+	void reserve(size_t n) override
 	{
 		getOffsets().reserve(n);
 		getData().reserve(n);		/// Средний размер массивов тут никак не учитывается. Или считается, что он не больше единицы.
 	}
 
-	size_t byteSize() const
+	size_t byteSize() const override
 	{
 		return data->byteSize() + getOffsets().size() * sizeof(getOffsets()[0]);
 	}
 
-	void getExtremes(Field & min, Field & max) const
+	void getExtremes(Field & min, Field & max) const override
 	{
 		min = Array();
 		max = Array();
@@ -350,7 +353,7 @@ public:
 	const ColumnPtr & getOffsetsColumn() const { return offsets; }
 
 
-	ColumnPtr replicate(const Offsets_t & replicate_offsets) const
+	ColumnPtr replicate(const Offsets_t & replicate_offsets) const override
 	{
 		/// Не получается реализовать в общем случае.
 
