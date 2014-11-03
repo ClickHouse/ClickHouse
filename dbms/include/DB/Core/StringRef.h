@@ -28,14 +28,31 @@ typedef std::vector<StringRef> StringRefs;
 
 inline bool operator== (StringRef lhs, StringRef rhs)
 {
-	/// Так почему-то быстрее, чем return lhs.size == rhs.size && 0 == memcmp(lhs.data, rhs.data, lhs.size);
+	/** Так почему-то быстрее, чем return lhs.size == rhs.size && 0 == memcmp(lhs.data, rhs.data, lhs.size);
+	  *
+	  * TODO Убедиться в этом ещё раз на репрезентативных наборах данных;
+	  *  при этом вместо memcmp сделать что-то типа memequal.
+	  *
+	  * NOTE Если добиться, чтобы кусок памяти под строки был добит нулями до размера, кратного 8 или 16 байт,
+	  *  то можно использовать более эффективную реализацию - см. PaddedStringRef.
+	  */
 
 	if (lhs.size != rhs.size)
 		return false;
 
-	for (size_t pos = 0; pos < lhs.size; ++pos)
-		if (lhs.data[pos] != rhs.data[pos])
+	const char * pos1 = lhs.data;
+	const char * pos2 = rhs.data;
+
+	const char * end1 = pos1 + lhs.size;
+
+	while (pos1 < end1)
+	{
+		if (*pos1 != *pos2)
 			return false;
+
+		++pos1;
+		++pos2;
+	}
 
 	return true;
 }
