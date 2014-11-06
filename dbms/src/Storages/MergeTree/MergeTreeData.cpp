@@ -1,4 +1,3 @@
-#include <Yandex/time2str.h>
 #include <Poco/Ext/ScopedTry.h>
 
 #include <DB/Storages/MergeTree/MergeTreeData.h>
@@ -1164,10 +1163,10 @@ static std::pair<String, DayNum_t> getMonthNameAndDayNum(const Field & partition
 		throw Exception("Invalid partition format: " + month_name + ". Partition should consist of 6 digits: YYYYMM",
 			ErrorCodes::INVALID_PARTITION_NAME);
 
-	DayNum_t date = DateLUT::instance().toDayNum(OrderedIdentifier2Date(month_name + "01"));
+	DayNum_t date = DateLUT::instance().YYYYMMDDToDayNum(parse<UInt32>(month_name + "01"));
 
 	/// Не можем просто сравнить date с нулем, потому что 0 тоже валидный DayNum.
-	if (month_name != toString(Date2OrderedIdentifier(DateLUT::instance().fromDayNum(date)) / 100))
+	if (month_name != toString(DateLUT::instance().toNumYYYYMMDD(date) / 100))
 		throw Exception("Invalid partition format: " + month_name + " doesn't look like month.",
 			ErrorCodes::INVALID_PARTITION_NAME);
 

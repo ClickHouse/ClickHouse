@@ -2065,7 +2065,7 @@ static String getFakePartNameForDrop(const String & month_name, UInt64 left, UIn
 {
 	/// Диапазон дат - весь месяц.
 	DateLUT & lut = DateLUT::instance();
-	time_t start_time = OrderedIdentifier2Date(month_name + "01");
+	time_t start_time = DateLUT::instance().YYYYMMDDToDate(parse<UInt32>(month_name + "01"));
 	DayNum_t left_date = lut.toDayNum(start_time);
 	DayNum_t right_date = DayNum_t(static_cast<size_t>(left_date) + lut.daysInMonth(start_time) - 1);
 

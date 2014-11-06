@@ -1,7 +1,7 @@
 #include <DB/Storages/MergeTree/ActiveDataPartSet.h>
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/ReadHelpers.h>
-#include <Yandex/time2str.h>
+
 
 namespace DB
 {
@@ -110,8 +110,8 @@ String ActiveDataPartSet::getPartName(DayNum_t left_date, DayNum_t right_date, U
 	/// Имя директории для куска иммет вид: YYYYMMDD_YYYYMMDD_N_N_L.
 	String res;
 	{
-		unsigned left_date_id = Date2OrderedIdentifier(date_lut.fromDayNum(left_date));
-		unsigned right_date_id = Date2OrderedIdentifier(date_lut.fromDayNum(right_date));
+		unsigned left_date_id = date_lut.toNumYYYYMMDD(left_date);
+		unsigned right_date_id = date_lut.toNumYYYYMMDD(right_date);
 
 		WriteBufferFromString wb(res);
 
@@ -155,8 +155,8 @@ void ActiveDataPartSet::parsePartName(const String & file_name, Part & part, con
 
 	DateLUT & date_lut = DateLUT::instance();
 
-	part.left_date = date_lut.toDayNum(OrderedIdentifier2Date(file_name.substr(matches[1].offset, matches[1].length)));
-	part.right_date = date_lut.toDayNum(OrderedIdentifier2Date(file_name.substr(matches[2].offset, matches[2].length)));
+	part.left_date = date_lut.YYYYMMDDToDayNum(parse<UInt32>(file_name.substr(matches[1].offset, matches[1].length)));
+	part.right_date = date_lut.YYYYMMDDToDayNum(parse<UInt32>(file_name.substr(matches[2].offset, matches[2].length)));
 	part.left = parse<UInt64>(file_name.substr(matches[3].offset, matches[3].length));
 	part.right = parse<UInt64>(file_name.substr(matches[4].offset, matches[4].length));
 	part.level = parse<UInt32>(file_name.substr(matches[5].offset, matches[5].length));
