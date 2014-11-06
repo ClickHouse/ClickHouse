@@ -88,9 +88,9 @@ QueryParseResult QueryParser::parse(std::istream & s)
 		result.CounterID = DB::parse<unsigned>(getValueOfOneTextElement(result.query, CounterID_element_name));
 
 	int time_zone_diff = 0;
-	result.date_first = Time2Date(Poco::DateTimeParser::parse(
+	result.date_first = DateLUT::instance().toDate(Poco::DateTimeParser::parse(
 		getValueOfOneTextElement(result.query, date_first_element_name), time_zone_diff).timestamp().epochTime());
-	result.date_last = Time2Date(Poco::DateTimeParser::parse(
+	result.date_last = DateLUT::instance().toDate(Poco::DateTimeParser::parse(
 		getValueOfOneTextElement(result.query, date_last_element_name), time_zone_diff).timestamp().epochTime());
 
 	if (result.date_first > result.date_last)
