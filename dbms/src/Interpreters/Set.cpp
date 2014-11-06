@@ -65,6 +65,7 @@ Set::Type Set::chooseMethod(const ConstColumnPlainPtrs & key_columns, bool & key
 	keys_fit_128_bits = true;
 	size_t keys_bytes = 0;
 	key_sizes.resize(keys_size);
+
 	for (size_t j = 0; j < keys_size; ++j)
 	{
 		if (!key_columns[j]->isFixed())
@@ -75,6 +76,7 @@ Set::Type Set::chooseMethod(const ConstColumnPlainPtrs & key_columns, bool & key
 		key_sizes[j] = key_columns[j]->sizeOfField();
 		keys_bytes += key_sizes[j];
 	}
+
 	if (keys_bytes > 16)
 		keys_fit_128_bits = false;
 
@@ -88,6 +90,7 @@ Set::Type Set::chooseMethod(const ConstColumnPlainPtrs & key_columns, bool & key
 		|| typeid_cast<const ColumnConstString *>(key_columns[0])
 		|| (typeid_cast<const ColumnFixedString *>(key_columns[0]) && !keys_fit_128_bits)))
 		return KEY_STRING;
+
 	/// Если много ключей - будем строить множество хэшей от них
 	return HASHED;
 }
@@ -109,8 +112,6 @@ bool Set::insertFromBlock(Block & block, bool create_ordered_set)
 	size_t rows = block.rows();
 
 	/// Какую структуру данных для множества использовать?
-	keys_fit_128_bits = false;
-
 	if (empty())
 		init(chooseMethod(key_columns, keys_fit_128_bits, key_sizes));
 
