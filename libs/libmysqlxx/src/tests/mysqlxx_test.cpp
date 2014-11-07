@@ -1,6 +1,5 @@
 #include <iostream>
 #include <mysqlxx/mysqlxx.h>
-#include <Yandex/time2str.h>
 
 
 int main(int argc, char ** argv)
@@ -23,8 +22,8 @@ int main(int argc, char ** argv)
 				std::cerr << row[1] << ", " << row["d"]
 					<< ", " << row[1].getDate()
 					<< ", " << row[1].getDateTime()
-					<< ", " << Date2Sql(row[1].getDate())
-					<< ", " << Time2Sql(row[1].getDateTime())
+					<< ", " << row[1].getDate()
+					<< ", " << row[1].getDateTime()
 					<< std::endl
 					<< mysqlxx::escape << row[1].getDate() << ", " << mysqlxx::escape << row[1].getDateTime() << std::endl
 					<< mysqlxx::quote << row[1].getDate() << ", " << mysqlxx::quote << row[1].getDateTime() << std::endl

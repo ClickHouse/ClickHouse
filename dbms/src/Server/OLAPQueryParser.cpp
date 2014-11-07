@@ -1,5 +1,4 @@
 #include <Yandex/DateLUT.h>
-#include <Yandex/time2str.h>
 #include <Poco/DateTimeParser.h>
 #include <Poco/AutoPtr.h>
 
@@ -194,7 +193,7 @@ QueryParseResult QueryParser::parse(std::istream & s)
 		result.limit = DB::parse<unsigned>(limit_nodes->item(0)->innerText());
 
 	LOG_DEBUG(log, "CounterID: " << result.CounterID
-		<< ", dates: " << Date2Sql(result.date_first) << " - " << Date2Sql(result.date_last));
+		<< ", dates: " << mysqlxx::Date(result.date_first) << " - " << mysqlxx::Date(result.date_last));
 
 	/// получаем список имён атрибутов
 	Poco::AutoPtr<Poco::XML::NodeList> attributes = result.query->getElementsByTagName("attribute");
