@@ -276,8 +276,6 @@ bool Join::insertFromBlock(const Block & block)
 	size_t rows = block.rows();
 
 	/// Какую структуру данных для множества использовать?
-	keys_fit_128_bits = false;
-
 	if (empty())
 		init(Set::chooseMethod(key_columns, keys_fit_128_bits, key_sizes));
 
