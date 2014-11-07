@@ -52,13 +52,27 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
 	bool skip_sanity_checks = false;
 
-	if (zookeeper && zookeeper->exists(replica_path + "/flags/force_restore_data"))
+	try
 	{
-		skip_sanity_checks = true;
-		zookeeper->remove(replica_path + "/flags/force_restore_data");
+		if (zookeeper && zookeeper->exists(replica_path + "/flags/force_restore_data"))
+		{
+			skip_sanity_checks = true;
+			zookeeper->remove(replica_path + "/flags/force_restore_data");
 
-		LOG_WARNING(log, "Skipping the limits on severity of changes to data parts and columns (flag "
-			<< replica_path << "/flags/force_restore_data).");
+			LOG_WARNING(log, "Skipping the limits on severity of changes to data parts and columns (flag "
+				<< replica_path << "/flags/force_restore_data).");
+		}
+	}
+	catch (const zkutil::KeeperException & e)
+	{
+		/// Не удалось соединиться с ZK (об этом стало известно при попытке выполнить первую операцию).
+		if (e.code == ZCONNECTIONLOSS)
+		{
+			tryLogCurrentException(__PRETTY_FUNCTION__);
+			zookeeper = nullptr;
+		}
+		else
+			throw;
 	}
 
 	data.loadDataParts(skip_sanity_checks);
@@ -2374,7 +2388,7 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
 {
 	res.is_leader = is_leader_node;
 	res.is_readonly = is_read_only;
-	res.is_session_expired = zookeeper->expired();
+	res.is_session_expired = !zookeeper || zookeeper->expired();
 
 	{
 		std::lock_guard<std::mutex> lock(queue_mutex);
