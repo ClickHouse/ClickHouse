@@ -25,9 +25,9 @@ public:
 
 	~CollapsingFinalBlockInputStream();
 
-	String getName() const { return "CollapsingFinalBlockInputStream"; }
+	String getName() const override { return "CollapsingFinalBlockInputStream"; }
 
-	String getID() const
+	String getID() const override
 	{
 		std::stringstream res;
 		res << "CollapsingFinal(inputs";
@@ -45,7 +45,7 @@ public:
 	}
 
 protected:
-	Block readImpl();
+	Block readImpl() override;
 
 private:
 	struct MergingBlock;

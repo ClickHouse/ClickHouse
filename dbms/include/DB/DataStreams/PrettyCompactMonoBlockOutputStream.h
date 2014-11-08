@@ -15,12 +15,12 @@ public:
 	PrettyCompactMonoBlockOutputStream(WriteBuffer & ostr_, bool no_escapes_ = false, size_t max_rows_ = PRETTY_FORMAT_DEFAULT_MAX_ROWS)
 		: PrettyCompactBlockOutputStream(ostr_, no_escapes_, max_rows_) {}
 
-	void write(const Block & block);
-	void writeSuffix();
-	
+	void write(const Block & block) override;
+	void writeSuffix() override;
+
 private:
 	typedef std::vector<Block> Blocks_t;
-	
+
 	Blocks_t blocks;
 };
 

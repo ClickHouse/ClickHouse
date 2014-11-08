@@ -22,9 +22,9 @@ public:
 		current_stream = children.begin();
 	}
 
-	String getName() const { return "ConcatBlockInputStream"; }
+	String getName() const override { return "ConcatBlockInputStream"; }
 
-	String getID() const
+	String getID() const override
 	{
 		std::stringstream res;
 		res << "Concat(";
@@ -44,7 +44,7 @@ public:
 	}
 
 protected:
-	Block readImpl()
+	Block readImpl() override
 	{
 		Block res;
 

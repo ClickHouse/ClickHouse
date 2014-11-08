@@ -13,9 +13,9 @@ class NativeBlockOutputStream : public IBlockOutputStream
 {
 public:
 	NativeBlockOutputStream(WriteBuffer & ostr_) : ostr(ostr_) {}
-	void write(const Block & block);
 
-	void flush() { ostr.next(); }
+	void write(const Block & block) override;
+	void flush() override { ostr.next(); }
 
 private:
 	WriteBuffer & ostr;

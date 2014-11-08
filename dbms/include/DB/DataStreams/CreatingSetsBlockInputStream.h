@@ -9,7 +9,7 @@
 namespace DB
 {
 
-/** Отдает без изменений данные из потока блоков, но перед чтением первого блока инициализирует все переданные множества.
+/** Отдаёт без изменений данные из потока блоков, но перед чтением первого блока инициализирует все переданные множества.
   */
 class CreatingSetsBlockInputStream : public IProfilingBlockInputStream
 {
@@ -29,9 +29,9 @@ public:
 		children.push_back(input);
 	}
 
-	String getName() const { return "CreatingSetsBlockInputStream"; }
+	String getName() const override { return "CreatingSetsBlockInputStream"; }
 
-	String getID() const
+	String getID() const override
 	{
 		std::stringstream res;
 		res << "CreatingSets(";
@@ -51,7 +51,7 @@ public:
 	}
 
 protected:
-	Block readImpl();
+	Block readImpl() override;
 
 private:
 	SubqueriesForSets subqueries_for_sets;

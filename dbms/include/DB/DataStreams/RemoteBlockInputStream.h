@@ -52,10 +52,10 @@ public:
 	}
 
 
-	String getName() const { return "RemoteBlockInputStream"; }
+	String getName() const override { return "RemoteBlockInputStream"; }
 
 
-	String getID() const
+	String getID() const override
 	{
 		std::stringstream res;
 		res << this;
@@ -69,7 +69,7 @@ public:
 	void progress(const Progress & value) override {}
 
 
-	void cancel()
+	void cancel() override
 	{
 		if (!__sync_bool_compare_and_swap(&is_cancelled, false, true))
 			return;
@@ -85,7 +85,7 @@ public:
 	}
 
 
-	~RemoteBlockInputStream()
+	~RemoteBlockInputStream() override
 	{
 		/** Если прервались в середине цикла общения с сервером, то закрываем соединение,
 		  *  чтобы оно не осталось висеть в рассихронизированном состоянии.
@@ -112,7 +112,7 @@ protected:
 		connection->sendExternalTablesData(res);
 	}
 
-	Block readImpl()
+	Block readImpl() override
 	{
 		if (!sent_query)
 		{
@@ -181,7 +181,7 @@ protected:
 		}
 	}
 
-	void readSuffixImpl()
+	void readSuffixImpl() override
 	{
 		/** Если одно из:
 		 *   - ничего не начинали делать;

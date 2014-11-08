@@ -71,14 +71,14 @@ private:
 class IProfilingBlockInputStream : public IBlockInputStream
 {
 public:
-	Block read();
+	Block read() override;
 
 	/** Реализация по-умолчанию вызывает рекурсивно readSuffix() у всех детей, а затем readSuffixImpl() у себя.
 	  * Если этот поток вызывает у детей read() в отдельном потоке, этот поведение обычно неверно:
 	  * readSuffix() у ребенка нельзя вызывать в момент, когда read() того же ребенка выполняется в другом потоке.
 	  * В таком случае нужно переопределить этот метод, чтобы readSuffix() у детей вызывался, например, после соединения потоков.
 	  */
-	void readSuffix();
+	void readSuffix() override;
 
 	/// Получить информацию о скорости выполнения.
 	const BlockStreamProfileInfo & getInfo() const { return info; }

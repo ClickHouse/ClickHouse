@@ -18,9 +18,9 @@ class OneBlockInputStream : public IProfilingBlockInputStream
 public:
 	OneBlockInputStream(const Block & block_) : block(block_), has_been_read(false) {}
 
-	String getName() const { return "OneBlockInputStream"; }
+	String getName() const override { return "OneBlockInputStream"; }
 
-	String getID() const
+	String getID() const override
 	{
 		std::stringstream res;
 		res << this;
@@ -28,7 +28,7 @@ public:
 	}
 
 protected:
-	Block readImpl()
+	Block readImpl() override
 	{
 		if (has_been_read)
 			return Block();

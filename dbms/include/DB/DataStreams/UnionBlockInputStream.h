@@ -44,9 +44,9 @@ public:
 			input_queue.emplace(inputs_[i], i);
 	}
 
-	String getName() const { return "UnionBlockInputStream"; }
+	String getName() const override { return "UnionBlockInputStream"; }
 
-	String getID() const
+	String getID() const override
 	{
 		std::stringstream res;
 		res << "Union(";
@@ -66,7 +66,7 @@ public:
 	}
 
 
-	~UnionBlockInputStream()
+	~UnionBlockInputStream() override
 	{
 		try
 		{
@@ -84,7 +84,7 @@ public:
 	/** Отличается от реализации по-умолчанию тем, что пытается остановить все источники,
 	  *  пропуская отвалившиеся по эксепшену.
 	  */
-	void cancel()
+	void cancel() override
 	{
 		if (!__sync_bool_compare_and_swap(&is_cancelled, false, true))
 			return;
@@ -127,7 +127,7 @@ protected:
 		LOG_TRACE(log, "Waited for threads to finish");
 	}
 
-	Block readImpl()
+	Block readImpl() override
 	{
 		OutputData res;
 		if (all_read)
@@ -153,7 +153,7 @@ protected:
 		return res.block;
 	}
 
-	void readSuffix()
+	void readSuffix() override
 	{
 		if (!all_read && !is_cancelled)
 			throw Exception("readSuffix called before all data is read", ErrorCodes::LOGICAL_ERROR);

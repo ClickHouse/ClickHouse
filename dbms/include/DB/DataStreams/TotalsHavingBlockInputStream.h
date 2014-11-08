@@ -28,9 +28,9 @@ public:
 		children.push_back(input_);
 	}
 
-	String getName() const { return "TotalsHavingBlockInputStream"; }
+	String getName() const override { return "TotalsHavingBlockInputStream"; }
 
-	String getID() const
+	String getID() const override
 	{
 		std::stringstream res;
 		res << "TotalsHavingBlockInputStream(" << children.back()->getID() << ", " << aggregator->getID()
@@ -38,10 +38,10 @@ public:
 		return res.str();
 	}
 
-	const Block & getTotals();
+	const Block & getTotals() override;
 
 protected:
-	Block readImpl();
+	Block readImpl() override;
 
 private:
 	SharedPtr<Aggregator> aggregator;

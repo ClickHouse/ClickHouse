@@ -14,8 +14,8 @@ public:
 	PrettyCompactBlockOutputStream(WriteBuffer & ostr_, bool no_escapes_ = false, size_t max_rows_ = PRETTY_FORMAT_DEFAULT_MAX_ROWS)
 		: PrettyBlockOutputStream(ostr_, no_escapes_, max_rows_) {}
 
-	void write(const Block & block);
-	
+	void write(const Block & block) override;
+
 protected:
 	void writeHeader(const Block & block, const Widths_t & max_widths, const Widths_t & name_widths);
 	void writeBottom(const Widths_t & max_widths);

@@ -26,16 +26,16 @@ public:
 		children.push_back(input_);
 	}
 
-	String getName() const { return "ExpressionBlockInputStream"; }
+	String getName() const override { return "ExpressionBlockInputStream"; }
 
-	String getID() const
+	String getID() const override
 	{
 		std::stringstream res;
 		res << "Expression(" << children.back()->getID() << ", " << expression->getID() << ")";
 		return res.str();
 	}
 
-	const Block & getTotals()
+	const Block & getTotals() override
 	{
 		if (IProfilingBlockInputStream * child = dynamic_cast<IProfilingBlockInputStream *>(&*children.back()))
 		{
@@ -49,7 +49,7 @@ public:
 	}
 
 protected:
-	Block readImpl()
+	Block readImpl() override
 	{
 		Block res = children.back()->read();
 		if (!res)

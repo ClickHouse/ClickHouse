@@ -20,12 +20,12 @@ public:
 		const Block & sample_,
 		size_t max_block_size_ = DEFAULT_INSERT_BLOCK_SIZE);	/// Обычно дамп читается в целях вставки в таблицу.
 
-	void readPrefix() { row_input->readPrefix(); }
-	void readSuffix() { row_input->readSuffix(); }
+	void readPrefix() override { row_input->readPrefix(); }
+	void readSuffix() override { row_input->readSuffix(); }
 
-	String getName() const { return "BlockInputStreamFromRowInputStream"; }
+	String getName() const override { return "BlockInputStreamFromRowInputStream"; }
 
-	String getID() const
+	String getID() const override
 	{
 		std::stringstream res;
 		res << this;
@@ -33,7 +33,7 @@ public:
 	}
 
 protected:
-	Block readImpl();
+	Block readImpl() override;
 
 private:
 	RowInputStreamPtr row_input;

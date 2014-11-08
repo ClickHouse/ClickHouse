@@ -18,14 +18,14 @@ class JSONCompactRowOutputStream : public JSONRowOutputStream
 public:
 	JSONCompactRowOutputStream(WriteBuffer & ostr_, const Block & sample_);
 
-	void writeField(const Field & field);
-	void writeFieldDelimiter();
-	void writeRowStartDelimiter();
-	void writeRowEndDelimiter();
+	void writeField(const Field & field) override;
+	void writeFieldDelimiter() override;
+	void writeRowStartDelimiter() override;
+	void writeRowEndDelimiter() override;
 
 protected:
-	void writeTotals();
-	void writeExtremes();
+	void writeTotals() override;
+	void writeExtremes() override;
 };
 
 }

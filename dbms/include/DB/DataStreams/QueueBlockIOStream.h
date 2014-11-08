@@ -30,29 +30,29 @@ class QueueBlockIOStream : public IProfilingBlockInputStream, public IBlockOutpu
 public:
 	QueueBlockIOStream(size_t queue_size_ = std::numeric_limits<int>::max())
 		: queue_size(queue_size_), queue(queue_size) {}
-	
-	String getName() const { return "QueueBlockIOStream"; }
 
-	String getID() const
+	String getName() const override { return "QueueBlockIOStream"; }
+
+	String getID() const override
 	{
 		std::stringstream res;
 		res << this;
 		return res.str();
 	}
 
-	void write(const Block & block)
+	void write(const Block & block) override
 	{
 		queue.push(block);
 	}
 
-	void cancel()
+	void cancel() override
 	{
 		IProfilingBlockInputStream::cancel();
 		queue.clear();
 	}
 
 protected:
-	Block readImpl()
+	Block readImpl() override
 	{
 		Block res;
 		queue.pop(res);

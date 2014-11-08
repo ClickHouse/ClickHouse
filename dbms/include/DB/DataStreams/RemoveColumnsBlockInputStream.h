@@ -24,9 +24,9 @@ public:
 		children.push_back(input_);
 	}
 
-	String getName() const { return "RemoveColumnsBlockInputStream"; }
+	String getName() const override { return "RemoveColumnsBlockInputStream"; }
 
-	String getID() const
+	String getID() const override
 	{
 		std::stringstream res;
 		res << "RemoveColumns(" << children.back()->getID();
@@ -39,7 +39,7 @@ public:
 	}
 
 protected:
-	Block readImpl()
+	Block readImpl() override
 	{
 		Block res = children.back()->read();
 		if (!res)

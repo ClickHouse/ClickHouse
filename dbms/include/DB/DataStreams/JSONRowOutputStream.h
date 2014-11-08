@@ -19,30 +19,30 @@ class JSONRowOutputStream : public IRowOutputStream
 public:
 	JSONRowOutputStream(WriteBuffer & ostr_, const Block & sample_);
 
-	void writeField(const Field & field);
-	void writeFieldDelimiter();
-	void writeRowStartDelimiter();
-	void writeRowEndDelimiter();
-	void writePrefix();
-	void writeSuffix();
+	void writeField(const Field & field) override;
+	void writeFieldDelimiter() override;
+	void writeRowStartDelimiter() override;
+	void writeRowEndDelimiter() override;
+	void writePrefix() override;
+	void writeSuffix() override;
 
-	void flush() { ostr.next(); dst_ostr.next(); }
-	
-	void setRowsBeforeLimit(size_t rows_before_limit_)
+	void flush() override { ostr.next(); dst_ostr.next(); }
+
+	void setRowsBeforeLimit(size_t rows_before_limit_) override
 	{
 		applied_limit = true;
 		rows_before_limit = rows_before_limit_;
 	}
 
-	void setTotals(const Block & totals_) { totals = totals_; }
-	void setExtremes(const Block & extremes_) { extremes = extremes_; }
+	void setTotals(const Block & totals_) override { totals = totals_; }
+	void setExtremes(const Block & extremes_) override { extremes = extremes_; }
 
 protected:
-	
+
 	void writeRowsBeforeLimitAtLeast();
 	virtual void writeTotals();
 	virtual void writeExtremes();
-	
+
 	WriteBuffer & dst_ostr;
 	WriteBufferValidUTF8 ostr;	/// Валидирует и пишет в dst_ostr.
 	size_t field_number;

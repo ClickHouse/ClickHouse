@@ -22,9 +22,9 @@ public:
 	FilterBlockInputStream(BlockInputStreamPtr input_, ssize_t filter_column_);
 	FilterBlockInputStream(BlockInputStreamPtr input_, const String & filter_column_name_);
 
-	String getName() const { return "FilterBlockInputStream"; }
+	String getName() const override { return "FilterBlockInputStream"; }
 
-	String getID() const
+	String getID() const override
 	{
 		std::stringstream res;
 		res << "Filter(" << children.back()->getID() << ", " << filter_column << ", " << filter_column_name << ")";
@@ -32,7 +32,7 @@ public:
 	}
 
 protected:
-	Block readImpl();
+	Block readImpl() override;
 
 private:
 	ssize_t filter_column;

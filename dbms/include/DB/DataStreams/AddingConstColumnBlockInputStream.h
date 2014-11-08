@@ -25,9 +25,9 @@ public:
 		children.push_back(input_);
 	}
 
-	String getName() const { return "AddingConstColumnBlockInputStream"; }
+	String getName() const override { return "AddingConstColumnBlockInputStream"; }
 
-	String getID() const
+	String getID() const override
 	{
 		std::stringstream res;
 		res << "AddingConstColumn(" << children.back()->getID() << ")";
@@ -35,7 +35,7 @@ public:
 	}
 
 protected:
-	Block readImpl()
+	Block readImpl() override
 	{
 		Block res = children.back()->read();
 		if (!res)

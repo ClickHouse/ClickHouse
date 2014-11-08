@@ -15,10 +15,10 @@ class NativeBlockInputStream : public IProfilingBlockInputStream
 public:
 	NativeBlockInputStream(ReadBuffer & istr_, const DataTypeFactory & data_type_factory_)
 		: istr(istr_), data_type_factory(data_type_factory_) {}
-	
-	String getName() const { return "NativeBlockInputStream"; }
 
-	String getID() const
+	String getName() const override { return "NativeBlockInputStream"; }
+
+	String getID() const override
 	{
 		std::stringstream res;
 		res << this;
@@ -26,7 +26,7 @@ public:
 	}
 
 protected:
-	Block readImpl();
+	Block readImpl() override;
 
 private:
 	ReadBuffer & istr;

@@ -27,9 +27,9 @@ public:
 	{
 	}
 
-	String getName() const { return "AggregatingSortedBlockInputStream"; }
+	String getName() const override { return "AggregatingSortedBlockInputStream"; }
 
-	String getID() const
+	String getID() const override
 	{
 		std::stringstream res;
 		res << "AggregatingSorted(inputs";
@@ -48,7 +48,7 @@ public:
 
 protected:
 	/// Может возвращаться на 1 больше записей, чем max_block_size.
-	Block readImpl();
+	Block readImpl() override;
 
 private:
 	Logger * log;

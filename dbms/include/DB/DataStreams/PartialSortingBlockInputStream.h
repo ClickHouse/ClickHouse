@@ -21,9 +21,9 @@ public:
 		children.push_back(input_);
 	}
 
-	String getName() const { return "PartialSortingBlockInputStream"; }
+	String getName() const override { return "PartialSortingBlockInputStream"; }
 
-	String getID() const
+	String getID() const override
 	{
 		std::stringstream res;
 		res << "PartialSorting(" << children.back()->getID();
@@ -36,7 +36,7 @@ public:
 	}
 
 protected:
-	Block readImpl();
+	Block readImpl() override;
 
 private:
 	SortDescription description;

@@ -20,13 +20,13 @@ class ValuesRowOutputStream : public IRowOutputStream
 public:
 	ValuesRowOutputStream(WriteBuffer & ostr_, const Block & sample_);
 
-	void writeField(const Field & field);
-	void writeFieldDelimiter();
-	void writeRowStartDelimiter();
-	void writeRowEndDelimiter();
-	void writeRowBetweenDelimiter();
+	void writeField(const Field & field) override;
+	void writeFieldDelimiter() override;
+	void writeRowStartDelimiter() override;
+	void writeRowEndDelimiter() override;
+	void writeRowBetweenDelimiter() override;
 
-	void flush() { ostr.next(); }
+	void flush() override { ostr.next(); }
 
 private:
 	WriteBuffer & ostr;
