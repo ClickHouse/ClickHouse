@@ -79,6 +79,8 @@ DefineStringRef(StringRef_Compare16_1_byFloatSSE)
 DefineStringRef(StringRef_Compare16_1_bySSE4)
 DefineStringRef(StringRef_Compare16_1_bySSE4_wide)
 DefineStringRef(StringRef_Compare16_1_bySSE_wide)
+DefineStringRef(StringRef_CompareAlwaysTrue)
+DefineStringRef(StringRef_CompareAlmostAlwaysTrue)
 
 
 inline bool operator==(StringRef_Compare1_Ptrs lhs, StringRef_Compare1_Ptrs rhs)
@@ -535,6 +537,21 @@ inline bool operator==(StringRef_Compare16_1_bySSE_wide lhs, StringRef_Compare16
 }
 
 
+inline bool operator==(StringRef_CompareAlwaysTrue lhs, StringRef_CompareAlwaysTrue rhs)
+{
+	return true;
+}
+
+inline bool operator==(StringRef_CompareAlmostAlwaysTrue lhs, StringRef_CompareAlmostAlwaysTrue rhs)
+{
+	if (lhs.size != rhs.size)
+		return false;
+
+	return true;
+}
+
+
+
 typedef UInt64 Value;
 
 
@@ -611,9 +628,10 @@ int main(int argc, char ** argv)
 	if (!m || m == 10) bench<StringRef_Compare16_1_bySSE4>			(data, "StringRef_Compare16_1_bySSE4");
 	if (!m || m == 11) bench<StringRef_Compare16_1_bySSE4_wide>		(data, "StringRef_Compare16_1_bySSE4_wide");
 	if (!m || m == 12) bench<StringRef_Compare16_1_bySSE_wide>		(data, "StringRef_Compare16_1_bySSE_wide");
+	if (!m || m == 100) bench<StringRef_CompareAlwaysTrue>			(data, "StringRef_CompareAlwaysTrue");
+	if (!m || m == 101) bench<StringRef_CompareAlmostAlwaysTrue>	(data, "StringRef_CompareAlmostAlwaysTrue");
 
 	/// 10 > 8, 9
-	/// 7 > 6
 	/// 1, 2, 5 - bad
 
 

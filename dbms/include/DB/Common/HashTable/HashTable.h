@@ -95,7 +95,7 @@ struct HashTableCell
 
 	/// Равны ли ключи у ячеек.
 	bool keyEquals(const Key & key_) const { return key == key_; }
-	bool keyEquals(const HashTableCell & other) const { return key == other.key; }
+	bool keyEquals(const Key & key_, size_t hash_) const { return key == key_; }
 
 	/// Если ячейка умеет запоминать в себе значение хэш-функции, то запомнить его.
 	void setHash(size_t hash_value) {}
@@ -244,9 +244,9 @@ protected:
 #endif
 
 	/// Найти ячейку с тем же ключём или пустую ячейку, начиная с заданного места и далее по цепочке разрешения коллизий.
-	size_t findCell(const Key & x, size_t place_value) const
+	size_t findCell(const Key & x, size_t hash_value, size_t place_value) const
 	{
-		while (!buf[place_value].isZero(*this) && !buf[place_value].keyEquals(x))
+		while (!buf[place_value].isZero(*this) && !buf[place_value].keyEquals(x, hash_value))
 		{
 			place_value = grower.next(place_value);
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
@@ -338,14 +338,15 @@ protected:
 	  */
 	void reinsert(Cell & x)
 	{
-		size_t place_value = grower.place(x.getHash(*this));
+		size_t hash_value = x.getHash(*this);
+		size_t place_value = grower.place(hash_value);
 
 		/// Если элемент на своём месте.
 		if (&x == &buf[place_value])
 			return;
 
 		/// Вычисление нового места, с учётом цепочки разрешения коллизий.
-		place_value = findCell(Cell::getKey(x.getValue()), place_value);
+		place_value = findCell(Cell::getKey(x.getValue()), hash_value, place_value);
 
 		/// Если элемент остался на своём месте в старой цепочке разрешения коллизий.
 		if (!buf[place_value].isZero(*this))
@@ -515,7 +516,7 @@ protected:
 	/// Только для ненулевых ключей. Найти нужное место, вставить туда ключ, если его ещё нет, вернуть итератор на ячейку.
 	void emplaceNonZero(Key x, iterator & it, bool & inserted, size_t hash_value)
 	{
-		size_t place_value = findCell(x, grower.place(hash_value));
+		size_t place_value = findCell(x, hash_value, grower.place(hash_value));
 
 		it = iterator(this, &buf[place_value]);
 
@@ -589,7 +590,8 @@ public:
 		if (Cell::isZero(x, *this))
 			return this->hasZero() ? iteratorToZero() : end();
 
-		size_t place_value = findCell(x, grower.place(hash(x)));
+		size_t hash_value = hash(x);
+		size_t place_value = findCell(x, hash_value, grower.place(hash_value));
 
 		return !buf[place_value].isZero(*this) ? iterator(this, &buf[place_value]) : end();
 	}
@@ -600,7 +602,8 @@ public:
 		if (Cell::isZero(x, *this))
 			return this->hasZero() ? iteratorToZero() : end();
 
-		size_t place_value = findCell(x, grower.place(hash(x)));
+		size_t hash_value = hash(x);
+		size_t place_value = findCell(x, hash_value, grower.place(hash_value));
 
 		return !buf[place_value].isZero(*this) ? const_iterator(this, &buf[place_value]) : end();
 	}

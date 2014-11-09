@@ -46,7 +46,7 @@ struct HashMapCell
 	static const Key & getKey(const value_type & value) { return value.first; }
 
 	bool keyEquals(const Key & key_) const { return value.first == key_; }
-	bool keyEquals(const HashMapCell & other) const { return value.first == other.value.first; }
+	bool keyEquals(const Key & key_, size_t hash_) const { return value.first == key_; }
 
 	void setHash(size_t hash_value) {}
 	size_t getHash(const Hash & hash) const { return hash(value.first); }
@@ -107,7 +107,7 @@ struct HashMapCellWithSavedHash : public HashMapCell<Key, TMapped, Hash, TState>
 	HashMapCellWithSavedHash(const typename Base::value_type & value_, const typename Base::State & state) : Base(value_, state) {}
 
 	bool keyEquals(const Key & key_) const { return this->value.first == key_; }
-	bool keyEquals(const HashMapCellWithSavedHash & other) const { return saved_hash == other.saved_hash && this->value.first == other.value.first; }
+	bool keyEquals(const Key & key_, size_t hash_) const { return saved_hash == hash_ && this->value.first == key_; }
 
 	void setHash(size_t hash_value) { saved_hash = hash_value; }
 	size_t getHash(const Hash & hash) const { return saved_hash; }
