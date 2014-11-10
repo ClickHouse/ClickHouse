@@ -21,7 +21,6 @@ namespace DB
   */
 
 class Context;
-struct ColumnDefaults;
 
 class Block
 {

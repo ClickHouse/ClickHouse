@@ -207,13 +207,9 @@ void StorageReplicatedMergeTree::createTableIfNotExists()
 										 zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
 	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/metadata", metadata.str(),
 										 zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
-	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/columns", data.getColumnsListNonMaterialized().toString(),
-										 zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
-	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/materialized_columns", data.materialized_columns.toString(),
-										 zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
-	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/alias_columns", data.alias_columns.toString(),
-										 zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
-	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/column_defaults", data.column_defaults.toString(),
+	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/columns", ColumnsDescription<false>{
+				data.getColumnsListNonMaterialized(), data.materialized_columns,
+				data.alias_columns, data.column_defaults}.toString(),
 										 zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
 	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/log", "",
 										 zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
@@ -261,13 +257,15 @@ void StorageReplicatedMergeTree::checkTableStructure(bool skip_sanity_checks, bo
 	assertEOF(buf);
 
 	zkutil::Stat stat;
-	auto columns = NamesAndTypesList::parse(zookeeper->get(zookeeper_path + "/columns", &stat), context.getDataTypeFactory());
-	auto materialized_columns = NamesAndTypesList::parse(
-		zookeeper->get(zookeeper_path + "/materialized_columns", &stat), context.getDataTypeFactory());
-	auto alias_columns = NamesAndTypesList::parse(
-		zookeeper->get(zookeeper_path + "/alias_columns", &stat), context.getDataTypeFactory());
-	auto column_defaults = ColumnDefaults::parse(zookeeper->get(zookeeper_path + "/column_defaults", &stat));
+	auto columns_desc = ColumnsDescription<true>::parse(
+		zookeeper->get(zookeeper_path + "/columns", &stat), context.getDataTypeFactory());
+
+	auto & columns = columns_desc.columns;
+	auto & materialized_columns = columns_desc.materialized;
+	auto & alias_columns = columns_desc.alias;
+	auto & column_defaults = columns_desc.defaults;
 	columns_version = stat.version;
+
 	if (columns != data.getColumnsListNonMaterialized() ||
 		materialized_columns != data.materialized_columns ||
 		alias_columns != data.alias_columns ||
@@ -424,10 +422,12 @@ void StorageReplicatedMergeTree::createReplica()
 		LOG_DEBUG(log, "Copied " << source_queue.size() << " queue entries");
 	}
 
-	zookeeper->create(replica_path + "/columns", data.getColumnsListNonMaterialized().toString(), zkutil::CreateMode::Persistent);
-	zookeeper->create(replica_path + "/materialized_columns", data.materialized_columns.toString(), zkutil::CreateMode::Persistent);
-	zookeeper->create(replica_path + "/alias_columns", data.alias_columns.toString(), zkutil::CreateMode::Persistent);
-	zookeeper->create(replica_path + "/column_defaults", data.column_defaults.toString(), zkutil::CreateMode::Persistent);
+	zookeeper->create(replica_path + "/columns", ColumnsDescription<false>{
+			data.getColumnsListNonMaterialized(),
+			data.materialized_columns,
+			data.alias_columns,
+			data.column_defaults
+		}.toString(), zkutil::CreateMode::Persistent);
 }
 
 void StorageReplicatedMergeTree::activateReplica()
@@ -648,15 +648,6 @@ void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(const MergeTreeData:
 
 	ops.push_back(new zkutil::Op::Check(
 		zookeeper_path + "/columns",
-		expected_columns_version));
-	ops.push_back(new zkutil::Op::Check(
-		zookeeper_path + "/materialized_columns",
-		expected_columns_version));
-	ops.push_back(new zkutil::Op::Check(
-		zookeeper_path + "/alias_columns",
-		expected_columns_version));
-	ops.push_back(new zkutil::Op::Check(
-		zookeeper_path + "/column_defaults",
 		expected_columns_version));
 	ops.push_back(new zkutil::Op::Create(
 		replica_path + "/parts/" + part_name,
@@ -1615,17 +1606,12 @@ void StorageReplicatedMergeTree::alterThread()
 
 			zkutil::Stat stat;
 			const String columns_str = zookeeper->get(zookeeper_path + "/columns", &stat, alter_thread_event);
-			const String materialized_columns_str = zookeeper->get(zookeeper_path + "/materialized_columns",
-				&stat, alter_thread_event);
-			const String alias_columns_str = zookeeper->get(zookeeper_path + "/alias_columns",
-				&stat, alter_thread_event);
-			const String column_defaults_str = zookeeper->get(zookeeper_path + "/column_defaults",
-				&stat, alter_thread_event);
-			NamesAndTypesList columns = NamesAndTypesList::parse(columns_str, context.getDataTypeFactory());
-			NamesAndTypesList materialized_columns = NamesAndTypesList::parse(
-				materialized_columns_str, context.getDataTypeFactory());
-			NamesAndTypesList alias_columns = NamesAndTypesList::parse(alias_columns_str, context.getDataTypeFactory());
-			ColumnDefaults column_defaults = ColumnDefaults::parse(column_defaults_str);
+			auto columns_desc = ColumnsDescription<true>::parse(columns_str, context.getDataTypeFactory());
+
+			auto & columns = columns_desc.columns;
+			auto & materialized_columns = columns_desc.materialized;
+			auto & alias_columns = columns_desc.alias;
+			auto & column_defaults = columns_desc.defaults;
 
 			bool changed_version = (stat.version != columns_version);
 
@@ -1744,10 +1730,7 @@ void StorageReplicatedMergeTree::alterThread()
 				}
 
 				/// Список столбцов для конкретной реплики.
-				zookeeper->set(replica_path + "/columns", columns.toString());
-				zookeeper->set(replica_path + "/materialized_columns", materialized_columns.toString());
-				zookeeper->set(replica_path + "/alias_columns", alias_columns.toString());
-				zookeeper->set(replica_path + "/column_defaults", column_defaults.toString());
+				zookeeper->set(replica_path + "/columns", columns_str);
 
 				if (changed_version)
 				{
@@ -2389,9 +2372,6 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 	NamesAndTypesList new_alias_columns;
 	ColumnDefaults new_column_defaults;
 	String new_columns_str;
-	String new_materialized_columns_str;
-	String new_alias_columns_str;
-	String new_column_defaults_str;
 	int new_columns_version;
 	zkutil::Stat stat;
 
@@ -2409,16 +2389,13 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 		new_column_defaults = data.column_defaults;
 		params.apply(new_columns, new_materialized_columns, new_alias_columns, new_column_defaults);
 
-		new_columns_str = new_columns.toString();
-		new_materialized_columns_str = new_materialized_columns.toString();
-		new_alias_columns_str = new_alias_columns.toString();
-		new_column_defaults_str = new_column_defaults.toString();
+		new_columns_str = ColumnsDescription<false>{
+			new_columns, new_materialized_columns,
+			new_alias_columns, new_column_defaults
+		}.toString();
 
 		/// Делаем ALTER.
 		zookeeper->set(zookeeper_path + "/columns", new_columns_str, -1, &stat);
-		zookeeper->set(zookeeper_path + "/materialized_columns", new_materialized_columns_str, -1, &stat);
-		zookeeper->set(zookeeper_path + "/alias_columns", new_alias_columns_str, -1, &stat);
-		zookeeper->set(zookeeper_path + "/column_defaults", new_column_defaults_str, -1, &stat);
 
 		new_columns_version = stat.version;
 	}
@@ -2446,18 +2423,9 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 		while (!shutdown_called)
 		{
 			String replica_columns_str;
-			String replica_materialized_columns_str;
-			String replica_alias_columns_str;
-			String replica_column_defaults_str;
 
 			/// Реплику могли успеть удалить.
-			if (!zookeeper->tryGet(zookeeper_path + "/replicas/" + replica + "/columns", replica_columns_str, &stat) ||
-				!zookeeper->tryGet(zookeeper_path + "/replicas/" + replica + "/materialized_columns",
-								   replica_materialized_columns_str, &stat) ||
-				!zookeeper->tryGet(zookeeper_path + "/replicas/" + replica + "/alias_columns",
-								   replica_alias_columns_str, &stat) ||
-				!zookeeper->tryGet(zookeeper_path + "/replicas/" + replica + "/column_defaults",
-								   replica_column_defaults_str, &stat))
+			if (!zookeeper->tryGet(zookeeper_path + "/replicas/" + replica + "/columns", replica_columns_str, &stat))
 			{
 				LOG_WARNING(log, replica << " was removed");
 				break;
@@ -2465,23 +2433,11 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 
 			int replica_columns_version = stat.version;
 
-			if (replica_columns_str == new_columns_str &&
-				replica_materialized_columns_str == new_materialized_columns_str &&
-				replica_alias_columns_str == new_alias_columns_str &&
-				replica_column_defaults_str == new_column_defaults_str)
+			if (replica_columns_str == new_columns_str)
 				break;
 
 			if (!zookeeper->exists(zookeeper_path + "/columns", &stat))
 				throw Exception(zookeeper_path + "/columns doesn't exist", ErrorCodes::NOT_FOUND_NODE);
-
-			if (!zookeeper->exists(zookeeper_path + "/materialized_columns", &stat))
-				throw Exception(zookeeper_path + "/materialized_columns doesn't exist", ErrorCodes::NOT_FOUND_NODE);
-
-			if (!zookeeper->exists(zookeeper_path + "/alias_columns", &stat))
-				throw Exception(zookeeper_path + "/alias_columns doesn't exist", ErrorCodes::NOT_FOUND_NODE);
-
-			if (!zookeeper->exists(zookeeper_path + "/column_defaults", &stat))
-				throw Exception(zookeeper_path + "/column_defaults doesn't exist", ErrorCodes::NOT_FOUND_NODE);
 
 			if (stat.version != new_columns_version)
 			{
@@ -2490,13 +2446,7 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 				return;
 			}
 
-			if (!zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/columns", &stat, alter_query_event) ||
-				!zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/materialized_columns",
-								   &stat, alter_query_event) ||
-				!zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/alias_columns",
-								   &stat, alter_query_event) ||
-				!zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/column_defaults",
-								   &stat, alter_query_event))
+			if (!zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/columns", &stat, alter_query_event))
 			{
 				LOG_WARNING(log, replica << " was removed");
 				break;

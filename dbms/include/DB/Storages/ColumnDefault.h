@@ -64,49 +64,85 @@ namespace DB
 		return lhs.type == rhs.type && queryToString(lhs.expression) == queryToString(rhs.expression);
 	}
 
-	struct ColumnDefaults : public std::unordered_map<String, ColumnDefault>
-	{
-		using std::unordered_map<String, ColumnDefault>::unordered_map;
+	using ColumnDefaults = std::unordered_map<String, ColumnDefault>;
 
-		/// @todo implement (de)serialization
+	template <bool store>
+	struct ColumnsDescription
+	{
+		template <typename T> using by_value_or_cref = typename std::conditional<store, T, const T &>::type;
+		by_value_or_cref<NamesAndTypesList> columns;
+		by_value_or_cref<NamesAndTypesList> materialized;
+		by_value_or_cref<NamesAndTypesList> alias;
+		by_value_or_cref<ColumnDefaults> defaults;
+
 		String toString() const
 		{
 			String s;
 			WriteBufferFromString buf{s};
 
-			writeString("column defaults format version: 1\n", buf);
-			writeText(size(), buf);
+			writeString("columns format version: 1\n", buf);
+			writeText(columns.size() + materialized.size() + alias.size(), buf);
 			writeString(" columns:\n", buf);
 
-			for (const auto & column_default : *this)
-			{
-				writeBackQuotedString(column_default.first, buf);
-				writeChar(' ', buf);
-				writeString(DB::toString(column_default.second.type), buf);
-				writeChar('\t', buf);
-				writeString(queryToString(column_default.second.expression), buf);
-				writeChar('\n', buf);
-			}
+			const auto write_columns = [this, &buf] (const NamesAndTypesList & columns) {
+				for (const auto & column : columns)
+				{
+					const auto it = defaults.find(column.name);
+
+					writeBackQuotedString(column.name, buf);
+					writeChar(' ', buf);
+					writeString(column.type->getName(), buf);
+					if (it == std::end(defaults))
+					{
+						writeChar('\n', buf);
+						continue;
+					}
+					else
+						writeChar('\t', buf);
+
+					writeString(DB::toString(it->second.type), buf);
+					writeChar('\t', buf);
+					writeString(queryToString(it->second.expression), buf);
+					writeChar('\n', buf);
+				}
+			};
+
+			write_columns(columns);
+			write_columns(materialized);
+			write_columns(alias);
 
 			return s;
 		}
 
-		static ColumnDefaults parse(const String & str) {
+		static ColumnsDescription parse(const String & str, const DataTypeFactory & data_type_factory)
+		{
 			ReadBufferFromString buf{str};
-			ColumnDefaults defaults{};
 
-			assertString("column defaults format version: 1\n", buf);
+			assertString("columns format version: 1\n", buf);
 			size_t count{};
 			readText(count, buf);
 			assertString(" columns:\n", buf);
 
 			ParserTernaryOperatorExpression expr_parser;
 
+			ColumnsDescription result{};
 			for (size_t i = 0; i < count; ++i)
 			{
 				String column_name;
 				readBackQuotedString(column_name, buf);
 				assertString(" ", buf);
+
+				String type_name;
+				readString(type_name, buf);
+				auto type = data_type_factory.get(type_name);
+				if (*buf.position() == '\n')
+				{
+					assertString("\n", buf);
+
+					result.columns.emplace_back(column_name, std::move(type));
+					continue;
+				}
+				assertString("\t", buf);
 
 				String default_type_str;
 				readString(default_type_str, buf);
@@ -124,12 +160,19 @@ namespace DB
 				if (!expr_parser.parse(begin, end, default_expr, expected))
 					throw Exception{"Could not parse default expression", DB::ErrorCodes::CANNOT_PARSE_TEXT};
 
-				defaults.emplace(column_name, ColumnDefault{default_type, default_expr});
+				if (ColumnDefaultType::Default == default_type)
+					result.columns.emplace_back(column_name, std::move(type));
+				else if (ColumnDefaultType::Materialized == default_type)
+					result.materialized.emplace_back(column_name, std::move(type));
+				else if (ColumnDefaultType::Alias == default_type)
+					result.alias.emplace_back(column_name, std::move(type));
+
+				result.defaults.emplace(column_name, ColumnDefault{default_type, default_expr});
 			}
 
 			assertEOF(buf);
 
-			return defaults;
+			return result;
 		}
 	};
 }
