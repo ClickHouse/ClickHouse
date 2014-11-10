@@ -131,7 +131,7 @@ struct SipHash64Impl
 
 struct SipHash128Impl
 {
-	static constexpr auto name = "SipHash128";
+	static constexpr auto name = "sipHash128";
 	static constexpr auto length = 16;
 
 	static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
