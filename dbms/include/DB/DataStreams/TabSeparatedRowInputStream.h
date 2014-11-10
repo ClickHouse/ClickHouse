@@ -20,8 +20,8 @@ public:
 	  */
 	TabSeparatedRowInputStream(ReadBuffer & istr_, const Block & sample_, bool with_names_ = false, bool with_types_ = false);
 
-	bool read(Row & row);
-	void readPrefix();
+	bool read(Row & row) override;
+	void readPrefix() override;
 
 private:
 	ReadBuffer & istr;

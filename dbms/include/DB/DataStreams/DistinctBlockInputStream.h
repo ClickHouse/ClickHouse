@@ -28,9 +28,9 @@ public:
 		children.push_back(input_);
 	}
 
-	String getName() const { return "DistinctBlockInputStream"; }
+	String getName() const override { return "DistinctBlockInputStream"; }
 
-	String getID() const
+	String getID() const override
 	{
 		std::stringstream res;
 		res << "Distinct(" << children.back()->getID() << ")";
@@ -38,7 +38,7 @@ public:
 	}
 
 protected:
-	Block readImpl()
+	Block readImpl() override
 	{
 		/// Пока не встретится блок, после фильтрации которого что-нибудь останется, или поток не закончится.
 		while (1)
@@ -51,7 +51,7 @@ protected:
 
 			if (!block)
 				return Block();
-			
+
 			size_t rows = block.rows();
 			size_t columns = columns_names.empty() ? block.columns() : columns_names.size();
 
@@ -94,7 +94,7 @@ protected:
 
 				/// Если вставилось в множество - строчку оставляем, иначе - удаляем.
 				filter[i] = set.insert(key).second;
-				
+
 				if (limit && set.size() == limit)
 					break;
 			}
@@ -128,7 +128,7 @@ protected:
 	}
 
 private:
-	
+
 	bool checkLimits() const
 	{
 		if (max_rows && set.size() > max_rows)
@@ -137,11 +137,11 @@ private:
 			return false;
 		return true;
 	}
-	
+
 	Names columns_names;
 
 	size_t limit;
-	
+
 	/// Ограничения на максимальный размер множества
 	size_t max_rows;
 	size_t max_bytes;

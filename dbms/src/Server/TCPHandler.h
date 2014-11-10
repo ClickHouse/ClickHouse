@@ -45,8 +45,8 @@ struct QueryState
 	bool is_empty = true;
 	/// Данные были отправлены.
 	bool sent_all_data = false;
-	/// Запрос на вставку или нет.
-	bool is_insert = false;
+	/// Запрос требует приёма данных от клиента (INSERT, но не INSERT SELECT).
+	bool need_receive_data_for_insert = false;
 
 	/// Для вывода прогресса - разница после предыдущей отправки прогресса.
 	Progress progress;

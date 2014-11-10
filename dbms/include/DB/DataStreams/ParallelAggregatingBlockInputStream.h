@@ -41,9 +41,9 @@ public:
 		aggregator = new Aggregator(key_names, aggregates, overflow_row_, max_rows_to_group_by_, group_by_overflow_mode_);
 	}
 
-	String getName() const { return "ParallelAggregatingBlockInputStream"; }
+	String getName() const override { return "ParallelAggregatingBlockInputStream"; }
 
-	String getID() const
+	String getID() const override
 	{
 		std::stringstream res;
 		res << "ParallelAggregating(";
@@ -63,7 +63,7 @@ public:
 	}
 
 protected:
-	Block readImpl()
+	Block readImpl() override
 	{
 		if (has_been_read)
 			return Block();

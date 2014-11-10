@@ -24,9 +24,9 @@ public:
 	{
 	}
 
-	String getName() const { return "SummingSortedBlockInputStream"; }
+	String getName() const override { return "SummingSortedBlockInputStream"; }
 
-	String getID() const
+	String getID() const override
 	{
 		std::stringstream res;
 		res << "SummingSorted(inputs";
@@ -45,7 +45,7 @@ public:
 
 protected:
 	/// Может возвращаться на 1 больше записей, чем max_block_size.
-	Block readImpl();
+	Block readImpl() override;
 
 private:
 	Logger * log;
@@ -55,7 +55,7 @@ private:
 
 	Row current_key;		/// Текущий первичный ключ.
 	Row next_key;			/// Первичный ключ следующей строки.
-	
+
 	Row current_row;
 	bool current_row_is_zero;	/// Текущая строчка просуммировалась в ноль, и её следует удалить.
 
@@ -97,7 +97,7 @@ private:
 	bool addRow(Row & row, TSortCursor & cursor)
 	{
 		bool res = false;	/// Есть ли хотя бы одно ненулевое число.
-		
+
 		for (size_t i = 0, size = column_numbers_to_sum.size(); i < size; ++i)
 		{
 			size_t j = column_numbers_to_sum[i];

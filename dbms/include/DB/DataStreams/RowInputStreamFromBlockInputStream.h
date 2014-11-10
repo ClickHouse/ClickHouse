@@ -14,10 +14,11 @@ class RowInputStreamFromBlockInputStream : public IRowInputStream
 {
 public:
 	explicit RowInputStreamFromBlockInputStream(BlockInputStreamPtr block_input_);
-	bool read(Row & row);
 
-	void readPrefix() { block_input->readPrefix(); };
-	void readSuffix() { block_input->readSuffix(); };
+	bool read(Row & row) override;
+
+	void readPrefix() override { block_input->readPrefix(); };
+	void readSuffix() override { block_input->readSuffix(); };
 
 private:
 	BlockInputStreamPtr block_input;

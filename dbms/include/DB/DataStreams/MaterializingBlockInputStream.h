@@ -18,9 +18,9 @@ public:
 		children.push_back(input_);
 	}
 
-	String getName() const { return "MaterializingBlockInputStream"; }
+	String getName() const override { return "MaterializingBlockInputStream"; }
 
-	String getID() const
+	String getID() const override
 	{
 		std::stringstream res;
 		res << "Materializing(" << children.back()->getID() << ")";
@@ -28,7 +28,7 @@ public:
 	}
 
 protected:
-	Block readImpl()
+	Block readImpl() override
 	{
 		Block res = children.back()->read();
 

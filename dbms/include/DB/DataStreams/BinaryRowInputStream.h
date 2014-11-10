@@ -17,7 +17,7 @@ class BinaryRowInputStream : public IRowInputStream
 public:
 	BinaryRowInputStream(ReadBuffer & istr_, const Block & sample_);
 
-	bool read(Row & row);
+	bool read(Row & row) override;
 
 private:
 	ReadBuffer & istr;

@@ -25,23 +25,23 @@ public:
 		children.push_back(in_);
 	}
 
-	String getName() const { return "AsynchronousBlockInputStream"; }
+	String getName() const override { return "AsynchronousBlockInputStream"; }
 
-	String getID() const
+	String getID() const override
 	{
 		std::stringstream res;
 		res << "Asynchronous(" << children.back()->getID() << ")";
 		return res.str();
 	}
 
-	void readPrefix()
+	void readPrefix() override
 	{
 		children.back()->readPrefix();
 		next();
 		started = true;
 	}
 
-	void readSuffix()
+	void readSuffix() override
 	{
 		if (started)
 		{
@@ -69,7 +69,7 @@ public:
 	}
 
 
-    ~AsynchronousBlockInputStream()
+    ~AsynchronousBlockInputStream() override
 	{
 		if (started)
 			pool.wait();
@@ -84,7 +84,7 @@ protected:
 	ExceptionPtr exception;
 
 
-	Block readImpl()
+	Block readImpl() override
 	{
 		/// Если вычислений ещё не было - вычислим первый блок синхронно
 		if (!started)

@@ -37,9 +37,9 @@ public:
 		children.push_back(input_);
 	}
 
-	String getName() const { return "SplittingAggregatingBlockInputStream"; }
+	String getName() const override { return "SplittingAggregatingBlockInputStream"; }
 
-	String getID() const
+	String getID() const override
 	{
 		std::stringstream res;
 		res << "SplittingAggregating(" << children.back()->getID() << ", " << aggregator->getID() << ")";
@@ -47,12 +47,12 @@ public:
 	}
 
 protected:
-	Block readImpl()
+	Block readImpl() override
 	{
 		if (!started)
 		{
 			started = true;
-			
+
 			ManyAggregatedDataVariants data;
 			aggregator->execute(children.back(), data);
 

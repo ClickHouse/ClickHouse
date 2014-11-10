@@ -1,40 +1,49 @@
-#include <Yandex/time2str.h>
+#include <cstring>
 #include <Yandex/DateLUT.h>
 #include <Poco/Exception.h>
 
 
 DateLUT::DateLUT()
 {
-	/** Дополнительный вызов Time2Date для случая, когда в 1981-1984 году в России,
-	  * 1 апреля начиналось в час ночи, не в полночь.
-	  */
 	size_t i = 0;
-	for (time_t t = Time2Date(DATE_LUT_MIN);
-		t <= DATE_LUT_MAX;
-		t = Time2Date(TimeDayShift(t)))
+	time_t start_of_day = DATE_LUT_MIN;
+
+	do
 	{
 		if (i > DATE_LUT_MAX_DAY_NUM)
 			throw Poco::Exception("Cannot create DateLUT: i > DATE_LUT_MAX_DAY_NUM.");
 
+		tm time_descr;
+		localtime_r(&start_of_day, &time_descr);
+
+		time_descr.tm_hour = 0;
+		time_descr.tm_min = 0;
+		time_descr.tm_sec = 0;
+		time_descr.tm_isdst = -1;
+
+		start_of_day = mktime(&time_descr);
+
 		Values & values = lut[i];
 
-		struct tm tm;
-		localtime_r(&t, &tm);
+		values.year = time_descr.tm_year + 1900;
+		values.month = time_descr.tm_mon + 1;
+		values.day_of_week = time_descr.tm_wday == 0 ? 7 : time_descr.tm_wday;
+		values.day_of_month = time_descr.tm_mday;
 
-		values.year = tm.tm_year + 1900;
-		values.month = tm.tm_mon + 1;
-		values.day_of_week = tm.tm_wday == 0 ? 7 : tm.tm_wday;
-		values.day_of_month = tm.tm_mday;
+		values.date = start_of_day;
 
-		tm.tm_hour = 0;
-		tm.tm_min = 0;
-		tm.tm_sec = 0;
-		tm.tm_isdst = -1;
+		/// Переходим на следующий день.
+		++time_descr.tm_mday;
 
-		values.date = mktime(&tm);
+		/** Обратите внимание, что в 1981-1984 году в России,
+		  * 1 апреля начиналось в час ночи, а не в полночь.
+		  * Если здесь оставить час равным нулю, то прибавление единицы к дню, привело бы к 23 часам того же дня.
+		  */
+		time_descr.tm_hour = 12;
+		start_of_day = mktime(&time_descr);
 
 		++i;
-	}
+	} while (start_of_day <= DATE_LUT_MAX);
 
 	/// Заполняем lookup таблицу для годов
 	memset(years_lut, 0, DATE_LUT_YEARS * sizeof(years_lut[0]));

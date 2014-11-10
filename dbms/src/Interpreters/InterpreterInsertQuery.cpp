@@ -3,6 +3,7 @@
 #include <DB/DataStreams/AddingDefaultBlockOutputStream.h>
 #include <DB/DataStreams/MaterializingBlockInputStream.h>
 #include <DB/DataStreams/PushingToViewsBlockOutputStream.h>
+#include <DB/DataStreams/NullAndDoCopyBlockInputStream.h>
 #include <DB/DataStreams/copyData.h>
 
 #include <DB/Parsers/ASTInsertQuery.h>
@@ -128,7 +129,8 @@ BlockIO InterpreterInsertQuery::execute()
 	table->write(query_ptr);
 
 	/// Создаем кортеж из нескольких стримов, в которые будем писать данные.
-	BlockOutputStreamPtr out = new AddingDefaultBlockOutputStream(new PushingToViewsBlockOutputStream(query.database, query.table, context, query_ptr), required_columns);
+	BlockOutputStreamPtr out = new AddingDefaultBlockOutputStream(
+		new PushingToViewsBlockOutputStream(query.database, query.table, context, query_ptr), required_columns);
 
 	BlockIO res;
 	res.out_sample = getSampleBlock();
@@ -141,9 +143,8 @@ BlockIO InterpreterInsertQuery::execute()
 	else
 	{
 		InterpreterSelectQuery interpreter_select(query.select, context);
-		BlockInputStreamPtr in = interpreter_select.execute();
-		in = new MaterializingBlockInputStream(in);
-		copyData(*in, *out);
+		BlockInputStreamPtr in = new MaterializingBlockInputStream(interpreter_select.execute());
+		res.in = new NullAndDoCopyBlockInputStream(in, out);
 	}
 
 	return res;

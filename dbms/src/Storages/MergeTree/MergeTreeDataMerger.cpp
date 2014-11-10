@@ -432,7 +432,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 	auto replaced_parts = data.renameTempPartAndReplace(new_data_part, nullptr, out_transaction);
 
 	if (new_data_part->name != merged_name)
-		LOG_ERROR(log, "Unexpected part name: " << new_data_part->name << " instead of " << merged_name);
+		throw Exception("Unexpected part name: " + new_data_part->name + " instead of " + merged_name, ErrorCodes::LOGICAL_ERROR);
 
 	/// Проверим, что удалились все исходные куски и только они.
 	if (replaced_parts.size() != parts.size())
@@ -443,13 +443,9 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 	else
 	{
 		for (size_t i = 0; i < parts.size(); ++i)
-		{
 			if (parts[i]->name != replaced_parts[i]->name)
-			{
-				LOG_ERROR(log, "Unexpected part removed when adding " << new_data_part->name << ": " << replaced_parts[i]->name
-					<< " instead of " << parts[i]->name);
-			}
-		}
+				throw Exception("Unexpected part removed when adding " + new_data_part->name + ": " + replaced_parts[i]->name
+					+ " instead of " + parts[i]->name, ErrorCodes::LOGICAL_ERROR);
 	}
 
 	LOG_TRACE(log, "Merged " << parts.size() << " parts: from " << parts.front()->name << " to " << parts.back()->name);

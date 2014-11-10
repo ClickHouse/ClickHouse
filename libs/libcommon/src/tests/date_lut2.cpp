@@ -20,6 +20,7 @@ int main(int argc, char ** argv)
 {
 	loop(OrderedIdentifier2Date(20101031), OrderedIdentifier2Date(20101101), 15 * 60);
 	loop(OrderedIdentifier2Date(20100328), OrderedIdentifier2Date(20100330), 15 * 60);
+	loop(OrderedIdentifier2Date(20141020), OrderedIdentifier2Date(20141106), 15 * 60);
 
 	return 0;
 }

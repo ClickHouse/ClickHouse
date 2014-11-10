@@ -115,6 +115,7 @@ public:
 		UInt32 queue_size;
 		UInt32 inserts_in_queue;
 		UInt32 merges_in_queue;
+		UInt32 queue_oldest_time;
 		UInt64 log_max_index;
 		UInt64 log_pointer;
 		UInt8 total_replicas;

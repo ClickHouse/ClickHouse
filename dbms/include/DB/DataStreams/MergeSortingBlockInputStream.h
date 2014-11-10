@@ -22,22 +22,22 @@ public:
 		children.push_back(input_);
 	}
 
-	String getName() const { return "MergeSortingBlockInputStream"; }
+	String getName() const override { return "MergeSortingBlockInputStream"; }
 
-	String getID() const
+	String getID() const override
 	{
 		std::stringstream res;
 		res << "MergeSorting(" << children.back()->getID();
-		
+
 		for (size_t i = 0; i < description.size(); ++i)
 			res << ", " << description[i].getID();
-		
+
 		res << ")";
 		return res.str();
 	}
 
 protected:
-	Block readImpl();
+	Block readImpl() override;
 
 private:
 	SortDescription description;
@@ -47,13 +47,13 @@ private:
 	bool has_been_read;
 
 	Logger * log;
-	
-	/** Слить сразу много блоков с помощью priority queue. 
+
+	/** Слить сразу много блоков с помощью priority queue.
 	  */
 	Block merge(Blocks & blocks);
-	
+
 	typedef std::vector<SortCursorImpl> CursorImpls;
-	
+
 	/** Делаем поддержку двух разных курсоров - с Collation и без.
 	 *  Шаблоны используем вместо полиморфных SortCursor'ов и вызовов виртуальных функций.
 	 */

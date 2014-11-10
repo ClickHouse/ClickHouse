@@ -31,7 +31,7 @@ public:
 		output->write(res);
 	}
 
-	void flush() { output->flush(); }
+	void flush() override { output->flush(); }
 
 	void writePrefix() override { output->writePrefix(); }
 	void writeSuffix() override { output->writeSuffix(); }

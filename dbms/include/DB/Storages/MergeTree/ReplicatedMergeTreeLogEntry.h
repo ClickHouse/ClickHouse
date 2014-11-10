@@ -64,6 +64,10 @@ struct ReplicatedMergeTreeLogEntry
 	bool currently_executing = false; /// Доступ под queue_mutex.
 	std::condition_variable execution_complete; /// Пробуждается когда currently_executing становится false.
 
+	/// Время создания или время копирования из общего лога в очередь конкретной реплики.
+	time_t create_time = 0;
+
+
 	void addResultToVirtualParts(StorageReplicatedMergeTree & storage);
 	void tagPartAsFuture(StorageReplicatedMergeTree & storage);
 

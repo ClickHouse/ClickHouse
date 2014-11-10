@@ -21,11 +21,11 @@ class VerticalRowOutputStream : public IRowOutputStream
 public:
 	VerticalRowOutputStream(WriteBuffer & ostr_, const Block & sample_);
 
-	void writeField(const Field & field);
-	void writeRowStartDelimiter();
-	void writeRowBetweenDelimiter();
+	void writeField(const Field & field) override;
+	void writeRowStartDelimiter() override;
+	void writeRowBetweenDelimiter() override;
 
-	void flush() { ostr.next(); }
+	void flush() override { ostr.next(); }
 
 private:
 	WriteBuffer & ostr;

@@ -13,7 +13,7 @@ namespace DB
 class EmptyBlockOutputStream : public IBlockOutputStream
 {
 public:
-	void write(const Block & block)
+	void write(const Block & block) override
 	{
 		throw Exception("Cannot write to EmptyBlockOutputStream", ErrorCodes::CANNOT_WRITE_TO_EMPTY_BLOCK_OUTPUT_STREAM);
 	}

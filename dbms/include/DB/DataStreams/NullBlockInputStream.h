@@ -11,10 +11,10 @@ namespace DB
 class NullBlockInputStream : public IBlockInputStream
 {
 public:
-	Block read() { return Block(); }
-	String getName() const { return "NullBlockInputStream"; }
+	Block read() override { return Block(); }
+	String getName() const override { return "NullBlockInputStream"; }
 
-	String getID() const
+	String getID() const override
 	{
 		std::stringstream res;
 		res << this;

@@ -20,16 +20,16 @@ public:
 	  */
 	TabSeparatedRowOutputStream(WriteBuffer & ostr_, const Block & sample_, bool with_names_ = false, bool with_types_ = false);
 
-	void writeField(const Field & field);
-	void writeFieldDelimiter();
-	void writeRowEndDelimiter();
-	void writePrefix();
-	void writeSuffix();
+	void writeField(const Field & field) override;
+	void writeFieldDelimiter() override;
+	void writeRowEndDelimiter() override;
+	void writePrefix() override;
+	void writeSuffix() override;
 
-	void flush() { ostr.next(); }
+	void flush() override { ostr.next(); }
 
-	void setTotals(const Block & totals_) { totals = totals_; }
-	void setExtremes(const Block & extremes_) { extremes = extremes_; }
+	void setTotals(const Block & totals_) override { totals = totals_; }
+	void setExtremes(const Block & extremes_) override { extremes = extremes_; }
 
 protected:
 	void writeTotals();

@@ -26,9 +26,9 @@ public:
 		children.insert(children.end(), inputs_.begin(), inputs_.end());
 	}
 
-	String getName() const { return "MergingSortedBlockInputStream"; }
+	String getName() const override { return "MergingSortedBlockInputStream"; }
 
-	String getID() const
+	String getID() const override
 	{
 		std::stringstream res;
 		res << "MergingSorted(";
@@ -51,36 +51,36 @@ public:
 	}
 
 protected:
-	Block readImpl();
-	void readSuffixImpl();
-	
+	Block readImpl() override;
+	void readSuffixImpl() override;
+
 	/// Инициализирует очередь и следующий блок результата.
 	void init(Block & merged_block, ColumnPlainPtrs & merged_columns);
-	
+
 	/// Достаёт из источника, соответствующего current следующий блок.
 	template <typename TSortCursor>
 	void fetchNextBlock(const TSortCursor & current, std::priority_queue<TSortCursor> & queue);
-	
-	
+
+
 	SortDescription description;
 	size_t max_block_size;
 	size_t limit;
 	size_t total_merged_rows;
 
 	bool first;
-	
+
 	bool has_collation;
 
 	/// Текущие сливаемые блоки.
 	size_t num_columns;
 	Blocks source_blocks;
-	
+
 	typedef std::vector<SortCursorImpl> CursorImpls;
 	CursorImpls cursors;
 
 	typedef std::priority_queue<SortCursor> Queue;
 	Queue queue;
-	
+
 	typedef std::priority_queue<SortCursorWithCollation> QueueWithCollation;
 	QueueWithCollation queue_with_collation;
 
@@ -102,7 +102,7 @@ protected:
 				tryLogCurrentException(__PRETTY_FUNCTION__);
 
 				/// Узнаем имя столбца и бросим исключение поинформативней.
-				
+
 				String column_name;
 				for (const Block & block : source_blocks)
 				{
@@ -129,16 +129,16 @@ protected:
 	}
 
 private:
-	
+
 	/** Делаем поддержку двух разных курсоров - с Collation и без.
 	 *  Шаблоны используем вместо полиморфных SortCursor'ов и вызовов виртуальных функций.
 	 */
 	template <typename TSortCursor>
-	void initQueue(std::priority_queue<TSortCursor> & queue);	
-	
+	void initQueue(std::priority_queue<TSortCursor> & queue);
+
 	template <typename TSortCursor>
 	void merge(Block & merged_block, ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
-	
+
 	Logger * log;
 };
 

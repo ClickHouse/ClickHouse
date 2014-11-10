@@ -127,13 +127,13 @@ void TCPHandler::runImpl()
 			state.io = executeQuery(state.query, query_context, false, state.stage);
 
 			if (state.io.out)
-				state.is_insert = true;
+				state.need_receive_data_for_insert = true;
 
 			after_check_cancelled.restart();
 			after_send_progress.restart();
 
 			/// Запрос требует приёма данных от клиента?
-			if (state.is_insert)
+			if (state.need_receive_data_for_insert)
 				processInsertQuery(global_settings);
 			else
 				processOrdinaryQuery();
@@ -566,7 +566,7 @@ bool TCPHandler::receiveData()
 	{
 		/// Если запрос на вставку, то данные нужно писать напрямую в state.io.out.
 		/// Иначе пишем блоки во временную таблицу external_table_name.
-		if (!state.is_insert)
+		if (!state.need_receive_data_for_insert)
 		{
 			StoragePtr storage;
 			/// Если такой таблицы не существовало, создаем ее.

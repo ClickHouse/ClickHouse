@@ -32,9 +32,9 @@ public:
 	{
 	}
 
-	String getName() const { return "CollapsingSortedBlockInputStream"; }
+	String getName() const override { return "CollapsingSortedBlockInputStream"; }
 
-	String getID() const
+	String getID() const override
 	{
 		std::stringstream res;
 		res << "CollapsingSorted(inputs";
@@ -53,7 +53,7 @@ public:
 
 protected:
 	/// Может возвращаться на 1 больше записей, чем max_block_size.
-	Block readImpl();
+	Block readImpl() override;
 
 private:
 	String sign_column;
@@ -63,7 +63,7 @@ private:
 
 	Row current_key;		/// Текущий первичный ключ.
 	Row next_key;			/// Первичный ключ следующей строки.
-	
+
 	Row first_negative;		/// Первая отрицательная строка для текущего первичного ключа.
 	Row last_positive;		/// Последняя положительная строка для текущего первичного ключа.
 	Row last_negative;		/// Последняя отрицательная. Сорраняется только если ни одной строки в ответ еще не выписано.

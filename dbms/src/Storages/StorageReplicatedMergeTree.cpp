@@ -52,13 +52,27 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
 	bool skip_sanity_checks = false;
 
-	if (zookeeper && zookeeper->exists(replica_path + "/flags/force_restore_data"))
+	try
 	{
-		skip_sanity_checks = true;
-		zookeeper->remove(replica_path + "/flags/force_restore_data");
+		if (zookeeper && zookeeper->exists(replica_path + "/flags/force_restore_data"))
+		{
+			skip_sanity_checks = true;
+			zookeeper->remove(replica_path + "/flags/force_restore_data");
 
-		LOG_WARNING(log, "Skipping the limits on severity of changes to data parts and columns (flag "
-			<< replica_path << "/flags/force_restore_data).");
+			LOG_WARNING(log, "Skipping the limits on severity of changes to data parts and columns (flag "
+				<< replica_path << "/flags/force_restore_data).");
+		}
+	}
+	catch (const zkutil::KeeperException & e)
+	{
+		/// Не удалось соединиться с ZK (об этом стало известно при попытке выполнить первую операцию).
+		if (e.code == ZCONNECTIONLOSS)
+		{
+			tryLogCurrentException(__PRETTY_FUNCTION__);
+			zookeeper = nullptr;
+		}
+		else
+			throw;
 	}
 
 	data.loadDataParts(skip_sanity_checks);
@@ -592,8 +606,10 @@ void StorageReplicatedMergeTree::loadQueue()
 	std::sort(children.begin(), children.end());
 	for (const String & child : children)
 	{
-		String s = zookeeper->get(replica_path + "/queue/" + child);
+		zkutil::Stat stat;
+		String s = zookeeper->get(replica_path + "/queue/" + child, &stat);
 		LogEntryPtr entry = LogEntry::parse(s);
+		entry->create_time = stat.ctime / 1000;
 		entry->znode_name = child;
 		entry->addResultToVirtualParts(*this);
 		queue.push_back(entry);
@@ -625,12 +641,14 @@ void StorageReplicatedMergeTree::pullLogsToQueue(zkutil::EventPtr next_update_ev
 
 	size_t count = 0;
 	String entry_str;
-	while (zookeeper->tryGet(zookeeper_path + "/log/log-" + padIndex(index), entry_str))
+	zkutil::Stat stat;
+	while (zookeeper->tryGet(zookeeper_path + "/log/log-" + padIndex(index), entry_str, &stat))
 	{
 		++count;
 		++index;
 
 		LogEntryPtr entry = LogEntry::parse(entry_str);
+		entry->create_time = stat.ctime / 1000;
 
 		/// Одновременно добавим запись в очередь и продвинем указатель на лог.
 		zkutil::Ops ops;
@@ -1510,6 +1528,7 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
 
 	LogEntryPtr log_entry = new LogEntry;
 	log_entry->type = LogEntry::GET_PART;
+	log_entry->create_time = time(0);
 	log_entry->source_replica = "";
 	log_entry->new_part_name = part_name;
 
@@ -2065,7 +2084,7 @@ static String getFakePartNameForDrop(const String & month_name, UInt64 left, UIn
 {
 	/// Диапазон дат - весь месяц.
 	DateLUT & lut = DateLUT::instance();
-	time_t start_time = OrderedIdentifier2Date(month_name + "01");
+	time_t start_time = DateLUT::instance().YYYYMMDDToDate(parse<UInt32>(month_name + "01"));
 	DayNum_t left_date = lut.toDayNum(start_time);
 	DayNum_t right_date = DayNum_t(static_cast<size_t>(left_date) + lut.daysInMonth(start_time) - 1);
 
@@ -2374,7 +2393,7 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
 {
 	res.is_leader = is_leader_node;
 	res.is_readonly = is_read_only;
-	res.is_session_expired = zookeeper->expired();
+	res.is_session_expired = !zookeeper || zookeeper->expired();
 
 	{
 		std::lock_guard<std::mutex> lock(queue_mutex);
@@ -2383,6 +2402,7 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
 
 		res.inserts_in_queue = 0;
 		res.merges_in_queue = 0;
+		res.queue_oldest_time = 0;
 
 		for (const LogEntryPtr & entry : queue)
 		{
@@ -2390,6 +2410,9 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
 				++res.inserts_in_queue;
 			if (entry->type == LogEntry::MERGE_PARTS)
 				++res.merges_in_queue;
+
+			if (entry->create_time && (!res.queue_oldest_time || entry->create_time < res.queue_oldest_time))
+				res.queue_oldest_time = entry->create_time;
 		}
 	}
 

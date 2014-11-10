@@ -30,9 +30,9 @@ public:
 		children.push_back(input_);
 	}
 
-	String getName() const { return "MergingAggregatedBlockInputStream"; }
+	String getName() const override { return "MergingAggregatedBlockInputStream"; }
 
-	String getID() const
+	String getID() const override
 	{
 		std::stringstream res;
 		res << "MergingAggregated(" << children.back()->getID() << ", " << aggregator->getID() << ")";
@@ -40,7 +40,7 @@ public:
 	}
 
 protected:
-	Block readImpl();
+	Block readImpl() override;
 
 private:
 	SharedPtr<Aggregator> aggregator;

@@ -14,15 +14,15 @@ class BlockOutputStreamFromRowOutputStream : public IBlockOutputStream
 {
 public:
 	BlockOutputStreamFromRowOutputStream(RowOutputStreamPtr row_output_);
-	void write(const Block & block);
-	void writePrefix() { row_output->writePrefix(); }
-	void writeSuffix() { row_output->writeSuffix(); }
+	void write(const Block & block) override;
+	void writePrefix() override { row_output->writePrefix(); }
+	void writeSuffix() override { row_output->writeSuffix(); }
 
-	void flush() { row_output->flush(); }
-	
-	void setRowsBeforeLimit(size_t rows_before_limit);
-	void setTotals(const Block & totals);
-	void setExtremes(const Block & extremes);
+	void flush() override { row_output->flush(); }
+
+	void setRowsBeforeLimit(size_t rows_before_limit) override;
+	void setTotals(const Block & totals) override;
+	void setExtremes(const Block & extremes) override;
 
 private:
 	RowOutputStreamPtr row_output;

@@ -17,10 +17,10 @@ class BinaryRowOutputStream : public IRowOutputStream
 public:
 	BinaryRowOutputStream(WriteBuffer & ostr_, const Block & sample_);
 
-	void writeField(const Field & field);
-	void writeRowEndDelimiter();
+	void writeField(const Field & field) override;
+	void writeRowEndDelimiter() override;
 
-	void flush() { ostr.next(); }
+	void flush() override { ostr.next(); }
 
 protected:
 	WriteBuffer & ostr;

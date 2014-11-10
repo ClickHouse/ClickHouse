@@ -17,10 +17,10 @@ class LimitBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	LimitBlockInputStream(BlockInputStreamPtr input_, size_t limit_, size_t offset_ = 0);
-	
-	String getName() const { return "LimitBlockInputStream"; }
 
-	String getID() const
+	String getName() const override { return "LimitBlockInputStream"; }
+
+	String getID() const override
 	{
 		std::stringstream res;
 		res << "Limit(" << children.back()->getID() << ", " << limit << ", " << offset << ")";
@@ -28,7 +28,7 @@ public:
 	}
 
 protected:
-	Block readImpl();
+	Block readImpl() override;
 
 private:
 	size_t limit;

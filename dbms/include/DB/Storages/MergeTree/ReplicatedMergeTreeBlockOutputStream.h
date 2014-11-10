@@ -2,7 +2,6 @@
 
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Storages/MergeTree/AbandonableLockInZooKeeper.h>
-#include <Yandex/time2str.h>
 
 
 namespace DB
@@ -32,8 +31,7 @@ public:
 
 			++block_index;
 			String block_id = insert_id.empty() ? "" : insert_id + "__" + toString(block_index);
-			time_t min_date_time = DateLUT::instance().fromDayNum(DayNum_t(current_block.min_date));
-			String month_name = toString(Date2OrderedIdentifier(min_date_time) / 100);
+			String month_name = toString(DateLUT::instance().toNumYYYYMMDD(DayNum_t(current_block.min_date)) / 100);
 
 			AbandonableLockInZooKeeper block_number_lock = storage.allocateBlockNumber(month_name);
 

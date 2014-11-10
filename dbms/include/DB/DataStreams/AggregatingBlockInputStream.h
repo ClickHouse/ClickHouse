@@ -33,9 +33,9 @@ public:
 	AggregatingBlockInputStream(BlockInputStreamPtr input_, const Names & key_names, const AggregateDescriptions & aggregates,
 		bool overflow_row_, bool final_, size_t max_rows_to_group_by_, OverflowMode group_by_overflow_mode_);
 
-	String getName() const { return "AggregatingBlockInputStream"; }
+	String getName() const override { return "AggregatingBlockInputStream"; }
 
-	String getID() const
+	String getID() const override
 	{
 		std::stringstream res;
 		res << "Aggregating(" << children.back()->getID() << ", " << aggregator->getID() << ")";
@@ -43,7 +43,7 @@ public:
 	}
 
 protected:
-	Block readImpl();
+	Block readImpl() override;
 
 	SharedPtr<Aggregator> aggregator;
 	bool final;
