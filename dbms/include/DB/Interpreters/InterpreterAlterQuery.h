@@ -31,6 +31,7 @@ private:
 			DROP_PARTITION,
 			ATTACH_PARTITION,
 			FETCH_PARTITION,
+			FREEZE_PARTITION,
 		};
 
 		Type type;
@@ -57,12 +58,17 @@ private:
 		{
 			return {FETCH_PARTITION, partition, false, false, false, from};
 		}
+
+		static PartitionCommand freezePartition(const Field & partition)
+		{
+			return {FREEZE_PARTITION, partition};
+		}
 	};
 
 	typedef std::vector<PartitionCommand> PartitionCommands;
 
 	ASTPtr query_ptr;
-	
+
 	Context context;
 
 	static void parseAlter(const ASTAlterQuery::ParameterContainer & params, const DataTypeFactory & data_type_factory,

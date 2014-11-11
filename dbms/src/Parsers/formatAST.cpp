@@ -773,6 +773,11 @@ void formatAST(const ASTAlterQuery 			& ast, std::ostream & s, size_t indent, bo
 			s << (hilite ? hilite_keyword : "") << " FROM " << (hilite ? hilite_none : "")
 				<< mysqlxx::quote << p.from;
 		}
+		else if (p.type == ASTAlterQuery::FREEZE_PARTITION)
+		{
+			s << (hilite ? hilite_keyword : "") << indent_str << "FREEZE PARTITION " << (hilite ? hilite_none : "");
+			formatAST(*p.partition, s, indent, hilite, true);
+		}
 		else
 			throw Exception("Unexpected type of ALTER", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 

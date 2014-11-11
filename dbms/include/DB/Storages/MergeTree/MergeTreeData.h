@@ -741,6 +741,11 @@ public:
 	/// Проверить, что кусок не сломан и посчитать для него чексуммы, если их нет.
 	MutableDataPartPtr loadPartAndFixMetadata(const String & relative_path);
 
+	/** Сделать локальный бэкап (снэпшот) для кусков, начинающихся с указанного префикса.
+	  * Бэкап создаётся в директории clickhouse_dir/shadow/i/, где i - инкрементное число.
+	  */
+	void freezePartition(const std::string & prefix);
+
 	size_t getColumnSize(const std::string & name) const
 	{
 		Poco::ScopedLock<Poco::FastMutex> lock{data_parts_mutex};

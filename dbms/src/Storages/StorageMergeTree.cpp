@@ -306,4 +306,13 @@ void StorageMergeTree::attachPartition(const Field & field, bool unreplicated, b
 	context.resetCaches();
 }
 
+
+void StorageMergeTree::freezePartition(const Field & partition, const Settings & settings)
+{
+	/// Префикс может быть произвольным. Не обязательно месяц - можно указать лишь год.
+	data.freezePartition(partition.getType() == Field::Types::UInt64
+		? toString(partition.get<UInt64>())
+		: partition.safeGet<String>());
+}
+
 }

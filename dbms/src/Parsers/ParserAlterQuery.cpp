@@ -27,6 +27,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & e
 	ParserString s_detach("DETACH", true, true);
 	ParserString s_attach("ATTACH", true, true);
 	ParserString s_fetch("FETCH", true, true);
+	ParserString s_freeze("FREEZE", true, true);
 	ParserString s_unreplicated("UNREPLICATED", true, true);
 	ParserString s_part("PART", true, true);
 	ParserString s_partition("PARTITION", true, true);
@@ -190,6 +191,22 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & e
 
 			params.from = typeid_cast<const ASTLiteral &>(*ast_from).value.get<const String &>();
 			params.type = ASTAlterQuery::FETCH_PARTITION;
+		}
+		else if (s_freeze.ignore(pos, end, expected))
+		{
+			ws.ignore(pos, end);
+
+			if (!s_partition.ignore(pos, end, expected))
+				return false;
+
+			ws.ignore(pos, end);
+
+			if (!parser_literal.parse(pos, end, params.partition, expected))
+				return false;
+
+			ws.ignore(pos, end);
+
+			params.type = ASTAlterQuery::FREEZE_PARTITION;
 		}
 		else if (s_modify.ignore(pos, end, expected))
 		{
