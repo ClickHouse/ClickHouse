@@ -99,9 +99,14 @@ namespace DB
 			const auto had_default_expr = it != column_defaults.end();
 			const auto old_default_type = had_default_expr ? it->second.type : ColumnDefaultType{};
 
-			if (old_default_type != default_type)
+			/// allow conversion between DEFAULT and MATERIALIZED
+			const auto default_materialized_conversion =
+				(old_default_type == ColumnDefaultType::Default && default_type == ColumnDefaultType::Materialized) ||
+				(old_default_type == ColumnDefaultType::Materialized && default_type == ColumnDefaultType::Default);
+
+			if (old_default_type != default_type && !default_materialized_conversion)
 				throw Exception{"Cannot change column default specifier from " + toString(old_default_type) +
-					" to " + toString(default_type), 0 };
+					" to " + toString(default_type), ErrorCodes::INCORRECT_QUERY};
 
 			/// find column or throw exception
 			const auto find_column = [this] (NamesAndTypesList & columns) {
@@ -113,6 +118,22 @@ namespace DB
 
 				return it;
 			};
+
+			/// remove from the old list, add to the new list in case of DEFAULT <-> MATERIALIZED alteration
+			if (default_materialized_conversion)
+			{
+				const auto was_default = old_default_type == ColumnDefaultType::Default;
+				auto & old_columns = was_default ? columns : materialized_columns;
+				auto & new_columns = was_default ? materialized_columns : columns;
+
+				const auto column_it = find_column(old_columns);
+				new_columns.emplace_back(*column_it);
+				old_columns.erase(column_it);
+
+				/// do not forget to change the default type of old column
+				if (had_default_expr)
+					column_defaults[column_name].type = default_type;
+			}
 
 			/// find column in one of three column lists
 			const auto column_it = find_column(
