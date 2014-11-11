@@ -126,6 +126,9 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 			alias_columns = removeAndReturnColumns(columns_and_defaults, ColumnDefaultType::Alias);
 			columns = new NamesAndTypesList{std::move(columns_and_defaults.first)};
 			column_defaults = std::move(columns_and_defaults.second);
+
+			if (columns->size() + materialized_columns.size() == 0)
+				throw Exception{"Cannot CREATE table without physical columns", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED};
 		}
 		else if (!create.as_table.empty())
 		{
