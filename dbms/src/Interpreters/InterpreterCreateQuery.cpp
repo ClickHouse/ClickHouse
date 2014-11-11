@@ -22,6 +22,7 @@
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/InterpreterCreateQuery.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
+#include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeNested.h>
 
 
@@ -253,7 +254,7 @@ InterpreterCreateQuery::ColumnsAndDefaults InterpreterCreateQuery::parseColumns(
 	auto & column_list_ast = typeid_cast<ASTExpressionList &>(*expression_list);
 
 	/// list of table columns in correct order
-	NamesAndTypesList columns{}, known_type_columns{};
+	NamesAndTypesList columns{};
 	ColumnDefaults defaults{};
 
 	/// Columns requiring type-deduction or default_expression type-check
@@ -273,10 +274,10 @@ InterpreterCreateQuery::ColumnsAndDefaults InterpreterCreateQuery::parseColumns(
 			const auto & type_range = col_decl.type->range;
 			columns.emplace_back(col_decl.name,
 				context.getDataTypeFactory().get({ type_range.first, type_range.second }));
-			known_type_columns.emplace_back(columns.back());
 		}
 		else
-			columns.emplace_back(col_decl.name, nullptr);
+			/// we're creating dummy DataTypeUInt8 in order to prevent the NullPointerException in ExpressionActions
+			columns.emplace_back(col_decl.name, new DataTypeUInt8);
 
 		/// add column to postprocessing if there is a default_expression specified
 		if (col_decl.default_expression)
@@ -308,7 +309,7 @@ InterpreterCreateQuery::ColumnsAndDefaults InterpreterCreateQuery::parseColumns(
 	/// set missing types and wrap default_expression's in a conversion-function if necessary
 	if (!defaulted_columns.empty())
 	{
-		const auto actions = ExpressionAnalyzer{default_expr_list, context, known_type_columns}.getActions(true);
+		const auto actions = ExpressionAnalyzer{default_expr_list, context, columns}.getActions(true);
 		const auto block = actions->getSampleBlock();
 
 		for (auto & column : defaulted_columns)
@@ -316,7 +317,7 @@ InterpreterCreateQuery::ColumnsAndDefaults InterpreterCreateQuery::parseColumns(
 			const auto name_and_type_ptr = column.first;
 			const auto col_decl_ptr = column.second;
 
-			if (name_and_type_ptr->type)
+			if (col_decl_ptr->type)
 			{
 				const auto & tmp_column = block.getByName(col_decl_ptr->name + "_tmp");
 

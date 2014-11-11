@@ -1,5 +1,6 @@
 #include <DB/Storages/AlterCommands.h>
 #include <DB/Storages/IStorage.h>
+#include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeNested.h>
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/Interpreters/Context.h>
@@ -184,8 +185,8 @@ namespace DB
 					defaults.erase(command.column_name);
 				}
 
-				if (command.data_type)
-					columns.emplace_back(command.column_name, command.data_type);
+				/// we're creating dummy DataTypeUInt8 in order to prevent the NullPointerException in ExpressionActions
+				columns.emplace_back(command.column_name, command.data_type ? command.data_type : new DataTypeUInt8);
 
 				if (command.default_expression)
 				{

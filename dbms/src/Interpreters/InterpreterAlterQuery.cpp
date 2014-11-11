@@ -1,6 +1,5 @@
 #include <DB/Interpreters/InterpreterAlterQuery.h>
 #include <DB/Interpreters/InterpreterCreateQuery.h>
-#include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Parsers/ASTAlterQuery.h>
 #include <DB/Parsers/ASTCreateQuery.h>
 #include <DB/Parsers/ASTExpressionList.h>
