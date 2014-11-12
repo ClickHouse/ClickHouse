@@ -21,6 +21,9 @@ public:
 		const std::string & this_database_,/// Имя БД для этой таблицы.
 		const std::string & name_,			/// Имя таблицы.
 		NamesAndTypesListPtr columns_,		/// Список столбцов.
+		const NamesAndTypesList & materialized_columns_,
+		const NamesAndTypesList & alias_columns_,
+		const ColumnDefaults & column_defaults_,
 		const String & source_database_,	/// В какой БД искать таблицы-источники.
 		const String & table_name_regexp_,	/// Регексп имён таблиц-источников.
 		const std::string & destination_name_prefix_, /// Префикс имен создаваемых таблиц типа Chunks.
@@ -30,7 +33,7 @@ public:
 	std::string getName() const override { return "ChunkMerger"; }
 	std::string getTableName() const override { return name; }
 
-	const NamesAndTypesList & getColumnsList() const override { return *columns; }
+	const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
 	NameAndTypePair getColumn(const String & column_name) const override;
 	bool hasColumn(const String & column_name) const override;
 
@@ -70,6 +73,9 @@ private:
 		const std::string & this_database_,
 		const std::string & name_,
 		NamesAndTypesListPtr columns_,
+		const NamesAndTypesList & materialized_columns_,
+		const NamesAndTypesList & alias_columns_,
+		const ColumnDefaults & column_defaults_,
 		const String & source_database_,
 		const String & table_name_regexp_,
 		const std::string & destination_name_prefix_,

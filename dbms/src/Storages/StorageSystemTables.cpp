@@ -30,7 +30,7 @@ BlockInputStreams StorageSystemTables::read(
 	processed_stage = QueryProcessingStage::FetchColumns;
 
 	Block block;
-	
+
 	ColumnWithNameAndType col_db;
 	col_db.name = "database";
 	col_db.type = new DataTypeString;
@@ -50,7 +50,7 @@ BlockInputStreams StorageSystemTables::read(
 	block.insert(col_engine);
 
 	Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
-	
+
 	for (Databases::const_iterator it = context.getDatabases().begin(); it != context.getDatabases().end(); ++it)
 	{
 		for (Tables::const_iterator jt = it->second.begin(); jt != it->second.end(); ++jt)
@@ -60,7 +60,7 @@ BlockInputStreams StorageSystemTables::read(
 			col_engine.column->insert(jt->second->getName());
 		}
 	}
-	
+
 	return BlockInputStreams(1, new OneBlockInputStream(block));
 }
 

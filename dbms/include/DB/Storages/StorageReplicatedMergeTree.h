@@ -31,6 +31,9 @@ public:
 		bool attach,
 		const String & path_, const String & database_name_, const String & name_,
 		NamesAndTypesListPtr columns_,
+		const NamesAndTypesList & materialized_columns_,
+		const NamesAndTypesList & alias_columns_,
+		const ColumnDefaults & column_defaults_,
 		Context & context_,
 		ASTPtr & primary_expr_ast_,
 		const String & date_column_name_,
@@ -53,7 +56,7 @@ public:
 	bool supportsFinal() const override { return data.supportsFinal(); }
 	bool supportsPrewhere() const override { return data.supportsPrewhere(); }
 
-	const NamesAndTypesList & getColumnsList() const override { return data.getColumnsList(); }
+	const NamesAndTypesList & getColumnsListImpl() const override { return data.getColumnsListNonMaterialized(); }
 
 	NameAndTypePair getColumn(const String & column_name) const override
 	{
@@ -247,6 +250,9 @@ private:
 		bool attach,
 		const String & path_, const String & database_name_, const String & name_,
 		NamesAndTypesListPtr columns_,
+		const NamesAndTypesList & materialized_columns_,
+		const NamesAndTypesList & alias_columns_,
+		const ColumnDefaults & column_defaults_,
 		Context & context_,
 		ASTPtr & primary_expr_ast_,
 		const String & date_column_name_,

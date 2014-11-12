@@ -2,6 +2,7 @@
 
 #include <DB/Storages/IStorage.h>
 #include <DB/Interpreters/Context.h>
+#include <DB/Storages/ColumnDefault.h>
 
 
 namespace DB
@@ -14,7 +15,7 @@ class InterpreterCreateQuery
 {
 public:
 	InterpreterCreateQuery(ASTPtr query_ptr_, Context & context_);
-	
+
 	/** В случае таблицы: добавляет созданную таблицу в контекст, а также возвращает её.
 	  * В случае БД: добавляет созданную БД в контекст и возвращает NULL.
 	  * assume_metadata_exists - не проверять наличие файла с метаданными и не создавать его
@@ -22,12 +23,22 @@ public:
 	  */
 	StoragePtr execute(bool assume_metadata_exists = false);
 
-	/** AST в список столбцов с типами и обратно. Столбцы типа Nested развернуты в список настоящих столбцов.
-	  */
-	static NamesAndTypesList parseColumns(ASTPtr expression_list, const DataTypeFactory & data_type_factory);
+	/// Список столбцов с типами в AST.
 	static ASTPtr formatColumns(const NamesAndTypesList & columns);
-	
+	static ASTPtr formatColumns(
+		NamesAndTypesList columns,
+		const NamesAndTypesList & materialized_columns,
+		const NamesAndTypesList & alias_columns,
+		const ColumnDefaults & column_defaults);
+
 private:
+	/// AST в список столбцов с типами. Столбцы типа Nested развернуты в список настоящих столбцов.
+	using ColumnsAndDefaults = std::pair<NamesAndTypesList, ColumnDefaults>;
+	ColumnsAndDefaults parseColumns(ASTPtr expression_list);
+
+	/// removes columns from the columns list and return them in a separate list
+	static NamesAndTypesList removeAndReturnColumns(ColumnsAndDefaults & columns_and_defaults, ColumnDefaultType type);
+
 	ASTPtr query_ptr;
 	Context context;
 };

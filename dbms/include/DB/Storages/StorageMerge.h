@@ -25,6 +25,16 @@ public:
 		const String & table_name_regexp_,	/// Регексп имён таблиц-источников.
 		const Context & context_);			/// Известные таблицы.
 
+	static StoragePtr create(
+		const std::string & name_,			/// Имя таблицы.
+		NamesAndTypesListPtr columns_,		/// Список столбцов.
+		const NamesAndTypesList & materialized_columns_,
+		const NamesAndTypesList & alias_columns_,
+		const ColumnDefaults & column_defaults_,
+		const String & source_database_,	/// В какой БД искать таблицы-источники.
+		const String & table_name_regexp_,	/// Регексп имён таблиц-источников.
+		const Context & context_);			/// Известные таблицы.
+
 	std::string getName() const override { return "Merge"; }
 	std::string getTableName() const override { return name; }
 	bool supportsSampling() const override { return true; }
@@ -32,9 +42,9 @@ public:
 	/// Проверка откладывается до метода read. Там проверяется поддержка PREWHERE у использующихся таблиц.
 	bool supportsPrewhere() const override { return true; }
 
-	const NamesAndTypesList & getColumnsList() const override { return *columns; }
-	NameAndTypePair getColumn(const String & column_name) const override;
-	bool hasColumn(const String & column_name) const override;
+	const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
+	NameAndTypePair getColumn(const String &column_name) const override;
+	bool hasColumn(const String &column_name) const override;
 
 	BlockInputStreams read(
 		const Names & column_names,
@@ -61,6 +71,16 @@ private:
 	StorageMerge(
 		const std::string & name_,
 		NamesAndTypesListPtr columns_,
+		const String & source_database_,
+		const String & table_name_regexp_,
+		const Context & context_);
+
+	StorageMerge(
+		const std::string & name_,
+		NamesAndTypesListPtr columns_,
+		const NamesAndTypesList & materialized_columns_,
+		const NamesAndTypesList & alias_columns_,
+		const ColumnDefaults & column_defaults_,
 		const String & source_database_,
 		const String & table_name_regexp_,
 		const Context & context_);

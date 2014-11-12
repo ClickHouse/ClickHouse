@@ -10,16 +10,23 @@
 
 namespace DB
 {
-	
+
 StoragePtr StorageChunks::create(
 	const std::string & path_,
 	const std::string & name_,
 	const std::string & database_name_,
 	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & materialized_columns_,
+	const NamesAndTypesList & alias_columns_,
+	const ColumnDefaults & column_defaults_,
 	Context & context_,
 	bool attach)
 {
-	return (new StorageChunks(path_, name_, database_name_, columns_, context_, attach))->thisPtr();
+	return (new StorageChunks{
+		path_, name_, database_name_, columns_,
+		materialized_columns_, alias_columns_, column_defaults_,
+		context_, attach
+	})->thisPtr();
 }
 
 void StorageChunks::addReference()
@@ -92,10 +99,10 @@ BlockInputStreams StorageChunks::readFromChunk(
 {
 	size_t mark1;
 	size_t mark2;
-	
+
 	{
 		Poco::ScopedReadRWLock lock(rwlock);
-		
+
 		if (!chunk_indices.count(chunk_name))
 			throw Exception("No chunk " + chunk_name + " in table " + name, ErrorCodes::CHUNK_NOT_FOUND);
 		size_t index = chunk_indices[chunk_name];
@@ -105,7 +112,7 @@ BlockInputStreams StorageChunks::readFromChunk(
 
 	return read(mark1, mark2, column_names, query, settings, processed_stage, max_block_size, threads);
 }
-	
+
 BlockOutputStreamPtr StorageChunks::writeToNewChunk(
 	const std::string & chunk_name)
 {
@@ -121,19 +128,24 @@ BlockOutputStreamPtr StorageChunks::writeToNewChunk(
 		chunk_num_to_marks.push_back(mark);
 		chunk_names.push_back(chunk_name);
 	}
-	
+
 	return StorageLog::write(nullptr);
 }
-	
+
 StorageChunks::StorageChunks(
 	const std::string & path_,
 	const std::string & name_,
 	const std::string & database_name_,
 	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & materialized_columns_,
+	const NamesAndTypesList & alias_columns_,
+	const ColumnDefaults & column_defaults_,
 	Context & context_,
 	bool attach)
 	:
-	StorageLog(path_, name_, columns_, context_.getSettings().max_compress_block_size),
+	StorageLog(path_, name_, columns_,
+			   materialized_columns_, alias_columns_, column_defaults_,
+			   context_.getSettings().max_compress_block_size),
 	database_name(database_name_),
 	reference_counter(path_ + escapeForFileName(name_) + "/refcount.txt"),
 	context(context_),
@@ -173,7 +185,7 @@ bool StorageChunks::hasColumn(const String & column_name) const
 {
 	if (column_name == _table_column_name)
 		return true;
-	return hasRealColumn(column_name);
+	return IStorage::hasColumn(column_name);
 }
 
 std::pair<String, size_t> StorageChunks::getTableFromMark(size_t mark) const
@@ -186,15 +198,15 @@ std::pair<String, size_t> StorageChunks::getTableFromMark(size_t mark) const
 		last = chunk_num_to_marks[pos + 1] - 1;
 	return std::make_pair(chunk_names[pos], last);
 }
-	
+
 void StorageChunks::loadIndex()
 {
 	loadMarks();
 
 	Poco::ScopedWriteRWLock lock(rwlock);
-	
+
 	String index_path = path + escapeForFileName(name) + "/chunks.chn";
-	
+
 	if (!Poco::File(index_path).exists())
 		return;
 
@@ -203,10 +215,10 @@ void StorageChunks::loadIndex()
 	{
 		String name;
 		size_t mark;
-		
+
 		readStringBinary(name, index);
 		readIntBinary<UInt64>(mark, index);
-		
+
 		chunk_indices[name] = chunk_num_to_marks.size();
 		chunk_num_to_marks.push_back(mark);
 		chunk_names.push_back(name);
@@ -226,14 +238,14 @@ void StorageChunks::appendChunkToIndex(const std::string & chunk_name, size_t ma
 void StorageChunks::dropThis()
 {
 	LOG_TRACE(log, "Table " << name << " will drop itself.");
-	
+
 	ASTDropQuery * query = new ASTDropQuery();
 	ASTPtr query_ptr = query;
 	query->detach = false;
 	query->if_exists = false;
 	query->database = database_name;
 	query->table = name;
-	
+
 	InterpreterDropQuery interpreter(query_ptr, context);
 	interpreter.execute();
 }

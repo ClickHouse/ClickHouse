@@ -3,8 +3,10 @@
 #include <Poco/SharedPtr.h>
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
+#include <DB/Interpreters/evaluateMissingDefaults.h>
 #include <DB/Columns/ColumnConst.h>
 
+#include <DB/Storages/ColumnDefault.h>
 
 
 namespace DB
@@ -19,10 +21,18 @@ class AddingDefaultBlockInputStream : public IProfilingBlockInputStream
 public:
 	AddingDefaultBlockInputStream(
 		BlockInputStreamPtr input_,
-		NamesAndTypesListPtr required_columns_)
-		: required_columns(required_columns_)
+		NamesAndTypesListPtr required_columns_,
+		const ColumnDefaults & column_defaults_,
+		const Context & context_)
+		: required_columns(required_columns_),
+		  column_defaults(column_defaults_), context(context_)
 	{
 		children.push_back(input_);
+	}
+
+	AddingDefaultBlockInputStream(BlockInputStreamPtr input_, NamesAndTypesListPtr required_columns_, const Context & context_)
+		: AddingDefaultBlockInputStream{input_, required_columns, {}, context}
+	{
 	}
 
 	String getName() const override { return "AddingDefaultBlockInputStream"; }
@@ -45,12 +55,15 @@ protected:
 		Block res = children.back()->read();
 		if (!res)
 			return res;
-		res.addDefaults(required_columns);
+		evaluateMissingDefaults(res, *required_columns, column_defaults, context);
+		res.addDefaults(*required_columns);
 		return res;
 	}
 
 private:
 	NamesAndTypesListPtr required_columns;
+	const ColumnDefaults & column_defaults;
+	Context context;
 };
 
 }

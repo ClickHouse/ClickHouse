@@ -7,20 +7,30 @@
 namespace DB
 {
 
-StorageMergeTree::StorageMergeTree(const String & path_, const String & database_name_, const String & table_name_,
-				NamesAndTypesListPtr columns_,
-				Context & context_,
-				ASTPtr & primary_expr_ast_,
-				const String & date_column_name_,
-				const ASTPtr & sampling_expression_, /// nullptr, если семплирование не поддерживается.
-				size_t index_granularity_,
-				MergeTreeData::Mode mode_,
-				const String & sign_column_,
-				const MergeTreeSettings & settings_)
-	: path(path_), database_name(database_name_), table_name(table_name_), full_path(path + escapeForFileName(table_name) + '/'),
+StorageMergeTree::StorageMergeTree(
+	const String & path_,
+	const String & database_name_,
+	const String & table_name_,
+	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & materialized_columns_,
+	const NamesAndTypesList & alias_columns_,
+	const ColumnDefaults & column_defaults_,
+	Context & context_,
+	ASTPtr & primary_expr_ast_,
+	const String & date_column_name_,
+	const ASTPtr & sampling_expression_, /// nullptr, если семплирование не поддерживается.
+	size_t index_granularity_,
+	MergeTreeData::Mode mode_,
+	const String & sign_column_,
+	const MergeTreeSettings & settings_)
+    : IStorage{materialized_columns_, alias_columns_, column_defaults_},
+	path(path_), database_name(database_name_), table_name(table_name_), full_path(path + escapeForFileName(table_name) + '/'),
 	increment(full_path + "increment.txt"), context(context_), background_pool(context_.getBackgroundPool()),
-	data(full_path, columns_, context_, primary_expr_ast_, date_column_name_, sampling_expression_,
-	index_granularity_,mode_, sign_column_, settings_, database_name_ + "." + table_name, false),
+	data(full_path, columns_,
+		 materialized_columns_, alias_columns_, column_defaults_,
+		 context_, primary_expr_ast_, date_column_name_,
+		 sampling_expression_, index_granularity_,mode_, sign_column_,
+		 settings_, database_name_ + "." + table_name, false),
 	reader(data), writer(data), merger(data),
 	log(&Logger::get(database_name_ + "." + table_name + " (StorageMergeTree)")),
 	shutdown_called(false)
@@ -29,6 +39,34 @@ StorageMergeTree::StorageMergeTree(const String & path_, const String & database
 
 	data.loadDataParts(false);
 	data.clearOldParts();
+}
+
+StoragePtr StorageMergeTree::create(
+	const String & path_, const String & database_name_, const String & table_name_,
+	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & materialized_columns_,
+	const NamesAndTypesList & alias_columns_,
+	const ColumnDefaults & column_defaults_,
+	Context & context_,
+	ASTPtr & primary_expr_ast_,
+	const String & date_column_name_,
+	const ASTPtr & sampling_expression_,
+	size_t index_granularity_,
+	MergeTreeData::Mode mode_,
+	const String & sign_column_,
+	const MergeTreeSettings & settings_)
+{
+	auto res = new StorageMergeTree{
+		path_, database_name_, table_name_,
+		columns_, materialized_columns_, alias_columns_, column_defaults_,
+		context_, primary_expr_ast_, date_column_name_,
+		sampling_expression_, index_granularity_, mode_, sign_column_, settings_
+	};
+	StoragePtr res_ptr = res->thisPtr();
+
+	res->merge_task_handle = res->background_pool.addTask(std::bind(&StorageMergeTree::mergeTask, res, std::placeholders::_1));
+
+	return res_ptr;
 }
 
 StoragePtr StorageMergeTree::create(
@@ -43,14 +81,10 @@ StoragePtr StorageMergeTree::create(
 	const String & sign_column_,
 	const MergeTreeSettings & settings_)
 {
-	StorageMergeTree * res = new StorageMergeTree(
-		path_, database_name_, table_name_, columns_, context_, primary_expr_ast_, date_column_name_,
+	return create(path_, database_name_, table_name_,
+		columns_, {}, {}, {},
+		context_, primary_expr_ast_, date_column_name_,
 		sampling_expression_, index_granularity_, mode_, sign_column_, settings_);
-	StoragePtr res_ptr = res->thisPtr();
-
-	res->merge_task_handle = res->background_pool.addTask(std::bind(&StorageMergeTree::mergeTask, res, std::placeholders::_1));
-
-	return res_ptr;
 }
 
 void StorageMergeTree::shutdown()
@@ -113,22 +147,38 @@ void StorageMergeTree::alter(const AlterCommands & params, const String & databa
 
 	data.checkAlter(params);
 
-	NamesAndTypesList new_columns = data.getColumnsList();
-	params.apply(new_columns);
+	auto new_columns = data.getColumnsListNonMaterialized();
+	auto new_materialized_columns = data.materialized_columns;
+	auto new_alias_columns = data.alias_columns;
+	auto new_column_defaults = data.column_defaults;
+
+	params.apply(new_columns, new_materialized_columns, new_alias_columns, new_column_defaults);
+
+	auto columns_for_parts = new_columns;
+	columns_for_parts.insert(std::end(columns_for_parts),
+		std::begin(new_materialized_columns), std::end(new_materialized_columns));
 
 	MergeTreeData::DataParts parts = data.getDataParts();
 	std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions;
 	for (const MergeTreeData::DataPartPtr & part : parts)
 	{
-		auto transaction = data.alterDataPart(part, new_columns);
-		if (transaction)
+		if (auto transaction = data.alterDataPart(part, columns_for_parts))
 			transactions.push_back(std::move(transaction));
 	}
 
 	auto table_hard_lock = lockStructureForAlter();
 
-	InterpreterAlterQuery::updateMetadata(database_name, table_name, new_columns, context);
+	InterpreterAlterQuery::updateMetadata(database_name, table_name, new_columns,
+		new_materialized_columns, new_alias_columns, new_column_defaults, context);
+
+	materialized_columns = new_materialized_columns;
+	alias_columns = new_alias_columns;
+	column_defaults = new_column_defaults;
+
 	data.setColumnsList(new_columns);
+	data.materialized_columns = std::move(new_materialized_columns);
+	data.alias_columns = std::move(new_alias_columns);
+	data.column_defaults = std::move(new_column_defaults);
 
 	for (auto & transaction : transactions)
 	{

@@ -39,6 +39,12 @@ String backQuoteIfNeed(const String & x)
 }
 
 
+String hightlight(const String & keyword, const String & color_sequence, const bool hilite)
+{
+	return hilite ? color_sequence + keyword + hilite_none : keyword;
+}
+
+
 void formatAST(const IAST & ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
 {
 
@@ -64,6 +70,7 @@ void formatAST(const IAST & ast, std::ostream & s, size_t indent, bool hilite, b
 	DISPATCH(Identifier)
 	DISPATCH(Literal)
 	DISPATCH(NameTypePair)
+	DISPATCH(ColumnDeclaration)
 	DISPATCH(Asterisk)
 	DISPATCH(OrderByElement)
 	DISPATCH(Subquery)
@@ -691,6 +698,25 @@ void formatAST(const ASTNameTypePair		& ast, std::ostream & s, size_t indent, bo
 	formatAST(*ast.type, s, indent, hilite, one_line);
 }
 
+void formatAST(const ASTColumnDeclaration	& ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
+{
+	std::string indent_str = one_line ? "" : std::string(4 * indent, ' ');
+	std::string nl_or_ws = one_line ? " " : "\n";
+
+	s << nl_or_ws << indent_str << backQuoteIfNeed(ast.name);
+	if (ast.type)
+	{
+		s << ' ';
+		formatAST(*ast.type, s, indent, hilite, one_line);
+	}
+
+	if (ast.default_expression)
+	{
+		s << ' ' << hightlight(ast.default_specifier, hilite_keyword, hilite) << ' ';
+		formatAST(*ast.default_expression, s, indent, hilite, one_line);
+	}
+}
+
 void formatAST(const ASTAsterisk			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
 {
 	s << "*";
@@ -734,7 +760,7 @@ void formatAST(const ASTAlterQuery 			& ast, std::ostream & s, size_t indent, bo
 		if (p.type == ASTAlterQuery::ADD_COLUMN)
 		{
 			s << (hilite ? hilite_keyword : "") << indent_str << "ADD COLUMN " << (hilite ? hilite_none : "");
-			formatAST(*p.name_type, s, indent, hilite, true);
+			formatAST(*p.col_decl, s, indent, hilite, true);
 
 			/// AFTER
 			if (p.column)
@@ -751,7 +777,7 @@ void formatAST(const ASTAlterQuery 			& ast, std::ostream & s, size_t indent, bo
 		else if (p.type == ASTAlterQuery::MODIFY_COLUMN)
 		{
 			s << (hilite ? hilite_keyword : "") << indent_str << "MODIFY COLUMN " << (hilite ? hilite_none : "");
-			formatAST(*p.name_type, s, indent, hilite, true);
+			formatAST(*p.col_decl, s, indent, hilite, true);
 		}
 		else if (p.type == ASTAlterQuery::DROP_PARTITION)
 		{
@@ -863,4 +889,3 @@ String formatColumnsForCreateQuery(NamesAndTypesList & columns)
 }
 
 }
-

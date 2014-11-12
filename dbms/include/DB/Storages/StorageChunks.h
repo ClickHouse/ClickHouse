@@ -7,7 +7,7 @@
 
 namespace DB
 {
-	
+
 /** Хранит несколько кусков данных. Читает из всех кусков.
   * Запись не поддерживается. Для записи используются таблицы типа ChunkMerger.
   * Таблицы типа ChunkRef могут ссылаться на отдельные куски внутри таблицы типа Chunks.
@@ -20,17 +20,20 @@ class StorageChunks : public StorageLog
 using StorageLog::read;
 public:
 	static StoragePtr create(const std::string & path_,
-							const std::string & name_,
-							const std::string & database_name_,
-							NamesAndTypesListPtr columns_,
-							Context & context_,
-							bool attach);
-	
+							 const std::string & name_,
+							 const std::string & database_name_,
+							 NamesAndTypesListPtr columns_,
+							 const NamesAndTypesList & materialized_columns_,
+							 const NamesAndTypesList & alias_columns_,
+							 const ColumnDefaults & column_defaults_,
+							 Context & context_,
+							 bool attach);
+
 	void addReference();
 	void removeReference();
-	
+
 	std::string getName() const override { return "Chunks"; }
-	
+
 	BlockInputStreams read(
 		const Names & column_names,
 		ASTPtr query,
@@ -53,13 +56,13 @@ public:
 
 	BlockOutputStreamPtr writeToNewChunk(
 		const std::string & chunk_name);
-	
+
 	/// Если бы запись была разрешена, непонятно, как назвать новый чанк.
 	BlockOutputStreamPtr write(ASTPtr query) override
 	{
 		throw Exception("Table doesn't support writing", ErrorCodes::NOT_IMPLEMENTED);
 	}
-	
+
 	/// Переименование испортило бы целостность количества ссылок из таблиц ChunkRef.
 	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override
 	{
@@ -79,29 +82,32 @@ private:
 	typedef std::vector<String> ChunkNumToChunkName;
 
 	String database_name;
-	
+
 	ChunkNumToMark chunk_num_to_marks;
 	ChunkIndices chunk_indices;
 	ChunkNumToChunkName chunk_names;
-	
+
 	CounterInFile reference_counter;
 	Context & context;
-	
+
 	Logger * log;
-	
+
 	StorageChunks(const std::string & path_,
-				const std::string & name_,
-				const std::string & database_name_,
-				NamesAndTypesListPtr columns_,
-				Context & context_,
-				bool attach);
-	
+				  const std::string & name_,
+				  const std::string & database_name_,
+				  NamesAndTypesListPtr columns_,
+				  const NamesAndTypesList & materialized_columns_,
+				  const NamesAndTypesList & alias_columns_,
+				  const ColumnDefaults & column_defaults_,
+				  Context & context_,
+				  bool attach);
+
 	void dropThis();
-	
+
 	void loadIndex();
 	void appendChunkToIndex(const std::string & chunk_name, size_t mark);
 
 	Block getBlockWithVirtualColumns() const;
 };
-	
+
 }

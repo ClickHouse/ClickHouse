@@ -30,26 +30,33 @@ StoragePtr StorageChunkMerger::create(
 	const std::string & this_database_,
 	const std::string & name_,
 	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & materialized_columns_,
+	const NamesAndTypesList & alias_columns_,
+	const ColumnDefaults & column_defaults_,
 	const String & source_database_,
 	const String & table_name_regexp_,
 	const std::string & destination_name_prefix_,
 	size_t chunks_to_merge_,
 	Context & context_)
 {
-	return (new StorageChunkMerger(this_database_, name_, columns_, source_database_, table_name_regexp_, destination_name_prefix_, chunks_to_merge_, context_))->thisPtr();
+	return (new StorageChunkMerger{
+		this_database_, name_, columns_, materialized_columns_, alias_columns_, column_defaults_,
+		source_database_, table_name_regexp_, destination_name_prefix_,
+		chunks_to_merge_, context_
+	})->thisPtr();
 }
 
 NameAndTypePair StorageChunkMerger::getColumn(const String & column_name) const
 {
 	if (column_name == _table_column_name)
 		return NameAndTypePair(_table_column_name, new DataTypeString);
-	return getRealColumn(column_name);
+	return IStorage::getColumn(column_name);
 }
 
 bool StorageChunkMerger::hasColumn(const String & column_name) const
 {
 	if (column_name == _table_column_name) return true;
-	return hasRealColumn(column_name);
+	return IStorage::hasColumn(column_name);
 }
 
 BlockInputStreams StorageChunkMerger::read(
@@ -222,12 +229,16 @@ StorageChunkMerger::StorageChunkMerger(
 	const std::string & this_database_,
 	const std::string & name_,
 	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & materialized_columns_,
+	const NamesAndTypesList & alias_columns_,
+	const ColumnDefaults & column_defaults_,
 	const String & source_database_,
 	const String & table_name_regexp_,
 	const std::string & destination_name_prefix_,
 	size_t chunks_to_merge_,
 	Context & context_)
-	: this_database(this_database_), name(name_), columns(columns_), source_database(source_database_),
+	: IStorage{materialized_columns_, alias_columns_, column_defaults_},
+	this_database(this_database_), name(name_), columns(columns_), source_database(source_database_),
 	table_name_regexp(table_name_regexp_), destination_name_prefix(destination_name_prefix_), chunks_to_merge(chunks_to_merge_),
 	context(context_), settings(context.getSettings()),
 	log(&Logger::get("StorageChunkMerger")), shutdown_called(false)
@@ -359,7 +370,7 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 
 	/// Объединим множества столбцов сливаемых чанков.
 	ColumnsMap known_columns_types;
-	for (const NameAndTypePair & column : *columns)
+	for (const NameAndTypePair & column : getColumnsList())
 		known_columns_types.insert(std::make_pair(column.name, column.type));
 
 	NamesAndTypesListPtr required_columns = new NamesAndTypesList;
@@ -458,7 +469,10 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 				processed_stage,
 				DEFAULT_MERGE_BLOCK_SIZE);
 
-			BlockInputStreamPtr input = new AddingDefaultBlockInputStream(new ConcatBlockInputStream(input_streams), required_columns);
+			BlockInputStreamPtr input{new AddingDefaultBlockInputStream{
+				new ConcatBlockInputStream{input_streams},
+				required_columns, src_storage->column_defaults, context
+			}};
 
 			input->readPrefix();
 			output->writePrefix();

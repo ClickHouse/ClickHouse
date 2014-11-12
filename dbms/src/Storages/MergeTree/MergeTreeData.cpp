@@ -23,6 +23,9 @@ namespace DB
 
 MergeTreeData::MergeTreeData(
 	const String & full_path_, NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & materialized_columns_,
+	const NamesAndTypesList & alias_columns_,
+	const ColumnDefaults & column_defaults_,
 	const Context & context_,
 	ASTPtr & primary_expr_ast_,
 	const String & date_column_name_, const ASTPtr & sampling_expression_,
@@ -33,7 +36,7 @@ MergeTreeData::MergeTreeData(
 	const String & log_name_,
 	bool require_part_metadata_,
 	BrokenPartCallback broken_part_callback_)
-	: context(context_),
+    : ITableDeclaration{materialized_columns_, alias_columns_, column_defaults_}, context(context_),
 	date_column_name(date_column_name_), sampling_expression(sampling_expression_),
 	index_granularity(index_granularity_),
 	mode(mode_), sign_column(sign_column_),
@@ -44,23 +47,27 @@ MergeTreeData::MergeTreeData(
 	log_name(log_name_), log(&Logger::get(log_name + " (Data)"))
 {
 	/// Проверяем, что столбец с датой существует и имеет тип Date.
-	{
-		auto it = columns->begin();
-		for (; it != columns->end(); ++it)
+	const auto check_date_exists = [this] (const NamesAndTypesList & columns) {
+		for (const auto & column : columns)
 		{
-			if (it->name == date_column_name)
+			if (column.name == date_column_name)
 			{
-				if (!typeid_cast<const DataTypeDate *>(&*it->type))
+				if (!typeid_cast<const DataTypeDate *>(column.type.get()))
 					throw Exception("Date column (" + date_column_name + ") for storage of MergeTree family must have type Date."
-						" Provided column of type " + it->type->getName() + "."
-						" You may have separate column with type " + it->type->getName() + ".", ErrorCodes::BAD_TYPE_OF_FIELD);
-				break;
+						" Provided column of type " + column.type->getName() + "."
+						" You may have separate column with type " + column.type->getName() + ".", ErrorCodes::BAD_TYPE_OF_FIELD);
+				return true;
 			}
 		}
 
-		if (it == columns->end())
-			throw Exception("Date column (" + date_column_name + ") does not exist in table declaration.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
-	}
+		return false;
+	};
+
+	if (!check_date_exists(*columns) && !check_date_exists(materialized_columns))
+		throw Exception{
+			"Date column (" + date_column_name + ") does not exist in table declaration.",
+			ErrorCodes::NO_SUCH_COLUMN_IN_TABLE
+		};
 
 	/// создаём директорию, если её нет
 	Poco::File(full_path).createDirectories();
@@ -74,9 +81,9 @@ MergeTreeData::MergeTreeData(
 		sort_descr.push_back(SortColumnDescription(name, 1));
 	}
 
-	primary_expr = ExpressionAnalyzer(primary_expr_ast, context, *columns).getActions(false);
+	primary_expr = ExpressionAnalyzer(primary_expr_ast, context, getColumnsList()).getActions(false);
 
-	ExpressionActionsPtr projected_expr = ExpressionAnalyzer(primary_expr_ast, context, *columns).getActions(true);
+	ExpressionActionsPtr projected_expr = ExpressionAnalyzer(primary_expr_ast, context, getColumnsList()).getActions(true);
 	primary_key_sample = projected_expr->getSampleBlock();
 }
 
@@ -355,8 +362,11 @@ void MergeTreeData::dropAllData()
 void MergeTreeData::checkAlter(const AlterCommands & params)
 {
 	/// Проверим, что указанные преобразования можно совершить над списком столбцов без учета типов.
-	NamesAndTypesList new_columns = *columns;
-	params.apply(new_columns);
+	auto new_columns = *columns;
+	auto new_materialized_columns = materialized_columns;
+	auto new_alias_columns = alias_columns;
+	auto new_column_defaults = column_defaults;
+	params.apply(new_columns, new_materialized_columns, new_alias_columns, new_column_defaults);
 
 	/// Список столбцов, которые нельзя трогать.
 	/// sampling_expression можно не учитывать, потому что он обязан содержаться в первичном ключе.
@@ -373,7 +383,11 @@ void MergeTreeData::checkAlter(const AlterCommands & params)
 	/// Проверим, что преобразования типов возможны.
 	ExpressionActionsPtr unused_expression;
 	NameToNameMap unused_map;
-	createConvertExpression(nullptr, *columns, new_columns, unused_expression, unused_map);
+
+	/// augment plain columns with materialized columns for convert expression creation
+	new_columns.insert(std::end(new_columns),
+		std::begin(new_materialized_columns), std::end(new_materialized_columns));
+	createConvertExpression(nullptr, getColumnsList(), new_columns, unused_expression, unused_map);
 }
 
 void MergeTreeData::createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,

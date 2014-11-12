@@ -25,6 +25,9 @@ public:
 	static StoragePtr create(
 		const std::string & name_,			/// Имя таблицы.
 		NamesAndTypesListPtr columns_,		/// Список столбцов.
+		const NamesAndTypesList & materialized_columns_,
+		const NamesAndTypesList & alias_columns_,
+		const ColumnDefaults & column_defaults_,
 		const String & remote_database_,	/// БД на удалённых серверах.
 		const String & remote_table_,		/// Имя таблицы на удалённых серверах.
 		const String & cluster_name,
@@ -46,7 +49,7 @@ public:
 	bool supportsFinal() const override { return true; }
 	bool supportsPrewhere() const override { return true; }
 
-	const NamesAndTypesList & getColumnsList() const override { return *columns; }
+	const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
 	NameAndTypePair getColumn(const String & column_name) const override;
 	bool hasColumn(const String & column_name) const override;
 
@@ -81,6 +84,19 @@ private:
 	StorageDistributed(
 		const std::string & name_,
 		NamesAndTypesListPtr columns_,
+		const String & remote_database_,
+		const String & remote_table_,
+		Cluster & cluster_,
+		Context & context_,
+		const ASTPtr & sharding_key_ = nullptr,
+		const String & data_path_ = String{});
+
+	StorageDistributed(
+		const std::string & name_,
+		NamesAndTypesListPtr columns_,
+		const NamesAndTypesList & materialized_columns_,
+		const NamesAndTypesList & alias_columns_,
+		const ColumnDefaults & column_defaults_,
 		const String & remote_database_,
 		const String & remote_table_,
 		Cluster & cluster_,
