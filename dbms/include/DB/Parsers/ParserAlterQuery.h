@@ -12,6 +12,7 @@ namespace DB
   * 	[MODIFY COLUMN col_modify type, ...]
   * 	[DROP|DETACH|ATTACH [UNREPLICATED] PARTITION|PART partition, ...]
   * 	[FETCH PARTITION partition FROM ...]
+  * 	[FREEZE PARTITION]
   */
 class ParserAlterQuery : public IParserBase
 {

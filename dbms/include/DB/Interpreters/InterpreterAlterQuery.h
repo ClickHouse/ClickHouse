@@ -37,6 +37,7 @@ private:
 			DROP_PARTITION,
 			ATTACH_PARTITION,
 			FETCH_PARTITION,
+			FREEZE_PARTITION,
 		};
 
 		Type type;
@@ -62,6 +63,11 @@ private:
 		static PartitionCommand fetchPartition(const Field & partition, const String & from)
 		{
 			return {FETCH_PARTITION, partition, false, false, false, from};
+		}
+
+		static PartitionCommand freezePartition(const Field & partition)
+		{
+			return {FREEZE_PARTITION, partition};
 		}
 	};
 

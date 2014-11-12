@@ -100,6 +100,7 @@ public:
 
 	void dropPartition(const Field & partition, bool detach, const Settings & settings) override;
 	void attachPartition(const Field & partition, bool unreplicated, bool part, const Settings & settings) override;
+	void freezePartition(const Field & partition, const Settings & settings) override;
 
 	void drop() override;
 

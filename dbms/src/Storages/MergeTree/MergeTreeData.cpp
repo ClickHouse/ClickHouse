@@ -12,6 +12,7 @@
 #include <DB/DataStreams/copyData.h>
 #include <DB/IO/WriteBufferFromFile.h>
 #include <DB/DataTypes/DataTypeDate.h>
+#include <DB/Common/localBackup.h>
 
 #include <algorithm>
 #include <iomanip>
@@ -1164,6 +1165,40 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
 		if (files.count(bin_file_name)) column_size -= files.find(bin_file_name)->second.file_size;
 		if (files.count(mrk_file_name)) column_size -= files.find(mrk_file_name)->second.file_size;
 	}
+}
+
+
+void MergeTreeData::freezePartition(const std::string & prefix)
+{
+	LOG_DEBUG(log, "Freezing parts with prefix " + prefix);
+
+	String clickhouse_path = Poco::Path(context.getPath()).makeAbsolute().toString();
+	String shadow_path = clickhouse_path + "shadow/";
+	Poco::File(shadow_path).createDirectories();
+	String backup_path = shadow_path + toString(Increment(shadow_path + "increment.txt").get(true)) + "/";
+
+	LOG_DEBUG(log, "Snapshot will be placed at " + backup_path);
+
+	size_t parts_processed = 0;
+	Poco::DirectoryIterator end;
+	for (Poco::DirectoryIterator it(full_path); it != end; ++it)
+	{
+		if (0 == it.name().compare(0, prefix.size(), prefix))
+		{
+			LOG_DEBUG(log, "Freezing part " + it.name());
+
+			String part_absolute_path = it.path().absolute().toString();
+			if (0 != part_absolute_path.compare(0, clickhouse_path.size(), clickhouse_path))
+				throw Exception("Part path " + part_absolute_path + " is not inside " + clickhouse_path, ErrorCodes::LOGICAL_ERROR);
+
+			String backup_part_absolute_path = part_absolute_path;
+			backup_part_absolute_path.replace(0, clickhouse_path.size(), backup_path);
+			localBackup(part_absolute_path, backup_part_absolute_path);
+			++parts_processed;
+		}
+	}
+
+	LOG_DEBUG(log, "Freezed " << parts_processed << " parts");
 }
 
 
