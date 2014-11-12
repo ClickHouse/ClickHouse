@@ -870,10 +870,13 @@ template <typename Impl, typename Name>
 class FunctionStringReplace : public IFunction
 {
 public:
+	static constexpr auto name = Name::name;
+	static IFunction * create(const Context & context) { return new FunctionStringReplace; }
+
 	/// Получить имя функции.
 	String getName() const
 	{
-		return Name::get();
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -954,10 +957,13 @@ template <typename Impl, typename Name>
 class FunctionsStringSearch : public IFunction
 {
 public:
+	static constexpr auto name = Name::name;
+	static IFunction * create(const Context & context) { return new FunctionsStringSearch; }
+
 	/// Получить имя функции.
 	String getName() const
 	{
-		return Name::get();
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -1020,10 +1026,13 @@ template <typename Impl, typename Name>
 class FunctionsStringSearchToString : public IFunction
 {
 public:
+	static constexpr auto name = Name::name;
+	static IFunction * create(const Context & context) { return new FunctionsStringSearchToString; }
+
 	/// Получить имя функции.
 	String getName() const
 	{
-		return Name::get();
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -1091,16 +1100,16 @@ public:
 };
 
 
-struct NamePosition 		{ static const char * get() { return "position"; } };
-struct NamePositionUTF8		{ static const char * get() { return "positionUTF8"; } };
-struct NameMatch			{ static const char * get() { return "match"; } };
-struct NameLike				{ static const char * get() { return "like"; } };
-struct NameNotLike			{ static const char * get() { return "notLike"; } };
-struct NameExtract			{ static const char * get() { return "extract"; } };
-struct NameReplaceOne			{ static const char * get() { return "replaceOne"; } };
-struct NameReplaceAll			{ static const char * get() { return "replaceAll"; } };
-struct NameReplaceRegexpOne			{ static const char * get() { return "replaceRegexpOne"; } };
-struct NameReplaceRegexpAll			{ static const char * get() { return "replaceRegexpAll"; } };
+struct NamePosition 		{ static constexpr auto name = "position"; };
+struct NamePositionUTF8		{ static constexpr auto name = "positionUTF8"; };
+struct NameMatch			{ static constexpr auto name = "match"; };
+struct NameLike				{ static constexpr auto name = "like"; };
+struct NameNotLike			{ static constexpr auto name = "notLike"; };
+struct NameExtract			{ static constexpr auto name = "extract"; };
+struct NameReplaceOne		{ static constexpr auto name = "replaceOne"; };
+struct NameReplaceAll		{ static constexpr auto name = "replaceAll"; };
+struct NameReplaceRegexpOne	{ static constexpr auto name = "replaceRegexpOne"; };
+struct NameReplaceRegexpAll	{ static constexpr auto name = "replaceRegexpAll"; };
 
 typedef FunctionsStringSearch<PositionImpl, 			NamePosition> 		FunctionPosition;
 typedef FunctionsStringSearch<PositionUTF8Impl, 		NamePositionUTF8> 	FunctionPositionUTF8;

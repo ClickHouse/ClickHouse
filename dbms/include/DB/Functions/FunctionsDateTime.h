@@ -229,7 +229,7 @@ struct DateTimeTransformImpl
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-					+ " of first argument of function " + Name::get(),
+					+ " of first argument of function " + Name::name,
 				ErrorCodes::ILLEGAL_COLUMN);
 	}
 };
@@ -239,10 +239,13 @@ template <typename ToDataType, typename Transform, typename Name>
 class FunctionDateOrDateTimeToSomething : public IFunction
 {
 public:
+	static constexpr auto name = Name::name;
+	static IFunction * create(const Context & context) { return new FunctionDateOrDateTimeToSomething; };
+
 	/// Получить имя функции.
 	String getName() const
 	{
-		return Name::get();
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -276,10 +279,13 @@ public:
 class FunctionNow : public IFunction
 {
 public:
+	static constexpr auto name = "now";
+	static IFunction * create(const Context & context) { return new FunctionNow; };
+
 	/// Получить имя функции.
 	String getName() const
 	{
-		return "now";
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -306,10 +312,13 @@ public:
 class FunctionToday : public IFunction
 {
 public:
+	static constexpr auto name = "today";
+	static IFunction * create(const Context & context) { return new FunctionToday; };
+
 	/// Получить имя функции.
 	String getName() const
 	{
-		return "today";
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -336,10 +345,13 @@ public:
 class FunctionYesterday : public IFunction
 {
 public:
+	static constexpr auto name = "yesterday";
+	static IFunction * create(const Context & context) { return new FunctionYesterday; };
+
 	/// Получить имя функции.
 	String getName() const
 	{
-		return "yesterday";
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -366,10 +378,13 @@ public:
 class FunctionTimeSlot : public IFunction
 {
 public:
+	static constexpr auto name = "timeSlot";
+	static IFunction * create(const Context & context) { return new FunctionTimeSlot; };
+
 	/// Получить имя функции.
 	String getName() const
 	{
-		return "timeSlot";
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -498,10 +513,13 @@ struct TimeSlotsImpl
 class FunctionTimeSlots : public IFunction
 {
 public:
+	static constexpr auto name = "timeSlots";
+	static IFunction * create(const Context & context) { return new FunctionTimeSlots; };
+
 	/// Получить имя функции.
 	String getName() const
 	{
-		return "timeSlots";
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -565,27 +583,27 @@ public:
 };
 
 
-struct NameToYear 			{ static const char * get() { return "toYear"; } };
-struct NameToMonth 			{ static const char * get() { return "toMonth"; } };
-struct NameToDayOfMonth		{ static const char * get() { return "toDayOfMonth"; } };
-struct NameToDayOfWeek		{ static const char * get() { return "toDayOfWeek"; } };
-struct NameToHour 			{ static const char * get() { return "toHour"; } };
-struct NameToMinute			{ static const char * get() { return "toMinute"; } };
-struct NameToSecond			{ static const char * get() { return "toSecond"; } };
-struct NameToMonday			{ static const char * get() { return "toMonday"; } };
-struct NameToStartOfMonth	{ static const char * get() { return "toStartOfMonth"; } };
-struct NameToStartOfQuarter	{ static const char * get() { return "toStartOfQuarter"; } };
-struct NameToStartOfYear	{ static const char * get() { return "toStartOfYear"; } };
-struct NameToStartOfMinute	{ static const char * get() { return "toStartOfMinute"; } };
-struct NameToStartOfHour	{ static const char * get() { return "toStartOfHour"; } };
-struct NameToTime 			{ static const char * get() { return "toTime"; } };
-struct NameToRelativeYearNum	{ static const char * get() { return "toRelativeYearNum"; } };
-struct NameToRelativeMonthNum	{ static const char * get() { return "toRelativeMonthNum"; } };
-struct NameToRelativeWeekNum	{ static const char * get() { return "toRelativeWeekNum"; } };
-struct NameToRelativeDayNum		{ static const char * get() { return "toRelativeDayNum"; } };
-struct NameToRelativeHourNum	{ static const char * get() { return "toRelativeHourNum"; } };
-struct NameToRelativeMinuteNum	{ static const char * get() { return "toRelativeMinuteNum"; } };
-struct NameToRelativeSecondNum	{ static const char * get() { return "toRelativeSecondNum"; } };
+struct NameToYear	 			{ static constexpr auto name = "toYear"; };
+struct NameToMonth	 			{ static constexpr auto name = "toMonth"; };
+struct NameToDayOfMonth			{ static constexpr auto name = "toDayOfMonth"; };
+struct NameToDayOfWeek			{ static constexpr auto name = "toDayOfWeek"; };
+struct NameToHour	 			{ static constexpr auto name = "toHour"; };
+struct NameToMinute				{ static constexpr auto name = "toMinute"; };
+struct NameToSecond				{ static constexpr auto name = "toSecond"; };
+struct NameToMonday				{ static constexpr auto name = "toMonday"; };
+struct NameToStartOfMonth		{ static constexpr auto name = "toStartOfMonth"; };
+struct NameToStartOfQuarter		{ static constexpr auto name = "toStartOfQuarter"; };
+struct NameToStartOfYear		{ static constexpr auto name = "toStartOfYear"; };
+struct NameToStartOfMinute		{ static constexpr auto name = "toStartOfMinute"; };
+struct NameToStartOfHour		{ static constexpr auto name = "toStartOfHour"; };
+struct NameToTime	 			{ static constexpr auto name = "toTime"; };
+struct NameToRelativeYearNum	{ static constexpr auto name = "toRelativeYearNum"; };
+struct NameToRelativeMonthNum	{ static constexpr auto name = "toRelativeMonthNum"; };
+struct NameToRelativeWeekNum	{ static constexpr auto name = "toRelativeWeekNum"; };
+struct NameToRelativeDayNum		{ static constexpr auto name = "toRelativeDayNum"; };
+struct NameToRelativeHourNum	{ static constexpr auto name = "toRelativeHourNum"; };
+struct NameToRelativeMinuteNum	{ static constexpr auto name = "toRelativeMinuteNum"; };
+struct NameToRelativeSecondNum	{ static constexpr auto name = "toRelativeSecondNum"; };
 
 
 typedef FunctionDateOrDateTimeToSomething<DataTypeUInt16,	ToYearImpl, 		NameToYear> 		FunctionToYear;

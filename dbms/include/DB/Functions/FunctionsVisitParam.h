@@ -16,16 +16,16 @@
 
 /** Функции для извлечения параметров визитов.
  *  Реализованы через шаблоны из FunctionsStringSearch.h.
- * 
+ *
  * Проверить есть ли параметр
  * 		visitParamHas
- * 
+ *
  * Извлечь числовое значение параметра
  * 		visitParamExtractUInt
  * 		visitParamExtractInt
  * 		visitParamExtractFloat
  * 		visitParamExtractBool
- * 
+ *
  * Извлечь строкое значение параметра
  * 		visitParamExtractString - значение разэскейпливается
  * 		visitParamExtractRaw
@@ -37,7 +37,7 @@ namespace DB
 struct HasParam
 {
 	typedef UInt8 ResultType;
-	
+
 	static UInt8 extract(const UInt8 * begin, const UInt8 * end)
 	{
 		return true;
@@ -48,15 +48,15 @@ template<typename NumericType>
 struct ExtractNumericType
 {
 	typedef NumericType ResultType;
-	
+
 	static ResultType extract(const UInt8 * begin, const UInt8 * end)
 	{
 		ReadBuffer in(const_cast<char *>(reinterpret_cast<const char *>(begin)), end - begin, 0);
-		
+
 		/// Учимся читать числа в двойных кавычках
 		if (!in.eof() && *in.position() == '"')
 			++in.position();
-		
+
 		ResultType x = 0;
 		if (!in.eof())
 			readText(x, in);
@@ -67,7 +67,7 @@ struct ExtractNumericType
 struct ExtractBool
 {
 	typedef UInt8 ResultType;
-	
+
 	static UInt8 extract(const UInt8 * begin, const UInt8 * end)
 	{
 		return begin + 4 <= end && 0 == strncmp(reinterpret_cast<const char *>(begin), "true", 4);
@@ -81,7 +81,7 @@ struct ExtractRaw
 	{
 		if (pos == end)
 			return;
-		
+
 		UInt8 open_char = *pos;
 		UInt8 close_char = 0;
 		switch (open_char)
@@ -96,19 +96,19 @@ struct ExtractRaw
 				close_char = '"';
 				break;
 		}
-		
+
 		if (close_char != 0)
 		{
-			size_t balance = 1;	
+			size_t balance = 1;
 			char last_char = 0;
-			
+
 			res_data.push_back(*pos);
-			
+
 			++pos;
 			for (; pos != end && balance > 0; ++pos)
 			{
 				res_data.push_back(*pos);
-				
+
 				if (open_char == '"' && *pos == '"')
 				{
 					if (last_char != '\\')
@@ -121,7 +121,7 @@ struct ExtractRaw
 					if (*pos == close_char)
 						--balance;
 				}
-				
+
 				if (last_char == '\\')
 					last_char = 0;
 				else
@@ -157,12 +157,12 @@ struct ExtractString
 		}
 		return false;
 	}
-	
+
 	static bool tryUnhex(const UInt8 * pos, const UInt8 * end, int & res)
 	{
 		if (pos + 3 >= end)
 			return false;
-		
+
 		res = 0;
 		{
 			UInt8 major, minor;
@@ -183,12 +183,12 @@ struct ExtractString
 		}
 		return true;
 	}
-	
+
 	static bool tryExtract(const UInt8 * pos, const UInt8 * end, ColumnString::Chars_t & res_data)
 	{
 		if (pos == end || *pos != '"')
 			return false;
-		
+
 		++pos;
 		while (pos != end)
 		{
@@ -228,20 +228,20 @@ struct ExtractString
 						case 'u':
 						{
 							++pos;
-							
+
 							int unicode;
 							if (!tryUnhex(pos, end, unicode))
 								return false;
 							pos += 3;
-							
+
 							res_data.resize(res_data.size() + 6);	/// максимальный размер UTF8 многобайтовой последовательности
-							
+
 							Poco::UTF8Encoding utf8;
 							int length = utf8.convert(unicode, const_cast<UInt8 *>(&res_data[0]) + res_data.size() - 6, 6);
-							
+
 							if (!length)
 								return false;
-							
+
 							res_data.resize(res_data.size() - 6 + length);
 							break;
 						}
@@ -261,11 +261,11 @@ struct ExtractString
 		}
 		return false;
 	}
-	
+
 	static void extract(const UInt8 * pos, const UInt8 * end, ColumnString::Chars_t & res_data)
 	{
 		size_t old_size = res_data.size();
-		
+
 		if (!tryExtract(pos, end, res_data))
 			res_data.resize(old_size);
 	}
@@ -276,7 +276,7 @@ struct ExtractString
  * на каждое вхождение поля, передавая ему указатель на часть строки,
  * где начинается вхождение значения поля.
  * ParamExtractor должен распарсить и вернуть значение нужного типа.
- * 
+ *
  * Если поле не было найдено или полю соответствует некорректное значение,
  * то используется значение по умолчанию - 0.
  */
@@ -292,7 +292,7 @@ struct ExtractParamImpl
 	{
 		/// Ищем параметр просто как подстроку вида "name":
 		needle = "\"" + needle + "\":";
-		
+
 		const UInt8 * begin = &data[0];
 		const UInt8 * pos = begin;
 		const UInt8 * end = pos + data.size();
@@ -352,10 +352,10 @@ struct ExtractParamToStringImpl
 		/// Константа 5 взята из функции, выполняющей похожую задачу FunctionsStringSearch.h::ExtractImpl
 		res_data.reserve(data.size()  / 5);
 		res_offsets.resize(offsets.size());
-		
+
 		/// Ищем параметр просто как подстроку вида "name":
 		needle = "\"" + needle + "\":";
-		
+
 		const UInt8 * begin = &data[0];
 		const UInt8 * pos = begin;
 		const UInt8 * end = pos + data.size();
@@ -381,12 +381,12 @@ struct ExtractParamToStringImpl
 				ParamExtractor::extract(pos + needle.size(), begin + offsets[i], res_data);
 
 			pos = begin + offsets[i];
-			
+
 			res_data.push_back(0);
 			res_offsets[i] = res_data.size();
 			++i;
 		}
-		
+
 		while (i < res_offsets.size())
 		{
 			res_data.push_back(0);
@@ -397,13 +397,13 @@ struct ExtractParamToStringImpl
 };
 
 
-struct NameVisitParamHas			{ static const char * get() { return "visitParamHas"; } };
-struct NameVisitParamExtractUInt	{ static const char * get() { return "visitParamExtractUInt"; } };
-struct NameVisitParamExtractInt		{ static const char * get() { return "visitParamExtractInt"; } };
-struct NameVisitParamExtractFloat	{ static const char * get() { return "visitParamExtractFloat"; } };
-struct NameVisitParamExtractBool	{ static const char * get() { return "visitParamExtractBool"; } };
-struct NameVisitParamExtractRaw		{ static const char * get() { return "visitParamExtractRaw"; } };
-struct NameVisitParamExtractString	{ static const char * get() { return "visitParamExtractString"; } };
+struct NameVisitParamHas			{ static constexpr auto name = "visitParamHas"; };
+struct NameVisitParamExtractUInt	{ static constexpr auto name = "visitParamExtractUInt"; };
+struct NameVisitParamExtractInt		{ static constexpr auto name = "visitParamExtractInt"; };
+struct NameVisitParamExtractFloat	{ static constexpr auto name = "visitParamExtractFloat"; };
+struct NameVisitParamExtractBool	{ static constexpr auto name = "visitParamExtractBool"; };
+struct NameVisitParamExtractRaw		{ static constexpr auto name = "visitParamExtractRaw"; };
+struct NameVisitParamExtractString	{ static constexpr auto name = "visitParamExtractString"; };
 
 
 typedef FunctionsStringSearch<ExtractParamImpl<HasParam>, NameVisitParamHas> FunctionVisitParamHas;

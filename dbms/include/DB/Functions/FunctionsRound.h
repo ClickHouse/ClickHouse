@@ -6,51 +6,51 @@
 
 namespace DB
 {
-	
+
 	/** Функции округления:
 	 * roundToExp2 - вниз до ближайшей степени двойки;
 	 * roundDuration - вниз до ближайшего из: 0, 1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000;
 	 * roundAge - вниз до ближайшего из: 0, 18, 25, 35, 45.
 	 */
-	
+
 	template<typename A>
 	struct RoundToExp2Impl
 	{
 		typedef A ResultType;
-		
+
 		static inline A apply(A x)
 		{
 			return x <= 0 ? static_cast<A>(0) : (static_cast<A>(1) << static_cast<UInt64>(log2(static_cast<double>(x))));
 		}
 	};
-	
+
 	template<>
 	struct RoundToExp2Impl<Float32>
 	{
 		typedef Float32 ResultType;
-		
+
 		static inline Float32 apply(Float32 x)
 		{
 			return static_cast<Float32>(x < 1 ? 0. : pow(2., floor(log2(x))));
 		}
 	};
-	
+
 	template<>
 	struct RoundToExp2Impl<Float64>
 	{
 		typedef Float64 ResultType;
-		
+
 		static inline Float64 apply(Float64 x)
 		{
 			return x < 1 ? 0. : pow(2., floor(log2(x)));
 		}
 	};
-	
+
 	template<typename A>
 	struct RoundDurationImpl
 	{
 		typedef UInt16 ResultType;
-		
+
 		static inline ResultType apply(A x)
 		{
 			return x < 1 ? 0
@@ -71,12 +71,12 @@ namespace DB
 				: 36000))))))))))))));
 		}
 	};
-	
+
 	template<typename A>
 	struct RoundAgeImpl
 	{
 		typedef UInt8 ResultType;
-		
+
 		static inline ResultType apply(A x)
 		{
 			return x < 18 ? 0
@@ -86,14 +86,14 @@ namespace DB
 				: 45)));
 		}
 	};
-	
-	
-	struct NameRoundToExp2		{ static const char * get() { return "roundToExp2"; } };
-	struct NameRoundDuration	{ static const char * get() { return "roundDuration"; } };
-	struct NameRoundAge 		{ static const char * get() { return "roundAge"; } };
-	
+
+
+	struct NameRoundToExp2		{ static constexpr auto name = "roundToExp2"; };
+	struct NameRoundDuration	{ static constexpr auto name = "roundDuration"; };
+	struct NameRoundAge 		{ static constexpr auto name = "roundAge"; };
+
 	typedef FunctionUnaryArithmetic<RoundToExp2Impl,	NameRoundToExp2> 	FunctionRoundToExp2;
 	typedef FunctionUnaryArithmetic<RoundDurationImpl,	NameRoundDuration>	FunctionRoundDuration;
 	typedef FunctionUnaryArithmetic<RoundAgeImpl,		NameRoundAge>		FunctionRoundAge;
-	
+
 }

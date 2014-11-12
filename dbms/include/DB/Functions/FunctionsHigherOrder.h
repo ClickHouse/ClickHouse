@@ -381,10 +381,13 @@ template <typename Impl, typename Name>
 class FunctionArrayMapped : public IFunction
 {
 public:
+	static constexpr auto name = Name::name;
+	static IFunction * create(const Context & context) { return new FunctionArrayMapped; };
+
 	/// Получить имя функции.
 	String getName() const
 	{
-		return Name::get();
+		return name;
 	}
 
 	/// Вызывается, если хоть один агрумент функции - лямбда-выражение.
@@ -591,14 +594,14 @@ public:
 };
 
 
-struct NameArrayMap		{ static const char * get() { return "arrayMap"; } };
-struct NameArrayFilter	{ static const char * get() { return "arrayFilter"; } };
-struct NameArrayCount	{ static const char * get() { return "arrayCount"; } };
-struct NameArrayExists	{ static const char * get() { return "arrayExists"; } };
-struct NameArrayAll		{ static const char * get() { return "arrayAll"; } };
-struct NameArraySum		{ static const char * get() { return "arraySum"; } };
-struct NameArrayFirst	{ static const char * get() { return "arrayFirst"; } };
-struct NameArrayFirstIndex	{ static const char * get() { return "arrayFirstIndex"; } };
+struct NameArrayMap			{ static constexpr auto name = "arrayMap"; };
+struct NameArrayFilter		{ static constexpr auto name = "arrayFilter"; };
+struct NameArrayCount		{ static constexpr auto name = "arrayCount"; };
+struct NameArrayExists		{ static constexpr auto name = "arrayExists"; };
+struct NameArrayAll			{ static constexpr auto name = "arrayAll"; };
+struct NameArraySum			{ static constexpr auto name = "arraySum"; };
+struct NameArrayFirst		{ static constexpr auto name = "arrayFirst"; };
+struct NameArrayFirstIndex	{ static constexpr auto name = "arrayFirstIndex"; };
 
 typedef FunctionArrayMapped<ArrayMapImpl, 		NameArrayMap>		FunctionArrayMap;
 typedef FunctionArrayMapped<ArrayFilterImpl, 	NameArrayFilter>	FunctionArrayFilter;

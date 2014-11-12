@@ -147,10 +147,13 @@ private:
 	typedef typename Impl::ReturnType ToType;
 
 public:
+	static constexpr auto name = Name::name;
+	static IFunction * create(const Context & context) { return new FunctionRandom; }
+
 	/// Получить имя функции.
 	String getName() const
 	{
-		return Name::get();
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -179,8 +182,8 @@ public:
 };
 
 
-struct NameRand 	{ static const char * get() { return "rand"; } };
-struct NameRand64 	{ static const char * get() { return "rand64"; } };
+struct NameRand 	{ static constexpr auto name = "rand"; };
+struct NameRand64 	{ static constexpr auto name = "rand64"; };
 
 typedef FunctionRandom<RandImpl,	NameRand> 	FunctionRand;
 typedef FunctionRandom<Rand64Impl,	NameRand64> FunctionRand64;

@@ -45,7 +45,8 @@ private:
 
 public:
 	/// Получить имя фукнции.
-	static String getName() { return "alphaTokens"; }
+	static constexpr auto name = "alphaTokens";
+	static String getName() { return name; }
 
 	/// Проверить типы агрументов функции.
 	static void checkArguments(const DataTypes & arguments)
@@ -107,7 +108,8 @@ private:
 	char sep;
 
 public:
-	static String getName() { return "splitByChar"; }
+	static constexpr auto name = "splitByChar";
+	static String getName() { return name; }
 
 	static void checkArguments(const DataTypes & arguments)
 	{
@@ -183,7 +185,8 @@ private:
 	String sep;
 
 public:
-	static String getName() { return "splitByString"; }
+	static constexpr auto name = "splitByString";
+	static String getName() { return name; }
 
 	static void checkArguments(const DataTypes & arguments)
 	{
@@ -246,7 +249,8 @@ private:
 	Pos end;
 public:
 	/// Получить имя функции.
-	static String getName() { return "extractAll"; }
+	static constexpr auto name = "extractAll";
+	static String getName() { return name; }
 
 	/// Проверить типы агрументов функции.
 	static void checkArguments( const DataTypes &  arguments )
@@ -305,10 +309,13 @@ template <typename Generator>
 class FunctionTokens : public IFunction
 {
 public:
+	static constexpr auto name = Generator::name;
+	static IFunction * create(const Context & context) { return new FunctionTokens; }
+
 	/// Получить имя функции.
 	String getName() const
 	{
-		return Generator::getName();
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.

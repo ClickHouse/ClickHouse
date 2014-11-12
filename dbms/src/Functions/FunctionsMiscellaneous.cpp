@@ -305,27 +305,23 @@ namespace DB
 
 void registerFunctionsMiscellaneous(FunctionFactory & factory)
 {
-	#define F [](const Context & context) -> IFunction*
+	factory.registerFunction<FunctionCurrentDatabase>();
+	factory.registerFunction<FunctionHostName>();
+	factory.registerFunction<FunctionVisibleWidth>();
+	factory.registerFunction<FunctionToTypeName>();
+	factory.registerFunction<FunctionBlockSize>();
+	factory.registerFunction<FunctionSleep>();
+	factory.registerFunction<FunctionMaterialize>();
+	factory.registerFunction<FunctionIgnore>();
+	factory.registerFunction<FunctionArrayJoin>();
+	factory.registerFunction<FunctionBar>();
 
-	factory.registerFunction("currentDatabase", F { return new FunctionCurrentDatabase{context.getCurrentDatabase()}; });
-	factory.registerFunction("hostName", 		F { return new FunctionHostName; });
-	factory.registerFunction("visibleWidth", 	F { return new FunctionVisibleWidth; });
-	factory.registerFunction("toTypeName", 		F { return new FunctionToTypeName; });
-	factory.registerFunction("blockSize", 		F { return new FunctionBlockSize; });
-	factory.registerFunction("sleep", 			F { return new FunctionSleep; });
-	factory.registerFunction("materialize", 	F { return new FunctionMaterialize; });
-	factory.registerFunction("ignore", 			F { return new FunctionIgnore; });
-	factory.registerFunction("arrayJoin", 		F { return new FunctionArrayJoin; });
-	factory.registerFunction("bar", 			F { return new FunctionBar; });
-
-	factory.registerFunction("tuple", 			F { return new FunctionTuple; });
-	factory.registerFunction("tupleElement", 	F { return new FunctionTupleElement; });
-	factory.registerFunction("in", 				F { return new FunctionIn(false, false); });
-	factory.registerFunction("notIn", 			F { return new FunctionIn(true, false); });
-	factory.registerFunction("globalIn", 		F { return new FunctionIn(false, true); });
-	factory.registerFunction("globalNotIn", 	F { return new FunctionIn(true, true); });
-
-	#undef F
+	factory.registerFunction<FunctionTuple>();
+	factory.registerFunction<FunctionTupleElement>();
+	factory.registerFunction<FunctionIn<false, false>>();
+	factory.registerFunction<FunctionIn<false, true>>();
+	factory.registerFunction<FunctionIn<true, false>>();
+	factory.registerFunction<FunctionIn<true, true>>();
 }
 
 }
