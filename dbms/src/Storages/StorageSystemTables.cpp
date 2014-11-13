@@ -2,6 +2,7 @@
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/Storages/StorageSystemTables.h>
+#include <DB/Common/VirtualColumnUtils.h>
 
 
 namespace DB
@@ -51,11 +52,19 @@ BlockInputStreams StorageSystemTables::read(
 
 	Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
 
-	for (Databases::const_iterator it = context.getDatabases().begin(); it != context.getDatabases().end(); ++it)
+	ColumnWithNameAndType filtered_databases_column = getFilteredDatabases(query);
+
+	for (size_t row_number = 0; row_number < filtered_databases_column.column->size(); ++row_number)
 	{
-		for (Tables::const_iterator jt = it->second.begin(); jt != it->second.end(); ++jt)
+		std::string database_name = filtered_databases_column.column->getDataAt(row_number).toString();
+		auto database_it = context.getDatabases().find(database_name);
+
+		if (database_it == context.getDatabases().end())
+			throw DB::Exception(std::string("Fail to find database " + database_name), DB::ErrorCodes::LOGICAL_ERROR);
+
+		for (Tables::const_iterator jt = database_it->second.begin(); jt != database_it->second.end(); ++jt)
 		{
-			col_db.column->insert(it->first);
+			col_db.column->insert(database_name);
 			col_name.column->insert(jt->first);
 			col_engine.column->insert(jt->second->getName());
 		}
@@ -64,5 +73,22 @@ BlockInputStreams StorageSystemTables::read(
 	return BlockInputStreams(1, new OneBlockInputStream(block));
 }
 
+ColumnWithNameAndType StorageSystemTables::getFilteredDatabases(ASTPtr query)
+{
+	ColumnWithNameAndType column;
+	column.name = "database";
+	column.type = new DataTypeString;
+	column.column = new ColumnString;
+
+	Block block;
+	block.insert(column);
+	for (auto database_it = context.getDatabases().begin(); database_it != context.getDatabases().end(); ++database_it)
+	{
+		column.column->insert(database_it->first);
+	}
+	VirtualColumnUtils::filterBlockWithQuery(query, block, context);
+
+	return block.getByPosition(0);
+}
 
 }

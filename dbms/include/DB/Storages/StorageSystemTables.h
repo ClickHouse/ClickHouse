@@ -38,6 +38,8 @@ private:
 	NamesAndTypesList columns;
 
 	StorageSystemTables(const std::string & name_, const Context & context_);
+
+	ColumnWithNameAndType getFilteredDatabases(ASTPtr query);
 };
 
 }
