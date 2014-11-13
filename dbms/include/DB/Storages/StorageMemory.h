@@ -62,12 +62,21 @@ friend class MemoryBlockInputStream;
 friend class MemoryBlockOutputStream;
 
 public:
-	static StoragePtr create(const std::string & name_, NamesAndTypesListPtr columns_);
+	static StoragePtr create(
+		const std::string & name_,
+		NamesAndTypesListPtr columns_);
+
+	static StoragePtr create(
+		const std::string & name_,
+		NamesAndTypesListPtr columns_,
+		const NamesAndTypesList & materialized_columns_,
+		const NamesAndTypesList & alias_columns_,
+		const ColumnDefaults & column_defaults_);
 
 	std::string getName() const override { return "Memory"; }
 	std::string getTableName() const override { return name; }
 
-	const NamesAndTypesList & getColumnsList() const override { return *columns; }
+	const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
 
 	size_t getSize() const { return data.size(); }
 
@@ -93,7 +102,16 @@ private:
 
 	Poco::FastMutex mutex;
 
-	StorageMemory(const std::string & name_, NamesAndTypesListPtr columns_);
+	StorageMemory(
+		const std::string & name_,
+		NamesAndTypesListPtr columns_);
+
+	StorageMemory(
+		const std::string & name_,
+		NamesAndTypesListPtr columns_,
+		const NamesAndTypesList & materialized_columns_,
+		const NamesAndTypesList & alias_columns_,
+		const ColumnDefaults & column_defaults_);
 };
 
 }

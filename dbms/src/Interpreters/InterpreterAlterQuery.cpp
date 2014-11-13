@@ -28,14 +28,14 @@ InterpreterAlterQuery::InterpreterAlterQuery(ASTPtr query_ptr_, Context & contex
 
 void InterpreterAlterQuery::execute()
 {
-	ASTAlterQuery & alter = typeid_cast<ASTAlterQuery &>(*query_ptr);
-	String & table_name = alter.table;
+	auto & alter = typeid_cast<ASTAlterQuery &>(*query_ptr);
+	const String & table_name = alter.table;
 	String database_name = alter.database.empty() ? context.getCurrentDatabase() : alter.database;
+	StoragePtr table = context.getTable(database_name, table_name);
+
 	AlterCommands alter_commands;
 	PartitionCommands partition_commands;
 	parseAlter(alter.parameters, context.getDataTypeFactory(), alter_commands, partition_commands);
-
-	StoragePtr table = context.getTable(database_name, table_name);
 
 	for (const PartitionCommand & command : partition_commands)
 	{
@@ -62,8 +62,12 @@ void InterpreterAlterQuery::execute()
 		}
 	}
 
-	if (!alter_commands.empty())
-		table->alter(alter_commands, database_name, table_name, context);
+	if (alter_commands.empty())
+		return;
+
+	alter_commands.validate(table.get(), context);
+
+	table->alter(alter_commands, database_name, table_name, context);
 }
 
 void InterpreterAlterQuery::parseAlter(
@@ -77,12 +81,20 @@ void InterpreterAlterQuery::parseAlter(
 			AlterCommand command;
 			command.type = AlterCommand::ADD;
 
-			const ASTNameTypePair & ast_name_type = typeid_cast<const ASTNameTypePair &>(*params.name_type);
-			StringRange type_range = ast_name_type.type->range;
-			String type_string = String(type_range.first, type_range.second - type_range.first);
+			const auto & ast_col_decl = typeid_cast<const ASTColumnDeclaration &>(*params.col_decl);
 
-			command.column_name = ast_name_type.name;
-			command.data_type = data_type_factory.get(type_string);
+			command.column_name = ast_col_decl.name;
+			if (ast_col_decl.type)
+			{
+				StringRange type_range = ast_col_decl.type->range;
+				String type_string(type_range.first, type_range.second - type_range.first);
+				command.data_type = data_type_factory.get(type_string);
+			}
+			if (ast_col_decl.default_expression)
+			{
+				command.default_type = columnDefaultTypeFromString(ast_col_decl.default_specifier);
+				command.default_expression = ast_col_decl.default_expression;
+			}
 
 			if (params.column)
 				command.after_column = typeid_cast<const ASTIdentifier &>(*params.column).name;
@@ -102,12 +114,21 @@ void InterpreterAlterQuery::parseAlter(
 			AlterCommand command;
 			command.type = AlterCommand::MODIFY;
 
-			const ASTNameTypePair & ast_name_type = typeid_cast<const ASTNameTypePair &>(*params.name_type);
-			StringRange type_range = ast_name_type.type->range;
-			String type_string = String(type_range.first, type_range.second - type_range.first);
+			const auto & ast_col_decl = typeid_cast<const ASTColumnDeclaration &>(*params.col_decl);
 
-			command.column_name = ast_name_type.name;
-			command.data_type = data_type_factory.get(type_string);
+			command.column_name = ast_col_decl.name;
+			if (ast_col_decl.type)
+			{
+				StringRange type_range = ast_col_decl.type->range;
+				String type_string(type_range.first, type_range.second - type_range.first);
+				command.data_type = data_type_factory.get(type_string);
+			}
+
+			if (ast_col_decl.default_expression)
+			{
+				command.default_type = columnDefaultTypeFromString(ast_col_decl.default_specifier);
+				command.default_expression = ast_col_decl.default_expression;
+			}
 
 			out_alter_commands.push_back(command);
 		}
@@ -137,7 +158,13 @@ void InterpreterAlterQuery::parseAlter(
 }
 
 void InterpreterAlterQuery::updateMetadata(
-	const String & database_name, const String & table_name, const NamesAndTypesList & columns, Context & context)
+	const String & database_name,
+	const String & table_name,
+	const NamesAndTypesList & columns,
+	const NamesAndTypesList & materialized_columns,
+	const NamesAndTypesList & alias_columns,
+	const ColumnDefaults & column_defaults,
+	Context & context)
 {
 	String path = context.getPath();
 
@@ -172,7 +199,7 @@ void InterpreterAlterQuery::updateMetadata(
 
 	ASTCreateQuery & attach = typeid_cast<ASTCreateQuery &>(*ast);
 
-	ASTPtr new_columns = InterpreterCreateQuery::formatColumns(columns);
+	ASTPtr new_columns = InterpreterCreateQuery::formatColumns(columns, materialized_columns, alias_columns, column_defaults);
 	*std::find(attach.children.begin(), attach.children.end(), attach.columns) = new_columns;
 	attach.columns = new_columns;
 

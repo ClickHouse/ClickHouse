@@ -166,10 +166,13 @@ template <typename Impl, typename Name>
 class FunctionStringHash64 : public IFunction
 {
 public:
+	static constexpr auto name = Name::name;
+	static IFunction * create(const Context & context) { return new FunctionStringHash64; };
+
 	/// Получить имя функции.
 	String getName() const
 	{
-		return Name::get();
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -214,7 +217,7 @@ public:
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-					+ " of first argument of function " + Name::get(),
+					+ " of first argument of function " + Name::name,
 				ErrorCodes::ILLEGAL_COLUMN);
 	}
 };
@@ -224,10 +227,13 @@ template <typename Impl>
 class FunctionStringHashFixedString : public IFunction
 {
 public:
+	static constexpr auto name = Impl::name;
+	static IFunction * create(const Context & context) { return new FunctionStringHashFixedString; };
+
 	/// Получить имя функции.
 	String getName() const
 	{
-		return Impl::name;
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -289,6 +295,10 @@ public:
 template <typename Impl, typename Name>
 class FunctionIntHash : public IFunction
 {
+public:
+	static constexpr auto name = Name::name;
+	static IFunction * create(const Context & context) { return new FunctionIntHash; };
+
 private:
 	typedef typename Impl::ReturnType ToType;
 
@@ -314,7 +324,7 @@ private:
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-					+ " of first argument of function " + Name::get(),
+					+ " of first argument of function " + Name::name,
 				ErrorCodes::ILLEGAL_COLUMN);
 	}
 
@@ -322,7 +332,7 @@ public:
 	/// Получить имя функции.
 	String getName() const
 	{
-		return Name::get();
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -387,6 +397,10 @@ UInt64 toInteger<Float64>(Float64 x)
 
 class FunctionCityHash64 : public IFunction
 {
+public:
+	static constexpr auto name = "cityHash64";
+	static IFunction * create(const Context & context) { return new FunctionCityHash64; };
+
 private:
 	template <typename FromType, bool first>
 	void executeIntType(const IColumn * column, ColumnUInt64::Container_t & vec_to)
@@ -550,7 +564,7 @@ public:
 	/// Получить имя функции.
 	String getName() const
 	{
-		return "cityHash64";
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -589,11 +603,11 @@ public:
 };
 
 
-struct NameHalfMD5 			{ static const char * get() { return "halfMD5"; } };
-struct NameSipHash64		{ static const char * get() { return "sipHash64"; } };
-struct NameCityHash64 		{ static const char * get() { return "cityHash64"; } };
-struct NameIntHash32 		{ static const char * get() { return "intHash32"; } };
-struct NameIntHash64 		{ static const char * get() { return "intHash64"; } };
+struct NameHalfMD5 			{ static constexpr auto name = "halfMD5"; };
+struct NameSipHash64		{ static constexpr auto name = "sipHash64"; };
+struct NameCityHash64 		{ static constexpr auto name = "cityHash64"; };
+struct NameIntHash32 		{ static constexpr auto name = "intHash32"; };
+struct NameIntHash64 		{ static constexpr auto name = "intHash64"; };
 
 typedef FunctionStringHash64<HalfMD5Impl,		NameHalfMD5> 		FunctionHalfMD5;
 typedef FunctionStringHash64<SipHash64Impl,		NameSipHash64> 		FunctionSipHash64;

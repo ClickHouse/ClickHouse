@@ -809,10 +809,13 @@ template <typename Impl, typename Name, typename ResultType>
 class FunctionStringOrArrayToT : public IFunction
 {
 public:
+	static constexpr auto name = Name::name;
+	static IFunction * create(const Context & context) { return new FunctionStringOrArrayToT; }
+
 	/// Получить имя функции.
 	String getName() const
 	{
-		return Name::get();
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -902,10 +905,13 @@ template <typename Impl, typename Name>
 class FunctionStringToString : public IFunction
 {
 public:
+	static constexpr auto name = Name::name;
+	static IFunction * create(const Context & context) { return new FunctionStringToString; }
+
 	/// Получить имя функции.
 	String getName() const
 	{
-		return Name::get();
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -960,10 +966,13 @@ template <typename Impl, typename Name>
 class FunctionStringStringToString : public IFunction
 {
 public:
+	static constexpr auto name = Name::name;
+	static IFunction * create(const Context & context) { return new FunctionStringStringToString; }
+
 	/// Получить имя функции.
 	String getName() const
 	{
-		return Name::get();
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -1212,10 +1221,13 @@ template <typename Impl, typename Name>
 class FunctionStringNumNumToString : public IFunction
 {
 public:
+	static constexpr auto name = Name::name;
+	static IFunction * create(const Context & context) { return new FunctionStringNumNumToString; }
+
 	/// Получить имя функции.
 	String getName() const
 	{
-		return Name::get();
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -1287,19 +1299,19 @@ public:
 };
 
 
-struct NameEmpty 			{ static const char * get() { return "empty"; } };
-struct NameNotEmpty 		{ static const char * get() { return "notEmpty"; } };
-struct NameLength 			{ static const char * get() { return "length"; } };
-struct NameLengthUTF8 		{ static const char * get() { return "lengthUTF8"; } };
-struct NameLower 			{ static const char * get() { return "lower"; } };
-struct NameUpper 			{ static const char * get() { return "upper"; } };
-struct NameLowerUTF8		{ static const char * get() { return "lowerUTF8"; } };
-struct NameUpperUTF8		{ static const char * get() { return "upperUTF8"; } };
-struct NameReverse			{ static const char * get() { return "reverse"; } };
-struct NameReverseUTF8		{ static const char * get() { return "reverseUTF8"; } };
-struct NameConcat			{ static const char * get() { return "concat"; } };
-struct NameSubstring		{ static const char * get() { return "substring"; } };
-struct NameSubstringUTF8	{ static const char * get() { return "substringUTF8"; } };
+struct NameEmpty 			{ static constexpr auto name = "empty"; };
+struct NameNotEmpty 		{ static constexpr auto name = "notEmpty"; };
+struct NameLength 			{ static constexpr auto name = "length"; };
+struct NameLengthUTF8 		{ static constexpr auto name = "lengthUTF8"; };
+struct NameLower 			{ static constexpr auto name = "lower"; };
+struct NameUpper 			{ static constexpr auto name = "upper"; };
+struct NameLowerUTF8		{ static constexpr auto name = "lowerUTF8"; };
+struct NameUpperUTF8		{ static constexpr auto name = "upperUTF8"; };
+struct NameReverse			{ static constexpr auto name = "reverse"; };
+struct NameReverseUTF8		{ static constexpr auto name = "reverseUTF8"; };
+struct NameConcat			{ static constexpr auto name = "concat"; };
+struct NameSubstring		{ static constexpr auto name = "substring"; };
+struct NameSubstringUTF8	{ static constexpr auto name = "substringUTF8"; };
 
 typedef FunctionStringOrArrayToT<EmptyImpl<false>,		NameEmpty,		UInt8> 	FunctionEmpty;
 typedef FunctionStringOrArrayToT<EmptyImpl<true>, 		NameNotEmpty,	UInt8> 	FunctionNotEmpty;

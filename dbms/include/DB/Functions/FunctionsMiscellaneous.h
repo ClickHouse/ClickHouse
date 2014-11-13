@@ -76,13 +76,16 @@ static inline void stringWidthConstant(const String & data, UInt64 & res)
 
 class FunctionCurrentDatabase : public IFunction
 {
-	const String name;
+	const String db_name;
 
 public:
-	explicit FunctionCurrentDatabase(const String & name) : name(name) {}
+	static constexpr auto name = "currentDatabase";
+	static IFunction * create(const Context & context) { return new FunctionCurrentDatabase{context.getCurrentDatabase()}; }
+
+	explicit FunctionCurrentDatabase(const String & db_name) : db_name{db_name} {}
 
 	String getName() const {
-		return "currentDatabase";
+		return name;
 	}
 
 	DataTypePtr getReturnType(const DataTypes & arguments) const
@@ -98,7 +101,7 @@ public:
 	void execute(Block & block, const ColumnNumbers & arguments, const size_t result)
 	{
 		block.getByPosition(result).column = new ColumnConstString{
-			block.rowsInFirstColumn(), name
+			block.rowsInFirstColumn(), db_name
 		};
 	}
 };
@@ -107,10 +110,13 @@ public:
 class FunctionHostName : public IFunction
 {
 public:
+	static constexpr auto name = "hostName";
+	static IFunction * create(const Context & context) { return new FunctionHostName; }
+
 	/// Получить имя функции.
 	String getName() const
 	{
-		return "hostName";
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -124,7 +130,8 @@ public:
 		return new DataTypeString;
 	}
 
-	/// Выполнить функцию над блоком.
+	/** Выполнить функцию над блоком. convertToFullColumn вызывается для того, чтобы в случае
+	 *	распределенного выполнения запроса каждый сервер возвращал свое имя хоста. */
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		block.getByPosition(result).column = ColumnConstString(
@@ -136,10 +143,13 @@ public:
 class FunctionVisibleWidth : public IFunction
 {
 public:
+	static constexpr auto name = "visibleWidth";
+	static IFunction * create(const Context & context) { return new FunctionVisibleWidth; }
+
 	/// Получить имя функции.
 	String getName() const
 	{
-		return "visibleWidth";
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -161,10 +171,13 @@ public:
 class FunctionToTypeName : public IFunction
 {
 public:
+	static constexpr auto name = "toTypeName";
+	static IFunction * create(const Context & context) { return new FunctionToTypeName; }
+
 	/// Получить имя функции.
 	String getName() const
 	{
-		return "toTypeName";
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -189,10 +202,13 @@ public:
 class FunctionBlockSize : public IFunction
 {
 public:
+	static constexpr auto name = "blockSize";
+	static IFunction * create(const Context & context) { return new FunctionBlockSize; }
+
 	/// Получить имя функции.
 	String getName() const
 	{
-		return "blockSize";
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -218,10 +234,13 @@ public:
 class FunctionSleep : public IFunction
 {
 public:
+	static constexpr auto name = "sleep";
+	static IFunction * create(const Context & context) { return new FunctionSleep; }
+
 	/// Получить имя функции.
 	String getName() const
 	{
-		return "sleep";
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -284,10 +303,13 @@ public:
 class FunctionMaterialize : public IFunction
 {
 public:
+	static constexpr auto name = "materialize";
+	static IFunction * create(const Context & context) { return new FunctionMaterialize; }
+
 	/// Получить имя функции.
 	String getName() const
 	{
-		return "materialize";
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -312,23 +334,23 @@ public:
 	}
 };
 
+template <bool negative, bool global> struct FunctionInName;
+template <> struct FunctionInName<false, false>	{ static constexpr auto name = "in"; };
+template <> struct FunctionInName<false, true>	{ static constexpr auto name = "globalIn"; };
+template <> struct FunctionInName<true, false>	{ static constexpr auto name = "notIn"; };
+template <> struct FunctionInName<true, true>	{ static constexpr auto name = "globalNotIn"; };
 
+template <bool negative, bool global>
 class FunctionIn : public IFunction
 {
-private:
-	bool negative;
-	bool global;
-
 public:
-	FunctionIn(bool negative_ = false, bool global_ = false) : negative(negative_), global(global_) {}
+	static constexpr auto name = FunctionInName<negative, global>::name;
+	static IFunction * create(const Context & context) { return new FunctionIn; }
 
 	/// Получить имя функции.
 	String getName() const
 	{
-		if (global)
-			return negative ? "globalNotIn" : "globalIn";
-		else
-			return negative ? "notIn" : "in";
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -376,10 +398,13 @@ public:
 class FunctionTuple : public IFunction
 {
 public:
+	static constexpr auto name = "tuple";
+	static IFunction * create(const Context & context) { return new FunctionTuple; }
+
 	/// Получить имя функции.
 	String getName() const
 	{
-		return "tuple";
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -407,10 +432,13 @@ public:
 class FunctionTupleElement : public IFunction
 {
 public:
+	static constexpr auto name = "tupleElement";
+	static IFunction * create(const Context & context) { return new FunctionTupleElement; }
+
 	/// Получить имя функции.
 	String getName() const
 	{
-		return "tupleElement";
+		return name;
 	}
 
 	void getReturnTypeAndPrerequisites(const ColumnsWithNameAndType & arguments,
@@ -471,10 +499,13 @@ public:
 class FunctionIgnore : public IFunction
 {
 public:
+	static constexpr auto name = "ignore";
+	static IFunction * create(const Context & context) { return new FunctionIgnore; }
+
 	/// Получить имя функции.
 	String getName() const
 	{
-		return "ignore";
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -494,10 +525,14 @@ public:
 class FunctionArrayJoin : public IFunction
 {
 public:
+	static constexpr auto name = "arrayJoin";
+	static IFunction * create(const Context & context) { return new FunctionArrayJoin; }
+
+
 	/// Получить имя функции.
 	String getName() const
 	{
-		return "arrayJoin";
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -529,10 +564,14 @@ public:
   */
 class FunctionReplicate : public IFunction
 {
+	static constexpr auto name = "replicate";
+	static IFunction * create(const Context & context) { return new FunctionReplicate; }
+
+
 	/// Получить имя функции.
 	String getName() const
 	{
-		return "replicate";
+		return name;
 	}
 
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -575,10 +614,13 @@ class FunctionReplicate : public IFunction
 class FunctionBar : public IFunction
 {
 public:
+	static constexpr auto name = "bar";
+	static IFunction * create(const Context & context) { return new FunctionBar; }
+
 	/// Получить имя функции.
 	String getName() const
 	{
-		return "bar";
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.

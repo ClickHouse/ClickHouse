@@ -5,7 +5,6 @@
 #include <DB/Storages/VirtualColumnFactory.h>
 #include <DB/Storages/Distributed/DistributedBlockOutputStream.h>
 #include <DB/Storages/Distributed/DirectoryMonitor.h>
-#include <DB/Storages/Distributed/queryToString.h>
 #include <DB/Common/escapeForFileName.h>
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>
@@ -70,9 +69,36 @@ StorageDistributed::StorageDistributed(
 	createDirectoryMonitors();
 }
 
+StorageDistributed::StorageDistributed(
+	const std::string & name_,
+	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & materialized_columns_,
+	const NamesAndTypesList & alias_columns_,
+	const ColumnDefaults & column_defaults_,
+	const String & remote_database_,
+	const String & remote_table_,
+	Cluster & cluster_,
+	Context & context_,
+	const ASTPtr & sharding_key_,
+	const String & data_path_)
+	: IStorage{materialized_columns_, alias_columns_, column_defaults_},
+	name(name_), columns(columns_),
+	remote_database(remote_database_), remote_table(remote_table_),
+	context(context_), cluster(cluster_),
+	sharding_key_expr(sharding_key_ ? ExpressionAnalyzer(sharding_key_, context, *columns).getActions(false) : nullptr),
+	sharding_key_column_name(sharding_key_ ? sharding_key_->getColumnName() : String{}),
+	write_enabled(cluster.getLocalNodesNum() + cluster.pools.size() < 2 || sharding_key_),
+	path(data_path_ + escapeForFileName(name) + '/')
+{
+	createDirectoryMonitors();
+}
+
 StoragePtr StorageDistributed::create(
 	const std::string & name_,
 	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & materialized_columns_,
+	const NamesAndTypesList & alias_columns_,
+	const ColumnDefaults & column_defaults_,
 	const String & remote_database_,
 	const String & remote_table_,
 	const String & cluster_name,
@@ -83,7 +109,9 @@ StoragePtr StorageDistributed::create(
 	context_.initClusters();
 
 	return (new StorageDistributed{
-		name_, columns_, remote_database_, remote_table_,
+		name_, columns_,
+		materialized_columns_, alias_columns_, column_defaults_,
+		remote_database_, remote_table_,
 		context_.getCluster(cluster_name), context_,
 		sharding_key_, data_path_
 	})->thisPtr();
@@ -100,7 +128,8 @@ StoragePtr StorageDistributed::create(
 {
 	auto res = new StorageDistributed{
 		name_, columns_, remote_database_,
-		remote_table_, *owned_cluster_, context_};
+		remote_table_, *owned_cluster_, context_
+	};
 
 	/// Захватываем владение объектом-кластером.
 	res->owned_cluster = owned_cluster_;
@@ -174,8 +203,9 @@ BlockOutputStreamPtr StorageDistributed::write(ASTPtr query)
 void StorageDistributed::alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context)
 {
 	auto lock = lockStructureForAlter();
-	params.apply(*columns);
-	InterpreterAlterQuery::updateMetadata(database_name, table_name, *columns, context);
+	params.apply(*columns, materialized_columns, alias_columns, column_defaults);
+	InterpreterAlterQuery::updateMetadata(database_name, table_name,
+		*columns, materialized_columns, alias_columns, column_defaults, context);
 }
 
 void StorageDistributed::shutdown()
@@ -193,7 +223,7 @@ NameAndTypePair StorageDistributed::getColumn(const String & column_name) const
 
 bool StorageDistributed::hasColumn(const String & column_name) const
 {
-	return VirtualColumnFactory::hasColumn(column_name) || hasRealColumn(column_name);
+	return VirtualColumnFactory::hasColumn(column_name) || IStorage::hasColumn(column_name);
 }
 
 void StorageDistributed::createDirectoryMonitor(const std::string & name)

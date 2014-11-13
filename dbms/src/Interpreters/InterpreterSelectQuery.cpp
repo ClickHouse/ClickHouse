@@ -67,7 +67,7 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input_, const NamesAndType
 
 		table_lock = storage->lockStructure(false);
 		if (table_column_names.empty())
-			context.setColumns(storage->getColumnsList());
+			context.setColumns(storage->getColumnsListNonMaterialized());
 	}
 
 	if (!table_column_names.empty())

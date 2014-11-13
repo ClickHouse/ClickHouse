@@ -23,10 +23,13 @@ template<typename Name>
 class FunctionReinterpretAsStringImpl : public IFunction
 {
 public:
+	static constexpr auto name = Name::name;
+	static IFunction * create(const Context & context) { return new FunctionReinterpretAsStringImpl; };
+
 	/// Получить имя функции.
 	String getName() const
 	{
-		return Name::get();
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -116,12 +119,15 @@ template<typename ToDataType, typename Name>
 class FunctionReinterpretStringAs : public IFunction
 {
 public:
+	static constexpr auto name = Name::name;
+	static IFunction * create(const Context & context) { return new FunctionReinterpretStringAs; };
+
 	typedef typename ToDataType::FieldType ToFieldType;
 
 	/// Получить имя функции.
 	String getName() const
 	{
-		return Name::get();
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -202,19 +208,19 @@ public:
 };
 
 
-struct NameReinterpretAsUInt8 		{ static const char * get() { return "reinterpretAsUInt8"; } };
-struct NameReinterpretAsUInt16		{ static const char * get() { return "reinterpretAsUInt16"; } };
-struct NameReinterpretAsUInt32		{ static const char * get() { return "reinterpretAsUInt32"; } };
-struct NameReinterpretAsUInt64		{ static const char * get() { return "reinterpretAsUInt64"; } };
-struct NameReinterpretAsInt8 		{ static const char * get() { return "reinterpretAsInt8"; } };
-struct NameReinterpretAsInt16 		{ static const char * get() { return "reinterpretAsInt16"; } };
-struct NameReinterpretAsInt32		{ static const char * get() { return "reinterpretAsInt32"; } };
-struct NameReinterpretAsInt64		{ static const char * get() { return "reinterpretAsInt64"; } };
-struct NameReinterpretAsFloat32	{ static const char * get() { return "reinterpretAsFloat32"; } };
-struct NameReinterpretAsFloat64	{ static const char * get() { return "reinterpretAsFloat64"; } };
-struct NameReinterpretAsDate		{ static const char * get() { return "reinterpretAsDate"; } };
-struct NameReinterpretAsDateTime	{ static const char * get() { return "reinterpretAsDateTime"; } };
-struct NameReinterpretAsString		{ static const char * get() { return "reinterpretAsString"; } };
+struct NameReinterpretAsUInt8 		{ static constexpr auto name = "reinterpretAsUInt8"; };
+struct NameReinterpretAsUInt16		{ static constexpr auto name = "reinterpretAsUInt16"; };
+struct NameReinterpretAsUInt32		{ static constexpr auto name = "reinterpretAsUInt32"; };
+struct NameReinterpretAsUInt64		{ static constexpr auto name = "reinterpretAsUInt64"; };
+struct NameReinterpretAsInt8 		{ static constexpr auto name = "reinterpretAsInt8"; };
+struct NameReinterpretAsInt16 		{ static constexpr auto name = "reinterpretAsInt16"; };
+struct NameReinterpretAsInt32		{ static constexpr auto name = "reinterpretAsInt32"; };
+struct NameReinterpretAsInt64		{ static constexpr auto name = "reinterpretAsInt64"; };
+struct NameReinterpretAsFloat32		{ static constexpr auto name = "reinterpretAsFloat32"; };
+struct NameReinterpretAsFloat64		{ static constexpr auto name = "reinterpretAsFloat64"; };
+struct NameReinterpretAsDate		{ static constexpr auto name = "reinterpretAsDate"; };
+struct NameReinterpretAsDateTime	{ static constexpr auto name = "reinterpretAsDateTime"; };
+struct NameReinterpretAsString		{ static constexpr auto name = "reinterpretAsString"; };
 
 typedef FunctionReinterpretStringAs<DataTypeUInt8,		NameReinterpretAsUInt8>		FunctionReinterpretAsUInt8;
 typedef FunctionReinterpretStringAs<DataTypeUInt16,	NameReinterpretAsUInt16>	FunctionReinterpretAsUInt16;

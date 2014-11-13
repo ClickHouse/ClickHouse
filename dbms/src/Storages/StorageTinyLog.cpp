@@ -194,8 +194,8 @@ void TinyLogBlockInputStream::readData(const String & name, const IDataType & ty
 TinyLogBlockOutputStream::TinyLogBlockOutputStream(StorageTinyLog & storage_)
 	: storage(storage_)
 {
-	for (NamesAndTypesList::const_iterator it = storage.columns->begin(); it != storage.columns->end(); ++it)
-		addStream(it->name, *it->type);
+	for (const auto & col : storage.getColumnsList())
+		addStream(col.name, *col.type);
 }
 
 
@@ -297,11 +297,20 @@ void TinyLogBlockOutputStream::write(const Block & block)
 }
 
 
-StorageTinyLog::StorageTinyLog(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, bool attach, size_t max_compress_block_size_)
-	: path(path_), name(name_), columns(columns_),
-		max_compress_block_size(max_compress_block_size_),
-		file_checker(path + escapeForFileName(name) + '/' + "sizes.json", *this),
-		log(&Logger::get("StorageTinyLog"))
+StorageTinyLog::StorageTinyLog(
+	const std::string & path_,
+	const std::string & name_,
+	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & materialized_columns_,
+	const NamesAndTypesList & alias_columns_,
+	const ColumnDefaults & column_defaults_,
+	bool attach,
+	size_t max_compress_block_size_)
+	: IStorage{materialized_columns_, alias_columns_, column_defaults_},
+	path(path_), name(name_), columns(columns_),
+	max_compress_block_size(max_compress_block_size_),
+	file_checker(path + escapeForFileName(name) + '/' + "sizes.json", *this),
+	log(&Logger::get("StorageTinyLog"))
 {
 	if (columns->empty())
 		throw Exception("Empty list of columns passed to StorageTinyLog constructor", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
@@ -314,13 +323,25 @@ StorageTinyLog::StorageTinyLog(const std::string & path_, const std::string & na
 			throwFromErrno("Cannot create directory " + full_path, ErrorCodes::CANNOT_CREATE_DIRECTORY);
 	}
 
-	for (NamesAndTypesList::const_iterator it = columns->begin(); it != columns->end(); ++it)
-		addFile(it->name, *it->type);
+	for (const auto & col : getColumnsList())
+		addFile(col.name, *col.type);
 }
 
-StoragePtr StorageTinyLog::create(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, bool attach, size_t max_compress_block_size_)
+StoragePtr StorageTinyLog::create(
+	const std::string & path_,
+	const std::string & name_,
+	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & materialized_columns_,
+	const NamesAndTypesList & alias_columns_,
+	const ColumnDefaults & column_defaults_,
+	bool attach,
+	size_t max_compress_block_size_)
 {
-	return (new StorageTinyLog(path_, name_, columns_, attach, max_compress_block_size_))->thisPtr();
+	return (new StorageTinyLog{
+		path_, name_, columns_,
+		materialized_columns_, alias_columns_, column_defaults_,
+		attach, max_compress_block_size_
+	})->thisPtr();
 }
 
 

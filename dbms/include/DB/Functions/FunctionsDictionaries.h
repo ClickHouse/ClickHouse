@@ -161,6 +161,10 @@ struct IdentityDictionaryGetter
 template <typename T, typename Transform, typename DictGetter, typename Name>
 class FunctionTransformWithDictionary : public IFunction
 {
+public:
+	static constexpr auto name = Name::name;
+	using base_type = FunctionTransformWithDictionary;
+
 private:
 	const SharedPtr<typename DictGetter::Src> owned_dict;
 
@@ -175,7 +179,7 @@ public:
 	/// Получить имя функции.
 	String getName() const
 	{
-		return Name::get();
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -211,7 +215,7 @@ public:
 
 			if (!key_col)
 				throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
-					+ " of second ('point of view') argument of function " + Name::get()
+					+ " of second ('point of view') argument of function " + name
 					+ ". Must be constant string.",
 					ErrorCodes::ILLEGAL_COLUMN);
 
@@ -239,7 +243,7 @@ public:
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-					+ " of first argument of function " + Name::get(),
+					+ " of first argument of function " + name,
 				ErrorCodes::ILLEGAL_COLUMN);
 	}
 };
@@ -249,6 +253,10 @@ public:
 template <typename T, typename Transform, typename DictGetter, typename Name>
 class FunctionIsInWithDictionary : public IFunction
 {
+public:
+	static constexpr auto name = Name::name;
+	using base_type = FunctionIsInWithDictionary;
+
 private:
 	const SharedPtr<typename DictGetter::Src> owned_dict;
 
@@ -263,7 +271,7 @@ public:
 	/// Получить имя функции.
 	String getName() const
 	{
-		return Name::get();
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -304,7 +312,7 @@ public:
 
 			if (!key_col)
 				throw Exception("Illegal column " + block.getByPosition(arguments[2]).column->getName()
-				+ " of third ('point of view') argument of function " + Name::get()
+				+ " of third ('point of view') argument of function " + name
 				+ ". Must be constant string.",
 				ErrorCodes::ILLEGAL_COLUMN);
 
@@ -368,7 +376,7 @@ public:
 		else
 			throw Exception("Illegal columns " + block.getByPosition(arguments[0]).column->getName()
 					+ " and " + block.getByPosition(arguments[1]).column->getName()
-					+ " of arguments of function " + Name::get(),
+					+ " of arguments of function " + name,
 				ErrorCodes::ILLEGAL_COLUMN);
 	}
 };
@@ -378,6 +386,10 @@ public:
 template <typename T, typename Transform, typename DictGetter, typename Name>
 class FunctionHierarchyWithDictionary : public IFunction
 {
+public:
+	static constexpr auto name = Name::name;
+	using base_type = FunctionHierarchyWithDictionary;
+
 private:
 	const SharedPtr<typename DictGetter::Src> owned_dict;
 
@@ -392,7 +404,7 @@ public:
 	/// Получить имя функции.
 	String getName() const
 	{
-		return Name::get();
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -428,7 +440,7 @@ public:
 
 			if (!key_col)
 				throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
-				+ " of second ('point of view') argument of function " + Name::get()
+				+ " of second ('point of view') argument of function " + name
 				+ ". Must be constant string.",
 				ErrorCodes::ILLEGAL_COLUMN);
 
@@ -477,88 +489,197 @@ public:
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-			+ " of first argument of function " + Name::get(),
+			+ " of first argument of function " + name,
 							ErrorCodes::ILLEGAL_COLUMN);
 	}
 };
 
 
-struct NameRegionToCity 	{ static const char * get() { return "regionToCity"; } };
-struct NameRegionToArea 	{ static const char * get() { return "regionToArea"; } };
-struct NameRegionToDistrict { static const char * get() { return "regionToDistrict"; } };
-struct NameRegionToCountry 	{ static const char * get() { return "regionToCountry"; } };
-struct NameRegionToContinent{ static const char * get() { return "regionToContient"; } };
-struct NameOSToRoot 		{ static const char * get() { return "OSToRoot"; } };
-struct NameSEToRoot 		{ static const char * get() { return "SEToRoot"; } };
-struct NameCategoryToRoot 	{ static const char * get() { return "categoryToRoot"; } };
-struct NameCategoryToSecondLevel { static const char * get() { return "categoryToSecondLevel"; } };
+struct NameRegionToCity				{ static constexpr auto name = "regionToCity"; };
+struct NameRegionToArea				{ static constexpr auto name = "regionToArea"; };
+struct NameRegionToDistrict			{ static constexpr auto name = "regionToDistrict"; };
+struct NameRegionToCountry			{ static constexpr auto name = "regionToCountry"; };
+struct NameRegionToContinent		{ static constexpr auto name = "regionToContient"; };
+struct NameOSToRoot					{ static constexpr auto name = "OSToRoot"; };
+struct NameSEToRoot					{ static constexpr auto name = "SEToRoot"; };
+struct NameCategoryToRoot			{ static constexpr auto name = "categoryToRoot"; };
+struct NameCategoryToSecondLevel	{ static constexpr auto name = "categoryToSecondLevel"; };
 
-struct NameRegionIn 		{ static const char * get() { return "regionIn"; } };
-struct NameOSIn 			{ static const char * get() { return "OSIn"; } };
-struct NameSEIn 			{ static const char * get() { return "SEIn"; } };
-struct NameCategoryIn 		{ static const char * get() { return "categoryIn"; } };
+struct NameRegionIn					{ static constexpr auto name = "regionIn"; };
+struct NameOSIn						{ static constexpr auto name = "OSIn"; };
+struct NameSEIn						{ static constexpr auto name = "SEIn"; };
+struct NameCategoryIn				{ static constexpr auto name = "categoryIn"; };
 
-struct NameRegionHierarchy	{ static const char * get() { return "regionHierarchy"; } };
-struct NameOSHierarchy		{ static const char * get() { return "OSHierarchy"; } };
-struct NameSEHierarchy		{ static const char * get() { return "SEHierarchy"; } };
-struct NameCategoryHierarchy{ static const char * get() { return "categoryHierarchy"; } };
+struct NameRegionHierarchy			{ static constexpr auto name = "regionHierarchy"; };
+struct NameOSHierarchy				{ static constexpr auto name = "OSHierarchy"; };
+struct NameSEHierarchy				{ static constexpr auto name = "SEHierarchy"; };
+struct NameCategoryHierarchy		{ static constexpr auto name = "categoryHierarchy"; };
 
 
-typedef FunctionTransformWithDictionary
-	<UInt32, RegionToCityImpl,	RegionsHierarchyGetter,	NameRegionToCity> FunctionRegionToCity;
+struct FunctionRegionToCity :
+	public FunctionTransformWithDictionary<UInt32, RegionToCityImpl,	RegionsHierarchyGetter,	NameRegionToCity>
+{
+	static IFunction * create(const Context & context)
+	{
+		return new base_type{context.getDictionaries().getRegionsHierarchies()};
+	}
+};
 
-typedef FunctionTransformWithDictionary
-	<UInt32, RegionToAreaImpl,	RegionsHierarchyGetter,	NameRegionToArea> FunctionRegionToArea;
+struct FunctionRegionToArea :
+	public FunctionTransformWithDictionary<UInt32, RegionToAreaImpl,	RegionsHierarchyGetter,	NameRegionToArea>
+{
+	static IFunction * create(const Context & context)
+	{
+		return new base_type{context.getDictionaries().getRegionsHierarchies()};
+	}
+};
 
-typedef FunctionTransformWithDictionary
-	<UInt32, RegionToDistrictImpl, RegionsHierarchyGetter, NameRegionToDistrict> FunctionRegionToDistrict;
+struct FunctionRegionToDistrict :
+	public FunctionTransformWithDictionary<UInt32, RegionToDistrictImpl, RegionsHierarchyGetter, NameRegionToDistrict>
+{
+	static IFunction * create(const Context & context)
+	{
+		return new base_type{context.getDictionaries().getRegionsHierarchies()};
+	}
+};
 
-typedef FunctionTransformWithDictionary
-	<UInt32, RegionToCountryImpl, RegionsHierarchyGetter, NameRegionToCountry> FunctionRegionToCountry;
+struct FunctionRegionToCountry :
+	public FunctionTransformWithDictionary<UInt32, RegionToCountryImpl, RegionsHierarchyGetter, NameRegionToCountry>
+{
+	static IFunction * create(const Context & context)
+	{
+		return new base_type{context.getDictionaries().getRegionsHierarchies()};
+	}
+};
 
-typedef FunctionTransformWithDictionary
-	<UInt32, RegionToContinentImpl, RegionsHierarchyGetter, NameRegionToContinent> FunctionRegionToContinent;
+struct FunctionRegionToContinent :
+	public FunctionTransformWithDictionary<UInt32, RegionToContinentImpl, RegionsHierarchyGetter, NameRegionToContinent>
+{
+	static IFunction * create(const Context & context)
+	{
+		return new base_type{context.getDictionaries().getRegionsHierarchies()};
+	}
+};
 
-typedef FunctionTransformWithDictionary
-	<UInt8, OSToRootImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameOSToRoot> FunctionOSToRoot;
+struct FunctionOSToRoot :
+	public FunctionTransformWithDictionary<UInt8, OSToRootImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameOSToRoot>
+{
+	static IFunction * create(const Context & context)
+	{
+		return new base_type{context.getDictionaries().getTechDataHierarchy()};
+	}
+};
 
-typedef FunctionTransformWithDictionary
-	<UInt8, SEToRootImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameSEToRoot> FunctionSEToRoot;
+struct FunctionSEToRoot :
+	public FunctionTransformWithDictionary<UInt8, SEToRootImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameSEToRoot>
+{
+	static IFunction * create(const Context & context)
+	{
+		return new base_type{context.getDictionaries().getTechDataHierarchy()};
+	}
+};
 
-typedef FunctionTransformWithDictionary
-	<UInt16, CategoryToRootImpl, IdentityDictionaryGetter<CategoriesHierarchy>, NameCategoryToRoot>	FunctionCategoryToRoot;
+struct FunctionCategoryToRoot :
+	public FunctionTransformWithDictionary<UInt16, CategoryToRootImpl, IdentityDictionaryGetter<CategoriesHierarchy>, NameCategoryToRoot>
+{
+	static IFunction * create(const Context & context)
+	{
+		return new base_type{context.getDictionaries().getCategoriesHierarchy()};
+	}
+};
 
-typedef FunctionTransformWithDictionary
-	<UInt16, CategoryToSecondLevelImpl, IdentityDictionaryGetter<CategoriesHierarchy>, NameCategoryToSecondLevel> FunctionCategoryToSecondLevel;
+struct FunctionCategoryToSecondLevel :
+	public FunctionTransformWithDictionary<UInt16, CategoryToSecondLevelImpl, IdentityDictionaryGetter<CategoriesHierarchy>, NameCategoryToSecondLevel>
+{
+	static IFunction * create(const Context & context)
+	{
+		return new base_type{context.getDictionaries().getCategoriesHierarchy()};
+	}
+};
 
-typedef FunctionIsInWithDictionary
-	<UInt32, RegionInImpl, RegionsHierarchyGetter,	NameRegionIn> FunctionRegionIn;
+struct FunctionRegionIn :
+	public FunctionIsInWithDictionary<UInt32, RegionInImpl, RegionsHierarchyGetter,	NameRegionIn>
+{
+	static IFunction * create(const Context & context)
+	{
+		return new base_type{context.getDictionaries().getRegionsHierarchies()};
+	}
+};
 
-typedef FunctionIsInWithDictionary
-	<UInt8,	OSInImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameOSIn> FunctionOSIn;
+struct FunctionOSIn :
+	public FunctionIsInWithDictionary<UInt8,	OSInImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameOSIn>
+{
+	static IFunction * create(const Context & context)
+	{
+		return new base_type{context.getDictionaries().getTechDataHierarchy()};
+	}
+};
 
-typedef FunctionIsInWithDictionary
-	<UInt8,	SEInImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameSEIn> FunctionSEIn;
+struct FunctionSEIn :
+	public FunctionIsInWithDictionary<UInt8,	SEInImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameSEIn>
+{
+	static IFunction * create(const Context & context)
+	{
+		return new base_type{context.getDictionaries().getTechDataHierarchy()};
+	}
+};
 
-typedef FunctionIsInWithDictionary
-	<UInt16, CategoryInImpl, IdentityDictionaryGetter<CategoriesHierarchy>, NameCategoryIn>	FunctionCategoryIn;
+struct FunctionCategoryIn :
+	public FunctionIsInWithDictionary<UInt16, CategoryInImpl, IdentityDictionaryGetter<CategoriesHierarchy>, NameCategoryIn>
+{
+	static IFunction * create(const Context & context)
+	{
+		return new base_type{context.getDictionaries().getCategoriesHierarchy()};
+	}
+};
 
-typedef FunctionHierarchyWithDictionary
-	<UInt32, RegionHierarchyImpl, RegionsHierarchyGetter, NameRegionHierarchy> FunctionRegionHierarchy;
+struct FunctionRegionHierarchy :
+	public FunctionHierarchyWithDictionary<UInt32, RegionHierarchyImpl, RegionsHierarchyGetter, NameRegionHierarchy>
+{
+	static IFunction * create(const Context & context)
+	{
+		return new base_type{context.getDictionaries().getRegionsHierarchies()};
+	}
+};
 
-typedef FunctionHierarchyWithDictionary
-	<UInt8, OSHierarchyImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameOSHierarchy> FunctionOSHierarchy;
+struct FunctionOSHierarchy :
+	public FunctionHierarchyWithDictionary<UInt8, OSHierarchyImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameOSHierarchy>
+{
+	static IFunction * create(const Context & context)
+	{
+		return new base_type{context.getDictionaries().getTechDataHierarchy()};
+	}
+};
 
-typedef FunctionHierarchyWithDictionary
-	<UInt8, SEHierarchyImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameSEHierarchy> FunctionSEHierarchy;
+struct FunctionSEHierarchy :
+	public FunctionHierarchyWithDictionary<UInt8, SEHierarchyImpl, IdentityDictionaryGetter<TechDataHierarchy>, NameSEHierarchy>
+{
+	static IFunction * create(const Context & context)
+	{
+		return new base_type{context.getDictionaries().getTechDataHierarchy()};
+	}
+};
 
-typedef FunctionHierarchyWithDictionary
-	<UInt16, CategoryHierarchyImpl, IdentityDictionaryGetter<CategoriesHierarchy>, NameCategoryHierarchy> FunctionCategoryHierarchy;
+struct FunctionCategoryHierarchy :
+	public FunctionHierarchyWithDictionary<UInt16, CategoryHierarchyImpl, IdentityDictionaryGetter<CategoriesHierarchy>, NameCategoryHierarchy>
+{
+	static IFunction * create(const Context & context)
+	{
+		return new base_type{context.getDictionaries().getCategoriesHierarchy()};
+	}
+};
 
 
 /// Преобразует числовой идентификатор региона в имя на заданном языке, используя словарь.
 class FunctionRegionToName : public IFunction
 {
+public:
+	static constexpr auto name = "regionToName";
+	static IFunction * create(const Context & context)
+	{
+		return new FunctionRegionToName(context.getDictionaries().getRegionsNames());
+	}
+
 private:
 	const SharedPtr<RegionsNames> owned_dict;
 
@@ -573,7 +694,7 @@ public:
 	/// Получить имя функции.
 	String getName() const
 	{
-		return "regionToName";
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.

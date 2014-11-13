@@ -22,7 +22,7 @@ public:
 	std::string getName() const override { return "SystemReplicas"; }
 	std::string getTableName() const override { return name; }
 
-	const NamesAndTypesList & getColumnsList() const override { return columns; }
+	const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
 
 	BlockInputStreams read(
 		const Names & column_names,

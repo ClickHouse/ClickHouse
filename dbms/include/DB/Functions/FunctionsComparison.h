@@ -385,8 +385,11 @@ template <
 	typename Name>
 class FunctionComparison : public IFunction
 {
-private:
+public:
+	static constexpr auto name = Name::name;
+	static IFunction * create(const Context & context) { return new FunctionComparison; };
 
+private:
 	template <typename T0, typename T1>
 	bool executeNumRightType(Block & block, const ColumnNumbers & arguments, size_t result, const ColumnVector<T0> * col_left)
 	{
@@ -567,7 +570,7 @@ public:
 	/// Получить имя функции.
 	String getName() const
 	{
-		return Name::get();
+		return name;
 	}
 
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -615,12 +618,12 @@ public:
 };
 
 
-struct NameEquals 			{ static const char * get() { return "equals"; } };
-struct NameNotEquals 		{ static const char * get() { return "notEquals"; } };
-struct NameLess 			{ static const char * get() { return "less"; } };
-struct NameGreater 			{ static const char * get() { return "greater"; } };
-struct NameLessOrEquals 	{ static const char * get() { return "lessOrEquals"; } };
-struct NameGreaterOrEquals 	{ static const char * get() { return "greaterOrEquals"; } };
+struct NameEquals 			{ static constexpr auto name = "equals"; };
+struct NameNotEquals 		{ static constexpr auto name = "notEquals"; };
+struct NameLess 			{ static constexpr auto name = "less"; };
+struct NameGreater 			{ static constexpr auto name = "greater"; };
+struct NameLessOrEquals 	{ static constexpr auto name = "lessOrEquals"; };
+struct NameGreaterOrEquals 	{ static constexpr auto name = "greaterOrEquals"; };
 
 typedef FunctionComparison<EqualsOp, 			NameEquals>				FunctionEquals;
 typedef FunctionComparison<NotEqualsOp, 		NameNotEquals>			FunctionNotEquals;

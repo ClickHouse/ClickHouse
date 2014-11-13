@@ -250,8 +250,8 @@ LogBlockOutputStream::LogBlockOutputStream(StorageLog & storage_)
 	: storage(storage_),
 	lock(storage.rwlock), marks_stream(storage.marks_file.path(), 4096, O_APPEND | O_CREAT | O_WRONLY)
 {
-	for (NamesAndTypesList::const_iterator it = storage.columns->begin(); it != storage.columns->end(); ++it)
-		addStream(it->name, *it->type);
+	for (const auto & column : storage.getColumnsList())
+		addStream(column.name, *column.type);
 }
 
 
@@ -409,8 +409,17 @@ void LogBlockOutputStream::writeMarks(MarksForColumns marks)
 }
 
 
-StorageLog::StorageLog(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, size_t max_compress_block_size_)
-	: path(path_), name(name_), columns(columns_), loaded_marks(false), max_compress_block_size(max_compress_block_size_),
+StorageLog::StorageLog(
+	const std::string & path_,
+	const std::string & name_,
+	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & materialized_columns_,
+	const NamesAndTypesList & alias_columns_,
+	const ColumnDefaults & column_defaults_,
+	size_t max_compress_block_size_)
+	: IStorage{materialized_columns_, alias_columns_, column_defaults_},
+	path(path_), name(name_), columns(columns_),
+	loaded_marks(false), max_compress_block_size(max_compress_block_size_),
 	file_checker(path + escapeForFileName(name) + '/' + "sizes.json", *this)
 {
 	if (columns->empty())
@@ -419,15 +428,39 @@ StorageLog::StorageLog(const std::string & path_, const std::string & name_, Nam
 	/// создаём файлы, если их нет
 	Poco::File(path + escapeForFileName(name) + '/').createDirectories();
 
-	for (NamesAndTypesList::const_iterator it = columns->begin(); it != columns->end(); ++it)
-		addFile(it->name, *it->type);
+	for (const auto & column : getColumnsList())
+		addFile(column.name, *column.type);
 
 	marks_file = Poco::File(path + escapeForFileName(name) + '/' + DBMS_STORAGE_LOG_MARKS_FILE_NAME);
 }
 
-StoragePtr StorageLog::create(const std::string & path_, const std::string & name_, NamesAndTypesListPtr columns_, size_t max_compress_block_size_)
+StoragePtr StorageLog::create(
+	const std::string & path_,
+	const std::string & name_,
+	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & materialized_columns_,
+	const NamesAndTypesList & alias_columns_,
+	const ColumnDefaults & column_defaults_,
+	size_t max_compress_block_size_)
 {
-	return (new StorageLog(path_, name_, columns_, max_compress_block_size_))->thisPtr();
+	return (new StorageLog{
+		path_, name_, columns_,
+		materialized_columns_, alias_columns_, column_defaults_,
+		max_compress_block_size_
+	})->thisPtr();
+}
+
+StoragePtr StorageLog::create(
+	const std::string & path_,
+	const std::string & name_,
+	NamesAndTypesListPtr columns_,
+	size_t max_compress_block_size_)
+{
+	return (new StorageLog{
+		path_, name_, columns_,
+		{}, {}, {},
+		max_compress_block_size_
+	})->thisPtr();
 }
 
 

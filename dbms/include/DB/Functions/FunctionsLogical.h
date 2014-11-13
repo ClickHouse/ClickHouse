@@ -152,6 +152,10 @@ struct AssociativeOperationImpl<Op, 1>
 template <template <typename> class Impl, typename Name>
 class FunctionAnyArityLogical : public IFunction
 {
+public:
+	static constexpr auto name = Name::name;
+	static IFunction * create(const Context & context) { return new FunctionAnyArityLogical; };
+
 private:
 	bool extractConstColumns(ColumnPlainPtrs & in, UInt8 & res)
 	{
@@ -240,7 +244,7 @@ public:
 	/// Получить имя функции.
 	String getName() const
 	{
-		return Name::get();
+		return name;
 	}
 
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -357,8 +361,11 @@ public:
 template <template <typename> class Impl, typename Name>
 class FunctionUnaryLogical : public IFunction
 {
-private:
+public:
+	static constexpr auto name = Name::name;
+	static IFunction * create(const Context & context) { return new FunctionUnaryLogical; };
 
+private:
 	template <typename T>
 	bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
@@ -391,7 +398,7 @@ public:
 	/// Получить имя функции.
 	String getName() const
 	{
-		return Name::get();
+		return name;
 	}
 
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -431,10 +438,10 @@ public:
 };
 
 
-struct NameAnd	{ static const char * get() { return "and"; } };
-struct NameOr	{ static const char * get() { return "or"; } };
-struct NameXor	{ static const char * get() { return "xor"; } };
-struct NameNot	{ static const char * get() { return "not"; } };
+struct NameAnd	{ static constexpr auto name = "and"; };
+struct NameOr	{ static constexpr auto name = "or"; };
+struct NameXor	{ static constexpr auto name = "xor"; };
+struct NameNot	{ static constexpr auto name = "not"; };
 
 typedef FunctionAnyArityLogical	<AndImpl,	NameAnd>	FunctionAnd;
 typedef FunctionAnyArityLogical	<OrImpl,	NameOr>		FunctionOr;

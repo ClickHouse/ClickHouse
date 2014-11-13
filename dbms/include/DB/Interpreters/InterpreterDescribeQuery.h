@@ -10,6 +10,8 @@
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/Columns/ColumnString.h>
+#include <DB/Parsers/formatAST.h>
+
 
 
 namespace DB
@@ -59,12 +61,17 @@ private:
 		col.name = "name";
 		col.type = new DataTypeString;
 		col.column = col.type->createColumn();
-
 		block.insert(col);
 
 		col.name = "type";
-
 		block.insert(col);
+
+		col.name = "default_type";
+		block.insert(col);
+
+		col.name = "default_expression";
+		block.insert(col);
+
 
 		return block;
 	}
@@ -74,27 +81,42 @@ private:
 		const ASTDescribeQuery & ast = typeid_cast<const ASTDescribeQuery &>(*query_ptr);
 
 		NamesAndTypesList columns;
+		ColumnDefaults column_defaults;
 
 		{
 			StoragePtr table = context.getTable(ast.database, ast.table);
 			auto table_lock = table->lockStructure(false);
 			columns = table->getColumnsList();
+			columns.insert(std::end(columns), std::begin(table->alias_columns), std::end(table->alias_columns));
+			column_defaults = table->column_defaults;
 		}
 
-		ColumnString * name_column = new ColumnString;
-		ColumnString * type_column = new ColumnString;
+		ColumnWithNameAndType name_column{new ColumnString, new DataTypeString, "name"};
+		ColumnWithNameAndType type_column{new ColumnString, new DataTypeString, "type" };
+		ColumnWithNameAndType default_type_column{new ColumnString, new DataTypeString, "default_type" };
+		ColumnWithNameAndType default_expression_column{new ColumnString, new DataTypeString, "default_expression" };;
 
-		Block block;
-		block.insert(ColumnWithNameAndType(name_column, new DataTypeString, "name"));
-		block.insert(ColumnWithNameAndType(type_column, new DataTypeString, "type"));
-
-		for (NamesAndTypesList::iterator it = columns.begin(); it != columns.end(); ++it)
+		for (const auto column : columns)
 		{
-			name_column->insert(it->name);
-			type_column->insert(it->type->getName());
+			name_column.column->insert(column.name);
+			type_column.column->insert(column.type->getName());
+
+			const auto it = column_defaults.find(column.name);
+			if (it == std::end(column_defaults))
+			{
+				default_type_column.column->insertDefault();
+				default_expression_column.column->insertDefault();
+			}
+			else
+			{
+				default_type_column.column->insert(toString(it->second.type));
+				default_expression_column.column->insert(queryToString(it->second.expression));
+			}
 		}
 
-		return new OneBlockInputStream(block);
+		return new OneBlockInputStream{
+			{name_column, type_column, default_type_column, default_expression_column}
+		};
 	}
 };
 

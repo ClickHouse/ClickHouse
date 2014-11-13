@@ -41,11 +41,15 @@ namespace DB
 
 class FunctionArray : public IFunction
 {
+public:
+	static constexpr auto name = "array";
+	static IFunction * create(const Context & context) { return new FunctionArray; }
+
 private:
 	/// Получить имя функции.
 	String getName() const
 	{
-		return "array";
+		return name;
 	}
 
 	template <typename T0, typename T1>
@@ -384,6 +388,10 @@ struct ArrayElementStringImpl
 
 class FunctionArrayElement : public IFunction
 {
+public:
+	static constexpr auto name = "arrayElement";
+	static IFunction * create(const Context & context) { return new FunctionArrayElement; }
+
 private:
 	template <typename T>
 	bool executeNumberConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index)
@@ -592,7 +600,7 @@ public:
 	/// Получить имя функции.
 	String getName() const
 	{
-		return "arrayElement";
+		return name;
 	}
 
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -755,6 +763,10 @@ struct ArrayIndexStringImpl
 template <typename IndexConv, typename Name>
 class FunctionArrayIndex : public IFunction
 {
+public:
+	static constexpr auto name = Name::name;
+	static IFunction * create(const Context & context) { return new FunctionArrayIndex; }
+
 private:
 	typedef ColumnVector<typename IndexConv::ResultType> ResultColumnType;
 
@@ -842,7 +854,7 @@ public:
 	/// Получить имя функции.
 	String getName() const
 	{
-		return Name::get();
+		return name;
 	}
 
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -893,10 +905,13 @@ public:
 class FunctionArrayEnumerate : public IFunction
 {
 public:
+	static constexpr auto name = "arrayEnumerate";
+	static IFunction * create (const Context & context) { return new FunctionArrayEnumerate; }
+
 	/// Получить имя функции.
 	String getName() const
 	{
-		return "arrayEnumerate";
+		return name;
 	}
 
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -963,10 +978,13 @@ public:
 class FunctionArrayEnumerateUniq : public IFunction
 {
 public:
+	static constexpr auto name = "arrayEnumerateUniq";
+	static IFunction * create(const Context & context) { return new FunctionArrayEnumerateUniq; }
+
 	/// Получить имя функции.
 	String getName() const
 	{
-		return "arrayEnumerateUniq";
+		return name;
 	}
 
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -1202,11 +1220,15 @@ template <> struct DataTypeToName<DataTypeDate> { static std::string get() { ret
 template <> struct DataTypeToName<DataTypeDateTime> { static std::string get() { return "DateTime"; } };
 
 template <typename DataType>
-struct EmptyArray : public IFunction
+struct FunctionEmptyArray : public IFunction
 {
+	static constexpr auto base_name = "emptyArray";
+	static const String name;
+	static IFunction * create(const Context & context) { return new FunctionEmptyArray; }
+
 	String getName() const
 	{
-		return "emptyArray" + DataTypeToName<DataType>::get();
+		return name;
 	}
 
 	DataTypePtr getReturnType(const DataTypes & arguments) const
@@ -1230,28 +1252,31 @@ struct EmptyArray : public IFunction
 	}
 };
 
+template <typename DataType>
+const String FunctionEmptyArray<DataType>::name = FunctionEmptyArray::base_name + DataTypeToName<DataType>::get();
 
-struct NameHas			{ static const char * get() { return "has"; } };
-struct NameIndexOf		{ static const char * get() { return "indexOf"; } };
-struct NameCountEqual	{ static const char * get() { return "countEqual"; } };
+
+struct NameHas			{ static constexpr auto name = "has"; };
+struct NameIndexOf		{ static constexpr auto name = "indexOf"; };
+struct NameCountEqual	{ static constexpr auto name = "countEqual"; };
 
 typedef FunctionArrayIndex<IndexToOne, 		NameHas>	FunctionHas;
 typedef FunctionArrayIndex<IndexIdentity, 	NameIndexOf>	FunctionIndexOf;
 typedef FunctionArrayIndex<IndexCount, 	NameCountEqual>	FunctionCountEqual;
 
-using FunctionEmptyArrayUInt8 = EmptyArray<DataTypeUInt8>;
-using FunctionEmptyArrayUInt16 = EmptyArray<DataTypeUInt16>;
-using FunctionEmptyArrayUInt32 = EmptyArray<DataTypeUInt32>;
-using FunctionEmptyArrayUInt64 = EmptyArray<DataTypeUInt64>;
-using FunctionEmptyArrayInt8 = EmptyArray<DataTypeInt8>;
-using FunctionEmptyArrayInt16 = EmptyArray<DataTypeInt16>;
-using FunctionEmptyArrayInt32 = EmptyArray<DataTypeInt32>;
-using FunctionEmptyArrayInt64 = EmptyArray<DataTypeInt64>;
-using FunctionEmptyArrayFloat32 = EmptyArray<DataTypeFloat32>;
-using FunctionEmptyArrayFloat64 = EmptyArray<DataTypeFloat64>;
-using FunctionEmptyArrayDate = EmptyArray<DataTypeDate>;
-using FunctionEmptyArrayDateTime = EmptyArray<DataTypeDateTime>;
-using FunctionEmptyArrayString = EmptyArray<DataTypeString>;
+using FunctionEmptyArrayUInt8 = FunctionEmptyArray<DataTypeUInt8>;
+using FunctionEmptyArrayUInt16 = FunctionEmptyArray<DataTypeUInt16>;
+using FunctionEmptyArrayUInt32 = FunctionEmptyArray<DataTypeUInt32>;
+using FunctionEmptyArrayUInt64 = FunctionEmptyArray<DataTypeUInt64>;
+using FunctionEmptyArrayInt8 = FunctionEmptyArray<DataTypeInt8>;
+using FunctionEmptyArrayInt16 = FunctionEmptyArray<DataTypeInt16>;
+using FunctionEmptyArrayInt32 = FunctionEmptyArray<DataTypeInt32>;
+using FunctionEmptyArrayInt64 = FunctionEmptyArray<DataTypeInt64>;
+using FunctionEmptyArrayFloat32 = FunctionEmptyArray<DataTypeFloat32>;
+using FunctionEmptyArrayFloat64 = FunctionEmptyArray<DataTypeFloat64>;
+using FunctionEmptyArrayDate = FunctionEmptyArray<DataTypeDate>;
+using FunctionEmptyArrayDateTime = FunctionEmptyArray<DataTypeDateTime>;
+using FunctionEmptyArrayString = FunctionEmptyArray<DataTypeString>;
 
 
 }

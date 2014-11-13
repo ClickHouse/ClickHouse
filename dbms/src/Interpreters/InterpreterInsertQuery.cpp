@@ -1,7 +1,8 @@
 #include <DB/IO/ConcatReadBuffer.h>
 
+#include <DB/DataStreams/ProhibitColumnsBlockOutputStream.h>
+#include <DB/DataStreams/MaterializingBlockOutputStream.h>
 #include <DB/DataStreams/AddingDefaultBlockOutputStream.h>
-#include <DB/DataStreams/MaterializingBlockInputStream.h>
 #include <DB/DataStreams/PushingToViewsBlockOutputStream.h>
 #include <DB/DataStreams/NullAndDoCopyBlockInputStream.h>
 #include <DB/DataStreams/copyData.h>
@@ -35,11 +36,12 @@ StoragePtr InterpreterInsertQuery::getTable()
 Block InterpreterInsertQuery::getSampleBlock()
 {
 	ASTInsertQuery & query = typeid_cast<ASTInsertQuery &>(*query_ptr);
-	Block db_sample = getTable()->getSampleBlock();
 
 	/// Если в запросе не указана информация о столбцах
 	if (!query.columns)
-		return db_sample;
+		return getTable()->getSampleBlockNonMaterialized();
+
+	Block db_sample = getTable()->getSampleBlock();
 
 	/// Формируем блок, основываясь на именах столбцов из запроса
 	Block res;
@@ -68,19 +70,31 @@ void InterpreterInsertQuery::execute(ReadBuffer * remaining_data_istr)
 
 	auto table_lock = table->lockStructure(true);
 
-	BlockInputStreamPtr in;
-	NamesAndTypesListPtr required_columns = new NamesAndTypesList(table->getSampleBlock().getColumnsList());
+	/** @note looks suspicious, first we ask to create block from NamesAndTypesList (internally in ITableDeclaration),
+	 *  then we compose the same list from the resulting block */
+	NamesAndTypesListPtr required_columns = new NamesAndTypesList(table->getColumnsList());
 
 	/// Надо убедиться, что запрос идет в таблицу, которая поддерживает вставку.
 	/// TODO Плохо - исправить.
 	table->write(query_ptr);
 
 	/// Создаем кортеж из нескольких стримов, в которые будем писать данные.
-	BlockOutputStreamPtr out = new AddingDefaultBlockOutputStream(new PushingToViewsBlockOutputStream(query.database, query.table, context, query_ptr), required_columns);
+	BlockOutputStreamPtr out{
+		new ProhibitColumnsBlockOutputStream{
+			new AddingDefaultBlockOutputStream{
+				new MaterializingBlockOutputStream{
+					new PushingToViewsBlockOutputStream{query.database, query.table, context, query_ptr}
+				},
+				required_columns, table->column_defaults, context
+			},
+			table->materialized_columns
+		}
+	};
 
 	/// Какой тип запроса: INSERT VALUES | INSERT FORMAT | INSERT SELECT?
 	if (!query.select)
 	{
+
 		String format = query.format;
 		if (format.empty())
 			format = "Values";
@@ -101,14 +115,17 @@ void InterpreterInsertQuery::execute(ReadBuffer * remaining_data_istr)
 		ConcatReadBuffer istr(buffers);
 		Block sample = getSampleBlock();
 
-		in = context.getFormatFactory().getInput(format, istr, sample, context.getSettings().max_insert_block_size, context.getDataTypeFactory());
+		BlockInputStreamPtr in{
+			context.getFormatFactory().getInput(
+				format, istr, sample, context.getSettings().max_insert_block_size,
+				context.getDataTypeFactory())
+		};
 		copyData(*in, *out);
 	}
 	else
 	{
 		InterpreterSelectQuery interpreter_select(query.select, context);
-		in = interpreter_select.execute();
-		in = new MaterializingBlockInputStream(in);
+		BlockInputStreamPtr in{interpreter_select.execute()};
 
 		copyData(*in, *out);
 	}
@@ -122,15 +139,24 @@ BlockIO InterpreterInsertQuery::execute()
 
 	auto table_lock = table->lockStructure(true);
 
-	NamesAndTypesListPtr required_columns = new NamesAndTypesList(table->getSampleBlock().getColumnsList());
+	NamesAndTypesListPtr required_columns = new NamesAndTypesList(table->getColumnsList());
 
 	/// Надо убедиться, что запрос идет в таблицу, которая поддерживает вставку.
 	/// TODO Плохо - исправить.
 	table->write(query_ptr);
 
 	/// Создаем кортеж из нескольких стримов, в которые будем писать данные.
-	BlockOutputStreamPtr out = new AddingDefaultBlockOutputStream(
-		new PushingToViewsBlockOutputStream(query.database, query.table, context, query_ptr), required_columns);
+	BlockOutputStreamPtr out{
+		new ProhibitColumnsBlockOutputStream{
+			new AddingDefaultBlockOutputStream{
+				new MaterializingBlockOutputStream{
+					new PushingToViewsBlockOutputStream{query.database, query.table, context, query_ptr}
+				},
+				required_columns, table->column_defaults, context
+			},
+			table->materialized_columns
+		}
+	};
 
 	BlockIO res;
 	res.out_sample = getSampleBlock();
@@ -142,9 +168,9 @@ BlockIO InterpreterInsertQuery::execute()
 	}
 	else
 	{
-		InterpreterSelectQuery interpreter_select(query.select, context);
-		BlockInputStreamPtr in = new MaterializingBlockInputStream(interpreter_select.execute());
-		res.in = new NullAndDoCopyBlockInputStream(in, out);
+		InterpreterSelectQuery interpreter_select{query.select, context};
+		BlockInputStreamPtr in{interpreter_select.execute()};
+		res.in = new NullAndDoCopyBlockInputStream{in, out};
 	}
 
 	return res;

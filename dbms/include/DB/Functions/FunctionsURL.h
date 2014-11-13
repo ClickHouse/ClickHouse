@@ -327,6 +327,11 @@ struct ExtractQueryStringAndFragment
 			res_data = pos + (without_leading_char ? 1 : 0);
 			res_size = end - res_data;
 		}
+		else if (nullptr != (pos = strchr(data, '#')))
+		{
+			res_data = pos;
+			res_size = end - res_data;
+		}
 	}
 };
 
@@ -503,7 +508,8 @@ private:
 	bool first;
 
 public:
-	static String getName() { return "extractURLParameters"; }
+	static constexpr auto name = "extractURLParameters";
+	static String getName() { return name; }
 
 	static void checkArguments(const DataTypes & arguments)
 	{
@@ -571,7 +577,8 @@ private:
 	bool first;
 
 public:
-	static String getName() { return "extractURLParameterNames"; }
+	static constexpr auto name = "extractURLParameterNames";
+	static String getName() { return name; }
 
 	static void checkArguments(const DataTypes & arguments)
 	{
@@ -639,7 +646,8 @@ private:
 	Pos end;
 
 public:
-	static String getName() { return "URLHierarchy"; }
+	static constexpr auto name = "URLHierarchy";
+	static String getName() { return name; }
 
 	static void checkArguments(const DataTypes & arguments)
 	{
@@ -737,7 +745,8 @@ private:
 	Pos start;
 
 public:
-	static String getName() { return "URLPathHierarchy"; }
+	static constexpr auto name = "URLPathHierarchy";
+	static String getName() { return name; }
 
 	static void checkArguments(const DataTypes & arguments)
 	{
@@ -924,25 +933,25 @@ struct CutSubstringImpl
 };
 
 
-struct NameProtocol 					{ static const char * get() { return "protocol"; } };
-struct NameDomain 						{ static const char * get() { return "domain"; } };
-struct NameDomainWithoutWWW 			{ static const char * get() { return "domainWithoutWWW"; } };
-struct NameFirstSignificantSubdomain	{ static const char * get() { return "firstSignificantSubdomain"; } };
-struct NameTopLevelDomain 				{ static const char * get() { return "topLevelDomain"; } };
-struct NamePath 						{ static const char * get() { return "path"; } };
-struct NameQueryString					{ static const char * get() { return "queryString"; } };
-struct NameFragment 					{ static const char * get() { return "fragment"; } };
-struct NameQueryStringAndFragment		{ static const char * get() { return "queryStringAndFragment"; } };
+struct NameProtocol 					{ static constexpr auto name = "protocol"; };
+struct NameDomain 						{ static constexpr auto name = "domain"; };
+struct NameDomainWithoutWWW 			{ static constexpr auto name = "domainWithoutWWW"; };
+struct NameFirstSignificantSubdomain	{ static constexpr auto name = "firstSignificantSubdomain"; };
+struct NameTopLevelDomain 				{ static constexpr auto name = "topLevelDomain"; };
+struct NamePath 						{ static constexpr auto name = "path"; };
+struct NameQueryString					{ static constexpr auto name = "queryString"; };
+struct NameFragment 					{ static constexpr auto name = "fragment"; };
+struct NameQueryStringAndFragment		{ static constexpr auto name = "queryStringAndFragment"; };
 
-struct NameCutToFirstSignificantSubdomain { static const char * get() { return "cutToFirstSignificantSubdomain"; } };
+struct NameCutToFirstSignificantSubdomain { static constexpr auto name = "cutToFirstSignificantSubdomain"; };
 
-struct NameCutWWW 						{ static const char * get() { return "cutWWW"; } };
-struct NameCutQueryString				{ static const char * get() { return "cutQueryString"; } };
-struct NameCutFragment 					{ static const char * get() { return "cutFragment"; } };
-struct NameCutQueryStringAndFragment 	{ static const char * get() { return "cutQueryStringAndFragment"; } };
+struct NameCutWWW 						{ static constexpr auto name = "cutWWW"; };
+struct NameCutQueryString				{ static constexpr auto name = "cutQueryString"; };
+struct NameCutFragment 					{ static constexpr auto name = "cutFragment"; };
+struct NameCutQueryStringAndFragment 	{ static constexpr auto name = "cutQueryStringAndFragment"; };
 
-struct NameExtractURLParameter 		{ static const char * get() { return "extractURLParameter"; } };
-struct NameCutURLParameter 				{ static const char * get() { return "cutURLParameter"; } };
+struct NameExtractURLParameter			{ static constexpr auto name = "extractURLParameter"; };
+struct NameCutURLParameter 				{ static constexpr auto name = "cutURLParameter"; };
 
 typedef FunctionStringToString<ExtractSubstringImpl<ExtractProtocol>, 			NameProtocol>	 		FunctionProtocol;
 typedef FunctionStringToString<ExtractSubstringImpl<ExtractDomain<false> >, 		NameDomain>	 			FunctionDomain;

@@ -20,6 +20,8 @@ namespace DB
   * Позволяет вставлять, удалять столбцы в любом порядке, менять порядок столбцов.
   */
 
+class Context;
+
 class Block
 {
 public:
@@ -54,6 +56,7 @@ public:
 	void insert(size_t position, const ColumnWithNameAndType & elem);
 	/// вставить столбец в конец
 	void insert(const ColumnWithNameAndType & elem);
+	void insertDefault(const String & name, const DataTypePtr & type);
 	/// вставить столбец в конец, если столбца с таким именем ещё нет
 	void insertUnique(const ColumnWithNameAndType & elem);
 	/// удалить столбец в заданной позиции
@@ -61,7 +64,7 @@ public:
 	/// удалить столбец с заданным именем
 	void erase(const String & name);
 	/// Добавляет в блок недостающие столбцы со значениями по-умолчанию
-	void addDefaults(NamesAndTypesListPtr required_columns);
+	void addDefaults(const NamesAndTypesList & required_columns);
 
 	ColumnWithNameAndType & getByPosition(size_t position);
 	const ColumnWithNameAndType & getByPosition(size_t position) const;

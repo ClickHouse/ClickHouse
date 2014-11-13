@@ -28,7 +28,7 @@ BlockInputStreams StorageSystemDatabases::read(
 	processed_stage = QueryProcessingStage::FetchColumns;
 
 	Block block;
-	
+
 	ColumnWithNameAndType col_name;
 	col_name.name = "name";
 	col_name.type = new DataTypeString;

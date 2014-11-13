@@ -5,8 +5,16 @@
 
 #include <DB/Core/Block.h>
 
+#include <DB/Storages/ColumnDefault.h>
+
 #include <DB/Columns/ColumnArray.h>
 #include <DB/DataTypes/DataTypeNested.h>
+
+#include <DB/Parsers/ASTExpressionList.h>
+#include <DB/Interpreters/ExpressionAnalyzer.h>
+#include <statdaemons/stdext.h>
+
+#include <DB/Parsers/formatAST.h>
 
 
 namespace DB
@@ -19,20 +27,11 @@ Block::Block(const Block & other)
 }
 
 
-void Block::addDefaults(NamesAndTypesListPtr required_columns)
+void Block::addDefaults(const NamesAndTypesList & required_columns)
 {
-	for (NamesAndTypesList::const_iterator it = required_columns->begin(); it != required_columns->end(); ++it)
-	{
-		if (!has(it->name))
-		{
-			ColumnWithNameAndType col;
-			col.name = it->name;
-			col.type = it->type;
-			col.column = dynamic_cast<IColumnConst &>(*it->type->createConstColumn(
-				rows(), it->type->getDefault())).convertToFullColumn();
-			insert(col);
-		}
-	}
+	for (const auto & column : required_columns)
+		if (!has(column.name))
+			insertDefault(column.name, column.type);
 }
 
 Block & Block::operator= (const Block & other)
@@ -81,6 +80,16 @@ void Block::insert(const ColumnWithNameAndType & elem)
 	index_by_name[elem.name] = it;
 	index_by_position.push_back(it);
 }
+
+void Block::insertDefault(const String & name, const DataTypePtr & type)
+{
+	insert({
+		dynamic_cast<IColumnConst &>(*type->createConstColumn(rows(),
+			type->getDefault())).convertToFullColumn(),
+		type, name
+	});
+}
+
 
 
 void Block::insertUnique(const ColumnWithNameAndType & elem)

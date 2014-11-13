@@ -107,6 +107,47 @@ protected:
 	/// Будем вызывать progressImpl самостоятельно.
 	void progress(const Progress & value) override {}
 
+	void injectRequiredColumns(NamesAndTypesList & columns) const {
+		std::set<NameAndTypePair> required_columns;
+		auto modified = false;
+
+		for (auto it = std::begin(columns); it != std::end(columns);)
+		{
+			required_columns.emplace(*it);
+
+			if (!owned_data_part->hasColumnFiles(it->name))
+			{
+				const auto default_it = storage.column_defaults.find(it->name);
+				if (default_it != std::end(storage.column_defaults))
+				{
+					IdentifierNameSet identifiers;
+					default_it->second.expression->collectIdentifierNames(identifiers);
+
+					for (const auto & identifier : identifiers)
+					{
+						if (storage.hasColumn(identifier))
+						{
+							NameAndTypePair column{identifier, storage.getDataTypeByName(identifier)};
+							if (required_columns.count(column) == 0)
+							{
+								it = columns.emplace(++it, std::move(column));
+								modified = true;
+							}
+						}
+					}
+
+					if (modified)
+						continue;
+				}
+			}
+
+			++it;
+		}
+
+		if (modified)
+			columns = NamesAndTypesList{std::begin(required_columns), std::end(required_columns)};
+	}
+
 	Block readImpl()
 	{
 		Block res;
@@ -119,6 +160,9 @@ protected:
 			/// Отправим информацию о том, что собираемся читать примерно столько-то строк.
 			/// NOTE В конструкторе это делать не получилось бы, потому что тогда ещё не установлен progress_callback.
 			progressImpl(Progress(0, 0, total_rows));
+
+			injectRequiredColumns(columns);
+			injectRequiredColumns(pre_columns);
 
 			UncompressedCache * uncompressed_cache = use_uncompressed_cache ? storage.context.getUncompressedCache() : NULL;
 			reader.reset(new MergeTreeReader(path, owned_data_part->name, columns, uncompressed_cache, storage, all_mark_ranges));

@@ -425,8 +425,9 @@ void StorageBuffer::alter(const AlterCommands & params, const String & database_
 	/// Чтобы не осталось блоков старой структуры.
 	optimize();
 
-	params.apply(*columns);
-	InterpreterAlterQuery::updateMetadata(database_name, table_name, *columns, context);
+	params.apply(*columns, materialized_columns, alias_columns, column_defaults);
+	InterpreterAlterQuery::updateMetadata(database_name, table_name,
+		*columns, materialized_columns, alias_columns, column_defaults, context);
 }
 
 }

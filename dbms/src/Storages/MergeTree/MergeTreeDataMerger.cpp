@@ -7,6 +7,7 @@
 #include <DB/DataStreams/CollapsingSortedBlockInputStream.h>
 #include <DB/DataStreams/SummingSortedBlockInputStream.h>
 #include <DB/DataStreams/AggregatingSortedBlockInputStream.h>
+#include <DB/DataStreams/MaterializingBlockInputStream.h>
 
 
 namespace DB
@@ -358,7 +359,8 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 				__sync_add_and_fetch(&merge_entry->bytes_read_uncompressed, value.bytes);
 			});
 
-		src_streams.push_back(new ExpressionBlockInputStream(input.release(), data.getPrimaryExpression()));
+		src_streams.push_back(new MaterializingBlockInputStream{
+			new ExpressionBlockInputStream(input.release(), data.getPrimaryExpression())});
 		sum_rows_approx += parts[i]->size * data.index_granularity;
 	}
 
