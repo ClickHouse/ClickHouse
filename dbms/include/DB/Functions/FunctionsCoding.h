@@ -45,7 +45,10 @@ const auto ipv6_bytes_length = 16;
 class FunctionIPv6NumToString : public IFunction
 {
 public:
-	String getName() const { return "IPv6NumToString"; }
+	static constexpr auto name = "IPv6NumToString";
+	static IFunction * create(const Context & context) { return new FunctionIPv6NumToString; }
+
+	String getName() const { return name; }
 
 	DataTypePtr getReturnType(const DataTypes & arguments) const
 	{
@@ -247,7 +250,10 @@ public:
 class FunctionIPv6StringToNum : public IFunction
 {
 public:
-	String getName() const { return "IPv6StringToNum"; }
+	static constexpr auto name = "IPv6StringToNum";
+	static IFunction * create(const Context & context) { return new FunctionIPv6StringToNum; }
+
+	String getName() const { return name; }
 
 	DataTypePtr getReturnType(const DataTypes & arguments) const
 	{
@@ -462,10 +468,13 @@ public:
 class FunctionIPv4NumToString : public IFunction
 {
 public:
+	static constexpr auto name = "IPv4NumToString";
+	static IFunction * create(const Context & context) { return new FunctionIPv4NumToString; }
+
 	/// Получить имя функции.
 	String getName() const
 	{
-		return "IPv4NumToString";
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -564,10 +573,13 @@ public:
 class FunctionIPv4StringToNum : public IFunction
 {
 public:
+	static constexpr auto name = "IPv4StringToNum";
+	static IFunction * create(const Context & context) { return new FunctionIPv4StringToNum; }
+
 	/// Получить имя функции.
 	String getName() const
 	{
-		return "IPv4StringToNum";
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -652,10 +664,13 @@ public:
 class FunctionHex : public IFunction
 {
 public:
+	static constexpr auto name = "hex";
+	static IFunction * create(const Context & context) { return new FunctionHex; }
+
 	/// Получить имя функции.
 	String getName() const
 	{
-		return "hex";
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -897,10 +912,13 @@ public:
 class FunctionUnhex : public IFunction
 {
 public:
+	static constexpr auto name = "unhex";
+	static IFunction * create(const Context & context) { return new FunctionUnhex; }
+
 	/// Получить имя функции.
 	String getName() const
 	{
-		return "unhex";
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -1002,10 +1020,13 @@ public:
 class FunctionBitmaskToArray : public IFunction
 {
 public:
+	static constexpr auto name = "bitmaskToArray";
+	static IFunction * create(const Context & context) { return new FunctionBitmaskToArray; }
+
 	/// Получить имя функции.
 	String getName() const
 	{
-		return "bitmaskToArray";
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -1111,10 +1132,13 @@ public:
 class FunctionToStringCutToZero : public IFunction
 {
 public:
+	static constexpr auto name = "toStringCutToZero";
+	static IFunction * create(const Context & context) { return new FunctionToStringCutToZero; }
+
 	/// Получить имя функции.
 	String getName() const
 	{
-		return "toStringCutToZero";
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.

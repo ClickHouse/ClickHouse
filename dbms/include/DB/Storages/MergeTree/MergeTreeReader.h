@@ -10,6 +10,7 @@
 #include <DB/IO/CompressedReadBufferFromFile.h>
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnNested.h>
+#include <DB/Interpreters/evaluateMissingDefaults.h>
 
 
 namespace DB
@@ -124,7 +125,7 @@ public:
 				storage.reportBrokenPart(part_name);
 
 			/// Более хорошая диагностика.
-			throw Exception(e.message() + " (while reading from part " + path + " from mark " + toString(from_mark) + " to "
+			throw Exception(e.message() +  "\n(while reading from part " + path + " from mark " + toString(from_mark) + " to "
 				+ toString(to_mark) + ")", e.code());
 		}
 		catch (...)
@@ -161,7 +162,8 @@ public:
 			size_t pos = 0;	/// Позиция, куда надо вставить недостающий столбец.
 			for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it, ++pos)
 			{
-				if (!res.has(it->name))
+				/// insert default values only for columns without default expressions
+				if (!res.has(it->name) && storage.column_defaults.count(it->name) == 0)
 				{
 					ColumnWithNameAndType column;
 					column.name = it->name;
@@ -192,11 +194,15 @@ public:
 					res.insert(pos, column);
 				}
 			}
+
+			/// evaluate defaulted columns
+			evaluateMissingDefaults(res, columns, storage.column_defaults, storage.context);
 		}
 		catch (const Exception & e)
 		{
 			/// Более хорошая диагностика.
-			throw Exception(e.message() + " (while reading from part " + path + ")", e.code());
+			throw Exception(e.message() + '\n' + e.getStackTrace().toString()
+				+ "\n(while reading from part " + path + ")", e.code());
 		}
 	}
 

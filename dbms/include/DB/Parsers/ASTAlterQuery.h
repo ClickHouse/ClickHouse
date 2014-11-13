@@ -38,7 +38,7 @@ public:
 		  *  В запросе DROP это поле не используется
 		  *  В запросе MODIFY здесь хранится имя столбца и новый тип
 		  */
-		ASTPtr name_type;
+		ASTPtr col_decl;
 
 		/** В запросе ADD COLUMN здесь опционально хранится имя столбца, следующее после AFTER
 		  * В запросе DROP здесь хранится имя столбца для удаления
@@ -61,7 +61,7 @@ public:
 		void clone(Parameters & p) const
 		{
 			p = *this;
-			p.name_type = name_type->clone();
+			p.col_decl = col_decl->clone();
 			p.column = column->clone();
 			p.partition = partition->clone();
 		}
@@ -75,8 +75,8 @@ public:
 	void addParameters(const Parameters & params)
 	{
 		parameters.push_back(params);
-		if (params.name_type)
-			children.push_back(params.name_type);
+		if (params.col_decl)
+			children.push_back(params.col_decl);
 		if (params.column)
 			children.push_back(params.column);
 		if (params.partition)

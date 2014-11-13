@@ -18,10 +18,13 @@ namespace DB
 class FunctionBitmaskToList : public IFunction
 {
 public:
+	static constexpr auto name = "bitmaskToList";
+	static IFunction * create(const Context & context) { return new FunctionBitmaskToList; }
+
 	/// Получить основное имя функции.
 	virtual String getName() const
 	{
-		return "bitmaskToList";
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.

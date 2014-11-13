@@ -4,6 +4,7 @@
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/Core/Exception.h>
 #include <DB/Core/Block.h>
+#include <DB/Storages/ColumnDefault.h>
 
 namespace DB
 {
@@ -22,7 +23,8 @@ public:
 
 	/** Получить список имён и типов столбцов таблицы, только невиртуальные.
 	  */
-	virtual const NamesAndTypesList & getColumnsList() const = 0;
+	NamesAndTypesList getColumnsList() const;
+	const NamesAndTypesList & getColumnsListNonMaterialized() const { return getColumnsListImpl(); }
 
 	/** Получить список имён столбцов таблицы, только невиртуальные.
 	  */
@@ -35,6 +37,9 @@ public:
 	/** Присутствует ли реальный (невиртуальный) столбец с таким именем.
 	  */
 	virtual bool hasRealColumn(const String & column_name) const;
+
+	NameAndTypePair getMaterializedColumn(const String & column_name) const;
+	bool hasMaterializedColumn(const String & column_name) const;
 
 	/** Получить описание любого столбца по его имени.
 	  */
@@ -49,6 +54,7 @@ public:
 	/** То же самое, но в виде блока-образца.
 	  */
 	Block getSampleBlock() const;
+	Block getSampleBlockNonMaterialized() const;
 
 	/** Проверить, что все запрошенные имена есть в таблице и заданы корректно.
 	  * (список имён не пустой и имена не повторяются)
@@ -69,7 +75,25 @@ public:
 	  */
 	void check(const Block & block, bool need_all = false) const;
 
-	virtual ~ITableDeclaration() {}
+
+	virtual ~ITableDeclaration() = default;
+
+	ITableDeclaration() = default;
+	ITableDeclaration(
+		const NamesAndTypesList & materialized_columns,
+		const NamesAndTypesList & alias_columns,
+		const ColumnDefaults & column_defaults)
+		: materialized_columns{materialized_columns},
+		  alias_columns{alias_columns},
+		  column_defaults{column_defaults}
+	{}
+
+	NamesAndTypesList materialized_columns{};
+	NamesAndTypesList alias_columns{};
+	ColumnDefaults column_defaults{};
+
+private:
+	virtual const NamesAndTypesList & getColumnsListImpl() const = 0;
 };
 
 }

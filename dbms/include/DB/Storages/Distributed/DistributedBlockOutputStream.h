@@ -1,7 +1,8 @@
 #pragma once
 
 #include <DB/Storages/StorageDistributed.h>
-#include <DB/Storages/Distributed/queryToString.h>
+
+#include <DB/Parsers/formatAST.h>
 
 #include <DB/IO/WriteBufferFromFile.h>
 #include <DB/IO/CompressedWriteBuffer.h>

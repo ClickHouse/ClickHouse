@@ -5,6 +5,8 @@
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/DataTypes/DataTypeAggregateFunction.h>
+#include <DB/DataTypes/DataTypeArray.h>
+#include <DB/DataTypes/DataTypeNested.h>
 #include <DB/IO/CompressedReadBuffer.h>
 #include <DB/IO/HashingReadBuffer.h>
 #include <DB/Columns/ColumnsNumber.h>

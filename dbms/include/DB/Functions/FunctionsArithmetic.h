@@ -367,6 +367,10 @@ struct BinaryOperationTraits
 template <template <typename, typename> class Op, typename Name>
 class FunctionBinaryArithmetic : public IFunction
 {
+public:
+	static constexpr auto name = Name::name;
+	static IFunction * create(const Context & context) { return new FunctionBinaryArithmetic; }
+
 private:
 	/// Overload for InvalidType
 	template <typename ResultDataType,
@@ -585,7 +589,7 @@ public:
 	/// Получить имя функции.
 	String getName() const
 	{
-		return Name::get();
+		return name;
 	}
 
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -641,6 +645,10 @@ public:
 template <template <typename> class Op, typename Name>
 class FunctionUnaryArithmetic : public IFunction
 {
+public:
+	static constexpr auto name = Name::name;
+	static IFunction * create(const Context & context) { return new FunctionUnaryArithmetic; }
+
 private:
 	template <typename T0>
 	bool checkType(const DataTypes & arguments, DataTypePtr & result) const
@@ -690,7 +698,7 @@ public:
 	/// Получить имя функции.
 	String getName() const
 	{
-		return Name::get();
+		return name;
 	}
 
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -739,19 +747,19 @@ public:
 };
 
 
-struct NamePlus 			{ static const char * get() { return "plus"; } };
-struct NameMinus 			{ static const char * get() { return "minus"; } };
-struct NameMultiply 		{ static const char * get() { return "multiply"; } };
-struct NameDivideFloating	{ static const char * get() { return "divide"; } };
-struct NameDivideIntegral 	{ static const char * get() { return "intDiv"; } };
-struct NameModulo 			{ static const char * get() { return "modulo"; } };
-struct NameNegate 			{ static const char * get() { return "negate"; } };
-struct NameBitAnd			{ static const char * get() { return "bitAnd"; } };
-struct NameBitOr			{ static const char * get() { return "bitOr"; } };
-struct NameBitXor			{ static const char * get() { return "bitXor"; } };
-struct NameBitNot			{ static const char * get() { return "bitNot"; } };
-struct NameBitShiftLeft		{ static const char * get() { return "bitShiftLeft"; } };
-struct NameBitShiftRight	{ static const char * get() { return "bitShiftRight"; } };
+struct NamePlus 			{ static constexpr auto name = "plus"; };
+struct NameMinus 			{ static constexpr auto name = "minus"; };
+struct NameMultiply 		{ static constexpr auto name = "multiply"; };
+struct NameDivideFloating	{ static constexpr auto name = "divide"; };
+struct NameDivideIntegral	{ static constexpr auto name = "intDiv"; };
+struct NameModulo			{ static constexpr auto name = "modulo"; };
+struct NameNegate			{ static constexpr auto name = "negate"; };
+struct NameBitAnd			{ static constexpr auto name = "bitAnd"; };
+struct NameBitOr			{ static constexpr auto name = "bitOr"; };
+struct NameBitXor			{ static constexpr auto name = "bitXor"; };
+struct NameBitNot			{ static constexpr auto name = "bitNot"; };
+struct NameBitShiftLeft		{ static constexpr auto name = "bitShiftLeft"; };
+struct NameBitShiftRight	{ static constexpr auto name = "bitShiftRight"; };
 
 typedef FunctionBinaryArithmetic<PlusImpl,				NamePlus> 				FunctionPlus;
 typedef FunctionBinaryArithmetic<MinusImpl, 			NameMinus> 				FunctionMinus;

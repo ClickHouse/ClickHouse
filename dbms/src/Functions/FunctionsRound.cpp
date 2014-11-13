@@ -6,13 +6,9 @@ namespace DB
 
 void registerFunctionsRound(FunctionFactory & factory)
 {
-	#define F [](const Context & context) -> IFunction*
-
-	factory.registerFunction("roundToExp2", 	F { return new FunctionRoundToExp2; });
-	factory.registerFunction("roundDuration", 	F { return new FunctionRoundDuration; });
-	factory.registerFunction("roundAge", 		F { return new FunctionRoundAge; });
-
-	#undef F
+	factory.registerFunction<FunctionRoundToExp2>();
+	factory.registerFunction<FunctionRoundDuration>();
+	factory.registerFunction<FunctionRoundAge>();
 }
 
 }

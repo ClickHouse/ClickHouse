@@ -25,9 +25,10 @@ public:
 
 	FunctionPtr get(const String & name, const Context & context) const;
 
-	void registerFunction(const String & name, Creator creator)
+	template <typename F> void registerFunction()
 	{
-		functions[name] = creator;
+		static_assert(std::is_same<decltype(&F::create), Creator>::value, "F::create has incorrect type");
+		functions[F::name] = &F::create;
 	}
 };
 

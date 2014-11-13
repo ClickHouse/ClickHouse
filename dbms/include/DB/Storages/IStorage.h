@@ -14,6 +14,7 @@
 #include <DB/Storages/AlterCommands.h>
 #include <Poco/File.h>
 #include <Poco/RWLock.h>
+#include <statdaemons/stdext.h>
 
 
 namespace DB
@@ -107,8 +108,8 @@ public:
 		return res;
 	}
 
-	typedef Poco::SharedPtr<Poco::ScopedWriteRWLock> TableStructureWriteLockPtr;
-	typedef Poco::SharedPtr<Poco::ScopedWriteRWLock> TableDataWriteLockPtr;
+	typedef std::unique_ptr<Poco::ScopedWriteRWLock> TableStructureWriteLockPtr;
+	typedef std::unique_ptr<Poco::ScopedWriteRWLock> TableDataWriteLockPtr;
 	typedef std::pair<TableDataWriteLockPtr, TableStructureWriteLockPtr> TableFullWriteLockPtr;
 
 	/** Не дает читать структуру таблицы. Берется для ALTER, RENAME и DROP.
@@ -124,7 +125,7 @@ public:
 	  */
 	TableDataWriteLockPtr lockDataForAlter()
 	{
-		TableDataWriteLockPtr res = new Poco::ScopedWriteRWLock(data_lock);
+		auto res = stdext::make_unique<Poco::ScopedWriteRWLock>(data_lock);
 		if (is_dropped)
 			throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
 		return res;
@@ -132,7 +133,7 @@ public:
 
 	TableStructureWriteLockPtr lockStructureForAlter()
 	{
-		TableStructureWriteLockPtr res = new Poco::ScopedWriteRWLock(structure_lock);
+		auto res = stdext::make_unique<Poco::ScopedWriteRWLock>(structure_lock);
 		if (is_dropped)
 			throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
 		return res;
@@ -271,7 +272,7 @@ public:
 		return res;
 	}
 
-	bool is_dropped;
+	bool is_dropped{false};
 
 	/// Поддерживается ли индекс в секции IN
 	virtual bool supportsIndexForIn() const { return false; };
@@ -280,7 +281,7 @@ public:
 	virtual bool checkData() const { throw DB::Exception("Check query is not supported for " + getName() + " storage"); }
 
 protected:
-	IStorage() : is_dropped(false) {}
+	using ITableDeclaration::ITableDeclaration;
 
 private:
 	std::weak_ptr<IStorage> this_ptr;

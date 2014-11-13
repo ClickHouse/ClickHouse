@@ -51,7 +51,7 @@ struct ConvertImpl
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-					+ " of first argument of function " + Name::get(),
+					+ " of first argument of function " + Name::name,
 				ErrorCodes::ILLEGAL_COLUMN);
 	}
 };
@@ -91,7 +91,7 @@ struct ConvertImpl<DataTypeDate, DataTypeDateTime, Name>
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-					+ " of first argument of function " + Name::get(),
+					+ " of first argument of function " + Name::name,
 				ErrorCodes::ILLEGAL_COLUMN);
 	}
 };
@@ -128,7 +128,7 @@ struct ConvertImpl<DataTypeDateTime, DataTypeDate, Name>
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-					+ " of first argument of function " + Name::get(),
+					+ " of first argument of function " + Name::name,
 				ErrorCodes::ILLEGAL_COLUMN);
 	}
 };
@@ -178,7 +178,7 @@ struct ConvertImpl<FromDataType, DataTypeString, Name>
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-					+ " of first argument of function " + Name::get(),
+					+ " of first argument of function " + Name::name,
 				ErrorCodes::ILLEGAL_COLUMN);
 	}
 };
@@ -240,7 +240,7 @@ struct ConvertImpl<DataTypeString, ToDataType, Name>
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-					+ " of first argument of function " + Name::get(),
+					+ " of first argument of function " + Name::name,
 				ErrorCodes::ILLEGAL_COLUMN);
 	}
 };
@@ -300,7 +300,7 @@ struct ConvertImpl<DataTypeFixedString, ToDataType, Name>
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-					+ " of first argument of function " + Name::get(),
+					+ " of first argument of function " + Name::name,
 				ErrorCodes::ILLEGAL_COLUMN);
 	}
 };
@@ -356,7 +356,7 @@ struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
 		}
 		else
 			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-					+ " of first argument of function " + Name::get(),
+					+ " of first argument of function " + Name::name,
 				ErrorCodes::ILLEGAL_COLUMN);
 	}
 };
@@ -366,10 +366,13 @@ template <typename ToDataType, typename Name>
 class FunctionConvert : public IFunction
 {
 public:
+	static constexpr auto name = Name::name;
+	static IFunction * create(const Context & context) { return new FunctionConvert; }
+
 	/// Получить имя функции.
 	String getName() const
 	{
-		return Name::get();
+		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
@@ -414,10 +417,13 @@ public:
 class FunctionToFixedString : public IFunction
 {
 public:
+	static constexpr auto name = "toFixedString";
+	static IFunction * create(const Context & context) { return new FunctionToFixedString; };
+
 	/// Получить имя функции.
 	String getName() const
 	{
-		return "toFixedString";
+		return name;
 	}
 
 	/** Получить тип результата по типам аргументов и значениям константных аргументов.
@@ -515,19 +521,19 @@ private:
 };
 
 
-struct NameToUInt8 			{ static const char * get() { return "toUInt8"; } };
-struct NameToUInt16 		{ static const char * get() { return "toUInt16"; } };
-struct NameToUInt32 		{ static const char * get() { return "toUInt32"; } };
-struct NameToUInt64 		{ static const char * get() { return "toUInt64"; } };
-struct NameToInt8 			{ static const char * get() { return "toInt8"; } };
-struct NameToInt16	 		{ static const char * get() { return "toInt16"; } };
-struct NameToInt32			{ static const char * get() { return "toInt32"; } };
-struct NameToInt64			{ static const char * get() { return "toInt64"; } };
-struct NameToFloat32		{ static const char * get() { return "toFloat32"; } };
-struct NameToFloat64		{ static const char * get() { return "toFloat64"; } };
-struct NameToDate			{ static const char * get() { return "toDate"; } };
-struct NameToDateTime		{ static const char * get() { return "toDateTime"; } };
-struct NameToString			{ static const char * get() { return "toString"; } };
+struct NameToUInt8 			{ static constexpr auto name = "toUInt8"; };
+struct NameToUInt16 		{ static constexpr auto name = "toUInt16"; };
+struct NameToUInt32 		{ static constexpr auto name = "toUInt32"; };
+struct NameToUInt64 		{ static constexpr auto name = "toUInt64"; };
+struct NameToInt8 			{ static constexpr auto name = "toInt8"; };
+struct NameToInt16	 		{ static constexpr auto name = "toInt16"; };
+struct NameToInt32			{ static constexpr auto name = "toInt32"; };
+struct NameToInt64			{ static constexpr auto name = "toInt64"; };
+struct NameToFloat32		{ static constexpr auto name = "toFloat32"; };
+struct NameToFloat64		{ static constexpr auto name = "toFloat64"; };
+struct NameToDate			{ static constexpr auto name = "toDate"; };
+struct NameToDateTime		{ static constexpr auto name = "toDateTime"; };
+struct NameToString			{ static constexpr auto name = "toString"; };
 
 typedef FunctionConvert<DataTypeUInt8,		NameToUInt8> 		FunctionToUInt8;
 typedef FunctionConvert<DataTypeUInt16,		NameToUInt16> 		FunctionToUInt16;

@@ -36,7 +36,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & e
 
 	ParserIdentifier table_parser;
 	ParserCompoundIdentifier parser_name;
-	ParserCompoundNameTypePair parser_name_type;
+	ParserCompoundColumnDeclaration parser_col_decl;
 	ParserLiteral parser_literal;
 	ParserStringLiteral parser_string_literal;
 
@@ -90,7 +90,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & e
 				return false;
 			ws.ignore(pos, end);
 
-			parser_name_type.parse(pos, end, params.name_type, expected);
+			parser_col_decl.parse(pos, end, params.col_decl, expected);
 
 			ws.ignore(pos, end);
 			if (s_after.ignore(pos, end, expected))
@@ -215,7 +215,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & e
 				return false;
 			ws.ignore(pos, end);
 
-			if (!parser_name_type.parse(pos, end, params.name_type, expected))
+			if (!parser_col_decl.parse(pos, end, params.col_decl, expected))
 				return false;
 
 			ws.ignore(pos, end);

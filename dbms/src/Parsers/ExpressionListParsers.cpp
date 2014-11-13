@@ -210,14 +210,8 @@ bool ParserVariableArityOperatorList::parseImpl(Pos & pos, Pos end, ASTPtr & nod
 
 		if (!arguments)
 		{
-			ASTFunction * function = new ASTFunction;
-			ASTPtr function_node = function;
-			arguments = new ASTExpressionList;
-			function->arguments = arguments;
-			function->children.push_back(arguments);
-			function->name = function_name;
-			arguments->children.push_back(node);
-			node = function_node;
+			node = makeASTFunction(function_name, node);
+			arguments = static_cast<ASTFunction &>(*node).arguments;
 		}
 
 		ASTPtr elem;

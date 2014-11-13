@@ -296,6 +296,10 @@ struct DataTypeFromFieldTypeOrError<NumberTraits::Error>
 
 class FunctionIf : public IFunction
 {
+public:
+	static constexpr auto name = "if";
+	static IFunction * create(const Context & context) { return new FunctionIf; }
+
 private:
 	template <typename T0, typename T1>
 	bool checkRightType(const DataTypes & arguments, DataTypePtr & type_res) const
@@ -473,7 +477,7 @@ public:
 	/// Получить имя функции.
 	String getName() const
 	{
-		return "if";
+		return name;
 	}
 
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.

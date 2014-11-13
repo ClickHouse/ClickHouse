@@ -19,11 +19,11 @@ class StorageSystemNumbers : public IStorage
 {
 public:
 	static StoragePtr create(const std::string & name_, bool multithreaded_ = false);
-	
+
 	std::string getName() const override { return "SystemNumbers"; }
 	std::string getTableName() const override { return name; }
 
-	const NamesAndTypesList & getColumnsList() const override { return columns; }
+	const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
 
 	BlockInputStreams read(
 		const Names & column_names,
@@ -37,7 +37,7 @@ private:
 	const std::string name;
 	NamesAndTypesList columns;
 	bool multithreaded;
-	
+
 	StorageSystemNumbers(const std::string & name_, bool multithreaded_);
 };
 
