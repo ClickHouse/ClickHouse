@@ -70,16 +70,17 @@ public:
 			/** Для некоторых столбцов файлы с данными могут отсутствовать.
 				* Это бывает для старых кусков, после добавления новых столбцов в структуру таблицы.
 				*/
-			auto all_columns_missing = true;
+			auto has_missing_columns = false;
 
 			/// Указатели на столбцы смещений, общие для столбцов из вложенных структур данных
 			/// Если append, все значения nullptr, и offset_columns используется только для проверки, что столбец смещений уже прочитан.
 			OffsetColumns offset_columns;
 			const auto read_column = [&] (const NameAndTypePair & it) {
 				if (streams.end() == streams.find(it.name))
+				{
+					has_missing_columns = true;
 					return;
-
-				all_columns_missing = false;
+				}
 
 				/// Все столбцы уже есть в блоке. Будем добавлять значения в конец.
 				bool append = res.has(it.name);
@@ -117,7 +118,7 @@ public:
 			for (const NameAndTypePair & it : columns)
 				read_column(it);
 
-			if (all_columns_missing)
+			if (has_missing_columns && !res)
 			{
 				addMinimumSizeColumn();
 				/// minimum size column is necessarily at list's front
