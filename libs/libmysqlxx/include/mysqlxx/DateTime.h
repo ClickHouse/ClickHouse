@@ -178,7 +178,7 @@ public:
 
 inline std::ostream & operator<< (std::ostream & ostr, const DateTime & datetime)
 {
-	ostr << std::setfill('0') << std::setw(4) <<  datetime.year();
+	ostr << std::setfill('0') << std::setw(4) << datetime.year();
 
 	ostr << '-' << (datetime.month() / 10) 	<< (datetime.month() % 10)
 		<< '-' << (datetime.day() / 10) 	<< (datetime.day() % 10)
