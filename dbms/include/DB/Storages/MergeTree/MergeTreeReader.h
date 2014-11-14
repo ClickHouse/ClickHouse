@@ -168,8 +168,6 @@ public:
 		if (!minimum_size_column)
 			throw std::logic_error{"could not find a column of minimum size in MergeTree"};
 
-		minimum_size_column_name = minimum_size_column->name;
-
 		ColumnWithNameAndType column{
 			minimum_size_column->type->createColumn(),
 			minimum_size_column->type,
@@ -244,9 +242,6 @@ public:
 
 			/// evaluate defaulted columns
 			evaluateMissingDefaults(res, columns, storage.column_defaults, storage.context);
-
-			if (!minimum_size_column_name.empty())
-				res.erase(minimum_size_column_name);
 		}
 		catch (const Exception & e)
 		{
@@ -374,7 +369,6 @@ private:
 	bool use_uncompressed_cache;
 	MergeTreeData & storage;
 	const MarkRanges & all_mark_ranges;
-	String minimum_size_column_name;
 
 	void addStream(const String & name, const IDataType & type, const MarkRanges & all_mark_ranges, size_t level = 0)
 	{
