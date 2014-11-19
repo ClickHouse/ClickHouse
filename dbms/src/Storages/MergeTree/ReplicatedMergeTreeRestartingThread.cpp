@@ -1,3 +1,4 @@
+#include <DB/IO/Operators.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeRestartingThread.h>
 
@@ -137,9 +138,15 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
 
 void ReplicatedMergeTreeRestartingThread::activateReplica()
 {
-	std::stringstream host;
-	host << "host: " << storage.context.getInterserverIOHost() << std::endl;
-	host << "port: " << storage.context.getInterserverIOPort() << std::endl;
+	auto host_port = storage.context.getInterserverIOAddress();
+
+	std::string address;
+	{
+		WriteBufferFromString address_buf(address);
+		address_buf
+			<< "host: " << host_port.first << '\n'
+			<< "port: " << host_port.second << '\n';
+	}
 
 	/** Если нода отмечена как активная, но отметка сделана в этом же экземпляре, удалим ее.
 	  * Такое возможно только при истечении сессии в ZooKeeper.
@@ -154,7 +161,7 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
 	zkutil::Ops ops;
 	ops.push_back(new zkutil::Op::Create(storage.replica_path + "/is_active",
 		active_node_identifier, storage.zookeeper->getDefaultACL(), zkutil::CreateMode::Ephemeral));
-	ops.push_back(new zkutil::Op::SetData(storage.replica_path + "/host", host.str(), -1));
+	ops.push_back(new zkutil::Op::SetData(storage.replica_path + "/host", address, -1));
 
 	try
 	{

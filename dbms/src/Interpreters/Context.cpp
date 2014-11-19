@@ -585,20 +585,20 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
 }
 
 
-void Context::setInterserverIOHost(const String & host, int port)
+void Context::setInterserverIOAddress(const String & host, UInt16 port)
 {
 	shared->interserver_io_host = host;
 	shared->interserver_io_port = port;
 }
 
-String Context::getInterserverIOHost() const
-{
-	return shared->interserver_io_host;
-}
 
-int Context::getInterserverIOPort() const
+std::pair<String, UInt16> Context::getInterserverIOAddress() const
 {
-	return shared->interserver_io_port;
+	if (shared->interserver_io_host.empty() || shared->interserver_io_port == 0)
+		throw Exception("Parameter 'interserver_http_port' required for replication is not specified in configuration file.",
+			ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+
+	return { shared->interserver_io_host, shared->interserver_io_port };
 }
 
 

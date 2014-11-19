@@ -373,7 +373,10 @@ int Server::main(const std::vector<std::string> & args)
 		String port_str = config().getString("interserver_http_port");
 		int port = parse<int>(port_str);
 
-		global_context->setInterserverIOHost(this_host, port);
+		if (port < 0 || port > 0xFFFF)
+			throw Exception("Out of range 'interserver_http_port': " + toString(port), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+		global_context->setInterserverIOAddress(this_host, port);
 	}
 
 	if (config().has("macros"))
