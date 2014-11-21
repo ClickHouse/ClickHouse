@@ -22,6 +22,7 @@
 namespace detail
 {
 const size_t DEFAULT_SAMPLE_COUNT = 8192;
+const auto MAX_SKIP_DEGREE = sizeof(UInt32) * 8;
 }
 
 /// Что делать, если нет ни одного значения - кинуть исключение, или вернуть 0 или NaN в случае double?
@@ -66,9 +67,10 @@ public:
 
 	void insertImpl(const T & v, const UInt32 hash)
 	{
- 		if (samples.size() == sample_count)
+ 		while (samples.size() + 1 >= sample_count)
 		{
-			++skip_degree;
+			if (++skip_degree > detail::MAX_SKIP_DEGREE)
+				throw DB::Exception{"skip_degree exceeds maximum value", DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED};
 			thinOut();
 		}
 

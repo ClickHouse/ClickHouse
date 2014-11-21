@@ -331,6 +331,19 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 		if (argument_types.size() != 2)
 			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
+		const auto determinator_type = argument_types[1].get();
+		if (!typeid_cast<const DataTypeInt32 *>(determinator_type) &&
+			!typeid_cast<const DataTypeUInt32 *>(determinator_type) &&
+			!typeid_cast<const DataTypeInt64 *>(determinator_type) &&
+			!typeid_cast<const DataTypeUInt64 *>(determinator_type))
+		{
+			throw Exception{
+				"Illegal type " + determinator_type->getName() + " of second argument for aggregate function " + name +
+				", Int32, UInt32, Int64 or UInt64 required",
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+			};
+		}
+
 		const IDataType & argument_type = *argument_types[0];
 
 			 if (typeid_cast<const DataTypeUInt8 	*>(&argument_type))	return new AggregateFunctionQuantileDeterministic<UInt8>;
@@ -352,6 +365,19 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 	{
 		if (argument_types.size() != 2)
 			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		const auto determinator_type = argument_types[1].get();
+		if (!typeid_cast<const DataTypeInt32 *>(determinator_type) &&
+			!typeid_cast<const DataTypeUInt32 *>(determinator_type) &&
+			!typeid_cast<const DataTypeInt64 *>(determinator_type) &&
+			!typeid_cast<const DataTypeUInt64 *>(determinator_type))
+		{
+			throw Exception{
+				"Illegal type " + determinator_type->getName() + " of second argument for aggregate function " + name +
+				", Int32, UInt32, Int64 or UInt64 required",
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+			};
+		}
 
 		const IDataType & argument_type = *argument_types[0];
 
