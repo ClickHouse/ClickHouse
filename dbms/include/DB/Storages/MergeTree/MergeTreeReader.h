@@ -58,6 +58,22 @@ public:
 		}
 	}
 
+	const NameAndTypePair * getAddedColumn() const { return added_column; }
+
+	void removeColumn(const String & column_name)
+	{
+		for (auto it = columns.begin(); it != columns.end(); ++it)
+		{
+			if (it->name == column_name)
+			{
+				columns.erase(it);
+				break;
+			}
+		}
+
+		streams.erase(column_name);
+	}
+
 	/** Если столбцов нет в блоке, добавляет их, если есть - добавляет прочитанные значения к ним в конец.
 	  * Не добавляет столбцы, для которых нет файлов. Чтобы их добавить, нужно вызвать fillMissingColumns.
 	  * В блоке должно быть либо ни одного столбца из columns, либо все, для которых есть файлы. */
@@ -176,6 +192,8 @@ public:
 
 		addStream(minimum_size_column->name, *minimum_size_column->type, all_mark_ranges);
 		columns.emplace(std::begin(columns), *minimum_size_column);
+
+		added_column = &columns.front();
 	}
 
 	/// Заполняет столбцы, которых нет в блоке, значениями по умолчанию.
@@ -366,6 +384,7 @@ private:
 	bool use_uncompressed_cache;
 	MergeTreeData & storage;
 	const MarkRanges & all_mark_ranges;
+	const NameAndTypePair * added_column = nullptr;
 
 	void addStream(const String & name, const IDataType & type, const MarkRanges & all_mark_ranges, size_t level = 0)
 	{
