@@ -11,6 +11,7 @@ void registerFunctionsArithmetic(FunctionFactory & factory)
 	factory.registerFunction<FunctionMultiply>();
 	factory.registerFunction<FunctionDivideFloating>();
 	factory.registerFunction<FunctionDivideIntegral>();
+	factory.registerFunction<FunctionDivideIntegralOrZero>();
 	factory.registerFunction<FunctionModulo>();
 	factory.registerFunction<FunctionNegate>();
 	factory.registerFunction<FunctionBitAnd>();

@@ -139,6 +139,22 @@ inline void throwIfDivisionLeadsToFPE(A a, B b)
 		throw Exception("Division of minimal signed number by minus one", ErrorCodes::ILLEGAL_DIVISION);
 }
 
+template <typename A, typename B>
+inline bool divisionLeadsToFPE(A a, B b)
+{
+	/// Возможно, лучше вместо проверок использовать siglongjmp?
+
+	if (unlikely(b == 0))
+		return true;
+
+	/// http://avva.livejournal.com/2548306.html
+	if (unlikely(std::is_signed<A>::value && std::is_signed<B>::value && a == std::numeric_limits<A>::min() && b == -1))
+		return true;
+
+	return false;
+}
+
+
 #pragma GCC diagnostic pop
 
 
@@ -152,6 +168,18 @@ struct DivideIntegralImpl
 	{
 		throwIfDivisionLeadsToFPE(a, b);
 		return static_cast<Result>(a) / b;
+	}
+};
+
+template<typename A, typename B>
+struct DivideIntegralOrZeroImpl
+{
+	typedef typename NumberTraits::ResultOfIntegerDivision<A, B>::Type ResultType;
+
+	template <typename Result = ResultType>
+	static inline Result apply(A a, B b)
+	{
+		return unlikely(divisionLeadsToFPE(a, b)) ? 0 : static_cast<Result>(a) / b;
 	}
 };
 
@@ -752,6 +780,7 @@ struct NameMinus 			{ static constexpr auto name = "minus"; };
 struct NameMultiply 		{ static constexpr auto name = "multiply"; };
 struct NameDivideFloating	{ static constexpr auto name = "divide"; };
 struct NameDivideIntegral	{ static constexpr auto name = "intDiv"; };
+struct NameDivideIntegralOrZero	{ static constexpr auto name = "intDivOrZero"; };
 struct NameModulo			{ static constexpr auto name = "modulo"; };
 struct NameNegate			{ static constexpr auto name = "negate"; };
 struct NameBitAnd			{ static constexpr auto name = "bitAnd"; };
@@ -766,6 +795,7 @@ typedef FunctionBinaryArithmetic<MinusImpl, 			NameMinus> 				FunctionMinus;
 typedef FunctionBinaryArithmetic<MultiplyImpl,			NameMultiply> 			FunctionMultiply;
 typedef FunctionBinaryArithmetic<DivideFloatingImpl, 	NameDivideFloating>	 	FunctionDivideFloating;
 typedef FunctionBinaryArithmetic<DivideIntegralImpl, 	NameDivideIntegral> 	FunctionDivideIntegral;
+typedef FunctionBinaryArithmetic<DivideIntegralOrZeroImpl, 	NameDivideIntegralOrZero> 	FunctionDivideIntegralOrZero;
 typedef FunctionBinaryArithmetic<ModuloImpl, 			NameModulo> 			FunctionModulo;
 typedef FunctionUnaryArithmetic<NegateImpl, 			NameNegate> 			FunctionNegate;
 typedef FunctionBinaryArithmetic<BitAndImpl,			NameBitAnd> 			FunctionBitAnd;
