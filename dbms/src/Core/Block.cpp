@@ -12,7 +12,7 @@
 
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
-#include <statdaemons/stdext.h>
+#include <statdaemons/ext/memory.hpp>
 
 #include <DB/Parsers/formatAST.h>
 

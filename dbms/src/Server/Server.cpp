@@ -5,7 +5,7 @@
 
 #include <Yandex/ApplicationServerExt.h>
 #include <statdaemons/ConfigProcessor.h>
-#include <statdaemons/stdext.h>
+#include <statdaemons/ext/memory.hpp>
 
 #include <DB/Interpreters/loadMetadata.h>
 #include <DB/Storages/StorageSystemNumbers.h>
@@ -383,7 +383,7 @@ int Server::main(const std::vector<std::string> & args)
 		global_context->setMacros(Macros(config(), "macros"));
 
 	std::string users_config_path = config().getString("users_config", config().getString("config-file", "config.xml"));
-	auto users_config_reloader = stdext::make_unique<UsersConfigReloader>(users_config_path, global_context.get());
+	auto users_config_reloader = ext::make_unique<UsersConfigReloader>(users_config_path, global_context.get());
 
 	/// Максимальное количество одновременно выполняющихся запросов.
 	global_context->getProcessList().setMaxSize(config().getInt("max_concurrent_queries", 0));
@@ -428,7 +428,7 @@ int Server::main(const std::vector<std::string> & args)
 
 	{
 		const auto profile_events_transmitter = config().getBool("use_graphite", true)
-			? stdext::make_unique<ProfileEventsTransmitter>()
+			? ext::make_unique<ProfileEventsTransmitter>()
 			: nullptr;
 
 		const std::string listen_host = config().getString("listen_host", "::");

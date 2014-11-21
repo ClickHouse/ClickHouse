@@ -1,6 +1,6 @@
 #pragma once
 
-#include <stats/ReservoirSampler.h>
+#include <DB/AggregateFunctions/ReservoirSamplerDeterministic.h>
 
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/ReadHelpers.h>
@@ -8,7 +8,7 @@
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeArray.h>
 
-#include <DB/AggregateFunctions/IUnaryAggregateFunction.h>
+#include <DB/AggregateFunctions/IBinaryAggregateFunction.h>
 
 #include <DB/Columns/ColumnArray.h>
 
@@ -17,9 +17,9 @@ namespace DB
 {
 
 template <typename ArgumentFieldType>
-struct AggregateFunctionQuantileData
+struct AggregateFunctionQuantileDeterministicData
 {
-	typedef ReservoirSampler<ArgumentFieldType, ReservoirSamplerOnEmpty::RETURN_NAN_OR_ZERO> Sample;
+	using Sample = ReservoirSamplerDeterministic<ArgumentFieldType, ReservoirSamplerDeterministicOnEmpty::RETURN_NAN_OR_ZERO>;
 	Sample sample;	/// TODO Добавить MemoryTracker
 };
 
@@ -30,30 +30,37 @@ struct AggregateFunctionQuantileData
   * Для дат и дат-с-временем returns_float следует задавать равным false.
   */
 template <typename ArgumentFieldType, bool returns_float = true>
-class AggregateFunctionQuantile final : public IUnaryAggregateFunction<AggregateFunctionQuantileData<ArgumentFieldType>, AggregateFunctionQuantile<ArgumentFieldType, returns_float> >
+class AggregateFunctionQuantileDeterministic final
+	: public IBinaryAggregateFunction<
+		AggregateFunctionQuantileDeterministicData<ArgumentFieldType>,
+		AggregateFunctionQuantileDeterministic<ArgumentFieldType, returns_float>>
 {
 private:
-	using Sample = typename AggregateFunctionQuantileData<ArgumentFieldType>::Sample;
+	using Sample = typename AggregateFunctionQuantileDeterministicData<ArgumentFieldType>::Sample;
 
 	double level;
 	DataTypePtr type;
 
 public:
-	AggregateFunctionQuantile(double level_ = 0.5) : level(level_) {}
+	AggregateFunctionQuantileDeterministic(double level_ = 0.5) : level(level_) {}
 
-	String getName() const { return "quantile"; }
+	String getName() const { return "quantileDeterministic"; }
 
 	DataTypePtr getReturnType() const
 	{
 		return type;
 	}
 
-	void setArgument(const DataTypePtr & argument)
+	void setArgumentsImpl(const DataTypes & arguments)
 	{
-		if (returns_float)
-			type = new DataTypeFloat64;
-		else
-			type = argument;
+		type = returns_float ? new DataTypeFloat64 : arguments[0];
+
+		if (!arguments[1]->isNumeric())
+			throw Exception{
+				"Invalid type of second argument to function " + getName() +
+					", got " + arguments[1]->getName() + ", expected numeric",
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+			};
 	}
 
 	void setParameters(const Array & params)
@@ -65,9 +72,10 @@ public:
 	}
 
 
-	void addOne(AggregateDataPtr place, const IColumn & column, size_t row_num) const
+	void addOne(AggregateDataPtr place, const IColumn & column, const IColumn & determinator, size_t row_num) const
 	{
-		this->data(place).sample.insert(static_cast<const ColumnVector<ArgumentFieldType> &>(column).getData()[row_num]);
+		this->data(place).sample.insert(static_cast<const ColumnVector<ArgumentFieldType> &>(column).getData()[row_num],
+			determinator.get64(row_num));
 	}
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
@@ -105,29 +113,36 @@ public:
   * Возвращает массив результатов.
   */
 template <typename ArgumentFieldType, bool returns_float = true>
-class AggregateFunctionQuantiles final : public IUnaryAggregateFunction<AggregateFunctionQuantileData<ArgumentFieldType>, AggregateFunctionQuantiles<ArgumentFieldType, returns_float> >
+class AggregateFunctionQuantilesDeterministic final
+	: public IBinaryAggregateFunction<
+		AggregateFunctionQuantileDeterministicData<ArgumentFieldType>,
+		AggregateFunctionQuantilesDeterministic<ArgumentFieldType, returns_float>>
 {
 private:
-	using Sample = typename AggregateFunctionQuantileData<ArgumentFieldType>::Sample;
+	using Sample = typename AggregateFunctionQuantileDeterministicData<ArgumentFieldType>::Sample;
 
 	typedef std::vector<double> Levels;
 	Levels levels;
 	DataTypePtr type;
 
 public:
-	String getName() const { return "quantiles"; }
+	String getName() const { return "quantilesDeterministic"; }
 
 	DataTypePtr getReturnType() const
 	{
 		return new DataTypeArray(type);
 	}
 
-	void setArgument(const DataTypePtr & argument)
+	void setArgumentsImpl(const DataTypes & arguments)
 	{
-		if (returns_float)
-			type = new DataTypeFloat64;
-		else
-			type = argument;
+		type = returns_float ? new DataTypeFloat64 : arguments[0];
+
+		if (!arguments[1]->isNumeric())
+			throw Exception{
+				"Invalid type of second argument to function " + getName() +
+					", got " + arguments[1]->getName() + ", expected numeric",
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+			};
 	}
 
 	void setParameters(const Array & params)
@@ -143,9 +158,10 @@ public:
 	}
 
 
-	void addOne(AggregateDataPtr place, const IColumn & column, size_t row_num) const
+	void addOne(AggregateDataPtr place, const IColumn & column, const IColumn & determinator, size_t row_num) const
 	{
-		this->data(place).sample.insert(static_cast<const ColumnVector<ArgumentFieldType> &>(column).getData()[row_num]);
+		this->data(place).sample.insert(static_cast<const ColumnVector<ArgumentFieldType> &>(column).getData()[row_num],
+			determinator.get64(row_num));
 	}
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
