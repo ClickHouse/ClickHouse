@@ -43,9 +43,9 @@ int main(int argc, char ** argv)
 
 		StoragePtr table = StorageMergeTree::create(
 			"./", "default", "test",
-			names_and_types, context, primary_expr, "d",
-			nullptr, {}, 101, {},
-			MergeTreeData::Ordinary, {}, {}, {});
+			names_and_types, {}, {}, {},
+			context, primary_expr, "d",
+			nullptr, 101, MergeTreeData::Ordinary, {}, {});
 
 		/// пишем в неё
 		{
