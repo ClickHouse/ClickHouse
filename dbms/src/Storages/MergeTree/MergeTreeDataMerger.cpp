@@ -380,7 +380,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 			break;
 
 		case MergeTreeData::Summing:
-			merged_stream = ext::make_unique<SummingSortedBlockInputStream>(src_streams, data.getSortDescription(), DEFAULT_MERGE_BLOCK_SIZE);
+			merged_stream = ext::make_unique<SummingSortedBlockInputStream>(src_streams, data.getSortDescription(), data.columns_to_sum, DEFAULT_MERGE_BLOCK_SIZE);
 			break;
 
 		case MergeTreeData::Aggregating:

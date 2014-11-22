@@ -33,6 +33,7 @@ MergeTreeData::MergeTreeData(
 	size_t index_granularity_,
 	Mode mode_,
 	const String & sign_column_,
+	const Names & columns_to_sum_,
 	const MergeTreeSettings & settings_,
 	const String & log_name_,
 	bool require_part_metadata_,
@@ -40,7 +41,7 @@ MergeTreeData::MergeTreeData(
     : ITableDeclaration{materialized_columns_, alias_columns_, column_defaults_}, context(context_),
 	date_column_name(date_column_name_), sampling_expression(sampling_expression_),
 	index_granularity(index_granularity_),
-	mode(mode_), sign_column(sign_column_),
+	mode(mode_), sign_column(sign_column_), columns_to_sum(columns_to_sum_),
 	settings(settings_), primary_expr_ast(primary_expr_ast_->clone()),
 	require_part_metadata(require_part_metadata_),
 	full_path(full_path_), columns(columns_),
@@ -48,7 +49,8 @@ MergeTreeData::MergeTreeData(
 	log_name(log_name_), log(&Logger::get(log_name + " (Data)"))
 {
 	/// Проверяем, что столбец с датой существует и имеет тип Date.
-	const auto check_date_exists = [this] (const NamesAndTypesList & columns) {
+	const auto check_date_exists = [this] (const NamesAndTypesList & columns)
+	{
 		for (const auto & column : columns)
 		{
 			if (column.name == date_column_name)
@@ -67,8 +69,19 @@ MergeTreeData::MergeTreeData(
 	if (!check_date_exists(*columns) && !check_date_exists(materialized_columns))
 		throw Exception{
 			"Date column (" + date_column_name + ") does not exist in table declaration.",
-			ErrorCodes::NO_SUCH_COLUMN_IN_TABLE
-		};
+			ErrorCodes::NO_SUCH_COLUMN_IN_TABLE};
+
+	/// Если заданы columns_to_sum, проверяем, что такие столбцы существуют.
+	if (!columns_to_sum.empty())
+	{
+		if (mode != Summing)
+			throw Exception("List of columns to sum for MergeTree cannot be specified in all modes except Summing.", ErrorCodes::LOGICAL_ERROR);
+
+		for (const auto & column_to_sum : columns_to_sum)
+			if (columns->end() == std::find_if(columns->begin(), columns->end(),
+				[&](const NameAndTypePair & name_and_type) { return column_to_sum == name_and_type.name; }))
+				throw Exception("Column " + column_to_sum + " listed in columns to sum does not exist in table declaration.");
+	}
 
 	/// создаём директорию, если её нет
 	Poco::File(full_path).createDirectories();

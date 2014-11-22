@@ -44,7 +44,7 @@ static bool startsWith(const std::string & s, const std::string & prefix)
   * Он может быть указан в кортеже: (CounterID, Date),
   *  или как один столбец: CounterID.
   */
-static ASTPtr extractPrimaryKey(const ASTPtr & node, const std::string & storage_name)
+static ASTPtr extractPrimaryKey(const ASTPtr & node)
 {
 	const ASTFunction * primary_expr_func = typeid_cast<const ASTFunction *>(&*node);
 
@@ -60,6 +60,30 @@ static ASTPtr extractPrimaryKey(const ASTPtr & node, const std::string & storage
 		ASTPtr res_ptr = res;
 		res->children.push_back(node);
 		return res_ptr;
+	}
+}
+
+/** Для StorageMergeTree: достать список имён столбцов.
+  * Он может быть указан в кортеже: (Clicks, Cost),
+  *  или как один столбец: Clicks.
+  */
+static Names extractColumnNames(const ASTPtr & node)
+{
+	const ASTFunction * expr_func = typeid_cast<const ASTFunction *>(&*node);
+
+	if (expr_func && expr_func->name == "tuple")
+	{
+		const auto & elements = expr_func->children.at(0)->children;
+		Names res;
+		res.reserve(elements.size());
+		for (const auto & elem : elements)
+			res.push_back(typeid_cast<const ASTIdentifier &>(*elem).name);
+
+		return res;
+	}
+	else
+	{
+		return { typeid_cast<const ASTIdentifier &>(*node).name };
 	}
 }
 
@@ -260,7 +284,7 @@ StoragePtr StorageFactory::get(
 	}
 	else if (endsWith(name, "MergeTree"))
 	{
-		/** Движки [Replicated][Summing|Collapsing|Aggregating|]MergeTree  (8 комбинаций)
+		/** Движки [Replicated][Summing|Collapsing|Aggregating|]MergeTree (8 комбинаций)
 		  * В качестве аргумента для движка должно быть указано:
 		  *  - (для Replicated) Путь к таблице в ZooKeeper
 		  *  - (для Replicated) Имя реплики в ZooKeeper
@@ -270,7 +294,76 @@ StoragePtr StorageFactory::get(
 		  *  - index_granularity;
 		  *  - (для Collapsing) имя столбца, содержащего тип строчки с изменением "визита" (принимающего значения 1 и -1).
 		  * Например: ENGINE = ReplicatedCollapsingMergeTree('/tables/mytable', 'rep02', EventDate, (CounterID, EventDate, intHash32(UniqID), VisitID), 8192, Sign).
+		  *  - (для Summing, не обязательно) кортеж столбцов, которых следует суммировать. Если не задано - используются все числовые столбцы, не входящие в первичный ключ.
+		  * Например: ENGINE = ReplicatedCollapsingMergeTree('/tables/mytable', 'rep02', EventDate, (CounterID, EventDate, intHash32(UniqID), VisitID), 8192, Sign).
+		  *
+		  * MergeTree(date, [sample_key], primary_key, index_granularity)
+		  * CollapsingMergeTree(date, [sample_key], primary_key, index_granularity, sign)
+		  * SummingMergeTree(date, [sample_key], primary_key, index_granularity, [columns_to_sum])
+		  * AggregatingMergeTree(date, [sample_key], primary_key, index_granularity)
 		  */
+
+		const char * verbose_help = R"(
+
+MergeTree is family of storage engines.
+
+MergeTrees is different in two ways:
+- it may be replicated and non-replicated;
+- it may do different actions on merge: nothing; sign collapse; sum; apply aggregete functions.
+
+So we have 8 combinations:
+    MergeTree, CollapsingMergeTree, SummingMergeTree, AggregatingMergeTree,
+    ReplicatedMergeTree, ReplicatedCollapsingMergeTree, ReplicatedSummingMergeTree, ReplicatedAggregatingMergeTree.
+
+In most of cases, you need MergeTree or ReplicatedMergeTree.
+
+For replicated merge trees, you need to supply path in ZooKeeper and replica name as first two parameters.
+Path in ZooKeeper is like '/clickhouse/tables/01/' where /clickhouse/tables/ is common prefix and 01 is shard name.
+Replica name is like 'mtstat01-1' - it may be hostname or any suitable string identifying replica.
+You may use macro substitutions for these parameters. It's like ReplicatedMergeTree('/clickhouse/tables/{shard}/', '{replica}'...
+Look at <macros> section in server configuration file.
+
+Next parameter (which is first for unreplicated tables and third for replicated tables) is name of date column.
+Date column must exist in table and have type Date (not DateTime).
+It is used for internal data partitioning and works like some kind of index.
+
+If your source data doesn't have column of type Date, but have DateTime column, you may add values for Date column while loading,
+ or you may INSERT your source data to table of type Log and then transform it with INSERT INTO t SELECT toDate(time) AS date, * FROM ...
+If your source data doesn't have any date or time, you may just pass any constant for date column while loading.
+
+Next parameter is optional sampling expression. Sampling expression is used to implement SAMPLE clause in query for approximate query execution.
+If you don't need approximate query execution, simply omit this parameter.
+Sample expression must be one of elements of primary key tuple. For example, if your primary key is (CounterID, EventDate, intHash64(UserID)), your sampling expression might be intHash64(UserID).
+
+Next parameter is primary key tuple. It's like (CounterID, EventDate, intHash64(UserID)) - list of column names or functional expressions in round brackets. If your primary key have just one element, you may omit round brackets.
+
+Careful choice of primary key is extremely important for processing short-time queries.
+
+Next parameter is index (primary key) granularity. Good value is 8192. You have no reasons to use any other value.
+
+For Collapsing mode, last parameter is name of sign column - special column that is used to 'collapse' rows with same primary key while merge.
+
+For Summing mode, last parameter is optional list of columns to sum while merge. List is passed in round brackets, like (PageViews, Cost).
+If this parameter is omitted, storage will sum all numeric columns except columns participated in primary key.
+
+
+Examples:
+
+MergeTree(EventDate, (CounterID, EventDate), 8192)
+
+MergeTree(EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192)
+
+CollapsingMergeTree(StartDate, intHash32(UserID), (CounterID, StartDate, intHash32(UserID), VisitID), 8192, Sign)
+
+SummingMergeTree(EventDate, (OrderID, EventDate, BannerID, PhraseID, ContextType, RegionID, PageID, IsFlat, TypeID, ResourceNo), 8192)
+
+SummingMergeTree(EventDate, (OrderID, EventDate, BannerID, PhraseID, ContextType, RegionID, PageID, IsFlat, TypeID, ResourceNo), 8192, (Shows, Clicks, Cost, CostCur, ShowsSumPosition, ClicksSumPosition, SessionNum, SessionLen, SessionCost, GoalsNum, SessionDepth))
+
+ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/hits', '{replica}', EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192)
+
+
+For further info please read the documentation: http://clickhouse.yandex-team.ru/
+)";
 
 		String name_part = name.substr(0, name.size() - strlen("MergeTree"));
 
@@ -287,7 +380,7 @@ StoragePtr StorageFactory::get(
 		else if (name_part == "Aggregating")
 			mode = MergeTreeData::Aggregating;
 		else if (!name_part.empty())
-			throw Exception("Unknown storage " + name, ErrorCodes::UNKNOWN_STORAGE);
+			throw Exception("Unknown storage " + name + verbose_help, ErrorCodes::UNKNOWN_STORAGE);
 
 		ASTs & args_func = typeid_cast<ASTFunction &>(*typeid_cast<ASTCreateQuery &>(*query).storage).children;
 
@@ -296,29 +389,76 @@ StoragePtr StorageFactory::get(
 		if (args_func.size() == 1)
 			args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
 
-		size_t additional_params = (replicated ? 2 : 0) + (mode == MergeTreeData::Collapsing ? 1 : 0);
-		if (args.size() != additional_params + 3 && args.size() != additional_params + 4)
+		/// NOTE Слегка запутанно.
+		size_t num_additional_params = (replicated ? 2 : 0) + (mode == MergeTreeData::Collapsing);
+
+		if (mode != MergeTreeData::Summing
+			&& args.size() != num_additional_params + 3
+			&& args.size() != num_additional_params + 4)
 		{
 			String params;
+
 			if (replicated)
-				params += "path in ZooKeeper, replica name or '', ";
-			params += "name of column with date, [name of column for sampling], primary key expression, index granularity";
+				params +=
+					"\npath in ZooKeeper,"
+					"\nreplica name,";
+
+			params +=
+				"\nname of column with date,"
+				"\n[sampling element of primary key],"
+				"\nprimary key expression,"
+				"\nindex granularity\n";
+
 			if (mode == MergeTreeData::Collapsing)
 				params += ", sign column";
-			throw Exception("Storage " + name + " requires " + toString(additional_params + 3) + " or "
-				+ toString(additional_params + 4) +" parameters: " + params,
+
+			throw Exception("Storage " + name + " requires "
+				+ toString(num_additional_params + 3) + " or "
+				+ toString(num_additional_params + 4) + " parameters: " + params + verbose_help,
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 		}
 
+		if (mode == MergeTreeData::Summing
+			&& args.size() != num_additional_params + 3
+			&& args.size() != num_additional_params + 4
+			&& args.size() != num_additional_params + 5)
+		{
+			String params;
+
+			if (replicated)
+				params +=
+					"\npath in ZooKeeper,"
+					"\nreplica name,";
+
+			params +=
+				"\nname of column with date,"
+				"\n[sampling element of primary key],"
+				"\nprimary key expression,"
+				"\nindex granularity,"
+				"\n[list of columns to sum]\n";
+
+			throw Exception("Storage " + name + " requires "
+				+ toString(num_additional_params + 3) + " or "
+				+ toString(num_additional_params + 4) + " or "
+				+ toString(num_additional_params + 5) + " parameters: " + params + verbose_help,
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+		}
+
+		/// Для Replicated.
 		String zookeeper_path;
 		String replica_name;
 
+		/// Для всех.
 		String date_column_name;
 		ASTPtr primary_expr_list;
 		ASTPtr sampling_expression;
 		UInt64 index_granularity;
 
+		/// Для Collapsing.
 		String sign_column_name;
+
+		/// Для Summing.
+		Names columns_to_sum;
 
 		if (replicated)
 		{
@@ -326,16 +466,16 @@ StoragePtr StorageFactory::get(
 			if (ast && ast->value.getType() == Field::Types::String)
 				zookeeper_path = safeGet<String>(ast->value);
 			else
-				throw Exception("Path in ZooKeeper must be a string literal", ErrorCodes::BAD_ARGUMENTS);
+				throw Exception(String("Path in ZooKeeper must be a string literal") + verbose_help, ErrorCodes::BAD_ARGUMENTS);
 
 			ast = typeid_cast<ASTLiteral *>(&*args[1]);
 			if (ast && ast->value.getType() == Field::Types::String)
 				replica_name = safeGet<String>(ast->value);
 			else
-				throw Exception("Replica name must be a string literal", ErrorCodes::BAD_ARGUMENTS);
+				throw Exception(String("Replica name must be a string literal") + verbose_help, ErrorCodes::BAD_ARGUMENTS);
 
 			if (replica_name.empty())
-				throw Exception("No replica name in config", ErrorCodes::NO_REPLICA_NAME_GIVEN);
+				throw Exception(String("No replica name in config") + verbose_help, ErrorCodes::NO_REPLICA_NAME_GIVEN);
 
 			args.erase(args.begin(), args.begin() + 2);
 		}
@@ -345,42 +485,54 @@ StoragePtr StorageFactory::get(
 			if (auto ast = typeid_cast<ASTIdentifier *>(&*args.back()))
 				sign_column_name = ast->name;
 			else
-				throw Exception("Sign column name must be an unquoted string", ErrorCodes::BAD_ARGUMENTS);
+				throw Exception(String("Sign column name must be an unquoted string") + verbose_help, ErrorCodes::BAD_ARGUMENTS);
 
 			args.pop_back();
 		}
+		else if (mode == MergeTreeData::Summing)
+		{
+			/// Если последний элемент - не index granularity (литерал), то это - список суммируемых столбцов.
+			if (!typeid_cast<const ASTLiteral *>(&*args.back()))
+			{
+				columns_to_sum = extractColumnNames(args.back());
+				args.pop_back();
+			}
+		}
 
+		/// Если присутствует выражение для сэмплирования. MergeTree(date, [sample_key], primary_key, index_granularity)
 		if (args.size() == 4)
 		{
 			sampling_expression = args[1];
 			args.erase(args.begin() + 1);
 		}
 
+		/// Теперь осталось только три параметра - date, primary_key, index_granularity.
+
 		if (auto ast = typeid_cast<ASTIdentifier *>(&*args[0]))
 			date_column_name = ast->name;
 		else
-			throw Exception("Date column name must be an unquoted string", ErrorCodes::BAD_ARGUMENTS);
+			throw Exception(String("Date column name must be an unquoted string") + verbose_help, ErrorCodes::BAD_ARGUMENTS);
 
-		primary_expr_list = extractPrimaryKey(args[1], name);
+		primary_expr_list = extractPrimaryKey(args[1]);
 
 		auto ast = typeid_cast<ASTLiteral *>(&*args[2]);
 		if (ast && ast->value.getType() == Field::Types::UInt64)
 				index_granularity = safeGet<UInt64>(ast->value);
 		else
-			throw Exception("Index granularity must be a positive integer", ErrorCodes::BAD_ARGUMENTS);
+			throw Exception(String("Index granularity must be a positive integer") + verbose_help, ErrorCodes::BAD_ARGUMENTS);
 
 		if (replicated)
 			return StorageReplicatedMergeTree::create(
 				zookeeper_path, replica_name, attach, data_path, database_name, table_name,
 				columns, materialized_columns, alias_columns, column_defaults,
 				context, primary_expr_list, date_column_name,
-				sampling_expression, index_granularity, mode, sign_column_name);
+				sampling_expression, index_granularity, mode, sign_column_name, columns_to_sum);
 		else
 			return StorageMergeTree::create(
 				data_path, database_name, table_name,
 				columns, materialized_columns, alias_columns, column_defaults,
 				context, primary_expr_list, date_column_name,
-				sampling_expression, index_granularity, mode, sign_column_name);
+				sampling_expression, index_granularity, mode, sign_column_name, columns_to_sum);
 	}
 	else
 		throw Exception("Unknown storage " + name, ErrorCodes::UNKNOWN_STORAGE);

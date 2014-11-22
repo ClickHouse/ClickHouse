@@ -22,6 +22,7 @@ StorageMergeTree::StorageMergeTree(
 	size_t index_granularity_,
 	MergeTreeData::Mode mode_,
 	const String & sign_column_,
+	const Names & columns_to_sum_,
 	const MergeTreeSettings & settings_)
     : IStorage{materialized_columns_, alias_columns_, column_defaults_},
 	path(path_), database_name(database_name_), table_name(table_name_), full_path(path + escapeForFileName(table_name) + '/'),
@@ -29,7 +30,7 @@ StorageMergeTree::StorageMergeTree(
 	data(full_path, columns_,
 		 materialized_columns_, alias_columns_, column_defaults_,
 		 context_, primary_expr_ast_, date_column_name_,
-		 sampling_expression_, index_granularity_,mode_, sign_column_,
+		 sampling_expression_, index_granularity_,mode_, sign_column_, columns_to_sum_,
 		 settings_, database_name_ + "." + table_name, false),
 	reader(data), writer(data), merger(data),
 	log(&Logger::get(database_name_ + "." + table_name + " (StorageMergeTree)")),
@@ -54,13 +55,14 @@ StoragePtr StorageMergeTree::create(
 	size_t index_granularity_,
 	MergeTreeData::Mode mode_,
 	const String & sign_column_,
+	const Names & columns_to_sum_,
 	const MergeTreeSettings & settings_)
 {
 	auto res = new StorageMergeTree{
 		path_, database_name_, table_name_,
 		columns_, materialized_columns_, alias_columns_, column_defaults_,
 		context_, primary_expr_ast_, date_column_name_,
-		sampling_expression_, index_granularity_, mode_, sign_column_, settings_
+		sampling_expression_, index_granularity_, mode_, sign_column_, columns_to_sum_, settings_
 	};
 	StoragePtr res_ptr = res->thisPtr();
 
@@ -69,23 +71,6 @@ StoragePtr StorageMergeTree::create(
 	return res_ptr;
 }
 
-StoragePtr StorageMergeTree::create(
-	const String & path_, const String & database_name_, const String & table_name_,
-	NamesAndTypesListPtr columns_,
-	Context & context_,
-	ASTPtr & primary_expr_ast_,
-	const String & date_column_name_,
-	const ASTPtr & sampling_expression_,
-	size_t index_granularity_,
-	MergeTreeData::Mode mode_,
-	const String & sign_column_,
-	const MergeTreeSettings & settings_)
-{
-	return create(path_, database_name_, table_name_,
-		columns_, {}, {}, {},
-		context_, primary_expr_ast_, date_column_name_,
-		sampling_expression_, index_granularity_, mode_, sign_column_, settings_);
-}
 
 void StorageMergeTree::shutdown()
 {

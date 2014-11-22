@@ -594,7 +594,8 @@ public:
 					const ASTPtr & sampling_expression_, /// nullptr, если семплирование не поддерживается.
 					size_t index_granularity_,
 					Mode mode_,
-					const String & sign_column_,
+					const String & sign_column_,			/// Для Collapsing режима.
+					const Names & columns_to_sum_,			/// Для Summing режима. Если пустое - то выбирается автоматически.
 					const MergeTreeSettings & settings_,
 					const String & log_name_,
 					bool require_part_metadata_,
@@ -772,6 +773,8 @@ public:
 	const Mode mode;
 	/// Для схлопывания записей об изменениях, если используется Collapsing режим работы.
 	const String sign_column;
+	/// Для суммирования, если используется Summing режим работы.
+	const Names columns_to_sum;
 
 	const MergeTreeSettings settings;
 
