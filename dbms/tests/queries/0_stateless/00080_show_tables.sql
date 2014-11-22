@@ -7,3 +7,4 @@ CREATE TABLE test_show_tables.B (A UInt8) ENGINE = TinyLog;
 
 SHOW TABLES from test_show_tables;
 
+DROP DATABASE test_show_tables;

@@ -13,7 +13,7 @@ OPTIMIZE TABLE test.summing_merge_tree;
 SELECT * FROM test.summing_merge_tree ORDER BY d, a, x, y, z;
 
 
-DROP TABLE IF EXISTS test.summing_merge_tree;
+DROP TABLE test.summing_merge_tree;
 
 CREATE TABLE test.summing_merge_tree (d Date, a String, x UInt32, y UInt64, z Float64) ENGINE = SummingMergeTree(d, a, 8192, (y, z));
 
@@ -27,3 +27,5 @@ OPTIMIZE TABLE test.summing_merge_tree;
 
 SELECT * FROM test.summing_merge_tree ORDER BY d, a, x, y, z;
 
+
+DROP TABLE test.summing_merge_tree;
