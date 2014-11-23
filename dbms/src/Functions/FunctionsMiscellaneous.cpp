@@ -273,13 +273,24 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 				additional_symbols += 2;			/// Кавычки.
 		}
 
-		ColumnUInt64 * nested_result_column = typeid_cast<ColumnUInt64 *>(&*nested_block.getByPosition(nested_block.columns() - 1).column);
-		ColumnUInt64::Container_t & nested_res = nested_result_column->getData();
+		ColumnPtr & nested_result_column = nested_block.getByPosition(nested_block.columns() - 1).column;
 
-		for (size_t i = 0; i < rows; ++i)
-			nested_res[i] += 2 + additional_symbols;
+		if (nested_result_column->isConst())
+		{
+			ColumnConstUInt64 & nested_result_column_const = typeid_cast<ColumnConstUInt64 &>(*nested_result_column);
+			if (nested_result_column_const.size())
+				nested_result_column_const.getData() += 2 + additional_symbols;
+		}
+		else
+		{
+			ColumnUInt64 & nested_result_column_vec = typeid_cast<ColumnUInt64 &>(*nested_result_column);
+			ColumnUInt64::Container_t & nested_res = nested_result_column_vec.getData();
 
-		block.getByPosition(result).column = nested_block.getByPosition(nested_block.columns() - 1).column;
+			for (size_t i = 0; i < rows; ++i)
+				nested_res[i] += 2 + additional_symbols;
+		}
+
+		block.getByPosition(result).column = nested_result_column;
 	}
 	else if (const ColumnConstArray * col = typeid_cast<const ColumnConstArray *>(&*column))
 	{
