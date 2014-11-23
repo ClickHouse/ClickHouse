@@ -52,6 +52,9 @@
 	M(ZooKeeperMulti) \
 	M(ZooKeeperExceptions) \
 	\
+	M(DistributedConnectionFailTry) \
+	M(DistributedConnectionFailAtAll) \
+	\
 	M(END)
 
 namespace ProfileEvents
