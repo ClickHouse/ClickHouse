@@ -836,7 +836,7 @@ private:
 			}
 			else if (const auto col = typeid_cast<const ColumnConstString *>(column))
 			{
-				out_length += col->getData().size();
+				out_length += col->getData().size() * col->size();
 				out_const = out_const && true;
 
 				result.emplace_back(instr_type::copy_const_string, column_uint_pair_t{col, 0});
