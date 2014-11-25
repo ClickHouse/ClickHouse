@@ -194,28 +194,6 @@ protected:
 				progressImpl(Progress(res.rows(), res.bytes()));
 				pre_reader->fillMissingColumns(res);
 
-				/** The column possibly added by pre_reader can be scheduled to be read by reader,
-				 *	thus resulting in duplicate read of the same column. To avoid such possibility
-				 *	we are removing such column from reader's column list */
-				if (const auto added_column = pre_reader->getAddedColumn())
-				{
-					if (column_name_set.count(added_column->name))
-					{
-						for (auto it = columns.begin(); it != columns.end(); ++it)
-						{
-							if (it->name == added_column->name)
-							{
-								columns.erase(it);
-								break;
-							}
-						}
-						reader->removeColumn(added_column->name);
-						column_name_set.erase(added_column->name);
-
-						pre_columns.emplace_back(*added_column);
-					}
-				}
-
 				/// Вычислим выражение в PREWHERE.
 				prewhere_actions->execute(res);
 
