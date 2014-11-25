@@ -75,9 +75,11 @@ public:
 			/// Указатели на столбцы смещений, общие для столбцов из вложенных структур данных
 			/// Если append, все значения nullptr, и offset_columns используется только для проверки, что столбец смещений уже прочитан.
 			OffsetColumns offset_columns;
-			const auto read_column = [&] (const NameAndTypePair & it) {
+
+			for (const NameAndTypePair & it : columns)
+			{
 				if (streams.end() == streams.find(it.name))
-					return;
+					continue;
 
 				all_columns_missing = false;
 
@@ -98,7 +100,7 @@ public:
 					String name = DataTypeNested::extractNestedTableName(column.name);
 
 					if (offset_columns.count(name) == 0)
-						offset_columns[name] = append ? nullptr : new ColumnArray::ColumnOffsets_t;
+						offset_columns[name] = append ? NULL : new ColumnArray::ColumnOffsets_t;
 					else
 						read_offsets = false; /// на предыдущих итерациях смещения уже считали вызовом readData
 
@@ -112,17 +114,10 @@ public:
 
 				if (!append && column.column->size())
 					res.insert(column);
-			};
-
-			for (const NameAndTypePair & it : columns)
-				read_column(it);
+			}
 
 			if (all_columns_missing)
-			{
-				addMinimumSizeColumn();
-				/// minimum size column is necessarily at list's front
-				read_column(columns.front());
-			}
+				addMinimumSizeColumn(from_mark, max_rows_to_read, res);
 		}
 		catch (const Exception & e)
 		{
@@ -141,7 +136,7 @@ public:
 		}
 	}
 
-	void addMinimumSizeColumn()
+	void addMinimumSizeColumn(const size_t from_mark, const size_t max_rows_to_read, Block & res)
 	{
 		const auto get_column_size = [this] (const String & name) {
 			const auto & files = data_part->checksums.files;
@@ -173,8 +168,17 @@ public:
 		if (!minimum_size_column)
 			throw std::logic_error{"could not find a column of minimum size in MergeTree"};
 
-		addStream(minimum_size_column->name, *minimum_size_column->type, all_mark_ranges);
+		ColumnWithNameAndType column{
+			minimum_size_column->type->createColumn(),
+			minimum_size_column->type,
+			minimum_size_column->name
+		};
+
+		addStream(column.name, *column.type, all_mark_ranges);
 		columns.emplace(std::begin(columns), *minimum_size_column);
+		res.insert(column);
+
+		readData(column.name, *column.type, *column.column, from_mark, max_rows_to_read, 0, true);
 	}
 
 	/// Заполняет столбцы, которых нет в блоке, значениями по умолчанию.
