@@ -813,6 +813,7 @@ private:
 		out_length = 0;
 		out_const = true;
 
+		size_t rows{};
 		for (const auto arg_pos : arguments)
 		{
 			const auto column = block.getByPosition(arg_pos).column.get();
@@ -822,6 +823,7 @@ private:
 				/** ColumnString stores strings with terminating null character
 				 *  which should not be copied, therefore the decrease of total size by
 				 *	the number of terminating nulls */
+				rows = col->size();
 				out_length += col->getChars().size() - col->getOffsets().size();
 				out_const = false;
 
@@ -829,6 +831,7 @@ private:
 			}
 			else if (const auto col = typeid_cast<const ColumnFixedString *>(column))
 			{
+				rows = col->size();
 				out_length += col->getChars().size();
 				out_const = false;
 
@@ -836,6 +839,7 @@ private:
 			}
 			else if (const auto col = typeid_cast<const ColumnConstString *>(column))
 			{
+				rows = col->size();
 				out_length += col->getData().size() * col->size();
 				out_const = out_const && true;
 
@@ -845,6 +849,9 @@ private:
 				throw Exception("Illegal column " + column->getName() + " of argument of function " + getName(),
 					ErrorCodes::ILLEGAL_COLUMN);
 		}
+
+		if (out_const && rows)
+			out_length /= rows;
 
 		return result;
 	}
