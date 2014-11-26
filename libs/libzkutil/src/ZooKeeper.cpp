@@ -61,14 +61,14 @@ void ZooKeeper::processEvent(zhandle_t * zh, int type, int state, const char * p
 	}
 }
 
-void ZooKeeper::init(const std::string & hosts_, int32_t sessionTimeoutMs_)
+void ZooKeeper::init(const std::string & hosts_, int32_t session_timeout_ms_)
 {
 	log = &Logger::get("ZooKeeper");
 	zoo_set_debug_level(ZOO_LOG_LEVEL_ERROR);
 	hosts = hosts_;
-	sessionTimeoutMs = sessionTimeoutMs_;
+	session_timeout_ms = session_timeout_ms_;
 
-	impl = zookeeper_init(hosts.c_str(), nullptr, sessionTimeoutMs, nullptr, nullptr, 0);
+	impl = zookeeper_init(hosts.c_str(), nullptr, session_timeout_ms, nullptr, nullptr, 0);
 	ProfileEvents::increment(ProfileEvents::ZooKeeperInit);
 
 	if (!impl)
@@ -77,9 +77,9 @@ void ZooKeeper::init(const std::string & hosts_, int32_t sessionTimeoutMs_)
 	default_acl = &ZOO_OPEN_ACL_UNSAFE;
 }
 
-ZooKeeper::ZooKeeper(const std::string & hosts, int32_t sessionTimeoutMs)
+ZooKeeper::ZooKeeper(const std::string & hosts, int32_t session_timeout_ms)
 {
-	init(hosts, sessionTimeoutMs);
+	init(hosts, session_timeout_ms);
 }
 
 struct ZooKeeperArgs
@@ -566,7 +566,7 @@ ZooKeeper::~ZooKeeper()
 
 ZooKeeperPtr ZooKeeper::startNewSession() const
 {
-	return new ZooKeeper(hosts, sessionTimeoutMs);
+	return new ZooKeeper(hosts, session_timeout_ms);
 }
 
 Op::Create::Create(const std::string & path_, const std::string & value_, AclPtr acl, int32_t flags)

@@ -29,7 +29,7 @@ class ZooKeeper
 public:
 	typedef Poco::SharedPtr<ZooKeeper> Ptr;
 
-	ZooKeeper(const std::string & hosts, int32_t sessionTimeoutMs = DEFAULT_SESSION_TIMEOUT);
+	ZooKeeper(const std::string & hosts, int32_t session_timeout_ms = DEFAULT_SESSION_TIMEOUT);
 
 	/** конфиг вида
 		<zookeeper>
@@ -245,7 +245,7 @@ private:
 	friend struct WatchWithEvent;
 	friend class EphemeralNodeHolder;
 
-	void init(const std::string & hosts, int32_t sessionTimeoutMs);
+	void init(const std::string & hosts, int32_t session_timeout_ms);
 	void removeChildrenRecursive(const std::string & path);
 	void tryRemoveChildrenRecursive(const std::string & path);
 	void * watchForEvent(EventPtr event);
@@ -265,7 +265,7 @@ private:
 
 			/// если потеряно соединение подождем timeout/3, авось восстановится
 			if (code == ZCONNECTIONLOSS)
-				usleep(sessionTimeoutMs * 1000 / 3);
+				usleep(session_timeout_ms * 1000 / 3);
 
 			LOG_WARNING(log, "Error on attempt " << i << ": " << error2string(code)  << ". Retry");
 			code = operation();
@@ -287,7 +287,7 @@ private:
 	int32_t existsImpl(const std::string & path, Stat * stat_, EventPtr watch = nullptr);
 
 	std::string hosts;
-	int32_t sessionTimeoutMs;
+	int32_t session_timeout_ms;
 
 	Poco::FastMutex mutex;
 	AclPtr default_acl;
