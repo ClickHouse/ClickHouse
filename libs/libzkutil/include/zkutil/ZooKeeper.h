@@ -12,6 +12,7 @@ namespace zkutil
 {
 
 const UInt32 DEFAULT_SESSION_TIMEOUT = 30000;
+const UInt32 BIG_SESSION_TIMEOUT = 600000;
 const UInt32 DEFAULT_RETRY_NUM = 3;
 
 struct WatchWithEvent;
@@ -44,6 +45,7 @@ public:
 		</zookeeper>
 	*/
 	ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name);
+	ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, int32_t session_timeout_ms);
 
 	~ZooKeeper();
 
