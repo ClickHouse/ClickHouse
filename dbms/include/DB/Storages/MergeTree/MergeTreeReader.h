@@ -58,7 +58,8 @@ public:
 		}
 	}
 
-	const NameAndTypePair * getAddedColumn() const { return added_column; }
+	const NameAndTypePair * getAddedColumnPtr() const { return added_column; }
+	void removeAddedColumnPtr() { added_column = nullptr; }
 
 	void removeColumn(const String & column_name)
 	{

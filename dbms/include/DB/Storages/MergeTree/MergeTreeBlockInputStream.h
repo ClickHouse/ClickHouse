@@ -197,7 +197,7 @@ protected:
 				/** The column possibly added by pre_reader can be scheduled to be read by reader,
 				 *	thus resulting in duplicate read of the same column. To avoid such possibility
 				 *	we are removing such column from reader's column list */
-				if (const auto added_column = pre_reader->getAddedColumn())
+				if (const auto added_column = pre_reader->getAddedColumnPtr())
 				{
 					if (column_name_set.count(added_column->name))
 					{
@@ -214,6 +214,8 @@ protected:
 
 						pre_columns.emplace_back(*added_column);
 					}
+
+					pre_reader->removeAddedColumnPtr();
 				}
 
 				/// Вычислим выражение в PREWHERE.
