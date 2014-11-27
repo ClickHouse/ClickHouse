@@ -103,7 +103,7 @@ public:
 
 		cnt += end - data;
 
-		while (data <= end - 8)
+		while (data + 8 <= end)
 		{
 			current_word = *reinterpret_cast<const u64 *>(data);
 
