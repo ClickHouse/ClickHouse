@@ -82,9 +82,17 @@ public:
 		/** Работает для массивов значений фиксированной длины.
 		  * Для массивов строк и массивов массивов полученный кусок памяти может не взаимно-однозначно соответствовать элементам.
 		  */
-		StringRef begin = data->getDataAt(offsetAt(n));
-		StringRef end = data->getDataAt(offsetAt(n) + sizeAt(n));
-		return StringRef(begin.data, end.data - begin.data);
+
+		if (data->size() == 0)
+			return StringRef();
+
+		/// Начало данных - адрес начала первого элемента массива.
+		StringRef begin = data->getDataAtWithTerminatingZero(offsetAt(n));
+
+		/// Конец данных - адрес конца данных последнего элемента массива.
+		StringRef last = data->getDataAtWithTerminatingZero(getOffsets()[n] - 1);
+
+		return StringRef(begin.data, last.data + last.size - begin.data);
 	}
 
 	void insertData(const char * pos, size_t length) override
@@ -377,7 +385,7 @@ private:
 	ColumnPtr offsets;	/// Смещения могут быть разделяемыми для нескольких столбцов - для реализации вложенных структур данных.
 
 	size_t ALWAYS_INLINE offsetAt(size_t i) const	{ return i == 0 ? 0 : getOffsets()[i - 1]; }
-	size_t ALWAYS_INLINE sizeAt(size_t i) const	{ return i == 0 ? getOffsets()[0] : (getOffsets()[i] - getOffsets()[i - 1]); }
+	size_t ALWAYS_INLINE sizeAt(size_t i) const		{ return i == 0 ? getOffsets()[0] : (getOffsets()[i] - getOffsets()[i - 1]); }
 
 
 	/// Размножить значения, если вложенный столбец - ColumnArray<T>.
