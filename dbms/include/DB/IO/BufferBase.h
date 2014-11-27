@@ -35,9 +35,9 @@ public:
 	{
 		Buffer(Position begin_pos_, Position end_pos_) : begin_pos(begin_pos_), end_pos(end_pos_) {}
 
-		inline Position begin() { return begin_pos; }
-		inline Position end() { return end_pos; }
-		inline size_t size() { return end_pos - begin_pos; }
+		inline Position begin() const { return begin_pos; }
+		inline Position end() const { return end_pos; }
+		inline size_t size() const { return end_pos - begin_pos; }
 		inline void resize(size_t size) { end_pos = begin_pos + size; }
 
 		inline void swap(Buffer & other)
@@ -71,10 +71,10 @@ public:
 	inline Position & position() { return pos; };
 
 	/// смещение в байтах курсора от начала буфера
-	inline size_t offset() { return pos - working_buffer.begin(); }
+	inline size_t offset() const { return pos - working_buffer.begin(); }
 
 	/** Сколько байт было прочитано/записано, считая те, что ещё в буфере. */
-	size_t count()
+	size_t count() const
 	{
 		return bytes + offset();
 	}
