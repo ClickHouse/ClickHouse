@@ -264,8 +264,9 @@ private:
 				*attempt = i;
 
 			/// если потеряно соединение подождем timeout/3, авось восстановится
+			static const int MAX_SLEEP_TIME = 10;
 			if (code == ZCONNECTIONLOSS)
-				usleep(session_timeout_ms * 1000 / 3);
+				usleep(std::min(session_timeout_ms * 1000 / 3, MAX_SLEEP_TIME * 1000 * 1000));
 
 			LOG_WARNING(log, "Error on attempt " << i << ": " << error2string(code)  << ". Retry");
 			code = operation();
