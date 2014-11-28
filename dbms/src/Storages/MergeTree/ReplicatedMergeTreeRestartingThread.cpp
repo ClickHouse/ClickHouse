@@ -40,10 +40,25 @@ void ReplicatedMergeTreeRestartingThread::run()
 			if (storage.zookeeper->expired())
 			{
 				LOG_WARNING(log, "ZooKeeper session has expired. Switching to a new session.");
+				storage.is_read_only = true;
 
 				partialShutdown();
-				storage.zookeeper = storage.context.getZooKeeper();
-				storage.is_read_only = true;
+
+				do
+				{
+					try
+					{
+						/// TODO race condition при присваивании?
+						storage.zookeeper = storage.context.getZooKeeper();
+					}
+					catch (const zkutil::KeeperException & e)
+					{
+						/// Исключение при попытке zookeeper_init обычно бывает, если не работает DNS. Будем пытаться сделать это заново.
+						tryLogCurrentException(__PRETTY_FUNCTION__);
+						wakeup_event.tryWait(10 * 1000);
+						continue;
+					}
+				} while (false);
 
 				while (!need_stop && !tryStartup())
 					wakeup_event.tryWait(10 * 1000);
