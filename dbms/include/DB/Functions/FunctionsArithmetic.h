@@ -284,6 +284,31 @@ struct BitNotImpl
 	}
 };
 
+template<typename A>
+struct AbsImpl
+{
+	typedef typename NumberTraits::ResultOfAbs<A>::Type ResultType;
+
+	template<typename T = A>
+	static inline ResultType apply(T a,
+		typename std::enable_if<std::is_integral<T>::value && std::is_signed<T>::value, void>::type * = nullptr)
+	{
+		return a < 0 ? static_cast<ResultType>(~a) + 1 : a;
+	}
+
+	template<typename T = A>
+	static inline ResultType apply(T a,
+		typename std::enable_if<std::is_integral<T>::value && std::is_unsigned<T>::value, void>::type * = nullptr)
+	{
+		return static_cast<ResultType>(a);
+	}
+
+	template<typename T = A>
+	static inline ResultType apply(T a, typename std::enable_if<std::is_floating_point<T>::value, void>::type * = nullptr)
+	{
+		return static_cast<ResultType>(std::abs(a));
+	}
+};
 
 /// this one is just for convenience
 template <bool B, typename T1, typename T2> using If = typename std::conditional<B, T1, T2>::type;
@@ -783,6 +808,7 @@ struct NameDivideIntegral	{ static constexpr auto name = "intDiv"; };
 struct NameDivideIntegralOrZero	{ static constexpr auto name = "intDivOrZero"; };
 struct NameModulo			{ static constexpr auto name = "modulo"; };
 struct NameNegate			{ static constexpr auto name = "negate"; };
+struct NameAbs				{ static constexpr auto name = "abs"; };
 struct NameBitAnd			{ static constexpr auto name = "bitAnd"; };
 struct NameBitOr			{ static constexpr auto name = "bitOr"; };
 struct NameBitXor			{ static constexpr auto name = "bitXor"; };
@@ -798,6 +824,7 @@ typedef FunctionBinaryArithmetic<DivideIntegralImpl, 	NameDivideIntegral> 	Funct
 typedef FunctionBinaryArithmetic<DivideIntegralOrZeroImpl, 	NameDivideIntegralOrZero> 	FunctionDivideIntegralOrZero;
 typedef FunctionBinaryArithmetic<ModuloImpl, 			NameModulo> 			FunctionModulo;
 typedef FunctionUnaryArithmetic<NegateImpl, 			NameNegate> 			FunctionNegate;
+typedef FunctionUnaryArithmetic<AbsImpl,	 			NameAbs>	 			FunctionAbs;
 typedef FunctionBinaryArithmetic<BitAndImpl,			NameBitAnd> 			FunctionBitAnd;
 typedef FunctionBinaryArithmetic<BitOrImpl,				NameBitOr> 				FunctionBitOr;
 typedef FunctionBinaryArithmetic<BitXorImpl,			NameBitXor> 			FunctionBitXor;
