@@ -79,20 +79,23 @@ public:
 
 	StringRef getDataAt(size_t n) const override
 	{
-		/** Работает для массивов значений фиксированной длины.
-		  * Для массивов строк и массивов массивов полученный кусок памяти может не взаимно-однозначно соответствовать элементам.
+		/** Возвращает диапазон памяти, покрывающий все элементы массива.
+		  * Работает для массивов значений фиксированной длины.
+		  * Для массивов строк и массивов массивов полученный кусок памяти может не взаимно-однозначно соответствовать элементам,
+		  *  так как содержит лишь уложенные подряд данные, но не смещения.
 		  */
 
-		if (data->size() == 0)
+		size_t array_size = sizeAt(n);
+		if (array_size == 0)
 			return StringRef();
 
-		/// Начало данных - адрес начала первого элемента массива.
-		StringRef begin = data->getDataAtWithTerminatingZero(offsetAt(n));
+		size_t offset_of_first_elem = offsetAt(n);
+		StringRef first = data->getDataAtWithTerminatingZero(offset_of_first_elem);
 
-		/// Конец данных - адрес конца данных последнего элемента массива.
-		StringRef last = data->getDataAtWithTerminatingZero(getOffsets()[n] - 1);
+		size_t offset_of_last_elem = getOffsets()[n] - 1;
+		StringRef last = data->getDataAtWithTerminatingZero(offset_of_last_elem);
 
-		return StringRef(begin.data, last.data + last.size - begin.data);
+		return StringRef(first.data, last.data + last.size - first.data);
 	}
 
 	void insertData(const char * pos, size_t length) override
