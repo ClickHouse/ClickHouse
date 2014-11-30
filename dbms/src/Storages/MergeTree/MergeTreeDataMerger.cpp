@@ -152,7 +152,7 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 		/// Этот месяц кончился хотя бы день назад.
 		bool is_old_month = now_day - now_month >= 1 && now_month > month;
 
-		time_t oldest_modification_time = first_part->modification_time;
+		time_t newest_modification_time = first_part->modification_time;
 
 		/// Правый конец отрезка.
 		MergeTreeData::DataParts::iterator jt = it;
@@ -188,7 +188,7 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 				break;
 			}
 
-			oldest_modification_time = std::max(oldest_modification_time, last_part->modification_time);
+			newest_modification_time = std::max(newest_modification_time, last_part->modification_time);
 			cur_max = std::max(cur_max, static_cast<size_t>(last_part->size_in_bytes));
 			cur_min = std::min(cur_min, static_cast<size_t>(last_part->size_in_bytes));
 			cur_sum += last_part->size_in_bytes;
@@ -200,7 +200,7 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 				break;
 
 			int min_len = 2;
-			int cur_age_in_sec = time(0) - oldest_modification_time;
+			int cur_age_in_sec = time(0) - newest_modification_time;
 
 			/// Если куски больше 1 Gb и образовались меньше 6 часов назад, то мерджить не меньше чем по 3.
 			if (cur_max > 1024 * 1024 * 1024 && cur_age_in_sec < 6 * 3600)
@@ -217,7 +217,7 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 			if (cur_len >= min_len
 				&& (/// Достаточная равномерность размеров или пошедшее время
 					static_cast<double>(cur_max) / (cur_sum - cur_max) < ratio
-					/// За старый месяц объединяем что угодно, если разрешено и если этому куску хотя бы 5 дней
+					/// За старый месяц объединяем что угодно, если разрешено и если этим кускам хотя бы 5 дней
 					|| (is_old_month && merge_anything_for_old_months && cur_age_in_sec > 3600 * 24 * 5)
 					/// Или достаточно много мелких кусков
 					|| cur_len > static_cast<int>(data.settings.max_parts_to_merge_at_once)
