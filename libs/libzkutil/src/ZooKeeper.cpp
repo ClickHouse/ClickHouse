@@ -569,7 +569,7 @@ ZooKeeperPtr ZooKeeper::startNewSession() const
 	return new ZooKeeper(hosts, session_timeout_ms);
 }
 
-Op::Create::Create(const std::string & path_, const std::string & value_, AclPtr acl, int32_t flags)
+Op::Create::Create(const std::string & path_, const std::string & value_, ACLPtr acl, int32_t flags)
 : path(path_), value(value_), created_path(path.size() + ZooKeeper::SEQUENTIAL_SUFFIX_SIZE)
 {
 	zoo_create_op_init(data.get(), path.c_str(), value.c_str(), value.size(), acl, flags, created_path.data(), created_path.size());

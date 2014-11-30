@@ -291,7 +291,7 @@ private:
 	int32_t session_timeout_ms;
 
 	Poco::FastMutex mutex;
-	AclPtr default_acl;
+	ACLPtr default_acl;
 	zhandle_t * impl;
 
 	std::unordered_set<WatchWithEvent *> watch_store;
