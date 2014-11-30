@@ -355,7 +355,7 @@ void MergeTreePartChecker::checkDataPart(String path, const Settings & settings,
 		first_exception->rethrow();
 
 	if (out_checksums)
-		out_checksums = checksums_data;
+		*out_checksums = checksums_data;
 }
 
 }
