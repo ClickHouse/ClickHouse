@@ -244,14 +244,14 @@ public:
 			}
 		};
 
- 		DataPart(MergeTreeData & storage_) : storage(storage_), size(0), size_in_bytes(0), remove_time(0) {}
+		DataPart(MergeTreeData & storage_) : storage(storage_) {}
 
  		MergeTreeData & storage;
 
-		size_t size;	/// в количестве засечек.
-		volatile size_t size_in_bytes; /// размер в байтах, 0 - если не посчитано;
-		                               /// используется из нескольких потоков без блокировок (изменяется при ALTER).
-		time_t modification_time;
+		size_t size = 0;				/// в количестве засечек.
+		volatile size_t size_in_bytes = 0; 	/// размер в байтах, 0 - если не посчитано;
+											/// используется из нескольких потоков без блокировок (изменяется при ALTER).
+		time_t modification_time = 0;
 		mutable time_t remove_time = std::numeric_limits<time_t>::max(); /// Когда кусок убрали из рабочего набора.
 
 		/// Если true, деструктор удалит директорию с куском.
