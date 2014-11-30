@@ -255,6 +255,8 @@ void MergeTreePartChecker::checkDataPart(String path, const Settings & settings,
 		path += "/";
 
 	NamesAndTypesList columns;
+
+	/// Чексуммы из файла checksums.txt. Могут отсутствовать. Если присутствуют - впоследствии сравниваются с реальными чексуммами данных.
 	MergeTreeData::DataPart::Checksums checksums_txt;
 
 	{
@@ -270,6 +272,7 @@ void MergeTreePartChecker::checkDataPart(String path, const Settings & settings,
 		assertEOF(buf);
 	}
 
+	/// Реальные чексуммы по содержимому данных. Их несоответствие checksums_txt будет говорить о битых данных.
 	MergeTreeData::DataPart::Checksums checksums_data;
 	size_t primary_idx_size;
 
@@ -350,6 +353,9 @@ void MergeTreePartChecker::checkDataPart(String path, const Settings & settings,
 
 	if (first_exception)
 		first_exception->rethrow();
+
+	if (out_checksums)
+		out_checksums = checksums_data;
 }
 
 }
