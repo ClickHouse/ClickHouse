@@ -575,13 +575,13 @@ Op::Create::Create(const std::string & path_, const std::string & value_, AclPtr
 	zoo_create_op_init(data.get(), path.c_str(), value.c_str(), value.size(), acl, flags, created_path.data(), created_path.size());
 }
 
-AclPtr ZooKeeper::getDefaultACL()
+ACLPtr ZooKeeper::getDefaultACL()
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(mutex);
 	return default_acl;
 }
 
-void ZooKeeper::setDefaultACL(AclPtr new_acl)
+void ZooKeeper::setDefaultACL(ACLPtr new_acl)
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(mutex);
 	default_acl = new_acl;

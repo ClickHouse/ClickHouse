@@ -64,9 +64,9 @@ public:
 	  */
 	bool expired();
 
-	AclPtr getDefaultACL();
+	ACLPtr getDefaultACL();
 
-	void setDefaultACL(AclPtr new_acl);
+	void setDefaultACL(ACLPtr new_acl);
 
 	/** Создать znode. Используется ACL, выставленный вызовом setDefaultACL (по умолчанию, всем полный доступ).
 	  * Если что-то пошло не так, бросить исключение.
