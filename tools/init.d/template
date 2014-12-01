@@ -165,12 +165,12 @@ forcestop()
 
 	if any_runs; then
 	    if [ -f "$LOCKFILE" ]; then
-			rm -f "$LOCKFILE"
 			for pid_file in $(find_pid_files); do
 				kill -9 `cat "$pid_file"`
 			done
 
 			wait4done
+			rm -f "$LOCKFILE"
 	    else
 			echo "has been stopping already"
 			return 1
@@ -213,7 +213,7 @@ case "$1" in
 			if [ ! -e $LOCKFILE ]; then
 				echo "$PROGRAM service is stopped";
 			else
-				echo "$(($NUMBER_OF_PROCESSES - $(running_processes))) processes unexpectedly terminated"
+				echo "$PROGRAM: $(($NUMBER_OF_PROCESSES - $(running_processes))) of $NUMBER_OF_PROCESSES processes unexpectedly terminated"
 			fi
 		fi
 		;;
