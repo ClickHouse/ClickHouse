@@ -20,11 +20,11 @@ LOCKFILE=$LOCALSTATEDIR/$PROGRAM
 RETVAL=0
 
 DEFAULT_NUMBER_OF_PROCESSES=1
-NUMBER_OF_PROCESSES=$(xmlstarlet sel -t -v "/yandex/number_of_processes" $CNFFILE) | echo $DEFAULT_NUMBER_OF_PROCESSES
+NUMBER_OF_PROCESSES=$(xmlstarlet sel -t -v "/yandex/number_of_processes" $CNFFILE || echo $DEFAULT_NUMBER_OF_PROCESSES)
 
 PIDDIR=/var/run/$PROGRAM
 PIDFILE_PREFIX=$PIDDIR/$PROGRAM
-PIDFILE_RE="$PIDFILE_PREFIX[0-9]+.pid"
+PIDFILE_RE="$PIDFILE_PREFIX[0-9]*.pid"
 
 
 generate_pid_name()
