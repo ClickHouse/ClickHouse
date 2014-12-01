@@ -11,11 +11,11 @@ then
 	git fetch --tags;
 
 	# берем последний тэг из текущего коммита
-	revision=$(git tag --points-at HEAD | tail -1)
+	revision=$(git tag --points-at HEAD 2> /dev/null | tail -1)
 
 	# или ближайший тэг если в данном комите нет тэгов
 	if [[ "$revision" = "" ]]; then
-		revison=$( ( git describe --tags || echo 1 ) | cut -d "-" -f 1)
+		revision=$( ( git describe --tags || echo 1 ) | cut -d "-" -f 1 )
 	fi
 	echo $revision >> ${CMAKE_CURRENT_BINARY_DIR}/src/revision.h;
 else
