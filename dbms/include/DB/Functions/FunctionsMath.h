@@ -2,6 +2,9 @@
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Functions/IFunction.h>
+#include <vectorf128.h>
+#include <vectormath_exp.h>
+#include <vectormath_trig.h>
 
 
 namespace DB
@@ -38,17 +41,6 @@ private:
 	}
 };
 
-struct EImpl
-{
-	static constexpr auto name = "e";
-	static constexpr auto value = 2.7182818284590452353602874713526624977572470;
-};
-
-struct PiImpl
-{
-	static constexpr auto name = "pi";
-	static constexpr auto value = 3.1415926535897932384626433832795028841971693;
-};
 
 template <typename Impl> class FunctionMathUnaryFloat64 : public IFunction
 {
@@ -164,252 +156,34 @@ private:
 	}
 };
 
-struct SqrImpl
+template <typename Name, Vec2d(&Function)(const Vec2d &)>
+struct UnaryFunctionVectorized
 {
-	static constexpr auto name = "sqr";
+	static constexpr auto name = Name::name;
 	static constexpr auto rows_per_iteration = 2;
 
 	template <typename T>
 	static void execute(const T * const src, Float64 * const dst)
 	{
-		dst[0] = static_cast<Float64>(src[0] * src[0]);
-		dst[1] = static_cast<Float64>(src[1] * src[1]);
+		const auto & result = Function(Vec2d(src[0], src[1]));
+		dst[0] = result[0];
+		dst[1] = result[1];
 	}
 };
 
-struct ExpImpl
+template <typename Name, Float64(&Function)(Float64)>
+struct UnaryFunctionPlain
 {
-	static constexpr auto name = "exp";
-	static constexpr auto rows_per_iteration = 2;
+	static constexpr auto name = Name::name;
+	static constexpr auto rows_per_iteration = 1;
 
 	template <typename T>
 	static void execute(const T * const src, Float64 * const dst)
 	{
-		dst[0] = static_cast<Float64>(std::exp(src[0]));
-		dst[1] = static_cast<Float64>(std::exp(src[1]));
+		dst[0] = static_cast<Float64>(Function(static_cast<Float64>(src[0])));
 	}
 };
 
-struct LogImpl
-{
-	static constexpr auto name = "log";
-	static constexpr auto rows_per_iteration = 2;
-
-	template <typename T>
-	static void execute(const T * const src, Float64 * const dst)
-	{
-		dst[0] = static_cast<Float64>(std::log(src[0]));
-		dst[1] = static_cast<Float64>(std::log(src[1]));
-	}
-};
-
-struct Exp2Impl
-{
-	static constexpr auto name = "exp2";
-	static constexpr auto rows_per_iteration = 2;
-
-	template <typename T>
-	static void execute(const T * const src, Float64 * const dst)
-	{
-		dst[0] = static_cast<Float64>(std::exp2(src[0]));
-		dst[1] = static_cast<Float64>(std::exp2(src[1]));
-	}
-};
-
-struct Log2Impl
-{
-	static constexpr auto name = "log2";
-	static constexpr auto rows_per_iteration = 2;
-
-	template <typename T>
-	static void execute(const T * const src, Float64 * const dst)
-	{
-		dst[0] = static_cast<Float64>(std::log2(src[0]));
-		dst[1] = static_cast<Float64>(std::log2(src[1]));
-	}
-};
-
-struct Exp10Impl
-{
-	static constexpr auto name = "exp10";
-	static constexpr auto rows_per_iteration = 2;
-
-	template <typename T>
-	static void execute(const T * const src, Float64 * const dst)
-	{
-		dst[0] = static_cast<Float64>(std::pow(10.0, src[0]));
-		dst[1] = static_cast<Float64>(std::pow(10.0, src[1]));
-	}
-};
-
-struct Log10Impl
-{
-	static constexpr auto name = "log10";
-	static constexpr auto rows_per_iteration = 2;
-
-	template <typename T>
-	static void execute(const T * const src, Float64 * const dst)
-	{
-		dst[0] = static_cast<Float64>(std::log10(src[0]));
-		dst[1] = static_cast<Float64>(std::log10(src[1]));
-	}
-};
-
-struct SqrtImpl
-{
-	static constexpr auto name = "sqrt";
-	static constexpr auto rows_per_iteration = 2;
-
-	template <typename T>
-	static void execute(const T * const src, Float64 * const dst)
-	{
-		dst[0] = static_cast<Float64>(std::sqrt(src[0]));
-		dst[1] = static_cast<Float64>(std::sqrt(src[1]));
-	}
-};
-
-struct CbrtImpl
-{
-	static constexpr auto name = "cbrt";
-	static constexpr auto rows_per_iteration = 2;
-
-	template <typename T>
-	static void execute(const T * const src, Float64 * const dst)
-	{
-		dst[0] = static_cast<Float64>(std::cbrt(src[0]));
-		dst[1] = static_cast<Float64>(std::cbrt(src[1]));
-	}
-};
-
-struct ErfImpl
-{
-	static constexpr auto name = "erf";
-	static constexpr auto rows_per_iteration = 2;
-
-	template <typename T>
-	static void execute(const T * const src, Float64 * const dst)
-	{
-		dst[0] = static_cast<Float64>(std::erf(src[0]));
-		dst[1] = static_cast<Float64>(std::erf(src[1]));
-	}
-};
-
-struct ErfcImpl
-{
-	static constexpr auto name = "erfc";
-	static constexpr auto rows_per_iteration = 2;
-
-	template <typename T>
-	static void execute(const T * const src, Float64 * const dst)
-	{
-		dst[0] = static_cast<Float64>(std::erfc(src[0]));
-		dst[1] = static_cast<Float64>(std::erfc(src[1]));
-	}
-};
-
-struct LGammaImpl
-{
-	static constexpr auto name = "lgamma";
-	static constexpr auto rows_per_iteration = 2;
-
-	template <typename T>
-	static void execute(const T * const src, Float64 * const dst)
-	{
-		dst[0] = static_cast<Float64>(std::lgamma(src[0]));
-		dst[1] = static_cast<Float64>(std::tgamma(src[1]));
-	}
-};
-
-struct TGammaImpl
-{
-	static constexpr auto name = "tgamma";
-	static constexpr auto rows_per_iteration = 2;
-
-	template <typename T>
-	static void execute(const T * const src, Float64 * const dst)
-	{
-		dst[0] = static_cast<Float64>(std::tgamma(src[0]));
-		dst[1] = static_cast<Float64>(std::tgamma(src[1]));
-	}
-};
-
-struct SinImpl
-{
-	static constexpr auto name = "sin";
-	static constexpr auto rows_per_iteration = 2;
-
-	template <typename T>
-	static void execute(const T * const src, Float64 * const dst)
-	{
-		dst[0] = static_cast<Float64>(std::sin(src[0]));
-		dst[1] = static_cast<Float64>(std::sin(src[1]));
-	}
-};
-
-struct CosImpl
-{
-	static constexpr auto name = "cos";
-	static constexpr auto rows_per_iteration = 2;
-
-	template <typename T>
-	static void execute(const T * const src, Float64 * const dst)
-	{
-		dst[0] = static_cast<Float64>(std::cos(src[0]));
-		dst[1] = static_cast<Float64>(std::cos(src[1]));
-	}
-};
-
-struct TanImpl
-{
-	static constexpr auto name = "tan";
-	static constexpr auto rows_per_iteration = 2;
-
-	template <typename T>
-	static void execute(const T * const src, Float64 * const dst)
-	{
-		dst[0] = static_cast<Float64>(std::tan(src[0]));
-		dst[1] = static_cast<Float64>(std::tan(src[1]));
-	}
-};
-
-struct AsinImpl
-{
-	static constexpr auto name = "asin";
-	static constexpr auto rows_per_iteration = 2;
-
-	template <typename T>
-	static void execute(const T * const src, Float64 * const dst)
-	{
-		dst[0] = static_cast<Float64>(std::asin(src[0]));
-		dst[1] = static_cast<Float64>(std::asin(src[1]));
-	}
-};
-
-struct AcosImpl
-{
-	static constexpr auto name = "acos";
-	static constexpr auto rows_per_iteration = 2;
-
-	template <typename T>
-	static void execute(const T * const src, Float64 * const dst)
-	{
-		dst[0] = static_cast<Float64>(std::acos(src[0]));
-		dst[1] = static_cast<Float64>(std::acos(src[1]));
-	}
-};
-
-struct AtanImpl
-{
-	static constexpr auto name = "atan";
-	static constexpr auto rows_per_iteration = 2;
-
-	template <typename T>
-	static void execute(const T * const src, Float64 * const dst)
-	{
-		dst[0] = static_cast<Float64>(std::atan(src[0]));
-		dst[1] = static_cast<Float64>(std::atan(src[1]));
-	}
-};
 
 template <typename Impl> class FunctionMathBinaryFloat64 : public IFunction
 {
@@ -466,7 +240,8 @@ private:
 			const auto dst = new ColumnVector<Float64>;
 			block.getByPosition(result).column = dst;
 
-			const LeftType left_src_data[Impl::rows_per_iteration] { left_arg->getData() };
+			LeftType left_src_data[Impl::rows_per_iteration];
+			std::fill(std::begin(left_src_data), std::end(left_src_data), left_arg->getData());
 			const auto & right_src_data = right_arg->getData();
 			const auto src_size = right_src_data.size();
 			auto & dst_data = dst->getData();
@@ -554,7 +329,8 @@ private:
 			block.getByPosition(result).column = dst;
 
 			const auto & left_src_data = left_arg->getData();
-			const RightType right_src_data[Impl::rows_per_iteration] { right_arg->getData() };
+			RightType right_src_data[Impl::rows_per_iteration];
+			std::fill(std::begin(right_src_data), std::end(right_src_data), right_arg->getData());
 			const auto src_size = left_src_data.size();
 			auto & dst_data = dst->getData();
 			dst_data.resize(src_size);
@@ -646,40 +422,76 @@ private:
 	}
 };
 
-struct PowImpl
+template <typename Name, Vec2d(&Function)(const Vec2d &, const Vec2d &)> 
+struct BinaryFunctionVectorized
 {
-	static constexpr auto name = "pow";
+	static constexpr auto name = Name::name;
 	static constexpr auto rows_per_iteration = 2;
 
 	template <typename T1, typename T2>
 	static void execute(const T1 * const src_left, const T2 * const src_right, Float64 * const dst)
 	{
-		dst[0] = static_cast<Float64>(std::pow(src_left[0], src_right[0]));
-		dst[1] = static_cast<Float64>(std::pow(src_left[1], src_right[0]));
+		const auto & result = Function(Vec2d(src_left[0], src_left[1]), Vec2d(src_right[0], src_right[1]));
+		dst[0] = result[0];
+		dst[1] = result[1];
 	}
 };
 
+
+struct EImpl
+{
+	static constexpr auto name = "e";
+	static constexpr auto value = 2.7182818284590452353602874713526624977572470;
+};
+
+struct PiImpl
+{
+	static constexpr auto name = "pi";
+	static constexpr auto value = 3.1415926535897932384626433832795028841971693;
+};
+
+struct SquareName { static constexpr auto name = "square"; };
+struct ExpName { static constexpr auto name = "exp"; };
+struct LogName { static constexpr auto name = "log"; };
+struct Exp2Name { static constexpr auto name = "exp2"; };
+struct Log2Name { static constexpr auto name = "log2"; };
+struct Exp10Name { static constexpr auto name = "exp10"; };
+struct Log10Name { static constexpr auto name = "log10"; };
+struct SqrtName { static constexpr auto name = "sqrt"; };
+struct CbrtName { static constexpr auto name = "cbrt"; };
+struct SinName { static constexpr auto name = "sin"; };
+struct CosName { static constexpr auto name = "cos"; };
+struct TanName { static constexpr auto name = "tan"; };
+struct AsinName { static constexpr auto name = "asin"; };
+struct AcosName { static constexpr auto name = "acos"; };
+struct AtanName { static constexpr auto name = "atan"; };
+struct ErfName { static constexpr auto name = "erf"; };
+struct ErfcName { static constexpr auto name = "erfc"; };
+struct LGammaName { static constexpr auto name = "lgamma"; };
+struct TGammaName { static constexpr auto name = "tgamma"; };
+struct PowName { static constexpr auto name = "pow"; };
+
 using FunctionE = FunctionMathNullaryConstFloat64<EImpl>;
 using FunctionPi = FunctionMathNullaryConstFloat64<PiImpl>;
-using FunctionSqr = FunctionMathUnaryFloat64<SqrImpl>;
-using FunctionExp = FunctionMathUnaryFloat64<ExpImpl>;
-using FunctionLog = FunctionMathUnaryFloat64<LogImpl>;
-using FunctionExp2 = FunctionMathUnaryFloat64<Exp2Impl>;
-using FunctionLog2 = FunctionMathUnaryFloat64<Log2Impl>;
-using FunctionExp10 = FunctionMathUnaryFloat64<Exp10Impl>;
-using FunctionLog10 = FunctionMathUnaryFloat64<Log10Impl>;
-using FunctionSqrt = FunctionMathUnaryFloat64<SqrtImpl>;
-using FunctionCbrt = FunctionMathUnaryFloat64<CbrtImpl>;
-using FunctionErf = FunctionMathUnaryFloat64<ErfImpl>;
-using FunctionErfc = FunctionMathUnaryFloat64<ErfcImpl>;
-using FunctionLGamma = FunctionMathUnaryFloat64<LGammaImpl>;
-using FunctionTGamma = FunctionMathUnaryFloat64<TGammaImpl>;
-using FunctionSin = FunctionMathUnaryFloat64<SinImpl>;
-using FunctionCos = FunctionMathUnaryFloat64<CosImpl>;
-using FunctionTan = FunctionMathUnaryFloat64<TanImpl>;
-using FunctionAsin = FunctionMathUnaryFloat64<AsinImpl>;
-using FunctionAcos = FunctionMathUnaryFloat64<AcosImpl>;
-using FunctionAtan = FunctionMathUnaryFloat64<AtanImpl>;
-using FunctionPow = FunctionMathBinaryFloat64<PowImpl>;
+using FunctionSqr = FunctionMathUnaryFloat64<UnaryFunctionVectorized<SquareName, square>>;
+using FunctionExp = FunctionMathUnaryFloat64<UnaryFunctionVectorized<ExpName, exp>>;
+using FunctionLog = FunctionMathUnaryFloat64<UnaryFunctionVectorized<LogName, log>>;
+using FunctionExp2 = FunctionMathUnaryFloat64<UnaryFunctionVectorized<Exp2Name, exp2>>;
+using FunctionLog2 = FunctionMathUnaryFloat64<UnaryFunctionVectorized<Log2Name, log2>>;
+using FunctionExp10 = FunctionMathUnaryFloat64<UnaryFunctionVectorized<Exp10Name, exp10>>;
+using FunctionLog10 = FunctionMathUnaryFloat64<UnaryFunctionVectorized<Log10Name, log10>>;
+using FunctionSqrt = FunctionMathUnaryFloat64<UnaryFunctionVectorized<SqrtName, sqrt>>;
+using FunctionCbrt = FunctionMathUnaryFloat64<UnaryFunctionVectorized<CbrtName, Power_rational<1, 3>::pow>>;
+using FunctionSin = FunctionMathUnaryFloat64<UnaryFunctionVectorized<SinName, sin>>;
+using FunctionCos = FunctionMathUnaryFloat64<UnaryFunctionVectorized<CosName, cos>>;
+using FunctionTan = FunctionMathUnaryFloat64<UnaryFunctionVectorized<TanName, tan>>;
+using FunctionAsin = FunctionMathUnaryFloat64<UnaryFunctionVectorized<AsinName, asin>>;
+using FunctionAcos = FunctionMathUnaryFloat64<UnaryFunctionVectorized<AcosName, acos>>;
+using FunctionAtan = FunctionMathUnaryFloat64<UnaryFunctionVectorized<AtanName, atan>>;
+using FunctionErf = FunctionMathUnaryFloat64<UnaryFunctionPlain<ErfName, std::erf>>;
+using FunctionErfc = FunctionMathUnaryFloat64<UnaryFunctionPlain<ErfcName, std::erfc>>;
+using FunctionLGamma = FunctionMathUnaryFloat64<UnaryFunctionPlain<LGammaName, std::lgamma>>;
+using FunctionTGamma = FunctionMathUnaryFloat64<UnaryFunctionPlain<TGammaName, std::tgamma>>;
+using FunctionPow = FunctionMathBinaryFloat64<BinaryFunctionVectorized<PowName, pow>>;
 
 }
