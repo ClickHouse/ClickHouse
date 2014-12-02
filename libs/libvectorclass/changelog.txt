@@ -1,0 +1,110 @@
+change log for vectorclass.zip
+------------------------------
+
+2015-10-24 version 1.16
+  * workaround for problem in Clang compiler extended to version 3.09 because not fixed yet by Clang
+    (vectorf128.h line 134)
+  * recognize problem with Apple version of Clang reporting wrong version number
+  * remove various minor problems with Clang
+  * function pow(vector, int) modified to strengthen type checking and avoid compiler warnings
+  * manual discusses dynamic allocation of arrays of vectors
+  * various minor changes
+
+
+2015-10-17 version 1.15
+  * added files ranvec1.h and ranvec1.cpp for random number generator
+  * constructors to make boolean vectors from their elements
+  * constructors and = operators to broadcast boolean scalar into boolean vectors
+  * various lookup functions improved
+  * operators &, |, ^, ~, etc. defined for various boolean vectors to avoid converson
+    to integer vectors
+  * nmul_add functions
+  * mul_add etc. moved to main header files
+  * explicit fused multiply-and-add used in math functions to improve performance 
+    on compilers that don't automatically insert FMA
+
+
+2014-07-24 version 1.14
+  * support for AVX-512f instruction set and 512-bit vectors:
+    Vec16i, Vec16ui, Vec8q, Vec8uq, Vec16f, Vec8d, and corresponding boolean vectors
+  * new define MAX_VECTOR_SIZE, valid values are 128, 256 and 512
+  * added hyperbolic functions sinh, cosh, tanh, asinh, acosh, atanh
+  * size() member function on all vector classes returns the number of elements
+  * functions for conversion between boolean vectors and integer bitfields
+  * extracting an element from a boolean vector now returns a bool, not an int
+  * improved precision in exp2 and exp10 functions
+  * various bug fixes
+
+
+2014-05-11 version 1.13
+  * pow function improved
+  * mul_add, mul_sub, mul_sub_x functions
+  * propagation of error codes through nan_code function
+  * "denormal" renamed to "subnormal" everywhere, in accordance with IEEE 754-2008 standard
+
+
+2014-04-20 version 1.12
+  * inline implementation of mathematical functions added (vectormath_exp.h vectormath_trig.h vectormath_common.h)
+  * vectormath.h renamed to vectormath_lib.h because a new alternative is added
+  * gather functions with constant indexes
+  * function sign_combine
+  * function pow_const(vector, const int)
+  * function pow_ratio(vector, const int, const int)
+  * functions horizontal_find_first, horizontal_count
+  * function recipr_sqrt removed
+  * functions round_to_int64_limited, truncate_to_int64_limited, to_double_limited
+  * function cubic_root renamed to cbrt
+  * function atan(vector,vector) renamed to atan2
+  * function if_mul
+  * function Vec4i round_to_int(Vec2d)
+  * operator & (float vector, boolean vector)
+  * operator &= (int vector, int vector)
+  * removed constructor Vec128b(int) and Vec256b(int) to avoid implicit conversion
+  * removed signalling nan function
+  * minor improvements in various blend and lookup functions
+
+
+2014-03-01 version 1.11
+  * fixed missing unsigned operators >>= in vectori256.h
+
+
+2013-10-04 version 1.10
+  * clear distinction between boolean vectors and integer vectors for the sake of 
+    compatibility with mask registers in forthcoming AVX512 instruction set
+  * added function if_add
+  * tentative support for clang version 3.3 with workaround for bugs
+  * remove ambiguity for builtin m128i operator == in clang compiler. 
+  * problems in clang compiler, bug reports filed at clang
+    (http://llvm.org/bugs/show_bug.cgi?id=17164, 17312)
+  * instrset.h fixes problem with macros named min and max in MS windows.h
+  * workaround problem in MS Visual Studio 11.0. Bug report 735861 and 804274
+  * minor bug fixes
+
+
+2013-03-31 version 1.03 beta
+  * bug fix for Vec2d cos (Vec2d const & x), VECTORMATH = 1
+
+
+2012-08-01 version 1.02 beta
+  * added file vector3d.h for 3-dimensional vectors
+  * added file complexvec.h for complex numbers and complex vectors
+  * added file quaternion.h for quaternions
+  * added function change_sign for floating point vectors
+  * added operators +, -, *, / between floating point vectors and scalars to remove overloading ambiguity
+
+
+2012-07-08 version 1.01 beta
+  * added file decimal.h with Number <-> string conversion functions: 
+    bin2bcd, bin2ascii, bin2hex_ascii, ascii2bin
+  * added andnot function for boolean vectors
+  * added functions shift_bytes_up and shift_bytes_down
+  * added operators for unsigned integer vector classes: >>=, &, &&, |, ||, ^, ~
+  * inteldispatchpatch.cpp removed. Use asmlib instead (www.agner.org/optimize/#asmlib)
+  * prefix ++ and -- operators now return a reference, postfix operators return a value
+  * various improvements in permute and blend functions
+  * minor improvement in abs function
+  * added version number to VECTORCLASS_H
+
+
+2012-05-30 version 1.00 beta
+  * first public release
