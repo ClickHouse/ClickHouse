@@ -113,6 +113,8 @@ protected:
 
 		double elapsed_seconds = watch.elapsedSeconds();
 
+		size_t total_src_rows = 0;
+		size_t total_src_bytes = 0;
 		for (size_t i = 0; i < max_threads; ++i)
 		{
 			size_t rows = many_data[i]->size();
@@ -120,7 +122,14 @@ protected:
 				<< "Aggregated. " << src_rows[i] << " to " << rows << " rows (from " << src_bytes[i] / 1048576.0 << " MiB)"
 				<< " in " << elapsed_seconds << " sec."
 				<< " (" << src_rows[i] / elapsed_seconds << " rows/sec., " << src_bytes[i] / elapsed_seconds / 1048576.0 << " MiB/sec.)");
+
+			total_src_rows += src_rows[i];
+			total_src_bytes += src_bytes[i];
 		}
+		LOG_TRACE(log, std::fixed << std::setprecision(3)
+			<< "Total aggregated. " << total_src_rows << " rows (from " << total_src_bytes / 1048576.0 << " MiB)"
+			<< " in " << elapsed_seconds << " sec."
+			<< " (" << total_src_rows / elapsed_seconds << " rows/sec., " << total_src_bytes / elapsed_seconds / 1048576.0 << " MiB/sec.)");
 
 		AggregatedDataVariantsPtr res = aggregator->merge(many_data);
 

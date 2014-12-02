@@ -143,7 +143,6 @@ private:
 
 		if (exception)
 		{
-			--active_threads;
 			handler.onException(exception, thread_num);
 		}
 	}
@@ -198,7 +197,7 @@ private:
 			}
 		}
 
-		/// Последний поток при выходе сообщает, что данных больше нет.
+		/// Если не было исключений, последний поток при выходе сообщает, что данных больше нет.
 		if (0 == --active_threads)
 		{
 			handler.onFinish();
