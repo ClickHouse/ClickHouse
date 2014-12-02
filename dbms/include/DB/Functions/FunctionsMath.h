@@ -230,19 +230,17 @@ private:
 	}
 
 	template <typename LeftType, typename RightType>
-	bool executeRight(Block & block, const ColumnNumbers & arguments, const size_t result,
-					  const ColumnConst<LeftType> * const left_arg)
+	bool executeRight(Block & block, const size_t result, const ColumnConst<LeftType> * const left_arg,
+		const IColumn * const right_arg)
 	{
-		const auto arg = block.getByPosition(arguments[1]).column.get();
-
-		if (const auto right_arg = typeid_cast<const ColumnVector<RightType> *>(arg))
+		if (const auto right_arg_typed = typeid_cast<const ColumnVector<RightType> *>(right_arg))
 		{
 			const auto dst = new ColumnVector<Float64>;
 			block.getByPosition(result).column = dst;
 
 			LeftType left_src_data[Impl::rows_per_iteration];
 			std::fill(std::begin(left_src_data), std::end(left_src_data), left_arg->getData());
-			const auto & right_src_data = right_arg->getData();
+			const auto & right_src_data = right_arg_typed->getData();
 			const auto src_size = right_src_data.size();
 			auto & dst_data = dst->getData();
 			dst_data.resize(src_size);
@@ -267,10 +265,10 @@ private:
 
 			return true;
 		}
-		else if (const auto right_arg = typeid_cast<const ColumnConst<RightType> *>(arg))
+		else if (const auto right_arg_typed = typeid_cast<const ColumnConst<RightType> *>(right_arg))
 		{
 			const LeftType left_src[Impl::rows_per_iteration] { left_arg->getData() };
-			const RightType right_src[Impl::rows_per_iteration] { right_arg->getData() };
+			const RightType right_src[Impl::rows_per_iteration] { right_arg_typed->getData() };
 			Float64 dst[Impl::rows_per_iteration];
 
 			Impl::execute(left_src, right_src, dst);
@@ -284,18 +282,16 @@ private:
 	}
 
 	template <typename LeftType, typename RightType>
-	bool executeRight(Block & block, const ColumnNumbers & arguments, const size_t result,
-					  const ColumnVector<LeftType> * const left_arg)
+	bool executeRight(Block & block, const size_t result, const ColumnVector<LeftType> * const left_arg,
+		const IColumn * const right_arg)
 	{
-		const auto arg = block.getByPosition(arguments[1]).column.get();
-
-		if (const auto right_arg = typeid_cast<const ColumnVector<RightType> *>(arg))
+		if (const auto right_arg_typed = typeid_cast<const ColumnVector<RightType> *>(right_arg))
 		{
 			const auto dst = new ColumnVector<Float64>;
 			block.getByPosition(result).column = dst;
 
 			const auto & left_src_data = left_arg->getData();
-			const auto & right_src_data = right_arg->getData();
+			const auto & right_src_data = right_arg_typed->getData();
 			const auto src_size = left_src_data.size();
 			auto & dst_data = dst->getData();
 			dst_data.resize(src_size);
@@ -323,14 +319,14 @@ private:
 
 			return true;
 		}
-		else if (const auto right_arg = typeid_cast<const ColumnConst<RightType> *>(arg))
+		else if (const auto right_arg_typed = typeid_cast<const ColumnConst<RightType> *>(right_arg))
 		{
 			const auto dst = new ColumnVector<Float64>;
 			block.getByPosition(result).column = dst;
 
 			const auto & left_src_data = left_arg->getData();
 			RightType right_src_data[Impl::rows_per_iteration];
-			std::fill(std::begin(right_src_data), std::end(right_src_data), right_arg->getData());
+			std::fill(std::begin(right_src_data), std::end(right_src_data), right_arg_typed->getData());
 			const auto src_size = left_src_data.size();
 			auto & dst_data = dst->getData();
 			dst_data.resize(src_size);
@@ -360,21 +356,23 @@ private:
 	}
 
 	template <typename LeftType, template <typename> class LeftColumnType>
-	bool executeLeftImpl(Block & block, const ColumnNumbers & arguments, const size_t result)
+	bool executeLeftImpl(Block & block, const ColumnNumbers & arguments, const size_t result,
+		const IColumn * const left_arg)
 	{
-		if (const auto arg = typeid_cast<const LeftColumnType<LeftType> *>(
-				block.getByPosition(arguments[0]).column.get()))
+		if (const auto left_arg_typed = typeid_cast<const LeftColumnType<LeftType> *>(left_arg))
 		{
-			if (executeRight<LeftType, UInt8>(block, arguments, result, arg) ||
-				executeRight<LeftType, UInt16>(block, arguments, result, arg) ||
-				executeRight<LeftType, UInt32>(block, arguments, result, arg) ||
-				executeRight<LeftType, UInt64>(block, arguments, result, arg) ||
-				executeRight<LeftType, Int8>(block, arguments, result, arg) ||
-				executeRight<LeftType, Int16>(block, arguments, result, arg) ||
-				executeRight<LeftType, Int32>(block, arguments, result, arg) ||
-				executeRight<LeftType, Int64>(block, arguments, result, arg) ||
-				executeRight<LeftType, Float32>(block, arguments, result, arg) ||
-				executeRight<LeftType, Float64>(block, arguments, result, arg))
+			const auto right_arg = block.getByPosition(arguments[1]).column.get();
+
+			if (executeRight<LeftType, UInt8>(block, result, left_arg_typed, right_arg) ||
+				executeRight<LeftType, UInt16>(block, result, left_arg_typed, right_arg) ||
+				executeRight<LeftType, UInt32>(block, result, left_arg_typed, right_arg) ||
+				executeRight<LeftType, UInt64>(block, result, left_arg_typed, right_arg) ||
+				executeRight<LeftType, Int8>(block, result, left_arg_typed, right_arg) ||
+				executeRight<LeftType, Int16>(block, result, left_arg_typed, right_arg) ||
+				executeRight<LeftType, Int32>(block, result, left_arg_typed, right_arg) ||
+				executeRight<LeftType, Int64>(block, result, left_arg_typed, right_arg) ||
+				executeRight<LeftType, Float32>(block, result, left_arg_typed, right_arg) ||
+				executeRight<LeftType, Float64>(block, result, left_arg_typed, right_arg))
 			{
 				return true;
 			}
@@ -392,10 +390,11 @@ private:
 	}
 
 	template <typename LeftType>
-	bool executeLeft(Block & block, const ColumnNumbers & arguments, const size_t result)
+	bool executeLeft(Block & block, const ColumnNumbers & arguments, const size_t result,
+		const IColumn * const left_arg)
 	{
-		if (executeLeftImpl<LeftType, ColumnVector>(block, arguments, result) ||
-			executeLeftImpl<LeftType, ColumnConst>(block, arguments, result))
+		if (executeLeftImpl<LeftType, ColumnVector>(block, arguments, result, left_arg) ||
+			executeLeftImpl<LeftType, ColumnConst>(block, arguments, result, left_arg))
 			return true;
 
 		return false;
@@ -403,19 +402,21 @@ private:
 
 	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
-		if (!executeLeft<UInt8>(block, arguments, result) &&
-			!executeLeft<UInt16>(block, arguments, result) &&
-			!executeLeft<UInt32>(block, arguments, result) &&
-			!executeLeft<UInt64>(block, arguments, result) &&
-			!executeLeft<Int8>(block, arguments, result) &&
-			!executeLeft<Int16>(block, arguments, result) &&
-			!executeLeft<Int32>(block, arguments, result) &&
-			!executeLeft<Int64>(block, arguments, result) &&
-			!executeLeft<Float32>(block, arguments, result) &&
-			!executeLeft<Float64>(block, arguments, result))
+		const auto left_arg = block.getByPosition(arguments[0]).column.get();
+
+		if (!executeLeft<UInt8>(block, arguments, result, left_arg) &&
+			!executeLeft<UInt16>(block, arguments, result, left_arg) &&
+			!executeLeft<UInt32>(block, arguments, result, left_arg) &&
+			!executeLeft<UInt64>(block, arguments, result, left_arg) &&
+			!executeLeft<Int8>(block, arguments, result, left_arg) &&
+			!executeLeft<Int16>(block, arguments, result, left_arg) &&
+			!executeLeft<Int32>(block, arguments, result, left_arg) &&
+			!executeLeft<Int64>(block, arguments, result, left_arg) &&
+			!executeLeft<Float32>(block, arguments, result, left_arg) &&
+			!executeLeft<Float64>(block, arguments, result, left_arg))
 		{
 			throw Exception{
-				"Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of argument of function " + getName(),
+				"Illegal column " + left_arg->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_COLUMN
 			};
 		}
