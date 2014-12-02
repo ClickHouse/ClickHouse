@@ -8,7 +8,6 @@ void registerFunctionsMath(FunctionFactory & factory)
 {
 	factory.registerFunction<FunctionE>();
 	factory.registerFunction<FunctionPi>();
-	factory.registerFunction<FunctionSqr>();
 	factory.registerFunction<FunctionExp>();
 	factory.registerFunction<FunctionLog>();
 	factory.registerFunction<FunctionExp2>();

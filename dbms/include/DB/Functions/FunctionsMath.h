@@ -451,7 +451,6 @@ struct PiImpl
 	static constexpr auto value = 3.1415926535897932384626433832795028841971693;
 };
 
-struct SquareName { static constexpr auto name = "square"; };
 struct ExpName { static constexpr auto name = "exp"; };
 struct LogName { static constexpr auto name = "log"; };
 struct Exp2Name { static constexpr auto name = "exp2"; };
@@ -474,7 +473,6 @@ struct PowName { static constexpr auto name = "pow"; };
 
 using FunctionE = FunctionMathNullaryConstFloat64<EImpl>;
 using FunctionPi = FunctionMathNullaryConstFloat64<PiImpl>;
-using FunctionSqr = FunctionMathUnaryFloat64<UnaryFunctionVectorized<SquareName, square>>;
 using FunctionExp = FunctionMathUnaryFloat64<UnaryFunctionVectorized<ExpName, exp>>;
 using FunctionLog = FunctionMathUnaryFloat64<UnaryFunctionVectorized<LogName, log>>;
 using FunctionExp2 = FunctionMathUnaryFloat64<UnaryFunctionVectorized<Exp2Name, exp2>>;

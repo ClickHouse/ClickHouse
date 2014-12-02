@@ -8,20 +8,15 @@ select abs(-128) = 128;
 select abs(127) = 127;
 select sum(abs(number - 10 as x) = (x < 0 ? -x : x)) / count() array join range(1000000) as number;
 
-select square(0) = 0;
-select square(1) = 1;
-select square(2) = 4;
-select sum(square(x) = x * x) / count() array join range(1000000) as x;
-
 select sqrt(0) = 0;
 select sqrt(1) = 1;
 select sqrt(4) = 2;
-select sum(sqrt(square(x)) = x) / count() array join range(1000000) as x;
+select sum(sqrt(x * x) = x) / count() array join range(1000000) as x;
 
 select cbrt(0) = 0;
 select cbrt(1) = 1;
 select cbrt(8) = 2;
-select sum(abs(cbrt(x * square(x)) - x) < 1.0e-9) / count() array join range(1000000) as x;
+select sum(abs(cbrt(x * x * x) - x) < 1.0e-9) / count() array join range(1000000) as x;
 
 select pow(1, 0) = 1;
 select pow(2, 0) = 1;
@@ -29,7 +24,7 @@ select sum(pow(x, 0) = 1) / count() array join range(1000000) as x;
 select pow(1, 1) = 1;
 select pow(2, 1) = 2;
 select sum(abs(pow(x, 1) - x) < 1.0e-9) / count() array join range(1000000) as x;
-select sum(pow(x, 2) = square(x)) / count() array join range(10000) as x;
+select sum(pow(x, 2) = x * x) / count() array join range(10000) as x;
 
 select tgamma(0) = inf;
 select tgamma(1) = 1;
