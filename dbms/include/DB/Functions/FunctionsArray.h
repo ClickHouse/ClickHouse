@@ -1261,6 +1261,7 @@ const String FunctionEmptyArray<DataType>::name = FunctionEmptyArray::base_name 
 class FunctionRange : public IFunction
 {
 public:
+	static constexpr auto max_elements = 1000000;
 	static constexpr auto name = "range";
 	static IFunction * create(const Context &) { return new FunctionRange; }
 
@@ -1303,6 +1304,11 @@ private:
 			const auto & in_data = in->getData();
 			const auto total_values = std::accumulate(std::begin(in_data), std::end(in_data), std::size_t{},
 				std::plus<std::size_t>{});
+			if (total_values > max_elements)
+				throw Exception{
+					"Argument to function " + getName() + " should not exceed " + std::to_string(max_elements),
+					ErrorCodes::ARGUMENT_OUT_OF_BOUND
+				};
 
 			const auto data_col = new ColumnVector<T>{total_values};
 			const auto out = new ColumnArray{
@@ -1328,6 +1334,11 @@ private:
 		{
 			const auto & in_data = in->getData();
 			const std::size_t total_values = in->size() * in_data;
+			if (total_values > max_elements)
+				throw Exception{
+					"Argument to function " + getName() + " should not exceed " + std::to_string(max_elements),
+					ErrorCodes::ARGUMENT_OUT_OF_BOUND
+				};
 
 			const auto data_col = new ColumnVector<T>{total_values};
 			const auto out = new ColumnArray{
