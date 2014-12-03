@@ -26,6 +26,14 @@ PIDDIR=/var/run/$PROGRAM
 PIDFILE_PREFIX=$PIDDIR/$PROGRAM
 PIDFILE_RE="$PIDFILE_PREFIX[0-9]*.pid"
 
+generate_program_name()
+{
+	if [ $NUMBER_OF_PROCESSES -eq 1 ]; then
+		echo $PROGRAM
+	else
+			echo $PROGRAM$1
+	fi
+}
 
 generate_pid_name()
 {
@@ -104,7 +112,7 @@ start()
 			if ! is_running $(generate_pid_name $i); then
 				rm -f $(generate_pid_name $i)
 				# TODO может лучше передавать демону номер процесса, а демон сам будет делать все необходимые подстановки
-				su -l $USER -s $SHELL -c "\"$BINDIR/$PROGRAM\" --daemon --pid-file=\"$(generate_pid_name $i)\" --config-file=\"$CNFFILE\" --log-file=\"$(generate_log_filename $i)\""
+				su -l $USER -s $SHELL -c "exec -a $(generate_program_name $i) \"$BINDIR/$PROGRAM\" --daemon --pid-file=\"$(generate_pid_name $i)\" --config-file=\"$CNFFILE\" --log-file=\"$(generate_log_filename $i)\""
 				EXIT_STATUS=$?
 				if [[ $EXIT_STATUS -ne 0 ]]; then
 					break
