@@ -30,7 +30,7 @@ StorageBuffer::StorageBuffer(const std::string & name_, NamesAndTypesListPtr col
 	destination_database(destination_database_), destination_table(destination_table_),
 	no_destination(destination_database.empty() && destination_table.empty()),
 	log(&Logger::get("StorageBuffer (" + name + ")")),
-	flush_thread([this] { flushThread(); })
+	flush_thread(&StorageBuffer::flushThread, this)
 {
 }
 
