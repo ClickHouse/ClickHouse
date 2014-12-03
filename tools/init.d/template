@@ -45,7 +45,7 @@ generate_log_filename()
 
 find_pid_files()
 {
-	find $PIDDIR -regex $PIDFILE_RE
+	find $PIDDIR -regex "$PIDFILE_RE"
 }
 
 is_running()
