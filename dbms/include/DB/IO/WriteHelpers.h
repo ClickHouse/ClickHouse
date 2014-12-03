@@ -356,9 +356,9 @@ inline void writeDateText(mysqlxx::Date date, WriteBuffer & buf)
 
 
 /// в формате YYYY-MM-DD HH:MM:SS, согласно текущему часовому поясу
-inline void writeDateTimeText(time_t datetime, WriteBuffer & buf)
+inline void writeDateTimeText(time_t datetime, WriteBuffer & buf, char date_delimeter = '-', char time_delimeter = ':')
 {
-	char s[19] = {'0', '0', '0', '0', '-', '0', '0', '-', '0', '0', ' ', '0', '0', ':', '0', '0', ':', '0', '0'};
+	char s[19] = {'0', '0', '0', '0', date_delimeter, '0', '0', date_delimeter, '0', '0', ' ', '0', '0', time_delimeter, '0', '0', time_delimeter, '0', '0'};
 
 	if (unlikely(datetime > DATE_LUT_MAX || datetime == 0))
 	{
@@ -392,9 +392,9 @@ inline void writeDateTimeText(time_t datetime, WriteBuffer & buf)
 	buf.write(s, 19);
 }
 
-inline void writeDateTimeText(mysqlxx::DateTime datetime, WriteBuffer & buf)
+inline void writeDateTimeText(mysqlxx::DateTime datetime, WriteBuffer & buf, char date_delimeter = '-', char time_delimeter = ':')
 {
-	char s[19] = {'0', '0', '0', '0', '-', '0', '0', '-', '0', '0', ' ', '0', '0', ':', '0', '0', ':', '0', '0'};
+	char s[19] = {'0', '0', '0', '0', date_delimeter, '0', '0', date_delimeter, '0', '0', ' ', '0', '0', time_delimeter, '0', '0', time_delimeter, '0', '0'};
 
 	s[0] += datetime.year() / 1000;
 	s[1] += (datetime.year() / 100) % 10;
