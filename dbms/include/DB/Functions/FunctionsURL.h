@@ -265,6 +265,27 @@ struct ExtractPath
 	}
 };
 
+struct ExtractPathFull
+{
+	static size_t getReserveLengthForElement() { return 30; }
+
+	static void execute(const Pos data, const size_t size, Pos & res_data, size_t & res_size)
+	{
+		res_data = data;
+		res_size = 0;
+
+		Pos pos = data;
+		Pos end = pos + size;
+
+		if (nullptr != (pos = strchr(data, '/')) && pos[1] == '/' && nullptr != (pos = strchr(pos + 2, '/')))
+		{
+			/// no leading slash
+			res_data = pos + 1;
+			res_size = end - res_data;
+		}
+	}
+};
+
 template <bool without_leading_char>
 struct ExtractQueryString
 {
@@ -941,6 +962,7 @@ struct NameDomainWithoutWWW 			{ static constexpr auto name = "domainWithoutWWW"
 struct NameFirstSignificantSubdomain	{ static constexpr auto name = "firstSignificantSubdomain"; };
 struct NameTopLevelDomain 				{ static constexpr auto name = "topLevelDomain"; };
 struct NamePath 						{ static constexpr auto name = "path"; };
+struct NamePathFull						{ static constexpr auto name = "pathFull"; };
 struct NameQueryString					{ static constexpr auto name = "queryString"; };
 struct NameFragment 					{ static constexpr auto name = "fragment"; };
 struct NameQueryStringAndFragment		{ static constexpr auto name = "queryStringAndFragment"; };
@@ -961,6 +983,7 @@ typedef FunctionStringToString<ExtractSubstringImpl<ExtractDomain<true>  >, 		Na
 typedef FunctionStringToString<ExtractSubstringImpl<ExtractFirstSignificantSubdomain>, NameFirstSignificantSubdomain>	FunctionFirstSignificantSubdomain;
 typedef FunctionStringToString<ExtractSubstringImpl<ExtractTopLevelDomain>, 		NameTopLevelDomain>		FunctionTopLevelDomain;
 typedef FunctionStringToString<ExtractSubstringImpl<ExtractPath>, 				NamePath>				FunctionPath;
+typedef FunctionStringToString<ExtractSubstringImpl<ExtractPathFull>,				NamePathFull>			FunctionPathFull;
 typedef FunctionStringToString<ExtractSubstringImpl<ExtractQueryString<true> >, 	NameQueryString>		FunctionQueryString;
 typedef FunctionStringToString<ExtractSubstringImpl<ExtractFragment<true> >, 		NameFragment>			FunctionFragment;
 typedef FunctionStringToString<ExtractSubstringImpl<ExtractQueryStringAndFragment<true> >, NameQueryStringAndFragment>	FunctionQueryStringAndFragment;

@@ -12,6 +12,7 @@ void registerFunctionsURL(FunctionFactory & factory)
 	factory.registerFunction<FunctionFirstSignificantSubdomain>();
 	factory.registerFunction<FunctionTopLevelDomain>();
 	factory.registerFunction<FunctionPath>();
+	factory.registerFunction<FunctionPathFull>();
 	factory.registerFunction<FunctionQueryString>();
 	factory.registerFunction<FunctionFragment>();
 	factory.registerFunction<FunctionQueryStringAndFragment>();
