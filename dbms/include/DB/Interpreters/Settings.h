@@ -81,7 +81,7 @@ struct Settings
 	\
 	M(SettingLoadBalancing, load_balancing, LoadBalancing::RANDOM) \
 	\
-	M(SettingTotalsMode, totals_mode, TotalsMode::BEFORE_HAVING) \
+	M(SettingTotalsMode, totals_mode, TotalsMode::AFTER_HAVING_EXCLUSIVE) \
 	M(SettingFloat, totals_auto_threshold, 0.5) \
 	\
 	/** Сэмплирование по умолчанию. Если равно 1, то отключено. */ \
