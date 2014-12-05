@@ -12,7 +12,7 @@
 
 #include <DB/Core/Field.h>
 
-#include <statdaemons/stdext.h>
+#include <statdaemons/ext/memory.hpp>
 
 namespace DB
 {
@@ -21,9 +21,9 @@ namespace
 {
 	/// select query has database and table names as AST pointers
 	/// Создает копию запроса, меняет имена базы данных и таблицы.
-	inline ASTPtr rewriteSelectQuery(const ASTPtr & query, const std::string & database, const std::string & table)
+	inline ASTPtr rewriteSelectQuery(ASTPtr & query, const std::string & database, const std::string & table)
 	{
-		auto modified_query_ast = query->clone();
+		auto & modified_query_ast = query;
 
 		auto & actual_query = typeid_cast<ASTSelectQuery &>(*modified_query_ast);
 		actual_query.database = new ASTIdentifier{{}, database, ASTIdentifier::Database};
@@ -228,7 +228,7 @@ bool StorageDistributed::hasColumn(const String & column_name) const
 
 void StorageDistributed::createDirectoryMonitor(const std::string & name)
 {
-	directory_monitors.emplace(name, stdext::make_unique<DirectoryMonitor>(*this, name));
+	directory_monitors.emplace(name, ext::make_unique<DirectoryMonitor>(*this, name));
 }
 
 void StorageDistributed::createDirectoryMonitors()

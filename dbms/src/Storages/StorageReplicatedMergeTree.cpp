@@ -36,6 +36,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	size_t index_granularity_,
 	MergeTreeData::Mode mode_,
 	const String & sign_column_,
+	const Names & columns_to_sum_,
 	const MergeTreeSettings & settings_)
     : IStorage{materialized_columns_, alias_columns_, column_defaults_}, context(context_),
 	zookeeper(context.getZooKeeper()), database_name(database_name_),
@@ -45,7 +46,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	data(full_path, columns_,
 		 materialized_columns_, alias_columns_, column_defaults_,
 		 context_, primary_expr_ast_, date_column_name_,
-		 sampling_expression_, index_granularity_, mode_, sign_column_,
+		 sampling_expression_, index_granularity_, mode_, sign_column_, columns_to_sum_,
 		 settings_, database_name_ + "." + table_name, true,
 		 std::bind(&StorageReplicatedMergeTree::enqueuePartForCheck, this, std::placeholders::_1)),
 	reader(data), writer(data), merger(data), fetcher(data),
@@ -115,7 +116,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 		unreplicated_data.reset(new MergeTreeData(unreplicated_path, columns_,
 			materialized_columns_, alias_columns_, column_defaults_,
 			context_, primary_expr_ast_,
-			date_column_name_, sampling_expression_, index_granularity_, mode_, sign_column_, settings_,
+			date_column_name_, sampling_expression_, index_granularity_, mode_, sign_column_, columns_to_sum_, settings_,
 			database_name_ + "." + table_name + "[unreplicated]", false));
 
 		unreplicated_data->loadDataParts(skip_sanity_checks);
@@ -147,6 +148,7 @@ StoragePtr StorageReplicatedMergeTree::create(
 	size_t index_granularity_,
 	MergeTreeData::Mode mode_,
 	const String & sign_column_,
+	const Names & columns_to_sum_ = Names(),
 	const MergeTreeSettings & settings_)
 {
 	auto res = new StorageReplicatedMergeTree{
@@ -155,7 +157,7 @@ StoragePtr StorageReplicatedMergeTree::create(
 		columns_, materialized_columns_, alias_columns_, column_defaults_,
 		context_, primary_expr_ast_, date_column_name_,
 		sampling_expression_, index_granularity_, mode_,
-		sign_column_, settings_
+		sign_column_, columns_to_sum_, settings_
 	};
 	StoragePtr res_ptr = res->thisPtr();
 
@@ -639,7 +641,7 @@ void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(const MergeTreeData:
 
 void StorageReplicatedMergeTree::loadQueue()
 {
-	std::unique_lock<std::mutex> lock(queue_mutex);
+	std::lock_guard<std::mutex> lock(queue_mutex);
 
 	Strings children = zookeeper->getChildren(replica_path + "/queue");
 	std::sort(children.begin(), children.end());
@@ -658,7 +660,7 @@ void StorageReplicatedMergeTree::loadQueue()
 
 void StorageReplicatedMergeTree::pullLogsToQueue(zkutil::EventPtr next_update_event)
 {
-	std::unique_lock<std::mutex> lock(queue_mutex);
+	std::lock_guard<std::mutex> lock(queue_mutex);
 
 	String index_str = zookeeper->get(replica_path + "/log_pointer");
 	UInt64 index;
@@ -908,7 +910,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 			  */
 			try
 			{
-				std::unique_lock<std::mutex> lock(queue_mutex);
+				std::lock_guard<std::mutex> lock(queue_mutex);
 
 				/// Найдем действие по объединению этого куска с другими. Запомним других.
 				StringSet parts_for_merge;
@@ -1143,7 +1145,7 @@ bool StorageReplicatedMergeTree::queueTask(BackgroundProcessingPool::Context & p
 
 	try
 	{
-		std::unique_lock<std::mutex> lock(queue_mutex);
+		std::lock_guard<std::mutex> lock(queue_mutex);
 		bool empty = queue.empty();
 		if (!empty)
 		{
@@ -1201,7 +1203,7 @@ bool StorageReplicatedMergeTree::queueTask(BackgroundProcessingPool::Context & p
 
 	entry->future_part_tagger = nullptr;
 
-	std::unique_lock<std::mutex> lock(queue_mutex);
+	std::lock_guard<std::mutex> lock(queue_mutex);
 
 	entry->currently_executing = false;
 	entry->execution_complete.notify_all();
@@ -1279,7 +1281,7 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 
 		try
 		{
-			std::unique_lock<std::mutex> merge_selecting_lock(merge_selecting_mutex);
+			std::lock_guard<std::mutex> merge_selecting_lock(merge_selecting_mutex);
 
 			if (need_pull)
 			{
@@ -1301,7 +1303,7 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 
 			if (big_merges_current < max_number_of_big_merges)
 			{
-				std::unique_lock<std::mutex> lock(queue_mutex);
+				std::lock_guard<std::mutex> lock(queue_mutex);
 
 				for (const auto & entry : queue)
 				{
@@ -1619,7 +1621,7 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
 	auto results = zookeeper->multi(ops);
 
 	{
-		std::unique_lock<std::mutex> lock(queue_mutex);
+		std::lock_guard<std::mutex> lock(queue_mutex);
 
 		String path_created = dynamic_cast<zkutil::Op::Create &>(ops[0]).getPathCreated();
 		log_entry->znode_name = path_created.substr(path_created.find_last_of('/') + 1);
@@ -1729,7 +1731,7 @@ void StorageReplicatedMergeTree::partCheckThread()
 							bool was_in_queue = false;
 
 							{
-								std::unique_lock<std::mutex> lock(queue_mutex);
+								std::lock_guard<std::mutex> lock(queue_mutex);
 
 								for (LogEntries::iterator it = queue.begin(); it != queue.end(); )
 								{
@@ -2212,7 +2214,7 @@ void StorageReplicatedMergeTree::dropPartition(const Field & field, bool detach,
 	  * Инвариант: после появления в логе записи DROP_RANGE, в логе не появятся слияния удаляемых кусков.
 	  */
 	{
-		std::unique_lock<std::mutex> merge_selecting_lock(merge_selecting_mutex);
+		std::lock_guard<std::mutex> merge_selecting_lock(merge_selecting_mutex);
 
 		virtual_parts.add(fake_part_name);
 	}

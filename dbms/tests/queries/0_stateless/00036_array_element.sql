@@ -28,6 +28,4 @@ CREATE TABLE array_element_test (id Int32) ENGINE = Memory;
 insert into array_element_test VALUES (-2), (1), (-4), (3), (2), (-1), (4), (-3), (0);
 select [1, 2, 3] as arr, arr[id] from array_element_test;
 
-DROP TABLE IF EXISTS array_element_test;
-
-
+DROP TABLE array_element_test;

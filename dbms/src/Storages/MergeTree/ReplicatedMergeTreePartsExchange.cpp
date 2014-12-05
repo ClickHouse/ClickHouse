@@ -67,10 +67,13 @@ MergeTreeData::MutableDataPartPtr ReplicatedMergeTreePartsFetcher::fetchPart(
 	int port,
 	bool to_detached)
 {
-	ReadBufferFromHTTP::Params params = {
-		std::make_pair("endpoint", "ReplicatedMergeTree:" + replica_path),
-		std::make_pair("part", part_name),
-		std::make_pair("compress", "false")};
+	ReadBufferFromHTTP::Params params =
+	{
+		{"endpoint", "ReplicatedMergeTree:" + replica_path},
+		{"part", part_name},
+		{"compress", "false"}
+	};
+
 	ReadBufferFromHTTP in(host, port, params);
 
 	String full_part_name = String(to_detached ? "detached/" : "") + "tmp_" + part_name;

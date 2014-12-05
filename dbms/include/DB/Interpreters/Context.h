@@ -263,10 +263,9 @@ public:
 
 	InterserverIOHandler & getInterserverIOHandler()						{ return shared->interserver_io_handler; }
 
-	/// Как другие серверы могут обратиться к этому.
-	void setInterserverIOHost(const String & host, int port);
-	String getInterserverIOHost() const;
-	int getInterserverIOPort() const;
+	/// Как другие серверы могут обратиться к этому для скачивания реплицируемых данных.
+	void setInterserverIOAddress(const String & host, UInt16 port);
+	std::pair<String, UInt16> getInterserverIOAddress() const;
 
 	/// Получить запрос на CREATE таблицы.
 	ASTPtr getCreateQuery(const String & database_name, const String & table_name) const;

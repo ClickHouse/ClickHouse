@@ -13,6 +13,7 @@
 #include <iomanip>
 
 #include <unordered_set>
+#include <algorithm>
 
 #include <boost/program_options.hpp>
 
@@ -359,7 +360,9 @@ private:
 			{
 				if (query != prev_query)
 				{
-					add_history(query.c_str());
+					std::string logged_query = query;
+					std::replace(logged_query.begin(), logged_query.end(), '\n', ' ');
+					add_history(logged_query.c_str());
 
 					if (!history_file.empty() && append_history(1, history_file.c_str()))
 						throwFromErrno("Cannot append history to file " + history_file, ErrorCodes::CANNOT_APPEND_HISTORY);

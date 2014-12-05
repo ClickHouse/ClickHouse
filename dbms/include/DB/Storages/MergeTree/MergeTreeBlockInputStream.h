@@ -193,7 +193,7 @@ protected:
 				}
 				progressImpl(Progress(res.rows(), res.bytes()));
 				pre_reader->fillMissingColumns(res);
-
+				
 				/// Вычислим выражение в PREWHERE.
 				prewhere_actions->execute(res);
 

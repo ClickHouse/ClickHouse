@@ -139,6 +139,22 @@ inline void throwIfDivisionLeadsToFPE(A a, B b)
 		throw Exception("Division of minimal signed number by minus one", ErrorCodes::ILLEGAL_DIVISION);
 }
 
+template <typename A, typename B>
+inline bool divisionLeadsToFPE(A a, B b)
+{
+	/// Возможно, лучше вместо проверок использовать siglongjmp?
+
+	if (unlikely(b == 0))
+		return true;
+
+	/// http://avva.livejournal.com/2548306.html
+	if (unlikely(std::is_signed<A>::value && std::is_signed<B>::value && a == std::numeric_limits<A>::min() && b == -1))
+		return true;
+
+	return false;
+}
+
+
 #pragma GCC diagnostic pop
 
 
@@ -152,6 +168,18 @@ struct DivideIntegralImpl
 	{
 		throwIfDivisionLeadsToFPE(a, b);
 		return static_cast<Result>(a) / b;
+	}
+};
+
+template<typename A, typename B>
+struct DivideIntegralOrZeroImpl
+{
+	typedef typename NumberTraits::ResultOfIntegerDivision<A, B>::Type ResultType;
+
+	template <typename Result = ResultType>
+	static inline Result apply(A a, B b)
+	{
+		return unlikely(divisionLeadsToFPE(a, b)) ? 0 : static_cast<Result>(a) / b;
 	}
 };
 
@@ -256,6 +284,31 @@ struct BitNotImpl
 	}
 };
 
+template<typename A>
+struct AbsImpl
+{
+	typedef typename NumberTraits::ResultOfAbs<A>::Type ResultType;
+
+	template<typename T = A>
+	static inline ResultType apply(T a,
+		typename std::enable_if<std::is_integral<T>::value && std::is_signed<T>::value, void>::type * = nullptr)
+	{
+		return a < 0 ? static_cast<ResultType>(~a) + 1 : a;
+	}
+
+	template<typename T = A>
+	static inline ResultType apply(T a,
+		typename std::enable_if<std::is_integral<T>::value && std::is_unsigned<T>::value, void>::type * = nullptr)
+	{
+		return static_cast<ResultType>(a);
+	}
+
+	template<typename T = A>
+	static inline ResultType apply(T a, typename std::enable_if<std::is_floating_point<T>::value, void>::type * = nullptr)
+	{
+		return static_cast<ResultType>(std::abs(a));
+	}
+};
 
 /// this one is just for convenience
 template <bool B, typename T1, typename T2> using If = typename std::conditional<B, T1, T2>::type;
@@ -752,8 +805,10 @@ struct NameMinus 			{ static constexpr auto name = "minus"; };
 struct NameMultiply 		{ static constexpr auto name = "multiply"; };
 struct NameDivideFloating	{ static constexpr auto name = "divide"; };
 struct NameDivideIntegral	{ static constexpr auto name = "intDiv"; };
+struct NameDivideIntegralOrZero	{ static constexpr auto name = "intDivOrZero"; };
 struct NameModulo			{ static constexpr auto name = "modulo"; };
 struct NameNegate			{ static constexpr auto name = "negate"; };
+struct NameAbs				{ static constexpr auto name = "abs"; };
 struct NameBitAnd			{ static constexpr auto name = "bitAnd"; };
 struct NameBitOr			{ static constexpr auto name = "bitOr"; };
 struct NameBitXor			{ static constexpr auto name = "bitXor"; };
@@ -766,8 +821,10 @@ typedef FunctionBinaryArithmetic<MinusImpl, 			NameMinus> 				FunctionMinus;
 typedef FunctionBinaryArithmetic<MultiplyImpl,			NameMultiply> 			FunctionMultiply;
 typedef FunctionBinaryArithmetic<DivideFloatingImpl, 	NameDivideFloating>	 	FunctionDivideFloating;
 typedef FunctionBinaryArithmetic<DivideIntegralImpl, 	NameDivideIntegral> 	FunctionDivideIntegral;
+typedef FunctionBinaryArithmetic<DivideIntegralOrZeroImpl, 	NameDivideIntegralOrZero> 	FunctionDivideIntegralOrZero;
 typedef FunctionBinaryArithmetic<ModuloImpl, 			NameModulo> 			FunctionModulo;
 typedef FunctionUnaryArithmetic<NegateImpl, 			NameNegate> 			FunctionNegate;
+typedef FunctionUnaryArithmetic<AbsImpl,	 			NameAbs>	 			FunctionAbs;
 typedef FunctionBinaryArithmetic<BitAndImpl,			NameBitAnd> 			FunctionBitAnd;
 typedef FunctionBinaryArithmetic<BitOrImpl,				NameBitOr> 				FunctionBitOr;
 typedef FunctionBinaryArithmetic<BitXorImpl,			NameBitXor> 			FunctionBitXor;

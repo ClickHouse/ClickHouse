@@ -5,7 +5,7 @@
 
 #include <Yandex/ApplicationServerExt.h>
 #include <statdaemons/ConfigProcessor.h>
-#include <statdaemons/stdext.h>
+#include <statdaemons/ext/memory.hpp>
 
 #include <DB/Interpreters/loadMetadata.h>
 #include <DB/Storages/StorageSystemNumbers.h>
@@ -373,14 +373,17 @@ int Server::main(const std::vector<std::string> & args)
 		String port_str = config().getString("interserver_http_port");
 		int port = parse<int>(port_str);
 
-		global_context->setInterserverIOHost(this_host, port);
+		if (port < 0 || port > 0xFFFF)
+			throw Exception("Out of range 'interserver_http_port': " + toString(port), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+		global_context->setInterserverIOAddress(this_host, port);
 	}
 
 	if (config().has("macros"))
 		global_context->setMacros(Macros(config(), "macros"));
 
 	std::string users_config_path = config().getString("users_config", config().getString("config-file", "config.xml"));
-	auto users_config_reloader = stdext::make_unique<UsersConfigReloader>(users_config_path, global_context.get());
+	auto users_config_reloader = ext::make_unique<UsersConfigReloader>(users_config_path, global_context.get());
 
 	/// Максимальное количество одновременно выполняющихся запросов.
 	global_context->getProcessList().setMaxSize(config().getInt("max_concurrent_queries", 0));
@@ -425,8 +428,10 @@ int Server::main(const std::vector<std::string> & args)
 
 	{
 		const auto profile_events_transmitter = config().getBool("use_graphite", true)
-			? stdext::make_unique<ProfileEventsTransmitter>()
+			? ext::make_unique<ProfileEventsTransmitter>()
 			: nullptr;
+
+		const std::string listen_host = config().getString("listen_host", "::");
 
 		bool use_olap_server = config().getBool("use_olap_http_server", false);
 		Poco::Timespan keep_alive_timeout(config().getInt("keep_alive_timeout", 10), 0);
@@ -437,7 +442,7 @@ int Server::main(const std::vector<std::string> & args)
 		http_params->setKeepAliveTimeout(keep_alive_timeout);
 
 		/// HTTP
-		Poco::Net::ServerSocket http_socket(Poco::Net::SocketAddress("[::]:" + config().getString("http_port")));
+		Poco::Net::ServerSocket http_socket(Poco::Net::SocketAddress(listen_host, config().getInt("http_port")));
 		http_socket.setReceiveTimeout(settings.receive_timeout);
 		http_socket.setSendTimeout(settings.send_timeout);
 		Poco::Net::HTTPServer http_server(
@@ -447,7 +452,7 @@ int Server::main(const std::vector<std::string> & args)
 			http_params);
 
 		/// TCP
-		Poco::Net::ServerSocket tcp_socket(Poco::Net::SocketAddress("[::]:" + config().getString("tcp_port")));
+		Poco::Net::ServerSocket tcp_socket(Poco::Net::SocketAddress(listen_host, config().getInt("tcp_port")));
 		tcp_socket.setReceiveTimeout(settings.receive_timeout);
 		tcp_socket.setSendTimeout(settings.send_timeout);
 		Poco::Net::TCPServer tcp_server(
@@ -460,10 +465,7 @@ int Server::main(const std::vector<std::string> & args)
 		Poco::SharedPtr<Poco::Net::HTTPServer> interserver_io_http_server;
 		if (config().has("interserver_http_port"))
 		{
-			String port_str = config().getString("interserver_http_port");
-
-			Poco::Net::ServerSocket interserver_io_http_socket(Poco::Net::SocketAddress("[::]:"
-				+ port_str));
+			Poco::Net::ServerSocket interserver_io_http_socket(Poco::Net::SocketAddress(listen_host, config().getInt("interserver_http_port")));
 			interserver_io_http_socket.setReceiveTimeout(settings.receive_timeout);
 			interserver_io_http_socket.setSendTimeout(settings.send_timeout);
 			interserver_io_http_server = new Poco::Net::HTTPServer(
@@ -480,7 +482,7 @@ int Server::main(const std::vector<std::string> & args)
 			olap_parser.reset(new OLAP::QueryParser());
 			olap_converter.reset(new OLAP::QueryConverter(config()));
 
-			Poco::Net::ServerSocket olap_http_socket(Poco::Net::SocketAddress("[::]:" + config().getString("olap_http_port")));
+			Poco::Net::ServerSocket olap_http_socket(Poco::Net::SocketAddress(listen_host, config().getInt("olap_http_port")));
 			olap_http_socket.setReceiveTimeout(settings.receive_timeout);
 			olap_http_socket.setSendTimeout(settings.send_timeout);
 			olap_http_server = new Poco::Net::HTTPServer(

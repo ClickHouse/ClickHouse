@@ -14,10 +14,6 @@ SELECT d FROM test.attach_r1 ORDER BY d;
 
 CREATE TABLE test.attach_r2 (d Date) ENGINE = ReplicatedMergeTree('/clickhouse/tables/01/attach', 'r2', d, d, 8192);
 
-SELECT * WHERE sleep(0.05); -- заменить на что-нибудь получше
-
-SELECT d FROM test.attach_r2 ORDER BY d;
-
 ALTER TABLE test.attach_r1 ATTACH PARTITION 201402;
 
 SELECT d FROM test.attach_r1 ORDER BY d;

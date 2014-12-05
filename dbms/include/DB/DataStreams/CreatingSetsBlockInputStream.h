@@ -16,7 +16,7 @@ class CreatingSetsBlockInputStream : public IProfilingBlockInputStream
 public:
 	CreatingSetsBlockInputStream(
 		BlockInputStreamPtr input,
-		SubqueriesForSets & subqueries_for_sets_,
+		const SubqueriesForSets & subqueries_for_sets_,
 		const Limits & limits)
 		: subqueries_for_sets(subqueries_for_sets_),
 		max_rows_to_transfer(limits.max_rows_to_transfer),

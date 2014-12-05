@@ -19,6 +19,7 @@ void registerFunctionsString(FunctionFactory & factory)
 	factory.registerFunction<FunctionConcat>();
 	factory.registerFunction<FunctionSubstring>();
 	factory.registerFunction<FunctionSubstringUTF8>();
+	factory.registerFunction<FunctionAppendTrailingCharIfAbsent>();
 }
 
 }

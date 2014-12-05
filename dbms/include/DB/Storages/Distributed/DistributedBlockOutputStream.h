@@ -10,7 +10,7 @@
 #include <DB/Interpreters/InterpreterInsertQuery.h>
 
 #include <statdaemons/Increment.h>
-#include <statdaemons/stdext.h>
+#include <statdaemons/ext/memory.hpp>
 
 #include <iostream>
 #include <type_traits>

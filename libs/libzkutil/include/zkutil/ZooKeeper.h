@@ -12,6 +12,7 @@ namespace zkutil
 {
 
 const UInt32 DEFAULT_SESSION_TIMEOUT = 30000;
+const UInt32 BIG_SESSION_TIMEOUT = 600000;
 const UInt32 DEFAULT_RETRY_NUM = 3;
 
 struct WatchWithEvent;
@@ -28,7 +29,7 @@ class ZooKeeper
 public:
 	typedef Poco::SharedPtr<ZooKeeper> Ptr;
 
-	ZooKeeper(const std::string & hosts, int32_t sessionTimeoutMs = DEFAULT_SESSION_TIMEOUT);
+	ZooKeeper(const std::string & hosts, int32_t session_timeout_ms = DEFAULT_SESSION_TIMEOUT);
 
 	/** конфиг вида
 		<zookeeper>
@@ -44,6 +45,7 @@ public:
 		</zookeeper>
 	*/
 	ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name);
+	ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, int32_t session_timeout_ms);
 
 	~ZooKeeper();
 
@@ -62,9 +64,9 @@ public:
 	  */
 	bool expired();
 
-	AclPtr getDefaultACL();
+	ACLPtr getDefaultACL();
 
-	void setDefaultACL(AclPtr new_acl);
+	void setDefaultACL(ACLPtr new_acl);
 
 	/** Создать znode. Используется ACL, выставленный вызовом setDefaultACL (по умолчанию, всем полный доступ).
 	  * Если что-то пошло не так, бросить исключение.
@@ -243,7 +245,7 @@ private:
 	friend struct WatchWithEvent;
 	friend class EphemeralNodeHolder;
 
-	void init(const std::string & hosts, int32_t sessionTimeoutMs);
+	void init(const std::string & hosts, int32_t session_timeout_ms);
 	void removeChildrenRecursive(const std::string & path);
 	void tryRemoveChildrenRecursive(const std::string & path);
 	void * watchForEvent(EventPtr event);
@@ -262,8 +264,9 @@ private:
 				*attempt = i;
 
 			/// если потеряно соединение подождем timeout/3, авось восстановится
+			static const int MAX_SLEEP_TIME = 10;
 			if (code == ZCONNECTIONLOSS)
-				usleep(sessionTimeoutMs * 1000 / 3);
+				usleep(std::min(session_timeout_ms * 1000 / 3, MAX_SLEEP_TIME * 1000 * 1000));
 
 			LOG_WARNING(log, "Error on attempt " << i << ": " << error2string(code)  << ". Retry");
 			code = operation();
@@ -285,10 +288,10 @@ private:
 	int32_t existsImpl(const std::string & path, Stat * stat_, EventPtr watch = nullptr);
 
 	std::string hosts;
-	int32_t sessionTimeoutMs;
+	int32_t session_timeout_ms;
 
 	Poco::FastMutex mutex;
-	AclPtr default_acl;
+	ACLPtr default_acl;
 	zhandle_t * impl;
 
 	std::unordered_set<WatchWithEvent *> watch_store;

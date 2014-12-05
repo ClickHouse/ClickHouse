@@ -1,9 +1,36 @@
 #include <iostream>
+#include <cstring>
 
 #include <Poco/Exception.h>
 
 #include <Yandex/DateLUT.h>
-#include <Yandex/time2str.h>
+
+
+static std::string toString(time_t Value)
+{
+	struct tm tm;
+	char buf[96];
+
+	localtime_r(&Value, &tm);
+	snprintf(buf, sizeof(buf), "%04d-%02d-%02d %02d:%02d:%02d",
+			 tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+
+	return buf;
+}
+
+static time_t orderedIdentifierToDate(unsigned value)
+{
+	struct tm tm;
+
+	memset(&tm, 0, sizeof(tm));
+
+	tm.tm_year = value / 10000 - 1900;
+	tm.tm_mon = (value % 10000) / 100 - 1;
+	tm.tm_mday = value % 100;
+	tm.tm_isdst = -1;
+
+	return mktime(&tm);
+}
 
 
 void loop(time_t begin, time_t end, int step)
@@ -15,8 +42,8 @@ void loop(time_t begin, time_t end, int step)
 		time_t t2 = date_lut.makeDateTime(date_lut.toYear(t), date_lut.toMonth(t), date_lut.toDayOfMonth(t),
 			date_lut.toHourInaccurate(t), date_lut.toMinute(t), date_lut.toSecond(t));
 
-		std::string s1 = Time2Sql(t);
-		std::string s2 = Time2Sql(t2);
+		std::string s1 = toString(t);
+		std::string s2 = toString(t2);
 			
 		std::cerr << s1 << ", " << s2 << std::endl;
 		
@@ -28,8 +55,8 @@ void loop(time_t begin, time_t end, int step)
 
 int main(int argc, char ** argv)
 {
-	loop(OrderedIdentifier2Date(20101031), OrderedIdentifier2Date(20101101), 15 * 60);
-	loop(OrderedIdentifier2Date(20100328), OrderedIdentifier2Date(20100330), 15 * 60);
+	loop(orderedIdentifierToDate(20101031), orderedIdentifierToDate(20101101), 15 * 60);
+	loop(orderedIdentifierToDate(20100328), orderedIdentifierToDate(20100330), 15 * 60);
 
 	return 0;
 }

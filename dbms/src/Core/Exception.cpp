@@ -15,7 +15,7 @@ namespace DB
 void throwFromErrno(const std::string & s, int code, int e)
 {
 	char buf[128];
-	throw Exception(s + ", errno: " + toString(e) + ", strerror: " + std::string(strerror_r(e, buf, sizeof(buf))), code);
+	throw ErrnoException(s + ", errno: " + toString(e) + ", strerror: " + std::string(strerror_r(e, buf, sizeof(buf))), code, e);
 }
 
 

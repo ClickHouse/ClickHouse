@@ -33,7 +33,7 @@ template <typename ArgumentFieldType, bool returns_float = true>
 class AggregateFunctionQuantile final : public IUnaryAggregateFunction<AggregateFunctionQuantileData<ArgumentFieldType>, AggregateFunctionQuantile<ArgumentFieldType, returns_float> >
 {
 private:
-	typedef ReservoirSampler<ArgumentFieldType, ReservoirSamplerOnEmpty::RETURN_NAN_OR_ZERO> Sample;
+	using Sample = typename AggregateFunctionQuantileData<ArgumentFieldType>::Sample;
 
 	double level;
 	DataTypePtr type;
@@ -108,7 +108,7 @@ template <typename ArgumentFieldType, bool returns_float = true>
 class AggregateFunctionQuantiles final : public IUnaryAggregateFunction<AggregateFunctionQuantileData<ArgumentFieldType>, AggregateFunctionQuantiles<ArgumentFieldType, returns_float> >
 {
 private:
-	typedef ReservoirSampler<ArgumentFieldType, ReservoirSamplerOnEmpty::RETURN_NAN_OR_ZERO> Sample;
+	using Sample = typename AggregateFunctionQuantileData<ArgumentFieldType>::Sample;
 
 	typedef std::vector<double> Levels;
 	Levels levels;
@@ -175,7 +175,7 @@ public:
 
 		size_t size = levels.size();
 		offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + size);
-		
+
 		if (returns_float)
 		{
 			ColumnFloat64::Container_t & data_to = static_cast<ColumnFloat64 &>(arr_to.getData()).getData();
@@ -186,7 +186,7 @@ public:
 		else
 		{
 			typename ColumnVector<ArgumentFieldType>::Container_t & data_to = static_cast<ColumnVector<ArgumentFieldType> &>(arr_to.getData()).getData();
-			
+
 			for (size_t i = 0; i < size; ++i)
 				 data_to.push_back(sample.quantileInterpolated(levels[i]));
 		}

@@ -79,12 +79,23 @@ public:
 
 	StringRef getDataAt(size_t n) const override
 	{
-		/** Работает для массивов значений фиксированной длины.
-		  * Для массивов строк и массивов массивов полученный кусок памяти может не взаимно-однозначно соответствовать элементам.
+		/** Возвращает диапазон памяти, покрывающий все элементы массива.
+		  * Работает для массивов значений фиксированной длины.
+		  * Для массивов строк и массивов массивов полученный кусок памяти может не взаимно-однозначно соответствовать элементам,
+		  *  так как содержит лишь уложенные подряд данные, но не смещения.
 		  */
-		StringRef begin = data->getDataAt(offsetAt(n));
-		StringRef end = data->getDataAt(offsetAt(n) + sizeAt(n));
-		return StringRef(begin.data, end.data - begin.data);
+
+		size_t array_size = sizeAt(n);
+		if (array_size == 0)
+			return StringRef();
+
+		size_t offset_of_first_elem = offsetAt(n);
+		StringRef first = data->getDataAtWithTerminatingZero(offset_of_first_elem);
+
+		size_t offset_of_last_elem = getOffsets()[n] - 1;
+		StringRef last = data->getDataAtWithTerminatingZero(offset_of_last_elem);
+
+		return StringRef(first.data, last.data + last.size - first.data);
 	}
 
 	void insertData(const char * pos, size_t length) override
@@ -377,7 +388,7 @@ private:
 	ColumnPtr offsets;	/// Смещения могут быть разделяемыми для нескольких столбцов - для реализации вложенных структур данных.
 
 	size_t ALWAYS_INLINE offsetAt(size_t i) const	{ return i == 0 ? 0 : getOffsets()[i - 1]; }
-	size_t ALWAYS_INLINE sizeAt(size_t i) const	{ return i == 0 ? getOffsets()[0] : (getOffsets()[i] - getOffsets()[i - 1]); }
+	size_t ALWAYS_INLINE sizeAt(size_t i) const		{ return i == 0 ? getOffsets()[0] : (getOffsets()[i] - getOffsets()[i - 1]); }
 
 
 	/// Размножить значения, если вложенный столбец - ColumnArray<T>.

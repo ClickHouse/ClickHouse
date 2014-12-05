@@ -61,14 +61,14 @@ void ZooKeeper::processEvent(zhandle_t * zh, int type, int state, const char * p
 	}
 }
 
-void ZooKeeper::init(const std::string & hosts_, int32_t sessionTimeoutMs_)
+void ZooKeeper::init(const std::string & hosts_, int32_t session_timeout_ms_)
 {
 	log = &Logger::get("ZooKeeper");
 	zoo_set_debug_level(ZOO_LOG_LEVEL_ERROR);
 	hosts = hosts_;
-	sessionTimeoutMs = sessionTimeoutMs_;
+	session_timeout_ms = session_timeout_ms_;
 
-	impl = zookeeper_init(hosts.c_str(), nullptr, sessionTimeoutMs, nullptr, nullptr, 0);
+	impl = zookeeper_init(hosts.c_str(), nullptr, session_timeout_ms, nullptr, nullptr, 0);
 	ProfileEvents::increment(ProfileEvents::ZooKeeperInit);
 
 	if (!impl)
@@ -77,9 +77,9 @@ void ZooKeeper::init(const std::string & hosts_, int32_t sessionTimeoutMs_)
 	default_acl = &ZOO_OPEN_ACL_UNSAFE;
 }
 
-ZooKeeper::ZooKeeper(const std::string & hosts, int32_t sessionTimeoutMs)
+ZooKeeper::ZooKeeper(const std::string & hosts, int32_t session_timeout_ms)
 {
-	init(hosts, sessionTimeoutMs);
+	init(hosts, session_timeout_ms);
 }
 
 struct ZooKeeperArgs
@@ -127,6 +127,13 @@ ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std
 	ZooKeeperArgs args(config, config_name);
 	init(args.hosts, args.session_timeout_ms);
 }
+
+ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration& config, const std::string& config_name, int32_t session_timeout_ms_)
+{
+	ZooKeeperArgs args(config, config_name);
+	init(args.hosts, session_timeout_ms_);
+}
+
 
 void * ZooKeeper::watchForEvent(EventPtr event)
 {
@@ -559,22 +566,22 @@ ZooKeeper::~ZooKeeper()
 
 ZooKeeperPtr ZooKeeper::startNewSession() const
 {
-	return new ZooKeeper(hosts, sessionTimeoutMs);
+	return new ZooKeeper(hosts, session_timeout_ms);
 }
 
-Op::Create::Create(const std::string & path_, const std::string & value_, AclPtr acl, int32_t flags)
+Op::Create::Create(const std::string & path_, const std::string & value_, ACLPtr acl, int32_t flags)
 : path(path_), value(value_), created_path(path.size() + ZooKeeper::SEQUENTIAL_SUFFIX_SIZE)
 {
 	zoo_create_op_init(data.get(), path.c_str(), value.c_str(), value.size(), acl, flags, created_path.data(), created_path.size());
 }
 
-AclPtr ZooKeeper::getDefaultACL()
+ACLPtr ZooKeeper::getDefaultACL()
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(mutex);
 	return default_acl;
 }
 
-void ZooKeeper::setDefaultACL(AclPtr new_acl)
+void ZooKeeper::setDefaultACL(ACLPtr new_acl)
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(mutex);
 	default_acl = new_acl;
