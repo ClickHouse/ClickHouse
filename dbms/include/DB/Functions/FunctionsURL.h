@@ -922,7 +922,9 @@ struct CutSubstringImpl
 		Pos start;
 		size_t length;
 		Extractor::execute(data.data(), data.size(), start, length);
-		res_data.erase(start - data.data(), length);
+		res_data.reserve(data.size() - length);
+		res_data.append(data.data(), start);
+		res_data.append(start + length, data.data() + data.size());
 	}
 
 	static void vector_fixed(const ColumnString::Chars_t & data, size_t n,
