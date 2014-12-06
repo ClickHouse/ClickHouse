@@ -9,6 +9,7 @@
 #include <Yandex/DateLUT.h>
 
 #include <mysqlxx/Row.h>
+#include <mysqlxx/Null.h>
 
 #include <DB/Core/Types.h>
 #include <DB/Core/Exception.h>
@@ -473,6 +474,15 @@ inline void writeText(const VisitID_t & x, 	WriteBuffer & buf) { writeIntText(st
 inline void writeText(const mysqlxx::Date & x,		WriteBuffer & buf) { writeDateText(x, buf); }
 inline void writeText(const mysqlxx::DateTime & x,	WriteBuffer & buf) { writeDateTimeText(x, buf); }
 
+template<typename T>
+inline void writeText(const mysqlxx::Null<T> & x,	WriteBuffer & buf)
+{
+	if (x.isNull())
+		writeCString("\\N", buf);
+	else
+		writeText(static_cast<T>(x), buf);
+}
+
 
 /// Методы для вывода в текстовом виде в кавычках
 inline void writeQuoted(const UInt8 & x, 	WriteBuffer & buf) { writeIntText(x, buf); }
@@ -505,6 +515,15 @@ inline void writeQuoted(const mysqlxx::DateTime & x,	WriteBuffer & buf)
 	writeChar('\'', buf);
 	writeDateTimeText(x, buf);
 	writeChar('\'', buf);
+}
+
+template <typename T>
+inline void writeQuoted(const mysqlxx::Null<T> & x,		WriteBuffer & buf)
+{
+	if (x.isNull())
+		writeCString("NULL", buf);
+	else
+		writeText(static_cast<T>(x), buf);
 }
 
 
