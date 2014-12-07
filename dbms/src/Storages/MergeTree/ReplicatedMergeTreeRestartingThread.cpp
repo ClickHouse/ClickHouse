@@ -28,11 +28,14 @@ ReplicatedMergeTreeRestartingThread::ReplicatedMergeTreeRestartingThread(Storage
 
 void ReplicatedMergeTreeRestartingThread::run()
 {
+	constexpr auto retry_delay_ms = 10 * 1000;
+	constexpr auto check_delay_ms = 60 * 1000;
+
 	try
 	{
 		/// Запуск реплики при старте сервера/создании таблицы.
 		while (!need_stop && !tryStartup())
-			wakeup_event.tryWait(10 * 1000);
+			wakeup_event.tryWait(retry_delay_ms);
 
 		/// Цикл перезапуска реплики при истечении сессии с ZK.
 		while (!need_stop)
@@ -55,13 +58,13 @@ void ReplicatedMergeTreeRestartingThread::run()
 					{
 						/// Исключение при попытке zookeeper_init обычно бывает, если не работает DNS. Будем пытаться сделать это заново.
 						tryLogCurrentException(__PRETTY_FUNCTION__);
-						wakeup_event.tryWait(10 * 1000);
+						wakeup_event.tryWait(retry_delay_ms);
 						continue;
 					}
 				} while (false);
 
 				while (!need_stop && !tryStartup())
-					wakeup_event.tryWait(10 * 1000);
+					wakeup_event.tryWait(retry_delay_ms);
 
 				if (need_stop)
 					break;
@@ -69,7 +72,7 @@ void ReplicatedMergeTreeRestartingThread::run()
 				storage.is_read_only = false;
 			}
 
-			wakeup_event.tryWait(60 * 1000);
+			wakeup_event.tryWait(check_delay_ms);
 		}
 	}
 	catch (...)
