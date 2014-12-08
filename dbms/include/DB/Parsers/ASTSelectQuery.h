@@ -30,6 +30,7 @@ public:
 	ASTPtr order_expression_list;
 	ASTPtr limit_offset;
 	ASTPtr limit_length;
+	ASTPtr next_union_all; /// Следующий запрос SELECT в цепочке UNION ALL, если такой есть
 
 	ASTSelectQuery() {}
 	ASTSelectQuery(StringRange range_) : ASTQueryWithOutput(range_) {}
@@ -123,6 +124,7 @@ public:
 		CLONE(limit_offset)
 		CLONE(limit_length)
 		CLONE(format)
+		CLONE(next_union_all)
 
 #undef CLONE
 
