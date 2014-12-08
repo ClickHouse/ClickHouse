@@ -480,7 +480,7 @@ inline void writeText(const mysqlxx::Null<T> & x,	WriteBuffer & buf)
 	if (x.isNull())
 		writeCString("\\N", buf);
 	else
-		writeText(static_cast<T>(x), buf);
+		writeText(static_cast<const T &>(x), buf);
 }
 
 
@@ -523,7 +523,7 @@ inline void writeQuoted(const mysqlxx::Null<T> & x,		WriteBuffer & buf)
 	if (x.isNull())
 		writeCString("NULL", buf);
 	else
-		writeText(static_cast<T>(x), buf);
+		writeText(static_cast<const T &>(x), buf);
 }
 
 
