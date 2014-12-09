@@ -45,7 +45,11 @@ generate_program_name()
 
 generate_pid_name()
 {
-	echo $PIDFILE_PREFIX$1.pid
+	if [ $NUMBER_OF_PROCESSES -gt 1 ]; then
+		echo $PIDFILE_PREFIX$1.pid
+	else
+		echo $PIDFILE_PREFIX.pid
+	fi
 }
 
 specific_log_file_for_each_process()
