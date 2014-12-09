@@ -39,7 +39,7 @@ generate_program_name()
 	if [ $NUMBER_OF_PROCESSES -eq 1 ]; then
 		echo $PROGRAM
 	else
-			echo $PROGRAM$1
+		echo $PROGRAM$1
 	fi
 }
 
