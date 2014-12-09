@@ -17,8 +17,6 @@
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/WriteBufferFromString.h>
 
-#include <DB/IO/DoubleConverter.h>
-
 
 namespace DB
 {
@@ -592,17 +590,24 @@ private:
 	  *
 	  * NOTE: При таком roundtrip-е, точность может теряться.
 	  */
-	static String formatFloat(const Float64 x)
+	static inline String formatFloat(Float64 x)
 	{
-		char tmp[25];
-		double_conversion::StringBuilder builder{tmp, sizeof(tmp)};
+		char tmp[24];
+		int res = std::snprintf(tmp, 23, "%.*g", WRITE_HELPERS_DEFAULT_FLOAT_PRECISION, x);
 
-		const auto result = getDoubleToStringConverter().ToShortest(x, &builder);
-
-		if (!result)
+		if (res >= 23 || res <= 0)
 			throw Exception("Cannot print float or double number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
 
-		return { tmp, tmp + builder.position() };
+		size_t string_size = res;
+
+		tmp[23] = '\0';
+		if (string_size == strspn(tmp, "-0123456789"))
+		{
+			tmp[string_size] = '.';
+			++string_size;
+		}
+
+		return {tmp, string_size};
 	}
 
 public:

@@ -19,7 +19,6 @@
 #include <DB/IO/WriteIntText.h>
 #include <DB/IO/VarInt.h>
 #include <DB/IO/WriteBufferFromString.h>
-#include <DB/IO/DoubleConverter.h>
 #include <city.h>
 
 #define WRITE_HELPERS_DEFAULT_FLOAT_PRECISION 6U
@@ -90,15 +89,13 @@ inline void writeBoolText(bool x, WriteBuffer & buf)
 template <typename T>
 void writeFloatText(T x, WriteBuffer & buf, unsigned precision = WRITE_HELPERS_DEFAULT_FLOAT_PRECISION)
 {
-	char tmp[25];
-	double_conversion::StringBuilder builder{tmp, sizeof(tmp)};
+	char tmp[24];
+	int res = std::snprintf(tmp, 24, "%.*g", precision, x);
 
-	const auto result = getDoubleToStringConverter<false>().ToShortest(x, &builder);
-
-	if (!result)
+	if (res >= 24 || res <= 0)
 		throw Exception("Cannot print float or double number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
 
-	buf.write(tmp, builder.position());
+	buf.write(tmp, res);
 }
 
 
