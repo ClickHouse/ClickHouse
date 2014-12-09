@@ -20,7 +20,15 @@ LOCKFILE=$LOCALSTATEDIR/$PROGRAM
 RETVAL=0
 
 DEFAULT_NUMBER_OF_PROCESSES=1
-NUMBER_OF_PROCESSES=$(xmlstarlet sel -t -v "/yandex/number_of_processes" $CNFFILE || echo $DEFAULT_NUMBER_OF_PROCESSES)
+NUMBER_OF_PROCESSES=$DEFAULT_NUMBER_OF_PROCESSES
+
+LOG_FILE=""
+
+# С помощью xmlstarlet пытаемся взять некоторые параметры из конфига
+if command -v xmlstarlet >/dev/null 2>&1; then
+	NUMBER_OF_PROCESSES=$(xmlstarlet sel -t -v "/yandex/number_of_processes" $CNFFILE || echo $DEFAULT_NUMBER_OF_PROCESSES)
+	LOG_FILE=$(xmlstarlet sel -t -v "/yandex/logger/log" $CNFFILE || echo $LOG_FILE)
+fi
 
 PIDDIR=/var/run/$PROGRAM
 PIDFILE_PREFIX=$PIDDIR/$PROGRAM
@@ -40,15 +48,16 @@ generate_pid_name()
 	echo $PIDFILE_PREFIX$1.pid
 }
 
-generate_log_filename()
+specific_log_file_for_each_process()
 {
-	log_file=$(xmlstarlet sel -t -v "/yandex/logger/log" $CNFFILE)
 	# Не будем менять имя лог файла, при одном процессе
-	if [ $NUMBER_OF_PROCESSES -gt 1 ]; then
-		log_file=$(echo $log_file | sed "s/\.log/$1.log/")
+	# Не выставляем, если имя лог файла пустое
+	if [ $NUMBER_OF_PROCESSES -gt 1 ] && [ "$LOG_FILE" != "" ]; then
+		log_file=$(echo $LOG_FILE | sed "s/\.log/$1.log/")
+		echo "--log-file=\"$log_file\""
 	fi
 
-	echo $log_file
+	echo ""
 }
 
 find_pid_files()
@@ -112,7 +121,7 @@ start()
 			if ! is_running $(generate_pid_name $i); then
 				rm -f $(generate_pid_name $i)
 				# TODO может лучше передавать демону номер процесса, а демон сам будет делать все необходимые подстановки
-				su -l $USER -s $SHELL -c "exec -a $(generate_program_name $i) \"$BINDIR/$PROGRAM\" --daemon --pid-file=\"$(generate_pid_name $i)\" --config-file=\"$CNFFILE\" --log-file=\"$(generate_log_filename $i)\""
+				su -l $USER -s $SHELL -c "exec -a $(generate_program_name $i) \"$BINDIR/$PROGRAM\" --daemon --pid-file=\"$(generate_pid_name $i)\" --config-file=\"$CNFFILE\" $(specific_log_file_for_each_process $i)"
 				EXIT_STATUS=$?
 				if [[ $EXIT_STATUS -ne 0 ]]; then
 					break
