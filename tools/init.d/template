@@ -1,4 +1,4 @@
-#! /bin/sh
+#!/bin/bash
 ### BEGIN INIT INFO
 # Provides:          @DAEMON@
 # Default-Start:     2
