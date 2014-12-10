@@ -22,8 +22,6 @@
 #include <DB/IO/DoubleConverter.h>
 #include <city.h>
 
-#define WRITE_HELPERS_DEFAULT_FLOAT_PRECISION 6U
-
 
 namespace DB
 {
@@ -88,7 +86,7 @@ inline void writeBoolText(bool x, WriteBuffer & buf)
 
 
 template <typename T>
-void writeFloatText(T x, WriteBuffer & buf, unsigned precision = WRITE_HELPERS_DEFAULT_FLOAT_PRECISION)
+void writeFloatText(T x, WriteBuffer & buf)
 {
 	char tmp[25];
 	double_conversion::StringBuilder builder{tmp, sizeof(tmp)};
