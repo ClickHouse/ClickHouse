@@ -8,7 +8,7 @@
 
 USER=metrika
 GROUP=metrika
-SHELL=/bin/sh
+SHELL=/bin/bash
 PROGRAM=@DAEMON@
 SYSCONFDIR=/etc/$PROGRAM
 LOGDIR=/var/log/$PROGRAM
