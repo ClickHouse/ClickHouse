@@ -841,7 +841,7 @@ void formatAST(const ASTJoin & ast, std::ostream & s, size_t indent, bool hilite
 		<< (ast.locality == ASTJoin::Global ? "GLOBAL " : "")
 		<< (ast.strictness == ASTJoin::Any ? "ANY " : "ALL ")
 		<< (ast.kind == ASTJoin::Inner ? "INNER " : "LEFT ")
-		<< "JOIN"
+		<< "JOIN "
 		<< (hilite ? hilite_none : "");
 
 	formatAST(*ast.table, s, indent, hilite, one_line, need_parens);
