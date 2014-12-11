@@ -89,7 +89,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 		if (!attach)
 			throw Exception("Can't create replicated table without ZooKeeper", ErrorCodes::NO_ZOOKEEPER);
 
-		is_read_only = true;
+		/// Не активируем реплику. Она будет в режиме readonly.
 		return;
 	}
 
@@ -161,7 +161,7 @@ StoragePtr StorageReplicatedMergeTree::create(
 	};
 	StoragePtr res_ptr = res->thisPtr();
 
-	if (!res->is_read_only)
+	if (res->zookeeper)
 	{
 		String endpoint_name = "ReplicatedMergeTree:" + res->replica_path;
 		InterserverIOEndpointPtr endpoint = new ReplicatedMergeTreePartsServer(res->data, *res);

@@ -149,7 +149,7 @@ private:
 	zkutil::ZooKeeperPtr zookeeper;
 
 	/// Если true, таблица в офлайновом режиме, и в нее нельзя писать.
-	bool is_read_only = false;
+	bool is_read_only = true;
 
 	/// Каким будет множество активных кусков после выполнения всей текущей очереди.
 	ActiveDataPartSet virtual_parts;

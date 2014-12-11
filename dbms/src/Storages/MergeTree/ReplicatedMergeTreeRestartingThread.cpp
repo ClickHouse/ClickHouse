@@ -33,19 +33,24 @@ void ReplicatedMergeTreeRestartingThread::run()
 
 	try
 	{
-		/// Запуск реплики при старте сервера/создании таблицы.
-		while (!need_stop && !tryStartup())
-			wakeup_event.tryWait(retry_delay_ms);
+		bool first_time = true;
 
-		/// Цикл перезапуска реплики при истечении сессии с ZK.
+		/// Запуск реплики при старте сервера/создании таблицы. Перезапуск реплики при истечении сессии с ZK.
 		while (!need_stop)
 		{
-			if (storage.zookeeper->expired())
+			if (first_time || storage.zookeeper->expired())
 			{
-				LOG_WARNING(log, "ZooKeeper session has expired. Switching to a new session.");
-				storage.is_read_only = true;
+				if (first_time)
+				{
+					LOG_DEBUG(log, "Activating replica.");
+				}
+				else
+				{
+					LOG_WARNING(log, "ZooKeeper session has expired. Switching to a new session.");
 
-				partialShutdown();
+					storage.is_read_only = true;
+					partialShutdown();
+				}
 
 				do
 				{
@@ -61,15 +66,16 @@ void ReplicatedMergeTreeRestartingThread::run()
 						wakeup_event.tryWait(retry_delay_ms);
 						continue;
 					}
+
+					if (!need_stop && !tryStartup())
+					{
+						wakeup_event.tryWait(retry_delay_ms);
+						continue;
+					}
 				} while (false);
 
-				while (!need_stop && !tryStartup())
-					wakeup_event.tryWait(retry_delay_ms);
-
-				if (need_stop)
-					break;
-
 				storage.is_read_only = false;
+				first_time = false;
 			}
 
 			wakeup_event.tryWait(check_delay_ms);
@@ -104,8 +110,11 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
 	{
 		activateReplica();
 
-		storage.leader_election = new zkutil::LeaderElection(storage.zookeeper_path + "/leader_election", *storage.zookeeper,
-			std::bind(&StorageReplicatedMergeTree::becomeLeader, &storage), storage.replica_name);
+		storage.leader_election = new zkutil::LeaderElection(
+			storage.zookeeper_path + "/leader_election",
+			*storage.zookeeper,
+			[this] { storage.becomeLeader(); },
+			storage.replica_name);
 
 		/// Все, что выше, может бросить KeeperException, если что-то не так с ZK.
 		/// Все, что ниже, не должно бросать исключений.
