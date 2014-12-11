@@ -250,7 +250,7 @@ void ReplicatedMergeTreeRestartingThread::goReadOnlyPermanently()
 {
 	LOG_INFO(log, "Going to readonly mode");
 
-	storage.is_read_only = true;
+	storage.is_readonly = true;
 	stop();
 
 	partialShutdown();
