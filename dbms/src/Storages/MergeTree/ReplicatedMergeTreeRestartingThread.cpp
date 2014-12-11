@@ -48,7 +48,7 @@ void ReplicatedMergeTreeRestartingThread::run()
 				{
 					LOG_WARNING(log, "ZooKeeper session has expired. Switching to a new session.");
 
-					storage.is_read_only = true;
+					storage.is_readonly = true;
 					partialShutdown();
 				}
 
@@ -74,7 +74,7 @@ void ReplicatedMergeTreeRestartingThread::run()
 					}
 				} while (false);
 
-				storage.is_read_only = false;
+				storage.is_readonly = false;
 				first_time = false;
 			}
 
@@ -84,7 +84,7 @@ void ReplicatedMergeTreeRestartingThread::run()
 	catch (...)
 	{
 		tryLogCurrentException("StorageReplicatedMergeTree::restartingThread");
-		LOG_ERROR(log, "Unexpected exception in restartingThread. The storage will be read-only until server restart.");
+		LOG_ERROR(log, "Unexpected exception in restartingThread. The storage will be readonly until server restart.");
 		goReadOnlyPermanently();
 		LOG_DEBUG(log, "Restarting thread finished");
 		return;
@@ -248,7 +248,7 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
 
 void ReplicatedMergeTreeRestartingThread::goReadOnlyPermanently()
 {
-	LOG_INFO(log, "Going to read-only mode");
+	LOG_INFO(log, "Going to readonly mode");
 
 	storage.is_read_only = true;
 	stop();

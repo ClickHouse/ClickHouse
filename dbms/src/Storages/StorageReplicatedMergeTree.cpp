@@ -2027,8 +2027,8 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 
 BlockOutputStreamPtr StorageReplicatedMergeTree::write(ASTPtr query)
 {
-	if (is_read_only)
-		throw Exception("Table is in read only mode", ErrorCodes::TABLE_IS_READ_ONLY);
+	if (is_readonly)
+		throw Exception("Table is in readonly mode", ErrorCodes::TABLE_IS_READ_ONLY);
 
 	String insert_id;
 	if (query)
@@ -2079,8 +2079,8 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 	{
 		auto table_lock = lockStructureForAlter();
 
-		if (is_read_only)
-			throw Exception("Can't ALTER read-only table", ErrorCodes::TABLE_IS_READ_ONLY);
+		if (is_readonly)
+			throw Exception("Can't ALTER readonly table", ErrorCodes::TABLE_IS_READ_ONLY);
 
 		data.checkAlter(params);
 
@@ -2346,8 +2346,8 @@ void StorageReplicatedMergeTree::attachPartition(const Field & field, bool unrep
 
 void StorageReplicatedMergeTree::drop()
 {
-	if (is_read_only)
-		throw Exception("Can't drop read-only replicated table (need to drop data in ZooKeeper as well)", ErrorCodes::TABLE_IS_READ_ONLY);
+	if (is_readonly)
+		throw Exception("Can't drop readonly replicated table (need to drop data in ZooKeeper as well)", ErrorCodes::TABLE_IS_READ_ONLY);
 
 	shutdown();
 
@@ -2480,7 +2480,7 @@ void StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(const String & 
 void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
 {
 	res.is_leader = is_leader_node;
-	res.is_readonly = is_read_only;
+	res.is_readonly = is_readonly;
 	res.is_session_expired = !zookeeper || zookeeper->expired();
 
 	{
