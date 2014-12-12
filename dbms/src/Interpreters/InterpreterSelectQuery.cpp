@@ -85,12 +85,26 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input_, const NamesAndType
 
 	if (input_)
 		streams.push_back(input_);
+	
+	if (is_union_all_head && (!query.next_union_all.isNull()))
+	{
+		// Проверить, что результаты всех запросов SELECT cовместимые.
+		Block previous = getSampleBlock();
+		for (ASTPtr tree = query.next_union_all; !tree.isNull(); tree = (static_cast<ASTSelectQuery *>(&*tree))->next_union_all)
+		{
+			Block current = InterpreterSelectQuery(tree, context, to_stage, subquery_depth, nullptr, false).getSampleBlock();
+			if (!blocksHaveCompatibleStructure(previous, current))
+				throw Exception("Incompatible results in the SELECT queries of the UNION ALL chain", ErrorCodes::UNION_ALL_INCOMPATIBLE_RESULTS);
+			previous = std::move(current);	
+		}		
+	}
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_, QueryProcessingStage::Enum to_stage_,
-	size_t subquery_depth_, BlockInputStreamPtr input_)
+	size_t subquery_depth_, BlockInputStreamPtr input_, bool is_union_all_head_)
 	: query_ptr(query_ptr_), query(typeid_cast<ASTSelectQuery &>(*query_ptr)),
 	context(context_), settings(context.getSettings()), to_stage(to_stage_), subquery_depth(subquery_depth_),
+	is_union_all_head(is_union_all_head_),
 	log(&Logger::get("InterpreterSelectQuery"))
 {
 	init(input_);
@@ -101,6 +115,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context 
 	QueryProcessingStage::Enum to_stage_, size_t subquery_depth_, BlockInputStreamPtr input_)
 	: query_ptr(query_ptr_), query(typeid_cast<ASTSelectQuery &>(*query_ptr)),
 	context(context_), settings(context.getSettings()), to_stage(to_stage_), subquery_depth(subquery_depth_),
+	is_union_all_head(true),
 	log(&Logger::get("InterpreterSelectQuery"))
 {
 	/** Оставляем в запросе в секции SELECT только нужные столбцы.
@@ -117,6 +132,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context 
 	const NamesAndTypesList & table_column_names, QueryProcessingStage::Enum to_stage_, size_t subquery_depth_, BlockInputStreamPtr input_)
 	: query_ptr(query_ptr_), query(typeid_cast<ASTSelectQuery &>(*query_ptr)),
 	context(context_), settings(context.getSettings()), to_stage(to_stage_), subquery_depth(subquery_depth_),
+	is_union_all_head(true),
 	log(&Logger::get("InterpreterSelectQuery"))
 {
 	/** Оставляем в запросе в секции SELECT только нужные столбцы.
@@ -187,8 +203,29 @@ static inline BlockInputStreamPtr maybeAsynchronous(BlockInputStreamPtr in, bool
 		: in;
 }
 
-
 BlockInputStreamPtr InterpreterSelectQuery::execute()
+{
+	BlockInputStreamPtr first_query_plan = executeSingleQuery();
+	
+	if (is_union_all_head && !query.next_union_all.isNull())
+	{
+		BlockInputStreams streams;
+		streams.push_back(first_query_plan);
+		
+		for (ASTPtr tree = query.next_union_all; !tree.isNull(); tree = (static_cast<ASTSelectQuery *>(&*tree))->next_union_all)
+		{
+			Context select_query_context = context;
+			InterpreterSelectQuery interpreter(tree, select_query_context, to_stage, subquery_depth, nullptr, false);
+			streams.push_back(maybeAsynchronous(interpreter.executeSingleQuery(), settings.asynchronous));
+		}
+		
+		return new UnionBlockInputStream(streams, settings.max_threads);
+	}
+	else
+		return first_query_plan;
+}
+
+BlockInputStreamPtr InterpreterSelectQuery::executeSingleQuery()
 {
 	/** Потоки данных. При параллельном выполнении запроса, имеем несколько потоков данных.
 	  * Если нет GROUP BY, то выполним все операции до ORDER BY и LIMIT параллельно, затем

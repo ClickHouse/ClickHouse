@@ -39,7 +39,8 @@ public:
 		const Context & context_,
 		QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
 		size_t subquery_depth_ = 0,
-		BlockInputStreamPtr input = nullptr);
+		BlockInputStreamPtr input = nullptr,
+		bool is_union_all_head_ = true);
 
 	InterpreterSelectQuery(
 		ASTPtr query_ptr_,
@@ -87,6 +88,8 @@ private:
 	/// Вынимает данные из таблицы. Возвращает стадию, до которой запрос был обработан в Storage.
 	QueryProcessingStage::Enum executeFetchColumns(BlockInputStreams & streams);
 
+	BlockInputStreamPtr executeSingleQuery();
+
 	void executeWhere(				BlockInputStreams & streams, ExpressionActionsPtr expression);
 	void executeAggregation(		BlockInputStreams & streams, ExpressionActionsPtr expression,
 									bool overflow_row, bool final);
@@ -111,6 +114,9 @@ private:
 	size_t subquery_depth;
 	ExpressionAnalyzerPtr query_analyzer;
 	BlockInputStreams streams;
+	
+	/// true, если это голова цепочки запросов SELECT объединённых ключевыми словами UNION ALL.
+	bool is_union_all_head;
 
 	/// Таблица, откуда читать данные, если не подзапрос.
 	StoragePtr storage;

@@ -125,6 +125,8 @@ typedef std::list<Block> BlocksList;
 /// Сравнить типы столбцов у блоков. Порядок столбцов имеет значение. Имена не имеют значения.
 bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs);
 
+bool blocksHaveCompatibleStructure(const Block& lhs, const Block& rhs);
+
 }
 
 namespace std
