@@ -242,8 +242,12 @@ void formatAST(const ASTSelectQuery 		& ast, std::ostream & s, size_t indent, bo
 	if (!ast.next_union_all.isNull())
 	{
 		s << (hilite ? hilite_keyword : "") << nl_or_ws << indent_str << "UNION ALL " << nl_or_ws << (hilite ? hilite_none : "");
-		const ASTSelectQuery * next_ast = static_cast<const ASTSelectQuery *>(&*ast.next_union_all);
-		formatAST(*next_ast, s, indent, hilite, one_line, need_parens);
+        
+        // NOTE Мы можем безопасно применить static_cast вместо typeid_cast, потому что знаем, что в цепочке UNION ALL
+        // имеются только деревья типа SELECT.
+		const ASTSelectQuery & next_ast = static_cast<const ASTSelectQuery &>(*ast.next_union_all);
+        
+		formatAST(next_ast, s, indent, hilite, one_line, need_parens);
 	}
 }
 
