@@ -59,7 +59,9 @@ public:
 		size_t subquery_depth_ = 0,
 		BlockInputStreamPtr input = nullptr);
 
-	/// Выполнить запрос, получить поток блоков для чтения
+	/** Выполнить запрос, возможно являющиийся цепочкой UNION ALL. 
+     *  Получить поток блоков для чтения
+     */
 	BlockInputStreamPtr execute();
 
 	/** Выполнить запрос, записать результат в нужном формате в buf.
@@ -88,6 +90,7 @@ private:
 	/// Вынимает данные из таблицы. Возвращает стадию, до которой запрос был обработан в Storage.
 	QueryProcessingStage::Enum executeFetchColumns(BlockInputStreams & streams);
 
+    /// Выполнить один запрос SELECT из цепочки UNION ALL.
 	BlockInputStreamPtr executeSingleQuery();
 
 	void executeWhere(				BlockInputStreams & streams, ExpressionActionsPtr expression);
@@ -115,7 +118,7 @@ private:
 	ExpressionAnalyzerPtr query_analyzer;
 	BlockInputStreams streams;
 	
-	/// true, если это голова цепочки запросов SELECT объединённых ключевыми словами UNION ALL.
+	/// Проверить, что запрос SELECT - первый элемент цепочки UNION ALL.
 	bool is_union_all_head;
 
 	/// Таблица, откуда читать данные, если не подзапрос.
