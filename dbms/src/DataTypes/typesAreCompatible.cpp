@@ -11,17 +11,17 @@
 namespace
 {
 
-#define REGISTER_COMPATIBLE_TYPES(T, U)     \
-	{ T.getName(), U.getName() },           \
-	{ U.getName(), T.getName() }            \
+#define REGISTER_COMPATIBLE_TYPES(T, U)	\
+	{ T.getName(), U.getName() },    	\
+	{ U.getName(), T.getName() }        \
 
 std::vector<std::pair<std::string, std::string> > init()
 {
-	std::vector<std::pair<std::string, std::string> > types_desc =
+	std::vector<std::pair<std::string, std::string> > types_compatibility_list =
 	{
-	    REGISTER_COMPATIBLE_TYPES(DB::DataTypeString(), DB::DataTypeFixedString(1)),
-	    
-	    REGISTER_COMPATIBLE_TYPES(DB::DataTypeFloat32(), DB::DataTypeFloat64()),
+		REGISTER_COMPATIBLE_TYPES(DB::DataTypeString(), DB::DataTypeFixedString(1)),
+
+		REGISTER_COMPATIBLE_TYPES(DB::DataTypeFloat32(), DB::DataTypeFloat64()),
 
 		REGISTER_COMPATIBLE_TYPES(DB::DataTypeInt8(), DB::DataTypeUInt8()),
 		REGISTER_COMPATIBLE_TYPES(DB::DataTypeInt8(), DB::DataTypeInt16()),
@@ -43,8 +43,10 @@ std::vector<std::pair<std::string, std::string> > init()
 
 		REGISTER_COMPATIBLE_TYPES(DB::DataTypeInt64(), DB::DataTypeUInt64())
 	};
-	std::sort(types_desc.begin(), types_desc.end());
-	return types_desc;
+
+	std::sort(types_compatibility_list.begin(), types_compatibility_list.end());
+
+	return types_compatibility_list;
 }
 
 }
@@ -54,12 +56,13 @@ namespace DB
 
 bool typesAreCompatible(const IDataType & lhs, const IDataType & rhs)
 {
-	static const auto types_desc = init();
+	static const auto types_compatibility_list = init();
 	
 	if (lhs.getName() == rhs.getName())
 		return true;
 
-	return std::binary_search(types_desc.begin(), types_desc.end(), std::make_pair(lhs.getName(), rhs.getName()));
+	return std::binary_search(types_compatibility_list.begin(), types_compatibility_list.end(), 
+							  std::make_pair(lhs.getName(), rhs.getName()));
 }
 
 }
