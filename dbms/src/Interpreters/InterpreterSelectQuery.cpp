@@ -547,7 +547,9 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 		if (storage && storage->isRemote())
 			storage->storeExternalTables(query_analyzer->getExternalTables());
 
-		streams = storage->read(required_columns, query_ptr, settings_for_storage, from_stage, settings.max_block_size, settings.max_threads);
+		streams = storage->read(required_columns, query_ptr,
+								context, settings_for_storage, from_stage,
+								settings.max_block_size, settings.max_threads);
 
 		for (auto & stream : streams)
 			stream->addTableLock(table_lock);
