@@ -5,48 +5,55 @@
 
 #include <string>
 #include <vector>
-#include <utility>
+#include <map>
 #include <algorithm>
 
 namespace
 {
 
-#define REGISTER_COMPATIBLE_TYPES(T, U)	\
-	{ T.getName(), U.getName() },    	\
-	{ U.getName(), T.getName() }        \
+typedef std::map<std::string, std::vector<std::string> > TypesCompatibilityList;
 
-std::vector<std::pair<std::string, std::string> > init()
+void addTypes(TypesCompatibilityList& tcl, const DB::IDataType & lhs, const DB::IDataType& rhs)
 {
-	std::vector<std::pair<std::string, std::string> > types_compatibility_list =
+	tcl[lhs.getName()].push_back(rhs.getName());
+	tcl[rhs.getName()].push_back(lhs.getName());
+}
+
+TypesCompatibilityList init()
+{
+	TypesCompatibilityList tcl;
+
+	addTypes(tcl, DB::DataTypeString(), DB::DataTypeFixedString(1));
+
+	addTypes(tcl, DB::DataTypeFloat32(), DB::DataTypeFloat64());
+
+	addTypes(tcl, DB::DataTypeInt8(), DB::DataTypeUInt8());
+	addTypes(tcl, DB::DataTypeInt8(), DB::DataTypeInt16());
+	addTypes(tcl, DB::DataTypeInt8(), DB::DataTypeUInt16());
+	addTypes(tcl, DB::DataTypeInt8(), DB::DataTypeInt32());
+	addTypes(tcl, DB::DataTypeInt8(), DB::DataTypeUInt32());
+	addTypes(tcl, DB::DataTypeInt8(), DB::DataTypeInt64());
+	addTypes(tcl, DB::DataTypeInt8(), DB::DataTypeUInt64());
+
+	addTypes(tcl, DB::DataTypeInt16(), DB::DataTypeUInt16()),
+	addTypes(tcl, DB::DataTypeInt16(), DB::DataTypeInt32()),
+	addTypes(tcl, DB::DataTypeInt16(), DB::DataTypeUInt32()),
+	addTypes(tcl, DB::DataTypeInt16(), DB::DataTypeInt64()),
+	addTypes(tcl, DB::DataTypeInt16(), DB::DataTypeUInt64()),
+
+	addTypes(tcl, DB::DataTypeInt32(), DB::DataTypeUInt32()),
+	addTypes(tcl, DB::DataTypeInt32(), DB::DataTypeInt64());
+	addTypes(tcl, DB::DataTypeInt32(), DB::DataTypeUInt64());
+
+	addTypes(tcl, DB::DataTypeInt64(), DB::DataTypeUInt64());
+
+	for (auto & it : tcl)
 	{
-		REGISTER_COMPATIBLE_TYPES(DB::DataTypeString(), DB::DataTypeFixedString(1)),
-
-		REGISTER_COMPATIBLE_TYPES(DB::DataTypeFloat32(), DB::DataTypeFloat64()),
-
-		REGISTER_COMPATIBLE_TYPES(DB::DataTypeInt8(), DB::DataTypeUInt8()),
-		REGISTER_COMPATIBLE_TYPES(DB::DataTypeInt8(), DB::DataTypeInt16()),
-		REGISTER_COMPATIBLE_TYPES(DB::DataTypeInt8(), DB::DataTypeUInt16()),
-		REGISTER_COMPATIBLE_TYPES(DB::DataTypeInt8(), DB::DataTypeInt32()),
-		REGISTER_COMPATIBLE_TYPES(DB::DataTypeInt8(), DB::DataTypeUInt32()),
-		REGISTER_COMPATIBLE_TYPES(DB::DataTypeInt8(), DB::DataTypeInt64()),
-		REGISTER_COMPATIBLE_TYPES(DB::DataTypeInt8(), DB::DataTypeUInt64()),
-
-		REGISTER_COMPATIBLE_TYPES(DB::DataTypeInt16(), DB::DataTypeUInt16()),
-		REGISTER_COMPATIBLE_TYPES(DB::DataTypeInt16(), DB::DataTypeInt32()),
-		REGISTER_COMPATIBLE_TYPES(DB::DataTypeInt16(), DB::DataTypeUInt32()),
-		REGISTER_COMPATIBLE_TYPES(DB::DataTypeInt16(), DB::DataTypeInt64()),
-		REGISTER_COMPATIBLE_TYPES(DB::DataTypeInt16(), DB::DataTypeUInt64()),
-
-		REGISTER_COMPATIBLE_TYPES(DB::DataTypeInt32(), DB::DataTypeUInt32()),
-		REGISTER_COMPATIBLE_TYPES(DB::DataTypeInt32(), DB::DataTypeInt64()),
-		REGISTER_COMPATIBLE_TYPES(DB::DataTypeInt32(), DB::DataTypeUInt64()),
-
-		REGISTER_COMPATIBLE_TYPES(DB::DataTypeInt64(), DB::DataTypeUInt64())
-	};
-
-	std::sort(types_compatibility_list.begin(), types_compatibility_list.end());
-
-	return types_compatibility_list;
+		auto & types_list = it.second;
+		std::sort(types_list.begin(), types_list.end());
+	}
+	
+	return tcl;
 }
 
 }
@@ -61,8 +68,12 @@ bool typesAreCompatible(const IDataType & lhs, const IDataType & rhs)
 	if (lhs.getName() == rhs.getName())
 		return true;
 
-	return std::binary_search(types_compatibility_list.begin(), types_compatibility_list.end(), 
-							  std::make_pair(lhs.getName(), rhs.getName()));
+	auto it = types_compatibility_list.find(lhs.getName());
+	if (it == types_compatibility_list.end())
+		return false;
+	
+	const auto & types_list = it->second;
+	return std::binary_search(types_list.begin(), types_list.end(), rhs.getName());
 }
 
 }
