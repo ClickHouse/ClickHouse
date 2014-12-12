@@ -89,12 +89,15 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input_, const NamesAndType
 	if (is_union_all_head && (!query.next_union_all.isNull()))
 	{
 		// Проверить, что результаты всех запросов SELECT cовместимые.
-		Block previous = getSampleBlock();
-		for (ASTPtr tree = query.next_union_all; !tree.isNull(); tree = (static_cast<ASTSelectQuery *>(&*tree))->next_union_all)
+        // NOTE Мы можем безопасно применить static_cast вместо typeid_cast, потому что знаем, что в цепочке UNION ALL
+        // имеются только деревья типа SELECT.
+        Block previous = getSampleBlock();
+		for (ASTPtr tree = query.next_union_all; !tree.isNull(); tree = (static_cast<ASTSelectQuery &>(*tree)).next_union_all)
 		{
 			Block current = InterpreterSelectQuery(tree, context, to_stage, subquery_depth, nullptr, false).getSampleBlock();
 			if (!blocksHaveCompatibleStructure(previous, current))
-				throw Exception("Incompatible results in the SELECT queries of the UNION ALL chain", ErrorCodes::UNION_ALL_INCOMPATIBLE_RESULTS);
+				throw Exception("Incompatible results in the SELECT queries of the UNION ALL chain", 
+                                ErrorCodes::UNION_ALL_INCOMPATIBLE_RESULTS);
 			previous = std::move(current);	
 		}		
 	}
@@ -212,7 +215,9 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 		BlockInputStreams streams;
 		streams.push_back(first_query_plan);
 		
-		for (ASTPtr tree = query.next_union_all; !tree.isNull(); tree = (static_cast<ASTSelectQuery *>(&*tree))->next_union_all)
+        // NOTE Мы можем безопасно применить static_cast вместо typeid_cast, потому что знаем, что в цепочке UNION ALL
+        // имеются только деревья типа SELECT.
+		for (ASTPtr tree = query.next_union_all; !tree.isNull(); tree = (static_cast<ASTSelectQuery &>(*tree)).next_union_all)
 		{
 			Context select_query_context = context;
 			InterpreterSelectQuery interpreter(tree, select_query_context, to_stage, subquery_depth, nullptr, false);
