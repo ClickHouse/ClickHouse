@@ -51,6 +51,7 @@ void ReplicatedMergeTreeCleanupThread::iterate()
 void ReplicatedMergeTreeCleanupThread::clearOldParts()
 {
 	auto table_lock = storage.lockStructure(false);
+	auto zookeeper = storage.getZooKeeper();
 
 	MergeTreeData::DataPartsVector parts = storage.data.grabOldParts();
 	size_t count = parts.size();
@@ -73,7 +74,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldParts()
 			ops.push_back(new zkutil::Op::Remove(storage.replica_path + "/parts/" + part->name + "/columns", -1));
 			ops.push_back(new zkutil::Op::Remove(storage.replica_path + "/parts/" + part->name + "/checksums", -1));
 			ops.push_back(new zkutil::Op::Remove(storage.replica_path + "/parts/" + part->name, -1));
-			auto code = storage.zookeeper->tryMulti(ops);
+			auto code = zookeeper->tryMulti(ops);
 			if (code != ZOK)
 				LOG_WARNING(log, "Couldn't remove " << part->name << " from ZooKeeper: " << zkutil::ZooKeeper::error2string(code));
 
@@ -94,8 +95,10 @@ void ReplicatedMergeTreeCleanupThread::clearOldParts()
 
 void ReplicatedMergeTreeCleanupThread::clearOldLogs()
 {
+	auto zookeeper = storage.getZooKeeper();
+
 	zkutil::Stat stat;
-	if (!storage.zookeeper->exists(storage.zookeeper_path + "/log", &stat))
+	if (!zookeeper->exists(storage.zookeeper_path + "/log", &stat))
 		throw Exception(storage.zookeeper_path + "/log doesn't exist", ErrorCodes::NOT_FOUND_NODE);
 
 	int children_count = stat.numChildren;
@@ -104,17 +107,17 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
 	if (static_cast<double>(children_count) < storage.data.settings.replicated_logs_to_keep * 1.1)
 		return;
 
-	Strings replicas = storage.zookeeper->getChildren(storage.zookeeper_path + "/replicas", &stat);
+	Strings replicas = zookeeper->getChildren(storage.zookeeper_path + "/replicas", &stat);
 	UInt64 min_pointer = std::numeric_limits<UInt64>::max();
 	for (const String & replica : replicas)
 	{
-		String pointer = storage.zookeeper->get(storage.zookeeper_path + "/replicas/" + replica + "/log_pointer");
+		String pointer = zookeeper->get(storage.zookeeper_path + "/replicas/" + replica + "/log_pointer");
 		if (pointer.empty())
 			return;
 		min_pointer = std::min(min_pointer, parse<UInt64>(pointer));
 	}
 
-	Strings entries = storage.zookeeper->getChildren(storage.zookeeper_path + "/log");
+	Strings entries = zookeeper->getChildren(storage.zookeeper_path + "/log");
 	std::sort(entries.begin(), entries.end());
 
 	/// Не будем трогать последние replicated_logs_to_keep записей.
@@ -134,7 +137,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
 		{
 			/// Одновременно с очисткой лога проверим, не добавилась ли реплика с тех пор, как мы получили список реплик.
 			ops.push_back(new zkutil::Op::Check(storage.zookeeper_path + "/replicas", stat.version));
-			storage.zookeeper->multi(ops);
+			zookeeper->multi(ops);
 			ops.clear();
 		}
 	}
@@ -145,8 +148,10 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
 
 void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
 {
+	auto zookeeper = storage.getZooKeeper();
+
 	zkutil::Stat stat;
-	if (!storage.zookeeper->exists(storage.zookeeper_path + "/blocks", &stat))
+	if (!zookeeper->exists(storage.zookeeper_path + "/blocks", &stat))
 		throw Exception(storage.zookeeper_path + "/blocks doesn't exist", ErrorCodes::NOT_FOUND_NODE);
 
 	int children_count = stat.numChildren;
@@ -158,14 +163,14 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
 	LOG_TRACE(log, "Clearing about " << static_cast<size_t>(children_count) - storage.data.settings.replicated_deduplication_window
 		<< " old blocks from ZooKeeper. This might take several minutes.");
 
-	Strings blocks = storage.zookeeper->getChildren(storage.zookeeper_path + "/blocks");
+	Strings blocks = zookeeper->getChildren(storage.zookeeper_path + "/blocks");
 
 	std::vector<std::pair<Int64, String> > timed_blocks;
 
 	for (const String & block : blocks)
 	{
 		zkutil::Stat stat;
-		storage.zookeeper->exists(storage.zookeeper_path + "/blocks/" + block, &stat);
+		zookeeper->exists(storage.zookeeper_path + "/blocks/" + block, &stat);
 		timed_blocks.push_back(std::make_pair(stat.czxid, block));
 	}
 
@@ -180,7 +185,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
 
 		if (ops.size() > 400 || i + 1 == timed_blocks.size())
 		{
-			storage.zookeeper->multi(ops);
+			zookeeper->multi(ops);
 			ops.clear();
 		}
 	}

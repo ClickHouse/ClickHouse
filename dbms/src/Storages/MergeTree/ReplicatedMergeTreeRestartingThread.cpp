@@ -38,7 +38,7 @@ void ReplicatedMergeTreeRestartingThread::run()
 		/// Запуск реплики при старте сервера/создании таблицы. Перезапуск реплики при истечении сессии с ZK.
 		while (!need_stop)
 		{
-			if (first_time || storage.zookeeper->expired())
+			if (first_time || storage.getZooKeeper()->expired())
 			{
 				if (first_time)
 				{
@@ -56,8 +56,7 @@ void ReplicatedMergeTreeRestartingThread::run()
 				{
 					try
 					{
-						/// TODO race condition при присваивании?
-						storage.zookeeper = storage.context.getZooKeeper();
+						storage.setZooKeeper(storage.context.getZooKeeper());
 					}
 					catch (const zkutil::KeeperException & e)
 					{
@@ -112,7 +111,8 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
 
 		storage.leader_election = new zkutil::LeaderElection(
 			storage.zookeeper_path + "/leader_election",
-			*storage.zookeeper,
+			*storage.current_zookeeper,		/// current_zookeeper живёт в течение времени жизни leader_election,
+											///  так как до изменения current_zookeeper, объект leader_election уничтожается в методе partialShutdown.
 			[this] { storage.becomeLeader(); },
 			storage.replica_name);
 
@@ -166,6 +166,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
 void ReplicatedMergeTreeRestartingThread::activateReplica()
 {
 	auto host_port = storage.context.getInterserverIOAddress();
+	auto zookeeper = storage.getZooKeeper();
 
 	std::string address;
 	{
@@ -181,18 +182,18 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
 	  *  но он крайне маловероятен при нормальном использовании.
 	  */
 	String data;
-	if (storage.zookeeper->tryGet(storage.replica_path + "/is_active", data) && data == active_node_identifier)
-		storage.zookeeper->tryRemove(storage.replica_path + "/is_active");
+	if (zookeeper->tryGet(storage.replica_path + "/is_active", data) && data == active_node_identifier)
+		zookeeper->tryRemove(storage.replica_path + "/is_active");
 
 	/// Одновременно объявим, что эта реплика активна, и обновим хост.
 	zkutil::Ops ops;
 	ops.push_back(new zkutil::Op::Create(storage.replica_path + "/is_active",
-		active_node_identifier, storage.zookeeper->getDefaultACL(), zkutil::CreateMode::Ephemeral));
+		active_node_identifier, zookeeper->getDefaultACL(), zkutil::CreateMode::Ephemeral));
 	ops.push_back(new zkutil::Op::SetData(storage.replica_path + "/host", address, -1));
 
 	try
 	{
-		storage.zookeeper->multi(ops);
+		zookeeper->multi(ops);
 	}
 	catch (const zkutil::KeeperException & e)
 	{
@@ -203,7 +204,9 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
 		throw;
 	}
 
-	storage.replica_is_active_node = zkutil::EphemeralNodeHolder::existing(storage.replica_path + "/is_active", *storage.zookeeper);
+	/// current_zookeeper живёт в течение времени жизни replica_is_active_node,
+	///  так как до изменения current_zookeeper, объект replica_is_active_node уничтожается в методе partialShutdown.
+	storage.replica_is_active_node = zkutil::EphemeralNodeHolder::existing(storage.replica_path + "/is_active", *storage.current_zookeeper);
 }
 
 
