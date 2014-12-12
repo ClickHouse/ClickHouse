@@ -238,6 +238,13 @@ void formatAST(const ASTSelectQuery 		& ast, std::ostream & s, size_t indent, bo
 		s << (hilite ? hilite_keyword : "") << nl_or_ws << indent_str << "FORMAT " << (hilite ? hilite_none : "");
 		formatAST(*ast.format, s, indent, hilite, one_line);
 	}
+	
+	if (!ast.next_union_all.isNull())
+	{
+		s << (hilite ? hilite_keyword : "") << nl_or_ws << indent_str << "UNION ALL " << (hilite ? hilite_none : "");
+		const ASTSelectQuery * next_ast = static_cast<const ASTSelectQuery *>(&*ast.next_union_all);
+		formatAST(*next_ast, s, false, hilite, one_line, need_parens);
+	}
 }
 
 void formatAST(const ASTSubquery 			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)

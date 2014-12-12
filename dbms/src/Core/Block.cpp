@@ -9,6 +9,7 @@
 
 #include <DB/Columns/ColumnArray.h>
 #include <DB/DataTypes/DataTypeNested.h>
+#include <DB/DataTypes/typesAreCompatible.h>
 
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
@@ -363,7 +364,7 @@ bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs)
 	{
 		const IDataType & lhs_type = *lhs.getByPosition(i).type;
 		const IDataType & rhs_type = *rhs.getByPosition(i).type;
-
+		
 		if (lhs_type.getName() != rhs_type.getName())
 			return false;
 	}
@@ -371,6 +372,23 @@ bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs)
 	return true;
 }
 
+bool blocksHaveCompatibleStructure(const Block & lhs, const Block & rhs)
+{
+	size_t columns = lhs.columns();
+	if (rhs.columns() != columns)
+		return false;
+
+	for (size_t i = 0; i < columns; ++i)
+	{
+		const auto & lhs_type = *lhs.getByPosition(i).type;
+		const auto & rhs_type = *rhs.getByPosition(i).type;
+		
+		if (!typesAreCompatible(lhs_type, rhs_type))
+			return false;
+	}
+
+	return true;
+}
 
 void Block::clear()
 {
