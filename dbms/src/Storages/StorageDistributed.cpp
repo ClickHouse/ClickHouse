@@ -21,9 +21,9 @@ namespace
 {
 	/// select query has database and table names as AST pointers
 	/// Создает копию запроса, меняет имена базы данных и таблицы.
-	inline ASTPtr rewriteSelectQuery(ASTPtr & query, const std::string & database, const std::string & table)
+	inline ASTPtr rewriteSelectQuery(const ASTPtr & query, const std::string & database, const std::string & table)
 	{
-		auto & modified_query_ast = query;
+		auto modified_query_ast = query->clone();
 
 		auto & actual_query = typeid_cast<ASTSelectQuery &>(*modified_query_ast);
 		actual_query.database = new ASTIdentifier{{}, database, ASTIdentifier::Database};
