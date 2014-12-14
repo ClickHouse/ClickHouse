@@ -9,7 +9,6 @@
 
 #include <DB/Columns/ColumnArray.h>
 #include <DB/DataTypes/DataTypeNested.h>
-#include <DB/DataTypes/typesAreCompatible.h>
 
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
@@ -17,6 +16,24 @@
 
 #include <DB/Parsers/formatAST.h>
 
+namespace
+{
+
+bool typesAreCompatible(const DB::IDataType & lhs, const DB::IDataType & rhs)
+{	
+	if (lhs.behavesAsNumber() && rhs.behavesAsNumber())
+		return true;
+	
+	if (lhs.behavesAsString() && rhs.behavesAsString())
+		return true;
+	
+	if (lhs.getName() == rhs.getName())
+		return true;
+
+	return false;
+}
+
+}
 
 namespace DB
 {
