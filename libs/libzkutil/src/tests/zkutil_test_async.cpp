@@ -6,11 +6,27 @@ try
 {
 	zkutil::ZooKeeper zookeeper{"localhost:2181"};
 
-	auto future = zookeeper.asyncGetChildren(argc <= 1 ? "/" : argv[1]);
-	auto res = future.get();
+	auto nodes = zookeeper.getChildren("/tmp");
 
-	for (const auto & child : res)
-		std::cerr << child << '\n';
+	std::vector<std::thread> threads;
+	for (size_t i = 0; i < 4; ++i)
+	{
+		threads.emplace_back([&]
+		{
+			while (true)
+			{
+				std::vector<zkutil::ZooKeeper::GetFuture> futures;
+				for (auto & node : nodes)
+					futures.push_back(zookeeper.asyncGet("/tmp/" + node));
+
+				for (auto & future : futures)
+					std::cerr << (future.get().value.empty() ? ',' : '.');
+			}
+		});
+	}
+
+	for (auto & thread : threads)
+		thread.join();
 
 	return 0;
 }
