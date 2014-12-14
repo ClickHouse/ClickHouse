@@ -33,6 +33,7 @@ struct ParallelInputsHandler
 	void onBlock(Block & block, size_t thread_num) {}
 
 	/// Блоки закончились. Из-за того, что все источники иссякли или из-за отмены работы.
+	/// Этот метод всегда вызывается ровно один раз, в конце работы, если метод onException не кидает исключение.
 	void onFinish() {}
 
 	/// Обработка исключения. Разумно вызывать в этом методе метод ParallelInputsProcessor::cancel, а также передавать эксепшен в основной поток.
@@ -145,6 +146,12 @@ private:
 		{
 			handler.onException(exception, thread_num);
 		}
+
+		/// Последний поток при выходе сообщает, что данных больше нет.
+		if (0 == --active_threads)
+		{
+			handler.onFinish();
+		}
 	}
 
 	void loop(size_t thread_num)
@@ -195,12 +202,6 @@ private:
 				if (block)
 					handler.onBlock(block, thread_num);
 			}
-		}
-
-		/// Если не было исключений, последний поток при выходе сообщает, что данных больше нет.
-		if (0 == --active_threads)
-		{
-			handler.onFinish();
 		}
 	}
 
