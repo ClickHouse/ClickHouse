@@ -25,8 +25,7 @@ public:
 		: aggregator(new Aggregator(keys_, aggregates_, overflow_row_, max_rows_to_group_by_, group_by_overflow_mode_)),
 		has_been_read(false), final(final_), max_threads(std::min(inputs.size(), max_threads_)),
 		keys_size(keys_.size()), aggregates_size(aggregates_.size()),
-		handler(*this), processor(inputs, max_threads, handler),
-		key(max_threads), key_columns(max_threads), aggregate_columns(max_threads), key_sizes(max_threads)
+		handler(*this), processor(inputs, max_threads, handler)
 	{
 		children.insert(children.end(), inputs.begin(), inputs.end());
 	}
@@ -38,8 +37,7 @@ public:
 		size_t max_rows_to_group_by_ = 0, OverflowMode group_by_overflow_mode_ = OverflowMode::THROW)
 		: has_been_read(false), final(final_), max_threads(std::min(inputs.size(), max_threads_)),
 		keys_size(key_names.size()), aggregates_size(aggregates.size()),
-		handler(*this), processor(inputs, max_threads, handler),
-		key(max_threads), key_columns(max_threads), aggregate_columns(max_threads), key_sizes(max_threads)
+		handler(*this), processor(inputs, max_threads, handler)
 	{
 		children.insert(children.end(), inputs.begin(), inputs.end());
 
@@ -85,8 +83,9 @@ protected:
 
 		many_data.resize(max_threads);
 		exceptions.resize(max_threads);
-		src_rows.resize(max_threads);
-		src_bytes.resize(max_threads);
+
+		for (size_t i = 0; i < max_threads; ++i)
+			threads_data.emplace_back(keys_size, aggregates_size);
 
 		LOG_TRACE(log, "Aggregating");
 
@@ -94,14 +93,6 @@ protected:
 
 		for (auto & elem : many_data)
 			elem = new AggregatedDataVariants;
-
-		for (size_t i = 0; i < max_threads; ++i)
-		{
-			key[i].resize(keys_size);
-			key_columns[i].resize(keys_size);
-			aggregate_columns[i].resize(aggregates_size);
-			key_sizes[i].resize(keys_size);
-		}
 
 		processor.process();
 		processor.wait();
@@ -119,12 +110,14 @@ protected:
 		{
 			size_t rows = many_data[i]->size();
 			LOG_TRACE(log, std::fixed << std::setprecision(3)
-				<< "Aggregated. " << src_rows[i] << " to " << rows << " rows (from " << src_bytes[i] / 1048576.0 << " MiB)"
+				<< "Aggregated. " << threads_data[i].src_rows << " to " << rows << " rows"
+					<< " (from " << threads_data[i].src_bytes / 1048576.0 << " MiB)"
 				<< " in " << elapsed_seconds << " sec."
-				<< " (" << src_rows[i] / elapsed_seconds << " rows/sec., " << src_bytes[i] / elapsed_seconds / 1048576.0 << " MiB/sec.)");
+				<< " (" << threads_data[i].src_rows / elapsed_seconds << " rows/sec., "
+					<< threads_data[i].src_bytes / elapsed_seconds / 1048576.0 << " MiB/sec.)");
 
-			total_src_rows += src_rows[i];
-			total_src_bytes += src_bytes[i];
+			total_src_rows += threads_data[i].src_rows;
+			total_src_bytes += threads_data[i].src_bytes;
 		}
 		LOG_TRACE(log, std::fixed << std::setprecision(3)
 			<< "Total aggregated. " << total_src_rows << " rows (from " << total_src_bytes / 1048576.0 << " MiB)"
@@ -166,11 +159,11 @@ private:
 		void onBlock(Block & block, size_t thread_num)
 		{
 			parent.aggregator->executeOnBlock(block, *parent.many_data[thread_num],
-				parent.key_columns[thread_num], parent.aggregate_columns[thread_num],
-				parent.key_sizes[thread_num], parent.key[thread_num], parent.no_more_keys);
+				parent.threads_data[thread_num].key_columns, parent.threads_data[thread_num].aggregate_columns,
+				parent.threads_data[thread_num].key_sizes, parent.threads_data[thread_num].key, parent.no_more_keys);
 
-			parent.src_rows[thread_num] += block.rowsInFirstColumn();
-			parent.src_bytes[thread_num] += block.bytes();
+			parent.threads_data[thread_num].src_rows += block.rowsInFirstColumn();
+			parent.threads_data[thread_num].src_bytes += block.bytes();
 		}
 
 		void onFinish()
@@ -192,13 +185,26 @@ private:
 	ManyAggregatedDataVariants many_data;
 	Exceptions exceptions;
 
-	std::vector<size_t> src_rows;
-	std::vector<size_t> src_bytes;
+	struct ThreadData
+	{
+		size_t src_rows = 0;
+		size_t src_bytes = 0;
 
-	std::vector<StringRefs> key;
-	std::vector<ConstColumnPlainPtrs> key_columns;
-	std::vector<Aggregator::AggregateColumns> aggregate_columns;
-	std::vector<Sizes> key_sizes;
+		StringRefs key;
+		ConstColumnPlainPtrs key_columns;
+		Aggregator::AggregateColumns aggregate_columns;
+		Sizes key_sizes;
+
+		ThreadData(size_t keys_size, size_t aggregates_size)
+		{
+			key.resize(keys_size);
+			key_columns.resize(keys_size);
+			aggregate_columns.resize(aggregates_size);
+			key_sizes.resize(keys_size);
+		}
+	};
+
+	std::vector<ThreadData> threads_data;
 };
 
 }
