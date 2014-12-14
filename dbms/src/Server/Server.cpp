@@ -4,6 +4,7 @@
 #include <Poco/Util/XMLConfiguration.h>
 
 #include <Yandex/ApplicationServerExt.h>
+#include <Yandex/ErrorHandlers.h>
 #include <statdaemons/ConfigProcessor.h>
 #include <statdaemons/ext/memory.hpp>
 
@@ -341,6 +342,9 @@ int Server::main(const std::vector<std::string> & args)
 			LOG_DEBUG(log, "Set rlimit on number of file descriptors to " << rlim.rlim_cur << " (was " << old << ")");
 		}
 	}
+
+	static ServerErrorHandler error_handler;
+	Poco::ErrorHandler::set(&error_handler);
 
 	/// Заранее инициализируем DateLUT, чтобы первая инициализация потом не влияла на измеряемую скорость выполнения.
 	LOG_DEBUG(log, "Initializing DateLUT.");
