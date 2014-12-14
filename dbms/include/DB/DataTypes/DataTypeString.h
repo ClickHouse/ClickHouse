@@ -23,6 +23,8 @@ public:
 		return "String";
 	}
 
+	bool behavesAsString() const { return true; }
+	
 	DataTypePtr clone() const
 	{
 		return new DataTypeString;
