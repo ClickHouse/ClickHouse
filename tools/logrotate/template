@@ -9,7 +9,7 @@
 	postrotate
 	PROGRAM=@DAEMON@
 	PIDDIR=/var/run/$PROGRAM
-	PIDFILE=$PIDDIR/$PROGRAM.pid
-	[ -f "$PIDFILE" ] && kill -s USR1 `cat $PIDFILE`
+	PIDFILE_RE="$PIDDIR/$PROGRAM[0-9]*.pid"
+	for PIDFILE in $(find $PIDDIR -regex "$PIDFILE_RE"); do kill -s USR1 `cat $PIDFILE`; done
 	endscript
 }

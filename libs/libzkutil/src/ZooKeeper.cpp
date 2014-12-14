@@ -623,8 +623,8 @@ ZooKeeper::GetFuture ZooKeeper::asyncGet(const std::string & path)
 		impl, path.c_str(), 0,
 		[] (int rc, const char * value, int value_len, const Stat * stat, const void * data)
 		{
-			auto & task = const_cast<GetFuture::Task &>(*static_cast<const GetFuture::Task *>(data));
-			task(rc, value, value_len, stat);
+			GetFuture::TaskPtr owned_task = std::move(const_cast<GetFuture::TaskPtr &>(*static_cast<const GetFuture::TaskPtr *>(data)));
+			(*owned_task)(rc, value, value_len, stat);
 		},
 		future.task.get());
 
@@ -652,8 +652,8 @@ ZooKeeper::TryGetFuture ZooKeeper::asyncTryGet(const std::string & path)
 		impl, path.c_str(), 0,
 		[] (int rc, const char * value, int value_len, const Stat * stat, const void * data)
 		{
-			auto & task = const_cast<TryGetFuture::Task &>(*static_cast<const TryGetFuture::Task *>(data));
-			task(rc, value, value_len, stat);
+			TryGetFuture::TaskPtr owned_task = std::move(const_cast<TryGetFuture::TaskPtr &>(*static_cast<const TryGetFuture::TaskPtr *>(data)));
+			(*owned_task)(rc, value, value_len, stat);
 		},
 		future.task.get());
 
@@ -681,8 +681,8 @@ ZooKeeper::ExistsFuture ZooKeeper::asyncExists(const std::string & path)
 		impl, path.c_str(), 0,
 		[] (int rc, const Stat * stat, const void * data)
 		{
-			auto & task = const_cast<ExistsFuture::Task &>(*static_cast<const ExistsFuture::Task *>(data));
-			task(rc, stat);
+			ExistsFuture::TaskPtr owned_task = std::move(const_cast<ExistsFuture::TaskPtr &>(*static_cast<const ExistsFuture::TaskPtr *>(data)));
+			(*owned_task)(rc, stat);
 		},
 		future.task.get());
 
@@ -715,8 +715,9 @@ ZooKeeper::GetChildrenFuture ZooKeeper::asyncGetChildren(const std::string & pat
 		impl, path.c_str(), 0,
 		[] (int rc, const String_vector * strings, const void * data)
 		{
-			auto & task = const_cast<GetChildrenFuture::Task &>(*static_cast<const GetChildrenFuture::Task *>(data));
-			task(rc, strings);
+			GetChildrenFuture::TaskPtr owned_task =
+				std::move(const_cast<GetChildrenFuture::TaskPtr &>(*static_cast<const GetChildrenFuture::TaskPtr *>(data)));
+			(*owned_task)(rc, strings);
 		},
 		future.task.get());
 

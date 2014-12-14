@@ -26,6 +26,7 @@ void registerFunctionsArray(FunctionFactory & factory)
 	factory.registerFunction<FunctionEmptyArrayDate>();
 	factory.registerFunction<FunctionEmptyArrayDateTime>();
 	factory.registerFunction<FunctionEmptyArrayString>();
+	factory.registerFunction<FunctionRange>();
 }
 
 }

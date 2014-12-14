@@ -101,7 +101,7 @@ struct FastHash64
 		uint64_t v;
 
 		while (pos != end) {
-			v  = *pos++;
+			v = *pos++;
 			h ^= mix(v);
 			h *= m;
 		}

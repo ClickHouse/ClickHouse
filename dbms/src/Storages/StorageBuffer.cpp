@@ -30,7 +30,7 @@ StorageBuffer::StorageBuffer(const std::string & name_, NamesAndTypesListPtr col
 	destination_database(destination_database_), destination_table(destination_table_),
 	no_destination(destination_database.empty() && destination_table.empty()),
 	log(&Logger::get("StorageBuffer (" + name + ")")),
-	flush_thread([this] { flushThread(); })
+	flush_thread(&StorageBuffer::flushThread, this)
 {
 }
 
@@ -258,8 +258,7 @@ void StorageBuffer::shutdown()
 
 bool StorageBuffer::optimize()
 {
-	for (auto & buf : buffers)
-		flushBuffer(buf, false);
+	flushAllBuffers(false);
 
 	return true;
 }
@@ -282,6 +281,13 @@ bool StorageBuffer::checkThresholds(Buffer & buffer, time_t current_time, size_t
 		LOG_TRACE(log, "Flushing buffer with " << rows << " rows, " << bytes << " bytes, age " << time_passed << " seconds.");
 
 	return res;
+}
+
+
+void StorageBuffer::flushAllBuffers(const bool check_thresholds)
+{
+	for (auto & buf : buffers)
+		flushBuffer(buf, check_thresholds);
 }
 
 
@@ -408,7 +414,7 @@ void StorageBuffer::flushThread()
 	{
 		try
 		{
-			optimize();
+			flushAllBuffers(true);
 		}
 		catch (...)
 		{

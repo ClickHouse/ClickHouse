@@ -19,7 +19,7 @@ static std::string formatReadable(double size, int precision, const char ** unit
 
 std::string formatReadableSizeWithBinarySuffix(double value, int precision)
 {
-	const char * units[]  = {" B", " KiB", " MiB", " GiB", " TiB", " PiB", " EiB", " ZiB", " YiB"};
+	const char * units[] = {" B", " KiB", " MiB", " GiB", " TiB", " PiB", " EiB", " ZiB", " YiB"};
 	return formatReadable(value, precision, units, sizeof(units) / sizeof(units[0]), 1024);
 }
 

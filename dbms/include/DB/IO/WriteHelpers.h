@@ -9,6 +9,7 @@
 #include <Yandex/DateLUT.h>
 
 #include <mysqlxx/Row.h>
+#include <mysqlxx/Null.h>
 
 #include <DB/Core/Types.h>
 #include <DB/Core/Exception.h>
@@ -18,9 +19,8 @@
 #include <DB/IO/WriteIntText.h>
 #include <DB/IO/VarInt.h>
 #include <DB/IO/WriteBufferFromString.h>
+#include <DB/IO/DoubleConverter.h>
 #include <city.h>
-
-#define WRITE_HELPERS_DEFAULT_FLOAT_PRECISION 6U
 
 
 namespace DB
@@ -86,15 +86,17 @@ inline void writeBoolText(bool x, WriteBuffer & buf)
 
 
 template <typename T>
-void writeFloatText(T x, WriteBuffer & buf, unsigned precision = WRITE_HELPERS_DEFAULT_FLOAT_PRECISION)
+void writeFloatText(T x, WriteBuffer & buf)
 {
-	char tmp[24];
-	int res = std::snprintf(tmp, 24, "%.*g", precision, x);
+	char tmp[25];
+	double_conversion::StringBuilder builder{tmp, sizeof(tmp)};
 
-	if (res >= 24 || res <= 0)
+	const auto result = getDoubleToStringConverter<false>().ToShortest(x, &builder);
+
+	if (!result)
 		throw Exception("Cannot print float or double number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
 
-	buf.write(tmp, res);
+	buf.write(tmp, builder.position());
 }
 
 
@@ -356,9 +358,9 @@ inline void writeDateText(mysqlxx::Date date, WriteBuffer & buf)
 
 
 /// в формате YYYY-MM-DD HH:MM:SS, согласно текущему часовому поясу
-inline void writeDateTimeText(time_t datetime, WriteBuffer & buf)
+inline void writeDateTimeText(time_t datetime, WriteBuffer & buf, char date_delimeter = '-', char time_delimeter = ':')
 {
-	char s[19] = {'0', '0', '0', '0', '-', '0', '0', '-', '0', '0', ' ', '0', '0', ':', '0', '0', ':', '0', '0'};
+	char s[19] = {'0', '0', '0', '0', date_delimeter, '0', '0', date_delimeter, '0', '0', ' ', '0', '0', time_delimeter, '0', '0', time_delimeter, '0', '0'};
 
 	if (unlikely(datetime > DATE_LUT_MAX || datetime == 0))
 	{
@@ -392,9 +394,9 @@ inline void writeDateTimeText(time_t datetime, WriteBuffer & buf)
 	buf.write(s, 19);
 }
 
-inline void writeDateTimeText(mysqlxx::DateTime datetime, WriteBuffer & buf)
+inline void writeDateTimeText(mysqlxx::DateTime datetime, WriteBuffer & buf, char date_delimeter = '-', char time_delimeter = ':')
 {
-	char s[19] = {'0', '0', '0', '0', '-', '0', '0', '-', '0', '0', ' ', '0', '0', ':', '0', '0', ':', '0', '0'};
+	char s[19] = {'0', '0', '0', '0', date_delimeter, '0', '0', date_delimeter, '0', '0', ' ', '0', '0', time_delimeter, '0', '0', time_delimeter, '0', '0'};
 
 	s[0] += datetime.year() / 1000;
 	s[1] += (datetime.year() / 100) % 10;
@@ -473,6 +475,15 @@ inline void writeText(const VisitID_t & x, 	WriteBuffer & buf) { writeIntText(st
 inline void writeText(const mysqlxx::Date & x,		WriteBuffer & buf) { writeDateText(x, buf); }
 inline void writeText(const mysqlxx::DateTime & x,	WriteBuffer & buf) { writeDateTimeText(x, buf); }
 
+template<typename T>
+inline void writeText(const mysqlxx::Null<T> & x,	WriteBuffer & buf)
+{
+	if (x.isNull())
+		writeCString("\\N", buf);
+	else
+		writeText(static_cast<const T &>(x), buf);
+}
+
 
 /// Методы для вывода в текстовом виде в кавычках
 inline void writeQuoted(const UInt8 & x, 	WriteBuffer & buf) { writeIntText(x, buf); }
@@ -505,6 +516,15 @@ inline void writeQuoted(const mysqlxx::DateTime & x,	WriteBuffer & buf)
 	writeChar('\'', buf);
 	writeDateTimeText(x, buf);
 	writeChar('\'', buf);
+}
+
+template <typename T>
+inline void writeQuoted(const mysqlxx::Null<T> & x,		WriteBuffer & buf)
+{
+	if (x.isNull())
+		writeCString("NULL", buf);
+	else
+		writeText(static_cast<const T &>(x), buf);
 }
 
 

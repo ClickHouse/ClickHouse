@@ -1,4 +1,5 @@
 #include <zkutil/ZooKeeper.h>
+#include <DB/IO/ReadHelpers.h>
 
 
 int main(int argc, char ** argv)
@@ -6,11 +7,28 @@ try
 {
 	zkutil::ZooKeeper zookeeper{"localhost:2181"};
 
-	auto future = zookeeper.asyncGetChildren(argc <= 1 ? "/" : argv[1]);
-	auto res = future.get();
+	auto nodes = zookeeper.getChildren("/tmp");
 
-	for (const auto & child : res)
-		std::cerr << child << '\n';
+	size_t num_threads = DB::parse<size_t>(argv[1]);
+	std::vector<std::thread> threads;
+	for (size_t i = 0; i < num_threads; ++i)
+	{
+		threads.emplace_back([&]
+		{
+			while (true)
+			{
+				std::vector<zkutil::ZooKeeper::TryGetFuture> futures;
+				for (auto & node : nodes)
+					futures.push_back(zookeeper.asyncTryGet("/tmp/" + node));
+
+				for (auto & future : futures)
+					std::cerr << (future.get().value.empty() ? ',' : '.');
+			}
+		});
+	}
+
+	for (auto & thread : threads)
+		thread.join();
 
 	return 0;
 }

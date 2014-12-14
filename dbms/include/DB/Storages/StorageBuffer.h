@@ -114,6 +114,7 @@ private:
 		size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
 		const String & destination_database_, const String & destination_table_);
 
+	void flushAllBuffers(bool check_thresholds = true);
 	/// Сбросить буфер. Если выставлено check_thresholds - сбрасывает только если превышены пороги.
 	void flushBuffer(Buffer & buffer, bool check_thresholds);
 	bool checkThresholds(Buffer & buffer, time_t current_time, size_t additional_rows = 0, size_t additional_bytes = 0);

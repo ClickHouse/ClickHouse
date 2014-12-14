@@ -38,10 +38,11 @@ class MergeTreeReader
 	typedef std::map<std::string, ColumnPtr> OffsetColumns;
 
 public:
-	MergeTreeReader(const String & path_, const MergeTreeData::DataPartPtr & data_part,	/// Путь к куску
-		const NamesAndTypesList & columns_, bool use_uncompressed_cache_, MergeTreeData & storage_, const MarkRanges & all_mark_ranges)
-	: path(path_), data_part(data_part), part_name(data_part->name), columns(columns_), use_uncompressed_cache(use_uncompressed_cache_), storage(storage_),
-	  all_mark_ranges(all_mark_ranges)
+	MergeTreeReader(const String & path_, /// Путь к куску
+		const MergeTreeData::DataPartPtr & data_part, const NamesAndTypesList & columns_,
+		bool use_uncompressed_cache_, MergeTreeData & storage_, const MarkRanges & all_mark_ranges)
+		: path(path_), data_part(data_part), part_name(data_part->name), columns(columns_),
+		use_uncompressed_cache(use_uncompressed_cache_), storage(storage_), all_mark_ranges(all_mark_ranges)
 	{
 		try
 		{
@@ -56,23 +57,6 @@ public:
 			storage.reportBrokenPart(part_name);
 			throw;
 		}
-	}
-
-	const NameAndTypePair * getAddedColumnPtr() const { return added_column; }
-	void removeAddedColumnPtr() { added_column = nullptr; }
-
-	void removeColumn(const String & column_name)
-	{
-		for (auto it = columns.begin(); it != columns.end(); ++it)
-		{
-			if (it->name == column_name)
-			{
-				columns.erase(it);
-				break;
-			}
-		}
-
-		streams.erase(column_name);
 	}
 
 	/** Если столбцов нет в блоке, добавляет их, если есть - добавляет прочитанные значения к ним в конец.
@@ -220,12 +204,20 @@ public:
 				}
 			}
 
-			size_t pos = 0;	/// Позиция, куда надо вставить недостающий столбец.
-			for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it, ++pos)
+			auto should_evaluate_defaults = false;
+			auto should_sort = false;
+			for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
 			{
 				/// insert default values only for columns without default expressions
-				if (!res.has(it->name) && storage.column_defaults.count(it->name) == 0)
+				if (!res.has(it->name))
 				{
+					should_sort = true;
+					if (storage.column_defaults.count(it->name) != 0)
+					{
+						should_evaluate_defaults = true;
+						continue;
+					}
+
 					ColumnWithNameAndType column;
 					column.name = it->name;
 					column.type = it->type;
@@ -252,12 +244,37 @@ public:
 							res.rows(), column.type->getDefault())).convertToFullColumn();
 					}
 
-					res.insert(pos, column);
+					res.insert(column);
 				}
 			}
 
-			/// evaluate defaulted columns
-			evaluateMissingDefaults(res, columns, storage.column_defaults, storage.context);
+			/// evaluate defaulted columns if necessary
+			if (should_evaluate_defaults)
+				evaluateMissingDefaults(res, columns, storage.column_defaults, storage.context);
+
+			/// remove added column to ensure same content among all blocks
+			if (added_column)
+			{
+				streams.erase(added_column->name);
+				columns.erase(std::begin(columns));
+			}
+
+			/// sort columns to ensure consistent order among all block
+			if (should_sort)
+			{
+				Block sorted_block;
+
+				for (const auto & name_and_type : columns)
+					sorted_block.insert(res.getByName(name_and_type.name));
+
+				std::swap(res, sorted_block);
+			}
+			else if (added_column)
+			{
+				res.erase(0);
+			}
+
+			added_column = nullptr;
 		}
 		catch (const Exception & e)
 		{

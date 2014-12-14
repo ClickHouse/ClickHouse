@@ -192,6 +192,8 @@ public:
 
 			/// Сериализует и десериализует в человекочитаемом виде.
 			bool readText(ReadBuffer & in); /// Возвращает false, если чексуммы в слишком старом формате.
+			bool readText_v2(ReadBuffer & in);
+			bool readText_v3(ReadBuffer & in);
 			void writeText(WriteBuffer & out) const;
 
 			bool empty() const

@@ -33,17 +33,18 @@ static void numWidthConstant(T a, UInt64 & c)
 		c = 2 + log10(-a);
 }
 
-inline UInt64 floatWidth(double x)
+inline UInt64 floatWidth(const double x)
 {
 	/// Не быстро.
-	unsigned size = WRITE_HELPERS_DEFAULT_FLOAT_PRECISION + 10;
-	char tmp[size];	/// знаки, +0.0e+123\0
-	int res = std::snprintf(tmp, size, "%.*g", WRITE_HELPERS_DEFAULT_FLOAT_PRECISION, x);
+	char tmp[25];
+	double_conversion::StringBuilder builder{tmp, sizeof(tmp)};
 
-	if (res >= static_cast<int>(size) || res <= 0)
+	const auto result = getDoubleToStringConverter<false>().ToShortest(x, &builder);
+
+	if (!result)
 		throw Exception("Cannot print float or double number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
 
-	return res;
+	return builder.position();
 }
 
 template <typename T>
