@@ -91,7 +91,9 @@ private:
 	QueryProcessingStage::Enum executeFetchColumns(BlockInputStreams & streams);
 
     /// Выполнить один запрос SELECT из цепочки UNION ALL.
-	BlockInputStreamPtr executeSingleQuery();
+	void executeSingleQuery(BlockInputStreams & query_streams, bool is_inside_union_all = false);
+	
+	void updateProfilingAndLimits(BlockInputStreams & query_streams);
 
 	void executeWhere(				BlockInputStreams & streams, ExpressionActionsPtr expression);
 	void executeAggregation(		BlockInputStreams & streams, ExpressionActionsPtr expression,
