@@ -107,6 +107,7 @@ private:
 
 	Logger * log;
 
+	Poco::Event shutdown_event;
 	/// Выполняет сброс данных по таймауту.
 	std::thread flush_thread;
 
@@ -122,7 +123,6 @@ private:
 	/// Аргумент table передаётся, так как иногда вычисляется заранее. Он должен соответствовать destination-у.
 	void writeBlockToDestination(const Block & block, StoragePtr table);
 
-	Poco::Event shutdown_event;
 	void flushThread();
 };
 
