@@ -70,7 +70,7 @@ public:
 		active_threads = max_threads;
 		threads.reserve(max_threads);
 		for (size_t i = 0; i < max_threads; ++i)
-			threads.emplace_back([=] { thread(current_memory_tracker, i); });
+			threads.emplace_back(std::bind(&ParallelInputsProcessor::thread, this, current_memory_tracker, i));
 	}
 
 	/// Попросить все источники остановиться раньше, чем они иссякнут.
