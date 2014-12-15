@@ -73,11 +73,19 @@ Block MergeSortingBlockInputStream::merge(Blocks & blocks)
 
 	watch.stop();
 
+	size_t rows_before_merge = 0;
+	size_t bytes_before_merge = 0;
+	for (const auto & block : blocks)
+	{
+		rows_before_merge += block.rowsInFirstColumn();
+		bytes_before_merge += block.bytes();
+	}
+
 	LOG_DEBUG(log, std::fixed << std::setprecision(2)
-		<< "Merge sorted " << blocks.size() << " blocks, " << merged.rows() << " rows"
+		<< "Merge sorted " << blocks.size() << " blocks, from " << rows_before_merge << " to " << merged.rows() << " rows"
 		<< " in " << watch.elapsedSeconds() << " sec., "
-		<< merged.rows() / watch.elapsedSeconds() << " rows/sec., "
-		<< merged.bytes() / 1000000.0 / watch.elapsedSeconds() << " MiB/sec.");
+		<< rows_before_merge / watch.elapsedSeconds() << " rows/sec., "
+		<< bytes_before_merge / 1048576.0 / watch.elapsedSeconds() << " MiB/sec.");
 
 	return merged;
 }
