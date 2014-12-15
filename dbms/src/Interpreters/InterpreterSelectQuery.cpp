@@ -213,12 +213,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 {	
 	if (is_union_all_head && !query.next_union_all.isNull())
 	{
-		{
-			BlockInputStreams query_streams;
-			executeSingleQuery(query_streams, true);
-			streams.reserve(streams.size() + query_streams.size());
-			std::copy(query_streams.begin(), query_streams.end(), std::back_inserter(streams));
-		}
+		executeSingleQuery(streams, true);
 		
         // NOTE Мы можем безопасно применить static_cast вместо typeid_cast, потому что знаем, что в цепочке UNION ALL
         // имеются только деревья типа SELECT.
@@ -226,27 +221,20 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 		{
 			Context select_query_context = context;
 			InterpreterSelectQuery interpreter(tree, select_query_context, to_stage, subquery_depth, nullptr, false);
-			BlockInputStreams query_streams;
-			interpreter.executeSingleQuery(query_streams, true);
-			streams.reserve(streams.size() + query_streams.size());
-			std::copy(query_streams.begin(), query_streams.end(), std::back_inserter(streams));
+			interpreter.executeSingleQuery(streams, true);
 		}
 
 		executeUnion(streams);
 		updateProfilingAndLimits(streams);
 	}
 	else
-	{
-		BlockInputStreams query_streams;
-		executeSingleQuery(query_streams, false);
-		streams.push_back(query_streams[0]);
-	}
+		executeSingleQuery(streams, false);
 	
 	return streams[0];
 }
 
 
-void InterpreterSelectQuery::executeSingleQuery(BlockInputStreams & query_streams, bool is_inside_union_all)
+void InterpreterSelectQuery::executeSingleQuery(BlockInputStreams & results, bool is_inside_union_all)
 {
 	/** Потоки данных. При параллельном выполнении запроса, имеем несколько потоков данных.
 	  * Если нет GROUP BY, то выполним все операции до ORDER BY и LIMIT параллельно, затем
@@ -258,6 +246,7 @@ void InterpreterSelectQuery::executeSingleQuery(BlockInputStreams & query_stream
 	  *  затем выполним остальные операции с одним получившимся потоком.
 	  */
 
+	BlockInputStreams query_streams;
 	bool do_execute_union = !is_inside_union_all;
 	
 	/** Вынем данные из Storage. from_stage - до какой стадии запрос был выполнен в Storage. */
@@ -351,7 +340,7 @@ void InterpreterSelectQuery::executeSingleQuery(BlockInputStreams & query_stream
 		  */
 		if (query_streams.empty())
 		{
-			query_streams.push_back(new NullBlockInputStream);
+			results.push_back(new NullBlockInputStream);
 			return;
 		}
 
@@ -462,7 +451,7 @@ void InterpreterSelectQuery::executeSingleQuery(BlockInputStreams & query_stream
 	/** Если данных нет. */
 	if (query_streams.empty())
 	{
-		query_streams.push_back(new NullBlockInputStream);
+		results.push_back(new NullBlockInputStream);
 		return;
 	}
 
@@ -475,6 +464,9 @@ void InterpreterSelectQuery::executeSingleQuery(BlockInputStreams & query_stream
 	
 	if (do_execute_union)
 		updateProfilingAndLimits(query_streams);
+	
+	results.reserve(results.size() + query_streams.size());
+	std::copy(query_streams.begin(), query_streams.end(), std::back_inserter(results));
 }
 
 
