@@ -278,7 +278,16 @@ public:
 		Chars_t & res_chars = res_->chars;
 		Offsets_t & res_offsets = res_->offsets;
 
-		res_chars.resize(chars.size());
+		if (limit == size)
+			res_chars.resize(chars.size());
+		else
+		{
+			size_t new_chars_size = 0;
+			for (size_t i = 0; i < limit; ++i)
+				new_chars_size += sizeAt(perm[i]);
+			res_chars.resize(new_chars_size);
+		}
+
 		res_offsets.resize(limit);
 
 		Offset_t current_new_offset = 0;
@@ -294,8 +303,6 @@ public:
 			current_new_offset += string_size;
 			res_offsets[i] = current_new_offset;
 		}
-
-		res_chars.resize(res_offsets[limit - 1]);
 
 		return res;
 	}

@@ -142,7 +142,7 @@ private:
 			if (nullptr == c_start)
 				throwFromErrno("PODArray: cannot realloc", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
-			memcpy(c_start, old_c_start, old_c_end_of_storage - old_c_start);
+			memcpy(c_start, old_c_start, std::min(bytes_to_alloc, static_cast<size_t>(end_diff)));
 			Allocator::deallocate(old_c_start, old_c_end_of_storage - old_c_start);
 		}
 
