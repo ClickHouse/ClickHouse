@@ -224,6 +224,10 @@ private:
 	std::unique_ptr<MergeTreeDataMerger> unreplicated_merger;
 	std::mutex unreplicated_mutex; /// Для мерджей и удаления нереплицируемых кусков.
 
+	/// Нужно ли завершить фоновые потоки (кроме restarting_thread).
+	volatile bool shutdown_called = false;
+	Poco::Event shutdown_event;
+
 	/// Потоки:
 
 	/// Поток, следящий за обновлениями в логах всех реплик и загружающий их в очередь.
@@ -255,10 +259,6 @@ private:
 	zkutil::EventPtr alter_query_event = zkutil::EventPtr(new Poco::Event);
 
 	Logger * log;
-
-	/// Нужно ли завершить фоновые потоки (кроме restarting_thread).
-	volatile bool shutdown_called = false;
-	Poco::Event shutdown_event;
 
 	StorageReplicatedMergeTree(
 		const String & zookeeper_path_,

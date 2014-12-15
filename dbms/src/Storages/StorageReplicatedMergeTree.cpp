@@ -49,9 +49,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 		 sampling_expression_, index_granularity_, mode_, sign_column_, columns_to_sum_,
 		 settings_, database_name_ + "." + table_name, true,
 		 std::bind(&StorageReplicatedMergeTree::enqueuePartForCheck, this, std::placeholders::_1)),
-	reader(data), writer(data), merger(data), fetcher(data),
-	log(&Logger::get(database_name + "." + table_name + " (StorageReplicatedMergeTree)")),
-	shutdown_event(false)
+	reader(data), writer(data), merger(data), fetcher(data), shutdown_event(false),
+	log(&Logger::get(database_name + "." + table_name + " (StorageReplicatedMergeTree)"))
 {
 	if (!zookeeper_path.empty() && zookeeper_path.back() == '/')
 		zookeeper_path.resize(zookeeper_path.size() - 1);
