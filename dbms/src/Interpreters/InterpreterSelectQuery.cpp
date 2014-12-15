@@ -264,7 +264,7 @@ void InterpreterSelectQuery::executeSingleQuery(BlockInputStreams & results, boo
 	  *  параллельный GROUP BY склеит потоки в один,
 	  *  затем выполним остальные операции с одним получившимся потоком.
 	  * Если запрос является членом цепочки UNION ALL и не содержит GROUP BY, ORDER BY, DISTINCT, или LIMIT, 
-	  * то объединение источников данных выполняется не на этом уровне, а не верхнем уровне.
+	  * то объединение источников данных выполняется не на этом уровне, а на верхнем уровне.
 	  */
 
 	BlockInputStreams query_streams;
