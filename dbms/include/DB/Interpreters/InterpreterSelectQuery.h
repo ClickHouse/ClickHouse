@@ -93,8 +93,6 @@ private:
     /// Выполнить один запрос SELECT из цепочки UNION ALL.
 	void executeSingleQuery(BlockInputStreams & results, bool is_inside_union_all = false);
 	
-	void updateProfilingAndLimits(BlockInputStreams & query_streams);
-
 	void executeWhere(				BlockInputStreams & streams, ExpressionActionsPtr expression);
 	void executeAggregation(		BlockInputStreams & streams, ExpressionActionsPtr expression,
 									bool overflow_row, bool final);
