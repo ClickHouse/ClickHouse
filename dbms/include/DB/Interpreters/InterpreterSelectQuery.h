@@ -10,6 +10,7 @@
 namespace DB
 {
 
+struct InterpreterSelectQueryWithContext;
 
 /** Интерпретирует запрос SELECT. Возвращает поток блоков с результатами выполнения запроса до стадии to_stage.
   */
@@ -91,7 +92,7 @@ private:
 	QueryProcessingStage::Enum executeFetchColumns(BlockInputStreams & streams);
 
     /// Выполнить один запрос SELECT из цепочки UNION ALL.
-	void executeSingleQuery(BlockInputStreams & results, bool is_inside_union_all = false);
+	void executeSingleQuery(bool is_inside_union_all = false);
 	
 	void executeWhere(				BlockInputStreams & streams, ExpressionActionsPtr expression);
 	void executeAggregation(		BlockInputStreams & streams, ExpressionActionsPtr expression,
@@ -118,9 +119,14 @@ private:
 	ExpressionAnalyzerPtr query_analyzer;
 	BlockInputStreams streams;
 	
-	/// Проверить, что запрос SELECT - первый элемент цепочки UNION ALL.
+	/** Цепочка UNION ALL может иметь длину 1 (в таком случае имеется просто один запрос SELECT) 
+	 * или больше. Этот флаг установлен, если это первый запрос, возможно единственный, этой цепочки.
+	 */
 	bool is_union_all_head;
 
+	/// Следующий запрос SELECT в цепочке UNION ALL.
+	std::unique_ptr<InterpreterSelectQueryWithContext> next_select_in_union_all;
+	
 	/// Таблица, откуда читать данные, если не подзапрос.
 	StoragePtr storage;
 	IStorage::TableStructureReadLockPtr table_lock;
@@ -128,5 +134,20 @@ private:
 	Logger * log;
 };
 
+struct InterpreterSelectQueryWithContext
+{
+	InterpreterSelectQueryWithContext(
+		ASTPtr query_ptr_,
+		Context & context_,
+		QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
+		size_t subquery_depth_ = 0,
+		BlockInputStreamPtr input = nullptr,
+		bool is_union_all_head_ = true) : context(context_), query(query_ptr_, context, to_stage_, subquery_depth_, input, is_union_all_head_)
+	{
+	}
+	
+	Context context;
+	InterpreterSelectQuery query;
+};
 
 }
