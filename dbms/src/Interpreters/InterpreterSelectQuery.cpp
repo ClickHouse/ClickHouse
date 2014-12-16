@@ -90,11 +90,10 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input_, const NamesAndType
 	
 	if (is_union_all_head && (!query.next_union_all.isNull()))
 	{
-		InterpreterSelectQuery * interpreter = this;
-		
 		// Проверить, что результаты всех запросов SELECT cовместимые.
         // NOTE Мы можем безопасно применить static_cast вместо typeid_cast, потому что знаем, что в цепочке UNION ALL
         // имеются только деревья типа SELECT.
+		InterpreterSelectQuery * interpreter = this;
 		Block first = interpreter->getSampleBlock();
 		for (ASTPtr tree = query.next_union_all; !tree.isNull(); tree = (static_cast<ASTSelectQuery &>(*tree)).next_union_all)
 		{
