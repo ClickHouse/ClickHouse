@@ -1,0 +1,2 @@
+SELECT 1 UNION /*comment*/ ALL SELECT 2;
+
