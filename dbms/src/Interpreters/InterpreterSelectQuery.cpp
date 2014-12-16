@@ -15,6 +15,7 @@
 #include <DB/DataStreams/narrowBlockInputStreams.h>
 #include <DB/DataStreams/copyData.h>
 #include <DB/DataStreams/CreatingSetsBlockInputStream.h>
+#include <DB/DataStreams/MaterializingBlockInputStream.h>
 
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ASTIdentifier.h>
@@ -225,6 +226,9 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 		
 		if (streams.empty())
 			return new NullBlockInputStream;
+		
+		for (auto & stream : streams)
+			stream = new MaterializingBlockInputStream(stream);
 		
 		executeUnion(streams);
 	}
