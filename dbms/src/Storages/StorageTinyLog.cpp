@@ -406,11 +406,10 @@ void StorageTinyLog::rename(const String & new_path_to_db, const String & new_da
 BlockInputStreams StorageTinyLog::read(
 	const Names & column_names,
 	ASTPtr query,
-	const Context & context,
 	const Settings & settings,
 	QueryProcessingStage::Enum & processed_stage,
-	const size_t max_block_size,
-	const unsigned threads)
+	size_t max_block_size,
+	unsigned threads)
 {
 	check(column_names);
 	processed_stage = QueryProcessingStage::FetchColumns;

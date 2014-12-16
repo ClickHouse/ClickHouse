@@ -62,11 +62,10 @@ bool StorageChunkMerger::hasColumn(const String & column_name) const
 BlockInputStreams StorageChunkMerger::read(
 	const Names & column_names,
 	ASTPtr query,
-	const Context & context,
 	const Settings & settings,
 	QueryProcessingStage::Enum & processed_stage,
-	const size_t max_block_size,
-	const unsigned threads)
+	size_t max_block_size,
+	unsigned threads)
 {
 	/// Будем читать из таблиц Chunks, на которые есть хоть одна ChunkRef, подходящая под регэксп, и из прочих таблиц, подходящих под регэксп.
 	Storages selected_tables;
@@ -77,17 +76,16 @@ BlockInputStreams StorageChunkMerger::read(
 		typedef std::set<std::string> StringSet;
 		StringSet chunks_table_names;
 
-		const Databases & databases = context.getDatabases();
+		Databases & databases = context.getDatabases();
 
-		const auto database_it = databases.find(source_database);
-		if (database_it == std::end(databases))
+		if (!databases.count(source_database))
 			throw Exception("No database " + source_database, ErrorCodes::UNKNOWN_DATABASE);
 
-		const Tables & tables = database_it->second;
-		for (const auto & it : tables)
+		Tables & tables = databases[source_database];
+		for (Tables::iterator it = tables.begin(); it != tables.end(); ++it)
 		{
-			const StoragePtr & table = it.second;
-			if (table_name_regexp.match(it.first) &&
+			StoragePtr table = it->second;
+			if (table_name_regexp.match(it->first) &&
 				!typeid_cast<StorageChunks *>(&*table) &&
 				!typeid_cast<StorageChunkMerger *>(&*table))
 			{
@@ -95,20 +93,19 @@ BlockInputStreams StorageChunkMerger::read(
 				{
 					if (chunk_ref->source_database_name != source_database)
 					{
-						LOG_WARNING(log, "ChunkRef " + it.first + " points to another database, ignoring");
+						LOG_WARNING(log, "ChunkRef " + it->first + " points to another database, ignoring");
 						continue;
 					}
 					if (!chunks_table_names.count(chunk_ref->source_table_name))
 					{
-						const auto table_it = tables.find(chunk_ref->source_table_name);
-						if (table_it != std::end(tables))
+						if (tables.count(chunk_ref->source_table_name))
 						{
 							chunks_table_names.insert(chunk_ref->source_table_name);
-							selected_tables.push_back(table_it->second);
+							selected_tables.push_back(tables[chunk_ref->source_table_name]);
 						}
 						else
 						{
-							LOG_WARNING(log, "ChunkRef " + it.first + " points to non-existing Chunks table, ignoring");
+							LOG_WARNING(log, "ChunkRef " + it->first + " points to non-existing Chunks table, ignoring");
 						}
 					}
 				}
@@ -177,7 +174,6 @@ BlockInputStreams StorageChunkMerger::read(
 		BlockInputStreams source_streams = table->read(
 			real_column_names,
 			modified_query_ast,
-			context,
 			settings,
 			tmp_processed_stage,
 			max_block_size,
@@ -469,7 +465,6 @@ bool StorageChunkMerger::mergeChunks(const Storages & chunks)
 			BlockInputStreams input_streams = src_storage->read(
 				src_column_names,
 				select_query_ptr,
-				context,
 				settings,
 				processed_stage,
 				DEFAULT_MERGE_BLOCK_SIZE);

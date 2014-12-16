@@ -74,11 +74,10 @@ StorageView::StorageView(
 BlockInputStreams StorageView::read(
 	const Names & column_names,
 	ASTPtr query,
-	const Context & context,
 	const Settings & settings,
 	QueryProcessingStage::Enum & processed_stage,
-	const size_t max_block_size,
-	const unsigned threads)
+	size_t max_block_size,
+	unsigned threads)
 {
 	ASTPtr inner_query_clone = getInnerQuery();
 	ASTSelectQuery & inner_select = static_cast<ASTSelectQuery &>(*inner_query_clone);

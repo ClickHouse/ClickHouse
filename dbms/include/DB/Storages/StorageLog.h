@@ -162,7 +162,6 @@ public:
 	virtual BlockInputStreams read(
 		const Names & column_names,
 		ASTPtr query,
-		const Context & context,
 		const Settings & settings,
 		QueryProcessingStage::Enum & processed_stage,
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
@@ -228,7 +227,6 @@ protected:
 		size_t to_mark,
 		const Names & column_names,
 		ASTPtr query,
-		const Context & context,
 		const Settings & settings,
 		QueryProcessingStage::Enum & processed_stage,
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,

@@ -12,17 +12,14 @@ StoragePtr StorageChunkRef::create(const std::string & name_, const Context & co
 }
 
 BlockInputStreams StorageChunkRef::read(
-	const Names & column_names,
-	ASTPtr query,
-	const Context & context,
-	const Settings & settings,
-	QueryProcessingStage::Enum & processed_stage,
-	const size_t max_block_size,
-	const unsigned threads)
+		const Names & column_names,
+		ASTPtr query,
+		const Settings & settings,
+		QueryProcessingStage::Enum & processed_stage,
+		size_t max_block_size,
+		unsigned threads)
 {
-	return getSource().readFromChunk(name, column_names, query,
-									 context, settings, processed_stage,
-									 max_block_size, threads);
+	return getSource().readFromChunk(name, column_names, query, settings, processed_stage, max_block_size, threads);
 }
 
 ASTPtr StorageChunkRef::getCustomCreateQuery(const Context & context) const

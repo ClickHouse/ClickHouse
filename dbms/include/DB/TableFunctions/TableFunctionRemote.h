@@ -90,12 +90,7 @@ private:
 		NamesAndTypesList res;
 
 		/// Отправляем на первый попавшийся шард
-		BlockInputStreamPtr input{
-			new RemoteBlockInputStream{
-				cluster.pools.front().get(), query, &settings,
-				Tables(), QueryProcessingStage::Complete, context
-			}
-		};
+		BlockInputStreamPtr input = new RemoteBlockInputStream(&*cluster.pools.front(), query, &settings, Tables(), QueryProcessingStage::Complete);
 		input->readPrefix();
 
 		while (true)
