@@ -89,9 +89,6 @@ private:
 
 	/// Вынимает данные из таблицы. Возвращает стадию, до которой запрос был обработан в Storage.
 	QueryProcessingStage::Enum executeFetchColumns(BlockInputStreams & streams);
-
-    /// Выполнить один запрос SELECT из цепочки UNION ALL.
-	void executeSingleQuery(BlockInputStreams & results, bool is_inside_union_all = false);
 	
 	void executeWhere(				BlockInputStreams & streams, ExpressionActionsPtr expression);
 	void executeAggregation(		BlockInputStreams & streams, ExpressionActionsPtr expression,
