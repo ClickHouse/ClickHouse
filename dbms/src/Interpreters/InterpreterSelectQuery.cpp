@@ -93,14 +93,14 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input_, const NamesAndType
 		// Проверить, что результаты всех запросов SELECT cовместимые.
         // NOTE Мы можем безопасно применить static_cast вместо typeid_cast, потому что знаем, что в цепочке UNION ALL
         // имеются только деревья типа SELECT.
-        Block previous = getSampleBlock();
+        Block first = getSampleBlock();
+				
 		for (ASTPtr tree = query.next_union_all; !tree.isNull(); tree = (static_cast<ASTSelectQuery &>(*tree)).next_union_all)
 		{
 			Block current = InterpreterSelectQuery(tree, context, to_stage, subquery_depth, nullptr, false).getSampleBlock();
-			if (!blocksHaveCompatibleStructure(previous, current))
+			if (!blocksHaveEqualStructure(first, current))
 				throw Exception("Result structures mismatch in the SELECT queries of the UNION ALL chain", 
                                 ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH);
-			previous = std::move(current);	
 		}		
 	}
 }
@@ -484,8 +484,7 @@ void InterpreterSelectQuery::executeSingleQuery(BlockInputStreams & results, boo
 	
 	if (query_streams.size() > 1)
 	{
-		results.reserve(results.size() + query_streams.size());
-		std::copy(query_streams.begin(), query_streams.end(), std::back_inserter(results));
+		results.insert(results.end(), query_streams.begin(), query_streams.end());
 	}
 	else
 		results.push_back(query_streams[0]);

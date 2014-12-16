@@ -16,24 +16,6 @@
 
 #include <DB/Parsers/formatAST.h>
 
-namespace
-{
-
-bool typesAreCompatible(const DB::IDataType & lhs, const DB::IDataType & rhs)
-{	
-	if (lhs.behavesAsNumber() && rhs.behavesAsNumber())
-		return true;
-	
-	if (lhs.behavesAsString() && rhs.behavesAsString())
-		return true;
-	
-	if (lhs.getName() == rhs.getName())
-		return true;
-
-	return false;
-}
-
-}
 
 namespace DB
 {
@@ -389,23 +371,6 @@ bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs)
 	return true;
 }
 
-bool blocksHaveCompatibleStructure(const Block & lhs, const Block & rhs)
-{
-	size_t columns = lhs.columns();
-	if (rhs.columns() != columns)
-		return false;
-
-	for (size_t i = 0; i < columns; ++i)
-	{
-		const IDataType & lhs_type = *lhs.getByPosition(i).type;
-		const IDataType & rhs_type = *rhs.getByPosition(i).type;
-		
-		if (!typesAreCompatible(lhs_type, rhs_type))
-			return false;
-	}
-
-	return true;
-}
 
 void Block::clear()
 {
