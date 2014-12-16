@@ -1,1 +1,7 @@
-SELECT 1,2 UNION ALL SELECT 3,4 UNION ALL SELECT 5,6;
+SELECT val FROM
+(SELECT value AS val FROM data2013 WHERE name = 'Alice'
+UNION ALL
+SELECT value AS val FROM data2014 WHERE name = 'Alice'
+UNION ALL
+SELECT value AS val FROM data2014 WHERE name = 'Dennis')
+ORDER BY val ASC;

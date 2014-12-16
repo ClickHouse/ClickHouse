@@ -215,6 +215,7 @@ static inline BlockInputStreamPtr maybeAsynchronous(BlockInputStreamPtr in, bool
 
 
 BlockInputStreamPtr InterpreterSelectQuery::execute()
+<<<<<<< HEAD
 {       
         if (isFirstSelectInsideUnionAll())
         {
@@ -262,6 +263,55 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
         }
         
         return streams[0];
+=======
+{	
+	if (is_union_all_head && !query.next_union_all.isNull())
+	{
+		executeSingleQuery(true);	
+		for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->query.next_select_in_union_all.get())
+		{
+			p->query.executeSingleQuery(true);
+			const auto & others = p->query.streams;
+			streams.insert(streams.end(), others.begin(), others.end());
+		}
+		
+		if (streams.empty())
+			return new NullBlockInputStream;
+		
+		for (auto & stream : streams)
+			stream = new MaterializingBlockInputStream(stream);
+		
+		executeUnion(streams);
+	}
+	else
+	{
+		executeSingleQuery();
+		if (streams.empty())
+			return new NullBlockInputStream;
+	}
+	
+	/// Ограничения на результат, квота на результат, а также колбек для прогресса.
+	if (IProfilingBlockInputStream * stream = dynamic_cast<IProfilingBlockInputStream *>(&*streams[0]))
+	{
+		stream->setProgressCallback(context.getProgressCallback());
+		stream->setProcessListElement(context.getProcessListElement());
+
+		/// Ограничения действуют только на конечный результат.
+		if (to_stage == QueryProcessingStage::Complete)
+		{
+			IProfilingBlockInputStream::LocalLimits limits;
+			limits.mode = IProfilingBlockInputStream::LIMITS_CURRENT;
+			limits.max_rows_to_read = settings.limits.max_result_rows;
+			limits.max_bytes_to_read = settings.limits.max_result_bytes;
+			limits.read_overflow_mode = settings.limits.result_overflow_mode;
+
+			stream->setLimits(limits);
+			stream->setQuota(context.getQuota());
+		}
+	}
+	
+	return streams[0];
+>>>>>>> Update functional tests. Add materialization in UNION ALL queries. [#METR-14099]
 }
 
 
