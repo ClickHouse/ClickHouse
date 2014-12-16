@@ -239,7 +239,7 @@ void formatAST(const ASTSelectQuery 		& ast, std::ostream & s, size_t indent, bo
 		formatAST(*ast.format, s, indent, hilite, one_line);
 	}
 	
-	if (!ast.next_union_all.isNull())
+	if (ast.next_union_all)
 	{
 		s << (hilite ? hilite_keyword : "") << nl_or_ws << indent_str << "UNION ALL " << nl_or_ws << (hilite ? hilite_none : "");
 
