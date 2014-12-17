@@ -44,7 +44,7 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input_, const NamesAndType
         if (query.table && typeid_cast<ASTSelectQuery *>(&*query.table))
         {
                 if (table_column_names.empty())
-                        context.setColumns(InterpreterSelectQuery(query.table, context).getSampleBlock().getColumnsList());
+                        context.setColumns(InterpreterSelectQuery(query.table, context, to_stage, subquery_depth, nullptr, false).getSampleBlock().getColumnsList());
         }
         else
         {
