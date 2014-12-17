@@ -10,8 +10,6 @@
 namespace DB
 {
 
-struct InterpreterSelectQueryWithContext;
-
 /** Интерпретирует запрос SELECT. Возвращает поток блоков с результатами выполнения запроса до стадии to_stage.
   */
 class InterpreterSelectQuery
@@ -128,31 +126,13 @@ private:
         bool is_union_all_head;
 
         /// Следующий запрос SELECT в цепочке UNION ALL.
-        std::unique_ptr<InterpreterSelectQueryWithContext> next_select_in_union_all;
+        std::unique_ptr<InterpreterSelectQuery> next_select_in_union_all;
         
         /// Таблица, откуда читать данные, если не подзапрос.
         StoragePtr storage;
         IStorage::TableStructureReadLockPtr table_lock;
 
         Logger * log;
-};
-
-/** Интерпретатор SELECT вместе с контекстом.
- */
-struct InterpreterSelectQueryWithContext
-{
-        InterpreterSelectQueryWithContext(
-                ASTPtr query_ptr_,
-                Context & context_,
-                QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
-                size_t subquery_depth_ = 0,
-                BlockInputStreamPtr input = nullptr,
-                bool is_union_all_head_ = true) : context(context_), query(query_ptr_, context, to_stage_, subquery_depth_, input, is_union_all_head_)
-        {
-        }
-        
-        Context context;
-        InterpreterSelectQuery query;
 };
 
 }

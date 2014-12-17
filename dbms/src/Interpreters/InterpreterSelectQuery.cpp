@@ -95,8 +95,8 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input_, const NamesAndType
                 Block first = interpreter->getSampleBlock();
                 for (ASTPtr tree = query.next_union_all; !tree.isNull(); tree = (static_cast<ASTSelectQuery &>(*tree)).next_union_all)
                 {
-                        interpreter->next_select_in_union_all.reset(new InterpreterSelectQueryWithContext(tree, context, to_stage, subquery_depth, nullptr, false));
-                        interpreter = &(interpreter->next_select_in_union_all->query);
+                        interpreter->next_select_in_union_all.reset(new InterpreterSelectQuery(tree, context, to_stage, subquery_depth, nullptr, false));
+                        interpreter = interpreter->next_select_in_union_all.get();
                         Block current = interpreter->getSampleBlock();
                         if (!blocksHaveEqualStructure(first, current))
                                 throw Exception("Result structures mismatch in the SELECT queries of the UNION ALL chain", 
@@ -219,10 +219,10 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
         if (isFirstSelectInsideUnionAll())
         {
                 executeSingleQuery(false);       
-                for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->query.next_select_in_union_all.get())
+                for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->next_select_in_union_all.get())
                 {
-                        p->query.executeSingleQuery(false);
-                        const auto & others = p->query.streams;
+                        p->executeSingleQuery(false);
+                        const auto & others = p->streams;
                         streams.insert(streams.end(), others.begin(), others.end());
                 }
                 
