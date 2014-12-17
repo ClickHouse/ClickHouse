@@ -620,6 +620,7 @@ BlockInputStreams StorageLog::read(
 	size_t to_mark,
 	const Names & column_names,
 	ASTPtr query,
+	const Context & context,
 	const Settings & settings,
 	QueryProcessingStage::Enum & processed_stage,
 	size_t max_block_size,
@@ -693,12 +694,15 @@ BlockInputStreams StorageLog::read(
 BlockInputStreams StorageLog::read(
 	const Names & column_names,
 	ASTPtr query,
+	const Context & context,
 	const Settings & settings,
 	QueryProcessingStage::Enum & processed_stage,
-	size_t max_block_size,
-	unsigned threads)
+	const size_t max_block_size,
+	const unsigned threads)
 {
-	return read(0, std::numeric_limits<size_t>::max(), column_names, query, settings, processed_stage, max_block_size, threads);
+	return read(0, std::numeric_limits<size_t>::max(), column_names,
+				query, context, settings, processed_stage,
+				max_block_size, threads);
 }
 
 

@@ -20,6 +20,8 @@
 
 #include <DB/Storages/StorageLog.h>
 
+#include <DB/Interpreters/Context.h>
+
 
 using Poco::SharedPtr;
 using namespace DB;
@@ -132,7 +134,7 @@ int main(int argc, char ** argv)
 
 			QueryProcessingStage::Enum stage;
 
-			BlockInputStreamPtr in = table->read(column_names, 0, Settings(), stage)[0];
+			BlockInputStreamPtr in = table->read(column_names, 0, Context{}, Settings(), stage)[0];
 			RowOutputStreamPtr out_ = new TabSeparatedRowOutputStream(out_buf, sample);
 			BlockOutputStreamFromRowOutputStream out(out_);
 			copyData(*in, out);
