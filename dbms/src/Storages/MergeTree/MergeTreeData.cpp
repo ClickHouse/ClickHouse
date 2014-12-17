@@ -13,6 +13,7 @@
 #include <DB/IO/WriteBufferFromFile.h>
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/Common/localBackup.h>
+#include <DB/Functions/FunctionFactory.h>
 
 #include <algorithm>
 #include <iomanip>

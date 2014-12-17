@@ -32,6 +32,8 @@
 
 #include <DB/Parsers/formatAST.h>
 
+#include <DB/Functions/FunctionFactory.h>
+
 #include <statdaemons/ext/range.hpp>
 
 

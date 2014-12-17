@@ -32,11 +32,11 @@ public:
 	ASTPtr limit_length;
 	ASTPtr next_union_all; /// Следующий запрос SELECT в цепочке UNION ALL, если такой есть
 
-	ASTSelectQuery() {}
-	ASTSelectQuery(StringRange range_) : ASTQueryWithOutput(range_) {}
+	ASTSelectQuery() = default;
+	ASTSelectQuery(const StringRange range_) : ASTQueryWithOutput(range_) {}
 
 	/** Получить текст, который идентифицирует этот элемент. */
-	String getID() const { return "SelectQuery"; };
+	String getID() const override { return "SelectQuery"; };
 
 	/// Проверить наличие функции arrayJoin. (Не большого ARRAY JOIN.)
 	static bool hasArrayJoin(const ASTPtr & ast)
@@ -103,9 +103,11 @@ public:
 		  */
 	}
 
-	ASTPtr clone() const
+	ASTPtr clone() const override
 	{
 		ASTSelectQuery * res = new ASTSelectQuery(*this);
+		ASTPtr ptr{res};
+
 		res->children.clear();
 
 #define CLONE(member) if (member) { res->member = member->clone(); res->children.push_back(res->member); }
@@ -128,7 +130,7 @@ public:
 
 #undef CLONE
 
-		return res;
+		return ptr;
 	}
 };
 

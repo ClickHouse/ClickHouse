@@ -15,7 +15,7 @@ class ASTSubquery : public IAST
 {
 public:
 	ASTSubquery() = default;
-	ASTSubquery(StringRange range_) : IAST(range_) {}
+	ASTSubquery(const StringRange range_) : IAST(range_) {}
 	
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() const override { return "Subquery"; }
@@ -24,6 +24,7 @@ public:
 	{
 		const auto res = new ASTSubquery{*this};
 		ASTPtr ptr{res};
+
 		res->children.clear();
 
 		for (const auto & child : children)

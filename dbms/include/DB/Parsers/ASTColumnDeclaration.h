@@ -17,13 +17,15 @@ public:
 	ASTPtr default_expression;
 
     ASTColumnDeclaration() = default;
-    ASTColumnDeclaration(StringRange range) : IAST{range} {}
+    ASTColumnDeclaration(const StringRange range) : IAST{range} {}
 
-	String getID() const { return "ColumnDeclaration_" + name; }
+	String getID() const override { return "ColumnDeclaration_" + name; }
 
-	ASTPtr clone() const
+	ASTPtr clone() const override
 	{
 		const auto res = new ASTColumnDeclaration{*this};
+		ASTPtr ptr{res};
+
 		res->children.clear();
 
 		if (type) {
@@ -36,7 +38,7 @@ public:
 			res->children.push_back(res->default_expression);
 		}
 
-		return res;
+		return ptr;
 	}
 };
 

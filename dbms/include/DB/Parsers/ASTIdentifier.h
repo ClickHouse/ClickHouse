@@ -26,17 +26,18 @@ public:
 	/// чего идентифицирует этот идентификатор
 	Kind kind;
 
-	ASTIdentifier() {}
-	ASTIdentifier(StringRange range_, const String & name_, Kind kind_ = Column) : ASTWithAlias(range_), name(name_), kind(kind_) {}
+	ASTIdentifier() = default;
+	ASTIdentifier(const StringRange range_, const String & name_, const Kind kind_ = Column)
+		: ASTWithAlias(range_), name(name_), kind(kind_) {}
 
-	String getColumnName() const { return name; }
+	String getColumnName() const override { return name; }
 
 	/** Получить текст, который идентифицирует этот элемент. */
-	String getID() const { return "Identifier_" + name; }
+	String getID() const override { return "Identifier_" + name; }
 
-	ASTPtr clone() const { return new ASTIdentifier(*this); }
+	ASTPtr clone() const override { return new ASTIdentifier(*this); }
 
-	void collectIdentifierNames(IdentifierNameSet & set) const
+	void collectIdentifierNames(IdentifierNameSet & set) const override
 	{
 		set.insert(name);
 	}

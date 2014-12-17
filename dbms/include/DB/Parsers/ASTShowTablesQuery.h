@@ -13,20 +13,22 @@ namespace DB
 class ASTShowTablesQuery : public ASTQueryWithOutput
 {
 public:
-	bool databases;
+	bool databases{false};
 	String from;
 	String like;
-	bool not_like;
+	bool not_like{false};
 
-	ASTShowTablesQuery() : databases(false), not_like(false) {}
-	ASTShowTablesQuery(StringRange range_) : ASTQueryWithOutput(range_), databases(false), not_like(false) {}
+	ASTShowTablesQuery() = default;
+	ASTShowTablesQuery(const StringRange range_) : ASTQueryWithOutput(range_) {}
 	
 	/** Получить текст, который идентифицирует этот элемент. */
-	String getID() const { return "ShowTables"; };
+	String getID() const override { return "ShowTables"; };
 
-	ASTPtr clone() const
+	ASTPtr clone() const override
 	{
 		ASTShowTablesQuery * res = new ASTShowTablesQuery(*this);
+		ASTPtr ptr{res};
+
 		res->children.clear();
 		
 		if (format)
@@ -35,7 +37,7 @@ public:
 			res->children.push_back(res->format);
 		}
 		
-		return res;
+		return ptr;
 	}
 };
 
