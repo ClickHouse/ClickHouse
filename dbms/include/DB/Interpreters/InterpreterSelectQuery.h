@@ -10,6 +10,7 @@
 namespace DB
 {
 
+struct InterpreterSelectQueryWithContext;
 
 /** Интерпретирует запрос SELECT. Возвращает поток блоков с результатами выполнения запроса до стадии to_stage.
   */
@@ -80,7 +81,8 @@ private:
         /// Выполнить один запрос SELECT из цепочки UNION ALL.
         void executeSingleQuery(bool should_perform_union_hint = true);
 
-	bool isFirstSelectInsideUnionAll() const;
+        /// Является ли это первым запросом цепочки UNION ALL имеющей длниу >= 2.
+        bool isFirstSelectInsideUnionAll() const;
 
         /** Из какой таблицы читать. JOIN-ы не поддерживаются.
           */
@@ -135,6 +137,8 @@ private:
         Logger * log;
 };
 
+/** Интерпретатор SELECT вместе с контекстом.
+ */
 struct InterpreterSelectQueryWithContext
 {
         InterpreterSelectQueryWithContext(

@@ -38,7 +38,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 	ParserString s_order("ORDER", true, true);
 	ParserString s_limit("LIMIT", true, true);
 	ParserString s_format("FORMAT", true, true);
-	ParserString s_union_all("UNION ALL", true, true);
+	ParserString s_union("UNION", true, true);
+	ParserString s_all("ALL", true, true);
 
 	ParserNotEmptyExpressionList exp_list;
 	ParserExpressionWithOptionalAlias exp_elem;
@@ -291,17 +292,22 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 	}
 	
 	// UNION ALL select query
-	if (s_union_all.ignore(pos, end, expected))
+	if (s_union.ignore(pos, end, expected))
 	{
 		ws.ignore(pos, end);
 		
-		ParserSelectQuery select_p;
-		if (!select_p.parse(pos, end, select_query->next_union_all, expected))
+		if (s_all.ignore(pos, end, expected))
+		{
+			ParserSelectQuery select_p;
+			if (!select_p.parse(pos, end, select_query->next_union_all, expected))
+				return false;
+		}
+		else
 			return false;
 		
 		ws.ignore(pos, end);
 	}
-
+	
 	select_query->children.push_back(select_query->select_expression_list);
 	if (select_query->database)
 		select_query->children.push_back(select_query->database);
