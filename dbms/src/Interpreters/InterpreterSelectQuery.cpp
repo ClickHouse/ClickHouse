@@ -88,14 +88,14 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input_, const NamesAndType
         
         if (isFirstSelectInsideUnionAll())
         {
-				// Создаем цепочку запросов SELECT и проверяем, что результаты всех запросов SELECT cовместимые.
+                // Создаем цепочку запросов SELECT и проверяем, что результаты всех запросов SELECT cовместимые.
                 // NOTE Мы можем безопасно применить static_cast вместо typeid_cast, 
                 // потому что знаем, что в цепочке UNION ALL имеются только деревья типа SELECT.
                 InterpreterSelectQuery * interpreter = this;
                 Block first = interpreter->getSampleBlock();
                 for (ASTPtr tree = query.next_union_all; !tree.isNull(); tree = (static_cast<ASTSelectQuery &>(*tree)).next_union_all)
                 {
-		        interpreter->next_select_in_union_all.reset(new InterpreterSelectQueryWithContext(tree, context, to_stage, subquery_depth, nullptr, false));
+                        interpreter->next_select_in_union_all.reset(new InterpreterSelectQueryWithContext(tree, context, to_stage, subquery_depth, nullptr, false));
                         interpreter = &(interpreter->next_select_in_union_all->query);
                         Block current = interpreter->getSampleBlock();
                         if (!blocksHaveEqualStructure(first, current))
