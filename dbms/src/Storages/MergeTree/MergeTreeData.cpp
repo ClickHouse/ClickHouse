@@ -11,6 +11,7 @@
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
 #include <DB/DataStreams/copyData.h>
 #include <DB/IO/WriteBufferFromFile.h>
+#include <DB/IO/CompressedReadBuffer.h>
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/Common/localBackup.h>
 #include <DB/Functions/FunctionFactory.h>
@@ -539,7 +540,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 	{
 		transaction->new_checksums = new_checksums;
 		WriteBufferFromFile checksums_file(full_path + part->name + "/checksums.txt.tmp", 4096);
-		new_checksums.writeText(checksums_file);
+		new_checksums.write(checksums_file);
 		transaction->rename_map["checksums.txt.tmp"] = "checksums.txt";
 	}
 
@@ -989,7 +990,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const St
 
 		{
 			WriteBufferFromFile out(full_path + relative_path + "/checksums.txt.tmp", 4096);
-			part->checksums.writeText(out);
+			part->checksums.write(out);
 		}
 
 		Poco::File(full_path + relative_path + "/checksums.txt.tmp").renameTo(full_path + relative_path + "/checksums.txt");
@@ -1059,28 +1060,31 @@ void MergeTreeData::DataPart::Checksums::checkSizes(const String & path) const
 	}
 }
 
-bool MergeTreeData::DataPart::Checksums::readText(ReadBuffer & in)
+bool MergeTreeData::DataPart::Checksums::read(ReadBuffer & in)
 {
 	files.clear();
 
 	DB::assertString("checksums format version: ", in);
 	int format_version;
 	DB::readText(format_version, in);
-	if (format_version < 1 || format_version > 3)
-		throw Exception("Bad checksums format version: " + DB::toString(format_version), ErrorCodes::UNKNOWN_FORMAT);
-	if (format_version == 1)
-		return false;
 	DB::assertString("\n", in);
 
+	if (format_version < 1 || format_version > 4)
+		throw Exception("Bad checksums format version: " + DB::toString(format_version), ErrorCodes::UNKNOWN_FORMAT);
+
+	if (format_version == 1)
+		return false;
 	if (format_version == 2)
-		return readText_v2(in);
+		return read_v2(in);
 	if (format_version == 3)
-		return readText_v3(in);
+		return read_v3(in);
+	if (format_version == 4)
+		return read_v4(in);
 
 	return false;
 }
 
-bool MergeTreeData::DataPart::Checksums::readText_v2(ReadBuffer & in)
+bool MergeTreeData::DataPart::Checksums::read_v2(ReadBuffer & in)
 {
 	size_t count;
 
@@ -1118,7 +1122,7 @@ bool MergeTreeData::DataPart::Checksums::readText_v2(ReadBuffer & in)
 	return true;
 }
 
-bool MergeTreeData::DataPart::Checksums::readText_v3(ReadBuffer & in)
+bool MergeTreeData::DataPart::Checksums::read_v3(ReadBuffer & in)
 {
 	size_t count;
 
@@ -1146,9 +1150,17 @@ bool MergeTreeData::DataPart::Checksums::readText_v3(ReadBuffer & in)
 	return true;
 }
 
-void MergeTreeData::DataPart::Checksums::writeText(WriteBuffer & out) const
+bool MergeTreeData::DataPart::Checksums::read_v4(ReadBuffer & from)
 {
-	DB::writeString("checksums format version: 3\n", out);
+	CompressedReadBuffer in{from};
+	return read_v3(in);
+}
+
+void MergeTreeData::DataPart::Checksums::write(WriteBuffer & to) const
+{
+	DB::writeString("checksums format version: 4\n", to);
+
+	DB::CompressedWriteBuffer out{to, CompressionMethod::LZ4, 1 << 16};
 	DB::writeVarUInt(files.size(), out);
 
 	for (const auto & it : files)

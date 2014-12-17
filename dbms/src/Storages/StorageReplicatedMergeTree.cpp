@@ -2101,8 +2101,9 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 	const String & database_name, const String & table_name, Context & context)
 {
 	auto zookeeper = getZooKeeper();
-	const MergeTreeMergeBlocker merger_blocker{merger};
-	const MergeTreeMergeBlocker unreplicated_merger_blocker{*unreplicated_merger};
+	const MergeTreeMergeBlocker merge_blocker{merger};
+	const auto unreplicated_merge_blocker = unreplicated_merger ?
+		ext::make_unique<MergeTreeMergeBlocker>(*unreplicated_merger) : nullptr;
 
 	LOG_DEBUG(log, "Doing ALTER");
 

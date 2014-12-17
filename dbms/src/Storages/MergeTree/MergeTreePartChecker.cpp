@@ -268,7 +268,7 @@ void MergeTreePartChecker::checkDataPart(String path, const Settings & settings,
 	if (settings.require_checksums || Poco::File(path + "checksums.txt").exists())
 	{
 		ReadBufferFromFile buf(path + "checksums.txt");
-		checksums_txt.readText(buf);
+		checksums_txt.read(buf);
 		assertEOF(buf);
 	}
 
