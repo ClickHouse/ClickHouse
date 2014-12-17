@@ -1,5 +1,5 @@
 #include <DB/DataStreams/RemoteBlockInputStream.h>
-#include <DB/DataStreams/RemoveColumnsBlockInputStream.h>
+#include <DB/DataStreams/MaterializingBlockInputStream.h>
 
 #include <DB/Storages/StorageDistributed.h>
 #include <DB/Storages/VirtualColumnFactory.h>
@@ -179,7 +179,12 @@ BlockInputStreams StorageDistributed::read(
 		for (size_t i = 0; i < cluster.getLocalNodesNum(); ++i)
 		{
 			InterpreterSelectQuery interpreter(modified_query_ast, new_context, processed_stage);
-			res.push_back(interpreter.execute());
+
+			/** Материализация нужна, так как с удалённых серверов константы приходят материализованными.
+			  * Если этого не делать, то в разных потоках будут получаться разные типы (Const и не-Const) столбцов,
+			  *  а это не разрешено, так как весь код исходит из допущения, что в потоке блоков все типы одинаковые.
+			  */
+			res.emplace_back(new MaterializingBlockInputStream(interpreter.execute()));
 		}
 	}
 
