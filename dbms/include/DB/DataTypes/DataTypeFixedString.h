@@ -29,8 +29,6 @@ public:
 	{
 		return "FixedString(" + toString(n) + ")";
 	}
-
-	bool behavesAsString() const { return true; }
 	
 	DataTypePtr clone() const
 	{
