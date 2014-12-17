@@ -127,6 +127,7 @@ void StorageMergeTree::rename(const String & new_path_to_db, const String & new_
 void StorageMergeTree::alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context)
 {
 	/// NOTE: Здесь так же как в ReplicatedMergeTree можно сделать ALTER, не блокирующий запись данных надолго.
+	const MergeTreeMergeBlocker merge_blocker{merger};
 
 	auto table_soft_lock = lockDataForAlter();
 
