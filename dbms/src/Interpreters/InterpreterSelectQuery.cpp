@@ -88,7 +88,7 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input_, const NamesAndType
         
         if (isFirstSelectInsideUnionAll())
         {
-	        // Создаем цепочку запросов SELECT и проверяем, что результаты всех запросов SELECT cовместимые.
+				// Создаем цепочку запросов SELECT и проверяем, что результаты всех запросов SELECT cовместимые.
                 // NOTE Мы можем безопасно применить static_cast вместо typeid_cast, 
                 // потому что знаем, что в цепочке UNION ALL имеются только деревья типа SELECT.
                 InterpreterSelectQuery * interpreter = this;
