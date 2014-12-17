@@ -85,7 +85,7 @@ int main(int argc, char ** argv)
 
 		QueryProcessingStage::Enum stage;
 
-		BlockInputStreamPtr in = table->read(column_names, 0, Settings(), stage)[0];
+		BlockInputStreamPtr in = table->read(column_names, 0, context, Settings(), stage)[0];
 
 		ForkBlockInputStreams fork(in);
 

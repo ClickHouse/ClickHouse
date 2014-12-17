@@ -140,10 +140,11 @@ StoragePtr StorageDistributed::create(
 BlockInputStreams StorageDistributed::read(
 	const Names & column_names,
 	ASTPtr query,
+	const Context & context,
 	const Settings & settings,
 	QueryProcessingStage::Enum & processed_stage,
-	size_t max_block_size,
-	unsigned threads)
+	const size_t max_block_size,
+	const unsigned threads)
 {
 	Settings new_settings = settings;
 	new_settings.queue_max_wait_ms = Cluster::saturate(new_settings.queue_max_wait_ms, settings.limits.max_execution_time);
@@ -163,7 +164,8 @@ BlockInputStreams StorageDistributed::read(
 	for (auto & conn_pool : cluster.pools)
 		res.emplace_back(new RemoteBlockInputStream{
 			conn_pool, modified_query, &new_settings,
-			external_tables, processed_stage});
+			external_tables, processed_stage, context
+		});
 
 	/// Добавляем запросы к локальному ClickHouse.
 	if (cluster.getLocalNodesNum() > 0)

@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Poco/SharedPtr.h>
 #include <DB/Functions/IFunction.h>
+#include <Yandex/singleton.h>
 
 
 namespace DB
@@ -14,7 +14,7 @@ class Context;
   * Функция при создании также может использовать для инициализации (например, захватить SharedPtr)
   *  какие-нибудь справочники, находящиеся в Context-е.
   */
-class FunctionFactory
+class FunctionFactory : public Singleton<FunctionFactory>
 {
 private:
 	typedef IFunction* (*Creator)(const Context & context);	/// Не std::function, так как меньше indirection и размер объекта.

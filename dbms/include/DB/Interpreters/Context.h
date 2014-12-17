@@ -14,7 +14,6 @@
 #include <DB/Storages/MarkCache.h>
 #include <DB/DataStreams/FormatFactory.h>
 #include <DB/Storages/IStorage.h>
-#include <DB/Functions/FunctionFactory.h>
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
 #include <DB/DataTypes/DataTypeFactory.h>
 #include <DB/Storages/StorageFactory.h>
@@ -83,7 +82,6 @@ struct ContextShared
 	String path;											/// Путь к директории с данными, со слешем на конце.
 	Databases databases;									/// Список БД и таблиц в них.
 	TableFunctionFactory table_function_factory;			/// Табличные функции.
-	FunctionFactory function_factory;						/// Обычные функции.
 	AggregateFunctionFactory aggregate_function_factory; 	/// Агрегатные функции.
 	DataTypeFactory data_type_factory;						/// Типы данных.
 	StorageFactory storage_factory;							/// Движки таблиц.
@@ -254,7 +252,6 @@ public:
 	void setSetting(const String & name, const std::string & value);
 
 	const TableFunctionFactory & getTableFunctionFactory() const			{ return shared->table_function_factory; }
-	const FunctionFactory & getFunctionFactory() const						{ return shared->function_factory; }
 	const AggregateFunctionFactory & getAggregateFunctionFactory() const	{ return shared->aggregate_function_factory; }
 	const DataTypeFactory & getDataTypeFactory() const						{ return shared->data_type_factory; }
 	const StorageFactory & getStorageFactory() const						{ return shared->storage_factory; }

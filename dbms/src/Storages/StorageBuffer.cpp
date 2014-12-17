@@ -90,6 +90,7 @@ private:
 BlockInputStreams StorageBuffer::read(
 	const Names & column_names,
 	ASTPtr query,
+	const Context & context,
 	const Settings & settings,
 	QueryProcessingStage::Enum & processed_stage,
 	size_t max_block_size,
@@ -101,7 +102,7 @@ BlockInputStreams StorageBuffer::read(
 
 	if (!no_destination)
 		streams_from_dst = context.getTable(destination_database, destination_table)->read(
-			column_names, query, settings, processed_stage, max_block_size, threads);
+			column_names, query, context, settings, processed_stage, max_block_size, threads);
 
 	BlockInputStreams streams_from_buffers;
 	streams_from_buffers.reserve(num_shards);

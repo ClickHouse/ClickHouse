@@ -9,6 +9,7 @@
 #include <DB/DataStreams/BlockOutputStreamFromRowOutputStream.h>
 #include <DB/DataStreams/copyData.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/Interpreters/Context.h>
 
 using Poco::SharedPtr;
 
@@ -31,7 +32,7 @@ int main(int argc, char ** argv)
 
 		DB::QueryProcessingStage::Enum stage;
 		
-		DB::LimitBlockInputStream input(table->read(column_names, 0, DB::Settings(), stage, 10)[0], 10, 96);
+		DB::LimitBlockInputStream input(table->read(column_names, 0, DB::Context{}, DB::Settings(), stage, 10)[0], 10, 96);
 		DB::RowOutputStreamPtr output_ = new DB::TabSeparatedRowOutputStream(out_buf, sample);
 		DB::BlockOutputStreamFromRowOutputStream output(output_);
 		

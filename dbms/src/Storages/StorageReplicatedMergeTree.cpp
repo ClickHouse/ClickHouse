@@ -1990,12 +1990,13 @@ StorageReplicatedMergeTree::~StorageReplicatedMergeTree()
 
 
 BlockInputStreams StorageReplicatedMergeTree::read(
-		const Names & column_names,
-		ASTPtr query,
-		const Settings & settings,
-		QueryProcessingStage::Enum & processed_stage,
-		size_t max_block_size,
-		unsigned threads)
+	const Names & column_names,
+	ASTPtr query,
+	const Context & context,
+	const Settings & settings,
+	QueryProcessingStage::Enum & processed_stage,
+	const size_t max_block_size,
+	const unsigned threads)
 {
 	Names virt_column_names;
 	Names real_column_names;
@@ -2024,8 +2025,9 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 
 	if (unreplicated_reader && values.count(0))
 	{
-		res = unreplicated_reader->read(
-			real_column_names, query, settings, processed_stage, max_block_size, threads, &part_index);
+		res = unreplicated_reader->read(real_column_names, query,
+										context, settings, processed_stage,
+										max_block_size, threads, &part_index);
 
 		for (auto & virtual_column : virt_column_names)
 		{
@@ -2039,7 +2041,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 
 	if (values.count(1))
 	{
-		auto res2 = reader.read(real_column_names, query, settings, processed_stage, max_block_size, threads, &part_index);
+		auto res2 = reader.read(real_column_names, query, context, settings, processed_stage, max_block_size, threads, &part_index);
 
 		for (auto & virtual_column : virt_column_names)
 		{
@@ -2099,6 +2101,8 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 	const String & database_name, const String & table_name, Context & context)
 {
 	auto zookeeper = getZooKeeper();
+	const MergeTreeMergeBlocker merger_blocker{merger};
+	const MergeTreeMergeBlocker unreplicated_merger_blocker{*unreplicated_merger};
 
 	LOG_DEBUG(log, "Doing ALTER");
 

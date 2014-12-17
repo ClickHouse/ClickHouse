@@ -464,7 +464,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 
 				out_expression->addInput(ColumnWithNameAndType(nullptr, column.type, column.name));
 
-				FunctionPtr function = context.getFunctionFactory().get("to" + new_type_name, context);
+				const FunctionPtr & function = FunctionFactory::instance().get("to" + new_type_name, context);
 				Names out_names;
 				out_expression->add(ExpressionAction::applyFunction(function, Names(1, column.name)), out_names);
 				out_expression->add(ExpressionAction::removeColumn(column.name));

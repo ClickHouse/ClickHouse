@@ -159,7 +159,7 @@ int main(int argc, char ** argv)
 
 		QueryProcessingStage::Enum stage;
 
-		Poco::SharedPtr<IBlockInputStream> in = table->read(column_names, 0, Settings(), stage, argc == 2 ? atoi(argv[1]) : 1048576)[0];
+		Poco::SharedPtr<IBlockInputStream> in = table->read(column_names, 0, Context{}, Settings(), stage, argc == 2 ? atoi(argv[1]) : 1048576)[0];
 		in = new PartialSortingBlockInputStream(in, sort_columns);
 		in = new MergeSortingBlockInputStream(in, sort_columns);
 		//in = new LimitBlockInputStream(in, 10);
