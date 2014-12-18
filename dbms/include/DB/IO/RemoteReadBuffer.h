@@ -3,6 +3,9 @@
 #include <DB/IO/ReadBufferFromHTTP.h>
 #include "ReadHelpers.h"
 
+#define DEFAULT_REMOTE_READ_BUFFER_CONNECTION_TIMEOUT 1
+#define DEFAULT_REMOTE_READ_BUFFER_RECEIVE_TIMEOUT 1800
+#define DEFAULT_REMOTE_READ_BUFFER_SEND_TIMEOUT 1800
 
 namespace DB
 {
@@ -20,8 +23,10 @@ public:
 		int port,
 		const std::string & path,
 		bool compress = true,
-		size_t timeout = 0,
-		size_t buffer_size = DBMS_DEFAULT_BUFFER_SIZE)
+		size_t buffer_size = DBMS_DEFAULT_BUFFER_SIZE,
+		const Poco::Timespan & connection_timeout = Poco::Timespan(DEFAULT_REMOTE_READ_BUFFER_CONNECTION_TIMEOUT, 0),
+		const Poco::Timespan & send_timeout = Poco::Timespan(DEFAULT_REMOTE_READ_BUFFER_SEND_TIMEOUT, 0),
+		const Poco::Timespan & receive_timeout = Poco::Timespan(DEFAULT_REMOTE_READ_BUFFER_RECEIVE_TIMEOUT, 0))
 		: ReadBuffer(nullptr, 0)
 	{
 		ReadBufferFromHTTP::Params params = {
@@ -29,7 +34,7 @@ public:
 			std::make_pair("path", path),
 			std::make_pair("compress", (compress ? "true" : "false"))};
 
-		impl = new ReadBufferFromHTTP(host, port, params, timeout, buffer_size);
+		impl = new ReadBufferFromHTTP(host, port, params, buffer_size, connection_timeout, send_timeout, receive_timeout);
 	}
 
 	bool nextImpl()
