@@ -32,6 +32,10 @@
 
 #include <DB/Parsers/formatAST.h>
 
+#include <DB/Functions/FunctionFactory.h>
+
+#include <statdaemons/ext/range.hpp>
+
 
 namespace DB
 {
@@ -589,6 +593,9 @@ static SharedPtr<InterpreterSelectQuery> interpretSubquery(
 		if (!parse_res)
 			throw Exception("Error in parsing SELECT query while creating set or join for table " + table->name + ".",
 				ErrorCodes::LOGICAL_ERROR);
+
+		/// @note it may be more appropriate to manually replace ASTAsterisk with table's columns
+		ExpressionAnalyzer{query, context, subquery_depth};
 	}
 	else
 		query = subquery->children.at(0);
@@ -1055,7 +1062,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 				}
 			}
 
-			FunctionPtr function = context.getFunctionFactory().get(node->name, context);
+			const FunctionPtr & function = FunctionFactory::instance().get(node->name, context);
 
 			Names argument_names;
 			DataTypes argument_types;
@@ -1737,26 +1744,32 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAnd
 		return;
 
 	auto & node = typeid_cast<ASTJoin &>(*select_query->join);
-	auto & keys = typeid_cast<ASTExpressionList &>(*node.using_expr_list);
-	auto & table = node.table->children.at(0);		/// TODO: поддержка идентификаторов.
 
-	size_t num_join_keys = keys.children.size();
-
-	for (size_t i = 0; i < num_join_keys; ++i)
+	Block nested_result_sample;
+	if (const auto identifier = typeid_cast<const ASTIdentifier *>(node.table.get()))
 	{
-		if (!join_key_names_left_set.insert(keys.children[i]->getColumnName()).second)
+		const auto & table = context.getTable("", identifier->name);
+		nested_result_sample = table->getSampleBlockNonMaterialized();
+	}
+	else if (typeid_cast<const ASTSubquery *>(node.table.get()))
+	{
+		const auto & table = node.table->children.at(0);
+		nested_result_sample = ExpressionAnalyzer(table, context, subquery_depth + 1).getSelectSampleBlock();	
+	}
+
+	auto & keys = typeid_cast<ASTExpressionList &>(*node.using_expr_list);
+	for (const auto & key : keys.children)
+	{
+		if (!join_key_names_left_set.insert(key->getColumnName()).second)
 			throw Exception("Duplicate column in USING list", ErrorCodes::DUPLICATE_COLUMN);
 
-		if (!join_key_names_right_set.insert(keys.children[i]->getAliasOrColumnName()).second)
+		if (!join_key_names_right_set.insert(key->getAliasOrColumnName()).second)
 			throw Exception("Duplicate column in USING list", ErrorCodes::DUPLICATE_COLUMN);
 	}
 
-	Block nested_result_sample = ExpressionAnalyzer(table, context, subquery_depth + 1).getSelectSampleBlock();
-
-	size_t nested_result_columns = nested_result_sample.columns();
-	for (size_t i = 0; i < nested_result_columns; ++i)
+	for (const auto i : ext::range(0, nested_result_sample.columns()))
 	{
-		auto col = nested_result_sample.getByPosition(i);
+		const auto & col = nested_result_sample.getByPosition(i);
 		if (!join_key_names_right_set.count(col.name))
 		{
 			joined_columns.insert(col.name);

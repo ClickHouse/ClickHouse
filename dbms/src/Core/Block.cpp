@@ -363,7 +363,7 @@ bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs)
 	{
 		const IDataType & lhs_type = *lhs.getByPosition(i).type;
 		const IDataType & rhs_type = *rhs.getByPosition(i).type;
-
+		
 		if (lhs_type.getName() != rhs_type.getName())
 			return false;
 	}

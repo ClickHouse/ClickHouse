@@ -87,7 +87,7 @@ struct SingleValueDataFixed
 
 	void changeIfLess(const Self & to)
 	{
-		if (!has() || to.value < value)
+		if (to.has() && (!has() || to.value < value))
 			change(to);
 	}
 
@@ -99,7 +99,7 @@ struct SingleValueDataFixed
 
 	void changeIfGreater(const Self & to)
 	{
-		if (!has() || to.value > value)
+		if (to.has() && (!has() || to.value > value))
 			change(to);
 	}
 };
@@ -258,7 +258,7 @@ struct __attribute__((__packed__)) SingleValueDataString
 
 	void changeIfLess(const Self & to)
 	{
-		if (!has() || to.getStringRef() < getStringRef())
+		if (to.has() && (!has() || to.getStringRef() < getStringRef()))
 			change(to);
 	}
 
@@ -270,7 +270,7 @@ struct __attribute__((__packed__)) SingleValueDataString
 
 	void changeIfGreater(const Self & to)
 	{
-		if (!has() || to.getStringRef() > getStringRef())
+		if (to.has() && (!has() || to.getStringRef() > getStringRef()))
 			change(to);
 	}
 };
@@ -353,7 +353,7 @@ struct SingleValueDataGeneric
 
 	void changeIfLess(const Self & to)
 	{
-		if (!has() || to.value < value)
+		if (to.has() && (!has() || to.value < value))
 			change(to);
 	}
 
@@ -372,7 +372,7 @@ struct SingleValueDataGeneric
 
 	void changeIfGreater(const Self & to)
 	{
-		if (!has() || to.value > value)
+		if (to.has() && (!has() || to.value > value))
 			change(to);
 	}
 };

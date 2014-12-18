@@ -103,8 +103,13 @@ static String extractPath(const ASTPtr & query)
 
 
 BlockInputStreams StorageSystemZooKeeper::read(
-	const Names & column_names, ASTPtr query, const Settings & settings,
-	QueryProcessingStage::Enum & processed_stage, size_t max_block_size, unsigned threads)
+	const Names & column_names,
+	ASTPtr query,
+	const Context & context,
+	const Settings & settings,
+	QueryProcessingStage::Enum & processed_stage,
+	const size_t max_block_size,
+	const unsigned threads)
 {
 	check(column_names);
 	processed_stage = QueryProcessingStage::FetchColumns;
@@ -131,13 +136,14 @@ BlockInputStreams StorageSystemZooKeeper::read(
 	zkutil::ZooKeeperPtr zookeeper = context.getZooKeeper();
 
 	/// Во всех случаях кроме корня, path не должен заканчиваться на слеш.
-	if (path != "/" && path.back() == '/')
-		path.resize(path.size() - 1);
+	String path_corrected = path;
+	if (path_corrected != "/" && path_corrected.back() == '/')
+		path_corrected.resize(path_corrected.size() - 1);
 
-	zkutil::Strings nodes = zookeeper->getChildren(path);
+	zkutil::Strings nodes = zookeeper->getChildren(path_corrected);
 
-	String path_part = path;
-	if (path == "/")
+	String path_part = path_corrected;
+	if (path_part == "/")
 		path_part.clear();
 
 	std::vector<zkutil::ZooKeeper::TryGetFuture> futures;
@@ -166,7 +172,7 @@ BlockInputStreams StorageSystemZooKeeper::read(
 		col_dataLength.column->insert(Int64(stat.dataLength));
 		col_numChildren.column->insert(Int64(stat.numChildren));
 		col_pzxid.column->insert(stat.pzxid);
-		col_path.column->insert(path);
+		col_path.column->insert(path);			/// Здесь именно оригинальный path. Чтобы при обработке запроса, условие в WHERE срабатывало.
 	}
 
 	Block block{

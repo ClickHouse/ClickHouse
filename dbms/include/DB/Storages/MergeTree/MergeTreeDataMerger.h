@@ -2,6 +2,7 @@
 
 #include <DB/Storages/MergeTree/MergeTreeData.h>
 #include <DB/Storages/MergeTree/DiskSpaceMonitor.h>
+#include <atomic>
 
 namespace DB
 {
@@ -13,7 +14,7 @@ class MergeTreeDataMerger
 public:
 	static const size_t NO_LIMIT = std::numeric_limits<size_t>::max();
 
-	MergeTreeDataMerger(MergeTreeData & data_) : data(data_), log(&Logger::get(data.getLogName() + " (Merger)")), canceled(false) {}
+	MergeTreeDataMerger(MergeTreeData & data_) : data(data_), log(&Logger::get(data.getLogName() + " (Merger)")) {}
 
 	typedef std::function<bool (const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &)> AllowedMergingPredicate;
 
@@ -49,9 +50,8 @@ public:
 	/** Отменяет все мерджи. Все выполняющиеся сейчас вызовы mergeParts скоро бросят исключение.
 	  * Все новые вызовы будут бросать исключения, пока не будет вызван uncancelAll().
 	  */
-	void cancelAll() { canceled = true; }
-
-	void uncancelAll() { canceled = false; }
+	bool cancelAll() { return canceled.exchange(true, std::memory_order_relaxed); }
+	bool uncancelAll() { return canceled.exchange(false, std::memory_order_relaxed); }
 
 private:
 	MergeTreeData & data;
@@ -61,7 +61,24 @@ private:
 	/// Когда в последний раз писали в лог, что место на диске кончилось (чтобы не писать об этом слишком часто).
 	time_t disk_space_warning_time = 0;
 
-	volatile bool canceled;
+	std::atomic<bool> canceled{false};
+};
+
+class MergeTreeMergeBlocker
+{
+public:
+	MergeTreeMergeBlocker(MergeTreeDataMerger & merger)
+		: merger(merger), was_cancelled{merger.cancelAll()} {}
+
+	~MergeTreeMergeBlocker()
+	{
+		if (was_cancelled)
+			merger.uncancelAll();
+	}
+
+private:
+	MergeTreeDataMerger & merger;
+	const bool was_cancelled;
 };
 
 }

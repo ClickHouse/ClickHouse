@@ -1,5 +1,5 @@
 #include <DB/DataStreams/RemoteBlockInputStream.h>
-#include <DB/DataStreams/RemoveColumnsBlockInputStream.h>
+#include <DB/DataStreams/MaterializingBlockInputStream.h>
 
 #include <DB/Storages/StorageDistributed.h>
 #include <DB/Storages/VirtualColumnFactory.h>
@@ -21,9 +21,9 @@ namespace
 {
 	/// select query has database and table names as AST pointers
 	/// Создает копию запроса, меняет имена базы данных и таблицы.
-	inline ASTPtr rewriteSelectQuery(ASTPtr & query, const std::string & database, const std::string & table)
+	inline ASTPtr rewriteSelectQuery(const ASTPtr & query, const std::string & database, const std::string & table)
 	{
-		auto & modified_query_ast = query;
+		auto modified_query_ast = query->clone();
 
 		auto & actual_query = typeid_cast<ASTSelectQuery &>(*modified_query_ast);
 		actual_query.database = new ASTIdentifier{{}, database, ASTIdentifier::Database};
@@ -140,10 +140,11 @@ StoragePtr StorageDistributed::create(
 BlockInputStreams StorageDistributed::read(
 	const Names & column_names,
 	ASTPtr query,
+	const Context & context,
 	const Settings & settings,
 	QueryProcessingStage::Enum & processed_stage,
-	size_t max_block_size,
-	unsigned threads)
+	const size_t max_block_size,
+	const unsigned threads)
 {
 	Settings new_settings = settings;
 	new_settings.queue_max_wait_ms = Cluster::saturate(new_settings.queue_max_wait_ms, settings.limits.max_execution_time);
@@ -163,7 +164,8 @@ BlockInputStreams StorageDistributed::read(
 	for (auto & conn_pool : cluster.pools)
 		res.emplace_back(new RemoteBlockInputStream{
 			conn_pool, modified_query, &new_settings,
-			external_tables, processed_stage});
+			external_tables, processed_stage, context
+		});
 
 	/// Добавляем запросы к локальному ClickHouse.
 	if (cluster.getLocalNodesNum() > 0)
@@ -177,7 +179,12 @@ BlockInputStreams StorageDistributed::read(
 		for (size_t i = 0; i < cluster.getLocalNodesNum(); ++i)
 		{
 			InterpreterSelectQuery interpreter(modified_query_ast, new_context, processed_stage);
-			res.push_back(interpreter.execute());
+
+			/** Материализация нужна, так как с удалённых серверов константы приходят материализованными.
+			  * Если этого не делать, то в разных потоках будут получаться разные типы (Const и не-Const) столбцов,
+			  *  а это не разрешено, так как весь код исходит из допущения, что в потоке блоков все типы одинаковые.
+			  */
+			res.emplace_back(new MaterializingBlockInputStream(interpreter.execute()));
 		}
 	}
 

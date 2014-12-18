@@ -38,10 +38,11 @@ class MergeTreeReader
 	typedef std::map<std::string, ColumnPtr> OffsetColumns;
 
 public:
-	MergeTreeReader(const String & path_, const MergeTreeData::DataPartPtr & data_part,	/// Путь к куску
-		const NamesAndTypesList & columns_, bool use_uncompressed_cache_, MergeTreeData & storage_, const MarkRanges & all_mark_ranges)
-	: path(path_), data_part(data_part), part_name(data_part->name), columns(columns_), use_uncompressed_cache(use_uncompressed_cache_), storage(storage_),
-	  all_mark_ranges(all_mark_ranges)
+	MergeTreeReader(const String & path_, /// Путь к куску
+		const MergeTreeData::DataPartPtr & data_part, const NamesAndTypesList & columns_,
+		bool use_uncompressed_cache_, MergeTreeData & storage_, const MarkRanges & all_mark_ranges)
+		: path(path_), data_part(data_part), part_name(data_part->name), columns(columns_),
+		use_uncompressed_cache(use_uncompressed_cache_), storage(storage_), all_mark_ranges(all_mark_ranges)
 	{
 		try
 		{

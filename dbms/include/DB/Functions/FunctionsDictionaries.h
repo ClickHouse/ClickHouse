@@ -736,7 +736,7 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		RegionsNames::SupportedLanguages::Enum language = RegionsNames::SupportedLanguages::RU;
+		RegionsNames::Language language = RegionsNames::Language::RU;
 
 		/// Если указан язык результата
 		if (arguments.size() == 2)

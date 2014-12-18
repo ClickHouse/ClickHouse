@@ -32,8 +32,13 @@ StoragePtr StorageSystemProcesses::create(const std::string & name_, const Conte
 
 
 BlockInputStreams StorageSystemProcesses::read(
-	const Names & column_names, ASTPtr query, const Settings & settings,
-	QueryProcessingStage::Enum & processed_stage, size_t max_block_size, unsigned threads)
+	const Names & column_names,
+	ASTPtr query,
+	const Context & context,
+	const Settings & settings,
+	QueryProcessingStage::Enum & processed_stage,
+	const size_t max_block_size,
+	const unsigned threads)
 {
 	check(column_names);
 	processed_stage = QueryProcessingStage::FetchColumns;

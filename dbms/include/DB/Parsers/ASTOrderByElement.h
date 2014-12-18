@@ -21,14 +21,14 @@ public:
 	 */
 	Poco::SharedPtr<Collator> collator;
 	
-	ASTOrderByElement() {}
-	ASTOrderByElement(StringRange range_, int direction_, const Poco::SharedPtr<Collator> & collator_ = nullptr)
+	ASTOrderByElement() = default;
+	ASTOrderByElement(const StringRange range_, const int direction_, const Poco::SharedPtr<Collator> & collator_ = nullptr)
 		: IAST(range_), direction(direction_), collator(collator_) {}
 	
 	/** Получить текст, который идентифицирует этот элемент. */
-	String getID() const { return "OrderByElement"; }
+	String getID() const override { return "OrderByElement"; }
 
-	ASTPtr clone() const { return new ASTOrderByElement(*this); }
+	ASTPtr clone() const override { return new ASTOrderByElement(*this); }
 };
 
 }

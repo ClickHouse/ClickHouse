@@ -33,8 +33,13 @@ StoragePtr StorageSystemMerges::create(const std::string & name, const Context &
 }
 
 BlockInputStreams StorageSystemMerges::read(
-	const Names & column_names, ASTPtr query, const Settings & settings,
-	QueryProcessingStage::Enum & processed_stage, const size_t max_block_size, const unsigned)
+	const Names & column_names,
+	ASTPtr query,
+	const Context & context,
+	const Settings & settings,
+	QueryProcessingStage::Enum & processed_stage,
+	const size_t max_block_size,
+	const unsigned)
 {
 	check(column_names);
 	processed_stage = QueryProcessingStage::FetchColumns;

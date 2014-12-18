@@ -183,16 +183,35 @@ public:
 	private:
 		using Task = std::packaged_task<Result (TaskParams...)>;
 		using TaskPtr = std::unique_ptr<Task>;
+		using TaskPtrPtr = std::unique_ptr<TaskPtr>;
 
-		TaskPtr task;
+		/** Всё очень сложно.
+		  *
+		  * В асинхронном интерфейсе libzookeeper, функция (например, zoo_aget)
+		  *  принимает указатель на свободную функцию-коллбэк и void* указатель на данные.
+		  * Указатель на данные потом передаётся в callback.
+		  * Это значит, что мы должны сами обеспечить, чтобы данные жили во время работы этой функции и до конца работы callback-а,
+		  *  и не можем просто так передать владение данными внутрь функции.
+		  * Для этого, мы засовываем данные в объект Future, который возвращается пользователю. Данные будут жить, пока живёт объект Future.
+		  * Данные засунуты в unique_ptr, чтобы при возврате объекта Future из функции, их адрес (который передаётся в libzookeeper) не менялся.
+		  *
+		  * Вторая проблема состоит в том, что после того, как std::promise был удовлетворён, и пользователь получил результат из std::future,
+		  *  объект Future может быть уничтожен, при чём раньше, чем завершит работу в другом потоке функция, которая удовлетворяет promise.
+		  * См. http://stackoverflow.com/questions/10843304/race-condition-in-pthread-once
+		  * Чтобы этого избежать, используется второй unique_ptr. Внутри callback-а, void* данные преобразуются в unique_ptr, и
+		  *  перемещаются в локальную переменную unique_ptr, чтобы продлить время жизни данных.
+		  */
+
+		TaskPtrPtr task;
+		std::future<Result> future;
 
 		template <typename... Args>
-		Future(Args &&... args) : task(new Task(std::forward<Args>(args)...)) {}
+		Future(Args &&... args) : task(new TaskPtr(new Task(std::forward<Args>(args)...))), future((*task)->get_future()) {}
 
 	public:
 		Result get()
 		{
-			return task->get_future().get();
+			return future.get();
 		}
 	};
 

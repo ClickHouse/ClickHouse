@@ -61,6 +61,7 @@ public:
 	BlockInputStreams read(
 		const Names & column_names,
 		ASTPtr query,
+		const Context & context,
 		const Settings & settings,
 		QueryProcessingStage::Enum & processed_stage,
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
@@ -107,6 +108,7 @@ private:
 
 	Logger * log;
 
+	Poco::Event shutdown_event;
 	/// Выполняет сброс данных по таймауту.
 	std::thread flush_thread;
 
@@ -122,7 +124,6 @@ private:
 	/// Аргумент table передаётся, так как иногда вычисляется заранее. Он должен соответствовать destination-у.
 	void writeBlockToDestination(const Block & block, StoragePtr table);
 
-	Poco::Event shutdown_event;
 	void flushThread();
 };
 

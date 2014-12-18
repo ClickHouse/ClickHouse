@@ -1,4 +1,4 @@
-#! /bin/sh
+#!/bin/bash
 ### BEGIN INIT INFO
 # Provides:          @DAEMON@
 # Default-Start:     2
@@ -8,28 +8,94 @@
 
 USER=metrika
 GROUP=metrika
-SHELL=/bin/sh
+SHELL=/bin/bash
 PROGRAM=@DAEMON@
 SYSCONFDIR=/etc/$PROGRAM
-PIDDIR=/var/run/$PROGRAM
 LOGDIR=/var/log/$PROGRAM
 LOCALSTATEDIR=/var/lock
 BINDIR=/usr/bin
 CRONFILE=/etc/cron.d/@CRONFILE@
-
 CNFFILE=$SYSCONFDIR/config.xml
-PIDFILE=$PIDDIR/$PROGRAM.pid
 LOCKFILE=$LOCALSTATEDIR/$PROGRAM
 RETVAL=0
 
-isrun()
+DEFAULT_NUMBER_OF_PROCESSES=1
+NUMBER_OF_PROCESSES=$DEFAULT_NUMBER_OF_PROCESSES
+
+LOG_FILE=""
+
+# С помощью xmlstarlet пытаемся взять некоторые параметры из конфига
+if command -v xmlstarlet >/dev/null 2>&1; then
+	NUMBER_OF_PROCESSES=$(xmlstarlet sel -t -v "/yandex/number_of_processes" $CNFFILE || echo $DEFAULT_NUMBER_OF_PROCESSES)
+	LOG_FILE=$(xmlstarlet sel -t -v "/yandex/logger/log" $CNFFILE || echo $LOG_FILE)
+fi
+
+PIDDIR=/var/run/$PROGRAM
+PIDFILE_PREFIX=$PIDDIR/$PROGRAM
+PIDFILE_RE="$PIDFILE_PREFIX[0-9]*.pid"
+
+generate_program_name()
 {
-	[ -r "$PIDFILE" ] && pgrep -s `cat "$PIDFILE"` >/dev/null 2>&1
+	if [ $NUMBER_OF_PROCESSES -eq 1 ]; then
+		echo $PROGRAM
+	else
+		echo $PROGRAM$1
+	fi
+}
+
+generate_pid_name()
+{
+	if [ $NUMBER_OF_PROCESSES -gt 1 ]; then
+		echo $PIDFILE_PREFIX$1.pid
+	else
+		echo $PIDFILE_PREFIX.pid
+	fi
+}
+
+specific_log_file_for_each_process()
+{
+	# Не будем менять имя лог файла, при одном процессе
+	# Не выставляем, если имя лог файла пустое
+	if [ $NUMBER_OF_PROCESSES -gt 1 ] && [ "$LOG_FILE" != "" ]; then
+		log_file=$(echo $LOG_FILE | sed "s/\.log/$1.log/")
+		echo "--log-file=\"$log_file\""
+	fi
+
+	echo ""
+}
+
+find_pid_files()
+{
+	find $PIDDIR -regex "$PIDFILE_RE"
+}
+
+is_running()
+{
+	pidfile=$1
+
+	[ -r "$pidfile" ] && pgrep -s $(cat "$pidfile") 1> /dev/null 2> /dev/null
+}
+
+running_processes()
+{
+	pidfiles=$(find_pid_files)
+	running=0
+	for pidfile in $pidfiles; do
+		if is_running $pidfile; then
+			running=$(($running + 1))
+		fi
+	done
+	echo $running
+}
+
+any_runs()
+{
+	if [[ $(running_processes) -gt  0 ]]; then return 0; else return 1; fi
 }
 
 wait4done()
 {
-	while isrun; do
+	while any_runs; do
 		sleep 1
 	done
 }
@@ -43,24 +109,32 @@ start()
 	echo -n "Start $PROGRAM service: "
 
 	[ -f "$LOCKFILE" ] && sleep 1
-	if isrun; then
+	if [[ $(running_processes) -eq $NUMBER_OF_PROCESSES ]]; then
 		echo -n "already running "
 		EXIT_STATUS=1
 	else
 		# Clean stale lock files
-		rm -f "$PIDFILE" "$LOCKFILE"
-		
+		rm -f "$LOCKFILE"
 		mkdir -p $LOGDIR
 		mkdir -p $PIDDIR
 		chown -R $USER:$GROUP $LOGDIR
 		chown -R $USER:$GROUP $PIDDIR
 		chown -R $USER:$GROUP $SYSCONFDIR
 
-		su -l $USER -s $SHELL -c "\"$BINDIR/$PROGRAM\" --daemon --pid-file=\"$PIDFILE\" --config-file=\"$CNFFILE\""
-		EXIT_STATUS=$?
+		for i in $(seq 1 $NUMBER_OF_PROCESSES); do
+			if ! is_running $(generate_pid_name $i); then
+				rm -f $(generate_pid_name $i)
+				# TODO может лучше передавать демону номер процесса, а демон сам будет делать все необходимые подстановки
+				su -l $USER -s $SHELL -c "exec -a $(generate_program_name $i) \"$BINDIR/$PROGRAM\" --daemon --pid-file=\"$(generate_pid_name $i)\" --config-file=\"$CNFFILE\" $(specific_log_file_for_each_process $i)"
+				EXIT_STATUS=$?
+				if [[ $EXIT_STATUS -ne 0 ]]; then
+					break
+				fi
+			fi
+		done
 	fi
 
-	if [ $EXIT_STATUS -eq 0 ]; then
+	if [[ $EXIT_STATUS -eq 0 ]]; then
 		touch "$LOCKFILE"
 		echo "DONE"
 	else
@@ -77,14 +151,17 @@ stop()
 
 	echo -n "Stop $PROGRAM service: "
 
-	if isrun; then
+	if any_runs; then
 	    if [ -f "$LOCKFILE" ]; then
-		kill -TERM `cat "$PIDFILE"`
-		wait4done
-		rm -f "$LOCKFILE"
+			for pid_file in $(find_pid_files); do
+				kill -TERM `cat "$pid_file"`
+			done
+
+			wait4done
+			rm -f "$LOCKFILE"
 	    else
-		echo "has been stopping already"
-		return 1
+			echo "has been stopping already"
+			return 1
 	    fi
 	else
 	    rm -f "$LOCKFILE"
@@ -107,14 +184,17 @@ forcestop()
 
 	echo -n "Stop $PROGRAM service: "
 
-	if isrun; then
+	if any_runs; then
 	    if [ -f "$LOCKFILE" ]; then
-		rm -f "$LOCKFILE"
-		kill -9 `cat "$PIDFILE"`
-		wait4done
+			for pid_file in $(find_pid_files); do
+				kill -9 `cat "$pid_file"`
+			done
+
+			wait4done
+			rm -f "$LOCKFILE"
 	    else
-		echo "has been stopping already"
-		return 1
+			echo "has been stopping already"
+			return 1
 	    fi
 	fi
 
@@ -148,7 +228,15 @@ case "$1" in
 		disable_cron && stop
 		;;
 	status)
-		isrun && echo "$PROGRAM service is running" || echo "$PROGRAM service is stopped"
+		if [[ $(running_processes) -eq $NUMBER_OF_PROCESSES ]]; then
+			echo "$PROGRAM service is running"
+		else
+			if [ ! -e $LOCKFILE ]; then
+				echo "$PROGRAM service is stopped";
+			else
+				echo "$PROGRAM: $(($NUMBER_OF_PROCESSES - $(running_processes))) of $NUMBER_OF_PROCESSES processes unexpectedly terminated"
+			fi
+		fi
 		;;
 	restart)
 		restart && enable_cron
@@ -163,22 +251,19 @@ case "$1" in
 		restart
 		;;
 	condstart)
-		isrun || start
+		any_runs || start
 		;;
 	condstop)
-		isrun && stop
+		any_runs && stop
 		;;
 	condrestart)
-		isrun && restart
+		any_runs && restart
 		;;
 	condreload)
-		isrun && restart
-		;;
-	fallenstart)
-		[ -r "$PIDFILE" ] && start
+		any_runs && restart
 		;;
 	*)
-		echo "Usage: ${0##*/} {start|stop|status|restart|forcestop|forcerestart|reload|condstart|condstop|condrestart|condreload|fallenstart}"
+		echo "Usage: ${0##*/} {start|stop|status|restart|forcestop|forcerestart|reload|condstart|condstop|condrestart|condreload}"
 		EXIT_STATUS=2
 esac
 

@@ -16,8 +16,8 @@ namespace DB
 		String database;
 		String table;
 		
-		ASTQueryWithTableAndOutput() {}
-		ASTQueryWithTableAndOutput(StringRange range_) : ASTQueryWithOutput(range_) {}
+		ASTQueryWithTableAndOutput() = default;
+		ASTQueryWithTableAndOutput(const StringRange range_) : ASTQueryWithOutput(range_) {}
 	};
 	
 	
@@ -26,20 +26,21 @@ namespace DB
 	class Name : public ASTQueryWithTableAndOutput \
 	{ \
 public: \
-		Name() {} \
-		Name(StringRange range_) : ASTQueryWithTableAndOutput(range_) {} \
-		String getID() const { return ID"_" + database + "_" + table; }; \
+		Name() = default;												\
+		Name(const StringRange range_) : ASTQueryWithTableAndOutput(range_) {} \
+		String getID() const override { return ID"_" + database + "_" + table; }; \
 	\
-		ASTPtr clone() const \
+		ASTPtr clone() const override \
 		{ \
 			Name * res = new Name(*this); \
+			ASTPtr ptr{res};			  \
 			res->children.clear(); \
 			if (format) \
 			{ \
 				res->format = format->clone(); \
 				res->children.push_back(res->format); \
 			} \
-			return res; \
+			return ptr; \
 		} \
 	};
 }

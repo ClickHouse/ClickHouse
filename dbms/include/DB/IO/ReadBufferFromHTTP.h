@@ -12,6 +12,7 @@
 #include <Yandex/logger_useful.h>
 
 #define DEFAULT_HTTP_READ_BUFFER_TIMEOUT 1800
+#define DEFAULT_HTTP_READ_BUFFER_CONNECTION_TIMEOUT 1
 
 
 namespace DB
@@ -36,8 +37,10 @@ public:
 		const std::string & host_,
 		int port_,
 		const Params & params,
-		size_t timeout_ = 0,
-		size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE)
+		size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
+		const Poco::Timespan & connection_timeout = Poco::Timespan(DEFAULT_HTTP_READ_BUFFER_CONNECTION_TIMEOUT, 0),
+		const Poco::Timespan & send_timeout = Poco::Timespan(DEFAULT_HTTP_READ_BUFFER_TIMEOUT, 0),
+		const Poco::Timespan & receive_timeout = Poco::Timespan(DEFAULT_HTTP_READ_BUFFER_TIMEOUT, 0))
 		: ReadBuffer(nullptr, 0), host(host_), port(port_)
 	{
 		std::stringstream uri;
@@ -59,7 +62,7 @@ public:
 		session.setPort(port);
 
 		/// устанавливаем таймаут
-		session.setTimeout(Poco::Timespan(timeout_ ? timeout_ : DEFAULT_HTTP_READ_BUFFER_TIMEOUT, 0));
+		session.setTimeout(connection_timeout, send_timeout, receive_timeout);
 
 		Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_POST, uri.str());
 		Poco::Net::HTTPResponse response;

@@ -87,9 +87,9 @@ public:
 	ASTAlterQuery(StringRange range_ = StringRange()) : IAST(range_) {};
 
 	/** Получить текст, который идентифицирует этот элемент. */
-	String getID() const { return ("AlterQuery_" + database + "_" + table); };
+	String getID() const override { return ("AlterQuery_" + database + "_" + table); };
 
-	ASTPtr clone() const
+	ASTPtr clone() const override
 	{
 		ASTAlterQuery * res = new ASTAlterQuery(*this);
 		for (ParameterContainer::size_type i = 0; i < parameters.size(); ++i)

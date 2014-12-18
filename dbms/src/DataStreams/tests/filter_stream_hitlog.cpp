@@ -142,7 +142,7 @@ int main(int argc, char ** argv)
 
 		QueryProcessingStage::Enum stage;
 
-		Poco::SharedPtr<IBlockInputStream> in = table->read(column_names, 0, Settings(), stage)[0];
+		Poco::SharedPtr<IBlockInputStream> in = table->read(column_names, 0, context, Settings(), stage)[0];
 		in = new ExpressionBlockInputStream(in, expression);
 		in = new FilterBlockInputStream(in, 4);
 		//in = new LimitBlockInputStream(in, 10);

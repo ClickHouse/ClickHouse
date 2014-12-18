@@ -202,12 +202,12 @@ public:
 	{
 		if (start + length > data.size())
 			throw Exception("Parameters start = "
-			+ toString(start) + ", length = "
-			+ toString(length) + " are out of bound in IColumnVector<T>::cut() method"
-			" (data.size() = " + toString(data.size()) + ").",
-							ErrorCodes::PARAMETER_OUT_OF_BOUND);
+				+ toString(start) + ", length = "
+				+ toString(length) + " are out of bound in IColumnVector<T>::cut() method"
+				" (data.size() = " + toString(data.size()) + ").",
+				ErrorCodes::PARAMETER_OUT_OF_BOUND);
 
-			Self * res = new Self(length);
+		Self * res = new Self(length);
 		memcpy(&res->getData()[0], &data[start], length * sizeof(data[0]));
 		return res;
 	}

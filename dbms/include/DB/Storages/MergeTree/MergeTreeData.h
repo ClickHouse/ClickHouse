@@ -191,8 +191,11 @@ public:
 			void checkSizes(const String & path) const;
 
 			/// Сериализует и десериализует в человекочитаемом виде.
-			bool readText(ReadBuffer & in); /// Возвращает false, если чексуммы в слишком старом формате.
-			void writeText(WriteBuffer & out) const;
+			bool read(ReadBuffer & in); /// Возвращает false, если чексуммы в слишком старом формате.
+			bool read_v2(ReadBuffer & in);
+			bool read_v3(ReadBuffer & in);
+			bool read_v4(ReadBuffer & in);
+			void write(WriteBuffer & out) const;
 
 			bool empty() const
 			{
@@ -228,7 +231,7 @@ public:
 				String s;
 				{
 					WriteBufferFromString out(s);
-					writeText(out);
+					write(out);
 				}
 				return s;
 			}
@@ -237,7 +240,7 @@ public:
 			{
 				ReadBufferFromString in(s);
 				Checksums res;
-				if (!res.readText(in))
+				if (!res.read(in))
 					throw Exception("Checksums format is too old", ErrorCodes::FORMAT_VERSION_TOO_OLD);
 				assertEOF(in);
 				return res;
@@ -385,7 +388,7 @@ public:
 				return;
 			}
 			ReadBufferFromFile file(path, std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path).getSize()));
-			if (checksums.readText(file))
+			if (checksums.read(file))
 				assertEOF(file);
 		}
 

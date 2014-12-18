@@ -38,9 +38,9 @@ public:
 	  */
 	StringPtr query_string;
 
-	IAST() {}
-	IAST(StringRange range_) : range(range_) {}
-	virtual ~IAST() {}
+	IAST() = default;
+	IAST(const StringRange range_) : range(range_) {}
+	virtual ~IAST() = default;
 
 	/** Получить каноническое имя столбца, если элемент является столбцом */
 	virtual String getColumnName() const { throw Exception("Trying to get name of not a column: " + getID(), ErrorCodes::NOT_A_COLUMN); }

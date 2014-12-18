@@ -13,7 +13,9 @@
 
 #include <Yandex/logger_useful.h>
 
-#define DEFAULT_REMOTE_WRITE_BUFFER_TIMEOUT 1800
+#define DEFAULT_REMOTE_WRITE_BUFFER_CONNECTION_TIMEOUT 1
+#define DEFAULT_REMOTE_WRITE_BUFFER_RECEIVE_TIMEOUT 1800
+#define DEFAULT_REMOTE_WRITE_BUFFER_SEND_TIMEOUT 1800
 
 
 namespace DB
@@ -49,8 +51,12 @@ public:
 	  */
 	RemoteWriteBuffer(const std::string & host_, int port_, const std::string & path_,
 		const std::string & tmp_path_ = "", const std::string & if_exists_ = "remove",
-		bool decompress_ = false, size_t timeout_ = 0, unsigned connection_retries_ = 3,
-		size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE)
+		bool decompress_ = false,
+		unsigned connection_retries_ = 3,
+		size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
+		const Poco::Timespan & connection_timeout = Poco::Timespan(DEFAULT_REMOTE_WRITE_BUFFER_CONNECTION_TIMEOUT, 0),
+		const Poco::Timespan & send_timeout = Poco::Timespan(DEFAULT_REMOTE_WRITE_BUFFER_SEND_TIMEOUT, 0),
+		const Poco::Timespan & receive_timeout = Poco::Timespan(DEFAULT_REMOTE_WRITE_BUFFER_RECEIVE_TIMEOUT, 0))
 		: WriteBuffer(nullptr, 0), host(host_), port(port_), path(path_),
 		tmp_path(tmp_path_), if_exists(if_exists_),
 		decompress(decompress_), connection_retries(connection_retries_), finalized(false)
@@ -72,7 +78,7 @@ public:
 		session.setKeepAlive(true);
 		
 		/// устанавливаем таймаут
-		session.setTimeout(Poco::Timespan((timeout_ ? timeout_ : DEFAULT_REMOTE_WRITE_BUFFER_TIMEOUT), 0));
+		session.setTimeout(connection_timeout, send_timeout, receive_timeout);
 		
 		Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_POST, uri_str, Poco::Net::HTTPRequest::HTTP_1_1);
 		

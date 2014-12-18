@@ -90,12 +90,13 @@ StorageMergeTree::~StorageMergeTree()
 BlockInputStreams StorageMergeTree::read(
 	const Names & column_names,
 	ASTPtr query,
+	const Context & context,
 	const Settings & settings,
 	QueryProcessingStage::Enum & processed_stage,
-	size_t max_block_size,
-	unsigned threads)
+	const size_t max_block_size,
+	const unsigned threads)
 {
-	return reader.read(column_names, query, settings, processed_stage, max_block_size, threads);
+	return reader.read(column_names, query, context, settings, processed_stage, max_block_size, threads);
 }
 
 BlockOutputStreamPtr StorageMergeTree::write(ASTPtr query)
@@ -127,6 +128,7 @@ void StorageMergeTree::rename(const String & new_path_to_db, const String & new_
 void StorageMergeTree::alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context)
 {
 	/// NOTE: Здесь так же как в ReplicatedMergeTree можно сделать ALTER, не блокирующий запись данных надолго.
+	const MergeTreeMergeBlocker merge_blocker{merger};
 
 	auto table_soft_lock = lockDataForAlter();
 

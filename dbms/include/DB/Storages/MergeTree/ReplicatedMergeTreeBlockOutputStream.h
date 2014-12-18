@@ -22,12 +22,14 @@ public:
 
 	void write(const Block & block) override
 	{
-		assertSessionIsNotExpired();
+		auto zookeeper = storage.getZooKeeper();
+
+		assertSessionIsNotExpired(zookeeper);
 		auto part_blocks = storage.writer.splitBlockIntoParts(block);
 
 		for (auto & current_block : part_blocks)
 		{
-			assertSessionIsNotExpired();
+			assertSessionIsNotExpired(zookeeper);
 
 			++block_index;
 			String block_id = insert_id.empty() ? "" : insert_id + "__" + toString(block_index);
@@ -60,29 +62,29 @@ public:
 				ops.push_back(new zkutil::Op::Create(
 					storage.zookeeper_path + "/blocks/" + block_id,
 					"",
-					storage.zookeeper->getDefaultACL(),
+					zookeeper->getDefaultACL(),
 					zkutil::CreateMode::Persistent));
 				ops.push_back(new zkutil::Op::Create(
 					storage.zookeeper_path + "/blocks/" + block_id + "/columns",
 					part->columns.toString(),
-					storage.zookeeper->getDefaultACL(),
+					zookeeper->getDefaultACL(),
 					zkutil::CreateMode::Persistent));
 				ops.push_back(new zkutil::Op::Create(
 					storage.zookeeper_path + "/blocks/" + block_id + "/checksums",
 					part->checksums.toString(),
-					storage.zookeeper->getDefaultACL(),
+					zookeeper->getDefaultACL(),
 					zkutil::CreateMode::Persistent));
 				ops.push_back(new zkutil::Op::Create(
 					storage.zookeeper_path + "/blocks/" + block_id + "/number",
 					toString(part_number),
-					storage.zookeeper->getDefaultACL(),
+					zookeeper->getDefaultACL(),
 					zkutil::CreateMode::Persistent));
 			}
 			storage.checkPartAndAddToZooKeeper(part, ops, part_name);
 			ops.push_back(new zkutil::Op::Create(
 				storage.zookeeper_path + "/log/log-",
 				log_entry.toString(),
-				storage.zookeeper->getDefaultACL(),
+				zookeeper->getDefaultACL(),
 				zkutil::CreateMode::PersistentSequential));
 			block_number_lock.getUnlockOps(ops);
 
@@ -91,7 +93,7 @@ public:
 
 			try
 			{
-				auto code = storage.zookeeper->tryMulti(ops);
+				auto code = zookeeper->tryMulti(ops);
 				if (code == ZOK)
 				{
 					transaction.commit();
@@ -101,7 +103,7 @@ public:
 				{
 					/// Если блок с таким ID уже есть в таблице, откатим его вставку.
 					String expected_checksums_str;
-					if (!block_id.empty() && storage.zookeeper->tryGet(
+					if (!block_id.empty() && zookeeper->tryGet(
 						storage.zookeeper_path + "/blocks/" + block_id + "/checksums", expected_checksums_str))
 					{
 						LOG_INFO(log, "Block with ID " << block_id << " already exists; ignoring it (removing part " << part->name << ")");
@@ -149,9 +151,9 @@ private:
 
 
 	/// Позволяет проверить, что сессия в ZooKeeper ещё жива.
-	void assertSessionIsNotExpired()
+	void assertSessionIsNotExpired(zkutil::ZooKeeperPtr & zookeeper)
 	{
-		if (storage.zookeeper->expired())
+		if (zookeeper->expired())
 			throw Exception("ZooKeeper session has been expired.", ErrorCodes::NO_ZOOKEEPER);
 	}
 };

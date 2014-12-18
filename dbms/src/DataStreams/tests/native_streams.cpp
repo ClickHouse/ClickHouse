@@ -21,6 +21,8 @@
 
 #include <DB/Storages/StorageLog.h>
 
+#include <DB/Interpreters/Context.h>
+
 
 int main(int argc, char ** argv)
 {
@@ -102,7 +104,7 @@ int main(int argc, char ** argv)
 		if (argc == 2 && 0 == strcmp(argv[1], "read"))
 		{
 			QueryProcessingStage::Enum stage;
-			SharedPtr<IBlockInputStream> in = table->read(column_names, 0, Settings(), stage)[0];
+			SharedPtr<IBlockInputStream> in = table->read(column_names, 0, Context{}, Settings(), stage)[0];
 			WriteBufferFromOStream out1(std::cout);
 			CompressedWriteBuffer out2(out1);
 			NativeBlockOutputStream out3(out2);
