@@ -576,11 +576,15 @@ private:
 		connection->sendQuery(query_without_data, "", QueryProcessingStage::Complete, &context.getSettingsRef(), true);
 		sendExternalTables();
 
-		/// Получим структуру таблицы
-		Block sample = receiveSampleBlock();
-
-		sendData(sample);
-		receivePacket();
+		/// Получаем структуру таблицы.
+		Block sample;
+		if (receiveSampleBlock(sample))
+		{
+			/// Если была получена структура, т.е. сервер не выкинул исключения,
+			/// отправляем эту структуру вместе с данными.
+			sendData(sample);
+			receivePacket();
+		}
 	}
 
 
@@ -762,15 +766,21 @@ private:
 
 	/** Получить блок - пример структуры таблицы, в которую будут вставляться данные.
 	  */
-	Block receiveSampleBlock()
+	bool receiveSampleBlock(Block & out)
 	{
 		Connection::Packet packet = connection->receivePacket();
 
 		switch (packet.type)
 		{
 			case Protocol::Server::Data:
-				return packet.block;
+				out = packet.block;
+				return true;
 
+			case Protocol::Server::Exception:
+				onException(*packet.exception);
+				last_exception = packet.exception;
+				return false;
+				
 			default:
 				throw Exception("Unexpected packet from server (expected Data, got "
 					+ String(Protocol::Server::toString(packet.type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
