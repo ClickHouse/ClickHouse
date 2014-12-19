@@ -99,7 +99,8 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input_, const NamesAndType
 			interpreter = interpreter->next_select_in_union_all.get();
 			Block current = interpreter->getSampleBlock();
 			if (!blocksHaveEqualStructure(first, current))
-				throw Exception("Result structures mismatch in the SELECT queries of the UNION ALL chain", 
+				throw Exception("Result structures mismatch in the SELECT queries of the UNION ALL chain. Found result structure:\n\n" + current.dumpStructure()
+				+ "\n\nwhile expecting:\n\n" + first.dumpStructure() + "\n\ninstead", 
 				ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH);
 		}
 	}
