@@ -86,8 +86,8 @@ public:
 
 		TableStructureReadLock(StoragePtr storage_, bool lock_structure, bool lock_data)
 		:	storage(storage_),
-		         data_lock(lock_data      ? new Poco::ScopedReadRWLock(storage->     data_lock) : nullptr),
-			structure_lock(lock_structure ? new Poco::ScopedReadRWLock(storage->structure_lock) : nullptr) {}
+			data_lock(lock_data      		? new Poco::ScopedReadRWLock(storage->     data_lock) : nullptr),
+			structure_lock(lock_structure 	? new Poco::ScopedReadRWLock(storage->structure_lock) : nullptr) {}
 	};
 
 	typedef Poco::SharedPtr<TableStructureReadLock> TableStructureReadLockPtr;

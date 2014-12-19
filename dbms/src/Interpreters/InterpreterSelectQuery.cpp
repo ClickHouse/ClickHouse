@@ -750,7 +750,7 @@ void InterpreterSelectQuery::executeHaving(BlockInputStreams & streams, Expressi
 
 
 void InterpreterSelectQuery::executeTotalsAndHaving(BlockInputStreams & streams, bool has_having,
-        ExpressionActionsPtr expression, bool overflow_row)
+	ExpressionActionsPtr expression, bool overflow_row)
 {
 	if (streams.size() > 1)
 	{

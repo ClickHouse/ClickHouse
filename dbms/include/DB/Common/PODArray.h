@@ -160,7 +160,7 @@ public:
 	struct iterator : public boost::iterator_adaptor<iterator, T*>
 	{
 		iterator() {}
-        iterator(T * ptr_) : iterator::iterator_adaptor_(ptr_) {}
+		iterator(T * ptr_) : iterator::iterator_adaptor_(ptr_) {}
 	};
 
 	struct const_iterator : public boost::iterator_adaptor<const_iterator, const T*>
