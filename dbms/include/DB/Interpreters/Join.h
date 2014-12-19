@@ -146,7 +146,7 @@ private:
 
 	/** Блоки данных таблицы, с которой идёт соединение.
 	  */
-	Blocks blocks;
+	BlocksList blocks;
 
 	MapsAny maps_any;
 	MapsAll maps_all;
