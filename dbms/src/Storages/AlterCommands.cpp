@@ -179,13 +179,9 @@ namespace DB
 
 	void AlterCommands::validate(IStorage * table, const Context & context)
 	{
-		auto lock = table->lockDataForAlter();
-
 		auto columns = table->getColumnsList();
 		columns.insert(std::end(columns), std::begin(table->alias_columns), std::end(table->alias_columns));
 		auto defaults = table->column_defaults;
-
-		lock.reset();
 
 		std::vector<std::pair<String, AlterCommand *>> defaulted_columns{};
 

@@ -68,7 +68,7 @@ class MergeTreeMergeBlocker
 {
 public:
 	MergeTreeMergeBlocker(MergeTreeDataMerger & merger)
-		: merger(merger), was_cancelled{merger.cancelAll()} {}
+		: merger(merger), was_cancelled{!merger.cancelAll()} {}
 
 	~MergeTreeMergeBlocker()
 	{

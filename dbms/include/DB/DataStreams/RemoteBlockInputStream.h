@@ -30,7 +30,7 @@ public:
 	/// Принимает готовое соединение.
 	RemoteBlockInputStream(Connection & connection_, const String & query_, const Settings * settings_,
 		const Tables & external_tables_ = Tables(), QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
-		const Context & context = Context{})
+		const Context & context = getDefaultContext())
 		: connection(&connection_), query(query_), external_tables(external_tables_), stage(stage_), context(context)
 	{
 		init(settings_);
@@ -39,7 +39,7 @@ public:
 	/// Принимает готовое соединение. Захватывает владение соединением из пула.
 	RemoteBlockInputStream(ConnectionPool::Entry & pool_entry_, const String & query_, const Settings * settings_,
 		const Tables & external_tables_ = Tables(), QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
-		const Context & context = Context{})
+		const Context & context = getDefaultContext())
 		: pool_entry(pool_entry_), connection(&*pool_entry_), query(query_),
 		  external_tables(external_tables_), stage(stage_), context(context)
 	{
@@ -49,7 +49,7 @@ public:
 	/// Принимает пул, из которого нужно будет достать соединение.
 	RemoteBlockInputStream(IConnectionPool * pool_, const String & query_, const Settings * settings_,
 		const Tables & external_tables_ = Tables(), QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
-		const Context & context = Context{})
+		const Context & context = getDefaultContext())
 		: pool(pool_), query(query_), external_tables(external_tables_), stage(stage_), context(context)
 	{
 		init(settings_);
@@ -273,6 +273,13 @@ private:
 	bool got_exception_from_server = false;
 
 	Logger * log = &Logger::get("RemoteBlockInputStream");
+
+	/// ITable::read requires a Context, therefore we should create one if the user can't supply it
+	static Context & getDefaultContext()
+	{
+		static Context instance;
+		return instance;
+	}
 };
 
 }
