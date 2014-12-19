@@ -19,8 +19,8 @@ public:
 private:
 	void write(const Block & block) override
 	{
-        for (const auto & column : columns)
-            if (block.has(column.name))
+		for (const auto & column : columns)
+			if (block.has(column.name))
 				throw Exception{"Cannot insert column " + column.name, ErrorCodes::ILLEGAL_COLUMN};
 
 		output->write(block);
