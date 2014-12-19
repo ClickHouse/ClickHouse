@@ -257,7 +257,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	return streams[0];
 }
 
-BlockInputStreams InterpreterSelectQuery::executeWithoutUnion()
+const BlockInputStreams & InterpreterSelectQuery::executeWithoutUnion()
 {
 	if (isFirstSelectInsideUnionAll())
 	{

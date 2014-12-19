@@ -64,7 +64,7 @@ public:
 	BlockInputStreamPtr execute();
 
 	/// Выполнить запрос без объединения потоков.
-	BlockInputStreams executeWithoutUnion();
+	const BlockInputStreams & executeWithoutUnion();
 	
 	/** Выполнить запрос, записать результат в нужном формате в buf.
 	 * BlockInputStreamPtr возвращается, чтобы можно было потом получить информацию о плане выполнения запроса.
