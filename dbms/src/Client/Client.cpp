@@ -96,9 +96,10 @@ private:
 
 	String format;						/// Формат вывода результата в консоль.
 	size_t format_max_block_size = 0;	/// Максимальный размер блока при выводе в консоль.
-	String current_format;              /// Формат вывода результата текущего запроса в консоль.
 	String insert_format;				/// Формат данных для INSERT-а при чтении их из stdin в batch режиме
 	size_t insert_format_max_block_size = 0; /// Максимальный размер блока при чтении данных INSERT-а.
+
+	bool has_vertical_output_suffix = false; /// \G указан в конце команды?
 
 	Context context;
 
@@ -233,15 +234,12 @@ private:
 				<< "." << Revision::get()
 				<< "." << std::endl;
 
-		if (is_interactive)
-		{
-			format = config().getString("format", config().has("vertical") ? "Vertical" : "PrettyCompact");
-		}
+		if (config().has("vertical"))
+			format = config().getString("format", "Vertical");
 		else
-			format = config().getString("format", "TabSeparated");
-
+			format = config().getString("format", is_interactive ? "PrettyCompact" : "TabSeparated");
+		
 		format_max_block_size = config().getInt("format_max_block_size", DEFAULT_BLOCK_SIZE);
-		current_format = format;
 
 		insert_format = "Values";
 		insert_format_max_block_size = config().getInt("insert_format_max_block_size", DEFAULT_INSERT_BLOCK_SIZE);
@@ -358,14 +356,15 @@ private:
 
 			bool ends_with_semicolon = line[ws - 1] == ';';
 			bool ends_with_backslash = line[ws - 1] == '\\';
-			bool ends_with_format_vertical = (ws >= 2) && (line[ws - 2] == '\\') && (line[ws - 1] == 'G');
+			
+			has_vertical_output_suffix = (ws >= 2) && (line[ws - 2] == '\\') && (line[ws - 1] == 'G');
 
 			if (ends_with_backslash)
 				line = line.substr(0, ws - 1);
 
 			query += line;
 
-			if (!ends_with_backslash && (ends_with_semicolon || ends_with_format_vertical || !config().has("multiline")))
+			if (!ends_with_backslash && (ends_with_semicolon || has_vertical_output_suffix || !config().has("multiline")))
 			{
 				if (query != prev_query)
 				{
@@ -383,11 +382,8 @@ private:
 					prev_query = query;
 				}
 				
-				if (ends_with_format_vertical)
-				{
-					current_format = config().getString("format", "Vertical");
+				if (has_vertical_output_suffix)
 					query = query.substr(0, query.length() - 2);
-				}
 
 				try
 				{
@@ -411,7 +407,6 @@ private:
 				}
 
 				query = "";
-				current_format = format;
 			}
 			else
 			{
@@ -815,12 +810,23 @@ private:
 		processed_rows += block.rows();
 		if (!block_std_out)
 		{
+			String current_format = format;
+			
 			/// Формат может быть указан в запросе.
 			if (ASTQueryWithOutput * query_with_output = dynamic_cast<ASTQueryWithOutput *>(&*parsed_query))
+			{
 				if (query_with_output->format)
+				{
+					if (has_vertical_output_suffix)
+						throw Exception("Output format already specified", ErrorCodes::CLIENT_OUTPUT_FORMAT_SPECIFIED);
 					if (ASTIdentifier * id = typeid_cast<ASTIdentifier *>(&*query_with_output->format))
 						current_format = id->name;
-
+				}
+			}
+			
+			if (has_vertical_output_suffix)
+				current_format = config().getString("format", "Vertical");
+			
 			block_std_out = context.getFormatFactory().getOutput(current_format, std_out, block);
 			block_std_out->writePrefix();
 		}
