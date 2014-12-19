@@ -63,6 +63,9 @@ public:
 	 */
 	BlockInputStreamPtr execute();
 
+	/// Выполнить запрос без объединения потоков.
+	BlockInputStreams executeWithoutUnion();
+	
 	/** Выполнить запрос, записать результат в нужном формате в buf.
 	 * BlockInputStreamPtr возвращается, чтобы можно было потом получить информацию о плане выполнения запроса.
 	 */
@@ -75,7 +78,7 @@ private:
 	typedef Poco::SharedPtr<ExpressionAnalyzer> ExpressionAnalyzerPtr;
 
 	void init(BlockInputStreamPtr input, const NamesAndTypesList & table_column_names = NamesAndTypesList());
-
+	
 	/// Выполнить один запрос SELECT из цепочки UNION ALL.
 	void executeSingleQuery(bool should_perform_union_hint = true);
 

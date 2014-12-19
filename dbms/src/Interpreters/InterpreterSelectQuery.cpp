@@ -225,33 +225,14 @@ static inline BlockInputStreamPtr maybeAsynchronous(BlockInputStreamPtr in, bool
 		: in;
 }
 
-
 BlockInputStreamPtr InterpreterSelectQuery::execute()
-{       
-	if (isFirstSelectInsideUnionAll())
-	{
-		executeSingleQuery(false);       
-		for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->next_select_in_union_all.get())
-		{
-			p->executeSingleQuery(false);
-			const auto & others = p->streams;
-			streams.insert(streams.end(), others.begin(), others.end());
-		}
-		
-		if (streams.empty())
-			return new NullBlockInputStream;
-		
-		for (auto & stream : streams)
-			stream = new MaterializingBlockInputStream(stream);
-		
-		executeUnion(streams);
-	}
-	else
-	{
-		executeSingleQuery();
-		if (streams.empty())
-			return new NullBlockInputStream;
-	}
+{
+	(void) executeWithoutUnion();
+	
+	if (streams.empty())
+		return new NullBlockInputStream;
+	
+	executeUnion(streams);
 	
 	/// Ограничения на результат, квота на результат, а также колбек для прогресса.
 	if (IProfilingBlockInputStream * stream = dynamic_cast<IProfilingBlockInputStream *>(&*streams[0]))
@@ -276,6 +257,26 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	return streams[0];
 }
 
+BlockInputStreams InterpreterSelectQuery::executeWithoutUnion()
+{
+	if (isFirstSelectInsideUnionAll())
+	{
+		executeSingleQuery(false);
+		for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->next_select_in_union_all.get())
+		{
+			p->executeSingleQuery(false);
+			const auto & others = p->streams;
+			streams.insert(streams.end(), others.begin(), others.end());
+		}
+		
+		for (auto & stream : streams)
+			stream = new MaterializingBlockInputStream(stream);
+	}
+	else
+		executeSingleQuery();
+	
+	return streams;
+}
 
 void InterpreterSelectQuery::executeSingleQuery(bool should_perform_union_hint)
 {
