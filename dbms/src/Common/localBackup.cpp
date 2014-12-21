@@ -73,7 +73,7 @@ void localBackup(Poco::Path source_path, Poco::Path destination_path)
 	  * Если какой-то файл удалился во время попытки сделать бэкап, то повторим попытку снова,
 	  *  так как важно учесть какие-нибудь новые файлы, который могли появиться.
 	  */
-	do
+	while (true)
 	{
 		try
 		{
@@ -98,5 +98,7 @@ void localBackup(Poco::Path source_path, Poco::Path destination_path)
 
 			continue;
 		}
-	} while (false);
+
+		break;
+	}
 }
