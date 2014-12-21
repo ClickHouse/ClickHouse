@@ -199,7 +199,6 @@ bool StorageMergeTree::merge(bool aggressive, BackgroundProcessingPool::Context 
 		if (!merger.selectPartsToMerge(parts, merged_name, disk_space, false, aggressive, only_small, can_merge) &&
 			!merger.selectPartsToMerge(parts, merged_name, disk_space,  true, aggressive, only_small, can_merge))
 		{
-			LOG_INFO(log, "No parts to merge");
 			return false;
 		}
 
