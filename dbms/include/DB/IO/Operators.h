@@ -42,43 +42,43 @@ struct BinaryManipReadBuffer 		: ReadBuffer {};
 
 template <typename T> 	WriteBuffer & operator<< (WriteBuffer & buf, const T & x) 		{ writeText(x, buf); 	return buf; }
 /// Если не использовать манипуляторы, строка выводится без экранирования, как есть.
-template <> 			WriteBuffer & operator<< (WriteBuffer & buf, const String & x) 	{ writeString(x, buf); 	return buf; }
-template <> 			WriteBuffer & operator<< (WriteBuffer & buf, const char & x) 	{ writeChar(x, buf); 	return buf; }
+template <> inline		WriteBuffer & operator<< (WriteBuffer & buf, const String & x) 	{ writeString(x, buf); 	return buf; }
+template <> inline		WriteBuffer & operator<< (WriteBuffer & buf, const char & x) 	{ writeChar(x, buf); 	return buf; }
 
-WriteBuffer & operator<< (WriteBuffer & buf, const char * x) 	{ writeCString(x, buf); return buf; }
+inline WriteBuffer & operator<< (WriteBuffer & buf, const char * x) 	{ writeCString(x, buf); return buf; }
 
-EscapeManipWriteBuffer &		operator<< (WriteBuffer & buf, EscapeManip x) 		{ return static_cast<EscapeManipWriteBuffer &>(buf); }
-QuoteManipWriteBuffer &			operator<< (WriteBuffer & buf, QuoteManip x) 		{ return static_cast<QuoteManipWriteBuffer &>(buf); }
-DoubleQuoteManipWriteBuffer & 	operator<< (WriteBuffer & buf, DoubleQuoteManip x) 	{ return static_cast<DoubleQuoteManipWriteBuffer &>(buf); }
-BinaryManipWriteBuffer &		operator<< (WriteBuffer & buf, BinaryManip x) 		{ return static_cast<BinaryManipWriteBuffer &>(buf); }
+inline EscapeManipWriteBuffer &		operator<< (WriteBuffer & buf, EscapeManip x) 		{ return static_cast<EscapeManipWriteBuffer &>(buf); }
+inline QuoteManipWriteBuffer &		operator<< (WriteBuffer & buf, QuoteManip x) 		{ return static_cast<QuoteManipWriteBuffer &>(buf); }
+inline DoubleQuoteManipWriteBuffer & operator<< (WriteBuffer & buf, DoubleQuoteManip x) { return static_cast<DoubleQuoteManipWriteBuffer &>(buf); }
+inline BinaryManipWriteBuffer &		operator<< (WriteBuffer & buf, BinaryManip x) 		{ return static_cast<BinaryManipWriteBuffer &>(buf); }
 
 template <typename T> WriteBuffer & operator<< (EscapeManipWriteBuffer & buf, 		const T & x) { writeText(x, buf); 			return buf; }
 template <typename T> WriteBuffer & operator<< (QuoteManipWriteBuffer & buf, 		const T & x) { writeQuoted(x, buf); 		return buf; }
 template <typename T> WriteBuffer & operator<< (DoubleQuoteManipWriteBuffer & buf, 	const T & x) { writeDoubleQuoted(x, buf); 	return buf; }
 template <typename T> WriteBuffer & operator<< (BinaryManipWriteBuffer & buf, 		const T & x) { writeBinary(x, buf); 		return buf; }
 
-WriteBuffer & operator<< (EscapeManipWriteBuffer & buf, 		const char * x) 	{ writeAnyEscapedString<'\''>(x, x + strlen(x), buf); return buf; }
-WriteBuffer & operator<< (QuoteManipWriteBuffer & buf, 			const char * x) 	{ writeAnyQuotedString<'\''>(x, x + strlen(x), buf); return buf; }
-WriteBuffer & operator<< (DoubleQuoteManipWriteBuffer & buf, 	const char * x) 	{ writeAnyQuotedString<'"'>(x, x + strlen(x), buf); return buf; }
-WriteBuffer & operator<< (BinaryManipWriteBuffer & buf, 		const char * x) 	{ writeStringBinary(x, buf); return buf; }
+inline WriteBuffer & operator<< (EscapeManipWriteBuffer & buf, 		const char * x) { writeAnyEscapedString<'\''>(x, x + strlen(x), buf); return buf; }
+inline WriteBuffer & operator<< (QuoteManipWriteBuffer & buf, 		const char * x) { writeAnyQuotedString<'\''>(x, x + strlen(x), buf); return buf; }
+inline WriteBuffer & operator<< (DoubleQuoteManipWriteBuffer & buf, const char * x) { writeAnyQuotedString<'"'>(x, x + strlen(x), buf); return buf; }
+inline WriteBuffer & operator<< (BinaryManipWriteBuffer & buf, 		const char * x) { writeStringBinary(x, buf); return buf; }
 
 /// Манипулятор вызывает у WriteBuffer метод next - это делает сброс буфера. Для вложенных буферов, сброс не рекурсивный.
 enum FlushManip { flush };
 
-WriteBuffer & operator<< (WriteBuffer & buf, FlushManip x) { buf.next(); return buf; }
+inline WriteBuffer & operator<< (WriteBuffer & buf, FlushManip x) { buf.next(); return buf; }
 
 
-template <typename T> 	ReadBuffer & operator>> (ReadBuffer & buf, T & x) 				{ readText(x, buf); 	return buf; }
-template <> 			ReadBuffer & operator>> (ReadBuffer & buf, String & x) 			{ readString(x, buf); 	return buf; }
-template <> 			ReadBuffer & operator>> (ReadBuffer & buf, char & x) 			{ readChar(x, buf); 	return buf; }
+template <typename T> 		ReadBuffer & operator>> (ReadBuffer & buf, T & x) 				{ readText(x, buf); 	return buf; }
+template <> inline 			ReadBuffer & operator>> (ReadBuffer & buf, String & x) 			{ readString(x, buf); 	return buf; }
+template <> inline 			ReadBuffer & operator>> (ReadBuffer & buf, char & x) 			{ readChar(x, buf); 	return buf; }
 
 /// Если указать для чтения строковый литерал, то это будет обозначать - убедиться в наличии последовательности байт и пропустить её.
-ReadBuffer & operator>> (ReadBuffer & buf, const char * x) 	{ assertString(x, buf); return buf; }
+inline ReadBuffer & operator>> (ReadBuffer & buf, const char * x) 	{ assertString(x, buf); return buf; }
 
-EscapeManipReadBuffer &			operator>> (ReadBuffer & buf, EscapeManip x) 		{ return static_cast<EscapeManipReadBuffer &>(buf); }
-QuoteManipReadBuffer &			operator>> (ReadBuffer & buf, QuoteManip x) 		{ return static_cast<QuoteManipReadBuffer &>(buf); }
-DoubleQuoteManipReadBuffer &	operator>> (ReadBuffer & buf, DoubleQuoteManip x) 	{ return static_cast<DoubleQuoteManipReadBuffer &>(buf); }
-BinaryManipReadBuffer &			operator>> (ReadBuffer & buf, BinaryManip x) 		{ return static_cast<BinaryManipReadBuffer &>(buf); }
+inline EscapeManipReadBuffer &		operator>> (ReadBuffer & buf, EscapeManip x) 		{ return static_cast<EscapeManipReadBuffer &>(buf); }
+inline QuoteManipReadBuffer &		operator>> (ReadBuffer & buf, QuoteManip x) 		{ return static_cast<QuoteManipReadBuffer &>(buf); }
+inline DoubleQuoteManipReadBuffer &	operator>> (ReadBuffer & buf, DoubleQuoteManip x) 	{ return static_cast<DoubleQuoteManipReadBuffer &>(buf); }
+inline BinaryManipReadBuffer &		operator>> (ReadBuffer & buf, BinaryManip x) 		{ return static_cast<BinaryManipReadBuffer &>(buf); }
 
 template <typename T> ReadBuffer & operator>> (EscapeManipReadBuffer & buf, 		T & x) { readText(x, buf); 			return buf; }
 template <typename T> ReadBuffer & operator>> (QuoteManipReadBuffer & buf, 			T & x) { readQuoted(x, buf); 		return buf; }
