@@ -583,19 +583,27 @@ static SharedPtr<InterpreterSelectQuery> interpretSubquery(
 	ASTPtr query;
 	if (table)
 	{
-		String query_str = "SELECT * FROM " + backQuoteIfNeed(table->name);
-		const char * begin = query_str.data();
-		const char * end = begin + query_str.size();
-		const char * pos = begin;
-		Expected expected = "";
+		/// create ASTSelectQuery for "SELECT * FROM table" as if written by hand
+		const auto select_query = new ASTSelectQuery;
+		query = select_query;
+		
+		const auto select_expression_list = new ASTExpressionList;
+		select_query->select_expression_list = select_expression_list;
+		select_query->children.emplace_back(select_query->select_expression_list);
 
-		bool parse_res = ParserSelectQuery().parse(pos, end, query, expected);
-		if (!parse_res)
-			throw Exception("Error in parsing SELECT query while creating set or join for table " + table->name + ".",
-				ErrorCodes::LOGICAL_ERROR);
+		/// get columns list for target table
+		const auto & storage = context.getTable("", table->name);
+		const auto & columns = storage->getColumnsListNonMaterialized();
+		select_expression_list->children.reserve(columns.size());
 
-		/// @note it may be more appropriate to manually replace ASTAsterisk with table's columns
-		ExpressionAnalyzer{query, context, subquery_depth};
+		/// manually substitute column names in place of asterisk
+		for (const auto & column : columns)
+			select_expression_list->children.emplace_back(new ASTIdentifier{
+				StringRange{}, column.name
+			});
+
+		select_query->table = subquery_or_table_name;
+		select_query->children.emplace_back(select_query->table);
 	}
 	else
 		query = subquery->children.at(0);
