@@ -55,20 +55,27 @@ public:
 	/// Переименовать столбцы в такие же имена, как в source.
 	void renameColumns(const ASTSelectQuery & source)
 	{
-		ASTs & to = select_expression_list->children;
 		const ASTs & from = source.select_expression_list->children;
-		
+		ASTs & to = select_expression_list->children;
+
 		if (from.size() != to.size())
-			/// XXX Временно!!! Скоро придумаем собственные сообщение + исключение.
-			throw Exception("FATAL ERROR", DB::ErrorCodes::UNKNOWN_IDENTIFIER);
-		
+			throw Exception("Size mismatch in UNION ALL chain", 
+							DB::ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH);
+
 		for (size_t i = 0; i < from.size(); ++i)
-		{			
-			if (from[i]->getAliasOrColumnName() != to[i]->getAliasOrColumnName())
+		{
+			const auto & from_alias = from[i]->tryGetAlias();
+			const auto & to_alias = to[i]->tryGetAlias();
+			if (!to_alias.empty() && !from_alias.empty())
+				if (to_alias != from_alias)
+					throw Exception("Column alias mismatch in UNION ALL chain", 
+									DB::ErrorCodes::UNION_ALL_COLUMN_ALIAS_MISMATCH);
+
+			if (to[i]->getAliasOrColumnName() != from[i]->getAliasOrColumnName())
 				to[i]->setAlias(from[i]->getAliasOrColumnName());
 		}
 	}
-	
+
 	/// Переписывает select_expression_list, чтобы вернуть только необходимые столбцы в правильном порядке.
 	void rewriteSelectExpressionList(const Names & column_names)
 	{

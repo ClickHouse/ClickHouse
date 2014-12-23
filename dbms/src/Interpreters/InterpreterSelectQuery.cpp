@@ -103,11 +103,11 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input_, const NamesAndType
 				+ "\n\nwhile expecting:\n\n" + first.dumpStructure() + "\n\ninstead", 
 				ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH);
 		}
-		
+
 		// Переименовать столбцы каждого запроса цепочки UNION ALL в такие же имена, как в первом запросе.
-		for (ASTPtr tree = query.next_union_all; !tree.isNull(); tree = (static_cast<ASTSelectQuery &>(*tree)).next_union_all)
+		for (IAST * tree = query.next_union_all.get(); tree != nullptr; tree = static_cast<ASTSelectQuery *>(tree)->next_union_all.get())
 		{
-			ASTSelectQuery & ast = static_cast<ASTSelectQuery &>(*(tree.get()));
+			auto & ast = static_cast<ASTSelectQuery &>(*tree);
 			ast.renameColumns(query);
 		}
 	}
@@ -115,13 +115,12 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input_, const NamesAndType
 
 ///
 /// XXX Временный boilerplate код, который сотру очень скоро. Не обращать внимание.
-/// на него. Дело в том, что rewriteExpressionList() может не работать правильно,
-/// если мы не вызываем renameColumns() перед ним. В свою очередь renameColumns()
+/// на него. Дело в том, что функция rewriteExpressionList() может работать неправильно,
+/// если мы не вызываем renameColumns() до нее. В свою очередь renameColumns()
 /// будет работать правильно лишь в том случае, если обладает достаточно информаций,
-/// то, что возможно только после построения объекта query_analyzer.
-/// Но тогда, после вызова rewriteExpressionList(), InterpreterSelectQuery содержит
-/// неправильнии информации. Единственный выход - заново инициализировать объект
-/// InterpreterSelectQuery.
+/// то, что возможно только после создания объекта query_analyzer.
+/// Но тогда, после вызова rewriteExpressionList(), объект InterpreterSelectQuery хранит
+/// неправильные информации. Единственный выход - заново инициализировать этот объект.
 ///
 void InterpreterSelectQuery::reinit(const NamesAndTypesList & table_column_names)
 {
@@ -215,7 +214,7 @@ void InterpreterSelectQuery::rewriteExpressionList(const Names & required_column
 	
 	for (IAST* tree = query.next_union_all.get(); tree != nullptr; tree = static_cast<ASTSelectQuery *>(tree)->next_union_all.get())
 	{
-		auto & next_query = *(static_cast<ASTSelectQuery *>(tree));
+		auto & next_query = static_cast<ASTSelectQuery &>(*tree);
 		if (next_query.distinct)
 			return;
 	}
@@ -223,7 +222,7 @@ void InterpreterSelectQuery::rewriteExpressionList(const Names & required_column
 	query.rewriteSelectExpressionList(required_column_names);
 	for (IAST* tree = query.next_union_all.get(); tree != nullptr; tree = static_cast<ASTSelectQuery *>(tree)->next_union_all.get())
 	{
-		auto & next_query = *(static_cast<ASTSelectQuery *>(tree));
+		auto & next_query = static_cast<ASTSelectQuery &>(*tree);
 		next_query.rewriteSelectExpressionList(required_column_names);
 	}
 }
