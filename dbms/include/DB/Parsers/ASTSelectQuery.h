@@ -52,6 +52,23 @@ public:
 		return false;
 	}
 
+	/// Переименовать столбцы в такие же имена, как в source.
+	void renameColumns(const ASTSelectQuery & source)
+	{
+		ASTs & to = select_expression_list->children;
+		const ASTs & from = source.select_expression_list->children;
+		
+		if (from.size() != to.size())
+			/// XXX Временно!!! Скоро придумаем собственные сообщение + исключение.
+			throw Exception("FATAL ERROR", DB::ErrorCodes::UNKNOWN_IDENTIFIER);
+		
+		for (size_t i = 0; i < from.size(); ++i)
+		{			
+			if (from[i]->getAliasOrColumnName() != to[i]->getAliasOrColumnName())
+				to[i]->setAlias(from[i]->getAliasOrColumnName());
+		}
+	}
+	
 	/// Переписывает select_expression_list, чтобы вернуть только необходимые столбцы в правильном порядке.
 	void rewriteSelectExpressionList(const Names & column_names)
 	{
