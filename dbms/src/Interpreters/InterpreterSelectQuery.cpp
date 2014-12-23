@@ -85,7 +85,7 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input_, const NamesAndType
 
 	if (input_)
 		streams.push_back(input_);
-	
+
 	if (isFirstSelectInsideUnionAll())
 	{
 		/// Создаем цепочку запросов SELECT и проверяем, что результаты всех запросов SELECT cовместимые.
@@ -103,7 +103,73 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input_, const NamesAndType
 				+ "\n\nwhile expecting:\n\n" + first.dumpStructure() + "\n\ninstead", 
 				ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH);
 		}
+		
+		// Переименовать столбцы каждого запроса цепочки UNION ALL в такие же имена, как в первом запросе.
+		for (ASTPtr tree = query.next_union_all; !tree.isNull(); tree = (static_cast<ASTSelectQuery &>(*tree)).next_union_all)
+		{
+			ASTSelectQuery & ast = static_cast<ASTSelectQuery &>(*(tree.get()));
+			ast.renameColumns(query);
+		}
 	}
+}
+
+///
+/// XXX Временный boilerplate код, который сотру очень скоро. Не обращать внимание.
+/// на него. Дело в том, что rewriteExpressionList() может не работать правильно,
+/// если мы не вызываем renameColumns() перед ним. В свою очередь renameColumns()
+/// будет работать правильно лишь в том случае, если обладает достаточно информаций,
+/// то, что возможно только после построения объекта query_analyzer.
+/// Но тогда, после вызова rewriteExpressionList(), InterpreterSelectQuery содержит
+/// неправильнии информации. Единственный выход - заново инициализировать объект
+/// InterpreterSelectQuery.
+///
+void InterpreterSelectQuery::reinit(const NamesAndTypesList & table_column_names)
+{
+	if (query.table && typeid_cast<ASTSelectQuery *>(&*query.table))
+	{
+		if (table_column_names.empty())
+			context.setColumns(InterpreterSelectQuery(query.table, context, to_stage, subquery_depth, nullptr, false).getSampleBlock().getColumnsList());
+	}
+	else
+	{
+		if (query.table && typeid_cast<const ASTFunction *>(&*query.table))
+		{
+			/// Получить табличную функцию
+			TableFunctionPtr table_function_ptr = context.getTableFunctionFactory().get(typeid_cast<const ASTFunction *>(&*query.table)->name, context);
+			/// Выполнить ее и запомнить результат
+			storage = table_function_ptr->execute(query.table, context);
+		}
+		else
+		{
+			String database_name;
+			String table_name;
+
+			getDatabaseAndTableNames(database_name, table_name);
+
+			storage = context.getTable(database_name, table_name);
+		}
+
+		table_lock = storage->lockStructure(false);
+		if (table_column_names.empty())
+			context.setColumns(storage->getColumnsListNonMaterialized());
+	}
+
+	if (!table_column_names.empty())
+		context.setColumns(table_column_names);
+
+	if (context.getColumns().empty())
+		throw Exception("There are no available columns", ErrorCodes::THERE_IS_NO_COLUMN);
+
+	query_analyzer = new ExpressionAnalyzer(query_ptr, context, storage, subquery_depth, true);
+	
+	/// Сохраняем в query context новые временные таблицы
+	for (auto & it : query_analyzer->getExternalTables())
+		if (!context.tryGetExternalTable(it.first))
+			context.addExternalTable(it.first, it.second);
+	
+	if (isFirstSelectInsideUnionAll())
+		for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->next_select_in_union_all.get())
+			p->reinit();
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_, QueryProcessingStage::Enum to_stage_,
@@ -124,8 +190,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context 
 	is_union_all_head(true),
 	log(&Logger::get("InterpreterSelectQuery"))
 {
-	rewriteExpressionList(required_column_names_);
 	init(input_);
+	rewriteExpressionList(required_column_names_);
+	reinit();
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_,
@@ -135,9 +202,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context 
 	context(context_), settings(context.getSettings()), to_stage(to_stage_), subquery_depth(subquery_depth_),
 	is_union_all_head(true),
 	log(&Logger::get("InterpreterSelectQuery"))
-{
-	rewriteExpressionList(required_column_names_);		
+{	
 	init(input_, table_column_names);
+	rewriteExpressionList(required_column_names_);
+	reinit(table_column_names);
 }
 
 void InterpreterSelectQuery::rewriteExpressionList(const Names & required_column_names)
@@ -153,7 +221,6 @@ void InterpreterSelectQuery::rewriteExpressionList(const Names & required_column
 	}
 	
 	query.rewriteSelectExpressionList(required_column_names);
-	
 	for (IAST* tree = query.next_union_all.get(); tree != nullptr; tree = static_cast<ASTSelectQuery *>(tree)->next_union_all.get())
 	{
 		auto & next_query = *(static_cast<ASTSelectQuery *>(tree));
@@ -527,7 +594,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	Names required_columns = query_analyzer->getRequiredColumns();
 
 	if (query.table && typeid_cast<ASTSelectQuery *>(&*query.table))
-	{
+	{	
 		/** Для подзапроса не действуют ограничения на максимальный размер результата.
 		 *  Так как результат поздапроса - ещё не результат всего запроса.
 		 */
