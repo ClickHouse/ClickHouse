@@ -48,8 +48,8 @@ typedef std::map<String, Tables> Databases;
 /// (имя базы данных, имя таблицы)
 typedef std::pair<String, String> DatabaseAndTableName;
 
-/// таблица -> множество таблиц-вьюшек, которые селектят из нее
-typedef std::map<DatabaseAndTableName, std::set<DatabaseAndTableName> > ViewDependencies;
+/// Таблица -> множество таблиц-представлений, которые деляют SELECT из неё.
+typedef std::map<DatabaseAndTableName, std::set<DatabaseAndTableName>> ViewDependencies;
 typedef std::vector<DatabaseAndTableName> Dependencies;
 
 /** Набор известных объектов, которые могут быть использованы в запросе.
@@ -206,7 +206,7 @@ public:
 
 	void addDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where);
 	void removeDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where);
-	Dependencies getDependencies(const DatabaseAndTableName & from) const;
+	Dependencies getDependencies(const String & database_name, const String & table_name) const;
 
 	/// Проверка существования таблицы/БД. database может быть пустой - в этом случае используется текущая БД.
 	bool isTableExist(const String & database_name, const String & table_name) const;
