@@ -238,7 +238,7 @@ private:
 			format = config().getString("format", "Vertical");
 		else
 			format = config().getString("format", is_interactive ? "PrettyCompact" : "TabSeparated");
-		
+
 		format_max_block_size = config().getInt("format_max_block_size", DEFAULT_BLOCK_SIZE);
 
 		insert_format = "Values";
@@ -381,7 +381,7 @@ private:
 
 					prev_query = query;
 				}
-				
+
 				if (has_vertical_output_suffix)
 					query = query.substr(0, query.length() - 2);
 
@@ -825,7 +825,7 @@ private:
 			}
 			
 			if (has_vertical_output_suffix)
-				current_format = config().getString("format", "Vertical");
+				current_format = "Vertical";
 			
 			block_std_out = context.getFormatFactory().getOutput(current_format, std_out, block);
 			block_std_out->writePrefix();

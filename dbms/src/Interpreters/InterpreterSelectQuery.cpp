@@ -33,7 +33,30 @@
 namespace DB
 {
 
-void InterpreterSelectQuery::init(BlockInputStreamPtr input_, const NamesAndTypesList & table_column_names)
+void InterpreterSelectQuery::init(BlockInputStreamPtr input, const Names & required_column_names, const NamesAndTypesList & table_column_names)
+{
+	if (isFirstSelectInsideUnionAll())
+	{
+		/// Функция rewriteExpressionList() работает правильно только, если имена столбцов совпадают
+		/// для каждого запроса цепочки UNION ALL. Поэтому сначала выполняем инициализацию.
+		basic_init(input, table_column_names);
+		init_union_all();
+		if (!required_column_names.empty() && (context.getColumns().size() != required_column_names.size()))
+		{
+			rewriteExpressionList(required_column_names);
+			/// Теперь имеется устаревшая информация для выполнения запроса. Обновляем эту информацию.
+			init_query_analyzer();
+		}
+	}
+	else
+	{
+		if (!required_column_names.empty())
+			rewriteExpressionList(required_column_names);
+		basic_init(input, table_column_names);
+	}
+}
+
+void InterpreterSelectQuery::basic_init(BlockInputStreamPtr input_, const NamesAndTypesList & table_column_names)
 {
 	ProfileEvents::increment(ProfileEvents::SelectQuery);
 
@@ -85,25 +108,39 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input_, const NamesAndType
 
 	if (input_)
 		streams.push_back(input_);
-	
-	if (isFirstSelectInsideUnionAll())
+}
+
+void InterpreterSelectQuery::init_union_all()
+{
+	/// Создаем цепочку запросов SELECT и проверяем, что результаты всех запросов SELECT cовместимые.
+	/// NOTE Мы можем безопасно применить static_cast вместо typeid_cast, 
+	/// потому что знаем, что в цепочке UNION ALL имеются только деревья типа SELECT.
+	InterpreterSelectQuery * interpreter = this;
+	Block first = interpreter->getSampleBlock();
+	for (ASTPtr tree = query.next_union_all; !tree.isNull(); tree = (static_cast<ASTSelectQuery &>(*tree)).next_union_all)
 	{
-		/// Создаем цепочку запросов SELECT и проверяем, что результаты всех запросов SELECT cовместимые.
-		/// NOTE Мы можем безопасно применить static_cast вместо typeid_cast, 
-		/// потому что знаем, что в цепочке UNION ALL имеются только деревья типа SELECT.
-		InterpreterSelectQuery * interpreter = this;
-		Block first = interpreter->getSampleBlock();
-		for (ASTPtr tree = query.next_union_all; !tree.isNull(); tree = (static_cast<ASTSelectQuery &>(*tree)).next_union_all)
-		{
-			interpreter->next_select_in_union_all.reset(new InterpreterSelectQuery(tree, context, to_stage, subquery_depth, nullptr, false));
-			interpreter = interpreter->next_select_in_union_all.get();
-			Block current = interpreter->getSampleBlock();
-			if (!blocksHaveEqualStructure(first, current))
-				throw Exception("Result structures mismatch in the SELECT queries of the UNION ALL chain. Found result structure:\n\n" + current.dumpStructure()
-				+ "\n\nwhile expecting:\n\n" + first.dumpStructure() + "\n\ninstead", 
-				ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH);
-		}
+		interpreter->next_select_in_union_all.reset(new InterpreterSelectQuery(tree, context, to_stage, subquery_depth, nullptr, false));
+		interpreter = interpreter->next_select_in_union_all.get();
+		Block current = interpreter->getSampleBlock();
+		if (!blocksHaveEqualStructure(first, current))
+			throw Exception("Result structures mismatch in the SELECT queries of the UNION ALL chain. Found result structure:\n\n" + current.dumpStructure()
+			+ "\n\nwhile expecting:\n\n" + first.dumpStructure() + "\n\ninstead", 
+			ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH);
 	}
+
+	// Переименовать столбцы каждого запроса цепочки UNION ALL в такие же имена, как в первом запросе.
+	for (IAST * tree = query.next_union_all.get(); tree != nullptr; tree = static_cast<ASTSelectQuery *>(tree)->next_union_all.get())
+	{
+		auto & ast = static_cast<ASTSelectQuery &>(*tree);
+		ast.renameColumns(query);
+	}	
+}
+
+void InterpreterSelectQuery::init_query_analyzer()
+{
+	query_analyzer = new ExpressionAnalyzer(query_ptr, context, storage, subquery_depth, true);
+	for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->next_select_in_union_all.get())
+		p->query_analyzer = new ExpressionAnalyzer(p->query_ptr, p->context, p->storage, p->subquery_depth, true);
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_, QueryProcessingStage::Enum to_stage_,
@@ -124,8 +161,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context 
 	is_union_all_head(true),
 	log(&Logger::get("InterpreterSelectQuery"))
 {
-	rewriteExpressionList(required_column_names_);
-	init(input_);
+	init(input_, required_column_names_);
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_,
@@ -135,9 +171,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context 
 	context(context_), settings(context.getSettings()), to_stage(to_stage_), subquery_depth(subquery_depth_),
 	is_union_all_head(true),
 	log(&Logger::get("InterpreterSelectQuery"))
-{
-	rewriteExpressionList(required_column_names_);		
-	init(input_, table_column_names);
+{	
+	init(input_, required_column_names_, table_column_names);
 }
 
 void InterpreterSelectQuery::rewriteExpressionList(const Names & required_column_names)
@@ -147,16 +182,15 @@ void InterpreterSelectQuery::rewriteExpressionList(const Names & required_column
 	
 	for (IAST* tree = query.next_union_all.get(); tree != nullptr; tree = static_cast<ASTSelectQuery *>(tree)->next_union_all.get())
 	{
-		auto & next_query = *(static_cast<ASTSelectQuery *>(tree));
+		auto & next_query = static_cast<ASTSelectQuery &>(*tree);
 		if (next_query.distinct)
 			return;
 	}
 	
 	query.rewriteSelectExpressionList(required_column_names);
-	
 	for (IAST* tree = query.next_union_all.get(); tree != nullptr; tree = static_cast<ASTSelectQuery *>(tree)->next_union_all.get())
 	{
-		auto & next_query = *(static_cast<ASTSelectQuery *>(tree));
+		auto & next_query = static_cast<ASTSelectQuery &>(*tree);
 		next_query.rewriteSelectExpressionList(required_column_names);
 	}
 }
@@ -527,7 +561,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	Names required_columns = query_analyzer->getRequiredColumns();
 
 	if (query.table && typeid_cast<ASTSelectQuery *>(&*query.table))
-	{
+	{	
 		/** Для подзапроса не действуют ограничения на максимальный размер результата.
 		 *  Так как результат поздапроса - ещё не результат всего запроса.
 		 */
