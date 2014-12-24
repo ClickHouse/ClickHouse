@@ -237,7 +237,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 	for (const auto & part : broken_parts_to_remove)
 		part->remove();
 	for (const auto & part : broken_parts_to_detach)
-		part->renameAddPrefix("detached/");
+		part->renameAddPrefix(true, "");
 
 	all_data_parts = data_parts;
 
@@ -789,7 +789,7 @@ void MergeTreeData::renameAndDetachPart(const DataPartPtr & part, const String &
 	removePartContributionToColumnSizes(part);
 	data_parts.erase(part);
 	if (move_to_detached || !prefix.empty())
-		part->renameAddPrefix((move_to_detached ? "detached/" : "") + prefix);
+		part->renameAddPrefix(move_to_detached, prefix);
 
 	if (restore_covered)
 	{

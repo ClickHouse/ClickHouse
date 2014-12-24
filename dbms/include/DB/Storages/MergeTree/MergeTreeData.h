@@ -331,8 +331,39 @@ public:
 			String from = storage.full_path + name + "/";
 			String to = storage.full_path + "tmp2_" + name + "/";
 
-			Poco::File(from).renameTo(to);
-			Poco::File(to).remove(true);
+			Poco::File from_dir{from};
+			Poco::File to_dir{to};
+
+			if (to_dir.exists())
+			{
+				LOG_WARNING(storage.log, "Directory " << to << " (to which part must be renamed before removing) already exists."
+					" Most likely this is due to unclean restart. Removing it.");
+
+				try
+				{
+					to_dir.remove(true);
+				}
+				catch (...)
+				{
+					LOG_ERROR(storage.log, "Cannot remove directory " << to << ". Check owner and access rights.");
+					throw;
+				}
+			}
+
+			try
+			{
+				from_dir.renameTo(to);
+			}
+			catch (const Poco::FileNotFoundException & e)
+			{
+				/// Если директория уже удалена. Такое возможно лишь при ручном вмешательстве.
+				LOG_WARNING(storage.log, "Directory " << from << " (part to remove) doesn't exist or one of nested files has gone."
+					" Most likely this is due to manual removing. This should be discouraged. Ignoring.");
+
+				return;
+			}
+
+			to_dir.remove(true);
 		}
 
 		void renameTo(const String & new_name) const
@@ -345,10 +376,28 @@ public:
 			f.renameTo(to);
 		}
 
-		/// Переименовывает кусок, дописав к имени префикс.
-		void renameAddPrefix(const String & prefix) const
+		/// Переименовывает кусок, дописав к имени префикс. to_detached - также перенести в директорию detached.
+		void renameAddPrefix(bool to_detached, const String & prefix) const
 		{
-			renameTo(prefix + name);
+			unsigned try_no = 0;
+			auto dst_name = [&, this] { return (to_detached ? "detached/" : "") + prefix + name + (try_no ? "_try" + toString(try_no) : ""); };
+
+			if (to_detached)
+			{
+				/** Если нужно отцепить кусок, и директория, в которую мы хотим его переименовать, уже существует,
+				  *  то будем переименовывать в директорию с именем, в которое добавлен суффикс в виде "_tryN".
+				  * Это делается только в случае to_detached, потому что считается, что в этом случае, точное имя не имеет значения.
+				  * Больше 10 попыток не делается, чтобы не оставалось слишком много мусорных директорий.
+				  */
+				while (try_no < 10 && Poco::File(dst_name()).exists())
+				{
+					LOG_WARNING(storage.log, "Directory " << dst_name() << " (to detach to) is already exist."
+						" Will detach to directory with '_tryN' suffix.");
+					++try_no;
+				}
+			}
+
+			renameTo(dst_name());
 		}
 
 		/// Загрузить индекс и вычислить размер. Если size=0, вычислить его тоже.
