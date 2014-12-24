@@ -77,8 +77,8 @@ public:
 private:
 	typedef Poco::SharedPtr<ExpressionAnalyzer> ExpressionAnalyzerPtr;
 
-	void init(BlockInputStreamPtr input, const NamesAndTypesList & table_column_names = NamesAndTypesList());
-	void reinit(const NamesAndTypesList & table_column_names = NamesAndTypesList());
+	void init(BlockInputStreamPtr input, const Names & required_column_names = Names(), const NamesAndTypesList & table_column_names = NamesAndTypesList());
+	void basic_init(bool is_first_init, BlockInputStreamPtr input = nullptr, const NamesAndTypesList & table_column_names = NamesAndTypesList());
 	
 	/// Выполнить один запрос SELECT из цепочки UNION ALL.
 	void executeSingleQuery(bool should_perform_union_hint = true);
