@@ -37,15 +37,14 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input, const Names & requi
 {
 	if (isFirstSelectInsideUnionAll())
 	{
-		/// В случае цепочки UNION ALL функуция rewriteExpressionList() может выкинуть исключение,
-		/// если не вызвали до этого функцию renameColumns(). Поэтому сначала выполняется инициализация.
+		/// Функция rewriteExpressionList() работает правильно только, если имена столбцов совпадают
+		/// для каждого запроса цепочки UNION ALL. Поэтому сначала выполняем инициализацию.
 		basic_init(input, table_column_names);
 		init_union_all();
 		if (!required_column_names.empty() && (context.getColumns().size() != required_column_names.size()))
 		{
 			rewriteExpressionList(required_column_names);
-			///	После вызова rewriteExpressionList(), имеется устаревшая информация для выполнения запроса.
-			/// Обновляем эту информацию.
+			/// Теперь имеется устаревшая информация для выполнения запроса. Обновляем эту информацию.
 			init_query_analyzer();
 		}
 	}
