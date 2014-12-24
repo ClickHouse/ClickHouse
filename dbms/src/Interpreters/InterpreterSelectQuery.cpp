@@ -39,33 +39,31 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input, const Names & requi
 	{
 		/// В случае цепочки UNION ALL функуция rewriteExpressionList() может выкинуть исключение,
 		/// если не вызвали до этого функцию renameColumns(). Поэтому сначала выполняется инициализация.
-		basic_init(true, input, table_column_names);
+		basic_init(input, table_column_names);
+		init_union_all();
 		if (!required_column_names.empty() && (context.getColumns().size() != required_column_names.size()))
 		{
 			rewriteExpressionList(required_column_names);
 			///	После вызова rewriteExpressionList(), имеется устаревшая информация для выполнения запроса.
-			/// Тогда необходимо сделать повторную инициализацию.
-			basic_init(false, nullptr, table_column_names);
+			/// Обновляем эту информацию.
+			init_query_analyzer();
 		}
 	}
 	else
 	{
 		if (!required_column_names.empty())
 			rewriteExpressionList(required_column_names);
-		basic_init(true, input, table_column_names);
+		basic_init(input, table_column_names);
 	}
 }
 
-void InterpreterSelectQuery::basic_init(bool is_first_init, BlockInputStreamPtr input_, const NamesAndTypesList & table_column_names)
+void InterpreterSelectQuery::basic_init(BlockInputStreamPtr input_, const NamesAndTypesList & table_column_names)
 {
-	if (is_first_init)
-	{
-		ProfileEvents::increment(ProfileEvents::SelectQuery);
+	ProfileEvents::increment(ProfileEvents::SelectQuery);
 
-		if (settings.limits.max_subquery_depth && subquery_depth > settings.limits.max_subquery_depth)
-			throw Exception("Too deep subqueries. Maximum: " + toString(settings.limits.max_subquery_depth),
-				ErrorCodes::TOO_DEEP_SUBQUERIES);
-	}
+	if (settings.limits.max_subquery_depth && subquery_depth > settings.limits.max_subquery_depth)
+		throw Exception("Too deep subqueries. Maximum: " + toString(settings.limits.max_subquery_depth),
+			ErrorCodes::TOO_DEEP_SUBQUERIES);
 
 	if (query.table && typeid_cast<ASTSelectQuery *>(&*query.table))
 	{
@@ -109,42 +107,41 @@ void InterpreterSelectQuery::basic_init(bool is_first_init, BlockInputStreamPtr 
 		if (!context.tryGetExternalTable(it.first))
 			context.addExternalTable(it.first, it.second);
 
-	if (is_first_init && input_)
+	if (input_)
 		streams.push_back(input_);
+}
 
-	if (isFirstSelectInsideUnionAll())
+void InterpreterSelectQuery::init_union_all()
+{
+	/// Создаем цепочку запросов SELECT и проверяем, что результаты всех запросов SELECT cовместимые.
+	/// NOTE Мы можем безопасно применить static_cast вместо typeid_cast, 
+	/// потому что знаем, что в цепочке UNION ALL имеются только деревья типа SELECT.
+	InterpreterSelectQuery * interpreter = this;
+	Block first = interpreter->getSampleBlock();
+	for (ASTPtr tree = query.next_union_all; !tree.isNull(); tree = (static_cast<ASTSelectQuery &>(*tree)).next_union_all)
 	{
-		if (is_first_init)
-		{
-			/// Создаем цепочку запросов SELECT и проверяем, что результаты всех запросов SELECT cовместимые.
-			/// NOTE Мы можем безопасно применить static_cast вместо typeid_cast, 
-			/// потому что знаем, что в цепочке UNION ALL имеются только деревья типа SELECT.
-			InterpreterSelectQuery * interpreter = this;
-			Block first = interpreter->getSampleBlock();
-			for (ASTPtr tree = query.next_union_all; !tree.isNull(); tree = (static_cast<ASTSelectQuery &>(*tree)).next_union_all)
-			{
-				interpreter->next_select_in_union_all.reset(new InterpreterSelectQuery(tree, context, to_stage, subquery_depth, nullptr, false));
-				interpreter = interpreter->next_select_in_union_all.get();
-				Block current = interpreter->getSampleBlock();
-				if (!blocksHaveEqualStructure(first, current))
-					throw Exception("Result structures mismatch in the SELECT queries of the UNION ALL chain. Found result structure:\n\n" + current.dumpStructure()
-					+ "\n\nwhile expecting:\n\n" + first.dumpStructure() + "\n\ninstead", 
-					ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH);
-			}
-
-			// Переименовать столбцы каждого запроса цепочки UNION ALL в такие же имена, как в первом запросе.
-			for (IAST * tree = query.next_union_all.get(); tree != nullptr; tree = static_cast<ASTSelectQuery *>(tree)->next_union_all.get())
-			{
-				auto & ast = static_cast<ASTSelectQuery &>(*tree);
-				ast.renameColumns(query);
-			}
-		}
-		else
-		{
-			for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->next_select_in_union_all.get())
-				p->basic_init(true);
-		}
+		interpreter->next_select_in_union_all.reset(new InterpreterSelectQuery(tree, context, to_stage, subquery_depth, nullptr, false));
+		interpreter = interpreter->next_select_in_union_all.get();
+		Block current = interpreter->getSampleBlock();
+		if (!blocksHaveEqualStructure(first, current))
+			throw Exception("Result structures mismatch in the SELECT queries of the UNION ALL chain. Found result structure:\n\n" + current.dumpStructure()
+			+ "\n\nwhile expecting:\n\n" + first.dumpStructure() + "\n\ninstead", 
+			ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH);
 	}
+
+	// Переименовать столбцы каждого запроса цепочки UNION ALL в такие же имена, как в первом запросе.
+	for (IAST * tree = query.next_union_all.get(); tree != nullptr; tree = static_cast<ASTSelectQuery *>(tree)->next_union_all.get())
+	{
+		auto & ast = static_cast<ASTSelectQuery &>(*tree);
+		ast.renameColumns(query);
+	}	
+}
+
+void InterpreterSelectQuery::init_query_analyzer()
+{
+	query_analyzer = new ExpressionAnalyzer(query_ptr, context, storage, subquery_depth, true);
+	for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->next_select_in_union_all.get())
+		p->query_analyzer = new ExpressionAnalyzer(p->query_ptr, p->context, p->storage, p->subquery_depth, true);
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_, QueryProcessingStage::Enum to_stage_,
