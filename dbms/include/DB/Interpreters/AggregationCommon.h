@@ -10,6 +10,7 @@
 #include <DB/Core/StringRef.h>
 #include <DB/Columns/IColumn.h>
 #include <DB/Common/HashTable/HashMap.h>
+#include <DB/Common/HashTable/TwoLevelHashMap.h>
 
 
 template <>
