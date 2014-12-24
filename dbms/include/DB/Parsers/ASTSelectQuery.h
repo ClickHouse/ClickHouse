@@ -52,7 +52,7 @@ public:
 		return false;
 	}
 
-	/// Переименовать столбцы в такие же имена, как в source.
+	/// Переименовать столбцы запроса в такие же имена, как в исходном запросе.
 	void renameColumns(const ASTSelectQuery & source)
 	{
 		const ASTs & from = source.select_expression_list->children;
@@ -64,14 +64,15 @@ public:
 
 		for (size_t i = 0; i < from.size(); ++i)
 		{
-			const auto & from_alias = from[i]->tryGetAlias();
-			const auto & to_alias = to[i]->tryGetAlias();
-			if (!to_alias.empty() && !from_alias.empty())
-				if (to_alias != from_alias)
-					throw Exception("Column alias mismatch in UNION ALL chain", 
+			/// Если столбец имеет алиас, то он должен совпадать с названием исходного столбца.
+			/// В противном случае мы ему присваиваем алиас, если требуется.
+			if (!to[i]->tryGetAlias().empty())
+			{
+				if (to[i]->tryGetAlias() != from[i]->getAliasOrColumnName())
+					throw Exception("Column alias mismatch in UNION ALL chain",
 									DB::ErrorCodes::UNION_ALL_COLUMN_ALIAS_MISMATCH);
-
-			if (to[i]->getAliasOrColumnName() != from[i]->getAliasOrColumnName())
+			}
+			else if (to[i]->getColumnName() != from[i]->getAliasOrColumnName())
 				to[i]->setAlias(from[i]->getAliasOrColumnName());
 		}
 	}
