@@ -35,15 +35,24 @@ namespace DB
 
 void InterpreterSelectQuery::init(BlockInputStreamPtr input, const Names & required_column_names, const NamesAndTypesList & table_column_names)
 {
-	/// В случае цепочки UNION ALL функуция rewriteExpressionList() может выкинуть исключение,
-	/// если не вызвали до этого функцию renameColumns(). Поэтому сначала выполняется инициализация.
-	///	После вызова rewriteExpressionList(), имеется устаревшая информация для выполнения запроса.
-	/// Тогда необходимо сделать повторную инициализацию.
-	basic_init(true, input, table_column_names);
-	if (!required_column_names.empty())
+	if (isFirstSelectInsideUnionAll())
 	{
-		rewriteExpressionList(required_column_names);
-		basic_init(false, input, table_column_names);
+		/// В случае цепочки UNION ALL функуция rewriteExpressionList() может выкинуть исключение,
+		/// если не вызвали до этого функцию renameColumns(). Поэтому сначала выполняется инициализация.
+		basic_init(true, input, table_column_names);
+		if (!required_column_names.empty() && (context.getColumns().size() != required_column_names.size()))
+		{
+			rewriteExpressionList(required_column_names);
+			///	После вызова rewriteExpressionList(), имеется устаревшая информация для выполнения запроса.
+			/// Тогда необходимо сделать повторную инициализацию.
+			basic_init(false, nullptr, table_column_names);
+		}
+	}
+	else
+	{
+		if (!required_column_names.empty())
+			rewriteExpressionList(required_column_names);
+		basic_init(true, input, table_column_names);
 	}
 }
 
