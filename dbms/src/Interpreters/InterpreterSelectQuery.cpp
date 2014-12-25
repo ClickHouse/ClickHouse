@@ -209,7 +209,7 @@ void InterpreterSelectQuery::rewriteExpressionList(const Names & required_column
 		return;
 	
 	if (isFirstSelectInsideUnionAll())
-		for (IAST* tree = query.next_union_all.get(); tree != nullptr; tree = static_cast<ASTSelectQuery *>(tree)->next_union_all.get())
+		for (IAST * tree = query.next_union_all.get(); tree != nullptr; tree = static_cast<ASTSelectQuery *>(tree)->next_union_all.get())
 		{
 			auto & next_query = static_cast<ASTSelectQuery &>(*tree);
 			if (next_query.distinct)
@@ -219,7 +219,7 @@ void InterpreterSelectQuery::rewriteExpressionList(const Names & required_column
 	query.rewriteSelectExpressionList(required_column_names);
 	
 	if (isFirstSelectInsideUnionAll())
-		for (IAST* tree = query.next_union_all.get(); tree != nullptr; tree = static_cast<ASTSelectQuery *>(tree)->next_union_all.get())
+		for (IAST * tree = query.next_union_all.get(); tree != nullptr; tree = static_cast<ASTSelectQuery *>(tree)->next_union_all.get())
 		{
 			auto & next_query = static_cast<ASTSelectQuery &>(*tree);
 			next_query.rewriteSelectExpressionList(required_column_names);
