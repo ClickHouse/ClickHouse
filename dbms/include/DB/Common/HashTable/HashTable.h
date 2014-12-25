@@ -538,7 +538,7 @@ protected:
 		if (unlikely(grower.overflow(m_size)))
 		{
 			resize();
-			it = find(x);
+			it = find(x, hash_value);
 		}
 	}
 
@@ -596,7 +596,6 @@ public:
 
 		size_t hash_value = hash(x);
 		size_t place_value = findCell(x, hash_value, grower.place(hash_value));
-
 		return !buf[place_value].isZero(*this) ? iterator(this, &buf[place_value]) : end();
 	}
 
@@ -608,7 +607,26 @@ public:
 
 		size_t hash_value = hash(x);
 		size_t place_value = findCell(x, hash_value, grower.place(hash_value));
+		return !buf[place_value].isZero(*this) ? const_iterator(this, &buf[place_value]) : end();
+	}
 
+
+	iterator find(Key x, size_t hash_value)
+	{
+		if (Cell::isZero(x, *this))
+			return this->hasZero() ? iteratorToZero() : end();
+
+		size_t place_value = findCell(x, hash_value, grower.place(hash_value));
+		return !buf[place_value].isZero(*this) ? iterator(this, &buf[place_value]) : end();
+	}
+
+
+	const_iterator find(Key x, size_t hash_value) const
+	{
+		if (Cell::isZero(x, *this))
+			return this->hasZero() ? iteratorToZero() : end();
+
+		size_t place_value = findCell(x, hash_value, grower.place(hash_value));
 		return !buf[place_value].isZero(*this) ? const_iterator(this, &buf[place_value]) : end();
 	}
 

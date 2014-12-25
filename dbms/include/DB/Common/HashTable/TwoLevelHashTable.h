@@ -198,7 +198,7 @@ public:
 	{
 		size_t buck = getBucketFromHash(hash_value);
 		typename Impl::iterator impl_it;
-		impls[buck].emplace(x, impl_it, inserted);
+		impls[buck].emplace(x, impl_it, inserted, hash_value);
 		it = iterator(this, buck, impl_it);
 	}
 
@@ -208,7 +208,7 @@ public:
 		size_t hash_value = hash(x);
 		size_t buck = getBucketFromHash(hash_value);
 
-		typename Impl::iterator found = impls[buck].find(x);
+		typename Impl::iterator found = impls[buck].find(x, hash_value);
 		return found != impls[buck].end()
 			? iterator(this, buck, found)
 			: end();
@@ -220,7 +220,7 @@ public:
 		size_t hash_value = hash(x);
 		size_t buck = getBucketFromHash(hash_value);
 
-		typename Impl::const_iterator found = impls[buck].find(x);
+		typename Impl::const_iterator found = impls[buck].find(x, hash_value);
 		return found != impls[buck].end()
 			? const_iterator(this, buck, found)
 			: end();
