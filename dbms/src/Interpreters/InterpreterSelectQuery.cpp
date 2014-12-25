@@ -72,7 +72,11 @@ void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_, const NamesAn
 	if (query.table && typeid_cast<ASTSelectQuery *>(&*query.table))
 	{
 		if (table_column_names.empty())
-			context.setColumns(InterpreterSelectQuery(query.table, context, to_stage, subquery_depth).getSampleBlock().getColumnsList());
+		{
+			/// Оптимизация: мы считаем, что запрос содержит только один SELECT, даже если это может быть 
+			/// в самом деле цепочка UNION ALL. Первый запрос достаточен для определения нужных столбцов.
+			context.setColumns(InterpreterSelectQuery(query.table, context, to_stage, subquery_depth, nullptr, false).getSampleBlock().getColumnsList());
+		}
 	}
 	else
 	{
@@ -114,20 +118,23 @@ void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_, const NamesAn
 	if (input_)
 		streams.push_back(input_);
 
-	/// Создаем цепочку запросов SELECT и проверяем, что результаты всех запросов SELECT cовместимые.
-	/// NOTE Мы можем безопасно применить static_cast вместо typeid_cast, 
-	/// потому что знаем, что в цепочке UNION ALL имеются только деревья типа SELECT.
-	InterpreterSelectQuery * interpreter = this;
-	Block first = interpreter->getSampleBlock();
-	for (ASTPtr tree = query.next_union_all; !tree.isNull(); tree = (static_cast<ASTSelectQuery &>(*tree)).next_union_all)
+	if (isFirstSelectInsideUnionAll())
 	{
-		interpreter->next_select_in_union_all.reset(new InterpreterSelectQuery(tree, context, to_stage, subquery_depth, nullptr, false));
-		interpreter = interpreter->next_select_in_union_all.get();
-		Block current = interpreter->getSampleBlock();
-		if (!blocksHaveEqualStructure(first, current))
-			throw Exception("Result structures mismatch in the SELECT queries of the UNION ALL chain. Found result structure:\n\n" + current.dumpStructure()
-			+ "\n\nwhile expecting:\n\n" + first.dumpStructure() + "\n\ninstead", 
-			ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH);
+		/// Создаем цепочку запросов SELECT и проверяем, что результаты всех запросов SELECT cовместимые.
+		/// NOTE Мы можем безопасно применить static_cast вместо typeid_cast, 
+		/// потому что знаем, что в цепочке UNION ALL имеются только деревья типа SELECT.
+		InterpreterSelectQuery * interpreter = this;
+		Block first = interpreter->getSampleBlock();
+		for (ASTPtr tree = query.next_union_all; !tree.isNull(); tree = (static_cast<ASTSelectQuery &>(*tree)).next_union_all)
+		{
+			interpreter->next_select_in_union_all.reset(new InterpreterSelectQuery(tree, context, to_stage, subquery_depth, nullptr, false));
+			interpreter = interpreter->next_select_in_union_all.get();
+			Block current = interpreter->getSampleBlock();
+			if (!blocksHaveEqualStructure(first, current))
+				throw Exception("Result structures mismatch in the SELECT queries of the UNION ALL chain. Found result structure:\n\n" + current.dumpStructure()
+				+ "\n\nwhile expecting:\n\n" + first.dumpStructure() + "\n\ninstead", 
+				ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH);
+		}
 	}
 }
 
@@ -175,22 +182,25 @@ bool InterpreterSelectQuery::hasAsterisk() const
 	if (query.hasAsterisk())
 		return true;
 
-	for (IAST * tree = query.next_union_all.get(); tree != nullptr; tree = static_cast<ASTSelectQuery *>(tree)->next_union_all.get())
-	{
-		const auto & next_query = static_cast<ASTSelectQuery &>(*tree);
-		if (next_query.hasAsterisk())
-			return true;
-	}
+	if (isFirstSelectInsideUnionAll())
+		for (IAST * tree = query.next_union_all.get(); tree != nullptr; tree = static_cast<ASTSelectQuery *>(tree)->next_union_all.get())
+		{
+			const auto & next_query = static_cast<ASTSelectQuery &>(*tree);
+			if (next_query.hasAsterisk())
+				return true;
+		}
+	
 	return false;
 }
 
 void InterpreterSelectQuery::renameColumns()
 {
-	for (IAST * tree = query.next_union_all.get(); tree != nullptr; tree = static_cast<ASTSelectQuery *>(tree)->next_union_all.get())
-	{
-		auto & ast = static_cast<ASTSelectQuery &>(*tree);
-		ast.renameColumns(query);
-	}
+	if (isFirstSelectInsideUnionAll())
+		for (IAST * tree = query.next_union_all.get(); tree != nullptr; tree = static_cast<ASTSelectQuery *>(tree)->next_union_all.get())
+		{
+			auto & ast = static_cast<ASTSelectQuery &>(*tree);
+			ast.renameColumns(query);
+		}
 }
 
 void InterpreterSelectQuery::rewriteExpressionList(const Names & required_column_names)
@@ -198,19 +208,22 @@ void InterpreterSelectQuery::rewriteExpressionList(const Names & required_column
 	if (query.distinct)
 		return;
 	
-	for (IAST* tree = query.next_union_all.get(); tree != nullptr; tree = static_cast<ASTSelectQuery *>(tree)->next_union_all.get())
-	{
-		auto & next_query = static_cast<ASTSelectQuery &>(*tree);
-		if (next_query.distinct)
-			return;
-	}
+	if (isFirstSelectInsideUnionAll())
+		for (IAST* tree = query.next_union_all.get(); tree != nullptr; tree = static_cast<ASTSelectQuery *>(tree)->next_union_all.get())
+		{
+			auto & next_query = static_cast<ASTSelectQuery &>(*tree);
+			if (next_query.distinct)
+				return;
+		}
 	
 	query.rewriteSelectExpressionList(required_column_names);
+	
+	if (isFirstSelectInsideUnionAll())
 	for (IAST* tree = query.next_union_all.get(); tree != nullptr; tree = static_cast<ASTSelectQuery *>(tree)->next_union_all.get())
-	{
-		auto & next_query = static_cast<ASTSelectQuery &>(*tree);
-		next_query.rewriteSelectExpressionList(required_column_names);
-	}
+		{
+			auto & next_query = static_cast<ASTSelectQuery &>(*tree);
+			next_query.rewriteSelectExpressionList(required_column_names);
+		}
 }
 
 bool InterpreterSelectQuery::isFirstSelectInsideUnionAll() const
