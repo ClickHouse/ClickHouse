@@ -4,6 +4,7 @@
 #include <DB/Parsers/ASTQueryWithOutput.h>
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Parsers/ASTFunction.h>
+#include <DB/Parsers/ASTAsterisk.h>
 
 namespace DB
 {
@@ -52,6 +53,19 @@ public:
 		return false;
 	}
 
+	bool hasAsterisk() const
+	{
+		if (const ASTExpressionList * node = typeid_cast<const ASTExpressionList *>(&*select_expression_list))
+		{
+			for (const auto & ast : node->children)
+			{
+				if (typeid_cast<const ASTAsterisk *>(&*ast) != nullptr)
+					return true;
+			}
+		}
+		return false;
+	}
+	
 	/// Переименовать столбцы запроса в такие же имена, как в исходном запросе.
 	void renameColumns(const ASTSelectQuery & source)
 	{

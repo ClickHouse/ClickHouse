@@ -79,7 +79,6 @@ private:
 
 	void init(BlockInputStreamPtr input, const Names & required_column_names = Names(), const NamesAndTypesList & table_column_names = NamesAndTypesList());
 	void basicInit(BlockInputStreamPtr input, const NamesAndTypesList & table_column_names);
-	void initUnionAll();
 	void initQueryAnalyzer();
 	
 	/// Выполнить один запрос SELECT из цепочки UNION ALL.
@@ -90,6 +89,12 @@ private:
 	 *  так как иначе DISTINCT работал бы по-другому.
 	 */
 	void rewriteExpressionList(const Names & required_column_names);
+
+	/// Содержит ли запрос хотя бы один астериск?
+	bool hasAsterisk() const;
+
+	// Переименовать столбцы каждого запроса цепочки UNION ALL в такие же имена, как в первом запросе.
+	void renameColumns();
 	
 	/// Является ли это первым запросом цепочки UNION ALL имеющей длниу >= 2.
 	bool isFirstSelectInsideUnionAll() const;
