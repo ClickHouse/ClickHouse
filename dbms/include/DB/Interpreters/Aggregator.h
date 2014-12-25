@@ -6,6 +6,7 @@
 #include <Poco/Mutex.h>
 
 #include <Yandex/logger_useful.h>
+#include <statdaemons/threadpool.hpp>
 
 #include <DB/Core/ColumnNumbers.h>
 #include <DB/Core/Names.h>
@@ -48,10 +49,10 @@ typedef std::vector<AggregateDescription> AggregateDescriptions;
   *  захватывается позднее - в функции convertToBlock, объектом ColumnAggregateFunction.
   */
 typedef AggregateDataPtr AggregatedDataWithoutKey;
-typedef HashMap<UInt64, AggregateDataPtr> AggregatedDataWithUInt64Key;
-typedef HashMapWithSavedHash<StringRef, AggregateDataPtr> AggregatedDataWithStringKey;
-typedef HashMap<UInt128, AggregateDataPtr, UInt128Hash> AggregatedDataWithKeys128;
-typedef HashMap<UInt128, std::pair<StringRef*, AggregateDataPtr>, UInt128TrivialHash> AggregatedDataHashed;
+typedef TwoLevelHashMap<UInt64, AggregateDataPtr> AggregatedDataWithUInt64Key;
+typedef TwoLevelHashMapWithSavedHash<StringRef, AggregateDataPtr> AggregatedDataWithStringKey;
+typedef TwoLevelHashMap<UInt128, AggregateDataPtr, UInt128Hash> AggregatedDataWithKeys128;
+typedef TwoLevelHashMap<UInt128, std::pair<StringRef*, AggregateDataPtr>, UInt128TrivialHash> AggregatedDataHashed;
 
 
 /// Специализации для UInt8, UInt16.
@@ -508,6 +509,27 @@ typedef SharedPtr<AggregatedDataVariants> AggregatedDataVariantsPtr;
 typedef std::vector<AggregatedDataVariantsPtr> ManyAggregatedDataVariants;
 
 
+/** Достать вариант агрегации по его типу. */
+template <typename Method> Method & getDataVariant(AggregatedDataVariants & variants);
+
+template <> inline AggregationMethodOneNumber<UInt8> & 	getDataVariant<AggregationMethodOneNumber<UInt8>>(AggregatedDataVariants & variants)
+	{ return *variants.key8; }
+template <> inline AggregationMethodOneNumber<UInt16> & getDataVariant<AggregationMethodOneNumber<UInt16>>(AggregatedDataVariants & variants)
+	{ return *variants.key16; }
+template <> inline AggregationMethodOneNumber<UInt32> & getDataVariant<AggregationMethodOneNumber<UInt32>>(AggregatedDataVariants & variants)
+	{ return *variants.key32; }
+template <> inline AggregationMethodOneNumber<UInt64> & getDataVariant<AggregationMethodOneNumber<UInt64>>(AggregatedDataVariants & variants)
+	{ return *variants.key64; }
+template <> inline AggregationMethodString & 			getDataVariant<AggregationMethodString>(AggregatedDataVariants & variants)
+	{ return *variants.key_string; }
+template <> inline AggregationMethodFixedString & 		getDataVariant<AggregationMethodFixedString>(AggregatedDataVariants & variants)
+	{ return *variants.key_fixed_string; }
+template <> inline AggregationMethodKeys128 & 			getDataVariant<AggregationMethodKeys128>(AggregatedDataVariants & variants)
+	{ return *variants.keys128; }
+template <> inline AggregationMethodHashed & 			getDataVariant<AggregationMethodHashed>(AggregatedDataVariants & variants)
+	{ return *variants.hashed; }
+
+
 /** Агрегирует источник блоков.
   */
 class Aggregator
@@ -639,10 +661,23 @@ protected:
 		const Sizes & key_sizes,
 		size_t start_row, bool final) const;
 
-	template <typename Method>
+	/// Слить данные из хэш-таблицы src в dst.
+	template <typename Method, typename Table>
 	void mergeDataImpl(
-		Method & method_dst,
-		Method & method_src) const;
+		Table & table_dst,
+		Table & table_src) const;
+
+	void mergeWithoutKeyDataImpl(
+		ManyAggregatedDataVariants & non_empty_data) const;
+
+	template <typename Method>
+	void mergeSingleLevelDataImpl(
+		ManyAggregatedDataVariants & non_empty_data) const;
+
+	template <typename Method>
+	void mergeTwoLevelDataImpl(
+		ManyAggregatedDataVariants & many_data,
+		boost::threadpool::pool * thread_pool) const;
 
 	template <typename Method>
 	void mergeStreamsImpl(

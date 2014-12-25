@@ -276,16 +276,16 @@ void NO_INLINE Aggregator::convertToBlockImpl(
 }
 
 
-template <typename Method>
+template <typename Method, typename Table>
 void NO_INLINE Aggregator::mergeDataImpl(
-	Method & method_dst,
-	Method & method_src) const
+	Table & table_dst,
+	Table & table_src) const
 {
-	for (typename Method::iterator it = method_src.data.begin(); it != method_src.data.end(); ++it)
+	for (auto it = table_src.begin(); it != table_src.end(); ++it)
 	{
-		typename Method::iterator res_it;
+		decltype(it) res_it;
 		bool inserted;
-		method_dst.data.emplace(it->first, res_it, inserted);
+		table_dst.emplace(it->first, res_it, inserted);
 
 		if (!inserted)
 		{
@@ -305,6 +305,86 @@ void NO_INLINE Aggregator::mergeDataImpl(
 			res_it->second = it->second;
 		}
 	}
+}
+
+
+void NO_INLINE Aggregator::mergeWithoutKeyDataImpl(
+	ManyAggregatedDataVariants & non_empty_data) const
+{
+	AggregatedDataVariantsPtr & res = non_empty_data[0];
+
+	/// Все результаты агрегации соединяем с первым.
+	for (size_t i = 1, size = non_empty_data.size(); i < size; ++i)
+	{
+		AggregatedDataWithoutKey & res_data = res->without_key;
+		AggregatedDataWithoutKey & current_data = non_empty_data[i]->without_key;
+
+		for (size_t i = 0; i < aggregates_size; ++i)
+			aggregate_functions[i]->merge(res_data + offsets_of_aggregate_states[i], current_data + offsets_of_aggregate_states[i]);
+
+		for (size_t i = 0; i < aggregates_size; ++i)
+			aggregate_functions[i]->destroy(current_data + offsets_of_aggregate_states[i]);
+
+		current_data = nullptr;
+	}
+}
+
+
+template <typename Method>
+void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
+	ManyAggregatedDataVariants & non_empty_data) const
+{
+	AggregatedDataVariantsPtr & res = non_empty_data[0];
+
+	/// Все результаты агрегации соединяем с первым.
+	for (size_t i = 1, size = non_empty_data.size(); i < size; ++i)
+	{
+		AggregatedDataVariants & current = *non_empty_data[i];
+
+		mergeDataImpl<Method>(
+			getDataVariant<Method>(*res).data,
+			getDataVariant<Method>(current).data);
+
+		/// current не будет уничтожать состояния агрегатных функций в деструкторе
+		current.aggregator = nullptr;
+	}
+}
+
+
+template <typename Method>
+void NO_INLINE Aggregator::mergeTwoLevelDataImpl(
+	ManyAggregatedDataVariants & non_empty_data,
+	boost::threadpool::pool * thread_pool) const
+{
+	AggregatedDataVariantsPtr & res = non_empty_data[0];
+
+	/// Слияние распараллеливается по корзинам - первому уровню TwoLevelHashMap.
+	auto merge_bucket = [&non_empty_data, &res, this](size_t bucket)
+	{
+		/// Все результаты агрегации соединяем с первым.
+		for (size_t i = 1, size = non_empty_data.size(); i < size; ++i)
+		{
+			AggregatedDataVariants & current = *non_empty_data[i];
+
+			mergeDataImpl<Method>(
+				getDataVariant<Method>(*res).data.impls[bucket],
+				getDataVariant<Method>(current).data.impls[bucket]);
+
+			/// current не будет уничтожать состояния агрегатных функций в деструкторе
+			current.aggregator = nullptr;
+		}
+	};
+
+	for (size_t bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
+	{
+		if (thread_pool)
+			thread_pool->schedule(std::bind(merge_bucket, bucket));
+		else
+			merge_bucket(bucket);
+	}
+
+	if (thread_pool)
+		thread_pool->wait();
 }
 
 
@@ -695,66 +775,54 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 
 	Stopwatch watch;
 
-	AggregatedDataVariantsPtr res = data_variants[0];
+	ManyAggregatedDataVariants non_empty_data;
+	non_empty_data.reserve(data_variants.size());
+	for (auto & data : data_variants)
+		if (!data->empty())
+			non_empty_data.push_back(data);
 
-	/// Все результаты агрегации соединяем с первым.
+	if (non_empty_data.empty())
+		return data_variants[0];
+
+	if (non_empty_data.size() == 1)
+		return non_empty_data[0];
+
+	AggregatedDataVariantsPtr res = non_empty_data[0];
+
 	size_t rows = res->size();
-	for (size_t i = 1, size = data_variants.size(); i < size; ++i)
+	for (size_t i = 1, size = non_empty_data.size(); i < size; ++i)
 	{
-		rows += data_variants[i]->size();
-		AggregatedDataVariants & current = *data_variants[i];
-
-		res->aggregates_pools.insert(res->aggregates_pools.end(), current.aggregates_pools.begin(), current.aggregates_pools.end());
-
-		if (current.empty())
-			continue;
-
-		if (res->empty())
-		{
-			res = data_variants[i];
-			continue;
-		}
+		rows += non_empty_data[i]->size();
+		AggregatedDataVariants & current = *non_empty_data[i];
 
 		if (res->type != current.type)
 			throw Exception("Cannot merge different aggregated data variants.", ErrorCodes::CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS);
 
-		/// В какой структуре данных агрегированы данные?
-		if (res->type == AggregatedDataVariants::WITHOUT_KEY || overflow_row)
-		{
-			AggregatedDataWithoutKey & res_data = res->without_key;
-			AggregatedDataWithoutKey & current_data = current.without_key;
-
-			for (size_t i = 0; i < aggregates_size; ++i)
-				aggregate_functions[i]->merge(res_data + offsets_of_aggregate_states[i], current_data + offsets_of_aggregate_states[i]);
-
-			for (size_t i = 0; i < aggregates_size; ++i)
-				aggregate_functions[i]->destroy(current_data + offsets_of_aggregate_states[i]);
-
-			current_data = nullptr;
-		}
-
-		if (res->type == AggregatedDataVariants::KEY_8)
-			mergeDataImpl(*res->key8, *current.key8);
-		else if (res->type == AggregatedDataVariants::KEY_16)
-			mergeDataImpl(*res->key16, *current.key16);
-		else if (res->type == AggregatedDataVariants::KEY_32)
-			mergeDataImpl(*res->key32, *current.key32);
-		else if (res->type == AggregatedDataVariants::KEY_64)
-			mergeDataImpl(*res->key64, *current.key64);
-		else if (res->type == AggregatedDataVariants::KEY_STRING)
-			mergeDataImpl(*res->key_string, *current.key_string);
-		else if (res->type == AggregatedDataVariants::KEY_FIXED_STRING)
-			mergeDataImpl(*res->key_fixed_string, *current.key_fixed_string);
-		else if (res->type == AggregatedDataVariants::KEYS_128)
-			mergeDataImpl(*res->keys128, *current.keys128);
-		else if (res->type == AggregatedDataVariants::HASHED)
-			mergeDataImpl(*res->hashed, *current.hashed);
-		else if (res->type != AggregatedDataVariants::WITHOUT_KEY)
-			throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
-
-		/// current не будет уничтожать состояния агрегатных функций в деструкторе
-		current.aggregator = nullptr;
+		res->aggregates_pools.insert(res->aggregates_pools.end(), current.aggregates_pools.begin(), current.aggregates_pools.end());
 	}
+
+	/// В какой структуре данных агрегированы данные?
+	if (res->type == AggregatedDataVariants::WITHOUT_KEY || overflow_row)
+		mergeWithoutKeyDataImpl(non_empty_data);
+
+	if (res->type == AggregatedDataVariants::KEY_8)
+		mergeSingleLevelDataImpl<AggregationMethodOneNumber<UInt8>>(non_empty_data);
+	else if (res->type == AggregatedDataVariants::KEY_16)
+		mergeSingleLevelDataImpl<AggregationMethodOneNumber<UInt16>>(non_empty_data);
+	else if (res->type == AggregatedDataVariants::KEY_32)
+		mergeTwoLevelDataImpl<AggregationMethodOneNumber<UInt32>>(non_empty_data, nullptr);
+	else if (res->type == AggregatedDataVariants::KEY_64)
+		mergeTwoLevelDataImpl<AggregationMethodOneNumber<UInt64>>(non_empty_data, nullptr);
+	else if (res->type == AggregatedDataVariants::KEY_STRING)
+		mergeTwoLevelDataImpl<AggregationMethodString>(non_empty_data, nullptr);
+	else if (res->type == AggregatedDataVariants::KEY_FIXED_STRING)
+		mergeTwoLevelDataImpl<AggregationMethodFixedString>(non_empty_data, nullptr);
+	else if (res->type == AggregatedDataVariants::KEYS_128)
+		mergeTwoLevelDataImpl<AggregationMethodKeys128>(non_empty_data, nullptr);
+	else if (res->type == AggregatedDataVariants::HASHED)
+		mergeTwoLevelDataImpl<AggregationMethodHashed>(non_empty_data, nullptr);
+	else if (res->type != AggregatedDataVariants::WITHOUT_KEY)
+		throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 
 	double elapsed_seconds = watch.elapsedSeconds();
 	size_t res_rows = res->size();
