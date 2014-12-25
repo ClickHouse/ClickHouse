@@ -74,7 +74,7 @@ void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_, const NamesAn
 		if (table_column_names.empty())
 		{
 			/// Оптимизация: мы считаем, что запрос содержит только один SELECT, даже если это может быть 
-			/// в самом деле цепочка UNION ALL. Первый запрос достаточен для определения нужных столбцов.
+			/// в самом деле цепочкой UNION ALL. Первый запрос достаточен для определения нужных столбцов.
 			context.setColumns(InterpreterSelectQuery(query.table, context, to_stage, subquery_depth, nullptr, false).getSampleBlock().getColumnsList());
 		}
 	}
