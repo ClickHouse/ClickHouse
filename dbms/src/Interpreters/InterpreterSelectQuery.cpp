@@ -39,24 +39,24 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input, const Names & requi
 	{
 		/// Функция rewriteExpressionList() работает правильно только, если имена столбцов совпадают
 		/// для каждого запроса цепочки UNION ALL. Поэтому сначала выполняем инициализацию.
-		basic_init(input, table_column_names);
-		init_union_all();
+		basicInit(input, table_column_names);
+		initUnionAll();
 		if (!required_column_names.empty() && (context.getColumns().size() != required_column_names.size()))
 		{
 			rewriteExpressionList(required_column_names);
 			/// Теперь имеется устаревшая информация для выполнения запроса. Обновляем эту информацию.
-			init_query_analyzer();
+			initQueryAnalyzer();
 		}
 	}
 	else
 	{
 		if (!required_column_names.empty())
 			rewriteExpressionList(required_column_names);
-		basic_init(input, table_column_names);
+		basicInit(input, table_column_names);
 	}
 }
 
-void InterpreterSelectQuery::basic_init(BlockInputStreamPtr input_, const NamesAndTypesList & table_column_names)
+void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_, const NamesAndTypesList & table_column_names)
 {
 	ProfileEvents::increment(ProfileEvents::SelectQuery);
 
@@ -110,7 +110,7 @@ void InterpreterSelectQuery::basic_init(BlockInputStreamPtr input_, const NamesA
 		streams.push_back(input_);
 }
 
-void InterpreterSelectQuery::init_union_all()
+void InterpreterSelectQuery::initUnionAll()
 {
 	/// Создаем цепочку запросов SELECT и проверяем, что результаты всех запросов SELECT cовместимые.
 	/// NOTE Мы можем безопасно применить static_cast вместо typeid_cast, 
@@ -129,6 +129,9 @@ void InterpreterSelectQuery::init_union_all()
 	}
 
 	// Переименовать столбцы каждого запроса цепочки UNION ALL в такие же имена, как в первом запросе.
+	// Мы выполняем этот код именно здесь, потому что в противном случае следующего рода запрос бы не срабатывал:
+	// SELECT X FROM (SELECT * FROM (SELECT 1 AS X, 2 AS Y) UNION ALL SELECT 3, 4)
+	// из-за того, что астериски заменены столбцами только при создании объектов query_analyzer в basicInit().
 	for (IAST * tree = query.next_union_all.get(); tree != nullptr; tree = static_cast<ASTSelectQuery *>(tree)->next_union_all.get())
 	{
 		auto & ast = static_cast<ASTSelectQuery &>(*tree);
@@ -136,7 +139,7 @@ void InterpreterSelectQuery::init_union_all()
 	}	
 }
 
-void InterpreterSelectQuery::init_query_analyzer()
+void InterpreterSelectQuery::initQueryAnalyzer()
 {
 	query_analyzer = new ExpressionAnalyzer(query_ptr, context, storage, subquery_depth, true);
 	for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->next_select_in_union_all.get())
