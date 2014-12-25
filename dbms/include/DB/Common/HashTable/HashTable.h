@@ -240,7 +240,7 @@ protected:
 	Grower grower;
 
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
-	mutable size_t collisions;
+	mutable size_t collisions = 0;
 #endif
 
 	/// Найти ячейку с тем же ключём или пустую ячейку, начиная с заданного места и далее по цепочке разрешения коллизий.
@@ -372,10 +372,14 @@ public:
 		if (Cell::need_zero_value_storage)
 			this->zeroValue()->setZero();
 		alloc(grower);
+	}
 
-#ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
-		collisions = 0;
-#endif
+	HashTable(size_t reserve_for_num_elements)
+	{
+		if (Cell::need_zero_value_storage)
+			this->zeroValue()->setZero();
+		grower.set(reserve_for_num_elements);
+		alloc(grower);
 	}
 
 	~HashTable()

@@ -129,6 +129,8 @@ public:
 	typedef typename Cell::Mapped mapped_type;
 	typedef typename Cell::value_type value_type;
 
+	using HashTable<Key, Cell, Hash, Grower, Allocator>::HashTable;
+
 	mapped_type & operator[](Key x)
 	{
 		typename HashMapTable::iterator it;
