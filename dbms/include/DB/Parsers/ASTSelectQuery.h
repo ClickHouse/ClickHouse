@@ -53,19 +53,16 @@ public:
 		return false;
 	}
 
+	/// Содержит ли запрос астериск?
 	bool hasAsterisk() const
 	{
-		if (const ASTExpressionList * node = typeid_cast<const ASTExpressionList *>(&*select_expression_list))
-		{
-			for (const auto & ast : node->children)
-			{
-				if (typeid_cast<const ASTAsterisk *>(&*ast) != nullptr)
-					return true;
-			}
-		}
+		for (const auto & ast : select_expression_list->children)
+			if (typeid_cast<const ASTAsterisk *>(&*ast) != nullptr)
+				return true;
+
 		return false;
 	}
-	
+
 	/// Переименовать столбцы запроса в такие же имена, как в исходном запросе.
 	void renameColumns(const ASTSelectQuery & source)
 	{
