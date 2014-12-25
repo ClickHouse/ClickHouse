@@ -124,7 +124,7 @@ protected:
 			<< " in " << elapsed_seconds << " sec."
 			<< " (" << total_src_rows / elapsed_seconds << " rows/sec., " << total_src_bytes / elapsed_seconds / 1048576.0 << " MiB/sec.)");
 
-		AggregatedDataVariantsPtr res = aggregator->merge(many_data);
+		AggregatedDataVariantsPtr res = aggregator->merge(many_data, max_threads);
 
 		if (isCancelled())
 			return Block();
