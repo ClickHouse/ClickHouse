@@ -34,13 +34,16 @@ namespace DB
 {
 
 void InterpreterSelectQuery::init(BlockInputStreamPtr input, const Names & required_column_names, const NamesAndTypesList & table_column_names)
-{
-	if (isFirstSelectInsideUnionAll())
+{	
+	if (isFirstSelectInsideUnionAll() && hasAsterisk())
 	{
-		/// Функция rewriteExpressionList() работает правильно только, если имена столбцов совпадают
-		/// для каждого запроса цепочки UNION ALL. Поэтому сначала выполняем инициализацию.
 		basicInit(input, table_column_names);
-		initUnionAll();
+
+		// Мы выполняем этот код именно здесь, потому что в противном случае следующего рода запрос бы не срабатывал:
+		// SELECT X FROM (SELECT * FROM (SELECT 1 AS X, 2 AS Y) UNION ALL SELECT 3, 4)
+		// из-за того, что астериски заменены столбцами только при создании объектов query_analyzer в basicInit().
+		renameColumns();
+
 		if (!required_column_names.empty() && (context.getColumns().size() != required_column_names.size()))
 		{
 			rewriteExpressionList(required_column_names);
@@ -50,8 +53,10 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input, const Names & requi
 	}
 	else
 	{
+		renameColumns();
 		if (!required_column_names.empty())
 			rewriteExpressionList(required_column_names);
+
 		basicInit(input, table_column_names);
 	}
 }
@@ -67,7 +72,7 @@ void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_, const NamesAn
 	if (query.table && typeid_cast<ASTSelectQuery *>(&*query.table))
 	{
 		if (table_column_names.empty())
-			context.setColumns(InterpreterSelectQuery(query.table, context, to_stage, subquery_depth, nullptr, false).getSampleBlock().getColumnsList());
+			context.setColumns(InterpreterSelectQuery(query.table, context, to_stage, subquery_depth).getSampleBlock().getColumnsList());
 	}
 	else
 	{
@@ -108,10 +113,7 @@ void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_, const NamesAn
 
 	if (input_)
 		streams.push_back(input_);
-}
 
-void InterpreterSelectQuery::initUnionAll()
-{
 	/// Создаем цепочку запросов SELECT и проверяем, что результаты всех запросов SELECT cовместимые.
 	/// NOTE Мы можем безопасно применить static_cast вместо typeid_cast, 
 	/// потому что знаем, что в цепочке UNION ALL имеются только деревья типа SELECT.
@@ -127,16 +129,6 @@ void InterpreterSelectQuery::initUnionAll()
 			+ "\n\nwhile expecting:\n\n" + first.dumpStructure() + "\n\ninstead", 
 			ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH);
 	}
-
-	// Переименовать столбцы каждого запроса цепочки UNION ALL в такие же имена, как в первом запросе.
-	// Мы выполняем этот код именно здесь, потому что в противном случае следующего рода запрос бы не срабатывал:
-	// SELECT X FROM (SELECT * FROM (SELECT 1 AS X, 2 AS Y) UNION ALL SELECT 3, 4)
-	// из-за того, что астериски заменены столбцами только при создании объектов query_analyzer в basicInit().
-	for (IAST * tree = query.next_union_all.get(); tree != nullptr; tree = static_cast<ASTSelectQuery *>(tree)->next_union_all.get())
-	{
-		auto & ast = static_cast<ASTSelectQuery &>(*tree);
-		ast.renameColumns(query);
-	}	
 }
 
 void InterpreterSelectQuery::initQueryAnalyzer()
@@ -176,6 +168,29 @@ InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context 
 	log(&Logger::get("InterpreterSelectQuery"))
 {	
 	init(input_, required_column_names_, table_column_names);
+}
+
+bool InterpreterSelectQuery::hasAsterisk() const
+{
+	if (query.hasAsterisk())
+		return true;
+
+	for (IAST * tree = query.next_union_all.get(); tree != nullptr; tree = static_cast<ASTSelectQuery *>(tree)->next_union_all.get())
+	{
+		const auto & next_query = static_cast<ASTSelectQuery &>(*tree);
+		if (next_query.hasAsterisk())
+			return true;
+	}
+	return false;
+}
+
+void InterpreterSelectQuery::renameColumns()
+{
+	for (IAST * tree = query.next_union_all.get(); tree != nullptr; tree = static_cast<ASTSelectQuery *>(tree)->next_union_all.get())
+	{
+		auto & ast = static_cast<ASTSelectQuery &>(*tree);
+		ast.renameColumns(query);
+	}
 }
 
 void InterpreterSelectQuery::rewriteExpressionList(const Names & required_column_names)
