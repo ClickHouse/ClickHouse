@@ -69,11 +69,54 @@ void aggregate1(Map & map, Source::const_iterator begin, Source::const_iterator 
 		++map[*it];
 }
 
+void aggregate12(Map & map, Source::const_iterator begin, Source::const_iterator end)
+{
+	Map::iterator found;
+	auto prev_it = end;
+	for (auto it = begin; it != end; ++it)
+	{
+		if (*it == *prev_it)
+		{
+			++found->second;
+			continue;
+		}
+		prev_it = it;
+
+		bool inserted;
+		map.emplace(*it, found, inserted);
+		++found->second;
+	}
+}
+
 void aggregate2(MapTwoLevel & map, Source::const_iterator begin, Source::const_iterator end)
 {
 	for (auto it = begin; it != end; ++it)
 		++map[*it];
 }
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+
+void aggregate22(MapTwoLevel & map, Source::const_iterator begin, Source::const_iterator end)
+{
+	MapTwoLevel::iterator found;
+	auto prev_it = end;
+	for (auto it = begin; it != end; ++it)
+	{
+		if (*it == *prev_it)
+		{
+			++found->second;
+			continue;
+		}
+		prev_it = it;
+
+		bool inserted;
+		map.emplace(*it, found, inserted);
+		++found->second;
+	}
+}
+
+#pragma GCC diagnostic pop
 
 void merge2(MapTwoLevel * maps, size_t num_threads, size_t bucket)
 {
@@ -281,6 +324,60 @@ int main(int argc, char ** argv)
 		std::cerr << "Size: " << maps[0].size() << std::endl << std::endl;
 	}
 
+	if (!method || method == 12)
+	{
+		/** То же самое, но с оптимизацией для подряд идущих одинаковых значений.
+		  */
+
+		Map maps[num_threads];
+
+		Stopwatch watch;
+
+		for (size_t i = 0; i < num_threads; ++i)
+			pool.schedule(std::bind(aggregate12,
+									std::ref(maps[i]),
+									data.begin() + (data.size() * i) / num_threads,
+									data.begin() + (data.size() * (i + 1)) / num_threads));
+
+			pool.wait();
+
+		watch.stop();
+		double time_aggregated = watch.elapsedSeconds();
+		std::cerr
+		<< "Aggregated in " << time_aggregated
+		<< " (" << n / time_aggregated << " elem/sec.)"
+		<< std::endl;
+
+		size_t size_before_merge = 0;
+		std::cerr << "Sizes: ";
+		for (size_t i = 0; i < num_threads; ++i)
+		{
+			std::cerr << (i == 0 ? "" : ", ") << maps[i].size();
+			size_before_merge += maps[i].size();
+		}
+		std::cerr << std::endl;
+
+		watch.restart();
+
+		for (size_t i = 1; i < num_threads; ++i)
+			for (auto it = maps[i].begin(); it != maps[i].end(); ++it)
+				maps[0][it->first] += it->second;
+
+			watch.stop();
+		double time_merged = watch.elapsedSeconds();
+		std::cerr
+		<< "Merged in " << time_merged
+		<< " (" << size_before_merge / time_merged << " elem/sec.)"
+		<< std::endl;
+
+		double time_total = time_aggregated + time_merged;
+		std::cerr
+		<< "Total in " << time_total
+		<< " (" << n / time_total << " elem/sec.)"
+		<< std::endl;
+		std::cerr << "Size: " << maps[0].size() << std::endl << std::endl;
+	}
+
 	if (!method || method == 11)
 	{
 		/** Вариант 11.
@@ -414,6 +511,60 @@ int main(int argc, char ** argv)
 			<< "Total in " << time_total
 			<< " (" << n / time_total << " elem/sec.)"
 			<< std::endl;
+
+		std::cerr << "Size: " << maps[0].size() << std::endl << std::endl;
+	}
+
+	if (!method || method == 22)
+	{
+		MapTwoLevel maps[num_threads];
+
+		Stopwatch watch;
+
+		for (size_t i = 0; i < num_threads; ++i)
+			pool.schedule(std::bind(aggregate22,
+									std::ref(maps[i]),
+									data.begin() + (data.size() * i) / num_threads,
+									data.begin() + (data.size() * (i + 1)) / num_threads));
+
+			pool.wait();
+
+		watch.stop();
+		double time_aggregated = watch.elapsedSeconds();
+		std::cerr
+		<< "Aggregated in " << time_aggregated
+		<< " (" << n / time_aggregated << " elem/sec.)"
+		<< std::endl;
+
+		size_t size_before_merge = 0;
+		std::cerr << "Sizes: ";
+		for (size_t i = 0; i < num_threads; ++i)
+		{
+			std::cerr << (i == 0 ? "" : ", ") << maps[i].size();
+			size_before_merge += maps[i].size();
+		}
+		std::cerr << std::endl;
+
+		watch.restart();
+
+		for (size_t i = 0; i < MapTwoLevel::NUM_BUCKETS; ++i)
+			pool.schedule(std::bind(merge2,
+									&maps[0], num_threads, i));
+
+			pool.wait();
+
+		watch.stop();
+		double time_merged = watch.elapsedSeconds();
+		std::cerr
+		<< "Merged in " << time_merged
+		<< " (" << size_before_merge / time_merged << " elem/sec.)"
+		<< std::endl;
+
+		double time_total = time_aggregated + time_merged;
+		std::cerr
+		<< "Total in " << time_total
+		<< " (" << n / time_total << " elem/sec.)"
+		<< std::endl;
 
 		std::cerr << "Size: " << maps[0].size() << std::endl << std::endl;
 	}
