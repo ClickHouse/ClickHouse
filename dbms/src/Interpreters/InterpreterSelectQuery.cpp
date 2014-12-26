@@ -326,10 +326,10 @@ const BlockInputStreams & InterpreterSelectQuery::executeWithoutUnion()
 {
 	if (isFirstSelectInsideUnionAll())
 	{
-		executeSingleQuery(false);
+		executeSingleQuery();
 		for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->next_select_in_union_all.get())
 		{
-			p->executeSingleQuery(false);
+			p->executeSingleQuery();
 			const auto & others = p->streams;
 			streams.insert(streams.end(), others.begin(), others.end());
 		}
@@ -343,7 +343,7 @@ const BlockInputStreams & InterpreterSelectQuery::executeWithoutUnion()
 	return streams;
 }
 
-void InterpreterSelectQuery::executeSingleQuery(bool should_perform_union_hint)
+void InterpreterSelectQuery::executeSingleQuery()
 {
 	/** Потоки данных. При параллельном выполнении запроса, имеем несколько потоков данных.
 	 *  Если нет GROUP BY, то выполним все операции до ORDER BY и LIMIT параллельно, затем
@@ -357,7 +357,7 @@ void InterpreterSelectQuery::executeSingleQuery(bool should_perform_union_hint)
 	 *  то объединение источников данных выполняется не на этом уровне, а на верхнем уровне.
 	 */
 
-	bool do_execute_union = should_perform_union_hint;
+	bool do_execute_union = false;
 	
 	/** Вынем данные из Storage. from_stage - до какой стадии запрос был выполнен в Storage. */
 	QueryProcessingStage::Enum from_stage = executeFetchColumns(streams);
@@ -558,9 +558,6 @@ void InterpreterSelectQuery::executeSingleQuery(bool should_perform_union_hint)
 	/** Если данных нет. */
 	if (streams.empty())
 		return;
-
-	if (do_execute_union)
-		executeUnion(streams);
 
 	SubqueriesForSets subqueries_for_sets = query_analyzer->getSubqueriesForSets();
 	if (!subqueries_for_sets.empty())
