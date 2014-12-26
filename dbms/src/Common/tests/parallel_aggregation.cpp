@@ -50,7 +50,7 @@ struct __attribute__((__aligned__(64))) AlignedSmallLock : public SmallLock
 };
 
 
-typedef AlignedSmallLock Mutex;
+typedef Poco::FastMutex Mutex;
 
 
 /*typedef HashTableWithSmallLocks<
@@ -107,30 +107,65 @@ void aggregate3(Map & local_map, Map & global_map, Mutex & mutex, Source::const_
 	}
 }
 
-void aggregate4(Map & local_map, MapTwoLevel & global_map, Mutex * mutexes, Source::const_iterator begin, Source::const_iterator end)
+void aggregate33(Map & local_map, Map & global_map, Mutex & mutex, Source::const_iterator begin, Source::const_iterator end)
 {
 	static constexpr size_t threshold = 65536;
 
 	for (auto it = begin; it != end; ++it)
 	{
-		Map::iterator found = local_map.find(*it);
+		Map::iterator found;
+		bool inserted;
+		local_map.emplace(*it, found, inserted);
+		++found->second;
 
-		if (found != local_map.end())
-			++found->second;
-		else if (local_map.size() < threshold)
-			++local_map[*it];	/// TODO Можно было бы делать один lookup, а не два.
+		if (inserted && local_map.size() == threshold)
+		{
+			Poco::ScopedLock<Mutex> lock(mutex);
+			for (auto & value_type : local_map)
+				global_map[value_type.first] += value_type.second;
+
+			local_map.clear();
+		}
+	}
+}
+
+void aggregate4(Map & local_map, MapTwoLevel & global_map, Mutex * mutexes, Source::const_iterator begin, Source::const_iterator end)
+{
+	static constexpr size_t threshold = 65536;
+	static constexpr size_t block_size = 8192;
+
+	auto it = begin;
+	while (it != end)
+	{
+		auto block_end = std::min(end, it + block_size);
+
+		if (local_map.size() < threshold)
+		{
+			for (; it != block_end; ++it)
+				++local_map[*it];
+		}
 		else
 		{
-			size_t hash_value = global_map.hash(*it);
-			size_t bucket = global_map.getBucketFromHash(hash_value);
-
-			if (mutexes[bucket].tryLock())
+			for (; it != block_end; ++it)
 			{
-				++global_map.impls[bucket][*it];
-				mutexes[bucket].unlock();
+				Map::iterator found = local_map.find(*it);
+
+				if (found != local_map.end())
+					++found->second;
+				else
+				{
+					size_t hash_value = global_map.hash(*it);
+					size_t bucket = global_map.getBucketFromHash(hash_value);
+
+					if (mutexes[bucket].tryLock())
+					{
+						++global_map.impls[bucket][*it];
+						mutexes[bucket].unlock();
+					}
+					else
+						++local_map[*it];
+				}
 			}
-			else
-				++local_map[*it];
 		}
 	}
 }
@@ -243,6 +278,81 @@ int main(int argc, char ** argv)
 			<< "Total in " << time_total
 			<< " (" << n / time_total << " elem/sec.)"
 			<< std::endl;
+		std::cerr << "Size: " << maps[0].size() << std::endl << std::endl;
+	}
+
+	if (!method || method == 11)
+	{
+		/** Вариант 11.
+		  * То же, что вариант 1, но при мердже, изменён порядок циклов,
+		  *  что потенциально может дать лучшую кэш-локальность.
+		  *
+		  * На практике, разницы нет.
+		  */
+
+		Map maps[num_threads];
+
+		Stopwatch watch;
+
+		for (size_t i = 0; i < num_threads; ++i)
+			pool.schedule(std::bind(aggregate1,
+				std::ref(maps[i]),
+				data.begin() + (data.size() * i) / num_threads,
+				data.begin() + (data.size() * (i + 1)) / num_threads));
+
+		pool.wait();
+
+		watch.stop();
+		double time_aggregated = watch.elapsedSeconds();
+		std::cerr
+		<< "Aggregated in " << time_aggregated
+		<< " (" << n / time_aggregated << " elem/sec.)"
+		<< std::endl;
+
+		size_t size_before_merge = 0;
+		std::cerr << "Sizes: ";
+		for (size_t i = 0; i < num_threads; ++i)
+		{
+			std::cerr << (i == 0 ? "" : ", ") << maps[i].size();
+			size_before_merge += maps[i].size();
+		}
+		std::cerr << std::endl;
+
+		watch.restart();
+
+		Map::iterator iterators[num_threads];
+		for (size_t i = 1; i < num_threads; ++i)
+			iterators[i] = maps[i].begin();
+
+		while (true)
+		{
+			bool finish = true;
+			for (size_t i = 1; i < num_threads; ++i)
+			{
+				if (iterators[i] == maps[i].end())
+					continue;
+
+				finish = false;
+				maps[0][iterators[i]->first] += iterators[i]->second;
+				++iterators[i];
+			}
+
+			if (finish)
+				break;
+		}
+
+		watch.stop();
+		double time_merged = watch.elapsedSeconds();
+		std::cerr
+		<< "Merged in " << time_merged
+		<< " (" << size_before_merge / time_merged << " elem/sec.)"
+		<< std::endl;
+
+		double time_total = time_aggregated + time_merged;
+		std::cerr
+		<< "Total in " << time_total
+		<< " (" << n / time_total << " elem/sec.)"
+		<< std::endl;
 		std::cerr << "Size: " << maps[0].size() << std::endl << std::endl;
 	}
 
@@ -374,6 +484,72 @@ int main(int argc, char ** argv)
 			<< "Total in " << time_total
 			<< " (" << n / time_total << " elem/sec.)"
 			<< std::endl;
+
+		std::cerr << "Size: " << global_map.size() << std::endl << std::endl;
+	}
+
+	if (!method || method == 33)
+	{
+		/** Вариант 33.
+		 * В разных потоках агрегируем независимо в разные хэш-таблицы,
+		 *  пока их размер не станет достаточно большим.
+		 * Затем сбрасываем данные в глобальную хэш-таблицу, защищённую mutex-ом, и продолжаем.
+		 */
+
+		Map local_maps[num_threads];
+		Map global_map;
+		Mutex mutex;
+
+		Stopwatch watch;
+
+		for (size_t i = 0; i < num_threads; ++i)
+			pool.schedule(std::bind(aggregate33,
+				std::ref(local_maps[i]),
+				std::ref(global_map),
+				std::ref(mutex),
+				data.begin() + (data.size() * i) / num_threads,
+				data.begin() + (data.size() * (i + 1)) / num_threads));
+
+		pool.wait();
+
+		watch.stop();
+		double time_aggregated = watch.elapsedSeconds();
+		std::cerr
+		<< "Aggregated in " << time_aggregated
+		<< " (" << n / time_aggregated << " elem/sec.)"
+		<< std::endl;
+
+		size_t size_before_merge = 0;
+		std::cerr << "Sizes (local): ";
+		for (size_t i = 0; i < num_threads; ++i)
+		{
+			std::cerr << (i == 0 ? "" : ", ") << local_maps[i].size();
+			size_before_merge += local_maps[i].size();
+		}
+		std::cerr << std::endl;
+		std::cerr << "Size (global): " << global_map.size() << std::endl;
+		size_before_merge += global_map.size();
+
+		watch.restart();
+
+		for (size_t i = 0; i < num_threads; ++i)
+			for (auto it = local_maps[i].begin(); it != local_maps[i].end(); ++it)
+				global_map[it->first] += it->second;
+
+		pool.wait();
+
+		watch.stop();
+		double time_merged = watch.elapsedSeconds();
+		std::cerr
+		<< "Merged in " << time_merged
+		<< " (" << size_before_merge / time_merged << " elem/sec.)"
+		<< std::endl;
+
+		double time_total = time_aggregated + time_merged;
+		std::cerr
+		<< "Total in " << time_total
+		<< " (" << n / time_total << " elem/sec.)"
+		<< std::endl;
 
 		std::cerr << "Size: " << global_map.size() << std::endl << std::endl;
 	}

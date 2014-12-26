@@ -725,6 +725,16 @@ public:
 	    return 0 == m_size;
 	}
 
+	void clear()
+	{
+		if (!__has_trivial_destructor(Cell))
+			for (iterator it = begin(); it != end(); ++it)
+				it.ptr->~Cell();
+
+		memset(buf, 0, grower.bufSize() * sizeof(*buf));
+		m_size = 0;
+	}
+
 	size_t getBufferSizeInBytes() const
 	{
 		return grower.bufSize() * sizeof(Cell);
