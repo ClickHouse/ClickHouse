@@ -47,7 +47,7 @@ public:
 	typedef ImplTable Impl;
 
 	size_t hash(const Key & x) const { return Hash::operator()(x); }
-	size_t getBucketFromHash(size_t hash_value) const { return hash_value >> 56; }
+	size_t getBucketFromHash(size_t hash_value) const { return (hash_value >> 24) & 0xFF; }	/// NOTE Плохо для хэш-таблиц больше чем на 2^32 ячеек.
 
 protected:
 	typename Impl::iterator beginOfNextNonEmptyBucket(size_t & bucket)
