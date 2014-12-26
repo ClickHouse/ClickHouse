@@ -34,7 +34,13 @@ namespace DB
 {
 
 void InterpreterSelectQuery::init(BlockInputStreamPtr input, const Names & required_column_names, const NamesAndTypesList & table_column_names)
-{	
+{
+	ProfileEvents::increment(ProfileEvents::SelectQuery);
+
+	if (settings.limits.max_subquery_depth && subquery_depth > settings.limits.max_subquery_depth)
+		throw Exception("Too deep subqueries. Maximum: " + toString(settings.limits.max_subquery_depth),
+			ErrorCodes::TOO_DEEP_SUBQUERIES);
+
 	if (isFirstSelectInsideUnionAll() && hasAsterisk())
 	{
 		basicInit(input, table_column_names);
@@ -63,12 +69,6 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input, const Names & requi
 
 void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_, const NamesAndTypesList & table_column_names)
 {
-	ProfileEvents::increment(ProfileEvents::SelectQuery);
-
-	if (settings.limits.max_subquery_depth && subquery_depth > settings.limits.max_subquery_depth)
-		throw Exception("Too deep subqueries. Maximum: " + toString(settings.limits.max_subquery_depth),
-			ErrorCodes::TOO_DEEP_SUBQUERIES);
-
 	if (query.table && typeid_cast<ASTSelectQuery *>(&*query.table))
 	{
 		if (table_column_names.empty())
