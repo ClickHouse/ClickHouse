@@ -14,13 +14,23 @@
   * - по идее, ресайзы кэш-локальны в большем диапазоне размеров.
   */
 
+template <size_t initial_size_degree = 8>
+struct TwoLevelHashTableGrower : public HashTableGrower<initial_size_degree>
+{
+	/// Увеличить размер хэш-таблицы.
+	void increaseSize()
+	{
+		this->size_degree += this->size_degree >= 15 ? 1 : 2;
+	}
+};
+
 template
 <
 	typename Key,
 	typename Cell,
 	typename Hash,
 	typename Grower,
-	typename Allocator,
+	typename Allocator,	/// TODO WithStackMemory
 	typename ImplTable = HashTable<Key, Cell, Hash, Grower, Allocator>
 >
 class TwoLevelHashTable :

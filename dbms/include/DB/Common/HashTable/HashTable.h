@@ -486,8 +486,10 @@ public:
 
 
 protected:
-	const_iterator iteratorToZero() const 	{ return const_iterator(this, this->zeroValue()); }
-	iterator iteratorToZero() 				{ return iterator(this, this->zeroValue()); }
+	const_iterator iteratorTo(const Cell * ptr) const 	{ return const_iterator(this, ptr); }
+	iterator iteratorTo(Cell * ptr) 					{ return iterator(this, ptr); }
+	const_iterator iteratorToZero() const 	{ return iteratorTo(this->zeroValue()); }
+	iterator iteratorToZero() 				{ return iteratorTo(this->zeroValue()); }
 
 
 	/// Если ключ нулевой - вставить его в специальное место и вернуть true.
