@@ -21,7 +21,6 @@
 
 typedef UInt64 Key;
 typedef UInt64 Value;
-
 typedef std::vector<Key> Source;
 
 
@@ -136,7 +135,7 @@ struct MergeSequential
 };
 
 template <typename Map>
-struct MergeSequentialTransposed
+struct MergeSequentialTransposed	/// На практике не лучше обычного.
 {
 	template <typename Merger>
 	static void NO_INLINE execute(Map ** source_maps, size_t num_maps, Map *& result_map,
@@ -250,9 +249,8 @@ struct Work
 };
 
 
-
-typedef HashMap<Key, Value> Map;
-typedef TwoLevelHashMap<Key, Value> MapTwoLevel;
+typedef HashMap<Key, Value, HashCRC32<Key>> Map;
+typedef TwoLevelHashMap<Key, Value, HashCRC32<Key>> MapTwoLevel;
 typedef Poco::FastMutex Mutex;
 
 
@@ -379,20 +377,6 @@ int main(int argc, char ** argv)
 			MergeParallelForTwoLevelTable<MapTwoLevel, MergeSequential<MapTwoLevel::Impl>>
 		>::execute(data, num_threads, creator, updater, merger, pool);
 
-	if (!method || method == 11)
-		Work<
-			MapTwoLevel,
-			AggregateIndependent<MapTwoLevel>,
-			MergeParallelForTwoLevelTable<MapTwoLevel, MergeSequential<MapTwoLevel::Impl>>
-		>::execute(data, num_threads, creator, updater, merger, pool);
-
-	if (!method || method == 12)
-		Work<
-			MapTwoLevel,
-			AggregateIndependentWithSequentialKeysOptimization<MapTwoLevel>,
-			MergeParallelForTwoLevelTable<MapTwoLevel, MergeSequential<MapTwoLevel::Impl>>
-		>::execute(data, num_threads, creator, updater, merger, pool);
-
 	if (!method || method == 13)
 		Work<
 			MapTwoLevel,
@@ -401,20 +385,6 @@ int main(int argc, char ** argv)
 		>::execute(data, num_threads, creator, updater, merger, pool);
 
 	if (!method || method == 14)
-		Work<
-			MapTwoLevel,
-			AggregateIndependentWithSequentialKeysOptimization<MapTwoLevel>,
-			MergeParallelForTwoLevelTable<MapTwoLevel, MergeSequentialTransposed<MapTwoLevel::Impl>>
-		>::execute(data, num_threads, creator, updater, merger, pool);
-
-	if (!method || method == 15)
-		Work<
-			MapTwoLevel,
-			AggregateIndependent<MapTwoLevel>,
-			MergeParallelForTwoLevelTable<MapTwoLevel, MergeSequentialTransposed<MapTwoLevel::Impl>>
-		>::execute(data, num_threads, creator, updater, merger, pool);
-
-	if (!method || method == 16)
 		Work<
 			MapTwoLevel,
 			AggregateIndependentWithSequentialKeysOptimization<MapTwoLevel>,

@@ -4,7 +4,7 @@
 
 
 /** Двухуровневая хэш-таблица.
-  * Представляет собой 256 маленьких хэш-таблиц (bucket-ов первого уровня).
+  * Представляет собой 256 (или 1 << BITS_FOR_BUCKET) маленьких хэш-таблиц (bucket-ов первого уровня).
   * Для определения, какую из них использовать, берётся один из байтов хэш-функции.
   *
   * Обычно работает чуть-чуть медленнее простой хэш-таблицы.
@@ -31,7 +31,8 @@ template
 	typename Hash,
 	typename Grower,
 	typename Allocator,	/// TODO WithStackMemory
-	typename ImplTable = HashTable<Key, Cell, Hash, Grower, Allocator>
+	typename ImplTable = HashTable<Key, Cell, Hash, Grower, Allocator>,
+	size_t BITS_FOR_BUCKET = 8
 >
 class TwoLevelHashTable :
 	private boost::noncopyable,
@@ -46,8 +47,13 @@ protected:
 public:
 	typedef ImplTable Impl;
 
+	static constexpr size_t NUM_BUCKETS = 1 << BITS_FOR_BUCKET;
+	static constexpr size_t MAX_BUCKET = NUM_BUCKETS - 1;
+
 	size_t hash(const Key & x) const { return Hash::operator()(x); }
-	size_t getBucketFromHash(size_t hash_value) const { return (hash_value >> 24) & 0xFF; }	/// NOTE Плохо для хэш-таблиц больше чем на 2^32 ячеек.
+
+	/// NOTE Плохо для хэш-таблиц больше чем на 2^32 ячеек.
+	size_t getBucketFromHash(size_t hash_value) const { return (hash_value >> (32 - BITS_FOR_BUCKET)) & MAX_BUCKET; }
 
 protected:
 	typename Impl::iterator beginOfNextNonEmptyBucket(size_t & bucket)
@@ -78,8 +84,6 @@ public:
 	typedef typename Impl::key_type key_type;
 	typedef typename Impl::value_type value_type;
 
-	static constexpr size_t NUM_BUCKETS = 256;
-	static constexpr size_t MAX_BUCKET = NUM_BUCKETS - 1;
 	Impl impls[NUM_BUCKETS];
 
 
