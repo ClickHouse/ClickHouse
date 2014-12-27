@@ -49,9 +49,9 @@ typedef std::vector<AggregateDescription> AggregateDescriptions;
   *  захватывается позднее - в функции convertToBlock, объектом ColumnAggregateFunction.
   */
 typedef AggregateDataPtr AggregatedDataWithoutKey;
-typedef TwoLevelHashMap<UInt64, AggregateDataPtr> AggregatedDataWithUInt64Key;
+typedef TwoLevelHashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>> AggregatedDataWithUInt64Key;
 typedef TwoLevelHashMapWithSavedHash<StringRef, AggregateDataPtr> AggregatedDataWithStringKey;
-typedef TwoLevelHashMap<UInt128, AggregateDataPtr, UInt128Hash> AggregatedDataWithKeys128;
+typedef TwoLevelHashMap<UInt128, AggregateDataPtr, UInt128HashCRC32> AggregatedDataWithKeys128;
 typedef TwoLevelHashMap<UInt128, std::pair<StringRef*, AggregateDataPtr>, UInt128TrivialHash> AggregatedDataHashed;
 
 
