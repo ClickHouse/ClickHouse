@@ -121,8 +121,8 @@ start()
 		for i in $(seq 1 $NUMBER_OF_PROCESSES); do
 			if ! is_running $(generate_pid_name $i); then
 				rm -f $(generate_pid_name $i)
-				# TODO может лучше передавать демону номер процесса, а демон сам будет делать все необходимые подстановки
-				su -l $USER -s $SHELL -c "exec -a $(generate_program_name $i) \"$BINDIR/$PROGRAM\" --daemon --pid-file=\"$(generate_pid_name $i)\" --config-file=\"$CNFFILE\" $(specific_log_file_for_each_process $i)"
+				# чтобы лок не удерживался в течении времени жизни дочернего процесса, освободим лок
+				su -l $USER -s $SHELL -c "flock -u 9; exec -a $(generate_program_name $i) \"$BINDIR/$PROGRAM\" --daemon --pid-file=\"$(generate_pid_name $i)\" --config-file=\"$CNFFILE\" $(specific_log_file_for_each_process $i)"
 				EXIT_STATUS=$?
 				if [[ $EXIT_STATUS -ne 0 ]]; then
 					break
@@ -256,6 +256,9 @@ main()
 }
 
 (
-	flock -n 9 || echo "Init script is already running" && exit 1
-	main
+	if flock -n 9; then
+		main "$@"
+	else
+		echo "Init script is already running" && exit 1
+	fi
 ) 9> $LOCKFILE
