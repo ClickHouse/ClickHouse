@@ -108,13 +108,10 @@ start()
 
 	echo -n "Start $PROGRAM service: "
 
-	[ -f "$LOCKFILE" ] && sleep 1
 	if [[ $(running_processes) -eq $NUMBER_OF_PROCESSES ]]; then
 		echo -n "already running "
 		EXIT_STATUS=1
 	else
-		# Clean stale lock files
-		rm -f "$LOCKFILE"
 		mkdir -p $LOGDIR
 		mkdir -p $PIDDIR
 		chown -R $USER:$GROUP $LOGDIR
@@ -135,7 +132,6 @@ start()
 	fi
 
 	if [[ $EXIT_STATUS -eq 0 ]]; then
-		touch "$LOCKFILE"
 		echo "DONE"
 	else
 		echo "FAILED"
@@ -151,21 +147,11 @@ stop()
 
 	echo -n "Stop $PROGRAM service: "
 
-	if any_runs; then
-	    if [ -f "$LOCKFILE" ]; then
-			for pid_file in $(find_pid_files); do
-				kill -TERM `cat "$pid_file"`
-			done
+	for pid_file in $(find_pid_files); do
+		kill -TERM `cat "$pid_file"`
+	done
 
-			wait4done
-			rm -f "$LOCKFILE"
-	    else
-			echo "has been stopping already"
-			return 1
-	    fi
-	else
-	    rm -f "$LOCKFILE"
-	fi
+	wait4done
 
 	echo "DONE"
 	return $EXIT_STATUS
@@ -184,19 +170,11 @@ forcestop()
 
 	echo -n "Stop $PROGRAM service: "
 
-	if any_runs; then
-	    if [ -f "$LOCKFILE" ]; then
-			for pid_file in $(find_pid_files); do
-				kill -9 `cat "$pid_file"`
-			done
+	for pid_file in $(find_pid_files); do
+		kill -9 `cat "$pid_file"`
+	done
 
-			wait4done
-			rm -f "$LOCKFILE"
-	    else
-			echo "has been stopping already"
-			return 1
-	    fi
-	fi
+	wait4done
 
 	echo "DONE"
 	return $EXIT_STATUS
@@ -218,9 +196,16 @@ disable_cron()
 	sed -i 's/^#*/#/' "$CRONFILE"
 }
 
-# See how we were called.
-EXIT_STATUS=0
-case "$1" in
+is_cron_disabled()
+{
+	[[ `grep -E "^#.*" $CRONFILE` == `cat $CRONFILE` ]];
+}
+
+main()
+{
+	# See how we were called.
+	EXIT_STATUS=0
+	case "$1" in
 	start)
 		start && enable_cron
 		;;
@@ -231,7 +216,7 @@ case "$1" in
 		if [[ $(running_processes) -eq $NUMBER_OF_PROCESSES ]]; then
 			echo "$PROGRAM service is running"
 		else
-			if [ ! -e $LOCKFILE ]; then
+			if is_cron_disabled; then
 				echo "$PROGRAM service is stopped";
 			else
 				echo "$PROGRAM: $(($NUMBER_OF_PROCESSES - $(running_processes))) of $NUMBER_OF_PROCESSES processes unexpectedly terminated"
@@ -265,6 +250,12 @@ case "$1" in
 	*)
 		echo "Usage: ${0##*/} {start|stop|status|restart|forcestop|forcerestart|reload|condstart|condstop|condrestart|condreload}"
 		EXIT_STATUS=2
-esac
+	esac
 
-exit $EXIT_STATUS
+	exit $EXIT_STATUS
+}
+
+(
+	flock -n 9 || echo "Init script is already running" && exit 1
+	main
+) 9> $LOCKFILE
