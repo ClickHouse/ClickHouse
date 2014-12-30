@@ -44,27 +44,27 @@ void SplittingAggregator::execute(BlockInputStreamPtr stream, ManyAggregatedData
 		rows = block.rows();
 
 		/// Каким способом выполнять агрегацию?
-		if (method == AggregatedDataVariants::EMPTY)
+		if (method == AggregatedDataVariants::Type::EMPTY)
 			method = chooseAggregationMethod(key_columns, key_sizes);
 
 		/// Подготавливаем массивы, куда будут складываться ключи или хэши от ключей.
-		if (method == AggregatedDataVariants::KEY_8			/// TODO не использовать SplittingAggregator для маленьких ключей.
-			|| method == AggregatedDataVariants::KEY_16
-			|| method == AggregatedDataVariants::KEY_32
-			|| method == AggregatedDataVariants::KEY_64)
+		if (method == AggregatedDataVariants::Type::key8			/// TODO не использовать SplittingAggregator для маленьких ключей.
+			|| method == AggregatedDataVariants::Type::key16
+			|| method == AggregatedDataVariants::Type::key32
+			|| method == AggregatedDataVariants::Type::key64)
 		{
 			keys64.resize(rows);
 		}
-		else if (method == AggregatedDataVariants::KEY_STRING || method == AggregatedDataVariants::KEY_FIXED_STRING)
+		else if (method == AggregatedDataVariants::Type::key_string || method == AggregatedDataVariants::Type::key_fixed_string)
 		{
 			hashes64.resize(rows);
 			string_refs.resize(rows);
 		}
-		else if (method == AggregatedDataVariants::KEYS_128)
+		else if (method == AggregatedDataVariants::Type::keys128)
 		{
 			keys128.resize(rows);
 		}
-		else if (method == AggregatedDataVariants::HASHED)
+		else if (method == AggregatedDataVariants::Type::hashed)
 		{
 			hashes128.resize(rows);
 		}
@@ -153,10 +153,10 @@ void SplittingAggregator::calculateHashesThread(Block & block, size_t begin, siz
 
 	try
 	{
-		if (method == AggregatedDataVariants::KEY_8
-			|| method == AggregatedDataVariants::KEY_16
-			|| method == AggregatedDataVariants::KEY_32
-			|| method == AggregatedDataVariants::KEY_64)
+		if (method == AggregatedDataVariants::Type::key8
+			|| method == AggregatedDataVariants::Type::key16
+			|| method == AggregatedDataVariants::Type::key32
+			|| method == AggregatedDataVariants::Type::key64)
 		{
 			const IColumn & column = *key_columns[0];
 
@@ -166,7 +166,7 @@ void SplittingAggregator::calculateHashesThread(Block & block, size_t begin, siz
 				thread_nums[i] = intHash32<0xd1f93e3190506c7cULL>(keys64[i]) % threads;	/// TODO более эффективная хэш-функция
 			}
 		}
-		else if (method == AggregatedDataVariants::KEY_STRING)
+		else if (method == AggregatedDataVariants::Type::key_string)
 		{
 			const IColumn & column = *key_columns[0];
 			const ColumnString & column_string = typeid_cast<const ColumnString &>(column);
@@ -181,7 +181,7 @@ void SplittingAggregator::calculateHashesThread(Block & block, size_t begin, siz
 				thread_nums[i] = (hashes64[i] >> 32) % threads;
 			}
 		}
-		else if (method == AggregatedDataVariants::KEY_FIXED_STRING)
+		else if (method == AggregatedDataVariants::Type::key_fixed_string)
 		{
 			const IColumn & column = *key_columns[0];
 			const ColumnFixedString & column_string = typeid_cast<const ColumnFixedString &>(column);
@@ -196,7 +196,7 @@ void SplittingAggregator::calculateHashesThread(Block & block, size_t begin, siz
 				thread_nums[i] = (hashes64[i] >> 32) % threads;
 			}
 		}
-		else if (method == AggregatedDataVariants::KEYS_128)
+		else if (method == AggregatedDataVariants::Type::keys128)
 		{
 			for (size_t i = begin; i < end; ++i)
 			{
@@ -204,7 +204,7 @@ void SplittingAggregator::calculateHashesThread(Block & block, size_t begin, siz
 				thread_nums[i] = (intHash32<0xd1f93e3190506c7cULL>(intHash32<0x271e6f39e4bd34c3ULL>(keys128[i].first) ^ keys128[i].second)) % threads;
 			}
 		}
-		else if (method == AggregatedDataVariants::HASHED)
+		else if (method == AggregatedDataVariants::Type::hashed)
 		{
 			for (size_t i = begin; i < end; ++i)
 			{
@@ -278,15 +278,15 @@ void SplittingAggregator::aggregateThread(
 		bool no_more_keys = max_rows_to_group_by && size_of_all_results > max_rows_to_group_by;
 		size_t old_result_size = result.size();
 
-		if (method == AggregatedDataVariants::KEY_8)
+		if (method == AggregatedDataVariants::Type::key8)
 			aggregateOneNumber<UInt8>(result, thread_no, no_more_keys);
-		else if (method == AggregatedDataVariants::KEY_16)
+		else if (method == AggregatedDataVariants::Type::key16)
 			aggregateOneNumber<UInt16>(result, thread_no, no_more_keys);
-		else if (method == AggregatedDataVariants::KEY_32)
+		else if (method == AggregatedDataVariants::Type::key32)
 			aggregateOneNumber<UInt32>(result, thread_no, no_more_keys);
-		else if (method == AggregatedDataVariants::KEY_64)
+		else if (method == AggregatedDataVariants::Type::key64)
 			aggregateOneNumber<UInt64>(result, thread_no, no_more_keys);
-		else if (method == AggregatedDataVariants::KEY_STRING)
+		else if (method == AggregatedDataVariants::Type::key_string)
 		{
 			AggregatedDataWithStringKey & res = result.key_string->data;
 
@@ -322,7 +322,7 @@ void SplittingAggregator::aggregateThread(
 					aggregate_functions[j]->add(it->second + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
 			}
 		}
-		else if (method == AggregatedDataVariants::KEY_FIXED_STRING)
+		else if (method == AggregatedDataVariants::Type::key_fixed_string)
 		{
 			AggregatedDataWithStringKey & res = result.key_fixed_string->data;
 
@@ -358,7 +358,7 @@ void SplittingAggregator::aggregateThread(
 					aggregate_functions[j]->add(it->second + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
 			}
 		}
-		else if (method == AggregatedDataVariants::KEYS_128)
+		else if (method == AggregatedDataVariants::Type::keys128)
 		{
 			AggregatedDataWithKeys128 & res = result.keys128->data;
 
@@ -392,7 +392,7 @@ void SplittingAggregator::aggregateThread(
 					aggregate_functions[j]->add(it->second + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
 			}
 		}
-		else if (method == AggregatedDataVariants::HASHED)
+		else if (method == AggregatedDataVariants::Type::hashed)
 		{
 			StringRefs key(keys_size);
 			AggregatedDataHashed & res = result.hashed->data;

@@ -36,7 +36,7 @@ public:
 	SplittingAggregator(const ColumnNumbers & keys_, const AggregateDescriptions & aggregates_, size_t threads_,
 		bool with_totals_, size_t max_rows_to_group_by_ = 0, OverflowMode group_by_overflow_mode_ = OverflowMode::THROW)
 		: Aggregator(keys_, aggregates_, with_totals_, max_rows_to_group_by_, group_by_overflow_mode_), threads(threads_), pool(threads),
-		log(&Logger::get("SplittingAggregator")), method(AggregatedDataVariants::EMPTY),
+		log(&Logger::get("SplittingAggregator")), method(AggregatedDataVariants::Type::EMPTY),
 		key_columns(keys_size), aggregate_columns(aggregates_size), rows(0), src_rows(0), src_bytes(0), size_of_all_results(0)
 	{
 	}
@@ -44,7 +44,7 @@ public:
 	SplittingAggregator(const Names & key_names_, const AggregateDescriptions & aggregates_, size_t threads_,
 		bool with_totals_, size_t max_rows_to_group_by_ = 0, OverflowMode group_by_overflow_mode_ = OverflowMode::THROW)
 		: Aggregator(key_names_, aggregates_, with_totals_, max_rows_to_group_by_, group_by_overflow_mode_), threads(threads_), pool(threads),
-		log(&Logger::get("SplittingAggregator")), method(AggregatedDataVariants::EMPTY),
+		log(&Logger::get("SplittingAggregator")), method(AggregatedDataVariants::Type::EMPTY),
 		key_columns(keys_size), aggregate_columns(aggregates_size), rows(0), src_rows(0), src_bytes(0), size_of_all_results(0)
 	{
 	}

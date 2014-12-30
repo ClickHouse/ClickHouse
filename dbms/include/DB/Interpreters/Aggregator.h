@@ -49,10 +49,16 @@ typedef std::vector<AggregateDescription> AggregateDescriptions;
   *  захватывается позднее - в функции convertToBlock, объектом ColumnAggregateFunction.
   */
 typedef AggregateDataPtr AggregatedDataWithoutKey;
-typedef TwoLevelHashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>> AggregatedDataWithUInt64Key;
-typedef TwoLevelHashMapWithSavedHash<StringRef, AggregateDataPtr> AggregatedDataWithStringKey;
-typedef TwoLevelHashMap<UInt128, AggregateDataPtr, UInt128HashCRC32> AggregatedDataWithKeys128;
-typedef TwoLevelHashMap<UInt128, std::pair<StringRef*, AggregateDataPtr>, UInt128TrivialHash> AggregatedDataHashed;
+
+typedef HashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>> AggregatedDataWithUInt64Key;
+typedef HashMapWithSavedHash<StringRef, AggregateDataPtr> AggregatedDataWithStringKey;
+typedef HashMap<UInt128, AggregateDataPtr, UInt128HashCRC32> AggregatedDataWithKeys128;
+typedef HashMap<UInt128, std::pair<StringRef*, AggregateDataPtr>, UInt128TrivialHash> AggregatedDataHashed;
+
+typedef TwoLevelHashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>> AggregatedDataWithUInt64KeyTwoLevel;
+typedef TwoLevelHashMapWithSavedHash<StringRef, AggregateDataPtr> AggregatedDataWithStringKeyTwoLevel;
+typedef TwoLevelHashMap<UInt128, AggregateDataPtr, UInt128HashCRC32> AggregatedDataWithKeys128TwoLevel;
+typedef TwoLevelHashMap<UInt128, std::pair<StringRef*, AggregateDataPtr>, UInt128TrivialHash> AggregatedDataHashedTwoLevel;
 
 
 /// Специализации для UInt8, UInt16.
@@ -83,39 +89,45 @@ struct HashTableFixedGrower
 typedef HashMap<UInt64, AggregateDataPtr, TrivialHash, HashTableFixedGrower<8>> AggregatedDataWithUInt8Key;
 typedef HashMap<UInt64, AggregateDataPtr, TrivialHash, HashTableFixedGrower<16>> AggregatedDataWithUInt16Key;
 
-template <typename FieldType>
-struct AggregatedDataWithUIntKey
-{
-	using Type = AggregatedDataWithUInt64Key;
-	static constexpr bool never_overflows = false;
-};
 
-template <>
-struct AggregatedDataWithUIntKey<UInt8>
-{
-	using Type = AggregatedDataWithUInt8Key;
-	static constexpr bool never_overflows = true;	/// Говорит о том, что в результате агрегации не может быть много записей.
-};
+template <typename T>
+inline UInt64 get64(T x) { return x; }
 
-template <>
-struct AggregatedDataWithUIntKey<UInt16>
+template <> inline UInt64 get64(Float64 x)
 {
-	using Type = AggregatedDataWithUInt16Key;
-	static constexpr bool never_overflows = true;
-};
+	union
+	{
+		Float64 src;
+		UInt64 res;
+	};
+
+	src = x;
+	return res;
+}
+
+template <> inline UInt64 get64(Float32 x)
+{
+	union
+	{
+		Float32 src;
+		UInt64 res;
+	};
+
+	res = 0;
+	src = x;
+	return res;
+}
 
 
 /// Для случая, когда есть один числовой ключ.
-template <typename FieldType>	/// UInt8/16/32/64 для любых типов соответствующей битности.
+template <typename FieldType, typename TData>	/// UInt8/16/32/64 для любых типов соответствующей битности.
 struct AggregationMethodOneNumber
 {
-	typedef typename AggregatedDataWithUIntKey<FieldType>::Type Data;
+	typedef TData Data;
 	typedef typename Data::key_type Key;
 	typedef typename Data::mapped_type Mapped;
 	typedef typename Data::iterator iterator;
 	typedef typename Data::const_iterator const_iterator;
-
-	static constexpr bool never_overflows = AggregatedDataWithUIntKey<FieldType>::never_overflows;
 
 	Data data;
 
@@ -156,52 +168,18 @@ struct AggregationMethodOneNumber
 	{
 		static_cast<ColumnVector<FieldType> *>(key_columns[0])->insertData(reinterpret_cast<const char *>(&it->first), sizeof(it->first));
 	}
-
-private:
-	UInt64 get64(FieldType x) const
-	{
-		return x;
-	}
 };
-
-template <>
-inline UInt64 AggregationMethodOneNumber<Float64>::get64(Float64 x) const
-{
-	union
-	{
-		Float64 src;
-		UInt64 res;
-	};
-
-	src = x;
-	return res;
-}
-
-template <>
-inline UInt64 AggregationMethodOneNumber<Float32>::get64(Float32 x) const
-{
-	union
-	{
-		Float32 src;
-		UInt64 res;
-	};
-
-	res = 0;
-	src = x;
-	return res;
-}
 
 
 /// Для случая, когда есть один строковый ключ.
+template <typename TData>
 struct AggregationMethodString
 {
-	typedef AggregatedDataWithStringKey Data;
-	typedef Data::key_type Key;
-	typedef Data::mapped_type Mapped;
-	typedef Data::iterator iterator;
-	typedef Data::const_iterator const_iterator;
-
-	static constexpr bool never_overflows = false;
+	typedef TData Data;
+	typedef typename Data::key_type Key;
+	typedef typename Data::mapped_type Mapped;
+	typedef typename Data::iterator iterator;
+	typedef typename Data::const_iterator const_iterator;
 
 	Data data;
 
@@ -242,15 +220,14 @@ struct AggregationMethodString
 
 
 /// Для случая, когда есть один строковый ключ фиксированной длины.
+template <typename TData>
 struct AggregationMethodFixedString
 {
-	typedef AggregatedDataWithStringKey Data;
-	typedef Data::key_type Key;
-	typedef Data::mapped_type Mapped;
-	typedef Data::iterator iterator;
-	typedef Data::const_iterator const_iterator;
-
-	static constexpr bool never_overflows = false;
+	typedef TData Data;
+	typedef typename Data::key_type Key;
+	typedef typename Data::mapped_type Mapped;
+	typedef typename Data::iterator iterator;
+	typedef typename Data::const_iterator const_iterator;
 
 	Data data;
 
@@ -291,15 +268,14 @@ struct AggregationMethodFixedString
 
 
 /// Для случая, когда все ключи фиксированной длины, и они помещаются в 128 бит.
+template <typename TData>
 struct AggregationMethodKeys128
 {
-	typedef AggregatedDataWithKeys128 Data;
-	typedef Data::key_type Key;
-	typedef Data::mapped_type Mapped;
-	typedef Data::iterator iterator;
-	typedef Data::const_iterator const_iterator;
-
-	static constexpr bool never_overflows = false;
+	typedef TData Data;
+	typedef typename Data::key_type Key;
+	typedef typename Data::mapped_type Mapped;
+	typedef typename Data::iterator iterator;
+	typedef typename Data::const_iterator const_iterator;
 
 	Data data;
 
@@ -338,15 +314,14 @@ struct AggregationMethodKeys128
 
 
 /// Для остальных случаев. Агрегирует по 128 битному хэшу от ключа. (При этом, строки, содержащие нули посередине, могут склеиться.)
+template <typename TData>
 struct AggregationMethodHashed
 {
-	typedef AggregatedDataHashed Data;
-	typedef Data::key_type Key;
-	typedef Data::mapped_type Mapped;
-	typedef Data::iterator iterator;
-	typedef Data::const_iterator const_iterator;
-
-	static constexpr bool never_overflows = false;
+	typedef TData Data;
+	typedef typename Data::key_type Key;
+	typedef typename Data::mapped_type Mapped;
+	typedef typename Data::iterator iterator;
+	typedef typename Data::const_iterator const_iterator;
 
 	Data data;
 
@@ -413,32 +388,52 @@ struct AggregatedDataVariants : private boost::noncopyable
 	  */
 	AggregatedDataWithoutKey without_key = nullptr;
 
-	std::unique_ptr<AggregationMethodOneNumber<UInt8>>	key8;
-	std::unique_ptr<AggregationMethodOneNumber<UInt16>>	key16;
-	std::unique_ptr<AggregationMethodOneNumber<UInt32>>	key32;
-	std::unique_ptr<AggregationMethodOneNumber<UInt64>>	key64;
-	std::unique_ptr<AggregationMethodString> 		key_string;
-	std::unique_ptr<AggregationMethodFixedString> 	key_fixed_string;
-	std::unique_ptr<AggregationMethodKeys128> 		keys128;
-	std::unique_ptr<AggregationMethodHashed> 		hashed;
+	std::unique_ptr<AggregationMethodOneNumber<UInt8, AggregatedDataWithUInt8Key>>			key8;
+	std::unique_ptr<AggregationMethodOneNumber<UInt16, AggregatedDataWithUInt16Key>>		key16;
 
-	enum Type
+	std::unique_ptr<AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64Key>>		key32;
+	std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64Key>>		key64;
+	std::unique_ptr<AggregationMethodString<AggregatedDataWithStringKey>> 					key_string;
+	std::unique_ptr<AggregationMethodFixedString<AggregatedDataWithStringKey>> 				key_fixed_string;
+	std::unique_ptr<AggregationMethodKeys128<AggregatedDataWithKeys128>> 					keys128;
+	std::unique_ptr<AggregationMethodHashed<AggregatedDataHashed>> 							hashed;
+
+	std::unique_ptr<AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64KeyTwoLevel>>	key32_two_level;
+	std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyTwoLevel>>	key64_two_level;
+	std::unique_ptr<AggregationMethodString<AggregatedDataWithStringKeyTwoLevel>>				key_string_two_level;
+	std::unique_ptr<AggregationMethodFixedString<AggregatedDataWithStringKeyTwoLevel>> 			key_fixed_string_two_level;
+	std::unique_ptr<AggregationMethodKeys128<AggregatedDataWithKeys128TwoLevel>> 				keys128_two_level;
+	std::unique_ptr<AggregationMethodHashed<AggregatedDataHashedTwoLevel>> 						hashed_two_level;
+
+	#define APPLY_FOR_AGGREGATED_VARIANT(M) \
+		M(key8,					false) \
+		M(key16,				false) \
+		M(key32,				false) \
+		M(key64,				false) \
+		M(key_string,			false) \
+		M(key_fixed_string,		false) \
+		M(keys128,				false) \
+		M(hashed,				false) \
+		M(key32_two_level,				true) \
+		M(key64_two_level,				true) \
+		M(key_string_two_level,			true) \
+		M(key_fixed_string_two_level,	true) \
+		M(keys128_two_level,			true) \
+		M(hashed_two_level,				true)
+
+	enum class Type
 	{
 		EMPTY = 0,
-		WITHOUT_KEY,
-		KEY_8,
-		KEY_16,
-		KEY_32,
-		KEY_64,
-		KEY_STRING,
-		KEY_FIXED_STRING,
-		KEYS_128,
-		HASHED,
+		without_key,
+
+	#define M(NAME, IS_TWO_LEVEL) NAME,
+		APPLY_FOR_AGGREGATED_VARIANT(M)
+	#undef M
 	};
-	Type type = EMPTY;
+	Type type = Type::EMPTY;
 
 	AggregatedDataVariants() : aggregates_pools(1, new Arena), aggregates_pool(&*aggregates_pools.back()) {}
-	bool empty() const { return type == EMPTY; }
+	bool empty() const { return type == Type::EMPTY; }
 
 	~AggregatedDataVariants();
 
@@ -448,16 +443,13 @@ struct AggregatedDataVariants : private boost::noncopyable
 
 		switch (type)
 		{
-			case EMPTY:				break;
-			case WITHOUT_KEY:		break;
-			case KEY_8:				key8			.reset(new decltype(key8)::element_type); 			break;
-			case KEY_16:			key16			.reset(new decltype(key16)::element_type); 			break;
-			case KEY_32:			key32			.reset(new decltype(key32)::element_type); 			break;
-			case KEY_64:			key64			.reset(new decltype(key64)::element_type); 			break;
-			case KEY_STRING:		key_string		.reset(new decltype(key_string)::element_type); 	break;
-			case KEY_FIXED_STRING:	key_fixed_string.reset(new decltype(key_fixed_string)::element_type); break;
-			case KEYS_128:			keys128			.reset(new decltype(keys128)::element_type); 		break;
-			case HASHED:			hashed			.reset(new decltype(hashed)::element_type);	 		break;
+			case Type::EMPTY:		break;
+			case Type::without_key:	break;
+
+		#define M(NAME, IS_TWO_LEVEL) \
+			case Type::NAME: NAME.reset(new decltype(NAME)::element_type); break;
+			APPLY_FOR_AGGREGATED_VARIANT(M)
+		#undef M
 
 			default:
 				throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
@@ -468,16 +460,13 @@ struct AggregatedDataVariants : private boost::noncopyable
 	{
 		switch (type)
 		{
-			case EMPTY:				return 0;
-			case WITHOUT_KEY:		return 1;
-			case KEY_8:				return key8->data.size() 				+ (without_key != nullptr);
-			case KEY_16:			return key16->data.size() 				+ (without_key != nullptr);
-			case KEY_32:			return key32->data.size() 				+ (without_key != nullptr);
-			case KEY_64:			return key64->data.size() 				+ (without_key != nullptr);
-			case KEY_STRING:		return key_string->data.size() 			+ (without_key != nullptr);
-			case KEY_FIXED_STRING:	return key_fixed_string->data.size() 	+ (without_key != nullptr);
-			case KEYS_128:			return keys128->data.size() 			+ (without_key != nullptr);
-			case HASHED:			return hashed->data.size() 				+ (without_key != nullptr);
+			case Type::EMPTY:		return 0;
+			case Type::without_key:	return 1;
+
+		#define M(NAME, IS_TWO_LEVEL) \
+			case Type::NAME: return NAME->data.size() + (without_key != nullptr);
+			APPLY_FOR_AGGREGATED_VARIANT(M)
+		#undef M
 
 			default:
 				throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
@@ -488,16 +477,30 @@ struct AggregatedDataVariants : private boost::noncopyable
 	{
 		switch (type)
 		{
-			case EMPTY:				return "EMPTY";
-			case WITHOUT_KEY:		return "WITHOUT_KEY";
-			case KEY_8:				return "KEY_8";
-			case KEY_16:			return "KEY_16";
-			case KEY_32:			return "KEY_32";
-			case KEY_64:			return "KEY_64";
-			case KEY_STRING:		return "KEY_STRING";
-			case KEY_FIXED_STRING:	return "KEY_FIXED_STRING";
-			case KEYS_128:			return "KEYS_128";
-			case HASHED:			return "HASHED";
+			case Type::EMPTY:		return "EMPTY";
+			case Type::without_key:	return "WITHOUT_KEY";
+
+		#define M(NAME, IS_TWO_LEVEL) \
+			case Type::NAME: return #NAME;
+			APPLY_FOR_AGGREGATED_VARIANT(M)
+		#undef M
+
+			default:
+				throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+		}
+	}
+
+	bool isTwoLevel() const
+	{
+		switch (type)
+		{
+			case Type::EMPTY:		return false;
+			case Type::without_key:	return false;
+
+		#define M(NAME, IS_TWO_LEVEL) \
+			case Type::NAME: return IS_TWO_LEVEL;
+			APPLY_FOR_AGGREGATED_VARIANT(M)
+		#undef M
 
 			default:
 				throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
@@ -512,22 +515,12 @@ typedef std::vector<AggregatedDataVariantsPtr> ManyAggregatedDataVariants;
 /** Достать вариант агрегации по его типу. */
 template <typename Method> Method & getDataVariant(AggregatedDataVariants & variants);
 
-template <> inline AggregationMethodOneNumber<UInt8> & 	getDataVariant<AggregationMethodOneNumber<UInt8>>(AggregatedDataVariants & variants)
-	{ return *variants.key8; }
-template <> inline AggregationMethodOneNumber<UInt16> & getDataVariant<AggregationMethodOneNumber<UInt16>>(AggregatedDataVariants & variants)
-	{ return *variants.key16; }
-template <> inline AggregationMethodOneNumber<UInt32> & getDataVariant<AggregationMethodOneNumber<UInt32>>(AggregatedDataVariants & variants)
-	{ return *variants.key32; }
-template <> inline AggregationMethodOneNumber<UInt64> & getDataVariant<AggregationMethodOneNumber<UInt64>>(AggregatedDataVariants & variants)
-	{ return *variants.key64; }
-template <> inline AggregationMethodString & 			getDataVariant<AggregationMethodString>(AggregatedDataVariants & variants)
-	{ return *variants.key_string; }
-template <> inline AggregationMethodFixedString & 		getDataVariant<AggregationMethodFixedString>(AggregatedDataVariants & variants)
-	{ return *variants.key_fixed_string; }
-template <> inline AggregationMethodKeys128 & 			getDataVariant<AggregationMethodKeys128>(AggregatedDataVariants & variants)
-	{ return *variants.keys128; }
-template <> inline AggregationMethodHashed & 			getDataVariant<AggregationMethodHashed>(AggregatedDataVariants & variants)
-	{ return *variants.hashed; }
+#define M(NAME, IS_TWO_LEVEL) \
+	template <> inline decltype(AggregatedDataVariants::NAME)::element_type & getDataVariant<decltype(AggregatedDataVariants::NAME)::element_type>(AggregatedDataVariants & variants) { return *variants.NAME; }
+
+APPLY_FOR_AGGREGATED_VARIANT(M)
+
+#undef M
 
 
 /** Агрегирует источник блоков.
@@ -640,6 +633,7 @@ protected:
 	void destroyAllAggregateStates(AggregatedDataVariants & result);
 
 
+	/// Обработать один блок данных, агрегировать данные в хэш-таблицу.
 	template <typename Method>
 	void executeImpl(
 		Method & method,
@@ -651,6 +645,18 @@ protected:
 		StringRefs & keys,
 		bool no_more_keys,
 		AggregateDataPtr overflow_row) const;
+
+	template <bool no_more_keys, typename Method>
+	void executeImplCase(
+		Method & method,
+		Arena * aggregates_pool,
+		size_t rows,
+		ConstColumnPlainPtrs & key_columns,
+		AggregateColumns & aggregate_columns,
+		const Sizes & key_sizes,
+		StringRefs & keys,
+		AggregateDataPtr overflow_row) const;
+
 
 	template <typename Method>
 	void convertToBlockImpl(

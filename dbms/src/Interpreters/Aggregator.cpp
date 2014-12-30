@@ -121,36 +121,36 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
 
 	/// Если ключей нет
 	if (keys_size == 0)
-		return AggregatedDataVariants::WITHOUT_KEY;
+		return AggregatedDataVariants::Type::without_key;
 
 	/// Если есть один числовой ключ, который помещается в 64 бита
 	if (keys_size == 1 && key_columns[0]->isNumeric())
 	{
 		size_t size_of_field = key_columns[0]->sizeOfField();
 		if (size_of_field == 1)
-			return AggregatedDataVariants::KEY_8;
+			return AggregatedDataVariants::Type::key8;
 		if (size_of_field == 2)
-			return AggregatedDataVariants::KEY_16;
+			return AggregatedDataVariants::Type::key16;
 		if (size_of_field == 4)
-			return AggregatedDataVariants::KEY_32;
+			return AggregatedDataVariants::Type::key32;
 		if (size_of_field == 8)
-			return AggregatedDataVariants::KEY_64;
+			return AggregatedDataVariants::Type::key64;
 		throw Exception("Logical error: numeric column has sizeOfField not in 1, 2, 4, 8.", ErrorCodes::LOGICAL_ERROR);
 	}
 
 	/// Если ключи помещаются в 128 бит, будем использовать хэш-таблицу по упакованным в 128-бит ключам
 	if (keys_fit_128_bits)
-		return AggregatedDataVariants::KEYS_128;
+		return AggregatedDataVariants::Type::keys128;
 
 	/// Если есть один строковый ключ, то используем хэш-таблицу с ним
 	if (keys_size == 1 && typeid_cast<const ColumnString *>(key_columns[0]))
-		return AggregatedDataVariants::KEY_STRING;
+		return AggregatedDataVariants::Type::key_string;
 
 	if (keys_size == 1 && typeid_cast<const ColumnFixedString *>(key_columns[0]))
-		return AggregatedDataVariants::KEY_FIXED_STRING;
+		return AggregatedDataVariants::Type::key_fixed_string;
 
 	/// Иначе будем агрегировать по хэшу от ключей.
-	return AggregatedDataVariants::HASHED;
+	return AggregatedDataVariants::Type::hashed;
 }
 
 
@@ -196,6 +196,24 @@ void NO_INLINE Aggregator::executeImpl(
 {
 	method.init(key_columns);
 
+	if (!no_more_keys)
+		executeImplCase<false>(method, aggregates_pool, rows, key_columns, aggregate_columns, key_sizes, keys, overflow_row);
+	else
+		executeImplCase<true>(method, aggregates_pool, rows, key_columns, aggregate_columns, key_sizes, keys, overflow_row);
+}
+
+
+template <bool no_more_keys, typename Method>
+void NO_INLINE Aggregator::executeImplCase(
+	Method & method,
+	Arena * aggregates_pool,
+	size_t rows,
+	ConstColumnPlainPtrs & key_columns,
+	AggregateColumns & aggregate_columns,
+	const Sizes & key_sizes,
+	StringRefs & keys,
+	AggregateDataPtr overflow_row) const
+{
 	/// Для всех строчек.
 	for (size_t i = 0; i < rows; ++i)
 	{
@@ -206,7 +224,7 @@ void NO_INLINE Aggregator::executeImpl(
 		/// Получаем ключ для вставки в хэш-таблицу.
 		typename Method::Key key = method.getKey(key_columns, keys_size, i, key_sizes, keys);
 
-		if (Method::never_overflows || !no_more_keys)	/// Вставляем.
+		if (!no_more_keys)	/// Вставляем.
 			method.data.emplace(key, it, inserted);
 		else
 		{
@@ -218,7 +236,7 @@ void NO_INLINE Aggregator::executeImpl(
 		}
 
 		/// Если ключ не поместился, и данные не надо агрегировать в отдельную строку, то делать нечего.
-		if (!Method::never_overflows && overflow && !overflow_row)
+		if (no_more_keys && overflow && !overflow_row)
 			continue;
 
 		/// Если вставили новый ключ - инициализируем состояния агрегатных функций, и возможно, что-нибудь связанное с ключом.
@@ -231,7 +249,7 @@ void NO_INLINE Aggregator::executeImpl(
 			createAggregateStates(aggregate_data);
 		}
 
-		AggregateDataPtr value = (Method::never_overflows || !overflow) ? Method::getAggregateData(it->second) : overflow_row;
+		AggregateDataPtr value = (!no_more_keys || !overflow) ? Method::getAggregateData(it->second) : overflow_row;
 
 		/// Добавляем значения в агрегатные функции.
 		for (size_t j = 0; j < aggregates_size; ++j)
@@ -506,7 +524,7 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 		createAggregateStates(result.without_key);
 	}
 
-	if (result.type == AggregatedDataVariants::WITHOUT_KEY)
+	if (result.type == AggregatedDataVariants::Type::without_key)
 	{
 		AggregatedDataWithoutKey & res = result.without_key;
 		if (!res)
@@ -535,31 +553,15 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 
 	AggregateDataPtr overflow_row_ptr = overflow_row ? result.without_key : nullptr;
 
-	if (result.type == AggregatedDataVariants::KEY_8)
-		executeImpl(*result.key8, result.aggregates_pool, rows, key_columns, aggregate_columns,
+#define M(NAME, IS_TWO_LEVEL) \
+	else if (result.type == AggregatedDataVariants::Type::NAME) \
+		executeImpl(*result.NAME, result.aggregates_pool, rows, key_columns, aggregate_columns, \
 			result.key_sizes, key, no_more_keys, overflow_row_ptr);
-	else if (result.type == AggregatedDataVariants::KEY_16)
-		executeImpl(*result.key16, result.aggregates_pool, rows, key_columns, aggregate_columns,
-			result.key_sizes, key, no_more_keys, overflow_row_ptr);
-	else if (result.type == AggregatedDataVariants::KEY_32)
-		executeImpl(*result.key32, result.aggregates_pool, rows, key_columns, aggregate_columns,
-			result.key_sizes, key, no_more_keys, overflow_row_ptr);
-	else if (result.type == AggregatedDataVariants::KEY_64)
-		executeImpl(*result.key64, result.aggregates_pool, rows, key_columns, aggregate_columns,
-			result.key_sizes, key, no_more_keys, overflow_row_ptr);
-	else if (result.type == AggregatedDataVariants::KEY_STRING)
-		executeImpl(*result.key_string, result.aggregates_pool, rows, key_columns, aggregate_columns,
-			result.key_sizes, key, no_more_keys, overflow_row_ptr);
-	else if (result.type == AggregatedDataVariants::KEY_FIXED_STRING)
-		executeImpl(*result.key_fixed_string, result.aggregates_pool, rows, key_columns, aggregate_columns,
-			result.key_sizes, key, no_more_keys, overflow_row_ptr);
-	else if (result.type == AggregatedDataVariants::KEYS_128)
-		executeImpl(*result.keys128, result.aggregates_pool, rows, key_columns, aggregate_columns,
-			result.key_sizes, key, no_more_keys, overflow_row_ptr);
-	else if (result.type == AggregatedDataVariants::HASHED)
-		executeImpl(*result.hashed, result.aggregates_pool, rows, key_columns, aggregate_columns,
-			result.key_sizes, key, no_more_keys, overflow_row_ptr);
-	else if (result.type != AggregatedDataVariants::WITHOUT_KEY)
+
+	if (false) {}
+	APPLY_FOR_AGGREGATED_VARIANT(M)
+#undef M
+	else if (result.type != AggregatedDataVariants::Type::without_key)
 		throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 
 	/// Проверка ограничений.
@@ -683,7 +685,7 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants, bool fi
 			}
 		}
 
-		if (data_variants.type == AggregatedDataVariants::WITHOUT_KEY || overflow_row)
+		if (data_variants.type == AggregatedDataVariants::Type::without_key || overflow_row)
 		{
 			AggregatedDataWithoutKey & data = data_variants.without_key;
 
@@ -700,31 +702,15 @@ Block Aggregator::convertToBlock(AggregatedDataVariants & data_variants, bool fi
 
 		size_t start_row = overflow_row ? 1 : 0;
 
-		if (data_variants.type == AggregatedDataVariants::KEY_8)
-			convertToBlockImpl(*data_variants.key8, key_columns, aggregate_columns,
-							final_aggregate_columns, data_variants.key_sizes, start_row, final);
-		else if (data_variants.type == AggregatedDataVariants::KEY_16)
-			convertToBlockImpl(*data_variants.key16, key_columns, aggregate_columns,
-							final_aggregate_columns, data_variants.key_sizes, start_row, final);
-		else if (data_variants.type == AggregatedDataVariants::KEY_32)
-			convertToBlockImpl(*data_variants.key32, key_columns, aggregate_columns,
-							final_aggregate_columns, data_variants.key_sizes, start_row, final);
-		else if (data_variants.type == AggregatedDataVariants::KEY_64)
-			convertToBlockImpl(*data_variants.key64, key_columns, aggregate_columns,
-							final_aggregate_columns, data_variants.key_sizes, start_row, final);
-		else if (data_variants.type == AggregatedDataVariants::KEY_STRING)
-			convertToBlockImpl(*data_variants.key_string, key_columns, aggregate_columns,
-							final_aggregate_columns, data_variants.key_sizes, start_row, final);
-		else if (data_variants.type == AggregatedDataVariants::KEY_FIXED_STRING)
-			convertToBlockImpl(*data_variants.key_fixed_string, key_columns, aggregate_columns,
-							final_aggregate_columns, data_variants.key_sizes, start_row, final);
-		else if (data_variants.type == AggregatedDataVariants::KEYS_128)
-			convertToBlockImpl(*data_variants.keys128, key_columns, aggregate_columns,
-							final_aggregate_columns, data_variants.key_sizes, start_row, final);
-		else if (data_variants.type == AggregatedDataVariants::HASHED)
-			convertToBlockImpl(*data_variants.hashed, key_columns, aggregate_columns,
-							final_aggregate_columns, data_variants.key_sizes, start_row, final);
-		else if (data_variants.type != AggregatedDataVariants::WITHOUT_KEY)
+	#define M(NAME, IS_TWO_LEVEL) \
+		else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
+			convertToBlockImpl(*data_variants.NAME, key_columns, aggregate_columns, \
+				final_aggregate_columns, data_variants.key_sizes, start_row, final);
+
+		if (false) {}
+		APPLY_FOR_AGGREGATED_VARIANT(M)
+	#undef M
+		else if (data_variants.type != AggregatedDataVariants::Type::without_key)
 			throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 	}
 	catch (...)
@@ -802,36 +788,44 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 	}
 
 	/// В какой структуре данных агрегированы данные?
-	if (res->type == AggregatedDataVariants::WITHOUT_KEY || overflow_row)
+	if (res->type == AggregatedDataVariants::Type::without_key || overflow_row)
 		mergeWithoutKeyDataImpl(non_empty_data);
 
 	boost::threadpool::pool * thread_pool = nullptr;
 	if (max_threads > 1 && rows > 100000	/// TODO Сделать настраиваемый порог.
-		&& (   res->type == AggregatedDataVariants::KEY_32
-			|| res->type == AggregatedDataVariants::KEY_64
-			|| res->type == AggregatedDataVariants::KEY_STRING
-			|| res->type == AggregatedDataVariants::KEY_FIXED_STRING
-			|| res->type == AggregatedDataVariants::KEYS_128
-			|| res->type == AggregatedDataVariants::HASHED))
+		&& res->isTwoLevel())
 		thread_pool = new boost::threadpool::pool(max_threads);
 
-	if (res->type == AggregatedDataVariants::KEY_8)
-		mergeSingleLevelDataImpl<AggregationMethodOneNumber<UInt8>>(non_empty_data);
-	else if (res->type == AggregatedDataVariants::KEY_16)
-		mergeSingleLevelDataImpl<AggregationMethodOneNumber<UInt16>>(non_empty_data);
-	else if (res->type == AggregatedDataVariants::KEY_32)
-		mergeTwoLevelDataImpl<AggregationMethodOneNumber<UInt32>>(non_empty_data, thread_pool);
-	else if (res->type == AggregatedDataVariants::KEY_64)
-		mergeTwoLevelDataImpl<AggregationMethodOneNumber<UInt64>>(non_empty_data, thread_pool);
-	else if (res->type == AggregatedDataVariants::KEY_STRING)
-		mergeTwoLevelDataImpl<AggregationMethodString>(non_empty_data, thread_pool);
-	else if (res->type == AggregatedDataVariants::KEY_FIXED_STRING)
-		mergeTwoLevelDataImpl<AggregationMethodFixedString>(non_empty_data, thread_pool);
-	else if (res->type == AggregatedDataVariants::KEYS_128)
-		mergeTwoLevelDataImpl<AggregationMethodKeys128>(non_empty_data, thread_pool);
-	else if (res->type == AggregatedDataVariants::HASHED)
-		mergeTwoLevelDataImpl<AggregationMethodHashed>(non_empty_data, thread_pool);
-	else if (res->type != AggregatedDataVariants::WITHOUT_KEY)
+	/// TODO Упростить.
+	if (res->type == AggregatedDataVariants::Type::key8)
+		mergeSingleLevelDataImpl<decltype(res->key8)::element_type>(non_empty_data);
+	else if (res->type == AggregatedDataVariants::Type::key16)
+		mergeSingleLevelDataImpl<decltype(res->key16)::element_type>(non_empty_data);
+	else if (res->type == AggregatedDataVariants::Type::key32)
+		mergeSingleLevelDataImpl<decltype(res->key32)::element_type>(non_empty_data);
+	else if (res->type == AggregatedDataVariants::Type::key64)
+		mergeSingleLevelDataImpl<decltype(res->key64)::element_type>(non_empty_data);
+	else if (res->type == AggregatedDataVariants::Type::key_string)
+		mergeSingleLevelDataImpl<decltype(res->key_string)::element_type>(non_empty_data);
+	else if (res->type == AggregatedDataVariants::Type::key_fixed_string)
+		mergeSingleLevelDataImpl<decltype(res->key_fixed_string)::element_type>(non_empty_data);
+	else if (res->type == AggregatedDataVariants::Type::keys128)
+		mergeSingleLevelDataImpl<decltype(res->keys128)::element_type>(non_empty_data);
+	else if (res->type == AggregatedDataVariants::Type::hashed)
+		mergeSingleLevelDataImpl<decltype(res->hashed)::element_type>(non_empty_data);
+	else if (res->type == AggregatedDataVariants::Type::key32_two_level)
+		mergeTwoLevelDataImpl<decltype(res->key32_two_level)::element_type>(non_empty_data, thread_pool);
+	else if (res->type == AggregatedDataVariants::Type::key64_two_level)
+		mergeTwoLevelDataImpl<decltype(res->key64_two_level)::element_type>(non_empty_data, thread_pool);
+	else if (res->type == AggregatedDataVariants::Type::key_string_two_level)
+		mergeTwoLevelDataImpl<decltype(res->key_string_two_level)::element_type>(non_empty_data, thread_pool);
+	else if (res->type == AggregatedDataVariants::Type::key_fixed_string_two_level)
+		mergeTwoLevelDataImpl<decltype(res->key_fixed_string_two_level)::element_type>(non_empty_data, thread_pool);
+	else if (res->type == AggregatedDataVariants::Type::keys128_two_level)
+		mergeTwoLevelDataImpl<decltype(res->keys128_two_level)::element_type>(non_empty_data, thread_pool);
+	else if (res->type == AggregatedDataVariants::Type::hashed_two_level)
+		mergeTwoLevelDataImpl<decltype(res->hashed_two_level)::element_type>(non_empty_data, thread_pool);
+	else if (res->type != AggregatedDataVariants::Type::without_key)
 		throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 
 	double elapsed_seconds = watch.elapsedSeconds();
@@ -889,7 +883,7 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 			result.key_sizes = key_sizes;
 		}
 
-		if (result.type == AggregatedDataVariants::WITHOUT_KEY || overflow_row)
+		if (result.type == AggregatedDataVariants::Type::without_key || overflow_row)
 		{
 			AggregatedDataWithoutKey & res = result.without_key;
 			if (!res)
@@ -905,23 +899,14 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 
 		size_t start_row = overflow_row ? 1 : 0;
 
-		if (result.type == AggregatedDataVariants::KEY_8)
-			mergeStreamsImpl(*result.key8, result.aggregates_pool, start_row, rows, key_columns, aggregate_columns, key_sizes, key);
-		else if (result.type == AggregatedDataVariants::KEY_16)
-			mergeStreamsImpl(*result.key16, result.aggregates_pool, start_row, rows, key_columns, aggregate_columns, key_sizes, key);
-		else if (result.type == AggregatedDataVariants::KEY_32)
-			mergeStreamsImpl(*result.key32, result.aggregates_pool, start_row, rows, key_columns, aggregate_columns, key_sizes, key);
-		else if (result.type == AggregatedDataVariants::KEY_64)
-			mergeStreamsImpl(*result.key64, result.aggregates_pool, start_row, rows, key_columns, aggregate_columns, key_sizes, key);
-		else if (result.type == AggregatedDataVariants::KEY_STRING)
-			mergeStreamsImpl(*result.key_string, result.aggregates_pool, start_row, rows, key_columns, aggregate_columns, key_sizes, key);
-		else if (result.type == AggregatedDataVariants::KEY_FIXED_STRING)
-			mergeStreamsImpl(*result.key_fixed_string, result.aggregates_pool, start_row, rows, key_columns, aggregate_columns, key_sizes, key);
-		else if (result.type == AggregatedDataVariants::KEYS_128)
-			mergeStreamsImpl(*result.keys128, result.aggregates_pool, start_row, rows, key_columns, aggregate_columns, key_sizes, key);
-		else if (result.type == AggregatedDataVariants::HASHED)
-			mergeStreamsImpl(*result.hashed, result.aggregates_pool, start_row, rows, key_columns, aggregate_columns, key_sizes, key);
-		else if (result.type != AggregatedDataVariants::WITHOUT_KEY)
+	#define M(NAME, IS_TWO_LEVEL) \
+		else if (result.type == AggregatedDataVariants::Type::NAME) \
+			mergeStreamsImpl(*result.NAME, result.aggregates_pool, start_row, rows, key_columns, aggregate_columns, key_sizes, key);
+
+		if (false) {}
+		APPLY_FOR_AGGREGATED_VARIANT(M)
+	#undef M
+		else if (result.type != AggregatedDataVariants::Type::without_key)
 			throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 
 		LOG_TRACE(log, "Merged aggregated block");
@@ -937,7 +922,7 @@ void Aggregator::destroyAllAggregateStates(AggregatedDataVariants & result)
 	LOG_TRACE(log, "Destroying aggregate states");
 
 	/// В какой структуре данных агрегированы данные?
-	if (result.type == AggregatedDataVariants::WITHOUT_KEY || overflow_row)
+	if (result.type == AggregatedDataVariants::Type::without_key || overflow_row)
 	{
 		AggregatedDataWithoutKey & res_data = result.without_key;
 
@@ -947,23 +932,14 @@ void Aggregator::destroyAllAggregateStates(AggregatedDataVariants & result)
 					aggregate_functions[i]->destroy(res_data + offsets_of_aggregate_states[i]);
 	}
 
-	if (result.type == AggregatedDataVariants::KEY_8)
-		destroyImpl(*result.key8);
-	else if (result.type == AggregatedDataVariants::KEY_16)
-		destroyImpl(*result.key16);
-	else if (result.type == AggregatedDataVariants::KEY_32)
-		destroyImpl(*result.key32);
-	else if (result.type == AggregatedDataVariants::KEY_64)
-		destroyImpl(*result.key64);
-	else if (result.type == AggregatedDataVariants::KEY_STRING)
-		destroyImpl(*result.key_string);
-	else if (result.type == AggregatedDataVariants::KEY_FIXED_STRING)
-		destroyImpl(*result.key_fixed_string);
-	else if (result.type == AggregatedDataVariants::KEYS_128)
-		destroyImpl(*result.keys128);
-	else if (result.type == AggregatedDataVariants::HASHED)
-		destroyImpl(*result.hashed);
-	else if (result.type != AggregatedDataVariants::WITHOUT_KEY)
+#define M(NAME, IS_TWO_LEVEL) \
+	else if (result.type == AggregatedDataVariants::Type::NAME) \
+		destroyImpl(*result.NAME);
+
+	if (false) {}
+	APPLY_FOR_AGGREGATED_VARIANT(M)
+#undef M
+	else if (result.type != AggregatedDataVariants::Type::without_key)
 		throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 }
 
