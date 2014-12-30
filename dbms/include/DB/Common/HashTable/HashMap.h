@@ -131,7 +131,7 @@ public:
 
 	using HashTable<Key, Cell, Hash, Grower, Allocator>::HashTable;
 
-	mapped_type & operator[](Key x)
+	mapped_type & ALWAYS_INLINE operator[](Key x)
 	{
 		typename HashMapTable::iterator it;
 		bool inserted;

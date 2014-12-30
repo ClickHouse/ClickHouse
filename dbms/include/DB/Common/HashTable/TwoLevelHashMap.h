@@ -19,7 +19,7 @@ public:
 	typedef typename Cell::Mapped mapped_type;
 	typedef typename Cell::value_type value_type;
 
-	mapped_type & operator[](Key x)
+	mapped_type & ALWAYS_INLINE operator[](Key x)
 	{
 		typename TwoLevelHashMapTable::iterator it;
 		bool inserted;

@@ -13,6 +13,7 @@
 
 #include <stats/IntHash.h>
 
+#include <DB/Core/Defines.h>
 #include <DB/Core/Types.h>
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
@@ -244,9 +245,23 @@ protected:
 #endif
 
 	/// Найти ячейку с тем же ключём или пустую ячейку, начиная с заданного места и далее по цепочке разрешения коллизий.
-	size_t findCell(const Key & x, size_t hash_value, size_t place_value) const
+	size_t ALWAYS_INLINE findCell(const Key & x, size_t hash_value, size_t place_value) const
 	{
 		while (!buf[place_value].isZero(*this) && !buf[place_value].keyEquals(x, hash_value))
+		{
+			place_value = grower.next(place_value);
+#ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
+			++collisions;
+#endif
+		}
+
+		return place_value;
+	}
+
+	/// Найти пустую ячейку, начиная с заданного места и далее по цепочке разрешения коллизий.
+	size_t ALWAYS_INLINE findEmptyCell(const Key & x, size_t hash_value, size_t place_value) const
+	{
+		while (!buf[place_value].isZero(*this))
 		{
 			place_value = grower.next(place_value);
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
@@ -493,7 +508,7 @@ protected:
 
 
 	/// Если ключ нулевой - вставить его в специальное место и вернуть true.
-	bool emplaceIfZero(Key x, iterator & it, bool & inserted)
+	bool ALWAYS_INLINE emplaceIfZero(Key x, iterator & it, bool & inserted)
 	{
 		/// Если утверждается, что нулевой ключ не могут вставить в таблицу.
 		if (!Cell::need_zero_value_storage)
@@ -520,7 +535,7 @@ protected:
 
 
 	/// Только для ненулевых ключей. Найти нужное место, вставить туда ключ, если его ещё нет, вернуть итератор на ячейку.
-	void emplaceNonZero(Key x, iterator & it, bool & inserted, size_t hash_value)
+	void ALWAYS_INLINE emplaceNonZero(Key x, iterator & it, bool & inserted, size_t hash_value)
 	{
 		size_t place_value = findCell(x, hash_value, grower.place(hash_value));
 
@@ -547,7 +562,7 @@ protected:
 
 public:
 	/// Вставить значение. В случае хоть сколько-нибудь сложных значений, лучше используйте функцию emplace.
-	std::pair<iterator, bool> insert(const value_type & x)
+	std::pair<iterator, bool> ALWAYS_INLINE insert(const value_type & x)
 	{
 		std::pair<iterator, bool> res;
 
@@ -576,7 +591,7 @@ public:
 	  * if (inserted)
 	  * 	new(&it->second) Mapped(value);
 	  */
-	void emplace(Key x, iterator & it, bool & inserted)
+	void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted)
 	{
 		if (!emplaceIfZero(x, it, inserted))
 			emplaceNonZero(x, it, inserted, hash(x));
@@ -584,14 +599,28 @@ public:
 
 
 	/// То же самое, но с заранее вычисленным значением хэш-функции.
-	void emplace(Key x, iterator & it, bool & inserted, size_t hash_value)
+	void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted, size_t hash_value)
 	{
 		if (!emplaceIfZero(x, it, inserted))
 			emplaceNonZero(x, it, inserted, hash_value);
 	}
 
 
-	iterator find(Key x)
+	/// Скопировать ячейку из другой хэш-таблицы. Предполагается, что ячейка не нулевая, а также, что такого ключа в таблице ещё не было.
+/*	void ALWAYS_INLINE insertUniqueNonZero(Cell * cell)
+	{
+		size_t hash_value = cell->getHash();
+		size_t place_value = findEmptyCell(cell->getKey(), hash_value, grower.place(hash_value));
+
+		memcpy(&buf[place_value], cell, sizeof(*cell));
+		++m_size;
+
+		if (unlikely(grower.overflow(m_size)))
+			resize();
+	}*/
+
+
+	iterator ALWAYS_INLINE find(Key x)
 	{
 		if (Cell::isZero(x, *this))
 			return this->hasZero() ? iteratorToZero() : end();
@@ -602,7 +631,7 @@ public:
 	}
 
 
-	const_iterator find(Key x) const
+	const_iterator ALWAYS_INLINE find(Key x) const
 	{
 		if (Cell::isZero(x, *this))
 			return this->hasZero() ? iteratorToZero() : end();
@@ -613,7 +642,7 @@ public:
 	}
 
 
-	iterator find(Key x, size_t hash_value)
+	iterator ALWAYS_INLINE find(Key x, size_t hash_value)
 	{
 		if (Cell::isZero(x, *this))
 			return this->hasZero() ? iteratorToZero() : end();
@@ -623,7 +652,7 @@ public:
 	}
 
 
-	const_iterator find(Key x, size_t hash_value) const
+	const_iterator ALWAYS_INLINE find(Key x, size_t hash_value) const
 	{
 		if (Cell::isZero(x, *this))
 			return this->hasZero() ? iteratorToZero() : end();

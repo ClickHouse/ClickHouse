@@ -478,7 +478,7 @@ struct AggregatedDataVariants : private boost::noncopyable
 		switch (type)
 		{
 			case Type::EMPTY:		return "EMPTY";
-			case Type::without_key:	return "WITHOUT_KEY";
+			case Type::without_key:	return "without_key";
 
 		#define M(NAME, IS_TWO_LEVEL) \
 			case Type::NAME: return #NAME;
@@ -658,14 +658,9 @@ protected:
 		AggregateDataPtr overflow_row) const;
 
 
-	template <typename Method>
-	void convertToBlockImpl(
-		Method & method,
-		ColumnPlainPtrs & key_columns,
-		AggregateColumnsData & aggregate_columns,
-		ColumnPlainPtrs & final_aggregate_columns,
-		const Sizes & key_sizes,
-		size_t start_row, bool final) const;
+	/// Преобразовать из одного типа хэш-таблицы в другой.
+	template <typename SrcData, typename DstData>
+	static void convertImpl(SrcData & src, DstData & dst);
 
 	/// Слить данные из хэш-таблицы src в dst.
 	template <typename Method, typename Table>
@@ -695,6 +690,15 @@ protected:
 		AggregateColumnsData & aggregate_columns,
 		const Sizes & key_sizes,
 		StringRefs & keys) const;
+
+	template <typename Method>
+	void convertToBlockImpl(
+		Method & method,
+		ColumnPlainPtrs & key_columns,
+		AggregateColumnsData & aggregate_columns,
+		ColumnPlainPtrs & final_aggregate_columns,
+		const Sizes & key_sizes,
+		size_t start_row, bool final) const;
 
 	template <typename Method>
 	void destroyImpl(

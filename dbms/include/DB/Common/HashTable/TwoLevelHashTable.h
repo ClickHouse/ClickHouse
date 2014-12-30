@@ -87,6 +87,24 @@ public:
 	Impl impls[NUM_BUCKETS];
 
 
+    TwoLevelHashTable() {}
+
+    /// Скопировать данные из другой (обычной) хэш-таблицы. У неё должна быть такая же хэш-функция.
+/*	template <typename Source>
+	TwoLevelHashTable(const Source & src)
+		: impls(src.size() * 15 / NUM_BUCKETS / 10)		/// Размер берётся с некоторым запасом.
+	{
+		for (typename Source::const_iterator it = src.begin(); it != src.end(); ++it)
+		{
+			Cell * cell = it.ptr;
+			size_t buck = getBucketFromHash(hash_value);
+			typename Impl::iterator impl_it;
+			impls[buck].emplace(x, impl_it, inserted, hash_value);
+			emplace();
+		}
+	}*/
+
+
 	class iterator
 	{
 		Self * container;
@@ -175,7 +193,7 @@ public:
 
 
 	/// Вставить значение. В случае хоть сколько-нибудь сложных значений, лучше используйте функцию emplace.
-	std::pair<iterator, bool> insert(const value_type & x)
+	std::pair<iterator, bool> ALWAYS_INLINE insert(const value_type & x)
 	{
 		size_t hash_value = hash(Cell::getKey(x));
 
@@ -200,7 +218,7 @@ public:
 	  * if (inserted)
 	  * 	new(&it->second) Mapped(value);
 	  */
-	void emplace(Key x, iterator & it, bool & inserted)
+	void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted)
 	{
 		size_t hash_value = hash(x);
 		emplace(x, it, inserted, hash_value);
@@ -208,7 +226,7 @@ public:
 
 
 	/// То же самое, но с заранее вычисленным значением хэш-функции.
-	void emplace(Key x, iterator & it, bool & inserted, size_t hash_value)
+	void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted, size_t hash_value)
 	{
 		size_t buck = getBucketFromHash(hash_value);
 		typename Impl::iterator impl_it;
@@ -217,7 +235,7 @@ public:
 	}
 
 
-	iterator find(Key x)
+	iterator ALWAYS_INLINE find(Key x)
 	{
 		size_t hash_value = hash(x);
 		size_t buck = getBucketFromHash(hash_value);
@@ -229,7 +247,7 @@ public:
 	}
 
 
-	const_iterator find(Key x) const
+	const_iterator ALWAYS_INLINE find(Key x) const
 	{
 		size_t hash_value = hash(x);
 		size_t buck = getBucketFromHash(hash_value);

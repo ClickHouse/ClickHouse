@@ -258,6 +258,14 @@ void NO_INLINE Aggregator::executeImplCase(
 }
 
 
+template <typename SrcData, typename DstData>
+static void Aggregator::convertImpl(SrcData & src, DstData & dst)
+{
+	for (const auto & value : src)
+		dst.insert(src);
+}
+
+
 template <typename Method>
 void NO_INLINE Aggregator::convertToBlockImpl(
 	Method & method,
