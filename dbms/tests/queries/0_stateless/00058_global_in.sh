@@ -34,7 +34,7 @@ BINARY=$(readlink /proc/$(pidof clickhouse-server | tr ' ' '\n' | head -n1)/exe 
 
 if [ ! -x "$BINARY" ] && [ -n "$(pgrep memcheck)" ]; then
 	# В случае, если сервер был запущен под valgrind-ом.
-	BINARY=$(cat /proc/$(pgrep memcheck)/cmdline | cut -f2 -d '')
+	BINARY=$(readlink /proc/$(pgrep memcheck)/cwd)/$(cat /proc/$(pgrep memcheck)/cmdline | cut -f2 -d '')
 fi
 
 if [ ! -x "$BINARY" ]; then
