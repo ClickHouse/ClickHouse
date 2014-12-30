@@ -34,7 +34,13 @@ namespace DB
 {
 
 void InterpreterSelectQuery::init(BlockInputStreamPtr input, const Names & required_column_names, const NamesAndTypesList & table_column_names)
-{	
+{
+	ProfileEvents::increment(ProfileEvents::SelectQuery);
+
+	if (settings.limits.max_subquery_depth && subquery_depth > settings.limits.max_subquery_depth)
+		throw Exception("Too deep subqueries. Maximum: " + toString(settings.limits.max_subquery_depth),
+			ErrorCodes::TOO_DEEP_SUBQUERIES);
+
 	if (isFirstSelectInsideUnionAll() && hasAsterisk())
 	{
 		basicInit(input, table_column_names);
@@ -63,12 +69,6 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input, const Names & requi
 
 void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_, const NamesAndTypesList & table_column_names)
 {
-	ProfileEvents::increment(ProfileEvents::SelectQuery);
-
-	if (settings.limits.max_subquery_depth && subquery_depth > settings.limits.max_subquery_depth)
-		throw Exception("Too deep subqueries. Maximum: " + toString(settings.limits.max_subquery_depth),
-			ErrorCodes::TOO_DEEP_SUBQUERIES);
-
 	if (query.table && typeid_cast<ASTSelectQuery *>(&*query.table))
 	{
 		if (table_column_names.empty())
@@ -326,10 +326,10 @@ const BlockInputStreams & InterpreterSelectQuery::executeWithoutUnion()
 {
 	if (isFirstSelectInsideUnionAll())
 	{
-		executeSingleQuery(false);
+		executeSingleQuery();
 		for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->next_select_in_union_all.get())
 		{
-			p->executeSingleQuery(false);
+			p->executeSingleQuery();
 			const auto & others = p->streams;
 			streams.insert(streams.end(), others.begin(), others.end());
 		}
@@ -343,7 +343,7 @@ const BlockInputStreams & InterpreterSelectQuery::executeWithoutUnion()
 	return streams;
 }
 
-void InterpreterSelectQuery::executeSingleQuery(bool should_perform_union_hint)
+void InterpreterSelectQuery::executeSingleQuery()
 {
 	/** Потоки данных. При параллельном выполнении запроса, имеем несколько потоков данных.
 	 *  Если нет GROUP BY, то выполним все операции до ORDER BY и LIMIT параллельно, затем
@@ -357,7 +357,7 @@ void InterpreterSelectQuery::executeSingleQuery(bool should_perform_union_hint)
 	 *  то объединение источников данных выполняется не на этом уровне, а на верхнем уровне.
 	 */
 
-	bool do_execute_union = should_perform_union_hint;
+	bool do_execute_union = false;
 	
 	/** Вынем данные из Storage. from_stage - до какой стадии запрос был выполнен в Storage. */
 	QueryProcessingStage::Enum from_stage = executeFetchColumns(streams);
@@ -558,9 +558,6 @@ void InterpreterSelectQuery::executeSingleQuery(bool should_perform_union_hint)
 	/** Если данных нет. */
 	if (streams.empty())
 		return;
-
-	if (do_execute_union)
-		executeUnion(streams);
 
 	SubqueriesForSets subqueries_for_sets = query_analyzer->getSubqueriesForSets();
 	if (!subqueries_for_sets.empty())

@@ -82,7 +82,7 @@ private:
 	void initQueryAnalyzer();
 	
 	/// Выполнить один запрос SELECT из цепочки UNION ALL.
-	void executeSingleQuery(bool should_perform_union_hint = true);
+	void executeSingleQuery();
 
 	/** Оставить в каждом запросе цепочки UNION ALL только нужные столбцы секции SELECT.
 	 *  Однако, если используется хоть один DISTINCT в цепочке, то все столбцы считаются нужными,

@@ -133,7 +133,7 @@ private:
 	ExpressionActionsPtr sharding_key_expr;
 	String sharding_key_column_name;
 	bool write_enabled;
-	String path;
+	String path;	/// Может быть пустым, если data_path_ пустой. В этом случае, директория для данных для отправки не создаётся.
 
 	class DirectoryMonitor;
 	std::unordered_map<std::string, std::unique_ptr<DirectoryMonitor>> directory_monitors;

@@ -63,8 +63,8 @@ StorageDistributed::StorageDistributed(
 	context(context_), cluster(cluster_),
 	sharding_key_expr(sharding_key_ ? ExpressionAnalyzer(sharding_key_, context, *columns).getActions(false) : nullptr),
 	sharding_key_column_name(sharding_key_ ? sharding_key_->getColumnName() : String{}),
-	write_enabled(cluster.getLocalNodesNum() + cluster.pools.size() < 2 || sharding_key_),
-	path(data_path_ + escapeForFileName(name) + '/')
+	write_enabled(!data_path_.empty() && (cluster.getLocalNodesNum() + cluster.pools.size() < 2 || sharding_key_)),
+	path(data_path_.empty() ? "" : (data_path_ + escapeForFileName(name) + '/'))
 {
 	createDirectoryMonitors();
 }
@@ -87,8 +87,8 @@ StorageDistributed::StorageDistributed(
 	context(context_), cluster(cluster_),
 	sharding_key_expr(sharding_key_ ? ExpressionAnalyzer(sharding_key_, context, *columns).getActions(false) : nullptr),
 	sharding_key_column_name(sharding_key_ ? sharding_key_->getColumnName() : String{}),
-	write_enabled(cluster.getLocalNodesNum() + cluster.pools.size() < 2 || sharding_key_),
-	path(data_path_ + escapeForFileName(name) + '/')
+	write_enabled(!data_path_.empty() && (cluster.getLocalNodesNum() + cluster.pools.size() < 2 || sharding_key_)),
+	path(data_path_.empty() ? "" : (data_path_ + escapeForFileName(name) + '/'))
 {
 	createDirectoryMonitors();
 }
@@ -240,6 +240,9 @@ void StorageDistributed::createDirectoryMonitor(const std::string & name)
 
 void StorageDistributed::createDirectoryMonitors()
 {
+	if (path.empty())
+		return;
+
 	Poco::File{path}.createDirectory();
 
 	Poco::DirectoryIterator end;
