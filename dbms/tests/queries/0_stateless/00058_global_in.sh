@@ -104,3 +104,5 @@ $CLIENT1 -n --query="
 $CLIENT2 -n --query="
 	DROP TABLE test.half1;
 	DROP TABLE test.half2;"
+
+rm -rf $PATH2
