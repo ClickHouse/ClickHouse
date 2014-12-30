@@ -12,7 +12,7 @@ template
 	typename Grower = TwoLevelHashTableGrower<>,
 	typename Allocator = HashTableAllocator
 >
-class TwoLevelHashMapTable : public TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, HashMapTable<Key, Cell, Hash, Grower, Allocator> >
+class TwoLevelHashMapTable : public TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, HashMapTable<Key, Cell, Hash, Grower, Allocator>>
 {
 public:
 	typedef Key key_type;
@@ -54,4 +54,4 @@ template
 	typename Grower = TwoLevelHashTableGrower<>,
 	typename Allocator = HashTableAllocator
 >
-using TwoLevelHashMapWithSavedHash =  TwoLevelHashMapTable<Key, HashMapCellWithSavedHash<Key, Mapped, Hash>, Hash, Grower, Allocator>;
+using TwoLevelHashMapWithSavedHash = TwoLevelHashMapTable<Key, HashMapCellWithSavedHash<Key, Mapped, Hash>, Hash, Grower, Allocator>;

@@ -145,6 +145,7 @@ public:
 		value_type * operator->() const { return &*current_it; }
 
 		Cell * getPtr() const { return current_it.getPtr(); }
+		size_t getHash() const { return current_it.getHash(); }
 	};
 
 
@@ -182,6 +183,7 @@ public:
 		const value_type * operator->() const { return &*current_it; }
 
 		const Cell * getPtr() const { return current_it.getPtr(); }
+		size_t getHash() const { return current_it.getHash(); }
 	};
 
 

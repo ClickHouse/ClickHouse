@@ -350,7 +350,7 @@ void NO_INLINE Aggregator::mergeDataImpl(
 	{
 		decltype(it) res_it;
 		bool inserted;
-		table_dst.emplace(it->first, res_it, inserted);
+		table_dst.emplace(it->first, res_it, inserted, it.getHash());
 
 		if (!inserted)
 		{

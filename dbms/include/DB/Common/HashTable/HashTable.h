@@ -441,6 +441,7 @@ public:
 		value_type * operator->() const { return &ptr->getValue(); }
 
 		Cell * getPtr() const { return ptr; }
+		size_t getHash() const { return ptr->getHash(*container); }
 	};
 
 
@@ -476,6 +477,7 @@ public:
 		const value_type * operator->() const { return &ptr->getValue(); }
 
 		const Cell * getPtr() const { return ptr; }
+		size_t getHash() const { return ptr->getHash(*container); }
 	};
 
 
