@@ -846,7 +846,25 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 	if (non_empty_data.size() == 1)
 		return non_empty_data[0];
 
-	AggregatedDataVariantsPtr res = non_empty_data[0];
+	/// Если хотя бы один из вариантов двухуровневый, то переконвертируем все варианты в двухуровневые, если есть не такие.
+	/// Замечание - возможно, было бы более оптимально не конвертировать одноуровневые варианты перед мерджем, а мерджить их отдельно, в конце.
+
+	bool has_at_least_one_two_level = false;
+	for (const auto & variant : non_empty_data)
+	{
+		if (variant->isTwoLevel())
+		{
+			has_at_least_one_two_level = true;
+			break;
+		}
+	}
+
+	if (has_at_least_one_two_level)
+		for (auto & variant : non_empty_data)
+			if (!variant->isTwoLevel())
+				variant->convertToTwoLevel();
+
+	AggregatedDataVariantsPtr & res = non_empty_data[0];
 
 	size_t rows = res->size();
 	for (size_t i = 1, size = non_empty_data.size(); i < size; ++i)
@@ -855,16 +873,7 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 		AggregatedDataVariants & current = *non_empty_data[i];
 
 		if (res->type != current.type)
-		{
-			/// Если один из вариантов двухуровневый, а другой - нет, то переконвертируем его в двухуровневый.
-			/// Замечание - возможно, было бы более оптимально не конвертировать одноуровневые варианты, а мерджить их отдельно, в конце.
-			if (!res->isTwoLevel() && current.isTwoLevel())
-				res->convertToTwoLevel();
-			else if (res->isTwoLevel() && !current.isTwoLevel())
-				current.convertToTwoLevel();
-			else
-				throw Exception("Cannot merge different aggregated data variants.", ErrorCodes::CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS);
-		}
+			throw Exception("Cannot merge different aggregated data variants.", ErrorCodes::CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS);
 
 		res->aggregates_pools.insert(res->aggregates_pools.end(), current.aggregates_pools.begin(), current.aggregates_pools.end());
 	}
