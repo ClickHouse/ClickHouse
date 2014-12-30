@@ -8,7 +8,7 @@
 #include <DB/Interpreters/AggregationCommon.h>
 
 #include <DB/Common/HashTable/HashMap.h>
-#include <DB/Common/HashTable/TwoLevelHashTable.h>
+#include <DB/Common/HashTable/TwoLevelHashMap.h>
 //#include <DB/Common/HashTable/HashTableWithSmallLocks.h>
 //#include <DB/Common/HashTable/HashTableMerge.h>
 
