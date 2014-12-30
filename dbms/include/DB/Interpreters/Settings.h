@@ -86,6 +86,10 @@ struct Settings
 	\
 	/** Сэмплирование по умолчанию. Если равно 1, то отключено. */ \
 	M(SettingFloat, default_sample, 1.0) \
+	/** Максимальное количество используемых реплик каждого шарда при выполнении запроса */ \
+	M(SettingUInt64, max_parallel_replicas, 1) \
+	M(SettingUInt64, parallel_replicas_count, 0) \
+	M(SettingUInt64, parallel_replica_offset, 0) \
 
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;
