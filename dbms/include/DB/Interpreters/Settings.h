@@ -87,6 +87,11 @@ struct Settings
 	M(SettingBool, compile, false) \
 	/** Количество одинаковых по структуре запросов перед тем, как инициируется их компиляция. */ \
 	M(SettingUInt64, min_count_to_compile, 0) \
+	\
+	/** Максимальное количество используемых реплик каждого шарда при выполнении запроса */ \
+	M(SettingUInt64, max_parallel_replicas, 1) \
+	M(SettingUInt64, parallel_replicas_count, 0) \
+	M(SettingUInt64, parallel_replica_offset, 0) \
 
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;
