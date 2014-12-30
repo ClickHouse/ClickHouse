@@ -27,6 +27,12 @@ class IConnectionPool : private boost::noncopyable
 public:
 	typedef PoolBase<Connection>::Entry Entry;
 	virtual Entry get(Settings * settings = nullptr) = 0;
+
+	virtual std::vector<Entry> getMany(unsigned max_connections, Settings * settings = nullptr) 
+	{
+		return std::vector<Entry>{ get(settings) };
+	}
+
 	virtual ~IConnectionPool() {}
 };
 
