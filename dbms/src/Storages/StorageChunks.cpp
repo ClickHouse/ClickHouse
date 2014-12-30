@@ -6,6 +6,8 @@
 #include <DB/Interpreters/InterpreterDropQuery.h>
 #include <DB/Parsers/ASTDropQuery.h>
 #include <DB/Common/VirtualColumnUtils.h>
+#include <DB/DataTypes/DataTypeString.h>
+#include <DB/Columns/ColumnString.h>
 
 
 namespace DB

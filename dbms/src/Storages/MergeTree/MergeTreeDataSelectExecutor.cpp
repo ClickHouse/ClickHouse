@@ -6,6 +6,7 @@
 #include <DB/DataStreams/FilterBlockInputStream.h>
 #include <DB/DataStreams/ConcatBlockInputStream.h>
 #include <DB/DataStreams/CollapsingFinalBlockInputStream.h>
+#include <DB/DataStreams/AddingConstColumnBlockInputStream.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Common/VirtualColumnUtils.h>
 

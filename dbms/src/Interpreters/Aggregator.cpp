@@ -442,10 +442,7 @@ void NO_INLINE Aggregator::mergeTwoLevelDataImpl(
 		}
 	};
 
-	/// future и packaged_task используются, чтобы исключения автоматически прокидывались в основной поток.
-
-	std::vector<std::future<void>> futures;
-	futures.reserve(Method::Data::NUM_BUCKETS);
+	/// packaged_task используются, чтобы исключения автоматически прокидывались в основной поток.
 
 	std::vector<std::packaged_task<void()>> tasks;
 	tasks.reserve(Method::Data::NUM_BUCKETS);
@@ -453,7 +450,6 @@ void NO_INLINE Aggregator::mergeTwoLevelDataImpl(
 	for (size_t bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
 	{
 		tasks.emplace_back(std::bind(merge_bucket, bucket, current_memory_tracker));
-		futures.emplace_back(tasks.back().get_future());
 
 		if (thread_pool)
 			thread_pool->schedule([bucket, &tasks] { tasks[bucket](); });
@@ -464,8 +460,8 @@ void NO_INLINE Aggregator::mergeTwoLevelDataImpl(
 	if (thread_pool)
 		thread_pool->wait();
 
-	for (auto & future : futures)
-		future.get();
+	for (auto & task : tasks)
+		task.get_future().get();
 }
 
 
@@ -635,16 +631,17 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 	/** Почему выбрано 30 000? Потому что при таком количестве элементов, в TwoLevelHashTable,
 	  *  скорее всего, хватит места на все ключи, с размером таблицы по-умолчанию
 	  *  (256 корзин по 256 ячеек, fill factor = 0.5)
+	  * TODO Не конвертировать, если запрос выполняется в один поток.
 	  */
 
 	if (result.isConvertibleToTwoLevel() && result_size >= TWO_LEVEL_HASH_TABLE_THRESHOLD)
 		result.convertToTwoLevel();
 
 	/// Проверка ограничений.
-	if (!no_more_keys && max_rows_to_group_by && result.size() > max_rows_to_group_by)
+	if (!no_more_keys && max_rows_to_group_by && result_size > max_rows_to_group_by)
 	{
 		if (group_by_overflow_mode == OverflowMode::THROW)
-			throw Exception("Limit for rows to GROUP BY exceeded: has " + toString(result.size())
+			throw Exception("Limit for rows to GROUP BY exceeded: has " + toString(result_size)
 				+ " rows, maximum: " + toString(max_rows_to_group_by),
 				ErrorCodes::TOO_MUCH_ROWS);
 		else if (group_by_overflow_mode == OverflowMode::BREAK)

@@ -3,7 +3,9 @@
 #include <Yandex/logger_useful.h>
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
+#include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/Common/VirtualColumnUtils.h>
+#include <DB/Interpreters/Context.h>
 
 #include <DB/Client/ConnectionPool.h>
 

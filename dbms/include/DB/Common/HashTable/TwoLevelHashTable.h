@@ -95,6 +95,7 @@ public:
 	{
 		typename Source::const_iterator it = src.begin();
 
+		/// Предполагается, что нулевой ключ (хранящийся отдельно) при итерировании идёт первым.
 		if (it != src.end() && it.getPtr()->isZero(src))
 		{
 			insert(*it);
@@ -142,6 +143,8 @@ public:
 
 		value_type & operator* () const { return *current_it; }
 		value_type * operator->() const { return &*current_it; }
+
+		Cell * getPtr() const { return current_it.getPtr(); }
 	};
 
 
@@ -177,6 +180,8 @@ public:
 
 		const value_type & operator* () const { return *current_it; }
 		const value_type * operator->() const { return &*current_it; }
+
+		const Cell * getPtr() const { return current_it.getPtr(); }
 	};
 
 
@@ -205,6 +210,10 @@ public:
 
 		std::pair<iterator, bool> res;
 		emplace(Cell::getKey(x), res.first, res.second, hash_value);
+
+		if (res.second)
+			res.first.getPtr()->setMapped(x);
+
 		return res;
 	}
 

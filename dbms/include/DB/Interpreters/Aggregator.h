@@ -7,6 +7,8 @@
 
 #include <DB/Core/StringRef.h>
 #include <DB/Common/Arena.h>
+#include <DB/Common/HashTable/HashMap.h>
+#include <DB/Common/HashTable/TwoLevelHashMap.h>
 
 #include <DB/DataStreams/IBlockInputStream.h>
 
