@@ -32,6 +32,11 @@ cp ${CONFIG/config/users} .
 # Запустим второй сервер.
 BINARY=$(readlink /proc/$(pidof clickhouse-server | tr ' ' '\n' | head -n1)/exe || echo "/usr/bin/clickhouse-server")
 
+if [ ! -x "$BINARY" ] && [ -n "$(pgrep memcheck)" ]; then
+	# В случае, если сервер был запущен под valgrind-ом.
+	BINARY=$(cat /proc/$(pgrep memcheck)/cmdline | cut -f2 -d '')
+fi
+
 if [ ! -x "$BINARY" ]; then
 	echo "Cannot find executable binary for running clickhouse-server" >&2
 	exit 1
