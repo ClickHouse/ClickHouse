@@ -1,22 +1,16 @@
 #pragma once
 
-#include <map>
-#include <unordered_map>
-
 #include <Poco/Mutex.h>
 
 #include <Yandex/logger_useful.h>
 #include <statdaemons/threadpool.hpp>
 
-#include <DB/Core/ColumnNumbers.h>
-#include <DB/Core/Names.h>
 #include <DB/Core/StringRef.h>
 #include <DB/Common/Arena.h>
 
 #include <DB/DataStreams/IBlockInputStream.h>
 
-#include <DB/AggregateFunctions/IAggregateFunction.h>
-
+#include <DB/Interpreters/AggregateDescription.h>
 #include <DB/Interpreters/AggregationCommon.h>
 #include <DB/Interpreters/Limits.h>
 
@@ -29,18 +23,6 @@
 
 namespace DB
 {
-
-
-struct AggregateDescription
-{
-	AggregateFunctionPtr function;
-	Array parameters;		/// Параметры (параметрической) агрегатной функции.
-	ColumnNumbers arguments;
-	Names argument_names;	/// Используются, если arguments не заданы.
-	String column_name;		/// Какое имя использовать для столбца со значениями агрегатной функции
-};
-
-typedef std::vector<AggregateDescription> AggregateDescriptions;
 
 
 /** Разные структуры данных, которые могут использоваться для агрегации
@@ -91,9 +73,9 @@ typedef HashMap<UInt64, AggregateDataPtr, TrivialHash, HashTableFixedGrower<16>>
 
 
 template <typename T>
-inline UInt64 get64(T x) { return x; }
+inline UInt64 unionCastToUInt64(T x) { return x; }
 
-template <> inline UInt64 get64(Float64 x)
+template <> inline UInt64 unionCastToUInt64(Float64 x)
 {
 	union
 	{
@@ -105,7 +87,7 @@ template <> inline UInt64 get64(Float64 x)
 	return res;
 }
 
-template <> inline UInt64 get64(Float32 x)
+template <> inline UInt64 unionCastToUInt64(Float32 x)
 {
 	union
 	{
@@ -133,6 +115,11 @@ struct AggregationMethodOneNumber
 
 	const FieldType * column;
 
+	AggregationMethodOneNumber() {}
+
+	template <typename Other>
+	AggregationMethodOneNumber(const Other & other) : data(other.data) {}
+
 	/** Вызывается в начале обработки каждого блока.
 	  * Устанавливает переменные, необходимые для остальных методов, вызываемых во внутренних циклах.
 	  */
@@ -149,7 +136,7 @@ struct AggregationMethodOneNumber
 		const Sizes & key_sizes,	/// Если ключи фиксированной длины - их длины. Не используется в методах агрегации по ключам переменной длины.
 		StringRefs & keys) const	/// Сюда могут быть записаны ссылки на данные ключей в столбцах. Они могут быть использованы в дальнейшем.
 	{
-		return get64(column[i]);
+		return unionCastToUInt64(column[i]);
 	}
 
 	/// Из значения в хэш-таблице получить AggregateDataPtr.
@@ -185,6 +172,11 @@ struct AggregationMethodString
 
 	const ColumnString::Offsets_t * offsets;
 	const ColumnString::Chars_t * chars;
+
+	AggregationMethodString() {}
+
+	template <typename Other>
+	AggregationMethodString(const Other & other) : data(other.data) {}
 
 	void init(ConstColumnPlainPtrs & key_columns)
 	{
@@ -234,6 +226,11 @@ struct AggregationMethodFixedString
 	size_t n;
 	const ColumnFixedString::Chars_t * chars;
 
+	AggregationMethodFixedString() {}
+
+	template <typename Other>
+	AggregationMethodFixedString(const Other & other) : data(other.data) {}
+
 	void init(ConstColumnPlainPtrs & key_columns)
 	{
 		const IColumn & column = *key_columns[0];
@@ -278,6 +275,11 @@ struct AggregationMethodKeys128
 	typedef typename Data::const_iterator const_iterator;
 
 	Data data;
+
+	AggregationMethodKeys128() {}
+
+	template <typename Other>
+	AggregationMethodKeys128(const Other & other) : data(other.data) {}
 
 	void init(ConstColumnPlainPtrs & key_columns)
 	{
@@ -324,6 +326,11 @@ struct AggregationMethodHashed
 	typedef typename Data::const_iterator const_iterator;
 
 	Data data;
+
+	AggregationMethodHashed() {}
+
+	template <typename Other>
+	AggregationMethodHashed(const Other & other) : data(other.data) {}
 
 	void init(ConstColumnPlainPtrs & key_columns)
 	{
@@ -506,6 +513,31 @@ struct AggregatedDataVariants : private boost::noncopyable
 				throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 		}
 	}
+
+	bool isConvertibleToTwoLevel() const
+	{
+		#define APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M) \
+			M(key32)			\
+			M(key64)			\
+			M(key_string)		\
+			M(key_fixed_string)	\
+			M(keys128)			\
+			M(hashed)
+
+		switch (type)
+		{
+		#define M(NAME) \
+			case Type::NAME: return true;
+
+			APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
+
+		#undef M
+			default:
+				return false;
+		}
+	}
+
+	void convertToTwoLevel();
 };
 
 typedef SharedPtr<AggregatedDataVariants> AggregatedDataVariantsPtr;
@@ -657,10 +689,6 @@ protected:
 		StringRefs & keys,
 		AggregateDataPtr overflow_row) const;
 
-
-	/// Преобразовать из одного типа хэш-таблицы в другой.
-	template <typename SrcData, typename DstData>
-	static void convertImpl(SrcData & src, DstData & dst);
 
 	/// Слить данные из хэш-таблицы src в dst.
 	template <typename Method, typename Table>

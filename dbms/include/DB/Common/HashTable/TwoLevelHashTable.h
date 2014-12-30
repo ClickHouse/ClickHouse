@@ -90,19 +90,25 @@ public:
     TwoLevelHashTable() {}
 
     /// Скопировать данные из другой (обычной) хэш-таблицы. У неё должна быть такая же хэш-функция.
-/*	template <typename Source>
+	template <typename Source>
 	TwoLevelHashTable(const Source & src)
-		: impls(src.size() * 15 / NUM_BUCKETS / 10)		/// Размер берётся с некоторым запасом.
 	{
-		for (typename Source::const_iterator it = src.begin(); it != src.end(); ++it)
+		typename Source::const_iterator it = src.begin();
+
+		if (it != src.end() && it.getPtr()->isZero(src))
 		{
-			Cell * cell = it.ptr;
-			size_t buck = getBucketFromHash(hash_value);
-			typename Impl::iterator impl_it;
-			impls[buck].emplace(x, impl_it, inserted, hash_value);
-			emplace();
+			insert(*it);
+			++it;
 		}
-	}*/
+
+		for (; it != src.end(); ++it)
+		{
+			const Cell * cell = it.getPtr();
+			size_t hash_value = cell->getHash(src);
+			size_t buck = getBucketFromHash(hash_value);
+			impls[buck].insertUniqueNonZero(cell, hash_value);
+		}
+	}
 
 
 	class iterator

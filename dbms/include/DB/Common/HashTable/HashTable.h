@@ -232,6 +232,9 @@ protected:
 	friend class const_iterator;
 	friend class iterator;
 
+	template <typename, typename, typename, typename, typename, typename, size_t>
+	friend class TwoLevelHashTable;
+
 	typedef size_t HashValue;
 	typedef HashTable<Key, Cell, Hash, Grower, Allocator> Self;
 	typedef Cell cell_type;
@@ -436,6 +439,8 @@ public:
 
 		value_type & operator* () const { return ptr->getValue(); }
 		value_type * operator->() const { return &ptr->getValue(); }
+
+		Cell * getPtr() const { return ptr; }
 	};
 
 
@@ -469,6 +474,8 @@ public:
 
 		const value_type & operator* () const { return ptr->getValue(); }
 		const value_type * operator->() const { return &ptr->getValue(); }
+
+		const Cell * getPtr() const { return ptr; }
 	};
 
 
@@ -607,17 +614,16 @@ public:
 
 
 	/// Скопировать ячейку из другой хэш-таблицы. Предполагается, что ячейка не нулевая, а также, что такого ключа в таблице ещё не было.
-/*	void ALWAYS_INLINE insertUniqueNonZero(Cell * cell)
+	void ALWAYS_INLINE insertUniqueNonZero(const Cell * cell, size_t hash_value)
 	{
-		size_t hash_value = cell->getHash();
-		size_t place_value = findEmptyCell(cell->getKey(), hash_value, grower.place(hash_value));
+		size_t place_value = findEmptyCell(cell->getKey(cell->getValue()), hash_value, grower.place(hash_value));
 
 		memcpy(&buf[place_value], cell, sizeof(*cell));
 		++m_size;
 
 		if (unlikely(grower.overflow(m_size)))
 			resize();
-	}*/
+	}
 
 
 	iterator ALWAYS_INLINE find(Key x)

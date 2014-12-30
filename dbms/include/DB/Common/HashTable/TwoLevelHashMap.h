@@ -19,6 +19,8 @@ public:
 	typedef typename Cell::Mapped mapped_type;
 	typedef typename Cell::value_type value_type;
 
+	using TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, HashMapTable<Key, Cell, Hash, Grower, Allocator> >::TwoLevelHashTable;
+
 	mapped_type & ALWAYS_INLINE operator[](Key x)
 	{
 		typename TwoLevelHashMapTable::iterator it;

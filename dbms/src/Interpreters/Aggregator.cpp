@@ -1,4 +1,6 @@
 #include <iomanip>
+#include <thread>
+#include <future>
 
 #include <statdaemons/Stopwatch.h>
 
@@ -25,6 +27,30 @@ AggregatedDataVariants::~AggregatedDataVariants()
 		{
 			tryLogCurrentException(__PRETTY_FUNCTION__);
 		}
+	}
+}
+
+
+void AggregatedDataVariants::convertToTwoLevel()
+{
+	if (aggregator)
+		LOG_TRACE(aggregator->log, "Converting aggregation data to two-level.");
+
+	switch (type)
+	{
+	#define M(NAME) \
+		case Type::NAME: \
+			NAME ## _two_level.reset(new decltype(NAME ## _two_level)::element_type(*NAME)); \
+			NAME.reset(); \
+			type = Type::NAME ## _two_level; \
+			break;
+
+		APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
+
+	#undef M
+
+		default:
+			throw Exception("Wrong data variant passed.", ErrorCodes::LOGICAL_ERROR);
 	}
 }
 
@@ -202,6 +228,8 @@ void NO_INLINE Aggregator::executeImpl(
 		executeImplCase<true>(method, aggregates_pool, rows, key_columns, aggregate_columns, key_sizes, keys, overflow_row);
 }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 
 template <bool no_more_keys, typename Method>
 void NO_INLINE Aggregator::executeImplCase(
@@ -215,9 +243,10 @@ void NO_INLINE Aggregator::executeImplCase(
 	AggregateDataPtr overflow_row) const
 {
 	/// Для всех строчек.
+	typename Method::iterator it;
+	typename Method::Key prev_key;
 	for (size_t i = 0; i < rows; ++i)
 	{
-		typename Method::iterator it;
 		bool inserted;			/// Вставили новый ключ, или такой ключ уже был?
 		bool overflow = false;	/// Новый ключ не поместился в хэш-таблицу из-за no_more_keys.
 
@@ -225,7 +254,22 @@ void NO_INLINE Aggregator::executeImplCase(
 		typename Method::Key key = method.getKey(key_columns, keys_size, i, key_sizes, keys);
 
 		if (!no_more_keys)	/// Вставляем.
+		{
+			/// Оптимизация для часто повторяющихся ключей.
+			if (i != 0 && key == prev_key)
+			{
+				/// Добавляем значения в агрегатные функции.
+				AggregateDataPtr value = Method::getAggregateData(it->second);
+				for (size_t j = 0; j < aggregates_size; ++j)	/// NOTE: Заменить индекс на два указателя?
+					aggregate_functions[j]->add(value + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
+
+				continue;
+			}
+			else
+				prev_key = key;
+
 			method.data.emplace(key, it, inserted);
+		}
 		else
 		{
 			/// Будем добавлять только если ключ уже есть.
@@ -257,13 +301,8 @@ void NO_INLINE Aggregator::executeImplCase(
 	}
 }
 
+#pragma GCC diagnostic pop
 
-template <typename SrcData, typename DstData>
-static void Aggregator::convertImpl(SrcData & src, DstData & dst)
-{
-	for (const auto & value : src)
-		dst.insert(src);
-}
 
 
 template <typename Method>
@@ -385,8 +424,10 @@ void NO_INLINE Aggregator::mergeTwoLevelDataImpl(
 	AggregatedDataVariantsPtr & res = non_empty_data[0];
 
 	/// Слияние распараллеливается по корзинам - первому уровню TwoLevelHashMap.
-	auto merge_bucket = [&non_empty_data, &res, this](size_t bucket)
+	auto merge_bucket = [&non_empty_data, &res, this](size_t bucket, MemoryTracker * memory_tracker)
 	{
+		current_memory_tracker = memory_tracker;
+
 		/// Все результаты агрегации соединяем с первым.
 		for (size_t i = 1, size = non_empty_data.size(); i < size; ++i)
 		{
@@ -401,16 +442,30 @@ void NO_INLINE Aggregator::mergeTwoLevelDataImpl(
 		}
 	};
 
+	/// future и packaged_task используются, чтобы исключения автоматически прокидывались в основной поток.
+
+	std::vector<std::future<void>> futures;
+	futures.reserve(Method::Data::NUM_BUCKETS);
+
+	std::vector<std::packaged_task<void()>> tasks;
+	tasks.reserve(Method::Data::NUM_BUCKETS);
+
 	for (size_t bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
 	{
+		tasks.emplace_back(std::bind(merge_bucket, bucket, current_memory_tracker));
+		futures.emplace_back(tasks.back().get_future());
+
 		if (thread_pool)
-			thread_pool->schedule(std::bind(merge_bucket, bucket));
+			thread_pool->schedule([bucket, &tasks] { tasks[bucket](); });
 		else
-			merge_bucket(bucket);
+			tasks[bucket]();
 	}
 
 	if (thread_pool)
 		thread_pool->wait();
+
+	for (auto & future : futures)
+		future.get();
 }
 
 
@@ -571,6 +626,19 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 #undef M
 	else if (result.type != AggregatedDataVariants::Type::without_key)
 		throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+
+	size_t result_size = result.size();
+
+	/// Если результат уже достаточно большой, и его можно сконвертировать в двухуровневую хэш-таблицу.
+	constexpr auto TWO_LEVEL_HASH_TABLE_THRESHOLD = 30000;
+
+	/** Почему выбрано 30 000? Потому что при таком количестве элементов, в TwoLevelHashTable,
+	  *  скорее всего, хватит места на все ключи, с размером таблицы по-умолчанию
+	  *  (256 корзин по 256 ячеек, fill factor = 0.5)
+	  */
+
+	if (result.isConvertibleToTwoLevel() && result_size >= TWO_LEVEL_HASH_TABLE_THRESHOLD)
+		result.convertToTwoLevel();
 
 	/// Проверка ограничений.
 	if (!no_more_keys && max_rows_to_group_by && result.size() > max_rows_to_group_by)
@@ -790,7 +858,16 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 		AggregatedDataVariants & current = *non_empty_data[i];
 
 		if (res->type != current.type)
-			throw Exception("Cannot merge different aggregated data variants.", ErrorCodes::CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS);
+		{
+			/// Если один из вариантов двухуровневый, а другой - нет, то переконвертируем его в двухуровневый.
+			/// Замечание - возможно, было бы более оптимально не конвертировать одноуровневые варианты, а мерджить их отдельно, в конце.
+			if (!res->isTwoLevel() && current.isTwoLevel())
+				res->convertToTwoLevel();
+			else if (res->isTwoLevel() && !current.isTwoLevel())
+				current.convertToTwoLevel();
+			else
+				throw Exception("Cannot merge different aggregated data variants.", ErrorCodes::CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS);
+		}
 
 		res->aggregates_pools.insert(res->aggregates_pools.end(), current.aggregates_pools.begin(), current.aggregates_pools.end());
 	}
