@@ -28,9 +28,22 @@ namespace DB
 
 
 /** Разные структуры данных, которые могут использоваться для агрегации
-  * Для эффективности сами данные для агрегации кладутся в пул.
+  * Для эффективности, сами данные для агрегации кладутся в пул.
   * Владение данными (состояний агрегатных функций) и пулом
   *  захватывается позднее - в функции convertToBlock, объектом ColumnAggregateFunction.
+  *
+  * Большинство структур данных существует в двух вариантах: обычном и двухуровневом (TwoLevel).
+  * Двухуровневая хэш-таблица работает чуть медленнее при маленьком количестве различных ключей,
+  *  но при большом количестве различных ключей лучше масштабируется, так как позволяет
+  *  распараллелить некоторые операции (слияние, пост-обработку) естественным образом.
+  *
+  * Чтобы обеспечить эффективную работу в большом диапазоне условий,
+  *  сначала используются одноуровневые хэш-таблицы,
+  *  а при достижении количеством различных ключей достаточно большого размера,
+  *  они конвертируются в двухуровневые.
+  *
+  * PS. Существует много различных подходов к эффективной реализации параллельной и распределённой агрегации,
+  *  лучшим образом подходящих для разных случаев, и этот подход - всего лишь один из них, выбранный по совокупности причин.
   */
 typedef AggregateDataPtr AggregatedDataWithoutKey;
 
@@ -55,7 +68,10 @@ struct TrivialHash
 	}
 };
 
-/// Превращает хэш-таблицу в что-то типа lookup-таблицы. Остаётся неоптимальность - в ячейках хранятся ключи.
+/** Превращает хэш-таблицу в что-то типа lookup-таблицы. Остаётся неоптимальность - в ячейках хранятся ключи.
+  * Также компилятору не удаётся полностью удалить код хождения по цепочке разрешения коллизий, хотя он не нужен.
+  * TODO Переделать в полноценную lookup-таблицу.
+  */
 template <size_t key_bits>
 struct HashTableFixedGrower
 {
@@ -153,9 +169,9 @@ struct AggregationMethodOneNumber
 
 	/** Вставить ключ из хэш-таблицы в столбцы.
 	  */
-	static void insertKeyIntoColumns(const_iterator & it, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
+	static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
 	{
-		static_cast<ColumnVector<FieldType> *>(key_columns[0])->insertData(reinterpret_cast<const char *>(&it->first), sizeof(it->first));
+		static_cast<ColumnVector<FieldType> *>(key_columns[0])->insertData(reinterpret_cast<const char *>(&value.first), sizeof(value.first));
 	}
 };
 
@@ -206,9 +222,9 @@ struct AggregationMethodString
 		it->first.data = pool.insert(it->first.data, it->first.size);
 	}
 
-	static void insertKeyIntoColumns(const_iterator & it, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
+	static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
 	{
-		key_columns[0]->insertData(it->first.data, it->first.size);
+		key_columns[0]->insertData(value.first.data, value.first.size);
 	}
 };
 
@@ -259,9 +275,9 @@ struct AggregationMethodFixedString
 		it->first.data = pool.insert(it->first.data, it->first.size);
 	}
 
-	static void insertKeyIntoColumns(const_iterator & it, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
+	static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
 	{
-		key_columns[0]->insertData(it->first.data, it->first.size);
+		key_columns[0]->insertData(value.first.data, value.first.size);
 	}
 };
 
@@ -304,13 +320,13 @@ struct AggregationMethodKeys128
 	{
 	}
 
-	static void insertKeyIntoColumns(const_iterator & it, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
+	static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
 	{
 		size_t offset = 0;
 		for (size_t i = 0; i < keys_size; ++i)
 		{
 			size_t size = key_sizes[i];
-			key_columns[i]->insertData(reinterpret_cast<const char *>(&it->first) + offset, size);
+			key_columns[i]->insertData(reinterpret_cast<const char *>(&value.first) + offset, size);
 			offset += size;
 		}
 	}
@@ -356,10 +372,10 @@ struct AggregationMethodHashed
 		it->second.first = placeKeysInPool(i, keys_size, keys, pool);
 	}
 
-	static void insertKeyIntoColumns(const_iterator & it, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
+	static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
 	{
 		for (size_t i = 0; i < keys_size; ++i)
-			key_columns[i]->insertDataWithTerminatingZero(it->second.first[i].data, it->second.first[i].size);
+			key_columns[i]->insertDataWithTerminatingZero(value.second.first[i].data, value.second.first[i].size);
 	}
 };
 
@@ -729,6 +745,26 @@ protected:
 		ColumnPlainPtrs & final_aggregate_columns,
 		const Sizes & key_sizes,
 		size_t start_row, bool final) const;
+
+	template <typename Method, typename Table>
+	void convertToBlockImplFinal(
+		Method & method,
+		Table & data,
+		ColumnPlainPtrs & key_columns,
+		AggregateColumnsData & aggregate_columns,
+		ColumnPlainPtrs & final_aggregate_columns,
+		const Sizes & key_sizes,
+		size_t start_row) const;
+
+	template <typename Method, typename Table>
+	void convertToBlockImplNotFinal(
+		Method & method,
+		Table & data,
+		ColumnPlainPtrs & key_columns,
+		AggregateColumnsData & aggregate_columns,
+		ColumnPlainPtrs & final_aggregate_columns,
+		const Sizes & key_sizes,
+		size_t start_row) const;
 
 	template <typename Method>
 	void destroyImpl(

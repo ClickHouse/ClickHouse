@@ -304,43 +304,6 @@ void NO_INLINE Aggregator::executeImplCase(
 #pragma GCC diagnostic pop
 
 
-
-template <typename Method>
-void NO_INLINE Aggregator::convertToBlockImpl(
-	Method & method,
-	ColumnPlainPtrs & key_columns,
-	AggregateColumnsData & aggregate_columns,
-	ColumnPlainPtrs & final_aggregate_columns,
-	const Sizes & key_sizes,
-	size_t start_row,
-	bool final) const
-{
-	if (!final)
-	{
-		size_t j = start_row;
-		for (typename Method::const_iterator it = method.data.begin(); it != method.data.end(); ++it, ++j)
-		{
-			method.insertKeyIntoColumns(it, key_columns, keys_size, key_sizes);
-
-			for (size_t i = 0; i < aggregates_size; ++i)
-				(*aggregate_columns[i])[j] = Method::getAggregateData(it->second) + offsets_of_aggregate_states[i];
-		}
-	}
-	else
-	{
-		for (typename Method::const_iterator it = method.data.begin(); it != method.data.end(); ++it)
-		{
-			method.insertKeyIntoColumns(it, key_columns, keys_size, key_sizes);
-
-			for (size_t i = 0; i < aggregates_size; ++i)
-				aggregate_functions[i]->insertResultInto(
-					Method::getAggregateData(it->second) + offsets_of_aggregate_states[i],
-					*final_aggregate_columns[i]);
-		}
-	}
-}
-
-
 template <typename Method, typename Table>
 void NO_INLINE Aggregator::mergeDataImpl(
 	Table & table_dst,
@@ -503,6 +466,65 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
 			aggregate_functions[j]->merge(
 				Method::getAggregateData(it->second) + offsets_of_aggregate_states[j],
 				(*aggregate_columns[j])[i]);
+	}
+}
+
+
+template <typename Method>
+void Aggregator::convertToBlockImpl(
+	Method & method,
+	ColumnPlainPtrs & key_columns,
+	AggregateColumnsData & aggregate_columns,
+	ColumnPlainPtrs & final_aggregate_columns,
+	const Sizes & key_sizes,
+	size_t start_row,
+	bool final) const
+{
+	if (final)
+		convertToBlockImplFinal(method, method.data, key_columns, aggregate_columns, final_aggregate_columns, key_sizes, start_row);
+	else
+		convertToBlockImplNotFinal(method, method.data, key_columns, aggregate_columns, final_aggregate_columns, key_sizes, start_row);
+}
+
+
+template <typename Method, typename Table>
+void NO_INLINE Aggregator::convertToBlockImplFinal(
+	Method & method,
+	Table & data,
+	ColumnPlainPtrs & key_columns,
+	AggregateColumnsData & aggregate_columns,
+	ColumnPlainPtrs & final_aggregate_columns,
+	const Sizes & key_sizes,
+	size_t start_row) const
+{
+	for (typename Table::const_iterator it = data.begin(); it != data.end(); ++it)
+	{
+		method.insertKeyIntoColumns(*it, key_columns, keys_size, key_sizes);
+
+		for (size_t i = 0; i < aggregates_size; ++i)
+			aggregate_functions[i]->insertResultInto(
+				Method::getAggregateData(it->second) + offsets_of_aggregate_states[i],
+				*final_aggregate_columns[i]);
+	}
+}
+
+template <typename Method, typename Table>
+void NO_INLINE Aggregator::convertToBlockImplNotFinal(
+	Method & method,
+	Table & data,
+	ColumnPlainPtrs & key_columns,
+	AggregateColumnsData & aggregate_columns,
+	ColumnPlainPtrs & final_aggregate_columns,
+	const Sizes & key_sizes,
+	size_t start_row) const
+{
+	size_t j = start_row;
+	for (typename Table::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
+	{
+		method.insertKeyIntoColumns(*it, key_columns, keys_size, key_sizes);
+
+		for (size_t i = 0; i < aggregates_size; ++i)
+			(*aggregate_columns[i])[j] = Method::getAggregateData(it->second) + offsets_of_aggregate_states[i];
 	}
 }
 
