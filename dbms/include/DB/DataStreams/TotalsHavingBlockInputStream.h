@@ -20,8 +20,8 @@ class TotalsHavingBlockInputStream : public IProfilingBlockInputStream
 public:
 	TotalsHavingBlockInputStream(BlockInputStreamPtr input_, const Names & keys_names_,
 		const AggregateDescriptions & aggregates_, bool overflow_row_, ExpressionActionsPtr expression_,
-		const std::string & filter_column_, TotalsMode totals_mode_, float auto_include_threshold_)
-		: aggregator(new Aggregator(keys_names_, aggregates_, overflow_row_)), overflow_row(overflow_row_),
+		const std::string & filter_column_, TotalsMode totals_mode_, double auto_include_threshold_)
+		: overflow_row(overflow_row_),
 		expression(expression_), filter_column_name(filter_column_), totals_mode(totals_mode_),
 		auto_include_threshold(auto_include_threshold_), passed_keys(0), total_keys(0)
 	{
@@ -33,7 +33,7 @@ public:
 	String getID() const override
 	{
 		std::stringstream res;
-		res << "TotalsHavingBlockInputStream(" << children.back()->getID() << ", " << aggregator->getID()
+		res << "TotalsHavingBlockInputStream(" << children.back()->getID()
 			<< "," << filter_column_name << ")";
 		return res.str();
 	}
@@ -44,24 +44,24 @@ protected:
 	Block readImpl() override;
 
 private:
-	SharedPtr<Aggregator> aggregator;
 	bool overflow_row;
 	ExpressionActionsPtr expression;
 	String filter_column_name;
 	TotalsMode totals_mode;
-	float auto_include_threshold;
+	double auto_include_threshold;
 	size_t passed_keys;
 	size_t total_keys;
 
-	Block current_totals;
+	/** Здесь находятся значения, не прошедшие max_rows_to_group_by.
+	  * Они прибавляются или не прибавляются к current_totals в зависимости от totals_mode.
+	  */
 	Block overflow_aggregates;
 
-	void addToTotals(Block & totals, Block & block, const IColumn::Filter * filter, size_t rows);
+	/// Здесь накапливаются тотальные значения. После окончания работы, они будут помещены в IProfilingBlockInputStream::totals.
+	Block current_totals;
 
-	void addToTotals(Block & totals, Block & block, const IColumn::Filter * filter)
-	{
-		addToTotals(totals, block, filter, block.rows());
-	}
+	/// Если filter == nullptr - прибавлять все строки. Иначе - только строки, проходящие фильтр (HAVING).
+	void addToTotals(Block & totals, Block & block, const IColumn::Filter * filter);
 };
 
 }

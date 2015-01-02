@@ -611,7 +611,7 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 		LOG_TRACE(log, "Aggregation method: " << result.getMethodName());
 	}
 
-	if (overflow_row && !result.without_key)
+	if ((overflow_row || result.type == AggregatedDataVariants::Type::without_key) && !result.without_key)
 	{
 		result.without_key = result.aggregates_pool->alloc(total_size_of_aggregate_states);
 		createAggregateStates(result.without_key);
@@ -620,11 +620,6 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 	if (result.type == AggregatedDataVariants::Type::without_key)
 	{
 		AggregatedDataWithoutKey & res = result.without_key;
-		if (!res)
-		{
-			res = result.aggregates_pool->alloc(total_size_of_aggregate_states);
-			createAggregateStates(res);
-		}
 
 		/// Оптимизация в случае единственной агрегатной функции count.
 		AggregateFunctionCount * agg_count = aggregates_size == 1
@@ -1001,15 +996,20 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
 		&& data_variants.isTwoLevel())						/// TODO Использовать общий тред-пул с функцией merge.
 		thread_pool.reset(new boost::threadpool::pool(max_threads));
 
+	/** Если требуется выдать overflow_row
+	  * (то есть, блок со значениями, не поместившимися в max_rows_to_group_by),
+	  *  то этот блок должен идти первым (на это рассчитывает TotalsHavingBlockInputStream).
+	  */
+
 	if (data_variants.type == AggregatedDataVariants::Type::without_key || overflow_row)
-		blocks = prepareBlocksAndFillWithoutKey(data_variants, final);
+		blocks.splice(blocks.end(), prepareBlocksAndFillWithoutKey(data_variants, final));
 
 	if (data_variants.type != AggregatedDataVariants::Type::without_key)
 	{
 		if (!data_variants.isTwoLevel())
-			blocks = prepareBlocksAndFillSingleLevel(data_variants, final);
+			blocks.splice(blocks.end(), prepareBlocksAndFillSingleLevel(data_variants, final));
 		else
-			blocks = prepareBlocksAndFillTwoLevel(data_variants, final, thread_pool.get());
+			blocks.splice(blocks.end(), prepareBlocksAndFillTwoLevel(data_variants, final, thread_pool.get()));
 	}
 
 	if (!final)
