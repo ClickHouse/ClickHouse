@@ -753,40 +753,58 @@ Block Aggregator::prepareBlockAndFill(
 		key_columns[i]->reserve(rows);
 	}
 
-	for (size_t i = 0; i < aggregates_size; ++i)
+	try
 	{
-		if (!final)
+		for (size_t i = 0; i < aggregates_size; ++i)
 		{
-			/// Столбец ColumnAggregateFunction захватывает разделяемое владение ареной с состояниями агрегатных функций.
-			ColumnAggregateFunction & column_aggregate_func = static_cast<ColumnAggregateFunction &>(*res.getByPosition(i + keys_size).column);
-
-			for (size_t j = 0; j < data_variants.aggregates_pools.size(); ++j)
-				column_aggregate_func.addArena(data_variants.aggregates_pools[j]);
-
-			aggregate_columns[i] = &column_aggregate_func.getData();
-			aggregate_columns[i]->resize(rows);
-		}
-		else
-		{
-			ColumnWithNameAndType & column = res.getByPosition(i + keys_size);
-			column.type = aggregate_functions[i]->getReturnType();
-			column.column = column.type->createColumn();
-			column.column->reserve(rows);
-
-			if (aggregate_functions[i]->isState())
+			if (!final)
 			{
 				/// Столбец ColumnAggregateFunction захватывает разделяемое владение ареной с состояниями агрегатных функций.
-				ColumnAggregateFunction & column_aggregate_func = static_cast<ColumnAggregateFunction &>(*column.column);
+				ColumnAggregateFunction & column_aggregate_func = static_cast<ColumnAggregateFunction &>(*res.getByPosition(i + keys_size).column);
 
 				for (size_t j = 0; j < data_variants.aggregates_pools.size(); ++j)
 					column_aggregate_func.addArena(data_variants.aggregates_pools[j]);
+
+				aggregate_columns[i] = &column_aggregate_func.getData();
+				aggregate_columns[i]->resize(rows);
 			}
+			else
+			{
+				ColumnWithNameAndType & column = res.getByPosition(i + keys_size);
+				column.type = aggregate_functions[i]->getReturnType();
+				column.column = column.type->createColumn();
+				column.column->reserve(rows);
 
-			final_aggregate_columns[i] = column.column;
+				if (aggregate_functions[i]->isState())
+				{
+					/// Столбец ColumnAggregateFunction захватывает разделяемое владение ареной с состояниями агрегатных функций.
+					ColumnAggregateFunction & column_aggregate_func = static_cast<ColumnAggregateFunction &>(*column.column);
+
+					for (size_t j = 0; j < data_variants.aggregates_pools.size(); ++j)
+						column_aggregate_func.addArena(data_variants.aggregates_pools[j]);
+				}
+
+				final_aggregate_columns[i] = column.column;
+			}
 		}
-	}
 
-	filler(key_columns, aggregate_columns, final_aggregate_columns, data_variants.key_sizes, final);
+		filler(key_columns, aggregate_columns, final_aggregate_columns, data_variants.key_sizes, final);
+	}
+	catch (...)
+	{
+		/** Работа с состояниями агрегатных функций недостаточно exception-safe.
+		  * Если часть столбцов aggregate_columns была resize-на, но значения не были вставлены,
+		  *  то эти столбцы будут в некорректном состоянии
+		  *  (ColumnAggregateFunction попытаются в деструкторе вызвать деструкторы у элементов, которых нет),
+		  *  а также деструкторы будут вызываться у AggregatedDataVariants.
+		  * Поэтому, вручную "откатываем" их.
+		  */
+		for (size_t i = 0; i < aggregates_size; ++i)
+			if (aggregate_columns[i])
+				aggregate_columns[i]->clear();
+
+		throw;
+	}
 
 	/// Изменяем размер столбцов-констант в блоке.
 	size_t columns = res.columns();
@@ -930,12 +948,40 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
 		thread_pool->wait();
 
 	BlocksList blocks;
+
+	/** Если был хотя бы один эксепшен, то следует "откатить" владение состояниями агрегатных функций в ColumnAggregateFunction-ах
+	  *  - то есть, очистить их (см. комментарий в функции prepareBlockAndFill.)
+	  */
+	std::exception_ptr first_exception;
 	for (auto & task : tasks)
-		blocks.emplace_back(task.get_future().get());
+	{
+		try
+		{
+			blocks.emplace_back(task.get_future().get());
+		}
+		catch (...)
+		{
+			if (!first_exception)
+				first_exception = std::current_exception();
+		}
+	}
+
+	if (first_exception)
+	{
+		for (auto & block : blocks)
+		{
+			for (size_t column_num = keys_size; column_num < keys_size + aggregates_size; ++column_num)
+			{
+				IColumn & col = *block.getByPosition(column_num).column;
+				if (ColumnAggregateFunction * col_aggregate = typeid_cast<ColumnAggregateFunction *>(&col))
+					col_aggregate->getData().clear();
+			}
+		}
+		std::rethrow_exception(first_exception);
+	}
 
 	return blocks;
 }
-
 
 
 BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, bool final, size_t max_threads)
@@ -952,33 +998,18 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
 
 	std::unique_ptr<boost::threadpool::pool> thread_pool;
 	if (max_threads > 1 && data_variants.size() > 100000	/// TODO Сделать настраиваемый порог.
-		&& data_variants.isTwoLevel())
+		&& data_variants.isTwoLevel())						/// TODO Использовать общий тред-пул с функцией merge.
 		thread_pool.reset(new boost::threadpool::pool(max_threads));
 
-	try
-	{
-		if (data_variants.type == AggregatedDataVariants::Type::without_key || overflow_row)
-			blocks = prepareBlocksAndFillWithoutKey(data_variants, final);
+	if (data_variants.type == AggregatedDataVariants::Type::without_key || overflow_row)
+		blocks = prepareBlocksAndFillWithoutKey(data_variants, final);
 
+	if (data_variants.type != AggregatedDataVariants::Type::without_key)
+	{
 		if (!data_variants.isTwoLevel())
 			blocks = prepareBlocksAndFillSingleLevel(data_variants, final);
 		else
 			blocks = prepareBlocksAndFillTwoLevel(data_variants, final, thread_pool.get());
-	}
-	catch (...)
-	{
-		/** Работа с состояниями агрегатных функций недостаточно exception-safe.
-		  * Если часть столбцов aggregate_columns была resize-на, но значения не были вставлены,
-		  *  то эти столбцы будут в некорректном состоянии
-		  *  (ColumnAggregateFunction попытаются в деструкторе вызвать деструкторы у элементов, которых нет),
-		  *  а также деструкторы будут вызываться у AggregatedDataVariants.
-		  * Поэтому, вручную "откатываем" их.
-		  */
-/*		for (size_t i = 0; i < aggregates_size; ++i)
-			if (aggregate_columns[i])
-				aggregate_columns[i]->clear();*/ // TODO
-
-		throw;
 	}
 
 	if (!final)
