@@ -23,7 +23,7 @@ public:
 		AggregateDescriptions & aggregates_, bool overflow_row_, bool final_, size_t max_threads_,
 		size_t max_rows_to_group_by_ = 0, OverflowMode group_by_overflow_mode_ = OverflowMode::THROW)
 		: aggregator(new Aggregator(keys_, aggregates_, overflow_row_, max_rows_to_group_by_, group_by_overflow_mode_)),
-		has_been_read(false), final(final_), max_threads(std::min(inputs.size(), max_threads_)),
+		final(final_), max_threads(std::min(inputs.size(), max_threads_)),
 		keys_size(keys_.size()), aggregates_size(aggregates_.size()),
 		handler(*this), processor(inputs, max_threads, handler)
 	{
@@ -35,7 +35,7 @@ public:
 	ParallelAggregatingBlockInputStream(BlockInputStreams inputs, const Names & key_names,
 		const AggregateDescriptions & aggregates,	bool overflow_row_, bool final_, size_t max_threads_,
 		size_t max_rows_to_group_by_ = 0, OverflowMode group_by_overflow_mode_ = OverflowMode::THROW)
-		: has_been_read(false), final(final_), max_threads(std::min(inputs.size(), max_threads_)),
+		: final(final_), max_threads(std::min(inputs.size(), max_threads_)),
 		keys_size(key_names.size()), aggregates_size(aggregates.size()),
 		handler(*this), processor(inputs, max_threads, handler)
 	{
@@ -76,65 +76,29 @@ public:
 protected:
 	Block readImpl() override
 	{
-		if (has_been_read)
-			return Block();
-
-		has_been_read = true;
-
-		many_data.resize(max_threads);
-		exceptions.resize(max_threads);
-
-		for (size_t i = 0; i < max_threads; ++i)
-			threads_data.emplace_back(keys_size, aggregates_size);
-
-		LOG_TRACE(log, "Aggregating");
-
-		Stopwatch watch;
-
-		for (auto & elem : many_data)
-			elem = new AggregatedDataVariants;
-
-		processor.process();
-		processor.wait();
-
-		rethrowFirstException(exceptions);
-
-		if (isCancelled())
-			return Block();
-
-		double elapsed_seconds = watch.elapsedSeconds();
-
-		size_t total_src_rows = 0;
-		size_t total_src_bytes = 0;
-		for (size_t i = 0; i < max_threads; ++i)
+		if (!executed)
 		{
-			size_t rows = many_data[i]->size();
-			LOG_TRACE(log, std::fixed << std::setprecision(3)
-				<< "Aggregated. " << threads_data[i].src_rows << " to " << rows << " rows"
-					<< " (from " << threads_data[i].src_bytes / 1048576.0 << " MiB)"
-				<< " in " << elapsed_seconds << " sec."
-				<< " (" << threads_data[i].src_rows / elapsed_seconds << " rows/sec., "
-					<< threads_data[i].src_bytes / elapsed_seconds / 1048576.0 << " MiB/sec.)");
+			executed = true;
+			AggregatedDataVariantsPtr data_variants = executeAndMerge();
 
-			total_src_rows += threads_data[i].src_rows;
-			total_src_bytes += threads_data[i].src_bytes;
+			if (data_variants)
+				blocks = aggregator->convertToBlocks(*data_variants, final, max_threads);
+
+			it = blocks.begin();
 		}
-		LOG_TRACE(log, std::fixed << std::setprecision(3)
-			<< "Total aggregated. " << total_src_rows << " rows (from " << total_src_bytes / 1048576.0 << " MiB)"
-			<< " in " << elapsed_seconds << " sec."
-			<< " (" << total_src_rows / elapsed_seconds << " rows/sec., " << total_src_bytes / elapsed_seconds / 1048576.0 << " MiB/sec.)");
 
-		AggregatedDataVariantsPtr res = aggregator->merge(many_data, max_threads);
+		Block res;
+		if (isCancelled() || it == blocks.end())
+			return res;
 
-		if (isCancelled())
-			return Block();
+		res = *it;
+		++it;
 
-		return aggregator->convertToBlock(*res, final);
+		return res;
 	}
 
 private:
 	SharedPtr<Aggregator> aggregator;
-	bool has_been_read;
 	bool final;
 	size_t max_threads;
 
@@ -147,6 +111,10 @@ private:
 	  *  ключам, которые уже успели попасть в набор.
 	  */
 	bool no_more_keys = false;
+
+	bool executed = false;
+	BlocksList blocks;
+	BlocksList::iterator it;
 
 	Logger * log = &Logger::get("ParallelAggregatingBlockInputStream");
 
@@ -205,6 +173,57 @@ private:
 	};
 
 	std::vector<ThreadData> threads_data;
+
+	AggregatedDataVariantsPtr executeAndMerge()
+	{
+		many_data.resize(max_threads);
+		exceptions.resize(max_threads);
+
+		for (size_t i = 0; i < max_threads; ++i)
+			threads_data.emplace_back(keys_size, aggregates_size);
+
+		LOG_TRACE(log, "Aggregating");
+
+		Stopwatch watch;
+
+		for (auto & elem : many_data)
+			elem = new AggregatedDataVariants;
+
+		processor.process();
+		processor.wait();
+
+		rethrowFirstException(exceptions);
+
+		if (isCancelled())
+			return nullptr;
+
+		double elapsed_seconds = watch.elapsedSeconds();
+
+		size_t total_src_rows = 0;
+		size_t total_src_bytes = 0;
+		for (size_t i = 0; i < max_threads; ++i)
+		{
+			size_t rows = many_data[i]->size();
+			LOG_TRACE(log, std::fixed << std::setprecision(3)
+				<< "Aggregated. " << threads_data[i].src_rows << " to " << rows << " rows"
+					<< " (from " << threads_data[i].src_bytes / 1048576.0 << " MiB)"
+				<< " in " << elapsed_seconds << " sec."
+				<< " (" << threads_data[i].src_rows / elapsed_seconds << " rows/sec., "
+					<< threads_data[i].src_bytes / elapsed_seconds / 1048576.0 << " MiB/sec.)");
+
+			total_src_rows += threads_data[i].src_rows;
+			total_src_bytes += threads_data[i].src_bytes;
+		}
+		LOG_TRACE(log, std::fixed << std::setprecision(3)
+			<< "Total aggregated. " << total_src_rows << " rows (from " << total_src_bytes / 1048576.0 << " MiB)"
+			<< " in " << elapsed_seconds << " sec."
+			<< " (" << total_src_rows / elapsed_seconds << " rows/sec., " << total_src_bytes / elapsed_seconds / 1048576.0 << " MiB/sec.)");
+
+		if (isCancelled())
+			return nullptr;
+
+		return aggregator->merge(many_data, max_threads);
+	}
 };
 
 }

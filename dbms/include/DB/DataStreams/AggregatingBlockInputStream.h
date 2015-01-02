@@ -21,7 +21,7 @@ public:
 	AggregatingBlockInputStream(BlockInputStreamPtr input_, const ColumnNumbers & keys_, AggregateDescriptions & aggregates_,
 		bool overflow_row_, bool final_, size_t max_rows_to_group_by_, OverflowMode group_by_overflow_mode_)
 		: aggregator(new Aggregator(keys_, aggregates_, overflow_row_, max_rows_to_group_by_, group_by_overflow_mode_)),
-		final(final_), has_been_read(false)
+		final(final_)
 	{
 		children.push_back(input_);
 	}
@@ -47,7 +47,10 @@ protected:
 
 	SharedPtr<Aggregator> aggregator;
 	bool final;
-	bool has_been_read;
+
+	bool executed = false;
+	BlocksList blocks;
+	BlocksList::iterator it;
 };
 
 }

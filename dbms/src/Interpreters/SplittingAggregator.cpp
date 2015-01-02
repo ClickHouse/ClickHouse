@@ -453,7 +453,15 @@ void SplittingAggregator::convertToBlockThread(
 
 	try
 	{
-		block = convertToBlock(data_variant, final);
+		BlocksList blocks = Aggregator::convertToBlocks(data_variant, final, 1);
+
+		if (blocks.empty())
+			return;
+
+		if (blocks.size() == 1)
+			block = blocks.front();
+
+		throw Exception("Logical error: two level aggregator used in splitting aggregator.", ErrorCodes::LOGICAL_ERROR);
 	}
 	catch (...)
 	{

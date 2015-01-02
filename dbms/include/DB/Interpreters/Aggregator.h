@@ -30,7 +30,7 @@ namespace DB
 /** Разные структуры данных, которые могут использоваться для агрегации
   * Для эффективности, сами данные для агрегации кладутся в пул.
   * Владение данными (состояний агрегатных функций) и пулом
-  *  захватывается позднее - в функции convertToBlock, объектом ColumnAggregateFunction.
+  *  захватывается позднее - в функции convertToBlocks, объектом ColumnAggregateFunction.
   *
   * Большинство структур данных существует в двух вариантах: обычном и двухуровневом (TwoLevel).
   * Двухуровневая хэш-таблица работает чуть медленнее при маленьком количестве различных ключей,
@@ -387,9 +387,10 @@ struct AggregatedDataVariants : private boost::noncopyable
 	/** Работа с состояниями агрегатных функций в пуле устроена следующим (неудобным) образом:
 	  * - при агрегации, состояния создаются в пуле с помощью функции IAggregateFunction::create (внутри - placement new произвольной структуры);
 	  * - они должны быть затем уничтожены с помощью IAggregateFunction::destroy (внутри - вызов деструктора произвольной структуры);
-	  * - если агрегация завершена, то, в функции Aggregator::convertToBlock, указатели на состояния агрегатных функций
+	  * - если агрегация завершена, то, в функции Aggregator::convertToBlocks, указатели на состояния агрегатных функций
 	  *   записываются в ColumnAggregateFunction; ColumnAggregateFunction "захватывает владение" ими, то есть - вызывает destroy в своём деструкторе.
-	  * - если при агрегации, до вызова Aggregator::convertToBlock вылетело исключение, то состояния агрегатных функций всё-равно должны быть уничтожены,
+	  * - если при агрегации, до вызова Aggregator::convertToBlocks вылетело исключение,
+	  *   то состояния агрегатных функций всё-равно должны быть уничтожены,
 	  *   иначе для сложных состояний (наприемер, AggregateFunctionUniq), будут утечки памяти;
 	  * - чтобы, в этом случае, уничтожить состояния, в деструкторе вызывается метод Aggregator::destroyAggregateStates,
 	  *   но только если переменная aggregator (см. ниже) не nullptr;
@@ -430,7 +431,7 @@ struct AggregatedDataVariants : private boost::noncopyable
 	std::unique_ptr<AggregationMethodKeys128<AggregatedDataWithKeys128TwoLevel>> 				keys128_two_level;
 	std::unique_ptr<AggregationMethodHashed<AggregatedDataHashedTwoLevel>> 						hashed_two_level;
 
-	#define APPLY_FOR_AGGREGATED_VARIANT(M) \
+	#define APPLY_FOR_AGGREGATED_VARIANTS(M) \
 		M(key8,					false) \
 		M(key16,				false) \
 		M(key32,				false) \
@@ -452,7 +453,7 @@ struct AggregatedDataVariants : private boost::noncopyable
 		without_key,
 
 	#define M(NAME, IS_TWO_LEVEL) NAME,
-		APPLY_FOR_AGGREGATED_VARIANT(M)
+		APPLY_FOR_AGGREGATED_VARIANTS(M)
 	#undef M
 	};
 	Type type = Type::EMPTY;
@@ -473,7 +474,7 @@ struct AggregatedDataVariants : private boost::noncopyable
 
 		#define M(NAME, IS_TWO_LEVEL) \
 			case Type::NAME: NAME.reset(new decltype(NAME)::element_type); break;
-			APPLY_FOR_AGGREGATED_VARIANT(M)
+			APPLY_FOR_AGGREGATED_VARIANTS(M)
 		#undef M
 
 			default:
@@ -490,7 +491,7 @@ struct AggregatedDataVariants : private boost::noncopyable
 
 		#define M(NAME, IS_TWO_LEVEL) \
 			case Type::NAME: return NAME->data.size() + (without_key != nullptr);
-			APPLY_FOR_AGGREGATED_VARIANT(M)
+			APPLY_FOR_AGGREGATED_VARIANTS(M)
 		#undef M
 
 			default:
@@ -507,7 +508,7 @@ struct AggregatedDataVariants : private boost::noncopyable
 
 		#define M(NAME, IS_TWO_LEVEL) \
 			case Type::NAME: return #NAME;
-			APPLY_FOR_AGGREGATED_VARIANT(M)
+			APPLY_FOR_AGGREGATED_VARIANTS(M)
 		#undef M
 
 			default:
@@ -524,7 +525,7 @@ struct AggregatedDataVariants : private boost::noncopyable
 
 		#define M(NAME, IS_TWO_LEVEL) \
 			case Type::NAME: return IS_TWO_LEVEL;
-			APPLY_FOR_AGGREGATED_VARIANT(M)
+			APPLY_FOR_AGGREGATED_VARIANTS(M)
 		#undef M
 
 			default:
@@ -556,6 +557,14 @@ struct AggregatedDataVariants : private boost::noncopyable
 	}
 
 	void convertToTwoLevel();
+
+	#define APPLY_FOR_VARIANTS_TWO_LEVEL(M) \
+			M(key32_two_level)				\
+			M(key64_two_level)				\
+			M(key_string_two_level)			\
+			M(key_fixed_string_two_level)	\
+			M(keys128_two_level)			\
+			M(hashed_two_level)
 };
 
 typedef SharedPtr<AggregatedDataVariants> AggregatedDataVariantsPtr;
@@ -568,7 +577,7 @@ template <typename Method> Method & getDataVariant(AggregatedDataVariants & vari
 #define M(NAME, IS_TWO_LEVEL) \
 	template <> inline decltype(AggregatedDataVariants::NAME)::element_type & getDataVariant<decltype(AggregatedDataVariants::NAME)::element_type>(AggregatedDataVariants & variants) { return *variants.NAME; }
 
-APPLY_FOR_AGGREGATED_VARIANT(M)
+APPLY_FOR_AGGREGATED_VARIANTS(M)
 
 #undef M
 
@@ -621,10 +630,11 @@ public:
 	  *  которые могут быть затем объединены с другими состояниями (для распределённой обработки запроса).
 	  * Если final = true, то в качестве столбцов-агрегатов создаются столбцы с готовыми значениями.
 	  */
-	Block convertToBlock(AggregatedDataVariants & data_variants, bool final);
+	BlocksList convertToBlocks(AggregatedDataVariants & data_variants, bool final, size_t max_threads);
 
 	/** Объединить несколько структур данных агрегации в одну. (В первый непустой элемент массива.) Все варианты агрегации должны быть одинаковыми!
-	  * После объединения, все стркутуры агрегации (а не только те, в которую они будут слиты) должны жить, пока не будет вызвана функция convertToBlock.
+	  * После объединения, все стркутуры агрегации (а не только те, в которую они будут слиты) должны жить,
+	  *  пока не будет вызвана функция convertToBlocks.
 	  * Это нужно, так как в слитом результате могут остаться указатели на память в пуле, которым владеют другие структуры агрегации.
 	  */
 	AggregatedDataVariantsPtr merge(ManyAggregatedDataVariants & data_variants, size_t max_threads);
@@ -737,24 +747,23 @@ protected:
 		const Sizes & key_sizes,
 		StringRefs & keys) const;
 
-	template <typename Method>
-	void convertToBlockImpl(
-		Method & method,
-		ColumnPlainPtrs & key_columns,
-		AggregateColumnsData & aggregate_columns,
-		ColumnPlainPtrs & final_aggregate_columns,
-		const Sizes & key_sizes,
-		size_t start_row, bool final) const;
-
 	template <typename Method, typename Table>
-	void convertToBlockImplFinal(
+	void convertToBlockImpl(
 		Method & method,
 		Table & data,
 		ColumnPlainPtrs & key_columns,
 		AggregateColumnsData & aggregate_columns,
 		ColumnPlainPtrs & final_aggregate_columns,
 		const Sizes & key_sizes,
-		size_t start_row) const;
+		bool final) const;
+
+	template <typename Method, typename Table>
+	void convertToBlockImplFinal(
+		Method & method,
+		Table & data,
+		ColumnPlainPtrs & key_columns,
+		ColumnPlainPtrs & final_aggregate_columns,
+		const Sizes & key_sizes) const;
 
 	template <typename Method, typename Table>
 	void convertToBlockImplNotFinal(
@@ -762,9 +771,25 @@ protected:
 		Table & data,
 		ColumnPlainPtrs & key_columns,
 		AggregateColumnsData & aggregate_columns,
-		ColumnPlainPtrs & final_aggregate_columns,
-		const Sizes & key_sizes,
-		size_t start_row) const;
+		const Sizes & key_sizes) const;
+
+	template <typename Filler>
+	Block prepareBlockAndFill(
+		AggregatedDataVariants & data_variants,
+		bool final,
+		size_t rows,
+		Filler && filler) const;
+
+	BlocksList prepareBlocksAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final) const;
+	BlocksList prepareBlocksAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final) const;
+	BlocksList prepareBlocksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final, boost::threadpool::pool * thread_pool) const;
+
+	template <typename Method>
+	BlocksList prepareBlocksAndFillTwoLevelImpl(
+		AggregatedDataVariants & data_variants,
+		Method & method,
+		bool final,
+		boost::threadpool::pool * thread_pool) const;
 
 	template <typename Method>
 	void destroyImpl(
