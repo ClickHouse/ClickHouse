@@ -73,7 +73,7 @@ void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_, const NamesAn
 	{
 		if (table_column_names.empty())
 		{
-			/// Оптимизация: мы считаем, что запрос содержит только один SELECT, даже если это может быть 
+			/// Оптимизация: мы считаем, что запрос содержит только один SELECT, даже если это может быть
 			/// в самом деле цепочкой UNION ALL. Первый запрос достаточен для определения нужных столбцов.
 			context.setColumns(InterpreterSelectQuery(query.table, context, to_stage, subquery_depth, nullptr, false).getSampleBlock().getColumnsList());
 		}
@@ -121,7 +121,7 @@ void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_, const NamesAn
 	if (isFirstSelectInsideUnionAll())
 	{
 		/// Создаем цепочку запросов SELECT и проверяем, что результаты всех запросов SELECT cовместимые.
-		/// NOTE Мы можем безопасно применить static_cast вместо typeid_cast, 
+		/// NOTE Мы можем безопасно применить static_cast вместо typeid_cast,
 		/// потому что знаем, что в цепочке UNION ALL имеются только деревья типа SELECT.
 		InterpreterSelectQuery * interpreter = this;
 		Block first = interpreter->getSampleBlock();
@@ -132,7 +132,7 @@ void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_, const NamesAn
 			Block current = interpreter->getSampleBlock();
 			if (!blocksHaveEqualStructure(first, current))
 				throw Exception("Result structures mismatch in the SELECT queries of the UNION ALL chain. Found result structure:\n\n" + current.dumpStructure()
-				+ "\n\nwhile expecting:\n\n" + first.dumpStructure() + "\n\ninstead", 
+				+ "\n\nwhile expecting:\n\n" + first.dumpStructure() + "\n\ninstead",
 				ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH);
 		}
 	}
@@ -173,7 +173,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context 
 	context(context_), settings(context.getSettings()), to_stage(to_stage_), subquery_depth(subquery_depth_),
 	is_union_all_head(true),
 	log(&Logger::get("InterpreterSelectQuery"))
-{	
+{
 	init(input_, required_column_names_, table_column_names);
 }
 
@@ -189,7 +189,7 @@ bool InterpreterSelectQuery::hasAsterisk() const
 			if (next_query.hasAsterisk())
 				return true;
 		}
-	
+
 	return false;
 }
 
@@ -207,7 +207,7 @@ void InterpreterSelectQuery::rewriteExpressionList(const Names & required_column
 {
 	if (query.distinct)
 		return;
-	
+
 	if (isFirstSelectInsideUnionAll())
 		for (IAST * tree = query.next_union_all.get(); tree != nullptr; tree = static_cast<ASTSelectQuery *>(tree)->next_union_all.get())
 		{
@@ -215,9 +215,9 @@ void InterpreterSelectQuery::rewriteExpressionList(const Names & required_column
 			if (next_query.distinct)
 				return;
 		}
-	
+
 	query.rewriteSelectExpressionList(required_column_names);
-	
+
 	if (isFirstSelectInsideUnionAll())
 		for (IAST * tree = query.next_union_all.get(); tree != nullptr; tree = static_cast<ASTSelectQuery *>(tree)->next_union_all.get())
 		{
@@ -293,12 +293,12 @@ static inline BlockInputStreamPtr maybeAsynchronous(BlockInputStreamPtr in, bool
 BlockInputStreamPtr InterpreterSelectQuery::execute()
 {
 	(void) executeWithoutUnion();
-	
+
 	if (streams.empty())
 		return new NullBlockInputStream;
-	
+
 	executeUnion(streams);
-	
+
 	/// Ограничения на результат, квота на результат, а также колбек для прогресса.
 	if (IProfilingBlockInputStream * stream = dynamic_cast<IProfilingBlockInputStream *>(&*streams[0]))
 	{
@@ -318,7 +318,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 			stream->setQuota(context.getQuota());
 		}
 	}
-	
+
 	return streams[0];
 }
 
@@ -333,13 +333,13 @@ const BlockInputStreams & InterpreterSelectQuery::executeWithoutUnion()
 			const auto & others = p->streams;
 			streams.insert(streams.end(), others.begin(), others.end());
 		}
-		
+
 		for (auto & stream : streams)
 			stream = new MaterializingBlockInputStream(stream);
 	}
 	else
 		executeSingleQuery();
-	
+
 	return streams;
 }
 
@@ -353,12 +353,12 @@ void InterpreterSelectQuery::executeSingleQuery()
 	 *  Если есть GROUP BY, то выполним все операции до GROUP BY, включительно, параллельно;
 	 *  параллельный GROUP BY склеит потоки в один,
 	 *  затем выполним остальные операции с одним получившимся потоком.
-	 *  Если запрос является членом цепочки UNION ALL и не содержит GROUP BY, ORDER BY, DISTINCT, или LIMIT, 
+	 *  Если запрос является членом цепочки UNION ALL и не содержит GROUP BY, ORDER BY, DISTINCT, или LIMIT,
 	 *  то объединение источников данных выполняется не на этом уровне, а на верхнем уровне.
 	 */
 
 	bool do_execute_union = false;
-	
+
 	/** Вынем данные из Storage. from_stage - до какой стадии запрос был выполнен в Storage. */
 	QueryProcessingStage::Enum from_stage = executeFetchColumns(streams);
 
@@ -370,7 +370,7 @@ void InterpreterSelectQuery::executeSingleQuery()
 		bool need_aggregate = false;
 		bool has_having     = false;
 		bool has_order_by   = false;
-		
+
 		ExpressionActionsPtr array_join;
 		ExpressionActionsPtr before_where;
 		ExpressionActionsPtr before_aggregation;
@@ -466,10 +466,10 @@ void InterpreterSelectQuery::executeSingleQuery()
 			to_stage > QueryProcessingStage::WithMergeableState &&
 			!query.group_by_with_totals;
 
-				
+
 		if (need_aggregate || has_order_by)
 			do_execute_union = true;
-		
+
 		if (first_stage)
 		{
 			if (has_where)
@@ -495,7 +495,7 @@ void InterpreterSelectQuery::executeSingleQuery()
 				do_execute_union = true;
 			}
 		}
-		
+
 		if (second_stage)
 		{
 			bool need_second_distinct_pass = true;
@@ -540,13 +540,13 @@ void InterpreterSelectQuery::executeSingleQuery()
 				executePreLimit(streams);
 				do_execute_union = true;
 			}
-			
+
 			if (need_second_distinct_pass)
 				do_execute_union = true;
-			
+
 			if (do_execute_union)
 				executeUnion(streams);
-			
+
 			/// Если было более одного источника - то нужно выполнить DISTINCT ещё раз после их слияния.
 			if (need_second_distinct_pass)
 				executeDistinct(streams, false, Names());
@@ -589,7 +589,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	Names required_columns = query_analyzer->getRequiredColumns();
 
 	if (query.table && typeid_cast<ASTSelectQuery *>(&*query.table))
-	{	
+	{
 		/** Для подзапроса не действуют ограничения на максимальный размер результата.
 		 *  Так как результат поздапроса - ещё не результат всего запроса.
 		 */
@@ -785,7 +785,7 @@ void InterpreterSelectQuery::executeMergeAggregated(BlockInputStreams & streams,
 {
 	/// Если объединять нечего
 	if (streams.size() == 1)
-			return;
+		return;
 
 	/// Склеим несколько источников в один
 	streams[0] = new UnionBlockInputStream(streams, settings.max_threads);
@@ -795,7 +795,7 @@ void InterpreterSelectQuery::executeMergeAggregated(BlockInputStreams & streams,
 	Names key_names;
 	AggregateDescriptions aggregates;
 	query_analyzer->getAggregateInfo(key_names, aggregates);
-	streams[0] = maybeAsynchronous(new MergingAggregatedBlockInputStream(streams[0], key_names, aggregates, overflow_row, final), settings.asynchronous);
+	streams[0] = maybeAsynchronous(new MergingAggregatedBlockInputStream(streams[0], key_names, aggregates, overflow_row, final, settings.max_threads), settings.asynchronous);
 }
 
 

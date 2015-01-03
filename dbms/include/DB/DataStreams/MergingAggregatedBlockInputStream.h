@@ -17,15 +17,15 @@ class MergingAggregatedBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	MergingAggregatedBlockInputStream(BlockInputStreamPtr input_, const ColumnNumbers & keys_,
-		const AggregateDescriptions & aggregates_, bool overflow_row_, bool final_)
-		: aggregator(new Aggregator(keys_, aggregates_, overflow_row_)), final(final_)
+		const AggregateDescriptions & aggregates_, bool overflow_row_, bool final_, size_t max_threads_)
+		: aggregator(new Aggregator(keys_, aggregates_, overflow_row_)), final(final_), max_threads(max_threads_)
 	{
 		children.push_back(input_);
 	}
 
 	MergingAggregatedBlockInputStream(BlockInputStreamPtr input_, const Names & keys_names_,
-		const AggregateDescriptions & aggregates_, bool overflow_row_, bool final_)
-		: aggregator(new Aggregator(keys_names_, aggregates_, overflow_row_)), final(final_)
+		const AggregateDescriptions & aggregates_, bool overflow_row_, bool final_, size_t max_threads_)
+		: aggregator(new Aggregator(keys_names_, aggregates_, overflow_row_)), final(final_), max_threads(max_threads_)
 	{
 		children.push_back(input_);
 	}
@@ -45,6 +45,7 @@ protected:
 private:
 	SharedPtr<Aggregator> aggregator;
 	bool final;
+	size_t max_threads;
 
 	bool executed = false;
 	BlocksList blocks;

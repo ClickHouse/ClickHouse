@@ -12,13 +12,18 @@ namespace DB
 class NativeBlockOutputStream : public IBlockOutputStream
 {
 public:
-	NativeBlockOutputStream(WriteBuffer & ostr_) : ostr(ostr_) {}
+	/** В случае указания ненулевой client_revision, может записываться дополнительная информация о блоке,
+	  *  в зависимости от поддерживаемой для указанной ревизии.
+	  */
+	NativeBlockOutputStream(WriteBuffer & ostr_, UInt64 client_revision_ = 0)
+		: ostr(ostr_), client_revision(client_revision_) {}
 
 	void write(const Block & block) override;
 	void flush() override { ostr.next(); }
 
 private:
 	WriteBuffer & ostr;
+	UInt64 client_revision;
 };
 
 }

@@ -632,7 +632,7 @@ public:
 	  */
 	BlocksList convertToBlocks(AggregatedDataVariants & data_variants, bool final, size_t max_threads);
 
-	/** Объединить несколько структур данных агрегации в одну. (В первый непустой элемент массива.) Все варианты агрегации должны быть одинаковыми!
+	/** Объединить несколько структур данных агрегации в одну. (В первый непустой элемент массива.)
 	  * После объединения, все стркутуры агрегации (а не только те, в которую они будут слиты) должны жить,
 	  *  пока не будет вызвана функция convertToBlocks.
 	  * Это нужно, так как в слитом результате могут остаться указатели на память в пуле, которым владеют другие структуры агрегации.
@@ -641,9 +641,8 @@ public:
 
 	/** Объединить несколько агрегированных блоков в одну структуру данных.
 	  * (Доагрегировать несколько блоков, которые представляют собой результат независимых агрегаций с удалённых серверов.)
-	  * Если overflow_row = true, то предполагается, что агрегаты для строк, не попавших в max_rows_to_group_by, расположены в первой строке каждого блока.
 	  */
-	void merge(BlockInputStreamPtr stream, AggregatedDataVariants & result);
+	void merge(BlockInputStreamPtr stream, AggregatedDataVariants & result, size_t max_threads);
 
 	/// Для IBlockInputStream.
 	String getID() const;
@@ -740,7 +739,6 @@ protected:
 	void mergeStreamsImpl(
 		Method & method,
 		Arena * aggregates_pool,
-		size_t start_row,
 		size_t rows,
 		ConstColumnPlainPtrs & key_columns,
 		AggregateColumnsData & aggregate_columns,

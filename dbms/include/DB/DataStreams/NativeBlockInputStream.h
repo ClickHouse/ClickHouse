@@ -13,8 +13,11 @@ namespace DB
 class NativeBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	NativeBlockInputStream(ReadBuffer & istr_, const DataTypeFactory & data_type_factory_)
-		: istr(istr_), data_type_factory(data_type_factory_) {}
+	/** В случае указания ненулевой server_revision, может ожидаться и считываться дополнительная информация о блоке,
+	  * в зависимости от поддерживаемой для указанной ревизии.
+	  */
+	NativeBlockInputStream(ReadBuffer & istr_, const DataTypeFactory & data_type_factory_, UInt64 server_revision_ = 0)
+		: istr(istr_), data_type_factory(data_type_factory_), server_revision(server_revision_) {}
 
 	String getName() const override { return "NativeBlockInputStream"; }
 
@@ -31,6 +34,7 @@ protected:
 private:
 	ReadBuffer & istr;
 	const DataTypeFactory & data_type_factory;
+	UInt64 server_revision;
 };
 
 }

@@ -56,8 +56,8 @@ Block TotalsHavingBlockInputStream::readImpl()
 	{
 		block = children[0]->read();
 
-		/// В этом случае, первый блок - блок со значениями, не вошедшими в max_rows_to_group_by. Отложим его.
-		if (overflow_row && !overflow_aggregates && block)
+		/// Блок со значениями, не вошедшими в max_rows_to_group_by. Отложим его.
+		if (overflow_row && block && block.info.is_overflows)
 		{
 			overflow_aggregates = block;
 			continue;

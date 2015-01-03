@@ -72,6 +72,10 @@ Block NativeBlockInputStream::readImpl()
 	if (istr.eof())
 		return res;
 
+	/// Дополнительная информация о блоке.
+	if (server_revision >= DBMS_MIN_REVISION_WITH_BLOCK_INFO)
+		res.info.read(istr);
+
 	/// Размеры
 	size_t columns = 0;
 	size_t rows = 0;

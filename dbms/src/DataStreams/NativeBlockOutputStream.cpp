@@ -49,6 +49,10 @@ static void writeData(const IDataType & type, const IColumn & column, WriteBuffe
 
 void NativeBlockOutputStream::write(const Block & block)
 {
+	/// Дополнительная информация о блоке.
+	if (client_revision >= DBMS_MIN_REVISION_WITH_BLOCK_INFO)
+		block.info.write(ostr);
+
 	/// Размеры
 	size_t columns = block.columns();
 	size_t rows = block.rows();

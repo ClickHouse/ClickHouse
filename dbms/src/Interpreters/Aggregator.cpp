@@ -432,7 +432,6 @@ template <typename Method>
 void NO_INLINE Aggregator::mergeStreamsImpl(
 	Method & method,
 	Arena * aggregates_pool,
-	size_t start_row,
 	size_t rows,
 	ConstColumnPlainPtrs & key_columns,
 	AggregateColumnsData & aggregate_columns,
@@ -442,7 +441,7 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
 	method.init(key_columns);
 
 	/// Для всех строчек.
-	for (size_t i = start_row; i < rows; ++i)
+	for (size_t i = 0; i < rows; ++i)
 	{
 		typename Method::iterator it;
 		bool inserted;			/// Вставили новый ключ, или такой ключ уже был?
@@ -523,22 +522,6 @@ void NO_INLINE Aggregator::convertToBlockImplNotFinal(
 			(*aggregate_columns[i])[j] = Method::getAggregateData(it->second) + offsets_of_aggregate_states[i];
 	}
 }
-
-/*template <typename Method>
-void Aggregator::convertToBlocksTwoLevelImpl(
-	Method & method,
-	ColumnPlainPtrs & key_columns,
-	AggregateColumnsData & aggregate_columns,
-	ColumnPlainPtrs & final_aggregate_columns,
-	const Sizes & key_sizes,
-	size_t start_row,
-	bool final) const
-{
-	if (final)
-		convertToBlockImplFinal(method, data, key_columns, aggregate_columns, final_aggregate_columns, key_sizes, start_row);
-	else
-		convertToBlockImplNotFinal(method, data, key_columns, aggregate_columns, final_aggregate_columns, key_sizes, start_row);
-}*/
 
 
 template <typename Method>
@@ -838,8 +821,12 @@ BlocksList Aggregator::prepareBlocksAndFillWithoutKey(AggregatedDataVariants & d
 		}
 	};
 
+	Block block = prepareBlockAndFill(data_variants, final, rows, filler);
+	if (overflow_row)
+		block.info.is_overflows = true;
+
 	BlocksList blocks;
-	blocks.emplace_back(prepareBlockAndFill(data_variants, final, rows, filler));
+	blocks.emplace_back(std::move(block));
 	return blocks;
 }
 
@@ -909,7 +896,7 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
 	{
 		current_memory_tracker = memory_tracker;
 
-		return prepareBlockAndFill(data_variants, final, method.data.impls[bucket].size(),
+		Block block = prepareBlockAndFill(data_variants, final, method.data.impls[bucket].size(),
 			[bucket, &filler] (
 				ColumnPlainPtrs & key_columns,
 				AggregateColumnsData & aggregate_columns,
@@ -919,6 +906,9 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
 			{
 				filler(key_columns, aggregate_columns, final_aggregate_columns, key_sizes, final, bucket);
 			});
+
+		block.info.bucket_num = bucket;
+		return block;
 	};
 
 	/// packaged_task используются, чтобы исключения автоматически прокидывались в основной поток.
@@ -995,11 +985,6 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
 	if (max_threads > 1 && data_variants.size() > 100000	/// TODO Сделать настраиваемый порог.
 		&& data_variants.isTwoLevel())						/// TODO Использовать общий тред-пул с функцией merge.
 		thread_pool.reset(new boost::threadpool::pool(max_threads));
-
-	/** Если требуется выдать overflow_row
-	  * (то есть, блок со значениями, не поместившимися в max_rows_to_group_by),
-	  *  то этот блок должен идти первым (на это рассчитывает TotalsHavingBlockInputStream).
-	  */
 
 	if (data_variants.type == AggregatedDataVariants::Type::without_key || overflow_row)
 		blocks.splice(blocks.end(), prepareBlocksAndFillWithoutKey(data_variants, final));
@@ -1145,7 +1130,7 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 }
 
 
-void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & result)
+void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & result, size_t max_threads)
 {
 	StringRefs key(keys_size);
 	ConstColumnPlainPtrs key_columns(keys_size);
@@ -1158,7 +1143,15 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 	/// result будет уничтожать состояния агрегатных функций в деструкторе
 	result.aggregator = this;
 
-	/// Читаем все данные
+	/** Если на удалённых серверах использовался двухуровневый метод агрегации,
+	  *  то в блоках будет расположена информация о номере корзины.
+	  * Тогда вычисления можно будет распараллелить по корзинам.
+	  * Разложим блоки по указанным в них номерам корзин.
+	  */
+	using BucketToBlocks = std::map<Int32, BlocksList>;
+	BucketToBlocks bucket_to_blocks;
+
+	/// Читаем все данные. TODO memory-savvy режим, при котором в один момент времени обрабатывается только одна корзина.
 	while (Block block = stream->read())
 	{
 		LOG_TRACE(log, "Merging aggregated block");
@@ -1187,7 +1180,7 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 			result.key_sizes = key_sizes;
 		}
 
-		if (result.type == AggregatedDataVariants::Type::without_key || overflow_row)
+		if (result.type == AggregatedDataVariants::Type::without_key || block.info.is_overflows)
 		{
 			AggregatedDataWithoutKey & res = result.without_key;
 			if (!res)
@@ -1201,11 +1194,9 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 				aggregate_functions[i]->merge(res + offsets_of_aggregate_states[i], (*aggregate_columns[i])[0]);
 		}
 
-		size_t start_row = overflow_row ? 1 : 0;
-
 	#define M(NAME, IS_TWO_LEVEL) \
 		else if (result.type == AggregatedDataVariants::Type::NAME) \
-			mergeStreamsImpl(*result.NAME, result.aggregates_pool, start_row, rows, key_columns, aggregate_columns, key_sizes, key);
+			mergeStreamsImpl(*result.NAME, result.aggregates_pool, rows, key_columns, aggregate_columns, key_sizes, key);
 
 		if (false) {}
 		APPLY_FOR_AGGREGATED_VARIANTS(M)
