@@ -58,14 +58,14 @@ public:
 		size_t subquery_depth_ = 0,
 		BlockInputStreamPtr input = nullptr);
 
-	/** Выполнить запрос, возможно являющиийся цепочкой UNION ALL. 
+	/** Выполнить запрос, возможно являющиийся цепочкой UNION ALL.
 	 *  Получить поток блоков для чтения
 	 */
 	BlockInputStreamPtr execute();
 
 	/// Выполнить запрос без объединения потоков.
 	const BlockInputStreams & executeWithoutUnion();
-	
+
 	/** Выполнить запрос, записать результат в нужном формате в buf.
 	 * BlockInputStreamPtr возвращается, чтобы можно было потом получить информацию о плане выполнения запроса.
 	 */
@@ -80,7 +80,7 @@ private:
 	void init(BlockInputStreamPtr input, const Names & required_column_names = Names(), const NamesAndTypesList & table_column_names = NamesAndTypesList());
 	void basicInit(BlockInputStreamPtr input, const NamesAndTypesList & table_column_names);
 	void initQueryAnalyzer();
-	
+
 	/// Выполнить один запрос SELECT из цепочки UNION ALL.
 	void executeSingleQuery();
 
@@ -95,7 +95,7 @@ private:
 
 	// Переименовать столбцы каждого запроса цепочки UNION ALL в такие же имена, как в первом запросе.
 	void renameColumns();
-	
+
 	/// Является ли это первым запросом цепочки UNION ALL имеющей длниу >= 2.
 	bool isFirstSelectInsideUnionAll() const;
 
@@ -132,19 +132,20 @@ private:
 	ASTSelectQuery & query;
 	Context context;
 	Settings settings;
+	size_t original_max_threads; /// В settings настройка max_threads может быть изменена. В original_max_threads сохраняется изначальное значение.
 	QueryProcessingStage::Enum to_stage;
 	size_t subquery_depth;
 	ExpressionAnalyzerPtr query_analyzer;
 	BlockInputStreams streams;
-	
-	/** Цепочка UNION ALL может иметь длину 1 (в таком случае имеется просто один запрос SELECT) 
+
+	/** Цепочка UNION ALL может иметь длину 1 (в таком случае имеется просто один запрос SELECT)
 	 * или больше. Этот флаг установлен, если это первый запрос, возможно единственный, этой цепочки.
 	 */
 	bool is_union_all_head;
 
 	/// Следующий запрос SELECT в цепочке UNION ALL.
 	std::unique_ptr<InterpreterSelectQuery> next_select_in_union_all;
-	
+
 	/// Таблица, откуда читать данные, если не подзапрос.
 	StoragePtr storage;
 	IStorage::TableStructureReadLockPtr table_lock;

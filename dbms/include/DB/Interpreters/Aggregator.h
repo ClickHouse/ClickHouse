@@ -131,31 +131,35 @@ struct AggregationMethodOneNumber
 
 	Data data;
 
-	const FieldType * column;
-
 	AggregationMethodOneNumber() {}
 
 	template <typename Other>
 	AggregationMethodOneNumber(const Other & other) : data(other.data) {}
 
-	/** Вызывается в начале обработки каждого блока.
-	  * Устанавливает переменные, необходимые для остальных методов, вызываемых во внутренних циклах.
-	  */
-	void init(ConstColumnPlainPtrs & key_columns)
+	/// Для использования одного Method в разных потоках, используйте разные State.
+	struct State
 	{
-		column = &static_cast<const ColumnVector<FieldType> *>(key_columns[0])->getData()[0];
-	}
+		const FieldType * vec;
 
-	/// Достать из ключевых столбцов ключ для вставки в хэш-таблицу.
-	Key getKey(
-		const ConstColumnPlainPtrs & key_columns,	/// Ключевые столбцы.
-		size_t keys_size,							/// Количество ключевых столбцов.
-		size_t i,					/// Из какой строки блока достать ключ.
-		const Sizes & key_sizes,	/// Если ключи фиксированной длины - их длины. Не используется в методах агрегации по ключам переменной длины.
-		StringRefs & keys) const	/// Сюда могут быть записаны ссылки на данные ключей в столбцах. Они могут быть использованы в дальнейшем.
-	{
-		return unionCastToUInt64(column[i]);
-	}
+		/** Вызывается в начале обработки каждого блока.
+		  * Устанавливает переменные, необходимые для остальных методов, вызываемых во внутренних циклах.
+		  */
+		void init(ConstColumnPlainPtrs & key_columns)
+		{
+			vec = &static_cast<const ColumnVector<FieldType> *>(key_columns[0])->getData()[0];
+		}
+
+		/// Достать из ключевых столбцов ключ для вставки в хэш-таблицу.
+		Key getKey(
+			const ConstColumnPlainPtrs & key_columns,	/// Ключевые столбцы.
+			size_t keys_size,							/// Количество ключевых столбцов.
+			size_t i,					/// Из какой строки блока достать ключ.
+			const Sizes & key_sizes,	/// Если ключи фиксированной длины - их длины. Не используется в методах агрегации по ключам переменной длины.
+			StringRefs & keys) const	/// Сюда могут быть записаны ссылки на данные ключей в столбцах. Они могут быть использованы в дальнейшем.
+		{
+			return unionCastToUInt64(vec[i]);
+		}
+	};
 
 	/// Из значения в хэш-таблице получить AggregateDataPtr.
 	static AggregateDataPtr & getAggregateData(Mapped & value) 				{ return value; }
@@ -188,31 +192,36 @@ struct AggregationMethodString
 
 	Data data;
 
-	const ColumnString::Offsets_t * offsets;
-	const ColumnString::Chars_t * chars;
-
 	AggregationMethodString() {}
 
 	template <typename Other>
 	AggregationMethodString(const Other & other) : data(other.data) {}
 
-	void init(ConstColumnPlainPtrs & key_columns)
+	struct State
 	{
-		const IColumn & column = *key_columns[0];
-		const ColumnString & column_string = static_cast<const ColumnString &>(column);
-		offsets = &column_string.getOffsets();
-		chars = &column_string.getChars();
-	}
+		const ColumnString::Offsets_t * offsets;
+		const ColumnString::Chars_t * chars;
 
-	Key getKey(
-		const ConstColumnPlainPtrs & key_columns,
-		size_t keys_size,
-		size_t i,
-		const Sizes & key_sizes,
-		StringRefs & keys) const
-	{
-		return StringRef(&(*chars)[i == 0 ? 0 : (*offsets)[i - 1]], (i == 0 ? (*offsets)[i] : ((*offsets)[i] - (*offsets)[i - 1])) - 1);
-	}
+		void init(ConstColumnPlainPtrs & key_columns)
+		{
+			const IColumn & column = *key_columns[0];
+			const ColumnString & column_string = static_cast<const ColumnString &>(column);
+			offsets = &column_string.getOffsets();
+			chars = &column_string.getChars();
+		}
+
+		Key getKey(
+			const ConstColumnPlainPtrs & key_columns,
+			size_t keys_size,
+			size_t i,
+			const Sizes & key_sizes,
+			StringRefs & keys) const
+		{
+			return StringRef(
+				&(*chars)[i == 0 ? 0 : (*offsets)[i - 1]],
+				(i == 0 ? (*offsets)[i] : ((*offsets)[i] - (*offsets)[i - 1])) - 1);
+		}
+	};
 
 	static AggregateDataPtr & getAggregateData(Mapped & value) 				{ return value; }
 	static const AggregateDataPtr & getAggregateData(const Mapped & value) 	{ return value; }
@@ -241,31 +250,34 @@ struct AggregationMethodFixedString
 
 	Data data;
 
-	size_t n;
-	const ColumnFixedString::Chars_t * chars;
-
 	AggregationMethodFixedString() {}
 
 	template <typename Other>
 	AggregationMethodFixedString(const Other & other) : data(other.data) {}
 
-	void init(ConstColumnPlainPtrs & key_columns)
+	struct State
 	{
-		const IColumn & column = *key_columns[0];
-		const ColumnFixedString & column_string = static_cast<const ColumnFixedString &>(column);
-		n = column_string.getN();
-		chars = &column_string.getChars();
-	}
+		size_t n;
+		const ColumnFixedString::Chars_t * chars;
 
-	Key getKey(
-		const ConstColumnPlainPtrs & key_columns,
-		size_t keys_size,
-		size_t i,
-		const Sizes & key_sizes,
-		StringRefs & keys) const
-	{
-		return StringRef(&(*chars)[i * n], n);
-	}
+		void init(ConstColumnPlainPtrs & key_columns)
+		{
+			const IColumn & column = *key_columns[0];
+			const ColumnFixedString & column_string = static_cast<const ColumnFixedString &>(column);
+			n = column_string.getN();
+			chars = &column_string.getChars();
+		}
+
+		Key getKey(
+			const ConstColumnPlainPtrs & key_columns,
+			size_t keys_size,
+			size_t i,
+			const Sizes & key_sizes,
+			StringRefs & keys) const
+		{
+			return StringRef(&(*chars)[i * n], n);
+		}
+	};
 
 	static AggregateDataPtr & getAggregateData(Mapped & value) 				{ return value; }
 	static const AggregateDataPtr & getAggregateData(const Mapped & value) 	{ return value; }
@@ -299,19 +311,22 @@ struct AggregationMethodKeys128
 	template <typename Other>
 	AggregationMethodKeys128(const Other & other) : data(other.data) {}
 
-	void init(ConstColumnPlainPtrs & key_columns)
+	struct State
 	{
-	}
+		void init(ConstColumnPlainPtrs & key_columns)
+		{
+		}
 
-	Key getKey(
-		const ConstColumnPlainPtrs & key_columns,
-		size_t keys_size,
-		size_t i,
-		const Sizes & key_sizes,
-		StringRefs & keys) const
-	{
-		return pack128(i, keys_size, key_columns, key_sizes);
-	}
+		Key getKey(
+			const ConstColumnPlainPtrs & key_columns,
+			size_t keys_size,
+			size_t i,
+			const Sizes & key_sizes,
+			StringRefs & keys) const
+		{
+			return pack128(i, keys_size, key_columns, key_sizes);
+		}
+	};
 
 	static AggregateDataPtr & getAggregateData(Mapped & value) 				{ return value; }
 	static const AggregateDataPtr & getAggregateData(const Mapped & value) 	{ return value; }
@@ -350,19 +365,22 @@ struct AggregationMethodHashed
 	template <typename Other>
 	AggregationMethodHashed(const Other & other) : data(other.data) {}
 
-	void init(ConstColumnPlainPtrs & key_columns)
+	struct State
 	{
-	}
+		void init(ConstColumnPlainPtrs & key_columns)
+		{
+		}
 
-	Key getKey(
-		const ConstColumnPlainPtrs & key_columns,
-		size_t keys_size,
-		size_t i,
-		const Sizes & key_sizes,
-		StringRefs & keys) const
-	{
-		return hash128(i, keys_size, key_columns, keys);
-	}
+		Key getKey(
+			const ConstColumnPlainPtrs & key_columns,
+			size_t keys_size,
+			size_t i,
+			const Sizes & key_sizes,
+			StringRefs & keys) const
+		{
+			return hash128(i, keys_size, key_columns, keys);
+		}
+	};
 
 	static AggregateDataPtr & getAggregateData(Mapped & value) 				{ return value.second; }
 	static const AggregateDataPtr & getAggregateData(const Mapped & value) 	{ return value.second; }
@@ -708,6 +726,7 @@ protected:
 	template <bool no_more_keys, typename Method>
 	void executeImplCase(
 		Method & method,
+		typename Method::State & state,
 		Arena * aggregates_pool,
 		size_t rows,
 		ConstColumnPlainPtrs & key_columns,
@@ -783,6 +802,7 @@ protected:
 	void mergeStreamsImpl(
 		Block & block,
 		AggregatedDataVariants & result,
+		Arena * aggregates_pool,
 		Method & method,
 		Table & data) const;
 

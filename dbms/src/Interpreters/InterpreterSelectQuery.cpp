@@ -35,6 +35,8 @@ namespace DB
 
 void InterpreterSelectQuery::init(BlockInputStreamPtr input, const Names & required_column_names, const NamesAndTypesList & table_column_names)
 {
+	original_max_threads = settings.max_threads;
+
 	ProfileEvents::increment(ProfileEvents::SelectQuery);
 
 	if (settings.limits.max_subquery_depth && subquery_depth > settings.limits.max_subquery_depth)
@@ -795,7 +797,7 @@ void InterpreterSelectQuery::executeMergeAggregated(BlockInputStreams & streams,
 	Names key_names;
 	AggregateDescriptions aggregates;
 	query_analyzer->getAggregateInfo(key_names, aggregates);
-	streams[0] = maybeAsynchronous(new MergingAggregatedBlockInputStream(streams[0], key_names, aggregates, overflow_row, final, settings.max_threads), settings.asynchronous);
+	streams[0] = maybeAsynchronous(new MergingAggregatedBlockInputStream(streams[0], key_names, aggregates, overflow_row, final, original_max_threads), settings.asynchronous);
 }
 
 

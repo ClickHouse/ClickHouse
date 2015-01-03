@@ -220,12 +220,13 @@ void NO_INLINE Aggregator::executeImpl(
 	bool no_more_keys,
 	AggregateDataPtr overflow_row) const
 {
-	method.init(key_columns);
+	typename Method::State state;
+	state.init(key_columns);
 
 	if (!no_more_keys)
-		executeImplCase<false>(method, aggregates_pool, rows, key_columns, aggregate_columns, key_sizes, keys, overflow_row);
+		executeImplCase<false>(method, state, aggregates_pool, rows, key_columns, aggregate_columns, key_sizes, keys, overflow_row);
 	else
-		executeImplCase<true>(method, aggregates_pool, rows, key_columns, aggregate_columns, key_sizes, keys, overflow_row);
+		executeImplCase<true>(method, state, aggregates_pool, rows, key_columns, aggregate_columns, key_sizes, keys, overflow_row);
 }
 
 #pragma GCC diagnostic push
@@ -234,6 +235,7 @@ void NO_INLINE Aggregator::executeImpl(
 template <bool no_more_keys, typename Method>
 void NO_INLINE Aggregator::executeImplCase(
 	Method & method,
+	typename Method::State & state,
 	Arena * aggregates_pool,
 	size_t rows,
 	ConstColumnPlainPtrs & key_columns,
@@ -251,7 +253,7 @@ void NO_INLINE Aggregator::executeImplCase(
 		bool overflow = false;	/// Новый ключ не поместился в хэш-таблицу из-за no_more_keys.
 
 		/// Получаем ключ для вставки в хэш-таблицу.
-		typename Method::Key key = method.getKey(key_columns, keys_size, i, key_sizes, keys);
+		typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes, keys);
 
 		if (!no_more_keys)	/// Вставляем.
 		{
@@ -1071,6 +1073,7 @@ template <typename Method, typename Table>
 void NO_INLINE Aggregator::mergeStreamsImpl(
 	Block & block,
 	AggregatedDataVariants & result,
+	Arena * aggregates_pool,
 	Method & method,
 	Table & data) const
 {
@@ -1084,9 +1087,8 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
 	for (size_t i = 0; i < aggregates_size; ++i)
 		aggregate_columns[i] = &typeid_cast<ColumnAggregateFunction &>(*block.getByPosition(keys_size + i).column).getData();
 
-	Arena & aggregates_pool = *result.aggregates_pool;
-
-	method.init(key_columns);
+	typename Method::State state;
+	state.init(key_columns);
 
 	/// Для всех строчек.
 	StringRefs keys(keys_size);
@@ -1097,16 +1099,16 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
 		bool inserted;			/// Вставили новый ключ, или такой ключ уже был?
 
 		/// Получаем ключ для вставки в хэш-таблицу.
-		auto key = method.getKey(key_columns, keys_size, i, result.key_sizes, keys);
+		auto key = state.getKey(key_columns, keys_size, i, result.key_sizes, keys);
 
 		data.emplace(key, it, inserted);
 
 		if (inserted)
 		{
-			method.onNewKey(*it, keys_size, i, keys, aggregates_pool);
+			method.onNewKey(*it, keys_size, i, keys, *aggregates_pool);
 
 			AggregateDataPtr & aggregate_data = Method::getAggregateData(it->second);
-			aggregate_data = aggregates_pool.alloc(total_size_of_aggregate_states);
+			aggregate_data = aggregates_pool->alloc(total_size_of_aggregate_states);
 			createAggregateStates(aggregate_data);
 		}
 
@@ -1220,7 +1222,7 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 			&& has_two_level)
 			thread_pool.reset(new boost::threadpool::pool(max_threads));
 
-		auto merge_bucket = [&bucket_to_blocks, &result, this](size_t bucket, MemoryTracker * memory_tracker)
+		auto merge_bucket = [&bucket_to_blocks, &result, this](size_t bucket, Arena * aggregates_pool, MemoryTracker * memory_tracker)
 		{
 			current_memory_tracker = memory_tracker;
 
@@ -1228,12 +1230,12 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 			{
 			#define M(NAME) \
 				else if (result.type == AggregatedDataVariants::Type::NAME) \
-					mergeStreamsImpl(block, result, *result.NAME, result.NAME->data.impls[bucket]);
+					mergeStreamsImpl(block, result, aggregates_pool, *result.NAME, result.NAME->data.impls[bucket]);
 
 				if (false) {}
 					APPLY_FOR_VARIANTS_TWO_LEVEL(M)
 			#undef M
-				else if (result.type != AggregatedDataVariants::Type::without_key)
+				else
 					throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 			}
 		};
@@ -1246,7 +1248,10 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 		for (auto & bucket_blocks : bucket_to_blocks)
 		{
 			size_t bucket = bucket_blocks.first;
-			tasks.emplace_back(std::bind(merge_bucket, bucket, current_memory_tracker));
+			result.aggregates_pools.push_back(new Arena);
+			Arena * aggregates_pool = result.aggregates_pools.back().get();
+
+			tasks.emplace_back(std::bind(merge_bucket, bucket, aggregates_pool, current_memory_tracker));
 
 			if (thread_pool)
 				thread_pool->schedule([bucket, &tasks] { tasks[bucket](); });
@@ -1275,7 +1280,7 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 
 		#define M(NAME, IS_TWO_LEVEL) \
 			else if (result.type == AggregatedDataVariants::Type::NAME) \
-				mergeStreamsImpl(block, result, *result.NAME, result.NAME->data);
+				mergeStreamsImpl(block, result, result.aggregates_pool, *result.NAME, result.NAME->data);
 
 			if (false) {}
 			APPLY_FOR_AGGREGATED_VARIANTS(M)
