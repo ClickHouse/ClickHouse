@@ -286,7 +286,7 @@ void NO_INLINE Aggregator::executeImplCase(
 		/// Если вставили новый ключ - инициализируем состояния агрегатных функций, и возможно, что-нибудь связанное с ключом.
 		if (inserted)
 		{
-			method.onNewKey(it, keys_size, i, keys, *aggregates_pool);
+			method.onNewKey(*it, keys_size, i, keys, *aggregates_pool);
 
 			AggregateDataPtr & aggregate_data = Method::getAggregateData(it->second);
 			aggregate_data = aggregates_pool->alloc(total_size_of_aggregate_states);
@@ -302,248 +302,6 @@ void NO_INLINE Aggregator::executeImplCase(
 }
 
 #pragma GCC diagnostic pop
-
-
-template <typename Method, typename Table>
-void NO_INLINE Aggregator::mergeDataImpl(
-	Table & table_dst,
-	Table & table_src) const
-{
-	for (auto it = table_src.begin(); it != table_src.end(); ++it)
-	{
-		decltype(it) res_it;
-		bool inserted;
-		table_dst.emplace(it->first, res_it, inserted, it.getHash());
-
-		if (!inserted)
-		{
-			for (size_t i = 0; i < aggregates_size; ++i)
-				aggregate_functions[i]->merge(
-					Method::getAggregateData(res_it->second) + offsets_of_aggregate_states[i],
-					Method::getAggregateData(it->second) + offsets_of_aggregate_states[i]);
-
-			for (size_t i = 0; i < aggregates_size; ++i)
-				aggregate_functions[i]->destroy(
-					Method::getAggregateData(it->second) + offsets_of_aggregate_states[i]);
-
-			Method::getAggregateData(it->second) = nullptr;
-		}
-		else
-		{
-			res_it->second = it->second;
-		}
-	}
-}
-
-
-void NO_INLINE Aggregator::mergeWithoutKeyDataImpl(
-	ManyAggregatedDataVariants & non_empty_data) const
-{
-	AggregatedDataVariantsPtr & res = non_empty_data[0];
-
-	/// Все результаты агрегации соединяем с первым.
-	for (size_t i = 1, size = non_empty_data.size(); i < size; ++i)
-	{
-		AggregatedDataWithoutKey & res_data = res->without_key;
-		AggregatedDataWithoutKey & current_data = non_empty_data[i]->without_key;
-
-		for (size_t i = 0; i < aggregates_size; ++i)
-			aggregate_functions[i]->merge(res_data + offsets_of_aggregate_states[i], current_data + offsets_of_aggregate_states[i]);
-
-		for (size_t i = 0; i < aggregates_size; ++i)
-			aggregate_functions[i]->destroy(current_data + offsets_of_aggregate_states[i]);
-
-		current_data = nullptr;
-	}
-}
-
-
-template <typename Method>
-void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
-	ManyAggregatedDataVariants & non_empty_data) const
-{
-	AggregatedDataVariantsPtr & res = non_empty_data[0];
-
-	/// Все результаты агрегации соединяем с первым.
-	for (size_t i = 1, size = non_empty_data.size(); i < size; ++i)
-	{
-		AggregatedDataVariants & current = *non_empty_data[i];
-
-		mergeDataImpl<Method>(
-			getDataVariant<Method>(*res).data,
-			getDataVariant<Method>(current).data);
-
-		/// current не будет уничтожать состояния агрегатных функций в деструкторе
-		current.aggregator = nullptr;
-	}
-}
-
-
-template <typename Method>
-void NO_INLINE Aggregator::mergeTwoLevelDataImpl(
-	ManyAggregatedDataVariants & non_empty_data,
-	boost::threadpool::pool * thread_pool) const
-{
-	AggregatedDataVariantsPtr & res = non_empty_data[0];
-
-	/// Слияние распараллеливается по корзинам - первому уровню TwoLevelHashMap.
-	auto merge_bucket = [&non_empty_data, &res, this](size_t bucket, MemoryTracker * memory_tracker)
-	{
-		current_memory_tracker = memory_tracker;
-
-		/// Все результаты агрегации соединяем с первым.
-		for (size_t i = 1, size = non_empty_data.size(); i < size; ++i)
-		{
-			AggregatedDataVariants & current = *non_empty_data[i];
-
-			mergeDataImpl<Method>(
-				getDataVariant<Method>(*res).data.impls[bucket],
-				getDataVariant<Method>(current).data.impls[bucket]);
-
-			/// current не будет уничтожать состояния агрегатных функций в деструкторе
-			current.aggregator = nullptr;
-		}
-	};
-
-	/// packaged_task используются, чтобы исключения автоматически прокидывались в основной поток.
-
-	std::vector<std::packaged_task<void()>> tasks;
-	tasks.reserve(Method::Data::NUM_BUCKETS);
-
-	for (size_t bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
-	{
-		tasks.emplace_back(std::bind(merge_bucket, bucket, current_memory_tracker));
-
-		if (thread_pool)
-			thread_pool->schedule([bucket, &tasks] { tasks[bucket](); });
-		else
-			tasks[bucket]();
-	}
-
-	if (thread_pool)
-		thread_pool->wait();
-
-	for (auto & task : tasks)
-		task.get_future().get();
-}
-
-
-template <typename Method>
-void NO_INLINE Aggregator::mergeStreamsImpl(
-	Method & method,
-	Arena * aggregates_pool,
-	size_t rows,
-	ConstColumnPlainPtrs & key_columns,
-	AggregateColumnsData & aggregate_columns,
-	const Sizes & key_sizes,
-	StringRefs & keys) const
-{
-	method.init(key_columns);
-
-	/// Для всех строчек.
-	for (size_t i = 0; i < rows; ++i)
-	{
-		typename Method::iterator it;
-		bool inserted;			/// Вставили новый ключ, или такой ключ уже был?
-
-		/// Получаем ключ для вставки в хэш-таблицу.
-		typename Method::Key key = method.getKey(key_columns, keys_size, i, key_sizes, keys);
-
-		method.data.emplace(key, it, inserted);
-
-		if (inserted)
-		{
-			method.onNewKey(it, keys_size, i, keys, *aggregates_pool);
-
-			AggregateDataPtr & aggregate_data = Method::getAggregateData(it->second);
-			aggregate_data = aggregates_pool->alloc(total_size_of_aggregate_states);
-			createAggregateStates(aggregate_data);
-		}
-
-		/// Мерджим состояния агрегатных функций.
-		for (size_t j = 0; j < aggregates_size; ++j)
-			aggregate_functions[j]->merge(
-				Method::getAggregateData(it->second) + offsets_of_aggregate_states[j],
-				(*aggregate_columns[j])[i]);
-	}
-}
-
-
-template <typename Method, typename Table>
-void Aggregator::convertToBlockImpl(
-	Method & method,
-	Table & data,
-	ColumnPlainPtrs & key_columns,
-	AggregateColumnsData & aggregate_columns,
-	ColumnPlainPtrs & final_aggregate_columns,
-	const Sizes & key_sizes,
-	bool final) const
-{
-	if (final)
-		convertToBlockImplFinal(method, data, key_columns, final_aggregate_columns, key_sizes);
-	else
-		convertToBlockImplNotFinal(method, data, key_columns, aggregate_columns, key_sizes);
-}
-
-
-template <typename Method, typename Table>
-void NO_INLINE Aggregator::convertToBlockImplFinal(
-	Method & method,
-	Table & data,
-	ColumnPlainPtrs & key_columns,
-	ColumnPlainPtrs & final_aggregate_columns,
-	const Sizes & key_sizes) const
-{
-	for (typename Table::const_iterator it = data.begin(); it != data.end(); ++it)
-	{
-		method.insertKeyIntoColumns(*it, key_columns, keys_size, key_sizes);
-
-		for (size_t i = 0; i < aggregates_size; ++i)
-			aggregate_functions[i]->insertResultInto(
-				Method::getAggregateData(it->second) + offsets_of_aggregate_states[i],
-				*final_aggregate_columns[i]);
-	}
-}
-
-template <typename Method, typename Table>
-void NO_INLINE Aggregator::convertToBlockImplNotFinal(
-	Method & method,
-	Table & data,
-	ColumnPlainPtrs & key_columns,
-	AggregateColumnsData & aggregate_columns,
-	const Sizes & key_sizes) const
-{
-	size_t j = 0;
-	for (typename Table::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
-	{
-		method.insertKeyIntoColumns(*it, key_columns, keys_size, key_sizes);
-
-		for (size_t i = 0; i < aggregates_size; ++i)
-			(*aggregate_columns[i])[j] = Method::getAggregateData(it->second) + offsets_of_aggregate_states[i];
-	}
-}
-
-
-template <typename Method>
-void NO_INLINE Aggregator::destroyImpl(
-	Method & method) const
-{
-	for (typename Method::const_iterator it = method.data.begin(); it != method.data.end(); ++it)
-	{
-		char * data = Method::getAggregateData(it->second);
-
-		/** Если исключение (обычно нехватка памяти, кидается MemoryTracker-ом) возникло
-		  *  после вставки ключа в хэш-таблицу, но до создания всех состояний агрегатных функций,
-		  *  то data будет равен nullptr-у.
-		  */
-		if (nullptr == data)
-			continue;
-
-		for (size_t i = 0; i < aggregates_size; ++i)
-			if (!aggregate_functions[i]->isState())
-				aggregate_functions[i]->destroy(data + offsets_of_aggregate_states[i]);
-	}
-}
 
 
 bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
@@ -709,6 +467,61 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 		<< "Aggregated. " << src_rows << " to " << rows << " rows (from " << src_bytes / 1048576.0 << " MiB)"
 		<< " in " << elapsed_seconds << " sec."
 		<< " (" << src_rows / elapsed_seconds << " rows/sec., " << src_bytes / elapsed_seconds / 1048576.0 << " MiB/sec.)");
+}
+
+
+template <typename Method, typename Table>
+void Aggregator::convertToBlockImpl(
+	Method & method,
+	Table & data,
+	ColumnPlainPtrs & key_columns,
+	AggregateColumnsData & aggregate_columns,
+	ColumnPlainPtrs & final_aggregate_columns,
+	const Sizes & key_sizes,
+	bool final) const
+{
+	if (final)
+		convertToBlockImplFinal(method, data, key_columns, final_aggregate_columns, key_sizes);
+	else
+		convertToBlockImplNotFinal(method, data, key_columns, aggregate_columns, key_sizes);
+}
+
+
+template <typename Method, typename Table>
+void NO_INLINE Aggregator::convertToBlockImplFinal(
+	Method & method,
+	Table & data,
+	ColumnPlainPtrs & key_columns,
+	ColumnPlainPtrs & final_aggregate_columns,
+	const Sizes & key_sizes) const
+{
+	for (typename Table::const_iterator it = data.begin(); it != data.end(); ++it)
+	{
+		method.insertKeyIntoColumns(*it, key_columns, keys_size, key_sizes);
+
+		for (size_t i = 0; i < aggregates_size; ++i)
+			aggregate_functions[i]->insertResultInto(
+				Method::getAggregateData(it->second) + offsets_of_aggregate_states[i],
+				*final_aggregate_columns[i]);
+	}
+}
+
+template <typename Method, typename Table>
+void NO_INLINE Aggregator::convertToBlockImplNotFinal(
+	Method & method,
+	Table & data,
+	ColumnPlainPtrs & key_columns,
+	AggregateColumnsData & aggregate_columns,
+	const Sizes & key_sizes) const
+{
+	size_t j = 0;
+	for (typename Table::const_iterator it = data.begin(); it != data.end(); ++it, ++j)
+	{
+		method.insertKeyIntoColumns(*it, key_columns, keys_size, key_sizes);
+
+		for (size_t i = 0; i < aggregates_size; ++i)
+			(*aggregate_columns[i])[j] = Method::getAggregateData(it->second) + offsets_of_aggregate_states[i];
+	}
 }
 
 
@@ -1023,6 +836,130 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
 }
 
 
+template <typename Method, typename Table>
+void NO_INLINE Aggregator::mergeDataImpl(
+	Table & table_dst,
+	Table & table_src) const
+{
+	for (auto it = table_src.begin(); it != table_src.end(); ++it)
+	{
+		decltype(it) res_it;
+		bool inserted;
+		table_dst.emplace(it->first, res_it, inserted, it.getHash());
+
+		if (!inserted)
+		{
+			for (size_t i = 0; i < aggregates_size; ++i)
+				aggregate_functions[i]->merge(
+					Method::getAggregateData(res_it->second) + offsets_of_aggregate_states[i],
+					Method::getAggregateData(it->second) + offsets_of_aggregate_states[i]);
+
+			for (size_t i = 0; i < aggregates_size; ++i)
+				aggregate_functions[i]->destroy(
+					Method::getAggregateData(it->second) + offsets_of_aggregate_states[i]);
+
+			Method::getAggregateData(it->second) = nullptr;
+		}
+		else
+		{
+			res_it->second = it->second;
+		}
+	}
+}
+
+
+void NO_INLINE Aggregator::mergeWithoutKeyDataImpl(
+	ManyAggregatedDataVariants & non_empty_data) const
+{
+	AggregatedDataVariantsPtr & res = non_empty_data[0];
+
+	/// Все результаты агрегации соединяем с первым.
+	for (size_t i = 1, size = non_empty_data.size(); i < size; ++i)
+	{
+		AggregatedDataWithoutKey & res_data = res->without_key;
+		AggregatedDataWithoutKey & current_data = non_empty_data[i]->without_key;
+
+		for (size_t i = 0; i < aggregates_size; ++i)
+			aggregate_functions[i]->merge(res_data + offsets_of_aggregate_states[i], current_data + offsets_of_aggregate_states[i]);
+
+		for (size_t i = 0; i < aggregates_size; ++i)
+			aggregate_functions[i]->destroy(current_data + offsets_of_aggregate_states[i]);
+
+		current_data = nullptr;
+	}
+}
+
+
+template <typename Method>
+void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
+	ManyAggregatedDataVariants & non_empty_data) const
+{
+	AggregatedDataVariantsPtr & res = non_empty_data[0];
+
+	/// Все результаты агрегации соединяем с первым.
+	for (size_t i = 1, size = non_empty_data.size(); i < size; ++i)
+	{
+		AggregatedDataVariants & current = *non_empty_data[i];
+
+		mergeDataImpl<Method>(
+			getDataVariant<Method>(*res).data,
+			getDataVariant<Method>(current).data);
+
+		/// current не будет уничтожать состояния агрегатных функций в деструкторе
+		current.aggregator = nullptr;
+	}
+}
+
+
+template <typename Method>
+void NO_INLINE Aggregator::mergeTwoLevelDataImpl(
+	ManyAggregatedDataVariants & non_empty_data,
+	boost::threadpool::pool * thread_pool) const
+{
+	AggregatedDataVariantsPtr & res = non_empty_data[0];
+
+	/// Слияние распараллеливается по корзинам - первому уровню TwoLevelHashMap.
+	auto merge_bucket = [&non_empty_data, &res, this](size_t bucket, MemoryTracker * memory_tracker)
+	{
+		current_memory_tracker = memory_tracker;
+
+		/// Все результаты агрегации соединяем с первым.
+		for (size_t i = 1, size = non_empty_data.size(); i < size; ++i)
+		{
+			AggregatedDataVariants & current = *non_empty_data[i];
+
+			mergeDataImpl<Method>(
+				getDataVariant<Method>(*res).data.impls[bucket],
+				getDataVariant<Method>(current).data.impls[bucket]);
+
+			/// current не будет уничтожать состояния агрегатных функций в деструкторе
+			current.aggregator = nullptr;
+		}
+	};
+
+	/// packaged_task используются, чтобы исключения автоматически прокидывались в основной поток.
+
+	std::vector<std::packaged_task<void()>> tasks;
+	tasks.reserve(Method::Data::NUM_BUCKETS);
+
+	for (size_t bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
+	{
+		tasks.emplace_back(std::bind(merge_bucket, bucket, current_memory_tracker));
+
+		if (thread_pool)
+			thread_pool->schedule([bucket, &tasks] { tasks[bucket](); });
+		else
+			tasks[bucket]();
+	}
+
+	if (thread_pool)
+		thread_pool->wait();
+
+	for (auto & task : tasks)
+		task.get_future().get();
+}
+
+
 AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_variants, size_t max_threads)
 {
 	if (data_variants.empty())
@@ -1130,7 +1067,81 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 }
 
 
-void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & result, size_t max_threads)
+template <typename Method, typename Table>
+void NO_INLINE Aggregator::mergeStreamsImpl(
+	Block & block,
+	AggregatedDataVariants & result,
+	Method & method,
+	Table & data) const
+{
+	ConstColumnPlainPtrs key_columns(keys_size);
+	AggregateColumnsData aggregate_columns(aggregates_size);
+
+	/// Запоминаем столбцы, с которыми будем работать
+	for (size_t i = 0; i < keys_size; ++i)
+		key_columns[i] = block.getByPosition(i).column;
+
+	for (size_t i = 0; i < aggregates_size; ++i)
+		aggregate_columns[i] = &typeid_cast<ColumnAggregateFunction &>(*block.getByPosition(keys_size + i).column).getData();
+
+	Arena & aggregates_pool = *result.aggregates_pool;
+
+	method.init(key_columns);
+
+	/// Для всех строчек.
+	StringRefs keys(keys_size);
+	size_t rows = block.rowsInFirstColumn();
+	for (size_t i = 0; i < rows; ++i)
+	{
+		typename Table::iterator it;
+		bool inserted;			/// Вставили новый ключ, или такой ключ уже был?
+
+		/// Получаем ключ для вставки в хэш-таблицу.
+		auto key = method.getKey(key_columns, keys_size, i, result.key_sizes, keys);
+
+		data.emplace(key, it, inserted);
+
+		if (inserted)
+		{
+			method.onNewKey(*it, keys_size, i, keys, aggregates_pool);
+
+			AggregateDataPtr & aggregate_data = Method::getAggregateData(it->second);
+			aggregate_data = aggregates_pool.alloc(total_size_of_aggregate_states);
+			createAggregateStates(aggregate_data);
+		}
+
+		/// Мерджим состояния агрегатных функций.
+		for (size_t j = 0; j < aggregates_size; ++j)
+			aggregate_functions[j]->merge(
+				Method::getAggregateData(it->second) + offsets_of_aggregate_states[j],
+				(*aggregate_columns[j])[i]);
+	}
+}
+
+void NO_INLINE Aggregator::mergeWithoutKeyStreamsImpl(
+	Block & block,
+	AggregatedDataVariants & result) const
+{
+	AggregateColumnsData aggregate_columns(aggregates_size);
+
+	/// Запоминаем столбцы, с которыми будем работать
+	for (size_t i = 0; i < aggregates_size; ++i)
+		aggregate_columns[i] = &typeid_cast<ColumnAggregateFunction &>(*block.getByPosition(keys_size + i).column).getData();
+
+	AggregatedDataWithoutKey & res = result.without_key;
+	if (!res)
+	{
+		res = result.aggregates_pool->alloc(total_size_of_aggregate_states);
+		createAggregateStates(res);
+	}
+
+	/// Добавляем значения
+	for (size_t i = 0; i < aggregates_size; ++i)
+		aggregate_functions[i]->merge(res + offsets_of_aggregate_states[i], (*aggregate_columns[i])[0]);
+}
+
+
+void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants & result, size_t max_threads)
 {
 	StringRefs key(keys_size);
 	ConstColumnPlainPtrs key_columns(keys_size);
@@ -1152,59 +1163,150 @@ void Aggregator::merge(BlockInputStreamPtr stream, AggregatedDataVariants & resu
 	BucketToBlocks bucket_to_blocks;
 
 	/// Читаем все данные. TODO memory-savvy режим, при котором в один момент времени обрабатывается только одна корзина.
+	LOG_TRACE(log, "Reading blocks of partially aggregated data.");
+
+	size_t total_input_rows = 0;
+	size_t total_input_blocks = 0;
 	while (Block block = stream->read())
 	{
-		LOG_TRACE(log, "Merging aggregated block");
+		total_input_rows += block.rowsInFirstColumn();
+		++total_input_blocks;
+		bucket_to_blocks[block.info.bucket_num].emplace_back(std::move(block));
+	}
 
-		if (!sample)
-			for (size_t i = 0; i < keys_size + aggregates_size; ++i)
-				sample.insert(block.getByPosition(i).cloneEmpty());
+	LOG_TRACE(log, "Read " << total_input_blocks << " blocks of partially aggregated data, total " << total_input_rows << " rows.");
 
-		/// Запоминаем столбцы, с которыми будем работать
-		for (size_t i = 0; i < keys_size; ++i)
-			key_columns[i] = block.getByPosition(i).column;
+	if (bucket_to_blocks.empty())
+		return;
+
+	if (!sample)
+		sample = bucket_to_blocks.begin()->second.front().cloneEmpty();
+
+	/// Каким способом выполнять агрегацию?
+	for (size_t i = 0; i < keys_size; ++i)
+		key_columns[i] = sample.getByPosition(i).column;
+
+	Sizes key_sizes;
+	AggregatedDataVariants::Type method = chooseAggregationMethod(key_columns, key_sizes);
+
+	/** Минус единицей обозначается отсутствие информации о корзине
+	  * - в случае одноуровневой агрегации, а также для блоков с "переполнившимися" значениями.
+	  * Если есть хотя бы один блок с номером корзины больше нуля, значит была двухуровневая агрегация.
+	  */
+	size_t has_two_level = bucket_to_blocks.rbegin()->first > 0;
+
+	if (has_two_level)
+	{
+	#define M(NAME) \
+		if (method == AggregatedDataVariants::Type::NAME) \
+			method = AggregatedDataVariants::Type::NAME ## _two_level;
+
+		APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
+
+	#undef M
+	}
+
+	result.init(method);
+	result.keys_size = keys_size;
+	result.key_sizes = key_sizes;
+
+	/// Сначала параллельно мерджим для отдельных bucket-ов. Затем домердживаем данные, не распределённые по bucket-ам.
+	if (has_two_level)
+	{
+		LOG_TRACE(log, "Merging partially aggregated two-level data.");
+
+		std::unique_ptr<boost::threadpool::pool> thread_pool;
+		if (max_threads > 1 && total_input_rows > 100000	/// TODO Сделать настраиваемый порог.
+			&& has_two_level)
+			thread_pool.reset(new boost::threadpool::pool(max_threads));
+
+		auto merge_bucket = [&bucket_to_blocks, &result, this](size_t bucket, MemoryTracker * memory_tracker)
+		{
+			current_memory_tracker = memory_tracker;
+
+			for (Block & block : bucket_to_blocks[bucket])
+			{
+			#define M(NAME) \
+				else if (result.type == AggregatedDataVariants::Type::NAME) \
+					mergeStreamsImpl(block, result, *result.NAME, result.NAME->data.impls[bucket]);
+
+				if (false) {}
+					APPLY_FOR_VARIANTS_TWO_LEVEL(M)
+			#undef M
+				else if (result.type != AggregatedDataVariants::Type::without_key)
+					throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+			}
+		};
+
+		/// packaged_task используются, чтобы исключения автоматически прокидывались в основной поток.
+
+		std::vector<std::packaged_task<void()>> tasks;
+		tasks.reserve(bucket_to_blocks.size());
+
+		for (auto & bucket_blocks : bucket_to_blocks)
+		{
+			size_t bucket = bucket_blocks.first;
+			tasks.emplace_back(std::bind(merge_bucket, bucket, current_memory_tracker));
+
+			if (thread_pool)
+				thread_pool->schedule([bucket, &tasks] { tasks[bucket](); });
+			else
+				tasks[bucket]();
+		}
+
+		if (thread_pool)
+			thread_pool->wait();
+
+		for (auto & task : tasks)
+			task.get_future().get();
+
+		LOG_TRACE(log, "Merged partially aggregated two-level data.");
+	}
+
+	if (bucket_to_blocks.count(-1))
+	{
+		LOG_TRACE(log, "Merging partially aggregated single-level data.");
+
+		BlocksList & blocks = bucket_to_blocks[-1];
+		for (Block & block : blocks)
+		{
+			if (result.type == AggregatedDataVariants::Type::without_key || block.info.is_overflows)
+				mergeWithoutKeyStreamsImpl(block, result);
+
+		#define M(NAME, IS_TWO_LEVEL) \
+			else if (result.type == AggregatedDataVariants::Type::NAME) \
+				mergeStreamsImpl(block, result, *result.NAME, result.NAME->data);
+
+			if (false) {}
+			APPLY_FOR_AGGREGATED_VARIANTS(M)
+		#undef M
+			else if (result.type != AggregatedDataVariants::Type::without_key)
+				throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+		}
+
+		LOG_TRACE(log, "Merged partially aggregated single-level data.");
+	}
+}
+
+
+template <typename Method>
+void NO_INLINE Aggregator::destroyImpl(
+	Method & method) const
+{
+	for (typename Method::const_iterator it = method.data.begin(); it != method.data.end(); ++it)
+	{
+		char * data = Method::getAggregateData(it->second);
+
+		/** Если исключение (обычно нехватка памяти, кидается MemoryTracker-ом) возникло
+		  *  после вставки ключа в хэш-таблицу, но до создания всех состояний агрегатных функций,
+		  *  то data будет равен nullptr-у.
+		  */
+		if (nullptr == data)
+			continue;
 
 		for (size_t i = 0; i < aggregates_size; ++i)
-			aggregate_columns[i] = &typeid_cast<ColumnAggregateFunction &>(*block.getByPosition(keys_size + i).column).getData();
-
-		size_t rows = block.rows();
-
-		/// Каким способом выполнять агрегацию?
-		Sizes key_sizes;
-		AggregatedDataVariants::Type method = chooseAggregationMethod(key_columns, key_sizes);
-
-		if (result.empty())
-		{
-			result.init(method);
-			result.keys_size = keys_size;
-			result.key_sizes = key_sizes;
-		}
-
-		if (result.type == AggregatedDataVariants::Type::without_key || block.info.is_overflows)
-		{
-			AggregatedDataWithoutKey & res = result.without_key;
-			if (!res)
-			{
-				res = result.aggregates_pool->alloc(total_size_of_aggregate_states);
-				createAggregateStates(res);
-			}
-
-			/// Добавляем значения
-			for (size_t i = 0; i < aggregates_size; ++i)
-				aggregate_functions[i]->merge(res + offsets_of_aggregate_states[i], (*aggregate_columns[i])[0]);
-		}
-
-	#define M(NAME, IS_TWO_LEVEL) \
-		else if (result.type == AggregatedDataVariants::Type::NAME) \
-			mergeStreamsImpl(*result.NAME, result.aggregates_pool, rows, key_columns, aggregate_columns, key_sizes, key);
-
-		if (false) {}
-		APPLY_FOR_AGGREGATED_VARIANTS(M)
-	#undef M
-		else if (result.type != AggregatedDataVariants::Type::without_key)
-			throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
-
-		LOG_TRACE(log, "Merged aggregated block");
+			if (!aggregate_functions[i]->isState())
+				aggregate_functions[i]->destroy(data + offsets_of_aggregate_states[i]);
 	}
 }
 

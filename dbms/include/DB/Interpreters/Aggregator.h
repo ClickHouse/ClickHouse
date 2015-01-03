@@ -163,7 +163,7 @@ struct AggregationMethodOneNumber
 
 	/** Разместить дополнительные данные, если это необходимо, в случае, когда в хэш-таблицу был вставлен новый ключ.
 	  */
-	static void onNewKey(iterator & it, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
+	static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
 	{
 	}
 
@@ -217,9 +217,9 @@ struct AggregationMethodString
 	static AggregateDataPtr & getAggregateData(Mapped & value) 				{ return value; }
 	static const AggregateDataPtr & getAggregateData(const Mapped & value) 	{ return value; }
 
-	static void onNewKey(iterator & it, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
+	static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
 	{
-		it->first.data = pool.insert(it->first.data, it->first.size);
+		value.first.data = pool.insert(value.first.data, value.first.size);
 	}
 
 	static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
@@ -270,9 +270,9 @@ struct AggregationMethodFixedString
 	static AggregateDataPtr & getAggregateData(Mapped & value) 				{ return value; }
 	static const AggregateDataPtr & getAggregateData(const Mapped & value) 	{ return value; }
 
-	static void onNewKey(iterator & it, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
+	static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
 	{
-		it->first.data = pool.insert(it->first.data, it->first.size);
+		value.first.data = pool.insert(value.first.data, value.first.size);
 	}
 
 	static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
@@ -316,7 +316,7 @@ struct AggregationMethodKeys128
 	static AggregateDataPtr & getAggregateData(Mapped & value) 				{ return value; }
 	static const AggregateDataPtr & getAggregateData(const Mapped & value) 	{ return value; }
 
-	static void onNewKey(iterator & it, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
+	static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
 	{
 	}
 
@@ -367,9 +367,9 @@ struct AggregationMethodHashed
 	static AggregateDataPtr & getAggregateData(Mapped & value) 				{ return value.second; }
 	static const AggregateDataPtr & getAggregateData(const Mapped & value) 	{ return value.second; }
 
-	static void onNewKey(iterator & it, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
+	static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
 	{
-		it->second.first = placeKeysInPool(i, keys_size, keys, pool);
+		value.second.first = placeKeysInPool(i, keys_size, keys, pool);
 	}
 
 	static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
@@ -642,7 +642,7 @@ public:
 	/** Объединить несколько агрегированных блоков в одну структуру данных.
 	  * (Доагрегировать несколько блоков, которые представляют собой результат независимых агрегаций с удалённых серверов.)
 	  */
-	void merge(BlockInputStreamPtr stream, AggregatedDataVariants & result, size_t max_threads);
+	void mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants & result, size_t max_threads);
 
 	/// Для IBlockInputStream.
 	String getID() const;
@@ -735,16 +735,6 @@ protected:
 		ManyAggregatedDataVariants & many_data,
 		boost::threadpool::pool * thread_pool) const;
 
-	template <typename Method>
-	void mergeStreamsImpl(
-		Method & method,
-		Arena * aggregates_pool,
-		size_t rows,
-		ConstColumnPlainPtrs & key_columns,
-		AggregateColumnsData & aggregate_columns,
-		const Sizes & key_sizes,
-		StringRefs & keys) const;
-
 	template <typename Method, typename Table>
 	void convertToBlockImpl(
 		Method & method,
@@ -788,6 +778,17 @@ protected:
 		Method & method,
 		bool final,
 		boost::threadpool::pool * thread_pool) const;
+
+	template <typename Method, typename Table>
+	void mergeStreamsImpl(
+		Block & block,
+		AggregatedDataVariants & result,
+		Method & method,
+		Table & data) const;
+
+	void mergeWithoutKeyStreamsImpl(
+		Block & block,
+		AggregatedDataVariants & result) const;
 
 	template <typename Method>
 	void destroyImpl(

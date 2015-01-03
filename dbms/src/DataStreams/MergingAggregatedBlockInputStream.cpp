@@ -13,7 +13,7 @@ Block MergingAggregatedBlockInputStream::readImpl()
 	{
 		executed = true;
 		AggregatedDataVariants data_variants;
-		aggregator->merge(children.back(), data_variants, max_threads);
+		aggregator->mergeStream(children.back(), data_variants, max_threads);
 		blocks = aggregator->convertToBlocks(data_variants, final, max_threads);
 		it = blocks.begin();
 	}
