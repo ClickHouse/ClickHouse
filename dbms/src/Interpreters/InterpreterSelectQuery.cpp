@@ -852,7 +852,9 @@ void InterpreterSelectQuery::executeOrder(BlockInputStreams & streams)
 		++it)
 	{
 		String name = (*it)->children.front()->getColumnName();
-		order_descr.push_back(SortColumnDescription(name, typeid_cast<ASTOrderByElement &>(**it).direction));
+		const ASTOrderByElement & order_by_elem = typeid_cast<const ASTOrderByElement &>(**it);
+
+		order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.collator);
 	}
 
 	/// Если есть LIMIT и нет DISTINCT - можно делать частичную сортировку.

@@ -1,13 +1,9 @@
-#include <queue>
-#include <iomanip>
-
-#include <statdaemons/Stopwatch.h>
-
 #include <DB/DataStreams/MergeSortingBlockInputStream.h>
 
 
 namespace DB
 {
+
 
 Block MergeSortingBlockInputStream::readImpl()
 {
@@ -16,98 +12,83 @@ Block MergeSortingBlockInputStream::readImpl()
 	  * - объединить их всех;
 	  */
 
-	if (has_been_read)
-		return Block();
+	/// Ещё не прочитали блоки.
+	if (!impl)
+	{
+		while (Block block = children.back()->read())
+			blocks.push_back(block);
 
-	has_been_read = true;
+		if (blocks.empty() || isCancelled())
+			return Block();
 
-	Blocks blocks;
-	while (Block block = children.back()->read())
-		blocks.push_back(block);
+		impl.reset(new MergeSortingBlocksBlockInputStream(blocks, description, DEFAULT_BLOCK_SIZE, limit));
+	}
 
-	if (isCancelled())
-		return Block();
-
-	return merge(blocks);
+	return impl->read();
 }
 
-Block MergeSortingBlockInputStream::merge(Blocks & blocks)
+
+MergeSortingBlocksBlockInputStream::MergeSortingBlocksBlockInputStream(
+	Blocks & blocks_, SortDescription & description_, size_t max_merged_block_size_, size_t limit_)
+	: blocks(blocks_), description(description_), max_merged_block_size(max_merged_block_size_), limit(limit_)
+{
+	Blocks nonempty_blocks;
+	for (const auto & block : blocks)
+	{
+		if (block.rowsInFirstColumn() == 0)
+			continue;
+
+		nonempty_blocks.push_back(block);
+		cursors.emplace_back(block, description);
+		has_collation |= cursors.back().has_collation;
+	}
+
+	blocks.swap(nonempty_blocks);
+
+	if (!has_collation)
+	{
+		for (size_t i = 0; i < cursors.size(); ++i)
+			queue.push(SortCursor(&cursors[i]));
+	}
+	else
+	{
+		for (size_t i = 0; i < cursors.size(); ++i)
+			queue_with_collation.push(SortCursorWithCollation(&cursors[i]));
+	}
+}
+
+
+Block MergeSortingBlocksBlockInputStream::readImpl()
 {
 	if (blocks.empty())
 		return Block();
 
 	if (blocks.size() == 1)
-		return blocks[0];
-
-	Stopwatch watch;
-
-	LOG_DEBUG(log, "Merge sorting");
-
-	CursorImpls cursors(blocks.size());
-
-	bool has_collation = false;
-
-	size_t nonempty_blocks = 0;
-	for (Blocks::const_iterator it = blocks.begin(); it != blocks.end(); ++it)
 	{
-		if (it->rowsInFirstColumn() == 0)
-			continue;
-
-		cursors[nonempty_blocks] = SortCursorImpl(*it, description);
-		has_collation |= cursors[nonempty_blocks].has_collation;
-
-		++nonempty_blocks;
+		Block res = blocks[0];
+		blocks.clear();
+		return res;
 	}
 
-	if (nonempty_blocks == 0)
-		return Block();
-
-	cursors.resize(nonempty_blocks);
-
-	Block merged;
-
-	if (has_collation)
-		merged = mergeImpl<SortCursorWithCollation>(blocks, cursors);
-	else
-		merged = mergeImpl<SortCursor>(blocks, cursors);
-
-	watch.stop();
-
-	size_t rows_before_merge = 0;
-	size_t bytes_before_merge = 0;
-	for (const auto & block : blocks)
-	{
-		rows_before_merge += block.rowsInFirstColumn();
-		bytes_before_merge += block.bytes();
-	}
-
-	LOG_DEBUG(log, std::fixed << std::setprecision(2)
-		<< "Merge sorted " << blocks.size() << " blocks, from " << rows_before_merge << " to " << merged.rows() << " rows"
-		<< " in " << watch.elapsedSeconds() << " sec., "
-		<< rows_before_merge / watch.elapsedSeconds() << " rows/sec., "
-		<< bytes_before_merge / 1048576.0 / watch.elapsedSeconds() << " MiB/sec.");
-
-	return merged;
+	return !has_collation
+		? mergeImpl<SortCursor>(queue)
+		: mergeImpl<SortCursorWithCollation>(queue_with_collation);
 }
 
+
 template <typename TSortCursor>
-Block MergeSortingBlockInputStream::mergeImpl(Blocks & blocks, CursorImpls & cursors)
+Block MergeSortingBlocksBlockInputStream::mergeImpl(std::priority_queue<TSortCursor> & queue)
 {
 	Block merged = blocks[0].cloneEmpty();
 	size_t num_columns = blocks[0].columns();
 
-	typedef std::priority_queue<TSortCursor> Queue;
-	Queue queue;
-
-	for (size_t i = 0; i < cursors.size(); ++i)
-		queue.push(TSortCursor(&cursors[i]));
-
 	ColumnPlainPtrs merged_columns;
 	for (size_t i = 0; i < num_columns; ++i)	/// TODO: reserve
-		merged_columns.push_back(&*merged.getByPosition(i).column);
+		merged_columns.push_back(merged.getByPosition(i).column.get());
 
 	/// Вынимаем строки в нужном порядке и кладём в merged.
-	for (size_t row = 0; (!limit || row < limit) && !queue.empty(); ++row)
+	size_t merged_rows = 0;
+	while (!queue.empty())
 	{
 		TSortCursor current = queue.top();
 		queue.pop();
@@ -120,9 +101,24 @@ Block MergeSortingBlockInputStream::mergeImpl(Blocks & blocks, CursorImpls & cur
 			current->next();
 			queue.push(current);
 		}
+
+		++total_merged_rows;
+		if (limit && total_merged_rows == limit)
+		{
+			blocks.clear();
+			return merged;
+		}
+
+		++merged_rows;
+		if (merged_rows == max_merged_block_size)
+			return merged;
 	}
+
+	if (merged_rows == 0)
+		merged.clear();
 
 	return merged;
 }
+
 
 }
