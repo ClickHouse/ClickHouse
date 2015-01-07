@@ -80,6 +80,7 @@ struct ContextShared
 	int interserver_io_port;								///           и порт,
 
 	String path;											/// Путь к директории с данными, со слешем на конце.
+	String tmp_path;										/// Путь ко временным файлам, возникающим при обработке запроса.
 	Databases databases;									/// Список БД и таблиц в них.
 	TableFunctionFactory table_function_factory;			/// Табличные функции.
 	AggregateFunctionFactory aggregate_function_factory; 	/// Агрегатные функции.
@@ -187,7 +188,9 @@ private:
 
 public:
 	String getPath() const;
+	String getTemporaryPath() const;
 	void setPath(const String & path);
+	void setTemporaryPath(const String & path);
 
 	/** Забрать список пользователей, квот и профилей настроек из этого конфига.
 	  * Список пользователей полностью заменяется.

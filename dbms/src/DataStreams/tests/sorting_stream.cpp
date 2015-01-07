@@ -161,7 +161,7 @@ int main(int argc, char ** argv)
 
 		Poco::SharedPtr<IBlockInputStream> in = table->read(column_names, 0, Context{}, Settings(), stage, argc == 2 ? atoi(argv[1]) : 1048576)[0];
 		in = new PartialSortingBlockInputStream(in, sort_columns);
-		in = new MergeSortingBlockInputStream(in, sort_columns);
+		in = new MergeSortingBlockInputStream(in, sort_columns, DEFAULT_BLOCK_SIZE);
 		//in = new LimitBlockInputStream(in, 10);
 
 		WriteBufferFromOStream ob(std::cout);

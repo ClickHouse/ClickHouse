@@ -893,8 +893,11 @@ void InterpreterSelectQuery::executeOrder(BlockInputStreams & streams)
 		streams.resize(1);
 	}
 
-	/// Сливаем сортированные блоки TODO: таймаут на слияние.
-	stream = maybeAsynchronous(new MergeSortingBlockInputStream(stream, order_descr, limit), is_async);
+	/// Сливаем сортированные блоки.
+	stream = maybeAsynchronous(new MergeSortingBlockInputStream(
+		stream, order_descr, settings.max_block_size, limit,
+		settings.limits.max_bytes_before_external_sort, context.getTemporaryPath(), context.getDataTypeFactory()),
+		is_async);
 }
 
 

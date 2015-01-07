@@ -20,11 +20,23 @@ String Context::getPath() const
 	return shared->path;
 }
 
+String Context::getTemporaryPath() const
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	return shared->tmp_path;
+}
+
 
 void Context::setPath(const String & path)
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 	shared->path = path;
+}
+
+void Context::setTemporaryPath(const String & path)
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	shared->tmp_path = path;
 }
 
 

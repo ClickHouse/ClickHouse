@@ -457,6 +457,12 @@ int Server::main(const std::vector<std::string> & args)
 	global_context->setGlobalContext(*global_context);
 	global_context->setPath(path);
 
+	/// Директория для временных файлов при обработке тяжёлых запросов.
+	std::string tmp_path = config().getString("tmp_path", path + "tmp/");
+	global_context->setTemporaryPath(tmp_path);
+	Poco::File(tmp_path).createDirectories();
+	/// TODO Очистка временных файлов. Проверка, что директория с временными файлами не совпадает и не содержит в себе основной path.
+
 	bool has_zookeeper = false;
 	if (config().has("zookeeper"))
 	{

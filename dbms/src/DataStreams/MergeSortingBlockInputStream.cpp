@@ -1,4 +1,9 @@
 #include <DB/DataStreams/MergeSortingBlockInputStream.h>
+#include <DB/DataStreams/MergingSortedBlockInputStream.h>
+#include <DB/DataStreams/NativeBlockOutputStream.h>
+#include <DB/DataStreams/copyData.h>
+#include <DB/IO/WriteBufferFromFile.h>
+#include <DB/IO/CompressedWriteBuffer.h>
 
 
 namespace DB
@@ -7,21 +12,70 @@ namespace DB
 
 Block MergeSortingBlockInputStream::readImpl()
 {
-	/** Достаточно простой алгоритм:
-	  * - прочитать в оперативку все блоки;
-	  * - объединить их всех;
+	/** Алгоритм:
+	  * - читать в оперативку блоки из источника;
+	  * - когда их становится слишком много и если возможна внешняя сортировка
+	  *   - слить блоки вместе в сортированный поток и записать его во временный файл;
+	  * - в конце, слить вместе все сортированные потоки из временных файлов, а также из накопившихся в оперативке блоков.
 	  */
 
 	/// Ещё не прочитали блоки.
 	if (!impl)
 	{
 		while (Block block = children.back()->read())
+		{
 			blocks.push_back(block);
+			sum_bytes_in_blocks += block.bytes();
 
-		if (blocks.empty() || isCancelled())
+			/** Если блоков стало слишком много и возможна внешняя сортировка,
+			  *  то сольём вместе те блоки, которые успели накопиться, и сбросим сортированный поток во временный (сжатый) файл.
+			  * NOTE. Возможно - проверка наличия свободного места на жёстком диске.
+			  */
+			if (max_bytes_before_external_sort && sum_bytes_in_blocks > max_bytes_before_external_sort)
+			{
+				temporary_files.emplace_back(new Poco::TemporaryFile(tmp_path));
+				const std::string & path = temporary_files.back()->path();
+				WriteBufferFromFile file_buf(path);
+				CompressedWriteBuffer compressed_buf(file_buf);
+				NativeBlockOutputStream block_out(compressed_buf);
+				MergeSortingBlocksBlockInputStream block_in(blocks, description, max_merged_block_size, limit);
+
+				LOG_INFO(log, "Sorting and writing part of data into temporary file " + path);
+				copyData(block_in, block_out);	/// TODO Проверка isCancelled.
+				LOG_INFO(log, "Done writing part of data into temporary file " + path);
+
+				blocks.clear();
+				sum_bytes_in_blocks = 0;
+			}
+		}
+
+		if ((blocks.empty() && temporary_files.empty()) || isCancelled())
 			return Block();
 
-		impl.reset(new MergeSortingBlocksBlockInputStream(blocks, description, DEFAULT_BLOCK_SIZE, limit));
+		if (temporary_files.empty())
+		{
+			impl.reset(new MergeSortingBlocksBlockInputStream(blocks, description, max_merged_block_size, limit));
+		}
+		else
+		{
+			/// Если были сброшены временные данные в файлы.
+
+			LOG_INFO(log, "There are " << temporary_files.size() << " temporary sorted parts to merge.");
+
+			/// Сформируем сортированные потоки для слияния.
+			for (const auto & file : temporary_files)
+			{
+				temporary_inputs.emplace_back(new TemporaryFileStream(file->path(), data_type_factory));
+				inputs_to_merge.emplace_back(temporary_inputs.back()->block_in);
+			}
+
+			/// Оставшиеся в оперативке блоки.
+			if (!blocks.empty())
+				inputs_to_merge.emplace_back(new MergeSortingBlocksBlockInputStream(blocks, description, max_merged_block_size, limit));
+
+			/// Будем сливать эти потоки.
+			impl.reset(new MergingSortedBlockInputStream(inputs_to_merge, description, max_merged_block_size, limit));
+		}
 	}
 
 	return impl->read();
