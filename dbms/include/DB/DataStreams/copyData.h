@@ -13,7 +13,7 @@ namespace DB
 /** Копирует данные из InputStream в OutputStream
   * (например, из БД в консоль и т. п.)
   */
-void copyData(IBlockInputStream & from, IBlockOutputStream & to);
+void copyData(IBlockInputStream & from, IBlockOutputStream & to, volatile bool * is_cancelled = nullptr);
 void copyData(IRowInputStream & from, IRowOutputStream & to);
 
 }

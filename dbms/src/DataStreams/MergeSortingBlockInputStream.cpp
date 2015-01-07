@@ -41,7 +41,7 @@ Block MergeSortingBlockInputStream::readImpl()
 				MergeSortingBlocksBlockInputStream block_in(blocks, description, max_merged_block_size, limit);
 
 				LOG_INFO(log, "Sorting and writing part of data into temporary file " + path);
-				copyData(block_in, block_out);	/// TODO Проверка isCancelled.
+				copyData(block_in, block_out, &is_cancelled);	/// NOTE. Возможно, ограничение на потребление места на дисках.
 				LOG_INFO(log, "Done writing part of data into temporary file " + path);
 
 				blocks.clear();
