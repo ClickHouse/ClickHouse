@@ -57,7 +57,7 @@ void AggregatedDataVariants::convertToTwoLevel()
 
 void Aggregator::initialize(Block & block)
 {
-	Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+	std::lock_guard<std::mutex> lock(mutex);
 
 	if (initialized)
 		return;

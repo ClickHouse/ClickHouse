@@ -22,7 +22,7 @@ public:
 	ParallelAggregatingBlockInputStream(BlockInputStreams inputs, const ColumnNumbers & keys_,
 		AggregateDescriptions & aggregates_, bool overflow_row_, bool final_, size_t max_threads_,
 		size_t max_rows_to_group_by_ = 0, OverflowMode group_by_overflow_mode_ = OverflowMode::THROW)
-		: aggregator(new Aggregator(keys_, aggregates_, overflow_row_, max_rows_to_group_by_, group_by_overflow_mode_)),
+		: aggregator(keys_, aggregates_, overflow_row_, max_rows_to_group_by_, group_by_overflow_mode_),
 		final(final_), max_threads(std::min(inputs.size(), max_threads_)),
 		keys_size(keys_.size()), aggregates_size(aggregates_.size()),
 		handler(*this), processor(inputs, max_threads, handler)
@@ -35,13 +35,12 @@ public:
 	ParallelAggregatingBlockInputStream(BlockInputStreams inputs, const Names & key_names,
 		const AggregateDescriptions & aggregates,	bool overflow_row_, bool final_, size_t max_threads_,
 		size_t max_rows_to_group_by_ = 0, OverflowMode group_by_overflow_mode_ = OverflowMode::THROW)
-		: final(final_), max_threads(std::min(inputs.size(), max_threads_)),
+		: aggregator(key_names, aggregates, overflow_row_, max_rows_to_group_by_, group_by_overflow_mode_),
+		final(final_), max_threads(std::min(inputs.size(), max_threads_)),
 		keys_size(key_names.size()), aggregates_size(aggregates.size()),
 		handler(*this), processor(inputs, max_threads, handler)
 	{
 		children.insert(children.end(), inputs.begin(), inputs.end());
-
-		aggregator = new Aggregator(key_names, aggregates, overflow_row_, max_rows_to_group_by_, group_by_overflow_mode_);
 	}
 
 	String getName() const override { return "ParallelAggregatingBlockInputStream"; }
@@ -61,7 +60,7 @@ public:
 		for (size_t i = 0; i < children_ids.size(); ++i)
 			res << (i == 0 ? "" : ", ") << children_ids[i];
 
-		res << ", " << aggregator->getID() << ")";
+		res << ", " << aggregator.getID() << ")";
 		return res.str();
 	}
 
@@ -82,7 +81,7 @@ protected:
 			AggregatedDataVariantsPtr data_variants = executeAndMerge();
 
 			if (data_variants)
-				blocks = aggregator->convertToBlocks(*data_variants, final, max_threads);
+				blocks = aggregator.convertToBlocks(*data_variants, final, max_threads);
 
 			it = blocks.begin();
 		}
@@ -98,7 +97,7 @@ protected:
 	}
 
 private:
-	SharedPtr<Aggregator> aggregator;
+	Aggregator aggregator;
 	bool final;
 	size_t max_threads;
 
@@ -126,7 +125,7 @@ private:
 
 		void onBlock(Block & block, size_t thread_num)
 		{
-			parent.aggregator->executeOnBlock(block, *parent.many_data[thread_num],
+			parent.aggregator.executeOnBlock(block, *parent.many_data[thread_num],
 				parent.threads_data[thread_num].key_columns, parent.threads_data[thread_num].aggregate_columns,
 				parent.threads_data[thread_num].key_sizes, parent.threads_data[thread_num].key, parent.no_more_keys);
 
@@ -222,7 +221,7 @@ private:
 		if (isCancelled())
 			return nullptr;
 
-		return aggregator->merge(many_data, max_threads);
+		return aggregator.merge(many_data, max_threads);
 	}
 };
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Poco/Mutex.h>
+#include <mutex>
 
 #include <Yandex/logger_useful.h>
 #include <statdaemons/threadpool.hpp>
@@ -609,8 +609,7 @@ public:
 		size_t max_rows_to_group_by_ = 0, OverflowMode group_by_overflow_mode_ = OverflowMode::THROW)
 		: keys(keys_), aggregates(aggregates_), aggregates_size(aggregates.size()),
 		overflow_row(overflow_row_),
-		max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
-		log(&Logger::get("Aggregator"))
+		max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_)
 	{
 		std::sort(keys.begin(), keys.end());
 		keys.erase(std::unique(keys.begin(), keys.end()), keys.end());
@@ -621,8 +620,7 @@ public:
 		size_t max_rows_to_group_by_ = 0, OverflowMode group_by_overflow_mode_ = OverflowMode::THROW)
 		: key_names(key_names_), aggregates(aggregates_), aggregates_size(aggregates.size()),
 		overflow_row(overflow_row_),
-		max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
-		log(&Logger::get("Aggregator"))
+		max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_)
 	{
 		std::sort(key_names.begin(), key_names.end());
 		key_names.erase(std::unique(key_names.begin(), key_names.end()), key_names.end());
@@ -683,14 +681,14 @@ protected:
 
 	/// Для инициализации от первого блока при конкуррентном использовании.
 	bool initialized = false;
-	Poco::FastMutex mutex;
+	std::mutex mutex;
 
 	size_t max_rows_to_group_by;
 	OverflowMode group_by_overflow_mode;
 
 	Block sample;
 
-	Logger * log;
+	Logger * log = &Logger::get("Aggregator");
 
 	/** Если заданы только имена столбцов (key_names, а также aggregates[i].column_name), то вычислить номера столбцов.
 	  * Сформировать блок - пример результата.
