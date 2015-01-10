@@ -634,4 +634,12 @@ Cluster & Context::getCluster(const std::string & cluster_name)
 	else
 		throw Poco::Exception("Failed to find cluster with name = " + cluster_name);
 }
+
+
+Compiler & Context::getCompiler()
+{
+	return shared->compiler;
+}
+
+
 }

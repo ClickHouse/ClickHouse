@@ -759,7 +759,9 @@ void InterpreterSelectQuery::executeAggregation(BlockInputStreams & streams, Exp
 		{
 			stream = maybeAsynchronous(
 				new ParallelAggregatingBlockInputStream(streams, key_names, aggregates, overflow_row, final,
-				settings.max_threads, settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode), settings.asynchronous);
+				settings.max_threads, settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode,
+				settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile),
+				settings.asynchronous);
 		}
 		else
 		{
@@ -779,7 +781,9 @@ void InterpreterSelectQuery::executeAggregation(BlockInputStreams & streams, Exp
 	}
 	else
 		stream = maybeAsynchronous(new AggregatingBlockInputStream(stream, key_names, aggregates, overflow_row, final,
-			settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode), settings.asynchronous);
+			settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode,
+			settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile),
+			settings.asynchronous);
 }
 
 

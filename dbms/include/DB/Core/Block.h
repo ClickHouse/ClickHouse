@@ -132,7 +132,7 @@ bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs);
 
 namespace std
 {
-	template<> inline void swap<DB::Block>(DB::Block & one, DB::Block & another) noexcept
+	template<> inline void swap<DB::Block>(DB::Block & one, DB::Block & another)
 	{
 		one.swap(another);
 	}

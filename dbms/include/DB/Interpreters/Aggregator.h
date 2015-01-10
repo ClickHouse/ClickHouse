@@ -15,6 +15,7 @@
 #include <DB/Interpreters/AggregateDescription.h>
 #include <DB/Interpreters/AggregationCommon.h>
 #include <DB/Interpreters/Limits.h>
+#include <DB/Interpreters/Compiler.h>
 
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnFixedString.h>
@@ -606,10 +607,11 @@ class Aggregator
 {
 public:
 	Aggregator(const ColumnNumbers & keys_, const AggregateDescriptions & aggregates_, bool overflow_row_,
-		size_t max_rows_to_group_by_ = 0, OverflowMode group_by_overflow_mode_ = OverflowMode::THROW)
+		size_t max_rows_to_group_by_, OverflowMode group_by_overflow_mode_, Compiler * compiler_, UInt32 min_count_to_compile_)
 		: keys(keys_), aggregates(aggregates_), aggregates_size(aggregates.size()),
 		overflow_row(overflow_row_),
-		max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_)
+		max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
+		compiler(compiler_), min_count_to_compile(min_count_to_compile_)
 	{
 		std::sort(keys.begin(), keys.end());
 		keys.erase(std::unique(keys.begin(), keys.end()), keys.end());
@@ -617,10 +619,11 @@ public:
 	}
 
 	Aggregator(const Names & key_names_, const AggregateDescriptions & aggregates_, bool overflow_row_,
-		size_t max_rows_to_group_by_ = 0, OverflowMode group_by_overflow_mode_ = OverflowMode::THROW)
+		size_t max_rows_to_group_by_, OverflowMode group_by_overflow_mode_, Compiler * compiler_, UInt32 min_count_to_compile_)
 		: key_names(key_names_), aggregates(aggregates_), aggregates_size(aggregates.size()),
 		overflow_row(overflow_row_),
-		max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_)
+		max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
+		compiler(compiler_), min_count_to_compile(min_count_to_compile_)
 	{
 		std::sort(key_names.begin(), key_names.end());
 		key_names.erase(std::unique(key_names.begin(), key_names.end()), key_names.end());
@@ -630,8 +633,9 @@ public:
 	/// Агрегировать источник. Получить результат в виде одной из структур данных.
 	void execute(BlockInputStreamPtr stream, AggregatedDataVariants & result);
 
-	typedef std::vector<ConstColumnPlainPtrs> AggregateColumns;
-	typedef std::vector<ColumnAggregateFunction::Container_t *> AggregateColumnsData;
+	using AggregateColumns = std::vector<ConstColumnPlainPtrs>;
+	using AggregateColumnsData = std::vector<ColumnAggregateFunction::Container_t *>;
+	using AggregateFunctionsPlainPtrs = std::vector<IAggregateFunction *>;
 
 	/// Обработать один блок. Вернуть false, если обработку следует прервать (при group_by_overflow_mode = 'break').
 	bool executeOnBlock(Block & block, AggregatedDataVariants & result,
@@ -669,7 +673,7 @@ protected:
 	ColumnNumbers keys;
 	Names key_names;
 	AggregateDescriptions aggregates;
-	std::vector<IAggregateFunction *> aggregate_functions;
+	AggregateFunctionsPlainPtrs aggregate_functions;
 	size_t keys_size;
 	size_t aggregates_size;
 	/// Нужно ли класть в AggregatedDataVariants::without_key агрегаты для ключей, не попавших в max_rows_to_group_by.
@@ -689,6 +693,18 @@ protected:
 	Block sample;
 
 	Logger * log = &Logger::get("Aggregator");
+
+
+	/** Динамически скомпилированная библиотека для агрегации, если есть.
+	  */
+	Compiler * compiler = nullptr;
+	UInt32 min_count_to_compile;
+	Compiler::SharedLibraryPtr compiled_aggregator;
+	const void * compiled_method_ptr = nullptr;
+
+	bool compiled_if_possible = false;
+	void compileIfPossible(AggregatedDataVariants::Type type);
+
 
 	/** Если заданы только имена столбцов (key_names, а также aggregates[i].column_name), то вычислить номера столбцов.
 	  * Сформировать блок - пример результата.

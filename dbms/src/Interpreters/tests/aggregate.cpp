@@ -23,7 +23,7 @@ int main(int argc, char ** argv)
 		size_t n = argc == 2 ? atoi(argv[1]) : 10;
 
 		DB::Block block;
-		
+
 		DB::ColumnWithNameAndType column_x;
 		column_x.name = "x";
 		column_x.type = new DB::DataTypeInt16;
@@ -73,8 +73,8 @@ int main(int argc, char ** argv)
 		DB::DataTypes empty_list_of_types;
 		aggregate_descriptions[0].function = factory.get("count", empty_list_of_types);
 
-		DB::Aggregator aggregator(key_column_numbers, aggregate_descriptions, false);
-		
+		DB::Aggregator aggregator(key_column_numbers, aggregate_descriptions, false, 0, DB::OverflowMode::THROW, nullptr, 0);
+
 		{
 			Poco::Stopwatch stopwatch;
 			stopwatch.start();

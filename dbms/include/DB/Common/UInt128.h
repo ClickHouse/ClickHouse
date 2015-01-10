@@ -1,3 +1,5 @@
+#pragma once
+
 #include <DB/Common/HashTable/Hash.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>

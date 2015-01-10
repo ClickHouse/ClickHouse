@@ -27,6 +27,7 @@
 #include <DB/Interpreters/ProcessList.h>
 #include <DB/Interpreters/Cluster.h>
 #include <DB/Interpreters/InterserverIOHandler.h>
+#include <DB/Interpreters/Compiler.h>
 #include <DB/Client/ConnectionPool.h>
 #include <statdaemons/ConfigProcessor.h>
 #include <zkutil/ZooKeeper.h>
@@ -99,6 +100,7 @@ struct ContextShared
 	InterserverIOHandler interserver_io_handler;			/// Обработчик для межсерверной передачи данных.
 	BackgroundProcessingPoolPtr background_pool;			/// Пул потоков для фоновой работы, выполняемой таблицами.
 	Macros macros;											/// Подстановки из конфига.
+	Compiler compiler { path + "build/", 1 };				/// Для динамической компиляции частей запроса, при необходимости.
 
 	/// Кластеры для distributed таблиц
 	/// Создаются при создании Distributed таблиц, так как нужно дождаться пока будут выставлены Settings
@@ -333,6 +335,8 @@ public:
 
 	void initClusters();
 	Cluster & getCluster(const std::string & cluster_name);
+
+	Compiler & getCompiler();
 
 	void shutdown() { shared->shutdown(); }
 };

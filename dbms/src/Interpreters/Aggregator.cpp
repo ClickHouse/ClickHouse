@@ -127,6 +127,97 @@ void Aggregator::initialize(Block & block)
 }
 
 
+void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
+{
+	std::lock_guard<std::mutex> lock(mutex);
+
+	if (compiled_if_possible)
+		return;
+
+	compiled_if_possible = true;
+
+	std::string method_typename;
+
+#define M(NAME, IS_TWO_LEVEL) \
+	else if (type == AggregatedDataVariants::Type::NAME) \
+		method_typename = "decltype(AggregatedDataVariants::" ## NAME ## ")::element_type";
+
+	if (false) {}
+		APPLY_FOR_AGGREGATED_VARIANTS(M)
+#undef M
+	else if (type != AggregatedDataVariants::Type::without_key)		/// TODO Реализовать для without_key
+		throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+
+	/// Список типов агрегатных функций.
+	std::stringstream aggregate_functions_typenames_str;
+	for (size_t i = 0; i < aggregates_size; ++i)
+	{
+		int status = 0;
+		char * type_name_ptr = abi::__cxa_demangle(typeid(*aggregate_functions[i]).name(), 0, 0, &status);
+		std::string type_name = type_name_ptr;
+		free(type_name_ptr);
+
+		if (status)
+			throw Exception("Cannot compile code: cannot demangle name " + String(typeid(*aggregate_functions[i]).name())
+				+ ", status: " + toString(status)/* TODO ErrorCodes*/);
+
+		aggregate_functions_typenames_str << ((i != 0) ? ", " : "") << type_name;
+	}
+
+	std::string aggregate_functions_typenames = aggregate_functions_typenames_str.str();
+
+	std::string key = "Aggregate: " + method_typename + ", " + aggregate_functions_typenames;
+
+	auto get_code = [method_typename, aggregate_functions_typenames]
+	{
+		/// Короткий кусок кода, представляющий собой явное инстанцирование шаблона.
+		std::stringstream code;
+		code <<
+			"#include <DB/Interpreters/SpecializedAggregator.h>\n"
+			"\n"
+			"namespace DB\n"
+			"{\n"
+			"\n"
+			"template void Aggregator::executeSpecialized<\n"
+				"\t" << method_typename << ", TypeList<" << aggregate_functions_typenames << ">>(\n"
+				"\t" << method_typename << " &, Arena *, size_t, ConstColumnPlainPtrs &,\n"
+				"\tAggregateColumns &, const Sizes &, StringRefs &, bool, AggregateDataPtr) const;\n"
+			"\n"
+			"static void wrapper(\n"
+				"\tconst Aggregator & aggregator,\n"
+				"\t" << method_typename << " & method,\n"
+				"\tArena * arena,\n"
+				"\tsize_t rows,\n"
+				"\tConstColumnPlainPtrs & key_columns,\n"
+				"\tAggregator::AggregateColumns & aggregate_columns,\n"
+				"\tconst Sizes & key_sizes,\n"
+				"\tStringRefs & keys,\n"
+				"\tbool no_more_keys,\n"
+				"\tAggregateDataPtr overflow_row)\n"
+			"{\n"
+				"\taggregator.executeSpecialized<\n"
+					"\t\t" << method_typename << ", TypeList<" << aggregate_functions_typenames << ">>(\n"
+					"\t\tmethod, arena, rows, key_columns, aggregate_columns, key_sizes, keys, no_more_keys, overflow_row);\n"
+			"}\n"
+			"\n"
+			"const void * getPtr() __attribute__((__visibility__(\"default\")));\n"
+			"const void * getPtr()\n"	/// Без этой обёртки непонятно, как достать нужный символ из скомпилированной библиотеки.
+			"{\n"
+				"\treturn reinterpret_cast<const void *>(&wrapper);\n"
+			"}\n"
+			"\n"
+			"}\n";
+
+		return code.str();
+	};
+
+	compiled_aggregator = compiler->getOrCount(key, min_count_to_compile, get_code);
+
+	if (compiled_aggregator)
+		compiled_method_ptr = compiled_aggregator->get<const void * (*) ()>("_ZN2DB6getPtrEv")();
+}
+
+
 AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColumnPlainPtrs & key_columns, Sizes & key_sizes)
 {
 	bool keys_fit_128_bits = true;
@@ -352,6 +443,9 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 		result.keys_size = keys_size;
 		result.key_sizes = key_sizes;
 		LOG_TRACE(log, "Aggregation method: " << result.getMethodName());
+
+		if (compiler)
+			compileIfPossible(result.type);
 	}
 
 	if ((overflow_row || result.type == AggregatedDataVariants::Type::without_key) && !result.without_key)
@@ -384,16 +478,36 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 
 	AggregateDataPtr overflow_row_ptr = overflow_row ? result.without_key : nullptr;
 
-#define M(NAME, IS_TWO_LEVEL) \
-	else if (result.type == AggregatedDataVariants::Type::NAME) \
-		executeImpl(*result.NAME, result.aggregates_pool, rows, key_columns, aggregate_columns, \
-			result.key_sizes, key, no_more_keys, overflow_row_ptr);
+	if (compiled_method_ptr)	/// NOTE Можно динамически начинать применять компилированный агрегатор, когда он станет готов, во время запроса.
+	{
+	#define M(NAME, IS_TWO_LEVEL) \
+		else if (result.type == AggregatedDataVariants::Type::NAME) \
+			reinterpret_cast<void (*)( \
+				const Aggregator &, decltype(result.NAME)::element_type &, \
+				Arena *, size_t, ConstColumnPlainPtrs &, AggregateColumns &, \
+				const Sizes &, StringRefs &, bool, AggregateDataPtr)>(compiled_method_ptr) \
+			(*this, *result.NAME, result.aggregates_pool, rows, key_columns, aggregate_columns, \
+				result.key_sizes, key, no_more_keys, overflow_row_ptr);
 
-	if (false) {}
-	APPLY_FOR_AGGREGATED_VARIANTS(M)
-#undef M
-	else if (result.type != AggregatedDataVariants::Type::without_key)
-		throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+		if (false) {}
+		APPLY_FOR_AGGREGATED_VARIANTS(M)
+	#undef M
+		else if (result.type != AggregatedDataVariants::Type::without_key)
+			throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+	}
+	else
+	{
+	#define M(NAME, IS_TWO_LEVEL) \
+		else if (result.type == AggregatedDataVariants::Type::NAME) \
+			executeImpl(*result.NAME, result.aggregates_pool, rows, key_columns, aggregate_columns, \
+				result.key_sizes, key, no_more_keys, overflow_row_ptr);
+
+		if (false) {}
+		APPLY_FOR_AGGREGATED_VARIANTS(M)
+	#undef M
+		else if (result.type != AggregatedDataVariants::Type::without_key)
+			throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+	}
 
 	size_t result_size = result.size();
 

@@ -91,7 +91,8 @@ int main(int argc, char ** argv)
 		}
 
 		DB::BlockInputStreamPtr stream = new DB::OneBlockInputStream(block);
-		stream = new DB::AggregatingBlockInputStream(stream, key_column_numbers, aggregate_descriptions, false, true, 0, DB::OverflowMode::THROW);
+		stream = new DB::AggregatingBlockInputStream(stream, key_column_numbers, aggregate_descriptions, false, true,
+													 0, DB::OverflowMode::THROW, nullptr);
 
 		DB::WriteBufferFromOStream ob(std::cout);
 		DB::RowOutputStreamPtr row_out = new DB::TabSeparatedRowOutputStream(ob, sample);
