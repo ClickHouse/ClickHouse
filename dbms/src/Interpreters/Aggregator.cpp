@@ -140,7 +140,7 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 
 #define M(NAME, IS_TWO_LEVEL) \
 	else if (type == AggregatedDataVariants::Type::NAME) \
-		method_typename = "decltype(AggregatedDataVariants::" ## NAME ## ")::element_type";
+		method_typename = "decltype(AggregatedDataVariants::" #NAME ")::element_type";
 
 	if (false) {}
 		APPLY_FOR_AGGREGATED_VARIANTS(M)
