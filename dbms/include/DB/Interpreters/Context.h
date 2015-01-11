@@ -100,7 +100,7 @@ struct ContextShared
 	InterserverIOHandler interserver_io_handler;			/// Обработчик для межсерверной передачи данных.
 	BackgroundProcessingPoolPtr background_pool;			/// Пул потоков для фоновой работы, выполняемой таблицами.
 	Macros macros;											/// Подстановки из конфига.
-	Compiler compiler { path + "build/", 1 };				/// Для динамической компиляции частей запроса, при необходимости.
+	std::unique_ptr<Compiler> compiler;						/// Для динамической компиляции частей запроса, при необходимости.
 
 	/// Кластеры для distributed таблиц
 	/// Создаются при создании Distributed таблиц, так как нужно дождаться пока будут выставлены Settings

@@ -638,7 +638,12 @@ Cluster & Context::getCluster(const std::string & cluster_name)
 
 Compiler & Context::getCompiler()
 {
-	return shared->compiler;
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+
+	if (!shared->compiler)
+		shared->compiler.reset(new Compiler{ shared->path + "build/", 1 });
+
+	return *shared->compiler;
 }
 
 
