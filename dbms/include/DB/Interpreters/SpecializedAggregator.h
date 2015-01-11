@@ -160,8 +160,8 @@ struct AggregateFunctionsCreator
 };
 
 
-template <typename Method, typename AggregateFunctionsList>		/// TODO Обновить.
-void Aggregator::executeSpecialized(
+template <typename Method, typename AggregateFunctionsList>
+void NO_INLINE Aggregator::executeSpecialized(
 	Method & method,
 	Arena * aggregates_pool,
 	size_t rows,
@@ -172,20 +172,61 @@ void Aggregator::executeSpecialized(
 	bool no_more_keys,
 	AggregateDataPtr overflow_row) const
 {
-	method.init(key_columns);
+	typename Method::State state;
+	state.init(key_columns);
 
+	if (!no_more_keys)
+		executeSpecializedCase<false, Method, AggregateFunctionsList>(
+			method, state, aggregates_pool, rows, key_columns, aggregate_columns, key_sizes, keys, overflow_row);
+	else
+		executeSpecializedCase<true, Method, AggregateFunctionsList>(
+			method, state, aggregates_pool, rows, key_columns, aggregate_columns, key_sizes, keys, overflow_row);
+}
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wuninitialized"
+
+template <bool no_more_keys, typename Method, typename AggregateFunctionsList>
+void NO_INLINE Aggregator::executeSpecializedCase(
+	Method & method,
+	typename Method::State & state,
+	Arena * aggregates_pool,
+	size_t rows,
+	ConstColumnPlainPtrs & key_columns,
+	AggregateColumns & aggregate_columns,
+	const Sizes & key_sizes,
+	StringRefs & keys,
+	AggregateDataPtr overflow_row) const
+{
 	/// Для всех строчек.
+	typename Method::iterator it;
+	typename Method::Key prev_key;
 	for (size_t i = 0; i < rows; ++i)
 	{
-		typename Method::iterator it;
 		bool inserted;			/// Вставили новый ключ, или такой ключ уже был?
 		bool overflow = false;	/// Новый ключ не поместился в хэш-таблицу из-за no_more_keys.
 
 		/// Получаем ключ для вставки в хэш-таблицу.
-		typename Method::Key key = method.getKey(key_columns, keys_size, i, key_sizes, keys);
+		typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes, keys);
 
-		if (Method::never_overflows || !no_more_keys)	/// Вставляем.
+		if (!no_more_keys)	/// Вставляем.
+		{
+			/// Оптимизация для часто повторяющихся ключей.
+			if (i != 0 && key == prev_key)
+			{
+				AggregateDataPtr value = Method::getAggregateData(it->second);
+
+				/// Добавляем значения в агрегатные функции.
+				AggregateFunctionsList::forEach(AggregateFunctionsUpdater(
+					aggregate_functions, offsets_of_aggregate_states, aggregate_columns, value, i));
+
+				continue;
+			}
+			else
+				prev_key = key;
+
 			method.data.emplace(key, it, inserted);
+		}
 		else
 		{
 			/// Будем добавлять только если ключ уже есть.
@@ -196,13 +237,13 @@ void Aggregator::executeSpecialized(
 		}
 
 		/// Если ключ не поместился, и данные не надо агрегировать в отдельную строку, то делать нечего.
-		if (!Method::never_overflows && overflow && !overflow_row)
+		if (no_more_keys && overflow && !overflow_row)
 			continue;
 
 		/// Если вставили новый ключ - инициализируем состояния агрегатных функций, и возможно, что-нибудь связанное с ключом.
 		if (inserted)
 		{
-			method.onNewKey(it, keys_size, i, keys, *aggregates_pool);
+			method.onNewKey(*it, keys_size, i, keys, *aggregates_pool);
 
 			AggregateDataPtr & aggregate_data = Method::getAggregateData(it->second);
 			aggregate_data = aggregates_pool->alloc(total_size_of_aggregate_states);
@@ -211,12 +252,14 @@ void Aggregator::executeSpecialized(
 				aggregate_functions, offsets_of_aggregate_states, aggregate_columns, aggregate_data));
 		}
 
-		AggregateDataPtr value = (Method::never_overflows || !overflow) ? Method::getAggregateData(it->second) : overflow_row;
+		AggregateDataPtr value = (!no_more_keys || !overflow) ? Method::getAggregateData(it->second) : overflow_row;
 
 		/// Добавляем значения в агрегатные функции.
 		AggregateFunctionsList::forEach(AggregateFunctionsUpdater(
 			aggregate_functions, offsets_of_aggregate_states, aggregate_columns, value, i));
 	}
 }
+
+#pragma GCC diagnostic pop
 
 }

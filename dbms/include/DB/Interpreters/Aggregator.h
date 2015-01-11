@@ -749,7 +749,34 @@ protected:
 		StringRefs & keys,
 		AggregateDataPtr overflow_row) const;
 
+public:
+	/// Шаблоны, инстанцирующиеся путём динамической компиляции кода - см. SpecializedAggregator.h
 
+	template <typename Method, typename AggregateFunctionsList>
+	void executeSpecialized(
+		Method & method,
+		Arena * aggregates_pool,
+		size_t rows,
+		ConstColumnPlainPtrs & key_columns,
+		AggregateColumns & aggregate_columns,
+		const Sizes & key_sizes,
+		StringRefs & keys,
+		bool no_more_keys,
+		AggregateDataPtr overflow_row) const;
+
+	template <bool no_more_keys, typename Method, typename AggregateFunctionsList>
+	void executeSpecializedCase(
+		Method & method,
+		typename Method::State & state,
+		Arena * aggregates_pool,
+		size_t rows,
+		ConstColumnPlainPtrs & key_columns,
+		AggregateColumns & aggregate_columns,
+		const Sizes & key_sizes,
+		StringRefs & keys,
+		AggregateDataPtr overflow_row) const;
+
+protected:
 	/// Слить данные из хэш-таблицы src в dst.
 	template <typename Method, typename Table>
 	void mergeDataImpl(

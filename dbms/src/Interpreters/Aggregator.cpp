@@ -170,7 +170,7 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 
 	auto get_code = [method_typename, aggregate_functions_typenames]
 	{
-		/// Короткий кусок кода, представляющий собой явное инстанцирование шаблона.
+		/// Короткий кусок кода, представляющий собой явное инстанцирование шаблона. TODO То же самое для TwoLevel.
 		std::stringstream code;
 		code <<
 			"#include <DB/Interpreters/SpecializedAggregator.h>\n"
