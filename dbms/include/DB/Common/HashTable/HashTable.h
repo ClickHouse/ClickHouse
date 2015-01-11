@@ -136,7 +136,7 @@ struct HashTableCell
 
 /** Определяет размер хэш-таблицы, а также когда и во сколько раз её надо ресайзить.
   */
-template <size_t initial_size_degree = 16>
+template <size_t initial_size_degree = 8>
 struct HashTableGrower
 {
 	/// Состояние этой структуры достаточно, чтобы получить размер буфера хэш-таблицы.
