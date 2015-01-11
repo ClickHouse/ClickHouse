@@ -19,7 +19,7 @@ int main(int argc, char ** argv)
 		auto lib = compiler.getOrCount("xxx", 1, []() -> std::string
 		{
 			return "void f() __attribute__((__visibility__(\"default\"))); void f() {}";
-		});
+		}, [](SharedLibraryPtr&){});
 	}
 	catch (const DB::Exception & e)
 	{

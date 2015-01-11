@@ -1,6 +1,7 @@
 #pragma once
 
 #include <mutex>
+#include <memory>
 
 #include <Yandex/logger_useful.h>
 #include <statdaemons/threadpool.hpp>
@@ -695,12 +696,21 @@ protected:
 	Logger * log = &Logger::get("Aggregator");
 
 
-	/** Динамически скомпилированная библиотека для агрегации, если есть.
-	  */
+	/** Для динамической компиляции, если предусмотрено. */
 	Compiler * compiler = nullptr;
 	UInt32 min_count_to_compile;
-	Compiler::SharedLibraryPtr compiled_aggregator;
-	const void * compiled_method_ptr = nullptr;
+
+	/** Динамически скомпилированная библиотека для агрегации, если есть. */
+	struct CompiledData
+	{
+		SharedLibraryPtr compiled_aggregator;
+
+		/// Получены с помощью dlsym. Нужно ещё сделать reinterpret_cast в указатель на функцию.
+		const void * compiled_method_ptr = nullptr;
+		const void * compiled_two_level_method_ptr = nullptr;
+	};
+	/// shared_ptr - чтобы передавать в callback, который может пережить Aggregator.
+	std::shared_ptr<CompiledData> compiled_data { new CompiledData };
 
 	bool compiled_if_possible = false;
 	void compileIfPossible(AggregatedDataVariants::Type type);

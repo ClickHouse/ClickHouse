@@ -55,6 +55,8 @@ private:
 	void * handle;
 };
 
+using SharedLibraryPtr = std::shared_ptr<SharedLibrary>;
+
 
 /** Позволяет скомпилировать кусок кода, использующий заголовочные файлы сервера, в динамическую библиотеку.
   * Ведёт статистику вызовов, и инициирует компиляцию только на N-ый по счёту вызов для одного ключа.
@@ -72,7 +74,9 @@ public:
 	~Compiler();
 
 	using HashedKey = UInt128;
-	using SharedLibraryPtr = std::shared_ptr<SharedLibrary>;
+
+	using CodeGenerator = std::function<std::string()>;
+	using ReadyCallback = std::function<void(SharedLibraryPtr&)>;
 
 	/** Увеличить счётчик для заданного ключа key на единицу.
 	  * Если результат компиляции уже есть (уже открыт, или есть файл с библиотекой),
@@ -84,7 +88,8 @@ public:
 	SharedLibraryPtr getOrCount(
 		const std::string & key,
 		UInt32 min_count_to_compile,
-		std::function<std::string()> get_code);
+		CodeGenerator get_code,
+		ReadyCallback on_ready);
 
 private:
 	using Counts = std::unordered_map<HashedKey, UInt32, UInt128Hash>;
@@ -108,7 +113,7 @@ private:
 	Logger * log = &Logger::get("Compiler");
 
 
-	void compile(HashedKey hashed_key, std::string file_name, std::function<std::string()> get_code);
+	void compile(HashedKey hashed_key, std::string file_name, CodeGenerator get_code, ReadyCallback on_ready);
 };
 
 }

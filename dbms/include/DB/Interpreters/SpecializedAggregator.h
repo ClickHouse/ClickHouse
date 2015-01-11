@@ -44,7 +44,7 @@ struct TypeList
 	using At = typename std::template conditional<I == 0, Head, typename Tail::template At<I - 1>>::type;
 
 	template <typename Func, size_t index = 0>
-	static void forEach(Func && func)
+	static void ALWAYS_INLINE forEach(Func && func)
 	{
 		func.template operator()<Head, index>();
 		Tail::template forEach<Func, index + 1>(std::forward<Func>(func));
@@ -63,7 +63,7 @@ struct TypeList<THead>
 	using At = typename std::template conditional<I == 0, Head, std::nullptr_t>::type;
 
 	template <typename Func, size_t index = 0>
-	static void forEach(Func && func)
+	static void ALWAYS_INLINE forEach(Func && func)
 	{
 		func.template operator()<Head, index>();
 	}
@@ -132,32 +132,35 @@ struct AggregateFunctionsCreator
 	}
 
 	template <typename AggregateFunction, size_t column_num>
-	void operator()()
-	{
-		AggregateFunction * func = static_cast<AggregateFunction *>(aggregate_functions[column_num]);
-
-		try
-		{
-			/** Может возникнуть исключение при нехватке памяти.
-			  * Для того, чтобы потом всё правильно уничтожилось, "откатываем" часть созданных состояний.
-			  * Код не очень удобный.
-			  */
-			func->create(aggregate_data + offsets_of_aggregate_states[column_num]);
-		}
-		catch (...)
-		{
-			for (size_t rollback_j = 0; rollback_j < column_num; ++rollback_j)
-				func->destroy(aggregate_data + offsets_of_aggregate_states[rollback_j]);
-
-			aggregate_data = nullptr;
-			throw;
-		}
-	}
+	void operator()() ALWAYS_INLINE;
 
 	const Aggregator::AggregateFunctionsPlainPtrs & aggregate_functions;
 	const Sizes & offsets_of_aggregate_states;
 	AggregateDataPtr & aggregate_data;
 };
+
+template <typename AggregateFunction, size_t column_num>
+void AggregateFunctionsCreator::operator()()
+{
+	AggregateFunction * func = static_cast<AggregateFunction *>(aggregate_functions[column_num]);
+
+	try
+	{
+		/** Может возникнуть исключение при нехватке памяти.
+			* Для того, чтобы потом всё правильно уничтожилось, "откатываем" часть созданных состояний.
+			* Код не очень удобный.
+			*/
+		func->create(aggregate_data + offsets_of_aggregate_states[column_num]);
+	}
+	catch (...)
+	{
+		for (size_t rollback_j = 0; rollback_j < column_num; ++rollback_j)
+			func->destroy(aggregate_data + offsets_of_aggregate_states[rollback_j]);
+
+		aggregate_data = nullptr;
+		throw;
+	}
+}
 
 
 template <typename Method, typename AggregateFunctionsList>

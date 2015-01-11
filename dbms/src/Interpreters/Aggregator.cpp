@@ -170,7 +170,7 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 
 	auto get_code = [method_typename, aggregate_functions_typenames]
 	{
-		/// Короткий кусок кода, представляющий собой явное инстанцирование шаблона. TODO То же самое для TwoLevel.
+		/// Короткий кусок кода, представляющий собой явное инстанцирование шаблона.
 		std::stringstream code;
 		code <<
 			"#include <DB/Interpreters/SpecializedAggregator.h>\n"
@@ -205,16 +205,62 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 			"{\n"
 				"\treturn reinterpret_cast<const void *>(&wrapper);\n"
 			"}\n"
+/*			"\n" /// То же самое для TwoLevel.
 			"\n"
+			"template void Aggregator::executeSpecialized<\n"
+				"\t" << method_typename << ", TypeList<" << aggregate_functions_typenames << ">>(\n"
+				"\t" << method_typename << " &, Arena *, size_t, ConstColumnPlainPtrs &,\n"
+				"\tAggregateColumns &, const Sizes &, StringRefs &, bool, AggregateDataPtr) const;\n"
+			"\n"
+			"static void wrapper(\n"
+				"\tconst Aggregator & aggregator,\n"
+				"\t" << method_typename << " & method,\n"
+				"\tArena * arena,\n"
+				"\tsize_t rows,\n"
+				"\tConstColumnPlainPtrs & key_columns,\n"
+				"\tAggregator::AggregateColumns & aggregate_columns,\n"
+				"\tconst Sizes & key_sizes,\n"
+				"\tStringRefs & keys,\n"
+				"\tbool no_more_keys,\n"
+				"\tAggregateDataPtr overflow_row)\n"
+			"{\n"
+				"\taggregator.executeSpecialized<\n"
+					"\t\t" << method_typename << ", TypeList<" << aggregate_functions_typenames << ">>(\n"
+					"\t\tmethod, arena, rows, key_columns, aggregate_columns, key_sizes, keys, no_more_keys, overflow_row);\n"
+			"}\n"
+			"\n"
+			"const void * getPtr() __attribute__((__visibility__(\"default\")));\n"
+			"const void * getPtr()\n"	/// Без этой обёртки непонятно, как достать нужный символ из скомпилированной библиотеки.
+			"{\n"
+				"\treturn reinterpret_cast<const void *>(&wrapper);\n"
+			"}\n"
+			"\n"*/
 			"}\n";
 
 		return code.str();
 	};
 
-	compiled_aggregator = compiler->getOrCount(key, min_count_to_compile, get_code);
+	auto compiled_data_owned_by_callback = compiled_data;
+	auto on_ready = [compiled_data_owned_by_callback] (SharedLibraryPtr & lib)
+	{
+		if (compiled_data_owned_by_callback.unique())	/// Aggregator уже уничтожен.
+			return;
 
-	if (compiled_aggregator)
-		compiled_method_ptr = compiled_aggregator->get<const void * (*) ()>("_ZN2DB6getPtrEv")();
+		compiled_data_owned_by_callback->compiled_aggregator = lib;
+		compiled_data_owned_by_callback->compiled_method_ptr = lib->get<const void * (*) ()>("_ZN2DB6getPtrEv")();
+//		compiled_data_owned_by_callback->compiled_two_level_method_ptr = lib->get<const void * (*) ()>("_ZN2DB14getPtrTwoLevelEv")();
+	};
+
+	/** Если библиотека уже была скомпилирована, то возвращается ненулевой SharedLibraryPtr.
+	  * Если библиотека не была скомпилирована, то увеличивается счётчик, и возвращается nullptr.
+	  * Если счётчик достигнул значения min_count_to_compile, то асинхронно (в отдельном потоке) запускается компиляция,
+	  *  по окончании которой вызывается колбэк on_ready.
+	  */
+	SharedLibraryPtr lib = compiler->getOrCount(key, min_count_to_compile, get_code, on_ready);
+
+	/// Если результат уже готов.
+	if (lib)
+		on_ready(lib);
 }
 
 
@@ -478,14 +524,14 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 
 	AggregateDataPtr overflow_row_ptr = overflow_row ? result.without_key : nullptr;
 
-	if (compiled_method_ptr)	/// NOTE Можно динамически начинать применять компилированный агрегатор, когда он станет готов, во время запроса.
+	if (compiled_data->compiled_method_ptr/* && compiled_data->compiled_two_level_method_ptr*/)
 	{
 	#define M(NAME, IS_TWO_LEVEL) \
 		else if (result.type == AggregatedDataVariants::Type::NAME) \
 			reinterpret_cast<void (*)( \
 				const Aggregator &, decltype(result.NAME)::element_type &, \
 				Arena *, size_t, ConstColumnPlainPtrs &, AggregateColumns &, \
-				const Sizes &, StringRefs &, bool, AggregateDataPtr)>(compiled_method_ptr) \
+				const Sizes &, StringRefs &, bool, AggregateDataPtr)>(compiled_data->compiled_method_ptr) \
 			(*this, *result.NAME, result.aggregates_pool, rows, key_columns, aggregate_columns, \
 				result.key_sizes, key, no_more_keys, overflow_row_ptr);
 

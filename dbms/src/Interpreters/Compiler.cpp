@@ -72,10 +72,11 @@ static std::string hashedKeyToFileName(Compiler::HashedKey hashed_key)
 }
 
 
-Compiler::SharedLibraryPtr Compiler::getOrCount(
+SharedLibraryPtr Compiler::getOrCount(
 	const std::string & key,
 	UInt32 min_count_to_compile,
-	std::function<std::string()> get_code)
+	CodeGenerator get_code,
+	ReadyCallback on_ready)
 {
 	HashedKey hashed_key = getHash(key);
 
@@ -96,9 +97,14 @@ Compiler::SharedLibraryPtr Compiler::getOrCount(
 	/// Есть файл с библиотекой, оставшийся от предыдущего запуска?
 	std::string file_name = hashedKeyToFileName(hashed_key);
 	if (files.count(file_name))
-		return libraries.emplace(std::piecewise_construct,
-			std::forward_as_tuple(hashed_key),
-			std::forward_as_tuple(new SharedLibrary(path + '/' + file_name + ".so"))).first->second;
+	{
+		std::string so_file_path = path + '/' + file_name + ".so";
+		LOG_INFO(log, "Loading existing library " << so_file_path);
+
+		SharedLibraryPtr lib(new SharedLibrary(so_file_path));
+		libraries[hashed_key] = lib;
+		return lib;
+	}
 
 	/// Достигнуто ли min_count_to_compile?
 	if (count >= min_count_to_compile)
@@ -115,7 +121,7 @@ Compiler::SharedLibraryPtr Compiler::getOrCount(
 			{
 				try
 				{
-					compile(hashed_key, file_name, get_code);
+					compile(hashed_key, file_name, get_code, on_ready);
 				}
 				catch (...)
 				{
@@ -160,7 +166,7 @@ struct Pipe : private boost::noncopyable
 };
 
 
-void Compiler::compile(HashedKey hashed_key, std::string file_name, std::function<std::string()> get_code)
+void Compiler::compile(HashedKey hashed_key, std::string file_name, CodeGenerator get_code, ReadyCallback on_ready)
 {
 	LOG_INFO(log, "Compiling code " << file_name);
 
@@ -218,12 +224,16 @@ void Compiler::compile(HashedKey hashed_key, std::string file_name, std::functio
 	/// Если до этого была ошибка, то файл с кодом остаётся для возможности просмотра.
 	Poco::File(cpp_file_path).remove();
 
+	SharedLibraryPtr lib(new SharedLibrary(so_file_path));
+
 	{
 		std::lock_guard<std::mutex> lock(mutex);
-		libraries[hashed_key].reset(new SharedLibrary(so_file_path));
+		libraries[hashed_key] = lib;
 	}
 
 	LOG_INFO(log, "Compiled code " << file_name);
+
+	on_ready(lib);
 }
 
 
