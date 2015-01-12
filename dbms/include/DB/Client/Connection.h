@@ -130,6 +130,9 @@ public:
 	size_t outBytesCount() const { return !out.isNull() ? out->count() : 0; }
 	size_t inBytesCount() const { return !in.isNull() ? in->count() : 0; }
 
+	/// Ждать изменение статуса нескольких соединений. Возвращает соединение готовое к чтению.
+	static Connection * waitForReadEvent(const std::vector<Connection *> & connections, size_t timeout_microseconds = 0);
+
 private:
 	String host;
 	UInt16 port;
