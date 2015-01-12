@@ -57,11 +57,13 @@ public:
 		return Base::get(settings);
 	}
 
-	/** Выделяет до указанного количества соединений. */
-	std::vector<Entry> getMany(unsigned max_connections, Settings * settings = nullptr) override
+	/** Выделяет до указанного количества соединений для работы. 
+	  * Соединения предоставляют доступ к разным репликам одного шарда.
+	  */
+	std::vector<Entry> getMany(Settings * settings = nullptr) override
 	{
 		applyLoadBalancing(settings);
-		return Base::getMany(max_connections, settings);
+		return Base::getMany(settings);
 	}
 
 protected:
