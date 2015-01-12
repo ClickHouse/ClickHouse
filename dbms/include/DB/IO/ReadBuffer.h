@@ -73,6 +73,11 @@ public:
 		return pos == working_buffer.end() && !next();
 	}
 
+	inline bool hasPendingBytes() const
+	{
+		return pos != working_buffer.end();
+	}
+
 	void ignore()
 	{
 		if (!eof())
