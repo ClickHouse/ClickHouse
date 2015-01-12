@@ -2,6 +2,8 @@
 #include <thread>
 #include <future>
 
+#include <cxxabi.h>
+
 #include <statdaemons/Stopwatch.h>
 
 #include <DB/DataTypes/DataTypeAggregateFunction.h>
