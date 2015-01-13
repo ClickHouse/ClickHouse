@@ -158,7 +158,8 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 
 	APPLY_FOR_VARIANTS_NOT_CONVERTIBLE_TO_TWO_LEVEL(M)
 #undef M
-	else if (type != AggregatedDataVariants::Type::without_key)		/// TODO Реализовать для without_key
+	else if (type == AggregatedDataVariants::Type::without_key) {}
+	else
 		throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 
 	/// Список типов агрегатных функций.
@@ -179,7 +180,12 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 
 	std::string aggregate_functions_typenames = aggregate_functions_typenames_str.str();
 
-	std::string key = "Aggregate: " + method_typename + ", " + aggregate_functions_typenames;
+	std::stringstream key_str;
+	key_str << "Aggregate: ";
+	if (!method_typename.empty())
+		key_str << method_typename + ", ";
+	key_str << aggregate_functions_typenames;
+	std::string key = key_str.str();
 
 	auto get_code = [method_typename, method_typename_two_level, aggregate_functions_typenames]
 	{
@@ -226,12 +232,39 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 				"}\n";
 		};
 
-		append_code_for_specialization(method_typename, "");
+		if (!method_typename.empty())
+			append_code_for_specialization(method_typename, "");
+		else
+		{
+			/// Для метода without_key.
+			code <<
+				"template void Aggregator::executeSpecializedWithoutKey<\n"
+					"\t" << "TypeList<" << aggregate_functions_typenames << ">>(\n"
+					"\tAggregatedDataWithoutKey &, size_t, AggregateColumns &) const;\n"
+				"\n"
+				"static void wrapper(\n"
+					"\tconst Aggregator & aggregator,\n"
+					"\tAggregatedDataWithoutKey & method,\n"
+					"\tsize_t rows,\n"
+					"\tAggregator::AggregateColumns & aggregate_columns)\n"
+				"{\n"
+					"\taggregator.executeSpecializedWithoutKey<\n"
+						"\t\tTypeList<" << aggregate_functions_typenames << ">>(\n"
+						"\t\tmethod, rows, aggregate_columns);\n"
+				"}\n"
+				"\n"
+				"const void * getPtr() __attribute__((__visibility__(\"default\")));\n"
+				"const void * getPtr()\n"
+				"{\n"
+					"\treturn reinterpret_cast<const void *>(&wrapper);\n"
+				"}\n";
+		}
 
 		if (!method_typename_two_level.empty())
 			append_code_for_specialization(method_typename_two_level, "TwoLevel");
 		else
 		{
+			/// Заглушка.
 			code <<
 				"const void * getPtrTwoLevel() __attribute__((__visibility__(\"default\")));\n"
 				"const void * getPtrTwoLevel()\n"
@@ -455,6 +488,30 @@ void NO_INLINE Aggregator::executeImplCase(
 #pragma GCC diagnostic pop
 
 
+void NO_INLINE Aggregator::executeWithoutKeyImpl(
+	AggregatedDataWithoutKey & res,
+	size_t rows,
+	AggregateColumns & aggregate_columns) const
+{
+	/// Оптимизация в случае единственной агрегатной функции count.
+	AggregateFunctionCount * agg_count = aggregates_size == 1
+		? typeid_cast<AggregateFunctionCount *>(aggregate_functions[0])
+		: NULL;
+
+	if (agg_count)
+		agg_count->addDelta(res, rows);
+	else
+	{
+		for (size_t i = 0; i < rows; ++i)
+		{
+			/// Добавляем значения
+			for (size_t j = 0; j < aggregates_size; ++j)
+				aggregate_functions[j]->add(res + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
+		}
+	}
+}
+
+
 bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 	ConstColumnPlainPtrs & key_columns, AggregateColumns & aggregate_columns,
 	Sizes & key_sizes, StringRefs & key,
@@ -512,71 +569,72 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 		createAggregateStates(result.without_key);
 	}
 
+	/// Выбираем один из методов агрегации и вызываем его.
+
+	/// Для случая, когда нет ключей (всё агегировать в одну строку).
 	if (result.type == AggregatedDataVariants::Type::without_key)
 	{
-		AggregatedDataWithoutKey & res = result.without_key;
-
-		/// Оптимизация в случае единственной агрегатной функции count.
-		AggregateFunctionCount * agg_count = aggregates_size == 1
-			? typeid_cast<AggregateFunctionCount *>(aggregate_functions[0])
-			: NULL;
-
-		if (agg_count)
-			agg_count->addDelta(res, rows);
-		else
+		/// Если есть динамически скомпилированный код.
+		if (compiled_data->compiled_method_ptr)
 		{
-			for (size_t i = 0; i < rows; ++i)
-			{
-				/// Добавляем значения
-				for (size_t j = 0; j < aggregates_size; ++j)
-					aggregate_functions[j]->add(res + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
-			}
+			reinterpret_cast<
+				void (*)(const Aggregator &, AggregatedDataWithoutKey &, size_t, AggregateColumns &)>
+					(compiled_data->compiled_method_ptr)(*this, result.without_key, rows, aggregate_columns);
 		}
-	}
-
-	AggregateDataPtr overflow_row_ptr = overflow_row ? result.without_key : nullptr;
-
-	bool is_two_level = result.isTwoLevel();
-	if (!is_two_level && compiled_data->compiled_method_ptr)
-	{
-	#define M(NAME, IS_TWO_LEVEL) \
-		else if (result.type == AggregatedDataVariants::Type::NAME) \
-			reinterpret_cast<void (*)( \
-				const Aggregator &, decltype(result.NAME)::element_type &, \
-				Arena *, size_t, ConstColumnPlainPtrs &, AggregateColumns &, \
-				const Sizes &, StringRefs &, bool, AggregateDataPtr)>(compiled_data->compiled_method_ptr) \
-			(*this, *result.NAME, result.aggregates_pool, rows, key_columns, aggregate_columns, \
-				result.key_sizes, key, no_more_keys, overflow_row_ptr);
-
-		if (false) {}
-		APPLY_FOR_AGGREGATED_VARIANTS(M)
-	#undef M
-	}
-	else if (is_two_level && compiled_data->compiled_two_level_method_ptr)
-	{
-	#define M(NAME) \
-		else if (result.type == AggregatedDataVariants::Type::NAME) \
-			reinterpret_cast<void (*)( \
-				const Aggregator &, decltype(result.NAME)::element_type &, \
-				Arena *, size_t, ConstColumnPlainPtrs &, AggregateColumns &, \
-				const Sizes &, StringRefs &, bool, AggregateDataPtr)>(compiled_data->compiled_two_level_method_ptr) \
-			(*this, *result.NAME, result.aggregates_pool, rows, key_columns, aggregate_columns, \
-				result.key_sizes, key, no_more_keys, overflow_row_ptr);
-
-		if (false) {}
-		APPLY_FOR_VARIANTS_TWO_LEVEL(M)
-	#undef M
+		else
+			executeWithoutKeyImpl(result.without_key, rows, aggregate_columns);
 	}
 	else
 	{
-	#define M(NAME, IS_TWO_LEVEL) \
-		else if (result.type == AggregatedDataVariants::Type::NAME) \
-			executeImpl(*result.NAME, result.aggregates_pool, rows, key_columns, aggregate_columns, \
-				result.key_sizes, key, no_more_keys, overflow_row_ptr);
+		/// Сюда пишутся данные, не поместившиеся в max_rows_to_group_by при group_by_overflow_mode = any.
+		AggregateDataPtr overflow_row_ptr = overflow_row ? result.without_key : nullptr;
 
-		if (false) {}
-		APPLY_FOR_AGGREGATED_VARIANTS(M)
-	#undef M
+		bool is_two_level = result.isTwoLevel();
+
+		/// Скомпилированный код, для обычной структуры.
+		if (!is_two_level && compiled_data->compiled_method_ptr)
+		{
+		#define M(NAME, IS_TWO_LEVEL) \
+			else if (result.type == AggregatedDataVariants::Type::NAME) \
+				reinterpret_cast<void (*)( \
+					const Aggregator &, decltype(result.NAME)::element_type &, \
+					Arena *, size_t, ConstColumnPlainPtrs &, AggregateColumns &, \
+					const Sizes &, StringRefs &, bool, AggregateDataPtr)>(compiled_data->compiled_method_ptr) \
+				(*this, *result.NAME, result.aggregates_pool, rows, key_columns, aggregate_columns, \
+					result.key_sizes, key, no_more_keys, overflow_row_ptr);
+
+			if (false) {}
+			APPLY_FOR_AGGREGATED_VARIANTS(M)
+		#undef M
+		}
+		/// Скомпилированный код, для two-level структуры.
+		else if (is_two_level && compiled_data->compiled_two_level_method_ptr)
+		{
+		#define M(NAME) \
+			else if (result.type == AggregatedDataVariants::Type::NAME) \
+				reinterpret_cast<void (*)( \
+					const Aggregator &, decltype(result.NAME)::element_type &, \
+					Arena *, size_t, ConstColumnPlainPtrs &, AggregateColumns &, \
+					const Sizes &, StringRefs &, bool, AggregateDataPtr)>(compiled_data->compiled_two_level_method_ptr) \
+				(*this, *result.NAME, result.aggregates_pool, rows, key_columns, aggregate_columns, \
+					result.key_sizes, key, no_more_keys, overflow_row_ptr);
+
+			if (false) {}
+			APPLY_FOR_VARIANTS_TWO_LEVEL(M)
+		#undef M
+		}
+		/// Когда нет динамически скомпилированного кода.
+		else
+		{
+		#define M(NAME, IS_TWO_LEVEL) \
+			else if (result.type == AggregatedDataVariants::Type::NAME) \
+				executeImpl(*result.NAME, result.aggregates_pool, rows, key_columns, aggregate_columns, \
+					result.key_sizes, key, no_more_keys, overflow_row_ptr);
+
+			if (false) {}
+			APPLY_FOR_AGGREGATED_VARIANTS(M)
+		#undef M
+		}
 	}
 
 	size_t result_size = result.size();

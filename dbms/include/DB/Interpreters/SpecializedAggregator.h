@@ -112,7 +112,7 @@ struct AggregateFunctionsUpdater
 template <typename AggregateFunction, size_t column_num>
 void AggregateFunctionsUpdater::operator()()
 {
-	reinterpret_cast<AggregateFunction *>(aggregate_functions[column_num])->add(
+	static_cast<AggregateFunction *>(aggregate_functions[column_num])->add(
 		value + offsets_of_aggregate_states[column_num],
 		&aggregate_columns[column_num][0],
 		row_num);
@@ -264,5 +264,28 @@ void NO_INLINE Aggregator::executeSpecializedCase(
 }
 
 #pragma GCC diagnostic pop
+
+template <typename AggregateFunctionsList>
+void NO_INLINE Aggregator::executeSpecializedWithoutKey(
+	AggregatedDataWithoutKey & res,
+	size_t rows,
+	AggregateColumns & aggregate_columns) const
+{
+	/// Оптимизация в случае единственной агрегатной функции count.
+	AggregateFunctionCount * agg_count = aggregates_size == 1
+		? typeid_cast<AggregateFunctionCount *>(aggregate_functions[0])
+		: NULL;
+
+	if (agg_count)
+		agg_count->addDelta(res, rows);
+	else
+	{
+		for (size_t i = 0; i < rows; ++i)
+		{
+			AggregateFunctionsList::forEach(AggregateFunctionsUpdater(
+				aggregate_functions, offsets_of_aggregate_states, aggregate_columns, res, i));
+		}
+	}
+}
 
 }

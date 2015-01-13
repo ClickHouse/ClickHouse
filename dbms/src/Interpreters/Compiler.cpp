@@ -119,6 +119,8 @@ SharedLibraryPtr Compiler::getOrCount(
 			/// Обозначает, что библиотека в процессе компиляции.
 			libraries[hashed_key] = nullptr;
 
+			LOG_INFO(log, "Compiling code " << file_name << ", key: " << key);
+
 			pool.schedule([=]
 			{
 				try
@@ -170,8 +172,6 @@ struct Pipe : private boost::noncopyable
 
 void Compiler::compile(HashedKey hashed_key, std::string file_name, CodeGenerator get_code, ReadyCallback on_ready)
 {
-	LOG_INFO(log, "Compiling code " << file_name);
-
 	std::string prefix = path + "/" + file_name;
 	std::string cpp_file_path = prefix + ".cpp";
 	std::string so_file_path = prefix + ".so";

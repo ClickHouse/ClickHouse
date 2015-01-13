@@ -705,7 +705,12 @@ protected:
 	Compiler * compiler = nullptr;
 	UInt32 min_count_to_compile;
 
-	/** Динамически скомпилированная библиотека для агрегации, если есть. */
+	/** Динамически скомпилированная библиотека для агрегации, если есть.
+	  * Смысл динамической компиляции в том, чтобы специализировать код
+	  *  под конкретный список агрегатных функций.
+	  * Это позволяет развернуть цикл по созданию и обновлению состояний агрегатных функций,
+	  *  а также использовать вместо виртуальных вызовов inline-код.
+	  */
 	struct CompiledData
 	{
 		SharedLibraryPtr compiled_aggregator;
@@ -765,6 +770,12 @@ protected:
 		StringRefs & keys,
 		AggregateDataPtr overflow_row) const;
 
+	/// Для случая, когда нет ключей (всё агрегировать в одну строку).
+	void executeWithoutKeyImpl(
+		AggregatedDataWithoutKey & res,
+		size_t rows,
+		AggregateColumns & aggregate_columns) const;
+
 public:
 	/// Шаблоны, инстанцирующиеся путём динамической компиляции кода - см. SpecializedAggregator.h
 
@@ -791,6 +802,12 @@ public:
 		const Sizes & key_sizes,
 		StringRefs & keys,
 		AggregateDataPtr overflow_row) const;
+
+	template <typename AggregateFunctionsList>
+	void executeSpecializedWithoutKey(
+		AggregatedDataWithoutKey & res,
+		size_t rows,
+		AggregateColumns & aggregate_columns) const;
 
 protected:
 	/// Слить данные из хэш-таблицы src в dst.
