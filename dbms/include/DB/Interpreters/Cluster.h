@@ -18,8 +18,8 @@ class Cluster : private boost::noncopyable
 public:
 	Cluster(const Settings & settings, const DataTypeFactory & data_type_factory, const String & cluster_name);
 
-	/// Построить кластер по именам шардов и реплик, локальные обрабатываются так же как удаленные
-	Cluster(const Settings & settings, const DataTypeFactory & data_type_factory, std::vector< std::vector<String> > names,
+	/// Построить кластер по именам шардов и реплик. Локальные обрабатываются так же как удаленные.
+	Cluster(const Settings & settings, const DataTypeFactory & data_type_factory, std::vector<std::vector<String>> names,
 			const String & username, const String & password);
 
 	/// количество узлов clickhouse сервера, расположенных локально
@@ -80,7 +80,7 @@ private:
 	Addresses addresses;
 	AddressesWithFailover addresses_with_failover;
 
-	size_t local_nodes_num;
+	size_t local_nodes_num = 0;
 };
 
 struct Clusters
