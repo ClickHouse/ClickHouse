@@ -749,8 +749,6 @@ void InterpreterSelectQuery::executeAggregation(BlockInputStreams & streams, Exp
 	AggregateDescriptions aggregates;
 	query_analyzer->getAggregateInfo(key_names, aggregates);
 
-	bool separate_totals = to_stage > QueryProcessingStage::WithMergeableState;
-
 	/// Если источников несколько, то выполняем параллельную агрегацию
 	if (streams.size() > 1)
 	{
