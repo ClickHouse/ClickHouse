@@ -139,13 +139,24 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 	compiled_if_possible = true;
 
 	std::string method_typename;
+	std::string method_typename_two_level;
 
-#define M(NAME, IS_TWO_LEVEL) \
+	if (false) {}
+#define M(NAME) \
+	else if (type == AggregatedDataVariants::Type::NAME) \
+	{ \
+		method_typename = "decltype(AggregatedDataVariants::" #NAME ")::element_type"; \
+		method_typename_two_level = "decltype(AggregatedDataVariants::" #NAME "_two_level)::element_type"; \
+	}
+
+	APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
+#undef M
+
+#define M(NAME) \
 	else if (type == AggregatedDataVariants::Type::NAME) \
 		method_typename = "decltype(AggregatedDataVariants::" #NAME ")::element_type";
 
-	if (false) {}
-		APPLY_FOR_AGGREGATED_VARIANTS(M)
+	APPLY_FOR_VARIANTS_NOT_CONVERTIBLE_TO_TWO_LEVEL(M)
 #undef M
 	else if (type != AggregatedDataVariants::Type::without_key)		/// TODO Реализовать для without_key
 		throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
@@ -161,7 +172,7 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 
 		if (status)
 			throw Exception("Cannot compile code: cannot demangle name " + String(typeid(*aggregate_functions[i]).name())
-				+ ", status: " + toString(status)/* TODO ErrorCodes*/);
+				+ ", status: " + toString(status), ErrorCodes::CANNOT_COMPILE_CODE);
 
 		aggregate_functions_typenames_str << ((i != 0) ? ", " : "") << type_name;
 	}
@@ -170,7 +181,7 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 
 	std::string key = "Aggregate: " + method_typename + ", " + aggregate_functions_typenames;
 
-	auto get_code = [method_typename, aggregate_functions_typenames]
+	auto get_code = [method_typename, method_typename_two_level, aggregate_functions_typenames]
 	{
 		/// Короткий кусок кода, представляющий собой явное инстанцирование шаблона.
 		std::stringstream code;
@@ -179,64 +190,57 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 			"\n"
 			"namespace DB\n"
 			"{\n"
-			"\n"
-			"template void Aggregator::executeSpecialized<\n"
-				"\t" << method_typename << ", TypeList<" << aggregate_functions_typenames << ">>(\n"
-				"\t" << method_typename << " &, Arena *, size_t, ConstColumnPlainPtrs &,\n"
-				"\tAggregateColumns &, const Sizes &, StringRefs &, bool, AggregateDataPtr) const;\n"
-			"\n"
-			"static void wrapper(\n"
-				"\tconst Aggregator & aggregator,\n"
-				"\t" << method_typename << " & method,\n"
-				"\tArena * arena,\n"
-				"\tsize_t rows,\n"
-				"\tConstColumnPlainPtrs & key_columns,\n"
-				"\tAggregator::AggregateColumns & aggregate_columns,\n"
-				"\tconst Sizes & key_sizes,\n"
-				"\tStringRefs & keys,\n"
-				"\tbool no_more_keys,\n"
-				"\tAggregateDataPtr overflow_row)\n"
-			"{\n"
-				"\taggregator.executeSpecialized<\n"
-					"\t\t" << method_typename << ", TypeList<" << aggregate_functions_typenames << ">>(\n"
-					"\t\tmethod, arena, rows, key_columns, aggregate_columns, key_sizes, keys, no_more_keys, overflow_row);\n"
-			"}\n"
-			"\n"
-			"const void * getPtr() __attribute__((__visibility__(\"default\")));\n"
-			"const void * getPtr()\n"	/// Без этой обёртки непонятно, как достать нужный символ из скомпилированной библиотеки.
-			"{\n"
-				"\treturn reinterpret_cast<const void *>(&wrapper);\n"
-			"}\n"
-/*			"\n" /// То же самое для TwoLevel.
-			"\n"
-			"template void Aggregator::executeSpecialized<\n"
-				"\t" << method_typename << ", TypeList<" << aggregate_functions_typenames << ">>(\n"
-				"\t" << method_typename << " &, Arena *, size_t, ConstColumnPlainPtrs &,\n"
-				"\tAggregateColumns &, const Sizes &, StringRefs &, bool, AggregateDataPtr) const;\n"
-			"\n"
-			"static void wrapper(\n"
-				"\tconst Aggregator & aggregator,\n"
-				"\t" << method_typename << " & method,\n"
-				"\tArena * arena,\n"
-				"\tsize_t rows,\n"
-				"\tConstColumnPlainPtrs & key_columns,\n"
-				"\tAggregator::AggregateColumns & aggregate_columns,\n"
-				"\tconst Sizes & key_sizes,\n"
-				"\tStringRefs & keys,\n"
-				"\tbool no_more_keys,\n"
-				"\tAggregateDataPtr overflow_row)\n"
-			"{\n"
-				"\taggregator.executeSpecialized<\n"
-					"\t\t" << method_typename << ", TypeList<" << aggregate_functions_typenames << ">>(\n"
-					"\t\tmethod, arena, rows, key_columns, aggregate_columns, key_sizes, keys, no_more_keys, overflow_row);\n"
-			"}\n"
-			"\n"
-			"const void * getPtr() __attribute__((__visibility__(\"default\")));\n"
-			"const void * getPtr()\n"	/// Без этой обёртки непонятно, как достать нужный символ из скомпилированной библиотеки.
-			"{\n"
-				"\treturn reinterpret_cast<const void *>(&wrapper);\n"
-			"}\n"
-			"\n"*/
+			"\n";
+
+		/// Может быть до двух инстанцирований шаблона - для обычного и two_level вариантов.
+		auto append_code_for_specialization =
+			[&code, &aggregate_functions_typenames] (const std::string & method_typename, const std::string & suffix)
+		{
+			code <<
+				"template void Aggregator::executeSpecialized<\n"
+					"\t" << method_typename << ", TypeList<" << aggregate_functions_typenames << ">>(\n"
+					"\t" << method_typename << " &, Arena *, size_t, ConstColumnPlainPtrs &,\n"
+					"\tAggregateColumns &, const Sizes &, StringRefs &, bool, AggregateDataPtr) const;\n"
+				"\n"
+				"static void wrapper" << suffix << "(\n"
+					"\tconst Aggregator & aggregator,\n"
+					"\t" << method_typename << " & method,\n"
+					"\tArena * arena,\n"
+					"\tsize_t rows,\n"
+					"\tConstColumnPlainPtrs & key_columns,\n"
+					"\tAggregator::AggregateColumns & aggregate_columns,\n"
+					"\tconst Sizes & key_sizes,\n"
+					"\tStringRefs & keys,\n"
+					"\tbool no_more_keys,\n"
+					"\tAggregateDataPtr overflow_row)\n"
+				"{\n"
+					"\taggregator.executeSpecialized<\n"
+						"\t\t" << method_typename << ", TypeList<" << aggregate_functions_typenames << ">>(\n"
+						"\t\tmethod, arena, rows, key_columns, aggregate_columns, key_sizes, keys, no_more_keys, overflow_row);\n"
+				"}\n"
+				"\n"
+				"const void * getPtr" << suffix << "() __attribute__((__visibility__(\"default\")));\n"
+				"const void * getPtr" << suffix << "()\n"	/// Без этой обёртки непонятно, как достать нужный символ из скомпилированной библиотеки.
+				"{\n"
+					"\treturn reinterpret_cast<const void *>(&wrapper" << suffix << ");\n"
+				"}\n";
+		};
+
+		append_code_for_specialization(method_typename, "");
+
+		if (!method_typename_two_level.empty())
+			append_code_for_specialization(method_typename_two_level, "TwoLevel");
+		else
+		{
+			code <<
+				"const void * getPtrTwoLevel() __attribute__((__visibility__(\"default\")));\n"
+				"const void * getPtrTwoLevel()\n"
+				"{\n"
+					"\treturn nullptr;\n"
+				"}\n";
+		}
+
+		code <<
 			"}\n";
 
 		return code.str();
@@ -250,7 +254,7 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 
 		compiled_data_owned_by_callback->compiled_aggregator = lib;
 		compiled_data_owned_by_callback->compiled_method_ptr = lib->get<const void * (*) ()>("_ZN2DB6getPtrEv")();
-//		compiled_data_owned_by_callback->compiled_two_level_method_ptr = lib->get<const void * (*) ()>("_ZN2DB14getPtrTwoLevelEv")();
+		compiled_data_owned_by_callback->compiled_two_level_method_ptr = lib->get<const void * (*) ()>("_ZN2DB14getPtrTwoLevelEv")();
 	};
 
 	/** Если библиотека уже была скомпилирована, то возвращается ненулевой SharedLibraryPtr.
@@ -268,6 +272,10 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 
 AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColumnPlainPtrs & key_columns, Sizes & key_sizes)
 {
+	/** Возвращает обычные (не two-level) методы, так как обработка начинается с них.
+	  * Затем, в процессе работы, данные могут быть переконвертированы в two-level структуру, если их становится много.
+	  */
+
 	bool keys_fit_128_bits = true;
 	size_t keys_bytes = 0;
 	key_sizes.resize(keys_size);
@@ -383,6 +391,8 @@ void NO_INLINE Aggregator::executeImplCase(
 	StringRefs & keys,
 	AggregateDataPtr overflow_row) const
 {
+	/// NOTE При редактировании этого кода, обратите также внимание на SpecializedAggregator.h.
+
 	/// Для всех строчек.
 	typename Method::iterator it;
 	typename Method::Key prev_key;
@@ -526,7 +536,8 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 
 	AggregateDataPtr overflow_row_ptr = overflow_row ? result.without_key : nullptr;
 
-	if (compiled_data->compiled_method_ptr/* && compiled_data->compiled_two_level_method_ptr*/)
+	bool is_two_level = result.isTwoLevel();
+	if (!is_two_level && compiled_data->compiled_method_ptr)
 	{
 	#define M(NAME, IS_TWO_LEVEL) \
 		else if (result.type == AggregatedDataVariants::Type::NAME) \
@@ -540,8 +551,21 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 		if (false) {}
 		APPLY_FOR_AGGREGATED_VARIANTS(M)
 	#undef M
-		else if (result.type != AggregatedDataVariants::Type::without_key)
-			throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+	}
+	else if (is_two_level && compiled_data->compiled_two_level_method_ptr)
+	{
+	#define M(NAME) \
+		else if (result.type == AggregatedDataVariants::Type::NAME) \
+			reinterpret_cast<void (*)( \
+				const Aggregator &, decltype(result.NAME)::element_type &, \
+				Arena *, size_t, ConstColumnPlainPtrs &, AggregateColumns &, \
+				const Sizes &, StringRefs &, bool, AggregateDataPtr)>(compiled_data->compiled_two_level_method_ptr) \
+			(*this, *result.NAME, result.aggregates_pool, rows, key_columns, aggregate_columns, \
+				result.key_sizes, key, no_more_keys, overflow_row_ptr);
+
+		if (false) {}
+		APPLY_FOR_VARIANTS_TWO_LEVEL(M)
+	#undef M
 	}
 	else
 	{
@@ -553,8 +577,6 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 		if (false) {}
 		APPLY_FOR_AGGREGATED_VARIANTS(M)
 	#undef M
-		else if (result.type != AggregatedDataVariants::Type::without_key)
-			throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 	}
 
 	size_t result_size = result.size();

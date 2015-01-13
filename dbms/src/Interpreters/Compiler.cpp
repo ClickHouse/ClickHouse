@@ -91,6 +91,8 @@ SharedLibraryPtr Compiler::getOrCount(
 		if (!it->second)
 			LOG_INFO(log, "Library " << hashedKeyToFileName(hashed_key) << " is compiling.");
 
+		/// TODO В этом случае, после окончания компиляции, не будет дёрнут колбэк.
+
 		return it->second;
 	}
 

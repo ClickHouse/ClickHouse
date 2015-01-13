@@ -451,6 +451,7 @@ struct AggregatedDataVariants : private boost::noncopyable
 	std::unique_ptr<AggregationMethodKeys128<AggregatedDataWithKeys128TwoLevel>> 				keys128_two_level;
 	std::unique_ptr<AggregationMethodHashed<AggregatedDataHashedTwoLevel>> 						hashed_two_level;
 
+	/// В этом и подобных макросах, вариант without_key не учитывается.
 	#define APPLY_FOR_AGGREGATED_VARIANTS(M) \
 		M(key8,					false) \
 		M(key16,				false) \
@@ -553,16 +554,20 @@ struct AggregatedDataVariants : private boost::noncopyable
 		}
 	}
 
+	#define APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M) \
+		M(key32)			\
+		M(key64)			\
+		M(key_string)		\
+		M(key_fixed_string)	\
+		M(keys128)			\
+		M(hashed)
+
+	#define APPLY_FOR_VARIANTS_NOT_CONVERTIBLE_TO_TWO_LEVEL(M) \
+		M(key8)				\
+		M(key16)			\
+
 	bool isConvertibleToTwoLevel() const
 	{
-		#define APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M) \
-			M(key32)			\
-			M(key64)			\
-			M(key_string)		\
-			M(key_fixed_string)	\
-			M(keys128)			\
-			M(hashed)
-
 		switch (type)
 		{
 		#define M(NAME) \
@@ -747,6 +752,7 @@ protected:
 		bool no_more_keys,
 		AggregateDataPtr overflow_row) const;
 
+	/// Специализация для конкретного значения no_more_keys.
 	template <bool no_more_keys, typename Method>
 	void executeImplCase(
 		Method & method,
