@@ -283,14 +283,6 @@ Block InterpreterSelectQuery::getSampleBlock()
 }
 
 
-/// Превращает источник в асинхронный, если это указано.
-static inline BlockInputStreamPtr maybeAsynchronous(BlockInputStreamPtr in, bool is_async)
-{
-	return is_async
-		? new AsynchronousBlockInputStream(in)
-		: in;
-}
-
 BlockInputStreamPtr InterpreterSelectQuery::execute()
 {
 	(void) executeWithoutUnion();
@@ -529,9 +521,9 @@ void InterpreterSelectQuery::executeSingleQuery()
 
 			/// На этой стадии можно считать минимумы и максимумы, если надо.
 			if (settings.extremes)
-				for (BlockInputStreams::iterator it = streams.begin(); it != streams.end(); ++it)
-					if (IProfilingBlockInputStream * stream = dynamic_cast<IProfilingBlockInputStream *>(&**it))
-							stream->enableExtremes();
+				for (auto & stream : streams)
+					if (IProfilingBlockInputStream * p_stream = dynamic_cast<IProfilingBlockInputStream *>(&*stream))
+						p_stream->enableExtremes();
 
 			/** Оптимизация - если источников несколько и есть LIMIT, то сначала применим предварительный LIMIT,
 				* ограничивающий число записей в каждом до offset + limit.
@@ -656,7 +648,6 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	{
 		settings.max_block_size = limit_length + limit_offset;
 		settings.max_threads = 1;
-		settings.asynchronous = false;
 	}
 
 	QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
@@ -681,7 +672,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	}
 	else
 	{
-		streams.push_back(maybeAsynchronous(interpreter_subquery->execute(), settings.asynchronous));
+		streams.push_back(interpreter_subquery->execute());
 	}
 
 	/** Если истчоников слишком много, то склеим их в max_threads источников.
@@ -708,12 +699,12 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 
 		QuotaForIntervals & quota = context.getQuota();
 
-		for (BlockInputStreams::iterator it = streams.begin(); it != streams.end(); ++it)
+		for (auto & stream : streams)
 		{
-			if (IProfilingBlockInputStream * stream = dynamic_cast<IProfilingBlockInputStream *>(&**it))
+			if (IProfilingBlockInputStream * p_stream = dynamic_cast<IProfilingBlockInputStream *>(&*stream))
 			{
-				stream->setLimits(limits);
-				stream->setQuota(quota);
+				p_stream->setLimits(limits);
+				p_stream->setQuota(quota);
 			}
 		}
 	}
@@ -724,23 +715,19 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 
 void InterpreterSelectQuery::executeWhere(BlockInputStreams & streams, ExpressionActionsPtr expression)
 {
-	bool is_async = settings.asynchronous && streams.size() <= settings.max_threads;
-	for (BlockInputStreams::iterator it = streams.begin(); it != streams.end(); ++it)
+	for (auto & stream : streams)
 	{
-		BlockInputStreamPtr & stream = *it;
-		stream = maybeAsynchronous(new ExpressionBlockInputStream(stream, expression), is_async);
-		stream = maybeAsynchronous(new FilterBlockInputStream(stream, query.where_expression->getColumnName()), is_async);
+		stream = new ExpressionBlockInputStream(stream, expression);
+		stream = new FilterBlockInputStream(stream, query.where_expression->getColumnName());
 	}
 }
 
 
 void InterpreterSelectQuery::executeAggregation(BlockInputStreams & streams, ExpressionActionsPtr expression, bool overflow_row, bool final)
 {
-	bool is_async = settings.asynchronous && streams.size() <= settings.max_threads;
-	for (BlockInputStreams::iterator it = streams.begin(); it != streams.end(); ++it)
+	for (auto & stream : streams)
 	{
-		BlockInputStreamPtr & stream = *it;
-		stream = maybeAsynchronous(new ExpressionBlockInputStream(stream, expression), is_async);
+		stream = new ExpressionBlockInputStream(stream, expression);
 	}
 
 	BlockInputStreamPtr & stream = streams[0];
@@ -752,19 +739,16 @@ void InterpreterSelectQuery::executeAggregation(BlockInputStreams & streams, Exp
 	/// Если источников несколько, то выполняем параллельную агрегацию
 	if (streams.size() > 1)
 	{
-		stream = maybeAsynchronous(
-			new ParallelAggregatingBlockInputStream(streams, key_names, aggregates, overflow_row, final,
+		stream = new ParallelAggregatingBlockInputStream(streams, key_names, aggregates, overflow_row, final,
 			settings.max_threads, settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode,
-			settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile),
-			settings.asynchronous);
+			settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile);
 
 		streams.resize(1);
 	}
 	else
-		stream = maybeAsynchronous(new AggregatingBlockInputStream(stream, key_names, aggregates, overflow_row, final,
+		stream = new AggregatingBlockInputStream(stream, key_names, aggregates, overflow_row, final,
 			settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode,
-			settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile),
-			settings.asynchronous);
+			settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile);
 }
 
 
@@ -782,18 +766,16 @@ void InterpreterSelectQuery::executeMergeAggregated(BlockInputStreams & streams,
 	Names key_names;
 	AggregateDescriptions aggregates;
 	query_analyzer->getAggregateInfo(key_names, aggregates);
-	streams[0] = maybeAsynchronous(new MergingAggregatedBlockInputStream(streams[0], key_names, aggregates, overflow_row, final, original_max_threads), settings.asynchronous);
+	streams[0] = new MergingAggregatedBlockInputStream(streams[0], key_names, aggregates, overflow_row, final, original_max_threads);
 }
 
 
 void InterpreterSelectQuery::executeHaving(BlockInputStreams & streams, ExpressionActionsPtr expression)
 {
-	bool is_async = settings.asynchronous && streams.size() <= settings.max_threads;
-	for (BlockInputStreams::iterator it = streams.begin(); it != streams.end(); ++it)
+	for (auto & stream : streams)
 	{
-		BlockInputStreamPtr & stream = *it;
-		stream = maybeAsynchronous(new ExpressionBlockInputStream(stream, expression), is_async);
-		stream = maybeAsynchronous(new FilterBlockInputStream(stream, query.having_expression->getColumnName()), is_async);
+		stream = new ExpressionBlockInputStream(stream, expression);
+		stream = new FilterBlockInputStream(stream, query.having_expression->getColumnName());
 	}
 }
 
@@ -810,20 +792,17 @@ void InterpreterSelectQuery::executeTotalsAndHaving(BlockInputStreams & streams,
 	Names key_names;
 	AggregateDescriptions aggregates;
 	query_analyzer->getAggregateInfo(key_names, aggregates);
-	streams[0] = maybeAsynchronous(new TotalsHavingBlockInputStream(
+	streams[0] = new TotalsHavingBlockInputStream(
 		streams[0], key_names, aggregates, overflow_row, expression,
-		has_having ? query.having_expression->getColumnName() : "", settings.totals_mode, settings.totals_auto_threshold),
-		settings.asynchronous);
+		has_having ? query.having_expression->getColumnName() : "", settings.totals_mode, settings.totals_auto_threshold);
 }
 
 
 void InterpreterSelectQuery::executeExpression(BlockInputStreams & streams, ExpressionActionsPtr expression)
 {
-	bool is_async = settings.asynchronous && streams.size() <= settings.max_threads;
-	for (BlockInputStreams::iterator it = streams.begin(); it != streams.end(); ++it)
+	for (auto & stream : streams)
 	{
-		BlockInputStreamPtr & stream = *it;
-		stream = maybeAsynchronous(new ExpressionBlockInputStream(stream, expression), is_async);
+		stream = new ExpressionBlockInputStream(stream, expression);
 	}
 }
 
@@ -852,10 +831,8 @@ void InterpreterSelectQuery::executeOrder(BlockInputStreams & streams)
 		limit = limit_length + limit_offset;
 	}
 
-	bool is_async = settings.asynchronous && streams.size() <= settings.max_threads;
-	for (BlockInputStreams::iterator it = streams.begin(); it != streams.end(); ++it)
+	for (auto & stream : streams)
 	{
-		BlockInputStreamPtr & stream = *it;
 		IProfilingBlockInputStream * sorting_stream = new PartialSortingBlockInputStream(stream, order_descr, limit);
 
 		/// Ограничения на сортировку
@@ -866,7 +843,7 @@ void InterpreterSelectQuery::executeOrder(BlockInputStreams & streams)
 		limits.read_overflow_mode = settings.limits.sort_overflow_mode;
 		sorting_stream->setLimits(limits);
 
-		stream = maybeAsynchronous(sorting_stream, is_async);
+		stream = sorting_stream;
 	}
 
 	BlockInputStreamPtr & stream = streams[0];
@@ -879,20 +856,17 @@ void InterpreterSelectQuery::executeOrder(BlockInputStreams & streams)
 	}
 
 	/// Сливаем сортированные блоки.
-	stream = maybeAsynchronous(new MergeSortingBlockInputStream(
+	stream = new MergeSortingBlockInputStream(
 		stream, order_descr, settings.max_block_size, limit,
-		settings.limits.max_bytes_before_external_sort, context.getTemporaryPath(), context.getDataTypeFactory()),
-		is_async);
+		settings.limits.max_bytes_before_external_sort, context.getTemporaryPath(), context.getDataTypeFactory());
 }
 
 
 void InterpreterSelectQuery::executeProjection(BlockInputStreams & streams, ExpressionActionsPtr expression)
 {
-	bool is_async = settings.asynchronous && streams.size() <= settings.max_threads;
-	for (BlockInputStreams::iterator it = streams.begin(); it != streams.end(); ++it)
+	for (auto & stream : streams)
 	{
-		BlockInputStreamPtr & stream = *it;
-		stream = maybeAsynchronous(new ExpressionBlockInputStream(stream, expression), is_async);
+		stream = new ExpressionBlockInputStream(stream, expression);
 	}
 }
 
@@ -911,12 +885,9 @@ void InterpreterSelectQuery::executeDistinct(BlockInputStreams & streams, bool b
 		if (!query.order_expression_list || !before_order)
 			limit_for_distinct = limit_length + limit_offset;
 
-		bool is_async = settings.asynchronous && streams.size() <= settings.max_threads;
-		for (BlockInputStreams::iterator it = streams.begin(); it != streams.end(); ++it)
+		for (auto & stream : streams)
 		{
-			BlockInputStreamPtr & stream = *it;
-			stream = maybeAsynchronous(new DistinctBlockInputStream(
-				stream, settings.limits, limit_for_distinct, columns), is_async);
+			stream = new DistinctBlockInputStream(stream, settings.limits, limit_for_distinct, columns);
 		}
 	}
 }
@@ -943,9 +914,8 @@ void InterpreterSelectQuery::executePreLimit(BlockInputStreams & streams)
 	/// Если есть LIMIT
 	if (query.limit_length)
 	{
-		for (BlockInputStreams::iterator it = streams.begin(); it != streams.end(); ++it)
+		for (auto & stream : streams)
 		{
-			BlockInputStreamPtr & stream = *it;
 			stream = new LimitBlockInputStream(stream, limit_length + limit_offset, 0);
 		}
 	}

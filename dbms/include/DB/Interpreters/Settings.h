@@ -41,8 +41,6 @@ struct Settings
 	M(SettingUInt64, max_distributed_connections, DEFAULT_MAX_DISTRIBUTED_CONNECTIONS) \
 	/** Какую часть запроса можно прочитать в оперативку для парсинга (оставшиеся данные для INSERT, если есть, считываются позже) */ \
 	M(SettingUInt64, max_query_size, DEFAULT_MAX_QUERY_SIZE) \
-	/** Выполнять разные стадии конвейера выполнения запроса параллельно. */ \
-	M(SettingBool, asynchronous, false) \
 	/** Интервал в микросекундах для проверки, не запрошена ли остановка выполнения запроса, и отправки прогресса. */ \
 	M(SettingUInt64, interactive_delay, DEFAULT_INTERACTIVE_DELAY) \
 	M(SettingSeconds, connect_timeout, DBMS_DEFAULT_CONNECT_TIMEOUT_SEC) \
