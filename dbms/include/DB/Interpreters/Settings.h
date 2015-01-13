@@ -62,8 +62,6 @@ struct Settings
 	M(SettingBool, extremes, false) \
 	/** Использовать ли кэш разжатых блоков. */ \
 	M(SettingBool, use_uncompressed_cache, true) \
-	/** Использовать ли SplittingAggregator вместо обычного. Он быстрее для запросов с большим состоянием агрегации. */ \
-	M(SettingBool, use_splitting_aggregator, false) \
 	/** Следует ли отменять выполняющийся запрос с таким же id, как новый. */ \
 	M(SettingBool, replace_running_query, false) \
 	/** Количество потоков, выполняющих фоновую работу для таблиц (например, слияние в merge tree). \

@@ -8,7 +8,6 @@
 #include <DB/DataStreams/AsynchronousBlockInputStream.h>
 #include <DB/DataStreams/UnionBlockInputStream.h>
 #include <DB/DataStreams/ParallelAggregatingBlockInputStream.h>
-#include <DB/DataStreams/SplittingAggregatingBlockInputStream.h>
 #include <DB/DataStreams/DistinctBlockInputStream.h>
 #include <DB/DataStreams/NullBlockInputStream.h>
 #include <DB/DataStreams/TotalsHavingBlockInputStream.h>
@@ -755,27 +754,11 @@ void InterpreterSelectQuery::executeAggregation(BlockInputStreams & streams, Exp
 	/// Если источников несколько, то выполняем параллельную агрегацию
 	if (streams.size() > 1)
 	{
-		if (!settings.use_splitting_aggregator || key_names.empty())
-		{
-			stream = maybeAsynchronous(
-				new ParallelAggregatingBlockInputStream(streams, key_names, aggregates, overflow_row, final,
-				settings.max_threads, settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode,
-				settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile),
-				settings.asynchronous);
-		}
-		else
-		{
-			if (overflow_row)
-				throw Exception("Splitting aggregator cannot handle queries like this yet. "
-								"Please change use_splitting_aggregator, remove WITH TOTALS, "
-								"change group_by_overflow_mode or set totals_mode to AFTER_HAVING_EXCLUSIVE.",
-								ErrorCodes::NOT_IMPLEMENTED);
-			stream = maybeAsynchronous(
-				new SplittingAggregatingBlockInputStream(
-					new UnionBlockInputStream(streams, settings.max_threads),
-					key_names, aggregates, settings.max_threads, query.group_by_with_totals, separate_totals, final,
-					settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode), settings.asynchronous);
-		}
+		stream = maybeAsynchronous(
+			new ParallelAggregatingBlockInputStream(streams, key_names, aggregates, overflow_row, final,
+			settings.max_threads, settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode,
+			settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile),
+			settings.asynchronous);
 
 		streams.resize(1);
 	}
