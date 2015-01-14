@@ -8,6 +8,7 @@
 #include <DB/Interpreters/Context.h>
 
 #include <DB/Client/ConnectionPool.h>
+#include <DB/Client/ReplicasConnections.h>
 
 
 namespace DB
@@ -24,10 +25,12 @@ private:
 		{
 			send_settings = true;
 			settings = *settings_;
+			use_many_replicas = (pool != nullptr) && UInt64(settings.max_parallel_replicas) > 1;
 		}
 		else
 			send_settings = false;
 	}
+
 public:
 	/// Принимает готовое соединение.
 	RemoteBlockInputStream(Connection & connection_, const String & query_, const Settings * settings_,
@@ -116,28 +119,45 @@ protected:
 			else
 				res.push_back(std::make_pair(input[0], table.first));
 		}
-		connection->sendExternalTablesData(res);
+		if (use_many_replicas)
+		{
+			/// XXX Какой из этих вариантов правильный?
+			/// 1. Выбрать одно соединение, например connection[0], и к нему применить sendExternalTablesData(res)?
+			/// 2. Отправить res по всем соединениям? <- this one!!!
+			//replicas_connections->sendExternalTablesData(res);
+		}
+		else
+			connection->sendExternalTablesData(res);
 	}
 
 	Block readImpl() override
 	{
 		if (!sent_query)
 		{
-			/// Если надо - достаём соединение из пула.
-			if (pool)
+			if (use_many_replicas)
 			{
-				pool_entry = pool->get(send_settings ? &settings : nullptr);
-				connection = &*pool_entry;
+				replicas_connections.reset(new ReplicasConnections(pool, &settings));
+				replicas_connections->sendQuery(query, "", stage, &settings, true);
+			}
+			else
+			{
+				/// Если надо - достаём соединение из пула.
+				if (pool)
+				{
+					pool_entry = pool->get(send_settings ? &settings : nullptr);
+					connection = &*pool_entry;
+				}
+
+				connection->sendQuery(query, "", stage, send_settings ? &settings : nullptr, true);
 			}
 
-			connection->sendQuery(query, "", stage, send_settings ? &settings : nullptr, true);
 			sendExternalTables();
 			sent_query = true;
 		}
 
 		while (true)
 		{
-			Connection::Packet packet = connection->receivePacket();
+			Connection::Packet packet = use_many_replicas ? replicas_connections->receivePacket() : connection->receivePacket();
 
 			switch (packet.type)
 			{
@@ -247,6 +267,8 @@ private:
 	ConnectionPool::Entry pool_entry;
 	Connection * connection = nullptr;
 
+	std::unique_ptr<ReplicasConnections> replicas_connections;
+
 	const String query;
 	bool send_settings;
 	Settings settings;
@@ -254,6 +276,8 @@ private:
 	Tables external_tables;
 	QueryProcessingStage::Enum stage;
 	Context context;
+
+	bool use_many_replicas = false;
 
 	/// Отправили запрос (это делается перед получением первого блока).
 	bool sent_query = false;
