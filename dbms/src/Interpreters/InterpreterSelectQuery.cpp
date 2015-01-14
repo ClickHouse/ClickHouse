@@ -109,7 +109,7 @@ void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_, const NamesAn
 	if (context.getColumns().empty())
 		throw Exception("There are no available columns", ErrorCodes::THERE_IS_NO_COLUMN);
 
-	query_analyzer = new ExpressionAnalyzer(query_ptr, context, storage, subquery_depth, true);
+	query_analyzer.reset(new ExpressionAnalyzer(query_ptr, context, storage, subquery_depth, true));
 
 	/// Сохраняем в query context новые временные таблицы
 	for (auto & it : query_analyzer->getExternalTables())
@@ -141,9 +141,9 @@ void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_, const NamesAn
 
 void InterpreterSelectQuery::initQueryAnalyzer()
 {
-	query_analyzer = new ExpressionAnalyzer(query_ptr, context, storage, subquery_depth, true);
+	query_analyzer.reset(new ExpressionAnalyzer(query_ptr, context, storage, subquery_depth, true));
 	for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->next_select_in_union_all.get())
-		p->query_analyzer = new ExpressionAnalyzer(p->query_ptr, p->context, p->storage, p->subquery_depth, true);
+		p->query_analyzer.reset(new ExpressionAnalyzer(p->query_ptr, p->context, p->storage, p->subquery_depth, true));
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_, QueryProcessingStage::Enum to_stage_,

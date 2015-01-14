@@ -164,8 +164,7 @@ BlockInputStreams StorageDistributed::read(
 	for (auto & conn_pool : cluster.pools)
 		res.emplace_back(new RemoteBlockInputStream{
 			conn_pool, modified_query, &new_settings,
-			external_tables, processed_stage, context
-		});
+			external_tables, processed_stage, context});
 
 	/// Добавляем запросы к локальному ClickHouse.
 	if (cluster.getLocalNodesNum() > 0)
