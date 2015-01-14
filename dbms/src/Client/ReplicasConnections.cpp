@@ -81,6 +81,7 @@ namespace DB
 
 				if (info.packet_number == next_packet_number)
 				{
+					++info.packet_number;
 					++next_packet_number;
 					return packet;
 				}
