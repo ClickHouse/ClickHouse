@@ -8,7 +8,7 @@
 #include <DB/Interpreters/Context.h>
 
 #include <DB/Client/ConnectionPool.h>
-#include <DB/Client/ShardReplicas.h>
+#include <DB/Client/ReplicasConnections.h>
 
 
 namespace DB
@@ -145,9 +145,14 @@ protected:
 		}
 
 		if (use_many_replicas)
-			shard_replicas->sendExternalTablesData(instances);
+		{
+			/// XXX Какой из этих вариантов правильный?
+			/// 1. Выбрать одно соединение, например connection[0], и к нему применить sendExternalTablesData(res)?
+			/// 2. Отправить res по всем соединениям? <- this one!!!
+			//replicas_connections->sendExternalTablesData(res);
+		}
 		else
-			connection->sendExternalTablesData(instances[0]);
+			connection->sendExternalTablesData(res);
 	}
 
 	Block readImpl() override
@@ -156,14 +161,8 @@ protected:
 		{
 			if (use_many_replicas)
 			{
-				auto entries = pool->getMany(&settings);
-				if (entries.size() > 1)
-					shard_replicas.reset(new ShardReplicas(entries, settings));
-				else if (entries.size() == 1)
-				{
-					use_many_replicas = false;
-					connection = &*entries[0];
-				}
+				replicas_connections.reset(new ReplicasConnections(pool, &settings));
+				replicas_connections->sendQuery(query, "", stage, &settings, true);
 			}
 			else
 			{
@@ -173,12 +172,9 @@ protected:
 					pool_entry = pool->get(send_settings ? &settings : nullptr);
 					connection = &*pool_entry;
 				}
-			}
 
-			if (use_many_replicas)
-				shard_replicas->sendQuery(query, "", stage, true);
-			else
-				connection->sendQuery(query, "", stage, send_settings ? &settings : nullptr, true);				
+				connection->sendQuery(query, "", stage, send_settings ? &settings : nullptr, true);
+			}
 
 			sendExternalTables();
 			sent_query = true;
@@ -186,7 +182,7 @@ protected:
 
 		while (true)
 		{
-			Connection::Packet packet = use_many_replicas ? shard_replicas->receivePacket() : connection->receivePacket();
+			Connection::Packet packet = use_many_replicas ? replicas_connections->receivePacket() : connection->receivePacket();
 
 			switch (packet.type)
 			{
@@ -311,7 +307,7 @@ private:
 	ConnectionPool::Entry pool_entry;
 	Connection * connection = nullptr;
 
-	std::unique_ptr<ShardReplicas> shard_replicas;
+	std::unique_ptr<ReplicasConnections> replicas_connections;
 
 	const String query;
 	bool send_settings;

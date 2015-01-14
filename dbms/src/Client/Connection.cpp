@@ -80,26 +80,6 @@ void Connection::disconnect()
 	connected = false;
 }
 
-Connection * Connection::waitForReadEvent(const std::vector<Connection *> & connections, size_t timeout_microseconds)
-{
-	for (auto & connection : connections)
-	{
-		const auto & buffer = static_cast<ReadBufferFromPocoSocket &>(*(connection->in));
-		if (buffer.hasPendingBytes())
-			return connection;
-	}
-
-	Poco::Net::Socket::SocketList readList(connections.size());
-	Poco::Net::Socket::SocketList writeList;
-	Poco::Net::Socket::SocketList exceptList;
-
-	std::transform(connections.begin(), connections.end(), readList.begin(), [](Connection * conn){ return conn->socket; });
-	int n = Poco::Net::Socket::select(readList, writeList, exceptList, Poco::Timespan(timeout_microseconds));
-	if (n > 0)
-		return connections[0];
-	else
-		return nullptr;
-}
 
 void Connection::sendHello()
 {
