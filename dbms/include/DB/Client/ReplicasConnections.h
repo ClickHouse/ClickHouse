@@ -1,10 +1,11 @@
 #pragma once
 
 #include <DB/Client/Connection.h>
-#include <DB/Client/ConnectionPool.h>
 
 namespace DB
 {
+	class IConnectionPool;
+	
 	class ReplicasConnections
 	{
 	public:
@@ -18,7 +19,7 @@ namespace DB
 		};
 
 	public:
-		ReplicasConnections(IConnectionPool * pool_, Settings * settings_, size_t timeout_microseconds_ = 0);
+		ReplicasConnections(IConnectionPool * pool_, Settings * settings_);
 
 		~ReplicasConnections() = default;
 
@@ -36,15 +37,15 @@ namespace DB
 					   const Settings * settings_ = nullptr, bool with_pending_data = false);
 
 	private:
-		using Connections = std::map<Poco::Net::StreamSocket, ConnectionInfo>;
+		using ConnectionHash = std::unordered_map<int, ConnectionInfo>;
 
 	private:
-		IConnectionPool * pool;
 		Settings * settings;
-		size_t timeout_microseconds;
+		Poco::Timespan select_timeout;
+		ConnectionHash connection_hash;
+		size_t valid_connections_count;
+		int next_packet_number = 0;
 		Poco::Net::Socket::SocketList write_list;
 		Poco::Net::Socket::SocketList except_list;
-		Connections connections;
-		int next_packet_number = 0;
 	};
 }
