@@ -146,9 +146,7 @@ protected:
 
 		if (use_many_replicas)
 		{
-			/// XXX Какой из этих вариантов правильный?
-			/// 1. Выбрать одно соединение, например connection[0], и к нему применить sendExternalTablesData(res)?
-			/// 2. Отправить res по всем соединениям? <- this one!!!
+			/// XXX Отправить res по всем соединениям.
 			//replicas_connections->sendExternalTablesData(res);
 		}
 		else
