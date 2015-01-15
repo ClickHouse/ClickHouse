@@ -26,7 +26,7 @@ namespace DB
 
 using Poco::SharedPtr;
 
-class ReplicasConnections;
+class ShardReplicas;
 
 /// Поток блоков читающих из таблицы и ее имя
 typedef std::pair<BlockInputStreamPtr, std::string> ExternalTableData;
@@ -42,7 +42,7 @@ typedef std::vector<ExternalTableData> ExternalTablesData;
   */
 class Connection : private boost::noncopyable
 {
-	friend class ReplicasConnections;
+	friend class ShardReplicas;
 
 public:
 	Connection(const String & host_, UInt16 port_, const String & default_database_,
