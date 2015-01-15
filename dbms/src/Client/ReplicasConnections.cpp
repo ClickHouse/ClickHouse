@@ -78,6 +78,7 @@ namespace DB
 		while (true)
 		{
 			ConnectionInfo & info = pickConnection();
+			bool retry = false;
 
 			while (info.is_valid)
 			{
@@ -92,20 +93,38 @@ namespace DB
 					case Protocol::Server::Extremes:
 						break;
 
-					default:
+					case Protocol::Server::EndOfStream:
+					case Protocol::Server::Exception:
 						info.is_valid = false;
 						--valid_connections_count;
+						/// Больше ничего не читаем. Закрываем все оставшиеся валидные соединения,
+						/// затем получаем оставшиеся пакеты, чтобы не было рассинхронизации с
+						/// репликами.
+						sendCancel();
+						drainResidualPackets();
+						break;
+
+					default:
+						/// Мы получили инвалидный пакет от реплики. Повторим попытку
+						/// c другой реплики, если такая найдется.
+						info.is_valid = false;
+						--valid_connections_count;
+						if (valid_connections_count > 0)
+							retry = true;
 						break;
 				}
 
-				if (info.packet_number == next_packet_number)
+				if ((info.packet_number == next_packet_number) && !retry)
 				{
 					++info.packet_number;
 					++next_packet_number;
 					return packet;
 				}
 				else
+				{
 					++info.packet_number;
+					retry = false;
+				}
 			}
 		}
 	}
