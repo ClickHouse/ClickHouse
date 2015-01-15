@@ -1,12 +1,10 @@
 #include <DB/Client/ShardReplicas.h>
-#include <DB/Client/ConnectionPool.h>
 
 namespace DB
 {
-	ShardReplicas::ShardReplicas(IConnectionPool * pool_, Settings * settings_) :
+	ShardReplicas::ShardReplicas(std::vector<ConnectionPool::Entry> & entries, Settings * settings_) :
 		settings(settings_)
 	{
-        auto entries = pool_->getMany(settings);
 		valid_replicas_count = entries.size();
 		replica_hash.reserve(valid_replicas_count);
 
