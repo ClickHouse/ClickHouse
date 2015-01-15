@@ -9,15 +9,15 @@ namespace DB
 	/**
 	  * Множество реплик одного шарда.
 	  */
-	class ReplicasConnections final
+	class ShardReplicas final
 	{
 	public:
-		ReplicasConnections(IConnectionPool * pool_, Settings * settings_);
+		ShardReplicas(IConnectionPool * pool_, Settings * settings_);
 
-		~ReplicasConnections() = default;
+		~ShardReplicas() = default;
 
-		ReplicasConnections(const ReplicasConnections &) = delete;
-		ReplicasConnections & operator=(const ReplicasConnections &) = delete;
+		ShardReplicas(const ShardReplicas &) = delete;
+		ShardReplicas & operator=(const ShardReplicas &) = delete;
 
 		/// Получить пакет от какой-нибудь реплики.
 		Connection::Packet receivePacket();
@@ -71,7 +71,7 @@ namespace DB
 
 	private:
 		/// Выбрать реплику, на которой можно прочитать данные.
-		Replica & pickConnection();
+		Replica & pickReplica();
 
 		/// Проверить, есть ли данные, которые можно прочитать на каких-нибудь репликах.
 		int waitForReadEvent();
