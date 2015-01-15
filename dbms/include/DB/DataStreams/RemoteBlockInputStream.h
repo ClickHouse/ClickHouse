@@ -85,10 +85,20 @@ public:
 
 		if (sent_query && !was_cancelled && !finished && !got_exception_from_server)
 		{
-			LOG_TRACE(log, "(" + connection->getServerAddress() + ") Cancelling query");
+			std::string addresses;
+			if (use_many_replicas)
+				addresses = replicas_connections->dumpAddresses();
+			else
+				addresses = connection->getServerAddress();
+
+			LOG_TRACE(log, "(" + addresses + ") Cancelling query");
 
 			/// Если запрошено прервать запрос - попросим удалённый сервер тоже прервать запрос.
-			connection->sendCancel();
+			if (use_many_replicas)
+				replicas_connections->sendCancel();
+			else
+				connection->sendCancel();
+
 			was_cancelled = true;
 		}
 	}
@@ -100,7 +110,12 @@ public:
 		  *  чтобы оно не осталось висеть в рассихронизированном состоянии.
 		  */
 		if (sent_query && !finished)
-			connection->disconnect();
+		{
+			if (use_many_replicas)
+				replicas_connections->disconnect();
+			else
+				connection->disconnect();
+		}
 	}
 
 protected:
@@ -167,11 +182,27 @@ protected:
 
 				case Protocol::Server::Exception:
 					got_exception_from_server = true;
+
+					if (use_many_replicas)
+					{
+						// Cancel and drain all the remaining connections.
+						replicas_connections->sendCancel();
+						replicas_connections->drainResidualPackets();
+					}
+
 					packet.exception->rethrow();
 					break;
 
 				case Protocol::Server::EndOfStream:
 					finished = true;
+
+					if (use_many_replicas)
+					{
+						// Cancel and drain all the remaining connections.
+						replicas_connections->sendCancel();
+						replicas_connections->drainResidualPackets();
+					}
+
 					return Block();
 
 				case Protocol::Server::Progress:
@@ -224,36 +255,51 @@ protected:
 		/// Отправим просьбу прервать выполнение запроса, если ещё не отправляли.
 		if (!was_cancelled)
 		{
-			LOG_TRACE(log, "(" + connection->getServerAddress() + ") Cancelling query because enough data has been read");
+			std::string addresses;
+			if (use_many_replicas)
+				addresses = replicas_connections->dumpAddresses();
+			else
+				addresses = connection->getServerAddress();
+
+			LOG_TRACE(log, "(" + addresses + ") Cancelling query because enough data has been read");
 
 			was_cancelled = true;
-			connection->sendCancel();
+
+			if (use_many_replicas)
+				replicas_connections->sendCancel();
+			else
+				connection->sendCancel();
 		}
 
-		/// Получим оставшиеся пакеты, чтобы не было рассинхронизации в соединении с сервером.
-		while (true)
+		if (use_many_replicas)
+			replicas_connections->drainResidualPackets();
+		else
 		{
-			Connection::Packet packet = connection->receivePacket();
-
-			switch (packet.type)
+			/// Получим оставшиеся пакеты, чтобы не было рассинхронизации в соединении с сервером.
+			while (true)
 			{
-				case Protocol::Server::Data:
-				case Protocol::Server::Progress:
-				case Protocol::Server::ProfileInfo:
-				case Protocol::Server::Totals:
-				case Protocol::Server::Extremes:
-					break;
+				Connection::Packet packet = connection->receivePacket();
 
-				case Protocol::Server::EndOfStream:
-					return;
+				switch (packet.type)
+				{
+					case Protocol::Server::Data:
+					case Protocol::Server::Progress:
+					case Protocol::Server::ProfileInfo:
+					case Protocol::Server::Totals:
+					case Protocol::Server::Extremes:
+						break;
 
-				case Protocol::Server::Exception:
-					got_exception_from_server = true;
-					packet.exception->rethrow();
-					break;
+					case Protocol::Server::EndOfStream:
+						return;
 
-				default:
-					throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
+					case Protocol::Server::Exception:
+						got_exception_from_server = true;
+						packet.exception->rethrow();
+						break;
+
+					default:
+						throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
+				}
 			}
 		}
 

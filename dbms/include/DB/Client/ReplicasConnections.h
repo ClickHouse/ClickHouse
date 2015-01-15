@@ -36,6 +36,14 @@ namespace DB
 		void sendQuery(const String & query, const String & query_id = "", UInt64 stage = QueryProcessingStage::Complete,
 					   const Settings * settings_ = nullptr, bool with_pending_data = false);
 
+		void disconnect();
+
+		void sendCancel();
+
+		void drainResidualPackets();
+
+		std::string dumpAddresses() const;
+
 	private:
 		using ConnectionHash = std::unordered_map<int, ConnectionInfo>;
 
