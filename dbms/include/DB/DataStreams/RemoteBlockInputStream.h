@@ -192,27 +192,11 @@ protected:
 
 				case Protocol::Server::Exception:
 					got_exception_from_server = true;
-
-					if (use_many_replicas)
-					{
-						// Cancel and drain all the remaining connections.
-						replicas_connections->sendCancel();
-						replicas_connections->drainResidualPackets();
-					}
-
 					packet.exception->rethrow();
 					break;
 
 				case Protocol::Server::EndOfStream:
 					finished = true;
-
-					if (use_many_replicas)
-					{
-						// Cancel and drain all the remaining connections.
-						replicas_connections->sendCancel();
-						replicas_connections->drainResidualPackets();
-					}
-
 					return Block();
 
 				case Protocol::Server::Progress:
