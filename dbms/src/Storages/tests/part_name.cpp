@@ -1,5 +1,5 @@
+#include <DB/IO/ReadHelpers.h>
 #include <DB/Storages/MergeTree/ActiveDataPartSet.h>
-#include <Yandex/time2str.h>
 #include <mysqlxx/DateTime.h>
 
 
@@ -12,7 +12,7 @@ int main(int argc, char ** argv)
 		std::string name = DB::ActiveDataPartSet::getPartName(date, date, 0, 0, 0);
 		std::cerr << name << '\n';
 
-		time_t time = OrderedIdentifier2Date(name);
+		time_t time = DateLUT::instance().YYYYMMDDToDate(DB::parse<UInt32>(name));
 		std::cerr << mysqlxx::DateTime(time) << '\n';
 	}
 

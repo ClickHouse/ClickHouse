@@ -14,7 +14,7 @@
 #include <DB/Storages/AlterCommands.h>
 #include <Poco/File.h>
 #include <Poco/RWLock.h>
-#include <statdaemons/stdext.h>
+#include <statdaemons/ext/memory.hpp>
 
 
 namespace DB
@@ -86,8 +86,8 @@ public:
 
 		TableStructureReadLock(StoragePtr storage_, bool lock_structure, bool lock_data)
 		:	storage(storage_),
-		         data_lock(lock_data      ? new Poco::ScopedReadRWLock(storage->     data_lock) : nullptr),
-			structure_lock(lock_structure ? new Poco::ScopedReadRWLock(storage->structure_lock) : nullptr) {}
+			data_lock(lock_data      		? new Poco::ScopedReadRWLock(storage->     data_lock) : nullptr),
+			structure_lock(lock_structure 	? new Poco::ScopedReadRWLock(storage->structure_lock) : nullptr) {}
 	};
 
 	typedef Poco::SharedPtr<TableStructureReadLock> TableStructureReadLockPtr;
@@ -125,7 +125,7 @@ public:
 	  */
 	TableDataWriteLockPtr lockDataForAlter()
 	{
-		auto res = stdext::make_unique<Poco::ScopedWriteRWLock>(data_lock);
+		auto res = ext::make_unique<Poco::ScopedWriteRWLock>(data_lock);
 		if (is_dropped)
 			throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
 		return res;
@@ -133,7 +133,7 @@ public:
 
 	TableStructureWriteLockPtr lockStructureForAlter()
 	{
-		auto res = stdext::make_unique<Poco::ScopedWriteRWLock>(structure_lock);
+		auto res = ext::make_unique<Poco::ScopedWriteRWLock>(structure_lock);
 		if (is_dropped)
 			throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
 		return res;
@@ -162,6 +162,7 @@ public:
 	virtual BlockInputStreams read(
 		const Names & column_names,
 		ASTPtr query,
+		const Context & context,
 		const Settings & settings,
 		QueryProcessingStage::Enum & processed_stage,
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,

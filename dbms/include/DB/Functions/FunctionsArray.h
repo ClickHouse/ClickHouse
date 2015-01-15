@@ -17,6 +17,8 @@
 #include <DB/Functions/NumberTraits.h>
 #include <DB/Functions/FunctionsConditional.h>
 
+#include <statdaemons/ext/range.hpp>
+
 #include <unordered_map>
 
 
@@ -1226,6 +1228,7 @@ struct FunctionEmptyArray : public IFunction
 	static const String name;
 	static IFunction * create(const Context & context) { return new FunctionEmptyArray; }
 
+private:
 	String getName() const
 	{
 		return name;
@@ -1254,6 +1257,129 @@ struct FunctionEmptyArray : public IFunction
 
 template <typename DataType>
 const String FunctionEmptyArray<DataType>::name = FunctionEmptyArray::base_name + DataTypeToName<DataType>::get();
+
+class FunctionRange : public IFunction
+{
+public:
+	static constexpr auto max_elements = 1000000;
+	static constexpr auto name = "range";
+	static IFunction * create(const Context &) { return new FunctionRange; }
+
+private:
+	String getName() const override
+	{
+		return name;
+	}
+
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	{
+		if (arguments.size() != 1)
+			throw Exception{
+				"Number of arguments for function " + getName() + " doesn't match: passed "
+				+ toString(arguments.size()) + ", should be 1.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
+			};
+
+		const auto arg = arguments.front().get();
+
+		if (!typeid_cast<const DataTypeUInt8 *>(arg) &&
+			!typeid_cast<const DataTypeUInt16 *>(arg) &&
+			!typeid_cast<const DataTypeUInt32 *>(arg) &
+			!typeid_cast<const DataTypeUInt64 *>(arg))
+		{
+			throw Exception{
+				"Illegal type " + arg->getName() + " of argument of function " + getName(),
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+			};
+		}
+		
+		return new DataTypeArray{arg->clone()};
+	}
+
+	template <typename T>
+	bool execute(Block & block, const IColumn * const arg, const size_t result) override
+	{
+		if (const auto in = typeid_cast<const ColumnVector<T> *>(arg))
+		{
+			const auto & in_data = in->getData();
+			const auto total_values = std::accumulate(std::begin(in_data), std::end(in_data), std::size_t{},
+				std::plus<std::size_t>{});
+			if (total_values > max_elements)
+				throw Exception{
+					"Argument to function " + getName() + " should not exceed " + std::to_string(max_elements),
+					ErrorCodes::ARGUMENT_OUT_OF_BOUND
+				};
+
+			const auto data_col = new ColumnVector<T>{total_values};
+			const auto out = new ColumnArray{
+				data_col,
+				new ColumnArray::ColumnOffsets_t{in->size()}
+			};
+			block.getByPosition(result).column = out;
+
+			auto & out_data = data_col->getData();
+			auto & out_offsets = out->getOffsets();
+
+			IColumn::Offset_t offset{};
+			for (const auto i : ext::range(0, in->size()))
+			{
+				std::copy(ext::make_range_iterator(T{}), ext::make_range_iterator(in_data[i]), &out_data[offset]);
+				offset += in_data[i];
+				out_offsets[i] = offset;
+			}
+
+			return true;
+		}
+		else if (const auto in = typeid_cast<const ColumnConst<T> *>(arg))
+		{
+			const auto & in_data = in->getData();
+			const std::size_t total_values = in->size() * in_data;
+			if (total_values > max_elements)
+				throw Exception{
+					"Argument to function " + getName() + " should not exceed " + std::to_string(max_elements),
+					ErrorCodes::ARGUMENT_OUT_OF_BOUND
+				};
+
+			const auto data_col = new ColumnVector<T>{total_values};
+			const auto out = new ColumnArray{
+				data_col,
+				new ColumnArray::ColumnOffsets_t{in->size()}
+			};
+			block.getByPosition(result).column = out;
+
+			auto & out_data = data_col->getData();
+			auto & out_offsets = out->getOffsets();
+			
+			IColumn::Offset_t offset{};
+			for (const auto i : ext::range(0, in->size()))
+			{
+				std::copy(ext::make_range_iterator(T{}), ext::make_range_iterator(in_data), &out_data[offset]);
+				offset += in_data;
+				out_offsets[i] = offset;
+			}
+
+			return true;
+		}
+
+		return false;
+	}
+
+	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
+	{
+		const auto col = block.getByPosition(arguments[0]).column.get();
+
+		if (!execute<UInt8>(block, col, result) &&
+			!execute<UInt16>(block, col, result) &&
+			!execute<UInt32>(block, col, result) &&
+			!execute<UInt64>(block, col, result))
+		{
+			throw Exception{
+				"Illegal column " + col->getName() + " of argument of function " + getName(),
+				ErrorCodes::ILLEGAL_COLUMN
+			};
+		}
+	}
+};
 
 
 struct NameHas			{ static constexpr auto name = "has"; };

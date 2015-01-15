@@ -4,6 +4,7 @@
 #include <DB/Parsers/ASTQueryWithOutput.h>
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Parsers/ASTFunction.h>
+#include <DB/Parsers/ASTAsterisk.h>
 
 namespace DB
 {
@@ -30,12 +31,13 @@ public:
 	ASTPtr order_expression_list;
 	ASTPtr limit_offset;
 	ASTPtr limit_length;
+	ASTPtr next_union_all; /// Следующий запрос SELECT в цепочке UNION ALL, если такой есть
 
-	ASTSelectQuery() {}
-	ASTSelectQuery(StringRange range_) : ASTQueryWithOutput(range_) {}
+	ASTSelectQuery() = default;
+	ASTSelectQuery(const StringRange range_) : ASTQueryWithOutput(range_) {}
 
 	/** Получить текст, который идентифицирует этот элемент. */
-	String getID() const { return "SelectQuery"; };
+	String getID() const override { return "SelectQuery"; };
 
 	/// Проверить наличие функции arrayJoin. (Не большого ARRAY JOIN.)
 	static bool hasArrayJoin(const ASTPtr & ast)
@@ -49,6 +51,41 @@ public:
 				return true;
 
 		return false;
+	}
+
+	/// Содержит ли запрос астериск?
+	bool hasAsterisk() const
+	{
+		for (const auto & ast : select_expression_list->children)
+			if (typeid_cast<const ASTAsterisk *>(&*ast) != nullptr)
+				return true;
+
+		return false;
+	}
+
+	/// Переименовать столбцы запроса в такие же имена, как в исходном запросе.
+	void renameColumns(const ASTSelectQuery & source)
+	{
+		const ASTs & from = source.select_expression_list->children;
+		ASTs & to = select_expression_list->children;
+
+		if (from.size() != to.size())
+			throw Exception("Size mismatch in UNION ALL chain", 
+							DB::ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH);
+
+		for (size_t i = 0; i < from.size(); ++i)
+		{
+			/// Если столбец имеет алиас, то он должен совпадать с названием исходного столбца.
+			/// В противном случае мы ему присваиваем алиас, если требуется.
+			if (!to[i]->tryGetAlias().empty())
+			{
+				if (to[i]->tryGetAlias() != from[i]->getAliasOrColumnName())
+					throw Exception("Column alias mismatch in UNION ALL chain",
+									DB::ErrorCodes::UNION_ALL_COLUMN_ALIAS_MISMATCH);
+			}
+			else if (to[i]->getColumnName() != from[i]->getAliasOrColumnName())
+				to[i]->setAlias(from[i]->getAliasOrColumnName());
+		}
 	}
 
 	/// Переписывает select_expression_list, чтобы вернуть только необходимые столбцы в правильном порядке.
@@ -102,9 +139,11 @@ public:
 		  */
 	}
 
-	ASTPtr clone() const
+	ASTPtr clone() const override
 	{
 		ASTSelectQuery * res = new ASTSelectQuery(*this);
+		ASTPtr ptr{res};
+
 		res->children.clear();
 
 #define CLONE(member) if (member) { res->member = member->clone(); res->children.push_back(res->member); }
@@ -123,10 +162,11 @@ public:
 		CLONE(limit_offset)
 		CLONE(limit_length)
 		CLONE(format)
+		CLONE(next_union_all)
 
 #undef CLONE
 
-		return res;
+		return ptr;
 	}
 };
 

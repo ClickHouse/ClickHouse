@@ -6,6 +6,8 @@
 #include <DB/Interpreters/InterpreterDropQuery.h>
 #include <DB/Parsers/ASTDropQuery.h>
 #include <DB/Common/VirtualColumnUtils.h>
+#include <DB/DataTypes/DataTypeString.h>
+#include <DB/Columns/ColumnString.h>
 
 
 namespace DB
@@ -46,10 +48,11 @@ void StorageChunks::removeReference()
 BlockInputStreams StorageChunks::read(
 	const Names & column_names,
 	ASTPtr query,
+	const Context & context,
 	const Settings & settings,
 	QueryProcessingStage::Enum & processed_stage,
-	size_t max_block_size,
-	unsigned threads)
+	const size_t max_block_size,
+	const unsigned threads)
 {
 	bool has_virtual_column = false;
 
@@ -59,17 +62,21 @@ BlockInputStreams StorageChunks::read(
 
 	/// Если виртуальных столбцов нет, просто считать данные из таблицы
 	if (!has_virtual_column)
-		return read(0, std::numeric_limits<size_t>::max(), column_names, query, settings, processed_stage, max_block_size, threads);
+		return read(0, std::numeric_limits<size_t>::max(), column_names,
+					query, context, settings,
+					processed_stage, max_block_size, threads);
 
 	Block virtual_columns_block = getBlockWithVirtualColumns();
 	if (!VirtualColumnUtils::filterBlockWithQuery(query, virtual_columns_block, context))
-		return read(0, std::numeric_limits<size_t>::max(), column_names, query, settings, processed_stage, max_block_size, threads);
+		return read(0, std::numeric_limits<size_t>::max(), column_names,
+					query, context, settings,
+					processed_stage, max_block_size, threads);
 	std::multiset<String> values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, _table_column_name);
 
 	BlockInputStreams res;
 	for (const auto & it : values)
 	{
-		BlockInputStreams temp = readFromChunk(it, column_names, query, settings, processed_stage, max_block_size, threads);
+		BlockInputStreams temp = readFromChunk(it, column_names, query, context, settings, processed_stage, max_block_size, threads);
 		res.insert(res.end(), temp.begin(), temp.end());
 	}
 	return res;
@@ -92,10 +99,11 @@ BlockInputStreams StorageChunks::readFromChunk(
 	const std::string & chunk_name,
 	const Names & column_names,
 	ASTPtr query,
+	const Context & context,
 	const Settings & settings,
 	QueryProcessingStage::Enum & processed_stage,
-	size_t max_block_size,
-	unsigned threads)
+	const size_t max_block_size,
+	const unsigned threads)
 {
 	size_t mark1;
 	size_t mark2;
@@ -110,7 +118,7 @@ BlockInputStreams StorageChunks::readFromChunk(
 		mark2 = index + 1 == chunk_num_to_marks.size() ? marksCount() : chunk_num_to_marks[index + 1];
 	}
 
-	return read(mark1, mark2, column_names, query, settings, processed_stage, max_block_size, threads);
+	return read(mark1, mark2, column_names, query, context, settings, processed_stage, max_block_size, threads);
 }
 
 BlockOutputStreamPtr StorageChunks::writeToNewChunk(

@@ -154,6 +154,14 @@ namespace NumberTraits
 				typename Next<typename Traits<A>::Bits>::Type>::type>::Type Type;
 	};
 
+	template <typename A> struct ResultOfAbs
+	{
+		typedef typename Construct<
+			Unsigned,
+			typename Traits<A>::Floatness,
+			typename Traits <A>::Bits>::Type Type;
+	};
+
 	/** При побитовых операциях получается целое число, битность которого равна максимальной из битностей аргументов.
 	  */
 	template <typename A, typename B> struct ResultOfBit

@@ -16,8 +16,6 @@ static void localBackupImpl(Poco::Path source_path, Poco::Path destination_path,
 	if (level >= 1000)
 		throw DB::Exception("Too deep recursion");
 
-	std::cerr << source_path.toString() << ", " << destination_path.toString() << "\n";
-
 	Poco::File(destination_path).createDirectories();
 
 	Poco::DirectoryIterator dir_end;
@@ -68,5 +66,39 @@ static void localBackupImpl(Poco::Path source_path, Poco::Path destination_path,
 
 void localBackup(Poco::Path source_path, Poco::Path destination_path)
 {
-	localBackupImpl(source_path, destination_path, 0);
+	size_t try_no = 0;
+	const size_t max_tries = 10;
+
+	/** В директории могут постоянно добавляться и удаляться файлы.
+	  * Если какой-то файл удалился во время попытки сделать бэкап, то повторим попытку снова,
+	  *  так как важно учесть какие-нибудь новые файлы, который могли появиться.
+	  */
+	while (true)
+	{
+		try
+		{
+			localBackupImpl(source_path, destination_path, 0);
+		}
+		catch (const DB::ErrnoException & e)
+		{
+			if (e.getErrno() != ENOENT)
+				throw;
+
+			++try_no;
+			if (try_no == max_tries)
+				throw;
+
+			continue;
+		}
+		catch (const Poco::FileNotFoundException & e)
+		{
+			++try_no;
+			if (try_no == max_tries)
+				throw;
+
+			continue;
+		}
+
+		break;
+	}
 }

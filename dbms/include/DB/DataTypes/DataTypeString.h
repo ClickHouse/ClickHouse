@@ -22,7 +22,7 @@ public:
 	{
 		return "String";
 	}
-
+	
 	DataTypePtr clone() const
 	{
 		return new DataTypeString;

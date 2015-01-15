@@ -1,7 +1,7 @@
 #pragma once
 
 #include <statdaemons/Stopwatch.h>
-#include <statdaemons/stdext.h>
+#include <statdaemons/ext/memory.hpp>
 #include <list>
 #include <mutex>
 #include <atomic>
@@ -67,7 +67,7 @@ public:
 	EntryPtr insert(Args &&... args)
 	{
 		std::lock_guard<std::mutex> lock{mutex};
-		return stdext::make_unique<Entry>(*this, merges.emplace(merges.end(), std::forward<Args>(args)...));
+		return ext::make_unique<Entry>(*this, merges.emplace(merges.end(), std::forward<Args>(args)...));
 	}
 
 	container_t get() const

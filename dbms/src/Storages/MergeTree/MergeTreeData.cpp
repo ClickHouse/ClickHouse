@@ -11,8 +11,10 @@
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
 #include <DB/DataStreams/copyData.h>
 #include <DB/IO/WriteBufferFromFile.h>
+#include <DB/IO/CompressedReadBuffer.h>
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/Common/localBackup.h>
+#include <DB/Functions/FunctionFactory.h>
 
 #include <algorithm>
 #include <iomanip>
@@ -33,6 +35,7 @@ MergeTreeData::MergeTreeData(
 	size_t index_granularity_,
 	Mode mode_,
 	const String & sign_column_,
+	const Names & columns_to_sum_,
 	const MergeTreeSettings & settings_,
 	const String & log_name_,
 	bool require_part_metadata_,
@@ -40,7 +43,7 @@ MergeTreeData::MergeTreeData(
     : ITableDeclaration{materialized_columns_, alias_columns_, column_defaults_}, context(context_),
 	date_column_name(date_column_name_), sampling_expression(sampling_expression_),
 	index_granularity(index_granularity_),
-	mode(mode_), sign_column(sign_column_),
+	mode(mode_), sign_column(sign_column_), columns_to_sum(columns_to_sum_),
 	settings(settings_), primary_expr_ast(primary_expr_ast_->clone()),
 	require_part_metadata(require_part_metadata_),
 	full_path(full_path_), columns(columns_),
@@ -48,7 +51,8 @@ MergeTreeData::MergeTreeData(
 	log_name(log_name_), log(&Logger::get(log_name + " (Data)"))
 {
 	/// Проверяем, что столбец с датой существует и имеет тип Date.
-	const auto check_date_exists = [this] (const NamesAndTypesList & columns) {
+	const auto check_date_exists = [this] (const NamesAndTypesList & columns)
+	{
 		for (const auto & column : columns)
 		{
 			if (column.name == date_column_name)
@@ -67,8 +71,19 @@ MergeTreeData::MergeTreeData(
 	if (!check_date_exists(*columns) && !check_date_exists(materialized_columns))
 		throw Exception{
 			"Date column (" + date_column_name + ") does not exist in table declaration.",
-			ErrorCodes::NO_SUCH_COLUMN_IN_TABLE
-		};
+			ErrorCodes::NO_SUCH_COLUMN_IN_TABLE};
+
+	/// Если заданы columns_to_sum, проверяем, что такие столбцы существуют.
+	if (!columns_to_sum.empty())
+	{
+		if (mode != Summing)
+			throw Exception("List of columns to sum for MergeTree cannot be specified in all modes except Summing.", ErrorCodes::LOGICAL_ERROR);
+
+		for (const auto & column_to_sum : columns_to_sum)
+			if (columns->end() == std::find_if(columns->begin(), columns->end(),
+				[&](const NameAndTypePair & name_and_type) { return column_to_sum == name_and_type.name; }))
+				throw Exception("Column " + column_to_sum + " listed in columns to sum does not exist in table declaration.");
+	}
 
 	/// создаём директорию, если её нет
 	Poco::File(full_path).createDirectories();
@@ -222,7 +237,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 	for (const auto & part : broken_parts_to_remove)
 		part->remove();
 	for (const auto & part : broken_parts_to_detach)
-		part->renameAddPrefix("detached/");
+		part->renameAddPrefix(true, "");
 
 	all_data_parts = data_parts;
 
@@ -451,7 +466,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 
 				out_expression->addInput(ColumnWithNameAndType(nullptr, column.type, column.name));
 
-				FunctionPtr function = context.getFunctionFactory().get("to" + new_type_name, context);
+				const FunctionPtr & function = FunctionFactory::instance().get("to" + new_type_name, context);
 				Names out_names;
 				out_expression->add(ExpressionAction::applyFunction(function, Names(1, column.name)), out_names);
 				out_expression->add(ExpressionAction::removeColumn(column.name));
@@ -525,7 +540,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 	{
 		transaction->new_checksums = new_checksums;
 		WriteBufferFromFile checksums_file(full_path + part->name + "/checksums.txt.tmp", 4096);
-		new_checksums.writeText(checksums_file);
+		new_checksums.write(checksums_file);
 		transaction->rename_map["checksums.txt.tmp"] = "checksums.txt";
 	}
 
@@ -774,7 +789,7 @@ void MergeTreeData::renameAndDetachPart(const DataPartPtr & part, const String &
 	removePartContributionToColumnSizes(part);
 	data_parts.erase(part);
 	if (move_to_detached || !prefix.empty())
-		part->renameAddPrefix((move_to_detached ? "detached/" : "") + prefix);
+		part->renameAddPrefix(move_to_detached, prefix);
 
 	if (restore_covered)
 	{
@@ -975,7 +990,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const St
 
 		{
 			WriteBufferFromFile out(full_path + relative_path + "/checksums.txt.tmp", 4096);
-			part->checksums.writeText(out);
+			part->checksums.write(out);
 		}
 
 		Poco::File(full_path + relative_path + "/checksums.txt.tmp").renameTo(full_path + relative_path + "/checksums.txt");
@@ -1045,19 +1060,34 @@ void MergeTreeData::DataPart::Checksums::checkSizes(const String & path) const
 	}
 }
 
-bool MergeTreeData::DataPart::Checksums::readText(ReadBuffer & in)
+bool MergeTreeData::DataPart::Checksums::read(ReadBuffer & in)
 {
 	files.clear();
-	size_t count;
 
 	DB::assertString("checksums format version: ", in);
 	int format_version;
 	DB::readText(format_version, in);
-	if (format_version < 1 || format_version > 2)
+	DB::assertString("\n", in);
+
+	if (format_version < 1 || format_version > 4)
 		throw Exception("Bad checksums format version: " + DB::toString(format_version), ErrorCodes::UNKNOWN_FORMAT);
+
 	if (format_version == 1)
 		return false;
-	DB::assertString("\n", in);
+	if (format_version == 2)
+		return read_v2(in);
+	if (format_version == 3)
+		return read_v3(in);
+	if (format_version == 4)
+		return read_v4(in);
+
+	return false;
+}
+
+bool MergeTreeData::DataPart::Checksums::read_v2(ReadBuffer & in)
+{
+	size_t count;
+
 	DB::readText(count, in);
 	DB::assertString(" files:\n", in);
 
@@ -1092,35 +1122,61 @@ bool MergeTreeData::DataPart::Checksums::readText(ReadBuffer & in)
 	return true;
 }
 
-void MergeTreeData::DataPart::Checksums::writeText(WriteBuffer & out) const
+bool MergeTreeData::DataPart::Checksums::read_v3(ReadBuffer & in)
 {
-	DB::writeString("checksums format version: 2\n", out);
-	DB::writeText(files.size(), out);
-	DB::writeString(" files:\n", out);
+	size_t count;
+
+	DB::readVarUInt(count, in);
+
+	for (size_t i = 0; i < count; ++i)
+	{
+		String name;
+		Checksum sum;
+
+		DB::readBinary(name, in);
+		DB::readVarUInt(sum.file_size, in);
+		DB::readBinary(sum.file_hash, in);
+		DB::readBinary(sum.is_compressed, in);
+
+		if (sum.is_compressed)
+		{
+			DB::readVarUInt(sum.uncompressed_size, in);
+			DB::readBinary(sum.uncompressed_hash, in);
+		}
+
+		files.emplace(std::move(name), sum);
+	}
+
+	return true;
+}
+
+bool MergeTreeData::DataPart::Checksums::read_v4(ReadBuffer & from)
+{
+	CompressedReadBuffer in{from};
+	return read_v3(in);
+}
+
+void MergeTreeData::DataPart::Checksums::write(WriteBuffer & to) const
+{
+	DB::writeString("checksums format version: 4\n", to);
+
+	DB::CompressedWriteBuffer out{to, CompressionMethod::LZ4, 1 << 16};
+	DB::writeVarUInt(files.size(), out);
 
 	for (const auto & it : files)
 	{
 		const String & name = it.first;
 		const Checksum & sum = it.second;
-		DB::writeString(name, out);
-		DB::writeString("\n\tsize: ", out);
-		DB::writeText(sum.file_size, out);
-		DB::writeString("\n\thash: ", out);
-		DB::writeText(sum.file_hash.first, out);
-		DB::writeString(" ", out);
-		DB::writeText(sum.file_hash.second, out);
-		DB::writeString("\n\tcompressed: ", out);
-		DB::writeText(sum.is_compressed, out);
-		DB::writeString("\n", out);
+
+		DB::writeBinary(name, out);
+		DB::writeVarUInt(sum.file_size, out);
+		DB::writeBinary(sum.file_hash, out);
+		DB::writeBinary(sum.is_compressed, out);
+
 		if (sum.is_compressed)
 		{
-			DB::writeString("\tuncompressed size: ", out);
-			DB::writeText(sum.uncompressed_size, out);
-			DB::writeString("\n\tuncompressed hash: ", out);
-			DB::writeText(sum.uncompressed_hash.first, out);
-			DB::writeString(" ", out);
-			DB::writeText(sum.uncompressed_hash.second, out);
-			DB::writeString("\n", out);
+			DB::writeVarUInt(sum.uncompressed_size, out);
+			DB::writeBinary(sum.uncompressed_hash, out);
 		}
 	}
 }

@@ -49,10 +49,10 @@ static inline char parseEscapeSequence(char c)
 	}
 }
 
-static inline void throwReadAfterEOF()
-{
-	throw Exception("Attempt to read after eof", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
-}
+
+/// Эти функции находятся в VarInt.h
+/// inline void throwReadAfterEOF()
+/// inline void readChar(char & x, ReadBuffer & buf)
 
 
 /// Чтение POD-типа в native формате
@@ -103,17 +103,6 @@ void readVectorBinary(std::vector<T> & v, ReadBuffer & buf, size_t MAX_VECTOR_SI
 }
 
 
-inline void readChar(char & x, ReadBuffer & buf)
-{
-	if (!buf.eof())
-	{
-		x = *buf.position();
-		++buf.position();
-	}
-	else
-		throwReadAfterEOF();
-}
-
 void assertString(const char * s, ReadBuffer & buf);
 void assertEOF(ReadBuffer & buf);
 
@@ -138,7 +127,7 @@ void readIntText(T & x, ReadBuffer & buf)
 	x = 0;
 	if (buf.eof())
 		throwReadAfterEOF();
-	
+
 	while (!buf.eof())
 	{
 		switch (*buf.position())

@@ -9,6 +9,7 @@
 #include <DB/AggregateFunctions/AggregateFunctionGroupUniqArray.h>
 #include <DB/AggregateFunctions/AggregateFunctionQuantile.h>
 #include <DB/AggregateFunctions/AggregateFunctionQuantileTiming.h>
+#include <DB/AggregateFunctions/AggregateFunctionQuantileDeterministic.h>
 #include <DB/AggregateFunctions/AggregateFunctionIf.h>
 #include <DB/AggregateFunctions/AggregateFunctionArray.h>
 #include <DB/AggregateFunctions/AggregateFunctionState.h>
@@ -325,6 +326,76 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 
 		return res;
 	}
+	else if (name == "quantileDeterministic")
+	{
+		if (argument_types.size() != 2)
+			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		const auto determinator_type = argument_types[1].get();
+		if (!typeid_cast<const DataTypeInt32 *>(determinator_type) &&
+			!typeid_cast<const DataTypeUInt32 *>(determinator_type) &&
+			!typeid_cast<const DataTypeInt64 *>(determinator_type) &&
+			!typeid_cast<const DataTypeUInt64 *>(determinator_type))
+		{
+			throw Exception{
+				"Illegal type " + determinator_type->getName() + " of second argument for aggregate function " + name +
+				", Int32, UInt32, Int64 or UInt64 required",
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+			};
+		}
+
+		const IDataType & argument_type = *argument_types[0];
+
+			 if (typeid_cast<const DataTypeUInt8 	*>(&argument_type))	return new AggregateFunctionQuantileDeterministic<UInt8>;
+		else if (typeid_cast<const DataTypeUInt16 	*>(&argument_type))	return new AggregateFunctionQuantileDeterministic<UInt16>;
+		else if (typeid_cast<const DataTypeUInt32 	*>(&argument_type))	return new AggregateFunctionQuantileDeterministic<UInt32>;
+		else if (typeid_cast<const DataTypeUInt64 	*>(&argument_type))	return new AggregateFunctionQuantileDeterministic<UInt64>;
+		else if (typeid_cast<const DataTypeInt8 	*>(&argument_type))	return new AggregateFunctionQuantileDeterministic<Int8>;
+		else if (typeid_cast<const DataTypeInt16 	*>(&argument_type))	return new AggregateFunctionQuantileDeterministic<Int16>;
+		else if (typeid_cast<const DataTypeInt32 	*>(&argument_type))	return new AggregateFunctionQuantileDeterministic<Int32>;
+		else if (typeid_cast<const DataTypeInt64 	*>(&argument_type))	return new AggregateFunctionQuantileDeterministic<Int64>;
+		else if (typeid_cast<const DataTypeFloat32 *>(&argument_type))	return new AggregateFunctionQuantileDeterministic<Float32>;
+		else if (typeid_cast<const DataTypeFloat64 *>(&argument_type))	return new AggregateFunctionQuantileDeterministic<Float64>;
+		else if (typeid_cast<const DataTypeDate 	*>(&argument_type)) return new AggregateFunctionQuantileDeterministic<DataTypeDate::FieldType, false>;
+		else if (typeid_cast<const DataTypeDateTime*>(&argument_type)) return new AggregateFunctionQuantileDeterministic<DataTypeDateTime::FieldType, false>;
+		else
+			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+	}
+	else if (name == "quantilesDeterministic")
+	{
+		if (argument_types.size() != 2)
+			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		const auto determinator_type = argument_types[1].get();
+		if (!typeid_cast<const DataTypeInt32 *>(determinator_type) &&
+			!typeid_cast<const DataTypeUInt32 *>(determinator_type) &&
+			!typeid_cast<const DataTypeInt64 *>(determinator_type) &&
+			!typeid_cast<const DataTypeUInt64 *>(determinator_type))
+		{
+			throw Exception{
+				"Illegal type " + determinator_type->getName() + " of second argument for aggregate function " + name +
+				", Int32, UInt32, Int64 or UInt64 required",
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+			};
+		}
+
+		const IDataType & argument_type = *argument_types[0];
+
+			 if (typeid_cast<const DataTypeUInt8 	*>(&argument_type))	return new AggregateFunctionQuantilesDeterministic<UInt8>;
+		else if (typeid_cast<const DataTypeUInt16 	*>(&argument_type))	return new AggregateFunctionQuantilesDeterministic<UInt16>;
+		else if (typeid_cast<const DataTypeUInt32 	*>(&argument_type))	return new AggregateFunctionQuantilesDeterministic<UInt32>;
+		else if (typeid_cast<const DataTypeUInt64 	*>(&argument_type))	return new AggregateFunctionQuantilesDeterministic<UInt64>;
+		else if (typeid_cast<const DataTypeInt8 	*>(&argument_type))	return new AggregateFunctionQuantilesDeterministic<Int8>;
+		else if (typeid_cast<const DataTypeInt16 	*>(&argument_type))	return new AggregateFunctionQuantilesDeterministic<Int16>;
+		else if (typeid_cast<const DataTypeInt32 	*>(&argument_type))	return new AggregateFunctionQuantilesDeterministic<Int32>;
+		else if (typeid_cast<const DataTypeInt64 	*>(&argument_type))	return new AggregateFunctionQuantilesDeterministic<Int64>;
+		else if (typeid_cast<const DataTypeFloat32 *>(&argument_type))	return new AggregateFunctionQuantilesDeterministic<Float32>;
+		else if (typeid_cast<const DataTypeFloat64 *>(&argument_type))	return new AggregateFunctionQuantilesDeterministic<Float64>;
+		else if (typeid_cast<const DataTypeDate 	*>(&argument_type)) return new AggregateFunctionQuantilesDeterministic<DataTypeDate::FieldType, false>;
+		else if (typeid_cast<const DataTypeDateTime*>(&argument_type)) return new AggregateFunctionQuantilesDeterministic<DataTypeDateTime::FieldType, false>;
+		else
+			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+	}
 	else if (recursion_level == 0 && name.size() > strlen("State") && !(strcmp(name.data() + name.size() - strlen("State"), "State")))
 	{
 		/// Для агрегатных функций вида aggState, где agg - имя другой агрегатной функции.
@@ -386,7 +457,7 @@ AggregateFunctionPtr AggregateFunctionFactory::tryGet(const String & name, const
 
 bool AggregateFunctionFactory::isAggregateFunctionName(const String & name, int recursion_level) const
 {
-	static const char * names[] =
+	static const char * names[]
 	{
 		"count",
 		"any",
@@ -409,7 +480,9 @@ bool AggregateFunctionFactory::isAggregateFunctionName(const String & name, int 
 		"medianTiming",
 		"quantileTiming",
 		"quantilesTiming",
-		NULL
+		"quantileDeterministic",
+		"quantilesDeterministic",
+		nullptr
 	};
 
 	for (const char ** it = names; *it; ++it)

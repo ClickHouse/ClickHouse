@@ -1,23 +1,74 @@
 #pragma once
 
+#include <queue>
+#include <Poco/TemporaryFile.h>
+
 #include <Yandex/logger_useful.h>
 
 #include <DB/Core/SortDescription.h>
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
+#include <DB/DataStreams/NativeBlockInputStream.h>
+
+#include <DB/IO/ReadBufferFromFile.h>
+#include <DB/IO/CompressedReadBuffer.h>
 
 
 namespace DB
 {
 
 /** Соединяет поток сортированных по отдельности блоков в сортированный целиком поток.
+  * Если данных для сортировки слишком много - может использовать внешнюю сортировку, с помощью временных файлов.
   */
+
+/** Часть реализации. Сливает набор готовых (уже прочитанных откуда-то) блоков.
+  * Возвращает результат слияния в виде потока блоков не более max_merged_block_size строк.
+  */
+class MergeSortingBlocksBlockInputStream : public IProfilingBlockInputStream
+{
+public:
+	/// limit - если не 0, то можно выдать только первые limit строк в сортированном порядке.
+	MergeSortingBlocksBlockInputStream(Blocks & blocks_, SortDescription & description_,
+		size_t max_merged_block_size_, size_t limit_ = 0);
+
+	String getName() const override { return "MergeSortingBlocksBlockInputStream"; }
+	String getID() const override { return getName(); }
+
+protected:
+	Block readImpl() override;
+
+private:
+	Blocks & blocks;
+	SortDescription description;
+	size_t max_merged_block_size;
+	size_t limit;
+	size_t total_merged_rows = 0;
+
+	using CursorImpls = std::vector<SortCursorImpl>;
+	CursorImpls cursors;
+
+	bool has_collation = false;
+
+	std::priority_queue<SortCursor> queue;
+	std::priority_queue<SortCursorWithCollation> queue_with_collation;
+
+	/** Делаем поддержку двух разных курсоров - с Collation и без.
+	 *  Шаблоны используем вместо полиморфных SortCursor'ов и вызовов виртуальных функций.
+	 */
+	template <typename TSortCursor>
+	Block mergeImpl(std::priority_queue<TSortCursor> & queue);
+};
+
+
 class MergeSortingBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	/// limit - если не 0, то можно выдать только первые limit строк в сортированном порядке.
-	MergeSortingBlockInputStream(BlockInputStreamPtr input_, SortDescription & description_, size_t limit_ = 0)
-		: description(description_), limit(limit_), has_been_read(false), log(&Logger::get("MergeSortingBlockInputStream"))
+	MergeSortingBlockInputStream(BlockInputStreamPtr input_, SortDescription & description_,
+		size_t max_merged_block_size_, size_t limit_,
+		size_t max_bytes_before_external_sort_, const std::string & tmp_path_, const DataTypeFactory & data_type_factory_)
+		: description(description_), max_merged_block_size(max_merged_block_size_), limit(limit_),
+		max_bytes_before_external_sort(max_bytes_before_external_sort_), tmp_path(tmp_path_), data_type_factory(data_type_factory_)
 	{
 		children.push_back(input_);
 	}
@@ -41,24 +92,36 @@ protected:
 
 private:
 	SortDescription description;
+	size_t max_merged_block_size;
 	size_t limit;
 
-	/// Всё было прочитано.
-	bool has_been_read;
+	size_t max_bytes_before_external_sort;
+	const std::string tmp_path;
+	const DataTypeFactory & data_type_factory;
 
-	Logger * log;
+	Logger * log = &Logger::get("MergeSortingBlockInputStream");
 
-	/** Слить сразу много блоков с помощью priority queue.
-	  */
-	Block merge(Blocks & blocks);
+	Blocks blocks;
+	size_t sum_bytes_in_blocks = 0;
+	std::unique_ptr<IBlockInputStream> impl;
 
-	typedef std::vector<SortCursorImpl> CursorImpls;
+	/// Всё ниже - для внешней сортировки.
+	std::vector<std::unique_ptr<Poco::TemporaryFile>> temporary_files;
 
-	/** Делаем поддержку двух разных курсоров - с Collation и без.
-	 *  Шаблоны используем вместо полиморфных SortCursor'ов и вызовов виртуальных функций.
-	 */
-	template <typename TSortCursor>
-	Block mergeImpl(Blocks & block, CursorImpls & cursors);
+	/// Для чтения сброшенных во временный файл данных.
+	struct TemporaryFileStream
+	{
+		ReadBufferFromFile file_in;
+		CompressedReadBuffer compressed_in;
+		BlockInputStreamPtr block_in;
+
+		TemporaryFileStream(const std::string & path, const DataTypeFactory & data_type_factory)
+			: file_in(path), compressed_in(file_in), block_in(new NativeBlockInputStream(compressed_in, data_type_factory)) {}
+	};
+
+	std::vector<std::unique_ptr<TemporaryFileStream>> temporary_inputs;
+
+	BlockInputStreams inputs_to_merge;
 };
 
 }

@@ -18,16 +18,13 @@ namespace DB
 class PushingToViewsBlockOutputStream : public IBlockOutputStream
 {
 public:
-	PushingToViewsBlockOutputStream(String database_, String table_, const Context & context_, ASTPtr query_ptr_)
-		: database(database_), table(table_), context(context_), query_ptr(query_ptr_)
+	PushingToViewsBlockOutputStream(String database, String table, const Context & context_, ASTPtr query_ptr_)
+		: context(context_), query_ptr(query_ptr_)
 	{
-		if (database.empty())
-			database = context.getCurrentDatabase();
-
 		storage = context.getTable(database, table);
 		addTableLock(storage->lockStructure(true));
 
-		Dependencies dependencies = context.getDependencies(DatabaseAndTableName(database, table));
+		Dependencies dependencies = context.getDependencies(database, table);
 		for (size_t i = 0; i < dependencies.size(); ++i)
 		{
 			children.push_back(new PushingToViewsBlockOutputStream(dependencies[i].first, dependencies[i].second, context, ASTPtr()));
@@ -67,8 +64,6 @@ public:
 private:
 	StoragePtr storage;
 	BlockOutputStreamPtr output;
-	String database;
-	String table;
 	Context context;
 	ASTPtr query_ptr;
 	std::vector<BlockOutputStreamPtr> children;

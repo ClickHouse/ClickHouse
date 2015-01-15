@@ -24,13 +24,13 @@ public:
 
 	bool global;	/// Если запрос SET GLOBAL.
 
-	ASTSetQuery() {}
-	ASTSetQuery(StringRange range_) : IAST(range_) {}
+	ASTSetQuery() = default;
+	ASTSetQuery(const StringRange range_) : IAST(range_) {}
 	
 	/** Получить текст, который идентифицирует этот элемент. */
-	String getID() const { return "Set"; };
+	String getID() const override { return "Set"; };
 
-	ASTPtr clone() const { return new ASTSetQuery(*this); }
+	ASTPtr clone() const override { return new ASTSetQuery(*this); }
 };
 
 }

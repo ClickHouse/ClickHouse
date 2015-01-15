@@ -60,3 +60,5 @@ SELECT d,
 FROM test.stored_aggregates
 GROUP BY d
 ORDER BY d;
+
+DROP TABLE test.stored_aggregates;

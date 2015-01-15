@@ -13,6 +13,7 @@
 
 #include <stats/IntHash.h>
 
+#include <DB/Core/Defines.h>
 #include <DB/Core/Types.h>
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
@@ -135,7 +136,7 @@ struct HashTableCell
 
 /** Определяет размер хэш-таблицы, а также когда и во сколько раз её надо ресайзить.
   */
-template <size_t initial_size_degree = 16>
+template <size_t initial_size_degree = 8>
 struct HashTableGrower
 {
 	/// Состояние этой структуры достаточно, чтобы получить размер буфера хэш-таблицы.
@@ -231,6 +232,9 @@ protected:
 	friend class const_iterator;
 	friend class iterator;
 
+	template <typename, typename, typename, typename, typename, typename, size_t>
+	friend class TwoLevelHashTable;
+
 	typedef size_t HashValue;
 	typedef HashTable<Key, Cell, Hash, Grower, Allocator> Self;
 	typedef Cell cell_type;
@@ -240,13 +244,27 @@ protected:
 	Grower grower;
 
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
-	mutable size_t collisions;
+	mutable size_t collisions = 0;
 #endif
 
 	/// Найти ячейку с тем же ключём или пустую ячейку, начиная с заданного места и далее по цепочке разрешения коллизий.
-	size_t findCell(const Key & x, size_t hash_value, size_t place_value) const
+	size_t ALWAYS_INLINE findCell(const Key & x, size_t hash_value, size_t place_value) const
 	{
 		while (!buf[place_value].isZero(*this) && !buf[place_value].keyEquals(x, hash_value))
+		{
+			place_value = grower.next(place_value);
+#ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
+			++collisions;
+#endif
+		}
+
+		return place_value;
+	}
+
+	/// Найти пустую ячейку, начиная с заданного места и далее по цепочке разрешения коллизий.
+	size_t ALWAYS_INLINE findEmptyCell(const Key & x, size_t hash_value, size_t place_value) const
+	{
+		while (!buf[place_value].isZero(*this))
 		{
 			place_value = grower.next(place_value);
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
@@ -372,10 +390,14 @@ public:
 		if (Cell::need_zero_value_storage)
 			this->zeroValue()->setZero();
 		alloc(grower);
+	}
 
-#ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
-		collisions = 0;
-#endif
+	HashTable(size_t reserve_for_num_elements)
+	{
+		if (Cell::need_zero_value_storage)
+			this->zeroValue()->setZero();
+		grower.set(reserve_for_num_elements);
+		alloc(grower);
 	}
 
 	~HashTable()
@@ -417,6 +439,9 @@ public:
 
 		value_type & operator* () const { return ptr->getValue(); }
 		value_type * operator->() const { return &ptr->getValue(); }
+
+		Cell * getPtr() const { return ptr; }
+		size_t getHash() const { return ptr->getHash(*container); }
 	};
 
 
@@ -450,6 +475,9 @@ public:
 
 		const value_type & operator* () const { return ptr->getValue(); }
 		const value_type * operator->() const { return &ptr->getValue(); }
+
+		const Cell * getPtr() const { return ptr; }
+		size_t getHash() const { return ptr->getHash(*container); }
 	};
 
 
@@ -482,12 +510,14 @@ public:
 
 
 protected:
-	const_iterator iteratorToZero() const 	{ return const_iterator(this, this->zeroValue()); }
-	iterator iteratorToZero() 				{ return iterator(this, this->zeroValue()); }
+	const_iterator iteratorTo(const Cell * ptr) const 	{ return const_iterator(this, ptr); }
+	iterator iteratorTo(Cell * ptr) 					{ return iterator(this, ptr); }
+	const_iterator iteratorToZero() const 	{ return iteratorTo(this->zeroValue()); }
+	iterator iteratorToZero() 				{ return iteratorTo(this->zeroValue()); }
 
 
 	/// Если ключ нулевой - вставить его в специальное место и вернуть true.
-	bool emplaceIfZero(Key x, iterator & it, bool & inserted)
+	bool ALWAYS_INLINE emplaceIfZero(Key x, iterator & it, bool & inserted)
 	{
 		/// Если утверждается, что нулевой ключ не могут вставить в таблицу.
 		if (!Cell::need_zero_value_storage)
@@ -514,7 +544,7 @@ protected:
 
 
 	/// Только для ненулевых ключей. Найти нужное место, вставить туда ключ, если его ещё нет, вернуть итератор на ячейку.
-	void emplaceNonZero(Key x, iterator & it, bool & inserted, size_t hash_value)
+	void ALWAYS_INLINE emplaceNonZero(Key x, iterator & it, bool & inserted, size_t hash_value)
 	{
 		size_t place_value = findCell(x, hash_value, grower.place(hash_value));
 
@@ -534,14 +564,14 @@ protected:
 		if (unlikely(grower.overflow(m_size)))
 		{
 			resize();
-			it = find(x);
+			it = find(x, hash_value);
 		}
 	}
 
 
 public:
 	/// Вставить значение. В случае хоть сколько-нибудь сложных значений, лучше используйте функцию emplace.
-	std::pair<iterator, bool> insert(const value_type & x)
+	std::pair<iterator, bool> ALWAYS_INLINE insert(const value_type & x)
 	{
 		std::pair<iterator, bool> res;
 
@@ -570,7 +600,7 @@ public:
 	  * if (inserted)
 	  * 	new(&it->second) Mapped(value);
 	  */
-	void emplace(Key x, iterator & it, bool & inserted)
+	void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted)
 	{
 		if (!emplaceIfZero(x, it, inserted))
 			emplaceNonZero(x, it, inserted, hash(x));
@@ -578,33 +608,64 @@ public:
 
 
 	/// То же самое, но с заранее вычисленным значением хэш-функции.
-	void emplace(Key x, iterator & it, bool & inserted, size_t hash_value)
+	void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted, size_t hash_value)
 	{
 		if (!emplaceIfZero(x, it, inserted))
 			emplaceNonZero(x, it, inserted, hash_value);
 	}
 
 
-	iterator find(Key x)
+	/// Скопировать ячейку из другой хэш-таблицы. Предполагается, что ячейка не нулевая, а также, что такого ключа в таблице ещё не было.
+	void ALWAYS_INLINE insertUniqueNonZero(const Cell * cell, size_t hash_value)
+	{
+		size_t place_value = findEmptyCell(cell->getKey(cell->getValue()), hash_value, grower.place(hash_value));
+
+		memcpy(&buf[place_value], cell, sizeof(*cell));
+		++m_size;
+
+		if (unlikely(grower.overflow(m_size)))
+			resize();
+	}
+
+
+	iterator ALWAYS_INLINE find(Key x)
 	{
 		if (Cell::isZero(x, *this))
 			return this->hasZero() ? iteratorToZero() : end();
 
 		size_t hash_value = hash(x);
 		size_t place_value = findCell(x, hash_value, grower.place(hash_value));
-
 		return !buf[place_value].isZero(*this) ? iterator(this, &buf[place_value]) : end();
 	}
 
 
-	const_iterator find(Key x) const
+	const_iterator ALWAYS_INLINE find(Key x) const
 	{
 		if (Cell::isZero(x, *this))
 			return this->hasZero() ? iteratorToZero() : end();
 
 		size_t hash_value = hash(x);
 		size_t place_value = findCell(x, hash_value, grower.place(hash_value));
+		return !buf[place_value].isZero(*this) ? const_iterator(this, &buf[place_value]) : end();
+	}
 
+
+	iterator ALWAYS_INLINE find(Key x, size_t hash_value)
+	{
+		if (Cell::isZero(x, *this))
+			return this->hasZero() ? iteratorToZero() : end();
+
+		size_t place_value = findCell(x, hash_value, grower.place(hash_value));
+		return !buf[place_value].isZero(*this) ? iterator(this, &buf[place_value]) : end();
+	}
+
+
+	const_iterator ALWAYS_INLINE find(Key x, size_t hash_value) const
+	{
+		if (Cell::isZero(x, *this))
+			return this->hasZero() ? iteratorToZero() : end();
+
+		size_t place_value = findCell(x, hash_value, grower.place(hash_value));
 		return !buf[place_value].isZero(*this) ? const_iterator(this, &buf[place_value]) : end();
 	}
 
@@ -699,6 +760,16 @@ public:
 	bool empty() const
 	{
 	    return 0 == m_size;
+	}
+
+	void clear()
+	{
+		if (!__has_trivial_destructor(Cell))
+			for (iterator it = begin(); it != end(); ++it)
+				it.ptr->~Cell();
+
+		memset(buf, 0, grower.bufSize() * sizeof(*buf));
+		m_size = 0;
 	}
 
 	size_t getBufferSizeInBytes() const

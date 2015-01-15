@@ -6,7 +6,7 @@
 #include <DB/Parsers/ASTSelectQuery.h>
 
 #include <DB/Interpreters/Context.h>
-#include <DB/Interpreters/Aggregator.h>
+#include <DB/Interpreters/AggregateDescription.h>
 #include <DB/Interpreters/ExpressionActions.h>
 #include <DB/Interpreters/Set.h>
 #include <DB/Interpreters/Join.h>

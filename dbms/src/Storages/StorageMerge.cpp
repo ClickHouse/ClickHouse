@@ -1,8 +1,13 @@
 #include <DB/DataStreams/narrowBlockInputStreams.h>
+#include <DB/DataStreams/AddingConstColumnBlockInputStream.h>
 #include <DB/Storages/StorageMerge.h>
 #include <DB/Common/VirtualColumnUtils.h>
 #include <DB/Interpreters/InterpreterAlterQuery.h>
 #include <DB/Storages/VirtualColumnFactory.h>
+#include <DB/Parsers/ASTSelectQuery.h>
+#include <DB/DataTypes/DataTypeString.h>
+#include <DB/Columns/ColumnString.h>
+
 
 namespace DB
 {
@@ -79,10 +84,11 @@ bool StorageMerge::hasColumn(const String & column_name) const
 BlockInputStreams StorageMerge::read(
 	const Names & column_names,
 	ASTPtr query,
+	const Context & context,
 	const Settings & settings,
 	QueryProcessingStage::Enum & processed_stage,
-	size_t max_block_size,
-	unsigned threads)
+	const size_t max_block_size,
+	const unsigned threads)
 {
 	BlockInputStreams res;
 
@@ -143,6 +149,7 @@ BlockInputStreams StorageMerge::read(
 		BlockInputStreams source_streams = table->read(
 			real_column_names,
 			modified_query_ast,
+			context,
 			settings,
 			tmp_processed_stage,
 			max_block_size,

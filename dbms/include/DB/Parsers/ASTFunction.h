@@ -32,12 +32,12 @@ public:
 	/// параметры - для параметрических агрегатных функций. Пример: quantile(0.9)(x) - то, что в первых скобках - параметры.
 	ASTPtr parameters;
 
-	FunctionKind kind;
+	FunctionKind kind{UNKNOWN};
 
-	ASTFunction() : kind(UNKNOWN) {}
-	ASTFunction(StringRange range_) : ASTWithAlias(range_), kind(UNKNOWN) {}
+	ASTFunction() = default;
+	ASTFunction(const StringRange range_) : ASTWithAlias(range_) {}
 
-	String getColumnName() const
+	String getColumnName() const override
 	{
 		String res;
 		WriteBufferFromString wb(res);
@@ -68,17 +68,19 @@ public:
 	}
 
 	/** Получить текст, который идентифицирует этот элемент. */
-	String getID() const { return "Function_" + name; }
+	String getID() const override { return "Function_" + name; }
 
-	ASTPtr clone() const
+	ASTPtr clone() const override
 	{
 		ASTFunction * res = new ASTFunction(*this);
+		ASTPtr ptr{res};
+
 		res->children.clear();
 
 		if (arguments) 	{ res->arguments = arguments->clone();		res->children.push_back(res->arguments); }
 		if (parameters) { res->parameters = parameters->clone(); 	res->children.push_back(res->parameters); }
 
-		return res;
+		return ptr;
 	}
 };
 

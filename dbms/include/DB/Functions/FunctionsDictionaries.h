@@ -63,6 +63,11 @@ struct RegionToContinentImpl
 	static UInt32 apply(UInt32 x, const RegionsHierarchy & hierarchy) { return hierarchy.toContinent(x); }
 };
 
+struct RegionToPopulationImpl
+{
+	static UInt32 apply(UInt32 x, const RegionsHierarchy & hierarchy) { return hierarchy.getPopulation(x); }
+};
+
 struct OSToRootImpl
 {
 	static UInt8 apply(UInt8 x, const TechDataHierarchy & hierarchy) { return hierarchy.OSToMostAncestor(x); }
@@ -500,6 +505,7 @@ struct NameRegionToArea				{ static constexpr auto name = "regionToArea"; };
 struct NameRegionToDistrict			{ static constexpr auto name = "regionToDistrict"; };
 struct NameRegionToCountry			{ static constexpr auto name = "regionToCountry"; };
 struct NameRegionToContinent		{ static constexpr auto name = "regionToContient"; };
+struct NameRegionToPopulation		{ static constexpr auto name = "regionToPopulation"; };
 struct NameOSToRoot					{ static constexpr auto name = "OSToRoot"; };
 struct NameSEToRoot					{ static constexpr auto name = "SEToRoot"; };
 struct NameCategoryToRoot			{ static constexpr auto name = "categoryToRoot"; };
@@ -554,6 +560,15 @@ struct FunctionRegionToCountry :
 
 struct FunctionRegionToContinent :
 	public FunctionTransformWithDictionary<UInt32, RegionToContinentImpl, RegionsHierarchyGetter, NameRegionToContinent>
+{
+	static IFunction * create(const Context & context)
+	{
+		return new base_type{context.getDictionaries().getRegionsHierarchies()};
+	}
+};
+
+struct FunctionRegionToPopulation :
+	public FunctionTransformWithDictionary<UInt32, RegionToPopulationImpl, RegionsHierarchyGetter, NameRegionToPopulation>
 {
 	static IFunction * create(const Context & context)
 	{
@@ -721,7 +736,7 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		RegionsNames::SupportedLanguages::Enum language = RegionsNames::SupportedLanguages::RU;
+		RegionsNames::Language language = RegionsNames::Language::RU;
 
 		/// Если указан язык результата
 		if (arguments.size() == 2)

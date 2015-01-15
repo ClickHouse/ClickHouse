@@ -413,221 +413,6 @@ struct ReverseUTF8Impl
 };
 
 
-/** Склеивает две строки.
-  */
-struct ConcatImpl
-{
-	static void vector_vector(
-		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
-		const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
-		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
-	{
-		size_t size = a_offsets.size();
-		c_data.resize(a_data.size() + b_data.size() - size);
-		c_offsets.resize(size);
-
-		ColumnString::Offset_t offset = 0;
-		ColumnString::Offset_t a_offset = 0;
-		ColumnString::Offset_t b_offset = 0;
-		for (size_t i = 0; i < size; ++i)
-		{
-			memcpy(&c_data[offset], &a_data[a_offset], a_offsets[i] - a_offset - 1);
-			offset += a_offsets[i] - a_offset - 1;
-			memcpy(&c_data[offset], &b_data[b_offset], b_offsets[i] - b_offset);
-			offset += b_offsets[i] - b_offset;
-
-			a_offset = a_offsets[i];
-			b_offset = b_offsets[i];
-
-			c_offsets[i] = offset;
-		}
-	}
-
-	static void vector_fixed_vector(
-		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
-		const ColumnString::Chars_t & b_data, ColumnString::Offset_t b_n,
-		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
-	{
-		size_t size = a_offsets.size();
-		c_data.resize(a_data.size() + b_data.size());
-		c_offsets.resize(size);
-
-		ColumnString::Offset_t offset = 0;
-		ColumnString::Offset_t a_offset = 0;
-		ColumnString::Offset_t b_offset = 0;
-		for (size_t i = 0; i < size; ++i)
-		{
-			memcpy(&c_data[offset], &a_data[a_offset], a_offsets[i] - a_offset - 1);
-			offset += a_offsets[i] - a_offset - 1;
-			memcpy(&c_data[offset], &b_data[b_offset], b_n);
-			offset += b_n;
-			c_data[offset] = 0;
-			offset += 1;
-
-			a_offset = a_offsets[i];
-			b_offset += b_n;
-
-			c_offsets[i] = offset;
-		}
-	}
-
-	static void vector_constant(
-		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
-		const std::string & b,
-		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
-	{
-		size_t size = a_offsets.size();
-		c_data.resize(a_data.size() + b.size() * size);
-		c_offsets.assign(a_offsets);
-
-		for (size_t i = 0; i < size; ++i)
-			c_offsets[i] += b.size() * (i + 1);
-
-		ColumnString::Offset_t offset = 0;
-		ColumnString::Offset_t a_offset = 0;
-		for (size_t i = 0; i < size; ++i)
-		{
-			memcpy(&c_data[offset], &a_data[a_offset], a_offsets[i] - a_offset - 1);
-			offset += a_offsets[i] - a_offset - 1;
-			memcpy(&c_data[offset], b.data(), b.size() + 1);
-			offset += b.size() + 1;
-
-			a_offset = a_offsets[i];
-		}
-	}
-
-	static void fixed_vector_vector(
-		const ColumnString::Chars_t & a_data, ColumnString::Offset_t a_n,
-		const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
-		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
-	{
-		size_t size = b_offsets.size();
-		c_data.resize(a_data.size() + b_data.size());
-		c_offsets.resize(size);
-
-		ColumnString::Offset_t offset = 0;
-		ColumnString::Offset_t a_offset = 0;
-		ColumnString::Offset_t b_offset = 0;
-		for (size_t i = 0; i < size; ++i)
-		{
-			memcpy(&c_data[offset], &a_data[a_offset], a_n);
-			offset += a_n;
-			memcpy(&c_data[offset], &b_data[b_offset], b_offsets[i] - b_offset);
-			offset += b_offsets[i] - b_offset;
-
-			a_offset = a_n;
-			b_offset = b_offsets[i];
-
-			c_offsets[i] = offset;
-		}
-	}
-
-	static void fixed_vector_fixed_vector(
-		const ColumnString::Chars_t & a_data, ColumnString::Offset_t a_n,
-		const ColumnString::Chars_t & b_data, ColumnString::Offset_t b_n,
-		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
-	{
-		size_t size = a_data.size() / a_n;
-		c_data.resize(a_data.size() + b_data.size() + size);
-		c_offsets.resize(size);
-
-		ColumnString::Offset_t offset = 0;
-		for (size_t i = 0; i < size; ++i)
-		{
-			memcpy(&c_data[offset], &a_data[i * a_n], a_n);
-			offset += a_n;
-			memcpy(&c_data[offset], &b_data[i * b_n], b_n);
-			offset += b_n;
-			c_data[offset] = 0;
-			++offset;
-
-			c_offsets[i] = offset;
-		}
-	}
-
-	static void fixed_vector_constant(
-		const ColumnString::Chars_t & a_data, ColumnString::Offset_t a_n,
-		const std::string & b,
-		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
-	{
-		size_t size = a_data.size() / a_n;
-		ColumnString::Offset_t b_n = b.size();
-		c_data.resize(a_data.size() + size * b_n + size);
-		c_offsets.resize(size);
-
-		ColumnString::Offset_t offset = 0;
-		for (size_t i = 0; i < size; ++i)
-		{
-			memcpy(&c_data[offset], &a_data[i * a_n], a_n);
-			offset += a_n;
-			memcpy(&c_data[offset], b.data(), b_n);
-			offset += b_n;
-			c_data[offset] = 0;
-			++offset;
-
-			c_offsets[i] = offset;
-		}
-	}
-
-	static void constant_vector(
-		const std::string & a,
-		const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
-		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
-	{
-		size_t size = b_offsets.size();
-		c_data.resize(b_data.size() + a.size() * size);
-		c_offsets.assign(b_offsets);
-
-		for (size_t i = 0; i < size; ++i)
-			c_offsets[i] += a.size() * (i + 1);
-
-		ColumnString::Offset_t offset = 0;
-		ColumnString::Offset_t b_offset = 0;
-		for (size_t i = 0; i < size; ++i)
-		{
-			memcpy(&c_data[offset], a.data(), a.size());
-			offset += a.size();
-			memcpy(&c_data[offset], &b_data[b_offset], b_offsets[i] - b_offset);
-			offset += b_offsets[i] - b_offset;
-
-			b_offset = b_offsets[i];
-		}
-	}
-
-	static void constant_fixed_vector(
-		const std::string & a,
-		const ColumnString::Chars_t & b_data, ColumnString::Offset_t b_n,
-		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
-	{
-		size_t size = b_data.size() / b_n;
-		ColumnString::Offset_t a_n = a.size();
-		c_data.resize(size * a_n + b_data.size() + size);
-		c_offsets.resize(size);
-
-		ColumnString::Offset_t offset = 0;
-		for (size_t i = 0; i < size; ++i)
-		{
-			memcpy(&c_data[offset], a.data(), a_n);
-			offset += a_n;
-			memcpy(&c_data[offset], &b_data[i * b_n], b_n);
-			offset += b_n;
-			c_data[offset] = 0;
-			++offset;
-
-			c_offsets[i] = offset;
-		}
-	}
-
-	static void constant_constant(
-		const std::string & a,
-		const std::string & b,
-		std::string & c)
-	{
-		c = a + b;
-	}
-};
-
-
 /** Выделяет подстроку в строке, как последовательности байт.
   */
 struct SubstringImpl
@@ -962,12 +747,11 @@ public:
 };
 
 
-template <typename Impl, typename Name>
-class FunctionStringStringToString : public IFunction
+class FunctionConcat : public IFunction
 {
 public:
-	static constexpr auto name = Name::name;
-	static IFunction * create(const Context & context) { return new FunctionStringStringToString; }
+	static constexpr auto name = "concat";
+	static IFunction * create(const Context & context) { return new FunctionConcat; }
 
 	/// Получить имя функции.
 	String getName() const
@@ -997,6 +781,15 @@ public:
 		return new DataTypeString;
 	}
 
+	void execute(Block & block, const ColumnNumbers & arguments, const size_t result)
+	{
+		if (arguments.size() == 2)
+			executeBinary(block, arguments, result);
+		else
+			executeNAry(block, arguments, result);
+	}
+
+private:
 	enum class instr_type : uint8_t
 	{
 		copy_string,
@@ -1020,6 +813,7 @@ public:
 		out_length = 0;
 		out_const = true;
 
+		size_t rows{};
 		for (const auto arg_pos : arguments)
 		{
 			const auto column = block.getByPosition(arg_pos).column.get();
@@ -1029,6 +823,7 @@ public:
 				/** ColumnString stores strings with terminating null character
 				 *  which should not be copied, therefore the decrease of total size by
 				 *	the number of terminating nulls */
+				rows = col->size();
 				out_length += col->getChars().size() - col->getOffsets().size();
 				out_const = false;
 
@@ -1036,6 +831,7 @@ public:
 			}
 			else if (const auto col = typeid_cast<const ColumnFixedString *>(column))
 			{
+				rows = col->size();
 				out_length += col->getChars().size();
 				out_const = false;
 
@@ -1043,7 +839,8 @@ public:
 			}
 			else if (const auto col = typeid_cast<const ColumnConstString *>(column))
 			{
-				out_length += col->getData().size();
+				rows = col->size();
+				out_length += col->getData().size() * col->size();
 				out_const = out_const && true;
 
 				result.emplace_back(instr_type::copy_const_string, column_uint_pair_t{col, 0});
@@ -1053,16 +850,10 @@ public:
 					ErrorCodes::ILLEGAL_COLUMN);
 		}
 
-		return result;
-	}
+		if (out_const && rows)
+			out_length /= rows;
 
-	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, const size_t result)
-	{
-		if (arguments.size() == 2)
-			executeBinary(block, arguments, result);
-		else
-			executeNAry(block, arguments, result);
+		return result;
 	}
 
 	void executeBinary(Block & block, const ColumnNumbers & arguments, const size_t result)
@@ -1082,7 +873,7 @@ public:
 		{
 			ColumnConstString * c_res = new ColumnConstString(c0_const->size(), "");
 			block.getByPosition(result).column = c_res;
-			Impl::constant_constant(c0_const->getData(), c1_const->getData(), c_res->getData());
+			constant_constant(c0_const->getData(), c1_const->getData(), c_res->getData());
 		}
 		else
 		{
@@ -1092,42 +883,42 @@ public:
 			ColumnString::Offsets_t & offsets_res = c_res->getOffsets();
 
 			if (c0_string && c1_string)
-				Impl::vector_vector(
+				vector_vector(
 					c0_string->getChars(), c0_string->getOffsets(),
 					c1_string->getChars(), c1_string->getOffsets(),
 					vec_res, offsets_res);
 			else if (c0_string && c1_fixed_string)
-				Impl::vector_fixed_vector(
+				vector_fixed_vector(
 					c0_string->getChars(), c0_string->getOffsets(),
 					c1_fixed_string->getChars(), c1_fixed_string->getN(),
 					vec_res, offsets_res);
 			else if (c0_string && c1_const)
-				Impl::vector_constant(
+				vector_constant(
 					c0_string->getChars(), c0_string->getOffsets(),
 					c1_const->getData(),
 					vec_res, offsets_res);
 			else if (c0_fixed_string && c1_string)
-				Impl::fixed_vector_vector(
+				fixed_vector_vector(
 					c0_fixed_string->getChars(), c0_fixed_string->getN(),
 					c1_string->getChars(), c1_string->getOffsets(),
 					vec_res, offsets_res);
 			else if (c0_const && c1_string)
-				Impl::constant_vector(
+				constant_vector(
 					c0_const->getData(),
 					c1_string->getChars(), c1_string->getOffsets(),
 					vec_res, offsets_res);
 			else if (c0_fixed_string && c1_fixed_string)
-				Impl::fixed_vector_fixed_vector(
+				fixed_vector_fixed_vector(
 					c0_fixed_string->getChars(), c0_fixed_string->getN(),
 					c1_fixed_string->getChars(), c1_fixed_string->getN(),
 					vec_res, offsets_res);
 			else if (c0_fixed_string && c1_const)
-				Impl::fixed_vector_constant(
+				fixed_vector_constant(
 					c0_fixed_string->getChars(), c0_fixed_string->getN(),
 					c1_const->getData(),
 					vec_res, offsets_res);
 			else if (c0_const && c1_fixed_string)
-				Impl::constant_fixed_vector(
+				constant_fixed_vector(
 					c0_const->getData(),
 					c1_fixed_string->getChars(), c1_fixed_string->getN(),
 					vec_res, offsets_res);
@@ -1214,6 +1005,215 @@ public:
 			}
 		}
 	}
+
+	static void vector_vector(
+		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
+		const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
+		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
+	{
+		size_t size = a_offsets.size();
+		c_data.resize(a_data.size() + b_data.size() - size);
+		c_offsets.resize(size);
+
+		ColumnString::Offset_t offset = 0;
+		ColumnString::Offset_t a_offset = 0;
+		ColumnString::Offset_t b_offset = 0;
+		for (size_t i = 0; i < size; ++i)
+		{
+			memcpy(&c_data[offset], &a_data[a_offset], a_offsets[i] - a_offset - 1);
+			offset += a_offsets[i] - a_offset - 1;
+			memcpy(&c_data[offset], &b_data[b_offset], b_offsets[i] - b_offset);
+			offset += b_offsets[i] - b_offset;
+
+			a_offset = a_offsets[i];
+			b_offset = b_offsets[i];
+
+			c_offsets[i] = offset;
+		}
+	}
+
+	static void vector_fixed_vector(
+		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
+		const ColumnString::Chars_t & b_data, ColumnString::Offset_t b_n,
+		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
+	{
+		size_t size = a_offsets.size();
+		c_data.resize(a_data.size() + b_data.size());
+		c_offsets.resize(size);
+
+		ColumnString::Offset_t offset = 0;
+		ColumnString::Offset_t a_offset = 0;
+		ColumnString::Offset_t b_offset = 0;
+		for (size_t i = 0; i < size; ++i)
+		{
+			memcpy(&c_data[offset], &a_data[a_offset], a_offsets[i] - a_offset - 1);
+			offset += a_offsets[i] - a_offset - 1;
+			memcpy(&c_data[offset], &b_data[b_offset], b_n);
+			offset += b_n;
+			c_data[offset] = 0;
+			offset += 1;
+
+			a_offset = a_offsets[i];
+			b_offset += b_n;
+
+			c_offsets[i] = offset;
+		}
+	}
+
+	static void vector_constant(
+		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
+		const std::string & b,
+		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
+	{
+		size_t size = a_offsets.size();
+		c_data.resize(a_data.size() + b.size() * size);
+		c_offsets.assign(a_offsets);
+
+		for (size_t i = 0; i < size; ++i)
+			c_offsets[i] += b.size() * (i + 1);
+
+		ColumnString::Offset_t offset = 0;
+		ColumnString::Offset_t a_offset = 0;
+		for (size_t i = 0; i < size; ++i)
+		{
+			memcpy(&c_data[offset], &a_data[a_offset], a_offsets[i] - a_offset - 1);
+			offset += a_offsets[i] - a_offset - 1;
+			memcpy(&c_data[offset], b.data(), b.size() + 1);
+			offset += b.size() + 1;
+
+			a_offset = a_offsets[i];
+		}
+	}
+
+	static void fixed_vector_vector(
+		const ColumnString::Chars_t & a_data, ColumnString::Offset_t a_n,
+		const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
+		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
+	{
+		size_t size = b_offsets.size();
+		c_data.resize(a_data.size() + b_data.size());
+		c_offsets.resize(size);
+
+		ColumnString::Offset_t offset = 0;
+		ColumnString::Offset_t a_offset = 0;
+		ColumnString::Offset_t b_offset = 0;
+		for (size_t i = 0; i < size; ++i)
+		{
+			memcpy(&c_data[offset], &a_data[a_offset], a_n);
+			offset += a_n;
+			memcpy(&c_data[offset], &b_data[b_offset], b_offsets[i] - b_offset);
+			offset += b_offsets[i] - b_offset;
+
+			a_offset = a_n;
+			b_offset = b_offsets[i];
+
+			c_offsets[i] = offset;
+		}
+	}
+
+	static void fixed_vector_fixed_vector(
+		const ColumnString::Chars_t & a_data, ColumnString::Offset_t a_n,
+		const ColumnString::Chars_t & b_data, ColumnString::Offset_t b_n,
+		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
+	{
+		size_t size = a_data.size() / a_n;
+		c_data.resize(a_data.size() + b_data.size() + size);
+		c_offsets.resize(size);
+
+		ColumnString::Offset_t offset = 0;
+		for (size_t i = 0; i < size; ++i)
+		{
+			memcpy(&c_data[offset], &a_data[i * a_n], a_n);
+			offset += a_n;
+			memcpy(&c_data[offset], &b_data[i * b_n], b_n);
+			offset += b_n;
+			c_data[offset] = 0;
+			++offset;
+
+			c_offsets[i] = offset;
+		}
+	}
+
+	static void fixed_vector_constant(
+		const ColumnString::Chars_t & a_data, ColumnString::Offset_t a_n,
+		const std::string & b,
+		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
+	{
+		size_t size = a_data.size() / a_n;
+		ColumnString::Offset_t b_n = b.size();
+		c_data.resize(a_data.size() + size * b_n + size);
+		c_offsets.resize(size);
+
+		ColumnString::Offset_t offset = 0;
+		for (size_t i = 0; i < size; ++i)
+		{
+			memcpy(&c_data[offset], &a_data[i * a_n], a_n);
+			offset += a_n;
+			memcpy(&c_data[offset], b.data(), b_n);
+			offset += b_n;
+			c_data[offset] = 0;
+			++offset;
+
+			c_offsets[i] = offset;
+		}
+	}
+
+	static void constant_vector(
+		const std::string & a,
+		const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
+		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
+	{
+		size_t size = b_offsets.size();
+		c_data.resize(b_data.size() + a.size() * size);
+		c_offsets.assign(b_offsets);
+
+		for (size_t i = 0; i < size; ++i)
+			c_offsets[i] += a.size() * (i + 1);
+
+		ColumnString::Offset_t offset = 0;
+		ColumnString::Offset_t b_offset = 0;
+		for (size_t i = 0; i < size; ++i)
+		{
+			memcpy(&c_data[offset], a.data(), a.size());
+			offset += a.size();
+			memcpy(&c_data[offset], &b_data[b_offset], b_offsets[i] - b_offset);
+			offset += b_offsets[i] - b_offset;
+
+			b_offset = b_offsets[i];
+		}
+	}
+
+	static void constant_fixed_vector(
+		const std::string & a,
+		const ColumnString::Chars_t & b_data, ColumnString::Offset_t b_n,
+		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
+	{
+		size_t size = b_data.size() / b_n;
+		ColumnString::Offset_t a_n = a.size();
+		c_data.resize(size * a_n + b_data.size() + size);
+		c_offsets.resize(size);
+
+		ColumnString::Offset_t offset = 0;
+		for (size_t i = 0; i < size; ++i)
+		{
+			memcpy(&c_data[offset], a.data(), a_n);
+			offset += a_n;
+			memcpy(&c_data[offset], &b_data[i * b_n], b_n);
+			offset += b_n;
+			c_data[offset] = 0;
+			++offset;
+
+			c_offsets[i] = offset;
+		}
+	}
+
+	static void constant_constant(
+		const std::string & a,
+		const std::string & b,
+		std::string & c)
+	{
+		c = a + b;
+	}
 };
 
 
@@ -1299,6 +1299,135 @@ public:
 };
 
 
+class FunctionAppendTrailingCharIfAbsent : public IFunction
+{
+public:
+	static constexpr auto name = "appendTrailingCharIfAbsent";
+	static IFunction * create(const Context & context) { return new FunctionAppendTrailingCharIfAbsent; }
+
+	String getName() const
+	{
+		return name;
+	}
+
+private:
+	DataTypePtr getReturnType(const DataTypes & arguments) const
+	{
+		if (arguments.size() != 2)
+			throw Exception{
+				"Number of arguments for function " + getName() + " doesn't match: passed "
+				+ toString(arguments.size()) + ", should be 2.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
+			};
+
+		if (!typeid_cast<const DataTypeString *>(arguments[0].get()))
+			throw Exception{
+				"Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+			};
+
+		if (!typeid_cast<const DataTypeString *>(arguments[1].get()))
+			throw Exception{
+				"Illegal type " + arguments[1]->getName() + " of argument of function " + getName(),
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+			};
+
+		return new DataTypeString;
+	}
+
+	void execute(Block & block, const ColumnNumbers & arguments, const size_t result)
+	{
+		const auto & column = block.getByPosition(arguments[0]).column;
+		const auto & column_char = block.getByPosition(arguments[1]).column;
+
+		if (!typeid_cast<const ColumnConstString *>(column_char.get()))
+			throw Exception{
+				"Second argument of function " + getName() + " must be a constant string",
+				ErrorCodes::ILLEGAL_COLUMN
+			};
+
+		const auto & trailing_char_str = static_cast<const ColumnConstString &>(*column_char).getData();
+
+		if (trailing_char_str.size() != 1)
+			throw Exception{
+				"Second argument of function " + getName() + " must be a one-character string",
+				ErrorCodes::BAD_ARGUMENTS
+			};
+
+		if (const auto col = typeid_cast<const ColumnString *>(&*column))
+		{
+			auto col_res = new ColumnString;
+			block.getByPosition(result).column = col_res;
+
+			const auto & src_data = col->getChars();
+			const auto & src_offsets = col->getOffsets();
+
+			auto & dst_data = col_res->getChars();
+			auto & dst_offsets = col_res->getOffsets();
+
+			const auto size = src_offsets.size();
+			dst_data.resize(src_data.size() + size);
+			dst_offsets.resize(size);
+
+			ColumnString::Offset_t src_offset{};
+			ColumnString::Offset_t dst_offset{};
+
+			for (const auto i : ext::range(0, size))
+			{
+				const auto src_length = src_offsets[i] - src_offset;
+				memcpy(&dst_data[dst_offset], &src_data[src_offset], src_length);
+				src_offset = src_offsets[i];
+				dst_offset += src_length;
+
+				if (src_length == 1 || dst_data[dst_offset - 2] != trailing_char_str.front())
+				{
+					dst_data[dst_offset - 1] = trailing_char_str.front();
+					dst_data[dst_offset] = 0;
+					++dst_offset;
+				}
+
+				dst_offsets[i] = dst_offset;
+			}
+
+			dst_data.resize_assume_reserved(dst_offset);
+		}
+		else if (const auto col = typeid_cast<const ColumnConstString *>(&*column))
+		{
+			const auto & in_data = col->getData();
+
+			block.getByPosition(result).column = new ColumnConstString{
+				col->size(),
+				in_data.size() == 0 ? trailing_char_str :
+					in_data.back() == trailing_char_str.front() ? in_data : in_data + trailing_char_str
+			};
+		}
+		else
+			throw Exception{
+				"Illegal column " + block.getByPosition(arguments[0]).column->getName()
+				+ " of argument of function " + getName(),
+				ErrorCodes::ILLEGAL_COLUMN
+			};
+	}
+
+	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
+		ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets)
+	{
+		res_data.resize(data.size());
+		res_offsets.assign(offsets);
+		size_t size = offsets.size();
+
+		ColumnString::Offset_t prev_offset = 0;
+		for (size_t i = 0; i < size; ++i)
+		{
+			for (size_t j = prev_offset; j < offsets[i] - 1; ++j)
+				res_data[j] = data[offsets[i] + prev_offset - 2 - j];
+			res_data[offsets[i] - 1] = 0;
+			prev_offset = offsets[i];
+		}
+	}
+};
+
+
 struct NameEmpty 			{ static constexpr auto name = "empty"; };
 struct NameNotEmpty 		{ static constexpr auto name = "notEmpty"; };
 struct NameLength 			{ static constexpr auto name = "length"; };
@@ -1309,7 +1438,6 @@ struct NameLowerUTF8		{ static constexpr auto name = "lowerUTF8"; };
 struct NameUpperUTF8		{ static constexpr auto name = "upperUTF8"; };
 struct NameReverse			{ static constexpr auto name = "reverse"; };
 struct NameReverseUTF8		{ static constexpr auto name = "reverseUTF8"; };
-struct NameConcat			{ static constexpr auto name = "concat"; };
 struct NameSubstring		{ static constexpr auto name = "substring"; };
 struct NameSubstringUTF8	{ static constexpr auto name = "substringUTF8"; };
 
@@ -1323,7 +1451,6 @@ typedef FunctionStringToString<LowerUpperUTF8Impl<Poco::Unicode::toLower>,	NameL
 typedef FunctionStringToString<LowerUpperUTF8Impl<Poco::Unicode::toUpper>,	NameUpperUTF8>	FunctionUpperUTF8;
 typedef FunctionStringToString<ReverseImpl,				NameReverse>			FunctionReverse;
 typedef FunctionStringToString<ReverseUTF8Impl,			NameReverseUTF8>		FunctionReverseUTF8;
-typedef FunctionStringStringToString<ConcatImpl,		NameConcat>				FunctionConcat;
 typedef FunctionStringNumNumToString<SubstringImpl,		NameSubstring>			FunctionSubstring;
 typedef FunctionStringNumNumToString<SubstringUTF8Impl,	NameSubstringUTF8>		FunctionSubstringUTF8;
 

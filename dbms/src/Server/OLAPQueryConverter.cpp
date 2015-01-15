@@ -32,7 +32,7 @@ static std::string firstWord(std::string s)
 	return s;
 }
 
-void QueryConverter::OLAPServerQueryToClickhouse(const QueryParseResult & query, Context & inout_context, std::string & out_query) const
+void QueryConverter::OLAPServerQueryToClickHouse(const QueryParseResult & query, Context & inout_context, std::string & out_query) const
 {
 	/// Пустая строка, или строка вида ", 'ua'".
 	std::string regions_point_of_view_formatted;

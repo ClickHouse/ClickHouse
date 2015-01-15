@@ -30,7 +30,7 @@ StorageBuffer::StorageBuffer(const std::string & name_, NamesAndTypesListPtr col
 	destination_database(destination_database_), destination_table(destination_table_),
 	no_destination(destination_database.empty() && destination_table.empty()),
 	log(&Logger::get("StorageBuffer (" + name + ")")),
-	flush_thread([this] { flushThread(); })
+	flush_thread(&StorageBuffer::flushThread, this)
 {
 }
 
@@ -90,6 +90,7 @@ private:
 BlockInputStreams StorageBuffer::read(
 	const Names & column_names,
 	ASTPtr query,
+	const Context & context,
 	const Settings & settings,
 	QueryProcessingStage::Enum & processed_stage,
 	size_t max_block_size,
@@ -101,7 +102,7 @@ BlockInputStreams StorageBuffer::read(
 
 	if (!no_destination)
 		streams_from_dst = context.getTable(destination_database, destination_table)->read(
-			column_names, query, settings, processed_stage, max_block_size, threads);
+			column_names, query, context, settings, processed_stage, max_block_size, threads);
 
 	BlockInputStreams streams_from_buffers;
 	streams_from_buffers.reserve(num_shards);
@@ -258,8 +259,7 @@ void StorageBuffer::shutdown()
 
 bool StorageBuffer::optimize()
 {
-	for (auto & buf : buffers)
-		flushBuffer(buf, false);
+	flushAllBuffers(false);
 
 	return true;
 }
@@ -282,6 +282,13 @@ bool StorageBuffer::checkThresholds(Buffer & buffer, time_t current_time, size_t
 		LOG_TRACE(log, "Flushing buffer with " << rows << " rows, " << bytes << " bytes, age " << time_passed << " seconds.");
 
 	return res;
+}
+
+
+void StorageBuffer::flushAllBuffers(const bool check_thresholds)
+{
+	for (auto & buf : buffers)
+		flushBuffer(buf, check_thresholds);
 }
 
 
@@ -408,7 +415,7 @@ void StorageBuffer::flushThread()
 	{
 		try
 		{
-			optimize();
+			flushAllBuffers(true);
 		}
 		catch (...)
 		{

@@ -18,7 +18,7 @@ public:
 	QueryConverter(Poco::Util::AbstractConfiguration & config);
 	
 	/// Получает из запроса в формате OLAP-server запрос и настройки для clickhouse.
-	void OLAPServerQueryToClickhouse(const QueryParseResult & query, Context & inout_context, std::string & out_query) const;
+	void OLAPServerQueryToClickHouse(const QueryParseResult & query, Context & inout_context, std::string & out_query) const;
 
 private:
 	/// Значение атрибута, подходящее для вывода в ответ и для группировки по нему.

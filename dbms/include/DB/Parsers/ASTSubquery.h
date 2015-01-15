@@ -9,25 +9,31 @@ namespace DB
 {
 
 
-/** Подзарос SELECT в секции IN.
+/** Подзарос SELECT
   */
 class ASTSubquery : public IAST
 {
 public:
-	/// тип возвращаемого значения
-	DataTypePtr return_type;
-	/// номер столбца возвращаемого значения
-	size_t return_column_number;
-	
-	ASTSubquery() {}
-	ASTSubquery(StringRange range_) : IAST(range_), return_column_number(0) {}
+	ASTSubquery() = default;
+	ASTSubquery(const StringRange range_) : IAST(range_) {}
 	
 	/** Получить текст, который идентифицирует этот элемент. */
-	String getID() const { return "Subquery"; };
+	String getID() const override { return "Subquery"; }
 
-	ASTPtr clone() const { return new ASTSubquery(*this); }
+	ASTPtr clone() const override
+	{
+		const auto res = new ASTSubquery{*this};
+		ASTPtr ptr{res};
 
-	String getColumnName() const { return getTreeID(); }
+		res->children.clear();
+
+		for (const auto & child : children)
+			res->children.emplace_back(child->clone());
+
+		return ptr;
+	}
+
+	String getColumnName() const override { return getTreeID(); }
 };
 
 }

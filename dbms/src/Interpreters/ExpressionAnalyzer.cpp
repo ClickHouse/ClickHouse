@@ -15,6 +15,7 @@
 #include <DB/DataTypes/DataTypeTuple.h>
 #include <DB/DataTypes/DataTypeExpression.h>
 #include <DB/DataTypes/DataTypeNested.h>
+
 #include <DB/Columns/ColumnSet.h>
 #include <DB/Columns/ColumnExpression.h>
 
@@ -26,11 +27,16 @@
 #include <DB/Storages/StorageMemory.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 
+#include <DB/DataStreams/LazyBlockInputStream.h>
 #include <DB/DataStreams/copyData.h>
 
 #include <DB/Common/typeid_cast.h>
 
 #include <DB/Parsers/formatAST.h>
+
+#include <DB/Functions/FunctionFactory.h>
+
+#include <statdaemons/ext/range.hpp>
 
 
 namespace DB
@@ -579,16 +585,27 @@ static SharedPtr<InterpreterSelectQuery> interpretSubquery(
 	ASTPtr query;
 	if (table)
 	{
-		String query_str = "SELECT * FROM " + backQuoteIfNeed(table->name);
-		const char * begin = query_str.data();
-		const char * end = begin + query_str.size();
-		const char * pos = begin;
-		Expected expected = "";
+		/// create ASTSelectQuery for "SELECT * FROM table" as if written by hand
+		const auto select_query = new ASTSelectQuery;
+		query = select_query;
 
-		bool parse_res = ParserSelectQuery().parse(pos, end, query, expected);
-		if (!parse_res)
-			throw Exception("Error in parsing SELECT query while creating set or join for table " + table->name + ".",
-				ErrorCodes::LOGICAL_ERROR);
+		const auto select_expression_list = new ASTExpressionList;
+		select_query->select_expression_list = select_expression_list;
+		select_query->children.emplace_back(select_query->select_expression_list);
+
+		/// get columns list for target table
+		const auto & storage = context.getTable("", table->name);
+		const auto & columns = storage->getColumnsListNonMaterialized();
+		select_expression_list->children.reserve(columns.size());
+
+		/// manually substitute column names in place of asterisk
+		for (const auto & column : columns)
+			select_expression_list->children.emplace_back(new ASTIdentifier{
+				StringRange{}, column.name
+			});
+
+		select_query->table = subquery_or_table_name;
+		select_query->children.emplace_back(select_query->table);
 	}
 	else
 		query = subquery->children.at(0);
@@ -622,7 +639,6 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name)
 	NamesAndTypesListPtr columns = new NamesAndTypesList(sample.getColumnsList());
 
 	String external_table_name = "_data" + toString(external_table_id);
-	++external_table_id;
 
 	/** Заменяем подзапрос на имя временной таблицы.
 	  * Именно в таком виде, запрос отправится на удалённый сервер.
@@ -684,7 +700,37 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 		  * - в этой функции видно выражение IN _data1.
 		  */
 		if (!subquery_for_set.source)
-			subquery_for_set.source = interpretSubquery(arg, context, subquery_depth)->execute();
+		{
+			auto interpreter = interpretSubquery(arg, context, subquery_depth);
+			subquery_for_set.source = new LazyBlockInputStream([interpreter]() mutable { return interpreter->execute(); });
+
+			/** Зачем используется LazyBlockInputStream?
+			  *
+			  * Дело в том, что при обработке запроса вида
+			  *  SELECT ... FROM remote_test WHERE column GLOBAL IN (subquery),
+			  *  если распределённая таблица remote_test содержит в качестве одного из серверов localhost,
+			  *  то запрос будет ещё раз интерпретирован локально (а не отправлен по TCP, как в случае удалённого сервера).
+			  *
+			  * Конвейер выполнения запроса будет такой:
+			  * CreatingSets
+			  *  выполнение подзапроса subquery, заполнение временной таблицы _data1 (1)
+			  *  CreatingSets
+			  *   чтение из таблицы _data1, создание множества (2)
+			  *   чтение из таблицы, подчинённой remote_test.
+			  *
+			  * (Вторая часть конвейера под CreatingSets - это повторная интерпретация запроса внутри StorageDistributed,
+			  *  запрос отличается тем, что имя БД и таблицы заменены на подчинённые, а также подзапрос заменён на _data1.)
+			  *
+			  * Но при создании конвейера, при создании источника (2), будет обнаружено, что таблица _data1 пустая
+			  *  (потому что запрос ещё не начал выполняться), и будет возвращён в качестве источника пустой источник.
+			  * И затем, при выполнении запроса, на шаге (2), будет создано пустое множество.
+			  *
+			  * Поэтому, мы делаем инициализацию шага (2) ленивой
+			  *  - чтобы она произошла только после выполнения шага (1), на котором нужная таблица будет заполнена.
+			  *
+			  * Замечание: это решение не очень хорошее, надо подумать лучше.
+			  */
+		}
 
 		subquery_for_set.set = ast_set->set;
 		arg = ast_set_ptr;
@@ -1055,7 +1101,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 				}
 			}
 
-			FunctionPtr function = context.getFunctionFactory().get(node->name, context);
+			const FunctionPtr & function = FunctionFactory::instance().get(node->name, context);
 
 			Names argument_names;
 			DataTypes argument_types;
@@ -1382,7 +1428,10 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 		  * - в этой функции видно выражение JOIN _data1.
 		  */
 		if (!subquery_for_set.source)
-			subquery_for_set.source = interpretSubquery(ast_join.table, context, subquery_depth, required_joined_columns)->execute();
+		{
+			auto interpreter = interpretSubquery(ast_join.table, context, subquery_depth, required_joined_columns);
+			subquery_for_set.source = new LazyBlockInputStream([interpreter]() mutable { return interpreter->execute(); });
+		}
 
 		subquery_for_set.join = join;
 	}
@@ -1737,26 +1786,32 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAnd
 		return;
 
 	auto & node = typeid_cast<ASTJoin &>(*select_query->join);
-	auto & keys = typeid_cast<ASTExpressionList &>(*node.using_expr_list);
-	auto & table = node.table->children.at(0);		/// TODO: поддержка идентификаторов.
 
-	size_t num_join_keys = keys.children.size();
-
-	for (size_t i = 0; i < num_join_keys; ++i)
+	Block nested_result_sample;
+	if (const auto identifier = typeid_cast<const ASTIdentifier *>(node.table.get()))
 	{
-		if (!join_key_names_left_set.insert(keys.children[i]->getColumnName()).second)
+		const auto & table = context.getTable("", identifier->name);
+		nested_result_sample = table->getSampleBlockNonMaterialized();
+	}
+	else if (typeid_cast<const ASTSubquery *>(node.table.get()))
+	{
+		const auto & table = node.table->children.at(0);
+		nested_result_sample = ExpressionAnalyzer(table, context, subquery_depth + 1).getSelectSampleBlock();
+	}
+
+	auto & keys = typeid_cast<ASTExpressionList &>(*node.using_expr_list);
+	for (const auto & key : keys.children)
+	{
+		if (!join_key_names_left_set.insert(key->getColumnName()).second)
 			throw Exception("Duplicate column in USING list", ErrorCodes::DUPLICATE_COLUMN);
 
-		if (!join_key_names_right_set.insert(keys.children[i]->getAliasOrColumnName()).second)
+		if (!join_key_names_right_set.insert(key->getAliasOrColumnName()).second)
 			throw Exception("Duplicate column in USING list", ErrorCodes::DUPLICATE_COLUMN);
 	}
 
-	Block nested_result_sample = ExpressionAnalyzer(table, context, subquery_depth + 1).getSelectSampleBlock();
-
-	size_t nested_result_columns = nested_result_sample.columns();
-	for (size_t i = 0; i < nested_result_columns; ++i)
+	for (const auto i : ext::range(0, nested_result_sample.columns()))
 	{
-		auto col = nested_result_sample.getByPosition(i);
+		const auto & col = nested_result_sample.getByPosition(i);
 		if (!join_key_names_right_set.count(col.name))
 		{
 			joined_columns.insert(col.name);

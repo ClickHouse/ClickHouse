@@ -3,7 +3,9 @@
 #include <Yandex/logger_useful.h>
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
+#include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/Common/VirtualColumnUtils.h>
+#include <DB/Interpreters/Context.h>
 
 #include <DB/Client/ConnectionPool.h>
 
@@ -29,24 +31,28 @@ private:
 public:
 	/// Принимает готовое соединение.
 	RemoteBlockInputStream(Connection & connection_, const String & query_, const Settings * settings_,
-		const Tables & external_tables_ = Tables(), QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete)
-		: connection(&connection_), query(query_), external_tables(external_tables_), stage(stage_)
+		const Tables & external_tables_ = Tables(), QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
+		const Context & context = getDefaultContext())
+		: connection(&connection_), query(query_), external_tables(external_tables_), stage(stage_), context(context)
 	{
 		init(settings_);
 	}
 
 	/// Принимает готовое соединение. Захватывает владение соединением из пула.
 	RemoteBlockInputStream(ConnectionPool::Entry & pool_entry_, const String & query_, const Settings * settings_,
-		const Tables & external_tables_ = Tables(), QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete)
-		: pool_entry(pool_entry_), connection(&*pool_entry_), query(query_), external_tables(external_tables_), stage(stage_)
+		const Tables & external_tables_ = Tables(), QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
+		const Context & context = getDefaultContext())
+		: pool_entry(pool_entry_), connection(&*pool_entry_), query(query_),
+		  external_tables(external_tables_), stage(stage_), context(context)
 	{
 		init(settings_);
 	}
 
 	/// Принимает пул, из которого нужно будет достать соединение.
 	RemoteBlockInputStream(IConnectionPool * pool_, const String & query_, const Settings * settings_,
-		const Tables & external_tables_ = Tables(), QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete)
-		: pool(pool_), query(query_), external_tables(external_tables_), stage(stage_)
+		const Tables & external_tables_ = Tables(), QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
+		const Context & context = getDefaultContext())
+		: pool(pool_), query(query_), external_tables(external_tables_), stage(stage_), context(context)
 	{
 		init(settings_);
 	}
@@ -103,7 +109,8 @@ protected:
 		{
 			StoragePtr cur = table.second;
 			QueryProcessingStage::Enum stage = QueryProcessingStage::Complete;
-			DB::BlockInputStreams input = cur->read(cur->getColumnNamesList(), ASTPtr(), settings, stage, DEFAULT_BLOCK_SIZE, 1);
+			DB::BlockInputStreams input = cur->read(cur->getColumnNamesList(), ASTPtr(), context, settings,
+				stage, DEFAULT_BLOCK_SIZE, 1);
 			if (input.size() == 0)
 				res.push_back(std::make_pair(new OneBlockInputStream(cur->getSampleBlock()), table.first));
 			else
@@ -246,6 +253,7 @@ private:
 	/// Временные таблицы, которые необходимо переслать на удаленные сервера.
 	Tables external_tables;
 	QueryProcessingStage::Enum stage;
+	Context context;
 
 	/// Отправили запрос (это делается перед получением первого блока).
 	bool sent_query = false;
@@ -267,6 +275,13 @@ private:
 	bool got_exception_from_server = false;
 
 	Logger * log = &Logger::get("RemoteBlockInputStream");
+
+	/// ITable::read requires a Context, therefore we should create one if the user can't supply it
+	static Context & getDefaultContext()
+	{
+		static Context instance;
+		return instance;
+	}
 };
 
 }

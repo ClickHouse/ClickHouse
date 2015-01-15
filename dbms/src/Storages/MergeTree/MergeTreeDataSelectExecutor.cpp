@@ -6,6 +6,7 @@
 #include <DB/DataStreams/FilterBlockInputStream.h>
 #include <DB/DataStreams/ConcatBlockInputStream.h>
 #include <DB/DataStreams/CollapsingFinalBlockInputStream.h>
+#include <DB/DataStreams/AddingConstColumnBlockInputStream.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Common/VirtualColumnUtils.h>
 
@@ -38,10 +39,11 @@ static Block getBlockWithVirtualColumns(const MergeTreeData::DataPartsVector & p
 BlockInputStreams MergeTreeDataSelectExecutor::read(
 	const Names & column_names_to_return,
 	ASTPtr query,
+	const Context & context,
 	const Settings & settings,
 	QueryProcessingStage::Enum & processed_stage,
-	size_t max_block_size,
-	unsigned threads,
+	const size_t max_block_size,
+	const unsigned threads,
 	size_t * part_index)
 {
 	size_t part_index_var = 0;
@@ -74,15 +76,15 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 	/// Если запрошен хотя бы один виртуальный столбец, пробуем индексировать
 	if (!virt_column_names.empty())
-		VirtualColumnUtils::filterBlockWithQuery(query, virtual_columns_block, data.context);
+		VirtualColumnUtils::filterBlockWithQuery(query, virtual_columns_block, context);
 
 	std::multiset<String> values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
 
 	data.check(real_column_names);
 	processed_stage = QueryProcessingStage::FetchColumns;
 
-	PKCondition key_condition(query, data.context, data.getColumnsList(), data.getSortDescription());
-	PKCondition date_condition(query, data.context, data.getColumnsList(), SortDescription(1, SortColumnDescription(data.date_column_name, 1)));
+	PKCondition key_condition(query, context, data.getColumnsList(), data.getSortDescription());
+	PKCondition date_condition(query, context, data.getColumnsList(), SortDescription(1, SortColumnDescription(data.date_column_name, 1)));
 
 	/// Выберем куски, в которых могут быть данные, удовлетворяющие date_condition, и которые подходят под условие на _part.
 	{

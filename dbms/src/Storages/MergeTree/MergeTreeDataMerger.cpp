@@ -42,23 +42,6 @@ static const double DISK_USAGE_COEFFICIENT_TO_RESERVE = 1.4;
 bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & parts, String & merged_name, size_t available_disk_space,
 	bool merge_anything_for_old_months, bool aggressive, bool only_small, const AllowedMergingPredicate & can_merge_callback)
 {
-	std::stringstream log_message;
-
-	log_message << "Selecting parts to merge. Available disk space: ";
-
-	if (available_disk_space == NO_LIMIT)
-		log_message << "no limit";
-	else
-		log_message << available_disk_space << " bytes";
-
-	log_message
-		<< ". Merge anything for old months: " << merge_anything_for_old_months
-		<< ". Aggressive: " << aggressive
-		<< ". Only small: " << only_small
-		<< ".";
-
-	LOG_TRACE(log, log_message.rdbuf());
-
 	MergeTreeData::DataParts data_parts = data.getDataParts();
 
 	DateLUT & date_lut = DateLUT::instance();
@@ -91,9 +74,6 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 
 	if (only_small)
 		cur_max_bytes_to_merge_parts = data.settings.max_bytes_to_merge_parts_small;
-
-	LOG_TRACE(log, "Max bytes to merge parts: " << cur_max_bytes_to_merge_parts
-		<< (only_small ? " (only small)" : (tonight ? " (tonight)" : "")) << ".");
 
 	/// Мемоизация для функции can_merge_callback. Результат вызова can_merge_callback для этого куска и предыдущего в data_parts.
 	std::map<MergeTreeData::DataPartPtr, bool> can_merge_with_previous;
@@ -152,7 +132,7 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 		/// Этот месяц кончился хотя бы день назад.
 		bool is_old_month = now_day - now_month >= 1 && now_month > month;
 
-		time_t oldest_modification_time = first_part->modification_time;
+		time_t newest_modification_time = first_part->modification_time;
 
 		/// Правый конец отрезка.
 		MergeTreeData::DataParts::iterator jt = it;
@@ -188,7 +168,7 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 				break;
 			}
 
-			oldest_modification_time = std::max(oldest_modification_time, last_part->modification_time);
+			newest_modification_time = std::max(newest_modification_time, last_part->modification_time);
 			cur_max = std::max(cur_max, static_cast<size_t>(last_part->size_in_bytes));
 			cur_min = std::min(cur_min, static_cast<size_t>(last_part->size_in_bytes));
 			cur_sum += last_part->size_in_bytes;
@@ -200,7 +180,7 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 				break;
 
 			int min_len = 2;
-			int cur_age_in_sec = time(0) - oldest_modification_time;
+			int cur_age_in_sec = time(0) - newest_modification_time;
 
 			/// Если куски больше 1 Gb и образовались меньше 6 часов назад, то мерджить не меньше чем по 3.
 			if (cur_max > 1024 * 1024 * 1024 && cur_age_in_sec < 6 * 3600)
@@ -217,7 +197,7 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 			if (cur_len >= min_len
 				&& (/// Достаточная равномерность размеров или пошедшее время
 					static_cast<double>(cur_max) / (cur_sum - cur_max) < ratio
-					/// За старый месяц объединяем что угодно, если разрешено и если этому куску хотя бы 5 дней
+					/// За старый месяц объединяем что угодно, если разрешено и если этим кускам хотя бы 5 дней
 					|| (is_old_month && merge_anything_for_old_months && cur_age_in_sec > 3600 * 24 * 5)
 					/// Или достаточно много мелких кусков
 					|| cur_len > static_cast<int>(data.settings.max_parts_to_merge_at_once)
@@ -293,10 +273,6 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 		LOG_DEBUG(log, "Selected " << parts.size() << " parts from " << parts.front()->name << " to " << parts.back()->name
 			<< (only_small ? " (only small)" : ""));
 	}
-	else
-	{
-		LOG_TRACE(log, "No parts selected for merge.");
-	}
 
 	return found;
 }
@@ -348,7 +324,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 	{
 		MarkRanges ranges(1, MarkRange(0, parts[i]->size));
 
-		auto input = stdext::make_unique<MergeTreeBlockInputStream>(
+		auto input = ext::make_unique<MergeTreeBlockInputStream>(
 			data.getFullPath() + parts[i]->name + '/', DEFAULT_MERGE_BLOCK_SIZE, union_column_names, data,
 			parts[i], ranges, false, nullptr, "");
 
@@ -372,19 +348,19 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 	switch (data.mode)
 	{
 		case MergeTreeData::Ordinary:
-			merged_stream = stdext::make_unique<MergingSortedBlockInputStream>(src_streams, data.getSortDescription(), DEFAULT_MERGE_BLOCK_SIZE);
+			merged_stream = ext::make_unique<MergingSortedBlockInputStream>(src_streams, data.getSortDescription(), DEFAULT_MERGE_BLOCK_SIZE);
 			break;
 
 		case MergeTreeData::Collapsing:
-			merged_stream = stdext::make_unique<CollapsingSortedBlockInputStream>(src_streams, data.getSortDescription(), data.sign_column, DEFAULT_MERGE_BLOCK_SIZE);
+			merged_stream = ext::make_unique<CollapsingSortedBlockInputStream>(src_streams, data.getSortDescription(), data.sign_column, DEFAULT_MERGE_BLOCK_SIZE);
 			break;
 
 		case MergeTreeData::Summing:
-			merged_stream = stdext::make_unique<SummingSortedBlockInputStream>(src_streams, data.getSortDescription(), DEFAULT_MERGE_BLOCK_SIZE);
+			merged_stream = ext::make_unique<SummingSortedBlockInputStream>(src_streams, data.getSortDescription(), data.columns_to_sum, DEFAULT_MERGE_BLOCK_SIZE);
 			break;
 
 		case MergeTreeData::Aggregating:
-			merged_stream = stdext::make_unique<AggregatingSortedBlockInputStream>(src_streams, data.getSortDescription(), DEFAULT_MERGE_BLOCK_SIZE);
+			merged_stream = ext::make_unique<AggregatingSortedBlockInputStream>(src_streams, data.getSortDescription(), DEFAULT_MERGE_BLOCK_SIZE);
 			break;
 
 		default:
@@ -402,7 +378,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 	const size_t initial_reservation = disk_reservation ? disk_reservation->getSize() : 0;
 
 	Block block;
-	while (!canceled && (block = merged_stream->read()))
+	while (!canceled.load(std::memory_order_relaxed) && (block = merged_stream->read()))
 	{
 		rows_written += block.rows();
 		to.write(block);
@@ -414,7 +390,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 			disk_reservation->update(static_cast<size_t>((1 - std::min(1., 1. * rows_written / sum_rows_approx)) * initial_reservation));
 	}
 
-	if (canceled)
+	if (canceled.load(std::memory_order_relaxed))
 		throw Exception("Canceled merging parts", ErrorCodes::ABORTED);
 
 	merged_stream->readSuffix();

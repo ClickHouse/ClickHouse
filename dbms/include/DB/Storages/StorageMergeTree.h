@@ -37,24 +37,10 @@ public:
 		const String & date_column_name_,
 		const ASTPtr & sampling_expression_, /// nullptr, если семплирование не поддерживается.
 		size_t index_granularity_,
-		MergeTreeData::Mode mode_ = MergeTreeData::Ordinary,
-		const String & sign_column_ = "",
+		MergeTreeData::Mode mode_,
+		const String & sign_column_,			/// Для Collapsing режима.
+		const Names & columns_to_sum_,			/// Для Summing режима.
 		const MergeTreeSettings & settings_ = MergeTreeSettings());
-
-	static StoragePtr create(
-		const String & path_,
-		const String & database_name_,
-		const String & table_name_,
-		NamesAndTypesListPtr columns_,
-		Context & context_,
-		ASTPtr & primary_expr_ast_,
-		const String & date_column_name_,
-		const ASTPtr & sampling_expression_, /// nullptr, если семплирование не поддерживается.
-		size_t index_granularity_,
-		MergeTreeData::Mode mode_ = MergeTreeData::Ordinary,
-		const String & sign_column_ = "",
-		const MergeTreeSettings & settings_ = MergeTreeSettings());
-
 
 	void shutdown() override;
 	~StorageMergeTree() override;
@@ -84,6 +70,7 @@ public:
 	BlockInputStreams read(
 		const Names & column_names,
 		ASTPtr query,
+		const Context & context,
 		const Settings & settings,
 		QueryProcessingStage::Enum & processed_stage,
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
@@ -193,6 +180,7 @@ private:
 		size_t index_granularity_,
 		MergeTreeData::Mode mode_,
 		const String & sign_column_,
+		const Names & columns_to_sum_,
 		const MergeTreeSettings & settings_);
 
 	/** Определяет, какие куски нужно объединять, и объединяет их.

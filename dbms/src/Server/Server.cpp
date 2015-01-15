@@ -1,11 +1,14 @@
 #include <sys/resource.h>
+#include <sys/file.h>
 
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Util/XMLConfiguration.h>
 
 #include <Yandex/ApplicationServerExt.h>
+#include <Yandex/ErrorHandlers.h>
+#include <Yandex/Revision.h>
 #include <statdaemons/ConfigProcessor.h>
-#include <statdaemons/stdext.h>
+#include <statdaemons/ext/memory.hpp>
 
 #include <DB/Interpreters/loadMetadata.h>
 #include <DB/Storages/StorageSystemNumbers.h>
@@ -19,6 +22,11 @@
 #include <DB/Storages/StorageSystemSettings.h>
 #include <DB/Storages/StorageSystemZooKeeper.h>
 #include <DB/Storages/StorageSystemReplicas.h>
+
+#include <DB/IO/copyData.h>
+#include <DB/IO/LimitReadBuffer.h>
+#include <DB/IO/WriteBufferFromFileDescriptor.h>
+#include <DB/IO/Operators.h>
 
 #include "Server.h"
 #include "HTTPHandler.h"
@@ -317,9 +325,100 @@ void UsersConfigReloader::reloadIfNewer(bool force)
 }
 
 
+/** Обеспечивает, что с одной директорией с данными может одновременно работать не более одного сервера.
+  */
+class StatusFile : private boost::noncopyable
+{
+public:
+	StatusFile(const std::string & path_)
+		: path(path_)
+	{
+		/// Если файл уже существует. NOTE Незначительный race condition.
+		if (Poco::File(path).exists())
+		{
+			std::string contents;
+			{
+				ReadBufferFromFile in(path, 1024);
+				LimitReadBuffer limit_in(in, 1024);
+				WriteBufferFromString out(contents);
+				copyData(limit_in, out);
+			}
+
+			if (!contents.empty())
+				LOG_INFO(&Logger::get("StatusFile"), "Status file " << path << " already exists - unclean restart. Contents:\n" << contents);
+			else
+				LOG_INFO(&Logger::get("StatusFile"), "Status file " << path << " already exists and is empty - probably unclean hardware restart.");
+		}
+
+		fd = open(path.c_str(), O_WRONLY | O_CREAT, 0666);
+
+		if (-1 == fd)
+			throwFromErrno("Cannot open file " + path);
+
+		try
+		{
+			int flock_ret = flock(fd, LOCK_EX | LOCK_NB);
+			if (-1 == flock_ret)
+			{
+				if (errno == EWOULDBLOCK)
+					throw Exception("Cannot lock file " + path + ". Another server instance in same directory is already running.");
+				else
+					throwFromErrno("Cannot lock file " + path);
+			}
+
+			if (0 != ftruncate(fd, 0))
+				throwFromErrno("Cannot ftruncate " + path);
+
+			if (0 != lseek(fd, 0, SEEK_SET))
+				throwFromErrno("Cannot lseek " + path);
+
+			/// Записываем в файл информацию о текущем экземпляре сервера.
+			{
+				WriteBufferFromFileDescriptor out(fd, 1024);
+				out
+					<< "PID: " << getpid() << "\n"
+					<< "Started at: " << mysqlxx::DateTime(time(0)) << "\n"
+					<< "Revision: " << Revision::get() << "\n";
+			}
+		}
+		catch (...)
+		{
+			close(fd);
+			throw;
+		}
+	}
+
+	~StatusFile()
+	{
+		char buf[128];
+
+		if (0 != close(fd))
+			LOG_ERROR(&Logger::get("StatusFile"), "Cannot close file " << path << ", errno: "
+				<< errno << ", strerror: " << strerror_r(errno, buf, sizeof(buf)));
+
+		if (0 != unlink(path.c_str()))
+			LOG_ERROR(&Logger::get("StatusFile"), "Cannot unlink file " << path << ", errno: "
+				<< errno << ", strerror: " << strerror_r(errno, buf, sizeof(buf)));
+	}
+
+private:
+	const std::string path;
+	int fd = -1;
+};
+
+
 int Server::main(const std::vector<std::string> & args)
 {
 	Logger * log = &logger();
+
+	std::string path = config().getString("path");
+	Poco::trimInPlace(path);
+	if (path.empty())
+		throw Exception("path configuration parameter is empty");
+	if (path.back() != '/')
+		path += '/';
+
+	StatusFile status{path + "status"};
 
 	/// Попробуем повысить ограничение на число открытых файлов.
 	{
@@ -342,6 +441,9 @@ int Server::main(const std::vector<std::string> & args)
 		}
 	}
 
+	static ServerErrorHandler error_handler;
+	Poco::ErrorHandler::set(&error_handler);
+
 	/// Заранее инициализируем DateLUT, чтобы первая инициализация потом не влияла на измеряемую скорость выполнения.
 	LOG_DEBUG(log, "Initializing DateLUT.");
 	DateLUT::instance();
@@ -353,7 +455,13 @@ int Server::main(const std::vector<std::string> & args)
 	  *  настройки, набор функций, типов данных, агрегатных функций, баз данных...
 	  */
 	global_context->setGlobalContext(*global_context);
-	global_context->setPath(config().getString("path"));
+	global_context->setPath(path);
+
+	/// Директория для временных файлов при обработке тяжёлых запросов.
+	std::string tmp_path = config().getString("tmp_path", path + "tmp/");
+	global_context->setTemporaryPath(tmp_path);
+	Poco::File(tmp_path).createDirectories();
+	/// TODO Очистка временных файлов. Проверка, что директория с временными файлами не совпадает и не содержит в себе основной path.
 
 	bool has_zookeeper = false;
 	if (config().has("zookeeper"))
@@ -373,14 +481,17 @@ int Server::main(const std::vector<std::string> & args)
 		String port_str = config().getString("interserver_http_port");
 		int port = parse<int>(port_str);
 
-		global_context->setInterserverIOHost(this_host, port);
+		if (port < 0 || port > 0xFFFF)
+			throw Exception("Out of range 'interserver_http_port': " + toString(port), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+		global_context->setInterserverIOAddress(this_host, port);
 	}
 
 	if (config().has("macros"))
 		global_context->setMacros(Macros(config(), "macros"));
 
 	std::string users_config_path = config().getString("users_config", config().getString("config-file", "config.xml"));
-	auto users_config_reloader = stdext::make_unique<UsersConfigReloader>(users_config_path, global_context.get());
+	auto users_config_reloader = ext::make_unique<UsersConfigReloader>(users_config_path, global_context.get());
 
 	/// Максимальное количество одновременно выполняющихся запросов.
 	global_context->getProcessList().setMaxSize(config().getInt("max_concurrent_queries", 0));
@@ -425,8 +536,10 @@ int Server::main(const std::vector<std::string> & args)
 
 	{
 		const auto profile_events_transmitter = config().getBool("use_graphite", true)
-			? stdext::make_unique<ProfileEventsTransmitter>()
+			? ext::make_unique<ProfileEventsTransmitter>()
 			: nullptr;
+
+		const std::string listen_host = config().getString("listen_host", "::");
 
 		bool use_olap_server = config().getBool("use_olap_http_server", false);
 		Poco::Timespan keep_alive_timeout(config().getInt("keep_alive_timeout", 10), 0);
@@ -437,7 +550,7 @@ int Server::main(const std::vector<std::string> & args)
 		http_params->setKeepAliveTimeout(keep_alive_timeout);
 
 		/// HTTP
-		Poco::Net::ServerSocket http_socket(Poco::Net::SocketAddress("[::]:" + config().getString("http_port")));
+		Poco::Net::ServerSocket http_socket(Poco::Net::SocketAddress(listen_host, config().getInt("http_port")));
 		http_socket.setReceiveTimeout(settings.receive_timeout);
 		http_socket.setSendTimeout(settings.send_timeout);
 		Poco::Net::HTTPServer http_server(
@@ -447,7 +560,7 @@ int Server::main(const std::vector<std::string> & args)
 			http_params);
 
 		/// TCP
-		Poco::Net::ServerSocket tcp_socket(Poco::Net::SocketAddress("[::]:" + config().getString("tcp_port")));
+		Poco::Net::ServerSocket tcp_socket(Poco::Net::SocketAddress(listen_host, config().getInt("tcp_port")));
 		tcp_socket.setReceiveTimeout(settings.receive_timeout);
 		tcp_socket.setSendTimeout(settings.send_timeout);
 		Poco::Net::TCPServer tcp_server(
@@ -460,10 +573,7 @@ int Server::main(const std::vector<std::string> & args)
 		Poco::SharedPtr<Poco::Net::HTTPServer> interserver_io_http_server;
 		if (config().has("interserver_http_port"))
 		{
-			String port_str = config().getString("interserver_http_port");
-
-			Poco::Net::ServerSocket interserver_io_http_socket(Poco::Net::SocketAddress("[::]:"
-				+ port_str));
+			Poco::Net::ServerSocket interserver_io_http_socket(Poco::Net::SocketAddress(listen_host, config().getInt("interserver_http_port")));
 			interserver_io_http_socket.setReceiveTimeout(settings.receive_timeout);
 			interserver_io_http_socket.setSendTimeout(settings.send_timeout);
 			interserver_io_http_server = new Poco::Net::HTTPServer(
@@ -480,7 +590,7 @@ int Server::main(const std::vector<std::string> & args)
 			olap_parser.reset(new OLAP::QueryParser());
 			olap_converter.reset(new OLAP::QueryConverter(config()));
 
-			Poco::Net::ServerSocket olap_http_socket(Poco::Net::SocketAddress("[::]:" + config().getString("olap_http_port")));
+			Poco::Net::ServerSocket olap_http_socket(Poco::Net::SocketAddress(listen_host, config().getInt("olap_http_port")));
 			olap_http_socket.setReceiveTimeout(settings.receive_timeout);
 			olap_http_socket.setSendTimeout(settings.send_timeout);
 			olap_http_server = new Poco::Net::HTTPServer(

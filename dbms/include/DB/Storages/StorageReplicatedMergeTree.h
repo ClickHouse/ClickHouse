@@ -39,8 +39,9 @@ public:
 		const String & date_column_name_,
 		const ASTPtr & sampling_expression_, /// nullptr, если семплирование не поддерживается.
 		size_t index_granularity_,
-		MergeTreeData::Mode mode_ = MergeTreeData::Ordinary,
-		const String & sign_column_ = "",
+		MergeTreeData::Mode mode_,
+		const String & sign_column_,		/// Для Collapsing режима.
+		const Names & columns_to_sum_,		/// Для Summing режима.
 		const MergeTreeSettings & settings_ = MergeTreeSettings());
 
 	void shutdown() override;
@@ -73,6 +74,7 @@ public:
 	BlockInputStreams read(
 		const Names & column_names,
 		ASTPtr query,
+		const Context & context,
 		const Settings & settings,
 		QueryProcessingStage::Enum & processed_stage,
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
@@ -145,10 +147,24 @@ private:
 	typedef std::list<String> StringList;
 
 	Context & context;
-	zkutil::ZooKeeperPtr zookeeper;
+
+	zkutil::ZooKeeperPtr current_zookeeper;		/// Используйте только с помощью методов ниже.
+	std::mutex current_zookeeper_mutex;			/// Для пересоздания сессии в фоновом потоке.
+
+	zkutil::ZooKeeperPtr getZooKeeper()
+	{
+		std::lock_guard<std::mutex> lock(current_zookeeper_mutex);
+		return current_zookeeper;
+	}
+
+	void setZooKeeper(zkutil::ZooKeeperPtr zookeeper)
+	{
+		std::lock_guard<std::mutex> lock(current_zookeeper_mutex);
+		current_zookeeper = zookeeper;
+	}
 
 	/// Если true, таблица в офлайновом режиме, и в нее нельзя писать.
-	bool is_read_only = false;
+	bool is_readonly = false;
 
 	/// Каким будет множество активных кусков после выполнения всей текущей очереди.
 	ActiveDataPartSet virtual_parts;
@@ -209,6 +225,10 @@ private:
 	std::unique_ptr<MergeTreeDataMerger> unreplicated_merger;
 	std::mutex unreplicated_mutex; /// Для мерджей и удаления нереплицируемых кусков.
 
+	/// Нужно ли завершить фоновые потоки (кроме restarting_thread).
+	volatile bool shutdown_called = false;
+	Poco::Event shutdown_event;
+
 	/// Потоки:
 
 	/// Поток, следящий за обновлениями в логах всех реплик и загружающий их в очередь.
@@ -241,10 +261,6 @@ private:
 
 	Logger * log;
 
-	/// Нужно ли завершить фоновые потоки (кроме restarting_thread).
-	volatile bool shutdown_called = false;
-	Poco::Event shutdown_event;
-
 	StorageReplicatedMergeTree(
 		const String & zookeeper_path_,
 		const String & replica_name_,
@@ -259,8 +275,9 @@ private:
 		const String & date_column_name_,
 		const ASTPtr & sampling_expression_,
 		size_t index_granularity_,
-		MergeTreeData::Mode mode_ = MergeTreeData::Ordinary,
-		const String & sign_column_ = "",
+		MergeTreeData::Mode mode_,
+		const String & sign_column_,
+		const Names & columns_to_sum_,
 		const MergeTreeSettings & settings_ = MergeTreeSettings());
 
 	/// Инициализация.

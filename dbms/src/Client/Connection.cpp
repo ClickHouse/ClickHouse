@@ -269,7 +269,7 @@ void Connection::sendData(const Block & block, const String & name)
 		else
 			maybe_compressed_out = out;
 
-		block_out = new NativeBlockOutputStream(*maybe_compressed_out);
+		block_out = new NativeBlockOutputStream(*maybe_compressed_out, server_revision);
 	}
 
 	writeVarUInt(Protocol::Client::Data, *out);
@@ -444,7 +444,7 @@ void Connection::initBlockInput()
 		else
 			maybe_compressed_in = in;
 
-		block_in = new NativeBlockInputStream(*maybe_compressed_in, data_type_factory);
+		block_in = new NativeBlockInputStream(*maybe_compressed_in, data_type_factory, server_revision);
 	}
 }
 

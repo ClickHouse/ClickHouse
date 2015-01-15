@@ -7,13 +7,21 @@
 namespace DB
 {
 
-void copyData(IBlockInputStream & from, IBlockOutputStream & to)
+void copyData(IBlockInputStream & from, IBlockOutputStream & to, volatile bool * is_cancelled)
 {
 	from.readPrefix();
 	to.writePrefix();
 
 	while (Block block = from.read())
+	{
+		if (is_cancelled && *is_cancelled)
+			break;
+
 		to.write(block);
+	}
+
+	if (is_cancelled && *is_cancelled)
+		return;
 
 	/// Для вывода дополнительной информации в некоторых форматах.
 	if (IProfilingBlockInputStream * input = dynamic_cast<IProfilingBlockInputStream *>(&from))
@@ -24,6 +32,9 @@ void copyData(IBlockInputStream & from, IBlockOutputStream & to)
 		to.setTotals(input->getTotals());
 		to.setExtremes(input->getExtremes());
 	}
+
+	if (is_cancelled && *is_cancelled)
+		return;
 
 	from.readSuffix();
 	to.writeSuffix();
@@ -45,7 +56,7 @@ void copyData(IRowInputStream & from, IRowOutputStream & to)
 			from.readRowBetweenDelimiter();
 			to.writeRowBetweenDelimiter();
 		}
-		
+
 		Row row;
 		bool has_rows = from.read(row);
 		if (!has_rows)

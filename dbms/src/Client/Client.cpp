@@ -13,6 +13,7 @@
 #include <iomanip>
 
 #include <unordered_set>
+#include <algorithm>
 
 #include <boost/program_options.hpp>
 
@@ -97,6 +98,8 @@ private:
 	size_t format_max_block_size = 0;	/// Максимальный размер блока при выводе в консоль.
 	String insert_format;				/// Формат данных для INSERT-а при чтении их из stdin в batch режиме
 	size_t insert_format_max_block_size = 0; /// Максимальный размер блока при чтении данных INSERT-а.
+
+	bool has_vertical_output_suffix = false; /// \G указан в конце команды?
 
 	Context context;
 
@@ -231,7 +234,11 @@ private:
 				<< "." << Revision::get()
 				<< "." << std::endl;
 
-		format = config().getString("format", is_interactive ? "PrettyCompact" : "TabSeparated");
+		if (config().has("vertical"))
+			format = config().getString("format", "Vertical");
+		else
+			format = config().getString("format", is_interactive ? "PrettyCompact" : "TabSeparated");
+
 		format_max_block_size = config().getInt("format_max_block_size", DEFAULT_BLOCK_SIZE);
 
 		insert_format = "Values";
@@ -349,23 +356,34 @@ private:
 
 			bool ends_with_semicolon = line[ws - 1] == ';';
 			bool ends_with_backslash = line[ws - 1] == '\\';
+			
+			has_vertical_output_suffix = (ws >= 2) && (line[ws - 2] == '\\') && (line[ws - 1] == 'G');
 
 			if (ends_with_backslash)
 				line = line.substr(0, ws - 1);
 
 			query += line;
 
-			if (!ends_with_backslash && (ends_with_semicolon || !config().has("multiline")))
+			if (!ends_with_backslash && (ends_with_semicolon || has_vertical_output_suffix || !config().has("multiline")))
 			{
 				if (query != prev_query)
 				{
-					add_history(query.c_str());
+					// Заменяем переводы строк на пробелы, а то возникает следуцющая проблема.
+					// Каждая строчка многострочного запроса сохраняется в истории отдельно. Если
+					// выйти из клиента и войти заново, то при нажатии клавиши "вверх" выводится не 
+					// весь многострочный запрос, а каждая его строчка по-отдельности.
+					std::string logged_query = query;
+					std::replace(logged_query.begin(), logged_query.end(), '\n', ' ');
+					add_history(logged_query.c_str());
 
 					if (!history_file.empty() && append_history(1, history_file.c_str()))
 						throwFromErrno("Cannot append history to file " + history_file, ErrorCodes::CANNOT_APPEND_HISTORY);
 
 					prev_query = query;
 				}
+
+				if (has_vertical_output_suffix)
+					query = query.substr(0, query.length() - 2);
 
 				try
 				{
@@ -569,11 +587,15 @@ private:
 		connection->sendQuery(query_without_data, "", QueryProcessingStage::Complete, &context.getSettingsRef(), true);
 		sendExternalTables();
 
-		/// Получим структуру таблицы
-		Block sample = receiveSampleBlock();
-
-		sendData(sample);
-		receivePacket();
+		/// Получаем структуру таблицы.
+		Block sample;
+		if (receiveSampleBlock(sample))
+		{
+			/// Если была получена структура, т.е. сервер не выкинул исключения,
+			/// отправляем эту структуру вместе с данными.
+			sendData(sample);
+			receivePacket();
+		}
 	}
 
 
@@ -755,15 +777,21 @@ private:
 
 	/** Получить блок - пример структуры таблицы, в которую будут вставляться данные.
 	  */
-	Block receiveSampleBlock()
+	bool receiveSampleBlock(Block & out)
 	{
 		Connection::Packet packet = connection->receivePacket();
 
 		switch (packet.type)
 		{
 			case Protocol::Server::Data:
-				return packet.block;
+				out = packet.block;
+				return true;
 
+			case Protocol::Server::Exception:
+				onException(*packet.exception);
+				last_exception = packet.exception;
+				return false;
+				
 			default:
 				throw Exception("Unexpected packet from server (expected Data, got "
 					+ String(Protocol::Server::toString(packet.type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
@@ -783,13 +811,22 @@ private:
 		if (!block_std_out)
 		{
 			String current_format = format;
-
+			
 			/// Формат может быть указан в запросе.
 			if (ASTQueryWithOutput * query_with_output = dynamic_cast<ASTQueryWithOutput *>(&*parsed_query))
+			{
 				if (query_with_output->format)
+				{
+					if (has_vertical_output_suffix)
+						throw Exception("Output format already specified", ErrorCodes::CLIENT_OUTPUT_FORMAT_SPECIFIED);
 					if (ASTIdentifier * id = typeid_cast<ASTIdentifier *>(&*query_with_output->format))
 						current_format = id->name;
-
+				}
+			}
+			
+			if (has_vertical_output_suffix)
+				current_format = "Vertical";
+			
 			block_std_out = context.getFormatFactory().getOutput(current_format, std_out, block);
 			block_std_out->writePrefix();
 		}
@@ -970,6 +1007,7 @@ public:
 			("database,d", 		boost::program_options::value<std::string>(), 	"database")
 			("multiline,m",														"multiline")
 			("multiquery,n",													"multiquery")
+			("vertical,E",                                                      "vertical")
 			APPLY_FOR_SETTINGS(DECLARE_SETTING)
 			APPLY_FOR_LIMITS(DECLARE_LIMIT)
 		;
@@ -1082,6 +1120,8 @@ public:
 			config().setBool("multiline", true);
 		if (options.count("multiquery"))
 			config().setBool("multiquery", true);
+		if (options.count("vertical"))
+			config().setBool("vertical", true);
 	}
 };
 

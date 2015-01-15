@@ -74,10 +74,11 @@ StorageView::StorageView(
 BlockInputStreams StorageView::read(
 	const Names & column_names,
 	ASTPtr query,
+	const Context & context,
 	const Settings & settings,
 	QueryProcessingStage::Enum & processed_stage,
-	size_t max_block_size,
-	unsigned threads)
+	const size_t max_block_size,
+	const unsigned threads)
 {
 	ASTPtr inner_query_clone = getInnerQuery();
 	ASTSelectQuery & inner_select = static_cast<ASTSelectQuery &>(*inner_query_clone);
@@ -91,8 +92,7 @@ BlockInputStreams StorageView::read(
 	if (outer_select.final && !inner_select.final)
 		inner_select.final = outer_select.final;
 
-	return BlockInputStreams(1,
-		InterpreterSelectQuery(inner_query_clone, context, column_names).execute());
+	return InterpreterSelectQuery(inner_query_clone, context, column_names).executeWithoutUnion();
 }
 
 

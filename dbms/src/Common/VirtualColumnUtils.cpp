@@ -1,16 +1,12 @@
-#include <DB/Common/VirtualColumnUtils.h>
-
 #include <DB/Interpreters/Context.h>
-#include <DB/DataStreams/AddingConstColumnBlockInputStream.h>
-#include <DB/DataStreams/OneBlockInputStream.h>
-#include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Parsers/ASTLiteral.h>
 #include <DB/Parsers/ASTSelectQuery.h>
-#include <DB/Storages/IStorage.h>
-#include <DB/Interpreters/InterpreterSelectQuery.h>
+
+#include <DB/Common/VirtualColumnUtils.h>
+
 
 namespace DB
 {

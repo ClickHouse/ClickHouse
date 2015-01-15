@@ -40,11 +40,11 @@ public:
 	ASTPtr table;				/// "Правая" таблица для соединения - подзапрос или имя таблицы.
 	ASTPtr using_expr_list;		/// По каким столбцам выполнять соединение.
 
-	ASTJoin() {}
-	ASTJoin(StringRange range_) : IAST(range_) {}
+	ASTJoin() = default;
+	ASTJoin(const StringRange range_) : IAST(range_) {}
 
 	/** Получить текст, который идентифицирует этот элемент. */
-	String getID() const
+	String getID() const override
 	{
 		String res;
 		{
@@ -57,19 +57,21 @@ public:
 			writeString(kind == Inner ? "Inner" : "Left", wb);
 			writeString("Join", wb);
 		}
-		return res;
 
+		return res;
 	};
 
-	ASTPtr clone() const
+	ASTPtr clone() const override
 	{
 		ASTJoin * res = new ASTJoin(*this);
+		ASTPtr ptr{res};
+
 		res->children.clear();
 
 		if (table) 				{ res->table 			= table->clone(); 			res->children.push_back(res->table); }
 		if (using_expr_list) 	{ res->using_expr_list 	= using_expr_list->clone(); res->children.push_back(res->using_expr_list); }
 
-		return res;
+		return ptr;
 	}
 };
 

@@ -18,9 +18,12 @@ namespace DB
 class SummingSortedBlockInputStream : public MergingSortedBlockInputStream
 {
 public:
-	SummingSortedBlockInputStream(BlockInputStreams inputs_, const SortDescription & description_, size_t max_block_size_)
-		: MergingSortedBlockInputStream(inputs_, description_, max_block_size_),
-		log(&Logger::get("SummingSortedBlockInputStream")), current_row_is_zero(false), output_is_non_empty(false)
+	SummingSortedBlockInputStream(BlockInputStreams inputs_,
+		const SortDescription & description_,
+		/// Список столбцов, которых нужно суммировать. Если пустое - берутся все числовые столбцы, не входящие в description.
+		const Names & column_names_to_sum_,
+		size_t max_block_size_)
+		: MergingSortedBlockInputStream(inputs_, description_, max_block_size_), column_names_to_sum(column_names_to_sum_)
 	{
 	}
 
@@ -48,18 +51,19 @@ protected:
 	Block readImpl() override;
 
 private:
-	Logger * log;
+	Logger * log = &Logger::get("SummingSortedBlockInputStream");
 
 	/// Столбцы с какими номерами надо суммировать.
+	Names column_names_to_sum;	/// Если задано - преобразуется в column_numbers_to_sum при инициализации.
 	ColumnNumbers column_numbers_to_sum;
 
 	Row current_key;		/// Текущий первичный ключ.
 	Row next_key;			/// Первичный ключ следующей строки.
 
 	Row current_row;
-	bool current_row_is_zero;	/// Текущая строчка просуммировалась в ноль, и её следует удалить.
+	bool current_row_is_zero = false;	/// Текущая строчка просуммировалась в ноль, и её следует удалить.
 
-	bool output_is_non_empty; /// Отдали ли мы наружу хоть одну строку.
+	bool output_is_non_empty = false; /// Отдали ли мы наружу хоть одну строку.
 
 	/** Делаем поддержку двух разных курсоров - с Collation и без.
 	 *  Шаблоны используем вместо полиморфных SortCursor'ов и вызовов виртуальных функций.

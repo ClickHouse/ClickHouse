@@ -294,7 +294,7 @@ public:
 		{
 			/// Записываем файл с чексуммами.
 			WriteBufferFromFile out(part_path + "checksums.txt", 4096);
-			checksums.writeText(out);
+			checksums.write(out);
 		}
 
 		return checksums;

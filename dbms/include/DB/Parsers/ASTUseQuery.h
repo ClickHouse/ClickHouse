@@ -14,13 +14,13 @@ class ASTUseQuery : public IAST
 public:
 	String database;
 
-	ASTUseQuery() {}
-	ASTUseQuery(StringRange range_) : IAST(range_) {}
+	ASTUseQuery() = default;
+	ASTUseQuery(const StringRange range_) : IAST(range_) {}
 	
 	/** Получить текст, который идентифицирует этот элемент. */
-	String getID() const { return "UseQuery_" + database; };
+	String getID() const override { return "UseQuery_" + database; };
 
-	ASTPtr clone() const { return new ASTUseQuery(*this); }
+	ASTPtr clone() const override { return new ASTUseQuery(*this); }
 };
 
 }

@@ -21,6 +21,9 @@
 
 #include <DB/Storages/StorageLog.h>
 
+#include <DB/Interpreters/Context.h>
+#include <Yandex/Revision.h>
+
 
 int main(int argc, char ** argv)
 {
@@ -102,10 +105,10 @@ int main(int argc, char ** argv)
 		if (argc == 2 && 0 == strcmp(argv[1], "read"))
 		{
 			QueryProcessingStage::Enum stage;
-			SharedPtr<IBlockInputStream> in = table->read(column_names, 0, Settings(), stage)[0];
+			SharedPtr<IBlockInputStream> in = table->read(column_names, 0, Context{}, Settings(), stage)[0];
 			WriteBufferFromOStream out1(std::cout);
 			CompressedWriteBuffer out2(out1);
-			NativeBlockOutputStream out3(out2);
+			NativeBlockOutputStream out3(out2, Revision::get());
 			copyData(*in, out3);
 		}
 
@@ -116,7 +119,7 @@ int main(int argc, char ** argv)
 
 			ReadBufferFromIStream in1(std::cin);
 			CompressedReadBuffer in2(in1);
-			NativeBlockInputStream in3(in2, factory);
+			NativeBlockInputStream in3(in2, factory, Revision::get());
 			SharedPtr<IBlockOutputStream> out = table->write(0);
 			copyData(in3, *out);
 		}

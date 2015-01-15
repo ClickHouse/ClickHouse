@@ -13,12 +13,12 @@ namespace DB
 class ASTCreateQuery : public IAST
 {
 public:
-	bool attach;	/// Запрос ATTACH TABLE, а не CREATE TABLE.
-	bool if_not_exists;
-	bool is_view;
-	bool is_materialized_view;
-	bool is_populate;
-	bool is_temporary;
+	bool attach{false};	/// Запрос ATTACH TABLE, а не CREATE TABLE.
+	bool if_not_exists{false};
+	bool is_view{false};
+	bool is_materialized_view{false};
+	bool is_populate{false};
+	bool is_temporary{false};
 	String database;
 	String table;
 	ASTPtr columns;
@@ -28,15 +28,17 @@ public:
 	String as_table;
 	ASTPtr select;
 
-	ASTCreateQuery() : attach(false), if_not_exists(false), is_view(false), is_materialized_view(false), is_populate(false), is_temporary(false) {}
-	ASTCreateQuery(StringRange range_) : IAST(range_), attach(false), if_not_exists(false), is_view(false), is_materialized_view(false), is_populate(false), is_temporary(false) {}
+	ASTCreateQuery() = default;
+	ASTCreateQuery(const StringRange range_) : IAST(range_) {}
 	
 	/** Получить текст, который идентифицирует этот элемент. */
-	String getID() const { return (attach ? "AttachQuery_" : "CreateQuery_") + database + "_" + table; };
+	String getID() const override { return (attach ? "AttachQuery_" : "CreateQuery_") + database + "_" + table; };
 
-	ASTPtr clone() const
+	ASTPtr clone() const override
 	{
 		ASTCreateQuery * res = new ASTCreateQuery(*this);
+		ASTPtr ptr{res};
+
 		res->children.clear();
 
 		if (columns) 	{ res->columns = columns->clone(); 	res->children.push_back(res->columns); }
@@ -44,7 +46,7 @@ public:
 		if (select) 	{ res->select = select->clone(); 	res->children.push_back(res->select); }
 		if (inner_storage) 	{ res->inner_storage = inner_storage->clone(); 	res->children.push_back(res->inner_storage); }
 
-		return res;
+		return ptr;
 	}
 };
 

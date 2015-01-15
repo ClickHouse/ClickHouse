@@ -65,7 +65,7 @@ int main(int argc, char ** argv)
 		QueryProcessingStage::Enum stage;
 
 		Poco::SharedPtr<IBlockInputStream> in;
-		in = table->read(column_names, 0, Settings(), stage)[0];
+		in = table->read(column_names, 0, context, Settings(), stage)[0];
 		in = new ExpressionBlockInputStream(in, expression);
 		in = new LimitBlockInputStream(in, 10, std::max(static_cast<Int64>(0), static_cast<Int64>(n) - 10));
 		

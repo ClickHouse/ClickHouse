@@ -165,9 +165,9 @@ protected:
 			injectRequiredColumns(pre_columns);
 
 			UncompressedCache * uncompressed_cache = use_uncompressed_cache ? storage.context.getUncompressedCache() : NULL;
-			reader.reset(new MergeTreeReader(path, owned_data_part->name, columns, uncompressed_cache, storage, all_mark_ranges));
+			reader.reset(new MergeTreeReader(path, owned_data_part, columns, uncompressed_cache, storage, all_mark_ranges));
 			if (prewhere_actions)
-				pre_reader.reset(new MergeTreeReader(path, owned_data_part->name, pre_columns, uncompressed_cache, storage,
+				pre_reader.reset(new MergeTreeReader(path, owned_data_part, pre_columns, uncompressed_cache, storage,
 													 all_mark_ranges));
 		}
 
@@ -193,7 +193,7 @@ protected:
 				}
 				progressImpl(Progress(res.rows(), res.bytes()));
 				pre_reader->fillMissingColumns(res);
-
+				
 				/// Вычислим выражение в PREWHERE.
 				prewhere_actions->execute(res);
 

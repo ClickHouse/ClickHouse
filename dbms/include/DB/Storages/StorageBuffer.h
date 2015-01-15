@@ -61,6 +61,7 @@ public:
 	BlockInputStreams read(
 		const Names & column_names,
 		ASTPtr query,
+		const Context & context,
 		const Settings & settings,
 		QueryProcessingStage::Enum & processed_stage,
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
@@ -107,6 +108,7 @@ private:
 
 	Logger * log;
 
+	Poco::Event shutdown_event;
 	/// Выполняет сброс данных по таймауту.
 	std::thread flush_thread;
 
@@ -114,6 +116,7 @@ private:
 		size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
 		const String & destination_database_, const String & destination_table_);
 
+	void flushAllBuffers(bool check_thresholds = true);
 	/// Сбросить буфер. Если выставлено check_thresholds - сбрасывает только если превышены пороги.
 	void flushBuffer(Buffer & buffer, bool check_thresholds);
 	bool checkThresholds(Buffer & buffer, time_t current_time, size_t additional_rows = 0, size_t additional_bytes = 0);
@@ -121,7 +124,6 @@ private:
 	/// Аргумент table передаётся, так как иногда вычисляется заранее. Он должен соответствовать destination-у.
 	void writeBlockToDestination(const Block & block, StoragePtr table);
 
-	Poco::Event shutdown_event;
 	void flushThread();
 };
 

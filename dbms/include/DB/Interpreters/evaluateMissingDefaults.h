@@ -16,7 +16,7 @@ inline void evaluateMissingDefaults(Block & block,
 	if (column_defaults.empty())
 		return;
 
-	ASTPtr default_expr_list{stdext::make_unique<ASTExpressionList>().release()};
+	ASTPtr default_expr_list{ext::make_unique<ASTExpressionList>().release()};
 
 	for (const auto & column : required_columns)
 	{

@@ -9,7 +9,7 @@
 #include <DB/Parsers/ASTSubquery.h>
 #include <DB/Parsers/formatAST.h>
 #include <DB/Common/escapeForFileName.h>
-#include <statdaemons/stdext.h>
+#include <statdaemons/ext/memory.hpp>
 #include <unordered_map>
 #include <map>
 #include <limits>

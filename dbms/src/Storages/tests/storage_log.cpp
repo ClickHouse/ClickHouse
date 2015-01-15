@@ -10,6 +10,7 @@
 #include <DB/DataStreams/copyData.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Columns/ColumnsNumber.h>
+#include <DB/Interpreters/Context.h>
 
 using Poco::SharedPtr;
 
@@ -68,7 +69,7 @@ int main(int argc, char ** argv)
 
 			DB::QueryProcessingStage::Enum stage;
 
-			SharedPtr<DB::IBlockInputStream> in = table->read(column_names, 0, DB::Settings(), stage)[0];
+			SharedPtr<DB::IBlockInputStream> in = table->read(column_names, 0, DB::Context{}, DB::Settings(), stage)[0];
 
 			DB::Block sample;
 			{

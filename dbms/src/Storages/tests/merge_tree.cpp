@@ -41,7 +41,11 @@ int main(int argc, char ** argv)
 		if (!parser.parse(begin, end, primary_expr, expected))
 			throw Poco::Exception("Cannot parse " + primary_expr_str);
 
-		StoragePtr table = StorageMergeTree::create("./", "default", "test", names_and_types, context, primary_expr, "d", nullptr, 101);
+		StoragePtr table = StorageMergeTree::create(
+			"./", "default", "test",
+			names_and_types, {}, {}, {},
+			context, primary_expr, "d",
+			nullptr, 101, MergeTreeData::Ordinary, {}, {});
 
 		/// пишем в неё
 		{
@@ -90,7 +94,7 @@ int main(int argc, char ** argv)
 			if (!parser.parse(begin, end, select, expected))
 				throw Poco::Exception("Cannot parse " + primary_expr_str);
 
-			SharedPtr<IBlockInputStream> in = table->read(column_names, select, Settings(), stage)[0];
+			SharedPtr<IBlockInputStream> in = table->read(column_names, select, context, Settings(), stage)[0];
 
 			Block sample;
 			{

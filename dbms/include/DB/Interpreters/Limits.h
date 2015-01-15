@@ -36,6 +36,7 @@ struct Limits
 	M(SettingUInt64, max_rows_to_sort, 0) \
 	M(SettingUInt64, max_bytes_to_sort, 0) \
 	M(SettingOverflowMode<false>, sort_overflow_mode, OverflowMode::THROW) \
+	M(SettingUInt64, max_bytes_before_external_sort, 0) \
 	\
 	/** Ограничение на размер результата. \
 	  * Проверяются также для подзапросов и на удалённых серверах. \
@@ -44,7 +45,7 @@ struct Limits
 	M(SettingUInt64, max_result_bytes, 0) \
 	M(SettingOverflowMode<false>, result_overflow_mode, OverflowMode::THROW) \
 	\
-	/* TODO: Проверять также при merge стадии сортировки, при слиянии и финализации агрегатных функций. */ \
+	/* TODO: Проверять также при слиянии и финализации агрегатных функций. */ \
 	M(SettingSeconds, max_execution_time, 0) \
 	M(SettingOverflowMode<false>, timeout_overflow_mode, OverflowMode::THROW) \
 	\
@@ -145,7 +146,7 @@ struct Limits
 
 private:
 	friend struct Settings;
-	
+
 	/// Записать все настройки в буфер. (В отличие от соответствующего метода в Settings, пустая строка на конце не пишется).
 	void serialize(WriteBuffer & buf) const
 	{

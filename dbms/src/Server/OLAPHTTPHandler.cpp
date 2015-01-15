@@ -54,7 +54,7 @@ void OLAPHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco:
 	OLAP::QueryParseResult olap_query = server.olap_parser->parse(request_istream);
 
 	std::string clickhouse_query;
-	server.olap_converter->OLAPServerQueryToClickhouse(olap_query, context, clickhouse_query);
+	server.olap_converter->OLAPServerQueryToClickHouse(olap_query, context, clickhouse_query);
 
 	LOG_TRACE(log, "Converted query: " << clickhouse_query);
 

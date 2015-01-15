@@ -191,8 +191,11 @@ public:
 			void checkSizes(const String & path) const;
 
 			/// Сериализует и десериализует в человекочитаемом виде.
-			bool readText(ReadBuffer & in); /// Возвращает false, если чексуммы в слишком старом формате.
-			void writeText(WriteBuffer & out) const;
+			bool read(ReadBuffer & in); /// Возвращает false, если чексуммы в слишком старом формате.
+			bool read_v2(ReadBuffer & in);
+			bool read_v3(ReadBuffer & in);
+			bool read_v4(ReadBuffer & in);
+			void write(WriteBuffer & out) const;
 
 			bool empty() const
 			{
@@ -228,7 +231,7 @@ public:
 				String s;
 				{
 					WriteBufferFromString out(s);
-					writeText(out);
+					write(out);
 				}
 				return s;
 			}
@@ -237,21 +240,21 @@ public:
 			{
 				ReadBufferFromString in(s);
 				Checksums res;
-				if (!res.readText(in))
+				if (!res.read(in))
 					throw Exception("Checksums format is too old", ErrorCodes::FORMAT_VERSION_TOO_OLD);
 				assertEOF(in);
 				return res;
 			}
 		};
 
- 		DataPart(MergeTreeData & storage_) : storage(storage_), size(0), size_in_bytes(0), remove_time(0) {}
+		DataPart(MergeTreeData & storage_) : storage(storage_) {}
 
  		MergeTreeData & storage;
 
-		size_t size;	/// в количестве засечек.
-		volatile size_t size_in_bytes; /// размер в байтах, 0 - если не посчитано;
-		                               /// используется из нескольких потоков без блокировок (изменяется при ALTER).
-		time_t modification_time;
+		size_t size = 0;				/// в количестве засечек.
+		volatile size_t size_in_bytes = 0; 	/// размер в байтах, 0 - если не посчитано;
+											/// используется из нескольких потоков без блокировок (изменяется при ALTER).
+		time_t modification_time = 0;
 		mutable time_t remove_time = std::numeric_limits<time_t>::max(); /// Когда кусок убрали из рабочего набора.
 
 		/// Если true, деструктор удалит директорию с куском.
@@ -328,8 +331,39 @@ public:
 			String from = storage.full_path + name + "/";
 			String to = storage.full_path + "tmp2_" + name + "/";
 
-			Poco::File(from).renameTo(to);
-			Poco::File(to).remove(true);
+			Poco::File from_dir{from};
+			Poco::File to_dir{to};
+
+			if (to_dir.exists())
+			{
+				LOG_WARNING(storage.log, "Directory " << to << " (to which part must be renamed before removing) already exists."
+					" Most likely this is due to unclean restart. Removing it.");
+
+				try
+				{
+					to_dir.remove(true);
+				}
+				catch (...)
+				{
+					LOG_ERROR(storage.log, "Cannot remove directory " << to << ". Check owner and access rights.");
+					throw;
+				}
+			}
+
+			try
+			{
+				from_dir.renameTo(to);
+			}
+			catch (const Poco::FileNotFoundException & e)
+			{
+				/// Если директория уже удалена. Такое возможно лишь при ручном вмешательстве.
+				LOG_WARNING(storage.log, "Directory " << from << " (part to remove) doesn't exist or one of nested files has gone."
+					" Most likely this is due to manual removing. This should be discouraged. Ignoring.");
+
+				return;
+			}
+
+			to_dir.remove(true);
 		}
 
 		void renameTo(const String & new_name) const
@@ -342,10 +376,28 @@ public:
 			f.renameTo(to);
 		}
 
-		/// Переименовывает кусок, дописав к имени префикс.
-		void renameAddPrefix(const String & prefix) const
+		/// Переименовывает кусок, дописав к имени префикс. to_detached - также перенести в директорию detached.
+		void renameAddPrefix(bool to_detached, const String & prefix) const
 		{
-			renameTo(prefix + name);
+			unsigned try_no = 0;
+			auto dst_name = [&, this] { return (to_detached ? "detached/" : "") + prefix + name + (try_no ? "_try" + toString(try_no) : ""); };
+
+			if (to_detached)
+			{
+				/** Если нужно отцепить кусок, и директория, в которую мы хотим его переименовать, уже существует,
+				  *  то будем переименовывать в директорию с именем, в которое добавлен суффикс в виде "_tryN".
+				  * Это делается только в случае to_detached, потому что считается, что в этом случае, точное имя не имеет значения.
+				  * Больше 10 попыток не делается, чтобы не оставалось слишком много мусорных директорий.
+				  */
+				while (try_no < 10 && Poco::File(dst_name()).exists())
+				{
+					LOG_WARNING(storage.log, "Directory " << dst_name() << " (to detach to) is already exist."
+						" Will detach to directory with '_tryN' suffix.");
+					++try_no;
+				}
+			}
+
+			renameTo(dst_name());
 		}
 
 		/// Загрузить индекс и вычислить размер. Если size=0, вычислить его тоже.
@@ -385,7 +437,7 @@ public:
 				return;
 			}
 			ReadBufferFromFile file(path, std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path).getSize()));
-			if (checksums.readText(file))
+			if (checksums.read(file))
 				assertEOF(file);
 		}
 
@@ -594,7 +646,8 @@ public:
 					const ASTPtr & sampling_expression_, /// nullptr, если семплирование не поддерживается.
 					size_t index_granularity_,
 					Mode mode_,
-					const String & sign_column_,
+					const String & sign_column_,			/// Для Collapsing режима.
+					const Names & columns_to_sum_,			/// Для Summing режима. Если пустое - то выбирается автоматически.
 					const MergeTreeSettings & settings_,
 					const String & log_name_,
 					bool require_part_metadata_,
@@ -772,6 +825,8 @@ public:
 	const Mode mode;
 	/// Для схлопывания записей об изменениях, если используется Collapsing режим работы.
 	const String sign_column;
+	/// Для суммирования, если используется Summing режим работы.
+	const Names columns_to_sum;
 
 	const MergeTreeSettings settings;
 

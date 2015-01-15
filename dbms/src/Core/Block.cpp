@@ -12,7 +12,7 @@
 
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
-#include <statdaemons/stdext.h>
+#include <statdaemons/ext/memory.hpp>
 
 #include <DB/Parsers/formatAST.h>
 
@@ -36,6 +36,7 @@ void Block::addDefaults(const NamesAndTypesList & required_columns)
 
 Block & Block::operator= (const Block & other)
 {
+	info = other.info;
 	data = other.data;
 
 	index_by_position.resize(data.size());
@@ -272,6 +273,7 @@ Block Block::cloneEmpty() const
 {
 	Block res;
 
+	res.info = info;
 	for (Container_t::const_iterator it = data.begin(); it != data.end(); ++it)
 		res.insert(it->cloneEmpty());
 
@@ -374,6 +376,7 @@ bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs)
 
 void Block::clear()
 {
+	info = BlockInfo();
 	data.clear();
 	index_by_name.clear();
 	index_by_position.clear();
@@ -381,6 +384,7 @@ void Block::clear()
 
 void Block::swap(Block & other)
 {
+	std::swap(info, other.info);
 	data.swap(other.data);
 	index_by_name.swap(other.index_by_name);
 	index_by_position.swap(other.index_by_position);

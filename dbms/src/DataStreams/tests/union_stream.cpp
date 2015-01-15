@@ -15,6 +15,8 @@
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 
+#include <DB/Interpreters/Context.h>
+
 using Poco::SharedPtr;
 
 
@@ -32,9 +34,9 @@ int main(int argc, char ** argv)
 		DB::QueryProcessingStage::Enum stage3;
 
 		DB::BlockInputStreams streams;
-		streams.push_back(new DB::LimitBlockInputStream(table->read(column_names, 0, DB::Settings(), stage1, 1)[0], 30, 30000));
-		streams.push_back(new DB::LimitBlockInputStream(table->read(column_names, 0, DB::Settings(), stage2, 1)[0], 30, 2000));
-		streams.push_back(new DB::LimitBlockInputStream(table->read(column_names, 0, DB::Settings(), stage3, 1)[0], 30, 100));
+		streams.emplace_back(new DB::LimitBlockInputStream(table->read(column_names, 0, DB::Context{}, DB::Settings(), stage1, 1)[0], 30, 30000));
+		streams.emplace_back(new DB::LimitBlockInputStream(table->read(column_names, 0, DB::Context{}, DB::Settings(), stage2, 1)[0], 30, 2000));
+		streams.emplace_back(new DB::LimitBlockInputStream(table->read(column_names, 0, DB::Context{}, DB::Settings(), stage3, 1)[0], 30, 100));
 
 		DB::UnionBlockInputStream union_stream(streams, 2);
 

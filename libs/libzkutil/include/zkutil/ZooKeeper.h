@@ -12,6 +12,7 @@ namespace zkutil
 {
 
 const UInt32 DEFAULT_SESSION_TIMEOUT = 30000;
+const UInt32 BIG_SESSION_TIMEOUT = 600000;
 const UInt32 DEFAULT_RETRY_NUM = 3;
 
 struct WatchWithEvent;
@@ -28,7 +29,7 @@ class ZooKeeper
 public:
 	typedef Poco::SharedPtr<ZooKeeper> Ptr;
 
-	ZooKeeper(const std::string & hosts, int32_t sessionTimeoutMs = DEFAULT_SESSION_TIMEOUT);
+	ZooKeeper(const std::string & hosts, int32_t session_timeout_ms = DEFAULT_SESSION_TIMEOUT);
 
 	/** конфиг вида
 		<zookeeper>
@@ -44,6 +45,7 @@ public:
 		</zookeeper>
 	*/
 	ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name);
+	ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, int32_t session_timeout_ms);
 
 	~ZooKeeper();
 
@@ -62,9 +64,9 @@ public:
 	  */
 	bool expired();
 
-	AclPtr getDefaultACL();
+	ACLPtr getDefaultACL();
 
-	void setDefaultACL(AclPtr new_acl);
+	void setDefaultACL(ACLPtr new_acl);
 
 	/** Создать znode. Используется ACL, выставленный вызовом setDefaultACL (по умолчанию, всем полный доступ).
 	  * Если что-то пошло не так, бросить исключение.
@@ -181,16 +183,35 @@ public:
 	private:
 		using Task = std::packaged_task<Result (TaskParams...)>;
 		using TaskPtr = std::unique_ptr<Task>;
+		using TaskPtrPtr = std::unique_ptr<TaskPtr>;
 
-		TaskPtr task;
+		/** Всё очень сложно.
+		  *
+		  * В асинхронном интерфейсе libzookeeper, функция (например, zoo_aget)
+		  *  принимает указатель на свободную функцию-коллбэк и void* указатель на данные.
+		  * Указатель на данные потом передаётся в callback.
+		  * Это значит, что мы должны сами обеспечить, чтобы данные жили во время работы этой функции и до конца работы callback-а,
+		  *  и не можем просто так передать владение данными внутрь функции.
+		  * Для этого, мы засовываем данные в объект Future, который возвращается пользователю. Данные будут жить, пока живёт объект Future.
+		  * Данные засунуты в unique_ptr, чтобы при возврате объекта Future из функции, их адрес (который передаётся в libzookeeper) не менялся.
+		  *
+		  * Вторая проблема состоит в том, что после того, как std::promise был удовлетворён, и пользователь получил результат из std::future,
+		  *  объект Future может быть уничтожен, при чём раньше, чем завершит работу в другом потоке функция, которая удовлетворяет promise.
+		  * См. http://stackoverflow.com/questions/10843304/race-condition-in-pthread-once
+		  * Чтобы этого избежать, используется второй unique_ptr. Внутри callback-а, void* данные преобразуются в unique_ptr, и
+		  *  перемещаются в локальную переменную unique_ptr, чтобы продлить время жизни данных.
+		  */
+
+		TaskPtrPtr task;
+		std::future<Result> future;
 
 		template <typename... Args>
-		Future(Args &&... args) : task(new Task(std::forward<Args>(args)...)) {}
+		Future(Args &&... args) : task(new TaskPtr(new Task(std::forward<Args>(args)...))), future((*task)->get_future()) {}
 
 	public:
 		Result get()
 		{
-			return task->get_future().get();
+			return future.get();
 		}
 	};
 
@@ -243,7 +264,7 @@ private:
 	friend struct WatchWithEvent;
 	friend class EphemeralNodeHolder;
 
-	void init(const std::string & hosts, int32_t sessionTimeoutMs);
+	void init(const std::string & hosts, int32_t session_timeout_ms);
 	void removeChildrenRecursive(const std::string & path);
 	void tryRemoveChildrenRecursive(const std::string & path);
 	void * watchForEvent(EventPtr event);
@@ -262,8 +283,9 @@ private:
 				*attempt = i;
 
 			/// если потеряно соединение подождем timeout/3, авось восстановится
+			static const int MAX_SLEEP_TIME = 10;
 			if (code == ZCONNECTIONLOSS)
-				usleep(sessionTimeoutMs * 1000 / 3);
+				usleep(std::min(session_timeout_ms * 1000 / 3, MAX_SLEEP_TIME * 1000 * 1000));
 
 			LOG_WARNING(log, "Error on attempt " << i << ": " << error2string(code)  << ". Retry");
 			code = operation();
@@ -285,10 +307,10 @@ private:
 	int32_t existsImpl(const std::string & path, Stat * stat_, EventPtr watch = nullptr);
 
 	std::string hosts;
-	int32_t sessionTimeoutMs;
+	int32_t session_timeout_ms;
 
 	Poco::FastMutex mutex;
-	AclPtr default_acl;
+	ACLPtr default_acl;
 	zhandle_t * impl;
 
 	std::unordered_set<WatchWithEvent *> watch_store;

@@ -24,8 +24,13 @@ StoragePtr StorageSystemTables::create(const std::string & name_, const Context 
 
 
 BlockInputStreams StorageSystemTables::read(
-	const Names & column_names, ASTPtr query, const Settings & settings,
-	QueryProcessingStage::Enum & processed_stage, size_t max_block_size, unsigned threads)
+	const Names & column_names,
+	ASTPtr query,
+	const Context & context,
+	const Settings & settings,
+	QueryProcessingStage::Enum & processed_stage,
+	const size_t max_block_size,
+	const unsigned threads)
 {
 	check(column_names);
 	processed_stage = QueryProcessingStage::FetchColumns;
@@ -75,20 +80,20 @@ BlockInputStreams StorageSystemTables::read(
 
 ColumnWithNameAndType StorageSystemTables::getFilteredDatabases(ASTPtr query)
 {
-	ColumnWithNameAndType filtered_databases_column;
-	filtered_databases_column.name = "database";
-	filtered_databases_column.type = new DataTypeString;
-	filtered_databases_column.column = new ColumnString;
+	ColumnWithNameAndType column;
+	column.name = "database";
+	column.type = new DataTypeString;
+	column.column = new ColumnString;
 
-	Block filtered_databases_block;
-	filtered_databases_block.insert(filtered_databases_column);
+	Block block;
+	block.insert(column);
 	for (auto database_it = context.getDatabases().begin(); database_it != context.getDatabases().end(); ++database_it)
 	{
-		filtered_databases_column.column->insert(database_it->first);
+		column.column->insert(database_it->first);
 	}
-	VirtualColumnUtils::filterBlockWithQuery(query, filtered_databases_block, context);
+	VirtualColumnUtils::filterBlockWithQuery(query, block, context);
 
-	return filtered_databases_column;
+	return block.getByPosition(0);
 }
 
 }

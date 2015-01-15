@@ -24,21 +24,23 @@ public:
 	const char * data = nullptr;
 	const char * end = nullptr;
 
-	ASTInsertQuery() {}
-	ASTInsertQuery(StringRange range_) : IAST(range_) {}
+	ASTInsertQuery() = default;
+	ASTInsertQuery(const StringRange range_) : IAST(range_) {}
 	
 	/** Получить текст, который идентифицирует этот элемент. */
-	String getID() const { return "InsertQuery_" + database + "_" + table; };
+	String getID() const override { return "InsertQuery_" + database + "_" + table; };
 
-	ASTPtr clone() const
+	ASTPtr clone() const override
 	{
 		ASTInsertQuery * res = new ASTInsertQuery(*this);
+		ASTPtr ptr{res};
+
 		res->children.clear();
 
 		if (columns) 	{ res->columns = columns->clone(); 	res->children.push_back(res->columns); }
 		if (select) 	{ res->select = select->clone(); 	res->children.push_back(res->select); }
 
-		return res;
+		return ptr;
 	}
 };
 

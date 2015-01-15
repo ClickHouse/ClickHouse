@@ -129,7 +129,9 @@ public:
 	typedef typename Cell::Mapped mapped_type;
 	typedef typename Cell::value_type value_type;
 
-	mapped_type & operator[](Key x)
+	using HashTable<Key, Cell, Hash, Grower, Allocator>::HashTable;
+
+	mapped_type & ALWAYS_INLINE operator[](Key x)
 	{
 		typename HashMapTable::iterator it;
 		bool inserted;

@@ -10,7 +10,7 @@
 
 namespace zkutil
 {
-typedef const ACL_vector * AclPtr;
+typedef const ACL_vector * ACLPtr;
 typedef Stat Stat;
 
 struct Op
@@ -41,7 +41,7 @@ private:
 
 struct Op::Create : public Op
 {
-	Create(const std::string & path_, const std::string & value_, AclPtr acl, int32_t flags);
+	Create(const std::string & path_, const std::string & value_, ACLPtr acl, int32_t flags);
 
 	std::string getPathCreated()
 	{

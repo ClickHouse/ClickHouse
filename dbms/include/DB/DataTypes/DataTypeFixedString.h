@@ -29,7 +29,7 @@ public:
 	{
 		return "FixedString(" + toString(n) + ")";
 	}
-
+	
 	DataTypePtr clone() const
 	{
 		return new DataTypeFixedString(n);

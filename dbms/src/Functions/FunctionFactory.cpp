@@ -28,6 +28,7 @@ void registerFunctionsStringArray(FunctionFactory &);
 void registerFunctionsStringSearch(FunctionFactory &);
 void registerFunctionsURL(FunctionFactory &);
 void registerFunctionsVisitParam(FunctionFactory &);
+void registerFunctionsMath(FunctionFactory &);
 
 
 FunctionFactory::FunctionFactory()
@@ -53,6 +54,7 @@ FunctionFactory::FunctionFactory()
 	registerFunctionsStringSearch(*this);
 	registerFunctionsURL(*this);
 	registerFunctionsVisitParam(*this);
+	registerFunctionsMath(*this);
 }
 
 

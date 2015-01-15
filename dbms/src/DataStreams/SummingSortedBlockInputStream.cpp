@@ -16,13 +16,13 @@ Block SummingSortedBlockInputStream::readImpl()
 {
 	if (!children.size())
 		return Block();
-	
+
 	if (children.size() == 1)
 		return children[0]->read();
 
 	Block merged_block;
 	ColumnPlainPtrs merged_columns;
-	
+
 	init(merged_block, merged_columns);
 	if (merged_columns.empty())
 		return Block();
@@ -34,7 +34,11 @@ Block SummingSortedBlockInputStream::readImpl()
 		current_key.resize(description.size());
 		next_key.resize(description.size());
 
-		/// Заполним номера столбцов, которые должны быть просуммированы.
+		/** Заполним номера столбцов, которые должны быть просуммированы.
+		  * Это могут быть только числовые столбцы, не входящие в ключ сортировки.
+		  * Если задан непустой список column_names_to_sum, то берём только эти столбцы.
+		  * Часть столбцов из column_names_to_sum может быть не найдена. Это игнорируется.
+		  */
 		for (size_t i = 0; i < num_columns; ++i)
 		{
 			ColumnWithNameAndType & column = merged_block.getByPosition(i);
@@ -52,7 +56,11 @@ Block SummingSortedBlockInputStream::readImpl()
 			if (it != description.end())
 				continue;
 
-			column_numbers_to_sum.push_back(i);
+			if (column_names_to_sum.empty()
+				|| column_names_to_sum.end() != std::find(column_names_to_sum.begin(), column_names_to_sum.end(), column.name))
+			{
+				column_numbers_to_sum.push_back(i);
+			}
 		}
 	}
 
@@ -67,9 +75,9 @@ Block SummingSortedBlockInputStream::readImpl()
 
 template<class TSortCursor>
 void SummingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
-{	
+{
 	size_t merged_rows = 0;
-	
+
 	/// Вынимаем строки в нужном порядке и кладём в merged_block, пока строк не больше max_block_size
 	while (!queue.empty())
 	{

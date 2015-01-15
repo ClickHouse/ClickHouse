@@ -14,21 +14,22 @@ using Poco::SharedPtr;
 class ASTExpressionList : public IAST
 {
 public:
-	ASTExpressionList() {}
-	ASTExpressionList(StringRange range_) : IAST(range_) {}
+	ASTExpressionList() = default;
+	ASTExpressionList(const StringRange range_) : IAST(range_) {}
 	
 	/** Получить текст, который идентифицирует этот элемент. */
-	String getID() const { return "ExpressionList"; }
+	String getID() const override { return "ExpressionList"; }
 
-	ASTPtr clone() const
+	ASTPtr clone() const override
 	{
-		ASTExpressionList * res = new ASTExpressionList(*this);
+		const auto res = new ASTExpressionList(*this);
+		ASTPtr ptr{res};
 		res->children.clear();
 		
-		for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
-			res->children.push_back((*it)->clone());
+		for (const auto & child : children)
+			res->children.emplace_back(child->clone());
 
-		return res;
+		return ptr;
 	}
 };
 

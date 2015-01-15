@@ -1,9 +1,8 @@
 #pragma once
 
-#include <statdaemons/threadpool.hpp>
-
 #include <DB/Interpreters/Aggregator.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
+#include <DB/DataStreams/ParallelInputsProcessor.h>
 
 
 namespace DB
@@ -13,32 +12,37 @@ using Poco::SharedPtr;
 
 
 /** Агрегирует несколько источников параллельно.
-  * Запускает агрегацию отдельных источников в отдельных потоках, затем объединяет результаты.
-  * Если final=false, агрегатные функции не финализируются, то есть, не заменяются на своё значение, а содержат промежуточное состояние вычислений.
+  * Производит агрегацию блоков из разных источников независимо в разных потоках, затем объединяет результаты.
+  * Если final == false, агрегатные функции не финализируются, то есть, не заменяются на своё значение, а содержат промежуточное состояние вычислений.
   * Это необходимо, чтобы можно было продолжить агрегацию (например, объединяя потоки частично агрегированных данных).
   */
 class ParallelAggregatingBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	ParallelAggregatingBlockInputStream(BlockInputStreams inputs_, const ColumnNumbers & keys_,
-		AggregateDescriptions & aggregates_, bool overflow_row_, bool final_, unsigned max_threads_ = 1,
-		size_t max_rows_to_group_by_ = 0, OverflowMode group_by_overflow_mode_ = OverflowMode::THROW)
-		: aggregator(new Aggregator(keys_, aggregates_, overflow_row_, max_rows_to_group_by_, group_by_overflow_mode_)),
-		has_been_read(false), final(final_), max_threads(max_threads_), pool(std::min(max_threads, inputs_.size()))
+	ParallelAggregatingBlockInputStream(BlockInputStreams inputs, const ColumnNumbers & keys_,
+		AggregateDescriptions & aggregates_, bool overflow_row_, bool final_, size_t max_threads_,
+		size_t max_rows_to_group_by_, OverflowMode group_by_overflow_mode_,
+		Compiler * compiler_, UInt32 min_count_to_compile_)
+		: aggregator(keys_, aggregates_, overflow_row_, max_rows_to_group_by_, group_by_overflow_mode_, compiler_, min_count_to_compile_),
+		final(final_), max_threads(std::min(inputs.size(), max_threads_)),
+		keys_size(keys_.size()), aggregates_size(aggregates_.size()),
+		handler(*this), processor(inputs, max_threads, handler)
 	{
-		children.insert(children.end(), inputs_.begin(), inputs_.end());
+		children.insert(children.end(), inputs.begin(), inputs.end());
 	}
 
 	/** Столбцы из key_names и аргументы агрегатных функций, уже должны быть вычислены.
 	  */
-	ParallelAggregatingBlockInputStream(BlockInputStreams inputs_, const Names & key_names,
-		const AggregateDescriptions & aggregates,	bool overflow_row_, bool final_, unsigned max_threads_ = 1,
-		size_t max_rows_to_group_by_ = 0, OverflowMode group_by_overflow_mode_ = OverflowMode::THROW)
-		: has_been_read(false), final(final_), max_threads(max_threads_), pool(std::min(max_threads, inputs_.size()))
+	ParallelAggregatingBlockInputStream(BlockInputStreams inputs, const Names & key_names,
+		const AggregateDescriptions & aggregates,	bool overflow_row_, bool final_, size_t max_threads_,
+		size_t max_rows_to_group_by_, OverflowMode group_by_overflow_mode_,
+		Compiler * compiler_, UInt32 min_count_to_compile_)
+		: aggregator(key_names, aggregates, overflow_row_, max_rows_to_group_by_, group_by_overflow_mode_, compiler_, min_count_to_compile_),
+		final(final_), max_threads(std::min(inputs.size(), max_threads_)),
+		keys_size(key_names.size()), aggregates_size(aggregates.size()),
+		handler(*this), processor(inputs, max_threads, handler)
 	{
-		children.insert(children.end(), inputs_.begin(), inputs_.end());
-
-		aggregator = new Aggregator(key_names, aggregates, overflow_row_, max_rows_to_group_by_, group_by_overflow_mode_);
+		children.insert(children.end(), inputs.begin(), inputs.end());
 	}
 
 	String getName() const override { return "ParallelAggregatingBlockInputStream"; }
@@ -58,58 +62,168 @@ public:
 		for (size_t i = 0; i < children_ids.size(); ++i)
 			res << (i == 0 ? "" : ", ") << children_ids[i];
 
-		res << ", " << aggregator->getID() << ")";
+		res << ", " << aggregator.getID() << ")";
 		return res.str();
+	}
+
+	void cancel() override
+	{
+		if (!__sync_bool_compare_and_swap(&is_cancelled, false, true))
+			return;
+
+		processor.cancel();
 	}
 
 protected:
 	Block readImpl() override
 	{
-		if (has_been_read)
-			return Block();
-
-		has_been_read = true;
-
-		ManyAggregatedDataVariants many_data(children.size());
-		Exceptions exceptions(children.size());
-
-		for (size_t i = 0, size = many_data.size(); i < size; ++i)
+		if (!executed)
 		{
-			many_data[i] = new AggregatedDataVariants;
-			pool.schedule(std::bind(&ParallelAggregatingBlockInputStream::calculate, this,
-				std::ref(children[i]), std::ref(*many_data[i]), std::ref(exceptions[i]), current_memory_tracker));
+			executed = true;
+			AggregatedDataVariantsPtr data_variants = executeAndMerge();
+
+			if (data_variants)
+				blocks = aggregator.convertToBlocks(*data_variants, final, max_threads);
+
+			it = blocks.begin();
 		}
-		pool.wait();
+
+		Block res;
+		if (isCancelled() || it == blocks.end())
+			return res;
+
+		res = *it;
+		++it;
+
+		return res;
+	}
+
+private:
+	Aggregator aggregator;
+	bool final;
+	size_t max_threads;
+
+	size_t keys_size;
+	size_t aggregates_size;
+
+	/** Используется, если есть ограничение на максимальное количество строк при агрегации,
+	  *  и если group_by_overflow_mode == ANY.
+	  * В этом случае, новые ключи не добавляются в набор, а производится агрегация только по
+	  *  ключам, которые уже успели попасть в набор.
+	  */
+	bool no_more_keys = false;
+
+	bool executed = false;
+	BlocksList blocks;
+	BlocksList::iterator it;
+
+	Logger * log = &Logger::get("ParallelAggregatingBlockInputStream");
+
+
+	struct Handler
+	{
+		Handler(ParallelAggregatingBlockInputStream & parent_)
+			: parent(parent_) {}
+
+		void onBlock(Block & block, size_t thread_num)
+		{
+			parent.aggregator.executeOnBlock(block, *parent.many_data[thread_num],
+				parent.threads_data[thread_num].key_columns, parent.threads_data[thread_num].aggregate_columns,
+				parent.threads_data[thread_num].key_sizes, parent.threads_data[thread_num].key, parent.no_more_keys);
+
+			parent.threads_data[thread_num].src_rows += block.rowsInFirstColumn();
+			parent.threads_data[thread_num].src_bytes += block.bytes();
+		}
+
+		void onFinish()
+		{
+		}
+
+		void onException(ExceptionPtr & exception, size_t thread_num)
+		{
+			parent.exceptions[thread_num] = exception;
+			parent.cancel();
+		}
+
+		ParallelAggregatingBlockInputStream & parent;
+	};
+
+	Handler handler;
+	ParallelInputsProcessor<Handler> processor;
+
+	ManyAggregatedDataVariants many_data;
+	Exceptions exceptions;
+
+	struct ThreadData
+	{
+		size_t src_rows = 0;
+		size_t src_bytes = 0;
+
+		StringRefs key;
+		ConstColumnPlainPtrs key_columns;
+		Aggregator::AggregateColumns aggregate_columns;
+		Sizes key_sizes;
+
+		ThreadData(size_t keys_size, size_t aggregates_size)
+		{
+			key.resize(keys_size);
+			key_columns.resize(keys_size);
+			aggregate_columns.resize(aggregates_size);
+			key_sizes.resize(keys_size);
+		}
+	};
+
+	std::vector<ThreadData> threads_data;
+
+	AggregatedDataVariantsPtr executeAndMerge()
+	{
+		many_data.resize(max_threads);
+		exceptions.resize(max_threads);
+
+		for (size_t i = 0; i < max_threads; ++i)
+			threads_data.emplace_back(keys_size, aggregates_size);
+
+		LOG_TRACE(log, "Aggregating");
+
+		Stopwatch watch;
+
+		for (auto & elem : many_data)
+			elem = new AggregatedDataVariants;
+
+		processor.process();
+		processor.wait();
 
 		rethrowFirstException(exceptions);
 
 		if (isCancelled())
-			return Block();
+			return nullptr;
 
-		AggregatedDataVariantsPtr res = aggregator->merge(many_data);
-		return aggregator->convertToBlock(*res, final);
-	}
+		double elapsed_seconds = watch.elapsedSeconds();
 
-private:
-	SharedPtr<Aggregator> aggregator;
-	bool has_been_read;
-	bool final;
-	size_t max_threads;
-	boost::threadpool::pool pool;
-
-	/// Вычисления, которые выполняются в отдельном потоке
-	void calculate(BlockInputStreamPtr & input, AggregatedDataVariants & data, ExceptionPtr & exception, MemoryTracker * memory_tracker)
-	{
-		current_memory_tracker = memory_tracker;
-
-		try
+		size_t total_src_rows = 0;
+		size_t total_src_bytes = 0;
+		for (size_t i = 0; i < max_threads; ++i)
 		{
-			aggregator->execute(input, data);
+			size_t rows = many_data[i]->size();
+			LOG_TRACE(log, std::fixed << std::setprecision(3)
+				<< "Aggregated. " << threads_data[i].src_rows << " to " << rows << " rows"
+					<< " (from " << threads_data[i].src_bytes / 1048576.0 << " MiB)"
+				<< " in " << elapsed_seconds << " sec."
+				<< " (" << threads_data[i].src_rows / elapsed_seconds << " rows/sec., "
+					<< threads_data[i].src_bytes / elapsed_seconds / 1048576.0 << " MiB/sec.)");
+
+			total_src_rows += threads_data[i].src_rows;
+			total_src_bytes += threads_data[i].src_bytes;
 		}
-		catch (...)
-		{
-			exception = cloneCurrentException();
-		}
+		LOG_TRACE(log, std::fixed << std::setprecision(3)
+			<< "Total aggregated. " << total_src_rows << " rows (from " << total_src_bytes / 1048576.0 << " MiB)"
+			<< " in " << elapsed_seconds << " sec."
+			<< " (" << total_src_rows / elapsed_seconds << " rows/sec., " << total_src_bytes / elapsed_seconds / 1048576.0 << " MiB/sec.)");
+
+		if (isCancelled())
+			return nullptr;
+
+		return aggregator.merge(many_data, max_threads);
 	}
 };
 

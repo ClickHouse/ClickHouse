@@ -18,10 +18,10 @@ public:
 	bool is_explicit = false;
 
 	ASTSet(const String & column_name_) : column_name(column_name_) {}
-	ASTSet(StringRange range_, const String & column_name_) : IAST(range_), column_name(column_name_) {}
-	String getID() const { return "Set_" + getColumnName(); }
-	ASTPtr clone() const { return new ASTSet(*this); }
-	String getColumnName() const { return column_name; }
+	ASTSet(const StringRange range_, const String & column_name_) : IAST(range_), column_name(column_name_) {}
+	String getID() const override { return "Set_" + getColumnName(); }
+	ASTPtr clone() const override { return new ASTSet(*this); }
+	String getColumnName() const override { return column_name; }
 };
 
 }

@@ -17,6 +17,8 @@
 #include <DB/IO/copyData.h>
 
 #include <DB/DataStreams/AsynchronousBlockInputStream.h>
+#include <DB/DataStreams/NativeBlockInputStream.h>
+#include <DB/DataStreams/NativeBlockOutputStream.h>
 #include <DB/Interpreters/executeQuery.h>
 
 #include <DB/Storages/StorageMemory.h>
@@ -597,12 +599,10 @@ void TCPHandler::initBlockInput()
 		else
 			state.maybe_compressed_in = in;
 
-		state.block_in = query_context.getFormatFactory().getInput(
-			"Native",
+		state.block_in = new NativeBlockInputStream(
 			*state.maybe_compressed_in,
-			state.io.out_sample,
-			query_context.getSettingsRef().max_insert_block_size,	/// Реально не используется в формате Native.
-			query_context.getDataTypeFactory());
+			query_context.getDataTypeFactory(),
+			client_revision);
 	}
 }
 
@@ -616,10 +616,9 @@ void TCPHandler::initBlockOutput()
 		else
 			state.maybe_compressed_out = out;
 
-		state.block_out = query_context.getFormatFactory().getOutput(
-			"Native",
+		state.block_out = new NativeBlockOutputStream(
 			*state.maybe_compressed_out,
-			state.io.in_sample);
+			client_revision);
 	}
 }
 

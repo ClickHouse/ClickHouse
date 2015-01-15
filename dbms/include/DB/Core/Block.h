@@ -5,6 +5,7 @@
 #include <list>
 #include <initializer_list>
 
+#include <DB/Core/BlockInfo.h>
 #include <DB/Core/ColumnWithNameAndType.h>
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/Core/Exception.h>
@@ -35,6 +36,8 @@ private:
 	IndexByName_t index_by_name;
 
 public:
+	BlockInfo info;
+
 	Block() = default;
 	Block(std::initializer_list<ColumnWithNameAndType> il) : data{il}
 	{
@@ -125,4 +128,12 @@ typedef std::list<Block> BlocksList;
 /// Сравнить типы столбцов у блоков. Порядок столбцов имеет значение. Имена не имеют значения.
 bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs);
 
+}
+
+namespace std
+{
+	template<> inline void swap<DB::Block>(DB::Block & one, DB::Block & another)
+	{
+		one.swap(another);
+	}
 }
