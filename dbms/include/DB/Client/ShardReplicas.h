@@ -1,17 +1,18 @@
 #pragma once
 
 #include <DB/Client/Connection.h>
-#include <DB/Client/ConnectionPool.h>
 
 namespace DB
 {
+	class IConnectionPool;
+
 	/**
 	  * Множество реплик одного шарда.
 	  */
 	class ShardReplicas final
 	{
 	public:
-		ShardReplicas(std::vector<ConnectionPool::Entry> & entries, const Settings & settings_);
+		ShardReplicas(IConnectionPool * pool_, Settings * settings_);
 
 		~ShardReplicas() = default;
 
@@ -22,8 +23,8 @@ namespace DB
 		Connection::Packet receivePacket();
 
 		/// Отправить запрос ко всем репликам.
-		void sendQuery(const String & query, const String & query_id = "",
-					   UInt64 stage = QueryProcessingStage::Complete, bool with_pending_data = false);
+		void sendQuery(const String & query, const String & query_id = "", UInt64 stage = QueryProcessingStage::Complete,
+					   const Settings * settings_ = nullptr, bool with_pending_data = false);
 
 		/// Разорвать соединения ко всем репликам
 		void disconnect();
@@ -55,7 +56,7 @@ namespace DB
 			/// Соединение к реплике
 			Connection * connection;
 
-			/// Номер следующего ожидаемого пакета.
+			/// Номер следующего ожиданного пакета.
 			int next_packet_number = 0;
 
 			/// Есть ли данные, которые можно прочитать?
@@ -76,12 +77,12 @@ namespace DB
 		int waitForReadEvent();
 
 	private:
-		const Settings & settings;
+		Settings * settings;
 
 		ReplicaHash replica_hash;
 		size_t valid_replicas_count;
 
-		/// Номер следующего ожидаемого пакета.
+		/// Номер следующего ожиданного пакета.
 		int next_packet_number = 0;
 	};
 }

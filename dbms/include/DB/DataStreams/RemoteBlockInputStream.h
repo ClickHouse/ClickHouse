@@ -8,7 +8,7 @@
 #include <DB/Interpreters/Context.h>
 
 #include <DB/Client/ConnectionPool.h>
-#include <DB/Client/ReplicasConnections.h>
+#include <DB/Client/ShardReplicas.h>
 
 
 namespace DB
@@ -87,7 +87,7 @@ public:
 		{
 			std::string addresses;
 			if (use_many_replicas)
-				addresses = replicas_connections->dumpAddresses();
+				addresses = shard_replicas->dumpAddresses();
 			else
 				addresses = connection->getServerAddress();
 
@@ -95,7 +95,7 @@ public:
 
 			/// Если запрошено прервать запрос - попросим удалённый сервер тоже прервать запрос.
 			if (use_many_replicas)
-				replicas_connections->sendCancel();
+				shard_replicas->sendCancel();
 			else
 				connection->sendCancel();
 
@@ -112,7 +112,7 @@ public:
 		if (sent_query && !finished)
 		{
 			if (use_many_replicas)
-				replicas_connections->disconnect();
+				shard_replicas->disconnect();
 			else
 				connection->disconnect();
 		}
@@ -122,7 +122,7 @@ protected:
 	/// Отправить на удаленные сервера все временные таблицы
 	void sendExternalTables()
 	{
-		size_t count = use_many_replicas ? replicas_connections->size() : 1;
+		size_t count = use_many_replicas ? shard_replicas->size() : 1;
 
 		std::vector<ExternalTablesData> instances;
 		instances.reserve(count);
@@ -145,7 +145,7 @@ protected:
 		}
 
 		if (use_many_replicas)
-			replicas_connections->sendExternalTablesData(instances);
+			shard_replicas->sendExternalTablesData(instances);
 		else
 			connection->sendExternalTablesData(instances[0]);
 	}
@@ -156,8 +156,8 @@ protected:
 		{
 			if (use_many_replicas)
 			{
-				replicas_connections.reset(new ReplicasConnections(pool, &settings));
-				replicas_connections->sendQuery(query, "", stage, &settings, true);
+				shard_replicas.reset(new ShardReplicas(pool, &settings));
+				shard_replicas->sendQuery(query, "", stage, &settings, true);
 			}
 			else
 			{
@@ -177,7 +177,7 @@ protected:
 
 		while (true)
 		{
-			Connection::Packet packet = use_many_replicas ? replicas_connections->receivePacket() : connection->receivePacket();
+			Connection::Packet packet = use_many_replicas ? shard_replicas->receivePacket() : connection->receivePacket();
 
 			switch (packet.type)
 			{
@@ -248,7 +248,7 @@ protected:
 		{
 			std::string addresses;
 			if (use_many_replicas)
-				addresses = replicas_connections->dumpAddresses();
+				addresses = shard_replicas->dumpAddresses();
 			else
 				addresses = connection->getServerAddress();
 
@@ -257,13 +257,13 @@ protected:
 			was_cancelled = true;
 
 			if (use_many_replicas)
-				replicas_connections->sendCancel();
+				shard_replicas->sendCancel();
 			else
 				connection->sendCancel();
 		}
 
 		if (use_many_replicas)
-			replicas_connections->drainResidualPackets();
+			shard_replicas->drainResidualPackets();
 		else
 		{
 			/// Получим оставшиеся пакеты, чтобы не было рассинхронизации в соединении с сервером.
@@ -302,7 +302,7 @@ private:
 	ConnectionPool::Entry pool_entry;
 	Connection * connection = nullptr;
 
-	std::unique_ptr<ReplicasConnections> replicas_connections;
+	std::unique_ptr<ShardReplicas> shard_replicas;
 
 	const String query;
 	bool send_settings;
