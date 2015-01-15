@@ -122,25 +122,32 @@ protected:
 	/// Отправить на удаленные сервера все временные таблицы
 	void sendExternalTables()
 	{
-		ExternalTablesData res;
-		for (const auto & table : external_tables)
+		size_t count = use_many_replicas ? replicas_connections->size() : 1;
+
+		std::vector<ExternalTablesData> instances;
+		instances.reserve(count);
+
+		for (size_t i = 0; i < count; ++i)
 		{
-			StoragePtr cur = table.second;
-			QueryProcessingStage::Enum stage = QueryProcessingStage::Complete;
-			DB::BlockInputStreams input = cur->read(cur->getColumnNamesList(), ASTPtr(), context, settings,
-				stage, DEFAULT_BLOCK_SIZE, 1);
-			if (input.size() == 0)
-				res.push_back(std::make_pair(new OneBlockInputStream(cur->getSampleBlock()), table.first));
-			else
-				res.push_back(std::make_pair(input[0], table.first));
+			ExternalTablesData res;
+			for (const auto & table : external_tables)
+			{
+				StoragePtr cur = table.second;
+				QueryProcessingStage::Enum stage = QueryProcessingStage::Complete;
+				DB::BlockInputStreams input = cur->read(cur->getColumnNamesList(), ASTPtr(), context, settings,
+					stage, DEFAULT_BLOCK_SIZE, 1);
+				if (input.size() == 0)
+					res.push_back(std::make_pair(new OneBlockInputStream(cur->getSampleBlock()), table.first));
+				else
+					res.push_back(std::make_pair(input[0], table.first));
+			}
+			instances.push_back(std::move(res));
 		}
+
 		if (use_many_replicas)
-		{
-			/// XXX Отправить res по всем соединениям.
-			//replicas_connections->sendExternalTablesData(res);
-		}
+			replicas_connections->sendExternalTablesData(instances);
 		else
-			connection->sendExternalTablesData(res);
+			connection->sendExternalTablesData(instances[0]);
 	}
 
 	Block readImpl() override

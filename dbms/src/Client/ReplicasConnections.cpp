@@ -236,4 +236,23 @@ namespace DB
 
 		return os.str();
 	}
+
+	size_t ReplicasConnections::size() const
+	{
+		return connection_hash.size();
+	}
+
+	void ReplicasConnections::sendExternalTablesData(std::vector<ExternalTablesData> & data)
+	{
+		if (data.size() != connection_hash.size())
+			throw Exception("Mismatch between replicas and data sources", ErrorCodes::MISMATCH_REPLICAS_DATA_SOURCES);
+
+		auto it = data.begin();
+		for (auto & e : connection_hash)
+		{
+			Connection * connection = e.second.connection;
+			connection->sendExternalTablesData(*it);
+			++it;
+		}
+	}
 }
