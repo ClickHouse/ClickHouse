@@ -637,7 +637,7 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 		}
 	}
 
-	size_t result_size = result.size();
+	size_t result_size = result.sizeWithoutOverflowRow();
 
 	/// Если результат уже достаточно большой, и его можно сконвертировать в двухуровневую хэш-таблицу.
 	constexpr auto TWO_LEVEL_HASH_TABLE_THRESHOLD = 30000;
@@ -889,7 +889,7 @@ BlocksList Aggregator::prepareBlocksAndFillWithoutKey(AggregatedDataVariants & d
 
 BlocksList Aggregator::prepareBlocksAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final) const
 {
-	size_t rows = data_variants.size();
+	size_t rows = data_variants.sizeWithoutOverflowRow();
 
 	auto filler = [&data_variants, this](
 		ColumnPlainPtrs & key_columns,
@@ -1039,7 +1039,7 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
 		return blocks;
 
 	std::unique_ptr<boost::threadpool::pool> thread_pool;
-	if (max_threads > 1 && data_variants.size() > 100000	/// TODO Сделать настраиваемый порог.
+	if (max_threads > 1 && data_variants.sizeWithoutOverflowRow() > 100000	/// TODO Сделать настраиваемый порог.
 		&& data_variants.isTwoLevel())						/// TODO Использовать общий тред-пул с функцией merge.
 		thread_pool.reset(new boost::threadpool::pool(max_threads));
 

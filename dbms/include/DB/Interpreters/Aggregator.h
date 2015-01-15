@@ -520,6 +520,24 @@ struct AggregatedDataVariants : private boost::noncopyable
 		}
 	}
 
+	/// Размер без учёта строчки, в которую записываются данные для расчёта TOTALS.
+	size_t sizeWithoutOverflowRow() const
+	{
+		switch (type)
+		{
+			case Type::EMPTY:		return 0;
+			case Type::without_key:	return 1;
+
+			#define M(NAME, IS_TWO_LEVEL) \
+			case Type::NAME: return NAME->data.size();
+			APPLY_FOR_AGGREGATED_VARIANTS(M)
+			#undef M
+
+			default:
+				throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+		}
+	}
+
 	const char * getMethodName() const
 	{
 		switch (type)
