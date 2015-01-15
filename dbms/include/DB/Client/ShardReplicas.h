@@ -56,7 +56,7 @@ namespace DB
 			/// Соединение к реплике
 			Connection * connection;
 
-			/// Номер следующего ожиданного пакета.
+			/// Номер следующего ожидаемого пакета.
 			int next_packet_number = 0;
 
 			/// Есть ли данные, которые можно прочитать?
@@ -82,7 +82,7 @@ namespace DB
 		ReplicaHash replica_hash;
 		size_t valid_replicas_count;
 
-		/// Номер следующего ожиданного пакета.
+		/// Номер следующего ожидаемого пакета.
 		int next_packet_number = 0;
 	};
 }
