@@ -122,7 +122,7 @@ protected:
 	/// Отправить на удаленные сервера все временные таблицы
 	void sendExternalTables()
 	{
-		size_t count = use_many_replicas ? shard_replicas->size() : 1;
+		size_t count = use_many_replicas ? replicas_connections->size() : 1;
 
 		std::vector<ExternalTablesData> instances;
 		instances.reserve(count);
@@ -145,12 +145,9 @@ protected:
 		}
 
 		if (use_many_replicas)
-		{
-			/// XXX Отправить res по всем соединениям.
-			//replicas_connections->sendExternalTablesData(res);
-		}
+			replicas_connections->sendExternalTablesData(instances);
 		else
-			connection->sendExternalTablesData(res);
+			connection->sendExternalTablesData(instances[0]);
 	}
 
 	Block readImpl() override
