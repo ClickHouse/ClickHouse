@@ -44,6 +44,10 @@ namespace DB
 
 		std::string dumpAddresses() const;
 
+		size_t size() const;
+
+		void sendExternalTablesData(std::vector<ExternalTablesData> & data);
+
 	private:
 		using ConnectionHash = std::unordered_map<int, ConnectionInfo>;
 
