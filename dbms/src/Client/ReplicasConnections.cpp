@@ -83,13 +83,6 @@ namespace DB
 			{
 				Connection::Packet packet = info.connection->receivePacket();
 
-				if (info.packet_number == next_packet_number)
-				{
-					++info.packet_number;
-					++next_packet_number;
-					return packet;
-				}
-
 				switch (packet.type)
 				{
 					case Protocol::Server::Data:
@@ -97,8 +90,6 @@ namespace DB
 					case Protocol::Server::ProfileInfo:
 					case Protocol::Server::Totals:
 					case Protocol::Server::Extremes:
-					case Protocol::Server::Exception:
-						++info.packet_number;
 						break;
 
 					default:
@@ -106,6 +97,15 @@ namespace DB
 						--valid_connections_count;
 						break;
 				}
+
+				if (info.packet_number == next_packet_number)
+				{
+					++info.packet_number;
+					++next_packet_number;
+					return packet;
+				}
+				else
+					++info.packet_number;
 			}
 		}
 	}
@@ -118,5 +118,103 @@ namespace DB
 			Connection * connection = e.second.connection;
 			connection->sendQuery(query, query_id, stage, settings_, with_pending_data);
 		}
+	}
+
+	void ReplicasConnections::disconnect()
+	{
+		for (auto & e : connection_hash)
+		{
+			ConnectionInfo & info = e.second;
+			if (info.is_valid)
+			{
+				Connection * connection = info.connection;
+				connection->disconnect();
+			}
+		}
+	}
+
+	void ReplicasConnections::sendCancel()
+	{
+		for (auto & e : connection_hash)
+		{
+			ConnectionInfo & info = e.second;
+			if (info.is_valid)
+			{
+				Connection * connection = info.connection;
+				connection->sendCancel();
+			}
+		}
+	}
+
+	void ReplicasConnections::drainResidualPackets()
+	{
+		bool caught_exceptions = false;
+
+		for (auto & e : connection_hash)
+		{
+			ConnectionInfo & info = e.second;
+			if (info.is_valid)
+			{
+				Connection * connection = info.connection;
+				bool again = true;
+
+				while (again)
+				{
+					Connection::Packet packet = connection->receivePacket();
+
+					switch (packet.type)
+					{
+						case Protocol::Server::Data:
+						case Protocol::Server::Progress:
+						case Protocol::Server::ProfileInfo:
+						case Protocol::Server::Totals:
+						case Protocol::Server::Extremes:
+							break;
+
+						case Protocol::Server::EndOfStream:
+							again = false;
+							continue;
+
+						case Protocol::Server::Exception:
+							// Accumulate info from packet.exception
+							caught_exceptions = true;
+							again = false;
+							continue;
+
+						default:
+							// Accumulate info (server address)
+							caught_exceptions = true;
+							again = false;
+							continue;
+					}
+				}
+			}
+		}
+
+		if (caught_exceptions)
+		{
+		}
+	}
+
+	std::string ReplicasConnections::dumpAddresses() const
+	{
+		if (valid_connections_count == 0)
+			return "";
+
+		std::ostringstream os;
+		for (auto & e : connection_hash)
+		{
+			char prefix = '\0';
+			const ConnectionInfo & info = e.second;
+			if (info.is_valid)
+			{
+				const Connection * connection = info.connection;
+				os << prefix << connection->getServerAddress();
+				if (prefix == '\0')
+					prefix = ';';
+			}
+		}
+
+		return os.str();
 	}
 }
