@@ -87,7 +87,7 @@ public:
 		{
 			std::string addresses;
 			if (use_many_replicas)
-				addresses = shard_replicas->dumpAddresses();
+				addresses = replicas_connections->dumpAddresses();
 			else
 				addresses = connection->getServerAddress();
 
@@ -95,7 +95,7 @@ public:
 
 			/// Если запрошено прервать запрос - попросим удалённый сервер тоже прервать запрос.
 			if (use_many_replicas)
-				shard_replicas->sendCancel();
+				replicas_connections->sendCancel();
 			else
 				connection->sendCancel();
 
@@ -112,7 +112,7 @@ public:
 		if (sent_query && !finished)
 		{
 			if (use_many_replicas)
-				shard_replicas->disconnect();
+				replicas_connections->disconnect();
 			else
 				connection->disconnect();
 		}
@@ -192,11 +192,27 @@ protected:
 
 				case Protocol::Server::Exception:
 					got_exception_from_server = true;
+
+					if (use_many_replicas)
+					{
+						// Cancel and drain all the remaining connections.
+						replicas_connections->sendCancel();
+						replicas_connections->drainResidualPackets();
+					}
+
 					packet.exception->rethrow();
 					break;
 
 				case Protocol::Server::EndOfStream:
 					finished = true;
+
+					if (use_many_replicas)
+					{
+						// Cancel and drain all the remaining connections.
+						replicas_connections->sendCancel();
+						replicas_connections->drainResidualPackets();
+					}
+
 					return Block();
 
 				case Protocol::Server::Progress:
@@ -251,7 +267,7 @@ protected:
 		{
 			std::string addresses;
 			if (use_many_replicas)
-				addresses = shard_replicas->dumpAddresses();
+				addresses = replicas_connections->dumpAddresses();
 			else
 				addresses = connection->getServerAddress();
 
@@ -260,13 +276,13 @@ protected:
 			was_cancelled = true;
 
 			if (use_many_replicas)
-				shard_replicas->sendCancel();
+				replicas_connections->sendCancel();
 			else
 				connection->sendCancel();
 		}
 
 		if (use_many_replicas)
-			shard_replicas->drainResidualPackets();
+			replicas_connections->drainResidualPackets();
 		else
 		{
 			/// Получим оставшиеся пакеты, чтобы не было рассинхронизации в соединении с сервером.
