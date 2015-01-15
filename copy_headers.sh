@@ -23,7 +23,7 @@ for i in $(clang -M -xc++ -std=gnu++1y -Wall -Werror -march=native -O3 -g -fPIC 
 	$SOURCE_PATH/dbms/include/DB/Interpreters/SpecializedAggregator.h |
 	tr -d '\\' |
 	grep -v '.o:' |
-	ssed -R -e 's/^.+\.cpp / /');
+	sed -r -e 's/^.+\.cpp / /');
 do
 	mkdir -p $DST/$(echo $i | ssed -R -e 's/\/[^/]*$/\//');
 	cp $i $DST/$i;
