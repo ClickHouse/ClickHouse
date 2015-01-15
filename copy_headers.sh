@@ -25,6 +25,6 @@ for i in $(clang -M -xc++ -std=gnu++1y -Wall -Werror -march=native -O3 -g -fPIC 
 	grep -v '.o:' |
 	sed -r -e 's/^.+\.cpp / /');
 do
-	mkdir -p $DST/$(echo $i | ssed -R -e 's/\/[^/]*$/\//');
+	mkdir -p $DST/$(echo $i | sed -r -e 's/\/[^/]*$/\//');
 	cp $i $DST/$i;
 done
