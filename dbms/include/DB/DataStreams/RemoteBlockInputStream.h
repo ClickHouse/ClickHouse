@@ -156,8 +156,16 @@ protected:
 		{
 			if (use_many_replicas)
 			{
-				shard_replicas.reset(new ShardReplicas(pool, &settings));
-				shard_replicas->sendQuery(query, "", stage, &settings, true);
+				auto entries = pool->getMany(&settings);
+				if (entries.size() > 1)
+					shard_replicas.reset(new ShardReplicas(entries, &settings));
+				else if (entries.size() == 1)
+				{
+					use_many_replicas = false;
+					connection = &*entries[0];
+				}
+				else // XXX Придумать исключение + сообщение
+					throw Exception("");
 			}
 			else
 			{
@@ -167,9 +175,12 @@ protected:
 					pool_entry = pool->get(send_settings ? &settings : nullptr);
 					connection = &*pool_entry;
 				}
-
-				connection->sendQuery(query, "", stage, send_settings ? &settings : nullptr, true);
 			}
+
+			if (use_many_replicas)
+				shard_replicas->sendQuery(query, "", stage, &settings, true);
+			else
+				connection->sendQuery(query, "", stage, send_settings ? &settings : nullptr, true);				
 
 			sendExternalTables();
 			sent_query = true;

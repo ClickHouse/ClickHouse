@@ -1,18 +1,17 @@
 #pragma once
 
 #include <DB/Client/Connection.h>
+#include <DB/Client/ConnectionPool.h>
 
 namespace DB
 {
-	class IConnectionPool;
-
 	/**
 	  * Множество реплик одного шарда.
 	  */
 	class ShardReplicas final
 	{
 	public:
-		ShardReplicas(IConnectionPool * pool_, Settings * settings_);
+		ShardReplicas(std::vector<ConnectionPool::Entry> & entries, Settings * settings_);
 
 		~ShardReplicas() = default;
 
