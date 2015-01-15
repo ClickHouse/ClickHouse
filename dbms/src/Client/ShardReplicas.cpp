@@ -1,9 +1,9 @@
-#include <DB/Client/ReplicasConnections.h>
+#include <DB/Client/ShardReplicas.h>
 #include <DB/Client/ConnectionPool.h>
 
 namespace DB
 {
-	ReplicasConnections::ReplicasConnections(IConnectionPool * pool_, Settings * settings_) :
+	ShardReplicas::ShardReplicas(IConnectionPool * pool_, Settings * settings_) :
 		settings(settings_)
 	{
         auto entries = pool_->getMany(settings);
@@ -17,7 +17,7 @@ namespace DB
 		}
 	}
 
-	int ReplicasConnections::waitForReadEvent()
+	int ShardReplicas::waitForReadEvent()
 	{
 		if (valid_replicas_count == 0)
 			return 0;
@@ -50,7 +50,7 @@ namespace DB
         return n;
 	}
 
-	ReplicasConnections::Replica & ReplicasConnections::pickConnection()
+	ShardReplicas::Replica & ShardReplicas::pickReplica()
 	{
 		Replica * res = nullptr;
 
@@ -75,11 +75,11 @@ namespace DB
         return *res;
 	}
 
-	Connection::Packet ReplicasConnections::receivePacket()
+	Connection::Packet ShardReplicas::receivePacket()
 	{
 		while (true)
 		{
-			Replica & replica = pickConnection();
+			Replica & replica = pickReplica();
 			bool retry = false;
 
 			while (replica.is_valid)
@@ -131,7 +131,7 @@ namespace DB
 		}
 	}
 
-	void ReplicasConnections::sendQuery(const String & query, const String & query_id, UInt64 stage, 
+	void ShardReplicas::sendQuery(const String & query, const String & query_id, UInt64 stage, 
 				   const Settings * settings_, bool with_pending_data)
 	{
 		for (auto & e : replica_hash)
@@ -141,7 +141,7 @@ namespace DB
 		}
 	}
 
-	void ReplicasConnections::disconnect()
+	void ShardReplicas::disconnect()
 	{
 		for (auto & e : replica_hash)
 		{
@@ -154,7 +154,7 @@ namespace DB
 		}
 	}
 
-	void ReplicasConnections::sendCancel()
+	void ShardReplicas::sendCancel()
 	{
 		for (auto & e : replica_hash)
 		{
@@ -167,7 +167,7 @@ namespace DB
 		}
 	}
 
-	void ReplicasConnections::drainResidualPackets()
+	void ShardReplicas::drainResidualPackets()
 	{
 		bool caught_exceptions = false;
 
@@ -197,13 +197,13 @@ namespace DB
 							continue;
 
 						case Protocol::Server::Exception:
-							// Accumulate replica from packet.exception
+							// XXX Что делать?
 							caught_exceptions = true;
 							again = false;
 							continue;
 
 						default:
-							// Accumulate replica (server address)
+							// XXX Что делать?
 							caught_exceptions = true;
 							again = false;
 							continue;
@@ -218,7 +218,7 @@ namespace DB
 		}
 	}
 
-	std::string ReplicasConnections::dumpAddresses() const
+	std::string ShardReplicas::dumpAddresses() const
 	{
 		if (valid_replicas_count == 0)
 			return "";
@@ -240,7 +240,7 @@ namespace DB
 		return os.str();
 	}
 
-	void ReplicasConnections::sendExternalTablesData(std::vector<ExternalTablesData> & data)
+	void ShardReplicas::sendExternalTablesData(std::vector<ExternalTablesData> & data)
 	{
 		if (data.size() != replica_hash.size())
 			throw Exception("Mismatch between replicas and data sources", ErrorCodes::MISMATCH_REPLICAS_DATA_SOURCES);
