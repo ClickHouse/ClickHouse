@@ -34,26 +34,26 @@ namespace DB
 				read_list.push_back(replica.connection->socket);
 		}
 
-        int n = Poco::Net::Socket::select(read_list, write_list, except_list, settings.poll_interval * 1000000);
+		int n = Poco::Net::Socket::select(read_list, write_list, except_list, settings.poll_interval * 1000000);
 
-        for (const auto & socket : read_list) 
+		for (const auto & socket : read_list) 
 		{
 			auto it = replica_hash.find(socket.impl()->sockfd());
 			if (it == replica_hash.end())
 				throw Exception("Unexpected replica", ErrorCodes::UNEXPECTED_REPLICA);
 			Replica & replica = it->second;
 			replica.can_read = true;
-        }
+		}
 
-        return n;
+		return n;
 	}
 
 	ShardReplicas::Replica & ShardReplicas::pickReplica()
 	{
 		Replica * res = nullptr;
 
-        int n = waitForReadEvent();
-        if (n > 0)
+		int n = waitForReadEvent();
+		if (n > 0)
 		{
 			int max_packet_number = -1;
 			for (auto & e : replica_hash) 
@@ -70,7 +70,7 @@ namespace DB
 		if (res == nullptr)
 			throw Exception("No available replica", ErrorCodes::NO_AVAILABLE_REPLICA);
 
-        return *res;
+		return *res;
 	}
 
 	Connection::Packet ShardReplicas::receivePacket()
