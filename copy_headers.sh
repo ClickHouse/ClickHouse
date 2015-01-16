@@ -18,13 +18,15 @@
 SOURCE_PATH=${1:-.}
 DST=${2:-$SOURCE_PATH/../headers};
 
+PATH="/usr/local/bin:/usr/local/sbin:/usr/bin:$PATH"
+
 for i in $(clang -M -xc++ -std=gnu++1y -Wall -Werror -march=native -O3 -g -fPIC \
 	$(cat $SOURCE_PATH/CMakeLists.txt | grep include_directories | grep -v METRICA_BINARY_DIR | sed -e "s!\${METRICA_SOURCE_DIR}!$SOURCE_PATH!; s!include_directories (!-I !; s!)!!;" | tr '\n' ' ') \
 	$SOURCE_PATH/dbms/include/DB/Interpreters/SpecializedAggregator.h |
 	tr -d '\\' |
 	grep -v '.o:' |
-	ssed -R -e 's/^.+\.cpp / /');
+	sed -r -e 's/^.+\.cpp / /');
 do
-	mkdir -p $DST/$(echo $i | ssed -R -e 's/\/[^/]*$/\//');
+	mkdir -p $DST/$(echo $i | sed -r -e 's/\/[^/]*$/\//');
 	cp $i $DST/$i;
 done
