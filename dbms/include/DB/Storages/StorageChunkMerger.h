@@ -33,6 +33,8 @@ public:
 	std::string getName() const override { return "ChunkMerger"; }
 	std::string getTableName() const override { return name; }
 
+	bool supportsParallelReplicas() const override { return true; }
+
 	const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
 	NameAndTypePair getColumn(const String & column_name) const override;
 	bool hasColumn(const String & column_name) const override;
