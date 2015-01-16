@@ -273,7 +273,6 @@ Block Block::cloneEmpty() const
 {
 	Block res;
 
-	res.info = info;
 	for (Container_t::const_iterator it = data.begin(); it != data.end(); ++it)
 		res.insert(it->cloneEmpty());
 
