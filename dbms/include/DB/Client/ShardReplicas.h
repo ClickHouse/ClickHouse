@@ -11,7 +11,7 @@ namespace DB
 	class ShardReplicas final
 	{
 	public:
-		ShardReplicas(std::vector<ConnectionPool::Entry> & entries, Settings * settings_);
+		ShardReplicas(std::vector<ConnectionPool::Entry> & entries, const Settings & settings_);
 
 		~ShardReplicas() = default;
 
@@ -22,8 +22,8 @@ namespace DB
 		Connection::Packet receivePacket();
 
 		/// Отправить запрос ко всем репликам.
-		void sendQuery(const String & query, const String & query_id = "", UInt64 stage = QueryProcessingStage::Complete,
-					   const Settings * settings_ = nullptr, bool with_pending_data = false);
+		void sendQuery(const String & query, const String & query_id = "",
+					   UInt64 stage = QueryProcessingStage::Complete, bool with_pending_data = false);
 
 		/// Разорвать соединения ко всем репликам
 		void disconnect();
@@ -76,7 +76,7 @@ namespace DB
 		int waitForReadEvent();
 
 	private:
-		Settings * settings;
+		const Settings & settings;
 
 		ReplicaHash replica_hash;
 		size_t valid_replicas_count;

@@ -2,7 +2,7 @@
 
 namespace DB
 {
-	ShardReplicas::ShardReplicas(std::vector<ConnectionPool::Entry> & entries, Settings * settings_) :
+	ShardReplicas::ShardReplicas(std::vector<ConnectionPool::Entry> & entries, const Settings & settings_) :
 		settings(settings_)
 	{
 		valid_replicas_count = entries.size();
@@ -34,7 +34,7 @@ namespace DB
 				read_list.push_back(replica.connection->socket);
 		}
 
-        int n = Poco::Net::Socket::select(read_list, write_list, except_list, settings->poll_interval * 1000000);
+        int n = Poco::Net::Socket::select(read_list, write_list, except_list, settings.poll_interval * 1000000);
 
         for (const auto & socket : read_list) 
 		{
@@ -129,13 +129,18 @@ namespace DB
 		}
 	}
 
-	void ShardReplicas::sendQuery(const String & query, const String & query_id, UInt64 stage, 
-				   const Settings * settings_, bool with_pending_data)
+	void ShardReplicas::sendQuery(const String & query, const String & query_id, UInt64 stage, bool with_pending_data)
 	{
+		Settings query_settings = settings;
+		query_settings.parallel_replicas_count = replica_hash.size();
+		UInt64 offset = 0;
+
 		for (auto & e : replica_hash)
 		{
 			Connection * connection = e.second.connection;
-			connection->sendQuery(query, query_id, stage, settings_, with_pending_data);
+			connection->sendQuery(query, query_id, stage, &query_settings, with_pending_data);
+			query_settings.parallel_replica_offset = offset;
+			++offset;
 		}
 	}
 
