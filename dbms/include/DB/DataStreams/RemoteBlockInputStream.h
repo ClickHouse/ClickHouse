@@ -158,7 +158,7 @@ protected:
 			{
 				auto entries = pool->getMany(&settings);
 				if (entries.size() > 1)
-					shard_replicas.reset(new ShardReplicas(entries, &settings));
+					shard_replicas.reset(new ShardReplicas(entries, settings));
 				else if (entries.size() == 1)
 				{
 					use_many_replicas = false;
@@ -176,7 +176,7 @@ protected:
 			}
 
 			if (use_many_replicas)
-				shard_replicas->sendQuery(query, "", stage, &settings, true);
+				shard_replicas->sendQuery(query, "", stage, true);
 			else
 				connection->sendQuery(query, "", stage, send_settings ? &settings : nullptr, true);				
 
