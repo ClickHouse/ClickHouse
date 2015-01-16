@@ -22,7 +22,7 @@ Block MergingAggregatedBlockInputStream::readImpl()
 	if (isCancelled() || it == blocks.end())
 		return res;
 
-	res = *it;
+	res = std::move(*it);
 	++it;
 
 	return res;

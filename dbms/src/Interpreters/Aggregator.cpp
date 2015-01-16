@@ -1071,7 +1071,7 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
 
 	double elapsed_seconds = watch.elapsedSeconds();
 	LOG_TRACE(log, std::fixed << std::setprecision(3)
-		<< "Converted aggregated data to block. "
+		<< "Converted aggregated data to blocks. "
 		<< rows << " rows, " << bytes / 1048576.0 << " MiB"
 		<< " in " << elapsed_seconds << " sec."
 		<< " (" << rows / elapsed_seconds << " rows/sec., " << bytes / elapsed_seconds / 1048576.0 << " MiB/sec.)");
