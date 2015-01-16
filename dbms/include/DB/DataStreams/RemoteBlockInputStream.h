@@ -164,8 +164,6 @@ protected:
 					use_many_replicas = false;
 					connection = &*entries[0];
 				}
-				else // XXX Придумать исключение + сообщение
-					throw Exception("");
 			}
 			else
 			{
