@@ -40,13 +40,21 @@ class ParserLeftAssociativeBinaryOperatorList : public IParserBase
 {
 private:
 	Operators_t operators;
-	ParserPtr elem_parser;
+	ParserPtr first_elem_parser;
+	ParserPtr remaining_elem_parser;
 
 public:
 	/** operators_ - допустимые операторы и соответствующие им функции
 	  */
-	ParserLeftAssociativeBinaryOperatorList(Operators_t operators_, ParserPtr && elem_parser_)
-		: operators(operators_), elem_parser(std::move(elem_parser_))
+	ParserLeftAssociativeBinaryOperatorList(Operators_t operators_, ParserPtr && first_elem_parser_)
+		: operators(operators_), first_elem_parser(std::move(first_elem_parser_))
+	{
+	}
+
+	ParserLeftAssociativeBinaryOperatorList(Operators_t operators_, ParserPtr && first_elem_parser_,
+		ParserPtr && remaining_elem_parser_)
+		: operators(operators_), first_elem_parser(std::move(first_elem_parser_)),
+		  remaining_elem_parser(std::move(remaining_elem_parser_))
 	{
 	}
 	
@@ -107,17 +115,11 @@ class ParserAccessExpression : public IParserBase
 {
 private:
 	static const char * operators[];
-	ParserLeftAssociativeBinaryOperatorList operator_parser;
-public:
-	ParserAccessExpression();
-	
+
 protected:
 	const char * getName() const { return "access expression"; }
 	
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
-	{
-		return operator_parser.parse(pos, end, node, expected);
-	}
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected);
 };
 
 
