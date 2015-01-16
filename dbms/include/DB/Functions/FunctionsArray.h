@@ -1261,7 +1261,7 @@ const String FunctionEmptyArray<DataType>::name = FunctionEmptyArray::base_name 
 class FunctionRange : public IFunction
 {
 public:
-	static constexpr auto max_elements = 1000000;
+	static constexpr auto max_elements = 100000000;
 	static constexpr auto name = "range";
 	static IFunction * create(const Context &) { return new FunctionRange; }
 
@@ -1306,7 +1306,8 @@ private:
 				std::plus<std::size_t>{});
 			if (total_values > max_elements)
 				throw Exception{
-					"Argument to function " + getName() + " should not exceed " + std::to_string(max_elements),
+					"A call to function " + getName() + " would produce " + std::to_string(total_values) +
+						" array elements, which is greater than the allowed maximum of " + std::to_string(max_elements),
 					ErrorCodes::ARGUMENT_OUT_OF_BOUND
 				};
 
@@ -1336,7 +1337,8 @@ private:
 			const std::size_t total_values = in->size() * in_data;
 			if (total_values > max_elements)
 				throw Exception{
-					"Argument to function " + getName() + " should not exceed " + std::to_string(max_elements),
+					"A call to function " + getName() + " would produce " + std::to_string(total_values) +
+						" array elements, which is greater than the allowed maximum of " + std::to_string(max_elements),
 					ErrorCodes::ARGUMENT_OUT_OF_BOUND
 				};
 
