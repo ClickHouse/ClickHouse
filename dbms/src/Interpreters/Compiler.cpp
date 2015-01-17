@@ -185,7 +185,8 @@ void Compiler::compile(HashedKey hashed_key, std::string file_name, CodeGenerato
 
 	/// Слегка неудобно.
 	command <<
-		"/usr/share/clickhouse/bin/clang"
+		"LD_LIBRARY_PATH=/usr/share/clickhouse/bin/"
+		" /usr/share/clickhouse/bin/clang"
 		" -x c++ -std=gnu++11 -O3 -g -Wall -Werror -Wnon-virtual-dtor -march=native -D NDEBUG"
 		" -shared -fPIC -fvisibility=hidden -fno-implement-inlines"
 		" -isystem /usr/share/clickhouse/headers/usr/local/include/"
