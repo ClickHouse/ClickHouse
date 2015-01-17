@@ -63,7 +63,7 @@ public:
 				Poco::File file(Poco::Path(files_info_path).parent().toString() + "/" + filename);
 				if (!file.exists())
 				{
-					LOG_ERROR(log, "File " << file.path() << " doesn't exists");
+					LOG_ERROR(log, "File " << file.path() << " doesn't exist");
 					correct = false;
 					continue;
 				}
