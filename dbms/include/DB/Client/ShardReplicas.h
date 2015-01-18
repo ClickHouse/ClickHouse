@@ -47,41 +47,16 @@ namespace DB
 		void sendExternalTablesData(std::vector<ExternalTablesData> & data);
 
 	private:
-		/// Описание реплики.
-		struct Replica
-		{
-			Replica(Connection * connection_) : connection(connection_) {}
-
-			/// Соединение к реплике
-			Connection * connection;
-
-			/// Номер следующего ожидаемого пакета.
-			int next_packet_number = 0;
-
-			/// Есть ли данные, которые можно прочитать?
-			bool can_read = false;
-
-			/// Является ли реплика валидной для чтения?
-			bool is_valid = true;
-		};
-
-		/// Реплики хэшированные по id сокета
-		using ReplicaHash = std::unordered_map<int, Replica>;
+		/// Проверить, есть ли данные, которые можно прочитать на каких-нибудь репликах.
+		/// Возвращает соединение на реплику, с которой можно прочитать данные, если такая есть.
+		Connection * waitForReadEvent();
 
 	private:
-		/// Выбрать реплику, на которой можно прочитать данные.
-		Replica & pickReplica();
-
-		/// Проверить, есть ли данные, которые можно прочитать на каких-нибудь репликах.
-		int waitForReadEvent();
+		/// Реплики хэшированные по id сокета
+		using ReplicaHash = std::unordered_map<int, Connection *>;
 
 	private:
 		const Settings & settings;
-
 		ReplicaHash replica_hash;
-		size_t valid_replicas_count;
-
-		/// Номер следующего ожидаемого пакета.
-		int next_packet_number = 0;
 	};
 }
