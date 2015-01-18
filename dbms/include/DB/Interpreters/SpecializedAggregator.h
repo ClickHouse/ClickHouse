@@ -32,8 +32,23 @@ namespace DB
 
 /** Список типов - для удобного перечисления агрегатных функций.
   */
-template <typename THead, typename... TTail>
+template <typename... TTail>
 struct TypeList
+{
+	static constexpr size_t size = 0;
+
+	template <size_t I>
+	using At = std::nullptr_t;
+
+	template <typename Func, size_t index = 0>
+	static void forEach(Func && func)
+	{
+	}
+};
+
+
+template <typename THead, typename... TTail>
+struct TypeList<THead, TTail...>
 {
 	using Head = THead;
 	using Tail = TypeList<TTail...>;
@@ -48,38 +63,6 @@ struct TypeList
 	{
 		func.template operator()<Head, index>();
 		Tail::template forEach<Func, index + 1>(std::forward<Func>(func));
-	}
-};
-
-
-template <typename THead>
-struct TypeList<THead>
-{
-	using Head = THead;
-
-	static constexpr size_t size = 1;
-
-	template <size_t I>
-	using At = typename std::template conditional<I == 0, Head, std::nullptr_t>::type;
-
-	template <typename Func, size_t index = 0>
-	static void ALWAYS_INLINE forEach(Func && func)
-	{
-		func.template operator()<Head, index>();
-	}
-};
-
-
-struct EmptyTypeList
-{
-	static constexpr size_t size = 0;
-
-	template <size_t I>
-	using At = std::nullptr_t;
-
-	template <typename Func, size_t index = 0>
-	static void forEach(Func && func)
-	{
 	}
 };
 
