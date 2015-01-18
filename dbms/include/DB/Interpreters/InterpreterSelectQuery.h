@@ -110,20 +110,19 @@ private:
 	/// Вынимает данные из таблицы. Возвращает стадию, до которой запрос был обработан в Storage.
 	QueryProcessingStage::Enum executeFetchColumns(BlockInputStreams & streams);
 
-	void executeWhere(                              BlockInputStreams & streams, ExpressionActionsPtr expression);
-	void executeAggregation(                BlockInputStreams & streams, ExpressionActionsPtr expression,
-																	bool overflow_row, bool final);
-	void executeMergeAggregated(    BlockInputStreams & streams, bool overflow_row, bool final);
-	void executeTotalsAndHaving(    BlockInputStreams & streams, bool has_having, ExpressionActionsPtr expression,
-																	bool overflow_row);
-	void executeHaving(                             BlockInputStreams & streams, ExpressionActionsPtr expression);
-	void executeExpression(                 BlockInputStreams & streams, ExpressionActionsPtr expression);
-	void executeOrder(                              BlockInputStreams & streams);
-	void executePreLimit(                   BlockInputStreams & streams);
-	void executeUnion(                              BlockInputStreams & streams);
-	void executeLimit(                              BlockInputStreams & streams);
-	void executeProjection(                 BlockInputStreams & streams, ExpressionActionsPtr expression);
-	void executeDistinct(                   BlockInputStreams & streams, bool before_order, Names columns);
+	void executeWhere(                   BlockInputStreams & streams, ExpressionActionsPtr expression);
+	void executeAggregation(             BlockInputStreams & streams, ExpressionActionsPtr expression, bool overflow_row, bool final);
+	void executeMergeAggregated(         BlockInputStreams & streams, bool overflow_row, bool final);
+	void executeTotalsAndHaving(         BlockInputStreams & streams, bool has_having, ExpressionActionsPtr expression, bool overflow_row);
+	void executeHaving(                  BlockInputStreams & streams, ExpressionActionsPtr expression);
+	void executeExpression(              BlockInputStreams & streams, ExpressionActionsPtr expression);
+	void executeOrder(                   BlockInputStreams & streams);
+	void executeMergeSorted(             BlockInputStreams & streams);
+	void executePreLimit(                BlockInputStreams & streams);
+	void executeUnion(                   BlockInputStreams & streams);
+	void executeLimit(                   BlockInputStreams & streams);
+	void executeProjection(              BlockInputStreams & streams, ExpressionActionsPtr expression);
+	void executeDistinct(                BlockInputStreams & streams, bool before_order, Names columns);
 	void executeSubqueriesInSetsAndJoins(BlockInputStreams & streams, SubqueriesForSets & subqueries_for_sets);
 
 	ASTPtr query_ptr;

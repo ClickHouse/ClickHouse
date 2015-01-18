@@ -3,6 +3,7 @@
 #include <DB/DataStreams/LimitBlockInputStream.h>
 #include <DB/DataStreams/PartialSortingBlockInputStream.h>
 #include <DB/DataStreams/MergeSortingBlockInputStream.h>
+#include <DB/DataStreams/MergingSortedBlockInputStream.h>
 #include <DB/DataStreams/AggregatingBlockInputStream.h>
 #include <DB/DataStreams/MergingAggregatedBlockInputStream.h>
 #include <DB/DataStreams/AsynchronousBlockInputStream.h>
@@ -476,15 +477,20 @@ void InterpreterSelectQuery::executeSingleQuery()
 				executeDistinct(streams, true, selected_columns);
 			}
 
-			/** Оптимизация - при распределённой обработке запроса,
-			 *  если не указаны GROUP, HAVING, ORDER, но указан LIMIT,
-			 *  то выполним предварительный LIMIT на удалёном сервере.
-			 */
+			/** При распределённой обработке запроса,
+			  *  если не указаны GROUP, HAVING,
+			  *  но есть ORDER или LIMIT,
+			  *  то выполним предварительную сортировку и LIMIT на удалёном сервере.
+			  */
 			if (!second_stage
-				&& !need_aggregate && !has_having && !has_order_by
-				&& query.limit_length)
+				&& !need_aggregate && !has_having)
 			{
-				executePreLimit(streams);
+				if (has_order_by)
+					executeOrder(streams);
+
+				if (query.limit_length)
+					executePreLimit(streams);
+
 				do_execute_union = true;
 			}
 		}
@@ -515,7 +521,16 @@ void InterpreterSelectQuery::executeSingleQuery()
 			}
 
 			if (has_order_by)
-				executeOrder(streams);
+			{
+				/** Если при распределённой обработке запроса есть ORDER BY,
+				  *  но нет агрегации, то на удалённых серверах был сделан ORDER BY
+				  *  - поэтому, делаем merge сортированных потоков с удалённых серверов.
+				  */
+				if (!first_stage && !need_aggregate && !(query.group_by_with_totals && !aggregate_final))
+					executeMergeSorted(streams);
+				else	/// Иначе просто сортировка.
+					executeOrder(streams);
+			}
 
 			executeProjection(streams, final_projection);
 
@@ -807,7 +822,7 @@ void InterpreterSelectQuery::executeExpression(BlockInputStreams & streams, Expr
 }
 
 
-void InterpreterSelectQuery::executeOrder(BlockInputStreams & streams)
+static SortDescription getSortDescription(ASTSelectQuery & query)
 {
 	SortDescription order_descr;
 	order_descr.reserve(query.order_expression_list->children.size());
@@ -821,6 +836,11 @@ void InterpreterSelectQuery::executeOrder(BlockInputStreams & streams)
 		order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.collator);
 	}
 
+	return order_descr;
+}
+
+static size_t getLimitForSorting(ASTSelectQuery & query)
+{
 	/// Если есть LIMIT и нет DISTINCT - можно делать частичную сортировку.
 	size_t limit = 0;
 	if (!query.distinct)
@@ -830,6 +850,15 @@ void InterpreterSelectQuery::executeOrder(BlockInputStreams & streams)
 		getLimitLengthAndOffset(query, limit_length, limit_offset);
 		limit = limit_length + limit_offset;
 	}
+
+	return limit;
+}
+
+
+void InterpreterSelectQuery::executeOrder(BlockInputStreams & streams)
+{
+	SortDescription order_descr = getSortDescription(query);
+	size_t limit = getLimitForSorting(query);
 
 	for (auto & stream : streams)
 	{
@@ -859,6 +888,29 @@ void InterpreterSelectQuery::executeOrder(BlockInputStreams & streams)
 	stream = new MergeSortingBlockInputStream(
 		stream, order_descr, settings.max_block_size, limit,
 		settings.limits.max_bytes_before_external_sort, context.getTemporaryPath(), context.getDataTypeFactory());
+}
+
+
+void InterpreterSelectQuery::executeMergeSorted(BlockInputStreams & streams)
+{
+	SortDescription order_descr = getSortDescription(query);
+	size_t limit = getLimitForSorting(query);
+
+	BlockInputStreamPtr & stream = streams[0];
+
+	/// Если потоков несколько, то объединяем их в один
+	if (streams.size() > 1)
+	{
+		/** MergingSortedBlockInputStream читает источники последовательно.
+		  * Чтобы данные на удалённых серверах готовились параллельно, оборачиваем в AsynchronousBlockInputStream.
+		  */
+		for (auto & stream : streams)
+			stream = new AsynchronousBlockInputStream(stream);
+
+		/// Сливаем сортированные источники в один сортированный источник.
+		stream = new MergingSortedBlockInputStream(streams, order_descr, settings.max_block_size, limit);
+		streams.resize(1);
+	}
 }
 
 
