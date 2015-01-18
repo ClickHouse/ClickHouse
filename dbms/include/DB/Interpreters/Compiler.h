@@ -81,6 +81,7 @@ public:
 	/** Увеличить счётчик для заданного ключа key на единицу.
 	  * Если результат компиляции уже есть (уже открыт, или есть файл с библиотекой),
 	  *  то вернуть готовую SharedLibrary.
+	  * Иначе, если min_count_to_compile == 0, то инициировать компиляцию в том же потоке, дождаться её, и вернуть результат.
 	  * Иначе, если счётчик достиг min_count_to_compile,
 	  *  инициировать компиляцию в отдельном потоке, если есть свободные потоки, и вернуть nullptr.
 	  * Иначе вернуть nullptr.
@@ -88,6 +89,7 @@ public:
 	SharedLibraryPtr getOrCount(
 		const std::string & key,
 		UInt32 min_count_to_compile,
+		const std::string & additional_compiler_flags,
 		CodeGenerator get_code,
 		ReadyCallback on_ready);
 
@@ -113,7 +115,12 @@ private:
 	Logger * log = &Logger::get("Compiler");
 
 
-	void compile(HashedKey hashed_key, std::string file_name, CodeGenerator get_code, ReadyCallback on_ready);
+	void compile(
+		HashedKey hashed_key,
+		std::string file_name,
+		const std::string & additional_compiler_flags,
+		CodeGenerator get_code,
+		ReadyCallback on_ready);
 };
 
 }

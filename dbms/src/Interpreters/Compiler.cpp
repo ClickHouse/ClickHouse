@@ -2,6 +2,7 @@
 
 #include <Poco/DirectoryIterator.h>
 #include <Yandex/Revision.h>
+#include <statdaemons/ext/unlock_guard.hpp>
 
 #include <DB/Common/SipHash.h>
 
@@ -75,6 +76,7 @@ static std::string hashedKeyToFileName(Compiler::HashedKey hashed_key)
 SharedLibraryPtr Compiler::getOrCount(
 	const std::string & key,
 	UInt32 min_count_to_compile,
+	const std::string & additional_compiler_flags,
 	CodeGenerator get_code,
 	ReadyCallback on_ready)
 {
@@ -89,7 +91,7 @@ SharedLibraryPtr Compiler::getOrCount(
 	if (libraries.end() != it)
 	{
 		if (!it->second)
-			LOG_INFO(log, "Library " << hashedKeyToFileName(hashed_key) << " is compiling.");
+			LOG_INFO(log, "Library " << hashedKeyToFileName(hashed_key) << " is already compiling or compilation was failed.");
 
 		/// TODO В этом случае, после окончания компиляции, не будет дёрнут колбэк.
 
@@ -111,27 +113,39 @@ SharedLibraryPtr Compiler::getOrCount(
 	/// Достигнуто ли min_count_to_compile?
 	if (count >= min_count_to_compile)
 	{
-		/// TODO Значение min_count_to_compile, равное нулю, обозначает необходимость синхронной компиляции.
+		/// Значение min_count_to_compile, равное нулю, обозначает необходимость синхронной компиляции.
 
 		/// Есть ли свободные потоки.
-		if (pool.active() < pool.size())
+		if (min_count_to_compile == 0 || pool.active() < pool.size())
 		{
 			/// Обозначает, что библиотека в процессе компиляции.
 			libraries[hashed_key] = nullptr;
 
 			LOG_INFO(log, "Compiling code " << file_name << ", key: " << key);
 
-			pool.schedule([=]
+			if (min_count_to_compile == 0)
 			{
-				try
 				{
-					compile(hashed_key, file_name, get_code, on_ready);
+					ext::unlock_guard<std::mutex> unlock(mutex);
+					compile(hashed_key, file_name, additional_compiler_flags, get_code, on_ready);
 				}
-				catch (...)
+
+				return libraries[hashed_key];
+			}
+			else
+			{
+				pool.schedule([=]
 				{
-					tryLogCurrentException("Compiler");
-				}
-			});
+					try
+					{
+						compile(hashed_key, file_name, additional_compiler_flags, get_code, on_ready);
+					}
+					catch (...)
+					{
+						tryLogCurrentException("Compiler");
+					}
+				});
+			}
 		}
 		else
 			LOG_INFO(log, "All threads are busy.");
@@ -170,7 +184,12 @@ struct Pipe : private boost::noncopyable
 };
 
 
-void Compiler::compile(HashedKey hashed_key, std::string file_name, CodeGenerator get_code, ReadyCallback on_ready)
+void Compiler::compile(
+	HashedKey hashed_key,
+	std::string file_name,
+	const std::string & additional_compiler_flags,
+	CodeGenerator get_code,
+	ReadyCallback on_ready)
 {
 	std::string prefix = path + "/" + file_name;
 	std::string cpp_file_path = prefix + ".cpp";
@@ -201,6 +220,7 @@ void Compiler::compile(HashedKey hashed_key, std::string file_name, CodeGenerato
 		" -I /usr/share/clickhouse/headers/libs/libmysqlxx/include/"
 		" -I /usr/share/clickhouse/headers/libs/libstatdaemons/include/"
 		" -I /usr/share/clickhouse/headers/libs/libstats/include/"
+		" " << additional_compiler_flags <<
 		" -o " << so_file_path << " " << cpp_file_path
 		<< " 2>&1 || echo Exit code: $?";
 

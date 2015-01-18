@@ -191,9 +191,7 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 	{
 		/// Короткий кусок кода, представляющий собой явное инстанцирование шаблона.
 		std::stringstream code;
-		code <<
-			"#include <DB/Interpreters/SpecializedAggregator.h>\n"
-			"\n"
+		code <<		/// Нет явного включения заголовочного файла. Он подключается с помощью опции компилятора -include.
 			"namespace DB\n"
 			"{\n"
 			"\n";
@@ -295,7 +293,9 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 	  * Если счётчик достигнул значения min_count_to_compile, то асинхронно (в отдельном потоке) запускается компиляция,
 	  *  по окончании которой вызывается колбэк on_ready.
 	  */
-	SharedLibraryPtr lib = compiler->getOrCount(key, min_count_to_compile, get_code, on_ready);
+	SharedLibraryPtr lib = compiler->getOrCount(key, min_count_to_compile,
+		"-include /usr/share/clickhouse/headers/dbms/include/DB/Interpreters/SpecializedAggregator.h",
+		get_code, on_ready);
 
 	/// Если результат уже готов.
 	if (lib)
