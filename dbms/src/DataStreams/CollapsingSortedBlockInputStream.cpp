@@ -58,14 +58,14 @@ void CollapsingSortedBlockInputStream::insertRows(ColumnPlainPtrs & merged_colum
 			for (size_t i = 0; i < num_columns; ++i)
 				merged_columns[i]->insert(first_negative[i]);
 		}
-			
+
 		if (count_positive >= count_negative)
 		{
 			++merged_rows;
 			for (size_t i = 0; i < num_columns; ++i)
 				merged_columns[i]->insert(last_positive[i]);
 		}
-			
+
 		if (!(count_positive == count_negative || count_positive + 1 == count_negative || count_positive == count_negative + 1))
 		{
 			if (count_incorrect_data < MAX_ERROR_MESSAGES)
@@ -74,19 +74,19 @@ void CollapsingSortedBlockInputStream::insertRows(ColumnPlainPtrs & merged_colum
 		}
 	}
 }
-	
+
 
 Block CollapsingSortedBlockInputStream::readImpl()
 {
-	if (!children.size())
+	if (finished)
 		return Block();
-	
+
 	if (children.size() == 1)
 		return children[0]->read();
 
 	Block merged_block;
 	ColumnPlainPtrs merged_columns;
-	
+
 	init(merged_block, merged_columns);
 	if (merged_columns.empty())
 		return Block();
@@ -102,7 +102,7 @@ Block CollapsingSortedBlockInputStream::readImpl()
 
 		sign_column_number = merged_block.getPositionByName(sign_column);
 	}
-	
+
 	if (has_collation)
 		merge(merged_block, merged_columns, queue_with_collation);
 	else
@@ -113,9 +113,9 @@ Block CollapsingSortedBlockInputStream::readImpl()
 
 template<class TSortCursor>
 void CollapsingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
-{	
+{
 	size_t merged_rows = 0;
-	
+
 	/// Вынимаем строки в нужном порядке и кладём в merged_block, пока строк не больше max_block_size
 	while (!queue.empty())
 	{
@@ -132,7 +132,7 @@ void CollapsingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPt
 
 			current_key = std::move(next_key);
 			next_key.resize(description.size());
-			
+
 			count_negative = 0;
 			count_positive = 0;
 		}
@@ -150,7 +150,7 @@ void CollapsingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPt
 				setRow(first_negative, current);
 			if (!blocks_written && !merged_rows)
 				setRow(last_negative, current);
-			
+
 			++count_negative;
 			last_is_positive = false;
 		}
@@ -179,7 +179,7 @@ void CollapsingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPt
 	/// Запишем данные для последнего визита.
 	insertRows(merged_columns, merged_rows, true);
 
-	children.clear();
+	finished = true;
 }
 
 }

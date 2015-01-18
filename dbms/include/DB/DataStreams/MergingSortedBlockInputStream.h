@@ -139,6 +139,9 @@ private:
 	void merge(Block & merged_block, ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
 
 	Logger * log = &Logger::get("MergingSortedBlockInputStream");
+
+	/// Прочитали до конца.
+	bool finished = false;
 };
 
 }

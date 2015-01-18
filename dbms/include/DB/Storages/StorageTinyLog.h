@@ -10,7 +10,6 @@
 #include <DB/IO/CompressedReadBuffer.h>
 #include <DB/IO/CompressedWriteBuffer.h>
 #include <DB/Storages/IStorage.h>
-#include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
 #include <DB/Common/FileChecker.h>
 #include <Poco/Util/XMLConfiguration.h>
@@ -20,81 +19,6 @@ namespace DB
 {
 
 class StorageTinyLog;
-
-
-class TinyLogBlockInputStream : public IProfilingBlockInputStream
-{
-public:
-	TinyLogBlockInputStream(size_t block_size_, const Names & column_names_, StorageTinyLog & storage_);
-	String getName() const { return "TinyLogBlockInputStream"; }
-
-	String getID() const;
-
-protected:
-	Block readImpl();
-private:
-	size_t block_size;
-	Names column_names;
-	StorageTinyLog & storage;
-	bool finished;
-
-	struct Stream
-	{
-		Stream(const std::string & data_path)
-			: plain(data_path, std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(data_path).getSize())),
-			compressed(plain)
-		{
-		}
-
-		ReadBufferFromFile plain;
-		CompressedReadBuffer compressed;
-	};
-
-	typedef std::map<std::string, std::unique_ptr<Stream> > FileStreams;
-	FileStreams streams;
-
-	void addStream(const String & name, const IDataType & type, size_t level = 0);
-	void readData(const String & name, const IDataType & type, IColumn & column, size_t limit, size_t level = 0, bool read_offsets = true);
-};
-
-class TinyLogBlockOutputStream : public IBlockOutputStream
-{
-public:
-	TinyLogBlockOutputStream(StorageTinyLog & storage_);
-
-	~TinyLogBlockOutputStream();
-
-	void write(const Block & block);
-	void writeSuffix();
-private:
-	StorageTinyLog & storage;
-
-	struct Stream
-	{
-		Stream(const std::string & data_path, size_t max_compress_block_size) :
-			plain(data_path, max_compress_block_size, O_APPEND | O_CREAT | O_WRONLY),
-			compressed(plain)
-		{
-		}
-
-		WriteBufferFromFile plain;
-		CompressedWriteBuffer compressed;
-
-		void finalize()
-		{
-			compressed.next();
-			plain.next();
-		}
-	};
-
-	typedef std::map<std::string, std::unique_ptr<Stream> > FileStreams;
-	FileStreams streams;
-
-	typedef std::set<std::string> OffsetColumns;
-
-	void addStream(const String & name, const IDataType & type, size_t level = 0);
-	void writeData(const String & name, const IDataType & type, const IColumn & column, OffsetColumns & offset_columns, size_t level = 0);
-};
 
 
 /** Реализует хранилище, подходящее для маленьких кусочков лога.

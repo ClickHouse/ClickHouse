@@ -20,7 +20,7 @@ namespace DB
 class AsynchronousBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	AsynchronousBlockInputStream(BlockInputStreamPtr in_) : pool(1), started(false)
+	AsynchronousBlockInputStream(BlockInputStreamPtr in_)
 	{
 		children.push_back(in_);
 	}
@@ -76,9 +76,9 @@ public:
 	}
 
 protected:
-	boost::threadpool::pool pool;
+	boost::threadpool::pool pool{1};
 	Poco::Event ready;
-	bool started;
+	bool started = false;
 
 	Block block;
 	ExceptionPtr exception;

@@ -4,7 +4,6 @@
 
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/Storages/IStorage.h>
-#include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
 
 
@@ -12,43 +11,6 @@ namespace DB
 {
 
 class StorageMemory;
-
-class MemoryBlockInputStream : public IProfilingBlockInputStream
-{
-public:
-	MemoryBlockInputStream(const Names & column_names_, BlocksList::iterator begin_, BlocksList::iterator end_);
-	String getName() const { return "MemoryBlockInputStream"; }
-
-	String getID() const
-	{
-		std::stringstream res;
-		res << "Memory(" << &*begin << ", " << &*end;
-
-		for (const auto & name : column_names)
-			res << ", " << name;
-
-		res << ")";
-		return res.str();
-	}
-
-protected:
-	Block readImpl();
-private:
-	Names column_names;
-	BlocksList::iterator begin;
-	BlocksList::iterator end;
-	BlocksList::iterator it;
-};
-
-
-class MemoryBlockOutputStream : public IBlockOutputStream
-{
-public:
-	MemoryBlockOutputStream(StorageMemory & storage_);
-	void write(const Block & block);
-private:
-	StorageMemory & storage;
-};
 
 
 /** Реализует хранилище в оперативке.

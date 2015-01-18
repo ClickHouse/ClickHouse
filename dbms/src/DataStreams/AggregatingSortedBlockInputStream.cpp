@@ -14,7 +14,7 @@ void AggregatingSortedBlockInputStream::insertCurrentRow(ColumnPlainPtrs & merge
 
 Block AggregatingSortedBlockInputStream::readImpl()
 {
-	if (!children.size())
+	if (finished)
 		return Block();
 
 	if (children.size() == 1)
@@ -114,7 +114,7 @@ void AggregatingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainP
 		}
 	}
 
-	children.clear();
+	finished = true;
 }
 
 }

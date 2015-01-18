@@ -14,6 +14,11 @@ void MergingSortedBlockInputStream::init(Block & merged_block, ColumnPlainPtrs &
 	if (first)
 	{
 		first = false;
+
+		/// Например, если дети - AsynchronousBlockInputStream, это действие инициирует начало работы в фоновых потоках.
+		for (auto & child : children)
+			child->readPrefix();
+
 		size_t i = 0;
 		for (Blocks::iterator it = source_blocks.begin(); it != source_blocks.end(); ++it, ++i)
 		{
@@ -62,7 +67,7 @@ void MergingSortedBlockInputStream::init(Block & merged_block, ColumnPlainPtrs &
 	{
 		if (!*it)
 			continue;
-		
+
 		size_t src_columns = it->columns();
 		size_t dst_columns = merged_block.columns();
 
@@ -88,13 +93,13 @@ void MergingSortedBlockInputStream::initQueue(std::priority_queue<TSortCursor> &
 		if (!cursors[i].empty())
 			queue.push(TSortCursor(&cursors[i]));
 }
-	
+
 
 Block MergingSortedBlockInputStream::readImpl()
 {
-	if (!children.size())
+	if (finished)
 		return Block();
-	
+
 	if (children.size() == 1)
 		return children[0]->read();
 
@@ -104,21 +109,21 @@ Block MergingSortedBlockInputStream::readImpl()
 	init(merged_block, merged_columns);
 	if (merged_columns.empty())
 		return Block();
-	
+
 	if (has_collation)
 		merge(merged_block, merged_columns, queue_with_collation);
 	else
 		merge(merged_block, merged_columns, queue);
-	
+
 	return merged_block;
 }
 
 template <typename TSortCursor>
 void MergingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
-{	
+{
 	size_t merged_rows = 0;
-	
-	/// Вынимаем строки в нужном порядке и кладём в merged_block, пока строк не больше max_block_size	
+
+	/// Вынимаем строки в нужном порядке и кладём в merged_block, пока строк не больше max_block_size
 	while (!queue.empty())
 	{
 		TSortCursor current = queue.top();
@@ -142,7 +147,7 @@ void MergingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs 
 		if (limit && total_merged_rows == limit)
 		{
 			cancel();
-			children.clear();
+			finished = true;
 			return;
 		}
 
@@ -152,7 +157,7 @@ void MergingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs 
 	}
 
 	cancel();
-	children.clear();
+	finished = true;
 }
 
 

@@ -5,7 +5,6 @@
 
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/Storages/IStorage.h>
-#include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
 #include <DB/Interpreters/Context.h>
 

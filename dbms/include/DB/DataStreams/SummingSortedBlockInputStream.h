@@ -53,6 +53,9 @@ protected:
 private:
 	Logger * log = &Logger::get("SummingSortedBlockInputStream");
 
+	/// Прочитали до конца.
+	bool finished = false;
+
 	/// Столбцы с какими номерами надо суммировать.
 	Names column_names_to_sum;	/// Если задано - преобразуется в column_numbers_to_sum при инициализации.
 	ColumnNumbers column_numbers_to_sum;

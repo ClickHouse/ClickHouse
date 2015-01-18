@@ -12,6 +12,8 @@
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/DataTypes/DataTypeNested.h>
 
+#include <DB/DataStreams/IProfilingBlockInputStream.h>
+
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnNested.h>
 
@@ -31,24 +33,114 @@ namespace DB
 using Poco::SharedPtr;
 
 
-LogBlockInputStream::LogBlockInputStream(size_t block_size_, const Names & column_names_, StorageLog & storage_, size_t mark_number_, size_t rows_limit_)
-	: block_size(block_size_), column_names(column_names_), storage(storage_),
-	mark_number(mark_number_), rows_limit(rows_limit_), rows_read(0), current_mark(mark_number_)
+class LogBlockInputStream : public IProfilingBlockInputStream
 {
-}
+public:
+	LogBlockInputStream(size_t block_size_, const Names & column_names_, StorageLog & storage_, size_t mark_number_, size_t rows_limit_)
+		: block_size(block_size_), column_names(column_names_), storage(storage_),
+		mark_number(mark_number_), rows_limit(rows_limit_), current_mark(mark_number_) {}
+
+	String getName() const { return "LogBlockInputStream"; }
+
+	String getID() const
+	{
+		std::stringstream res;
+		res << "Log(" << storage.getTableName() << ", " << &storage << ", " << mark_number << ", " << rows_limit;
+
+		for (const auto & name : column_names)
+			res << ", " << name;
+
+		res << ")";
+		return res.str();
+	}
+
+protected:
+	Block readImpl();
+private:
+	size_t block_size;
+	Names column_names;
+	StorageLog & storage;
+	size_t mark_number;		/// С какой засечки читать данные
+	size_t rows_limit;		/// Максимальное количество строк, которых можно прочитать
+
+	size_t rows_read = 0;
+	size_t current_mark;
+
+	struct Stream
+	{
+		Stream(const std::string & data_path, size_t offset)
+			: plain(data_path, std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(data_path).getSize())),
+			compressed(plain)
+		{
+			if (offset)
+				plain.seek(offset);
+		}
+
+		ReadBufferFromFile plain;
+		CompressedReadBuffer compressed;
+	};
+
+	typedef std::map<std::string, std::unique_ptr<Stream> > FileStreams;
+	FileStreams streams;
+
+	void addStream(const String & name, const IDataType & type, size_t level = 0);
+	void readData(const String & name, const IDataType & type, IColumn & column, size_t max_rows_to_read, size_t level = 0, bool read_offsets = true);
+};
 
 
-String LogBlockInputStream::getID() const
+class LogBlockOutputStream : public IBlockOutputStream
 {
-	std::stringstream res;
-	res << "Log(" << storage.getTableName() << ", " << &storage << ", " << mark_number << ", " << rows_limit;
+public:
+	LogBlockOutputStream(StorageLog & storage_)
+		: storage(storage_),
+		lock(storage.rwlock), marks_stream(storage.marks_file.path(), 4096, O_APPEND | O_CREAT | O_WRONLY)
+	{
+		for (const auto & column : storage.getColumnsList())
+			addStream(column.name, *column.type);
+	}
 
-	for (const auto & name : column_names)
-		res << ", " << name;
+	~LogBlockOutputStream() { writeSuffix(); }
 
-	res << ")";
-	return res.str();
-}
+	void write(const Block & block);
+	void writeSuffix();
+private:
+	StorageLog & storage;
+	Poco::ScopedWriteRWLock lock;
+
+	struct Stream
+	{
+		Stream(const std::string & data_path, size_t max_compress_block_size) :
+			plain(data_path, max_compress_block_size, O_APPEND | O_CREAT | O_WRONLY),
+			compressed(plain)
+		{
+			plain_offset = Poco::File(data_path).getSize();
+		}
+
+		WriteBufferFromFile plain;
+		CompressedWriteBuffer compressed;
+
+		size_t plain_offset;	/// Сколько байт было в файле на момент создания LogBlockOutputStream.
+
+		void finalize()
+		{
+			compressed.next();
+			plain.next();
+		}
+	};
+
+	typedef std::vector<std::pair<size_t, Mark> > MarksForColumns;
+
+	typedef std::map<std::string, std::unique_ptr<Stream> > FileStreams;
+	FileStreams streams;
+
+	typedef std::set<std::string> OffsetColumns;
+
+	WriteBufferFromFile marks_stream; /// Объявлен ниже lock, чтобы файл открывался при захваченном rwlock.
+
+	void addStream(const String & name, const IDataType & type, size_t level = 0);
+	void writeData(const String & name, const IDataType & type, const IColumn & column, MarksForColumns & out_marks, OffsetColumns & offset_columns, size_t level = 0);
+	void writeMarks(MarksForColumns marks);
+};
 
 
 Block LogBlockInputStream::readImpl()
@@ -243,15 +335,6 @@ void LogBlockInputStream::readData(const String & name, const IDataType & type, 
 	}
 	else
 		type.deserializeBinary(column, streams[name]->compressed, max_rows_to_read);
-}
-
-
-LogBlockOutputStream::LogBlockOutputStream(StorageLog & storage_)
-	: storage(storage_),
-	lock(storage.rwlock), marks_stream(storage.marks_file.path(), 4096, O_APPEND | O_CREAT | O_WRONLY)
-{
-	for (const auto & column : storage.getColumnsList())
-		addStream(column.name, *column.type);
 }
 
 

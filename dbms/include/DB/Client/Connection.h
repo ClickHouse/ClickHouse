@@ -14,7 +14,7 @@
 
 #include <DB/DataStreams/IBlockInputStream.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
-#include <DB/DataStreams/IProfilingBlockInputStream.h>
+#include <DB/DataStreams/BlockStreamProfileInfo.h>
 
 #include <DB/Interpreters/Settings.h>
 

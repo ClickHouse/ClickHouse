@@ -1,6 +1,7 @@
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/InterpreterInsertQuery.h>
 #include <DB/Interpreters/InterpreterAlterQuery.h>
+#include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/Storages/StorageBuffer.h>
 #include <DB/Parsers/ASTInsertQuery.h>
 #include <Poco/Ext/ThreadNumber.h>
