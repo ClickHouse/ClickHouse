@@ -2025,7 +2025,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 
 	size_t part_index = 0;
 
-	if (unreplicated_reader && values.count(0))
+	if (process_unreplicated && unreplicated_reader && values.count(0))
 	{
 		res = unreplicated_reader->read(real_column_names, query,
 										context, settings, processed_stage,
