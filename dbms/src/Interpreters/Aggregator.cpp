@@ -1530,7 +1530,6 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 			else if (result.type == AggregatedDataVariants::Type::NAME) \
 				mergeStreamsImpl(block, result, result.aggregates_pool, *result.NAME, result.NAME->data);
 
-			if (false) {}
 			APPLY_FOR_AGGREGATED_VARIANTS(M)
 		#undef M
 			else if (result.type != AggregatedDataVariants::Type::without_key)
