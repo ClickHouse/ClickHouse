@@ -47,7 +47,7 @@ public:
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
 	{
-		data(place).value.insert(data(place).value.begin(), data(rhs).value.begin(), data(rhs).value.end());
+		data(place).value.insert(data(place).value.end(), data(rhs).value.begin(), data(rhs).value.end());
 	}
 
 	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
