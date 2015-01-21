@@ -81,9 +81,9 @@ public:
 			<< " rows starting from " << all_mark_ranges.front().begin * storage.index_granularity);
 	}
 
-	String getName() const { return "MergeTreeBlockInputStream"; }
+	String getName() const override { return "MergeTreeBlockInputStream"; }
 
-	String getID() const
+	String getID() const override
 	{
 		std::stringstream res;
 		res << "MergeTree(" << path << ", columns";
@@ -148,7 +148,7 @@ protected:
 			columns = NamesAndTypesList{std::begin(required_columns), std::end(required_columns)};
 	}
 
-	Block readImpl()
+	Block readImpl() override
 	{
 		Block res;
 
@@ -193,7 +193,7 @@ protected:
 				}
 				progressImpl(Progress(res.rows(), res.bytes()));
 				pre_reader->fillMissingColumns(res);
-				
+
 				/// Вычислим выражение в PREWHERE.
 				prewhere_actions->execute(res);
 

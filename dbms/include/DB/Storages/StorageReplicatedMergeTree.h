@@ -135,8 +135,8 @@ private:
 	friend class ReplicatedMergeTreeBlockOutputStream;
 	friend class ReplicatedMergeTreeRestartingThread;
 	friend class ReplicatedMergeTreeCleanupThread;
-	friend class ReplicatedMergeTreeLogEntry;
-	friend class FuturePartTagger;
+	friend struct ReplicatedMergeTreeLogEntry;
+	friend struct FuturePartTagger;
 
 	typedef ReplicatedMergeTreeLogEntry LogEntry;
 	typedef LogEntry::Ptr LogEntryPtr;

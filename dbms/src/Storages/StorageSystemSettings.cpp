@@ -9,8 +9,8 @@ namespace DB
 {
 
 
-StorageSystemSettings::StorageSystemSettings(const std::string & name_, const Context & context_)
-	: name(name_), context(context_)
+StorageSystemSettings::StorageSystemSettings(const std::string & name_)
+	: name(name_)
 	, columns{
 		{ "name", 			new DataTypeString	},
 		{ "value",			new DataTypeString	},
@@ -19,9 +19,9 @@ StorageSystemSettings::StorageSystemSettings(const std::string & name_, const Co
 {
 }
 
-StoragePtr StorageSystemSettings::create(const std::string & name_, const Context & context_)
+StoragePtr StorageSystemSettings::create(const std::string & name_)
 {
-	return (new StorageSystemSettings(name_, context_))->thisPtr();
+	return (new StorageSystemSettings(name_))->thisPtr();
 }
 
 

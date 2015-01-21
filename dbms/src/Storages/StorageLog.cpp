@@ -541,7 +541,7 @@ StoragePtr StorageLog::create(
 {
 	return (new StorageLog{
 		path_, name_, columns_,
-		{}, {}, {},
+		{}, {}, ColumnDefaults{},
 		max_compress_block_size_
 	})->thisPtr();
 }

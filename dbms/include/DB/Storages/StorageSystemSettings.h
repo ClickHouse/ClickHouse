@@ -17,7 +17,7 @@ using Poco::SharedPtr;
 class StorageSystemSettings : public IStorage
 {
 public:
-	static StoragePtr create(const std::string & name_, const Context & context_);
+	static StoragePtr create(const std::string & name_);
 
 	std::string getName() const override { return "SystemSettings"; }
 	std::string getTableName() const override { return name; }
@@ -35,10 +35,9 @@ public:
 
 private:
 	const std::string name;
-	const Context & context;
 	NamesAndTypesList columns;
 
-	StorageSystemSettings(const std::string & name_, const Context & context_);
+	StorageSystemSettings(const std::string & name_);
 };
 
 }

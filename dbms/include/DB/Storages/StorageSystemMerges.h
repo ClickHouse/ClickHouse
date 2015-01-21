@@ -8,7 +8,7 @@ namespace DB
 class StorageSystemMerges : public IStorage
 {
 public:
-	static StoragePtr create(const std::string & name, const Context & context);
+	static StoragePtr create(const std::string & name);
 
 	std::string getName() const override { return "SystemMerges"; }
 	std::string getTableName() const override { return name; }
@@ -25,10 +25,9 @@ public:
 
 private:
 	const std::string name;
-	const Context & context;
 	NamesAndTypesList columns;
 
-	StorageSystemMerges(const std::string & name, const Context & context);
+	StorageSystemMerges(const std::string & name);
 };
 
 }

@@ -58,7 +58,7 @@ public:
 			for (auto & node : files_info.get_child("yandex"))
 			{
 				std::string filename = unescapeForFileName(node.first);
-				size_t expected_size = std::stoull(node.second.get<std::string>("size"));
+				size_t expected_size = std::stoull(node.second.template get<std::string>("size"));
 
 				Poco::File file(Poco::Path(files_info_path).parent().toString() + "/" + filename);
 				if (!file.exists())

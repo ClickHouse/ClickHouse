@@ -8,8 +8,8 @@
 namespace DB
 {
 
-StorageSystemMerges::StorageSystemMerges(const std::string & name, const Context & context)
-	: name{name}, context(context)
+StorageSystemMerges::StorageSystemMerges(const std::string & name)
+	: name{name}
 	, columns{
 		{ "database", new DataTypeString },
 		{ "table", new DataTypeString },
@@ -27,9 +27,9 @@ StorageSystemMerges::StorageSystemMerges(const std::string & name, const Context
 {
 }
 
-StoragePtr StorageSystemMerges::create(const std::string & name, const Context & context)
+StoragePtr StorageSystemMerges::create(const std::string & name)
 {
-	return (new StorageSystemMerges{name, context})->thisPtr();
+	return (new StorageSystemMerges{name})->thisPtr();
 }
 
 BlockInputStreams StorageSystemMerges::read(

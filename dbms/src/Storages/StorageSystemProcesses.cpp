@@ -9,8 +9,8 @@ namespace DB
 {
 
 
-StorageSystemProcesses::StorageSystemProcesses(const std::string & name_, const Context & context_)
-	: name(name_), context(context_)
+StorageSystemProcesses::StorageSystemProcesses(const std::string & name_)
+	: name(name_)
 	, columns{
 		{ "user", 			new DataTypeString	},
 		{ "address",		new DataTypeString	},
@@ -25,9 +25,9 @@ StorageSystemProcesses::StorageSystemProcesses(const std::string & name_, const 
 {
 }
 
-StoragePtr StorageSystemProcesses::create(const std::string & name_, const Context & context_)
+StoragePtr StorageSystemProcesses::create(const std::string & name_)
 {
-	return (new StorageSystemProcesses(name_, context_))->thisPtr();
+	return (new StorageSystemProcesses(name_))->thisPtr();
 }
 
 

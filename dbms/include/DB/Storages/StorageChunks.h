@@ -74,7 +74,7 @@ public:
 protected:
 	/// Виртуальная функция из StorageLog
 	/// По номеру засечки получить имя таблицы, из которой идет чтение и номер последней засечки из этой таблицы.
-	std::pair<String, size_t> getTableFromMark(size_t mark) const;
+	std::pair<String, size_t> getTableFromMark(size_t mark) const override;
 private:
 	/// Имя чанка - номер (в последовательности, как чанки записаны в таблице).
 	typedef std::map<String, size_t> ChunkIndices;
