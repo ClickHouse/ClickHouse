@@ -520,17 +520,17 @@ int Server::main(const std::vector<std::string> & args)
 	global_context->addTable("system", "one",		StorageSystemOne::create("one"));
 	global_context->addTable("system", "numbers", 	StorageSystemNumbers::create("numbers"));
 	global_context->addTable("system", "numbers_mt", StorageSystemNumbers::create("numbers_mt", true));
-	global_context->addTable("system", "tables", 	StorageSystemTables::create("tables", *global_context));
-	global_context->addTable("system", "parts", 	StorageSystemParts::create("parts", *global_context));
-	global_context->addTable("system", "databases", StorageSystemDatabases::create("databases", *global_context));
-	global_context->addTable("system", "processes", StorageSystemProcesses::create("processes", *global_context));
-	global_context->addTable("system", "settings", 	StorageSystemSettings::create("settings", *global_context));
+	global_context->addTable("system", "tables", 	StorageSystemTables::create("tables"));
+	global_context->addTable("system", "parts", 	StorageSystemParts::create("parts"));
+	global_context->addTable("system", "databases", StorageSystemDatabases::create("databases"));
+	global_context->addTable("system", "processes", StorageSystemProcesses::create("processes"));
+	global_context->addTable("system", "settings", 	StorageSystemSettings::create("settings"));
 	global_context->addTable("system", "events", 	StorageSystemEvents::create("events"));
-	global_context->addTable("system", "merges",	StorageSystemMerges::create("merges", *global_context));
-	global_context->addTable("system", "replicas",	StorageSystemReplicas::create("replicas", *global_context));
+	global_context->addTable("system", "merges",	StorageSystemMerges::create("merges"));
+	global_context->addTable("system", "replicas",	StorageSystemReplicas::create("replicas"));
 
 	if (has_zookeeper)
-		global_context->addTable("system", "zookeeper", StorageSystemZooKeeper::create("zookeeper", *global_context));
+		global_context->addTable("system", "zookeeper", StorageSystemZooKeeper::create("zookeeper"));
 
 	global_context->setCurrentDatabase(config().getString("default_database", "default"));
 
