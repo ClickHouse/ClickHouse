@@ -215,7 +215,7 @@ public:
 			addStream(part_path, it.name, *it.type);
 	}
 
-	void write(const Block & block)
+	void write(const Block & block) override
 	{
 		size_t rows = block.rows();
 
@@ -333,7 +333,7 @@ public:
 	{
 	}
 
-	void write(const Block & block)
+	void write(const Block & block) override
 	{
 		if (!initialized)
 		{

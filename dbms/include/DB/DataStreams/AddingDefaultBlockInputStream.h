@@ -31,7 +31,7 @@ public:
 	}
 
 	AddingDefaultBlockInputStream(BlockInputStreamPtr input_, NamesAndTypesListPtr required_columns_, const Context & context_)
-		: AddingDefaultBlockInputStream{input_, required_columns, {}, context}
+		: AddingDefaultBlockInputStream{input_, required_columns_, ColumnDefaults{}, context_}
 	{
 	}
 

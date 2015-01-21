@@ -230,7 +230,7 @@ private:
 		if (!typeid_cast<const ASTIdentifier *>(left_arg) && typeid_cast<const ASTIdentifier *>(right_arg))
 			std::swap(left_arg, right_arg);
 
-		if (const auto identifier = typeid_cast<const ASTIdentifier *>(left_arg))
+		if (typeid_cast<const ASTIdentifier *>(left_arg))
 		{
 			/// condition may be "good" if only right_arg is a constant and its value is outside the threshold
 			if (const auto literal = typeid_cast<const ASTLiteral *>(right_arg))
