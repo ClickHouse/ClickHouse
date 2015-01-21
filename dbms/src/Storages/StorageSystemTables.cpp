@@ -9,17 +9,36 @@ namespace DB
 {
 
 
-StorageSystemTables::StorageSystemTables(const std::string & name_, const Context & context_)
-	: name(name_), context(context_)
+StorageSystemTables::StorageSystemTables(const std::string & name_)
+	: name(name_)
 {
 	columns.push_back(NameAndTypePair("database", 	new DataTypeString));
 	columns.push_back(NameAndTypePair("name", 		new DataTypeString));
 	columns.push_back(NameAndTypePair("engine", 	new DataTypeString));
 }
 
-StoragePtr StorageSystemTables::create(const std::string & name_, const Context & context_)
+StoragePtr StorageSystemTables::create(const std::string & name_)
 {
-	return (new StorageSystemTables(name_, context_))->thisPtr();
+	return (new StorageSystemTables(name_))->thisPtr();
+}
+
+
+static ColumnWithNameAndType getFilteredDatabases(ASTPtr query, const Context & context)
+{
+	ColumnWithNameAndType column;
+	column.name = "database";
+	column.type = new DataTypeString;
+	column.column = new ColumnString;
+
+	Block block;
+	block.insert(column);
+	for (auto database_it = context.getDatabases().begin(); database_it != context.getDatabases().end(); ++database_it)
+	{
+		column.column->insert(database_it->first);
+	}
+	VirtualColumnUtils::filterBlockWithQuery(query, block, context);
+
+	return block.getByPosition(0);
 }
 
 
@@ -57,7 +76,7 @@ BlockInputStreams StorageSystemTables::read(
 
 	Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
 
-	ColumnWithNameAndType filtered_databases_column = getFilteredDatabases(query);
+	ColumnWithNameAndType filtered_databases_column = getFilteredDatabases(query, context);
 
 	for (size_t row_number = 0; row_number < filtered_databases_column.column->size(); ++row_number)
 	{
@@ -76,24 +95,6 @@ BlockInputStreams StorageSystemTables::read(
 	}
 
 	return BlockInputStreams(1, new OneBlockInputStream(block));
-}
-
-ColumnWithNameAndType StorageSystemTables::getFilteredDatabases(ASTPtr query)
-{
-	ColumnWithNameAndType column;
-	column.name = "database";
-	column.type = new DataTypeString;
-	column.column = new ColumnString;
-
-	Block block;
-	block.insert(column);
-	for (auto database_it = context.getDatabases().begin(); database_it != context.getDatabases().end(); ++database_it)
-	{
-		column.column->insert(database_it->first);
-	}
-	VirtualColumnUtils::filterBlockWithQuery(query, block, context);
-
-	return block.getByPosition(0);
 }
 
 }
