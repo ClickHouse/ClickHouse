@@ -734,8 +734,8 @@ protected:
 		SharedLibraryPtr compiled_aggregator;
 
 		/// Получены с помощью dlsym. Нужно ещё сделать reinterpret_cast в указатель на функцию.
-		const void * compiled_method_ptr = nullptr;
-		const void * compiled_two_level_method_ptr = nullptr;
+		void * compiled_method_ptr = nullptr;
+		void * compiled_two_level_method_ptr = nullptr;
 	};
 	/// shared_ptr - чтобы передавать в callback, который может пережить Aggregator.
 	std::shared_ptr<CompiledData> compiled_data { new CompiledData };

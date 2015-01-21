@@ -166,13 +166,15 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 	std::stringstream aggregate_functions_typenames_str;
 	for (size_t i = 0; i < aggregates_size; ++i)
 	{
+		IAggregateFunction & func = *aggregate_functions[i];
+
 		int status = 0;
-		char * type_name_ptr = abi::__cxa_demangle(typeid(*aggregate_functions[i]).name(), 0, 0, &status);
+		char * type_name_ptr = abi::__cxa_demangle(typeid(func).name(), 0, 0, &status);
 		std::string type_name = type_name_ptr;
 		free(type_name_ptr);
 
 		if (status)
-			throw Exception("Cannot compile code: cannot demangle name " + String(typeid(*aggregate_functions[i]).name())
+			throw Exception("Cannot compile code: cannot demangle name " + String(typeid(func).name())
 				+ ", status: " + toString(status), ErrorCodes::CANNOT_COMPILE_CODE);
 
 		aggregate_functions_typenames_str << ((i != 0) ? ", " : "") << type_name;
@@ -223,10 +225,10 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 						"\t\tmethod, arena, rows, key_columns, aggregate_columns, key_sizes, keys, no_more_keys, overflow_row);\n"
 				"}\n"
 				"\n"
-				"const void * getPtr" << suffix << "() __attribute__((__visibility__(\"default\")));\n"
-				"const void * getPtr" << suffix << "()\n"	/// Без этой обёртки непонятно, как достать нужный символ из скомпилированной библиотеки.
+				"void * getPtr" << suffix << "() __attribute__((__visibility__(\"default\")));\n"
+				"void * getPtr" << suffix << "()\n"	/// Без этой обёртки непонятно, как достать нужный символ из скомпилированной библиотеки.
 				"{\n"
-					"\treturn reinterpret_cast<const void *>(&wrapper" << suffix << ");\n"
+					"\treturn reinterpret_cast<void *>(&wrapper" << suffix << ");\n"
 				"}\n";
 		};
 
@@ -251,10 +253,10 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 						"\t\tmethod, rows, aggregate_columns);\n"
 				"}\n"
 				"\n"
-				"const void * getPtr() __attribute__((__visibility__(\"default\")));\n"
-				"const void * getPtr()\n"
+				"void * getPtr() __attribute__((__visibility__(\"default\")));\n"
+				"void * getPtr()\n"
 				"{\n"
-					"\treturn reinterpret_cast<const void *>(&wrapper);\n"
+					"\treturn reinterpret_cast<void *>(&wrapper);\n"
 				"}\n";
 		}
 
@@ -264,8 +266,8 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 		{
 			/// Заглушка.
 			code <<
-				"const void * getPtrTwoLevel() __attribute__((__visibility__(\"default\")));\n"
-				"const void * getPtrTwoLevel()\n"
+				"void * getPtrTwoLevel() __attribute__((__visibility__(\"default\")));\n"
+				"void * getPtrTwoLevel()\n"
 				"{\n"
 					"\treturn nullptr;\n"
 				"}\n";
@@ -284,8 +286,8 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 			return;
 
 		compiled_data_owned_by_callback->compiled_aggregator = lib;
-		compiled_data_owned_by_callback->compiled_method_ptr = lib->get<const void * (*) ()>("_ZN2DB6getPtrEv")();
-		compiled_data_owned_by_callback->compiled_two_level_method_ptr = lib->get<const void * (*) ()>("_ZN2DB14getPtrTwoLevelEv")();
+		compiled_data_owned_by_callback->compiled_method_ptr = lib->get<void * (*) ()>("_ZN2DB6getPtrEv")();
+		compiled_data_owned_by_callback->compiled_two_level_method_ptr = lib->get<void * (*) ()>("_ZN2DB14getPtrTwoLevelEv")();
 	};
 
 	/** Если библиотека уже была скомпилирована, то возвращается ненулевой SharedLibraryPtr.
@@ -409,8 +411,10 @@ void NO_INLINE Aggregator::executeImpl(
 		executeImplCase<true>(method, state, aggregates_pool, rows, key_columns, aggregate_columns, key_sizes, keys, overflow_row);
 }
 
+#ifndef __clang__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
 
 template <bool no_more_keys, typename Method>
 void NO_INLINE Aggregator::executeImplCase(
@@ -485,8 +489,9 @@ void NO_INLINE Aggregator::executeImplCase(
 	}
 }
 
+#ifndef __clang__
 #pragma GCC diagnostic pop
-
+#endif
 
 void NO_INLINE Aggregator::executeWithoutKeyImpl(
 	AggregatedDataWithoutKey & res,
