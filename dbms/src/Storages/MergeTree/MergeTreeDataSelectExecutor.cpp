@@ -281,6 +281,16 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 			});
 
 			final_parts_with_ranges = hashed_replica_parts[settings.parallel_replica_offset].second;
+
+			/// Пересчитываем количество засечек и диапазонов.
+			sum_marks = 0;
+			sum_ranges = 0;
+			for (const auto & part_with_ranges : *final_parts_with_ranges)
+			{
+				sum_ranges += part_with_ranges.ranges.size();
+				for (const auto & range : part_with_ranges.ranges)
+					sum_marks += range.end - range.begin;
+			}
 		}
 	}
 
