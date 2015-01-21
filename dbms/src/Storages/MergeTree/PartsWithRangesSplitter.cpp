@@ -3,64 +3,66 @@
 namespace DB
 {
 
-PartsWithRangesSplitter::PartsWithRangesSplitter(const Cluster & input_cluster_, 
-						size_t total_size_, size_t min_cluster_size_, size_t max_clusters_count_) 
-: input_cluster(input_cluster_),
-total_size(total_size_),
-remaining_size(total_size_),
-min_cluster_size(min_cluster_size_),
-max_clusters_count(max_clusters_count_)
+PartsWithRangesSplitter::PartsWithRangesSplitter(const MergeTreeDataSelectExecutor::RangesInDataParts & input_, 
+						size_t total_size_, size_t min_segment_size_, size_t max_segments_count_)
+	: input(input_),
+	total_size(total_size_),
+	remaining_size(total_size_),
+	min_segment_size(min_segment_size_),
+	max_segments_count(max_segments_count_)
 {
+	if ((total_size == 0) || (min_segment_size == 0) || (max_segments_count < 2)
+		|| (total_size < min_segment_size))
+		throw Exception("One or more parameters are out of bound.", ErrorCodes::PARAMETER_OUT_OF_BOUND);
 }
 
-std::vector<PartsWithRangesSplitter::Cluster> PartsWithRangesSplitter::perform()
+std::vector<MergeTreeDataSelectExecutor::RangesInDataParts> PartsWithRangesSplitter::perform()
 {
 	init();
 	while (emit()) {}
-	return output_clusters;
+	return output_segments;
 }
 
 void PartsWithRangesSplitter::init()
 {
-	size_t clusters_count = max_clusters_count;
-	while ((clusters_count > 0) && (total_size < (min_cluster_size * clusters_count)))
-		--clusters_count;
+	size_t segments_count = max_segments_count;
+	while ((segments_count > 0) && (total_size < (min_segment_size * segments_count)))
+		--segments_count;
 
-	cluster_size = total_size / clusters_count;
+	segment_size = total_size / segments_count;
+	output_segments.resize(segments_count);
 
-	output_clusters.resize(clusters_count);
-
-	// Initialize range reader.
-	input_part = input_cluster.begin();
+	/// Инициализируем информацию про первый диапазон.
+	input_part = input.begin();
 	input_range = input_part->ranges.begin();
 	initRangeInfo();
 
-	// Initialize output writer.
-	current_output_cluster = output_clusters.begin();
+	/// Инициализируем информацию про первый выходной сегмент.
+	current_output_segment = output_segments.begin();
 	addPart();
-	initClusterInfo();
+	initSegmentInfo();
 }
 
 bool PartsWithRangesSplitter::emit()
 {
-	size_t new_size = std::min(range_end - range_begin, cluster_end - cluster_begin);
+	size_t new_size = std::min(range_end - range_begin, segment_end - segment_begin);
 	current_output_part->ranges.push_back(MarkRange(range_begin, range_begin + new_size));
 
 	range_begin += new_size;
-	cluster_begin += new_size;
+	segment_begin += new_size;
 
-	if (isClusterConsumed())
-		return updateCluster();
+	if (isSegmentConsumed())
+		return updateSegment();
 	else if (isRangeConsumed())
 		return updateRange(true);
 	else
 		return false;
 }
 
-bool PartsWithRangesSplitter::updateCluster()
+bool PartsWithRangesSplitter::updateSegment()
 {
-	++current_output_cluster;
-	if (current_output_cluster == output_clusters.end())
+	++current_output_segment;
+	if (current_output_segment == output_segments.end())
 		return false;
 
 	if (isRangeConsumed())
@@ -68,7 +70,7 @@ bool PartsWithRangesSplitter::updateCluster()
 			return false;
 
 	addPart();
-	initClusterInfo();
+	initSegmentInfo();
 	return true;
 }
 
@@ -78,7 +80,7 @@ bool PartsWithRangesSplitter::updateRange(bool add_part)
 	if (input_range == input_part->ranges.end())
 	{
 		++input_part;
-		if (input_part == input_cluster.end())
+		if (input_part == input.end())
 			return false;
 
 		input_range = input_part->ranges.begin();
@@ -95,8 +97,8 @@ void PartsWithRangesSplitter::addPart()
 {
 	MergeTreeDataSelectExecutor::RangesInDataPart new_part;
 	new_part.data_part = input_part->data_part;
-	current_output_cluster->push_back(new_part);
-	current_output_part = &(current_output_cluster->back());
+	current_output_segment->push_back(new_part);
+	current_output_part = &(current_output_segment->back());
 }
 
 void PartsWithRangesSplitter::initRangeInfo()
@@ -105,14 +107,14 @@ void PartsWithRangesSplitter::initRangeInfo()
 	range_end = input_range->end - input_range->begin;
 }
 
-void PartsWithRangesSplitter::initClusterInfo()
+void PartsWithRangesSplitter::initSegmentInfo()
 {
-	cluster_begin = 0;
-	cluster_end = cluster_size;
+	segment_begin = 0;
+	segment_end = segment_size;
 
-	remaining_size -= cluster_size;
-	if (remaining_size < cluster_size)
-		cluster_end += remaining_size;
+	remaining_size -= segment_size;
+	if (remaining_size < segment_size)
+		segment_end += remaining_size;
 }
 
 }
