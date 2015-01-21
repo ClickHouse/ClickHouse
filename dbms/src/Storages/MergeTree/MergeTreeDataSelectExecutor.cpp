@@ -1,5 +1,6 @@
 #include <DB/Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <DB/Storages/MergeTree/MergeTreeWhereOptimizer.h>
+#include <DB/Storages/MergeTree/PartsWithRangesSplitter.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
@@ -224,6 +225,18 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 			for (const auto & range : ranges.ranges)
 				sum_marks += range.end - range.begin;
 		}
+	}
+
+	if (settings.parallel_replicas_count > 0)
+	{
+		PartsWithRangesSplitter splitter(parts_with_ranges, sum_marks, data.settings.min_rows_for_seek,
+										 settings.parallel_replicas_count);
+		auto per_replica_parts_with_ranges = splitter.perform();
+
+		/// Для каждого элемента per_replica_parts_with_ranges[k], вычисляем хэш от RangesInDataParts
+		/// Сортируем per_replica_parts_with_ranges по хэшу
+		/// Выбираем per_replica_parts_with_ranges[settings.parallel_replica_offset]
+ 		/// Если settings.parallel_replica_offset > (n - 1), то ничего не делаем.
 	}
 
 	LOG_DEBUG(log, "Selected " << parts.size() << " parts by date, " << parts_with_ranges.size() << " parts by key, "
