@@ -10,7 +10,32 @@
 #include <DB/DataStreams/AddingConstColumnBlockInputStream.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Common/VirtualColumnUtils.h>
+#include <DB/Common/SipHash.h>
 
+namespace
+{
+	std::pair<UInt64, UInt64> computeHash(const DB::MergeTreeDataSelectExecutor::RangesInDataParts & cluster)
+	{
+		SipHash hash;
+		for (const auto & part_with_ranges : cluster)
+		{
+			const auto & part = *(part_with_ranges.data_part);
+			hash.update(part.name.c_str(), part.name.length());
+			const auto & ranges = part_with_ranges.ranges;
+			for (const auto & range : ranges)
+			{
+				hash.update(reinterpret_cast<const char *>(&range.begin), sizeof(range.begin));
+				hash.update(reinterpret_cast<const char *>(&range.end), sizeof(range.end));
+			}
+		}
+
+		UInt64 lo;
+		UInt64 hi;
+
+		hash.get128(lo, hi);
+		return std::make_pair(lo, hi);
+	}
+}
 
 namespace DB
 {
@@ -227,19 +252,42 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 		}
 	}
 
+	RangesInDataParts * final_parts_with_ranges = nullptr;
+
 	if (settings.parallel_replicas_count > 0)
 	{
 		PartsWithRangesSplitter splitter(parts_with_ranges, sum_marks, data.settings.min_rows_for_seek,
 										 settings.parallel_replicas_count);
 		auto per_replica_parts_with_ranges = splitter.perform();
 
-		/// Для каждого элемента per_replica_parts_with_ranges[k], вычисляем хэш от RangesInDataParts
-		/// Сортируем per_replica_parts_with_ranges по хэшу
-		/// Выбираем per_replica_parts_with_ranges[settings.parallel_replica_offset]
- 		/// Если settings.parallel_replica_offset > (n - 1), то ничего не делаем.
+		if ((per_replica_parts_with_ranges.size() > 1) && (settings.parallel_replica_offset < per_replica_parts_with_ranges.size()))
+		{
+			/// Для каждого элемента массива per_replica_parts_with_ranges, вычисляем его хэш
+			/// Сортируем массив per_replica_parts_with_ranges по хэшу.
+			/// Выбираем k-й элемент массива per_replica_parts_with_ranges, где k - наш номер реплики.
+
+			using Entry = std::pair<std::pair<UInt64, UInt64>, RangesInDataParts *>;
+			std::vector<Entry> hashed_replica_parts;
+
+			for (auto & cluster : per_replica_parts_with_ranges)
+			{
+				Entry entry = std::make_pair(computeHash(cluster), &cluster);
+				hashed_replica_parts.push_back(entry);
+			}
+
+			std::sort(hashed_replica_parts.begin(), hashed_replica_parts.end(), [&](const Entry & lhs, const Entry & rhs)
+			{
+				return lhs.first < rhs.first;
+			});
+
+			final_parts_with_ranges = hashed_replica_parts[settings.parallel_replica_offset].second;
+		}
 	}
 
-	LOG_DEBUG(log, "Selected " << parts.size() << " parts by date, " << parts_with_ranges.size() << " parts by key, "
+	if (final_parts_with_ranges == nullptr)
+		final_parts_with_ranges = &parts_with_ranges;
+
+	LOG_DEBUG(log, "Selected " << parts.size() << " parts by date, " << final_parts_with_ranges->size() << " parts by key, "
 			  << sum_marks << " marks to read from " << sum_ranges << " ranges");
 
 	BlockInputStreams res;
@@ -254,7 +302,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 		column_names_to_read.erase(std::unique(column_names_to_read.begin(), column_names_to_read.end()), column_names_to_read.end());
 
 		res = spreadMarkRangesAmongThreadsFinal(
-			parts_with_ranges,
+			*final_parts_with_ranges,
 			threads,
 			column_names_to_read,
 			max_block_size,
@@ -266,7 +314,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	else
 	{
 		res = spreadMarkRangesAmongThreads(
-			parts_with_ranges,
+			*final_parts_with_ranges,
 			threads,
 			column_names_to_read,
 			max_block_size,
