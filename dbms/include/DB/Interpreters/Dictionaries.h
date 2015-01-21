@@ -1,6 +1,7 @@
 #pragma once
 
 #include <thread>
+#include <unordered_map>
 
 #include <Poco/SharedPtr.h>
 
@@ -10,6 +11,9 @@
 #include <statdaemons/TechDataHierarchy.h>
 #include <statdaemons/CategoriesHierarchy.h>
 #include <statdaemons/RegionsNames.h>
+
+#include <DB/Dictionaries/IDictionary.h>
+#include <DB/Dictionaries/FlatDictionary.h>
 
 
 namespace DB
@@ -26,6 +30,7 @@ private:
 	MultiVersion<TechDataHierarchy> tech_data_hierarchy;
 	MultiVersion<CategoriesHierarchy> categories_hierarchy;
 	MultiVersion<RegionsNames> regions_names;
+	std::unordered_map<std::string, std::shared_ptr<MultiVersion<IDictionary>>> external_dictionaries;
 
 	/// Периодичность обновления справочников, в секундах.
 	int reload_period;
@@ -116,9 +121,23 @@ private:
 			was_exception = true;
 		}
 
+		try
+		{
+			reloadExternalDictionaries();
+		}
+		catch (...)
+		{
+			handleException();
+			was_exception = true;
+		}
+
+
 		if (!was_exception)
 			LOG_INFO(log, "Loaded dictionaries.");
 	}
+
+
+	void reloadExternalDictionaries();
 
 	/// Обновляет каждые reload_period секунд.
 	void reloadPeriodically()
@@ -166,6 +185,18 @@ public:
 	MultiVersion<RegionsNames>::Version getRegionsNames() const
 	{
 		return regions_names.get();
+	}
+
+	MultiVersion<IDictionary>::Version getExternalDictionary(const std::string & name) const
+	{
+		const auto it = external_dictionaries.find(name);
+		if (it == std::end(external_dictionaries))
+			throw Exception{
+				"No such dictionary: " + name,
+				ErrorCodes::BAD_ARGUMENTS
+			};
+
+		return it->second->get();
 	}
 };
 

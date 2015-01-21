@@ -25,6 +25,7 @@ void registerFunctionsDictionaries(FunctionFactory & factory)
 	factory.registerFunction<FunctionSEHierarchy>();
 	factory.registerFunction<FunctionCategoryHierarchy>();
 	factory.registerFunction<FunctionRegionToName>();
+	factory.registerFunction<FunctionDictGetString>();
 }
-
+	
 }
