@@ -260,31 +260,32 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	{
 		PartsWithRangesSplitter splitter(parts_with_ranges, sum_marks, data.settings.min_rows_for_seek,
 										 settings.parallel_replicas_count);
-		auto per_replica_parts_with_ranges = splitter.perform();
+		auto segments = splitter.perform();
 
-		if (settings.parallel_replica_offset < per_replica_parts_with_ranges.size())
+		if (settings.parallel_replica_offset < segments.size())
 		{
-			if (per_replica_parts_with_ranges.size() > 1)
+			if (segments.size() > 1)
 			{
-				/// Для каждого элемента массива per_replica_parts_with_ranges, вычисляем его хэш
-				/// Сортируем массив per_replica_parts_with_ranges по хэшу.
-				/// Выбираем k-й элемент массива per_replica_parts_with_ranges, где k - наш номер реплики.
+				/// Для каждого элемента массива segments, вычисляем его хэш
+				/// Сортируем массив segments по хэшу.
+				/// Выбираем k-й элемент массива segments, где k - наш номер реплики.
 
 				using Entry = std::pair<std::pair<UInt64, UInt64>, RangesInDataParts *>;
-				std::vector<Entry> hashed_replica_parts;
+				std::vector<Entry> hashed_segments;
+				hashed_segments.reserve(segments.size());
 
-				for (auto & cluster : per_replica_parts_with_ranges)
+				for (auto & segment : segments)
 				{
-					Entry entry = std::make_pair(computeHash(cluster), &cluster);
-					hashed_replica_parts.push_back(entry);
+					Entry entry = std::make_pair(computeHash(segment), &segment);
+					hashed_segments.push_back(entry);
 				}
 
-				std::sort(hashed_replica_parts.begin(), hashed_replica_parts.end(), [&](const Entry & lhs, const Entry & rhs)
+				std::sort(hashed_segments.begin(), hashed_segments.end(), [&](const Entry & lhs, const Entry & rhs)
 				{
 					return lhs.first < rhs.first;
 				});
 
-				final_parts_with_ranges = hashed_replica_parts[settings.parallel_replica_offset].second;
+				final_parts_with_ranges = hashed_segments[settings.parallel_replica_offset].second;
 
 				/// Пересчитываем количество засечек и диапазонов.
 				sum_marks = 0;
