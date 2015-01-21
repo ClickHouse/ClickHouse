@@ -25,7 +25,7 @@ public:
 	/// Максимальное количество различных шардов и максимальное количество реплик одного шарда
 	const size_t MAX_ADDRESSES = 200;
 
-	std::string getName() const { return "remote"; }
+	std::string getName() const override { return "remote"; }
 
 	StoragePtr execute(ASTPtr ast_function, Context & context) const override
 	{

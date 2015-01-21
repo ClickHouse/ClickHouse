@@ -325,7 +325,7 @@ InterpreterCreateQuery::ColumnsAndDefaults InterpreterCreateQuery::parseColumns(
 				const auto & tmp_column = block.getByName(col_decl_ptr->name + "_tmp");
 
 				/// type mismatch between explicitly specified and deduced type, add conversion
-				if (typeid(*name_and_type_ptr->type) != typeid(*tmp_column.type))
+				if (name_and_type_ptr->type->getName() != tmp_column.type->getName())
 				{
 					col_decl_ptr->default_expression = makeASTFunction(
 						"to" + name_and_type_ptr->type->getName(),
