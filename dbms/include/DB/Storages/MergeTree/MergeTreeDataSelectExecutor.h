@@ -49,8 +49,10 @@ private:
 		}
 	};
 
+public:
 	typedef std::vector<RangesInDataPart> RangesInDataParts;
 
+private:
 	size_t min_marks_for_seek;
 	size_t min_marks_for_concurrent_read;
 	size_t max_marks_to_use_cache;
