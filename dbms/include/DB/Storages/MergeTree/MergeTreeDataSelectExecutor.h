@@ -6,14 +6,11 @@
 namespace DB
 {
 
-class PartsWithRangesSplitter;
 
 /** Выполняет запросы SELECT на данных из merge-дерева.
   */
 class MergeTreeDataSelectExecutor
 {
-	friend class PartsWithRangesSplitter;
-
 public:
 	MergeTreeDataSelectExecutor(MergeTreeData & data_);
 
@@ -30,11 +27,7 @@ public:
 		unsigned threads = 1,
 		size_t * inout_part_index = nullptr);
 
-private:
-	MergeTreeData & data;
-
-	Logger * log;
-
+public:
 	struct RangesInDataPart
 	{
 		MergeTreeData::DataPartPtr data_part;
@@ -49,10 +42,13 @@ private:
 		}
 	};
 
-public:
 	typedef std::vector<RangesInDataPart> RangesInDataParts;
 
 private:
+	MergeTreeData & data;
+
+	Logger * log;
+
 	size_t min_marks_for_seek;
 	size_t min_marks_for_concurrent_read;
 	size_t max_marks_to_use_cache;

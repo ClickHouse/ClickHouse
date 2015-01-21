@@ -14,27 +14,29 @@
 
 namespace
 {
-	std::pair<UInt64, UInt64> computeHash(const DB::MergeTreeDataSelectExecutor::RangesInDataParts & cluster)
+
+std::pair<UInt64, UInt64> computeHash(const DB::MergeTreeDataSelectExecutor::RangesInDataParts & cluster)
+{
+	SipHash hash;
+	for (const auto & part_with_ranges : cluster)
 	{
-		SipHash hash;
-		for (const auto & part_with_ranges : cluster)
+		const auto & part = *(part_with_ranges.data_part);
+		hash.update(part.name.c_str(), part.name.length());
+		const auto & ranges = part_with_ranges.ranges;
+		for (const auto & range : ranges)
 		{
-			const auto & part = *(part_with_ranges.data_part);
-			hash.update(part.name.c_str(), part.name.length());
-			const auto & ranges = part_with_ranges.ranges;
-			for (const auto & range : ranges)
-			{
-				hash.update(reinterpret_cast<const char *>(&range.begin), sizeof(range.begin));
-				hash.update(reinterpret_cast<const char *>(&range.end), sizeof(range.end));
-			}
+			hash.update(reinterpret_cast<const char *>(&range.begin), sizeof(range.begin));
+			hash.update(reinterpret_cast<const char *>(&range.end), sizeof(range.end));
 		}
-
-		UInt64 lo;
-		UInt64 hi;
-
-		hash.get128(lo, hi);
-		return std::make_pair(lo, hi);
 	}
+
+	UInt64 lo;
+	UInt64 hi;
+
+	hash.get128(lo, hi);
+	return std::make_pair(lo, hi);
+}
+
 }
 
 namespace DB
