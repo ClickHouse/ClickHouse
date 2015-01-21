@@ -6,11 +6,14 @@
 namespace DB
 {
 
+class PartsWithRangesSplitter;
 
 /** Выполняет запросы SELECT на данных из merge-дерева.
   */
 class MergeTreeDataSelectExecutor
 {
+	friend class PartsWithRangesSplitter;
+
 public:
 	MergeTreeDataSelectExecutor(MergeTreeData & data_);
 
