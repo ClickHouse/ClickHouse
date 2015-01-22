@@ -256,7 +256,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 	if (settings.parallel_replicas_count > 1)
 	{
-		PartsWithRangesSplitter splitter(parts_with_ranges, sum_marks, data.settings.min_rows_for_seek,
+		PartsWithRangesSplitter splitter(parts_with_ranges, data.settings.min_rows_for_seek,
 										 settings.parallel_replicas_count);
 		auto segments = splitter.perform();
 
