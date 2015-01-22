@@ -238,7 +238,7 @@ UsersConfigReloader::~UsersConfigReloader()
 		quit = true;
 		thread.join();
 	}
-	catch(...)
+	catch (...)
 	{
 		tryLogCurrentException("~UsersConfigReloader");
 	}
