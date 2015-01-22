@@ -51,7 +51,7 @@ public:
 					const auto & attribute_column = *block.getByPosition(attribute_idx).column;
 					auto & attribute = attributes[dict_struct.attributes[attribute_idx - 1].name];
 
-					for (const auto row_idx : ext::range(1, attribute_column.size()))
+					for (const auto row_idx : ext::range(0, id_column.size()))
 						setAttributeValue(attribute, id_column[row_idx].get<UInt64>(), attribute_column[row_idx]);
 				}
 			}
