@@ -13,7 +13,9 @@ namespace DB
 			Connection * connection = &*entry;
 			if (connection == nullptr)
 				throw Exception("Invalid connection specified in parameter.");
-			replica_hash.insert(std::make_pair(connection->socket.impl()->sockfd(), connection));
+			auto res = replica_hash.insert(std::make_pair(connection->socket.impl()->sockfd(), connection));
+			if (!res.second)
+				throw Exception("Invalid set of connections.");
 		}
 	}
 
