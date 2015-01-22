@@ -774,8 +774,7 @@ void InterpreterSelectQuery::executeMergeAggregated(BlockInputStreams & streams,
 		return;
 
 	/// Склеим несколько источников в один
-	streams[0] = new UnionBlockInputStream(streams, settings.max_threads);
-	streams.resize(1);
+	executeUnion(streams);
 
 	/// Теперь объединим агрегированные блоки
 	Names key_names;
@@ -798,11 +797,7 @@ void InterpreterSelectQuery::executeHaving(BlockInputStreams & streams, Expressi
 void InterpreterSelectQuery::executeTotalsAndHaving(BlockInputStreams & streams, bool has_having,
 	ExpressionActionsPtr expression, bool overflow_row)
 {
-	if (streams.size() > 1)
-	{
-		streams[0] = new UnionBlockInputStream(streams, settings.max_threads);
-		streams.resize(1);
-	}
+	executeUnion(streams);
 
 	Names key_names;
 	AggregateDescriptions aggregates;
@@ -878,11 +873,7 @@ void InterpreterSelectQuery::executeOrder(BlockInputStreams & streams)
 	BlockInputStreamPtr & stream = streams[0];
 
 	/// Если потоков несколько, то объединяем их в один
-	if (streams.size() > 1)
-	{
-		stream = new UnionBlockInputStream(streams, settings.max_threads);
-		streams.resize(1);
-	}
+	executeUnion(streams);
 
 	/// Сливаем сортированные блоки.
 	stream = new MergeSortingBlockInputStream(
@@ -996,6 +987,7 @@ void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(BlockInputStreams &
 		for (auto & elem : subqueries_for_sets)
 			elem.second.table.reset();
 
+	executeUnion(streams);
 	streams[0] = new CreatingSetsBlockInputStream(streams[0], subqueries_for_sets, settings.limits);
 }
 
