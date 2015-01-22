@@ -1292,12 +1292,12 @@ private:
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
 			};
 		}
-		
+
 		return new DataTypeArray{arg->clone()};
 	}
 
 	template <typename T>
-	bool execute(Block & block, const IColumn * const arg, const size_t result) override
+	bool execute(Block & block, const IColumn * const arg, const size_t result)
 	{
 		if (const auto in = typeid_cast<const ColumnVector<T> *>(arg))
 		{
@@ -1351,7 +1351,7 @@ private:
 
 			auto & out_data = data_col->getData();
 			auto & out_offsets = out->getOffsets();
-			
+
 			IColumn::Offset_t offset{};
 			for (const auto i : ext::range(0, in->size()))
 			{

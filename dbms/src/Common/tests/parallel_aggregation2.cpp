@@ -62,8 +62,10 @@ struct AggregateIndependent
 	}
 };
 
+#if !__clang__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
 
 template <typename Map>
 struct AggregateIndependentWithSequentialKeysOptimization
@@ -111,7 +113,9 @@ struct AggregateIndependentWithSequentialKeysOptimization
 	}
 };
 
+#if !__clang__
 #pragma GCC diagnostic pop
+#endif
 
 
 template <typename Map>
@@ -142,7 +146,7 @@ struct MergeSequentialTransposed	/// На практике не лучше об�
 						Merger && merger,
 						boost::threadpool::pool & pool)
 	{
-		typename Map::iterator iterators[num_maps];
+		std::vector<typename Map::iterator> iterators(num_maps);
 		for (size_t i = 1; i < num_maps; ++i)
 			iterators[i] = source_maps[i]->begin();
 
@@ -259,15 +263,19 @@ struct Creator
 	void operator()(Value & x) const {}
 };
 
+#if !__clang__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
 
 struct Updater
 {
 	void operator()(Value & x) const { ++x; }
 };
 
+#if !__clang__
 #pragma GCC diagnostic pop
+#endif
 
 struct Merger
 {

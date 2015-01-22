@@ -94,8 +94,10 @@ void aggregate2(MapTwoLevel & map, Source::const_iterator begin, Source::const_i
 		++map[*it];
 }
 
+#if !__clang__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
 
 void aggregate22(MapTwoLevel & map, Source::const_iterator begin, Source::const_iterator end)
 {
@@ -116,7 +118,9 @@ void aggregate22(MapTwoLevel & map, Source::const_iterator begin, Source::const_
 	}
 }
 
+#if !__clang__
 #pragma GCC diagnostic pop
+#endif
 
 void merge2(MapTwoLevel * maps, size_t num_threads, size_t bucket)
 {
@@ -275,7 +279,7 @@ int main(int argc, char ** argv)
 		  * Затем сливаем их вместе.
 		  */
 
-		Map maps[num_threads];
+		std::vector<Map> maps(num_threads);
 
 		Stopwatch watch;
 
@@ -329,7 +333,7 @@ int main(int argc, char ** argv)
 		/** То же самое, но с оптимизацией для подряд идущих одинаковых значений.
 		  */
 
-		Map maps[num_threads];
+		std::vector<Map> maps(num_threads);
 
 		Stopwatch watch;
 
@@ -387,7 +391,7 @@ int main(int argc, char ** argv)
 		  * На практике, разницы нет.
 		  */
 
-		Map maps[num_threads];
+		std::vector<Map> maps(num_threads);
 
 		Stopwatch watch;
 
@@ -417,7 +421,7 @@ int main(int argc, char ** argv)
 
 		watch.restart();
 
-		Map::iterator iterators[num_threads];
+		std::vector<Map::iterator> iterators(num_threads);
 		for (size_t i = 1; i < num_threads; ++i)
 			iterators[i] = maps[i].begin();
 
@@ -463,7 +467,7 @@ int main(int argc, char ** argv)
 		  *  и преимущество в производительности достигает 4 раз.
 		  */
 
-		MapTwoLevel maps[num_threads];
+		std::vector<MapTwoLevel> maps(num_threads);
 
 		Stopwatch watch;
 
@@ -517,7 +521,7 @@ int main(int argc, char ** argv)
 
 	if (!method || method == 22)
 	{
-		MapTwoLevel maps[num_threads];
+		std::vector<MapTwoLevel> maps(num_threads);
 
 		Stopwatch watch;
 
@@ -581,7 +585,7 @@ int main(int argc, char ** argv)
 		  * Этот метод плохой - много contention-а.
 		  */
 
-		Map local_maps[num_threads];
+		std::vector<Map> local_maps(num_threads);
 		Map global_map;
 		Mutex mutex;
 
@@ -647,7 +651,7 @@ int main(int argc, char ** argv)
 		 * Затем сбрасываем данные в глобальную хэш-таблицу, защищённую mutex-ом, и продолжаем.
 		 */
 
-		Map local_maps[num_threads];
+		std::vector<Map> local_maps(num_threads);
 		Map global_map;
 		Mutex mutex;
 
@@ -716,9 +720,9 @@ int main(int argc, char ** argv)
 		  * Этот метод не такой уж плохой при большом количестве потоков, но хуже второго.
 		  */
 
-		Map local_maps[num_threads];
+		std::vector<Map> local_maps(num_threads);
 		MapTwoLevel global_map;
-		Mutex mutexes[MapTwoLevel::NUM_BUCKETS];
+		std::vector<Mutex> mutexes(MapTwoLevel::NUM_BUCKETS);
 
 		Stopwatch watch;
 
@@ -851,7 +855,7 @@ int main(int argc, char ** argv)
 		  * Довольно тормозной вариант.
 		  */
 /*
-		Map maps[num_threads];
+		std::vector<Map> maps(num_threads);
 
 		Stopwatch watch;
 

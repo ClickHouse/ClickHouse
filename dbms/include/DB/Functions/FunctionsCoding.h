@@ -77,7 +77,7 @@ public:
 	static constexpr auto && digits = "0123456789abcdef";
 
 	/// print integer in desired base, faster than sprintf
-	template <uint32_t base, typename T, uint32_t buffer_size = sizeof(T) * int_log(256, base)>
+	template <uint32_t base, typename T, uint32_t buffer_size = sizeof(T) * int_log(256, base, false)>
 	static void print_integer(char *& out, T value)
 	{
 		if (value == 0)

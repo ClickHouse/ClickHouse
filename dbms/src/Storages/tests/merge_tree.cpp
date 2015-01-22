@@ -43,7 +43,7 @@ int main(int argc, char ** argv)
 
 		StoragePtr table = StorageMergeTree::create(
 			"./", "default", "test",
-			names_and_types, {}, {}, {},
+			names_and_types, {}, {}, ColumnDefaults{},
 			context, primary_expr, "d",
 			nullptr, 101, MergeTreeData::Ordinary, {}, {});
 

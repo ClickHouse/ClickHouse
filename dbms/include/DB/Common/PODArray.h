@@ -30,7 +30,7 @@ namespace DB
   * Поддерживается только часть интерфейса std::vector.
   *
   * Конструктор по-умолчанию создаёт пустой объект, который не выделяет память.
-  * Затем выделяется память минимум под initial_size элементов.
+  * Затем выделяется память минимум под POD_ARRAY_INITIAL_SIZE элементов.
   *
   * При первом выделении памяти использует std::allocator.
   *  В реализации из libstdc++ он кэширует куски памяти несколько больше, чем обычный malloc.
@@ -40,12 +40,13 @@ namespace DB
   *
   * Если вставлять элементы push_back-ом, не делая reserve, то PODArray примерно в 2.5 раза быстрее std::vector.
   */
+#define POD_ARRAY_INITIAL_SIZE 4096UL
+
 template <typename T>
 class PODArray : private boost::noncopyable, private std::allocator<char>	/// empty base optimization
 {
 private:
 	typedef std::allocator<char> Allocator;
-	static constexpr size_t initial_size = 4096;
 
 	char * c_start;
 	char * c_end;
@@ -78,7 +79,7 @@ private:
 		return n;
 	}
 
-	static size_t to_size(size_t n) { return byte_size(std::max(initial_size, round_up_to_power_of_two(n))); }
+	static size_t to_size(size_t n) { return byte_size(std::max(POD_ARRAY_INITIAL_SIZE, round_up_to_power_of_two(n))); }
 
 	void alloc(size_t n)
 	{
@@ -203,7 +204,7 @@ public:
 	void reserve()
 	{
 		if (size() == 0)
-			realloc(initial_size);
+			realloc(POD_ARRAY_INITIAL_SIZE);
 		else
 			realloc(size() * 2);
 	}
