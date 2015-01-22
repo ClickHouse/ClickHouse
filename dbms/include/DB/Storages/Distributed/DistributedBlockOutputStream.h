@@ -11,6 +11,7 @@
 
 #include <statdaemons/Increment.h>
 #include <statdaemons/ext/memory.hpp>
+#include <Yandex/Revision.h>
 
 #include <iostream>
 #include <type_traits>
@@ -193,7 +194,7 @@ private:
 
 				WriteBufferFromFile out{block_file_tmp_path};
 				CompressedWriteBuffer compress{out};
-				NativeBlockOutputStream stream{compress};
+				NativeBlockOutputStream stream{compress, Revision::get()};
 
 				writeStringBinary(query_string, out);
 
