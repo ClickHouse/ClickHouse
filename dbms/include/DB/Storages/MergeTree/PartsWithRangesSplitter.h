@@ -8,11 +8,11 @@ namespace DB
 /** Этот класс разбивает объект типа RangesInDataParts (см. MergeTreeDataSelectExecutor)
   * на указанное количество частей. 
   */
-class PartsWithRangesSplitter
+class PartsWithRangesSplitter final
 {
 public:
 	PartsWithRangesSplitter(const MergeTreeDataSelectExecutor::RangesInDataParts & input_, 
-							size_t total_size_, size_t min_segment_size_, size_t max_segments_count_);
+							size_t min_segment_size_, size_t max_segments_count_);
 
 	~PartsWithRangesSplitter() = default;
 	PartsWithRangesSplitter(const PartsWithRangesSplitter &) = delete;
@@ -22,30 +22,32 @@ public:
 
 private:
 	void init();
-	bool emit();
-	bool updateSegment();
-	bool updateRange(bool add_part);
-	void addPart();
+	bool emitRange();
+	bool switchToNextSegment();
+	bool switchToNextRange(bool add_part);
 	void initRangeInfo();
 	void initSegmentInfo();
+	void addPart();
 	bool isRangeConsumed() const { return range_begin == range_end; }
 	bool isSegmentConsumed() const { return segment_begin == segment_end; }
 
 private:
-	// Input data.
+	// Входные данные.
 	const MergeTreeDataSelectExecutor::RangesInDataParts & input;
 	MergeTreeDataSelectExecutor::RangesInDataParts::const_iterator input_part;
 	std::vector<MarkRange>::const_iterator input_range;
 
-	// Output data.
+	// Выходные данные.
 	std::vector<MergeTreeDataSelectExecutor::RangesInDataParts> output_segments;
 	std::vector<MergeTreeDataSelectExecutor::RangesInDataParts>::iterator current_output_segment;
 	MergeTreeDataSelectExecutor::RangesInDataPart * current_output_part;
 
 	size_t total_size;
 	size_t remaining_size;
-	size_t min_segment_size;
-	size_t max_segments_count;
+
+	const size_t min_segment_size;
+	const size_t max_segments_count;
+
 	size_t segment_size;
 
 	size_t range_begin;
@@ -53,6 +55,8 @@ private:
 
 	size_t segment_begin;
 	size_t segment_end;
+
+	size_t part_index_in_query;
 };
 
 }
