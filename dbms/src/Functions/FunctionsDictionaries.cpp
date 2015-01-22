@@ -25,6 +25,14 @@ void registerFunctionsDictionaries(FunctionFactory & factory)
 	factory.registerFunction<FunctionSEHierarchy>();
 	factory.registerFunction<FunctionCategoryHierarchy>();
 	factory.registerFunction<FunctionRegionToName>();
+	factory.registerFunction<FunctionDictGetUInt8>();
+	factory.registerFunction<FunctionDictGetUInt16>();
+	factory.registerFunction<FunctionDictGetUInt32>();
+	factory.registerFunction<FunctionDictGetUInt64>();
+	factory.registerFunction<FunctionDictGetInt8>();
+	factory.registerFunction<FunctionDictGetInt16>();
+	factory.registerFunction<FunctionDictGetInt32>();
+	factory.registerFunction<FunctionDictGetInt64>();
 	factory.registerFunction<FunctionDictGetString>();
 }
 	

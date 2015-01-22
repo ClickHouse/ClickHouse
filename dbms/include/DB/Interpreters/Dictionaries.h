@@ -13,13 +13,14 @@
 #include <statdaemons/RegionsNames.h>
 
 #include <DB/Dictionaries/IDictionary.h>
-#include <DB/Dictionaries/FlatDictionary.h>
 
 
 namespace DB
 {
 
 using Poco::SharedPtr;
+
+class Context;
 
 /// Словари Метрики, которые могут использоваться в функциях.
 
@@ -32,6 +33,7 @@ private:
 	MultiVersion<RegionsNames> regions_names;
 	std::unordered_map<std::string, std::shared_ptr<MultiVersion<IDictionary>>> external_dictionaries;
 
+	const Context & context;
 	/// Периодичность обновления справочников, в секундах.
 	int reload_period;
 
@@ -153,8 +155,8 @@ private:
 
 public:
 	/// Справочники будут обновляться в отдельном потоке, каждые reload_period секунд.
-	Dictionaries(int reload_period_ = 3600)
-		: reload_period(reload_period_),
+	Dictionaries(const Context & context, int reload_period_ = 3600)
+		: context(context), reload_period(reload_period_),
 		log(&Logger::get("Dictionaries"))
 	{
 		reloadImpl();

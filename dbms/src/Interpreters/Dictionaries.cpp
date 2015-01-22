@@ -18,6 +18,9 @@ namespace
 void Dictionaries::reloadExternalDictionaries()
 {
 	const auto config_path = Poco::Util::Application::instance().config().getString("dictionaries_config");
+	if (config_path.empty())
+		return;
+
 	const config_ptr_t<Poco::Util::XMLConfiguration> config{new Poco::Util::XMLConfiguration{config_path}};
 
 	/// get all dictionaries' definitions
@@ -29,28 +32,31 @@ void Dictionaries::reloadExternalDictionaries()
 	{
 		if (0 != strncmp(key.data(), "dictionary", strlen("dictionary")))
 		{
-			/// @todo maybe output a warning
+			LOG_WARNING(log, "unknown node in dictionaries file: '" + key + "', 'dictionary'");
 			continue;
 		}
 
-		std::cout << key << std::endl;
 		const auto & prefix = key + '.';
 
 		const auto & name = config->getString(prefix + "name");
 		if (name.empty())
 		{
-			/// @todo handle error, dictionary name cannot be empty
+			LOG_WARNING(log, "dictionary name cannot be empty");
+			continue;
 		}
 
-		auto dict_ptr = DictionaryFactory::instance().create();
-		const auto it = external_dictionaries.find(name);
-		if (it == std::end(external_dictionaries))
+		try
 		{
-			external_dictionaries.emplace(name, std::make_shared<MultiVersion<IDictionary>>(dict_ptr.release()));
+			auto dict_ptr = DictionaryFactory::instance().create(*config, prefix, context);
+			const auto it = external_dictionaries.find(name);
+			if (it == std::end(external_dictionaries))
+				external_dictionaries.emplace(name, std::make_shared<MultiVersion<IDictionary>>(dict_ptr.release()));
+			else
+				it->second->set(dict_ptr.release());
 		}
-		else
+		catch (const Exception &)
 		{
-			it->second->set(dict_ptr.release());
+			handleException();
 		}
 	}
 };

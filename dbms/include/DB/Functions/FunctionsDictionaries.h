@@ -908,4 +908,146 @@ private:
 	const Dictionaries & dictionaries;
 };
 
+
+template <typename IntegralType>
+class FunctionDictGetInteger: public IFunction
+{
+public:
+	static const std::string name;
+
+	static IFunction * create(const Context & context)
+	{
+		return new FunctionDictGetInteger{context.getDictionaries()};
+	};
+
+	FunctionDictGetInteger(const Dictionaries & dictionaries) : dictionaries(dictionaries) {}
+
+	String getName() const override { return name; }
+
+private:
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	{
+		if (arguments.size() != 3)
+			throw Exception{
+				"Number of arguments for function " + getName() + " doesn't match: passed "
+					+ toString(arguments.size()) + ", should be 3.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
+			};
+
+		if (!typeid_cast<const DataTypeString *>(arguments[0].get()))
+		{
+			throw Exception{
+				"Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+			};
+		}
+
+		if (!typeid_cast<const DataTypeString *>(arguments[1].get()))
+		{
+			throw Exception{
+				"Illegal type " + arguments[1]->getName() + " of argument of function " + getName(),
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+			};
+		}
+
+		const auto id_arg = arguments[2].get();
+		if (!typeid_cast<const DataTypeUInt8 *>(id_arg) &&
+			!typeid_cast<const DataTypeUInt16 *>(id_arg) &&
+			!typeid_cast<const DataTypeUInt32 *>(id_arg) &&
+			!typeid_cast<const DataTypeUInt64 *>(id_arg) &&
+			!typeid_cast<const DataTypeInt8 *>(id_arg) &&
+			!typeid_cast<const DataTypeInt16 *>(id_arg) &&
+			!typeid_cast<const DataTypeInt32 *>(id_arg) &&
+			!typeid_cast<const DataTypeInt64 *>(id_arg))
+		{
+			throw Exception{
+				"Illegal type " + arguments[2]->getName() + " of argument of function " + getName(),
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+			};
+		}
+
+		return new typename DataTypeFromFieldType<IntegralType>::Type;
+	}
+
+	void execute(Block & block, const ColumnNumbers & arguments, const size_t result)
+	{
+		const auto dict_name_col = typeid_cast<const ColumnConst<String> *>(block.getByPosition(arguments[0]).column.get());
+		if (!dict_name_col)
+			throw Exception{
+				"First argument of function " + getName() + " must be a constant string",
+				ErrorCodes::ILLEGAL_COLUMN
+			};
+
+		auto dict = dictionaries.getExternalDictionary(dict_name_col->getData());
+
+		const auto attr_name_col = typeid_cast<const ColumnConst<String> *>(block.getByPosition(arguments[1]).column.get());
+		if (!attr_name_col)
+			throw Exception{
+				"Second argument of function " + getName() + " must be a constant string",
+				ErrorCodes::ILLEGAL_COLUMN
+			};
+
+		const auto & attr_name = attr_name_col->getData();
+
+		const auto id_col = block.getByPosition(arguments[2]).column.get();
+		if (!execute<UInt8>(block, result, dict, attr_name, id_col) &&
+			!execute<UInt16>(block, result, dict, attr_name, id_col) &&
+			!execute<UInt32>(block, result, dict, attr_name, id_col) &&
+			!execute<UInt64>(block, result, dict, attr_name, id_col) &&
+			!execute<Int8>(block, result, dict, attr_name, id_col) &&
+			!execute<Int16>(block, result, dict, attr_name, id_col) &&
+			!execute<Int32>(block, result, dict, attr_name, id_col) &&
+			!execute<Int64>(block, result, dict, attr_name, id_col))
+		{
+			throw Exception{
+				"Third argument of function " + getName() + " must be integral",
+				ErrorCodes::ILLEGAL_COLUMN
+			};
+		}
+	}
+
+	template <typename T>
+	bool execute(Block & block, const size_t result, const MultiVersion<IDictionary>::Version & dictionary,
+		const std::string & attr_name, const IColumn * const id_col_untyped)
+	{
+		if (const auto id_col = typeid_cast<const ColumnVector<T> *>(id_col_untyped))
+		{
+			const auto out = new ColumnVector<IntegralType>;
+			block.getByPosition(result).column = out;
+
+			for (const auto & id : id_col->getData())
+				out->insert(dictionary->getUInt64(id, attr_name));
+
+			return true;
+		}
+		else if (const auto id_col = typeid_cast<const ColumnConst<T> *>(id_col_untyped))
+		{
+			block.getByPosition(result).column = new ColumnConst<IntegralType>{
+				id_col->size(),
+				static_cast<IntegralType>(dictionary->getUInt64(id_col->getData(), attr_name))
+			};
+
+			return true;
+		};
+
+		return false;
+	}
+
+	const Dictionaries & dictionaries;
+};
+
+template <typename IntegralType>
+const std::string FunctionDictGetInteger<IntegralType>::name = "dictGet" + TypeName<IntegralType>::get();
+
+
+using FunctionDictGetUInt8 = FunctionDictGetInteger<UInt8>;
+using FunctionDictGetUInt16 = FunctionDictGetInteger<UInt16>;
+using FunctionDictGetUInt32 = FunctionDictGetInteger<UInt32>;
+using FunctionDictGetUInt64 = FunctionDictGetInteger<UInt64>;
+using FunctionDictGetInt8 = FunctionDictGetInteger<Int8>;
+using FunctionDictGetInt16 = FunctionDictGetInteger<Int16>;
+using FunctionDictGetInt32 = FunctionDictGetInteger<Int32>;
+using FunctionDictGetInt64 = FunctionDictGetInteger<Int64>;
+
+
 }
