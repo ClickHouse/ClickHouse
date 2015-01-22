@@ -18,38 +18,35 @@ namespace DB
 		ShardReplicas(const ShardReplicas &) = delete;
 		ShardReplicas & operator=(const ShardReplicas &) = delete;
 
-		/// Получить пакет от какой-нибудь реплики.
-		Connection::Packet receivePacket();
+		/// Отправить на реплики всё содержимое внешних таблиц.
+		void sendExternalTablesData(std::vector<ExternalTablesData> & data);
 
-		/// Отправить запрос ко всем репликам.
+		/// Отправить запрос на реплики.
 		void sendQuery(const String & query, const String & query_id = "",
 					   UInt64 stage = QueryProcessingStage::Complete, bool with_pending_data = false);
 
-		/// Разорвать соединения ко всем репликам
+		/// Получить пакет от какой-нибудь реплики.
+		Connection::Packet receivePacket();
+
+		/// Разорвать соединения к репликам
 		void disconnect();
 
-		/// Отменить запросы у всех реплик
+		/// Отменить запросы к репликам
 		void sendCancel();
 
-		/// Для каждой реплики получить оставшиеся пакеты при отмене запроса.
-		void drainResidualPackets();
+		/// Для каждой реплики получить оставшиеся пакеты после отмена запроса.
+		Connection::Packet drain();
 
-		/// Получить адреса всех реплик в виде строки.
+		/// Получить адреса реплик в виде строки.
 		std::string dumpAddresses() const;
 
 		/// Возвращает количесто реплик.
-		size_t size() const 
-		{
-			return replica_hash.size();
-		}
-
-		/// Отправить ко всем репликам всё содержимое внешних таблиц.
-		void sendExternalTablesData(std::vector<ExternalTablesData> & data);
+		size_t size() const { return replica_hash.size(); }
 
 	private:
 		/// Проверить, есть ли данные, которые можно прочитать на каких-нибудь репликах.
 		/// Возвращает соединение на реплику, с которой можно прочитать данные, если такая есть.
-		Connection * waitForReadEvent();
+		Connection ** waitForReadEvent();
 
 	private:
 		/// Реплики хэшированные по id сокета
@@ -58,5 +55,8 @@ namespace DB
 	private:
 		const Settings & settings;
 		ReplicaHash replica_hash;
+		size_t active_connection_count = 0;
+		bool sent_query = false;
+		bool cancelled = false;
 	};
 }

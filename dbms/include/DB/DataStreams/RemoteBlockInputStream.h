@@ -158,9 +158,10 @@ protected:
 			{
 				auto entries = pool->getMany(&settings);
 				if (entries.size() > 1)
-					shard_replicas.reset(new ShardReplicas(entries, settings));
-				else if (entries.size() == 1)
+					shard_replicas = ext::make_unique<ShardReplicas>(entries, settings);
+				else
 				{
+					/// NOTE IConnectionPool::getMany() всегда возвращает как минимум одно соединение.
 					use_many_replicas = false;
 					connection = &*entries[0];
 				}
@@ -272,7 +273,22 @@ protected:
 		}
 
 		if (use_many_replicas)
-			shard_replicas->drainResidualPackets();
+		{
+			Connection::Packet packet = shard_replicas->drain();
+			switch (packet.type)
+			{
+				case Protocol::Server::EndOfStream:
+					break;
+
+				case Protocol::Server::Exception:
+					got_exception_from_server = true;
+					packet.exception->rethrow();
+					break;
+
+				default:
+					throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
+			}
+		}
 		else
 		{
 			/// Получим оставшиеся пакеты, чтобы не было рассинхронизации в соединении с сервером.
