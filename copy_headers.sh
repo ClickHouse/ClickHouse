@@ -20,10 +20,8 @@ DST=${2:-$SOURCE_PATH/../headers};
 
 PATH="/usr/local/bin:/usr/local/sbin:/usr/bin:$PATH"
 
-# Указано -mavx2, чтобы было найдено больше заголовочных файлов с интринсиками
-# - с запасом, для последующего использования -march=native на сервере.
 
-for i in $(clang -M -xc++ -std=gnu++1y -Wall -Werror -mavx2 -O3 -g -fPIC \
+for i in $(clang -M -xc++ -std=gnu++1y -Wall -Werror -msse4 -mpopcnt -O3 -g -fPIC \
 	$(cat "$SOURCE_PATH/CMakeLists.txt" | grep include_directories | grep -v METRICA_BINARY_DIR | sed -e "s!\${METRICA_SOURCE_DIR}!$SOURCE_PATH!; s!include_directories (!-I !; s!)!!;" | tr '\n' ' ') \
 	"$SOURCE_PATH/dbms/include/DB/Interpreters/SpecializedAggregator.h" |
 	tr -d '\\' |
@@ -31,5 +29,14 @@ for i in $(clang -M -xc++ -std=gnu++1y -Wall -Werror -mavx2 -O3 -g -fPIC \
 	sed -r -e 's/^.+\.cpp / /');
 do
 	mkdir -p "$DST/$(echo $i | sed -r -e 's/\/[^/]*$/\//')";
+	cp "$i" "$DST/$i";
+done
+
+
+# Копируем больше заголовочных файлов с интринсиками, так как на серверах, куда будут устанавливаться
+#  заголовочные файлы, будет использоваться опция -march=native.
+
+for i in $(ls -1 $(clang -v -xc++ - <<<'' 2>&1 | grep '^ /' | grep 'include' | grep '/lib/clang/')/*.h | grep -vE 'arm|altivec|Intrin');
+do
 	cp "$i" "$DST/$i";
 done
