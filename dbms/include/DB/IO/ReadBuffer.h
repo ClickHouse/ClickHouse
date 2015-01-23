@@ -40,7 +40,7 @@ public:
 	/** прочитать следующие данные и заполнить ими буфер; переместить позицию в начало;
 	  * вернуть false в случае конца, true иначе; кинуть исключение, если что-то не так
 	  */
-	inline bool next()
+	__attribute__((noinline)) bool next()
 	{
 		bytes += offset();
 		bool res = nextImpl();
@@ -68,7 +68,7 @@ public:
 	  *
 	  * При попытке чтения после конца, следует кидать исключение.
 	  */
-	inline bool eof()
+	bool __attribute__ ((noinline)) eof()
 	{
 		return !hasPendingData() && !next();
 	}
