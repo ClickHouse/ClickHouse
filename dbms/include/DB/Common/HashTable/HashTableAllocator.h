@@ -8,6 +8,15 @@
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 
+/** При использовании HashTableAllocatorWithStackMemory, размещённом на стеке,
+  *  GCC 4.9 ошибочно делает предположение, что мы можем вызывать free от указателя на стек.
+  * На самом деле, комбинация условий внутри HashTableAllocatorWithStackMemory этого не допускает.
+  */
+#if !__clang__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wfree-nonheap-object"
+#endif
+
 
 /** Общая часть разных хэш-таблиц, отвечающая за выделение/освобождение памяти.
   * Используется в качестве параметра шаблона (есть несколько реализаций с таким же интерфейсом).
@@ -158,3 +167,7 @@ public:
 		return buf;
 	}
 };
+
+#if !__clang__
+#pragma GCC diagnostic pop
+#endif
