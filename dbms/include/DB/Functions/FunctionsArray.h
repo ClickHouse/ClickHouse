@@ -254,9 +254,9 @@ struct ArrayElementNumImpl
 			else if (index[i].getType() == Field::Types::Int64)
 			{
 				Int64 cur_id = safeGet<Int64>(index[i]);
-				if (cur_id > 0 && cur_id <= array_size)
+				if (cur_id > 0 && static_cast<UInt64>(cur_id) <= array_size)
 					result[i] = data[current_offset + cur_id - 1];
-				else if (cur_id < 0 && -cur_id <= array_size)
+				else if (cur_id < 0 && static_cast<UInt64>(-cur_id) <= array_size)
 					result[i] = data[offsets[i] + cur_id];
 				else
 					result[i] = T();
@@ -350,9 +350,9 @@ struct ArrayElementStringImpl
 			else if (index[i].getType() == Field::Types::Int64)
 			{
 				Int64 cur_id = safeGet<Int64>(index[i]);
-				if (cur_id > 0 && cur_id <= array_size)
+				if (cur_id > 0 && static_cast<UInt64>(cur_id) <= array_size)
 					adjusted_index = cur_id - 1;
-				else if (cur_id < 0 && -cur_id <= array_size)
+				else if (cur_id < 0 && static_cast<UInt64>(-cur_id) <= array_size)
 					adjusted_index = array_size + cur_id;
 				else
 					adjusted_index = array_size; /// Индекс не вписывается в рамки массива, заменяем слишком большим
@@ -559,9 +559,9 @@ private:
 			else if (index[i].getType() == Field::Types::Int64)
 			{
 				Int64 cur_id = safeGet<Int64>(index[i]);
-				if (cur_id > 0 && cur_id <= array_size)
+				if (cur_id > 0 && static_cast<UInt64>(cur_id) <= array_size)
 					block.getByPosition(result).column->insert(array[cur_id - 1]);
-				else if (cur_id < 0 && -cur_id <= array_size)
+				else if (cur_id < 0 && static_cast<UInt64>(-cur_id) <= array_size)
 					block.getByPosition(result).column->insert(array[array_size + cur_id]);
 				else
 					block.getByPosition(result).column->insertDefault();
