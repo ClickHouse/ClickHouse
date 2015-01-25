@@ -1,11 +1,17 @@
 #include <map>
+
 #include <Poco/Path.h>
+#include <Poco/Util/XMLConfiguration.h>
 
 #include <DB/Common/escapeForFileName.h>
 
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 
+#include <DB/IO/ReadBufferFromFile.h>
+#include <DB/IO/WriteBufferFromFile.h>
+#include <DB/IO/CompressedReadBuffer.h>
+#include <DB/IO/CompressedWriteBuffer.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
 
@@ -13,6 +19,7 @@
 #include <DB/DataTypes/DataTypeNested.h>
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
+#include <DB/DataStreams/IBlockOutputStream.h>
 
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnNested.h>

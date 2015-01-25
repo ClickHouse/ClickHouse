@@ -1,25 +1,16 @@
 #pragma once
 
-#include <set>
+#include <map>
 
 #include <Poco/File.h>
 #include <Poco/RWLock.h>
 
-#include <DB/Core/NamesAndTypes.h>
-#include <DB/IO/ReadBufferFromFile.h>
-#include <DB/IO/WriteBufferFromFile.h>
-#include <DB/IO/CompressedReadBuffer.h>
-#include <DB/IO/CompressedWriteBuffer.h>
 #include <DB/Storages/IStorage.h>
-#include <DB/DataStreams/IBlockOutputStream.h>
 #include <DB/Common/FileChecker.h>
 
 
 namespace DB
 {
-
-class StorageLog;
-
 
 /** Смещение до каждой некоторой пачки значений.
   * Эти пачки имеют одинаковый размер в разных столбцах.

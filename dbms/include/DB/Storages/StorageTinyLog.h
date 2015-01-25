@@ -1,25 +1,15 @@
 #pragma once
 
-#include <set>
+#include <map>
 
 #include <Poco/File.h>
 
-#include <DB/Core/NamesAndTypes.h>
-#include <DB/IO/ReadBufferFromFile.h>
-#include <DB/IO/WriteBufferFromFile.h>
-#include <DB/IO/CompressedReadBuffer.h>
-#include <DB/IO/CompressedWriteBuffer.h>
 #include <DB/Storages/IStorage.h>
-#include <DB/DataStreams/IBlockOutputStream.h>
 #include <DB/Common/FileChecker.h>
-#include <Poco/Util/XMLConfiguration.h>
 
 
 namespace DB
 {
-
-class StorageTinyLog;
-
 
 /** Реализует хранилище, подходящее для маленьких кусочков лога.
   * Отличается от StorageLog отсутствием файлов с засечками.
