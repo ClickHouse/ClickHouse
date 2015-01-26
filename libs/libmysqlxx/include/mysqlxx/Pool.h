@@ -197,14 +197,30 @@ public:
 	 * @param max_connections_		Максимальное количество подключений
 	 */
 	Pool(const std::string & config_name,
-		 unsigned default_connections_ = MYSQLXX_POOL_DEFAULT_START_CONNECTIONS,
-		 unsigned max_connections_ = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS,
-		 const char * parent_config_name_ = nullptr)
+		unsigned default_connections_ = MYSQLXX_POOL_DEFAULT_START_CONNECTIONS,
+		unsigned max_connections_ = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS,
+		const char * parent_config_name_ = nullptr)
+	    : Pool{
+			Poco::Util::Application::instance().config(), config_name,
+			default_connections_, max_connections_, parent_config_name_
+		  }
+	{}
+
+
+	/**
+	 * @param cfg					Конфигурация
+	 * @param config_name			Имя параметра в конфигурационном файле
+	 * @param default_connections_	Количество подключений по-умолчанию
+	 * @param max_connections_		Максимальное количество подключений
+	 */
+	Pool(Poco::Util::LayeredConfiguration & cfg,
+		const std::string & config_name,
+		unsigned default_connections_ = MYSQLXX_POOL_DEFAULT_START_CONNECTIONS,
+		unsigned max_connections_ = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS,
+		const char * parent_config_name_ = nullptr)
 		: default_connections(default_connections_), max_connections(max_connections_),
 		initialized(false), was_successful(false)
 	{
-		Poco::Util::LayeredConfiguration & cfg = Poco::Util::Application::instance().config();
-
 		server 		= cfg.getString(config_name + ".host");
 
 		if (parent_config_name_)

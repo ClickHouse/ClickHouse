@@ -1,5 +1,6 @@
 #pragma once
 
+#include <mutex>
 #include <thread>
 #include <unordered_map>
 
@@ -38,9 +39,13 @@ private:
 	int reload_period;
 
 	std::thread reloading_thread;
+	std::thread reloading_externals_thread;
 	Poco::Event destroy;
 
 	Logger * log;
+
+	std::mutex externals_mutex;
+	Poco::Timestamp dictionaries_last_modified{0};
 
 
 	void handleException() const
@@ -123,23 +128,12 @@ private:
 			was_exception = true;
 		}
 
-		try
-		{
-			reloadExternalDictionaries();
-		}
-		catch (...)
-		{
-			handleException();
-			was_exception = true;
-		}
-
-
 		if (!was_exception)
 			LOG_INFO(log, "Loaded dictionaries.");
 	}
 
 
-	void reloadExternalDictionaries();
+	void reloadExternals();
 
 	/// Обновляет каждые reload_period секунд.
 	void reloadPeriodically()
@@ -153,6 +147,18 @@ private:
 		}
 	}
 
+	void reloadExternalsPeriodically()
+	{
+		const auto check_period = 1000;
+		while (true)
+		{
+			if (destroy.tryWait(check_period))
+				return;
+
+			reloadExternals();
+		}
+	}
+
 public:
 	/// Справочники будут обновляться в отдельном потоке, каждые reload_period секунд.
 	Dictionaries(const Context & context, int reload_period_ = 3600)
@@ -160,13 +166,16 @@ public:
 		log(&Logger::get("Dictionaries"))
 	{
 		reloadImpl();
+		reloadExternals();
 		reloading_thread = std::thread([this] { reloadPeriodically(); });
+		reloading_externals_thread = std::thread{&Dictionaries::reloadExternalsPeriodically, this};
 	}
 
 	~Dictionaries()
 	{
 		destroy.set();
 		reloading_thread.join();
+		reloading_externals_thread.join();
 	}
 
 	MultiVersion<RegionsHierarchies>::Version getRegionsHierarchies() const
@@ -191,6 +200,13 @@ public:
 
 	MultiVersion<IDictionary>::Version getExternalDictionary(const std::string & name) const
 	{
+		std::cout << "there are dictionaries: ";
+		std::transform(std::begin(external_dictionaries), std::end(external_dictionaries),
+			std::ostream_iterator<std::string>{std::cout, ", "},
+			[] (const std::pair<const std::string, std::shared_ptr<MultiVersion<IDictionary>>> & pair) {
+				return pair.first;
+			});
+		std::cout << std::endl;
 		const auto it = external_dictionaries.find(name);
 		if (it == std::end(external_dictionaries))
 			throw Exception{

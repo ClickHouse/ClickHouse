@@ -1,10 +1,7 @@
 #pragma once
 
+#include <DB/Dictionaries/IDictionarySource.h>
 #include <DB/Dictionaries/IDictionary.h>
-#include <DB/Core/Block.h>
-#include <DB/Interpreters/Context.h>
-#include <DB/DataStreams/TabSeparatedRowInputStream.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <statdaemons/ext/range.hpp>
 #include <Poco/Util/XMLConfiguration.h>
 #include <map>
@@ -13,15 +10,16 @@
 namespace DB
 {
 
+const auto initial_array_size = 128;
 const auto max_array_size = 500000;
-const auto max_block_size = 8192;
 
 /// @todo manage arrays using std::vector or PODArray, start with an initial size, expand up to max_array_size
-class FlatDictionary : public IDictionary
+class FlatDictionary final : public IDictionary
 {
 public:
     FlatDictionary(const DictionaryStructure & dict_struct, const Poco::Util::XMLConfiguration & config,
-		const std::string & config_prefix, const Context & context)
+		const std::string & config_prefix, DictionarySourcePtr source_ptr)
+	: source_ptr{std::move(source_ptr)}
 	{
 		for (const auto & attribute : dict_struct.attributes)
 		{
@@ -32,32 +30,27 @@ public:
 				hierarchical_attribute = &attributes[attribute.name];
 		}
 
-		if (config.has(config_prefix + "source.file"))
+		auto stream = this->source_ptr->loadAll();
+
+		while (const auto block = stream->read())
 		{
-			const auto & file_name = config.getString(config_prefix + "source.file.path");
-			const auto & format = config.getString(config_prefix + "source.file.format");
+			const auto & id_column = *block.getByPosition(0).column;
 
-			ReadBufferFromFile in{file_name};
-			auto sample_block = createSampleBlock(dict_struct, context);
-			auto stream = context.getFormatFactory().getInput(
-				format, in, sample_block, max_block_size, context.getDataTypeFactory());
-
-			while (const auto block = stream->read())
+			for (const auto attribute_idx : ext::range(1, attributes.size()))
 			{
-				const auto & id_column = *block.getByPosition(0).column;
+				const auto & attribute_column = *block.getByPosition(attribute_idx).column;
+				auto & attribute = attributes[dict_struct.attributes[attribute_idx - 1].name];
 
-				for (const auto attribute_idx : ext::range(1, attributes.size()))
-				{
-					const auto & attribute_column = *block.getByPosition(attribute_idx).column;
-					auto & attribute = attributes[dict_struct.attributes[attribute_idx - 1].name];
-
-					for (const auto row_idx : ext::range(0, id_column.size()))
-						setAttributeValue(attribute, id_column[row_idx].get<UInt64>(), attribute_column[row_idx]);
-				}
+				for (const auto row_idx : ext::range(0, id_column.size()))
+					setAttributeValue(attribute, id_column[row_idx].get<UInt64>(), attribute_column[row_idx]);
 			}
 		}
+
+		/// @todo wrap source_ptr so that it reset buffer automatically
+		this->source_ptr->reset();
 	}
 
+private:
 	UInt64 getUInt64(const id_t id, const std::string & attribute_name) const override
 	{
 		const auto & attribute = findAttribute(attribute_name);
@@ -74,7 +67,7 @@ public:
 		return attribute.uint64_null_value;
 	}
 
-    StringRef getString(const id_t id, const std::string & attribute_name) const override
+	StringRef getString(const id_t id, const std::string & attribute_name) const override
 	{
 		const auto & attribute = findAttribute(attribute_name);
 
@@ -85,12 +78,13 @@ public:
 			};
 
 		if (id < max_array_size)
-			return { attribute.string_array[id].data(), attribute.string_array[id].size() };
+			return attribute.string_array[id];
 
         return { attribute.string_null_value.data(), attribute.string_null_value.size() };
     }
 
-private:
+	bool isComplete() const override { return true; }
+
 	enum class attribute_type
 	{
 		uint8,
@@ -124,7 +118,8 @@ private:
 		std::unique_ptr<Int16[]> int16_array;
 		std::unique_ptr<Int32[]> int32_array;
 		std::unique_ptr<Int64[]> int64_array;
-		std::unique_ptr<String[]> string_array;
+		std::unique_ptr<Arena> string_arena;
+		std::vector<StringRef> string_array;
 	};
 
 	using attributes_t = std::map<std::string, attribute_t>;
@@ -177,8 +172,10 @@ private:
 				break;
 			case attribute_type::string:
 				attr.string_null_value = null_value;
-				attr.string_array.reset(new String[max_array_size]);
-				std::fill(attr.string_array.get(), attr.string_array.get() + max_array_size, attr.string_null_value);
+				attr.string_arena.reset(new Arena);
+				attr.string_array.resize(initial_array_size, StringRef{
+					attr.string_null_value.data(), attr.string_null_value.size()
+				});
 				break;
 		}
 
@@ -227,29 +224,23 @@ private:
 			case attribute_type::int16: attribute.int16_array[id] = value.get<Int64>(); break;
 			case attribute_type::int32: attribute.int32_array[id] = value.get<Int64>(); break;
 			case attribute_type::int64: attribute.int64_array[id] = value.get<Int64>(); break;
-			case attribute_type::string: attribute.string_array[id] = value.get<String>(); break;
-		}
-	}
+			case attribute_type::string:
+			{
+				const auto & string = value.get<String>();
+				const auto string_in_arena = attribute.string_arena->insert(string.data(), string.size());
 
-	static Block createSampleBlock(const DictionaryStructure & dict_struct, const Context & context)
-	{
-		Block block{
-			ColumnWithNameAndType{
-				new ColumnUInt64,
-				new DataTypeUInt64,
-				dict_struct.id_name
+				const auto current_size = attribute.string_array.size();
+				if (id >= current_size)
+					attribute.string_array.resize(
+						std::min<std::size_t>(max_array_size, 2 * current_size > id ? 2 * current_size : 2 * id),
+						StringRef{
+							attribute.string_null_value.data(), attribute.string_null_value.size()
+						});
+
+				attribute.string_array[id] = StringRef{string_in_arena, string.size()};
+				break;
 			}
-		};
-
-		for (const auto & attribute : dict_struct.attributes)
-		{
-			const auto & type = context.getDataTypeFactory().get(attribute.type);
-			block.insert(ColumnWithNameAndType{
-				type->createColumn(), type, attribute.name
-			});
 		}
-
-		return block;
 	}
 
 	const attribute_t & findAttribute(const std::string & attribute_name) const
@@ -266,6 +257,8 @@ private:
 
     attributes_t attributes;
 	const attribute_t * hierarchical_attribute = nullptr;
+
+	DictionarySourcePtr source_ptr;
 };
 
 }

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <DB/Dictionaries/DictionarySourceFactory.h>
+#include <DB/Dictionaries/DictionaryStructure.h>
 #include <DB/Dictionaries/FlatDictionary.h>
 #include <Yandex/singleton.h>
 #include <statdaemons/ext/memory.hpp>
@@ -14,13 +16,16 @@ public:
 	DictionaryPtr create(const Poco::Util::XMLConfiguration & config, const std::string & config_prefix,
 		const Context & context) const
 	{
-		const auto & layout_prefix = config_prefix + "layout.";
-
 		auto dict_struct = DictionaryStructure::fromXML(config, config_prefix + "structure");
+
+		auto source_ptr = DictionarySourceFactory::instance().create(
+			config, config_prefix + "source.", dict_struct, context);
+
+		const auto & layout_prefix = config_prefix + "layout.";
 
 		if (config.has(layout_prefix + "flat"))
 		{
-			return ext::make_unique<FlatDictionary>(dict_struct, config, config_prefix, context);
+			return ext::make_unique<FlatDictionary>(dict_struct, config, config_prefix, std::move(source_ptr));
 		}
 		else if (config.has(layout_prefix + "hashed"))
 		{
