@@ -3,7 +3,7 @@
 #include <DB/Dictionaries/IDictionarySource.h>
 #include <DB/Dictionaries/IDictionary.h>
 #include <statdaemons/ext/range.hpp>
-#include <Poco/Util/XMLConfiguration.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #include <map>
 #include <vector>
 
@@ -17,7 +17,7 @@ const auto max_array_size = 500000;
 class FlatDictionary final : public IDictionary
 {
 public:
-    FlatDictionary(const DictionaryStructure & dict_struct, const Poco::Util::XMLConfiguration & config,
+    FlatDictionary(const DictionaryStructure & dict_struct, const Poco::Util::AbstractConfiguration & config,
 		const std::string & config_prefix, DictionarySourcePtr source_ptr)
 	: source_ptr{std::move(source_ptr)}
 	{

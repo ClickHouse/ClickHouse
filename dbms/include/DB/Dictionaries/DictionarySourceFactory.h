@@ -3,6 +3,7 @@
 #include <DB/Core/Block.h>
 #include <DB/Dictionaries/DictionaryStructure.h>
 #include <DB/Dictionaries/FileDictionarySource.h>
+#include <DB/Dictionaries/MysqlDictionarySource.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <Yandex/singleton.h>
 #include <statdaemons/ext/memory.hpp>
@@ -39,7 +40,7 @@ Block createSampleBlock(const DictionaryStructure & dict_struct, const Context &
 class DictionarySourceFactory : public Singleton<DictionarySourceFactory>
 {
 public:
-	DictionarySourcePtr create(const Poco::Util::AbstractConfiguration & config,
+	DictionarySourcePtr create(Poco::Util::AbstractConfiguration & config,
 		const std::string & config_prefix,
 		const DictionaryStructure & dict_struct,
 		const Context & context) const
@@ -54,15 +55,10 @@ public:
 		}
 		else if (config.has(config_prefix + "mysql"))
 		{
-			throw Exception{
-				"source.mysql not yet implemented",
-				ErrorCodes::NOT_IMPLEMENTED
-			};
+			return ext::make_unique<MysqlDictionarySource>(config, config_prefix + "mysql.", sample_block, context);
 		}
 
-		throw Exception{
-			"unsupported source type"
-		};
+		throw Exception{"unsupported source type"};
 	}
 };
 

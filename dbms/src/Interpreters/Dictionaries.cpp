@@ -1,19 +1,10 @@
 #include <DB/Interpreters/Dictionaries.h>
 #include <DB/Dictionaries/DictionaryFactory.h>
-#include <Poco/Util/XMLConfiguration.h>
+#include <DB/Dictionaries/config_ptr_t.h>
 
 
 namespace DB
 {
-
-namespace
-{
-	template <typename T> struct release
-	{
-		void operator()(const T * const ptr) { ptr->release(); }
-	};
-	template <typename T> using config_ptr_t = std::unique_ptr<T, release<T>>;
-};
 
 void Dictionaries::reloadExternals()
 {

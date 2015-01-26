@@ -200,13 +200,6 @@ public:
 
 	MultiVersion<IDictionary>::Version getExternalDictionary(const std::string & name) const
 	{
-		std::cout << "there are dictionaries: ";
-		std::transform(std::begin(external_dictionaries), std::end(external_dictionaries),
-			std::ostream_iterator<std::string>{std::cout, ", "},
-			[] (const std::pair<const std::string, std::shared_ptr<MultiVersion<IDictionary>>> & pair) {
-				return pair.first;
-			});
-		std::cout << std::endl;
 		const auto it = external_dictionaries.find(name);
 		if (it == std::end(external_dictionaries))
 			throw Exception{

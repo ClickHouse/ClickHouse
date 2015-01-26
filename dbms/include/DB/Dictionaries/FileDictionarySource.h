@@ -7,10 +7,10 @@
 namespace DB
 {
 
-const auto max_block_size = 8192;
-
 class FileDictionarySource final : public IDictionarySource
 {
+	static const auto max_block_size = 8192;
+
 public:
 	FileDictionarySource(const std::string & filename, const std::string & format, Block & sample_block,
 		const Context & context)

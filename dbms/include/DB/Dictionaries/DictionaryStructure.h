@@ -1,7 +1,7 @@
 #pragma once
 
 #include <DB/Core/ErrorCodes.h>
-#include <Poco/Util/XMLConfiguration.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #include <vector>
 #include <string>
 
@@ -22,7 +22,7 @@ struct DictionaryStructure
 	std::string id_name;
 	std::vector<DictionaryAttribute> attributes;
 
-	static DictionaryStructure fromXML(const Poco::Util::XMLConfiguration & config, const std::string & config_prefix)
+	static DictionaryStructure fromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
 	{
 		const auto & id_name = config.getString(config_prefix + ".id.name");
 		if (id_name.empty())

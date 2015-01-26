@@ -13,10 +13,10 @@ namespace DB
 class DictionaryFactory : public Singleton<DictionaryFactory>
 {
 public:
-	DictionaryPtr create(const Poco::Util::XMLConfiguration & config, const std::string & config_prefix,
+	DictionaryPtr create(Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
 		const Context & context) const
 	{
-		auto dict_struct = DictionaryStructure::fromXML(config, config_prefix + "structure");
+		auto dict_struct = DictionaryStructure::fromConfig(config, config_prefix + "structure");
 
 		auto source_ptr = DictionarySourceFactory::instance().create(
 			config, config_prefix + "source.", dict_struct, context);
