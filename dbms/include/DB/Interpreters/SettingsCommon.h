@@ -232,7 +232,9 @@ enum class LoadBalancing
 	RANDOM = 0,
 	/// среди реплик с минимальным количеством ошибок выбирается реплика
 	/// с минимальным количеством отличающихся символов в имени реплики и имени локального хоста
-	NEAREST_HOSTNAME
+	NEAREST_HOSTNAME,
+	/// реплики перебираются строго по порядку; количество ошибок не имеет значение
+	IN_ORDER,
 };
 
 struct SettingLoadBalancing
@@ -249,14 +251,16 @@ struct SettingLoadBalancing
 	{
 		if (s == "random") 				return LoadBalancing::RANDOM;
 		if (s == "nearest_hostname") 	return LoadBalancing::NEAREST_HOSTNAME;
+		if (s == "in_order") 			return LoadBalancing::IN_ORDER;
 
-		throw Exception("Unknown load balancing mode: '" + s + "', must be one of 'random', 'nearest_hostname'", ErrorCodes::UNKNOWN_LOAD_BALANCING);
+		throw Exception("Unknown load balancing mode: '" + s + "', must be one of 'random', 'nearest_hostname', 'in_order'",
+			ErrorCodes::UNKNOWN_LOAD_BALANCING);
 	}
 
 	String toString() const
 	{
-		const char * strings[] = {"random", "nearest_hostname"};
-		if (value < LoadBalancing::RANDOM || value > LoadBalancing::NEAREST_HOSTNAME)
+		const char * strings[] = {"random", "nearest_hostname", "in_order"};
+		if (value < LoadBalancing::RANDOM || value > LoadBalancing::IN_ORDER)
 			throw Exception("Unknown load balancing mode", ErrorCodes::UNKNOWN_OVERFLOW_MODE);
 		return strings[static_cast<size_t>(value)];
 	}
