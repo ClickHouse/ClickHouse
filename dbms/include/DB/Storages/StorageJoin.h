@@ -1,59 +1,38 @@
 #pragma once
 
 #include <DB/Storages/IStorage.h>
-#include <DB/Interpreters/Set.h>
+#include <DB/Interpreters/Join.h>
 
 
 namespace DB
 {
 
-
-/** Общая часть StorageSet и StorageJoin.
-  */
-class StorageSetAndJoinBase : public IStorage
-{
-protected:
-	String path;
-	String name;
-	NamesAndTypesListPtr columns;
-
-	UInt64 increment = 0;	/// Для имён файлов бэкапа.
-
-	String getTableName() const override { return name; }
-	const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
-
-	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
-
-	/// Восстановление из бэкапа.
-	void restore();
-	void restoreFromFile(const String & file_path, const DataTypeFactory & data_type_factory);
-
-	virtual void insertBlock(const Block & block) = 0;
-};
-
-
-/** Позволяет сохранить множество для последующего использования в правой части оператора IN.
-  * При вставке в таблицу, данные будут вставлены в множество,
+/** Позволяет сохранить состояние для последующего использования в правой части JOIN.
+  * При вставке в таблицу, данные будут вставлены в состояние,
   *  а также записаны в файл-бэкап, для восстановления после перезапуска.
-  * Чтение из таблицы напрямую невозможно - возможно лишь указание в правой части оператора IN.
+  * Чтение из таблицы напрямую невозможно - возможно лишь указание в правой части JOIN.
+  *
+  * NOTE: В основном, повторяет StorageSet. Можно обобщить.
   */
-class StorageSet : public IStorage
+class StorageJoin : public IStorage
 {
 public:
 	static StoragePtr create(
 		const String & path_,
 		const String & name_,
+		const Names & key_names_,
+		ASTJoin::Kind kind_, ASTJoin::Strictness strictness_,
 		NamesAndTypesListPtr columns_,
 		const NamesAndTypesList & materialized_columns_,
 		const NamesAndTypesList & alias_columns_,
 		const ColumnDefaults & column_defaults_)
 	{
-		return (new StorageSet{
+		return (new StorageJoin{
 			path_, name_, columns_,
 			materialized_columns_, alias_columns_, column_defaults_})->thisPtr();
 	}
 
-	String getName() const override { return "Set"; }
+	String getName() const override { return "Join"; }
 	String getTableName() const override { return name; }
 
 	const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
@@ -63,7 +42,7 @@ public:
 	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
 
 	/// Получить доступ к внутренностям.
-	SetPtr & getSet() { return set; }
+	JoinPtr & getJoin() { return join; }
 
 private:
 	String path;
@@ -71,11 +50,13 @@ private:
 	NamesAndTypesListPtr columns;
 
 	UInt64 increment = 0;	/// Для имён файлов бэкапа.
-	SetPtr set { new Set{Limits{}} };
+	JoinPtr join;
 
-	StorageSet(
+	StorageJoin(
 		const String & path_,
 		const String & name_,
+		const Names & key_names_,
+		ASTJoin::Kind kind_, ASTJoin::Strictness strictness_,
 		NamesAndTypesListPtr columns_,
 		const NamesAndTypesList & materialized_columns_,
 		const NamesAndTypesList & alias_columns_,

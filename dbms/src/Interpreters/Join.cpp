@@ -261,6 +261,8 @@ void Join::insertFromBlockImpl(Maps & maps, size_t rows, const ConstColumnPlainP
 
 bool Join::insertFromBlock(const Block & block)
 {
+	Poco::ScopedWriteRWLock lock(rwlock);
+
 	size_t keys_size = key_names_right.size();
 	ConstColumnPlainPtrs key_columns(keys_size);
 
@@ -530,6 +532,8 @@ void Join::joinBlockImpl(Block & block, Maps & maps)
 
 void Join::joinBlock(Block & block)
 {
+	Poco::ScopedReadRWLock lock(rwlock);
+
 	if (kind == ASTJoin::Left && strictness == ASTJoin::Any)
 		joinBlockImpl<ASTJoin::Left, ASTJoin::Any, MapsAny>(block, maps_any);
 	else if (kind == ASTJoin::Inner && strictness == ASTJoin::Any)

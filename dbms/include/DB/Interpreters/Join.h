@@ -169,6 +169,13 @@ private:
 	size_t max_bytes;
 	OverflowMode overflow_mode;
 
+	/** Защищает работу с состоянием в функциях insertFromBlock и joinBlock.
+	  * Эти функции могут вызываться одновременно из разных потоков только при использовании StorageJoin,
+	  *  и StorageJoin вызывает только эти две функции.
+	  * Поэтому остальные функции не защинены.
+	  */
+	mutable Poco::RWLock rwlock;
+
 	void init(Set::Type type_);
 
 	template <ASTJoin::Strictness STRICTNESS, typename Maps>
