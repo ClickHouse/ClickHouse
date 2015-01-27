@@ -4,7 +4,6 @@
 #include <DB/Dictionaries/IDictionary.h>
 #include <statdaemons/ext/range.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <map>
 #include <vector>
 
 namespace DB
@@ -36,10 +35,10 @@ public:
 		{
 			const auto & id_column = *block.getByPosition(0).column;
 
-			for (const auto attribute_idx : ext::range(1, attributes.size()))
+			for (const auto attribute_idx : ext::range(0, attributes.size()))
 			{
-				const auto & attribute_column = *block.getByPosition(attribute_idx).column;
-				auto & attribute = attributes[dict_struct.attributes[attribute_idx - 1].name];
+				const auto & attribute_column = *block.getByPosition(attribute_idx + 1).column;
+				auto & attribute = attributes[dict_struct.attributes[attribute_idx].name];
 
 				for (const auto row_idx : ext::range(0, id_column.size()))
 					setAttributeValue(attribute, id_column[row_idx].get<UInt64>(), attribute_column[row_idx]);
@@ -85,19 +84,6 @@ private:
 
 	bool isComplete() const override { return true; }
 
-	enum class attribute_type
-	{
-		uint8,
-		uint16,
-		uint32,
-		uint64,
-		int8,
-		int16,
-		int32,
-		int64,
-		string
-	};
-
 	struct attribute_t
 	{
 		attribute_type type;
@@ -109,6 +95,8 @@ private:
 		Int16 int16_null_value;
 		Int32 int32_null_value;
 		Int64 int64_null_value;
+		Float32 float32_null_value;
+		Float64 float64_null_value;
 		String string_null_value;
 		std::unique_ptr<UInt8[]> uint8_array;
 		std::unique_ptr<UInt16[]> uint16_array;
@@ -118,6 +106,8 @@ private:
 		std::unique_ptr<Int16[]> int16_array;
 		std::unique_ptr<Int32[]> int32_array;
 		std::unique_ptr<Int64[]> int64_array;
+		std::unique_ptr<Float32[]> float32_array;
+		std::unique_ptr<Float64[]> float64_array;
 		std::unique_ptr<Arena> string_arena;
 		std::vector<StringRef> string_array;
 	};
@@ -170,6 +160,16 @@ private:
 				attr.int64_array.reset(new Int64[max_array_size]);
 				std::fill(attr.int64_array.get(), attr.int64_array.get() + max_array_size, attr.int64_null_value);
 				break;
+			case attribute_type::float32:
+				attr.float32_null_value = DB::parse<Float32>(null_value);
+				attr.float32_array.reset(new Float32[max_array_size]);
+				std::fill(attr.float32_array.get(), attr.float32_array.get() + max_array_size, attr.float32_null_value);
+				break;
+			case attribute_type::float64:
+				attr.float64_null_value = DB::parse<Float64>(null_value);
+				attr.float64_array.reset(new Float64[max_array_size]);
+				std::fill(attr.float64_array.get(), attr.float64_array.get() + max_array_size, attr.float64_null_value);
+				break;
 			case attribute_type::string:
 				attr.string_null_value = null_value;
 				attr.string_arena.reset(new Arena);
@@ -180,30 +180,6 @@ private:
 		}
 
 		return attr;
-	}
-
-	attribute_type getAttributeTypeByName(const std::string & type)
-	{
-		static const std::unordered_map<std::string, attribute_type> dictionary{
-			{ "UInt8", attribute_type::uint8 },
-			{ "UInt16", attribute_type::uint16 },
-			{ "UInt32", attribute_type::uint32 },
-			{ "UInt64", attribute_type::uint64 },
-			{ "Int8", attribute_type::int8 },
-			{ "Int16", attribute_type::int16 },
-			{ "Int32", attribute_type::int32 },
-			{ "Int64", attribute_type::int64 },
-			{ "String", attribute_type::string },
-		};
-
-		const auto it = dictionary.find(type);
-		if (it != std::end(dictionary))
-			return it->second;
-
-		throw Exception{
-			"Unknown type " + type,
-			ErrorCodes::UNKNOWN_TYPE
-		};
 	}
 
 	void setAttributeValue(attribute_t & attribute, const id_t id, const Field & value)
@@ -224,6 +200,8 @@ private:
 			case attribute_type::int16: attribute.int16_array[id] = value.get<Int64>(); break;
 			case attribute_type::int32: attribute.int32_array[id] = value.get<Int64>(); break;
 			case attribute_type::int64: attribute.int64_array[id] = value.get<Int64>(); break;
+			case attribute_type::float32: attribute.float32_array[id] = value.get<Float64>(); break;
+			case attribute_type::float64: attribute.float64_array[id] = value.get<Float64>(); break;
 			case attribute_type::string:
 			{
 				const auto & string = value.get<String>();

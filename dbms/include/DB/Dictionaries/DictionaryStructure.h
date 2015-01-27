@@ -4,9 +4,51 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <vector>
 #include <string>
+#include <map>
 
 namespace DB
 {
+
+enum class attribute_type
+{
+	uint8,
+	uint16,
+	uint32,
+	uint64,
+	int8,
+	int16,
+	int32,
+	int64,
+	float32,
+	float64,
+	string
+};
+
+attribute_type getAttributeTypeByName(const std::string & type)
+{
+	static const std::unordered_map<std::string, attribute_type> dictionary{
+		{ "UInt8", attribute_type::uint8 },
+		{ "UInt16", attribute_type::uint16 },
+		{ "UInt32", attribute_type::uint32 },
+		{ "UInt64", attribute_type::uint64 },
+		{ "Int8", attribute_type::int8 },
+		{ "Int16", attribute_type::int16 },
+		{ "Int32", attribute_type::int32 },
+		{ "Int64", attribute_type::int64 },
+		{ "Float32", attribute_type::float32 },
+		{ "Float64", attribute_type::float64 },
+		{ "String", attribute_type::string },
+	};
+
+	const auto it = dictionary.find(type);
+	if (it != std::end(dictionary))
+		return it->second;
+
+	throw Exception{
+		"Unknown type " + type,
+		ErrorCodes::UNKNOWN_TYPE
+	};
+}
 
 struct DictionaryAttribute
 {
