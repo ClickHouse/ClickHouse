@@ -25,6 +25,7 @@
 #include <DB/Storages/StorageChunkRef.h>
 #include <DB/Storages/StorageChunkMerger.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
+#include <DB/Storages/StorageSet.h>
 
 
 namespace DB
@@ -174,6 +175,12 @@ StoragePtr StorageFactory::get(
 			data_path, table_name, columns,
 			materialized_columns, alias_columns, column_defaults,
 			attach, context.getSettings().max_compress_block_size);
+	}
+	else if (name == "Set")
+	{
+		return StorageSet::create(
+			data_path, table_name, columns,
+			materialized_columns, alias_columns, column_defaults);
 	}
 	else if (name == "Memory")
 	{

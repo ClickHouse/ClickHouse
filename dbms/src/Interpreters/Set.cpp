@@ -96,8 +96,10 @@ Set::Type Set::chooseMethod(const ConstColumnPlainPtrs & key_columns, bool & key
 }
 
 
-bool Set::insertFromBlock(Block & block, bool create_ordered_set)
+bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 {
+	Poco::ScopedWriteRWLock lock(rwlock);
+
 	size_t keys_size = block.columns();
 	ConstColumnPlainPtrs key_columns(keys_size);
 	data_types.resize(keys_size);
@@ -392,6 +394,8 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 	block.getByPosition(result).column = c_res;
 	ColumnUInt8::Container_t & vec_res = c_res->getData();
 	vec_res.resize(block.getByPosition(arguments[0]).column->size());
+
+	Poco::ScopedReadRWLock lock(rwlock);
 
 	/// Если множество пусто
 	if (data_types.empty())

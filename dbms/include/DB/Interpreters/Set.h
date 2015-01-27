@@ -47,9 +47,12 @@ public:
 	void createFromAST(DataTypes & types, ASTPtr node, bool create_ordered_set);
 
 	// Возвращает false, если превышено какое-нибудь ограничение, и больше не нужно вставлять.
-	bool insertFromBlock(Block & block, bool create_ordered_set = false);
+	bool insertFromBlock(const Block & block, bool create_ordered_set = false);
 
-	size_t size() const { return getTotalRowCount(); }
+	/// Считает суммарное число ключей во всех Set'ах
+	size_t getTotalRowCount() const;
+	/// Считает суммарный размер в байтах буфферов всех Set'ов + размер string_pool'а
+	size_t getTotalByteCount() const;
 
 	/** Для указанных столбцов блока проверить принадлежность их значений множеству.
 	  * Записать результат в столбец в позиции result.
@@ -152,16 +155,18 @@ private:
 	/// Проверить не превышены ли допустимые размеры множества ключей
 	bool checkSetSizeLimits() const;
 
-	/// Считает суммарное число ключей во всех Set'ах
-	size_t getTotalRowCount() const;
-	/// Считает суммарный размер в байтах буфферов всех Set'ов + размер string_pool'а
-	size_t getTotalByteCount() const;
-
 	/// вектор упорядоченных элементов Set
 	/// нужен для работы индекса по первичному ключу в секции In
 	typedef std::vector<Field> OrderedSetElements;
 	typedef std::unique_ptr<OrderedSetElements> OrderedSetElementsPtr;
 	OrderedSetElementsPtr ordered_set_elements;
+
+	/** Защищает работу с множеством в функциях insertFromBlock и execute.
+	  * Эти функции могут вызываться одновременно из разных потоков только при использовании StorageSet,
+	  *  и StorageSet вызывает только эти две функции.
+	  * Поэтому остальные функции по работе с множеством, не защинены.
+	  */
+	mutable Poco::RWLock rwlock;
 };
 
 typedef Poco::SharedPtr<Set> SetPtr;

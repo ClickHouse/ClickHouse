@@ -78,7 +78,10 @@ public:
 	  */
 	void joinBlock(Block & block);
 
-	size_t size() const { return getTotalRowCount(); }
+	/// Считает суммарное число ключей во всех Join'ах
+	size_t getTotalRowCount() const;
+	/// Считает суммарный размер в байтах буфферов всех Join'ов + размер string_pool'а
+	size_t getTotalByteCount() const;
 
 
 	/// Ссылка на строку в блоке.
@@ -176,11 +179,6 @@ private:
 
 	/// Проверить не превышены ли допустимые размеры множества
 	bool checkSizeLimits() const;
-
-	/// Считает суммарное число ключей во всех Join'ах
-	size_t getTotalRowCount() const;
-	/// Считает суммарный размер в байтах буфферов всех Join'ов + размер string_pool'а
-	size_t getTotalByteCount() const;
 };
 
 typedef Poco::SharedPtr<Join> JoinPtr;

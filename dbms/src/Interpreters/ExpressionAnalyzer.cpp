@@ -26,6 +26,7 @@
 #include <DB/Storages/StorageDistributed.h>
 #include <DB/Storages/StorageMemory.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
+#include <DB/Storages/StorageSet.h>
 
 #include <DB/DataStreams/LazyBlockInputStream.h>
 #include <DB/DataStreams/copyData.h>
@@ -675,16 +676,37 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 		return;
 
 	/// Если подзапрос или имя таблицы для SELECT.
-	if (typeid_cast<ASTSubquery *>(&*arg) || typeid_cast<ASTIdentifier *>(&*arg))
+	ASTIdentifier * identifier = typeid_cast<ASTIdentifier *>(&*arg);
+	if (typeid_cast<ASTSubquery *>(&*arg) || identifier)
 	{
 		/// Получаем поток блоков для подзапроса. Создаём Set и кладём на место подзапроса.
 		String set_id = arg->getColumnName();
 		ASTSet * ast_set = new ASTSet(set_id);
 		ASTPtr ast_set_ptr = ast_set;
 
+		/// Особый случай - если справа оператора IN указано имя таблицы, при чём, таблица имеет тип Set (заранее подготовленное множество).
+		/// TODO В этом синтаксисе не поддерживается указание имени БД.
+		if (identifier)
+		{
+			StoragePtr table = context.tryGetTable("", identifier->name);
+
+			if (table)
+			{
+				StorageSet * storage_set = typeid_cast<StorageSet *>(table.get());
+
+				if (storage_set)
+				{
+					SetPtr & set = storage_set->getSet();
+					ast_set->set = set;
+					arg = ast_set_ptr;
+					return;
+				}
+			}
+		}
+
 		SubqueryForSet & subquery_for_set = subqueries_for_sets[set_id];
 
-		/// Если уже создали Set с таким же подзапросом.
+		/// Если уже создали Set с таким же подзапросом/таблицей.
 		if (subquery_for_set.set)
 		{
 			ast_set->set = subquery_for_set.set;

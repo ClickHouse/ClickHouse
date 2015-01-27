@@ -49,6 +49,12 @@ public:
 			output->write(block);
 	}
 
+	void flush() override
+	{
+		if (output)
+			output->flush();
+	}
+
 	void writePrefix() override
 	{
 		if (output)

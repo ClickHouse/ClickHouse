@@ -74,10 +74,6 @@ void InterpreterInsertQuery::execute(ReadBuffer * remaining_data_istr)
 	 *  then we compose the same list from the resulting block */
 	NamesAndTypesListPtr required_columns = new NamesAndTypesList(table->getColumnsList());
 
-	/// Надо убедиться, что запрос идет в таблицу, которая поддерживает вставку.
-	/// TODO Плохо - исправить.
-	table->write(query_ptr);
-
 	/// Создаем кортеж из нескольких стримов, в которые будем писать данные.
 	BlockOutputStreamPtr out{
 		new ProhibitColumnsBlockOutputStream{
@@ -140,10 +136,6 @@ BlockIO InterpreterInsertQuery::execute()
 	auto table_lock = table->lockStructure(true);
 
 	NamesAndTypesListPtr required_columns = new NamesAndTypesList(table->getColumnsList());
-
-	/// Надо убедиться, что запрос идет в таблицу, которая поддерживает вставку.
-	/// TODO Плохо - исправить.
-	table->write(query_ptr);
 
 	/// Создаем кортеж из нескольких стримов, в которые будем писать данные.
 	BlockOutputStreamPtr out{
