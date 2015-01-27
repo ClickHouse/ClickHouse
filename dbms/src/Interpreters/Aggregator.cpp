@@ -1365,6 +1365,9 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
 				Method::getAggregateData(it->second) + offsets_of_aggregate_states[j],
 				(*aggregate_columns[j])[i]);
 	}
+
+	/// Пораньше освобождаем память.
+	block.clear();
 }
 
 void NO_INLINE Aggregator::mergeWithoutKeyStreamsImpl(
@@ -1387,6 +1390,9 @@ void NO_INLINE Aggregator::mergeWithoutKeyStreamsImpl(
 	/// Добавляем значения
 	for (size_t i = 0; i < aggregates_size; ++i)
 		aggregate_functions[i]->merge(res + offsets_of_aggregate_states[i], (*aggregate_columns[i])[0]);
+
+	/// Пораньше освобождаем память.
+	block.clear();
 }
 
 
