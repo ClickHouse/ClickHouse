@@ -41,8 +41,6 @@ struct Settings
 	M(SettingUInt64, max_distributed_connections, DEFAULT_MAX_DISTRIBUTED_CONNECTIONS) \
 	/** Какую часть запроса можно прочитать в оперативку для парсинга (оставшиеся данные для INSERT, если есть, считываются позже) */ \
 	M(SettingUInt64, max_query_size, DEFAULT_MAX_QUERY_SIZE) \
-	/** Выполнять разные стадии конвейера выполнения запроса параллельно. */ \
-	M(SettingBool, asynchronous, false) \
 	/** Интервал в микросекундах для проверки, не запрошена ли остановка выполнения запроса, и отправки прогресса. */ \
 	M(SettingUInt64, interactive_delay, DEFAULT_INTERACTIVE_DELAY) \
 	M(SettingSeconds, connect_timeout, DBMS_DEFAULT_CONNECT_TIMEOUT_SEC) \
@@ -62,8 +60,6 @@ struct Settings
 	M(SettingBool, extremes, false) \
 	/** Использовать ли кэш разжатых блоков. */ \
 	M(SettingBool, use_uncompressed_cache, true) \
-	/** Использовать ли SplittingAggregator вместо обычного. Он быстрее для запросов с большим состоянием агрегации. */ \
-	M(SettingBool, use_splitting_aggregator, false) \
 	/** Следует ли отменять выполняющийся запрос с таким же id, как новый. */ \
 	M(SettingBool, replace_running_query, false) \
 	/** Количество потоков, выполняющих фоновую работу для таблиц (например, слияние в merge tree). \
@@ -86,6 +82,11 @@ struct Settings
 	\
 	/** Сэмплирование по умолчанию. Если равно 1, то отключено. */ \
 	M(SettingFloat, default_sample, 1.0) \
+	\
+	/** Включена ли компиляция запросов. */ \
+	M(SettingBool, compile, false) \
+	/** Количество одинаковых по структуре запросов перед тем, как инициируется их компиляция. */ \
+	M(SettingUInt64, min_count_to_compile, 0) \
 
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;

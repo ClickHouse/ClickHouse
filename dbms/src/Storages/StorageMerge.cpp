@@ -1,8 +1,13 @@
 #include <DB/DataStreams/narrowBlockInputStreams.h>
+#include <DB/DataStreams/AddingConstColumnBlockInputStream.h>
 #include <DB/Storages/StorageMerge.h>
 #include <DB/Common/VirtualColumnUtils.h>
 #include <DB/Interpreters/InterpreterAlterQuery.h>
 #include <DB/Storages/VirtualColumnFactory.h>
+#include <DB/Parsers/ASTSelectQuery.h>
+#include <DB/DataTypes/DataTypeString.h>
+#include <DB/Columns/ColumnString.h>
+
 
 namespace DB
 {

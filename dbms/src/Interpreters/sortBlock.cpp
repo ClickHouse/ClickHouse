@@ -9,7 +9,13 @@ typedef std::vector<std::pair<const IColumn *, SortColumnDescription> > ColumnsW
 
 static inline bool needCollation(const IColumn * column, const SortColumnDescription & description)
 {
-	return !description.collator.isNull() && column->getName() == "ColumnString";
+	if (description.collator.isNull())
+		return false;
+
+	if (column->getName() != "ColumnString")
+		throw Exception("Collations could be specified only for String columns.", ErrorCodes::BAD_COLLATION);
+
+	return true;
 }
 
 

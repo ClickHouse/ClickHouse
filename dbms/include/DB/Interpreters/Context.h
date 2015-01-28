@@ -27,6 +27,7 @@
 #include <DB/Interpreters/ProcessList.h>
 #include <DB/Interpreters/Cluster.h>
 #include <DB/Interpreters/InterserverIOHandler.h>
+#include <DB/Interpreters/Compiler.h>
 #include <DB/Client/ConnectionPool.h>
 #include <statdaemons/ConfigProcessor.h>
 #include <zkutil/ZooKeeper.h>
@@ -48,8 +49,8 @@ typedef std::map<String, Tables> Databases;
 /// (имя базы данных, имя таблицы)
 typedef std::pair<String, String> DatabaseAndTableName;
 
-/// таблица -> множество таблиц-вьюшек, которые селектят из нее
-typedef std::map<DatabaseAndTableName, std::set<DatabaseAndTableName> > ViewDependencies;
+/// Таблица -> множество таблиц-представлений, которые деляют SELECT из неё.
+typedef std::map<DatabaseAndTableName, std::set<DatabaseAndTableName>> ViewDependencies;
 typedef std::vector<DatabaseAndTableName> Dependencies;
 
 /** Набор известных объектов, которые могут быть использованы в запросе.
@@ -80,6 +81,7 @@ struct ContextShared
 	int interserver_io_port;								///           и порт,
 
 	String path;											/// Путь к директории с данными, со слешем на конце.
+	String tmp_path;										/// Путь ко временным файлам, возникающим при обработке запроса.
 	Databases databases;									/// Список БД и таблиц в них.
 	TableFunctionFactory table_function_factory;			/// Табличные функции.
 	AggregateFunctionFactory aggregate_function_factory; 	/// Агрегатные функции.
@@ -98,6 +100,7 @@ struct ContextShared
 	InterserverIOHandler interserver_io_handler;			/// Обработчик для межсерверной передачи данных.
 	BackgroundProcessingPoolPtr background_pool;			/// Пул потоков для фоновой работы, выполняемой таблицами.
 	Macros macros;											/// Подстановки из конфига.
+	std::unique_ptr<Compiler> compiler;						/// Для динамической компиляции частей запроса, при необходимости.
 
 	/// Кластеры для distributed таблиц
 	/// Создаются при создании Distributed таблиц, так как нужно дождаться пока будут выставлены Settings
@@ -187,7 +190,9 @@ private:
 
 public:
 	String getPath() const;
+	String getTemporaryPath() const;
 	void setPath(const String & path);
+	void setTemporaryPath(const String & path);
 
 	/** Забрать список пользователей, квот и профилей настроек из этого конфига.
 	  * Список пользователей полностью заменяется.
@@ -206,7 +211,7 @@ public:
 
 	void addDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where);
 	void removeDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where);
-	Dependencies getDependencies(const DatabaseAndTableName & from) const;
+	Dependencies getDependencies(const String & database_name, const String & table_name) const;
 
 	/// Проверка существования таблицы/БД. database может быть пустой - в этом случае используется текущая БД.
 	bool isTableExist(const String & database_name, const String & table_name) const;
@@ -330,6 +335,8 @@ public:
 
 	void initClusters();
 	Cluster & getCluster(const std::string & cluster_name);
+
+	Compiler & getCompiler();
 
 	void shutdown() { shared->shutdown(); }
 };

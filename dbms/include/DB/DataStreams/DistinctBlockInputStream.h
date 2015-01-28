@@ -96,7 +96,10 @@ protected:
 				filter[i] = set.insert(key).second;
 
 				if (limit && set.size() == limit)
+				{
+					memset(&filter[i + 1], 0, (rows - (i + 1)) * sizeof(IColumn::Filter::value_type));
 					break;
+				}
 			}
 
 			/// Если ни одной новой строки не было в блоке - перейдём к следующему блоку.

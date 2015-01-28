@@ -8,7 +8,9 @@
 #include <DB/IO/ReadBufferFromString.h>
 #include <DB/Interpreters/InterpreterAlterQuery.h>
 #include <DB/Common/VirtualColumnUtils.h>
+#include <DB/DataStreams/AddingConstColumnBlockInputStream.h>
 #include <time.h>
+
 
 namespace DB
 {
@@ -1353,11 +1355,12 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 
 			bool only_small = big_merges_current + big_merges_queued >= max_number_of_big_merges;
 
-			LOG_TRACE(log, "Currently executing big merges: " << big_merges_current
-				<< ". Queued big merges: " << big_merges_queued
-				<< ". All merges in queue: " << merges_queued
-				<< ". Max number of big merges: " << max_number_of_big_merges
-				<< (only_small ? ". So, will select only small parts to merge." : "."));
+			if (big_merges_current || merges_queued)
+				LOG_TRACE(log, "Currently executing big merges: " << big_merges_current
+					<< ". Queued big merges: " << big_merges_queued
+					<< ". All merges in queue: " << merges_queued
+					<< ". Max number of big merges: " << max_number_of_big_merges
+					<< (only_small ? ". So, will select only small parts to merge." : "."));
 
 			do
 			{
@@ -1376,7 +1379,6 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 				if (   !merger.selectPartsToMerge(parts, merged_name, MergeTreeDataMerger::NO_LIMIT, false, false, only_small, can_merge)
 					&& !merger.selectPartsToMerge(parts, merged_name, MergeTreeDataMerger::NO_LIMIT, true, false, only_small, can_merge))
 				{
-					LOG_INFO(log, "No parts to merge");
 					break;
 				}
 

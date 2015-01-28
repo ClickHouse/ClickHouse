@@ -27,8 +27,14 @@ const Block & TotalsHavingBlockInputStream::getTotals()
 		/** Если totals_mode == AFTER_HAVING_AUTO, нужно решить, добавлять ли в TOTALS агрегаты для строк,
 		  *  не прошедших max_rows_to_group_by.
 		  */
-		if (overflow_aggregates && static_cast<float>(passed_keys) / total_keys >= auto_include_threshold)
-			addToTotals(current_totals, overflow_aggregates, nullptr);
+		if (overflow_aggregates)
+		{
+			if (totals_mode == TotalsMode::BEFORE_HAVING
+				|| totals_mode == TotalsMode::AFTER_HAVING_INCLUSIVE
+				|| (totals_mode == TotalsMode::AFTER_HAVING_AUTO
+					&& static_cast<double>(passed_keys) / total_keys >= auto_include_threshold))
+				addToTotals(current_totals, overflow_aggregates, nullptr);
+		}
 
 		finalize(current_totals);
 		totals = current_totals;
@@ -50,24 +56,28 @@ Block TotalsHavingBlockInputStream::readImpl()
 	{
 		block = children[0]->read();
 
+		/// Блок со значениями, не вошедшими в max_rows_to_group_by. Отложим его.
+		if (overflow_row && block && block.info.is_overflows)
+		{
+			overflow_aggregates = block;
+			continue;
+		}
+
 		if (!block)
 			return finalized;
 
 		finalized = block;
 		finalize(finalized);
 
-		total_keys += finalized.rows() - (overflow_row ? 1 : 0);
+		total_keys += finalized.rows();
 
-		if (filter_column_name.empty() || totals_mode == TotalsMode::BEFORE_HAVING)
+		if (filter_column_name.empty())
 		{
-			/** Включая особую нулевую строку, если overflow_row == true.
-			  * Предполагается, что если totals_mode == AFTER_HAVING_EXCLUSIVE, нам эту строку не дадут.
-			  */
 			addToTotals(current_totals, block, nullptr);
 		}
-
-		if (!filter_column_name.empty())
+		else
 		{
+			/// Вычисляем выражение в HAVING.
 			expression->execute(finalized);
 
 			size_t filter_column_pos = finalized.getPositionByName(filter_column_name);
@@ -85,25 +95,13 @@ Block TotalsHavingBlockInputStream::readImpl()
 
 			IColumn::Filter & filter = filter_column->getData();
 
-			if (totals_mode != TotalsMode::BEFORE_HAVING)
-			{
-				if (overflow_row)
-				{
-					filter[0] = totals_mode == TotalsMode::AFTER_HAVING_INCLUSIVE;
-					addToTotals(current_totals, block, &filter);
+			/// Прибавляем значения в totals (если это не было сделано ранее).
+			if (totals_mode == TotalsMode::BEFORE_HAVING)
+				addToTotals(current_totals, block, nullptr);
+			else
+				addToTotals(current_totals, block, &filter);
 
-					if (totals_mode == TotalsMode::AFTER_HAVING_AUTO)
-						addToTotals(overflow_aggregates, block, nullptr, 1);
-				}
-				else
-				{
-					addToTotals(current_totals, block, &filter);
-				}
-			}
-
-			if (overflow_row)
-				filter[0] = 0;
-
+			/// Фильтруем блок по выражению в HAVING.
 			size_t columns = finalized.columns();
 
 			for (size_t i = 0; i < columns; ++i)
@@ -117,19 +115,6 @@ Block TotalsHavingBlockInputStream::readImpl()
 				}
 			}
 		}
-		else
-		{
-			if (overflow_row)
-			{
-				/// Придется выбросить одну строку из начала всех столбцов.
-				size_t columns = finalized.columns();
-				for (size_t i = 0; i < columns; ++i)
-				{
-					ColumnWithNameAndType & current_column = finalized.getByPosition(i);
-					current_column.column = current_column.column->cut(1, current_column.column->size() - 1);
-				}
-			}
-		}
 
 		if (!finalized)
 			continue;
@@ -139,7 +124,7 @@ Block TotalsHavingBlockInputStream::readImpl()
 	}
 }
 
-void TotalsHavingBlockInputStream::addToTotals(Block & totals, Block & block, const IColumn::Filter * filter, size_t rows)
+void TotalsHavingBlockInputStream::addToTotals(Block & totals, Block & block, const IColumn::Filter * filter)
 {
 	bool init = !totals;
 
@@ -188,7 +173,7 @@ void TotalsHavingBlockInputStream::addToTotals(Block & totals, Block & block, co
 		}
 
 		const ColumnAggregateFunction::Container_t & vec = column->getData();
-		size_t size = std::min(vec.size(), rows);
+		size_t size = vec.size();
 
 		if (filter)
 		{

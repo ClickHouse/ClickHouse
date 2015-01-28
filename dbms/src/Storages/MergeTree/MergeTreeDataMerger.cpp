@@ -42,23 +42,6 @@ static const double DISK_USAGE_COEFFICIENT_TO_RESERVE = 1.4;
 bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & parts, String & merged_name, size_t available_disk_space,
 	bool merge_anything_for_old_months, bool aggressive, bool only_small, const AllowedMergingPredicate & can_merge_callback)
 {
-	std::stringstream log_message;
-
-	log_message << "Selecting parts to merge. Available disk space: ";
-
-	if (available_disk_space == NO_LIMIT)
-		log_message << "no limit";
-	else
-		log_message << available_disk_space << " bytes";
-
-	log_message
-		<< ". Merge anything for old months: " << merge_anything_for_old_months
-		<< ". Aggressive: " << aggressive
-		<< ". Only small: " << only_small
-		<< ".";
-
-	LOG_TRACE(log, log_message.rdbuf());
-
 	MergeTreeData::DataParts data_parts = data.getDataParts();
 
 	DateLUT & date_lut = DateLUT::instance();
@@ -91,9 +74,6 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 
 	if (only_small)
 		cur_max_bytes_to_merge_parts = data.settings.max_bytes_to_merge_parts_small;
-
-	LOG_TRACE(log, "Max bytes to merge parts: " << cur_max_bytes_to_merge_parts
-		<< (only_small ? " (only small)" : (tonight ? " (tonight)" : "")) << ".");
 
 	/// Мемоизация для функции can_merge_callback. Результат вызова can_merge_callback для этого куска и предыдущего в data_parts.
 	std::map<MergeTreeData::DataPartPtr, bool> can_merge_with_previous;
@@ -292,10 +272,6 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 
 		LOG_DEBUG(log, "Selected " << parts.size() << " parts from " << parts.front()->name << " to " << parts.back()->name
 			<< (only_small ? " (only small)" : ""));
-	}
-	else
-	{
-		LOG_TRACE(log, "No parts selected for merge.");
 	}
 
 	return found;

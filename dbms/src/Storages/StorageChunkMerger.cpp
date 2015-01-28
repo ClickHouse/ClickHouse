@@ -14,7 +14,10 @@
 #include <DB/DataStreams/ConcatBlockInputStream.h>
 #include <DB/DataStreams/narrowBlockInputStreams.h>
 #include <DB/DataStreams/AddingDefaultBlockInputStream.h>
+#include <DB/DataStreams/AddingConstColumnBlockInputStream.h>
 #include <DB/Common/VirtualColumnUtils.h>
+#include <DB/DataTypes/DataTypeString.h>
+#include <DB/Columns/ColumnString.h>
 
 
 namespace DB

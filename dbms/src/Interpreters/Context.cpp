@@ -20,11 +20,23 @@ String Context::getPath() const
 	return shared->path;
 }
 
+String Context::getTemporaryPath() const
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	return shared->tmp_path;
+}
+
 
 void Context::setPath(const String & path)
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 	shared->path = path;
+}
+
+void Context::setTemporaryPath(const String & path)
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	shared->tmp_path = path;
 }
 
 
@@ -81,15 +93,17 @@ void Context::removeDependency(const DatabaseAndTableName & from, const Database
 	shared->view_dependencies[from].erase(where);
 }
 
-Dependencies Context::getDependencies(const DatabaseAndTableName & from) const
+Dependencies Context::getDependencies(const String & database_name, const String & table_name) const
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
-	ViewDependencies::const_iterator iter = shared->view_dependencies.find(from);
+
+	String db = database_name.empty() ? current_database : database_name;
+
+	ViewDependencies::const_iterator iter = shared->view_dependencies.find(DatabaseAndTableName(db, table_name));
 	if (iter == shared->view_dependencies.end())
-		return Dependencies();
-	const std::set<DatabaseAndTableName> &buf = iter->second;
-	Dependencies res(buf.begin(), buf.end());
-	return res;
+		return {};
+
+	return Dependencies(iter->second.begin(), iter->second.end());
 }
 
 bool Context::isTableExist(const String & database_name, const String & table_name) const
@@ -620,4 +634,17 @@ Cluster & Context::getCluster(const std::string & cluster_name)
 	else
 		throw Poco::Exception("Failed to find cluster with name = " + cluster_name);
 }
+
+
+Compiler & Context::getCompiler()
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+
+	if (!shared->compiler)
+		shared->compiler.reset(new Compiler{ shared->path + "build/", 1 });
+
+	return *shared->compiler;
+}
+
+
 }

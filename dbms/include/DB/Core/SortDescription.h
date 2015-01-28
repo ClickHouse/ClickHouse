@@ -50,9 +50,9 @@ struct SortCursorImpl
 	ConstColumnPlainPtrs all_columns;
 	ConstColumnPlainPtrs sort_columns;
 	SortDescription desc;
-	size_t sort_columns_size;
-	size_t pos;
-	size_t rows;
+	size_t sort_columns_size = 0;
+	size_t pos = 0;
+	size_t rows = 0;
 
 	/** Порядок (что сравнивается), если сравниваемые столбцы равны.
 	  * Даёт возможность предпочитать строки из нужного курсора.
@@ -65,12 +65,12 @@ struct SortCursorImpl
 	NeedCollationFlags need_collation;
 
 	/** Есть ли хотя бы один столбец с Collator. */
-	bool has_collation;
+	bool has_collation = false;
 
-	SortCursorImpl() : sort_columns(0), pos(0), rows(0) {}
+	SortCursorImpl() {}
 
 	SortCursorImpl(const Block & block, const SortDescription & desc_, size_t order_ = 0)
-		: desc(desc_), sort_columns_size(desc.size()), order(order_), need_collation(desc.size()), has_collation(false)
+		: desc(desc_), sort_columns_size(desc.size()), order(order_), need_collation(desc.size())
 	{
 		reset(block);
 	}

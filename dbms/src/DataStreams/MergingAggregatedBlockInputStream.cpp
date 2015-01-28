@@ -9,14 +9,23 @@ namespace DB
 
 Block MergingAggregatedBlockInputStream::readImpl()
 {
-	if (has_been_read)
-		return Block();
+	if (!executed)
+	{
+		executed = true;
+		AggregatedDataVariants data_variants;
+		aggregator.mergeStream(children.back(), data_variants, max_threads);
+		blocks = aggregator.convertToBlocks(data_variants, final, max_threads);
+		it = blocks.begin();
+	}
 
-	has_been_read = true;
-	
-	AggregatedDataVariants data_variants;
-	aggregator->merge(children.back(), data_variants);
-	return aggregator->convertToBlock(data_variants, final);
+	Block res;
+	if (isCancelled() || it == blocks.end())
+		return res;
+
+	res = *it;
+	++it;
+
+	return res;
 }
 
 

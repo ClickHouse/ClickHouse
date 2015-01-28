@@ -20,7 +20,6 @@ desc table defaulted_test;
 select *, payload_length from defaulted_test;
 insert into defaulted_test (payload) values ('some string');
 select *, payload_length from defaulted_test order by payload;
-optimize table defaulted_test;
 select *, payload_length from defaulted_test order by payload;
 alter table defaulted_test modify column payload_length default length(payload);
 desc table defaulted_test;

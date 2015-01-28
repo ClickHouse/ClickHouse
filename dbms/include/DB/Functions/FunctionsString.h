@@ -1379,7 +1379,7 @@ private:
 				src_offset = src_offsets[i];
 				dst_offset += src_length;
 
-				if (dst_data[dst_offset - 2] != trailing_char_str.front())
+				if (src_length == 1 || dst_data[dst_offset - 2] != trailing_char_str.front())
 				{
 					dst_data[dst_offset - 1] = trailing_char_str.front();
 					dst_data[dst_offset] = 0;
@@ -1397,7 +1397,8 @@ private:
 
 			block.getByPosition(result).column = new ColumnConstString{
 				col->size(),
-				in_data.back() == trailing_char_str.front() ? in_data : in_data + trailing_char_str
+				in_data.size() == 0 ? trailing_char_str :
+					in_data.back() == trailing_char_str.front() ? in_data : in_data + trailing_char_str
 			};
 		}
 		else

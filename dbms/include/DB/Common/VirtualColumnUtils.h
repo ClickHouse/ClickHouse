@@ -1,18 +1,17 @@
 #pragma once
 
-#include <DB/Interpreters/Context.h>
-#include <DB/DataStreams/AddingConstColumnBlockInputStream.h>
-#include <DB/DataStreams/OneBlockInputStream.h>
-#include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
-#include <DB/Parsers/ASTIdentifier.h>
-#include <DB/Parsers/ASTExpressionList.h>
-#include <DB/Parsers/ASTLiteral.h>
-#include <DB/Parsers/ASTSelectQuery.h>
-#include <DB/Columns/ColumnString.h>
+#include <set>
+
+#include <DB/Core/Block.h>
+#include <DB/Core/NamesAndTypes.h>
+#include <DB/Parsers/IAST.h>
+
 
 namespace DB
 {
+
+class Context;
+
 
 namespace VirtualColumnUtils
 {

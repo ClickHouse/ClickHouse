@@ -20,8 +20,8 @@ class MergingSortedBlockInputStream : public IProfilingBlockInputStream
 public:
 	/// limit - если не 0, то можно выдать только первые limit строк в сортированном порядке.
 	MergingSortedBlockInputStream(BlockInputStreams inputs_, const SortDescription & description_, size_t max_block_size_, size_t limit_ = 0)
-		: description(description_), max_block_size(max_block_size_), limit(limit_), total_merged_rows(0), first(true), has_collation(false),
-		num_columns(0), source_blocks(inputs_.size()), cursors(inputs_.size()), log(&Logger::get("MergingSortedBlockInputStream"))
+		: description(description_), max_block_size(max_block_size_), limit(limit_),
+		source_blocks(inputs_.size()), cursors(inputs_.size())
 	{
 		children.insert(children.end(), inputs_.begin(), inputs_.end());
 	}
@@ -65,14 +65,13 @@ protected:
 	SortDescription description;
 	size_t max_block_size;
 	size_t limit;
-	size_t total_merged_rows;
+	size_t total_merged_rows = 0;
 
-	bool first;
-
-	bool has_collation;
+	bool first = true;
+	bool has_collation = false;
 
 	/// Текущие сливаемые блоки.
-	size_t num_columns;
+	size_t num_columns = 0;
 	Blocks source_blocks;
 
 	typedef std::vector<SortCursorImpl> CursorImpls;
@@ -139,7 +138,7 @@ private:
 	template <typename TSortCursor>
 	void merge(Block & merged_block, ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
 
-	Logger * log;
+	Logger * log = &Logger::get("MergingSortedBlockInputStream");
 };
 
 }

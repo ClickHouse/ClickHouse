@@ -1,10 +1,12 @@
 #include <sys/resource.h>
+#include <sys/file.h>
 
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Util/XMLConfiguration.h>
 
 #include <Yandex/ApplicationServerExt.h>
 #include <Yandex/ErrorHandlers.h>
+#include <Yandex/Revision.h>
 #include <statdaemons/ConfigProcessor.h>
 #include <statdaemons/ext/memory.hpp>
 
@@ -20,6 +22,11 @@
 #include <DB/Storages/StorageSystemSettings.h>
 #include <DB/Storages/StorageSystemZooKeeper.h>
 #include <DB/Storages/StorageSystemReplicas.h>
+
+#include <DB/IO/copyData.h>
+#include <DB/IO/LimitReadBuffer.h>
+#include <DB/IO/WriteBufferFromFileDescriptor.h>
+#include <DB/IO/Operators.h>
 
 #include "Server.h"
 #include "HTTPHandler.h"
@@ -318,9 +325,100 @@ void UsersConfigReloader::reloadIfNewer(bool force)
 }
 
 
+/** Обеспечивает, что с одной директорией с данными может одновременно работать не более одного сервера.
+  */
+class StatusFile : private boost::noncopyable
+{
+public:
+	StatusFile(const std::string & path_)
+		: path(path_)
+	{
+		/// Если файл уже существует. NOTE Незначительный race condition.
+		if (Poco::File(path).exists())
+		{
+			std::string contents;
+			{
+				ReadBufferFromFile in(path, 1024);
+				LimitReadBuffer limit_in(in, 1024);
+				WriteBufferFromString out(contents);
+				copyData(limit_in, out);
+			}
+
+			if (!contents.empty())
+				LOG_INFO(&Logger::get("StatusFile"), "Status file " << path << " already exists - unclean restart. Contents:\n" << contents);
+			else
+				LOG_INFO(&Logger::get("StatusFile"), "Status file " << path << " already exists and is empty - probably unclean hardware restart.");
+		}
+
+		fd = open(path.c_str(), O_WRONLY | O_CREAT, 0666);
+
+		if (-1 == fd)
+			throwFromErrno("Cannot open file " + path);
+
+		try
+		{
+			int flock_ret = flock(fd, LOCK_EX | LOCK_NB);
+			if (-1 == flock_ret)
+			{
+				if (errno == EWOULDBLOCK)
+					throw Exception("Cannot lock file " + path + ". Another server instance in same directory is already running.");
+				else
+					throwFromErrno("Cannot lock file " + path);
+			}
+
+			if (0 != ftruncate(fd, 0))
+				throwFromErrno("Cannot ftruncate " + path);
+
+			if (0 != lseek(fd, 0, SEEK_SET))
+				throwFromErrno("Cannot lseek " + path);
+
+			/// Записываем в файл информацию о текущем экземпляре сервера.
+			{
+				WriteBufferFromFileDescriptor out(fd, 1024);
+				out
+					<< "PID: " << getpid() << "\n"
+					<< "Started at: " << mysqlxx::DateTime(time(0)) << "\n"
+					<< "Revision: " << Revision::get() << "\n";
+			}
+		}
+		catch (...)
+		{
+			close(fd);
+			throw;
+		}
+	}
+
+	~StatusFile()
+	{
+		char buf[128];
+
+		if (0 != close(fd))
+			LOG_ERROR(&Logger::get("StatusFile"), "Cannot close file " << path << ", errno: "
+				<< errno << ", strerror: " << strerror_r(errno, buf, sizeof(buf)));
+
+		if (0 != unlink(path.c_str()))
+			LOG_ERROR(&Logger::get("StatusFile"), "Cannot unlink file " << path << ", errno: "
+				<< errno << ", strerror: " << strerror_r(errno, buf, sizeof(buf)));
+	}
+
+private:
+	const std::string path;
+	int fd = -1;
+};
+
+
 int Server::main(const std::vector<std::string> & args)
 {
 	Logger * log = &logger();
+
+	std::string path = config().getString("path");
+	Poco::trimInPlace(path);
+	if (path.empty())
+		throw Exception("path configuration parameter is empty");
+	if (path.back() != '/')
+		path += '/';
+
+	StatusFile status{path + "status"};
 
 	/// Попробуем повысить ограничение на число открытых файлов.
 	{
@@ -357,7 +455,13 @@ int Server::main(const std::vector<std::string> & args)
 	  *  настройки, набор функций, типов данных, агрегатных функций, баз данных...
 	  */
 	global_context->setGlobalContext(*global_context);
-	global_context->setPath(config().getString("path"));
+	global_context->setPath(path);
+
+	/// Директория для временных файлов при обработке тяжёлых запросов.
+	std::string tmp_path = config().getString("tmp_path", path + "tmp/");
+	global_context->setTemporaryPath(tmp_path);
+	Poco::File(tmp_path).createDirectories();
+	/// TODO Очистка временных файлов. Проверка, что директория с временными файлами не совпадает и не содержит в себе основной path.
 
 	bool has_zookeeper = false;
 	if (config().has("zookeeper"))

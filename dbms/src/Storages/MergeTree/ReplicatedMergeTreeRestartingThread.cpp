@@ -13,7 +13,7 @@ static String generateActiveNodeIdentifier()
 	struct timespec times;
 	if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &times))
 		throwFromErrno("Cannot clock_gettime.", ErrorCodes::CANNOT_CLOCK_GETTIME);
-	return toString(times.tv_nsec + times.tv_sec + getpid());
+	return "pid: " + toString(getpid()) + ", random: " + toString(times.tv_nsec + times.tv_sec + getpid());
 }
 
 
@@ -52,7 +52,7 @@ void ReplicatedMergeTreeRestartingThread::run()
 					partialShutdown();
 				}
 
-				do
+				while (true)
 				{
 					try
 					{
@@ -62,6 +62,7 @@ void ReplicatedMergeTreeRestartingThread::run()
 					{
 						/// Исключение при попытке zookeeper_init обычно бывает, если не работает DNS. Будем пытаться сделать это заново.
 						tryLogCurrentException(__PRETTY_FUNCTION__);
+
 						wakeup_event.tryWait(retry_delay_ms);
 						continue;
 					}
@@ -71,7 +72,9 @@ void ReplicatedMergeTreeRestartingThread::run()
 						wakeup_event.tryWait(retry_delay_ms);
 						continue;
 					}
-				} while (false);
+
+					break;
+				}
 
 				storage.is_readonly = false;
 				first_time = false;
@@ -133,32 +136,31 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
 		storage.queue_task_handle = storage.context.getBackgroundPool().addTask(
 			std::bind(&StorageReplicatedMergeTree::queueTask, &storage, std::placeholders::_1));
 		storage.queue_task_handle->wake();
-		return true;
-	}
-	catch (const zkutil::KeeperException & e)
-	{
-		storage.replica_is_active_node = nullptr;
-		storage.leader_election = nullptr;
-		LOG_ERROR(log, "Couldn't start replication: " << e.what() << ", " << e.displayText() << ", stack trace:\n"
-			<< e.getStackTrace().toString());
-		return false;
-	}
-	catch (const Exception & e)
-	{
-		if (e.code() != ErrorCodes::REPLICA_IS_ALREADY_ACTIVE)
-			throw;
 
-		storage.replica_is_active_node = nullptr;
-		storage.leader_election = nullptr;
-		LOG_ERROR(log, "Couldn't start replication: " << e.what() << ", " << e.displayText() << ", stack trace:\n"
-			<< e.getStackTrace().toString());
-		return false;
+		return true;
 	}
 	catch (...)
 	{
-		storage.replica_is_active_node = nullptr;
-		storage.leader_election = nullptr;
-		throw;
+		storage.replica_is_active_node 	= nullptr;
+		storage.leader_election 		= nullptr;
+
+		try
+		{
+			throw;
+		}
+		catch (const zkutil::KeeperException & e)
+		{
+			LOG_ERROR(log, "Couldn't start replication: " << e.what() << ", " << e.displayText() << ", stack trace:\n" << e.getStackTrace().toString());
+			return false;
+		}
+		catch (const Exception & e)
+		{
+			if (e.code() != ErrorCodes::REPLICA_IS_ALREADY_ACTIVE)
+				throw;
+
+			LOG_ERROR(log, "Couldn't start replication: " << e.what() << ", " << e.displayText() << ", stack trace:\n" << e.getStackTrace().toString());
+			return false;
+		}
 	}
 }
 
