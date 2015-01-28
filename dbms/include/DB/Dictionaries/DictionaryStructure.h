@@ -50,6 +50,29 @@ attribute_type getAttributeTypeByName(const std::string & type)
 	};
 }
 
+std::string toString(const attribute_type type)
+{
+	switch (type)
+	{
+		case attribute_type::uint8: return "UInt8";
+		case attribute_type::uint16: return "UInt16";
+		case attribute_type::uint32: return "UInt32";
+		case attribute_type::uint64: return "UInt64";
+		case attribute_type::int8: return "Int8";
+		case attribute_type::int16: return "Int16";
+		case attribute_type::int32: return "Int32";
+		case attribute_type::int64: return "Int64";
+		case attribute_type::float32: return "Float32";
+		case attribute_type::float64: return "Float64";
+		case attribute_type::string: return "String";
+	}
+
+	throw Exception{
+		"Unknown attribute_type " + toString(type),
+		ErrorCodes::ARGUMENT_OUT_OF_BOUND
+	};
+}
+
 struct DictionaryAttribute
 {
 	std::string name;

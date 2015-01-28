@@ -20,13 +20,16 @@ public:
 		const std::string & config_prefix, DictionarySourcePtr source_ptr)
 	: source_ptr{std::move(source_ptr)}
 	{
+		attributes.reserve(dict_struct.attributes.size());
 		for (const auto & attribute : dict_struct.attributes)
 		{
-			attributes.emplace(attribute.name,
-				createAttributeWithType(getAttributeTypeByName(attribute.type), attribute.null_value));
+			attribute_index_by_name.emplace(attribute.name, attributes.size());
+			attributes.emplace_back(
+				createAttributeWithType(getAttributeTypeByName(attribute.type),
+				attribute.null_value));
 
 			if (attribute.hierarchical)
-				hierarchical_attribute = &attributes[attribute.name];
+				hierarchical_attribute = &attributes.back();
 		}
 
 		auto stream = this->source_ptr->loadAll();
@@ -38,7 +41,7 @@ public:
 			for (const auto attribute_idx : ext::range(0, attributes.size()))
 			{
 				const auto & attribute_column = *block.getByPosition(attribute_idx + 1).column;
-				auto & attribute = attributes[dict_struct.attributes[attribute_idx].name];
+				auto & attribute = attributes[attribute_idx];
 
 				for (const auto row_idx : ext::range(0, id_column.size()))
 					setAttributeValue(attribute, id_column[row_idx].get<UInt64>(), attribute_column[row_idx]);
@@ -49,14 +52,41 @@ public:
 		this->source_ptr->reset();
 	}
 
-private:
-	UInt64 getUInt64(const id_t id, const std::string & attribute_name) const override
+	id_t toParent(const id_t id) const override
 	{
-		const auto & attribute = findAttribute(attribute_name);
+		const auto exists = id < max_array_size;
+		const auto attr = hierarchical_attribute;
+
+		switch (hierarchical_attribute->type)
+		{
+		case attribute_type::uint8: return exists ? attr->uint8_array[id] : attr->uint8_null_value;
+		case attribute_type::uint16: return exists ? attr->uint16_array[id] : attr->uint16_null_value;
+		case attribute_type::uint32: return exists ? attr->uint32_array[id] : attr->uint32_null_value;
+		case attribute_type::uint64: return exists ? attr->uint64_array[id] : attr->uint64_null_value;
+		case attribute_type::int8: return exists ? attr->int8_array[id] : attr->int8_null_value;
+		case attribute_type::int16: return exists ? attr->int16_array[id] : attr->int16_null_value;
+		case attribute_type::int32: return exists ? attr->int32_array[id] : attr->int32_null_value;
+		case attribute_type::int64: return exists ? attr->int64_array[id] : attr->int64_null_value;
+		case attribute_type::float32:
+		case attribute_type::float64:
+		case attribute_type::string:
+			break;
+		}
+
+		throw Exception{
+			"Hierarchical attribute has non-integer type " + toString(hierarchical_attribute->type),
+			ErrorCodes::TYPE_MISMATCH
+		};
+	}
+
+	UInt64 getUInt64(const std::string & attribute_name, const id_t id) const override
+	{
+		const auto idx = getAttributeIndex(attribute_name);
+		const auto & attribute = attributes[idx];
 
 		if (attribute.type != attribute_type::uint64)
 			throw Exception{
-				"Type mismatch: attribute " + attribute_name + " has a type different from UInt64",
+				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
 				ErrorCodes::TYPE_MISMATCH
 			};
 
@@ -66,13 +96,14 @@ private:
 		return attribute.uint64_null_value;
 	}
 
-	StringRef getString(const id_t id, const std::string & attribute_name) const override
+	StringRef getString(const std::string & attribute_name, const id_t id) const override
 	{
-		const auto & attribute = findAttribute(attribute_name);
+		const auto idx = getAttributeIndex(attribute_name);
+		const auto & attribute = attributes[idx];
 
 		if (attribute.type != attribute_type::string)
 			throw Exception{
-				"Type mismatch: attribute " + attribute_name + " has a type different from String",
+				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
 				ErrorCodes::TYPE_MISMATCH
 			};
 
@@ -82,7 +113,43 @@ private:
         return { attribute.string_null_value.data(), attribute.string_null_value.size() };
     }
 
+	std::size_t getAttributeIndex(const std::string & attribute_name) const override
+	{
+		const auto it = attribute_index_by_name.find(attribute_name);
+		if (it == std::end(attribute_index_by_name))
+			throw Exception{
+				"No such attribute '" + attribute_name + "'",
+				ErrorCodes::BAD_ARGUMENTS
+			};
+
+		return it->second;
+	}
+
+	bool isUInt64(const std::size_t attribute_idx) const override
+	{
+		return attributes[attribute_idx].type == attribute_type::uint64;
+	}
+
+	bool isString(const std::size_t attribute_idx) const override
+	{
+		return attributes[attribute_idx].type == attribute_type::string;
+	}
+
+	UInt64 getUInt64Unsafe(const std::size_t attribute_idx, const id_t id) const override
+	{
+		const auto & attribute = attributes[attribute_idx];
+		return id < max_array_size ? attribute.uint64_array[id] : attribute.uint64_null_value;
+	}
+
+	StringRef getStringUnsafe(const std::size_t attribute_idx, const id_t id) const override
+	{
+		const auto & attribute = attributes[attribute_idx];
+		return id < max_array_size ? attribute.string_array[id] : attribute.string_null_value;
+	}
+
 	bool isComplete() const override { return true; }
+
+	bool hasHierarchy() const override { return hierarchical_attribute; }
 
 	struct attribute_t
 	{
@@ -111,8 +178,6 @@ private:
 		std::unique_ptr<Arena> string_arena;
 		std::vector<StringRef> string_array;
 	};
-
-	using attributes_t = std::map<std::string, attribute_t>;
 
 	attribute_t createAttributeWithType(const attribute_type type, const std::string & null_value)
 	{
@@ -221,19 +286,8 @@ private:
 		}
 	}
 
-	const attribute_t & findAttribute(const std::string & attribute_name) const
-	{
-		const auto it = attributes.find(attribute_name);
-		if (it == std::end(attributes))
-			throw Exception{
-				"No such attribute '" + attribute_name + "'",
-				ErrorCodes::BAD_ARGUMENTS
-			};
-
-		return it->second;
-	}
-
-    attributes_t attributes;
+	std::map<std::string, std::size_t> attribute_index_by_name;
+	std::vector<attribute_t> attributes;
 	const attribute_t * hierarchical_attribute = nullptr;
 
 	DictionarySourcePtr source_ptr;

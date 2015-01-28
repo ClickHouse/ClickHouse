@@ -12,6 +12,7 @@
 
 #include <DB/Functions/IFunction.h>
 #include <statdaemons/CategoriesHierarchy.h>
+#include <statdaemons/ext/range.hpp>
 
 
 namespace DB
@@ -884,9 +885,16 @@ private:
 			const auto out = new ColumnString;
 			block.getByPosition(result).column = out;
 
+			const auto attribute_idx = dictionary->getAttributeIndex(attr_name);
+			if (!dictionary->isString(attribute_idx))
+				throw Exception{
+					"Type mismatch: attribute " + attr_name + " has type different from String",
+					ErrorCodes::TYPE_MISMATCH
+				};
+
 			for (const auto & id : id_col->getData())
 			{
-				const auto string_ref = dictionary->getString(id, attr_name);
+				const auto string_ref = dictionary->getStringUnsafe(attribute_idx, id);
 				out->insertData(string_ref.data, string_ref.size);
 			}
 
@@ -896,7 +904,7 @@ private:
 		{
 			block.getByPosition(result).column = new ColumnConst<String>{
 				id_col->size(),
-				dictionary->getString(id_col->getData(), attr_name).toString()
+				dictionary->getString(attr_name, id_col->getData()).toString()
 			};
 
 			return true;
@@ -910,7 +918,7 @@ private:
 
 
 template <typename IntegralType>
-class FunctionDictGetInteger: public IFunction
+class FunctionDictGetInteger final : public IFunction
 {
 public:
 	static const std::string name;
@@ -961,7 +969,7 @@ private:
 			!typeid_cast<const DataTypeInt64 *>(id_arg))
 		{
 			throw Exception{
-				"Illegal type " + arguments[2]->getName() + " of argument of function " + getName(),
+				"Illegal type " + id_arg->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
 			};
 		}
@@ -969,7 +977,7 @@ private:
 		return new typename DataTypeFromFieldType<IntegralType>::Type;
 	}
 
-	void execute(Block & block, const ColumnNumbers & arguments, const size_t result)
+	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
 		const auto dict_name_col = typeid_cast<const ColumnConst<String> *>(block.getByPosition(arguments[0]).column.get());
 		if (!dict_name_col)
@@ -1015,8 +1023,15 @@ private:
 			const auto out = new ColumnVector<IntegralType>;
 			block.getByPosition(result).column = out;
 
+			const auto attribute_idx = dictionary->getAttributeIndex(attr_name);
+			if (!dictionary->isUInt64(attribute_idx))
+				throw Exception{
+					"Type mismatch: attribute " + attr_name + " has type different from UInt64",
+					ErrorCodes::TYPE_MISMATCH
+				};
+
 			for (const auto & id : id_col->getData())
-				out->insert(dictionary->getUInt64(id, attr_name));
+				out->insert(dictionary->getUInt64Unsafe(attribute_idx, id));
 
 			return true;
 		}
@@ -1024,7 +1039,7 @@ private:
 		{
 			block.getByPosition(result).column = new ColumnConst<IntegralType>{
 				id_col->size(),
-				static_cast<IntegralType>(dictionary->getUInt64(id_col->getData(), attr_name))
+				static_cast<IntegralType>(dictionary->getUInt64(attr_name, id_col->getData()))
 			};
 
 			return true;
@@ -1048,6 +1063,366 @@ using FunctionDictGetInt8 = FunctionDictGetInteger<Int8>;
 using FunctionDictGetInt16 = FunctionDictGetInteger<Int16>;
 using FunctionDictGetInt32 = FunctionDictGetInteger<Int32>;
 using FunctionDictGetInt64 = FunctionDictGetInteger<Int64>;
+
+
+
+class FunctionDictGetHierarchy final : public IFunction
+{
+public:
+	static constexpr auto name = "dictGetHierarchy";
+
+	static IFunction * create(const Context & context)
+	{
+		return new FunctionDictGetHierarchy{context.getDictionaries()};
+	};
+
+	FunctionDictGetHierarchy(const Dictionaries & dictionaries) : dictionaries(dictionaries) {}
+
+	String getName() const override { return name; }
+
+private:
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	{
+		if (arguments.size() != 2)
+			throw Exception{
+				"Number of arguments for function " + getName() + " doesn't match: passed "
+					+ toString(arguments.size()) + ", should be 2.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
+			};
+
+		if (!typeid_cast<const DataTypeString *>(arguments[0].get()))
+		{
+			throw Exception{
+				"Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+			};
+		}
+
+		const auto id_arg = arguments[1].get();
+		if (!typeid_cast<const DataTypeUInt8 *>(id_arg) &&
+			!typeid_cast<const DataTypeUInt16 *>(id_arg) &&
+			!typeid_cast<const DataTypeUInt32 *>(id_arg) &&
+			!typeid_cast<const DataTypeUInt64 *>(id_arg) &&
+			!typeid_cast<const DataTypeInt8 *>(id_arg) &&
+			!typeid_cast<const DataTypeInt16 *>(id_arg) &&
+			!typeid_cast<const DataTypeInt32 *>(id_arg) &&
+			!typeid_cast<const DataTypeInt64 *>(id_arg))
+		{
+			throw Exception{
+				"Illegal type " + id_arg->getName() + " of argument of function " + getName(),
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+			};
+		}
+
+		return new DataTypeArray{new DataTypeUInt64};
+	};
+
+	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
+	{
+		const auto dict_name_col = typeid_cast<const ColumnConst<String> *>(block.getByPosition(arguments[0]).column.get());
+		if (!dict_name_col)
+			throw Exception{
+				"First argument of function " + getName() + " must be a constant string",
+				ErrorCodes::ILLEGAL_COLUMN
+			};
+
+		auto dict = dictionaries.getExternalDictionary(dict_name_col->getData());
+
+		if (!dict->hasHierarchy())
+			throw Exception{
+				"Dictionary does not have a hierarchy",
+				ErrorCodes::UNSUPPORTED_METHOD
+			};
+
+		const auto id_col = block.getByPosition(arguments[1]).column.get();
+		if (!execute<UInt8>(block, result, dict, id_col) &&
+			!execute<UInt16>(block, result, dict, id_col) &&
+			!execute<UInt32>(block, result, dict, id_col) &&
+			!execute<UInt64>(block, result, dict, id_col) &&
+			!execute<Int8>(block, result, dict, id_col) &&
+			!execute<Int16>(block, result, dict, id_col) &&
+			!execute<Int32>(block, result, dict, id_col) &&
+			!execute<Int64>(block, result, dict, id_col))
+		{
+			throw Exception{
+				"Second argument of function " + getName() + " must be integral",
+				ErrorCodes::ILLEGAL_COLUMN
+			};
+		}
+	}
+
+	template <typename T>
+	bool execute(Block & block, const size_t result, const MultiVersion<IDictionary>::Version & dictionary,
+		const IColumn * const id_col_untyped)
+	{
+		if (const auto id_col = typeid_cast<const ColumnVector<T> *>(id_col_untyped))
+		{
+			const auto backend = new ColumnVector<UInt64>;
+			const auto array = new ColumnArray{backend};
+			block.getByPosition(result).column = array;
+
+			const auto & in = id_col->getData();
+			const auto size = in.size();
+			auto & out = backend->getData();
+			auto & offsets = array->getOffsets();
+			offsets.resize(size);
+			out.reserve(size * 4);
+
+			for (const auto idx : ext::range(0, size))
+			{
+				IDictionary::id_t cur = in[idx];
+				while (cur)
+				{
+					out.push_back(cur);
+					cur = dictionary->toParent(cur);
+				}
+				offsets[idx] = out.size();
+			};
+
+			return true;
+		}
+		else if (const auto id_col = typeid_cast<const ColumnConst<T> *>(id_col_untyped))
+		{
+			Array res;
+
+			IDictionary::id_t cur = id_col->getData();
+			while (cur)
+			{
+				res.push_back(static_cast<typename NearestFieldType<T>::Type>(cur));
+				cur = dictionary->toParent(cur);
+			}
+
+			block.getByPosition(result).column = new ColumnConstArray{
+				id_col->size(),
+				res,
+				new DataTypeArray{new DataTypeUInt64}
+			};
+
+			return true;
+		};
+
+		return false;
+	}
+
+	const Dictionaries & dictionaries;
+};
+
+
+class FunctionDictIsIn final : public IFunction
+{
+public:
+	static constexpr auto name = "dictIsIn";
+
+	static IFunction * create(const Context & context)
+	{
+		return new FunctionDictIsIn{context.getDictionaries()};
+	};
+
+	FunctionDictIsIn(const Dictionaries & dictionaries) : dictionaries(dictionaries) {}
+
+	String getName() const override { return name; }
+
+private:
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	{
+		if (arguments.size() != 3)
+			throw Exception{
+				"Number of arguments for function " + getName() + " doesn't match: passed "
+					+ toString(arguments.size()) + ", should be 3.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
+			};
+
+		if (!typeid_cast<const DataTypeString *>(arguments[0].get()))
+		{
+			throw Exception{
+				"Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+			};
+		}
+
+		const auto child_id_arg = arguments[1].get();
+		if (!typeid_cast<const DataTypeUInt8 *>(child_id_arg) &&
+			!typeid_cast<const DataTypeUInt16 *>(child_id_arg) &&
+			!typeid_cast<const DataTypeUInt32 *>(child_id_arg) &&
+			!typeid_cast<const DataTypeUInt64 *>(child_id_arg) &&
+			!typeid_cast<const DataTypeInt8 *>(child_id_arg) &&
+			!typeid_cast<const DataTypeInt16 *>(child_id_arg) &&
+			!typeid_cast<const DataTypeInt32 *>(child_id_arg) &&
+			!typeid_cast<const DataTypeInt64 *>(child_id_arg))
+		{
+			throw Exception{
+				"Illegal type " + child_id_arg->getName() + " of argument of function " + getName(),
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+			};
+		}
+
+		const auto ancestor_id_arg = arguments[2].get();
+		if (!typeid_cast<const DataTypeUInt8 *>(ancestor_id_arg) &&
+			!typeid_cast<const DataTypeUInt16 *>(ancestor_id_arg) &&
+			!typeid_cast<const DataTypeUInt32 *>(ancestor_id_arg) &&
+			!typeid_cast<const DataTypeUInt64 *>(ancestor_id_arg) &&
+			!typeid_cast<const DataTypeInt8 *>(ancestor_id_arg) &&
+			!typeid_cast<const DataTypeInt16 *>(ancestor_id_arg) &&
+			!typeid_cast<const DataTypeInt32 *>(ancestor_id_arg) &&
+			!typeid_cast<const DataTypeInt64 *>(ancestor_id_arg))
+		{
+			throw Exception{
+				"Illegal type " + ancestor_id_arg->getName() + " of argument of function " + getName(),
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+			};
+		}
+
+		return new DataTypeUInt8;
+	}
+
+	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
+	{
+		const auto dict_name_col = typeid_cast<const ColumnConst<String> *>(block.getByPosition(arguments[0]).column.get());
+		if (!dict_name_col)
+			throw Exception{
+				"First argument of function " + getName() + " must be a constant string",
+				ErrorCodes::ILLEGAL_COLUMN
+			};
+
+		auto dict = dictionaries.getExternalDictionary(dict_name_col->getData());
+
+		if (!dict->hasHierarchy())
+			throw Exception{
+				"Dictionary does not have a hierarchy",
+				ErrorCodes::UNSUPPORTED_METHOD
+			};
+
+		const auto child_id_col = block.getByPosition(arguments[1]).column.get();
+		const auto ancestor_id_col = block.getByPosition(arguments[2]).column.get();
+		if (!execute<UInt8>(block, result, dict, child_id_col, ancestor_id_col) &&
+			!execute<UInt16>(block, result, dict, child_id_col, ancestor_id_col) &&
+			!execute<UInt32>(block, result, dict, child_id_col, ancestor_id_col) &&
+			!execute<UInt64>(block, result, dict, child_id_col, ancestor_id_col) &&
+			!execute<Int8>(block, result, dict, child_id_col, ancestor_id_col) &&
+			!execute<Int16>(block, result, dict, child_id_col, ancestor_id_col) &&
+			!execute<Int32>(block, result, dict, child_id_col, ancestor_id_col) &&
+			!execute<Int64>(block, result, dict, child_id_col, ancestor_id_col))
+		{
+			throw Exception{
+				"Illegal column " + child_id_col->getName()
+					+ " of second argument of function " + getName(),
+				ErrorCodes::ILLEGAL_COLUMN
+			};
+		}
+	}
+
+	template <typename T>
+	bool execute(Block & block, const size_t result, const MultiVersion<IDictionary>::Version & dictionary,
+		const IColumn * const child_id_col_untyped, const IColumn * const ancestor_id_col_untyped)
+	{
+		if (execute<T, ColumnVector<T>>(block, result, dictionary, child_id_col_untyped, ancestor_id_col_untyped) ||
+			execute<T, ColumnConst<T>>(block, result, dictionary, child_id_col_untyped, ancestor_id_col_untyped))
+			return true;
+
+		return false;
+	}
+
+	template <typename T, typename ColumnType>
+	bool execute(Block & block, const size_t result, const MultiVersion<IDictionary>::Version & dictionary,
+		const IColumn * const child_id_col_untyped, const IColumn * const ancestor_id_col_untyped)
+	{
+		if (const auto child_id_col = typeid_cast<const ColumnType *>(child_id_col_untyped))
+		{
+			if (execute<T, UInt8>(block, result, dictionary, child_id_col, ancestor_id_col_untyped) ||
+				execute<T, UInt16>(block, result, dictionary, child_id_col, ancestor_id_col_untyped) ||
+				execute<T, UInt32>(block, result, dictionary, child_id_col, ancestor_id_col_untyped) ||
+				execute<T, UInt64>(block, result, dictionary, child_id_col, ancestor_id_col_untyped) ||
+				execute<T, Int8>(block, result, dictionary, child_id_col, ancestor_id_col_untyped) ||
+				execute<T, Int16>(block, result, dictionary, child_id_col, ancestor_id_col_untyped) ||
+				execute<T, Int32>(block, result, dictionary, child_id_col, ancestor_id_col_untyped) ||
+				execute<T, Int64>(block, result, dictionary, child_id_col, ancestor_id_col_untyped))
+				return true;
+			else
+				throw Exception{
+					"Illegal column " + ancestor_id_col_untyped->getName()
+						+ " of third argument of function " + getName(),
+					ErrorCodes::ILLEGAL_COLUMN
+				};
+		}
+
+		return false;
+	}
+
+	template <typename T, typename U>
+	bool execute(Block & block, const size_t result, const MultiVersion<IDictionary>::Version & dictionary,
+		const ColumnVector<T> * const child_id_col, const IColumn * const ancestor_id_col_untyped)
+	{
+		if (const auto ancestor_id_col = typeid_cast<const ColumnVector<T> *>(ancestor_id_col_untyped))
+		{
+			const auto out = new ColumnVector<UInt8>;
+			block.getByPosition(result).column = out;
+
+			const auto & child_ids = child_id_col->getData();
+			const auto & ancestor_ids = ancestor_id_col->getData();
+			auto & data = out->getData();
+			const auto size = child_id_col->size();
+			data.resize(size);
+
+			for (const auto idx : ext::range(0, size))
+				data[idx] = dictionary->in(child_ids[idx], ancestor_ids[idx]);
+
+			return true;
+		}
+		else if (const auto ancestor_id_col = typeid_cast<const ColumnConst<T> *>(ancestor_id_col_untyped))
+		{
+			const auto out = new ColumnVector<UInt8>;
+			block.getByPosition(result).column = out;
+
+			const auto & child_ids = child_id_col->getData();
+			const auto ancestor_id = ancestor_id_col->getData();
+			auto & data = out->getData();
+			const auto size = child_id_col->size();
+			data.resize(size);
+
+			for (const auto idx : ext::range(0, size))
+				data[idx] = dictionary->in(child_ids[idx], ancestor_id);
+
+			return true;
+		}
+
+		return false;
+	}
+
+	template <typename T, typename U>
+	bool execute(Block & block, const size_t result, const MultiVersion<IDictionary>::Version & dictionary,
+		const ColumnConst<T> * const child_id_col, const IColumn * const ancestor_id_col_untyped)
+	{
+		if (const auto ancestor_id_col = typeid_cast<const ColumnVector<T> *>(ancestor_id_col_untyped))
+		{
+			const auto out = new ColumnVector<UInt8>;
+			block.getByPosition(result).column = out;
+
+			const auto child_id = child_id_col->getData();
+			const auto & ancestor_ids = ancestor_id_col->getData();
+			auto & data = out->getData();
+			const auto size = child_id_col->size();
+			data.resize(size);
+
+			for (const auto idx : ext::range(0, size))
+				data[idx] = dictionary->in(child_id, ancestor_ids[idx]);
+
+			return true;
+		}
+		else if (const auto ancestor_id_col = typeid_cast<const ColumnConst<T> *>(ancestor_id_col_untyped))
+		{
+			block.getByPosition(result).column = new ColumnConst<UInt8>{
+				child_id_col->size(),
+				dictionary->in(child_id_col->getData(), ancestor_id_col->getData())
+			};
+
+			return true;
+		}
+
+		return false;
+	}
+
+	const Dictionaries & dictionaries;
+};
 
 
 }

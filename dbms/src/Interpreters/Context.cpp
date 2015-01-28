@@ -496,7 +496,7 @@ const Dictionaries & Context::getDictionaries() const
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 
 	if (!shared->dictionaries)
-		shared->dictionaries = new Dictionaries{*this};
+		shared->dictionaries = new Dictionaries{*this->global_context};
 
 	return *shared->dictionaries;
 }
