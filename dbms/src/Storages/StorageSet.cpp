@@ -1,9 +1,6 @@
 #include <DB/Storages/StorageSet.h>
-#include <DB/IO/WriteBufferFromFile.h>
 #include <DB/IO/ReadBufferFromFile.h>
-#include <DB/IO/CompressedWriteBuffer.h>
 #include <DB/IO/CompressedReadBuffer.h>
-#include <DB/DataStreams/NativeBlockOutputStream.h>
 #include <DB/DataStreams/NativeBlockInputStream.h>
 #include <DB/Common/escapeForFileName.h>
 
@@ -12,53 +9,42 @@ namespace DB
 {
 
 
-class SetBlockOutputStream : public IBlockOutputStream
+SetOrJoinBlockOutputStream::SetOrJoinBlockOutputStream(StorageSetOrJoinBase & table_,
+	const String & backup_path_, const String & backup_tmp_path_, const String & backup_file_name_)
+	: table(table_),
+	backup_path(backup_path_), backup_tmp_path(backup_tmp_path_),
+	backup_file_name(backup_file_name_),
+	backup_buf(backup_tmp_path + backup_file_name),
+	compressed_backup_buf(backup_buf),
+	backup_stream(compressed_backup_buf)
 {
-public:
-	SetBlockOutputStream(SetPtr & set_, const String & backup_path_, const String & backup_tmp_path_, const String & backup_file_name_)
-		: set(set_),
-		backup_path(backup_path_), backup_tmp_path(backup_tmp_path_),
-		backup_file_name(backup_file_name_),
-		backup_buf(backup_tmp_path + backup_file_name),
-		compressed_backup_buf(backup_buf),
-		backup_stream(compressed_backup_buf)
-	{
-	}
+}
 
-	void write(const Block & block) override
-	{
-		set->insertFromBlock(block);
-		backup_stream.write(block);
-	}
-
-	void writeSuffix() override
-	{
-		backup_stream.flush();
-		compressed_backup_buf.next();
-		backup_buf.next();
-
-		Poco::File(backup_tmp_path + backup_file_name).renameTo(backup_path + backup_file_name);
-	}
-
-private:
-	SetPtr set;
-	String backup_path;
-	String backup_tmp_path;
-	String backup_file_name;
-	WriteBufferFromFile backup_buf;
-	CompressedWriteBuffer compressed_backup_buf;
-	NativeBlockOutputStream backup_stream;
-};
-
-
-BlockOutputStreamPtr StorageSet::write(ASTPtr query)
+void SetOrJoinBlockOutputStream::write(const Block & block)
 {
-	++increment;
-	return new SetBlockOutputStream(set, path, path + "tmp/", toString(increment) + ".bin");
+	table.insertBlock(block);
+	backup_stream.write(block);
+}
+
+void SetOrJoinBlockOutputStream::writeSuffix()
+{
+	backup_stream.flush();
+	compressed_backup_buf.next();
+	backup_buf.next();
+
+	Poco::File(backup_tmp_path + backup_file_name).renameTo(backup_path + backup_file_name);
 }
 
 
-StorageSet::StorageSet(
+
+BlockOutputStreamPtr StorageSetOrJoinBase::write(ASTPtr query)
+{
+	++increment;
+	return new SetOrJoinBlockOutputStream(*this, path, path + "tmp/", toString(increment) + ".bin");
+}
+
+
+StorageSetOrJoinBase::StorageSetOrJoinBase(
 	const String & path_,
 	const String & name_,
 	NamesAndTypesListPtr columns_,
@@ -68,11 +54,24 @@ StorageSet::StorageSet(
 	: IStorage{materialized_columns_, alias_columns_, column_defaults_},
 	path(path_ + escapeForFileName(name_) + '/'), name(name_), columns(columns_)
 {
+}
+
+
+
+StorageSet::StorageSet(
+	const String & path_,
+	const String & name_,
+	NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & materialized_columns_,
+	const NamesAndTypesList & alias_columns_,
+	const ColumnDefaults & column_defaults_)
+	: StorageSetOrJoinBase{path_, name_, columns_, materialized_columns_, alias_columns_, column_defaults_}
+{
 	restore();
 }
 
 
-void StorageSet::restore()
+void StorageSetOrJoinBase::restore()
 {
 	Poco::File tmp_dir(path + "tmp/");
 	if (!tmp_dir.exists())
@@ -107,7 +106,7 @@ void StorageSet::restore()
 }
 
 
-void StorageSet::restoreFromFile(const String & file_path, const DataTypeFactory & data_type_factory)
+void StorageSetOrJoinBase::restoreFromFile(const String & file_path, const DataTypeFactory & data_type_factory)
 {
 	ReadBufferFromFile backup_buf(file_path);
 	CompressedReadBuffer compressed_backup_buf(backup_buf);
@@ -115,19 +114,19 @@ void StorageSet::restoreFromFile(const String & file_path, const DataTypeFactory
 
 	backup_stream.readPrefix();
 	while (Block block = backup_stream.read())
-		set->insertFromBlock(block);
+		insertBlock(block);
 	backup_stream.readSuffix();
 
 	/// TODO Добавить скорость, сжатые байты, объём данных в памяти, коэффициент сжатия... Обобщить всё логгирование статистики в проекте.
-	LOG_INFO(&Logger::get("StorageSet"), std::fixed << std::setprecision(2)
+	LOG_INFO(&Logger::get("StorageSetOrJoinBase"), std::fixed << std::setprecision(2)
 		<< "Loaded from backup file " << file_path << ". "
 		<< backup_stream.getInfo().rows << " rows, "
 		<< backup_stream.getInfo().bytes / 1048576.0 << " MiB. "
-		<< "Set has " << set->getTotalRowCount() << " unique rows.");
+		<< "State has " << getSize() << " unique rows.");
 }
 
 
-void StorageSet::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
+void StorageSetOrJoinBase::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
 {
 	/// Переименовываем директорию с данными.
 	String new_path = new_path_to_db + escapeForFileName(new_table_name);

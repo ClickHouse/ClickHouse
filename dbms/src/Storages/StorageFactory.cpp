@@ -26,6 +26,7 @@
 #include <DB/Storages/StorageChunkMerger.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Storages/StorageSet.h>
+#include <DB/Storages/StorageJoin.h>
 
 
 namespace DB
