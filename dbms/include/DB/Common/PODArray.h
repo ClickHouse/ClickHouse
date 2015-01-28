@@ -231,6 +231,17 @@ public:
 		c_end = c_start + byte_size(n);
 	}
 
+	void resize_fill(size_t n, const T & value)
+	{
+		size_t old_size = size();
+		if (n > old_size)
+		{
+			reserve(n);
+			std::fill(t_end(), reinterpret_cast<T *>(c_end + n - old_size), value);
+		}
+		c_end = c_start + byte_size(n);
+	}
+
 	void clear()
 	{
 		c_end = c_start;
