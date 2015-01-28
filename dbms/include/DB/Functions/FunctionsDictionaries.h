@@ -917,18 +917,46 @@ private:
 };
 
 
-template <typename IntegralType>
-class FunctionDictGetInteger final : public IFunction
+template <typename DataType> struct DictGetTraits;
+#define DECLARE_DICT_GET_TRAITS(TYPE, DATA_TYPE) \
+template <> struct DictGetTraits<DATA_TYPE>\
+{\
+	static TYPE get(const IDictionary * const dict, const std::string & name, const IDictionary::id_t id)\
+	{\
+		return dict->get##TYPE(name, id);\
+	}\
+	static bool is(const IDictionary * const dict, const std::size_t idx) { return dict->is##TYPE(idx); } \
+	static TYPE get(const IDictionary * const dict, const std::size_t idx, const IDictionary::id_t id)\
+	{\
+		return dict->get##TYPE##Unsafe(idx, id);\
+	}\
+};
+DECLARE_DICT_GET_TRAITS(UInt8, DataTypeUInt8)
+DECLARE_DICT_GET_TRAITS(UInt16, DataTypeUInt16)
+DECLARE_DICT_GET_TRAITS(UInt32, DataTypeUInt32)
+DECLARE_DICT_GET_TRAITS(UInt64, DataTypeUInt64)
+DECLARE_DICT_GET_TRAITS(Int8, DataTypeInt8)
+DECLARE_DICT_GET_TRAITS(Int16, DataTypeInt16)
+DECLARE_DICT_GET_TRAITS(Int32, DataTypeInt32)
+DECLARE_DICT_GET_TRAITS(Int64, DataTypeInt64)
+DECLARE_DICT_GET_TRAITS(Float32, DataTypeFloat32)
+DECLARE_DICT_GET_TRAITS(Float64, DataTypeFloat64)
+#undef DECLARE_DICT_GET_TRAITS
+
+template <typename DataType>
+class FunctionDictGet final : public IFunction
 {
+	using Type = typename DataType::FieldType;
+
 public:
 	static const std::string name;
 
 	static IFunction * create(const Context & context)
 	{
-		return new FunctionDictGetInteger{context.getDictionaries()};
+		return new FunctionDictGet{context.getDictionaries()};
 	};
 
-	FunctionDictGetInteger(const Dictionaries & dictionaries) : dictionaries(dictionaries) {}
+	FunctionDictGet(const Dictionaries & dictionaries) : dictionaries(dictionaries) {}
 
 	String getName() const override { return name; }
 
@@ -974,7 +1002,7 @@ private:
 			};
 		}
 
-		return new typename DataTypeFromFieldType<IntegralType>::Type;
+		return new DataType;
 	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
@@ -987,6 +1015,7 @@ private:
 			};
 
 		auto dict = dictionaries.getExternalDictionary(dict_name_col->getData());
+		const auto dict_ptr = dict.get();
 
 		const auto attr_name_col = typeid_cast<const ColumnConst<String> *>(block.getByPosition(arguments[1]).column.get());
 		if (!attr_name_col)
@@ -998,14 +1027,14 @@ private:
 		const auto & attr_name = attr_name_col->getData();
 
 		const auto id_col = block.getByPosition(arguments[2]).column.get();
-		if (!execute<UInt8>(block, result, dict, attr_name, id_col) &&
-			!execute<UInt16>(block, result, dict, attr_name, id_col) &&
-			!execute<UInt32>(block, result, dict, attr_name, id_col) &&
-			!execute<UInt64>(block, result, dict, attr_name, id_col) &&
-			!execute<Int8>(block, result, dict, attr_name, id_col) &&
-			!execute<Int16>(block, result, dict, attr_name, id_col) &&
-			!execute<Int32>(block, result, dict, attr_name, id_col) &&
-			!execute<Int64>(block, result, dict, attr_name, id_col))
+		if (!execute<UInt8>(block, result, dict_ptr, attr_name, id_col) &&
+			!execute<UInt16>(block, result, dict_ptr, attr_name, id_col) &&
+			!execute<UInt32>(block, result, dict_ptr, attr_name, id_col) &&
+			!execute<UInt64>(block, result, dict_ptr, attr_name, id_col) &&
+			!execute<Int8>(block, result, dict_ptr, attr_name, id_col) &&
+			!execute<Int16>(block, result, dict_ptr, attr_name, id_col) &&
+			!execute<Int32>(block, result, dict_ptr, attr_name, id_col) &&
+			!execute<Int64>(block, result, dict_ptr, attr_name, id_col))
 		{
 			throw Exception{
 				"Third argument of function " + getName() + " must be integral",
@@ -1015,31 +1044,36 @@ private:
 	}
 
 	template <typename T>
-	bool execute(Block & block, const size_t result, const MultiVersion<IDictionary>::Version & dictionary,
+	bool execute(Block & block, const size_t result, const IDictionary * const dictionary,
 		const std::string & attr_name, const IColumn * const id_col_untyped)
 	{
 		if (const auto id_col = typeid_cast<const ColumnVector<T> *>(id_col_untyped))
 		{
-			const auto out = new ColumnVector<IntegralType>;
-			block.getByPosition(result).column = out;
-
 			const auto attribute_idx = dictionary->getAttributeIndex(attr_name);
-			if (!dictionary->isUInt64(attribute_idx))
+			if (!DictGetTraits<DataType>::is(dictionary, attribute_idx))
 				throw Exception{
 					"Type mismatch: attribute " + attr_name + " has type different from UInt64",
 					ErrorCodes::TYPE_MISMATCH
 				};
 
-			for (const auto & id : id_col->getData())
-				out->insert(dictionary->getUInt64Unsafe(attribute_idx, id));
+			const auto out = new ColumnVector<Type>;
+			block.getByPosition(result).column = out;
+
+			const auto & ids = id_col->getData();
+			auto & data = out->getData();
+			const auto size = ids.size();
+			data.resize(size);
+
+			for (const auto idx : ext::range(0, size))
+				data[idx] = DictGetTraits<DataType>::get(dictionary, attribute_idx, ids[idx]);
 
 			return true;
 		}
 		else if (const auto id_col = typeid_cast<const ColumnConst<T> *>(id_col_untyped))
 		{
-			block.getByPosition(result).column = new ColumnConst<IntegralType>{
+			block.getByPosition(result).column = new ColumnConst<Type>{
 				id_col->size(),
-				static_cast<IntegralType>(dictionary->getUInt64(attr_name, id_col->getData()))
+				DictGetTraits<DataType>::get(dictionary, attr_name, id_col->getData())
 			};
 
 			return true;
@@ -1051,19 +1085,20 @@ private:
 	const Dictionaries & dictionaries;
 };
 
-template <typename IntegralType>
-const std::string FunctionDictGetInteger<IntegralType>::name = "dictGet" + TypeName<IntegralType>::get();
+template <typename DataType>
+const std::string FunctionDictGet<DataType>::name = "dictGet" + TypeName<typename DataType::FieldType>::get();
 
 
-using FunctionDictGetUInt8 = FunctionDictGetInteger<UInt8>;
-using FunctionDictGetUInt16 = FunctionDictGetInteger<UInt16>;
-using FunctionDictGetUInt32 = FunctionDictGetInteger<UInt32>;
-using FunctionDictGetUInt64 = FunctionDictGetInteger<UInt64>;
-using FunctionDictGetInt8 = FunctionDictGetInteger<Int8>;
-using FunctionDictGetInt16 = FunctionDictGetInteger<Int16>;
-using FunctionDictGetInt32 = FunctionDictGetInteger<Int32>;
-using FunctionDictGetInt64 = FunctionDictGetInteger<Int64>;
-
+using FunctionDictGetUInt8 = FunctionDictGet<DataTypeUInt8>;
+using FunctionDictGetUInt16 = FunctionDictGet<DataTypeUInt16>;
+using FunctionDictGetUInt32 = FunctionDictGet<DataTypeUInt32>;
+using FunctionDictGetUInt64 = FunctionDictGet<DataTypeUInt64>;
+using FunctionDictGetInt8 = FunctionDictGet<DataTypeInt8>;
+using FunctionDictGetInt16 = FunctionDictGet<DataTypeInt16>;
+using FunctionDictGetInt32 = FunctionDictGet<DataTypeInt32>;
+using FunctionDictGetInt64 = FunctionDictGet<DataTypeInt64>;
+using FunctionDictGetFloat32 = FunctionDictGet<DataTypeFloat32>;
+using FunctionDictGetFloat64 = FunctionDictGet<DataTypeFloat64>;
 
 
 class FunctionDictGetHierarchy final : public IFunction

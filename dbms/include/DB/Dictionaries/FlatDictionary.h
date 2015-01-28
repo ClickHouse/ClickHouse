@@ -79,39 +79,32 @@ public:
 		};
 	}
 
-	UInt64 getUInt64(const std::string & attribute_name, const id_t id) const override
-	{
-		const auto idx = getAttributeIndex(attribute_name);
-		const auto & attribute = attributes[idx];
-
-		if (attribute.type != attribute_type::uint64)
-			throw Exception{
-				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-				ErrorCodes::TYPE_MISMATCH
-			};
-
-		if (id < max_array_size)
-			return attribute.uint64_array[id];
-
-		return attribute.uint64_null_value;
+	#define DECLARE_SAFE_GETTER(TYPE, NAME, LC_TYPE) \
+	TYPE get##NAME(const std::string & attribute_name, const id_t id) const override\
+	{\
+		const auto idx = getAttributeIndex(attribute_name);\
+		const auto & attribute = attributes[idx];\
+		if (attribute.type != attribute_type::LC_TYPE)\
+			throw Exception{\
+				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
+				ErrorCodes::TYPE_MISMATCH\
+			};\
+		if (id < max_array_size)\
+			return attribute.LC_TYPE##_array[id];\
+		return attribute.LC_TYPE##_null_value;\
 	}
-
-	StringRef getString(const std::string & attribute_name, const id_t id) const override
-	{
-		const auto idx = getAttributeIndex(attribute_name);
-		const auto & attribute = attributes[idx];
-
-		if (attribute.type != attribute_type::string)
-			throw Exception{
-				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-				ErrorCodes::TYPE_MISMATCH
-			};
-
-		if (id < max_array_size)
-			return attribute.string_array[id];
-
-        return { attribute.string_null_value.data(), attribute.string_null_value.size() };
-    }
+	DECLARE_SAFE_GETTER(UInt8, UInt8, uint8)
+	DECLARE_SAFE_GETTER(UInt16, UInt16, uint16)
+	DECLARE_SAFE_GETTER(UInt32, UInt32, uint32)
+	DECLARE_SAFE_GETTER(UInt64, UInt64, uint64)
+	DECLARE_SAFE_GETTER(Int8, Int8, int8)
+	DECLARE_SAFE_GETTER(Int16, Int16, int16)
+	DECLARE_SAFE_GETTER(Int32, Int32, int32)
+	DECLARE_SAFE_GETTER(Int64, Int64, int64)
+	DECLARE_SAFE_GETTER(Float32, Float32, float32)
+	DECLARE_SAFE_GETTER(Float64, Float64, float64)
+	DECLARE_SAFE_GETTER(StringRef, String, string)
+	#undef DECLARE_SAFE_GETTER
 
 	std::size_t getAttributeIndex(const std::string & attribute_name) const override
 	{
@@ -125,27 +118,42 @@ public:
 		return it->second;
 	}
 
-	bool isUInt64(const std::size_t attribute_idx) const override
-	{
-		return attributes[attribute_idx].type == attribute_type::uint64;
+	#define DECLARE_TYPE_CHECKER(NAME, LC_NAME)\
+	bool is##NAME(const std::size_t attribute_idx) const override\
+	{\
+		return attributes[attribute_idx].type == attribute_type::LC_NAME;\
 	}
+	DECLARE_TYPE_CHECKER(UInt8, uint8)
+	DECLARE_TYPE_CHECKER(UInt16, uint16)
+	DECLARE_TYPE_CHECKER(UInt32, uint32)
+	DECLARE_TYPE_CHECKER(UInt64, uint64)
+	DECLARE_TYPE_CHECKER(Int8, int8)
+	DECLARE_TYPE_CHECKER(Int16, int16)
+	DECLARE_TYPE_CHECKER(Int32, int32)
+	DECLARE_TYPE_CHECKER(Int64, int64)
+	DECLARE_TYPE_CHECKER(Float32, float32)
+	DECLARE_TYPE_CHECKER(Float64, float64)
+	DECLARE_TYPE_CHECKER(String, string)
+	#undef DECLARE_TYPE_CHECKER
 
-	bool isString(const std::size_t attribute_idx) const override
-	{
-		return attributes[attribute_idx].type == attribute_type::string;
+	#define DECLARE_UNSAFE_GETTER(TYPE, NAME, LC_NAME)\
+	TYPE get##NAME##Unsafe(const std::size_t attribute_idx, const id_t id) const override\
+	{\
+		const auto & attribute = attributes[attribute_idx];\
+		return id < max_array_size ? attribute.LC_NAME##_array[id] : attribute.LC_NAME##_null_value;\
 	}
-
-	UInt64 getUInt64Unsafe(const std::size_t attribute_idx, const id_t id) const override
-	{
-		const auto & attribute = attributes[attribute_idx];
-		return id < max_array_size ? attribute.uint64_array[id] : attribute.uint64_null_value;
-	}
-
-	StringRef getStringUnsafe(const std::size_t attribute_idx, const id_t id) const override
-	{
-		const auto & attribute = attributes[attribute_idx];
-		return id < max_array_size ? attribute.string_array[id] : attribute.string_null_value;
-	}
+	DECLARE_UNSAFE_GETTER(UInt8, UInt8, uint8)
+	DECLARE_UNSAFE_GETTER(UInt16, UInt16, uint16)
+	DECLARE_UNSAFE_GETTER(UInt32, UInt32, uint32)
+	DECLARE_UNSAFE_GETTER(UInt64, UInt64, uint64)
+	DECLARE_UNSAFE_GETTER(Int8, Int8, int8)
+	DECLARE_UNSAFE_GETTER(Int16, Int16, int16)
+	DECLARE_UNSAFE_GETTER(Int32, Int32, int32)
+	DECLARE_UNSAFE_GETTER(Int64, Int64, int64)
+	DECLARE_UNSAFE_GETTER(Float32, Float32, float32)
+	DECLARE_UNSAFE_GETTER(Float64, Float64, float64)
+	DECLARE_UNSAFE_GETTER(StringRef, String, string)
+	#undef DECLARE_UNSAFE_GETTER
 
 	bool isComplete() const override { return true; }
 

@@ -33,6 +33,8 @@ void registerFunctionsDictionaries(FunctionFactory & factory)
 	factory.registerFunction<FunctionDictGetInt16>();
 	factory.registerFunction<FunctionDictGetInt32>();
 	factory.registerFunction<FunctionDictGetInt64>();
+	factory.registerFunction<FunctionDictGetFloat32>();
+	factory.registerFunction<FunctionDictGetFloat64>();
 	factory.registerFunction<FunctionDictGetString>();
 	factory.registerFunction<FunctionDictGetHierarchy>();
 	factory.registerFunction<FunctionDictIsIn>();
