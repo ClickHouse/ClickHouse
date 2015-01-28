@@ -3,6 +3,7 @@
 #include <DB/Interpreters/Context.h>
 #include <DB/Dictionaries/DictionaryStructure.h>
 #include <DB/Dictionaries/IDictionarySource.h>
+#include <DB/Dictionaries/OwningBufferBlockInputStream.h>
 
 namespace DB
 {
@@ -19,9 +20,11 @@ public:
 private:
 	BlockInputStreamPtr loadAll() override
 	{
-		in_ptr = ext::make_unique<ReadBufferFromFile>(filename);
-		return context.getFormatFactory().getInput(
+		auto in_ptr = ext::make_unique<ReadBufferFromFile>(filename);
+		auto stream = context.getFormatFactory().getInput(
 			format, *in_ptr, sample_block, max_block_size, context.getDataTypeFactory());
+
+		return new OwningBufferBlockInputStream{stream, std::move(in_ptr)};
 	}
 
 	BlockInputStreamPtr loadId(const std::uint64_t id) override
@@ -40,17 +43,10 @@ private:
 		};
 	}
 
-	void reset() override
-	{
-		in_ptr.reset(nullptr);
-	}
-
 	const std::string filename;
 	const std::string format;
 	Block sample_block;
 	const Context & context;
-
-	std::unique_ptr<ReadBufferFromFile> in_ptr;
 };
 
 }
