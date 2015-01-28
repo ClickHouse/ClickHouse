@@ -10,12 +10,14 @@ Block CreatingSetsBlockInputStream::readImpl()
 
 	if (!created)
 	{
-		/// Заполнение временных таблиц идёт первым - потому что эти таблицы могут затем использоваться для создания Set/Join.
 		for (auto & elem : subqueries_for_sets)
 		{
-			create(elem.second);
-			if (isCancelled())
-				return res;
+			if (elem.second.source)	/// Бывают заранее подготовленные Set/Join - для них не указывается source.
+			{
+				create(elem.second);
+				if (isCancelled())
+					return res;
+			}
 		}
 
 		created = true;

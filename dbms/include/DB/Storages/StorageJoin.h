@@ -39,6 +39,9 @@ public:
 	/// Получить доступ к внутренностям.
 	JoinPtr & getJoin() { return join; }
 
+	/// Убедиться, что структура данных подходит для осуществления JOIN такого типа.
+	void assertCompatible(ASTJoin::Kind kind_, ASTJoin::Strictness strictness_) const;
+
 private:
 	const Names & key_names;
 	ASTJoin::Kind kind;					/// LEFT | INNER

@@ -37,4 +37,12 @@ StorageJoin::StorageJoin(
 }
 
 
+void StorageJoin::assertCompatible(ASTJoin::Kind kind_, ASTJoin::Strictness strictness_) const
+{
+	/// NOTE Можно немного ослабить.
+	if (!(kind == kind_ && strictness == strictness_))
+		throw Exception("Table " + name + " has incompatible type of JOIN.", ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN);
+}
+
+
 }

@@ -22,11 +22,10 @@
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 
-#include <DB/Storages/StorageMergeTree.h>
 #include <DB/Storages/StorageDistributed.h>
 #include <DB/Storages/StorageMemory.h>
-#include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Storages/StorageSet.h>
+#include <DB/Storages/StorageJoin.h>
 
 #include <DB/DataStreams/LazyBlockInputStream.h>
 #include <DB/DataStreams/copyData.h>
@@ -1431,14 +1430,34 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 	String join_id = ast_join.table->getColumnName();
 
 	SubqueryForSet & subquery_for_set = subqueries_for_sets[join_id];
+
+	/// Особый случай - если справа JOIN указано имя таблицы, при чём, таблица имеет тип Join (заранее подготовленное отображение).
+	/// TODO В этом синтаксисе не поддерживается указание имени БД.
+	ASTIdentifier * identifier = typeid_cast<ASTIdentifier *>(&*ast_join.table);
+	if (identifier)
+	{
+		StoragePtr table = context.tryGetTable("", identifier->name);
+
+		if (table)
+		{
+			StorageJoin * storage_join = typeid_cast<StorageJoin *>(table.get());
+
+			if (storage_join)
+			{
+				storage_join->assertCompatible(ast_join.kind, ast_join.strictness);
+				/// TODO Проверять набор ключей.
+
+				JoinPtr & join = storage_join->getJoin();
+				subquery_for_set.join = join;
+			}
+		}
+	}
+
 	if (!subquery_for_set.join)
 	{
 		Names join_key_names_left(join_key_names_left_set.begin(), join_key_names_left_set.end());
 		Names join_key_names_right(join_key_names_right_set.begin(), join_key_names_right_set.end());
 		JoinPtr join = new Join(join_key_names_left, join_key_names_right, settings.limits, ast_join.kind, ast_join.strictness);
-
-/*		for (const auto & name_type : columns_added_by_join)
-			std::cerr << "! Column added by JOIN: " << name_type.name << std::endl;*/
 
 		Names required_joined_columns(join_key_names_right.begin(), join_key_names_right.end());
 		for (const auto & name_type : columns_added_by_join)

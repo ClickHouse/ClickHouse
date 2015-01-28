@@ -216,7 +216,7 @@ StoragePtr StorageFactory::get(
 		if (!kind_id)
 			throw Exception("Second parameter of storage Join must be LEFT or INNER (without quotes).", ErrorCodes::BAD_ARGUMENTS);
 
-		const String kind_str = Poco::toLower(strictness_id->name);
+		const String kind_str = Poco::toLower(kind_id->name);
 		ASTJoin::Kind kind;
 		if (kind_str == "left")
 			kind = ASTJoin::Kind::Left;
