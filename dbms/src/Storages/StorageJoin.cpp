@@ -17,6 +17,21 @@ StorageJoin::StorageJoin(
 	: StorageSetOrJoinBase{path_, name_, columns_, materialized_columns_, alias_columns_, column_defaults_},
 	key_names(key_names_), kind(kind_), strictness(strictness_)
 {
+	/// Проверяем, что ключ существует в определении таблицы.
+	const auto check_key_exists = [] (const NamesAndTypesList & columns, const String & key)
+	{
+		for (const auto & column : columns)
+			if (column.name == key)
+				return true;
+		return false;
+	};
+
+	for (const auto & key : key_names)
+		if (!check_key_exists(*columns, key) && !check_key_exists(materialized_columns, key))
+			throw Exception{
+				"Key column (" + key + ") does not exist in table declaration.",
+				ErrorCodes::NO_SUCH_COLUMN_IN_TABLE};
+
 	join = new Join(key_names, key_names, Limits(), kind, strictness);
 	restore();
 }
