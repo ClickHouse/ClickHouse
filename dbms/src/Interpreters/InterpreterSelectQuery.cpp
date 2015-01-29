@@ -101,7 +101,7 @@ void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_, const NamesAn
 		}
 
 		if (!storage->supportsParallelReplicas() && (settings.parallel_replicas_count > 0))
-			throw Exception("Storage engine " + storage->getName() 
+			throw Exception("Storage engine " + storage->getName()
 							+ " does not support parallel execution on several replicas",
 							ErrorCodes::STORAGE_DOESNT_SUPPORT_PARALLEL_REPLICAS);
 
