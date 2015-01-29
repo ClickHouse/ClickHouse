@@ -6,6 +6,26 @@
 namespace DB
 {
 
+namespace
+{
+	std::string findKeyForDictionary(Poco::Util::XMLConfiguration & config, const std::string & name)
+	{
+		Poco::Util::AbstractConfiguration::Keys keys;
+		config.keys(keys);
+
+		for (const auto & key : keys)
+		{
+			if (0 != strncmp(key.data(), "dictionary", strlen("dictionary")))
+				continue;
+
+			if (name == config.getString(key + ".name"))
+				return key;
+		}
+
+		return {};
+	}
+}
+
 void Dictionaries::reloadExternals()
 {
 	const std::lock_guard<std::mutex> lock{externals_mutex};
@@ -48,20 +68,22 @@ void Dictionaries::reloadExternals()
 				auto it = external_dictionaries.find(name);
 				if (it == std::end(external_dictionaries))
 				{
-					auto dict_ptr = DictionaryFactory::instance().create(*config, prefix, context);
+					/// such a dictionary is not present at the moment
+					auto dict_ptr = DictionaryFactory::instance().create(name, *config, prefix, context);
 					external_dictionaries.emplace(name, std::make_shared<MultiVersion<IDictionary>>(dict_ptr.release()));
 				}
 				else
 				{
+					/// dictionary exists, it may be desirable to reload it
 					auto & current = it->second->get();
-					if (current->isComplete())
+					if (current->isCached())
+						const_cast<IDictionary *>(current.get())->reload();
+					else
 					{
 						/// @todo check that timeout has passed
-						auto dict_ptr = DictionaryFactory::instance().create(*config, prefix, context);
+						auto dict_ptr = DictionaryFactory::instance().create(name, *config, prefix, context);
 						it->second->set(dict_ptr.release());
 					}
-					else
-						const_cast<IDictionary *>(current.get())->reload();
 				}
 			}
 			catch (const Exception &)
@@ -72,18 +94,33 @@ void Dictionaries::reloadExternals()
 	}
 	else
 	{
+		config_ptr_t<Poco::Util::XMLConfiguration> config;
 		for (auto & dictionary : external_dictionaries)
 		{
 			try
 			{
-				auto & current = dictionary.second->get();
-				if (current->isComplete())
+				auto current = dictionary.second->get();
+				if (current->isCached())
 				{
-					/// @todo check that timeout has passed and load new version
+					const_cast<IDictionary *>(current.get())->reload();
 				}
 				else
 				{
-					const_cast<IDictionary *>(current.get())->reload();
+					/// @todo check that timeout has passed and load new version
+					if (!current->getSource()->isModified())
+						continue;
+
+					/// source has supposedly been modified, load it over again
+					if (!config)
+						config.reset(new Poco::Util::XMLConfiguration{config_path});
+
+					const auto & name = current->getName();
+					const auto & key = findKeyForDictionary(*config, name);
+					if (!key.empty())
+					{
+						auto dict_ptr = DictionaryFactory::instance().create(name, *config, key + '.', context);
+						dictionary.second->set(dict_ptr.release());
+					}
 				}
 			}
 			catch (const Exception &)

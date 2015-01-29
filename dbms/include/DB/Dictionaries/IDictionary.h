@@ -7,12 +7,21 @@
 namespace DB
 {
 
+class IDictionarySource;
+
 class IDictionary
 {
 public:
     using id_t = std::uint64_t;
 
+	virtual std::string getName() const = 0;
+
 	virtual std::string getTypeName() const = 0;
+
+	virtual bool isCached() const = 0;
+	virtual void reload() {}
+
+	virtual const IDictionarySource * const getSource() const = 0;
 
 	virtual bool hasHierarchy() const = 0;
 
@@ -70,10 +79,6 @@ public:
 	virtual Float32 getFloat32Unsafe(std::size_t attribute_idx, id_t id) const = 0;
 	virtual Float64 getFloat64Unsafe(std::size_t attribute_idx, id_t id) const = 0;
 	virtual StringRef getStringUnsafe(std::size_t attribute_idx, id_t id) const = 0;
-
-	/// entirely-loaded dictionaries should be immutable
-	virtual bool isComplete() const = 0;
-	virtual void reload() {}
 
     virtual ~IDictionary() = default;
 };

@@ -47,6 +47,9 @@ private:
 		};
 	}
 
+	/// @todo check update_time with SHOW TABLE STATUS LIKE '%table%'
+	bool isModified() const override { return true; }
+
 	static config_ptr_t<Poco::Util::LayeredConfiguration> getLayeredConfig(Poco::Util::AbstractConfiguration & config)
 	{
 		config_ptr_t<Poco::Util::LayeredConfiguration> layered_config{new Poco::Util::LayeredConfiguration};

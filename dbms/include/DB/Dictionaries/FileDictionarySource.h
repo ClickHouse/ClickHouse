@@ -4,6 +4,8 @@
 #include <DB/Dictionaries/DictionaryStructure.h>
 #include <DB/Dictionaries/IDictionarySource.h>
 #include <DB/Dictionaries/OwningBufferBlockInputStream.h>
+#include <Poco/Timestamp.h>
+#include <Poco/File.h>
 
 namespace DB
 {
@@ -15,7 +17,9 @@ class FileDictionarySource final : public IDictionarySource
 public:
 	FileDictionarySource(const std::string & filename, const std::string & format, Block & sample_block,
 		const Context & context)
-		: filename{filename}, format{format}, sample_block{sample_block}, context(context) {}
+		: filename{filename}, format{format}, sample_block{sample_block}, context(context),
+		last_modification{getLastModification()}
+	{}
 
 private:
 	BlockInputStreamPtr loadAll() override
@@ -23,6 +27,7 @@ private:
 		auto in_ptr = ext::make_unique<ReadBufferFromFile>(filename);
 		auto stream = context.getFormatFactory().getInput(
 			format, *in_ptr, sample_block, max_block_size, context.getDataTypeFactory());
+		last_modification = getLastModification();
 
 		return new OwningBufferBlockInputStream{stream, std::move(in_ptr)};
 	}
@@ -43,10 +48,15 @@ private:
 		};
 	}
 
+	bool isModified() const override { return getLastModification() > last_modification; }
+
+	Poco::Timestamp getLastModification() const { return Poco::File{filename}.getLastModified(); }
+
 	const std::string filename;
 	const std::string format;
 	Block sample_block;
 	const Context & context;
+	Poco::Timestamp last_modification;
 };
 
 }

@@ -17,9 +17,10 @@ const auto max_array_size = 500000;
 class FlatDictionary final : public IDictionary
 {
 public:
-    FlatDictionary(const DictionaryStructure & dict_struct, const Poco::Util::AbstractConfiguration & config,
+    FlatDictionary(const std::string & name, const DictionaryStructure & dict_struct,
+		const Poco::Util::AbstractConfiguration & config,
 		const std::string & config_prefix, DictionarySourcePtr source_ptr)
-		: source_ptr{std::move(source_ptr)}
+		: name{name}, source_ptr{std::move(source_ptr)}
 	{
 		const auto size = dict_struct.attributes.size();
 		attributes.reserve(size);
@@ -50,7 +51,13 @@ public:
 		}
 	}
 
+	std::string getName() const override { return name; }
+
 	std::string getTypeName() const override { return "FlatDictionary"; }
+
+	bool isCached() const override { return false; }
+
+	const IDictionarySource * const getSource() const override { return source_ptr.get(); }
 
 	bool hasHierarchy() const override { return hierarchical_attribute; }
 
@@ -157,8 +164,6 @@ public:
 	DECLARE_UNSAFE_GETTER(Float64, Float64, float64)
 	DECLARE_UNSAFE_GETTER(StringRef, String, string)
 #undef DECLARE_UNSAFE_GETTER
-
-	bool isComplete() const override { return true; }
 
 	struct attribute_t
 	{
@@ -347,11 +352,12 @@ public:
 		};
 	}
 
+	const std::string name;
 	std::map<std::string, std::size_t> attribute_index_by_name;
 	std::vector<attribute_t> attributes;
 	const attribute_t * hierarchical_attribute = nullptr;
 
-	DictionarySourcePtr source_ptr;
+	const DictionarySourcePtr source_ptr;
 };
 
 }

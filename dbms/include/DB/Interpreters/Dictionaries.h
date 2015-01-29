@@ -149,7 +149,7 @@ private:
 
 	void reloadExternalsPeriodically()
 	{
-		const auto check_period = 1000;
+		const auto check_period = 60 * 1000;
 		while (true)
 		{
 			if (destroy.tryWait(check_period))

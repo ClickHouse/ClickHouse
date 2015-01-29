@@ -61,6 +61,10 @@ private:
 		};
 	}
 
+	/// @todo check update_time with SHOW TABLE STATUS LIKE '%table%'
+	bool isModified() const override { return true; }
+
+
 	static std::string composeLoadAllQuery(const Block & block, const std::string & table)
 	{
 		std::string query{"SELECT "};

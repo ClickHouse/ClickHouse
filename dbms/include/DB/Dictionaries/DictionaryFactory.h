@@ -14,7 +14,8 @@ namespace DB
 class DictionaryFactory : public Singleton<DictionaryFactory>
 {
 public:
-	DictionaryPtr create(Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
+	DictionaryPtr create(const std::string & name, Poco::Util::AbstractConfiguration & config,
+		const std::string & config_prefix,
 		const Context & context) const
 	{
 		auto dict_struct = DictionaryStructure::fromConfig(config, config_prefix + "structure");
@@ -26,11 +27,11 @@ public:
 
 		if (config.has(layout_prefix + "flat"))
 		{
-			return ext::make_unique<FlatDictionary>(dict_struct, config, config_prefix, std::move(source_ptr));
+			return ext::make_unique<FlatDictionary>(name, dict_struct, config, config_prefix, std::move(source_ptr));
 		}
 		else if (config.has(layout_prefix + "hashed"))
 		{
-			return ext::make_unique<HashedDictionary>(dict_struct, config, config_prefix, std::move(source_ptr));
+			return ext::make_unique<HashedDictionary>(name, dict_struct, config, config_prefix, std::move(source_ptr));
 		}
 		else if (config.has(layout_prefix + "cache"))
 		{
