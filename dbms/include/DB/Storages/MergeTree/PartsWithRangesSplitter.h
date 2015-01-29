@@ -6,13 +6,13 @@ namespace DB
 {
 
 /** Этот класс разбивает объект типа RangesInDataParts (см. MergeTreeDataSelectExecutor)
-  * на указанное количество частей. 
+  * на не больше, чем указанное количество сегментов.
   */
 class PartsWithRangesSplitter final
 {
 public:
-	PartsWithRangesSplitter(const MergeTreeDataSelectExecutor::RangesInDataParts & input_, 
-							size_t min_segment_size_, size_t max_segments_count_);
+	PartsWithRangesSplitter(const MergeTreeDataSelectExecutor::RangesInDataParts & input_,
+							size_t granularity_, size_t min_segment_size_, size_t max_segments_count_);
 
 	~PartsWithRangesSplitter() = default;
 	PartsWithRangesSplitter(const PartsWithRangesSplitter &) = delete;
@@ -43,8 +43,8 @@ private:
 	MergeTreeDataSelectExecutor::RangesInDataPart * current_output_part;
 
 	size_t total_size;
-	size_t remaining_size;
 
+	const size_t granularity;
 	const size_t min_segment_size;
 	const size_t max_segments_count;
 

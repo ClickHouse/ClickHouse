@@ -143,6 +143,12 @@ public:
 		return read(to, n);
 	}
 
+	/** Проверить, есть ли данные в буфере для чтения. */
+	bool hasPendingData()
+	{
+		return offset() != buffer().size();
+	}
+
 private:
 	/** Прочитать следующие данные и заполнить ими буфер.
 	  * Вернуть false в случае конца, true иначе.

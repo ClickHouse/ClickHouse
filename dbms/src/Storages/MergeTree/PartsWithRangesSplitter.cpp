@@ -3,12 +3,12 @@
 namespace DB
 {
 
-PartsWithRangesSplitter::PartsWithRangesSplitter(const MergeTreeDataSelectExecutor::RangesInDataParts & input_, 
-						size_t min_segment_size_, size_t max_segments_count_)
+PartsWithRangesSplitter::PartsWithRangesSplitter(const MergeTreeDataSelectExecutor::RangesInDataParts & input_,
+						size_t granularity_, size_t min_segment_size_, size_t max_segments_count_)
 	: input(input_),
 	current_output_part(nullptr),
 	total_size(0),
-	remaining_size(0),
+	granularity(granularity_),
 	min_segment_size(min_segment_size_),
 	max_segments_count(max_segments_count_),
 	segment_size(0),
@@ -27,28 +27,40 @@ PartsWithRangesSplitter::PartsWithRangesSplitter(const MergeTreeDataSelectExecut
 		for (const auto & range : ranges)
 			total_size += range.end - range.begin;
 	}
+	total_size *= granularity;
 
-	if ((total_size == 0) || (min_segment_size == 0) || (max_segments_count < 2)
-		|| (total_size < min_segment_size))
+	if ((total_size == 0) || (min_segment_size == 0) || (max_segments_count < 2))
 		throw Exception("One or more arguments are invalid.", ErrorCodes::BAD_ARGUMENTS);
 }
 
 std::vector<MergeTreeDataSelectExecutor::RangesInDataParts> PartsWithRangesSplitter::perform()
 {
-	init();
-	while (emitRange()) {}
+	if (total_size > min_segment_size)
+	{
+		init();
+		while (emitRange()) {}
+	}
 	return output_segments;
 }
 
 void PartsWithRangesSplitter::init()
 {
-	remaining_size = total_size;
+	output_segments.clear();
 
-	size_t segments_count = max_segments_count;
-	while ((segments_count > 0) && (total_size < (min_segment_size * segments_count)))
-		--segments_count;
+	// Вычислить размер сегментов так, чтобы он был кратен granularity
+	segment_size = total_size / std::min(max_segments_count, (total_size / min_segment_size));
+	unsigned int scale = segment_size / granularity;
+	if (segment_size % granularity != 0) {
+		++scale;
+	}
+	segment_size = granularity * scale;
 
-	segment_size = total_size / segments_count;
+	// Посчитать количество сегментов.
+	size_t segments_count = total_size / segment_size;
+	if (total_size % segment_size != 0) {
+		++segments_count;
+	}
+
 	output_segments.resize(segments_count);
 
 	input_part = input.begin();
@@ -65,10 +77,12 @@ void PartsWithRangesSplitter::init()
 
 bool PartsWithRangesSplitter::emitRange()
 {
-	size_t new_size = std::min(range_end - range_begin, segment_end - segment_begin);
-	current_output_part->ranges.push_back(MarkRange(range_begin, range_begin + new_size));
+	size_t new_size = std::min((range_end - range_begin) * granularity, segment_end - segment_begin);
+	size_t end = range_begin + new_size / granularity;
 
-	range_begin += new_size;
+	current_output_part->ranges.push_back(MarkRange(range_begin, end));
+
+	range_begin = end;
 	segment_begin += new_size;
 
 	if (isSegmentConsumed())
@@ -121,13 +135,8 @@ void PartsWithRangesSplitter::initRangeInfo()
 void PartsWithRangesSplitter::initSegmentInfo()
 {
 	addPart();
-
 	segment_begin = 0;
 	segment_end = segment_size;
-
-	remaining_size -= segment_size;
-	if (remaining_size < segment_size)
-		segment_end += remaining_size;
 }
 
 void PartsWithRangesSplitter::addPart()
