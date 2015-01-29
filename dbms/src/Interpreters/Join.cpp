@@ -398,7 +398,7 @@ struct Adder<KIND, ASTJoin::All, Map>
 
 
 template <ASTJoin::Kind KIND, ASTJoin::Strictness STRICTNESS, typename Maps>
-void Join::joinBlockImpl(Block & block, Maps & maps) const
+void Join::joinBlockImpl(Block & block, const Maps & maps) const
 {
 	if (blocks.empty())
 		throw Exception("Attempt to JOIN with empty table", ErrorCodes::EMPTY_DATA_PASSED);
