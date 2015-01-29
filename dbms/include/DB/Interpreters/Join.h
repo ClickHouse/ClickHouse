@@ -76,7 +76,7 @@ public:
 
 	/** Присоединить к блоку "левой" таблицы новые столбцы из сформированного отображения.
 	  */
-	void joinBlock(Block & block);
+	void joinBlock(Block & block) const;
 
 	/// Считает суммарное число ключей во всех Join'ах
 	size_t getTotalRowCount() const;
@@ -140,12 +140,10 @@ private:
 	ASTJoin::Kind kind;
 	ASTJoin::Strictness strictness;
 
-	/// Имена и номера ключевых столбцов (по которым производится соединение) в "левой" таблице.
+	/// Имена ключевых столбцов (по которым производится соединение) в "левой" таблице.
 	const Names key_names_left;
-	ColumnNumbers key_numbers_left;
-	/// Имена и номера ключевых столбцов (по которым производится соединение) в "правой" таблице.
+	/// Имена ключевых столбцов (по которым производится соединение) в "правой" таблице.
 	const Names key_names_right;
-	ColumnNumbers key_numbers_right;
 
 	/** Блоки данных таблицы, с которой идёт соединение.
 	  */
@@ -182,7 +180,7 @@ private:
 	void insertFromBlockImpl(Maps & maps, size_t rows, const ConstColumnPlainPtrs & key_columns, size_t keys_size, Block * stored_block);
 
 	template <ASTJoin::Kind KIND, ASTJoin::Strictness STRICTNESS, typename Maps>
-	void joinBlockImpl(Block & block, Maps & maps);
+	void joinBlockImpl(Block & block, Maps & maps) const;
 
 	/// Проверить не превышены ли допустимые размеры множества
 	bool checkSizeLimits() const;
