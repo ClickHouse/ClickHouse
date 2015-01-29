@@ -1,4 +1,5 @@
 #include <DB/Client/ShardReplicas.h>
+#include <boost/concept_check.hpp>
 
 namespace DB
 {
@@ -21,8 +22,8 @@ namespace DB
 
 	void ShardReplicas::sendExternalTablesData(std::vector<ExternalTablesData> & data)
 	{
-		if (sent_query)
-			throw Exception("Cannot send external tables data: query already sent.");
+		if (!sent_query)
+			throw Exception("Cannot send external tables data: query not yet sent.");
 
 		if (data.size() < active_connection_count)
 			throw Exception("Mismatch between replicas and data sources", ErrorCodes::MISMATCH_REPLICAS_DATA_SOURCES);
@@ -51,8 +52,8 @@ namespace DB
 			Connection * connection = e.second;
 			if (connection != nullptr)
 			{
-				connection->sendQuery(query, query_id, stage, &query_settings, with_pending_data);
 				query_settings.parallel_replica_offset = offset;
+				connection->sendQuery(query, query_id, stage, &query_settings, with_pending_data);
 				++offset;
 			}
 		}
@@ -190,23 +191,32 @@ namespace DB
 	Connection ** ShardReplicas::waitForReadEvent()
 	{
 		Poco::Net::Socket::SocketList read_list;
-		Poco::Net::Socket::SocketList write_list;
-		Poco::Net::Socket::SocketList except_list;
-
 		read_list.reserve(active_connection_count);
 
 		for (auto & e : replica_hash)
 		{
 			Connection * connection = e.second;
-			if (connection != nullptr)
+			if ((connection != nullptr) && connection->hasReadBufferPendingData())
 				read_list.push_back(connection->socket);
 		}
 
-		int n = Poco::Net::Socket::select(read_list, write_list, except_list, settings.poll_interval * 1000000);
-		if (n == 0)
-			return nullptr;
+		if (read_list.empty())
+		{
+			Poco::Net::Socket::SocketList write_list;
+			Poco::Net::Socket::SocketList except_list;
 
-		auto & socket = read_list[rand() % n];
+			for (auto & e : replica_hash)
+			{
+				Connection * connection = e.second;
+				if (connection != nullptr)
+					read_list.push_back(connection->socket);
+			}
+			int n = Poco::Net::Socket::select(read_list, write_list, except_list, settings.poll_interval * 1000000);
+			if (n == 0)
+				return nullptr;
+		}
+
+		auto & socket = read_list[rand() % read_list.size()];
 		auto it = replica_hash.find(socket.impl()->sockfd());
 		if (it == replica_hash.end())
 			throw Exception("Unexpected replica", ErrorCodes::UNEXPECTED_REPLICA);
