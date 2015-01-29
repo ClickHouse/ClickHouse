@@ -180,7 +180,7 @@ private:
 	void insertFromBlockImpl(Maps & maps, size_t rows, const ConstColumnPlainPtrs & key_columns, size_t keys_size, Block * stored_block);
 
 	template <ASTJoin::Kind KIND, ASTJoin::Strictness STRICTNESS, typename Maps>
-	void joinBlockImpl(Block & block, Maps & maps) const;
+	void joinBlockImpl(Block & block, const Maps & maps) const;
 
 	/// Проверить не превышены ли допустимые размеры множества
 	bool checkSizeLimits() const;
