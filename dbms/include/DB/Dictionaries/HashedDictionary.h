@@ -3,20 +3,18 @@
 #include <DB/Dictionaries/IDictionary.h>
 #include <DB/Dictionaries/IDictionarySource.h>
 #include <DB/Dictionaries/DictionarySourceFactory.h>
+#include <DB/Common/HashTable/HashMap.h>
 #include <statdaemons/ext/range.hpp>
+#include <statdaemons/ext/memory.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <vector>
 
 namespace DB
 {
 
-const auto initial_array_size = 1024;
-const auto max_array_size = 500000;
-
-class FlatDictionary final : public IDictionary
+class HashedDictionary final : public IDictionary
 {
 public:
-    FlatDictionary(const DictionaryStructure & dict_struct, const Poco::Util::AbstractConfiguration & config,
+	HashedDictionary(const DictionaryStructure & dict_struct, const Poco::Util::AbstractConfiguration & config,
 		const std::string & config_prefix, DictionarySourcePtr source_ptr)
 		: source_ptr{std::move(source_ptr)}
 	{
@@ -57,19 +55,51 @@ public:
 
 		switch (hierarchical_attribute->type)
 		{
-		case attribute_type::uint8: return id < attr->uint8_array->size() ? (*attr->uint8_array)[id] : attr->uint8_null_value;
-		case attribute_type::uint16: return id < attr->uint16_array->size() ? (*attr->uint16_array)[id] : attr->uint16_null_value;
-		case attribute_type::uint32: return id < attr->uint32_array->size() ? (*attr->uint32_array)[id] : attr->uint32_null_value;
-		case attribute_type::uint64: return id < attr->uint64_array->size() ? (*attr->uint64_array)[id] : attr->uint64_null_value;
-		case attribute_type::int8: return id < attr->int8_array->size() ? (*attr->int8_array)[id] : attr->int8_null_value;
-		case attribute_type::int16: return id < attr->int16_array->size() ? (*attr->int16_array)[id] : attr->int16_null_value;
-		case attribute_type::int32: return id < attr->int32_array->size() ? (*attr->int32_array)[id] : attr->int32_null_value;
-		case attribute_type::int64: return id < attr->int64_array->size() ? (*attr->int64_array)[id] : attr->int64_null_value;
-		case attribute_type::float32:
-		case attribute_type::float64:
-		case attribute_type::string:
-			break;
-		}
+			case attribute_type::uint8:
+			{
+				const auto it = attr->uint8_map->find(id);
+				return it != attr->uint8_map->end() ? it->second : attr->uint8_null_value;
+			}
+			case attribute_type::uint16:
+			{
+				const auto it = attr->uint16_map->find(id);
+				return it != attr->uint16_map->end() ? it->second : attr->uint16_null_value;
+			}
+			case attribute_type::uint32:
+			{
+				const auto it = attr->uint32_map->find(id);
+				return it != attr->uint32_map->end() ? it->second : attr->uint32_null_value;
+			}
+			case attribute_type::uint64:
+			{
+				const auto it = attr->uint64_map->find(id);
+				return it != attr->uint64_map->end() ? it->second : attr->uint64_null_value;
+			}
+			case attribute_type::int8:
+			{
+				const auto it = attr->int8_map->find(id);
+				return it != attr->int8_map->end() ? it->second : attr->int8_null_value;
+			}
+			case attribute_type::int16:
+			{
+				const auto it = attr->int16_map->find(id);
+				return it != attr->int16_map->end() ? it->second : attr->int16_null_value;
+			}
+			case attribute_type::int32:
+			{
+				const auto it = attr->int32_map->find(id);
+				return it != attr->int32_map->end() ? it->second : attr->int32_null_value;
+			}
+			case attribute_type::int64:
+			{
+				const auto it = attr->int64_map->find(id);
+				return it != attr->int64_map->end() ? it->second : attr->int64_null_value;
+			}
+			case attribute_type::float32:
+			case attribute_type::float64:
+			case attribute_type::string:
+				break;
+		};
 
 		throw Exception{
 			"Hierarchical attribute has non-integer type " + toString(hierarchical_attribute->type),
@@ -87,8 +117,9 @@ public:
 				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
 				ErrorCodes::TYPE_MISMATCH\
 			};\
-		if (id < attribute.LC_TYPE##_array->size())\
-			return (*attribute.LC_TYPE##_array)[id];\
+		const auto it = attribute.LC_TYPE##_map->find(id);\
+		if (it != attribute.LC_TYPE##_map->end())\
+			return it->second;\
 		return attribute.LC_TYPE##_null_value;\
 	}
 	DECLARE_SAFE_GETTER(UInt8, UInt8, uint8)
@@ -138,8 +169,9 @@ public:
 	TYPE get##NAME##Unsafe(const std::size_t attribute_idx, const id_t id) const override\
 	{\
 		const auto & attribute = attributes[attribute_idx];\
-		if (id < attribute.LC_NAME##_array->size())\
-			return (*attribute.LC_NAME##_array)[id];\
+		const auto it = attribute.LC_NAME##_map->find(id);\
+		if (it != attribute.LC_NAME##_map->end())\
+			return it->second;\
 		return attribute.LC_NAME##_null_value;\
 	}
 	DECLARE_UNSAFE_GETTER(UInt8, UInt8, uint8)
@@ -171,18 +203,18 @@ public:
 		Float32 float32_null_value;
 		Float64 float64_null_value;
 		String string_null_value;
-		std::unique_ptr<PODArray<UInt8>> uint8_array;
-		std::unique_ptr<PODArray<UInt16>> uint16_array;
-		std::unique_ptr<PODArray<UInt32>> uint32_array;
-		std::unique_ptr<PODArray<UInt64>> uint64_array;
-		std::unique_ptr<PODArray<Int8>> int8_array;
-		std::unique_ptr<PODArray<Int16>> int16_array;
-		std::unique_ptr<PODArray<Int32>> int32_array;
-		std::unique_ptr<PODArray<Int64>> int64_array;
-		std::unique_ptr<PODArray<Float32>> float32_array;
-		std::unique_ptr<PODArray<Float64>> float64_array;
+		std::unique_ptr<HashMap<UInt64, UInt8>> uint8_map;
+		std::unique_ptr<HashMap<UInt64, UInt16>> uint16_map;
+		std::unique_ptr<HashMap<UInt64, UInt32>> uint32_map;
+		std::unique_ptr<HashMap<UInt64, UInt64>> uint64_map;
+		std::unique_ptr<HashMap<UInt64, Int8>> int8_map;
+		std::unique_ptr<HashMap<UInt64, Int16>> int16_map;
+		std::unique_ptr<HashMap<UInt64, Int32>> int32_map;
+		std::unique_ptr<HashMap<UInt64, Int64>> int64_map;
+		std::unique_ptr<HashMap<UInt64, Float32>> float32_map;
+		std::unique_ptr<HashMap<UInt64, Float64>> float64_map;
 		std::unique_ptr<Arena> string_arena;
-		std::unique_ptr<PODArray<StringRef>> string_array;
+		std::unique_ptr<HashMap<UInt64, StringRef>> string_map;
 	};
 
 	attribute_t createAttributeWithType(const attribute_type type, const std::string & null_value)
@@ -193,59 +225,48 @@ public:
 		{
 			case attribute_type::uint8:
 				attr.uint8_null_value = DB::parse<UInt8>(null_value);
-				attr.uint8_array.reset(new PODArray<UInt8>);
-				attr.uint8_array->resize_fill(initial_array_size, attr.uint8_null_value);
+				attr.uint8_map.reset(new HashMap<UInt64, UInt8>);
 				break;
 			case attribute_type::uint16:
 				attr.uint16_null_value = DB::parse<UInt16>(null_value);
-				attr.uint16_array.reset(new PODArray<UInt16>);
-				attr.uint16_array->resize_fill(initial_array_size, attr.uint16_null_value);
+				attr.uint16_map.reset(new HashMap<UInt64, UInt16>);
 				break;
 			case attribute_type::uint32:
 				attr.uint32_null_value = DB::parse<UInt32>(null_value);
-				attr.uint32_array.reset(new PODArray<UInt32>);
-				attr.uint32_array->resize_fill(initial_array_size, attr.uint32_null_value);
+				attr.uint32_map.reset(new HashMap<UInt64, UInt32>);
 				break;
 			case attribute_type::uint64:
 				attr.uint64_null_value = DB::parse<UInt64>(null_value);
-				attr.uint64_array.reset(new PODArray<UInt64>);
-				attr.uint64_array->resize_fill(initial_array_size, attr.uint64_null_value);
+				attr.uint64_map.reset(new HashMap<UInt64, UInt64>);
 				break;
 			case attribute_type::int8:
 				attr.int8_null_value = DB::parse<Int8>(null_value);
-				attr.int8_array.reset(new PODArray<Int8>);
-				attr.int8_array->resize_fill(initial_array_size, attr.int8_null_value);
+				attr.int8_map.reset(new HashMap<UInt64, Int8>);
 				break;
 			case attribute_type::int16:
 				attr.int16_null_value = DB::parse<Int16>(null_value);
-				attr.int16_array.reset(new PODArray<Int16>);
-				attr.int16_array->resize_fill(initial_array_size, attr.int16_null_value);
+				attr.int16_map.reset(new HashMap<UInt64, Int16>);
 				break;
 			case attribute_type::int32:
 				attr.int32_null_value = DB::parse<Int32>(null_value);
-				attr.int32_array.reset(new PODArray<Int32>);
-				attr.int32_array->resize_fill(initial_array_size, attr.int32_null_value);
+				attr.int32_map.reset(new HashMap<UInt64, Int32>);
 				break;
 			case attribute_type::int64:
 				attr.int64_null_value = DB::parse<Int64>(null_value);
-				attr.int64_array.reset(new PODArray<Int64>);
-				attr.int64_array->resize_fill(initial_array_size, attr.int64_null_value);
+				attr.int64_map.reset(new HashMap<UInt64, Int64>);
 				break;
 			case attribute_type::float32:
 				attr.float32_null_value = DB::parse<Float32>(null_value);
-				attr.float32_array.reset(new PODArray<Float32>);
-				attr.float32_array->resize_fill(initial_array_size, attr.float32_null_value);
+				attr.float32_map.reset(new HashMap<UInt64, Float32>);
 				break;
 			case attribute_type::float64:
 				attr.float64_null_value = DB::parse<Float64>(null_value);
-				attr.float64_array.reset(new PODArray<Float64>);
-				attr.float64_array->resize_fill(initial_array_size, attr.float64_null_value);
+				attr.float64_map.reset(new HashMap<UInt64, Float64>);
 				break;
 			case attribute_type::string:
 				attr.string_null_value = null_value;
 				attr.string_arena.reset(new Arena);
-				attr.string_array.reset(new PODArray<StringRef>);
-				attr.string_array->resize_fill(initial_array_size, attr.string_null_value);
+				attr.string_map.reset(new HashMap<UInt64, StringRef>);
 				break;
 		}
 
@@ -254,91 +275,63 @@ public:
 
 	void setAttributeValue(attribute_t & attribute, const id_t id, const Field & value)
 	{
-		if (id >= max_array_size)
-			throw Exception{
-				"Identifier should be less than " + toString(max_array_size),
-				ErrorCodes::ARGUMENT_OUT_OF_BOUND
-			};
-
 		switch (attribute.type)
 		{
 			case attribute_type::uint8:
 			{
-				if (id >= attribute.uint8_array->size())
-					attribute.uint8_array->resize_fill(id, attribute.uint8_null_value);
-				(*attribute.uint8_array)[id] = value.get<UInt64>();
+				attribute.uint8_map->insert({ id, value.get<UInt64>() });
 				break;
 			}
 			case attribute_type::uint16:
 			{
-				if (id >= attribute.uint16_array->size())
-					attribute.uint16_array->resize_fill(id, attribute.uint16_null_value);
-				(*attribute.uint16_array)[id] = value.get<UInt64>();
+				attribute.uint16_map->insert({ id, value.get<UInt64>() });
 				break;
 			}
 			case attribute_type::uint32:
 			{
-				if (id >= attribute.uint32_array->size())
-					attribute.uint32_array->resize_fill(id, attribute.uint32_null_value);
-				(*attribute.uint32_array)[id] = value.get<UInt64>();
+				attribute.uint32_map->insert({ id, value.get<UInt64>() });
 				break;
 			}
 			case attribute_type::uint64:
 			{
-				if (id >= attribute.uint64_array->size())
-					attribute.uint64_array->resize_fill(id, attribute.uint64_null_value);
-				(*attribute.uint64_array)[id] = value.get<UInt64>();
+				attribute.uint64_map->insert({ id, value.get<UInt64>() });
 				break;
 			}
 			case attribute_type::int8:
 			{
-				if (id >= attribute.int8_array->size())
-					attribute.int8_array->resize_fill(id, attribute.int8_null_value);
-				(*attribute.int8_array)[id] = value.get<Int64>();
+				attribute.int8_map->insert({ id, value.get<Int64>() });
 				break;
 			}
 			case attribute_type::int16:
 			{
-				if (id >= attribute.int16_array->size())
-					attribute.int16_array->resize_fill(id, attribute.int16_null_value);
-				(*attribute.int16_array)[id] = value.get<Int64>();
+				attribute.int16_map->insert({ id, value.get<Int64>() });
 				break;
 			}
 			case attribute_type::int32:
 			{
-				if (id >= attribute.int32_array->size())
-					attribute.int32_array->resize_fill(id, attribute.int32_null_value);
-				(*attribute.int32_array)[id] = value.get<Int64>();
+				attribute.int32_map->insert({ id, value.get<Int64>() });
 				break;
 			}
 			case attribute_type::int64:
 			{
-				if (id >= attribute.int64_array->size())
-					attribute.int64_array->resize_fill(id, attribute.int64_null_value);
-				(*attribute.int64_array)[id] = value.get<Int64>();
+				attribute.int64_map->insert({ id, value.get<Int64>() });
 				break;
 			}
 			case attribute_type::float32:
 			{
-				if (id >= attribute.float32_array->size())
-					attribute.float32_array->resize_fill(id, attribute.float32_null_value);
-				(*attribute.float32_array)[id] = value.get<Float64>();
+				attribute.float32_map->insert({ id, value.get<Float64>() });
 				break;
 			}
 			case attribute_type::float64:
 			{
-				if (id >= attribute.float64_array->size())
-					attribute.float64_array->resize_fill(id, attribute.float64_null_value);
-				(*attribute.float64_array)[id] = value.get<Float64>();
+				attribute.float64_map->insert({ id, value.get<Float64>() });
 				break;
 			}
 			case attribute_type::string:
 			{
-				if (id >= attribute.string_array->size())
-					attribute.string_array->resize_fill(id, attribute.string_null_value);
 				const auto & string = value.get<String>();
 				const auto string_in_arena = attribute.string_arena->insert(string.data(), string.size());
-				(*attribute.string_array)[id] = StringRef{string_in_arena, string.size()};
+				attribute.string_map->insert({ id, StringRef{string_in_arena, string.size()} });
 				break;
 			}
 		};

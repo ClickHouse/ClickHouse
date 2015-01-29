@@ -3,6 +3,7 @@
 #include <DB/Dictionaries/DictionarySourceFactory.h>
 #include <DB/Dictionaries/DictionaryStructure.h>
 #include <DB/Dictionaries/FlatDictionary.h>
+#include <DB/Dictionaries/HashedDictionary.h>
 #include <Yandex/singleton.h>
 #include <statdaemons/ext/memory.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -29,10 +30,7 @@ public:
 		}
 		else if (config.has(layout_prefix + "hashed"))
 		{
-			throw Exception{
-				"Dictionary of type 'hashed' is not yet implemented",
-				ErrorCodes::NOT_IMPLEMENTED
-			};
+			return ext::make_unique<HashedDictionary>(dict_struct, config, config_prefix, std::move(source_ptr));
 		}
 		else if (config.has(layout_prefix + "cache"))
 		{
