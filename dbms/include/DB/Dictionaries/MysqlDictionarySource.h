@@ -2,12 +2,10 @@
 
 #include <DB/Interpreters/Context.h>
 #include <DB/Dictionaries/MysqlBlockInputStream.h>
-#include <DB/Dictionaries/DictionaryStructure.h>
 #include <DB/Dictionaries/IDictionarySource.h>
 #include <DB/Dictionaries/config_ptr_t.h>
 #include <statdaemons/ext/range.hpp>
 #include <mysqlxx/Pool.h>
-#include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
 namespace DB

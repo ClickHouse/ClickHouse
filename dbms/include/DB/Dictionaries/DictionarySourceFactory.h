@@ -4,6 +4,7 @@
 #include <DB/Dictionaries/DictionaryStructure.h>
 #include <DB/Dictionaries/FileDictionarySource.h>
 #include <DB/Dictionaries/MysqlDictionarySource.h>
+#include <DB/Dictionaries/ClickhouseDictionarySource.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <Yandex/singleton.h>
 #include <statdaemons/ext/memory.hpp>
@@ -56,6 +57,11 @@ public:
 		else if (config.has(config_prefix + "mysql"))
 		{
 			return ext::make_unique<MysqlDictionarySource>(config, config_prefix + "mysql.", sample_block, context);
+		}
+		else if (config.has(config_prefix + "clickhouse"))
+		{
+			return ext::make_unique<ClickhouseDictionarySource>(config, config_prefix + "clickhouse.",
+				sample_block, context);
 		}
 
 		throw Exception{"unsupported source type"};
