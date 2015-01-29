@@ -109,6 +109,9 @@ public:
 	/// Проверить, есть ли данные, которые можно прочитать.
 	bool poll(size_t timeout_microseconds = 0);
 
+	/// Проверить, есть ли данные в буфере для чтения.
+	bool hasReadBufferPendingData();
+
 	/// Получить пакет от сервера.
 	Packet receivePacket();
 

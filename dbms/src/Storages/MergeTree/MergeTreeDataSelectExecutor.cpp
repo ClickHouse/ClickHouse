@@ -246,20 +246,24 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 			parts_with_ranges.push_back(ranges);
 	}
 
-	if (settings.parallel_replicas_count > 1)
+	UInt64 parallel_replicas_count = UInt64(settings.parallel_replicas_count);
+	UInt64 parallel_replica_offset = UInt64(settings.parallel_replica_offset);
+
+	if (parallel_replicas_count > 1)
 	{
-		PartsWithRangesSplitter splitter(parts_with_ranges, data.settings.min_rows_for_seek,
-										 settings.parallel_replicas_count);
+		// Разбиваем массив на не больше, чем N сегментов, где N - количество реплик,
+		PartsWithRangesSplitter splitter(parts_with_ranges, data.index_granularity, data.settings.min_rows_for_seek,
+										 parallel_replicas_count);
 		auto segments = splitter.perform();
 
-		if (settings.parallel_replica_offset >= segments.size())
-			return BlockInputStreams();
-
-		if (segments.size() > 1)
+		if (!segments.empty())
 		{
-			/// Для каждого элемента массива segments, вычисляем его хэш
-			/// Сортируем массив segments по хэшу.
-			/// Выбираем k-й элемент массива segments, где k - наш номер реплики.
+			if (parallel_replica_offset >= segments.size())
+				return BlockInputStreams();
+
+			/// Для каждого сегмента, вычисляем его хэш.
+			/// Сортируем массив сегментов по хэшу.
+			/// Выбираем сегмент соответствующий текущей реплике.
 
 			using Entry = std::pair<std::pair<UInt64, UInt64>, RangesInDataParts *>;
 			std::vector<Entry> hashed_segments;
@@ -276,7 +280,13 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 				return lhs.first < rhs.first;
 			});
 
-			parts_with_ranges = std::move(*(hashed_segments[settings.parallel_replica_offset].second));
+			parts_with_ranges = std::move(*(hashed_segments[parallel_replica_offset].second));
+		}
+		else
+		{
+			/// Получаем данные только от первой реплики.
+			if (parallel_replica_offset > 0)
+				return BlockInputStreams();
 		}
 	}
 
