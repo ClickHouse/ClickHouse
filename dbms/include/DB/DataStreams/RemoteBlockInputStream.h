@@ -179,7 +179,7 @@ protected:
 			if (use_many_replicas)
 				shard_replicas->sendQuery(query, "", stage, true);
 			else
-				connection->sendQuery(query, "", stage, send_settings ? &settings : nullptr, true);				
+				connection->sendQuery(query, "", stage, send_settings ? &settings : nullptr, true);
 
 			sendExternalTables();
 			sent_query = true;
