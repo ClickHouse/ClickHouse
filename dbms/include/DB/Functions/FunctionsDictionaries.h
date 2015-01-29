@@ -13,6 +13,8 @@
 #include <DB/Functions/IFunction.h>
 #include <statdaemons/CategoriesHierarchy.h>
 #include <statdaemons/ext/range.hpp>
+#include <DB/Dictionaries/FlatDictionary.h>
+#include <DB/Dictionaries/HashedDictionary.h>
 
 
 namespace DB
@@ -849,6 +851,23 @@ private:
 			};
 
 		auto dict = dictionaries.getExternalDictionary(dict_name_col->getData());
+		const auto dict_ptr = dict.get();
+
+		if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
+			!executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr))
+			throw Exception{
+				"Unsupported dictionary type " + dict_ptr->getTypeName(),
+				ErrorCodes::UNKNOWN_TYPE
+			};
+	}
+
+	template <typename DictionaryType>
+	bool executeDispatch(Block & block, const ColumnNumbers & arguments, const size_t result,
+		const IDictionary * const dictionary)
+	{
+		const auto dict = typeid_cast<const DictionaryType *>(dictionary);
+		if (!dict)
+			return false;
 
 		const auto attr_name_col = typeid_cast<const ColumnConst<String> *>(block.getByPosition(arguments[1]).column.get());
 		if (!attr_name_col)
@@ -874,10 +893,12 @@ private:
 				ErrorCodes::ILLEGAL_COLUMN
 			};
 		}
+
+		return true;
 	}
 
-	template <typename T>
-	bool execute(Block & block, const size_t result, const MultiVersion<IDictionary>::Version & dictionary,
+	template <typename T, typename DictionaryType>
+	bool execute(Block & block, const size_t result, const DictionaryType * const dictionary,
 		const std::string & attr_name, const IColumn * const id_col_untyped)
 	{
 		if (const auto id_col = typeid_cast<const ColumnVector<T> *>(id_col_untyped))
@@ -1017,6 +1038,22 @@ private:
 		auto dict = dictionaries.getExternalDictionary(dict_name_col->getData());
 		const auto dict_ptr = dict.get();
 
+		if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
+			!executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr))
+			throw Exception{
+				"Unsupported dictionary type " + dict_ptr->getTypeName(),
+				ErrorCodes::UNKNOWN_TYPE
+			};
+	}
+
+	template <typename DictionaryType>
+	bool executeDispatch(Block & block, const ColumnNumbers & arguments, const size_t result,
+		const IDictionary * const dictionary)
+	{
+		const auto dict = typeid_cast<const DictionaryType *>(dictionary);
+		if (!dict)
+			return false;
+
 		const auto attr_name_col = typeid_cast<const ColumnConst<String> *>(block.getByPosition(arguments[1]).column.get());
 		if (!attr_name_col)
 			throw Exception{
@@ -1027,24 +1064,26 @@ private:
 		const auto & attr_name = attr_name_col->getData();
 
 		const auto id_col = block.getByPosition(arguments[2]).column.get();
-		if (!execute<UInt8>(block, result, dict_ptr, attr_name, id_col) &&
-			!execute<UInt16>(block, result, dict_ptr, attr_name, id_col) &&
-			!execute<UInt32>(block, result, dict_ptr, attr_name, id_col) &&
-			!execute<UInt64>(block, result, dict_ptr, attr_name, id_col) &&
-			!execute<Int8>(block, result, dict_ptr, attr_name, id_col) &&
-			!execute<Int16>(block, result, dict_ptr, attr_name, id_col) &&
-			!execute<Int32>(block, result, dict_ptr, attr_name, id_col) &&
-			!execute<Int64>(block, result, dict_ptr, attr_name, id_col))
+		if (!execute<UInt8>(block, result, dict, attr_name, id_col) &&
+			!execute<UInt16>(block, result, dict, attr_name, id_col) &&
+			!execute<UInt32>(block, result, dict, attr_name, id_col) &&
+			!execute<UInt64>(block, result, dict, attr_name, id_col) &&
+			!execute<Int8>(block, result, dict, attr_name, id_col) &&
+			!execute<Int16>(block, result, dict, attr_name, id_col) &&
+			!execute<Int32>(block, result, dict, attr_name, id_col) &&
+			!execute<Int64>(block, result, dict, attr_name, id_col))
 		{
 			throw Exception{
 				"Third argument of function " + getName() + " must be integral",
 				ErrorCodes::ILLEGAL_COLUMN
 			};
 		}
+
+		return true;
 	}
 
-	template <typename T>
-	bool execute(Block & block, const size_t result, const IDictionary * const dictionary,
+	template <typename T, typename DictionaryType>
+	bool execute(Block & block, const size_t result, const DictionaryType * const dictionary,
 		const std::string & attr_name, const IColumn * const id_col_untyped)
 	{
 		if (const auto id_col = typeid_cast<const ColumnVector<T> *>(id_col_untyped))
@@ -1162,12 +1201,29 @@ private:
 			};
 
 		auto dict = dictionaries.getExternalDictionary(dict_name_col->getData());
+		const auto dict_ptr = dict.get();
 
 		if (!dict->hasHierarchy())
 			throw Exception{
 				"Dictionary does not have a hierarchy",
 				ErrorCodes::UNSUPPORTED_METHOD
 			};
+
+		if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
+			!executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr))
+			throw Exception{
+				"Unsupported dictionary type " + dict_ptr->getTypeName(),
+				ErrorCodes::UNKNOWN_TYPE
+			};
+	}
+
+	template <typename DictionaryType>
+	bool executeDispatch(Block & block, const ColumnNumbers & arguments, const size_t result,
+		const IDictionary * const dictionary)
+	{
+		const auto dict = typeid_cast<const DictionaryType *>(dictionary);
+		if (!dict)
+			return false;
 
 		const auto id_col = block.getByPosition(arguments[1]).column.get();
 		if (!execute<UInt8>(block, result, dict, id_col) &&
@@ -1184,10 +1240,12 @@ private:
 				ErrorCodes::ILLEGAL_COLUMN
 			};
 		}
+
+		return true;
 	}
 
-	template <typename T>
-	bool execute(Block & block, const size_t result, const MultiVersion<IDictionary>::Version & dictionary,
+	template <typename T, typename DictionaryType>
+	bool execute(Block & block, const size_t result, const DictionaryType * const dictionary,
 		const IColumn * const id_col_untyped)
 	{
 		if (const auto id_col = typeid_cast<const ColumnVector<T> *>(id_col_untyped))
@@ -1320,12 +1378,29 @@ private:
 			};
 
 		auto dict = dictionaries.getExternalDictionary(dict_name_col->getData());
+		const auto dict_ptr = dict.get();
 
 		if (!dict->hasHierarchy())
 			throw Exception{
 				"Dictionary does not have a hierarchy",
 				ErrorCodes::UNSUPPORTED_METHOD
 			};
+
+		if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
+			!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr))
+			throw Exception{
+				"Unsupported dictionary type " + dict_ptr->getTypeName(),
+				ErrorCodes::UNKNOWN_TYPE
+			};
+	}
+
+	template <typename DictionaryType>
+	bool executeDispatch(Block & block, const ColumnNumbers & arguments, const size_t result,
+		const IDictionary * const dictionary)
+	{
+		const auto dict = typeid_cast<const DictionaryType *>(dictionary);
+		if (!dict)
+			return false;
 
 		const auto child_id_col = block.getByPosition(arguments[1]).column.get();
 		const auto ancestor_id_col = block.getByPosition(arguments[2]).column.get();
@@ -1344,10 +1419,12 @@ private:
 				ErrorCodes::ILLEGAL_COLUMN
 			};
 		}
+
+		return true;
 	}
 
-	template <typename T>
-	bool execute(Block & block, const size_t result, const MultiVersion<IDictionary>::Version & dictionary,
+	template <typename T, typename DictionaryType>
+	bool execute(Block & block, const size_t result, const DictionaryType * const dictionary,
 		const IColumn * const child_id_col_untyped, const IColumn * const ancestor_id_col_untyped)
 	{
 		if (execute<T, ColumnVector<T>>(block, result, dictionary, child_id_col_untyped, ancestor_id_col_untyped) ||
@@ -1357,8 +1434,8 @@ private:
 		return false;
 	}
 
-	template <typename T, typename ColumnType>
-	bool execute(Block & block, const size_t result, const MultiVersion<IDictionary>::Version & dictionary,
+	template <typename T, typename ColumnType, typename DictionaryType>
+	bool execute(Block & block, const size_t result, const DictionaryType * dictionary,
 		const IColumn * const child_id_col_untyped, const IColumn * const ancestor_id_col_untyped)
 	{
 		if (const auto child_id_col = typeid_cast<const ColumnType *>(child_id_col_untyped))
@@ -1383,8 +1460,8 @@ private:
 		return false;
 	}
 
-	template <typename T, typename U>
-	bool execute(Block & block, const size_t result, const MultiVersion<IDictionary>::Version & dictionary,
+	template <typename T, typename U, typename DictionaryType>
+	bool execute(Block & block, const size_t result, const DictionaryType * const dictionary,
 		const ColumnVector<T> * const child_id_col, const IColumn * const ancestor_id_col_untyped)
 	{
 		if (const auto ancestor_id_col = typeid_cast<const ColumnVector<T> *>(ancestor_id_col_untyped))
@@ -1423,8 +1500,8 @@ private:
 		return false;
 	}
 
-	template <typename T, typename U>
-	bool execute(Block & block, const size_t result, const MultiVersion<IDictionary>::Version & dictionary,
+	template <typename T, typename U, typename DictionaryType>
+	bool execute(Block & block, const size_t result, const DictionaryType * const dictionary,
 		const ColumnConst<T> * const child_id_col, const IColumn * const ancestor_id_col_untyped)
 	{
 		if (const auto ancestor_id_col = typeid_cast<const ColumnVector<T> *>(ancestor_id_col_untyped))

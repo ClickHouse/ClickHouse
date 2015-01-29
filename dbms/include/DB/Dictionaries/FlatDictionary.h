@@ -3,6 +3,7 @@
 #include <DB/Dictionaries/IDictionary.h>
 #include <DB/Dictionaries/IDictionarySource.h>
 #include <DB/Dictionaries/DictionarySourceFactory.h>
+#include <DB/Dictionaries/DictionaryStructure.h>
 #include <statdaemons/ext/range.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <vector>
@@ -48,6 +49,8 @@ public:
 			}
 		}
 	}
+
+	std::string getTypeName() const override { return "FlatDictionary"; }
 
 	bool hasHierarchy() const override { return hierarchical_attribute; }
 

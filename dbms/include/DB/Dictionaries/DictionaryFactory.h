@@ -1,9 +1,9 @@
 #pragma once
 
 #include <DB/Dictionaries/DictionarySourceFactory.h>
-#include <DB/Dictionaries/DictionaryStructure.h>
 #include <DB/Dictionaries/FlatDictionary.h>
 #include <DB/Dictionaries/HashedDictionary.h>
+#include <DB/Dictionaries/DictionaryStructure.h>
 #include <Yandex/singleton.h>
 #include <statdaemons/ext/memory.hpp>
 #include <Poco/Util/AbstractConfiguration.h>

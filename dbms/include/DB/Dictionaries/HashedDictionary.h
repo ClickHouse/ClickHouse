@@ -3,6 +3,7 @@
 #include <DB/Dictionaries/IDictionary.h>
 #include <DB/Dictionaries/IDictionarySource.h>
 #include <DB/Dictionaries/DictionarySourceFactory.h>
+#include <DB/Dictionaries/DictionaryStructure.h>
 #include <DB/Common/HashTable/HashMap.h>
 #include <statdaemons/ext/range.hpp>
 #include <statdaemons/ext/memory.hpp>
@@ -46,6 +47,8 @@ public:
 			}
 		}
 	}
+
+	std::string getTypeName() const override { return "HashedDictionary"; }
 
 	bool hasHierarchy() const override { return hierarchical_attribute; }
 

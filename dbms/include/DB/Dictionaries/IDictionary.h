@@ -12,6 +12,8 @@ class IDictionary
 public:
     using id_t = std::uint64_t;
 
+	virtual std::string getTypeName() const = 0;
+
 	virtual bool hasHierarchy() const = 0;
 
 	/// do not call unless you ensure that hasHierarchy() returns true

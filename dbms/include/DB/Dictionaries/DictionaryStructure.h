@@ -24,7 +24,7 @@ enum class attribute_type
 	string
 };
 
-attribute_type getAttributeTypeByName(const std::string & type)
+inline attribute_type getAttributeTypeByName(const std::string & type)
 {
 	static const std::unordered_map<std::string, attribute_type> dictionary{
 		{ "UInt8", attribute_type::uint8 },
@@ -50,7 +50,7 @@ attribute_type getAttributeTypeByName(const std::string & type)
 	};
 }
 
-std::string toString(const attribute_type type)
+inline std::string toString(const attribute_type type)
 {
 	switch (type)
 	{
