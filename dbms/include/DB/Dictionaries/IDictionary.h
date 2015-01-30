@@ -12,6 +12,8 @@ class IDictionarySource;
 class IDictionary;
 using DictionaryPtr = std::unique_ptr<IDictionary>;
 
+class DictionaryLifetime;
+
 class IDictionary
 {
 public:
@@ -26,6 +28,8 @@ public:
 	virtual DictionaryPtr clone() const = 0;
 
 	virtual const IDictionarySource * const getSource() const = 0;
+
+	virtual const DictionaryLifetime & getLifetime() const = 0;
 
 	virtual bool hasHierarchy() const = 0;
 

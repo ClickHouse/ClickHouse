@@ -15,15 +15,16 @@ class HashedDictionary final : public IDictionary
 {
 public:
 	HashedDictionary(const std::string & name, const DictionaryStructure & dict_struct,
-		DictionarySourcePtr source_ptr)
-		: name{name}, dict_struct(dict_struct), source_ptr{std::move(source_ptr)}
+		DictionarySourcePtr source_ptr, const DictionaryLifetime dict_lifetime)
+		: name{name}, dict_struct(dict_struct),
+		  source_ptr{std::move(source_ptr)}, dict_lifetime(dict_lifetime)
 	{
 		createAttributes();
 		loadData();
 	}
 
 	HashedDictionary(const HashedDictionary & other)
-		: HashedDictionary{other.name, other.dict_struct, other.source_ptr->clone()}
+		: HashedDictionary{other.name, other.dict_struct, other.source_ptr->clone(), other.dict_lifetime}
 	{}
 
 	std::string getName() const override { return name; }
@@ -35,6 +36,8 @@ public:
 	DictionaryPtr clone() const override { return ext::make_unique<HashedDictionary>(*this); }
 
 	const IDictionarySource * const getSource() const override { return source_ptr.get(); }
+
+	const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
 
 	bool hasHierarchy() const override { return hierarchical_attribute; }
 
@@ -362,6 +365,7 @@ private:
 	const std::string name;
 	const DictionaryStructure dict_struct;
 	const DictionarySourcePtr source_ptr;
+	const DictionaryLifetime dict_lifetime;
 
 	std::map<std::string, std::size_t> attribute_index_by_name;
 	std::vector<attribute_t> attributes;

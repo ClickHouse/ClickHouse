@@ -73,6 +73,21 @@ inline std::string toString(const attribute_type type)
 	};
 }
 
+struct DictionaryLifetime
+{
+	std::uint64_t min_sec;
+	std::uint64_t max_sec;
+
+	static DictionaryLifetime fromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
+	{
+		const auto & lifetime_min_key = config_prefix + ".min";
+		const auto has_min = config.has(lifetime_min_key);
+		const std::uint64_t min_update_time = has_min ? config.getInt(lifetime_min_key) : config.getInt(config_prefix);
+		const std::uint64_t max_update_time = has_min ? config.getInt(config_prefix + ".max") : min_update_time;
+		return { min_update_time, max_update_time };
+	}
+};
+
 struct DictionaryAttribute
 {
 	std::string name;

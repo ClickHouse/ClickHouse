@@ -23,15 +23,17 @@ public:
 		auto source_ptr = DictionarySourceFactory::instance().create(
 			config, config_prefix + "source.", dict_struct, context);
 
+		const auto dict_lifetime = DictionaryLifetime::fromConfig(config, config_prefix + "lifetime");
+
 		const auto & layout_prefix = config_prefix + "layout.";
 
 		if (config.has(layout_prefix + "flat"))
 		{
-			return ext::make_unique<FlatDictionary>(name, dict_struct, std::move(source_ptr));
+			return ext::make_unique<FlatDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime);
 		}
 		else if (config.has(layout_prefix + "hashed"))
 		{
-			return ext::make_unique<HashedDictionary>(name, dict_struct, std::move(source_ptr));
+			return ext::make_unique<HashedDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime);
 		}
 		else if (config.has(layout_prefix + "cache"))
 		{

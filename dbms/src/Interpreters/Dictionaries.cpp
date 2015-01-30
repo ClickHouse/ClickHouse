@@ -16,6 +16,7 @@ void Dictionaries::reloadExternals()
 	const auto last_modified = Poco::File{config_path}.getLastModified();
 	if (last_modified > dictionaries_last_modified)
 	{
+		/// definitions of dictionaries may have changed, recreate all of them
 		dictionaries_last_modified = last_modified;
 
 		const config_ptr_t<Poco::Util::XMLConfiguration> config{new Poco::Util::XMLConfiguration{config_path}};
@@ -44,34 +45,13 @@ void Dictionaries::reloadExternals()
 					continue;
 				}
 
-				const auto & lifetime_key = prefix + "lifetime";
-				const auto & lifetime_min_key = lifetime_key + ".min";
-				const auto has_min = config->has(lifetime_min_key);
-				const auto min_update_time = has_min ? config->getInt(lifetime_min_key) : config->getInt(lifetime_key);
-				const auto max_update_time = has_min ? config->getInt(lifetime_key + ".max") : min_update_time;
-
-				std::cout << "min_update_time = " << min_update_time << " max_update_time = " << max_update_time << std::endl;
-
+				auto dict_ptr = DictionaryFactory::instance().create(name, *config, prefix, context);
 				auto it = external_dictionaries.find(name);
+				/// add new dictionary or update an existing version
 				if (it == std::end(external_dictionaries))
-				{
-					/// such a dictionary is not present at the moment
-					auto dict_ptr = DictionaryFactory::instance().create(name, *config, prefix, context);
 					external_dictionaries.emplace(name, std::make_shared<MultiVersion<IDictionary>>(dict_ptr.release()));
-				}
 				else
-				{
-					/// dictionary exists, it may be desirable to reload it
-					auto & current = it->second->get();
-					if (current->isCached())
-						const_cast<IDictionary *>(current.get())->reload();
-					else
-					{
-						/// @todo check that timeout has passed
-						auto dict_ptr = DictionaryFactory::instance().create(name, *config, prefix, context);
-						it->second->set(dict_ptr.release());
-					}
-				}
+					it->second->set(dict_ptr.release());
 			}
 			catch (...)
 			{
@@ -81,15 +61,14 @@ void Dictionaries::reloadExternals()
 	}
 	else
 	{
+		/// periodic update
 		for (auto & dictionary : external_dictionaries)
 		{
 			try
 			{
 				auto current = dictionary.second->get();
 				if (current->isCached())
-				{
 					const_cast<IDictionary *>(current.get())->reload();
-				}
 				else
 				{
 					/// @todo check that timeout has passed and load new version
