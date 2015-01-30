@@ -360,9 +360,9 @@ bool Connection::poll(size_t timeout_microseconds)
 }
 
 
-bool Connection::hasReadBufferPendingData()
+bool Connection::hasReadBufferPendingData() const
 {
-	return static_cast<ReadBufferFromPocoSocket &>(*in).hasPendingData();
+	return static_cast<const ReadBufferFromPocoSocket &>(*in).hasPendingData();
 }
 
 

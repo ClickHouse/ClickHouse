@@ -29,13 +29,13 @@ PartsWithRangesSplitter::PartsWithRangesSplitter(const MergeTreeDataSelectExecut
 	}
 	total_size *= granularity;
 
-	if ((total_size == 0) || (min_segment_size == 0) || (max_segments_count < 2))
+	if ((granularity == 0) || (min_segment_size == 0) || (max_segments_count == 0) || (total_size == 0))
 		throw Exception("One or more arguments are invalid.", ErrorCodes::BAD_ARGUMENTS);
 }
 
-std::vector<MergeTreeDataSelectExecutor::RangesInDataParts> PartsWithRangesSplitter::perform()
+Segments PartsWithRangesSplitter::perform()
 {
-	if (total_size > min_segment_size)
+	if ((max_segments_count > 1) && (total_size > min_segment_size))
 	{
 		init();
 		while (emitRange()) {}

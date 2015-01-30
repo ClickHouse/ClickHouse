@@ -109,7 +109,7 @@ public:
 	bool poll(size_t timeout_microseconds = 0);
 
 	/// Проверить, есть ли данные в буфере для чтения.
-	bool hasReadBufferPendingData();
+	bool hasReadBufferPendingData() const;
 
 	/// Получить пакет от сервера.
 	Packet receivePacket();

@@ -15,10 +15,10 @@
 namespace
 {
 
-std::pair<UInt64, UInt64> computeHash(const DB::MergeTreeDataSelectExecutor::RangesInDataParts & cluster)
+std::pair<UInt64, UInt64> computeHash(const DB::MergeTreeDataSelectExecutor::RangesInDataParts & segment)
 {
 	SipHash hash;
-	for (const auto & part_with_ranges : cluster)
+	for (const auto & part_with_ranges : segment)
 	{
 		const auto & part = *(part_with_ranges.data_part);
 		hash.update(part.name.c_str(), part.name.length());

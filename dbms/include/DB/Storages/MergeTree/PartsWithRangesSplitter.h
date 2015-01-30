@@ -5,6 +5,8 @@
 namespace DB
 {
 
+using Segments = std::vector<MergeTreeDataSelectExecutor::RangesInDataParts>;
+
 /** Этот класс разбивает объект типа RangesInDataParts (см. MergeTreeDataSelectExecutor)
   * на не больше, чем указанное количество сегментов.
   */
@@ -18,7 +20,7 @@ public:
 	PartsWithRangesSplitter(const PartsWithRangesSplitter &) = delete;
 	PartsWithRangesSplitter & operator=(const PartsWithRangesSplitter &) = delete;
 
-	std::vector<MergeTreeDataSelectExecutor::RangesInDataParts> perform();
+	Segments perform();
 
 private:
 	void init();
@@ -35,11 +37,11 @@ private:
 	// Входные данные.
 	const MergeTreeDataSelectExecutor::RangesInDataParts & input;
 	MergeTreeDataSelectExecutor::RangesInDataParts::const_iterator input_part;
-	std::vector<MarkRange>::const_iterator input_range;
+	MarkRanges::const_iterator input_range;
 
 	// Выходные данные.
-	std::vector<MergeTreeDataSelectExecutor::RangesInDataParts> output_segments;
-	std::vector<MergeTreeDataSelectExecutor::RangesInDataParts>::iterator current_output_segment;
+	Segments output_segments;
+	Segments::iterator current_output_segment;
 	MergeTreeDataSelectExecutor::RangesInDataPart * current_output_part;
 
 	size_t total_size;
