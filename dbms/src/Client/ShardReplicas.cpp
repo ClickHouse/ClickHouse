@@ -65,6 +65,8 @@ namespace DB
 	{
 		if (!sent_query)
 			throw Exception("Cannot receive packets: no query sent.");
+		if (active_connection_count == 0)
+			throw Exception("No more packets are available.");
 
 		Connection ** connection = waitForReadEvent();
 		if (connection == nullptr)
