@@ -9,6 +9,9 @@ namespace DB
 
 class IDictionarySource;
 
+class IDictionary;
+using DictionaryPtr = std::unique_ptr<IDictionary>;
+
 class IDictionary
 {
 public:
@@ -20,6 +23,7 @@ public:
 
 	virtual bool isCached() const = 0;
 	virtual void reload() {}
+	virtual DictionaryPtr clone() const = 0;
 
 	virtual const IDictionarySource * const getSource() const = 0;
 
@@ -82,7 +86,5 @@ public:
 
     virtual ~IDictionary() = default;
 };
-
-using DictionaryPtr = std::unique_ptr<IDictionary>;
 
 }

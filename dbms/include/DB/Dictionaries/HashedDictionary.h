@@ -7,7 +7,6 @@
 #include <DB/Common/HashTable/HashMap.h>
 #include <statdaemons/ext/range.hpp>
 #include <statdaemons/ext/memory.hpp>
-#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
@@ -16,44 +15,24 @@ class HashedDictionary final : public IDictionary
 {
 public:
 	HashedDictionary(const std::string & name, const DictionaryStructure & dict_struct,
-		const Poco::Util::AbstractConfiguration & config,
-		const std::string & config_prefix, DictionarySourcePtr source_ptr)
-		: name{name}, source_ptr{std::move(source_ptr)}
+		DictionarySourcePtr source_ptr)
+		: name{name}, dict_struct(dict_struct), source_ptr{std::move(source_ptr)}
 	{
-		const auto size = dict_struct.attributes.size();
-		attributes.reserve(size);
-		for (const auto & attribute : dict_struct.attributes)
-		{
-			attribute_index_by_name.emplace(attribute.name, attributes.size());
-			attributes.push_back(std::move(createAttributeWithType(getAttributeTypeByName(attribute.type),
-				attribute.null_value)));
-
-			if (attribute.hierarchical)
-				hierarchical_attribute = &attributes.back();
-		}
-
-		auto stream = this->source_ptr->loadAll();
-
-		while (const auto block = stream->read())
-		{
-			const auto & id_column = *block.getByPosition(0).column;
-
-			for (const auto attribute_idx : ext::range(0, attributes.size()))
-			{
-				const auto & attribute_column = *block.getByPosition(attribute_idx + 1).column;
-				auto & attribute = attributes[attribute_idx];
-
-				for (const auto row_idx : ext::range(0, id_column.size()))
-					setAttributeValue(attribute, id_column[row_idx].get<UInt64>(), attribute_column[row_idx]);
-			}
-		}
+		createAttributes();
+		loadData();
 	}
+
+	HashedDictionary(const HashedDictionary & other)
+		: HashedDictionary{other.name, other.dict_struct, other.source_ptr->clone()}
+	{}
 
 	std::string getName() const override { return name; }
 
 	std::string getTypeName() const override { return "HashedDictionary"; }
 
 	bool isCached() const override { return false; }
+
+	DictionaryPtr clone() const override { return ext::make_unique<HashedDictionary>(*this); }
 
 	const IDictionarySource * const getSource() const override { return source_ptr.get(); }
 
@@ -197,6 +176,7 @@ public:
 	DECLARE_UNSAFE_GETTER(StringRef, String, string)
 #undef DECLARE_UNSAFE_GETTER
 
+private:
 	struct attribute_t
 	{
 		attribute_type type;
@@ -224,6 +204,40 @@ public:
 		std::unique_ptr<Arena> string_arena;
 		std::unique_ptr<HashMap<UInt64, StringRef>> string_map;
 	};
+
+	void createAttributes()
+	{
+		const auto size = dict_struct.attributes.size();
+		attributes.reserve(size);
+		for (const auto & attribute : dict_struct.attributes)
+		{
+			attribute_index_by_name.emplace(attribute.name, attributes.size());
+			attributes.push_back(std::move(createAttributeWithType(getAttributeTypeByName(attribute.type),
+				attribute.null_value)));
+
+			if (attribute.hierarchical)
+				hierarchical_attribute = &attributes.back();
+		}
+	}
+
+	void loadData()
+	{
+		auto stream = source_ptr->loadAll();
+
+		while (const auto block = stream->read())
+		{
+			const auto & id_column = *block.getByPosition(0).column;
+
+			for (const auto attribute_idx : ext::range(0, attributes.size()))
+			{
+				const auto & attribute_column = *block.getByPosition(attribute_idx + 1).column;
+				auto & attribute = attributes[attribute_idx];
+
+				for (const auto row_idx : ext::range(0, id_column.size()))
+					setAttributeValue(attribute, id_column[row_idx].get<UInt64>(), attribute_column[row_idx]);
+			}
+		}
+	}
 
 	attribute_t createAttributeWithType(const attribute_type type, const std::string & null_value)
 	{
@@ -346,11 +360,13 @@ public:
 	}
 
 	const std::string name;
+	const DictionaryStructure dict_struct;
+	const DictionarySourcePtr source_ptr;
+
 	std::map<std::string, std::size_t> attribute_index_by_name;
 	std::vector<attribute_t> attributes;
 	const attribute_t * hierarchical_attribute = nullptr;
 
-	const DictionarySourcePtr source_ptr;
 };
 
 }

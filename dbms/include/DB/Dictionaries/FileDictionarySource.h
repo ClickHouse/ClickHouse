@@ -21,7 +21,12 @@ public:
 		  last_modification{getLastModification()}
 	{}
 
-private:
+	FileDictionarySource(const FileDictionarySource & other)
+		: filename{other.filename}, format{other.format},
+		  sample_block{other.sample_block}, context(other.context),
+		  last_modification{other.last_modification}
+	{}
+
 	BlockInputStreamPtr loadAll() override
 	{
 		auto in_ptr = ext::make_unique<ReadBufferFromFile>(filename);
@@ -50,6 +55,9 @@ private:
 
 	bool isModified() const override { return getLastModification() > last_modification; }
 
+	DictionarySourcePtr clone() const override { return ext::make_unique<FileDictionarySource>(*this); }
+
+private:
 	Poco::Timestamp getLastModification() const { return Poco::File{filename}.getLastModified(); }
 
 	const std::string filename;

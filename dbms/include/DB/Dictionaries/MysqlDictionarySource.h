@@ -1,12 +1,11 @@
 #pragma once
 
-#include <DB/Interpreters/Context.h>
-#include <DB/Dictionaries/MysqlBlockInputStream.h>
 #include <DB/Dictionaries/IDictionarySource.h>
-#include <DB/Dictionaries/config_ptr_t.h>
+#include <DB/Dictionaries/MysqlBlockInputStream.h>
+#include <DB/Interpreters/Context.h>
 #include <statdaemons/ext/range.hpp>
 #include <mysqlxx/Pool.h>
-#include <Poco/Util/LayeredConfiguration.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
@@ -18,15 +17,26 @@ class MysqlDictionarySource final : public IDictionarySource
 public:
 	MysqlDictionarySource(Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
 		Block & sample_block, const Context & context)
-		: layered_config_ptr{getLayeredConfig(config)},
-		  pool{*layered_config_ptr, config_prefix},
-		  sample_block{sample_block}, context(context),
+		: host{config.getString(config_prefix + "host")},
+		  port(config.getInt(config_prefix + "port")),
+		  user{config.getString(config_prefix + "user", "")},
+		  password{config.getString(config_prefix + "password", "")},
+		  db{config.getString(config_prefix + "db", "")},
 		  table{config.getString(config_prefix + "table")},
+		  sample_block{sample_block}, context(context),
+		  pool{db, host, user, password, port},
 		  load_all_query{composeLoadAllQuery(sample_block, table)},
 		  last_modification{getLastModification()}
 	{}
 
-private:
+	MysqlDictionarySource(const MysqlDictionarySource & other)
+		: host{other.host}, port{other.port}, user{other.user}, password{other.password},
+		  db{other.db}, table{other.db},
+		  sample_block{other.sample_block}, context(other.context),
+		  pool{db, host, user, password, port},
+		  load_all_query{other.load_all_query}, last_modification{other.last_modification}
+	{}
+
 	BlockInputStreamPtr loadAll() override
 	{
 		return new MysqlBlockInputStream{pool.Get()->query(load_all_query), sample_block, max_block_size};
@@ -50,6 +60,9 @@ private:
 
 	bool isModified() const override { return getLastModification() > last_modification; }
 
+	DictionarySourcePtr clone() const override { return ext::make_unique<MysqlDictionarySource>(*this); }
+
+private:
 	mysqlxx::DateTime getLastModification() const
 	{
 		const auto Create_time_idx = 11;
@@ -72,13 +85,6 @@ private:
 		return {};
 	}
 
-	static config_ptr_t<Poco::Util::LayeredConfiguration> getLayeredConfig(Poco::Util::AbstractConfiguration & config)
-	{
-		config_ptr_t<Poco::Util::LayeredConfiguration> layered_config{new Poco::Util::LayeredConfiguration};
-		layered_config->add(&config);
-		return layered_config;
-	}
-
 	static std::string composeLoadAllQuery(const Block & block, const std::string & table)
 	{
 		std::string query{"SELECT "};
@@ -98,11 +104,15 @@ private:
 		return query;
 	}
 
-	const config_ptr_t<Poco::Util::LayeredConfiguration> layered_config_ptr;
-	mutable mysqlxx::Pool pool;
+	const std::string host;
+	const UInt16 port;
+	const std::string user;
+	const std::string password;
+	const std::string db;
+	const std::string table;
 	Block sample_block;
 	const Context & context;
-	const std::string table;
+	mutable mysqlxx::Pool pool;
 	const std::string load_all_query;
 	mysqlxx::DateTime last_modification;
 };

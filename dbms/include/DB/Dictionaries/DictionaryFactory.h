@@ -27,11 +27,11 @@ public:
 
 		if (config.has(layout_prefix + "flat"))
 		{
-			return ext::make_unique<FlatDictionary>(name, dict_struct, config, config_prefix, std::move(source_ptr));
+			return ext::make_unique<FlatDictionary>(name, dict_struct, std::move(source_ptr));
 		}
 		else if (config.has(layout_prefix + "hashed"))
 		{
-			return ext::make_unique<HashedDictionary>(name, dict_struct, config, config_prefix, std::move(source_ptr));
+			return ext::make_unique<HashedDictionary>(name, dict_struct, std::move(source_ptr));
 		}
 		else if (config.has(layout_prefix + "cache"))
 		{

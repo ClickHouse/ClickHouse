@@ -2,29 +2,8 @@
 #include <DB/Dictionaries/DictionaryFactory.h>
 #include <DB/Dictionaries/config_ptr_t.h>
 
-
 namespace DB
 {
-
-namespace
-{
-	std::string findKeyForDictionary(Poco::Util::XMLConfiguration & config, const std::string & name)
-	{
-		Poco::Util::AbstractConfiguration::Keys keys;
-		config.keys(keys);
-
-		for (const auto & key : keys)
-		{
-			if (0 != strncmp(key.data(), "dictionary", strlen("dictionary")))
-				continue;
-
-			if (name == config.getString(key + ".name"))
-				return key;
-		}
-
-		return {};
-	}
-}
 
 void Dictionaries::reloadExternals()
 {
@@ -48,23 +27,31 @@ void Dictionaries::reloadExternals()
 		/// for each dictionary defined in xml config
 		for (const auto & key : keys)
 		{
-			if (0 != strncmp(key.data(), "dictionary", strlen("dictionary")))
-			{
-				LOG_WARNING(log, "unknown node in dictionaries file: '" + key + "', 'dictionary'");
-				continue;
-			}
-
-			const auto & prefix = key + '.';
-
-			const auto & name = config->getString(prefix + "name");
-			if (name.empty())
-			{
-				LOG_WARNING(log, "dictionary name cannot be empty");
-				continue;
-			}
-
 			try
 			{
+				if (0 != strncmp(key.data(), "dictionary", strlen("dictionary")))
+				{
+					LOG_WARNING(log, "unknown node in dictionaries file: '" + key + "', 'dictionary'");
+					continue;
+				}
+
+				const auto & prefix = key + '.';
+
+				const auto & name = config->getString(prefix + "name");
+				if (name.empty())
+				{
+					LOG_WARNING(log, "dictionary name cannot be empty");
+					continue;
+				}
+
+				const auto & lifetime_key = prefix + "lifetime";
+				const auto & lifetime_min_key = lifetime_key + ".min";
+				const auto has_min = config->has(lifetime_min_key);
+				const auto min_update_time = has_min ? config->getInt(lifetime_min_key) : config->getInt(lifetime_key);
+				const auto max_update_time = has_min ? config->getInt(lifetime_key + ".max") : min_update_time;
+
+				std::cout << "min_update_time = " << min_update_time << " max_update_time = " << max_update_time << std::endl;
+
 				auto it = external_dictionaries.find(name);
 				if (it == std::end(external_dictionaries))
 				{
@@ -86,7 +73,7 @@ void Dictionaries::reloadExternals()
 					}
 				}
 			}
-			catch (const Exception &)
+			catch (...)
 			{
 				handleException();
 			}
@@ -94,7 +81,6 @@ void Dictionaries::reloadExternals()
 	}
 	else
 	{
-		config_ptr_t<Poco::Util::XMLConfiguration> config;
 		for (auto & dictionary : external_dictionaries)
 		{
 			try
@@ -110,20 +96,11 @@ void Dictionaries::reloadExternals()
 					if (!current->getSource()->isModified())
 						continue;
 
-					/// source has supposedly been modified, load it over again
-					if (!config)
-						config.reset(new Poco::Util::XMLConfiguration{config_path});
-
-					const auto & name = current->getName();
-					const auto & key = findKeyForDictionary(*config, name);
-					if (!key.empty())
-					{
-						auto dict_ptr = DictionaryFactory::instance().create(name, *config, key + '.', context);
-						dictionary.second->set(dict_ptr.release());
-					}
+					auto new_version = current->clone();
+					dictionary.second->set(new_version.release());
 				}
 			}
-			catch (const Exception &)
+			catch (...)
 			{
 				handleException();
 			}

@@ -6,6 +6,9 @@
 namespace DB
 {
 
+class IDictionarySource;
+using DictionarySourcePtr = std::unique_ptr<IDictionarySource>;
+
 class IDictionarySource
 {
 public:
@@ -14,9 +17,9 @@ public:
 	virtual BlockInputStreamPtr loadIds(const std::vector<std::uint64_t> ids) = 0;
 	virtual bool isModified() const = 0;
 
+	virtual DictionarySourcePtr clone() const = 0;
+
 	virtual ~IDictionarySource() = default;
 };
-
-using DictionarySourcePtr = std::unique_ptr<IDictionarySource>;
 
 }
