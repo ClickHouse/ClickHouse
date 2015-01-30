@@ -152,6 +152,7 @@ void ExpressionAnalyzer::analyzeAggregation()
 
 					group_asts.pop_back();
 					i -= 1;
+
 					continue;
 				}
 

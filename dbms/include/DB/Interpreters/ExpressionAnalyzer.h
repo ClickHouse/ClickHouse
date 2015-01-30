@@ -147,7 +147,7 @@ private:
 	  */
 	NamesAndTypesList columns;
 
-	/// Столбцы после ARRAY JOIN и/или агрегации.
+	/// Столбцы после ARRAY JOIN, JOIN и/или агрегации.
 	NamesAndTypesList aggregated_columns;
 
 	/// Таблица, из которой делается запрос.
