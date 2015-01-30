@@ -4,19 +4,12 @@ namespace DB
 {
 
 PartsWithRangesSplitter::PartsWithRangesSplitter(const MergeTreeDataSelectExecutor::RangesInDataParts & input_,
+						UInt64 parallel_replica_offset,
 						size_t granularity_, size_t min_segment_size_, size_t max_segments_count_)
 	: input(input_),
-	current_output_part(nullptr),
-	total_size(0),
 	granularity(granularity_),
 	min_segment_size(min_segment_size_),
-	max_segments_count(max_segments_count_),
-	segment_size(0),
-	range_begin(0),
-	range_end(0),
-	segment_begin(0),
-	segment_end(0),
-	part_index_in_query(0)
+	max_segments_count(max_segments_count_)
 {
 	total_size = 0;
 	for (const auto & part_with_ranges : input)
@@ -27,6 +20,7 @@ PartsWithRangesSplitter::PartsWithRangesSplitter(const MergeTreeDataSelectExecut
 		for (const auto & range : ranges)
 			total_size += range.end - range.begin;
 	}
+	part_index_in_query = parallel_replica_offset * total_size;
 	total_size *= granularity;
 
 	if ((granularity == 0) || (min_segment_size == 0) || (max_segments_count == 0) || (total_size == 0))
@@ -49,7 +43,7 @@ void PartsWithRangesSplitter::init()
 
 	// Вычислить размер сегментов так, чтобы он был кратен granularity
 	segment_size = total_size / std::min(max_segments_count, (total_size / min_segment_size));
-	unsigned int scale = segment_size / granularity;
+	size_t scale = segment_size / granularity;
 	if (segment_size % granularity != 0) {
 		++scale;
 	}
@@ -64,7 +58,7 @@ void PartsWithRangesSplitter::init()
 	output_segments.resize(segments_count);
 
 	input_part = input.begin();
-	part_index_in_query = input_part->part_index_in_query;
+	part_index_in_query += input_part->part_index_in_query;
 
 	/// Инициализируем информацию про первый диапазон.
 	input_range = input_part->ranges.begin();

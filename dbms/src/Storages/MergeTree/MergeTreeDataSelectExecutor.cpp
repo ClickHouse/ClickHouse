@@ -252,7 +252,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	if (parallel_replicas_count > 1)
 	{
 		// Разбиваем массив на не больше, чем N сегментов, где N - количество реплик,
-		PartsWithRangesSplitter splitter(parts_with_ranges, data.index_granularity, data.settings.min_rows_for_seek,
+		PartsWithRangesSplitter splitter(parts_with_ranges, parallel_replica_offset,
+										 data.index_granularity, data.settings.min_rows_for_seek,
 										 parallel_replicas_count);
 		auto segments = splitter.perform();
 
