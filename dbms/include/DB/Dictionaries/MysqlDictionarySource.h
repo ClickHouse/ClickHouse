@@ -22,7 +22,8 @@ public:
 		  pool{*layered_config_ptr, config_prefix},
 		  sample_block{sample_block}, context(context),
 		  table{config.getString(config_prefix + "table")},
-		  load_all_query{composeLoadAllQuery(sample_block, table)}
+		  load_all_query{composeLoadAllQuery(sample_block, table)},
+		  last_modification{getLastModification()}
 	{}
 
 private:
@@ -47,8 +48,29 @@ private:
 		};
 	}
 
-	/// @todo check update_time with SHOW TABLE STATUS LIKE '%table%'
-	bool isModified() const override { return true; }
+	bool isModified() const override { return getLastModification() > last_modification; }
+
+	mysqlxx::DateTime getLastModification() const
+	{
+		const auto Create_time_idx = 11;
+		const auto Update_time_idx = 12;
+
+		try
+		{
+			auto connection = pool.Get();
+			auto query = connection->query("SHOW TABLE STATUS LIKE '%" + table + "%';");
+			auto result = query.use();
+			auto row = result.fetch();
+			const auto & update_time = row[Update_time_idx];
+			return !update_time.isNull() ? update_time.getDateTime() : row[Create_time_idx].getDateTime();
+		}
+		catch (...)
+		{
+			tryLogCurrentException("MysqlDictionarySource");
+		}
+
+		return {};
+	}
 
 	static config_ptr_t<Poco::Util::LayeredConfiguration> getLayeredConfig(Poco::Util::AbstractConfiguration & config)
 	{
@@ -77,11 +99,12 @@ private:
 	}
 
 	const config_ptr_t<Poco::Util::LayeredConfiguration> layered_config_ptr;
-	mysqlxx::Pool pool;
+	mutable mysqlxx::Pool pool;
 	Block sample_block;
 	const Context & context;
 	const std::string table;
 	const std::string load_all_query;
+	mysqlxx::DateTime last_modification;
 };
 
 }
