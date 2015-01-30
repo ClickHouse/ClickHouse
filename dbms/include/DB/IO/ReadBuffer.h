@@ -144,9 +144,9 @@ public:
 	}
 
 	/** Проверить, есть ли данные в буфере для чтения. */
-	bool hasPendingData()
+	bool hasPendingData() const
 	{
-		return offset() != buffer().size();
+		return offset() != working_buffer.size();
 	}
 
 private:
