@@ -22,8 +22,23 @@ SetOrJoinBlockOutputStream::SetOrJoinBlockOutputStream(StorageSetOrJoinBase & ta
 
 void SetOrJoinBlockOutputStream::write(const Block & block)
 {
-	table.insertBlock(block);
-	backup_stream.write(block);
+	/// Сортируем столбцы в блоке. Это нужно, так как Set и Join рассчитывают на одинаковый порядок столбцов в разных блоках.
+
+	size_t columns = block.columns();
+	std::vector<std::string> names(columns);
+
+	for (size_t i = 0; i < columns; ++i)
+		names[i] = block.unsafeGetByPosition(i).name;
+
+	std::sort(names.begin(), names.end());
+
+	Block sorted_block;
+
+	for (const auto & name : names)
+		sorted_block.insert(block.getByName(name));		/// NOTE Можно чуть-чуть оптимальнее.
+
+	table.insertBlock(sorted_block);
+	backup_stream.write(sorted_block);
 }
 
 void SetOrJoinBlockOutputStream::writeSuffix()
