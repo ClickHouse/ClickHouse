@@ -536,7 +536,7 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 		key_columns[i] = block.getByPosition(keys[i]).column;
 
 		if (key_columns[i]->isConst())
-			throw Exception("Constants is not allowed as GROUP BY keys"
+			throw Exception("Constants are not allowed as GROUP BY keys"
 				" (but all of them must be eliminated in ExpressionAnalyzer)", ErrorCodes::ILLEGAL_COLUMN);
 	}
 
@@ -550,7 +550,7 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 				* Поэтому, стобцы-константы не разрешены в качестве аргументов агрегатных функций.
 				*/
 			if (aggregate_columns[i][j]->isConst())
-				throw Exception("Constants is not allowed as arguments of aggregate functions", ErrorCodes::ILLEGAL_COLUMN);
+				throw Exception("Constants are not allowed as arguments of aggregate functions", ErrorCodes::ILLEGAL_COLUMN);
 		}
 	}
 
