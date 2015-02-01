@@ -454,12 +454,12 @@ void InterpreterSelectQuery::executeSingleQuery()
 			settings.limits.max_rows_to_group_by &&
 			settings.limits.group_by_overflow_mode == OverflowMode::ANY &&
 			settings.totals_mode != TotalsMode::AFTER_HAVING_EXCLUSIVE;
+
 		/// Нужно ли после агрегации сразу финализировать агрегатные функции.
 		bool aggregate_final =
 			need_aggregate &&
 			to_stage > QueryProcessingStage::WithMergeableState &&
 			!query.group_by_with_totals;
-
 
 		if (need_aggregate || has_order_by)
 			do_execute_union = true;
@@ -769,10 +769,6 @@ void InterpreterSelectQuery::executeAggregation(BlockInputStreams & streams, Exp
 
 void InterpreterSelectQuery::executeMergeAggregated(BlockInputStreams & streams, bool overflow_row, bool final)
 {
-	/// Если объединять нечего
-	if (streams.size() == 1)
-		return;
-
 	/// Склеим несколько источников в один
 	executeUnion(streams);
 
