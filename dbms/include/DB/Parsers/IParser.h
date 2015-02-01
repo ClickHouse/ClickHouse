@@ -41,7 +41,7 @@ public:
 		ASTPtr ignore_node;
 		return parse(pos, end, ignore_node, expected);
 	}
-	
+
 	bool ignore(Pos & pos, Pos end)
 	{
 		Expected expected;
@@ -100,10 +100,10 @@ inline std::string getSyntaxErrorMessage(
 {
 	std::stringstream message;
 
-	message << "Syntax error ";
+	message << "Syntax error";
 
 	if (!description.empty())
-		message << "(" << description << ")";
+		message << " (" << description << ")";
 
 	message << ": failed at position " << (pos - begin + 1);
 
