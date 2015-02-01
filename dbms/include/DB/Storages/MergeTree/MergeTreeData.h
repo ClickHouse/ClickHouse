@@ -594,6 +594,10 @@ public:
 		/// Если не был вызван commit(), удаляет временные файлы, отменяя ALTER куска.
 		~AlterDataPartTransaction();
 
+		/// Посмотреть изменения перед коммитом.
+		const NamesAndTypesList & getNewColumns() const { return new_columns; }
+		const DataPart::Checksums & getNewChecksums() const { return new_checksums; }
+
 	private:
 		friend class MergeTreeData;
 
