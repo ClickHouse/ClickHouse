@@ -6,9 +6,9 @@
 #include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/DataTypes/DataTypeString.h>
 
-
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnString.h>
+#include <DB/Columns/ColumnTuple.h>
 
 #include <DB/Functions/IFunction.h>
 #include <DB/Common/HashTable/HashMap.h>
@@ -598,6 +598,60 @@ private:
 
 		return true;
 	}
+
+	/** Для массива кортежей функция вычисляется покомпонентно - для каждого элемента кортежа.
+	  */
+	bool executeTuple(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		ColumnArray * col_array = typeid_cast<ColumnArray *>(&*block.getByPosition(arguments[0]).column);
+
+		if (!col_array)
+			return false;
+
+		ColumnTuple * col_nested = typeid_cast<ColumnTuple *>(&col_array->getData());
+
+		if (!col_nested)
+			return false;
+
+		Block & tuple_block = col_nested->getData();
+		size_t tuple_size = tuple_block.columns();
+
+		/** Будем вычислять функцию для кортежа внутренностей массива.
+		  * Для этого создадим временный блок.
+		  * Он будет состоять из следующих столбцов:
+		  * - индекс массива, который нужно взять;
+		  * - массив из первых элементов кортежей;
+		  * - результат взятия элементов по индексу для массива из первых элементов кортежей;
+		  * - массив из вторых элементов кортежей;
+		  * - результат взятия элементов по индексу для массива из вторых элементов кортежей;
+		  * ...
+		  */
+		Block block_of_temporary_results;
+		block_of_temporary_results.insert(block.getByPosition(arguments[1]));
+
+		/// результаты взятия элементов по индексу для массивов из каждых элементов кортежей;
+		Block result_tuple_block;
+
+		for (size_t i = 0; i < tuple_size; ++i)
+		{
+			ColumnWithNameAndType array_of_tuple_section;
+			array_of_tuple_section.column = new ColumnArray(tuple_block.getByPosition(i).column, col_array->getOffsetsColumn());
+			array_of_tuple_section.type = new DataTypeArray(tuple_block.getByPosition(i).type);
+			block_of_temporary_results.insert(array_of_tuple_section);
+
+			ColumnWithNameAndType array_elements_of_tuple_section;
+			block_of_temporary_results.insert(array_elements_of_tuple_section);
+
+			execute(block_of_temporary_results, ColumnNumbers{i * 2 + 1, 0}, i * 2 + 2);
+
+			result_tuple_block.insert(block_of_temporary_results.getByPosition(i * 2 + 2));
+		}
+
+		ColumnTuple * col_res = new ColumnTuple(result_tuple_block);
+		block.getByPosition(result).column = col_res;
+
+		return true;
+	}
 public:
 	/// Получить имя функции.
 	String getName() const
@@ -627,7 +681,10 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (!block.getByPosition(arguments[1]).column->isConst())
+		if (executeTuple(block, arguments, result))
+		{
+		}
+		else if (!block.getByPosition(arguments[1]).column->isConst())
 		{
 			if (!(	executeArgument<UInt8>	(block, arguments, result)
 				||	executeArgument<UInt16>	(block, arguments, result)
