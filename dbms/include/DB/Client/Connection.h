@@ -52,9 +52,8 @@ public:
 		:
 		host(host_), port(port_), default_database(default_database_),
 		user(user_), password(password_),
-		client_name(client_name_), connected(false),
-		server_version_major(0), server_version_minor(0), server_revision(0),
-		query_id(""), compression(compression_), data_type_factory(data_type_factory_),
+		client_name(client_name_),
+		compression(compression_), data_type_factory(data_type_factory_),
 		connect_timeout(connect_timeout_), receive_timeout(receive_timeout_), send_timeout(send_timeout_),
 		log_wrapper(host, port)
 	{
@@ -139,12 +138,12 @@ private:
 
 	String client_name;
 
-	bool connected;
+	bool connected = false;
 
 	String server_name;
-	UInt64 server_version_major;
-	UInt64 server_version_minor;
-	UInt64 server_revision;
+	UInt64 server_version_major = 0;
+	UInt64 server_version_minor = 0;
+	UInt64 server_revision = 0;
 
 	Poco::Net::StreamSocket socket;
 	SharedPtr<ReadBuffer> in;
