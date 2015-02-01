@@ -26,7 +26,7 @@
 int main(int argc, char ** argv)
 {
 	using namespace DB;
-	
+
 	try
 	{
 		ParserSelectQuery parser;
@@ -64,8 +64,8 @@ int main(int argc, char ** argv)
 		columns.push_back(NameAndTypePair("s1", new DataTypeString));
 		columns.push_back(NameAndTypePair("s2", new DataTypeString));
 		context.setColumns(columns);
-		
-		ExpressionAnalyzer analyzer(ast, context);
+
+		ExpressionAnalyzer analyzer(ast, context, context.getColumns());
 		ExpressionActionsChain chain;
 		analyzer.appendSelect(chain, false);
 		analyzer.appendProjectResult(chain, false);
@@ -75,7 +75,7 @@ int main(int argc, char ** argv)
 		size_t n = argc == 2 ? atoi(argv[1]) : 10;
 
 		Block block;
-		
+
 		ColumnWithNameAndType column_x;
 		column_x.name = "x";
 		column_x.type = new DataTypeInt16;
@@ -123,7 +123,7 @@ int main(int argc, char ** argv)
 				<< ", " << n * 1000000 / stopwatch.elapsed() << " rows/sec."
 				<< std::endl;
 		}
-		
+
 		OneBlockInputStream * is = new OneBlockInputStream(block);
 		LimitBlockInputStream lis(is, 20, std::max(0, static_cast<int>(n) - 20));
 		WriteBufferFromOStream out_buf(std::cout);

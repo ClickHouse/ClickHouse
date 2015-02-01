@@ -125,7 +125,7 @@ int main(int argc, char ** argv)
 
 		/// читаем из неё, применяем выражение, фильтруем, и пишем в tsv виде в консоль
 
-		ExpressionAnalyzer analyzer(ast, context);
+		ExpressionAnalyzer analyzer(ast, context, context.getColumns());
 		ExpressionActionsChain chain;
 		analyzer.appendSelect(chain, false);
 		analyzer.appendWhere(chain, false);

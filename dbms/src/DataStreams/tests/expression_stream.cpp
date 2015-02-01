@@ -50,13 +50,13 @@ int main(int argc, char ** argv)
 		Context context;
 		context.getColumns().push_back(NameAndTypePair("number", new DataTypeUInt64));
 
-		ExpressionAnalyzer analyzer(ast, context);
+		ExpressionAnalyzer analyzer(ast, context, context.getColumns());
 		ExpressionActionsChain chain;
 		analyzer.appendSelect(chain, false);
 		analyzer.appendProjectResult(chain, false);
 		chain.finalize();
 		ExpressionActionsPtr expression = chain.getLastActions();
-		
+
 		StoragePtr table = StorageSystemNumbers::create("Numbers");
 
 		Names column_names;
@@ -68,7 +68,7 @@ int main(int argc, char ** argv)
 		in = table->read(column_names, 0, context, Settings(), stage)[0];
 		in = new ExpressionBlockInputStream(in, expression);
 		in = new LimitBlockInputStream(in, 10, std::max(static_cast<Int64>(0), static_cast<Int64>(n) - 10));
-		
+
 		WriteBufferFromOStream out1(std::cout);
 		RowOutputStreamPtr out2 = new TabSeparatedRowOutputStream(out1, expression->getSampleBlock());
 		BlockOutputStreamFromRowOutputStream out(out2);
