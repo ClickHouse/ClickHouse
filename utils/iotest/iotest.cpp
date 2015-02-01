@@ -63,7 +63,6 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
 	try
 	{
 		AlignedBuffer direct_buf(block_size);
-
 		std::vector<char> simple_buf(block_size);
 
 		char * buf;
@@ -86,15 +85,6 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
 			lrand48_r(&rand_data, &rand_result1);
 			lrand48_r(&rand_data, &rand_result2);
 			lrand48_r(&rand_data, &rand_result3);
-
-			for (size_t j = 0; j + 3 < block_size; j += 3)
-			{
-				long r;
-				lrand48_r(&rand_data, &r);
-				buf[j    ] = static_cast<char>((r >>  0) & 255);
-				buf[j + 1] = static_cast<char>((r >>  8) & 255);
-				buf[j + 2] = static_cast<char>((r >> 16) & 255);
-			}
 
 			size_t rand_result = rand_result1 ^ (rand_result2 << 22) ^ (rand_result3 << 43);
 			size_t offset;

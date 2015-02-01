@@ -156,15 +156,6 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
 
 				char * buf = buffers[i].data;
 
-				for (size_t j = 0; j + 3 < block_size; j += 3)
-				{
-					long r;
-					lrand48_r(&rand_data, &r);
-					buf[j    ] = static_cast<char>((r >>  0) & 255);
-					buf[j + 1] = static_cast<char>((r >>  8) & 255);
-					buf[j + 2] = static_cast<char>((r >> 16) & 255);
-				}
-
 				long rand_result1 = 0;
 				long rand_result2 = 0;
 				long rand_result3 = 0;
