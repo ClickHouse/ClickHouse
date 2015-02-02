@@ -371,10 +371,6 @@ std::string QueryConverter::convertCondition(
 		return "SEIn(toUInt8(" + value + "), toUInt8(" + constant + "))";
 	if (name == "se_not_in")
 		return "NOT SEIn(toUInt8(" + value + "), toUInt8(" + constant + "))";
-	if (name == "category_in")
-		return "categoryIn(" + value + ", " + constant + ")";
-	if (name == "category_not_in")
-		return "NOT categoryIn(" + value + ", " + constant + ")";
 	if (name == "interest_has_all_from")
 		return "bitwiseAnd(" + value + ", " + constant + ") == " + constant;
 	if (name == "interest_not_has_all_from")
