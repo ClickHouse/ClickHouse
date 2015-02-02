@@ -8,7 +8,6 @@
 #include <Yandex/logger_useful.h>
 #include <statdaemons/RegionsHierarchies.h>
 #include <statdaemons/TechDataHierarchy.h>
-#include <statdaemons/CategoriesHierarchy.h>
 #include <statdaemons/RegionsNames.h>
 
 
@@ -24,7 +23,6 @@ class Dictionaries
 private:
 	MultiVersion<RegionsHierarchies> regions_hierarchies;
 	MultiVersion<TechDataHierarchy> tech_data_hierarchy;
-	MultiVersion<CategoriesHierarchy> categories_hierarchy;
 	MultiVersion<RegionsNames> regions_names;
 
 	/// Периодичность обновления справочников, в секундах.
@@ -94,18 +92,6 @@ private:
 
 		try
 		{
-			MultiVersion<CategoriesHierarchy>::Version new_categories_hierarchy = new CategoriesHierarchy;
-			new_categories_hierarchy->reload();
-			categories_hierarchy.set(new_categories_hierarchy);
-		}
-		catch (...)
-		{
-			handleException();
-			was_exception = true;
-		}
-
-		try
-		{
 			MultiVersion<RegionsNames>::Version new_regions_names = new RegionsNames;
 			new_regions_names->reload();
 			regions_names.set(new_regions_names);
@@ -156,11 +142,6 @@ public:
 	MultiVersion<TechDataHierarchy>::Version getTechDataHierarchy() const
 	{
 		return tech_data_hierarchy.get();
-	}
-
-	MultiVersion<CategoriesHierarchy>::Version getCategoriesHierarchy() const
-	{
-		return categories_hierarchy.get();
 	}
 
 	MultiVersion<RegionsNames>::Version getRegionsNames() const

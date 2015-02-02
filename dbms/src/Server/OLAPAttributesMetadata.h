@@ -602,13 +602,6 @@ typedef AttributeHashBase UTMTermHash;
 typedef AttributeHashBase FromHash;
 typedef AttributeUIntBase CLID;
 typedef AttributeUIntBase SocialSourceNetworkID;
-typedef AttributeUIntBase URLCategoryID;
-typedef AttributeUIntBase URLCategoryMostAncestor;
-typedef AttributeUIntBase URLCategorySecondLevel;
-typedef AttributeUIntBase URLRegionID;
-typedef AttributeUIntBase URLRegionCity;
-typedef AttributeUIntBase URLRegionArea;
-typedef AttributeUIntBase URLRegionCountry;
 
 
 /** Информация о типах атрибутов */
@@ -791,13 +784,6 @@ inline AttributeMetadatas GetOLAPAttributeMetadata()
 
 		{"SocialSourceNetworkID",	new SocialSourceNetworkID},
 
-		{"URLCategoryID",			new URLCategoryID},
-		{"URLCategoryMostAncestor",	new URLCategoryMostAncestor},
-		{"URLCategorySecondLevel",	new URLCategorySecondLevel},
-		{"URLRegionID",				new URLRegionID},
-		{"URLRegionCity", 			new URLRegionCity},
-		{"URLRegionArea", 			new URLRegionArea},
-		{"URLRegionCountry",		new URLRegionCountry},
 		{"CorrectedTraficSourceID",	new CorrectedTraficSourceID},
 		{"CorrectedSearchEngineID", new CorrectedSearchEngineID},
 	};

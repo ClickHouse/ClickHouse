@@ -11,7 +11,6 @@
 #include <DB/Interpreters/Context.h>
 
 #include <DB/Functions/IFunction.h>
-#include <statdaemons/CategoriesHierarchy.h>
 
 
 namespace DB
@@ -24,17 +23,15 @@ namespace DB
   *  regionToCity, regionToArea, regionToCountry,
   *  OSToRoot,
   *  SEToRoot,
-  *  categoryToRoot,
-  *  categoryToSecondLevel
   *
   * Преобразовать значения в столбце
   *  regionToName
   *
   * Является ли первый идентификатор потомком второго.
-  *  regionIn, SEIn, OSIn, categoryIn.
+  *  regionIn, SEIn, OSIn.
   *
   * Получить массив идентификаторов регионов, состоящий из исходного и цепочки родителей. Порядок implementation defined.
-  *  regionHierarchy, OSHierarchy, SEHierarchy, categoryHierarchy.
+  *  regionHierarchy, OSHierarchy, SEHierarchy.
   */
 
 
@@ -78,16 +75,6 @@ struct SEToRootImpl
 	static UInt8 apply(UInt8 x, const TechDataHierarchy & hierarchy) { return hierarchy.SEToMostAncestor(x); }
 };
 
-struct CategoryToRootImpl
-{
-	static UInt16 apply(UInt16 x, const CategoriesHierarchy & hierarchy) { return hierarchy.toMostAncestor(x); }
-};
-
-struct CategoryToSecondLevelImpl
-{
-	static UInt16 apply(UInt16 x, const CategoriesHierarchy & hierarchy) { return hierarchy.toSecondLevel(x); }
-};
-
 struct RegionInImpl
 {
 	static bool apply(UInt32 x, UInt32 y, const RegionsHierarchy & hierarchy) { return hierarchy.in(x, y); }
@@ -103,11 +90,6 @@ struct SEInImpl
 	static bool apply(UInt32 x, UInt32 y, const TechDataHierarchy & hierarchy) { return hierarchy.isSEIn(x, y); }
 };
 
-struct CategoryInImpl
-{
-	static bool apply(UInt16 x, UInt16 y, const CategoriesHierarchy & hierarchy) { return hierarchy.in(x, y); }
-};
-
 struct RegionHierarchyImpl
 {
 	static UInt32 toParent(UInt32 x, const RegionsHierarchy & hierarchy) { return hierarchy.toParent(x); }
@@ -121,11 +103,6 @@ struct OSHierarchyImpl
 struct SEHierarchyImpl
 {
 	static UInt8 toParent(UInt8 x, const TechDataHierarchy & hierarchy) { return hierarchy.SEToParent(x); }
-};
-
-struct CategoryHierarchyImpl
-{
-	static UInt16 toParent(UInt16 x, const CategoriesHierarchy & hierarchy) { return hierarchy.toParent(x); }
 };
 
 
@@ -508,18 +485,14 @@ struct NameRegionToContinent		{ static constexpr auto name = "regionToContient";
 struct NameRegionToPopulation		{ static constexpr auto name = "regionToPopulation"; };
 struct NameOSToRoot					{ static constexpr auto name = "OSToRoot"; };
 struct NameSEToRoot					{ static constexpr auto name = "SEToRoot"; };
-struct NameCategoryToRoot			{ static constexpr auto name = "categoryToRoot"; };
-struct NameCategoryToSecondLevel	{ static constexpr auto name = "categoryToSecondLevel"; };
 
 struct NameRegionIn					{ static constexpr auto name = "regionIn"; };
 struct NameOSIn						{ static constexpr auto name = "OSIn"; };
 struct NameSEIn						{ static constexpr auto name = "SEIn"; };
-struct NameCategoryIn				{ static constexpr auto name = "categoryIn"; };
 
 struct NameRegionHierarchy			{ static constexpr auto name = "regionHierarchy"; };
 struct NameOSHierarchy				{ static constexpr auto name = "OSHierarchy"; };
 struct NameSEHierarchy				{ static constexpr auto name = "SEHierarchy"; };
-struct NameCategoryHierarchy		{ static constexpr auto name = "categoryHierarchy"; };
 
 
 struct FunctionRegionToCity :
@@ -594,24 +567,6 @@ struct FunctionSEToRoot :
 	}
 };
 
-struct FunctionCategoryToRoot :
-	public FunctionTransformWithDictionary<UInt16, CategoryToRootImpl, IdentityDictionaryGetter<CategoriesHierarchy>, NameCategoryToRoot>
-{
-	static IFunction * create(const Context & context)
-	{
-		return new base_type{context.getDictionaries().getCategoriesHierarchy()};
-	}
-};
-
-struct FunctionCategoryToSecondLevel :
-	public FunctionTransformWithDictionary<UInt16, CategoryToSecondLevelImpl, IdentityDictionaryGetter<CategoriesHierarchy>, NameCategoryToSecondLevel>
-{
-	static IFunction * create(const Context & context)
-	{
-		return new base_type{context.getDictionaries().getCategoriesHierarchy()};
-	}
-};
-
 struct FunctionRegionIn :
 	public FunctionIsInWithDictionary<UInt32, RegionInImpl, RegionsHierarchyGetter,	NameRegionIn>
 {
@@ -639,15 +594,6 @@ struct FunctionSEIn :
 	}
 };
 
-struct FunctionCategoryIn :
-	public FunctionIsInWithDictionary<UInt16, CategoryInImpl, IdentityDictionaryGetter<CategoriesHierarchy>, NameCategoryIn>
-{
-	static IFunction * create(const Context & context)
-	{
-		return new base_type{context.getDictionaries().getCategoriesHierarchy()};
-	}
-};
-
 struct FunctionRegionHierarchy :
 	public FunctionHierarchyWithDictionary<UInt32, RegionHierarchyImpl, RegionsHierarchyGetter, NameRegionHierarchy>
 {
@@ -672,15 +618,6 @@ struct FunctionSEHierarchy :
 	static IFunction * create(const Context & context)
 	{
 		return new base_type{context.getDictionaries().getTechDataHierarchy()};
-	}
-};
-
-struct FunctionCategoryHierarchy :
-	public FunctionHierarchyWithDictionary<UInt16, CategoryHierarchyImpl, IdentityDictionaryGetter<CategoriesHierarchy>, NameCategoryHierarchy>
-{
-	static IFunction * create(const Context & context)
-	{
-		return new base_type{context.getDictionaries().getCategoriesHierarchy()};
 	}
 };
 
