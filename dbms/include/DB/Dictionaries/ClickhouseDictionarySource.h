@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DB/Dictionaries/IDictionarySource.h>
-#include <DB/Interpreters/Context.h>
 #include <DB/Client/ConnectionPool.h>
 #include <DB/DataStreams/RemoteBlockInputStream.h>
 #include <DB/Interpreters/InterpreterSelectQuery.h>
@@ -21,14 +20,14 @@ class ClickhouseDictionarySource final : public IDictionarySource
 
 public:
 	ClickhouseDictionarySource(Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
-		Block & sample_block, const Context & context)
+		Block & sample_block, Context & context)
 		: host{config.getString(config_prefix + "host")},
 		  port(config.getInt(config_prefix + "port")),
 		  user{config.getString(config_prefix + "user", "")},
 		  password{config.getString(config_prefix + "password", "")},
 		  db{config.getString(config_prefix + "db", "")},
 		  table{config.getString(config_prefix + "table")},
-		  sample_block{sample_block}, context{context},
+		  sample_block{sample_block}, context(context),
 		  is_local{isLocal(host, port)},
 		  pool{is_local ? nullptr : ext::make_unique<ConnectionPool>(
 			  max_connections, host, port, db, user, password, context.getDataTypeFactory(),
@@ -40,7 +39,7 @@ public:
 	ClickhouseDictionarySource(const ClickhouseDictionarySource & other)
 		: host{other.host}, port{other.port}, user{other.user}, password{other.password},
 		  db{other.db}, table{other.db},
-		  sample_block{other.sample_block}, context{other.context},
+		  sample_block{other.sample_block}, context(other.context),
 		  is_local{other.is_local},
 		  pool{is_local ? nullptr : ext::make_unique<ConnectionPool>(
 			  max_connections, host, port, db, user, password, context.getDataTypeFactory(),
@@ -119,7 +118,7 @@ private:
 	const std::string db;
 	const std::string table;
 	Block sample_block;
-	Context context;
+	Context & context;
 	const bool is_local;
 	std::unique_ptr<ConnectionPool> pool;
 	const std::string load_all_query;

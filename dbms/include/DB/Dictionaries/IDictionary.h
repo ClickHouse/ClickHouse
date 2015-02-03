@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DB/Core/Field.h>
+#include <DB/Core/StringRef.h>
 #include <memory>
 #include <Poco/Util/XMLConfiguration.h>
 

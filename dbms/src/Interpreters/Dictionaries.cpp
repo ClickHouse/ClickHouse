@@ -1,5 +1,7 @@
 #include <DB/Interpreters/Dictionaries.h>
 #include <DB/Dictionaries/DictionaryFactory.h>
+#include <DB/Dictionaries/DictionaryStructure.h>
+#include <DB/Dictionaries/IDictionarySource.h>
 #include <DB/Dictionaries/config_ptr_t.h>
 
 namespace DB

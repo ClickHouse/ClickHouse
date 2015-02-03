@@ -15,8 +15,6 @@
 #include <statdaemons/CategoriesHierarchy.h>
 #include <statdaemons/RegionsNames.h>
 
-#include <DB/Dictionaries/IDictionary.h>
-
 
 namespace DB
 {
@@ -24,6 +22,7 @@ namespace DB
 using Poco::SharedPtr;
 
 class Context;
+class IDictionary;
 
 /// Словари Метрики, которые могут использоваться в функциях.
 
@@ -39,7 +38,7 @@ private:
 	std::unordered_map<std::string, std::chrono::system_clock::time_point> update_times;
 	std::mt19937 rnd_engine;
 
-	const Context & context;
+	Context & context;
 	/// Периодичность обновления справочников, в секундах.
 	int reload_period;
 
@@ -165,7 +164,7 @@ private:
 
 public:
 	/// Справочники будут обновляться в отдельном потоке, каждые reload_period секунд.
-	Dictionaries(const Context & context, int reload_period_ = 3600)
+	Dictionaries(Context & context, int reload_period_ = 3600)
 		: context(context), reload_period(reload_period_),
 		log(&Logger::get("Dictionaries"))
 	{

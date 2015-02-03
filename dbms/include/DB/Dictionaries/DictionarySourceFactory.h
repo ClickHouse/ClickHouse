@@ -44,7 +44,7 @@ public:
 	DictionarySourcePtr create(Poco::Util::AbstractConfiguration & config,
 		const std::string & config_prefix,
 		const DictionaryStructure & dict_struct,
-		const Context & context) const
+		Context & context) const
 	{
 		auto sample_block = createSampleBlock(dict_struct, context);
 
@@ -60,8 +60,8 @@ public:
 		}
 		else if (config.has(config_prefix + "clickhouse"))
 		{
-			return ext::make_unique<ClickhouseDictionarySource>(config, config_prefix + "clickhouse.",
-				sample_block, context);
+			return nullptr;//ext::make_unique<ClickhouseDictionarySource>(config, config_prefix + "clickhouse.",
+				//sample_block, context);
 		}
 
 		throw Exception{"unsupported source type"};
