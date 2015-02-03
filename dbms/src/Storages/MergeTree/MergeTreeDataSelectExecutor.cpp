@@ -10,6 +10,7 @@
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Common/VirtualColumnUtils.h>
 
+
 namespace DB
 {
 

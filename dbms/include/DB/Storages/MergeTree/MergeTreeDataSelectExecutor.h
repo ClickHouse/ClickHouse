@@ -27,7 +27,11 @@ public:
 		unsigned threads = 1,
 		size_t * inout_part_index = nullptr);
 
-public:
+private:
+	MergeTreeData & data;
+
+	Logger * log;
+
 	struct RangesInDataPart
 	{
 		MergeTreeData::DataPartPtr data_part;
@@ -43,11 +47,6 @@ public:
 	};
 
 	typedef std::vector<RangesInDataPart> RangesInDataParts;
-
-private:
-	MergeTreeData & data;
-
-	Logger * log;
 
 	size_t min_marks_for_seek;
 	size_t min_marks_for_concurrent_read;
