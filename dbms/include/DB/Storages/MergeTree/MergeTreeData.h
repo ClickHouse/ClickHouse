@@ -405,8 +405,13 @@ public:
 		{
 			/// Размер - в количестве засечек.
 			if (!size)
+			{
+				if (columns.empty())
+					throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
+
 				size = Poco::File(storage.full_path + name + "/" + escapeForFileName(columns.front().name) + ".mrk")
 					.getSize() / MERGE_TREE_MARK_SIZE;
+			}
 
 			size_t key_size = storage.sort_descr.size();
 			index.resize(key_size * size);
@@ -455,6 +460,9 @@ public:
 					if (Poco::File(storage.full_path + name + "/" + escapeForFileName(column.name) + ".bin").exists())
 						columns.push_back(column);
 				}
+
+				if (columns.empty())
+					throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 
 				{
 					WriteBufferFromFile out(path + ".tmp", 4096);
