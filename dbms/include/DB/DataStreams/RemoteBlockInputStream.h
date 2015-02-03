@@ -278,6 +278,7 @@ protected:
 			switch (packet.type)
 			{
 				case Protocol::Server::EndOfStream:
+					finished = true;
 					break;
 
 				case Protocol::Server::Exception:
@@ -306,6 +307,7 @@ protected:
 						break;
 
 					case Protocol::Server::EndOfStream:
+						finished = true;
 						return;
 
 					case Protocol::Server::Exception:
@@ -318,8 +320,6 @@ protected:
 				}
 			}
 		}
-
-		finished = true;
 	}
 
 private:
