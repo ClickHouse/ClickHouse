@@ -319,10 +319,10 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 		select_query->children.push_back(select_query->join);
 	if (select_query->sample_size)
 		select_query->children.push_back(select_query->sample_size);
-	if (select_query->where_expression)
-		select_query->children.push_back(select_query->where_expression);
 	if (select_query->prewhere_expression)
 		select_query->children.push_back(select_query->prewhere_expression);
+	if (select_query->where_expression)
+		select_query->children.push_back(select_query->where_expression);
 	if (select_query->group_expression_list)
 		select_query->children.push_back(select_query->group_expression_list);
 	if (select_query->having_expression)
