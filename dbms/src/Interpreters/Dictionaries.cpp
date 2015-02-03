@@ -46,6 +46,14 @@ void Dictionaries::reloadExternals()
 				}
 
 				auto dict_ptr = DictionaryFactory::instance().create(name, *config, prefix, context);
+				if (!dict_ptr->isCached())
+				{
+					const auto & lifetime = dict_ptr->getLifetime();
+					std::uniform_int_distribution<std::uint64_t> distribution{lifetime.min_sec, lifetime.max_sec};
+					update_times[name] = std::chrono::system_clock::now() +
+						std::chrono::seconds{distribution(rnd_engine)};
+				}
+
 				auto it = external_dictionaries.find(name);
 				/// add new dictionary or update an existing version
 				if (it == std::end(external_dictionaries))
@@ -67,16 +75,27 @@ void Dictionaries::reloadExternals()
 			try
 			{
 				auto current = dictionary.second->get();
-				if (current->isCached())
-					const_cast<IDictionary *>(current.get())->reload();
-				else
+				/// update only non-cached dictionaries
+				if (!current->isCached())
 				{
-					/// @todo check that timeout has passed and load new version
-					if (!current->getSource()->isModified())
+					auto & update_time = update_times[current->getName()];
+
+					/// check that timeout has passed
+					if (std::chrono::system_clock::now() < update_time)
 						continue;
 
-					auto new_version = current->clone();
-					dictionary.second->set(new_version.release());
+					/// check source modified
+					if (current->getSource()->isModified())
+					{
+						/// create new version of dictionary
+						auto new_version = current->clone();
+						dictionary.second->set(new_version.release());
+					}
+
+					/// calculate next update time
+					const auto & lifetime = current->getLifetime();
+					std::uniform_int_distribution<std::uint64_t> distribution{lifetime.min_sec, lifetime.max_sec};
+					update_time = std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
 				}
 			}
 			catch (...)

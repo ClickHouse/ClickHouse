@@ -3,6 +3,8 @@
 #include <mutex>
 #include <thread>
 #include <unordered_map>
+#include <chrono>
+#include <random>
 
 #include <Poco/SharedPtr.h>
 
@@ -33,6 +35,8 @@ private:
 	MultiVersion<CategoriesHierarchy> categories_hierarchy;
 	MultiVersion<RegionsNames> regions_names;
 	std::unordered_map<std::string, std::shared_ptr<MultiVersion<IDictionary>>> external_dictionaries;
+	std::unordered_map<std::string, std::chrono::system_clock::time_point> update_times;
+	std::mt19937 rnd_engine;
 
 	const Context & context;
 	/// Периодичность обновления справочников, в секундах.
@@ -149,7 +153,7 @@ private:
 
 	void reloadExternalsPeriodically()
 	{
-		const auto check_period = 60 * 1000;
+		const auto check_period = 5 * 1000;
 		while (true)
 		{
 			if (destroy.tryWait(check_period))
