@@ -20,11 +20,11 @@ namespace DB
   *
   * Замечание: если один из вложенных пулов заблокируется из-за переполнения, то этот пул тоже заблокируется.
   */
-class ConnectionPoolWithFailover : public PoolWithFailoverBase<IConnectionPool, Settings*>, public IConnectionPool
+class ConnectionPoolWithFailover : public PoolWithFailoverBase<IConnectionPool, Settings *>, public IConnectionPool
 {
 public:
 	typedef IConnectionPool::Entry Entry;
-	typedef PoolWithFailoverBase<IConnectionPool, Settings*> Base;
+	typedef PoolWithFailoverBase<IConnectionPool, Settings *> Base;
 
 	ConnectionPoolWithFailover(ConnectionPools & nested_pools_,
 		LoadBalancing load_balancing,
@@ -53,23 +53,17 @@ public:
 	/** Выделяет соединение для работы. */
 	Entry get(Settings * settings = nullptr) override
 	{
-		LoadBalancing load_balancing = default_load_balancing;
-		if (settings)
-			load_balancing = settings->load_balancing;
-
-		for (size_t i = 0; i < nested_pools.size(); ++i)
-		{
-			if (load_balancing == LoadBalancing::NEAREST_HOSTNAME)
-				nested_pools[i].priority = hostname_differences[i];
-			else if (load_balancing == LoadBalancing::RANDOM)
-				nested_pools[i].priority = 0;
-			else if (load_balancing == LoadBalancing::IN_ORDER)
-				nested_pools[i].priority = i;
-			else
-				throw Exception("Unknown load_balancing_mode: " + toString(static_cast<int>(load_balancing)), ErrorCodes::LOGICAL_ERROR);
-		}
-
+		applyLoadBalancing(settings);
 		return Base::get(settings);
+	}
+
+	/** Выделяет до указанного количества соединений для работы.
+	  * Соединения предоставляют доступ к разным репликам одного шарда.
+	  */
+	std::vector<Entry> getMany(Settings * settings = nullptr) override
+	{
+		applyLoadBalancing(settings);
+		return Base::getMany(settings);
 	}
 
 protected:
@@ -94,6 +88,25 @@ protected:
 private:
 	std::vector<size_t> hostname_differences; /// Расстояния от имени этого хоста до имен хостов пулов.
 	LoadBalancing default_load_balancing;
+
+	void applyLoadBalancing(Settings * settings)
+	{
+		LoadBalancing load_balancing = default_load_balancing;
+		if (settings)
+			load_balancing = settings->load_balancing;
+
+		for (size_t i = 0; i < nested_pools.size(); ++i)
+		{
+			if (load_balancing == LoadBalancing::NEAREST_HOSTNAME)
+				nested_pools[i].priority = hostname_differences[i];
+			else if (load_balancing == LoadBalancing::RANDOM)
+				nested_pools[i].priority = 0;
+			else if (load_balancing == LoadBalancing::IN_ORDER)
+				nested_pools[i].priority = i;
+			else
+				throw Exception("Unknown load_balancing_mode: " + toString(static_cast<int>(load_balancing)), ErrorCodes::LOGICAL_ERROR);
+		}
+	}
 };
 
 

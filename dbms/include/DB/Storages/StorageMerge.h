@@ -42,6 +42,8 @@ public:
 	/// Проверка откладывается до метода read. Там проверяется поддержка PREWHERE у использующихся таблиц.
 	bool supportsPrewhere() const override { return true; }
 
+	bool supportsParallelReplicas() const override { return true; }
+
 	const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
 	NameAndTypePair getColumn(const String &column_name) const override;
 	bool hasColumn(const String &column_name) const override;
