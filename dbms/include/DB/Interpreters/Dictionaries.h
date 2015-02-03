@@ -3,6 +3,8 @@
 #include <mutex>
 #include <thread>
 #include <unordered_map>
+#include <chrono>
+#include <random>
 
 #include <Poco/SharedPtr.h>
 
@@ -32,7 +34,10 @@ private:
 	MultiVersion<TechDataHierarchy> tech_data_hierarchy;
 	MultiVersion<CategoriesHierarchy> categories_hierarchy;
 	MultiVersion<RegionsNames> regions_names;
+	mutable std::mutex external_dictionaries_mutex;
 	std::unordered_map<std::string, std::shared_ptr<MultiVersion<IDictionary>>> external_dictionaries;
+	std::unordered_map<std::string, std::chrono::system_clock::time_point> update_times;
+	std::mt19937 rnd_engine;
 
 	const Context & context;
 	/// Периодичность обновления справочников, в секундах.
@@ -44,7 +49,6 @@ private:
 
 	Logger * log;
 
-	std::mutex externals_mutex;
 	Poco::Timestamp dictionaries_last_modified{0};
 
 
@@ -149,7 +153,7 @@ private:
 
 	void reloadExternalsPeriodically()
 	{
-		const auto check_period = 60 * 1000;
+		const auto check_period = 5 * 1000;
 		while (true)
 		{
 			if (destroy.tryWait(check_period))
@@ -200,6 +204,7 @@ public:
 
 	MultiVersion<IDictionary>::Version getExternalDictionary(const std::string & name) const
 	{
+		const std::lock_guard<std::mutex> lock{external_dictionaries_mutex};
 		const auto it = external_dictionaries.find(name);
 		if (it == std::end(external_dictionaries))
 			throw Exception{
