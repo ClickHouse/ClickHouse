@@ -26,6 +26,8 @@ namespace DB
 
 using Poco::SharedPtr;
 
+class ShardReplicas;
+
 /// Поток блоков читающих из таблицы и ее имя
 typedef std::pair<BlockInputStreamPtr, std::string> ExternalTableData;
 /// Вектор пар, описывающих таблицы
@@ -40,6 +42,8 @@ typedef std::vector<ExternalTableData> ExternalTablesData;
   */
 class Connection : private boost::noncopyable
 {
+	friend class ShardReplicas;
+
 public:
 	Connection(const String & host_, UInt16 port_, const String & default_database_,
 		const String & user_, const String & password_,
@@ -103,6 +107,9 @@ public:
 
 	/// Проверить, есть ли данные, которые можно прочитать.
 	bool poll(size_t timeout_microseconds = 0);
+
+	/// Проверить, есть ли данные в буфере для чтения.
+	bool hasReadBufferPendingData() const;
 
 	/// Получить пакет от сервера.
 	Packet receivePacket();

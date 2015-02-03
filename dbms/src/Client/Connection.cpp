@@ -360,6 +360,12 @@ bool Connection::poll(size_t timeout_microseconds)
 }
 
 
+bool Connection::hasReadBufferPendingData() const
+{
+	return static_cast<const ReadBufferFromPocoSocket &>(*in).hasPendingData();
+}
+
+
 Connection::Packet Connection::receivePacket()
 {
 	//LOG_TRACE(log_wrapper.get(), "Receiving packet (" << getServerAddress() << ")");

@@ -108,7 +108,6 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 	/// Семплирование.
 	Names column_names_to_read = real_column_names;
-	UInt64 sampling_column_value_limit = 0;
 	typedef Poco::SharedPtr<ASTFunction> ASTFunctionPtr;
 	ASTFunctionPtr filter_function;
 	ExpressionActionsPtr filter_expression;
@@ -150,6 +149,12 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 			relative_sample_size = 0;
 	}
 
+	UInt64 parallel_replicas_count = UInt64(settings.parallel_replicas_count);
+	UInt64 parallel_replica_offset = UInt64(settings.parallel_replica_offset);
+
+	if ((parallel_replicas_count > 1) && !data.sampling_expression.isNull() && (relative_sample_size == 0))
+		relative_sample_size = 1;
+
 	if (relative_sample_size != 0)
 	{
 		UInt64 sampling_column_max = 0;
@@ -166,20 +171,60 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 		else
 			throw Exception("Invalid sampling column type in storage parameters: " + type->getName() + ". Must be unsigned integer type.", ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
 
+		UInt64 sampling_column_value_lower_limit;
+		UInt64 sampling_column_value_upper_limit;
+		UInt64 upper_limit = static_cast<UInt64>(relative_sample_size * sampling_column_max);
+
+		if (parallel_replicas_count > 1)
+		{
+			UInt64 step = upper_limit / parallel_replicas_count;
+			sampling_column_value_lower_limit = parallel_replica_offset * step;
+			if ((parallel_replica_offset + 1) < parallel_replicas_count)
+				sampling_column_value_upper_limit = (parallel_replica_offset + 1) * step;
+			else
+				sampling_column_value_upper_limit = upper_limit + 1;
+		}
+		else
+		{
+			sampling_column_value_lower_limit = 0;
+			sampling_column_value_upper_limit = upper_limit + 1;
+		}
+
 		/// Добавим условие, чтобы отсечь еще что-нибудь при повторном просмотре индекса.
-		sampling_column_value_limit = static_cast<UInt64>(relative_sample_size * sampling_column_max);
 		if (!key_condition.addCondition(data.sampling_expression->getColumnName(),
-			Range::createRightBounded(sampling_column_value_limit, true)))
+			Range::createLeftBounded(sampling_column_value_lower_limit, true)))
 			throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
 
-		/// Выражение для фильтрации: sampling_expression <= sampling_column_value_limit
+		if (!key_condition.addCondition(data.sampling_expression->getColumnName(),
+			Range::createRightBounded(sampling_column_value_upper_limit, false)))
+			throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
+
+		/// Выражение для фильтрации: sampling_expression in [sampling_column_value_lower_limit, sampling_column_value_upper_limit)
+
+		ASTPtr lower_filter_args = new ASTExpressionList;
+		lower_filter_args->children.push_back(data.sampling_expression);
+		lower_filter_args->children.push_back(new ASTLiteral(StringRange(), sampling_column_value_lower_limit));
+
+		ASTFunctionPtr lower_filter_function = new ASTFunction;
+		lower_filter_function->name = "greaterOrEquals";
+		lower_filter_function->arguments = lower_filter_args;
+		lower_filter_function->children.push_back(lower_filter_function->arguments);
+
+		ASTPtr upper_filter_args = new ASTExpressionList;
+		upper_filter_args->children.push_back(data.sampling_expression);
+		upper_filter_args->children.push_back(new ASTLiteral(StringRange(), sampling_column_value_upper_limit));
+
+		ASTFunctionPtr upper_filter_function = new ASTFunction;
+		upper_filter_function->name = "less";
+		upper_filter_function->arguments = upper_filter_args;
+		upper_filter_function->children.push_back(upper_filter_function->arguments);
 
 		ASTPtr filter_function_args = new ASTExpressionList;
-		filter_function_args->children.push_back(data.sampling_expression);
-		filter_function_args->children.push_back(new ASTLiteral(StringRange(), sampling_column_value_limit));
+		filter_function_args->children.push_back(lower_filter_function);
+		filter_function_args->children.push_back(upper_filter_function);
 
 		filter_function = new ASTFunction;
-		filter_function->name = "lessOrEquals";
+		filter_function->name = "and";
 		filter_function->arguments = filter_function_args;
 		filter_function->children.push_back(filter_function->arguments);
 
