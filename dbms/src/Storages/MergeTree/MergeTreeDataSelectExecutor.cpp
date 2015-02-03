@@ -1,6 +1,5 @@
 #include <DB/Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <DB/Storages/MergeTree/MergeTreeWhereOptimizer.h>
-#include <DB/Storages/MergeTree/PartsWithRangesSplitter.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
@@ -10,34 +9,6 @@
 #include <DB/DataStreams/AddingConstColumnBlockInputStream.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Common/VirtualColumnUtils.h>
-#include <DB/Common/SipHash.h>
-
-namespace
-{
-
-std::pair<UInt64, UInt64> computeHash(const DB::MergeTreeDataSelectExecutor::RangesInDataParts & segment)
-{
-	SipHash hash;
-	for (const auto & part_with_ranges : segment)
-	{
-		const auto & part = *(part_with_ranges.data_part);
-		hash.update(part.name.c_str(), part.name.length());
-		const auto & ranges = part_with_ranges.ranges;
-		for (const auto & range : ranges)
-		{
-			hash.update(reinterpret_cast<const char *>(&range.begin), sizeof(range.begin));
-			hash.update(reinterpret_cast<const char *>(&range.end), sizeof(range.end));
-		}
-	}
-
-	UInt64 lo;
-	UInt64 hi;
-
-	hash.get128(lo, hi);
-	return std::make_pair(lo, hi);
-}
-
-}
 
 namespace DB
 {
@@ -136,7 +107,6 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 	/// Семплирование.
 	Names column_names_to_read = real_column_names;
-	UInt64 sampling_column_value_limit = 0;
 	typedef Poco::SharedPtr<ASTFunction> ASTFunctionPtr;
 	ASTFunctionPtr filter_function;
 	ExpressionActionsPtr filter_expression;
@@ -178,6 +148,12 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 			relative_sample_size = 0;
 	}
 
+	UInt64 parallel_replicas_count = UInt64(settings.parallel_replicas_count);
+	UInt64 parallel_replica_offset = UInt64(settings.parallel_replica_offset);
+
+	if ((parallel_replicas_count > 1) && !data.sampling_expression.isNull() && (relative_sample_size == 0))
+		relative_sample_size = 1;
+
 	if (relative_sample_size != 0)
 	{
 		UInt64 sampling_column_max = 0;
@@ -194,20 +170,60 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 		else
 			throw Exception("Invalid sampling column type in storage parameters: " + type->getName() + ". Must be unsigned integer type.", ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
 
+		UInt64 sampling_column_value_lower_limit;
+		UInt64 sampling_column_value_upper_limit;
+		UInt64 upper_limit = static_cast<UInt64>(relative_sample_size * sampling_column_max);
+
+		if (parallel_replicas_count > 1)
+		{
+			UInt64 step = upper_limit / parallel_replicas_count;
+			sampling_column_value_lower_limit = parallel_replica_offset * step;
+			if ((parallel_replica_offset + 1) < parallel_replicas_count)
+				sampling_column_value_upper_limit = (parallel_replica_offset + 1) * step;
+			else
+				sampling_column_value_upper_limit = upper_limit + 1;
+		}
+		else
+		{
+			sampling_column_value_lower_limit = 0;
+			sampling_column_value_upper_limit = upper_limit + 1;
+		}
+
 		/// Добавим условие, чтобы отсечь еще что-нибудь при повторном просмотре индекса.
-		sampling_column_value_limit = static_cast<UInt64>(relative_sample_size * sampling_column_max);
 		if (!key_condition.addCondition(data.sampling_expression->getColumnName(),
-			Range::createRightBounded(sampling_column_value_limit, true)))
+			Range::createLeftBounded(sampling_column_value_lower_limit, true)))
 			throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
 
-		/// Выражение для фильтрации: sampling_expression <= sampling_column_value_limit
+		if (!key_condition.addCondition(data.sampling_expression->getColumnName(),
+			Range::createRightBounded(sampling_column_value_upper_limit, false)))
+			throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
+
+		/// Выражение для фильтрации: sampling_expression in [sampling_column_value_lower_limit, sampling_column_value_upper_limit)
+
+		ASTPtr lower_filter_args = new ASTExpressionList;
+		lower_filter_args->children.push_back(data.sampling_expression);
+		lower_filter_args->children.push_back(new ASTLiteral(StringRange(), sampling_column_value_lower_limit));
+
+		ASTFunctionPtr lower_filter_function = new ASTFunction;
+		lower_filter_function->name = "greaterOrEquals";
+		lower_filter_function->arguments = lower_filter_args;
+		lower_filter_function->children.push_back(lower_filter_function->arguments);
+
+		ASTPtr upper_filter_args = new ASTExpressionList;
+		upper_filter_args->children.push_back(data.sampling_expression);
+		upper_filter_args->children.push_back(new ASTLiteral(StringRange(), sampling_column_value_upper_limit));
+
+		ASTFunctionPtr upper_filter_function = new ASTFunction;
+		upper_filter_function->name = "less";
+		upper_filter_function->arguments = upper_filter_args;
+		upper_filter_function->children.push_back(upper_filter_function->arguments);
 
 		ASTPtr filter_function_args = new ASTExpressionList;
-		filter_function_args->children.push_back(data.sampling_expression);
-		filter_function_args->children.push_back(new ASTLiteral(StringRange(), sampling_column_value_limit));
+		filter_function_args->children.push_back(lower_filter_function);
+		filter_function_args->children.push_back(upper_filter_function);
 
 		filter_function = new ASTFunction;
-		filter_function->name = "lessOrEquals";
+		filter_function->name = "and";
 		filter_function->arguments = filter_function_args;
 		filter_function->children.push_back(filter_function->arguments);
 
@@ -237,70 +253,21 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	RangesInDataParts parts_with_ranges;
 
 	/// Найдем, какой диапазон читать из каждого куска.
+	size_t sum_marks = 0;
+	size_t sum_ranges = 0;
 	for (auto & part : parts)
 	{
 		RangesInDataPart ranges(part, (*part_index)++);
 		ranges.ranges = markRangesFromPkRange(part->index, key_condition);
 
 		if (!ranges.ranges.empty())
+		{
 			parts_with_ranges.push_back(ranges);
-	}
 
-	UInt64 parallel_replicas_count = UInt64(settings.parallel_replicas_count);
-	UInt64 parallel_replica_offset = UInt64(settings.parallel_replica_offset);
-
-	if (parallel_replicas_count > 1)
-	{
-		// Разбиваем массив на не больше, чем N сегментов, где N - количество реплик,
-		PartsWithRangesSplitter splitter(parts_with_ranges, parallel_replica_offset,
-										 data.index_granularity, data.settings.min_rows_for_seek,
-										 parallel_replicas_count);
-		auto segments = splitter.perform();
-
-		if (!segments.empty())
-		{
-			if (parallel_replica_offset >= segments.size())
-				return BlockInputStreams();
-
-			/// Для каждого сегмента, вычисляем его хэш.
-			/// Сортируем массив сегментов по хэшу.
-			/// Выбираем сегмент соответствующий текущей реплике.
-
-			using Entry = std::pair<std::pair<UInt64, UInt64>, RangesInDataParts *>;
-			std::vector<Entry> hashed_segments;
-			hashed_segments.reserve(segments.size());
-
-			for (auto & segment : segments)
-			{
-				Entry entry = std::make_pair(computeHash(segment), &segment);
-				hashed_segments.push_back(entry);
-			}
-
-			std::sort(hashed_segments.begin(), hashed_segments.end(), [](const Entry & lhs, const Entry & rhs)
-			{
-				return lhs.first < rhs.first;
-			});
-
-			parts_with_ranges = std::move(*(hashed_segments[parallel_replica_offset].second));
+			sum_ranges += ranges.ranges.size();
+			for (const auto & range : ranges.ranges)
+				sum_marks += range.end - range.begin;
 		}
-		else
-		{
-			/// Получаем данные только от первой реплики.
-			if (parallel_replica_offset > 0)
-				return BlockInputStreams();
-		}
-	}
-
-	/// Считаем количество засечек и диапазонов.
-	size_t sum_marks = 0;
-	size_t sum_ranges = 0;
-	sum_marks = 0;
-	sum_ranges = 0;
-	for (const auto & part_with_ranges : parts_with_ranges)
-	{
-		sum_ranges += part_with_ranges.ranges.size();
-		for (const auto & range : part_with_ranges.ranges)
-			sum_marks += range.end - range.begin;
 	}
 
 	LOG_DEBUG(log, "Selected " << parts.size() << " parts by date, " << parts_with_ranges.size() << " parts by key, "
