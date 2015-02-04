@@ -60,8 +60,8 @@ public:
 		}
 		else if (config.has(config_prefix + "clickhouse"))
 		{
-			return nullptr;//ext::make_unique<ClickhouseDictionarySource>(config, config_prefix + "clickhouse.",
-				//sample_block, context);
+			ext::make_unique<ClickhouseDictionarySource>(config, config_prefix + "clickhouse.",
+				sample_block, context);
 		}
 
 		throw Exception{"unsupported source type"};

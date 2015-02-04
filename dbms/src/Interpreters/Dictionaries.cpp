@@ -7,11 +7,30 @@
 namespace DB
 {
 
+namespace
+{
+	std::string getDictionariesConfigPath(const Poco::Util::AbstractConfiguration & config)
+	{
+		const auto path = config.getString("dictionaries_config");
+		if (path.empty())
+			return path;
+
+		if (path[0] != '/')
+		{
+			const auto app_config_path = config.getString("config-file", "config.xml");
+			const auto config_dir = Poco::Path{app_config_path}.parent().toString();
+			const auto absolute_path = config_dir + path;
+			if (Poco::File{absolute_path}.exists())
+				return absolute_path;
+		}
+
+		return path;
+	}
+}
+
 void Dictionaries::reloadExternals()
 {
-	const auto config_path = Poco::Util::Application::instance().config().getString("dictionaries_config");
-	if (config_path.empty())
-		return;
+	const auto config_path = getDictionariesConfigPath(Poco::Util::Application::instance().config());
 
 	const auto last_modified = Poco::File{config_path}.getLastModified();
 	if (last_modified > dictionaries_last_modified)
