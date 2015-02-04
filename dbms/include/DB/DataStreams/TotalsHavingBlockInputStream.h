@@ -23,7 +23,7 @@ public:
 		const std::string & filter_column_, TotalsMode totals_mode_, double auto_include_threshold_)
 		: overflow_row(overflow_row_),
 		expression(expression_), filter_column_name(filter_column_), totals_mode(totals_mode_),
-		auto_include_threshold(auto_include_threshold_), passed_keys(0), total_keys(0)
+		auto_include_threshold(auto_include_threshold_)
 	{
 		children.push_back(input_);
 	}
@@ -49,8 +49,8 @@ private:
 	String filter_column_name;
 	TotalsMode totals_mode;
 	double auto_include_threshold;
-	size_t passed_keys;
-	size_t total_keys;
+	size_t passed_keys = 0;
+	size_t total_keys = 0;
 
 	/** Здесь находятся значения, не прошедшие max_rows_to_group_by.
 	  * Они прибавляются или не прибавляются к current_totals в зависимости от totals_mode.

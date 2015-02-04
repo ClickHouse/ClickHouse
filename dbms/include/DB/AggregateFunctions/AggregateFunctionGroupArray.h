@@ -17,14 +17,14 @@ struct AggregateFunctionGroupArrayData
 {
 	Array value;	/// TODO Добавить MemoryTracker
 };
-	
+
 
 /// Складывает все значения в массив. Реализовано неэффективно.
 class AggregateFunctionGroupArray final : public IUnaryAggregateFunction<AggregateFunctionGroupArrayData, AggregateFunctionGroupArray>
 {
 private:
 	DataTypePtr type;
-	
+
 public:
 	String getName() const { return "groupArray"; }
 
