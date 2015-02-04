@@ -495,7 +495,11 @@ const Dictionaries & Context::getDictionaries() const
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 
 	if (!shared->dictionaries)
-		shared->dictionaries = new Dictionaries;
+	{
+		if (!this->global_context)
+			throw Exception("Logical error: there is no global context", ErrorCodes::LOGICAL_ERROR);
+		shared->dictionaries = new Dictionaries{ *this->global_context };
+	}
 
 	return *shared->dictionaries;
 }
