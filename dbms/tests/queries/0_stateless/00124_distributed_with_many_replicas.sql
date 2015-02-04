@@ -2,7 +2,7 @@ SET max_parallel_replicas = 2;
 
 DROP TABLE IF EXISTS test.report;
 
-CREATE TABLE test.report(id UInt32, event_date Date, priority UInt32, description String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/report', '{replica}', event_date, intHash32(id), (id, event_date, intHash32(id)), 8192);
+CREATE TABLE test.report(id UInt32, event_date Date, priority UInt32, description String) ENGINE = MergeTree(event_date, intHash32(id), (id, event_date, intHash32(id)), 8192);
 
 INSERT INTO test.report(id,event_date,priority,description) VALUES(1, '2015-01-01', 1, 'foo');
 INSERT INTO test.report(id,event_date,priority,description) VALUES(2, '2015-02-01', 2, 'bar');
