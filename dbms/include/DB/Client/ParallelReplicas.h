@@ -8,15 +8,13 @@ namespace DB
 	/**
 	  * Множество реплик одного шарда.
 	  */
-	class ShardReplicas final
+	class ParallelReplicas final
 	{
 	public:
-		ShardReplicas(std::vector<ConnectionPool::Entry> & entries, const Settings & settings_);
+		ParallelReplicas(std::vector<ConnectionPool::Entry> & entries, const Settings & settings_);
 
-		~ShardReplicas() = default;
-
-		ShardReplicas(const ShardReplicas &) = delete;
-		ShardReplicas & operator=(const ShardReplicas &) = delete;
+		ParallelReplicas(const ParallelReplicas &) = delete;
+		ParallelReplicas & operator=(const ParallelReplicas &) = delete;
 
 		/// Отправить на реплики всё содержимое внешних таблиц.
 		void sendExternalTablesData(std::vector<ExternalTablesData> & data);
@@ -41,7 +39,7 @@ namespace DB
 		std::string dumpAddresses() const;
 
 		/// Возвращает количесто реплик.
-		size_t size() const { return replica_hash.size(); }
+		size_t size() const { return replica_map.size(); }
 
 	private:
 		/// Проверить, есть ли данные, которые можно прочитать на каких-нибудь репликах.
@@ -50,11 +48,11 @@ namespace DB
 
 	private:
 		/// Реплики хэшированные по id сокета
-		using ReplicaHash = std::unordered_map<int, Connection *>;
+		using ReplicaMap = std::unordered_map<int, Connection *>;
 
 	private:
 		const Settings & settings;
-		ReplicaHash replica_hash;
+		ReplicaMap replica_map;
 		size_t active_connection_count = 0;
 		bool sent_query = false;
 		bool cancelled = false;

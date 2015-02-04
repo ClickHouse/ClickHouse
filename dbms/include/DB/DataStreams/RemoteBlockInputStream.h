@@ -8,7 +8,7 @@
 #include <DB/Interpreters/Context.h>
 
 #include <DB/Client/ConnectionPool.h>
-#include <DB/Client/ShardReplicas.h>
+#include <DB/Client/ParallelReplicas.h>
 
 
 namespace DB
@@ -87,7 +87,7 @@ public:
 		{
 			std::string addresses;
 			if (use_many_replicas)
-				addresses = shard_replicas->dumpAddresses();
+				addresses = parallel_replicas->dumpAddresses();
 			else
 				addresses = connection->getServerAddress();
 
@@ -95,7 +95,7 @@ public:
 
 			/// Если запрошено прервать запрос - попросим удалённый сервер тоже прервать запрос.
 			if (use_many_replicas)
-				shard_replicas->sendCancel();
+				parallel_replicas->sendCancel();
 			else
 				connection->sendCancel();
 
@@ -112,7 +112,7 @@ public:
 		if (sent_query && !finished)
 		{
 			if (use_many_replicas)
-				shard_replicas->disconnect();
+				parallel_replicas->disconnect();
 			else
 				connection->disconnect();
 		}
@@ -122,7 +122,7 @@ protected:
 	/// Отправить на удаленные сервера все временные таблицы
 	void sendExternalTables()
 	{
-		size_t count = use_many_replicas ? shard_replicas->size() : 1;
+		size_t count = use_many_replicas ? parallel_replicas->size() : 1;
 
 		std::vector<ExternalTablesData> instances;
 		instances.reserve(count);
@@ -145,7 +145,7 @@ protected:
 		}
 
 		if (use_many_replicas)
-			shard_replicas->sendExternalTablesData(instances);
+			parallel_replicas->sendExternalTablesData(instances);
 		else
 			connection->sendExternalTablesData(instances[0]);
 	}
@@ -156,14 +156,14 @@ protected:
 		{
 			if (use_many_replicas)
 			{
-				auto entries = pool->getMany(&settings);
-				if (entries.size() > 1)
-					shard_replicas = ext::make_unique<ShardReplicas>(entries, settings);
+				pool_entries = pool->getMany(&settings);
+				if (pool_entries.size() > 1)
+					parallel_replicas = ext::make_unique<ParallelReplicas>(pool_entries, settings);
 				else
 				{
 					/// NOTE IConnectionPool::getMany() всегда возвращает как минимум одно соединение.
 					use_many_replicas = false;
-					connection = &*entries[0];
+					connection = &*pool_entries[0];
 				}
 			}
 			else
@@ -177,7 +177,7 @@ protected:
 			}
 
 			if (use_many_replicas)
-				shard_replicas->sendQuery(query, "", stage, true);
+				parallel_replicas->sendQuery(query, "", stage, true);
 			else
 				connection->sendQuery(query, "", stage, send_settings ? &settings : nullptr, true);
 
@@ -187,7 +187,7 @@ protected:
 
 		while (true)
 		{
-			Connection::Packet packet = use_many_replicas ? shard_replicas->receivePacket() : connection->receivePacket();
+			Connection::Packet packet = use_many_replicas ? parallel_replicas->receivePacket() : connection->receivePacket();
 
 			switch (packet.type)
 			{
@@ -258,7 +258,7 @@ protected:
 		{
 			std::string addresses;
 			if (use_many_replicas)
-				addresses = shard_replicas->dumpAddresses();
+				addresses = parallel_replicas->dumpAddresses();
 			else
 				addresses = connection->getServerAddress();
 
@@ -267,14 +267,14 @@ protected:
 			was_cancelled = true;
 
 			if (use_many_replicas)
-				shard_replicas->sendCancel();
+				parallel_replicas->sendCancel();
 			else
 				connection->sendCancel();
 		}
 
 		if (use_many_replicas)
 		{
-			Connection::Packet packet = shard_replicas->drain();
+			Connection::Packet packet = parallel_replicas->drain();
 			switch (packet.type)
 			{
 				case Protocol::Server::EndOfStream:
@@ -327,7 +327,8 @@ private:
 	ConnectionPool::Entry pool_entry;
 	Connection * connection = nullptr;
 
-	std::unique_ptr<ShardReplicas> shard_replicas;
+	std::vector<ConnectionPool::Entry> pool_entries;
+	std::unique_ptr<ParallelReplicas> parallel_replicas;
 
 	const String query;
 	bool send_settings;

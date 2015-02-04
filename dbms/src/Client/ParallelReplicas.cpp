@@ -1,26 +1,26 @@
-#include <DB/Client/ShardReplicas.h>
+#include <DB/Client/ParallelReplicas.h>
 #include <boost/concept_check.hpp>
 
 namespace DB
 {
-	ShardReplicas::ShardReplicas(std::vector<ConnectionPool::Entry> & entries, const Settings & settings_) :
+	ParallelReplicas::ParallelReplicas(std::vector<ConnectionPool::Entry> & entries, const Settings & settings_) :
 		settings(settings_),
 		active_connection_count(entries.size())
 	{
-		replica_hash.reserve(entries.size());
+		replica_map.reserve(entries.size());
 
 		for (auto & entry : entries)
 		{
 			Connection * connection = &*entry;
 			if (connection == nullptr)
 				throw Exception("Invalid connection specified in parameter.");
-			auto res = replica_hash.insert(std::make_pair(connection->socket.impl()->sockfd(), connection));
+			auto res = replica_map.insert(std::make_pair(connection->socket.impl()->sockfd(), connection));
 			if (!res.second)
 				throw Exception("Invalid set of connections.");
 		}
 	}
 
-	void ShardReplicas::sendExternalTablesData(std::vector<ExternalTablesData> & data)
+	void ParallelReplicas::sendExternalTablesData(std::vector<ExternalTablesData> & data)
 	{
 		if (!sent_query)
 			throw Exception("Cannot send external tables data: query not yet sent.");
@@ -29,7 +29,7 @@ namespace DB
 			throw Exception("Mismatch between replicas and data sources", ErrorCodes::MISMATCH_REPLICAS_DATA_SOURCES);
 
 		auto it = data.begin();
-		for (auto & e : replica_hash)
+		for (auto & e : replica_map)
 		{
 			Connection * connection = e.second;
 			if (connection != nullptr)
@@ -38,16 +38,16 @@ namespace DB
 		}
 	}
 
-	void ShardReplicas::sendQuery(const String & query, const String & query_id, UInt64 stage, bool with_pending_data)
+	void ParallelReplicas::sendQuery(const String & query, const String & query_id, UInt64 stage, bool with_pending_data)
 	{
 		if (sent_query)
 			throw Exception("Query already sent.");
 
 		Settings query_settings = settings;
-		query_settings.parallel_replicas_count = replica_hash.size();
+		query_settings.parallel_replicas_count = replica_map.size();
 		UInt64 offset = 0;
 
-		for (auto & e : replica_hash)
+		for (auto & e : replica_map)
 		{
 			Connection * connection = e.second;
 			if (connection != nullptr)
@@ -61,7 +61,7 @@ namespace DB
 		sent_query = true;
 	}
 
-	Connection::Packet ShardReplicas::receivePacket()
+	Connection::Packet ParallelReplicas::receivePacket()
 	{
 		if (!sent_query)
 			throw Exception("Cannot receive packets: no query sent.");
@@ -109,9 +109,9 @@ namespace DB
 		return packet;
 	}
 
-	void ShardReplicas::disconnect()
+	void ParallelReplicas::disconnect()
 	{
-		for (auto & e : replica_hash)
+		for (auto & e : replica_map)
 		{
 			Connection * & connection = e.second;
 			if (connection != nullptr)
@@ -123,12 +123,12 @@ namespace DB
 		}
 	}
 
-	void ShardReplicas::sendCancel()
+	void ParallelReplicas::sendCancel()
 	{
 		if (!sent_query || cancelled)
 			throw Exception("Cannot cancel. Either no query sent or already cancelled.");
 
-		for (auto & e : replica_hash)
+		for (auto & e : replica_map)
 		{
 			Connection * connection = e.second;
 			if (connection != nullptr)
@@ -138,7 +138,7 @@ namespace DB
 		cancelled = true;
 	}
 
-	Connection::Packet ShardReplicas::drain()
+	Connection::Packet ParallelReplicas::drain()
 	{
 		if (!cancelled)
 			throw Exception("Cannot drain connections: cancel first.");
@@ -172,30 +172,29 @@ namespace DB
 		return res;
 	}
 
-	std::string ShardReplicas::dumpAddresses() const
+	std::string ParallelReplicas::dumpAddresses() const
 	{
+		bool is_first = true;
 		std::ostringstream os;
-		for (auto & e : replica_hash)
+		for (auto & e : replica_map)
 		{
-			char prefix = '\0';
 			const Connection * connection = e.second;
 			if (connection != nullptr)
 			{
-				os << prefix << connection->getServerAddress();
-				if (prefix == '\0')
-					prefix = ';';
+				os << (is_first ? "" : "; ") << connection->getServerAddress();
+				if (is_first) { is_first = false; }
 			}
 		}
 
 		return os.str();
 	}
 
-	Connection ** ShardReplicas::waitForReadEvent()
+	Connection ** ParallelReplicas::waitForReadEvent()
 	{
 		Poco::Net::Socket::SocketList read_list;
 		read_list.reserve(active_connection_count);
 
-		for (auto & e : replica_hash)
+		for (auto & e : replica_map)
 		{
 			Connection * connection = e.second;
 			if ((connection != nullptr) && connection->hasReadBufferPendingData())
@@ -207,7 +206,7 @@ namespace DB
 			Poco::Net::Socket::SocketList write_list;
 			Poco::Net::Socket::SocketList except_list;
 
-			for (auto & e : replica_hash)
+			for (auto & e : replica_map)
 			{
 				Connection * connection = e.second;
 				if (connection != nullptr)
@@ -219,8 +218,8 @@ namespace DB
 		}
 
 		auto & socket = read_list[rand() % read_list.size()];
-		auto it = replica_hash.find(socket.impl()->sockfd());
-		if (it == replica_hash.end())
+		auto it = replica_map.find(socket.impl()->sockfd());
+		if (it == replica_map.end())
 			throw Exception("Unexpected replica", ErrorCodes::UNEXPECTED_REPLICA);
 		return &(it->second);
 	}
