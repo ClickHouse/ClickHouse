@@ -70,7 +70,7 @@ public:
 		ASTs & to = select_expression_list->children;
 
 		if (from.size() != to.size())
-			throw Exception("Size mismatch in UNION ALL chain", 
+			throw Exception("Size mismatch in UNION ALL chain",
 							DB::ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH);
 
 		for (size_t i = 0; i < from.size(); ++i)
@@ -148,6 +148,16 @@ public:
 
 #define CLONE(member) if (member) { res->member = member->clone(); res->children.push_back(res->member); }
 
+		/** NOTE Члены должны клонироваться точно в таком же порядке,
+		  *  в каком они были вставлены в children в ParserSelectQuery.
+		  * Это важно, потому что из имён children-ов составляется идентификатор (getTreeID),
+		  *  который может быть использован для идентификаторов столбцов в случае подзапросов в операторе IN.
+		  * При распределённой обработке запроса, в случае, если один из серверов localhost, а другой - нет,
+		  *  запрос на localhost выполняется в рамках процесса и при этом клонируется,
+		  *  а на удалённый сервер запрос отправляется в текстовом виде по TCP.
+		  * И если порядок при клонировании не совпадает с порядком при парсинге,
+		  *  то на разных серверах получатся разные идентификаторы.
+		  */
 		CLONE(select_expression_list)
 		CLONE(database)
 		CLONE(table)
