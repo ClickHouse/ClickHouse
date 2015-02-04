@@ -11,7 +11,7 @@ namespace
 {
 	std::string getDictionariesConfigPath(const Poco::Util::AbstractConfiguration & config)
 	{
-		const auto path = config.getString("dictionaries_config");
+		const auto path = config.getString("dictionaries_config", "");
 		if (path.empty())
 			return path;
 
