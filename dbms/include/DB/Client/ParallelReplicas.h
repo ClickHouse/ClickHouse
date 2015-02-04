@@ -33,6 +33,7 @@ namespace DB
 		void sendCancel();
 
 		/// Для каждой реплики получить оставшиеся пакеты после отмена запроса.
+		/// Возвращает либо последнее полученное исключение либо пакет EndOfStream.
 		Connection::Packet drain();
 
 		/// Получить адреса реплик в виде строки.
@@ -41,14 +42,16 @@ namespace DB
 		/// Возвращает количесто реплик.
 		size_t size() const { return replica_map.size(); }
 
-	private:
-		/// Проверить, есть ли данные, которые можно прочитать на каких-нибудь репликах.
-		/// Возвращает соединение на такую реплику, если оно найдётся.
-		Connection ** waitForReadEvent();
+		bool hasActiveConnections() const { return active_connection_count > 0; }
 
 	private:
 		/// Реплики хэшированные по id сокета
 		using ReplicaMap = std::unordered_map<int, Connection *>;
+
+	private:
+		/// Проверить, есть ли данные, которые можно прочитать на каких-нибудь репликах.
+		/// Возвращает соединение на такую реплику, если оно найдётся.
+		ReplicaMap::iterator waitForReadEvent();
 
 	private:
 		const Settings & settings;

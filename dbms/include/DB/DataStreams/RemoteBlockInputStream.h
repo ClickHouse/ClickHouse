@@ -199,11 +199,17 @@ protected:
 
 				case Protocol::Server::Exception:
 					got_exception_from_server = true;
+					if (use_many_replicas)
+					{
+						parallel_replicas->sendCancel();
+						(void) parallel_replicas->drain();
+					}
 					packet.exception->rethrow();
 					break;
 
 				case Protocol::Server::EndOfStream:
-					finished = true;
+					if (!use_many_replicas || !parallel_replicas->hasActiveConnections())
+						finished = true;
 					return Block();
 
 				case Protocol::Server::Progress:
@@ -233,6 +239,11 @@ protected:
 					break;
 
 				default:
+					if (use_many_replicas)
+					{
+						parallel_replicas->sendCancel();
+						(void) parallel_replicas->drain();
+					}
 					throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
 			}
 		}

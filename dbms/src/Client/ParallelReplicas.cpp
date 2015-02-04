@@ -13,17 +13,17 @@ namespace DB
 		{
 			Connection * connection = &*entry;
 			if (connection == nullptr)
-				throw Exception("Invalid connection specified in parameter.");
+				throw Exception("Invalid connection specified in parameter.", ErrorCodes::LOGICAL_ERROR);
 			auto res = replica_map.insert(std::make_pair(connection->socket.impl()->sockfd(), connection));
 			if (!res.second)
-				throw Exception("Invalid set of connections.");
+				throw Exception("Invalid set of connections.", ErrorCodes::LOGICAL_ERROR);
 		}
 	}
 
 	void ParallelReplicas::sendExternalTablesData(std::vector<ExternalTablesData> & data)
 	{
 		if (!sent_query)
-			throw Exception("Cannot send external tables data: query not yet sent.");
+			throw Exception("Cannot send external tables data: query not yet sent.", ErrorCodes::LOGICAL_ERROR);
 
 		if (data.size() < active_connection_count)
 			throw Exception("Mismatch between replicas and data sources", ErrorCodes::MISMATCH_REPLICAS_DATA_SOURCES);
@@ -41,7 +41,7 @@ namespace DB
 	void ParallelReplicas::sendQuery(const String & query, const String & query_id, UInt64 stage, bool with_pending_data)
 	{
 		if (sent_query)
-			throw Exception("Query already sent.");
+			throw Exception("Query already sent.", ErrorCodes::LOGICAL_ERROR);
 
 		Settings query_settings = settings;
 		query_settings.parallel_replicas_count = replica_map.size();
@@ -64,15 +64,16 @@ namespace DB
 	Connection::Packet ParallelReplicas::receivePacket()
 	{
 		if (!sent_query)
-			throw Exception("Cannot receive packets: no query sent.");
-		if (active_connection_count == 0)
-			throw Exception("No more packets are available.");
+			throw Exception("Cannot receive packets: no query sent.", ErrorCodes::LOGICAL_ERROR);
+		if (!hasActiveConnections())
+			throw Exception("No more packets are available.", ErrorCodes::LOGICAL_ERROR);
 
-		Connection ** connection = waitForReadEvent();
-		if (connection == nullptr)
+		auto it = waitForReadEvent();
+		if (it == replica_map.end())
 			throw Exception("No available replica", ErrorCodes::NO_AVAILABLE_REPLICA);
 
-		Connection::Packet packet = (*connection)->receivePacket();
+		Connection * & connection = it->second;
+		Connection::Packet packet = connection->receivePacket();
 
 		switch (packet.type)
 		{
@@ -84,25 +85,10 @@ namespace DB
 				break;
 
 			case Protocol::Server::EndOfStream:
-				*connection = nullptr;
-				--active_connection_count;
-				if (active_connection_count > 0)
-				{
-					Connection::Packet empty_packet;
-					empty_packet.type = Protocol::Server::Data;
-					return empty_packet;
-				}
-				break;
-
 			case Protocol::Server::Exception:
 			default:
-				*connection = nullptr;
+				connection = nullptr;
 				--active_connection_count;
-				if (!cancelled)
-				{
-					sendCancel();
-					(void) drain();
-				}
 				break;
 		}
 
@@ -126,7 +112,7 @@ namespace DB
 	void ParallelReplicas::sendCancel()
 	{
 		if (!sent_query || cancelled)
-			throw Exception("Cannot cancel. Either no query sent or already cancelled.");
+			throw Exception("Cannot cancel. Either no query sent or already cancelled.", ErrorCodes::LOGICAL_ERROR);
 
 		for (auto & e : replica_map)
 		{
@@ -141,12 +127,12 @@ namespace DB
 	Connection::Packet ParallelReplicas::drain()
 	{
 		if (!cancelled)
-			throw Exception("Cannot drain connections: cancel first.");
+			throw Exception("Cannot drain connections: cancel first.", ErrorCodes::LOGICAL_ERROR);
 
 		Connection::Packet res;
 		res.type = Protocol::Server::EndOfStream;
 
-		while (active_connection_count > 0)
+		while (hasActiveConnections())
 		{
 			Connection::Packet packet = receivePacket();
 
@@ -157,10 +143,8 @@ namespace DB
 				case Protocol::Server::ProfileInfo:
 				case Protocol::Server::Totals:
 				case Protocol::Server::Extremes:
-					break;
-
 				case Protocol::Server::EndOfStream:
-					return res;
+					break;
 
 				case Protocol::Server::Exception:
 				default:
@@ -189,7 +173,7 @@ namespace DB
 		return os.str();
 	}
 
-	Connection ** ParallelReplicas::waitForReadEvent()
+	ParallelReplicas::ReplicaMap::iterator ParallelReplicas::waitForReadEvent()
 	{
 		Poco::Net::Socket::SocketList read_list;
 		read_list.reserve(active_connection_count);
@@ -214,13 +198,10 @@ namespace DB
 			}
 			int n = Poco::Net::Socket::select(read_list, write_list, except_list, settings.poll_interval * 1000000);
 			if (n == 0)
-				return nullptr;
+				return replica_map.end();
 		}
 
 		auto & socket = read_list[rand() % read_list.size()];
-		auto it = replica_map.find(socket.impl()->sockfd());
-		if (it == replica_map.end())
-			throw Exception("Unexpected replica", ErrorCodes::UNEXPECTED_REPLICA);
-		return &(it->second);
+		return replica_map.find(socket.impl()->sockfd());
 	}
 }
