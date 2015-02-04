@@ -28,7 +28,7 @@ public:
 		  table{config.getString(config_prefix + "table")},
 		  sample_block{sample_block}, context(context),
 		  is_local{isLocal(host, port)},
-		  pool{is_local ? nullptr : ext::make_unique<ConnectionPool>(
+		  pool{/*is_local ? nullptr : */ext::make_unique<ConnectionPool>(
 			  max_connections, host, port, db, user, password, context.getDataTypeFactory(),
 			  "ClickhouseDictionarySource")
 		  },
@@ -40,7 +40,7 @@ public:
 		  db{other.db}, table{other.db},
 		  sample_block{other.sample_block}, context(other.context),
 		  is_local{other.is_local},
-		  pool{is_local ? nullptr : ext::make_unique<ConnectionPool>(
+		  pool{/*is_local ? nullptr : */ext::make_unique<ConnectionPool>(
 			  max_connections, host, port, db, user, password, context.getDataTypeFactory(),
 			  "ClickhouseDictionarySource")},
 		  load_all_query{other.load_all_query}
