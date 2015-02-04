@@ -75,9 +75,15 @@ void Dictionaries::reloadExternals()
 					if (!dict_ptr->isCached())
 					{
 						const auto & lifetime = dict_ptr->getLifetime();
-						std::uniform_int_distribution<std::uint64_t> distribution{lifetime.min_sec, lifetime.max_sec};
-						update_times[name] = std::chrono::system_clock::now() +
-							std::chrono::seconds{ distribution(rnd_engine) };
+						if (lifetime.min_sec != 0 && lifetime.max_sec != 0)
+						{
+							std::uniform_int_distribution<std::uint64_t> distribution{
+								lifetime.min_sec,
+								lifetime.max_sec
+							};
+							update_times[name] = std::chrono::system_clock::now() +
+								std::chrono::seconds{distribution(rnd_engine)};
+						}
 					}
 
 					auto it = external_dictionaries.find(name);
@@ -104,6 +110,12 @@ void Dictionaries::reloadExternals()
 		try
 		{
 			auto current = dictionary.second->get();
+			const auto & lifetime = current->getLifetime();
+
+			/// do not update dictionaries with zero as lifetime
+			if (lifetime.min_sec == 0 || lifetime.max_sec == 0)
+				continue;
+
 			/// update only non-cached dictionaries
 			if (!current->isCached())
 			{
@@ -122,7 +134,6 @@ void Dictionaries::reloadExternals()
 				}
 
 				/// calculate next update time
-				const auto & lifetime = current->getLifetime();
 				std::uniform_int_distribution<std::uint64_t> distribution{lifetime.min_sec, lifetime.max_sec};
 				update_time = std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
 			}

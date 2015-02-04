@@ -60,7 +60,7 @@ public:
 		}
 		else if (config.has(config_prefix + "clickhouse"))
 		{
-			ext::make_unique<ClickhouseDictionarySource>(config, config_prefix + "clickhouse.",
+			return ext::make_unique<ClickhouseDictionarySource>(config, config_prefix + "clickhouse.",
 				sample_block, context);
 		}
 
