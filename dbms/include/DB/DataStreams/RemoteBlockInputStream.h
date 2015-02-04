@@ -25,7 +25,7 @@ private:
 		{
 			send_settings = true;
 			settings = *settings_;
-			use_many_replicas = (pool != nullptr) && UInt64(settings.max_parallel_replicas) > 1;
+			use_many_replicas = (pool != nullptr) && (settings.max_parallel_replicas > 1);
 		}
 		else
 			send_settings = false;

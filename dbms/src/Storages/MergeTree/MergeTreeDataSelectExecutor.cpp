@@ -149,10 +149,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 			relative_sample_size = 0;
 	}
 
-	UInt64 parallel_replicas_count = UInt64(settings.parallel_replicas_count);
-	UInt64 parallel_replica_offset = UInt64(settings.parallel_replica_offset);
-
-	if ((parallel_replicas_count > 1) && !data.sampling_expression.isNull() && (relative_sample_size == 0))
+	if ((settings.parallel_replicas_count > 1) && !data.sampling_expression.isNull() && (relative_sample_size == 0))
 		relative_sample_size = 1;
 
 	if (relative_sample_size != 0)
@@ -175,11 +172,11 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 		UInt64 sampling_column_value_upper_limit;
 		UInt64 upper_limit = static_cast<UInt64>(relative_sample_size * sampling_column_max);
 
-		if (parallel_replicas_count > 1)
+		if (settings.parallel_replicas_count > 1)
 		{
-			sampling_column_value_lower_limit = (parallel_replica_offset * upper_limit) / parallel_replicas_count;
-			if ((parallel_replica_offset + 1) < parallel_replicas_count)
-				sampling_column_value_upper_limit = ((parallel_replica_offset + 1) * upper_limit) / parallel_replicas_count;
+			sampling_column_value_lower_limit = (settings.parallel_replica_offset * upper_limit) / settings.parallel_replicas_count;
+			if ((settings.parallel_replica_offset + 1) < settings.parallel_replicas_count)
+				sampling_column_value_upper_limit = ((settings.parallel_replica_offset + 1) * upper_limit) / settings.parallel_replicas_count;
 			else
 				sampling_column_value_upper_limit = upper_limit + 1;
 		}
