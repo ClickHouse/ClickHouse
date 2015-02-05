@@ -42,7 +42,7 @@ private:
 
 	std::thread reloading_thread;
 	std::thread reloading_externals_thread;
-	Poco::Event destroy;
+	Poco::Event destroy{false};
 
 	Logger * log;
 
