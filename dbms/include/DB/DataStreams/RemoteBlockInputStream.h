@@ -209,8 +209,11 @@ protected:
 
 				case Protocol::Server::EndOfStream:
 					if (!use_many_replicas || !parallel_replicas->hasActiveConnections())
+					{
 						finished = true;
-					return Block();
+						return Block();
+					}
+					break;
 
 				case Protocol::Server::Progress:
 					/** Используем прогресс с удалённого сервера.
