@@ -25,7 +25,6 @@ private:
 		{
 			send_settings = true;
 			settings = *settings_;
-			use_many_replicas = (pool != nullptr) && (settings.max_parallel_replicas > 1);
 		}
 		else
 			send_settings = false;
@@ -85,20 +84,11 @@ public:
 
 		if (sent_query && !was_cancelled && !finished && !got_exception_from_server)
 		{
-			std::string addresses;
-			if (use_many_replicas)
-				addresses = parallel_replicas->dumpAddresses();
-			else
-				addresses = connection->getServerAddress();
-
+			std::string addresses = parallel_replicas->dumpAddresses();
 			LOG_TRACE(log, "(" + addresses + ") Cancelling query");
 
 			/// Если запрошено прервать запрос - попросим удалённый сервер тоже прервать запрос.
-			if (use_many_replicas)
-				parallel_replicas->sendCancel();
-			else
-				connection->sendCancel();
-
+			parallel_replicas->sendCancel();
 			was_cancelled = true;
 		}
 	}
@@ -110,19 +100,14 @@ public:
 		  *  чтобы оно не осталось висеть в рассихронизированном состоянии.
 		  */
 		if (sent_query && !finished)
-		{
-			if (use_many_replicas)
-				parallel_replicas->disconnect();
-			else
-				connection->disconnect();
-		}
+			parallel_replicas->disconnect();
 	}
 
 protected:
 	/// Отправить на удаленные сервера все временные таблицы
 	void sendExternalTables()
 	{
-		size_t count = use_many_replicas ? parallel_replicas->size() : 1;
+		size_t count = parallel_replicas->size();
 
 		std::vector<ExternalTablesData> instances;
 		instances.reserve(count);
@@ -144,27 +129,18 @@ protected:
 			instances.push_back(std::move(res));
 		}
 
-		if (use_many_replicas)
-			parallel_replicas->sendExternalTablesData(instances);
-		else
-			connection->sendExternalTablesData(instances[0]);
+		parallel_replicas->sendExternalTablesData(instances);
 	}
 
 	Block readImpl() override
 	{
 		if (!sent_query)
 		{
+			bool use_many_replicas = (pool != nullptr) && send_settings && (settings.max_parallel_replicas > 1);
 			if (use_many_replicas)
 			{
 				pool_entries = pool->getMany(&settings);
-				if (pool_entries.size() > 1)
-					parallel_replicas = ext::make_unique<ParallelReplicas>(pool_entries, settings);
-				else
-				{
-					/// NOTE IConnectionPool::getMany() всегда возвращает как минимум одно соединение.
-					use_many_replicas = false;
-					connection = &*pool_entries[0];
-				}
+				parallel_replicas = ext::make_unique<ParallelReplicas>(pool_entries, &settings);
 			}
 			else
 			{
@@ -174,20 +150,17 @@ protected:
 					pool_entry = pool->get(send_settings ? &settings : nullptr);
 					connection = &*pool_entry;
 				}
+				parallel_replicas = ext::make_unique<ParallelReplicas>(connection, send_settings ? &settings : nullptr);
 			}
 
-			if (use_many_replicas)
-				parallel_replicas->sendQuery(query, "", stage, true);
-			else
-				connection->sendQuery(query, "", stage, send_settings ? &settings : nullptr, true);
-
+			parallel_replicas->sendQuery(query, "", stage, true);
 			sendExternalTables();
 			sent_query = true;
 		}
 
 		while (true)
 		{
-			Connection::Packet packet = use_many_replicas ? parallel_replicas->receivePacket() : connection->receivePacket();
+			Connection::Packet packet = parallel_replicas->receivePacket();
 
 			switch (packet.type)
 			{
@@ -199,16 +172,13 @@ protected:
 
 				case Protocol::Server::Exception:
 					got_exception_from_server = true;
-					if (use_many_replicas)
-					{
-						parallel_replicas->sendCancel();
-						(void) parallel_replicas->drain();
-					}
+					parallel_replicas->sendCancel();
+					(void) parallel_replicas->drain();
 					packet.exception->rethrow();
 					break;
 
 				case Protocol::Server::EndOfStream:
-					if (!use_many_replicas || !parallel_replicas->hasActiveConnections())
+					if (!parallel_replicas->hasActiveConnections())
 					{
 						finished = true;
 						return Block();
@@ -242,11 +212,8 @@ protected:
 					break;
 
 				default:
-					if (use_many_replicas)
-					{
-						parallel_replicas->sendCancel();
-						(void) parallel_replicas->drain();
-					}
+					parallel_replicas->sendCancel();
+					(void) parallel_replicas->drain();
 					throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
 			}
 		}
@@ -270,74 +237,34 @@ protected:
 		/// Отправим просьбу прервать выполнение запроса, если ещё не отправляли.
 		if (!was_cancelled)
 		{
-			std::string addresses;
-			if (use_many_replicas)
-				addresses = parallel_replicas->dumpAddresses();
-			else
-				addresses = connection->getServerAddress();
-
+			std::string addresses = parallel_replicas->dumpAddresses();
 			LOG_TRACE(log, "(" + addresses + ") Cancelling query because enough data has been read");
 
 			was_cancelled = true;
-
-			if (use_many_replicas)
-				parallel_replicas->sendCancel();
-			else
-				connection->sendCancel();
+			parallel_replicas->sendCancel();
 		}
 
-		if (use_many_replicas)
+		/// Получим оставшиеся пакеты, чтобы не было рассинхронизации в соединении с сервером.
+		Connection::Packet packet = parallel_replicas->drain();
+		switch (packet.type)
 		{
-			Connection::Packet packet = parallel_replicas->drain();
-			switch (packet.type)
-			{
-				case Protocol::Server::EndOfStream:
-					finished = true;
-					break;
+			case Protocol::Server::EndOfStream:
+				finished = true;
+				break;
 
-				case Protocol::Server::Exception:
-					got_exception_from_server = true;
-					packet.exception->rethrow();
-					break;
+			case Protocol::Server::Exception:
+				got_exception_from_server = true;
+				packet.exception->rethrow();
+				break;
 
-				default:
-					throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
-			}
-		}
-		else
-		{
-			/// Получим оставшиеся пакеты, чтобы не было рассинхронизации в соединении с сервером.
-			while (true)
-			{
-				Connection::Packet packet = connection->receivePacket();
-
-				switch (packet.type)
-				{
-					case Protocol::Server::Data:
-					case Protocol::Server::Progress:
-					case Protocol::Server::ProfileInfo:
-					case Protocol::Server::Totals:
-					case Protocol::Server::Extremes:
-						break;
-
-					case Protocol::Server::EndOfStream:
-						finished = true;
-						return;
-
-					case Protocol::Server::Exception:
-						got_exception_from_server = true;
-						packet.exception->rethrow();
-						break;
-
-					default:
-						throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
-				}
-			}
+			default:
+				throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
 		}
 	}
 
 private:
 	IConnectionPool * pool = nullptr;
+
 	ConnectionPool::Entry pool_entry;
 	Connection * connection = nullptr;
 
@@ -351,8 +278,6 @@ private:
 	Tables external_tables;
 	QueryProcessingStage::Enum stage;
 	Context context;
-
-	bool use_many_replicas = false;
 
 	/// Отправили запрос (это делается перед получением первого блока).
 	bool sent_query = false;

@@ -3,21 +3,27 @@
 
 namespace DB
 {
-	ParallelReplicas::ParallelReplicas(std::vector<ConnectionPool::Entry> & entries, const Settings & settings_) :
-		settings(settings_),
-		active_connection_count(entries.size())
+	ParallelReplicas::ParallelReplicas(Connection * connection_, const Settings * settings_)
+		: settings(settings_),
+		active_connection_count(1),
+		supports_parallel_execution(false)
 	{
-		replica_map.reserve(entries.size());
+		addConnection(connection_);
+	}
 
-		for (auto & entry : entries)
-		{
-			Connection * connection = &*entry;
-			if (connection == nullptr)
-				throw Exception("Invalid connection specified in parameter.", ErrorCodes::LOGICAL_ERROR);
-			auto res = replica_map.insert(std::make_pair(connection->socket.impl()->sockfd(), connection));
-			if (!res.second)
-				throw Exception("Invalid set of connections.", ErrorCodes::LOGICAL_ERROR);
-		}
+	ParallelReplicas::ParallelReplicas(std::vector<ConnectionPool::Entry> & entries_, const Settings * settings_) 
+		: settings(settings_),
+		active_connection_count(entries_.size()),
+		supports_parallel_execution(active_connection_count > 1)
+	{
+		if (supports_parallel_execution && (settings == nullptr))
+			throw Exception("Settings are required for parallel execution", ErrorCodes::LOGICAL_ERROR);
+		if (active_connection_count == 0)
+			throw Exception("No connection specified", ErrorCodes::LOGICAL_ERROR);
+
+		replica_map.reserve(active_connection_count);
+		for (auto & entry : entries_)
+			addConnection(&*entry);
 	}
 
 	void ParallelReplicas::sendExternalTablesData(std::vector<ExternalTablesData> & data)
@@ -43,22 +49,36 @@ namespace DB
 		if (sent_query)
 			throw Exception("Query already sent.", ErrorCodes::LOGICAL_ERROR);
 
-		Settings query_settings = settings;
-		query_settings.parallel_replicas_count = replica_map.size();
-		UInt64 offset = 0;
-
-		for (auto & e : replica_map)
+		if (supports_parallel_execution)
 		{
-			Connection * connection = e.second;
+			Settings query_settings = *settings;
+			query_settings.parallel_replicas_count = active_connection_count;
+			UInt64 offset = 0;
+
+			for (auto & e : replica_map)
+			{
+				Connection * connection = e.second;
+				if (connection != nullptr)
+				{
+					query_settings.parallel_replica_offset = offset;
+					connection->sendQuery(query, query_id, stage, &query_settings, with_pending_data);
+					++offset;
+				}
+			}
+
+			if (offset > 0)
+				sent_query = true;
+		}
+		else
+		{
+			auto it = replica_map.begin();
+			Connection * connection = it->second;
 			if (connection != nullptr)
 			{
-				query_settings.parallel_replica_offset = offset;
-				connection->sendQuery(query, query_id, stage, &query_settings, with_pending_data);
-				++offset;
+				connection->sendQuery(query, query_id, stage, settings, with_pending_data);
+				sent_query = true;
 			}
 		}
-
-		sent_query = true;
 	}
 
 	Connection::Packet ParallelReplicas::receivePacket()
@@ -68,7 +88,7 @@ namespace DB
 		if (!hasActiveConnections())
 			throw Exception("No more packets are available.", ErrorCodes::LOGICAL_ERROR);
 
-		auto it = waitForReadEvent();
+		auto it = getConnection();
 		if (it == replica_map.end())
 			throw Exception("No available replica", ErrorCodes::NO_AVAILABLE_REPLICA);
 
@@ -87,8 +107,7 @@ namespace DB
 			case Protocol::Server::EndOfStream:
 			case Protocol::Server::Exception:
 			default:
-				connection = nullptr;
-				--active_connection_count;
+				invalidateConnection(connection);
 				break;
 		}
 
@@ -103,8 +122,7 @@ namespace DB
 			if (connection != nullptr)
 			{
 				connection->disconnect();
-				connection = nullptr;
-				--active_connection_count;
+				invalidateConnection(connection);
 			}
 		}
 	}
@@ -173,6 +191,37 @@ namespace DB
 		return os.str();
 	}
 
+	void ParallelReplicas::addConnection(Connection * connection)
+	{
+		if (connection == nullptr)
+			throw Exception("Invalid connection specified in parameter.", ErrorCodes::LOGICAL_ERROR);
+		auto res = replica_map.insert(std::make_pair(connection->socket.impl()->sockfd(), connection));
+		if (!res.second)
+			throw Exception("Invalid set of connections.", ErrorCodes::LOGICAL_ERROR);
+	}
+
+	void ParallelReplicas::invalidateConnection(Connection * & connection)
+	{
+		connection = nullptr;
+		--active_connection_count;
+	}
+
+	ParallelReplicas::ReplicaMap::iterator ParallelReplicas::getConnection()
+	{
+		ReplicaMap::iterator it;
+
+		if (supports_parallel_execution)
+			it = waitForReadEvent();
+		else
+		{
+			it = replica_map.begin();
+			if (it->second == nullptr)
+				it = replica_map.end();
+		}
+
+		return it;
+	}
+
 	ParallelReplicas::ReplicaMap::iterator ParallelReplicas::waitForReadEvent()
 	{
 		Poco::Net::Socket::SocketList read_list;
@@ -196,7 +245,7 @@ namespace DB
 				if (connection != nullptr)
 					read_list.push_back(connection->socket);
 			}
-			int n = Poco::Net::Socket::select(read_list, write_list, except_list, settings.poll_interval * 1000000);
+			int n = Poco::Net::Socket::select(read_list, write_list, except_list, settings->poll_interval * 1000000);
 			if (n == 0)
 				return replica_map.end();
 		}

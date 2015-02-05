@@ -11,7 +11,8 @@ namespace DB
 	class ParallelReplicas final
 	{
 	public:
-		ParallelReplicas(std::vector<ConnectionPool::Entry> & entries, const Settings & settings_);
+		ParallelReplicas(Connection * connection_, const Settings * settings_);
+		ParallelReplicas(std::vector<ConnectionPool::Entry> & entries, const Settings * settings_);
 
 		ParallelReplicas(const ParallelReplicas &) = delete;
 		ParallelReplicas & operator=(const ParallelReplicas &) = delete;
@@ -49,14 +50,22 @@ namespace DB
 		using ReplicaMap = std::unordered_map<int, Connection *>;
 
 	private:
+		/// Добавить соединение к реплике.
+		void addConnection(Connection * connection);
+
+		void invalidateConnection(Connection * & connection);
+
+		ReplicaMap::iterator getConnection();
+
 		/// Проверить, есть ли данные, которые можно прочитать на каких-нибудь репликах.
 		/// Возвращает соединение на такую реплику, если оно найдётся.
 		ReplicaMap::iterator waitForReadEvent();
 
 	private:
-		const Settings & settings;
+		const Settings * settings;
 		ReplicaMap replica_map;
 		size_t active_connection_count = 0;
+		bool supports_parallel_execution;
 		bool sent_query = false;
 		bool cancelled = false;
 	};
