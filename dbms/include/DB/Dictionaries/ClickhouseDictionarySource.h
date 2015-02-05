@@ -3,10 +3,10 @@
 #include <DB/Dictionaries/IDictionarySource.h>
 #include <DB/Client/ConnectionPool.h>
 #include <DB/DataStreams/RemoteBlockInputStream.h>
+#include <DB/Interpreters/executeQuery.h>
 #include <statdaemons/ext/range.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Net/NetworkInterface.h>
-#include <DB/DataStreams/NullBlockInputStream.h>
 
 namespace DB
 {
@@ -33,13 +33,7 @@ public:
 			  "ClickhouseDictionarySource")
 		  },
 		  load_all_query{composeLoadAllQuery(sample_block, table)}
-	{
-		if (is_local)
-			throw Exception{
-				"Cannot use local clickhouse as a dictionary source",
-				ErrorCodes::LOGICAL_ERROR
-			};
-	}
+	{}
 
 	ClickhouseDictionarySource(const ClickhouseDictionarySource & other)
 		: host{other.host}, port{other.port}, user{other.user}, password{other.password},
@@ -55,9 +49,7 @@ public:
 	BlockInputStreamPtr loadAll() override
 	{
 		if (is_local)
-			return new RemoteBlockInputStream{pool.get(), load_all_query, nullptr};
-			/// should be processed locally but due to some coupling problems cannot be handled properly now
-			/// return executeQuery(load_all_query, context).in;
+			return executeQuery(load_all_query, context).in;
 		return new RemoteBlockInputStream{pool.get(), load_all_query, nullptr};
 	}
 
