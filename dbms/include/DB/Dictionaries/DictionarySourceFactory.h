@@ -56,7 +56,7 @@ public:
 		}
 		else if (config.has(config_prefix + "mysql"))
 		{
-			return ext::make_unique<MysqlDictionarySource>(config, config_prefix + "mysql.", sample_block, context);
+			return ext::make_unique<MysqlDictionarySource>(config, config_prefix + "mysql", sample_block, context);
 		}
 		else if (config.has(config_prefix + "clickhouse"))
 		{

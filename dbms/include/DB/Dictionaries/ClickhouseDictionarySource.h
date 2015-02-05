@@ -18,7 +18,8 @@ class ClickhouseDictionarySource final : public IDictionarySource
 	static const auto max_block_size = 8192;
 
 public:
-	ClickhouseDictionarySource(Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
+	ClickhouseDictionarySource(const Poco::Util::AbstractConfiguration & config,
+		const std::string & config_prefix,
 		Block & sample_block, Context & context)
 		: host{config.getString(config_prefix + "host")},
 		  port(config.getInt(config_prefix + "port")),
