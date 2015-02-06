@@ -38,7 +38,7 @@ namespace mysqlxx
   *
   * TODO: Упростить, используя PoolBase.
   */
-class Pool
+class Pool final
 {
 protected:
 	/** Информация о соединении. */
@@ -191,20 +191,27 @@ public:
 	};
 
 
+	Pool(const std::string & config_name,
+		unsigned default_connections_ = MYSQLXX_POOL_DEFAULT_START_CONNECTIONS,
+		unsigned max_connections_ = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS,
+		const char * parent_config_name_ = nullptr)
+		: Pool{
+			Poco::Util::Application::instance().config(), config_name,
+			default_connections_, max_connections_, parent_config_name_
+		  }
+	{}
+
 	/**
 	 * @param config_name			Имя параметра в конфигурационном файле
 	 * @param default_connections_	Количество подключений по-умолчанию
 	 * @param max_connections_		Максимальное количество подключений
 	 */
-	Pool(const std::string & config_name,
+	Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & config_name,
 		 unsigned default_connections_ = MYSQLXX_POOL_DEFAULT_START_CONNECTIONS,
 		 unsigned max_connections_ = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS,
 		 const char * parent_config_name_ = nullptr)
-		: default_connections(default_connections_), max_connections(max_connections_),
-		initialized(false), was_successful(false)
+		: default_connections(default_connections_), max_connections(max_connections_)
 	{
-		Poco::Util::LayeredConfiguration & cfg = Poco::Util::Application::instance().config();
-
 		server 		= cfg.getString(config_name + ".host");
 
 		if (parent_config_name_)
@@ -255,8 +262,19 @@ public:
 		 unsigned default_connections_ = MYSQLXX_POOL_DEFAULT_START_CONNECTIONS,
 		 unsigned max_connections_ = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS)
 	: default_connections(default_connections_), max_connections(max_connections_),
-	initialized(false), db(db_), server(server_), user(user_), password(password_), port(port_),
-	connect_timeout(connect_timeout_), rw_timeout(rw_timeout_), was_successful(false) {}
+	db(db_), server(server_), user(user_), password(password_), port(port_),
+	connect_timeout(connect_timeout_), rw_timeout(rw_timeout_) {}
+
+	Pool(const Pool & other)
+		: default_connections{other.default_connections},
+		  max_connections{other.max_connections},
+		  db{other.db}, server{other.server},
+		  user{other.user}, password{other.password},
+		  port{other.port}, connect_timeout{other.connect_timeout},
+		  rw_timeout{other.rw_timeout}
+	{}
+
+	Pool & operator=(const Pool &) = delete;
 
 	~Pool()
 	{
@@ -340,7 +358,7 @@ protected:
 
 private:
 	/** Признак того, что мы инициализированы. */
-	bool initialized;
+	bool initialized{false};
 	/** Список соединений. */
 	typedef std::list<Connection *> Connections;
 	/** Список соединений. */
@@ -360,10 +378,10 @@ private:
 	unsigned rw_timeout;
 
 	/** Хотя бы один раз было успешное соединение. */
-	bool was_successful;
+	bool was_successful{false};
 
 	/** Выполняет инициализацию класса, если мы еще не инициализированы. */
-	inline void initialize()
+	void initialize()
 	{
 		if (!initialized)
 		{

@@ -15,25 +15,19 @@ class MysqlDictionarySource final : public IDictionarySource
 	static const auto max_block_size = 8192;
 
 public:
-	MysqlDictionarySource(Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
+	MysqlDictionarySource(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
 		Block & sample_block, const Context & context)
-		: host{config.getString(config_prefix + "host")},
-		  port(config.getInt(config_prefix + "port")),
-		  user{config.getString(config_prefix + "user", "")},
-		  password{config.getString(config_prefix + "password", "")},
-		  db{config.getString(config_prefix + "db", "")},
-		  table{config.getString(config_prefix + "table")},
+		: table{config.getString(config_prefix + ".table")},
 		  sample_block{sample_block}, context(context),
-		  pool{db, host, user, password, port},
+		  pool{config, config_prefix},
 		  load_all_query{composeLoadAllQuery(sample_block, table)},
 		  last_modification{getLastModification()}
 	{}
 
 	MysqlDictionarySource(const MysqlDictionarySource & other)
-		: host{other.host}, port{other.port}, user{other.user}, password{other.password},
-		  db{other.db}, table{other.db},
+		: table{other.table},
 		  sample_block{other.sample_block}, context(other.context),
-		  pool{db, host, user, password, port},
+		  pool{other.pool},
 		  load_all_query{other.load_all_query}, last_modification{other.last_modification}
 	{}
 
@@ -65,7 +59,6 @@ public:
 private:
 	mysqlxx::DateTime getLastModification() const
 	{
-		const auto Create_time_idx = 11;
 		const auto Update_time_idx = 12;
 
 		try
@@ -75,7 +68,7 @@ private:
 			auto result = query.use();
 			auto row = result.fetch();
 			const auto & update_time = row[Update_time_idx];
-			return !update_time.isNull() ? update_time.getDateTime() : row[Create_time_idx].getDateTime();
+			return !update_time.isNull() ? update_time.getDateTime() : mysqlxx::DateTime{std::time(nullptr)};
 		}
 		catch (...)
 		{
@@ -104,15 +97,10 @@ private:
 		return query;
 	}
 
-	const std::string host;
-	const UInt16 port;
-	const std::string user;
-	const std::string password;
-	const std::string db;
 	const std::string table;
 	Block sample_block;
 	const Context & context;
-	mutable mysqlxx::Pool pool;
+	mutable mysqlxx::PoolWithFailover pool;
 	const std::string load_all_query;
 	mysqlxx::DateTime last_modification;
 };
