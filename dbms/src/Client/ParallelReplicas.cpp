@@ -92,7 +92,7 @@ namespace DB
 		if (it == replica_map.end())
 			throw Exception("No available replica", ErrorCodes::NO_AVAILABLE_REPLICA);
 
-		Connection * & connection = it->second;
+		Connection * connection = it->second;
 		Connection::Packet packet = connection->receivePacket();
 
 		switch (packet.type)
@@ -107,7 +107,7 @@ namespace DB
 			case Protocol::Server::EndOfStream:
 			case Protocol::Server::Exception:
 			default:
-				invalidateConnection(connection);
+				invalidateConnection(it);
 				break;
 		}
 
@@ -116,13 +116,13 @@ namespace DB
 
 	void ParallelReplicas::disconnect()
 	{
-		for (auto & e : replica_map)
+		for (auto it = replica_map.begin(); it != replica_map.end(); ++it)
 		{
-			Connection * & connection = e.second;
+			Connection * connection = it->second;
 			if (connection != nullptr)
 			{
 				connection->disconnect();
-				invalidateConnection(connection);
+				invalidateConnection(it);
 			}
 		}
 	}
@@ -200,12 +200,6 @@ namespace DB
 			throw Exception("Invalid set of connections.", ErrorCodes::LOGICAL_ERROR);
 	}
 
-	void ParallelReplicas::invalidateConnection(Connection * & connection)
-	{
-		connection = nullptr;
-		--active_connection_count;
-	}
-
 	ParallelReplicas::ReplicaMap::iterator ParallelReplicas::getConnection()
 	{
 		ReplicaMap::iterator it;
@@ -252,5 +246,11 @@ namespace DB
 
 		auto & socket = read_list[rand() % read_list.size()];
 		return replica_map.find(socket.impl()->sockfd());
+	}
+
+	void ParallelReplicas::invalidateConnection(ParallelReplicas::ReplicaMap::iterator it)
+	{
+		it->second = nullptr;
+		--active_connection_count;
 	}
 }

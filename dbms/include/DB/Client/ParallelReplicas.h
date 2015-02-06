@@ -53,13 +53,13 @@ namespace DB
 		/// Добавить соединение к реплике.
 		void addConnection(Connection * connection);
 
-		void invalidateConnection(Connection * & connection);
-
 		ReplicaMap::iterator getConnection();
 
 		/// Проверить, есть ли данные, которые можно прочитать на каких-нибудь репликах.
 		/// Возвращает соединение на такую реплику, если оно найдётся.
 		ReplicaMap::iterator waitForReadEvent();
+
+		void invalidateConnection(ReplicaMap::iterator it);
 
 	private:
 		const Settings * settings;
