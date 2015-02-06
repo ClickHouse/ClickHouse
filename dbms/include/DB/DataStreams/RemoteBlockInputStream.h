@@ -136,23 +136,7 @@ protected:
 	{
 		if (!sent_query)
 		{
-			bool use_many_replicas = (pool != nullptr) && send_settings && (settings.max_parallel_replicas > 1);
-			if (use_many_replicas)
-			{
-				pool_entries = pool->getMany(&settings);
-				parallel_replicas = ext::make_unique<ParallelReplicas>(pool_entries, &settings);
-			}
-			else
-			{
-				/// Если надо - достаём соединение из пула.
-				if (pool)
-				{
-					pool_entry = pool->get(send_settings ? &settings : nullptr);
-					connection = &*pool_entry;
-				}
-				parallel_replicas = ext::make_unique<ParallelReplicas>(connection, send_settings ? &settings : nullptr);
-			}
-
+			initParallelReplicas();
 			parallel_replicas->sendQuery(query, "", stage, true);
 			sendExternalTables();
 			sent_query = true;
@@ -172,8 +156,7 @@ protected:
 
 				case Protocol::Server::Exception:
 					got_exception_from_server = true;
-					parallel_replicas->sendCancel();
-					(void) parallel_replicas->drain();
+					abort();
 					packet.exception->rethrow();
 					break;
 
@@ -212,8 +195,7 @@ protected:
 					break;
 
 				default:
-					parallel_replicas->sendCancel();
-					(void) parallel_replicas->drain();
+					abort();
 					throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
 			}
 		}
@@ -262,6 +244,15 @@ protected:
 		}
 	}
 
+	void abort()
+	{
+		std::string addresses = parallel_replicas->dumpAddresses();
+		LOG_TRACE(log, "(" + addresses + ") Aborting query");
+
+		parallel_replicas->sendCancel();
+		(void) parallel_replicas->drain();
+	}
+
 private:
 	IConnectionPool * pool = nullptr;
 
@@ -305,6 +296,26 @@ private:
 	{
 		static Context instance;
 		return instance;
+	}
+
+	void initParallelReplicas()
+	{
+		bool use_many_replicas = (pool != nullptr) && send_settings && (settings.max_parallel_replicas > 1);
+		if (use_many_replicas)
+		{
+			pool_entries = pool->getMany(&settings);
+			parallel_replicas = ext::make_unique<ParallelReplicas>(pool_entries, &settings);
+		}
+		else
+		{
+			/// Если надо - достаём соединение из пула.
+			if (pool)
+			{
+				pool_entry = pool->get(send_settings ? &settings : nullptr);
+				connection = &*pool_entry;
+			}
+			parallel_replicas = ext::make_unique<ParallelReplicas>(connection, send_settings ? &settings : nullptr);
+		}
 	}
 };
 
