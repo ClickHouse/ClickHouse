@@ -3,6 +3,7 @@
 #include <DB/Dictionaries/DictionaryStructure.h>
 #include <DB/Dictionaries/IDictionarySource.h>
 #include <DB/Dictionaries/config_ptr_t.h>
+#include <statdaemons/ext/scope_guard.hpp>
 
 namespace DB
 {
@@ -125,6 +126,12 @@ void Dictionaries::reloadExternals()
 				if (std::chrono::system_clock::now() < update_time)
 					continue;
 
+				scope_exit({
+					/// calculate next update time
+					std::uniform_int_distribution<std::uint64_t> distribution{lifetime.min_sec, lifetime.max_sec};
+					update_time = std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
+				});
+
 				/// check source modified
 				if (current->getSource()->isModified())
 				{
@@ -132,10 +139,6 @@ void Dictionaries::reloadExternals()
 					auto new_version = current->clone();
 					dictionary.second->set(new_version.release());
 				}
-
-				/// calculate next update time
-				std::uniform_int_distribution<std::uint64_t> distribution{lifetime.min_sec, lifetime.max_sec};
-				update_time = std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
 			}
 		}
 		catch (...)
