@@ -50,7 +50,7 @@ public:
 		init(settings_);
 	}
 
-	/// Принимает пул, из которого нужно будет достать соединение.
+	/// Принимает пул, из которого нужно будет достать одно или несколько соединений.
 	RemoteBlockInputStream(IConnectionPool * pool_, const String & query_, const Settings * settings_,
 		const Tables & external_tables_ = Tables(), QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
 		const Context & context = getDefaultContext())
@@ -244,6 +244,15 @@ protected:
 		}
 	}
 
+	void createParallelReplicas()
+	{
+		Settings * parallel_replicas_settings = send_settings ? &settings : nullptr;
+		if (connection != nullptr)
+			parallel_replicas = ext::make_unique<ParallelReplicas>(connection, parallel_replicas_settings);
+		else
+			parallel_replicas = ext::make_unique<ParallelReplicas>(pool, parallel_replicas_settings);
+	}
+
 	void abort()
 	{
 		std::string addresses = parallel_replicas->dumpAddresses();
@@ -294,15 +303,6 @@ private:
 	{
 		static Context instance;
 		return instance;
-	}
-
-	void createParallelReplicas()
-	{
-		Settings * parallel_replicas_settings = send_settings ? &settings : nullptr;
-		if (connection != nullptr)
-			parallel_replicas = ext::make_unique<ParallelReplicas>(connection, parallel_replicas_settings);
-		else
-			parallel_replicas = ext::make_unique<ParallelReplicas>(pool, parallel_replicas_settings);
 	}
 };
 
