@@ -136,7 +136,7 @@ protected:
 	{
 		if (!sent_query)
 		{
-			initParallelReplicas();
+			createParallelReplicas();
 			parallel_replicas->sendQuery(query, "", stage, true);
 			sendExternalTables();
 			sent_query = true;
@@ -258,8 +258,6 @@ private:
 
 	ConnectionPool::Entry pool_entry;
 	Connection * connection = nullptr;
-
-	std::vector<ConnectionPool::Entry> pool_entries;
 	std::unique_ptr<ParallelReplicas> parallel_replicas;
 
 	const String query;
@@ -298,24 +296,13 @@ private:
 		return instance;
 	}
 
-	void initParallelReplicas()
+	void createParallelReplicas()
 	{
-		bool use_many_replicas = (pool != nullptr) && send_settings && (settings.max_parallel_replicas > 1);
-		if (use_many_replicas)
-		{
-			pool_entries = pool->getMany(&settings);
-			parallel_replicas = ext::make_unique<ParallelReplicas>(pool_entries, &settings);
-		}
+		Settings * parallel_replicas_settings = send_settings ? &settings : nullptr;
+		if (connection != nullptr)
+			parallel_replicas = ext::make_unique<ParallelReplicas>(connection, parallel_replicas_settings);
 		else
-		{
-			/// Если надо - достаём соединение из пула.
-			if (pool)
-			{
-				pool_entry = pool->get(send_settings ? &settings : nullptr);
-				connection = &*pool_entry;
-			}
-			parallel_replicas = ext::make_unique<ParallelReplicas>(connection, send_settings ? &settings : nullptr);
-		}
+			parallel_replicas = ext::make_unique<ParallelReplicas>(pool, parallel_replicas_settings);
 	}
 };
 

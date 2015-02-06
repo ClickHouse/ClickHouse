@@ -11,8 +11,8 @@ namespace DB
 	class ParallelReplicas final
 	{
 	public:
-		ParallelReplicas(Connection * connection_, const Settings * settings_);
-		ParallelReplicas(std::vector<ConnectionPool::Entry> & entries, const Settings * settings_);
+		ParallelReplicas(Connection * connection_, Settings * settings_);
+		ParallelReplicas(IConnectionPool * pool_, Settings * settings_);
 
 		ParallelReplicas(const ParallelReplicas &) = delete;
 		ParallelReplicas & operator=(const ParallelReplicas &) = delete;
@@ -62,8 +62,12 @@ namespace DB
 		void invalidateConnection(ReplicaMap::iterator it);
 
 	private:
-		const Settings * settings;
+		Settings * settings;
 		ReplicaMap replica_map;
+
+		std::vector<ConnectionPool::Entry> pool_entries;
+		ConnectionPool::Entry pool_entry;
+
 		size_t active_connection_count = 0;
 		bool supports_parallel_execution;
 		bool sent_query = false;

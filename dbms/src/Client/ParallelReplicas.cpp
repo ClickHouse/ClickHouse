@@ -3,7 +3,7 @@
 
 namespace DB
 {
-	ParallelReplicas::ParallelReplicas(Connection * connection_, const Settings * settings_)
+	ParallelReplicas::ParallelReplicas(Connection * connection_, Settings * settings_)
 		: settings(settings_),
 		active_connection_count(1),
 		supports_parallel_execution(false)
@@ -11,19 +11,34 @@ namespace DB
 		addConnection(connection_);
 	}
 
-	ParallelReplicas::ParallelReplicas(std::vector<ConnectionPool::Entry> & entries_, const Settings * settings_) 
-		: settings(settings_),
-		active_connection_count(entries_.size()),
-		supports_parallel_execution(active_connection_count > 1)
+	ParallelReplicas::ParallelReplicas(IConnectionPool * pool_, Settings * settings_)
+		: settings(settings_)
 	{
-		if (supports_parallel_execution && (settings == nullptr))
-			throw Exception("Settings are required for parallel execution", ErrorCodes::LOGICAL_ERROR);
-		if (active_connection_count == 0)
-			throw Exception("No connection specified", ErrorCodes::LOGICAL_ERROR);
+		if (pool_ == nullptr)
+			throw Exception("Null pool specified", ErrorCodes::LOGICAL_ERROR);
 
-		replica_map.reserve(active_connection_count);
-		for (auto & entry : entries_)
-			addConnection(&*entry);
+		bool has_many_replicas = (settings != nullptr) && (settings->max_parallel_replicas > 1);
+		if (has_many_replicas)
+		{
+			pool_entries = pool_->getMany(settings);
+			active_connection_count = pool_entries.size();
+			supports_parallel_execution = (active_connection_count > 1);
+
+			if (active_connection_count == 0)
+				throw Exception("No connection available", ErrorCodes::LOGICAL_ERROR);
+
+			replica_map.reserve(active_connection_count);
+			for (auto & entry : pool_entries)
+				addConnection(&*entry);
+		}
+		else
+		{
+			active_connection_count = 1;
+			supports_parallel_execution = false;
+
+			pool_entry = pool_->get(settings);
+			addConnection(&*pool_entry);
+		}
 	}
 
 	void ParallelReplicas::sendExternalTablesData(std::vector<ExternalTablesData> & data)
