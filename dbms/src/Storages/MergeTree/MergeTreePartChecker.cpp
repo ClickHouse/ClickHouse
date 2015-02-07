@@ -120,7 +120,7 @@ struct Stream
 
 		/// Если засечка должна быть ровно на границе блоков, нам подходит и засечка, указывающая на конец предыдущего блока,
 		///  и на начало следующего.
-		if (uncompressed_hashing_buf.position() == uncompressed_hashing_buf.buffer().end())
+		if (!uncompressed_hashing_buf.hasPendingData())
 		{
 			/// Получим засечку, указывающую на конец предыдущего блока.
 			has_alternative_mark = true;

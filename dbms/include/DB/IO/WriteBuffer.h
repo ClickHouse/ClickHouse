@@ -44,7 +44,7 @@ public:
 			pos = working_buffer.begin();
 			throw;
 		}
-		
+
 		pos = working_buffer.begin();
 	}
 
@@ -56,11 +56,11 @@ public:
 
 	inline void nextIfAtEnd()
 	{
-		if (pos == working_buffer.end())
+		if (!hasPendingData())
 			next();
 	}
 
-	
+
 	void write(const char * from, size_t n)
 	{
 		size_t bytes_copied = 0;
@@ -82,7 +82,7 @@ public:
 		*pos = x;
 		++pos;
 	}
-	
+
 private:
 	/** Записать данные, находящиеся в буфере (от начала буфера до текущей позиции).
 	  * Кинуть исключение, если что-то не так.

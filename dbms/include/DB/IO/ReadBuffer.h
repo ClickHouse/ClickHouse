@@ -46,7 +46,7 @@ public:
 		bool res = nextImpl();
 		if (!res)
 			working_buffer.resize(0);
-		
+
 		pos = working_buffer.begin();
 		return res;
 	}
@@ -54,7 +54,7 @@ public:
 
 	inline void nextIfAtEnd()
 	{
-		if (pos == working_buffer.end())
+		if (!hasPendingData())
 			next();
 	}
 
@@ -70,7 +70,7 @@ public:
 	  */
 	inline bool eof()
 	{
-		return pos == working_buffer.end() && !next();
+		return !hasPendingData() && !next();
 	}
 
 	void ignore()
@@ -141,12 +141,6 @@ public:
 	virtual size_t readBig(char * to, size_t n)
 	{
 		return read(to, n);
-	}
-
-	/** Проверить, есть ли данные в буфере для чтения. */
-	bool hasPendingData() const
-	{
-		return pos != working_buffer.end();
 	}
 
 private:

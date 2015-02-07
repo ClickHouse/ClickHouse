@@ -14,23 +14,23 @@ class ConcatReadBuffer : public ReadBuffer
 {
 public:
 	typedef std::vector<ReadBuffer *> ReadBuffers;
-	
+
 protected:
 	ReadBuffers buffers;
 	ReadBuffers::iterator current;
-	
+
 	bool nextImpl()
 	{
 		if (buffers.end() == current)
 			return false;
-		
+
 		/// Первое чтение
-		if (working_buffer.size() == 0 && (*current)->position() != (*current)->buffer().end())
+		if (working_buffer.size() == 0 && (*current)->hasPendingData())
 		{
 			working_buffer = Buffer((*current)->position(), (*current)->buffer().end());
 			return true;
 		}
-		
+
 		if (!(*current)->next())
 		{
 			++current;
@@ -45,7 +45,7 @@ protected:
 					return false;
 			}
 		}
-		
+
 		working_buffer = Buffer((*current)->position(), (*current)->buffer().end());
 		return true;
 	}
