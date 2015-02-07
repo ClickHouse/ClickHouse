@@ -241,8 +241,9 @@ namespace DB
 		Poco::Net::Socket::SocketList read_list;
 		read_list.reserve(active_replica_count);
 
-		/// Сначала проверяем, есть ли данные, которые уже лежат в буфере
-		/// хоть одного соединения.
+		/** Сначала проверяем, есть ли данные, которые уже лежат в буфере
+		  * хоть одного соединения.
+		  */
 		for (auto & e : replica_map)
 		{
 			Connection * connection = e.second;
@@ -250,8 +251,9 @@ namespace DB
 				read_list.push_back(connection->socket);
 		}
 
-		/// Если не было найдено никаких данных, то проверяем, есть ли соединения
-		/// готовые для чтения.
+		/** Если не было найдено никаких данных, то проверяем, есть ли соединения
+		  * готовые для чтения.
+		  */
 		if (read_list.empty())
 		{
 			Poco::Net::Socket::SocketList write_list;

@@ -82,7 +82,7 @@ public:
 		if (!__sync_bool_compare_and_swap(&is_cancelled, false, true))
 			return;
 
-		if (sent_query && !was_cancelled && !finished && !got_exception_from_server)
+		if (sent_query && !was_cancelled && !finished && !got_exception_from_replica)
 		{
 			std::string addresses = parallel_replicas->dumpAddresses();
 			LOG_TRACE(log, "(" + addresses + ") Cancelling query");
@@ -155,7 +155,7 @@ protected:
 					break;	/// Если блок пустой - получим другие пакеты до EndOfStream.
 
 				case Protocol::Server::Exception:
-					got_exception_from_server = true;
+					got_exception_from_replica = true;
 					abort();
 					packet.exception->rethrow();
 					break;
@@ -195,6 +195,7 @@ protected:
 					break;
 
 				default:
+					got_unknown_packet_from_replica = true;
 					abort();
 					throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
 			}
@@ -209,7 +210,7 @@ protected:
 		 *   - получили с сервера эксепшен;
 		 * - то больше читать ничего не нужно.
 		 */
-		if (!sent_query || finished || got_exception_from_server)
+		if (!sent_query || finished || got_exception_from_replica)
 			return;
 
 		/** Если ещё прочитали не все данные, но они больше не нужны.
@@ -235,16 +236,17 @@ protected:
 				break;
 
 			case Protocol::Server::Exception:
-				got_exception_from_server = true;
+				got_exception_from_replica = true;
 				packet.exception->rethrow();
 				break;
 
 			default:
+				got_unknown_packet_from_replica = true;
 				throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
 		}
 	}
 
-	/// Создать структуру для общения с репликами одного шарда, на которых должен выполниться запрос.
+	/// Создать объект для общения с репликами одного шарда, на которых должен выполниться запрос.
 	void createParallelReplicas()
 	{
 		Settings * parallel_replicas_settings = send_settings ? &settings : nullptr;
@@ -254,16 +256,20 @@ protected:
 			parallel_replicas = ext::make_unique<ParallelReplicas>(pool, parallel_replicas_settings);
 	}
 
-	/// Если был получен пакет типа Exception или неизвестного типа, отменить запросы на всех
-	/// репликах. Читать и пропускать все оставшиеся пакеты до EndOfStream или Exception, чтобы
-	/// не было рассинхронизации в соединениях с репликами.
+	/** Если с одной реплики был получен пакет Exception или неизвестный пакет, отменить запросы на всех
+	  * остальных репликах. Читать и пропускать все оставшиеся пакеты до EndOfStream или Exception, чтобы
+	  * не было рассинхронизации в соединениях с репликами.
+	  */
 	void abort()
 	{
-		std::string addresses = parallel_replicas->dumpAddresses();
-		LOG_TRACE(log, "(" + addresses + ") Aborting query");
+		if (got_exception_from_replica || got_unknown_packet_from_replica)
+		{
+			std::string addresses = parallel_replicas->dumpAddresses();
+			LOG_TRACE(log, "(" + addresses + ") Aborting query");
 
-		parallel_replicas->sendCancel();
-		(void) parallel_replicas->drain();
+			parallel_replicas->sendCancel();
+			(void) parallel_replicas->drain();
+		}
 	}
 
 private:
@@ -291,14 +297,21 @@ private:
 	  */
 	bool finished = false;
 
-	/** На каждую реплику была отправлена просьба прервать выполенение запроса, так как данные больше не нужны.
+	/** На каждую реплику была отправлена просьба прервать выполнение запроса, так как данные больше не нужны.
 	  * Это может быть из-за того, что данных достаточно (например, при использовании LIMIT),
 	  *  или если на стороне клиента произошло исключение.
 	  */
 	bool was_cancelled = false;
 
-	/// С одной репилки было получено исключение. В этом случае получать больше пакетов или просить прервать запрос не нужно.
-	bool got_exception_from_server = false;
+	/** С одной репилки было получено исключение. В этом случае получать больше пакетов или
+	  * просить прервать запрос на этой реплике не нужно.
+	  */
+	bool got_exception_from_replica = false;
+
+	/** С одной реплики был получен неизвестный пакет. В этом случае получать больше пакетов или
+	  * просить прервать запрос на этой реплике не нужно.
+	  */
+	bool got_unknown_packet_from_replica = false;
 
 	Logger * log = &Logger::get("RemoteBlockInputStream");
 
