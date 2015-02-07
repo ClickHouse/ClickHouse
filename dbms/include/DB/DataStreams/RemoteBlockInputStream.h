@@ -14,7 +14,7 @@
 namespace DB
 {
 
-/** Позволяет выполнить запрос (SELECT) на удалённом сервере и получить результат.
+/** Позволяет выполнить запрос (SELECT) на удалённых репликах одного шарда и получить результат.
   */
 class RemoteBlockInputStream : public IProfilingBlockInputStream
 {
@@ -87,7 +87,7 @@ public:
 			std::string addresses = parallel_replicas->dumpAddresses();
 			LOG_TRACE(log, "(" + addresses + ") Cancelling query");
 
-			/// Если запрошено прервать запрос - попросим удалённый сервер тоже прервать запрос.
+			/// Если запрошено прервать запрос - попросим удалённые реплики тоже прервать запрос.
 			parallel_replicas->sendCancel();
 			was_cancelled = true;
 		}
@@ -96,15 +96,15 @@ public:
 
 	~RemoteBlockInputStream() override
 	{
-		/** Если прервались в середине цикла общения с сервером, то закрываем соединение,
-		  *  чтобы оно не осталось висеть в рассихронизированном состоянии.
+		/** Если прервались в середине цикла общения с репликами, то закрываем соединения,
+		  *  чтобы они не остались висеть в рассихронизированном состоянии.
 		  */
 		if (sent_query && !finished)
 			parallel_replicas->disconnect();
 	}
 
 protected:
-	/// Отправить на удаленные сервера все временные таблицы
+	/// Отправить на удаленные реплики все временные таблицы
 	void sendExternalTables()
 	{
 		size_t count = parallel_replicas->size();
@@ -161,7 +161,7 @@ protected:
 					break;
 
 				case Protocol::Server::EndOfStream:
-					if (!parallel_replicas->hasActiveConnections())
+					if (!parallel_replicas->hasActiveReplicas())
 					{
 						finished = true;
 						return Block();
@@ -226,7 +226,7 @@ protected:
 			parallel_replicas->sendCancel();
 		}
 
-		/// Получим оставшиеся пакеты, чтобы не было рассинхронизации в соединении с сервером.
+		/// Получим оставшиеся пакеты, чтобы не было рассинхронизации в соединениях с репликами.
 		Connection::Packet packet = parallel_replicas->drain();
 		switch (packet.type)
 		{
@@ -244,6 +244,7 @@ protected:
 		}
 	}
 
+	/// Создать структуру для общения с репликами одного шарда, на которых должен выполниться запрос.
 	void createParallelReplicas()
 	{
 		Settings * parallel_replicas_settings = send_settings ? &settings : nullptr;
@@ -253,6 +254,9 @@ protected:
 			parallel_replicas = ext::make_unique<ParallelReplicas>(pool, parallel_replicas_settings);
 	}
 
+	/// Если был получен пакет типа Exception или неизвестного типа, отменить запросы на всех
+	/// репликах. Читать и пропускать все оставшиеся пакеты до EndOfStream или Exception, чтобы
+	/// не было рассинхронизации в соединениях с репликами.
 	void abort()
 	{
 		std::string addresses = parallel_replicas->dumpAddresses();
@@ -280,20 +284,20 @@ private:
 	/// Отправили запрос (это делается перед получением первого блока).
 	bool sent_query = false;
 
-	/** Получили все данные от сервера, до пакета EndOfStream.
+	/** Получили все данные от всех реплик, до пакета EndOfStream.
 	  * Если при уничтожении объекта, ещё не все данные считаны,
-	  *  то для того, чтобы не было рассинхронизации, на сервер отправляется просьба прервать выполнение запроса,
+	  *  то для того, чтобы не было рассинхронизации, на реплики отправляются просьбы прервать выполнение запроса,
 	  *  и после этого считываются все пакеты до EndOfStream.
 	  */
 	bool finished = false;
 
-	/** На сервер была отправлена просьба прервать выполенение запроса, так как данные больше не нужны.
+	/** На каждую реплику была отправлена просьба прервать выполенение запроса, так как данные больше не нужны.
 	  * Это может быть из-за того, что данных достаточно (например, при использовании LIMIT),
 	  *  или если на стороне клиента произошло исключение.
 	  */
 	bool was_cancelled = false;
 
-	/// С сервера было получено исключение. В этом случае получать больше пакетов или просить прервать запрос не нужно.
+	/// С одной репилки было получено исключение. В этом случае получать больше пакетов или просить прервать запрос не нужно.
 	bool got_exception_from_server = false;
 
 	Logger * log = &Logger::get("RemoteBlockInputStream");

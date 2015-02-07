@@ -36,8 +36,9 @@ namespace DB
 		/// Отменить запросы к репликам
 		void sendCancel();
 
-		/// Для каждой реплики получить оставшиеся пакеты после отмена запроса.
-		/// Возвращает либо последнее полученное исключение либо пакет EndOfStream.
+		/// На каждой реплике читать и пропускать все пакеты до EndOfStream или Exception.
+		/// Возвращает EndOfStream, если не было получено никакого исключения. В противном
+		/// случае возвращает последний полученный пакет типа Exception.
 		Connection::Packet drain();
 
 		/// Получить адреса реплик в виде строки.
@@ -46,26 +47,26 @@ namespace DB
 		/// Возвращает количесто реплик.
 		size_t size() const { return replica_map.size(); }
 
-		/// Проверить, есть ли действительные соединения к репликам.
-		bool hasActiveConnections() const { return active_connection_count > 0; }
+		/// Проверить, есть ли действительные реплики.
+		bool hasActiveReplicas() const { return active_replica_count > 0; }
 
 	private:
 		/// Реплики хэшированные по id сокета
 		using ReplicaMap = std::unordered_map<int, Connection *>;
 
 	private:
-		/// Зарегистрировать соединение к реплике.
-		void addConnection(Connection * connection);
+		/// Зарегистрировать реплику.
+		void registerReplica(Connection * connection);
 
-		/// Получить соединение к реплике, на которой можно прочитать данные.
-		ReplicaMap::iterator getConnection();
+		/// Получить реплику, на которой можно прочитать данные.
+		ReplicaMap::iterator getReplicaForReading();
 
 		/// Проверить, есть ли данные, которые можно прочитать на каких-нибудь репликах.
-		/// Возвращает соединение к такой реплике, если оно найдётся.
+		/// Возвращает одну такую реплику, если она найдётся.
 		ReplicaMap::iterator waitForReadEvent();
 
-		// Пометить соединение как недействительное.
-		void invalidateConnection(ReplicaMap::iterator it);
+		// Пометить реплику как недействительную.
+		void invalidateReplica(ReplicaMap::iterator it);
 
 	private:
 		Settings * settings;
@@ -75,7 +76,7 @@ namespace DB
 		ConnectionPool::Entry pool_entry;
 
 		/// Текущее количество действительных соединений к репликам.
-		size_t active_connection_count = 0;
+		size_t active_replica_count = 0;
 		/// Запрос выполняется параллельно на нескольких репликах.
 		bool supports_parallel_execution;
 		/// Отправили запрос

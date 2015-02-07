@@ -5,10 +5,10 @@ namespace DB
 {
 	ParallelReplicas::ParallelReplicas(Connection * connection_, Settings * settings_)
 		: settings(settings_),
-		active_connection_count(1),
+		active_replica_count(1),
 		supports_parallel_execution(false)
 	{
-		addConnection(connection_);
+		registerReplica(connection_);
 	}
 
 	ParallelReplicas::ParallelReplicas(IConnectionPool * pool_, Settings * settings_)
@@ -21,23 +21,23 @@ namespace DB
 		if (has_many_replicas)
 		{
 			pool_entries = pool_->getMany(settings);
-			active_connection_count = pool_entries.size();
-			supports_parallel_execution = (active_connection_count > 1);
+			active_replica_count = pool_entries.size();
+			supports_parallel_execution = (active_replica_count > 1);
 
-			if (active_connection_count == 0)
+			if (active_replica_count == 0)
 				throw Exception("No connection available", ErrorCodes::LOGICAL_ERROR);
 
-			replica_map.reserve(active_connection_count);
+			replica_map.reserve(active_replica_count);
 			for (auto & entry : pool_entries)
-				addConnection(&*entry);
+				registerReplica(&*entry);
 		}
 		else
 		{
-			active_connection_count = 1;
+			active_replica_count = 1;
 			supports_parallel_execution = false;
 
 			pool_entry = pool_->get(settings);
-			addConnection(&*pool_entry);
+			registerReplica(&*pool_entry);
 		}
 	}
 
@@ -46,7 +46,7 @@ namespace DB
 		if (!sent_query)
 			throw Exception("Cannot send external tables data: query not yet sent.", ErrorCodes::LOGICAL_ERROR);
 
-		if (data.size() < active_connection_count)
+		if (data.size() < active_replica_count)
 			throw Exception("Mismatch between replicas and data sources", ErrorCodes::MISMATCH_REPLICAS_DATA_SOURCES);
 
 		auto it = data.begin();
@@ -67,7 +67,7 @@ namespace DB
 		if (supports_parallel_execution)
 		{
 			Settings query_settings = *settings;
-			query_settings.parallel_replicas_count = active_connection_count;
+			query_settings.parallel_replicas_count = active_replica_count;
 			UInt64 offset = 0;
 
 			for (auto & e : replica_map)
@@ -100,10 +100,10 @@ namespace DB
 	{
 		if (!sent_query)
 			throw Exception("Cannot receive packets: no query sent.", ErrorCodes::LOGICAL_ERROR);
-		if (!hasActiveConnections())
+		if (!hasActiveReplicas())
 			throw Exception("No more packets are available.", ErrorCodes::LOGICAL_ERROR);
 
-		auto it = getConnection();
+		auto it = getReplicaForReading();
 		if (it == replica_map.end())
 			throw Exception("No available replica", ErrorCodes::NO_AVAILABLE_REPLICA);
 
@@ -120,13 +120,13 @@ namespace DB
 				break;
 
 			case Protocol::Server::EndOfStream:
-				invalidateConnection(it);
+				invalidateReplica(it);
 				break;
 
 			case Protocol::Server::Exception:
 			default:
 				connection->disconnect();
-				invalidateConnection(it);
+				invalidateReplica(it);
 				break;
 		}
 
@@ -141,7 +141,7 @@ namespace DB
 			if (connection != nullptr)
 			{
 				connection->disconnect();
-				invalidateConnection(it);
+				invalidateReplica(it);
 			}
 		}
 	}
@@ -169,7 +169,7 @@ namespace DB
 		Connection::Packet res;
 		res.type = Protocol::Server::EndOfStream;
 
-		while (hasActiveConnections())
+		while (hasActiveReplicas())
 		{
 			Connection::Packet packet = receivePacket();
 
@@ -211,7 +211,7 @@ namespace DB
 		return os.str();
 	}
 
-	void ParallelReplicas::addConnection(Connection * connection)
+	void ParallelReplicas::registerReplica(Connection * connection)
 	{
 		if (connection == nullptr)
 			throw Exception("Invalid connection specified in parameter.", ErrorCodes::LOGICAL_ERROR);
@@ -220,7 +220,7 @@ namespace DB
 			throw Exception("Invalid set of connections.", ErrorCodes::LOGICAL_ERROR);
 	}
 
-	ParallelReplicas::ReplicaMap::iterator ParallelReplicas::getConnection()
+	ParallelReplicas::ReplicaMap::iterator ParallelReplicas::getReplicaForReading()
 	{
 		ReplicaMap::iterator it;
 
@@ -239,7 +239,7 @@ namespace DB
 	ParallelReplicas::ReplicaMap::iterator ParallelReplicas::waitForReadEvent()
 	{
 		Poco::Net::Socket::SocketList read_list;
-		read_list.reserve(active_connection_count);
+		read_list.reserve(active_replica_count);
 
 		/// Сначала проверяем, есть ли данные, которые уже лежат в буфере
 		/// хоть одного соединения.
@@ -272,9 +272,9 @@ namespace DB
 		return replica_map.find(socket.impl()->sockfd());
 	}
 
-	void ParallelReplicas::invalidateConnection(ParallelReplicas::ReplicaMap::iterator it)
+	void ParallelReplicas::invalidateReplica(ParallelReplicas::ReplicaMap::iterator it)
 	{
 		it->second = nullptr;
-		--active_connection_count;
+		--active_replica_count;
 	}
 }
