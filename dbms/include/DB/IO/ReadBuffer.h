@@ -68,7 +68,7 @@ public:
 	  *
 	  * При попытке чтения после конца, следует кидать исключение.
 	  */
-	bool __attribute__ ((noinline)) eof()
+	bool eof()
 	{
 		return !hasPendingData() && !next();
 	}
