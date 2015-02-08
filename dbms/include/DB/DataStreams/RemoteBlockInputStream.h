@@ -82,7 +82,7 @@ public:
 		if (!__sync_bool_compare_and_swap(&is_cancelled, false, true))
 			return;
 
-		if (sent_query && !was_cancelled && !finished && !got_exception_from_replica)
+		if (isInProgress() && !hasThrownException() && !was_cancelled)
 		{
 			std::string addresses = parallel_replicas->dumpAddresses();
 			LOG_TRACE(log, "(" + addresses + ") Cancelling query");
@@ -96,11 +96,12 @@ public:
 
 	~RemoteBlockInputStream() override
 	{
-		/** Если прервались в середине цикла общения с репликами, то закрываем соединения,
-		  *  чтобы они не остались висеть в рассихронизированном состоянии.
+		/** Если прервались в середине цикла общения с репликами, то прервываем
+		  * все соединения, затем читаем и пропускаем оставшиеся пакеты чтобы
+		  * эти соединения не остались висеть в рассихронизированном состоянии.
 		  */
-		if (sent_query && !finished)
-			parallel_replicas->disconnect();
+		if (isInProgress())
+			abort();
 	}
 
 protected:
@@ -156,7 +157,6 @@ protected:
 
 				case Protocol::Server::Exception:
 					got_exception_from_replica = true;
-					abort();
 					packet.exception->rethrow();
 					break;
 
@@ -177,7 +177,7 @@ protected:
 					  */
 					progressImpl(packet.progress);
 
-					if (!was_cancelled && !finished && isCancelled())
+					if (!was_cancelled && isInProgress() && isCancelled())
 						cancel();
 
 					break;
@@ -196,7 +196,6 @@ protected:
 
 				default:
 					got_unknown_packet_from_replica = true;
-					abort();
 					throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
 			}
 		}
@@ -207,10 +206,11 @@ protected:
 		/** Если одно из:
 		 *   - ничего не начинали делать;
 		 *   - получили все пакеты до EndOfStream;
-		 *   - получили с сервера эксепшен;
+		 *   - получили с одной реплики эксепшен;
+		 *   - получили с одной реплики неизвестный пакет;
 		 * - то больше читать ничего не нужно.
 		 */
-		if (!sent_query || finished || got_exception_from_replica)
+		if (!isInProgress() || hasThrownException())
 			return;
 
 		/** Если ещё прочитали не все данные, но они больше не нужны.
@@ -256,20 +256,28 @@ protected:
 			parallel_replicas = ext::make_unique<ParallelReplicas>(pool, parallel_replicas_settings);
 	}
 
-	/** Если с одной реплики был получен пакет Exception или неизвестный пакет, отменить запросы на всех
-	  * остальных репликах. Читать и пропускать все оставшиеся пакеты до EndOfStream или Exception, чтобы
-	  * не было рассинхронизации в соединениях с репликами.
+	/** Отменить запросы на всех репликах. Читать и пропускать все оставшиеся пакеты
+	  * до EndOfStream или Exception, чтоб не было рассинхронизации в соединениях с репликами.
 	  */
 	void abort()
 	{
-		if (got_exception_from_replica || got_unknown_packet_from_replica)
-		{
-			std::string addresses = parallel_replicas->dumpAddresses();
-			LOG_TRACE(log, "(" + addresses + ") Aborting query");
+		std::string addresses = parallel_replicas->dumpAddresses();
+		LOG_TRACE(log, "(" + addresses + ") Aborting query");
 
-			parallel_replicas->sendCancel();
-			(void) parallel_replicas->drain();
-		}
+		parallel_replicas->sendCancel();
+		(void) parallel_replicas->drain();
+	}
+
+	/// Возвращает true, если запрос отправлен, а ещё не выполнен.
+	bool isInProgress() const
+	{
+		return sent_query && !finished;
+	}
+
+	/// Возвращает true, если исключение было выкинуто.
+	bool hasThrownException() const
+	{
+		return got_exception_from_replica || got_unknown_packet_from_replica;
 	}
 
 private:

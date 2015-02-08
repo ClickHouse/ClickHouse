@@ -29,9 +29,6 @@ namespace DB
 		/// Получить пакет от какой-нибудь реплики.
 		Connection::Packet receivePacket();
 
-		/// Разорвать соединения к репликам
-		void disconnect();
-
 		/// Отменить запросы к репликам
 		void sendCancel();
 

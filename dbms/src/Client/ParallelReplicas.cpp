@@ -133,19 +133,6 @@ namespace DB
 		return packet;
 	}
 
-	void ParallelReplicas::disconnect()
-	{
-		for (auto it = replica_map.begin(); it != replica_map.end(); ++it)
-		{
-			Connection * connection = it->second;
-			if (connection != nullptr)
-			{
-				connection->disconnect();
-				invalidateReplica(it);
-			}
-		}
-	}
-
 	void ParallelReplicas::sendCancel()
 	{
 		if (!sent_query || cancelled)
