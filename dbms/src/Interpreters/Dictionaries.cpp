@@ -34,7 +34,7 @@ void Dictionaries::reloadExternals()
 	const auto config_path = getDictionariesConfigPath(Poco::Util::Application::instance().config());
 	const Poco::File config_file{config_path};
 
-	if (!config_file.exists())
+	if (config_path.empty() || !config_file.exists())
 	{
 		LOG_WARNING(log, "config file '" + config_path + "' does not exist");
 	}
