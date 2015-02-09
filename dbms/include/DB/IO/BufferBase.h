@@ -79,6 +79,12 @@ public:
 		return bytes + offset();
 	}
 
+	/** Проверить, есть ли данные в буфере. */
+	bool hasPendingData() const
+	{
+		return pos != working_buffer.end();
+	}
+
 protected:
 	/// Ссылка на кусок памяти для буфера.
 	Buffer internal_buffer;

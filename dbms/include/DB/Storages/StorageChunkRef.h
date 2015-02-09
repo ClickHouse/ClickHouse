@@ -22,8 +22,6 @@ public:
 	NameAndTypePair getColumn(const String & column_name) const override { return getSource().getColumn(column_name); };
 	bool hasColumn(const String & column_name) const override { return getSource().hasColumn(column_name); };
 
-	bool supportsParallelReplicas() const override { return true; }
-
 	BlockInputStreams read(
 		const Names & column_names,
 		ASTPtr query,

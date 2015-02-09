@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DB/Storages/IStorage.h>
+#include <Yandex/singleton.h>
 
 
 namespace DB
@@ -11,7 +12,7 @@ class Context;
 
 /** Позволяет создать таблицу по имени движка.
   */
-class StorageFactory
+class StorageFactory : public Singleton<StorageFactory>
 {
 public:
 	StoragePtr get(

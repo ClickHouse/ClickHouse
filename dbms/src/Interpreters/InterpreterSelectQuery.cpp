@@ -25,7 +25,6 @@
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Storages/StorageView.h>
-#include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/TableFunctions/ITableFunction.h>
 #include <DB/TableFunctions/TableFunctionFactory.h>
 
@@ -104,12 +103,6 @@ void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_, const NamesAn
 			throw Exception("Storage engine " + storage->getName()
 							+ " does not support parallel execution on several replicas",
 							ErrorCodes::STORAGE_DOESNT_SUPPORT_PARALLEL_REPLICAS);
-
-		if (StorageReplicatedMergeTree * storage_replicated_merge_tree = typeid_cast<StorageReplicatedMergeTree *>(&*storage))
-		{
-			if (settings.parallel_replica_offset > 0)
-				storage_replicated_merge_tree->skipUnreplicated();
-		}
 
 		table_lock = storage->lockStructure(false);
 		if (table_column_names.empty())

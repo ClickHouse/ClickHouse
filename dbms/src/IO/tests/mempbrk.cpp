@@ -63,7 +63,7 @@ namespace test
 		return end;
 	}
 
-	
+
 	void readEscapedString(DB::String & s, DB::ReadBuffer & buf)
 	{
 		s = "";
@@ -74,7 +74,7 @@ namespace test
 			s.append(buf.position(), next_pos - buf.position());
 			buf.position() += next_pos - buf.position();
 
-			if (buf.position() == buf.buffer().end())
+			if (!buf.hasPendingData())
 				continue;
 
 			if (*buf.position() == '\t' || *buf.position() == '\n')

@@ -40,13 +40,13 @@ public:
 	/** прочитать следующие данные и заполнить ими буфер; переместить позицию в начало;
 	  * вернуть false в случае конца, true иначе; кинуть исключение, если что-то не так
 	  */
-	inline bool next()
+	bool next()
 	{
 		bytes += offset();
 		bool res = nextImpl();
 		if (!res)
 			working_buffer.resize(0);
-		
+
 		pos = working_buffer.begin();
 		return res;
 	}
@@ -54,7 +54,7 @@ public:
 
 	inline void nextIfAtEnd()
 	{
-		if (pos == working_buffer.end())
+		if (!hasPendingData())
 			next();
 	}
 
@@ -68,9 +68,9 @@ public:
 	  *
 	  * При попытке чтения после конца, следует кидать исключение.
 	  */
-	inline bool eof()
+	bool eof()
 	{
-		return pos == working_buffer.end() && !next();
+		return !hasPendingData() && !next();
 	}
 
 	void ignore()
@@ -141,12 +141,6 @@ public:
 	virtual size_t readBig(char * to, size_t n)
 	{
 		return read(to, n);
-	}
-
-	/** Проверить, есть ли данные в буфере для чтения. */
-	bool hasPendingData() const
-	{
-		return offset() != working_buffer.size();
 	}
 
 private:

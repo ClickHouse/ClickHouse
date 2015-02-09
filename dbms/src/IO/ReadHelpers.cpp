@@ -55,7 +55,7 @@ void readString(String & s, ReadBuffer & buf)
 		s.append(buf.position(), bytes);
 		buf.position() += bytes;
 
-		if (buf.position() != buf.buffer().end())
+		if (buf.hasPendingData())
 			return;
 	}
 }
@@ -121,7 +121,7 @@ void readEscapedString(DB::String & s, DB::ReadBuffer & buf)
 		s.append(buf.position(), next_pos - buf.position());
 		buf.position() += next_pos - buf.position();
 
-		if (buf.position() == buf.buffer().end())
+		if (!buf.hasPendingData())
 			continue;
 
 		if (*buf.position() == '\t' || *buf.position() == '\n')
@@ -191,8 +191,8 @@ static void readAnyQuotedString(String & s, ReadBuffer & buf)
 
 		s.append(buf.position(), next_pos - buf.position());
 		buf.position() += next_pos - buf.position();
-		
-		if (buf.position() == buf.buffer().end())
+
+		if (!buf.hasPendingData())
 			continue;
 
 		if (*buf.position() == quote)

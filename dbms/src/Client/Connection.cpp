@@ -165,7 +165,7 @@ void Connection::forceConnected()
 
 bool Connection::ping()
 {
-	LOG_TRACE(log_wrapper.get(), "Ping (" << getServerAddress() << ")");
+	// LOG_TRACE(log_wrapper.get(), "Ping (" << getServerAddress() << ")");
 
 	try
 	{
