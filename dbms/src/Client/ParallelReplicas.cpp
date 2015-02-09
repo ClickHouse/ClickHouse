@@ -1,5 +1,4 @@
 #include <DB/Client/ParallelReplicas.h>
-#include <boost/concept_check.hpp>
 
 namespace DB
 {
