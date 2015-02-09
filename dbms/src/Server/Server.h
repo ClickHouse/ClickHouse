@@ -49,7 +49,7 @@ public:
 	std::unique_ptr<OLAP::QueryConverter> olap_converter;
 
 protected:
-	void initialize(Application& self)
+	void initialize(Application & self)
 	{
 		Daemon::initialize(self);
 		logger().information("starting up");
@@ -61,7 +61,7 @@ protected:
 		Daemon::uninitialize();
 	}
 
-	int main(const std::vector<std::string>& args);
+	int main(const std::vector<std::string> & args);
 };
 
 }

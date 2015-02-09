@@ -1,6 +1,10 @@
 #pragma once
 
+#include <mutex>
 #include <thread>
+#include <unordered_map>
+#include <chrono>
+#include <random>
 
 #include <Poco/SharedPtr.h>
 
@@ -16,6 +20,9 @@ namespace DB
 
 using Poco::SharedPtr;
 
+class Context;
+class IDictionary;
+
 /// Словари Метрики, которые могут использоваться в функциях.
 
 class Dictionaries
@@ -24,14 +31,22 @@ private:
 	MultiVersion<RegionsHierarchies> regions_hierarchies;
 	MultiVersion<TechDataHierarchy> tech_data_hierarchy;
 	MultiVersion<RegionsNames> regions_names;
+	mutable std::mutex external_dictionaries_mutex;
+	std::unordered_map<std::string, std::shared_ptr<MultiVersion<IDictionary>>> external_dictionaries;
+	std::unordered_map<std::string, std::chrono::system_clock::time_point> update_times;
+	std::mt19937 rnd_engine;
 
+	Context & context;
 	/// Периодичность обновления справочников, в секундах.
 	int reload_period;
 
 	std::thread reloading_thread;
-	Poco::Event destroy;
+	std::thread reloading_externals_thread;
+	Poco::Event destroy{false};
 
 	Logger * log;
+
+	Poco::Timestamp dictionaries_last_modified{0};
 
 
 	void handleException() const
@@ -106,6 +121,9 @@ private:
 			LOG_INFO(log, "Loaded dictionaries.");
 	}
 
+
+	void reloadExternals();
+
 	/// Обновляет каждые reload_period секунд.
 	void reloadPeriodically()
 	{
@@ -118,20 +136,35 @@ private:
 		}
 	}
 
+	void reloadExternalsPeriodically()
+	{
+		const auto check_period = 5 * 1000;
+		while (true)
+		{
+			if (destroy.tryWait(check_period))
+				return;
+
+			reloadExternals();
+		}
+	}
+
 public:
 	/// Справочники будут обновляться в отдельном потоке, каждые reload_period секунд.
-	Dictionaries(int reload_period_ = 3600)
-		: reload_period(reload_period_),
+	Dictionaries(Context & context, int reload_period_ = 3600)
+		: context(context), reload_period(reload_period_),
 		log(&Logger::get("Dictionaries"))
 	{
 		reloadImpl();
+		reloadExternals();
 		reloading_thread = std::thread([this] { reloadPeriodically(); });
+		reloading_externals_thread = std::thread{&Dictionaries::reloadExternalsPeriodically, this};
 	}
 
 	~Dictionaries()
 	{
 		destroy.set();
 		reloading_thread.join();
+		reloading_externals_thread.join();
 	}
 
 	MultiVersion<RegionsHierarchies>::Version getRegionsHierarchies() const
@@ -147,6 +180,19 @@ public:
 	MultiVersion<RegionsNames>::Version getRegionsNames() const
 	{
 		return regions_names.get();
+	}
+
+	MultiVersion<IDictionary>::Version getExternalDictionary(const std::string & name) const
+	{
+		const std::lock_guard<std::mutex> lock{external_dictionaries_mutex};
+		const auto it = external_dictionaries.find(name);
+		if (it == std::end(external_dictionaries))
+			throw Exception{
+				"No such dictionary: " + name,
+				ErrorCodes::BAD_ARGUMENTS
+			};
+
+		return it->second->get();
 	}
 };
 

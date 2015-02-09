@@ -2,13 +2,11 @@
 
 using namespace mysqlxx;
 
-PoolWithFailover::PoolWithFailover(const std::string & config_name, unsigned default_connections, 
-								   unsigned max_connections, size_t max_tries_)
-	: max_tries(max_tries_)
+PoolWithFailover::PoolWithFailover(const Poco::Util::AbstractConfiguration & cfg,
+								   const std::string & config_name, const unsigned default_connections,
+								   const unsigned max_connections, const size_t max_tries)
+	: max_tries(max_tries)
 {
-	Poco::Util::Application & app = Poco::Util::Application::instance();
-	Poco::Util::AbstractConfiguration & cfg = app.config();
-	
 	if (cfg.has(config_name + ".replica"))
 	{
 		Poco::Util::AbstractConfiguration::Keys replica_keys;
@@ -20,7 +18,7 @@ PoolWithFailover::PoolWithFailover(const std::string & config_name, unsigned def
 				if (it->size() < std::string("replica").size() || it->substr(0, std::string("replica").size()) != "replica")
 					throw Poco::Exception("Unknown element in config: " + *it + ", expected replica");
 				std::string replica_name = config_name + "." + *it;
-				Replica replica(new Pool(replica_name, default_connections, max_connections, config_name.c_str()),
+				Replica replica(new Pool(cfg, replica_name, default_connections, max_connections, config_name.c_str()),
 								cfg.getInt(replica_name + ".priority", 0));
 				replicas_by_priority[replica.priority].push_back(replica);
 			}
@@ -28,7 +26,28 @@ PoolWithFailover::PoolWithFailover(const std::string & config_name, unsigned def
 	}
 	else
 	{
-		replicas_by_priority[0].push_back(Replica(new Pool(config_name, default_connections, max_connections), 0));
+		replicas_by_priority[0].push_back(Replica(new Pool(cfg, config_name, default_connections, max_connections), 0));
+	}
+}
+
+PoolWithFailover::PoolWithFailover(const std::string & config_name, const unsigned default_connections,
+	const unsigned max_connections, const size_t max_tries)
+	: PoolWithFailover{
+		Poco::Util::Application::instance().config(), config_name,
+		default_connections, max_connections, max_tries
+	  }
+{}
+
+PoolWithFailover::PoolWithFailover(const PoolWithFailover & other)
+	: max_tries{other.max_tries}
+{
+	for (const auto & replica_with_priority : other.replicas_by_priority)
+	{
+		Replicas replicas;
+		replicas.reserve(replica_with_priority.second.size());
+		for (const auto & replica : replica_with_priority.second)
+			replicas.emplace_back(new Pool{*replica.pool}, replica.priority);
+		replicas_by_priority.emplace(replica_with_priority.first, std::move(replicas));
 	}
 }
 

@@ -13,6 +13,7 @@
 #include <DB/Parsers/ASTNameTypePair.h>
 #include <DB/Parsers/ASTColumnDeclaration.h>
 
+#include <DB/Storages/StorageFactory.h>
 #include <DB/Storages/StorageLog.h>
 #include <DB/Storages/StorageSystemNumbers.h>
 
@@ -194,7 +195,7 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 		else
 			throw Exception("Incorrect CREATE query: required ENGINE.", ErrorCodes::ENGINE_REQUIRED);
 
-		res = context.getStorageFactory().get(
+		res = StorageFactory::instance().get(
 			storage_name, data_path, table_name, database_name, context,
 			context.getGlobalContext(), query_ptr, columns,
 			materialized_columns, alias_columns, column_defaults, create.attach);
