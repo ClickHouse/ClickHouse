@@ -16,7 +16,6 @@
 #include <DB/Storages/IStorage.h>
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
 #include <DB/DataTypes/DataTypeFactory.h>
-#include <DB/Storages/StorageFactory.h>
 #include <DB/Storages/MergeTree/BackgroundProcessingPool.h>
 #include <DB/Storages/MergeTree/MergeList.h>
 #include <DB/TableFunctions/TableFunctionFactory.h>
@@ -86,7 +85,6 @@ struct ContextShared
 	TableFunctionFactory table_function_factory;			/// Табличные функции.
 	AggregateFunctionFactory aggregate_function_factory; 	/// Агрегатные функции.
 	DataTypeFactory data_type_factory;						/// Типы данных.
-	StorageFactory storage_factory;							/// Движки таблиц.
 	FormatFactory format_factory;							/// Форматы.
 	mutable SharedPtr<Dictionaries> dictionaries;			/// Словари Метрики. Инициализируются лениво.
 	Users users;											/// Известные пользователи.
@@ -259,7 +257,6 @@ public:
 	const TableFunctionFactory & getTableFunctionFactory() const			{ return shared->table_function_factory; }
 	const AggregateFunctionFactory & getAggregateFunctionFactory() const	{ return shared->aggregate_function_factory; }
 	const DataTypeFactory & getDataTypeFactory() const						{ return shared->data_type_factory; }
-	const StorageFactory & getStorageFactory() const						{ return shared->storage_factory; }
 	const FormatFactory & getFormatFactory() const							{ return shared->format_factory; }
 	const Dictionaries & getDictionaries() const;
 
