@@ -161,7 +161,7 @@ private:
 	typedef std::vector<std::thread> Threads;
 
 	const size_t size;
-	static constexpr double sleep_seconds = 10;
+	enum { sleep_seconds = 10 };
 
 	Tasks tasks; 		/// Задачи в порядке, в котором мы планируем их выполнять.
 	Counters counters;

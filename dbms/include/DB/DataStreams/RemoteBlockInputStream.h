@@ -8,6 +8,7 @@
 #include <DB/Interpreters/Context.h>
 
 #include <DB/Client/ConnectionPool.h>
+#include <DB/Client/ShardReplicas.h>
 
 
 namespace DB
@@ -24,10 +25,12 @@ private:
 		{
 			send_settings = true;
 			settings = *settings_;
+			use_many_replicas = (pool != nullptr) && UInt64(settings.max_parallel_replicas) > 1;
 		}
 		else
 			send_settings = false;
 	}
+
 public:
 	/// Принимает готовое соединение.
 	RemoteBlockInputStream(Connection & connection_, const String & query_, const Settings * settings_,
@@ -82,10 +85,20 @@ public:
 
 		if (sent_query && !was_cancelled && !finished && !got_exception_from_server)
 		{
-			LOG_TRACE(log, "(" + connection->getServerAddress() + ") Cancelling query");
+			std::string addresses;
+			if (use_many_replicas)
+				addresses = shard_replicas->dumpAddresses();
+			else
+				addresses = connection->getServerAddress();
+
+			LOG_TRACE(log, "(" + addresses + ") Cancelling query");
 
 			/// Если запрошено прервать запрос - попросим удалённый сервер тоже прервать запрос.
-			connection->sendCancel();
+			if (use_many_replicas)
+				shard_replicas->sendCancel();
+			else
+				connection->sendCancel();
+
 			was_cancelled = true;
 		}
 	}
@@ -97,47 +110,84 @@ public:
 		  *  чтобы оно не осталось висеть в рассихронизированном состоянии.
 		  */
 		if (sent_query && !finished)
-			connection->disconnect();
+		{
+			if (use_many_replicas)
+				shard_replicas->disconnect();
+			else
+				connection->disconnect();
+		}
 	}
 
 protected:
 	/// Отправить на удаленные сервера все временные таблицы
 	void sendExternalTables()
 	{
-		ExternalTablesData res;
-		for (const auto & table : external_tables)
+		size_t count = use_many_replicas ? shard_replicas->size() : 1;
+
+		std::vector<ExternalTablesData> instances;
+		instances.reserve(count);
+
+		for (size_t i = 0; i < count; ++i)
 		{
-			StoragePtr cur = table.second;
-			QueryProcessingStage::Enum stage = QueryProcessingStage::Complete;
-			DB::BlockInputStreams input = cur->read(cur->getColumnNamesList(), ASTPtr(), context, settings,
-				stage, DEFAULT_BLOCK_SIZE, 1);
-			if (input.size() == 0)
-				res.push_back(std::make_pair(new OneBlockInputStream(cur->getSampleBlock()), table.first));
-			else
-				res.push_back(std::make_pair(input[0], table.first));
+			ExternalTablesData res;
+			for (const auto & table : external_tables)
+			{
+				StoragePtr cur = table.second;
+				QueryProcessingStage::Enum stage = QueryProcessingStage::Complete;
+				DB::BlockInputStreams input = cur->read(cur->getColumnNamesList(), ASTPtr(), context, settings,
+					stage, DEFAULT_BLOCK_SIZE, 1);
+				if (input.size() == 0)
+					res.push_back(std::make_pair(new OneBlockInputStream(cur->getSampleBlock()), table.first));
+				else
+					res.push_back(std::make_pair(input[0], table.first));
+			}
+			instances.push_back(std::move(res));
 		}
-		connection->sendExternalTablesData(res);
+
+		if (use_many_replicas)
+			shard_replicas->sendExternalTablesData(instances);
+		else
+			connection->sendExternalTablesData(instances[0]);
 	}
 
 	Block readImpl() override
 	{
 		if (!sent_query)
 		{
-			/// Если надо - достаём соединение из пула.
-			if (pool)
+			if (use_many_replicas)
 			{
-				pool_entry = pool->get(send_settings ? &settings : nullptr);
-				connection = &*pool_entry;
+				auto entries = pool->getMany(&settings);
+				if (entries.size() > 1)
+					shard_replicas = ext::make_unique<ShardReplicas>(entries, settings);
+				else
+				{
+					/// NOTE IConnectionPool::getMany() всегда возвращает как минимум одно соединение.
+					use_many_replicas = false;
+					connection = &*entries[0];
+				}
+			}
+			else
+			{
+				/// Если надо - достаём соединение из пула.
+				if (pool)
+				{
+					pool_entry = pool->get(send_settings ? &settings : nullptr);
+					connection = &*pool_entry;
+				}
 			}
 
-			connection->sendQuery(query, "", stage, send_settings ? &settings : nullptr, true);
+			if (use_many_replicas)
+				shard_replicas->sendQuery(query, "", stage, true);
+			else
+				connection->sendQuery(query, "", stage, send_settings ? &settings : nullptr, true);
+
 			sendExternalTables();
 			sent_query = true;
 		}
 
 		while (true)
 		{
-			Connection::Packet packet = connection->receivePacket();
+			Connection::Packet packet = use_many_replicas ? shard_replicas->receivePacket() : connection->receivePacket();
 
 			switch (packet.type)
 			{
@@ -206,28 +256,30 @@ protected:
 		/// Отправим просьбу прервать выполнение запроса, если ещё не отправляли.
 		if (!was_cancelled)
 		{
-			LOG_TRACE(log, "(" + connection->getServerAddress() + ") Cancelling query because enough data has been read");
+			std::string addresses;
+			if (use_many_replicas)
+				addresses = shard_replicas->dumpAddresses();
+			else
+				addresses = connection->getServerAddress();
+
+			LOG_TRACE(log, "(" + addresses + ") Cancelling query because enough data has been read");
 
 			was_cancelled = true;
-			connection->sendCancel();
+
+			if (use_many_replicas)
+				shard_replicas->sendCancel();
+			else
+				connection->sendCancel();
 		}
 
-		/// Получим оставшиеся пакеты, чтобы не было рассинхронизации в соединении с сервером.
-		while (true)
+		if (use_many_replicas)
 		{
-			Connection::Packet packet = connection->receivePacket();
-
+			Connection::Packet packet = shard_replicas->drain();
 			switch (packet.type)
 			{
-				case Protocol::Server::Data:
-				case Protocol::Server::Progress:
-				case Protocol::Server::ProfileInfo:
-				case Protocol::Server::Totals:
-				case Protocol::Server::Extremes:
-					break;
-
 				case Protocol::Server::EndOfStream:
-					return;
+					finished = true;
+					break;
 
 				case Protocol::Server::Exception:
 					got_exception_from_server = true;
@@ -238,14 +290,44 @@ protected:
 					throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
 			}
 		}
+		else
+		{
+			/// Получим оставшиеся пакеты, чтобы не было рассинхронизации в соединении с сервером.
+			while (true)
+			{
+				Connection::Packet packet = connection->receivePacket();
 
-		finished = true;
+				switch (packet.type)
+				{
+					case Protocol::Server::Data:
+					case Protocol::Server::Progress:
+					case Protocol::Server::ProfileInfo:
+					case Protocol::Server::Totals:
+					case Protocol::Server::Extremes:
+						break;
+
+					case Protocol::Server::EndOfStream:
+						finished = true;
+						return;
+
+					case Protocol::Server::Exception:
+						got_exception_from_server = true;
+						packet.exception->rethrow();
+						break;
+
+					default:
+						throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
+				}
+			}
+		}
 	}
 
 private:
 	IConnectionPool * pool = nullptr;
 	ConnectionPool::Entry pool_entry;
 	Connection * connection = nullptr;
+
+	std::unique_ptr<ShardReplicas> shard_replicas;
 
 	const String query;
 	bool send_settings;
@@ -254,6 +336,8 @@ private:
 	Tables external_tables;
 	QueryProcessingStage::Enum stage;
 	Context context;
+
+	bool use_many_replicas = false;
 
 	/// Отправили запрос (это делается перед получением первого блока).
 	bool sent_query = false;

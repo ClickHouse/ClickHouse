@@ -6,9 +6,9 @@
 #include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/DataTypes/DataTypeString.h>
 
-
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnString.h>
+#include <DB/Columns/ColumnTuple.h>
 
 #include <DB/Functions/IFunction.h>
 #include <DB/Common/HashTable/HashMap.h>
@@ -254,9 +254,9 @@ struct ArrayElementNumImpl
 			else if (index[i].getType() == Field::Types::Int64)
 			{
 				Int64 cur_id = safeGet<Int64>(index[i]);
-				if (cur_id > 0 && cur_id <= array_size)
+				if (cur_id > 0 && static_cast<UInt64>(cur_id) <= array_size)
 					result[i] = data[current_offset + cur_id - 1];
-				else if (cur_id < 0 && -cur_id <= array_size)
+				else if (cur_id < 0 && static_cast<UInt64>(-cur_id) <= array_size)
 					result[i] = data[offsets[i] + cur_id];
 				else
 					result[i] = T();
@@ -350,9 +350,9 @@ struct ArrayElementStringImpl
 			else if (index[i].getType() == Field::Types::Int64)
 			{
 				Int64 cur_id = safeGet<Int64>(index[i]);
-				if (cur_id > 0 && cur_id <= array_size)
+				if (cur_id > 0 && static_cast<UInt64>(cur_id) <= array_size)
 					adjusted_index = cur_id - 1;
-				else if (cur_id < 0 && -cur_id <= array_size)
+				else if (cur_id < 0 && static_cast<UInt64>(-cur_id) <= array_size)
 					adjusted_index = array_size + cur_id;
 				else
 					adjusted_index = array_size; /// Индекс не вписывается в рамки массива, заменяем слишком большим
@@ -559,9 +559,9 @@ private:
 			else if (index[i].getType() == Field::Types::Int64)
 			{
 				Int64 cur_id = safeGet<Int64>(index[i]);
-				if (cur_id > 0 && cur_id <= array_size)
+				if (cur_id > 0 && static_cast<UInt64>(cur_id) <= array_size)
 					block.getByPosition(result).column->insert(array[cur_id - 1]);
-				else if (cur_id < 0 && -cur_id <= array_size)
+				else if (cur_id < 0 && static_cast<UInt64>(-cur_id) <= array_size)
 					block.getByPosition(result).column->insert(array[array_size + cur_id]);
 				else
 					block.getByPosition(result).column->insertDefault();
@@ -598,6 +598,60 @@ private:
 
 		return true;
 	}
+
+	/** Для массива кортежей функция вычисляется покомпонентно - для каждого элемента кортежа.
+	  */
+	bool executeTuple(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		ColumnArray * col_array = typeid_cast<ColumnArray *>(&*block.getByPosition(arguments[0]).column);
+
+		if (!col_array)
+			return false;
+
+		ColumnTuple * col_nested = typeid_cast<ColumnTuple *>(&col_array->getData());
+
+		if (!col_nested)
+			return false;
+
+		Block & tuple_block = col_nested->getData();
+		size_t tuple_size = tuple_block.columns();
+
+		/** Будем вычислять функцию для кортежа внутренностей массива.
+		  * Для этого создадим временный блок.
+		  * Он будет состоять из следующих столбцов:
+		  * - индекс массива, который нужно взять;
+		  * - массив из первых элементов кортежей;
+		  * - результат взятия элементов по индексу для массива из первых элементов кортежей;
+		  * - массив из вторых элементов кортежей;
+		  * - результат взятия элементов по индексу для массива из вторых элементов кортежей;
+		  * ...
+		  */
+		Block block_of_temporary_results;
+		block_of_temporary_results.insert(block.getByPosition(arguments[1]));
+
+		/// результаты взятия элементов по индексу для массивов из каждых элементов кортежей;
+		Block result_tuple_block;
+
+		for (size_t i = 0; i < tuple_size; ++i)
+		{
+			ColumnWithNameAndType array_of_tuple_section;
+			array_of_tuple_section.column = new ColumnArray(tuple_block.getByPosition(i).column, col_array->getOffsetsColumn());
+			array_of_tuple_section.type = new DataTypeArray(tuple_block.getByPosition(i).type);
+			block_of_temporary_results.insert(array_of_tuple_section);
+
+			ColumnWithNameAndType array_elements_of_tuple_section;
+			block_of_temporary_results.insert(array_elements_of_tuple_section);
+
+			execute(block_of_temporary_results, ColumnNumbers{i * 2 + 1, 0}, i * 2 + 2);
+
+			result_tuple_block.insert(block_of_temporary_results.getByPosition(i * 2 + 2));
+		}
+
+		ColumnTuple * col_res = new ColumnTuple(result_tuple_block);
+		block.getByPosition(result).column = col_res;
+
+		return true;
+	}
 public:
 	/// Получить имя функции.
 	String getName() const
@@ -627,7 +681,10 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (!block.getByPosition(arguments[1]).column->isConst())
+		if (executeTuple(block, arguments, result))
+		{
+		}
+		else if (!block.getByPosition(arguments[1]).column->isConst())
 		{
 			if (!(	executeArgument<UInt8>	(block, arguments, result)
 				||	executeArgument<UInt16>	(block, arguments, result)
@@ -1261,7 +1318,7 @@ const String FunctionEmptyArray<DataType>::name = FunctionEmptyArray::base_name 
 class FunctionRange : public IFunction
 {
 public:
-	static constexpr auto max_elements = 1000000;
+	static constexpr auto max_elements = 100000000;
 	static constexpr auto name = "range";
 	static IFunction * create(const Context &) { return new FunctionRange; }
 
@@ -1292,12 +1349,12 @@ private:
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
 			};
 		}
-		
+
 		return new DataTypeArray{arg->clone()};
 	}
 
 	template <typename T>
-	bool execute(Block & block, const IColumn * const arg, const size_t result) override
+	bool execute(Block & block, const IColumn * const arg, const size_t result)
 	{
 		if (const auto in = typeid_cast<const ColumnVector<T> *>(arg))
 		{
@@ -1306,7 +1363,8 @@ private:
 				std::plus<std::size_t>{});
 			if (total_values > max_elements)
 				throw Exception{
-					"Argument to function " + getName() + " should not exceed " + std::to_string(max_elements),
+					"A call to function " + getName() + " would produce " + std::to_string(total_values) +
+						" array elements, which is greater than the allowed maximum of " + std::to_string(max_elements),
 					ErrorCodes::ARGUMENT_OUT_OF_BOUND
 				};
 
@@ -1336,7 +1394,8 @@ private:
 			const std::size_t total_values = in->size() * in_data;
 			if (total_values > max_elements)
 				throw Exception{
-					"Argument to function " + getName() + " should not exceed " + std::to_string(max_elements),
+					"A call to function " + getName() + " would produce " + std::to_string(total_values) +
+						" array elements, which is greater than the allowed maximum of " + std::to_string(max_elements),
 					ErrorCodes::ARGUMENT_OUT_OF_BOUND
 				};
 
@@ -1349,7 +1408,7 @@ private:
 
 			auto & out_data = data_col->getData();
 			auto & out_offsets = out->getOffsets();
-			
+
 			IColumn::Offset_t offset{};
 			for (const auto i : ext::range(0, in->size()))
 			{

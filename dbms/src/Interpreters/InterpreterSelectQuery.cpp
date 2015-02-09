@@ -3,6 +3,7 @@
 #include <DB/DataStreams/LimitBlockInputStream.h>
 #include <DB/DataStreams/PartialSortingBlockInputStream.h>
 #include <DB/DataStreams/MergeSortingBlockInputStream.h>
+#include <DB/DataStreams/MergingSortedBlockInputStream.h>
 #include <DB/DataStreams/AggregatingBlockInputStream.h>
 #include <DB/DataStreams/MergingAggregatedBlockInputStream.h>
 #include <DB/DataStreams/AsynchronousBlockInputStream.h>
@@ -24,6 +25,7 @@
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Storages/StorageView.h>
+#include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/TableFunctions/ITableFunction.h>
 #include <DB/TableFunctions/TableFunctionFactory.h>
 
@@ -96,6 +98,17 @@ void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_, const NamesAn
 			getDatabaseAndTableNames(database_name, table_name);
 
 			storage = context.getTable(database_name, table_name);
+		}
+
+		if (!storage->supportsParallelReplicas() && (settings.parallel_replicas_count > 0))
+			throw Exception("Storage engine " + storage->getName()
+							+ " does not support parallel execution on several replicas",
+							ErrorCodes::STORAGE_DOESNT_SUPPORT_PARALLEL_REPLICAS);
+
+		if (StorageReplicatedMergeTree * storage_replicated_merge_tree = typeid_cast<StorageReplicatedMergeTree *>(&*storage))
+		{
+			if (settings.parallel_replica_offset > 0)
+				storage_replicated_merge_tree->skipUnreplicated();
 		}
 
 		table_lock = storage->lockStructure(false);
@@ -453,12 +466,12 @@ void InterpreterSelectQuery::executeSingleQuery()
 			settings.limits.max_rows_to_group_by &&
 			settings.limits.group_by_overflow_mode == OverflowMode::ANY &&
 			settings.totals_mode != TotalsMode::AFTER_HAVING_EXCLUSIVE;
+
 		/// Нужно ли после агрегации сразу финализировать агрегатные функции.
 		bool aggregate_final =
 			need_aggregate &&
 			to_stage > QueryProcessingStage::WithMergeableState &&
 			!query.group_by_with_totals;
-
 
 		if (need_aggregate || has_order_by)
 			do_execute_union = true;
@@ -476,15 +489,20 @@ void InterpreterSelectQuery::executeSingleQuery()
 				executeDistinct(streams, true, selected_columns);
 			}
 
-			/** Оптимизация - при распределённой обработке запроса,
-			 *  если не указаны GROUP, HAVING, ORDER, но указан LIMIT,
-			 *  то выполним предварительный LIMIT на удалёном сервере.
-			 */
+			/** При распределённой обработке запроса,
+			  *  если не указаны GROUP, HAVING,
+			  *  но есть ORDER или LIMIT,
+			  *  то выполним предварительную сортировку и LIMIT на удалёном сервере.
+			  */
 			if (!second_stage
-				&& !need_aggregate && !has_having && !has_order_by
-				&& query.limit_length)
+				&& !need_aggregate && !has_having)
 			{
-				executePreLimit(streams);
+				if (has_order_by)
+					executeOrder(streams);
+
+				if (query.limit_length)
+					executePreLimit(streams);
+
 				do_execute_union = true;
 			}
 		}
@@ -515,7 +533,16 @@ void InterpreterSelectQuery::executeSingleQuery()
 			}
 
 			if (has_order_by)
-				executeOrder(streams);
+			{
+				/** Если при распределённой обработке запроса есть ORDER BY,
+				  *  но нет агрегации, то на удалённых серверах был сделан ORDER BY
+				  *  - поэтому, делаем merge сортированных потоков с удалённых серверов.
+				  */
+				if (!first_stage && !need_aggregate && !(query.group_by_with_totals && !aggregate_final))
+					executeMergeSorted(streams);
+				else	/// Иначе просто сортировка.
+					executeOrder(streams);
+			}
 
 			executeProjection(streams, final_projection);
 
@@ -754,13 +781,8 @@ void InterpreterSelectQuery::executeAggregation(BlockInputStreams & streams, Exp
 
 void InterpreterSelectQuery::executeMergeAggregated(BlockInputStreams & streams, bool overflow_row, bool final)
 {
-	/// Если объединять нечего
-	if (streams.size() == 1)
-		return;
-
 	/// Склеим несколько источников в один
-	streams[0] = new UnionBlockInputStream(streams, settings.max_threads);
-	streams.resize(1);
+	executeUnion(streams);
 
 	/// Теперь объединим агрегированные блоки
 	Names key_names;
@@ -783,11 +805,7 @@ void InterpreterSelectQuery::executeHaving(BlockInputStreams & streams, Expressi
 void InterpreterSelectQuery::executeTotalsAndHaving(BlockInputStreams & streams, bool has_having,
 	ExpressionActionsPtr expression, bool overflow_row)
 {
-	if (streams.size() > 1)
-	{
-		streams[0] = new UnionBlockInputStream(streams, settings.max_threads);
-		streams.resize(1);
-	}
+	executeUnion(streams);
 
 	Names key_names;
 	AggregateDescriptions aggregates;
@@ -807,7 +825,7 @@ void InterpreterSelectQuery::executeExpression(BlockInputStreams & streams, Expr
 }
 
 
-void InterpreterSelectQuery::executeOrder(BlockInputStreams & streams)
+static SortDescription getSortDescription(ASTSelectQuery & query)
 {
 	SortDescription order_descr;
 	order_descr.reserve(query.order_expression_list->children.size());
@@ -821,6 +839,11 @@ void InterpreterSelectQuery::executeOrder(BlockInputStreams & streams)
 		order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.collator);
 	}
 
+	return order_descr;
+}
+
+static size_t getLimitForSorting(ASTSelectQuery & query)
+{
 	/// Если есть LIMIT и нет DISTINCT - можно делать частичную сортировку.
 	size_t limit = 0;
 	if (!query.distinct)
@@ -830,6 +853,15 @@ void InterpreterSelectQuery::executeOrder(BlockInputStreams & streams)
 		getLimitLengthAndOffset(query, limit_length, limit_offset);
 		limit = limit_length + limit_offset;
 	}
+
+	return limit;
+}
+
+
+void InterpreterSelectQuery::executeOrder(BlockInputStreams & streams)
+{
+	SortDescription order_descr = getSortDescription(query);
+	size_t limit = getLimitForSorting(query);
 
 	for (auto & stream : streams)
 	{
@@ -849,16 +881,35 @@ void InterpreterSelectQuery::executeOrder(BlockInputStreams & streams)
 	BlockInputStreamPtr & stream = streams[0];
 
 	/// Если потоков несколько, то объединяем их в один
-	if (streams.size() > 1)
-	{
-		stream = new UnionBlockInputStream(streams, settings.max_threads);
-		streams.resize(1);
-	}
+	executeUnion(streams);
 
 	/// Сливаем сортированные блоки.
 	stream = new MergeSortingBlockInputStream(
 		stream, order_descr, settings.max_block_size, limit,
 		settings.limits.max_bytes_before_external_sort, context.getTemporaryPath(), context.getDataTypeFactory());
+}
+
+
+void InterpreterSelectQuery::executeMergeSorted(BlockInputStreams & streams)
+{
+	SortDescription order_descr = getSortDescription(query);
+	size_t limit = getLimitForSorting(query);
+
+	BlockInputStreamPtr & stream = streams[0];
+
+	/// Если потоков несколько, то объединяем их в один
+	if (streams.size() > 1)
+	{
+		/** MergingSortedBlockInputStream читает источники последовательно.
+		  * Чтобы данные на удалённых серверах готовились параллельно, оборачиваем в AsynchronousBlockInputStream.
+		  */
+		for (auto & stream : streams)
+			stream = new AsynchronousBlockInputStream(stream);
+
+		/// Сливаем сортированные источники в один сортированный источник.
+		stream = new MergingSortedBlockInputStream(streams, order_descr, settings.max_block_size, limit);
+		streams.resize(1);
+	}
 }
 
 
@@ -944,6 +995,7 @@ void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(BlockInputStreams &
 		for (auto & elem : subqueries_for_sets)
 			elem.second.table.reset();
 
+	executeUnion(streams);
 	streams[0] = new CreatingSetsBlockInputStream(streams[0], subqueries_for_sets, settings.limits);
 }
 

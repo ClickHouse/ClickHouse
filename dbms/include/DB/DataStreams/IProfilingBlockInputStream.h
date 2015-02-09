@@ -1,66 +1,18 @@
 #pragma once
 
-#include <boost/function.hpp>
-
-#include <statdaemons/Stopwatch.h>
-
-#include <DB/Core/Names.h>
 #include <DB/Core/Progress.h>
 
 #include <DB/Interpreters/Limits.h>
 #include <DB/Interpreters/Quota.h>
 #include <DB/Interpreters/ProcessList.h>
 
+#include <DB/DataStreams/BlockStreamProfileInfo.h>
+
 #include <DB/DataStreams/IBlockInputStream.h>
 
 
 namespace DB
 {
-
-
-/// Информация для профайлинга.
-struct BlockStreamProfileInfo
-{
-	bool started = false;
-	Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};	/// Время с учётом ожидания
-
-	String stream_name;			/// Короткое имя потока, для которого собирается информация
-
-	size_t rows = 0;
-	size_t blocks = 0;
-	size_t bytes = 0;
-
-	/// Информация о вложенных потоках - для выделения чистого времени работы.
-	typedef std::vector<const BlockStreamProfileInfo *> BlockStreamProfileInfos;
-	BlockStreamProfileInfos nested_infos;
-
-	String column_names;
-
-	/// Собрать BlockStreamProfileInfo для ближайших в дереве источников с именем name. Пример; собрать все info для PartialSorting stream-ов.
-	void collectInfosForStreamsWithName(const String & name, BlockStreamProfileInfos & res) const;
-
-	/** Получить число строк, если бы не было LIMIT-а.
-	  * Если нет LIMIT-а - возвращается 0.
-	  * Если запрос не содержит ORDER BY, то число может быть занижено - возвращается количество строк в блоках, которые были прочитаны до LIMIT-а.
-	  * Если запрос содержит ORDER BY, то возвращается точное число строк, которое было бы, если убрать LIMIT.
-	  */
-	size_t getRowsBeforeLimit() const;
-	bool hasAppliedLimit() const;
-
-	void update(Block & block);
-
-	/// Методы для бинарной [де]сериализации
-	void read(ReadBuffer & in);
-	void write(WriteBuffer & out) const;
-
-private:
-	void calculateRowsBeforeLimit() const;
-
-	/// Для этих полей сделаем accessor'ы, т.к. их необходимо предварительно вычислять.
-	mutable bool applied_limit = false;					/// Применялся ли LIMIT
-	mutable size_t rows_before_limit = 0;
-	mutable bool calculated_rows_before_limit = false;	/// Вычислялось ли поле rows_before_limit
-};
 
 
 /** Смотрит за тем, как работает источник блоков.
@@ -71,7 +23,7 @@ private:
 class IProfilingBlockInputStream : public IBlockInputStream
 {
 public:
-	Block read() override;
+	Block read() override final;
 
 	/** Реализация по-умолчанию вызывает рекурсивно readSuffix() у всех детей, а затем readSuffixImpl() у себя.
 	  * Если этот поток вызывает у детей read() в отдельном потоке, этот поведение обычно неверно:
@@ -87,6 +39,9 @@ public:
 	  * Реализация по-умолчанию берёт их из себя или из первого дочернего источника, в котором они есть.
 	  * Переопределённый метод может провести некоторые вычисления. Например, применить выражение к totals дочернего источника.
 	  * Тотальных значений может не быть - тогда возвращается пустой блок.
+	  *
+	  * Вызывайте этот метод только после получения всех данных с помощью read,
+	  *  иначе будут проблемы, если какие-то данные в это же время вычисляются в другом потоке.
 	  */
 	virtual const Block & getTotals();
 

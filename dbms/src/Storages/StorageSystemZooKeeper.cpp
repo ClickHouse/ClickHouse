@@ -13,8 +13,8 @@ namespace DB
 {
 
 
-StorageSystemZooKeeper::StorageSystemZooKeeper(const std::string & name_, const Context & context_)
-	: name(name_), context(context_)
+StorageSystemZooKeeper::StorageSystemZooKeeper(const std::string & name_)
+	: name(name_)
 	, columns{
 		{ "name", 			new DataTypeString	},
 		{ "value", 			new DataTypeString	},
@@ -34,9 +34,9 @@ StorageSystemZooKeeper::StorageSystemZooKeeper(const std::string & name_, const 
 {
 }
 
-StoragePtr StorageSystemZooKeeper::create(const std::string & name_, const Context & context_)
+StoragePtr StorageSystemZooKeeper::create(const std::string & name_)
 {
-	return (new StorageSystemZooKeeper(name_, context_))->thisPtr();
+	return (new StorageSystemZooKeeper(name_))->thisPtr();
 }
 
 

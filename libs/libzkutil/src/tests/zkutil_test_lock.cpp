@@ -1,3 +1,4 @@
+#include <iostream>
 #include <zkutil/Lock.h>
 
 int main()

@@ -13,8 +13,8 @@ namespace DB
 class MaterializingBlockOutputStream : public IBlockOutputStream
 {
 public:
-	MaterializingBlockOutputStream(const BlockOutputStreamPtr & output) : output{output}
-	{}
+	MaterializingBlockOutputStream(const BlockOutputStreamPtr & output)
+		: output{output} {}
 
 	void write(const Block & original_block) override
 	{
@@ -31,6 +31,12 @@ public:
 		output->write(block);
 	}
 
+	void flush() override { output->flush(); }
+
+	void writePrefix() override { output->writePrefix(); }
+	void writeSuffix() override { output->writeSuffix(); }
+
+private:
 	BlockOutputStreamPtr output;
 };
 

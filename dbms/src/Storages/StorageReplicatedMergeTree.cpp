@@ -1571,8 +1571,10 @@ void StorageReplicatedMergeTree::alterThread()
 
 					/// Обновим метаданные куска в ZooKeeper.
 					zkutil::Ops ops;
-					ops.push_back(new zkutil::Op::SetData(replica_path + "/parts/" + part->name + "/columns", part->columns.toString(), -1));
-					ops.push_back(new zkutil::Op::SetData(replica_path + "/parts/" + part->name + "/checksums", part->checksums.toString(), -1));
+					ops.push_back(new zkutil::Op::SetData(
+						replica_path + "/parts/" + part->name + "/columns", transaction->getNewColumns().toString(), -1));
+					ops.push_back(new zkutil::Op::SetData(
+						replica_path + "/parts/" + part->name + "/checksums", transaction->getNewChecksums().toString(), -1));
 					zookeeper->multi(ops);
 
 					/// Применим изменения файлов.
@@ -2025,7 +2027,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 
 	size_t part_index = 0;
 
-	if (unreplicated_reader && values.count(0))
+	if (process_unreplicated && unreplicated_reader && values.count(0))
 	{
 		res = unreplicated_reader->read(real_column_names, query,
 										context, settings, processed_stage,

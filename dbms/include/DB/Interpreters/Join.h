@@ -76,9 +76,12 @@ public:
 
 	/** Присоединить к блоку "левой" таблицы новые столбцы из сформированного отображения.
 	  */
-	void joinBlock(Block & block);
+	void joinBlock(Block & block) const;
 
-	size_t size() const { return getTotalRowCount(); }
+	/// Считает суммарное число ключей во всех Join'ах
+	size_t getTotalRowCount() const;
+	/// Считает суммарный размер в байтах буфферов всех Join'ов + размер string_pool'а
+	size_t getTotalByteCount() const;
 
 
 	/// Ссылка на строку в блоке.
@@ -137,12 +140,10 @@ private:
 	ASTJoin::Kind kind;
 	ASTJoin::Strictness strictness;
 
-	/// Имена и номера ключевых столбцов (по которым производится соединение) в "левой" таблице.
+	/// Имена ключевых столбцов (по которым производится соединение) в "левой" таблице.
 	const Names key_names_left;
-	ColumnNumbers key_numbers_left;
-	/// Имена и номера ключевых столбцов (по которым производится соединение) в "правой" таблице.
+	/// Имена ключевых столбцов (по которым производится соединение) в "правой" таблице.
 	const Names key_names_right;
-	ColumnNumbers key_numbers_right;
 
 	/** Блоки данных таблицы, с которой идёт соединение.
 	  */
@@ -166,21 +167,23 @@ private:
 	size_t max_bytes;
 	OverflowMode overflow_mode;
 
+	/** Защищает работу с состоянием в функциях insertFromBlock и joinBlock.
+	  * Эти функции могут вызываться одновременно из разных потоков только при использовании StorageJoin,
+	  *  и StorageJoin вызывает только эти две функции.
+	  * Поэтому остальные функции не защинены.
+	  */
+	mutable Poco::RWLock rwlock;
+
 	void init(Set::Type type_);
 
 	template <ASTJoin::Strictness STRICTNESS, typename Maps>
 	void insertFromBlockImpl(Maps & maps, size_t rows, const ConstColumnPlainPtrs & key_columns, size_t keys_size, Block * stored_block);
 
 	template <ASTJoin::Kind KIND, ASTJoin::Strictness STRICTNESS, typename Maps>
-	void joinBlockImpl(Block & block, Maps & maps);
+	void joinBlockImpl(Block & block, const Maps & maps) const;
 
 	/// Проверить не превышены ли допустимые размеры множества
 	bool checkSizeLimits() const;
-
-	/// Считает суммарное число ключей во всех Join'ах
-	size_t getTotalRowCount() const;
-	/// Считает суммарный размер в байтах буфферов всех Join'ов + размер string_pool'а
-	size_t getTotalByteCount() const;
 };
 
 typedef Poco::SharedPtr<Join> JoinPtr;

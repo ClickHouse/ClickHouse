@@ -110,7 +110,7 @@ private:
 				memcpy(src_remaining, &src_data[rows_size], rows_remaining * sizeof(FieldType));
 				memset(src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(FieldType));
 				Float64 dst_remaining[Impl::rows_per_iteration];
-	
+
 				Impl::execute(src_remaining, dst_remaining);
 
 				memcpy(&dst_data[rows_size], dst_remaining, rows_remaining * sizeof(Float64));
@@ -124,7 +124,7 @@ private:
 			Float64 dst[Impl::rows_per_iteration];
 
 			Impl::execute(src, dst);
-			
+
 			block.getByPosition(result).column = new ColumnConst<Float64>{col->size(), dst[0]};
 
 			return true;
@@ -257,7 +257,7 @@ private:
 				memcpy(right_src_remaining, &right_src_data[rows_size], rows_remaining * sizeof(RightType));
 				memset(right_src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(RightType));
 				Float64 dst_remaining[Impl::rows_per_iteration];
-	
+
 				Impl::execute(left_src_data, right_src_remaining, dst_remaining);
 
 				memcpy(&dst_data[rows_size], dst_remaining, rows_remaining * sizeof(Float64));
@@ -272,7 +272,7 @@ private:
 			Float64 dst[Impl::rows_per_iteration];
 
 			Impl::execute(left_src, right_src, dst);
-			
+
 			block.getByPosition(result).column = new ColumnConst<Float64>{left_arg->size(), dst[0]};
 
 			return true;
@@ -304,14 +304,14 @@ private:
 
 			if (rows_remaining != 0)
 			{
-				LeftType left_src_remaining[Impl::rows_per_iteration];	
+				LeftType left_src_remaining[Impl::rows_per_iteration];
 				memcpy(left_src_remaining, &left_src_data[rows_size], rows_remaining * sizeof(LeftType));
 				memset(left_src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(LeftType));
 				RightType right_src_remaining[Impl::rows_per_iteration];
 				memcpy(right_src_remaining, &right_src_data[rows_size], rows_remaining * sizeof(RightType));
 				memset(right_src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(RightType));
 				Float64 dst_remaining[Impl::rows_per_iteration];
-	
+
 				Impl::execute(left_src_remaining, right_src_remaining, dst_remaining);
 
 				memcpy(&dst_data[rows_size], dst_remaining, rows_remaining * sizeof(Float64));
@@ -339,11 +339,11 @@ private:
 
 			if (rows_remaining != 0)
 			{
-				LeftType left_src_remaining[Impl::rows_per_iteration];	
+				LeftType left_src_remaining[Impl::rows_per_iteration];
 				memcpy(left_src_remaining, &left_src_data[rows_size], rows_remaining * sizeof(LeftType));
 				memset(left_src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(LeftType));
 				Float64 dst_remaining[Impl::rows_per_iteration];
-	
+
 				Impl::execute(left_src_remaining, right_src_data, dst_remaining);
 
 				memcpy(&dst_data[rows_size], dst_remaining, rows_remaining * sizeof(Float64));
@@ -423,7 +423,7 @@ private:
 	}
 };
 
-template <typename Name, Vec2d(&Function)(const Vec2d &, const Vec2d &)> 
+template <typename Name, Vec2d(&Function)(const Vec2d &, const Vec2d &)>
 struct BinaryFunctionVectorized
 {
 	static constexpr auto name = Name::name;
@@ -442,13 +442,13 @@ struct BinaryFunctionVectorized
 struct EImpl
 {
 	static constexpr auto name = "e";
-	static constexpr auto value = 2.7182818284590452353602874713526624977572470;
+	static const double value;	/// См. .cpp
 };
 
 struct PiImpl
 {
 	static constexpr auto name = "pi";
-	static constexpr auto value = 3.1415926535897932384626433832795028841971693;
+	static const double value;
 };
 
 struct ExpName { static constexpr auto name = "exp"; };

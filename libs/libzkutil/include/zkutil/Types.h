@@ -21,10 +21,10 @@ public:
 
 	std::unique_ptr<zoo_op_t> data;
 
-	class Remove;
-	class Create;
-	class SetData;
-	class Check;
+	struct Remove;
+	struct Create;
+	struct SetData;
+	struct Check;
 };
 
 struct Op::Remove : public Op
@@ -78,7 +78,7 @@ private:
 	std::string path;
 };
 
-struct OpResult : public zoo_op_result_t, boost::noncopyable
+struct OpResult : public zoo_op_result_t
 {
 	/// Указатели в этой структуре указывают на поля в классе Op.
 	/// Поэтому деструктор не нужен

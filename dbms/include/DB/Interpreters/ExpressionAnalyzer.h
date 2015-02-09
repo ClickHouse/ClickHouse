@@ -45,13 +45,6 @@ typedef std::unordered_map<String, SubqueryForSet> SubqueriesForSets;
 class ExpressionAnalyzer : private boost::noncopyable
 {
 public:
-	ExpressionAnalyzer(const ASTPtr & ast_, const Context & context_, size_t subquery_depth_ = 0, bool do_global_ = false)
-		: ast(ast_), context(context_), settings(context.getSettings()),
-		subquery_depth(subquery_depth_), columns(context.getColumns()), storage(getTable()), do_global(do_global_)
-	{
-		init();
-	}
-
 	ExpressionAnalyzer(const ASTPtr & ast_, const Context & context_, StoragePtr storage_, size_t subquery_depth_ = 0, bool do_global_ = false)
 		: ast(ast_), context(context_), settings(context.getSettings()),
 		subquery_depth(subquery_depth_), columns(context.getColumns()), storage(storage_ ? storage_ : getTable()), do_global(do_global_)
@@ -147,7 +140,7 @@ private:
 	  */
 	NamesAndTypesList columns;
 
-	/// Столбцы после ARRAY JOIN и/или агрегации.
+	/// Столбцы после ARRAY JOIN, JOIN и/или агрегации.
 	NamesAndTypesList aggregated_columns;
 
 	/// Таблица, из которой делается запрос.

@@ -28,7 +28,7 @@ using Poco::SharedPtr;
 int main(int argc, char ** argv)
 {
 	using namespace DB;
-	
+
 	try
 	{
 		size_t n = argc == 2 ? parse<UInt64>(argv[1]) : 10ULL;
@@ -56,13 +56,13 @@ int main(int argc, char ** argv)
 		Context context;
 		context.getColumns().push_back(NameAndTypePair("number", new DataTypeUInt64));
 
-		ExpressionAnalyzer analyzer(ast, context);
+		ExpressionAnalyzer analyzer(ast, context, context.getColumns());
 		ExpressionActionsChain chain;
 		analyzer.appendSelect(chain, false);
 		analyzer.appendProjectResult(chain, false);
 		chain.finalize();
 		ExpressionActionsPtr expression = chain.getLastActions();
-		
+
 		StoragePtr table = StorageSystemNumbers::create("Numbers");
 
 		Names column_names;
@@ -74,7 +74,7 @@ int main(int argc, char ** argv)
 		in = new ExpressionBlockInputStream(in, expression);
 		in = new FilterBlockInputStream(in, 1);
 		in = new LimitBlockInputStream(in, 10, std::max(static_cast<Int64>(0), static_cast<Int64>(n) - 10));
-		
+
 		WriteBufferFromOStream ob(std::cout);
 		RowOutputStreamPtr out_ = new TabSeparatedRowOutputStream(ob, expression->getSampleBlock());
 		BlockOutputStreamFromRowOutputStream out(out_);

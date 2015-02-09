@@ -166,13 +166,15 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 	std::stringstream aggregate_functions_typenames_str;
 	for (size_t i = 0; i < aggregates_size; ++i)
 	{
+		IAggregateFunction & func = *aggregate_functions[i];
+
 		int status = 0;
-		char * type_name_ptr = abi::__cxa_demangle(typeid(*aggregate_functions[i]).name(), 0, 0, &status);
+		char * type_name_ptr = abi::__cxa_demangle(typeid(func).name(), 0, 0, &status);
 		std::string type_name = type_name_ptr;
 		free(type_name_ptr);
 
 		if (status)
-			throw Exception("Cannot compile code: cannot demangle name " + String(typeid(*aggregate_functions[i]).name())
+			throw Exception("Cannot compile code: cannot demangle name " + String(typeid(func).name())
 				+ ", status: " + toString(status), ErrorCodes::CANNOT_COMPILE_CODE);
 
 		aggregate_functions_typenames_str << ((i != 0) ? ", " : "") << type_name;
@@ -191,9 +193,7 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 	{
 		/// Короткий кусок кода, представляющий собой явное инстанцирование шаблона.
 		std::stringstream code;
-		code <<
-			"#include <DB/Interpreters/SpecializedAggregator.h>\n"
-			"\n"
+		code <<		/// Нет явного включения заголовочного файла. Он подключается с помощью опции компилятора -include.
 			"namespace DB\n"
 			"{\n"
 			"\n";
@@ -225,10 +225,10 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 						"\t\tmethod, arena, rows, key_columns, aggregate_columns, key_sizes, keys, no_more_keys, overflow_row);\n"
 				"}\n"
 				"\n"
-				"const void * getPtr" << suffix << "() __attribute__((__visibility__(\"default\")));\n"
-				"const void * getPtr" << suffix << "()\n"	/// Без этой обёртки непонятно, как достать нужный символ из скомпилированной библиотеки.
+				"void * getPtr" << suffix << "() __attribute__((__visibility__(\"default\")));\n"
+				"void * getPtr" << suffix << "()\n"	/// Без этой обёртки непонятно, как достать нужный символ из скомпилированной библиотеки.
 				"{\n"
-					"\treturn reinterpret_cast<const void *>(&wrapper" << suffix << ");\n"
+					"\treturn reinterpret_cast<void *>(&wrapper" << suffix << ");\n"
 				"}\n";
 		};
 
@@ -253,10 +253,10 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 						"\t\tmethod, rows, aggregate_columns);\n"
 				"}\n"
 				"\n"
-				"const void * getPtr() __attribute__((__visibility__(\"default\")));\n"
-				"const void * getPtr()\n"
+				"void * getPtr() __attribute__((__visibility__(\"default\")));\n"
+				"void * getPtr()\n"
 				"{\n"
-					"\treturn reinterpret_cast<const void *>(&wrapper);\n"
+					"\treturn reinterpret_cast<void *>(&wrapper);\n"
 				"}\n";
 		}
 
@@ -266,8 +266,8 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 		{
 			/// Заглушка.
 			code <<
-				"const void * getPtrTwoLevel() __attribute__((__visibility__(\"default\")));\n"
-				"const void * getPtrTwoLevel()\n"
+				"void * getPtrTwoLevel() __attribute__((__visibility__(\"default\")));\n"
+				"void * getPtrTwoLevel()\n"
 				"{\n"
 					"\treturn nullptr;\n"
 				"}\n";
@@ -286,8 +286,8 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 			return;
 
 		compiled_data_owned_by_callback->compiled_aggregator = lib;
-		compiled_data_owned_by_callback->compiled_method_ptr = lib->get<const void * (*) ()>("_ZN2DB6getPtrEv")();
-		compiled_data_owned_by_callback->compiled_two_level_method_ptr = lib->get<const void * (*) ()>("_ZN2DB14getPtrTwoLevelEv")();
+		compiled_data_owned_by_callback->compiled_method_ptr = lib->get<void * (*) ()>("_ZN2DB6getPtrEv")();
+		compiled_data_owned_by_callback->compiled_two_level_method_ptr = lib->get<void * (*) ()>("_ZN2DB14getPtrTwoLevelEv")();
 	};
 
 	/** Если библиотека уже была скомпилирована, то возвращается ненулевой SharedLibraryPtr.
@@ -295,7 +295,9 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 	  * Если счётчик достигнул значения min_count_to_compile, то асинхронно (в отдельном потоке) запускается компиляция,
 	  *  по окончании которой вызывается колбэк on_ready.
 	  */
-	SharedLibraryPtr lib = compiler->getOrCount(key, min_count_to_compile, get_code, on_ready);
+	SharedLibraryPtr lib = compiler->getOrCount(key, min_count_to_compile,
+		"-include /usr/share/clickhouse/headers/dbms/include/DB/Interpreters/SpecializedAggregator.h",
+		get_code, on_ready);
 
 	/// Если результат уже готов.
 	if (lib)
@@ -409,8 +411,10 @@ void NO_INLINE Aggregator::executeImpl(
 		executeImplCase<true>(method, state, aggregates_pool, rows, key_columns, aggregate_columns, key_sizes, keys, overflow_row);
 }
 
+#ifndef __clang__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
 
 template <bool no_more_keys, typename Method>
 void NO_INLINE Aggregator::executeImplCase(
@@ -485,8 +489,9 @@ void NO_INLINE Aggregator::executeImplCase(
 	}
 }
 
+#ifndef __clang__
 #pragma GCC diagnostic pop
-
+#endif
 
 void NO_INLINE Aggregator::executeWithoutKeyImpl(
 	AggregatedDataWithoutKey & res,
@@ -531,7 +536,7 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 		key_columns[i] = block.getByPosition(keys[i]).column;
 
 		if (key_columns[i]->isConst())
-			throw Exception("Constants is not allowed as GROUP BY keys"
+			throw Exception("Constants are not allowed as GROUP BY keys"
 				" (but all of them must be eliminated in ExpressionAnalyzer)", ErrorCodes::ILLEGAL_COLUMN);
 	}
 
@@ -545,7 +550,7 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 				* Поэтому, стобцы-константы не разрешены в качестве аргументов агрегатных функций.
 				*/
 			if (aggregate_columns[i][j]->isConst())
-				throw Exception("Constants is not allowed as arguments of aggregate functions", ErrorCodes::ILLEGAL_COLUMN);
+				throw Exception("Constants are not allowed as arguments of aggregate functions", ErrorCodes::ILLEGAL_COLUMN);
 		}
 	}
 
@@ -637,7 +642,7 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 		}
 	}
 
-	size_t result_size = result.size();
+	size_t result_size = result.sizeWithoutOverflowRow();
 
 	/// Если результат уже достаточно большой, и его можно сконвертировать в двухуровневую хэш-таблицу.
 	constexpr auto TWO_LEVEL_HASH_TABLE_THRESHOLD = 30000;
@@ -889,7 +894,7 @@ BlocksList Aggregator::prepareBlocksAndFillWithoutKey(AggregatedDataVariants & d
 
 BlocksList Aggregator::prepareBlocksAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final) const
 {
-	size_t rows = data_variants.size();
+	size_t rows = data_variants.sizeWithoutOverflowRow();
 
 	auto filler = [&data_variants, this](
 		ColumnPlainPtrs & key_columns,
@@ -1039,7 +1044,7 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
 		return blocks;
 
 	std::unique_ptr<boost::threadpool::pool> thread_pool;
-	if (max_threads > 1 && data_variants.size() > 100000	/// TODO Сделать настраиваемый порог.
+	if (max_threads > 1 && data_variants.sizeWithoutOverflowRow() > 100000	/// TODO Сделать настраиваемый порог.
 		&& data_variants.isTwoLevel())						/// TODO Использовать общий тред-пул с функцией merge.
 		thread_pool.reset(new boost::threadpool::pool(max_threads));
 
@@ -1071,7 +1076,7 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
 
 	double elapsed_seconds = watch.elapsedSeconds();
 	LOG_TRACE(log, std::fixed << std::setprecision(3)
-		<< "Converted aggregated data to block. "
+		<< "Converted aggregated data to blocks. "
 		<< rows << " rows, " << bytes / 1048576.0 << " MiB"
 		<< " in " << elapsed_seconds << " sec."
 		<< " (" << rows / elapsed_seconds << " rows/sec., " << bytes / elapsed_seconds / 1048576.0 << " MiB/sec.)");
@@ -1360,6 +1365,9 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
 				Method::getAggregateData(it->second) + offsets_of_aggregate_states[j],
 				(*aggregate_columns[j])[i]);
 	}
+
+	/// Пораньше освобождаем память.
+	block.clear();
 }
 
 void NO_INLINE Aggregator::mergeWithoutKeyStreamsImpl(
@@ -1382,6 +1390,9 @@ void NO_INLINE Aggregator::mergeWithoutKeyStreamsImpl(
 	/// Добавляем значения
 	for (size_t i = 0; i < aggregates_size; ++i)
 		aggregate_functions[i]->merge(res + offsets_of_aggregate_states[i], (*aggregate_columns[i])[0]);
+
+	/// Пораньше освобождаем память.
+	block.clear();
 }
 
 
@@ -1454,6 +1465,8 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 	result.keys_size = keys_size;
 	result.key_sizes = key_sizes;
 
+	bool has_blocks_with_unknown_bucket = bucket_to_blocks.count(-1);
+
 	/// Сначала параллельно мерджим для отдельных bucket-ов. Затем домердживаем данные, не распределённые по bucket-ам.
 	if (has_two_level)
 	{
@@ -1464,7 +1477,7 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 			&& has_two_level)
 			thread_pool.reset(new boost::threadpool::pool(max_threads));
 
-		auto merge_bucket = [&bucket_to_blocks, &result, this](size_t bucket, Arena * aggregates_pool, MemoryTracker * memory_tracker)
+		auto merge_bucket = [&bucket_to_blocks, &result, this](Int32 bucket, Arena * aggregates_pool, MemoryTracker * memory_tracker)
 		{
 			current_memory_tracker = memory_tracker;
 
@@ -1485,11 +1498,15 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 		/// packaged_task используются, чтобы исключения автоматически прокидывались в основной поток.
 
 		std::vector<std::packaged_task<void()>> tasks;
-		tasks.reserve(bucket_to_blocks.size());
+		tasks.reserve(bucket_to_blocks.size() - has_blocks_with_unknown_bucket);
 
 		for (auto & bucket_blocks : bucket_to_blocks)
 		{
-			size_t bucket = bucket_blocks.first;
+			auto bucket = bucket_blocks.first;
+
+			if (bucket == -1)
+				continue;
+
 			result.aggregates_pools.push_back(new Arena);
 			Arena * aggregates_pool = result.aggregates_pools.back().get();
 
@@ -1510,7 +1527,7 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 		LOG_TRACE(log, "Merged partially aggregated two-level data.");
 	}
 
-	if (bucket_to_blocks.count(-1))
+	if (has_blocks_with_unknown_bucket)
 	{
 		LOG_TRACE(log, "Merging partially aggregated single-level data.");
 
@@ -1524,7 +1541,6 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 			else if (result.type == AggregatedDataVariants::Type::NAME) \
 				mergeStreamsImpl(block, result, result.aggregates_pool, *result.NAME, result.NAME->data);
 
-			if (false) {}
 			APPLY_FOR_AGGREGATED_VARIANTS(M)
 		#undef M
 			else if (result.type != AggregatedDataVariants::Type::without_key)

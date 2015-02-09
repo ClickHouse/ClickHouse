@@ -3,6 +3,8 @@
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 
+#include <DB/DataStreams/IProfilingBlockInputStream.h>
+
 #include <DB/Storages/StorageMemory.h>
 
 
@@ -12,45 +14,68 @@ namespace DB
 using Poco::SharedPtr;
 
 
-MemoryBlockInputStream::MemoryBlockInputStream(const Names & column_names_, BlocksList::iterator begin_, BlocksList::iterator end_)
-	: column_names(column_names_), begin(begin_), end(end_), it(begin)
+class MemoryBlockInputStream : public IProfilingBlockInputStream
 {
-}
+public:
+	MemoryBlockInputStream(const Names & column_names_, BlocksList::iterator begin_, BlocksList::iterator end_)
+		: column_names(column_names_), begin(begin_), end(end_), it(begin) {}
 
+	String getName() const { return "MemoryBlockInputStream"; }
 
-Block MemoryBlockInputStream::readImpl()
-{
-	if (it == end)
+	String getID() const
 	{
-		return Block();
+		std::stringstream res;
+		res << "Memory(" << &*begin << ", " << &*end;
+
+		for (const auto & name : column_names)
+			res << ", " << name;
+
+		res << ")";
+		return res.str();
 	}
-	else
+
+protected:
+	Block readImpl()
 	{
-		Block src = *it;
-		Block res;
+		if (it == end)
+		{
+			return Block();
+		}
+		else
+		{
+			Block src = *it;
+			Block res;
 
-		/// Добавляем только нужные столбцы в res.
-		for (size_t i = 0, size = column_names.size(); i < size; ++i)
-			res.insert(src.getByName(column_names[i]));
+			/// Добавляем только нужные столбцы в res.
+			for (size_t i = 0, size = column_names.size(); i < size; ++i)
+				res.insert(src.getByName(column_names[i]));
 
-		++it;
-		return res;
+			++it;
+			return res;
+		}
 	}
-}
+private:
+	Names column_names;
+	BlocksList::iterator begin;
+	BlocksList::iterator end;
+	BlocksList::iterator it;
+};
 
 
-MemoryBlockOutputStream::MemoryBlockOutputStream(StorageMemory & storage_)
-	: storage(storage_)
+class MemoryBlockOutputStream : public IBlockOutputStream
 {
-}
+public:
+	MemoryBlockOutputStream(StorageMemory & storage_) : storage(storage_) {}
 
-
-void MemoryBlockOutputStream::write(const Block & block)
-{
-	storage.check(block, true);
-	Poco::ScopedLock<Poco::FastMutex> lock(storage.mutex);
-	storage.data.push_back(block);
-}
+	void write(const Block & block)
+	{
+		storage.check(block, true);
+		Poco::ScopedLock<Poco::FastMutex> lock(storage.mutex);
+		storage.data.push_back(block);
+	}
+private:
+	StorageMemory & storage;
+};
 
 
 StorageMemory::StorageMemory(

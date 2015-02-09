@@ -165,8 +165,15 @@ void DataTypeArray::deserializeText(Field & field, ReadBuffer & istr) const
 
 		first = false;
 
+		skipWhitespaceIfAny(istr);
+
+		if (*istr.position() == ']')
+			break;
+
 		arr.push_back(Field());
 		nested->deserializeTextQuoted(arr.back(), istr);
+
+		skipWhitespaceIfAny(istr);
 	}
 	assertString("]", istr);
 

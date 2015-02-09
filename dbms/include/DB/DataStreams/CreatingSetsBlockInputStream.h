@@ -24,7 +24,8 @@ public:
 		transfer_overflow_mode(limits.transfer_overflow_mode)
 	{
 		for (auto & elem : subqueries_for_sets)
-			children.push_back(elem.second.source);
+			if (elem.second.source)
+				children.push_back(elem.second.source);
 
 		children.push_back(input);
 	}

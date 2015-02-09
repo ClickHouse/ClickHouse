@@ -56,6 +56,7 @@ public:
 	bool supportsSampling() const override { return data.supportsSampling(); }
 	bool supportsFinal() const override { return data.supportsFinal(); }
 	bool supportsPrewhere() const override { return data.supportsPrewhere(); }
+	bool supportsParallelReplicas() const override { return true; }
 
 	const NamesAndTypesList & getColumnsListImpl() const override { return data.getColumnsListNonMaterialized(); }
 
@@ -102,6 +103,8 @@ public:
 	/// Добавить кусок в очередь кусков, чьи данные нужно проверить в фоновом потоке.
 	void enqueuePartForCheck(const String & name);
 
+	void skipUnreplicated() { process_unreplicated = false; }
+
 	MergeTreeData & getData() { return data; }
 	MergeTreeData * getUnreplicatedData() { return unreplicated_data.get(); }
 
@@ -135,8 +138,8 @@ private:
 	friend class ReplicatedMergeTreeBlockOutputStream;
 	friend class ReplicatedMergeTreeRestartingThread;
 	friend class ReplicatedMergeTreeCleanupThread;
-	friend class ReplicatedMergeTreeLogEntry;
-	friend class FuturePartTagger;
+	friend struct ReplicatedMergeTreeLogEntry;
+	friend struct FuturePartTagger;
 
 	typedef ReplicatedMergeTreeLogEntry LogEntry;
 	typedef LogEntry::Ptr LogEntryPtr;
@@ -162,6 +165,8 @@ private:
 		std::lock_guard<std::mutex> lock(current_zookeeper_mutex);
 		current_zookeeper = zookeeper;
 	}
+
+	bool process_unreplicated = true;
 
 	/// Если true, таблица в офлайновом режиме, и в нее нельзя писать.
 	bool is_readonly = false;

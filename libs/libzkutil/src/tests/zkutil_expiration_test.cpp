@@ -1,3 +1,4 @@
+#include <iostream>
 #include <zkutil/ZooKeeper.h>
 #include <Poco/ConsoleChannel.h>
 

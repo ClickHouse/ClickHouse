@@ -23,7 +23,7 @@ namespace DB
 class TableFunctionMerge: public ITableFunction
 {
 public:
- 	std::string getName() const { return "merge"; }
+	std::string getName() const override { return "merge"; }
 
 	StoragePtr execute(ASTPtr ast_function, Context & context) const override
 	{

@@ -293,7 +293,7 @@ namespace DB
 				const auto & tmp_column = block.getByName(column_name + "_tmp");
 
 				// column not specified explicitly in the ALTER query may require default_expression modification
-				if (typeid(*column.type) != typeid(*tmp_column.type))
+				if (column.type->getName() != tmp_column.type->getName())
 				{
 					const auto it = defaults.find(column_name);
 					this->push_back(AlterCommand{
@@ -307,7 +307,7 @@ namespace DB
 				const auto & tmp_column = block.getByName(column_name + "_tmp");
 
 				/// type mismatch between explicitly specified and deduced type, add conversion
-				if (typeid(*column.type) != typeid(*tmp_column.type))
+				if (column.type->getName() != tmp_column.type->getName())
 				{
 					command_ptr->default_expression = makeASTFunction(
 						"to" + column.type->getName(),

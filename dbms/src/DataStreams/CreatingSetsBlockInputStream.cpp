@@ -10,12 +10,14 @@ Block CreatingSetsBlockInputStream::readImpl()
 
 	if (!created)
 	{
-		/// Заполнение временных таблиц идёт первым - потому что эти таблицы могут затем использоваться для создания Set/Join.
 		for (auto & elem : subqueries_for_sets)
 		{
-			create(elem.second);
-			if (isCancelled())
-				return res;
+			if (elem.second.source)	/// Бывают заранее подготовленные Set/Join - для них не указывается source.
+			{
+				create(elem.second);
+				if (isCancelled())
+					return res;
+			}
 		}
 
 		created = true;
@@ -126,9 +128,9 @@ void CreatingSetsBlockInputStream::create(SubqueryForSet & subquery)
 		msg << "Created. ";
 
 		if (subquery.set)
-			msg << "Set with " << subquery.set->size() << " entries from " << head_rows << " rows. ";
+			msg << "Set with " << subquery.set->getTotalRowCount() << " entries from " << head_rows << " rows. ";
 		if (subquery.join)
-			msg << "Join with " << subquery.join->size() << " entries from " << head_rows << " rows. ";
+			msg << "Join with " << subquery.join->getTotalRowCount() << " entries from " << head_rows << " rows. ";
 		if (subquery.table)
 			msg << "Table with " << head_rows << " rows. ";
 

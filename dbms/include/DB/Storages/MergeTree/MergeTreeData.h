@@ -405,8 +405,13 @@ public:
 		{
 			/// Размер - в количестве засечек.
 			if (!size)
+			{
+				if (columns.empty())
+					throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
+
 				size = Poco::File(storage.full_path + name + "/" + escapeForFileName(columns.front().name) + ".mrk")
 					.getSize() / MERGE_TREE_MARK_SIZE;
+			}
 
 			size_t key_size = storage.sort_descr.size();
 			index.resize(key_size * size);
@@ -455,6 +460,9 @@ public:
 					if (Poco::File(storage.full_path + name + "/" + escapeForFileName(column.name) + ".bin").exists())
 						columns.push_back(column);
 				}
+
+				if (columns.empty())
+					throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 
 				{
 					WriteBufferFromFile out(path + ".tmp", 4096);
@@ -594,6 +602,10 @@ public:
 		/// Если не был вызван commit(), удаляет временные файлы, отменяя ALTER куска.
 		~AlterDataPartTransaction();
 
+		/// Посмотреть изменения перед коммитом.
+		const NamesAndTypesList & getNewColumns() const { return new_columns; }
+		const DataPart::Checksums & getNewChecksums() const { return new_checksums; }
+
 	private:
 		friend class MergeTreeData;
 
@@ -664,14 +676,14 @@ public:
 
 	UInt64 getMaxDataPartIndex();
 
-	std::string getTableName() const
+	std::string getTableName() const override
 	{
 		throw Exception("Logical error: calling method getTableName of not a table.", ErrorCodes::LOGICAL_ERROR);
 	}
 
 	const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
 
-	NameAndTypePair getColumn(const String & column_name) const
+	NameAndTypePair getColumn(const String & column_name) const override
 	{
 		if (column_name == "_part")
 			return NameAndTypePair("_part", new DataTypeString);
@@ -680,7 +692,7 @@ public:
 		return ITableDeclaration::getColumn(column_name);
 	}
 
-	bool hasColumn(const String & column_name) const
+	bool hasColumn(const String & column_name) const override
 	{
 		if (column_name == "_part")
 			return true;

@@ -261,17 +261,14 @@ void Join::insertFromBlockImpl(Maps & maps, size_t rows, const ConstColumnPlainP
 
 bool Join::insertFromBlock(const Block & block)
 {
+	Poco::ScopedWriteRWLock lock(rwlock);
+
 	size_t keys_size = key_names_right.size();
 	ConstColumnPlainPtrs key_columns(keys_size);
 
-	/// Переводим имена столбцов в номера, если они ещё не вычислены.
-	if (key_numbers_right.empty())
-		for (const auto & name : key_names_right)
-			key_numbers_right.push_back(block.getPositionByName(name));
-
 	/// Запоминаем столбцы ключей, с которыми будем работать
 	for (size_t i = 0; i < keys_size; ++i)
-		key_columns[i] = block.getByPosition(key_numbers_right[i]).column;
+		key_columns[i] = block.getByName(key_names_right[i]).column;
 
 	size_t rows = block.rows();
 
@@ -401,7 +398,7 @@ struct Adder<KIND, ASTJoin::All, Map>
 
 
 template <ASTJoin::Kind KIND, ASTJoin::Strictness STRICTNESS, typename Maps>
-void Join::joinBlockImpl(Block & block, Maps & maps)
+void Join::joinBlockImpl(Block & block, const Maps & maps) const
 {
 	if (blocks.empty())
 		throw Exception("Attempt to JOIN with empty table", ErrorCodes::EMPTY_DATA_PASSED);
@@ -409,14 +406,9 @@ void Join::joinBlockImpl(Block & block, Maps & maps)
 	size_t keys_size = key_names_left.size();
 	ConstColumnPlainPtrs key_columns(keys_size);
 
-	/// Переводим имена столбцов в номера, если они ещё не вычислены.
-	if (key_numbers_left.empty())
-		for (const auto & name : key_names_left)
-			key_numbers_left.push_back(block.getPositionByName(name));
-
 	/// Запоминаем столбцы ключей, с которыми будем работать
 	for (size_t i = 0; i < keys_size; ++i)
-		key_columns[i] = block.getByPosition(key_numbers_left[i]).column;
+		key_columns[i] = block.getByName(key_names_left[i]).column;
 
 	/// Добавляем в блок новые столбцы.
 	const Block & first_mapped_block = blocks.front();
@@ -528,8 +520,10 @@ void Join::joinBlockImpl(Block & block, Maps & maps)
 }
 
 
-void Join::joinBlock(Block & block)
+void Join::joinBlock(Block & block) const
 {
+	Poco::ScopedReadRWLock lock(rwlock);
+
 	if (kind == ASTJoin::Left && strictness == ASTJoin::Any)
 		joinBlockImpl<ASTJoin::Left, ASTJoin::Any, MapsAny>(block, maps_any);
 	else if (kind == ASTJoin::Inner && strictness == ASTJoin::Any)

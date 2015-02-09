@@ -3,6 +3,8 @@
 #include <DB/Common/escapeForFileName.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
+#include <DB/IO/ReadBufferFromFile.h>
+#include <DB/IO/WriteBufferFromFile.h>
 #include <DB/Interpreters/InterpreterDropQuery.h>
 #include <DB/Parsers/ASTDropQuery.h>
 #include <DB/Common/VirtualColumnUtils.h>

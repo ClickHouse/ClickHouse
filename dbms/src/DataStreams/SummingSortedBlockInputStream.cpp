@@ -14,7 +14,7 @@ void SummingSortedBlockInputStream::insertCurrentRow(ColumnPlainPtrs & merged_co
 
 Block SummingSortedBlockInputStream::readImpl()
 {
-	if (!children.size())
+	if (finished)
 		return Block();
 
 	if (children.size() == 1)
@@ -130,7 +130,7 @@ void SummingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs 
 		insertCurrentRow(merged_columns);
 	}
 
-	children.clear();
+	finished = true;
 }
 
 }

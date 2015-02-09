@@ -25,6 +25,8 @@
 #include <DB/Storages/StorageChunkRef.h>
 #include <DB/Storages/StorageChunkMerger.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
+#include <DB/Storages/StorageSet.h>
+#include <DB/Storages/StorageJoin.h>
 
 
 namespace DB
@@ -174,6 +176,70 @@ StoragePtr StorageFactory::get(
 			data_path, table_name, columns,
 			materialized_columns, alias_columns, column_defaults,
 			attach, context.getSettings().max_compress_block_size);
+	}
+	else if (name == "Set")
+	{
+		return StorageSet::create(
+			data_path, table_name, columns,
+			materialized_columns, alias_columns, column_defaults);
+	}
+	else if (name == "Join")
+	{
+		/// Join(ANY, LEFT, k1, k2, ...)
+
+		ASTs & args_func = typeid_cast<ASTFunction &>(*typeid_cast<ASTCreateQuery &>(*query).storage).children;
+
+		constexpr auto params_error_message = "Storage Join requires at least 3 parameters: Join(ANY|ALL, LEFT|INNER, keys...).";
+
+		if (args_func.size() != 1)
+			throw Exception(params_error_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
+
+		if (args.size() < 3)
+			throw Exception(params_error_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		const ASTIdentifier * strictness_id = typeid_cast<ASTIdentifier *>(&*args[0]);
+		if (!strictness_id)
+			throw Exception("First parameter of storage Join must be ANY or ALL (without quotes).", ErrorCodes::BAD_ARGUMENTS);
+
+		const String strictness_str = Poco::toLower(strictness_id->name);
+		ASTJoin::Strictness strictness;
+		if (strictness_str == "any")
+			strictness = ASTJoin::Strictness::Any;
+		else if (strictness_str == "all")
+			strictness = ASTJoin::Strictness::All;
+		else
+			throw Exception("First parameter of storage Join must be ANY or ALL (without quotes).", ErrorCodes::BAD_ARGUMENTS);
+
+		const ASTIdentifier * kind_id = typeid_cast<ASTIdentifier *>(&*args[1]);
+		if (!kind_id)
+			throw Exception("Second parameter of storage Join must be LEFT or INNER (without quotes).", ErrorCodes::BAD_ARGUMENTS);
+
+		const String kind_str = Poco::toLower(kind_id->name);
+		ASTJoin::Kind kind;
+		if (kind_str == "left")
+			kind = ASTJoin::Kind::Left;
+		else if (kind_str == "inner")
+			kind = ASTJoin::Kind::Inner;
+		else
+			throw Exception("Second parameter of storage Join must be LEFT or INNER (without quotes).", ErrorCodes::BAD_ARGUMENTS);
+
+		Names key_names;
+		key_names.reserve(args.size() - 2);
+		for (size_t i = 2, size = args.size(); i < size; ++i)
+		{
+			const ASTIdentifier * key = typeid_cast<ASTIdentifier *>(&*args[i]);
+			if (!key)
+				throw Exception("Parameter №" + toString(i + 1) + " of storage Join don't look like column name.", ErrorCodes::BAD_ARGUMENTS);
+
+			key_names.push_back(key->name);
+		}
+
+		return StorageJoin::create(
+			data_path, table_name,
+			key_names, kind, strictness,
+			columns, materialized_columns, alias_columns, column_defaults);
 	}
 	else if (name == "Memory")
 	{

@@ -22,8 +22,7 @@ class AggregatingSortedBlockInputStream : public MergingSortedBlockInputStream
 {
 public:
 	AggregatingSortedBlockInputStream(BlockInputStreams inputs_, const SortDescription & description_, size_t max_block_size_)
-		: MergingSortedBlockInputStream(inputs_, description_, max_block_size_),
-		log(&Logger::get("SummingSortedBlockInputStream"))
+		: MergingSortedBlockInputStream(inputs_, description_, max_block_size_)
 	{
 	}
 
@@ -51,7 +50,10 @@ protected:
 	Block readImpl() override;
 
 private:
-	Logger * log;
+	Logger * log = &Logger::get("SummingSortedBlockInputStream");
+
+	/// Прочитали до конца.
+	bool finished = false;
 
 	/// Столбцы с какими номерами надо аггрегировать.
 	ColumnNumbers column_numbers_to_aggregate;

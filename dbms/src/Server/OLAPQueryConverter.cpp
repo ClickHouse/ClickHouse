@@ -371,10 +371,6 @@ std::string QueryConverter::convertCondition(
 		return "SEIn(toUInt8(" + value + "), toUInt8(" + constant + "))";
 	if (name == "se_not_in")
 		return "NOT SEIn(toUInt8(" + value + "), toUInt8(" + constant + "))";
-	if (name == "category_in")
-		return "categoryIn(" + value + ", " + constant + ")";
-	if (name == "category_not_in")
-		return "NOT categoryIn(" + value + ", " + constant + ")";
 	if (name == "interest_has_all_from")
 		return "bitwiseAnd(" + value + ", " + constant + ") == " + constant;
 	if (name == "interest_not_has_all_from")
@@ -480,13 +476,6 @@ void QueryConverter::fillNumericAttributeMap()
 	M("RegionCity",           "regionToCity(RegionID%s)")
 	M("RegionArea",           "regionToArea(RegionID%s)")
 	M("RegionCountry",        "regionToCountry(RegionID%s)")
-	M("URLRegionID",          "URLRegions[1]")
-	M("URLRegionCity",        "regionToCity(URLRegions[1]%s)")
-	M("URLRegionArea",        "regionToArea(URLRegions[1]%s)")
-	M("URLRegionCountry",     "regionToCountry(URLRegions[1]%s)")
-	M("URLCategoryID",        "URLCategories[1]")
-	M("URLCategoryMostAncestor", "categoryToRoot(URLCategories[1])")
-	M("URLCategorySecondLevel",  "categoryToSecondLevel(URLCategories[1])")
 	M("TraficSourceID",       "TraficSourceID")
 	M("IsNewUser",            "intDiv(toUInt32(FirstVisit), 1800) == intDiv(toUInt32(StartTime), 1800)")
 	M("UserNewness",          "intDiv(toUInt64(StartTime)-toUInt64(FirstVisit), 86400)")

@@ -16,7 +16,7 @@ int main(int argc, char ** argv)
 	{
 		Compiler compiler(".", 1);
 
-		auto lib = compiler.getOrCount("xxx", 1, []() -> std::string
+		auto lib = compiler.getOrCount("xxx", 1, "", []() -> std::string
 		{
 			return "void f() __attribute__((__visibility__(\"default\"))); void f() {}";
 		}, [](SharedLibraryPtr&){});

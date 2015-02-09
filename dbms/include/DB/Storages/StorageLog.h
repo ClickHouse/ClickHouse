@@ -1,26 +1,16 @@
 #pragma once
 
-#include <set>
+#include <map>
 
 #include <Poco/File.h>
 #include <Poco/RWLock.h>
 
-#include <DB/Core/NamesAndTypes.h>
-#include <DB/IO/ReadBufferFromFile.h>
-#include <DB/IO/WriteBufferFromFile.h>
-#include <DB/IO/CompressedReadBuffer.h>
-#include <DB/IO/CompressedWriteBuffer.h>
 #include <DB/Storages/IStorage.h>
-#include <DB/DataStreams/IProfilingBlockInputStream.h>
-#include <DB/DataStreams/IBlockOutputStream.h>
 #include <DB/Common/FileChecker.h>
 
 
 namespace DB
 {
-
-class StorageLog;
-
 
 /** Смещение до каждой некоторой пачки значений.
   * Эти пачки имеют одинаковый размер в разных столбцах.
@@ -33,96 +23,6 @@ struct Mark
 };
 
 typedef std::vector<Mark> Marks;
-
-
-class LogBlockInputStream : public IProfilingBlockInputStream
-{
-public:
-	LogBlockInputStream(size_t block_size_, const Names & column_names_, StorageLog & storage_, size_t mark_number_, size_t rows_limit_);
-	String getName() const { return "LogBlockInputStream"; }
-
-	String getID() const;
-
-protected:
-	Block readImpl();
-private:
-	size_t block_size;
-	Names column_names;
-	StorageLog & storage;
-	size_t mark_number;		/// С какой засечки читать данные
-	size_t rows_limit;		/// Максимальное количество строк, которых можно прочитать
-
-	size_t rows_read;
-	size_t current_mark;
-
-	struct Stream
-	{
-		Stream(const std::string & data_path, size_t offset)
-			: plain(data_path, std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(data_path).getSize())),
-			compressed(plain)
-		{
-			if (offset)
-				plain.seek(offset);
-		}
-
-		ReadBufferFromFile plain;
-		CompressedReadBuffer compressed;
-	};
-
-	typedef std::map<std::string, std::unique_ptr<Stream> > FileStreams;
-	FileStreams streams;
-
-	void addStream(const String & name, const IDataType & type, size_t level = 0);
-	void readData(const String & name, const IDataType & type, IColumn & column, size_t max_rows_to_read, size_t level = 0, bool read_offsets = true);
-};
-
-
-class LogBlockOutputStream : public IBlockOutputStream
-{
-public:
-	LogBlockOutputStream(StorageLog & storage_);
-	~LogBlockOutputStream() { writeSuffix(); }
-
-	void write(const Block & block);
-	void writeSuffix();
-private:
-	StorageLog & storage;
-	Poco::ScopedWriteRWLock lock;
-
-	struct Stream
-	{
-		Stream(const std::string & data_path, size_t max_compress_block_size) :
-			plain(data_path, max_compress_block_size, O_APPEND | O_CREAT | O_WRONLY),
-			compressed(plain)
-		{
-			plain_offset = Poco::File(data_path).getSize();
-		}
-
-		WriteBufferFromFile plain;
-		CompressedWriteBuffer compressed;
-
-		size_t plain_offset;	/// Сколько байт было в файле на момент создания LogBlockOutputStream.
-
-		void finalize()
-		{
-			compressed.next();
-			plain.next();
-		}
-	};
-
-	typedef std::vector<std::pair<size_t, Mark> > MarksForColumns;
-
-	typedef std::map<std::string, std::unique_ptr<Stream> > FileStreams;
-	FileStreams streams;
-
-	typedef std::set<std::string> OffsetColumns;
-
-	WriteBufferFromFile marks_stream; /// Объявлен ниже lock, чтобы файл открывался при захваченном rwlock.
-
-	void addStream(const String & name, const IDataType & type, size_t level = 0);
-	void writeData(const String & name, const IDataType & type, const IColumn & column, MarksForColumns & out_marks, OffsetColumns & offset_columns, size_t level = 0);
-	void writeMarks(MarksForColumns marks);
-};
 
 
 /** Реализует хранилище, подходящее для логов.

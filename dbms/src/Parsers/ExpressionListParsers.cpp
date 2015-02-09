@@ -118,7 +118,7 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, Pos end, ASTP
 		if (first)
 		{
 			ASTPtr elem;
-			if (!elem_parser->parse(pos, end, elem, expected))
+			if (!first_elem_parser->parse(pos, end, elem, expected))
 				return false;
 
 			node = elem;
@@ -155,7 +155,7 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, Pos end, ASTP
 			ASTPtr exp_list_node = p_exp_list;
 
 			ASTPtr elem;
-			if (!elem_parser->parse(pos, end, elem, expected))
+			if (!(remaining_elem_parser ? remaining_elem_parser : first_elem_parser)->parse(pos, end, elem, expected))
 				return false;
 
 			/// первым аргументом функции будет предыдущий элемент, вторым - следующий
@@ -432,11 +432,13 @@ bool ParserUnaryMinusExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Ex
 }
 
 
-ParserAccessExpression::ParserAccessExpression()
-	: operator_parser(
-		operators,
-		ParserPtr(new ParserExpressionElement))
+bool ParserAccessExpression::parseImpl(Pos &pos, Pos end, ASTPtr &node, Expected &expected)
 {
+	return ParserLeftAssociativeBinaryOperatorList{
+		operators,
+		ParserPtr(new ParserExpressionElement),
+		ParserPtr(new ParserExpressionWithOptionalAlias)
+	}.parse(pos, end, node, expected);
 }
 
 

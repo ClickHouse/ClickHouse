@@ -132,8 +132,8 @@ void Context::assertTableExists(const String & database_name, const String & tab
 
 	String db = database_name.empty() ? current_database : database_name;
 
-	Databases::const_iterator it;
-	if (shared->databases.end() == (it = shared->databases.find(db)))
+	Databases::const_iterator it = shared->databases.find(db);
+	if (shared->databases.end() == it)
 		throw Exception("Database " + db + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
 
 	if (it->second.end() == it->second.find(table_name))
@@ -199,8 +199,8 @@ StoragePtr Context::tryGetExternalTable(const String & table_name) const
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 
-	Tables::const_iterator jt;
-	if (external_tables.end() == (jt = external_tables.find(table_name)))
+	Tables::const_iterator jt = external_tables.find(table_name);
+	if (external_tables.end() == jt)
 		return StoragePtr();
 
 	return jt->second;
@@ -210,9 +210,6 @@ StoragePtr Context::tryGetExternalTable(const String & table_name) const
 StoragePtr Context::getTable(const String & database_name, const String & table_name) const
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
-
-	Databases::const_iterator it;
-	Tables::const_iterator jt;
 
 	if (database_name.empty())
 	{
@@ -226,10 +223,12 @@ StoragePtr Context::getTable(const String & database_name, const String & table_
 	}
 	String db = database_name.empty() ? current_database : database_name;
 
-	if (shared->databases.end() == (it = shared->databases.find(db)))
+	Databases::const_iterator it = shared->databases.find(db);
+	if (shared->databases.end() == it)
 		throw Exception("Database " + db + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
 
-	if (it->second.end() == (jt = it->second.find(table_name)))
+	Tables::const_iterator jt = it->second.find(table_name);
+	if (it->second.end() == jt)
 		throw Exception("Table " + db + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
 	return jt->second;
@@ -252,12 +251,12 @@ StoragePtr Context::tryGetTable(const String & database_name, const String & tab
 	}
 	String db = database_name.empty() ? current_database : database_name;
 
-	Databases::const_iterator it;
-	if (shared->databases.end() == (it = shared->databases.find(db)))
+	Databases::const_iterator it = shared->databases.find(db);
+	if (shared->databases.end() == it)
 		return StoragePtr();
 
-	Tables::const_iterator jt;
-	if (it->second.end() == (jt = it->second.find(table_name)))
+	Tables::const_iterator jt = it->second.find(table_name);
+	if (it->second.end() == jt)
 		return StoragePtr();
 
 	return jt->second;
@@ -496,7 +495,11 @@ const Dictionaries & Context::getDictionaries() const
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 
 	if (!shared->dictionaries)
-		shared->dictionaries = new Dictionaries;
+	{
+		if (!this->global_context)
+			throw Exception("Logical error: there is no global context", ErrorCodes::LOGICAL_ERROR);
+		shared->dictionaries = new Dictionaries{ *this->global_context };
+	}
 
 	return *shared->dictionaries;
 }

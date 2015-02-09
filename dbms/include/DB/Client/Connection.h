@@ -14,7 +14,7 @@
 
 #include <DB/DataStreams/IBlockInputStream.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
-#include <DB/DataStreams/IProfilingBlockInputStream.h>
+#include <DB/DataStreams/BlockStreamProfileInfo.h>
 
 #include <DB/Interpreters/Settings.h>
 
@@ -25,6 +25,8 @@ namespace DB
 {
 
 using Poco::SharedPtr;
+
+class ShardReplicas;
 
 /// Поток блоков читающих из таблицы и ее имя
 typedef std::pair<BlockInputStreamPtr, std::string> ExternalTableData;
@@ -40,6 +42,8 @@ typedef std::vector<ExternalTableData> ExternalTablesData;
   */
 class Connection : private boost::noncopyable
 {
+	friend class ShardReplicas;
+
 public:
 	Connection(const String & host_, UInt16 port_, const String & default_database_,
 		const String & user_, const String & password_,
@@ -52,9 +56,8 @@ public:
 		:
 		host(host_), port(port_), default_database(default_database_),
 		user(user_), password(password_),
-		client_name(client_name_), connected(false),
-		server_version_major(0), server_version_minor(0), server_revision(0),
-		query_id(""), compression(compression_), data_type_factory(data_type_factory_),
+		client_name(client_name_),
+		compression(compression_), data_type_factory(data_type_factory_),
 		connect_timeout(connect_timeout_), receive_timeout(receive_timeout_), send_timeout(send_timeout_),
 		log_wrapper(host, port)
 	{
@@ -105,6 +108,9 @@ public:
 	/// Проверить, есть ли данные, которые можно прочитать.
 	bool poll(size_t timeout_microseconds = 0);
 
+	/// Проверить, есть ли данные в буфере для чтения.
+	bool hasReadBufferPendingData() const;
+
 	/// Получить пакет от сервера.
 	Packet receivePacket();
 
@@ -139,12 +145,12 @@ private:
 
 	String client_name;
 
-	bool connected;
+	bool connected = false;
 
 	String server_name;
-	UInt64 server_version_major;
-	UInt64 server_version_minor;
-	UInt64 server_revision;
+	UInt64 server_version_major = 0;
+	UInt64 server_version_minor = 0;
+	UInt64 server_revision = 0;
 
 	Poco::Net::StreamSocket socket;
 	SharedPtr<ReadBuffer> in;

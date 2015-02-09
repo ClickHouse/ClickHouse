@@ -26,9 +26,7 @@ public:
 	CollapsingSortedBlockInputStream(BlockInputStreams inputs_, const SortDescription & description_,
 		const String & sign_column_, size_t max_block_size_)
 		: MergingSortedBlockInputStream(inputs_, description_, max_block_size_),
-		sign_column(sign_column_), sign_column_number(0),
-		log(&Logger::get("CollapsingSortedBlockInputStream")),
-		count_positive(0), count_negative(0), count_incorrect_data(0), blocks_written(0)
+		sign_column(sign_column_)
 	{
 	}
 
@@ -57,9 +55,12 @@ protected:
 
 private:
 	String sign_column;
-	size_t sign_column_number;
+	size_t sign_column_number = 0;
 
-	Logger * log;
+	Logger * log = &Logger::get("CollapsingSortedBlockInputStream");
+
+	/// Прочитали до конца.
+	bool finished = false;
 
 	Row current_key;		/// Текущий первичный ключ.
 	Row next_key;			/// Первичный ключ следующей строки.
@@ -68,13 +69,13 @@ private:
 	Row last_positive;		/// Последняя положительная строка для текущего первичного ключа.
 	Row last_negative;		/// Последняя отрицательная. Сорраняется только если ни одной строки в ответ еще не выписано.
 
-	size_t count_positive;	/// Количество положительных строк для текущего первичного ключа.
-	size_t count_negative;	/// Количество отрицательных строк для текущего первичного ключа.
-	bool last_is_positive;  /// true, если последняя строка для текущего первичного ключа положительная.
+	size_t count_positive = 0;	/// Количество положительных строк для текущего первичного ключа.
+	size_t count_negative = 0;	/// Количество отрицательных строк для текущего первичного ключа.
+	bool last_is_positive = false;  /// true, если последняя строка для текущего первичного ключа положительная.
 
-	size_t count_incorrect_data;	/// Чтобы не писать в лог слишком много сообщений об ошибке.
+	size_t count_incorrect_data = 0;	/// Чтобы не писать в лог слишком много сообщений об ошибке.
 
-	size_t blocks_written;
+	size_t blocks_written = 0;
 
 	/** Делаем поддержку двух разных курсоров - с Collation и без.
 	 *  Шаблоны используем вместо полиморфных SortCursor'ов и вызовов виртуальных функций.

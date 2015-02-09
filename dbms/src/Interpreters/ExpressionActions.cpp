@@ -85,6 +85,13 @@ void ExpressionAction::prepare(Block & sample_block)
 {
 //	std::cerr << "preparing: " << toString() << std::endl;
 
+	/** Константные выражения следует вычислить, и положить результат в sample_block.
+	  * Для неконстантных столбцов, следует в качестве column в sample_block положить nullptr.
+	  *
+	  * Тот факт, что только для константных выражений column != nullptr,
+	  *  может использоваться в дальнейшем при оптимизации запроса.
+	  */
+
 	switch (type)
 	{
 		case APPLY_FUNCTION:
@@ -156,7 +163,7 @@ void ExpressionAction::prepare(Block & sample_block)
 		case JOIN:
 		{
 			for (const auto & col : columns_added_by_join)
-				sample_block.insert(ColumnWithNameAndType(col.type->createColumn(), col.type, col.name));
+				sample_block.insert(ColumnWithNameAndType(nullptr, col.type, col.name));
 
 			break;
 		}

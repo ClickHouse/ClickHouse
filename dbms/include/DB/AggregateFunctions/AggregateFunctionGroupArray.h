@@ -17,14 +17,14 @@ struct AggregateFunctionGroupArrayData
 {
 	Array value;	/// TODO Добавить MemoryTracker
 };
-	
+
 
 /// Складывает все значения в массив. Реализовано неэффективно.
 class AggregateFunctionGroupArray final : public IUnaryAggregateFunction<AggregateFunctionGroupArrayData, AggregateFunctionGroupArray>
 {
 private:
 	DataTypePtr type;
-	
+
 public:
 	String getName() const { return "groupArray"; }
 
@@ -47,7 +47,7 @@ public:
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
 	{
-		data(place).value.insert(data(place).value.begin(), data(rhs).value.begin(), data(rhs).value.end());
+		data(place).value.insert(data(place).value.end(), data(rhs).value.begin(), data(rhs).value.end());
 	}
 
 	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const

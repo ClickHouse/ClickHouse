@@ -6,8 +6,10 @@
 #include <Poco/Stopwatch.h>
 #include <Poco/SharedPtr.h>
 
-#include <DB/IO/ReadBufferFromIStream.h>
-#include <DB/IO/WriteBufferFromOStream.h>
+#include <DB/IO/ReadBufferFromFileDescriptor.h>
+#include <DB/IO/WriteBufferFromFileDescriptor.h>
+#include <DB/IO/CompressedReadBuffer.h>
+#include <DB/IO/CompressedWriteBuffer.h>
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>
@@ -106,7 +108,7 @@ int main(int argc, char ** argv)
 		{
 			QueryProcessingStage::Enum stage;
 			SharedPtr<IBlockInputStream> in = table->read(column_names, 0, Context{}, Settings(), stage)[0];
-			WriteBufferFromOStream out1(std::cout);
+			WriteBufferFromFileDescriptor out1(STDOUT_FILENO);
 			CompressedWriteBuffer out2(out1);
 			NativeBlockOutputStream out3(out2, Revision::get());
 			copyData(*in, out3);
@@ -117,7 +119,7 @@ int main(int argc, char ** argv)
 		{
 			DataTypeFactory factory;
 
-			ReadBufferFromIStream in1(std::cin);
+			ReadBufferFromFileDescriptor in1(STDIN_FILENO);
 			CompressedReadBuffer in2(in1);
 			NativeBlockInputStream in3(in2, factory, Revision::get());
 			SharedPtr<IBlockOutputStream> out = table->write(0);

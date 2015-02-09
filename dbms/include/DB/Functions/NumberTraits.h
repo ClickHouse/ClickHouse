@@ -117,10 +117,7 @@ namespace NumberTraits
 	  */
 	template <typename A, typename B> struct ResultOfFloatingPointDivision
 	{
-		typedef typename Construct<
-			Signed,
-			Floating,
-			typename Next<typename boost::mpl::max<typename Traits<A>::Bits, typename Traits<B>::Bits>::type>::Type>::Type Type;
+		typedef Float64 Type;
 	};
 
 	/** При целочисленном делении получается число, битность которого равна делимому.

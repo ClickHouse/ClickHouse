@@ -11,94 +11,6 @@ namespace DB
 {
 
 
-void BlockStreamProfileInfo::read(ReadBuffer & in)
-{
-	readVarUInt(rows, in);
-	readVarUInt(blocks, in);
-	readVarUInt(bytes, in);
-	readBinary(applied_limit, in);
-	readVarUInt(rows_before_limit, in);
-	readBinary(calculated_rows_before_limit, in);
-}
-
-
-void BlockStreamProfileInfo::write(WriteBuffer & out) const
-{
-	writeVarUInt(rows, out);
-	writeVarUInt(blocks, out);
-	writeVarUInt(bytes, out);
-	writeBinary(hasAppliedLimit(), out);
-	writeVarUInt(getRowsBeforeLimit(), out);
-	writeBinary(calculated_rows_before_limit, out);
-}
-
-
-size_t BlockStreamProfileInfo::getRowsBeforeLimit() const
-{
-	if (!calculated_rows_before_limit)
-		calculateRowsBeforeLimit();
-	return rows_before_limit;
-}
-
-
-bool BlockStreamProfileInfo::hasAppliedLimit() const
-{
-	if (!calculated_rows_before_limit)
-		calculateRowsBeforeLimit();
-	return applied_limit;
-}
-
-
-void BlockStreamProfileInfo::update(Block & block)
-{
-	++blocks;
-	rows += block.rowsInFirstColumn();
-	bytes += block.bytes();
-
-	if (column_names.empty())
-		column_names = block.dumpNames();
-}
-
-
-void BlockStreamProfileInfo::collectInfosForStreamsWithName(const String & name, BlockStreamProfileInfos & res) const
-{
-	if (stream_name == name)
-	{
-		res.push_back(this);
-		return;
-	}
-
-	for (BlockStreamProfileInfos::const_iterator it = nested_infos.begin(); it != nested_infos.end(); ++it)
-		(*it)->collectInfosForStreamsWithName(name, res);
-}
-
-
-void BlockStreamProfileInfo::calculateRowsBeforeLimit() const
-{
-	calculated_rows_before_limit = true;
-
-	/// есть ли Limit?
-	BlockStreamProfileInfos limits;
-	collectInfosForStreamsWithName("Limit", limits);
-	if (limits.empty())
-		return;
-
-	applied_limit = true;
-
-	/** Берём количество строчек, прочитанных ниже PartialSorting-а, если есть, или ниже Limit-а.
-	  * Это нужно, потому что сортировка может вернуть только часть строк.
-	  */
-	BlockStreamProfileInfos partial_sortings;
-	collectInfosForStreamsWithName("PartialSorting", partial_sortings);
-
-	BlockStreamProfileInfos & limits_or_sortings = partial_sortings.empty() ? limits : partial_sortings;
-
-	for (BlockStreamProfileInfos::const_iterator it = limits_or_sortings.begin(); it != limits_or_sortings.end(); ++it)
-		for (BlockStreamProfileInfos::const_iterator jt = (*it)->nested_infos.begin(); jt != (*it)->nested_infos.end(); ++jt)
-			rows_before_limit += (*jt)->rows;
-}
-
-
 Block IProfilingBlockInputStream::read()
 {
 	if (!info.started)
@@ -106,9 +18,11 @@ Block IProfilingBlockInputStream::read()
 		info.total_stopwatch.start();
 		info.stream_name = getShortName();
 
-		for (BlockInputStreams::const_iterator it = children.begin(); it != children.end(); ++it)
-			if (const IProfilingBlockInputStream * child = dynamic_cast<const IProfilingBlockInputStream *>(&**it))
-				info.nested_infos.push_back(&child->info);
+		for (const auto & child : children)
+			if (const IProfilingBlockInputStream * p_child = dynamic_cast<const IProfilingBlockInputStream *>(&*child))
+				info.nested_infos.push_back(&p_child->info);
+
+		/// Заметим, что после такого, элементы children нельзя удалять до того, как может потребоваться работать с nested_info.
 
 		info.started = true;
 	}
@@ -174,8 +88,8 @@ Block IProfilingBlockInputStream::read()
 
 void IProfilingBlockInputStream::readSuffix()
 {
-	for (BlockInputStreams::iterator it = children.begin(); it != children.end(); ++it)
-		(*it)->readSuffix();
+	for (auto & child : children)
+		child->readSuffix();
 
 	readSuffixImpl();
 }
@@ -367,9 +281,9 @@ void IProfilingBlockInputStream::cancel()
 	if (!__sync_bool_compare_and_swap(&is_cancelled, false, true))
 		return;
 
-	for (BlockInputStreams::iterator it = children.begin(); it != children.end(); ++it)
-		if (IProfilingBlockInputStream * child = dynamic_cast<IProfilingBlockInputStream *>(&**it))
-			child->cancel();
+	for (auto & child : children)
+		if (IProfilingBlockInputStream * p_child = dynamic_cast<IProfilingBlockInputStream *>(&*child))
+			p_child->cancel();
 }
 
 
@@ -377,9 +291,9 @@ void IProfilingBlockInputStream::setProgressCallback(ProgressCallback callback)
 {
 	progress_callback = callback;
 
-	for (BlockInputStreams::iterator it = children.begin(); it != children.end(); ++it)
-		if (IProfilingBlockInputStream * child = dynamic_cast<IProfilingBlockInputStream *>(&**it))
-			child->setProgressCallback(callback);
+	for (auto & child : children)
+		if (IProfilingBlockInputStream * p_child = dynamic_cast<IProfilingBlockInputStream *>(&*child))
+			p_child->setProgressCallback(callback);
 }
 
 
@@ -387,9 +301,9 @@ void IProfilingBlockInputStream::setProcessListElement(ProcessList::Element * el
 {
 	process_list_elem = elem;
 
-	for (BlockInputStreams::iterator it = children.begin(); it != children.end(); ++it)
-		if (IProfilingBlockInputStream * child = dynamic_cast<IProfilingBlockInputStream *>(&**it))
-			child->setProcessListElement(elem);
+	for (auto & child : children)
+		if (IProfilingBlockInputStream * p_child = dynamic_cast<IProfilingBlockInputStream *>(&*child))
+			p_child->setProcessListElement(elem);
 }
 
 
@@ -398,11 +312,11 @@ const Block & IProfilingBlockInputStream::getTotals()
 	if (totals)
 		return totals;
 
-	for (BlockInputStreams::iterator it = children.begin(); it != children.end(); ++it)
+	for (auto & child : children)
 	{
-		if (IProfilingBlockInputStream * child = dynamic_cast<IProfilingBlockInputStream *>(&**it))
+		if (IProfilingBlockInputStream * p_child = dynamic_cast<IProfilingBlockInputStream *>(&*child))
 		{
-			const Block & res = child->getTotals();
+			const Block & res = p_child->getTotals();
 			if (res)
 				return res;
 		}
@@ -416,11 +330,11 @@ const Block & IProfilingBlockInputStream::getExtremes() const
 	if (extremes)
 		return extremes;
 
-	for (BlockInputStreams::const_iterator it = children.begin(); it != children.end(); ++it)
+	for (const auto & child : children)
 	{
-		if (const IProfilingBlockInputStream * child = dynamic_cast<const IProfilingBlockInputStream *>(&**it))
+		if (const IProfilingBlockInputStream * p_child = dynamic_cast<const IProfilingBlockInputStream *>(&*child))
 		{
-			const Block & res = child->getExtremes();
+			const Block & res = p_child->getExtremes();
 			if (res)
 				return res;
 		}

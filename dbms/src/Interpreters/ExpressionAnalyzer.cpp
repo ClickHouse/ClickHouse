@@ -22,10 +22,10 @@
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 
-#include <DB/Storages/StorageMergeTree.h>
 #include <DB/Storages/StorageDistributed.h>
 #include <DB/Storages/StorageMemory.h>
-#include <DB/Storages/StorageReplicatedMergeTree.h>
+#include <DB/Storages/StorageSet.h>
+#include <DB/Storages/StorageJoin.h>
 
 #include <DB/DataStreams/LazyBlockInputStream.h>
 #include <DB/DataStreams/copyData.h>
@@ -152,6 +152,7 @@ void ExpressionAnalyzer::analyzeAggregation()
 
 					group_asts.pop_back();
 					i -= 1;
+
 					continue;
 				}
 
@@ -633,7 +634,7 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name)
 		}
 	}
 
-	SharedPtr<InterpreterSelectQuery> interpreter = interpretSubquery(subquery_or_table_name, context, subquery_depth);
+	SharedPtr<InterpreterSelectQuery> interpreter = interpretSubquery(subquery_or_table_name, context, subquery_depth + 1);
 
 	Block sample = interpreter->getSampleBlock();
 	NamesAndTypesListPtr columns = new NamesAndTypesList(sample.getColumnsList());
@@ -675,16 +676,37 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 		return;
 
 	/// Если подзапрос или имя таблицы для SELECT.
-	if (typeid_cast<ASTSubquery *>(&*arg) || typeid_cast<ASTIdentifier *>(&*arg))
+	ASTIdentifier * identifier = typeid_cast<ASTIdentifier *>(&*arg);
+	if (typeid_cast<ASTSubquery *>(&*arg) || identifier)
 	{
 		/// Получаем поток блоков для подзапроса. Создаём Set и кладём на место подзапроса.
 		String set_id = arg->getColumnName();
 		ASTSet * ast_set = new ASTSet(set_id);
 		ASTPtr ast_set_ptr = ast_set;
 
+		/// Особый случай - если справа оператора IN указано имя таблицы, при чём, таблица имеет тип Set (заранее подготовленное множество).
+		/// TODO В этом синтаксисе не поддерживается указание имени БД.
+		if (identifier)
+		{
+			StoragePtr table = context.tryGetTable("", identifier->name);
+
+			if (table)
+			{
+				StorageSet * storage_set = typeid_cast<StorageSet *>(table.get());
+
+				if (storage_set)
+				{
+					SetPtr & set = storage_set->getSet();
+					ast_set->set = set;
+					arg = ast_set_ptr;
+					return;
+				}
+			}
+		}
+
 		SubqueryForSet & subquery_for_set = subqueries_for_sets[set_id];
 
-		/// Если уже создали Set с таким же подзапросом.
+		/// Если уже создали Set с таким же подзапросом/таблицей.
 		if (subquery_for_set.set)
 		{
 			ast_set->set = subquery_for_set.set;
@@ -1409,14 +1431,34 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 	String join_id = ast_join.table->getColumnName();
 
 	SubqueryForSet & subquery_for_set = subqueries_for_sets[join_id];
+
+	/// Особый случай - если справа JOIN указано имя таблицы, при чём, таблица имеет тип Join (заранее подготовленное отображение).
+	/// TODO В этом синтаксисе не поддерживается указание имени БД.
+	ASTIdentifier * identifier = typeid_cast<ASTIdentifier *>(&*ast_join.table);
+	if (identifier)
+	{
+		StoragePtr table = context.tryGetTable("", identifier->name);
+
+		if (table)
+		{
+			StorageJoin * storage_join = typeid_cast<StorageJoin *>(table.get());
+
+			if (storage_join)
+			{
+				storage_join->assertCompatible(ast_join.kind, ast_join.strictness);
+				/// TODO Проверять набор ключей.
+
+				JoinPtr & join = storage_join->getJoin();
+				subquery_for_set.join = join;
+			}
+		}
+	}
+
 	if (!subquery_for_set.join)
 	{
 		Names join_key_names_left(join_key_names_left_set.begin(), join_key_names_left_set.end());
 		Names join_key_names_right(join_key_names_right_set.begin(), join_key_names_right_set.end());
 		JoinPtr join = new Join(join_key_names_left, join_key_names_right, settings.limits, ast_join.kind, ast_join.strictness);
-
-/*		for (const auto & name_type : columns_added_by_join)
-			std::cerr << "! Column added by JOIN: " << name_type.name << std::endl;*/
 
 		Names required_joined_columns(join_key_names_right.begin(), join_key_names_right.end());
 		for (const auto & name_type : columns_added_by_join)
@@ -1795,8 +1837,8 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAnd
 	}
 	else if (typeid_cast<const ASTSubquery *>(node.table.get()))
 	{
-		const auto & table = node.table->children.at(0);
-		nested_result_sample = ExpressionAnalyzer(table, context, subquery_depth + 1).getSelectSampleBlock();
+		const auto & subquery = node.table->children.at(0);
+		nested_result_sample = InterpreterSelectQuery(subquery, context, QueryProcessingStage::Complete, subquery_depth + 1).getSampleBlock();
 	}
 
 	auto & keys = typeid_cast<ASTExpressionList &>(*node.using_expr_list);

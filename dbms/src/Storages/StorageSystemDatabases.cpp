@@ -8,15 +8,15 @@ namespace DB
 {
 
 
-StorageSystemDatabases::StorageSystemDatabases(const std::string & name_, const Context & context_)
-	: name(name_), context(context_)
+StorageSystemDatabases::StorageSystemDatabases(const std::string & name_)
+	: name(name_)
 {
 	columns.push_back(NameAndTypePair("name", new DataTypeString));
 }
 
-StoragePtr StorageSystemDatabases::create(const std::string & name_, const Context & context_)
+StoragePtr StorageSystemDatabases::create(const std::string & name_)
 {
-	return (new StorageSystemDatabases(name_, context_))->thisPtr();
+	return (new StorageSystemDatabases(name_))->thisPtr();
 }
 
 

@@ -76,9 +76,6 @@ private:
 		"RegionCity",
 		"RegionArea",
 		"RegionCountry",
-		"URLRegionCity",
-		"URLRegionArea",
-		"URLRegionCountry"
 	};
 
 	/// Парсеры значений атрибутов.
