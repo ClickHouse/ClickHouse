@@ -1,8 +1,9 @@
-#include <DB/Interpreters/Dictionaries.h>
+#include <DB/Interpreters/ExternalDictionaries.h>
 #include <DB/Dictionaries/DictionaryFactory.h>
 #include <DB/Dictionaries/DictionaryStructure.h>
 #include <DB/Dictionaries/IDictionarySource.h>
 #include <statdaemons/ext/scope_guard.hpp>
+#include <Poco/Util/Application.h>
 
 namespace DB
 {
@@ -28,7 +29,7 @@ namespace
 	}
 }
 
-void Dictionaries::reloadExternals()
+void ExternalDictionaries::reloadImpl()
 {
 	const auto config_path = getDictionariesConfigPath(Poco::Util::Application::instance().config());
 	const Poco::File config_file{config_path};
@@ -40,10 +41,10 @@ void Dictionaries::reloadExternals()
 	else
 	{
 		const auto last_modified = config_file.getLastModified();
-		if (last_modified > dictionaries_last_modified)
+		if (last_modified > config_last_modified)
 		{
 			/// definitions of dictionaries may have changed, recreate all of them
-			dictionaries_last_modified = last_modified;
+			config_last_modified = last_modified;
 
 			const auto config = new Poco::Util::XMLConfiguration{config_path};
 			SCOPE_EXIT(
@@ -87,12 +88,12 @@ void Dictionaries::reloadExternals()
 						}
 					}
 
-					auto it = external_dictionaries.find(name);
+					auto it = dictionaries.find(name);
 					/// add new dictionary or update an existing version
-					if (it == std::end(external_dictionaries))
+					if (it == std::end(dictionaries))
 					{
-						const std::lock_guard<std::mutex> lock{external_dictionaries_mutex};
-						external_dictionaries.emplace(name, std::make_shared<MultiVersion<IDictionary>>(dict_ptr.release()));
+						const std::lock_guard<std::mutex> lock{dictionaries_mutex};
+						dictionaries.emplace(name, std::make_shared<MultiVersion<IDictionary>>(dict_ptr.release()));
 					}
 					else
 						it->second->set(dict_ptr.release());
@@ -106,7 +107,7 @@ void Dictionaries::reloadExternals()
 	}
 
 	/// periodic update
-	for (auto & dictionary : external_dictionaries)
+	for (auto & dictionary : dictionaries)
 	{
 		try
 		{

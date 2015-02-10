@@ -23,6 +23,7 @@
 #include <DB/Interpreters/Users.h>
 #include <DB/Interpreters/Quota.h>
 #include <DB/Interpreters/Dictionaries.h>
+#include <DB/Interpreters/ExternalDictionaries.h>
 #include <DB/Interpreters/ProcessList.h>
 #include <DB/Interpreters/Cluster.h>
 #include <DB/Interpreters/InterserverIOHandler.h>
@@ -87,6 +88,7 @@ struct ContextShared
 	DataTypeFactory data_type_factory;						/// Типы данных.
 	FormatFactory format_factory;							/// Форматы.
 	mutable SharedPtr<Dictionaries> dictionaries;			/// Словари Метрики. Инициализируются лениво.
+	mutable SharedPtr<ExternalDictionaries> external_dictionaries;
 	Users users;											/// Известные пользователи.
 	Quotas quotas;											/// Известные квоты на использование ресурсов.
 	mutable UncompressedCachePtr uncompressed_cache;		/// Кэш разжатых блоков.
@@ -259,6 +261,7 @@ public:
 	const DataTypeFactory & getDataTypeFactory() const						{ return shared->data_type_factory; }
 	const FormatFactory & getFormatFactory() const							{ return shared->format_factory; }
 	const Dictionaries & getDictionaries() const;
+	const ExternalDictionaries & getExternalDictionaries() const;
 
 	InterserverIOHandler & getInterserverIOHandler()						{ return shared->interserver_io_handler; }
 

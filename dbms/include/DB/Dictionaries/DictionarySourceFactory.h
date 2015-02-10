@@ -67,7 +67,7 @@ public:
 		}
 		else if ("mysql" == source_type)
 		{
-			return ext::make_unique<MySQLDictionarySource>(config, config_prefix + ".mysql", sample_block, context);
+			return ext::make_unique<MySQLDictionarySource>(config, config_prefix + ".mysql", sample_block);
 		}
 		else if ("clickhouse" == source_type)
 		{

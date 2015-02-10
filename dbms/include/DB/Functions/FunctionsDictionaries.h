@@ -740,10 +740,10 @@ public:
 
 	static IFunction * create(const Context & context)
 	{
-		return new FunctionDictGetString{context.getDictionaries()};
+		return new FunctionDictGetString{context.getExternalDictionaries()};
 	};
 
-	FunctionDictGetString(const Dictionaries & dictionaries) : dictionaries(dictionaries) {}
+	FunctionDictGetString(const ExternalDictionaries & dictionaries) : dictionaries(dictionaries) {}
 
 	String getName() const override { return name; }
 
@@ -804,7 +804,7 @@ private:
 				ErrorCodes::ILLEGAL_COLUMN
 			};
 
-		auto dict = dictionaries.getExternalDictionary(dict_name_col->getData());
+		auto dict = dictionaries.getDictionary(dict_name_col->getData());
 		const auto dict_ptr = dict.get();
 
 		if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
@@ -889,7 +889,7 @@ private:
 		return false;
 	}
 
-	const Dictionaries & dictionaries;
+	const ExternalDictionaries & dictionaries;
 };
 
 
@@ -929,10 +929,10 @@ public:
 
 	static IFunction * create(const Context & context)
 	{
-		return new FunctionDictGet{context.getDictionaries()};
+		return new FunctionDictGet{context.getExternalDictionaries()};
 	};
 
-	FunctionDictGet(const Dictionaries & dictionaries) : dictionaries(dictionaries) {}
+	FunctionDictGet(const ExternalDictionaries & dictionaries) : dictionaries(dictionaries) {}
 
 	String getName() const override { return name; }
 
@@ -993,7 +993,7 @@ private:
 				ErrorCodes::ILLEGAL_COLUMN
 			};
 
-		auto dict = dictionaries.getExternalDictionary(dict_name_col->getData());
+		auto dict = dictionaries.getDictionary(dict_name_col->getData());
 		const auto dict_ptr = dict.get();
 
 		if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
@@ -1080,7 +1080,7 @@ private:
 		return false;
 	}
 
-	const Dictionaries & dictionaries;
+	const ExternalDictionaries & dictionaries;
 };
 
 template <typename DataType>
@@ -1106,10 +1106,10 @@ public:
 
 	static IFunction * create(const Context & context)
 	{
-		return new FunctionDictGetHierarchy{context.getDictionaries()};
+		return new FunctionDictGetHierarchy{context.getExternalDictionaries()};
 	};
 
-	FunctionDictGetHierarchy(const Dictionaries & dictionaries) : dictionaries(dictionaries) {}
+	FunctionDictGetHierarchy(const ExternalDictionaries & dictionaries) : dictionaries(dictionaries) {}
 
 	String getName() const override { return name; }
 
@@ -1161,7 +1161,7 @@ private:
 				ErrorCodes::ILLEGAL_COLUMN
 			};
 
-		auto dict = dictionaries.getExternalDictionary(dict_name_col->getData());
+		auto dict = dictionaries.getDictionary(dict_name_col->getData());
 		const auto dict_ptr = dict.get();
 
 		if (!dict->hasHierarchy())
@@ -1259,7 +1259,7 @@ private:
 		return false;
 	}
 
-	const Dictionaries & dictionaries;
+	const ExternalDictionaries & dictionaries;
 };
 
 
@@ -1270,10 +1270,10 @@ public:
 
 	static IFunction * create(const Context & context)
 	{
-		return new FunctionDictIsIn{context.getDictionaries()};
+		return new FunctionDictIsIn{context.getExternalDictionaries()};
 	};
 
-	FunctionDictIsIn(const Dictionaries & dictionaries) : dictionaries(dictionaries) {}
+	FunctionDictIsIn(const ExternalDictionaries & dictionaries) : dictionaries(dictionaries) {}
 
 	String getName() const override { return name; }
 
@@ -1342,7 +1342,7 @@ private:
 				ErrorCodes::ILLEGAL_COLUMN
 			};
 
-		auto dict = dictionaries.getExternalDictionary(dict_name_col->getData());
+		auto dict = dictionaries.getDictionary(dict_name_col->getData());
 		const auto dict_ptr = dict.get();
 
 		if (!dict->hasHierarchy())
@@ -1499,7 +1499,7 @@ private:
 		return false;
 	}
 
-	const Dictionaries & dictionaries;
+	const ExternalDictionaries & dictionaries;
 };
 
 
