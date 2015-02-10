@@ -160,10 +160,15 @@ BlockInputStreams StorageDistributed::read(
 		query, remote_database, remote_table);
 	const auto & modified_query = queryToString(modified_query_ast);
 
+	/// Ограничение сетевого трафика, если нужно.
+	ThrottlerPtr throttler;
+	if (settings.limits.max_network_bandwidth)
+		throttler.reset(new Throttler(settings.limits.max_network_bandwidth));
+
 	/// Цикл по шардам.
 	for (auto & conn_pool : cluster.pools)
 		res.emplace_back(new RemoteBlockInputStream{
-			conn_pool, modified_query, &new_settings,
+			conn_pool, modified_query, &new_settings, throttler,
 			external_tables, processed_stage, context});
 
 	/// Добавляем запросы к локальному ClickHouse.

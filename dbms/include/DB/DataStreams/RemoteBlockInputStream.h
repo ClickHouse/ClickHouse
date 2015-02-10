@@ -5,6 +5,7 @@
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/Common/VirtualColumnUtils.h>
+#include <DB/Common/Throttler.h>
 #include <DB/Interpreters/Context.h>
 
 #include <DB/Client/ConnectionPool.h>
@@ -32,29 +33,29 @@ private:
 
 public:
 	/// Принимает готовое соединение.
-	RemoteBlockInputStream(Connection & connection_, const String & query_, const Settings * settings_,
+	RemoteBlockInputStream(Connection & connection_, const String & query_, const Settings * settings_, ThrottlerPtr throttler_ = nullptr,
 		const Tables & external_tables_ = Tables(), QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
 		const Context & context = getDefaultContext())
-		: connection(&connection_), query(query_), external_tables(external_tables_), stage(stage_), context(context)
+		: connection(&connection_), query(query_), throttler(throttler_), external_tables(external_tables_), stage(stage_), context(context)
 	{
 		init(settings_);
 	}
 
 	/// Принимает готовое соединение. Захватывает владение соединением из пула.
-	RemoteBlockInputStream(ConnectionPool::Entry & pool_entry_, const String & query_, const Settings * settings_,
+	RemoteBlockInputStream(ConnectionPool::Entry & pool_entry_, const String & query_, const Settings * settings_, ThrottlerPtr throttler_ = nullptr,
 		const Tables & external_tables_ = Tables(), QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
 		const Context & context = getDefaultContext())
-		: pool_entry(pool_entry_), connection(&*pool_entry_), query(query_),
+		: pool_entry(pool_entry_), connection(&*pool_entry_), query(query_), throttler(throttler_),
 		  external_tables(external_tables_), stage(stage_), context(context)
 	{
 		init(settings_);
 	}
 
 	/// Принимает пул, из которого нужно будет достать одно или несколько соединений.
-	RemoteBlockInputStream(IConnectionPool * pool_, const String & query_, const Settings * settings_,
+	RemoteBlockInputStream(IConnectionPool * pool_, const String & query_, const Settings * settings_, ThrottlerPtr throttler_ = nullptr,
 		const Tables & external_tables_ = Tables(), QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
 		const Context & context = getDefaultContext())
-		: pool(pool_), query(query_), external_tables(external_tables_), stage(stage_), context(context)
+		: pool(pool_), query(query_), throttler(throttler_), external_tables(external_tables_), stage(stage_), context(context)
 	{
 		init(settings_);
 	}
@@ -257,9 +258,9 @@ protected:
 	{
 		Settings * parallel_replicas_settings = send_settings ? &settings : nullptr;
 		if (connection != nullptr)
-			parallel_replicas = ext::make_unique<ParallelReplicas>(connection, parallel_replicas_settings);
+			parallel_replicas = ext::make_unique<ParallelReplicas>(connection, parallel_replicas_settings, throttler);
 		else
-			parallel_replicas = ext::make_unique<ParallelReplicas>(pool, parallel_replicas_settings);
+			parallel_replicas = ext::make_unique<ParallelReplicas>(pool, parallel_replicas_settings, throttler);
 	}
 
 	/// Возвращает true, если запрос отправлен, а ещё не выполнен.
@@ -290,6 +291,8 @@ private:
 	const String query;
 	bool send_settings;
 	Settings settings;
+	/// Если не nullptr, то используется, чтобы ограничить сетевой трафик.
+	ThrottlerPtr throttler;
 	/// Временные таблицы, которые необходимо переслать на удаленные сервера.
 	Tables external_tables;
 	QueryProcessingStage::Enum stage;
