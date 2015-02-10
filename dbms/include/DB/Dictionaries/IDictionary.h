@@ -28,7 +28,7 @@ public:
 	virtual void reload() {}
 	virtual DictionaryPtr clone() const = 0;
 
-	virtual const IDictionarySource * const getSource() const = 0;
+	virtual const IDictionarySource * getSource() const = 0;
 
 	virtual const DictionaryLifetime & getLifetime() const = 0;
 
