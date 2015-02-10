@@ -58,7 +58,7 @@ public:
 	bool isModified() const override { return getLastModification() > last_modification; }
 	bool supportsSelectiveLoad() const override { return true; }
 
-	DictionarySourcePtr clone() const override { return ext::make_unique<MySQLDictionarySource>(*this); }
+	DictionarySourcePtr clone() const override { return std::make_unique<MySQLDictionarySource>(*this); }
 
 private:
 	mysqlxx::DateTime getLastModification() const

@@ -34,7 +34,7 @@ public:
 
 	bool isCached() const override { return true; }
 
-	DictionaryPtr clone() const override { return ext::make_unique<CacheDictionary>(*this); }
+	DictionaryPtr clone() const override { return std::make_unique<CacheDictionary>(*this); }
 
 	const IDictionarySource * getSource() const override { return source_ptr.get(); }
 
