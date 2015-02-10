@@ -11,7 +11,7 @@
 #include <DB/DataTypes/DataTypeNested.h>
 
 #include <DB/Parsers/ASTExpressionList.h>
-#include <statdaemons/ext/memory.hpp>
+#include <memory>
 
 #include <DB/Parsers/formatAST.h>
 

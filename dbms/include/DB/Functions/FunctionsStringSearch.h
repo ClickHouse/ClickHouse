@@ -3,7 +3,7 @@
 #include <Poco/Mutex.h>
 
 #include <statdaemons/OptimizedRegularExpression.h>
-#include <statdaemons/ext/memory.hpp>
+#include <memory>
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>
@@ -313,7 +313,7 @@ namespace Regexps
 
 		auto it = known_regexps.find(pattern);
 		if (known_regexps.end() == it)
-			it = known_regexps.emplace(pattern, ext::make_unique<Holder>()).first;
+			it = known_regexps.emplace(pattern, std::make_unique<Holder>()).first;
 
 		return it->second->get([&pattern] {
 			return new Regexp{createRegexp<like>(pattern)};

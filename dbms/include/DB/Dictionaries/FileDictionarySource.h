@@ -30,7 +30,7 @@ public:
 
 	BlockInputStreamPtr loadAll() override
 	{
-		auto in_ptr = ext::make_unique<ReadBufferFromFile>(filename);
+		auto in_ptr = std::make_unique<ReadBufferFromFile>(filename);
 		auto stream = context.getFormatFactory().getInput(
 			format, *in_ptr, sample_block, max_block_size, context.getDataTypeFactory());
 		last_modification = getLastModification();
@@ -57,7 +57,7 @@ public:
 	bool isModified() const override { return getLastModification() > last_modification; }
 	bool supportsSelectiveLoad() const override { return false; }
 
-	DictionarySourcePtr clone() const override { return ext::make_unique<FileDictionarySource>(*this); }
+	DictionarySourcePtr clone() const override { return std::make_unique<FileDictionarySource>(*this); }
 
 private:
 	Poco::Timestamp getLastModification() const { return Poco::File{filename}.getLastModified(); }

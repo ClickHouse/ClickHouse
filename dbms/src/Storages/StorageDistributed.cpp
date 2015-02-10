@@ -12,7 +12,7 @@
 
 #include <DB/Core/Field.h>
 
-#include <statdaemons/ext/memory.hpp>
+#include <memory>
 
 namespace DB
 {
@@ -239,7 +239,7 @@ bool StorageDistributed::hasColumn(const String & column_name) const
 
 void StorageDistributed::createDirectoryMonitor(const std::string & name)
 {
-	directory_monitors.emplace(name, ext::make_unique<DirectoryMonitor>(*this, name));
+	directory_monitors.emplace(name, std::make_unique<DirectoryMonitor>(*this, name));
 }
 
 void StorageDistributed::createDirectoryMonitors()

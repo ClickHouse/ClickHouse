@@ -5,7 +5,7 @@
 #include <DB/Dictionaries/DictionaryStructure.h>
 #include <DB/Common/HashTable/HashMap.h>
 #include <statdaemons/ext/range.hpp>
-#include <statdaemons/ext/memory.hpp>
+#include <memory>
 
 namespace DB
 {
@@ -32,7 +32,7 @@ public:
 
 	bool isCached() const override { return false; }
 
-	DictionaryPtr clone() const override { return ext::make_unique<HashedDictionary>(*this); }
+	DictionaryPtr clone() const override { return std::make_unique<HashedDictionary>(*this); }
 
 	const IDictionarySource * getSource() const override { return source_ptr.get(); }
 

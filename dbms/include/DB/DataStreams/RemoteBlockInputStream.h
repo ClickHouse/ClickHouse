@@ -258,9 +258,9 @@ protected:
 	{
 		Settings * parallel_replicas_settings = send_settings ? &settings : nullptr;
 		if (connection != nullptr)
-			parallel_replicas = ext::make_unique<ParallelReplicas>(connection, parallel_replicas_settings, throttler);
+			parallel_replicas = std::make_unique<ParallelReplicas>(connection, parallel_replicas_settings, throttler);
 		else
-			parallel_replicas = ext::make_unique<ParallelReplicas>(pool, parallel_replicas_settings, throttler);
+			parallel_replicas = std::make_unique<ParallelReplicas>(pool, parallel_replicas_settings, throttler);
 	}
 
 	/// Возвращает true, если запрос отправлен, а ещё не выполнен.

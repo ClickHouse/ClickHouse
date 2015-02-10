@@ -4,7 +4,7 @@
 #include <DB/Dictionaries/HashedDictionary.h>
 #include <DB/Dictionaries/CacheDictionary.h>
 #include <DB/Dictionaries/DictionaryStructure.h>
-#include <statdaemons/ext/memory.hpp>
+#include <memory>
 #include <Yandex/singleton.h>
 
 namespace DB
@@ -33,11 +33,11 @@ DictionaryPtr DictionaryFactory::create(const std::string & name, Poco::Util::Ab
 
 	if ("flat" == layout_type)
 	{
-		return ext::make_unique<FlatDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime);
+		return std::make_unique<FlatDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime);
 	}
 	else if ("hashed" == layout_type)
 	{
-		return ext::make_unique<HashedDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime);
+		return std::make_unique<HashedDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime);
 	}
 	else if ("cache" == layout_type)
 	{
@@ -48,7 +48,7 @@ DictionaryPtr DictionaryFactory::create(const std::string & name, Poco::Util::Ab
 				ErrorCodes::TOO_SMALL_BUFFER_SIZE
 			};
 
-		return ext::make_unique<CacheDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, size);
+		return std::make_unique<CacheDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, size);
 	}
 
 	throw Exception{

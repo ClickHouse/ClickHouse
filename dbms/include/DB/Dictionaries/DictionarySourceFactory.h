@@ -7,7 +7,7 @@
 #include <DB/Dictionaries/ClickHouseDictionarySource.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <Yandex/singleton.h>
-#include <statdaemons/ext/memory.hpp>
+#include <memory>
 
 namespace DB
 {
@@ -63,15 +63,15 @@ public:
 		{
 			const auto filename = config.getString(config_prefix + ".file.path");
 			const auto format = config.getString(config_prefix + ".file.format");
-			return ext::make_unique<FileDictionarySource>(filename, format, sample_block, context);
+			return std::make_unique<FileDictionarySource>(filename, format, sample_block, context);
 		}
 		else if ("mysql" == source_type)
 		{
-			return ext::make_unique<MySQLDictionarySource>(config, config_prefix + ".mysql", sample_block);
+			return std::make_unique<MySQLDictionarySource>(config, config_prefix + ".mysql", sample_block);
 		}
 		else if ("clickhouse" == source_type)
 		{
-			return ext::make_unique<ClickHouseDictionarySource>(config, config_prefix + ".clickhouse",
+			return std::make_unique<ClickHouseDictionarySource>(config, config_prefix + ".clickhouse",
 				sample_block, context);
 		}
 
