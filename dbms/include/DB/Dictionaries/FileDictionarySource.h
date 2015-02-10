@@ -10,13 +10,14 @@
 namespace DB
 {
 
+/// Allows loading dictionaries from a file with given format, does not support "random access"
 class FileDictionarySource final : public IDictionarySource
 {
 	static const auto max_block_size = 8192;
 
 public:
 	FileDictionarySource(const std::string & filename, const std::string & format, Block & sample_block,
-		Context & context)
+		const Context & context)
 		: filename{filename}, format{format}, sample_block{sample_block}, context(context),
 		  last_modification{getLastModification()}
 	{}
@@ -54,6 +55,7 @@ public:
 	}
 
 	bool isModified() const override { return getLastModification() > last_modification; }
+	bool supportsSelectiveLoad() const override { return false; }
 
 	DictionarySourcePtr clone() const override { return ext::make_unique<FileDictionarySource>(*this); }
 
@@ -63,7 +65,7 @@ private:
 	const std::string filename;
 	const std::string format;
 	Block sample_block;
-	Context & context;
+	const Context & context;
 	Poco::Timestamp last_modification;
 };
 

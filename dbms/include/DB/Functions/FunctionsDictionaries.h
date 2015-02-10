@@ -14,6 +14,7 @@
 #include <statdaemons/ext/range.hpp>
 #include <DB/Dictionaries/FlatDictionary.h>
 #include <DB/Dictionaries/HashedDictionary.h>
+#include <DB/Dictionaries/CacheDictionary.h>
 
 
 namespace DB
@@ -35,6 +36,19 @@ namespace DB
   *
   * Получить массив идентификаторов регионов, состоящий из исходного и цепочки родителей. Порядок implementation defined.
   *  regionHierarchy, OSHierarchy, SEHierarchy.
+  *
+  * Функции, использующие подключаемые (внешние) словари.
+  *
+  * Получить значение аттрибута заданного типа.
+  *	 dictGetType(dictionary, attribute, id),
+  *	 	Type - placeholder для имени типа, в данный момент поддерживаются любые числовые и строковой типы.
+  *		Тип должен соответствовать реальному типу аттрибута, с которым он был объявлен в структуре словаря.
+  *
+  * Получить массив идентификаторов, состоящий из исходного и цепочки родителей.
+  *  dictGetHierarchy(dictionary, id).
+  *
+  * Является ли первы йидентификатор потомком второго.
+  *  dictIsIn(dictionary, child_id, parent_id).
   */
 
 
@@ -746,7 +760,8 @@ private:
 		if (!typeid_cast<const DataTypeString *>(arguments[0].get()))
 		{
 			throw Exception{
-				"Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
+				"Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
+					+ ", expected a string.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
 			};
 		}
@@ -754,7 +769,8 @@ private:
 		if (!typeid_cast<const DataTypeString *>(arguments[1].get()))
 		{
 			throw Exception{
-				"Illegal type " + arguments[1]->getName() + " of argument of function " + getName(),
+				"Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
+					+ ", expected a string.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
 			};
 		}
@@ -770,7 +786,8 @@ private:
 			!typeid_cast<const DataTypeInt64 *>(id_arg))
 		{
 			throw Exception{
-				"Illegal type " + arguments[2]->getName() + " of argument of function " + getName(),
+				"Illegal type " + arguments[2]->getName() + " of third argument of function " + getName()
+					+ ", expected an integer.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
 			};
 		}
@@ -791,7 +808,8 @@ private:
 		const auto dict_ptr = dict.get();
 
 		if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
-			!executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr))
+			!executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
+			!executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr))
 			throw Exception{
 				"Unsupported dictionary type " + dict_ptr->getTypeName(),
 				ErrorCodes::UNKNOWN_TYPE
@@ -931,7 +949,8 @@ private:
 		if (!typeid_cast<const DataTypeString *>(arguments[0].get()))
 		{
 			throw Exception{
-				"Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
+				"Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
+					+ ", expected a string.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
 			};
 		}
@@ -939,7 +958,8 @@ private:
 		if (!typeid_cast<const DataTypeString *>(arguments[1].get()))
 		{
 			throw Exception{
-				"Illegal type " + arguments[1]->getName() + " of argument of function " + getName(),
+				"Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
+					+ ", expected a string.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
 			};
 		}
@@ -955,7 +975,8 @@ private:
 			!typeid_cast<const DataTypeInt64 *>(id_arg))
 		{
 			throw Exception{
-				"Illegal type " + id_arg->getName() + " of argument of function " + getName(),
+				"Illegal type " + id_arg->getName() + " of third argument of function " + getName()
+					+ ", expected an integer.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
 			};
 		}
@@ -976,7 +997,8 @@ private:
 		const auto dict_ptr = dict.get();
 
 		if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
-			!executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr))
+			!executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
+			!executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr))
 			throw Exception{
 				"Unsupported dictionary type " + dict_ptr->getTypeName(),
 				ErrorCodes::UNKNOWN_TYPE
@@ -1104,7 +1126,8 @@ private:
 		if (!typeid_cast<const DataTypeString *>(arguments[0].get()))
 		{
 			throw Exception{
-				"Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
+				"Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
+					+ ", expected a string.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
 			};
 		}
@@ -1120,7 +1143,8 @@ private:
 			!typeid_cast<const DataTypeInt64 *>(id_arg))
 		{
 			throw Exception{
-				"Illegal type " + id_arg->getName() + " of argument of function " + getName(),
+				"Illegal type " + id_arg->getName() + " of second argument of function " + getName()
+					+ ", expected an integer.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
 			};
 		}
@@ -1147,7 +1171,8 @@ private:
 			};
 
 		if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
-			!executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr))
+			!executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
+			!executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr))
 			throw Exception{
 				"Unsupported dictionary type " + dict_ptr->getTypeName(),
 				ErrorCodes::UNKNOWN_TYPE
@@ -1265,7 +1290,8 @@ private:
 		if (!typeid_cast<const DataTypeString *>(arguments[0].get()))
 		{
 			throw Exception{
-				"Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
+				"Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
+					+ ", expected a string.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
 			};
 		}
@@ -1281,7 +1307,8 @@ private:
 			!typeid_cast<const DataTypeInt64 *>(child_id_arg))
 		{
 			throw Exception{
-				"Illegal type " + child_id_arg->getName() + " of argument of function " + getName(),
+				"Illegal type " + child_id_arg->getName() + " of second argument of function " + getName()
+					+ ", expected an integer.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
 			};
 		}
@@ -1297,7 +1324,8 @@ private:
 			!typeid_cast<const DataTypeInt64 *>(ancestor_id_arg))
 		{
 			throw Exception{
-				"Illegal type " + ancestor_id_arg->getName() + " of argument of function " + getName(),
+				"Illegal type " + ancestor_id_arg->getName() + " of argument of third function " + getName()
+					+ ", expected an integer.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
 			};
 		}
@@ -1324,7 +1352,8 @@ private:
 			};
 
 		if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
-			!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr))
+			!executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
+			!executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr))
 			throw Exception{
 				"Unsupported dictionary type " + dict_ptr->getTypeName(),
 				ErrorCodes::UNKNOWN_TYPE
