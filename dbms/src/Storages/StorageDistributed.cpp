@@ -149,7 +149,7 @@ BlockInputStreams StorageDistributed::read(
 	Settings new_settings = settings;
 	new_settings.queue_max_wait_ms = Cluster::saturate(new_settings.queue_max_wait_ms, settings.limits.max_execution_time);
 
-	size_t result_size = cluster.pools.size() + cluster.getLocalNodesNum();
+	size_t result_size = (cluster.pools.size() * settings.max_parallel_replicas) + cluster.getLocalNodesNum();
 
 	processed_stage = result_size == 1
 		? QueryProcessingStage::Complete
