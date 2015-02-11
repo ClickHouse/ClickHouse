@@ -67,6 +67,8 @@ const std::unordered_set<String> injective_function_names
 
 void ExpressionAnalyzer::init()
 {
+	optimizeOrChains();
+
 	select_query = typeid_cast<ASTSelectQuery *>(&*ast);
 
 	addStorageAliases();
@@ -76,8 +78,6 @@ void ExpressionAnalyzer::init()
 
 	/// Common subexpression elimination. Rewrite rules.
 	normalizeTree();
-
-	optimizeOrChains();
 
 	/// GROUP BY injective function elimination.
 	optimizeGroupBy();
@@ -468,14 +468,14 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 
 struct OrWithIdentifier
 {
-	OrWithIdentifier(ASTFunction * or_function_, IAST * parent_, ASTIdentifier * identifier_)
+	OrWithIdentifier(ASTFunction * or_function_, IAST * parent_, const std::string & identifier_)
 		: or_function(or_function_), parent(parent_), identifier(identifier_)
 	{
 	}
 
 	ASTFunction * or_function;
 	IAST * parent;
-	ASTIdentifier * identifier;
+	const std::string & identifier;
 };
 
 bool operator<(const OrWithIdentifier & lhs, const OrWithIdentifier & rhs)
@@ -508,7 +508,8 @@ ASTFunctionPtr createInExpression(const OrWithIdentifier & or_with_identifier, c
 	ASTPtr value_list = new ASTExpressionList;
 	for (auto function : equal_function_list)
 	{
-		auto literal = static_cast<ASTLiteral *>(&*(function->children[1]));
+		auto expr = static_cast<ASTExpressionList *>(&*(function->children[0]));
+		auto literal = static_cast<ASTLiteral *>(&*(expr->children[1]));
 		value_list->children.push_back(literal->clone());
 	}
 
@@ -517,7 +518,8 @@ ASTFunctionPtr createInExpression(const OrWithIdentifier & or_with_identifier, c
 	tuple_function->arguments = value_list;
 	tuple_function->children.push_back(tuple_function->arguments);
 
-	ASTPtr identifier = or_with_identifier.identifier->clone();
+	Poco::SharedPtr<ASTIdentifier> identifier = new ASTIdentifier;
+	identifier->name = or_with_identifier.identifier;
 
 	ASTPtr in_expr = new ASTExpressionList;
 	in_expr->children.push_back(identifier);
@@ -556,36 +558,36 @@ void ExpressionAnalyzer::optimizeOrChains()
 		bool found = false;
 
 		ASTFunction * function = typeid_cast<ASTFunction *>(&*node);
-		if ((function == nullptr) || (function->name != "or") || (function->children.size() != 1))
-			continue;
-
-		ASTExpressionList * expression_list = typeid_cast<ASTExpressionList *>(&*(function->children[0]));
-		if (expression_list == nullptr)
-			continue;
-
-		/// Цепочка элементов выражения OR.
-		for (auto child : expression_list->children)
+		if ((function != nullptr) && (function->name == "or") && (function->children.size() == 1))
 		{
-			ASTFunction * equals = typeid_cast<ASTFunction *>(&*child);
-			if ((equals == nullptr) || (equals->name != "equals") || (equals->children.size() != 1))
-				continue;
-
-			ASTExpressionList * equals_expression_list = typeid_cast<ASTExpressionList *>(&*(equals->children[0]));
-			if ((equals_expression_list == nullptr) || (equals_expression_list->children.size() != 2))
-				continue;
-
-			// Равенство c = xk
-			ASTIdentifier * identifier = typeid_cast<ASTIdentifier *>(&*(equals_expression_list->children[0]));
-			if (identifier == nullptr)
-				continue;
-
-			ASTLiteral * literal = typeid_cast<ASTLiteral *>(&*(equals_expression_list->children[1]));
-			if (literal == nullptr)
-				continue;
-
-			OrWithIdentifier pp(function, parent.get(), identifier);
-			equal_function_map[pp].push_back(equals);
-			found = true;
+			ASTExpressionList * expression_list = typeid_cast<ASTExpressionList *>(&*(function->children[0]));
+			if (expression_list != nullptr)
+			{
+				/// Цепочка элементов выражения OR.
+				for (auto child : expression_list->children)
+				{
+					ASTFunction * equals = typeid_cast<ASTFunction *>(&*child);
+					if ((equals != nullptr) && (equals->name == "equals") && (equals->children.size() == 1))
+					{
+						ASTExpressionList * equals_expression_list = typeid_cast<ASTExpressionList *>(&*(equals->children[0]));
+						if ((equals_expression_list != nullptr) && (equals_expression_list->children.size() == 2))
+						{
+							// Равенство c = xk
+							ASTIdentifier * identifier = typeid_cast<ASTIdentifier *>(&*(equals_expression_list->children[0]));
+							if (identifier != nullptr)
+							{
+								ASTLiteral * literal = typeid_cast<ASTLiteral *>(&*(equals_expression_list->children[1]));
+								if (literal != nullptr)
+								{
+									OrWithIdentifier pp(function, parent.get(), identifier->name);
+									equal_function_map[pp].push_back(equals);
+									found = true;
+								}
+							}
+						}
+					}
+				}
+			}
 		}
 
 		if (!found)
@@ -614,10 +616,13 @@ void ExpressionAnalyzer::optimizeOrChains()
 			continue;
 
 		bool check = true;
-		auto first_literal = static_cast<ASTLiteral *>(&*(equal_function_list[0]->children[1]));
+		auto first_expr = static_cast<ASTExpressionList *>(&*(equal_function_list[0]->children[0]));
+		auto first_literal = static_cast<ASTLiteral *>(&*(first_expr->children[1]));
 		for (size_t i = 1; i < equal_function_list.size(); ++i)
 		{
-			auto literal = static_cast<ASTLiteral *>(&*(equal_function_list[i]->children[1]));
+			auto expr = static_cast<ASTExpressionList *>(&*(equal_function_list[i]->children[0]));
+			auto literal = static_cast<ASTLiteral *>(&*(expr->children[1]));
+
 			if (literal->type != first_literal->type)
 				check = false;
 		}
@@ -662,6 +667,11 @@ void ExpressionAnalyzer::optimizeOrChains()
 			parent->children.push_back(children[0]);
 			auto it = std::remove(parent->children.begin(), parent->children.end(), or_function);
 			parent->children.erase(it, parent->children.end());
+
+			/// Если узел OR был корнем выражения WHERE, то следует обновить этот корень.
+			auto select = typeid_cast<ASTSelectQuery *>(&*ast);
+			if (or_function == select->where_expression.get())
+				select->where_expression = children[0];
 		}
 	}
 }
