@@ -12,7 +12,7 @@
 
 #include <DB/Core/Field.h>
 
-#include <statdaemons/ext/memory.hpp>
+#include <memory>
 
 namespace DB
 {
@@ -149,7 +149,7 @@ BlockInputStreams StorageDistributed::read(
 	Settings new_settings = settings;
 	new_settings.queue_max_wait_ms = Cluster::saturate(new_settings.queue_max_wait_ms, settings.limits.max_execution_time);
 
-	size_t result_size = cluster.pools.size() + cluster.getLocalNodesNum();
+	size_t result_size = (cluster.pools.size() * settings.max_parallel_replicas) + cluster.getLocalNodesNum();
 
 	processed_stage = result_size == 1
 		? QueryProcessingStage::Complete
@@ -160,10 +160,15 @@ BlockInputStreams StorageDistributed::read(
 		query, remote_database, remote_table);
 	const auto & modified_query = queryToString(modified_query_ast);
 
+	/// Ограничение сетевого трафика, если нужно.
+	ThrottlerPtr throttler;
+	if (settings.limits.max_network_bandwidth)
+		throttler.reset(new Throttler(settings.limits.max_network_bandwidth));
+
 	/// Цикл по шардам.
 	for (auto & conn_pool : cluster.pools)
 		res.emplace_back(new RemoteBlockInputStream{
-			conn_pool, modified_query, &new_settings,
+			conn_pool, modified_query, &new_settings, throttler,
 			external_tables, processed_stage, context});
 
 	/// Добавляем запросы к локальному ClickHouse.
@@ -234,7 +239,7 @@ bool StorageDistributed::hasColumn(const String & column_name) const
 
 void StorageDistributed::createDirectoryMonitor(const std::string & name)
 {
-	directory_monitors.emplace(name, ext::make_unique<DirectoryMonitor>(*this, name));
+	directory_monitors.emplace(name, std::make_unique<DirectoryMonitor>(*this, name));
 }
 
 void StorageDistributed::createDirectoryMonitors()

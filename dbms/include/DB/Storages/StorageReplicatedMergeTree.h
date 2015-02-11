@@ -103,8 +103,6 @@ public:
 	/// Добавить кусок в очередь кусков, чьи данные нужно проверить в фоновом потоке.
 	void enqueuePartForCheck(const String & name);
 
-	void skipUnreplicated() { process_unreplicated = false; }
-
 	MergeTreeData & getData() { return data; }
 	MergeTreeData * getUnreplicatedData() { return unreplicated_data.get(); }
 
@@ -165,8 +163,6 @@ private:
 		std::lock_guard<std::mutex> lock(current_zookeeper_mutex);
 		current_zookeeper = zookeeper;
 	}
-
-	bool process_unreplicated = true;
 
 	/// Если true, таблица в офлайновом режиме, и в нее нельзя писать.
 	bool is_readonly = false;

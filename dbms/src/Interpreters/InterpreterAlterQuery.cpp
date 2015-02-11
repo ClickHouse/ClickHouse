@@ -10,9 +10,6 @@
 #include <DB/IO/copyData.h>
 #include <DB/Common/escapeForFileName.h>
 #include <DB/Parsers/formatAST.h>
-#include <DB/Storages/StorageMerge.h>
-#include <DB/Storages/StorageMergeTree.h>
-#include <DB/Storages/StorageReplicatedMergeTree.h>
 
 #include <Poco/FileStream.h>
 

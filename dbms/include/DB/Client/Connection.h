@@ -4,6 +4,8 @@
 
 #include <Poco/Net/StreamSocket.h>
 
+#include <DB/Common/Throttler.h>
+
 #include <DB/Core/Block.h>
 #include <DB/Core/Defines.h>
 #include <DB/Core/Progress.h>
@@ -26,12 +28,13 @@ namespace DB
 
 using Poco::SharedPtr;
 
-class ShardReplicas;
+class ParallelReplicas;
 
 /// Поток блоков читающих из таблицы и ее имя
 typedef std::pair<BlockInputStreamPtr, std::string> ExternalTableData;
 /// Вектор пар, описывающих таблицы
 typedef std::vector<ExternalTableData> ExternalTablesData;
+
 
 /** Соединение с сервером БД для использования в клиенте.
   * Как использовать - см. Core/Protocol.h
@@ -42,7 +45,7 @@ typedef std::vector<ExternalTableData> ExternalTablesData;
   */
 class Connection : private boost::noncopyable
 {
-	friend class ShardReplicas;
+	friend class ParallelReplicas;
 
 public:
 	Connection(const String & host_, UInt16 port_, const String & default_database_,
@@ -68,6 +71,12 @@ public:
 	}
 
 	virtual ~Connection() {};
+
+	/// Установить ограничитель сетевого трафика. Один ограничитель может использоваться одновременно для нескольких разных соединений.
+	void setThrottler(const ThrottlerPtr & throttler_)
+	{
+		throttler = throttler_;
+	}
 
 
 	/// Пакет, который может быть получен от сервера.
@@ -160,6 +169,11 @@ private:
 	UInt64 compression;		/// Сжимать ли данные при взаимодействии с сервером.
 
 	const DataTypeFactory & data_type_factory;
+
+	/** Если не nullptr, то используется, чтобы ограничить сетевой трафик.
+	  * Учитывается только трафик при передаче блоков. Другие пакеты не учитываются.
+	  */
+	ThrottlerPtr throttler;
 
 	Poco::Timespan connect_timeout;
 	Poco::Timespan receive_timeout;

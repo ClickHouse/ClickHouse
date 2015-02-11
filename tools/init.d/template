@@ -93,6 +93,11 @@ any_runs()
 	if [[ $(running_processes) -gt  0 ]]; then return 0; else return 1; fi
 }
 
+all_runs()
+{
+	[[ $(running_processes) -eq $NUMBER_OF_PROCESSES ]]
+}
+
 wait4done()
 {
 	while any_runs; do
@@ -108,7 +113,7 @@ start()
 
 	echo -n "Start $PROGRAM service: "
 
-	if [[ $(running_processes) -eq $NUMBER_OF_PROCESSES ]]; then
+	if all_runs; then
 		echo -n "already running "
 		EXIT_STATUS=1
 	else
@@ -236,7 +241,7 @@ main()
 		restart
 		;;
 	condstart)
-		any_runs || start
+		all_runs || start
 		;;
 	condstop)
 		any_runs && stop

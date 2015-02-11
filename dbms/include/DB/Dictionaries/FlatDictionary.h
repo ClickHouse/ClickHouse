@@ -2,10 +2,8 @@
 
 #include <DB/Dictionaries/IDictionary.h>
 #include <DB/Dictionaries/IDictionarySource.h>
-#include <DB/Dictionaries/DictionarySourceFactory.h>
 #include <DB/Dictionaries/DictionaryStructure.h>
 #include <statdaemons/ext/range.hpp>
-#include <Poco/Util/AbstractConfiguration.h>
 #include <vector>
 
 namespace DB
@@ -36,9 +34,9 @@ public:
 
 	bool isCached() const override { return false; }
 
-	DictionaryPtr clone() const override { return ext::make_unique<FlatDictionary>(*this); }
+	DictionaryPtr clone() const override { return std::make_unique<FlatDictionary>(*this); }
 
-	const IDictionarySource * const getSource() const override { return source_ptr.get(); }
+	const IDictionarySource * getSource() const override { return source_ptr.get(); }
 
 	const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
 
@@ -50,18 +48,18 @@ public:
 
 		switch (hierarchical_attribute->type)
 		{
-		case attribute_type::uint8: return id < attr->uint8_array->size() ? (*attr->uint8_array)[id] : attr->uint8_null_value;
-		case attribute_type::uint16: return id < attr->uint16_array->size() ? (*attr->uint16_array)[id] : attr->uint16_null_value;
-		case attribute_type::uint32: return id < attr->uint32_array->size() ? (*attr->uint32_array)[id] : attr->uint32_null_value;
-		case attribute_type::uint64: return id < attr->uint64_array->size() ? (*attr->uint64_array)[id] : attr->uint64_null_value;
-		case attribute_type::int8: return id < attr->int8_array->size() ? (*attr->int8_array)[id] : attr->int8_null_value;
-		case attribute_type::int16: return id < attr->int16_array->size() ? (*attr->int16_array)[id] : attr->int16_null_value;
-		case attribute_type::int32: return id < attr->int32_array->size() ? (*attr->int32_array)[id] : attr->int32_null_value;
-		case attribute_type::int64: return id < attr->int64_array->size() ? (*attr->int64_array)[id] : attr->int64_null_value;
-		case attribute_type::float32:
-		case attribute_type::float64:
-		case attribute_type::string:
-			break;
+			case AttributeType::uint8: return id < attr->uint8_array->size() ? (*attr->uint8_array)[id] : attr->uint8_null_value;
+			case AttributeType::uint16: return id < attr->uint16_array->size() ? (*attr->uint16_array)[id] : attr->uint16_null_value;
+			case AttributeType::uint32: return id < attr->uint32_array->size() ? (*attr->uint32_array)[id] : attr->uint32_null_value;
+			case AttributeType::uint64: return id < attr->uint64_array->size() ? (*attr->uint64_array)[id] : attr->uint64_null_value;
+			case AttributeType::int8: return id < attr->int8_array->size() ? (*attr->int8_array)[id] : attr->int8_null_value;
+			case AttributeType::int16: return id < attr->int16_array->size() ? (*attr->int16_array)[id] : attr->int16_null_value;
+			case AttributeType::int32: return id < attr->int32_array->size() ? (*attr->int32_array)[id] : attr->int32_null_value;
+			case AttributeType::int64: return id < attr->int64_array->size() ? (*attr->int64_array)[id] : attr->int64_null_value;
+			case AttributeType::float32:
+			case AttributeType::float64:
+			case AttributeType::string:
+				break;
 		}
 
 		throw Exception{
@@ -75,7 +73,7 @@ public:
 	{\
 		const auto idx = getAttributeIndex(attribute_name);\
 		const auto & attribute = attributes[idx];\
-		if (attribute.type != attribute_type::LC_TYPE)\
+		if (attribute.type != AttributeType::LC_TYPE)\
 			throw Exception{\
 				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
 				ErrorCodes::TYPE_MISMATCH\
@@ -112,7 +110,7 @@ public:
 #define DECLARE_TYPE_CHECKER(NAME, LC_NAME)\
 	bool is##NAME(const std::size_t attribute_idx) const override\
 	{\
-		return attributes[attribute_idx].type == attribute_type::LC_NAME;\
+		return attributes[attribute_idx].type == AttributeType::LC_NAME;\
 	}
 	DECLARE_TYPE_CHECKER(UInt8, uint8)
 	DECLARE_TYPE_CHECKER(UInt16, uint16)
@@ -151,7 +149,7 @@ public:
 private:
 	struct attribute_t
 	{
-		attribute_type type;
+		AttributeType type;
 		UInt8 uint8_null_value;
 		UInt16 uint16_null_value;
 		UInt32 uint32_null_value;
@@ -195,6 +193,7 @@ private:
 	void loadData()
 	{
 		auto stream = source_ptr->loadAll();
+		stream->readPrefix();
 
 		while (const auto block = stream->read())
 		{
@@ -209,65 +208,67 @@ private:
 					setAttributeValue(attribute, id_column[row_idx].get<UInt64>(), attribute_column[row_idx]);
 			}
 		}
+
+		stream->readSuffix();
 	}
 
-	attribute_t createAttributeWithType(const attribute_type type, const std::string & null_value)
+	attribute_t createAttributeWithType(const AttributeType type, const std::string & null_value)
 	{
 		attribute_t attr{type};
 
 		switch (type)
 		{
-			case attribute_type::uint8:
+			case AttributeType::uint8:
 				attr.uint8_null_value = DB::parse<UInt8>(null_value);
 				attr.uint8_array.reset(new PODArray<UInt8>);
 				attr.uint8_array->resize_fill(initial_array_size, attr.uint8_null_value);
 				break;
-			case attribute_type::uint16:
+			case AttributeType::uint16:
 				attr.uint16_null_value = DB::parse<UInt16>(null_value);
 				attr.uint16_array.reset(new PODArray<UInt16>);
 				attr.uint16_array->resize_fill(initial_array_size, attr.uint16_null_value);
 				break;
-			case attribute_type::uint32:
+			case AttributeType::uint32:
 				attr.uint32_null_value = DB::parse<UInt32>(null_value);
 				attr.uint32_array.reset(new PODArray<UInt32>);
 				attr.uint32_array->resize_fill(initial_array_size, attr.uint32_null_value);
 				break;
-			case attribute_type::uint64:
+			case AttributeType::uint64:
 				attr.uint64_null_value = DB::parse<UInt64>(null_value);
 				attr.uint64_array.reset(new PODArray<UInt64>);
 				attr.uint64_array->resize_fill(initial_array_size, attr.uint64_null_value);
 				break;
-			case attribute_type::int8:
+			case AttributeType::int8:
 				attr.int8_null_value = DB::parse<Int8>(null_value);
 				attr.int8_array.reset(new PODArray<Int8>);
 				attr.int8_array->resize_fill(initial_array_size, attr.int8_null_value);
 				break;
-			case attribute_type::int16:
+			case AttributeType::int16:
 				attr.int16_null_value = DB::parse<Int16>(null_value);
 				attr.int16_array.reset(new PODArray<Int16>);
 				attr.int16_array->resize_fill(initial_array_size, attr.int16_null_value);
 				break;
-			case attribute_type::int32:
+			case AttributeType::int32:
 				attr.int32_null_value = DB::parse<Int32>(null_value);
 				attr.int32_array.reset(new PODArray<Int32>);
 				attr.int32_array->resize_fill(initial_array_size, attr.int32_null_value);
 				break;
-			case attribute_type::int64:
+			case AttributeType::int64:
 				attr.int64_null_value = DB::parse<Int64>(null_value);
 				attr.int64_array.reset(new PODArray<Int64>);
 				attr.int64_array->resize_fill(initial_array_size, attr.int64_null_value);
 				break;
-			case attribute_type::float32:
+			case AttributeType::float32:
 				attr.float32_null_value = DB::parse<Float32>(null_value);
 				attr.float32_array.reset(new PODArray<Float32>);
 				attr.float32_array->resize_fill(initial_array_size, attr.float32_null_value);
 				break;
-			case attribute_type::float64:
+			case AttributeType::float64:
 				attr.float64_null_value = DB::parse<Float64>(null_value);
 				attr.float64_array.reset(new PODArray<Float64>);
 				attr.float64_array->resize_fill(initial_array_size, attr.float64_null_value);
 				break;
-			case attribute_type::string:
+			case AttributeType::string:
 				attr.string_null_value = null_value;
 				attr.string_arena.reset(new Arena);
 				attr.string_array.reset(new PODArray<StringRef>);
@@ -288,77 +289,77 @@ private:
 
 		switch (attribute.type)
 		{
-			case attribute_type::uint8:
+			case AttributeType::uint8:
 			{
 				if (id >= attribute.uint8_array->size())
 					attribute.uint8_array->resize_fill(id, attribute.uint8_null_value);
 				(*attribute.uint8_array)[id] = value.get<UInt64>();
 				break;
 			}
-			case attribute_type::uint16:
+			case AttributeType::uint16:
 			{
 				if (id >= attribute.uint16_array->size())
 					attribute.uint16_array->resize_fill(id, attribute.uint16_null_value);
 				(*attribute.uint16_array)[id] = value.get<UInt64>();
 				break;
 			}
-			case attribute_type::uint32:
+			case AttributeType::uint32:
 			{
 				if (id >= attribute.uint32_array->size())
 					attribute.uint32_array->resize_fill(id, attribute.uint32_null_value);
 				(*attribute.uint32_array)[id] = value.get<UInt64>();
 				break;
 			}
-			case attribute_type::uint64:
+			case AttributeType::uint64:
 			{
 				if (id >= attribute.uint64_array->size())
 					attribute.uint64_array->resize_fill(id, attribute.uint64_null_value);
 				(*attribute.uint64_array)[id] = value.get<UInt64>();
 				break;
 			}
-			case attribute_type::int8:
+			case AttributeType::int8:
 			{
 				if (id >= attribute.int8_array->size())
 					attribute.int8_array->resize_fill(id, attribute.int8_null_value);
 				(*attribute.int8_array)[id] = value.get<Int64>();
 				break;
 			}
-			case attribute_type::int16:
+			case AttributeType::int16:
 			{
 				if (id >= attribute.int16_array->size())
 					attribute.int16_array->resize_fill(id, attribute.int16_null_value);
 				(*attribute.int16_array)[id] = value.get<Int64>();
 				break;
 			}
-			case attribute_type::int32:
+			case AttributeType::int32:
 			{
 				if (id >= attribute.int32_array->size())
 					attribute.int32_array->resize_fill(id, attribute.int32_null_value);
 				(*attribute.int32_array)[id] = value.get<Int64>();
 				break;
 			}
-			case attribute_type::int64:
+			case AttributeType::int64:
 			{
 				if (id >= attribute.int64_array->size())
 					attribute.int64_array->resize_fill(id, attribute.int64_null_value);
 				(*attribute.int64_array)[id] = value.get<Int64>();
 				break;
 			}
-			case attribute_type::float32:
+			case AttributeType::float32:
 			{
 				if (id >= attribute.float32_array->size())
 					attribute.float32_array->resize_fill(id, attribute.float32_null_value);
 				(*attribute.float32_array)[id] = value.get<Float64>();
 				break;
 			}
-			case attribute_type::float64:
+			case AttributeType::float64:
 			{
 				if (id >= attribute.float64_array->size())
 					attribute.float64_array->resize_fill(id, attribute.float64_null_value);
 				(*attribute.float64_array)[id] = value.get<Float64>();
 				break;
 			}
-			case attribute_type::string:
+			case AttributeType::string:
 			{
 				if (id >= attribute.string_array->size())
 					attribute.string_array->resize_fill(id, attribute.string_null_value);
