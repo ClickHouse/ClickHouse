@@ -51,7 +51,7 @@ public:
 private:
 	size_t max_speed;
 	size_t count = 0;
-	Stopwatch watch;
+	Stopwatch watch {CLOCK_MONOTONIC_COARSE};
 	std::mutex mutex;
 };
 
