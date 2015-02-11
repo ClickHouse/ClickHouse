@@ -2,11 +2,10 @@
 
 #include <DB/Dictionaries/IDictionary.h>
 #include <DB/Dictionaries/IDictionarySource.h>
-#include <DB/Dictionaries/DictionarySourceFactory.h>
 #include <DB/Dictionaries/DictionaryStructure.h>
 #include <DB/Common/HashTable/HashMap.h>
 #include <statdaemons/ext/range.hpp>
-#include <statdaemons/ext/memory.hpp>
+#include <memory>
 
 namespace DB
 {
@@ -33,9 +32,9 @@ public:
 
 	bool isCached() const override { return false; }
 
-	DictionaryPtr clone() const override { return ext::make_unique<HashedDictionary>(*this); }
+	DictionaryPtr clone() const override { return std::make_unique<HashedDictionary>(*this); }
 
-	const IDictionarySource * const getSource() const override { return source_ptr.get(); }
+	const IDictionarySource * getSource() const override { return source_ptr.get(); }
 
 	const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
 
@@ -47,49 +46,49 @@ public:
 
 		switch (hierarchical_attribute->type)
 		{
-			case attribute_type::uint8:
+			case AttributeType::uint8:
 			{
 				const auto it = attr->uint8_map->find(id);
 				return it != attr->uint8_map->end() ? it->second : attr->uint8_null_value;
 			}
-			case attribute_type::uint16:
+			case AttributeType::uint16:
 			{
 				const auto it = attr->uint16_map->find(id);
 				return it != attr->uint16_map->end() ? it->second : attr->uint16_null_value;
 			}
-			case attribute_type::uint32:
+			case AttributeType::uint32:
 			{
 				const auto it = attr->uint32_map->find(id);
 				return it != attr->uint32_map->end() ? it->second : attr->uint32_null_value;
 			}
-			case attribute_type::uint64:
+			case AttributeType::uint64:
 			{
 				const auto it = attr->uint64_map->find(id);
 				return it != attr->uint64_map->end() ? it->second : attr->uint64_null_value;
 			}
-			case attribute_type::int8:
+			case AttributeType::int8:
 			{
 				const auto it = attr->int8_map->find(id);
 				return it != attr->int8_map->end() ? it->second : attr->int8_null_value;
 			}
-			case attribute_type::int16:
+			case AttributeType::int16:
 			{
 				const auto it = attr->int16_map->find(id);
 				return it != attr->int16_map->end() ? it->second : attr->int16_null_value;
 			}
-			case attribute_type::int32:
+			case AttributeType::int32:
 			{
 				const auto it = attr->int32_map->find(id);
 				return it != attr->int32_map->end() ? it->second : attr->int32_null_value;
 			}
-			case attribute_type::int64:
+			case AttributeType::int64:
 			{
 				const auto it = attr->int64_map->find(id);
 				return it != attr->int64_map->end() ? it->second : attr->int64_null_value;
 			}
-			case attribute_type::float32:
-			case attribute_type::float64:
-			case attribute_type::string:
+			case AttributeType::float32:
+			case AttributeType::float64:
+			case AttributeType::string:
 				break;
 		};
 
@@ -104,7 +103,7 @@ public:
 	{\
 		const auto idx = getAttributeIndex(attribute_name);\
 		const auto & attribute = attributes[idx];\
-		if (attribute.type != attribute_type::LC_TYPE)\
+		if (attribute.type != AttributeType::LC_TYPE)\
 			throw Exception{\
 				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
 				ErrorCodes::TYPE_MISMATCH\
@@ -142,7 +141,7 @@ public:
 #define DECLARE_TYPE_CHECKER(NAME, LC_NAME)\
 	bool is##NAME(const std::size_t attribute_idx) const override\
 	{\
-		return attributes[attribute_idx].type == attribute_type::LC_NAME;\
+		return attributes[attribute_idx].type == AttributeType::LC_NAME;\
 	}
 	DECLARE_TYPE_CHECKER(UInt8, uint8)
 	DECLARE_TYPE_CHECKER(UInt16, uint16)
@@ -182,7 +181,7 @@ public:
 private:
 	struct attribute_t
 	{
-		attribute_type type;
+		AttributeType type;
 		UInt8 uint8_null_value;
 		UInt16 uint16_null_value;
 		UInt32 uint32_null_value;
@@ -226,6 +225,7 @@ private:
 	void loadData()
 	{
 		auto stream = source_ptr->loadAll();
+		stream->readPrefix();
 
 		while (const auto block = stream->read())
 		{
@@ -240,55 +240,57 @@ private:
 					setAttributeValue(attribute, id_column[row_idx].get<UInt64>(), attribute_column[row_idx]);
 			}
 		}
+
+		stream->readSuffix();
 	}
 
-	attribute_t createAttributeWithType(const attribute_type type, const std::string & null_value)
+	attribute_t createAttributeWithType(const AttributeType type, const std::string & null_value)
 	{
 		attribute_t attr{type};
 
 		switch (type)
 		{
-			case attribute_type::uint8:
+			case AttributeType::uint8:
 				attr.uint8_null_value = DB::parse<UInt8>(null_value);
 				attr.uint8_map.reset(new HashMap<UInt64, UInt8>);
 				break;
-			case attribute_type::uint16:
+			case AttributeType::uint16:
 				attr.uint16_null_value = DB::parse<UInt16>(null_value);
 				attr.uint16_map.reset(new HashMap<UInt64, UInt16>);
 				break;
-			case attribute_type::uint32:
+			case AttributeType::uint32:
 				attr.uint32_null_value = DB::parse<UInt32>(null_value);
 				attr.uint32_map.reset(new HashMap<UInt64, UInt32>);
 				break;
-			case attribute_type::uint64:
+			case AttributeType::uint64:
 				attr.uint64_null_value = DB::parse<UInt64>(null_value);
 				attr.uint64_map.reset(new HashMap<UInt64, UInt64>);
 				break;
-			case attribute_type::int8:
+			case AttributeType::int8:
 				attr.int8_null_value = DB::parse<Int8>(null_value);
 				attr.int8_map.reset(new HashMap<UInt64, Int8>);
 				break;
-			case attribute_type::int16:
+			case AttributeType::int16:
 				attr.int16_null_value = DB::parse<Int16>(null_value);
 				attr.int16_map.reset(new HashMap<UInt64, Int16>);
 				break;
-			case attribute_type::int32:
+			case AttributeType::int32:
 				attr.int32_null_value = DB::parse<Int32>(null_value);
 				attr.int32_map.reset(new HashMap<UInt64, Int32>);
 				break;
-			case attribute_type::int64:
+			case AttributeType::int64:
 				attr.int64_null_value = DB::parse<Int64>(null_value);
 				attr.int64_map.reset(new HashMap<UInt64, Int64>);
 				break;
-			case attribute_type::float32:
+			case AttributeType::float32:
 				attr.float32_null_value = DB::parse<Float32>(null_value);
 				attr.float32_map.reset(new HashMap<UInt64, Float32>);
 				break;
-			case attribute_type::float64:
+			case AttributeType::float64:
 				attr.float64_null_value = DB::parse<Float64>(null_value);
 				attr.float64_map.reset(new HashMap<UInt64, Float64>);
 				break;
-			case attribute_type::string:
+			case AttributeType::string:
 				attr.string_null_value = null_value;
 				attr.string_arena.reset(new Arena);
 				attr.string_map.reset(new HashMap<UInt64, StringRef>);
@@ -302,57 +304,57 @@ private:
 	{
 		switch (attribute.type)
 		{
-			case attribute_type::uint8:
+			case AttributeType::uint8:
 			{
 				attribute.uint8_map->insert({ id, value.get<UInt64>() });
 				break;
 			}
-			case attribute_type::uint16:
+			case AttributeType::uint16:
 			{
 				attribute.uint16_map->insert({ id, value.get<UInt64>() });
 				break;
 			}
-			case attribute_type::uint32:
+			case AttributeType::uint32:
 			{
 				attribute.uint32_map->insert({ id, value.get<UInt64>() });
 				break;
 			}
-			case attribute_type::uint64:
+			case AttributeType::uint64:
 			{
 				attribute.uint64_map->insert({ id, value.get<UInt64>() });
 				break;
 			}
-			case attribute_type::int8:
+			case AttributeType::int8:
 			{
 				attribute.int8_map->insert({ id, value.get<Int64>() });
 				break;
 			}
-			case attribute_type::int16:
+			case AttributeType::int16:
 			{
 				attribute.int16_map->insert({ id, value.get<Int64>() });
 				break;
 			}
-			case attribute_type::int32:
+			case AttributeType::int32:
 			{
 				attribute.int32_map->insert({ id, value.get<Int64>() });
 				break;
 			}
-			case attribute_type::int64:
+			case AttributeType::int64:
 			{
 				attribute.int64_map->insert({ id, value.get<Int64>() });
 				break;
 			}
-			case attribute_type::float32:
+			case AttributeType::float32:
 			{
 				attribute.float32_map->insert({ id, value.get<Float64>() });
 				break;
 			}
-			case attribute_type::float64:
+			case AttributeType::float64:
 			{
 				attribute.float64_map->insert({ id, value.get<Float64>() });
 				break;
 			}
-			case attribute_type::string:
+			case AttributeType::string:
 			{
 				const auto & string = value.get<String>();
 				const auto string_in_arena = attribute.string_arena->insert(string.data(), string.size());

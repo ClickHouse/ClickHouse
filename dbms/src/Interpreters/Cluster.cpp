@@ -1,5 +1,6 @@
 #include <DB/Interpreters/Cluster.h>
 #include <DB/Common/escapeForFileName.h>
+#include <DB/Common/isLocalAddress.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Net/NetworkInterface.h>
@@ -255,19 +256,7 @@ bool Cluster::isLocal(const Address & address)
 	/// - её порт совпадает с портом, который слушает сервер;
 	/// - её хост резолвится в набор адресов, один из которых совпадает с одним из адресов сетевых интерфейсов сервера
 	/// то нужно всегда ходить на этот шард без межпроцессного взаимодействия
-	const UInt16 clickhouse_port = Poco::Util::Application::instance().config().getInt("tcp_port", 0);
-	static auto interfaces = Poco::Net::NetworkInterface::list();
-
-	if (clickhouse_port == address.host_port.port() &&
-		interfaces.end() != std::find_if(interfaces.begin(), interfaces.end(),
-			[&](const Poco::Net::NetworkInterface & interface) { return interface.address() == address.host_port.host(); }))
-	{
-		LOG_INFO(&Poco::Util::Application::instance().logger(),
-			"Replica with address " << address.host_port.toString() << " will be processed as local.");
-		return true;
-	}
-
-	return false;
+	return isLocalAddress(address.host_port);
 }
 
 }

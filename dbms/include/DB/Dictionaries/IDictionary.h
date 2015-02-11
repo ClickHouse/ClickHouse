@@ -18,7 +18,7 @@ class DictionaryLifetime;
 class IDictionary
 {
 public:
-    using id_t = std::uint64_t;
+	using id_t = std::uint64_t;
 
 	virtual std::string getName() const = 0;
 
@@ -28,7 +28,7 @@ public:
 	virtual void reload() {}
 	virtual DictionaryPtr clone() const = 0;
 
-	virtual const IDictionarySource * const getSource() const = 0;
+	virtual const IDictionarySource * getSource() const = 0;
 
 	virtual const DictionaryLifetime & getLifetime() const = 0;
 
@@ -89,7 +89,7 @@ public:
 	virtual Float64 getFloat64Unsafe(std::size_t attribute_idx, id_t id) const = 0;
 	virtual StringRef getStringUnsafe(std::size_t attribute_idx, id_t id) const = 0;
 
-    virtual ~IDictionary() = default;
+	virtual ~IDictionary() = default;
 };
 
 }

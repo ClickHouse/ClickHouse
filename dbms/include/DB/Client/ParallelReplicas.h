@@ -1,85 +1,93 @@
 #pragma once
 
+#include <DB/Common/Throttler.h>
 #include <DB/Client/Connection.h>
 #include <DB/Client/ConnectionPool.h>
 
+
 namespace DB
 {
-	/** Множество реплик одного шарда.
+
+
+/** Для получения данных сразу из нескольких реплик (соединений) в рамках одного потока.
+  * В качестве вырожденного случая, может также работать с одним соединением.
+  *
+  * Интерфейс почти совпадает с Connection.
+  */
+class ParallelReplicas final : private boost::noncopyable
+{
+public:
+	/// Принимает готовое соединение.
+	ParallelReplicas(Connection * connection_, Settings * settings_, ThrottlerPtr throttler_);
+
+	/// Принимает пул, из которого нужно будет достать одно или несколько соединений.
+	ParallelReplicas(IConnectionPool * pool_, Settings * settings_, ThrottlerPtr throttler_);
+
+	/// Отправить на реплики всё содержимое внешних таблиц.
+	void sendExternalTablesData(std::vector<ExternalTablesData> & data);
+
+	/// Отправить запрос на реплики.
+	void sendQuery(const String & query, const String & query_id = "",
+					UInt64 stage = QueryProcessingStage::Complete, bool with_pending_data = false);
+
+	/// Получить пакет от какой-нибудь реплики.
+	Connection::Packet receivePacket();
+
+	/// Отменить запросы к репликам
+	void sendCancel();
+
+	/** На каждой реплике читать и пропускать все пакеты до EndOfStream или Exception.
+	  * Возвращает EndOfStream, если не было получено никакого исключения. В противном
+	  * случае возвращает последний полученный пакет типа Exception.
 	  */
-	class ParallelReplicas final
-	{
-	public:
-		/// Принимает готовое соединение.
-		ParallelReplicas(Connection * connection_, Settings * settings_);
+	Connection::Packet drain();
 
-		/// Принимает пул, из которого нужно будет достать одно или несколько соединений.
-		ParallelReplicas(IConnectionPool * pool_, Settings * settings_);
+	/// Получить адреса реплик в виде строки.
+	std::string dumpAddresses() const;
 
-		ParallelReplicas(const ParallelReplicas &) = delete;
-		ParallelReplicas & operator=(const ParallelReplicas &) = delete;
+	/// Возвращает количесто реплик.
+	size_t size() const { return replica_map.size(); }
 
-		/// Отправить на реплики всё содержимое внешних таблиц.
-		void sendExternalTablesData(std::vector<ExternalTablesData> & data);
+	/// Проверить, есть ли действительные реплики.
+	bool hasActiveReplicas() const { return active_replica_count > 0; }
 
-		/// Отправить запрос на реплики.
-		void sendQuery(const String & query, const String & query_id = "",
-					   UInt64 stage = QueryProcessingStage::Complete, bool with_pending_data = false);
+private:
+	/// Реплики хэшированные по id сокета
+	using ReplicaMap = std::unordered_map<int, Connection *>;
 
-		/// Получить пакет от какой-нибудь реплики.
-		Connection::Packet receivePacket();
 
-		/// Отменить запросы к репликам
-		void sendCancel();
+	/// Зарегистрировать реплику.
+	void registerReplica(Connection * connection);
 
-		/** На каждой реплике читать и пропускать все пакеты до EndOfStream или Exception.
-		  * Возвращает EndOfStream, если не было получено никакого исключения. В противном
-		  * случае возвращает последний полученный пакет типа Exception.
-		  */
-		Connection::Packet drain();
+	/// Получить реплику, на которой можно прочитать данные.
+	ReplicaMap::iterator getReplicaForReading();
 
-		/// Получить адреса реплик в виде строки.
-		std::string dumpAddresses() const;
+	/** Проверить, есть ли данные, которые можно прочитать на каких-нибудь репликах.
+		* Возвращает одну такую реплику, если она найдётся.
+		*/
+	ReplicaMap::iterator waitForReadEvent();
 
-		/// Возвращает количесто реплик.
-		size_t size() const { return replica_map.size(); }
+	/// Пометить реплику как недействительную.
+	void invalidateReplica(ReplicaMap::iterator it);
 
-		/// Проверить, есть ли действительные реплики.
-		bool hasActiveReplicas() const { return active_replica_count > 0; }
 
-	private:
-		/// Реплики хэшированные по id сокета
-		using ReplicaMap = std::unordered_map<int, Connection *>;
+	Settings * settings;
+	ReplicaMap replica_map;
 
-	private:
-		/// Зарегистрировать реплику.
-		void registerReplica(Connection * connection);
+	/// Если не nullptr, то используется, чтобы ограничить сетевой трафик.
+	ThrottlerPtr throttler;
 
-		/// Получить реплику, на которой можно прочитать данные.
-		ReplicaMap::iterator getReplicaForReading();
+	std::vector<ConnectionPool::Entry> pool_entries;
+	ConnectionPool::Entry pool_entry;
 
-		/** Проверить, есть ли данные, которые можно прочитать на каких-нибудь репликах.
-		  * Возвращает одну такую реплику, если она найдётся.
-		  */
-		ReplicaMap::iterator waitForReadEvent();
+	/// Текущее количество действительных соединений к репликам.
+	size_t active_replica_count;
+	/// Запрос выполняется параллельно на нескольких репликах.
+	bool supports_parallel_execution;
+	/// Отправили запрос
+	bool sent_query = false;
+	/// Отменили запрос
+	bool cancelled = false;
+};
 
-		/// Пометить реплику как недействительную.
-		void invalidateReplica(ReplicaMap::iterator it);
-
-	private:
-		Settings * settings;
-		ReplicaMap replica_map;
-
-		std::vector<ConnectionPool::Entry> pool_entries;
-		ConnectionPool::Entry pool_entry;
-
-		/// Текущее количество действительных соединений к репликам.
-		size_t active_replica_count;
-		/// Запрос выполняется параллельно на нескольких репликах.
-		bool supports_parallel_execution;
-		/// Отправили запрос
-		bool sent_query = false;
-		/// Отменили запрос
-		bool cancelled = false;
-	};
 }

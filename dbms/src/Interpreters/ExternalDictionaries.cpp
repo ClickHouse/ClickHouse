@@ -1,9 +1,9 @@
-#include <DB/Interpreters/Dictionaries.h>
+#include <DB/Interpreters/ExternalDictionaries.h>
 #include <DB/Dictionaries/DictionaryFactory.h>
 #include <DB/Dictionaries/DictionaryStructure.h>
 #include <DB/Dictionaries/IDictionarySource.h>
-#include <DB/Dictionaries/config_ptr_t.h>
 #include <statdaemons/ext/scope_guard.hpp>
+#include <Poco/Util/Application.h>
 
 namespace DB
 {
@@ -29,7 +29,7 @@ namespace
 	}
 }
 
-void Dictionaries::reloadExternals()
+void ExternalDictionaries::reloadImpl()
 {
 	const auto config_path = getDictionariesConfigPath(Poco::Util::Application::instance().config());
 	const Poco::File config_file{config_path};
@@ -41,12 +41,15 @@ void Dictionaries::reloadExternals()
 	else
 	{
 		const auto last_modified = config_file.getLastModified();
-		if (last_modified > dictionaries_last_modified)
+		if (last_modified > config_last_modified)
 		{
 			/// definitions of dictionaries may have changed, recreate all of them
-			dictionaries_last_modified = last_modified;
+			config_last_modified = last_modified;
 
-			const config_ptr_t<Poco::Util::XMLConfiguration> config{new Poco::Util::XMLConfiguration{config_path}};
+			const auto config = new Poco::Util::XMLConfiguration{config_path};
+			SCOPE_EXIT(
+				config->release();
+			);
 
 			/// get all dictionaries' definitions
 			Poco::Util::AbstractConfiguration::Keys keys;
@@ -63,16 +66,14 @@ void Dictionaries::reloadExternals()
 						continue;
 					}
 
-					const auto & prefix = key + '.';
-
-					const auto & name = config->getString(prefix + "name");
+					const auto name = config->getString(key + ".name");
 					if (name.empty())
 					{
 						LOG_WARNING(log, "dictionary name cannot be empty");
 						continue;
 					}
 
-					auto dict_ptr = DictionaryFactory::instance().create(name, *config, prefix, context);
+					auto dict_ptr = DictionaryFactory::instance().create(name, *config, key, context);
 					if (!dict_ptr->isCached())
 					{
 						const auto & lifetime = dict_ptr->getLifetime();
@@ -87,12 +88,12 @@ void Dictionaries::reloadExternals()
 						}
 					}
 
-					auto it = external_dictionaries.find(name);
+					auto it = dictionaries.find(name);
 					/// add new dictionary or update an existing version
-					if (it == std::end(external_dictionaries))
+					if (it == std::end(dictionaries))
 					{
-						const std::lock_guard<std::mutex> lock{external_dictionaries_mutex};
-						external_dictionaries.emplace(name, std::make_shared<MultiVersion<IDictionary>>(dict_ptr.release()));
+						const std::lock_guard<std::mutex> lock{dictionaries_mutex};
+						dictionaries.emplace(name, std::make_shared<MultiVersion<IDictionary>>(dict_ptr.release()));
 					}
 					else
 						it->second->set(dict_ptr.release());
@@ -106,7 +107,7 @@ void Dictionaries::reloadExternals()
 	}
 
 	/// periodic update
-	for (auto & dictionary : external_dictionaries)
+	for (auto & dictionary : dictionaries)
 	{
 		try
 		{
@@ -126,11 +127,11 @@ void Dictionaries::reloadExternals()
 				if (std::chrono::system_clock::now() < update_time)
 					continue;
 
-				scope_exit({
+				SCOPE_EXIT(
 					/// calculate next update time
 					std::uniform_int_distribution<std::uint64_t> distribution{lifetime.min_sec, lifetime.max_sec};
 					update_time = std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
-				});
+				);
 
 				/// check source modified
 				if (current->getSource()->isModified())

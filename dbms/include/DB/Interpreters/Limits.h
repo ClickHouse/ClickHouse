@@ -87,6 +87,9 @@ struct Limits
 	\
 	/** Максимальное использование памяти при обработке запроса. 0 - не ограничено. */ \
 	M(SettingUInt64, max_memory_usage, 0) \
+	\
+	/** Максимальная скорость обмена данными по сети в байтах в секунду. 0 - не ограничена. */ \
+	M(SettingUInt64, max_network_bandwidth, 0) \
 
 #define DECLARE(TYPE, NAME, DEFAULT) \
 	TYPE NAME {DEFAULT};

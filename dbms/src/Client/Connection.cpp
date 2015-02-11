@@ -277,15 +277,22 @@ void Connection::sendData(const Block & block, const String & name)
 	if (server_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)
 		writeStringBinary(name, *out);
 
+	size_t prev_bytes = out->count();
+
 	block.checkNestedArraysOffsets();
 	block_out->write(block);
 	maybe_compressed_out->next();
 	out->next();
+
+	if (throttler)
+		throttler->add(out->count() - prev_bytes);
 }
 
 
 void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String & name)
 {
+	/// NOTE В этом методе не используется throttler (хотя можно использовать, но это пока не важно).
+
 	writeVarUInt(Protocol::Client::Data, *out);
 
 	if (server_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)
@@ -436,8 +443,15 @@ Block Connection::receiveData()
 	if (server_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)
 		readStringBinary(external_table_name, *in);
 
+	size_t prev_bytes = in->count();
+
 	/// Прочитать из сети один блок
-	return block_in->read();
+	Block res = block_in->read();
+
+	if (throttler)
+		throttler->add(in->count() - prev_bytes);
+
+	return res;
 }
 
 

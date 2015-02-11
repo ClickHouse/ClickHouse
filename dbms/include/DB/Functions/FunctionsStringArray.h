@@ -267,7 +267,7 @@ public:
 			throw Exception("Illegal column " + col->getName() + " of first argument of function " + getName() + ". Must be constant string.",
 				ErrorCodes::ILLEGAL_COLUMN);
 
-		re = Regexps::get(col->getData());
+		re = Regexps::get<false, false>(col->getData());
 		capture = re->getNumberOfSubpatterns() > 0 ? 1 : 0;
 
 		matches.resize(capture + 1);

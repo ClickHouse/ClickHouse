@@ -92,9 +92,8 @@ private:
 		/// Отправляем на первый попавшийся шард
 		BlockInputStreamPtr input{
 			new RemoteBlockInputStream{
-				cluster.pools.front().get(), query, &settings,
-				Tables(), QueryProcessingStage::Complete, context
-			}
+				cluster.pools.front().get(), query, &settings, nullptr,
+				Tables(), QueryProcessingStage::Complete, context}
 		};
 		input->readPrefix();
 

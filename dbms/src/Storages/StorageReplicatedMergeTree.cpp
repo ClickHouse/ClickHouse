@@ -2107,7 +2107,7 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 	auto zookeeper = getZooKeeper();
 	const MergeTreeMergeBlocker merge_blocker{merger};
 	const auto unreplicated_merge_blocker = unreplicated_merger ?
-		ext::make_unique<MergeTreeMergeBlocker>(*unreplicated_merger) : nullptr;
+		std::make_unique<MergeTreeMergeBlocker>(*unreplicated_merger) : nullptr;
 
 	LOG_DEBUG(log, "Doing ALTER");
 
