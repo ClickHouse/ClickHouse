@@ -7,6 +7,9 @@
 namespace DB
 {
 
+/** Provides reading from a Buffer, taking exclusive ownership over it's lifetime,
+*	simplifies usage of ReadBufferFromFile (no need to manage buffer lifetime) etc.
+*/
 class OwningBufferBlockInputStream : public IProfilingBlockInputStream
 {
 public:
@@ -21,9 +24,7 @@ private:
 
 	String getName() const override { return "OwningBufferBlockInputStream"; }
 
-	String getID() const override {
-		return "OwningBuffer(" + stream->getID() + ")";
-	}
+	String getID() const override {  return "OwningBuffer(" + stream->getID() + ")"; }
 
 	BlockInputStreamPtr stream;
 	std::unique_ptr<ReadBuffer> buffer;

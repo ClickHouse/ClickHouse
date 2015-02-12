@@ -9,7 +9,7 @@
 namespace DB
 {
 
-enum class attribute_type
+enum class AttributeType
 {
 	uint8,
 	uint16,
@@ -24,20 +24,20 @@ enum class attribute_type
 	string
 };
 
-inline attribute_type getAttributeTypeByName(const std::string & type)
+inline AttributeType getAttributeTypeByName(const std::string & type)
 {
-	static const std::unordered_map<std::string, attribute_type> dictionary{
-		{ "UInt8", attribute_type::uint8 },
-		{ "UInt16", attribute_type::uint16 },
-		{ "UInt32", attribute_type::uint32 },
-		{ "UInt64", attribute_type::uint64 },
-		{ "Int8", attribute_type::int8 },
-		{ "Int16", attribute_type::int16 },
-		{ "Int32", attribute_type::int32 },
-		{ "Int64", attribute_type::int64 },
-		{ "Float32", attribute_type::float32 },
-		{ "Float64", attribute_type::float64 },
-		{ "String", attribute_type::string },
+	static const std::unordered_map<std::string, AttributeType> dictionary{
+		{ "UInt8", AttributeType::uint8 },
+		{ "UInt16", AttributeType::uint16 },
+		{ "UInt32", AttributeType::uint32 },
+		{ "UInt64", AttributeType::uint64 },
+		{ "Int8", AttributeType::int8 },
+		{ "Int16", AttributeType::int16 },
+		{ "Int32", AttributeType::int32 },
+		{ "Int64", AttributeType::int64 },
+		{ "Float32", AttributeType::float32 },
+		{ "Float64", AttributeType::float64 },
+		{ "String", AttributeType::string },
 	};
 
 	const auto it = dictionary.find(type);
@@ -50,44 +50,53 @@ inline attribute_type getAttributeTypeByName(const std::string & type)
 	};
 }
 
-inline std::string toString(const attribute_type type)
+inline std::string toString(const AttributeType type)
 {
 	switch (type)
 	{
-		case attribute_type::uint8: return "UInt8";
-		case attribute_type::uint16: return "UInt16";
-		case attribute_type::uint32: return "UInt32";
-		case attribute_type::uint64: return "UInt64";
-		case attribute_type::int8: return "Int8";
-		case attribute_type::int16: return "Int16";
-		case attribute_type::int32: return "Int32";
-		case attribute_type::int64: return "Int64";
-		case attribute_type::float32: return "Float32";
-		case attribute_type::float64: return "Float64";
-		case attribute_type::string: return "String";
+		case AttributeType::uint8: return "UInt8";
+		case AttributeType::uint16: return "UInt16";
+		case AttributeType::uint32: return "UInt32";
+		case AttributeType::uint64: return "UInt64";
+		case AttributeType::int8: return "Int8";
+		case AttributeType::int16: return "Int16";
+		case AttributeType::int32: return "Int32";
+		case AttributeType::int64: return "Int64";
+		case AttributeType::float32: return "Float32";
+		case AttributeType::float64: return "Float64";
+		case AttributeType::string: return "String";
 	}
 
 	throw Exception{
-		"Unknown attribute_type " + toString(type),
+		"Unknown attribute_type " + toString(static_cast<int>(type)),
 		ErrorCodes::ARGUMENT_OUT_OF_BOUND
 	};
 }
 
+/// Min and max lifetimes for a dictionary or it's entry
 struct DictionaryLifetime
 {
 	std::uint64_t min_sec;
 	std::uint64_t max_sec;
 
-	static DictionaryLifetime fromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
+	DictionaryLifetime(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
 	{
 		const auto & lifetime_min_key = config_prefix + ".min";
 		const auto has_min = config.has(lifetime_min_key);
-		const std::uint64_t min_update_time = has_min ? config.getInt(lifetime_min_key) : config.getInt(config_prefix);
-		const std::uint64_t max_update_time = has_min ? config.getInt(config_prefix + ".max") : min_update_time;
-		return { min_update_time, max_update_time };
+
+		this->min_sec = has_min ? config.getInt(lifetime_min_key) : config.getInt(config_prefix);
+		this->max_sec = has_min ? config.getInt(config_prefix + ".max") : this->min_sec;
 	}
 };
 
+/** Holds the description of a single dictionary attribute:
+*	- name, used for lookup into dictionary and source;
+*	- type, used in conjunction with DataTypeFactory and getAttributeTypeByname;
+*	- null_value, used as a default value for non-existent entries in the dictionary,
+*		decimal representation for numeric attributes;
+*	- hierarchical, whether this attribute defines a hierarchy;
+*	- injective, whether the mapping to parent is injective (can be used for optimization of GROUP BY?)
+*/
 struct DictionaryAttribute
 {
 	std::string name;
@@ -97,34 +106,34 @@ struct DictionaryAttribute
 	bool injective;
 };
 
+/// Name of identifier plus list of attributes
 struct DictionaryStructure
 {
 	std::string id_name;
 	std::vector<DictionaryAttribute> attributes;
 
-	static DictionaryStructure fromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
+	DictionaryStructure(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
+		: id_name{config.getString(config_prefix + ".id.name")}
 	{
-		const auto & id_name = config.getString(config_prefix + ".id.name");
 		if (id_name.empty())
 			throw Exception{
 				"No 'id' specified for dictionary",
 				ErrorCodes::BAD_ARGUMENTS
 			};
 
-		DictionaryStructure result{id_name};
-
 		Poco::Util::AbstractConfiguration::Keys keys;
 		config.keys(config_prefix, keys);
 		auto has_hierarchy = false;
+
 		for (const auto & key : keys)
 		{
 			if (0 != strncmp(key.data(), "attribute", strlen("attribute")))
 				continue;
 
-			const auto & prefix = config_prefix + '.' + key + '.';
-			const auto & name = config.getString(prefix + "name");
-			const auto & type = config.getString(prefix + "type");
-			const auto & null_value = config.getString(prefix + "null_value");
+			const auto prefix = config_prefix + '.' + key + '.';
+			const auto name = config.getString(prefix + "name");
+			const auto type = config.getString(prefix + "type");
+			const auto null_value = config.getString(prefix + "null_value");
 			const auto hierarchical = config.getBool(prefix + "hierarchical", false);
 			const auto injective = config.getBool(prefix + "injective", false);
 			if (name.empty() || type.empty())
@@ -141,16 +150,16 @@ struct DictionaryStructure
 
 			has_hierarchy = has_hierarchy || hierarchical;
 
-			result.attributes.emplace_back(DictionaryAttribute{name, type, null_value, hierarchical, injective});
+			attributes.emplace_back(DictionaryAttribute{
+				name, type, null_value, hierarchical, injective
+			});
 		}
 
-		if (result.attributes.empty())
+		if (attributes.empty())
 			throw Exception{
 				"Dictionary has no attributes defined",
 				ErrorCodes::BAD_ARGUMENTS
 			};
-
-		return result;
 	}
 };
 

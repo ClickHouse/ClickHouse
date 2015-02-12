@@ -14,7 +14,7 @@
 #include <DB/Storages/AlterCommands.h>
 #include <Poco/File.h>
 #include <Poco/RWLock.h>
-#include <statdaemons/ext/memory.hpp>
+#include <memory>
 
 
 namespace DB
@@ -129,7 +129,7 @@ public:
 	  */
 	TableDataWriteLockPtr lockDataForAlter()
 	{
-		auto res = ext::make_unique<Poco::ScopedWriteRWLock>(data_lock);
+		auto res = std::make_unique<Poco::ScopedWriteRWLock>(data_lock);
 		if (is_dropped)
 			throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
 		return res;
@@ -137,7 +137,7 @@ public:
 
 	TableStructureWriteLockPtr lockStructureForAlter()
 	{
-		auto res = ext::make_unique<Poco::ScopedWriteRWLock>(structure_lock);
+		auto res = std::make_unique<Poco::ScopedWriteRWLock>(structure_lock);
 		if (is_dropped)
 			throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
 		return res;

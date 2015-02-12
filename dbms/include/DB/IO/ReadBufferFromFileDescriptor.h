@@ -80,7 +80,7 @@ public:
 		if (new_pos + (working_buffer.end() - pos) == pos_in_file)
 			return new_pos;
 
-		if (pos != working_buffer.end() && new_pos <= pos_in_file && new_pos >= pos_in_file - static_cast<off_t>(working_buffer.size()))
+		if (hasPendingData() && new_pos <= pos_in_file && new_pos >= pos_in_file - static_cast<off_t>(working_buffer.size()))
 		{
 			/// Остались в пределах буфера.
 			pos = working_buffer.begin() + (new_pos - (pos_in_file - working_buffer.size()));

@@ -2027,7 +2027,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 
 	size_t part_index = 0;
 
-	if (process_unreplicated && unreplicated_reader && values.count(0))
+	if ((settings.parallel_replica_offset == 0) && unreplicated_reader && values.count(0))
 	{
 		res = unreplicated_reader->read(real_column_names, query,
 										context, settings, processed_stage,
@@ -2107,7 +2107,7 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 	auto zookeeper = getZooKeeper();
 	const MergeTreeMergeBlocker merge_blocker{merger};
 	const auto unreplicated_merge_blocker = unreplicated_merger ?
-		ext::make_unique<MergeTreeMergeBlocker>(*unreplicated_merger) : nullptr;
+		std::make_unique<MergeTreeMergeBlocker>(*unreplicated_merger) : nullptr;
 
 	LOG_DEBUG(log, "Doing ALTER");
 

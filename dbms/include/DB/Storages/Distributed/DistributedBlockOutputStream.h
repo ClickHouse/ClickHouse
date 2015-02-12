@@ -10,7 +10,7 @@
 #include <DB/Interpreters/InterpreterInsertQuery.h>
 
 #include <statdaemons/Increment.h>
-#include <statdaemons/ext/memory.hpp>
+#include <memory>
 #include <Yandex/Revision.h>
 
 #include <iostream>

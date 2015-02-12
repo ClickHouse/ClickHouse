@@ -3,7 +3,7 @@
 #include <Poco/Mutex.h>
 
 #include <statdaemons/OptimizedRegularExpression.h>
-#include <statdaemons/ext/memory.hpp>
+#include <memory>
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>
@@ -299,24 +299,24 @@ namespace Regexps
 	}
 
 	template <bool like>
-	inline Regexp createRegexp(const std::string & pattern) { return pattern; }
+	inline Regexp createRegexp(const std::string & pattern, int flags) { return {pattern, flags}; }
 	template <>
-	inline Regexp createRegexp<true>(const std::string & pattern) { return likePatternToRegexp(pattern); }
+	inline Regexp createRegexp<true>(const std::string & pattern, int flags) { return {likePatternToRegexp(pattern), flags}; }
 
-	template <bool like = false>
+	template <bool like, bool no_capture>
 	inline Pointer get(const std::string & pattern)
 	{
 		/// C++11 has thread-safe function-local statics on most modern compilers.
-		static KnownRegexps known_regexps;
+		static KnownRegexps known_regexps;	/// Разные переменные для разных параметров шаблона.
 		static std::mutex mutex;
 		std::lock_guard<std::mutex> lock{mutex};
 
 		auto it = known_regexps.find(pattern);
 		if (known_regexps.end() == it)
-			it = known_regexps.emplace(pattern, ext::make_unique<Holder>()).first;
+			it = known_regexps.emplace(pattern, std::make_unique<Holder>()).first;
 
 		return it->second->get([&pattern] {
-			return new Regexp{createRegexp<like>(pattern)};
+			return new Regexp{createRegexp<like>(pattern, no_capture ? OptimizedRegularExpression::RE_NO_CAPTURE : 0)};
 		});
 	}
 }
@@ -373,7 +373,7 @@ struct MatchImpl
 		}
 		else
 		{
-			const auto & regexp = Regexps::get<like>(pattern);
+			const auto & regexp = Regexps::get<like, true>(pattern);
 			size_t size = offsets.size();
 			for (size_t i = 0; i < size; ++i)
 				res[i] = revert ^ regexp->match(reinterpret_cast<const char *>(&data[i != 0 ? offsets[i - 1] : 0]), (i != 0 ? offsets[i] - offsets[i - 1] : offsets[0]) - 1);
@@ -382,7 +382,7 @@ struct MatchImpl
 
 	static void constant(const std::string & data, const std::string & pattern, UInt8 & res)
 	{
-		const auto & regexp = Regexps::get<like>(pattern);
+		const auto & regexp = Regexps::get<like, true>(pattern);
 		res = revert ^ regexp->match(data);
 	}
 };
@@ -397,7 +397,7 @@ struct ExtractImpl
 		res_data.reserve(data.size() / 5);
 		res_offsets.resize(offsets.size());
 
-		const auto & regexp = Regexps::get(pattern);
+		const auto & regexp = Regexps::get<false, false>(pattern);
 
 		unsigned capture = regexp->getNumberOfSubpatterns() > 0 ? 1 : 0;
 		OptimizedRegularExpression::MatchVec matches;
