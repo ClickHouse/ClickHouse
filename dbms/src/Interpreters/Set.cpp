@@ -472,7 +472,6 @@ void Set::executeOrdinary(const ConstColumnPlainPtrs & key_columns, ColumnUInt8:
 			const ColumnString::Offsets_t & offsets = column_string->getOffsets();
 			const ColumnString::Chars_t & data = column_string->getChars();
 
-			/// Оптимизация для подряд идущих одинаковых ключей. TODO Распространить на другие методы.
 			StringRef prev_key;
 			bool prev_result;
 
