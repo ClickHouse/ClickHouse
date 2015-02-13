@@ -71,11 +71,10 @@ protected:
 		if (!buffer.data)
 			return res;
 
-		for (size_t i = 0, size = buffer.data.columns(); i < size; ++i)
+		for (const auto & name : column_names)
 		{
-			auto & col = buffer.data.unsafeGetByPosition(i);
-			if (column_names.count(col.name))
-				res.insert(col);
+			auto & col = buffer.data.getByName(name);
+			res.insert(ColumnWithNameAndType(col.column->clone(), col.type, name));
 		}
 
 		return res;
@@ -213,14 +212,17 @@ private:
 
 	void insertIntoBuffer(const Block & block, StorageBuffer::Buffer & buffer, std::unique_lock<std::mutex> && lock)
 	{
+		/// Сортируем столбцы в блоке. Это нужно, чтобы было проще потом конкатенировать блоки.
+		Block sorted_block = block.sortColumns();
+
 		if (!buffer.data)
 		{
 			buffer.first_write_time = time(0);
-			buffer.data = block.cloneEmpty();
+			buffer.data = sorted_block.cloneEmpty();
 		}
 
 		/// Если после вставки в буфер, ограничения будут превышены, то будем сбрасывать буфер.
-		if (storage.checkThresholds(buffer, time(0), block.rowsInFirstColumn(), block.bytes()))
+		if (storage.checkThresholds(buffer, time(0), sorted_block.rowsInFirstColumn(), sorted_block.bytes()))
 		{
 			/// Вытащим из буфера блок, заменим буфер на пустой. После этого можно разблокировать mutex.
 			Block block_to_write;
@@ -230,13 +232,13 @@ private:
 
 			if (!storage.no_destination)
 			{
-				appendBlock(block, block_to_write);
+				appendBlock(sorted_block, block_to_write);
 				storage.writeBlockToDestination(block_to_write,
 					storage.context.tryGetTable(storage.destination_database, storage.destination_table));
 			}
 		}
 		else
-			appendBlock(block, buffer.data);
+			appendBlock(sorted_block, buffer.data);
 	}
 };
 
