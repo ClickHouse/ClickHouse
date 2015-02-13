@@ -94,9 +94,6 @@ private:
 	// Переименовать столбцы каждого запроса цепочки UNION ALL в такие же имена, как в первом запросе.
 	void renameColumns();
 
-	/// Является ли это первым запросом цепочки UNION ALL имеющей длниу >= 2.
-	bool isFirstSelectInsideUnionAll() const;
-
 	/** Из какой таблицы читать. JOIN-ы не поддерживаются.
 	 */
 	void getDatabaseAndTableNames(String & database_name, String & table_name);
@@ -135,10 +132,8 @@ private:
 	std::unique_ptr<ExpressionAnalyzer> query_analyzer;
 	BlockInputStreams streams;
 
-	/** Цепочка UNION ALL может иметь длину 1 (в таком случае имеется просто один запрос SELECT)
-	 * или больше. Этот флаг установлен, если это первый запрос, возможно единственный, этой цепочки.
-	 */
-	bool is_union_all_head;
+	/// Являемся ли мы первым запросом SELECT цепочки UNION ALL?
+	bool is_first_select_inside_union_all;
 
 	/// Следующий запрос SELECT в цепочке UNION ALL.
 	std::unique_ptr<InterpreterSelectQuery> next_select_in_union_all;

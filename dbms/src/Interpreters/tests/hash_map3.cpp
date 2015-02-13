@@ -46,7 +46,7 @@ public:
 };
 
 
-struct TrivialHash
+struct SimpleHash
 {
 	size_t operator() (UInt64 x) const { return x; }
 	size_t operator() (StringRef x) const { return DB::parse<UInt64>(x.data); }
@@ -65,7 +65,7 @@ int main(int argc, char ** argv)
 	typedef HashMapWithDump<
 		StringRef,
 		UInt64,
-		TrivialHash,
+		SimpleHash,
 		Grower,
 		HashTableAllocatorWithStackMemory<4 * 24> > Map;
 

@@ -181,6 +181,26 @@ struct HashTableGrower
 };
 
 
+/** При использовании в качестве Grower-а, превращает хэш-таблицу в что-то типа lookup-таблицы.
+  * Остаётся неоптимальность - в ячейках хранятся ключи.
+  * Также компилятору не удаётся полностью удалить код хождения по цепочке разрешения коллизий, хотя он не нужен.
+  * TODO Сделать полноценную lookup-таблицу.
+  */
+template <size_t key_bits>
+struct HashTableFixedGrower
+{
+	size_t bufSize() const				{ return 1 << key_bits; }
+	size_t place(size_t x) const 		{ return x; }
+	/// Тут можно было бы написать __builtin_unreachable(), но компилятор не до конца всё оптимизирует, и получается менее эффективно.
+	size_t next(size_t pos) const		{ return pos + 1; }
+	bool overflow(size_t elems) const	{ return false; }
+
+	void increaseSize() { __builtin_unreachable(); }
+	void set(size_t num_elems) {}
+	void setBufSize(size_t buf_size_) {}
+};
+
+
 /** Если нужно хранить нулевой ключ отдельно - место для его хранения. */
 template <bool need_zero_value_storage, typename Cell>
 struct ZeroValueStorage;

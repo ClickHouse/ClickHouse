@@ -290,12 +290,12 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 
 		ws.ignore(pos, end);
 	}
-	
+
 	// UNION ALL select query
 	if (s_union.ignore(pos, end, expected))
 	{
 		ws.ignore(pos, end);
-		
+
 		if (s_all.ignore(pos, end, expected))
 		{
 			ParserSelectQuery select_p;
@@ -304,10 +304,10 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 		}
 		else
 			return false;
-		
+
 		ws.ignore(pos, end);
 	}
-	
+
 	select_query->children.push_back(select_query->select_expression_list);
 	if (select_query->database)
 		select_query->children.push_back(select_query->database);
