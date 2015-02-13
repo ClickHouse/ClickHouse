@@ -472,12 +472,23 @@ void Set::executeOrdinary(const ConstColumnPlainPtrs & key_columns, ColumnUInt8:
 			const ColumnString::Offsets_t & offsets = column_string->getOffsets();
 			const ColumnString::Chars_t & data = column_string->getChars();
 
+			StringRef prev_key;
+			bool prev_result;
+
 			/// Для всех строчек
 			for (size_t i = 0; i < rows; ++i)
 			{
 				/// Строим ключ
 				StringRef ref(&data[i == 0 ? 0 : offsets[i - 1]], (i == 0 ? offsets[i] : (offsets[i] - offsets[i - 1])) - 1);
-				vec_res[i] = negative ^ (set.end() != set.find(ref));
+
+				if (i != 0 && ref == prev_key)
+					vec_res[i] = prev_result;
+				else
+				{
+					prev_result = negative ^ (set.end() != set.find(ref));
+					prev_key = ref;
+					vec_res[i] = prev_result;
+				}
 			}
 		}
 		else if (const ColumnFixedString * column_string = typeid_cast<const ColumnFixedString *>(&column))
