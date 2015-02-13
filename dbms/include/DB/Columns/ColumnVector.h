@@ -74,6 +74,37 @@ template <> struct CompareHelper<Float32> : public FloatCompareHelper<Float32> {
 template <> struct CompareHelper<Float64> : public FloatCompareHelper<Float64> {};
 
 
+/** Для реализации функции get64.
+  */
+template <typename T>
+inline UInt64 unionCastToUInt64(T x) { return x; }
+
+template <> inline UInt64 unionCastToUInt64(Float64 x)
+{
+	union
+	{
+		Float64 src;
+		UInt64 res;
+	};
+
+	src = x;
+	return res;
+}
+
+template <> inline UInt64 unionCastToUInt64(Float32 x)
+{
+	union
+	{
+		Float32 src;
+		UInt64 res;
+	};
+
+	res = 0;
+	src = x;
+	return res;
+}
+
+
 /** Шаблон столбцов, которые используют для хранения простой массив.
   */
 template <typename T>
@@ -191,7 +222,10 @@ public:
 		res = typename NearestFieldType<T>::Type(data[n]);
 	}
 
-	UInt64 get64(size_t n) const override;
+	UInt64 get64(size_t n) const override
+	{
+		return unionCastToUInt64(data[n]);
+	}
 
 	void insert(const Field & x) override
 	{
@@ -359,40 +393,6 @@ public:
 protected:
 	Container_t data;
 };
-
-
-template <typename T>
-UInt64 ColumnVector<T>::get64(size_t n) const
-{
-	return data[n];
-}
-
-template <>
-inline UInt64 ColumnVector<Float64>::get64(size_t n) const
-{
-	union
-	{
-		Float64 src;
-		UInt64 res;
-	};
-
-	src = data[n];
-	return res;
-}
-
-template <>
-inline UInt64 ColumnVector<Float32>::get64(size_t n) const
-{
-	union
-	{
-		Float32 src;
-		UInt64 res;
-	};
-
-	res = 0;
-	src = data[n];
-	return res;
-}
 
 
 }

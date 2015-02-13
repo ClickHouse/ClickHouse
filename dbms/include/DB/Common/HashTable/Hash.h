@@ -110,3 +110,14 @@ DEFINE_HASH(DB::Float32)
 DEFINE_HASH(DB::Float64)
 
 #undef DEFINE_HASH
+
+
+/// Разумно использовать для UInt8, UInt16 при достаточном размере хэш-таблицы.
+struct TrivialHash
+{
+	template <typename T>
+	size_t operator() (T key) const
+	{
+		return key;
+	}
+};
