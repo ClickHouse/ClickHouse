@@ -92,6 +92,18 @@ struct Settings
 	M(SettingUInt64, max_parallel_replicas, 1) \
 	M(SettingUInt64, parallel_replicas_count, 0) \
 	M(SettingUInt64, parallel_replica_offset, 0) \
+	\
+	/** Тонкие настройки для чтения из MergeTree */ \
+	\
+	/** Если из одного файла читается хотя бы столько строк, чтение можно распараллелить. */ \
+	M(SettingUInt64, merge_tree_min_rows_for_concurrent_read, (20 * 8192)) \
+	/** Можно пропускать чтение более чем стольки строк ценой одного seek по файлу. */ \
+	M(SettingUInt64, merge_tree_min_rows_for_seek, (5 * 8192)) \
+	/** Если отрезок индекса может содержать нужные ключи, делим его на столько частей и рекурсивно проверяем их. */ \
+	M(SettingUInt64, merge_tree_coarse_index_granularity, 8) \
+	/** Максимальное количество строк на запрос, для использования кэша разжатых данных. Если запрос большой - кэш не используется. \
+	  * (Чтобы большие запросы не вымывали кэш.) */ \
+	M(SettingUInt64, merge_tree_max_rows_to_use_cache, (1024 * 1024)) \
 
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;
