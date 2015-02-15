@@ -19,7 +19,7 @@ private:
 	AggregateFunctionPtr function;
 	DataTypes argument_types;
 	Array parameters;
-	
+
 public:
 	DataTypeAggregateFunction(const AggregateFunctionPtr & function_, const DataTypes & argument_types_, const Array & parameters_)
 		: function(function_), argument_types(argument_types_), parameters(parameters_)
@@ -27,7 +27,7 @@ public:
 	}
 
 	std::string getFunctionName() const { return function->getName(); }
-	
+
 	std::string getName() const
 	{
 		std::stringstream stream;
@@ -47,20 +47,20 @@ public:
 
 		for (DataTypes::const_iterator it = argument_types.begin(); it != argument_types.end(); ++it)
 			stream << ", " << (*it)->getName();
-		
+
 		stream << ")";
 		return stream.str();
 	}
 
 	DataTypePtr getReturnType() const { return function->getReturnType(); };
 	DataTypes getArgumentsDataTypes() const { return argument_types; }
-	
+
 	DataTypePtr clone() const { return new DataTypeAggregateFunction(function, argument_types, parameters); }
 
 	void serializeBinary(const Field & field, WriteBuffer & ostr) const;
 	void deserializeBinary(Field & field, ReadBuffer & istr) const;
 	void serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset = 0, size_t limit = 0) const;
-	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit) const;
+	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const;
 	void serializeText(const Field & field, WriteBuffer & ostr) const;
 	void deserializeText(Field & field, ReadBuffer & istr) const;
 	void serializeTextEscaped(const Field & field, WriteBuffer & ostr) const;

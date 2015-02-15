@@ -19,7 +19,7 @@ private:
 
 public:
 	DataTypeArray(DataTypePtr nested_);
-	
+
 	std::string getName() const
 	{
 		return "Array(" + nested->getName() + ")";
@@ -41,7 +41,7 @@ public:
 
 	void serializeTextQuoted(const Field & field, WriteBuffer & ostr) const;
 	void deserializeTextQuoted(Field & field, ReadBuffer & istr) const;
-	
+
 	void serializeTextJSON(const Field & field, WriteBuffer & ostr) const;
 
 	/** Потоковая сериализация массивов устроена по-особенному:
@@ -57,7 +57,7 @@ public:
 	/** Прочитать только значения, без размеров.
 	  * При этом, в column уже заранее должны быть считаны все размеры.
 	  */
-	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit) const;
+	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const;
 
 	/** Записать размеры. */
 	void serializeOffsets(const IColumn & column, WriteBuffer & ostr, size_t offset = 0, size_t limit = 0) const;

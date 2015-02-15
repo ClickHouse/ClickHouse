@@ -294,6 +294,9 @@ private:
 		std::string path_prefix;
 		size_t max_mark_range;
 
+		/// Используется в качестве подсказки, чтобы уменьшить количество реаллокаций при создании столбца переменной длины.
+		double avg_value_size_hint = 0;
+
 		Stream(const String & path_prefix, UncompressedCache * uncompressed_cache, MarkCache * mark_cache, const MarkRanges & all_mark_ranges)
 			: path_prefix(path_prefix)
 		{
@@ -494,7 +497,20 @@ private:
 		{
 			Stream & stream = *streams[name];
 			stream.seekToMark(from_mark);
-			type.deserializeBinary(column, *stream.data_buffer, max_rows_to_read);
+			type.deserializeBinary(column, *stream.data_buffer, max_rows_to_read, stream.avg_value_size_hint);
+
+			/// Вычисление подсказки о среднем размере значения.
+			size_t column_size = column.size();
+			if (column_size)
+			{
+				double current_avg_value_size = static_cast<double>(column.byteSize()) / column_size;
+
+				/// Эвристика, чтобы при изменениях, значение avg_value_size_hint быстро росло, но медленно уменьшалось.
+				if (current_avg_value_size > stream.avg_value_size_hint)
+					stream.avg_value_size_hint = current_avg_value_size;
+				else if (current_avg_value_size * 2 < stream.avg_value_size_hint)
+					stream.avg_value_size_hint = (current_avg_value_size + stream.avg_value_size_hint * 3) / 4;
+			}
 		}
 	}
 };

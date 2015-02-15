@@ -30,7 +30,7 @@ public:
 	/// Если тип числовой, уместны ли с ним все арифметические операции и приведение типов.
 	/// true для чисел, false для даты и даты-с-временем.
 	virtual bool behavesAsNumber() const { return false; }
-	
+
 	/// Клонировать
 	virtual SharedPtr<IDataType> clone() const = 0;
 
@@ -49,9 +49,11 @@ public:
 	  *  - в этом случае, столбец сериализуется до конца.
 	  */
 	virtual void serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset = 0, size_t limit = 0) const = 0;
-	
-	/** Считать не более limit значений и дописать их в конец столбца. */
-	virtual void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit) const = 0;
+
+	/** Считать не более limit значений и дописать их в конец столбца.
+	  * avg_value_size_hint - если не 0, то может использоваться, чтобы избежать реаллокаций при чтении строкового столбца.
+	  */
+	virtual void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const = 0;
 
 	/** Текстовая сериализация - для вывода на экран / сохранения в текстовый файл и т. п.
 	  * Без эскейпинга и квотирования.
@@ -68,7 +70,7 @@ public:
 	  */
 	virtual void serializeTextQuoted(const Field & field, WriteBuffer & ostr) const = 0;
 	virtual void deserializeTextQuoted(Field & field, ReadBuffer & istr) const = 0;
-	
+
 	/** Текстовая сериализация в виде литерала для использования в формате JSON.
 	  */
 	virtual void serializeTextJSON(const Field & field, WriteBuffer & ostr) const = 0;

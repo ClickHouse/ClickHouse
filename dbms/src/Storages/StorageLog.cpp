@@ -338,7 +338,7 @@ void LogBlockInputStream::readData(const String & name, const IDataType & type, 
 		}
 	}
 	else
-		type.deserializeBinary(column, streams[name]->compressed, max_rows_to_read);
+		type.deserializeBinary(column, streams[name]->compressed, max_rows_to_read, 0);	/// TODO Использовать avg_value_size_hint.
 }
 
 

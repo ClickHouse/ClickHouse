@@ -110,7 +110,7 @@ int main(int argc, char ** argv)
 			{
 				std::ifstream istr("test");
 				DB::ReadBufferFromIStream in_buf(istr);
-				data_type.deserializeBinary(*column, in_buf, n);
+				data_type.deserializeBinary(*column, in_buf, n, 0);
 			}
 			stopwatch.stop();
 

@@ -70,13 +70,20 @@ void DataTypeString::serializeBinary(const IColumn & column, WriteBuffer & ostr,
 }
 
 
-void DataTypeString::deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit) const
+void DataTypeString::deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
 {
 	ColumnString & column_string = typeid_cast<ColumnString &>(column);
 	ColumnString::Chars_t & data = column_string.getChars();
 	ColumnString::Offsets_t & offsets = column_string.getOffsets();
 
-	data.reserve(data.size() + limit * DBMS_APPROX_STRING_SIZE);
+	/// Выбрано наугад.
+	constexpr auto avg_value_size_hint_reserve_multiplier = 1.2;
+
+	data.reserve(data.size()
+		+ limit * (avg_value_size_hint && avg_value_size_hint > sizeof(offsets[0])
+			? (avg_value_size_hint - sizeof(offsets[0])) * avg_value_size_hint_reserve_multiplier
+			: DBMS_APPROX_STRING_SIZE));
+
 	offsets.reserve(offsets.size() + limit);
 
 	size_t offset = data.size();

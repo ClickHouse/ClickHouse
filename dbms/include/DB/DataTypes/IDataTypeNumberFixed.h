@@ -51,7 +51,7 @@ public:
 		ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(typename ColumnType::value_type) * limit);
 	}
 
-	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit) const
+	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
 	{
 		typename ColumnType::Container_t & x = typeid_cast<ColumnType &>(column).getData();
 		size_t initial_size = x.size();

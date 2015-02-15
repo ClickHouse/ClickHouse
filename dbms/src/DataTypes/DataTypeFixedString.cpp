@@ -49,7 +49,7 @@ void DataTypeFixedString::serializeBinary(const IColumn & column, WriteBuffer & 
 }
 
 
-void DataTypeFixedString::deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit) const
+void DataTypeFixedString::deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
 {
 	ColumnFixedString::Chars_t & data = typeid_cast<ColumnFixedString &>(column).getChars();
 

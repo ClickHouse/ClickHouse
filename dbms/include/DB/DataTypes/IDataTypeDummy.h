@@ -25,8 +25,8 @@ public:
 
 	void serializeBinary(const IColumn & column, WriteBuffer & ostr,
 		size_t offset = 0, size_t limit = 0) const														{ throwNoSerialization(); }
-	
-	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit) const 					{ throwNoSerialization(); }
+
+	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const	{ throwNoSerialization(); }
 
 	void serializeText(const Field & field, WriteBuffer & ostr) const 									{ throwNoSerialization(); }
 	void deserializeText(Field & field, ReadBuffer & istr) const 										{ throwNoSerialization(); }
@@ -36,7 +36,7 @@ public:
 
 	void serializeTextQuoted(const Field & field, WriteBuffer & ostr) const 							{ throwNoSerialization(); }
 	void deserializeTextQuoted(Field & field, ReadBuffer & istr) const 									{ throwNoSerialization(); }
-	
+
 	void serializeTextJSON(const Field & field, WriteBuffer & ostr) const 							{ throwNoSerialization(); }
 
 	SharedPtr<IColumn> createColumn() const

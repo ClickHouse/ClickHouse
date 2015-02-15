@@ -115,7 +115,7 @@ void DataTypeNested::serializeBinary(const IColumn & column, WriteBuffer & ostr,
 }
 
 
-void DataTypeNested::deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit) const
+void DataTypeNested::deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
 {
 	ColumnNested & column_nested = typeid_cast<ColumnNested &>(column);
 	ColumnNested::Offsets_t & offsets = column_nested.getOffsets();
@@ -129,7 +129,7 @@ void DataTypeNested::deserializeBinary(IColumn & column, ReadBuffer & istr, size
 	NamesAndTypesList::const_iterator it = nested->begin();
 	for (size_t i = 0; i < nested->size(); ++i, ++it)
 	{
-		it->type->deserializeBinary(*column_nested.getData()[i], istr, nested_limit);
+		it->type->deserializeBinary(*column_nested.getData()[i], istr, nested_limit, 0);
 		if (column_nested.getData()[i]->size() != last_offset)
 			throw Exception("Cannot read all nested column values", ErrorCodes::CANNOT_READ_ALL_DATA);
 	}
