@@ -101,11 +101,21 @@ static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars_t & data, Column
 				while (sse_src_pos < sse_src_end)
 				{
 					/// NOTE gcc 4.9.2 разворачивает цикл, но почему-то использует только один xmm регистр.
-					for (size_t j = 0; j < UNROLL_TIMES; ++j)
-						_mm_storeu_si128(sse_dst_pos + j, _mm_loadu_si128(sse_src_pos + j));
+					///for (size_t j = 0; j < UNROLL_TIMES; ++j)
+					///	_mm_storeu_si128(sse_dst_pos + j, _mm_loadu_si128(sse_src_pos + j));
 
 					sse_src_pos += UNROLL_TIMES;
 					sse_dst_pos += UNROLL_TIMES;
+
+					if (UNROLL_TIMES >= 3) __asm__("movdqu %0, %%xmm0" :: "m"(sse_src_pos[-3]));
+					if (UNROLL_TIMES >= 2) __asm__("movdqu %0, %%xmm1" :: "m"(sse_src_pos[-2]));
+					if (UNROLL_TIMES >= 1) __asm__("movdqu %0, %%xmm2" :: "m"(sse_src_pos[-1]));
+					if (UNROLL_TIMES >= 0) __asm__("movdqu %0, %%xmm3" :: "m"(sse_src_pos[0]));
+
+					if (UNROLL_TIMES >= 3) __asm__("movdqu %%xmm0, %0" : "=m"(sse_dst_pos[-3]));
+					if (UNROLL_TIMES >= 2) __asm__("movdqu %%xmm1, %0" : "=m"(sse_dst_pos[-2]));
+					if (UNROLL_TIMES >= 1) __asm__("movdqu %%xmm2, %0" : "=m"(sse_dst_pos[-1]));
+					if (UNROLL_TIMES >= 0) __asm__("movdqu %%xmm3, %0" : "=m"(sse_dst_pos[0]));
 				}
 
 				istr.position() += size;
