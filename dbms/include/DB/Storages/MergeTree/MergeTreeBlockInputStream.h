@@ -69,6 +69,7 @@ public:
 		}
 
 		/// Оценим общее количество строк - для прогресс-бара.
+		size_t total_rows = 0;
 		for (const auto & range : all_mark_ranges)
 			total_rows += range.end - range.begin;
 		total_rows *= storage.index_granularity;
@@ -79,6 +80,8 @@ public:
 				? ", up to " + toString((all_mark_ranges.back().end - all_mark_ranges.front().begin) * storage.index_granularity)
 				: "")
 			<< " rows starting from " << all_mark_ranges.front().begin * storage.index_granularity);
+
+		setTotalRowsApprox(total_rows);
 	}
 
 	String getName() const override { return "MergeTreeBlockInputStream"; }
@@ -157,10 +160,6 @@ protected:
 
 		if (!reader)
 		{
-			/// Отправим информацию о том, что собираемся читать примерно столько-то строк.
-			/// NOTE В конструкторе это делать не получилось бы, потому что тогда ещё не установлен progress_callback.
-			progressImpl(Progress(0, 0, total_rows));
-
 			injectRequiredColumns(columns);
 			injectRequiredColumns(pre_columns);
 
@@ -353,7 +352,6 @@ private:
 	ExpressionActionsPtr prewhere_actions;
 	String prewhere_column;
 	bool remove_prewhere_column;
-	size_t total_rows = 0;	/// Приблизительное общее количество строк - для прогресс-бара.
 
 	Logger * log;
 };
