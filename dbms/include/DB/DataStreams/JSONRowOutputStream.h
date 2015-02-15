@@ -4,7 +4,6 @@
 
 #include <DB/Core/Block.h>
 #include <DB/IO/WriteBuffer.h>
-#include <DB/IO/WriteBufferValidUTF8.h>
 #include <DB/DataStreams/IRowOutputStream.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 
@@ -26,7 +25,13 @@ public:
 	void writePrefix() override;
 	void writeSuffix() override;
 
-	void flush() override { ostr.next(); dst_ostr.next(); }
+	void flush() override
+	{
+		ostr->next();
+
+		if (validating_ostr)
+			dst_ostr.next();
+	}
 
 	void setRowsBeforeLimit(size_t rows_before_limit_) override
 	{
@@ -44,11 +49,13 @@ protected:
 	virtual void writeExtremes();
 
 	WriteBuffer & dst_ostr;
-	WriteBufferValidUTF8 ostr;	/// Валидирует и пишет в dst_ostr.
-	size_t field_number;
-	size_t row_count;
-	bool applied_limit;
-	size_t rows_before_limit;
+	std::unique_ptr<WriteBuffer> validating_ostr;	/// Валидирует UTF-8 последовательности.
+	WriteBuffer * ostr;
+
+	size_t field_number = 0;
+	size_t row_count = 0;
+	bool applied_limit = false;
+	size_t rows_before_limit = 0;
 	NamesAndTypes fields;
 	Block totals;
 	Block extremes;
