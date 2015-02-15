@@ -12,6 +12,8 @@
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/VarInt.h>
 
+#include <emmintrin.h>
+
 
 namespace DB
 {
@@ -100,7 +102,30 @@ void DataTypeString::deserializeBinary(IColumn & column, ReadBuffer & istr, size
 
 		data.resize(offset);
 
-		istr.readStrict(reinterpret_cast<char*>(&data[offset - size - 1]), sizeof(ColumnUInt8::value_type) * size);
+		if (size)
+		{
+			/// Оптимистичная ветка, в которой возможно более эффективное копирование.
+			if (offset + 16 <= data.capacity() && istr.position() + size + 16 <= istr.buffer().end())
+			{
+				const __m128i * sse_src_pos = reinterpret_cast<const __m128i *>(istr.position());
+				const __m128i * sse_src_end = sse_src_pos + (size + 15) / 16;
+				__m128i * sse_dst_pos = reinterpret_cast<__m128i *>(&data[offset - size - 1]);
+
+				while (sse_src_pos < sse_src_end)
+				{
+					_mm_storeu_si128(sse_dst_pos, _mm_loadu_si128(sse_src_pos));
+					++sse_src_pos;
+					++sse_dst_pos;
+				}
+
+				istr.position() += size;
+			}
+			else
+			{
+				istr.readStrict(reinterpret_cast<char*>(&data[offset - size - 1]), size);
+			}
+		}
+
 		data[offset - 1] = 0;
 	}
 }
