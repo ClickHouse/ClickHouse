@@ -80,9 +80,9 @@ void DataTypeString::deserializeBinary(IColumn & column, ReadBuffer & istr, size
 	constexpr auto avg_value_size_hint_reserve_multiplier = 1.2;
 
 	data.reserve(data.size()
-		+ limit * (avg_value_size_hint && avg_value_size_hint > sizeof(offsets[0])
+		+ std::ceil(limit * (avg_value_size_hint && avg_value_size_hint > sizeof(offsets[0])
 			? (avg_value_size_hint - sizeof(offsets[0])) * avg_value_size_hint_reserve_multiplier
-			: DBMS_APPROX_STRING_SIZE));
+			: DBMS_APPROX_STRING_SIZE)));
 
 	offsets.reserve(offsets.size() + limit);
 
