@@ -7,6 +7,8 @@
 #include <DB/DataStreams/ConcatBlockInputStream.h>
 #include <DB/DataStreams/CollapsingFinalBlockInputStream.h>
 #include <DB/DataStreams/AddingConstColumnBlockInputStream.h>
+#include <DB/DataStreams/CreatingSetsBlockInputStream.h>
+#include <DB/DataStreams/NullBlockInputStream.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Common/VirtualColumnUtils.h>
 
@@ -249,7 +251,14 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 		ExpressionAnalyzer analyzer(select.prewhere_expression, data.context, data.getColumnsList());
 		prewhere_actions = analyzer.getActions(false);
 		prewhere_column = select.prewhere_expression->getColumnName();
-		/// TODO: Чтобы работали подзапросы в PREWHERE, можно тут сохранить analyzer.getSetsWithSubqueries(), а потом их выполнить.
+		SubqueriesForSets prewhere_subqueries = analyzer.getSubqueriesForSets();
+
+		/** Вычислим подзапросы прямо сейчас.
+		  * NOTE Недостаток - эти вычисления не вписываются в конвейер выполнения запроса.
+		  * Они делаются до начала выполнения конвейера; их нельзя прервать; во время вычислений не отправляются пакеты прогресса.
+		  */
+		if (!prewhere_subqueries.empty())
+			CreatingSetsBlockInputStream(new NullBlockInputStream, prewhere_subqueries, settings.limits).read();
 	}
 
 	RangesInDataParts parts_with_ranges;
@@ -317,6 +326,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 	return res;
 }
+
 
 BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 	RangesInDataParts parts,
@@ -421,6 +431,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 					data.getFullPath() + part.data_part->name + '/', max_block_size, column_names, data,
 					part.data_part, ranges_to_get_from_part, use_uncompressed_cache,
 					prewhere_actions, prewhere_column));
+
 				for (const String & virt_column : virt_columns)
 				{
 					if (virt_column == "_part")
