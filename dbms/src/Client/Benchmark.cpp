@@ -55,9 +55,10 @@ class Benchmark
 public:
 	Benchmark(unsigned concurrency_, double delay_,
 			const String & host_, UInt16 port_, const String & default_database_,
-			const String & user_, const String & password_)
+			const String & user_, const String & password_, const Settings & settings_)
 		: concurrency(concurrency_), delay(delay_), queue(concurrency), pool(concurrency),
-		connections(concurrency, host_, port_, default_database_, user_, password_, data_type_factory)
+		connections(concurrency, host_, port_, default_database_, user_, password_, data_type_factory),
+		settings(settings_)
 	{
 		std::cerr << std::fixed << std::setprecision(3);
 
@@ -81,6 +82,7 @@ private:
 
 	DataTypeFactory data_type_factory;
 	ConnectionPool connections;
+	Settings settings;
 
 	struct Stats
 	{
@@ -237,7 +239,7 @@ private:
 	void execute(ConnectionPool::Entry & connection, Query & query)
 	{
 		Stopwatch watch;
-		RemoteBlockInputStream stream(connection, query, nullptr);
+		RemoteBlockInputStream stream(connection, query, &settings);
 
 		Progress progress;
 		stream.setProgressCallback([&progress](const Progress & value) { progress.incrementPiecewiseAtomically(value); });
@@ -304,6 +306,12 @@ int main(int argc, char ** argv)
 			("user", boost::program_options::value<std::string>()->default_value("default"), "")
 			("password", boost::program_options::value<std::string>()->default_value(""), "")
 			("database", boost::program_options::value<std::string>()->default_value("default"), "")
+		#define DECLARE_SETTING(TYPE, NAME, DEFAULT) (#NAME, boost::program_options::value<std::string> (), "Settings.h")
+		#define DECLARE_LIMIT(TYPE, NAME, DEFAULT) (#NAME, boost::program_options::value<std::string> (), "Limits.h")
+			APPLY_FOR_SETTINGS(DECLARE_SETTING)
+			APPLY_FOR_LIMITS(DECLARE_LIMIT)
+		#undef DECLARE_SETTING
+		#undef DECLARE_LIMIT
 		;
 
 		boost::program_options::variables_map options;
@@ -316,6 +324,16 @@ int main(int argc, char ** argv)
 			return 1;
 		}
 
+		/// Извлекаем settings and limits из полученных options
+		Settings settings;
+
+		#define EXTRACT_SETTING(TYPE, NAME, DEFAULT) \
+		if (options.count(#NAME)) \
+			settings.set(#NAME, options[#NAME].as<std::string>());
+		APPLY_FOR_SETTINGS(EXTRACT_SETTING)
+		APPLY_FOR_LIMITS(EXTRACT_SETTING)
+		#undef EXTRACT_SETTING
+
 		Benchmark benchmark(
 			options["concurrency"].as<unsigned>(),
 			options["delay"].as<double>(),
@@ -323,7 +341,8 @@ int main(int argc, char ** argv)
 			options["port"].as<UInt16>(),
 			options["database"].as<std::string>(),
 			options["user"].as<std::string>(),
-			options["password"].as<std::string>());
+			options["password"].as<std::string>(),
+			settings);
 	}
 	catch (const Exception & e)
 	{
