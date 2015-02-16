@@ -173,7 +173,10 @@ public:
 		}
 
 		if (!minimum_size_column)
-			throw std::logic_error{"could not find a column of minimum size in MergeTree"};
+			throw Exception{
+				"could not find a column of minimum size in MergeTree",
+				ErrorCodes::LOGICAL_ERROR
+			};
 
 		addStream(minimum_size_column->name, *minimum_size_column->type, all_mark_ranges);
 		columns.emplace(std::begin(columns), *minimum_size_column);
@@ -182,7 +185,7 @@ public:
 	}
 
 	/// Заполняет столбцы, которых нет в блоке, значениями по умолчанию.
-	void fillMissingColumns(Block & res)
+	void fillMissingColumns(Block & res, const Names & ordered_names)
 	{
 		try
 		{
@@ -259,15 +262,23 @@ public:
 				columns.erase(std::begin(columns));
 			}
 
-			/// sort columns to ensure consistent order among all block
+			/// sort columns to ensure consistent order among all blocks
 			if (should_sort)
 			{
-				Block sorted_block;
+				Block ordered_block;
 
-				for (const auto & name_and_type : columns)
-					sorted_block.insert(res.getByName(name_and_type.name));
+				for (const auto & name : ordered_names)
+					if (res.has(name))
+						ordered_block.insert(res.getByName(name));
 
-				std::swap(res, sorted_block);
+				if (res.columns() != ordered_block.columns())
+					throw Exception{
+						"Ordered block has different columns than original one:\n" +
+							ordered_block.dumpNames() + "\nvs.\n" + res.dumpNames(),
+						ErrorCodes::LOGICAL_ERROR
+					};
+
+				std::swap(res, ordered_block);
 			}
 			else if (added_column)
 			{
