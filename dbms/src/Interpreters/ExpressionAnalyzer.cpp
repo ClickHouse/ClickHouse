@@ -67,9 +67,9 @@ const std::unordered_set<String> injective_function_names
 
 void ExpressionAnalyzer::init()
 {
-	optimizeOrChains();
-
 	select_query = typeid_cast<ASTSelectQuery *>(&*ast);
+
+	optimizeDisjunctiveEqualityChains();
 
 	addStorageAliases();
 
@@ -464,11 +464,16 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 	finished_asts[initial_ast] = ast;
 }
 
-// XXX Temporary design during development phase.
-
-struct OrWithIdentifier
+namespace
 {
-	OrWithIdentifier(ASTFunction * or_function_, IAST * parent_, const std::string & identifier_)
+
+//
+// XXX Code in progress. Ignore for now.
+//
+
+struct LogicalOrWithLeftHandSide
+{
+	LogicalOrWithLeftHandSide(ASTFunction * or_function_, IAST * parent_, const std::string & identifier_)
 		: or_function(or_function_), parent(parent_), identifier(identifier_)
 	{
 	}
@@ -478,7 +483,7 @@ struct OrWithIdentifier
 	const std::string & identifier;
 };
 
-bool operator<(const OrWithIdentifier & lhs, const OrWithIdentifier & rhs)
+bool operator<(const LogicalOrWithLeftHandSide & lhs, const LogicalOrWithLeftHandSide & rhs)
 {
 	if (lhs.or_function < rhs.or_function)
 		return true;
@@ -490,23 +495,50 @@ bool operator<(const OrWithIdentifier & lhs, const OrWithIdentifier & rhs)
 	if (lhs.parent > rhs.parent)
 		return false;
 
-	if (lhs.identifier < rhs.identifier)
+	int val = lhs.identifier.compare(rhs.identifier);
+	if (val < 0)
 		return true;
-	if (lhs.identifier > rhs.identifier)
+	if (val > 0)
 		return false;
 
 	return false;
 }
 
-using EqualFunctionList = std::vector<ASTFunction *>;
-using EqualFunctionMap = std::map<OrWithIdentifier, EqualFunctionList>;
+using Equalities = std::vector<ASTFunction *>;
+
+/// Цепочки x = c[1] OR x = c[2] OR ... x = C[N], где x - произвольное выражение
+/// и c[1], c[2], ..., c[N] - литералы одного типа.
+using DisjunctiveEqualitiesMap = std::map<LogicalOrWithLeftHandSide, Equalities>;
+
 using ASTFunctionPtr = Poco::SharedPtr<ASTFunction>;
 
-/// Создать новое выражение IN на основе цепочки из выражения OR.
-ASTFunctionPtr createInExpression(const OrWithIdentifier & or_with_identifier, const EqualFunctionList & equal_function_list)
+bool mustTransform(const Equalities & equalities)
+{
+	const UInt64 mutation_threshold = 6;
+
+	if (equalities.size() < mutation_threshold)
+		return false;
+
+	bool check = true;
+	auto first_expr = static_cast<ASTExpressionList *>(&*(equalities[0]->children[0]));
+	auto first_literal = static_cast<ASTLiteral *>(&*(first_expr->children[1]));
+	for (size_t i = 1; i < equalities.size(); ++i)
+	{
+		auto expr = static_cast<ASTExpressionList *>(&*(equalities[i]->children[0]));
+		auto literal = static_cast<ASTLiteral *>(&*(expr->children[1]));
+
+		if (literal->type != first_literal->type)
+			return false;
+	}
+	return true;
+}
+
+/// Создать новое выражение IN на основе цепочки OR.
+/// Предполагается, что все нужны проверки уже сделаны в optimizeDisjunctiveEqualityChains.
+ASTFunctionPtr createInExpression(const LogicalOrWithLeftHandSide & logical_or_with_lhs, const Equalities & equalities)
 {
 	ASTPtr value_list = new ASTExpressionList;
-	for (auto function : equal_function_list)
+	for (auto function : equalities)
 	{
 		auto expr = static_cast<ASTExpressionList *>(&*(function->children[0]));
 		auto literal = static_cast<ASTLiteral *>(&*(expr->children[1]));
@@ -519,7 +551,7 @@ ASTFunctionPtr createInExpression(const OrWithIdentifier & or_with_identifier, c
 	tuple_function->children.push_back(tuple_function->arguments);
 
 	Poco::SharedPtr<ASTIdentifier> identifier = new ASTIdentifier;
-	identifier->name = or_with_identifier.identifier;
+	identifier->name = logical_or_with_lhs.identifier;
 
 	ASTPtr in_expr = new ASTExpressionList;
 	in_expr->children.push_back(identifier);
@@ -533,20 +565,12 @@ ASTFunctionPtr createInExpression(const OrWithIdentifier & or_with_identifier, c
 	return in_function;
 }
 
-void ExpressionAnalyzer::optimizeOrChains()
+void collectDisjunctiveEqualityChains(ASTPtr root, DisjunctiveEqualitiesMap & disjunctive_equalities_map)
 {
-	EqualFunctionMap equal_function_map;
+	using NodeWithParent = std::pair<ASTPtr, ASTPtr>;
 
-	/// XXX Temporary hack during development phase.
-	UInt64 mutation_threshold = 3;
-
-	/** 1. Поиск кандидатов
-	  */
-
-	/// (node, parent node)
-	//// XXX Лучше бы IAST имел атрибут parent.
-	std::deque<std::pair<ASTPtr, ASTPtr> > to_visit;
-	to_visit.push_back(std::make_pair(ast, ASTPtr()));
+	std::deque<NodeWithParent> to_visit;
+	to_visit.push_back(NodeWithParent(root, ASTPtr()));
 
 	while (!to_visit.empty())
 	{
@@ -579,8 +603,8 @@ void ExpressionAnalyzer::optimizeOrChains()
 								ASTLiteral * literal = typeid_cast<ASTLiteral *>(&*(equals_expression_list->children[1]));
 								if (literal != nullptr)
 								{
-									OrWithIdentifier pp(function, parent.get(), identifier->name);
-									equal_function_map[pp].push_back(equals);
+									LogicalOrWithLeftHandSide logical_or_with_lhs(function, parent.get(), identifier->name);
+									disjunctive_equalities_map[logical_or_with_lhs].push_back(equals);
 									found = true;
 								}
 							}
@@ -593,72 +617,25 @@ void ExpressionAnalyzer::optimizeOrChains()
 		if (!found)
 			for (auto & child : node->children)
 				if (typeid_cast<ASTSelectQuery *>(&*child) == nullptr)
-					to_visit.push_back(std::make_pair(child, node));
+					to_visit.push_back(NodeWithParent(child, node));
 	}
 
-	for (auto & e : equal_function_map)
+	for (auto & e : disjunctive_equalities_map)
 	{
-		EqualFunctionList & equal_function_list = e.second;
-		std::sort(equal_function_list.begin(), equal_function_list.end());
+		Equalities & equalities = e.second;
+		std::sort(equalities.begin(), equalities.end());
 	}
+}
 
-	/** 2. Заменяем длинные цепочки на выражения IN.
-	  */
-	for (const auto & e : equal_function_map)
+void fixBrokenOrExpressions(ASTSelectQuery & select_query, DisjunctiveEqualitiesMap & disjunctive_equalities_map)
+{
+	for (const auto & e : disjunctive_equalities_map)
 	{
-		const OrWithIdentifier & pp = e.first; 
-		const EqualFunctionList & equal_function_list = e.second;
+		const LogicalOrWithLeftHandSide & logical_or_with_lhs = e.first;
+		const Equalities & equalities = e.second;
 
-		/** Пропускать цепочку, если она слишком коротка или содержит данные разних типов.
-		  */
-
-		if (equal_function_list.size() < mutation_threshold)
-			continue;
-
-		bool check = true;
-		auto first_expr = static_cast<ASTExpressionList *>(&*(equal_function_list[0]->children[0]));
-		auto first_literal = static_cast<ASTLiteral *>(&*(first_expr->children[1]));
-		for (size_t i = 1; i < equal_function_list.size(); ++i)
-		{
-			auto expr = static_cast<ASTExpressionList *>(&*(equal_function_list[i]->children[0]));
-			auto literal = static_cast<ASTLiteral *>(&*(expr->children[1]));
-
-			if (literal->type != first_literal->type)
-				check = false;
-		}
-		if (!check)
-			continue;
-
-		/** Создать новое выражение IN.
-		  */
-
-		auto in_expr = createInExpression(pp, equal_function_list);
-
-		/** Вставить это выражение в запрос.
-		  */
-
-		ASTFunction * or_function = pp.or_function;
-		ASTExpressionList * expression_list = static_cast<ASTExpressionList *>(&*(or_function->children[0]));
-		auto & children = expression_list->children;
-
-		children.push_back(in_expr);
-
-		auto it = std::remove_if(children.begin(), children.end(), [&](const ASTPtr & node)
-		{
-			return std::binary_search(equal_function_list.begin(), equal_function_list.end(), node.get());
-		});
-		children.erase(it, children.end());
-	}
-
-	/** 3. Удалить узлы OR, которые имеют только один узел типа Function.
-	  */
-	for (const auto & e : equal_function_map)
-	{
-		const OrWithIdentifier & pp = e.first;
-		const EqualFunctionList & equal_function_list = e.second;
-
-		ASTFunction * or_function = pp.or_function;
-		IAST * parent = pp.parent;
+		ASTFunction * or_function = logical_or_with_lhs.or_function;
+		IAST * parent = logical_or_with_lhs.parent;
 		ASTExpressionList * expression_list = static_cast<ASTExpressionList *>(&*(or_function->children[0]));
 		auto & children = expression_list->children;
 
@@ -668,12 +645,66 @@ void ExpressionAnalyzer::optimizeOrChains()
 			auto it = std::remove(parent->children.begin(), parent->children.end(), or_function);
 			parent->children.erase(it, parent->children.end());
 
-			/// Если узел OR был корнем выражения WHERE, то следует обновить этот корень.
-			auto select = typeid_cast<ASTSelectQuery *>(&*ast);
-			if (or_function == select->where_expression.get())
-				select->where_expression = children[0];
+			/// Если узел OR был корнем выражения WHERE, PREWHERE или HAVING, то следует обновить этот корень.
+			if (or_function == select_query.where_expression.get())
+				select_query.where_expression = children[0];
+			else if (or_function == select_query.prewhere_expression.get())
+				select_query.prewhere_expression = children[0];
+			else if (or_function == select_query.having_expression.get())
+				select_query.having_expression = children[0];
 		}
 	}
+}
+
+}
+
+void ExpressionAnalyzer::optimizeDisjunctiveEqualityChains()
+{
+	if (select_query == nullptr)
+		return;
+
+	/** 1. Поиск всех цепочек OR.
+	  */
+	DisjunctiveEqualitiesMap disjunctive_equalities_map;
+	collectDisjunctiveEqualityChains(ast, disjunctive_equalities_map);
+
+	/** 2. Заменяем длинные цепочки на выражения IN.
+	  */
+	for (const auto & e : disjunctive_equalities_map)
+	{
+		const LogicalOrWithLeftHandSide & logical_or_with_lhs = e.first; 
+		const Equalities & equalities = e.second;
+
+		/** Пропустить цепочку, если она слишком коротка или содержит данные разних типов.
+		  */
+
+		if (!mustTransform(equalities))
+			continue;
+
+		/** Создать новое выражение IN.
+		  */
+
+		auto in_expr = createInExpression(logical_or_with_lhs, equalities);
+
+		/** Вставить это выражение в запрос.
+		  */
+
+		ASTFunction * or_function = logical_or_with_lhs.or_function;
+		ASTExpressionList * expression_list = static_cast<ASTExpressionList *>(&*(or_function->children[0]));
+		auto & children = expression_list->children;
+
+		children.push_back(in_expr);
+
+		auto it = std::remove_if(children.begin(), children.end(), [&](const ASTPtr & node)
+		{
+			return std::binary_search(equalities.begin(), equalities.end(), node.get());
+		});
+		children.erase(it, children.end());
+	}
+
+	/** 3. Удалить узлы OR, которые имеют только один узел типа Function.
+	  */
+	fixBrokenOrExpressions(*select_query, disjunctive_equalities_map);
 }
 
 void ExpressionAnalyzer::optimizeGroupBy()

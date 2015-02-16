@@ -218,7 +218,7 @@ private:
 	/** Заменить все цепочки вида c = x1 OR c = x2 OR ... OR c = xN на выражения c IN (x1, x2, ..., xN),
 	  * где c - произвольное выражение; x1, x2, ... xN - литералы одного типа.
 	  */
-	void optimizeOrChains();
+	void optimizeDisjunctiveEqualityChains();
 
 	///	Eliminates injective function calls and constant expressions from group by statement
 	void optimizeGroupBy();
