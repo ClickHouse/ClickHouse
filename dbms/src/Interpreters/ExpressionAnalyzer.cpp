@@ -514,12 +514,11 @@ using ASTFunctionPtr = Poco::SharedPtr<ASTFunction>;
 
 bool mustTransform(const Equalities & equalities)
 {
-	const UInt64 mutation_threshold = 6;
+	const UInt64 mutation_threshold = 3;
 
 	if (equalities.size() < mutation_threshold)
 		return false;
 
-	bool check = true;
 	auto first_expr = static_cast<ASTExpressionList *>(&*(equalities[0]->children[0]));
 	auto first_literal = static_cast<ASTLiteral *>(&*(first_expr->children[1]));
 	for (size_t i = 1; i < equalities.size(); ++i)
