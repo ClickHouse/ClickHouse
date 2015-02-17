@@ -486,13 +486,13 @@ namespace
 
 struct LogicalOrWithLeftHandSide
 {
-	LogicalOrWithLeftHandSide(ASTFunction * or_function_, const std::string & identifier_)
-		: or_function(or_function_), identifier(identifier_)
+	LogicalOrWithLeftHandSide(ASTFunction * or_function_, const std::string & expression_)
+		: or_function(or_function_), expression(expression_)
 	{
 	}
 
 	ASTFunction * or_function;
-	const std::string & identifier;
+	const std::string expression;
 };
 
 bool operator<(const LogicalOrWithLeftHandSide & lhs, const LogicalOrWithLeftHandSide & rhs)
@@ -502,7 +502,7 @@ bool operator<(const LogicalOrWithLeftHandSide & lhs, const LogicalOrWithLeftHan
 	if (lhs.or_function > rhs.or_function)
 		return false;
 
-	int val = lhs.identifier.compare(rhs.identifier);
+	int val = lhs.expression.compare(rhs.expression);
 	if (val < 0)
 		return true;
 	if (val > 0)
@@ -553,16 +553,17 @@ ASTFunctionPtr createInExpression(const LogicalOrWithLeftHandSide & logical_or_w
 		value_list->children.push_back(literal->clone());
 	}
 
+	auto function = equalities[0];
+	auto expr = static_cast<ASTExpressionList *>(&*(function->children[0]));
+	auto equals_expr_lhs = static_cast<ASTLiteral *>(&*(expr->children[0]));
+
 	ASTFunctionPtr tuple_function = new ASTFunction;
 	tuple_function->name = "tuple";
 	tuple_function->arguments = value_list;
 	tuple_function->children.push_back(tuple_function->arguments);
 
-	Poco::SharedPtr<ASTIdentifier> identifier = new ASTIdentifier;
-	identifier->name = logical_or_with_lhs.identifier;
-
 	ASTPtr in_expr = new ASTExpressionList;
-	in_expr->children.push_back(identifier);
+	in_expr->children.push_back(equals_expr_lhs->clone());
 	in_expr->children.push_back(tuple_function);
 
 	ASTFunctionPtr in_function = new ASTFunction;
@@ -609,18 +610,14 @@ void collectDisjunctiveEqualityChains(ASTPtr root, DisjunctiveEqualitiesMap & di
 						if ((equals_expression_list != nullptr) && (equals_expression_list->children.size() == 2))
 						{
 							// Равенство c = xk
-							//auto str = queryToString(equals_expression_list->children[0]);
+							auto expr_lhs = queryToString(equals_expression_list->children[0]);
 
-							ASTIdentifier * identifier = typeid_cast<ASTIdentifier *>(&*(equals_expression_list->children[0]));
-							if (identifier != nullptr)
+							ASTLiteral * literal = typeid_cast<ASTLiteral *>(&*(equals_expression_list->children[1]));
+							if (literal != nullptr)
 							{
-								ASTLiteral * literal = typeid_cast<ASTLiteral *>(&*(equals_expression_list->children[1]));
-								if (literal != nullptr)
-								{
-									LogicalOrWithLeftHandSide logical_or_with_lhs(function, identifier->name);
-									disjunctive_equalities_map[logical_or_with_lhs].push_back(equals);
-									found = true;
-								}
+								LogicalOrWithLeftHandSide logical_or_with_lhs(function, expr_lhs);
+								disjunctive_equalities_map[logical_or_with_lhs].push_back(equals);
+								found = true;
 							}
 						}
 					}
