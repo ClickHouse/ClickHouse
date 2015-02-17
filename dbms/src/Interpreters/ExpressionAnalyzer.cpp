@@ -69,7 +69,20 @@ void ExpressionAnalyzer::init()
 {
 	select_query = typeid_cast<ASTSelectQuery *>(&*ast);
 
+	{
+		std::ostringstream os;
+		ast->dumpTree(os);
+		LOG_DEBUG(&Logger::get("ExpressionAnalyzer"), "Before: " << os.str());
+		LOG_DEBUG(&Logger::get("ExpressionAnalyzer"), "######################################");
+	}
+
 	optimizeDisjunctiveEqualityChains();
+
+	{
+		std::ostringstream os;
+		ast->dumpTree(os);
+		LOG_DEBUG(&Logger::get("ExpressionAnalyzer"), "After: " << os.str());
+	}
 
 	addStorageAliases();
 
@@ -473,13 +486,12 @@ namespace
 
 struct LogicalOrWithLeftHandSide
 {
-	LogicalOrWithLeftHandSide(ASTFunction * or_function_, IAST * parent_, const std::string & identifier_)
-		: or_function(or_function_), parent(parent_), identifier(identifier_)
+	LogicalOrWithLeftHandSide(ASTFunction * or_function_, const std::string & identifier_)
+		: or_function(or_function_), identifier(identifier_)
 	{
 	}
 
 	ASTFunction * or_function;
-	IAST * parent;
 	const std::string & identifier;
 };
 
@@ -488,11 +500,6 @@ bool operator<(const LogicalOrWithLeftHandSide & lhs, const LogicalOrWithLeftHan
 	if (lhs.or_function < rhs.or_function)
 		return true;
 	if (lhs.or_function > rhs.or_function)
-		return false;
-
-	if (lhs.parent < rhs.parent)
-		return true;
-	if (lhs.parent > rhs.parent)
 		return false;
 
 	int val = lhs.identifier.compare(rhs.identifier);
@@ -511,6 +518,8 @@ using Equalities = std::vector<ASTFunction *>;
 using DisjunctiveEqualitiesMap = std::map<LogicalOrWithLeftHandSide, Equalities>;
 
 using ASTFunctionPtr = Poco::SharedPtr<ASTFunction>;
+
+using ParentMap = std::map<ASTFunction *, std::vector<IAST *> >;
 
 bool mustTransform(const Equalities & equalities)
 {
@@ -564,25 +573,29 @@ ASTFunctionPtr createInExpression(const LogicalOrWithLeftHandSide & logical_or_w
 	return in_function;
 }
 
-void collectDisjunctiveEqualityChains(ASTPtr root, DisjunctiveEqualitiesMap & disjunctive_equalities_map)
+void collectDisjunctiveEqualityChains(ASTPtr root, DisjunctiveEqualitiesMap & disjunctive_equalities_map, ParentMap & parent_map)
 {
-	using NodeWithParent = std::pair<ASTPtr, ASTPtr>;
+	using Edge = std::pair<ASTPtr, ASTPtr>;
 
-	std::deque<NodeWithParent> to_visit;
-	to_visit.push_back(NodeWithParent(root, ASTPtr()));
+	std::deque<Edge> to_visit;
+	to_visit.push_back(Edge(ASTPtr(), root));
 
 	while (!to_visit.empty())
 	{
-		auto node_with_parent = to_visit.front();
-		auto & node = node_with_parent.first;
-		auto & parent = node_with_parent.second;
+		auto edge = to_visit.front();
+		auto & from_node = edge.first;
+		auto & to_node = edge.second;
+
 		to_visit.pop_front();
 
 		bool found = false;
 
-		ASTFunction * function = typeid_cast<ASTFunction *>(&*node);
+		ASTFunction * function = typeid_cast<ASTFunction *>(&*to_node);
 		if ((function != nullptr) && (function->name == "or") && (function->children.size() == 1))
 		{
+			if (!from_node.isNull())
+				parent_map[function].push_back(from_node.get());
+
 			ASTExpressionList * expression_list = typeid_cast<ASTExpressionList *>(&*(function->children[0]));
 			if (expression_list != nullptr)
 			{
@@ -596,13 +609,15 @@ void collectDisjunctiveEqualityChains(ASTPtr root, DisjunctiveEqualitiesMap & di
 						if ((equals_expression_list != nullptr) && (equals_expression_list->children.size() == 2))
 						{
 							// Равенство c = xk
+							//auto str = queryToString(equals_expression_list->children[0]);
+
 							ASTIdentifier * identifier = typeid_cast<ASTIdentifier *>(&*(equals_expression_list->children[0]));
 							if (identifier != nullptr)
 							{
 								ASTLiteral * literal = typeid_cast<ASTLiteral *>(&*(equals_expression_list->children[1]));
 								if (literal != nullptr)
 								{
-									LogicalOrWithLeftHandSide logical_or_with_lhs(function, parent.get(), identifier->name);
+									LogicalOrWithLeftHandSide logical_or_with_lhs(function, identifier->name);
 									disjunctive_equalities_map[logical_or_with_lhs].push_back(equals);
 									found = true;
 								}
@@ -614,9 +629,9 @@ void collectDisjunctiveEqualityChains(ASTPtr root, DisjunctiveEqualitiesMap & di
 		}
 
 		if (!found)
-			for (auto & child : node->children)
+			for (auto & child : to_node->children)
 				if (typeid_cast<ASTSelectQuery *>(&*child) == nullptr)
-					to_visit.push_back(NodeWithParent(child, node));
+					to_visit.push_back(Edge(to_node, child));
 	}
 
 	for (auto & e : disjunctive_equalities_map)
@@ -626,7 +641,7 @@ void collectDisjunctiveEqualityChains(ASTPtr root, DisjunctiveEqualitiesMap & di
 	}
 }
 
-void fixBrokenOrExpressions(ASTSelectQuery & select_query, DisjunctiveEqualitiesMap & disjunctive_equalities_map)
+void fixBrokenOrExpressions(ASTSelectQuery & select_query, const DisjunctiveEqualitiesMap & disjunctive_equalities_map, ParentMap & parent_map)
 {
 	for (const auto & e : disjunctive_equalities_map)
 	{
@@ -634,15 +649,18 @@ void fixBrokenOrExpressions(ASTSelectQuery & select_query, DisjunctiveEqualities
 		const Equalities & equalities = e.second;
 
 		ASTFunction * or_function = logical_or_with_lhs.or_function;
-		IAST * parent = logical_or_with_lhs.parent;
 		ASTExpressionList * expression_list = static_cast<ASTExpressionList *>(&*(or_function->children[0]));
 		auto & children = expression_list->children;
 
-		if ((parent != nullptr) && (children.size() == 1))
+		if (children.size() == 1)
 		{
-			parent->children.push_back(children[0]);
-			auto it = std::remove(parent->children.begin(), parent->children.end(), or_function);
-			parent->children.erase(it, parent->children.end());
+			std::vector<IAST *> & parents = parent_map[or_function];
+			for (auto & parent : parents)
+			{
+				parent->children.push_back(children[0]);
+				auto it = std::remove(parent->children.begin(), parent->children.end(), or_function);
+				parent->children.erase(it, parent->children.end());
+			}
 
 			/// Если узел OR был корнем выражения WHERE, PREWHERE или HAVING, то следует обновить этот корень.
 			if (or_function == select_query.where_expression.get())
@@ -665,7 +683,8 @@ void ExpressionAnalyzer::optimizeDisjunctiveEqualityChains()
 	/** 1. Поиск всех цепочек OR.
 	  */
 	DisjunctiveEqualitiesMap disjunctive_equalities_map;
-	collectDisjunctiveEqualityChains(ast, disjunctive_equalities_map);
+	ParentMap parent_map;
+	collectDisjunctiveEqualityChains(ast, disjunctive_equalities_map, parent_map);
 
 	/** 2. Заменяем длинные цепочки на выражения IN.
 	  */
@@ -703,7 +722,7 @@ void ExpressionAnalyzer::optimizeDisjunctiveEqualityChains()
 
 	/** 3. Удалить узлы OR, которые имеют только один узел типа Function.
 	  */
-	fixBrokenOrExpressions(*select_query, disjunctive_equalities_map);
+	fixBrokenOrExpressions(*select_query, disjunctive_equalities_map, parent_map);
 }
 
 void ExpressionAnalyzer::optimizeGroupBy()
