@@ -65,7 +65,13 @@ public:
 	  * - проверяются ограничения и квоты, которые должны быть проверены не в рамках одного источника,
 	  *   а над общим количеством потраченных ресурсов во всех источниках сразу (информация в ProcessList-е).
 	  */
-	virtual void progress(const Progress & value) { progressImpl(value); }
+	virtual void progress(const Progress & value)
+	{
+		/// Данные для прогресса берутся из листовых источников.
+		if (children.empty())
+			progressImpl(value);
+	}
+
 	void progressImpl(const Progress & value);
 
 
@@ -76,6 +82,10 @@ public:
 	  * Также эта информация будет доступна в запросе SHOW PROCESSLIST.
 	  */
 	void setProcessListElement(ProcessList::Element * elem);
+
+	/** Установить информацию о приблизительном общем количестве строк, которых нужно прочитать.
+	  */
+	void setTotalRowsApprox(size_t value) { total_rows_approx = value; }
 
 
 	/** Попросить прервать получение данных как можно скорее.
@@ -161,6 +171,10 @@ protected:
 	Block totals;
 	/// Минимумы и максимумы. Первая строчка блока - минимумы, вторая - максимумы.
 	Block extremes;
+	/// Приблизительное общее количество строк, которых нужно прочитать. Для прогресс-бара.
+	size_t total_rows_approx = 0;
+	/// Информация о приблизительном общем количестве строк собрана в родительском источнике.
+	bool collected_total_rows_approx = false;
 
 	/// Ограничения и квоты.
 
@@ -182,6 +196,14 @@ protected:
 	  */
 	bool checkLimits();
 	void checkQuota(Block & block);
+
+	/// Собрать информацию о приблизительном общем числе строк по всем детям.
+	void collectTotalRowsApprox();
+
+	/** Передать информацию о приблизительном общем числе строк в колбэк прогресса.
+	  * Сделано так, что отправка происходит лишь в верхнем источнике.
+	  */
+	void collectAndSendTotalRowsApprox();
 };
 
 }

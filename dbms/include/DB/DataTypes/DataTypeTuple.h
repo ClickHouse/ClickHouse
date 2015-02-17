@@ -19,7 +19,7 @@ private:
 	DataTypes elems;
 public:
 	DataTypeTuple(DataTypes elems_) : elems(elems_) {}
-	
+
 	std::string getName() const
 	{
 		std::stringstream s;
@@ -28,7 +28,7 @@ public:
 		for (DataTypes::const_iterator it = elems.begin(); it != elems.end(); ++it)
 			s << (it == elems.begin() ? "" : ", ") << (*it)->getName();
 		s << ")";
-		
+
 		return s.str();
 	}
 
@@ -62,7 +62,7 @@ public:
 		}
 		writeChar(')', ostr);
 	}
-	
+
 	void deserializeText(Field & field, ReadBuffer & istr) const
 	{
 		size_t size = elems.size();
@@ -82,7 +82,7 @@ public:
 	{
 		serializeText(field, ostr);
 	}
-	
+
 	void deserializeTextEscaped(Field & field, ReadBuffer & istr) const
 	{
 		deserializeText(field, istr);
@@ -92,7 +92,7 @@ public:
 	{
 		serializeText(field, ostr);
 	}
-	
+
 	void deserializeTextQuoted(Field & field, ReadBuffer & istr) const
 	{
 		deserializeText(field, istr);
@@ -129,11 +129,11 @@ public:
 	  * Именно из-за этого (невозможности читать меньший кусок записанных данных), Tuple не могут быть использованы для хранения данных в таблицах.
 	  * (Хотя могут быть использованы для передачи данных по сети в Native формате.)
 	  */
-	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit) const
+	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
 	{
 		ColumnTuple & real_column = static_cast<ColumnTuple &>(column);
 		for (size_t i = 0, size = elems.size(); i < size; ++i)
-			elems[i]->deserializeBinary(*real_column.getData().getByPosition(i).column, istr, limit);
+			elems[i]->deserializeBinary(*real_column.getData().getByPosition(i).column, istr, limit, avg_value_size_hint);
 	}
 
 	ColumnPtr createColumn() const
@@ -147,7 +147,7 @@ public:
 		}
 		return new ColumnTuple(tuple_block);
 	}
-	
+
 	ColumnPtr createConstColumn(size_t size, const Field & field) const
 	{
 		return new ColumnConstArray(size, get<const Array &>(field), new DataTypeTuple(elems));

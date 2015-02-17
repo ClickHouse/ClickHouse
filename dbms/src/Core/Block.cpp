@@ -81,6 +81,7 @@ void Block::insert(const ColumnWithNameAndType & elem)
 	index_by_position.push_back(it);
 }
 
+
 void Block::insertDefault(const String & name, const DataTypePtr & type)
 {
 	insert({
@@ -276,6 +277,17 @@ Block Block::cloneEmpty() const
 		res.insert(it->cloneEmpty());
 
 	return res;
+}
+
+
+Block Block::sortColumns() const
+{
+	Block sorted_block;
+
+	for (const auto & name : index_by_name)
+		sorted_block.insert(*name.second);
+
+	return sorted_block;
 }
 
 

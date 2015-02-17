@@ -26,7 +26,7 @@ int main(int argc, char ** argv)
 			Poco::SharedPtr<DB::ColumnString> column = new DB::ColumnString();
 			DB::ColumnString::Chars_t & data = column->getChars();
 			DB::ColumnString::Offsets_t & offsets = column->getOffsets();
-			
+
 			data.resize(n * size);
 			offsets.resize(n);
 			for (size_t i = 0; i < n; ++i)
@@ -52,7 +52,7 @@ int main(int argc, char ** argv)
 			DB::ReadBufferFromIStream in_buf(istr);
 
 			stopwatch.restart();
-			data_type.deserializeBinary(*column, in_buf, n);
+			data_type.deserializeBinary(*column, in_buf, n, 0);
 			stopwatch.stop();
 
 			std::cout << "Reading, elapsed: " << static_cast<double>(stopwatch.elapsed()) / 1000000 << std::endl;

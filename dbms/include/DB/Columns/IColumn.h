@@ -48,6 +48,9 @@ public:
 	  */
 	virtual size_t sizeOfField() const { throw Exception("Cannot get sizeOfField() for column " + getName(), ErrorCodes::CANNOT_GET_SIZE_OF_FIELD); }
 
+	/** Создать столбец с такими же данными. */
+	virtual SharedPtr<IColumn> clone() const { return cut(0, size()); }
+
 	/** Создать пустой столбец такого же типа */
 	virtual SharedPtr<IColumn> cloneEmpty() const { return cloneResized(0); }
 

@@ -13,6 +13,8 @@ namespace DB
 
 Block IProfilingBlockInputStream::read()
 {
+	collectAndSendTotalRowsApprox();
+
 	if (!info.started)
 	{
 		info.total_stopwatch.start();
@@ -211,66 +213,62 @@ void IProfilingBlockInputStream::checkQuota(Block & block)
 
 void IProfilingBlockInputStream::progressImpl(const Progress & value)
 {
-	/// Данные для прогресса берутся из листовых источников.
-	if (children.empty())
+	if (progress_callback)
+		progress_callback(value);
+
+	if (process_list_elem)
 	{
-		if (progress_callback)
-			progress_callback(value);
+		if (!process_list_elem->update(value))
+			cancel();
 
-		if (process_list_elem)
+		/// Общее количество данных, обработанных или предполагаемых к обработке во всех листовых источниках, возможно, на удалённых серверах.
+
+		size_t rows_processed = process_list_elem->progress.rows;
+		size_t bytes_processed = process_list_elem->progress.bytes;
+
+		size_t total_rows_estimate = std::max(process_list_elem->progress.rows, process_list_elem->progress.total_rows);
+
+		/** Проверяем ограничения на объём данных для чтения, скорость выполнения запроса, квоту на объём данных для чтения.
+			* NOTE: Может быть, имеет смысл сделать, чтобы они проверялись прямо в ProcessList?
+			*/
+
+		if (limits.mode == LIMITS_TOTAL
+			&& ((limits.max_rows_to_read && total_rows_estimate > limits.max_rows_to_read)
+				|| (limits.max_bytes_to_read && bytes_processed > limits.max_bytes_to_read)))
 		{
-			if (!process_list_elem->update(value))
-				cancel();
-
-			/// Общее количество данных, обработанных или предполагаемых к обработке во всех листовых источниках, возможно, на удалённых серверах.
-
-			size_t rows_processed = process_list_elem->progress.rows;
-			size_t bytes_processed = process_list_elem->progress.bytes;
-
-			size_t total_rows_estimate = std::max(process_list_elem->progress.rows, process_list_elem->progress.total_rows);
-
-			/** Проверяем ограничения на объём данных для чтения, скорость выполнения запроса, квоту на объём данных для чтения.
-			  * NOTE: Может быть, имеет смысл сделать, чтобы они проверялись прямо в ProcessList?
-			  */
-
-			if (limits.mode == LIMITS_TOTAL
-				&& ((limits.max_rows_to_read && total_rows_estimate > limits.max_rows_to_read)
-					|| (limits.max_bytes_to_read && bytes_processed > limits.max_bytes_to_read)))
+			if (limits.read_overflow_mode == OverflowMode::THROW)
 			{
-				if (limits.read_overflow_mode == OverflowMode::THROW)
-				{
-					if (limits.max_rows_to_read && total_rows_estimate > limits.max_rows_to_read)
-						throw Exception("Limit for rows to read exceeded: " + toString(total_rows_estimate)
-							+ " rows read (or to read), maximum: " + toString(limits.max_rows_to_read),
-							ErrorCodes::TOO_MUCH_ROWS);
-					else
-						throw Exception("Limit for (uncompressed) bytes to read exceeded: " + toString(bytes_processed)
-							+ " bytes read, maximum: " + toString(limits.max_bytes_to_read),
-							ErrorCodes::TOO_MUCH_ROWS);
-				}
-				else if (limits.read_overflow_mode == OverflowMode::BREAK)
-					cancel();
+				if (limits.max_rows_to_read && total_rows_estimate > limits.max_rows_to_read)
+					throw Exception("Limit for rows to read exceeded: " + toString(total_rows_estimate)
+						+ " rows read (or to read), maximum: " + toString(limits.max_rows_to_read),
+						ErrorCodes::TOO_MUCH_ROWS);
 				else
-					throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
+					throw Exception("Limit for (uncompressed) bytes to read exceeded: " + toString(bytes_processed)
+						+ " bytes read, maximum: " + toString(limits.max_bytes_to_read),
+						ErrorCodes::TOO_MUCH_ROWS);
 			}
+			else if (limits.read_overflow_mode == OverflowMode::BREAK)
+				cancel();
+			else
+				throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
+		}
 
-			if (limits.min_execution_speed)
+		if (limits.min_execution_speed)
+		{
+			double total_elapsed = info.total_stopwatch.elapsedSeconds();
+
+			if (total_elapsed > limits.timeout_before_checking_execution_speed.totalMicroseconds() / 1000000.0
+				&& rows_processed / total_elapsed < limits.min_execution_speed)
 			{
-				double total_elapsed = info.total_stopwatch.elapsedSeconds();
-
-				if (total_elapsed > limits.timeout_before_checking_execution_speed.totalMicroseconds() / 1000000.0
-					&& rows_processed / total_elapsed < limits.min_execution_speed)
-				{
-					throw Exception("Query is executing too slow: " + toString(rows_processed / total_elapsed)
-						+ " rows/sec., minimum: " + toString(limits.min_execution_speed),
-						ErrorCodes::TOO_SLOW);
-				}
+				throw Exception("Query is executing too slow: " + toString(rows_processed / total_elapsed)
+					+ " rows/sec., minimum: " + toString(limits.min_execution_speed),
+					ErrorCodes::TOO_SLOW);
 			}
+		}
 
-			if (quota != nullptr && limits.mode == LIMITS_TOTAL)
-			{
-				quota->checkAndAddReadRowsBytes(time(0), value.rows, value.bytes);
-			}
+		if (quota != nullptr && limits.mode == LIMITS_TOTAL)
+		{
+			quota->checkAndAddReadRowsBytes(time(0), value.rows, value.bytes);
 		}
 	}
 }
@@ -341,6 +339,32 @@ const Block & IProfilingBlockInputStream::getExtremes() const
 	}
 
 	return extremes;
+}
+
+void IProfilingBlockInputStream::collectTotalRowsApprox()
+{
+	if (collected_total_rows_approx)
+		return;
+
+	collected_total_rows_approx = true;
+
+	for (auto & child : children)
+	{
+		if (IProfilingBlockInputStream * p_child = dynamic_cast<IProfilingBlockInputStream *>(&*child))
+		{
+			p_child->collectTotalRowsApprox();
+			total_rows_approx += p_child->total_rows_approx;
+		}
+	}
+}
+
+void IProfilingBlockInputStream::collectAndSendTotalRowsApprox()
+{
+	if (collected_total_rows_approx)
+		return;
+
+	collectTotalRowsApprox();
+	progressImpl(Progress(0, 0, total_rows_approx));
 }
 
 

@@ -48,10 +48,6 @@ private:
 
 	typedef std::vector<RangesInDataPart> RangesInDataParts;
 
-	size_t min_marks_for_seek;
-	size_t min_marks_for_concurrent_read;
-	size_t max_marks_to_use_cache;
-
 	BlockInputStreams spreadMarkRangesAmongThreads(
 		RangesInDataParts parts,
 		size_t threads,
@@ -60,7 +56,8 @@ private:
 		bool use_uncompressed_cache,
 		ExpressionActionsPtr prewhere_actions,
 		const String & prewhere_column,
-		const Names & virt_columns);
+		const Names & virt_columns,
+		const Settings & settings);
 
 	BlockInputStreams spreadMarkRangesAmongThreadsFinal(
 		RangesInDataParts parts,
@@ -70,12 +67,13 @@ private:
 		bool use_uncompressed_cache,
 		ExpressionActionsPtr prewhere_actions,
 		const String & prewhere_column,
-		const Names & virt_columns);
+		const Names & virt_columns,
+		const Settings & settings);
 
 	/// Создать выражение "Sign == 1".
 	void createPositiveSignCondition(ExpressionActionsPtr & out_expression, String & out_column);
 
-	MarkRanges markRangesFromPkRange(const MergeTreeData::DataPart::Index & index, PKCondition & key_condition);
+	MarkRanges markRangesFromPkRange(const MergeTreeData::DataPart::Index & index, PKCondition & key_condition, const Settings & settings);
 };
 
 }

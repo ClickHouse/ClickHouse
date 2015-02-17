@@ -12,6 +12,8 @@
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/VarInt.h>
 
+#include <emmintrin.h>
+
 
 namespace DB
 {
@@ -70,15 +72,9 @@ void DataTypeString::serializeBinary(const IColumn & column, WriteBuffer & ostr,
 }
 
 
-void DataTypeString::deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit) const
+template <int UNROLL_TIMES>
+static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars_t & data, ColumnString::Offsets_t & offsets, ReadBuffer & istr, size_t limit)
 {
-	ColumnString & column_string = typeid_cast<ColumnString &>(column);
-	ColumnString::Chars_t & data = column_string.getChars();
-	ColumnString::Offsets_t & offsets = column_string.getOffsets();
-
-	data.reserve(data.size() + limit * DBMS_APPROX_STRING_SIZE);
-	offsets.reserve(offsets.size() + limit);
-
 	size_t offset = data.size();
 	for (size_t i = 0; i < limit; ++i)
 	{
@@ -93,9 +89,73 @@ void DataTypeString::deserializeBinary(IColumn & column, ReadBuffer & istr, size
 
 		data.resize(offset);
 
-		istr.readStrict(reinterpret_cast<char*>(&data[offset - size - 1]), sizeof(ColumnUInt8::value_type) * size);
+		if (size)
+		{
+			/// Оптимистичная ветка, в которой возможно более эффективное копирование.
+			if (offset + 16 * UNROLL_TIMES <= data.capacity() && istr.position() + size + 16 * UNROLL_TIMES <= istr.buffer().end())
+			{
+				const __m128i * sse_src_pos = reinterpret_cast<const __m128i *>(istr.position());
+				const __m128i * sse_src_end = sse_src_pos + (size + (16 * UNROLL_TIMES - 1)) / 16 / UNROLL_TIMES * UNROLL_TIMES;
+				__m128i * sse_dst_pos = reinterpret_cast<__m128i *>(&data[offset - size - 1]);
+
+				while (sse_src_pos < sse_src_end)
+				{
+					/// NOTE gcc 4.9.2 разворачивает цикл, но почему-то использует только один xmm регистр.
+					///for (size_t j = 0; j < UNROLL_TIMES; ++j)
+					///	_mm_storeu_si128(sse_dst_pos + j, _mm_loadu_si128(sse_src_pos + j));
+
+					sse_src_pos += UNROLL_TIMES;
+					sse_dst_pos += UNROLL_TIMES;
+
+					if (UNROLL_TIMES >= 4) __asm__("movdqu %0, %%xmm0" :: "m"(sse_src_pos[-4]));
+					if (UNROLL_TIMES >= 3) __asm__("movdqu %0, %%xmm1" :: "m"(sse_src_pos[-3]));
+					if (UNROLL_TIMES >= 2) __asm__("movdqu %0, %%xmm2" :: "m"(sse_src_pos[-2]));
+					if (UNROLL_TIMES >= 1) __asm__("movdqu %0, %%xmm3" :: "m"(sse_src_pos[-1]));
+
+					if (UNROLL_TIMES >= 4) __asm__("movdqu %%xmm0, %0" : "=m"(sse_dst_pos[-4]));
+					if (UNROLL_TIMES >= 3) __asm__("movdqu %%xmm1, %0" : "=m"(sse_dst_pos[-3]));
+					if (UNROLL_TIMES >= 2) __asm__("movdqu %%xmm2, %0" : "=m"(sse_dst_pos[-2]));
+					if (UNROLL_TIMES >= 1) __asm__("movdqu %%xmm3, %0" : "=m"(sse_dst_pos[-1]));
+				}
+
+				istr.position() += size;
+			}
+			else
+			{
+				istr.readStrict(reinterpret_cast<char*>(&data[offset - size - 1]), size);
+			}
+		}
+
 		data[offset - 1] = 0;
 	}
+}
+
+
+void DataTypeString::deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
+{
+	ColumnString & column_string = typeid_cast<ColumnString &>(column);
+	ColumnString::Chars_t & data = column_string.getChars();
+	ColumnString::Offsets_t & offsets = column_string.getOffsets();
+
+	/// Выбрано наугад.
+	constexpr auto avg_value_size_hint_reserve_multiplier = 1.2;
+
+	double avg_chars_size = (avg_value_size_hint && avg_value_size_hint > sizeof(offsets[0])
+		? (avg_value_size_hint - sizeof(offsets[0])) * avg_value_size_hint_reserve_multiplier
+		: DBMS_APPROX_STRING_SIZE);
+
+	data.reserve(data.size() + std::ceil(limit * avg_chars_size));
+
+	offsets.reserve(offsets.size() + limit);
+
+	if (avg_chars_size >= 64)
+		deserializeBinarySSE2<4>(data, offsets, istr, limit);
+	else if (avg_chars_size >= 48)
+		deserializeBinarySSE2<3>(data, offsets, istr, limit);
+	else if (avg_chars_size >= 32)
+		deserializeBinarySSE2<2>(data, offsets, istr, limit);
+	else
+		deserializeBinarySSE2<1>(data, offsets, istr, limit);
 }
 
 

@@ -173,7 +173,10 @@ public:
 		}
 
 		if (!minimum_size_column)
-			throw std::logic_error{"could not find a column of minimum size in MergeTree"};
+			throw Exception{
+				"could not find a column of minimum size in MergeTree",
+				ErrorCodes::LOGICAL_ERROR
+			};
 
 		addStream(minimum_size_column->name, *minimum_size_column->type, all_mark_ranges);
 		columns.emplace(std::begin(columns), *minimum_size_column);
@@ -182,7 +185,7 @@ public:
 	}
 
 	/// Заполняет столбцы, которых нет в блоке, значениями по умолчанию.
-	void fillMissingColumns(Block & res)
+	void fillMissingColumns(Block & res, const Names & ordered_names)
 	{
 		try
 		{
@@ -259,15 +262,23 @@ public:
 				columns.erase(std::begin(columns));
 			}
 
-			/// sort columns to ensure consistent order among all block
+			/// sort columns to ensure consistent order among all blocks
 			if (should_sort)
 			{
-				Block sorted_block;
+				Block ordered_block;
 
-				for (const auto & name_and_type : columns)
-					sorted_block.insert(res.getByName(name_and_type.name));
+				for (const auto & name : ordered_names)
+					if (res.has(name))
+						ordered_block.insert(res.getByName(name));
 
-				std::swap(res, sorted_block);
+				if (res.columns() != ordered_block.columns())
+					throw Exception{
+						"Ordered block has different columns than original one:\n" +
+							ordered_block.dumpNames() + "\nvs.\n" + res.dumpNames(),
+						ErrorCodes::LOGICAL_ERROR
+					};
+
+				std::swap(res, ordered_block);
 			}
 			else if (added_column)
 			{
@@ -293,6 +304,9 @@ private:
 		Poco::SharedPtr<CompressedReadBufferFromFile> non_cached_buffer;
 		std::string path_prefix;
 		size_t max_mark_range;
+
+		/// Используется в качестве подсказки, чтобы уменьшить количество реаллокаций при создании столбца переменной длины.
+		double avg_value_size_hint = 0;
 
 		Stream(const String & path_prefix, UncompressedCache * uncompressed_cache, MarkCache * mark_cache, const MarkRanges & all_mark_ranges)
 			: path_prefix(path_prefix)
@@ -494,7 +508,20 @@ private:
 		{
 			Stream & stream = *streams[name];
 			stream.seekToMark(from_mark);
-			type.deserializeBinary(column, *stream.data_buffer, max_rows_to_read);
+			type.deserializeBinary(column, *stream.data_buffer, max_rows_to_read, stream.avg_value_size_hint);
+
+			/// Вычисление подсказки о среднем размере значения.
+			size_t column_size = column.size();
+			if (column_size)
+			{
+				double current_avg_value_size = static_cast<double>(column.byteSize()) / column_size;
+
+				/// Эвристика, чтобы при изменениях, значение avg_value_size_hint быстро росло, но медленно уменьшалось.
+				if (current_avg_value_size > stream.avg_value_size_hint)
+					stream.avg_value_size_hint = current_avg_value_size;
+				else if (current_avg_value_size * 2 < stream.avg_value_size_hint)
+					stream.avg_value_size_hint = (current_avg_value_size + stream.avg_value_size_hint * 3) / 4;
+			}
 		}
 	}
 };

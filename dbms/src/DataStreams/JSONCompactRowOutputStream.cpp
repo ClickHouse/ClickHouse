@@ -17,28 +17,28 @@ JSONCompactRowOutputStream::JSONCompactRowOutputStream(WriteBuffer & ostr_, cons
 
 void JSONCompactRowOutputStream::writeField(const Field & field)
 {
-	fields[field_number].type->serializeTextJSON(field, ostr);
+	fields[field_number].type->serializeTextJSON(field, *ostr);
 	++field_number;
 }
 
 
 void JSONCompactRowOutputStream::writeFieldDelimiter()
 {
-	writeCString(", ", ostr);
+	writeCString(", ", *ostr);
 }
 
 
 void JSONCompactRowOutputStream::writeRowStartDelimiter()
 {
 	if (row_count > 0)
-		writeCString(",\n", ostr);
-	writeCString("\t\t[", ostr);
+		writeCString(",\n", *ostr);
+	writeCString("\t\t[", *ostr);
 }
 
 
 void JSONCompactRowOutputStream::writeRowEndDelimiter()
 {
-	writeChar(']', ostr);
+	writeChar(']', *ostr);
 	field_number = 0;
 	++row_count;
 }
@@ -48,21 +48,21 @@ void JSONCompactRowOutputStream::writeTotals()
 {
 	if (totals)
 	{
-		writeCString(",\n", ostr);
-		writeChar('\n', ostr);
-		writeCString("\t\"totals\": [", ostr);
+		writeCString(",\n", *ostr);
+		writeChar('\n', *ostr);
+		writeCString("\t\"totals\": [", *ostr);
 
 		size_t totals_columns = totals.columns();
 		for (size_t i = 0; i < totals_columns; ++i)
 		{
 			if (i != 0)
-				writeChar(',', ostr);
+				writeChar(',', *ostr);
 
 			const ColumnWithNameAndType & column = totals.getByPosition(i);
-			column.type->serializeTextJSON((*column.column)[0], ostr);
+			column.type->serializeTextJSON((*column.column)[0], *ostr);
 		}
 
-		writeChar(']', ostr);
+		writeChar(']', *ostr);
 	}
 }
 
@@ -90,17 +90,17 @@ void JSONCompactRowOutputStream::writeExtremes()
 {
 	if (extremes)
 	{
-		writeCString(",\n", ostr);
-		writeChar('\n', ostr);
-		writeCString("\t\"extremes\":\n", ostr);
-		writeCString("\t{\n", ostr);
+		writeCString(",\n", *ostr);
+		writeChar('\n', *ostr);
+		writeCString("\t\"extremes\":\n", *ostr);
+		writeCString("\t{\n", *ostr);
 
-		writeExtremesElement("min", extremes, 0, ostr);
-		writeCString(",\n", ostr);
-		writeExtremesElement("max", extremes, 1, ostr);
+		writeExtremesElement("min", extremes, 0, *ostr);
+		writeCString(",\n", *ostr);
+		writeExtremesElement("max", extremes, 1, *ostr);
 
-		writeChar('\n', ostr);
-		writeCString("\t}", ostr);
+		writeChar('\n', *ostr);
+		writeCString("\t}", *ostr);
 	}
 }
 

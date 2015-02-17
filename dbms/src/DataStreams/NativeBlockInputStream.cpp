@@ -23,7 +23,7 @@ static void readData(const IDataType & type, IColumn & column, ReadBuffer & istr
 	if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
 	{
 		IColumn & offsets_column = *typeid_cast<ColumnArray &>(column).getOffsetsColumn();
-		type_arr->getOffsetsType()->deserializeBinary(offsets_column, istr, rows);
+		type_arr->getOffsetsType()->deserializeBinary(offsets_column, istr, rows, 0);
 
 		if (offsets_column.size() != rows)
 			throw Exception("Cannot read all data in NativeBlockInputStream.", ErrorCodes::CANNOT_READ_ALL_DATA);
@@ -39,7 +39,7 @@ static void readData(const IDataType & type, IColumn & column, ReadBuffer & istr
 	{
 		ColumnNested & column_nested = typeid_cast<ColumnNested &>(column);
 		IColumn & offsets_column = *column_nested.getOffsetsColumn();
-		type_nested->getOffsetsType()->deserializeBinary(offsets_column, istr, rows);
+		type_nested->getOffsetsType()->deserializeBinary(offsets_column, istr, rows, 0);
 
 		if (offsets_column.size() != rows)
 			throw Exception("Cannot read all data in NativeBlockInputStream.", ErrorCodes::CANNOT_READ_ALL_DATA);
@@ -58,7 +58,7 @@ static void readData(const IDataType & type, IColumn & column, ReadBuffer & istr
 		}
 	}
 	else
-		type.deserializeBinary(column, istr, rows);
+		type.deserializeBinary(column, istr, rows, 0);	/// TODO Использовать avg_value_size_hint.
 
 	if (column.size() != rows)
 		throw Exception("Cannot read all data in NativeBlockInputStream.", ErrorCodes::CANNOT_READ_ALL_DATA);

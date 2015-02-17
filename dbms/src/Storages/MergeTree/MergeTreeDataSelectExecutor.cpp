@@ -7,6 +7,8 @@
 #include <DB/DataStreams/ConcatBlockInputStream.h>
 #include <DB/DataStreams/CollapsingFinalBlockInputStream.h>
 #include <DB/DataStreams/AddingConstColumnBlockInputStream.h>
+#include <DB/DataStreams/CreatingSetsBlockInputStream.h>
+#include <DB/DataStreams/NullBlockInputStream.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Common/VirtualColumnUtils.h>
 
@@ -14,13 +16,9 @@
 namespace DB
 {
 
-MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(MergeTreeData & data_) : data(data_), log(&Logger::get(data.getLogName() + " (SelectExecutor)"))
+MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(MergeTreeData & data_)
+	: data(data_), log(&Logger::get(data.getLogName() + " (SelectExecutor)"))
 {
-	min_marks_for_seek = (data.settings.min_rows_for_seek + data.index_granularity - 1) / data.index_granularity;
-	min_marks_for_concurrent_read = (data.settings.min_rows_for_concurrent_read + data.index_granularity - 1) / data.index_granularity;
-	max_marks_to_use_cache = (data.settings.max_rows_to_use_cache + data.index_granularity - 1) / data.index_granularity;
-
-
 }
 
 /// Построить блок состоящий только из возможных значений виртуальных столбцов
@@ -132,7 +130,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 			for (size_t i = 0; i < parts.size(); ++i)
 			{
 				MergeTreeData::DataPartPtr & part = parts[i];
-				MarkRanges ranges = markRangesFromPkRange(part->index, key_condition);
+				MarkRanges ranges = markRangesFromPkRange(part->index, key_condition, settings);
 
 				for (size_t j = 0; j < ranges.size(); ++j)
 					total_count += ranges[j].end - ranges[j].begin;
@@ -253,7 +251,14 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 		ExpressionAnalyzer analyzer(select.prewhere_expression, data.context, data.getColumnsList());
 		prewhere_actions = analyzer.getActions(false);
 		prewhere_column = select.prewhere_expression->getColumnName();
-		/// TODO: Чтобы работали подзапросы в PREWHERE, можно тут сохранить analyzer.getSetsWithSubqueries(), а потом их выполнить.
+		SubqueriesForSets prewhere_subqueries = analyzer.getSubqueriesForSets();
+
+		/** Вычислим подзапросы прямо сейчас.
+		  * NOTE Недостаток - эти вычисления не вписываются в конвейер выполнения запроса.
+		  * Они делаются до начала выполнения конвейера; их нельзя прервать; во время вычислений не отправляются пакеты прогресса.
+		  */
+		if (!prewhere_subqueries.empty())
+			CreatingSetsBlockInputStream(new NullBlockInputStream, prewhere_subqueries, settings.limits).read();
 	}
 
 	RangesInDataParts parts_with_ranges;
@@ -264,7 +269,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	for (auto & part : parts)
 	{
 		RangesInDataPart ranges(part, (*part_index)++);
-		ranges.ranges = markRangesFromPkRange(part->index, key_condition);
+		ranges.ranges = markRangesFromPkRange(part->index, key_condition, settings);
 
 		if (!ranges.ranges.empty())
 		{
@@ -298,7 +303,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 			settings.use_uncompressed_cache,
 			prewhere_actions,
 			prewhere_column,
-			virt_column_names);
+			virt_column_names,
+			settings);
 	}
 	else
 	{
@@ -310,7 +316,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 			settings.use_uncompressed_cache,
 			prewhere_actions,
 			prewhere_column,
-			virt_column_names);
+			virt_column_names,
+			settings);
 	}
 
 	if (relative_sample_size != 0)
@@ -320,6 +327,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	return res;
 }
 
+
 BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 	RangesInDataParts parts,
 	size_t threads,
@@ -328,8 +336,12 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 	bool use_uncompressed_cache,
 	ExpressionActionsPtr prewhere_actions,
 	const String & prewhere_column,
-	const Names & virt_columns)
+	const Names & virt_columns,
+	const Settings & settings)
 {
+	size_t min_marks_for_concurrent_read = (settings.merge_tree_min_rows_for_concurrent_read + data.index_granularity - 1) / data.index_granularity;
+	size_t max_marks_to_use_cache = (settings.merge_tree_max_rows_to_use_cache + data.index_granularity - 1) / data.index_granularity;
+
 	/// На всякий случай перемешаем куски.
 	std::random_shuffle(parts.begin(), parts.end());
 
@@ -419,6 +431,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 					data.getFullPath() + part.data_part->name + '/', max_block_size, column_names, data,
 					part.data_part, ranges_to_get_from_part, use_uncompressed_cache,
 					prewhere_actions, prewhere_column));
+
 				for (const String & virt_column : virt_columns)
 				{
 					if (virt_column == "_part")
@@ -451,8 +464,11 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 	bool use_uncompressed_cache,
 	ExpressionActionsPtr prewhere_actions,
 	const String & prewhere_column,
-	const Names & virt_columns)
+	const Names & virt_columns,
+	const Settings & settings)
 {
+	size_t max_marks_to_use_cache = (settings.merge_tree_max_rows_to_use_cache + data.index_granularity - 1) / data.index_granularity;
+
 	size_t sum_marks = 0;
 	for (size_t i = 0; i < parts.size(); ++i)
 		for (size_t j = 0; j < parts[i].ranges.size(); ++j)
@@ -529,8 +545,11 @@ void MergeTreeDataSelectExecutor::createPositiveSignCondition(ExpressionActionsP
 }
 
 /// Получает набор диапазонов засечек, вне которых не могут находиться ключи из заданного диапазона.
-MarkRanges MergeTreeDataSelectExecutor::markRangesFromPkRange(const MergeTreeData::DataPart::Index & index, PKCondition & key_condition)
+MarkRanges MergeTreeDataSelectExecutor::markRangesFromPkRange(
+	const MergeTreeData::DataPart::Index & index, PKCondition & key_condition, const Settings & settings)
 {
+	size_t min_marks_for_seek = (settings.merge_tree_min_rows_for_seek + data.index_granularity - 1) / data.index_granularity;
+
 	MarkRanges res;
 
 	size_t key_size = data.getSortDescription().size();
@@ -575,7 +594,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPkRange(const MergeTreeDat
 			else
 			{
 				/// Разбиваем отрезок и кладем результат в стек справа налево.
-				size_t step = (range.end - range.begin - 1) / data.settings.coarse_index_granularity + 1;
+				size_t step = (range.end - range.begin - 1) / settings.merge_tree_coarse_index_granularity + 1;
 				size_t end;
 
 				for (end = range.end; end > range.begin + step; end -= step)

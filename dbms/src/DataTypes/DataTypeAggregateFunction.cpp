@@ -45,7 +45,7 @@ void DataTypeAggregateFunction::serializeBinary(const IColumn & column, WriteBuf
 		function->serialize(*it, ostr);
 }
 
-void DataTypeAggregateFunction::deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit) const
+void DataTypeAggregateFunction::deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
 {
 	ColumnAggregateFunction & real_column = typeid_cast<ColumnAggregateFunction &>(column);
 	ColumnAggregateFunction::Container_t & vec = real_column.getData();

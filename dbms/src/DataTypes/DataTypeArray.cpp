@@ -68,7 +68,7 @@ void DataTypeArray::serializeBinary(const IColumn & column, WriteBuffer & ostr, 
 }
 
 
-void DataTypeArray::deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit) const
+void DataTypeArray::deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
 {
 	ColumnArray & column_array = typeid_cast<ColumnArray &>(column);
 	ColumnArray::Offsets_t & offsets = column_array.getOffsets();
@@ -79,7 +79,7 @@ void DataTypeArray::deserializeBinary(IColumn & column, ReadBuffer & istr, size_
 	if (last_offset < nested_column.size())
 		throw Exception("Nested column longer than last offset", ErrorCodes::LOGICAL_ERROR);
 	size_t nested_limit = last_offset - nested_column.size();
-	nested->deserializeBinary(nested_column, istr, nested_limit);
+	nested->deserializeBinary(nested_column, istr, nested_limit, 0);
 
 	if (column_array.getData().size() != last_offset)
 		throw Exception("Cannot read all array values", ErrorCodes::CANNOT_READ_ALL_DATA);

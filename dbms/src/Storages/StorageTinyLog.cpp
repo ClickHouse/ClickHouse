@@ -276,7 +276,7 @@ void TinyLogBlockInputStream::readData(const String & name, const IDataType & ty
 		}
 	}
 	else
-		type.deserializeBinary(column, streams[name]->compressed, limit);
+		type.deserializeBinary(column, streams[name]->compressed, limit, 0);	/// TODO Использовать avg_value_size_hint.
 }
 
 
