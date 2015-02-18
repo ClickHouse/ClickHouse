@@ -18,15 +18,16 @@ LogicalOrWithLeftHandSide::LogicalOrWithLeftHandSide(ASTFunction * or_function_,
 bool operator<(const LogicalOrWithLeftHandSide & lhs, 
 			   const LogicalOrWithLeftHandSide & rhs)
 {
-	if (lhs.or_function < rhs.or_function)
+	std::ptrdiff_t res1 = lhs.or_function - rhs.or_function;
+	if (res1 < 0)
 		return true;
-	if (lhs.or_function > rhs.or_function)
+	if (res1 > 0)
 		return false;
 
-	int val = lhs.expression.compare(rhs.expression);
-	if (val < 0)
+	int res2 = lhs.expression.compare(rhs.expression);
+	if (res2 < 0)
 		return true;
-	if (val > 0)
+	if (res2 > 0)
 		return false;
 
 	return false;
@@ -42,46 +43,19 @@ void LogicalExpressionsOptimizer::optimizeDisjunctiveEqualityChains()
 	if (select_query == nullptr)
 		return;
 
-	/** 1. Поиск всех цепочек OR.
-	  */
 	collectDisjunctiveEqualityChains();
 
-	/** 2. Заменяем длинные цепочки на выражения IN.
-	  */
-	for (const auto & e : disjunctive_equalities_map)
+	for (const auto & chain : disjunctive_equalities_map)
 	{
-		const LogicalOrWithLeftHandSide & logical_or_with_lhs = e.first; 
-		const Equalities & equalities = e.second;
-
-		/** Пропустить цепочку, если она слишком коротка или содержит данные разних типов.
-		  */
+		const Equalities & equalities = chain.second;
 
 		if (!mustTransform(equalities))
 			continue;
 
-		/** Создать новое выражение IN.
-		  */
-
-		auto in_expr = createInExpression(logical_or_with_lhs, equalities);
-
-		/** Вставить это выражение в запрос.
-		  */
-
-		ASTFunction * or_function = logical_or_with_lhs.or_function;
-		ASTExpressionList * expression_list = static_cast<ASTExpressionList *>(&*(or_function->children[0]));
-		auto & children = expression_list->children;
-
-		children.push_back(in_expr);
-
-		auto it = std::remove_if(children.begin(), children.end(), [&](const ASTPtr & node)
-		{
-			return std::binary_search(equalities.begin(), equalities.end(), node.get());
-		});
-		children.erase(it, children.end());
+		auto in_expression = createInExpression(equalities);
+		putInExpression(chain, in_expression);
 	}
 
-	/** 3. Удалить узлы OR, которые имеют только один узел типа Function.
-	  */
 	fixBrokenOrExpressions();
 }
 
@@ -169,9 +143,7 @@ bool LogicalExpressionsOptimizer::mustTransform(const Equalities & equalities) c
 	return true;
 }
 
-/// Создать новое выражение IN на основе цепочки OR.
-/// Предполагается, что все нужны проверки уже сделаны в optimizeDisjunctiveEqualityChains.
-LogicalExpressionsOptimizer::ASTFunctionPtr LogicalExpressionsOptimizer::createInExpression(const LogicalOrWithLeftHandSide & logical_or_with_lhs, const Equalities & equalities)
+LogicalExpressionsOptimizer::ASTFunctionPtr LogicalExpressionsOptimizer::createInExpression(const Equalities & equalities) const
 {
 	ASTPtr value_list = new ASTExpressionList;
 	for (auto function : equalities)
@@ -202,6 +174,24 @@ LogicalExpressionsOptimizer::ASTFunctionPtr LogicalExpressionsOptimizer::createI
 	return in_function;
 }
 
+void LogicalExpressionsOptimizer::putInExpression(const DisjunctiveEqualityChain & chain, ASTFunctionPtr in_expression)
+{
+		const LogicalOrWithLeftHandSide & logical_or_with_lhs = chain.first;
+		const Equalities & equalities = chain.second;
+
+		ASTFunction * or_function = logical_or_with_lhs.or_function;
+		ASTExpressionList * expression_list = static_cast<ASTExpressionList *>(&*(or_function->children[0]));
+		auto & children = expression_list->children;
+
+		children.push_back(in_expression);
+
+		auto it = std::remove_if(children.begin(), children.end(), [&](const ASTPtr & node)
+		{
+			return std::binary_search(equalities.begin(), equalities.end(), node.get());
+		});
+		children.erase(it, children.end());
+}
+
 void LogicalExpressionsOptimizer::fixBrokenOrExpressions()
 {
 	for (const auto & e : disjunctive_equalities_map)
@@ -215,7 +205,7 @@ void LogicalExpressionsOptimizer::fixBrokenOrExpressions()
 
 		if (children.size() == 1)
 		{
-			std::vector<IAST *> & parents = parent_map[or_function];
+			IASTs & parents = parent_map[or_function];
 			for (auto & parent : parents)
 			{
 				parent->children.push_back(children[0]);
