@@ -68,7 +68,7 @@ private:
 
 private:
 	using ParentNodes = std::vector<IAST *>;
-	using FunctionParentMap = std::unordered_map<ASTFunction *, ParentNodes>;
+	using FunctionParentMap = std::unordered_map<IAST *, ParentNodes>;
 
 private:
 	ASTSelectQuery * select_query;

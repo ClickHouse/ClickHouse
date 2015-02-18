@@ -59,17 +59,20 @@ void LogicalExpressionsOptimizer::optimizeDisjunctiveEqualityChains()
 
 void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 {
+	std::set<IAST *> visited;
+
 	using Edge = std::pair<IAST *, IAST *>;
 	std::deque<Edge> to_visit;
 
 	to_visit.push_back(Edge(nullptr, select_query));
 	while (!to_visit.empty())
 	{
-		auto edge = to_visit.front();
+		auto edge = to_visit.back();
 		auto from_node = edge.first;
 		auto to_node = edge.second;
 
-		to_visit.pop_front();
+		to_visit.pop_back();
+		visited.insert(to_node);
 
 		bool found_chain = false;
 
@@ -101,15 +104,38 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 					}
 				}
 			}
-
-			if ((from_node != nullptr) && found_chain)
-				or_parent_map[function].push_back(from_node);
 		}
 
-		if (!found_chain)
+		if (found_chain)
+		{
+			if (from_node != nullptr)
+			{
+				auto res = or_parent_map.insert(std::make_pair(function, ParentNodes{from_node}));
+				if (!res.second)
+					throw Exception("Parent node information is corrupted", ErrorCodes::LOGICAL_ERROR);
+			}
+		}
+		else
+		{
 			for (auto & child : to_node->children)
+			{
 				if (typeid_cast<ASTSelectQuery *>(&*child) == nullptr)
-					to_visit.push_back(Edge(to_node, &*child));
+				{
+					if (!visited.count(&*child))
+						to_visit.push_back(Edge(to_node, &*child));
+					else
+					{
+						/// Если узел является функцией OR, обновляем информацию про его родителей.
+						auto it = or_parent_map.find(&*child);
+						if (it != or_parent_map.end())
+						{
+							auto & parent_nodes = it->second;
+							parent_nodes.push_back(to_node);
+						}
+					}
+				}
+			}
+		}
 	}
 
 	for (auto & chain : disjunctive_equality_chains_map)
