@@ -47,7 +47,7 @@ void LogicalExpressionsOptimizer::optimizeDisjunctiveEqualityChains()
 
 	for (const auto & chain : disjunctive_equalities_map)
 	{
-		const Equalities & equalities = chain.second;
+		const auto & equalities = chain.second;
 
 		if (!mustTransform(equalities))
 			continue;
@@ -62,8 +62,8 @@ void LogicalExpressionsOptimizer::optimizeDisjunctiveEqualityChains()
 void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 {
 	using Edge = std::pair<ASTPtr, ASTPtr>;
-
 	std::deque<Edge> to_visit;
+
 	to_visit.push_back(Edge(ASTPtr(), root));
 
 	while (!to_visit.empty())
@@ -76,28 +76,28 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 
 		bool found = false;
 
-		ASTFunction * function = typeid_cast<ASTFunction *>(&*to_node);
+		auto function = typeid_cast<ASTFunction *>(&*to_node);
 		if ((function != nullptr) && (function->name == "or") && (function->children.size() == 1))
 		{
 			if (!from_node.isNull())
 				parent_map[function].push_back(from_node.get());
 
-			ASTExpressionList * expression_list = typeid_cast<ASTExpressionList *>(&*(function->children[0]));
+			auto expression_list = typeid_cast<ASTExpressionList *>(&*(function->children[0]));
 			if (expression_list != nullptr)
 			{
 				/// Цепочка элементов выражения OR.
 				for (auto child : expression_list->children)
 				{
-					ASTFunction * equals = typeid_cast<ASTFunction *>(&*child);
+					auto equals = typeid_cast<ASTFunction *>(&*child);
 					if ((equals != nullptr) && (equals->name == "equals") && (equals->children.size() == 1))
 					{
-						ASTExpressionList * equals_expression_list = typeid_cast<ASTExpressionList *>(&*(equals->children[0]));
+						auto equals_expression_list = typeid_cast<ASTExpressionList *>(&*(equals->children[0]));
 						if ((equals_expression_list != nullptr) && (equals_expression_list->children.size() == 2))
 						{
 							// Равенство c = xk
 							auto expr_lhs = queryToString(equals_expression_list->children[0]);
 
-							ASTLiteral * literal = typeid_cast<ASTLiteral *>(&*(equals_expression_list->children[1]));
+							auto literal = typeid_cast<ASTLiteral *>(&*(equals_expression_list->children[1]));
 							if (literal != nullptr)
 							{
 								LogicalOrWithLeftHandSide logical_or_with_lhs(function, expr_lhs);
@@ -116,9 +116,9 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 					to_visit.push_back(Edge(to_node, child));
 	}
 
-	for (auto & e : disjunctive_equalities_map)
+	for (auto & chain : disjunctive_equalities_map)
 	{
-		Equalities & equalities = e.second;
+		auto & equalities = chain.second;
 		std::sort(equalities.begin(), equalities.end());
 	}
 }
@@ -176,36 +176,36 @@ LogicalExpressionsOptimizer::ASTFunctionPtr LogicalExpressionsOptimizer::createI
 
 void LogicalExpressionsOptimizer::putInExpression(const DisjunctiveEqualityChain & chain, ASTFunctionPtr in_expression)
 {
-		const LogicalOrWithLeftHandSide & logical_or_with_lhs = chain.first;
-		const Equalities & equalities = chain.second;
+	const auto & logical_or_with_lhs = chain.first;
+	const auto & equalities = chain.second;
 
-		ASTFunction * or_function = logical_or_with_lhs.or_function;
-		ASTExpressionList * expression_list = static_cast<ASTExpressionList *>(&*(or_function->children[0]));
-		auto & children = expression_list->children;
+	auto or_function = logical_or_with_lhs.or_function;
+	auto expression_list = static_cast<ASTExpressionList *>(&*(or_function->children[0]));
+	auto & children = expression_list->children;
 
-		children.push_back(in_expression);
+	children.push_back(in_expression);
 
-		auto it = std::remove_if(children.begin(), children.end(), [&](const ASTPtr & node)
-		{
-			return std::binary_search(equalities.begin(), equalities.end(), node.get());
-		});
-		children.erase(it, children.end());
+	auto it = std::remove_if(children.begin(), children.end(), [&](const ASTPtr & node)
+	{
+		return std::binary_search(equalities.begin(), equalities.end(), node.get());
+	});
+	children.erase(it, children.end());
 }
 
 void LogicalExpressionsOptimizer::fixBrokenOrExpressions()
 {
-	for (const auto & e : disjunctive_equalities_map)
+	for (const auto & chain : disjunctive_equalities_map)
 	{
-		const LogicalOrWithLeftHandSide & logical_or_with_lhs = e.first;
-		const Equalities & equalities = e.second;
+		const auto & logical_or_with_lhs = chain.first;
+		const auto & equalities = chain.second;
 
-		ASTFunction * or_function = logical_or_with_lhs.or_function;
-		ASTExpressionList * expression_list = static_cast<ASTExpressionList *>(&*(or_function->children[0]));
+		auto or_function = logical_or_with_lhs.or_function;
+		auto expression_list = static_cast<ASTExpressionList *>(&*(or_function->children[0]));
 		auto & children = expression_list->children;
 
 		if (children.size() == 1)
 		{
-			IASTs & parents = parent_map[or_function];
+			auto & parents = parent_map[or_function];
 			for (auto & parent : parents)
 			{
 				parent->children.push_back(children[0]);
