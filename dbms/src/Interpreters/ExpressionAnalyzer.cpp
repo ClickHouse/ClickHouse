@@ -70,21 +70,9 @@ void ExpressionAnalyzer::init()
 {
 	select_query = typeid_cast<ASTSelectQuery *>(&*ast);
 
-	{
-		std::ostringstream os;
-		ast->dumpTree(os);
-		LOG_DEBUG(&Logger::get("ExpressionAnalyzer"), "Before: " << os.str());
-		LOG_DEBUG(&Logger::get("ExpressionAnalyzer"), "######################################");
-	}
-
-	LogicalExpressionsOptimizer logical_expressions_optimizer(select_query);
+	/// Оптимизирует логические выражения.
+	LogicalExpressionsOptimizer logical_expressions_optimizer(select_query, settings);
 	logical_expressions_optimizer.optimizeDisjunctiveEqualityChains();
-
-	{
-		std::ostringstream os;
-		ast->dumpTree(os);
-		LOG_DEBUG(&Logger::get("ExpressionAnalyzer"), "After: " << os.str());
-	}
 
 	addStorageAliases();
 
