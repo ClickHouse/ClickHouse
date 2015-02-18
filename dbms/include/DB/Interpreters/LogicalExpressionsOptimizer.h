@@ -40,18 +40,20 @@ private:
 	using DisjunctiveEqualityChain = DisjunctiveEqualitiesMap::value_type;
 
 	using ASTFunctionPtr = Poco::SharedPtr<ASTFunction>;
-	using IASTs = std::vector<IAST *>;
-	using ParentMap = std::map<ASTFunction *, IASTs>;
+	using ParentNodes = std::vector<IAST *>;
+	using ParentMap = std::map<ASTFunction *, ParentNodes>;
 
 private:
-	/// Собрать информацию про все равенства входящие в цепочки OR (не обязательно однородные).
+	/** Собрать информация про все равенства входящие в цепочки OR (не обязательно однородные).
+	  * Эта информация сгруппирована по выражению, которое стоит в левой части равенства.
+	  */
 	void collectDisjunctiveEqualityChains();
 
 	/** Проверить, что множество равенств expr = x1, ..., expr = xN выполняет два следующих требования:
 	  * 1. Оно не слишком маленькое
 	  * 2. x1, ... xN имеют один и тот же тип
 	  */
-	bool mustTransform(const Equalities & equalities) const;
+	bool mayOptimizeDisjunctiveEqualityChain(const DisjunctiveEqualityChain & chain) const;
 
 	/// Создать новое выражение IN на основе цепочки OR.
 	ASTFunctionPtr createInExpression(const Equalities & equalities) const;
