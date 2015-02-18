@@ -32,6 +32,7 @@ public:
 	typedef std::vector<SharedPtr<IAST> > ASTs;
 	ASTs children;
 	StringRange range;
+	bool is_visited = false;
 
 	/** Строка с полным запросом.
 	  * Этот указатель не дает ее удалить, пока range в нее ссылается.
@@ -62,6 +63,13 @@ public:
 
 	/** Получить глубокую копию дерева. */
 	virtual SharedPtr<IAST> clone() const = 0;
+
+	void clearVisited()
+	{
+		is_visited = false;
+		for (ASTs::iterator it = children.begin(); it != children.end(); ++it)
+			(*it)->is_visited = false;
+	}
 
 	/** Получить текст, который идентифицирует этот элемент и всё поддерево.
 	  * Обычно он содержит идентификатор элемента и getTreeID от всех детей.

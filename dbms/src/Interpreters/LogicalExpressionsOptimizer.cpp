@@ -59,8 +59,6 @@ void LogicalExpressionsOptimizer::optimizeDisjunctiveEqualityChains()
 
 void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 {
-	std::set<IAST *> visited;
-
 	using Edge = std::pair<IAST *, IAST *>;
 	std::deque<Edge> to_visit;
 
@@ -72,7 +70,7 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 		auto to_node = edge.second;
 
 		to_visit.pop_back();
-		visited.insert(to_node);
+		to_node->is_visited = true;
 
 		bool found_chain = false;
 
@@ -121,7 +119,7 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 			{
 				if (typeid_cast<ASTSelectQuery *>(&*child) == nullptr)
 				{
-					if (!visited.count(&*child))
+					if (!child->is_visited)
 						to_visit.push_back(Edge(to_node, &*child));
 					else
 					{
@@ -137,6 +135,8 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 			}
 		}
 	}
+
+	select_query->clearVisited();
 
 	for (auto & chain : disjunctive_equality_chains_map)
 	{
