@@ -5,6 +5,8 @@
 #include <DB/Parsers/ASTLiteral.h>
 #include <DB/Parsers/queryToString.h>
 
+#include <DB/Core/ErrorCodes.h>
+
 #include <deque>
 
 namespace DB
@@ -15,8 +17,7 @@ LogicalOrWithLeftHandSide::LogicalOrWithLeftHandSide(ASTFunction * or_function_,
 {
 }
 
-bool operator<(const LogicalOrWithLeftHandSide & lhs, 
-			   const LogicalOrWithLeftHandSide & rhs)
+bool operator<(const LogicalOrWithLeftHandSide & lhs, const LogicalOrWithLeftHandSide & rhs)
 {
 	std::ptrdiff_t res1 = lhs.or_function - rhs.or_function;
 	if (res1 < 0)
@@ -79,9 +80,6 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 		auto function = typeid_cast<ASTFunction *>(&*to_node);
 		if ((function != nullptr) && (function->name == "or") && (function->children.size() == 1))
 		{
-			if (!from_node.isNull())
-				parent_map[function].push_back(from_node.get());
-
 			auto expression_list = typeid_cast<ASTExpressionList *>(&*(function->children[0]));
 			if (expression_list != nullptr)
 			{
@@ -94,7 +92,7 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 						auto equals_expression_list = typeid_cast<ASTExpressionList *>(&*(equals->children[0]));
 						if ((equals_expression_list != nullptr) && (equals_expression_list->children.size() == 2))
 						{
-							// Равенство c = xk
+							/// Равенство expr = xN.
 							auto expr_lhs = queryToString(equals_expression_list->children[0]);
 
 							auto literal = typeid_cast<ASTLiteral *>(&*(equals_expression_list->children[1]));
@@ -108,6 +106,9 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 					}
 				}
 			}
+
+			if (!from_node.isNull() && found)
+				parent_map[function].push_back(from_node.get());
 		}
 
 		if (!found)
@@ -174,22 +175,31 @@ LogicalExpressionsOptimizer::ASTFunctionPtr LogicalExpressionsOptimizer::createI
 	return in_function;
 }
 
+namespace
+{
+
+ASTs & getOrExpressionOperands(const LogicalOrWithLeftHandSide & logical_or_with_lhs)
+{
+	auto or_function = logical_or_with_lhs.or_function;
+	auto expression_list = static_cast<ASTExpressionList *>(&*(or_function->children[0]));
+	return expression_list->children;
+}
+
+}
+
 void LogicalExpressionsOptimizer::putInExpression(const DisjunctiveEqualityChain & chain, ASTFunctionPtr in_expression)
 {
 	const auto & logical_or_with_lhs = chain.first;
 	const auto & equalities = chain.second;
 
-	auto or_function = logical_or_with_lhs.or_function;
-	auto expression_list = static_cast<ASTExpressionList *>(&*(or_function->children[0]));
-	auto & children = expression_list->children;
+	auto & operands = getOrExpressionOperands(logical_or_with_lhs);
+	operands.push_back(in_expression);
 
-	children.push_back(in_expression);
-
-	auto it = std::remove_if(children.begin(), children.end(), [&](const ASTPtr & node)
+	auto it = std::remove_if(operands.begin(), operands.end(), [&](const ASTPtr & node)
 	{
 		return std::binary_search(equalities.begin(), equalities.end(), node.get());
 	});
-	children.erase(it, children.end());
+	operands.erase(it, operands.end());
 }
 
 void LogicalExpressionsOptimizer::fixBrokenOrExpressions()
@@ -197,29 +207,31 @@ void LogicalExpressionsOptimizer::fixBrokenOrExpressions()
 	for (const auto & chain : disjunctive_equalities_map)
 	{
 		const auto & logical_or_with_lhs = chain.first;
-		const auto & equalities = chain.second;
-
 		auto or_function = logical_or_with_lhs.or_function;
-		auto expression_list = static_cast<ASTExpressionList *>(&*(or_function->children[0]));
-		auto & children = expression_list->children;
+		auto & operands = getOrExpressionOperands(logical_or_with_lhs);
 
-		if (children.size() == 1)
+		if (operands.size() == 1)
 		{
-			auto & parents = parent_map[or_function];
+			auto it = parent_map.find(or_function);
+			if (it == parent_map.end())
+				throw Exception("Parent node information is corrupted", ErrorCodes::LOGICAL_ERROR);
+			auto & parents = it->second;
+
 			for (auto & parent : parents)
 			{
-				parent->children.push_back(children[0]);
+				parent->children.push_back(operands[0]);
 				auto it = std::remove(parent->children.begin(), parent->children.end(), or_function);
 				parent->children.erase(it, parent->children.end());
 			}
 
 			/// Если узел OR был корнем выражения WHERE, PREWHERE или HAVING, то следует обновить этот корень.
+			/// Из-за того, что имеем дело с направленным ациклическим графом, надо проверить все случаи.
 			if (or_function == select_query->where_expression.get())
-				select_query->where_expression = children[0];
-			else if (or_function == select_query->prewhere_expression.get())
-				select_query->prewhere_expression = children[0];
-			else if (or_function == select_query->having_expression.get())
-				select_query->having_expression = children[0];
+				select_query->where_expression = operands[0];
+			if (or_function == select_query->prewhere_expression.get())
+				select_query->prewhere_expression = operands[0];
+			if (or_function == select_query->having_expression.get())
+				select_query->having_expression = operands[0];
 		}
 	}
 }
