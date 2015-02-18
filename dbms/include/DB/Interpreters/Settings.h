@@ -92,6 +92,9 @@ struct Settings
 	M(SettingUInt64, max_parallel_replicas, 1) \
 	M(SettingUInt64, parallel_replicas_count, 0) \
 	M(SettingUInt64, parallel_replica_offset, 0) \
+	\
+	/** Минимальная длина выражения expr = x1 OR ... expr = xN для оптимизации */ \
+	M(SettingUInt64, min_or_chain_length_for_optimization, 6)
 
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;

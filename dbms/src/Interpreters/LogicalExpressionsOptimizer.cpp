@@ -1,4 +1,5 @@
 #include <DB/Interpreters/LogicalExpressionsOptimizer.h>
+#include <DB/Interpreters/Settings.h>
 
 #include <DB/Parsers/ASTFunction.h>
 #include <DB/Parsers/ASTSelectQuery.h>
@@ -34,8 +35,8 @@ bool operator<(const OrWithExpression & lhs, const OrWithExpression & rhs)
 	return false;
 }
 
-LogicalExpressionsOptimizer::LogicalExpressionsOptimizer(ASTSelectQuery * select_query_)
-	: select_query(select_query_)
+LogicalExpressionsOptimizer::LogicalExpressionsOptimizer(ASTSelectQuery * select_query_, const Settings & settings_)
+	: select_query(select_query_), settings(settings_)
 {
 }
 
@@ -108,7 +109,7 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 		if (!found_chain)
 			for (auto & child : to_node->children)
 				if (typeid_cast<ASTSelectQuery *>(&*child) == nullptr)
-					to_visit.push_back(Edge(to_node, child.get()));
+					to_visit.push_back(Edge(to_node, &*child));
 	}
 
 	for (auto & chain : disjunctive_equalities_map)
@@ -120,11 +121,10 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 
 bool LogicalExpressionsOptimizer::mayOptimizeDisjunctiveEqualityChain(const DisjunctiveEqualityChain & chain) const
 {
-	const UInt64 mutation_threshold = 3;
 	const auto & equalities = chain.second;
 
 	/// Исключаем слишком короткие цепочки.
-	if (equalities.size() < mutation_threshold)
+	if (equalities.size() < settings.min_or_chain_length_for_optimization)
 		return false;
 
 	/// Проверяем, что правые части всех равенств имеют один и тот же тип.
@@ -160,42 +160,48 @@ void LogicalExpressionsOptimizer::replaceOrByIn(const DisjunctiveEqualityChain &
 	const auto & or_with_expression = chain.first;
 	const auto & equalities = chain.second;
 
-	/// Создать новое выражение IN на основе информации из OR-цепочки.
+	/// 1. Создать новое выражение IN на основе информации из OR-цепочки.
 
+	/// Построить список литералов x1, ..., xN из цепочки expr = x1 OR ... OR expr = xN
 	ASTPtr value_list = new ASTExpressionList;
 	for (auto function : equalities)
 	{
-		auto expr = static_cast<ASTExpressionList *>(&*(function->children[0]));
-		auto literal = static_cast<ASTLiteral *>(&*(expr->children[1]));
-		value_list->children.push_back(literal->clone());
+		auto expression_list = static_cast<ASTExpressionList *>(&*(function->children[0]));
+		ASTPtr literal = expression_list->children[1];
+		value_list->children.push_back(literal);
 	}
 
-	auto function = equalities[0];
-	auto expr = static_cast<ASTExpressionList *>(&*(function->children[0]));
-	auto equals_expr_lhs = static_cast<ASTLiteral *>(&*(expr->children[0]));
+	/// Получить выражение expr из цепочки expr = x1 OR ... OR expr = xN
+	ASTPtr equals_expr_lhs;
+	{
+		auto function = equalities[0];
+		auto expression_list = static_cast<ASTExpressionList *>(&*(function->children[0]));
+		equals_expr_lhs = expression_list->children[0];
+	}
 
 	ASTFunctionPtr tuple_function = new ASTFunction;
 	tuple_function->name = "tuple";
 	tuple_function->arguments = value_list;
 	tuple_function->children.push_back(tuple_function->arguments);
 
-	ASTPtr in_expr = new ASTExpressionList;
-	in_expr->children.push_back(equals_expr_lhs->clone());
-	in_expr->children.push_back(tuple_function);
+	ASTPtr expression_list = new ASTExpressionList;
+	expression_list->children.push_back(equals_expr_lhs);
+	expression_list->children.push_back(tuple_function);
 
+	/// Построить выражение expr IN (x1, ..., xN)
 	ASTFunctionPtr in_function = new ASTFunction;
 	in_function->name = "in";
-	in_function->arguments = in_expr;
+	in_function->arguments = expression_list;
 	in_function->children.push_back(in_function->arguments);
 
-	/// Заменить OR-цепочку на новое выражение IN.
+	/// 2. Заменить OR-цепочку на новое выражение IN.
 
 	auto & operands = getOrExpressionOperands(or_with_expression);
 	operands.push_back(in_function);
 
-	auto it = std::remove_if(operands.begin(), operands.end(), [&](const ASTPtr & node)
+	auto it = std::remove_if(operands.begin(), operands.end(), [&](const ASTPtr & operand)
 	{
-		return std::binary_search(equalities.begin(), equalities.end(), node.get());
+		return std::binary_search(equalities.begin(), equalities.end(), &*operand);
 	});
 	operands.erase(it, operands.end());
 }
@@ -224,11 +230,11 @@ void LogicalExpressionsOptimizer::fixBrokenOrExpressions()
 
 			/// Если узел OR был корнем выражения WHERE, PREWHERE или HAVING, то следует обновить этот корень.
 			/// Из-за того, что имеем дело с направленным ациклическим графом, надо проверить все случаи.
-			if (or_function == select_query->where_expression.get())
+			if (!select_query->where_expression.isNull() && (or_function == &*(select_query->where_expression)))
 				select_query->where_expression = operands[0];
-			if (or_function == select_query->prewhere_expression.get())
+			if (!select_query->prewhere_expression.isNull() && (or_function == &*(select_query->prewhere_expression)))
 				select_query->prewhere_expression = operands[0];
-			if (or_function == select_query->having_expression.get())
+			if (!select_query->having_expression.isNull() && (or_function == &*(select_query->having_expression)))
 				select_query->having_expression = operands[0];
 		}
 	}

@@ -10,6 +10,7 @@
 namespace DB
 {
 
+class Settings;
 class ASTFunction;
 class ASTSelectQuery;
 
@@ -32,7 +33,7 @@ class LogicalExpressionsOptimizer final
 {
 public:
 	/// Конструктор. Принимает корень DAG запроса.
-	LogicalExpressionsOptimizer(ASTSelectQuery * select_query_);
+	LogicalExpressionsOptimizer(ASTSelectQuery * select_query_, const Settings & settings_);
 
 	/** Заменить все довольно длинные однородные OR-цепочки expr = x1 OR ... OR expr = xN
 	  * на выражения expr IN (x1, ..., xN).
@@ -46,9 +47,6 @@ private:
 	using Equalities = std::vector<ASTFunction *>;
 	using DisjunctiveEqualitiesMap = std::map<OrWithExpression, Equalities>;
 	using DisjunctiveEqualityChain = DisjunctiveEqualitiesMap::value_type;
-
-	using ParentNodes = std::vector<IAST *>;
-	using FunctionParentMap = std::unordered_map<ASTFunction *, ParentNodes>;
 
 private:
 	/** Собрать информация про все равенства входящие в цепочки OR (не обязательно однородные).
@@ -69,7 +67,12 @@ private:
 	void fixBrokenOrExpressions();
 
 private:
+	using ParentNodes = std::vector<IAST *>;
+	using FunctionParentMap = std::unordered_map<ASTFunction *, ParentNodes>;
+
+private:
 	ASTSelectQuery * select_query;
+	const Settings & settings;
 	/// Информация про OR-цепочки внутри запроса.
 	DisjunctiveEqualitiesMap disjunctive_equalities_map;
 	/// Родители функций OR.
