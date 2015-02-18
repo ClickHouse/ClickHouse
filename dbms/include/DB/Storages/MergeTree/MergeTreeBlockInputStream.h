@@ -25,7 +25,8 @@ public:
 		all_mark_ranges(mark_ranges_), remaining_mark_ranges(mark_ranges_),
 		use_uncompressed_cache(use_uncompressed_cache_),
 		prewhere_actions(prewhere_actions_), prewhere_column(prewhere_column_),
-		log(&Logger::get("MergeTreeBlockInputStream"))
+		log(&Logger::get("MergeTreeBlockInputStream")),
+		ordered_names{column_names}
 	{
 		std::reverse(remaining_mark_ranges.begin(), remaining_mark_ranges.end());
 
@@ -191,7 +192,7 @@ protected:
 						remaining_mark_ranges.pop_back();
 				}
 				progressImpl(Progress(res.rows(), res.bytes()));
-				pre_reader->fillMissingColumns(res);
+				pre_reader->fillMissingColumns(res, ordered_names);
 
 				/// Вычислим выражение в PREWHERE.
 				prewhere_actions->execute(res);
@@ -294,7 +295,7 @@ protected:
 				else
 					throw Exception("Illegal type " + column->getName() + " of column for filter. Must be ColumnUInt8 or ColumnConstUInt8.", ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
 
-				reader->fillMissingColumns(res);
+				reader->fillMissingColumns(res, ordered_names);
 			}
 			while (!remaining_mark_ranges.empty() && !res && !isCancelled());
 		}
@@ -316,7 +317,7 @@ protected:
 
 			progressImpl(Progress(res.rows(), res.bytes()));
 
-			reader->fillMissingColumns(res);
+			reader->fillMissingColumns(res, ordered_names);
 		}
 
 		if (remaining_mark_ranges.empty())
@@ -354,6 +355,9 @@ private:
 	bool remove_prewhere_column;
 
 	Logger * log;
+
+	/// requested column names in specific order as expected by other stages
+	const Names ordered_names;
 };
 
 }
