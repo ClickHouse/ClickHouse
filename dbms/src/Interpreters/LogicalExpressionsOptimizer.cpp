@@ -34,8 +34,8 @@ bool operator<(const OrWithExpression & lhs, const OrWithExpression & rhs)
 	return false;
 }
 
-LogicalExpressionsOptimizer::LogicalExpressionsOptimizer(ASTPtr root_)
-	: root(root_), select_query(typeid_cast<ASTSelectQuery *>(&*root))
+LogicalExpressionsOptimizer::LogicalExpressionsOptimizer(ASTSelectQuery * select_query_)
+	: select_query(select_query_)
 {
 }
 
@@ -58,21 +58,21 @@ void LogicalExpressionsOptimizer::optimizeDisjunctiveEqualityChains()
 
 void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 {
-	using Edge = std::pair<ASTPtr, ASTPtr>;
+	using Edge = std::pair<IAST *, IAST *>;
 	std::deque<Edge> to_visit;
 
-	to_visit.push_back(Edge(ASTPtr(), root));
+	to_visit.push_back(Edge(nullptr, select_query));
 	while (!to_visit.empty())
 	{
 		auto edge = to_visit.front();
-		auto & from_node = edge.first;
-		auto & to_node = edge.second;
+		auto from_node = edge.first;
+		auto to_node = edge.second;
 
 		to_visit.pop_front();
 
 		bool found_chain = false;
 
-		auto function = typeid_cast<ASTFunction *>(&*to_node);
+		auto function = typeid_cast<ASTFunction *>(to_node);
 		if ((function != nullptr) && (function->name == "or") && (function->children.size() == 1))
 		{
 			auto expression_list = typeid_cast<ASTExpressionList *>(&*(function->children[0]));
@@ -101,14 +101,14 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 				}
 			}
 
-			if (!from_node.isNull() && found_chain)
-				or_parent_map[function].push_back(from_node.get());
+			if ((from_node != nullptr) && found_chain)
+				or_parent_map[function].push_back(from_node);
 		}
 
 		if (!found_chain)
 			for (auto & child : to_node->children)
 				if (typeid_cast<ASTSelectQuery *>(&*child) == nullptr)
-					to_visit.push_back(Edge(to_node, child));
+					to_visit.push_back(Edge(to_node, child.get()));
 	}
 
 	for (auto & chain : disjunctive_equalities_map)

@@ -32,7 +32,7 @@ class LogicalExpressionsOptimizer final
 {
 public:
 	/// Конструктор. Принимает корень DAG запроса.
-	LogicalExpressionsOptimizer(ASTPtr root_);
+	LogicalExpressionsOptimizer(ASTSelectQuery * select_query_);
 
 	/** Заменить все довольно длинные однородные OR-цепочки expr = x1 OR ... OR expr = xN
 	  * на выражения expr IN (x1, ..., xN).
@@ -69,7 +69,6 @@ private:
 	void fixBrokenOrExpressions();
 
 private:
-	ASTPtr root;
 	ASTSelectQuery * select_query;
 	/// Информация про OR-цепочки внутри запроса.
 	DisjunctiveEqualitiesMap disjunctive_equalities_map;
