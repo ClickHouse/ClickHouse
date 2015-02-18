@@ -1,16 +1,23 @@
 #pragma once
 
-#include <DB/Parsers/ASTFunction.h>
+#include <DB/Parsers/IAST.h>
+
+#include <string>
+#include <vector>
+#include <map>
+#include <unordered_map>
 
 namespace DB
 {
 
-class IAST;
+class ASTFunction;
 class ASTSelectQuery;
 
-struct LogicalOrWithLeftHandSide
+/** Функция OR с выражением.
+  */
+struct OrWithExpression
 {
-	LogicalOrWithLeftHandSide(ASTFunction * or_function_, const std::string & expression_);
+	OrWithExpression(ASTFunction * or_function_, const std::string & expression_);
 	ASTFunction * or_function;
 	const std::string expression;
 };
@@ -21,9 +28,10 @@ struct LogicalOrWithLeftHandSide
   * expr = x1 OR ... OR expr = xN
   * где expr - произвольное выражение и x1, ..., xN - литералы одного типа
   */
-class LogicalExpressionsOptimizer
+class LogicalExpressionsOptimizer final
 {
 public:
+	/// Конструктор. Принимает корень DAG запроса.
 	LogicalExpressionsOptimizer(ASTPtr root_);
 
 	/** Заменить все довольно длинные однородные OR-цепочки expr = x1 OR ... OR expr = xN
@@ -36,12 +44,11 @@ public:
 
 private:
 	using Equalities = std::vector<ASTFunction *>;
-	using DisjunctiveEqualitiesMap = std::map<LogicalOrWithLeftHandSide, Equalities>;
+	using DisjunctiveEqualitiesMap = std::map<OrWithExpression, Equalities>;
 	using DisjunctiveEqualityChain = DisjunctiveEqualitiesMap::value_type;
 
-	using ASTFunctionPtr = Poco::SharedPtr<ASTFunction>;
 	using ParentNodes = std::vector<IAST *>;
-	using ParentMap = std::map<ASTFunction *, ParentNodes>;
+	using FunctionParentMap = std::unordered_map<ASTFunction *, ParentNodes>;
 
 private:
 	/** Собрать информация про все равенства входящие в цепочки OR (не обязательно однородные).
@@ -55,13 +62,10 @@ private:
 	  */
 	bool mayOptimizeDisjunctiveEqualityChain(const DisjunctiveEqualityChain & chain) const;
 
-	/// Создать новое выражение IN на основе цепочки OR.
-	ASTFunctionPtr createInExpression(const Equalities & equalities) const;
+	/// Заменить однородную OR-цепочку на выражение IN.
+	void replaceOrByIn(const DisjunctiveEqualityChain & chain);
 
-	/// Вставить новое выражение IN в запрос.
-	void putInExpression(const DisjunctiveEqualityChain & chain, ASTFunctionPtr in_expression);
-
-    /// Удалить узлы OR, которые имеют только один узел типа Function.
+    /// Удалить выражения OR, которые имеют только один операнд.
 	void fixBrokenOrExpressions();
 
 private:
@@ -69,8 +73,8 @@ private:
 	ASTSelectQuery * select_query;
 	/// Информация про OR-цепочки внутри запроса.
 	DisjunctiveEqualitiesMap disjunctive_equalities_map;
-	// Родители функций OR.
-	ParentMap parent_map;
+	/// Родители функций OR.
+	FunctionParentMap or_parent_map;
 };
 
 }

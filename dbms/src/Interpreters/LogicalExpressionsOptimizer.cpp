@@ -1,6 +1,6 @@
 #include <DB/Interpreters/LogicalExpressionsOptimizer.h>
 
-#include <DB/Parsers/IAST.h>
+#include <DB/Parsers/ASTFunction.h>
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ASTLiteral.h>
 #include <DB/Parsers/queryToString.h>
@@ -12,12 +12,12 @@
 namespace DB
 {
 
-LogicalOrWithLeftHandSide::LogicalOrWithLeftHandSide(ASTFunction * or_function_, const std::string & expression_)
+OrWithExpression::OrWithExpression(ASTFunction * or_function_, const std::string & expression_)
 	: or_function(or_function_), expression(expression_)
 {
 }
 
-bool operator<(const LogicalOrWithLeftHandSide & lhs, const LogicalOrWithLeftHandSide & rhs)
+bool operator<(const OrWithExpression & lhs, const OrWithExpression & rhs)
 {
 	std::ptrdiff_t res1 = lhs.or_function - rhs.or_function;
 	if (res1 < 0)
@@ -50,10 +50,7 @@ void LogicalExpressionsOptimizer::optimizeDisjunctiveEqualityChains()
 	{
 		if (!mayOptimizeDisjunctiveEqualityChain(chain))
 			continue;
-
-		const auto & equalities = chain.second;
-		auto in_expression = createInExpression(equalities);
-		putInExpression(chain, in_expression);
+		replaceOrByIn(chain);
 	}
 
 	fixBrokenOrExpressions();
@@ -92,12 +89,11 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 						{
 							/// Равенство expr = xN.
 							auto expr_lhs = queryToString(equals_expression_list->children[0]);
-
 							auto literal = typeid_cast<ASTLiteral *>(&*(equals_expression_list->children[1]));
 							if (literal != nullptr)
 							{
-								LogicalOrWithLeftHandSide logical_or_with_lhs(function, expr_lhs);
-								disjunctive_equalities_map[logical_or_with_lhs].push_back(equals);
+								OrWithExpression or_with_expression(function, expr_lhs);
+								disjunctive_equalities_map[or_with_expression].push_back(equals);
 								found_chain = true;
 							}
 						}
@@ -106,7 +102,7 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 			}
 
 			if (!from_node.isNull() && found_chain)
-				parent_map[function].push_back(from_node.get());
+				or_parent_map[function].push_back(from_node.get());
 		}
 
 		if (!found_chain)
@@ -145,8 +141,27 @@ bool LogicalExpressionsOptimizer::mayOptimizeDisjunctiveEqualityChain(const Disj
 	return true;
 }
 
-LogicalExpressionsOptimizer::ASTFunctionPtr LogicalExpressionsOptimizer::createInExpression(const Equalities & equalities) const
+namespace
 {
+
+ASTs & getOrExpressionOperands(const OrWithExpression & or_with_expression)
+{
+	auto or_function = or_with_expression.or_function;
+	auto expression_list = static_cast<ASTExpressionList *>(&*(or_function->children[0]));
+	return expression_list->children;
+}
+
+}
+
+void LogicalExpressionsOptimizer::replaceOrByIn(const DisjunctiveEqualityChain & chain)
+{
+	using ASTFunctionPtr = Poco::SharedPtr<ASTFunction>;
+
+	const auto & or_with_expression = chain.first;
+	const auto & equalities = chain.second;
+
+	/// Создать новое выражение IN на основе информации из OR-цепочки.
+
 	ASTPtr value_list = new ASTExpressionList;
 	for (auto function : equalities)
 	{
@@ -173,28 +188,10 @@ LogicalExpressionsOptimizer::ASTFunctionPtr LogicalExpressionsOptimizer::createI
 	in_function->arguments = in_expr;
 	in_function->children.push_back(in_function->arguments);
 
-	return in_function;
-}
+	/// Заменить OR-цепочку на новое выражение IN.
 
-namespace
-{
-
-ASTs & getOrExpressionOperands(const LogicalOrWithLeftHandSide & logical_or_with_lhs)
-{
-	auto or_function = logical_or_with_lhs.or_function;
-	auto expression_list = static_cast<ASTExpressionList *>(&*(or_function->children[0]));
-	return expression_list->children;
-}
-
-}
-
-void LogicalExpressionsOptimizer::putInExpression(const DisjunctiveEqualityChain & chain, ASTFunctionPtr in_expression)
-{
-	const auto & logical_or_with_lhs = chain.first;
-	const auto & equalities = chain.second;
-
-	auto & operands = getOrExpressionOperands(logical_or_with_lhs);
-	operands.push_back(in_expression);
+	auto & operands = getOrExpressionOperands(or_with_expression);
+	operands.push_back(in_function);
 
 	auto it = std::remove_if(operands.begin(), operands.end(), [&](const ASTPtr & node)
 	{
@@ -207,14 +204,14 @@ void LogicalExpressionsOptimizer::fixBrokenOrExpressions()
 {
 	for (const auto & chain : disjunctive_equalities_map)
 	{
-		const auto & logical_or_with_lhs = chain.first;
-		auto or_function = logical_or_with_lhs.or_function;
-		auto & operands = getOrExpressionOperands(logical_or_with_lhs);
+		const auto & or_with_expression = chain.first;
+		auto or_function = or_with_expression.or_function;
+		auto & operands = getOrExpressionOperands(or_with_expression);
 
 		if (operands.size() == 1)
 		{
-			auto it = parent_map.find(or_function);
-			if (it == parent_map.end())
+			auto it = or_parent_map.find(or_function);
+			if (it == or_parent_map.end())
 				throw Exception("Parent node information is corrupted", ErrorCodes::LOGICAL_ERROR);
 			auto & parents = it->second;
 
