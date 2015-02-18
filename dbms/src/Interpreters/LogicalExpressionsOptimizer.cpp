@@ -47,7 +47,7 @@ void LogicalExpressionsOptimizer::optimizeDisjunctiveEqualityChains()
 
 	collectDisjunctiveEqualityChains();
 
-	for (const auto & chain : disjunctive_equalities_map)
+	for (const auto & chain : disjunctive_equality_chains_map)
 	{
 		if (!mayOptimizeDisjunctiveEqualityChain(chain))
 			continue;
@@ -94,7 +94,7 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 							if (literal != nullptr)
 							{
 								OrWithExpression or_with_expression(function, expr_lhs);
-								disjunctive_equalities_map[or_with_expression].push_back(equals);
+								disjunctive_equality_chains_map[or_with_expression].push_back(equals);
 								found_chain = true;
 							}
 						}
@@ -112,7 +112,7 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 					to_visit.push_back(Edge(to_node, &*child));
 	}
 
-	for (auto & chain : disjunctive_equalities_map)
+	for (auto & chain : disjunctive_equality_chains_map)
 	{
 		auto & equalities = chain.second;
 		std::sort(equalities.begin(), equalities.end());
@@ -208,7 +208,7 @@ void LogicalExpressionsOptimizer::replaceOrByIn(const DisjunctiveEqualityChain &
 
 void LogicalExpressionsOptimizer::fixBrokenOrExpressions()
 {
-	for (const auto & chain : disjunctive_equalities_map)
+	for (const auto & chain : disjunctive_equality_chains_map)
 	{
 		const auto & or_with_expression = chain.first;
 		auto or_function = or_with_expression.or_function;

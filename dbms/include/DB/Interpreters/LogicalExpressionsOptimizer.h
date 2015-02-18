@@ -45,8 +45,8 @@ public:
 
 private:
 	using Equalities = std::vector<ASTFunction *>;
-	using DisjunctiveEqualitiesMap = std::map<OrWithExpression, Equalities>;
-	using DisjunctiveEqualityChain = DisjunctiveEqualitiesMap::value_type;
+	using DisjunctiveEqualityChainsMap = std::map<OrWithExpression, Equalities>;
+	using DisjunctiveEqualityChain = DisjunctiveEqualityChainsMap::value_type;
 
 private:
 	/** Собрать информация про все равенства входящие в цепочки OR (не обязательно однородные).
@@ -63,7 +63,7 @@ private:
 	/// Заменить однородную OR-цепочку на выражение IN.
 	void replaceOrByIn(const DisjunctiveEqualityChain & chain);
 
-    /// Удалить выражения OR, которые имеют только один операнд.
+	/// Удалить выражения OR, которые имеют только один операнд.
 	void fixBrokenOrExpressions();
 
 private:
@@ -74,7 +74,7 @@ private:
 	ASTSelectQuery * select_query;
 	const Settings & settings;
 	/// Информация про OR-цепочки внутри запроса.
-	DisjunctiveEqualitiesMap disjunctive_equalities_map;
+	DisjunctiveEqualityChainsMap disjunctive_equality_chains_map;
 	/// Родители функций OR.
 	FunctionParentMap or_parent_map;
 };
