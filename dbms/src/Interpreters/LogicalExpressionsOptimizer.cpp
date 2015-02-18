@@ -48,11 +48,10 @@ void LogicalExpressionsOptimizer::optimizeDisjunctiveEqualityChains()
 
 	for (const auto & chain : disjunctive_equalities_map)
 	{
-		const auto & equalities = chain.second;
-
-		if (!mustTransform(equalities))
+		if (!mayOptimizeDisjunctiveEqualityChain(chain))
 			continue;
 
+		const auto & equalities = chain.second;
 		auto in_expression = createInExpression(equalities);
 		putInExpression(chain, in_expression);
 	}
@@ -66,7 +65,6 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 	std::deque<Edge> to_visit;
 
 	to_visit.push_back(Edge(ASTPtr(), root));
-
 	while (!to_visit.empty())
 	{
 		auto edge = to_visit.front();
@@ -75,7 +73,7 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 
 		to_visit.pop_front();
 
-		bool found = false;
+		bool found_chain = false;
 
 		auto function = typeid_cast<ASTFunction *>(&*to_node);
 		if ((function != nullptr) && (function->name == "or") && (function->children.size() == 1))
@@ -100,18 +98,18 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 							{
 								LogicalOrWithLeftHandSide logical_or_with_lhs(function, expr_lhs);
 								disjunctive_equalities_map[logical_or_with_lhs].push_back(equals);
-								found = true;
+								found_chain = true;
 							}
 						}
 					}
 				}
 			}
 
-			if (!from_node.isNull() && found)
+			if (!from_node.isNull() && found_chain)
 				parent_map[function].push_back(from_node.get());
 		}
 
-		if (!found)
+		if (!found_chain)
 			for (auto & child : to_node->children)
 				if (typeid_cast<ASTSelectQuery *>(&*child) == nullptr)
 					to_visit.push_back(Edge(to_node, child));
@@ -124,13 +122,16 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 	}
 }
 
-bool LogicalExpressionsOptimizer::mustTransform(const Equalities & equalities) const
+bool LogicalExpressionsOptimizer::mayOptimizeDisjunctiveEqualityChain(const DisjunctiveEqualityChain & chain) const
 {
 	const UInt64 mutation_threshold = 3;
+	const auto & equalities = chain.second;
 
+	/// Исключаем слишком короткие цепочки.
 	if (equalities.size() < mutation_threshold)
 		return false;
 
+	/// Проверяем, что правые части всех равенств имеют один и тот же тип.
 	auto first_expr = static_cast<ASTExpressionList *>(&*(equalities[0]->children[0]));
 	auto first_literal = static_cast<ASTLiteral *>(&*(first_expr->children[1]));
 	for (size_t i = 1; i < equalities.size(); ++i)
