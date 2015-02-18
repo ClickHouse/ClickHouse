@@ -77,7 +77,7 @@ void ExpressionAnalyzer::init()
 		LOG_DEBUG(&Logger::get("ExpressionAnalyzer"), "######################################");
 	}
 
-	LogicalExpressionsOptimizer logical_expressions_optimizer(ast);
+	LogicalExpressionsOptimizer logical_expressions_optimizer(select_query);
 	logical_expressions_optimizer.optimizeDisjunctiveEqualityChains();
 
 	{
