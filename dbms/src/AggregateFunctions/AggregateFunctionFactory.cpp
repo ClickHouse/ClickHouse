@@ -420,6 +420,12 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 	}
 	else if (recursion_level <= 1 && name.size() >= 3 && name[name.size() - 2] == 'I' && name[name.size() - 1] == 'f')
 	{
+		if (argument_types.empty())
+			throw Exception{
+				"Incorrect number of arguments for aggregate function " + name,
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
+			};
+
 		/// Для агрегатных функций вида aggIf, где agg - имя другой агрегатной функции.
 		DataTypes nested_dt = argument_types;
 		nested_dt.pop_back();
