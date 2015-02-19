@@ -3,6 +3,7 @@
 #include <DB/Dictionaries/IDictionary.h>
 #include <DB/Dictionaries/IDictionarySource.h>
 #include <DB/Dictionaries/DictionaryStructure.h>
+#include <DB/Columns/ColumnString.h>
 #include <statdaemons/ext/range.hpp>
 #include <vector>
 
@@ -68,7 +69,7 @@ public:
 		};
 	}
 
-#define DECLARE_SAFE_GETTER(TYPE, NAME, LC_TYPE) \
+#define DECLARE_INDIVIDUAL_GETTER(TYPE, NAME, LC_TYPE) \
 	TYPE get##NAME(const std::string & attribute_name, const id_t id) const override\
 	{\
 		const auto idx = getAttributeIndex(attribute_name);\
@@ -82,69 +83,70 @@ public:
 			return (*attribute.LC_TYPE##_array)[id];\
 		return attribute.LC_TYPE##_null_value;\
 	}
-	DECLARE_SAFE_GETTER(UInt8, UInt8, uint8)
-	DECLARE_SAFE_GETTER(UInt16, UInt16, uint16)
-	DECLARE_SAFE_GETTER(UInt32, UInt32, uint32)
-	DECLARE_SAFE_GETTER(UInt64, UInt64, uint64)
-	DECLARE_SAFE_GETTER(Int8, Int8, int8)
-	DECLARE_SAFE_GETTER(Int16, Int16, int16)
-	DECLARE_SAFE_GETTER(Int32, Int32, int32)
-	DECLARE_SAFE_GETTER(Int64, Int64, int64)
-	DECLARE_SAFE_GETTER(Float32, Float32, float32)
-	DECLARE_SAFE_GETTER(Float64, Float64, float64)
-	DECLARE_SAFE_GETTER(StringRef, String, string)
-#undef DECLARE_SAFE_GETTER
+	DECLARE_INDIVIDUAL_GETTER(UInt8, UInt8, uint8)
+	DECLARE_INDIVIDUAL_GETTER(UInt16, UInt16, uint16)
+	DECLARE_INDIVIDUAL_GETTER(UInt32, UInt32, uint32)
+	DECLARE_INDIVIDUAL_GETTER(UInt64, UInt64, uint64)
+	DECLARE_INDIVIDUAL_GETTER(Int8, Int8, int8)
+	DECLARE_INDIVIDUAL_GETTER(Int16, Int16, int16)
+	DECLARE_INDIVIDUAL_GETTER(Int32, Int32, int32)
+	DECLARE_INDIVIDUAL_GETTER(Int64, Int64, int64)
+	DECLARE_INDIVIDUAL_GETTER(Float32, Float32, float32)
+	DECLARE_INDIVIDUAL_GETTER(Float64, Float64, float64)
+	DECLARE_INDIVIDUAL_GETTER(StringRef, String, string)
+#undef DECLARE_INDIVIDUAL_GETTER
 
-	std::size_t getAttributeIndex(const std::string & attribute_name) const override
+#define DECLARE_MULTIPLE_GETTER(TYPE, LC_TYPE)\
+	void get##TYPE(const std::string & attribute_name, const PODArray<UInt64> & ids, PODArray<TYPE> & out) const override\
+	{\
+		const auto idx = getAttributeIndex(attribute_name);\
+		const auto & attribute = attributes[idx];\
+		if (attribute.type != AttributeType::LC_TYPE)\
+			throw Exception{\
+				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
+				ErrorCodes::TYPE_MISMATCH\
+			};\
+		\
+		const auto & attr = *attribute.LC_TYPE##_array;\
+		const auto null_value = attribute.LC_TYPE##_null_value;\
+		\
+		for (const auto i : ext::range(0, ids.size()))\
+		{\
+			const auto id = ids[i];\
+			out[i] = id < attr.size() ? attr[id] : null_value;\
+		}\
+	}
+	DECLARE_MULTIPLE_GETTER(UInt8, uint8)
+	DECLARE_MULTIPLE_GETTER(UInt16, uint16)
+	DECLARE_MULTIPLE_GETTER(UInt32, uint32)
+	DECLARE_MULTIPLE_GETTER(UInt64, uint64)
+	DECLARE_MULTIPLE_GETTER(Int8, int8)
+	DECLARE_MULTIPLE_GETTER(Int16, int16)
+	DECLARE_MULTIPLE_GETTER(Int32, int32)
+	DECLARE_MULTIPLE_GETTER(Int64, int64)
+	DECLARE_MULTIPLE_GETTER(Float32, float32)
+	DECLARE_MULTIPLE_GETTER(Float64, float64)
+#undef DECLARE_MULTIPLE_GETTER
+	void getString(const std::string & attribute_name, const PODArray<UInt64> & ids, ColumnString * out) const override
 	{
-		const auto it = attribute_index_by_name.find(attribute_name);
-		if (it == std::end(attribute_index_by_name))
+		const auto idx = getAttributeIndex(attribute_name);
+		const auto & attribute = attributes[idx];
+		if (attribute.type != AttributeType::string)
 			throw Exception{
-				"No such attribute '" + attribute_name + "'",
-				ErrorCodes::BAD_ARGUMENTS
+				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
+				ErrorCodes::TYPE_MISMATCH
 			};
 
-		return it->second;
-	}
+		const auto & attr = *attribute.string_array;
+		const auto null_value = attribute.string_null_value;
 
-#define DECLARE_TYPE_CHECKER(NAME, LC_NAME)\
-	bool is##NAME(const std::size_t attribute_idx) const override\
-	{\
-		return attributes[attribute_idx].type == AttributeType::LC_NAME;\
+		for (const auto i : ext::range(0, ids.size()))
+		{
+			const auto id = ids[i];
+			const auto string_ref = id < attr.size() ? attr[id] : null_value;
+			out->insertData(string_ref.data, string_ref.size);
+		}
 	}
-	DECLARE_TYPE_CHECKER(UInt8, uint8)
-	DECLARE_TYPE_CHECKER(UInt16, uint16)
-	DECLARE_TYPE_CHECKER(UInt32, uint32)
-	DECLARE_TYPE_CHECKER(UInt64, uint64)
-	DECLARE_TYPE_CHECKER(Int8, int8)
-	DECLARE_TYPE_CHECKER(Int16, int16)
-	DECLARE_TYPE_CHECKER(Int32, int32)
-	DECLARE_TYPE_CHECKER(Int64, int64)
-	DECLARE_TYPE_CHECKER(Float32, float32)
-	DECLARE_TYPE_CHECKER(Float64, float64)
-	DECLARE_TYPE_CHECKER(String, string)
-#undef DECLARE_TYPE_CHECKER
-
-#define DECLARE_UNSAFE_GETTER(TYPE, NAME, LC_NAME)\
-	TYPE get##NAME##Unsafe(const std::size_t attribute_idx, const id_t id) const override\
-	{\
-		const auto & attribute = attributes[attribute_idx];\
-		if (id < attribute.LC_NAME##_array->size())\
-			return (*attribute.LC_NAME##_array)[id];\
-		return attribute.LC_NAME##_null_value;\
-	}
-	DECLARE_UNSAFE_GETTER(UInt8, UInt8, uint8)
-	DECLARE_UNSAFE_GETTER(UInt16, UInt16, uint16)
-	DECLARE_UNSAFE_GETTER(UInt32, UInt32, uint32)
-	DECLARE_UNSAFE_GETTER(UInt64, UInt64, uint64)
-	DECLARE_UNSAFE_GETTER(Int8, Int8, int8)
-	DECLARE_UNSAFE_GETTER(Int16, Int16, int16)
-	DECLARE_UNSAFE_GETTER(Int32, Int32, int32)
-	DECLARE_UNSAFE_GETTER(Int64, Int64, int64)
-	DECLARE_UNSAFE_GETTER(Float32, Float32, float32)
-	DECLARE_UNSAFE_GETTER(Float64, Float64, float64)
-	DECLARE_UNSAFE_GETTER(StringRef, String, string)
-#undef DECLARE_UNSAFE_GETTER
 
 private:
 	struct attribute_t
@@ -368,7 +370,19 @@ private:
 				(*attribute.string_array)[id] = StringRef{string_in_arena, string.size()};
 				break;
 			}
-		};
+		}
+	}
+
+	std::size_t getAttributeIndex(const std::string & attribute_name) const
+	{
+		const auto it = attribute_index_by_name.find(attribute_name);
+		if (it == std::end(attribute_index_by_name))
+			throw Exception{
+				"No such attribute '" + attribute_name + "'",
+				ErrorCodes::BAD_ARGUMENTS
+			};
+
+		return it->second;
 	}
 
 	const std::string name;

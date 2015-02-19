@@ -1397,7 +1397,7 @@ private:
 
 			block.getByPosition(result).column = new ColumnConstString{
 				col->size(),
-				in_data.size() == 0 ? trailing_char_str :
+				in_data.size() == 0 ? in_data :
 					in_data.back() == trailing_char_str.front() ? in_data : in_data + trailing_char_str
 			};
 		}

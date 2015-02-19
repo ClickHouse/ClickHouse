@@ -7,7 +7,6 @@
 #include <DB/Common/isLocalAddress.h>
 #include <statdaemons/ext/range.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Poco/Net/NetworkInterface.h>
 
 namespace DB
 {
@@ -63,10 +62,11 @@ public:
 
 	BlockInputStreamPtr loadId(const std::uint64_t id) override
 	{
-		throw Exception{
-			"Method unsupported",
-			ErrorCodes::NOT_IMPLEMENTED
-		};
+		const auto query = composeLoadIdQuery(id);
+
+		if (is_local)
+			return executeQuery(query, context, true).in;
+		return new RemoteBlockInputStream{pool.get(), query, nullptr};
 	}
 
 	BlockInputStreamPtr loadIds(const std::vector<std::uint64_t> ids) override
@@ -103,20 +103,25 @@ private:
 		return query;
 	}
 
-	static bool isLocal(const std::string & host, const UInt16 port)
+	std::string composeLoadIdQuery(const id_t id)
 	{
-		const UInt16 clickhouse_port = Poco::Util::Application::instance().config().getInt("tcp_port", 0);
-		static auto interfaces = Poco::Net::NetworkInterface::list();
+		std::string query{"SELECT "};
 
-		if (clickhouse_port == port)
+		auto first = true;
+		for (const auto idx : ext::range(0, sample_block.columns()))
 		{
-			return interfaces.end() != std::find_if(interfaces.begin(), interfaces.end(),
-				[&] (const Poco::Net::NetworkInterface & interface) {
-					return interface.address() == Poco::Net::IPAddress(host);
-				});
+			if (!first)
+				query += ", ";
+
+			query += sample_block.getByPosition(idx).name;
+			first = false;
 		}
 
-		return false;
+		const auto & id_column_name = sample_block.getByPosition(0).name;
+
+		query += " FROM " + table + " WHERE " + id_column_name + " IN (" + std::to_string(id) + ");";
+
+		return query;
 	}
 
 	const std::string host;

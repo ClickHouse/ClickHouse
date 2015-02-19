@@ -741,7 +741,7 @@ public:
 	static IFunction * create(const Context & context)
 	{
 		return new FunctionDictGetString{context.getExternalDictionaries()};
-	};
+	}
 
 	FunctionDictGetString(const ExternalDictionaries & dictionaries) : dictionaries(dictionaries) {}
 
@@ -775,19 +775,11 @@ private:
 			};
 		}
 
-		const auto id_arg = arguments[2].get();
-		if (!typeid_cast<const DataTypeUInt8 *>(id_arg) &&
-			!typeid_cast<const DataTypeUInt16 *>(id_arg) &&
-			!typeid_cast<const DataTypeUInt32 *>(id_arg) &&
-			!typeid_cast<const DataTypeUInt64 *>(id_arg) &&
-			!typeid_cast<const DataTypeInt8 *>(id_arg) &&
-			!typeid_cast<const DataTypeInt16 *>(id_arg) &&
-			!typeid_cast<const DataTypeInt32 *>(id_arg) &&
-			!typeid_cast<const DataTypeInt64 *>(id_arg))
+		if (!typeid_cast<const DataTypeUInt64 *>(arguments[2].get()))
 		{
 			throw Exception{
 				"Illegal type " + arguments[2]->getName() + " of third argument of function " + getName()
-					+ ", expected an integer.",
+					+ ", muste be UInt64.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
 			};
 		}
@@ -833,60 +825,29 @@ private:
 
 		const auto & attr_name = attr_name_col->getData();
 
-		const auto id_col = block.getByPosition(arguments[2]).column.get();
-		if (!execute<UInt8>(block, result, dict, attr_name, id_col) &&
-			!execute<UInt16>(block, result, dict, attr_name, id_col) &&
-			!execute<UInt32>(block, result, dict, attr_name, id_col) &&
-			!execute<UInt64>(block, result, dict, attr_name, id_col) &&
-			!execute<Int8>(block, result, dict, attr_name, id_col) &&
-			!execute<Int16>(block, result, dict, attr_name, id_col) &&
-			!execute<Int32>(block, result, dict, attr_name, id_col) &&
-			!execute<Int64>(block, result, dict, attr_name, id_col))
-		{
-			throw Exception{
-				"Third argument of function " + getName() + " must be integral",
-				ErrorCodes::ILLEGAL_COLUMN
-			};
-		}
-
-		return true;
-	}
-
-	template <typename T, typename DictionaryType>
-	bool execute(Block & block, const size_t result, const DictionaryType * const dictionary,
-		const std::string & attr_name, const IColumn * const id_col_untyped)
-	{
-		if (const auto id_col = typeid_cast<const ColumnVector<T> *>(id_col_untyped))
+		const auto id_col_untyped = block.getByPosition(arguments[2]).column.get();
+		if (const auto id_col = typeid_cast<const ColumnVector<UInt64> *>(id_col_untyped))
 		{
 			const auto out = new ColumnString;
 			block.getByPosition(result).column = out;
-
-			const auto attribute_idx = dictionary->getAttributeIndex(attr_name);
-			if (!dictionary->isString(attribute_idx))
-				throw Exception{
-					"Type mismatch: attribute " + attr_name + " has type different from String",
-					ErrorCodes::TYPE_MISMATCH
-				};
-
-			for (const auto & id : id_col->getData())
-			{
-				const auto string_ref = dictionary->getStringUnsafe(attribute_idx, id);
-				out->insertData(string_ref.data, string_ref.size);
-			}
-
-			return true;
+			dictionary->getString(attr_name, id_col->getData(), out);
 		}
-		else if (const auto id_col = typeid_cast<const ColumnConst<T> *>(id_col_untyped))
+		else if (const auto id_col = typeid_cast<const ColumnConst<UInt64> *>(id_col_untyped))
 		{
 			block.getByPosition(result).column = new ColumnConst<String>{
 				id_col->size(),
 				dictionary->getString(attr_name, id_col->getData()).toString()
 			};
+		}
+		else
+		{
+			throw Exception{
+				"Third argument of function " + getName() + " must be UInt64",
+				ErrorCodes::ILLEGAL_COLUMN
+			};
+		}
 
-			return true;
-		};
-
-		return false;
+		return true;
 	}
 
 	const ExternalDictionaries & dictionaries;
@@ -901,10 +862,9 @@ template <> struct DictGetTraits<DATA_TYPE>\
 	{\
 		return dict->get##TYPE(name, id);\
 	}\
-	static bool is(const IDictionary * const dict, const std::size_t idx) { return dict->is##TYPE(idx); } \
-	static TYPE get(const IDictionary * const dict, const std::size_t idx, const IDictionary::id_t id)\
+	static void get(const IDictionary * const dict, const std::string & name, const PODArray<UInt64> & ids, PODArray<TYPE> & out)\
 	{\
-		return dict->get##TYPE##Unsafe(idx, id);\
+		dict->get##TYPE(name, ids, out);\
 	}\
 };
 DECLARE_DICT_GET_TRAITS(UInt8, DataTypeUInt8)
@@ -930,7 +890,7 @@ public:
 	static IFunction * create(const Context & context)
 	{
 		return new FunctionDictGet{context.getExternalDictionaries()};
-	};
+	}
 
 	FunctionDictGet(const ExternalDictionaries & dictionaries) : dictionaries(dictionaries) {}
 
@@ -964,19 +924,11 @@ private:
 			};
 		}
 
-		const auto id_arg = arguments[2].get();
-		if (!typeid_cast<const DataTypeUInt8 *>(id_arg) &&
-			!typeid_cast<const DataTypeUInt16 *>(id_arg) &&
-			!typeid_cast<const DataTypeUInt32 *>(id_arg) &&
-			!typeid_cast<const DataTypeUInt64 *>(id_arg) &&
-			!typeid_cast<const DataTypeInt8 *>(id_arg) &&
-			!typeid_cast<const DataTypeInt16 *>(id_arg) &&
-			!typeid_cast<const DataTypeInt32 *>(id_arg) &&
-			!typeid_cast<const DataTypeInt64 *>(id_arg))
+		if (!typeid_cast<const DataTypeUInt64 *>(arguments[2].get()))
 		{
 			throw Exception{
-				"Illegal type " + id_arg->getName() + " of third argument of function " + getName()
-					+ ", expected an integer.",
+				"Illegal type " + arguments[2]->getName() + " of third argument of function " + getName()
+					+ ", must be UInt64.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
 			};
 		}
@@ -1022,38 +974,9 @@ private:
 
 		const auto & attr_name = attr_name_col->getData();
 
-		const auto id_col = block.getByPosition(arguments[2]).column.get();
-		if (!execute<UInt8>(block, result, dict, attr_name, id_col) &&
-			!execute<UInt16>(block, result, dict, attr_name, id_col) &&
-			!execute<UInt32>(block, result, dict, attr_name, id_col) &&
-			!execute<UInt64>(block, result, dict, attr_name, id_col) &&
-			!execute<Int8>(block, result, dict, attr_name, id_col) &&
-			!execute<Int16>(block, result, dict, attr_name, id_col) &&
-			!execute<Int32>(block, result, dict, attr_name, id_col) &&
-			!execute<Int64>(block, result, dict, attr_name, id_col))
+		const auto id_col_untyped = block.getByPosition(arguments[2]).column.get();
+		if (const auto id_col = typeid_cast<const ColumnVector<UInt64> *>(id_col_untyped))
 		{
-			throw Exception{
-				"Third argument of function " + getName() + " must be integral",
-				ErrorCodes::ILLEGAL_COLUMN
-			};
-		}
-
-		return true;
-	}
-
-	template <typename T, typename DictionaryType>
-	bool execute(Block & block, const size_t result, const DictionaryType * const dictionary,
-		const std::string & attr_name, const IColumn * const id_col_untyped)
-	{
-		if (const auto id_col = typeid_cast<const ColumnVector<T> *>(id_col_untyped))
-		{
-			const auto attribute_idx = dictionary->getAttributeIndex(attr_name);
-			if (!DictGetTraits<DataType>::is(dictionary, attribute_idx))
-				throw Exception{
-					"Type mismatch: attribute " + attr_name + " has type different from UInt64",
-					ErrorCodes::TYPE_MISMATCH
-				};
-
 			const auto out = new ColumnVector<Type>;
 			block.getByPosition(result).column = out;
 
@@ -1062,22 +985,24 @@ private:
 			const auto size = ids.size();
 			data.resize(size);
 
-			for (const auto idx : ext::range(0, size))
-				data[idx] = DictGetTraits<DataType>::get(dictionary, attribute_idx, ids[idx]);
-
-			return true;
+			DictGetTraits<DataType>::get(dictionary, attr_name, ids, data);
 		}
-		else if (const auto id_col = typeid_cast<const ColumnConst<T> *>(id_col_untyped))
+		else if (const auto id_col = typeid_cast<const ColumnConst<UInt64> *>(id_col_untyped))
 		{
 			block.getByPosition(result).column = new ColumnConst<Type>{
 				id_col->size(),
 				DictGetTraits<DataType>::get(dictionary, attr_name, id_col->getData())
 			};
+		}
+		else
+		{
+			throw Exception{
+				"Third argument of function " + getName() + " must be UInt64",
+				ErrorCodes::ILLEGAL_COLUMN
+			};
+		}
 
-			return true;
-		};
-
-		return false;
+		return true;
 	}
 
 	const ExternalDictionaries & dictionaries;
@@ -1107,7 +1032,7 @@ public:
 	static IFunction * create(const Context & context)
 	{
 		return new FunctionDictGetHierarchy{context.getExternalDictionaries()};
-	};
+	}
 
 	FunctionDictGetHierarchy(const ExternalDictionaries & dictionaries) : dictionaries(dictionaries) {}
 
@@ -1132,25 +1057,17 @@ private:
 			};
 		}
 
-		const auto id_arg = arguments[1].get();
-		if (!typeid_cast<const DataTypeUInt8 *>(id_arg) &&
-			!typeid_cast<const DataTypeUInt16 *>(id_arg) &&
-			!typeid_cast<const DataTypeUInt32 *>(id_arg) &&
-			!typeid_cast<const DataTypeUInt64 *>(id_arg) &&
-			!typeid_cast<const DataTypeInt8 *>(id_arg) &&
-			!typeid_cast<const DataTypeInt16 *>(id_arg) &&
-			!typeid_cast<const DataTypeInt32 *>(id_arg) &&
-			!typeid_cast<const DataTypeInt64 *>(id_arg))
+		if (!typeid_cast<const DataTypeUInt64 *>(arguments[1].get()))
 		{
 			throw Exception{
-				"Illegal type " + id_arg->getName() + " of second argument of function " + getName()
-					+ ", expected an integer.",
+				"Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
+					+ ", must be UInt64.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
 			};
 		}
 
 		return new DataTypeArray{new DataTypeUInt64};
-	};
+	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
@@ -1187,30 +1104,8 @@ private:
 		if (!dict)
 			return false;
 
-		const auto id_col = block.getByPosition(arguments[1]).column.get();
-		if (!execute<UInt8>(block, result, dict, id_col) &&
-			!execute<UInt16>(block, result, dict, id_col) &&
-			!execute<UInt32>(block, result, dict, id_col) &&
-			!execute<UInt64>(block, result, dict, id_col) &&
-			!execute<Int8>(block, result, dict, id_col) &&
-			!execute<Int16>(block, result, dict, id_col) &&
-			!execute<Int32>(block, result, dict, id_col) &&
-			!execute<Int64>(block, result, dict, id_col))
-		{
-			throw Exception{
-				"Second argument of function " + getName() + " must be integral",
-				ErrorCodes::ILLEGAL_COLUMN
-			};
-		}
-
-		return true;
-	}
-
-	template <typename T, typename DictionaryType>
-	bool execute(Block & block, const size_t result, const DictionaryType * const dictionary,
-		const IColumn * const id_col_untyped)
-	{
-		if (const auto id_col = typeid_cast<const ColumnVector<T> *>(id_col_untyped))
+		const auto id_col_untyped = block.getByPosition(arguments[1]).column.get();
+		if (const auto id_col = typeid_cast<const ColumnVector<UInt64> *>(id_col_untyped))
 		{
 			const auto backend = new ColumnVector<UInt64>;
 			const auto array = new ColumnArray{backend};
@@ -1232,18 +1127,16 @@ private:
 					cur = dictionary->toParent(cur);
 				}
 				offsets[idx] = out.size();
-			};
-
-			return true;
+			}
 		}
-		else if (const auto id_col = typeid_cast<const ColumnConst<T> *>(id_col_untyped))
+		else if (const auto id_col = typeid_cast<const ColumnConst<UInt64> *>(id_col_untyped))
 		{
 			Array res;
 
 			IDictionary::id_t cur = id_col->getData();
 			while (cur)
 			{
-				res.push_back(static_cast<typename NearestFieldType<T>::Type>(cur));
+				res.push_back(cur);
 				cur = dictionary->toParent(cur);
 			}
 
@@ -1252,9 +1145,23 @@ private:
 				res,
 				new DataTypeArray{new DataTypeUInt64}
 			};
+		}
+		else
+		{
+			throw Exception{
+				"Second argument of function " + getName() + " must be UInt64",
+				ErrorCodes::ILLEGAL_COLUMN
+			};
+		}
 
-			return true;
-		};
+		return true;
+	}
+
+	template <typename T, typename DictionaryType>
+	bool execute(Block & block, const size_t result, const DictionaryType * const dictionary,
+		const IColumn * const id_col_untyped)
+	{
+
 
 		return false;
 	}
@@ -1271,7 +1178,7 @@ public:
 	static IFunction * create(const Context & context)
 	{
 		return new FunctionDictIsIn{context.getExternalDictionaries()};
-	};
+	}
 
 	FunctionDictIsIn(const ExternalDictionaries & dictionaries) : dictionaries(dictionaries) {}
 
@@ -1368,69 +1275,28 @@ private:
 		if (!dict)
 			return false;
 
-		const auto child_id_col = block.getByPosition(arguments[1]).column.get();
-		const auto ancestor_id_col = block.getByPosition(arguments[2]).column.get();
-		if (!execute<UInt8>(block, result, dict, child_id_col, ancestor_id_col) &&
-			!execute<UInt16>(block, result, dict, child_id_col, ancestor_id_col) &&
-			!execute<UInt32>(block, result, dict, child_id_col, ancestor_id_col) &&
-			!execute<UInt64>(block, result, dict, child_id_col, ancestor_id_col) &&
-			!execute<Int8>(block, result, dict, child_id_col, ancestor_id_col) &&
-			!execute<Int16>(block, result, dict, child_id_col, ancestor_id_col) &&
-			!execute<Int32>(block, result, dict, child_id_col, ancestor_id_col) &&
-			!execute<Int64>(block, result, dict, child_id_col, ancestor_id_col))
-		{
+		const auto child_id_col_untyped = block.getByPosition(arguments[1]).column.get();
+		const auto ancestor_id_col_untyped = block.getByPosition(arguments[2]).column.get();
+
+		if (const auto child_id_col = typeid_cast<const ColumnVector<UInt64> *>(child_id_col_untyped))
+			execute(block, result, dictionary, child_id_col, ancestor_id_col_untyped);
+		else if (const auto child_id_col = typeid_cast<const ColumnConst<UInt64> *>(child_id_col_untyped))
+			execute(block, result, dictionary, child_id_col, ancestor_id_col_untyped);
+		else
 			throw Exception{
-				"Illegal column " + child_id_col->getName()
+				"Illegal column " + child_id_col_untyped->getName()
 					+ " of second argument of function " + getName(),
 				ErrorCodes::ILLEGAL_COLUMN
 			};
-		}
 
 		return true;
 	}
 
-	template <typename T, typename DictionaryType>
+	template <typename DictionaryType>
 	bool execute(Block & block, const size_t result, const DictionaryType * const dictionary,
-		const IColumn * const child_id_col_untyped, const IColumn * const ancestor_id_col_untyped)
+		const ColumnVector<UInt64> * const child_id_col, const IColumn * const ancestor_id_col_untyped)
 	{
-		if (execute<T, ColumnVector<T>>(block, result, dictionary, child_id_col_untyped, ancestor_id_col_untyped) ||
-			execute<T, ColumnConst<T>>(block, result, dictionary, child_id_col_untyped, ancestor_id_col_untyped))
-			return true;
-
-		return false;
-	}
-
-	template <typename T, typename ColumnType, typename DictionaryType>
-	bool execute(Block & block, const size_t result, const DictionaryType * dictionary,
-		const IColumn * const child_id_col_untyped, const IColumn * const ancestor_id_col_untyped)
-	{
-		if (const auto child_id_col = typeid_cast<const ColumnType *>(child_id_col_untyped))
-		{
-			if (execute<T, UInt8>(block, result, dictionary, child_id_col, ancestor_id_col_untyped) ||
-				execute<T, UInt16>(block, result, dictionary, child_id_col, ancestor_id_col_untyped) ||
-				execute<T, UInt32>(block, result, dictionary, child_id_col, ancestor_id_col_untyped) ||
-				execute<T, UInt64>(block, result, dictionary, child_id_col, ancestor_id_col_untyped) ||
-				execute<T, Int8>(block, result, dictionary, child_id_col, ancestor_id_col_untyped) ||
-				execute<T, Int16>(block, result, dictionary, child_id_col, ancestor_id_col_untyped) ||
-				execute<T, Int32>(block, result, dictionary, child_id_col, ancestor_id_col_untyped) ||
-				execute<T, Int64>(block, result, dictionary, child_id_col, ancestor_id_col_untyped))
-				return true;
-			else
-				throw Exception{
-					"Illegal column " + ancestor_id_col_untyped->getName()
-						+ " of third argument of function " + getName(),
-					ErrorCodes::ILLEGAL_COLUMN
-				};
-		}
-
-		return false;
-	}
-
-	template <typename T, typename U, typename DictionaryType>
-	bool execute(Block & block, const size_t result, const DictionaryType * const dictionary,
-		const ColumnVector<T> * const child_id_col, const IColumn * const ancestor_id_col_untyped)
-	{
-		if (const auto ancestor_id_col = typeid_cast<const ColumnVector<T> *>(ancestor_id_col_untyped))
+		if (const auto ancestor_id_col = typeid_cast<const ColumnVector<UInt64> *>(ancestor_id_col_untyped))
 		{
 			const auto out = new ColumnVector<UInt8>;
 			block.getByPosition(result).column = out;
@@ -1443,10 +1309,8 @@ private:
 
 			for (const auto idx : ext::range(0, size))
 				data[idx] = dictionary->in(child_ids[idx], ancestor_ids[idx]);
-
-			return true;
 		}
-		else if (const auto ancestor_id_col = typeid_cast<const ColumnConst<T> *>(ancestor_id_col_untyped))
+		else if (const auto ancestor_id_col = typeid_cast<const ColumnConst<UInt64> *>(ancestor_id_col_untyped))
 		{
 			const auto out = new ColumnVector<UInt8>;
 			block.getByPosition(result).column = out;
@@ -1459,18 +1323,24 @@ private:
 
 			for (const auto idx : ext::range(0, size))
 				data[idx] = dictionary->in(child_ids[idx], ancestor_id);
-
-			return true;
+		}
+		else
+		{
+			throw Exception{
+				"Illegal column " + ancestor_id_col_untyped->getName()
+					+ " of third argument of function " + getName(),
+				ErrorCodes::ILLEGAL_COLUMN
+			};
 		}
 
-		return false;
+		return true;
 	}
 
-	template <typename T, typename U, typename DictionaryType>
+	template <typename DictionaryType>
 	bool execute(Block & block, const size_t result, const DictionaryType * const dictionary,
-		const ColumnConst<T> * const child_id_col, const IColumn * const ancestor_id_col_untyped)
+		const ColumnConst<UInt64> * const child_id_col, const IColumn * const ancestor_id_col_untyped)
 	{
-		if (const auto ancestor_id_col = typeid_cast<const ColumnVector<T> *>(ancestor_id_col_untyped))
+		if (const auto ancestor_id_col = typeid_cast<const ColumnVector<UInt64> *>(ancestor_id_col_untyped))
 		{
 			const auto out = new ColumnVector<UInt8>;
 			block.getByPosition(result).column = out;
@@ -1483,20 +1353,24 @@ private:
 
 			for (const auto idx : ext::range(0, size))
 				data[idx] = dictionary->in(child_id, ancestor_ids[idx]);
-
-			return true;
 		}
-		else if (const auto ancestor_id_col = typeid_cast<const ColumnConst<T> *>(ancestor_id_col_untyped))
+		else if (const auto ancestor_id_col = typeid_cast<const ColumnConst<UInt64> *>(ancestor_id_col_untyped))
 		{
 			block.getByPosition(result).column = new ColumnConst<UInt8>{
 				child_id_col->size(),
 				dictionary->in(child_id_col->getData(), ancestor_id_col->getData())
 			};
-
-			return true;
+		}
+		else
+		{
+			throw Exception{
+				"Illegal column " + ancestor_id_col_untyped->getName()
+					+ " of third argument of function " + getName(),
+				ErrorCodes::ILLEGAL_COLUMN
+			};
 		}
 
-		return false;
+		return true;
 	}
 
 	const ExternalDictionaries & dictionaries;
