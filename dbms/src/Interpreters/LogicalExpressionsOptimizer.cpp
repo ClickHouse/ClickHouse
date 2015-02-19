@@ -46,13 +46,17 @@ void LogicalExpressionsOptimizer::optimizeDisjunctiveEqualityChains()
 
 	collectDisjunctiveEqualityChains();
 
-	for (const auto & chain : disjunctive_equality_chains_map)
+	for (auto & chain : disjunctive_equality_chains_map)
 	{
 		if (!mayOptimizeDisjunctiveEqualityChain(chain))
 			continue;
-		replaceOrByIn(chain);
+		addInExpression(chain);
+
+		auto & equalities = chain.second;
+		equalities.is_processed = true;
 	}
 
+	cleanupOrExpressions();
 	fixBrokenOrExpressions();
 }
 
@@ -94,7 +98,7 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 							{
 								auto expr_lhs = equals_expression_list->children[0]->getTreeID();
 								OrWithExpression or_with_expression(function, expr_lhs);
-								disjunctive_equality_chains_map[or_with_expression].push_back(equals);
+								disjunctive_equality_chains_map[or_with_expression].functions.push_back(equals);
 								found_chain = true;
 							}
 						}
@@ -140,24 +144,26 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 	for (auto & chain : disjunctive_equality_chains_map)
 	{
 		auto & equalities = chain.second;
-		std::sort(equalities.begin(), equalities.end());
+		auto & equality_functions = equalities.functions;
+		std::sort(equality_functions.begin(), equality_functions.end());
 	}
 }
 
 bool LogicalExpressionsOptimizer::mayOptimizeDisjunctiveEqualityChain(const DisjunctiveEqualityChain & chain) const
 {
-	const auto & equalities = chain.second;
+	const auto & equalities =  chain.second;
+	const auto & equality_functions = equalities.functions;
 
 	/// Исключаем слишком короткие цепочки.
-	if (equalities.size() < settings.min_or_chain_length_for_optimization)
+	if (equality_functions.size() < settings.min_or_chain_length_for_optimization)
 		return false;
 
 	/// Проверяем, что правые части всех равенств имеют один и тот же тип.
-	auto first_expr = static_cast<ASTExpressionList *>(&*(equalities[0]->children[0]));
+	auto first_expr = static_cast<ASTExpressionList *>(&*(equality_functions[0]->children[0]));
 	auto first_literal = static_cast<ASTLiteral *>(&*(first_expr->children[1]));
-	for (size_t i = 1; i < equalities.size(); ++i)
+	for (size_t i = 1; i < equality_functions.size(); ++i)
 	{
-		auto expr = static_cast<ASTExpressionList *>(&*(equalities[i]->children[0]));
+		auto expr = static_cast<ASTExpressionList *>(&*(equality_functions[i]->children[0]));
 		auto literal = static_cast<ASTLiteral *>(&*(expr->children[1]));
 
 		if (literal->type != first_literal->type)
@@ -169,27 +175,27 @@ bool LogicalExpressionsOptimizer::mayOptimizeDisjunctiveEqualityChain(const Disj
 namespace
 {
 
-ASTs & getOrExpressionOperands(const OrWithExpression & or_with_expression)
+ASTs & getOrFunctionOperands(ASTFunction * or_function)
 {
-	auto or_function = or_with_expression.or_function;
 	auto expression_list = static_cast<ASTExpressionList *>(&*(or_function->children[0]));
 	return expression_list->children;
 }
 
 }
 
-void LogicalExpressionsOptimizer::replaceOrByIn(const DisjunctiveEqualityChain & chain)
+void LogicalExpressionsOptimizer::addInExpression(const DisjunctiveEqualityChain & chain)
 {
 	using ASTFunctionPtr = Poco::SharedPtr<ASTFunction>;
 
 	const auto & or_with_expression = chain.first;
 	const auto & equalities = chain.second;
+	const auto & equality_functions = equalities.functions;
 
 	/// 1. Создать новое выражение IN на основе информации из OR-цепочки.
 
 	/// Построить список литералов x1, ..., xN из цепочки expr = x1 OR ... OR expr = xN
 	ASTPtr value_list = new ASTExpressionList;
-	for (auto function : equalities)
+	for (auto function : equality_functions)
 	{
 		auto expression_list = static_cast<ASTExpressionList *>(&*(function->children[0]));
 		ASTPtr literal = expression_list->children[1];
@@ -199,7 +205,7 @@ void LogicalExpressionsOptimizer::replaceOrByIn(const DisjunctiveEqualityChain &
 	/// Получить выражение expr из цепочки expr = x1 OR ... OR expr = xN
 	ASTPtr equals_expr_lhs;
 	{
-		auto function = equalities[0];
+		auto function = equality_functions[0];
 		auto expression_list = static_cast<ASTExpressionList *>(&*(function->children[0]));
 		equals_expr_lhs = expression_list->children[0];
 	}
@@ -219,16 +225,57 @@ void LogicalExpressionsOptimizer::replaceOrByIn(const DisjunctiveEqualityChain &
 	in_function->arguments = expression_list;
 	in_function->children.push_back(in_function->arguments);
 
-	/// 2. Заменить OR-цепочку на новое выражение IN.
+	/// 2. Вставить новое выражение IN.
 
-	auto & operands = getOrExpressionOperands(or_with_expression);
+	auto & operands = getOrFunctionOperands(or_with_expression.or_function);
 	operands.push_back(in_function);
+}
 
-	auto it = std::remove_if(operands.begin(), operands.end(), [&](const ASTPtr & operand)
+void LogicalExpressionsOptimizer::cleanupOrExpressions()
+{
+	std::unordered_map<ASTFunction *, ASTs::iterator> garbage_map;
+	garbage_map.reserve(or_parent_map.size());
+
+	/// Инициализация.
+	for (const auto & chain : disjunctive_equality_chains_map)
 	{
-		return std::binary_search(equalities.begin(), equalities.end(), &*operand);
-	});
-	operands.erase(it, operands.end());
+		const auto & equalities = chain.second;
+		if (!chain.second.is_processed)
+			continue;
+
+		const auto & or_with_expression = chain.first;
+		auto & operands = getOrFunctionOperands(or_with_expression.or_function);
+		garbage_map.insert(std::make_pair(or_with_expression.or_function, operands.end()));
+	}
+
+	/// Собрать мусор.
+	for (const auto & chain : disjunctive_equality_chains_map)
+	{
+		const auto & equalities = chain.second;
+		if (!equalities.is_processed)
+			continue;
+
+		const auto & or_with_expression = chain.first;
+		auto & operands = getOrFunctionOperands(or_with_expression.or_function);
+		const auto & equality_functions = equalities.functions;
+
+		auto it = garbage_map.find(or_with_expression.or_function);
+		if (it == garbage_map.end())
+			throw Exception("Garbage map is corrupted", ErrorCodes::LOGICAL_ERROR);
+
+		auto & last = it->second;
+		last = std::remove_if(operands.begin(), last, [&](const ASTPtr & operand)
+		{
+			return std::binary_search(equality_functions.begin(), equality_functions.end(), &*operand);
+		});
+	}
+
+	/// Удалить мусор.
+	for (const auto & entry : garbage_map)
+	{
+		auto & operands = getOrFunctionOperands(entry.first);
+		operands.erase(entry.second, operands.end());
+	}
 }
 
 void LogicalExpressionsOptimizer::fixBrokenOrExpressions()
@@ -237,7 +284,7 @@ void LogicalExpressionsOptimizer::fixBrokenOrExpressions()
 	{
 		const auto & or_with_expression = chain.first;
 		auto or_function = or_with_expression.or_function;
-		auto & operands = getOrExpressionOperands(or_with_expression);
+		auto & operands = getOrFunctionOperands(or_with_expression.or_function);
 
 		if (operands.size() == 1)
 		{

@@ -46,7 +46,11 @@ public:
 	LogicalExpressionsOptimizer & operator=(const LogicalExpressionsOptimizer &) = delete;
 
 private:
-	using Equalities = std::vector<ASTFunction *>;
+	struct Equalities
+	{
+		std::vector<ASTFunction *> functions;
+		bool is_processed = false;
+	};
 	using DisjunctiveEqualityChainsMap = std::map<OrWithExpression, Equalities>;
 	using DisjunctiveEqualityChain = DisjunctiveEqualityChainsMap::value_type;
 
@@ -62,8 +66,11 @@ private:
 	  */
 	bool mayOptimizeDisjunctiveEqualityChain(const DisjunctiveEqualityChain & chain) const;
 
-	/// Заменить однородную OR-цепочку на выражение IN.
-	void replaceOrByIn(const DisjunctiveEqualityChain & chain);
+	/// Вставить выражение IN в OR-цепочку.
+	void addInExpression(const DisjunctiveEqualityChain & chain);
+
+	/// Удалить равенства, которые были заменены выражениями IN.
+	void cleanupOrExpressions();
 
 	/// Удалить выражения OR, которые имеют только один операнд.
 	void fixBrokenOrExpressions();
