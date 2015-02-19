@@ -4,7 +4,6 @@
 #include <DB/Parsers/ASTFunction.h>
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ASTLiteral.h>
-#include <DB/Parsers/queryToString.h>
 
 #include <DB/Core/ErrorCodes.h>
 
@@ -90,10 +89,10 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 						if ((equals_expression_list != nullptr) && (equals_expression_list->children.size() == 2))
 						{
 							/// Равенство expr = xN.
-							auto expr_lhs = queryToString(equals_expression_list->children[0]);
 							auto literal = typeid_cast<ASTLiteral *>(&*(equals_expression_list->children[1]));
 							if (literal != nullptr)
 							{
+								auto expr_lhs = equals_expression_list->children[0]->getTreeID();
 								OrWithExpression or_with_expression(function, expr_lhs);
 								disjunctive_equality_chains_map[or_with_expression].push_back(equals);
 								found_chain = true;

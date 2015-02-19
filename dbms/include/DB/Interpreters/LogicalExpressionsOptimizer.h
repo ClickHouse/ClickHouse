@@ -23,6 +23,8 @@ struct OrWithExpression
 	const std::string expression;
 };
 
+bool operator<(const OrWithExpression & lhs, const OrWithExpression & rhs);
+
 /** Этот класс предоставляет функции для оптимизации логических выражений внутри запросов.
   *
   * Для простоты назовём однородной OR-цепочой любое выражение имеющее следующую структуру:
