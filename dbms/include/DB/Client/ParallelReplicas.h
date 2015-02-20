@@ -33,6 +33,9 @@ public:
 	/// Получить пакет от какой-нибудь реплики.
 	Connection::Packet receivePacket();
 
+	/// Разорвать все действующие соединения.
+	void disconnect();
+
 	/// Отменить запросы к репликам
 	void sendCancel();
 

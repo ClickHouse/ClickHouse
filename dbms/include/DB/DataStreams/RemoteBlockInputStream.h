@@ -102,13 +102,7 @@ public:
 		  * эти соединения не остались висеть в рассихронизированном состоянии.
 		  */
 		if (isQueryInProgress())
-		{
-			std::string addresses = parallel_replicas->dumpAddresses();
-			LOG_TRACE(log, "(" + addresses + ") Aborting query");
-
-			parallel_replicas->sendCancel();
-			(void) parallel_replicas->drain();
-		}
+			parallel_replicas->disconnect();
 	}
 
 protected:
