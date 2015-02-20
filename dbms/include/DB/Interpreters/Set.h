@@ -94,9 +94,9 @@ private:
 	/** Разные структуры данных, которые могут использоваться для проверки принадлежности
 	  *  одного или нескольких столбцов значений множеству.
 	  */
-	typedef HashSet<UInt64> SetUInt64;
+	typedef HashSet<UInt64, HashCRC32<UInt64>> SetUInt64;
 	typedef HashSetWithSavedHash<StringRef> SetString;
-	typedef HashSet<UInt128, UInt128Hash> SetHashed;
+	typedef HashSet<UInt128, UInt128HashCRC32> SetHashed;
 
 	/// Специализация для случая, когда есть один числовой ключ.
 	std::unique_ptr<SetUInt64> key64;

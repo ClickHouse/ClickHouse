@@ -108,7 +108,7 @@ public:
 	struct MapsAny
 	{
 		/// Специализация для случая, когда есть один числовой ключ.
-		typedef HashMap<UInt64, RowRef> MapUInt64;
+		typedef HashMap<UInt64, RowRef, HashCRC32<UInt64>> MapUInt64;
 
 		/// Специализация для случая, когда есть один строковый ключ.
 		typedef HashMapWithSavedHash<StringRef, RowRef> MapString;
@@ -118,7 +118,7 @@ public:
 		  * Иначе - вычисляет SipHash от набора из всех ключей.
 		  * (При этом, строки, содержащие нули посередине, могут склеиться.)
 		  */
-		typedef HashMap<UInt128, RowRef, UInt128Hash> MapHashed;
+		typedef HashMap<UInt128, RowRef, UInt128HashCRC32> MapHashed;
 
 		std::unique_ptr<MapUInt64> key64;
 		std::unique_ptr<MapString> key_string;
@@ -127,9 +127,9 @@ public:
 
 	struct MapsAll
 	{
-		typedef HashMap<UInt64, RowRefList> MapUInt64;
+		typedef HashMap<UInt64, RowRefList, HashCRC32<UInt64>> MapUInt64;
 		typedef HashMapWithSavedHash<StringRef, RowRefList> MapString;
-		typedef HashMap<UInt128, RowRefList, UInt128Hash> MapHashed;
+		typedef HashMap<UInt128, RowRefList, UInt128HashCRC32> MapHashed;
 
 		std::unique_ptr<MapUInt64> key64;
 		std::unique_ptr<MapString> key_string;

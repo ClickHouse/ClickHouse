@@ -1226,7 +1226,7 @@ private:
 		if (keys_bytes > 16)
 			return false;
 
-		typedef ClearableHashMap<UInt128, UInt32, UInt128Hash, HashTableGrower<INITIAL_SIZE_DEGREE>,
+		typedef ClearableHashMap<UInt128, UInt32, UInt128HashCRC32, HashTableGrower<INITIAL_SIZE_DEGREE>,
 			HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(UInt128)> > ValuesToIndices;
 
 		ValuesToIndices indices;
