@@ -862,7 +862,7 @@ template <> struct DictGetTraits<DATA_TYPE>\
 	{\
 		return dict->get##TYPE(name, id);\
 	}\
-	static void get(const IDictionary * const dict, const std::string & name, const PODArray<UInt64> & ids, PODArray<TYPE> & out)\
+	static void get(const IDictionary * const dict, const std::string & name, const PODArray<IDictionary::id_t> & ids, PODArray<TYPE> & out)\
 	{\
 		dict->get##TYPE(name, ids, out);\
 	}\
@@ -1203,36 +1203,20 @@ private:
 			};
 		}
 
-		const auto child_id_arg = arguments[1].get();
-		if (!typeid_cast<const DataTypeUInt8 *>(child_id_arg) &&
-			!typeid_cast<const DataTypeUInt16 *>(child_id_arg) &&
-			!typeid_cast<const DataTypeUInt32 *>(child_id_arg) &&
-			!typeid_cast<const DataTypeUInt64 *>(child_id_arg) &&
-			!typeid_cast<const DataTypeInt8 *>(child_id_arg) &&
-			!typeid_cast<const DataTypeInt16 *>(child_id_arg) &&
-			!typeid_cast<const DataTypeInt32 *>(child_id_arg) &&
-			!typeid_cast<const DataTypeInt64 *>(child_id_arg))
+		if (!typeid_cast<const DataTypeUInt64 *>(arguments[1].get()))
 		{
 			throw Exception{
-				"Illegal type " + child_id_arg->getName() + " of second argument of function " + getName()
-					+ ", expected an integer.",
+				"Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
+					+ ", must be UInt64.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
 			};
 		}
 
-		const auto ancestor_id_arg = arguments[2].get();
-		if (!typeid_cast<const DataTypeUInt8 *>(ancestor_id_arg) &&
-			!typeid_cast<const DataTypeUInt16 *>(ancestor_id_arg) &&
-			!typeid_cast<const DataTypeUInt32 *>(ancestor_id_arg) &&
-			!typeid_cast<const DataTypeUInt64 *>(ancestor_id_arg) &&
-			!typeid_cast<const DataTypeInt8 *>(ancestor_id_arg) &&
-			!typeid_cast<const DataTypeInt16 *>(ancestor_id_arg) &&
-			!typeid_cast<const DataTypeInt32 *>(ancestor_id_arg) &&
-			!typeid_cast<const DataTypeInt64 *>(ancestor_id_arg))
+		if (!typeid_cast<const DataTypeUInt64 *>(arguments[2].get()))
 		{
 			throw Exception{
-				"Illegal type " + ancestor_id_arg->getName() + " of argument of third function " + getName()
-					+ ", expected an integer.",
+				"Illegal type " + arguments[2]->getName() + " of third argument of function " + getName()
+					+ ", must be UInt64.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
 			};
 		}

@@ -130,7 +130,7 @@ public:
 #undef DECLARE_INDIVIDUAL_GETTER
 
 #define DECLARE_MULTIPLE_GETTER(TYPE, LC_TYPE)\
-	void get##TYPE(const std::string & attribute_name, const PODArray<UInt64> & ids, PODArray<TYPE> & out) const override\
+	void get##TYPE(const std::string & attribute_name, const PODArray<id_t> & ids, PODArray<TYPE> & out) const override\
 	{\
 		const auto idx = getAttributeIndex(attribute_name);\
 		const auto & attribute = attributes[idx];\
@@ -160,7 +160,7 @@ public:
 	DECLARE_MULTIPLE_GETTER(Float32, float32)
 	DECLARE_MULTIPLE_GETTER(Float64, float64)
 #undef DECLARE_MULTIPLE_GETTER
-	void getString(const std::string & attribute_name, const PODArray<UInt64> & ids, ColumnString * out) const override
+	void getString(const std::string & attribute_name, const PODArray<id_t> & ids, ColumnString * out) const override
 	{
 		const auto idx = getAttributeIndex(attribute_name);
 		const auto & attribute = attributes[idx];

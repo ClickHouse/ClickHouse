@@ -61,17 +61,17 @@ public:
 	virtual StringRef getString(const std::string & attribute_name, id_t id) const = 0;
 
 	/// functions for multiple access
-	virtual void getUInt8(const std::string & attr_name, const PODArray<UInt64> & ids, PODArray<UInt8> & out) const = 0;
-	virtual void getUInt16(const std::string & attr_name, const PODArray<UInt64> & ids, PODArray<UInt16> & out) const = 0;
-	virtual void getUInt32(const std::string & attr_name, const PODArray<UInt64> & ids, PODArray<UInt32> & out) const = 0;
-	virtual void getUInt64(const std::string & attr_name, const PODArray<UInt64> & ids, PODArray<UInt64> & out) const = 0;
-	virtual void getInt8(const std::string & attr_name, const PODArray<UInt64> & ids, PODArray<Int8> & out) const = 0;
-	virtual void getInt16(const std::string & attr_name, const PODArray<UInt64> & ids, PODArray<Int16> & out) const = 0;
-	virtual void getInt32(const std::string & attr_name, const PODArray<UInt64> & ids, PODArray<Int32> & out) const = 0;
-	virtual void getInt64(const std::string & attr_name, const PODArray<UInt64> & ids, PODArray<Int64> & out) const = 0;
-	virtual void getFloat32(const std::string & attr_name, const PODArray<UInt64> & ids, PODArray<Float32> & out) const = 0;
-	virtual void getFloat64(const std::string & attr_name, const PODArray<UInt64> & ids, PODArray<Float64> & out) const = 0;
-	virtual void getString(const std::string & attr_name, const PODArray<UInt64> & ids, ColumnString * out) const = 0;
+	virtual void getUInt8(const std::string & attr_name, const PODArray<id_t> & ids, PODArray<UInt8> & out) const = 0;
+	virtual void getUInt16(const std::string & attr_name, const PODArray<id_t> & ids, PODArray<UInt16> & out) const = 0;
+	virtual void getUInt32(const std::string & attr_name, const PODArray<id_t> & ids, PODArray<UInt32> & out) const = 0;
+	virtual void getUInt64(const std::string & attr_name, const PODArray<id_t> & ids, PODArray<UInt64> & out) const = 0;
+	virtual void getInt8(const std::string & attr_name, const PODArray<id_t> & ids, PODArray<Int8> & out) const = 0;
+	virtual void getInt16(const std::string & attr_name, const PODArray<id_t> & ids, PODArray<Int16> & out) const = 0;
+	virtual void getInt32(const std::string & attr_name, const PODArray<id_t> & ids, PODArray<Int32> & out) const = 0;
+	virtual void getInt64(const std::string & attr_name, const PODArray<id_t> & ids, PODArray<Int64> & out) const = 0;
+	virtual void getFloat32(const std::string & attr_name, const PODArray<id_t> & ids, PODArray<Float32> & out) const = 0;
+	virtual void getFloat64(const std::string & attr_name, const PODArray<id_t> & ids, PODArray<Float64> & out) const = 0;
+	virtual void getString(const std::string & attr_name, const PODArray<id_t> & ids, ColumnString * out) const = 0;
 
 	virtual ~IDictionary() = default;
 };
