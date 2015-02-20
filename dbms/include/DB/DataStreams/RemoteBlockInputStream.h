@@ -147,6 +147,7 @@ protected:
 			createParallelReplicas();
 			parallel_replicas->sendQuery(query, "", stage, true);
 			sendExternalTables();
+			__sync_synchronize();
 			sent_query = true;
 		}
 
