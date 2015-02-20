@@ -239,10 +239,12 @@ void LogicalExpressionsOptimizer::addInExpression(const DisjunctiveEqualityChain
 
 void LogicalExpressionsOptimizer::cleanupOrExpressions()
 {
+	/// Сохраняет для каждой оптимизированной OR-цепочки итератор на первый элемент
+	/// списка операндов, которые надо удалить.
 	std::unordered_map<ASTFunction *, ASTs::iterator> garbage_map;
-	garbage_map.reserve(processed_count);
 
 	/// Инициализация.
+	garbage_map.reserve(processed_count);
 	for (const auto & chain : disjunctive_equality_chains_map)
 	{
 		const auto & equalities = chain.second;
@@ -269,8 +271,8 @@ void LogicalExpressionsOptimizer::cleanupOrExpressions()
 		if (it == garbage_map.end())
 			throw Exception("Garbage map is corrupted", ErrorCodes::LOGICAL_ERROR);
 
-		auto & last = it->second;
-		last = std::remove_if(operands.begin(), last, [&](const ASTPtr & operand)
+		auto & first_erased = it->second;
+		first_erased = std::remove_if(operands.begin(), first_erased, [&](const ASTPtr & operand)
 		{
 			return std::binary_search(equality_functions.begin(), equality_functions.end(), &*operand);
 		});
@@ -280,10 +282,10 @@ void LogicalExpressionsOptimizer::cleanupOrExpressions()
 	for (const auto & entry : garbage_map)
 	{
 		auto function = entry.first;
-		auto last = entry.second;
+		auto first_erased = entry.second;
 
 		auto & operands = getOrFunctionOperands(function);
-		operands.erase(last, operands.end());
+		operands.erase(first_erased, operands.end());
 	}
 }
 
@@ -309,8 +311,8 @@ void LogicalExpressionsOptimizer::fixBrokenOrExpressions()
 			for (auto & parent : parents)
 			{
 				parent->children.push_back(operands[0]);
-				auto last = std::remove(parent->children.begin(), parent->children.end(), or_function);
-				parent->children.erase(last, parent->children.end());
+				auto first_erased = std::remove(parent->children.begin(), parent->children.end(), or_function);
+				parent->children.erase(first_erased, parent->children.end());
 			}
 
 			/// Если узел OR был корнем выражения WHERE, PREWHERE или HAVING, то следует обновить этот корень.
