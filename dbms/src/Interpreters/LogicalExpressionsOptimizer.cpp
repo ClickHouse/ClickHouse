@@ -155,6 +155,17 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 	}
 }
 
+namespace
+{
+
+ASTs & getFunctionOperands(ASTFunction * or_function)
+{
+	auto expression_list = static_cast<ASTExpressionList *>(&*(or_function->children[0]));
+	return expression_list->children;
+}
+
+}
+
 bool LogicalExpressionsOptimizer::mayOptimizeDisjunctiveEqualityChain(const DisjunctiveEqualityChain & chain) const
 {
 	const auto & equalities =  chain.second;
@@ -165,28 +176,17 @@ bool LogicalExpressionsOptimizer::mayOptimizeDisjunctiveEqualityChain(const Disj
 		return false;
 
 	/// Проверяем, что правые части всех равенств имеют один и тот же тип.
-	auto first_expr = static_cast<ASTExpressionList *>(&*(equality_functions[0]->children[0]));
-	auto first_literal = static_cast<ASTLiteral *>(&*(first_expr->children[1]));
-	for (auto function : equality_functions)
+	auto & first_operands = getFunctionOperands(equality_functions[0]);
+	auto first_literal = static_cast<ASTLiteral *>(&*first_operands[1]);
+	for (size_t i = 1; i < equality_functions.size(); ++i)
 	{
-		auto expr = static_cast<ASTExpressionList *>(&*(function->children[0]));
-		auto literal = static_cast<ASTLiteral *>(&*(expr->children[1]));
+		auto & operands = getFunctionOperands(equality_functions[i]);
+		auto literal = static_cast<ASTLiteral *>(&*operands[1]);
 
 		if (literal->type != first_literal->type)
 			return false;
 	}
 	return true;
-}
-
-namespace
-{
-
-ASTs & getOrFunctionOperands(ASTFunction * or_function)
-{
-	auto expression_list = static_cast<ASTExpressionList *>(&*(or_function->children[0]));
-	return expression_list->children;
-}
-
 }
 
 void LogicalExpressionsOptimizer::addInExpression(const DisjunctiveEqualityChain & chain)
@@ -203,17 +203,16 @@ void LogicalExpressionsOptimizer::addInExpression(const DisjunctiveEqualityChain
 	ASTPtr value_list = new ASTExpressionList;
 	for (const auto function : equality_functions)
 	{
-		const auto expression_list = static_cast<ASTExpressionList *>(&*(function->children[0]));
-		const auto & literal = expression_list->children[1];
-		value_list->children.push_back(literal);
+		const auto & operands = getFunctionOperands(function);
+		value_list->children.push_back(operands[1]);
 	}
 
 	/// Получить выражение expr из цепочки expr = x1 OR ... OR expr = xN
 	ASTPtr equals_expr_lhs;
 	{
 		auto function = equality_functions[0];
-		auto expression_list = static_cast<ASTExpressionList *>(&*(function->children[0]));
-		equals_expr_lhs = expression_list->children[0];
+		const auto & operands = getFunctionOperands(function);
+		equals_expr_lhs = operands[0];
 	}
 
 	ASTFunctionPtr tuple_function = new ASTFunction;
@@ -233,7 +232,7 @@ void LogicalExpressionsOptimizer::addInExpression(const DisjunctiveEqualityChain
 
 	/// 2. Вставить новое выражение IN.
 
-	auto & operands = getOrFunctionOperands(or_with_expression.or_function);
+	auto & operands = getFunctionOperands(or_with_expression.or_function);
 	operands.push_back(in_function);
 }
 
@@ -252,7 +251,7 @@ void LogicalExpressionsOptimizer::cleanupOrExpressions()
 			continue;
 
 		const auto & or_with_expression = chain.first;
-		auto & operands = getOrFunctionOperands(or_with_expression.or_function);
+		auto & operands = getFunctionOperands(or_with_expression.or_function);
 		garbage_map.insert(std::make_pair(or_with_expression.or_function, operands.end()));
 	}
 
@@ -264,7 +263,7 @@ void LogicalExpressionsOptimizer::cleanupOrExpressions()
 			continue;
 
 		const auto & or_with_expression = chain.first;
-		auto & operands = getOrFunctionOperands(or_with_expression.or_function);
+		auto & operands = getFunctionOperands(or_with_expression.or_function);
 		const auto & equality_functions = equalities.functions;
 
 		auto it = garbage_map.find(or_with_expression.or_function);
@@ -284,7 +283,7 @@ void LogicalExpressionsOptimizer::cleanupOrExpressions()
 		auto function = entry.first;
 		auto first_erased = entry.second;
 
-		auto & operands = getOrFunctionOperands(function);
+		auto & operands = getFunctionOperands(function);
 		operands.erase(first_erased, operands.end());
 	}
 }
@@ -299,7 +298,7 @@ void LogicalExpressionsOptimizer::fixBrokenOrExpressions()
 
 		const auto & or_with_expression = chain.first;
 		auto or_function = or_with_expression.or_function;
-		auto & operands = getOrFunctionOperands(or_with_expression.or_function);
+		auto & operands = getFunctionOperands(or_with_expression.or_function);
 
 		if (operands.size() == 1)
 		{
