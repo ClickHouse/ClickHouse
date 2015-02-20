@@ -41,7 +41,7 @@ LogicalExpressionsOptimizer::LogicalExpressionsOptimizer(ASTSelectQuery * select
 
 void LogicalExpressionsOptimizer::optimizeDisjunctiveEqualityChains()
 {
-	if (select_query == nullptr)
+	if ((select_query == nullptr) || hasOptimizedDisjunctiveEqualityChains)
 		return;
 
 	collectDisjunctiveEqualityChains();
@@ -54,10 +54,16 @@ void LogicalExpressionsOptimizer::optimizeDisjunctiveEqualityChains()
 
 		auto & equalities = chain.second;
 		equalities.is_processed = true;
+		++processed_count;
 	}
 
-	cleanupOrExpressions();
-	fixBrokenOrExpressions();
+	if (processed_count > 0)
+	{
+		cleanupOrExpressions();
+		fixBrokenOrExpressions();
+	}
+
+	hasOptimizedDisjunctiveEqualityChains = true;
 }
 
 void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
@@ -84,7 +90,7 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 			if (expression_list != nullptr)
 			{
 				/// Цепочка элементов выражения OR.
-				for (auto child : expression_list->children)
+				for (auto & child : expression_list->children)
 				{
 					auto equals = typeid_cast<ASTFunction *>(&*child);
 					if ((equals != nullptr) && (equals->name == "equals") && (equals->children.size() == 1))
@@ -161,9 +167,9 @@ bool LogicalExpressionsOptimizer::mayOptimizeDisjunctiveEqualityChain(const Disj
 	/// Проверяем, что правые части всех равенств имеют один и тот же тип.
 	auto first_expr = static_cast<ASTExpressionList *>(&*(equality_functions[0]->children[0]));
 	auto first_literal = static_cast<ASTLiteral *>(&*(first_expr->children[1]));
-	for (size_t i = 1; i < equality_functions.size(); ++i)
+	for (auto function : equality_functions)
 	{
-		auto expr = static_cast<ASTExpressionList *>(&*(equality_functions[i]->children[0]));
+		auto expr = static_cast<ASTExpressionList *>(&*(function->children[0]));
 		auto literal = static_cast<ASTLiteral *>(&*(expr->children[1]));
 
 		if (literal->type != first_literal->type)
@@ -195,10 +201,10 @@ void LogicalExpressionsOptimizer::addInExpression(const DisjunctiveEqualityChain
 
 	/// Построить список литералов x1, ..., xN из цепочки expr = x1 OR ... OR expr = xN
 	ASTPtr value_list = new ASTExpressionList;
-	for (auto function : equality_functions)
+	for (const auto function : equality_functions)
 	{
-		auto expression_list = static_cast<ASTExpressionList *>(&*(function->children[0]));
-		ASTPtr literal = expression_list->children[1];
+		const auto expression_list = static_cast<ASTExpressionList *>(&*(function->children[0]));
+		const auto & literal = expression_list->children[1];
 		value_list->children.push_back(literal);
 	}
 
@@ -234,7 +240,7 @@ void LogicalExpressionsOptimizer::addInExpression(const DisjunctiveEqualityChain
 void LogicalExpressionsOptimizer::cleanupOrExpressions()
 {
 	std::unordered_map<ASTFunction *, ASTs::iterator> garbage_map;
-	garbage_map.reserve(or_parent_map.size());
+	garbage_map.reserve(processed_count);
 
 	/// Инициализация.
 	for (const auto & chain : disjunctive_equality_chains_map)
@@ -273,8 +279,11 @@ void LogicalExpressionsOptimizer::cleanupOrExpressions()
 	/// Удалить мусор.
 	for (const auto & entry : garbage_map)
 	{
-		auto & operands = getOrFunctionOperands(entry.first);
-		operands.erase(entry.second, operands.end());
+		auto function = entry.first;
+		auto last = entry.second;
+
+		auto & operands = getOrFunctionOperands(function);
+		operands.erase(last, operands.end());
 	}
 }
 
@@ -282,6 +291,10 @@ void LogicalExpressionsOptimizer::fixBrokenOrExpressions()
 {
 	for (const auto & chain : disjunctive_equality_chains_map)
 	{
+		const auto & equalities = chain.second;
+		if (!equalities.is_processed)
+			continue;
+
 		const auto & or_with_expression = chain.first;
 		auto or_function = or_with_expression.or_function;
 		auto & operands = getOrFunctionOperands(or_with_expression.or_function);
@@ -296,8 +309,8 @@ void LogicalExpressionsOptimizer::fixBrokenOrExpressions()
 			for (auto & parent : parents)
 			{
 				parent->children.push_back(operands[0]);
-				auto it = std::remove(parent->children.begin(), parent->children.end(), or_function);
-				parent->children.erase(it, parent->children.end());
+				auto last = std::remove(parent->children.begin(), parent->children.end(), or_function);
+				parent->children.erase(last, parent->children.end());
 			}
 
 			/// Если узел OR был корнем выражения WHERE, PREWHERE или HAVING, то следует обновить этот корень.
