@@ -12,20 +12,20 @@
 namespace DB
 {
 
-OrWithExpression::OrWithExpression(ASTFunction * or_function_, const std::string & expression_)
+LogicalExpressionsOptimizer::OrWithExpression::OrWithExpression(ASTFunction * or_function_, const std::string & expression_)
 	: or_function(or_function_), expression(expression_)
 {
 }
 
-bool operator<(const OrWithExpression & lhs, const OrWithExpression & rhs)
+bool LogicalExpressionsOptimizer::OrWithExpression::operator<(const OrWithExpression & rhs) const
 {
-	std::ptrdiff_t res1 = lhs.or_function - rhs.or_function;
+	std::ptrdiff_t res1 = this->or_function - rhs.or_function;
 	if (res1 < 0)
 		return true;
 	if (res1 > 0)
 		return false;
 
-	int res2 = lhs.expression.compare(rhs.expression);
+	int res2 = this->expression.compare(rhs.expression);
 	if (res2 < 0)
 		return true;
 	if (res2 > 0)

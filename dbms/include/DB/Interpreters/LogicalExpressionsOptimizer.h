@@ -14,17 +14,6 @@ class Settings;
 class ASTFunction;
 class ASTSelectQuery;
 
-/** Функция OR с выражением.
-  */
-struct OrWithExpression
-{
-	OrWithExpression(ASTFunction * or_function_, const std::string & expression_);
-	ASTFunction * or_function;
-	const std::string expression;
-};
-
-bool operator<(const OrWithExpression & lhs, const OrWithExpression & rhs);
-
 /** Этот класс предоставляет функции для оптимизации логических выражений внутри запросов.
   *
   * Для простоты назовём однородной OR-цепочой любое выражение имеющее следующую структуру:
@@ -46,11 +35,23 @@ public:
 	LogicalExpressionsOptimizer & operator=(const LogicalExpressionsOptimizer &) = delete;
 
 private:
+	/** Функция OR с выражением.
+	*/
+	struct OrWithExpression
+	{
+		OrWithExpression(ASTFunction * or_function_, const std::string & expression_);
+		bool operator<(const OrWithExpression & rhs) const;
+
+		ASTFunction * or_function;
+		const std::string expression;
+	};
+
 	struct Equalities
 	{
 		std::vector<ASTFunction *> functions;
 		bool is_processed = false;
 	};
+
 	using DisjunctiveEqualityChainsMap = std::map<OrWithExpression, Equalities>;
 	using DisjunctiveEqualityChain = DisjunctiveEqualityChainsMap::value_type;
 
