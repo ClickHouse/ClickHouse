@@ -178,9 +178,9 @@ bool LogicalExpressionsOptimizer::mayOptimizeDisjunctiveEqualityChain(const Disj
 	/// Проверяем, что правые части всех равенств имеют один и тот же тип.
 	auto & first_operands = getFunctionOperands(equality_functions[0]);
 	auto first_literal = static_cast<ASTLiteral *>(&*first_operands[1]);
-	for (auto function : equality_functions)
+	for (size_t i = 1; i < equality_functions.size(); ++i)
 	{
-		auto & operands = getFunctionOperands(function);
+		auto & operands = getFunctionOperands(equality_functions[i]);
 		auto literal = static_cast<ASTLiteral *>(&*operands[1]);
 
 		if (literal->type != first_literal->type)
