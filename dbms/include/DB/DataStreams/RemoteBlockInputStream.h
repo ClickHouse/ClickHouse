@@ -101,7 +101,7 @@ public:
 		  * все соединения, затем читаем и пропускаем оставшиеся пакеты чтобы
 		  * эти соединения не остались висеть в рассихронизированном состоянии.
 		  */
-		if (isQueryInProgress())
+		if (established || isQueryInProgress())
 			parallel_replicas->disconnect();
 	}
 
@@ -139,10 +139,10 @@ protected:
 		if (!sent_query)
 		{
 			createParallelReplicas();
+			setEstablishedState();
 			parallel_replicas->sendQuery(query, "", stage, true);
 			sendExternalTables();
-			__sync_synchronize();
-			sent_query = true;
+			setSentQueryState();
 		}
 
 		while (true)
@@ -277,6 +277,27 @@ protected:
 	}
 
 private:
+	/// ITable::read requires a Context, therefore we should create one if the user can't supply it
+	static Context & getDefaultContext()
+	{
+		static Context instance;
+		return instance;
+	}
+
+	/// Перейти в состояние established (т.е. соединения с репликами установлены).
+	void NO_INLINE setEstablishedState()
+	{
+		established = true;
+	}
+
+	/// Перейти в состояние sent_query (т.е. запрос отправлен).
+	void NO_INLINE setSentQueryState()
+	{
+		established = false;
+		sent_query = true;
+	}
+
+private:
 	IConnectionPool * pool = nullptr;
 
 	ConnectionPool::Entry pool_entry;
@@ -292,6 +313,9 @@ private:
 	Tables external_tables;
 	QueryProcessingStage::Enum stage;
 	Context context;
+
+	/// Установили соединения с репликами, но ещё не отправили запрос.
+	bool established = false;
 
 	/// Отправили запрос (это делается перед получением первого блока).
 	bool sent_query = false;
@@ -320,13 +344,6 @@ private:
 	bool got_unknown_packet_from_replica = false;
 
 	Logger * log = &Logger::get("RemoteBlockInputStream");
-
-	/// ITable::read requires a Context, therefore we should create one if the user can't supply it
-	static Context & getDefaultContext()
-	{
-		static Context instance;
-		return instance;
-	}
 };
 
 }
