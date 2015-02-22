@@ -144,7 +144,7 @@ struct SettingMaxThreads
 		if (0 != cpu_identify(&raw_data, &data))
 			throw Exception("Cannot cpu_identify: " + String(cpuid_error()), ErrorCodes::CPUID_ERROR);
 
-		return data.num_cores;
+		return data.num_cores * data.total_logical_cpus / data.num_logical_cpus;
 	}
 };
 
