@@ -210,11 +210,11 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 		if (res)
 			return res;
 		else if (typeid_cast<const DataTypeDate 	*>(&argument_type))
-			return new AggregateFunctionUniq<DataTypeDate::FieldType, AggregateFunctionUniqHLL12Data>;
+			return new AggregateFunctionUniq<DataTypeDate::FieldType, AggregateFunctionUniqHLL12Data<DataTypeDate::FieldType>>;
 		else if (typeid_cast<const DataTypeDateTime*>(&argument_type))
-			return new AggregateFunctionUniq<DataTypeDateTime::FieldType, AggregateFunctionUniqHLL12Data>;
+			return new AggregateFunctionUniq<DataTypeDateTime::FieldType, AggregateFunctionUniqHLL12Data<DataTypeDateTime::FieldType>>;
 		else if (typeid_cast<const DataTypeString*>(&argument_type) || typeid_cast<const DataTypeFixedString*>(&argument_type))
-			return new AggregateFunctionUniq<String, AggregateFunctionUniqHLL12Data>;
+			return new AggregateFunctionUniq<String, AggregateFunctionUniqHLL12Data<String>>;
 		else
 			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}

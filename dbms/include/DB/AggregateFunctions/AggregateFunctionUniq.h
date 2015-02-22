@@ -4,7 +4,6 @@
 #include <type_traits>
 
 #include <stats/UniquesHashSet.h>
-#include <statdaemons/HyperLogLogCounter.h>
 
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/ReadHelpers.h>
@@ -15,6 +14,7 @@
 
 #include <DB/Interpreters/AggregationCommon.h>
 #include <DB/Common/HashTable/HashSet.h>
+#include <DB/Common/HyperLogLogWithSmallSetOptimization.h>
 
 #include <DB/Columns/ColumnString.h>
 
@@ -55,16 +55,26 @@ struct AggregateFunctionUniqUniquesHashSetData
 {
 	typedef UniquesHashSet<DefaultHash<UInt64>> Set;
 	Set set;
-	
+
 	static String getName() { return "uniq"; }
 };
 
 
+template <typename T>
 struct AggregateFunctionUniqHLL12Data
 {
-	typedef HLL12 Set;
+	typedef HyperLogLogWithSmallSetOptimization<T, 16, 12> Set;
 	Set set;
-	
+
+	static String getName() { return "uniqHLL12"; }
+};
+
+template <>
+struct AggregateFunctionUniqHLL12Data<String>
+{
+	typedef HyperLogLogWithSmallSetOptimization<UInt64, 16, 12> Set;
+	Set set;
+
 	static String getName() { return "uniqHLL12"; }
 };
 
