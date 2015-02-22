@@ -3,7 +3,7 @@
 #include <DB/Core/Field.h>
 #include <DB/IO/WriteHelpers.h>
 #include <Poco/Timespan.h>
-#include <libcpuid/libcpuid.h>
+#include <cpuid/libcpuid.h>
 
 
 namespace DB
