@@ -9,6 +9,7 @@
 #include <DB/Core/Defines.h>
 #include <DB/Core/StringRef.h>
 #include <DB/Columns/IColumn.h>
+#include <DB/Columns/ColumnsNumber.h>
 
 
 template <>
@@ -35,9 +36,27 @@ static inline UInt128 ALWAYS_INLINE pack128(
 	size_t offset = 0;
 	for (size_t j = 0; j < keys_size; ++j)
 	{
-		StringRef key_data = key_columns[j]->getDataAt(i);
-		memcpy(bytes + offset, key_data.data, key_sizes[j]);
-		offset += key_sizes[j];
+		switch (key_sizes[j])
+		{
+			case 1:
+				memcpy(bytes + offset, &static_cast<const ColumnUInt8 *>(key_columns[j])->getData()[i], 1);
+				offset += 1;
+				break;
+			case 2:
+				memcpy(bytes + offset, &static_cast<const ColumnUInt16 *>(key_columns[j])->getData()[i], 2);
+				offset += 2;
+				break;
+			case 4:
+				memcpy(bytes + offset, &static_cast<const ColumnUInt32 *>(key_columns[j])->getData()[i], 4);
+				offset += 4;
+				break;
+			case 8:
+				memcpy(bytes + offset, &static_cast<const ColumnUInt64 *>(key_columns[j])->getData()[i], 8);
+				offset += 8;
+				break;
+			default:
+				__builtin_unreachable();
+		}
 	}
 
 	return key;
