@@ -101,7 +101,8 @@ struct AggregationMethodOneNumber
 			size_t keys_size,							/// Количество ключевых столбцов.
 			size_t i,					/// Из какой строки блока достать ключ.
 			const Sizes & key_sizes,	/// Если ключи фиксированной длины - их длины. Не используется в методах агрегации по ключам переменной длины.
-			StringRefs & keys) const	/// Сюда могут быть записаны ссылки на данные ключей в столбцах. Они могут быть использованы в дальнейшем.
+			StringRefs & keys,			/// Сюда могут быть записаны ссылки на данные ключей в столбцах. Они могут быть использованы в дальнейшем.
+			Arena & pool) const
 		{
 			return unionCastToUInt64(vec[i]);
 		}
@@ -116,6 +117,10 @@ struct AggregationMethodOneNumber
 	static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
 	{
 	}
+
+	/** Действие, которое нужно сделать, если ключ не новый. Например, откатить выделение памяти в пуле.
+	  */
+	static void onExistingKey(const Key & key, StringRefs & keys, Arena & pool) {}
 
 	/** Вставить ключ из хэш-таблицы в столбцы.
 	  */
@@ -161,7 +166,8 @@ struct AggregationMethodString
 			size_t keys_size,
 			size_t i,
 			const Sizes & key_sizes,
-			StringRefs & keys) const
+			StringRefs & keys,
+			Arena & pool) const
 		{
 			return StringRef(
 				&(*chars)[i == 0 ? 0 : (*offsets)[i - 1]],
@@ -176,6 +182,8 @@ struct AggregationMethodString
 	{
 		value.first.data = pool.insert(value.first.data, value.first.size);
 	}
+
+	static void onExistingKey(const Key & key, StringRefs & keys, Arena & pool) {}
 
 	static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
 	{
@@ -219,7 +227,8 @@ struct AggregationMethodFixedString
 			size_t keys_size,
 			size_t i,
 			const Sizes & key_sizes,
-			StringRefs & keys) const
+			StringRefs & keys,
+			Arena & pool) const
 		{
 			return StringRef(&(*chars)[i * n], n);
 		}
@@ -232,6 +241,8 @@ struct AggregationMethodFixedString
 	{
 		value.first.data = pool.insert(value.first.data, value.first.size);
 	}
+
+	static void onExistingKey(const Key & key, StringRefs & keys, Arena & pool) {}
 
 	static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
 	{
@@ -268,7 +279,8 @@ struct AggregationMethodKeysFixed
 			size_t keys_size,
 			size_t i,
 			const Sizes & key_sizes,
-			StringRefs & keys) const
+			StringRefs & keys,
+			Arena & pool) const
 		{
 			return packFixed<Key>(i, keys_size, key_columns, key_sizes);
 		}
@@ -281,6 +293,8 @@ struct AggregationMethodKeysFixed
 	{
 	}
 
+	static void onExistingKey(const Key & key, StringRefs & keys, Arena & pool) {}
+
 	static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
 	{
 		size_t offset = 0;
@@ -290,6 +304,64 @@ struct AggregationMethodKeysFixed
 			key_columns[i]->insertData(reinterpret_cast<const char *>(&value.first) + offset, size);
 			offset += size;
 		}
+	}
+};
+
+
+/// Для остальных случаев. Агрегирует по конкатенации ключей. (При этом, строки, содержащие нули посередине, могут склеиться.)
+template <typename TData>
+struct AggregationMethodConcat
+{
+	typedef TData Data;
+	typedef typename Data::key_type Key;
+	typedef typename Data::mapped_type Mapped;
+	typedef typename Data::iterator iterator;
+	typedef typename Data::const_iterator const_iterator;
+
+	Data data;
+
+	AggregationMethodConcat() {}
+
+	template <typename Other>
+	AggregationMethodConcat(const Other & other) : data(other.data) {}
+
+	struct State
+	{
+		void init(ConstColumnPlainPtrs & key_columns)
+		{
+		}
+
+		Key getKey(
+			const ConstColumnPlainPtrs & key_columns,
+			size_t keys_size,
+			size_t i,
+			const Sizes & key_sizes,
+			StringRefs & keys,
+			Arena & pool) const
+		{
+			return extractKeysAndPlaceInPoolContiguous(i, keys_size, key_columns, keys, pool);
+		}
+	};
+
+	static AggregateDataPtr & getAggregateData(Mapped & value) 				{ return value; }
+	static const AggregateDataPtr & getAggregateData(const Mapped & value) 	{ return value; }
+
+	static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
+	{
+	}
+
+	static void onExistingKey(const Key & key, StringRefs & keys, Arena & pool)
+	{
+		pool.rollback(key.size + keys.size() * sizeof(keys[0]));
+	}
+
+	static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
+	{
+		/// См. функцию extractKeysAndPlaceInPoolContiguous.
+		const StringRef * key_refs = reinterpret_cast<const StringRef *>(value.first.data + value.first.size);
+
+		for (size_t i = 0; i < keys_size; ++i)
+			key_columns[i]->insertDataWithTerminatingZero(key_refs[i].data, key_refs[i].size);
 	}
 };
 
@@ -322,7 +394,8 @@ struct AggregationMethodHashed
 			size_t keys_size,
 			size_t i,
 			const Sizes & key_sizes,
-			StringRefs & keys) const
+			StringRefs & keys,
+			Arena & pool) const
 		{
 			return hash128(i, keys_size, key_columns, keys);
 		}
@@ -335,6 +408,8 @@ struct AggregationMethodHashed
 	{
 		value.second.first = placeKeysInPool(i, keys_size, keys, pool);
 	}
+
+	static void onExistingKey(const Key & key, StringRefs & keys, Arena & pool) {}
 
 	static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
 	{
@@ -388,6 +463,7 @@ struct AggregatedDataVariants : private boost::noncopyable
 	std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128>> 					keys128;
 	std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256>> 					keys256;
 	std::unique_ptr<AggregationMethodHashed<AggregatedDataHashed>> 							hashed;
+	std::unique_ptr<AggregationMethodConcat<AggregatedDataWithStringKey>> 					concat;
 
 	std::unique_ptr<AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64KeyTwoLevel>>	key32_two_level;
 	std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyTwoLevel>>	key64_two_level;
@@ -396,6 +472,7 @@ struct AggregatedDataVariants : private boost::noncopyable
 	std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128TwoLevel>> 				keys128_two_level;
 	std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel>> 				keys256_two_level;
 	std::unique_ptr<AggregationMethodHashed<AggregatedDataHashedTwoLevel>> 						hashed_two_level;
+	std::unique_ptr<AggregationMethodConcat<AggregatedDataWithStringKeyTwoLevel>> 				concat_two_level;
 
 	/// В этом и подобных макросах, вариант without_key не учитывается.
 	#define APPLY_FOR_AGGREGATED_VARIANTS(M) \
@@ -408,13 +485,15 @@ struct AggregatedDataVariants : private boost::noncopyable
 		M(keys128,				false) \
 		M(keys256,				false) \
 		M(hashed,				false) \
+		M(concat,				false) \
 		M(key32_two_level,				true) \
 		M(key64_two_level,				true) \
 		M(key_string_two_level,			true) \
 		M(key_fixed_string_two_level,	true) \
 		M(keys128_two_level,			true) \
 		M(keys256_two_level,			true) \
-		M(hashed_two_level,				true)
+		M(hashed_two_level,				true) \
+		M(concat_two_level,				true)
 
 	enum class Type
 	{
@@ -527,7 +606,8 @@ struct AggregatedDataVariants : private boost::noncopyable
 		M(key_fixed_string)	\
 		M(keys128)			\
 		M(keys256)			\
-		M(hashed)
+		M(hashed)			\
+		M(concat)
 
 	#define APPLY_FOR_VARIANTS_NOT_CONVERTIBLE_TO_TWO_LEVEL(M) \
 		M(key8)				\
@@ -557,7 +637,8 @@ struct AggregatedDataVariants : private boost::noncopyable
 			M(key_fixed_string_two_level)	\
 			M(keys128_two_level)			\
 			M(keys256_two_level)			\
-			M(hashed_two_level)
+			M(hashed_two_level)				\
+			M(concat_two_level)
 };
 
 typedef SharedPtr<AggregatedDataVariants> AggregatedDataVariantsPtr;

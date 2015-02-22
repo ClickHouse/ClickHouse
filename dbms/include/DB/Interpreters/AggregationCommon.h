@@ -143,4 +143,41 @@ static inline StringRef * ALWAYS_INLINE extractKeysAndPlaceInPool(
 }
 
 
+/** Скопировать ключи в пул в непрерывный кусок памяти.
+  * Потом разместить в пуле StringRef-ы на них.
+  *
+  * [key1][key2]...[keyN][ref1][ref2]...[refN]
+  * ^---------------------|     |
+  *       ^---------------------|
+  * ^---return-value----^
+  *
+  * Вернуть StringRef на кусок памяти с ключами (без учёта StringRef-ов после них).
+  */
+static inline StringRef ALWAYS_INLINE extractKeysAndPlaceInPoolContiguous(
+	size_t i, size_t keys_size, const ConstColumnPlainPtrs & key_columns, StringRefs & keys, Arena & pool)
+{
+	size_t sum_keys_size = 0;
+	for (size_t j = 0; j < keys_size; ++j)
+	{
+		keys[j] = key_columns[j]->getDataAtWithTerminatingZero(i);
+		sum_keys_size += keys[j].size;
+	}
+
+	char * res = pool.alloc(sum_keys_size + keys_size * sizeof(StringRef));
+	char * place = res;
+
+	for (size_t j = 0; j < keys_size; ++j)
+	{
+		memcpy(place, keys[j].data, keys[j].size);
+		keys[j].data = place;
+		place += keys[j].size;
+	}
+
+	/// Размещаем в пуле StringRef-ы на только что скопированные ключи.
+	memcpy(place, &keys[0], keys_size * sizeof(StringRef));
+
+	return {res, sum_keys_size};
+}
+
+
 }

@@ -357,8 +357,10 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
 	if (keys_size == 1 && typeid_cast<const ColumnFixedString *>(key_columns[0]))
 		return AggregatedDataVariants::Type::key_fixed_string;
 
-	/// Иначе будем агрегировать по хэшу от ключей.
-	return AggregatedDataVariants::Type::hashed;
+	/// Иначе будем агрегировать по конкатенации ключей.
+	return AggregatedDataVariants::Type::concat;
+
+	/// NOTE AggregatedDataVariants::Type::hashed не используется.
 }
 
 
@@ -439,7 +441,7 @@ void NO_INLINE Aggregator::executeImplCase(
 		bool overflow = false;	/// Новый ключ не поместился в хэш-таблицу из-за no_more_keys.
 
 		/// Получаем ключ для вставки в хэш-таблицу.
-		typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes, keys);
+		typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes, keys, *aggregates_pool);
 
 		if (!no_more_keys)	/// Вставляем.
 		{
@@ -451,6 +453,7 @@ void NO_INLINE Aggregator::executeImplCase(
 				for (size_t j = 0; j < aggregates_size; ++j)	/// NOTE: Заменить индекс на два указателя?
 					aggregate_functions[j]->add(value + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
 
+				method.onExistingKey(key, keys, *aggregates_pool);
 				continue;
 			}
 			else
@@ -469,7 +472,10 @@ void NO_INLINE Aggregator::executeImplCase(
 
 		/// Если ключ не поместился, и данные не надо агрегировать в отдельную строку, то делать нечего.
 		if (no_more_keys && overflow && !overflow_row)
+		{
+			method.onExistingKey(key, keys, *aggregates_pool);
 			continue;
+		}
 
 		/// Если вставили новый ключ - инициализируем состояния агрегатных функций, и возможно, что-нибудь связанное с ключом.
 		if (inserted)
@@ -480,6 +486,8 @@ void NO_INLINE Aggregator::executeImplCase(
 			aggregate_data = aggregates_pool->alloc(total_size_of_aggregate_states);
 			createAggregateStates(aggregate_data);
 		}
+		else
+			method.onExistingKey(key, keys, *aggregates_pool);
 
 		AggregateDataPtr value = (!no_more_keys || !overflow) ? Method::getAggregateData(it->second) : overflow_row;
 
@@ -1281,6 +1289,8 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 		mergeSingleLevelDataImpl<decltype(res->keys256)::element_type>(non_empty_data);
 	else if (res->type == AggregatedDataVariants::Type::hashed)
 		mergeSingleLevelDataImpl<decltype(res->hashed)::element_type>(non_empty_data);
+	else if (res->type == AggregatedDataVariants::Type::concat)
+		mergeSingleLevelDataImpl<decltype(res->concat)::element_type>(non_empty_data);
 	else if (res->type == AggregatedDataVariants::Type::key32_two_level)
 		mergeTwoLevelDataImpl<decltype(res->key32_two_level)::element_type>(non_empty_data, thread_pool.get());
 	else if (res->type == AggregatedDataVariants::Type::key64_two_level)
@@ -1295,6 +1305,8 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 		mergeTwoLevelDataImpl<decltype(res->keys256_two_level)::element_type>(non_empty_data, thread_pool.get());
 	else if (res->type == AggregatedDataVariants::Type::hashed_two_level)
 		mergeTwoLevelDataImpl<decltype(res->hashed_two_level)::element_type>(non_empty_data, thread_pool.get());
+	else if (res->type == AggregatedDataVariants::Type::concat_two_level)
+		mergeTwoLevelDataImpl<decltype(res->concat_two_level)::element_type>(non_empty_data, thread_pool.get());
 	else if (res->type != AggregatedDataVariants::Type::without_key)
 		throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 
@@ -1341,7 +1353,7 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
 		bool inserted;			/// Вставили новый ключ, или такой ключ уже был?
 
 		/// Получаем ключ для вставки в хэш-таблицу.
-		auto key = state.getKey(key_columns, keys_size, i, result.key_sizes, keys);
+		auto key = state.getKey(key_columns, keys_size, i, result.key_sizes, keys, *aggregates_pool);
 
 		data.emplace(key, it, inserted);
 
@@ -1353,6 +1365,8 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
 			aggregate_data = aggregates_pool->alloc(total_size_of_aggregate_states);
 			createAggregateStates(aggregate_data);
 		}
+		else
+			method.onExistingKey(key, keys, *aggregates_pool);
 
 		/// Мерджим состояния агрегатных функций.
 		for (size_t j = 0; j < aggregates_size; ++j)

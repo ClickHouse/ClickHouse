@@ -193,7 +193,7 @@ void NO_INLINE Aggregator::executeSpecializedCase(
 		bool overflow = false;	/// Новый ключ не поместился в хэш-таблицу из-за no_more_keys.
 
 		/// Получаем ключ для вставки в хэш-таблицу.
-		typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes, keys);
+		typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes, keys, *aggregates_pool);
 
 		if (!no_more_keys)	/// Вставляем.
 		{
@@ -206,6 +206,7 @@ void NO_INLINE Aggregator::executeSpecializedCase(
 				AggregateFunctionsList::forEach(AggregateFunctionsUpdater(
 					aggregate_functions, offsets_of_aggregate_states, aggregate_columns, value, i));
 
+				method.onExistingKey(key, keys, *aggregates_pool);
 				continue;
 			}
 			else
@@ -224,7 +225,10 @@ void NO_INLINE Aggregator::executeSpecializedCase(
 
 		/// Если ключ не поместился, и данные не надо агрегировать в отдельную строку, то делать нечего.
 		if (no_more_keys && overflow && !overflow_row)
+		{
+			method.onExistingKey(key, keys, *aggregates_pool);
 			continue;
+		}
 
 		/// Если вставили новый ключ - инициализируем состояния агрегатных функций, и возможно, что-нибудь связанное с ключом.
 		if (inserted)
@@ -237,6 +241,8 @@ void NO_INLINE Aggregator::executeSpecializedCase(
 			AggregateFunctionsList::forEach(AggregateFunctionsCreator(
 				aggregate_functions, offsets_of_aggregate_states, aggregate_columns, aggregate_data));
 		}
+		else
+			method.onExistingKey(key, keys, *aggregates_pool);
 
 		AggregateDataPtr value = (!no_more_keys || !overflow) ? Method::getAggregateData(it->second) : overflow_row;
 

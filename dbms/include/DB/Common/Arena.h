@@ -63,7 +63,7 @@ private:
 
 	size_t growth_factor;
 	size_t linear_growth_threshold;
-	
+
 	/// Последний непрерывный кусок памяти.
 	Chunk * head;
 	size_t size_in_bytes;
@@ -77,7 +77,7 @@ private:
 	size_t nextSize(size_t min_next_size) const
 	{
 		size_t size_after_grow = 0;
-		
+
 		if (head->size() < linear_growth_threshold)
 			size_after_grow = head->size() * growth_factor;
 		else
@@ -119,6 +119,14 @@ public:
 		return res;
 	}
 
+	/** Отменить только что сделанное выделение памяти.
+	  * Нужно передать размер не меньше того, который был только что выделен.
+	  */
+	void rollback(size_t size)
+	{
+		head->pos -= size;
+	}
+
 	/// Вставить строку без выравнивания.
 	const char * insert(const char * data, size_t size)
 	{
@@ -126,7 +134,7 @@ public:
 		memcpy(res, data, size);
 		return res;
 	}
-	
+
 	/// Размер выделенного пула в байтах
 	size_t size() const
 	{
