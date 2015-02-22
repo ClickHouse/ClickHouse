@@ -7,6 +7,7 @@
 #include <DB/Parsers/ASTNameTypePair.h>
 #include <DB/Interpreters/Context.h>
 
+
 namespace DB
 {
 
@@ -19,10 +20,18 @@ NamesAndTypesList ITableDeclaration::getColumnsList() const
 }
 
 
+ITableDeclaration::ColumnsListRange ITableDeclaration::getColumnsListIterator() const
+{
+	const auto & columns = getColumnsListImpl();
+	return boost::join(
+		boost::iterator_range<NamesAndTypesList::const_iterator>(columns.begin(), columns.end()),
+		boost::iterator_range<NamesAndTypesList::const_iterator>(std::begin(materialized_columns), std::end(materialized_columns)));
+}
+
+
 bool ITableDeclaration::hasRealColumn(const String & column_name) const
 {
-	const NamesAndTypesList & real_columns = getColumnsList();
-	for (auto & it : real_columns)
+	for (auto & it : getColumnsListIterator())
 		if (it.name == column_name)
 			return true;
 	return false;
@@ -31,9 +40,8 @@ bool ITableDeclaration::hasRealColumn(const String & column_name) const
 
 Names ITableDeclaration::getColumnNamesList() const
 {
-	const NamesAndTypesList & real_columns = getColumnsList();
 	Names res;
-	for (auto & it : real_columns)
+	for (auto & it : getColumnsListIterator())
 		res.push_back(it.name);
 	return res;
 }
@@ -41,8 +49,7 @@ Names ITableDeclaration::getColumnNamesList() const
 
 NameAndTypePair ITableDeclaration::getRealColumn(const String & column_name) const
 {
-	const NamesAndTypesList & real_columns = getColumnsList();
-	for (auto & it : real_columns)
+	for (auto & it : getColumnsListIterator())
 		if (it.name == column_name)
 			return it;
 	throw Exception("There is no column " + column_name + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
@@ -79,7 +86,7 @@ NameAndTypePair ITableDeclaration::getColumn(const String & column_name) const
 
 const DataTypePtr ITableDeclaration::getDataTypeByName(const String & column_name) const
 {
-	for (const auto & column : getColumnsList())
+	for (const auto & column : getColumnsListIterator())
 		if (column.name == column_name)
 			return column.type;
 
@@ -91,7 +98,7 @@ Block ITableDeclaration::getSampleBlock() const
 {
 	Block res;
 
-	for (const auto & col : getColumnsList())
+	for (const auto & col : getColumnsListIterator())
 		res.insert({ col.type->createColumn(), col.type, col.name });
 
 	return res;
