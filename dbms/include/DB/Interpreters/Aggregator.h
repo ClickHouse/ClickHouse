@@ -573,11 +573,12 @@ class Aggregator
 {
 public:
 	Aggregator(const ColumnNumbers & keys_, const AggregateDescriptions & aggregates_, bool overflow_row_,
-		size_t max_rows_to_group_by_, OverflowMode group_by_overflow_mode_, Compiler * compiler_, UInt32 min_count_to_compile_)
+		size_t max_rows_to_group_by_, OverflowMode group_by_overflow_mode_, Compiler * compiler_, UInt32 min_count_to_compile_,
+		size_t group_by_two_level_threshold_)
 		: keys(keys_), aggregates(aggregates_), aggregates_size(aggregates.size()),
 		overflow_row(overflow_row_),
 		max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
-		compiler(compiler_), min_count_to_compile(min_count_to_compile_)
+		compiler(compiler_), min_count_to_compile(min_count_to_compile_), group_by_two_level_threshold(group_by_two_level_threshold_)
 	{
 		std::sort(keys.begin(), keys.end());
 		keys.erase(std::unique(keys.begin(), keys.end()), keys.end());
@@ -585,11 +586,12 @@ public:
 	}
 
 	Aggregator(const Names & key_names_, const AggregateDescriptions & aggregates_, bool overflow_row_,
-		size_t max_rows_to_group_by_, OverflowMode group_by_overflow_mode_, Compiler * compiler_, UInt32 min_count_to_compile_)
+		size_t max_rows_to_group_by_, OverflowMode group_by_overflow_mode_, Compiler * compiler_, UInt32 min_count_to_compile_,
+		size_t group_by_two_level_threshold_)
 		: key_names(key_names_), aggregates(aggregates_), aggregates_size(aggregates.size()),
 		overflow_row(overflow_row_),
 		max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
-		compiler(compiler_), min_count_to_compile(min_count_to_compile_)
+		compiler(compiler_), min_count_to_compile(min_count_to_compile_), group_by_two_level_threshold(group_by_two_level_threshold_)
 	{
 		std::sort(key_names.begin(), key_names.end());
 		key_names.erase(std::unique(key_names.begin(), key_names.end()), key_names.end());
@@ -685,6 +687,10 @@ protected:
 	bool compiled_if_possible = false;
 	void compileIfPossible(AggregatedDataVariants::Type type);
 
+	/** При каком количестве ключей, начинает использоваться двухуровневая агрегация.
+	  * 0 - никогда не использовать.
+	  */
+	size_t group_by_two_level_threshold;
 
 	/** Если заданы только имена столбцов (key_names, а также aggregates[i].column_name), то вычислить номера столбцов.
 	  * Сформировать блок - пример результата.

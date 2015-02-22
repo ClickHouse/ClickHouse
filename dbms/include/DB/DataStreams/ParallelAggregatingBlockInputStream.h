@@ -22,8 +22,9 @@ public:
 	ParallelAggregatingBlockInputStream(BlockInputStreams inputs, const ColumnNumbers & keys_,
 		AggregateDescriptions & aggregates_, bool overflow_row_, bool final_, size_t max_threads_,
 		size_t max_rows_to_group_by_, OverflowMode group_by_overflow_mode_,
-		Compiler * compiler_, UInt32 min_count_to_compile_)
-		: aggregator(keys_, aggregates_, overflow_row_, max_rows_to_group_by_, group_by_overflow_mode_, compiler_, min_count_to_compile_),
+		Compiler * compiler_, UInt32 min_count_to_compile_, size_t group_by_two_level_threshold_)
+		: aggregator(keys_, aggregates_, overflow_row_, max_rows_to_group_by_, group_by_overflow_mode_,
+			compiler_, min_count_to_compile_, group_by_two_level_threshold_),
 		final(final_), max_threads(std::min(inputs.size(), max_threads_)),
 		keys_size(keys_.size()), aggregates_size(aggregates_.size()),
 		handler(*this), processor(inputs, max_threads, handler)
@@ -36,8 +37,9 @@ public:
 	ParallelAggregatingBlockInputStream(BlockInputStreams inputs, const Names & key_names,
 		const AggregateDescriptions & aggregates,	bool overflow_row_, bool final_, size_t max_threads_,
 		size_t max_rows_to_group_by_, OverflowMode group_by_overflow_mode_,
-		Compiler * compiler_, UInt32 min_count_to_compile_)
-		: aggregator(key_names, aggregates, overflow_row_, max_rows_to_group_by_, group_by_overflow_mode_, compiler_, min_count_to_compile_),
+		Compiler * compiler_, UInt32 min_count_to_compile_, size_t group_by_two_level_threshold_)
+		: aggregator(key_names, aggregates, overflow_row_, max_rows_to_group_by_, group_by_overflow_mode_,
+			compiler_, min_count_to_compile_, group_by_two_level_threshold_),
 		final(final_), max_threads(std::min(inputs.size(), max_threads_)),
 		keys_size(key_names.size()), aggregates_size(aggregates.size()),
 		handler(*this), processor(inputs, max_threads, handler)
@@ -129,7 +131,8 @@ private:
 		{
 			parent.aggregator.executeOnBlock(block, *parent.many_data[thread_num],
 				parent.threads_data[thread_num].key_columns, parent.threads_data[thread_num].aggregate_columns,
-				parent.threads_data[thread_num].key_sizes, parent.threads_data[thread_num].key, parent.no_more_keys);
+				parent.threads_data[thread_num].key_sizes, parent.threads_data[thread_num].key,
+				parent.no_more_keys);
 
 			parent.threads_data[thread_num].src_rows += block.rowsInFirstColumn();
 			parent.threads_data[thread_num].src_bytes += block.bytes();

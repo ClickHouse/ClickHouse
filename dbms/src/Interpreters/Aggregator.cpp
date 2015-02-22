@@ -644,16 +644,7 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 
 	size_t result_size = result.sizeWithoutOverflowRow();
 
-	/// Если результат уже достаточно большой, и его можно сконвертировать в двухуровневую хэш-таблицу.
-	constexpr auto TWO_LEVEL_HASH_TABLE_THRESHOLD = 30000;
-
-	/** Почему выбрано 30 000? Потому что при таком количестве элементов, в TwoLevelHashTable,
-	  *  скорее всего, хватит места на все ключи, с размером таблицы по-умолчанию
-	  *  (256 корзин по 256 ячеек, fill factor = 0.5)
-	  * TODO Не конвертировать, если запрос выполняется в один поток.
-	  */
-
-	if (result.isConvertibleToTwoLevel() && result_size >= TWO_LEVEL_HASH_TABLE_THRESHOLD)
+	if (group_by_two_level_threshold && result.isConvertibleToTwoLevel() && result_size >= group_by_two_level_threshold)
 		result.convertToTwoLevel();
 
 	/// Проверка ограничений.
