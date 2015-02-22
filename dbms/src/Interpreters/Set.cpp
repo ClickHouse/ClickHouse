@@ -191,7 +191,7 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 
 		/// Для всех строчек
 		for (size_t i = 0; i < rows; ++i)
-			res.insert(keys_fit_128_bits ? pack128(i, keys_size, key_columns, key_sizes) : hash128(i, keys_size, key_columns));
+			res.insert(keys_fit_128_bits ? packFixed<UInt128>(i, keys_size, key_columns, key_sizes) : hash128(i, keys_size, key_columns));
 	}
 	else
 		throw Exception("Unknown set variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
@@ -510,7 +510,10 @@ void Set::executeOrdinary(const ConstColumnPlainPtrs & key_columns, ColumnUInt8:
 
 		/// Для всех строчек
 		for (size_t i = 0; i < rows; ++i)
-			vec_res[i] = negative ^ (set.end() != set.find(keys_fit_128_bits ? pack128(i, keys_size, key_columns, key_sizes) : hash128(i, keys_size, key_columns)));
+			vec_res[i] = negative ^
+				(set.end() != set.find(keys_fit_128_bits
+					? packFixed<UInt128>(i, keys_size, key_columns, key_sizes)
+					: hash128(i, keys_size, key_columns)));
 	}
 	else
 		throw Exception("Unknown set variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
@@ -613,7 +616,10 @@ void Set::executeArray(const ColumnArray * key_column, ColumnUInt8::Container_t 
 			for (size_t j = prev_offset; j < offsets[i]; ++j)
 			{
 				/// Строим ключ
-				res |= negative ^ (set.end() != set.find(keys_fit_128_bits ? pack128(i, 1, nested_columns, key_sizes) : hash128(i, 1, nested_columns)));
+				res |= negative ^
+					(set.end() != set.find(keys_fit_128_bits
+						? packFixed<UInt128>(i, 1, nested_columns, key_sizes)
+						: hash128(i, 1, nested_columns)));
 				if (res)
 					break;
 			}

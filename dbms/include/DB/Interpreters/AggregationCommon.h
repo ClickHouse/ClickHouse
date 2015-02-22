@@ -22,17 +22,18 @@ namespace DB
 typedef std::vector<size_t> Sizes;
 
 
-/// Записать набор ключей фиксированной длины в UInt128, уложив их подряд (при допущении, что они помещаются).
-static inline UInt128 ALWAYS_INLINE pack128(
+/// Записать набор ключей фиксированной длины в T, уложив их подряд (при допущении, что они помещаются).
+template <typename T>
+static inline T ALWAYS_INLINE packFixed(
 	size_t i, size_t keys_size, const ConstColumnPlainPtrs & key_columns, const Sizes & key_sizes)
 {
 	union
 	{
-		UInt128 key;
-		char bytes[16];
+		T key;
+		char bytes[sizeof(key)];
 	};
 
-	memset(bytes, 0, 16);
+	memset(bytes, 0, sizeof(key));
 	size_t offset = 0;
 	for (size_t j = 0; j < keys_size; ++j)
 	{

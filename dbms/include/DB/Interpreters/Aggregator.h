@@ -52,11 +52,13 @@ typedef AggregateDataPtr AggregatedDataWithoutKey;
 typedef HashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>> AggregatedDataWithUInt64Key;
 typedef HashMapWithSavedHash<StringRef, AggregateDataPtr> AggregatedDataWithStringKey;
 typedef HashMap<UInt128, AggregateDataPtr, UInt128HashCRC32> AggregatedDataWithKeys128;
+typedef HashMap<UInt256, AggregateDataPtr, UInt256HashCRC32> AggregatedDataWithKeys256;
 typedef HashMap<UInt128, std::pair<StringRef*, AggregateDataPtr>, UInt128TrivialHash> AggregatedDataHashed;
 
 typedef TwoLevelHashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>> AggregatedDataWithUInt64KeyTwoLevel;
 typedef TwoLevelHashMapWithSavedHash<StringRef, AggregateDataPtr> AggregatedDataWithStringKeyTwoLevel;
 typedef TwoLevelHashMap<UInt128, AggregateDataPtr, UInt128HashCRC32> AggregatedDataWithKeys128TwoLevel;
+typedef TwoLevelHashMap<UInt256, AggregateDataPtr, UInt256HashCRC32> AggregatedDataWithKeys256TwoLevel;
 typedef TwoLevelHashMap<UInt128, std::pair<StringRef*, AggregateDataPtr>, UInt128TrivialHash> AggregatedDataHashedTwoLevel;
 
 typedef HashMap<UInt64, AggregateDataPtr, TrivialHash, HashTableFixedGrower<8>> AggregatedDataWithUInt8Key;
@@ -238,9 +240,9 @@ struct AggregationMethodFixedString
 };
 
 
-/// Для случая, когда все ключи фиксированной длины, и они помещаются в 128 бит.
+/// Для случая, когда все ключи фиксированной длины, и они помещаются в N (например, 128) бит.
 template <typename TData>
-struct AggregationMethodKeys128
+struct AggregationMethodKeysFixed
 {
 	typedef TData Data;
 	typedef typename Data::key_type Key;
@@ -250,10 +252,10 @@ struct AggregationMethodKeys128
 
 	Data data;
 
-	AggregationMethodKeys128() {}
+	AggregationMethodKeysFixed() {}
 
 	template <typename Other>
-	AggregationMethodKeys128(const Other & other) : data(other.data) {}
+	AggregationMethodKeysFixed(const Other & other) : data(other.data) {}
 
 	struct State
 	{
@@ -268,7 +270,7 @@ struct AggregationMethodKeys128
 			const Sizes & key_sizes,
 			StringRefs & keys) const
 		{
-			return pack128(i, keys_size, key_columns, key_sizes);
+			return packFixed<Key>(i, keys_size, key_columns, key_sizes);
 		}
 	};
 
@@ -383,14 +385,16 @@ struct AggregatedDataVariants : private boost::noncopyable
 	std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64Key>>		key64;
 	std::unique_ptr<AggregationMethodString<AggregatedDataWithStringKey>> 					key_string;
 	std::unique_ptr<AggregationMethodFixedString<AggregatedDataWithStringKey>> 				key_fixed_string;
-	std::unique_ptr<AggregationMethodKeys128<AggregatedDataWithKeys128>> 					keys128;
+	std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128>> 					keys128;
+	std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256>> 					keys256;
 	std::unique_ptr<AggregationMethodHashed<AggregatedDataHashed>> 							hashed;
 
 	std::unique_ptr<AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64KeyTwoLevel>>	key32_two_level;
 	std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyTwoLevel>>	key64_two_level;
 	std::unique_ptr<AggregationMethodString<AggregatedDataWithStringKeyTwoLevel>>				key_string_two_level;
 	std::unique_ptr<AggregationMethodFixedString<AggregatedDataWithStringKeyTwoLevel>> 			key_fixed_string_two_level;
-	std::unique_ptr<AggregationMethodKeys128<AggregatedDataWithKeys128TwoLevel>> 				keys128_two_level;
+	std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128TwoLevel>> 				keys128_two_level;
+	std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel>> 				keys256_two_level;
 	std::unique_ptr<AggregationMethodHashed<AggregatedDataHashedTwoLevel>> 						hashed_two_level;
 
 	/// В этом и подобных макросах, вариант without_key не учитывается.
@@ -402,12 +406,14 @@ struct AggregatedDataVariants : private boost::noncopyable
 		M(key_string,			false) \
 		M(key_fixed_string,		false) \
 		M(keys128,				false) \
+		M(keys256,				false) \
 		M(hashed,				false) \
 		M(key32_two_level,				true) \
 		M(key64_two_level,				true) \
 		M(key_string_two_level,			true) \
 		M(key_fixed_string_two_level,	true) \
 		M(keys128_two_level,			true) \
+		M(keys256_two_level,			true) \
 		M(hashed_two_level,				true)
 
 	enum class Type
@@ -520,6 +526,7 @@ struct AggregatedDataVariants : private boost::noncopyable
 		M(key_string)		\
 		M(key_fixed_string)	\
 		M(keys128)			\
+		M(keys256)			\
 		M(hashed)
 
 	#define APPLY_FOR_VARIANTS_NOT_CONVERTIBLE_TO_TWO_LEVEL(M) \
@@ -549,6 +556,7 @@ struct AggregatedDataVariants : private boost::noncopyable
 			M(key_string_two_level)			\
 			M(key_fixed_string_two_level)	\
 			M(keys128_two_level)			\
+			M(keys256_two_level)			\
 			M(hashed_two_level)
 };
 

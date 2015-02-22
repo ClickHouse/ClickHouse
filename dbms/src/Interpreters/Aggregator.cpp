@@ -311,21 +311,19 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
 	  * Затем, в процессе работы, данные могут быть переконвертированы в two-level структуру, если их становится много.
 	  */
 
-	bool keys_fit_128_bits = true;
+	bool all_fixed = true;
 	size_t keys_bytes = 0;
 	key_sizes.resize(keys_size);
 	for (size_t j = 0; j < keys_size; ++j)
 	{
 		if (!key_columns[j]->isFixed())
 		{
-			keys_fit_128_bits = false;
+			all_fixed = false;
 			break;
 		}
 		key_sizes[j] = key_columns[j]->sizeOfField();
 		keys_bytes += key_sizes[j];
 	}
-	if (keys_bytes > 16)
-		keys_fit_128_bits = false;
 
 	/// Если ключей нет
 	if (keys_size == 0)
@@ -346,9 +344,11 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
 		throw Exception("Logical error: numeric column has sizeOfField not in 1, 2, 4, 8.", ErrorCodes::LOGICAL_ERROR);
 	}
 
-	/// Если ключи помещаются в 128 бит, будем использовать хэш-таблицу по упакованным в 128-бит ключам
-	if (keys_fit_128_bits)
+	/// Если ключи помещаются в N бит, будем использовать хэш-таблицу по упакованным в N-бит ключам
+	if (all_fixed && keys_bytes <= 16)
 		return AggregatedDataVariants::Type::keys128;
+	if (all_fixed && keys_bytes <= 32)
+		return AggregatedDataVariants::Type::keys256;
 
 	/// Если есть один строковый ключ, то используем хэш-таблицу с ним
 	if (keys_size == 1 && typeid_cast<const ColumnString *>(key_columns[0]))
@@ -1277,6 +1277,8 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 		mergeSingleLevelDataImpl<decltype(res->key_fixed_string)::element_type>(non_empty_data);
 	else if (res->type == AggregatedDataVariants::Type::keys128)
 		mergeSingleLevelDataImpl<decltype(res->keys128)::element_type>(non_empty_data);
+	else if (res->type == AggregatedDataVariants::Type::keys256)
+		mergeSingleLevelDataImpl<decltype(res->keys256)::element_type>(non_empty_data);
 	else if (res->type == AggregatedDataVariants::Type::hashed)
 		mergeSingleLevelDataImpl<decltype(res->hashed)::element_type>(non_empty_data);
 	else if (res->type == AggregatedDataVariants::Type::key32_two_level)
@@ -1289,6 +1291,8 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 		mergeTwoLevelDataImpl<decltype(res->key_fixed_string_two_level)::element_type>(non_empty_data, thread_pool.get());
 	else if (res->type == AggregatedDataVariants::Type::keys128_two_level)
 		mergeTwoLevelDataImpl<decltype(res->keys128_two_level)::element_type>(non_empty_data, thread_pool.get());
+	else if (res->type == AggregatedDataVariants::Type::keys256_two_level)
+		mergeTwoLevelDataImpl<decltype(res->keys256_two_level)::element_type>(non_empty_data, thread_pool.get());
 	else if (res->type == AggregatedDataVariants::Type::hashed_two_level)
 		mergeTwoLevelDataImpl<decltype(res->hashed_two_level)::element_type>(non_empty_data, thread_pool.get());
 	else if (res->type != AggregatedDataVariants::Type::without_key)

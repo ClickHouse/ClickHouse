@@ -1237,7 +1237,7 @@ private:
 			size_t off = offsets[i];
 			for (size_t j = prev_off; j < off; ++j)
 			{
-				res_values[j] = ++indices[pack128(j, count, columns, key_sizes)];
+				res_values[j] = ++indices[packFixed<UInt128>(j, count, columns, key_sizes)];
 			}
 			prev_off = off;
 		}
