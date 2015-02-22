@@ -198,19 +198,22 @@ void NO_INLINE Aggregator::executeSpecializedCase(
 		if (!no_more_keys)	/// Вставляем.
 		{
 			/// Оптимизация для часто повторяющихся ключей.
-			if (i != 0 && key == prev_key)
+			if (!Method::no_consecutive_keys_optimization)
 			{
-				AggregateDataPtr value = Method::getAggregateData(it->second);
+				if (i != 0 && key == prev_key)
+				{
+					AggregateDataPtr value = Method::getAggregateData(it->second);
 
-				/// Добавляем значения в агрегатные функции.
-				AggregateFunctionsList::forEach(AggregateFunctionsUpdater(
-					aggregate_functions, offsets_of_aggregate_states, aggregate_columns, value, i));
+					/// Добавляем значения в агрегатные функции.
+					AggregateFunctionsList::forEach(AggregateFunctionsUpdater(
+						aggregate_functions, offsets_of_aggregate_states, aggregate_columns, value, i));
 
-				method.onExistingKey(key, keys, *aggregates_pool);
-				continue;
+					method.onExistingKey(key, keys, *aggregates_pool);
+					continue;
+				}
+				else
+					prev_key = key;
 			}
-			else
-				prev_key = key;
 
 			method.data.emplace(key, it, inserted);
 		}

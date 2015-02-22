@@ -29,7 +29,7 @@ int main(int argc, char ** argv)
 		column_x.type = new DB::DataTypeInt16;
 		DB::ColumnInt16 * x = new DB::ColumnInt16;
 		column_x.column = x;
-		DB::PODArray<Int16> & vec_x = x->getData();
+		auto & vec_x = x->getData();
 
 		vec_x.resize(n);
 		for (size_t i = 0; i < n; ++i)

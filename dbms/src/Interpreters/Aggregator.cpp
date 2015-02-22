@@ -446,18 +446,21 @@ void NO_INLINE Aggregator::executeImplCase(
 		if (!no_more_keys)	/// Вставляем.
 		{
 			/// Оптимизация для часто повторяющихся ключей.
-			if (i != 0 && key == prev_key)
+			if (!Method::no_consecutive_keys_optimization)
 			{
-				/// Добавляем значения в агрегатные функции.
-				AggregateDataPtr value = Method::getAggregateData(it->second);
-				for (size_t j = 0; j < aggregates_size; ++j)	/// NOTE: Заменить индекс на два указателя?
-					aggregate_functions[j]->add(value + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
+				if (i != 0 && key == prev_key)
+				{
+					/// Добавляем значения в агрегатные функции.
+					AggregateDataPtr value = Method::getAggregateData(it->second);
+					for (size_t j = 0; j < aggregates_size; ++j)	/// NOTE: Заменить индекс на два указателя?
+						aggregate_functions[j]->add(value + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
 
-				method.onExistingKey(key, keys, *aggregates_pool);
-				continue;
+					method.onExistingKey(key, keys, *aggregates_pool);
+					continue;
+				}
+				else
+					prev_key = key;
 			}
-			else
-				prev_key = key;
 
 			method.data.emplace(key, it, inserted);
 		}

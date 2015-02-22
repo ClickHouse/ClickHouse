@@ -122,6 +122,10 @@ struct AggregationMethodOneNumber
 	  */
 	static void onExistingKey(const Key & key, StringRefs & keys, Arena & pool) {}
 
+	/** Не использовать оптимизацию для идущих подряд ключей.
+	  */
+	static const bool no_consecutive_keys_optimization = false;
+
 	/** Вставить ключ из хэш-таблицы в столбцы.
 	  */
 	static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
@@ -185,6 +189,8 @@ struct AggregationMethodString
 
 	static void onExistingKey(const Key & key, StringRefs & keys, Arena & pool) {}
 
+	static const bool no_consecutive_keys_optimization = false;
+
 	static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
 	{
 		key_columns[0]->insertData(value.first.data, value.first.size);
@@ -244,6 +250,8 @@ struct AggregationMethodFixedString
 
 	static void onExistingKey(const Key & key, StringRefs & keys, Arena & pool) {}
 
+	static const bool no_consecutive_keys_optimization = false;
+
 	static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
 	{
 		key_columns[0]->insertData(value.first.data, value.first.size);
@@ -294,6 +302,8 @@ struct AggregationMethodKeysFixed
 	}
 
 	static void onExistingKey(const Key & key, StringRefs & keys, Arena & pool) {}
+
+	static const bool no_consecutive_keys_optimization = false;
 
 	static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
 	{
@@ -355,6 +365,9 @@ struct AggregationMethodConcat
 		pool.rollback(key.size + keys.size() * sizeof(keys[0]));
 	}
 
+	/// Если ключ уже был, то он удаляется из пула (затирается), и сравнить с ним следующий ключ уже нельзя.
+	static const bool no_consecutive_keys_optimization = true;
+
 	static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
 	{
 		/// См. функцию extractKeysAndPlaceInPoolContiguous.
@@ -410,6 +423,8 @@ struct AggregationMethodHashed
 	}
 
 	static void onExistingKey(const Key & key, StringRefs & keys, Arena & pool) {}
+
+	static const bool no_consecutive_keys_optimization = false;
 
 	static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
 	{
