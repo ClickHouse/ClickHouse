@@ -35,8 +35,8 @@ struct Settings
 	M(SettingUInt64, max_block_size, DEFAULT_BLOCK_SIZE) \
 	/** Максимальный размер блока для вставки, если мы управляем формированием блоков для вставки. */ \
 	M(SettingUInt64, max_insert_block_size, DEFAULT_INSERT_BLOCK_SIZE) \
-	/** Максимальное количество потоков выполнения запроса */ \
-	M(SettingUInt64, max_threads, DEFAULT_MAX_THREADS) \
+	/** Максимальное количество потоков выполнения запроса. По-умолчанию - определять автоматически. */ \
+	M(SettingMaxThreads, max_threads, 0) \
 	/** Максимальное количество соединений при распределённой обработке одного запроса (должно быть больше, чем max_threads). */ \
 	M(SettingUInt64, max_distributed_connections, DEFAULT_MAX_DISTRIBUTED_CONNECTIONS) \
 	/** Какую часть запроса можно прочитать в оперативку для парсинга (оставшиеся данные для INSERT, если есть, считываются позже) */ \
