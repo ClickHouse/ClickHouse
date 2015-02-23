@@ -127,6 +127,33 @@ public:
 		head->pos -= size;
 	}
 
+	/** Начать или расширить непрерывный кусок памяти.
+	  * begin - текущее начало куска памяти, если его надо расширить, или nullptr, если его надо начать.
+	  * Если в чанке не хватило места - скопировать существующие данные в новый кусок памяти и изменить значение begin.
+	  */
+	char * allocContinue(size_t size, char const *& begin)
+	{
+		if (unlikely(head->pos + size > head->end))
+		{
+			char * prev_end = head->pos;
+			addChunk(size);
+
+			if (begin)
+			{
+				begin = insert(begin, prev_end - begin);
+				return allocContinue(size, begin);
+			}
+		}
+
+		char * res = head->pos;
+		head->pos += size;
+
+		if (!begin)
+			begin = res;
+
+		return res;
+	}
+
 	/// Вставить строку без выравнивания.
 	const char * insert(const char * data, size_t size)
 	{
