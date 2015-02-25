@@ -35,8 +35,8 @@ struct Settings
 	M(SettingUInt64, max_block_size, DEFAULT_BLOCK_SIZE) \
 	/** Максимальный размер блока для вставки, если мы управляем формированием блоков для вставки. */ \
 	M(SettingUInt64, max_insert_block_size, DEFAULT_INSERT_BLOCK_SIZE) \
-	/** Максимальное количество потоков выполнения запроса */ \
-	M(SettingUInt64, max_threads, DEFAULT_MAX_THREADS) \
+	/** Максимальное количество потоков выполнения запроса. По-умолчанию - определять автоматически. */ \
+	M(SettingMaxThreads, max_threads, 0) \
 	/** Максимальное количество соединений при распределённой обработке одного запроса (должно быть больше, чем max_threads). */ \
 	M(SettingUInt64, max_distributed_connections, DEFAULT_MAX_DISTRIBUTED_CONNECTIONS) \
 	/** Какую часть запроса можно прочитать в оперативку для парсинга (оставшиеся данные для INSERT, если есть, считываются позже) */ \
@@ -87,6 +87,8 @@ struct Settings
 	M(SettingBool, compile, false) \
 	/** Количество одинаковых по структуре запросов перед тем, как инициируется их компиляция. */ \
 	M(SettingUInt64, min_count_to_compile, 0) \
+	/** При каком количестве ключей, начинает использоваться двухуровневая агрегация. 0 - никогда не использовать. */ \
+	M(SettingUInt64, group_by_two_level_threshold, 30000) \
 	\
 	/** Максимальное количество используемых реплик каждого шарда при выполнении запроса */ \
 	M(SettingUInt64, max_parallel_replicas, 1) \
@@ -106,7 +108,7 @@ struct Settings
 	M(SettingUInt64, merge_tree_max_rows_to_use_cache, (1024 * 1024)) \
 	\
 	/** Минимальная длина выражения expr = x1 OR ... expr = xN для оптимизации */ \
-	M(SettingUInt64, min_or_chain_length_for_optimization, 6) \
+	M(SettingUInt64, optimize_min_equality_disjunction_chain_length, 4) \
 
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;

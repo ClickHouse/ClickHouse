@@ -763,14 +763,14 @@ void InterpreterSelectQuery::executeAggregation(BlockInputStreams & streams, Exp
 	{
 		stream = new ParallelAggregatingBlockInputStream(streams, key_names, aggregates, overflow_row, final,
 			settings.max_threads, settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode,
-			settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile);
+			settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile, settings.group_by_two_level_threshold);
 
 		streams.resize(1);
 	}
 	else
 		stream = new AggregatingBlockInputStream(stream, key_names, aggregates, overflow_row, final,
 			settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode,
-			settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile);
+			settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile, 0);
 }
 
 

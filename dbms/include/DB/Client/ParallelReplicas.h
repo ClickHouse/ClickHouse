@@ -3,6 +3,8 @@
 #include <DB/Common/Throttler.h>
 #include <DB/Client/Connection.h>
 #include <DB/Client/ConnectionPool.h>
+#include <Poco/ScopedLock.h>
+#include <Poco/Mutex.h>
 
 
 namespace DB
@@ -11,6 +13,7 @@ namespace DB
 
 /** Для получения данных сразу из нескольких реплик (соединений) в рамках одного потока.
   * В качестве вырожденного случая, может также работать с одним соединением.
+  * Предполагается, что все функции кроме sendCancel всегда выполняются в одном потоке.
   *
   * Интерфейс почти совпадает с Connection.
   */
@@ -49,31 +52,36 @@ public:
 	std::string dumpAddresses() const;
 
 	/// Возвращает количесто реплик.
+	/// Без блокировки, потому что sendCancel() не меняет это количество.
 	size_t size() const { return replica_map.size(); }
 
 	/// Проверить, есть ли действительные реплики.
+	/// Без блокировки, потому что sendCancel() не меняет состояние реплик.
 	bool hasActiveReplicas() const { return active_replica_count > 0; }
 
 private:
 	/// Реплики хэшированные по id сокета
 	using ReplicaMap = std::unordered_map<int, Connection *>;
 
-
+private:
 	/// Зарегистрировать реплику.
 	void registerReplica(Connection * connection);
+
+	/// Внутренняя версия функции receivePacket без блокировки.
+	Connection::Packet receivePacketUnlocked();
 
 	/// Получить реплику, на которой можно прочитать данные.
 	ReplicaMap::iterator getReplicaForReading();
 
 	/** Проверить, есть ли данные, которые можно прочитать на каких-нибудь репликах.
-		* Возвращает одну такую реплику, если она найдётся.
-		*/
+	  * Возвращает одну такую реплику, если она найдётся.
+	  */
 	ReplicaMap::iterator waitForReadEvent();
 
 	/// Пометить реплику как недействительную.
 	void invalidateReplica(ReplicaMap::iterator it);
 
-
+private:
 	Settings * settings;
 	ReplicaMap replica_map;
 
@@ -91,6 +99,10 @@ private:
 	bool sent_query = false;
 	/// Отменили запрос
 	bool cancelled = false;
+
+	/// Мьютекс для того, чтобы функция sendCancel могла выполняться безопасно
+	/// в отдельном потоке.
+	mutable Poco::FastMutex cancel_mutex;
 };
 
 }

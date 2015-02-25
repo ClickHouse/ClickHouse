@@ -3,6 +3,7 @@
 #include <DB/Core/Field.h>
 #include <DB/IO/WriteHelpers.h>
 #include <Poco/Timespan.h>
+#include <cpuid/libcpuid.h>
 
 
 namespace DB
@@ -62,6 +63,90 @@ struct SettingUInt64
 };
 
 typedef SettingUInt64 SettingBool;
+
+
+/** В отличие от SettingUInt64, поддерживает значение 'auto' - количество процессорных ядер без учёта SMT.
+  * Значение 0 так же воспринимается как auto.
+  * При сериализации, auto записывается так же, как 0.
+  */
+struct SettingMaxThreads
+{
+	UInt64 value;
+	bool is_auto;
+	bool changed = false;
+
+	SettingMaxThreads(UInt64 x = 0) : value(x ? x : getAutoValue()), is_auto(x == 0) {}
+
+	operator UInt64() const { return value; }
+	SettingMaxThreads & operator= (UInt64 x) { set(x); return *this; }
+
+	String toString() const
+	{
+		/// Вместо значения auto выводим актуальное значение, чтобы его было легче посмотреть.
+		return DB::toString(value);
+	}
+
+	void set(UInt64 x)
+	{
+		value = x ? x : getAutoValue();
+		is_auto = x == 0;
+		changed = true;
+	}
+
+	void set(const Field & x)
+	{
+		if (x.getType() == Field::Types::String)
+			set(safeGet<const String &>(x));
+		else
+			set(safeGet<UInt64>(x));
+	}
+
+	void set(const String & x)
+	{
+		if (x == "auto")
+			setAuto();
+		else
+			set(parse<UInt64>(x));
+	}
+
+	void set(ReadBuffer & buf)
+	{
+		UInt64 x = 0;
+		readVarUInt(x, buf);
+		set(x);
+	}
+
+	void write(WriteBuffer & buf) const
+	{
+		writeVarUInt(is_auto ? 0 : value, buf);
+	}
+
+	void setAuto()
+	{
+		value = getAutoValue();
+		is_auto = true;
+	}
+
+	UInt64 getAutoValue() const
+	{
+		static auto res = getAutoValueImpl();
+		return res;
+	}
+
+	/// Выполняется один раз за всё время. Выполняется из одного потока.
+	UInt64 getAutoValueImpl() const
+	{
+		cpu_raw_data_t raw_data;
+		if (0 != cpuid_get_raw_data(&raw_data))
+			throw Exception("Cannot cpuid_get_raw_data: " + String(cpuid_error()), ErrorCodes::CPUID_ERROR);
+
+		cpu_id_t data;
+		if (0 != cpu_identify(&raw_data, &data))
+			throw Exception("Cannot cpu_identify: " + String(cpuid_error()), ErrorCodes::CPUID_ERROR);
+
+		return data.num_cores * data.total_logical_cpus / data.num_logical_cpus;
+	}
+};
 
 
 struct SettingSeconds

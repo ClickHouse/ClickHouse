@@ -1,17 +1,15 @@
 #!/bin/bash
 
-ck="clickhouse-client "
 test_table="hits_100m"
-claster="self"
 
 start_date="'2013-07-01'"
 early_stop_date="'2013-07-02'"
 stop_date="'2013-07-31'"
 counter_id=34
 
-function run_ck_server 
+function run_ck_server
 {
-    sudo sh -c " ulimit  -v 54000000; /etc/init.d/clickhouse-server-metrika-yandex-ulimit restart"
+    sudo sh -c " ulimit -v 54000000; /etc/init.d/clickhouse-server restart"
 }
 
 # execute queries
@@ -32,7 +30,7 @@ function execute()
 	if [[ $query =~ $comment_re ]]; then
 	    echo "$query"
 	    echo
-	else	    
+	else
 	    sync
 	    sudo sh -c "echo 3 > /proc/sys/vm/drop_caches"
 
@@ -46,7 +44,7 @@ function execute()
 		fi
 
 		# restart clickhouse if failed
-		ps aux | grep -P '\d+ /usr/bin/clickhouse-server'
+		ps aux | grep -P '\d+ clickhouse-server'
 		if [ "$?" != "0" ]; then
 		    run_ck_server
 		fi
@@ -54,6 +52,7 @@ function execute()
 	fi
 
 	let "index = $index + 1"
+	echo "Ran $index queries." >&2
     done
 }
 

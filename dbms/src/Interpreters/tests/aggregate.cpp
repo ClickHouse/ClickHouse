@@ -29,7 +29,7 @@ int main(int argc, char ** argv)
 		column_x.type = new DB::DataTypeInt16;
 		DB::ColumnInt16 * x = new DB::ColumnInt16;
 		column_x.column = x;
-		DB::PODArray<Int16> & vec_x = x->getData();
+		auto & vec_x = x->getData();
 
 		vec_x.resize(n);
 		for (size_t i = 0; i < n; ++i)
@@ -73,7 +73,7 @@ int main(int argc, char ** argv)
 		DB::DataTypes empty_list_of_types;
 		aggregate_descriptions[0].function = factory.get("count", empty_list_of_types);
 
-		DB::Aggregator aggregator(key_column_numbers, aggregate_descriptions, false, 0, DB::OverflowMode::THROW, nullptr, 0);
+		DB::Aggregator aggregator(key_column_numbers, aggregate_descriptions, false, 0, DB::OverflowMode::THROW, nullptr, 0, 0);
 
 		{
 			Poco::Stopwatch stopwatch;

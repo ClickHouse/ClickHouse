@@ -6,6 +6,10 @@
 #include <DB/Core/Block.h>
 #include <DB/Storages/ColumnDefault.h>
 
+#include <boost/range/iterator_range.hpp>
+#include <boost/range/join.hpp>
+
+
 namespace DB
 {
 
@@ -94,6 +98,11 @@ public:
 
 private:
 	virtual const NamesAndTypesList & getColumnsListImpl() const = 0;
+
+	using ColumnsListRange = boost::range::joined_range<
+		const boost::iterator_range<NamesAndTypesList::const_iterator>,
+		const boost::iterator_range<NamesAndTypesList::const_iterator>>;
+	ColumnsListRange getColumnsListIterator() const;
 };
 
 }

@@ -248,7 +248,7 @@ void Join::insertFromBlockImpl(Maps & maps, size_t rows, const ConstColumnPlainP
 		for (size_t i = 0; i < rows; ++i)
 		{
 			UInt128 key = keys_fit_128_bits
-				? pack128(i, keys_size, key_columns, key_sizes)
+				? packFixed<UInt128>(i, keys_size, key_columns, key_sizes)
 				: hash128(i, keys_size, key_columns);
 
 			Inserter<STRICTNESS, Map>::insert(res, key, stored_block, i, pool);
@@ -499,7 +499,7 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 		for (size_t i = 0; i < rows; ++i)
 		{
 			UInt128 key = keys_fit_128_bits
-				? pack128(i, keys_size, key_columns, key_sizes)
+				? packFixed<UInt128>(i, keys_size, key_columns, key_sizes)
 				: hash128(i, keys_size, key_columns);
 
 			Adder<KIND, STRICTNESS, Map>::add(map, key, num_columns_to_add, added_columns, i, filter.get(), current_offset, offsets_to_replicate.get());

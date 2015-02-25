@@ -52,11 +52,13 @@ typedef AggregateDataPtr AggregatedDataWithoutKey;
 typedef HashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>> AggregatedDataWithUInt64Key;
 typedef HashMapWithSavedHash<StringRef, AggregateDataPtr> AggregatedDataWithStringKey;
 typedef HashMap<UInt128, AggregateDataPtr, UInt128HashCRC32> AggregatedDataWithKeys128;
+typedef HashMap<UInt256, AggregateDataPtr, UInt256HashCRC32> AggregatedDataWithKeys256;
 typedef HashMap<UInt128, std::pair<StringRef*, AggregateDataPtr>, UInt128TrivialHash> AggregatedDataHashed;
 
 typedef TwoLevelHashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>> AggregatedDataWithUInt64KeyTwoLevel;
 typedef TwoLevelHashMapWithSavedHash<StringRef, AggregateDataPtr> AggregatedDataWithStringKeyTwoLevel;
 typedef TwoLevelHashMap<UInt128, AggregateDataPtr, UInt128HashCRC32> AggregatedDataWithKeys128TwoLevel;
+typedef TwoLevelHashMap<UInt256, AggregateDataPtr, UInt256HashCRC32> AggregatedDataWithKeys256TwoLevel;
 typedef TwoLevelHashMap<UInt128, std::pair<StringRef*, AggregateDataPtr>, UInt128TrivialHash> AggregatedDataHashedTwoLevel;
 
 typedef HashMap<UInt64, AggregateDataPtr, TrivialHash, HashTableFixedGrower<8>> AggregatedDataWithUInt8Key;
@@ -99,7 +101,8 @@ struct AggregationMethodOneNumber
 			size_t keys_size,							/// Количество ключевых столбцов.
 			size_t i,					/// Из какой строки блока достать ключ.
 			const Sizes & key_sizes,	/// Если ключи фиксированной длины - их длины. Не используется в методах агрегации по ключам переменной длины.
-			StringRefs & keys) const	/// Сюда могут быть записаны ссылки на данные ключей в столбцах. Они могут быть использованы в дальнейшем.
+			StringRefs & keys,			/// Сюда могут быть записаны ссылки на данные ключей в столбцах. Они могут быть использованы в дальнейшем.
+			Arena & pool) const
 		{
 			return unionCastToUInt64(vec[i]);
 		}
@@ -114,6 +117,14 @@ struct AggregationMethodOneNumber
 	static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
 	{
 	}
+
+	/** Действие, которое нужно сделать, если ключ не новый. Например, откатить выделение памяти в пуле.
+	  */
+	static void onExistingKey(const Key & key, StringRefs & keys, Arena & pool) {}
+
+	/** Не использовать оптимизацию для идущих подряд ключей.
+	  */
+	static const bool no_consecutive_keys_optimization = false;
 
 	/** Вставить ключ из хэш-таблицы в столбцы.
 	  */
@@ -159,7 +170,8 @@ struct AggregationMethodString
 			size_t keys_size,
 			size_t i,
 			const Sizes & key_sizes,
-			StringRefs & keys) const
+			StringRefs & keys,
+			Arena & pool) const
 		{
 			return StringRef(
 				&(*chars)[i == 0 ? 0 : (*offsets)[i - 1]],
@@ -174,6 +186,10 @@ struct AggregationMethodString
 	{
 		value.first.data = pool.insert(value.first.data, value.first.size);
 	}
+
+	static void onExistingKey(const Key & key, StringRefs & keys, Arena & pool) {}
+
+	static const bool no_consecutive_keys_optimization = false;
 
 	static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
 	{
@@ -217,7 +233,8 @@ struct AggregationMethodFixedString
 			size_t keys_size,
 			size_t i,
 			const Sizes & key_sizes,
-			StringRefs & keys) const
+			StringRefs & keys,
+			Arena & pool) const
 		{
 			return StringRef(&(*chars)[i * n], n);
 		}
@@ -231,6 +248,10 @@ struct AggregationMethodFixedString
 		value.first.data = pool.insert(value.first.data, value.first.size);
 	}
 
+	static void onExistingKey(const Key & key, StringRefs & keys, Arena & pool) {}
+
+	static const bool no_consecutive_keys_optimization = false;
+
 	static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
 	{
 		key_columns[0]->insertData(value.first.data, value.first.size);
@@ -238,9 +259,9 @@ struct AggregationMethodFixedString
 };
 
 
-/// Для случая, когда все ключи фиксированной длины, и они помещаются в 128 бит.
+/// Для случая, когда все ключи фиксированной длины, и они помещаются в N (например, 128) бит.
 template <typename TData>
-struct AggregationMethodKeys128
+struct AggregationMethodKeysFixed
 {
 	typedef TData Data;
 	typedef typename Data::key_type Key;
@@ -250,10 +271,10 @@ struct AggregationMethodKeys128
 
 	Data data;
 
-	AggregationMethodKeys128() {}
+	AggregationMethodKeysFixed() {}
 
 	template <typename Other>
-	AggregationMethodKeys128(const Other & other) : data(other.data) {}
+	AggregationMethodKeysFixed(const Other & other) : data(other.data) {}
 
 	struct State
 	{
@@ -266,9 +287,10 @@ struct AggregationMethodKeys128
 			size_t keys_size,
 			size_t i,
 			const Sizes & key_sizes,
-			StringRefs & keys) const
+			StringRefs & keys,
+			Arena & pool) const
 		{
-			return pack128(i, keys_size, key_columns, key_sizes);
+			return packFixed<Key>(i, keys_size, key_columns, key_sizes);
 		}
 	};
 
@@ -279,6 +301,10 @@ struct AggregationMethodKeys128
 	{
 	}
 
+	static void onExistingKey(const Key & key, StringRefs & keys, Arena & pool) {}
+
+	static const bool no_consecutive_keys_optimization = false;
+
 	static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
 	{
 		size_t offset = 0;
@@ -288,6 +314,67 @@ struct AggregationMethodKeys128
 			key_columns[i]->insertData(reinterpret_cast<const char *>(&value.first) + offset, size);
 			offset += size;
 		}
+	}
+};
+
+
+/// Для остальных случаев. Агрегирует по конкатенации ключей. (При этом, строки, содержащие нули посередине, могут склеиться.)
+template <typename TData>
+struct AggregationMethodConcat
+{
+	typedef TData Data;
+	typedef typename Data::key_type Key;
+	typedef typename Data::mapped_type Mapped;
+	typedef typename Data::iterator iterator;
+	typedef typename Data::const_iterator const_iterator;
+
+	Data data;
+
+	AggregationMethodConcat() {}
+
+	template <typename Other>
+	AggregationMethodConcat(const Other & other) : data(other.data) {}
+
+	struct State
+	{
+		void init(ConstColumnPlainPtrs & key_columns)
+		{
+		}
+
+		Key getKey(
+			const ConstColumnPlainPtrs & key_columns,
+			size_t keys_size,
+			size_t i,
+			const Sizes & key_sizes,
+			StringRefs & keys,
+			Arena & pool) const
+		{
+			return extractKeysAndPlaceInPoolContiguous(i, keys_size, key_columns, keys, pool);
+		}
+	};
+
+	static AggregateDataPtr & getAggregateData(Mapped & value) 				{ return value; }
+	static const AggregateDataPtr & getAggregateData(const Mapped & value) 	{ return value; }
+
+	static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
+	{
+	}
+
+	static void onExistingKey(const Key & key, StringRefs & keys, Arena & pool)
+	{
+		pool.rollback(key.size + keys.size() * sizeof(keys[0]));
+	}
+
+	/// Если ключ уже был, то он удаляется из пула (затирается), и сравнить с ним следующий ключ уже нельзя.
+	static const bool no_consecutive_keys_optimization = true;
+
+	static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
+	{
+		/// См. функцию extractKeysAndPlaceInPoolContiguous.
+		const StringRef * key_refs = reinterpret_cast<const StringRef *>(value.first.data + value.first.size);
+
+		for (size_t i = 0; i < keys_size; ++i)
+			key_columns[i]->insertDataWithTerminatingZero(key_refs[i].data, key_refs[i].size);
 	}
 };
 
@@ -320,7 +407,8 @@ struct AggregationMethodHashed
 			size_t keys_size,
 			size_t i,
 			const Sizes & key_sizes,
-			StringRefs & keys) const
+			StringRefs & keys,
+			Arena & pool) const
 		{
 			return hash128(i, keys_size, key_columns, keys);
 		}
@@ -333,6 +421,10 @@ struct AggregationMethodHashed
 	{
 		value.second.first = placeKeysInPool(i, keys_size, keys, pool);
 	}
+
+	static void onExistingKey(const Key & key, StringRefs & keys, Arena & pool) {}
+
+	static const bool no_consecutive_keys_optimization = false;
 
 	static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
 	{
@@ -383,15 +475,19 @@ struct AggregatedDataVariants : private boost::noncopyable
 	std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64Key>>		key64;
 	std::unique_ptr<AggregationMethodString<AggregatedDataWithStringKey>> 					key_string;
 	std::unique_ptr<AggregationMethodFixedString<AggregatedDataWithStringKey>> 				key_fixed_string;
-	std::unique_ptr<AggregationMethodKeys128<AggregatedDataWithKeys128>> 					keys128;
+	std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128>> 					keys128;
+	std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256>> 					keys256;
 	std::unique_ptr<AggregationMethodHashed<AggregatedDataHashed>> 							hashed;
+	std::unique_ptr<AggregationMethodConcat<AggregatedDataWithStringKey>> 					concat;
 
 	std::unique_ptr<AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64KeyTwoLevel>>	key32_two_level;
 	std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyTwoLevel>>	key64_two_level;
 	std::unique_ptr<AggregationMethodString<AggregatedDataWithStringKeyTwoLevel>>				key_string_two_level;
 	std::unique_ptr<AggregationMethodFixedString<AggregatedDataWithStringKeyTwoLevel>> 			key_fixed_string_two_level;
-	std::unique_ptr<AggregationMethodKeys128<AggregatedDataWithKeys128TwoLevel>> 				keys128_two_level;
+	std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128TwoLevel>> 				keys128_two_level;
+	std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel>> 				keys256_two_level;
 	std::unique_ptr<AggregationMethodHashed<AggregatedDataHashedTwoLevel>> 						hashed_two_level;
+	std::unique_ptr<AggregationMethodConcat<AggregatedDataWithStringKeyTwoLevel>> 				concat_two_level;
 
 	/// В этом и подобных макросах, вариант without_key не учитывается.
 	#define APPLY_FOR_AGGREGATED_VARIANTS(M) \
@@ -402,13 +498,17 @@ struct AggregatedDataVariants : private boost::noncopyable
 		M(key_string,			false) \
 		M(key_fixed_string,		false) \
 		M(keys128,				false) \
+		M(keys256,				false) \
 		M(hashed,				false) \
+		M(concat,				false) \
 		M(key32_two_level,				true) \
 		M(key64_two_level,				true) \
 		M(key_string_two_level,			true) \
 		M(key_fixed_string_two_level,	true) \
 		M(keys128_two_level,			true) \
-		M(hashed_two_level,				true)
+		M(keys256_two_level,			true) \
+		M(hashed_two_level,				true) \
+		M(concat_two_level,				true)
 
 	enum class Type
 	{
@@ -520,7 +620,9 @@ struct AggregatedDataVariants : private boost::noncopyable
 		M(key_string)		\
 		M(key_fixed_string)	\
 		M(keys128)			\
-		M(hashed)
+		M(keys256)			\
+		M(hashed)			\
+		M(concat)
 
 	#define APPLY_FOR_VARIANTS_NOT_CONVERTIBLE_TO_TWO_LEVEL(M) \
 		M(key8)				\
@@ -549,7 +651,9 @@ struct AggregatedDataVariants : private boost::noncopyable
 			M(key_string_two_level)			\
 			M(key_fixed_string_two_level)	\
 			M(keys128_two_level)			\
-			M(hashed_two_level)
+			M(keys256_two_level)			\
+			M(hashed_two_level)				\
+			M(concat_two_level)
 };
 
 typedef SharedPtr<AggregatedDataVariants> AggregatedDataVariantsPtr;
@@ -573,11 +677,12 @@ class Aggregator
 {
 public:
 	Aggregator(const ColumnNumbers & keys_, const AggregateDescriptions & aggregates_, bool overflow_row_,
-		size_t max_rows_to_group_by_, OverflowMode group_by_overflow_mode_, Compiler * compiler_, UInt32 min_count_to_compile_)
+		size_t max_rows_to_group_by_, OverflowMode group_by_overflow_mode_, Compiler * compiler_, UInt32 min_count_to_compile_,
+		size_t group_by_two_level_threshold_)
 		: keys(keys_), aggregates(aggregates_), aggregates_size(aggregates.size()),
 		overflow_row(overflow_row_),
 		max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
-		compiler(compiler_), min_count_to_compile(min_count_to_compile_)
+		compiler(compiler_), min_count_to_compile(min_count_to_compile_), group_by_two_level_threshold(group_by_two_level_threshold_)
 	{
 		std::sort(keys.begin(), keys.end());
 		keys.erase(std::unique(keys.begin(), keys.end()), keys.end());
@@ -585,11 +690,12 @@ public:
 	}
 
 	Aggregator(const Names & key_names_, const AggregateDescriptions & aggregates_, bool overflow_row_,
-		size_t max_rows_to_group_by_, OverflowMode group_by_overflow_mode_, Compiler * compiler_, UInt32 min_count_to_compile_)
+		size_t max_rows_to_group_by_, OverflowMode group_by_overflow_mode_, Compiler * compiler_, UInt32 min_count_to_compile_,
+		size_t group_by_two_level_threshold_)
 		: key_names(key_names_), aggregates(aggregates_), aggregates_size(aggregates.size()),
 		overflow_row(overflow_row_),
 		max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
-		compiler(compiler_), min_count_to_compile(min_count_to_compile_)
+		compiler(compiler_), min_count_to_compile(min_count_to_compile_), group_by_two_level_threshold(group_by_two_level_threshold_)
 	{
 		std::sort(key_names.begin(), key_names.end());
 		key_names.erase(std::unique(key_names.begin(), key_names.end()), key_names.end());
@@ -685,6 +791,10 @@ protected:
 	bool compiled_if_possible = false;
 	void compileIfPossible(AggregatedDataVariants::Type type);
 
+	/** При каком количестве ключей, начинает использоваться двухуровневая агрегация.
+	  * 0 - никогда не использовать.
+	  */
+	size_t group_by_two_level_threshold;
 
 	/** Если заданы только имена столбцов (key_names, а также aggregates[i].column_name), то вычислить номера столбцов.
 	  * Сформировать блок - пример результата.

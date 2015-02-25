@@ -193,23 +193,27 @@ void NO_INLINE Aggregator::executeSpecializedCase(
 		bool overflow = false;	/// Новый ключ не поместился в хэш-таблицу из-за no_more_keys.
 
 		/// Получаем ключ для вставки в хэш-таблицу.
-		typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes, keys);
+		typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes, keys, *aggregates_pool);
 
 		if (!no_more_keys)	/// Вставляем.
 		{
 			/// Оптимизация для часто повторяющихся ключей.
-			if (i != 0 && key == prev_key)
+			if (!Method::no_consecutive_keys_optimization)
 			{
-				AggregateDataPtr value = Method::getAggregateData(it->second);
+				if (i != 0 && key == prev_key)
+				{
+					AggregateDataPtr value = Method::getAggregateData(it->second);
 
-				/// Добавляем значения в агрегатные функции.
-				AggregateFunctionsList::forEach(AggregateFunctionsUpdater(
-					aggregate_functions, offsets_of_aggregate_states, aggregate_columns, value, i));
+					/// Добавляем значения в агрегатные функции.
+					AggregateFunctionsList::forEach(AggregateFunctionsUpdater(
+						aggregate_functions, offsets_of_aggregate_states, aggregate_columns, value, i));
 
-				continue;
+					method.onExistingKey(key, keys, *aggregates_pool);
+					continue;
+				}
+				else
+					prev_key = key;
 			}
-			else
-				prev_key = key;
 
 			method.data.emplace(key, it, inserted);
 		}
@@ -224,7 +228,10 @@ void NO_INLINE Aggregator::executeSpecializedCase(
 
 		/// Если ключ не поместился, и данные не надо агрегировать в отдельную строку, то делать нечего.
 		if (no_more_keys && overflow && !overflow_row)
+		{
+			method.onExistingKey(key, keys, *aggregates_pool);
 			continue;
+		}
 
 		/// Если вставили новый ключ - инициализируем состояния агрегатных функций, и возможно, что-нибудь связанное с ключом.
 		if (inserted)
@@ -237,6 +244,8 @@ void NO_INLINE Aggregator::executeSpecializedCase(
 			AggregateFunctionsList::forEach(AggregateFunctionsCreator(
 				aggregate_functions, offsets_of_aggregate_states, aggregate_columns, aggregate_data));
 		}
+		else
+			method.onExistingKey(key, keys, *aggregates_pool);
 
 		AggregateDataPtr value = (!no_more_keys || !overflow) ? Method::getAggregateData(it->second) : overflow_row;
 

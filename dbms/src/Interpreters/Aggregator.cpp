@@ -311,21 +311,19 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
 	  * Затем, в процессе работы, данные могут быть переконвертированы в two-level структуру, если их становится много.
 	  */
 
-	bool keys_fit_128_bits = true;
+	bool all_fixed = true;
 	size_t keys_bytes = 0;
 	key_sizes.resize(keys_size);
 	for (size_t j = 0; j < keys_size; ++j)
 	{
 		if (!key_columns[j]->isFixed())
 		{
-			keys_fit_128_bits = false;
+			all_fixed = false;
 			break;
 		}
 		key_sizes[j] = key_columns[j]->sizeOfField();
 		keys_bytes += key_sizes[j];
 	}
-	if (keys_bytes > 16)
-		keys_fit_128_bits = false;
 
 	/// Если ключей нет
 	if (keys_size == 0)
@@ -346,9 +344,11 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
 		throw Exception("Logical error: numeric column has sizeOfField not in 1, 2, 4, 8.", ErrorCodes::LOGICAL_ERROR);
 	}
 
-	/// Если ключи помещаются в 128 бит, будем использовать хэш-таблицу по упакованным в 128-бит ключам
-	if (keys_fit_128_bits)
+	/// Если ключи помещаются в N бит, будем использовать хэш-таблицу по упакованным в N-бит ключам
+	if (all_fixed && keys_bytes <= 16)
 		return AggregatedDataVariants::Type::keys128;
+	if (all_fixed && keys_bytes <= 32)
+		return AggregatedDataVariants::Type::keys256;
 
 	/// Если есть один строковый ключ, то используем хэш-таблицу с ним
 	if (keys_size == 1 && typeid_cast<const ColumnString *>(key_columns[0]))
@@ -357,8 +357,10 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
 	if (keys_size == 1 && typeid_cast<const ColumnFixedString *>(key_columns[0]))
 		return AggregatedDataVariants::Type::key_fixed_string;
 
-	/// Иначе будем агрегировать по хэшу от ключей.
-	return AggregatedDataVariants::Type::hashed;
+	/// Иначе будем агрегировать по конкатенации ключей.
+	return AggregatedDataVariants::Type::concat;
+
+	/// NOTE AggregatedDataVariants::Type::hashed не используется.
 }
 
 
@@ -439,22 +441,26 @@ void NO_INLINE Aggregator::executeImplCase(
 		bool overflow = false;	/// Новый ключ не поместился в хэш-таблицу из-за no_more_keys.
 
 		/// Получаем ключ для вставки в хэш-таблицу.
-		typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes, keys);
+		typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes, keys, *aggregates_pool);
 
 		if (!no_more_keys)	/// Вставляем.
 		{
 			/// Оптимизация для часто повторяющихся ключей.
-			if (i != 0 && key == prev_key)
+			if (!Method::no_consecutive_keys_optimization)
 			{
-				/// Добавляем значения в агрегатные функции.
-				AggregateDataPtr value = Method::getAggregateData(it->second);
-				for (size_t j = 0; j < aggregates_size; ++j)	/// NOTE: Заменить индекс на два указателя?
-					aggregate_functions[j]->add(value + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
+				if (i != 0 && key == prev_key)
+				{
+					/// Добавляем значения в агрегатные функции.
+					AggregateDataPtr value = Method::getAggregateData(it->second);
+					for (size_t j = 0; j < aggregates_size; ++j)	/// NOTE: Заменить индекс на два указателя?
+						aggregate_functions[j]->add(value + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
 
-				continue;
+					method.onExistingKey(key, keys, *aggregates_pool);
+					continue;
+				}
+				else
+					prev_key = key;
 			}
-			else
-				prev_key = key;
 
 			method.data.emplace(key, it, inserted);
 		}
@@ -469,7 +475,10 @@ void NO_INLINE Aggregator::executeImplCase(
 
 		/// Если ключ не поместился, и данные не надо агрегировать в отдельную строку, то делать нечего.
 		if (no_more_keys && overflow && !overflow_row)
+		{
+			method.onExistingKey(key, keys, *aggregates_pool);
 			continue;
+		}
 
 		/// Если вставили новый ключ - инициализируем состояния агрегатных функций, и возможно, что-нибудь связанное с ключом.
 		if (inserted)
@@ -480,6 +489,8 @@ void NO_INLINE Aggregator::executeImplCase(
 			aggregate_data = aggregates_pool->alloc(total_size_of_aggregate_states);
 			createAggregateStates(aggregate_data);
 		}
+		else
+			method.onExistingKey(key, keys, *aggregates_pool);
 
 		AggregateDataPtr value = (!no_more_keys || !overflow) ? Method::getAggregateData(it->second) : overflow_row;
 
@@ -644,16 +655,7 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 
 	size_t result_size = result.sizeWithoutOverflowRow();
 
-	/// Если результат уже достаточно большой, и его можно сконвертировать в двухуровневую хэш-таблицу.
-	constexpr auto TWO_LEVEL_HASH_TABLE_THRESHOLD = 30000;
-
-	/** Почему выбрано 30 000? Потому что при таком количестве элементов, в TwoLevelHashTable,
-	  *  скорее всего, хватит места на все ключи, с размером таблицы по-умолчанию
-	  *  (256 корзин по 256 ячеек, fill factor = 0.5)
-	  * TODO Не конвертировать, если запрос выполняется в один поток.
-	  */
-
-	if (result.isConvertibleToTwoLevel() && result_size >= TWO_LEVEL_HASH_TABLE_THRESHOLD)
+	if (group_by_two_level_threshold && result.isConvertibleToTwoLevel() && result_size >= group_by_two_level_threshold)
 		result.convertToTwoLevel();
 
 	/// Проверка ограничений.
@@ -1286,8 +1288,12 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 		mergeSingleLevelDataImpl<decltype(res->key_fixed_string)::element_type>(non_empty_data);
 	else if (res->type == AggregatedDataVariants::Type::keys128)
 		mergeSingleLevelDataImpl<decltype(res->keys128)::element_type>(non_empty_data);
+	else if (res->type == AggregatedDataVariants::Type::keys256)
+		mergeSingleLevelDataImpl<decltype(res->keys256)::element_type>(non_empty_data);
 	else if (res->type == AggregatedDataVariants::Type::hashed)
 		mergeSingleLevelDataImpl<decltype(res->hashed)::element_type>(non_empty_data);
+	else if (res->type == AggregatedDataVariants::Type::concat)
+		mergeSingleLevelDataImpl<decltype(res->concat)::element_type>(non_empty_data);
 	else if (res->type == AggregatedDataVariants::Type::key32_two_level)
 		mergeTwoLevelDataImpl<decltype(res->key32_two_level)::element_type>(non_empty_data, thread_pool.get());
 	else if (res->type == AggregatedDataVariants::Type::key64_two_level)
@@ -1298,8 +1304,12 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 		mergeTwoLevelDataImpl<decltype(res->key_fixed_string_two_level)::element_type>(non_empty_data, thread_pool.get());
 	else if (res->type == AggregatedDataVariants::Type::keys128_two_level)
 		mergeTwoLevelDataImpl<decltype(res->keys128_two_level)::element_type>(non_empty_data, thread_pool.get());
+	else if (res->type == AggregatedDataVariants::Type::keys256_two_level)
+		mergeTwoLevelDataImpl<decltype(res->keys256_two_level)::element_type>(non_empty_data, thread_pool.get());
 	else if (res->type == AggregatedDataVariants::Type::hashed_two_level)
 		mergeTwoLevelDataImpl<decltype(res->hashed_two_level)::element_type>(non_empty_data, thread_pool.get());
+	else if (res->type == AggregatedDataVariants::Type::concat_two_level)
+		mergeTwoLevelDataImpl<decltype(res->concat_two_level)::element_type>(non_empty_data, thread_pool.get());
 	else if (res->type != AggregatedDataVariants::Type::without_key)
 		throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 
@@ -1346,7 +1356,7 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
 		bool inserted;			/// Вставили новый ключ, или такой ключ уже был?
 
 		/// Получаем ключ для вставки в хэш-таблицу.
-		auto key = state.getKey(key_columns, keys_size, i, result.key_sizes, keys);
+		auto key = state.getKey(key_columns, keys_size, i, result.key_sizes, keys, *aggregates_pool);
 
 		data.emplace(key, it, inserted);
 
@@ -1358,6 +1368,8 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
 			aggregate_data = aggregates_pool->alloc(total_size_of_aggregate_states);
 			createAggregateStates(aggregate_data);
 		}
+		else
+			method.onExistingKey(key, keys, *aggregates_pool);
 
 		/// Мерджим состояния агрегатных функций.
 		for (size_t j = 0; j < aggregates_size; ++j)
