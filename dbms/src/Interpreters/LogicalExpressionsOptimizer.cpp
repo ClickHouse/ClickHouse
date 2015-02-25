@@ -19,19 +19,7 @@ LogicalExpressionsOptimizer::OrWithExpression::OrWithExpression(ASTFunction * or
 
 bool LogicalExpressionsOptimizer::OrWithExpression::operator<(const OrWithExpression & rhs) const
 {
-	std::ptrdiff_t res1 = this->or_function - rhs.or_function;
-	if (res1 < 0)
-		return true;
-	if (res1 > 0)
-		return false;
-
-	int res2 = this->expression.compare(rhs.expression);
-	if (res2 < 0)
-		return true;
-	if (res2 > 0)
-		return false;
-
-	return false;
+	return std::tie(this->or_function, this->expression) < std::tie(rhs.or_function, rhs.expression);
 }
 
 LogicalExpressionsOptimizer::LogicalExpressionsOptimizer(ASTSelectQuery * select_query_, const Settings & settings_)
@@ -172,7 +160,7 @@ bool LogicalExpressionsOptimizer::mayOptimizeDisjunctiveEqualityChain(const Disj
 	const auto & equality_functions = equalities.functions;
 
 	/// Исключаем слишком короткие цепочки.
-	if (equality_functions.size() < settings.min_or_chain_length_for_optimization)
+	if (equality_functions.size() < settings.optimize_min_equality_disjunction_chain_length)
 		return false;
 
 	/// Проверяем, что правые части всех равенств имеют один и тот же тип.

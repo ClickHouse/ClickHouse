@@ -108,7 +108,7 @@ struct Settings
 	M(SettingUInt64, merge_tree_max_rows_to_use_cache, (1024 * 1024)) \
 	\
 	/** Минимальная длина выражения expr = x1 OR ... expr = xN для оптимизации */ \
-	M(SettingUInt64, min_or_chain_length_for_optimization, 6) \
+	M(SettingUInt64, optimize_min_equality_disjunction_chain_length, 4) \
 
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;
