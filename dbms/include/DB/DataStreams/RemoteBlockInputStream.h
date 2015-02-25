@@ -22,11 +22,11 @@ class RemoteBlockInputStream : public IProfilingBlockInputStream
 private:
 	void init(const Settings * settings_)
 	{
-		sent_query.store(false, std::memory_order_release);
-		finished.store(false, std::memory_order_release);
-		got_exception_from_replica.store(false, std::memory_order_release);
-		got_unknown_packet_from_replica.store(false, std::memory_order_release);
-		was_cancelled.store(false, std::memory_order_release);
+		sent_query.store(false, std::memory_order_seq_cst);
+		finished.store(false, std::memory_order_seq_cst);
+		got_exception_from_replica.store(false, std::memory_order_seq_cst);
+		got_unknown_packet_from_replica.store(false, std::memory_order_seq_cst);
+		was_cancelled.store(false, std::memory_order_seq_cst);
 
 		if (settings_)
 		{
@@ -141,13 +141,13 @@ protected:
 
 	Block readImpl() override
 	{
-		if (!sent_query.load(std::memory_order_acquire))
+		if (!sent_query.load(std::memory_order_seq_cst))
 		{
 			createParallelReplicas();
 			established = true;
 			parallel_replicas->sendQuery(query, "", stage, true);
 			established = false;
-			sent_query.store(true, std::memory_order_release);
+			sent_query.store(true, std::memory_order_seq_cst);
 			sendExternalTables();
 		}
 
@@ -164,14 +164,14 @@ protected:
 					break;	/// Если блок пустой - получим другие пакеты до EndOfStream.
 
 				case Protocol::Server::Exception:
-					got_exception_from_replica.store(true, std::memory_order_release);
+					got_exception_from_replica.store(true, std::memory_order_seq_cst);
 					packet.exception->rethrow();
 					break;
 
 				case Protocol::Server::EndOfStream:
 					if (!parallel_replicas->hasActiveReplicas())
 					{
-						finished.store(true, std::memory_order_release);
+						finished.store(true, std::memory_order_seq_cst);
 						return Block();
 					}
 					break;
@@ -203,7 +203,7 @@ protected:
 					break;
 
 				default:
-					got_unknown_packet_from_replica.store(true, std::memory_order_release);
+					got_unknown_packet_from_replica.store(true, std::memory_order_seq_cst);
 					throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
 			}
 		}
@@ -237,16 +237,16 @@ protected:
 		switch (packet.type)
 		{
 			case Protocol::Server::EndOfStream:
-				finished.store(true, std::memory_order_release);
+				finished.store(true, std::memory_order_seq_cst);
 				break;
 
 			case Protocol::Server::Exception:
-				got_exception_from_replica.store(true, std::memory_order_release);
+				got_exception_from_replica.store(true, std::memory_order_seq_cst);
 				packet.exception->rethrow();
 				break;
 
 			default:
-				got_unknown_packet_from_replica.store(true, std::memory_order_release);
+				got_unknown_packet_from_replica.store(true, std::memory_order_seq_cst);
 				throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
 		}
 	}
@@ -264,19 +264,19 @@ protected:
 	/// Возвращает true, если запрос отправлен, а ещё не выполнен.
 	bool isQueryInProgress() const
 	{
-		return sent_query.load(std::memory_order_acquire) && !finished.load(std::memory_order_acquire) && !was_cancelled.load(std::memory_order_acquire);
+		return sent_query.load(std::memory_order_seq_cst) && !finished.load(std::memory_order_seq_cst) && !was_cancelled.load(std::memory_order_seq_cst);
 	}
 
 	/// Возвращает true, если никакой запрос не отправлен или один запрос уже выполнен.
 	bool hasNoQueryInProgress() const
 	{
-		return !sent_query.load(std::memory_order_acquire) || finished.load(std::memory_order_acquire);
+		return !sent_query.load(std::memory_order_seq_cst) || finished.load(std::memory_order_seq_cst);
 	}
 
 	/// Возвращает true, если исключение было выкинуто.
 	bool hasThrownException() const
 	{
-		return got_exception_from_replica.load(std::memory_order_acquire) || got_unknown_packet_from_replica.load(std::memory_order_acquire);
+		return got_exception_from_replica.load(std::memory_order_seq_cst) || got_unknown_packet_from_replica.load(std::memory_order_seq_cst);
 	}
 
 private:
@@ -292,7 +292,7 @@ private:
 	{
 		bool old_val = false;
 		bool new_val = true;
-		if (was_cancelled.compare_exchange_strong(old_val, new_val, std::memory_order_release, std::memory_order_relaxed))
+		if (was_cancelled.compare_exchange_strong(old_val, new_val, std::memory_order_seq_cst, std::memory_order_relaxed))
 		{
 			parallel_replicas->sendCancel();
 			return true;
