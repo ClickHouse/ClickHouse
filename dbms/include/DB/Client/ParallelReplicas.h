@@ -3,6 +3,8 @@
 #include <DB/Common/Throttler.h>
 #include <DB/Client/Connection.h>
 #include <DB/Client/ConnectionPool.h>
+#include <Poco/ScopedLock.h>
+#include <Poco/Mutex.h>
 
 
 namespace DB
@@ -49,18 +51,23 @@ public:
 	std::string dumpAddresses() const;
 
 	/// Возвращает количесто реплик.
+	/// Без блокировки, потому что sendCancel() не меняет это количество.
 	size_t size() const { return replica_map.size(); }
 
 	/// Проверить, есть ли действительные реплики.
+	/// Без блокировки, потому что sendCancel() не меняет состояние реплик.
 	bool hasActiveReplicas() const { return active_replica_count > 0; }
 
 private:
 	/// Реплики хэшированные по id сокета
 	using ReplicaMap = std::unordered_map<int, Connection *>;
 
-
+private:
 	/// Зарегистрировать реплику.
 	void registerReplica(Connection * connection);
+
+	/// Внутренняя версия функции receivePacket без блокировки.
+	Connection::Packet receivePacketUnlocked();
 
 	/// Получить реплику, на которой можно прочитать данные.
 	ReplicaMap::iterator getReplicaForReading();
@@ -73,7 +80,7 @@ private:
 	/// Пометить реплику как недействительную.
 	void invalidateReplica(ReplicaMap::iterator it);
 
-
+private:
 	Settings * settings;
 	ReplicaMap replica_map;
 
@@ -91,6 +98,8 @@ private:
 	bool sent_query = false;
 	/// Отменили запрос
 	bool cancelled = false;
+
+	mutable Poco::FastMutex cancel_mutex;
 };
 
 }
