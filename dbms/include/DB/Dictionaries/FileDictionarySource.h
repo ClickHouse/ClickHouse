@@ -38,14 +38,6 @@ public:
 		return new OwningBufferBlockInputStream{stream, std::move(in_ptr)};
 	}
 
-	BlockInputStreamPtr loadId(const std::uint64_t id) override
-	{
-		throw Exception{
-			"Method unsupported",
-			ErrorCodes::NOT_IMPLEMENTED
-		};
-	}
-
 	BlockInputStreamPtr loadIds(const std::vector<std::uint64_t> ids) override
 	{
 		throw Exception{

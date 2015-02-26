@@ -39,14 +39,6 @@ public:
 		return new MySQLBlockInputStream{pool.Get()->query(load_all_query), sample_block, max_block_size};
 	}
 
-	BlockInputStreamPtr loadId(const std::uint64_t id) override
-	{
-		throw Exception{
-			"Method unsupported",
-			ErrorCodes::NOT_IMPLEMENTED
-		};
-	}
-
 	BlockInputStreamPtr loadIds(const std::vector<std::uint64_t> ids) override
 	{
 		throw Exception{
