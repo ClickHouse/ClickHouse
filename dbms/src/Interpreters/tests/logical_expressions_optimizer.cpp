@@ -5,7 +5,6 @@
 #include <DB/Interpreters/Settings.h>
 
 #include <iostream>
-#include <deque>
 #include <vector>
 #include <utility>
 #include <string>
@@ -25,8 +24,6 @@ using TestResult = std::pair<bool, std::string>;
 
 void reorder(DB::IAST * ast)
 {
-	using namespace DB;
-
 	auto & children = ast->children;
 	if (children.empty())
 		return;
@@ -34,7 +31,7 @@ void reorder(DB::IAST * ast)
 	for (auto & child : children)
 		reorder(&*child);
 
-	std::sort(children.begin(), children.end(), [](const ASTPtr & lhs, const ASTPtr & rhs)
+	std::sort(children.begin(), children.end(), [](const DB::ASTPtr & lhs, const DB::ASTPtr & rhs)
 	{
 		return lhs->getTreeID() < rhs->getTreeID();
 	});
@@ -42,82 +39,47 @@ void reorder(DB::IAST * ast)
 
 bool equals(const DB::ASTPtr & lhs, const DB::ASTPtr & rhs)
 {
-	using namespace DB;
-
-	ASTPtr lhs_reordered = lhs->clone();
+	DB::ASTPtr lhs_reordered = lhs->clone();
 	reorder(&*lhs_reordered);
 
-	ASTPtr rhs_reordered = rhs->clone();
+	DB::ASTPtr rhs_reordered = rhs->clone();
 	reorder(&*rhs_reordered);
 
-	std::deque<const IAST *> to_visit_left;
-	std::deque<const IAST *> to_visit_right;
-
-	to_visit_left.push_back(&*lhs_reordered);
-	to_visit_right.push_back(&*rhs_reordered);
-
-	while (!to_visit_left.empty())
-	{
-		auto node_left = to_visit_left.back();
-		to_visit_left.pop_back();
-
-		if (to_visit_right.empty())
-			return false;
-
-		auto node_right = to_visit_right.back();
-		to_visit_right.pop_back();
-
-		if (node_left->getTreeID() != node_right->getTreeID())
-			return false;
-
-		if (node_left->children.size() != node_right->children.size())
-			return false;
-
-		for (auto & child : node_left->children)
-			to_visit_left.push_back(&*child);
-		for (auto & child : node_right->children)
-			to_visit_right.push_back(&*child);
-	}
-
-	return true;
+	return lhs_reordered->getTreeID() == rhs_reordered->getTreeID();
 }
 
 bool parse(DB::ASTPtr  & ast, const std::string & query)
 {
-	using namespace DB;
-
-	ParserSelectQuery parser;
+	DB::ParserSelectQuery parser;
 	const char * pos = &query[0];
 	const char * end = &query[0] + query.size();
 
-	Expected expected = "";
+	DB::Expected expected = "";
 	return parser.parse(pos, end, ast, expected);
 }
 
 TestResult check(const TestEntry & entry)
 {
-	using namespace DB;
-
 	try
 	{
-		ASTPtr ast_input;
+		DB::ASTPtr ast_input;
 		if (!parse(ast_input, entry.input))
 			return TestResult(false, "parse error");
 
-		auto select_query = typeid_cast<ASTSelectQuery *>(&*ast_input);
+		auto select_query = typeid_cast<DB::ASTSelectQuery *>(&*ast_input);
 
-		Settings settings;
+		DB::Settings settings;
 		settings.optimize_min_equality_disjunction_chain_length = entry.limit;
 
-		LogicalExpressionsOptimizer optimizer(select_query, settings);
+		DB::LogicalExpressionsOptimizer optimizer(select_query, settings);
 		optimizer.optimizeDisjunctiveEqualityChains();
 
-		ASTPtr ast_expected;
+		DB::ASTPtr ast_expected;
 		if (!parse(ast_expected, entry.expected_output))
 			return TestResult(false, "parse error");
 
 		bool res = equals(ast_input, ast_expected);
-		std::string output = queryToString(ast_input);
+		std::string output = DB::queryToString(ast_input);
 
 		return TestResult(res, output);
 	}
