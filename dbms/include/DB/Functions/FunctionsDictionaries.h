@@ -779,7 +779,7 @@ private:
 		{
 			throw Exception{
 				"Illegal type " + arguments[2]->getName() + " of third argument of function " + getName()
-					+ ", muste be UInt64.",
+					+ ", must be UInt64.",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
 			};
 		}
@@ -836,7 +836,7 @@ private:
 		{
 			block.getByPosition(result).column = new ColumnConst<String>{
 				id_col->size(),
-				dictionary->getString(attr_name, id_col->getData()).toString()
+				dictionary->getString(attr_name, id_col->getData())
 			};
 		}
 		else

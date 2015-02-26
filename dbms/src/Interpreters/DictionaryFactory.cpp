@@ -39,6 +39,17 @@ DictionaryPtr DictionaryFactory::create(const std::string & name, Poco::Util::Ab
 	{
 		return std::make_unique<HashedDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime);
 	}
+	else if ("cache" == layout_type)
+	{
+		const auto size = config.getInt(layout_prefix + ".cache.size");
+		if (size == 0)
+			throw Exception{
+				"Dictionary of type 'cache' cannot have size of 0 bytes",
+				ErrorCodes::TOO_SMALL_BUFFER_SIZE
+			};
+
+		return std::make_unique<CacheDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, size);
+	}
 
 	throw Exception{
 		"Unknown dictionary layout type: " + layout_type,

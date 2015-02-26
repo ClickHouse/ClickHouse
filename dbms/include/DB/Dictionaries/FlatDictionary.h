@@ -69,8 +69,8 @@ public:
 		};
 	}
 
-#define DECLARE_INDIVIDUAL_GETTER(TYPE, NAME, LC_TYPE) \
-	TYPE get##NAME(const std::string & attribute_name, const id_t id) const override\
+#define DECLARE_INDIVIDUAL_GETTER(TYPE, LC_TYPE) \
+	TYPE get##TYPE(const std::string & attribute_name, const id_t id) const override\
 	{\
 		const auto idx = getAttributeIndex(attribute_name);\
 		const auto & attribute = attributes[idx];\
@@ -83,17 +83,17 @@ public:
 			return (*attribute.LC_TYPE##_array)[id];\
 		return attribute.LC_TYPE##_null_value;\
 	}
-	DECLARE_INDIVIDUAL_GETTER(UInt8, UInt8, uint8)
-	DECLARE_INDIVIDUAL_GETTER(UInt16, UInt16, uint16)
-	DECLARE_INDIVIDUAL_GETTER(UInt32, UInt32, uint32)
-	DECLARE_INDIVIDUAL_GETTER(UInt64, UInt64, uint64)
-	DECLARE_INDIVIDUAL_GETTER(Int8, Int8, int8)
-	DECLARE_INDIVIDUAL_GETTER(Int16, Int16, int16)
-	DECLARE_INDIVIDUAL_GETTER(Int32, Int32, int32)
-	DECLARE_INDIVIDUAL_GETTER(Int64, Int64, int64)
-	DECLARE_INDIVIDUAL_GETTER(Float32, Float32, float32)
-	DECLARE_INDIVIDUAL_GETTER(Float64, Float64, float64)
-	DECLARE_INDIVIDUAL_GETTER(StringRef, String, string)
+	DECLARE_INDIVIDUAL_GETTER(UInt8, uint8)
+	DECLARE_INDIVIDUAL_GETTER(UInt16, uint16)
+	DECLARE_INDIVIDUAL_GETTER(UInt32, uint32)
+	DECLARE_INDIVIDUAL_GETTER(UInt64, uint64)
+	DECLARE_INDIVIDUAL_GETTER(Int8, int8)
+	DECLARE_INDIVIDUAL_GETTER(Int16, int16)
+	DECLARE_INDIVIDUAL_GETTER(Int32, int32)
+	DECLARE_INDIVIDUAL_GETTER(Int64, int64)
+	DECLARE_INDIVIDUAL_GETTER(Float32, float32)
+	DECLARE_INDIVIDUAL_GETTER(Float64, float64)
+	DECLARE_INDIVIDUAL_GETTER(String, string)
 #undef DECLARE_INDIVIDUAL_GETTER
 
 #define DECLARE_MULTIPLE_GETTER(TYPE, LC_TYPE)\
@@ -143,7 +143,7 @@ public:
 		for (const auto i : ext::range(0, ids.size()))
 		{
 			const auto id = ids[i];
-			const auto string_ref = id < attr.size() ? attr[id] : null_value;
+			const auto string_ref = id < attr.size() ? attr[id] : StringRef{null_value};
 			out->insertData(string_ref.data, string_ref.size);
 		}
 	}
@@ -184,8 +184,8 @@ private:
 		for (const auto & attribute : dict_struct.attributes)
 		{
 			attribute_index_by_name.emplace(attribute.name, attributes.size());
-			attributes.push_back(std::move(createAttributeWithType(getAttributeTypeByName(attribute.type),
-				attribute.null_value)));
+			attributes.push_back(createAttributeWithType(getAttributeTypeByName(attribute.type),
+				attribute.null_value));
 
 			if (attribute.hierarchical)
 				hierarchical_attribute = &attributes.back();

@@ -10,6 +10,7 @@
 #include <DB/Core/StringRef.h>
 #include <DB/Columns/IColumn.h>
 #include <DB/Columns/ColumnsNumber.h>
+#include <DB/Columns/ColumnFixedString.h>
 
 
 template <>
@@ -56,7 +57,8 @@ static inline T ALWAYS_INLINE packFixed(
 				offset += 8;
 				break;
 			default:
-				__builtin_unreachable();
+				memcpy(bytes + offset, &static_cast<const ColumnFixedString *>(key_columns[j])->getChars()[i * key_sizes[j]], key_sizes[j]);
+				offset += key_sizes[j];
 		}
 	}
 

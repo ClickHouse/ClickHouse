@@ -58,7 +58,7 @@ public:
 	virtual Int64 getInt64(const std::string & attribute_name, id_t id) const = 0;
 	virtual Float32 getFloat32(const std::string & attribute_name, id_t id) const = 0;
 	virtual Float64 getFloat64(const std::string & attribute_name, id_t id) const = 0;
-	virtual StringRef getString(const std::string & attribute_name, id_t id) const = 0;
+	virtual String getString(const std::string & attribute_name, id_t id) const = 0;
 
 	/// functions for multiple access
 	virtual void getUInt8(const std::string & attr_name, const PODArray<id_t> & ids, PODArray<UInt8> & out) const = 0;
