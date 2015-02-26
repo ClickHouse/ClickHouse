@@ -177,6 +177,17 @@ public:
     PODArray(const_iterator from_begin, const_iterator from_end) : use_libc_realloc(false) { alloc(from_end - from_begin); insert(from_begin, from_end); }
     ~PODArray() { dealloc(); }
 
+	PODArray(PODArray && other) { *this = std::move(other); }
+	PODArray & operator=(PODArray && other)
+	{
+		std::swap(c_start, other.c_start);
+		std::swap(c_end, other.c_end);
+		std::swap(c_end_of_storage, other.c_end_of_storage);
+		std::swap(use_libc_realloc, other.use_libc_realloc);
+
+		return *this;
+	}
+
 
     size_t size() const { return t_end() - t_start(); }
     bool empty() const { return t_end() == t_start(); }
