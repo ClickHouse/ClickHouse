@@ -34,7 +34,7 @@ AggregateFunctionFactory::AggregateFunctionFactory()
 
 /** Создать агрегатную функцию с числовым типом в параметре шаблона, в зависимости от типа аргумента.
   */
-template<template <typename> class AggregateFunctionTemplate>
+template <template <typename> class AggregateFunctionTemplate>
 static IAggregateFunction * createWithNumericType(const IDataType & argument_type)
 {
 	     if (typeid_cast<const DataTypeUInt8 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt8>;
@@ -51,7 +51,7 @@ static IAggregateFunction * createWithNumericType(const IDataType & argument_typ
 		return nullptr;
 }
 
-template<template <typename, typename> class AggregateFunctionTemplate, class Data>
+template <template <typename, typename> class AggregateFunctionTemplate, class Data>
 static IAggregateFunction * createWithNumericType(const IDataType & argument_type)
 {
 	     if (typeid_cast<const DataTypeUInt8 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt8, Data>;
@@ -69,7 +69,7 @@ static IAggregateFunction * createWithNumericType(const IDataType & argument_typ
 }
 
 
-template<template <typename, typename> class AggregateFunctionTemplate, template <typename> class Data>
+template <template <typename, typename> class AggregateFunctionTemplate, template <typename> class Data>
 static IAggregateFunction * createWithNumericType(const IDataType & argument_type)
 {
 	     if (typeid_cast<const DataTypeUInt8 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt8, Data<UInt8> >;
@@ -87,8 +87,45 @@ static IAggregateFunction * createWithNumericType(const IDataType & argument_typ
 }
 
 
+/** Для шаблона с двумя аргументами.
+  */
+template <typename FirstType, template <typename, typename> class AggregateFunctionTemplate>
+static IAggregateFunction * createWithTwoNumericTypesSecond(const IDataType & second_type)
+{
+	     if (typeid_cast<const DataTypeUInt8 	*>(&second_type))	return new AggregateFunctionTemplate<FirstType, UInt8>;
+	else if (typeid_cast<const DataTypeUInt16 	*>(&second_type))	return new AggregateFunctionTemplate<FirstType, UInt16>;
+	else if (typeid_cast<const DataTypeUInt32 	*>(&second_type))	return new AggregateFunctionTemplate<FirstType, UInt32>;
+	else if (typeid_cast<const DataTypeUInt64 	*>(&second_type))	return new AggregateFunctionTemplate<FirstType, UInt64>;
+	else if (typeid_cast<const DataTypeInt8 	*>(&second_type))	return new AggregateFunctionTemplate<FirstType, Int8>;
+	else if (typeid_cast<const DataTypeInt16 	*>(&second_type))	return new AggregateFunctionTemplate<FirstType, Int16>;
+	else if (typeid_cast<const DataTypeInt32 	*>(&second_type))	return new AggregateFunctionTemplate<FirstType, Int32>;
+	else if (typeid_cast<const DataTypeInt64 	*>(&second_type))	return new AggregateFunctionTemplate<FirstType, Int64>;
+	else if (typeid_cast<const DataTypeFloat32 	*>(&second_type))	return new AggregateFunctionTemplate<FirstType, Float32>;
+	else if (typeid_cast<const DataTypeFloat64 	*>(&second_type))	return new AggregateFunctionTemplate<FirstType, Float64>;
+	else
+		return nullptr;
+}
+
+template <template <typename, typename> class AggregateFunctionTemplate>
+static IAggregateFunction * createWithTwoNumericTypes(const IDataType & first_type, const IDataType & second_type)
+{
+	     if (typeid_cast<const DataTypeUInt8 	*>(&first_type))	return createWithTwoNumericTypesSecond<UInt8, AggregateFunctionTemplate>(second_type);
+	else if (typeid_cast<const DataTypeUInt16 	*>(&first_type))	return createWithTwoNumericTypesSecond<UInt16, AggregateFunctionTemplate>(second_type);
+	else if (typeid_cast<const DataTypeUInt32 	*>(&first_type))	return createWithTwoNumericTypesSecond<UInt32, AggregateFunctionTemplate>(second_type);
+	else if (typeid_cast<const DataTypeUInt64 	*>(&first_type))	return createWithTwoNumericTypesSecond<UInt64, AggregateFunctionTemplate>(second_type);
+	else if (typeid_cast<const DataTypeInt8 	*>(&first_type))	return createWithTwoNumericTypesSecond<Int8, AggregateFunctionTemplate>(second_type);
+	else if (typeid_cast<const DataTypeInt16 	*>(&first_type))	return createWithTwoNumericTypesSecond<Int16, AggregateFunctionTemplate>(second_type);
+	else if (typeid_cast<const DataTypeInt32 	*>(&first_type))	return createWithTwoNumericTypesSecond<Int32, AggregateFunctionTemplate>(second_type);
+	else if (typeid_cast<const DataTypeInt64 	*>(&first_type))	return createWithTwoNumericTypesSecond<Int64, AggregateFunctionTemplate>(second_type);
+	else if (typeid_cast<const DataTypeFloat32 	*>(&first_type))	return createWithTwoNumericTypesSecond<Float32, AggregateFunctionTemplate>(second_type);
+	else if (typeid_cast<const DataTypeFloat64 	*>(&first_type))	return createWithTwoNumericTypesSecond<Float64, AggregateFunctionTemplate>(second_type);
+	else
+		return nullptr;
+}
+
+
 /// min, max, any, anyLast
-template<template <typename> class AggregateFunctionTemplate, template <typename> class Data>
+template <template <typename> class AggregateFunctionTemplate, template <typename> class Data>
 static IAggregateFunction * createAggregateFunctionSingleValue(const String & name, const DataTypes & argument_types)
 {
 	if (argument_types.size() != 1)
@@ -326,6 +363,32 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 
 		return res;
 	}
+	else if (name == "medianTimingWeighted" || name == "quantileTimingWeighted")
+	{
+		if (argument_types.size() != 2)
+			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		AggregateFunctionPtr res = createWithTwoNumericTypes<AggregateFunctionQuantileTimingWeighted>(*argument_types[0], *argument_types[1]);
+
+		if (!res)
+			throw Exception("Illegal types " + argument_types[0]->getName() + " and " + argument_types[1]->getName()
+				+ " of arguments for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		return res;
+	}
+	else if (name == "quantilesTimingWeighted")
+	{
+		if (argument_types.size() != 2)
+			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		AggregateFunctionPtr res = createWithTwoNumericTypes<AggregateFunctionQuantilesTimingWeighted>(*argument_types[0], *argument_types[1]);
+
+		if (!res)
+			throw Exception("Illegal types " + argument_types[0]->getName() + " and " + argument_types[1]->getName()
+				+ " of arguments for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		return res;
+	}
 	else if (name == "quantileDeterministic")
 	{
 		if (argument_types.size() != 2)
@@ -486,6 +549,9 @@ bool AggregateFunctionFactory::isAggregateFunctionName(const String & name, int 
 		"medianTiming",
 		"quantileTiming",
 		"quantilesTiming",
+		"quantileTimingWeighted",
+		"quantilesTimingWeighted",
+		"medianTimingWeighted",
 		"quantileDeterministic",
 		"quantilesDeterministic",
 		nullptr
