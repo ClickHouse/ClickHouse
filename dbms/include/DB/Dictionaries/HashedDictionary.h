@@ -73,7 +73,7 @@ public:
 		\
 		const auto it = attribute.LC_TYPE##_map->find(id);\
 		if (it != attribute.LC_TYPE##_map->end())\
-			return it->second;\
+			return TYPE{it->second};\
 		\
 		return attribute.LC_TYPE##_null_value;\
 	}

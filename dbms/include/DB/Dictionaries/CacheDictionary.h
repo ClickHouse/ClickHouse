@@ -106,8 +106,8 @@ public:
 		ColumnString out;
 		getItems(attribute, ids, &out);
 
-        return out.getDataAt(0);
-	}
+        return String{out.getDataAt(0)};
+	};
 
 #define DECLARE_MULTIPLE_GETTER(TYPE, LC_TYPE)\
 	void get##TYPE(const std::string & attribute_name, const PODArray<id_t> & ids, PODArray<TYPE> & out) const override\
@@ -376,9 +376,9 @@ private:
 				else
 				{
 					const auto string_ref = attribute_array[cell_idx];
-					map[id] = string_ref;
+					map[id] = String{string_ref};
 					total_length += string_ref.size + 1;
-				};
+				}
 			}
 		}
 
@@ -392,7 +392,7 @@ private:
 			update(required_ids, [&] (const auto id, const auto cell_idx) {
 				const auto attribute_value = attribute_array[cell_idx];
 
-				map[id] = attribute_value;
+				map[id] = String{attribute_value};
 				total_length += (attribute_value.size + 1) * outdated_ids[id];
 			});
 		}
