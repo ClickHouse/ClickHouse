@@ -123,8 +123,11 @@ private:
 	/// Распарсенный запрос. Оттуда берутся некоторые настройки (формат).
 	ASTPtr parsed_query;
 
-	/// Последнее полученное от сервера исключение.
+	/// Последнее полученное от сервера исключение. Для кода возврата в неинтерактивном режиме.
 	ExceptionPtr last_exception;
+
+	/// Было ли в последнем запросе исключение.
+	bool got_exception = false;
 
 	Stopwatch watch;
 
@@ -479,6 +482,7 @@ private:
 			return false;
 
 		resetOutput();
+		got_exception = false;
 
 		watch.restart();
 
@@ -512,25 +516,29 @@ private:
 		else
 			processOrdinaryQuery();
 
-		if (set_query)
+		/// В случае исключения, не будем менять контекст (текущая БД, настройки) на клиенте.
+		if (!got_exception)
 		{
-			/// Запоминаем все изменения в настройках, чтобы не потерять их при разрыве соединения.
-			for (ASTSetQuery::Changes::const_iterator it = set_query->changes.begin(); it != set_query->changes.end(); ++it)
+			if (set_query)
 			{
-				if (it->name ==	"profile")
-					current_profile = it->value.safeGet<String>();
-				else
-					context.setSetting(it->name, it->value);
+				/// Запоминаем все изменения в настройках, чтобы не потерять их при разрыве соединения.
+				for (ASTSetQuery::Changes::const_iterator it = set_query->changes.begin(); it != set_query->changes.end(); ++it)
+				{
+					if (it->name ==	"profile")
+						current_profile = it->value.safeGet<String>();
+					else
+						context.setSetting(it->name, it->value);
+				}
 			}
-		}
 
-		if (use_query)
-		{
-			const String & new_database = use_query->database;
-			/// Если клиент инициирует пересоединение, он берет настройки из конфига
-			config().setString("database", new_database);
-			/// Если connection инициирует пересоединение, он использует свою переменную
-			connection->setDefaultDatabase(new_database);
+			if (use_query)
+			{
+				const String & new_database = use_query->database;
+				/// Если клиент инициирует пересоединение, он берет настройки из конфига
+				config().setString("database", new_database);
+				/// Если connection инициирует пересоединение, он использует свою переменную
+				connection->setDefaultDatabase(new_database);
+			}
 		}
 
 		if (is_interactive)
@@ -959,6 +967,7 @@ private:
 	void onException(const Exception & e)
 	{
 		resetOutput();
+		got_exception = true;
 
 		std::cerr << "Received exception from server:" << std::endl
 			<< "Code: " << e.code() << ". " << e.displayText();
