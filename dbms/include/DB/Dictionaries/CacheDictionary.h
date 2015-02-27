@@ -250,11 +250,6 @@ private:
 		return attr;
 	}
 
-	static bool hasTimeExpired(const std::chrono::system_clock::time_point & time_point)
-	{
-		return std::chrono::system_clock::now() >= time_point;
-	}
-
 	template <typename T>
 	void getItems(attribute_t & attribute, const PODArray<id_t> & ids, PODArray<T> & out) const
 	{
@@ -264,6 +259,7 @@ private:
 		{
 			const Poco::ScopedReadRWLock read_lock{rw_lock};
 
+			const auto now = std::chrono::system_clock::now();
 			/// fetch up-to-date values, decide which ones require update
 			for (const auto i : ext::range(0, ids.size()))
 			{
@@ -277,7 +273,7 @@ private:
 				const auto cell_idx = getCellIdx(id);
 				const auto & cell = cells[cell_idx];
 
-				if (cell.id != id || hasTimeExpired(cell.expires_at))
+				if (cell.id != id || cell.expires_at < now)
 				{
 					out[i] = std::get<T>(attribute.null_values);
 					outdated_ids[id].push_back(i);
@@ -317,6 +313,7 @@ private:
 		{
 			const Poco::ScopedReadRWLock read_lock{rw_lock};
 
+			const auto now = std::chrono::system_clock::now();
 			/// fetch up-to-date values, discard on fail
 			for (const auto i : ext::range(0, ids.size()))
 			{
@@ -331,7 +328,7 @@ private:
 				const auto cell_idx = getCellIdx(id);
 				const auto & cell = cells[cell_idx];
 
-				if (cell.id != id || hasTimeExpired(cell.expires_at))
+				if (cell.id != id || cell.expires_at < now)
 				{
 					found_outdated_values = true;
 					break;
@@ -361,6 +358,7 @@ private:
 		{
 			const Poco::ScopedReadRWLock read_lock{rw_lock};
 
+			const auto now = std::chrono::system_clock::now();
 			for (const auto i : ext::range(0, ids.size()))
 			{
 				const auto id = ids[i];
@@ -373,7 +371,7 @@ private:
 				const auto cell_idx = getCellIdx(id);
 				const auto & cell = cells[cell_idx];
 
-				if (cell.id != id || hasTimeExpired(cell.expires_at))
+				if (cell.id != id || cell.expires_at < now)
 					outdated_ids[id] += 1;
 				else
 				{
