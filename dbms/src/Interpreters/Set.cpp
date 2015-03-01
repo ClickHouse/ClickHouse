@@ -129,7 +129,7 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 			UInt64 key = column.get64(i);
 			res.insert(key);
 
-			if(create_ordered_set)
+			if (create_ordered_set)
 				ordered_set_elements->push_back(column[i]);
 		}
 	}
@@ -156,7 +156,7 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 				if (inserted)
 					it->data = string_pool.insert(ref.data, ref.size);
 
-				if(create_ordered_set)
+				if (create_ordered_set)
 					ordered_set_elements->push_back(std::string(ref.data, ref.size));
 			}
 		}
@@ -178,7 +178,7 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 				if (inserted)
 					it->data = string_pool.insert(ref.data, ref.size);
 
-				if(create_ordered_set)
+				if (create_ordered_set)
 					ordered_set_elements->push_back(std::string(ref.data, ref.size));
 			}
 		}
