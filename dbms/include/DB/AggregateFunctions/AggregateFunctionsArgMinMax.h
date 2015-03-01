@@ -27,7 +27,7 @@ private:
 	DataTypePtr type_val;
 
 public:
-	String getName() const { return String("arg") + decltype(Data::value)::name(); }
+	String getName() const { return decltype(Data::value)::name() == "min" ? "argMin" : "argMax"; }
 
 	DataTypePtr getReturnType() const
 	{
