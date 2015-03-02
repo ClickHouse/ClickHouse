@@ -175,7 +175,7 @@ SetVariants::Type SetVariants::chooseMethod(const ConstColumnPlainPtrs & key_col
 
 
 template <typename Method>
-size_t Set::insertFromBlockImplSmall(
+size_t NO_INLINE Set::insertFromBlockImplSmall(
 	Method & method,
 	const ConstColumnPlainPtrs & key_columns,
 	size_t start,
@@ -206,7 +206,7 @@ size_t Set::insertFromBlockImplSmall(
 }
 
 template <typename Method>
-size_t Set::insertFromBlockImplBig(
+size_t NO_INLINE Set::insertFromBlockImplBig(
 	Method & method,
 	const ConstColumnPlainPtrs & key_columns,
 	size_t start,
@@ -574,7 +574,7 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 
 
 template <typename Method>
-void Set::executeImpl(
+void NO_INLINE Set::executeImpl(
 	Method & method,
 	const ConstColumnPlainPtrs & key_columns,
 	ColumnUInt8::Container_t & vec_res,
@@ -598,7 +598,7 @@ void Set::executeImpl(
 }
 
 template <typename Method>
-void Set::executeArrayImpl(
+void NO_INLINE Set::executeArrayImpl(
 	Method & method,
 	const ConstColumnPlainPtrs & key_columns,
 	const ColumnArray::Offsets_t & offsets,
