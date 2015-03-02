@@ -2,8 +2,6 @@
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
-#include <DB/Interpreters/Set.h>
-#include <DB/Interpreters/Join.h>
 
 
 namespace DB

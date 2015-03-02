@@ -8,6 +8,7 @@
 #include <DB/Parsers/ASTSetQuery.h>
 #include <DB/Parsers/ASTOptimizeQuery.h>
 #include <DB/Parsers/ASTAlterQuery.h>
+#include <DB/Parsers/ASTShowProcesslistQuery.h>
 #include <DB/Parsers/TablePropertiesQueriesASTs.h>
 #include <DB/Parsers/ASTCheckQuery.h>
 
