@@ -25,6 +25,8 @@
 #include <DB/Parsers/ParserSelectQuery.h>
 #include <DB/Parsers/formatAST.h>
 
+#include <DB/Interpreters/Context.h>
+
 
 using Poco::SharedPtr;
 
