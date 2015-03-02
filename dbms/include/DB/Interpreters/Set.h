@@ -12,7 +12,6 @@
 #include <DB/Parsers/IAST.h>
 
 #include <DB/Common/HashTable/HashSet.h>
-#include <DB/Common/HashTable/SmallTable.h>
 #include <DB/Interpreters/AggregationCommon.h>
 #include <DB/Interpreters/Limits.h>
 #include <DB/Columns/ColumnConst.h>
@@ -29,13 +28,6 @@ namespace DB
   * Используются в качестве параметра шаблона.
   */
 
-template <typename Src, typename Dst>
-void copyHashTable(const Src & src, Dst & dst)
-{
-	for (const auto & x : src)
-		dst.insert(x);
-}
-
 
 /// Для случая, когда есть один числовой ключ.
 template <typename FieldType, typename TData>	/// UInt8/16/32/64 для любых типов соответствующей битности.
@@ -45,11 +37,6 @@ struct SetMethodOneNumber
 	typedef typename Data::key_type Key;
 
 	Data data;
-
-	SetMethodOneNumber() {}
-
-	template <typename Other>
-	SetMethodOneNumber(const Other & other) { copyHashTable(other.data, data); }
 
 	/// Для использования одного Method в разных потоках, используйте разные State.
 	struct State
@@ -89,11 +76,6 @@ struct SetMethodString
 	typedef typename Data::key_type Key;
 
 	Data data;
-
-	SetMethodString() {}
-
-	template <typename Other>
-	SetMethodString(const Other & other) { copyHashTable(other.data, data); }
 
 	struct State
 	{
@@ -136,11 +118,6 @@ struct SetMethodFixedString
 
 	Data data;
 
-	SetMethodFixedString() {}
-
-	template <typename Other>
-	SetMethodFixedString(const Other & other) { copyHashTable(other.data, data); }
-
 	struct State
 	{
 		size_t n;
@@ -180,11 +157,6 @@ struct SetMethodKeysFixed
 
 	Data data;
 
-	SetMethodKeysFixed() {}
-
-	template <typename Other>
-	SetMethodKeysFixed(const Other & other) { copyHashTable(other.data, data); }
-
 	struct State
 	{
 		void init(const ConstColumnPlainPtrs & key_columns)
@@ -213,11 +185,6 @@ struct SetMethodHashed
 	typedef typename Data::key_type Key;
 
 	Data data;
-
-	SetMethodHashed() {}
-
-	template <typename Other>
-	SetMethodHashed(const Other & other) { copyHashTable(other.data, data); }
 
 	struct State
 	{
@@ -248,6 +215,10 @@ struct SetVariants
 	std::unique_ptr<SetMethodOneNumber<UInt8, HashSet<UInt8, TrivialHash, HashTableFixedGrower<8>>>> 	key8;
 	std::unique_ptr<SetMethodOneNumber<UInt16, HashSet<UInt16, TrivialHash, HashTableFixedGrower<16>>>> key16;
 
+	/** Также для эксперимента проверялась возможность использовать SmallSet,
+	  *  пока количество элементов в множестве небольшое (и, при необходимости, конвертировать в полноценный HashSet).
+	  * Но этот эксперимент показал, что преимущество есть только в редких случаях.
+	  */
 	std::unique_ptr<SetMethodOneNumber<UInt32, HashSet<UInt32, HashCRC32<UInt32>>>> key32;
 	std::unique_ptr<SetMethodOneNumber<UInt64, HashSet<UInt64, HashCRC32<UInt64>>>> key64;
 	std::unique_ptr<SetMethodString<HashSetWithSavedHash<StringRef>>> 				key_string;
@@ -256,35 +227,16 @@ struct SetVariants
 	std::unique_ptr<SetMethodKeysFixed<HashSet<UInt256, UInt256HashCRC32>>> 		keys256;
 	std::unique_ptr<SetMethodHashed<HashSet<UInt128, UInt128TrivialHash>>> 			hashed;
 
-	std::unique_ptr<SetMethodOneNumber<UInt32, SmallSet<UInt32, 16>>> key32_small;
-	std::unique_ptr<SetMethodOneNumber<UInt64, SmallSet<UInt64, 16>>> key64_small;
-	std::unique_ptr<SetMethodString<SmallSet<StringRef, 16>>> 		key_string_small;
-	std::unique_ptr<SetMethodFixedString<SmallSet<StringRef, 16>>> 	key_fixed_string_small;
-	std::unique_ptr<SetMethodKeysFixed<SmallSet<UInt128, 16>>> 		keys128_small;
-	std::unique_ptr<SetMethodKeysFixed<SmallSet<UInt256, 16>>> 		keys256_small;
-	std::unique_ptr<SetMethodHashed<SmallSet<UInt128, 16>>> 		hashed_small;
+	/** В отличие от Aggregator, здесь не используется метод concat.
+	  * Это сделано потому что метод hashed, хоть и медленнее, но в данном случае, использует меньше оперативки.
+	  *  так как при его использовании, сами значения ключей не сохраняются.
+	  */
 
 	Arena string_pool;
 
 	#define APPLY_FOR_SET_VARIANTS(M) \
-		M(key8,					false) \
-		M(key16,				false) \
-		M(key32,				false) \
-		M(key64,				false) \
-		M(key_string,			false) \
-		M(key_fixed_string,		false) \
-		M(keys128,				false) \
-		M(keys256,				false) \
-		M(hashed,				false) \
-		M(key32_small,				true) \
-		M(key64_small,				true) \
-		M(key_string_small,			true) \
-		M(key_fixed_string_small,	true) \
-		M(keys128_small,			true) \
-		M(keys256_small,			true) \
-		M(hashed_small,				true)
-
-	#define APPLY_FOR_SET_VARIANTS_BIG(M) \
+		M(key8) 			\
+		M(key16) 			\
 		M(key32) 			\
 		M(key64) 			\
 		M(key_string) 		\
@@ -297,7 +249,7 @@ struct SetVariants
 	{
 		EMPTY,
 
-	#define M(NAME, IS_SMALL) NAME,
+	#define M(NAME) NAME,
 		APPLY_FOR_SET_VARIANTS(M)
 	#undef M
 	};
@@ -313,9 +265,6 @@ struct SetVariants
 	size_t getTotalRowCount() const;
 	/// Считает размер в байтах буфера Set и размер string_pool'а
 	size_t getTotalByteCount() const;
-
-	bool isSmall() const;
-	void convertToBig();
 };
 
 
@@ -414,19 +363,9 @@ private:
 
 
 	template <typename Method>
-	size_t insertFromBlockImplBig(
+	void insertFromBlockImpl(
 		Method & method,
 		const ConstColumnPlainPtrs & key_columns,
-		size_t start,
-		size_t rows,
-		StringRefs & keys,
-		SetVariants & variants);
-
-	template <typename Method>
-	size_t insertFromBlockImplSmall(
-		Method & method,
-		const ConstColumnPlainPtrs & key_columns,
-		size_t start,
 		size_t rows,
 		StringRefs & keys,
 		SetVariants & variants);

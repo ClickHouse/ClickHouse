@@ -29,7 +29,7 @@ void SetVariants::init(Type type_)
 	{
 		case Type::EMPTY: break;
 
-	#define M(NAME, IS_SMALL) \
+	#define M(NAME) \
 		case Type::NAME: NAME.reset(new decltype(NAME)::element_type); break;
 		APPLY_FOR_SET_VARIANTS(M)
 	#undef M
@@ -46,7 +46,7 @@ size_t SetVariants::getTotalRowCount() const
 	{
 		case Type::EMPTY: return 0;
 
-	#define M(NAME, IS_SMALL) \
+	#define M(NAME) \
 		case Type::NAME: return NAME->data.size();
 		APPLY_FOR_SET_VARIANTS(M)
 	#undef M
@@ -63,45 +63,9 @@ size_t SetVariants::getTotalByteCount() const
 	{
 		case Type::EMPTY: return 0;
 
-	#define M(NAME, IS_SMALL) \
+	#define M(NAME) \
 		case Type::NAME: return NAME->data.getBufferSizeInBytes();
 		APPLY_FOR_SET_VARIANTS(M)
-	#undef M
-
-		default:
-			throw Exception("Unknown Set variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
-	}
-}
-
-
-bool SetVariants::isSmall() const
-{
-	switch (type)
-	{
-		case Type::EMPTY: return false;
-
-	#define M(NAME, IS_SMALL) \
-		case Type::NAME: return IS_SMALL;
-		APPLY_FOR_SET_VARIANTS(M)
-	#undef M
-
-		default:
-			throw Exception("Unknown Set variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
-	}
-}
-
-
-void SetVariants::convertToBig()
-{
-	switch (type)
-	{
-	#define M(NAME) \
-		case Type::NAME ## _small: \
-			NAME.reset(new decltype(NAME)::element_type(*NAME ## _small)); \
-			NAME ## _small.reset(); \
-			type = Type::NAME; \
-			break;
-		APPLY_FOR_SET_VARIANTS_BIG(M)
 	#undef M
 
 		default:
@@ -122,9 +86,6 @@ bool Set::checkSetSizeLimits() const
 
 SetVariants::Type SetVariants::chooseMethod(const ConstColumnPlainPtrs & key_columns, Sizes & key_sizes)
 {
-	/** Возвращает small-методы, так как обработка начинается с них.
-	  * Затем, в процессе работы, данные могут быть переконвертированы в полноценную (не small) структуру, если их становится много.
-	  */
 	size_t keys_size = key_columns.size();
 
 	bool all_fixed = true;
@@ -150,35 +111,34 @@ SetVariants::Type SetVariants::chooseMethod(const ConstColumnPlainPtrs & key_col
 		if (size_of_field == 2)
 			return SetVariants::Type::key16;
 		if (size_of_field == 4)
-			return SetVariants::Type::key32_small;
+			return SetVariants::Type::key32;
 		if (size_of_field == 8)
-			return SetVariants::Type::key64_small;
+			return SetVariants::Type::key64;
 		throw Exception("Logical error: numeric column has sizeOfField not in 1, 2, 4, 8.", ErrorCodes::LOGICAL_ERROR);
 	}
 
 	/// Если ключи помещаются в N бит, будем использовать хэш-таблицу по упакованным в N-бит ключам
 	if (all_fixed && keys_bytes <= 16)
-		return SetVariants::Type::keys128_small;
+		return SetVariants::Type::keys128;
 	if (all_fixed && keys_bytes <= 32)
-		return SetVariants::Type::keys256_small;
+		return SetVariants::Type::keys256;
 
 	/// Если есть один строковый ключ, то используем хэш-таблицу с ним
 	if (keys_size == 1 && (typeid_cast<const ColumnString *>(key_columns[0]) || typeid_cast<const ColumnConstString *>(key_columns[0])))
-		return SetVariants::Type::key_string_small;
+		return SetVariants::Type::key_string;
 
 	if (keys_size == 1 && typeid_cast<const ColumnFixedString *>(key_columns[0]))
-		return SetVariants::Type::key_fixed_string_small;
+		return SetVariants::Type::key_fixed_string;
 
 	/// Иначе будем агрегировать по конкатенации ключей.
-	return SetVariants::Type::hashed_small;
+	return SetVariants::Type::hashed;
 }
 
 
 template <typename Method>
-size_t NO_INLINE Set::insertFromBlockImplSmall(
+void NO_INLINE Set::insertFromBlockImpl(
 	Method & method,
 	const ConstColumnPlainPtrs & key_columns,
-	size_t start,
 	size_t rows,
 	StringRefs & keys,
 	SetVariants & variants)
@@ -188,38 +148,7 @@ size_t NO_INLINE Set::insertFromBlockImplSmall(
 	size_t keys_size = key_columns.size();
 
 	/// Для всех строчек
-	for (size_t i = start; i < rows; ++i)
-	{
-		/// Строим ключ
-		typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes, keys);
-
-		typename Method::Data::iterator it = method.data.find(key);
-		bool inserted;
-		if (!method.data.tryEmplace(key, it, inserted))
-			return i;
-
-		if (inserted)
-			method.onNewKey(*it, keys_size, i, keys, variants.string_pool);
-	}
-
-	return rows;
-}
-
-template <typename Method>
-size_t NO_INLINE Set::insertFromBlockImplBig(
-	Method & method,
-	const ConstColumnPlainPtrs & key_columns,
-	size_t start,
-	size_t rows,
-	StringRefs & keys,
-	SetVariants & variants)
-{
-	typename Method::State state;
-	state.init(key_columns);
-	size_t keys_size = key_columns.size();
-
-	/// Для всех строчек
-	for (size_t i = start; i < rows; ++i)
+	for (size_t i = 0; i < rows; ++i)
 	{
 		/// Строим ключ
 		typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes, keys);
@@ -231,8 +160,6 @@ size_t NO_INLINE Set::insertFromBlockImplBig(
 		if (inserted)
 			method.onNewKey(*it, keys_size, i, keys, variants.string_pool);
 	}
-
-	return rows;
 }
 
 
@@ -258,54 +185,19 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 		data.init(data.chooseMethod(key_columns, key_sizes));
 
 	StringRefs keys;
-	size_t start = 0;
 
 	if (false) {}
-	else if (data.type == SetVariants::Type::key8)
-		start = insertFromBlockImplBig(*data.key8, key_columns, start, rows, keys, data);
-	else if (data.type == SetVariants::Type::key16)
-		start = insertFromBlockImplBig(*data.key16, key_columns, start, rows, keys, data);
-	else if (data.type == SetVariants::Type::key32_small)
-		start = insertFromBlockImplSmall(*data.key32_small, key_columns, start, rows, keys, data);
-	else if (data.type == SetVariants::Type::key64_small)
-		start = insertFromBlockImplSmall(*data.key64_small, key_columns, start, rows, keys, data);
-	else if (data.type == SetVariants::Type::key_string_small)
-		start = insertFromBlockImplSmall(*data.key_string_small, key_columns, start, rows, keys, data);
-	else if (data.type == SetVariants::Type::key_fixed_string_small)
-		start = insertFromBlockImplSmall(*data.key_fixed_string_small, key_columns, start, rows, keys, data);
-	else if (data.type == SetVariants::Type::keys128_small)
-		start = insertFromBlockImplSmall(*data.keys128_small, key_columns, start, rows, keys, data);
-	else if (data.type == SetVariants::Type::keys256_small)
-		start = insertFromBlockImplSmall(*data.keys256_small, key_columns, start, rows, keys, data);
-	else if (data.type == SetVariants::Type::hashed_small)
-		start = insertFromBlockImplSmall(*data.hashed_small, key_columns, start, rows, keys, data);
-
-	/// Нужно ли сконвертировать из small в полноценный вариант.
-	if (data.isSmall() && start != rows)
-		data.convertToBig();
-
-	if (false) {}
-	else if (data.type == SetVariants::Type::key32)
-		start = insertFromBlockImplBig(*data.key32, key_columns, start, rows, keys, data);
-	else if (data.type == SetVariants::Type::key64)
-		start = insertFromBlockImplBig(*data.key64, key_columns, start, rows, keys, data);
-	else if (data.type == SetVariants::Type::key_string)
-		start = insertFromBlockImplBig(*data.key_string, key_columns, start, rows, keys, data);
-	else if (data.type == SetVariants::Type::key_fixed_string)
-		start = insertFromBlockImplBig(*data.key_fixed_string, key_columns, start, rows, keys, data);
-	else if (data.type == SetVariants::Type::keys128)
-		start = insertFromBlockImplBig(*data.keys128, key_columns, start, rows, keys, data);
-	else if (data.type == SetVariants::Type::keys256)
-		start = insertFromBlockImplBig(*data.keys256, key_columns, start, rows, keys, data);
-	else if (data.type == SetVariants::Type::hashed)
-		start = insertFromBlockImplBig(*data.hashed, key_columns, start, rows, keys, data);
-
-	if (start == 0)
+#define M(NAME) \
+	else if (data.type == SetVariants::Type::NAME) \
+		insertFromBlockImpl(*data.NAME, key_columns, rows, keys, data);
+		APPLY_FOR_SET_VARIANTS(M)
+#undef M
+	else
 		throw Exception("Unknown set variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
 
 	if (create_ordered_set)
 		for (size_t i = 0; i < rows; ++i)
-			ordered_set_elements->push_back((*key_columns[0])[i]);
+			ordered_set_elements->push_back((*key_columns[0])[i]); /// ordered_set для индекса работает только если IN одному ключу.
 
 	if (!checkSetSizeLimits())
 	{
@@ -637,7 +529,7 @@ void Set::executeOrdinary(const ConstColumnPlainPtrs & key_columns, ColumnUInt8:
 	StringRefs keys;
 
 	if (false) {}
-#define M(NAME, IS_SMALL) \
+#define M(NAME) \
 	else if (data.type == SetVariants::Type::NAME) \
 		executeImpl(*data.NAME, key_columns, vec_res, negative, rows, keys);
 	APPLY_FOR_SET_VARIANTS(M)
@@ -654,7 +546,7 @@ void Set::executeArray(const ColumnArray * key_column, ColumnUInt8::Container_t 
 	StringRefs keys;
 
 	if (false) {}
-#define M(NAME, IS_SMALL) \
+#define M(NAME) \
 	else if (data.type == SetVariants::Type::NAME) \
 		executeArrayImpl(*data.NAME, ConstColumnPlainPtrs{key_column}, offsets, vec_res, negative, rows, keys);
 	APPLY_FOR_SET_VARIANTS(M)
