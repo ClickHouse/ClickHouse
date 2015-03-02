@@ -60,21 +60,13 @@ public:
 		return new RemoteBlockInputStream{pool.get(), load_all_query, nullptr};
 	}
 
-	BlockInputStreamPtr loadId(const std::uint64_t id) override
+	BlockInputStreamPtr loadIds(const std::vector<std::uint64_t> ids) override
 	{
-		const auto query = composeLoadIdQuery(id);
+		const auto query = composeLoadIdsQuery(ids);
 
 		if (is_local)
 			return executeQuery(query, context, true).in;
 		return new RemoteBlockInputStream{pool.get(), query, nullptr};
-	}
-
-	BlockInputStreamPtr loadIds(const std::vector<std::uint64_t> ids) override
-	{
-		throw Exception{
-			"Method unsupported",
-			ErrorCodes::NOT_IMPLEMENTED
-		};
 	}
 
 	bool isModified() const override { return true; }
@@ -103,7 +95,7 @@ private:
 		return query;
 	}
 
-	std::string composeLoadIdQuery(const id_t id)
+	std::string composeLoadIdsQuery(const std::vector<std::uint64_t> ids)
 	{
 		std::string query{"SELECT "};
 
@@ -113,13 +105,25 @@ private:
 			if (!first)
 				query += ", ";
 
-			query += sample_block.getByPosition(idx).name;
 			first = false;
+			query += sample_block.getByPosition(idx).name;
 		}
 
 		const auto & id_column_name = sample_block.getByPosition(0).name;
 
-		query += " FROM " + table + " WHERE " + id_column_name + " IN (" + std::to_string(id) + ");";
+		query += " FROM " + table + " WHERE " + id_column_name + " IN (";
+
+		first = true;
+		for (const auto id : ids)
+		{
+			if (!first)
+				query += ',';
+
+			first = false;
+			query += toString(id);
+		}
+
+		query += ");";
 
 		return query;
 	}

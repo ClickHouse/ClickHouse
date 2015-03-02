@@ -63,7 +63,8 @@ struct Limits
 	M(SettingUInt64, max_ast_depth, 1000)		/** Проверяются не во время парсинга, */ \
 	M(SettingUInt64, max_ast_elements, 10000)	/**  а уже после парсинга запроса. */ \
 	\
-	M(SettingBool, readonly, false) \
+	/** 0 - можно всё. 1 - только запросы на чтение. 2 - только запросы на чтение, а также изменение настроек, кроме настройки readonly. */ \
+	M(SettingUInt64, readonly, 0) \
 	\
 	/** Ограничения для максимального размера множества, получающегося при выполнении секции IN. */ \
 	M(SettingUInt64, max_rows_in_set, 0) \
@@ -128,6 +129,22 @@ struct Limits
 		return true;
 
 	#undef TRY_SET
+	}
+
+	/// Пропустить сериализованное в бинарном виде значение из буфера.
+	bool tryIgnore(const String & name, ReadBuffer & buf)
+	{
+	#define TRY_IGNORE(TYPE, NAME, DEFAULT) \
+		else if (name == #NAME) decltype(NAME)(DEFAULT).set(buf);
+
+		if (false) {}
+		APPLY_FOR_LIMITS(TRY_IGNORE)
+		else
+			return false;
+
+		return true;
+
+		#undef TRY_IGNORE
 	}
 
 	/** Установить настройку по имени. Прочитать значение в текстовом виде из строки (например, из конфига, или из параметра URL).

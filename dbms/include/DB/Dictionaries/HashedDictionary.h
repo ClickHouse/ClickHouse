@@ -45,65 +45,26 @@ public:
 	{
 		const auto attr = hierarchical_attribute;
 
-		switch (hierarchical_attribute->type)
-		{
-			case AttributeType::uint8:
-			{
-				const auto it = attr->uint8_map->find(id);
-				return it != attr->uint8_map->end() ? it->second : attr->uint8_null_value;
-			}
-			case AttributeType::uint16:
-			{
-				const auto it = attr->uint16_map->find(id);
-				return it != attr->uint16_map->end() ? it->second : attr->uint16_null_value;
-			}
-			case AttributeType::uint32:
-			{
-				const auto it = attr->uint32_map->find(id);
-				return it != attr->uint32_map->end() ? it->second : attr->uint32_null_value;
-			}
-			case AttributeType::uint64:
-			{
-				const auto it = attr->uint64_map->find(id);
-				return it != attr->uint64_map->end() ? it->second : attr->uint64_null_value;
-			}
-			case AttributeType::int8:
-			{
-				const auto it = attr->int8_map->find(id);
-				return it != attr->int8_map->end() ? it->second : attr->int8_null_value;
-			}
-			case AttributeType::int16:
-			{
-				const auto it = attr->int16_map->find(id);
-				return it != attr->int16_map->end() ? it->second : attr->int16_null_value;
-			}
-			case AttributeType::int32:
-			{
-				const auto it = attr->int32_map->find(id);
-				return it != attr->int32_map->end() ? it->second : attr->int32_null_value;
-			}
-			case AttributeType::int64:
-			{
-				const auto it = attr->int64_map->find(id);
-				return it != attr->int64_map->end() ? it->second : attr->int64_null_value;
-			}
-			case AttributeType::float32:
-			case AttributeType::float64:
-			case AttributeType::string:
-				break;
-		};
-
-		throw Exception{
-			"Hierarchical attribute has non-integer type " + toString(hierarchical_attribute->type),
-			ErrorCodes::TYPE_MISMATCH
-		};
+		const auto it = attr->uint64_map->find(id);
+		return it != attr->uint64_map->end() ? it->second : attr->uint64_null_value;
 	}
 
-#define DECLARE_INDIVIDUAL_GETTER(TYPE, NAME, LC_TYPE) \
-	TYPE get##NAME(const std::string & attribute_name, const id_t id) const override\
+	void toParent(const PODArray<id_t> & ids, PODArray<id_t> & out) const override
+	{
+		const auto & attr = *hierarchical_attribute->uint64_map;
+		const auto null_value = hierarchical_attribute->uint64_null_value;
+
+		for (const auto i : ext::range(0, ids.size()))
+		{
+			const auto it = attr.find(ids[i]);
+			out[i] = it != attr.end() ? it->second : null_value;
+		}
+	}
+
+#define DECLARE_INDIVIDUAL_GETTER(TYPE, LC_TYPE) \
+	TYPE get##TYPE(const std::string & attribute_name, const id_t id) const override\
 	{\
-		const auto idx = getAttributeIndex(attribute_name);\
-		const auto & attribute = attributes[idx];\
+		const auto & attribute = getAttribute(attribute_name);\
 		if (attribute.type != AttributeType::LC_TYPE)\
 			throw Exception{\
 				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
@@ -112,28 +73,27 @@ public:
 		\
 		const auto it = attribute.LC_TYPE##_map->find(id);\
 		if (it != attribute.LC_TYPE##_map->end())\
-			return it->second;\
+			return TYPE{it->second};\
 		\
 		return attribute.LC_TYPE##_null_value;\
 	}
-	DECLARE_INDIVIDUAL_GETTER(UInt8, UInt8, uint8)
-	DECLARE_INDIVIDUAL_GETTER(UInt16, UInt16, uint16)
-	DECLARE_INDIVIDUAL_GETTER(UInt32, UInt32, uint32)
-	DECLARE_INDIVIDUAL_GETTER(UInt64, UInt64, uint64)
-	DECLARE_INDIVIDUAL_GETTER(Int8, Int8, int8)
-	DECLARE_INDIVIDUAL_GETTER(Int16, Int16, int16)
-	DECLARE_INDIVIDUAL_GETTER(Int32, Int32, int32)
-	DECLARE_INDIVIDUAL_GETTER(Int64, Int64, int64)
-	DECLARE_INDIVIDUAL_GETTER(Float32, Float32, float32)
-	DECLARE_INDIVIDUAL_GETTER(Float64, Float64, float64)
-	DECLARE_INDIVIDUAL_GETTER(StringRef, String, string)
+	DECLARE_INDIVIDUAL_GETTER(UInt8, uint8)
+	DECLARE_INDIVIDUAL_GETTER(UInt16, uint16)
+	DECLARE_INDIVIDUAL_GETTER(UInt32, uint32)
+	DECLARE_INDIVIDUAL_GETTER(UInt64, uint64)
+	DECLARE_INDIVIDUAL_GETTER(Int8, int8)
+	DECLARE_INDIVIDUAL_GETTER(Int16, int16)
+	DECLARE_INDIVIDUAL_GETTER(Int32, int32)
+	DECLARE_INDIVIDUAL_GETTER(Int64, int64)
+	DECLARE_INDIVIDUAL_GETTER(Float32, float32)
+	DECLARE_INDIVIDUAL_GETTER(Float64, float64)
+	DECLARE_INDIVIDUAL_GETTER(String, string)
 #undef DECLARE_INDIVIDUAL_GETTER
 
 #define DECLARE_MULTIPLE_GETTER(TYPE, LC_TYPE)\
 	void get##TYPE(const std::string & attribute_name, const PODArray<id_t> & ids, PODArray<TYPE> & out) const override\
 	{\
-		const auto idx = getAttributeIndex(attribute_name);\
-		const auto & attribute = attributes[idx];\
+		const auto & attribute = getAttribute(attribute_name);\
 		if (attribute.type != AttributeType::LC_TYPE)\
 			throw Exception{\
 				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
@@ -162,8 +122,7 @@ public:
 #undef DECLARE_MULTIPLE_GETTER
 	void getString(const std::string & attribute_name, const PODArray<id_t> & ids, ColumnString * out) const override
 	{
-		const auto idx = getAttributeIndex(attribute_name);
-		const auto & attribute = attributes[idx];
+		const auto & attribute = getAttribute(attribute_name);
 		if (attribute.type != AttributeType::string)
 			throw Exception{
 				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
@@ -176,7 +135,7 @@ public:
 		for (const auto i : ext::range(0, ids.size()))
 		{
 			const auto it = attr.find(ids[i]);
-			const auto string_ref = it != attr.end() ? it->second : null_value;
+			const auto string_ref = it != attr.end() ? it->second : StringRef{null_value};
 			out->insertData(string_ref.data, string_ref.size);
 		}
 	}
@@ -217,11 +176,19 @@ private:
 		for (const auto & attribute : dict_struct.attributes)
 		{
 			attribute_index_by_name.emplace(attribute.name, attributes.size());
-			attributes.push_back(std::move(createAttributeWithType(getAttributeTypeByName(attribute.type),
-				attribute.null_value)));
+			attributes.push_back(createAttributeWithType(getAttributeTypeByName(attribute.type),
+				attribute.null_value));
 
 			if (attribute.hierarchical)
+			{
 				hierarchical_attribute = &attributes.back();
+
+				if (hierarchical_attribute->type != AttributeType::uint64)
+					throw Exception{
+						"Hierarchical attribute must be UInt64.",
+						ErrorCodes::TYPE_MISMATCH
+					};
+			}
 		}
 	}
 
@@ -367,7 +334,7 @@ private:
 		};
 	}
 
-	std::size_t getAttributeIndex(const std::string & attribute_name) const
+	const attribute_t & getAttribute(const std::string & attribute_name) const
 	{
 		const auto it = attribute_index_by_name.find(attribute_name);
 		if (it == std::end(attribute_index_by_name))
@@ -376,7 +343,7 @@ private:
 				ErrorCodes::BAD_ARGUMENTS
 			};
 
-		return it->second;
+		return attributes[it->second];
 	}
 
 	const std::string name;

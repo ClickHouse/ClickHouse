@@ -6,6 +6,7 @@
 #include <DB/Columns/ColumnString.h>
 #include <statdaemons/ext/range.hpp>
 #include <vector>
+#include <tuple>
 
 namespace DB
 {
@@ -46,75 +47,66 @@ public:
 	id_t toParent(const id_t id) const override
 	{
 		const auto attr = hierarchical_attribute;
+		const auto & array = *std::get<std::unique_ptr<PODArray<UInt64>>>(attr->arrays);
 
-		switch (hierarchical_attribute->type)
-		{
-			case AttributeType::uint8: return id < attr->uint8_array->size() ? (*attr->uint8_array)[id] : attr->uint8_null_value;
-			case AttributeType::uint16: return id < attr->uint16_array->size() ? (*attr->uint16_array)[id] : attr->uint16_null_value;
-			case AttributeType::uint32: return id < attr->uint32_array->size() ? (*attr->uint32_array)[id] : attr->uint32_null_value;
-			case AttributeType::uint64: return id < attr->uint64_array->size() ? (*attr->uint64_array)[id] : attr->uint64_null_value;
-			case AttributeType::int8: return id < attr->int8_array->size() ? (*attr->int8_array)[id] : attr->int8_null_value;
-			case AttributeType::int16: return id < attr->int16_array->size() ? (*attr->int16_array)[id] : attr->int16_null_value;
-			case AttributeType::int32: return id < attr->int32_array->size() ? (*attr->int32_array)[id] : attr->int32_null_value;
-			case AttributeType::int64: return id < attr->int64_array->size() ? (*attr->int64_array)[id] : attr->int64_null_value;
-			case AttributeType::float32:
-			case AttributeType::float64:
-			case AttributeType::string:
-				break;
-		}
-
-		throw Exception{
-			"Hierarchical attribute has non-integer type " + toString(hierarchical_attribute->type),
-			ErrorCodes::TYPE_MISMATCH
-		};
+		return id < array.size() ? array[id] : std::get<UInt64>(attr->null_values);
 	}
 
-#define DECLARE_INDIVIDUAL_GETTER(TYPE, NAME, LC_TYPE) \
-	TYPE get##NAME(const std::string & attribute_name, const id_t id) const override\
+	void toParent(const PODArray<id_t> & ids, PODArray<id_t> & out) const override
+	{
+		getItems<UInt64>(*hierarchical_attribute, ids, out);
+	}
+
+#define DECLARE_INDIVIDUAL_GETTER(TYPE, LC_TYPE) \
+	TYPE get##TYPE(const std::string & attribute_name, const id_t id) const override\
 	{\
-		const auto idx = getAttributeIndex(attribute_name);\
-		const auto & attribute = attributes[idx];\
+		const auto & attribute = getAttribute(attribute_name);\
 		if (attribute.type != AttributeType::LC_TYPE)\
 			throw Exception{\
 				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
 				ErrorCodes::TYPE_MISMATCH\
 			};\
-		if (id < attribute.LC_TYPE##_array->size())\
-			return (*attribute.LC_TYPE##_array)[id];\
-		return attribute.LC_TYPE##_null_value;\
+		\
+		const auto & array = *std::get<std::unique_ptr<PODArray<TYPE>>>(attribute.arrays);\
+		\
+		return id < array.size() ? array[id] : std::get<TYPE>(attribute.null_values);\
 	}
-	DECLARE_INDIVIDUAL_GETTER(UInt8, UInt8, uint8)
-	DECLARE_INDIVIDUAL_GETTER(UInt16, UInt16, uint16)
-	DECLARE_INDIVIDUAL_GETTER(UInt32, UInt32, uint32)
-	DECLARE_INDIVIDUAL_GETTER(UInt64, UInt64, uint64)
-	DECLARE_INDIVIDUAL_GETTER(Int8, Int8, int8)
-	DECLARE_INDIVIDUAL_GETTER(Int16, Int16, int16)
-	DECLARE_INDIVIDUAL_GETTER(Int32, Int32, int32)
-	DECLARE_INDIVIDUAL_GETTER(Int64, Int64, int64)
-	DECLARE_INDIVIDUAL_GETTER(Float32, Float32, float32)
-	DECLARE_INDIVIDUAL_GETTER(Float64, Float64, float64)
-	DECLARE_INDIVIDUAL_GETTER(StringRef, String, string)
+	DECLARE_INDIVIDUAL_GETTER(UInt8, uint8)
+	DECLARE_INDIVIDUAL_GETTER(UInt16, uint16)
+	DECLARE_INDIVIDUAL_GETTER(UInt32, uint32)
+	DECLARE_INDIVIDUAL_GETTER(UInt64, uint64)
+	DECLARE_INDIVIDUAL_GETTER(Int8, int8)
+	DECLARE_INDIVIDUAL_GETTER(Int16, int16)
+	DECLARE_INDIVIDUAL_GETTER(Int32, int32)
+	DECLARE_INDIVIDUAL_GETTER(Int64, int64)
+	DECLARE_INDIVIDUAL_GETTER(Float32, float32)
+	DECLARE_INDIVIDUAL_GETTER(Float64, float64)
 #undef DECLARE_INDIVIDUAL_GETTER
+	String getString(const std::string & attribute_name, const id_t id) const override
+	{
+		const auto & attribute = getAttribute(attribute_name);
+		if (attribute.type != AttributeType::string)
+			throw Exception{
+				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
+				ErrorCodes::TYPE_MISMATCH
+			};
+
+		const auto & array = *std::get<std::unique_ptr<PODArray<StringRef>>>(attribute.arrays);
+
+		return id < array.size() ? String{array[id]} : std::get<String>(attribute.null_values);
+	}
 
 #define DECLARE_MULTIPLE_GETTER(TYPE, LC_TYPE)\
 	void get##TYPE(const std::string & attribute_name, const PODArray<id_t> & ids, PODArray<TYPE> & out) const override\
 	{\
-		const auto idx = getAttributeIndex(attribute_name);\
-		const auto & attribute = attributes[idx];\
+		const auto & attribute = getAttribute(attribute_name);\
 		if (attribute.type != AttributeType::LC_TYPE)\
 			throw Exception{\
 				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
 				ErrorCodes::TYPE_MISMATCH\
 			};\
 		\
-		const auto & attr = *attribute.LC_TYPE##_array;\
-		const auto null_value = attribute.LC_TYPE##_null_value;\
-		\
-		for (const auto i : ext::range(0, ids.size()))\
-		{\
-			const auto id = ids[i];\
-			out[i] = id < attr.size() ? attr[id] : null_value;\
-		}\
+		getItems<TYPE>(attribute, ids, out);\
 	}
 	DECLARE_MULTIPLE_GETTER(UInt8, uint8)
 	DECLARE_MULTIPLE_GETTER(UInt16, uint16)
@@ -129,52 +121,44 @@ public:
 #undef DECLARE_MULTIPLE_GETTER
 	void getString(const std::string & attribute_name, const PODArray<id_t> & ids, ColumnString * out) const override
 	{
-		const auto idx = getAttributeIndex(attribute_name);
-		const auto & attribute = attributes[idx];
+		const auto & attribute = getAttribute(attribute_name);
 		if (attribute.type != AttributeType::string)
 			throw Exception{
 				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
 				ErrorCodes::TYPE_MISMATCH
 			};
 
-		const auto & attr = *attribute.string_array;
-		const auto null_value = attribute.string_null_value;
+		const auto & attr = *std::get<std::unique_ptr<PODArray<StringRef>>>(attribute.arrays);
+		const auto & null_value = std::get<String>(attribute.null_values);
 
 		for (const auto i : ext::range(0, ids.size()))
 		{
 			const auto id = ids[i];
-			const auto string_ref = id < attr.size() ? attr[id] : null_value;
+			const auto string_ref = id < attr.size() ? attr[id] : StringRef{null_value};
 			out->insertData(string_ref.data, string_ref.size);
 		}
 	}
 
 private:
-	struct attribute_t
+	struct attribute_t final
 	{
 		AttributeType type;
-		UInt8 uint8_null_value;
-		UInt16 uint16_null_value;
-		UInt32 uint32_null_value;
-		UInt64 uint64_null_value;
-		Int8 int8_null_value;
-		Int16 int16_null_value;
-		Int32 int32_null_value;
-		Int64 int64_null_value;
-		Float32 float32_null_value;
-		Float64 float64_null_value;
-		String string_null_value;
-		std::unique_ptr<PODArray<UInt8>> uint8_array;
-		std::unique_ptr<PODArray<UInt16>> uint16_array;
-		std::unique_ptr<PODArray<UInt32>> uint32_array;
-		std::unique_ptr<PODArray<UInt64>> uint64_array;
-		std::unique_ptr<PODArray<Int8>> int8_array;
-		std::unique_ptr<PODArray<Int16>> int16_array;
-		std::unique_ptr<PODArray<Int32>> int32_array;
-		std::unique_ptr<PODArray<Int64>> int64_array;
-		std::unique_ptr<PODArray<Float32>> float32_array;
-		std::unique_ptr<PODArray<Float64>> float64_array;
+		std::tuple<UInt8, UInt16, UInt32, UInt64,
+			Int8, Int16, Int32, Int64,
+			Float32, Float64,
+			String> null_values;
+		std::tuple<std::unique_ptr<PODArray<UInt8>>,
+			std::unique_ptr<PODArray<UInt16>>,
+			std::unique_ptr<PODArray<UInt32>>,
+			std::unique_ptr<PODArray<UInt64>>,
+			std::unique_ptr<PODArray<Int8>>,
+			std::unique_ptr<PODArray<Int16>>,
+			std::unique_ptr<PODArray<Int32>>,
+			std::unique_ptr<PODArray<Int64>>,
+			std::unique_ptr<PODArray<Float32>>,
+			std::unique_ptr<PODArray<Float64>>,
+			std::unique_ptr<PODArray<StringRef>>> arrays;
 		std::unique_ptr<Arena> string_arena;
-		std::unique_ptr<PODArray<StringRef>> string_array;
 	};
 
 	void createAttributes()
@@ -184,11 +168,19 @@ private:
 		for (const auto & attribute : dict_struct.attributes)
 		{
 			attribute_index_by_name.emplace(attribute.name, attributes.size());
-			attributes.push_back(std::move(createAttributeWithType(getAttributeTypeByName(attribute.type),
-				attribute.null_value)));
+			attributes.push_back(createAttributeWithType(getAttributeTypeByName(attribute.type),
+				attribute.null_value));
 
 			if (attribute.hierarchical)
+			{
 				hierarchical_attribute = &attributes.back();
+
+				if (hierarchical_attribute->type != AttributeType::uint64)
+					throw Exception{
+						"Hierarchical attribute must be UInt64.",
+						ErrorCodes::TYPE_MISMATCH
+					};
+			}
 		}
 	}
 
@@ -214,71 +206,63 @@ private:
 		stream->readSuffix();
 	}
 
+	template <typename T>
+	void createAttributeImpl(attribute_t & attribute, const std::string & null_value)
+	{
+		const auto & null_value_ref = std::get<T>(attribute.null_values) = DB::parse<T>(null_value);
+		std::get<std::unique_ptr<PODArray<T>>>(attribute.arrays) =
+			std::make_unique<PODArray<T>>(initial_array_size, null_value_ref);
+	}
+
 	attribute_t createAttributeWithType(const AttributeType type, const std::string & null_value)
 	{
 		attribute_t attr{type};
 
 		switch (type)
 		{
-			case AttributeType::uint8:
-				attr.uint8_null_value = DB::parse<UInt8>(null_value);
-				attr.uint8_array.reset(new PODArray<UInt8>);
-				attr.uint8_array->resize_fill(initial_array_size, attr.uint8_null_value);
-				break;
-			case AttributeType::uint16:
-				attr.uint16_null_value = DB::parse<UInt16>(null_value);
-				attr.uint16_array.reset(new PODArray<UInt16>);
-				attr.uint16_array->resize_fill(initial_array_size, attr.uint16_null_value);
-				break;
-			case AttributeType::uint32:
-				attr.uint32_null_value = DB::parse<UInt32>(null_value);
-				attr.uint32_array.reset(new PODArray<UInt32>);
-				attr.uint32_array->resize_fill(initial_array_size, attr.uint32_null_value);
-				break;
-			case AttributeType::uint64:
-				attr.uint64_null_value = DB::parse<UInt64>(null_value);
-				attr.uint64_array.reset(new PODArray<UInt64>);
-				attr.uint64_array->resize_fill(initial_array_size, attr.uint64_null_value);
-				break;
-			case AttributeType::int8:
-				attr.int8_null_value = DB::parse<Int8>(null_value);
-				attr.int8_array.reset(new PODArray<Int8>);
-				attr.int8_array->resize_fill(initial_array_size, attr.int8_null_value);
-				break;
-			case AttributeType::int16:
-				attr.int16_null_value = DB::parse<Int16>(null_value);
-				attr.int16_array.reset(new PODArray<Int16>);
-				attr.int16_array->resize_fill(initial_array_size, attr.int16_null_value);
-				break;
-			case AttributeType::int32:
-				attr.int32_null_value = DB::parse<Int32>(null_value);
-				attr.int32_array.reset(new PODArray<Int32>);
-				attr.int32_array->resize_fill(initial_array_size, attr.int32_null_value);
-				break;
-			case AttributeType::int64:
-				attr.int64_null_value = DB::parse<Int64>(null_value);
-				attr.int64_array.reset(new PODArray<Int64>);
-				attr.int64_array->resize_fill(initial_array_size, attr.int64_null_value);
-				break;
-			case AttributeType::float32:
-				attr.float32_null_value = DB::parse<Float32>(null_value);
-				attr.float32_array.reset(new PODArray<Float32>);
-				attr.float32_array->resize_fill(initial_array_size, attr.float32_null_value);
-				break;
-			case AttributeType::float64:
-				attr.float64_null_value = DB::parse<Float64>(null_value);
-				attr.float64_array.reset(new PODArray<Float64>);
-				attr.float64_array->resize_fill(initial_array_size, attr.float64_null_value);
-				break;
+			case AttributeType::uint8: createAttributeImpl<UInt8>(attr, null_value); break;
+			case AttributeType::uint16: createAttributeImpl<UInt16>(attr, null_value); break;
+			case AttributeType::uint32: createAttributeImpl<UInt32>(attr, null_value); break;
+			case AttributeType::uint64: createAttributeImpl<UInt64>(attr, null_value); break;
+			case AttributeType::int8: createAttributeImpl<Int8>(attr, null_value); break;
+			case AttributeType::int16: createAttributeImpl<Int16>(attr, null_value); break;
+			case AttributeType::int32: createAttributeImpl<Int32>(attr, null_value); break;
+			case AttributeType::int64: createAttributeImpl<Int64>(attr, null_value); break;
+			case AttributeType::float32: createAttributeImpl<Float32>(attr, null_value); break;
+			case AttributeType::float64: createAttributeImpl<Float64>(attr, null_value); break;
 			case AttributeType::string:
-				attr.string_null_value = null_value;
-				attr.string_arena.reset(new Arena);
-				attr.string_array.reset(new PODArray<StringRef>);
-				attr.string_array->resize_fill(initial_array_size, attr.string_null_value);
+			{
+				const auto & null_value_ref = std::get<String>(attr.null_values) = DB::parse<String>(null_value);
+				std::get<std::unique_ptr<PODArray<StringRef>>>(attr.arrays) =
+					std::make_unique<PODArray<StringRef>>(initial_array_size, null_value_ref);
+				attr.string_arena = std::make_unique<Arena>();
 				break;
-		}
+			}
+		};
 
 		return attr;
+	}
+
+	template <typename T>
+	void getItems(const attribute_t & attribute, const PODArray<id_t> & ids, PODArray<T> & out) const
+	{
+		const auto & attr = *std::get<std::unique_ptr<PODArray<T>>>(attribute.arrays);
+		const auto null_value = std::get<T>(attribute.null_values);
+
+		for (const auto i : ext::range(0, ids.size()))
+		{
+			const auto id = ids[i];
+			out[i] = id < attr.size() ? attr[id] : null_value;
+		}
+	}
+
+	template <typename T>
+	void setAttributeValueImpl(attribute_t & attribute, const id_t id, const T value)
+	{
+		auto & array = *std::get<std::unique_ptr<PODArray<T>>>(attribute.arrays);
+		if (id >= array.size())
+			array.resize_fill(id, std::get<T>(attribute.null_values));
+		array[id] = value;
 	}
 
 	void setAttributeValue(attribute_t & attribute, const id_t id, const Field & value)
@@ -293,87 +277,68 @@ private:
 		{
 			case AttributeType::uint8:
 			{
-				if (id >= attribute.uint8_array->size())
-					attribute.uint8_array->resize_fill(id, attribute.uint8_null_value);
-				(*attribute.uint8_array)[id] = value.get<UInt64>();
+				setAttributeValueImpl<UInt8>(attribute, id, value.get<UInt64>());
 				break;
 			}
 			case AttributeType::uint16:
 			{
-				if (id >= attribute.uint16_array->size())
-					attribute.uint16_array->resize_fill(id, attribute.uint16_null_value);
-				(*attribute.uint16_array)[id] = value.get<UInt64>();
+				setAttributeValueImpl<UInt16>(attribute, id, value.get<UInt64>());
 				break;
 			}
 			case AttributeType::uint32:
 			{
-				if (id >= attribute.uint32_array->size())
-					attribute.uint32_array->resize_fill(id, attribute.uint32_null_value);
-				(*attribute.uint32_array)[id] = value.get<UInt64>();
+				setAttributeValueImpl<UInt32>(attribute, id, value.get<UInt64>());
 				break;
 			}
 			case AttributeType::uint64:
 			{
-				if (id >= attribute.uint64_array->size())
-					attribute.uint64_array->resize_fill(id, attribute.uint64_null_value);
-				(*attribute.uint64_array)[id] = value.get<UInt64>();
+				setAttributeValueImpl<UInt64>(attribute, id, value.get<UInt64>());
 				break;
 			}
 			case AttributeType::int8:
 			{
-				if (id >= attribute.int8_array->size())
-					attribute.int8_array->resize_fill(id, attribute.int8_null_value);
-				(*attribute.int8_array)[id] = value.get<Int64>();
+				setAttributeValueImpl<Int8>(attribute, id, value.get<Int64>());
 				break;
 			}
 			case AttributeType::int16:
 			{
-				if (id >= attribute.int16_array->size())
-					attribute.int16_array->resize_fill(id, attribute.int16_null_value);
-				(*attribute.int16_array)[id] = value.get<Int64>();
+				setAttributeValueImpl<Int16>(attribute, id, value.get<Int64>());
 				break;
 			}
 			case AttributeType::int32:
 			{
-				if (id >= attribute.int32_array->size())
-					attribute.int32_array->resize_fill(id, attribute.int32_null_value);
-				(*attribute.int32_array)[id] = value.get<Int64>();
+				setAttributeValueImpl<Int32>(attribute, id, value.get<Int64>());
 				break;
 			}
 			case AttributeType::int64:
 			{
-				if (id >= attribute.int64_array->size())
-					attribute.int64_array->resize_fill(id, attribute.int64_null_value);
-				(*attribute.int64_array)[id] = value.get<Int64>();
+				setAttributeValueImpl<Int64>(attribute, id, value.get<Int64>());
 				break;
 			}
 			case AttributeType::float32:
 			{
-				if (id >= attribute.float32_array->size())
-					attribute.float32_array->resize_fill(id, attribute.float32_null_value);
-				(*attribute.float32_array)[id] = value.get<Float64>();
+				setAttributeValueImpl<Float32>(attribute, id, value.get<Float64>());
 				break;
 			}
 			case AttributeType::float64:
 			{
-				if (id >= attribute.float64_array->size())
-					attribute.float64_array->resize_fill(id, attribute.float64_null_value);
-				(*attribute.float64_array)[id] = value.get<Float64>();
+				setAttributeValueImpl<Float64>(attribute, id, value.get<Float64>());
 				break;
 			}
 			case AttributeType::string:
 			{
-				if (id >= attribute.string_array->size())
-					attribute.string_array->resize_fill(id, attribute.string_null_value);
+				auto & array = *std::get<std::unique_ptr<PODArray<StringRef>>>(attribute.arrays);
+				if (id >= array.size())
+					array.resize_fill(id, std::get<String>(attribute.null_values));
 				const auto & string = value.get<String>();
 				const auto string_in_arena = attribute.string_arena->insert(string.data(), string.size());
-				(*attribute.string_array)[id] = StringRef{string_in_arena, string.size()};
+				array[id] = StringRef{string_in_arena, string.size()};
 				break;
 			}
 		}
 	}
 
-	std::size_t getAttributeIndex(const std::string & attribute_name) const
+	const attribute_t & getAttribute(const std::string & attribute_name) const
 	{
 		const auto it = attribute_index_by_name.find(attribute_name);
 		if (it == std::end(attribute_index_by_name))
@@ -382,7 +347,7 @@ private:
 				ErrorCodes::BAD_ARGUMENTS
 			};
 
-		return it->second;
+		return attributes[it->second];
 	}
 
 	const std::string name;

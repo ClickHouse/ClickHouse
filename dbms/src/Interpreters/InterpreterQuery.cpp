@@ -8,6 +8,7 @@
 #include <DB/Parsers/ASTSetQuery.h>
 #include <DB/Parsers/ASTOptimizeQuery.h>
 #include <DB/Parsers/ASTAlterQuery.h>
+#include <DB/Parsers/ASTShowProcesslistQuery.h>
 #include <DB/Parsers/TablePropertiesQueriesASTs.h>
 #include <DB/Parsers/ASTCheckQuery.h>
 
@@ -82,7 +83,7 @@ void InterpreterQuery::execute(WriteBuffer & ostr, ReadBuffer * remaining_data_i
 	}
 	else if (typeid_cast<ASTSetQuery *>(&*query_ptr))
 	{
-		throwIfReadOnly();
+		/// readonly проверяется внутри InterpreterSetQuery
 		InterpreterSetQuery interpreter(query_ptr, context);
 		interpreter.execute();
 	}
@@ -174,7 +175,7 @@ BlockIO InterpreterQuery::execute()
 	}
 	else if (typeid_cast<ASTSetQuery *>(&*query_ptr))
 	{
-		throwIfReadOnly();
+		/// readonly проверяется внутри InterpreterSetQuery
 		InterpreterSetQuery interpreter(query_ptr, context);
 		interpreter.execute();
 	}

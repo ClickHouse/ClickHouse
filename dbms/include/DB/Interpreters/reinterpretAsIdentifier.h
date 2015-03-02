@@ -19,7 +19,7 @@ namespace DB
 
 			/// otherwise evaluate the expression
 			Block block{};
-			/** pass a dummy column name because ExpressioAnalyzer
+			/** pass a dummy column name because ExpressionAnalyzer
 		     *  does not work with no columns so far. */
 			ExpressionAnalyzer{
 				expr, context,

@@ -24,9 +24,6 @@ public:
 	*/
 	virtual bool supportsSelectiveLoad() const = 0;
 
-	/// returns an input stream with the data for the requested identifier
-	virtual BlockInputStreamPtr loadId(const std::uint64_t id) = 0;
-
 	/// returns an input stream with the data for a collection of identifiers
 	virtual BlockInputStreamPtr loadIds(const std::vector<std::uint64_t> ids) = 0;
 

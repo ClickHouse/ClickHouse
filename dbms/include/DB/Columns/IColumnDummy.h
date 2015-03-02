@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DB/Columns/IColumn.h>
-#include <DB/Interpreters/Set.h>
 
 
 namespace DB
