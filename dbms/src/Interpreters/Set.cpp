@@ -507,7 +507,7 @@ void NO_INLINE Set::executeArrayImpl(
 		for (size_t j = prev_offset; j < offsets[i]; ++j)
 		{
 			/// Строим ключ
-			typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes);
+			typename Method::Key key = state.getKey(key_columns, keys_size, j, key_sizes);
 			res |= negative ^ (method.data.end() != method.data.find(key));
 			if (res)
 				break;
@@ -541,7 +541,7 @@ void Set::executeArray(const ColumnArray * key_column, ColumnUInt8::Container_t 
 	if (false) {}
 #define M(NAME) \
 	else if (data.type == SetVariants::Type::NAME) \
-		executeArrayImpl(*data.NAME, ConstColumnPlainPtrs{key_column}, offsets, vec_res, negative, rows);
+		executeArrayImpl(*data.NAME, ConstColumnPlainPtrs{&nested_column}, offsets, vec_res, negative, rows);
 	APPLY_FOR_SET_VARIANTS(M)
 #undef M
 	else
