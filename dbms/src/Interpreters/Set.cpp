@@ -140,7 +140,6 @@ void NO_INLINE Set::insertFromBlockImpl(
 	Method & method,
 	const ConstColumnPlainPtrs & key_columns,
 	size_t rows,
-	StringRefs & keys,
 	SetVariants & variants)
 {
 	typename Method::State state;
@@ -151,14 +150,14 @@ void NO_INLINE Set::insertFromBlockImpl(
 	for (size_t i = 0; i < rows; ++i)
 	{
 		/// Строим ключ
-		typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes, keys);
+		typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes);
 
 		typename Method::Data::iterator it = method.data.find(key);
 		bool inserted;
 		method.data.emplace(key, it, inserted);
 
 		if (inserted)
-			method.onNewKey(*it, keys_size, i, keys, variants.string_pool);
+			method.onNewKey(*it, keys_size, i, variants.string_pool);
 	}
 }
 
@@ -184,12 +183,10 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 	if (empty())
 		data.init(data.chooseMethod(key_columns, key_sizes));
 
-	StringRefs keys;
-
 	if (false) {}
 #define M(NAME) \
 	else if (data.type == SetVariants::Type::NAME) \
-		insertFromBlockImpl(*data.NAME, key_columns, rows, keys, data);
+		insertFromBlockImpl(*data.NAME, key_columns, rows, data);
 		APPLY_FOR_SET_VARIANTS(M)
 #undef M
 	else
@@ -471,8 +468,7 @@ void NO_INLINE Set::executeImpl(
 	const ConstColumnPlainPtrs & key_columns,
 	ColumnUInt8::Container_t & vec_res,
 	bool negative,
-	size_t rows,
-	StringRefs & keys) const
+	size_t rows) const
 {
 	typename Method::State state;
 	state.init(key_columns);
@@ -484,7 +480,7 @@ void NO_INLINE Set::executeImpl(
 	for (size_t i = 0; i < rows; ++i)
 	{
 		/// Строим ключ
-		typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes, keys);
+		typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes);
 		vec_res[i] = negative ^ (method.data.end() != method.data.find(key));
 	}
 }
@@ -496,8 +492,7 @@ void NO_INLINE Set::executeArrayImpl(
 	const ColumnArray::Offsets_t & offsets,
 	ColumnUInt8::Container_t & vec_res,
 	bool negative,
-	size_t rows,
-	StringRefs & keys) const
+	size_t rows) const
 {
 	typename Method::State state;
 	state.init(key_columns);
@@ -512,7 +507,7 @@ void NO_INLINE Set::executeArrayImpl(
 		for (size_t j = prev_offset; j < offsets[i]; ++j)
 		{
 			/// Строим ключ
-			typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes, keys);
+			typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes);
 			res |= negative ^ (method.data.end() != method.data.find(key));
 			if (res)
 				break;
@@ -526,12 +521,11 @@ void NO_INLINE Set::executeArrayImpl(
 void Set::executeOrdinary(const ConstColumnPlainPtrs & key_columns, ColumnUInt8::Container_t & vec_res, bool negative) const
 {
 	size_t rows = key_columns[0]->size();
-	StringRefs keys;
 
 	if (false) {}
 #define M(NAME) \
 	else if (data.type == SetVariants::Type::NAME) \
-		executeImpl(*data.NAME, key_columns, vec_res, negative, rows, keys);
+		executeImpl(*data.NAME, key_columns, vec_res, negative, rows);
 	APPLY_FOR_SET_VARIANTS(M)
 #undef M
 	else
@@ -543,12 +537,11 @@ void Set::executeArray(const ColumnArray * key_column, ColumnUInt8::Container_t 
 	size_t rows = key_column->size();
 	const ColumnArray::Offsets_t & offsets = key_column->getOffsets();
 	const IColumn & nested_column = key_column->getData();
-	StringRefs keys;
 
 	if (false) {}
 #define M(NAME) \
 	else if (data.type == SetVariants::Type::NAME) \
-		executeArrayImpl(*data.NAME, ConstColumnPlainPtrs{key_column}, offsets, vec_res, negative, rows, keys);
+		executeArrayImpl(*data.NAME, ConstColumnPlainPtrs{key_column}, offsets, vec_res, negative, rows);
 	APPLY_FOR_SET_VARIANTS(M)
 #undef M
 	else
