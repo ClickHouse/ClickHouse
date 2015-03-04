@@ -41,10 +41,10 @@ public:
 
 	BlockInputStreamPtr loadIds(const std::vector<std::uint64_t> ids) override
 	{
-		throw Exception{
-			"Method unsupported",
-			ErrorCodes::NOT_IMPLEMENTED
-		};
+		last_modification = getLastModification();
+		const auto query = composeLoadIdsQuery(ids);
+
+		return new MySQLBlockInputStream{pool.Get()->query(query), sample_block, max_block_size};
 	}
 
 	bool isModified() const override { return getLastModification() > last_modification; }
@@ -76,22 +76,69 @@ private:
 		return mysqlxx::DateTime{std::time(nullptr)};
 	}
 
-	/// @todo escape table and column names
 	static std::string composeLoadAllQuery(const Block & block, const std::string & table)
 	{
-		std::string query{"SELECT "};
+		std::string query;
 
-		auto first = true;
-		for (const auto idx : ext::range(0, block.columns()))
 		{
-			if (!first)
-				query += ", ";
+			WriteBufferFromString out{query};
+			writeString("SELECT ", out);
 
-			query += block.getByPosition(idx).name;
-			first = false;
+			auto first = true;
+			for (const auto idx : ext::range(0, block.columns()))
+			{
+				if (!first)
+					writeString(", ", out);
+
+				writeString(block.getByPosition(idx).name, out);
+				first = false;
+			}
+
+			writeString(" FROM ", out);
+			writeProbablyBackQuotedString(table, out);
+			writeChar(';', out);
 		}
 
-		query += " FROM " + table + ';';
+		return query;
+	}
+
+	std::string composeLoadIdsQuery(const std::vector<std::uint64_t> ids)
+	{
+		std::string query;
+
+		{
+			WriteBufferFromString out{query};
+			writeString("SELECT ", out);
+
+			auto first = true;
+			for (const auto idx : ext::range(0, sample_block.columns()))
+			{
+				if (!first)
+					writeString(", ", out);
+
+				writeString(sample_block.getByPosition(idx).name, out);
+				first = false;
+			}
+
+			const auto & id_column_name = sample_block.getByPosition(0).name;
+			writeString(" FROM ", out);
+			writeProbablyBackQuotedString(table, out);
+			writeString(" WHERE ", out);
+			writeProbablyBackQuotedString(id_column_name, out);
+			writeString(" IN (", out);
+
+			first = true;
+			for (const auto id : ids)
+			{
+				if (!first)
+					writeString(", ", out);
+
+				first = false;
+				writeString(toString(id), out);
+			}
+
+			writeString(");", out);
+		}
 
 		return query;
 	}

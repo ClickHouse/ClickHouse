@@ -11,7 +11,7 @@
 namespace DB
 {
 
-const auto max_connections = 1;
+const auto max_connections = 16;
 
 /** Allows loading dictionaries from local or remote ClickHouse instance
 *	@todo use ConnectionPoolWithFailover
@@ -75,55 +75,69 @@ public:
 	DictionarySourcePtr clone() const override { return std::make_unique<ClickHouseDictionarySource>(*this); }
 
 private:
-	/// @todo escape table and column names
 	static std::string composeLoadAllQuery(const Block & block, const std::string & table)
 	{
-		std::string query{"SELECT "};
+		std::string query;
 
-		auto first = true;
-		for (const auto idx : ext::range(0, block.columns()))
 		{
-			if (!first)
-				query += ", ";
+			WriteBufferFromString out{query};
+			writeString("SELECT ", out);
 
-			query += block.getByPosition(idx).name;
-			first = false;
+			auto first = true;
+			for (const auto idx : ext::range(0, block.columns()))
+			{
+				if (!first)
+					writeString(", ", out);
+
+				writeString(block.getByPosition(idx).name, out);
+				first = false;
+			}
+
+			writeString(" FROM ", out);
+			writeProbablyBackQuotedString(table, out);
+			writeChar(';', out);
 		}
-
-		query += " FROM " + table + ';';
 
 		return query;
 	}
 
 	std::string composeLoadIdsQuery(const std::vector<std::uint64_t> ids)
 	{
-		std::string query{"SELECT "};
+		std::string query;
 
-		auto first = true;
-		for (const auto idx : ext::range(0, sample_block.columns()))
 		{
-			if (!first)
-				query += ", ";
+			WriteBufferFromString out{query};
+			writeString("SELECT ", out);
 
-			first = false;
-			query += sample_block.getByPosition(idx).name;
+			auto first = true;
+			for (const auto idx : ext::range(0, sample_block.columns()))
+			{
+				if (!first)
+					writeString(", ", out);
+
+				writeString(sample_block.getByPosition(idx).name, out);
+				first = false;
+			}
+
+			const auto & id_column_name = sample_block.getByPosition(0).name;
+			writeString(" FROM ", out);
+			writeProbablyBackQuotedString(table, out);
+			writeString(" WHERE ", out);
+			writeProbablyBackQuotedString(id_column_name, out);
+			writeString(" IN (", out);
+
+			first = true;
+			for (const auto id : ids)
+			{
+				if (!first)
+					writeString(", ", out);
+
+				first = false;
+				writeString(toString(id), out);
+			}
+
+			writeString(");", out);
 		}
-
-		const auto & id_column_name = sample_block.getByPosition(0).name;
-
-		query += " FROM " + table + " WHERE " + id_column_name + " IN (";
-
-		first = true;
-		for (const auto id : ids)
-		{
-			if (!first)
-				query += ',';
-
-			first = false;
-			query += toString(id);
-		}
-
-		query += ");";
 
 		return query;
 	}
