@@ -32,6 +32,20 @@ void Settings::set(const String & name, ReadBuffer & buf)
 #undef TRY_SET
 }
 
+/// Пропустить сериализованное в бинарном виде значение из буфера.
+void Settings::ignore(const String & name, ReadBuffer & buf)
+{
+#define TRY_IGNORE(TYPE, NAME, DEFAULT) \
+	else if (name == #NAME) decltype(NAME)(DEFAULT).set(buf);
+
+	if (false) {}
+	APPLY_FOR_SETTINGS(TRY_IGNORE)
+	else if (!limits.tryIgnore(name, buf))
+		throw Exception("Unknown setting " + name, ErrorCodes::UNKNOWN_SETTING);
+
+	#undef TRY_IGNORE
+}
+
 /** Установить настройку по имени. Прочитать значение в текстовом виде из строки (например, из конфига, или из параметра URL).
 	*/
 void Settings::set(const String & name, const String & value)
@@ -71,9 +85,9 @@ void Settings::setProfile(const String & profile_name, Poco::Util::AbstractConfi
 
 /// Прочитать настройки из буфера. Они записаны как набор name-value пар, идущих подряд, заканчивающихся пустым name.
 /// Если выставлен флаг check_readonly, в настройках выставлено readonly, но пришли какие-то изменения кинуть исключение.
-void Settings::deserialize(ReadBuffer & buf, bool check_readonly)
+void Settings::deserialize(ReadBuffer & buf)
 {
-	bool readonly = limits.readonly;
+	bool readonly = limits.readonly == 1;	/// Если readonly = 2, то можно менять настройки.
 
 	while (true)
 	{
@@ -84,10 +98,10 @@ void Settings::deserialize(ReadBuffer & buf, bool check_readonly)
 		if (name.empty())
 			break;
 
-		if (check_readonly && readonly)
-			throw Exception("Can't set setting " + name + ". Settings are readonly.", ErrorCodes::READONLY);
-
-		set(name, buf);
+		if (!readonly)
+			set(name, buf);
+		else
+			ignore(name, buf);
 	}
 }
 

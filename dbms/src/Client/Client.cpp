@@ -40,6 +40,12 @@
 #include <DB/DataStreams/AsynchronousBlockInputStream.h>
 
 #include <DB/Parsers/ParserQuery.h>
+#include <DB/Parsers/ASTSetQuery.h>
+#include <DB/Parsers/ASTUseQuery.h>
+#include <DB/Parsers/ASTInsertQuery.h>
+#include <DB/Parsers/ASTSelectQuery.h>
+#include <DB/Parsers/ASTQueryWithOutput.h>
+#include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/formatAST.h>
 
 #include <DB/Interpreters/Context.h>
@@ -123,8 +129,11 @@ private:
 	/// Распарсенный запрос. Оттуда берутся некоторые настройки (формат).
 	ASTPtr parsed_query;
 
-	/// Последнее полученное от сервера исключение.
+	/// Последнее полученное от сервера исключение. Для кода возврата в неинтерактивном режиме.
 	ExceptionPtr last_exception;
+
+	/// Было ли в последнем запросе исключение.
+	bool got_exception = false;
 
 	Stopwatch watch;
 
@@ -356,7 +365,7 @@ private:
 
 			bool ends_with_semicolon = line[ws - 1] == ';';
 			bool ends_with_backslash = line[ws - 1] == '\\';
-			
+
 			has_vertical_output_suffix = (ws >= 2) && (line[ws - 2] == '\\') && (line[ws - 1] == 'G');
 
 			if (ends_with_backslash)
@@ -370,7 +379,7 @@ private:
 				{
 					// Заменяем переводы строк на пробелы, а то возникает следуцющая проблема.
 					// Каждая строчка многострочного запроса сохраняется в истории отдельно. Если
-					// выйти из клиента и войти заново, то при нажатии клавиши "вверх" выводится не 
+					// выйти из клиента и войти заново, то при нажатии клавиши "вверх" выводится не
 					// весь многострочный запрос, а каждая его строчка по-отдельности.
 					std::string logged_query = query;
 					std::replace(logged_query.begin(), logged_query.end(), '\n', ' ');
@@ -479,6 +488,7 @@ private:
 			return false;
 
 		resetOutput();
+		got_exception = false;
 
 		watch.restart();
 
@@ -512,25 +522,29 @@ private:
 		else
 			processOrdinaryQuery();
 
-		if (set_query)
+		/// В случае исключения, не будем менять контекст (текущая БД, настройки) на клиенте.
+		if (!got_exception)
 		{
-			/// Запоминаем все изменения в настройках, чтобы не потерять их при разрыве соединения.
-			for (ASTSetQuery::Changes::const_iterator it = set_query->changes.begin(); it != set_query->changes.end(); ++it)
+			if (set_query)
 			{
-				if (it->name ==	"profile")
-					current_profile = it->value.safeGet<String>();
-				else
-					context.setSetting(it->name, it->value);
+				/// Запоминаем все изменения в настройках, чтобы не потерять их при разрыве соединения.
+				for (ASTSetQuery::Changes::const_iterator it = set_query->changes.begin(); it != set_query->changes.end(); ++it)
+				{
+					if (it->name ==	"profile")
+						current_profile = it->value.safeGet<String>();
+					else
+						context.setSetting(it->name, it->value);
+				}
 			}
-		}
 
-		if (use_query)
-		{
-			const String & new_database = use_query->database;
-			/// Если клиент инициирует пересоединение, он берет настройки из конфига
-			config().setString("database", new_database);
-			/// Если connection инициирует пересоединение, он использует свою переменную
-			connection->setDefaultDatabase(new_database);
+			if (use_query)
+			{
+				const String & new_database = use_query->database;
+				/// Если клиент инициирует пересоединение, он берет настройки из конфига
+				config().setString("database", new_database);
+				/// Если connection инициирует пересоединение, он использует свою переменную
+				connection->setDefaultDatabase(new_database);
+			}
 		}
 
 		if (is_interactive)
@@ -791,7 +805,7 @@ private:
 				onException(*packet.exception);
 				last_exception = packet.exception;
 				return false;
-				
+
 			default:
 				throw Exception("Unexpected packet from server (expected Data, got "
 					+ String(Protocol::Server::toString(packet.type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
@@ -811,7 +825,7 @@ private:
 		if (!block_std_out)
 		{
 			String current_format = format;
-			
+
 			/// Формат может быть указан в запросе.
 			if (ASTQueryWithOutput * query_with_output = dynamic_cast<ASTQueryWithOutput *>(&*parsed_query))
 			{
@@ -823,10 +837,10 @@ private:
 						current_format = id->name;
 				}
 			}
-			
+
 			if (has_vertical_output_suffix)
 				current_format = "Vertical";
-			
+
 			block_std_out = context.getFormatFactory().getOutput(current_format, std_out, block);
 			block_std_out->writePrefix();
 		}
@@ -959,6 +973,7 @@ private:
 	void onException(const Exception & e)
 	{
 		resetOutput();
+		got_exception = true;
 
 		std::cerr << "Received exception from server:" << std::endl
 			<< "Code: " << e.code() << ". " << e.displayText();

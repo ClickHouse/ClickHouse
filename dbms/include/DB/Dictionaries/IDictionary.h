@@ -38,6 +38,7 @@ public:
 
 	/// do not call unless you ensure that hasHierarchy() returns true
 	virtual id_t toParent(id_t id) const = 0;
+	virtual void toParent(const PODArray<id_t> & ids, PODArray<id_t> & out) const = 0;
 
 	bool in(id_t child_id, const id_t ancestor_id) const
 	{

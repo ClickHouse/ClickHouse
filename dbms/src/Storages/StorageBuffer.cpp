@@ -101,8 +101,14 @@ BlockInputStreams StorageBuffer::read(
 	BlockInputStreams streams_from_dst;
 
 	if (!no_destination)
-		streams_from_dst = context.getTable(destination_database, destination_table)->read(
-			column_names, query, context, settings, processed_stage, max_block_size, threads);
+	{
+		auto destination = context.getTable(destination_database, destination_table);
+
+		if (destination.get() == this)
+			throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
+
+		streams_from_dst = destination->read(column_names, query, context, settings, processed_stage, max_block_size, threads);
+	}
 
 	BlockInputStreams streams_from_buffers;
 	streams_from_buffers.reserve(num_shards);
@@ -157,6 +163,9 @@ public:
 		if (!storage.no_destination)
 		{
 			destination = storage.context.tryGetTable(storage.destination_database, storage.destination_table);
+
+			if (destination.get() == &storage)
+				throw Exception("Destination table is myself. Write will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
 
 			/// Проверяем структуру таблицы.
 			try
@@ -232,9 +241,9 @@ private:
 
 			if (!storage.no_destination)
 			{
+				auto destination = storage.context.tryGetTable(storage.destination_database, storage.destination_table);
 				appendBlock(sorted_block, block_to_write);
-				storage.writeBlockToDestination(block_to_write,
-					storage.context.tryGetTable(storage.destination_database, storage.destination_table));
+				storage.writeBlockToDestination(block_to_write, destination);
 			}
 		}
 		else

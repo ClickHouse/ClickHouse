@@ -108,7 +108,7 @@ struct Settings
 	M(SettingUInt64, merge_tree_max_rows_to_use_cache, (1024 * 1024)) \
 	\
 	/** Минимальная длина выражения expr = x1 OR ... expr = xN для оптимизации */ \
-	M(SettingUInt64, optimize_min_equality_disjunction_chain_length, 4) \
+	M(SettingUInt64, optimize_min_equality_disjunction_chain_length, 3) \
 
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;
@@ -126,6 +126,9 @@ struct Settings
 	/// Установить настройку по имени. Прочитать сериализованное в бинарном виде значение из буфера (для межсерверного взаимодействия).
 	void set(const String & name, ReadBuffer & buf);
 
+	/// Пропустить сериализованное в бинарном виде значение из буфера.
+	void ignore(const String & name, ReadBuffer & buf);
+
 	/** Установить настройку по имени. Прочитать значение в текстовом виде из строки (например, из конфига, или из параметра URL).
 	  */
 	void set(const String & name, const String & value);
@@ -136,8 +139,8 @@ struct Settings
 	void setProfile(const String & profile_name, Poco::Util::AbstractConfiguration & config);
 
 	/// Прочитать настройки из буфера. Они записаны как набор name-value пар, идущих подряд, заканчивающихся пустым name.
-	/// Если выставлен флаг check_readonly, в настройках выставлено readonly, но пришли какие-то изменения кинуть исключение.
-	void deserialize(ReadBuffer & buf, bool check_readonly = false);
+	/// Если в настройках выставлено readonly=1, то игнорировать настройки.
+	void deserialize(ReadBuffer & buf);
 
 	/// Записать изменённые настройки в буфер. (Например, для отправки на удалённый сервер.)
 	void serialize(WriteBuffer & buf) const;

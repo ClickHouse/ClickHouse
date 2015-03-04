@@ -52,15 +52,25 @@ public:
 
 	const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
 
-	bool hasHierarchy() const override { return false; }
+	bool hasHierarchy() const override { return hierarchical_attribute; }
 
-	id_t toParent(const id_t id) const override { return 0; }
+	id_t toParent(const id_t id) const override
+	{
+		PODArray<UInt64> ids{1, id};
+		PODArray<UInt64> out{1};
+		getItems<UInt64>(*hierarchical_attribute, ids, out);
+		return out.front();
+	}
+
+	void toParent(const PODArray<id_t> & ids, PODArray<id_t> & out) const override
+	{
+		getItems<UInt64>(*hierarchical_attribute, ids, out);
+	}
 
 #define DECLARE_INDIVIDUAL_GETTER(TYPE, LC_TYPE) \
 	TYPE get##TYPE(const std::string & attribute_name, const id_t id) const override\
     {\
-		const auto idx = getAttributeIndex(attribute_name);\
-		const auto & attribute = attributes[idx];\
+		auto & attribute = getAttribute(attribute_name);\
 		if (attribute.type != AttributeType::LC_TYPE)\
 			throw Exception{\
 				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
@@ -69,7 +79,7 @@ public:
 		\
 		PODArray<UInt64> ids{1, id};\
 		PODArray<TYPE> out{1};\
-		getItems<TYPE>(idx, ids, out);\
+		getItems<TYPE>(attribute, ids, out);\
         return out.front();\
 	}
 	DECLARE_INDIVIDUAL_GETTER(UInt8, uint8)
@@ -85,8 +95,7 @@ public:
 #undef DECLARE_INDIVIDUAL_GETTER
 	String getString(const std::string & attribute_name, const id_t id) const override
 	{
-		const auto idx = getAttributeIndex(attribute_name);
-		const auto & attribute = attributes[idx];
+		auto & attribute = getAttribute(attribute_name);
 		if (attribute.type != AttributeType::string)
 			throw Exception{
 				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
@@ -95,23 +104,22 @@ public:
 
 		PODArray<UInt64> ids{1, id};
 		ColumnString out;
-		getItems(idx, ids, &out);
+		getItems(attribute, ids, &out);
 
-        return out.getDataAt(0);
-	}
+        return String{out.getDataAt(0)};
+	};
 
 #define DECLARE_MULTIPLE_GETTER(TYPE, LC_TYPE)\
 	void get##TYPE(const std::string & attribute_name, const PODArray<id_t> & ids, PODArray<TYPE> & out) const override\
 	{\
-		const auto idx = getAttributeIndex(attribute_name);\
-		const auto & attribute = attributes[idx];\
+		auto & attribute = getAttribute(attribute_name);\
 		if (attribute.type != AttributeType::LC_TYPE)\
 			throw Exception{\
 				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
 				ErrorCodes::TYPE_MISMATCH\
 			};\
 		\
-		getItems<TYPE>(idx, ids, out);\
+		getItems<TYPE>(attribute, ids, out);\
 	}
 	DECLARE_MULTIPLE_GETTER(UInt8, uint8)
 	DECLARE_MULTIPLE_GETTER(UInt16, uint16)
@@ -126,15 +134,14 @@ public:
 #undef DECLARE_MULTIPLE_GETTER
 	void getString(const std::string & attribute_name, const PODArray<id_t> & ids, ColumnString * out) const override
 	{
-		const auto idx = getAttributeIndex(attribute_name);
-		const auto & attribute = attributes[idx];
+		auto & attribute = getAttribute(attribute_name);
 		if (attribute.type != AttributeType::string)
 			throw Exception{
 				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
 				ErrorCodes::TYPE_MISMATCH
 			};
 
-		getItems(idx, ids, out);
+		getItems(attribute, ids, out);
 	}
 
 private:
@@ -176,7 +183,15 @@ private:
 				attribute.null_value));
 
 			if (attribute.hierarchical)
+			{
 				hierarchical_attribute = &attributes.back();
+
+				if (hierarchical_attribute->type != AttributeType::uint64)
+					throw Exception{
+						"Hierarchical attribute must be UInt64.",
+						ErrorCodes::TYPE_MISMATCH
+					};
+			}
 		}
 	}
 
@@ -235,20 +250,16 @@ private:
 		return attr;
 	}
 
-	static bool hasTimeExpired(const std::chrono::system_clock::time_point & time_point)
-	{
-		return std::chrono::system_clock::now() >= time_point;
-	}
-
 	template <typename T>
-	void getItems(const std::size_t attribute_idx, const PODArray<id_t> & ids, PODArray<T> & out) const
+	void getItems(attribute_t & attribute, const PODArray<id_t> & ids, PODArray<T> & out) const
 	{
 		HashMap<id_t, std::vector<std::size_t>> outdated_ids;
-		auto & attribute = attributes[attribute_idx];
 		auto & attribute_array = std::get<std::unique_ptr<T[]>>(attribute.arrays);
 
 		{
 			const Poco::ScopedReadRWLock read_lock{rw_lock};
+
+			const auto now = std::chrono::system_clock::now();
 			/// fetch up-to-date values, decide which ones require update
 			for (const auto i : ext::range(0, ids.size()))
 			{
@@ -262,7 +273,7 @@ private:
 				const auto cell_idx = getCellIdx(id);
 				const auto & cell = cells[cell_idx];
 
-				if (cell.id != id || hasTimeExpired(cell.expires_at))
+				if (cell.id != id || cell.expires_at < now)
 				{
 					out[i] = std::get<T>(attribute.null_values);
 					outdated_ids[id].push_back(i);
@@ -289,12 +300,11 @@ private:
 		});
 	}
 
-	void getItems(const std::size_t attribute_idx, const PODArray<id_t> & ids, ColumnString * out) const
+	void getItems(attribute_t & attribute, const PODArray<id_t> & ids, ColumnString * out) const
 	{
 		/// save on some allocations
 		out->getOffsets().reserve(ids.size());
 
-		auto & attribute = attributes[attribute_idx];
 		auto & attribute_array = std::get<std::unique_ptr<StringRef[]>>(attribute.arrays);
 
 		auto found_outdated_values = false;
@@ -303,6 +313,7 @@ private:
 		{
 			const Poco::ScopedReadRWLock read_lock{rw_lock};
 
+			const auto now = std::chrono::system_clock::now();
 			/// fetch up-to-date values, discard on fail
 			for (const auto i : ext::range(0, ids.size()))
 			{
@@ -317,7 +328,7 @@ private:
 				const auto cell_idx = getCellIdx(id);
 				const auto & cell = cells[cell_idx];
 
-				if (cell.id != id || hasTimeExpired(cell.expires_at))
+				if (cell.id != id || cell.expires_at < now)
 				{
 					found_outdated_values = true;
 					break;
@@ -347,6 +358,7 @@ private:
 		{
 			const Poco::ScopedReadRWLock read_lock{rw_lock};
 
+			const auto now = std::chrono::system_clock::now();
 			for (const auto i : ext::range(0, ids.size()))
 			{
 				const auto id = ids[i];
@@ -359,14 +371,14 @@ private:
 				const auto cell_idx = getCellIdx(id);
 				const auto & cell = cells[cell_idx];
 
-				if (cell.id != id || hasTimeExpired(cell.expires_at))
+				if (cell.id != id || cell.expires_at < now)
 					outdated_ids[id] += 1;
 				else
 				{
 					const auto string_ref = attribute_array[cell_idx];
-					map[id] = string_ref;
+					map[id] = String{string_ref};
 					total_length += string_ref.size + 1;
-				};
+				}
 			}
 		}
 
@@ -380,8 +392,8 @@ private:
 			update(required_ids, [&] (const auto id, const auto cell_idx) {
 				const auto attribute_value = attribute_array[cell_idx];
 
-				map[id] = attribute_value;
-				total_length += attribute_value.size + 1;
+				map[id] = String{attribute_value};
+				total_length += (attribute_value.size + 1) * outdated_ids[id];
 			});
 		}
 
@@ -390,7 +402,7 @@ private:
 		for (const auto id : ids)
 		{
 			const auto it = map.find(id);
-			const auto string = it != map.end() ? it->second : std::get<String>(attributes[attribute_idx].null_values);
+			const auto string = it != map.end() ? it->second : std::get<String>(attribute.null_values);
 			out->insertData(string.data(), string.size());
 		}
 	}
@@ -414,6 +426,11 @@ private:
 
 			const auto & ids = id_column->getData();
 
+			/// cache column pointers
+			std::vector<const IColumn *> column_ptrs(attributes.size());
+			for (const auto i : ext::range(0, attributes.size()))
+				column_ptrs[i] = block.getByPosition(i + 1).column.get();
+
 			for (const auto i : ext::range(0, ids.size()))
 			{
 				const auto id = ids[i];
@@ -422,7 +439,7 @@ private:
 
 				for (const auto attribute_idx : ext::range(0, attributes.size()))
 				{
-					const auto & attribute_column = *block.getByPosition(attribute_idx + 1).column;
+					const auto & attribute_column = *column_ptrs[attribute_idx];
 					auto & attribute = attributes[attribute_idx];
 
 					setAttributeValue(attribute, cell_idx, attribute_column[i]);
@@ -486,7 +503,7 @@ private:
 		}
 	}
 
-	std::size_t getAttributeIndex(const std::string & attribute_name) const
+	attribute_t & getAttribute(const std::string & attribute_name) const
 	{
 		const auto it = attribute_index_by_name.find(attribute_name);
 		if (it == std::end(attribute_index_by_name))
@@ -495,7 +512,7 @@ private:
 				ErrorCodes::BAD_ARGUMENTS
 			};
 
-		return it->second;
+		return attributes[it->second];
 	}
 
 	static std::size_t round_up_to_power_of_two(std::size_t n)
@@ -529,7 +546,7 @@ private:
 	std::map<std::string, std::size_t> attribute_index_by_name;
 	mutable std::vector<attribute_t> attributes;
 	mutable std::vector<cell_metadata_t> cells;
-	const attribute_t * hierarchical_attribute = nullptr;
+	attribute_t * hierarchical_attribute = nullptr;
 
 	mutable std::mt19937_64 rnd_engine{getSeed()};
 };

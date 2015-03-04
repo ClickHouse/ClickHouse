@@ -7,6 +7,7 @@
 #include <DB/Columns/ColumnString.h>
 #include <statdaemons/ext/range.hpp>
 #include <memory>
+#include <tuple>
 
 namespace DB
 {
@@ -44,77 +45,31 @@ public:
 	id_t toParent(const id_t id) const override
 	{
 		const auto attr = hierarchical_attribute;
+		const auto & map = *std::get<std::unique_ptr<HashMap<UInt64, UInt64>>>(attr->maps);
+		const auto it = map.find(id);
 
-		switch (hierarchical_attribute->type)
-		{
-			case AttributeType::uint8:
-			{
-				const auto it = attr->uint8_map->find(id);
-				return it != attr->uint8_map->end() ? it->second : attr->uint8_null_value;
-			}
-			case AttributeType::uint16:
-			{
-				const auto it = attr->uint16_map->find(id);
-				return it != attr->uint16_map->end() ? it->second : attr->uint16_null_value;
-			}
-			case AttributeType::uint32:
-			{
-				const auto it = attr->uint32_map->find(id);
-				return it != attr->uint32_map->end() ? it->second : attr->uint32_null_value;
-			}
-			case AttributeType::uint64:
-			{
-				const auto it = attr->uint64_map->find(id);
-				return it != attr->uint64_map->end() ? it->second : attr->uint64_null_value;
-			}
-			case AttributeType::int8:
-			{
-				const auto it = attr->int8_map->find(id);
-				return it != attr->int8_map->end() ? it->second : attr->int8_null_value;
-			}
-			case AttributeType::int16:
-			{
-				const auto it = attr->int16_map->find(id);
-				return it != attr->int16_map->end() ? it->second : attr->int16_null_value;
-			}
-			case AttributeType::int32:
-			{
-				const auto it = attr->int32_map->find(id);
-				return it != attr->int32_map->end() ? it->second : attr->int32_null_value;
-			}
-			case AttributeType::int64:
-			{
-				const auto it = attr->int64_map->find(id);
-				return it != attr->int64_map->end() ? it->second : attr->int64_null_value;
-			}
-			case AttributeType::float32:
-			case AttributeType::float64:
-			case AttributeType::string:
-				break;
-		};
+		return it != map.end() ? it->second : std::get<UInt64>(attr->null_values);
+	}
 
-		throw Exception{
-			"Hierarchical attribute has non-integer type " + toString(hierarchical_attribute->type),
-			ErrorCodes::TYPE_MISMATCH
-		};
+	void toParent(const PODArray<id_t> & ids, PODArray<id_t> & out) const override
+	{
+		getItems<UInt64>(*hierarchical_attribute, ids, out);
 	}
 
 #define DECLARE_INDIVIDUAL_GETTER(TYPE, LC_TYPE) \
 	TYPE get##TYPE(const std::string & attribute_name, const id_t id) const override\
 	{\
-		const auto idx = getAttributeIndex(attribute_name);\
-		const auto & attribute = attributes[idx];\
+		const auto & attribute = getAttribute(attribute_name);\
 		if (attribute.type != AttributeType::LC_TYPE)\
 			throw Exception{\
 				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
 				ErrorCodes::TYPE_MISMATCH\
 			};\
 		\
-		const auto it = attribute.LC_TYPE##_map->find(id);\
-		if (it != attribute.LC_TYPE##_map->end())\
-			return it->second;\
+		const auto & map = *std::get<std::unique_ptr<HashMap<UInt64, TYPE>>>(attribute.maps);\
+		const auto it = map.find(id);\
 		\
-		return attribute.LC_TYPE##_null_value;\
+		return it != map.end() ? TYPE{it->second} : std::get<TYPE>(attribute.null_values);\
 	}
 	DECLARE_INDIVIDUAL_GETTER(UInt8, uint8)
 	DECLARE_INDIVIDUAL_GETTER(UInt16, uint16)
@@ -126,28 +81,33 @@ public:
 	DECLARE_INDIVIDUAL_GETTER(Int64, int64)
 	DECLARE_INDIVIDUAL_GETTER(Float32, float32)
 	DECLARE_INDIVIDUAL_GETTER(Float64, float64)
-	DECLARE_INDIVIDUAL_GETTER(String, string)
 #undef DECLARE_INDIVIDUAL_GETTER
+	String getString(const std::string & attribute_name, const id_t id) const override
+	{
+		const auto & attribute = getAttribute(attribute_name);
+		if (attribute.type != AttributeType::string)
+			throw Exception{
+				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
+				ErrorCodes::TYPE_MISMATCH
+			};
+
+		const auto & map = *std::get<std::unique_ptr<HashMap<UInt64, StringRef>>>(attribute.maps);
+		const auto it = map.find(id);
+
+		return it != map.end() ? String{it->second} : std::get<String>(attribute.null_values);
+	}
 
 #define DECLARE_MULTIPLE_GETTER(TYPE, LC_TYPE)\
 	void get##TYPE(const std::string & attribute_name, const PODArray<id_t> & ids, PODArray<TYPE> & out) const override\
 	{\
-		const auto idx = getAttributeIndex(attribute_name);\
-		const auto & attribute = attributes[idx];\
+		const auto & attribute = getAttribute(attribute_name);\
 		if (attribute.type != AttributeType::LC_TYPE)\
 			throw Exception{\
 				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
 				ErrorCodes::TYPE_MISMATCH\
 			};\
 		\
-		const auto & attr = *attribute.LC_TYPE##_map;\
-		const auto null_value = attribute.LC_TYPE##_null_value;\
-		\
-		for (const auto i : ext::range(0, ids.size()))\
-		{\
-			const auto it = attr.find(ids[i]);\
-			out[i] = it != attr.end() ? it->second : null_value;\
-		}\
+		getItems<TYPE>(attribute, ids, out);\
 	}
 	DECLARE_MULTIPLE_GETTER(UInt8, uint8)
 	DECLARE_MULTIPLE_GETTER(UInt16, uint16)
@@ -162,16 +122,15 @@ public:
 #undef DECLARE_MULTIPLE_GETTER
 	void getString(const std::string & attribute_name, const PODArray<id_t> & ids, ColumnString * out) const override
 	{
-		const auto idx = getAttributeIndex(attribute_name);
-		const auto & attribute = attributes[idx];
+		const auto & attribute = getAttribute(attribute_name);
 		if (attribute.type != AttributeType::string)
 			throw Exception{
 				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
 				ErrorCodes::TYPE_MISMATCH
 			};
 
-		const auto & attr = *attribute.string_map;
-		const auto null_value = attribute.string_null_value;
+		const auto & attr = *std::get<std::unique_ptr<HashMap<UInt64, StringRef>>>(attribute.maps);
+		const auto & null_value = std::get<String>(attribute.null_values);
 
 		for (const auto i : ext::range(0, ids.size()))
 		{
@@ -182,38 +141,32 @@ public:
 	}
 
 private:
-	struct attribute_t
+	struct attribute_t final
 	{
 		AttributeType type;
-		UInt8 uint8_null_value;
-		UInt16 uint16_null_value;
-		UInt32 uint32_null_value;
-		UInt64 uint64_null_value;
-		Int8 int8_null_value;
-		Int16 int16_null_value;
-		Int32 int32_null_value;
-		Int64 int64_null_value;
-		Float32 float32_null_value;
-		Float64 float64_null_value;
-		String string_null_value;
-		std::unique_ptr<HashMap<UInt64, UInt8>> uint8_map;
-		std::unique_ptr<HashMap<UInt64, UInt16>> uint16_map;
-		std::unique_ptr<HashMap<UInt64, UInt32>> uint32_map;
-		std::unique_ptr<HashMap<UInt64, UInt64>> uint64_map;
-		std::unique_ptr<HashMap<UInt64, Int8>> int8_map;
-		std::unique_ptr<HashMap<UInt64, Int16>> int16_map;
-		std::unique_ptr<HashMap<UInt64, Int32>> int32_map;
-		std::unique_ptr<HashMap<UInt64, Int64>> int64_map;
-		std::unique_ptr<HashMap<UInt64, Float32>> float32_map;
-		std::unique_ptr<HashMap<UInt64, Float64>> float64_map;
+		std::tuple<UInt8, UInt16, UInt32, UInt64,
+			Int8, Int16, Int32, Int64,
+			Float32, Float64,
+			String> null_values;
+		std::tuple<std::unique_ptr<HashMap<UInt64, UInt8>>,
+			std::unique_ptr<HashMap<UInt64, UInt16>>,
+			std::unique_ptr<HashMap<UInt64, UInt32>>,
+			std::unique_ptr<HashMap<UInt64, UInt64>>,
+			std::unique_ptr<HashMap<UInt64, Int8>>,
+			std::unique_ptr<HashMap<UInt64, Int16>>,
+			std::unique_ptr<HashMap<UInt64, Int32>>,
+			std::unique_ptr<HashMap<UInt64, Int64>>,
+			std::unique_ptr<HashMap<UInt64, Float32>>,
+			std::unique_ptr<HashMap<UInt64, Float64>>,
+			std::unique_ptr<HashMap<UInt64, StringRef>>> maps;
 		std::unique_ptr<Arena> string_arena;
-		std::unique_ptr<HashMap<UInt64, StringRef>> string_map;
 	};
 
 	void createAttributes()
 	{
 		const auto size = dict_struct.attributes.size();
 		attributes.reserve(size);
+
 		for (const auto & attribute : dict_struct.attributes)
 		{
 			attribute_index_by_name.emplace(attribute.name, attributes.size());
@@ -221,7 +174,15 @@ private:
 				attribute.null_value));
 
 			if (attribute.hierarchical)
+			{
 				hierarchical_attribute = &attributes.back();
+
+				if (hierarchical_attribute->type != AttributeType::uint64)
+					throw Exception{
+						"Hierarchical attribute must be UInt64.",
+						ErrorCodes::TYPE_MISMATCH
+					};
+			}
 		}
 	}
 
@@ -247,127 +208,88 @@ private:
 		stream->readSuffix();
 	}
 
+	template <typename T>
+	void createAttributeImpl(attribute_t & attribute, const std::string & null_value)
+	{
+		std::get<T>(attribute.null_values) = DB::parse<T>(null_value);
+		std::get<std::unique_ptr<HashMap<UInt64, T>>>(attribute.maps) = std::make_unique<HashMap<UInt64, T>>();
+	}
+
 	attribute_t createAttributeWithType(const AttributeType type, const std::string & null_value)
 	{
 		attribute_t attr{type};
 
 		switch (type)
 		{
-			case AttributeType::uint8:
-				attr.uint8_null_value = DB::parse<UInt8>(null_value);
-				attr.uint8_map.reset(new HashMap<UInt64, UInt8>);
-				break;
-			case AttributeType::uint16:
-				attr.uint16_null_value = DB::parse<UInt16>(null_value);
-				attr.uint16_map.reset(new HashMap<UInt64, UInt16>);
-				break;
-			case AttributeType::uint32:
-				attr.uint32_null_value = DB::parse<UInt32>(null_value);
-				attr.uint32_map.reset(new HashMap<UInt64, UInt32>);
-				break;
-			case AttributeType::uint64:
-				attr.uint64_null_value = DB::parse<UInt64>(null_value);
-				attr.uint64_map.reset(new HashMap<UInt64, UInt64>);
-				break;
-			case AttributeType::int8:
-				attr.int8_null_value = DB::parse<Int8>(null_value);
-				attr.int8_map.reset(new HashMap<UInt64, Int8>);
-				break;
-			case AttributeType::int16:
-				attr.int16_null_value = DB::parse<Int16>(null_value);
-				attr.int16_map.reset(new HashMap<UInt64, Int16>);
-				break;
-			case AttributeType::int32:
-				attr.int32_null_value = DB::parse<Int32>(null_value);
-				attr.int32_map.reset(new HashMap<UInt64, Int32>);
-				break;
-			case AttributeType::int64:
-				attr.int64_null_value = DB::parse<Int64>(null_value);
-				attr.int64_map.reset(new HashMap<UInt64, Int64>);
-				break;
-			case AttributeType::float32:
-				attr.float32_null_value = DB::parse<Float32>(null_value);
-				attr.float32_map.reset(new HashMap<UInt64, Float32>);
-				break;
-			case AttributeType::float64:
-				attr.float64_null_value = DB::parse<Float64>(null_value);
-				attr.float64_map.reset(new HashMap<UInt64, Float64>);
-				break;
+			case AttributeType::uint8: createAttributeImpl<UInt8>(attr, null_value); break;
+			case AttributeType::uint16: createAttributeImpl<UInt16>(attr, null_value); break;
+			case AttributeType::uint32: createAttributeImpl<UInt32>(attr, null_value); break;
+			case AttributeType::uint64: createAttributeImpl<UInt64>(attr, null_value); break;
+			case AttributeType::int8: createAttributeImpl<Int8>(attr, null_value); break;
+			case AttributeType::int16: createAttributeImpl<Int16>(attr, null_value); break;
+			case AttributeType::int32: createAttributeImpl<Int32>(attr, null_value); break;
+			case AttributeType::int64: createAttributeImpl<Int64>(attr, null_value); break;
+			case AttributeType::float32: createAttributeImpl<Float32>(attr, null_value); break;
+			case AttributeType::float64: createAttributeImpl<Float64>(attr, null_value); break;
 			case AttributeType::string:
-				attr.string_null_value = null_value;
-				attr.string_arena.reset(new Arena);
-				attr.string_map.reset(new HashMap<UInt64, StringRef>);
+			{
+				const auto & null_value_ref = std::get<String>(attr.null_values) = DB::parse<String>(null_value);
+				std::get<std::unique_ptr<HashMap<UInt64, StringRef>>>(attr.maps) =
+					std::make_unique<HashMap<UInt64, StringRef>>();
+				attr.string_arena = std::make_unique<Arena>();
 				break;
+			}
 		}
 
 		return attr;
+	}
+
+	template <typename T>
+	void getItems(const attribute_t & attribute, const PODArray<id_t> & ids, PODArray<T> & out) const
+	{
+		const auto & attr = *std::get<std::unique_ptr<HashMap<UInt64, T>>>(attribute.maps);
+		const auto null_value = std::get<T>(attribute.null_values);
+
+		for (const auto i : ext::range(0, ids.size()))
+		{
+			const auto it = attr.find(ids[i]);
+			out[i] = it != attr.end() ? it->second : null_value;
+		}
+	}
+
+	template <typename T>
+	void setAttributeValueImpl(attribute_t & attribute, const id_t id, const T value)
+	{
+		auto & map = *std::get<std::unique_ptr<HashMap<UInt64, T>>>(attribute.maps);
+		map.insert({ id, value });
 	}
 
 	void setAttributeValue(attribute_t & attribute, const id_t id, const Field & value)
 	{
 		switch (attribute.type)
 		{
-			case AttributeType::uint8:
-			{
-				attribute.uint8_map->insert({ id, value.get<UInt64>() });
-				break;
-			}
-			case AttributeType::uint16:
-			{
-				attribute.uint16_map->insert({ id, value.get<UInt64>() });
-				break;
-			}
-			case AttributeType::uint32:
-			{
-				attribute.uint32_map->insert({ id, value.get<UInt64>() });
-				break;
-			}
-			case AttributeType::uint64:
-			{
-				attribute.uint64_map->insert({ id, value.get<UInt64>() });
-				break;
-			}
-			case AttributeType::int8:
-			{
-				attribute.int8_map->insert({ id, value.get<Int64>() });
-				break;
-			}
-			case AttributeType::int16:
-			{
-				attribute.int16_map->insert({ id, value.get<Int64>() });
-				break;
-			}
-			case AttributeType::int32:
-			{
-				attribute.int32_map->insert({ id, value.get<Int64>() });
-				break;
-			}
-			case AttributeType::int64:
-			{
-				attribute.int64_map->insert({ id, value.get<Int64>() });
-				break;
-			}
-			case AttributeType::float32:
-			{
-				attribute.float32_map->insert({ id, value.get<Float64>() });
-				break;
-			}
-			case AttributeType::float64:
-			{
-				attribute.float64_map->insert({ id, value.get<Float64>() });
-				break;
-			}
+			case AttributeType::uint8: setAttributeValueImpl<UInt8>(attribute, id, value.get<UInt64>()); break;
+			case AttributeType::uint16: setAttributeValueImpl<UInt16>(attribute, id, value.get<UInt64>()); break;
+			case AttributeType::uint32: setAttributeValueImpl<UInt32>(attribute, id, value.get<UInt64>()); break;
+			case AttributeType::uint64: setAttributeValueImpl<UInt64>(attribute, id, value.get<UInt64>()); break;
+			case AttributeType::int8: setAttributeValueImpl<Int8>(attribute, id, value.get<Int64>()); break;
+			case AttributeType::int16: setAttributeValueImpl<Int16>(attribute, id, value.get<Int64>()); break;
+			case AttributeType::int32: setAttributeValueImpl<Int32>(attribute, id, value.get<Int64>()); break;
+			case AttributeType::int64: setAttributeValueImpl<Int64>(attribute, id, value.get<Int64>()); break;
+			case AttributeType::float32: setAttributeValueImpl<Float32>(attribute, id, value.get<Float64>()); break;
+			case AttributeType::float64: setAttributeValueImpl<Float64>(attribute, id, value.get<Float64>()); break;
 			case AttributeType::string:
 			{
+				auto & map = *std::get<std::unique_ptr<HashMap<UInt64, StringRef>>>(attribute.maps);
 				const auto & string = value.get<String>();
 				const auto string_in_arena = attribute.string_arena->insert(string.data(), string.size());
-				attribute.string_map->insert({ id, StringRef{string_in_arena, string.size()} });
+				map.insert({ id, StringRef{string_in_arena, string.size()} });
 				break;
 			}
-		};
+		}
 	}
 
-	std::size_t getAttributeIndex(const std::string & attribute_name) const
+	const attribute_t & getAttribute(const std::string & attribute_name) const
 	{
 		const auto it = attribute_index_by_name.find(attribute_name);
 		if (it == std::end(attribute_index_by_name))
@@ -376,7 +298,7 @@ private:
 				ErrorCodes::BAD_ARGUMENTS
 			};
 
-		return it->second;
+		return attributes[it->second];
 	}
 
 	const std::string name;

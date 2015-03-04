@@ -160,12 +160,17 @@ namespace detail
 
 		void insert(UInt64 x)
 		{
-			++count;
+			insertWeighted(x, 1);
+		}
+
+		void insertWeighted(UInt64 x, size_t weight)
+		{
+			count += weight;
 
 			if (x < SMALL_THRESHOLD)
-				++count_small[x];
+				count_small[x] += weight;
 			else if (x < BIG_THRESHOLD)
-				++count_big[(x - SMALL_THRESHOLD) / BIG_PRECISION];
+				count_big[(x - SMALL_THRESHOLD) / BIG_PRECISION] += weight;
 		}
 
 		void merge(const QuantileTimingLarge & rhs)
@@ -371,6 +376,23 @@ public:
 		}
 	}
 
+	void insertWeighted(UInt64 x, size_t weight)
+	{
+		/// NOTE: Первое условие - для того, чтобы избежать переполнения.
+		if (weight < TINY_MAX_ELEMS && tiny.count + weight <= TINY_MAX_ELEMS)
+		{
+			for (size_t i = 0; i < weight; ++i)
+				tiny.insert(x);
+		}
+		else
+		{
+			if (unlikely(tiny.count <= TINY_MAX_ELEMS))
+				toLarge();
+
+			large->insertWeighted(x, weight);
+		}
+	}
+
 	void merge(const QuantileTiming & rhs)
 	{
 		if (tiny.count + rhs.tiny.count <= TINY_MAX_ELEMS)
@@ -567,6 +589,66 @@ public:
 };
 
 
+/** То же самое, но с двумя аргументами. Второй аргумент - "вес" (целое число) - сколько раз учитывать значение.
+  */
+template <typename ArgumentFieldType, typename WeightFieldType>
+class AggregateFunctionQuantileTimingWeighted final : public IAggregateFunctionHelper<QuantileTiming>
+{
+private:
+	double level;
+
+public:
+	AggregateFunctionQuantileTimingWeighted(double level_ = 0.5) : level(level_) {}
+
+	String getName() const { return "quantileTimingWeighted"; }
+
+	DataTypePtr getReturnType() const
+	{
+		return new DataTypeFloat32;
+	}
+
+	void setArguments(const DataTypes & arguments)
+	{
+	}
+
+	void setParameters(const Array & params)
+	{
+		if (params.size() != 1)
+			throw Exception("Aggregate function " + getName() + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		level = apply_visitor(FieldVisitorConvertToNumber<Float64>(), params[0]);
+	}
+
+
+	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const
+	{
+		this->data(place).insertWeighted(
+			static_cast<const ColumnVector<ArgumentFieldType> &>(*columns[0]).getData()[row_num],
+			static_cast<const ColumnVector<WeightFieldType> &>(*columns[1]).getData()[row_num]);
+	}
+
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
+	{
+		this->data(place).merge(this->data(rhs));
+	}
+
+	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
+	{
+		this->data(place).serialize(buf);
+	}
+
+	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
+	{
+		this->data(place).deserializeMerge(buf);
+	}
+
+	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
+	{
+		static_cast<ColumnFloat32 &>(to).getData().push_back(this->data(place).getFloat(level));
+	}
+};
+
+
 /** То же самое, но позволяет вычислить сразу несколько квантилей.
   * Для этого, принимает в качестве параметров несколько уровней. Пример: quantilesTiming(0.5, 0.8, 0.9, 0.95)(ConnectTiming).
   * Возвращает массив результатов.
@@ -638,5 +720,76 @@ public:
 		this->data(place).getManyFloat(&levels[0], size, &data_to[old_size]);
 	}
 };
+
+
+template <typename ArgumentFieldType, typename WeightFieldType>
+class AggregateFunctionQuantilesTimingWeighted final : public IAggregateFunctionHelper<QuantileTiming>
+{
+private:
+	typedef std::vector<double> Levels;
+	Levels levels;
+
+public:
+	String getName() const { return "quantilesTimingWeighted"; }
+
+	DataTypePtr getReturnType() const
+	{
+		return new DataTypeArray(new DataTypeFloat32);
+	}
+
+	void setArguments(const DataTypes & arguments)
+	{
+	}
+
+	void setParameters(const Array & params)
+	{
+		if (params.empty())
+			throw Exception("Aggregate function " + getName() + " requires at least one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		size_t size = params.size();
+		levels.resize(size);
+
+		for (size_t i = 0; i < size; ++i)
+			levels[i] = apply_visitor(FieldVisitorConvertToNumber<Float64>(), params[i]);
+	}
+
+	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const
+	{
+		this->data(place).insertWeighted(
+			static_cast<const ColumnVector<ArgumentFieldType> &>(*columns[0]).getData()[row_num],
+			static_cast<const ColumnVector<WeightFieldType> &>(*columns[1]).getData()[row_num]);
+	}
+
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
+	{
+		this->data(place).merge(this->data(rhs));
+	}
+
+	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
+	{
+		this->data(place).serialize(buf);
+	}
+
+	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
+	{
+		this->data(place).deserializeMerge(buf);
+	}
+
+	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
+	{
+		ColumnArray & arr_to = static_cast<ColumnArray &>(to);
+		ColumnArray::Offsets_t & offsets_to = arr_to.getOffsets();
+
+		size_t size = levels.size();
+		offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + size);
+
+		typename ColumnFloat32::Container_t & data_to = static_cast<ColumnFloat32 &>(arr_to.getData()).getData();
+		size_t old_size = data_to.size();
+		data_to.resize(data_to.size() + size);
+
+		this->data(place).getManyFloat(&levels[0], size, &data_to[old_size]);
+	}
+};
+
 
 }

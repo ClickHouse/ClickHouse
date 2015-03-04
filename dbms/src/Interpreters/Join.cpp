@@ -9,15 +9,53 @@ namespace DB
 {
 
 
+Join::Type Join::chooseMethod(const ConstColumnPlainPtrs & key_columns, bool & keys_fit_128_bits, Sizes & key_sizes)
+{
+	size_t keys_size = key_columns.size();
+
+	keys_fit_128_bits = true;
+	size_t keys_bytes = 0;
+	key_sizes.resize(keys_size);
+
+	for (size_t j = 0; j < keys_size; ++j)
+	{
+		if (!key_columns[j]->isFixed())
+		{
+			keys_fit_128_bits = false;
+			break;
+		}
+		key_sizes[j] = key_columns[j]->sizeOfField();
+		keys_bytes += key_sizes[j];
+	}
+
+	if (keys_bytes > 16)
+		keys_fit_128_bits = false;
+
+	/// Если есть один числовой ключ, который помещается в 64 бита
+	if (keys_size == 1 && key_columns[0]->isNumeric())
+		return Type::KEY_64;
+
+	/// Если есть один строковый ключ, то используем хэш-таблицу с ним
+	if (keys_size == 1
+		&& (typeid_cast<const ColumnString *>(key_columns[0])
+			|| typeid_cast<const ColumnConstString *>(key_columns[0])
+			|| (typeid_cast<const ColumnFixedString *>(key_columns[0]) && !keys_fit_128_bits)))
+		return Type::KEY_STRING;
+
+	/// Если много ключей - будем строить множество хэшей от них
+	return Type::HASHED;
+}
+
+
 template <typename Maps>
-static void initImpl(Maps & maps, Set::Type type)
+static void initImpl(Maps & maps, Join::Type type)
 {
 	switch (type)
 	{
-		case Set::EMPTY:																break;
-		case Set::KEY_64:		maps.key64		.reset(new typename Maps::MapUInt64); 	break;
-		case Set::KEY_STRING:	maps.key_string	.reset(new typename Maps::MapString); 	break;
-		case Set::HASHED:		maps.hashed		.reset(new typename Maps::MapHashed);	break;
+		case Join::Type::EMPTY:																	break;
+		case Join::Type::KEY_64:		maps.key64		.reset(new typename Maps::MapUInt64); 	break;
+		case Join::Type::KEY_STRING:	maps.key_string	.reset(new typename Maps::MapString); 	break;
+		case Join::Type::HASHED:		maps.hashed		.reset(new typename Maps::MapHashed);	break;
 
 		default:
 			throw Exception("Unknown JOIN keys variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
@@ -51,7 +89,7 @@ static size_t getTotalByteCountImpl(const Maps & maps)
 }
 
 
-void Join::init(Set::Type type_)
+void Join::init(Type type_)
 {
 	type = type_;
 
@@ -190,7 +228,7 @@ struct Inserter<ASTJoin::All, Join::MapsAll::MapString>
 template <ASTJoin::Strictness STRICTNESS, typename Maps>
 void Join::insertFromBlockImpl(Maps & maps, size_t rows, const ConstColumnPlainPtrs & key_columns, size_t keys_size, Block * stored_block)
 {
-	if (type == Set::KEY_64)
+	if (type == Type::KEY_64)
 	{
 		typedef typename Maps::MapUInt64 Map;
 		Map & res = *maps.key64;
@@ -204,7 +242,7 @@ void Join::insertFromBlockImpl(Maps & maps, size_t rows, const ConstColumnPlainP
 			Inserter<STRICTNESS, Map>::insert(res, key, stored_block, i, pool);
 		}
 	}
-	else if (type == Set::KEY_STRING)
+	else if (type == Type::KEY_STRING)
 	{
 		typedef typename Maps::MapString Map;
 		Map & res = *maps.key_string;
@@ -239,7 +277,7 @@ void Join::insertFromBlockImpl(Maps & maps, size_t rows, const ConstColumnPlainP
 		else
 			throw Exception("Illegal type of column when creating join with string key: " + column.getName(), ErrorCodes::ILLEGAL_COLUMN);
 	}
-	else if (type == Set::HASHED)
+	else if (type == Type::HASHED)
 	{
 		typedef typename Maps::MapHashed Map;
 		Map & res = *maps.hashed;
@@ -274,7 +312,7 @@ bool Join::insertFromBlock(const Block & block)
 
 	/// Какую структуру данных для множества использовать?
 	if (empty())
-		init(Set::chooseMethod(key_columns, keys_fit_128_bits, key_sizes));
+		init(chooseMethod(key_columns, keys_fit_128_bits, key_sizes));
 
 	blocks.push_back(block);
 	Block * stored_block = &blocks.back();
@@ -441,7 +479,7 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 	if (strictness == ASTJoin::All)
 		offsets_to_replicate.reset(new IColumn::Offsets_t(rows));
 
-	if (type == Set::KEY_64)
+	if (type == Type::KEY_64)
 	{
 		typedef typename Maps::MapUInt64 Map;
 		const Map & map = *maps.key64;
@@ -455,7 +493,7 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 			Adder<KIND, STRICTNESS, Map>::add(map, key, num_columns_to_add, added_columns, i, filter.get(), current_offset, offsets_to_replicate.get());
 		}
 	}
-	else if (type == Set::KEY_STRING)
+	else if (type == Type::KEY_STRING)
 	{
 		typedef typename Maps::MapString Map;
 		const Map & map = *maps.key_string;
@@ -490,7 +528,7 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 		else
 			throw Exception("Illegal type of column when creating set with string key: " + column.getName(), ErrorCodes::ILLEGAL_COLUMN);
 	}
-	else if (type == Set::HASHED)
+	else if (type == Type::HASHED)
 	{
 		typedef typename Maps::MapHashed Map;
 		Map & map = *maps.hashed;

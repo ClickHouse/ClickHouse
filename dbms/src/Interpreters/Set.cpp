@@ -21,78 +21,144 @@
 namespace DB
 {
 
-size_t Set::getTotalRowCount() const
+void SetVariants::init(Type type_)
 {
-	size_t rows = 0;
-	if (key64)
-		rows += key64->size();
-	if (key_string)
-		rows += key_string->size();
-	if (hashed)
-		rows += hashed->size();
-	return rows;
+	type = type_;
+
+	switch (type)
+	{
+		case Type::EMPTY: break;
+
+	#define M(NAME) \
+		case Type::NAME: NAME.reset(new decltype(NAME)::element_type); break;
+		APPLY_FOR_SET_VARIANTS(M)
+	#undef M
+
+		default:
+			throw Exception("Unknown Set variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+	}
 }
 
 
-size_t Set::getTotalByteCount() const
+size_t SetVariants::getTotalRowCount() const
 {
-	size_t bytes = 0;
-	if (key64)
-		bytes += key64->getBufferSizeInBytes();
-	if (key_string)
-		bytes += key_string->getBufferSizeInBytes();
-	if (hashed)
-		bytes += hashed->getBufferSizeInBytes();
-	bytes += string_pool.size();
-	return bytes;
+	switch (type)
+	{
+		case Type::EMPTY: return 0;
+
+	#define M(NAME) \
+		case Type::NAME: return NAME->data.size();
+		APPLY_FOR_SET_VARIANTS(M)
+	#undef M
+
+		default:
+			throw Exception("Unknown Set variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+	}
+}
+
+
+size_t SetVariants::getTotalByteCount() const
+{
+	switch (type)
+	{
+		case Type::EMPTY: return 0;
+
+	#define M(NAME) \
+		case Type::NAME: return NAME->data.getBufferSizeInBytes();
+		APPLY_FOR_SET_VARIANTS(M)
+	#undef M
+
+		default:
+			throw Exception("Unknown Set variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+	}
 }
 
 
 bool Set::checkSetSizeLimits() const
 {
-	if (max_rows && getTotalRowCount() > max_rows)
+	if (max_rows && data.getTotalRowCount() > max_rows)
 		return false;
-	if (max_bytes && getTotalByteCount() > max_bytes)
+	if (max_bytes && data.getTotalByteCount() > max_bytes)
 		return false;
 	return true;
 }
 
 
-Set::Type Set::chooseMethod(const ConstColumnPlainPtrs & key_columns, bool & keys_fit_128_bits, Sizes & key_sizes)
+SetVariants::Type SetVariants::chooseMethod(const ConstColumnPlainPtrs & key_columns, Sizes & key_sizes)
 {
 	size_t keys_size = key_columns.size();
 
-	keys_fit_128_bits = true;
+	bool all_fixed = true;
 	size_t keys_bytes = 0;
 	key_sizes.resize(keys_size);
-
 	for (size_t j = 0; j < keys_size; ++j)
 	{
 		if (!key_columns[j]->isFixed())
 		{
-			keys_fit_128_bits = false;
+			all_fixed = false;
 			break;
 		}
 		key_sizes[j] = key_columns[j]->sizeOfField();
 		keys_bytes += key_sizes[j];
 	}
 
-	if (keys_bytes > 16)
-		keys_fit_128_bits = false;
-
 	/// Если есть один числовой ключ, который помещается в 64 бита
 	if (keys_size == 1 && key_columns[0]->isNumeric())
-		return KEY_64;
+	{
+		size_t size_of_field = key_columns[0]->sizeOfField();
+		if (size_of_field == 1)
+			return SetVariants::Type::key8;
+		if (size_of_field == 2)
+			return SetVariants::Type::key16;
+		if (size_of_field == 4)
+			return SetVariants::Type::key32;
+		if (size_of_field == 8)
+			return SetVariants::Type::key64;
+		throw Exception("Logical error: numeric column has sizeOfField not in 1, 2, 4, 8.", ErrorCodes::LOGICAL_ERROR);
+	}
+
+	/// Если ключи помещаются в N бит, будем использовать хэш-таблицу по упакованным в N-бит ключам
+	if (all_fixed && keys_bytes <= 16)
+		return SetVariants::Type::keys128;
+	if (all_fixed && keys_bytes <= 32)
+		return SetVariants::Type::keys256;
 
 	/// Если есть один строковый ключ, то используем хэш-таблицу с ним
-	if (keys_size == 1
-		&& (typeid_cast<const ColumnString *>(key_columns[0])
-		|| typeid_cast<const ColumnConstString *>(key_columns[0])
-		|| (typeid_cast<const ColumnFixedString *>(key_columns[0]) && !keys_fit_128_bits)))
-		return KEY_STRING;
+	if (keys_size == 1 && (typeid_cast<const ColumnString *>(key_columns[0]) || typeid_cast<const ColumnConstString *>(key_columns[0])))
+		return SetVariants::Type::key_string;
 
-	/// Если много ключей - будем строить множество хэшей от них
-	return HASHED;
+	if (keys_size == 1 && typeid_cast<const ColumnFixedString *>(key_columns[0]))
+		return SetVariants::Type::key_fixed_string;
+
+	/// Иначе будем агрегировать по конкатенации ключей.
+	return SetVariants::Type::hashed;
+}
+
+
+template <typename Method>
+void NO_INLINE Set::insertFromBlockImpl(
+	Method & method,
+	const ConstColumnPlainPtrs & key_columns,
+	size_t rows,
+	SetVariants & variants)
+{
+	typename Method::State state;
+	state.init(key_columns);
+	size_t keys_size = key_columns.size();
+
+	/// Для всех строчек
+	for (size_t i = 0; i < rows; ++i)
+	{
+		/// Строим ключ
+		typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes);
+
+		typename Method::Data::iterator it = method.data.find(key);
+		bool inserted;
+		method.data.emplace(key, it, inserted);
+
+		if (inserted)
+			method.onNewKey(*it, keys_size, i, variants.string_pool);
+	}
 }
 
 
@@ -115,94 +181,28 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 
 	/// Какую структуру данных для множества использовать?
 	if (empty())
-		init(chooseMethod(key_columns, keys_fit_128_bits, key_sizes));
+		data.init(data.chooseMethod(key_columns, key_sizes));
 
-	if (type == KEY_64)
-	{
-		SetUInt64 & res = *key64;
-		const IColumn & column = *key_columns[0];
-
-		/// Для всех строчек
-		for (size_t i = 0; i < rows; ++i)
-		{
-			/// Строим ключ
-			UInt64 key = column.get64(i);
-			res.insert(key);
-
-			if(create_ordered_set)
-				ordered_set_elements->push_back(column[i]);
-		}
-	}
-	else if (type == KEY_STRING)
-	{
-		SetString & res = *key_string;
-		const IColumn & column = *key_columns[0];
-
-		if (const ColumnString * column_string = typeid_cast<const ColumnString *>(&column))
-		{
-			const ColumnString::Offsets_t & offsets = column_string->getOffsets();
-			const ColumnString::Chars_t & data = column_string->getChars();
-
-			/// Для всех строчек
-			for (size_t i = 0; i < rows; ++i)
-			{
-				/// Строим ключ
-				StringRef ref(&data[i == 0 ? 0 : offsets[i - 1]], (i == 0 ? offsets[i] : (offsets[i] - offsets[i - 1])) - 1);
-
-				SetString::iterator it;
-				bool inserted;
-				res.emplace(ref, it, inserted);
-
-				if (inserted)
-					it->data = string_pool.insert(ref.data, ref.size);
-
-				if(create_ordered_set)
-					ordered_set_elements->push_back(std::string(ref.data, ref.size));
-			}
-		}
-		else if (const ColumnFixedString * column_string = typeid_cast<const ColumnFixedString *>(&column))
-		{
-			size_t n = column_string->getN();
-			const ColumnFixedString::Chars_t & data = column_string->getChars();
-
-			/// Для всех строчек
-			for (size_t i = 0; i < rows; ++i)
-			{
-				/// Строим ключ
-				StringRef ref(&data[i * n], n);
-
-				SetString::iterator it;
-				bool inserted;
-				res.emplace(ref, it, inserted);
-
-				if (inserted)
-					it->data = string_pool.insert(ref.data, ref.size);
-
-				if(create_ordered_set)
-					ordered_set_elements->push_back(std::string(ref.data, ref.size));
-			}
-		}
-		else
-			throw Exception("Illegal type of column when creating set with string key: " + column.getName(), ErrorCodes::ILLEGAL_COLUMN);
-	}
-	else if (type == HASHED)
-	{
-		SetHashed & res = *hashed;
-
-		/// Для всех строчек
-		for (size_t i = 0; i < rows; ++i)
-			res.insert(keys_fit_128_bits ? packFixed<UInt128>(i, keys_size, key_columns, key_sizes) : hash128(i, keys_size, key_columns));
-	}
+	if (false) {}
+#define M(NAME) \
+	else if (data.type == SetVariants::Type::NAME) \
+		insertFromBlockImpl(*data.NAME, key_columns, rows, data);
+		APPLY_FOR_SET_VARIANTS(M)
+#undef M
 	else
 		throw Exception("Unknown set variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
+
+	if (create_ordered_set)
+		for (size_t i = 0; i < rows; ++i)
+			ordered_set_elements->push_back((*key_columns[0])[i]); /// ordered_set для индекса работает только если IN одному ключу.
 
 	if (!checkSetSizeLimits())
 	{
 		if (overflow_mode == OverflowMode::THROW)
-			throw Exception("IN-Set size exceeded."
-				" Rows: " + toString(getTotalRowCount()) +
+			throw Exception("IN-set size exceeded."
+				" Rows: " + toString(data.getTotalRowCount()) +
 				", limit: " + toString(max_rows) +
-				". Bytes: " + toString(getTotalByteCount()) +
+				". Bytes: " + toString(data.getTotalByteCount()) +
 				", limit: " + toString(max_bytes) + ".",
 				ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 
@@ -417,12 +417,19 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 			throw Exception(std::string() + "Types in section IN don't match: " + data_types[0]->getName() + " on the right, " + array_type->getNestedType()->getName() + " on the left.", ErrorCodes::TYPE_MISMATCH);
 
 		IColumn * in_column = &*block.getByPosition(arguments[0]).column;
-		if (ColumnConstArray * col = typeid_cast<ColumnConstArray *>(in_column))
-			executeConstArray(col, vec_res, negative);
-		else if (ColumnArray * col = typeid_cast<ColumnArray *>(in_column))
+
+		/// Константный столбец слева от IN поддерживается не напрямую. Для этого, он сначала материализуется.
+		ColumnPtr materialized_column;
+		if (in_column->isConst())
+		{
+			materialized_column = static_cast<const IColumnConst *>(in_column)->convertToFullColumn();
+			in_column = materialized_column.get();
+		}
+
+		if (ColumnArray * col = typeid_cast<ColumnArray *>(in_column))
 			executeArray(col, vec_res, negative);
 		else
-			throw Exception("Unexpeced array column type: " + in_column->getName(), ErrorCodes::ILLEGAL_COLUMN);
+			throw Exception("Unexpected array column type: " + in_column->getName(), ErrorCodes::ILLEGAL_COLUMN);
 	}
 	else
 	{
@@ -439,82 +446,88 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 				throw Exception("Types of column " + toString(i + 1) + " in section IN don't match: " + data_types[i]->getName() + " on the right, " + block.getByPosition(arguments[i]).type->getName() + " on the left.", ErrorCodes::TYPE_MISMATCH);
 		}
 
+		/// Константные столбцы слева от IN поддерживается не напрямую. Для этого, они сначала материализуется.
+		Columns materialized_columns;
+		for (auto & column_ptr : key_columns)
+		{
+			if (column_ptr->isConst())
+			{
+				materialized_columns.emplace_back(static_cast<const IColumnConst *>(column_ptr)->convertToFullColumn());
+				column_ptr = materialized_columns.back().get();
+			}
+		}
+
 		executeOrdinary(key_columns, vec_res, negative);
 	}
 }
 
-void Set::executeOrdinary(const ConstColumnPlainPtrs & key_columns, ColumnUInt8::Container_t & vec_res, bool negative) const
+
+template <typename Method>
+void NO_INLINE Set::executeImpl(
+	Method & method,
+	const ConstColumnPlainPtrs & key_columns,
+	ColumnUInt8::Container_t & vec_res,
+	bool negative,
+	size_t rows) const
 {
-	size_t keys_size = data_types.size();
-	size_t rows = key_columns[0]->size();
-	Row key(keys_size);
+	typename Method::State state;
+	state.init(key_columns);
+	size_t keys_size = key_columns.size();
 
-	if (type == KEY_64)
+	/// NOTE Не используется оптимизация для подряд идущих одинаковых значений.
+
+	/// Для всех строчек
+	for (size_t i = 0; i < rows; ++i)
 	{
-		const SetUInt64 & set = *key64;
-		const IColumn & column = *key_columns[0];
+		/// Строим ключ
+		typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes);
+		vec_res[i] = negative ^ (method.data.end() != method.data.find(key));
+	}
+}
 
-		/// Для всех строчек
-		for (size_t i = 0; i < rows; ++i)
+template <typename Method>
+void NO_INLINE Set::executeArrayImpl(
+	Method & method,
+	const ConstColumnPlainPtrs & key_columns,
+	const ColumnArray::Offsets_t & offsets,
+	ColumnUInt8::Container_t & vec_res,
+	bool negative,
+	size_t rows) const
+{
+	typename Method::State state;
+	state.init(key_columns);
+	size_t keys_size = key_columns.size();
+
+	size_t prev_offset = 0;
+	/// Для всех строчек
+	for (size_t i = 0; i < rows; ++i)
+	{
+		UInt8 res = 0;
+		/// Для всех элементов
+		for (size_t j = prev_offset; j < offsets[i]; ++j)
 		{
 			/// Строим ключ
-			UInt64 key = column.get64(i);
-			vec_res[i] = negative ^ (set.end() != set.find(key));
+			typename Method::Key key = state.getKey(key_columns, keys_size, j, key_sizes);
+			res |= negative ^ (method.data.end() != method.data.find(key));
+			if (res)
+				break;
 		}
+		vec_res[i] = res;
+		prev_offset = offsets[i];
 	}
-	else if (type == KEY_STRING)
-	{
-		const SetString & set = *key_string;
-		const IColumn & column = *key_columns[0];
+}
 
-		if (const ColumnString * column_string = typeid_cast<const ColumnString *>(&column))
-		{
-			const ColumnString::Offsets_t & offsets = column_string->getOffsets();
-			const ColumnString::Chars_t & data = column_string->getChars();
 
-			/// Для всех строчек
-			for (size_t i = 0; i < rows; ++i)
-			{
-				/// Строим ключ
-				StringRef ref(&data[i == 0 ? 0 : offsets[i - 1]], (i == 0 ? offsets[i] : (offsets[i] - offsets[i - 1])) - 1);
-				vec_res[i] = negative ^ (set.end() != set.find(ref));
-			}
-		}
-		else if (const ColumnFixedString * column_string = typeid_cast<const ColumnFixedString *>(&column))
-		{
-			size_t n = column_string->getN();
-			const ColumnFixedString::Chars_t & data = column_string->getChars();
+void Set::executeOrdinary(const ConstColumnPlainPtrs & key_columns, ColumnUInt8::Container_t & vec_res, bool negative) const
+{
+	size_t rows = key_columns[0]->size();
 
-			/// Для всех строчек
-			for (size_t i = 0; i < rows; ++i)
-			{
-				/// Строим ключ
-				StringRef ref(&data[i * n], n);
-				vec_res[i] = negative ^ (set.end() != set.find(ref));
-			}
-		}
-		else if (const ColumnConstString * column_string = typeid_cast<const ColumnConstString *>(&column))
-		{
-			bool res = negative ^ (set.end() != set.find(StringRef(column_string->getData())));
-
-			/// Для всех строчек
-			for (size_t i = 0; i < rows; ++i)
-				vec_res[i] = res;
-		}
-		else
-			throw Exception("Illegal type of column when creating set with string key: " + column.getName(), ErrorCodes::ILLEGAL_COLUMN);
-	}
-	else if (type == HASHED)
-	{
-		const SetHashed & set = *hashed;
-
-		/// Для всех строчек
-		for (size_t i = 0; i < rows; ++i)
-			vec_res[i] = negative ^
-				(set.end() != set.find(keys_fit_128_bits
-					? packFixed<UInt128>(i, keys_size, key_columns, key_sizes)
-					: hash128(i, keys_size, key_columns)));
-	}
+	if (false) {}
+#define M(NAME) \
+	else if (data.type == SetVariants::Type::NAME) \
+		executeImpl(*data.NAME, key_columns, vec_res, negative, rows);
+	APPLY_FOR_SET_VARIANTS(M)
+#undef M
 	else
 		throw Exception("Unknown set variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
 }
@@ -525,150 +538,16 @@ void Set::executeArray(const ColumnArray * key_column, ColumnUInt8::Container_t 
 	const ColumnArray::Offsets_t & offsets = key_column->getOffsets();
 	const IColumn & nested_column = key_column->getData();
 
-	if (type == KEY_64)
-	{
-		const SetUInt64 & set = *key64;
-
-		size_t prev_offset = 0;
-		/// Для всех строчек
-		for (size_t i = 0; i < rows; ++i)
-		{
-			UInt8 res = 0;
-			/// Для всех элементов
-			for (size_t j = prev_offset; j < offsets[i]; ++j)
-			{
-				/// Строим ключ
-				UInt64 key = nested_column.get64(j);
-				res |= negative ^ (set.end() != set.find(key));
-				if (res)
-					break;
-			}
-			vec_res[i] = res;
-			prev_offset = offsets[i];
-		}
-	}
-	else if (type == KEY_STRING)
-	{
-		const SetString & set = *key_string;
-
-		if (const ColumnString * column_string = typeid_cast<const ColumnString *>(&nested_column))
-		{
-			const ColumnString::Offsets_t & nested_offsets = column_string->getOffsets();
-			const ColumnString::Chars_t & data = column_string->getChars();
-
-			size_t prev_offset = 0;
-			/// Для всех строчек
-			for (size_t i = 0; i < rows; ++i)
-			{
-				UInt8 res = 0;
-				/// Для всех элементов
-				for (size_t j = prev_offset; j < offsets[i]; ++j)
-				{
-					/// Строим ключ
-					size_t begin = j == 0 ? 0 : nested_offsets[j - 1];
-					size_t end = nested_offsets[j];
-					StringRef ref(&data[begin], end - begin - 1);
-					res |= negative ^ (set.end() != set.find(ref));
-					if (res)
-						break;
-				}
-				vec_res[i] = res;
-				prev_offset = offsets[i];
-			}
-		}
-		else if (const ColumnFixedString * column_string = typeid_cast<const ColumnFixedString *>(&nested_column))
-		{
-			size_t n = column_string->getN();
-			const ColumnFixedString::Chars_t & data = column_string->getChars();
-
-			size_t prev_offset = 0;
-			/// Для всех строчек
-			for (size_t i = 0; i < rows; ++i)
-			{
-				UInt8 res = 0;
-				/// Для всех элементов
-				for (size_t j = prev_offset; j < offsets[i]; ++j)
-				{
-					/// Строим ключ
-					StringRef ref(&data[j * n], n);
-					res |= negative ^ (set.end() != set.find(ref));
-					if (res)
-						break;
-				}
-				vec_res[i] = res;
-				prev_offset = offsets[i];
-			}
-		}
-		else
-			throw Exception("Illegal type of column when looking for Array(String) key: " + nested_column.getName(), ErrorCodes::ILLEGAL_COLUMN);
-	}
-	else if (type == HASHED)
-	{
-		const SetHashed & set = *hashed;
-		ConstColumnPlainPtrs nested_columns(1, &nested_column);
-
-		size_t prev_offset = 0;
-		/// Для всех строчек
-		for (size_t i = 0; i < rows; ++i)
-		{
-			UInt8 res = 0;
-			/// Для всех элементов
-			for (size_t j = prev_offset; j < offsets[i]; ++j)
-			{
-				/// Строим ключ
-				res |= negative ^
-					(set.end() != set.find(keys_fit_128_bits
-						? packFixed<UInt128>(i, 1, nested_columns, key_sizes)
-						: hash128(i, 1, nested_columns)));
-				if (res)
-					break;
-			}
-			vec_res[i] = res;
-			prev_offset = offsets[i];
-		}
-	}
+	if (false) {}
+#define M(NAME) \
+	else if (data.type == SetVariants::Type::NAME) \
+		executeArrayImpl(*data.NAME, ConstColumnPlainPtrs{&nested_column}, offsets, vec_res, negative, rows);
+	APPLY_FOR_SET_VARIANTS(M)
+#undef M
 	else
 		throw Exception("Unknown set variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
 }
 
-void Set::executeConstArray(const ColumnConstArray * key_column, ColumnUInt8::Container_t & vec_res, bool negative) const
-{
-	if (type == HASHED)
-	{
-		ColumnPtr full_column = key_column->convertToFullColumn();
-		executeArray(typeid_cast<ColumnArray *>(&*full_column), vec_res, negative);
-		return;
-	}
-
-	size_t rows = key_column->size();
-	Array values = key_column->getData();
-	UInt8 res = 0;
-
-	/// Для всех элементов
-	for (size_t j = 0; j < values.size(); ++j)
-	{
-		if (type == KEY_64)
-		{
-			const SetUInt64 & set = *key64;
-			UInt64 key = get<UInt64>(values[j]);
-			res |= negative ^ (set.end() != set.find(key));
-		}
-		else if (type == KEY_STRING)
-		{
-			const SetString & set = *key_string;
-			res |= negative ^ (set.end() != set.find(StringRef(get<String>(values[j]))));
-		}
-		else
-			throw Exception("Unknown set variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
-
-		if (res)
-			break;
-	}
-
-	/// Для всех строчек
-	for (size_t i = 0; i < rows; ++i)
-		vec_res[i] = res;
-}
 
 BoolMask Set::mayBeTrueInRange(const Range & range)
 {

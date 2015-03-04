@@ -25,7 +25,7 @@ struct StringRef
 
 	std::string toString() const { return std::string(data, size); }
 
-	operator std::string() const { return toString(); }
+	explicit operator std::string() const { return toString(); }
 };
 
 typedef std::vector<StringRef> StringRefs;

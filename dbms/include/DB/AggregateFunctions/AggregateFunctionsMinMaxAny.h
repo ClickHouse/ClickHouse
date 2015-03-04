@@ -67,40 +67,70 @@ struct SingleValueDataFixed
 		value = to.value;
 	}
 
-	void changeFirstTime(const IColumn & column, size_t row_num)
+	bool changeFirstTime(const IColumn & column, size_t row_num)
 	{
 		if (!has())
+		{
 			change(column, row_num);
+			return true;
+		}
+		else
+			return false;
 	}
 
-	void changeFirstTime(const Self & to)
+	bool changeFirstTime(const Self & to)
 	{
 		if (!has())
+		{
 			change(to);
+			return true;
+		}
+		else
+			return false;
 	}
 
-	void changeIfLess(const IColumn & column, size_t row_num)
+	bool changeIfLess(const IColumn & column, size_t row_num)
 	{
 		if (!has() || static_cast<const ColumnVector<T> &>(column).getData()[row_num] < value)
+		{
 			change(column, row_num);
+			return true;
+		}
+		else
+			return false;
 	}
 
-	void changeIfLess(const Self & to)
+	bool changeIfLess(const Self & to)
 	{
 		if (to.has() && (!has() || to.value < value))
+		{
 			change(to);
+			return true;
+		}
+		else
+			return false;
 	}
 
-	void changeIfGreater(const IColumn & column, size_t row_num)
+	bool changeIfGreater(const IColumn & column, size_t row_num)
 	{
 		if (!has() || static_cast<const ColumnVector<T> &>(column).getData()[row_num] > value)
+		{
 			change(column, row_num);
+			return true;
+		}
+		else
+			return false;
 	}
 
-	void changeIfGreater(const Self & to)
+	bool changeIfGreater(const Self & to)
 	{
 		if (to.has() && (!has() || to.value > value))
+		{
 			change(to);
+			return true;
+		}
+		else
+			return false;
 	}
 };
 
@@ -238,40 +268,70 @@ struct __attribute__((__packed__)) SingleValueDataString
 		changeImpl(to.getStringRef());
 	}
 
-	void changeFirstTime(const IColumn & column, size_t row_num)
+	bool changeFirstTime(const IColumn & column, size_t row_num)
 	{
 		if (!has())
+		{
 			change(column, row_num);
+			return true;
+		}
+		else
+			return false;
 	}
 
-	void changeFirstTime(const Self & to)
+	bool changeFirstTime(const Self & to)
 	{
 		if (!has())
+		{
 			change(to);
+			return true;
+		}
+		else
+			return false;
 	}
 
-	void changeIfLess(const IColumn & column, size_t row_num)
+	bool changeIfLess(const IColumn & column, size_t row_num)
 	{
 		if (!has() || static_cast<const ColumnString &>(column).getDataAtWithTerminatingZero(row_num) < getStringRef())
+		{
 			change(column, row_num);
+			return true;
+		}
+		else
+			return false;
 	}
 
-	void changeIfLess(const Self & to)
+	bool changeIfLess(const Self & to)
 	{
 		if (to.has() && (!has() || to.getStringRef() < getStringRef()))
+		{
 			change(to);
+			return true;
+		}
+		else
+			return false;
 	}
 
-	void changeIfGreater(const IColumn & column, size_t row_num)
+	bool changeIfGreater(const IColumn & column, size_t row_num)
 	{
 		if (!has() || static_cast<const ColumnString &>(column).getDataAtWithTerminatingZero(row_num) > getStringRef())
+		{
 			change(column, row_num);
+			return true;
+		}
+		else
+			return false;
 	}
 
-	void changeIfGreater(const Self & to)
+	bool changeIfGreater(const Self & to)
 	{
 		if (to.has() && (!has() || to.getStringRef() > getStringRef()))
+		{
 			change(to);
+			return true;
+		}
+		else
+			return false;
 	}
 };
 
@@ -326,54 +386,90 @@ struct SingleValueDataGeneric
 		value = to.value;
 	}
 
-	void changeFirstTime(const IColumn & column, size_t row_num)
+	bool changeFirstTime(const IColumn & column, size_t row_num)
 	{
 		if (!has())
+		{
 			change(column, row_num);
+			return true;
+		}
+		else
+			return false;
 	}
 
-	void changeFirstTime(const Self & to)
+	bool changeFirstTime(const Self & to)
 	{
 		if (!has())
+		{
 			change(to);
+			return true;
+		}
+		else
+			return false;
 	}
 
-	void changeIfLess(const IColumn & column, size_t row_num)
+	bool changeIfLess(const IColumn & column, size_t row_num)
 	{
 		if (!has())
+		{
 			change(column, row_num);
+			return true;
+		}
 		else
 		{
 			Field new_value;
 			column.get(row_num, new_value);
 			if (new_value < value)
+			{
 				value = new_value;
+				return true;
+			}
+			else
+				return false;
 		}
 	}
 
-	void changeIfLess(const Self & to)
+	bool changeIfLess(const Self & to)
 	{
 		if (to.has() && (!has() || to.value < value))
+		{
 			change(to);
+			return true;
+		}
+		else
+			return false;
 	}
 
-	void changeIfGreater(const IColumn & column, size_t row_num)
+	bool changeIfGreater(const IColumn & column, size_t row_num)
 	{
 		if (!has())
+		{
 			change(column, row_num);
+			return true;
+		}
 		else
 		{
 			Field new_value;
 			column.get(row_num, new_value);
 			if (new_value > value)
+			{
 				value = new_value;
+				return true;
+			}
+			else
+				return false;
 		}
 	}
 
-	void changeIfGreater(const Self & to)
+	bool changeIfGreater(const Self & to)
 	{
 		if (to.has() && (!has() || to.value > value))
+		{
 			change(to);
+			return true;
+		}
+		else
+			return false;
 	}
 };
 
@@ -388,8 +484,8 @@ struct AggregateFunctionMinData : Data
 {
 	typedef AggregateFunctionMinData<Data> Self;
 
-	void changeIfBetter(const IColumn & column, size_t row_num) { this->changeIfLess(column, row_num); }
-	void changeIfBetter(const Self & to) 						{ this->changeIfLess(to); }
+	bool changeIfBetter(const IColumn & column, size_t row_num) { return this->changeIfLess(column, row_num); }
+	bool changeIfBetter(const Self & to) 						{ return this->changeIfLess(to); }
 
 	static const char * name() { return "min"; }
 };
@@ -399,8 +495,8 @@ struct AggregateFunctionMaxData : Data
 {
 	typedef AggregateFunctionMaxData<Data> Self;
 
-	void changeIfBetter(const IColumn & column, size_t row_num) { this->changeIfGreater(column, row_num); }
-	void changeIfBetter(const Self & to) 						{ this->changeIfGreater(to); }
+	bool changeIfBetter(const IColumn & column, size_t row_num) { return this->changeIfGreater(column, row_num); }
+	bool changeIfBetter(const Self & to) 						{ return this->changeIfGreater(to); }
 
 	static const char * name() { return "max"; }
 };
@@ -410,8 +506,8 @@ struct AggregateFunctionAnyData : Data
 {
 	typedef AggregateFunctionAnyData<Data> Self;
 
-	void changeIfBetter(const IColumn & column, size_t row_num) { this->changeFirstTime(column, row_num); }
-	void changeIfBetter(const Self & to) 						{ this->changeFirstTime(to); }
+	bool changeIfBetter(const IColumn & column, size_t row_num) { return this->changeFirstTime(column, row_num); }
+	bool changeIfBetter(const Self & to) 						{ return this->changeFirstTime(to); }
 
 	static const char * name() { return "any"; }
 };
@@ -421,8 +517,8 @@ struct AggregateFunctionAnyLastData : Data
 {
 	typedef AggregateFunctionAnyLastData<Data> Self;
 
-	void changeIfBetter(const IColumn & column, size_t row_num) { this->change(column, row_num); }
-	void changeIfBetter(const Self & to) 						{ this->change(to); }
+	bool changeIfBetter(const IColumn & column, size_t row_num) { this->change(column, row_num); return true; }
+	bool changeIfBetter(const Self & to) 						{ this->change(to); return true; }
 
 	static const char * name() { return "anyLast"; }
 };

@@ -12,7 +12,7 @@ TableFunctionPtr TableFunctionFactory::get(
 	const String & name,
 	const Context & context) const
 {
-	if (context.getSettings().limits.readonly)
+	if (context.getSettings().limits.readonly == 1)		/** Например, для readonly = 2 - разрешено. */
 		throw Exception("Table functions are forbidden in readonly mode", ErrorCodes::READONLY);
 
 		 if (name == "merge")						return new TableFunctionMerge;

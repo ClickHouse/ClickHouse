@@ -185,10 +185,34 @@ public:
 	}
 
 
+	/// То же самое, но вернуть false, если переполнено.
+	bool ALWAYS_INLINE tryEmplace(Key x, iterator & it, bool & inserted)
+	{
+		Cell * res = findCell(x);
+		it = iteratorTo(res);
+		inserted = res == buf + m_size;
+		if (inserted)
+		{
+			if (res == buf + capacity)
+				return false;
+
+			new(res) Cell(x, *this);
+			++m_size;
+		}
+		return true;
+	}
+
+
 	/// Скопировать ячейку из другой хэш-таблицы. Предполагается, что такого ключа в таблице ещё не было.
 	void ALWAYS_INLINE insertUnique(const Cell * cell)
 	{
 		memcpy(&buf[m_size], cell, sizeof(*cell));
+		++m_size;
+	}
+
+	void ALWAYS_INLINE insertUnique(Key x)
+	{
+		new(&buf[m_size]) Cell(x, *this);
 		++m_size;
 	}
 

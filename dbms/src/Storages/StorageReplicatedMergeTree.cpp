@@ -8,6 +8,7 @@
 #include <DB/IO/ReadBufferFromString.h>
 #include <DB/Interpreters/InterpreterAlterQuery.h>
 #include <DB/Common/VirtualColumnUtils.h>
+#include <DB/Parsers/ASTInsertQuery.h>
 #include <DB/DataStreams/AddingConstColumnBlockInputStream.h>
 #include <time.h>
 

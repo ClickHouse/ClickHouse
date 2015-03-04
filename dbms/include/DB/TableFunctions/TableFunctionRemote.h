@@ -23,7 +23,7 @@ class TableFunctionRemote : public ITableFunction
 {
 public:
 	/// Максимальное количество различных шардов и максимальное количество реплик одного шарда
-	const size_t MAX_ADDRESSES = 200;
+	const size_t MAX_ADDRESSES = 200;	/// TODO Перенести в Settings.
 
 	std::string getName() const override { return "remote"; }
 
@@ -31,8 +31,8 @@ public:
 	{
 		ASTs & args_func = typeid_cast<ASTFunction &>(*ast_function).children;
 
-		const char * err = "Table function remote requires 2 to 5 parameters: "
-			"addresses pattern, name of remote database, name of remote table, [username, password].";
+		const char * err = "Table function 'remote' requires from 2 to 5 parameters: "
+			"addresses pattern, name of remote database, name of remote table, [username, [password]].";
 
 		if (args_func.size() != 1)
 			throw Exception(err, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -42,31 +42,73 @@ public:
 		if (args.size() < 2 || args.size() > 5)
 			throw Exception(err, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		String descripton	 	= safeGet<const String &>(typeid_cast<ASTLiteral &>(*args[0]).value);
-		String remote_database 	= reinterpretAsIdentifier(args[1], context).name;
-		String remote_table 	= args.size() % 2 ? typeid_cast<ASTIdentifier &>(*args[2]).name : "";
-		String username = args.size() >= 4
-			? safeGet<const String &>(typeid_cast<ASTLiteral &>(*args[args.size() - 2]).value) : "default";
-		String password = args.size() >= 4
-			? safeGet<const String &>(typeid_cast<ASTLiteral &>(*args[args.size() - 1]).value) : "";
+		String description;
+		String remote_database;
+		String remote_table;
+		String username;
+		String password;
 
-		if (remote_table.empty())
+		size_t arg_num = 0;
+
+		auto getStringLiteral = [](const IAST & node, const char * description)
 		{
-			size_t dot = remote_database.find('.');
-			if (dot == String::npos)
-				throw Exception(err, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+			const ASTLiteral * lit = typeid_cast<const ASTLiteral *>(&node);
+			if (!lit)
+				throw Exception(description + String(" must be string literal (in single quotes)."), ErrorCodes::BAD_ARGUMENTS);
+
+			if (lit->value.getType() != Field::Types::String)
+				throw Exception(description + String(" must be string literal (in single quotes)."), ErrorCodes::BAD_ARGUMENTS);
+
+			return safeGet<const String &>(lit->value);
+		};
+
+		description = getStringLiteral(*args[arg_num], "Hosts pattern");
+		++arg_num;
+
+		remote_database = reinterpretAsIdentifier(args[arg_num], context).name;
+		++arg_num;
+
+		size_t dot = remote_database.find('.');
+		if (dot != String::npos)
+		{
+			/// NOTE Плохо - не поддерживаются идентификаторы в обратных кавычках.
 			remote_table = remote_database.substr(dot + 1);
 			remote_database = remote_database.substr(0, dot);
 		}
+		else
+		{
+			if (arg_num >= args.size())
+				throw Exception(err, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+			remote_table = reinterpretAsIdentifier(args[arg_num], context).name;
+			++arg_num;
+		}
+
+		if (arg_num < args.size())
+		{
+			username = getStringLiteral(*args[arg_num], "Username");
+			++arg_num;
+		}
+		else
+			username = "default";
+
+		if (arg_num < args.size())
+		{
+			password = getStringLiteral(*args[arg_num], "Password");
+			++arg_num;
+		}
+
+		if (arg_num < args.size())
+			throw Exception(err, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 		/// В InterpreterSelectQuery будет создан ExpressionAnalzyer, который при обработке запроса наткнется на эти Identifier.
-		/// Нам необходимо их пометить как имя базы данных и таблицы поскольку по умолчанию стоит значение column
-		typeid_cast<ASTIdentifier &>(*args[1]).kind = ASTIdentifier::Database;
-		if (args.size() % 2)
-			typeid_cast<ASTIdentifier &>(*args[2]).kind = ASTIdentifier::Table;
+		/// Нам необходимо их пометить как имя базы данных или таблицы, поскольку по умолчанию стоит значение column.
+		for (auto & arg : args)
+			if (ASTIdentifier * id = typeid_cast<ASTIdentifier *>(arg.get()))
+				id->kind = ASTIdentifier::Table;
 
-		std::vector <std::vector< String> > names;
-		std::vector<String> shards = parseDescription(descripton, 0, descripton.size(), ',');
+		std::vector<std::vector<String>> names;
+		std::vector<String> shards = parseDescription(description, 0, description.size(), ',');
 
 		for (size_t i = 0; i < shards.size(); ++i)
 			names.push_back(parseDescription(shards[i], 0, shards[i].size(), '|'));
