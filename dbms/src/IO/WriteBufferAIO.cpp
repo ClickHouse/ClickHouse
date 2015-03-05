@@ -4,7 +4,6 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <fcntl.h>
 
 namespace DB
 {
@@ -45,6 +44,31 @@ WriteBufferAIO::~WriteBufferAIO()
 
 	if (fd != -1)
 		::close(fd);
+}
+
+off_t WriteBufferAIO::seek(off_t offset, int whence)
+{
+	waitForCompletion();
+
+	off_t res = ::lseek(fd, offset, whence);
+	if (res == -1)
+	{
+		got_exception = true;
+		throwFromErrno("Cannot seek through file " + getFileName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+	}
+	return res;
+}
+
+void WriteBufferAIO::truncate(off_t length)
+{
+	waitForCompletion();
+
+	int res = ::ftruncate(fd, length);
+	if (res == -1)
+	{
+		got_exception = true;
+		throwFromErrno("Cannot truncate file " + getFileName(), ErrorCodes::CANNOT_TRUNCATE_FILE);
+	}
 }
 
 void WriteBufferAIO::sync() noexcept

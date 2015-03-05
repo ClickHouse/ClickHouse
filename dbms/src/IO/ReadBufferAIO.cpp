@@ -4,7 +4,6 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <fcntl.h>
 
 namespace DB
 {
@@ -24,7 +23,7 @@ ReadBufferAIO::ReadBufferAIO(const std::string & filename_, size_t buffer_size_,
 	if (fd == -1)
 	{
 		got_exception = true;
-		throwFromErrno("Cannot open file " + filename_, errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
+		throwFromErrno("Cannot open file " + filename_, (errno == ENOENT) ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
 	}
 }
 
@@ -34,7 +33,7 @@ ReadBufferAIO::~ReadBufferAIO()
 	{
 		try
 		{
-			(void) waitForCompletion();
+			waitForCompletion();
 		}
 		catch (...)
 		{
@@ -46,9 +45,51 @@ ReadBufferAIO::~ReadBufferAIO()
 		::close(fd);
 }
 
+/// Если offset такой маленький, что мы не выйдем за пределы буфера, настоящий seek по файлу не делается.
+off_t ReadBufferAIO::seek(off_t off, int whence)
+{
+	waitForCompletion();
+
+	off_t new_pos = off;
+	if (whence == SEEK_CUR)
+		new_pos = pos_in_file - (working_buffer.end() - pos) + off;
+	else if (whence != SEEK_SET)
+	{
+		got_exception = true;
+		throw Exception("ReadBufferAIO::seek expects SEEK_SET or SEEK_CUR as whence", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+	}
+
+	/// Никуда не сдвинулись.
+	if ((new_pos + (working_buffer.end() - pos)) == pos_in_file)
+		return new_pos;
+
+	if (hasPendingData() && (new_pos <= pos_in_file) && (new_pos >= (pos_in_file - static_cast<off_t>(working_buffer.size()))))
+	{
+		/// Остались в пределах буфера.
+		pos = working_buffer.begin() + (new_pos - (pos_in_file - working_buffer.size()));
+		return new_pos;
+	}
+	else
+	{
+		ProfileEvents::increment(ProfileEvents::Seek);
+
+		pos = working_buffer.end();
+		off_t res = ::lseek(fd, new_pos, SEEK_SET);
+		if (res == -1)
+		{
+			got_exception = true;
+			throwFromErrno("Cannot seek through file " + getFileName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+		}
+		pos_in_file = new_pos;
+		return res;
+	}
+}
+
 bool ReadBufferAIO::nextImpl()
 {
-	if (!waitForCompletion())
+	waitForCompletion();
+
+	if (is_eof)
 		return false;
 
 	swapBuffers();
@@ -76,7 +117,7 @@ bool ReadBufferAIO::nextImpl()
 	return true;
 }
 
-bool ReadBufferAIO::waitForCompletion()
+void ReadBufferAIO::waitForCompletion()
 {
 	if (is_pending_read)
 	{
@@ -89,15 +130,16 @@ bool ReadBufferAIO::waitForCompletion()
 				throw Exception("Failed to wait for asynchronous IO completion", ErrorCodes::AIO_COMPLETION_ERROR);
 			}
 
-		size_t bytes_read = (events[0].res > 0) ? static_cast<size_t>(events[0].res) : 0;
-		fill_buffer.buffer().resize(bytes_read);
-
 		is_pending_read = false;
 
-		return bytes_read == fill_buffer.internalBuffer().size();
+		size_t bytes_read = (events[0].res > 0) ? static_cast<size_t>(events[0].res) : 0;
+		pos_in_file += bytes_read;
+
+		if (bytes_read > 0)
+			fill_buffer.buffer().resize(bytes_read);
+		if (bytes_read < fill_buffer.internalBuffer().size())
+			is_eof = true;
 	}
-	else
-		return true;
 }
 
 void ReadBufferAIO::swapBuffers() noexcept

@@ -4,6 +4,9 @@
 #include <DB/IO/BufferWithOwnMemory.h>
 #include <statdaemons/AIO.h>
 
+#include <unistd.h>
+#include <fcntl.h>
+
 namespace DB
 {
 
@@ -19,6 +22,8 @@ public:
 	WriteBufferAIO(const WriteBufferAIO &) = delete;
 	WriteBufferAIO & operator=(const WriteBufferAIO &) = delete;
 
+	off_t seek(off_t off, int whence = SEEK_SET);
+	void truncate(off_t length = 0);
 	void sync() noexcept;
 	std::string getFileName() const noexcept { return filename; }
 	int getFD() const noexcept { return fd; }

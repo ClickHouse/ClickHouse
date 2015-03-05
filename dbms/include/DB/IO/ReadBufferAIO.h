@@ -4,6 +4,9 @@
 #include <DB/IO/BufferWithOwnMemory.h>
 #include <statdaemons/AIO.h>
 
+#include <unistd.h>
+#include <fcntl.h>
+
 namespace DB
 {
 
@@ -19,12 +22,14 @@ public:
 	ReadBufferAIO(const ReadBufferAIO &) = delete;
 	ReadBufferAIO & operator=(const ReadBufferAIO &) = delete;
 
+	off_t seek(off_t off, int whence = SEEK_SET);
+	size_t getPositionInFile() const noexcept { return pos_in_file - (working_buffer.end() - pos); }
 	std::string getFileName() const noexcept { return filename; }
 	int getFD() const noexcept { return fd; }
 
 private:
 	bool nextImpl() override;
-	bool waitForCompletion();
+	void waitForCompletion();
 	void swapBuffers() noexcept;
 
 private:
@@ -38,8 +43,10 @@ private:
 	std::vector<iocb *> request_ptrs;
 	std::vector<io_event> events;
 	int fd = -1; // file descriptor
+	off_t pos_in_file = 0;
 	bool is_pending_read = false;
 	bool got_exception = false;
+	bool is_eof = false;
 };
 
 }
