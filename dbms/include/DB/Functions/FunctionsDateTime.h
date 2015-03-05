@@ -408,6 +408,7 @@ public:
 		if (const ColumnUInt32 * times = typeid_cast<const ColumnUInt32 *>(&*block.getByPosition(arguments[0]).column))
 		{
 			ColumnUInt32 * res = new ColumnUInt32;
+			ColumnPtr res_holder = res;
 			ColumnUInt32::Container_t & res_vec = res->getData();
 			const ColumnUInt32::Container_t & vec = times->getData();
 
@@ -417,7 +418,7 @@ public:
 			for (size_t i = 0; i < size; ++i)
 				res_vec[i] = vec[i] / TIME_SLOT_SIZE * TIME_SLOT_SIZE;
 
-			block.getByPosition(result).column = res;
+			block.getByPosition(result).column = res_holder;
 		}
 		else if (const ColumnConstUInt32 * const_times = typeid_cast<const ColumnConstUInt32 *>(&*block.getByPosition(arguments[0]).column))
 		{
@@ -551,22 +552,23 @@ public:
 		const ColumnConstUInt32 * const_durations = typeid_cast<const ColumnConstUInt32 *>(&*block.getByPosition(arguments[1]).column);
 
 		ColumnArray * res = new ColumnArray(new ColumnUInt32);
+		ColumnPtr res_holder = res;
 		ColumnUInt32::Container_t & res_values = typeid_cast<ColumnUInt32 &>(res->getData()).getData();
 
 		if (starts && durations)
 		{
 			TimeSlotsImpl<UInt32>::vector_vector(starts->getData(), durations->getData(), res_values, res->getOffsets());
-			block.getByPosition(result).column = res;
+			block.getByPosition(result).column = res_holder;
 		}
 		else if (starts && const_durations)
 		{
 			TimeSlotsImpl<UInt32>::vector_constant(starts->getData(), const_durations->getData(), res_values, res->getOffsets());
-			block.getByPosition(result).column = res;
+			block.getByPosition(result).column = res_holder;
 		}
 		else if (const_starts && durations)
 		{
 			TimeSlotsImpl<UInt32>::constant_vector(const_starts->getData(), durations->getData(), res_values, res->getOffsets());
-			block.getByPosition(result).column = res;
+			block.getByPosition(result).column = res_holder;
 		}
 		else if (const_starts && const_durations)
 		{

@@ -156,8 +156,9 @@ typedef ColumnConst<Array> ColumnConstArray;
 
 template <typename T> ColumnPtr ColumnConst<T>::convertToFullColumn() const
 {
-	ColumnVector<T> * res = new ColumnVector<T>;
-	res->getData().assign(s, data);
+	ColumnVector<T> * res_ = new ColumnVector<T>;
+	ColumnPtr res = res_;
+	res_->getData().assign(s, data);
 	return res;
 }
 
