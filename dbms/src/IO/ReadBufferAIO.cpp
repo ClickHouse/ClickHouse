@@ -2,6 +2,8 @@
 #include <DB/Common/ProfileEvents.h>
 #include <DB/Core/ErrorCodes.h>
 
+#include <Yandex/likely.h>
+
 #include <sys/types.h>
 #include <sys/stat.h>
 
@@ -43,6 +45,16 @@ ReadBufferAIO::~ReadBufferAIO()
 
 	if (fd != -1)
 		::close(fd);
+}
+
+void ReadBufferAIO::setMaxBytes(size_t max_bytes_read_)
+{
+	if (is_started)
+	{
+		got_exception = true;
+		throw Exception("Illegal attempt to set the maximum number of bytes to read", ErrorCodes::LOGICAL_ERROR);
+	}
+	max_bytes_read = max_bytes_read_;
 }
 
 /// Если offset такой маленький, что мы не выйдем за пределы буфера, настоящий seek по файлу не делается.
@@ -92,7 +104,8 @@ bool ReadBufferAIO::nextImpl()
 	if (is_eof)
 		return false;
 
-	swapBuffers();
+	if (likely(is_started))
+		swapBuffers();
 
 	// Create request.
 	::memset(&cb, 0, sizeof(cb));
@@ -113,6 +126,9 @@ bool ReadBufferAIO::nextImpl()
 		}
 
 	is_pending_read = true;
+
+	if (unlikely(!is_started))
+		is_started = true;
 
 	return true;
 }

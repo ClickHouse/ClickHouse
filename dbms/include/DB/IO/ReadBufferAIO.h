@@ -4,6 +4,8 @@
 #include <DB/IO/BufferWithOwnMemory.h>
 #include <statdaemons/AIO.h>
 
+#include <limits>
+
 #include <unistd.h>
 #include <fcntl.h>
 
@@ -22,6 +24,7 @@ public:
 	ReadBufferAIO(const ReadBufferAIO &) = delete;
 	ReadBufferAIO & operator=(const ReadBufferAIO &) = delete;
 
+	void setMaxBytes(size_t max_bytes_read_);
 	off_t seek(off_t off, int whence = SEEK_SET);
 	size_t getPositionInFile() const noexcept { return pos_in_file - (working_buffer.end() - pos); }
 	std::string getFileName() const noexcept { return filename; }
@@ -42,11 +45,13 @@ private:
 	iocb cb;
 	std::vector<iocb *> request_ptrs;
 	std::vector<io_event> events;
+	size_t max_bytes_read = std::numeric_limits<size_t>::max();
 	int fd = -1; // file descriptor
 	off_t pos_in_file = 0;
 	bool is_pending_read = false;
 	bool got_exception = false;
 	bool is_eof = false;
+	bool is_started = false;
 };
 
 }
