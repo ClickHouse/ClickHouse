@@ -214,6 +214,7 @@ private:
 	void connect();
 	void sendHello();
 	void receiveHello();
+	/// TODO: при недоступном сервере ping может выполняться read/write timeout
 	bool ping();
 
 	Block receiveData();
