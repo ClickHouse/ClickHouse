@@ -338,6 +338,7 @@ public:
 				typeid_cast<const ColumnConstString *>(&*block.getByPosition(arrayArgumentPosition).column);
 
 		ColumnArray * col_res = new ColumnArray(new ColumnString);
+		ColumnPtr col_res_holder = col_res;
 		ColumnString & res_strings = typeid_cast<ColumnString &>(col_res->getData());
 		ColumnArray::Offsets_t & res_offsets = col_res->getOffsets();
 		ColumnString::Chars_t & res_strings_chars = res_strings.getChars();
@@ -385,7 +386,7 @@ public:
 				res_offsets.push_back(current_dst_offset);
 			}
 
-			block.getByPosition(result).column = col_res;
+			block.getByPosition(result).column = col_res_holder;
 		}
 		else if (col_const_str)
 		{
