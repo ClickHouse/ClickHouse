@@ -19,14 +19,14 @@ public:
 	WriteBufferAIO(const WriteBufferAIO &) = delete;
 	WriteBufferAIO & operator=(const WriteBufferAIO &) = delete;
 
-	void sync();
-	std::string getFileName() const { return filename; }
-	int getFD() const { return fd; }
+	void sync() noexcept;
+	std::string getFileName() const noexcept { return filename; }
+	int getFD() const noexcept { return fd; }
 
 private:
-	void swapBuffers();
-	void waitForCompletion();
 	void nextImpl() override;
+	void waitForCompletion();
+	void swapBuffers() noexcept;
 
 private:
 	static const size_t BLOCK_SIZE = 512;
@@ -40,6 +40,7 @@ private:
 	std::vector<io_event> events;
 	int fd = -1; // file descriptor
 	bool is_pending_write = false;
+	bool got_exception = false;
 };
 
 }

@@ -19,12 +19,13 @@ public:
 	ReadBufferAIO(const ReadBufferAIO &) = delete;
 	ReadBufferAIO & operator=(const ReadBufferAIO &) = delete;
 
-	std::string getFileName() const;
+	std::string getFileName() const noexcept { return filename; }
+	int getFD() const noexcept { return fd; }
 
 private:
-	void swapBuffers();
-	bool waitForCompletion();
 	bool nextImpl() override;
+	bool waitForCompletion();
+	void swapBuffers() noexcept;
 
 private:
 	static const size_t BLOCK_SIZE = 512;
@@ -38,6 +39,7 @@ private:
 	std::vector<io_event> events;
 	int fd = -1; // file descriptor
 	bool is_pending_read = false;
+	bool got_exception = false;
 };
 
 }

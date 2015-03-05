@@ -22,25 +22,32 @@ WriteBufferAIO::WriteBufferAIO(const std::string & filename_, size_t buffer_size
 
 	fd = ::open(filename_.c_str(), open_flags, mode_);
 	if (fd == -1)
+	{
+		got_exception = true;
 		throwFromErrno("Cannot open file " + filename_, errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
+	}
 }
 
 WriteBufferAIO::~WriteBufferAIO()
 {
-	try
+	if (!got_exception)
 	{
-		next();
-		waitForCompletion();
-	}
-	catch (...)
-	{
-		tryLogCurrentException(__PRETTY_FUNCTION__);
+		try
+		{
+			next();
+			waitForCompletion();
+		}
+		catch (...)
+		{
+			tryLogCurrentException(__PRETTY_FUNCTION__);
+		}
 	}
 
-	::close(fd);
+	if (fd != -1)
+		::close(fd);
 }
 
-void WriteBufferAIO::sync()
+void WriteBufferAIO::sync() noexcept
 {
 	::fsync(fd);
 }
@@ -66,7 +73,10 @@ void WriteBufferAIO::nextImpl()
 	// Submit request.
 	while (io_submit(aio_context.ctx, request_ptrs.size(), &request_ptrs[0]) < 0)
 		if (errno != EINTR)
+		{
+			got_exception = true;
 			throw Exception("Cannot submit request for asynchronous IO", ErrorCodes::AIO_SUBMIT_ERROR);
+		}
 
 	is_pending_write = true;
 }
@@ -79,13 +89,23 @@ void WriteBufferAIO::waitForCompletion()
 
 		while (io_getevents(aio_context.ctx, events.size(), events.size(), &events[0], nullptr) < 0)
 			if (errno != EINTR)
+			{
+				got_exception = true;
 				throw Exception("Failed to wait for asynchronous IO completion", ErrorCodes::AIO_COMPLETION_ERROR);
+			}
+
+		size_t bytes_written = (events[0].res > 0) ? static_cast<size_t>(events[0].res) : 0;
+		if (bytes_written < flush_buffer.offset())
+		{
+			got_exception = true;
+			throw Exception("Asynchronous write error", ErrorCodes::AIO_WRITE_ERROR);
+		}
 
 		is_pending_write = false;
 	}
 }
 
-void WriteBufferAIO::swapBuffers()
+void WriteBufferAIO::swapBuffers() noexcept
 {
 	buffer().swap(flush_buffer.buffer());
 	std::swap(position(), flush_buffer.position());
