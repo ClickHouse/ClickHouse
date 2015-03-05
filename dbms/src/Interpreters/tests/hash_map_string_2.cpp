@@ -440,7 +440,7 @@ inline bool memequal_sse_wide(const char * p1, const char * p2, size_t size)
 		if (   compare_byIntSSE(p1,      p2)
 			&& compare_byIntSSE(p1 + 16, p2 + 16)
 			&& compare_byIntSSE(p1 + 32, p2 + 32)
-			&& compare_byIntSSE(p1 + 40, p2 + 40))
+			&& compare_byIntSSE(p1 + 48, p2 + 48))
 		{
 			p1 += 64;
 			p2 += 64;
