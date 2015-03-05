@@ -20,7 +20,8 @@ public:
 	WriteBufferAIO & operator=(const WriteBufferAIO &) = delete;
 
 	void sync();
-	std::string getFileName() const;
+	std::string getFileName() const { return filename; }
+	int getFD() const { return fd; }
 
 private:
 	void swapBuffers();

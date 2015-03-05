@@ -23,7 +23,7 @@ public:
 
 private:
 	void swapBuffers();
-	void waitForCompletion();
+	bool waitForCompletion();
 	bool nextImpl() override;
 
 private:

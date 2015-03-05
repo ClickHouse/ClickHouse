@@ -20,7 +20,7 @@ WriteBufferAIO::WriteBufferAIO(const std::string & filename_, size_t buffer_size
 	int open_flags = ((flags_ == -1) ? O_WRONLY | O_TRUNC | O_CREAT : flags_);
 	open_flags |= O_DIRECT;
 
-	fd = open(filename_.c_str(), open_flags, mode_);
+	fd = ::open(filename_.c_str(), open_flags, mode_);
 	if (fd == -1)
 		throwFromErrno("Cannot open file " + filename_, errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
 }
@@ -37,17 +37,12 @@ WriteBufferAIO::~WriteBufferAIO()
 		tryLogCurrentException(__PRETTY_FUNCTION__);
 	}
 
-	close(fd);
+	::close(fd);
 }
 
 void WriteBufferAIO::sync()
 {
-	fsync(fd);
-}
-
-std::string WriteBufferAIO::getFileName() const
-{
-	return filename;
+	::fsync(fd);
 }
 
 void WriteBufferAIO::nextImpl()
@@ -59,11 +54,10 @@ void WriteBufferAIO::nextImpl()
 	swapBuffers();
 
 	// Create request.
-	memset(&cb, 0, sizeof(cb));
+	::memset(&cb, 0, sizeof(cb));
 
 	cb.aio_lio_opcode = IOCB_CMD_PWRITE;
 	cb.aio_fildes = fd;
-	// XXX Check that buf (i.e. working_buffer) is aligned to BLOCK_SIZE
 	cb.aio_buf = reinterpret_cast<UInt64>(flush_buffer.buffer().begin());
 	cb.aio_nbytes = flush_buffer.offset();
 	cb.aio_offset = 0;
@@ -81,7 +75,7 @@ void WriteBufferAIO::waitForCompletion()
 {
 	if (is_pending_write)
 	{
-		memset(&events[0], 0, sizeof(events[0]) * events.size());
+		::memset(&events[0], 0, sizeof(events[0]) * events.size());
 
 		while (io_getevents(aio_context.ctx, events.size(), events.size(), &events[0], nullptr) < 0)
 			if (errno != EINTR)
@@ -93,8 +87,8 @@ void WriteBufferAIO::waitForCompletion()
 
 void WriteBufferAIO::swapBuffers()
 {
-	std::swap(this->buffer(), flush_buffer.buffer());
-	std::swap(this->position(), flush_buffer.position());
+	buffer().swap(flush_buffer.buffer());
+	std::swap(position(), flush_buffer.position());
 }
 
 }
