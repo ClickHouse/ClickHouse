@@ -118,7 +118,7 @@ bool ReadBufferAIO::nextImpl()
 	cb.aio_lio_opcode = IOCB_CMD_PREAD;
 	cb.aio_fildes = fd;
 	cb.aio_buf = reinterpret_cast<UInt64>(fill_buffer.internalBuffer().begin());
-	cb.aio_nbytes = fill_buffer.internalBuffer().size();
+	cb.aio_nbytes = std::min(fill_buffer.internalBuffer().size(), max_bytes_read);
 	cb.aio_offset = 0;
 	cb.aio_reqprio = 0;
 
@@ -154,11 +154,18 @@ void ReadBufferAIO::waitForCompletion()
 		is_pending_read = false;
 
 		size_t bytes_read = (events[0].res > 0) ? static_cast<size_t>(events[0].res) : 0;
+		if ((bytes_read % BLOCK_SIZE) != 0)
+		{
+			got_exception = true;
+			throw Exception("Received unaligned number of bytes from file " + filename, ErrorCodes::AIO_UNALIGNED_BUFFER_ERROR);
+		}
+
 		pos_in_file += bytes_read;
+		total_bytes_read += bytes_read;
 
 		if (bytes_read > 0)
 			fill_buffer.buffer().resize(bytes_read);
-		if (bytes_read < fill_buffer.internalBuffer().size())
+		if ((bytes_read < fill_buffer.internalBuffer().size()) || (total_bytes_read == max_bytes_read))
 			is_eof = true;
 	}
 }
