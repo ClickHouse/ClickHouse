@@ -185,7 +185,7 @@ std::string ParallelReplicas::dumpAddresses() const
 		if (connection != nullptr)
 		{
 			os << (is_first ? "" : "; ") << connection->getServerAddress();
-			if (is_first) { is_first = false; }
+			is_first = false;
 		}
 	}
 

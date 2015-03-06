@@ -86,11 +86,7 @@ public:
 		if (hasNoQueryInProgress() || hasThrownException())
 			return;
 
-		if (tryCancel())
-		{
-			std::string addresses = parallel_replicas->dumpAddresses();
-			LOG_TRACE(log, "(" + addresses + ") Cancelling query");
-		}
+		tryCancel("Cancelling query");
 	}
 
 
@@ -224,11 +220,7 @@ protected:
 		 */
 
 		/// Отправим просьбу прервать выполнение запроса, если ещё не отправляли.
-		if (tryCancel())
-		{
-			std::string addresses = parallel_replicas->dumpAddresses();
-			LOG_TRACE(log, "(" + addresses + ") Cancelling query because enough data has been read");
-		}
+		tryCancel("Cancelling query because enough data has been read");
 
 		/// Получим оставшиеся пакеты, чтобы не было рассинхронизации в соединениях с репликами.
 		Connection::Packet packet = parallel_replicas->drain();
@@ -286,18 +278,14 @@ private:
 	}
 
 	/// Отправить запрос на отмену всех соединений к репликам, если такой запрос ещё не был отправлен.
-	bool tryCancel()
+	void tryCancel(const char * reason)
 	{
 		bool old_val = false;
-		bool new_val = true;
+		if (!was_cancelled.compare_exchange_strong(old_val, true, std::memory_order_seq_cst, std::memory_order_seq_cst))
+			return;
 
-		if (was_cancelled.compare_exchange_strong(old_val, new_val, std::memory_order_seq_cst, std::memory_order_seq_cst))
-		{
-			parallel_replicas->sendCancel();
-			return true;
-		}
-		else
-			return false;
+		LOG_TRACE(log, "(" << parallel_replicas->dumpAddresses() << ") " << reason);
+		parallel_replicas->sendCancel();
 	}
 
 private:
