@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DB/IO/IBufferAIO.h>
 #include <DB/IO/ReadBuffer.h>
 #include <DB/IO/BufferWithOwnMemory.h>
 #include <statdaemons/AIO.h>
@@ -14,7 +15,7 @@ namespace DB
 
 using ReadBufferWithOwnMemory = BufferWithOwnMemory<ReadBuffer>;
 
-class ReadBufferAIO : public ReadBufferWithOwnMemory
+class ReadBufferAIO : public IBufferAIO, public ReadBufferWithOwnMemory
 {
 public:
 	ReadBufferAIO(const std::string & filename_, size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE, int flags_ = -1, mode_t mode_ = 0666,
@@ -34,9 +35,6 @@ private:
 	bool nextImpl() override;
 	void waitForCompletion();
 	void swapBuffers() noexcept;
-
-private:
-	static const size_t BLOCK_SIZE = 512;
 
 private:
 	ReadBufferWithOwnMemory fill_buffer; // buffer asynchronously read from disk

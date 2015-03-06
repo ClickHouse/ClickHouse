@@ -5,8 +5,6 @@
 #include <streambuf>
 #include <cstdlib>
 
-static const size_t BLOCK_SIZE = 512;
-
 static const std::string source = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
 void die(const std::string & msg)
@@ -31,15 +29,15 @@ int main()
 
 		// Create data.
 		std::string buf;
-		buf.reserve(10 * BLOCK_SIZE);
-		for (size_t i = 0; i < (10 * BLOCK_SIZE); ++i)
+		buf.reserve(10 * DB::WriteBufferAIO::BLOCK_SIZE);
+		for (size_t i = 0; i < (10 * DB::WriteBufferAIO::BLOCK_SIZE); ++i)
 		{
 			buf.append(1, source[i % source.length()]);
 		}
 
 		// Write data.
 		{
-			DB::WriteBufferAIO out(filename, 3 * BLOCK_SIZE);
+			DB::WriteBufferAIO out(filename, 3 * DB::WriteBufferAIO::BLOCK_SIZE);
 			out.write(&buf[0], buf.length());
 		}
 
