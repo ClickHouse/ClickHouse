@@ -91,7 +91,7 @@ void WriteBufferAIO::nextImpl()
 	cb.aio_fildes = fd;
 	cb.aio_buf = reinterpret_cast<UInt64>(flush_buffer.buffer().begin());
 	cb.aio_nbytes = flush_buffer.offset();
-	cb.aio_offset = 0;
+	cb.aio_offset = total_bytes_written;
 	cb.aio_reqprio = 0;
 
 	if ((cb.aio_nbytes % BLOCK_SIZE) != 0)
@@ -130,6 +130,7 @@ void WriteBufferAIO::waitForCompletion()
 			got_exception = true;
 			throw Exception("Asynchronous write error on file " + filename, ErrorCodes::AIO_WRITE_ERROR);
 		}
+		total_bytes_written += bytes_written;
 
 		is_pending_write = false;
 	}

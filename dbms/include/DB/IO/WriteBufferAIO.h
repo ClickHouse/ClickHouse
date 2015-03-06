@@ -43,6 +43,7 @@ private:
 	iocb cb;
 	std::vector<iocb *> request_ptrs;
 	std::vector<io_event> events;
+	size_t total_bytes_written = 0;
 	int fd = -1; // file descriptor
 	bool is_pending_write = false;
 	bool got_exception = false;
