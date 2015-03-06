@@ -43,6 +43,8 @@ void ExternalDictionaries::reloadImpl()
 		const auto last_modified = config_file.getLastModified();
 		if (last_modified > config_last_modified)
 		{
+			stored_exceptions.clear();
+
 			/// definitions of dictionaries may have changed, recreate all of them
 			config_last_modified = last_modified;
 
@@ -58,6 +60,8 @@ void ExternalDictionaries::reloadImpl()
 			/// for each dictionary defined in xml config
 			for (const auto & key : keys)
 			{
+				std::string name;
+
 				try
 				{
 					if (0 != strncmp(key.data(), "dictionary", strlen("dictionary")))
@@ -66,7 +70,7 @@ void ExternalDictionaries::reloadImpl()
 						continue;
 					}
 
-					const auto name = config->getString(key + ".name");
+					name = config->getString(key + ".name");
 					if (name.empty())
 					{
 						LOG_WARNING(log, "dictionary name cannot be empty");
@@ -100,7 +104,25 @@ void ExternalDictionaries::reloadImpl()
 				}
 				catch (...)
 				{
-					handleException();
+					if (!name.empty())
+						stored_exceptions.emplace(name, std::current_exception());
+
+					try
+					{
+						throw;
+					}
+					catch (const Poco::Exception & e)
+					{
+						LOG_ERROR(log, "Cannot load external dictionary! You must resolve this manually. " << e.displayText());
+					}
+					catch (const std::exception & e)
+					{
+						LOG_ERROR(log, "Cannot load external dictionary! You must resolve this manually. " << e.what());
+					}
+					catch (...)
+					{
+						LOG_ERROR(log, "Cannot load external dictionary! You must resolve this manually.");
+					}
 				}
 			}
 		}
@@ -142,9 +164,20 @@ void ExternalDictionaries::reloadImpl()
 				}
 			}
 		}
+		catch (const Poco::Exception & e)
+		{
+			LOG_ERROR(log, "Cannot update external dictionary '" << dictionary.first
+				<< "'! You must resolve this manually. " << e.displayText());
+		}
+		catch (const std::exception & e)
+		{
+			LOG_ERROR(log, "Cannot load external dictionary '" << dictionary.first
+				<< "'! You must resolve this manually. " << e.what());
+		}
 		catch (...)
 		{
-			handleException();
+			LOG_ERROR(log, "Cannot update external dictionary '" << dictionary.first
+				<< "'! You must resolve this manually.");
 		}
 	}
 }

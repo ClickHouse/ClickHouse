@@ -40,6 +40,8 @@ private:
 
 	mutable std::mutex dictionaries_mutex;
 	std::unordered_map<std::string, std::shared_ptr<MultiVersion<IDictionary>>> dictionaries;
+	/// exception pointers for notifying user about failures on dictionary creation
+	std::unordered_map<std::string, std::exception_ptr> stored_exceptions;
 	std::unordered_map<std::string, std::chrono::system_clock::time_point> update_times;
 	std::mt19937_64 rnd_engine{getSeed()};
 
@@ -51,24 +53,6 @@ private:
 	Logger * log;
 
 	Poco::Timestamp config_last_modified{0};
-
-	void handleException() const
-	{
-		try
-		{
-			throw;
-		}
-		catch (const Poco::Exception & e)
-		{
-			LOG_ERROR(log, "Cannot load exter dictionary! You must resolve this manually. " << e.displayText());
-			return;
-		}
-		catch (...)
-		{
-			LOG_ERROR(log, "Cannot load dictionary! You must resolve this manually.");
-			return;
-		}
-	}
 
 	void reloadImpl();
 
@@ -110,10 +94,16 @@ public:
 		const std::lock_guard<std::mutex> lock{dictionaries_mutex};
 		const auto it = dictionaries.find(name);
 		if (it == std::end(dictionaries))
-			throw Exception{
-				"No such dictionary: " + name,
-				ErrorCodes::BAD_ARGUMENTS
-			};
+		{
+			const auto exception_it = stored_exceptions.find(name);
+			if (exception_it != std::end(stored_exceptions))
+				std::rethrow_exception(exception_it->second);
+			else
+				throw Exception{
+					"No such dictionary: " + name,
+					ErrorCodes::BAD_ARGUMENTS
+				};
+		}
 
 		return it->second->get();
 	}
