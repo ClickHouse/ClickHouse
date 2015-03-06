@@ -21,11 +21,11 @@ ReadBufferAIO::ReadBufferAIO(const std::string & filename_, size_t buffer_size_,
 	int open_flags = ((flags_ == -1) ? O_RDONLY : flags_);
 	open_flags |= O_DIRECT;
 
-	fd = ::open(filename_.c_str(), open_flags, mode_);
+	fd = ::open(filename.c_str(), open_flags, mode_);
 	if (fd == -1)
 	{
 		got_exception = true;
-		throwFromErrno("Cannot open file " + filename_, (errno == ENOENT) ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
+		throwFromErrno("Cannot open file " + filename, (errno == ENOENT) ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
 	}
 }
 
@@ -52,7 +52,12 @@ void ReadBufferAIO::setMaxBytes(size_t max_bytes_read_)
 	if (is_started)
 	{
 		got_exception = true;
-		throw Exception("Illegal attempt to set the maximum number of bytes to read", ErrorCodes::LOGICAL_ERROR);
+		throw Exception("Illegal attempt to set the maximum number of bytes to read from file " + filename, ErrorCodes::LOGICAL_ERROR);
+	}
+	if ((max_bytes_read_ % BLOCK_SIZE) != 0)
+	{
+		got_exception = true;
+		throw Exception("Invalid maximum number of bytes to read from file " + filename, ErrorCodes::AIO_UNALIGNED_BUFFER_ERROR);
 	}
 	max_bytes_read = max_bytes_read_;
 }
@@ -90,7 +95,7 @@ off_t ReadBufferAIO::seek(off_t off, int whence)
 		if (res == -1)
 		{
 			got_exception = true;
-			throwFromErrno("Cannot seek through file " + getFileName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+			throwFromErrno("Cannot seek through file " + filename, ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 		}
 		pos_in_file = new_pos;
 		return res;
@@ -117,12 +122,18 @@ bool ReadBufferAIO::nextImpl()
 	cb.aio_offset = 0;
 	cb.aio_reqprio = 0;
 
+	if ((cb.aio_nbytes % BLOCK_SIZE) != 0)
+	{
+		got_exception = true;
+		throw Exception("Illegal attempt to read unaligned data from file " + filename, ErrorCodes::AIO_UNALIGNED_BUFFER_ERROR);
+	}
+
 	// Submit request.
 	while (io_submit(aio_context.ctx, request_ptrs.size(), &request_ptrs[0]) < 0)
 		if (errno != EINTR)
 		{
 			got_exception = true;
-			throw Exception("Cannot submit request for asynchronous IO", ErrorCodes::AIO_SUBMIT_ERROR);
+			throw Exception("Cannot submit request for asynchronous IO on file " + filename, ErrorCodes::AIO_SUBMIT_ERROR);
 		}
 
 	is_pending_read = true;
@@ -143,7 +154,7 @@ void ReadBufferAIO::waitForCompletion()
 			if (errno != EINTR)
 			{
 				got_exception = true;
-				throw Exception("Failed to wait for asynchronous IO completion", ErrorCodes::AIO_COMPLETION_ERROR);
+				throw Exception("Failed to wait for asynchronous IO completion on file " + filename, ErrorCodes::AIO_COMPLETION_ERROR);
 			}
 
 		is_pending_read = false;

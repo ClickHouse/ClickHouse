@@ -19,11 +19,11 @@ WriteBufferAIO::WriteBufferAIO(const std::string & filename_, size_t buffer_size
 	int open_flags = ((flags_ == -1) ? O_WRONLY | O_TRUNC | O_CREAT : flags_);
 	open_flags |= O_DIRECT;
 
-	fd = ::open(filename_.c_str(), open_flags, mode_);
+	fd = ::open(filename.c_str(), open_flags, mode_);
 	if (fd == -1)
 	{
 		got_exception = true;
-		throwFromErrno("Cannot open file " + filename_, errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
+		throwFromErrno("Cannot open file " + filename, errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
 	}
 }
 
@@ -54,7 +54,7 @@ off_t WriteBufferAIO::seek(off_t offset, int whence)
 	if (res == -1)
 	{
 		got_exception = true;
-		throwFromErrno("Cannot seek through file " + getFileName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+		throwFromErrno("Cannot seek through file " + filename, ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 	}
 	return res;
 }
@@ -67,7 +67,7 @@ void WriteBufferAIO::truncate(off_t length)
 	if (res == -1)
 	{
 		got_exception = true;
-		throwFromErrno("Cannot truncate file " + getFileName(), ErrorCodes::CANNOT_TRUNCATE_FILE);
+		throwFromErrno("Cannot truncate file " + filename, ErrorCodes::CANNOT_TRUNCATE_FILE);
 	}
 }
 
@@ -94,12 +94,18 @@ void WriteBufferAIO::nextImpl()
 	cb.aio_offset = 0;
 	cb.aio_reqprio = 0;
 
+	if ((cb.aio_nbytes % BLOCK_SIZE) != 0)
+	{
+		got_exception = true;
+		throw Exception("Illegal attempt to write unaligned data to file " + filename, ErrorCodes::AIO_UNALIGNED_BUFFER_ERROR);
+	}
+
 	// Submit request.
 	while (io_submit(aio_context.ctx, request_ptrs.size(), &request_ptrs[0]) < 0)
 		if (errno != EINTR)
 		{
 			got_exception = true;
-			throw Exception("Cannot submit request for asynchronous IO", ErrorCodes::AIO_SUBMIT_ERROR);
+			throw Exception("Cannot submit request for asynchronous IO on file " + filename, ErrorCodes::AIO_SUBMIT_ERROR);
 		}
 
 	is_pending_write = true;
@@ -115,14 +121,14 @@ void WriteBufferAIO::waitForCompletion()
 			if (errno != EINTR)
 			{
 				got_exception = true;
-				throw Exception("Failed to wait for asynchronous IO completion", ErrorCodes::AIO_COMPLETION_ERROR);
+				throw Exception("Failed to wait for asynchronous IO completion on file " + filename, ErrorCodes::AIO_COMPLETION_ERROR);
 			}
 
 		size_t bytes_written = (events[0].res > 0) ? static_cast<size_t>(events[0].res) : 0;
 		if (bytes_written < flush_buffer.offset())
 		{
 			got_exception = true;
-			throw Exception("Asynchronous write error", ErrorCodes::AIO_WRITE_ERROR);
+			throw Exception("Asynchronous write error on file " + filename, ErrorCodes::AIO_WRITE_ERROR);
 		}
 
 		is_pending_write = false;
