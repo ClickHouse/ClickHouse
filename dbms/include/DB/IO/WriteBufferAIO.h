@@ -26,13 +26,13 @@ public:
 	off_t seek(off_t off, int whence = SEEK_SET);
 	void truncate(off_t length = 0);
 	void sync() noexcept;
-	std::string getFileName() const noexcept { return filename; }
-	int getFD() const noexcept { return fd; }
+	std::string getFileName() const noexcept override { return filename; }
+	int getFD() const noexcept override { return fd; }
 
 private:
 	void nextImpl() override;
-	void waitForCompletion();
-	void swapBuffers() noexcept;
+	void waitForCompletion() override;
+	void swapBuffers() noexcept override;
 
 private:
 	WriteBufferWithOwnMemory flush_buffer; // buffer asynchronously flushed to disk

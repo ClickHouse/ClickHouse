@@ -28,13 +28,13 @@ public:
 	void setMaxBytes(size_t max_bytes_read_);
 	off_t seek(off_t off, int whence = SEEK_SET);
 	size_t getPositionInFile() const noexcept { return pos_in_file - (working_buffer.end() - pos); }
-	std::string getFileName() const noexcept { return filename; }
-	int getFD() const noexcept { return fd; }
+	std::string getFileName() const noexcept override { return filename; }
+	int getFD() const noexcept override { return fd; }
 
 private:
 	bool nextImpl() override;
-	void waitForCompletion();
-	void swapBuffers() noexcept;
+	void waitForCompletion() override;
+	void swapBuffers() noexcept override;
 
 private:
 	ReadBufferWithOwnMemory fill_buffer; // buffer asynchronously read from disk
