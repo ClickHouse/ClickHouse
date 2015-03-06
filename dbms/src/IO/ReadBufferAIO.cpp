@@ -14,7 +14,7 @@ ReadBufferAIO::ReadBufferAIO(const std::string & filename_, size_t buffer_size_,
 	char * existing_memory_)
 	: BufferWithOwnMemory(buffer_size_, existing_memory_, BLOCK_SIZE),
 	fill_buffer(BufferWithOwnMemory(buffer_size_, existing_memory_, BLOCK_SIZE)),
-	filename(filename_)
+	filename(filename_), request_ptrs{ &cb }, events(1)
 {
 	ProfileEvents::increment(ProfileEvents::FileOpen);
 
@@ -119,7 +119,7 @@ bool ReadBufferAIO::nextImpl()
 	cb.aio_fildes = fd;
 	cb.aio_buf = reinterpret_cast<UInt64>(fill_buffer.internalBuffer().begin());
 	cb.aio_nbytes = std::min(fill_buffer.internalBuffer().size(), max_bytes_read);
-	cb.aio_offset = 0;
+	cb.aio_offset = total_bytes_read;
 	cb.aio_reqprio = 0;
 
 	// Submit request.
