@@ -122,12 +122,6 @@ bool ReadBufferAIO::nextImpl()
 	cb.aio_offset = 0;
 	cb.aio_reqprio = 0;
 
-	if ((cb.aio_nbytes % BLOCK_SIZE) != 0)
-	{
-		got_exception = true;
-		throw Exception("Illegal attempt to read unaligned data from file " + filename, ErrorCodes::AIO_UNALIGNED_BUFFER_ERROR);
-	}
-
 	// Submit request.
 	while (io_submit(aio_context.ctx, request_ptrs.size(), &request_ptrs[0]) < 0)
 		if (errno != EINTR)
