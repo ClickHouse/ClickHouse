@@ -5,6 +5,7 @@
 #include <DB/Dictionaries/DictionaryStructure.h>
 #include <DB/Common/HashTable/HashMap.h>
 #include <DB/Columns/ColumnString.h>
+#include <DB/Common/HashTable/HashMap.h>
 #include <statdaemons/ext/scope_guard.hpp>
 #include <Poco/RWLock.h>
 #include <cmath>
@@ -413,6 +414,15 @@ private:
 		auto stream = source_ptr->loadIds(ids);
 		stream->readPrefix();
 
+		HashMap<UInt64, UInt8> remaining_ids{ids.size()};
+		for (const auto id : ids)
+			remaining_ids.insert({ id, 0 });
+
+		std::uniform_int_distribution<std::uint64_t> distribution{
+			dict_lifetime.min_sec,
+			dict_lifetime.max_sec
+		};
+
 		const Poco::ScopedWriteRWLock write_lock{rw_lock};
 
 		while (const auto block = stream->read())
@@ -434,7 +444,7 @@ private:
 			for (const auto i : ext::range(0, ids.size()))
 			{
 				const auto id = ids[i];
-				const auto & cell_idx = getCellIdx(id);
+				const auto cell_idx = getCellIdx(id);
 				auto & cell = cells[cell_idx];
 
 				for (const auto attribute_idx : ext::range(0, attributes.size()))
@@ -445,19 +455,33 @@ private:
 					setAttributeValue(attribute, cell_idx, attribute_column[i]);
 				}
 
-				std::uniform_int_distribution<std::uint64_t> distribution{
-					dict_lifetime.min_sec,
-					dict_lifetime.max_sec
-				};
-
 				cell.id = id;
 				cell.expires_at = std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
 
 				on_cell_updated(id, cell_idx);
+				remaining_ids[id] = 1;
 			}
 		}
 
 		stream->readSuffix();
+
+		for (const auto id_found_pair : remaining_ids)
+		{
+			if (id_found_pair.second)
+				continue;
+
+			const auto id = id_found_pair.first;
+			const auto cell_idx = getCellIdx(id);
+			auto & cell = cells[cell_idx];
+
+			for (auto & attribute : attributes)
+				setDefaultAttributeValue(attribute, cell_idx);
+
+			cell.id = id;
+			cell.expires_at = std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
+
+			on_cell_updated(id, cell_idx);
+		}
 	}
 
 	std::uint64_t getCellIdx(const id_t id) const
@@ -465,6 +489,36 @@ private:
 		const auto hash = intHash64(id);
 		const auto idx = hash & (size - 1);
 		return idx;
+	}
+
+	void setDefaultAttributeValue(attribute_t & attribute, const id_t idx) const
+	{
+		switch (attribute.type)
+		{
+			case AttributeType::uint8: std::get<std::unique_ptr<UInt8[]>>(attribute.arrays)[idx] = std::get<UInt8>(attribute.null_values); break;
+			case AttributeType::uint16: std::get<std::unique_ptr<UInt16[]>>(attribute.arrays)[idx] = std::get<UInt16>(attribute.null_values); break;
+			case AttributeType::uint32: std::get<std::unique_ptr<UInt32[]>>(attribute.arrays)[idx] = std::get<UInt32>(attribute.null_values); break;
+			case AttributeType::uint64: std::get<std::unique_ptr<UInt64[]>>(attribute.arrays)[idx] = std::get<UInt64>(attribute.null_values); break;
+			case AttributeType::int8: std::get<std::unique_ptr<Int8[]>>(attribute.arrays)[idx] = std::get<Int8>(attribute.null_values); break;
+			case AttributeType::int16: std::get<std::unique_ptr<Int16[]>>(attribute.arrays)[idx] = std::get<Int16>(attribute.null_values); break;
+			case AttributeType::int32: std::get<std::unique_ptr<Int32[]>>(attribute.arrays)[idx] = std::get<Int32>(attribute.null_values); break;
+			case AttributeType::int64: std::get<std::unique_ptr<Int64[]>>(attribute.arrays)[idx] = std::get<Int64>(attribute.null_values); break;
+			case AttributeType::float32: std::get<std::unique_ptr<Float32[]>>(attribute.arrays)[idx] = std::get<Float32>(attribute.null_values); break;
+			case AttributeType::float64: std::get<std::unique_ptr<Float64[]>>(attribute.arrays)[idx] = std::get<Float64>(attribute.null_values); break;
+			case AttributeType::string:
+			{
+				const auto & null_value_ref = std::get<String>(attribute.null_values);
+				auto & string_ref = std::get<std::unique_ptr<StringRef[]>>(attribute.arrays)[idx];
+				if (string_ref.data == null_value_ref.data())
+					return;
+
+				delete[] string_ref.data;
+
+				string_ref = StringRef{null_value_ref};
+
+				break;
+			}
+		}
 	}
 
 	void setAttributeValue(attribute_t & attribute, const id_t idx, const Field & value) const
@@ -485,7 +539,8 @@ private:
 			{
 				const auto & string = value.get<String>();
 				auto & string_ref = std::get<std::unique_ptr<StringRef[]>>(attribute.arrays)[idx];
-				if (string_ref.data)
+				const auto & null_value_ref = std::get<String>(attribute.null_values);
+				if (string_ref.data != null_value_ref.data())
 					delete[] string_ref.data;
 
 				const auto size = string.size();
