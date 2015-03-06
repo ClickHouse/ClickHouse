@@ -22,13 +22,6 @@ class RemoteBlockInputStream : public IProfilingBlockInputStream
 private:
 	void init(const Settings * settings_)
 	{
-		established.store(false, std::memory_order_seq_cst);
-		sent_query.store(false, std::memory_order_seq_cst);
-		finished.store(false, std::memory_order_seq_cst);
-		got_exception_from_replica.store(false, std::memory_order_seq_cst);
-		got_unknown_packet_from_replica.store(false, std::memory_order_seq_cst);
-		was_cancelled.store(false, std::memory_order_seq_cst);
-
 		if (settings_)
 		{
 			send_settings = true;
@@ -107,7 +100,7 @@ public:
 		  * все соединения, затем читаем и пропускаем оставшиеся пакеты чтобы
 		  * эти соединения не остались висеть в рассихронизированном состоянии.
 		  */
-		if (established.load(std::memory_order_seq_cst) || isQueryInProgress())
+		if (established || isQueryInProgress())
 			parallel_replicas->disconnect();
 	}
 
@@ -142,16 +135,16 @@ protected:
 
 	Block readImpl() override
 	{
-		if (!sent_query.load(std::memory_order_seq_cst))
+		if (!sent_query)
 		{
 			createParallelReplicas();
 
-			established.store(true, std::memory_order_seq_cst);
+			established= true;
 
 			parallel_replicas->sendQuery(query, "", stage, true);
 
-			established.store(false, std::memory_order_seq_cst);
-			sent_query.store(true, std::memory_order_seq_cst);
+			established= false;
+			sent_query= true;
 
 			sendExternalTables();
 		}
@@ -169,14 +162,14 @@ protected:
 					break;	/// Если блок пустой - получим другие пакеты до EndOfStream.
 
 				case Protocol::Server::Exception:
-					got_exception_from_replica.store(true, std::memory_order_seq_cst);
+					got_exception_from_replica= true;
 					packet.exception->rethrow();
 					break;
 
 				case Protocol::Server::EndOfStream:
 					if (!parallel_replicas->hasActiveReplicas())
 					{
-						finished.store(true, std::memory_order_seq_cst);
+						finished= true;
 						return Block();
 					}
 					break;
@@ -208,7 +201,7 @@ protected:
 					break;
 
 				default:
-					got_unknown_packet_from_replica.store(true, std::memory_order_seq_cst);
+					got_unknown_packet_from_replica= true;
 					throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
 			}
 		}
@@ -242,16 +235,16 @@ protected:
 		switch (packet.type)
 		{
 			case Protocol::Server::EndOfStream:
-				finished.store(true, std::memory_order_seq_cst);
+				finished= true;
 				break;
 
 			case Protocol::Server::Exception:
-				got_exception_from_replica.store(true, std::memory_order_seq_cst);
+				got_exception_from_replica= true;
 				packet.exception->rethrow();
 				break;
 
 			default:
-				got_unknown_packet_from_replica.store(true, std::memory_order_seq_cst);
+				got_unknown_packet_from_replica= true;
 				throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
 		}
 	}
@@ -269,19 +262,19 @@ protected:
 	/// Возвращает true, если запрос отправлен, а ещё не выполнен.
 	bool isQueryInProgress() const
 	{
-		return sent_query.load(std::memory_order_seq_cst) && !finished.load(std::memory_order_seq_cst) && !was_cancelled.load(std::memory_order_seq_cst);
+		return sent_query && !finished && !was_cancelled;
 	}
 
 	/// Возвращает true, если никакой запрос не отправлен или один запрос уже выполнен.
 	bool hasNoQueryInProgress() const
 	{
-		return !sent_query.load(std::memory_order_seq_cst) || finished.load(std::memory_order_seq_cst);
+		return !sent_query || finished;
 	}
 
 	/// Возвращает true, если исключение было выкинуто.
 	bool hasThrownException() const
 	{
-		return got_exception_from_replica.load(std::memory_order_seq_cst) || got_unknown_packet_from_replica.load(std::memory_order_seq_cst);
+		return got_exception_from_replica || got_unknown_packet_from_replica;
 	}
 
 private:
@@ -297,7 +290,8 @@ private:
 	{
 		bool old_val = false;
 		bool new_val = true;
-		if (was_cancelled.compare_exchange_strong(old_val, new_val, std::memory_order_seq_cst, std::memory_order_relaxed))
+
+		if (was_cancelled.compare_exchange_strong(old_val, new_val, std::memory_order_seq_cst, std::memory_order_seq_cst))
 		{
 			parallel_replicas->sendCancel();
 			return true;
@@ -324,33 +318,33 @@ private:
 	Context context;
 
 	/// Установили соединения с репликами, но ещё не отправили запрос.
-	std::atomic<bool> established;
+	std::atomic<bool> established { false };
 
 	/// Отправили запрос (это делается перед получением первого блока).
-	std::atomic<bool> sent_query;
+	std::atomic<bool> sent_query { false };
 
 	/** Получили все данные от всех реплик, до пакета EndOfStream.
 	  * Если при уничтожении объекта, ещё не все данные считаны,
 	  *  то для того, чтобы не было рассинхронизации, на реплики отправляются просьбы прервать выполнение запроса,
 	  *  и после этого считываются все пакеты до EndOfStream.
 	  */
-	std::atomic<bool> finished;
+	std::atomic<bool> finished { false };
 
 	/** На каждую реплику была отправлена просьба прервать выполнение запроса, так как данные больше не нужны.
 	  * Это может быть из-за того, что данных достаточно (например, при использовании LIMIT),
 	  *  или если на стороне клиента произошло исключение.
 	  */
-	std::atomic<bool> was_cancelled;
+	std::atomic<bool> was_cancelled { false };
 
 	/** С одной репилки было получено исключение. В этом случае получать больше пакетов или
 	  * просить прервать запрос на этой реплике не нужно.
 	  */
-	std::atomic<bool> got_exception_from_replica;
+	std::atomic<bool> got_exception_from_replica { false };
 
 	/** С одной реплики был получен неизвестный пакет. В этом случае получать больше пакетов или
 	  * просить прервать запрос на этой реплике не нужно.
 	  */
-	std::atomic<bool> got_unknown_packet_from_replica;
+	std::atomic<bool> got_unknown_packet_from_replica { false };
 
 	Logger * log = &Logger::get("RemoteBlockInputStream");
 };
