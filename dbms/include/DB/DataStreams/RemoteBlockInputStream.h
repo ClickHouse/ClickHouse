@@ -139,12 +139,12 @@ protected:
 		{
 			createParallelReplicas();
 
-			established= true;
+			established = true;
 
 			parallel_replicas->sendQuery(query, "", stage, true);
 
-			established= false;
-			sent_query= true;
+			established = false;
+			sent_query = true;
 
 			sendExternalTables();
 		}
@@ -162,14 +162,14 @@ protected:
 					break;	/// Если блок пустой - получим другие пакеты до EndOfStream.
 
 				case Protocol::Server::Exception:
-					got_exception_from_replica= true;
+					got_exception_from_replica = true;
 					packet.exception->rethrow();
 					break;
 
 				case Protocol::Server::EndOfStream:
 					if (!parallel_replicas->hasActiveReplicas())
 					{
-						finished= true;
+						finished = true;
 						return Block();
 					}
 					break;
@@ -201,7 +201,7 @@ protected:
 					break;
 
 				default:
-					got_unknown_packet_from_replica= true;
+					got_unknown_packet_from_replica = true;
 					throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
 			}
 		}
@@ -235,16 +235,16 @@ protected:
 		switch (packet.type)
 		{
 			case Protocol::Server::EndOfStream:
-				finished= true;
+				finished = true;
 				break;
 
 			case Protocol::Server::Exception:
-				got_exception_from_replica= true;
+				got_exception_from_replica = true;
 				packet.exception->rethrow();
 				break;
 
 			default:
-				got_unknown_packet_from_replica= true;
+				got_unknown_packet_from_replica = true;
 				throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
 		}
 	}
