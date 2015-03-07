@@ -71,7 +71,7 @@ public:
 		this->emplace(x, it, inserted);
 
 		if (inserted)
-			new(&it->second) mapped_type();		/// В отличие от HashMap, всегда инициализируем значение.
+			new(&it->second) mapped_type();
 
 		return it->second;
 	}
