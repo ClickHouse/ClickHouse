@@ -140,7 +140,6 @@ void AggregateFunctionsCreator::operator()()
 		for (size_t rollback_j = 0; rollback_j < column_num; ++rollback_j)
 			func->destroy(aggregate_data + offsets_of_aggregate_states[rollback_j]);
 
-		aggregate_data = nullptr;
 		throw;
 	}
 }
@@ -239,10 +238,14 @@ void NO_INLINE Aggregator::executeSpecializedCase(
 			method.onNewKey(*it, keys_size, i, keys, *aggregates_pool);
 
 			AggregateDataPtr & aggregate_data = Method::getAggregateData(it->second);
-			aggregate_data = aggregates_pool->alloc(total_size_of_aggregate_states);
+
+			aggregate_data = nullptr;
+			AggregateDataPtr place = aggregates_pool->alloc(total_size_of_aggregate_states);
 
 			AggregateFunctionsList::forEach(AggregateFunctionsCreator(
-				aggregate_functions, offsets_of_aggregate_states, aggregate_columns, aggregate_data));
+				aggregate_functions, offsets_of_aggregate_states, aggregate_columns, place));
+
+			aggregate_data = place;
 		}
 		else
 			method.onExistingKey(key, keys, *aggregates_pool);
