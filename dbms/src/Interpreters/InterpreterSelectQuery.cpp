@@ -12,7 +12,6 @@
 #include <DB/DataStreams/DistinctBlockInputStream.h>
 #include <DB/DataStreams/NullBlockInputStream.h>
 #include <DB/DataStreams/TotalsHavingBlockInputStream.h>
-#include <DB/DataStreams/narrowBlockInputStreams.h>
 #include <DB/DataStreams/copyData.h>
 #include <DB/DataStreams/CreatingSetsBlockInputStream.h>
 #include <DB/DataStreams/MaterializingBlockInputStream.h>
@@ -696,12 +695,6 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	{
 		streams.push_back(interpreter_subquery->execute());
 	}
-
-	/** Если истчоников слишком много, то склеим их в max_threads источников.
-	 *  (Иначе действия в каждом маленьком источнике, а затем объединение состояний, слишком неэффективно.)
-	 */
-	if (streams.size() > settings.max_threads)
-		streams = narrowBlockInputStreams(streams, settings.max_threads);
 
 	/** Установка ограничений и квоты на чтение данных, скорость и время выполнения запроса.
 	 *  Такие ограничения проверяются на сервере-инициаторе запроса, а не на удалённых серверах.

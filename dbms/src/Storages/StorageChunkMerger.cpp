@@ -12,7 +12,6 @@
 #include <DB/Interpreters/executeQuery.h>
 #include <DB/Interpreters/InterpreterDropQuery.h>
 #include <DB/DataStreams/ConcatBlockInputStream.h>
-#include <DB/DataStreams/narrowBlockInputStreams.h>
 #include <DB/DataStreams/AddingDefaultBlockInputStream.h>
 #include <DB/DataStreams/AddingConstColumnBlockInputStream.h>
 #include <DB/Common/VirtualColumnUtils.h>
@@ -209,11 +208,6 @@ BlockInputStreams StorageChunkMerger::read(
 		if (tmp_processed_stage < processed_stage)
 			processed_stage = tmp_processed_stage;
 	}
-
-	/** Если истчоников слишком много, то склеим их в threads источников.
-	 */
-	if (res.size() > threads)
-		res = narrowBlockInputStreams(res, threads);
 
 	return res;
 }
