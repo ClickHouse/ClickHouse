@@ -5,7 +5,6 @@
 #include <DB/Parsers/ASTJoin.h>
 
 #include <DB/Interpreters/AggregationCommon.h>
-#include <DB/Interpreters/Set.h>
 
 #include <DB/Common/Arena.h>
 #include <DB/Common/HashTable/HashMap.h>
@@ -67,7 +66,7 @@ public:
 	{
 	}
 
-	bool empty() { return type == Set::EMPTY; }
+	bool empty() { return type == Type::EMPTY; }
 
 	/** Добавить в отображение для соединения блок "правой" таблицы.
 	  * Возвращает false, если превышено какое-нибудь ограничение, и больше не нужно вставлять.
@@ -155,7 +154,17 @@ private:
 	/// Дополнительные данные - строки, а также продолжения односвязных списков строк.
 	Arena pool;
 
-	Set::Type type = Set::EMPTY;
+	enum class Type
+	{
+		EMPTY,
+		KEY_64,
+		KEY_STRING,
+		HASHED,
+	};
+
+	Type type = Type::EMPTY;
+
+	static Type chooseMethod(const ConstColumnPlainPtrs & key_columns, bool & keys_fit_128_bits, Sizes & key_sizes);
 
 	bool keys_fit_128_bits;
 	Sizes key_sizes;
@@ -174,7 +183,7 @@ private:
 	  */
 	mutable Poco::RWLock rwlock;
 
-	void init(Set::Type type_);
+	void init(Type type_);
 
 	template <ASTJoin::Strictness STRICTNESS, typename Maps>
 	void insertFromBlockImpl(Maps & maps, size_t rows, const ConstColumnPlainPtrs & key_columns, size_t keys_size, Block * stored_block);

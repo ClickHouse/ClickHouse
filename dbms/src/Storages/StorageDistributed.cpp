@@ -6,6 +6,7 @@
 #include <DB/Storages/Distributed/DistributedBlockOutputStream.h>
 #include <DB/Storages/Distributed/DirectoryMonitor.h>
 #include <DB/Common/escapeForFileName.h>
+#include <DB/Parsers/ASTInsertQuery.h>
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/InterpreterAlterQuery.h>

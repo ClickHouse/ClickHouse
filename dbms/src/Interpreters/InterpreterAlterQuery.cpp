@@ -5,6 +5,7 @@
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Parsers/ASTNameTypePair.h>
 #include <DB/Parsers/ASTIdentifier.h>
+#include <DB/Parsers/ASTLiteral.h>
 
 #include <DB/Parsers/ParserCreateQuery.h>
 #include <DB/IO/copyData.h>

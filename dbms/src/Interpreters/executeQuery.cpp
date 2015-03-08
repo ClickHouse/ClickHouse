@@ -3,6 +3,8 @@
 #include <DB/Parsers/formatAST.h>
 
 #include <DB/DataStreams/BlockIO.h>
+#include <DB/Parsers/ASTInsertQuery.h>
+#include <DB/Parsers/ASTShowProcesslistQuery.h>
 #include <DB/Interpreters/executeQuery.h>
 
 

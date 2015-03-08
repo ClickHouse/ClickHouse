@@ -3,41 +3,31 @@
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/ReadHelpers.h>
 
-#include <DB/AggregateFunctions/IAggregateFunction.h>
+#include <DB/AggregateFunctions/AggregateFunctionsMinMaxAny.h>
 
 
 namespace DB
 {
 
 
-struct AggregateFunctionArgMinTraits
-{
-	static bool better(const Field & lhs, const Field & rhs) { return lhs < rhs; }
-	static String name() { return "argMin"; }
-};
-
-struct AggregateFunctionArgMaxTraits
-{
-	static bool better(const Field & lhs, const Field & rhs) { return lhs > rhs; }
-	static String name() { return "argMax"; }
-};
-
+/// Возможные значения параметров шаблонов см. в AggregateFunctionsMinMaxAny.h
+template <typename ResultData, typename ValueData>
 struct AggregateFunctionsArgMinMaxData
 {
-	Field result;	// аргумент, при котором достигается минимальное/максимальное значение value.
-	Field value;	// значение, для которого считается минимум/максимум.
+	ResultData result;	// аргумент, при котором достигается минимальное/максимальное значение value.
+	ValueData value;	// значение, для которого считается минимум/максимум.
 };
 
 /// Возвращает первое попавшееся значение arg для минимального/максимального value. Пример: argMax(arg, value).
-template <typename Traits>
-class AggregateFunctionsArgMinMax final : public IAggregateFunctionHelper<AggregateFunctionsArgMinMaxData>
+template <typename Data>
+class AggregateFunctionsArgMinMax final : public IAggregateFunctionHelper<Data>
 {
 private:
 	DataTypePtr type_res;
 	DataTypePtr type_val;
 
 public:
-	String getName() const { return Traits::name(); }
+	String getName() const { return (0 == strcmp(decltype(Data::value)::name(), "min")) ? "argMin" : "argMax"; }
 
 	DataTypePtr getReturnType() const
 	{
@@ -55,105 +45,37 @@ public:
 
 	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const
 	{
-		Field result;
-		Field value;
-		columns[0]->get(row_num, result);
-		columns[1]->get(row_num, value);
-		Data & d = data(place);
-
-		if (!d.value.isNull())
-		{
-			if (Traits::better(value, d.value))
-			{
-				d.result = result;
-				d.value = value;
-			}
-		}
-		else
-		{
-			d.result = result;
-			d.value = value;
-		}
+		if (this->data(place).value.changeIfBetter(*columns[1], row_num))
+			this->data(place).result.change(*columns[0], row_num);
 	}
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
 	{
-		Data & d = data(place);
-		const Data & d_rhs = data(rhs);
-
-		if (!d.value.isNull())
-		{
-			if (Traits::better(d_rhs.value, d.value))
-			{
-				d.result = d_rhs.result;
-				d.value = d_rhs.value;
-			}
-		}
-		else
-		{
-			d.result = d_rhs.result;
-			d.value = d_rhs.value;
-		}
+		if (this->data(place).value.changeIfBetter(this->data(rhs).value))
+			this->data(place).result.change(this->data(rhs).result);
 	}
 
 	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
 	{
-		const Data & d = data(place);
-
-		if (unlikely(d.result.isNull()))
-		{
-			writeBinary(false, buf);
-		}
-		else
-		{
-			writeBinary(true, buf);
-			type_res->serializeBinary(d.result, buf);
-			type_val->serializeBinary(d.value, buf);
-		}
+		this->data(place).result.write(buf, *type_res.get());
+		this->data(place).value.write(buf, *type_val.get());
 	}
 
 	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
 	{
-		Data & d = data(place);
+		Data rhs;	/// Для строчек не очень оптимально, так как может делаться одна лишняя аллокация.
 
-		bool is_not_null = false;
-		readBinary(is_not_null, buf);
+		rhs.result.read(buf, *type_res.get());
+		rhs.value.read(buf, *type_val.get());
 
-		if (is_not_null)
-		{
-			if (!d.value.isNull())
-			{
-				Field result_;
-				Field value_;
-
-				type_res->deserializeBinary(result_, buf);
-				type_val->deserializeBinary(value_, buf);
-
-				if (Traits::better(value_, d.value))
-				{
-					d.result = result_;
-					d.value = value_;
-				}
-			}
-			else
-			{
-				type_res->deserializeBinary(d.result, buf);
-				type_val->deserializeBinary(d.value, buf);
-			}
-		}
+		if (this->data(place).value.changeIfBetter(rhs.value))
+			this->data(place).result.change(rhs.result);
 	}
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
 	{
-		if (unlikely(data(place).value.isNull()))
-			to.insertDefault();
-		else
-			to.insert(data(place).result);
+		this->data(place).result.insertResultInto(to);
 	}
 };
-
-typedef AggregateFunctionsArgMinMax<AggregateFunctionArgMinTraits> AggregateFunctionArgMin;
-typedef AggregateFunctionsArgMinMax<AggregateFunctionArgMaxTraits> AggregateFunctionArgMax;
-
 
 }

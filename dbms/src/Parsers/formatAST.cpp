@@ -1,7 +1,5 @@
 #include <sstream>
 
-#include <boost/variant/static_visitor.hpp>
-
 #include <mysqlxx/Manip.h>
 
 #include <DB/IO/WriteBufferFromOStream.h>
@@ -11,6 +9,32 @@
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 #include <DB/Core/NamesAndTypes.h>
+
+#include <DB/Parsers/ASTSelectQuery.h>
+#include <DB/Parsers/ASTCreateQuery.h>
+#include <DB/Parsers/ASTDropQuery.h>
+#include <DB/Parsers/ASTInsertQuery.h>
+#include <DB/Parsers/ASTRenameQuery.h>
+#include <DB/Parsers/ASTShowTablesQuery.h>
+#include <DB/Parsers/ASTUseQuery.h>
+#include <DB/Parsers/ASTSetQuery.h>
+#include <DB/Parsers/ASTOptimizeQuery.h>
+#include <DB/Parsers/TablePropertiesQueriesASTs.h>
+#include <DB/Parsers/ASTExpressionList.h>
+#include <DB/Parsers/ASTFunction.h>
+#include <DB/Parsers/ASTIdentifier.h>
+#include <DB/Parsers/ASTLiteral.h>
+#include <DB/Parsers/ASTNameTypePair.h>
+#include <DB/Parsers/ASTColumnDeclaration.h>
+#include <DB/Parsers/ASTAsterisk.h>
+#include <DB/Parsers/ASTOrderByElement.h>
+#include <DB/Parsers/ASTSubquery.h>
+#include <DB/Parsers/ASTAlterQuery.h>
+#include <DB/Parsers/ASTShowProcesslistQuery.h>
+#include <DB/Parsers/ASTSet.h>
+#include <DB/Parsers/ASTJoin.h>
+#include <DB/Parsers/ASTCheckQuery.h>
+//#include <DB/Parsers/ASTMultiQuery.h>
 
 #include <DB/Parsers/formatAST.h>
 
@@ -42,52 +66,6 @@ String backQuoteIfNeed(const String & x)
 String hightlight(const String & keyword, const String & color_sequence, const bool hilite)
 {
 	return hilite ? color_sequence + keyword + hilite_none : keyword;
-}
-
-
-void formatAST(const IAST & ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
-{
-
-#define DISPATCH(NAME) \
-	else if (const AST ## NAME * concrete = typeid_cast<const AST ## NAME *>(&ast)) \
-		formatAST(*concrete, s, indent, hilite, one_line, need_parens);
-
-	if (false) {}
-	DISPATCH(SelectQuery)
-	DISPATCH(InsertQuery)
-	DISPATCH(CreateQuery)
-	DISPATCH(DropQuery)
-	DISPATCH(RenameQuery)
-	DISPATCH(ShowTablesQuery)
-	DISPATCH(UseQuery)
-	DISPATCH(SetQuery)
-	DISPATCH(OptimizeQuery)
-	DISPATCH(ExistsQuery)
-	DISPATCH(ShowCreateQuery)
-	DISPATCH(DescribeQuery)
-	DISPATCH(ExpressionList)
-	DISPATCH(Function)
-	DISPATCH(Identifier)
-	DISPATCH(Literal)
-	DISPATCH(NameTypePair)
-	DISPATCH(ColumnDeclaration)
-	DISPATCH(Asterisk)
-	DISPATCH(OrderByElement)
-	DISPATCH(Subquery)
-	DISPATCH(AlterQuery)
-	DISPATCH(ShowProcesslistQuery)
-	DISPATCH(Set)
-	DISPATCH(Join)
-	DISPATCH(CheckQuery)
-//	DISPATCH(MultiQuery)
-	else
-		throw Exception("Unknown element in AST: " + ast.getID()
-			+ ((ast.range.first && (ast.range.second > ast.range.first))
-				? " '" + std::string(ast.range.first, ast.range.second - ast.range.first) + "'"
-				: ""),
-			ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
-
-#undef DISPATCH
 }
 
 
@@ -354,17 +332,17 @@ void formatAST(const ASTQueryWithTableAndOutput & ast, std::string name, std::os
 
 void formatAST(const ASTExistsQuery			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
 {
-	formatAST(static_cast<const ASTQueryWithTableAndOutput &>(ast), "EXISTS TABLE", s, indent, hilite, one_line);
+	formatAST(static_cast<const ASTQueryWithTableAndOutput &>(ast), "EXISTS TABLE", s, indent, hilite, one_line, false);
 }
 
 void formatAST(const ASTDescribeQuery			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
 {
-	formatAST(static_cast<const ASTQueryWithTableAndOutput &>(ast), "DESCRIBE TABLE", s, indent, hilite, one_line);
+	formatAST(static_cast<const ASTQueryWithTableAndOutput &>(ast), "DESCRIBE TABLE", s, indent, hilite, one_line, false);
 }
 
 void formatAST(const ASTShowCreateQuery		& ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
 {
-	formatAST(static_cast<const ASTQueryWithTableAndOutput &>(ast), "SHOW CREATE TABLE", s, indent, hilite, one_line);
+	formatAST(static_cast<const ASTQueryWithTableAndOutput &>(ast), "SHOW CREATE TABLE", s, indent, hilite, one_line, false);
 }
 
 void formatAST(const ASTRenameQuery			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
@@ -886,6 +864,52 @@ void formatAST(const ASTMultiQuery & ast, std::ostream & s, size_t indent, bool 
 
 	s << (hilite ? hilite_keyword : "") << "}" << (hilite ? hilite_none : "");
 }*/
+
+
+void formatAST(const IAST & ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
+{
+
+#define DISPATCH(NAME) \
+	else if (const AST ## NAME * concrete = typeid_cast<const AST ## NAME *>(&ast)) \
+		formatAST(*concrete, s, indent, hilite, one_line, need_parens);
+
+	if (false) {}
+	DISPATCH(SelectQuery)
+	DISPATCH(InsertQuery)
+	DISPATCH(CreateQuery)
+	DISPATCH(DropQuery)
+	DISPATCH(RenameQuery)
+	DISPATCH(ShowTablesQuery)
+	DISPATCH(UseQuery)
+	DISPATCH(SetQuery)
+	DISPATCH(OptimizeQuery)
+	DISPATCH(ExistsQuery)
+	DISPATCH(ShowCreateQuery)
+	DISPATCH(DescribeQuery)
+	DISPATCH(ExpressionList)
+	DISPATCH(Function)
+	DISPATCH(Identifier)
+	DISPATCH(Literal)
+	DISPATCH(NameTypePair)
+	DISPATCH(ColumnDeclaration)
+	DISPATCH(Asterisk)
+	DISPATCH(OrderByElement)
+	DISPATCH(Subquery)
+	DISPATCH(AlterQuery)
+	DISPATCH(ShowProcesslistQuery)
+	DISPATCH(Set)
+	DISPATCH(Join)
+	DISPATCH(CheckQuery)
+//	DISPATCH(MultiQuery)
+	else
+		throw Exception("Unknown element in AST: " + ast.getID()
+			+ ((ast.range.first && (ast.range.second > ast.range.first))
+				? " '" + std::string(ast.range.first, ast.range.second - ast.range.first) + "'"
+				: ""),
+			ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
+
+#undef DISPATCH
+}
 
 
 String formatColumnsForCreateQuery(NamesAndTypesList & columns)

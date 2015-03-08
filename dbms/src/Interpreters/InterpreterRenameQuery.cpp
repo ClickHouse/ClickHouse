@@ -8,6 +8,7 @@
 #include <DB/IO/copyData.h>
 
 #include <DB/Parsers/ASTRenameQuery.h>
+#include <DB/Parsers/ASTCreateQuery.h>
 #include <DB/Parsers/ParserCreateQuery.h>
 #include <DB/Parsers/formatAST.h>
 

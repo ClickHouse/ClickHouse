@@ -381,7 +381,6 @@ void Aggregator::createAggregateStates(AggregateDataPtr & aggregate_data) const
 			for (size_t rollback_j = 0; rollback_j < j; ++rollback_j)
 				aggregate_functions[rollback_j]->destroy(aggregate_data + offsets_of_aggregate_states[rollback_j]);
 
-			aggregate_data = nullptr;
 			throw;
 		}
 	}
@@ -486,8 +485,12 @@ void NO_INLINE Aggregator::executeImplCase(
 			method.onNewKey(*it, keys_size, i, keys, *aggregates_pool);
 
 			AggregateDataPtr & aggregate_data = Method::getAggregateData(it->second);
-			aggregate_data = aggregates_pool->alloc(total_size_of_aggregate_states);
-			createAggregateStates(aggregate_data);
+
+			/// exception-safety - если не удалось выделить память или создать состояния, то не будут вызываться деструкторы.
+			aggregate_data = nullptr;
+			AggregateDataPtr place = aggregates_pool->alloc(total_size_of_aggregate_states);
+			createAggregateStates(place);
+			aggregate_data = place;
 		}
 		else
 			method.onExistingKey(key, keys, *aggregates_pool);
@@ -581,8 +584,9 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 
 	if ((overflow_row || result.type == AggregatedDataVariants::Type::without_key) && !result.without_key)
 	{
-		result.without_key = result.aggregates_pool->alloc(total_size_of_aggregate_states);
-		createAggregateStates(result.without_key);
+		AggregateDataPtr place = result.aggregates_pool->alloc(total_size_of_aggregate_states);
+		createAggregateStates(place);
+		result.without_key = place;
 	}
 
 	/// Выбираем один из методов агрегации и вызываем его.
@@ -831,6 +835,12 @@ Block Aggregator::prepareBlockAndFill(
 		}
 
 		filler(key_columns, aggregate_columns, final_aggregate_columns, data_variants.key_sizes, final);
+
+		/// Изменяем размер столбцов-констант в блоке.
+		size_t columns = res.columns();
+		for (size_t i = 0; i < columns; ++i)
+			if (res.getByPosition(i).column->isConst())
+				res.getByPosition(i).column = res.getByPosition(i).column->cut(0, rows);
 	}
 	catch (...)
 	{
@@ -847,12 +857,6 @@ Block Aggregator::prepareBlockAndFill(
 
 		throw;
 	}
-
-	/// Изменяем размер столбцов-констант в блоке.
-	size_t columns = res.columns();
-	for (size_t i = 0; i < columns; ++i)
-		if (res.getByPosition(i).column->isConst())
-			res.getByPosition(i).column = res.getByPosition(i).column->cut(0, rows);
 
 	return res;
 }
@@ -1035,7 +1039,7 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
 
 BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, bool final, size_t max_threads)
 {
-	LOG_TRACE(log, "Converting aggregated data to block");
+	LOG_TRACE(log, "Converting aggregated data to blocks");
 
 	Stopwatch watch;
 
@@ -1365,8 +1369,11 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
 			method.onNewKey(*it, keys_size, i, keys, *aggregates_pool);
 
 			AggregateDataPtr & aggregate_data = Method::getAggregateData(it->second);
-			aggregate_data = aggregates_pool->alloc(total_size_of_aggregate_states);
-			createAggregateStates(aggregate_data);
+
+			aggregate_data = nullptr;
+			AggregateDataPtr place = aggregates_pool->alloc(total_size_of_aggregate_states);
+			createAggregateStates(place);
+			aggregate_data = place;
 		}
 		else
 			method.onExistingKey(key, keys, *aggregates_pool);
@@ -1395,8 +1402,9 @@ void NO_INLINE Aggregator::mergeWithoutKeyStreamsImpl(
 	AggregatedDataWithoutKey & res = result.without_key;
 	if (!res)
 	{
-		res = result.aggregates_pool->alloc(total_size_of_aggregate_states);
-		createAggregateStates(res);
+		AggregateDataPtr place = result.aggregates_pool->alloc(total_size_of_aggregate_states);
+		createAggregateStates(place);
+		res = place;
 	}
 
 	/// Добавляем значения

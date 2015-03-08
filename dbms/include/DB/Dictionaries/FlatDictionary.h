@@ -165,6 +165,7 @@ private:
 	{
 		const auto size = dict_struct.attributes.size();
 		attributes.reserve(size);
+
 		for (const auto & attribute : dict_struct.attributes)
 		{
 			attribute_index_by_name.emplace(attribute.name, attributes.size());
@@ -275,56 +276,16 @@ private:
 
 		switch (attribute.type)
 		{
-			case AttributeType::uint8:
-			{
-				setAttributeValueImpl<UInt8>(attribute, id, value.get<UInt64>());
-				break;
-			}
-			case AttributeType::uint16:
-			{
-				setAttributeValueImpl<UInt16>(attribute, id, value.get<UInt64>());
-				break;
-			}
-			case AttributeType::uint32:
-			{
-				setAttributeValueImpl<UInt32>(attribute, id, value.get<UInt64>());
-				break;
-			}
-			case AttributeType::uint64:
-			{
-				setAttributeValueImpl<UInt64>(attribute, id, value.get<UInt64>());
-				break;
-			}
-			case AttributeType::int8:
-			{
-				setAttributeValueImpl<Int8>(attribute, id, value.get<Int64>());
-				break;
-			}
-			case AttributeType::int16:
-			{
-				setAttributeValueImpl<Int16>(attribute, id, value.get<Int64>());
-				break;
-			}
-			case AttributeType::int32:
-			{
-				setAttributeValueImpl<Int32>(attribute, id, value.get<Int64>());
-				break;
-			}
-			case AttributeType::int64:
-			{
-				setAttributeValueImpl<Int64>(attribute, id, value.get<Int64>());
-				break;
-			}
-			case AttributeType::float32:
-			{
-				setAttributeValueImpl<Float32>(attribute, id, value.get<Float64>());
-				break;
-			}
-			case AttributeType::float64:
-			{
-				setAttributeValueImpl<Float64>(attribute, id, value.get<Float64>());
-				break;
-			}
+			case AttributeType::uint8: setAttributeValueImpl<UInt8>(attribute, id, value.get<UInt64>()); break;
+			case AttributeType::uint16: setAttributeValueImpl<UInt16>(attribute, id, value.get<UInt64>()); break;
+			case AttributeType::uint32: setAttributeValueImpl<UInt32>(attribute, id, value.get<UInt64>()); break;
+			case AttributeType::uint64: setAttributeValueImpl<UInt64>(attribute, id, value.get<UInt64>()); break;
+			case AttributeType::int8: setAttributeValueImpl<Int8>(attribute, id, value.get<Int64>()); break;
+			case AttributeType::int16: setAttributeValueImpl<Int16>(attribute, id, value.get<Int64>()); break;
+			case AttributeType::int32: setAttributeValueImpl<Int32>(attribute, id, value.get<Int64>()); break;
+			case AttributeType::int64: setAttributeValueImpl<Int64>(attribute, id, value.get<Int64>()); break;
+			case AttributeType::float32: setAttributeValueImpl<Float32>(attribute, id, value.get<Float64>()); break;
+			case AttributeType::float64: setAttributeValueImpl<Float64>(attribute, id, value.get<Float64>()); break;
 			case AttributeType::string:
 			{
 				auto & array = *std::get<std::unique_ptr<PODArray<StringRef>>>(attribute.arrays);

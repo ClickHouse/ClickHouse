@@ -27,7 +27,7 @@ public:
 		bool inserted;
 		this->emplace(x, it, inserted);
 
-		if (!__has_trivial_constructor(mapped_type) && inserted)
+		if (inserted)
 			new(&it->second) mapped_type();
 
 		return it->second;

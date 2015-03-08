@@ -1,7 +1,7 @@
 #pragma once
 
 #include <list>
-#include <queue>
+#include <stack>
 #include <atomic>
 #include <thread>
 #include <mutex>
@@ -49,7 +49,7 @@ public:
 		: inputs(inputs_), max_threads(std::min(inputs_.size(), max_threads_)), handler(handler_)
 	{
 		for (size_t i = 0; i < inputs_.size(); ++i)
-			input_queue.emplace(inputs_[i], i);
+			input_stack.emplace(inputs_[i], i);
 	}
 
 	~ParallelInputsProcessor()
@@ -162,16 +162,16 @@ private:
 
 			/// Выбираем следующий источник.
 			{
-				std::lock_guard<std::mutex> lock(input_queue_mutex);
+				std::lock_guard<std::mutex> lock(input_stack_mutex);
 
 				/// Если свободных источников нет, то этот поток больше не нужен. (Но другие потоки могут работать со своими источниками.)
-				if (input_queue.empty())
+				if (input_stack.empty())
 					break;
 
-				input = input_queue.front();
+				input = input_stack.top();
 
 				/// Убираем источник из очереди доступных источников.
-				input_queue.pop();
+				input_stack.pop();
 			}
 
 			/// Основная работа.
@@ -183,15 +183,15 @@ private:
 
 				/// Если этот источник ещё не иссяк, то положим полученный блок в очередь готовых.
 				{
-					std::lock_guard<std::mutex> lock(input_queue_mutex);
+					std::lock_guard<std::mutex> lock(input_stack_mutex);
 
 					if (block)
 					{
-						input_queue.push(input);
+						input_stack.push(input);
 					}
 					else
 					{
-						if (input_queue.empty())
+						if (input_stack.empty())
 							break;
 					}
 				}
@@ -214,12 +214,15 @@ private:
 	typedef std::vector<std::thread> ThreadsData;
 	ThreadsData threads;
 
-	/// Очередь доступных источников, которые не заняты каким-либо потоком в данный момент.
-	typedef std::queue<InputData> InputQueue;
-	InputQueue input_queue;
+	/** Стек доступных источников, которые не заняты каким-либо потоком в данный момент.
+	  * Стек вместо очереди - чтобы выполнять работу по чтению одного источника более последовательно.
+	  * То есть, продолжать обработку источника, который недавно обрабатывался.
+	  */
+	typedef std::stack<InputData> InputStack;
+	InputStack input_stack;
 
-	/// Для операций с input_queue.
-	std::mutex input_queue_mutex;
+	/// Для операций с input_stack.
+	std::mutex input_stack_mutex;
 
 	/// Сколько источников иссякло.
 	std::atomic<size_t> active_threads { 0 };
