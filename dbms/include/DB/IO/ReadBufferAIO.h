@@ -13,9 +13,10 @@
 namespace DB
 {
 
-using ReadBufferWithOwnMemory = BufferWithOwnMemory<ReadBuffer>;
-
-class ReadBufferAIO : public IBufferAIO, public ReadBufferWithOwnMemory
+/** Класс для асинхронной чтения данных.
+  * Все размеры и смещения должны быть кратны 512 байтам.
+  */
+class ReadBufferAIO : public IBufferAIO, public BufferWithOwnMemory<ReadBuffer>
 {
 public:
 	ReadBufferAIO(const std::string & filename_, size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE, int flags_ = -1, mode_t mode_ = 0666,
@@ -37,7 +38,8 @@ private:
 	void swapBuffers() noexcept override;
 
 private:
-	ReadBufferWithOwnMemory fill_buffer; // buffer asynchronously read from disk
+	/// Буфер для асинхронных операций чтения данных.
+	BufferWithOwnMemory<ReadBuffer> fill_buffer;
 	const std::string filename;
 
 	AIOContext aio_context;
@@ -45,14 +47,18 @@ private:
 	std::vector<iocb *> request_ptrs;
 	std::vector<io_event> events;
 
-	int fd = -1; // file descriptor
+	int fd = -1;
 	size_t max_bytes_read = std::numeric_limits<size_t>::max();
 	size_t total_bytes_read = 0;
 	off_t pos_in_file = 0;
 
+	/// Асинхронная операция чтения ещё не завершилась.
 	bool is_pending_read = false;
+	/// Было получено исключение.
 	bool got_exception = false;
+	/// Конец файла достигнут.
 	bool is_eof = false;
+	/// Был отправлен хоть один запрос на асинхронную операцию чтения.
 	bool is_started = false;
 };
 

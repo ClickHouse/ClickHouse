@@ -49,7 +49,7 @@ WriteBufferAIO::~WriteBufferAIO()
 off_t WriteBufferAIO::seek(off_t off, int whence)
 {
 	if ((off % DB::WriteBufferAIO::BLOCK_SIZE) != 0)
-		throw Exception("Invalid offset for WriteBufferAIO::seek", ErrorCodes::AIO_UNALIGNED_BUFFER_ERROR);
+		throw Exception("Invalid offset for WriteBufferAIO::seek", ErrorCodes::AIO_UNALIGNED_SIZE_ERROR);
 
 	waitForCompletion();
 
@@ -65,7 +65,7 @@ off_t WriteBufferAIO::seek(off_t off, int whence)
 void WriteBufferAIO::truncate(off_t length)
 {
 	if ((length % DB::WriteBufferAIO::BLOCK_SIZE) != 0)
-		throw Exception("Invalid length for WriteBufferAIO::ftruncate", ErrorCodes::AIO_UNALIGNED_BUFFER_ERROR);
+		throw Exception("Invalid length for WriteBufferAIO::ftruncate", ErrorCodes::AIO_UNALIGNED_SIZE_ERROR);
 
 	waitForCompletion();
 
@@ -79,8 +79,14 @@ void WriteBufferAIO::truncate(off_t length)
 
 void WriteBufferAIO::sync()
 {
+	/// Если в буфере ещё остались данные - запишем их.
+	next();
 	waitForCompletion();
-	::fsync(fd);
+
+	/// Попросим ОС сбросить данные на диск.
+	int res = ::fsync(fd);
+	if (res == -1)
+		throwFromErrno("Cannot fsync " + getFileName(), ErrorCodes::CANNOT_FSYNC);
 }
 
 void WriteBufferAIO::nextImpl()
@@ -91,7 +97,7 @@ void WriteBufferAIO::nextImpl()
 	waitForCompletion();
 	swapBuffers();
 
-	// Create request.
+	/// Создать запрос.
 	::memset(&cb, 0, sizeof(cb));
 
 	cb.aio_lio_opcode = IOCB_CMD_PWRITE;
@@ -104,10 +110,10 @@ void WriteBufferAIO::nextImpl()
 	if ((cb.aio_nbytes % BLOCK_SIZE) != 0)
 	{
 		got_exception = true;
-		throw Exception("Illegal attempt to write unaligned data to file " + filename, ErrorCodes::AIO_UNALIGNED_BUFFER_ERROR);
+		throw Exception("Illegal attempt to write unaligned data to file " + filename, ErrorCodes::AIO_UNALIGNED_SIZE_ERROR);
 	}
 
-	// Submit request.
+	/// Отправить запрос.
 	while (io_submit(aio_context.ctx, request_ptrs.size(), &request_ptrs[0]) < 0)
 		if (errno != EINTR)
 		{

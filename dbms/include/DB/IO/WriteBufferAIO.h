@@ -11,9 +11,10 @@
 namespace DB
 {
 
-using WriteBufferWithOwnMemory = BufferWithOwnMemory<WriteBuffer>;
-
-class WriteBufferAIO : public IBufferAIO, public WriteBufferWithOwnMemory
+/** Класс для асинхронной записи данных.
+  * Все размеры и смещения должны быть кратны 512 байтам.
+  */
+class WriteBufferAIO : public IBufferAIO, public BufferWithOwnMemory<WriteBuffer>
 {
 public:
 	WriteBufferAIO(const std::string & filename_, size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE, int flags_ = -1, mode_t mode_ = 0666,
@@ -35,18 +36,21 @@ private:
 	void swapBuffers() noexcept override;
 
 private:
-	WriteBufferWithOwnMemory flush_buffer; // buffer asynchronously flushed to disk
-	const std::string filename; // name of the file to which we flush data.
+	/// Буфер для асинхронных операций записи данных.
+	BufferWithOwnMemory<WriteBuffer> flush_buffer;
+	const std::string filename;
 
 	AIOContext aio_context;
 	iocb cb;
 	std::vector<iocb *> request_ptrs;
 	std::vector<io_event> events;
 
-	int fd = -1; // file descriptor
+	int fd = -1;
 	size_t total_bytes_written = 0;
 
+	/// Асинхронная операция записи ещё не завершилась.
 	bool is_pending_write = false;
+	/// Было получено исключение.
 	bool got_exception = false;
 };
 

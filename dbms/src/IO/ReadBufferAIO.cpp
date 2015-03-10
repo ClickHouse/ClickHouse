@@ -2,7 +2,6 @@
 #include <DB/Common/ProfileEvents.h>
 #include <DB/Core/ErrorCodes.h>
 
-#include <cerrno>
 #include <sys/types.h>
 #include <sys/stat.h>
 
@@ -56,7 +55,7 @@ void ReadBufferAIO::setMaxBytes(size_t max_bytes_read_)
 	if ((max_bytes_read_ % BLOCK_SIZE) != 0)
 	{
 		got_exception = true;
-		throw Exception("Invalid maximum number of bytes to read from file " + filename, ErrorCodes::AIO_UNALIGNED_BUFFER_ERROR);
+		throw Exception("Invalid maximum number of bytes to read from file " + filename, ErrorCodes::AIO_UNALIGNED_SIZE_ERROR);
 	}
 	max_bytes_read = max_bytes_read_;
 }
@@ -65,7 +64,7 @@ void ReadBufferAIO::setMaxBytes(size_t max_bytes_read_)
 off_t ReadBufferAIO::seek(off_t off, int whence)
 {
 	if ((off % DB::ReadBufferAIO::BLOCK_SIZE) != 0)
-		throw Exception("Invalid offset for ReadBufferAIO::seek", ErrorCodes::AIO_UNALIGNED_BUFFER_ERROR);
+		throw Exception("Invalid offset for ReadBufferAIO::seek", ErrorCodes::AIO_UNALIGNED_SIZE_ERROR);
 
 	waitForCompletion();
 
@@ -117,7 +116,7 @@ bool ReadBufferAIO::nextImpl()
 	if (is_eof)
 		return true;
 
-	// Create request.
+	// Создать запрос.
 	::memset(&cb, 0, sizeof(cb));
 
 	cb.aio_lio_opcode = IOCB_CMD_PREAD;
@@ -127,7 +126,7 @@ bool ReadBufferAIO::nextImpl()
 	cb.aio_offset = pos_in_file;
 	cb.aio_reqprio = 0;
 
-	// Submit request.
+	// Отправить запрос.
 	while (io_submit(aio_context.ctx, request_ptrs.size(), &request_ptrs[0]) < 0)
 		if (errno != EINTR)
 		{
@@ -162,7 +161,7 @@ void ReadBufferAIO::waitForCompletion()
 		if ((bytes_read % BLOCK_SIZE) != 0)
 		{
 			got_exception = true;
-			throw Exception("Received unaligned number of bytes from file " + filename, ErrorCodes::AIO_UNALIGNED_BUFFER_ERROR);
+			throw Exception("Received unaligned number of bytes from file " + filename, ErrorCodes::AIO_UNALIGNED_SIZE_ERROR);
 		}
 
 		pos_in_file += bytes_read;
