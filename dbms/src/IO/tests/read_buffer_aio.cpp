@@ -20,6 +20,7 @@ bool test3(const std::string & filename, const std::string & buf);
 bool test4(const std::string & filename);
 bool test5(const std::string & filename, const std::string & buf);
 bool test6(const std::string & filename, const std::string & buf);
+bool test7(const std::string & filename);
 
 void run()
 {
@@ -33,6 +34,7 @@ void run()
 	run_test(std::bind(test4, std::ref(filename)));
 	run_test(std::bind(test5, std::ref(filename), std::ref(buf)));
 	run_test(std::bind(test6, std::ref(filename), std::ref(buf)));
+	run_test(std::bind(test7, std::ref(filename)));
 
 	::unlink(filename.c_str());
 }
@@ -131,6 +133,7 @@ bool test3(const std::string & filename, const std::string & buf)
 bool test4(const std::string & filename)
 {
 	bool ok = false;
+
 	try
 	{
 		DB::ReadBufferAIO in(filename, 3 * DB::ReadBufferAIO::BLOCK_SIZE);
@@ -167,10 +170,27 @@ bool test6(const std::string & filename, const std::string & buf)
 	newbuf.resize(buf.length() - DB::ReadBufferAIO::BLOCK_SIZE);
 
 	DB::ReadBufferAIO in(filename, 3 * DB::ReadBufferAIO::BLOCK_SIZE);
-	in.seek(DB::ReadBufferAIO::BLOCK_SIZE, SEEK_CUR);
+	(void) in.seek(DB::ReadBufferAIO::BLOCK_SIZE, SEEK_CUR);
 	(void) in.read(&newbuf[0], newbuf.length());
 
 	return (newbuf == buf.substr(DB::ReadBufferAIO::BLOCK_SIZE));
+}
+
+bool test7(const std::string & filename)
+{
+	bool ok = false;
+
+	try
+	{
+		DB::ReadBufferAIO in(filename, 3 * DB::ReadBufferAIO::BLOCK_SIZE);
+		(void) in.seek(DB::ReadBufferAIO::BLOCK_SIZE + 1, SEEK_CUR);
+	}
+	catch (const DB::Exception &)
+	{
+		ok = true;
+	}
+
+	return ok;
 }
 
 }

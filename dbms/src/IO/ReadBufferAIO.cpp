@@ -64,6 +64,9 @@ void ReadBufferAIO::setMaxBytes(size_t max_bytes_read_)
 /// Если offset такой маленький, что мы не выйдем за пределы буфера, настоящий seek по файлу не делается.
 off_t ReadBufferAIO::seek(off_t off, int whence)
 {
+	if ((off % DB::ReadBufferAIO::BLOCK_SIZE) != 0)
+		throw Exception("Invalid offset for ReadBufferAIO::seek", ErrorCodes::AIO_UNALIGNED_BUFFER_ERROR);
+
 	waitForCompletion();
 
 	off_t new_pos = off;
