@@ -4,6 +4,7 @@
 #include <fstream>
 #include <functional>
 #include <cstdlib>
+#include <unistd.h>
 
 namespace
 {
@@ -23,6 +24,8 @@ void run()
 
 	run_test(std::bind(test1, std::ref(filename), std::ref(buf)));
 	run_test(std::bind(test2, std::ref(filename), std::ref(buf)));
+
+	::unlink(filename.c_str());
 }
 
 void prepare(std::string  & filename, std::string & buf)
@@ -82,34 +85,28 @@ void run_test(std::function<bool()> && func)
 
 bool test1(const std::string & filename, const std::string & buf)
 {
-	size_t n_read;
-	std::vector<char> newbuf(buf.size());
+	std::string newbuf;
+	newbuf.resize(buf.length());
 
-	{
-		DB::ReadBufferAIO in(filename, 3 * DB::ReadBufferAIO::BLOCK_SIZE);
-		n_read = in.read(&newbuf[0], newbuf.size());
-	}
+	DB::ReadBufferAIO in(filename, 3 * DB::ReadBufferAIO::BLOCK_SIZE);
+	(void) in.read(&newbuf[0], newbuf.length());
 
-	newbuf.resize(n_read);
-	std::string outstr(newbuf.begin(), newbuf.end());
-	return (outstr == buf);
+	return (newbuf == buf);
 }
 
 bool test2(const std::string & filename, const std::string & buf)
 {
-	size_t n_read;
-	std::vector<char> newbuf(buf.size());
+	std::string newbuf;
+	newbuf.resize(buf.length());
+
 	size_t requested = 9 * DB::ReadBufferAIO::BLOCK_SIZE;
 
-	{
-		DB::ReadBufferAIO in(filename, 3 * DB::ReadBufferAIO::BLOCK_SIZE);
-		in.setMaxBytes(requested);
-		n_read = in.read(&newbuf[0], newbuf.size());
-	}
+	DB::ReadBufferAIO in(filename, 3 * DB::ReadBufferAIO::BLOCK_SIZE);
+	in.setMaxBytes(requested);
+	size_t n_read = in.read(&newbuf[0], newbuf.length());
 
 	newbuf.resize(n_read);
-	std::string outstr(newbuf.begin(), newbuf.end());
-	return (outstr == buf.substr(0, requested));
+	return (newbuf == buf.substr(0, requested));
 }
 
 }
