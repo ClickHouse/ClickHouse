@@ -37,12 +37,15 @@ private:
 private:
 	WriteBufferWithOwnMemory flush_buffer; // buffer asynchronously flushed to disk
 	const std::string filename; // name of the file to which we flush data.
+
 	AIOContext aio_context;
 	iocb cb;
 	std::vector<iocb *> request_ptrs;
 	std::vector<io_event> events;
-	size_t total_bytes_written = 0;
+
 	int fd = -1; // file descriptor
+	size_t total_bytes_written = 0;
+
 	bool is_pending_write = false;
 	bool got_exception = false;
 };

@@ -39,14 +39,17 @@ private:
 private:
 	ReadBufferWithOwnMemory fill_buffer; // buffer asynchronously read from disk
 	const std::string filename;
+
 	AIOContext aio_context;
 	iocb cb;
 	std::vector<iocb *> request_ptrs;
 	std::vector<io_event> events;
+
+	int fd = -1; // file descriptor
 	size_t max_bytes_read = std::numeric_limits<size_t>::max();
 	size_t total_bytes_read = 0;
-	int fd = -1; // file descriptor
 	off_t pos_in_file = 0;
+
 	bool is_pending_read = false;
 	bool got_exception = false;
 	bool is_eof = false;

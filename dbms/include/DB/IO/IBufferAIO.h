@@ -5,6 +5,8 @@
 namespace DB
 {
 
+/** Этот интерфейс определяет функции, которые ReadBufferAIO и WriteBufferAIO реализуют.
+  */
 class IBufferAIO
 {
 public:

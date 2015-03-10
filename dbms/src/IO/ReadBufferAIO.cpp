@@ -104,13 +104,16 @@ off_t ReadBufferAIO::seek(off_t off, int whence)
 
 bool ReadBufferAIO::nextImpl()
 {
-	waitForCompletion();
-
 	if (is_eof)
 		return false;
 
+	waitForCompletion();
+
 	if (likely(is_started))
 		swapBuffers();
+
+	if (is_eof)
+		return true;
 
 	// Create request.
 	::memset(&cb, 0, sizeof(cb));

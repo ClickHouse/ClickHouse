@@ -14,7 +14,7 @@ void die(const std::string & msg)
 	::exit(EXIT_FAILURE);
 }
 
-int main()
+bool test1()
 {
 	bool ok;
 
@@ -46,13 +46,16 @@ int main()
 		}
 
 		// Read data.
-		std::vector<char> newbuf(3 * DB::ReadBufferAIO::BLOCK_SIZE);
+		size_t n_read;
+		std::vector<char> newbuf(10 * DB::ReadBufferAIO::BLOCK_SIZE);
 		{
 			DB::ReadBufferAIO in(filename, 3 * DB::ReadBufferAIO::BLOCK_SIZE);
-			in.read(&newbuf[0], newbuf.size());
+			n_read = in.read(&newbuf[0], newbuf.size());
 		}
 
-		ok = std::equal(newbuf.begin(), newbuf.end(), buf.begin());
+		newbuf.resize(n_read);
+		std::string outstr(newbuf.begin(), newbuf.end());
+		ok = (outstr == buf);
 	}
 	catch (const DB::Exception & ex)
 	{
@@ -70,5 +73,76 @@ int main()
 	else
 		std::cout << "Test failed\n";
 
+	return ok;
+}
+
+bool test2()
+{
+	bool ok;
+
+	try
+	{
+		// Create temporary directory and file inside it.
+		char pattern[] = "/tmp/fileXXXXXX";
+		char * dir = ::mkdtemp(pattern);
+		if (dir == nullptr)
+			die("Could not create directory");
+
+		const std::string filename = std::string(dir) + "/foo";
+
+		// Create data.
+		std::string buf;
+		buf.reserve(10 * DB::ReadBufferAIO::BLOCK_SIZE);
+		for (size_t i = 0; i < (10 * DB::ReadBufferAIO::BLOCK_SIZE); ++i)
+		{
+			buf.append(1, source[i % source.length()]);
+		}
+
+		// Write data synchrounously.
+		{
+			std::ofstream out(filename.c_str());
+			if (!out.is_open())
+				die("Could not open file");
+
+			out << buf;
+		}
+
+		// Read data.
+		size_t n_read;
+		std::vector<char> newbuf(10 * DB::ReadBufferAIO::BLOCK_SIZE);
+		size_t expected = 9 * DB::ReadBufferAIO::BLOCK_SIZE;
+		{
+			DB::ReadBufferAIO in(filename, 3 * DB::ReadBufferAIO::BLOCK_SIZE);
+			in.setMaxBytes(expected);
+			n_read = in.read(&newbuf[0], newbuf.size());
+		}
+
+		newbuf.resize(n_read);
+		std::string outstr(newbuf.begin(), newbuf.end());
+		ok = (outstr == buf.substr(0, expected));
+	}
+	catch (const DB::Exception & ex)
+	{
+		ok = false;
+		std::cout << "Caught exception " << ex.displayText() << "\n";
+	}
+	catch (const std::exception & ex)
+	{
+		ok = false;
+		std::cout << "Caught exception " << ex.what() << "\n";
+	}
+
+	if (ok)
+		std::cout << "Test passed\n";
+	else
+		std::cout << "Test failed\n";
+
+	return ok;
+}
+
+int main()
+{
+	(void) test1();
+	(void) test2();
 	return 0;
 }
