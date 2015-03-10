@@ -13,8 +13,13 @@ void run();
 void prepare(std::string  & filename, std::string & buf);
 void die(const std::string & msg);
 void run_test(std::function<bool()> && func);
+
 bool test1(const std::string & filename, const std::string & buf);
 bool test2(const std::string & filename, const std::string & buf);
+bool test3(const std::string & filename, const std::string & buf);
+bool test4(const std::string & filename);
+bool test5(const std::string & filename, const std::string & buf);
+bool test6(const std::string & filename, const std::string & buf);
 
 void run()
 {
@@ -24,6 +29,10 @@ void run()
 
 	run_test(std::bind(test1, std::ref(filename), std::ref(buf)));
 	run_test(std::bind(test2, std::ref(filename), std::ref(buf)));
+	run_test(std::bind(test3, std::ref(filename), std::ref(buf)));
+	run_test(std::bind(test4, std::ref(filename)));
+	run_test(std::bind(test5, std::ref(filename), std::ref(buf)));
+	run_test(std::bind(test6, std::ref(filename), std::ref(buf)));
 
 	::unlink(filename.c_str());
 }
@@ -85,6 +94,16 @@ void run_test(std::function<bool()> && func)
 
 bool test1(const std::string & filename, const std::string & buf)
 {
+	DB::ReadBufferAIO in(filename, 3 * DB::ReadBufferAIO::BLOCK_SIZE);
+	if (in.getFileName() != filename)
+		return false;
+	if (in.getFD() == -1)
+		return false;
+	return true;
+}
+
+bool test2(const std::string & filename, const std::string & buf)
+{
 	std::string newbuf;
 	newbuf.resize(buf.length());
 
@@ -94,7 +113,7 @@ bool test1(const std::string & filename, const std::string & buf)
 	return (newbuf == buf);
 }
 
-bool test2(const std::string & filename, const std::string & buf)
+bool test3(const std::string & filename, const std::string & buf)
 {
 	std::string newbuf;
 	newbuf.resize(buf.length());
@@ -107,6 +126,51 @@ bool test2(const std::string & filename, const std::string & buf)
 
 	newbuf.resize(n_read);
 	return (newbuf == buf.substr(0, requested));
+}
+
+bool test4(const std::string & filename)
+{
+	bool ok = false;
+	try
+	{
+		DB::ReadBufferAIO in(filename, 3 * DB::ReadBufferAIO::BLOCK_SIZE);
+		in.setMaxBytes(DB::ReadBufferAIO::BLOCK_SIZE >> 1);
+	}
+	catch (const DB::Exception &)
+	{
+		ok = true;
+	}
+	return ok;
+}
+
+bool test5(const std::string & filename, const std::string & buf)
+{
+	std::string newbuf;
+	newbuf.resize(buf.length());
+
+	DB::ReadBufferAIO in(filename, 3 * DB::ReadBufferAIO::BLOCK_SIZE);
+
+	if (in.getPositionInFile() != 0)
+		return false;
+
+	(void) in.read(&newbuf[0], newbuf.length());
+
+	if (in.getPositionInFile() != buf.length())
+		return false;
+
+	return true;
+}
+
+bool test6(const std::string & filename, const std::string & buf)
+{
+	std::string newbuf;
+	newbuf.resize(buf.length() - DB::ReadBufferAIO::BLOCK_SIZE);
+
+	DB::ReadBufferAIO in(filename, 3 * DB::ReadBufferAIO::BLOCK_SIZE);
+	in.seek(DB::ReadBufferAIO::BLOCK_SIZE, SEEK_CUR);
+	(void) in.read(&newbuf[0], newbuf.length());
+
+	return (newbuf == buf.substr(DB::ReadBufferAIO::BLOCK_SIZE));
 }
 
 }

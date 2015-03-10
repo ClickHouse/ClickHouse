@@ -2,8 +2,7 @@
 #include <DB/Common/ProfileEvents.h>
 #include <DB/Core/ErrorCodes.h>
 
-#include <Yandex/likely.h>
-
+#include <cerrno>
 #include <sys/types.h>
 #include <sys/stat.h>
 
@@ -109,7 +108,7 @@ bool ReadBufferAIO::nextImpl()
 
 	waitForCompletion();
 
-	if (likely(is_started))
+	if (is_started)
 		swapBuffers();
 
 	if (is_eof)
@@ -122,7 +121,7 @@ bool ReadBufferAIO::nextImpl()
 	cb.aio_fildes = fd;
 	cb.aio_buf = reinterpret_cast<UInt64>(fill_buffer.internalBuffer().begin());
 	cb.aio_nbytes = std::min(fill_buffer.internalBuffer().size(), max_bytes_read);
-	cb.aio_offset = total_bytes_read;
+	cb.aio_offset = pos_in_file;
 	cb.aio_reqprio = 0;
 
 	// Submit request.
@@ -135,7 +134,7 @@ bool ReadBufferAIO::nextImpl()
 
 	is_pending_read = true;
 
-	if (unlikely(!is_started))
+	if (!is_started)
 		is_started = true;
 
 	return true;
