@@ -2,60 +2,66 @@
 
 #include <iostream>
 #include <fstream>
-#include <streambuf>
-#include <algorithm>
+#include <functional>
 #include <cstdlib>
 
-static const std::string source = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+namespace
+{
+
+void run();
+void prepare(std::string  & filename, std::string & buf);
+void die(const std::string & msg);
+void run_test(std::function<bool()> && func);
+bool test1(const std::string & filename, const std::string & buf);
+bool test2(const std::string & filename, const std::string & buf);
+
+void run()
+{
+	std::string filename;
+	std::string buf;
+	prepare(filename, buf);
+
+	run_test(std::bind(test1, std::ref(filename), std::ref(buf)));
+	run_test(std::bind(test2, std::ref(filename), std::ref(buf)));
+}
+
+void prepare(std::string  & filename, std::string & buf)
+{
+	static const std::string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
+	char pattern[] = "/tmp/fileXXXXXX";
+	char * dir = ::mkdtemp(pattern);
+	if (dir == nullptr)
+		die("Could not create directory");
+
+	filename = std::string(dir) + "/foo";
+
+	size_t n = 10 * DB::ReadBufferAIO::BLOCK_SIZE;
+	buf.reserve(n);
+
+	for (size_t i = 0; i < n; ++i)
+		buf += chars[i % chars.length()];
+
+	std::ofstream out(filename.c_str());
+	if (!out.is_open())
+		die("Could not open file");
+
+	out << buf;
+}
 
 void die(const std::string & msg)
 {
-	std::cout << msg;
+	std::cout << msg << "\n";
 	::exit(EXIT_FAILURE);
 }
 
-bool test1()
+void run_test(std::function<bool()> && func)
 {
 	bool ok;
 
 	try
 	{
-		// Create temporary directory and file inside it.
-		char pattern[] = "/tmp/fileXXXXXX";
-		char * dir = ::mkdtemp(pattern);
-		if (dir == nullptr)
-			die("Could not create directory");
-
-		const std::string filename = std::string(dir) + "/foo";
-
-		// Create data.
-		std::string buf;
-		buf.reserve(10 * DB::ReadBufferAIO::BLOCK_SIZE);
-		for (size_t i = 0; i < (10 * DB::ReadBufferAIO::BLOCK_SIZE); ++i)
-		{
-			buf.append(1, source[i % source.length()]);
-		}
-
-		// Write data synchrounously.
-		{
-			std::ofstream out(filename.c_str());
-			if (!out.is_open())
-				die("Could not open file");
-
-			out << buf;
-		}
-
-		// Read data.
-		size_t n_read;
-		std::vector<char> newbuf(10 * DB::ReadBufferAIO::BLOCK_SIZE);
-		{
-			DB::ReadBufferAIO in(filename, 3 * DB::ReadBufferAIO::BLOCK_SIZE);
-			n_read = in.read(&newbuf[0], newbuf.size());
-		}
-
-		newbuf.resize(n_read);
-		std::string outstr(newbuf.begin(), newbuf.end());
-		ok = (outstr == buf);
+		ok = func();
 	}
 	catch (const DB::Exception & ex)
 	{
@@ -72,77 +78,44 @@ bool test1()
 		std::cout << "Test passed\n";
 	else
 		std::cout << "Test failed\n";
-
-	return ok;
 }
 
-bool test2()
+bool test1(const std::string & filename, const std::string & buf)
 {
-	bool ok;
+	size_t n_read;
+	std::vector<char> newbuf(buf.size());
 
-	try
 	{
-		// Create temporary directory and file inside it.
-		char pattern[] = "/tmp/fileXXXXXX";
-		char * dir = ::mkdtemp(pattern);
-		if (dir == nullptr)
-			die("Could not create directory");
-
-		const std::string filename = std::string(dir) + "/foo";
-
-		// Create data.
-		std::string buf;
-		buf.reserve(10 * DB::ReadBufferAIO::BLOCK_SIZE);
-		for (size_t i = 0; i < (10 * DB::ReadBufferAIO::BLOCK_SIZE); ++i)
-		{
-			buf.append(1, source[i % source.length()]);
-		}
-
-		// Write data synchrounously.
-		{
-			std::ofstream out(filename.c_str());
-			if (!out.is_open())
-				die("Could not open file");
-
-			out << buf;
-		}
-
-		// Read data.
-		size_t n_read;
-		std::vector<char> newbuf(10 * DB::ReadBufferAIO::BLOCK_SIZE);
-		size_t expected = 9 * DB::ReadBufferAIO::BLOCK_SIZE;
-		{
-			DB::ReadBufferAIO in(filename, 3 * DB::ReadBufferAIO::BLOCK_SIZE);
-			in.setMaxBytes(expected);
-			n_read = in.read(&newbuf[0], newbuf.size());
-		}
-
-		newbuf.resize(n_read);
-		std::string outstr(newbuf.begin(), newbuf.end());
-		ok = (outstr == buf.substr(0, expected));
-	}
-	catch (const DB::Exception & ex)
-	{
-		ok = false;
-		std::cout << "Caught exception " << ex.displayText() << "\n";
-	}
-	catch (const std::exception & ex)
-	{
-		ok = false;
-		std::cout << "Caught exception " << ex.what() << "\n";
+		DB::ReadBufferAIO in(filename, 3 * DB::ReadBufferAIO::BLOCK_SIZE);
+		n_read = in.read(&newbuf[0], newbuf.size());
 	}
 
-	if (ok)
-		std::cout << "Test passed\n";
-	else
-		std::cout << "Test failed\n";
+	newbuf.resize(n_read);
+	std::string outstr(newbuf.begin(), newbuf.end());
+	return (outstr == buf);
+}
 
-	return ok;
+bool test2(const std::string & filename, const std::string & buf)
+{
+	size_t n_read;
+	std::vector<char> newbuf(buf.size());
+	size_t requested = 9 * DB::ReadBufferAIO::BLOCK_SIZE;
+
+	{
+		DB::ReadBufferAIO in(filename, 3 * DB::ReadBufferAIO::BLOCK_SIZE);
+		in.setMaxBytes(requested);
+		n_read = in.read(&newbuf[0], newbuf.size());
+	}
+
+	newbuf.resize(n_read);
+	std::string outstr(newbuf.begin(), newbuf.end());
+	return (outstr == buf.substr(0, requested));
+}
+
 }
 
 int main()
 {
-	(void) test1();
-	(void) test2();
+	run();
 	return 0;
 }
