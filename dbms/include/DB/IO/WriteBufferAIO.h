@@ -25,7 +25,7 @@ public:
 
 	off_t seek(off_t off, int whence = SEEK_SET);
 	void truncate(off_t length = 0);
-	void sync() noexcept;
+	void sync();
 	std::string getFileName() const noexcept override { return filename; }
 	int getFD() const noexcept override { return fd; }
 

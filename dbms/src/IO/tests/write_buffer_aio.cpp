@@ -5,7 +5,8 @@
 #include <streambuf>
 #include <cstdlib>
 
-static const std::string source = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+namespace
+{
 
 void die(const std::string & msg)
 {
@@ -13,41 +14,55 @@ void die(const std::string & msg)
 	::exit(EXIT_FAILURE);
 }
 
-int main()
+bool test1()
+{
+	static const std::string symbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
+	char pattern[] = "/tmp/fileXXXXXX";
+	char * dir = ::mkdtemp(pattern);
+	if (dir == nullptr)
+		die("Could not create directory");
+
+	const std::string filename = std::string(dir) + "/foo";
+
+	size_t n = 10 * DB::WriteBufferAIO::BLOCK_SIZE;
+
+	std::string buf;
+	buf.reserve(n);
+
+	for (size_t i = 0; i < n; ++i)
+		buf += symbols[i % symbols.length()];
+
+	{
+		DB::WriteBufferAIO out(filename, 3 * DB::WriteBufferAIO::BLOCK_SIZE);
+
+		if (out.getFileName() != filename)
+			return false;
+		if (out.getFD() == -1)
+			return false;
+
+		out.write(&buf[0], buf.length());
+	}
+
+	std::ifstream in(filename.c_str());
+	if (!in.is_open())
+		die("Could not open file");
+
+	std::string received{ std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>() };
+
+	in.close();
+	::unlink(filename.c_str());
+
+	return (received == buf);
+}
+
+void run()
 {
 	bool ok;
 
 	try
 	{
-		// Create temporary directory and file inside it.
-		char pattern[] = "/tmp/fileXXXXXX";
-		char * dir = ::mkdtemp(pattern);
-		if (dir == nullptr)
-			die("Could not create directory");
-
-		const std::string filename = std::string(dir) + "/foo";
-
-		// Create data.
-		std::string buf;
-		buf.reserve(10 * DB::WriteBufferAIO::BLOCK_SIZE);
-		for (size_t i = 0; i < (10 * DB::WriteBufferAIO::BLOCK_SIZE); ++i)
-		{
-			buf.append(1, source[i % source.length()]);
-		}
-
-		// Write data.
-		{
-			DB::WriteBufferAIO out(filename, 3 * DB::WriteBufferAIO::BLOCK_SIZE);
-			out.write(&buf[0], buf.length());
-		}
-
-		// Read data synchronously.
-		std::ifstream in(filename.c_str());
-		if (!in.is_open())
-			die("Could not open file");
-
-		std::string received{ std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>() };
-		ok = (received == buf);
+		ok = test1();
 	}
 	catch (const DB::Exception & ex)
 	{
@@ -64,6 +79,12 @@ int main()
 		std::cout << "Test passed\n";
 	else
 		std::cout << "Test failed\n";
+}
 
+}
+
+int main()
+{
+	run();
 	return 0;
 }

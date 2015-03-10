@@ -1,5 +1,6 @@
 #include <DB/IO/ReadBufferAIO.h>
 
+#include <vector>
 #include <iostream>
 #include <fstream>
 #include <functional>
@@ -12,9 +13,9 @@ namespace
 void run();
 void prepare(std::string  & filename, std::string & buf);
 void die(const std::string & msg);
-void run_test(std::function<bool()> && func);
+void run_test(unsigned int num, const std::function<bool()> func);
 
-bool test1(const std::string & filename, const std::string & buf);
+bool test1(const std::string & filename);
 bool test2(const std::string & filename, const std::string & buf);
 bool test3(const std::string & filename, const std::string & buf);
 bool test4(const std::string & filename);
@@ -28,20 +29,30 @@ void run()
 	std::string buf;
 	prepare(filename, buf);
 
-	run_test(std::bind(test1, std::ref(filename), std::ref(buf)));
-	run_test(std::bind(test2, std::ref(filename), std::ref(buf)));
-	run_test(std::bind(test3, std::ref(filename), std::ref(buf)));
-	run_test(std::bind(test4, std::ref(filename)));
-	run_test(std::bind(test5, std::ref(filename), std::ref(buf)));
-	run_test(std::bind(test6, std::ref(filename), std::ref(buf)));
-	run_test(std::bind(test7, std::ref(filename)));
+	const std::vector<std::function<bool()> > tests =
+	{
+		std::bind(test1, std::ref(filename)),
+		std::bind(test2, std::ref(filename), std::ref(buf)),
+		std::bind(test3, std::ref(filename), std::ref(buf)),
+		std::bind(test4, std::ref(filename)),
+		std::bind(test5, std::ref(filename), std::ref(buf)),
+		std::bind(test6, std::ref(filename), std::ref(buf)),
+		std::bind(test7, std::ref(filename))
+	};
+
+	unsigned int num = 0;
+	for (const auto & test : tests)
+	{
+		++num;
+		run_test(num, test);
+	}
 
 	::unlink(filename.c_str());
 }
 
 void prepare(std::string  & filename, std::string & buf)
 {
-	static const std::string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+	static const std::string symbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
 	char pattern[] = "/tmp/fileXXXXXX";
 	char * dir = ::mkdtemp(pattern);
@@ -54,7 +65,7 @@ void prepare(std::string  & filename, std::string & buf)
 	buf.reserve(n);
 
 	for (size_t i = 0; i < n; ++i)
-		buf += chars[i % chars.length()];
+		buf += symbols[i % symbols.length()];
 
 	std::ofstream out(filename.c_str());
 	if (!out.is_open())
@@ -69,7 +80,7 @@ void die(const std::string & msg)
 	::exit(EXIT_FAILURE);
 }
 
-void run_test(std::function<bool()> && func)
+void run_test(unsigned int num, const std::function<bool()> func)
 {
 	bool ok;
 
@@ -89,12 +100,12 @@ void run_test(std::function<bool()> && func)
 	}
 
 	if (ok)
-		std::cout << "Test passed\n";
+		std::cout << "Test " << num << " passed\n";
 	else
-		std::cout << "Test failed\n";
+		std::cout << "Test " << num << " failed\n";
 }
 
-bool test1(const std::string & filename, const std::string & buf)
+bool test1(const std::string & filename)
 {
 	DB::ReadBufferAIO in(filename, 3 * DB::ReadBufferAIO::BLOCK_SIZE);
 	if (in.getFileName() != filename)

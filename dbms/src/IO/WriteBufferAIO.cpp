@@ -46,11 +46,14 @@ WriteBufferAIO::~WriteBufferAIO()
 		::close(fd);
 }
 
-off_t WriteBufferAIO::seek(off_t offset, int whence)
+off_t WriteBufferAIO::seek(off_t off, int whence)
 {
+	if ((off % DB::WriteBufferAIO::BLOCK_SIZE) != 0)
+		throw Exception("Invalid offset for WriteBufferAIO::seek", ErrorCodes::AIO_UNALIGNED_BUFFER_ERROR);
+
 	waitForCompletion();
 
-	off_t res = ::lseek(fd, offset, whence);
+	off_t res = ::lseek(fd, off, whence);
 	if (res == -1)
 	{
 		got_exception = true;
@@ -61,6 +64,9 @@ off_t WriteBufferAIO::seek(off_t offset, int whence)
 
 void WriteBufferAIO::truncate(off_t length)
 {
+	if ((length % DB::WriteBufferAIO::BLOCK_SIZE) != 0)
+		throw Exception("Invalid length for WriteBufferAIO::ftruncate", ErrorCodes::AIO_UNALIGNED_BUFFER_ERROR);
+
 	waitForCompletion();
 
 	int res = ::ftruncate(fd, length);
@@ -71,8 +77,9 @@ void WriteBufferAIO::truncate(off_t length)
 	}
 }
 
-void WriteBufferAIO::sync() noexcept
+void WriteBufferAIO::sync()
 {
+	waitForCompletion();
 	::fsync(fd);
 }
 
