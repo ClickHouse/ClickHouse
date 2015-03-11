@@ -12,7 +12,7 @@ WriteBufferAIO::WriteBufferAIO(const std::string & filename_, size_t buffer_size
 		char * existing_memory_)
 		: BufferWithOwnMemory(buffer_size_, existing_memory_, BLOCK_SIZE),
 		flush_buffer(BufferWithOwnMemory(buffer_size_, nullptr, BLOCK_SIZE)),
-		filename(filename_), request_ptrs{ &cb }, events(1)
+		filename(filename_), request_ptrs{ &request }, events(1)
 {
 	ProfileEvents::increment(ProfileEvents::FileOpen);
 
@@ -102,16 +102,16 @@ void WriteBufferAIO::nextImpl()
 	swapBuffers();
 
 	/// Создать запрос.
-	::memset(&cb, 0, sizeof(cb));
+	::memset(&request, 0, sizeof(request));
 
-	cb.aio_lio_opcode = IOCB_CMD_PWRITE;
-	cb.aio_fildes = fd;
-	cb.aio_buf = reinterpret_cast<UInt64>(flush_buffer.buffer().begin());
-	cb.aio_nbytes = flush_buffer.offset();
-	cb.aio_offset = total_bytes_written;
-	cb.aio_reqprio = 0;
+	request.aio_lio_opcode = IOCB_CMD_PWRITE;
+	request.aio_fildes = fd;
+	request.aio_buf = reinterpret_cast<UInt64>(flush_buffer.buffer().begin());
+	request.aio_nbytes = flush_buffer.offset();
+	request.aio_offset = total_bytes_written;
+	request.aio_reqprio = 0;
 
-	if ((cb.aio_nbytes % BLOCK_SIZE) != 0)
+	if ((request.aio_nbytes % BLOCK_SIZE) != 0)
 	{
 		got_exception = true;
 		throw Exception("Illegal attempt to write unaligned data to file " + filename, ErrorCodes::AIO_UNALIGNED_SIZE_ERROR);

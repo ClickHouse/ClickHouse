@@ -41,7 +41,7 @@ private:
 	const std::string filename;
 
 	AIOContext aio_context;
-	iocb cb;
+	iocb request;
 	std::vector<iocb *> request_ptrs;
 	std::vector<io_event> events;
 

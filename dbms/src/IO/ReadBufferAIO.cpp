@@ -12,7 +12,7 @@ ReadBufferAIO::ReadBufferAIO(const std::string & filename_, size_t buffer_size_,
 	char * existing_memory_)
 	: BufferWithOwnMemory(buffer_size_, existing_memory_, BLOCK_SIZE),
 	fill_buffer(BufferWithOwnMemory(buffer_size_, existing_memory_, BLOCK_SIZE)),
-	filename(filename_), request_ptrs{ &cb }, events(1)
+	filename(filename_), request_ptrs{ &request }, events(1)
 {
 	ProfileEvents::increment(ProfileEvents::FileOpen);
 
@@ -124,14 +124,14 @@ bool ReadBufferAIO::nextImpl()
 		return true;
 
 	/// Создать запрос.
-	::memset(&cb, 0, sizeof(cb));
+	::memset(&request, 0, sizeof(request));
 
-	cb.aio_lio_opcode = IOCB_CMD_PREAD;
-	cb.aio_fildes = fd;
-	cb.aio_buf = reinterpret_cast<UInt64>(fill_buffer.internalBuffer().begin());
-	cb.aio_nbytes = std::min(fill_buffer.internalBuffer().size(), max_bytes_read);
-	cb.aio_offset = pos_in_file;
-	cb.aio_reqprio = 0;
+	request.aio_lio_opcode = IOCB_CMD_PREAD;
+	request.aio_fildes = fd;
+	request.aio_buf = reinterpret_cast<UInt64>(fill_buffer.internalBuffer().begin());
+	request.aio_nbytes = std::min(fill_buffer.internalBuffer().size(), max_bytes_read);
+	request.aio_offset = pos_in_file;
+	request.aio_reqprio = 0;
 
 	/// Отправить запрос.
 	while (io_submit(aio_context.ctx, request_ptrs.size(), &request_ptrs[0]) < 0)
