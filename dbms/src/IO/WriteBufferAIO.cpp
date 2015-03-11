@@ -87,7 +87,10 @@ void WriteBufferAIO::sync()
 	/// Попросим ОС сбросить данные на диск.
 	int res = ::fsync(fd);
 	if (res == -1)
+	{
+		got_exception = true;
 		throwFromErrno("Cannot fsync " + getFileName(), ErrorCodes::CANNOT_FSYNC);
+	}
 }
 
 void WriteBufferAIO::nextImpl()
@@ -138,15 +141,22 @@ void WriteBufferAIO::waitForCompletion()
 				throw Exception("Failed to wait for asynchronous IO completion on file " + filename, ErrorCodes::AIO_COMPLETION_ERROR);
 			}
 
-		size_t bytes_written = (events[0].res > 0) ? static_cast<size_t>(events[0].res) : 0;
+		is_pending_write = false;
+
+		if (events[0].res < 0)
+		{
+			got_exception = true;
+			throw Exception("Asynchronous write error on file " + filename, ErrorCodes::AIO_WRITE_ERROR);
+		}
+
+		size_t bytes_written = static_cast<size_t>(events[0].res);
 		if (bytes_written < flush_buffer.offset())
 		{
 			got_exception = true;
 			throw Exception("Asynchronous write error on file " + filename, ErrorCodes::AIO_WRITE_ERROR);
 		}
-		total_bytes_written += bytes_written;
 
-		is_pending_write = false;
+		total_bytes_written += bytes_written;
 	}
 }
 

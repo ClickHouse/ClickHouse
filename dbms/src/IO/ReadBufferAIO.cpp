@@ -106,20 +106,24 @@ off_t ReadBufferAIO::seek(off_t off, int whence)
 
 bool ReadBufferAIO::nextImpl()
 {
+	/// Если конец файла уже был достигнут при вызове этой функции,
+	/// то текущий вызов ошибочен.
 	if (is_eof)
 		return false;
 
 	waitForCompletion();
 
+	/// При первом вызове не надо обменять местами основной и дублирующий буферы.
 	if (is_started)
 		swapBuffers();
 	else
 		is_started = true;
 
+	/// Если конец файла только что достигнут, больше ничего не делаем.
 	if (is_eof)
 		return true;
 
-	// Создать запрос.
+	/// Создать запрос.
 	::memset(&cb, 0, sizeof(cb));
 
 	cb.aio_lio_opcode = IOCB_CMD_PREAD;
@@ -129,7 +133,7 @@ bool ReadBufferAIO::nextImpl()
 	cb.aio_offset = pos_in_file;
 	cb.aio_reqprio = 0;
 
-	// Отправить запрос.
+	/// Отправить запрос.
 	while (io_submit(aio_context.ctx, request_ptrs.size(), &request_ptrs[0]) < 0)
 		if (errno != EINTR)
 		{
@@ -156,7 +160,13 @@ void ReadBufferAIO::waitForCompletion()
 
 		is_pending_read = false;
 
-		size_t bytes_read = (events[0].res > 0) ? static_cast<size_t>(events[0].res) : 0;
+		if (events[0].res < 0)
+		{
+			got_exception = true;
+			throw Exception("Asynchronous read error on file " + filename, ErrorCodes::AIO_READ_ERROR);
+		}
+
+		size_t bytes_read = static_cast<size_t>(events[0].res);
 		if ((bytes_read % BLOCK_SIZE) != 0)
 		{
 			got_exception = true;
