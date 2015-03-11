@@ -1,4 +1,5 @@
 #include <DB/IO/ReadBufferAIO.h>
+#include <boost/filesystem.hpp>
 
 #include <vector>
 #include <iostream>
@@ -11,7 +12,7 @@ namespace
 {
 
 void run();
-void prepare(std::string  & filename, std::string & buf);
+void prepare(std::string & directory, std::string  & filename, std::string & buf);
 void die(const std::string & msg);
 void run_test(unsigned int num, const std::function<bool()> func);
 
@@ -25,9 +26,12 @@ bool test7(const std::string & filename);
 
 void run()
 {
+	namespace fs = boost::filesystem;
+
+	std::string directory;
 	std::string filename;
 	std::string buf;
-	prepare(filename, buf);
+	prepare(directory, filename, buf);
 
 	const std::vector<std::function<bool()> > tests =
 	{
@@ -47,10 +51,10 @@ void run()
 		run_test(num, test);
 	}
 
-	::unlink(filename.c_str());
+	fs::remove_all(directory);
 }
 
-void prepare(std::string  & filename, std::string & buf)
+void prepare(std::string & directory, std::string  & filename, std::string & buf)
 {
 	static const std::string symbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
@@ -59,7 +63,8 @@ void prepare(std::string  & filename, std::string & buf)
 	if (dir == nullptr)
 		die("Could not create directory");
 
-	filename = std::string(dir) + "/foo";
+	directory = std::string(dir);
+	filename = directory + "/foo";
 
 	size_t n = 10 * DB::ReadBufferAIO::BLOCK_SIZE;
 	buf.reserve(n);

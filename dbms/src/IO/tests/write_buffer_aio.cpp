@@ -1,4 +1,5 @@
 #include <DB/IO/WriteBufferAIO.h>
+#include <boost/filesystem.hpp>
 
 #include <iostream>
 #include <fstream>
@@ -16,6 +17,8 @@ void die(const std::string & msg)
 
 bool test1()
 {
+	namespace fs = boost::filesystem;
+
 	static const std::string symbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
 	char pattern[] = "/tmp/fileXXXXXX";
@@ -23,7 +26,8 @@ bool test1()
 	if (dir == nullptr)
 		die("Could not create directory");
 
-	const std::string filename = std::string(dir) + "/foo";
+	const std::string directory = std::string(dir);
+	const std::string filename = directory + "/foo";
 
 	size_t n = 10 * DB::WriteBufferAIO::BLOCK_SIZE;
 
@@ -51,7 +55,7 @@ bool test1()
 	std::string received{ std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>() };
 
 	in.close();
-	::unlink(filename.c_str());
+	fs::remove_all(directory);
 
 	return (received == buf);
 }
