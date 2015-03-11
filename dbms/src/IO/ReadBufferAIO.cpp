@@ -113,6 +113,8 @@ bool ReadBufferAIO::nextImpl()
 
 	if (is_started)
 		swapBuffers();
+	else
+		is_started = true;
 
 	if (is_eof)
 		return true;
@@ -136,10 +138,6 @@ bool ReadBufferAIO::nextImpl()
 		}
 
 	is_pending_read = true;
-
-	if (!is_started)
-		is_started = true;
-
 	return true;
 }
 
