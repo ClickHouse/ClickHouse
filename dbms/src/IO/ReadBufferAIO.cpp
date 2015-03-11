@@ -16,14 +16,15 @@ ReadBufferAIO::ReadBufferAIO(const std::string & filename_, size_t buffer_size_,
 {
 	ProfileEvents::increment(ProfileEvents::FileOpen);
 
-	int open_flags = ((flags_ == -1) ? O_RDONLY : flags_);
+	int open_flags = (flags_ == -1) ? O_RDONLY : flags_;
 	open_flags |= O_DIRECT;
 
 	fd = ::open(filename.c_str(), open_flags, mode_);
 	if (fd == -1)
 	{
 		got_exception = true;
-		throwFromErrno("Cannot open file " + filename, (errno == ENOENT) ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
+		auto error_code = (errno == ENOENT) ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE;
+		throwFromErrno("Cannot open file " + filename, error_code);
 	}
 }
 

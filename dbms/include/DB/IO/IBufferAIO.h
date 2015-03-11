@@ -15,6 +15,7 @@ public:
 	virtual int getFD() const noexcept = 0;
 
 public:
+	/// Граница, на которых должны быть выровнены блоки.
 	static const size_t BLOCK_SIZE = 512;
 
 protected:

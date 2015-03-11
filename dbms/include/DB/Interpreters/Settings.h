@@ -111,7 +111,7 @@ struct Settings
 	M(SettingUInt64, optimize_min_equality_disjunction_chain_length, 3) \
 	\
 	/** Минимальное количество байтов для операций ввода/ввывода минуя кэш страниц */ \
-	M(SettingUInt64, min_bytes_to_use_direct_io, (1024 * 1024 * 1024)) \
+	M(SettingUInt64, min_bytes_to_use_direct_io, (20U * 1024U * 1024U * 1024U)) \
 
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;
