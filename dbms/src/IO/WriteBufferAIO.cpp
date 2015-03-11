@@ -2,6 +2,7 @@
 #include <DB/Common/ProfileEvents.h>
 #include <DB/Core/ErrorCodes.h>
 
+#include <limits>
 #include <sys/types.h>
 #include <sys/stat.h>
 
@@ -36,6 +37,7 @@ WriteBufferAIO::~WriteBufferAIO()
 	{
 		try
 		{
+			/// Если в буфере ещё остались данные - запишем их.
 			next();
 			waitForCompletion();
 		}
@@ -54,15 +56,43 @@ off_t WriteBufferAIO::seek(off_t off, int whence)
 	if ((off % DB::WriteBufferAIO::BLOCK_SIZE) != 0)
 		throw Exception("Invalid offset for WriteBufferAIO::seek", ErrorCodes::AIO_UNALIGNED_SIZE_ERROR);
 
+	/// Если в буфере ещё остались данные - запишем их.
+	next();
 	waitForCompletion();
 
-	off_t res = ::lseek(fd, off, whence);
-	if (res == -1)
+	if (whence == SEEK_SET)
+	{
+		if (off < 0)
+		{
+			got_exception = true;
+			throw Exception("SEEK_SET underflow", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+		}
+		pos_in_file = off;
+	}
+	else if (whence == SEEK_CUR)
+	{
+		if (off >= 0)
+		{
+			if (off > (std::numeric_limits<off_t>::max() - pos_in_file))
+			{
+				got_exception = true;
+				throw Exception("SEEK_CUR overflow", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+			}
+		}
+		else if (off < -pos_in_file)
+		{
+			got_exception = true;
+			throw Exception("SEEK_CUR underflow", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+		}
+		pos_in_file += off;
+	}
+	else
 	{
 		got_exception = true;
-		throwFromErrno("Cannot seek through file " + filename, ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+		throw Exception("WriteBufferAIO::seek expects SEEK_SET or SEEK_CUR as whence", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 	}
-	return res;
+
+	return pos_in_file;
 }
 
 void WriteBufferAIO::truncate(off_t length)
@@ -70,6 +100,8 @@ void WriteBufferAIO::truncate(off_t length)
 	if ((length % DB::WriteBufferAIO::BLOCK_SIZE) != 0)
 		throw Exception("Invalid length for WriteBufferAIO::ftruncate", ErrorCodes::AIO_UNALIGNED_SIZE_ERROR);
 
+	/// Если в буфере ещё остались данные - запишем их.
+	next();
 	waitForCompletion();
 
 	int res = ::ftruncate(fd, length);
@@ -78,6 +110,9 @@ void WriteBufferAIO::truncate(off_t length)
 		got_exception = true;
 		throwFromErrno("Cannot truncate file " + filename, ErrorCodes::CANNOT_TRUNCATE_FILE);
 	}
+
+	if (pos_in_file > length)
+		pos_in_file = length;
 }
 
 void WriteBufferAIO::sync()
@@ -108,7 +143,7 @@ void WriteBufferAIO::nextImpl()
 	request.aio_fildes = fd;
 	request.aio_buf = reinterpret_cast<UInt64>(flush_buffer.buffer().begin());
 	request.aio_nbytes = flush_buffer.offset();
-	request.aio_offset = total_bytes_written;
+	request.aio_offset = pos_in_file;
 	request.aio_reqprio = 0;
 
 	if ((request.aio_nbytes % BLOCK_SIZE) != 0)
@@ -154,7 +189,7 @@ void WriteBufferAIO::waitForCompletion()
 			throw Exception("Asynchronous write error on file " + filename, ErrorCodes::AIO_WRITE_ERROR);
 		}
 
-		total_bytes_written += bytes_written;
+		pos_in_file += bytes_written;
 	}
 }
 

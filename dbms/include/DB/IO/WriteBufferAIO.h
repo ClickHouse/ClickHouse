@@ -47,7 +47,7 @@ private:
 
 	const std::string filename;
 
-	size_t total_bytes_written = 0;
+	off_t pos_in_file = 0;
 	int fd = -1;
 
 	/// Асинхронная операция записи ещё не завершилась.

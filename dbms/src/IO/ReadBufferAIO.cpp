@@ -92,6 +92,7 @@ off_t ReadBufferAIO::seek(off_t off, int whence)
 	}
 	else
 	{
+		// XXX Don't do any seek!!!
 		ProfileEvents::increment(ProfileEvents::Seek);
 
 		pos = working_buffer.end();
