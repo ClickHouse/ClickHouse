@@ -12,7 +12,7 @@ WriteBufferAIO::WriteBufferAIO(const std::string & filename_, size_t buffer_size
 		char * existing_memory_)
 		: BufferWithOwnMemory(buffer_size_, existing_memory_, BLOCK_SIZE),
 		flush_buffer(BufferWithOwnMemory(buffer_size_, nullptr, BLOCK_SIZE)),
-		filename(filename_), request_ptrs{ &request }, events(1)
+		request_ptrs{ &request }, events(1), filename(filename_)
 {
 	ProfileEvents::increment(ProfileEvents::FileOpen);
 

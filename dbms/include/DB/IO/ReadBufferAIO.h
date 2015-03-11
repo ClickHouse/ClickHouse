@@ -40,17 +40,19 @@ private:
 private:
 	/// Буфер для асинхронных операций чтения данных.
 	BufferWithOwnMemory<ReadBuffer> fill_buffer;
-	const std::string filename;
 
-	AIOContext aio_context;
 	iocb request;
 	std::vector<iocb *> request_ptrs;
 	std::vector<io_event> events;
 
-	int fd = -1;
+	AIOContext aio_context;
+
+	const std::string filename;
+
 	size_t max_bytes_read = std::numeric_limits<size_t>::max();
 	size_t total_bytes_read = 0;
 	off_t pos_in_file = 0;
+	int fd = -1;
 
 	/// Асинхронная операция чтения ещё не завершилась.
 	bool is_pending_read = false;

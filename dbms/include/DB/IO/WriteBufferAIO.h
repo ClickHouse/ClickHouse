@@ -38,15 +38,17 @@ private:
 private:
 	/// Буфер для асинхронных операций записи данных.
 	BufferWithOwnMemory<WriteBuffer> flush_buffer;
-	const std::string filename;
 
-	AIOContext aio_context;
 	iocb request;
 	std::vector<iocb *> request_ptrs;
 	std::vector<io_event> events;
 
-	int fd = -1;
+	AIOContext aio_context;
+
+	const std::string filename;
+
 	size_t total_bytes_written = 0;
+	int fd = -1;
 
 	/// Асинхронная операция записи ещё не завершилась.
 	bool is_pending_write = false;

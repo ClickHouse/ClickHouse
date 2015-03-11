@@ -12,7 +12,7 @@ ReadBufferAIO::ReadBufferAIO(const std::string & filename_, size_t buffer_size_,
 	char * existing_memory_)
 	: BufferWithOwnMemory(buffer_size_, existing_memory_, BLOCK_SIZE),
 	fill_buffer(BufferWithOwnMemory(buffer_size_, existing_memory_, BLOCK_SIZE)),
-	filename(filename_), request_ptrs{ &request }, events(1)
+	request_ptrs{ &request }, events(1), filename(filename_)
 {
 	ProfileEvents::increment(ProfileEvents::FileOpen);
 
