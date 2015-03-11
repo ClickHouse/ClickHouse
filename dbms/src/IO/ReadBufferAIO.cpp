@@ -149,8 +149,6 @@ void ReadBufferAIO::waitForCompletion()
 {
 	if (is_pending_read)
 	{
-		::memset(&events[0], 0, sizeof(events[0]) * events.size());
-
 		while (io_getevents(aio_context.ctx, events.size(), events.size(), &events[0], nullptr) < 0)
 			if (errno != EINTR)
 			{
