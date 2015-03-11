@@ -26,6 +26,8 @@ ReadBufferAIO::ReadBufferAIO(const std::string & filename_, size_t buffer_size_,
 		auto error_code = (errno == ENOENT) ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE;
 		throwFromErrno("Cannot open file " + filename, error_code);
 	}
+
+	::memset(&request, 0, sizeof(request));
 }
 
 ReadBufferAIO::~ReadBufferAIO()
@@ -124,8 +126,6 @@ bool ReadBufferAIO::nextImpl()
 		return true;
 
 	/// Создать запрос.
-	::memset(&request, 0, sizeof(request));
-
 	request.aio_lio_opcode = IOCB_CMD_PREAD;
 	request.aio_fildes = fd;
 	request.aio_buf = reinterpret_cast<UInt64>(fill_buffer.internalBuffer().begin());

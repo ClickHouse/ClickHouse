@@ -26,6 +26,8 @@ WriteBufferAIO::WriteBufferAIO(const std::string & filename_, size_t buffer_size
 		auto error_code = (errno == ENOENT) ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE;
 		throwFromErrno("Cannot open file " + filename, error_code);
 	}
+
+	::memset(&request, 0, sizeof(request));
 }
 
 WriteBufferAIO::~WriteBufferAIO()
@@ -102,8 +104,6 @@ void WriteBufferAIO::nextImpl()
 	swapBuffers();
 
 	/// Создать запрос.
-	::memset(&request, 0, sizeof(request));
-
 	request.aio_lio_opcode = IOCB_CMD_PWRITE;
 	request.aio_fildes = fd;
 	request.aio_buf = reinterpret_cast<UInt64>(flush_buffer.buffer().begin());
