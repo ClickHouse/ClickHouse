@@ -190,7 +190,7 @@ bool test6(const std::string & filename, const std::string & buf)
 
 	(void) in.read(&newbuf[0], newbuf.length());
 
-	if (in.getPositionInFile() != buf.length())
+	if (static_cast<size_t>(in.getPositionInFile()) != buf.length())
 		return false;
 
 	return true;

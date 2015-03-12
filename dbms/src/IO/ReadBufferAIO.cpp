@@ -63,7 +63,6 @@ void ReadBufferAIO::setMaxBytes(size_t max_bytes_read_)
 	max_bytes_read = max_bytes_read_;
 }
 
-/// Если offset такой маленький, что мы не выйдем за пределы буфера, настоящий seek по файлу не делается.
 off_t ReadBufferAIO::seek(off_t off, int whence)
 {
 	if ((off % DB::ReadBufferAIO::BLOCK_SIZE) != 0)
@@ -71,40 +70,56 @@ off_t ReadBufferAIO::seek(off_t off, int whence)
 
 	waitForCompletion();
 
-	off_t new_pos = off;
-	if (whence == SEEK_CUR)
-		new_pos = pos_in_file - (working_buffer.end() - pos) + off;
-	else if (whence != SEEK_SET)
+	off_t new_pos;
+
+	if (whence == SEEK_SET)
+	{
+		if (off < 0)
+		{
+			got_exception = true;
+			throw Exception("SEEK_SET underflow", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+		}
+		new_pos = off;
+	}
+	else if (whence == SEEK_CUR)
+	{
+		if (off >= 0)
+		{
+			if (off > (std::numeric_limits<off_t>::max() - getPositionInFile()))
+			{
+				got_exception = true;
+				throw Exception("SEEK_CUR overflow", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+			}
+		}
+		else if (off < -getPositionInFile())
+		{
+			got_exception = true;
+			throw Exception("SEEK_CUR underflow", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+		}
+		new_pos = getPositionInFile() + off;
+	}
+	else
 	{
 		got_exception = true;
 		throw Exception("ReadBufferAIO::seek expects SEEK_SET or SEEK_CUR as whence", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 	}
 
-	/// Никуда не сдвинулись.
-	if ((new_pos + (working_buffer.end() - pos)) == pos_in_file)
-		return new_pos;
-
-	if (hasPendingData() && (new_pos <= pos_in_file) && (new_pos >= (pos_in_file - static_cast<off_t>(working_buffer.size()))))
+	if (new_pos != getPositionInFile())
 	{
-		/// Остались в пределах буфера.
-		pos = working_buffer.begin() + (new_pos - (pos_in_file - working_buffer.size()));
-		return new_pos;
-	}
-	else
-	{
-		// XXX Don't do any seek!!!
-		ProfileEvents::increment(ProfileEvents::Seek);
-
-		pos = working_buffer.end();
-		off_t res = ::lseek(fd, new_pos, SEEK_SET);
-		if (res == -1)
+		off_t working_buffer_begin_pos = pos_in_file - static_cast<off_t>(working_buffer.size());
+		if (hasPendingData() && (new_pos >= working_buffer_begin_pos) && (new_pos <= pos_in_file))
 		{
-			got_exception = true;
-			throwFromErrno("Cannot seek through file " + filename, ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+			/// Свдинулись, но остались в пределах буфера.
+			pos = working_buffer.begin() + (new_pos - working_buffer_begin_pos);
 		}
-		pos_in_file = new_pos;
-		return res;
+		else
+		{
+			pos = working_buffer.end();
+			pos_in_file = new_pos;
+		}
 	}
+
+	return new_pos;
 }
 
 bool ReadBufferAIO::nextImpl()
