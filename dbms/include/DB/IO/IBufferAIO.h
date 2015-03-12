@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DB/Core/Defines.h>
 #include <string>
 
 namespace DB
@@ -16,7 +17,7 @@ public:
 
 public:
 	/// Граница, на которых должны быть выровнены блоки.
-	static const size_t BLOCK_SIZE = 512;
+	static const size_t BLOCK_SIZE = DEFAULT_AIO_FILE_BLOCK_SIZE;
 
 protected:
 	/// Ждать окончания текущей асинхронной задачи.
