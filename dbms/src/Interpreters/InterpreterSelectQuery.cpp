@@ -817,12 +817,10 @@ static SortDescription getSortDescription(ASTSelectQuery & query)
 {
 	SortDescription order_descr;
 	order_descr.reserve(query.order_expression_list->children.size());
-	for (ASTs::iterator it = query.order_expression_list->children.begin();
-		it != query.order_expression_list->children.end();
-		++it)
+	for (const auto & elem : query.order_expression_list->children)
 	{
-		String name = (*it)->children.front()->getColumnName();
-		const ASTOrderByElement & order_by_elem = typeid_cast<const ASTOrderByElement &>(**it);
+		String name = elem->children.front()->getColumnName();
+		const ASTOrderByElement & order_by_elem = typeid_cast<const ASTOrderByElement &>(*elem);
 
 		order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.collator);
 	}

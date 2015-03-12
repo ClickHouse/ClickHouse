@@ -85,6 +85,9 @@ void ExpressionAnalyzer::init()
 	/// GROUP BY injective function elimination.
 	optimizeGroupBy();
 
+	/// Удалить из ORDER BY повторяющиеся элементы.
+	optimizeOrderBy();
+
 	/// array_join_alias_to_name, array_join_result_to_source.
 	getArrayJoinedColumns();
 
@@ -528,6 +531,38 @@ void ExpressionAnalyzer::optimizeGroupBy()
 
 	if (group_exprs.empty())
 		select_query->group_expression_list = nullptr;
+}
+
+
+void ExpressionAnalyzer::optimizeOrderBy()
+{
+	if (!(select_query && select_query->order_expression_list))
+		return;
+
+	/// Уникализируем условия сортировки.
+	using NameAndLocale = std::pair<std::string, std::string>;
+	std::set<NameAndLocale> elems_set;
+
+	ASTs & elems = select_query->order_expression_list->children;
+	ASTs unique_elems;
+	unique_elems.reserve(elems.size());
+
+	for (const auto & elem : elems)
+	{
+		String name = elem->children.front()->getColumnName();
+		const ASTOrderByElement & order_by_elem = typeid_cast<const ASTOrderByElement &>(*elem);
+
+		if (elems_set.emplace(
+			std::piecewise_construct,
+			std::forward_as_tuple(name),
+			std::forward_as_tuple(order_by_elem.collator ? order_by_elem.collator->getLocale() : std::string())).second)
+		{
+			unique_elems.emplace_back(elem);
+		}
+	}
+
+	if (unique_elems.size() < elems.size())
+		elems = unique_elems;
 }
 
 
