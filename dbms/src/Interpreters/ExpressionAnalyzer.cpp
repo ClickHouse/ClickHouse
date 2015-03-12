@@ -85,6 +85,9 @@ void ExpressionAnalyzer::init()
 	/// GROUP BY injective function elimination.
 	optimizeGroupBy();
 
+	/// Удалить из ORDER BY повторяющиеся элементы.
+	optimizeOrderBy();
+
 	/// array_join_alias_to_name, array_join_result_to_source.
 	getArrayJoinedColumns();
 
@@ -162,11 +165,13 @@ void ExpressionAnalyzer::analyzeAggregation()
 				}
 
 				NameAndTypePair key{column_name, col.type};
-				aggregation_keys.push_back(key);
 
+				/// Ключи агрегации уникализируются.
 				if (!unique_keys.count(key.name))
 				{
 					unique_keys.insert(key.name);
+					aggregation_keys.push_back(key);
+
 					/// key is no longer needed, therefore we can save a little by moving it
 					aggregated_columns.push_back(std::move(key));
 				}
@@ -526,6 +531,38 @@ void ExpressionAnalyzer::optimizeGroupBy()
 
 	if (group_exprs.empty())
 		select_query->group_expression_list = nullptr;
+}
+
+
+void ExpressionAnalyzer::optimizeOrderBy()
+{
+	if (!(select_query && select_query->order_expression_list))
+		return;
+
+	/// Уникализируем условия сортировки.
+	using NameAndLocale = std::pair<std::string, std::string>;
+	std::set<NameAndLocale> elems_set;
+
+	ASTs & elems = select_query->order_expression_list->children;
+	ASTs unique_elems;
+	unique_elems.reserve(elems.size());
+
+	for (const auto & elem : elems)
+	{
+		String name = elem->children.front()->getColumnName();
+		const ASTOrderByElement & order_by_elem = typeid_cast<const ASTOrderByElement &>(*elem);
+
+		if (elems_set.emplace(
+			std::piecewise_construct,
+			std::forward_as_tuple(name),
+			std::forward_as_tuple(order_by_elem.collator ? order_by_elem.collator->getLocale() : std::string())).second)
+		{
+			unique_elems.emplace_back(elem);
+		}
+	}
+
+	if (unique_elems.size() < elems.size())
+		elems = unique_elems;
 }
 
 
@@ -1306,6 +1343,7 @@ void ExpressionAnalyzer::getAggregates(ASTPtr ast, ExpressionActionsPtr & action
 		AggregateDescription aggregate;
 		aggregate.column_name = node->getColumnName();
 
+		/// Агрегатные функции уникализируются.
 		for (size_t i = 0; i < aggregate_descriptions.size(); ++i)
 			if (aggregate_descriptions[i].column_name == aggregate.column_name)
 				return;
@@ -1711,7 +1749,8 @@ ExpressionActionsPtr ExpressionAnalyzer::getConstActions()
 void ExpressionAnalyzer::getAggregateInfo(Names & key_names, AggregateDescriptions & aggregates)
 {
 	for (NamesAndTypesList::iterator it = aggregation_keys.begin(); it != aggregation_keys.end(); ++it)
-		key_names.push_back(it->name);
+		key_names.emplace_back(it->name);
+
 	aggregates = aggregate_descriptions;
 }
 
