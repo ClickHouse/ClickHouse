@@ -110,9 +110,6 @@ void WriteBufferAIO::truncate(off_t length)
 		got_exception = true;
 		throwFromErrno("Cannot truncate file " + filename, ErrorCodes::CANNOT_TRUNCATE_FILE);
 	}
-
-	if (pos_in_file > length)
-		pos_in_file = length;
 }
 
 void WriteBufferAIO::sync()
