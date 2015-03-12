@@ -162,11 +162,13 @@ void ExpressionAnalyzer::analyzeAggregation()
 				}
 
 				NameAndTypePair key{column_name, col.type};
-				aggregation_keys.push_back(key);
 
+				/// Ключи агрегации уникализируются.
 				if (!unique_keys.count(key.name))
 				{
 					unique_keys.insert(key.name);
+					aggregation_keys.push_back(key);
+
 					/// key is no longer needed, therefore we can save a little by moving it
 					aggregated_columns.push_back(std::move(key));
 				}
@@ -1306,6 +1308,7 @@ void ExpressionAnalyzer::getAggregates(ASTPtr ast, ExpressionActionsPtr & action
 		AggregateDescription aggregate;
 		aggregate.column_name = node->getColumnName();
 
+		/// Агрегатные функции уникализируются.
 		for (size_t i = 0; i < aggregate_descriptions.size(); ++i)
 			if (aggregate_descriptions[i].column_name == aggregate.column_name)
 				return;
@@ -1711,7 +1714,8 @@ ExpressionActionsPtr ExpressionAnalyzer::getConstActions()
 void ExpressionAnalyzer::getAggregateInfo(Names & key_names, AggregateDescriptions & aggregates)
 {
 	for (NamesAndTypesList::iterator it = aggregation_keys.begin(); it != aggregation_keys.end(); ++it)
-		key_names.push_back(it->name);
+		key_names.emplace_back(it->name);
+
 	aggregates = aggregate_descriptions;
 }
 
