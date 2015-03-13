@@ -12,7 +12,7 @@ namespace DB
 ReadBufferAIO::ReadBufferAIO(const std::string & filename_, size_t buffer_size_, int flags_, mode_t mode_,
 	char * existing_memory_)
 	: BufferWithOwnMemory(buffer_size_, existing_memory_, DEFAULT_AIO_FILE_BLOCK_SIZE),
-	fill_buffer(BufferWithOwnMemory(buffer_size_, existing_memory_, DEFAULT_AIO_FILE_BLOCK_SIZE)),
+	fill_buffer(BufferWithOwnMemory(buffer_size_, nullptr, DEFAULT_AIO_FILE_BLOCK_SIZE)),
 	request_ptrs{ &request }, events(1), filename(filename_)
 {
 	ProfileEvents::increment(ProfileEvents::FileOpen);
