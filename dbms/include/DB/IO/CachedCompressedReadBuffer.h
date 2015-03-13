@@ -53,12 +53,13 @@ private:
 			owned_cell.reset(new UncompressedCacheCell);
 
 			size_t size_decompressed;
-			owned_cell->compressed_size = readCompressedData(size_decompressed);
+			size_t size_compressed_without_checksum;
+			owned_cell->compressed_size = readCompressedData(size_decompressed, size_compressed_without_checksum);
 
 			if (owned_cell->compressed_size)
 			{
 				owned_cell->data.resize(size_decompressed);
-				decompress(owned_cell->data.m_data, size_decompressed);
+				decompress(owned_cell->data.m_data, size_decompressed, size_compressed_without_checksum);
 
 				/// Положим данные в кэш.
 				cache->set(key, owned_cell);

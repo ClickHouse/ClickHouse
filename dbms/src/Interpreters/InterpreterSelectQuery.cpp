@@ -12,7 +12,6 @@
 #include <DB/DataStreams/DistinctBlockInputStream.h>
 #include <DB/DataStreams/NullBlockInputStream.h>
 #include <DB/DataStreams/TotalsHavingBlockInputStream.h>
-#include <DB/DataStreams/narrowBlockInputStreams.h>
 #include <DB/DataStreams/copyData.h>
 #include <DB/DataStreams/CreatingSetsBlockInputStream.h>
 #include <DB/DataStreams/MaterializingBlockInputStream.h>
@@ -697,12 +696,6 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 		streams.push_back(interpreter_subquery->execute());
 	}
 
-	/** Если истчоников слишком много, то склеим их в max_threads источников.
-	 *  (Иначе действия в каждом маленьком источнике, а затем объединение состояний, слишком неэффективно.)
-	 */
-	if (streams.size() > settings.max_threads)
-		streams = narrowBlockInputStreams(streams, settings.max_threads);
-
 	/** Установка ограничений и квоты на чтение данных, скорость и время выполнения запроса.
 	 *  Такие ограничения проверяются на сервере-инициаторе запроса, а не на удалённых серверах.
 	 *  Потому что сервер-инициатор имеет суммарные данные о выполнении запроса на всех серверах.
@@ -824,12 +817,10 @@ static SortDescription getSortDescription(ASTSelectQuery & query)
 {
 	SortDescription order_descr;
 	order_descr.reserve(query.order_expression_list->children.size());
-	for (ASTs::iterator it = query.order_expression_list->children.begin();
-		it != query.order_expression_list->children.end();
-		++it)
+	for (const auto & elem : query.order_expression_list->children)
 	{
-		String name = (*it)->children.front()->getColumnName();
-		const ASTOrderByElement & order_by_elem = typeid_cast<const ASTOrderByElement &>(**it);
+		String name = elem->children.front()->getColumnName();
+		const ASTOrderByElement & order_by_elem = typeid_cast<const ASTOrderByElement &>(*elem);
 
 		order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.collator);
 	}

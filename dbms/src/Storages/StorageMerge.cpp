@@ -1,4 +1,3 @@
-#include <DB/DataStreams/narrowBlockInputStreams.h>
 #include <DB/DataStreams/AddingConstColumnBlockInputStream.h>
 #include <DB/Storages/StorageMerge.h>
 #include <DB/Common/VirtualColumnUtils.h>
@@ -172,11 +171,6 @@ BlockInputStreams StorageMerge::read(
 		if (tmp_processed_stage < processed_stage)
 			processed_stage = tmp_processed_stage;
 	}
-
-	/** Если истчоников слишком много, то склеим их в threads источников.
-	  */
-	if (res.size() > threads)
-		res = narrowBlockInputStreams(res, threads);
 
 	return res;
 }

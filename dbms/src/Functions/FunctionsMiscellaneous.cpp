@@ -109,8 +109,8 @@ namespace VisibleWidth
 		if (const ColumnVector<T> * col = typeid_cast<const ColumnVector<T> *>(&*column))
 		{
 			ColumnUInt64 * res = new ColumnUInt64(column->size());
-			numWidthVector(col->getData(), res->getData());
 			block.getByPosition(result).column = res;
+			numWidthVector(col->getData(), res->getData());
 			return true;
 		}
 		else
@@ -158,20 +158,20 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 	else if (const ColumnString * col = typeid_cast<const ColumnString *>(&*column))
 	{
 		ColumnUInt64 * res = new ColumnUInt64(rows);
-		stringWidthVector(col->getChars(), col->getOffsets(), res->getData());
 		block.getByPosition(result).column = res;
+		stringWidthVector(col->getChars(), col->getOffsets(), res->getData());
 	}
 	else if (const ColumnFixedString * col = typeid_cast<const ColumnFixedString *>(&*column))
 	{
 		ColumnUInt64 * res = new ColumnUInt64(rows);
-		stringWidthFixedVector(col->getChars(), col->getN(), res->getData());
 		block.getByPosition(result).column = res;
+		stringWidthFixedVector(col->getChars(), col->getN(), res->getData());
 	}
 	else if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(&*column))
 	{
 		UInt64 res = 0;
-		stringWidthConstant(col->getData(), res);
 		block.getByPosition(result).column = new ColumnConstUInt64(rows, res);
+		stringWidthConstant(col->getData(), res);
 	}
 	else if (const ColumnArray * col = typeid_cast<const ColumnArray *>(&*column))
 	{
@@ -191,6 +191,7 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 
 		/// Теперь суммируем и кладём в результат.
 		ColumnUInt64 * res = new ColumnUInt64(rows);
+		block.getByPosition(result).column = res;
 		ColumnUInt64::Container_t & vec = res->getData();
 
 		size_t additional_symbols = 0;	/// Кавычки.
@@ -223,8 +224,6 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 				vec[i] = 1 + std::max(static_cast<size_t>(1),
 					(i == 0 ? col->getOffsets()[0] : (col->getOffsets()[i] - col->getOffsets()[i - 1])) * nested_length);
 		}
-
-		block.getByPosition(result).column = res;
 	}
 	else if (const ColumnTuple * col = typeid_cast<const ColumnTuple *>(&*column))
 	{

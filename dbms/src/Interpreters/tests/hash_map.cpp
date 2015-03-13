@@ -63,6 +63,16 @@ struct AlternativeHash
 	}
 };
 
+struct CRC32Hash_
+{
+	size_t operator() (UInt64 x) const
+	{
+		UInt64 crc = -1ULL;
+		asm("crc32q %[x], %[crc]\n" : [crc] "+r" (crc) : [x] "rm" (x));
+		return crc;
+	}
+};
+
 
 int main(int argc, char ** argv)
 {
@@ -81,7 +91,7 @@ int main(int argc, char ** argv)
 	DB::DataTypes data_types_empty;
 	DB::DataTypes data_types_uint64;
 	data_types_uint64.push_back(new DB::DataTypeUInt64);
-	
+
 	std::vector<Key> data(n);
 	Value value;
 
@@ -181,7 +191,7 @@ int main(int argc, char ** argv)
 
 		watch.stop();
 		std::cerr << std::fixed << std::setprecision(2)
-			<< "HashMap. Size: " << map.size()
+			<< "HashMap, AlternativeHash. Size: " << map.size()
 			<< ", elapsed: " << watch.elapsedSeconds()
 			<< " (" << n / watch.elapsedSeconds() << " elem/sec.)"
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
@@ -191,6 +201,36 @@ int main(int argc, char ** argv)
 	}
 
 	if (argc < 3 || atoi(argv[2]) == 3)
+	{
+		Stopwatch watch;
+
+		typedef HashMap<Key, Value, CRC32Hash_> Map;
+		Map map;
+		Map::iterator it;
+		bool inserted;
+
+		for (size_t i = 0; i < n; ++i)
+		{
+			map.emplace(data[i], it, inserted);
+			if (inserted)
+			{
+				new(&it->second) Value(std::move(value));
+				INIT;
+			}
+		}
+
+		watch.stop();
+		std::cerr << std::fixed << std::setprecision(2)
+			<< "HashMap, CRC32Hash. Size: " << map.size()
+			<< ", elapsed: " << watch.elapsedSeconds()
+			<< " (" << n / watch.elapsedSeconds() << " elem/sec.)"
+#ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
+			<< ", collisions: " << map.getCollisions()
+#endif
+			<< std::endl;
+	}
+
+	if (argc < 3 || atoi(argv[2]) == 4)
 	{
 		Stopwatch watch;
 
@@ -210,7 +250,7 @@ int main(int argc, char ** argv)
 			<< std::endl;
 	}
 
-	if (argc < 3 || atoi(argv[2]) == 4)
+	if (argc < 3 || atoi(argv[2]) == 5)
 	{
 		Stopwatch watch;
 
@@ -231,7 +271,7 @@ int main(int argc, char ** argv)
 			<< std::endl;
 	}
 
-	if (argc < 3 || atoi(argv[2]) == 5)
+	if (argc < 3 || atoi(argv[2]) == 6)
 	{
 		Stopwatch watch;
 
@@ -250,6 +290,6 @@ int main(int argc, char ** argv)
 			<< " (" << n / watch.elapsedSeconds() << " elem/sec.)"
 			<< std::endl;
 	}
-	
+
 	return 0;
 }

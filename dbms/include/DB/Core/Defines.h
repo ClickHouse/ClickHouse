@@ -11,6 +11,7 @@
 #define DBMS_DEFAULT_CONNECT_TIMEOUT_WITH_FAILOVER_MS			50
 #define DBMS_DEFAULT_SEND_TIMEOUT_SEC							300
 #define DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC						300
+#define DBMS_DEFAULT_PING_TIMEOUT_SEC							5
 #define DBMS_DEFAULT_POLL_INTERVAL 								10
 
 /// Насколько секунд можно максимально задерживать вставку в таблицу типа MergeTree, если в ней много недомердженных кусков.
@@ -46,7 +47,9 @@
 #define DEFAULT_INTERACTIVE_DELAY								100000
 #define DBMS_DEFAULT_DISTRIBUTED_CONNECTIONS_POOL_SIZE 			1024
 #define DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES 	3
-#define DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_DECREASE_ERROR_PERIOD 	300 /// каждый период уменьшаем счетчик ошибок в 2 раза
+/// каждый период уменьшаем счетчик ошибок в 2 раза
+/// слишком маленький период может приводить, что ошибки исчезают сразу после создания.
+#define DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_DECREASE_ERROR_PERIOD 	(2*DBMS_DEFAULT_SEND_TIMEOUT_SEC)
 #define DEFAULT_QUERIES_QUEUE_WAIT_TIME_MS 						5000	/// Максимальное время ожидания в очереди запросов.
 #define DBMS_DEFAULT_BACKGROUND_POOL_SIZE					6
 

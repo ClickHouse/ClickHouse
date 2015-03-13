@@ -5,6 +5,7 @@
 #include <city.h>
 #include <quicklz/quicklz_level1.h>
 #include <lz4/lz4.h>
+#include <zstd/zstd.h>
 
 #include <DB/Common/PODArray.h>
 #include <DB/Common/ProfileEvents.h>
@@ -32,7 +33,7 @@ protected:
 
 	/// Прочитать сжатые данные в compressed_buffer. Достать из их заголовка размер разжатых данных. Проверить чексумму.
 	/// Возвращает количество прочитанных байт.
-	size_t readCompressedData(size_t & size_decompressed)
+	size_t readCompressedData(size_t & size_decompressed, size_t & size_compressed_without_checksum)
 	{
 		if (compressed_in->eof())
 			return 0;
@@ -44,14 +45,15 @@ protected:
 		compressed_in->readStrict(&own_compressed_buffer[0], QUICKLZ_HEADER_SIZE);
 
 		UInt8 method = own_compressed_buffer[0];	/// См. CompressedWriteBuffer.h
-		size_t size_compressed;
+
+		size_t & size_compressed = size_compressed_without_checksum;
 
 		if (method < 0x80)
 		{
 			size_compressed = qlz_size_compressed(&own_compressed_buffer[0]);
 			size_decompressed = qlz_size_decompressed(&own_compressed_buffer[0]);
 		}
-		else if (method == 0x82)
+		else if (method == static_cast<UInt8>(CompressionMethodByte::LZ4) || method == static_cast<UInt8>(CompressionMethodByte::ZSTD))
 		{
 			size_compressed = *reinterpret_cast<const UInt32 *>(&own_compressed_buffer[1]);
 			size_decompressed = *reinterpret_cast<const UInt32 *>(&own_compressed_buffer[5]);
@@ -85,7 +87,7 @@ protected:
 		return size_compressed + sizeof(checksum);
 	}
 
-	void decompress(char * to, size_t size_decompressed)
+	void decompress(char * to, size_t size_decompressed, size_t size_compressed_without_checksum)
 	{
 		ProfileEvents::increment(ProfileEvents::CompressedReadBufferBlocks);
 		ProfileEvents::increment(ProfileEvents::CompressedReadBufferBytes, size_decompressed);
@@ -99,10 +101,19 @@ protected:
 
 			qlz_decompress(&compressed_buffer[0], to, qlz_state);
 		}
-		else if (method == 0x82)
+		else if (method == static_cast<UInt8>(CompressionMethodByte::LZ4))
 		{
 			if (LZ4_decompress_fast(&compressed_buffer[QUICKLZ_HEADER_SIZE], to, size_decompressed) < 0)
-				throw Exception("Cannot LZ4_decompress_fast", ErrorCodes::CORRUPTED_DATA);
+				throw Exception("Cannot LZ4_decompress_fast", ErrorCodes::CANNOT_DECOMPRESS);
+		}
+		else if (method == static_cast<UInt8>(CompressionMethodByte::ZSTD))
+		{
+			size_t res = ZSTD_decompress(
+				to, size_decompressed,
+				&compressed_buffer[QUICKLZ_HEADER_SIZE], size_compressed_without_checksum - QUICKLZ_HEADER_SIZE);
+
+			if (ZSTD_isError(res))
+				throw Exception("Cannot ZSTD_decompress: " + std::string(ZSTD_getErrorName(res)), ErrorCodes::CANNOT_DECOMPRESS);
 		}
 		else
 			throw Exception("Unknown compression method: " + toString(method), ErrorCodes::UNKNOWN_COMPRESSION_METHOD);

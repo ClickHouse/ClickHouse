@@ -147,10 +147,10 @@ struct __attribute__((__packed__)) SingleValueDataString
 	static constexpr Int32 AUTOMATIC_STORAGE_SIZE = 64;
 	static constexpr Int32 MAX_SMALL_STRING_SIZE = AUTOMATIC_STORAGE_SIZE - sizeof(size);
 
-	union
+	union __attribute__((__aligned__(1)))
 	{
 		char small_data[MAX_SMALL_STRING_SIZE];	/// Включая завершающий ноль.
-		char * large_data;
+		char * __attribute__((__aligned__(1))) large_data;
 	};
 
 	~SingleValueDataString()

@@ -18,16 +18,6 @@ using Poco::SharedPtr;
 class AggregatingBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	AggregatingBlockInputStream(BlockInputStreamPtr input_, const ColumnNumbers & keys_, AggregateDescriptions & aggregates_,
-		bool overflow_row_, bool final_, size_t max_rows_to_group_by_, OverflowMode group_by_overflow_mode_,
-		Compiler * compiler_, UInt32 min_count_to_compile_, size_t group_by_two_level_threshold_)
-		: aggregator(keys_, aggregates_, overflow_row_, max_rows_to_group_by_, group_by_overflow_mode_,
-			compiler_, min_count_to_compile_, group_by_two_level_threshold_),
-		final(final_)
-	{
-		children.push_back(input_);
-	}
-
 	/** keys берутся из GROUP BY части запроса
 	  * Агрегатные функции ищутся везде в выражении.
 	  * Столбцы, соответствующие keys и аргументам агрегатных функций, уже должны быть вычислены.
