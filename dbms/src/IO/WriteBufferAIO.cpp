@@ -1,6 +1,7 @@
 #include <DB/IO/WriteBufferAIO.h>
 #include <DB/Common/ProfileEvents.h>
 #include <DB/Core/ErrorCodes.h>
+#include <DB/Core/Defines.h>
 
 #include <limits>
 #include <sys/types.h>
@@ -11,8 +12,8 @@ namespace DB
 
 WriteBufferAIO::WriteBufferAIO(const std::string & filename_, size_t buffer_size_, int flags_, mode_t mode_,
 		char * existing_memory_)
-		: BufferWithOwnMemory(buffer_size_, existing_memory_, BLOCK_SIZE),
-		flush_buffer(BufferWithOwnMemory(buffer_size_, nullptr, BLOCK_SIZE)),
+		: BufferWithOwnMemory(buffer_size_, existing_memory_, DEFAULT_AIO_FILE_BLOCK_SIZE),
+		flush_buffer(BufferWithOwnMemory(buffer_size_, nullptr, DEFAULT_AIO_FILE_BLOCK_SIZE)),
 		request_ptrs{ &request }, events(1), filename(filename_)
 {
 	ProfileEvents::increment(ProfileEvents::FileOpen);
@@ -53,7 +54,7 @@ WriteBufferAIO::~WriteBufferAIO()
 
 off_t WriteBufferAIO::seek(off_t off, int whence)
 {
-	if ((off % DB::WriteBufferAIO::BLOCK_SIZE) != 0)
+	if ((off % DEFAULT_AIO_FILE_BLOCK_SIZE) != 0)
 		throw Exception("Invalid offset for WriteBufferAIO::seek", ErrorCodes::AIO_UNALIGNED_SIZE_ERROR);
 
 	/// Если в буфере ещё остались данные - запишем их.
@@ -95,9 +96,14 @@ off_t WriteBufferAIO::seek(off_t off, int whence)
 	return pos_in_file;
 }
 
+off_t WriteBufferAIO::getPositionInFile()
+{
+	return seek(0, SEEK_CUR);
+}
+
 void WriteBufferAIO::truncate(off_t length)
 {
-	if ((length % DB::WriteBufferAIO::BLOCK_SIZE) != 0)
+	if ((length % DEFAULT_AIO_FILE_BLOCK_SIZE) != 0)
 		throw Exception("Invalid length for WriteBufferAIO::ftruncate", ErrorCodes::AIO_UNALIGNED_SIZE_ERROR);
 
 	/// Если в буфере ещё остались данные - запишем их.
@@ -143,7 +149,7 @@ void WriteBufferAIO::nextImpl()
 	request.aio_offset = pos_in_file;
 	request.aio_reqprio = 0;
 
-	if ((request.aio_nbytes % BLOCK_SIZE) != 0)
+	if ((request.aio_nbytes % DEFAULT_AIO_FILE_BLOCK_SIZE) != 0)
 	{
 		got_exception = true;
 		throw Exception("Illegal attempt to write unaligned data to file " + filename, ErrorCodes::AIO_UNALIGNED_SIZE_ERROR);

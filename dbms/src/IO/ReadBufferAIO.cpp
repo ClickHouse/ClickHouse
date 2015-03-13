@@ -1,6 +1,7 @@
 #include <DB/IO/ReadBufferAIO.h>
 #include <DB/Common/ProfileEvents.h>
 #include <DB/Core/ErrorCodes.h>
+#include <DB/Core/Defines.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -10,8 +11,8 @@ namespace DB
 
 ReadBufferAIO::ReadBufferAIO(const std::string & filename_, size_t buffer_size_, int flags_, mode_t mode_,
 	char * existing_memory_)
-	: BufferWithOwnMemory(buffer_size_, existing_memory_, BLOCK_SIZE),
-	fill_buffer(BufferWithOwnMemory(buffer_size_, existing_memory_, BLOCK_SIZE)),
+	: BufferWithOwnMemory(buffer_size_, existing_memory_, DEFAULT_AIO_FILE_BLOCK_SIZE),
+	fill_buffer(BufferWithOwnMemory(buffer_size_, existing_memory_, DEFAULT_AIO_FILE_BLOCK_SIZE)),
 	request_ptrs{ &request }, events(1), filename(filename_)
 {
 	ProfileEvents::increment(ProfileEvents::FileOpen);
@@ -55,7 +56,7 @@ void ReadBufferAIO::setMaxBytes(size_t max_bytes_read_)
 		got_exception = true;
 		throw Exception("Illegal attempt to set the maximum number of bytes to read from file " + filename, ErrorCodes::LOGICAL_ERROR);
 	}
-	if ((max_bytes_read_ % BLOCK_SIZE) != 0)
+	if ((max_bytes_read_ % DEFAULT_AIO_FILE_BLOCK_SIZE) != 0)
 	{
 		got_exception = true;
 		throw Exception("Invalid maximum number of bytes to read from file " + filename, ErrorCodes::AIO_UNALIGNED_SIZE_ERROR);
@@ -65,7 +66,7 @@ void ReadBufferAIO::setMaxBytes(size_t max_bytes_read_)
 
 off_t ReadBufferAIO::seek(off_t off, int whence)
 {
-	if ((off % DB::ReadBufferAIO::BLOCK_SIZE) != 0)
+	if ((off % DEFAULT_AIO_FILE_BLOCK_SIZE) != 0)
 		throw Exception("Invalid offset for ReadBufferAIO::seek", ErrorCodes::AIO_UNALIGNED_SIZE_ERROR);
 
 	waitForCompletion();
@@ -85,18 +86,18 @@ off_t ReadBufferAIO::seek(off_t off, int whence)
 	{
 		if (off >= 0)
 		{
-			if (off > (std::numeric_limits<off_t>::max() - getPositionInFile()))
+			if (off > (std::numeric_limits<off_t>::max() - getPositionInFileRelaxed()))
 			{
 				got_exception = true;
 				throw Exception("SEEK_CUR overflow", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 			}
 		}
-		else if (off < -getPositionInFile())
+		else if (off < -getPositionInFileRelaxed())
 		{
 			got_exception = true;
 			throw Exception("SEEK_CUR underflow", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 		}
-		new_pos = getPositionInFile() + off;
+		new_pos = getPositionInFileRelaxed() + off;
 	}
 	else
 	{
@@ -104,7 +105,7 @@ off_t ReadBufferAIO::seek(off_t off, int whence)
 		throw Exception("ReadBufferAIO::seek expects SEEK_SET or SEEK_CUR as whence", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 	}
 
-	if (new_pos != getPositionInFile())
+	if (new_pos != getPositionInFileRelaxed())
 	{
 		off_t working_buffer_begin_pos = pos_in_file - static_cast<off_t>(working_buffer.size());
 		if (hasPendingData() && (new_pos >= working_buffer_begin_pos) && (new_pos <= pos_in_file))
@@ -120,6 +121,16 @@ off_t ReadBufferAIO::seek(off_t off, int whence)
 	}
 
 	return new_pos;
+}
+
+off_t ReadBufferAIO::getPositionInFile()
+{
+	return seek(0, SEEK_CUR);
+}
+
+off_t ReadBufferAIO::getPositionInFileRelaxed() const noexcept
+{
+	return pos_in_file - (working_buffer.end() - pos); 
 }
 
 bool ReadBufferAIO::nextImpl()
@@ -181,7 +192,7 @@ void ReadBufferAIO::waitForCompletion()
 		}
 
 		size_t bytes_read = static_cast<size_t>(events[0].res);
-		if ((bytes_read % BLOCK_SIZE) != 0)
+		if ((bytes_read % DEFAULT_AIO_FILE_BLOCK_SIZE) != 0)
 		{
 			got_exception = true;
 			throw Exception("Received unaligned number of bytes from file " + filename, ErrorCodes::AIO_UNALIGNED_SIZE_ERROR);

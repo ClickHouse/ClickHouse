@@ -1,4 +1,6 @@
 #include <DB/IO/WriteBufferAIO.h>
+#include <DB/Core/Defines.h>
+
 #include <boost/filesystem.hpp>
 
 #include <iostream>
@@ -81,7 +83,7 @@ bool test1()
 	const std::string directory = std::string(dir);
 	const std::string filename = directory + "/foo";
 
-	size_t n = 10 * DB::WriteBufferAIO::BLOCK_SIZE;
+	size_t n = 10 * DEFAULT_AIO_FILE_BLOCK_SIZE;
 
 	std::string buf;
 	buf.reserve(n);
@@ -90,7 +92,7 @@ bool test1()
 		buf += symbols[i % symbols.length()];
 
 	{
-		DB::WriteBufferAIO out(filename, 3 * DB::WriteBufferAIO::BLOCK_SIZE);
+		DB::WriteBufferAIO out(filename, 3 * DEFAULT_AIO_FILE_BLOCK_SIZE);
 
 		if (out.getFileName() != filename)
 			return false;
@@ -126,7 +128,7 @@ bool test2()
 	const std::string directory = std::string(dir);
 	const std::string filename = directory + "/foo";
 
-	size_t n = 10 * DB::WriteBufferAIO::BLOCK_SIZE;
+	size_t n = 10 * DEFAULT_AIO_FILE_BLOCK_SIZE;
 
 	std::string buf;
 	buf.reserve(n);
@@ -135,7 +137,7 @@ bool test2()
 		buf += symbols[i % symbols.length()];
 
 	{
-		DB::WriteBufferAIO out(filename, 3 * DB::WriteBufferAIO::BLOCK_SIZE);
+		DB::WriteBufferAIO out(filename, 3 * DEFAULT_AIO_FILE_BLOCK_SIZE);
 
 		if (out.getFileName() != filename)
 			return false;
@@ -143,7 +145,7 @@ bool test2()
 			return false;
 
 		out.write(&buf[0], buf.length() / 2);
-		out.seek(DB::WriteBufferAIO::BLOCK_SIZE, SEEK_CUR);
+		out.seek(DEFAULT_AIO_FILE_BLOCK_SIZE, SEEK_CUR);
 		out.write(&buf[buf.length() / 2], buf.length() / 2);
 	}
 
@@ -158,9 +160,9 @@ bool test2()
 
 	if (received.substr(0, buf.length() / 2) != buf.substr(0, buf.length() / 2))
 		return false;
-	if (received.substr(buf.length() / 2, DB::WriteBufferAIO::BLOCK_SIZE) != std::string(DB::WriteBufferAIO::BLOCK_SIZE, '\0'))
+	if (received.substr(buf.length() / 2, DEFAULT_AIO_FILE_BLOCK_SIZE) != std::string(DEFAULT_AIO_FILE_BLOCK_SIZE, '\0'))
 		return false;
-	if (received.substr(buf.length() / 2 + DB::WriteBufferAIO::BLOCK_SIZE) != buf.substr(buf.length() / 2))
+	if (received.substr(buf.length() / 2 + DEFAULT_AIO_FILE_BLOCK_SIZE) != buf.substr(buf.length() / 2))
 		return false;
 
 	return true;
@@ -180,7 +182,7 @@ bool test3()
 	const std::string directory = std::string(dir);
 	const std::string filename = directory + "/foo";
 
-	size_t n = 10 * DB::WriteBufferAIO::BLOCK_SIZE;
+	size_t n = 10 * DEFAULT_AIO_FILE_BLOCK_SIZE;
 
 	std::string buf;
 	buf.reserve(n);
@@ -189,7 +191,7 @@ bool test3()
 		buf += symbols[i % symbols.length()];
 
 	{
-		DB::WriteBufferAIO out(filename, 3 * DB::WriteBufferAIO::BLOCK_SIZE);
+		DB::WriteBufferAIO out(filename, 3 * DEFAULT_AIO_FILE_BLOCK_SIZE);
 
 		if (out.getFileName() != filename)
 			return false;
@@ -234,7 +236,7 @@ bool test4()
 	const std::string directory = std::string(dir);
 	const std::string filename = directory + "/foo";
 
-	size_t n = 10 * DB::WriteBufferAIO::BLOCK_SIZE;
+	size_t n = 10 * DEFAULT_AIO_FILE_BLOCK_SIZE;
 
 	std::string buf;
 	buf.reserve(n);
@@ -243,7 +245,7 @@ bool test4()
 		buf += symbols[i % symbols.length()];
 
 	{
-		DB::WriteBufferAIO out(filename, 3 * DB::WriteBufferAIO::BLOCK_SIZE);
+		DB::WriteBufferAIO out(filename, 3 * DEFAULT_AIO_FILE_BLOCK_SIZE);
 
 		if (out.getFileName() != filename)
 			return false;
