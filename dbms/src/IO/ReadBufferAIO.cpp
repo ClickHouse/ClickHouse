@@ -184,18 +184,22 @@ void ReadBufferAIO::waitForAIOCompletion()
 			}
 
 		is_pending_read = false;
+		off_t bytes_read = events[0].res;
 
-		if (events[0].res < 0)
+		if (bytes_read < 0)
 		{
 			got_exception = true;
 			throw Exception("Asynchronous read error on file " + filename, ErrorCodes::AIO_READ_ERROR);
 		}
-
-		size_t bytes_read = static_cast<size_t>(events[0].res);
 		if ((bytes_read % DEFAULT_AIO_FILE_BLOCK_SIZE) != 0)
 		{
 			got_exception = true;
 			throw Exception("Received unaligned number of bytes from file " + filename, ErrorCodes::AIO_UNALIGNED_SIZE_ERROR);
+		}
+		if (pos_in_file > (std::numeric_limits<off_t>::max() - bytes_read))
+		{
+			got_exception = true;
+			throw Exception("File position overflowed", ErrorCodes::LOGICAL_ERROR);
 		}
 
 		pos_in_file += bytes_read;
@@ -203,7 +207,7 @@ void ReadBufferAIO::waitForAIOCompletion()
 
 		if (bytes_read > 0)
 			fill_buffer.buffer().resize(bytes_read);
-		if ((bytes_read < fill_buffer.internalBuffer().size()) || (total_bytes_read == max_bytes_read))
+		if ((static_cast<size_t>(bytes_read) < fill_buffer.internalBuffer().size()) || (total_bytes_read == max_bytes_read))
 			is_eof = true;
 	}
 }

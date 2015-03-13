@@ -176,8 +176,8 @@ void WriteBufferAIO::waitForAIOCompletion()
 			}
 
 		is_pending_write = false;
-
 		off_t bytes_written = events[0].res;
+
 		if ((bytes_written < 0) || (static_cast<size_t>(bytes_written) < flush_buffer.offset()))
 		{
 			got_exception = true;
