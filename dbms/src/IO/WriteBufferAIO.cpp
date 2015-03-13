@@ -177,17 +177,16 @@ void WriteBufferAIO::waitForAIOCompletion()
 
 		is_pending_write = false;
 
-		if (events[0].res < 0)
+		off_t bytes_written = events[0].res;
+		if ((bytes_written < 0) || (static_cast<size_t>(bytes_written) < flush_buffer.offset()))
 		{
 			got_exception = true;
 			throw Exception("Asynchronous write error on file " + filename, ErrorCodes::AIO_WRITE_ERROR);
 		}
-
-		size_t bytes_written = static_cast<size_t>(events[0].res);
-		if (bytes_written < flush_buffer.offset())
+		if (pos_in_file > (std::numeric_limits<off_t>::max() - bytes_written))
 		{
 			got_exception = true;
-			throw Exception("Asynchronous write error on file " + filename, ErrorCodes::AIO_WRITE_ERROR);
+			throw Exception("File position overflowed", ErrorCodes::LOGICAL_ERROR);
 		}
 
 		pos_in_file += bytes_written;
