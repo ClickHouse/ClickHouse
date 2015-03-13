@@ -44,7 +44,7 @@ MergeTreeData::MergeTreeData(
 	date_column_name(date_column_name_), sampling_expression(sampling_expression_),
 	index_granularity(index_granularity_),
 	mode(mode_), sign_column(sign_column_), columns_to_sum(columns_to_sum_),
-	settings(settings_), primary_expr_ast(primary_expr_ast_->clone()),
+	settings(settings_), primary_expr_ast(primary_expr_ast_ ? primary_expr_ast_->clone() : nullptr),
 	require_part_metadata(require_part_metadata_),
 	full_path(full_path_), columns(columns_),
 	broken_part_callback(broken_part_callback_),
@@ -89,18 +89,23 @@ MergeTreeData::MergeTreeData(
 	Poco::File(full_path).createDirectories();
 	Poco::File(full_path + "detached").createDirectory();
 
-	/// инициализируем описание сортировки
-	sort_descr.reserve(primary_expr_ast->children.size());
-	for (const ASTPtr & ast : primary_expr_ast->children)
+	if (primary_expr_ast)
 	{
-		String name = ast->getColumnName();
-		sort_descr.push_back(SortColumnDescription(name, 1));
+		/// инициализируем описание сортировки
+		sort_descr.reserve(primary_expr_ast->children.size());
+		for (const ASTPtr & ast : primary_expr_ast->children)
+		{
+			String name = ast->getColumnName();
+			sort_descr.push_back(SortColumnDescription(name, 1));
+		}
+
+		primary_expr = ExpressionAnalyzer(primary_expr_ast, context, getColumnsList()).getActions(false);
+
+		ExpressionActionsPtr projected_expr = ExpressionAnalyzer(primary_expr_ast, context, getColumnsList()).getActions(true);
+		primary_key_sample = projected_expr->getSampleBlock();
 	}
-
-	primary_expr = ExpressionAnalyzer(primary_expr_ast, context, getColumnsList()).getActions(false);
-
-	ExpressionActionsPtr projected_expr = ExpressionAnalyzer(primary_expr_ast, context, getColumnsList()).getActions(true);
-	primary_key_sample = projected_expr->getSampleBlock();
+	else if (mode != Unsorted)
+		throw Exception("Primary key could be empty only for UnsortedMergeTree", ErrorCodes::BAD_ARGUMENTS);
 }
 
 UInt64 MergeTreeData::getMaxDataPartIndex()
@@ -120,6 +125,7 @@ std::string MergeTreeData::getModePrefix() const
 		case Collapsing: 	return "Collapsing";
 		case Summing: 		return "Summing";
 		case Aggregating: 	return "Aggregating";
+		case Unsorted: 		return "Unsorted";
 
 		default:
 			throw Exception("Unknown mode of operation for MergeTreeData: " + toString(mode), ErrorCodes::LOGICAL_ERROR);
@@ -386,8 +392,14 @@ void MergeTreeData::checkAlter(const AlterCommands & params)
 
 	/// Список столбцов, которые нельзя трогать.
 	/// sampling_expression можно не учитывать, потому что он обязан содержаться в первичном ключе.
-	Names keys = primary_expr->getRequiredColumns();
+
+	Names keys;
+
+	if (primary_expr)
+		keys = primary_expr->getRequiredColumns();
+
 	keys.push_back(sign_column);
+
 	std::sort(keys.begin(), keys.end());
 
 	for (const AlterCommand & command : params)

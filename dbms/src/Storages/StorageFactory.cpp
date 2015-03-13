@@ -350,7 +350,7 @@ StoragePtr StorageFactory::get(
 	}
 	else if (endsWith(name, "MergeTree"))
 	{
-		/** Движки [Replicated][Summing|Collapsing|Aggregating|]MergeTree (8 комбинаций)
+		/** Движки [Replicated][|Summing|Collapsing|Aggregating|Unsorted]MergeTree (2 * 5 комбинаций)
 		  * В качестве аргумента для движка должно быть указано:
 		  *  - (для Replicated) Путь к таблице в ZooKeeper
 		  *  - (для Replicated) Имя реплики в ZooKeeper
@@ -367,6 +367,7 @@ StoragePtr StorageFactory::get(
 		  * CollapsingMergeTree(date, [sample_key], primary_key, index_granularity, sign)
 		  * SummingMergeTree(date, [sample_key], primary_key, index_granularity, [columns_to_sum])
 		  * AggregatingMergeTree(date, [sample_key], primary_key, index_granularity)
+		  * UnsortedMergeTree(date, index_granularity)	TODO Добавить описание ниже.
 		  */
 
 		const char * verbose_help = R"(
@@ -445,6 +446,8 @@ For further info please read the documentation: http://clickhouse.yandex-team.ru
 			mode = MergeTreeData::Summing;
 		else if (name_part == "Aggregating")
 			mode = MergeTreeData::Aggregating;
+		else if (name_part == "Unsorted")
+			mode = MergeTreeData::Unsorted;
 		else if (!name_part.empty())
 			throw Exception("Unknown storage " + name + verbose_help, ErrorCodes::UNKNOWN_STORAGE);
 
@@ -458,7 +461,26 @@ For further info please read the documentation: http://clickhouse.yandex-team.ru
 		/// NOTE Слегка запутанно.
 		size_t num_additional_params = (replicated ? 2 : 0) + (mode == MergeTreeData::Collapsing);
 
-		if (mode != MergeTreeData::Summing
+		if (mode == MergeTreeData::Unsorted
+			&& args.size() != num_additional_params + 2)
+		{
+			String params;
+
+			if (replicated)
+				params +=
+				"\npath in ZooKeeper,"
+				"\nreplica name,";
+
+			params +=
+				"\nname of column with date,"
+				"\nindex granularity\n";
+
+			throw Exception("Storage " + name + " requires "
+				+ toString(num_additional_params + 2) + " parameters: " + params + verbose_help,
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+		}
+
+		if (mode != MergeTreeData::Summing && mode != MergeTreeData::Unsorted
 			&& args.size() != num_additional_params + 3
 			&& args.size() != num_additional_params + 4)
 		{
@@ -579,9 +601,10 @@ For further info please read the documentation: http://clickhouse.yandex-team.ru
 		else
 			throw Exception(String("Date column name must be an unquoted string") + verbose_help, ErrorCodes::BAD_ARGUMENTS);
 
-		primary_expr_list = extractPrimaryKey(args[1]);
+		if (mode != MergeTreeData::Unsorted)
+			primary_expr_list = extractPrimaryKey(args[1]);
 
-		auto ast = typeid_cast<ASTLiteral *>(&*args[2]);
+		auto ast = typeid_cast<ASTLiteral *>(&*args.back());
 		if (ast && ast->value.getType() == Field::Types::UInt64)
 				index_granularity = safeGet<UInt64>(ast->value);
 		else

@@ -8,6 +8,7 @@
 #include <DB/DataStreams/SummingSortedBlockInputStream.h>
 #include <DB/DataStreams/AggregatingSortedBlockInputStream.h>
 #include <DB/DataStreams/MaterializingBlockInputStream.h>
+#include <DB/DataStreams/ConcatBlockInputStream.h>
 
 
 namespace DB
@@ -361,6 +362,10 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 
 		case MergeTreeData::Aggregating:
 			merged_stream = std::make_unique<AggregatingSortedBlockInputStream>(src_streams, data.getSortDescription(), DEFAULT_MERGE_BLOCK_SIZE);
+			break;
+
+		case MergeTreeData::Unsorted:
+			merged_stream = std::make_unique<ConcatBlockInputStream>(src_streams);
 			break;
 
 		default:
