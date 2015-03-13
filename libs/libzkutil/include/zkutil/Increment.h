@@ -11,6 +11,7 @@ public:
 	Increment(ZooKeeperPtr zk_, const std::string & path_) 
 	: zk(zk_), path(path_)
 	{
+		zk->createAncestors(path);
 	}
 	
 	size_t get()
