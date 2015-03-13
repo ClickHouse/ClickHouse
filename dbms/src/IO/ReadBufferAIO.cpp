@@ -130,7 +130,7 @@ off_t ReadBufferAIO::getPositionInFile()
 
 off_t ReadBufferAIO::getPositionInFileRelaxed() const noexcept
 {
-	return pos_in_file - (working_buffer.end() - pos); 
+	return pos_in_file - (working_buffer.end() - pos);
 }
 
 bool ReadBufferAIO::nextImpl()
