@@ -200,11 +200,11 @@ bool test3()
 
 		out.write(&buf[0], buf.length());
 
-		off_t pos1 = out.seek(0, SEEK_CUR);
+		off_t pos1 = out.getPositionInFile();
 
 		out.truncate(buf.length() / 2);
 
-		off_t pos2 = out.seek(0, SEEK_CUR);
+		off_t pos2 = out.getPositionInFile();
 
 		if (pos1 != pos2)
 			return false;
@@ -254,11 +254,11 @@ bool test4()
 
 		out.write(&buf[0], buf.length());
 
-		off_t pos1 = out.seek(0, SEEK_CUR);
+		off_t pos1 = out.getPositionInFile();
 
 		out.truncate(3 * buf.length() / 2);
 
-		off_t pos2 = out.seek(0, SEEK_CUR);
+		off_t pos2 = out.getPositionInFile();
 
 		if (pos1 != pos2)
 			return false;
