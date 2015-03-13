@@ -37,7 +37,7 @@ ReadBufferAIO::~ReadBufferAIO()
 	{
 		try
 		{
-			waitForCompletion();
+			waitForAIOCompletion();
 		}
 		catch (...)
 		{
@@ -69,7 +69,7 @@ off_t ReadBufferAIO::seek(off_t off, int whence)
 	if ((off % DEFAULT_AIO_FILE_BLOCK_SIZE) != 0)
 		throw Exception("Invalid offset for ReadBufferAIO::seek", ErrorCodes::AIO_UNALIGNED_SIZE_ERROR);
 
-	waitForCompletion();
+	waitForAIOCompletion();
 
 	off_t new_pos;
 
@@ -140,7 +140,7 @@ bool ReadBufferAIO::nextImpl()
 	if (is_eof)
 		return false;
 
-	waitForCompletion();
+	waitForAIOCompletion();
 
 	/// При первом вызове не надо обменять местами основной и дублирующий буферы.
 	if (is_started)
@@ -172,7 +172,7 @@ bool ReadBufferAIO::nextImpl()
 	return true;
 }
 
-void ReadBufferAIO::waitForCompletion()
+void ReadBufferAIO::waitForAIOCompletion()
 {
 	if (is_pending_read)
 	{

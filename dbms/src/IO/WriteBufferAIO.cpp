@@ -38,9 +38,7 @@ WriteBufferAIO::~WriteBufferAIO()
 	{
 		try
 		{
-			/// Если в буфере ещё остались данные - запишем их.
-			next();
-			waitForCompletion();
+			flush();
 		}
 		catch (...)
 		{
@@ -57,9 +55,7 @@ off_t WriteBufferAIO::seek(off_t off, int whence)
 	if ((off % DEFAULT_AIO_FILE_BLOCK_SIZE) != 0)
 		throw Exception("Invalid offset for WriteBufferAIO::seek", ErrorCodes::AIO_UNALIGNED_SIZE_ERROR);
 
-	/// Если в буфере ещё остались данные - запишем их.
-	next();
-	waitForCompletion();
+	flush();
 
 	if (whence == SEEK_SET)
 	{
@@ -106,9 +102,7 @@ void WriteBufferAIO::truncate(off_t length)
 	if ((length % DEFAULT_AIO_FILE_BLOCK_SIZE) != 0)
 		throw Exception("Invalid length for WriteBufferAIO::ftruncate", ErrorCodes::AIO_UNALIGNED_SIZE_ERROR);
 
-	/// Если в буфере ещё остались данные - запишем их.
-	next();
-	waitForCompletion();
+	flush();
 
 	int res = ::ftruncate(fd, length);
 	if (res == -1)
@@ -120,9 +114,7 @@ void WriteBufferAIO::truncate(off_t length)
 
 void WriteBufferAIO::sync()
 {
-	/// Если в буфере ещё остались данные - запишем их.
-	next();
-	waitForCompletion();
+	flush();
 
 	/// Попросим ОС сбросить данные на диск.
 	int res = ::fsync(fd);
@@ -133,12 +125,18 @@ void WriteBufferAIO::sync()
 	}
 }
 
+void WriteBufferAIO::flush()
+{
+	next();
+	waitForAIOCompletion();
+}
+
 void WriteBufferAIO::nextImpl()
 {
 	if (!offset())
 		return;
 
-	waitForCompletion();
+	waitForAIOCompletion();
 	swapBuffers();
 
 	/// Создать запрос.
@@ -166,7 +164,7 @@ void WriteBufferAIO::nextImpl()
 	is_pending_write = true;
 }
 
-void WriteBufferAIO::waitForCompletion()
+void WriteBufferAIO::waitForAIOCompletion()
 {
 	if (is_pending_write)
 	{

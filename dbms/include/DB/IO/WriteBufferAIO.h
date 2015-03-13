@@ -32,9 +32,12 @@ public:
 	int getFD() const noexcept { return fd; }
 
 private:
+	/// Если в буфере ещё остались данные - запишем их.
+	void flush();
+	///
 	void nextImpl();
 	/// Ждать окончания текущей асинхронной задачи.
-	void waitForCompletion();
+	void waitForAIOCompletion();
 	/// Менять местами основной и дублирующий буферы.
 	void swapBuffers() noexcept;
 

@@ -35,7 +35,7 @@ private:
 	off_t getPositionInFileRelaxed() const noexcept;
 	bool nextImpl();
 	/// Ждать окончания текущей асинхронной задачи.
-	void waitForCompletion();
+	void waitForAIOCompletion();
 	/// Менять местами основной и дублирующий буферы.
 	void swapBuffers() noexcept;
 
