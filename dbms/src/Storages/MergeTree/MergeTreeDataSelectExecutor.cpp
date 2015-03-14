@@ -271,7 +271,11 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	for (auto & part : parts)
 	{
 		RangesInDataPart ranges(part, (*part_index)++);
-		ranges.ranges = markRangesFromPkRange(part->index, key_condition, settings);
+
+		if (data.mode != MergeTreeData::Unsorted)
+			ranges.ranges = markRangesFromPkRange(part->index, key_condition, settings);
+		else
+			ranges.ranges = MarkRanges{MarkRange{0, part->size}};
 
 		if (!ranges.ranges.empty())
 		{

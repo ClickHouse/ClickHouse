@@ -336,8 +336,12 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 				__sync_add_and_fetch(&merge_entry->bytes_read_uncompressed, value.bytes);
 			});
 
-		src_streams.push_back(new MaterializingBlockInputStream{
-			new ExpressionBlockInputStream(input.release(), data.getPrimaryExpression())});
+		if (data.mode != MergeTreeData::Unsorted)
+			src_streams.push_back(new MaterializingBlockInputStream{
+				new ExpressionBlockInputStream(input.release(), data.getPrimaryExpression())});
+		else
+			src_streams.push_back(input.release());
+
 		sum_rows_approx += parts[i]->size * data.index_granularity;
 	}
 

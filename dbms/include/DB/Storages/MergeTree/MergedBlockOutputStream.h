@@ -235,8 +235,11 @@ public:
 	{
 		Poco::File(part_path).createDirectories();
 
-		index_file_stream = new WriteBufferFromFile(part_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
-		index_stream = new HashingWriteBuffer(*index_file_stream);
+		if (storage.mode != MergeTreeData::Unsorted)
+		{
+			index_file_stream = new WriteBufferFromFile(part_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
+			index_stream = new HashingWriteBuffer(*index_file_stream);
+		}
 
 		for (const auto & it : columns_list)
 			addStream(part_path, it.name, *it.type);
@@ -260,7 +263,9 @@ public:
 		{
 			for (PrimaryColumns::const_iterator it = primary_columns.begin(); it != primary_columns.end(); ++it)
 			{
-				index_vec.push_back((*(*it)->column)[i]);
+				if (storage.mode != MergeTreeData::Unsorted)
+					index_vec.push_back((*(*it)->column)[i]);
+
 				(*it)->type->serializeBinary(index_vec.back(), *index_stream);
 			}
 
@@ -291,9 +296,13 @@ public:
 		/// Заканчиваем запись и достаем чексуммы.
 		MergeTreeData::DataPart::Checksums checksums;
 
-		index_stream->next();
-		checksums.files["primary.idx"].file_size = index_stream->count();
-		checksums.files["primary.idx"].file_hash = index_stream->getHash();
+		if (storage.mode != MergeTreeData::Unsorted)
+		{
+			index_stream->next();
+			checksums.files["primary.idx"].file_size = index_stream->count();
+			checksums.files["primary.idx"].file_hash = index_stream->getHash();
+			index_stream = nullptr;
+		}
 
 		for (ColumnStreams::iterator it = column_streams.begin(); it != column_streams.end(); ++it)
 		{
@@ -301,7 +310,6 @@ public:
 			it->second->addToChecksums(checksums);
 		}
 
-		index_stream = nullptr;
 		column_streams.clear();
 
 		if (marks_count == 0)
