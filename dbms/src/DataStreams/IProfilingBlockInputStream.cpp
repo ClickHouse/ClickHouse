@@ -226,7 +226,7 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
 		size_t rows_processed = process_list_elem->progress.rows;
 		size_t bytes_processed = process_list_elem->progress.bytes;
 
-		size_t total_rows_estimate = std::max(process_list_elem->progress.rows, process_list_elem->progress.total_rows);
+		size_t total_rows_estimate = std::max(rows_processed, process_list_elem->progress.total_rows);
 
 		/** Проверяем ограничения на объём данных для чтения, скорость выполнения запроса, квоту на объём данных для чтения.
 			* NOTE: Может быть, имеет смысл сделать, чтобы они проверялись прямо в ProcessList?
@@ -257,12 +257,26 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
 		{
 			double total_elapsed = info.total_stopwatch.elapsedSeconds();
 
-			if (total_elapsed > limits.timeout_before_checking_execution_speed.totalMicroseconds() / 1000000.0
-				&& rows_processed / total_elapsed < limits.min_execution_speed)
+			if (total_elapsed > limits.timeout_before_checking_execution_speed.totalMicroseconds() / 1000000.0)
 			{
-				throw Exception("Query is executing too slow: " + toString(rows_processed / total_elapsed)
-					+ " rows/sec., minimum: " + toString(limits.min_execution_speed),
-					ErrorCodes::TOO_SLOW);
+				if (rows_processed / total_elapsed < limits.min_execution_speed)
+					throw Exception("Query is executing too slow: " + toString(rows_processed / total_elapsed)
+						+ " rows/sec., minimum: " + toString(limits.min_execution_speed),
+						ErrorCodes::TOO_SLOW);
+
+				size_t total_rows = process_list_elem->progress.total_rows;
+
+				/// Если предсказанное время выполнения больше, чем max_execution_time.
+				if (limits.max_execution_time != 0 && total_rows)
+				{
+					double estimated_execution_time_seconds = total_elapsed * (static_cast<double>(total_rows) / rows_processed);
+
+					if (estimated_execution_time_seconds > limits.max_execution_time.totalSeconds())
+						throw Exception("Estimated query execution time (" + toString(UInt64(estimated_execution_time_seconds)) + " seconds)"
+							+ " is too long. Maximum: " + toString(limits.max_execution_time.totalSeconds())
+							+ ". Estimated rows to process: " + toString(total_rows),
+							ErrorCodes::TOO_SLOW);
+				}
 			}
 		}
 
