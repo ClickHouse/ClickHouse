@@ -284,7 +284,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	}
 
 	LOG_DEBUG(log, "Selected " << parts.size() << " parts by date, " << parts_with_ranges.size() << " parts by key, "
-			  << sum_marks << " marks to read from " << sum_ranges << " ranges");
+		<< sum_marks << " marks to read from " << sum_ranges << " ranges");
 
 	BlockInputStreams res;
 

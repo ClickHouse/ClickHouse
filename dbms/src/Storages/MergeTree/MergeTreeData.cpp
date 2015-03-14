@@ -522,7 +522,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 		BlockInputStreamPtr part_in = new MergeTreeBlockInputStream(full_path + part->name + '/',
 			DEFAULT_MERGE_BLOCK_SIZE, expression->getRequiredColumns(), *this, part, ranges, false, nullptr, "", false);
 		ExpressionBlockInputStream in(part_in, expression);
-		MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/', true);
+		MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/', true, CompressionMethod::LZ4);
 		in.readPrefix();
 		out.writePrefix();
 

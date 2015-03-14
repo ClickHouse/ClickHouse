@@ -374,7 +374,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 
 	const String new_part_tmp_path = data.getFullPath() + "tmp_" + merged_name + "/";
 
-	MergedBlockOutputStream to{data, new_part_tmp_path, union_columns};
+	MergedBlockOutputStream to{data, new_part_tmp_path, union_columns, CompressionMethod::LZ4};
 
 	merged_stream->readPrefix();
 	to.writePrefix();
