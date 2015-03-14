@@ -253,13 +253,15 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
 				throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
 		}
 
-		if (limits.min_execution_speed)
+		size_t total_rows = process_list_elem->progress.total_rows;
+
+		if (limits.min_execution_speed || (total_rows && limits.timeout_before_checking_execution_speed != 0))
 		{
 			double total_elapsed = info.total_stopwatch.elapsedSeconds();
 
 			if (total_elapsed > limits.timeout_before_checking_execution_speed.totalMicroseconds() / 1000000.0)
 			{
-				if (rows_processed / total_elapsed < limits.min_execution_speed)
+				if (limits.min_execution_speed && rows_processed / total_elapsed < limits.min_execution_speed)
 					throw Exception("Query is executing too slow: " + toString(rows_processed / total_elapsed)
 						+ " rows/sec., minimum: " + toString(limits.min_execution_speed),
 						ErrorCodes::TOO_SLOW);
@@ -272,7 +274,7 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
 					double estimated_execution_time_seconds = total_elapsed * (static_cast<double>(total_rows) / rows_processed);
 
 					if (estimated_execution_time_seconds > limits.max_execution_time.totalSeconds())
-						throw Exception("Estimated query execution time (" + toString(UInt64(estimated_execution_time_seconds)) + " seconds)"
+						throw Exception("Estimated query execution time (" + toString(estimated_execution_time_seconds) + " seconds)"
 							+ " is too long. Maximum: " + toString(limits.max_execution_time.totalSeconds())
 							+ ". Estimated rows to process: " + toString(total_rows),
 							ErrorCodes::TOO_SLOW);
