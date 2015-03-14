@@ -83,6 +83,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	PKCondition key_condition(query, context, data.getColumnsList(), data.getSortDescription());
 	PKCondition date_condition(query, context, data.getColumnsList(), SortDescription(1, SortColumnDescription(data.date_column_name, 1)));
 
+	if (settings.force_index_by_date && date_condition.alwaysTrue())
+		throw Exception("Index by date is not used and setting 'force_index_by_date' is set.", ErrorCodes::INDEX_NOT_USED);
+
 	/// Выберем куски, в которых могут быть данные, удовлетворяющие date_condition, и которые подходят под условие на _part.
 	{
 		auto prev_parts = parts;
