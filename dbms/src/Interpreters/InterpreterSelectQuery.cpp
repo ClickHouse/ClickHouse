@@ -664,8 +664,15 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	 *  то в качестве размера блока будем использовать limit + offset (чтобы не читать из таблицы больше, чем запрошено),
 	 *  а также установим количество потоков в 1 и отменим асинхронное выполнение конвейера запроса.
 	 */
-	if (!query.distinct && !query.prewhere_expression && !query.where_expression && !query.group_expression_list && !query.having_expression && !query.order_expression_list
-		&& query.limit_length && !query_analyzer->hasAggregation() && limit_length + limit_offset < settings.max_block_size)
+	if (!query.distinct
+		&& !query.prewhere_expression
+		&& !query.where_expression
+		&& !query.group_expression_list
+		&& !query.having_expression
+		&& !query.order_expression_list
+		&& query.limit_length
+		&& !query_analyzer->hasAggregation()
+		&& limit_length + limit_offset < settings.max_block_size)
 	{
 		settings.max_block_size = limit_length + limit_offset;
 		settings.max_threads = 1;
@@ -678,12 +685,6 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	/// Инициализируем изначальные потоки данных, на которые накладываются преобразования запроса. Таблица или подзапрос?
 	if (!interpreter_subquery)
 	{
-		/** При распределённой обработке запроса, на все удалённые серверы отправляются временные таблицы,
-			*  полученные из глобальных подзапросов - GLOBAL IN/JOIN.
-			*/
-		if (storage && storage->isRemote())
-			storage->storeExternalTables(query_analyzer->getExternalTables());
-
 		streams = storage->read(required_columns, query_ptr,
 			context, settings_for_storage, from_stage,
 			settings.max_block_size, settings.max_threads);

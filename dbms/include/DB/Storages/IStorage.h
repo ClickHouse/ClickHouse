@@ -47,29 +47,19 @@ public:
 	/// Основное имя типа таблицы (например, StorageMergeTree).
 	virtual std::string getName() const = 0;
 
-	/** Возвращает true, если хранилище получает данные с удалённого сервера или серверов.
-	  */
+	/** Возвращает true, если хранилище получает данные с удалённого сервера или серверов. */
 	virtual bool isRemote() const { return false; }
 
-	virtual void storeExternalTables(const std::map<String, StoragePtr> & tables_)
-	{
-		throw Exception("Method storeExternalTables is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-	}
-
-	/** Возвращает true, если хранилище поддерживает запросы с секцией SAMPLE.
-	 */
+	/** Возвращает true, если хранилище поддерживает запросы с секцией SAMPLE. */
 	virtual bool supportsSampling() const { return false; }
 
-	/** Возвращает true, если хранилище поддерживает запросы с секцией FINAL.
-	 */
+	/** Возвращает true, если хранилище поддерживает запросы с секцией FINAL. */
 	virtual bool supportsFinal() const { return false; }
 
-	/** Возвращает true, если хранилище поддерживает запросы с секцией PREWHERE.
-	 */
+	/** Возвращает true, если хранилище поддерживает запросы с секцией PREWHERE. */
 	virtual bool supportsPrewhere() const { return false; }
 
-	/** Возвращает true, если хранилище поддерживает несколько реплик.
-	 */
+	/** Возвращает true, если хранилище поддерживает несколько реплик. */
 	virtual bool supportsParallelReplicas() const { return false; }
 
 	/** Не дает изменять описание таблицы (в том числе переименовывать и удалять таблицу).
