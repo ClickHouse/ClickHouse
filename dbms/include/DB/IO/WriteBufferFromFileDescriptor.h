@@ -6,6 +6,7 @@
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 
+#include <DB/IO/WriteBufferFromFileBase.h>
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/BufferWithOwnMemory.h>
@@ -16,7 +17,7 @@ namespace DB
 
 /** Работает с готовым файловым дескриптором. Не открывает и не закрывает файл.
   */
-class WriteBufferFromFileDescriptor : public BufferWithOwnMemory<WriteBuffer>
+class WriteBufferFromFileDescriptor : public WriteBufferFromFileBase
 {
 protected:
 	int fd;
@@ -40,14 +41,14 @@ protected:
 	}
 
 	/// Имя или описание файла
-	virtual std::string getFileName()
+	virtual std::string getFileName() const noexcept override
 	{
 		return "(fd = " + toString(fd) + ")";
 	}
 
 public:
 	WriteBufferFromFileDescriptor(int fd_ = -1, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, char * existing_memory = nullptr, size_t alignment = 0)
-		: BufferWithOwnMemory<WriteBuffer>(buf_size, existing_memory, alignment), fd(fd_) {}
+		: WriteBufferFromFileBase(buf_size, existing_memory, alignment), fd(fd_) {}
 
 	/** Можно вызывать для инициализации, если нужный fd не был передан в конструктор.
 	  * Менять fd во время работы нельзя.
@@ -69,12 +70,12 @@ public:
 		}
 	}
 
-	int getFD()
+	int getFD() const noexcept override
 	{
 		return fd;
 	}
 
-	off_t seek(off_t offset, int whence = SEEK_SET)
+	off_t seek(off_t offset, int whence = SEEK_SET) override
 	{
 		off_t res = lseek(fd, offset, whence);
 		if (-1 == res)
@@ -82,14 +83,19 @@ public:
 		return res;
 	}
 
-	void truncate(off_t length = 0)
+	off_t getPositionInFile() override
+	{
+		return seek(0, SEEK_CUR);
+	}
+
+	void truncate(off_t length = 0) override
 	{
 		int res = ftruncate(fd, length);
 		if (-1 == res)
 			throwFromErrno("Cannot truncate file " + getFileName(), ErrorCodes::CANNOT_TRUNCATE_FILE);
 	}
 
-	void sync()
+	void sync() override
 	{
 		/// Если в буфере ещё остались данные - запишем их.
 		next();
