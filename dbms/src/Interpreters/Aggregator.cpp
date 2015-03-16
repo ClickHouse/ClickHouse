@@ -984,17 +984,28 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
 	std::vector<std::packaged_task<Block()>> tasks;
 	tasks.reserve(Method::Data::NUM_BUCKETS);
 
-	for (size_t bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
+	try
 	{
-		if (method.data.impls[bucket].empty())
-			continue;
+		for (size_t bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
+		{
+			if (method.data.impls[bucket].empty())
+				continue;
 
-		tasks.emplace_back(std::bind(converter, bucket, current_memory_tracker));
+			tasks.emplace_back(std::bind(converter, bucket, current_memory_tracker));
 
+			if (thread_pool)
+				thread_pool->schedule([bucket, &tasks] { tasks[bucket](); });
+			else
+				tasks[bucket]();
+		}
+	}
+	catch (...)
+	{
+		/// Если этого не делать, то в случае исключения, tasks уничтожится раньше завершения потоков, и будет плохо.
 		if (thread_pool)
-			thread_pool->schedule([bucket, &tasks] { tasks[bucket](); });
-		else
-			tasks[bucket]();
+			thread_pool->wait();
+
+		throw;
 	}
 
 	if (thread_pool)
@@ -1197,14 +1208,25 @@ void NO_INLINE Aggregator::mergeTwoLevelDataImpl(
 	std::vector<std::packaged_task<void()>> tasks;
 	tasks.reserve(Method::Data::NUM_BUCKETS);
 
-	for (size_t bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
+	try
 	{
-		tasks.emplace_back(std::bind(merge_bucket, bucket, current_memory_tracker));
+		for (size_t bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
+		{
+			tasks.emplace_back(std::bind(merge_bucket, bucket, current_memory_tracker));
 
+			if (thread_pool)
+				thread_pool->schedule([bucket, &tasks] { tasks[bucket](); });
+			else
+				tasks[bucket]();
+		}
+	}
+	catch (...)
+	{
+		/// Если этого не делать, то в случае исключения, tasks уничтожится раньше завершения потоков, и будет плохо.
 		if (thread_pool)
-			thread_pool->schedule([bucket, &tasks] { tasks[bucket](); });
-		else
-			tasks[bucket]();
+			thread_pool->wait();
+
+		throw;
 	}
 
 	if (thread_pool)
@@ -1492,11 +1514,6 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 	{
 		LOG_TRACE(log, "Merging partially aggregated two-level data.");
 
-		std::unique_ptr<boost::threadpool::pool> thread_pool;
-		if (max_threads > 1 && total_input_rows > 100000	/// TODO Сделать настраиваемый порог.
-			&& has_two_level)
-			thread_pool.reset(new boost::threadpool::pool(max_threads));
-
 		auto merge_bucket = [&bucket_to_blocks, &result, this](Int32 bucket, Arena * aggregates_pool, MemoryTracker * memory_tracker)
 		{
 			current_memory_tracker = memory_tracker;
@@ -1519,6 +1536,11 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 
 		std::vector<std::packaged_task<void()>> tasks;
 		tasks.reserve(bucket_to_blocks.size() - has_blocks_with_unknown_bucket);
+
+		std::unique_ptr<boost::threadpool::pool> thread_pool;
+		if (max_threads > 1 && total_input_rows > 100000	/// TODO Сделать настраиваемый порог.
+			&& has_two_level)
+			thread_pool.reset(new boost::threadpool::pool(max_threads));
 
 		for (auto & bucket_blocks : bucket_to_blocks)
 		{

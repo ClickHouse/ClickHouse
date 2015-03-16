@@ -13,7 +13,7 @@
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <zkutil/ZooKeeper.h>
 #include <zkutil/LeaderElection.h>
-#include <statdaemons/threadpool.hpp>
+
 
 namespace DB
 {
