@@ -46,8 +46,8 @@ private:
 	BufferWithOwnMemory<WriteBuffer> flush_buffer;
 
 	iocb request;
-	std::vector<iocb *> request_ptrs;
-	std::vector<io_event> events;
+	std::vector<iocb *> request_ptrs{&request};
+	std::vector<io_event> events{1};
 
 	AIOContext aio_context{1};
 
