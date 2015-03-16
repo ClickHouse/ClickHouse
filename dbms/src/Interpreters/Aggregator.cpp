@@ -1123,13 +1123,13 @@ void NO_INLINE Aggregator::mergeDataImpl(
 			for (size_t i = 0; i < aggregates_size; ++i)
 				aggregate_functions[i]->destroy(
 					Method::getAggregateData(it->second) + offsets_of_aggregate_states[i]);
-
-			Method::getAggregateData(it->second) = nullptr;
 		}
 		else
 		{
 			res_it->second = it->second;
 		}
+
+		Method::getAggregateData(it->second) = nullptr;
 	}
 }
 
