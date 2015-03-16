@@ -8,7 +8,6 @@
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 
-#include <DB/IO/ReadBufferFromFileBase.h>
 #include <DB/IO/ReadBuffer.h>
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/BufferWithOwnMemory.h>
@@ -19,7 +18,7 @@ namespace DB
 
 /** Работает с готовым файловым дескриптором. Не открывает и не закрывает файл.
   */
-class ReadBufferFromFileDescriptor : public ReadBufferFromFileBase
+class ReadBufferFromFileDescriptor : public BufferWithOwnMemory<ReadBuffer>
 {
 protected:
 	int fd;
@@ -54,22 +53,22 @@ protected:
 	}
 
 	/// Имя или описание файла
-	virtual std::string getFileName() const noexcept override
+	virtual std::string getFileName()
 	{
 		return "(fd = " + toString(fd) + ")";
 	}
 
 public:
 	ReadBufferFromFileDescriptor(int fd_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, char * existing_memory = nullptr, size_t alignment = 0)
-		: ReadBufferFromFileBase(buf_size, existing_memory, alignment), fd(fd_), pos_in_file(0) {}
+		: BufferWithOwnMemory<ReadBuffer>(buf_size, existing_memory, alignment), fd(fd_), pos_in_file(0) {}
 
-	int getFD() const noexcept override
+	int getFD()
 	{
 		return fd;
 	}
 
 	/// Если offset такой маленький, что мы не выйдем за пределы буфера, настоящий seek по файлу не делается.
-	off_t seek(off_t offset, int whence = SEEK_CUR) override
+	off_t seek(off_t offset, int whence = SEEK_SET)
 	{
 		off_t new_pos = offset;
 		if (whence == SEEK_CUR)
@@ -100,7 +99,7 @@ public:
 		}
 	}
 
-	off_t getPositionInFile() override
+	off_t getPositionInFile()
 	{
 		return pos_in_file - (working_buffer.end() - pos);
 	}
