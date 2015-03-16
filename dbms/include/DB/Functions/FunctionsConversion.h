@@ -134,6 +134,65 @@ struct ConvertImpl<DataTypeDateTime, DataTypeDate, Name>
 };
 
 
+/** Отдельный случай для преобразования UInt32 или UInt64 в Date.
+  * Если число меньше 65536, то оно понимается, как DayNum, а если больше - как unix timestamp.
+  * Немного нелогично, что мы, по сути, помещаем две разные функции в одну.
+  * Но зато это позволяет поддержать распространённый случай,
+  *  когда пользователь пишет toDate(UInt32), ожидая, что это - перевод unix timestamp в дату
+  *  (иначе такое использование было бы распространённой ошибкой).
+  */
+template <typename FromDataType, typename Name>
+struct ConvertImplUInt32Or64ToDate
+{
+	typedef typename FromDataType::FieldType FromFieldType;
+	typedef DataTypeDate::FieldType ToFieldType;
+
+	template <typename To, typename From>
+	static To convert(const From & from, const DateLUT & date_lut)
+	{
+		return from < 0xFFFF
+			? from
+			: date_lut.toDayNum(from);
+	}
+
+	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		DateLUT & date_lut = DateLUT::instance();
+
+		if (const ColumnVector<FromFieldType> * col_from
+			= typeid_cast<const ColumnVector<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
+		{
+			ColumnVector<ToFieldType> * col_to = new ColumnVector<ToFieldType>;
+			block.getByPosition(result).column = col_to;
+
+			const typename ColumnVector<FromFieldType>::Container_t & vec_from = col_from->getData();
+			typename ColumnVector<ToFieldType>::Container_t & vec_to = col_to->getData();
+			size_t size = vec_from.size();
+			vec_to.resize(size);
+
+			for (size_t i = 0; i < size; ++i)
+				vec_to[i] = convert<ToFieldType>(vec_from[i], date_lut);
+		}
+		else if (const ColumnConst<FromFieldType> * col_from
+			= typeid_cast<const ColumnConst<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
+		{
+			block.getByPosition(result).column = new ColumnConst<ToFieldType>(col_from->size(),
+				convert<ToFieldType>(col_from->getData(), date_lut));
+		}
+		else
+			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+					+ " of first argument of function " + Name::name,
+				ErrorCodes::ILLEGAL_COLUMN);
+	}
+};
+
+template <typename Name>
+struct ConvertImpl<DataTypeUInt32, DataTypeDate, Name> : ConvertImplUInt32Or64ToDate<DataTypeUInt32, Name> {};
+
+template <typename Name>
+struct ConvertImpl<DataTypeUInt64, DataTypeDate, Name> : ConvertImplUInt32Or64ToDate<DataTypeUInt64, Name> {};
+
+
 /** Преобразование чисел, дат, дат-с-временем в строки: через форматирование.
   */
 template <typename DataType> void formatImpl(typename DataType::FieldType x, WriteBuffer & wb) { writeText(x, wb); }
@@ -392,9 +451,9 @@ public:
 		IDataType * from_type = &*block.getByPosition(arguments[0]).type;
 
 		if      (typeid_cast<const DataTypeUInt8 *		>(from_type)) ConvertImpl<DataTypeUInt8, 	ToDataType, Name>::execute(block, arguments, result);
-		else if (typeid_cast<const DataTypeUInt16 *	>(from_type)) ConvertImpl<DataTypeUInt16, 	ToDataType, Name>::execute(block, arguments, result);
-		else if (typeid_cast<const DataTypeUInt32 *	>(from_type)) ConvertImpl<DataTypeUInt32, 	ToDataType, Name>::execute(block, arguments, result);
-		else if (typeid_cast<const DataTypeUInt64 *	>(from_type)) ConvertImpl<DataTypeUInt64, 	ToDataType, Name>::execute(block, arguments, result);
+		else if (typeid_cast<const DataTypeUInt16 *		>(from_type)) ConvertImpl<DataTypeUInt16, 	ToDataType, Name>::execute(block, arguments, result);
+		else if (typeid_cast<const DataTypeUInt32 *		>(from_type)) ConvertImpl<DataTypeUInt32, 	ToDataType, Name>::execute(block, arguments, result);
+		else if (typeid_cast<const DataTypeUInt64 *		>(from_type)) ConvertImpl<DataTypeUInt64, 	ToDataType, Name>::execute(block, arguments, result);
 		else if (typeid_cast<const DataTypeInt8 *		>(from_type)) ConvertImpl<DataTypeInt8, 	ToDataType, Name>::execute(block, arguments, result);
 		else if (typeid_cast<const DataTypeInt16 *		>(from_type)) ConvertImpl<DataTypeInt16, 	ToDataType, Name>::execute(block, arguments, result);
 		else if (typeid_cast<const DataTypeInt32 *		>(from_type)) ConvertImpl<DataTypeInt32, 	ToDataType, Name>::execute(block, arguments, result);
@@ -403,7 +462,7 @@ public:
 		else if (typeid_cast<const DataTypeFloat64 *	>(from_type)) ConvertImpl<DataTypeFloat64, 	ToDataType, Name>::execute(block, arguments, result);
 		else if (typeid_cast<const DataTypeDate *		>(from_type)) ConvertImpl<DataTypeDate, 	ToDataType, Name>::execute(block, arguments, result);
 		else if (typeid_cast<const DataTypeDateTime *	>(from_type)) ConvertImpl<DataTypeDateTime,	ToDataType, Name>::execute(block, arguments, result);
-		else if (typeid_cast<const DataTypeString *	>(from_type)) ConvertImpl<DataTypeString, 	ToDataType, Name>::execute(block, arguments, result);
+		else if (typeid_cast<const DataTypeString *		>(from_type)) ConvertImpl<DataTypeString, 	ToDataType, Name>::execute(block, arguments, result);
 		else if (typeid_cast<const DataTypeFixedString *>(from_type)) ConvertImpl<DataTypeFixedString, ToDataType, Name>::execute(block, arguments, result);
 		else
 			throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
