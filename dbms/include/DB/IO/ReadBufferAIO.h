@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DB/IO/ReadBufferFromFileBase.h>
 #include <DB/IO/ReadBuffer.h>
 #include <DB/IO/BufferWithOwnMemory.h>
 #include <statdaemons/AIO.h>
@@ -15,7 +16,7 @@ namespace DB
 /** Класс для асинхронного чтения данных.
   * Все размеры и смещения должны быть кратны DEFAULT_AIO_FILE_BLOCK_SIZE байтам.
   */
-class ReadBufferAIO : public BufferWithOwnMemory<ReadBuffer>
+class ReadBufferAIO : public ReadBufferFromFileBase
 {
 public:
 	ReadBufferAIO(const std::string & filename_, size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE, int flags_ = -1, mode_t mode_ = 0666,
@@ -26,10 +27,10 @@ public:
 	ReadBufferAIO & operator=(const ReadBufferAIO &) = delete;
 
 	void setMaxBytes(size_t max_bytes_read_);
-	off_t seek(off_t off, int whence = SEEK_SET);
-	off_t getPositionInFile();
-	std::string getFileName() const noexcept { return filename; }
-	int getFD() const noexcept { return fd; }
+	off_t seek(off_t off, int whence) override;
+	off_t getPositionInFile() override;
+	std::string getFileName() const noexcept override { return filename; }
+	int getFD() const noexcept override { return fd; }
 
 private:
 	off_t getPositionInFileRelaxed() const noexcept;

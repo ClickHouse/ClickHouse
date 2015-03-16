@@ -11,8 +11,8 @@ namespace DB
 
 ReadBufferAIO::ReadBufferAIO(const std::string & filename_, size_t buffer_size_, int flags_, mode_t mode_,
 	char * existing_memory_)
-	: BufferWithOwnMemory(buffer_size_, existing_memory_, DEFAULT_AIO_FILE_BLOCK_SIZE),
-	fill_buffer(BufferWithOwnMemory(buffer_size_, nullptr, DEFAULT_AIO_FILE_BLOCK_SIZE)),
+	: ReadBufferFromFileBase(buffer_size_, existing_memory_, DEFAULT_AIO_FILE_BLOCK_SIZE),
+	fill_buffer(BufferWithOwnMemory<ReadBuffer>(buffer_size_, nullptr, DEFAULT_AIO_FILE_BLOCK_SIZE)),
 	filename(filename_)
 {
 	ProfileEvents::increment(ProfileEvents::FileOpen);
@@ -64,7 +64,7 @@ void ReadBufferAIO::setMaxBytes(size_t max_bytes_read_)
 	max_bytes_read = max_bytes_read_;
 }
 
-off_t ReadBufferAIO::seek(off_t off, int whence)
+off_t ReadBufferAIO::seek(off_t off, int whence = SEEK_CUR)
 {
 	if ((off % DEFAULT_AIO_FILE_BLOCK_SIZE) != 0)
 		throw Exception("Invalid offset for ReadBufferAIO::seek", ErrorCodes::AIO_UNALIGNED_SIZE_ERROR);

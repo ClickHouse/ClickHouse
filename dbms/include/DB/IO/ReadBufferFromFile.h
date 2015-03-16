@@ -33,7 +33,7 @@ public:
 		close(fd);
 	}
 
-	virtual std::string getFileName()
+	std::string getFileName() const noexcept override
 	{
 		return file_name;
 	}
