@@ -12,7 +12,7 @@
 namespace DB
 {
 
-/** Класс для асинхронной чтения данных.
+/** Класс для асинхронного чтения данных.
   * Все размеры и смещения должны быть кратны DEFAULT_AIO_FILE_BLOCK_SIZE байтам.
   */
 class ReadBufferAIO : public BufferWithOwnMemory<ReadBuffer>
@@ -47,7 +47,7 @@ private:
 	std::vector<iocb *> request_ptrs;
 	std::vector<io_event> events;
 
-	AIOContext aio_context;
+	AIOContext aio_context{1};
 
 	const std::string filename;
 

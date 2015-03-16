@@ -145,7 +145,6 @@ void WriteBufferAIO::nextImpl()
 	request.aio_buf = reinterpret_cast<UInt64>(flush_buffer.buffer().begin());
 	request.aio_nbytes = flush_buffer.offset();
 	request.aio_offset = pos_in_file;
-	request.aio_reqprio = 0;
 
 	if ((request.aio_nbytes % DEFAULT_AIO_FILE_BLOCK_SIZE) != 0)
 	{
@@ -155,11 +154,13 @@ void WriteBufferAIO::nextImpl()
 
 	/// Отправить запрос.
 	while (io_submit(aio_context.ctx, request_ptrs.size(), &request_ptrs[0]) < 0)
+	{
 		if (errno != EINTR)
 		{
 			got_exception = true;
 			throw Exception("Cannot submit request for asynchronous IO on file " + filename, ErrorCodes::AIO_SUBMIT_ERROR);
 		}
+	}
 
 	is_pending_write = true;
 }
@@ -169,11 +170,13 @@ void WriteBufferAIO::waitForAIOCompletion()
 	if (is_pending_write)
 	{
 		while (io_getevents(aio_context.ctx, events.size(), events.size(), &events[0], nullptr) < 0)
+		{
 			if (errno != EINTR)
 			{
 				got_exception = true;
 				throw Exception("Failed to wait for asynchronous IO completion on file " + filename, ErrorCodes::AIO_COMPLETION_ERROR);
 			}
+		}
 
 		is_pending_write = false;
 		off_t bytes_written = events[0].res;

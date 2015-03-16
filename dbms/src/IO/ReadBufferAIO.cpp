@@ -158,15 +158,16 @@ bool ReadBufferAIO::nextImpl()
 	request.aio_buf = reinterpret_cast<UInt64>(fill_buffer.internalBuffer().begin());
 	request.aio_nbytes = std::min(fill_buffer.internalBuffer().size(), max_bytes_read);
 	request.aio_offset = pos_in_file;
-	request.aio_reqprio = 0;
 
 	/// Отправить запрос.
 	while (io_submit(aio_context.ctx, request_ptrs.size(), &request_ptrs[0]) < 0)
+	{
 		if (errno != EINTR)
 		{
 			got_exception = true;
 			throw Exception("Cannot submit request for asynchronous IO on file " + filename, ErrorCodes::AIO_SUBMIT_ERROR);
 		}
+	}
 
 	is_pending_read = true;
 	return true;
@@ -177,11 +178,13 @@ void ReadBufferAIO::waitForAIOCompletion()
 	if (is_pending_read)
 	{
 		while (io_getevents(aio_context.ctx, events.size(), events.size(), &events[0], nullptr) < 0)
+		{
 			if (errno != EINTR)
 			{
 				got_exception = true;
 				throw Exception("Failed to wait for asynchronous IO completion on file " + filename, ErrorCodes::AIO_COMPLETION_ERROR);
 			}
+		}
 
 		is_pending_read = false;
 		off_t bytes_read = events[0].res;
