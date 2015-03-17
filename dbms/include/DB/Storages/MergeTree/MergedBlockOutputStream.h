@@ -15,18 +15,32 @@ namespace DB
 class IMergedBlockOutputStream : public IBlockOutputStream
 {
 public:
-	IMergedBlockOutputStream(MergeTreeData & storage_, size_t min_compress_block_size_, size_t max_compress_block_size_) : storage(storage_), index_offset(0), min_compress_block_size(min_compress_block_size_), max_compress_block_size(max_compress_block_size_)
+	IMergedBlockOutputStream(
+		MergeTreeData & storage_,
+		size_t min_compress_block_size_,
+		size_t max_compress_block_size_,
+		CompressionMethod compression_method_)
+		: storage(storage_),
+		min_compress_block_size(min_compress_block_size_),
+		max_compress_block_size(max_compress_block_size_),
+		compression_method(compression_method_)
 	{
 	}
 
 protected:
-	typedef std::set<std::string> OffsetColumns;
+	using OffsetColumns = std::set<std::string>;
+
 	struct ColumnStream
 	{
-		ColumnStream(const String & escaped_column_name_, const String & data_path, const std::string & marks_path, size_t max_compress_block_size = DEFAULT_MAX_COMPRESS_BLOCK_SIZE) :
+		ColumnStream(
+			const String & escaped_column_name_,
+			const String & data_path,
+			const std::string & marks_path,
+			size_t max_compress_block_size,
+			CompressionMethod compression_method) :
 			escaped_column_name(escaped_column_name_),
 			plain_file(data_path, max_compress_block_size, O_TRUNC | O_CREAT | O_WRONLY),
-			plain_hashing(plain_file), compressed_buf(plain_hashing), compressed(compressed_buf),
+			plain_hashing(plain_file), compressed_buf(plain_hashing, compression_method), compressed(compressed_buf),
 			marks_file(marks_path, 4096, O_TRUNC | O_CREAT | O_WRONLY), marks(marks_file) {}
 
 		String escaped_column_name;
@@ -70,7 +84,7 @@ protected:
 		}
 	};
 
-	typedef std::map<String, std::unique_ptr<ColumnStream> > ColumnStreams;
+	using ColumnStreams = std::map<String, std::unique_ptr<ColumnStream>>;
 
 	void addStream(const String & path, const String & name, const IDataType & type, size_t level = 0, String filename = "")
 	{
@@ -92,7 +106,8 @@ protected:
 				escaped_size_name,
 				path + escaped_size_name + ".bin",
 				path + escaped_size_name + ".mrk",
-				max_compress_block_size));
+				max_compress_block_size,
+				compression_method));
 
 			addStream(path, name, *type_arr->getNestedType(), level + 1);
 		}
@@ -101,7 +116,8 @@ protected:
 				escaped_column_name,
 				path + escaped_column_name + ".bin",
 				path + escaped_column_name + ".mrk",
-				max_compress_block_size));
+				max_compress_block_size,
+				compression_method));
 	}
 
 
@@ -146,7 +162,8 @@ protected:
 
 					type_arr->serializeOffsets(column, stream.compressed, prev_mark, limit);
 
-					stream.compressed.nextIfAtEnd();	/// Чтобы вместо засечек, указывающих на конец сжатого блока, были засечки, указывающие на начало следующего.
+					/// Чтобы вместо засечек, указывающих на конец сжатого блока, были засечки, указывающие на начало следующего.
+					stream.compressed.nextIfAtEnd();
 
 					prev_mark += limit;
 				}
@@ -180,7 +197,8 @@ protected:
 
 				type.serializeBinary(column, stream.compressed, prev_mark, limit);
 
-				stream.compressed.nextIfAtEnd();	/// Чтобы вместо засечек, указывающих на конец сжатого блока, были засечки, указывающие на начало следующего.
+				/// Чтобы вместо засечек, указывающих на конец сжатого блока, были засечки, указывающие на начало следующего.
+				stream.compressed.nextIfAtEnd();
 
 				prev_mark += limit;
 			}
@@ -192,10 +210,12 @@ protected:
 	ColumnStreams column_streams;
 
 	/// Смещение до первой строчки блока, для которой надо записать индекс.
-	size_t index_offset;
+	size_t index_offset = 0;
 
 	size_t min_compress_block_size;
 	size_t max_compress_block_size;
+
+	CompressionMethod compression_method;
 };
 
 /** Для записи одного куска. Данные уже отсортированы, относятся к одному месяцу, и пишутся в один кускок.
@@ -203,13 +223,23 @@ protected:
 class MergedBlockOutputStream : public IMergedBlockOutputStream
 {
 public:
-	MergedBlockOutputStream(MergeTreeData & storage_, String part_path_, const NamesAndTypesList & columns_list_)
-		: IMergedBlockOutputStream(storage_, storage_.context.getSettings().min_compress_block_size, storage_.context.getSettings().max_compress_block_size), columns_list(columns_list_), part_path(part_path_), marks_count(0)
+	MergedBlockOutputStream(
+		MergeTreeData & storage_,
+		String part_path_,
+		const NamesAndTypesList & columns_list_,
+		CompressionMethod compression_method)
+		: IMergedBlockOutputStream(
+			storage_, storage_.context.getSettings().min_compress_block_size,
+			storage_.context.getSettings().max_compress_block_size, compression_method),
+		columns_list(columns_list_), part_path(part_path_)
 	{
 		Poco::File(part_path).createDirectories();
 
-		index_file_stream = new WriteBufferFromFile(part_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
-		index_stream = new HashingWriteBuffer(*index_file_stream);
+		if (storage.mode != MergeTreeData::Unsorted)
+		{
+			index_file_stream = new WriteBufferFromFile(part_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
+			index_stream = new HashingWriteBuffer(*index_file_stream);
+		}
 
 		for (const auto & it : columns_list)
 			addStream(part_path, it.name, *it.type);
@@ -233,7 +263,9 @@ public:
 		{
 			for (PrimaryColumns::const_iterator it = primary_columns.begin(); it != primary_columns.end(); ++it)
 			{
-				index_vec.push_back((*(*it)->column)[i]);
+				if (storage.mode != MergeTreeData::Unsorted)
+					index_vec.push_back((*(*it)->column)[i]);
+
 				(*it)->type->serializeBinary(index_vec.back(), *index_stream);
 			}
 
@@ -264,9 +296,13 @@ public:
 		/// Заканчиваем запись и достаем чексуммы.
 		MergeTreeData::DataPart::Checksums checksums;
 
-		index_stream->next();
-		checksums.files["primary.idx"].file_size = index_stream->count();
-		checksums.files["primary.idx"].file_hash = index_stream->getHash();
+		if (storage.mode != MergeTreeData::Unsorted)
+		{
+			index_stream->next();
+			checksums.files["primary.idx"].file_size = index_stream->count();
+			checksums.files["primary.idx"].file_hash = index_stream->getHash();
+			index_stream = nullptr;
+		}
 
 		for (ColumnStreams::iterator it = column_streams.begin(); it != column_streams.end(); ++it)
 		{
@@ -274,7 +310,6 @@ public:
 			it->second->addToChecksums(checksums);
 		}
 
-		index_stream = nullptr;
 		column_streams.clear();
 
 		if (marks_count == 0)
@@ -315,7 +350,7 @@ private:
 	NamesAndTypesList columns_list;
 	String part_path;
 
-	size_t marks_count;
+	size_t marks_count = 0;
 
 	SharedPtr<WriteBufferFromFile> index_file_stream;
 	SharedPtr<HashingWriteBuffer> index_stream;
@@ -328,8 +363,11 @@ typedef Poco::SharedPtr<MergedBlockOutputStream> MergedBlockOutputStreamPtr;
 class MergedColumnOnlyOutputStream : public IMergedBlockOutputStream
 {
 public:
-	MergedColumnOnlyOutputStream(MergeTreeData & storage_, String part_path_, bool sync_ = false) :
-		IMergedBlockOutputStream(storage_, storage_.context.getSettings().min_compress_block_size, storage_.context.getSettings().max_compress_block_size), part_path(part_path_), initialized(false), sync(sync_)
+	MergedColumnOnlyOutputStream(MergeTreeData & storage_, String part_path_, bool sync_, CompressionMethod compression_method)
+		: IMergedBlockOutputStream(
+			storage_, storage_.context.getSettings().min_compress_block_size,
+			storage_.context.getSettings().max_compress_block_size, compression_method),
+		part_path(part_path_), sync(sync_)
 	{
 	}
 
@@ -386,8 +424,7 @@ public:
 private:
 	String part_path;
 
-	bool initialized;
-
+	bool initialized = false;
 	bool sync;
 };
 

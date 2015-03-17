@@ -162,11 +162,37 @@ void Connection::forceConnected()
 	}
 }
 
-
+struct PingTimeoutSetter
+{
+	PingTimeoutSetter(Poco::Net::StreamSocket & socket_, const Poco::Timespan & ping_timeout_) 
+	: socket(socket_), ping_timeout(ping_timeout_)
+	{
+		old_send_timeout = socket.getSendTimeout();
+		old_receive_timeout = socket.getReceiveTimeout();
+		
+		if (old_send_timeout > ping_timeout)
+			socket.setSendTimeout(ping_timeout);
+		if (old_receive_timeout > ping_timeout)
+			socket.setReceiveTimeout(ping_timeout);
+	}
+	
+	~PingTimeoutSetter()
+	{
+		socket.setSendTimeout(old_send_timeout);
+		socket.setReceiveTimeout(old_receive_timeout);
+	}
+	
+	Poco::Net::StreamSocket & socket;
+	Poco::Timespan ping_timeout;
+	Poco::Timespan old_send_timeout;
+	Poco::Timespan old_receive_timeout;
+};
+	
 bool Connection::ping()
 {
 	// LOG_TRACE(log_wrapper.get(), "Ping (" << getServerAddress() << ")");
 
+	PingTimeoutSetter timeout_setter(socket, ping_timeout);
 	try
 	{
 		UInt64 pong = 0;

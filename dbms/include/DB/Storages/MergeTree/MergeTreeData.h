@@ -55,6 +55,8 @@ namespace DB
   *   (см. CollapsingSortedBlockInputStream.h)
   * - Summing - при склейке кусков, при совпадении PK суммировать все числовые столбцы, не входящие в PK.
   * - Aggregating - при склейке кусков, при совпадении PK, делается слияние состояний столбцов-агрегатных функций.
+  * - Unsorted - при склейке кусков, данные не упорядочиваются, а всего лишь конкатенируются;
+  *            - это позволяет читать данные ровно такими пачками, какими они были записаны.
   */
 
 /** Этот класс хранит список кусков и параметры структуры данных.
@@ -399,18 +401,22 @@ public:
 			}
 
 			size_t key_size = storage.sort_descr.size();
-			index.resize(key_size * size);
 
-			String index_path = storage.full_path + name + "/primary.idx";
-			ReadBufferFromFile index_file(index_path,
-				std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(index_path).getSize()));
+			if (key_size)
+			{
+				index.resize(key_size * size);
 
-			for (size_t i = 0; i < size; ++i)
-				for (size_t j = 0; j < key_size; ++j)
-					storage.primary_key_sample.getByPosition(j).type->deserializeBinary(index[i * key_size + j], index_file);
+				String index_path = storage.full_path + name + "/primary.idx";
+				ReadBufferFromFile index_file(index_path,
+					std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(index_path).getSize()));
 
-			if (!index_file.eof())
-				throw Exception("index file " + index_path + " is unexpectedly long", ErrorCodes::EXPECTED_END_OF_FILE);
+				for (size_t i = 0; i < size; ++i)
+					for (size_t j = 0; j < key_size; ++j)
+						storage.primary_key_sample.getByPosition(j).type->deserializeBinary(index[i * key_size + j], index_file);
+
+				if (!index_file.eof())
+					throw Exception("index file " + index_path + " is unexpectedly long", ErrorCodes::EXPECTED_END_OF_FILE);
+			}
 
 			size_in_bytes = calcTotalSize(storage.full_path + name + "/");
 		}
@@ -468,7 +474,7 @@ public:
 
 			if (!checksums.empty())
 			{
-				if (!checksums.files.count("primary.idx"))
+				if (!storage.sort_descr.empty() && !checksums.files.count("primary.idx"))
 					throw Exception("No checksum for primary.idx", ErrorCodes::NO_FILE_IN_DATA_PART);
 
 				if (require_part_metadata)
@@ -486,12 +492,14 @@ public:
 			}
 			else
 			{
-				/// Проверяем, что первичный ключ непуст.
+				if (!storage.sort_descr.empty())
+				{
+					/// Проверяем, что первичный ключ непуст.
+					Poco::File index_file(path + "/primary.idx");
 
-				Poco::File index_file(path + "/primary.idx");
-
-				if (!index_file.exists() || index_file.getSize() == 0)
-					throw Exception("Part " + path + " is broken: primary key is empty.", ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
+					if (!index_file.exists() || index_file.getSize() == 0)
+						throw Exception("Part " + path + " is broken: primary key is empty.", ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
+				}
 
 				/// Проверяем, что все засечки непусты и имеют одинаковый размер.
 
@@ -620,6 +628,7 @@ public:
 		Collapsing,
 		Summing,
 		Aggregating,
+		Unsorted,
 	};
 
 	static void doNothing(const String & name) {}
@@ -628,7 +637,7 @@ public:
 	  *  (корректность имён и путей не проверяется)
 	  *  состоящую из указанных столбцов.
 	  *
-	  * primary_expr_ast	- выражение для сортировки;
+	  * primary_expr_ast	- выражение для сортировки; Пустое для UnsortedMergeTree.
 	  * date_column_name 	- имя столбца с датой;
 	  * index_granularity 	- на сколько строчек пишется одно значение индекса.
 	  * require_part_metadata - обязательно ли в директории с куском должны быть checksums.txt и columns.txt

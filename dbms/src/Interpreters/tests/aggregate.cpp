@@ -62,9 +62,9 @@ int main(int argc, char ** argv)
 		DB::BlockInputStreamPtr stream = new DB::OneBlockInputStream(block);
 		DB::AggregatedDataVariants aggregated_data_variants;
 
-		DB::ColumnNumbers key_column_numbers;
-		key_column_numbers.push_back(0);
-		key_column_numbers.push_back(1);
+		DB::Names key_column_names;
+		key_column_names.emplace_back("x");
+		key_column_names.emplace_back("s1");
 
 		DB::AggregateFunctionFactory factory;
 
@@ -73,7 +73,7 @@ int main(int argc, char ** argv)
 		DB::DataTypes empty_list_of_types;
 		aggregate_descriptions[0].function = factory.get("count", empty_list_of_types);
 
-		DB::Aggregator aggregator(key_column_numbers, aggregate_descriptions, false, 0, DB::OverflowMode::THROW, nullptr, 0, 0);
+		DB::Aggregator aggregator(key_column_names, aggregate_descriptions, false, 0, DB::OverflowMode::THROW, nullptr, 0, 0);
 
 		{
 			Poco::Stopwatch stopwatch;
