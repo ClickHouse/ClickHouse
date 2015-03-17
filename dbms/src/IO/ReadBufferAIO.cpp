@@ -144,18 +144,23 @@ bool ReadBufferAIO::nextImpl()
 	if (is_eof)
 		return true;
 
+	/// Количество запрашиваемых байтов.
+	requested_byte_count = std::min(fill_buffer.internalBuffer().size(), max_bytes_read);
+
+	/// Для запроса выравниваем количество запрашиваемых байтов на границе следующего блока.
+	size_t effective_byte_count = requested_byte_count;
+	if ((effective_byte_count % DEFAULT_AIO_FILE_BLOCK_SIZE) != 0)
+		effective_byte_count += DEFAULT_AIO_FILE_BLOCK_SIZE - (effective_byte_count % DEFAULT_AIO_FILE_BLOCK_SIZE);
+
+	/// Также выравниваем позицию в файле на границе предыдущего блока.
+	off_t effective_pos_in_file = pos_in_file - (pos_in_file % DEFAULT_AIO_FILE_BLOCK_SIZE);
+
 	/// Создать запрос.
 	request.aio_lio_opcode = IOCB_CMD_PREAD;
 	request.aio_fildes = fd;
 	request.aio_buf = reinterpret_cast<UInt64>(fill_buffer.internalBuffer().begin());
-
-	requested_byte_count = std::min(fill_buffer.internalBuffer().size(), max_bytes_read);		
-
-	request.aio_nbytes = requested_byte_count;
-	if ((request.aio_nbytes % DEFAULT_AIO_FILE_BLOCK_SIZE) != 0)
-		request.aio_nbytes += DEFAULT_AIO_FILE_BLOCK_SIZE - (request.aio_nbytes % DEFAULT_AIO_FILE_BLOCK_SIZE);
-
-	request.aio_offset = pos_in_file - (pos_in_file % DEFAULT_AIO_FILE_BLOCK_SIZE);
+	request.aio_nbytes = effective_byte_count;
+	request.aio_offset = effective_pos_in_file;
 
 	/// Отправить запрос.
 	while (io_submit(aio_context.ctx, request_ptrs.size(), &request_ptrs[0]) < 0)
@@ -198,6 +203,7 @@ void ReadBufferAIO::waitForAIOCompletion()
 			throw Exception("File position overflowed", ErrorCodes::LOGICAL_ERROR);
 		}
 
+		/// Игнорируем излишние байты справа.
 		bytes_read = std::min(bytes_read, static_cast<off_t>(requested_byte_count));
 
 		if (bytes_read > 0)
@@ -205,6 +211,7 @@ void ReadBufferAIO::waitForAIOCompletion()
 		if (static_cast<size_t>(bytes_read) < fill_buffer.internalBuffer().size())
 			is_eof = true;
 
+		/// Игнорируем излишние байты слева.
 		working_buffer_offset = pos_in_file % DEFAULT_AIO_FILE_BLOCK_SIZE;
 		bytes_read -= working_buffer_offset;
 

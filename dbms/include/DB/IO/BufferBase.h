@@ -99,6 +99,7 @@ protected:
 	  */
 	Buffer working_buffer;
 
+	/// Количество игнорируемых байтов с начальной позиции буфера working_buffer.
 	size_t working_buffer_offset = 0;
 
 	/// Позиция чтения/записи.

@@ -194,7 +194,7 @@ bool test5(const std::string & filename, const std::string & buf)
 	if (count != newbuf.length())
 		return false;
 
-	if (newbuf != buf.substr(0, newbuf.size()))
+	if (newbuf != buf.substr(0, newbuf.length()))
 		return false;
 
 	return true;
@@ -348,7 +348,7 @@ bool test13(const std::string & filename, const std::string & buf)
 
 	DB::ReadBufferAIO in(filename, DEFAULT_AIO_FILE_BLOCK_SIZE);
 	size_t count1 = in.read(&newbuf[0], newbuf.length());
-	if (count1 != newbuf.size())
+	if (count1 != newbuf.length())
 		return false;
 	return true;
 }
