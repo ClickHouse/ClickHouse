@@ -14,7 +14,7 @@ namespace
 {
 
 void run();
-void prepare(std::string & directory, std::string  & filename, std::string & buf);
+void prepare(size_t s, std::string & directory, std::string  & filename, std::string & buf);
 void die(const std::string & msg);
 void run_test(unsigned int num, const std::function<bool()> func);
 
@@ -25,11 +25,12 @@ bool test4(const std::string & filename, const std::string & buf);
 bool test5(const std::string & filename);
 bool test6(const std::string & filename, const std::string & buf);
 bool test7(const std::string & filename, const std::string & buf);
-bool test8(const std::string & filename);
+bool test8(const std::string & filename, const std::string & buf);
 bool test9(const std::string & filename, const std::string & buf);
 bool test10(const std::string & filename, const std::string & buf);
 bool test11(const std::string & filename);
 bool test12(const std::string & filename, const std::string & buf);
+bool test13(const std::string & filename, const std::string & buf);
 
 void run()
 {
@@ -38,7 +39,12 @@ void run()
 	std::string directory;
 	std::string filename;
 	std::string buf;
-	prepare(directory, filename, buf);
+	prepare(10 * DEFAULT_AIO_FILE_BLOCK_SIZE, directory, filename, buf);
+
+	std::string directory2;
+	std::string filename2;
+	std::string buf2;
+	prepare(2 * DEFAULT_AIO_FILE_BLOCK_SIZE - 2, directory2, filename2, buf2);
 
 	const std::vector<std::function<bool()> > tests =
 	{
@@ -49,11 +55,12 @@ void run()
 		std::bind(test5, std::ref(filename)),
 		std::bind(test6, std::ref(filename), std::ref(buf)),
 		std::bind(test7, std::ref(filename), std::ref(buf)),
-		std::bind(test8, std::ref(filename)),
+		std::bind(test8, std::ref(filename), std::ref(buf)),
 		std::bind(test9, std::ref(filename), std::ref(buf)),
 		std::bind(test10, std::ref(filename), std::ref(buf)),
 		std::bind(test11, std::ref(filename)),
-		std::bind(test12, std::ref(filename), std::ref(buf))
+		std::bind(test12, std::ref(filename), std::ref(buf)),
+		std::bind(test13, std::ref(filename2), std::ref(buf2))
 	};
 
 	unsigned int num = 0;
@@ -64,9 +71,10 @@ void run()
 	}
 
 	fs::remove_all(directory);
+	fs::remove_all(directory2);
 }
 
-void prepare(std::string & directory, std::string  & filename, std::string & buf)
+void prepare(size_t s, std::string & directory, std::string  & filename, std::string & buf)
 {
 	static const std::string symbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
@@ -222,21 +230,22 @@ bool test7(const std::string & filename, const std::string & buf)
 	return (newbuf == buf.substr(DEFAULT_AIO_FILE_BLOCK_SIZE));
 }
 
-bool test8(const std::string & filename)
+bool test8(const std::string & filename, const std::string & buf)
 {
-	bool ok = false;
+	std::string newbuf;
+	newbuf.resize(DEFAULT_AIO_FILE_BLOCK_SIZE - 1);
 
-	try
-	{
-		DB::ReadBufferAIO in(filename, 3 * DEFAULT_AIO_FILE_BLOCK_SIZE);
-		(void) in.seek(DEFAULT_AIO_FILE_BLOCK_SIZE + 1, SEEK_CUR);
-	}
-	catch (const DB::Exception &)
-	{
-		ok = true;
-	}
+	DB::ReadBufferAIO in(filename, 3 * DEFAULT_AIO_FILE_BLOCK_SIZE);
+	(void) in.seek(DEFAULT_AIO_FILE_BLOCK_SIZE + 1, SEEK_CUR);
+	size_t count = in.read(&newbuf[0], newbuf.length());
 
-	return ok;
+	if (count != newbuf.length())
+		return false;
+
+	if (newbuf != buf.substr(DEFAULT_AIO_FILE_BLOCK_SIZE + 1, newbuf.length()))
+		return false;
+
+	return true;
 }
 
 bool test9(const std::string & filename, const std::string & buf)
@@ -326,6 +335,18 @@ bool test12(const std::string & filename, const std::string & buf)
 	}
 
 	return ok;
+}
+
+bool test13(const std::string & filename, const std::string & buf)
+{
+	std::string newbuf;
+	newbuf.resize(2 * DEFAULT_AIO_FILE_BLOCK_SIZE - 2);
+
+	DB::ReadBufferAIO in(filename, DEFAULT_AIO_FILE_BLOCK_SIZE);
+	size_t count1 = in.read(&newbuf[0], newbuf.length());
+	if (count1 != newbuf.size())
+		return false;
+	return true;
 }
 
 }

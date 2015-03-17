@@ -99,6 +99,8 @@ protected:
 	  */
 	Buffer working_buffer;
 
+	size_t working_buffer_offset = 0;
+
 	/// Позиция чтения/записи.
 	Position pos;
 

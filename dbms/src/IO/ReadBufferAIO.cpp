@@ -66,9 +66,6 @@ void ReadBufferAIO::setMaxBytes(size_t max_bytes_read_)
 
 off_t ReadBufferAIO::seek(off_t off, int whence)
 {
-	if ((off % DEFAULT_AIO_FILE_BLOCK_SIZE) != 0)
-		throw Exception("Invalid offset for ReadBufferAIO::seek", ErrorCodes::AIO_UNALIGNED_SIZE_ERROR);
-
 	waitForAIOCompletion();
 
 	off_t new_pos;
@@ -157,7 +154,7 @@ bool ReadBufferAIO::nextImpl()
 	request.aio_fildes = fd;
 	request.aio_buf = reinterpret_cast<UInt64>(fill_buffer.internalBuffer().begin());
 	request.aio_nbytes = std::min(fill_buffer.internalBuffer().size(), max_bytes_read);
-	request.aio_offset = pos_in_file;
+	request.aio_offset = pos_in_file - (pos_in_file % DEFAULT_AIO_FILE_BLOCK_SIZE);
 
 	/// Отправить запрос.
 	while (io_submit(aio_context.ctx, request_ptrs.size(), &request_ptrs[0]) < 0)
@@ -194,23 +191,24 @@ void ReadBufferAIO::waitForAIOCompletion()
 			got_exception = true;
 			throw Exception("Asynchronous read error on file " + filename, ErrorCodes::AIO_READ_ERROR);
 		}
-		if ((bytes_read % DEFAULT_AIO_FILE_BLOCK_SIZE) != 0)
-		{
-			got_exception = true;
-			throw Exception("Received unaligned number of bytes from file " + filename, ErrorCodes::AIO_UNALIGNED_SIZE_ERROR);
-		}
 		if (pos_in_file > (std::numeric_limits<off_t>::max() - bytes_read))
 		{
 			got_exception = true;
 			throw Exception("File position overflowed", ErrorCodes::LOGICAL_ERROR);
 		}
 
+		if (bytes_read > 0)
+			fill_buffer.buffer().resize(bytes_read);
+		if (static_cast<size_t>(bytes_read) < fill_buffer.internalBuffer().size())
+			is_eof = true;
+
+		working_buffer_offset = pos_in_file % DEFAULT_AIO_FILE_BLOCK_SIZE;
+		bytes_read -= working_buffer_offset;
+
 		pos_in_file += bytes_read;
 		total_bytes_read += bytes_read;
 
-		if (bytes_read > 0)
-			fill_buffer.buffer().resize(bytes_read);
-		if ((static_cast<size_t>(bytes_read) < fill_buffer.internalBuffer().size()) || (total_bytes_read == max_bytes_read))
+		if (total_bytes_read == max_bytes_read)
 			is_eof = true;
 	}
 }
