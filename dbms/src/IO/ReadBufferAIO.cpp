@@ -56,11 +56,6 @@ void ReadBufferAIO::setMaxBytes(size_t max_bytes_read_)
 		got_exception = true;
 		throw Exception("Illegal attempt to set the maximum number of bytes to read from file " + filename, ErrorCodes::LOGICAL_ERROR);
 	}
-	if ((max_bytes_read_ % DEFAULT_AIO_FILE_BLOCK_SIZE) != 0)
-	{
-		got_exception = true;
-		throw Exception("Invalid maximum number of bytes to read from file " + filename, ErrorCodes::AIO_UNALIGNED_SIZE_ERROR);
-	}
 	max_bytes_read = max_bytes_read_;
 }
 
@@ -153,7 +148,13 @@ bool ReadBufferAIO::nextImpl()
 	request.aio_lio_opcode = IOCB_CMD_PREAD;
 	request.aio_fildes = fd;
 	request.aio_buf = reinterpret_cast<UInt64>(fill_buffer.internalBuffer().begin());
-	request.aio_nbytes = std::min(fill_buffer.internalBuffer().size(), max_bytes_read);
+
+	requested_byte_count = std::min(fill_buffer.internalBuffer().size(), max_bytes_read);		
+
+	request.aio_nbytes = requested_byte_count;
+	if ((request.aio_nbytes % DEFAULT_AIO_FILE_BLOCK_SIZE) != 0)
+		request.aio_nbytes += DEFAULT_AIO_FILE_BLOCK_SIZE - (request.aio_nbytes % DEFAULT_AIO_FILE_BLOCK_SIZE);
+
 	request.aio_offset = pos_in_file - (pos_in_file % DEFAULT_AIO_FILE_BLOCK_SIZE);
 
 	/// Отправить запрос.
@@ -196,6 +197,8 @@ void ReadBufferAIO::waitForAIOCompletion()
 			got_exception = true;
 			throw Exception("File position overflowed", ErrorCodes::LOGICAL_ERROR);
 		}
+
+		bytes_read = std::min(bytes_read, static_cast<off_t>(requested_byte_count));
 
 		if (bytes_read > 0)
 			fill_buffer.buffer().resize(bytes_read);

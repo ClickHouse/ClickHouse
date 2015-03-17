@@ -22,7 +22,7 @@ bool test1(const std::string & filename);
 bool test2(const std::string & filename, const std::string & buf);
 bool test3(const std::string & filename, const std::string & buf);
 bool test4(const std::string & filename, const std::string & buf);
-bool test5(const std::string & filename);
+bool test5(const std::string & filename, const std::string & buf);
 bool test6(const std::string & filename, const std::string & buf);
 bool test7(const std::string & filename, const std::string & buf);
 bool test8(const std::string & filename, const std::string & buf);
@@ -31,6 +31,7 @@ bool test10(const std::string & filename, const std::string & buf);
 bool test11(const std::string & filename);
 bool test12(const std::string & filename, const std::string & buf);
 bool test13(const std::string & filename, const std::string & buf);
+bool test14(const std::string & filename, const std::string & buf);
 
 void run()
 {
@@ -44,7 +45,7 @@ void run()
 	std::string directory2;
 	std::string filename2;
 	std::string buf2;
-	prepare(2 * DEFAULT_AIO_FILE_BLOCK_SIZE - 2, directory2, filename2, buf2);
+	prepare(2 * DEFAULT_AIO_FILE_BLOCK_SIZE - 3, directory2, filename2, buf2);
 
 	const std::vector<std::function<bool()> > tests =
 	{
@@ -52,7 +53,7 @@ void run()
 		std::bind(test2, std::ref(filename), std::ref(buf)),
 		std::bind(test3, std::ref(filename), std::ref(buf)),
 		std::bind(test4, std::ref(filename), std::ref(buf)),
-		std::bind(test5, std::ref(filename)),
+		std::bind(test5, std::ref(filename), std::ref(buf)),
 		std::bind(test6, std::ref(filename), std::ref(buf)),
 		std::bind(test7, std::ref(filename), std::ref(buf)),
 		std::bind(test8, std::ref(filename), std::ref(buf)),
@@ -60,7 +61,8 @@ void run()
 		std::bind(test10, std::ref(filename), std::ref(buf)),
 		std::bind(test11, std::ref(filename)),
 		std::bind(test12, std::ref(filename), std::ref(buf)),
-		std::bind(test13, std::ref(filename2), std::ref(buf2))
+		std::bind(test13, std::ref(filename2), std::ref(buf2)),
+		std::bind(test14, std::ref(filename), std::ref(buf))
 	};
 
 	unsigned int num = 0;
@@ -180,20 +182,22 @@ bool test4(const std::string & filename, const std::string & buf)
 	return n_read == 0;
 }
 
-bool test5(const std::string & filename)
+bool test5(const std::string & filename, const std::string & buf)
 {
-	bool ok = false;
+	std::string newbuf;
+	newbuf.resize(1 + (DEFAULT_AIO_FILE_BLOCK_SIZE >> 1));
 
-	try
-	{
-		DB::ReadBufferAIO in(filename, 3 * DEFAULT_AIO_FILE_BLOCK_SIZE);
-		in.setMaxBytes(DEFAULT_AIO_FILE_BLOCK_SIZE >> 1);
-	}
-	catch (const DB::Exception &)
-	{
-		ok = true;
-	}
-	return ok;
+	DB::ReadBufferAIO in(filename, DEFAULT_AIO_FILE_BLOCK_SIZE);
+	in.setMaxBytes(1 + (DEFAULT_AIO_FILE_BLOCK_SIZE >> 1));
+
+	size_t count = in.read(&newbuf[0], newbuf.length());
+	if (count != newbuf.length())
+		return false;
+
+	if (newbuf != buf.substr(0, newbuf.size()))
+		return false;
+
+	return true;
 }
 
 bool test6(const std::string & filename, const std::string & buf)
@@ -340,12 +344,31 @@ bool test12(const std::string & filename, const std::string & buf)
 bool test13(const std::string & filename, const std::string & buf)
 {
 	std::string newbuf;
-	newbuf.resize(2 * DEFAULT_AIO_FILE_BLOCK_SIZE - 2);
+	newbuf.resize(2 * DEFAULT_AIO_FILE_BLOCK_SIZE - 3);
 
 	DB::ReadBufferAIO in(filename, DEFAULT_AIO_FILE_BLOCK_SIZE);
 	size_t count1 = in.read(&newbuf[0], newbuf.length());
 	if (count1 != newbuf.size())
 		return false;
+	return true;
+}
+
+bool test14(const std::string & filename, const std::string & buf)
+{
+	std::string newbuf;
+	newbuf.resize(1 + (DEFAULT_AIO_FILE_BLOCK_SIZE >> 1));
+
+	DB::ReadBufferAIO in(filename, DEFAULT_AIO_FILE_BLOCK_SIZE);
+	(void) in.seek(2, SEEK_SET);
+	in.setMaxBytes(3 + (DEFAULT_AIO_FILE_BLOCK_SIZE >> 1));
+
+	size_t count = in.read(&newbuf[0], newbuf.length());
+	if (count != newbuf.length())
+		return false;
+
+	if (newbuf != buf.substr(2, newbuf.length()))
+		return false;
+
 	return true;
 }
 
