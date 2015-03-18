@@ -109,6 +109,31 @@ private:
 	Logger * log = &Logger::get("ParallelAggregatingBlockInputStream");
 
 
+	ManyAggregatedDataVariants many_data;
+	Exceptions exceptions;
+
+	struct ThreadData
+	{
+		size_t src_rows = 0;
+		size_t src_bytes = 0;
+
+		StringRefs key;
+		ConstColumnPlainPtrs key_columns;
+		Aggregator::AggregateColumns aggregate_columns;
+		Sizes key_sizes;
+
+		ThreadData(size_t keys_size, size_t aggregates_size)
+		{
+			key.resize(keys_size);
+			key_columns.resize(keys_size);
+			aggregate_columns.resize(aggregates_size);
+			key_sizes.resize(keys_size);
+		}
+	};
+
+	std::vector<ThreadData> threads_data;
+
+
 	struct Handler
 	{
 		Handler(ParallelAggregatingBlockInputStream & parent_)
@@ -141,29 +166,6 @@ private:
 	Handler handler;
 	ParallelInputsProcessor<Handler> processor;
 
-	ManyAggregatedDataVariants many_data;
-	Exceptions exceptions;
-
-	struct ThreadData
-	{
-		size_t src_rows = 0;
-		size_t src_bytes = 0;
-
-		StringRefs key;
-		ConstColumnPlainPtrs key_columns;
-		Aggregator::AggregateColumns aggregate_columns;
-		Sizes key_sizes;
-
-		ThreadData(size_t keys_size, size_t aggregates_size)
-		{
-			key.resize(keys_size);
-			key_columns.resize(keys_size);
-			aggregate_columns.resize(aggregates_size);
-			key_sizes.resize(keys_size);
-		}
-	};
-
-	std::vector<ThreadData> threads_data;
 
 	AggregatedDataVariantsPtr executeAndMerge()
 	{
