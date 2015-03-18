@@ -1065,15 +1065,35 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
 		&& data_variants.isTwoLevel())						/// TODO Использовать общий тред-пул с функцией merge.
 		thread_pool.reset(new boost::threadpool::pool(max_threads));
 
-	if (data_variants.type == AggregatedDataVariants::Type::without_key || overflow_row)
-		blocks.splice(blocks.end(), prepareBlocksAndFillWithoutKey(data_variants, final));
-
-	if (data_variants.type != AggregatedDataVariants::Type::without_key)
+	try
 	{
-		if (!data_variants.isTwoLevel())
-			blocks.splice(blocks.end(), prepareBlocksAndFillSingleLevel(data_variants, final));
-		else
-			blocks.splice(blocks.end(), prepareBlocksAndFillTwoLevel(data_variants, final, thread_pool.get()));
+		if (data_variants.type == AggregatedDataVariants::Type::without_key || overflow_row)
+			blocks.splice(blocks.end(), prepareBlocksAndFillWithoutKey(data_variants, final));
+
+		if (data_variants.type != AggregatedDataVariants::Type::without_key)
+		{
+			if (!data_variants.isTwoLevel())
+				blocks.splice(blocks.end(), prepareBlocksAndFillSingleLevel(data_variants, final));
+			else
+				blocks.splice(blocks.end(), prepareBlocksAndFillTwoLevel(data_variants, final, thread_pool.get()));
+		}
+	}
+	catch (...)
+	{
+		/** Если был хотя бы один эксепшен, то следует "откатить" владение состояниями агрегатных функций в ColumnAggregateFunction-ах
+		  *  - то есть, очистить их (см. комментарий в функции prepareBlockAndFill.)
+		  */
+		for (auto & block : blocks)
+		{
+			for (size_t column_num = keys_size; column_num < keys_size + aggregates_size; ++column_num)
+			{
+				IColumn & col = *block.getByPosition(column_num).column;
+				if (ColumnAggregateFunction * col_aggregate = typeid_cast<ColumnAggregateFunction *>(&col))
+					col_aggregate->getData().clear();
+			}
+		}
+
+		throw;
 	}
 
 	if (!final)
