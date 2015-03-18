@@ -56,6 +56,7 @@ private:
 	mysqlxx::DateTime getLastModification() const
 	{
 		const auto Update_time_idx = 12;
+		mysqlxx::DateTime update_time{std::time(nullptr)};
 
 		try
 		{
@@ -63,9 +64,13 @@ private:
 			auto query = connection->query("SHOW TABLE STATUS LIKE '%" + strconvert::escaped_for_like(table) + "%';");
 			auto result = query.use();
 			auto row = result.fetch();
-			const auto & update_time = row[Update_time_idx];
-			if (!update_time.isNull())
-				return update_time.getDateTime();
+			const auto & update_time_value = row[Update_time_idx];
+
+			if (!update_time_value.isNull())
+				update_time = update_time_value.getDateTime();
+
+			/// fetch remaining rows to avoid "commands out of sync" error
+			while (auto row = result.fetch());
 		}
 		catch (...)
 		{
@@ -73,7 +78,7 @@ private:
 		}
 
 		/// we suppose failure to get modification time is not an error, therefore return current time
-		return mysqlxx::DateTime{std::time(nullptr)};
+		return update_time;
 	}
 
 	static std::string composeLoadAllQuery(const Block & block, const std::string & table)

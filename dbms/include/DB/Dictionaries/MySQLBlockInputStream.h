@@ -17,7 +17,7 @@ class MySQLBlockInputStream final : public IProfilingBlockInputStream
 {
 public:
 	MySQLBlockInputStream(mysqlxx::Query query, const Block & sample_block, const std::size_t max_block_size)
-		: query{std::move(query)}, result{query.use()}, sample_block{sample_block}, max_block_size{max_block_size}
+		: query{std::move(query)}, result{this->query.use()}, sample_block{sample_block}, max_block_size{max_block_size}
 	{
 		types.reserve(sample_block.columns());
 
