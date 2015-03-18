@@ -131,17 +131,21 @@ private:
 
 		if (use_libc_realloc)
 		{
-			c_start = reinterpret_cast<char *>(::realloc(c_start, bytes_to_alloc));
+			auto new_c_start = reinterpret_cast<char *>(::realloc(c_start, bytes_to_alloc));
 
-			if (nullptr == c_start)
+			if (nullptr == new_c_start)
 				throwFromErrno("PODArray: cannot realloc", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+
+			c_start = new_c_start;
 		}
 		else
 		{
-			c_start = reinterpret_cast<char *>(malloc(bytes_to_alloc));
+			auto new_c_start = reinterpret_cast<char *>(malloc(bytes_to_alloc));
 
-			if (nullptr == c_start)
+			if (nullptr == new_c_start)
 				throwFromErrno("PODArray: cannot realloc", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+
+			c_start = new_c_start;
 
 			memcpy(c_start, old_c_start, std::min(bytes_to_alloc, static_cast<size_t>(end_diff)));
 			Allocator::deallocate(old_c_start, old_c_end_of_storage - old_c_start);
