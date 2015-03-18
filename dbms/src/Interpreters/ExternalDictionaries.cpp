@@ -62,14 +62,14 @@ void ExternalDictionaries::reloadImpl()
 			{
 				std::string name;
 
+				if (0 != strncmp(key.data(), "dictionary", strlen("dictionary")))
+				{
+					LOG_WARNING(log, "unknown node in dictionaries file: '" + key + "', 'dictionary'");
+					continue;
+				}
+
 				try
 				{
-					if (0 != strncmp(key.data(), "dictionary", strlen("dictionary")))
-					{
-						LOG_WARNING(log, "unknown node in dictionaries file: '" + key + "', 'dictionary'");
-						continue;
-					}
-
 					name = config->getString(key + ".name");
 					if (name.empty())
 					{
@@ -113,15 +113,18 @@ void ExternalDictionaries::reloadImpl()
 					}
 					catch (const Poco::Exception & e)
 					{
-						LOG_ERROR(log, "Cannot load external dictionary! You must resolve this manually. " << e.displayText());
+						LOG_ERROR(log, "Cannot load external dictionary '" << name
+							<< "'! You must resolve this manually. " << e.displayText());
 					}
 					catch (const std::exception & e)
 					{
-						LOG_ERROR(log, "Cannot load external dictionary! You must resolve this manually. " << e.what());
+						LOG_ERROR(log, "Cannot load external dictionary '" << name
+							<< "'! You must resolve this manually. " << e.what());
 					}
 					catch (...)
 					{
-						LOG_ERROR(log, "Cannot load external dictionary! You must resolve this manually.");
+						LOG_ERROR(log, "Cannot load external dictionary '" << name
+							<< "'! You must resolve this manually.");
 					}
 				}
 			}
