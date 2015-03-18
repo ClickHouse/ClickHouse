@@ -8,6 +8,7 @@
 #include <DB/DataStreams/SummingSortedBlockInputStream.h>
 #include <DB/DataStreams/AggregatingSortedBlockInputStream.h>
 #include <DB/DataStreams/MaterializingBlockInputStream.h>
+#include <DB/DataStreams/ConcatBlockInputStream.h>
 
 
 namespace DB
@@ -335,8 +336,12 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 				__sync_add_and_fetch(&merge_entry->bytes_read_uncompressed, value.bytes);
 			});
 
-		src_streams.push_back(new MaterializingBlockInputStream{
-			new ExpressionBlockInputStream(input.release(), data.getPrimaryExpression())});
+		if (data.mode != MergeTreeData::Unsorted)
+			src_streams.push_back(new MaterializingBlockInputStream{
+				new ExpressionBlockInputStream(input.release(), data.getPrimaryExpression())});
+		else
+			src_streams.push_back(input.release());
+
 		sum_rows_approx += parts[i]->size * data.index_granularity;
 	}
 
@@ -363,13 +368,17 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 			merged_stream = std::make_unique<AggregatingSortedBlockInputStream>(src_streams, data.getSortDescription(), DEFAULT_MERGE_BLOCK_SIZE);
 			break;
 
+		case MergeTreeData::Unsorted:
+			merged_stream = std::make_unique<ConcatBlockInputStream>(src_streams);
+			break;
+
 		default:
 			throw Exception("Unknown mode of operation for MergeTreeData: " + toString(data.mode), ErrorCodes::LOGICAL_ERROR);
 	}
 
 	const String new_part_tmp_path = data.getFullPath() + "tmp_" + merged_name + "/";
 
-	MergedBlockOutputStream to{data, new_part_tmp_path, union_columns};
+	MergedBlockOutputStream to{data, new_part_tmp_path, union_columns, CompressionMethod::LZ4};
 
 	merged_stream->readPrefix();
 	to.writePrefix();

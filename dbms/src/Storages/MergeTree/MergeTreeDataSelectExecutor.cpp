@@ -4,7 +4,6 @@
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
 #include <DB/DataStreams/FilterBlockInputStream.h>
-#include <DB/DataStreams/ConcatBlockInputStream.h>
 #include <DB/DataStreams/CollapsingFinalBlockInputStream.h>
 #include <DB/DataStreams/AddingConstColumnBlockInputStream.h>
 #include <DB/DataStreams/CreatingSetsBlockInputStream.h>
@@ -83,6 +82,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 	PKCondition key_condition(query, context, data.getColumnsList(), data.getSortDescription());
 	PKCondition date_condition(query, context, data.getColumnsList(), SortDescription(1, SortColumnDescription(data.date_column_name, 1)));
+
+	if (settings.force_index_by_date && date_condition.alwaysTrue())
+		throw Exception("Index by date is not used and setting 'force_index_by_date' is set.", ErrorCodes::INDEX_NOT_USED);
 
 	/// Выберем куски, в которых могут быть данные, удовлетворяющие date_condition, и которые подходят под условие на _part.
 	{
@@ -269,7 +271,11 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	for (auto & part : parts)
 	{
 		RangesInDataPart ranges(part, (*part_index)++);
-		ranges.ranges = markRangesFromPkRange(part->index, key_condition, settings);
+
+		if (data.mode != MergeTreeData::Unsorted)
+			ranges.ranges = markRangesFromPkRange(part->index, key_condition, settings);
+		else
+			ranges.ranges = MarkRanges{MarkRange{0, part->size}};
 
 		if (!ranges.ranges.empty())
 		{
@@ -282,7 +288,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	}
 
 	LOG_DEBUG(log, "Selected " << parts.size() << " parts by date, " << parts_with_ranges.size() << " parts by key, "
-			  << sum_marks << " marks to read from " << sum_ranges << " ranges");
+		<< sum_marks << " marks to read from " << sum_ranges << " ranges");
 
 	BlockInputStreams res;
 
@@ -374,7 +380,6 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 		for (size_t i = 0; i < threads && !parts.empty(); ++i)
 		{
 			size_t need_marks = min_marks_per_thread;
-			BlockInputStreams streams;
 
 			/// Цикл по кускам.
 			while (need_marks > 0 && !parts.empty())
@@ -427,7 +432,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 					}
 				}
 
-				streams.push_back(new MergeTreeBlockInputStream(
+				res.push_back(new MergeTreeBlockInputStream(
 					data.getFullPath() + part.data_part->name + '/', max_block_size, column_names, data,
 					part.data_part, ranges_to_get_from_part, use_uncompressed_cache,
 					prewhere_actions, prewhere_column));
@@ -435,18 +440,13 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 				for (const String & virt_column : virt_columns)
 				{
 					if (virt_column == "_part")
-						streams.back() = new AddingConstColumnBlockInputStream<String>(
-							streams.back(), new DataTypeString, part.data_part->name, "_part");
+						res.back() = new AddingConstColumnBlockInputStream<String>(
+							res.back(), new DataTypeString, part.data_part->name, "_part");
 					else if (virt_column == "_part_index")
-						streams.back() = new AddingConstColumnBlockInputStream<UInt64>(
-							streams.back(), new DataTypeUInt64, part.part_index_in_query, "_part_index");
+						res.back() = new AddingConstColumnBlockInputStream<UInt64>(
+							res.back(), new DataTypeUInt64, part.part_index_in_query, "_part_index");
 				}
 			}
-
-			if (streams.size() == 1)
-				res.push_back(streams[0]);
-			else
-				res.push_back(new ConcatBlockInputStream(streams));
 		}
 
 		if (!parts.empty())

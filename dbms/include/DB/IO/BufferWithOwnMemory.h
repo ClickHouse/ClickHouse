@@ -113,6 +113,7 @@ private:
 			return;
 
 		free(reinterpret_cast<void *>(m_data));
+		m_data = nullptr;	/// Чтобы избежать double free, если последующий вызов alloc кинет исключение.
 
 		if (current_memory_tracker)
 			current_memory_tracker->free(m_capacity);

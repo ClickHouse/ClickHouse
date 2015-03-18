@@ -54,15 +54,6 @@ struct QueryState
 
 	void reset()
 	{
-		/** process_list_entry также включает/выключает учёт памяти MemoryTracker-ом.
-		  * Члены maybe_compressed_in, block_in, maybe_compressed_out, block_out
-		  *  могли быть инициализированы до io, и выделенная в них память могла не быть учтена MemoryTracker-ом.
-		  * Если эти члены будут уничтожены раньше, то освобождение памяти будет учтено MemoryTracker-ом,
-		  *  и вычисленный расход памяти может оказаться отрицательным (это не проблема, но некрасиво).
-		  * Поэтому, сначала уничтожим process_list_entry.
-		  */
-		io.process_list_entry = nullptr;
-
 		*this = QueryState();
 	}
 

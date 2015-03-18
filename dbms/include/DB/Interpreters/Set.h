@@ -55,9 +55,8 @@ struct SetMethodOneNumber
 		Key getKey(
 			const ConstColumnPlainPtrs & key_columns,	/// Ключевые столбцы.
 			size_t keys_size,							/// Количество ключевых столбцов.
-			size_t i,					/// Из какой строки блока достать ключ.
-			const Sizes & key_sizes,	/// Если ключи фиксированной длины - их длины. Не используется в методах по ключам переменной длины.
-			StringRefs & keys) const	/// Сюда могут быть записаны ссылки на данные ключей в столбцах. Они могут быть использованы в дальнейшем.
+			size_t i,						/// Из какой строки блока достать ключ.
+			const Sizes & key_sizes) const	/// Если ключи фиксированной длины - их длины. Не используется в методах по ключам переменной длины.
 		{
 			return unionCastToUInt64(vec[i]);
 		}
@@ -65,7 +64,7 @@ struct SetMethodOneNumber
 
 	/** Разместить дополнительные данные, если это необходимо, в случае, когда в хэш-таблицу был вставлен новый ключ.
 	  */
-	static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, StringRefs & keys, Arena & pool) {}
+	static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, Arena & pool) {}
 };
 
 /// Для случая, когда есть один строковый ключ.
@@ -94,8 +93,7 @@ struct SetMethodString
 			const ConstColumnPlainPtrs & key_columns,
 			size_t keys_size,
 			size_t i,
-			const Sizes & key_sizes,
-			StringRefs & keys) const
+			const Sizes & key_sizes) const
 		{
 			return StringRef(
 				&(*chars)[i == 0 ? 0 : (*offsets)[i - 1]],
@@ -103,7 +101,7 @@ struct SetMethodString
 		}
 	};
 
-	static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
+	static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, Arena & pool)
 	{
 		value.data = pool.insert(value.data, value.size);
 	}
@@ -135,14 +133,13 @@ struct SetMethodFixedString
 			const ConstColumnPlainPtrs & key_columns,
 			size_t keys_size,
 			size_t i,
-			const Sizes & key_sizes,
-			StringRefs & keys) const
+			const Sizes & key_sizes) const
 		{
 			return StringRef(&(*chars)[i * n], n);
 		}
 	};
 
-	static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
+	static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, Arena & pool)
 	{
 		value.data = pool.insert(value.data, value.size);
 	}
@@ -167,14 +164,13 @@ struct SetMethodKeysFixed
 			const ConstColumnPlainPtrs & key_columns,
 			size_t keys_size,
 			size_t i,
-			const Sizes & key_sizes,
-			StringRefs & keys) const
+			const Sizes & key_sizes) const
 		{
 			return packFixed<Key>(i, keys_size, key_columns, key_sizes);
 		}
 	};
 
-	static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, StringRefs & keys, Arena & pool) {}
+	static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, Arena & pool) {}
 };
 
 /// Для остальных случаев. По 128 битному хэшу от ключа. (При этом, строки, содержащие нули посередине, могут склеиться.)
@@ -196,14 +192,13 @@ struct SetMethodHashed
 			const ConstColumnPlainPtrs & key_columns,
 			size_t keys_size,
 			size_t i,
-			const Sizes & key_sizes,
-			StringRefs & keys) const
+			const Sizes & key_sizes) const
 		{
-			return hash128(i, keys_size, key_columns, keys);
+			return hash128(i, keys_size, key_columns);
 		}
 	};
 
-	static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, StringRefs & keys, Arena & pool) {}
+	static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, Arena & pool) {}
 };
 
 
@@ -367,7 +362,6 @@ private:
 		Method & method,
 		const ConstColumnPlainPtrs & key_columns,
 		size_t rows,
-		StringRefs & keys,
 		SetVariants & variants);
 
 	template <typename Method>
@@ -376,8 +370,7 @@ private:
 		const ConstColumnPlainPtrs & key_columns,
 		ColumnUInt8::Container_t & vec_res,
 		bool negative,
-		size_t rows,
-		StringRefs & keys) const;
+		size_t rows) const;
 
 	template <typename Method>
 	void executeArrayImpl(
@@ -386,8 +379,7 @@ private:
 		const ColumnArray::Offsets_t & offsets,
 		ColumnUInt8::Container_t & vec_res,
 		bool negative,
-		size_t rows,
-		StringRefs & keys) const;
+		size_t rows) const;
 };
 
 typedef Poco::SharedPtr<Set> SetPtr;

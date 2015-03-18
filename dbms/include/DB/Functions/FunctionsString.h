@@ -1408,23 +1408,6 @@ private:
 				ErrorCodes::ILLEGAL_COLUMN
 			};
 	}
-
-	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
-		ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets)
-	{
-		res_data.resize(data.size());
-		res_offsets.assign(offsets);
-		size_t size = offsets.size();
-
-		ColumnString::Offset_t prev_offset = 0;
-		for (size_t i = 0; i < size; ++i)
-		{
-			for (size_t j = prev_offset; j < offsets[i] - 1; ++j)
-				res_data[j] = data[offsets[i] + prev_offset - 2 - j];
-			res_data[offsets[i] - 1] = 0;
-			prev_offset = offsets[i];
-		}
-	}
 };
 
 

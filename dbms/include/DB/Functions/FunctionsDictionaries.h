@@ -1107,26 +1107,61 @@ private:
 		const auto id_col_untyped = block.getByPosition(arguments[1]).column.get();
 		if (const auto id_col = typeid_cast<const ColumnVector<UInt64> *>(id_col_untyped))
 		{
+			const auto & in = id_col->getData();
+			const auto size = in.size();
+
+			/// copy of `in` array
+			auto in_array = std::make_unique<PODArray<UInt64>>(std::begin(in), std::end(in));
+			/// used for storing and handling result of ::toParent call
+			auto out_array = std::make_unique<PODArray<UInt64>>(size);
+			/// resulting hierarchies
+			std::vector<std::vector<IDictionary::id_t>> hierarchies(size);
+
+			/// total number of non-zero elements, used for allocating all the required memory upfront
+			std::size_t total_count = 0;
+
+			while (true)
+			{
+				auto all_zeroes = true;
+
+				/// erase zeroed identifiers, store non-zeroed ones
+				for (const auto i : ext::range(0, size))
+				{
+					const auto id = (*in_array)[i];
+					if (0 == id)
+						continue;
+
+					all_zeroes = false;
+					/// place id at it's corresponding place
+					hierarchies[i].push_back(id);
+
+					++total_count;
+				}
+
+				if (all_zeroes)
+					break;
+
+				/// translate all non-zero identifiers at once
+				dictionary->toParent(*in_array, *out_array);
+
+				/// we're going to use the `in_array` from this iteration as `out_array` on the next one
+				std::swap(in_array, out_array);
+			}
+
 			const auto backend = new ColumnVector<UInt64>;
 			const auto array = new ColumnArray{backend};
 			block.getByPosition(result).column = array;
 
-			const auto & in = id_col->getData();
-			const auto size = in.size();
 			auto & out = backend->getData();
 			auto & offsets = array->getOffsets();
+			out.reserve(total_count);
 			offsets.resize(size);
-			out.reserve(size * 4);
 
-			for (const auto idx : ext::range(0, size))
+			for (const auto i : ext::range(0, size))
 			{
-				IDictionary::id_t cur = in[idx];
-				while (cur)
-				{
-					out.push_back(cur);
-					cur = dictionary->toParent(cur);
-				}
-				offsets[idx] = out.size();
+				const auto & ids = hierarchies[i];
+				out.insert_assume_reserved(std::begin(ids), std::end(ids));
+				offsets[i] = out.size();
 			}
 		}
 		else if (const auto id_col = typeid_cast<const ColumnConst<UInt64> *>(id_col_untyped))

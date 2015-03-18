@@ -12,7 +12,6 @@
 #include <DB/DataStreams/DistinctBlockInputStream.h>
 #include <DB/DataStreams/NullBlockInputStream.h>
 #include <DB/DataStreams/TotalsHavingBlockInputStream.h>
-#include <DB/DataStreams/narrowBlockInputStreams.h>
 #include <DB/DataStreams/copyData.h>
 #include <DB/DataStreams/CreatingSetsBlockInputStream.h>
 #include <DB/DataStreams/MaterializingBlockInputStream.h>
@@ -665,8 +664,15 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	 *  то в качестве размера блока будем использовать limit + offset (чтобы не читать из таблицы больше, чем запрошено),
 	 *  а также установим количество потоков в 1 и отменим асинхронное выполнение конвейера запроса.
 	 */
-	if (!query.distinct && !query.prewhere_expression && !query.where_expression && !query.group_expression_list && !query.having_expression && !query.order_expression_list
-		&& query.limit_length && !query_analyzer->hasAggregation() && limit_length + limit_offset < settings.max_block_size)
+	if (!query.distinct
+		&& !query.prewhere_expression
+		&& !query.where_expression
+		&& !query.group_expression_list
+		&& !query.having_expression
+		&& !query.order_expression_list
+		&& query.limit_length
+		&& !query_analyzer->hasAggregation()
+		&& limit_length + limit_offset < settings.max_block_size)
 	{
 		settings.max_block_size = limit_length + limit_offset;
 		settings.max_threads = 1;
@@ -679,12 +685,6 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	/// Инициализируем изначальные потоки данных, на которые накладываются преобразования запроса. Таблица или подзапрос?
 	if (!interpreter_subquery)
 	{
-		/** При распределённой обработке запроса, на все удалённые серверы отправляются временные таблицы,
-			*  полученные из глобальных подзапросов - GLOBAL IN/JOIN.
-			*/
-		if (storage && storage->isRemote())
-			storage->storeExternalTables(query_analyzer->getExternalTables());
-
 		streams = storage->read(required_columns, query_ptr,
 			context, settings_for_storage, from_stage,
 			settings.max_block_size, settings.max_threads);
@@ -696,12 +696,6 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	{
 		streams.push_back(interpreter_subquery->execute());
 	}
-
-	/** Если истчоников слишком много, то склеим их в max_threads источников.
-	 *  (Иначе действия в каждом маленьком источнике, а затем объединение состояний, слишком неэффективно.)
-	 */
-	if (streams.size() > settings.max_threads)
-		streams = narrowBlockInputStreams(streams, settings.max_threads);
 
 	/** Установка ограничений и квоты на чтение данных, скорость и время выполнения запроса.
 	 *  Такие ограничения проверяются на сервере-инициаторе запроса, а не на удалённых серверах.
@@ -824,12 +818,10 @@ static SortDescription getSortDescription(ASTSelectQuery & query)
 {
 	SortDescription order_descr;
 	order_descr.reserve(query.order_expression_list->children.size());
-	for (ASTs::iterator it = query.order_expression_list->children.begin();
-		it != query.order_expression_list->children.end();
-		++it)
+	for (const auto & elem : query.order_expression_list->children)
 	{
-		String name = (*it)->children.front()->getColumnName();
-		const ASTOrderByElement & order_by_elem = typeid_cast<const ASTOrderByElement &>(**it);
+		String name = elem->children.front()->getColumnName();
+		const ASTOrderByElement & order_by_elem = typeid_cast<const ASTOrderByElement &>(*elem);
 
 		order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.collator);
 	}

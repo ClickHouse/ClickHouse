@@ -528,9 +528,7 @@ struct AggregatedDataVariants : private boost::noncopyable
 
 	void init(Type type_)
 	{
-		type = type_;
-
-		switch (type)
+		switch (type_)
 		{
 			case Type::EMPTY:		break;
 			case Type::without_key:	break;
@@ -543,6 +541,8 @@ struct AggregatedDataVariants : private boost::noncopyable
 			default:
 				throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 		}
+
+		type = type_;
 	}
 
 	size_t size() const
@@ -676,19 +676,6 @@ APPLY_FOR_AGGREGATED_VARIANTS(M)
 class Aggregator
 {
 public:
-	Aggregator(const ColumnNumbers & keys_, const AggregateDescriptions & aggregates_, bool overflow_row_,
-		size_t max_rows_to_group_by_, OverflowMode group_by_overflow_mode_, Compiler * compiler_, UInt32 min_count_to_compile_,
-		size_t group_by_two_level_threshold_)
-		: keys(keys_), aggregates(aggregates_), aggregates_size(aggregates.size()),
-		overflow_row(overflow_row_),
-		max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
-		compiler(compiler_), min_count_to_compile(min_count_to_compile_), group_by_two_level_threshold(group_by_two_level_threshold_)
-	{
-		std::sort(keys.begin(), keys.end());
-		keys.erase(std::unique(keys.begin(), keys.end()), keys.end());
-		keys_size = keys.size();
-	}
-
 	Aggregator(const Names & key_names_, const AggregateDescriptions & aggregates_, bool overflow_row_,
 		size_t max_rows_to_group_by_, OverflowMode group_by_overflow_mode_, Compiler * compiler_, UInt32 min_count_to_compile_,
 		size_t group_by_two_level_threshold_)
@@ -738,6 +725,9 @@ public:
 
 	/// Для IBlockInputStream.
 	String getID() const;
+
+	size_t getNumberOfKeys() const { return keys_size; }
+	size_t getNumberOfAggregates() const { return aggregates_size; }
 
 protected:
 	friend struct AggregatedDataVariants;

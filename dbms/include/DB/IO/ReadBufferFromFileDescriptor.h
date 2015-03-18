@@ -99,7 +99,7 @@ public:
 		}
 	}
 
-	size_t getPositionInFile()
+	off_t getPositionInFile()
 	{
 		return pos_in_file - (working_buffer.end() - pos);
 	}

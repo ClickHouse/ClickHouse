@@ -13,7 +13,7 @@ PoolWithFailover::PoolWithFailover(const Poco::Util::AbstractConfiguration & cfg
 		cfg.keys(config_name, replica_keys);
 		for (Poco::Util::AbstractConfiguration::Keys::const_iterator it = replica_keys.begin(); it != replica_keys.end(); ++it)
 		{
-			if (!(*it == "port" || *it == "user" || *it == "password" || *it == "db"))
+			if (!(*it == "port" || *it == "user" || *it == "password" || *it == "db" || *it == "table"))
 			{
 				if (it->size() < std::string("replica").size() || it->substr(0, std::string("replica").size()) != "replica")
 					throw Poco::Exception("Unknown element in config: " + *it + ", expected replica");

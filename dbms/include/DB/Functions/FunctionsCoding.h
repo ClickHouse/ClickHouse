@@ -1324,7 +1324,6 @@ public:
 		if (col_fstr_in)
 		{
 			ColumnString * col_str = new ColumnString;
-
 			col_res = col_str;
 
 			ColumnString::Chars_t & out_vec = col_str->getChars();

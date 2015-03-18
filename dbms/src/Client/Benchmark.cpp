@@ -56,9 +56,9 @@ public:
 	Benchmark(unsigned concurrency_, double delay_,
 			const String & host_, UInt16 port_, const String & default_database_,
 			const String & user_, const String & password_, const Settings & settings_)
-		: concurrency(concurrency_), delay(delay_), queue(concurrency), pool(concurrency),
+		: concurrency(concurrency_), delay(delay_), queue(concurrency),
 		connections(concurrency, host_, port_, default_database_, user_, password_, data_type_factory),
-		settings(settings_)
+		settings(settings_), pool(concurrency)
 	{
 		std::cerr << std::fixed << std::setprecision(3);
 
@@ -77,8 +77,6 @@ private:
 
 	typedef ConcurrentBoundedQueue<Query> Queue;
 	Queue queue;
-
-	boost::threadpool::pool pool;
 
 	DataTypeFactory data_type_factory;
 	ConnectionPool connections;
@@ -122,6 +120,8 @@ private:
 	Stats info_total;
 
 	Poco::FastMutex mutex;
+
+	boost::threadpool::pool pool;
 
 
 	void readQueries()

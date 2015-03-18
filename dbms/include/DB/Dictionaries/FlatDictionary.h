@@ -165,6 +165,7 @@ private:
 	{
 		const auto size = dict_struct.attributes.size();
 		attributes.reserve(size);
+
 		for (const auto & attribute : dict_struct.attributes)
 		{
 			attribute_index_by_name.emplace(attribute.name, attributes.size());

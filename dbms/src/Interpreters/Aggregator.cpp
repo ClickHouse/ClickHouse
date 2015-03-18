@@ -381,7 +381,6 @@ void Aggregator::createAggregateStates(AggregateDataPtr & aggregate_data) const
 			for (size_t rollback_j = 0; rollback_j < j; ++rollback_j)
 				aggregate_functions[rollback_j]->destroy(aggregate_data + offsets_of_aggregate_states[rollback_j]);
 
-			aggregate_data = nullptr;
 			throw;
 		}
 	}
@@ -486,8 +485,12 @@ void NO_INLINE Aggregator::executeImplCase(
 			method.onNewKey(*it, keys_size, i, keys, *aggregates_pool);
 
 			AggregateDataPtr & aggregate_data = Method::getAggregateData(it->second);
-			aggregate_data = aggregates_pool->alloc(total_size_of_aggregate_states);
-			createAggregateStates(aggregate_data);
+
+			/// exception-safety - если не удалось выделить память или создать состояния, то не будут вызываться деструкторы.
+			aggregate_data = nullptr;
+			AggregateDataPtr place = aggregates_pool->alloc(total_size_of_aggregate_states);
+			createAggregateStates(place);
+			aggregate_data = place;
 		}
 		else
 			method.onExistingKey(key, keys, *aggregates_pool);
@@ -581,8 +584,9 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 
 	if ((overflow_row || result.type == AggregatedDataVariants::Type::without_key) && !result.without_key)
 	{
-		result.without_key = result.aggregates_pool->alloc(total_size_of_aggregate_states);
-		createAggregateStates(result.without_key);
+		AggregateDataPtr place = result.aggregates_pool->alloc(total_size_of_aggregate_states);
+		createAggregateStates(place);
+		result.without_key = place;
 	}
 
 	/// Выбираем один из методов агрегации и вызываем его.
@@ -831,6 +835,12 @@ Block Aggregator::prepareBlockAndFill(
 		}
 
 		filler(key_columns, aggregate_columns, final_aggregate_columns, data_variants.key_sizes, final);
+
+		/// Изменяем размер столбцов-констант в блоке.
+		size_t columns = res.columns();
+		for (size_t i = 0; i < columns; ++i)
+			if (res.getByPosition(i).column->isConst())
+				res.getByPosition(i).column = res.getByPosition(i).column->cut(0, rows);
 	}
 	catch (...)
 	{
@@ -847,12 +857,6 @@ Block Aggregator::prepareBlockAndFill(
 
 		throw;
 	}
-
-	/// Изменяем размер столбцов-констант в блоке.
-	size_t columns = res.columns();
-	for (size_t i = 0; i < columns; ++i)
-		if (res.getByPosition(i).column->isConst())
-			res.getByPosition(i).column = res.getByPosition(i).column->cut(0, rows);
 
 	return res;
 }
@@ -980,17 +984,28 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
 	std::vector<std::packaged_task<Block()>> tasks;
 	tasks.reserve(Method::Data::NUM_BUCKETS);
 
-	for (size_t bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
+	try
 	{
-		if (method.data.impls[bucket].empty())
-			continue;
+		for (size_t bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
+		{
+			if (method.data.impls[bucket].empty())
+				continue;
 
-		tasks.emplace_back(std::bind(converter, bucket, current_memory_tracker));
+			tasks.emplace_back(std::bind(converter, bucket, current_memory_tracker));
 
+			if (thread_pool)
+				thread_pool->schedule([bucket, &tasks] { tasks[bucket](); });
+			else
+				tasks[bucket]();
+		}
+	}
+	catch (...)
+	{
+		/// Если этого не делать, то в случае исключения, tasks уничтожится раньше завершения потоков, и будет плохо.
 		if (thread_pool)
-			thread_pool->schedule([bucket, &tasks] { tasks[bucket](); });
-		else
-			tasks[bucket]();
+			thread_pool->wait();
+
+		throw;
 	}
 
 	if (thread_pool)
@@ -1035,7 +1050,7 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
 
 BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, bool final, size_t max_threads)
 {
-	LOG_TRACE(log, "Converting aggregated data to block");
+	LOG_TRACE(log, "Converting aggregated data to blocks");
 
 	Stopwatch watch;
 
@@ -1108,13 +1123,13 @@ void NO_INLINE Aggregator::mergeDataImpl(
 			for (size_t i = 0; i < aggregates_size; ++i)
 				aggregate_functions[i]->destroy(
 					Method::getAggregateData(it->second) + offsets_of_aggregate_states[i]);
-
-			Method::getAggregateData(it->second) = nullptr;
 		}
 		else
 		{
 			res_it->second = it->second;
 		}
+
+		Method::getAggregateData(it->second) = nullptr;
 	}
 }
 
@@ -1193,14 +1208,25 @@ void NO_INLINE Aggregator::mergeTwoLevelDataImpl(
 	std::vector<std::packaged_task<void()>> tasks;
 	tasks.reserve(Method::Data::NUM_BUCKETS);
 
-	for (size_t bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
+	try
 	{
-		tasks.emplace_back(std::bind(merge_bucket, bucket, current_memory_tracker));
+		for (size_t bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
+		{
+			tasks.emplace_back(std::bind(merge_bucket, bucket, current_memory_tracker));
 
+			if (thread_pool)
+				thread_pool->schedule([bucket, &tasks] { tasks[bucket](); });
+			else
+				tasks[bucket]();
+		}
+	}
+	catch (...)
+	{
+		/// Если этого не делать, то в случае исключения, tasks уничтожится раньше завершения потоков, и будет плохо.
 		if (thread_pool)
-			thread_pool->schedule([bucket, &tasks] { tasks[bucket](); });
-		else
-			tasks[bucket]();
+			thread_pool->wait();
+
+		throw;
 	}
 
 	if (thread_pool)
@@ -1365,8 +1391,11 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
 			method.onNewKey(*it, keys_size, i, keys, *aggregates_pool);
 
 			AggregateDataPtr & aggregate_data = Method::getAggregateData(it->second);
-			aggregate_data = aggregates_pool->alloc(total_size_of_aggregate_states);
-			createAggregateStates(aggregate_data);
+
+			aggregate_data = nullptr;
+			AggregateDataPtr place = aggregates_pool->alloc(total_size_of_aggregate_states);
+			createAggregateStates(place);
+			aggregate_data = place;
 		}
 		else
 			method.onExistingKey(key, keys, *aggregates_pool);
@@ -1395,8 +1424,9 @@ void NO_INLINE Aggregator::mergeWithoutKeyStreamsImpl(
 	AggregatedDataWithoutKey & res = result.without_key;
 	if (!res)
 	{
-		res = result.aggregates_pool->alloc(total_size_of_aggregate_states);
-		createAggregateStates(res);
+		AggregateDataPtr place = result.aggregates_pool->alloc(total_size_of_aggregate_states);
+		createAggregateStates(place);
+		res = place;
 	}
 
 	/// Добавляем значения
@@ -1484,11 +1514,6 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 	{
 		LOG_TRACE(log, "Merging partially aggregated two-level data.");
 
-		std::unique_ptr<boost::threadpool::pool> thread_pool;
-		if (max_threads > 1 && total_input_rows > 100000	/// TODO Сделать настраиваемый порог.
-			&& has_two_level)
-			thread_pool.reset(new boost::threadpool::pool(max_threads));
-
 		auto merge_bucket = [&bucket_to_blocks, &result, this](Int32 bucket, Arena * aggregates_pool, MemoryTracker * memory_tracker)
 		{
 			current_memory_tracker = memory_tracker;
@@ -1511,6 +1536,11 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 
 		std::vector<std::packaged_task<void()>> tasks;
 		tasks.reserve(bucket_to_blocks.size() - has_blocks_with_unknown_bucket);
+
+		std::unique_ptr<boost::threadpool::pool> thread_pool;
+		if (max_threads > 1 && total_input_rows > 100000	/// TODO Сделать настраиваемый порог.
+			&& has_two_level)
+			thread_pool.reset(new boost::threadpool::pool(max_threads));
 
 		for (auto & bucket_blocks : bucket_to_blocks)
 		{

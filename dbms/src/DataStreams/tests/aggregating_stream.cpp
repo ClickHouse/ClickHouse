@@ -23,16 +23,18 @@
 
 int main(int argc, char ** argv)
 {
+	using namespace DB;
+
 	try
 	{
 		size_t n = argc == 2 ? atoi(argv[1]) : 10;
 
-		DB::Block block;
+		Block block;
 
-		DB::ColumnWithNameAndType column_x;
+		ColumnWithNameAndType column_x;
 		column_x.name = "x";
-		column_x.type = new DB::DataTypeInt16;
-		DB::ColumnInt16 * x = new DB::ColumnInt16;
+		column_x.type = new DataTypeInt16;
+		ColumnInt16 * x = new ColumnInt16;
 		column_x.column = x;
 		auto & vec_x = x->getData();
 
@@ -44,65 +46,64 @@ int main(int argc, char ** argv)
 
 		const char * strings[] = {"abc", "def", "abcd", "defg", "ac"};
 
-		DB::ColumnWithNameAndType column_s1;
+		ColumnWithNameAndType column_s1;
 		column_s1.name = "s1";
-		column_s1.type = new DB::DataTypeString;
-		column_s1.column = new DB::ColumnString;
+		column_s1.type = new DataTypeString;
+		column_s1.column = new ColumnString;
 
 		for (size_t i = 0; i < n; ++i)
 			column_s1.column->insert(std::string(strings[i % 5]));
 
 		block.insert(column_s1);
 
-		DB::ColumnWithNameAndType column_s2;
+		ColumnWithNameAndType column_s2;
 		column_s2.name = "s2";
-		column_s2.type = new DB::DataTypeString;
-		column_s2.column = new DB::ColumnString;
+		column_s2.type = new DataTypeString;
+		column_s2.column = new ColumnString;
 
 		for (size_t i = 0; i < n; ++i)
 			column_s2.column->insert(std::string(strings[i % 3]));
 
 		block.insert(column_s2);
 
-		DB::ColumnNumbers key_column_numbers;
-		key_column_numbers.push_back(0);
-		//key_column_numbers.push_back(1);
+		Names key_column_names;
+		key_column_names.emplace_back("x");
 
-		DB::AggregateFunctionFactory factory;
+		AggregateFunctionFactory factory;
 
-		DB::AggregateDescriptions aggregate_descriptions(1);
+		AggregateDescriptions aggregate_descriptions(1);
 
-		DB::DataTypes empty_list_of_types;
+		DataTypes empty_list_of_types;
 		aggregate_descriptions[0].function = factory.get("count", empty_list_of_types);
 
-		Poco::SharedPtr<DB::DataTypes> result_types = new DB::DataTypes
+		Poco::SharedPtr<DataTypes> result_types = new DataTypes
 		{
-			new DB::DataTypeInt16,
-		//	new DB::DataTypeString,
-			new DB::DataTypeUInt64,
+			new DataTypeInt16,
+		//	new DataTypeString,
+			new DataTypeUInt64,
 		};
 
-		DB::Block sample;
-		for (DB::DataTypes::const_iterator it = result_types->begin(); it != result_types->end(); ++it)
+		Block sample;
+		for (DataTypes::const_iterator it = result_types->begin(); it != result_types->end(); ++it)
 		{
-			DB::ColumnWithNameAndType col;
+			ColumnWithNameAndType col;
 			col.type = *it;
 			sample.insert(col);
 		}
 
-		DB::BlockInputStreamPtr stream = new DB::OneBlockInputStream(block);
-		stream = new DB::AggregatingBlockInputStream(stream, key_column_numbers, aggregate_descriptions, false, true,
-													 0, DB::OverflowMode::THROW, nullptr, 0, 0);
+		BlockInputStreamPtr stream = new OneBlockInputStream(block);
+		stream = new AggregatingBlockInputStream(stream, key_column_names, aggregate_descriptions, false, true,
+													 0, OverflowMode::THROW, nullptr, 0, 0);
 
-		DB::WriteBufferFromOStream ob(std::cout);
-		DB::RowOutputStreamPtr row_out = new DB::TabSeparatedRowOutputStream(ob, sample);
-		DB::BlockOutputStreamPtr out = new DB::BlockOutputStreamFromRowOutputStream(row_out);
+		WriteBufferFromOStream ob(std::cout);
+		RowOutputStreamPtr row_out = new TabSeparatedRowOutputStream(ob, sample);
+		BlockOutputStreamPtr out = new BlockOutputStreamFromRowOutputStream(row_out);
 
 		{
 			Poco::Stopwatch stopwatch;
 			stopwatch.start();
 
-			DB::copyData(*stream, *out);
+			copyData(*stream, *out);
 
 			stopwatch.stop();
 			std::cout << std::fixed << std::setprecision(2)
@@ -115,7 +116,7 @@ int main(int argc, char ** argv)
 		stream->dumpTree(std::cout);
 		std::cout << std::endl;
 	}
-	catch (const DB::Exception & e)
+	catch (const Exception & e)
 	{
 		std::cerr << e.displayText() << std::endl;
 	}
