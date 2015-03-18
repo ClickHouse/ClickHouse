@@ -128,8 +128,11 @@ public:
 		}
 		catch (const Exception & e)
 		{
-			if (e.code() != ErrorCodes::ALL_REQUESTED_COLUMNS_ARE_MISSING)
+			if (e.code() != ErrorCodes::ALL_REQUESTED_COLUMNS_ARE_MISSING
+				&& e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+			{
 				storage.reportBrokenPart(part_name);
+			}
 
 			/// Более хорошая диагностика.
 			throw Exception(e.message() +  "\n(while reading from part " + path + " from mark " + toString(from_mark) + " to "
