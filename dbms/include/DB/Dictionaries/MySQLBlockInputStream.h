@@ -16,8 +16,12 @@ namespace DB
 class MySQLBlockInputStream final : public IProfilingBlockInputStream
 {
 public:
-	MySQLBlockInputStream(mysqlxx::Query query, const Block & sample_block, const std::size_t max_block_size)
-		: query{std::move(query)}, result{this->query.use()}, sample_block{sample_block}, max_block_size{max_block_size}
+	MySQLBlockInputStream(const mysqlxx::PoolWithFailover::Entry & entry,
+		const std::string & query_str,
+		const Block & sample_block,
+		const std::size_t max_block_size)
+		: entry{entry}, query{this->entry->query(query_str)}, result{query.use()},
+		  sample_block{sample_block}, max_block_size{max_block_size}
 	{
 		types.reserve(sample_block.columns());
 
@@ -105,6 +109,7 @@ private:
 		}
 	}
 
+	mysqlxx::PoolWithFailover::Entry entry;
 	mysqlxx::Query query;
 	mysqlxx::UseQueryResult result;
 	Block sample_block;

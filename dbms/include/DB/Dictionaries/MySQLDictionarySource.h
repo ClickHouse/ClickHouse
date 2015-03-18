@@ -36,7 +36,7 @@ public:
 	BlockInputStreamPtr loadAll() override
 	{
 		last_modification = getLastModification();
-		return new MySQLBlockInputStream{pool.Get()->query(load_all_query), sample_block, max_block_size};
+		return new MySQLBlockInputStream{pool.Get(), load_all_query, sample_block, max_block_size};
 	}
 
 	BlockInputStreamPtr loadIds(const std::vector<std::uint64_t> ids) override
@@ -44,7 +44,7 @@ public:
 		last_modification = getLastModification();
 		const auto query = composeLoadIdsQuery(ids);
 
-		return new MySQLBlockInputStream{pool.Get()->query(query), sample_block, max_block_size};
+		return new MySQLBlockInputStream{pool.Get(), query, sample_block, max_block_size};
 	}
 
 	bool isModified() const override { return getLastModification() > last_modification; }
