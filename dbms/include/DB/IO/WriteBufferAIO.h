@@ -2,11 +2,13 @@
 
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/BufferWithOwnMemory.h>
+#include <DB/Core/Defines.h>
 #include <statdaemons/AIO.h>
 
 #include <string>
 #include <unistd.h>
 #include <fcntl.h>
+#include <sys/uio.h>
 
 namespace DB
 {
@@ -50,6 +52,11 @@ private:
 	std::vector<io_event> events{1};
 
 	AIOContext aio_context{1};
+
+	iovec iov[3];
+
+	Memory left_page{DEFAULT_AIO_FILE_BLOCK_SIZE, DEFAULT_AIO_FILE_BLOCK_SIZE};
+	Memory right_page{DEFAULT_AIO_FILE_BLOCK_SIZE, DEFAULT_AIO_FILE_BLOCK_SIZE};
 
 	const std::string filename;
 

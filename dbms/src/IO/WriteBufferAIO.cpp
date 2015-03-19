@@ -1,7 +1,6 @@
 #include <DB/IO/WriteBufferAIO.h>
 #include <DB/Common/ProfileEvents.h>
 #include <DB/Core/ErrorCodes.h>
-#include <DB/Core/Defines.h>
 
 #include <limits>
 #include <sys/types.h>
@@ -52,9 +51,6 @@ WriteBufferAIO::~WriteBufferAIO()
 
 off_t WriteBufferAIO::seek(off_t off, int whence)
 {
-	if ((off % DEFAULT_AIO_FILE_BLOCK_SIZE) != 0)
-		throw Exception("Invalid offset for WriteBufferAIO::seek", ErrorCodes::AIO_UNALIGNED_SIZE_ERROR);
-
 	flush();
 
 	if (whence == SEEK_SET)
@@ -99,9 +95,6 @@ off_t WriteBufferAIO::getPositionInFile()
 
 void WriteBufferAIO::truncate(off_t length)
 {
-	if ((length % DEFAULT_AIO_FILE_BLOCK_SIZE) != 0)
-		throw Exception("Invalid length for WriteBufferAIO::ftruncate", ErrorCodes::AIO_UNALIGNED_SIZE_ERROR);
-
 	flush();
 
 	int res = ::ftruncate(fd, length);
@@ -139,18 +132,136 @@ void WriteBufferAIO::nextImpl()
 	waitForAIOCompletion();
 	swapBuffers();
 
-	/// Создать запрос.
-	request.aio_lio_opcode = IOCB_CMD_PWRITE;
-	request.aio_fildes = fd;
-	request.aio_buf = reinterpret_cast<UInt64>(flush_buffer.buffer().begin());
-	request.aio_nbytes = flush_buffer.offset();
-	request.aio_offset = pos_in_file;
+	/// Input parameters: fd, pos_in_file, flush_buffer
 
-	if ((request.aio_nbytes % DEFAULT_AIO_FILE_BLOCK_SIZE) != 0)
+	/*
+			region_aligned_begin     region_begin                             region_end      region_aligned_end
+			|                           |                                          |                           |
+			|     +---------------------+                                          +----------------------+    |
+			|     |                                                                                       |    |
+			+--------+--------+--------+--------+--------+--------+--------+--------+--------+--------+--------+
+			|XXXXX*  :        :        :        :        :        :        :        :        :        :   *XXXX|
+	+-------|XXXXX*  :        :        :        :        :        :        :        :        :        :   *XXXX|-------+
+	|		|XXXXX*  :        :        :        :        :        :        :        :        :        :   *XXXX|       |
+	|		|XXXXX*  :        :        :        :        :        :        :        :        :        :   *XXXX|       |
+	|		+--------+--------+--------+--------+--------+--------+--------+--------+--------+--------+--------+       |
+(1)	|           |                                       ^                                                 |            |(1)
+read|			+---- left padded disk page             |                      right padded disk page ----+            |read
+    |                                                   |                                                              |
+	|		+--------+ (left padded page)               |                        (right padded page)  +--------+       |
+	|		|XXXXX*YY|                                  |                                             |ZZZ*XXXX|       |
+	|		|XXXXX*YY|--------------------------------->+<--------------------------------------------|ZZZ*XXXX|       |
+	+------>|XXXXX*YY|<--+                              | (3) scattered write           +------------>|ZZZ*XXXX|<------+
+			|XXXXX*YY|   |                              |                               |             |ZZZ*XXXX|
+			+--------+   |(2)copy                       |                               |(2)copy      +--------+
+                         |                              |                               |
+	+--------------------+                              |                               +--------------------+
+	|                                                   |                                                    |
+	|		buffer_begin     aligned_buffer_begin.......+...........aligned_buffer_end     buffer_end        |
+	|		|                        |                                   |                          |        |
+	|		|  +---------------------+                                   +----------------------+   |        |
+	|		|  |                                                                                |   |        |
+	|		---+--------+--------+--------+--------+--------+--------+--------+--------+--------+----        |
+	|		*YY:        :        :        :        :        :        :        :        :        :ZZZ*        |
+	|		*YY:        :        :        :        :        :        :        :        :        :ZZZ*        |
+	+-------*YY:        :        :        :        :        :        :        :        :        :ZZZ*--------+
+			*YY:        :        :        :        :        :        :        :        :        :ZZZ*
+			---+--------+--------+--------+--------+--------+--------+--------+--------+--------+----
+
+	 */
+
+	//
+	// 1. Determine the enclosing page-aligned disk region.
+	//
+
+	/// Disk region we want to write to.
+	size_t region_begin = pos_in_file;
+	size_t region_end = pos_in_file + flush_buffer.offset();
+
+	/// Page-aligned disk region.
+	size_t region_aligned_begin = region_begin - (region_begin % DEFAULT_AIO_FILE_BLOCK_SIZE);
+	size_t region_aligned_end = region_end;
+	if ((region_aligned_end % DEFAULT_AIO_FILE_BLOCK_SIZE) != 0)
+		region_aligned_end += DEFAULT_AIO_FILE_BLOCK_SIZE - (region_aligned_end % DEFAULT_AIO_FILE_BLOCK_SIZE);
+
+	bool has_left_padding = (region_aligned_begin != region_begin);
+	bool has_right_padding = (region_aligned_end != region_end);
+
+	//
+	// 2. Read needed data from disk into padded pages.
+	//
+
+	if (has_left_padding)
 	{
-		got_exception = true;
-		throw Exception("Illegal attempt to write unaligned data to file " + filename, ErrorCodes::AIO_UNALIGNED_SIZE_ERROR);
+		/// Left-side padding disk region.
+		ssize_t read_count = ::pread(fd, &left_page[0], DEFAULT_AIO_FILE_BLOCK_SIZE, region_aligned_begin);
+		if (read_count < 0)
+			throw Exception("Read error");
 	}
+	if (has_right_padding)
+	{
+		/// Right-side padding disk region.
+		ssize_t read_count = ::pread(fd, &right_page[0], DEFAULT_AIO_FILE_BLOCK_SIZE, (region_aligned_end - DEFAULT_AIO_FILE_BLOCK_SIZE));
+		if (read_count < 0)
+			throw Exception("Read error");
+	}
+
+	//
+	// 3. Copy padding data (2 user-space copies) from the buffer into the padded pages.
+	//
+
+	/// Buffer we want to write to disk.
+	Position buffer_begin = flush_buffer.buffer().begin();
+	Position buffer_end = buffer_begin + flush_buffer.offset();
+
+	/// Subset of the buffer that is page-aligned.
+	Position aligned_buffer_begin = buffer_begin;
+	Position aligned_buffer_end = buffer_end;
+
+	if (has_left_padding)
+	{
+		size_t left_page_unmodified_size = region_begin - region_aligned_begin;
+		size_t left_page_modified_size = DEFAULT_AIO_FILE_BLOCK_SIZE - left_page_unmodified_size;
+		aligned_buffer_begin += left_page_modified_size;
+		::memcpy(&left_page[0] + left_page_unmodified_size, buffer_begin, left_page_modified_size);
+	}
+	if (has_right_padding)
+	{
+		size_t right_page_begin = region_aligned_end - DEFAULT_AIO_FILE_BLOCK_SIZE;
+		size_t right_page_modified_size = region_end - right_page_begin;
+		aligned_buffer_end -= right_page_modified_size;
+		::memcpy(&right_page[0], (buffer_end - right_page_modified_size), right_page_modified_size);
+	}
+
+	//
+	// 4. Create requests.
+	//
+
+	size_t i = 0;
+
+	if (has_left_padding)
+	{
+		iov[i].iov_base = &left_page[0];
+		iov[i].iov_len = DEFAULT_AIO_FILE_BLOCK_SIZE;
+		++i;
+	}
+
+	iov[i].iov_base = aligned_buffer_begin;
+	iov[i].iov_len = aligned_buffer_end - aligned_buffer_begin;
+	++i;
+
+	if (has_right_padding)
+	{
+		iov[i].iov_base = &right_page[0];
+		iov[i].iov_len = DEFAULT_AIO_FILE_BLOCK_SIZE;
+	}
+
+	/// Send requests (1 syscall).
+	request.aio_lio_opcode = IOCB_CMD_PWRITEV;
+	request.aio_fildes = fd;
+	request.aio_buf = reinterpret_cast<UInt64>(iov);
+	request.aio_nbytes = i + 1;
+	request.aio_offset = region_aligned_begin;
 
 	/// Отправить запрос.
 	while (io_submit(aio_context.ctx, request_ptrs.size(), &request_ptrs[0]) < 0)
