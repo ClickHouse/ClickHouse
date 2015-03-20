@@ -76,7 +76,8 @@ public:
 	  */
 	void cancel() override
 	{
-		if (!__sync_bool_compare_and_swap(&is_cancelled, false, true))
+		bool old_val = false;
+		if (!is_cancelled.compare_exchange_strong(old_val, true, std::memory_order_seq_cst, std::memory_order_relaxed))
 			return;
 
 		//std::cerr << "cancelling\n";
@@ -164,7 +165,7 @@ protected:
 	void readSuffix() override
 	{
 		//std::cerr << "readSuffix\n";
-		if (!all_read && !is_cancelled)
+		if (!all_read && !is_cancelled.load(std::memory_order_seq_cst))
 			throw Exception("readSuffix called before all data is read", ErrorCodes::LOGICAL_ERROR);
 
 		finalize();

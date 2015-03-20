@@ -7,9 +7,9 @@
 #include <DB/Interpreters/ProcessList.h>
 
 #include <DB/DataStreams/BlockStreamProfileInfo.h>
-
 #include <DB/DataStreams/IBlockInputStream.h>
 
+#include <atomic>
 
 namespace DB
 {
@@ -96,9 +96,9 @@ public:
 
 	/** Требуется ли прервать получение данных.
 	 */
-	bool isCancelled()
+	bool isCancelled() const
 	{
-		return is_cancelled;
+		return is_cancelled.load(std::memory_order_seq_cst);
 	}
 
 	/** Какие ограничения (и квоты) проверяются.
@@ -151,7 +151,7 @@ public:
 
 protected:
 	BlockStreamProfileInfo info;
-	volatile bool is_cancelled = false;
+	std::atomic<bool> is_cancelled{false};
 	ProgressCallback progress_callback;
 	ProcessList::Element * process_list_elem = nullptr;
 
