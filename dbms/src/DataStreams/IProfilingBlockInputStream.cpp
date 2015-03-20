@@ -31,7 +31,7 @@ Block IProfilingBlockInputStream::read()
 
 	Block res;
 
-	if (is_cancelled)
+	if (is_cancelled.load(std::memory_order_seq_cst))
 		return res;
 
 	res = readImpl();
@@ -292,7 +292,8 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
 
 void IProfilingBlockInputStream::cancel()
 {
-	if (!__sync_bool_compare_and_swap(&is_cancelled, false, true))
+	bool old_val = false;
+	if (!is_cancelled.compare_exchange_strong(old_val, true, std::memory_order_seq_cst, std::memory_order_relaxed))
 		return;
 
 	for (auto & child : children)
