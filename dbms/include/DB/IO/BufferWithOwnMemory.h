@@ -91,20 +91,26 @@ private:
 		if (current_memory_tracker)
 			current_memory_tracker->alloc(m_capacity);
 
+		char * new_m_data = nullptr;
+
 		if (!alignment)
 		{
-			m_data = reinterpret_cast<char *>(malloc(m_capacity));
+			new_m_data = reinterpret_cast<char *>(malloc(m_capacity));
 
-			if (!m_data)
+			if (!new_m_data)
 				throw Exception("Cannot allocate memory (malloc)", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+
+			m_data = new_m_data;
 
 			return;
 		}
 
-		int res = posix_memalign(reinterpret_cast<void **>(&m_data), alignment, (m_capacity + alignment - 1) / alignment * alignment);
+		int res = posix_memalign(reinterpret_cast<void **>(&new_m_data), alignment, (m_capacity + alignment - 1) / alignment * alignment);
 
 		if (0 != res)
 			DB::throwFromErrno("Cannot allocate memory (posix_memalign)", ErrorCodes::CANNOT_ALLOCATE_MEMORY, res);
+
+		m_data = new_m_data;
 	}
 
 	void dealloc()

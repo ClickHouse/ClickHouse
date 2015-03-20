@@ -41,10 +41,10 @@ DictionaryPtr DictionaryFactory::create(const std::string & name, Poco::Util::Ab
 	}
 	else if ("cache" == layout_type)
 	{
-		const auto size = config.getInt(layout_prefix + ".cache.size");
+		const auto size = config.getInt(layout_prefix + ".cache.size_in_cells");
 		if (size == 0)
 			throw Exception{
-				"Dictionary of type 'cache' cannot have size of 0 bytes",
+				"Dictionary of type 'cache' cannot have 0 cells",
 				ErrorCodes::TOO_SMALL_BUFFER_SIZE
 			};
 

@@ -247,8 +247,8 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
 	catch (Exception & e)
 	{
 		std::stringstream s;
-		s << "Code: " << e.code()
-			<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what();
+		s << "Code: " << e.code() << ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what()
+			<< ", Stack trace:\n\n" << e.getStackTrace().toString();
 		LOG_ERROR(log, s.str());
 		trySendExceptionToClient(s, request, response, used_output);
 	}
@@ -257,18 +257,21 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
 		std::stringstream s;
 		s << "Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
 			<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what();
+		LOG_ERROR(log, s.str());
 		trySendExceptionToClient(s, request, response, used_output);
 	}
 	catch (std::exception & e)
 	{
 		std::stringstream s;
 		s << "Code: " << ErrorCodes::STD_EXCEPTION << ". " << e.what();
+		LOG_ERROR(log, s.str());
 		trySendExceptionToClient(s, request, response, used_output);
 	}
 	catch (...)
 	{
 		std::stringstream s;
 		s << "Code: " << ErrorCodes::UNKNOWN_EXCEPTION << ". Unknown exception.";
+		LOG_ERROR(log, s.str());
 		trySendExceptionToClient(s, request, response, used_output);
 	}
 }

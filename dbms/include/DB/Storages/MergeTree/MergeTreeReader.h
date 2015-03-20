@@ -128,8 +128,11 @@ public:
 		}
 		catch (const Exception & e)
 		{
-			if (e.code() != ErrorCodes::ALL_REQUESTED_COLUMNS_ARE_MISSING)
+			if (e.code() != ErrorCodes::ALL_REQUESTED_COLUMNS_ARE_MISSING
+				&& e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+			{
 				storage.reportBrokenPart(part_name);
+			}
 
 			/// Более хорошая диагностика.
 			throw Exception(e.message() +  "\n(while reading from part " + path + " from mark " + toString(from_mark) + " to "
@@ -258,8 +261,10 @@ public:
 			/// remove added column to ensure same content among all blocks
 			if (added_column)
 			{
+				res.erase(0);
 				streams.erase(added_column->name);
 				columns.erase(std::begin(columns));
+				added_column = nullptr;
 			}
 
 			/// sort columns to ensure consistent order among all blocks
@@ -280,12 +285,6 @@ public:
 
 				std::swap(res, ordered_block);
 			}
-			else if (added_column)
-			{
-				res.erase(0);
-			}
-
-			added_column = nullptr;
 		}
 		catch (const Exception & e)
 		{

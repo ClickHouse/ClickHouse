@@ -12,6 +12,7 @@ fi
 
 # Создадим директории для данных второго сервера.
 PATH2=/tmp/clickhouse/
+[ -d "$PATH2" ] && rm -rf $PATH2
 mkdir -p ${PATH2}{data,metadata}/default/
 
 # Создадим второй конфиг с портом 9001.
@@ -47,6 +48,7 @@ PID=$!
 
 function finish {
 	kill $PID
+	wait
 }
 
 trap finish EXIT
@@ -104,5 +106,3 @@ $CLIENT1 -n --query="
 $CLIENT2 -n --query="
 	DROP TABLE test.half1;
 	DROP TABLE test.half2;"
-
-rm -rf $PATH2

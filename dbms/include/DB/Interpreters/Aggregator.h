@@ -528,9 +528,7 @@ struct AggregatedDataVariants : private boost::noncopyable
 
 	void init(Type type_)
 	{
-		type = type_;
-
-		switch (type)
+		switch (type_)
 		{
 			case Type::EMPTY:		break;
 			case Type::without_key:	break;
@@ -543,6 +541,8 @@ struct AggregatedDataVariants : private boost::noncopyable
 			default:
 				throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 		}
+
+		type = type_;
 	}
 
 	size_t size() const

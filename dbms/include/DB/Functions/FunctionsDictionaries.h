@@ -3,6 +3,8 @@
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/DataTypes/DataTypeString.h>
+#include <DB/DataTypes/DataTypeDate.h>
+#include <DB/DataTypes/DataTypeDateTime.h>
 
 #include <DB/Columns/ColumnVector.h>
 #include <DB/Columns/ColumnArray.h>
@@ -877,6 +879,8 @@ DECLARE_DICT_GET_TRAITS(Int32, DataTypeInt32)
 DECLARE_DICT_GET_TRAITS(Int64, DataTypeInt64)
 DECLARE_DICT_GET_TRAITS(Float32, DataTypeFloat32)
 DECLARE_DICT_GET_TRAITS(Float64, DataTypeFloat64)
+DECLARE_DICT_GET_TRAITS(UInt16, DataTypeDate)
+DECLARE_DICT_GET_TRAITS(UInt32, DataTypeDateTime)
 #undef DECLARE_DICT_GET_TRAITS
 
 template <typename DataType>
@@ -1009,7 +1013,7 @@ private:
 };
 
 template <typename DataType>
-const std::string FunctionDictGet<DataType>::name = "dictGet" + TypeName<typename DataType::FieldType>::get();
+const std::string FunctionDictGet<DataType>::name = "dictGet" + DataType{}.getName();
 
 
 using FunctionDictGetUInt8 = FunctionDictGet<DataTypeUInt8>;
@@ -1022,6 +1026,8 @@ using FunctionDictGetInt32 = FunctionDictGet<DataTypeInt32>;
 using FunctionDictGetInt64 = FunctionDictGet<DataTypeInt64>;
 using FunctionDictGetFloat32 = FunctionDictGet<DataTypeFloat32>;
 using FunctionDictGetFloat64 = FunctionDictGet<DataTypeFloat64>;
+using FunctionDictGetDate = FunctionDictGet<DataTypeDate>;
+using FunctionDictGetDateTime = FunctionDictGet<DataTypeDateTime>;
 
 
 class FunctionDictGetHierarchy final : public IFunction
@@ -1396,4 +1402,4 @@ private:
 };
 
 
-}
+};

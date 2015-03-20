@@ -39,7 +39,10 @@ private:
 	static const auto check_period_sec = 5;
 
 	mutable std::mutex dictionaries_mutex;
-	std::unordered_map<std::string, std::shared_ptr<MultiVersion<IDictionary>>> dictionaries;
+
+	using dictionary_ptr_t = std::shared_ptr<MultiVersion<IDictionary>>;
+	using dictionary_origin_pair_t = std::pair<dictionary_ptr_t, std::string>;
+	std::unordered_map<std::string, dictionary_origin_pair_t> dictionaries;
 	/// exception pointers for notifying user about failures on dictionary creation
 	std::unordered_map<std::string, std::exception_ptr> stored_exceptions;
 	std::unordered_map<std::string, std::chrono::system_clock::time_point> update_times;
@@ -52,9 +55,10 @@ private:
 
 	Logger * log;
 
-	Poco::Timestamp config_last_modified{0};
+	std::unordered_map<std::string, Poco::Timestamp> last_modification_times;
 
 	void reloadImpl();
+	void reloadFromFile(const std::string & config_path);
 
 	void reloadPeriodically()
 	{
@@ -105,7 +109,7 @@ public:
 				};
 		}
 
-		return it->second->get();
+		return it->second.first->get();
 	}
 };
 
