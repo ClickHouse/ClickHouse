@@ -261,8 +261,10 @@ public:
 			/// remove added column to ensure same content among all blocks
 			if (added_column)
 			{
+				res.erase(0);
 				streams.erase(added_column->name);
 				columns.erase(std::begin(columns));
+				added_column = nullptr;
 			}
 
 			/// sort columns to ensure consistent order among all blocks
@@ -283,12 +285,6 @@ public:
 
 				std::swap(res, ordered_block);
 			}
-			else if (added_column)
-			{
-				res.erase(0);
-			}
-
-			added_column = nullptr;
 		}
 		catch (const Exception & e)
 		{
