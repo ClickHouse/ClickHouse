@@ -17,7 +17,8 @@ WriteBufferAIO::WriteBufferAIO(const std::string & filename_, size_t buffer_size
 {
 	ProfileEvents::increment(ProfileEvents::FileOpen);
 
-	int open_flags = (flags_ == -1) ? (O_WRONLY | O_TRUNC | O_CREAT) : flags_;
+	/// About O_RDWR: yep, we really mean it.
+	int open_flags = (flags_ == -1) ? (O_RDWR | O_TRUNC | O_CREAT) : flags_;
 	open_flags |= O_DIRECT;
 
 	fd = ::open(filename.c_str(), open_flags, mode_);
@@ -132,6 +133,8 @@ void WriteBufferAIO::nextImpl()
 	waitForAIOCompletion();
 	swapBuffers();
 
+	truncate_count = 0;
+
 	/// Input parameters: fd, pos_in_file, flush_buffer
 
 	/*
@@ -196,14 +199,15 @@ read|			+---- left padded disk page             |                      right pad
 		/// Left-side padding disk region.
 		ssize_t read_count = ::pread(fd, &left_page[0], DEFAULT_AIO_FILE_BLOCK_SIZE, region_aligned_begin);
 		if (read_count < 0)
-			throw Exception("Read error");
+			throw Exception("Read error", ErrorCodes::AIO_READ_ERROR);
 	}
 	if (has_right_padding)
 	{
 		/// Right-side padding disk region.
 		ssize_t read_count = ::pread(fd, &right_page[0], DEFAULT_AIO_FILE_BLOCK_SIZE, (region_aligned_end - DEFAULT_AIO_FILE_BLOCK_SIZE));
 		if (read_count < 0)
-			throw Exception("Read error");
+			throw Exception("Read error", ErrorCodes::AIO_WRITE_ERROR);
+		truncate_count = DEFAULT_AIO_FILE_BLOCK_SIZE - read_count;
 	}
 
 	//
@@ -301,6 +305,19 @@ void WriteBufferAIO::waitForAIOCompletion()
 		{
 			got_exception = true;
 			throw Exception("File position overflowed", ErrorCodes::LOGICAL_ERROR);
+		}
+
+		bytes_written -= truncate_count;
+
+		// Delete the trailing zeroes that were added for alignment purposes.
+		if (truncate_count > 0)
+		{
+			int res = ::ftruncate(fd, truncate_count);
+			if (res == -1)
+			{
+				got_exception = true;
+				throwFromErrno("Cannot truncate file " + filename, ErrorCodes::CANNOT_TRUNCATE_FILE);
+			}
 		}
 
 		pos_in_file += bytes_written;
