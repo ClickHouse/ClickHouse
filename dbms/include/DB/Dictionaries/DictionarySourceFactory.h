@@ -15,7 +15,7 @@ namespace DB
 namespace
 {
 
-Block createSampleBlock(const DictionaryStructure & dict_struct, const Context & context)
+Block createSampleBlock(const DictionaryStructure & dict_struct)
 {
 	Block block{
 		ColumnWithNameAndType{
@@ -26,12 +26,9 @@ Block createSampleBlock(const DictionaryStructure & dict_struct, const Context &
 	};
 
 	for (const auto & attribute : dict_struct.attributes)
-	{
-		const auto & type = context.getDataTypeFactory().get(attribute.type);
 		block.insert(ColumnWithNameAndType{
-			type->createColumn(), type, attribute.name
+			attribute.type->createColumn(), attribute.type, attribute.name
 		});
-	}
 
 	return block;
 }
@@ -55,7 +52,7 @@ public:
 				ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG
 			};
 
-		auto sample_block = createSampleBlock(dict_struct, context);
+		auto sample_block = createSampleBlock(dict_struct);
 
 		const auto & source_type = keys.front();
 
