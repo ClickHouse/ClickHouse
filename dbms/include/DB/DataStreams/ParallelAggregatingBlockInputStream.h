@@ -57,7 +57,8 @@ public:
 
 	void cancel() override
 	{
-		if (!__sync_bool_compare_and_swap(&is_cancelled, false, true))
+		bool old_val = false;
+		if (!is_cancelled.compare_exchange_strong(old_val, true, std::memory_order_seq_cst, std::memory_order_relaxed))
 			return;
 
 		processor.cancel();

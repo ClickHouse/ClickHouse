@@ -63,14 +63,17 @@ private:
 			auto connection = pool.Get();
 			auto query = connection->query("SHOW TABLE STATUS LIKE '%" + strconvert::escaped_for_like(table) + "%';");
 			auto result = query.use();
-			auto row = result.fetch();
-			const auto & update_time_value = row[Update_time_idx];
 
-			if (!update_time_value.isNull())
-				update_time = update_time_value.getDateTime();
+			if (auto row = result.fetch())
+			{
+				const auto & update_time_value = row[Update_time_idx];
 
-			/// fetch remaining rows to avoid "commands out of sync" error
-			while (auto row = result.fetch());
+				if (!update_time_value.isNull())
+					update_time = update_time_value.getDateTime();
+
+				/// fetch remaining rows to avoid "commands out of sync" error
+				while (auto row = result.fetch());
+			}
 		}
 		catch (...)
 		{

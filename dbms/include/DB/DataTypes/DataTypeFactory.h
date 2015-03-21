@@ -2,6 +2,8 @@
 
 #include <map>
 
+#include <Yandex/singleton.h>
+
 #include <Poco/RegularExpression.h>
 
 #include <DB/DataTypes/IDataType.h>
@@ -12,7 +14,7 @@ namespace DB
 
 /** Позволяет создать тип данных по его имени.
   */
-class DataTypeFactory
+class DataTypeFactory : public Singleton<DataTypeFactory>
 {
 public:
 	DataTypeFactory();

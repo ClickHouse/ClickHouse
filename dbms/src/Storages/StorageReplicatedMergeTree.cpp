@@ -1058,28 +1058,6 @@ void StorageReplicatedMergeTree::executeDropRange(const StorageReplicatedMergeTr
 	}
 
 	LOG_INFO(log, (entry.detach ? "Detached " : "Removed ") << removed_parts << " parts inside " << entry.new_part_name << ".");
-
-	if (unreplicated_data)
-	{
-		std::lock_guard<std::mutex> unreplicated_lock(unreplicated_mutex);
-
-		removed_parts = 0;
-		parts = unreplicated_data->getDataParts();
-		for (const auto & part : parts)
-		{
-			if (!ActiveDataPartSet::contains(entry.new_part_name, part->name))
-				continue;
-			LOG_DEBUG(log, "Removing unreplicated part " << part->name);
-			++removed_parts;
-
-			if (entry.detach)
-				unreplicated_data->renameAndDetachPart(part, "");
-			else
-				unreplicated_data->replaceParts({part}, {}, false);
-		}
-
-		LOG_INFO(log, (entry.detach ? "Detached " : "Removed ") << removed_parts << " parts inside " << entry.new_part_name << " (in unreplicated data).");
-	}
 }
 
 

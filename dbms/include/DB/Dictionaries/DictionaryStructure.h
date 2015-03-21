@@ -1,6 +1,8 @@
 #pragma once
 
 #include <DB/Core/ErrorCodes.h>
+#include <DB/DataTypes/DataTypeFactory.h>
+#include <DB/IO/ReadBufferFromString.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <vector>
 #include <string>
@@ -9,35 +11,37 @@
 namespace DB
 {
 
-enum class AttributeType
+enum class AttributeUnderlyingType
 {
-	uint8,
-	uint16,
-	uint32,
-	uint64,
-	int8,
-	int16,
-	int32,
-	int64,
-	float32,
-	float64,
-	string
+	UInt8,
+	UInt16,
+	UInt32,
+	UInt64,
+	Int8,
+	Int16,
+	Int32,
+	Int64,
+	Float32,
+	Float64,
+	String
 };
 
-inline AttributeType getAttributeTypeByName(const std::string & type)
+inline AttributeUnderlyingType getAttributeUnderlyingType(const std::string & type)
 {
-	static const std::unordered_map<std::string, AttributeType> dictionary{
-		{ "UInt8", AttributeType::uint8 },
-		{ "UInt16", AttributeType::uint16 },
-		{ "UInt32", AttributeType::uint32 },
-		{ "UInt64", AttributeType::uint64 },
-		{ "Int8", AttributeType::int8 },
-		{ "Int16", AttributeType::int16 },
-		{ "Int32", AttributeType::int32 },
-		{ "Int64", AttributeType::int64 },
-		{ "Float32", AttributeType::float32 },
-		{ "Float64", AttributeType::float64 },
-		{ "String", AttributeType::string },
+	static const std::unordered_map<std::string, AttributeUnderlyingType> dictionary{
+		{ "UInt8", AttributeUnderlyingType::UInt8 },
+		{ "UInt16", AttributeUnderlyingType::UInt16 },
+		{ "UInt32", AttributeUnderlyingType::UInt32 },
+		{ "UInt64", AttributeUnderlyingType::UInt64 },
+		{ "Int8", AttributeUnderlyingType::Int8 },
+		{ "Int16", AttributeUnderlyingType::Int16 },
+		{ "Int32", AttributeUnderlyingType::Int32 },
+		{ "Int64", AttributeUnderlyingType::Int64 },
+		{ "Float32", AttributeUnderlyingType::Float32 },
+		{ "Float64", AttributeUnderlyingType::Float64 },
+		{ "String", AttributeUnderlyingType::String },
+		{ "Date", AttributeUnderlyingType::UInt16 },
+		{ "DateTime", AttributeUnderlyingType::UInt32 },
 	};
 
 	const auto it = dictionary.find(type);
@@ -50,21 +54,21 @@ inline AttributeType getAttributeTypeByName(const std::string & type)
 	};
 }
 
-inline std::string toString(const AttributeType type)
+inline std::string toString(const AttributeUnderlyingType type)
 {
 	switch (type)
 	{
-		case AttributeType::uint8: return "UInt8";
-		case AttributeType::uint16: return "UInt16";
-		case AttributeType::uint32: return "UInt32";
-		case AttributeType::uint64: return "UInt64";
-		case AttributeType::int8: return "Int8";
-		case AttributeType::int16: return "Int16";
-		case AttributeType::int32: return "Int32";
-		case AttributeType::int64: return "Int64";
-		case AttributeType::float32: return "Float32";
-		case AttributeType::float64: return "Float64";
-		case AttributeType::string: return "String";
+		case AttributeUnderlyingType::UInt8: return "UInt8";
+		case AttributeUnderlyingType::UInt16: return "UInt16";
+		case AttributeUnderlyingType::UInt32: return "UInt32";
+		case AttributeUnderlyingType::UInt64: return "UInt64";
+		case AttributeUnderlyingType::Int8: return "Int8";
+		case AttributeUnderlyingType::Int16: return "Int16";
+		case AttributeUnderlyingType::Int32: return "Int32";
+		case AttributeUnderlyingType::Int64: return "Int64";
+		case AttributeUnderlyingType::Float32: return "Float32";
+		case AttributeUnderlyingType::Float64: return "Float64";
+		case AttributeUnderlyingType::String: return "String";
 	}
 
 	throw Exception{
@@ -91,7 +95,7 @@ struct DictionaryLifetime
 
 /** Holds the description of a single dictionary attribute:
 *	- name, used for lookup into dictionary and source;
-*	- type, used in conjunction with DataTypeFactory and getAttributeTypeByname;
+*	- type, used in conjunction with DataTypeFactory and getAttributeUnderlyingTypeByname;
 *	- null_value, used as a default value for non-existent entries in the dictionary,
 *		decimal representation for numeric attributes;
 *	- hierarchical, whether this attribute defines a hierarchy;
@@ -100,8 +104,9 @@ struct DictionaryLifetime
 struct DictionaryAttribute
 {
 	std::string name;
-	std::string type;
-	std::string null_value;
+	AttributeUnderlyingType underlying_type;
+	DataTypePtr type;
+	Field null_value;
 	bool hierarchical;
 	bool injective;
 };
@@ -131,12 +136,20 @@ struct DictionaryStructure
 				continue;
 
 			const auto prefix = config_prefix + '.' + key + '.';
+
 			const auto name = config.getString(prefix + "name");
-			const auto type = config.getString(prefix + "type");
-			const auto null_value = config.getString(prefix + "null_value");
+			const auto type_string = config.getString(prefix + "type");
+			const auto type = DataTypeFactory::instance().get(type_string);
+			const auto underlying_type = getAttributeUnderlyingType(type_string);
+
+			const auto null_value_string = config.getString(prefix + "null_value");
+			Field null_value;
+			ReadBufferFromString null_value_buffer{null_value_string};
+			type->deserializeText(null_value, null_value_buffer);
+
 			const auto hierarchical = config.getBool(prefix + "hierarchical", false);
 			const auto injective = config.getBool(prefix + "injective", false);
-			if (name.empty() || type.empty())
+			if (name.empty())
 				throw Exception{
 					"Properties 'name' and 'type' of an attribute cannot be empty",
 					ErrorCodes::BAD_ARGUMENTS
@@ -151,7 +164,7 @@ struct DictionaryStructure
 			has_hierarchy = has_hierarchy || hierarchical;
 
 			attributes.emplace_back(DictionaryAttribute{
-				name, type, null_value, hierarchical, injective
+				name, underlying_type, type, null_value, hierarchical, injective
 			});
 		}
 
