@@ -60,6 +60,7 @@ private:
 
 	const std::string filename;
 
+	off_t bytes_to_write = 0;
 	off_t truncate_count = 0;
 
 	off_t pos_in_file = 0;
