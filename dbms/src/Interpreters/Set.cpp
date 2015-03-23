@@ -170,11 +170,20 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 	ConstColumnPlainPtrs key_columns(keys_size);
 	data_types.resize(keys_size);
 
+	/// Константные столбцы справа от IN поддерживается не напрямую. Для этого, они сначала материализуется.
+	Columns materialized_columns;
+
 	/// Запоминаем столбцы, с которыми будем работать
 	for (size_t i = 0; i < keys_size; ++i)
 	{
 		key_columns[i] = block.getByPosition(i).column;
 		data_types[i] = block.getByPosition(i).type;
+
+		if (key_columns[i]->isConst())
+		{
+			materialized_columns.emplace_back(static_cast<const IColumnConst *>(key_columns[i])->convertToFullColumn());
+			key_columns[i] = materialized_columns.back().get();
+		}
 	}
 
 	size_t rows = block.rows();

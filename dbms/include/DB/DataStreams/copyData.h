@@ -6,6 +6,7 @@
 #include <DB/DataStreams/IRowInputStream.h>
 #include <DB/DataStreams/IRowOutputStream.h>
 
+#include <atomic>
 
 namespace DB
 {
@@ -13,7 +14,7 @@ namespace DB
 /** Копирует данные из InputStream в OutputStream
   * (например, из БД в консоль и т. п.)
   */
-void copyData(IBlockInputStream & from, IBlockOutputStream & to, volatile bool * is_cancelled = nullptr);
+void copyData(IBlockInputStream & from, IBlockOutputStream & to, std::atomic<bool> * is_cancelled = nullptr);
 void copyData(IRowInputStream & from, IRowOutputStream & to);
 
 }

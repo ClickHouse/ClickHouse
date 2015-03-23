@@ -83,7 +83,9 @@ void executeQuery(
 
 	String query(begin, query_size);
 
-	LOG_DEBUG(&Logger::get("executeQuery"), query);
+	String logged_query = query;
+	std::replace(logged_query.begin(), logged_query.end(), '\n', ' ');
+	LOG_DEBUG(&Logger::get("executeQuery"), logged_query);
 
 	/// Положим запрос в список процессов. Но запрос SHOW PROCESSLIST класть не будем.
 	ProcessList::EntryPtr process_list_entry;

@@ -80,7 +80,8 @@ public:
 
 	void cancel() override
 	{
-		if (!__sync_bool_compare_and_swap(&is_cancelled, false, true))
+		bool old_val = false;
+		if (!is_cancelled.compare_exchange_strong(old_val, true, std::memory_order_seq_cst, std::memory_order_relaxed))
 			return;
 
 		if (hasNoQueryInProgress() || hasThrownException())
@@ -147,6 +148,9 @@ protected:
 
 		while (true)
 		{
+			if (isCancelled())
+				return Block();
+
 			Connection::Packet packet = parallel_replicas->receivePacket();
 
 			switch (packet.type)
@@ -178,10 +182,6 @@ protected:
 					  *  и квот (например, на количество строчек для чтения).
 					  */
 					progressImpl(packet.progress);
-
-					if (isQueryInProgress() && isCancelled())
-						cancel();
-
 					break;
 
 				case Protocol::Server::ProfileInfo:
@@ -281,7 +281,7 @@ private:
 	void tryCancel(const char * reason)
 	{
 		bool old_val = false;
-		if (!was_cancelled.compare_exchange_strong(old_val, true, std::memory_order_seq_cst, std::memory_order_seq_cst))
+		if (!was_cancelled.compare_exchange_strong(old_val, true, std::memory_order_seq_cst, std::memory_order_relaxed))
 			return;
 
 		LOG_TRACE(log, "(" << parallel_replicas->dumpAddresses() << ") " << reason);

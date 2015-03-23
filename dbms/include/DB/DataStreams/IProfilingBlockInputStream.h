@@ -7,9 +7,9 @@
 #include <DB/Interpreters/ProcessList.h>
 
 #include <DB/DataStreams/BlockStreamProfileInfo.h>
-
 #include <DB/DataStreams/IBlockInputStream.h>
 
+#include <atomic>
 
 namespace DB
 {
@@ -96,9 +96,9 @@ public:
 
 	/** Требуется ли прервать получение данных.
 	 */
-	bool isCancelled()
+	bool isCancelled() const
 	{
-		return is_cancelled;
+		return is_cancelled.load(std::memory_order_seq_cst);
 	}
 
 	/** Какие ограничения (и квоты) проверяются.
@@ -117,27 +117,19 @@ public:
 	/// Используется подмножество ограничений из Limits.
 	struct LocalLimits
 	{
-		LimitsMode mode;
+		LimitsMode mode = LIMITS_CURRENT;
 
-		size_t max_rows_to_read;
-		size_t max_bytes_to_read;
-		OverflowMode read_overflow_mode;
+		size_t max_rows_to_read = 0;
+		size_t max_bytes_to_read = 0;
+		OverflowMode read_overflow_mode = OverflowMode::THROW;
 
-		Poco::Timespan max_execution_time;
-		OverflowMode timeout_overflow_mode;
+		Poco::Timespan max_execution_time = 0;
+		OverflowMode timeout_overflow_mode = OverflowMode::THROW;
 
 		/// В строчках в секунду.
-		size_t min_execution_speed;
+		size_t min_execution_speed = 0;
 		/// Проверять, что скорость не слишком низкая, после прошествия указанного времени.
-		Poco::Timespan timeout_before_checking_execution_speed;
-
-		LocalLimits()
-			: mode(LIMITS_CURRENT),
-			max_rows_to_read(0), max_bytes_to_read(0), read_overflow_mode(OverflowMode::THROW),
-			max_execution_time(0), timeout_overflow_mode(OverflowMode::THROW),
-			min_execution_speed(0), timeout_before_checking_execution_speed(0)
-		{
-		}
+		Poco::Timespan timeout_before_checking_execution_speed = 0;
 	};
 
 	/** Установить ограничения для проверки на каждый блок. */
@@ -159,7 +151,7 @@ public:
 
 protected:
 	BlockStreamProfileInfo info;
-	volatile bool is_cancelled = false;
+	std::atomic<bool> is_cancelled{false};
 	ProgressCallback progress_callback;
 	ProcessList::Element * process_list_elem = nullptr;
 

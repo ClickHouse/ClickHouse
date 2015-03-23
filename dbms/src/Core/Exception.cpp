@@ -43,6 +43,14 @@ ExceptionPtr cloneCurrentException()
 	}
 }
 
+inline std::string demangle(const char * const mangled, int & status)
+{
+	const auto demangled_str = abi::__cxa_demangle(mangled, 0, 0, &status);
+	std::string demangled{demangled_str};
+	free(demangled_str);
+
+	return demangled;
+}
 
 void tryLogCurrentException(const char * log_name)
 {
@@ -72,10 +80,8 @@ void tryLogCurrentException(const char * log_name)
 	{
 		try
 		{
-			int status;
-			char * realname = abi::__cxa_demangle(typeid(e).name(), 0, 0, &status);
-			std::string name = realname;
-			free(realname);
+			int status = 0;
+			auto name = demangle(typeid(e).name(), status);
 
 			if (status)
 				name += " (demangling status: " + toString(status) + ")";
@@ -88,7 +94,13 @@ void tryLogCurrentException(const char * log_name)
 	{
 		try
 		{
-			LOG_ERROR(&Logger::get(log_name), "Unknown exception. Code: " << ErrorCodes::UNKNOWN_EXCEPTION);
+			int status = 0;
+			auto name = demangle(abi::__cxa_current_exception_type()->name(), status);
+
+			if (status)
+				name += " (demangling status: " + toString(status) + ")";
+
+			LOG_ERROR(&Logger::get(log_name), "Unknown exception. Code: " << ErrorCodes::UNKNOWN_EXCEPTION << ", type: " << name);
 		}
 		catch (...) {}
 	}

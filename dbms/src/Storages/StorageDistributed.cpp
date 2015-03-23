@@ -166,6 +166,8 @@ BlockInputStreams StorageDistributed::read(
 	if (settings.limits.max_network_bandwidth)
 		throttler.reset(new Throttler(settings.limits.max_network_bandwidth));
 
+	Tables external_tables = context.getExternalTables();
+
 	/// Цикл по шардам.
 	for (auto & conn_pool : cluster.pools)
 		res.emplace_back(new RemoteBlockInputStream{
@@ -177,9 +179,6 @@ BlockInputStreams StorageDistributed::read(
 	{
 		DB::Context new_context = context;
 		new_context.setSettings(new_settings);
-		for (auto & it : external_tables)
-			if (!new_context.tryGetExternalTable(it.first))
-				new_context.addExternalTable(it.first, it.second);
 
 		for (size_t i = 0; i < cluster.getLocalNodesNum(); ++i)
 		{
@@ -193,7 +192,6 @@ BlockInputStreams StorageDistributed::read(
 		}
 	}
 
-	external_tables.clear();
 	return res;
 }
 

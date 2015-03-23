@@ -7,20 +7,30 @@
 namespace DB
 {
 
-void copyData(IBlockInputStream & from, IBlockOutputStream & to, volatile bool * is_cancelled)
+namespace
+{
+
+bool isAtomicSet(std::atomic<bool> * val)
+{
+	return ((val != nullptr) && val->load(std::memory_order_seq_cst));
+}
+
+}
+
+void copyData(IBlockInputStream & from, IBlockOutputStream & to, std::atomic<bool> * is_cancelled)
 {
 	from.readPrefix();
 	to.writePrefix();
 
 	while (Block block = from.read())
 	{
-		if (is_cancelled && *is_cancelled)
+		if (isAtomicSet(is_cancelled))
 			break;
 
 		to.write(block);
 	}
 
-	if (is_cancelled && *is_cancelled)
+	if (isAtomicSet(is_cancelled))
 		return;
 
 	/// Для вывода дополнительной информации в некоторых форматах.
@@ -33,7 +43,7 @@ void copyData(IBlockInputStream & from, IBlockOutputStream & to, volatile bool *
 		to.setExtremes(input->getExtremes());
 	}
 
-	if (is_cancelled && *is_cancelled)
+	if (isAtomicSet(is_cancelled))
 		return;
 
 	from.readSuffix();

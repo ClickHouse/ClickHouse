@@ -218,6 +218,9 @@ private:
 	///	Eliminates injective function calls and constant expressions from group by statement
 	void optimizeGroupBy();
 
+	/// Удалить из ORDER BY повторяющиеся элементы.
+	void optimizeOrderBy();
+
 	/// Превратить перечисление значений или подзапрос в ASTSet. node - функция in или notIn.
 	void makeSet(ASTFunction * node, const Block & sample_block);
 

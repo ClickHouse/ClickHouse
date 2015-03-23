@@ -83,6 +83,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	PKCondition key_condition(query, context, data.getColumnsList(), data.getSortDescription());
 	PKCondition date_condition(query, context, data.getColumnsList(), SortDescription(1, SortColumnDescription(data.date_column_name, 1)));
 
+	if (settings.force_index_by_date && date_condition.alwaysTrue())
+		throw Exception("Index by date is not used and setting 'force_index_by_date' is set.", ErrorCodes::INDEX_NOT_USED);
+
 	/// Выберем куски, в которых могут быть данные, удовлетворяющие date_condition, и которые подходят под условие на _part.
 	{
 		auto prev_parts = parts;
@@ -268,7 +271,11 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	for (auto & part : parts)
 	{
 		RangesInDataPart ranges(part, (*part_index)++);
-		ranges.ranges = markRangesFromPkRange(part->index, key_condition, settings);
+
+		if (data.mode != MergeTreeData::Unsorted)
+			ranges.ranges = markRangesFromPkRange(part->index, key_condition, settings);
+		else
+			ranges.ranges = MarkRanges{MarkRange{0, part->size}};
 
 		if (!ranges.ranges.empty())
 		{
@@ -281,7 +288,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	}
 
 	LOG_DEBUG(log, "Selected " << parts.size() << " parts by date, " << parts_with_ranges.size() << " parts by key, "
-			  << sum_marks << " marks to read from " << sum_ranges << " ranges");
+		<< sum_marks << " marks to read from " << sum_ranges << " ranges");
 
 	BlockInputStreams res;
 

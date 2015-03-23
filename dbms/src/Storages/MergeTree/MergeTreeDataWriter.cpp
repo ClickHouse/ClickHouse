@@ -94,15 +94,18 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 	new_data_part->is_temp = true;
 
 	/// Если для сортировки надо вычислить некоторые столбцы - делаем это.
-	data.getPrimaryExpression()->execute(block);
+	if (data.mode != MergeTreeData::Unsorted)
+		data.getPrimaryExpression()->execute(block);
 
 	SortDescription sort_descr = data.getSortDescription();
 
 	/// Сортируем.
-	stableSortBlock(block, sort_descr);
+	if (data.mode != MergeTreeData::Unsorted)
+		stableSortBlock(block, sort_descr);
 
 	NamesAndTypesList columns = data.getColumnsList().filter(block.getColumnsList().getNames());
-	MergedBlockOutputStream out(data, part_tmp_path, columns);
+	MergedBlockOutputStream out(data, part_tmp_path, columns, CompressionMethod::LZ4);
+
 	out.getIndex().reserve(part_size * sort_descr.size());
 
 	out.writePrefix();

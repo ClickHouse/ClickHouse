@@ -35,13 +35,13 @@ public:
 			  max_connections, host, port, db, user, password, context.getDataTypeFactory(),
 			  "ClickHouseDictionarySource")
 		  },
-		  load_all_query{composeLoadAllQuery(sample_block, table)}
+		  load_all_query{composeLoadAllQuery(sample_block, db, table)}
 	{}
 
 	/// copy-constructor is provided in order to support cloneability
 	ClickHouseDictionarySource(const ClickHouseDictionarySource & other)
 		: host{other.host}, port{other.port}, user{other.user}, password{other.password},
-		  db{other.db}, table{other.db},
+		  db{other.db}, table{other.table},
 		  sample_block{other.sample_block}, context(other.context),
 		  is_local{other.is_local},
 		  pool{is_local ? nullptr : std::make_unique<ConnectionPool>(
@@ -75,7 +75,7 @@ public:
 	DictionarySourcePtr clone() const override { return std::make_unique<ClickHouseDictionarySource>(*this); }
 
 private:
-	static std::string composeLoadAllQuery(const Block & block, const std::string & table)
+	static std::string composeLoadAllQuery(const Block & block, const std::string & db, const std::string & table)
 	{
 		std::string query;
 
@@ -94,6 +94,8 @@ private:
 			}
 
 			writeString(" FROM ", out);
+			writeProbablyBackQuotedString(db, out);
+			writeChar('.', out);
 			writeProbablyBackQuotedString(table, out);
 			writeChar(';', out);
 		}
@@ -121,6 +123,8 @@ private:
 
 			const auto & id_column_name = sample_block.getByPosition(0).name;
 			writeString(" FROM ", out);
+			writeProbablyBackQuotedString(db, out);
+			writeChar('.', out);
 			writeProbablyBackQuotedString(table, out);
 			writeString(" WHERE ", out);
 			writeProbablyBackQuotedString(id_column_name, out);

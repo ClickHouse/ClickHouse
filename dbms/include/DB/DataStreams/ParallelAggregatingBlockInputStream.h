@@ -19,19 +19,6 @@ using Poco::SharedPtr;
 class ParallelAggregatingBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	ParallelAggregatingBlockInputStream(BlockInputStreams inputs, const ColumnNumbers & keys_,
-		AggregateDescriptions & aggregates_, bool overflow_row_, bool final_, size_t max_threads_,
-		size_t max_rows_to_group_by_, OverflowMode group_by_overflow_mode_,
-		Compiler * compiler_, UInt32 min_count_to_compile_, size_t group_by_two_level_threshold_)
-		: aggregator(keys_, aggregates_, overflow_row_, max_rows_to_group_by_, group_by_overflow_mode_,
-			compiler_, min_count_to_compile_, group_by_two_level_threshold_),
-		final(final_), max_threads(std::min(inputs.size(), max_threads_)),
-		keys_size(keys_.size()), aggregates_size(aggregates_.size()),
-		handler(*this), processor(inputs, max_threads, handler)
-	{
-		children.insert(children.end(), inputs.begin(), inputs.end());
-	}
-
 	/** Столбцы из key_names и аргументы агрегатных функций, уже должны быть вычислены.
 	  */
 	ParallelAggregatingBlockInputStream(BlockInputStreams inputs, const Names & key_names,
@@ -41,7 +28,7 @@ public:
 		: aggregator(key_names, aggregates, overflow_row_, max_rows_to_group_by_, group_by_overflow_mode_,
 			compiler_, min_count_to_compile_, group_by_two_level_threshold_),
 		final(final_), max_threads(std::min(inputs.size(), max_threads_)),
-		keys_size(key_names.size()), aggregates_size(aggregates.size()),
+		keys_size(aggregator.getNumberOfKeys()), aggregates_size(aggregator.getNumberOfAggregates()),
 		handler(*this), processor(inputs, max_threads, handler)
 	{
 		children.insert(children.end(), inputs.begin(), inputs.end());
@@ -70,7 +57,8 @@ public:
 
 	void cancel() override
 	{
-		if (!__sync_bool_compare_and_swap(&is_cancelled, false, true))
+		bool old_val = false;
+		if (!is_cancelled.compare_exchange_strong(old_val, true, std::memory_order_seq_cst, std::memory_order_relaxed))
 			return;
 
 		processor.cancel();
@@ -122,6 +110,31 @@ private:
 	Logger * log = &Logger::get("ParallelAggregatingBlockInputStream");
 
 
+	ManyAggregatedDataVariants many_data;
+	Exceptions exceptions;
+
+	struct ThreadData
+	{
+		size_t src_rows = 0;
+		size_t src_bytes = 0;
+
+		StringRefs key;
+		ConstColumnPlainPtrs key_columns;
+		Aggregator::AggregateColumns aggregate_columns;
+		Sizes key_sizes;
+
+		ThreadData(size_t keys_size, size_t aggregates_size)
+		{
+			key.resize(keys_size);
+			key_columns.resize(keys_size);
+			aggregate_columns.resize(aggregates_size);
+			key_sizes.resize(keys_size);
+		}
+	};
+
+	std::vector<ThreadData> threads_data;
+
+
 	struct Handler
 	{
 		Handler(ParallelAggregatingBlockInputStream & parent_)
@@ -154,29 +167,6 @@ private:
 	Handler handler;
 	ParallelInputsProcessor<Handler> processor;
 
-	ManyAggregatedDataVariants many_data;
-	Exceptions exceptions;
-
-	struct ThreadData
-	{
-		size_t src_rows = 0;
-		size_t src_bytes = 0;
-
-		StringRefs key;
-		ConstColumnPlainPtrs key_columns;
-		Aggregator::AggregateColumns aggregate_columns;
-		Sizes key_sizes;
-
-		ThreadData(size_t keys_size, size_t aggregates_size)
-		{
-			key.resize(keys_size);
-			key_columns.resize(keys_size);
-			aggregate_columns.resize(aggregates_size);
-			key_sizes.resize(keys_size);
-		}
-	};
-
-	std::vector<ThreadData> threads_data;
 
 	AggregatedDataVariantsPtr executeAndMerge()
 	{

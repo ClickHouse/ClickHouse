@@ -14,14 +14,15 @@ private:
 	bool nextImpl()
 	{
 		size_t size_decompressed;
-		size_compressed = readCompressedData(size_decompressed);
+		size_t size_compressed_without_checksum;
+		size_compressed = readCompressedData(size_decompressed, size_compressed_without_checksum);
 		if (!size_compressed)
 			return false;
 
 		memory.resize(size_decompressed);
 		working_buffer = Buffer(&memory[0], &memory[size_decompressed]);
 
-		decompress(working_buffer.begin(), size_decompressed);
+		decompress(working_buffer.begin(), size_decompressed, size_compressed_without_checksum);
 
 		return true;
 	}
@@ -44,14 +45,15 @@ public:
 		while (bytes_read < n)
 		{
 			size_t size_decompressed;
+			size_t size_compressed_without_checksum;
 
-			if (!readCompressedData(size_decompressed))
+			if (!readCompressedData(size_decompressed, size_compressed_without_checksum))
 				return bytes_read;
 
 			/// Если разжатый блок помещается целиком туда, куда его надо скопировать.
 			if (size_decompressed <= n - bytes_read)
 			{
-				decompress(to + bytes_read, size_decompressed);
+				decompress(to + bytes_read, size_decompressed, size_compressed_without_checksum);
 				bytes_read += size_decompressed;
 				bytes += size_decompressed;
 			}
@@ -62,7 +64,7 @@ public:
 				working_buffer = Buffer(&memory[0], &memory[size_decompressed]);
 				pos = working_buffer.begin();
 
-				decompress(working_buffer.begin(), size_decompressed);
+				decompress(working_buffer.begin(), size_decompressed, size_compressed_without_checksum);
 
 				bytes_read += read(to + bytes_read, n - bytes_read);
 				break;

@@ -64,6 +64,9 @@ public:
 		pos = ptr + offset;
 	}
 
+	/// получить буфер
+	inline Buffer & internalBuffer() { return internal_buffer; }
+
 	/// получить часть буфера, из которого можно читать / в который можно писать данные
 	inline Buffer & buffer() { return working_buffer; }
 	
