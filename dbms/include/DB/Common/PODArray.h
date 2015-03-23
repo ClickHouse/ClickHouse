@@ -253,7 +253,7 @@ public:
 		if (n > old_size)
 		{
 			reserve(n);
-			std::fill(t_end(), reinterpret_cast<T *>(c_end + n - old_size), value);
+			std::fill(t_end(), t_end() + n - old_size, value);
 		}
 		c_end = c_start + byte_size(n);
 	}
