@@ -266,13 +266,13 @@ read|			+---- left padded disk page             |                      right pad
 	bytes_to_write = 0;
 	for (size_t j = 0; j < i; ++j)
 	{
-		if ((iov[i].iov_len > std::numeric_limits<off_t>::max()) ||
-			(static_cast<off_t>(iov[i].iov_len) > (std::numeric_limits<off_t>::max() - bytes_to_write)))
+		if ((iov[j].iov_len > std::numeric_limits<off_t>::max()) ||
+			(static_cast<off_t>(iov[j].iov_len) > (std::numeric_limits<off_t>::max() - bytes_to_write)))
 		{
 			got_exception = true;
 			throw Exception("Overflow on bytes to write", ErrorCodes::LOGICAL_ERROR);
 		}
-		bytes_to_write += iov[i].iov_len;
+		bytes_to_write += iov[j].iov_len;
 	}
 
 	/// Send requests (1 syscall).
