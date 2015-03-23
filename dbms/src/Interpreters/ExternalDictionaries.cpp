@@ -132,7 +132,10 @@ void ExternalDictionaries::reloadFromFile(const std::string & config_path)
 
 				if (0 != strncmp(key.data(), "dictionary", strlen("dictionary")))
 				{
-					LOG_WARNING(log, config_path << ": unknown node in dictionaries file: '" << key + "', 'dictionary'");
+					if (0 != strncmp(key.data(), "comment", strlen("comment")))
+						LOG_WARNING(log,
+							config_path << ": unknown node in dictionaries file: '" << key + "', 'dictionary'");
+
 					continue;
 				}
 

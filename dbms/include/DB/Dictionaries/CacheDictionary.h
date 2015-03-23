@@ -455,7 +455,10 @@ private:
 				}
 
 				cell.id = id;
-				cell.expires_at = std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
+				if (dict_lifetime.min_sec != 0 && dict_lifetime.max_sec != 0)
+					cell.expires_at = std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
+				else
+					cell.expires_at = std::chrono::time_point<std::chrono::system_clock>::max();
 
 				on_cell_updated(id, cell_idx);
 				remaining_ids[id] = 1;
@@ -477,7 +480,10 @@ private:
 				setDefaultAttributeValue(attribute, cell_idx);
 
 			cell.id = id;
-			cell.expires_at = std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
+			if (dict_lifetime.min_sec != 0 && dict_lifetime.max_sec != 0)
+				cell.expires_at = std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
+			else
+				cell.expires_at = std::chrono::time_point<std::chrono::system_clock>::max();
 
 			on_cell_updated(id, cell_idx);
 		}

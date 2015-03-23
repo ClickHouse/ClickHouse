@@ -144,8 +144,18 @@ struct DictionaryStructure
 
 			const auto null_value_string = config.getString(prefix + "null_value");
 			Field null_value;
-			ReadBufferFromString null_value_buffer{null_value_string};
-			type->deserializeText(null_value, null_value_buffer);
+			try
+			{
+				ReadBufferFromString null_value_buffer{null_value_string};
+				type->deserializeText(null_value, null_value_buffer);
+			}
+			catch (const std::exception & e)
+			{
+				throw Exception{
+					std::string{"Error parsing null_value: "} + e.what(),
+					ErrorCodes::BAD_ARGUMENTS
+				};
+			}
 
 			const auto hierarchical = config.getBool(prefix + "hierarchical", false);
 			const auto injective = config.getBool(prefix + "injective", false);
