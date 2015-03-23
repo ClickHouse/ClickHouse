@@ -228,14 +228,17 @@ class StorageChunkMerger::MergeTask
 public:
 	MergeTask(const StorageChunkMerger & chunk_merger_, DB::Context & context_, Logger * log_)
 	:
+	shutdown_called(false),
 	chunk_merger(chunk_merger_),
 	context(context_),
-	shutdown_called(false),
 	log(log_)
 	{
 	}
 
 	bool merge();
+
+public:
+	std::atomic<bool> shutdown_called;
 
 private:
 	bool maybeMergeSomething();
@@ -244,7 +247,7 @@ private:
 
 	const StorageChunkMerger & chunk_merger;
 	DB::Context & context;
-	std::atomic<bool> shutdown_called;
+
 	Logger * log;
 	time_t last_nothing_to_merge_time = 0;
 };
@@ -284,7 +287,7 @@ void StorageChunkMerger::shutdown()
 {
 	if (merge_task->shutdown_called)
 		return;
-	
+
 	merge_task->shutdown_called.store(true);
 	context.getBackgroundPool().removeTask(merge_task_handle);
 }
