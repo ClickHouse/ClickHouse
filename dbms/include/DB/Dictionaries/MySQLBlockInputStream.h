@@ -6,6 +6,7 @@
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
+#include <DB/Columns/ColumnString.h>
 #include <statdaemons/ext/range.hpp>
 #include <mysqlxx/Query.h>
 #include <vector>
@@ -42,6 +43,13 @@ public:
 		: entry{entry}, query{this->entry->query(query_str)}, result{query.use()},
 		  sample_block{sample_block}, max_block_size{max_block_size}
 	{
+		if (sample_block.columns() != result.getNumFields())
+			throw Exception{
+				"mysqlxx::UseQueryResult contains " + toString(result.getNumFields()) + " columns while " +
+					toString(sample_block.columns()) + " expected",
+				ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH
+			};
+
 		types.reserve(sample_block.columns());
 
 		for (const auto idx : ext::range(0, sample_block.columns()))
@@ -91,48 +99,82 @@ public:
 private:
 	Block readImpl() override
 	{
+		auto row = result.fetch();
+		if (!row)
+			return {};
+
 		auto block = sample_block.cloneEmpty();
 
-		if (block.columns() != result.getNumFields())
-			throw Exception{
-				"mysqlxx::UseQueryResult contains " + toString(result.getNumFields()) + " columns while " +
-					toString(block.columns()) + " expected",
-				ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH
-			};
+		/// cache pointers returned by the calls to getByPosition
+		std::vector<IColumn *> columns(block.columns());
+		for (const auto i : ext::range(0, columns.size()))
+			columns[i] = block.getByPosition(i).column.get();
 
-		std::size_t rows = 0;
-		while (auto row = result.fetch())
+		std::size_t num_rows = 0;
+		while (row)
 		{
-			/// @todo cache pointers returned by the calls to getByPosition
 			for (const auto idx : ext::range(0, row.size()))
-				insertValue(block.getByPosition(idx).column, row[idx], types[idx]);
+			{
+				const auto value = row[idx];
+				if (!value.isNull())
+					insertValue(columns[idx], types[idx], value);
+				else
+					insertDefaultValue(columns[idx], types[idx]);
+			}
 
-			++rows;
-			if (rows == max_block_size)
+			++num_rows;
+			if (num_rows == max_block_size)
 				break;
+
+			row = result.fetch();
 		}
 
-		return rows == 0 ? Block{} : block;
-	};
+		return block;
+	}
 
-	static void insertValue(ColumnPtr & column, const mysqlxx::Value & value, const value_type_t type)
+	static void insertValue(IColumn * const column, const value_type_t type, const mysqlxx::Value & value)
 	{
 		switch (type)
 		{
-			case value_type_t::UInt8: column->insert(static_cast<UInt64>(value)); break;
-			case value_type_t::UInt16: column->insert(static_cast<UInt64>(value)); break;
-			case value_type_t::UInt32: column->insert(static_cast<UInt64>(value)); break;
-			case value_type_t::UInt64: column->insert(static_cast<UInt64>(value)); break;
-			case value_type_t::Int8: column->insert(static_cast<Int64>(value)); break;
-			case value_type_t::Int16: column->insert(static_cast<Int64>(value)); break;
-			case value_type_t::Int32: column->insert(static_cast<Int64>(value)); break;
-			case value_type_t::Int64: column->insert(static_cast<Int64>(value)); break;
-			case value_type_t::Float32: column->insert(static_cast<Float64>(value)); break;
-			case value_type_t::Float64: column->insert(static_cast<Float64>(value)); break;
-			case value_type_t::String: column->insert(value.getString()); break;
-			case value_type_t::Date: column->insert(static_cast<UInt64>(UInt16{value.getDate().getDayNum()})); break;
-			case value_type_t::DateTime: column->insert(static_cast<UInt64>(time_t{value.getDateTime()})); break;
-		};
+			case value_type_t::UInt8: static_cast<ColumnUInt8 *>(column)->insert(value.getUInt()); break;
+			case value_type_t::UInt16: static_cast<ColumnUInt16 *>(column)->insert(value.getUInt()); break;
+			case value_type_t::UInt32: static_cast<ColumnUInt32 *>(column)->insert(value.getUInt()); break;
+			case value_type_t::UInt64: static_cast<ColumnUInt64 *>(column)->insert(value.getUInt()); break;
+			case value_type_t::Int8: static_cast<ColumnInt8 *>(column)->insert(value.getInt()); break;
+			case value_type_t::Int16: static_cast<ColumnInt16 *>(column)->insert(value.getInt()); break;
+			case value_type_t::Int32: static_cast<ColumnInt32 *>(column)->insert(value.getInt()); break;
+			case value_type_t::Int64: static_cast<ColumnInt64 *>(column)->insert(value.getInt()); break;
+			case value_type_t::Float32: static_cast<ColumnFloat32 *>(column)->insert(value.getDouble()); break;
+			case value_type_t::Float64: static_cast<ColumnFloat64 *>(column)->insert(value.getDouble()); break;
+			case value_type_t::String:
+			{
+				const auto string = value.getString();
+				static_cast<ColumnString *>(column)->insertDataWithTerminatingZero(string.data(), string.size() + 1);
+				break;
+			}
+			case value_type_t::Date: static_cast<ColumnUInt16 *>(column)->insert(UInt16{value.getDate().getDayNum()}); break;
+			case value_type_t::DateTime: static_cast<ColumnUInt32 *>(column)->insert(time_t{value.getDateTime()}); break;
+		}
+	}
+
+	static void insertDefaultValue(IColumn * const column, const value_type_t type)
+	{
+		switch (type)
+		{
+			case value_type_t::UInt8: static_cast<ColumnUInt8 *>(column)->insertDefault(); break;
+			case value_type_t::UInt16: static_cast<ColumnUInt16 *>(column)->insertDefault(); break;
+			case value_type_t::UInt32: static_cast<ColumnUInt32 *>(column)->insertDefault(); break;
+			case value_type_t::UInt64: static_cast<ColumnUInt64 *>(column)->insertDefault(); break;
+			case value_type_t::Int8: static_cast<ColumnInt8 *>(column)->insertDefault(); break;
+			case value_type_t::Int16: static_cast<ColumnInt16 *>(column)->insertDefault(); break;
+			case value_type_t::Int32: static_cast<ColumnInt32 *>(column)->insertDefault(); break;
+			case value_type_t::Int64: static_cast<ColumnInt64 *>(column)->insertDefault(); break;
+			case value_type_t::Float32: static_cast<ColumnFloat32 *>(column)->insertDefault(); break;
+			case value_type_t::Float64: static_cast<ColumnFloat64 *>(column)->insertDefault(); break;
+			case value_type_t::String: static_cast<ColumnString *>(column)->insertDefault(); break;
+			case value_type_t::Date: static_cast<ColumnUInt16 *>(column)->insertDefault(); break;
+			case value_type_t::DateTime: static_cast<ColumnUInt32 *>(column)->insertDefault(); break;
+		}
 	}
 
 	mysqlxx::PoolWithFailover::Entry entry;
