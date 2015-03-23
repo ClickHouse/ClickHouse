@@ -935,7 +935,7 @@ protected:
 	template <typename Method, typename Table>
 	void mergeStreamsImpl(
 		Block & block,
-		AggregatedDataVariants & result,
+		const Sizes & key_sizes,
 		Arena * aggregates_pool,
 		Method & method,
 		Table & data) const;

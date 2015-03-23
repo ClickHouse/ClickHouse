@@ -583,7 +583,21 @@ protected:
 
 		if (unlikely(grower.overflow(m_size)))
 		{
-			resize();
+			try
+			{
+				resize();
+			}
+			catch (...)
+			{
+				/** Если этого не делать, то будут проблемы.
+				  * Ведь останется ключ, но неинициализированное mapped-значение,
+				  *  у которого, возможно, даже нельзя вызвать деструктор.
+				  */
+				--m_size;
+				buf[place_value].setZero();
+				throw;
+			}
+
 			it = find(x, hash_value);
 		}
 	}
