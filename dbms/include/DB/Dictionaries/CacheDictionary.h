@@ -519,6 +519,7 @@ private:
 				if (string_ref.data == null_value_ref.data())
 					return;
 
+				bytes_allocated -= string_ref.size + 1;
 				const std::unique_ptr<const char[]> deleter{string_ref.data};
 
 				string_ref = StringRef{null_value_ref};
