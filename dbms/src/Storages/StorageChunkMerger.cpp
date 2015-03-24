@@ -231,7 +231,8 @@ public:
 	shutdown_called(false),
 	chunk_merger(chunk_merger_),
 	context(context_),
-	log(log_)
+	log(log_),
+	merging(false)
 	{
 	}
 
@@ -250,6 +251,8 @@ private:
 
 	Logger * log;
 	time_t last_nothing_to_merge_time = 0;
+
+	std::atomic<bool> merging;
 };
 
 StorageChunkMerger::StorageChunkMerger(
@@ -297,6 +300,27 @@ StorageChunkMerger::~StorageChunkMerger()
 	shutdown();
 }
 
+struct BoolLock
+{
+	BoolLock(std::atomic<bool> & flag_) : flag(flag_), locked(false) {}
+
+	bool trylock()
+	{
+		bool expected = false;
+		locked = flag.compare_exchange_weak(expected, true);
+		return locked;
+	}
+
+	~BoolLock()
+	{
+		if (locked)
+			flag.store(false);
+	}
+
+	std::atomic<bool> & flag;
+	bool locked;
+};
+
 bool StorageChunkMerger::MergeTask::merge()
 {
 	time_t now = time(0);
@@ -304,6 +328,10 @@ bool StorageChunkMerger::MergeTask::merge()
 		return false;
 
 	if (shutdown_called)
+		return false;
+
+	BoolLock lock(merging);
+	if (!lock.trylock())
 		return false;
 
 	bool merged = false;
