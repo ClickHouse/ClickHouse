@@ -24,6 +24,7 @@ public:
 	{
 		createAttributes();
 		loadData();
+		calculateBytesAllocated();
 	}
 
 	FlatDictionary(const FlatDictionary & other)
@@ -32,7 +33,9 @@ public:
 
 	std::string getName() const override { return name; }
 
-	std::string getTypeName() const override { return "FlatDictionary"; }
+	std::string getTypeName() const override { return "Flat"; }
+
+	std::size_t getBytesAllocated() const override { return bytes_allocated; }
 
 	bool isCached() const override { return false; }
 
@@ -207,6 +210,42 @@ private:
 	}
 
 	template <typename T>
+	void addAttributeSize(const attribute_t & attribute)
+	{
+		const auto & array_ref = std::get<std::unique_ptr<PODArray<T>>>(attribute.arrays);
+		bytes_allocated += sizeof(PODArray<T>) + array_ref->storage_size();
+	}
+
+	void calculateBytesAllocated()
+	{
+		bytes_allocated += attributes.size() * sizeof(attributes.front());
+
+		for (const auto & attribute : attributes)
+		{
+			switch (attribute.type)
+			{
+				case AttributeUnderlyingType::UInt8: addAttributeSize<UInt8>(attribute); break;
+				case AttributeUnderlyingType::UInt16: addAttributeSize<UInt16>(attribute); break;
+				case AttributeUnderlyingType::UInt32: addAttributeSize<UInt32>(attribute); break;
+				case AttributeUnderlyingType::UInt64: addAttributeSize<UInt64>(attribute); break;
+				case AttributeUnderlyingType::Int8: addAttributeSize<Int8>(attribute); break;
+				case AttributeUnderlyingType::Int16: addAttributeSize<Int16>(attribute); break;
+				case AttributeUnderlyingType::Int32: addAttributeSize<Int32>(attribute); break;
+				case AttributeUnderlyingType::Int64: addAttributeSize<Int64>(attribute); break;
+				case AttributeUnderlyingType::Float32: addAttributeSize<Float32>(attribute); break;
+				case AttributeUnderlyingType::Float64: addAttributeSize<Float64>(attribute); break;
+				case AttributeUnderlyingType::String:
+				{
+					addAttributeSize<StringRef>(attribute);
+					bytes_allocated += sizeof(Arena) + attribute.string_arena->size();
+
+					break;
+				}
+			}
+		}
+	}
+
+	template <typename T>
 	void createAttributeImpl(attribute_t & attribute, const Field & null_value)
 	{
 		const auto & null_value_ref = std::get<T>(attribute.null_values) =
@@ -319,6 +358,8 @@ private:
 	std::map<std::string, std::size_t> attribute_index_by_name;
 	std::vector<attribute_t> attributes;
 	const attribute_t * hierarchical_attribute = nullptr;
+
+	std::size_t bytes_allocated = 0;
 };
 
 }

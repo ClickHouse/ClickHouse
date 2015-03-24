@@ -26,8 +26,9 @@ public:
 
 	virtual std::string getTypeName() const = 0;
 
+	virtual std::size_t getBytesAllocated() const = 0;
+
 	virtual bool isCached() const = 0;
-	virtual void reload() {}
 	virtual DictionaryPtr clone() const = 0;
 
 	virtual const IDictionarySource * getSource() const = 0;

@@ -1510,7 +1510,7 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 	  * - в случае одноуровневой агрегации, а также для блоков с "переполнившимися" значениями.
 	  * Если есть хотя бы один блок с номером корзины больше нуля, значит была двухуровневая агрегация.
 	  */
-	UInt32 max_bucket = bucket_to_blocks.rbegin()->first;
+	auto max_bucket = bucket_to_blocks.rbegin()->first;
 	size_t has_two_level = max_bucket > 0;
 
 	if (has_two_level)

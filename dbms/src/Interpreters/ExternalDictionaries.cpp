@@ -44,6 +44,8 @@ void ExternalDictionaries::reloadImpl()
 	/// periodic update
 	for (auto & dictionary : dictionaries)
 	{
+		const auto & name = dictionary.first;
+
 		try
 		{
 			auto current = dictionary.second.first->get();
@@ -76,21 +78,33 @@ void ExternalDictionaries::reloadImpl()
 					dictionary.second.first->set(new_version.release());
 				}
 			}
-		}
-		catch (const Poco::Exception & e)
-		{
-			LOG_ERROR(log, "Cannot update external dictionary '" << dictionary.first
-				<< "'! You must resolve this manually. " << e.displayText());
-		}
-		catch (const std::exception & e)
-		{
-			LOG_ERROR(log, "Cannot update external dictionary '" << dictionary.first
-				<< "'! You must resolve this manually. " << e.what());
+
+			/// erase stored exception on success
+			stored_exceptions.erase(name);
 		}
 		catch (...)
 		{
-			LOG_ERROR(log, "Cannot update external dictionary '" << dictionary.first
-				<< "'! You must resolve this manually.");
+			stored_exceptions.emplace(name, std::current_exception());
+
+			try
+			{
+				throw;
+			}
+			catch (const Poco::Exception & e)
+			{
+				LOG_ERROR(log, "Cannot update external dictionary '" << name
+					<< "'! You must resolve this manually. " << e.displayText());
+			}
+			catch (const std::exception & e)
+			{
+				LOG_ERROR(log, "Cannot update external dictionary '" << name
+					<< "'! You must resolve this manually. " << e.what());
+			}
+			catch (...)
+			{
+				LOG_ERROR(log, "Cannot update external dictionary '" << name
+					<< "'! You must resolve this manually.");
+			}
 		}
 	}
 }
@@ -113,8 +127,6 @@ void ExternalDictionaries::reloadFromFile(const std::string & config_path)
 		const auto last_modified = config_file.getLastModified();
 		if (last_modified > config_last_modified)
 		{
-			stored_exceptions.clear();
-
 			/// definitions of dictionaries may have changed, recreate all of them
 			config_last_modified = last_modified;
 
@@ -179,6 +191,9 @@ void ExternalDictionaries::reloadFromFile(const std::string & config_path)
 					}
 					else
 						it->second.first->set(dict_ptr.release());
+
+					/// erase stored exception on success
+					stored_exceptions.erase(name);
 				}
 				catch (...)
 				{
