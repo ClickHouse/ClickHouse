@@ -45,7 +45,7 @@ public:
 
 	std::string getTypeName() const override { return "CacheDictionary"; }
 
-	std::size_t getBytesAllocated() const override { return -1; }
+	std::size_t getBytesAllocated() const override { return bytes_allocated; }
 
 	bool isCached() const override { return true; }
 
@@ -179,6 +179,8 @@ private:
 		const auto size = dict_struct.attributes.size();
 		attributes.reserve(size);
 
+		bytes_allocated += size * sizeof(attributes.front());
+
 		for (const auto & attribute : dict_struct.attributes)
 		{
 			attribute_index_by_name.emplace(attribute.name, attributes.size());
@@ -206,46 +208,57 @@ private:
 			case AttributeUnderlyingType::UInt8:
 				std::get<UInt8>(attr.null_values) = null_value.get<UInt64>();
 				std::get<std::unique_ptr<UInt8[]>>(attr.arrays) = std::make_unique<UInt8[]>(size);
+				bytes_allocated += size * sizeof(UInt8);
 				break;
 			case AttributeUnderlyingType::UInt16:
 				std::get<UInt16>(attr.null_values) = null_value.get<UInt64>();
 				std::get<std::unique_ptr<UInt16[]>>(attr.arrays) = std::make_unique<UInt16[]>(size);
+				bytes_allocated += size * sizeof(UInt16);
 				break;
 			case AttributeUnderlyingType::UInt32:
 				std::get<UInt32>(attr.null_values) = null_value.get<UInt64>();
 				std::get<std::unique_ptr<UInt32[]>>(attr.arrays) = std::make_unique<UInt32[]>(size);
+				bytes_allocated += size * sizeof(UInt32);
 				break;
 			case AttributeUnderlyingType::UInt64:
 				std::get<UInt64>(attr.null_values) = null_value.get<UInt64>();
 				std::get<std::unique_ptr<UInt64[]>>(attr.arrays) = std::make_unique<UInt64[]>(size);
+				bytes_allocated += size * sizeof(UInt64);
 				break;
 			case AttributeUnderlyingType::Int8:
 				std::get<Int8>(attr.null_values) = null_value.get<Int64>();
 				std::get<std::unique_ptr<Int8[]>>(attr.arrays) = std::make_unique<Int8[]>(size);
+				bytes_allocated += size * sizeof(Int8);
 				break;
 			case AttributeUnderlyingType::Int16:
 				std::get<Int16>(attr.null_values) = null_value.get<Int64>();
 				std::get<std::unique_ptr<Int16[]>>(attr.arrays) = std::make_unique<Int16[]>(size);
+				bytes_allocated += size * sizeof(Int16);
 				break;
 			case AttributeUnderlyingType::Int32:
 				std::get<Int32>(attr.null_values) = null_value.get<Int64>();
 				std::get<std::unique_ptr<Int32[]>>(attr.arrays) = std::make_unique<Int32[]>(size);
+				bytes_allocated += size * sizeof(Int32);
 				break;
 			case AttributeUnderlyingType::Int64:
 				std::get<Int64>(attr.null_values) = null_value.get<Int64>();
 				std::get<std::unique_ptr<Int64[]>>(attr.arrays) = std::make_unique<Int64[]>(size);
+				bytes_allocated += size * sizeof(Int64);
 				break;
 			case AttributeUnderlyingType::Float32:
 				std::get<Float32>(attr.null_values) = null_value.get<Float64>();
 				std::get<std::unique_ptr<Float32[]>>(attr.arrays) = std::make_unique<Float32[]>(size);
+				bytes_allocated += size * sizeof(Float32);
 				break;
 			case AttributeUnderlyingType::Float64:
 				std::get<Float64>(attr.null_values) = null_value.get<Float64>();
 				std::get<std::unique_ptr<Float64[]>>(attr.arrays) = std::make_unique<Float64[]>(size);
+				bytes_allocated += size * sizeof(Float64);
 				break;
 			case AttributeUnderlyingType::String:
 				std::get<String>(attr.null_values) = null_value.get<String>();
 				std::get<std::unique_ptr<StringRef[]>>(attr.arrays) = std::make_unique<StringRef[]>(size);
+				bytes_allocated += size * sizeof(StringRef);
 				break;
 		}
 
@@ -506,7 +519,7 @@ private:
 				if (string_ref.data == null_value_ref.data())
 					return;
 
-				delete[] string_ref.data;
+				const std::unique_ptr<const char[]> deleter{string_ref.data};
 
 				string_ref = StringRef{null_value_ref};
 
@@ -535,14 +548,19 @@ private:
 				auto & string_ref = std::get<std::unique_ptr<StringRef[]>>(attribute.arrays)[idx];
 				const auto & null_value_ref = std::get<String>(attribute.null_values);
 				if (string_ref.data != null_value_ref.data())
-					delete[] string_ref.data;
+				{
+					bytes_allocated -= string_ref.size + 1;
+					/// avoid explicit delete, let unique_ptr handle it
+					const std::unique_ptr<const char[]> deleter{string_ref.data};
+				}
 
 				const auto size = string.size();
 				if (size > 0)
 				{
-					const auto string_ptr = new char[size + 1];
-					std::copy(string.data(), string.data() + size + 1, string_ptr);
-					string_ref = StringRef{string_ptr, size};
+					auto string_ptr = std::make_unique<char[]>(size + 1);
+					std::copy(string.data(), string.data() + size + 1, string_ptr.get());
+					string_ref = StringRef{string_ptr.release(), size};
+					bytes_allocated += size + 1;
 				}
 				else
 					string_ref = {};
@@ -598,6 +616,8 @@ private:
 	attribute_t * hierarchical_attribute = nullptr;
 
 	mutable std::mt19937_64 rnd_engine{getSeed()};
+
+	mutable std::size_t bytes_allocated;
 };
 
 }

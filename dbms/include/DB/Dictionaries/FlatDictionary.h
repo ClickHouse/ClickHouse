@@ -218,7 +218,7 @@ private:
 
 	void calculateBytesAllocated()
 	{
-		bytes_allocated += attributes.size() * sizeof(attribute_t);
+		bytes_allocated += attributes.size() * sizeof(attributes.front());
 
 		for (const auto & attribute : attributes)
 		{
@@ -236,9 +236,8 @@ private:
 				case AttributeUnderlyingType::Float64: addAttributeSize<Float64>(attribute); break;
 				case AttributeUnderlyingType::String:
 				{
-					const auto & array_ref = std::get<std::unique_ptr<PODArray<StringRef>>>(attribute.arrays);
-					bytes_allocated += sizeof(PODArray<StringRef>) + array_ref->storage_size() +
-						sizeof(Arena) + attribute.string_arena->size();
+					addAttributeSize<StringRef>(attribute);
+					bytes_allocated += sizeof(Arena) + attribute.string_arena->size();
 
 					break;
 				}
