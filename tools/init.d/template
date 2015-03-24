@@ -217,17 +217,6 @@ main()
 	stop)
 		disable_cron && stop
 		;;
-	status)
-		if [[ $(running_processes) -eq $NUMBER_OF_PROCESSES ]]; then
-			echo "$PROGRAM service is running"
-		else
-			if is_cron_disabled; then
-				echo "$PROGRAM service is stopped";
-			else
-				echo "$PROGRAM: $(($NUMBER_OF_PROCESSES - $(running_processes))) of $NUMBER_OF_PROCESSES processes unexpectedly terminated"
-			fi
-		fi
-		;;
 	restart)
 		restart && enable_cron
 		;;
@@ -260,6 +249,23 @@ main()
 	exit $EXIT_STATUS
 }
 
+status()
+{
+	if [[ $(running_processes) -eq $NUMBER_OF_PROCESSES ]]; then
+		echo "$PROGRAM service is running"
+	else
+		if is_cron_disabled; then
+			echo "$PROGRAM service is stopped";
+		else
+			echo "$PROGRAM: $(($NUMBER_OF_PROCESSES - $(running_processes))) of $NUMBER_OF_PROCESSES processes unexpectedly terminated"
+		fi
+	fi
+}
+
+if [[ "$1" == "status" ]]; then
+	status
+	exit 0
+fi
 (
 	if flock -n 9; then
 		main "$@"
