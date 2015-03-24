@@ -519,7 +519,8 @@ private:
 				if (string_ref.data == null_value_ref.data())
 					return;
 
-				bytes_allocated -= string_ref.size + 1;
+				if (string_ref.size != 0)
+					bytes_allocated -= string_ref.size + 1;
 				const std::unique_ptr<const char[]> deleter{string_ref.data};
 
 				string_ref = StringRef{null_value_ref};
@@ -550,13 +551,14 @@ private:
 				const auto & null_value_ref = std::get<String>(attribute.null_values);
 				if (string_ref.data != null_value_ref.data())
 				{
-					bytes_allocated -= string_ref.size + 1;
+					if (string_ref.size != 0)
+						bytes_allocated -= string_ref.size + 1;
 					/// avoid explicit delete, let unique_ptr handle it
 					const std::unique_ptr<const char[]> deleter{string_ref.data};
 				}
 
 				const auto size = string.size();
-				if (size > 0)
+				if (size != 0)
 				{
 					auto string_ptr = std::make_unique<char[]>(size + 1);
 					std::copy(string.data(), string.data() + size + 1, string_ptr.get());
