@@ -32,6 +32,8 @@ public:
 
 	std::string getTypeName() const override { return "HashedDictionary"; }
 
+	std::size_t getBytesAllocated() const override { return -1; }
+
 	bool isCached() const override { return false; }
 
 	DictionaryPtr clone() const override { return std::make_unique<HashedDictionary>(*this); }

@@ -45,6 +45,8 @@ public:
 
 	std::string getTypeName() const override { return "CacheDictionary"; }
 
+	std::size_t getBytesAllocated() const override { return -1; }
+
 	bool isCached() const override { return true; }
 
 	DictionaryPtr clone() const override { return std::make_unique<CacheDictionary>(*this); }
@@ -318,13 +320,6 @@ private:
 			for (const auto i : ext::range(0, ids.size()))
 			{
 				const auto id = ids[i];
-				if (id == 0)
-				{
-					const auto & string = std::get<String>(attribute.null_values);
-					out->insertData(string.data(), string.size());
-					continue;
-				}
-
 				const auto cell_idx = getCellIdx(id);
 				const auto & cell = cells[cell_idx];
 
@@ -362,12 +357,6 @@ private:
 			for (const auto i : ext::range(0, ids.size()))
 			{
 				const auto id = ids[i];
-				if (id == 0)
-				{
-					total_length += 1;
-					continue;
-				}
-
 				const auto cell_idx = getCellIdx(id);
 				const auto & cell = cells[cell_idx];
 
