@@ -23,6 +23,7 @@ public:
 		createAttributes();
 		loadData();
 		calculateBytesAllocated();
+		creation_time = std::chrono::system_clock::now();
 	}
 
 	HashedDictionary(const HashedDictionary & other)
@@ -35,6 +36,12 @@ public:
 
 	std::size_t getBytesAllocated() const override { return bytes_allocated; }
 
+	double getHitRate() const override { return 1.0; }
+
+	std::size_t getElementCount() const override { return element_count; }
+
+	double getLoadFactor() const override { return static_cast<double>(element_count) / bucket_count; }
+
 	bool isCached() const override { return false; }
 
 	DictionaryPtr clone() const override { return std::make_unique<HashedDictionary>(*this); }
@@ -44,6 +51,11 @@ public:
 	const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
 
 	const DictionaryStructure & getStructure() const override { return dict_struct; }
+
+	std::chrono::time_point<std::chrono::system_clock> getCreationTime() const override
+	{
+		return creation_time;
+	}
 
 	bool hasHierarchy() const override { return hierarchical_attribute; }
 
@@ -199,6 +211,8 @@ private:
 		{
 			const auto & id_column = *block.getByPosition(0).column;
 
+			element_count += id_column.size();
+
 			for (const auto attribute_idx : ext::range(0, attributes.size()))
 			{
 				const auto & attribute_column = *block.getByPosition(attribute_idx + 1).column;
@@ -217,6 +231,7 @@ private:
 	{
 		const auto & map_ref = std::get<std::unique_ptr<HashMap<UInt64, T>>>(attribute.maps);
 		bytes_allocated += sizeof(HashMap<UInt64, T>) + map_ref->getBufferSizeInBytes();
+		bucket_count = map_ref->getBufferSizeInCells();
 	}
 
 	void calculateBytesAllocated()
@@ -351,6 +366,10 @@ private:
 	const attribute_t * hierarchical_attribute = nullptr;
 
 	std::size_t bytes_allocated = 0;
+	std::size_t element_count = 0;
+	std::size_t bucket_count = 0;
+
+	std::chrono::time_point<std::chrono::system_clock> creation_time;
 };
 
 }
