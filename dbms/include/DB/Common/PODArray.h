@@ -62,7 +62,6 @@ private:
 	const T * t_end() const 			{ return reinterpret_cast<const T *>(c_end); }
 	const T * t_end_of_storage() const 	{ return reinterpret_cast<const T *>(c_end_of_storage); }
 
-	size_t storage_size() const { return c_end_of_storage - c_start; }
 	static size_t byte_size(size_t n) { return n * sizeof(T); }
 
 	static size_t round_up_to_power_of_two(size_t n)
@@ -160,6 +159,7 @@ private:
 public:
 	typedef T value_type;
 
+	size_t storage_size() const { return c_end_of_storage - c_start; }
 
 	/// Просто typedef нельзя, так как возникает неоднозначность для конструкторов и функций assign.
 	struct iterator : public boost::iterator_adaptor<iterator, T*>
