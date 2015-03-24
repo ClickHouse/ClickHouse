@@ -43,6 +43,8 @@ public:
 
 	const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
 
+	const DictionaryStructure & getStructure() const override { return dict_struct; }
+
 	bool hasHierarchy() const override { return hierarchical_attribute; }
 
 	id_t toParent(const id_t id) const override
