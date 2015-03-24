@@ -43,7 +43,7 @@ public:
 
 	std::string getName() const override { return name; }
 
-	std::string getTypeName() const override { return "CacheDictionary"; }
+	std::string getTypeName() const override { return "Cache"; }
 
 	std::size_t getBytesAllocated() const override { return bytes_allocated; }
 
