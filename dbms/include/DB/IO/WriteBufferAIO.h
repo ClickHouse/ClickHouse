@@ -55,8 +55,7 @@ private:
 
 	iovec iov[3];
 
-	Memory left_page{DEFAULT_AIO_FILE_BLOCK_SIZE, DEFAULT_AIO_FILE_BLOCK_SIZE};
-	Memory right_page{DEFAULT_AIO_FILE_BLOCK_SIZE, DEFAULT_AIO_FILE_BLOCK_SIZE};
+	Memory memory_page{DEFAULT_AIO_FILE_BLOCK_SIZE, DEFAULT_AIO_FILE_BLOCK_SIZE};
 
 	const std::string filename;
 
@@ -64,7 +63,9 @@ private:
 	off_t truncate_count = 0;
 
 	off_t pos_in_file = 0;
+	off_t max_pos = 0;
 	int fd = -1;
+	int fd2 = -1;
 
 	/// Асинхронная операция записи ещё не завершилась.
 	bool is_pending_write = false;

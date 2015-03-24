@@ -19,6 +19,7 @@ bool test1();
 bool test2();
 bool test3();
 bool test4();
+bool test5();
 
 void run()
 {
@@ -27,7 +28,8 @@ void run()
 		test1,
 		test2,
 		test3,
-		test4
+		test4,
+		test5
 	};
 
 	unsigned int num = 0;
@@ -280,6 +282,52 @@ bool test4()
 		return false;
 
 	return true;
+}
+
+bool test5()
+{
+	namespace fs = boost::filesystem;
+
+	static const std::string symbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
+	char pattern[] = "/tmp/fileXXXXXX";
+	char * dir = ::mkdtemp(pattern);
+	if (dir == nullptr)
+		die("Could not create directory");
+
+	const std::string directory = std::string(dir);
+	const std::string filename = directory + "/foo";
+
+	size_t n = 10 * DEFAULT_AIO_FILE_BLOCK_SIZE;
+
+	std::string buf;
+	buf.reserve(n);
+
+	for (size_t i = 0; i < n; ++i)
+		buf += symbols[i % symbols.length()];
+
+	{
+		DB::WriteBufferAIO out(filename, 3 * DEFAULT_AIO_FILE_BLOCK_SIZE);
+
+		if (out.getFileName() != filename)
+			return false;
+		if (out.getFD() == -1)
+			return false;
+
+		out.seek(1, SEEK_SET);
+		out.write(&buf[0], buf.length());
+	}
+
+	std::ifstream in(filename.c_str());
+	if (!in.is_open())
+		die("Could not open file");
+
+	std::string received{ std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>() };
+
+	in.close();
+	fs::remove_all(directory);
+
+	return received.substr(1) == buf;
 }
 
 }

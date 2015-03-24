@@ -17,12 +17,19 @@ WriteBufferAIO::WriteBufferAIO(const std::string & filename_, size_t buffer_size
 {
 	ProfileEvents::increment(ProfileEvents::FileOpen);
 
-	/// About O_RDWR: yep, we really mean it.
-	int open_flags = (flags_ == -1) ? (O_RDWR | O_TRUNC | O_CREAT) : flags_;
+	int open_flags = (flags_ == -1) ? (O_WRONLY | O_TRUNC | O_CREAT) : flags_;
 	open_flags |= O_DIRECT;
 
 	fd = ::open(filename.c_str(), open_flags, mode_);
 	if (fd == -1)
+	{
+		got_exception = true;
+		auto error_code = (errno == ENOENT) ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE;
+		throwFromErrno("Cannot open file " + filename, error_code);
+	}
+
+	fd2 = ::open(filename.c_str(), O_RDONLY, mode_);
+	if (fd2 == -1)
 	{
 		got_exception = true;
 		auto error_code = (errno == ENOENT) ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE;
@@ -135,8 +142,6 @@ void WriteBufferAIO::nextImpl()
 
 	truncate_count = 0;
 
-	/// Input parameters: fd, pos_in_file, flush_buffer
-
 	/*
 			region_aligned_begin     region_begin                             region_end      region_aligned_end
 			|                           |                                          |                           |
@@ -149,7 +154,7 @@ void WriteBufferAIO::nextImpl()
 	|		|XXXXX*  :        :        :        :        :        :        :        :        :        :   *XXXX|       |
 	|		+--------+--------+--------+--------+--------+--------+--------+--------+--------+--------+--------+       |
 (1)	|           |                                       ^                                                 |            |(1)
-read|			+---- left padded disk page             |                      right padded disk page ----+            |read
+read|			+---- region left padding               |                      region right padding   ----+            |read
     |                                                   |                                                              |
 	|		+--------+ (left padded page)               |                        (right padded page)  +--------+       |
 	|		|XXXXX*YY|                                  |                                             |ZZZ*XXXX|       |
@@ -173,92 +178,85 @@ read|			+---- left padded disk page             |                      right pad
 
 	 */
 
-	//
-	// 1. Determine the enclosing page-aligned disk region.
-	//
+	/// Регион диска, на который хотим записать данные.
+	off_t region_begin = pos_in_file;
+	off_t region_end = pos_in_file + flush_buffer.offset();
+	size_t region_size = region_end - region_begin;
 
-	/// Disk region we want to write to.
-	size_t region_begin = pos_in_file;
-	size_t region_end = pos_in_file + flush_buffer.offset();
+	/// Регион диска, на который действительно записываем данные.
+	size_t region_left_padding = region_begin % DEFAULT_AIO_FILE_BLOCK_SIZE;
+	size_t region_right_padding = 0;
+	if (region_end % DEFAULT_AIO_FILE_BLOCK_SIZE != 0)
+		region_right_padding = DEFAULT_AIO_FILE_BLOCK_SIZE - (region_end % DEFAULT_AIO_FILE_BLOCK_SIZE);
 
-	/// Page-aligned disk region.
-	size_t region_aligned_begin = region_begin - (region_begin % DEFAULT_AIO_FILE_BLOCK_SIZE);
-	size_t region_aligned_end = region_end;
-	if ((region_aligned_end % DEFAULT_AIO_FILE_BLOCK_SIZE) != 0)
-		region_aligned_end += DEFAULT_AIO_FILE_BLOCK_SIZE - (region_aligned_end % DEFAULT_AIO_FILE_BLOCK_SIZE);
+	off_t region_aligned_begin = region_begin - region_left_padding;
+	off_t region_aligned_end = region_end + region_right_padding;
+	size_t region_aligned_size = region_aligned_end - region_aligned_begin;
 
-	bool has_left_padding = (region_aligned_begin < region_begin);
-	bool has_right_padding = (region_aligned_end > region_end);
-
-	//
-	// 2. Read needed data from disk into padded pages.
-	//
-
-	if (has_left_padding)
-	{
-		/// Left-side padding disk region.
-		::memset(&left_page[0], 0, left_page.size());
-		ssize_t read_count = ::pread(fd, &left_page[0], DEFAULT_AIO_FILE_BLOCK_SIZE, region_aligned_begin);
-		if (read_count < 0)
-			throw Exception("Read error", ErrorCodes::AIO_READ_ERROR);
-	}
-	if (has_right_padding)
-	{
-		/// Right-side padding disk region.
-		::memset(&right_page[0], 0, right_page.size());
-		ssize_t read_count = ::pread(fd, &right_page[0], DEFAULT_AIO_FILE_BLOCK_SIZE, (region_aligned_end - DEFAULT_AIO_FILE_BLOCK_SIZE));
-		if (read_count < 0)
-			throw Exception("Read error", ErrorCodes::AIO_WRITE_ERROR);
-		truncate_count = DEFAULT_AIO_FILE_BLOCK_SIZE - read_count;
-	}
-
-	//
-	// 3. Copy padding data (2 user-space copies) from the buffer into the padded pages.
-	//
-
-	/// Buffer we want to write to disk.
+	/// Буфер данных, которые хотим записать на диск.
 	Position buffer_begin = flush_buffer.buffer().begin();
-	Position buffer_end = buffer_begin + flush_buffer.offset();
+	Position buffer_end = buffer_begin + region_size;
+	size_t buffer_size = buffer_end - buffer_begin;
+	size_t buffer_capacity = flush_buffer.buffer().size();
 
-	/// Subset of the buffer that is page-aligned.
-	Position aligned_buffer_begin = buffer_begin;
-	Position aligned_buffer_end = buffer_end;
+	/// Обработать буфер, чтобы он оторажал структуру региона диска.
 
-	if (has_left_padding)
+	// Process the left side.
+	bool has_excess_buffer = false;
+	if (region_left_padding > 0)
 	{
-		size_t left_page_unmodified_size = region_begin - region_aligned_begin;
-		size_t left_page_modified_size = DEFAULT_AIO_FILE_BLOCK_SIZE - left_page_unmodified_size;
-		aligned_buffer_begin += left_page_modified_size;
-		::memcpy(&left_page[0] + left_page_unmodified_size, buffer_begin, left_page_modified_size);
+		if ((region_left_padding + buffer_size) > buffer_capacity)
+		{
+			has_excess_buffer = true;
+			::memset(&memory_page[0], 0, memory_page.size());
+			::memcpy(&memory_page[0], buffer_end - region_left_padding, region_left_padding);
+			buffer_end = buffer_begin + buffer_capacity;
+			buffer_size = buffer_capacity;
+		}
+		else
+		{
+			buffer_size += region_left_padding;
+			buffer_end = buffer_begin + buffer_size;
+		}
+
+		::memmove(buffer_begin + region_left_padding, buffer_begin, buffer_size - region_left_padding);
+		::memset(buffer_begin, 0, region_left_padding);
+
+		ssize_t read_count = ::pread(fd2, buffer_begin, region_left_padding, region_aligned_begin);
+		if (read_count < 0)
+		{
+			got_exception = true;
+			throw Exception("Read error", ErrorCodes::AIO_READ_ERROR);
+		}
 	}
-	if (has_right_padding)
+
+	Position end_ptr;
+	if (has_excess_buffer)
+		end_ptr = &memory_page[region_left_padding];
+	else
+		end_ptr = buffer_end;
+
+	// Process the right side.
+	if (region_right_padding > 0)
 	{
-		size_t right_page_begin = region_aligned_end - DEFAULT_AIO_FILE_BLOCK_SIZE;
-		size_t right_page_modified_size = region_end - right_page_begin;
-		aligned_buffer_end -= right_page_modified_size;
-		::memcpy(&right_page[0], (buffer_end - right_page_modified_size), right_page_modified_size);
+		::memset(end_ptr, 0, region_right_padding);
+		ssize_t read_count = ::pread(fd2, end_ptr, region_right_padding, region_end);
+		if (read_count < 0)
+			read_count = 0;
+		truncate_count = DEFAULT_AIO_FILE_BLOCK_SIZE - (region_left_padding + read_count);
 	}
 
-	//
-	// 4. Create requests.
-	//
+	/// Создать запрос на асинхронную запись.
 
-	size_t i = 0;
+	size_t i =  0;
 
-	if (has_left_padding)
-	{
-		iov[i].iov_base = &left_page[0];
-		iov[i].iov_len = DEFAULT_AIO_FILE_BLOCK_SIZE;
-		++i;
-	}
-
-	iov[i].iov_base = aligned_buffer_begin;
-	iov[i].iov_len = aligned_buffer_end - aligned_buffer_begin;
+	iov[i].iov_base = buffer_begin;
+	iov[i].iov_len = (has_excess_buffer ? buffer_capacity : region_aligned_size);
 	++i;
 
-	if (has_right_padding)
+	if (has_excess_buffer)
 	{
-		iov[i].iov_base = &right_page[0];
+		iov[i].iov_base = &memory_page[0];
 		iov[i].iov_len = DEFAULT_AIO_FILE_BLOCK_SIZE;
 		++i;
 	}
@@ -275,7 +273,6 @@ read|			+---- left padded disk page             |                      right pad
 		bytes_to_write += iov[j].iov_len;
 	}
 
-	/// Send requests (1 syscall).
 	request.aio_lio_opcode = IOCB_CMD_PWRITEV;
 	request.aio_fildes = fd;
 	request.aio_buf = reinterpret_cast<UInt64>(iov);
@@ -317,26 +314,29 @@ void WriteBufferAIO::waitForAIOCompletion()
 			throw Exception("Asynchronous write error on file " + filename, ErrorCodes::AIO_WRITE_ERROR);
 		}
 
-		// Delete the trailing zeroes that were added for alignment purposes.
-		if (truncate_count > 0)
-		{
-			bytes_written -= truncate_count;
-
-			int res = ::ftruncate(fd, truncate_count);
-			if (res == -1)
-			{
-				got_exception = true;
-				throwFromErrno("Cannot truncate file " + filename, ErrorCodes::CANNOT_TRUNCATE_FILE);
-			}
-		}
-
+		bytes_written -= truncate_count;
 		if (pos_in_file > (std::numeric_limits<off_t>::max() - bytes_written))
 		{
 			got_exception = true;
 			throw Exception("File position overflowed", ErrorCodes::LOGICAL_ERROR);
 		}
 
-		pos_in_file += bytes_written;
+		off_t delta = pos_in_file - request.aio_offset;
+		pos_in_file += bytes_written - delta;
+
+		if (pos_in_file > max_pos)
+			max_pos = pos_in_file;
+
+		if (truncate_count > 0)
+		{
+			// Delete the trailing zeroes that were added for alignment purposes.
+			int res = ::ftruncate(fd, max_pos);
+			if (res == -1)
+			{
+				got_exception = true;
+				throwFromErrno("Cannot truncate file " + filename, ErrorCodes::CANNOT_TRUNCATE_FILE);
+			}
+		}
 	}
 }
 
