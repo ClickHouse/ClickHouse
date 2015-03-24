@@ -68,11 +68,11 @@ public:
 		getItems<UInt64>(*hierarchical_attribute, ids, out);
 	}
 
-#define DECLARE_INDIVIDUAL_GETTER(TYPE, LC_TYPE) \
+#define DECLARE_INDIVIDUAL_GETTER(TYPE) \
 	TYPE get##TYPE(const std::string & attribute_name, const id_t id) const override\
     {\
 		auto & attribute = getAttribute(attribute_name);\
-		if (attribute.type != AttributeType::LC_TYPE)\
+		if (attribute.type != AttributeUnderlyingType::TYPE)\
 			throw Exception{\
 				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
 				ErrorCodes::TYPE_MISMATCH\
@@ -83,21 +83,21 @@ public:
 		getItems<TYPE>(attribute, ids, out);\
         return out.front();\
 	}
-	DECLARE_INDIVIDUAL_GETTER(UInt8, uint8)
-	DECLARE_INDIVIDUAL_GETTER(UInt16, uint16)
-	DECLARE_INDIVIDUAL_GETTER(UInt32, uint32)
-	DECLARE_INDIVIDUAL_GETTER(UInt64, uint64)
-	DECLARE_INDIVIDUAL_GETTER(Int8, int8)
-	DECLARE_INDIVIDUAL_GETTER(Int16, int16)
-	DECLARE_INDIVIDUAL_GETTER(Int32, int32)
-	DECLARE_INDIVIDUAL_GETTER(Int64, int64)
-	DECLARE_INDIVIDUAL_GETTER(Float32, float32)
-	DECLARE_INDIVIDUAL_GETTER(Float64, float64)
+	DECLARE_INDIVIDUAL_GETTER(UInt8)
+	DECLARE_INDIVIDUAL_GETTER(UInt16)
+	DECLARE_INDIVIDUAL_GETTER(UInt32)
+	DECLARE_INDIVIDUAL_GETTER(UInt64)
+	DECLARE_INDIVIDUAL_GETTER(Int8)
+	DECLARE_INDIVIDUAL_GETTER(Int16)
+	DECLARE_INDIVIDUAL_GETTER(Int32)
+	DECLARE_INDIVIDUAL_GETTER(Int64)
+	DECLARE_INDIVIDUAL_GETTER(Float32)
+	DECLARE_INDIVIDUAL_GETTER(Float64)
 #undef DECLARE_INDIVIDUAL_GETTER
 	String getString(const std::string & attribute_name, const id_t id) const override
 	{
 		auto & attribute = getAttribute(attribute_name);
-		if (attribute.type != AttributeType::string)
+		if (attribute.type != AttributeUnderlyingType::String)
 			throw Exception{
 				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
 				ErrorCodes::TYPE_MISMATCH
@@ -110,11 +110,11 @@ public:
         return String{out.getDataAt(0)};
 	};
 
-#define DECLARE_MULTIPLE_GETTER(TYPE, LC_TYPE)\
+#define DECLARE_MULTIPLE_GETTER(TYPE)\
 	void get##TYPE(const std::string & attribute_name, const PODArray<id_t> & ids, PODArray<TYPE> & out) const override\
 	{\
 		auto & attribute = getAttribute(attribute_name);\
-		if (attribute.type != AttributeType::LC_TYPE)\
+		if (attribute.type != AttributeUnderlyingType::TYPE)\
 			throw Exception{\
 				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
 				ErrorCodes::TYPE_MISMATCH\
@@ -122,21 +122,21 @@ public:
 		\
 		getItems<TYPE>(attribute, ids, out);\
 	}
-	DECLARE_MULTIPLE_GETTER(UInt8, uint8)
-	DECLARE_MULTIPLE_GETTER(UInt16, uint16)
-	DECLARE_MULTIPLE_GETTER(UInt32, uint32)
-	DECLARE_MULTIPLE_GETTER(UInt64, uint64)
-	DECLARE_MULTIPLE_GETTER(Int8, int8)
-	DECLARE_MULTIPLE_GETTER(Int16, int16)
-	DECLARE_MULTIPLE_GETTER(Int32, int32)
-	DECLARE_MULTIPLE_GETTER(Int64, int64)
-	DECLARE_MULTIPLE_GETTER(Float32, float32)
-	DECLARE_MULTIPLE_GETTER(Float64, float64)
+	DECLARE_MULTIPLE_GETTER(UInt8)
+	DECLARE_MULTIPLE_GETTER(UInt16)
+	DECLARE_MULTIPLE_GETTER(UInt32)
+	DECLARE_MULTIPLE_GETTER(UInt64)
+	DECLARE_MULTIPLE_GETTER(Int8)
+	DECLARE_MULTIPLE_GETTER(Int16)
+	DECLARE_MULTIPLE_GETTER(Int32)
+	DECLARE_MULTIPLE_GETTER(Int64)
+	DECLARE_MULTIPLE_GETTER(Float32)
+	DECLARE_MULTIPLE_GETTER(Float64)
 #undef DECLARE_MULTIPLE_GETTER
 	void getString(const std::string & attribute_name, const PODArray<id_t> & ids, ColumnString * out) const override
 	{
 		auto & attribute = getAttribute(attribute_name);
-		if (attribute.type != AttributeType::string)
+		if (attribute.type != AttributeUnderlyingType::String)
 			throw Exception{
 				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
 				ErrorCodes::TYPE_MISMATCH
@@ -154,7 +154,7 @@ private:
 
 	struct attribute_t final
 	{
-		AttributeType type;
+		AttributeUnderlyingType type;
 		std::tuple<UInt8, UInt16, UInt32, UInt64,
 			Int8, Int16, Int32, Int64,
 			Float32, Float64,
@@ -180,14 +180,13 @@ private:
 		for (const auto & attribute : dict_struct.attributes)
 		{
 			attribute_index_by_name.emplace(attribute.name, attributes.size());
-			attributes.push_back(createAttributeWithType(getAttributeTypeByName(attribute.type),
-				attribute.null_value));
+			attributes.push_back(createAttributeWithType(attribute.underlying_type, attribute.null_value));
 
 			if (attribute.hierarchical)
 			{
 				hierarchical_attribute = &attributes.back();
 
-				if (hierarchical_attribute->type != AttributeType::uint64)
+				if (hierarchical_attribute->type != AttributeUnderlyingType::UInt64)
 					throw Exception{
 						"Hierarchical attribute must be UInt64.",
 						ErrorCodes::TYPE_MISMATCH
@@ -196,54 +195,54 @@ private:
 		}
 	}
 
-	attribute_t createAttributeWithType(const AttributeType type, const std::string & null_value)
+	attribute_t createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
 	{
 		attribute_t attr{type};
 
 		switch (type)
 		{
-			case AttributeType::uint8:
-				std::get<UInt8>(attr.null_values) = DB::parse<UInt8>(null_value);
+			case AttributeUnderlyingType::UInt8:
+				std::get<UInt8>(attr.null_values) = null_value.get<UInt64>();
 				std::get<std::unique_ptr<UInt8[]>>(attr.arrays) = std::make_unique<UInt8[]>(size);
 				break;
-			case AttributeType::uint16:
-				std::get<UInt16>(attr.null_values) = DB::parse<UInt16>(null_value);
+			case AttributeUnderlyingType::UInt16:
+				std::get<UInt16>(attr.null_values) = null_value.get<UInt64>();
 				std::get<std::unique_ptr<UInt16[]>>(attr.arrays) = std::make_unique<UInt16[]>(size);
 				break;
-			case AttributeType::uint32:
-				std::get<UInt32>(attr.null_values) = DB::parse<UInt32>(null_value);
+			case AttributeUnderlyingType::UInt32:
+				std::get<UInt32>(attr.null_values) = null_value.get<UInt64>();
 				std::get<std::unique_ptr<UInt32[]>>(attr.arrays) = std::make_unique<UInt32[]>(size);
 				break;
-			case AttributeType::uint64:
-				std::get<UInt64>(attr.null_values) = DB::parse<UInt64>(null_value);
+			case AttributeUnderlyingType::UInt64:
+				std::get<UInt64>(attr.null_values) = null_value.get<UInt64>();
 				std::get<std::unique_ptr<UInt64[]>>(attr.arrays) = std::make_unique<UInt64[]>(size);
 				break;
-			case AttributeType::int8:
-				std::get<Int8>(attr.null_values) = DB::parse<Int8>(null_value);
+			case AttributeUnderlyingType::Int8:
+				std::get<Int8>(attr.null_values) = null_value.get<Int64>();
 				std::get<std::unique_ptr<Int8[]>>(attr.arrays) = std::make_unique<Int8[]>(size);
 				break;
-			case AttributeType::int16:
-				std::get<Int16>(attr.null_values) = DB::parse<Int16>(null_value);
+			case AttributeUnderlyingType::Int16:
+				std::get<Int16>(attr.null_values) = null_value.get<Int64>();
 				std::get<std::unique_ptr<Int16[]>>(attr.arrays) = std::make_unique<Int16[]>(size);
 				break;
-			case AttributeType::int32:
-				std::get<Int32>(attr.null_values) = DB::parse<Int32>(null_value);
+			case AttributeUnderlyingType::Int32:
+				std::get<Int32>(attr.null_values) = null_value.get<Int64>();
 				std::get<std::unique_ptr<Int32[]>>(attr.arrays) = std::make_unique<Int32[]>(size);
 				break;
-			case AttributeType::int64:
-				std::get<Int64>(attr.null_values) = DB::parse<Int64>(null_value);
+			case AttributeUnderlyingType::Int64:
+				std::get<Int64>(attr.null_values) = null_value.get<Int64>();
 				std::get<std::unique_ptr<Int64[]>>(attr.arrays) = std::make_unique<Int64[]>(size);
 				break;
-			case AttributeType::float32:
-				std::get<Float32>(attr.null_values) = DB::parse<Float32>(null_value);
+			case AttributeUnderlyingType::Float32:
+				std::get<Float32>(attr.null_values) = null_value.get<Float64>();
 				std::get<std::unique_ptr<Float32[]>>(attr.arrays) = std::make_unique<Float32[]>(size);
 				break;
-			case AttributeType::float64:
-				std::get<Float64>(attr.null_values) = DB::parse<Float64>(null_value);
+			case AttributeUnderlyingType::Float64:
+				std::get<Float64>(attr.null_values) = null_value.get<Float64>();
 				std::get<std::unique_ptr<Float64[]>>(attr.arrays) = std::make_unique<Float64[]>(size);
 				break;
-			case AttributeType::string:
-				std::get<String>(attr.null_values) = null_value;
+			case AttributeUnderlyingType::String:
+				std::get<String>(attr.null_values) = null_value.get<String>();
 				std::get<std::unique_ptr<StringRef[]>>(attr.arrays) = std::make_unique<StringRef[]>(size);
 				break;
 		}
@@ -456,7 +455,10 @@ private:
 				}
 
 				cell.id = id;
-				cell.expires_at = std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
+				if (dict_lifetime.min_sec != 0 && dict_lifetime.max_sec != 0)
+					cell.expires_at = std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
+				else
+					cell.expires_at = std::chrono::time_point<std::chrono::system_clock>::max();
 
 				on_cell_updated(id, cell_idx);
 				remaining_ids[id] = 1;
@@ -478,7 +480,10 @@ private:
 				setDefaultAttributeValue(attribute, cell_idx);
 
 			cell.id = id;
-			cell.expires_at = std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
+			if (dict_lifetime.min_sec != 0 && dict_lifetime.max_sec != 0)
+				cell.expires_at = std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
+			else
+				cell.expires_at = std::chrono::time_point<std::chrono::system_clock>::max();
 
 			on_cell_updated(id, cell_idx);
 		}
@@ -495,17 +500,17 @@ private:
 	{
 		switch (attribute.type)
 		{
-			case AttributeType::uint8: std::get<std::unique_ptr<UInt8[]>>(attribute.arrays)[idx] = std::get<UInt8>(attribute.null_values); break;
-			case AttributeType::uint16: std::get<std::unique_ptr<UInt16[]>>(attribute.arrays)[idx] = std::get<UInt16>(attribute.null_values); break;
-			case AttributeType::uint32: std::get<std::unique_ptr<UInt32[]>>(attribute.arrays)[idx] = std::get<UInt32>(attribute.null_values); break;
-			case AttributeType::uint64: std::get<std::unique_ptr<UInt64[]>>(attribute.arrays)[idx] = std::get<UInt64>(attribute.null_values); break;
-			case AttributeType::int8: std::get<std::unique_ptr<Int8[]>>(attribute.arrays)[idx] = std::get<Int8>(attribute.null_values); break;
-			case AttributeType::int16: std::get<std::unique_ptr<Int16[]>>(attribute.arrays)[idx] = std::get<Int16>(attribute.null_values); break;
-			case AttributeType::int32: std::get<std::unique_ptr<Int32[]>>(attribute.arrays)[idx] = std::get<Int32>(attribute.null_values); break;
-			case AttributeType::int64: std::get<std::unique_ptr<Int64[]>>(attribute.arrays)[idx] = std::get<Int64>(attribute.null_values); break;
-			case AttributeType::float32: std::get<std::unique_ptr<Float32[]>>(attribute.arrays)[idx] = std::get<Float32>(attribute.null_values); break;
-			case AttributeType::float64: std::get<std::unique_ptr<Float64[]>>(attribute.arrays)[idx] = std::get<Float64>(attribute.null_values); break;
-			case AttributeType::string:
+			case AttributeUnderlyingType::UInt8: std::get<std::unique_ptr<UInt8[]>>(attribute.arrays)[idx] = std::get<UInt8>(attribute.null_values); break;
+			case AttributeUnderlyingType::UInt16: std::get<std::unique_ptr<UInt16[]>>(attribute.arrays)[idx] = std::get<UInt16>(attribute.null_values); break;
+			case AttributeUnderlyingType::UInt32: std::get<std::unique_ptr<UInt32[]>>(attribute.arrays)[idx] = std::get<UInt32>(attribute.null_values); break;
+			case AttributeUnderlyingType::UInt64: std::get<std::unique_ptr<UInt64[]>>(attribute.arrays)[idx] = std::get<UInt64>(attribute.null_values); break;
+			case AttributeUnderlyingType::Int8: std::get<std::unique_ptr<Int8[]>>(attribute.arrays)[idx] = std::get<Int8>(attribute.null_values); break;
+			case AttributeUnderlyingType::Int16: std::get<std::unique_ptr<Int16[]>>(attribute.arrays)[idx] = std::get<Int16>(attribute.null_values); break;
+			case AttributeUnderlyingType::Int32: std::get<std::unique_ptr<Int32[]>>(attribute.arrays)[idx] = std::get<Int32>(attribute.null_values); break;
+			case AttributeUnderlyingType::Int64: std::get<std::unique_ptr<Int64[]>>(attribute.arrays)[idx] = std::get<Int64>(attribute.null_values); break;
+			case AttributeUnderlyingType::Float32: std::get<std::unique_ptr<Float32[]>>(attribute.arrays)[idx] = std::get<Float32>(attribute.null_values); break;
+			case AttributeUnderlyingType::Float64: std::get<std::unique_ptr<Float64[]>>(attribute.arrays)[idx] = std::get<Float64>(attribute.null_values); break;
+			case AttributeUnderlyingType::String:
 			{
 				const auto & null_value_ref = std::get<String>(attribute.null_values);
 				auto & string_ref = std::get<std::unique_ptr<StringRef[]>>(attribute.arrays)[idx];
@@ -525,17 +530,17 @@ private:
 	{
 		switch (attribute.type)
 		{
-			case AttributeType::uint8: std::get<std::unique_ptr<UInt8[]>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
-			case AttributeType::uint16: std::get<std::unique_ptr<UInt16[]>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
-			case AttributeType::uint32: std::get<std::unique_ptr<UInt32[]>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
-			case AttributeType::uint64: std::get<std::unique_ptr<UInt64[]>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
-			case AttributeType::int8: std::get<std::unique_ptr<Int8[]>>(attribute.arrays)[idx] = value.get<Int64>(); break;
-			case AttributeType::int16: std::get<std::unique_ptr<Int16[]>>(attribute.arrays)[idx] = value.get<Int64>(); break;
-			case AttributeType::int32: std::get<std::unique_ptr<Int32[]>>(attribute.arrays)[idx] = value.get<Int64>(); break;
-			case AttributeType::int64: std::get<std::unique_ptr<Int64[]>>(attribute.arrays)[idx] = value.get<Int64>(); break;
-			case AttributeType::float32: std::get<std::unique_ptr<Float32[]>>(attribute.arrays)[idx] = value.get<Float64>(); break;
-			case AttributeType::float64: std::get<std::unique_ptr<Float64[]>>(attribute.arrays)[idx] = value.get<Float64>(); break;
-			case AttributeType::string:
+			case AttributeUnderlyingType::UInt8: std::get<std::unique_ptr<UInt8[]>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
+			case AttributeUnderlyingType::UInt16: std::get<std::unique_ptr<UInt16[]>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
+			case AttributeUnderlyingType::UInt32: std::get<std::unique_ptr<UInt32[]>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
+			case AttributeUnderlyingType::UInt64: std::get<std::unique_ptr<UInt64[]>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
+			case AttributeUnderlyingType::Int8: std::get<std::unique_ptr<Int8[]>>(attribute.arrays)[idx] = value.get<Int64>(); break;
+			case AttributeUnderlyingType::Int16: std::get<std::unique_ptr<Int16[]>>(attribute.arrays)[idx] = value.get<Int64>(); break;
+			case AttributeUnderlyingType::Int32: std::get<std::unique_ptr<Int32[]>>(attribute.arrays)[idx] = value.get<Int64>(); break;
+			case AttributeUnderlyingType::Int64: std::get<std::unique_ptr<Int64[]>>(attribute.arrays)[idx] = value.get<Int64>(); break;
+			case AttributeUnderlyingType::Float32: std::get<std::unique_ptr<Float32[]>>(attribute.arrays)[idx] = value.get<Float64>(); break;
+			case AttributeUnderlyingType::Float64: std::get<std::unique_ptr<Float64[]>>(attribute.arrays)[idx] = value.get<Float64>(); break;
+			case AttributeUnderlyingType::String:
 			{
 				const auto & string = value.get<String>();
 				auto & string_ref = std::get<std::unique_ptr<StringRef[]>>(attribute.arrays)[idx];

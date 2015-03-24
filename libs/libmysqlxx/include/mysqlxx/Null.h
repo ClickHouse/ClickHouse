@@ -23,7 +23,7 @@ class Null
 public:
 	T data;
 	bool is_null;
-	
+
 	Null() : is_null(true) {}
 	Null(NullType data) : is_null(true) {}
 	explicit Null(const T & data_) : data(data_), is_null(false) {}
@@ -68,7 +68,7 @@ public:
 
 	bool operator== (const NullType other) const { return is_null; }
 
-	bool operator!= (const Null<T> & other) const 
+	bool operator!= (const Null<T> & other) const
 	{
 		return !(*this == other);
 	}
@@ -81,5 +81,13 @@ public:
 	}
 };
 
+
+template<typename T>
+T getValueFromNull(const Null<T> & maybe)
+{
+	if (maybe.isNull())
+		return {};
+	return maybe;
+}
 
 }

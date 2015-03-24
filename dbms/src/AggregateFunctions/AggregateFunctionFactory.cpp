@@ -14,6 +14,7 @@
 #include <DB/AggregateFunctions/AggregateFunctionArray.h>
 #include <DB/AggregateFunctions/AggregateFunctionState.h>
 #include <DB/AggregateFunctions/AggregateFunctionMerge.h>
+#include <DB/AggregateFunctions/AggregateFunctionDebug.h>
 
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
 
@@ -230,7 +231,9 @@ static IAggregateFunction * createAggregateFunctionArgMinMax(const String & name
 
 AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const DataTypes & argument_types, int recursion_level) const
 {
-	if (name == "count")
+	if (name == "debug")
+		return new AggregateFunctionDebug;
+	else if (name == "count")
 		return new AggregateFunctionCount;
 	else if (name == "any")
 		return createAggregateFunctionSingleValue<AggregateFunctionsSingleValue, AggregateFunctionAnyData>(name, argument_types);
@@ -602,6 +605,7 @@ bool AggregateFunctionFactory::isAggregateFunctionName(const String & name, int 
 {
 	static const char * names[]
 	{
+		"debug",
 		"count",
 		"any",
 		"anyLast",

@@ -716,7 +716,7 @@ void TCPHandler::run()
 	}
 	catch (Exception & e)
 	{
-		LOG_ERROR(log, "Code: " << e.code() << ", e.displayText() = " << e.displayText()
+		LOG_ERROR(log, "Code: " << e.code() << ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what()
 			<< ", Stack trace:\n\n" << e.getStackTrace().toString());
 	}
 	catch (Poco::Exception & e)

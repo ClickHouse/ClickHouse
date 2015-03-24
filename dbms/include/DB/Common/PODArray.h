@@ -52,7 +52,7 @@ private:
 	char * c_end;
 	char * c_end_of_storage;
 
-	bool use_libc_realloc;
+	bool use_libc_realloc = false;
 
 	T * t_start() 						{ return reinterpret_cast<T *>(c_start); }
 	T * t_end() 						{ return reinterpret_cast<T *>(c_end); }
@@ -131,17 +131,21 @@ private:
 
 		if (use_libc_realloc)
 		{
-			c_start = reinterpret_cast<char *>(::realloc(c_start, bytes_to_alloc));
+			auto new_c_start = reinterpret_cast<char *>(::realloc(c_start, bytes_to_alloc));
 
-			if (nullptr == c_start)
+			if (nullptr == new_c_start)
 				throwFromErrno("PODArray: cannot realloc", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+
+			c_start = new_c_start;
 		}
 		else
 		{
-			c_start = reinterpret_cast<char *>(malloc(bytes_to_alloc));
+			auto new_c_start = reinterpret_cast<char *>(malloc(bytes_to_alloc));
 
-			if (nullptr == c_start)
+			if (nullptr == new_c_start)
 				throwFromErrno("PODArray: cannot realloc", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+
+			c_start = new_c_start;
 
 			memcpy(c_start, old_c_start, std::min(bytes_to_alloc, static_cast<size_t>(end_diff)));
 			Allocator::deallocate(old_c_start, old_c_end_of_storage - old_c_start);
@@ -171,10 +175,10 @@ public:
 	};
 
 
-	PODArray() : use_libc_realloc(false) { alloc(0); }
-    PODArray(size_t n) : use_libc_realloc(false) { alloc(n); c_end += byte_size(n); }
-    PODArray(size_t n, const T & x) : use_libc_realloc(false) { alloc(n); assign(n, x); }
-    PODArray(const_iterator from_begin, const_iterator from_end) : use_libc_realloc(false) { alloc(from_end - from_begin); insert(from_begin, from_end); }
+	PODArray() { alloc(0); }
+    PODArray(size_t n) { alloc(n); c_end += byte_size(n); }
+    PODArray(size_t n, const T & x) { alloc(n); assign(n, x); }
+    PODArray(const_iterator from_begin, const_iterator from_end) { alloc(from_end - from_begin); insert(from_begin, from_end); }
     ~PODArray() { dealloc(); }
 
 	PODArray(PODArray && other) { *this = std::move(other); }
@@ -249,7 +253,7 @@ public:
 		if (n > old_size)
 		{
 			reserve(n);
-			std::fill(t_end(), reinterpret_cast<T *>(c_end + n - old_size), value);
+			std::fill(t_end(), t_end() + n - old_size, value);
 		}
 		c_end = c_start + byte_size(n);
 	}
