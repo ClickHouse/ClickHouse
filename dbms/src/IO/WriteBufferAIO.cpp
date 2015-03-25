@@ -176,8 +176,8 @@ void WriteBufferAIO::nextImpl()
 		if ((region_left_padding + buffer_size) > buffer_capacity)
 		{
 			excess = region_left_padding + buffer_size - buffer_capacity;
-			::memset(&memory_page[0], 0, memory_page.size());
 			::memcpy(&memory_page[0], buffer_end - excess, excess);
+			::memset(&memory_page[excess], 0, memory_page.size() - excess);
 			buffer_end = buffer_begin + buffer_capacity;
 			buffer_size = buffer_capacity;
 		}
@@ -188,7 +188,6 @@ void WriteBufferAIO::nextImpl()
 		}
 
 		::memmove(buffer_begin + region_left_padding, buffer_begin, buffer_size - region_left_padding);
-		::memset(buffer_begin, 0, region_left_padding);
 
 		ssize_t read_count = ::pread(fd2, buffer_begin, region_left_padding, region_aligned_begin);
 		if (read_count < 0)
@@ -196,24 +195,29 @@ void WriteBufferAIO::nextImpl()
 			got_exception = true;
 			throw Exception("Read error", ErrorCodes::AIO_READ_ERROR);
 		}
+
+		::memset(buffer_begin + read_count, 0, region_left_padding - read_count);
 	}
 
 	if (region_right_padding > 0)
 	{
-		Position end_ptr;
+		Position from;
 		if (excess > 0)
-			end_ptr = &memory_page[excess];
+			from = &memory_page[excess];
 		else
-			end_ptr = buffer_end;
+			from = buffer_end;
 
-		::memset(end_ptr, 0, region_right_padding);
-		ssize_t read_count = ::pread(fd2, end_ptr, region_right_padding, region_end);
+		ssize_t read_count = ::pread(fd2, from, region_right_padding, region_end);
 		if (read_count < 0)
 		{
 			got_exception = true;
 			throw Exception("Read error", ErrorCodes::AIO_READ_ERROR);
 		}
+
 		truncate_count = region_right_padding - read_count;
+
+		if (from == buffer_end)
+			::memset(from + read_count, 0, truncate_count);
 	}
 
 	/// Создать запрос на асинхронную запись.
