@@ -168,7 +168,7 @@ void WriteBufferAIO::nextImpl()
 	size_t buffer_size = buffer_end - buffer_begin;
 	size_t buffer_capacity = flush_buffer.buffer().size();
 
-	/// Обработать буфер, чтобы он оторажал структуру региона диска.
+	/// Обработать буфер, чтобы он отражал структуру региона диска.
 
 	size_t excess = 0;
 	if (region_left_padding > 0)
