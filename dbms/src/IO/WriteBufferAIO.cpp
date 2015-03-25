@@ -28,6 +28,8 @@ WriteBufferAIO::WriteBufferAIO(const std::string & filename_, size_t buffer_size
 		throwFromErrno("Cannot open file " + filename, error_code);
 	}
 
+	ProfileEvents::increment(ProfileEvents::FileOpen);
+
 	fd2 = ::open(filename.c_str(), O_RDONLY, mode_);
 	if (fd2 == -1)
 	{
@@ -95,8 +97,8 @@ off_t WriteBufferAIO::seek(off_t off, int whence)
 		throw Exception("WriteBufferAIO::seek expects SEEK_SET or SEEK_CUR as whence", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 	}
 
-	if (pos_in_file > max_pos)
-		max_pos = pos_in_file;
+	if (pos_in_file > max_pos_in_file)
+		max_pos_in_file = pos_in_file;
 
 	return pos_in_file;
 }
@@ -298,13 +300,13 @@ void WriteBufferAIO::waitForAIOCompletion()
 		off_t delta = pos_in_file - request.aio_offset;
 		pos_in_file += bytes_written - delta;
 
-		if (pos_in_file > max_pos)
-			max_pos = pos_in_file;
+		if (pos_in_file > max_pos_in_file)
+			max_pos_in_file = pos_in_file;
 
 		if (truncate_count > 0)
 		{
 			// Delete the trailing zeroes that were added for alignment purposes.
-			int res = ::ftruncate(fd, max_pos);
+			int res = ::ftruncate(fd, max_pos_in_file);
 			if (res == -1)
 			{
 				got_exception = true;
