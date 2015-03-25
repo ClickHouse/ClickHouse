@@ -147,7 +147,7 @@ void WriteBufferAIO::nextImpl()
 	waitForAIOCompletion();
 	swapBuffers();
 
-	truncate_count = 0;
+	truncation_count = 0;
 
 	/// Регион диска, в который хотим записать данные.
 	const off_t region_begin = pos_in_file;
@@ -170,15 +170,15 @@ void WriteBufferAIO::nextImpl()
 
 	/// Обработать буфер, чтобы он отражал структуру региона диска.
 
-	size_t excess = 0;
+	size_t excess_count = 0;
 
 	if (region_left_padding > 0)
 	{
 		if ((region_left_padding + buffer_size) > buffer_capacity)
 		{
-			excess = region_left_padding + buffer_size - buffer_capacity;
-			::memcpy(&memory_page[0], buffer_end - excess, excess);
-			::memset(&memory_page[excess], 0, memory_page.size() - excess);
+			excess_count = region_left_padding + buffer_size - buffer_capacity;
+			::memcpy(&memory_page[0], buffer_end - excess_count, excess_count);
+			::memset(&memory_page[excess_count], 0, memory_page.size() - excess_count);
 			buffer_size = buffer_capacity;
 		}
 		else
@@ -201,8 +201,8 @@ void WriteBufferAIO::nextImpl()
 	if (region_right_padding > 0)
 	{
 		Position from;
-		if (excess > 0)
-			from = &memory_page[excess];
+		if (excess_count > 0)
+			from = &memory_page[excess_count];
 		else
 			from = buffer_end;
 
@@ -213,10 +213,10 @@ void WriteBufferAIO::nextImpl()
 			throw Exception("Read error", ErrorCodes::AIO_READ_ERROR);
 		}
 
-		truncate_count = region_right_padding - read_count;
+		truncation_count = region_right_padding - read_count;
 
 		if (from == buffer_end)
-			::memset(from + read_count, 0, truncate_count);
+			::memset(from + read_count, 0, truncation_count);
 	}
 
 	/// Создать запрос на асинхронную запись.
@@ -224,10 +224,10 @@ void WriteBufferAIO::nextImpl()
 	size_t i =  0;
 
 	iov[i].iov_base = buffer_begin;
-	iov[i].iov_len = ((excess > 0) ? buffer_capacity : region_aligned_size);
+	iov[i].iov_len = ((excess_count > 0) ? buffer_capacity : region_aligned_size);
 	++i;
 
-	if (excess > 0)
+	if (excess_count > 0)
 	{
 		iov[i].iov_base = &memory_page[0];
 		iov[i].iov_len = memory_page.size();
@@ -267,48 +267,48 @@ void WriteBufferAIO::nextImpl()
 
 void WriteBufferAIO::waitForAIOCompletion()
 {
-	if (is_pending_write)
+	if (!is_pending_write)
+		return;
+
+	while (io_getevents(aio_context.ctx, events.size(), events.size(), &events[0], nullptr) < 0)
 	{
-		while (io_getevents(aio_context.ctx, events.size(), events.size(), &events[0], nullptr) < 0)
-		{
-			if (errno != EINTR)
-			{
-				got_exception = true;
-				throw Exception("Failed to wait for asynchronous IO completion on file " + filename, ErrorCodes::AIO_COMPLETION_ERROR);
-			}
-		}
-
-		is_pending_write = false;
-		off_t bytes_written = events[0].res;
-
-		if (bytes_written < bytes_to_write)
+		if (errno != EINTR)
 		{
 			got_exception = true;
-			throw Exception("Asynchronous write error on file " + filename, ErrorCodes::AIO_WRITE_ERROR);
+			throw Exception("Failed to wait for asynchronous IO completion on file " + filename, ErrorCodes::AIO_COMPLETION_ERROR);
 		}
+	}
 
-		bytes_written -= truncate_count;
-		if (pos_in_file > (std::numeric_limits<off_t>::max() - bytes_written))
+	is_pending_write = false;
+	off_t bytes_written = events[0].res;
+
+	if (bytes_written < bytes_to_write)
+	{
+		got_exception = true;
+		throw Exception("Asynchronous write error on file " + filename, ErrorCodes::AIO_WRITE_ERROR);
+	}
+
+	bytes_written -= truncation_count;
+
+	off_t pos_offset = bytes_written - (pos_in_file - request.aio_offset);
+	if (pos_in_file > (std::numeric_limits<off_t>::max() - pos_offset))
+	{
+		got_exception = true;
+		throw Exception("File position overflowed", ErrorCodes::LOGICAL_ERROR);
+	}
+	pos_in_file += pos_offset;
+
+	if (pos_in_file > max_pos_in_file)
+		max_pos_in_file = pos_in_file;
+
+	if (truncation_count > 0)
+	{
+		/// Укоротить файл, чтобы удалить из него излишние нули.
+		int res = ::ftruncate(fd, max_pos_in_file);
+		if (res == -1)
 		{
 			got_exception = true;
-			throw Exception("File position overflowed", ErrorCodes::LOGICAL_ERROR);
-		}
-
-		off_t delta = pos_in_file - request.aio_offset;
-		pos_in_file += bytes_written - delta;
-
-		if (pos_in_file > max_pos_in_file)
-			max_pos_in_file = pos_in_file;
-
-		if (truncate_count > 0)
-		{
-			// Delete the trailing zeroes that were added for alignment purposes.
-			int res = ::ftruncate(fd, max_pos_in_file);
-			if (res == -1)
-			{
-				got_exception = true;
-				throwFromErrno("Cannot truncate file " + filename, ErrorCodes::CANNOT_TRUNCATE_FILE);
-			}
+			throwFromErrno("Cannot truncate file " + filename, ErrorCodes::CANNOT_TRUNCATE_FILE);
 		}
 	}
 }
