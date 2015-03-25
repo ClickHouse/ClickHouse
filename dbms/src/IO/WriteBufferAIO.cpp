@@ -93,6 +93,9 @@ off_t WriteBufferAIO::seek(off_t off, int whence)
 		throw Exception("WriteBufferAIO::seek expects SEEK_SET or SEEK_CUR as whence", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 	}
 
+	if (pos_in_file > max_pos)
+		max_pos = pos_in_file;
+
 	return pos_in_file;
 }
 
@@ -142,12 +145,12 @@ void WriteBufferAIO::nextImpl()
 
 	truncate_count = 0;
 
-	/// Регион диска, на который хотим записать данные.
+	/// Регион диска, в который хотим записать данные.
 	off_t region_begin = pos_in_file;
 	off_t region_end = pos_in_file + flush_buffer.offset();
 	size_t region_size = region_end - region_begin;
 
-	/// Регион диска, на который действительно записываем данные.
+	/// Регион диска, в который действительно записываем данные.
 	size_t region_left_padding = region_begin % DEFAULT_AIO_FILE_BLOCK_SIZE;
 	size_t region_right_padding = 0;
 	if (region_end % DEFAULT_AIO_FILE_BLOCK_SIZE != 0)
@@ -165,15 +168,14 @@ void WriteBufferAIO::nextImpl()
 
 	/// Обработать буфер, чтобы он оторажал структуру региона диска.
 
-	// Process the left side.
-	bool has_excess_buffer = false;
+	size_t excess = 0;
 	if (region_left_padding > 0)
 	{
 		if ((region_left_padding + buffer_size) > buffer_capacity)
 		{
-			has_excess_buffer = true;
+			excess = region_left_padding + buffer_size - buffer_capacity;
 			::memset(&memory_page[0], 0, memory_page.size());
-			::memcpy(&memory_page[0], buffer_end - region_left_padding, region_left_padding);
+			::memcpy(&memory_page[0], buffer_end - excess, excess);
 			buffer_end = buffer_begin + buffer_capacity;
 			buffer_size = buffer_capacity;
 		}
@@ -194,20 +196,22 @@ void WriteBufferAIO::nextImpl()
 		}
 	}
 
-	Position end_ptr;
-	if (has_excess_buffer)
-		end_ptr = &memory_page[region_left_padding];
-	else
-		end_ptr = buffer_end;
-
-	// Process the right side.
 	if (region_right_padding > 0)
 	{
+		Position end_ptr;
+		if (excess > 0)
+			end_ptr = &memory_page[excess];
+		else
+			end_ptr = buffer_end;
+
 		::memset(end_ptr, 0, region_right_padding);
 		ssize_t read_count = ::pread(fd2, end_ptr, region_right_padding, region_end);
 		if (read_count < 0)
-			read_count = 0;
-		truncate_count = DEFAULT_AIO_FILE_BLOCK_SIZE - (region_left_padding + read_count);
+		{
+			got_exception = true;
+			throw Exception("Read error", ErrorCodes::AIO_READ_ERROR);
+		}
+		truncate_count = region_right_padding - read_count;
 	}
 
 	/// Создать запрос на асинхронную запись.
@@ -215,13 +219,13 @@ void WriteBufferAIO::nextImpl()
 	size_t i =  0;
 
 	iov[i].iov_base = buffer_begin;
-	iov[i].iov_len = (has_excess_buffer ? buffer_capacity : region_aligned_size);
+	iov[i].iov_len = ((excess > 0) ? buffer_capacity : region_aligned_size);
 	++i;
 
-	if (has_excess_buffer)
+	if (excess > 0)
 	{
 		iov[i].iov_base = &memory_page[0];
-		iov[i].iov_len = DEFAULT_AIO_FILE_BLOCK_SIZE;
+		iov[i].iov_len = memory_page.size();
 		++i;
 	}
 
