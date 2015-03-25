@@ -150,29 +150,28 @@ void WriteBufferAIO::nextImpl()
 	truncate_count = 0;
 
 	/// Регион диска, в который хотим записать данные.
-	off_t region_begin = pos_in_file;
-	off_t region_end = pos_in_file + flush_buffer.offset();
-	size_t region_size = region_end - region_begin;
+	const off_t region_begin = pos_in_file;
+	const off_t region_end = pos_in_file + flush_buffer.offset();
+	const size_t region_size = region_end - region_begin;
 
 	/// Регион диска, в который действительно записываем данные.
-	size_t region_left_padding = region_begin % DEFAULT_AIO_FILE_BLOCK_SIZE;
-	size_t region_right_padding = 0;
-	if (region_end % DEFAULT_AIO_FILE_BLOCK_SIZE != 0)
-		region_right_padding = DEFAULT_AIO_FILE_BLOCK_SIZE - (region_end % DEFAULT_AIO_FILE_BLOCK_SIZE);
+	const size_t region_left_padding = region_begin % DEFAULT_AIO_FILE_BLOCK_SIZE;
+	const size_t region_right_padding = (DEFAULT_AIO_FILE_BLOCK_SIZE - (region_end % DEFAULT_AIO_FILE_BLOCK_SIZE)) % DEFAULT_AIO_FILE_BLOCK_SIZE;
 
-	off_t region_aligned_begin = region_begin - region_left_padding;
-	off_t region_aligned_end = region_end + region_right_padding;
-	size_t region_aligned_size = region_aligned_end - region_aligned_begin;
+	const off_t region_aligned_begin = region_begin - region_left_padding;
+	const off_t region_aligned_end = region_end + region_right_padding;
+	const size_t region_aligned_size = region_aligned_end - region_aligned_begin;
 
 	/// Буфер данных, которые хотим записать на диск.
-	Position buffer_begin = flush_buffer.buffer().begin();
+	const Position buffer_begin = flush_buffer.buffer().begin();
 	Position buffer_end = buffer_begin + region_size;
 	size_t buffer_size = buffer_end - buffer_begin;
-	size_t buffer_capacity = flush_buffer.buffer().size();
+	const size_t buffer_capacity = flush_buffer.buffer().size();
 
 	/// Обработать буфер, чтобы он отражал структуру региона диска.
 
 	size_t excess = 0;
+
 	if (region_left_padding > 0)
 	{
 		if ((region_left_padding + buffer_size) > buffer_capacity)
@@ -180,14 +179,12 @@ void WriteBufferAIO::nextImpl()
 			excess = region_left_padding + buffer_size - buffer_capacity;
 			::memcpy(&memory_page[0], buffer_end - excess, excess);
 			::memset(&memory_page[excess], 0, memory_page.size() - excess);
-			buffer_end = buffer_begin + buffer_capacity;
 			buffer_size = buffer_capacity;
 		}
 		else
-		{
 			buffer_size += region_left_padding;
-			buffer_end = buffer_begin + buffer_size;
-		}
+
+		buffer_end = buffer_begin + buffer_size;
 
 		::memmove(buffer_begin + region_left_padding, buffer_begin, buffer_size - region_left_padding);
 
