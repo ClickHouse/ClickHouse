@@ -8,6 +8,7 @@
 #include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/Dictionaries/IDictionary.h>
+#include <DB/Dictionaries/IDictionarySource.h>
 #include <DB/Dictionaries/DictionaryStructure.h>
 #include <mutex>
 
@@ -29,6 +30,7 @@ StorageSystemDictionaries::StorageSystemDictionaries(const std::string & name)
 		  { "load_factor", new DataTypeFloat64 },
 		  { "creation_time", new DataTypeDateTime },
 		  { "last_exception", new DataTypeString },
+		  { "source", new DataTypeString }
 	}
 {
 }
@@ -70,6 +72,7 @@ BlockInputStreams StorageSystemDictionaries::read(
 	ColumnWithNameAndType col_load_factor{new ColumnFloat64, new DataTypeFloat64, "load_factor"};
 	ColumnWithNameAndType col_creation_time{new ColumnUInt32, new DataTypeDateTime, "creation_time"};
 	ColumnWithNameAndType col_last_exception{new ColumnString, new DataTypeString, "last_exception"};
+	ColumnWithNameAndType col_source{new ColumnString, new DataTypeString, "source"};
 
 	const auto & external_dictionaries = context.getExternalDictionaries();
 	const std::lock_guard<std::mutex> lock{external_dictionaries.dictionaries_mutex};
@@ -126,6 +129,8 @@ BlockInputStreams StorageSystemDictionaries::read(
 		}
 		else
 			col_last_exception.column->insert(std::string{});
+
+		col_source.column->insert(dict_ptr->getSource()->toString());
 	}
 
 	Block block{
@@ -140,7 +145,8 @@ BlockInputStreams StorageSystemDictionaries::read(
 		col_element_count,
 		col_load_factor,
 		col_creation_time,
-		col_last_exception
+		col_last_exception,
+		col_source
 	};
 
 	return BlockInputStreams{1, new OneBlockInputStream{block}};

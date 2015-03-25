@@ -24,7 +24,7 @@ public:
 
 private:
 	const std::string name;
-	NamesAndTypesList columns;
+	const NamesAndTypesList columns;
 
 	StorageSystemDictionaries(const std::string & name);
 
