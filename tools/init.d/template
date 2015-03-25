@@ -72,7 +72,7 @@ specific_log_file_for_each_process()
 
 find_pid_files()
 {
-	find $PIDDIR -regex "$PIDFILE_RE"
+	[[ -e $PIDDIR ]] && find $PIDDIR -regex "$PIDFILE_RE"
 }
 
 is_running()
