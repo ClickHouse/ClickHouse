@@ -28,7 +28,7 @@ private:
 	unsigned char m_hour;
 	unsigned char m_minute;
 	unsigned char m_second;
-	
+
 	void init(time_t time)
 	{
 		if (unlikely(time > DATE_LUT_MAX || time == 0))
@@ -39,10 +39,10 @@ private:
 			m_hour 		= 0;
 			m_minute 	= 0;
 			m_second 	= 0;
-			
+
 			return;
 		}
-		
+
 		DateLUT & date_lut = DateLUT::instance();
 		const DateLUT::Values & values = date_lut.getValues(time);
 
@@ -189,4 +189,15 @@ inline std::ostream & operator<< (std::ostream & ostr, const DateTime & datetime
 	return ostr;
 }
 
+}
+
+
+namespace std
+{
+inline string to_string(const mysqlxx::DateTime & datetime)
+{
+	stringstream str;
+	str << datetime;
+	return str.str();
+}
 }
