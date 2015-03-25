@@ -9,6 +9,7 @@
 #include <statdaemons/ext/scope_guard.hpp>
 #include <Poco/RWLock.h>
 #include <cmath>
+#include <atomic>
 #include <chrono>
 #include <vector>
 #include <map>
@@ -43,7 +44,22 @@ public:
 
 	std::string getName() const override { return name; }
 
-	std::string getTypeName() const override { return "CacheDictionary"; }
+	std::string getTypeName() const override { return "Cache"; }
+
+	std::size_t getBytesAllocated() const override { return bytes_allocated; }
+
+	double getHitRate() const override
+	{
+		return static_cast<double>(hit_count.load(std::memory_order_acquire)) /
+			query_count.load(std::memory_order_relaxed);
+	}
+
+	std::size_t getElementCount() const override { return element_count.load(std::memory_order_relaxed); }
+
+	double getLoadFactor() const override
+	{
+		return static_cast<double>(element_count.load(std::memory_order_relaxed)) / size;
+	}
 
 	bool isCached() const override { return true; }
 
@@ -52,6 +68,13 @@ public:
 	const IDictionarySource * getSource() const override { return source_ptr.get(); }
 
 	const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
+
+	const DictionaryStructure & getStructure() const override { return dict_struct; }
+
+	std::chrono::time_point<std::chrono::system_clock> getCreationTime() const override
+	{
+		return creation_time;
+	}
 
 	bool hasHierarchy() const override { return hierarchical_attribute; }
 
@@ -177,6 +200,9 @@ private:
 		const auto size = dict_struct.attributes.size();
 		attributes.reserve(size);
 
+		bytes_allocated += size * sizeof(cell_metadata_t);
+		bytes_allocated += size * sizeof(attributes.front());
+
 		for (const auto & attribute : dict_struct.attributes)
 		{
 			attribute_index_by_name.emplace(attribute.name, attributes.size());
@@ -204,46 +230,57 @@ private:
 			case AttributeUnderlyingType::UInt8:
 				std::get<UInt8>(attr.null_values) = null_value.get<UInt64>();
 				std::get<std::unique_ptr<UInt8[]>>(attr.arrays) = std::make_unique<UInt8[]>(size);
+				bytes_allocated += size * sizeof(UInt8);
 				break;
 			case AttributeUnderlyingType::UInt16:
 				std::get<UInt16>(attr.null_values) = null_value.get<UInt64>();
 				std::get<std::unique_ptr<UInt16[]>>(attr.arrays) = std::make_unique<UInt16[]>(size);
+				bytes_allocated += size * sizeof(UInt16);
 				break;
 			case AttributeUnderlyingType::UInt32:
 				std::get<UInt32>(attr.null_values) = null_value.get<UInt64>();
 				std::get<std::unique_ptr<UInt32[]>>(attr.arrays) = std::make_unique<UInt32[]>(size);
+				bytes_allocated += size * sizeof(UInt32);
 				break;
 			case AttributeUnderlyingType::UInt64:
 				std::get<UInt64>(attr.null_values) = null_value.get<UInt64>();
 				std::get<std::unique_ptr<UInt64[]>>(attr.arrays) = std::make_unique<UInt64[]>(size);
+				bytes_allocated += size * sizeof(UInt64);
 				break;
 			case AttributeUnderlyingType::Int8:
 				std::get<Int8>(attr.null_values) = null_value.get<Int64>();
 				std::get<std::unique_ptr<Int8[]>>(attr.arrays) = std::make_unique<Int8[]>(size);
+				bytes_allocated += size * sizeof(Int8);
 				break;
 			case AttributeUnderlyingType::Int16:
 				std::get<Int16>(attr.null_values) = null_value.get<Int64>();
 				std::get<std::unique_ptr<Int16[]>>(attr.arrays) = std::make_unique<Int16[]>(size);
+				bytes_allocated += size * sizeof(Int16);
 				break;
 			case AttributeUnderlyingType::Int32:
 				std::get<Int32>(attr.null_values) = null_value.get<Int64>();
 				std::get<std::unique_ptr<Int32[]>>(attr.arrays) = std::make_unique<Int32[]>(size);
+				bytes_allocated += size * sizeof(Int32);
 				break;
 			case AttributeUnderlyingType::Int64:
 				std::get<Int64>(attr.null_values) = null_value.get<Int64>();
 				std::get<std::unique_ptr<Int64[]>>(attr.arrays) = std::make_unique<Int64[]>(size);
+				bytes_allocated += size * sizeof(Int64);
 				break;
 			case AttributeUnderlyingType::Float32:
 				std::get<Float32>(attr.null_values) = null_value.get<Float64>();
 				std::get<std::unique_ptr<Float32[]>>(attr.arrays) = std::make_unique<Float32[]>(size);
+				bytes_allocated += size * sizeof(Float32);
 				break;
 			case AttributeUnderlyingType::Float64:
 				std::get<Float64>(attr.null_values) = null_value.get<Float64>();
 				std::get<std::unique_ptr<Float64[]>>(attr.arrays) = std::make_unique<Float64[]>(size);
+				bytes_allocated += size * sizeof(Float64);
 				break;
 			case AttributeUnderlyingType::String:
 				std::get<String>(attr.null_values) = null_value.get<String>();
 				std::get<std::unique_ptr<StringRef[]>>(attr.arrays) = std::make_unique<StringRef[]>(size);
+				bytes_allocated += size * sizeof(StringRef);
 				break;
 		}
 
@@ -283,6 +320,9 @@ private:
 			}
 		}
 
+		query_count.fetch_add(ids.size(), std::memory_order_relaxed);
+		hit_count.fetch_add(ids.size() - outdated_ids.size(), std::memory_order_release);
+
 		if (outdated_ids.empty())
 			return;
 
@@ -318,13 +358,6 @@ private:
 			for (const auto i : ext::range(0, ids.size()))
 			{
 				const auto id = ids[i];
-				if (id == 0)
-				{
-					const auto & string = std::get<String>(attribute.null_values);
-					out->insertData(string.data(), string.size());
-					continue;
-				}
-
 				const auto cell_idx = getCellIdx(id);
 				const auto & cell = cells[cell_idx];
 
@@ -343,7 +376,11 @@ private:
 
 		/// optimistic code completed successfully
 		if (!found_outdated_values)
+		{
+			query_count.fetch_add(ids.size(), std::memory_order_relaxed);
+			hit_count.fetch_add(ids.size(), std::memory_order_release);
 			return;
+		}
 
 		/// now onto the pessimistic one, discard possibly partial results from the optimistic path
 		out->getChars().resize_assume_reserved(0);
@@ -362,12 +399,6 @@ private:
 			for (const auto i : ext::range(0, ids.size()))
 			{
 				const auto id = ids[i];
-				if (id == 0)
-				{
-					total_length += 1;
-					continue;
-				}
-
 				const auto cell_idx = getCellIdx(id);
 				const auto & cell = cells[cell_idx];
 
@@ -381,6 +412,9 @@ private:
 				}
 			}
 		}
+
+		query_count.fetch_add(ids.size(), std::memory_order_relaxed);
+		hit_count.fetch_add(ids.size() - outdated_ids.size(), std::memory_order_release);
 
 		/// request new values
 		if (!outdated_ids.empty())
@@ -454,6 +488,10 @@ private:
 					setAttributeValue(attribute, cell_idx, attribute_column[i]);
 				}
 
+				/// if cell id is zero and zero does not map to this cell, then the cell is unused
+				if (cell.id == 0 && cell_idx != zero_cell_idx)
+					element_count.fetch_add(1, std::memory_order_relaxed);
+
 				cell.id = id;
 				if (dict_lifetime.min_sec != 0 && dict_lifetime.max_sec != 0)
 					cell.expires_at = std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
@@ -478,6 +516,9 @@ private:
 
 			for (auto & attribute : attributes)
 				setDefaultAttributeValue(attribute, cell_idx);
+
+			if (cell.id == 0 && cell_idx != zero_cell_idx)
+				element_count.fetch_add(1, std::memory_order_relaxed);
 
 			cell.id = id;
 			if (dict_lifetime.min_sec != 0 && dict_lifetime.max_sec != 0)
@@ -517,7 +558,9 @@ private:
 				if (string_ref.data == null_value_ref.data())
 					return;
 
-				delete[] string_ref.data;
+				if (string_ref.size != 0)
+					bytes_allocated -= string_ref.size + 1;
+				const std::unique_ptr<const char[]> deleter{string_ref.data};
 
 				string_ref = StringRef{null_value_ref};
 
@@ -546,14 +589,20 @@ private:
 				auto & string_ref = std::get<std::unique_ptr<StringRef[]>>(attribute.arrays)[idx];
 				const auto & null_value_ref = std::get<String>(attribute.null_values);
 				if (string_ref.data != null_value_ref.data())
-					delete[] string_ref.data;
+				{
+					if (string_ref.size != 0)
+						bytes_allocated -= string_ref.size + 1;
+					/// avoid explicit delete, let unique_ptr handle it
+					const std::unique_ptr<const char[]> deleter{string_ref.data};
+				}
 
 				const auto size = string.size();
-				if (size > 0)
+				if (size != 0)
 				{
-					const auto string_ptr = new char[size + 1];
-					std::copy(string.data(), string.data() + size + 1, string_ptr);
-					string_ref = StringRef{string_ptr, size};
+					auto string_ptr = std::make_unique<char[]>(size + 1);
+					std::copy(string.data(), string.data() + size + 1, string_ptr.get());
+					string_ref = StringRef{string_ptr.release(), size};
+					bytes_allocated += size + 1;
 				}
 				else
 					string_ref = {};
@@ -603,12 +652,20 @@ private:
 
 	mutable Poco::RWLock rw_lock;
 	const std::size_t size;
+	const std::uint64_t zero_cell_idx{getCellIdx(0)};
 	std::map<std::string, std::size_t> attribute_index_by_name;
 	mutable std::vector<attribute_t> attributes;
 	mutable std::vector<cell_metadata_t> cells;
 	attribute_t * hierarchical_attribute = nullptr;
 
 	mutable std::mt19937_64 rnd_engine{getSeed()};
+
+	mutable std::size_t bytes_allocated = 0;
+	mutable std::atomic<std::size_t> element_count{};
+	mutable std::atomic<std::size_t> hit_count{};
+	mutable std::atomic<std::size_t> query_count{};
+
+	const std::chrono::time_point<std::chrono::system_clock> creation_time = std::chrono::system_clock::now();
 };
 
 }

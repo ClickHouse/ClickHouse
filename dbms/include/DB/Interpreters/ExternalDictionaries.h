@@ -38,6 +38,8 @@ class ExternalDictionaries
 private:
 	static const auto check_period_sec = 5;
 
+	friend class StorageSystemDictionaries;
+
 	mutable std::mutex dictionaries_mutex;
 
 	using dictionary_ptr_t = std::shared_ptr<MultiVersion<IDictionary>>;

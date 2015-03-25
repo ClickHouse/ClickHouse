@@ -811,6 +811,11 @@ public:
 		return grower.bufSize() * sizeof(Cell);
 	}
 
+	size_t getBufferSizeInCells() const
+	{
+		return grower.bufSize();
+	}
+
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
 	size_t getCollisions() const
 	{

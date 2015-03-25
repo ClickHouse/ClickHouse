@@ -437,7 +437,7 @@ void ExpressionActions::checkLimits(Block & block) const
 
 void ExpressionActions::addInput(const ColumnWithNameAndType & column)
 {
-	input_columns.push_back(NameAndTypePair(column.name, column.type));
+	input_columns.emplace_back(column.name, column.type);
 	sample_block.insert(column);
 }
 
@@ -505,7 +505,7 @@ void ExpressionActions::prependArrayJoin(const ExpressionAction & action, const 
 	}
 	for (const std::string & name : array_join_set)
 	{
-		input_columns.push_back(NameAndTypePair(name, sample_block.getByName(name).type));
+		input_columns.emplace_back(name, sample_block.getByName(name).type);
 		actions.insert(actions.begin(), ExpressionAction::removeColumn(name));
 	}
 

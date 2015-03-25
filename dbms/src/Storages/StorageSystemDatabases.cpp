@@ -11,7 +11,7 @@ namespace DB
 StorageSystemDatabases::StorageSystemDatabases(const std::string & name_)
 	: name(name_)
 {
-	columns.push_back(NameAndTypePair("name", new DataTypeString));
+	columns.emplace_back("name", new DataTypeString);
 }
 
 StoragePtr StorageSystemDatabases::create(const std::string & name_)
