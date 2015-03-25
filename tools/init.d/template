@@ -34,6 +34,12 @@ PIDDIR=/var/run/$PROGRAM
 PIDFILE_PREFIX=$PIDDIR/$PROGRAM
 PIDFILE_RE="$PIDFILE_PREFIX[0-9]*.pid"
 
+SUPPORTED_COMMANDS="{start|stop|status|restart|forcestop|forcerestart|reload|condstart|condstop|condrestart|condreload}"
+is_supported_command()
+{
+	echo $SUPPORTED_COMMANDS | grep -E "(\{|\|)$1(\||})" &> /dev/null
+}
+
 generate_program_name()
 {
 	if [ $NUMBER_OF_PROCESSES -eq 1 ]; then
@@ -241,9 +247,6 @@ main()
 	condreload)
 		any_runs && restart
 		;;
-	*)
-		echo "Usage: ${0##*/} {start|stop|status|restart|forcestop|forcerestart|reload|condstart|condstop|condrestart|condreload}"
-		EXIT_STATUS=2
 	esac
 
 	exit $EXIT_STATUS
@@ -262,10 +265,17 @@ status()
 	fi
 }
 
+# выполняем команды, не нуждающиеся в блокировке
+if ! is_supported_command "$1"; then
+	echo "Usage: ${0##*/} $SUPPORTED_COMMANDS"
+	exit 2
+fi
+
 if [[ "$1" == "status" ]]; then
 	status
 	exit 0
 fi
+
 (
 	if flock -n 9; then
 		main "$@"
