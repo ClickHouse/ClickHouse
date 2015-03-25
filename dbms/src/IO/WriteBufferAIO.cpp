@@ -55,6 +55,8 @@ WriteBufferAIO::~WriteBufferAIO()
 
 	if (fd != -1)
 		::close(fd);
+	if (fd2 != -1)
+		::close(fd2);
 }
 
 off_t WriteBufferAIO::seek(off_t off, int whence)
