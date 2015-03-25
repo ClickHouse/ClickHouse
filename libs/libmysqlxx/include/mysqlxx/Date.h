@@ -185,3 +185,12 @@ inline std::ostream & operator<< (std::ostream & ostr, const Date & date)
 }
 
 }
+
+
+namespace std
+{
+inline string to_string(const mysqlxx::Date & date)
+{
+	return date.toString();
+}
+}
