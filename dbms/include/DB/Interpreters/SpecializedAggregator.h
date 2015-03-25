@@ -235,11 +235,11 @@ void NO_INLINE Aggregator::executeSpecializedCase(
 		/// Если вставили новый ключ - инициализируем состояния агрегатных функций, и возможно, что-нибудь связанное с ключом.
 		if (inserted)
 		{
+			AggregateDataPtr & aggregate_data = Method::getAggregateData(it->second);
+			aggregate_data = nullptr;
+
 			method.onNewKey(*it, keys_size, i, keys, *aggregates_pool);
 
-			AggregateDataPtr & aggregate_data = Method::getAggregateData(it->second);
-
-			aggregate_data = nullptr;
 			AggregateDataPtr place = aggregates_pool->alloc(total_size_of_aggregate_states);
 
 			AggregateFunctionsList::forEach(AggregateFunctionsCreator(

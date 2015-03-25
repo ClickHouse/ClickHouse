@@ -12,9 +12,9 @@ namespace DB
 StorageSystemTables::StorageSystemTables(const std::string & name_)
 	: name(name_)
 {
-	columns.push_back(NameAndTypePair("database", 	new DataTypeString));
-	columns.push_back(NameAndTypePair("name", 		new DataTypeString));
-	columns.push_back(NameAndTypePair("engine", 	new DataTypeString));
+	columns.emplace_back("database", 	new DataTypeString);
+	columns.emplace_back("name", 		new DataTypeString);
+	columns.emplace_back("engine", 		new DataTypeString);
 }
 
 StoragePtr StorageSystemTables::create(const std::string & name_)

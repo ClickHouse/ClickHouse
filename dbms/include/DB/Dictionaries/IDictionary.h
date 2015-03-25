@@ -2,9 +2,10 @@
 
 #include <DB/Core/Field.h>
 #include <DB/Core/StringRef.h>
-#include <memory>
 #include <Poco/Util/XMLConfiguration.h>
 #include <DB/Common/PODArray.h>
+#include <memory>
+#include <chrono>
 
 namespace DB
 {
@@ -15,6 +16,7 @@ class IDictionary;
 using DictionaryPtr = std::unique_ptr<IDictionary>;
 
 class DictionaryLifetime;
+class DictionaryStructure;
 class ColumnString;
 
 class IDictionary
@@ -26,13 +28,24 @@ public:
 
 	virtual std::string getTypeName() const = 0;
 
+	virtual std::size_t getBytesAllocated() const = 0;
+
+	virtual double getHitRate() const = 0;
+
+	virtual std::size_t getElementCount() const = 0;
+
+	virtual double getLoadFactor() const = 0;
+
 	virtual bool isCached() const = 0;
-	virtual void reload() {}
 	virtual DictionaryPtr clone() const = 0;
 
 	virtual const IDictionarySource * getSource() const = 0;
 
 	virtual const DictionaryLifetime & getLifetime() const = 0;
+
+	virtual const DictionaryStructure & getStructure() const = 0;
+
+	virtual std::chrono::time_point<std::chrono::system_clock> getCreationTime() const = 0;
 
 	virtual bool hasHierarchy() const = 0;
 

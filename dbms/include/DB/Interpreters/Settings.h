@@ -88,7 +88,7 @@ struct Settings
 	/** Количество одинаковых по структуре запросов перед тем, как инициируется их компиляция. */ \
 	M(SettingUInt64, min_count_to_compile, 0) \
 	/** При каком количестве ключей, начинает использоваться двухуровневая агрегация. 0 - никогда не использовать. */ \
-	M(SettingUInt64, group_by_two_level_threshold, 30000) \
+	M(SettingUInt64, group_by_two_level_threshold, 100000) \
 	\
 	/** Максимальное количество используемых реплик каждого шарда при выполнении запроса */ \
 	M(SettingUInt64, max_parallel_replicas, 1) \

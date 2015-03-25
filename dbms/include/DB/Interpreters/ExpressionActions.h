@@ -177,7 +177,7 @@ public:
 	{
 		for (ColumnsWithNameAndType::const_iterator it = input_columns_.begin(); it != input_columns_.end(); ++it)
 		{
-			input_columns.push_back(NameAndTypePair(it->name, it->type));
+			input_columns.emplace_back(it->name, it->type);
 			sample_block.insert(*it);
 		}
 	}
