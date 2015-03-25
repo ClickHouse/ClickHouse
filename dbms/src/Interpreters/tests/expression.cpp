@@ -60,9 +60,9 @@ int main(int argc, char ** argv)
 
 		Context context;
 		NamesAndTypesList columns;
-		columns.push_back(NameAndTypePair("x", new DataTypeInt16));
-		columns.push_back(NameAndTypePair("s1", new DataTypeString));
-		columns.push_back(NameAndTypePair("s2", new DataTypeString));
+		columns.emplace_back("x", new DataTypeInt16);
+		columns.emplace_back("s1", new DataTypeString);
+		columns.emplace_back("s2", new DataTypeString);
 		context.setColumns(columns);
 
 		ExpressionAnalyzer analyzer(ast, context, context.getColumns());

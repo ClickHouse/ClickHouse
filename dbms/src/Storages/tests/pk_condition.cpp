@@ -32,7 +32,7 @@ int main(int argc, const char ** argv)
 	}
 	Context context;
 	NamesAndTypesList columns;
-	columns.push_back(NameAndTypePair("key", new DataTypeUInt64));
+	columns.emplace_back("key", new DataTypeUInt64);
 	SortDescription sort_descr;
 	sort_descr.push_back(SortColumnDescription("key", 1));
 
