@@ -9,6 +9,7 @@
 #include <statdaemons/ext/scope_guard.hpp>
 #include <Poco/RWLock.h>
 #include <cmath>
+#include <atomic>
 #include <chrono>
 #include <vector>
 #include <map>
@@ -47,6 +48,19 @@ public:
 
 	std::size_t getBytesAllocated() const override { return bytes_allocated; }
 
+	double getHitRate() const override
+	{
+		return static_cast<double>(hit_count.load(std::memory_order_acquire)) /
+			query_count.load(std::memory_order_relaxed);
+	}
+
+	std::size_t getElementCount() const override { return element_count.load(std::memory_order_relaxed); }
+
+	double getLoadFactor() const override
+	{
+		return static_cast<double>(element_count.load(std::memory_order_relaxed)) / size;
+	}
+
 	bool isCached() const override { return true; }
 
 	DictionaryPtr clone() const override { return std::make_unique<CacheDictionary>(*this); }
@@ -54,6 +68,13 @@ public:
 	const IDictionarySource * getSource() const override { return source_ptr.get(); }
 
 	const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
+
+	const DictionaryStructure & getStructure() const override { return dict_struct; }
+
+	std::chrono::time_point<std::chrono::system_clock> getCreationTime() const override
+	{
+		return creation_time;
+	}
 
 	bool hasHierarchy() const override { return hierarchical_attribute; }
 
@@ -179,6 +200,7 @@ private:
 		const auto size = dict_struct.attributes.size();
 		attributes.reserve(size);
 
+		bytes_allocated += size * sizeof(cell_metadata_t);
 		bytes_allocated += size * sizeof(attributes.front());
 
 		for (const auto & attribute : dict_struct.attributes)
@@ -298,6 +320,9 @@ private:
 			}
 		}
 
+		query_count.fetch_add(ids.size(), std::memory_order_relaxed);
+		hit_count.fetch_add(ids.size() - outdated_ids.size(), std::memory_order_release);
+
 		if (outdated_ids.empty())
 			return;
 
@@ -351,7 +376,11 @@ private:
 
 		/// optimistic code completed successfully
 		if (!found_outdated_values)
+		{
+			query_count.fetch_add(ids.size(), std::memory_order_relaxed);
+			hit_count.fetch_add(ids.size(), std::memory_order_release);
 			return;
+		}
 
 		/// now onto the pessimistic one, discard possibly partial results from the optimistic path
 		out->getChars().resize_assume_reserved(0);
@@ -383,6 +412,9 @@ private:
 				}
 			}
 		}
+
+		query_count.fetch_add(ids.size(), std::memory_order_relaxed);
+		hit_count.fetch_add(ids.size() - outdated_ids.size(), std::memory_order_release);
 
 		/// request new values
 		if (!outdated_ids.empty())
@@ -456,6 +488,10 @@ private:
 					setAttributeValue(attribute, cell_idx, attribute_column[i]);
 				}
 
+				/// if cell id is zero and zero does not map to this cell, then the cell is unused
+				if (cell.id == 0 && cell_idx != zero_cell_idx)
+					element_count.fetch_add(1, std::memory_order_relaxed);
+
 				cell.id = id;
 				if (dict_lifetime.min_sec != 0 && dict_lifetime.max_sec != 0)
 					cell.expires_at = std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
@@ -480,6 +516,9 @@ private:
 
 			for (auto & attribute : attributes)
 				setDefaultAttributeValue(attribute, cell_idx);
+
+			if (cell.id == 0 && cell_idx != zero_cell_idx)
+				element_count.fetch_add(1, std::memory_order_relaxed);
 
 			cell.id = id;
 			if (dict_lifetime.min_sec != 0 && dict_lifetime.max_sec != 0)
@@ -613,6 +652,7 @@ private:
 
 	mutable Poco::RWLock rw_lock;
 	const std::size_t size;
+	const std::uint64_t zero_cell_idx{getCellIdx(0)};
 	std::map<std::string, std::size_t> attribute_index_by_name;
 	mutable std::vector<attribute_t> attributes;
 	mutable std::vector<cell_metadata_t> cells;
@@ -620,7 +660,12 @@ private:
 
 	mutable std::mt19937_64 rnd_engine{getSeed()};
 
-	mutable std::size_t bytes_allocated;
+	mutable std::size_t bytes_allocated = 0;
+	mutable std::atomic<std::size_t> element_count{};
+	mutable std::atomic<std::size_t> hit_count{};
+	mutable std::atomic<std::size_t> query_count{};
+
+	const std::chrono::time_point<std::chrono::system_clock> creation_time = std::chrono::system_clock::now();
 };
 
 }

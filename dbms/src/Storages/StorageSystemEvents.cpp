@@ -13,8 +13,8 @@ namespace DB
 StorageSystemEvents::StorageSystemEvents(const std::string & name_)
 	: name(name_)
 {
-	columns.push_back(NameAndTypePair("event", 		new DataTypeString));
-	columns.push_back(NameAndTypePair("value",		new DataTypeUInt64));
+	columns.emplace_back("event", 		new DataTypeString);
+	columns.emplace_back("value",		new DataTypeUInt64);
 }
 
 StoragePtr StorageSystemEvents::create(const std::string & name_)

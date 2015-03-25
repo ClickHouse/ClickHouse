@@ -74,6 +74,8 @@ public:
 
 	DictionarySourcePtr clone() const override { return std::make_unique<ClickHouseDictionarySource>(*this); }
 
+	std::string toString() const override { return "ClickHouse: " + db + '.' + table; }
+
 private:
 	static std::string composeLoadAllQuery(const Block & block, const std::string & db, const std::string & table)
 	{
@@ -94,8 +96,11 @@ private:
 			}
 
 			writeString(" FROM ", out);
-			writeProbablyBackQuotedString(db, out);
-			writeChar('.', out);
+			if (!db.empty())
+			{
+				writeProbablyBackQuotedString(db, out);
+				writeChar('.', out);
+			}
 			writeProbablyBackQuotedString(table, out);
 			writeChar(';', out);
 		}
@@ -123,8 +128,11 @@ private:
 
 			const auto & id_column_name = sample_block.getByPosition(0).name;
 			writeString(" FROM ", out);
-			writeProbablyBackQuotedString(db, out);
-			writeChar('.', out);
+			if (!db.empty())
+			{
+				writeProbablyBackQuotedString(db, out);
+				writeChar('.', out);
+			}
 			writeProbablyBackQuotedString(table, out);
 			writeString(" WHERE ", out);
 			writeProbablyBackQuotedString(id_column_name, out);
@@ -137,7 +145,7 @@ private:
 					writeString(", ", out);
 
 				first = false;
-				writeString(toString(id), out);
+				writeString(DB::toString(id), out);
 			}
 
 			writeString(");", out);

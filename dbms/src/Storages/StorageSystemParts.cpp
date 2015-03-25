@@ -16,19 +16,19 @@ namespace DB
 StorageSystemParts::StorageSystemParts(const std::string & name_)
 	: name(name_)
 {
-	columns.push_back(NameAndTypePair("partition", 			new DataTypeString));
-	columns.push_back(NameAndTypePair("name", 				new DataTypeString));
-	columns.push_back(NameAndTypePair("replicated",			new DataTypeUInt8));
-	columns.push_back(NameAndTypePair("active",				new DataTypeUInt8));
-	columns.push_back(NameAndTypePair("marks",				new DataTypeUInt64));
-	columns.push_back(NameAndTypePair("bytes",				new DataTypeUInt64));
-	columns.push_back(NameAndTypePair("modification_time",	new DataTypeDateTime));
-	columns.push_back(NameAndTypePair("remove_time",		new DataTypeDateTime));
-	columns.push_back(NameAndTypePair("refcount",			new DataTypeUInt32));
+	columns.emplace_back("partition", 			new DataTypeString);
+	columns.emplace_back("name", 				new DataTypeString);
+	columns.emplace_back("replicated",			new DataTypeUInt8);
+	columns.emplace_back("active",				new DataTypeUInt8);
+	columns.emplace_back("marks",				new DataTypeUInt64);
+	columns.emplace_back("bytes",				new DataTypeUInt64);
+	columns.emplace_back("modification_time",	new DataTypeDateTime);
+	columns.emplace_back("remove_time",			new DataTypeDateTime);
+	columns.emplace_back("refcount",			new DataTypeUInt32);
 
-	columns.push_back(NameAndTypePair("database", 			new DataTypeString));
-	columns.push_back(NameAndTypePair("table", 				new DataTypeString));
-	columns.push_back(NameAndTypePair("engine", 			new DataTypeString));
+	columns.emplace_back("database", 			new DataTypeString);
+	columns.emplace_back("table", 				new DataTypeString);
+	columns.emplace_back("engine", 				new DataTypeString);
 }
 
 StoragePtr StorageSystemParts::create(const std::string & name_)

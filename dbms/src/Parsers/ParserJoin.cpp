@@ -73,6 +73,10 @@ bool ParserJoin::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expecte
 
 	ws.ignore(pos, end);
 
+	/// Может быть указан алиас. На данный момент, он ничего не значит и не используется.
+	ParserAlias().ignore(pos, end);
+	ws.ignore(pos, end);
+
 	if (!s_using.ignore(pos, end, expected))
 		return false;
 
