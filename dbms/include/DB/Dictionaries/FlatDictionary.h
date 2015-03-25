@@ -230,7 +230,7 @@ private:
 	{
 		const auto & array_ref = std::get<std::unique_ptr<PODArray<T>>>(attribute.arrays);
 		bytes_allocated += sizeof(PODArray<T>) + array_ref->storage_size();
-		bucket_count = array_ref->size();
+		bucket_count = array_ref->capacity();
 	}
 
 	void calculateBytesAllocated()
