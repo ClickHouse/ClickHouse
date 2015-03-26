@@ -32,6 +32,9 @@ public:
 
 	virtual DictionarySourcePtr clone() const = 0;
 
+	/// returns an informal string describing the source
+	virtual std::string toString() const = 0;
+
 	virtual ~IDictionarySource() = default;
 };
 

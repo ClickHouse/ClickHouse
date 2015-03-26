@@ -53,24 +53,25 @@ public:
 	~StorageChunkMerger() override;
 
 private:
-	String this_database;
-	String name;
+	const String this_database;
+	const String name;
 	NamesAndTypesListPtr columns;
-	String source_database;
+	const String source_database;
 	OptimizedRegularExpression table_name_regexp;
 	std::string destination_name_prefix;
-	size_t chunks_to_merge;
+	const size_t chunks_to_merge;
 	Context & context;
 	Settings settings;
 
-	std::thread merge_thread;
-	Poco::Event cancel_merge_thread;
-
 	Logger * log;
-	volatile bool shutdown_called;
 
 	/// Название виртуального столбца, отвечающего за имя таблицы, из которой идет чтение. (Например "_table")
 	String _table_column_name;
+
+	class MergeTask;
+	using MergeTaskPtr = std::shared_ptr<MergeTask>;
+	MergeTaskPtr merge_task;
+	DB::BackgroundProcessingPool::TaskHandle merge_task_handle;
 
 	StorageChunkMerger(
 		const std::string & this_database_,
@@ -84,11 +85,6 @@ private:
 		const std::string & destination_name_prefix_,
 		size_t chunks_to_merge_,
 		Context & context_);
-
-	void mergeThread();
-	bool maybeMergeSomething();
-	Storages selectChunksToMerge();
-	bool mergeChunks(const Storages & chunks);
 
 	Block getBlockWithVirtualColumns(const Storages & selected_tables) const;
 

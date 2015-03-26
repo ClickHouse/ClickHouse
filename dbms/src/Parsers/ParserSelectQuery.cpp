@@ -125,6 +125,10 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 		}
 		else
 			return false;
+
+		/// Может быть указан алиас. На данный момент, он ничего не значит и не используется.
+		ParserAlias().ignore(pos, end);
+		ws.ignore(pos, end);
 	}
 
 	/** FINAL и SAMPLE может быть здесь или после всех JOIN-ов

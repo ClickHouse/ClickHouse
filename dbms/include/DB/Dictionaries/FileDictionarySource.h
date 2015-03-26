@@ -51,6 +51,8 @@ public:
 
 	DictionarySourcePtr clone() const override { return std::make_unique<FileDictionarySource>(*this); }
 
+	std::string toString() const override { return "File: " + filename + ' ' + format; }
+
 private:
 	Poco::Timestamp getLastModification() const { return Poco::File{filename}.getLastModified(); }
 

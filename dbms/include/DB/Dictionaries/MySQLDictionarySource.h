@@ -18,16 +18,18 @@ class MySQLDictionarySource final : public IDictionarySource
 public:
 	MySQLDictionarySource(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
 		Block & sample_block)
-		: table{config.getString(config_prefix + ".table")},
+		: db{config.getString(config_prefix + ".db", "")},
+		  table{config.getString(config_prefix + ".table")},
 		  sample_block{sample_block},
 		  pool{config, config_prefix},
-		  load_all_query{composeLoadAllQuery(sample_block, table)},
+		  load_all_query{composeLoadAllQuery(sample_block, db, table)},
 		  last_modification{getLastModification()}
 	{}
 
 	/// copy-constructor is provided in order to support cloneability
 	MySQLDictionarySource(const MySQLDictionarySource & other)
-		: table{other.table},
+		: db{other.db},
+		  table{other.table},
 		  sample_block{other.sample_block},
 		  pool{other.pool},
 		  load_all_query{other.load_all_query}, last_modification{other.last_modification}
@@ -52,6 +54,8 @@ public:
 
 	DictionarySourcePtr clone() const override { return std::make_unique<MySQLDictionarySource>(*this); }
 
+	std::string toString() const override { return "MySQL: " + db + '.' + table; }
+
 private:
 	mysqlxx::DateTime getLastModification() const
 	{
@@ -63,14 +67,17 @@ private:
 			auto connection = pool.Get();
 			auto query = connection->query("SHOW TABLE STATUS LIKE '%" + strconvert::escaped_for_like(table) + "%';");
 			auto result = query.use();
-			auto row = result.fetch();
-			const auto & update_time_value = row[Update_time_idx];
 
-			if (!update_time_value.isNull())
-				update_time = update_time_value.getDateTime();
+			if (auto row = result.fetch())
+			{
+				const auto & update_time_value = row[Update_time_idx];
 
-			/// fetch remaining rows to avoid "commands out of sync" error
-			while (auto row = result.fetch());
+				if (!update_time_value.isNull())
+					update_time = update_time_value.getDateTime();
+
+				/// fetch remaining rows to avoid "commands out of sync" error
+				while (auto row = result.fetch());
+			}
 		}
 		catch (...)
 		{
@@ -81,7 +88,7 @@ private:
 		return update_time;
 	}
 
-	static std::string composeLoadAllQuery(const Block & block, const std::string & table)
+	static std::string composeLoadAllQuery(const Block & block, const std::string & db, const std::string & table)
 	{
 		std::string query;
 
@@ -100,6 +107,11 @@ private:
 			}
 
 			writeString(" FROM ", out);
+			if (!db.empty())
+			{
+				writeProbablyBackQuotedString(db, out);
+				writeChar('.', out);
+			}
 			writeProbablyBackQuotedString(table, out);
 			writeChar(';', out);
 		}
@@ -127,6 +139,11 @@ private:
 
 			const auto & id_column_name = sample_block.getByPosition(0).name;
 			writeString(" FROM ", out);
+			if (!db.empty())
+			{
+				writeProbablyBackQuotedString(db, out);
+				writeChar('.', out);
+			}
 			writeProbablyBackQuotedString(table, out);
 			writeString(" WHERE ", out);
 			writeProbablyBackQuotedString(id_column_name, out);
@@ -139,7 +156,7 @@ private:
 					writeString(", ", out);
 
 				first = false;
-				writeString(toString(id), out);
+				writeString(DB::toString(id), out);
 			}
 
 			writeString(");", out);
@@ -148,6 +165,7 @@ private:
 		return query;
 	}
 
+	const std::string db;
 	const std::string table;
 	Block sample_block;
 	mutable mysqlxx::PoolWithFailover pool;

@@ -47,7 +47,8 @@ public:
 		if (!res)
 			working_buffer.resize(0);
 
-		pos = working_buffer.begin();
+		pos = working_buffer.begin() + working_buffer_offset;
+		working_buffer_offset = 0;
 		return res;
 	}
 

@@ -91,8 +91,6 @@ private:
 
 	void applyLoadBalancing(Settings * settings)
 	{
-		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
-
 		LoadBalancing load_balancing = default_load_balancing;
 		if (settings)
 			load_balancing = settings->load_balancing;

@@ -482,12 +482,13 @@ void NO_INLINE Aggregator::executeImplCase(
 		/// Если вставили новый ключ - инициализируем состояния агрегатных функций, и возможно, что-нибудь связанное с ключом.
 		if (inserted)
 		{
-			method.onNewKey(*it, keys_size, i, keys, *aggregates_pool);
-
 			AggregateDataPtr & aggregate_data = Method::getAggregateData(it->second);
 
 			/// exception-safety - если не удалось выделить память или создать состояния, то не будут вызываться деструкторы.
 			aggregate_data = nullptr;
+
+			method.onNewKey(*it, keys_size, i, keys, *aggregates_pool);
+
 			AggregateDataPtr place = aggregates_pool->alloc(total_size_of_aggregate_states);
 			createAggregateStates(place);
 			aggregate_data = place;
@@ -1377,7 +1378,7 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 template <typename Method, typename Table>
 void NO_INLINE Aggregator::mergeStreamsImpl(
 	Block & block,
-	AggregatedDataVariants & result,
+	const Sizes & key_sizes,
 	Arena * aggregates_pool,
 	Method & method,
 	Table & data) const
@@ -1404,17 +1405,17 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
 		bool inserted;			/// Вставили новый ключ, или такой ключ уже был?
 
 		/// Получаем ключ для вставки в хэш-таблицу.
-		auto key = state.getKey(key_columns, keys_size, i, result.key_sizes, keys, *aggregates_pool);
+		auto key = state.getKey(key_columns, keys_size, i, key_sizes, keys, *aggregates_pool);
 
 		data.emplace(key, it, inserted);
 
 		if (inserted)
 		{
+			AggregateDataPtr & aggregate_data = Method::getAggregateData(it->second);
+			aggregate_data = nullptr;
+
 			method.onNewKey(*it, keys_size, i, keys, *aggregates_pool);
 
-			AggregateDataPtr & aggregate_data = Method::getAggregateData(it->second);
-
-			aggregate_data = nullptr;
 			AggregateDataPtr place = aggregates_pool->alloc(total_size_of_aggregate_states);
 			createAggregateStates(place);
 			aggregate_data = place;
@@ -1470,9 +1471,6 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 	Block empty_block;
 	initialize(empty_block);
 
-	/// result будет уничтожать состояния агрегатных функций в деструкторе
-	result.aggregator = this;
-
 	/** Если на удалённых серверах использовался двухуровневый метод агрегации,
 	  *  то в блоках будет расположена информация о номере корзины.
 	  * Тогда вычисления можно будет распараллелить по корзинам.
@@ -1512,7 +1510,7 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 	  * - в случае одноуровневой агрегации, а также для блоков с "переполнившимися" значениями.
 	  * Если есть хотя бы один блок с номером корзины больше нуля, значит была двухуровневая агрегация.
 	  */
-	UInt32 max_bucket = bucket_to_blocks.rbegin()->first;
+	auto max_bucket = bucket_to_blocks.rbegin()->first;
 	size_t has_two_level = max_bucket > 0;
 
 	if (has_two_level)
@@ -1526,6 +1524,9 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 	#undef M
 	}
 
+	/// result будет уничтожать состояния агрегатных функций в деструкторе
+	result.aggregator = this;
+
 	result.init(method);
 	result.keys_size = keys_size;
 	result.key_sizes = key_sizes;
@@ -1537,7 +1538,7 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 	{
 		LOG_TRACE(log, "Merging partially aggregated two-level data.");
 
-		auto merge_bucket = [&bucket_to_blocks, &result, this](Int32 bucket, Arena * aggregates_pool, MemoryTracker * memory_tracker)
+		auto merge_bucket = [&bucket_to_blocks, &result, &key_sizes, this](Int32 bucket, Arena * aggregates_pool, MemoryTracker * memory_tracker)
 		{
 			current_memory_tracker = memory_tracker;
 
@@ -1545,7 +1546,7 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 			{
 			#define M(NAME) \
 				else if (result.type == AggregatedDataVariants::Type::NAME) \
-					mergeStreamsImpl(block, result, aggregates_pool, *result.NAME, result.NAME->data.impls[bucket]);
+					mergeStreamsImpl(block, key_sizes, aggregates_pool, *result.NAME, result.NAME->data.impls[bucket]);
 
 				if (false) {}
 					APPLY_FOR_VARIANTS_TWO_LEVEL(M)
@@ -1564,9 +1565,9 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 			&& has_two_level)
 			thread_pool.reset(new boost::threadpool::pool(max_threads));
 
-		for (auto & bucket_blocks : bucket_to_blocks)
+		for (const auto & bucket_blocks : bucket_to_blocks)
 		{
-			auto bucket = bucket_blocks.first;
+			const auto bucket = bucket_blocks.first;
 
 			if (bucket == -1)
 				continue;
@@ -1604,7 +1605,7 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 
 		#define M(NAME, IS_TWO_LEVEL) \
 			else if (result.type == AggregatedDataVariants::Type::NAME) \
-				mergeStreamsImpl(block, result, result.aggregates_pool, *result.NAME, result.NAME->data);
+				mergeStreamsImpl(block, key_sizes, result.aggregates_pool, *result.NAME, result.NAME->data);
 
 			APPLY_FOR_AGGREGATED_VARIANTS(M)
 		#undef M
