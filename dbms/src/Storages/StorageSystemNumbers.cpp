@@ -54,9 +54,8 @@ private:
 
 
 StorageSystemNumbers::StorageSystemNumbers(const std::string & name_, bool multithreaded_)
-	: name(name_), multithreaded(multithreaded_)
+	: name(name_), columns{{"number", new DataTypeUInt64}}, multithreaded(multithreaded_)
 {
-	columns.emplace_back("number", new DataTypeUInt64);
 }
 
 StoragePtr StorageSystemNumbers::create(const std::string & name_, bool multithreaded_)
