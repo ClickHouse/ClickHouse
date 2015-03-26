@@ -2,7 +2,6 @@
 
 #include <stdint.h>
 #include <string.h>
-#include <algorithm>
 
 
 /** Поиск подстроки в строке по алгоритму Вольницкого:
@@ -39,6 +38,22 @@ private:
 	offset_t hash[hash_size];	/// Хэш-таблица.
 
 	bool fallback;				/// Нужно ли использовать fallback алгоритм.
+
+	/// fallback алгоритм
+	static const char * naive_memmem(const char * haystack, size_t haystack_size, const char * needle, size_t needle_size)
+	{
+		const char * pos = haystack;
+		const char * end = haystack + haystack_size;
+		while (nullptr != (pos = reinterpret_cast<const char *>(memchr(pos, needle[0], end - pos))) && pos + needle_size <= end)
+		{
+			if (0 == memcmp(pos, needle, needle_size))
+				return pos;
+			else
+				++pos;
+		}
+
+		return end;
+	}
 
 public:
 	/** haystack_size_hint - ожидаемый суммарный размер haystack при вызовах search. Можно не указывать.
@@ -83,8 +98,7 @@ public:
 		}
 		if (fallback || haystack_size <= needle_size)
 		{
-			/// Как ни странно, std::search работает намного быстрее memmem из eglibc.
-			return std::search(haystack, haystack_end, needle, needle_end);
+			return naive_memmem(haystack, haystack_size, needle, needle_size);
 		}
 
 		/// Будем "прикладывать" needle к haystack и сравнивать n-грам из конца needle.
@@ -106,7 +120,7 @@ public:
 		}
 
 		/// Оставшийся хвостик.
-		return std::search(pos - step + 1, haystack_end, needle, needle_end);
+		return naive_memmem(pos - step + 1, haystack_end - (pos - step + 1), needle, needle_size);
 	}
 
 	const unsigned char * search(const unsigned char * haystack, size_t haystack_size) const
