@@ -10,11 +10,14 @@ namespace DB
 
 
 StorageSystemTables::StorageSystemTables(const std::string & name_)
-	: name(name_)
+	: name(name_),
+	columns
+	{
+		{"database", 	new DataTypeString},
+		{"name", 		new DataTypeString},
+		{"engine", 		new DataTypeString},
+	}
 {
-	columns.emplace_back("database", 	new DataTypeString);
-	columns.emplace_back("name", 		new DataTypeString);
-	columns.emplace_back("engine", 		new DataTypeString);
 }
 
 StoragePtr StorageSystemTables::create(const std::string & name_)
@@ -32,10 +35,9 @@ static ColumnWithNameAndType getFilteredDatabases(ASTPtr query, const Context & 
 
 	Block block;
 	block.insert(column);
-	for (auto database_it = context.getDatabases().begin(); database_it != context.getDatabases().end(); ++database_it)
-	{
-		column.column->insert(database_it->first);
-	}
+	for (const auto db : context.getDatabases())
+		column.column->insert(db.first);
+
 	VirtualColumnUtils::filterBlockWithQuery(query, block, context);
 
 	return block.getByPosition(0);

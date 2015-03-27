@@ -558,7 +558,7 @@ void Set::executeArray(const ColumnArray * key_column, ColumnUInt8::Container_t 
 }
 
 
-BoolMask Set::mayBeTrueInRange(const Range & range)
+BoolMask Set::mayBeTrueInRange(const Range & range) const
 {
 	if (!ordered_set_elements)
 		throw DB::Exception("Ordered set in not created.");
@@ -588,7 +588,10 @@ BoolMask Set::mayBeTrueInRange(const Range & range)
 	}
 	else
 	{
-		auto left_it = range.left_bounded ? std::lower_bound(ordered_set_elements->begin(), ordered_set_elements->end(), left) : ordered_set_elements->begin();
+		auto left_it = range.left_bounded
+			? std::lower_bound(ordered_set_elements->begin(), ordered_set_elements->end(), left)
+			: ordered_set_elements->begin();
+
 		if (range.left_bounded && !range.left_included && left_it != ordered_set_elements->end() && *left_it == left)
 			++left_it;
 
@@ -599,7 +602,10 @@ BoolMask Set::mayBeTrueInRange(const Range & range)
 		}
 		else
 		{
-			auto right_it = range.right_bounded ? std::upper_bound(ordered_set_elements->begin(), ordered_set_elements->end(), right) : ordered_set_elements->end();
+			auto right_it = range.right_bounded
+				? std::upper_bound(ordered_set_elements->begin(), ordered_set_elements->end(), right)
+				: ordered_set_elements->end();
+
 			if (range.right_bounded && !range.right_included && right_it != ordered_set_elements->begin() && *(right_it--) == right)
 				--right_it;
 
@@ -613,13 +619,9 @@ BoolMask Set::mayBeTrueInRange(const Range & range)
 				--right_it;
 				/// в диапазон не попадает ни одного ключа из in
 				if (*right_it < *left_it)
-				{
 					can_be_true = false;
-				}
 				else
-				{
 					can_be_true = true;
-				}
 			}
 		}
 	}

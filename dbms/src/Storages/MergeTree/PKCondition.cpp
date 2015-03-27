@@ -42,7 +42,7 @@ PKCondition::PKCondition(ASTPtr query, const Context & context_, const NamesAndT
 		if (select.prewhere_expression)
 		{
 			traverseAST(select.prewhere_expression, block_with_constants);
-			rpn.push_back(RPNElement(RPNElement::FUNCTION_AND));
+			rpn.emplace_back(RPNElement::FUNCTION_AND);
 		}
 	}
 	else if (select.prewhere_expression)
@@ -51,7 +51,7 @@ PKCondition::PKCondition(ASTPtr query, const Context & context_, const NamesAndT
 	}
 	else
 	{
-		rpn.push_back(RPNElement(RPNElement::FUNCTION_UNKNOWN));
+		rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
 	}
 }
 
@@ -59,8 +59,8 @@ bool PKCondition::addCondition(const String & column, const Range & range)
 {
 	if (!pk_columns.count(column))
 		return false;
-	rpn.push_back(RPNElement(RPNElement::FUNCTION_IN_RANGE, pk_columns[column], range));
-	rpn.push_back(RPNElement(RPNElement::FUNCTION_AND));
+	rpn.emplace_back(RPNElement::FUNCTION_IN_RANGE, pk_columns[column], range);
+	rpn.emplace_back(RPNElement::FUNCTION_AND);
 	return true;
 }
 
@@ -224,7 +224,7 @@ bool PKCondition::operatorFromAST(ASTFunction * func, RPNElement & out)
 	return true;
 }
 
-String PKCondition::toString()
+String PKCondition::toString() const
 {
 	String res;
 	for (size_t i = 0; i < rpn.size(); ++i)
@@ -236,7 +236,7 @@ String PKCondition::toString()
 	return res;
 }
 
-bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk, bool right_bounded)
+bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk, bool right_bounded) const
 {
 	/// Найдем диапазоны элементов ключа.
 	std::vector<Range> key_ranges(sort_descr.size(), Range());
@@ -264,10 +264,10 @@ bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk
 	std::vector<BoolMask> rpn_stack;
 	for (size_t i = 0; i < rpn.size(); ++i)
 	{
-		RPNElement & element = rpn[i];
+		const auto & element = rpn[i];
 		if (element.function == RPNElement::FUNCTION_UNKNOWN)
 		{
-			rpn_stack.push_back(BoolMask(true, true));
+			rpn_stack.emplace_back(true, true);
 		}
 		else if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE || element.function == RPNElement::FUNCTION_IN_RANGE)
 		{
@@ -275,15 +275,15 @@ bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk
 			bool intersects = element.range.intersectsRange(key_range);
 			bool contains = element.range.containsRange(key_range);
 
-			rpn_stack.push_back(BoolMask(intersects, !contains));
+			rpn_stack.emplace_back(intersects, !contains);
 			if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
 				rpn_stack.back() = !rpn_stack.back();
 		}
 		else if (element.function == RPNElement::FUNCTION_IN_SET || element.function == RPNElement::FUNCTION_NOT_IN_SET)
 		{
-			ASTFunction * in_func = typeid_cast<ASTFunction *>(element.in_function.get());
-			ASTs & args = typeid_cast<ASTExpressionList &>(*in_func->arguments).children;
-			ASTSet * ast_set = typeid_cast<ASTSet *>(args[1].get());
+			auto in_func = typeid_cast<const ASTFunction *>(element.in_function.get());
+			const ASTs & args = typeid_cast<const ASTExpressionList &>(*in_func->arguments).children;
+			auto ast_set = typeid_cast<const ASTSet *>(args[1].get());
 			if (in_func && ast_set)
 			{
 				const Range & key_range = key_ranges[element.key_column];
@@ -294,7 +294,7 @@ bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk
 			}
 			else
 			{
-				throw DB::Exception("Set for IN is not created yet!");
+				throw DB::Exception("Set for IN is not created yet!", ErrorCodes::LOGICAL_ERROR);
 			}
 		}
 		else if (element.function == RPNElement::FUNCTION_NOT)
@@ -303,16 +303,16 @@ bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk
 		}
 		else if (element.function == RPNElement::FUNCTION_AND)
 		{
-			BoolMask arg1 = rpn_stack.back();
+			auto arg1 = rpn_stack.back();
 			rpn_stack.pop_back();
-			BoolMask arg2 = rpn_stack.back();
+			auto arg2 = rpn_stack.back();
 			rpn_stack.back() = arg1 & arg2;
 		}
 		else if (element.function == RPNElement::FUNCTION_OR)
 		{
-			BoolMask arg1 = rpn_stack.back();
+			auto arg1 = rpn_stack.back();
 			rpn_stack.pop_back();
-			BoolMask arg2 = rpn_stack.back();
+			auto arg2 = rpn_stack.back();
 			rpn_stack.back() = arg1 | arg2;
 		}
 		else
@@ -325,27 +325,27 @@ bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk
 	return rpn_stack[0].can_be_true;
 }
 
-bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk)
+bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk) const
 {
 	return mayBeTrueInRange(left_pk, right_pk, true);
 }
 
-bool PKCondition::mayBeTrueAfter(const Field * left_pk)
+bool PKCondition::mayBeTrueAfter(const Field * left_pk) const
 {
 	return mayBeTrueInRange(left_pk, nullptr, false);
 }
 
-ASTSet * PKCondition::RPNElement::inFunctionToSet()
+const ASTSet * PKCondition::RPNElement::inFunctionToSet() const
 {
-	ASTFunction * in_func = typeid_cast<ASTFunction *>(in_function.get());
+	auto in_func = typeid_cast<const ASTFunction *>(in_function.get());
 	if (!in_func)
 		return nullptr;
-	ASTs & args = typeid_cast<ASTExpressionList &>(*in_func->arguments).children;
-	ASTSet * ast_set = typeid_cast<ASTSet *>(args[1].get());
+	const ASTs & args = typeid_cast<const ASTExpressionList &>(*in_func->arguments).children;
+	auto ast_set = typeid_cast<const ASTSet *>(args[1].get());
 	return ast_set;
 }
 
-String PKCondition::RPNElement::toString()
+String PKCondition::RPNElement::toString() const
 {
 	std::ostringstream ss;
 	switch (function)
@@ -374,4 +374,50 @@ String PKCondition::RPNElement::toString()
 			return "ERROR";
 	}
 }
+
+
+bool PKCondition::alwaysUnknown() const
+{
+	std::vector<UInt8> rpn_stack;
+
+	for (size_t i = 0; i < rpn.size(); ++i)
+	{
+		const auto & element = rpn[i];
+
+		if (element.function == RPNElement::FUNCTION_UNKNOWN)
+		{
+			rpn_stack.push_back(true);
+		}
+		else if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE
+			|| element.function == RPNElement::FUNCTION_IN_RANGE
+			|| element.function == RPNElement::FUNCTION_IN_SET
+			|| element.function == RPNElement::FUNCTION_NOT_IN_SET)
+		{
+			rpn_stack.push_back(false);
+		}
+		else if (element.function == RPNElement::FUNCTION_NOT)
+		{
+		}
+		else if (element.function == RPNElement::FUNCTION_AND)
+		{
+			auto arg1 = rpn_stack.back();
+			rpn_stack.pop_back();
+			auto arg2 = rpn_stack.back();
+			rpn_stack.back() = arg1 & arg2;
+		}
+		else if (element.function == RPNElement::FUNCTION_OR)
+		{
+			auto arg1 = rpn_stack.back();
+			rpn_stack.pop_back();
+			auto arg2 = rpn_stack.back();
+			rpn_stack.back() = arg1 | arg2;
+		}
+		else
+			throw Exception("Unexpected function type in PKCondition::RPNElement", ErrorCodes::LOGICAL_ERROR);
+	}
+
+	return rpn_stack[0];
+}
+
+
 }

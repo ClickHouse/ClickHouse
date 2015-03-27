@@ -293,7 +293,7 @@ public:
 	  */
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result, bool negative) const;
 
-	std::string describe()
+	std::string describe() const
 	{
 		if (!ordered_set_elements)
 			return "{}";
@@ -312,7 +312,7 @@ public:
 	}
 
 	/// проверяет есть ли в Set элементы для заданного диапазона индекса
-	BoolMask mayBeTrueInRange(const Range & range);
+	BoolMask mayBeTrueInRange(const Range & range) const;
 
 	size_t getTotalRowCount() const { return data.getTotalRowCount(); }
 	size_t getTotalByteCount() const { return data.getTotalByteCount(); }

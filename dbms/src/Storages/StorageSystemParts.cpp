@@ -14,21 +14,24 @@ namespace DB
 
 
 StorageSystemParts::StorageSystemParts(const std::string & name_)
-	: name(name_)
-{
-	columns.emplace_back("partition", 			new DataTypeString);
-	columns.emplace_back("name", 				new DataTypeString);
-	columns.emplace_back("replicated",			new DataTypeUInt8);
-	columns.emplace_back("active",				new DataTypeUInt8);
-	columns.emplace_back("marks",				new DataTypeUInt64);
-	columns.emplace_back("bytes",				new DataTypeUInt64);
-	columns.emplace_back("modification_time",	new DataTypeDateTime);
-	columns.emplace_back("remove_time",			new DataTypeDateTime);
-	columns.emplace_back("refcount",			new DataTypeUInt32);
+	: name(name_),
+	columns
+	{
+		{"partition", 			new DataTypeString},
+		{"name", 				new DataTypeString},
+		{"replicated",			new DataTypeUInt8},
+		{"active",				new DataTypeUInt8},
+		{"marks",				new DataTypeUInt64},
+		{"bytes",				new DataTypeUInt64},
+		{"modification_time",	new DataTypeDateTime},
+		{"remove_time",			new DataTypeDateTime},
+		{"refcount",			new DataTypeUInt32},
 
-	columns.emplace_back("database", 			new DataTypeString);
-	columns.emplace_back("table", 				new DataTypeString);
-	columns.emplace_back("engine", 				new DataTypeString);
+		{"database", 			new DataTypeString},
+		{"table", 				new DataTypeString},
+		{"engine", 				new DataTypeString},
+	}
+{
 }
 
 StoragePtr StorageSystemParts::create(const std::string & name_)
