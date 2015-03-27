@@ -280,20 +280,20 @@ public:
 
 	/// Выполнимо ли условие в диапазоне ключей.
 	/// left_pk и right_pk должны содержать все поля из sort_descr в соответствующем порядке.
-	bool mayBeTrueInRange(const Field * left_pk, const Field * right_pk);
+	bool mayBeTrueInRange(const Field * left_pk, const Field * right_pk) const;
 
 	/// Выполнимо ли условие в полубесконечном (не ограниченном справа) диапазоне ключей.
 	/// left_pk должен содержать все поля из sort_descr в соответствующем порядке.
-	bool mayBeTrueAfter(const Field * left_pk);
+	bool mayBeTrueAfter(const Field * left_pk) const;
 
 	/// Проверяет, что индекс не может быть использован.
-	bool alwaysUnknown();
+	bool alwaysUnknown() const;
 
 	/// Наложить дополнительное условие: значение в столбце column должно быть в диапазоне range.
 	/// Возвращает, есть ли такой столбец в первичном ключе.
 	bool addCondition(const String & column, const Range & range);
 
-	String toString();
+	String toString() const;
 private:
 	/// Выражение хранится в виде обратной польской строки (Reverse Polish Notation).
 	struct RPNElement
@@ -318,7 +318,7 @@ private:
 		RPNElement(Function function_, size_t key_column_, const Range & range_)
 			: function(function_), range(range_), key_column(key_column_) {}
 
-		String toString();
+		String toString() const;
 
 		Function function;
 
@@ -328,13 +328,13 @@ private:
 		/// Для FUNCTION_IN_SET
 		ASTPtr in_function;
 
-		ASTSet * inFunctionToSet();
+		const ASTSet * inFunctionToSet() const;
 	};
 
 	typedef std::vector<RPNElement> RPN;
 	typedef std::map<String, size_t> ColumnIndices;
 
-	bool mayBeTrueInRange(const Field * left_pk, const Field * right_pk, bool right_bounded);
+	bool mayBeTrueInRange(const Field * left_pk, const Field * right_pk, bool right_bounded) const;
 
 	void traverseAST(ASTPtr & node, Block & block_with_constants);
 	bool atomFromAST(ASTPtr & node, Block & block_with_constants, RPNElement & out);

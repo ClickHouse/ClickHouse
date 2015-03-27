@@ -42,7 +42,7 @@ PKCondition::PKCondition(ASTPtr query, const Context & context_, const NamesAndT
 		if (select.prewhere_expression)
 		{
 			traverseAST(select.prewhere_expression, block_with_constants);
-			rpn.push_back(RPNElement(RPNElement::FUNCTION_AND));
+			rpn.emplace_back(RPNElement::FUNCTION_AND);
 		}
 	}
 	else if (select.prewhere_expression)
@@ -51,7 +51,7 @@ PKCondition::PKCondition(ASTPtr query, const Context & context_, const NamesAndT
 	}
 	else
 	{
-		rpn.push_back(RPNElement(RPNElement::FUNCTION_UNKNOWN));
+		rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
 	}
 }
 
@@ -59,8 +59,8 @@ bool PKCondition::addCondition(const String & column, const Range & range)
 {
 	if (!pk_columns.count(column))
 		return false;
-	rpn.push_back(RPNElement(RPNElement::FUNCTION_IN_RANGE, pk_columns[column], range));
-	rpn.push_back(RPNElement(RPNElement::FUNCTION_AND));
+	rpn.emplace_back(RPNElement::FUNCTION_IN_RANGE, pk_columns[column], range);
+	rpn.emplace_back(RPNElement::FUNCTION_AND);
 	return true;
 }
 
@@ -224,7 +224,7 @@ bool PKCondition::operatorFromAST(ASTFunction * func, RPNElement & out)
 	return true;
 }
 
-String PKCondition::toString()
+String PKCondition::toString() const
 {
 	String res;
 	for (size_t i = 0; i < rpn.size(); ++i)
@@ -236,7 +236,7 @@ String PKCondition::toString()
 	return res;
 }
 
-bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk, bool right_bounded)
+bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk, bool right_bounded) const
 {
 	/// Найдем диапазоны элементов ключа.
 	std::vector<Range> key_ranges(sort_descr.size(), Range());
@@ -264,7 +264,7 @@ bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk
 	std::vector<BoolMask> rpn_stack;
 	for (size_t i = 0; i < rpn.size(); ++i)
 	{
-		RPNElement & element = rpn[i];
+		const auto & element = rpn[i];
 		if (element.function == RPNElement::FUNCTION_UNKNOWN)
 		{
 			rpn_stack.emplace_back(true, true);
@@ -281,9 +281,9 @@ bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk
 		}
 		else if (element.function == RPNElement::FUNCTION_IN_SET || element.function == RPNElement::FUNCTION_NOT_IN_SET)
 		{
-			ASTFunction * in_func = typeid_cast<ASTFunction *>(element.in_function.get());
-			ASTs & args = typeid_cast<ASTExpressionList &>(*in_func->arguments).children;
-			ASTSet * ast_set = typeid_cast<ASTSet *>(args[1].get());
+			auto in_func = typeid_cast<const ASTFunction *>(element.in_function.get());
+			const ASTs & args = typeid_cast<const ASTExpressionList &>(*in_func->arguments).children;
+			auto ast_set = typeid_cast<const ASTSet *>(args[1].get());
 			if (in_func && ast_set)
 			{
 				const Range & key_range = key_ranges[element.key_column];
@@ -325,27 +325,27 @@ bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk
 	return rpn_stack[0].can_be_true;
 }
 
-bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk)
+bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk) const
 {
 	return mayBeTrueInRange(left_pk, right_pk, true);
 }
 
-bool PKCondition::mayBeTrueAfter(const Field * left_pk)
+bool PKCondition::mayBeTrueAfter(const Field * left_pk) const
 {
 	return mayBeTrueInRange(left_pk, nullptr, false);
 }
 
-ASTSet * PKCondition::RPNElement::inFunctionToSet()
+const ASTSet * PKCondition::RPNElement::inFunctionToSet() const
 {
-	ASTFunction * in_func = typeid_cast<ASTFunction *>(in_function.get());
+	auto in_func = typeid_cast<const ASTFunction *>(in_function.get());
 	if (!in_func)
 		return nullptr;
-	ASTs & args = typeid_cast<ASTExpressionList &>(*in_func->arguments).children;
-	ASTSet * ast_set = typeid_cast<ASTSet *>(args[1].get());
+	const ASTs & args = typeid_cast<const ASTExpressionList &>(*in_func->arguments).children;
+	auto ast_set = typeid_cast<const ASTSet *>(args[1].get());
 	return ast_set;
 }
 
-String PKCondition::RPNElement::toString()
+String PKCondition::RPNElement::toString() const
 {
 	std::ostringstream ss;
 	switch (function)
@@ -376,13 +376,13 @@ String PKCondition::RPNElement::toString()
 }
 
 
-bool PKCondition::alwaysUnknown()
+bool PKCondition::alwaysUnknown() const
 {
 	std::vector<UInt8> rpn_stack;
 
 	for (size_t i = 0; i < rpn.size(); ++i)
 	{
-		RPNElement & element = rpn[i];
+		const auto & element = rpn[i];
 
 		if (element.function == RPNElement::FUNCTION_UNKNOWN)
 		{
