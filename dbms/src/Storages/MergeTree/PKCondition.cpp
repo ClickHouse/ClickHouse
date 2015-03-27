@@ -267,7 +267,7 @@ bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk
 		RPNElement & element = rpn[i];
 		if (element.function == RPNElement::FUNCTION_UNKNOWN)
 		{
-			rpn_stack.push_back(BoolMask(true, true));
+			rpn_stack.emplace_back(true, true);
 		}
 		else if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE || element.function == RPNElement::FUNCTION_IN_RANGE)
 		{
@@ -275,7 +275,7 @@ bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk
 			bool intersects = element.range.intersectsRange(key_range);
 			bool contains = element.range.containsRange(key_range);
 
-			rpn_stack.push_back(BoolMask(intersects, !contains));
+			rpn_stack.emplace_back(intersects, !contains);
 			if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
 				rpn_stack.back() = !rpn_stack.back();
 		}
@@ -294,7 +294,7 @@ bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk
 			}
 			else
 			{
-				throw DB::Exception("Set for IN is not created yet!");
+				throw DB::Exception("Set for IN is not created yet!", ErrorCodes::LOGICAL_ERROR);
 			}
 		}
 		else if (element.function == RPNElement::FUNCTION_NOT)
@@ -303,16 +303,16 @@ bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk
 		}
 		else if (element.function == RPNElement::FUNCTION_AND)
 		{
-			BoolMask arg1 = rpn_stack.back();
+			auto arg1 = rpn_stack.back();
 			rpn_stack.pop_back();
-			BoolMask arg2 = rpn_stack.back();
+			auto arg2 = rpn_stack.back();
 			rpn_stack.back() = arg1 & arg2;
 		}
 		else if (element.function == RPNElement::FUNCTION_OR)
 		{
-			BoolMask arg1 = rpn_stack.back();
+			auto arg1 = rpn_stack.back();
 			rpn_stack.pop_back();
-			BoolMask arg2 = rpn_stack.back();
+			auto arg2 = rpn_stack.back();
 			rpn_stack.back() = arg1 | arg2;
 		}
 		else
@@ -374,4 +374,50 @@ String PKCondition::RPNElement::toString()
 			return "ERROR";
 	}
 }
+
+
+bool PKCondition::alwaysUnknown()
+{
+	std::vector<UInt8> rpn_stack;
+
+	for (size_t i = 0; i < rpn.size(); ++i)
+	{
+		RPNElement & element = rpn[i];
+
+		if (element.function == RPNElement::FUNCTION_UNKNOWN)
+		{
+			rpn_stack.push_back(true);
+		}
+		else if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE
+			|| element.function == RPNElement::FUNCTION_IN_RANGE
+			|| element.function == RPNElement::FUNCTION_IN_SET
+			|| element.function == RPNElement::FUNCTION_NOT_IN_SET)
+		{
+			rpn_stack.push_back(false);
+		}
+		else if (element.function == RPNElement::FUNCTION_NOT)
+		{
+		}
+		else if (element.function == RPNElement::FUNCTION_AND)
+		{
+			auto arg1 = rpn_stack.back();
+			rpn_stack.pop_back();
+			auto arg2 = rpn_stack.back();
+			rpn_stack.back() = arg1 & arg2;
+		}
+		else if (element.function == RPNElement::FUNCTION_OR)
+		{
+			auto arg1 = rpn_stack.back();
+			rpn_stack.pop_back();
+			auto arg2 = rpn_stack.back();
+			rpn_stack.back() = arg1 | arg2;
+		}
+		else
+			throw Exception("Unexpected function type in PKCondition::RPNElement", ErrorCodes::LOGICAL_ERROR);
+	}
+
+	return rpn_stack[0];
+}
+
+
 }
