@@ -149,6 +149,40 @@ void WriteBufferAIO::nextImpl()
 
 	truncation_count = 0;
 
+        /*
+            Представление данных на диске
+
+            XXX : данные, которые хотим записать
+            ZZZ : данные, которые уже на диске или нули, если отсутствуют данные
+
+            region_aligned_begin                                           region_aligned_end
+            :   region_begin                                          region_end            :
+            :   :                                                              :            :
+            :   :                                                              :            :
+            +---:-----------+---------------+---------------+---------------+--:------------+
+            |   :           |               |               |               |  :            |
+            |   +-----------+---------------+---------------+---------------+--+            |
+            |ZZZ|XXXXXXXXXXX|XXXXXXXXXXXXXXX|XXXXXXXXXXXXXXX|XXXXXXXXXXXXXXX|XX|ZZZZZZZZZZZZ|
+            |ZZZ|XXXXXXXXXXX|XXXXXXXXXXXXXXX|XXXXXXXXXXXXXXX|XXXXXXXXXXXXXXX|XX|ZZZZZZZZZZZZ|
+            |   +-----------+---------------+---------------+---------------+--+            |
+            |               |               |               |               |               |
+            +---------------+---------------+---------------+---------------+---------------+
+                                                            <--------------->
+                                                                    :
+                                                                    :
+                                                         DEFAULT_AIO_FILE_BLOCK_SIZE
+
+            <--><--------------------------------------------------------------><----------->
+             :                                    :                                   :
+             :                                    :                                   :
+            region_left_padding             region_size                  region_right_padding
+
+            <------------------------------------------------------------------------------->
+                                                  :
+                                                  :
+                                         region_aligned_size
+         */
+
 	/// Регион диска, в который хотим записать данные.
 	const off_t region_begin = pos_in_file;
 	const off_t region_end = pos_in_file + flush_buffer.offset();
@@ -162,6 +196,32 @@ void WriteBufferAIO::nextImpl()
 	const off_t region_aligned_end = region_end + region_right_padding;
 	const size_t region_aligned_size = region_aligned_end - region_aligned_begin;
 
+	/*
+        Представление данных в буфере до обработки
+
+        buffer_begin                                         buffer_end
+        :                                                             :
+        :                                                             :
+        +---------------+---------------+---------------+-------------:-+
+        |               |               |               |             : |
+        +---------------+---------------+---------------+-------------+ |
+        |XXXXXXXXXXXXXXX|XXXXXXXXXXXXXXX|XXXXXXXXXXXXXXX|XXXXXXXXXXXXX| |
+        |XXXXXXXXXXXXXXX|XXXXXXXXXXXXXXX|XXXXXXXXXXXXXXX|XXXXXXXXXXXXX| |
+        +---------------+---------------+---------------+-------------+ |
+        |               |               |               |               |
+        +---------------+---------------+---------------+---------------+
+
+        <------------------------------------------------------------->
+                                        :
+                                        :
+                                   buffer_size
+
+        <--------------------------------------------------------------->
+                                        :
+                                        :
+                                  buffer_capacity
+    */
+
 	/// Буфер данных, которые хотим записать на диск.
 	const Position buffer_begin = flush_buffer.buffer().begin();
 	Position buffer_end = buffer_begin + region_size;
@@ -169,6 +229,32 @@ void WriteBufferAIO::nextImpl()
 	const size_t buffer_capacity = flush_buffer.buffer().size();
 
 	/// Обработать буфер, чтобы он отражал структуру региона диска.
+
+	/*
+		Представление данных в буфере после обработки
+
+		buffer_begin                                              buffer_end   memory_page
+		:                                                                  :       :
+		:                                                                  :       :
+		+---:-----------+---------------+---------------+---------------+--:------------+
+		|               |               |               |               |  :            |
+		|   +-----------+---------------+---------------+---------------+--+            |
+		|ZZZ|XXXXXXXXXXX|XXXXXXXXXXXXXXX|XXXXXXXXXXXXXXX|XXXXXXXXXXXXXXX|XX|ZZZZZZZZZZZZ|
+		|ZZZ|XXXXXXXXXXX|XXXXXXXXXXXXXXX|XXXXXXXXXXXXXXX|XXXXXXXXXXXXXXX|XX|ZZZZZZZZZZZZ|
+		|   +-----------+---------------+---------------+---------------+--+            |
+		|               |               |               |               |               |
+		+---------------+---------------+---------------+---------------+---------------+
+
+		<--><--------------------------------------------------------------><----------->
+		 :                                  :                                     :
+		 :                                  :                                     :
+		region_left_padding             region_size                  region_right_padding
+
+		<------------------------------------------------------------------------------->
+                                              :
+                                              :
+                                     region_aligned_size
+	*/
 
 	size_t excess_count = 0;
 
