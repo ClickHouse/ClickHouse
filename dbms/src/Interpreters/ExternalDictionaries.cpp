@@ -34,12 +34,12 @@ namespace
 	}
 }
 
-void ExternalDictionaries::reloadImpl()
+void ExternalDictionaries::reloadImpl(const bool throw_on_error)
 {
 	const auto config_paths = getDictionariesConfigPaths(Poco::Util::Application::instance().config());
 
 	for (const auto & config_path : config_paths)
-		reloadFromFile(config_path);
+		reloadFromFile(config_path, throw_on_error);
 
 	/// periodic update
 	for (auto & dictionary : dictionaries)
@@ -109,7 +109,7 @@ void ExternalDictionaries::reloadImpl()
 	}
 }
 
-void ExternalDictionaries::reloadFromFile(const std::string & config_path)
+void ExternalDictionaries::reloadFromFile(const std::string & config_path, const bool throw_on_error)
 {
 	const Poco::File config_file{config_path};
 
@@ -197,8 +197,9 @@ void ExternalDictionaries::reloadFromFile(const std::string & config_path)
 				}
 				catch (...)
 				{
+					const auto exception_ptr = std::current_exception();
 					if (!name.empty())
-						stored_exceptions.emplace(name, std::current_exception());
+						stored_exceptions.emplace(name, exception_ptr);
 
 					try
 					{
@@ -219,6 +220,10 @@ void ExternalDictionaries::reloadFromFile(const std::string & config_path)
 						LOG_ERROR(log, config_path << ": cannot create external dictionary '" << name
 							<< "'! You must resolve this manually.");
 					}
+
+					/// propagate exception
+					if (throw_on_error)
+						std::rethrow_exception(exception_ptr);
 				}
 			}
 		}

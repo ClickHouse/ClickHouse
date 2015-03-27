@@ -31,8 +31,10 @@ private:
 
 
 
-	void handleException() const
+	void handleException(const bool throw_on_error) const
 	{
+		const auto exception_ptr = std::current_exception();
+
 		try
 		{
 			throw;
@@ -40,18 +42,19 @@ private:
 		catch (const Poco::Exception & e)
 		{
 			LOG_ERROR(log, "Cannot load dictionary! You must resolve this manually. " << e.displayText());
-			return;
 		}
 		catch (...)
 		{
 			LOG_ERROR(log, "Cannot load dictionary! You must resolve this manually.");
-			return;
 		}
+
+		if (throw_on_error)
+			std::rethrow_exception(exception_ptr);
 	}
 
 
 	/// Обновляет справочники.
-	void reloadImpl()
+	void reloadImpl(const bool throw_on_error = false)
 	{
 		/** Если не удаётся обновить справочники, то несмотря на это, не кидаем исключение (используем старые справочники).
 		  * Если старых корректных справочников нет, то при использовании функций, которые от них зависят,
@@ -70,7 +73,7 @@ private:
 		}
 		catch (...)
 		{
-			handleException();
+			handleException(throw_on_error);
 			was_exception = true;
 		}
 
@@ -83,7 +86,7 @@ private:
 		}
 		catch (...)
 		{
-			handleException();
+			handleException(throw_on_error);
 			was_exception = true;
 		}
 
@@ -95,7 +98,7 @@ private:
 		}
 		catch (...)
 		{
-			handleException();
+			handleException(throw_on_error);
 			was_exception = true;
 		}
 
@@ -119,10 +122,10 @@ private:
 
 public:
 	/// Справочники будут обновляться в отдельном потоке, каждые reload_period секунд.
-	Dictionaries(int reload_period_ = 3600)
+	Dictionaries(const bool throw_on_error, const int reload_period_ = 3600)
 		: reload_period(reload_period_), log(&Logger::get("Dictionaries"))
 	{
-		reloadImpl();
+		reloadImpl(throw_on_error);
 		reloading_thread = std::thread([this] { reloadPeriodically(); });
 	}
 
