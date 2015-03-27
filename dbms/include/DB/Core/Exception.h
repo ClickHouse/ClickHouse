@@ -6,6 +6,7 @@
 #include <statdaemons/Exception.h>
 #include <Poco/SharedPtr.h>
 
+namespace Poco { class Logger; }
 
 namespace DB
 {
@@ -28,6 +29,7 @@ ExceptionPtr cloneCurrentException();
   * Можно использовать в деструкторах в блоке catch (...).
   */
 void tryLogCurrentException(const char * log_name);
+void tryLogCurrentException(Poco::Logger * logger);
 
 
 void rethrowFirstException(Exceptions & exceptions);

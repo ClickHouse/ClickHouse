@@ -54,6 +54,11 @@ inline std::string demangle(const char * const mangled, int & status)
 
 void tryLogCurrentException(const char * log_name)
 {
+	tryLogCurrentException(&Logger::get(log_name));
+}
+
+void tryLogCurrentException(Poco::Logger * logger)
+{
 	try
 	{
 		throw;
@@ -62,7 +67,7 @@ void tryLogCurrentException(const char * log_name)
 	{
 		try
 		{
-			LOG_ERROR(&Logger::get(log_name), "Code: " << e.code() << ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what()
+			LOG_ERROR(logger, "Code: " << e.code() << ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what()
 				<< ", Stack trace:\n\n" << e.getStackTrace().toString());
 		}
 		catch (...) {}
@@ -71,7 +76,7 @@ void tryLogCurrentException(const char * log_name)
 	{
 		try
 		{
-			LOG_ERROR(&Logger::get(log_name), "Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
+			LOG_ERROR(logger, "Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
 				<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what());
 		}
 		catch (...) {}
@@ -86,7 +91,7 @@ void tryLogCurrentException(const char * log_name)
 			if (status)
 				name += " (demangling status: " + toString(status) + ")";
 
-			LOG_ERROR(&Logger::get(log_name), "std::exception. Code: " << ErrorCodes::STD_EXCEPTION << ", type: " << name << ", e.what() = " << e.what());
+			LOG_ERROR(logger, "std::exception. Code: " << ErrorCodes::STD_EXCEPTION << ", type: " << name << ", e.what() = " << e.what());
 		}
 		catch (...) {}
 	}
@@ -100,7 +105,7 @@ void tryLogCurrentException(const char * log_name)
 			if (status)
 				name += " (demangling status: " + toString(status) + ")";
 
-			LOG_ERROR(&Logger::get(log_name), "Unknown exception. Code: " << ErrorCodes::UNKNOWN_EXCEPTION << ", type: " << name);
+			LOG_ERROR(logger, "Unknown exception. Code: " << ErrorCodes::UNKNOWN_EXCEPTION << ", type: " << name);
 		}
 		catch (...) {}
 	}
