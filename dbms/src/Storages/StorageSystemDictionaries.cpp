@@ -10,6 +10,7 @@
 #include <DB/Dictionaries/IDictionary.h>
 #include <DB/Dictionaries/IDictionarySource.h>
 #include <DB/Dictionaries/DictionaryStructure.h>
+#include <statdaemons/ext/map.hpp>
 #include <mutex>
 
 namespace DB
@@ -87,15 +88,12 @@ BlockInputStreams StorageSystemDictionaries::read(
 		col_origin.column->insert(dict_info.second.second);
 
 		const auto & dict_struct = dict_ptr->getStructure();
-		Array attribute_names;
-		Array attribute_types;
-		for (const auto & attribute : dict_struct.attributes)
-		{
-			attribute_names.push_back(attribute.name);
-			attribute_types.push_back(attribute.type->getName());
-		}
-		col_attribute_names.column->insert(attribute_names);
-		col_attribute_types.column->insert(attribute_types);
+		col_attribute_names.column->insert(ext::map<Array>(dict_struct.attributes, [] (auto & attr) -> decltype(auto) {
+			return attr.name;
+		}));
+		col_attribute_types.column->insert(ext::map<Array>(dict_struct.attributes, [] (auto & attr) -> decltype(auto) {
+			return attr.type->getName();
+		}));
 		col_has_hierarchy.column->insert(UInt64{dict_ptr->hasHierarchy()});
 		col_bytes_allocated.column->insert(dict_ptr->getBytesAllocated());
 		col_hit_rate.column->insert(dict_ptr->getHitRate());
