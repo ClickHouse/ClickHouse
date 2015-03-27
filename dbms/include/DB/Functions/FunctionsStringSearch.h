@@ -160,10 +160,15 @@ struct PositionUTF8Impl
 /// Переводит выражение LIKE в regexp re2. Например, abc%def -> ^abc.*def$
 inline String likePatternToRegexp(const String & pattern)
 {
-	String res = "^";
+	String res;
 	res.reserve(pattern.size() * 2);
 	const char * pos = pattern.data();
 	const char * end = pos + pattern.size();
+
+	if (pos < end && *pos == '%')
+		++pos;
+	else
+		res = "^";
 
 	while (pos < end)
 	{
@@ -174,7 +179,10 @@ inline String likePatternToRegexp(const String & pattern)
 				res += *pos;
 				break;
 			case '%':
-				res += ".*";
+				if (pos + 1 != end)
+					res += ".*";
+				else
+					return res;
 				break;
 			case '_':
 				res += ".";
@@ -347,6 +355,7 @@ struct MatchImpl
 			/// Текущий индекс в массиве строк.
 			size_t i = 0;
 
+			/// TODO Надо сделать так, чтобы searcher был общим на все вызовы функции.
 			Volnitsky searcher(strstr_pattern.data(), strstr_pattern.size(), end - pos);
 
 			/// Искать будем следующее вхождение сразу во всех строках.
@@ -369,14 +378,87 @@ struct MatchImpl
 				++i;
 			}
 
+			/// Хвостик, в котором не может быть подстрок.
 			memset(&res[i], revert, (res.size() - i) * sizeof(res[0]));
 		}
 		else
 		{
-			const auto & regexp = Regexps::get<like, true>(pattern);
 			size_t size = offsets.size();
-			for (size_t i = 0; i < size; ++i)
-				res[i] = revert ^ regexp->match(reinterpret_cast<const char *>(&data[i != 0 ? offsets[i - 1] : 0]), (i != 0 ? offsets[i] - offsets[i - 1] : offsets[0]) - 1);
+
+			const auto & regexp = Regexps::get<like, true>(pattern);
+
+			std::string required_substring;
+			bool is_trivial;
+			bool required_substring_is_prefix;	/// для anchored выполнения регекспа.
+
+			regexp->getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
+
+			if (required_substring.empty())
+			{
+				size_t prev_offset = 0;
+				for (size_t i = 0; i < size; ++i)
+				{
+					res[i] = revert ^ regexp->getRE2()->Match(
+						re2_st::StringPiece(reinterpret_cast<const char *>(&data[prev_offset]), offsets[i] - prev_offset - 1),
+						0, offsets[i] - prev_offset - 1, re2_st::RE2::UNANCHORED, nullptr, 0);
+
+					prev_offset = offsets[i];
+				}
+			}
+			else
+			{
+				/// NOTE Это почти совпадает со случаем likePatternIsStrstr.
+
+				const UInt8 * begin = &data[0];
+				const UInt8 * pos = begin;
+				const UInt8 * end = pos + data.size();
+
+				/// Текущий индекс в массиве строк.
+				size_t i = 0;
+
+				Volnitsky searcher(required_substring.data(), required_substring.size(), end - pos);
+
+				/// Искать будем следующее вхождение сразу во всех строках.
+				while (pos < end && end != (pos = searcher.search(pos, end - pos)))
+				{
+					/// Определим, к какому индексу оно относится.
+					while (begin + offsets[i] < pos)
+					{
+						res[i] = revert;
+						++i;
+					}
+
+					/// Проверяем, что вхождение не переходит через границы строк.
+					if (pos + strstr_pattern.size() < begin + offsets[i])
+					{
+						/// И если не переходит - при необходимости, проверяем регекспом.
+
+						if (is_trivial)
+							res[i] = !revert;
+						else
+						{
+							const char * str_data = reinterpret_cast<const char *>(&data[i != 0 ? offsets[i - 1] : 0]);
+							size_t str_size = (i != 0 ? offsets[i] - offsets[i - 1] : offsets[0]) - 1;
+
+							if (required_substring_is_prefix)
+								res[i] = revert ^ regexp->getRE2()->Match(
+									re2_st::StringPiece(str_data, str_size),
+									reinterpret_cast<const char *>(pos) - str_data, str_size, re2_st::RE2::ANCHOR_START, nullptr, 0);
+							else
+								res[i] = revert ^ regexp->getRE2()->Match(
+									re2_st::StringPiece(str_data, str_size),
+									0, str_size, re2_st::RE2::UNANCHORED, nullptr, 0);
+						}
+					}
+					else
+						res[i] = revert;
+
+					pos = begin + offsets[i];
+					++i;
+				}
+
+				memset(&res[i], revert, (res.size() - i) * sizeof(res[0]));
+			}
 		}
 	}
 
