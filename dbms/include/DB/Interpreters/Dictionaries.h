@@ -64,42 +64,53 @@ private:
 
 		LOG_INFO(log, "Loading dictionaries.");
 
+		auto & config = Poco::Util::Application::instance().config();
+
 		bool was_exception = false;
 
-		try
+		if (config.has(TechDataHierarchy::required_key))
 		{
-			MultiVersion<TechDataHierarchy>::Version new_tech_data_hierarchy = new TechDataHierarchy;
-			tech_data_hierarchy.set(new_tech_data_hierarchy);
-		}
-		catch (...)
-		{
-			handleException(throw_on_error);
-			was_exception = true;
-		}
-
-		try
-		{
-			MultiVersion<RegionsHierarchies>::Version new_regions_hierarchies = new RegionsHierarchies;
-			new_regions_hierarchies->reload();
-			regions_hierarchies.set(new_regions_hierarchies);
-
-		}
-		catch (...)
-		{
-			handleException(throw_on_error);
-			was_exception = true;
+			try
+			{
+				auto new_tech_data_hierarchy = std::make_unique<TechDataHierarchy>();
+				tech_data_hierarchy.set(new_tech_data_hierarchy.release());
+			}
+			catch (...)
+			{
+				handleException(throw_on_error);
+				was_exception = true;
+			}
 		}
 
-		try
+
+		if (config.has(RegionsHierarchies::required_key))
 		{
-			MultiVersion<RegionsNames>::Version new_regions_names = new RegionsNames;
-			new_regions_names->reload();
-			regions_names.set(new_regions_names);
+			try
+			{
+				auto new_regions_hierarchies = std::make_unique<RegionsHierarchies>();
+				new_regions_hierarchies->reload();
+				regions_hierarchies.set(new_regions_hierarchies.release());
+			}
+			catch (...)
+			{
+				handleException(throw_on_error);
+				was_exception = true;
+			}
 		}
-		catch (...)
+
+		if (config.has(RegionsNames::required_key))
 		{
-			handleException(throw_on_error);
-			was_exception = true;
+			try
+			{
+				auto new_regions_names = std::make_unique<RegionsNames>();
+				new_regions_names->reload();
+				regions_names.set(new_regions_names.release());
+			}
+			catch (...)
+			{
+				handleException(throw_on_error);
+				was_exception = true;
+			}
 		}
 
 		if (!was_exception)
