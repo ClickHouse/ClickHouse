@@ -1030,7 +1030,8 @@ public:
 			("database,d", 		boost::program_options::value<std::string>(), 	"database")
 			("multiline,m",														"multiline")
 			("multiquery,n",													"multiquery")
-			("vertical,E",                                                      "vertical")
+			("format,f",        boost::program_options::value<std::string>(), 	"default output format")
+			("vertical,E",      "vertical output format, same as --format=Vertical or FORMAT Vertical or \\G at end of command")
 			("time,t",			"print query execution time to stderr in non-interactive mode (for benchmarks)")
 			APPLY_FOR_SETTINGS(DECLARE_SETTING)
 			APPLY_FOR_LIMITS(DECLARE_LIMIT)
@@ -1144,6 +1145,8 @@ public:
 			config().setBool("multiline", true);
 		if (options.count("multiquery"))
 			config().setBool("multiquery", true);
+		if (options.count("format"))
+			config().setString("format", options["format"].as<std::string>());
 		if (options.count("vertical"))
 			config().setBool("vertical", true);
 		if (options.count("time"))
