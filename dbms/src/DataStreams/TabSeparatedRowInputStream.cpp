@@ -45,6 +45,19 @@ void TabSeparatedRowInputStream::readPrefix()
 }
 
 
+/** Проверка на распространённый случай ошибки - использование Windows перевода строки.
+  */
+static void checkForCarriageReturn(ReadBuffer & istr)
+{
+	if (istr.position()[0] == '\r' || (istr.position() != istr.buffer().begin() && istr.position()[-1] == '\r'))
+		throw Exception("You have carriage return (\\r, 0x0D, ASCII 13) at end of first row."
+			" It's like your input data have DOS/Windows style line separators, that are illegal in TabSeparated format."
+			" You must transform your file to Unix format."
+			" But if you really need carriage return at end of string value of last column, you need to escape it as \\r.",
+			ErrorCodes::INCORRECT_DATA);
+}
+
+
 bool TabSeparatedRowInputStream::read(Row & row)
 {
 	updateDiagnosticInfo();
@@ -66,7 +79,12 @@ bool TabSeparatedRowInputStream::read(Row & row)
 		if (i + 1 == size)
 		{
 			if (!istr.eof())
+			{
+				if (unlikely(row_num == 1))
+					checkForCarriageReturn(istr);
+
 				assertString("\n", istr);
+			}
 		}
 		else
 			assertString("\t", istr);
@@ -86,6 +104,16 @@ void TabSeparatedRowInputStream::printDiagnosticInfo(WriteBuffer & out)
 		return;
 	}
 
+	size_t max_length_of_column_name = 0;
+	for (size_t i = 0; i < sample.columns(); ++i)
+		if (sample.getByPosition(i).name.size() > max_length_of_column_name)
+			max_length_of_column_name = sample.getByPosition(i).name.size();
+
+	size_t max_length_of_data_type_name = 0;
+	for (size_t i = 0; i < sample.columns(); ++i)
+		if (sample.getByPosition(i).type->getName().size() > max_length_of_data_type_name)
+			max_length_of_data_type_name = sample.getByPosition(i).type->getName().size();
+
 	/// Откатываем курсор для чтения на начало предыдущей или текущей строки и парсим всё заново. Но теперь выводим подробную информацию.
 
 	if (pos_of_prev_row)
@@ -93,7 +121,7 @@ void TabSeparatedRowInputStream::printDiagnosticInfo(WriteBuffer & out)
 		istr.position() = pos_of_prev_row;
 
 		out << "\nRow " << (row_num - 1) << ":\n";
-		if (!parseRowAndPrintDiagnosticInfo(out))
+		if (!parseRowAndPrintDiagnosticInfo(out, max_length_of_column_name, max_length_of_data_type_name))
 			return;
 	}
 	else
@@ -108,7 +136,7 @@ void TabSeparatedRowInputStream::printDiagnosticInfo(WriteBuffer & out)
 	}
 
 	out << "\nRow " << row_num << ":\n";
-	parseRowAndPrintDiagnosticInfo(out);
+	parseRowAndPrintDiagnosticInfo(out, max_length_of_column_name, max_length_of_data_type_name);
 	out << "\n";
 }
 
@@ -172,7 +200,8 @@ static void verbosePrintString(BufferBase::Position begin, BufferBase::Position 
 }
 
 
-bool TabSeparatedRowInputStream::parseRowAndPrintDiagnosticInfo(WriteBuffer & out)
+bool TabSeparatedRowInputStream::parseRowAndPrintDiagnosticInfo(
+	WriteBuffer & out, size_t max_length_of_column_name, size_t max_length_of_data_type_name)
 {
 	size_t size = data_types.size();
 	for (size_t i = 0; i < size; ++i)
@@ -183,7 +212,9 @@ bool TabSeparatedRowInputStream::parseRowAndPrintDiagnosticInfo(WriteBuffer & ou
 			return false;
 		}
 
-		out << "Column " << i << ", name: " << sample.getByPosition(i).name << ", type: " << data_types[i]->getName();
+		out << "Column " << i << ", " << std::string((i < 10 ? 2 : i < 100 ? 1 : 0), ' ')
+			<< "name: " << sample.getByPosition(i).name << ", " << std::string(max_length_of_column_name - sample.getByPosition(i).name.size(), ' ')
+			<< "type: " << data_types[i]->getName() << ", " << std::string(max_length_of_data_type_name - data_types[i]->getName().size(), ' ');
 
 		auto prev_position = istr.position();
 		std::exception_ptr exception;
@@ -208,31 +239,42 @@ bool TabSeparatedRowInputStream::parseRowAndPrintDiagnosticInfo(WriteBuffer & ou
 			/// Пустая строка вместо числа.
 			if (curr_position == prev_position)
 			{
-				out << ", ERROR: text ";
+				out << "ERROR: text ";
 				verbosePrintString(prev_position, std::min(prev_position + 10, istr.buffer().end()), out);
-				out << " is not like number\n";
+				out << " is not like " << data_types[i]->getName() << "\n";
 				return false;
 			}
 		}
 
-		out << ", parsed text: ";
+		out << "parsed text: ";
 		verbosePrintString(prev_position, curr_position, out);
 
 		if (exception)
 		{
-			out << ", ERROR\n";
+			if (data_types[i]->getName() == "DateTime")
+				out << "ERROR: DateTime must be in YYYY-MM-DD hh:mm:ss format.\n";
+			else if (data_types[i]->getName() == "Date")
+				out << "ERROR: Date must be in YYYY-MM-DD format.\n";
+			else
+				out << "ERROR\n";
 			return false;
 		}
 
-		out << " as " << apply_visitor(FieldVisitorToString(), field) << "\n";
+		out << "\n";
 
 		if (data_types[i]->isNumeric())
 		{
 			if (*curr_position != '\n' && *curr_position != '\t')
 			{
-				out << "ERROR: garbage after number: ";
+				out << "ERROR: garbage after " << data_types[i]->getName() << ": ";
 				verbosePrintString(curr_position, std::min(curr_position + 10, istr.buffer().end()), out);
 				out << "\n";
+
+				if (data_types[i]->getName() == "DateTime")
+					out << "ERROR: DateTime must be in YYYY-MM-DD hh:mm:ss format.\n";
+				else if (data_types[i]->getName() == "Date")
+					out << "ERROR: Date must be in YYYY-MM-DD format.\n";
+
 				return false;
 			}
 		}

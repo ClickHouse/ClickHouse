@@ -59,6 +59,7 @@
 #include <DB/Common/ExternalTable.h>
 #include <DB/Common/UnicodeBar.h>
 #include <DB/Common/formatReadable.h>
+#include <DB/Columns/ColumnString.h>
 
 
 /// http://en.wikipedia.org/wiki/ANSI_escape_code
@@ -727,7 +728,7 @@ private:
 			WriteBufferFromFileDescriptor stderr_out(STDERR_FILENO);
 			concrete_row_input->printDiagnosticInfo(stderr_out);
 
-			throw Exception("Cannot parse data in tab separated format.", ErrorCodes::SYNTAX_ERROR);
+			throw;
 		}
 	}
 

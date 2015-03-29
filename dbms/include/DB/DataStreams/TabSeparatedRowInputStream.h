@@ -57,7 +57,7 @@ private:
 		pos_of_current_row = istr.position();
 	}
 
-	bool parseRowAndPrintDiagnosticInfo(WriteBuffer & out);
+	bool parseRowAndPrintDiagnosticInfo(WriteBuffer & out, size_t max_length_of_column_name, size_t max_length_of_data_type_name);
 };
 
 }
