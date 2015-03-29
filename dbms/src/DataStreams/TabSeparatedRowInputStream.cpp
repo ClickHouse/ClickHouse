@@ -50,10 +50,10 @@ void TabSeparatedRowInputStream::readPrefix()
 static void checkForCarriageReturn(ReadBuffer & istr)
 {
 	if (istr.position()[0] == '\r' || (istr.position() != istr.buffer().begin() && istr.position()[-1] == '\r'))
-		throw Exception("You have carriage return (\\r, 0x0D, ASCII 13) at end of first row."
-			" It's like your input data have DOS/Windows style line separators, that are illegal in TabSeparated format."
+		throw Exception("\nYou have carriage return (\\r, 0x0D, ASCII 13) at end of first row."
+			"\nIt's like your input data has DOS/Windows style line separators, that are illegal in TabSeparated format."
 			" You must transform your file to Unix format."
-			" But if you really need carriage return at end of string value of last column, you need to escape it as \\r.",
+			"\nBut if you really need carriage return at end of string value of last column, you need to escape it as \\r.",
 			ErrorCodes::INCORRECT_DATA);
 }
 
@@ -65,29 +65,43 @@ bool TabSeparatedRowInputStream::read(Row & row)
 	size_t size = data_types.size();
 	row.resize(size);
 
-	for (size_t i = 0; i < size; ++i)
+	try
 	{
-		if (i == 0 && istr.eof())
+		for (size_t i = 0; i < size; ++i)
 		{
-			row.clear();
-			return false;
-		}
-
-		data_types[i]->deserializeTextEscaped(row[i], istr);
-
-		/// пропускаем разделители
-		if (i + 1 == size)
-		{
-			if (!istr.eof())
+			if (i == 0 && istr.eof())
 			{
-				if (unlikely(row_num == 1))
-					checkForCarriageReturn(istr);
-
-				assertString("\n", istr);
+				row.clear();
+				return false;
 			}
+
+			data_types[i]->deserializeTextEscaped(row[i], istr);
+
+			/// пропускаем разделители
+			if (i + 1 == size)
+			{
+				if (!istr.eof())
+				{
+					if (unlikely(row_num == 1))
+						checkForCarriageReturn(istr);
+
+					assertString("\n", istr);
+				}
+			}
+			else
+				assertString("\t", istr);
 		}
-		else
-			assertString("\t", istr);
+	}
+	catch (Exception & e)
+	{
+		String verbose_diagnostic;
+		{
+			WriteBufferFromString diagnostic_out(verbose_diagnostic);
+			printDiagnosticInfo(diagnostic_out);
+		}
+
+		e.addMessage("\n" + verbose_diagnostic);
+		throw;
 	}
 
 	return true;

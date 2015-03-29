@@ -23,11 +23,6 @@ public:
 	bool read(Row & row) override;
 	void readPrefix() override;
 
-	/** В случае исключения при парсинге, вы можете вызвать эту функцию.
-	  * Она выполняет заново парсинг последних двух строк и выводит подробную информацию о том, что происходит.
-	  */
-	void printDiagnosticInfo(WriteBuffer & out);
-
 private:
 	ReadBuffer & istr;
 	const Block sample;
@@ -45,6 +40,11 @@ private:
 
 	BufferBase::Position pos_of_current_row = nullptr;
 	BufferBase::Position pos_of_prev_row = nullptr;
+
+	/** В случае исключения при парсинге, вызывается эта функция.
+	  * Она выполняет заново парсинг последних двух строк и выводит подробную информацию о том, что происходит.
+	  */
+	void printDiagnosticInfo(WriteBuffer & out);
 
 	void updateDiagnosticInfo()
 	{

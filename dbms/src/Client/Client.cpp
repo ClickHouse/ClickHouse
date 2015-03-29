@@ -695,41 +695,19 @@ private:
 
 		BlockInputStreamPtr async_block_input = new AsynchronousBlockInputStream(block_input);
 
-		try
+		async_block_input->readPrefix();
+
+		while (true)
 		{
-			async_block_input->readPrefix();
+			Block block = async_block_input->read();
+			connection->sendData(block);
+			processed_rows += block.rows();
 
-			while (true)
-			{
-				Block block = async_block_input->read();
-				connection->sendData(block);
-				processed_rows += block.rows();
-
-				if (!block)
-					break;
-			}
-
-			async_block_input->readSuffix();
+			if (!block)
+				break;
 		}
-		catch (...)		/// TODO Более точно
-		{
-			/** В частном случае - при использовании формата TabSeparated, мы можем вывести более подробную диагностику.
-			  */
 
-			BlockInputStreamFromRowInputStream * concrete_block_input = dynamic_cast<BlockInputStreamFromRowInputStream *>(block_input.get());
-			if (!concrete_block_input)
-				throw;
-
-			RowInputStreamPtr & row_input = concrete_block_input->getRowInput();
-			TabSeparatedRowInputStream * concrete_row_input = dynamic_cast<TabSeparatedRowInputStream *>(row_input.get());
-			if (!concrete_row_input)
-				throw;
-
-			WriteBufferFromFileDescriptor stderr_out(STDERR_FILENO);
-			concrete_row_input->printDiagnosticInfo(stderr_out);
-
-			throw;
-		}
+		async_block_input->readSuffix();
 	}
 
 
