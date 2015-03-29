@@ -38,6 +38,8 @@
 #include <DB/IO/ReadBufferFromIStream.h>
 
 #include <DB/DataStreams/AsynchronousBlockInputStream.h>
+#include <DB/DataStreams/BlockInputStreamFromRowInputStream.h>
+#include <DB/DataStreams/TabSeparatedRowInputStream.h>
 
 #include <DB/Parsers/ParserQuery.h>
 #include <DB/Parsers/ASTSetQuery.h>
@@ -687,21 +689,46 @@ private:
 			if (!insert->format.empty())
 				current_format = insert->format;
 
-		BlockInputStreamPtr block_std_in = new AsynchronousBlockInputStream(context.getFormatFactory().getInput(
-			current_format, buf, sample, insert_format_max_block_size, context.getDataTypeFactory()));
-		block_std_in->readPrefix();
+		BlockInputStreamPtr block_input = context.getFormatFactory().getInput(
+			current_format, buf, sample, insert_format_max_block_size, context.getDataTypeFactory());
 
-		while (true)
+		BlockInputStreamPtr async_block_input = new AsynchronousBlockInputStream(block_input);
+
+		try
 		{
-			Block block = block_std_in->read();
-			connection->sendData(block);
-			processed_rows += block.rows();
+			async_block_input->readPrefix();
 
-			if (!block)
-				break;
+			while (true)
+			{
+				Block block = async_block_input->read();
+				connection->sendData(block);
+				processed_rows += block.rows();
+
+				if (!block)
+					break;
+			}
+
+			async_block_input->readSuffix();
 		}
+		catch (...)		/// TODO Более точно
+		{
+			/** В частном случае - при использовании формата TabSeparated, мы можем вывести более подробную диагностику.
+			  */
 
-		block_std_in->readSuffix();
+			BlockInputStreamFromRowInputStream * concrete_block_input = dynamic_cast<BlockInputStreamFromRowInputStream *>(block_input.get());
+			if (!concrete_block_input)
+				throw;
+
+			RowInputStreamPtr & row_input = concrete_block_input->getRowInput();
+			TabSeparatedRowInputStream * concrete_row_input = dynamic_cast<TabSeparatedRowInputStream *>(row_input.get());
+			if (!concrete_row_input)
+				throw;
+
+			WriteBufferFromFileDescriptor stderr_out(STDERR_FILENO);
+			concrete_row_input->printDiagnosticInfo(stderr_out);
+
+			throw Exception("Cannot parse data in tab separated format.", ErrorCodes::SYNTAX_ERROR);
+		}
 	}
 
 
