@@ -14,7 +14,7 @@ namespace DB
 {
 
 /** Класс для асинхронной записи данных.
-  * Все размеры и смещения должны быть кратны DEFAULT_AIO_FILE_BLOCK_SIZE байтам.
+  * Размер буфера должен составить не менее двух страниц.
   */
 class WriteBufferAIO : public BufferWithOwnMemory<WriteBuffer>
 {
@@ -47,6 +47,7 @@ private:
 	/// Буфер для асинхронных операций записи данных.
 	BufferWithOwnMemory<WriteBuffer> flush_buffer;
 
+	/// Описание асинхронного запроса на запись.
 	iocb request;
 	std::vector<iocb *> request_ptrs{&request};
 	std::vector<io_event> events{1};
@@ -55,11 +56,17 @@ private:
 
 	iovec iov[3];
 
+	/// Дополнительный буфер размером со страницу. Содежрит те данные, которые
+	/// не влезают в основной буфер.
 	Memory memory_page{DEFAULT_AIO_FILE_BLOCK_SIZE, DEFAULT_AIO_FILE_BLOCK_SIZE};
 
 	const std::string filename;
 
+	/// Количество байтов, которые будут записаны на диск.
 	off_t bytes_to_write = 0;
+
+	/// Количество нулевых байтов, которые надо отрезать c конца файла
+	/// после завершения операции записи данных.
 	off_t truncation_count = 0;
 
 	/// Текущая позиция в файле.
@@ -72,9 +79,9 @@ private:
 	/// Файловый дескриптор для чтения. Употребляется для невыровненных записей.
 	int fd2 = -1;
 
-	/// Асинхронная операция записи ещё не завершилась.
+	/// Асинхронная операция записи ещё не завершилась?
 	bool is_pending_write = false;
-	/// Было получено исключение.
+	/// Было получено исключение?
 	bool got_exception = false;
 };
 

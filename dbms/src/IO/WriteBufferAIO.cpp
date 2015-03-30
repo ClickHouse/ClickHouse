@@ -188,7 +188,7 @@ void WriteBufferAIO::nextImpl()
 	const off_t region_end = pos_in_file + flush_buffer.offset();
 	const size_t region_size = region_end - region_begin;
 
-	/// Регион диска, в который действительно записываем данные.
+	/// Выровненный регион диска, в который хотим записать данные.
 	const size_t region_left_padding = region_begin % DEFAULT_AIO_FILE_BLOCK_SIZE;
 	const size_t region_right_padding = (DEFAULT_AIO_FILE_BLOCK_SIZE - (region_end % DEFAULT_AIO_FILE_BLOCK_SIZE)) % DEFAULT_AIO_FILE_BLOCK_SIZE;
 
@@ -198,6 +198,8 @@ void WriteBufferAIO::nextImpl()
 
 	/*
 		Представление данных в буфере до обработки
+
+		XXX : данные, которые хотим записать
 
 		buffer_begin                                         buffer_end
 		:                                                             :
@@ -233,6 +235,9 @@ void WriteBufferAIO::nextImpl()
 	/*
 		Представление данных в буфере после обработки
 
+		XXX : данные, которые хотим записать
+		ZZZ : данные из диска или нули, если отсутствуют данные
+
 		buffer_begin                                              buffer_end   memory_page
 		:                                                                  :       :
 		:                                                                  :       :
@@ -260,6 +265,10 @@ void WriteBufferAIO::nextImpl()
 
 	if (region_left_padding > 0)
 	{
+		/// Сдвинуть данные буфера вправо. Дополнить начало буфера данными из диска.
+		/// Копировать данные, которые не влезают в буфер, в дополнительный буфер
+		/// размером со страницу.
+
 		if ((region_left_padding + buffer_size) > buffer_capacity)
 		{
 			excess_count = region_left_padding + buffer_size - buffer_capacity;
@@ -286,6 +295,8 @@ void WriteBufferAIO::nextImpl()
 
 	if (region_right_padding > 0)
 	{
+		/// При необходимости дополнить конец буфера данными из диска.
+
 		Position from;
 		if (excess_count > 0)
 			from = &memory_page[excess_count];
