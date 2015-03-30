@@ -1,6 +1,6 @@
 \timing
 
-create table hits_10m_meshed
+create table hits_10m
 (
     WatchID INTEGER,
     JavaEnable INTEGER,
@@ -106,17 +106,14 @@ create table hits_10m_meshed
     HasGCLID INTEGER,
     RefererHash INTEGER,
     URLHash INTEGER,
-    CLID INTEGER, 
-    UserIDHash INTEGER
-) ORDER BY CounterID, EventDate, UserIDHash, EventTime;
+    CLID INTEGER
+) ORDER BY CounterID, EventDate, UserID, EventTime;
+
+\set input_file '''/opt/dumps/hits_10m_corrected.tsv'''
+COPY hits_10m FROM :input_file DELIMITER E'\t' DIRECT;
 
 
-\set input_file '''/opt/dump/dump_0.3/dump_hits_10m_meshed.tsv''' 
-COPY hits_10m_meshed FROM :input_file DELIMITER E'\t' DIRECT;
-
-
-
-create table hits_100m_meshed
+create table hits_100m
 (
     WatchID INTEGER,
     JavaEnable INTEGER,
@@ -222,17 +219,14 @@ create table hits_100m_meshed
     HasGCLID INTEGER,
     RefererHash INTEGER,
     URLHash INTEGER,
-    CLID INTEGER, 
-    UserIDHash INTEGER
-) ORDER BY CounterID, EventDate, UserIDHash, EventTime;;
+    CLID INTEGER
+) ORDER BY CounterID, EventDate, UserID, EventTime;
 
-\set input_file '''/opt/dump/dump_0.3/dump_hits_100m_meshed.tsv''' 
-COPY hits_100m_meshed FROM :input_file DELIMITER E'\t' DIRECT;
-
+\set input_file '''/opt/dumps/hits_100m_corrected.tsv'''
+COPY hits_100m FROM :input_file DELIMITER E'\t' DIRECT;
 
 
-
-create table hits_1b_meshed
+create table hits_1000m
 (
     WatchID INTEGER,
     JavaEnable INTEGER,
@@ -338,10 +332,8 @@ create table hits_1b_meshed
     HasGCLID INTEGER,
     RefererHash INTEGER,
     URLHash INTEGER,
-    CLID INTEGER, 
-    UserIDHash INTEGER
-) ORDER BY CounterID, EventDate, UserIDHash, EventTime;
+    CLID INTEGER
+) ORDER BY CounterID, EventDate, UserID, EventTime;
 
-
-\set input_file '''/opt/dump/dump_0.3/dump_hits_1b_meshed.tsv''' 
-COPY hits_1b_meshed FROM :input_file DELIMITER E'\t' DIRECT;
+\set input_file '''/opt/dumps/hits_1000m_corrected.tsv''' 
+COPY hits_1000m FROM :input_file DELIMITER E'\t' DIRECT;
