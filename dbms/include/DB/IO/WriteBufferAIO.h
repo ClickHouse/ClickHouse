@@ -2,11 +2,13 @@
 
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/BufferWithOwnMemory.h>
+#include <DB/Core/Defines.h>
 #include <statdaemons/AIO.h>
 
 #include <string>
 #include <unistd.h>
 #include <fcntl.h>
+#include <sys/uio.h>
 
 namespace DB
 {
@@ -46,15 +48,29 @@ private:
 	BufferWithOwnMemory<WriteBuffer> flush_buffer;
 
 	iocb request;
-	std::vector<iocb *> request_ptrs;
-	std::vector<io_event> events;
+	std::vector<iocb *> request_ptrs{&request};
+	std::vector<io_event> events{1};
 
-	AIOContext aio_context;
+	AIOContext aio_context{1};
+
+	iovec iov[3];
+
+	Memory memory_page{DEFAULT_AIO_FILE_BLOCK_SIZE, DEFAULT_AIO_FILE_BLOCK_SIZE};
 
 	const std::string filename;
 
+	off_t bytes_to_write = 0;
+	off_t truncation_count = 0;
+
+	/// Текущая позиция в файле.
 	off_t pos_in_file = 0;
+	/// Максимальная достигнутая позиция в файле.
+	off_t max_pos_in_file = 0;
+
+	/// Файловый дескриптор для записи.
 	int fd = -1;
+	/// Файловый дескриптор для чтения. Употребляется для невыровненных записей.
+	int fd2 = -1;
 
 	/// Асинхронная операция записи ещё не завершилась.
 	bool is_pending_write = false;

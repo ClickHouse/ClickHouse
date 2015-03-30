@@ -32,6 +32,8 @@ public:
 		return res.str();
 	}
 
+	RowInputStreamPtr & getRowInput() { return row_input; }
+
 protected:
 	Block readImpl() override;
 

@@ -38,6 +38,8 @@
 #include <DB/IO/ReadBufferFromIStream.h>
 
 #include <DB/DataStreams/AsynchronousBlockInputStream.h>
+#include <DB/DataStreams/BlockInputStreamFromRowInputStream.h>
+#include <DB/DataStreams/TabSeparatedRowInputStream.h>
 
 #include <DB/Parsers/ParserQuery.h>
 #include <DB/Parsers/ASTSetQuery.h>
@@ -57,6 +59,7 @@
 #include <DB/Common/ExternalTable.h>
 #include <DB/Common/UnicodeBar.h>
 #include <DB/Common/formatReadable.h>
+#include <DB/Columns/ColumnString.h>
 
 
 /// http://en.wikipedia.org/wiki/ANSI_escape_code
@@ -93,6 +96,7 @@ private:
 	};
 
 	bool is_interactive = true;			/// Использовать readline интерфейс или batch режим.
+	bool print_time_to_stderr = false;	/// В неинтерактивном режиме, выводить время выполнения в stderr.
 	bool stdin_is_not_tty = false;		/// stdin - не терминал.
 
 	winsize terminal_size {};			/// Размер терминала - для вывода прогресс-бара.
@@ -257,6 +261,9 @@ private:
 
 		if (is_interactive)
 		{
+			if (print_time_to_stderr)
+				throw Exception("time option could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
+
 			/// Отключаем tab completion.
 			rl_bind_key('\t', rl_insert);
 
@@ -557,6 +564,10 @@ private:
 
 			std::cout << std::endl << std::endl;
 		}
+		else if (print_time_to_stderr)
+		{
+			std::cerr << watch.elapsedSeconds() << "\n";
+		}
 
 		return true;
 	}
@@ -679,13 +690,16 @@ private:
 			if (!insert->format.empty())
 				current_format = insert->format;
 
-		BlockInputStreamPtr block_std_in = new AsynchronousBlockInputStream(context.getFormatFactory().getInput(
-			current_format, buf, sample, insert_format_max_block_size, context.getDataTypeFactory()));
-		block_std_in->readPrefix();
+		BlockInputStreamPtr block_input = context.getFormatFactory().getInput(
+			current_format, buf, sample, insert_format_max_block_size, context.getDataTypeFactory());
+
+		BlockInputStreamPtr async_block_input = new AsynchronousBlockInputStream(block_input);
+
+		async_block_input->readPrefix();
 
 		while (true)
 		{
-			Block block = block_std_in->read();
+			Block block = async_block_input->read();
 			connection->sendData(block);
 			processed_rows += block.rows();
 
@@ -693,7 +707,7 @@ private:
 				break;
 		}
 
-		block_std_in->readSuffix();
+		async_block_input->readSuffix();
 	}
 
 
@@ -1022,7 +1036,9 @@ public:
 			("database,d", 		boost::program_options::value<std::string>(), 	"database")
 			("multiline,m",														"multiline")
 			("multiquery,n",													"multiquery")
-			("vertical,E",                                                      "vertical")
+			("format,f",        boost::program_options::value<std::string>(), 	"default output format")
+			("vertical,E",      "vertical output format, same as --format=Vertical or FORMAT Vertical or \\G at end of command")
+			("time,t",			"print query execution time to stderr in non-interactive mode (for benchmarks)")
 			APPLY_FOR_SETTINGS(DECLARE_SETTING)
 			APPLY_FOR_LIMITS(DECLARE_LIMIT)
 		;
@@ -1135,8 +1151,12 @@ public:
 			config().setBool("multiline", true);
 		if (options.count("multiquery"))
 			config().setBool("multiquery", true);
+		if (options.count("format"))
+			config().setString("format", options["format"].as<std::string>());
 		if (options.count("vertical"))
 			config().setBool("vertical", true);
+		if (options.count("time"))
+			print_time_to_stderr = true;
 	}
 };
 

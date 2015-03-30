@@ -72,7 +72,7 @@
 #define DBMS_DISTRIBUTED_DIRECTORY_MONITOR_SLEEP_TIME_MS		100
 
 /// Граница, на которых должны быть выровнены блоки для асинхронных файловых операций.
-#define DEFAULT_AIO_FILE_BLOCK_SIZE								512
+#define DEFAULT_AIO_FILE_BLOCK_SIZE								4096
 
 #define ALWAYS_INLINE 	__attribute__((__always_inline__))
 #define NO_INLINE 		__attribute__((__noinline__))

@@ -1467,6 +1467,8 @@ void StorageReplicatedMergeTree::alterThread()
 			/// Если описание столбцов изменилось, обновим структуру таблицы локально.
 			if (changed_version)
 			{
+				LOG_INFO(log, "Changed version of 'columns' node in ZooKeeper. Waiting for structure write lock.");
+
 				auto table_lock = lockStructureForAlter();
 
 				const auto columns_changed = columns != data.getColumnsListNonMaterialized();

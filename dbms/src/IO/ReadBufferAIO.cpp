@@ -11,9 +11,9 @@ namespace DB
 
 ReadBufferAIO::ReadBufferAIO(const std::string & filename_, size_t buffer_size_, int flags_, mode_t mode_,
 	char * existing_memory_)
-	: BufferWithOwnMemory(buffer_size_, existing_memory_, DEFAULT_AIO_FILE_BLOCK_SIZE),
+	: BufferWithOwnMemory<ReadBuffer>(buffer_size_, existing_memory_, DEFAULT_AIO_FILE_BLOCK_SIZE),
 	fill_buffer(BufferWithOwnMemory(buffer_size_, nullptr, DEFAULT_AIO_FILE_BLOCK_SIZE)),
-	request_ptrs{ &request }, events(1), filename(filename_)
+	filename(filename_)
 {
 	ProfileEvents::increment(ProfileEvents::FileOpen);
 
@@ -56,19 +56,11 @@ void ReadBufferAIO::setMaxBytes(size_t max_bytes_read_)
 		got_exception = true;
 		throw Exception("Illegal attempt to set the maximum number of bytes to read from file " + filename, ErrorCodes::LOGICAL_ERROR);
 	}
-	if ((max_bytes_read_ % DEFAULT_AIO_FILE_BLOCK_SIZE) != 0)
-	{
-		got_exception = true;
-		throw Exception("Invalid maximum number of bytes to read from file " + filename, ErrorCodes::AIO_UNALIGNED_SIZE_ERROR);
-	}
 	max_bytes_read = max_bytes_read_;
 }
 
 off_t ReadBufferAIO::seek(off_t off, int whence)
 {
-	if ((off % DEFAULT_AIO_FILE_BLOCK_SIZE) != 0)
-		throw Exception("Invalid offset for ReadBufferAIO::seek", ErrorCodes::AIO_UNALIGNED_SIZE_ERROR);
-
 	waitForAIOCompletion();
 
 	off_t new_pos;
@@ -152,21 +144,33 @@ bool ReadBufferAIO::nextImpl()
 	if (is_eof)
 		return true;
 
+	/// Количество запрашиваемых байтов.
+	requested_byte_count = std::min(fill_buffer.internalBuffer().size(), max_bytes_read);
+
+	/// Для запроса выравниваем количество запрашиваемых байтов на границе следующего блока.
+	size_t effective_byte_count = requested_byte_count;
+	if ((effective_byte_count % DEFAULT_AIO_FILE_BLOCK_SIZE) != 0)
+		effective_byte_count += DEFAULT_AIO_FILE_BLOCK_SIZE - (effective_byte_count % DEFAULT_AIO_FILE_BLOCK_SIZE);
+
+	/// Также выравниваем позицию в файле на границе предыдущего блока.
+	off_t effective_pos_in_file = pos_in_file - (pos_in_file % DEFAULT_AIO_FILE_BLOCK_SIZE);
+
 	/// Создать запрос.
 	request.aio_lio_opcode = IOCB_CMD_PREAD;
 	request.aio_fildes = fd;
 	request.aio_buf = reinterpret_cast<UInt64>(fill_buffer.internalBuffer().begin());
-	request.aio_nbytes = std::min(fill_buffer.internalBuffer().size(), max_bytes_read);
-	request.aio_offset = pos_in_file;
-	request.aio_reqprio = 0;
+	request.aio_nbytes = effective_byte_count;
+	request.aio_offset = effective_pos_in_file;
 
 	/// Отправить запрос.
 	while (io_submit(aio_context.ctx, request_ptrs.size(), &request_ptrs[0]) < 0)
+	{
 		if (errno != EINTR)
 		{
 			got_exception = true;
 			throw Exception("Cannot submit request for asynchronous IO on file " + filename, ErrorCodes::AIO_SUBMIT_ERROR);
 		}
+	}
 
 	is_pending_read = true;
 	return true;
@@ -177,11 +181,13 @@ void ReadBufferAIO::waitForAIOCompletion()
 	if (is_pending_read)
 	{
 		while (io_getevents(aio_context.ctx, events.size(), events.size(), &events[0], nullptr) < 0)
+		{
 			if (errno != EINTR)
 			{
 				got_exception = true;
 				throw Exception("Failed to wait for asynchronous IO completion on file " + filename, ErrorCodes::AIO_COMPLETION_ERROR);
 			}
+		}
 
 		is_pending_read = false;
 		off_t bytes_read = events[0].res;
@@ -191,23 +197,28 @@ void ReadBufferAIO::waitForAIOCompletion()
 			got_exception = true;
 			throw Exception("Asynchronous read error on file " + filename, ErrorCodes::AIO_READ_ERROR);
 		}
-		if ((bytes_read % DEFAULT_AIO_FILE_BLOCK_SIZE) != 0)
-		{
-			got_exception = true;
-			throw Exception("Received unaligned number of bytes from file " + filename, ErrorCodes::AIO_UNALIGNED_SIZE_ERROR);
-		}
 		if (pos_in_file > (std::numeric_limits<off_t>::max() - bytes_read))
 		{
 			got_exception = true;
 			throw Exception("File position overflowed", ErrorCodes::LOGICAL_ERROR);
 		}
 
-		pos_in_file += bytes_read;
-		total_bytes_read += bytes_read;
+		/// Игнорируем излишние байты справа.
+		bytes_read = std::min(bytes_read, static_cast<off_t>(requested_byte_count));
 
 		if (bytes_read > 0)
 			fill_buffer.buffer().resize(bytes_read);
-		if ((static_cast<size_t>(bytes_read) < fill_buffer.internalBuffer().size()) || (total_bytes_read == max_bytes_read))
+		if (static_cast<size_t>(bytes_read) < fill_buffer.internalBuffer().size())
+			is_eof = true;
+
+		/// Игнорируем излишние байты слева.
+		working_buffer_offset = pos_in_file % DEFAULT_AIO_FILE_BLOCK_SIZE;
+		bytes_read -= working_buffer_offset;
+
+		pos_in_file += bytes_read;
+		total_bytes_read += bytes_read;
+
+		if (total_bytes_read == max_bytes_read)
 			is_eof = true;
 	}
 }

@@ -12,9 +12,8 @@ namespace DB
 
 
 StorageSystemOne::StorageSystemOne(const std::string & name_)
-	: name(name_)
+	: name(name_), columns{{"dummy", new DataTypeUInt8}}
 {
-	columns.emplace_back("dummy", new DataTypeUInt8);
 }
 
 StoragePtr StorageSystemOne::create(const std::string & name_)

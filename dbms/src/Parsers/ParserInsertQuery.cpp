@@ -111,6 +111,15 @@ bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 		ParserWhiteSpaceOrComments ws_without_nl(false);
 
 		ws_without_nl.ignore(pos, end);
+		if (pos != end && *pos == ';')
+			throw Exception("You have excessive ';' symbol before data for INSERT.\n"
+				"Example:\n\n"
+				"INSERT INTO t (x, y) FORMAT TabSeparated\n"
+				"1\tHello\n"
+				"2\tWorld\n"
+				"\n"
+				"Note that there is no ';' in first line.", ErrorCodes::SYNTAX_ERROR);
+
 		if (pos != end && *pos == '\n')
 			++pos;
 

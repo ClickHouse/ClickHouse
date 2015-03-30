@@ -134,7 +134,7 @@ struct ConvertImpl<DataTypeDateTime, DataTypeDate, Name>
 };
 
 
-/** Отдельный случай для преобразования UInt32 или UInt64 в Date.
+/** Отдельный случай для преобразования (U)Int32 или (U)Int64 в Date.
   * Если число меньше 65536, то оно понимается, как DayNum, а если больше - как unix timestamp.
   * Немного нелогично, что мы, по сути, помещаем две разные функции в одну.
   * Но зато это позволяет поддержать распространённый случай,
@@ -142,7 +142,7 @@ struct ConvertImpl<DataTypeDateTime, DataTypeDate, Name>
   *  (иначе такое использование было бы распространённой ошибкой).
   */
 template <typename FromDataType, typename Name>
-struct ConvertImplUInt32Or64ToDate
+struct ConvertImpl32Or64ToDate
 {
 	typedef typename FromDataType::FieldType FromFieldType;
 	typedef DataTypeDate::FieldType ToFieldType;
@@ -186,11 +186,10 @@ struct ConvertImplUInt32Or64ToDate
 	}
 };
 
-template <typename Name>
-struct ConvertImpl<DataTypeUInt32, DataTypeDate, Name> : ConvertImplUInt32Or64ToDate<DataTypeUInt32, Name> {};
-
-template <typename Name>
-struct ConvertImpl<DataTypeUInt64, DataTypeDate, Name> : ConvertImplUInt32Or64ToDate<DataTypeUInt64, Name> {};
+template <typename Name> struct ConvertImpl<DataTypeUInt32, DataTypeDate, Name> : ConvertImpl32Or64ToDate<DataTypeUInt32, Name> {};
+template <typename Name> struct ConvertImpl<DataTypeUInt64, DataTypeDate, Name> : ConvertImpl32Or64ToDate<DataTypeUInt64, Name> {};
+template <typename Name> struct ConvertImpl<DataTypeInt32, DataTypeDate, Name> : ConvertImpl32Or64ToDate<DataTypeInt32, Name> {};
+template <typename Name> struct ConvertImpl<DataTypeInt64, DataTypeDate, Name> : ConvertImpl32Or64ToDate<DataTypeInt64, Name> {};
 
 
 /** Преобразование чисел, дат, дат-с-временем в строки: через форматирование.

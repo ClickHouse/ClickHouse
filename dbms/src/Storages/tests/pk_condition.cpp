@@ -31,8 +31,7 @@ int main(int argc, const char ** argv)
 		return 1;
 	}
 	Context context;
-	NamesAndTypesList columns;
-	columns.emplace_back("key", new DataTypeUInt64);
+	NamesAndTypesList columns{{"key", new DataTypeUInt64}};
 	SortDescription sort_descr;
 	sort_descr.push_back(SortColumnDescription("key", 1));
 
