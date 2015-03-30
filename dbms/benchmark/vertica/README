@@ -35,6 +35,6 @@ Create tables with queries from hits_define_schema.sql.
 Time to insert data:
 hits_10m: 91 sec.
 hits_100m: 774 sec.
-hits_1000m: 
+hits_1000m: 13769 sec.
 
 You need to validate number of rows with SELECT count(*).
