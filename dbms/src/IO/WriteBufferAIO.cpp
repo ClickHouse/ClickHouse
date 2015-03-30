@@ -15,6 +15,12 @@ WriteBufferAIO::WriteBufferAIO(const std::string & filename_, size_t buffer_size
 		flush_buffer(BufferWithOwnMemory(buffer_size_, nullptr, DEFAULT_AIO_FILE_BLOCK_SIZE)),
 		filename(filename_)
 {
+	if (buffer_size_ < (2 * DEFAULT_AIO_FILE_BLOCK_SIZE))
+	{
+		got_exception = true;
+		throw Exception("Buffers are too small", ErrorCodes::LOGICAL_ERROR);
+	}
+
 	ProfileEvents::increment(ProfileEvents::FileOpen);
 
 	int open_flags = (flags_ == -1) ? (O_WRONLY | O_TRUNC | O_CREAT) : flags_;
@@ -150,6 +156,27 @@ void WriteBufferAIO::nextImpl()
 	truncation_count = 0;
 
 	/*
+		Страница на диске или в памяти
+
+		начальный адрес (начальная позиция в случае диска) кратен DEFAULT_AIO_FILE_BLOCK_SIZE
+		:
+		:
+		+---------------+
+		|               |
+		|               |
+		|               |
+		|               |
+		|               |
+		|               |
+		+---------------+
+		<--------------->
+		        :
+		        :
+		DEFAULT_AIO_FILE_BLOCK_SIZE
+
+	*/
+
+	/*
 		Представление данных на диске
 
 		XXX : данные, которые хотим записать
@@ -167,10 +194,6 @@ void WriteBufferAIO::nextImpl()
 		|   +-----------+---------------+---------------+---------------+--+            |
 		|               |               |               |               |               |
 		+---------------+---------------+---------------+---------------+---------------+
-		                                                <--------------->
-		                                                        :
-		                                                        :
-		                                            DEFAULT_AIO_FILE_BLOCK_SIZE
 
 		<--><--------------------------------------------------------------><----------->
 		 :                                    :                                   :
@@ -249,6 +272,11 @@ void WriteBufferAIO::nextImpl()
 		|   +-----------+---------------+---------------+---------------+--+            |
 		|               |               |               |               |               |
 		+---------------+---------------+---------------+---------------+---------------+
+
+		<--------------------------------------------------------------->
+		                                :
+		                                :
+		                            buffer_capacity
 
 		<--><--------------------------------------------------------------><----------->
 		 :                                  :                                     :
