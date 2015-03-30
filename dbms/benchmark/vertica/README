@@ -30,6 +30,7 @@ How to prepare data
 
 Prepare dumps with script create_dump.sh for tables hits_10m, hits_100m, hits_1000m. It takes about 5 hours (1m41.882s, 25m11.103s, 276m36.388s).
 Start vsql command line client.
+/opt/vertica/bin/vsql -U dbadmin
 Create tables with queries from hits_define_schema.sql.
 
 Time to insert data:
