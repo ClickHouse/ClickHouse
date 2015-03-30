@@ -14,7 +14,6 @@ namespace DB
 {
 
 /** Класс для асинхронной записи данных.
-  * Размер буфера должен составить не менее двух страниц, т.е. 2 * DEFAULT_AIO_FILE_BLOCK_SIZE.
   */
 class WriteBufferAIO : public BufferWithOwnMemory<WriteBuffer>
 {

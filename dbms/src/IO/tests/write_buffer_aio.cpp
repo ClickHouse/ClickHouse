@@ -25,7 +25,6 @@ bool test7();
 bool test8();
 bool test9();
 bool test10();
-bool test11();
 
 void run()
 {
@@ -40,8 +39,7 @@ void run()
 		test7,
 		test8,
 		test9,
-		test10,
-		test11
+		test10
 	};
 
 	unsigned int num = 0;
@@ -403,33 +401,6 @@ bool test6()
 
 bool test7()
 {
-	bool ok = false;
-
-	namespace fs = boost::filesystem;
-
-	char pattern[] = "/tmp/fileXXXXXX";
-	char * dir = ::mkdtemp(pattern);
-	if (dir == nullptr)
-		die("Could not create directory");
-
-	const std::string directory = std::string(dir);
-	const std::string filename = directory + "/foo";
-
-	try
-	{
-		DB::WriteBufferAIO out(filename, DEFAULT_AIO_FILE_BLOCK_SIZE);
-	}
-	catch (const DB::Exception &)
-	{
-		ok = true;
-	}
-
-	fs::remove_all(directory);
-	return ok;
-}
-
-bool test8()
-{
 	namespace fs = boost::filesystem;
 
 	static const std::string symbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -445,8 +416,7 @@ bool test8()
 	std::string buf2 = "11111111112222222222";
 
 	{
-		// Minimal buffer size = 2 pages.
-		DB::WriteBufferAIO out(filename, 2 * DEFAULT_AIO_FILE_BLOCK_SIZE);
+		DB::WriteBufferAIO out(filename, DEFAULT_AIO_FILE_BLOCK_SIZE);
 
 		if (out.getFileName() != filename)
 			return false;
@@ -476,7 +446,7 @@ bool test8()
 	return true;
 }
 
-bool test9()
+bool test8()
 {
 	namespace fs = boost::filesystem;
 
@@ -523,7 +493,7 @@ bool test9()
 	return true;
 }
 
-bool test10()
+bool test9()
 {
 	namespace fs = boost::filesystem;
 
@@ -579,7 +549,7 @@ bool test10()
 	return true;
 }
 
-bool test11()
+bool test10()
 {
 	namespace fs = boost::filesystem;
 

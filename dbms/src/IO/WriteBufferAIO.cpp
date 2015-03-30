@@ -15,12 +15,6 @@ WriteBufferAIO::WriteBufferAIO(const std::string & filename_, size_t buffer_size
 		flush_buffer(BufferWithOwnMemory(buffer_size_, nullptr, DEFAULT_AIO_FILE_BLOCK_SIZE)),
 		filename(filename_)
 {
-	if (buffer_size_ < (2 * DEFAULT_AIO_FILE_BLOCK_SIZE))
-	{
-		got_exception = true;
-		throw Exception("Buffers are too small", ErrorCodes::LOGICAL_ERROR);
-	}
-
 	ProfileEvents::increment(ProfileEvents::FileOpen);
 
 	int open_flags = (flags_ == -1) ? (O_WRONLY | O_TRUNC | O_CREAT) : flags_;
