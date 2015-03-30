@@ -9,7 +9,7 @@
 namespace DB
 {
 
-ReadBufferAIO::ReadBufferAIO(const std::string & filename_, size_t buffer_size_, int flags_, mode_t mode_,
+ReadBufferAIO::ReadBufferAIO(const std::string & filename_, size_t buffer_size_, int flags_,
 	char * existing_memory_)
 	: ReadBufferFromFileBase(buffer_size_, existing_memory_, DEFAULT_AIO_FILE_BLOCK_SIZE),
 	fill_buffer(BufferWithOwnMemory(buffer_size_, nullptr, DEFAULT_AIO_FILE_BLOCK_SIZE)),
@@ -20,7 +20,7 @@ ReadBufferAIO::ReadBufferAIO(const std::string & filename_, size_t buffer_size_,
 	int open_flags = (flags_ == -1) ? O_RDONLY : flags_;
 	open_flags |= O_DIRECT;
 
-	fd = ::open(filename.c_str(), open_flags, mode_);
+	fd = ::open(filename.c_str(), open_flags);
 	if (fd == -1)
 	{
 		got_exception = true;
