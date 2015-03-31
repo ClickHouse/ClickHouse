@@ -433,6 +433,8 @@ private:
 		UncompressedCache * uncompressed_cache = use_uncompressed_cache ? storage.context.getUncompressedCache() : NULL;
 		MarkCache * mark_cache = storage.context.getMarkCache();
 
+		size_t aio_threshold = storage.context.getSettingsRef().min_bytes_to_use_direct_io;
+
 		/// Для массивов используются отдельные потоки для размеров.
 		if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
 		{
@@ -443,14 +445,12 @@ private:
 
 			if (!streams.count(size_name))
 				streams.emplace(size_name, std::unique_ptr<Stream>(new Stream(
-					path + escaped_size_name, uncompressed_cache, mark_cache, all_mark_ranges,
-					storage.context.getSettingsRef().min_bytes_to_use_direct_io)));
+					path + escaped_size_name, uncompressed_cache, mark_cache, all_mark_ranges, aio_threshold)));
 
 			addStream(name, *type_arr->getNestedType(), all_mark_ranges, level + 1);
 		}
 		else
-			streams[name].reset(new Stream(path + escaped_column_name, uncompressed_cache, mark_cache, all_mark_ranges,
-										   storage.context.getSettingsRef().min_bytes_to_use_direct_io));
+			streams[name].reset(new Stream(path + escaped_column_name, uncompressed_cache, mark_cache, all_mark_ranges, aio_threshold));
 	}
 
 	void readData(const String & name, const IDataType & type, IColumn & column, size_t from_mark, size_t max_rows_to_read,
