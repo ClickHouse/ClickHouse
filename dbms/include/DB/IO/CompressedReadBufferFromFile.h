@@ -1,7 +1,10 @@
 #pragma once
 
 #include <DB/IO/CompressedReadBufferBase.h>
-#include "ReadBufferFromFile.h"
+#include <DB/IO/ReadBufferFromFileBase.h>
+#include <DB/IO/createReadBufferFromFileBase.h>
+
+#include <memory>
 
 
 namespace DB
@@ -18,7 +21,8 @@ private:
 	  *  - file_in смотрит в конец этого блока.
 	  *  - size_compressed содержит сжатый размер этого блока.
 	  */
-	ReadBufferFromFile file_in;
+	std::unique_ptr<ReadBufferFromFileBase> p_file_in;
+	ReadBufferFromFileBase & file_in;
 	size_t size_compressed = 0;
 
 	bool nextImpl()
@@ -38,8 +42,10 @@ private:
 	}
 
 public:
-	CompressedReadBufferFromFile(const std::string & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE)
-		: BufferWithOwnMemory<ReadBuffer>(0), file_in(path, buf_size)
+	CompressedReadBufferFromFile(const std::string & path, size_t aio_threshold, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE)
+		: BufferWithOwnMemory<ReadBuffer>(0),
+		p_file_in(createReadBufferFromFileBase(path, aio_threshold, buf_size)),
+		file_in(*p_file_in)
 	{
 		compressed_in = &file_in;
 	}
@@ -57,7 +63,7 @@ public:
 		}
 		else
 		{
-			file_in.seek(offset_in_compressed_file);
+			file_in.seek(offset_in_compressed_file, SEEK_SET);
 
 			bytes += offset();
 			nextImpl();

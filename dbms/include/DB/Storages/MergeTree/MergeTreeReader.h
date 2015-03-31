@@ -303,12 +303,14 @@ private:
 		Poco::SharedPtr<CompressedReadBufferFromFile> non_cached_buffer;
 		std::string path_prefix;
 		size_t max_mark_range;
+		size_t aio_threshold;
 
 		/// Используется в качестве подсказки, чтобы уменьшить количество реаллокаций при создании столбца переменной длины.
 		double avg_value_size_hint = 0;
 
-		Stream(const String & path_prefix, UncompressedCache * uncompressed_cache, MarkCache * mark_cache, const MarkRanges & all_mark_ranges)
-			: path_prefix(path_prefix)
+		Stream(const String & path_prefix_, UncompressedCache * uncompressed_cache, MarkCache * mark_cache, const MarkRanges & all_mark_ranges,
+			   size_t aio_threshold_)
+			: path_prefix(path_prefix_), aio_threshold(aio_threshold_)
 		{
 			loadMarks(mark_cache);
 			size_t max_mark_range = 0;
@@ -346,7 +348,7 @@ private:
 			}
 			else
 			{
-				non_cached_buffer = new CompressedReadBufferFromFile(path_prefix + ".bin", buffer_size);
+				non_cached_buffer = new CompressedReadBufferFromFile(path_prefix + ".bin", aio_threshold, buffer_size);
 				data_buffer = &*non_cached_buffer;
 			}
 		}
@@ -441,12 +443,14 @@ private:
 
 			if (!streams.count(size_name))
 				streams.emplace(size_name, std::unique_ptr<Stream>(new Stream(
-					path + escaped_size_name, uncompressed_cache, mark_cache, all_mark_ranges)));
+					path + escaped_size_name, uncompressed_cache, mark_cache, all_mark_ranges,
+					storage.context.getSettingsRef().min_bytes_to_use_direct_io)));
 
 			addStream(name, *type_arr->getNestedType(), all_mark_ranges, level + 1);
 		}
 		else
-			streams[name].reset(new Stream(path + escaped_column_name, uncompressed_cache, mark_cache, all_mark_ranges));
+			streams[name].reset(new Stream(path + escaped_column_name, uncompressed_cache, mark_cache, all_mark_ranges,
+										   storage.context.getSettingsRef().min_bytes_to_use_direct_io));
 	}
 
 	void readData(const String & name, const IDataType & type, IColumn & column, size_t from_mark, size_t max_rows_to_read,
