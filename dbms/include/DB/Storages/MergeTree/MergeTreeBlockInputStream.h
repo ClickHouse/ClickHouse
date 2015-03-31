@@ -113,7 +113,6 @@ protected:
 
 	void injectRequiredColumns(NamesAndTypesList & columns) const {
 		std::set<NameAndTypePair> required_columns;
-		auto modified = false;
 
 		for (auto it = std::begin(columns); it != std::end(columns);)
 		{
@@ -127,6 +126,8 @@ protected:
 					IdentifierNameSet identifiers;
 					default_it->second.expression->collectIdentifierNames(identifiers);
 
+					auto modified = false;
+
 					for (const auto & identifier : identifiers)
 					{
 						if (storage.hasColumn(identifier))
@@ -134,7 +135,7 @@ protected:
 							NameAndTypePair column{identifier, storage.getDataTypeByName(identifier)};
 							if (required_columns.count(column) == 0)
 							{
-								it = columns.emplace(++it, std::move(column));
+								it = columns.emplace(std::next(it), std::move(column));
 								modified = true;
 							}
 						}
@@ -148,7 +149,8 @@ protected:
 			++it;
 		}
 
-		if (modified)
+		/// check whether any inserts occurred
+		if (columns.size() != required_columns.size())
 			columns = NamesAndTypesList{std::begin(required_columns), std::end(required_columns)};
 	}
 
