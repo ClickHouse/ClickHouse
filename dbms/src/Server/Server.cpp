@@ -609,9 +609,24 @@ int Server::main(const std::vector<std::string> & args)
 		if (olap_http_server)
 			olap_http_server->start();
 
-		LOG_INFO(log, "Ready for connections.");
+		/// try to load dictionaries immediately, throw on error and die
+		try
+		{
+			if (!config().getBool("dictionaries_lazy_load", true))
+			{
+				global_context->tryCreateDictionaries(true);
+				global_context->tryCreateExternalDictionaries(true);
+			}
 
-		waitForTerminationRequest();
+			LOG_INFO(log, "Ready for connections.");
+
+			waitForTerminationRequest();
+		}
+		catch (...)
+		{
+			LOG_ERROR(log, "Caught exception while loading dictionaries.");
+			tryLogCurrentException(log);
+		}
 
 		LOG_DEBUG(log, "Received termination signal. Waiting for current connections to close.");
 
