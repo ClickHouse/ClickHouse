@@ -343,7 +343,7 @@ private:
 
 			if (uncompressed_cache)
 			{
-				cached_buffer = new CachedCompressedReadBuffer(path_prefix + ".bin", uncompressed_cache, buffer_size);
+				cached_buffer = new CachedCompressedReadBuffer(path_prefix + ".bin", uncompressed_cache, aio_threshold, buffer_size);
 				data_buffer = &*cached_buffer;
 			}
 			else

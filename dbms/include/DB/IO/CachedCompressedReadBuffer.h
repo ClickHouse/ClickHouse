@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DB/IO/ReadBufferFromFile.h>
+#include <DB/IO/createReadBufferFromFileBase.h>
 #include <DB/IO/CompressedReadBufferBase.h>
 #include <DB/IO/UncompressedCache.h>
 
@@ -20,9 +20,10 @@ private:
 	const std::string path;
 	UncompressedCache * cache;
 	size_t buf_size;
+	size_t aio_threshold;
 
 	/// SharedPtr - для ленивой инициализации (только в случае кэш-промаха).
-	Poco::SharedPtr<ReadBufferFromFile> file_in;
+	Poco::SharedPtr<ReadBufferFromFileBase> file_in;
 	size_t file_pos;
 
 	/// Кусок данных из кэша, или кусок считанных данных, который мы положим в кэш.
@@ -32,7 +33,7 @@ private:
 	{
 		if (!file_in)
 		{
-			file_in = new ReadBufferFromFile(path, buf_size);
+			file_in = createReadBufferFromFileBase(path, aio_threshold, buf_size);
 			compressed_in = &*file_in;
 		}
 	}
@@ -48,7 +49,7 @@ private:
 		{
 			/// Если нет - надо прочитать его из файла.
 			initInput();
-			file_in->seek(file_pos);
+			file_in->seek(file_pos, SEEK_SET);
 
 			owned_cell.reset(new UncompressedCacheCell);
 
@@ -80,8 +81,9 @@ private:
 	}
 
 public:
-	CachedCompressedReadBuffer(const std::string & path_, UncompressedCache * cache_, size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE)
-		: ReadBuffer(nullptr, 0), path(path_), cache(cache_), buf_size(buf_size_), file_pos(0)
+	CachedCompressedReadBuffer(const std::string & path_, UncompressedCache * cache_, size_t aio_threshold_,
+							   size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE)
+		: ReadBuffer(nullptr, 0), path(path_), cache(cache_), buf_size(buf_size_), aio_threshold(aio_threshold_), file_pos(0)
 	{
 	}
 
