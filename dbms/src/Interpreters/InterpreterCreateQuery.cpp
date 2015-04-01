@@ -312,7 +312,7 @@ InterpreterCreateQuery::ColumnsAndDefaults InterpreterCreateQuery::parseColumns(
 				}
 				else
 				{
-					/// @todo fix for parametric types, results in broken codem, i.e. toArray(ElementType)(col)
+					/// @todo fix for parametric types, results in broken code, i.e. toArray(ElementType)(col)
 					const auto conversion_function_name = "to" + data_type_ptr->getName();
 
 					default_expr_list->children.emplace_back(setAlias(
