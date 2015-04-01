@@ -232,6 +232,44 @@ void readBackQuotedString(String & s, ReadBuffer & buf)
 }
 
 
+void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf)
+{
+	char s[19];
+
+	size_t size = buf.read(s, 10);
+	if (10 != size)
+	{
+		s[size] = 0;
+		throw Exception(std::string("Cannot parse datetime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
+	}
+
+	if (s[4] < '0' || s[4] > '9')
+	{
+		size_t size = buf.read(&s[10], 9);
+		if (9 != size)
+		{
+			s[10 + size] = 0;
+			throw Exception(std::string("Cannot parse datetime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
+		}
+
+		UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
+		UInt8 month = (s[5] - '0') * 10 + (s[6] - '0');
+		UInt8 day = (s[8] - '0') * 10 + (s[9] - '0');
+
+		UInt8 hour = (s[11] - '0') * 10 + (s[12] - '0');
+		UInt8 minute = (s[14] - '0') * 10 + (s[15] - '0');
+		UInt8 second = (s[17] - '0') * 10 + (s[18] - '0');
+
+		if (unlikely(year == 0))
+			datetime = 0;
+		else
+			datetime = DateLUT::instance().makeDateTime(year, month, day, hour, minute, second);
+	}
+	else
+		datetime = parse<time_t>(s, 10);
+}
+
+
 void readException(Exception & e, ReadBuffer & buf, const String & additional_message)
 {
 	int code = 0;
@@ -239,7 +277,7 @@ void readException(Exception & e, ReadBuffer & buf, const String & additional_me
 	String message;
 	String stack_trace;
 	bool has_nested = false;
-	
+
 	readBinary(code, buf);
 	readBinary(name, buf);
 	readBinary(message, buf);
