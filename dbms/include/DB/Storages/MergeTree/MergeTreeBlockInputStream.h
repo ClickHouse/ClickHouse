@@ -30,26 +30,39 @@ public:
 	{
 		std::reverse(remaining_mark_ranges.begin(), remaining_mark_ranges.end());
 
+		/// inject columns required for defaults evaluation
+		const auto injected_columns = injectRequiredColumns(column_names);
+		/// insert injected columns into ordered columns list to avoid exception about different block structures
+		ordered_names.insert(std::end(ordered_names), std::begin(injected_columns), std::end(injected_columns));
+
 		Names pre_column_names;
 
 		if (prewhere_actions)
 		{
 			pre_column_names = prewhere_actions->getRequiredColumns();
+
+			/// @todo somehow decide which injected columns belong to PREWHERE, optimizing reads
+			pre_column_names.insert(std::end(pre_column_names),
+				std::begin(injected_columns), std::end(injected_columns));
+
 			if (pre_column_names.empty())
 				pre_column_names.push_back(column_names[0]);
-			NameSet pre_name_set(pre_column_names.begin(), pre_column_names.end());
+
+			const NameSet pre_name_set(pre_column_names.begin(), pre_column_names.end());
 			/// Если выражение в PREWHERE - не столбец таблицы, не нужно отдавать наружу столбец с ним
 			///  (от storage ожидают получить только столбцы таблицы).
 			remove_prewhere_column = !pre_name_set.count(prewhere_column);
+
 			Names post_column_names;
 			for (const auto & name : column_names)
-			{
 				if (!pre_name_set.count(name))
 					post_column_names.push_back(name);
-			}
+
 			column_names = post_column_names;
 		}
-		column_name_set.insert(column_names.begin(), column_names.end());
+
+		/// will be used to distinguish between PREWHERE and WHERE columns when applying filter
+		column_name_set = NameSet{column_names.begin(), column_names.end()};
 
 		if (check_columns)
 		{
@@ -70,10 +83,9 @@ public:
 		}
 
 		/// Оценим общее количество строк - для прогресс-бара.
-		size_t total_rows = 0;
-		for (const auto & range : all_mark_ranges)
-			total_rows += range.end - range.begin;
-		total_rows *= storage.index_granularity;
+		const auto total_rows = storage.index_granularity *
+			std::accumulate(std::begin(all_mark_ranges), std::end(all_mark_ranges), size_t{},
+				[] (const auto current, auto & range) { return current + (range.end - range.begin); });
 
 		LOG_TRACE(log, "Reading " << all_mark_ranges.size() << " ranges from part " << owned_data_part->name
 			<< ", approx. " << total_rows
@@ -111,47 +123,43 @@ protected:
 	/// Будем вызывать progressImpl самостоятельно.
 	void progress(const Progress & value) override {}
 
-	void injectRequiredColumns(NamesAndTypesList & columns) const {
-		std::set<NameAndTypePair> required_columns;
+	NameSet injectRequiredColumns(Names & columns) const {
+		NameSet required_columns{std::begin(columns), std::end(columns)};
+		NameSet injected_columns;
 
-		for (auto it = std::begin(columns); it != std::end(columns);)
+		for (size_t i = 0; i < columns.size(); ++i)
 		{
-			required_columns.emplace(*it);
+			const auto & column_name = columns[i];
 
-			if (!owned_data_part->hasColumnFiles(it->name))
+			/// column has files and hence does not require evaluation
+			if (owned_data_part->hasColumnFiles(column_name))
+				continue;
+
+			const auto default_it = storage.column_defaults.find(column_name);
+			/// columns has no explicit default expression
+			if (default_it == std::end(storage.column_defaults))
+				continue;
+
+			/// collect identifiers required for evaluation
+			IdentifierNameSet identifiers;
+			default_it->second.expression->collectIdentifierNames(identifiers);
+
+			for (const auto & identifier : identifiers)
 			{
-				const auto default_it = storage.column_defaults.find(it->name);
-				if (default_it != std::end(storage.column_defaults))
+				if (storage.hasColumn(identifier))
 				{
-					IdentifierNameSet identifiers;
-					default_it->second.expression->collectIdentifierNames(identifiers);
-
-					auto modified = false;
-
-					for (const auto & identifier : identifiers)
+					/// ensure each column is added only once
+					if (required_columns.count(identifier) == 0)
 					{
-						if (storage.hasColumn(identifier))
-						{
-							NameAndTypePair column{identifier, storage.getDataTypeByName(identifier)};
-							if (required_columns.count(column) == 0)
-							{
-								it = columns.emplace(std::next(it), std::move(column));
-								modified = true;
-							}
-						}
+						columns.emplace_back(identifier);
+						required_columns.emplace(identifier);
+						injected_columns.emplace(identifier);
 					}
-
-					if (modified)
-						continue;
 				}
 			}
-
-			++it;
 		}
 
-		/// check whether any inserts occurred
-		if (columns.size() != required_columns.size())
-			columns = NamesAndTypesList{std::begin(required_columns), std::end(required_columns)};
+		return injected_columns;
 	}
 
 	Block readImpl() override
@@ -163,9 +171,6 @@ protected:
 
 		if (!reader)
 		{
-			injectRequiredColumns(columns);
-			injectRequiredColumns(pre_columns);
-
 			UncompressedCache * uncompressed_cache = use_uncompressed_cache ? storage.context.getUncompressedCache() : NULL;
 			reader.reset(new MergeTreeReader(path, owned_data_part, columns, uncompressed_cache, storage, all_mark_ranges));
 			if (prewhere_actions)
@@ -358,8 +363,8 @@ private:
 
 	Logger * log;
 
-	/// requested column names in specific order as expected by other stages
-	const Names ordered_names;
+	/// column names in specific order as expected by other stages
+	Names ordered_names;
 };
 
 }
