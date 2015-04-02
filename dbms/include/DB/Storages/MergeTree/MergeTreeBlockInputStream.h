@@ -111,7 +111,14 @@ protected:
 	/// Будем вызывать progressImpl самостоятельно.
 	void progress(const Progress & value) override {}
 
-	void injectRequiredColumns(NamesAndTypesList & columns) const {
+
+	/** Если некоторых запрошенных столбцов нет в куске,
+	  *  то выясняем, какие столбцы может быть необходимо дополнительно прочитать,
+	  *  чтобы можно было вычислить DEFAULT выражение для этих столбцов.
+	  * Добавляем их в columns.
+	  */
+	void injectRequiredColumns(NamesAndTypesList & columns) const
+	{
 		std::set<NameAndTypePair> required_columns;
 		auto modified = false;
 
@@ -134,6 +141,9 @@ protected:
 							NameAndTypePair column{identifier, storage.getDataTypeByName(identifier)};
 							if (required_columns.count(column) == 0)
 							{
+								/** Вставляем требуемый столбец сразу после it и продолжаем цикл с него.
+								  * Таким образом, обрабатываются цепочки зависимостей.
+								  */
 								it = columns.emplace(++it, std::move(column));
 								modified = true;
 							}
@@ -152,6 +162,7 @@ protected:
 			columns = NamesAndTypesList{std::begin(required_columns), std::end(required_columns)};
 	}
 
+
 	Block readImpl() override
 	{
 		Block res;
@@ -164,11 +175,12 @@ protected:
 			injectRequiredColumns(columns);
 			injectRequiredColumns(pre_columns);
 
-			UncompressedCache * uncompressed_cache = use_uncompressed_cache ? storage.context.getUncompressedCache() : NULL;
+			UncompressedCache * uncompressed_cache = use_uncompressed_cache ? storage.context.getUncompressedCache() : nullptr;
+
 			reader.reset(new MergeTreeReader(path, owned_data_part, columns, uncompressed_cache, storage, all_mark_ranges));
+
 			if (prewhere_actions)
-				pre_reader.reset(new MergeTreeReader(path, owned_data_part, pre_columns, uncompressed_cache, storage,
-													 all_mark_ranges));
+				pre_reader.reset(new MergeTreeReader(path, owned_data_part, pre_columns, uncompressed_cache, storage, all_mark_ranges));
 		}
 
 		if (prewhere_actions)
@@ -191,7 +203,7 @@ protected:
 					if (range.begin == range.end)
 						remaining_mark_ranges.pop_back();
 				}
-				progressImpl(Progress(res.rows(), res.bytes()));
+				progressImpl(Progress(res.rowsInFirstColumn(), res.bytes()));
 				pre_reader->fillMissingColumns(res, ordered_names);
 
 				/// Вычислим выражение в PREWHERE.
@@ -204,8 +216,8 @@ protected:
 				size_t pre_bytes = res.bytes();
 
 				/** Если фильтр - константа (например, написано PREWHERE 1),
-				*  то либо вернём пустой блок, либо вернём блок без изменений.
-				*/
+				  *  то либо вернём пустой блок, либо вернём блок без изменений.
+				  */
 				if (ColumnConstUInt8 * column_const = typeid_cast<ColumnConstUInt8 *>(&*column))
 				{
 					if (!column_const->getData())
@@ -295,7 +307,7 @@ protected:
 				else
 					throw Exception("Illegal type " + column->getName() + " of column for filter. Must be ColumnUInt8 or ColumnConstUInt8.", ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
 
-				reader->fillMissingColumns(res, ordered_names);
+				reader->fillMissingColumnsAndReorder(res, ordered_names);
 			}
 			while (!remaining_mark_ranges.empty() && !res && !isCancelled());
 		}
@@ -315,7 +327,7 @@ protected:
 					remaining_mark_ranges.pop_back();
 			}
 
-			progressImpl(Progress(res.rows(), res.bytes()));
+			progressImpl(Progress(res.rowsInFirstColumn(), res.bytes()));
 
 			reader->fillMissingColumns(res, ordered_names);
 		}
