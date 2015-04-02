@@ -629,6 +629,8 @@ int Server::main(const std::vector<std::string> & args)
 		if (olap_http_server)
 			olap_http_server->start();
 
+		LOG_INFO(log, "Ready for connections.");
+
 		SCOPE_EXIT(
 			LOG_DEBUG(log, "Received termination signal. Waiting for current connections to close.");
 
@@ -650,8 +652,6 @@ int Server::main(const std::vector<std::string> & args)
 				global_context->tryCreateDictionaries();
 				global_context->tryCreateExternalDictionaries();
 			}
-
-			LOG_INFO(log, "Ready for connections.");
 
 			waitForTerminationRequest();
 		}
