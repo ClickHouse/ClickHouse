@@ -83,9 +83,10 @@ public:
 		}
 
 		/// Оценим общее количество строк - для прогресс-бара.
-		const auto total_rows = storage.index_granularity *
-			std::accumulate(std::begin(all_mark_ranges), std::end(all_mark_ranges), size_t{},
-				[] (const auto current, auto & range) { return current + (range.end - range.begin); });
+		size_t total_rows = 0;
+		for (const auto & range : all_mark_ranges)
+			total_rows += range.end - range.begin;
+		total_rows *= storage.index_granularity;
 
 		LOG_TRACE(log, "Reading " << all_mark_ranges.size() << " ranges from part " << owned_data_part->name
 			<< ", approx. " << total_rows
