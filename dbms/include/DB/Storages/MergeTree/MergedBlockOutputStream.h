@@ -8,6 +8,7 @@
 #include <DB/Common/escapeForFileName.h>
 #include <DB/DataTypes/DataTypeNested.h>
 #include <DB/DataTypes/DataTypeArray.h>
+#include <DB/Columns/ColumnArray.h>
 
 
 namespace DB
@@ -168,8 +169,11 @@ protected:
 					prev_mark += limit;
 				}
 			}
-		}
 
+			writeData(name, *type_arr->getNestedType(), typeid_cast<const ColumnArray &>(column).getData(),
+				offset_columns, level + 1);
+		}
+		else
 		{
 			ColumnStream & stream = *column_streams[name];
 
