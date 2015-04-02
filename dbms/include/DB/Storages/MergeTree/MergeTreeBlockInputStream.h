@@ -179,15 +179,8 @@ protected:
 
 		if (!reader)
 		{
-<<<<<<< HEAD
-			injectRequiredColumns(columns);
-			injectRequiredColumns(pre_columns);
-
 			UncompressedCache * uncompressed_cache = use_uncompressed_cache ? storage.context.getUncompressedCache() : nullptr;
 
-=======
-			UncompressedCache * uncompressed_cache = use_uncompressed_cache ? storage.context.getUncompressedCache() : NULL;
->>>>>>> 34303d0cb6e695c82876a1dd6aadf87a9f875545
 			reader.reset(new MergeTreeReader(path, owned_data_part, columns, uncompressed_cache, storage, all_mark_ranges));
 
 			if (prewhere_actions)
