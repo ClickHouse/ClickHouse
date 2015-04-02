@@ -11,6 +11,7 @@
 #include <DB/Columns/ColumnFixedString.h>
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Functions/IFunction.h>
+#include <statdaemons/ext/range.hpp>
 
 
 namespace DB
@@ -498,10 +499,11 @@ public:
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 		if (!arguments[1].column)
 			throw Exception("Second argument for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
-		if (!typeid_cast<const DataTypeString *>(&*arguments[0].type))
-			throw Exception(getName() + " is only implemented for type String", ErrorCodes::NOT_IMPLEMENTED);
+		if (!typeid_cast<const DataTypeString *>(arguments[0].type.get()) &&
+			!typeid_cast<const DataTypeFixedString *>(arguments[0].type.get()))
+			throw Exception(getName() + " is only implemented for types String and FixedString", ErrorCodes::NOT_IMPLEMENTED);
 
-		size_t n = getSize(arguments[1]);
+		const size_t n = getSize(arguments[1]);
 
 		out_return_type = new DataTypeFixedString(n);
 	}
@@ -523,7 +525,7 @@ public:
 
 			block.getByPosition(result).column = new ColumnConst<String>(column_const->size(), std::move(resized_string), new DataTypeFixedString(n));
 		}
-		else if(const ColumnString * column_string = typeid_cast<const ColumnString *>(&*column))
+		else if (const ColumnString * column_string = typeid_cast<const ColumnString *>(&*column))
 		{
 			ColumnFixedString * column_fixed = new ColumnFixedString(n);
 			ColumnPtr result_ptr = column_fixed;
@@ -541,6 +543,26 @@ public:
 				memcpy(&out_chars[i * n], &in_chars[off], len);
 			}
 			block.getByPosition(result).column = result_ptr;
+		}
+		else if (const auto column_fixed_string = typeid_cast<const ColumnFixedString *>(column.get()))
+		{
+			const auto src_n = column_fixed_string->getN();
+			if (src_n > n)
+				throw Exception{
+					"String too long for type FixedString(" + toString(n) + ")",
+					ErrorCodes::TOO_LARGE_STRING_SIZE
+				};
+
+			const auto column_fixed = new ColumnFixedString{n};
+			block.getByPosition(result).column = column_fixed;
+
+			auto & out_chars = column_fixed->getChars();
+			const auto & in_chars = column_fixed_string->getChars();
+			const auto size = column_fixed_string->size();
+			out_chars.resize_fill(size * n);
+
+			for (const auto i : ext::range(0, size))
+				memcpy(&out_chars[i * n], &in_chars[i * src_n], src_n);
 		}
 		else
 			throw Exception("Unexpected column: " + column->getName(), ErrorCodes::ILLEGAL_COLUMN);
