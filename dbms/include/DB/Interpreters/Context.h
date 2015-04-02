@@ -262,9 +262,8 @@ public:
 	const FormatFactory & getFormatFactory() const							{ return shared->format_factory; }
 	const Dictionaries & getDictionaries() const;
 	const ExternalDictionaries & getExternalDictionaries() const;
-
-	void tryCreateDictionaries(bool throw_on_error = false) const;
-	void tryCreateExternalDictionaries(bool throw_on_error = false) const;
+	void tryCreateDictionaries() const;
+	void tryCreateExternalDictionaries() const;
 
 	InterserverIOHandler & getInterserverIOHandler()						{ return shared->interserver_io_handler; }
 
@@ -342,6 +341,10 @@ public:
 	Compiler & getCompiler();
 
 	void shutdown() { shared->shutdown(); }
+
+private:
+	const Dictionaries & getDictionariesImpl(bool throw_on_error) const;
+	const ExternalDictionaries & getExternalDictionariesImpl(bool throw_on_error) const;
 };
 
 

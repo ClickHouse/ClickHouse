@@ -492,37 +492,51 @@ Context & Context::getGlobalContext()
 
 const Dictionaries & Context::getDictionaries() const
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
-
-	tryCreateDictionaries();
-
-	return *shared->dictionaries;
+	return getDictionariesImpl(false);
 }
 
 
 const ExternalDictionaries & Context::getExternalDictionaries() const
 {
+	return getExternalDictionariesImpl(false);
+}
+
+
+const Dictionaries & Context::getDictionariesImpl(const bool throw_on_error) const
+{
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 
-	tryCreateExternalDictionaries();
-
-	return *shared->external_dictionaries;
-}
-
-void Context::tryCreateDictionaries(const bool throw_on_error) const
-{
 	if (!shared->dictionaries)
 		shared->dictionaries = new Dictionaries{throw_on_error};
+
+	return *shared->dictionaries;
 }
 
-void Context::tryCreateExternalDictionaries(const bool throw_on_error) const
+
+const ExternalDictionaries & Context::getExternalDictionariesImpl(const bool throw_on_error) const
 {
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+
 	if (!shared->external_dictionaries)
 	{
 		if (!this->global_context)
 			throw Exception("Logical error: there is no global context", ErrorCodes::LOGICAL_ERROR);
 		shared->external_dictionaries = new ExternalDictionaries{*this->global_context, throw_on_error};
 	}
+
+	return *shared->external_dictionaries;
+}
+
+
+void Context::tryCreateDictionaries() const
+{
+	static_cast<void>(getDictionariesImpl(true));
+}
+
+
+void Context::tryCreateExternalDictionaries() const
+{
+	static_cast<void>(getExternalDictionariesImpl(true));
 }
 
 
