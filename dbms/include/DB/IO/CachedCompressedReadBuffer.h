@@ -49,7 +49,7 @@ private:
 		{
 			/// Если нет - надо прочитать его из файла.
 			initInput();
-			file_in->seek(file_pos, SEEK_SET);
+			file_in->seek(file_pos);
 
 			owned_cell.reset(new UncompressedCacheCell);
 

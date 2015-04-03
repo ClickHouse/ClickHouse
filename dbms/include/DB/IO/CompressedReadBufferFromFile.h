@@ -63,7 +63,7 @@ public:
 		}
 		else
 		{
-			file_in.seek(offset_in_compressed_file, SEEK_SET);
+			file_in.seek(offset_in_compressed_file);
 
 			bytes += offset();
 			nextImpl();
