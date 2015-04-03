@@ -36,11 +36,15 @@ private:
 	off_t getPositionInFileRelaxed() const noexcept;
 	off_t doSeek(off_t off, int whence) override;
 	bool nextImpl() override;
-	void sync() override;
+	void synchronousRead();
+	void initRequest();
+	void publishReceivedData();
+	void sync();
 	/// Ждать окончания текущей асинхронной задачи.
 	void waitForAIOCompletion();
 	/// Менять местами основной и дублирующий буферы.
 	void swapBuffers() noexcept;
+	void skipLastRequest();
 
 private:
 	/// Буфер для асинхронных операций чтения данных.
@@ -60,11 +64,14 @@ private:
 
 	const std::string filename;
 
+	ssize_t bytes_read = 0;
 	size_t max_bytes_read = std::numeric_limits<size_t>::max();
 	size_t total_bytes_read = 0;
 	size_t requested_byte_count = 0;
+	off_t region_aligned_begin = 0;
 	off_t pos_in_file = 0;
 	int fd = -1;
+	size_t iov_size = 0;
 
 	size_t buffer_capacity = 0;
 

@@ -61,8 +61,6 @@ void ReadBufferAIO::setMaxBytes(size_t max_bytes_read_)
 
 off_t ReadBufferAIO::doSeek(off_t off, int whence)
 {
-	sync();
-
 	off_t new_pos;
 
 	if (whence == SEEK_SET)
@@ -110,6 +108,9 @@ off_t ReadBufferAIO::doSeek(off_t off, int whence)
 			pos = working_buffer.end();
 			pos_in_file = new_pos;
 		}
+
+		/// Сдвинулись, значит не можем использовать результат последнего асинхронного запроса.
+		skipLastRequest();
 	}
 
 	return new_pos;
@@ -132,60 +133,24 @@ bool ReadBufferAIO::nextImpl()
 	if (is_eof)
 		return false;
 
-	sync();
-	is_started = true;
+	if (!is_started)
+	{
+		synchronousRead();
+		is_started = true;
+	}
+	else
+		sync();
 
 	/// Если конец файла только что достигнут, больше ничего не делаем.
 	if (is_eof)
 		return true;
 
-	/// Количество запрашиваемых байтов.
-	requested_byte_count = std::min(fill_buffer.internalBuffer().size(), max_bytes_read);
-
-	/// Регион диска, из которого хотим читать данные.
-	const off_t region_begin = pos_in_file;
-	const off_t region_end = pos_in_file + requested_byte_count;
-	const size_t region_size = region_end - region_begin;
-
-	/// Выровненный регион диска, из которого хотим читать данные.
-	const size_t region_left_padding = region_begin % DEFAULT_AIO_FILE_BLOCK_SIZE;
-	const size_t region_right_padding = (DEFAULT_AIO_FILE_BLOCK_SIZE - (region_end % DEFAULT_AIO_FILE_BLOCK_SIZE)) % DEFAULT_AIO_FILE_BLOCK_SIZE;
-
-	const off_t region_aligned_begin = region_begin - region_left_padding;
-	const off_t region_aligned_end = region_end + region_right_padding;
-	const off_t region_aligned_size = region_aligned_end - region_aligned_begin;
-
-	/// Буфер, в который запишем данные из диска.
-	const Position buffer_begin = fill_buffer.internalBuffer().begin();
-	buffer_capacity = this->memory.size();
-
-	size_t excess_count = 0;
-
-	if ((region_left_padding + region_size) > buffer_capacity)
-	{
-		excess_count = region_left_padding + region_size - buffer_capacity;
-		::memset(&memory_page[0], 0, memory_page.size());
-	}
-
-	/// Создать запрос на асинхронное чтение.
-
-	size_t i = 0;
-
-	iov[i].iov_base = buffer_begin;
-	iov[i].iov_len = (excess_count > 0) ? buffer_capacity : region_aligned_size;
-	++i;
-
-	if (excess_count > 0)
-	{
-		iov[i].iov_base = &memory_page[0];
-		iov[i].iov_len = memory_page.size();
-		++i;
-	}
+	initRequest();
 
 	request.aio_lio_opcode = IOCB_CMD_PREADV;
 	request.aio_fildes = fd;
 	request.aio_buf = reinterpret_cast<UInt64>(iov);
-	request.aio_nbytes = i;
+	request.aio_nbytes = iov_size;
 	request.aio_offset = region_aligned_begin;
 
 	/// Отправить запрос.
@@ -202,32 +167,56 @@ bool ReadBufferAIO::nextImpl()
 	return true;
 }
 
-void ReadBufferAIO::sync()
+void ReadBufferAIO::initRequest()
 {
-	if (is_eof || !is_started || !is_pending_read)
-		return;
+	/// Количество запрашиваемых байтов.
+	requested_byte_count = std::min(fill_buffer.internalBuffer().size(), max_bytes_read);
 
-	waitForAIOCompletion();
-	swapBuffers();
-}
+	/// Регион диска, из которого хотим читать данные.
+	const off_t region_begin = pos_in_file;
+	const off_t region_end = pos_in_file + requested_byte_count;
+	const size_t region_size = region_end - region_begin;
 
-void ReadBufferAIO::waitForAIOCompletion()
-{
-	if (!is_pending_read)
-		return;
+	/// Выровненный регион диска, из которого хотим читать данные.
+	const size_t region_left_padding = region_begin % DEFAULT_AIO_FILE_BLOCK_SIZE;
+	const size_t region_right_padding = (DEFAULT_AIO_FILE_BLOCK_SIZE - (region_end % DEFAULT_AIO_FILE_BLOCK_SIZE)) % DEFAULT_AIO_FILE_BLOCK_SIZE;
 
-	while (io_getevents(aio_context.ctx, events.size(), events.size(), &events[0], nullptr) < 0)
+	region_aligned_begin = region_begin - region_left_padding;
+	const off_t region_aligned_end = region_end + region_right_padding;
+	const off_t region_aligned_size = region_aligned_end - region_aligned_begin;
+
+	/// Буфер, в который запишем данные из диска.
+	const Position buffer_begin = fill_buffer.internalBuffer().begin();
+	buffer_capacity = this->memory.size();
+
+	size_t excess_count = 0;
+
+	if ((region_left_padding + region_size) > buffer_capacity)
 	{
-		if (errno != EINTR)
-		{
-			got_exception = true;
-			throw Exception("Failed to wait for asynchronous IO completion on file " + filename, ErrorCodes::AIO_COMPLETION_ERROR);
-		}
+		excess_count = region_left_padding + region_size - buffer_capacity;
+		::memset(&memory_page[0], 0, memory_page.size());
 	}
 
-	is_pending_read = false;
-	off_t bytes_read = events[0].res;
+	/// Создать запрос на синхронное чтение.
 
+	size_t i = 0;
+
+	iov[i].iov_base = buffer_begin;
+	iov[i].iov_len = (excess_count > 0) ? buffer_capacity : region_aligned_size;
+	++i;
+
+	if (excess_count > 0)
+	{
+		iov[i].iov_base = &memory_page[0];
+		iov[i].iov_len = memory_page.size();
+		++i;
+	}
+
+	iov_size = i;
+}
+
+void ReadBufferAIO::publishReceivedData()
+{
 	size_t region_left_padding = pos_in_file % DEFAULT_AIO_FILE_BLOCK_SIZE;
 
 	if ((bytes_read < 0) || (static_cast<size_t>(bytes_read) < region_left_padding))
@@ -269,6 +258,74 @@ void ReadBufferAIO::waitForAIOCompletion()
 
 	if (total_bytes_read == max_bytes_read)
 		is_eof = true;
+}
+
+void ReadBufferAIO::synchronousRead()
+{
+	initRequest();
+	bytes_read = ::preadv(fd, iov, iov_size, region_aligned_begin);
+	publishReceivedData();
+	swapBuffers();
+}
+
+void ReadBufferAIO::sync()
+{
+	if (is_eof || !is_pending_read)
+		return;
+
+	waitForAIOCompletion();
+	swapBuffers();
+}
+
+void ReadBufferAIO::skipLastRequest()
+{
+	if (is_eof || !is_pending_read)
+		return;
+
+	while (io_getevents(aio_context.ctx, events.size(), events.size(), &events[0], nullptr) < 0)
+	{
+		if (errno != EINTR)
+		{
+			got_exception = true;
+			throw Exception("Failed to wait for asynchronous IO completion on file " + filename, ErrorCodes::AIO_COMPLETION_ERROR);
+		}
+	}
+
+	is_pending_read = false;
+	is_started = false;
+
+	/// Несмотря на то, что не станем использовать результат последнего запроса,
+	/// убедимся, что запрос правильно выполнен.
+
+	bytes_read = events[0].res;
+
+	size_t region_left_padding = pos_in_file % DEFAULT_AIO_FILE_BLOCK_SIZE;
+
+	if ((bytes_read < 0) || (static_cast<size_t>(bytes_read) < region_left_padding))
+	{
+		got_exception = true;
+		throw Exception("Asynchronous read error on file " + filename, ErrorCodes::AIO_READ_ERROR);
+	}
+}
+
+void ReadBufferAIO::waitForAIOCompletion()
+{
+	if (!is_pending_read)
+		return;
+
+	while (io_getevents(aio_context.ctx, events.size(), events.size(), &events[0], nullptr) < 0)
+	{
+		if (errno != EINTR)
+		{
+			got_exception = true;
+			throw Exception("Failed to wait for asynchronous IO completion on file " + filename, ErrorCodes::AIO_COMPLETION_ERROR);
+		}
+	}
+
+	is_pending_read = false;
+	bytes_read = events[0].res;
+
+	publishReceivedData();
 }
 
 void ReadBufferAIO::swapBuffers() noexcept

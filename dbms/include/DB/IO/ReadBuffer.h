@@ -44,7 +44,6 @@ public:
 	{
 		bytes += offset();
 		bool res = nextImpl();
-		sync();
 		if (!res)
 			working_buffer.resize(0);
 
@@ -150,7 +149,6 @@ private:
 	  * Кинуть исключение, если что-то не так.
 	  */
 	virtual bool nextImpl() { return false; };
-	virtual void sync() {}
 };
 
 
