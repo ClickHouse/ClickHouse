@@ -61,7 +61,7 @@ WriteBufferAIO::~WriteBufferAIO()
 		::close(fd2);
 }
 
-off_t WriteBufferAIO::seek(off_t off, int whence)
+off_t WriteBufferAIO::doSeek(off_t off, int whence)
 {
 	flush();
 

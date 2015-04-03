@@ -75,14 +75,6 @@ public:
 		return fd;
 	}
 
-	off_t seek(off_t offset, int whence = SEEK_SET) override
-	{
-		off_t res = lseek(fd, offset, whence);
-		if (-1 == res)
-			throwFromErrno("Cannot seek through file " + getFileName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
-		return res;
-	}
-
 	off_t getPositionInFile() override
 	{
 		return seek(0, SEEK_CUR);
@@ -104,6 +96,15 @@ public:
 		int res = fsync(fd);
 		if (-1 == res)
 			throwFromErrno("Cannot fsync " + getFileName(), ErrorCodes::CANNOT_FSYNC);
+	}
+
+private:
+	off_t doSeek(off_t offset, int whence) override
+	{
+		off_t res = lseek(fd, offset, whence);
+		if (-1 == res)
+			throwFromErrno("Cannot seek through file " + getFileName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+		return res;
 	}
 };
 

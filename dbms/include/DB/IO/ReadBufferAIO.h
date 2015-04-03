@@ -28,15 +28,15 @@ public:
 	ReadBufferAIO & operator=(const ReadBufferAIO &) = delete;
 
 	void setMaxBytes(size_t max_bytes_read_);
-	off_t seek(off_t off, int whence = SEEK_SET) override;
 	off_t getPositionInFile() override;
 	std::string getFileName() const noexcept override { return filename; }
 	int getFD() const noexcept override { return fd; }
 
 private:
 	off_t getPositionInFileRelaxed() const noexcept;
+	off_t doSeek(off_t off, int whence) override;
 	bool nextImpl() override;
-	bool sync() override;
+	void sync() override;
 	/// Ждать окончания текущей асинхронной задачи.
 	void waitForAIOCompletion();
 	/// Менять местами основной и дублирующий буферы.

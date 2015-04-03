@@ -26,7 +26,6 @@ public:
 	WriteBufferAIO(const WriteBufferAIO &) = delete;
 	WriteBufferAIO & operator=(const WriteBufferAIO &) = delete;
 
-	off_t seek(off_t off, int whence = SEEK_SET) override;
 	off_t getPositionInFile() override;
 	void truncate(off_t length = 0) override;
 	void sync() override;
@@ -34,6 +33,8 @@ public:
 	int getFD() const noexcept override { return fd; }
 
 private:
+	///
+	off_t doSeek(off_t off, int whence) override;
 	/// Если в буфере ещё остались данные - запишем их.
 	void flush();
 	///

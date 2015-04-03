@@ -37,7 +37,7 @@ ReadBufferAIO::~ReadBufferAIO()
 	{
 		try
 		{
-			(void) sync();
+			sync();
 		}
 		catch (...)
 		{
@@ -59,9 +59,9 @@ void ReadBufferAIO::setMaxBytes(size_t max_bytes_read_)
 	max_bytes_read = max_bytes_read_;
 }
 
-off_t ReadBufferAIO::seek(off_t off, int whence)
+off_t ReadBufferAIO::doSeek(off_t off, int whence)
 {
-	(void) sync();
+	sync();
 
 	off_t new_pos;
 
@@ -132,7 +132,7 @@ bool ReadBufferAIO::nextImpl()
 	if (is_eof)
 		return false;
 
-	(void) sync();
+	sync();
 	is_started = true;
 
 	/// Если конец файла только что достигнут, больше ничего не делаем.
@@ -202,19 +202,13 @@ bool ReadBufferAIO::nextImpl()
 	return true;
 }
 
-bool ReadBufferAIO::sync()
+void ReadBufferAIO::sync()
 {
-	if (is_eof)
-		return false;
-	if (!is_started)
-		return false;
-	if (!is_pending_read)
-		return false;
+	if (is_eof || !is_started || !is_pending_read)
+		return;
 
 	waitForAIOCompletion();
 	swapBuffers();
-
-	return true;
 }
 
 void ReadBufferAIO::waitForAIOCompletion()

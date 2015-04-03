@@ -68,8 +68,14 @@ public:
 		return fd;
 	}
 
+	off_t getPositionInFile() override
+	{
+		return pos_in_file - (working_buffer.end() - pos);
+	}
+
+private:
 	/// Если offset такой маленький, что мы не выйдем за пределы буфера, настоящий seek по файлу не делается.
-	off_t seek(off_t offset, int whence = SEEK_SET) override
+	off_t doSeek(off_t offset, int whence) override
 	{
 		off_t new_pos = offset;
 		if (whence == SEEK_CUR)
@@ -98,11 +104,6 @@ public:
 			pos_in_file = new_pos;
 			return res;
 		}
-	}
-
-	off_t getPositionInFile() override
-	{
-		return pos_in_file - (working_buffer.end() - pos);
 	}
 };
 
