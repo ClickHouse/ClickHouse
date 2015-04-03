@@ -44,11 +44,11 @@ public:
 	{
 		bytes += offset();
 		bool res = nextImpl();
+		(void) sync();
 		if (!res)
 			working_buffer.resize(0);
 
-		pos = working_buffer.begin() + working_buffer_offset;
-		working_buffer_offset = 0;
+		pos = working_buffer.begin();
 		return res;
 	}
 
@@ -118,7 +118,7 @@ public:
 		while (bytes_copied < n && !eof())
 		{
 			size_t bytes_to_copy = std::min(static_cast<size_t>(working_buffer.end() - pos), n - bytes_copied);
-			std::memcpy(to + bytes_copied, pos, bytes_to_copy);
+			::memcpy(to + bytes_copied, pos, bytes_to_copy);
 			pos += bytes_to_copy;
 			bytes_copied += bytes_to_copy;
 		}
@@ -150,6 +150,7 @@ private:
 	  * Кинуть исключение, если что-то не так.
 	  */
 	virtual bool nextImpl() { return false; };
+	virtual bool sync() { return false; }
 };
 
 

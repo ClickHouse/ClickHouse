@@ -12,7 +12,7 @@ namespace DB
 ReadBufferAIO::ReadBufferAIO(const std::string & filename_, size_t buffer_size_, int flags_,
 	char * existing_memory_)
 	: ReadBufferFromFileBase(buffer_size_, existing_memory_, DEFAULT_AIO_FILE_BLOCK_SIZE),
-	fill_buffer(BufferWithOwnMemory(buffer_size_, nullptr, DEFAULT_AIO_FILE_BLOCK_SIZE)),
+	fill_buffer(BufferWithOwnMemory<ReadBuffer>(buffer_size_, nullptr, DEFAULT_AIO_FILE_BLOCK_SIZE)),
 	filename(filename_)
 {
 	ProfileEvents::increment(ProfileEvents::FileOpen);
@@ -37,7 +37,7 @@ ReadBufferAIO::~ReadBufferAIO()
 	{
 		try
 		{
-			waitForAIOCompletion();
+			(void) sync();
 		}
 		catch (...)
 		{
@@ -61,7 +61,7 @@ void ReadBufferAIO::setMaxBytes(size_t max_bytes_read_)
 
 off_t ReadBufferAIO::seek(off_t off, int whence)
 {
-	waitForAIOCompletion();
+	(void) sync();
 
 	off_t new_pos;
 
@@ -132,13 +132,8 @@ bool ReadBufferAIO::nextImpl()
 	if (is_eof)
 		return false;
 
-	waitForAIOCompletion();
-
-	/// При первом вызове не надо обменять местами основной и дублирующий буферы.
-	if (is_started)
-		swapBuffers();
-	else
-		is_started = true;
+	(void) sync();
+	is_started = true;
 
 	/// Если конец файла только что достигнут, больше ничего не делаем.
 	if (is_eof)
@@ -147,20 +142,51 @@ bool ReadBufferAIO::nextImpl()
 	/// Количество запрашиваемых байтов.
 	requested_byte_count = std::min(fill_buffer.internalBuffer().size(), max_bytes_read);
 
-	/// Для запроса выравниваем количество запрашиваемых байтов на границе следующего блока.
-	size_t effective_byte_count = requested_byte_count;
-	if ((effective_byte_count % DEFAULT_AIO_FILE_BLOCK_SIZE) != 0)
-		effective_byte_count += DEFAULT_AIO_FILE_BLOCK_SIZE - (effective_byte_count % DEFAULT_AIO_FILE_BLOCK_SIZE);
+	/// Регион диска, из которого хотим читать данные.
+	const off_t region_begin = pos_in_file;
+	const off_t region_end = pos_in_file + requested_byte_count;
+	const size_t region_size = region_end - region_begin;
 
-	/// Также выравниваем позицию в файле на границе предыдущего блока.
-	off_t effective_pos_in_file = pos_in_file - (pos_in_file % DEFAULT_AIO_FILE_BLOCK_SIZE);
+	/// Выровненный регион диска, из которого хотим читать данные.
+	const size_t region_left_padding = region_begin % DEFAULT_AIO_FILE_BLOCK_SIZE;
+	const size_t region_right_padding = (DEFAULT_AIO_FILE_BLOCK_SIZE - (region_end % DEFAULT_AIO_FILE_BLOCK_SIZE)) % DEFAULT_AIO_FILE_BLOCK_SIZE;
 
-	/// Создать запрос.
-	request.aio_lio_opcode = IOCB_CMD_PREAD;
+	const off_t region_aligned_begin = region_begin - region_left_padding;
+	const off_t region_aligned_end = region_end + region_right_padding;
+	const off_t region_aligned_size = region_aligned_end - region_aligned_begin;
+
+	/// Буфер, в который запишем данные из диска.
+	const Position buffer_begin = fill_buffer.internalBuffer().begin();
+	buffer_capacity = this->memory.size();
+
+	size_t excess_count = 0;
+
+	if ((region_left_padding + region_size) > buffer_capacity)
+	{
+		excess_count = region_left_padding + region_size - buffer_capacity;
+		::memset(&memory_page[0], 0, memory_page.size());
+	}
+
+	/// Создать запрос на асинхронное чтение.
+
+	size_t i = 0;
+
+	iov[i].iov_base = buffer_begin;
+	iov[i].iov_len = (excess_count > 0) ? buffer_capacity : region_aligned_size;
+	++i;
+
+	if (excess_count > 0)
+	{
+		iov[i].iov_base = &memory_page[0];
+		iov[i].iov_len = memory_page.size();
+		++i;
+	}
+
+	request.aio_lio_opcode = IOCB_CMD_PREADV;
 	request.aio_fildes = fd;
-	request.aio_buf = reinterpret_cast<UInt64>(fill_buffer.internalBuffer().begin());
-	request.aio_nbytes = effective_byte_count;
-	request.aio_offset = effective_pos_in_file;
+	request.aio_buf = reinterpret_cast<UInt64>(iov);
+	request.aio_nbytes = i;
+	request.aio_offset = region_aligned_begin;
 
 	/// Отправить запрос.
 	while (io_submit(aio_context.ctx, request_ptrs.size(), &request_ptrs[0]) < 0)
@@ -176,51 +202,79 @@ bool ReadBufferAIO::nextImpl()
 	return true;
 }
 
+bool ReadBufferAIO::sync()
+{
+	if (is_eof)
+		return false;
+	if (!is_started)
+		return false;
+	if (!is_pending_read)
+		return false;
+
+	waitForAIOCompletion();
+	swapBuffers();
+
+	return true;
+}
+
 void ReadBufferAIO::waitForAIOCompletion()
 {
-	if (is_pending_read)
+	if (!is_pending_read)
+		return;
+
+	while (io_getevents(aio_context.ctx, events.size(), events.size(), &events[0], nullptr) < 0)
 	{
-		while (io_getevents(aio_context.ctx, events.size(), events.size(), &events[0], nullptr) < 0)
-		{
-			if (errno != EINTR)
-			{
-				got_exception = true;
-				throw Exception("Failed to wait for asynchronous IO completion on file " + filename, ErrorCodes::AIO_COMPLETION_ERROR);
-			}
-		}
-
-		is_pending_read = false;
-		off_t bytes_read = events[0].res;
-
-		if (bytes_read < 0)
+		if (errno != EINTR)
 		{
 			got_exception = true;
-			throw Exception("Asynchronous read error on file " + filename, ErrorCodes::AIO_READ_ERROR);
+			throw Exception("Failed to wait for asynchronous IO completion on file " + filename, ErrorCodes::AIO_COMPLETION_ERROR);
 		}
-		if (pos_in_file > (std::numeric_limits<off_t>::max() - bytes_read))
-		{
-			got_exception = true;
-			throw Exception("File position overflowed", ErrorCodes::LOGICAL_ERROR);
-		}
-
-		/// Игнорируем излишние байты справа.
-		bytes_read = std::min(bytes_read, static_cast<off_t>(requested_byte_count));
-
-		if (bytes_read > 0)
-			fill_buffer.buffer().resize(bytes_read);
-		if (static_cast<size_t>(bytes_read) < fill_buffer.internalBuffer().size())
-			is_eof = true;
-
-		/// Игнорируем излишние байты слева.
-		working_buffer_offset = pos_in_file % DEFAULT_AIO_FILE_BLOCK_SIZE;
-		bytes_read -= working_buffer_offset;
-
-		pos_in_file += bytes_read;
-		total_bytes_read += bytes_read;
-
-		if (total_bytes_read == max_bytes_read)
-			is_eof = true;
 	}
+
+	is_pending_read = false;
+	off_t bytes_read = events[0].res;
+
+	size_t region_left_padding = pos_in_file % DEFAULT_AIO_FILE_BLOCK_SIZE;
+
+	if ((bytes_read < 0) || (static_cast<size_t>(bytes_read) < region_left_padding))
+	{
+		got_exception = true;
+		throw Exception("Asynchronous read error on file " + filename, ErrorCodes::AIO_READ_ERROR);
+	}
+
+	/// Игнорируем излишние байты слева.
+	bytes_read -= region_left_padding;
+
+	/// Игнорируем излишние байты справа.
+	bytes_read = std::min(bytes_read, static_cast<off_t>(requested_byte_count));
+
+	if (pos_in_file > (std::numeric_limits<off_t>::max() - bytes_read))
+	{
+		got_exception = true;
+		throw Exception("File position overflowed", ErrorCodes::LOGICAL_ERROR);
+	}
+
+	Position buffer_begin = fill_buffer.internalBuffer().begin();
+
+	if ((region_left_padding + bytes_read) > buffer_capacity)
+	{
+		size_t excess_count = region_left_padding + bytes_read - buffer_capacity;
+		::memmove(buffer_begin, buffer_begin + region_left_padding, buffer_capacity);
+		::memcpy(buffer_begin + buffer_capacity - region_left_padding, &memory_page[0], excess_count);
+	}
+	else
+		::memmove(buffer_begin, buffer_begin + region_left_padding, bytes_read);
+
+	if (bytes_read > 0)
+		fill_buffer.buffer().resize(bytes_read);
+	if (static_cast<size_t>(bytes_read) < requested_byte_count)
+		is_eof = true;
+
+	pos_in_file += bytes_read;
+	total_bytes_read += bytes_read;
+
+	if (total_bytes_read == max_bytes_read)
+		is_eof = true;
 }
 
 void ReadBufferAIO::swapBuffers() noexcept

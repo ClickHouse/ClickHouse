@@ -12,7 +12,7 @@ namespace DB
 WriteBufferAIO::WriteBufferAIO(const std::string & filename_, size_t buffer_size_, int flags_, mode_t mode_,
 		char * existing_memory_)
 		: WriteBufferFromFileBase(buffer_size_, existing_memory_, DEFAULT_AIO_FILE_BLOCK_SIZE),
-		flush_buffer(BufferWithOwnMemory(buffer_size_, nullptr, DEFAULT_AIO_FILE_BLOCK_SIZE)),
+		flush_buffer(BufferWithOwnMemory<WriteBuffer>(buffer_size_, nullptr, DEFAULT_AIO_FILE_BLOCK_SIZE)),
 		filename(filename_)
 {
 	ProfileEvents::increment(ProfileEvents::FileOpen);

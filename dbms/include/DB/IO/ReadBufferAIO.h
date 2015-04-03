@@ -3,12 +3,14 @@
 #include <DB/IO/ReadBufferFromFileBase.h>
 #include <DB/IO/ReadBuffer.h>
 #include <DB/IO/BufferWithOwnMemory.h>
+#include <DB/Core/Defines.h>
 #include <statdaemons/AIO.h>
 
 #include <string>
 #include <limits>
 #include <unistd.h>
 #include <fcntl.h>
+#include <sys/uio.h>
 
 namespace DB
 {
@@ -34,6 +36,7 @@ public:
 private:
 	off_t getPositionInFileRelaxed() const noexcept;
 	bool nextImpl() override;
+	bool sync() override;
 	/// Ждать окончания текущей асинхронной задачи.
 	void waitForAIOCompletion();
 	/// Менять местами основной и дублирующий буферы.
@@ -49,6 +52,12 @@ private:
 
 	AIOContext aio_context{1};
 
+	iovec iov[2];
+
+	/// Дополнительный буфер размером со страницу. Содежрит те данные, которые
+	/// не влезают в основной буфер.
+	Memory memory_page{DEFAULT_AIO_FILE_BLOCK_SIZE, DEFAULT_AIO_FILE_BLOCK_SIZE};
+
 	const std::string filename;
 
 	size_t max_bytes_read = std::numeric_limits<size_t>::max();
@@ -56,6 +65,8 @@ private:
 	size_t requested_byte_count = 0;
 	off_t pos_in_file = 0;
 	int fd = -1;
+
+	size_t buffer_capacity = 0;
 
 	/// Асинхронная операция чтения ещё не завершилась.
 	bool is_pending_read = false;
