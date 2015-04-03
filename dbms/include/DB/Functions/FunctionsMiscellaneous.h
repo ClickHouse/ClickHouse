@@ -22,6 +22,7 @@
 #include <DB/Columns/ColumnReplicated.h>
 #include <DB/Common/UnicodeBar.h>
 #include <DB/Functions/IFunction.h>
+#include <statdaemons/ext/range.hpp>
 
 
 namespace DB
@@ -769,5 +770,118 @@ private:
 			return false;
 	}
 };
+
+
+template <typename Impl>
+class FunctionNumericPredicate : public IFunction
+{
+public:
+	static constexpr auto name = Impl::name;
+	static IFunction * create(const Context &) { return new FunctionNumericPredicate; }
+
+	String getName() const override { return name; }
+
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	{
+		const auto args_size = arguments.size();
+		if (args_size != 1)
+			throw Exception{
+				"Number of arguments for function " + getName() + " doesn't match: passed " +
+					toString(args_size) + ", should be 1",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
+			};
+
+		const auto arg = arguments.front().get();
+		if (!typeid_cast<const DataTypeUInt8 *>(arg) &&
+			!typeid_cast<const DataTypeUInt16 *>(arg) &&
+			!typeid_cast<const DataTypeUInt32 *>(arg) &&
+			!typeid_cast<const DataTypeUInt64 *>(arg) &&
+			!typeid_cast<const DataTypeInt8 *>(arg) &&
+			!typeid_cast<const DataTypeInt16 *>(arg) &&
+			!typeid_cast<const DataTypeInt32 *>(arg) &&
+			!typeid_cast<const DataTypeInt64 *>(arg) &&
+			!typeid_cast<const DataTypeFloat32 *>(arg) &&
+			!typeid_cast<const DataTypeFloat64 *>(arg))
+			throw Exception{
+				"Argument for function " + getName() + " must be numeric",
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+			};
+
+		return new DataTypeUInt8;
+	}
+
+	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
+	{
+		const auto in = block.getByPosition(arguments.front()).column.get();
+
+		if (!execute<UInt8>(block, in, result) &&
+			!execute<UInt16>(block, in, result) &&
+			!execute<UInt32>(block, in, result) &&
+			!execute<UInt64>(block, in, result) &&
+			!execute<Int8>(block, in, result) &&
+			!execute<Int16>(block, in, result) &&
+			!execute<Int32>(block, in, result) &&
+			!execute<Int64>(block, in, result) &&
+			!execute<Float32>(block, in, result)  &&
+			!execute<Float64>(block, in, result))
+			throw Exception{
+				"Illegal column " + in->getName() + " of first argument of function " + getName(),
+				ErrorCodes::ILLEGAL_COLUMN
+			};
+	}
+
+	template <typename T>
+	bool execute(Block & block, const IColumn * in_untyped, const size_t result) override
+	{
+		if (const auto in = typeid_cast<const ColumnVector<T> *>(in_untyped))
+		{
+			const auto size = in->size();
+
+			const auto out = new ColumnVector<UInt8>{size};
+			block.getByPosition(result).column = out;
+
+			const auto & in_data = in->getData();
+			auto & out_data = out->getData();
+
+			for (const auto i : ext::range(0, size))
+				out_data[i] = Impl::execute(in_data[i]);
+
+			return true;
+		}
+		else if (const auto in = typeid_cast<const ColumnConst<T> *>(in_untyped))
+		{
+			block.getByPosition(result).column = new ColumnConstUInt8{
+				in->size(),
+				Impl::execute(in->getData())
+			};
+
+			return true;
+		}
+
+		return false;
+	}
+};
+
+struct IsFiniteImpl
+{
+	static constexpr auto name = "isFinite";
+	template <typename T> static bool execute(const T t) { return std::isfinite(t); }
+};
+
+struct IsInfiniteImpl
+{
+	static constexpr auto name = "isInfinite";
+	template <typename T> static bool execute(const T t) { return std::isinf(t); }
+};
+
+struct IsNanImpl
+{
+	static constexpr auto name = "isNan";
+	template <typename T> static bool execute(const T t) { return std::isnan(t); }
+};
+
+using FunctionIsFinite = FunctionNumericPredicate<IsFiniteImpl>;
+using FunctionIsInfinite = FunctionNumericPredicate<IsInfiniteImpl>;
+using FunctionIsNan = FunctionNumericPredicate<IsNanImpl>;
 
 }
