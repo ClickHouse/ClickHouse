@@ -266,7 +266,7 @@ bool TabSeparatedRowInputStream::parseRowAndPrintDiagnosticInfo(
 		if (exception)
 		{
 			if (data_types[i]->getName() == "DateTime")
-				out << "ERROR: DateTime must be in YYYY-MM-DD hh:mm:ss format.\n";
+				out << "ERROR: DateTime must be in YYYY-MM-DD hh:mm:ss or NNNNNNNNNN (unix timestamp, exactly 10 digits) format.\n";
 			else if (data_types[i]->getName() == "Date")
 				out << "ERROR: Date must be in YYYY-MM-DD format.\n";
 			else
@@ -285,7 +285,7 @@ bool TabSeparatedRowInputStream::parseRowAndPrintDiagnosticInfo(
 				out << "\n";
 
 				if (data_types[i]->getName() == "DateTime")
-					out << "ERROR: DateTime must be in YYYY-MM-DD hh:mm:ss format.\n";
+					out << "ERROR: DateTime must be in YYYY-MM-DD hh:mm:ss or NNNNNNNNNN (unix timestamp, exactly 10 digits) format.\n";
 				else if (data_types[i]->getName() == "Date")
 					out << "ERROR: Date must be in YYYY-MM-DD format.\n";
 

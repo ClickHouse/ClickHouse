@@ -61,7 +61,8 @@ public:
 
 	/** Если столбцов нет в блоке, добавляет их, если есть - добавляет прочитанные значения к ним в конец.
 	  * Не добавляет столбцы, для которых нет файлов. Чтобы их добавить, нужно вызвать fillMissingColumns.
-	  * В блоке должно быть либо ни одного столбца из columns, либо все, для которых есть файлы. */
+	  * В блоке должно быть либо ни одного столбца из columns, либо все, для которых есть файлы.
+	  */
 	void readRange(size_t from_mark, size_t to_mark, Block & res)
 	{
 		try
@@ -128,8 +129,7 @@ public:
 		}
 		catch (const Exception & e)
 		{
-			if (e.code() != ErrorCodes::ALL_REQUESTED_COLUMNS_ARE_MISSING
-				&& e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+			if (e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
 			{
 				storage.reportBrokenPart(part_name);
 			}
@@ -187,111 +187,22 @@ public:
 		added_column = &columns.front();
 	}
 
-	/// Заполняет столбцы, которых нет в блоке, значениями по умолчанию.
+
+	/** Добавляет в блок недостающие столбцы из ordered_names, состоящие из значений по-умолчанию.
+	  * Недостающие столбцы добавляются в позиции, такие же как в ordered_names.
+	  * Если был добавлен хотя бы один столбец - то все столбцы в блоке переупорядочиваются как в ordered_names.
+	  */
 	void fillMissingColumns(Block & res, const Names & ordered_names)
 	{
-		try
-		{
-			/** Для недостающих столбцов из вложенной структуры нужно создавать не столбец пустых массивов, а столбец массивов
-			  *  правильных длин.
-			  * TODO: Если для какой-то вложенной структуры были запрошены только отсутствующие столбцы, для них вернутся пустые
-			  *  массивы, даже если в куске есть смещения для этой вложенной структуры. Это можно исправить.
-			  */
+		fillMissingColumnsImpl(res, ordered_names, false);
+	}
 
-			/// Сначала запомним столбцы смещений для всех массивов в блоке.
-			OffsetColumns offset_columns;
-			for (size_t i = 0; i < res.columns(); ++i)
-			{
-				const ColumnWithNameAndType & column = res.getByPosition(i);
-				if (const ColumnArray * array = typeid_cast<const ColumnArray *>(&*column.column))
-				{
-					String offsets_name = DataTypeNested::extractNestedTableName(column.name);
-					offset_columns[offsets_name] = array->getOffsetsColumn();
-				}
-			}
-
-			auto should_evaluate_defaults = false;
-			auto should_sort = false;
-			for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
-			{
-				/// insert default values only for columns without default expressions
-				if (!res.has(it->name))
-				{
-					should_sort = true;
-					if (storage.column_defaults.count(it->name) != 0)
-					{
-						should_evaluate_defaults = true;
-						continue;
-					}
-
-					ColumnWithNameAndType column;
-					column.name = it->name;
-					column.type = it->type;
-
-					String offsets_name = DataTypeNested::extractNestedTableName(column.name);
-					if (offset_columns.count(offsets_name))
-					{
-						ColumnPtr offsets_column = offset_columns[offsets_name];
-						DataTypePtr nested_type = typeid_cast<DataTypeArray &>(*column.type).getNestedType();
-						size_t nested_rows = offsets_column->empty() ? 0
-							: typeid_cast<ColumnUInt64 &>(*offsets_column).getData().back();
-
-						ColumnPtr nested_column = dynamic_cast<IColumnConst &>(*nested_type->createConstColumn(
-							nested_rows, nested_type->getDefault())).convertToFullColumn();
-
-						column.column = new ColumnArray(nested_column, offsets_column);
-					}
-					else
-					{
-						/** Нужно превратить константный столбец в полноценный, так как в части блоков (из других кусков),
-						  *  он может быть полноценным (а то интерпретатор может посчитать, что он константный везде).
-						  */
-						column.column = dynamic_cast<IColumnConst &>(*column.type->createConstColumn(
-							res.rows(), column.type->getDefault())).convertToFullColumn();
-					}
-
-					res.insert(column);
-				}
-			}
-
-			/// evaluate defaulted columns if necessary
-			if (should_evaluate_defaults)
-				evaluateMissingDefaults(res, columns, storage.column_defaults, storage.context);
-
-			/// remove added column to ensure same content among all blocks
-			if (added_column)
-			{
-				res.erase(0);
-				streams.erase(added_column->name);
-				columns.erase(std::begin(columns));
-				added_column = nullptr;
-			}
-
-			/// sort columns to ensure consistent order among all blocks
-			if (should_sort)
-			{
-				Block ordered_block;
-
-				for (const auto & name : ordered_names)
-					if (res.has(name))
-						ordered_block.insert(res.getByName(name));
-
-				if (res.columns() != ordered_block.columns())
-					throw Exception{
-						"Ordered block has different columns than original one:\n" +
-							ordered_block.dumpNames() + "\nvs.\n" + res.dumpNames(),
-						ErrorCodes::LOGICAL_ERROR
-					};
-
-				std::swap(res, ordered_block);
-			}
-		}
-		catch (const Exception & e)
-		{
-			/// Более хорошая диагностика.
-			throw Exception(e.message() + '\n' + e.getStackTrace().toString()
-				+ "\n(while reading from part " + path + ")", e.code());
-		}
+	/** То же самое, но всегда переупорядочивает столбцы в блоке, как в ordered_names
+	  *  (даже если не было недостающих столбцов).
+	  */
+	void fillMissingColumnsAndReorder(Block & res, const Names & ordered_names)
+	{
+		fillMissingColumnsImpl(res, ordered_names, true);
 	}
 
 private:
@@ -521,6 +432,111 @@ private:
 				else if (current_avg_value_size * 2 < stream.avg_value_size_hint)
 					stream.avg_value_size_hint = (current_avg_value_size + stream.avg_value_size_hint * 3) / 4;
 			}
+		}
+	}
+
+	void fillMissingColumnsImpl(Block & res, const Names & ordered_names, bool always_reorder)
+	{
+		try
+		{
+			/** Для недостающих столбцов из вложенной структуры нужно создавать не столбец пустых массивов, а столбец массивов
+			  *  правильных длин.
+			  * TODO: Если для какой-то вложенной структуры были запрошены только отсутствующие столбцы, для них вернутся пустые
+			  *  массивы, даже если в куске есть смещения для этой вложенной структуры. Это можно исправить.
+			  */
+
+			/// Сначала запомним столбцы смещений для всех массивов в блоке.
+			OffsetColumns offset_columns;
+			for (size_t i = 0; i < res.columns(); ++i)
+			{
+				const ColumnWithNameAndType & column = res.getByPosition(i);
+				if (const ColumnArray * array = typeid_cast<const ColumnArray *>(&*column.column))
+				{
+					String offsets_name = DataTypeNested::extractNestedTableName(column.name);
+					offset_columns[offsets_name] = array->getOffsetsColumn();
+				}
+			}
+
+			auto should_evaluate_defaults = false;
+			auto should_sort = always_reorder;
+			for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
+			{
+				/// insert default values only for columns without default expressions
+				if (!res.has(it->name))
+				{
+					should_sort = true;
+					if (storage.column_defaults.count(it->name) != 0)
+					{
+						should_evaluate_defaults = true;
+						continue;
+					}
+
+					ColumnWithNameAndType column;
+					column.name = it->name;
+					column.type = it->type;
+
+					String offsets_name = DataTypeNested::extractNestedTableName(column.name);
+					if (offset_columns.count(offsets_name))
+					{
+						ColumnPtr offsets_column = offset_columns[offsets_name];
+						DataTypePtr nested_type = typeid_cast<DataTypeArray &>(*column.type).getNestedType();
+						size_t nested_rows = offsets_column->empty() ? 0
+							: typeid_cast<ColumnUInt64 &>(*offsets_column).getData().back();
+
+						ColumnPtr nested_column = dynamic_cast<IColumnConst &>(*nested_type->createConstColumn(
+							nested_rows, nested_type->getDefault())).convertToFullColumn();
+
+						column.column = new ColumnArray(nested_column, offsets_column);
+					}
+					else
+					{
+						/** Нужно превратить константный столбец в полноценный, так как в части блоков (из других кусков),
+						  *  он может быть полноценным (а то интерпретатор может посчитать, что он константный везде).
+						  */
+						column.column = dynamic_cast<IColumnConst &>(*column.type->createConstColumn(
+							res.rows(), column.type->getDefault())).convertToFullColumn();
+					}
+
+					res.insert(column);
+				}
+			}
+
+			/// evaluate defaulted columns if necessary
+			if (should_evaluate_defaults)
+				evaluateMissingDefaults(res, columns, storage.column_defaults, storage.context);
+
+			/// remove added column to ensure same content among all blocks
+			if (added_column)
+			{
+				res.erase(0);
+				streams.erase(added_column->name);
+				columns.erase(std::begin(columns));
+				added_column = nullptr;
+			}
+
+			/// sort columns to ensure consistent order among all blocks
+			if (should_sort)
+			{
+				Block ordered_block;
+
+				for (const auto & name : ordered_names)
+					if (res.has(name))
+						ordered_block.insert(res.getByName(name));
+
+				if (res.columns() != ordered_block.columns())
+					throw Exception{
+						"Ordered block has different number of columns than original one:\n" +
+							ordered_block.dumpNames() + "\nvs.\n" + res.dumpNames(),
+						ErrorCodes::LOGICAL_ERROR};
+
+				std::swap(res, ordered_block);
+			}
+		}
+		catch (const Exception & e)
+		{
+			/// Более хорошая диагностика.
+			throw Exception(e.message() + '\n' + e.getStackTrace().toString()
+				+ "\n(while reading from part " + path + ")", e.code());
 		}
 	}
 };

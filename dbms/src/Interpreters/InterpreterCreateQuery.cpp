@@ -25,6 +25,7 @@
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeNested.h>
+#include <DB/DataTypes/DataTypeFixedString.h>
 
 
 namespace DB
@@ -293,13 +294,31 @@ InterpreterCreateQuery::ColumnsAndDefaults InterpreterCreateQuery::parseColumns(
 			 *	2. conversion of expression (1) to explicitly-specified type alias as column name */
 			if (col_decl.type)
 			{
-				const auto tmp_column_name = col_decl.name + "_tmp";
 				const auto & final_column_name = col_decl.name;
-				const auto conversion_function_name = "to" + columns.back().type->getName();
+				const auto tmp_column_name = final_column_name + "_tmp";
+				const auto data_type_ptr = columns.back().type.get();
 
-				default_expr_list->children.emplace_back(setAlias(
-					makeASTFunction(conversion_function_name, ASTPtr{new ASTIdentifier{{}, tmp_column_name}}),
-					final_column_name));
+				/// specific code for different data types, e.g. toFixedString(col, N) for DataTypeFixedString
+				if (const auto fixed_string = typeid_cast<const DataTypeFixedString *>(data_type_ptr))
+				{
+					const auto conversion_function_name = "toFixedString";
+
+					default_expr_list->children.emplace_back(setAlias(
+						makeASTFunction(
+							conversion_function_name,
+							ASTPtr{new ASTIdentifier{{}, tmp_column_name}},
+							ASTPtr{new ASTLiteral{{}, fixed_string->getN()}}),
+						final_column_name));
+				}
+				else
+				{
+					/// @todo fix for parametric types, results in broken code, i.e. toArray(ElementType)(col)
+					const auto conversion_function_name = "to" + data_type_ptr->getName();
+
+					default_expr_list->children.emplace_back(setAlias(
+						makeASTFunction(conversion_function_name, ASTPtr{new ASTIdentifier{{}, tmp_column_name}}),
+						final_column_name));
+				}
 
 				default_expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), tmp_column_name));
 			}

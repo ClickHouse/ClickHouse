@@ -13,6 +13,7 @@
 #include <DB/IO/WriteBufferFromFile.h>
 #include <DB/IO/CompressedReadBuffer.h>
 #include <DB/DataTypes/DataTypeDate.h>
+#include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/Common/localBackup.h>
 #include <DB/Functions/FunctionFactory.h>
 
@@ -466,7 +467,8 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 		}
 		else
 		{
-			String new_type_name = new_types[column.name]->getName();
+			const auto new_type = new_types[column.name].get();
+			const String new_type_name = new_type->getName();
 
 			if (new_type_name != column.type->getName() &&
 				(!part || part->hasColumnFiles(column.name)))
@@ -478,13 +480,31 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 
 				out_expression->addInput(ColumnWithNameAndType(nullptr, column.type, column.name));
 
-				const FunctionPtr & function = FunctionFactory::instance().get("to" + new_type_name, context);
 				Names out_names;
-				out_expression->add(ExpressionAction::applyFunction(function, Names(1, column.name)), out_names);
+
+				if (const auto fixed_string = typeid_cast<const DataTypeFixedString *>(new_type))
+				{
+					const auto width = fixed_string->getN();
+					const auto string_width_column = toString(width);
+					out_expression->addInput({ new ColumnConstUInt64{1, width}, new DataTypeUInt64, string_width_column });
+
+					const auto function = FunctionFactory::instance().get("toFixedString", context);
+					out_expression->add(ExpressionAction::applyFunction(function, Names{
+						column.name, string_width_column
+					}), out_names);
+
+					out_expression->add(ExpressionAction::removeColumn(string_width_column));
+				}
+				else
+				{
+					const FunctionPtr & function = FunctionFactory::instance().get("to" + new_type_name, context);
+					out_expression->add(ExpressionAction::applyFunction(function, Names{column.name}), out_names);
+				}
+
 				out_expression->add(ExpressionAction::removeColumn(column.name));
 
-				String escaped_expr = escapeForFileName(out_names[0]);
-				String escaped_column = escapeForFileName(column.name);
+				const String escaped_expr = escapeForFileName(out_names[0]);
+				const String escaped_column = escapeForFileName(column.name);
 				out_rename_map[escaped_expr + ".bin"] = escaped_column + ".bin";
 				out_rename_map[escaped_expr + ".mrk"] = escaped_column + ".mrk";
 			}
