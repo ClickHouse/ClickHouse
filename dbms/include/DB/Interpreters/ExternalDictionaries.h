@@ -59,8 +59,8 @@ private:
 
 	std::unordered_map<std::string, Poco::Timestamp> last_modification_times;
 
-	void reloadImpl();
-	void reloadFromFile(const std::string & config_path);
+	void reloadImpl(bool throw_on_error = false);
+	void reloadFromFile(const std::string & config_path, bool throw_on_error);
 
 	void reloadPeriodically()
 	{
@@ -82,10 +82,10 @@ private:
 
 public:
 	/// Справочники будут обновляться в отдельном потоке, каждые reload_period секунд.
-	ExternalDictionaries(Context & context)
+	ExternalDictionaries(Context & context, const bool throw_on_error)
 		: context(context), log(&Logger::get("ExternalDictionaries"))
 	{
-		reloadImpl();
+		reloadImpl(throw_on_error);
 		reloading_thread = std::thread{&ExternalDictionaries::reloadPeriodically, this};
 	}
 

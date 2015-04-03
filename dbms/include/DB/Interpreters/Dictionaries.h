@@ -31,8 +31,10 @@ private:
 
 
 
-	void handleException() const
+	void handleException(const bool throw_on_error) const
 	{
+		const auto exception_ptr = std::current_exception();
+
 		try
 		{
 			throw;
@@ -40,18 +42,19 @@ private:
 		catch (const Poco::Exception & e)
 		{
 			LOG_ERROR(log, "Cannot load dictionary! You must resolve this manually. " << e.displayText());
-			return;
 		}
 		catch (...)
 		{
 			LOG_ERROR(log, "Cannot load dictionary! You must resolve this manually.");
-			return;
 		}
+
+		if (throw_on_error)
+			std::rethrow_exception(exception_ptr);
 	}
 
 
 	/// Обновляет справочники.
-	void reloadImpl()
+	void reloadImpl(const bool throw_on_error = false)
 	{
 		/** Если не удаётся обновить справочники, то несмотря на это, не кидаем исключение (используем старые справочники).
 		  * Если старых корректных справочников нет, то при использовании функций, которые от них зависят,
@@ -61,42 +64,53 @@ private:
 
 		LOG_INFO(log, "Loading dictionaries.");
 
+		auto & config = Poco::Util::Application::instance().config();
+
 		bool was_exception = false;
 
-		try
+		if (config.has(TechDataHierarchy::required_key))
 		{
-			MultiVersion<TechDataHierarchy>::Version new_tech_data_hierarchy = new TechDataHierarchy;
-			tech_data_hierarchy.set(new_tech_data_hierarchy);
-		}
-		catch (...)
-		{
-			handleException();
-			was_exception = true;
-		}
-
-		try
-		{
-			MultiVersion<RegionsHierarchies>::Version new_regions_hierarchies = new RegionsHierarchies;
-			new_regions_hierarchies->reload();
-			regions_hierarchies.set(new_regions_hierarchies);
-
-		}
-		catch (...)
-		{
-			handleException();
-			was_exception = true;
+			try
+			{
+				auto new_tech_data_hierarchy = std::make_unique<TechDataHierarchy>();
+				tech_data_hierarchy.set(new_tech_data_hierarchy.release());
+			}
+			catch (...)
+			{
+				handleException(throw_on_error);
+				was_exception = true;
+			}
 		}
 
-		try
+
+		if (config.has(RegionsHierarchies::required_key))
 		{
-			MultiVersion<RegionsNames>::Version new_regions_names = new RegionsNames;
-			new_regions_names->reload();
-			regions_names.set(new_regions_names);
+			try
+			{
+				auto new_regions_hierarchies = std::make_unique<RegionsHierarchies>();
+				new_regions_hierarchies->reload();
+				regions_hierarchies.set(new_regions_hierarchies.release());
+			}
+			catch (...)
+			{
+				handleException(throw_on_error);
+				was_exception = true;
+			}
 		}
-		catch (...)
+
+		if (config.has(RegionsNames::required_key))
 		{
-			handleException();
-			was_exception = true;
+			try
+			{
+				auto new_regions_names = std::make_unique<RegionsNames>();
+				new_regions_names->reload();
+				regions_names.set(new_regions_names.release());
+			}
+			catch (...)
+			{
+				handleException(throw_on_error);
+				was_exception = true;
+			}
 		}
 
 		if (!was_exception)
@@ -119,10 +133,10 @@ private:
 
 public:
 	/// Справочники будут обновляться в отдельном потоке, каждые reload_period секунд.
-	Dictionaries(int reload_period_ = 3600)
+	Dictionaries(const bool throw_on_error, const int reload_period_ = 3600)
 		: reload_period(reload_period_), log(&Logger::get("Dictionaries"))
 	{
-		reloadImpl();
+		reloadImpl(throw_on_error);
 		reloading_thread = std::thread([this] { reloadPeriodically(); });
 	}
 

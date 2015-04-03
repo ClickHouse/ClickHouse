@@ -59,10 +59,12 @@ int main(int argc, char ** argv)
 		}
 
 		Context context;
-		NamesAndTypesList columns;
-		columns.emplace_back("x", new DataTypeInt16);
-		columns.emplace_back("s1", new DataTypeString);
-		columns.emplace_back("s2", new DataTypeString);
+		NamesAndTypesList columns
+		{
+			{"x", new DataTypeInt16},
+			{"s1", new DataTypeString},
+			{"s2", new DataTypeString}
+		};
 		context.setColumns(columns);
 
 		ExpressionAnalyzer analyzer(ast, context, context.getColumns());

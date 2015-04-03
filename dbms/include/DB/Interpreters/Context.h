@@ -263,6 +263,9 @@ public:
 	const Dictionaries & getDictionaries() const;
 	const ExternalDictionaries & getExternalDictionaries() const;
 
+	void tryCreateDictionaries(bool throw_on_error = false) const;
+	void tryCreateExternalDictionaries(bool throw_on_error = false) const;
+
 	InterserverIOHandler & getInterserverIOHandler()						{ return shared->interserver_io_handler; }
 
 	/// Как другие серверы могут обратиться к этому для скачивания реплицируемых данных.

@@ -98,11 +98,11 @@ private:
 		for (size_t i = 0; i < nested_pools.size(); ++i)
 		{
 			if (load_balancing == LoadBalancing::NEAREST_HOSTNAME)
-				nested_pools[i].priority = hostname_differences[i];
+				nested_pools[i].state.priority = hostname_differences[i];
 			else if (load_balancing == LoadBalancing::RANDOM)
-				nested_pools[i].priority = 0;
+				nested_pools[i].state.priority = 0;
 			else if (load_balancing == LoadBalancing::IN_ORDER)
-				nested_pools[i].priority = i;
+				nested_pools[i].state.priority = i;
 			else
 				throw Exception("Unknown load_balancing_mode: " + toString(static_cast<int>(load_balancing)), ErrorCodes::LOGICAL_ERROR);
 		}

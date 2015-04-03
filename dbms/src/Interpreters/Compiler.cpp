@@ -218,6 +218,7 @@ void Compiler::compile(
 		" -I /usr/share/clickhouse/headers/libs/libcityhash/"
 		" -I /usr/share/clickhouse/headers/libs/libcommon/include/"
 		" -I /usr/share/clickhouse/headers/libs/libdouble-conversion/"
+		" -I /usr/share/clickhouse/headers/libs/libcpuid/include/"
 		" -I /usr/share/clickhouse/headers/libs/libmysqlxx/include/"
 		" -I /usr/share/clickhouse/headers/libs/libstatdaemons/include/"
 		" -I /usr/share/clickhouse/headers/libs/libstats/include/"
