@@ -21,13 +21,13 @@ select isInfinite(-inf) = 1;
 select isInfinite(nan) = 0;
 
 
-select isNan(0) = 0;
-select isNan(1) = 0;
-select isNan(materialize(0)) = 0;
-select isNan(materialize(1)) = 0;
-select isNan(1/0) = 0;
-select isNan(-1/0) = 0;
-select isNan(0/0) = 1;
-select isNan(inf) = 0;
-select isNan(-inf) = 0;
-select isNan(nan) = 1;
+select isNaN(0) = 0;
+select isNaN(1) = 0;
+select isNaN(materialize(0)) = 0;
+select isNaN(materialize(1)) = 0;
+select isNaN(1/0) = 0;
+select isNaN(-1/0) = 0;
+select isNaN(0/0) = 1;
+select isNaN(inf) = 0;
+select isNaN(-inf) = 0;
+select isNaN(nan) = 1;

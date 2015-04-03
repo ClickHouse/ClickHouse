@@ -874,14 +874,14 @@ struct IsInfiniteImpl
 	template <typename T> static bool execute(const T t) { return std::isinf(t); }
 };
 
-struct IsNanImpl
+struct IsNaNImpl
 {
-	static constexpr auto name = "isNan";
+	static constexpr auto name = "isNaN";
 	template <typename T> static bool execute(const T t) { return std::isnan(t); }
 };
 
 using FunctionIsFinite = FunctionNumericPredicate<IsFiniteImpl>;
 using FunctionIsInfinite = FunctionNumericPredicate<IsInfiniteImpl>;
-using FunctionIsNan = FunctionNumericPredicate<IsNanImpl>;
+using FunctionIsNaN = FunctionNumericPredicate<IsNaNImpl>;
 
 }
