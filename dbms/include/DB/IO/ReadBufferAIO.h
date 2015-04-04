@@ -56,12 +56,6 @@ private:
 
 	AIOContext aio_context{1};
 
-	iovec iov[2];
-
-	/// Дополнительный буфер размером со страницу. Содежрит те данные, которые
-	/// не влезают в основной буфер.
-	Memory memory_page{DEFAULT_AIO_FILE_BLOCK_SIZE, DEFAULT_AIO_FILE_BLOCK_SIZE};
-
 	const std::string filename;
 
 	ssize_t bytes_read = 0;
@@ -71,9 +65,9 @@ private:
 	off_t region_aligned_begin = 0;
 	off_t pos_in_file = 0;
 	int fd = -1;
-	size_t iov_size = 0;
 
-	size_t buffer_capacity = 0;
+	Position buffer_begin = nullptr;
+	off_t region_aligned_size = 0;
 
 	/// Асинхронная операция чтения ещё не завершилась.
 	bool is_pending_read = false;

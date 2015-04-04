@@ -9,10 +9,12 @@
 namespace DB
 {
 
+/// Выделяем дополнительную страницу. Содежрит те данные, которые
+/// не влезают в основной буфер.
 ReadBufferAIO::ReadBufferAIO(const std::string & filename_, size_t buffer_size_, int flags_,
 	char * existing_memory_)
-	: ReadBufferFromFileBase(buffer_size_, existing_memory_, DEFAULT_AIO_FILE_BLOCK_SIZE),
-	fill_buffer(BufferWithOwnMemory<ReadBuffer>(buffer_size_, nullptr, DEFAULT_AIO_FILE_BLOCK_SIZE)),
+	: ReadBufferFromFileBase(buffer_size_ + DEFAULT_AIO_FILE_BLOCK_SIZE, existing_memory_, DEFAULT_AIO_FILE_BLOCK_SIZE),
+	fill_buffer(BufferWithOwnMemory<ReadBuffer>(buffer_size_ + DEFAULT_AIO_FILE_BLOCK_SIZE, nullptr, DEFAULT_AIO_FILE_BLOCK_SIZE)),
 	filename(filename_)
 {
 	ProfileEvents::increment(ProfileEvents::FileOpen);
@@ -145,12 +147,13 @@ bool ReadBufferAIO::nextImpl()
 	if (is_eof)
 		return true;
 
+	/// Создать асинхронный запрос.
 	initRequest();
 
-	request.aio_lio_opcode = IOCB_CMD_PREADV;
+	request.aio_lio_opcode = IOCB_CMD_PREAD;
 	request.aio_fildes = fd;
-	request.aio_buf = reinterpret_cast<UInt64>(iov);
-	request.aio_nbytes = iov_size;
+	request.aio_buf = reinterpret_cast<UInt64>(buffer_begin);
+	request.aio_nbytes = region_aligned_size;
 	request.aio_offset = region_aligned_begin;
 
 	/// Отправить запрос.
@@ -167,15 +170,22 @@ bool ReadBufferAIO::nextImpl()
 	return true;
 }
 
+void ReadBufferAIO::synchronousRead()
+{
+	initRequest();
+	bytes_read = ::pread(fd, buffer_begin, region_aligned_size, region_aligned_begin);
+	publishReceivedData();
+	swapBuffers();
+}
+
 void ReadBufferAIO::initRequest()
 {
 	/// Количество запрашиваемых байтов.
-	requested_byte_count = std::min(fill_buffer.internalBuffer().size(), max_bytes_read);
+	requested_byte_count = std::min(fill_buffer.internalBuffer().size() - DEFAULT_AIO_FILE_BLOCK_SIZE, max_bytes_read);
 
 	/// Регион диска, из которого хотим читать данные.
 	const off_t region_begin = pos_in_file;
 	const off_t region_end = pos_in_file + requested_byte_count;
-	const size_t region_size = region_end - region_begin;
 
 	/// Выровненный регион диска, из которого хотим читать данные.
 	const size_t region_left_padding = region_begin % DEFAULT_AIO_FILE_BLOCK_SIZE;
@@ -183,36 +193,10 @@ void ReadBufferAIO::initRequest()
 
 	region_aligned_begin = region_begin - region_left_padding;
 	const off_t region_aligned_end = region_end + region_right_padding;
-	const off_t region_aligned_size = region_aligned_end - region_aligned_begin;
+	region_aligned_size = region_aligned_end - region_aligned_begin;
 
 	/// Буфер, в который запишем данные из диска.
-	const Position buffer_begin = fill_buffer.internalBuffer().begin();
-	buffer_capacity = this->memory.size();
-
-	size_t excess_count = 0;
-
-	if ((region_left_padding + region_size) > buffer_capacity)
-	{
-		excess_count = region_left_padding + region_size - buffer_capacity;
-		::memset(&memory_page[0], 0, memory_page.size());
-	}
-
-	/// Создать запрос на синхронное чтение.
-
-	size_t i = 0;
-
-	iov[i].iov_base = buffer_begin;
-	iov[i].iov_len = (excess_count > 0) ? buffer_capacity : region_aligned_size;
-	++i;
-
-	if (excess_count > 0)
-	{
-		iov[i].iov_base = &memory_page[0];
-		iov[i].iov_len = memory_page.size();
-		++i;
-	}
-
-	iov_size = i;
+	buffer_begin = fill_buffer.internalBuffer().begin();
 }
 
 void ReadBufferAIO::publishReceivedData()
@@ -237,16 +221,7 @@ void ReadBufferAIO::publishReceivedData()
 		throw Exception("File position overflowed", ErrorCodes::LOGICAL_ERROR);
 	}
 
-	Position buffer_begin = fill_buffer.internalBuffer().begin();
-
-	if ((region_left_padding + bytes_read) > buffer_capacity)
-	{
-		size_t excess_count = region_left_padding + bytes_read - buffer_capacity;
-		::memmove(buffer_begin, buffer_begin + region_left_padding, buffer_capacity);
-		::memcpy(buffer_begin + buffer_capacity - region_left_padding, &memory_page[0], excess_count);
-	}
-	else
-		::memmove(buffer_begin, buffer_begin + region_left_padding, bytes_read);
+	::memmove(buffer_begin, buffer_begin + region_left_padding, bytes_read);
 
 	if (bytes_read > 0)
 		fill_buffer.buffer().resize(bytes_read);
@@ -258,14 +233,6 @@ void ReadBufferAIO::publishReceivedData()
 
 	if (total_bytes_read == max_bytes_read)
 		is_eof = true;
-}
-
-void ReadBufferAIO::synchronousRead()
-{
-	initRequest();
-	bytes_read = ::preadv(fd, iov, iov_size, region_aligned_begin);
-	publishReceivedData();
-	swapBuffers();
 }
 
 void ReadBufferAIO::sync()
