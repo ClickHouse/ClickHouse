@@ -252,15 +252,14 @@ void ReadBufferAIO::publishReceivedData()
 	if (pos_in_file > (std::numeric_limits<off_t>::max() - bytes_read))
 		throw Exception("File position overflowed", ErrorCodes::LOGICAL_ERROR);
 
-	::memmove(buffer_begin, buffer_begin + region_left_padding, bytes_read);
-
 	if (bytes_read > 0)
-		fill_buffer.buffer().resize(bytes_read);
+		fill_buffer.buffer().resize(region_left_padding + bytes_read);
 	if (static_cast<size_t>(bytes_read) < requested_byte_count)
 		is_eof = true;
 
 	pos_in_file += bytes_read;
 	total_bytes_read += bytes_read;
+	working_buffer_offset = region_left_padding;
 
 	if (total_bytes_read == max_bytes_read)
 		is_eof = true;

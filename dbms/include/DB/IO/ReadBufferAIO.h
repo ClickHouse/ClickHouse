@@ -68,13 +68,14 @@ private:
 
 	Position buffer_begin = nullptr;
 	off_t region_aligned_size = 0;
-	
+
 	/// Асинхронная операция чтения ещё не завершилась.
 	bool is_pending_read = false;
 	/// Конец файла достигнут.
 	bool is_eof = false;
 	/// Был отправлен хоть один запрос на асинхронную операцию чтения.
 	bool is_started = false;
+	/// Асинхронная операция завершилась неудачно?
 	bool aio_failed = false;
 };
 
