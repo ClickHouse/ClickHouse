@@ -25,7 +25,6 @@ ReadBufferAIO::ReadBufferAIO(const std::string & filename_, size_t buffer_size_,
 	fd = ::open(filename.c_str(), open_flags);
 	if (fd == -1)
 	{
-		got_exception = true;
 		auto error_code = (errno == ENOENT) ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE;
 		throwFromErrno("Cannot open file " + filename, error_code);
 	}
@@ -35,13 +34,16 @@ ReadBufferAIO::ReadBufferAIO(const std::string & filename_, size_t buffer_size_,
 
 ReadBufferAIO::~ReadBufferAIO()
 {
-	try
+	if (!aio_failed)
 	{
-		(void) waitForAIOCompletion();
-	}
-	catch (...)
-	{
-		tryLogCurrentException(__PRETTY_FUNCTION__);
+		try
+		{
+			(void) waitForAIOCompletion();
+		}
+		catch (...)
+		{
+			tryLogCurrentException(__PRETTY_FUNCTION__);
+		}
 	}
 
 	if (fd != -1)
@@ -51,10 +53,7 @@ ReadBufferAIO::~ReadBufferAIO()
 void ReadBufferAIO::setMaxBytes(size_t max_bytes_read_)
 {
 	if (is_started)
-	{
-		got_exception = true;
 		throw Exception("Illegal attempt to set the maximum number of bytes to read from file " + filename, ErrorCodes::LOGICAL_ERROR);
-	}
 	max_bytes_read = max_bytes_read_;
 }
 
@@ -70,10 +69,7 @@ off_t ReadBufferAIO::doSeek(off_t off, int whence)
 	if (whence == SEEK_SET)
 	{
 		if (off < 0)
-		{
-			got_exception = true;
 			throw Exception("SEEK_SET underflow", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-		}
 		new_pos = off;
 	}
 	else if (whence == SEEK_CUR)
@@ -81,23 +77,14 @@ off_t ReadBufferAIO::doSeek(off_t off, int whence)
 		if (off >= 0)
 		{
 			if (off > (std::numeric_limits<off_t>::max() - getPositionInFileRelaxed()))
-			{
-				got_exception = true;
 				throw Exception("SEEK_CUR overflow", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-			}
 		}
 		else if (off < -getPositionInFileRelaxed())
-		{
-			got_exception = true;
 			throw Exception("SEEK_CUR underflow", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-		}
 		new_pos = getPositionInFileRelaxed() + off;
 	}
 	else
-	{
-		got_exception = true;
 		throw Exception("ReadBufferAIO::seek expects SEEK_SET or SEEK_CUR as whence", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-	}
 
 	if (new_pos != getPositionInFileRelaxed())
 	{
@@ -158,7 +145,7 @@ bool ReadBufferAIO::nextImpl()
 	{
 		if (errno != EINTR)
 		{
-			got_exception = true;
+			aio_failed = true;
 			throw Exception("Cannot submit request for asynchronous IO on file " + filename, ErrorCodes::AIO_SUBMIT_ERROR);
 		}
 	}
@@ -198,10 +185,7 @@ void ReadBufferAIO::skipPendingAIO()
 	size_t region_left_padding = pos_in_file % DEFAULT_AIO_FILE_BLOCK_SIZE;
 
 	if ((bytes_read < 0) || (static_cast<size_t>(bytes_read) < region_left_padding))
-	{
-		got_exception = true;
 		throw Exception("Asynchronous read error on file " + filename, ErrorCodes::AIO_READ_ERROR);
-	}
 }
 
 bool ReadBufferAIO::waitForAIOCompletion()
@@ -213,7 +197,7 @@ bool ReadBufferAIO::waitForAIOCompletion()
 	{
 		if (errno != EINTR)
 		{
-			got_exception = true;
+			aio_failed = true;
 			throw Exception("Failed to wait for asynchronous IO completion on file " + filename, ErrorCodes::AIO_COMPLETION_ERROR);
 		}
 	}
@@ -257,10 +241,7 @@ void ReadBufferAIO::publishReceivedData()
 	size_t region_left_padding = pos_in_file % DEFAULT_AIO_FILE_BLOCK_SIZE;
 
 	if ((bytes_read < 0) || (static_cast<size_t>(bytes_read) < region_left_padding))
-	{
-		got_exception = true;
 		throw Exception("Asynchronous read error on file " + filename, ErrorCodes::AIO_READ_ERROR);
-	}
 
 	/// Игнорируем излишние байты слева.
 	bytes_read -= region_left_padding;
@@ -269,10 +250,7 @@ void ReadBufferAIO::publishReceivedData()
 	bytes_read = std::min(bytes_read, static_cast<off_t>(requested_byte_count));
 
 	if (pos_in_file > (std::numeric_limits<off_t>::max() - bytes_read))
-	{
-		got_exception = true;
 		throw Exception("File position overflowed", ErrorCodes::LOGICAL_ERROR);
-	}
 
 	::memmove(buffer_begin, buffer_begin + region_left_padding, bytes_read);
 
