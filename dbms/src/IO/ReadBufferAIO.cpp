@@ -35,16 +35,13 @@ ReadBufferAIO::ReadBufferAIO(const std::string & filename_, size_t buffer_size_,
 
 ReadBufferAIO::~ReadBufferAIO()
 {
-	if (!got_exception)
+	try
 	{
-		try
-		{
-			sync();
-		}
-		catch (...)
-		{
-			tryLogCurrentException(__PRETTY_FUNCTION__);
-		}
+		(void) waitForAIOCompletion();
+	}
+	catch (...)
+	{
+		tryLogCurrentException(__PRETTY_FUNCTION__);
 	}
 
 	if (fd != -1)
