@@ -41,10 +41,10 @@ private:
 	void publishReceivedData();
 	void sync();
 	/// Ждать окончания текущей асинхронной задачи.
-	void waitForAIOCompletion();
+	bool waitForAIOCompletion();
 	/// Менять местами основной и дублирующий буферы.
 	void swapBuffers() noexcept;
-	void skipLastRequest();
+	void skipPendingAIO();
 
 private:
 	/// Буфер для асинхронных операций чтения данных.
@@ -68,11 +68,10 @@ private:
 
 	Position buffer_begin = nullptr;
 	off_t region_aligned_size = 0;
-
+	bool got_exception = false;
+	
 	/// Асинхронная операция чтения ещё не завершилась.
 	bool is_pending_read = false;
-	/// Было получено исключение.
-	bool got_exception = false;
 	/// Конец файла достигнут.
 	bool is_eof = false;
 	/// Был отправлен хоть один запрос на асинхронную операцию чтения.
