@@ -43,6 +43,10 @@ private:
 	void waitForAIOCompletion();
 	/// Менять местами основной и дублирующий буферы.
 	void swapBuffers() noexcept;
+	///
+	void prepare();
+	///
+	void finalize();
 
 private:
 	/// Буфер для асинхронных операций записи данных.
@@ -74,6 +78,13 @@ private:
 	off_t pos_in_file = 0;
 	/// Максимальная достигнутая позиция в файле.
 	off_t max_pos_in_file = 0;
+
+	Position buffer_begin = nullptr;
+	size_t excess_count = 0;
+	size_t buffer_capacity = 0;
+	size_t region_aligned_size = 0;
+	off_t region_aligned_begin = 0;
+	off_t bytes_written = 0;
 
 	/// Файловый дескриптор для записи.
 	int fd = -1;
