@@ -136,7 +136,8 @@ void WriteBufferAIO::sync()
 void WriteBufferAIO::flush()
 {
 	next();
-	waitForAIOCompletion();
+	if (waitForAIOCompletion())
+		finalize();
 }
 
 void WriteBufferAIO::nextImpl()
@@ -144,7 +145,8 @@ void WriteBufferAIO::nextImpl()
 	if (!offset())
 		return;
 
-	waitForAIOCompletion();
+	if (waitForAIOCompletion())
+		finalize();
 	swapBuffers();
 
 	prepare();
@@ -195,10 +197,10 @@ void WriteBufferAIO::nextImpl()
 	is_pending_write = true;
 }
 
-void WriteBufferAIO::waitForAIOCompletion()
+bool WriteBufferAIO::waitForAIOCompletion()
 {
 	if (!is_pending_write)
-		return;
+		return false;
 
 	while (io_getevents(aio_context.ctx, events.size(), events.size(), &events[0], nullptr) < 0)
 	{
@@ -212,13 +214,7 @@ void WriteBufferAIO::waitForAIOCompletion()
 	is_pending_write = false;
 	bytes_written = events[0].res;
 
-	if (bytes_written < bytes_to_write)
-	{
-		got_exception = true;
-		throw Exception("Asynchronous write error on file " + filename, ErrorCodes::AIO_WRITE_ERROR);
-	}
-
-	finalize();
+	return true;
 }
 
 void WriteBufferAIO::swapBuffers() noexcept
@@ -423,6 +419,12 @@ void WriteBufferAIO::prepare()
 
 void WriteBufferAIO::finalize()
 {
+	if (bytes_written < bytes_to_write)
+	{
+		got_exception = true;
+		throw Exception("Asynchronous write error on file " + filename, ErrorCodes::AIO_WRITE_ERROR);
+	}
+
 	bytes_written -= truncation_count;
 
 	off_t pos_offset = bytes_written - (pos_in_file - request.aio_offset);
