@@ -133,12 +133,13 @@ off_t ReadBufferAIO::doSeek(off_t off, int whence)
 		}
 		else
 		{
+			/// Сдвинулись за пределы буфера.
 			pos = working_buffer.end();
 			pos_in_file = new_pos_in_file;
-		}
 
-		/// Сдвинулись, значит не можем использовать результат последнего асинхронного запроса.
-		skip();
+			/// Не можем использовать результат текущего асинхронного запроса.
+			skip();
+		}
 	}
 
 	return new_pos_in_file;
