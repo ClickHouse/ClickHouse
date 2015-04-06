@@ -199,6 +199,11 @@ void ReadBufferAIO::prepare()
 
 	/// Регион диска, из которого хотим читать данные.
 	const off_t region_begin = pos_in_file;
+
+	if ((requested_byte_count > std::numeric_limits<off_t>::max()) ||
+		(pos_in_file > (std::numeric_limits<off_t>::max() - static_cast<off_t>(requested_byte_count))))
+		throw Exception("An overflow occurred during file operation", ErrorCodes::LOGICAL_ERROR);
+
 	const off_t region_end = pos_in_file + requested_byte_count;
 
 	/// Выровненный регион диска, из которого хотим читать данные.
@@ -206,6 +211,10 @@ void ReadBufferAIO::prepare()
 	const size_t region_right_padding = (DEFAULT_AIO_FILE_BLOCK_SIZE - (region_end % DEFAULT_AIO_FILE_BLOCK_SIZE)) % DEFAULT_AIO_FILE_BLOCK_SIZE;
 
 	region_aligned_begin = region_begin - region_left_padding;
+
+	if (region_end > (std::numeric_limits<off_t>::max() - static_cast<off_t>(region_right_padding)))
+		throw Exception("An overflow occurred during file operation", ErrorCodes::LOGICAL_ERROR);
+
 	const off_t region_aligned_end = region_end + region_right_padding;
 	region_aligned_size = region_aligned_end - region_aligned_begin;
 
@@ -232,7 +241,7 @@ void ReadBufferAIO::publish()
 		is_eof = true;
 
 	if (pos_in_file > (std::numeric_limits<off_t>::max() - bytes_read))
-		throw Exception("File position overflowed", ErrorCodes::LOGICAL_ERROR);
+		throw Exception("An overflow occurred during file operation", ErrorCodes::LOGICAL_ERROR);
 
 	pos_in_file += bytes_read;
 	total_bytes_read += bytes_read;

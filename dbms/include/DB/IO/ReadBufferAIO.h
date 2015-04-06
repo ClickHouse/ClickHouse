@@ -72,7 +72,7 @@ private:
 	int fd = -1;
 
 	Position buffer_begin = nullptr;
-	off_t region_aligned_size = 0;
+	size_t region_aligned_size = 0;
 
 	/// Асинхронная операция чтения ещё не завершилась.
 	bool is_pending_read = false;
