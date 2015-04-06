@@ -9,12 +9,12 @@
 namespace DB
 {
 
-/// Выделяем дополнительную страницу. Содежрит те данные, которые
+/// Примечание: выделяется дополнительная страница, которая содежрит те данные, которые
 /// не влезают в основной буфер.
 ReadBufferAIO::ReadBufferAIO(const std::string & filename_, size_t buffer_size_, int flags_,
 	char * existing_memory_)
 	: ReadBufferFromFileBase(buffer_size_ + DEFAULT_AIO_FILE_BLOCK_SIZE, existing_memory_, DEFAULT_AIO_FILE_BLOCK_SIZE),
-	fill_buffer(BufferWithOwnMemory<ReadBuffer>(buffer_size_ + DEFAULT_AIO_FILE_BLOCK_SIZE, nullptr, DEFAULT_AIO_FILE_BLOCK_SIZE)),
+	fill_buffer(BufferWithOwnMemory<ReadBuffer>(this->memory.size(), nullptr, DEFAULT_AIO_FILE_BLOCK_SIZE)),
 	filename(filename_)
 {
 	ProfileEvents::increment(ProfileEvents::FileOpen);
@@ -125,17 +125,17 @@ off_t ReadBufferAIO::doSeek(off_t off, int whence)
 
 	if (new_pos_in_file != getPositionInFile())
 	{
-		off_t working_buffer_begin_pos = pos_in_file - static_cast<off_t>(working_buffer.size());
-		if (hasPendingData() && (new_pos_in_file >= working_buffer_begin_pos) && (new_pos_in_file <= pos_in_file))
+		off_t first_read_pos_in_file = first_unread_pos_in_file - static_cast<off_t>(working_buffer.size());
+		if (hasPendingData() && (new_pos_in_file >= first_read_pos_in_file) && (new_pos_in_file <= first_unread_pos_in_file))
 		{
 			/// Свдинулись, но остались в пределах буфера.
-			pos = working_buffer.begin() + (new_pos_in_file - working_buffer_begin_pos);
+			pos = working_buffer.begin() + (new_pos_in_file - first_read_pos_in_file);
 		}
 		else
 		{
 			/// Сдвинулись за пределы буфера.
 			pos = working_buffer.end();
-			pos_in_file = new_pos_in_file;
+			first_unread_pos_in_file = new_pos_in_file;
 
 			/// Не можем использовать результат текущего асинхронного запроса.
 			skip();
@@ -167,8 +167,6 @@ void ReadBufferAIO::skip()
 	is_started = false;
 
 	bytes_read = events[0].res;
-	size_t region_left_padding = pos_in_file % DEFAULT_AIO_FILE_BLOCK_SIZE;
-
 	if ((bytes_read < 0) || (static_cast<size_t>(bytes_read) < region_left_padding))
 		throw Exception("Asynchronous read error on file " + filename, ErrorCodes::AIO_READ_ERROR);
 }
@@ -198,16 +196,16 @@ void ReadBufferAIO::prepare()
 	requested_byte_count = std::min(fill_buffer.internalBuffer().size() - DEFAULT_AIO_FILE_BLOCK_SIZE, max_bytes_read);
 
 	/// Регион диска, из которого хотим читать данные.
-	const off_t region_begin = pos_in_file;
+	const off_t region_begin = first_unread_pos_in_file;
 
 	if ((requested_byte_count > std::numeric_limits<off_t>::max()) ||
-		(pos_in_file > (std::numeric_limits<off_t>::max() - static_cast<off_t>(requested_byte_count))))
+		(first_unread_pos_in_file > (std::numeric_limits<off_t>::max() - static_cast<off_t>(requested_byte_count))))
 		throw Exception("An overflow occurred during file operation", ErrorCodes::LOGICAL_ERROR);
 
-	const off_t region_end = pos_in_file + requested_byte_count;
+	const off_t region_end = first_unread_pos_in_file + requested_byte_count;
 
 	/// Выровненный регион диска, из которого будем читать данные.
-	const size_t region_left_padding = region_begin % DEFAULT_AIO_FILE_BLOCK_SIZE;
+	region_left_padding = region_begin % DEFAULT_AIO_FILE_BLOCK_SIZE;
 	const size_t region_right_padding = (DEFAULT_AIO_FILE_BLOCK_SIZE - (region_end % DEFAULT_AIO_FILE_BLOCK_SIZE)) % DEFAULT_AIO_FILE_BLOCK_SIZE;
 
 	region_aligned_begin = region_begin - region_left_padding;
@@ -218,14 +216,11 @@ void ReadBufferAIO::prepare()
 	const off_t region_aligned_end = region_end + region_right_padding;
 	region_aligned_size = region_aligned_end - region_aligned_begin;
 
-	/// Буфер, в который запишем полученные данные.
 	buffer_begin = fill_buffer.internalBuffer().begin();
 }
 
 void ReadBufferAIO::publish()
 {
-	size_t region_left_padding = pos_in_file % DEFAULT_AIO_FILE_BLOCK_SIZE;
-
 	if ((bytes_read < 0) || (static_cast<size_t>(bytes_read) < region_left_padding))
 		throw Exception("Asynchronous read error on file " + filename, ErrorCodes::AIO_READ_ERROR);
 
@@ -240,10 +235,10 @@ void ReadBufferAIO::publish()
 	if (static_cast<size_t>(bytes_read) < requested_byte_count)
 		is_eof = true;
 
-	if (pos_in_file > (std::numeric_limits<off_t>::max() - bytes_read))
+	if (first_unread_pos_in_file > (std::numeric_limits<off_t>::max() - bytes_read))
 		throw Exception("An overflow occurred during file operation", ErrorCodes::LOGICAL_ERROR);
 
-	pos_in_file += bytes_read;
+	first_unread_pos_in_file += bytes_read;
 	total_bytes_read += bytes_read;
 	working_buffer_offset = region_left_padding;
 

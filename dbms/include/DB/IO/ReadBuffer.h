@@ -144,6 +144,10 @@ public:
 		return read(to, n);
 	}
 
+protected:
+	/// Количество игнорируемых байтов с начальной позиции буфера working_buffer.
+	size_t working_buffer_offset = 0;
+
 private:
 	/** Прочитать следующие данные и заполнить ими буфер.
 	  * Вернуть false в случае конца, true иначе.

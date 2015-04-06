@@ -28,7 +28,7 @@ public:
 	ReadBufferAIO & operator=(const ReadBufferAIO &) = delete;
 
 	void setMaxBytes(size_t max_bytes_read_);
-	off_t getPositionInFile() override { return pos_in_file - (working_buffer.end() - pos); }
+	off_t getPositionInFile() override { return first_unread_pos_in_file - (working_buffer.end() - pos); }
 	std::string getFileName() const noexcept override { return filename; }
 	int getFD() const noexcept override { return fd; }
 
@@ -64,19 +64,30 @@ private:
 
 	const std::string filename;
 
-	ssize_t bytes_read = 0;
+	/// Максимальное количество байтов, которое можно прочитать.
 	size_t max_bytes_read = std::numeric_limits<size_t>::max();
-	size_t total_bytes_read = 0;
 	/// Количество запрашиваемых байтов.
 	size_t requested_byte_count = 0;
+	/// Количество прочитанных байтов при последнем запросе.
+	ssize_t bytes_read = 0;
+	/// Итоговое количество прочитанных байтов.
+	size_t total_bytes_read = 0;
+
+	/// Позиция первого непрочитанного байта в файле.
+	off_t first_unread_pos_in_file = 0;
+
+	/// Начальная позиция выровненного региона диска, из которого читаются данные.
 	off_t region_aligned_begin = 0;
-	/// Текущая позиция в файле.
-	off_t pos_in_file = 0;
+	/// Левое смещение для выравнения региона.
+	size_t region_left_padding = 0;
+	/// Размер выровненного региона.
+	size_t region_aligned_size = 0;
+
 	/// Файловый дескриптор для чтения.
 	int fd = -1;
 
+	/// Буфер, в который пишутся полученные данные.
 	Position buffer_begin = nullptr;
-	size_t region_aligned_size = 0;
 
 	/// Асинхронная операция чтения ещё не завершилась.
 	bool is_pending_read = false;
