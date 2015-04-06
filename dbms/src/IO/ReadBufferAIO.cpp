@@ -64,13 +64,15 @@ bool ReadBufferAIO::nextImpl()
 	if (is_eof)
 		return false;
 
-	if (!is_started)
+	if (!is_aio)
 	{
 		synchronousRead();
-		is_started = true;
+		is_aio = true;
 	}
 	else
 		receive();
+
+	is_started = true;
 
 	/// Если конец файла только что достигнут, больше ничего не делаем.
 	if (is_eof)
@@ -164,7 +166,7 @@ void ReadBufferAIO::skip()
 	if (!waitForAIOCompletion())
 		return;
 
-	is_started = false;
+	is_aio = false;
 
 	bytes_read = events[0].res;
 	if ((bytes_read < 0) || (static_cast<size_t>(bytes_read) < region_left_padding))
