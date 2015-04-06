@@ -55,6 +55,7 @@ private:
 	/// Буфер для асинхронных операций чтения данных.
 	BufferWithOwnMemory<ReadBuffer> fill_buffer;
 
+	/// Описание асинхронного запроса на чтение.
 	iocb request;
 	std::vector<iocb *> request_ptrs{&request};
 	std::vector<io_event> events{1};
@@ -66,9 +67,12 @@ private:
 	ssize_t bytes_read = 0;
 	size_t max_bytes_read = std::numeric_limits<size_t>::max();
 	size_t total_bytes_read = 0;
+	/// Количество запрашиваемых байтов.
 	size_t requested_byte_count = 0;
 	off_t region_aligned_begin = 0;
+	/// Текущая позиция в файле.
 	off_t pos_in_file = 0;
+	/// Файловый дескриптор для чтения.
 	int fd = -1;
 
 	Position buffer_begin = nullptr;

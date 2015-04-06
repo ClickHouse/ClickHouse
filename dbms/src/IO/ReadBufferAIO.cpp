@@ -194,7 +194,6 @@ bool ReadBufferAIO::waitForAIOCompletion()
 
 void ReadBufferAIO::prepare()
 {
-	/// Количество запрашиваемых байтов.
 	requested_byte_count = std::min(fill_buffer.internalBuffer().size() - DEFAULT_AIO_FILE_BLOCK_SIZE, max_bytes_read);
 
 	/// Регион диска, из которого хотим читать данные.
@@ -206,7 +205,7 @@ void ReadBufferAIO::prepare()
 
 	const off_t region_end = pos_in_file + requested_byte_count;
 
-	/// Выровненный регион диска, из которого хотим читать данные.
+	/// Выровненный регион диска, из которого будем читать данные.
 	const size_t region_left_padding = region_begin % DEFAULT_AIO_FILE_BLOCK_SIZE;
 	const size_t region_right_padding = (DEFAULT_AIO_FILE_BLOCK_SIZE - (region_end % DEFAULT_AIO_FILE_BLOCK_SIZE)) % DEFAULT_AIO_FILE_BLOCK_SIZE;
 
@@ -218,7 +217,7 @@ void ReadBufferAIO::prepare()
 	const off_t region_aligned_end = region_end + region_right_padding;
 	region_aligned_size = region_aligned_end - region_aligned_begin;
 
-	/// Буфер, в который запишем данные из диска.
+	/// Буфер, в который запишем полученные данные.
 	buffer_begin = fill_buffer.internalBuffer().begin();
 }
 
