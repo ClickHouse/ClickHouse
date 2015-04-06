@@ -28,23 +28,28 @@ public:
 	ReadBufferAIO & operator=(const ReadBufferAIO &) = delete;
 
 	void setMaxBytes(size_t max_bytes_read_);
-	off_t getPositionInFile() override;
+	off_t getPositionInFile() override { return pos_in_file - (working_buffer.end() - pos); }
 	std::string getFileName() const noexcept override { return filename; }
 	int getFD() const noexcept override { return fd; }
 
 private:
-	off_t getPositionInFileRelaxed() const noexcept;
-	off_t doSeek(off_t off, int whence) override;
+	///
 	bool nextImpl() override;
+	///
+	off_t doSeek(off_t off, int whence) override;
+	/// Синхронно читать данные.
 	void synchronousRead();
-	void initRequest();
-	void publishReceivedData();
-	void sync();
+	/// Получить данные от асинхронного запроса.
+	void receive();
+	/// Игнорировать данные от асинхронного запроса.
+	void skip();
 	/// Ждать окончания текущей асинхронной задачи.
 	bool waitForAIOCompletion();
-	/// Менять местами основной и дублирующий буферы.
-	void swapBuffers() noexcept;
-	void skipPendingAIO();
+	/// Подготовить асинхронный запрос.
+	void prepare();
+	/// Подготовить к чтению дублирующий буфер содержащий данные от
+	/// последнего асинхронного запроса.
+	void publish();
 
 private:
 	/// Буфер для асинхронных операций чтения данных.

@@ -57,61 +57,6 @@ void ReadBufferAIO::setMaxBytes(size_t max_bytes_read_)
 	max_bytes_read = max_bytes_read_;
 }
 
-off_t ReadBufferAIO::getPositionInFile()
-{
-	return seek(0, SEEK_CUR);
-}
-
-off_t ReadBufferAIO::doSeek(off_t off, int whence)
-{
-	off_t new_pos;
-
-	if (whence == SEEK_SET)
-	{
-		if (off < 0)
-			throw Exception("SEEK_SET underflow", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-		new_pos = off;
-	}
-	else if (whence == SEEK_CUR)
-	{
-		if (off >= 0)
-		{
-			if (off > (std::numeric_limits<off_t>::max() - getPositionInFileRelaxed()))
-				throw Exception("SEEK_CUR overflow", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-		}
-		else if (off < -getPositionInFileRelaxed())
-			throw Exception("SEEK_CUR underflow", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-		new_pos = getPositionInFileRelaxed() + off;
-	}
-	else
-		throw Exception("ReadBufferAIO::seek expects SEEK_SET or SEEK_CUR as whence", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-
-	if (new_pos != getPositionInFileRelaxed())
-	{
-		off_t working_buffer_begin_pos = pos_in_file - static_cast<off_t>(working_buffer.size());
-		if (hasPendingData() && (new_pos >= working_buffer_begin_pos) && (new_pos <= pos_in_file))
-		{
-			/// Свдинулись, но остались в пределах буфера.
-			pos = working_buffer.begin() + (new_pos - working_buffer_begin_pos);
-		}
-		else
-		{
-			pos = working_buffer.end();
-			pos_in_file = new_pos;
-		}
-
-		/// Сдвинулись, значит не можем использовать результат последнего асинхронного запроса.
-		skipPendingAIO();
-	}
-
-	return new_pos;
-}
-
-off_t ReadBufferAIO::getPositionInFileRelaxed() const noexcept
-{
-	return pos_in_file - (working_buffer.end() - pos);
-}
-
 bool ReadBufferAIO::nextImpl()
 {
 	/// Если конец файла уже был достигнут при вызове этой функции,
@@ -125,14 +70,14 @@ bool ReadBufferAIO::nextImpl()
 		is_started = true;
 	}
 	else
-		sync();
+		receive();
 
 	/// Если конец файла только что достигнут, больше ничего не делаем.
 	if (is_eof)
 		return true;
 
 	/// Создать асинхронный запрос.
-	initRequest();
+	prepare();
 
 	request.aio_lio_opcode = IOCB_CMD_PREAD;
 	request.aio_fildes = fd;
@@ -154,34 +99,73 @@ bool ReadBufferAIO::nextImpl()
 	return true;
 }
 
-void ReadBufferAIO::synchronousRead()
+off_t ReadBufferAIO::doSeek(off_t off, int whence)
 {
-	initRequest();
-	bytes_read = ::pread(fd, buffer_begin, region_aligned_size, region_aligned_begin);
-	publishReceivedData();
-	swapBuffers();
+	off_t new_pos_in_file;
+
+	if (whence == SEEK_SET)
+	{
+		if (off < 0)
+			throw Exception("SEEK_SET underflow", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+		new_pos_in_file = off;
+	}
+	else if (whence == SEEK_CUR)
+	{
+		if (off >= 0)
+		{
+			if (off > (std::numeric_limits<off_t>::max() - getPositionInFile()))
+				throw Exception("SEEK_CUR overflow", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+		}
+		else if (off < -getPositionInFile())
+			throw Exception("SEEK_CUR underflow", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+		new_pos_in_file = getPositionInFile() + off;
+	}
+	else
+		throw Exception("ReadBufferAIO::seek expects SEEK_SET or SEEK_CUR as whence", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+	if (new_pos_in_file != getPositionInFile())
+	{
+		off_t working_buffer_begin_pos = pos_in_file - static_cast<off_t>(working_buffer.size());
+		if (hasPendingData() && (new_pos_in_file >= working_buffer_begin_pos) && (new_pos_in_file <= pos_in_file))
+		{
+			/// Свдинулись, но остались в пределах буфера.
+			pos = working_buffer.begin() + (new_pos_in_file - working_buffer_begin_pos);
+		}
+		else
+		{
+			pos = working_buffer.end();
+			pos_in_file = new_pos_in_file;
+		}
+
+		/// Сдвинулись, значит не можем использовать результат последнего асинхронного запроса.
+		skip();
+	}
+
+	return new_pos_in_file;
 }
 
-void ReadBufferAIO::sync()
+void ReadBufferAIO::synchronousRead()
+{
+	prepare();
+	bytes_read = ::pread(fd, buffer_begin, region_aligned_size, region_aligned_begin);
+	publish();
+}
+
+void ReadBufferAIO::receive()
 {
 	if (!waitForAIOCompletion())
 		return;
-	publishReceivedData();
-	swapBuffers();
+	publish();
 }
 
-void ReadBufferAIO::skipPendingAIO()
+void ReadBufferAIO::skip()
 {
 	if (!waitForAIOCompletion())
 		return;
 
 	is_started = false;
 
-	/// Несмотря на то, что не станем использовать результат последнего запроса,
-	/// убедимся, что запрос правильно выполнен.
-
 	bytes_read = events[0].res;
-
 	size_t region_left_padding = pos_in_file % DEFAULT_AIO_FILE_BLOCK_SIZE;
 
 	if ((bytes_read < 0) || (static_cast<size_t>(bytes_read) < region_left_padding))
@@ -208,14 +192,7 @@ bool ReadBufferAIO::waitForAIOCompletion()
 	return true;
 }
 
-void ReadBufferAIO::swapBuffers() noexcept
-{
-	internalBuffer().swap(fill_buffer.internalBuffer());
-	buffer().swap(fill_buffer.buffer());
-	std::swap(position(), fill_buffer.position());
-}
-
-void ReadBufferAIO::initRequest()
+void ReadBufferAIO::prepare()
 {
 	/// Количество запрашиваемых байтов.
 	requested_byte_count = std::min(fill_buffer.internalBuffer().size() - DEFAULT_AIO_FILE_BLOCK_SIZE, max_bytes_read);
@@ -236,7 +213,7 @@ void ReadBufferAIO::initRequest()
 	buffer_begin = fill_buffer.internalBuffer().begin();
 }
 
-void ReadBufferAIO::publishReceivedData()
+void ReadBufferAIO::publish()
 {
 	size_t region_left_padding = pos_in_file % DEFAULT_AIO_FILE_BLOCK_SIZE;
 
@@ -249,13 +226,13 @@ void ReadBufferAIO::publishReceivedData()
 	/// Игнорируем излишние байты справа.
 	bytes_read = std::min(bytes_read, static_cast<off_t>(requested_byte_count));
 
-	if (pos_in_file > (std::numeric_limits<off_t>::max() - bytes_read))
-		throw Exception("File position overflowed", ErrorCodes::LOGICAL_ERROR);
-
 	if (bytes_read > 0)
 		fill_buffer.buffer().resize(region_left_padding + bytes_read);
 	if (static_cast<size_t>(bytes_read) < requested_byte_count)
 		is_eof = true;
+
+	if (pos_in_file > (std::numeric_limits<off_t>::max() - bytes_read))
+		throw Exception("File position overflowed", ErrorCodes::LOGICAL_ERROR);
 
 	pos_in_file += bytes_read;
 	total_bytes_read += bytes_read;
@@ -263,6 +240,11 @@ void ReadBufferAIO::publishReceivedData()
 
 	if (total_bytes_read == max_bytes_read)
 		is_eof = true;
+
+	/// Менять местами основной и дублирующий буферы.
+	internalBuffer().swap(fill_buffer.internalBuffer());
+	buffer().swap(fill_buffer.buffer());
+	std::swap(position(), fill_buffer.position());
 }
 
 }
