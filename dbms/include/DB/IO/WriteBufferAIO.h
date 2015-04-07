@@ -86,8 +86,8 @@ private:
 
 	/// Асинхронная операция записи ещё не завершилась?
 	bool is_pending_write = false;
-	/// Было получено исключение?
-	bool got_exception = false;
+	/// Асинхронная операция завершилась неудачно?
+	bool aio_failed = false;
 };
 
 }

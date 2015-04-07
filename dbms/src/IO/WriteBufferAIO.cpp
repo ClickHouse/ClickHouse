@@ -31,7 +31,6 @@ WriteBufferAIO::WriteBufferAIO(const std::string & filename_, size_t buffer_size
 	fd = ::open(filename.c_str(), open_flags, mode_);
 	if (fd == -1)
 	{
-		got_exception = true;
 		auto error_code = (errno == ENOENT) ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE;
 		throwFromErrno("Cannot open file " + filename, error_code);
 	}
@@ -41,7 +40,6 @@ WriteBufferAIO::WriteBufferAIO(const std::string & filename_, size_t buffer_size
 	fd2 = ::open(filename.c_str(), O_RDONLY, mode_);
 	if (fd2 == -1)
 	{
-		got_exception = true;
 		auto error_code = (errno == ENOENT) ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE;
 		throwFromErrno("Cannot open file " + filename, error_code);
 	}
@@ -51,7 +49,7 @@ WriteBufferAIO::WriteBufferAIO(const std::string & filename_, size_t buffer_size
 
 WriteBufferAIO::~WriteBufferAIO()
 {
-	if (!got_exception)
+	if (!aio_failed)
 	{
 		try
 		{
@@ -80,10 +78,7 @@ void WriteBufferAIO::truncate(off_t length)
 
 	int res = ::ftruncate(fd, length);
 	if (res == -1)
-	{
-		got_exception = true;
 		throwFromErrno("Cannot truncate file " + filename, ErrorCodes::CANNOT_TRUNCATE_FILE);
-	}
 }
 
 void WriteBufferAIO::sync()
@@ -93,10 +88,7 @@ void WriteBufferAIO::sync()
 	/// Попросим ОС сбросить данные на диск.
 	int res = ::fsync(fd);
 	if (res == -1)
-	{
-		got_exception = true;
 		throwFromErrno("Cannot fsync " + getFileName(), ErrorCodes::CANNOT_FSYNC);
-	}
 }
 
 void WriteBufferAIO::nextImpl()
@@ -122,7 +114,7 @@ void WriteBufferAIO::nextImpl()
 	{
 		if (errno != EINTR)
 		{
-			got_exception = true;
+			aio_failed =  true;
 			throw Exception("Cannot submit request for asynchronous IO on file " + filename, ErrorCodes::AIO_SUBMIT_ERROR);
 		}
 	}
@@ -137,10 +129,7 @@ off_t WriteBufferAIO::doSeek(off_t off, int whence)
 	if (whence == SEEK_SET)
 	{
 		if (off < 0)
-		{
-			got_exception = true;
 			throw Exception("SEEK_SET underflow", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-		}
 		pos_in_file = off;
 	}
 	else if (whence == SEEK_CUR)
@@ -148,23 +137,14 @@ off_t WriteBufferAIO::doSeek(off_t off, int whence)
 		if (off >= 0)
 		{
 			if (off > (std::numeric_limits<off_t>::max() - pos_in_file))
-			{
-				got_exception = true;
 				throw Exception("SEEK_CUR overflow", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-			}
 		}
 		else if (off < -pos_in_file)
-		{
-			got_exception = true;
 			throw Exception("SEEK_CUR underflow", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-		}
 		pos_in_file += off;
 	}
 	else
-	{
-		got_exception = true;
 		throw Exception("WriteBufferAIO::seek expects SEEK_SET or SEEK_CUR as whence", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-	}
 
 	if (pos_in_file > max_pos_in_file)
 		max_pos_in_file = pos_in_file;
@@ -188,7 +168,7 @@ bool WriteBufferAIO::waitForAIOCompletion()
 	{
 		if (errno != EINTR)
 		{
-			got_exception = true;
+			aio_failed = true;
 			throw Exception("Failed to wait for asynchronous IO completion on file " + filename, ErrorCodes::AIO_COMPLETION_ERROR);
 		}
 	}
@@ -342,10 +322,7 @@ void WriteBufferAIO::prepare()
 
 		ssize_t read_count = ::pread(fd2, buffer_begin, region_left_padding, region_aligned_begin);
 		if (read_count < 0)
-		{
-			got_exception = true;
 			throw Exception("Read error", ErrorCodes::AIO_READ_ERROR);
-		}
 
 		::memset(buffer_begin + read_count, 0, region_left_padding - read_count);
 	}
@@ -355,10 +332,7 @@ void WriteBufferAIO::prepare()
 		/// Дополнить конец буфера данными из диска.
 		ssize_t read_count = ::pread(fd2, buffer_end, region_right_padding, region_end);
 		if (read_count < 0)
-		{
-			got_exception = true;
 			throw Exception("Read error", ErrorCodes::AIO_READ_ERROR);
-		}
 
 		truncation_count = region_right_padding - read_count;
 		::memset(buffer_end + read_count, 0, truncation_count);
@@ -368,19 +342,13 @@ void WriteBufferAIO::prepare()
 void WriteBufferAIO::finalize()
 {
 	if (bytes_written < bytes_to_write)
-	{
-		got_exception = true;
 		throw Exception("Asynchronous write error on file " + filename, ErrorCodes::AIO_WRITE_ERROR);
-	}
 
 	bytes_written -= truncation_count;
 
 	off_t pos_offset = bytes_written - (pos_in_file - request.aio_offset);
 	if (pos_in_file > (std::numeric_limits<off_t>::max() - pos_offset))
-	{
-		got_exception = true;
 		throw Exception("File position overflowed", ErrorCodes::LOGICAL_ERROR);
-	}
 	pos_in_file += pos_offset;
 
 	if (pos_in_file > max_pos_in_file)
@@ -391,10 +359,7 @@ void WriteBufferAIO::finalize()
 		/// Укоротить файл, чтобы удалить из него излишние нули.
 		int res = ::ftruncate(fd, max_pos_in_file);
 		if (res == -1)
-		{
-			got_exception = true;
 			throwFromErrno("Cannot truncate file " + filename, ErrorCodes::CANNOT_TRUNCATE_FILE);
-		}
 	}
 }
 
