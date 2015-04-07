@@ -17,9 +17,9 @@ WriteBufferAIO::WriteBufferAIO(const std::string & filename_, size_t buffer_size
 		flush_buffer(BufferWithOwnMemory<WriteBuffer>(this->memory.size(), nullptr, DEFAULT_AIO_FILE_BLOCK_SIZE)),
 		filename(filename_)
 {
+	/// Исправить информацию о размере буферов, чтобы дополнительные страницы не касались базового класса BufferBase.
 	this->buffer().resize(this->buffer().size() - DEFAULT_AIO_FILE_BLOCK_SIZE);
 	this->internalBuffer().resize(this->internalBuffer().size() - DEFAULT_AIO_FILE_BLOCK_SIZE);
-
 	flush_buffer.buffer().resize(this->buffer().size() - DEFAULT_AIO_FILE_BLOCK_SIZE);
 	flush_buffer.internalBuffer().resize(this->internalBuffer().size() - DEFAULT_AIO_FILE_BLOCK_SIZE);
 
@@ -111,15 +111,10 @@ void WriteBufferAIO::nextImpl()
 
 	/// Создать запрос на асинхронную запись.
 
-	iov[0].iov_base = buffer_begin;
-	iov[0].iov_len = region_aligned_size;
-
-	bytes_to_write = region_aligned_size;
-
-	request.aio_lio_opcode = IOCB_CMD_PWRITEV;
+	request.aio_lio_opcode = IOCB_CMD_PWRITE;
 	request.aio_fildes = fd;
-	request.aio_buf = reinterpret_cast<UInt64>(iov);
-	request.aio_nbytes = 1;
+	request.aio_buf = reinterpret_cast<UInt64>(buffer_begin);
+	request.aio_nbytes = region_aligned_size;
 	request.aio_offset = region_aligned_begin;
 
 	/// Отправить запрос.
@@ -276,6 +271,8 @@ void WriteBufferAIO::prepare()
 	const off_t region_aligned_end = region_end + region_right_padding;
 	region_aligned_size = region_aligned_end - region_aligned_begin;
 
+	bytes_to_write = region_aligned_size;
+
 	/*
 		Представление данных в буфере до обработки
 
@@ -297,11 +294,6 @@ void WriteBufferAIO::prepare()
 		                                :
 		                                :
 		                            buffer_size
-
-		<--------------------------------------------------------------->
-		                                :
-		                                :
-		                            buffer_capacity
 	*/
 
 	/// Буфер данных, которые хотим записать на диск.
@@ -317,7 +309,7 @@ void WriteBufferAIO::prepare()
 		XXX : данные, которые хотим записать
 		ZZZ : данные из диска или нули, если отсутствуют данные
 
-		buffer_begin                                              buffer_end   memory_page
+		buffer_begin                                              buffer_end   дополнительная страница
 		:                                                                  :       :
 		:                                                                  :       :
 		+---:-----------+---------------+---------------+---------------+--:------------+
@@ -328,11 +320,6 @@ void WriteBufferAIO::prepare()
 		|   +-----------+---------------+---------------+---------------+--+            |
 		|               |               |               |               |               |
 		+---------------+---------------+---------------+---------------+---------------+
-
-		<--------------------------------------------------------------->
-		                                :
-		                                :
-		                            buffer_capacity
 
 		<--><--------------------------------------------------------------><----------->
 		 :                                  :                                     :
@@ -348,9 +335,6 @@ void WriteBufferAIO::prepare()
 	if (region_left_padding > 0)
 	{
 		/// Сдвинуть данные буфера вправо. Дополнить начало буфера данными из диска.
-		/// Копировать данные, которые не влезают в буфер, в дополнительный буфер
-		/// размером со страницу.
-
 		buffer_size += region_left_padding;
 		buffer_end = buffer_begin + buffer_size;
 
@@ -368,11 +352,8 @@ void WriteBufferAIO::prepare()
 
 	if (region_right_padding > 0)
 	{
-		/// При необходимости дополнить конец буфера данными из диска.
-
-		Position from = buffer_end;
-
-		ssize_t read_count = ::pread(fd2, from, region_right_padding, region_end);
+		/// Дополнить конец буфера данными из диска.
+		ssize_t read_count = ::pread(fd2, buffer_end, region_right_padding, region_end);
 		if (read_count < 0)
 		{
 			got_exception = true;
@@ -380,9 +361,7 @@ void WriteBufferAIO::prepare()
 		}
 
 		truncation_count = region_right_padding - read_count;
-
-		if (from == buffer_end)
-			::memset(from + read_count, 0, truncation_count);
+		::memset(buffer_end + read_count, 0, truncation_count);
 	}
 }
 

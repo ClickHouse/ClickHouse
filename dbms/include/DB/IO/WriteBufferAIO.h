@@ -9,7 +9,6 @@
 #include <string>
 #include <unistd.h>
 #include <fcntl.h>
-#include <sys/uio.h>
 
 namespace DB
 {
@@ -34,14 +33,14 @@ public:
 
 private:
 	///
+	void nextImpl() override;
+	///
 	off_t doSeek(off_t off, int whence) override;
 	/// Если в буфере ещё остались данные - запишем их.
 	void flush();
-	///
-	void nextImpl() override;
 	/// Ждать окончания текущей асинхронной задачи.
 	bool waitForAIOCompletion();
-	///
+	/// Подготовить асинхронный запрос.
 	void prepare();
 	///
 	void finalize();
@@ -57,13 +56,12 @@ private:
 
 	AIOContext aio_context{1};
 
-	iovec iov[3];
-
 	const std::string filename;
 
 	/// Количество байтов, которые будут записаны на диск.
 	off_t bytes_to_write = 0;
-
+	/// Количество записанных байтов при последнем запросе.
+	off_t bytes_written = 0;
 	/// Количество нулевых байтов, которые надо отрезать c конца файла
 	/// после завершения операции записи данных.
 	off_t truncation_count = 0;
@@ -73,15 +71,18 @@ private:
 	/// Максимальная достигнутая позиция в файле.
 	off_t max_pos_in_file = 0;
 
-	Position buffer_begin = nullptr;
-	size_t region_aligned_size = 0;
+	/// Начальная позиция выровненного региона диска, в который записываются данные.
 	off_t region_aligned_begin = 0;
-	off_t bytes_written = 0;
+	/// Размер выровненного региона диска.
+	size_t region_aligned_size = 0;
 
 	/// Файловый дескриптор для записи.
 	int fd = -1;
 	/// Файловый дескриптор для чтения. Употребляется для невыровненных записей.
 	int fd2 = -1;
+
+	/// Буфер данных, которые хотим записать на диск.
+	Position buffer_begin = nullptr;
 
 	/// Асинхронная операция записи ещё не завершилась?
 	bool is_pending_write = false;
