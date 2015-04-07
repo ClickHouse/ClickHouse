@@ -59,10 +59,6 @@ private:
 
 	iovec iov[3];
 
-	/// Дополнительный буфер размером со страницу. Содежрит те данные, которые
-	/// не влезают в основной буфер.
-	Memory memory_page{DEFAULT_AIO_FILE_BLOCK_SIZE, DEFAULT_AIO_FILE_BLOCK_SIZE};
-
 	const std::string filename;
 
 	/// Количество байтов, которые будут записаны на диск.
@@ -78,8 +74,6 @@ private:
 	off_t max_pos_in_file = 0;
 
 	Position buffer_begin = nullptr;
-	size_t excess_count = 0;
-	size_t buffer_capacity = 0;
 	size_t region_aligned_size = 0;
 	off_t region_aligned_begin = 0;
 	off_t bytes_written = 0;
