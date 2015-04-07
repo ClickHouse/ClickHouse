@@ -8,6 +8,7 @@
 #include <Yandex/ErrorHandlers.h>
 #include <Yandex/Revision.h>
 #include <statdaemons/ConfigProcessor.h>
+#include <statdaemons/ext/scope_guard.hpp>
 #include <memory>
 
 #include <DB/Interpreters/loadMetadata.h>
@@ -536,6 +537,25 @@ int Server::main(const std::vector<std::string> & args)
 
 	global_context->setCurrentDatabase(config().getString("default_database", "default"));
 
+	SCOPE_EXIT(
+		LOG_DEBUG(log, "Closed all connections.");
+
+		/** Попросим завершить фоновую работу у всех движков таблиц.
+		  * Это важно делать заранее, не в деструкторе Context-а, так как
+		  *  движки таблиц могут при уничтожении всё ещё пользоваться Context-ом.
+		  */
+		LOG_INFO(log, "Shutting down storages.");
+		global_context->shutdown();
+		LOG_DEBUG(log, "Shutted down storages.");
+
+		/** Явно уничтожаем контекст - это удобнее, чем в деструкторе Server-а, так как ещё доступен логгер.
+		  * В этот момент никто больше не должен владеть shared-частью контекста.
+		  */
+		global_context.reset();
+
+		LOG_DEBUG(log, "Destroyed global context.");
+	);
+
 	{
 		const auto profile_events_transmitter = config().getBool("use_graphite", true)
 			? std::make_unique<ProfileEventsTransmitter>()
@@ -609,53 +629,38 @@ int Server::main(const std::vector<std::string> & args)
 		if (olap_http_server)
 			olap_http_server->start();
 
+		LOG_INFO(log, "Ready for connections.");
+
+		SCOPE_EXIT(
+			LOG_DEBUG(log, "Received termination signal. Waiting for current connections to close.");
+
+			users_config_reloader.reset();
+
+			is_cancelled = true;
+
+			http_server.stop();
+			tcp_server.stop();
+			if (use_olap_server)
+				olap_http_server->stop();
+		);
+
 		/// try to load dictionaries immediately, throw on error and die
 		try
 		{
 			if (!config().getBool("dictionaries_lazy_load", true))
 			{
-				global_context->tryCreateDictionaries(true);
-				global_context->tryCreateExternalDictionaries(true);
+				global_context->tryCreateDictionaries();
+				global_context->tryCreateExternalDictionaries();
 			}
-
-			LOG_INFO(log, "Ready for connections.");
 
 			waitForTerminationRequest();
 		}
 		catch (...)
 		{
 			LOG_ERROR(log, "Caught exception while loading dictionaries.");
-			tryLogCurrentException(log);
+			throw;
 		}
-
-		LOG_DEBUG(log, "Received termination signal. Waiting for current connections to close.");
-
-		users_config_reloader.reset();
-
-		is_cancelled = true;
-
-		http_server.stop();
-		tcp_server.stop();
-		if (use_olap_server)
-			olap_http_server->stop();
 	}
-
-	LOG_DEBUG(log, "Closed all connections.");
-
-	/** Попросим завершить фоновую работу у всех движков таблиц.
-	  * Это важно делать заранее, не в деструкторе Context-а, так как
-	  *  движки таблиц могут при уничтожении всё ещё пользоваться Context-ом.
-	  */
-	LOG_INFO(log, "Shutting down storages.");
-	global_context->shutdown();
-	LOG_DEBUG(log, "Shutted down storages.");
-
-	/** Явно уничтожаем контекст - это удобнее, чем в деструкторе Server-а, так как ещё доступен логгер.
-	  * В этот момент никто больше не должен владеть shared-частью контекста.
-	  */
-	global_context.reset();
-
-	LOG_DEBUG(log, "Destroyed global context.");
 
 	return Application::EXIT_OK;
 }

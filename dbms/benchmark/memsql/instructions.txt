@@ -1,4 +1,24 @@
-create table hits_10m
+http://www.memsql.com/download/
+http://docs.memsql.com/docs/latest/setup/setup_onprem.html
+wget http://download.memsql.com/8d9f4c4d99a547baa40ba097b171bd15/memsql-3.2.x86_64.deb
+scp memsql-3.2.x86_64.deb example05e:~
+ssh example05e
+sudo dpkg -i memsql-3.2.x86_64.deb
+
+sudo mkdir /opt/memsql-data/
+sudo cp -r /var/lib/memsql/data/* /opt/memsql-data/
+sudo rm -rf /var/lib/memsql/data
+sudo ln -s /opt/memsql-data /var/lib/memsql/data
+sudo chown -R memsql /opt/memsql-data
+sudo chown -R memsql /var/lib/memsql/data
+
+sudo service memsql start
+mysql -u root -h 127.0.0.1 -P 3306 --prompt="memsql> "
+
+CREATE DATABASE test;
+USE test;
+
+CREATE TABLE hits_10m
 (
     WatchID BIGINT,
     JavaEnable SMALLINT,
@@ -104,8 +124,16 @@ create table hits_10m
     HasGCLID SMALLINT,
     RefererHash BIGINT,
     URLHash BIGINT,
-    CLID BIGINT, 
-    UserIDHash BIGINT
+    CLID BIGINT,
+    INDEX ColumnStoreIndex USING CLUSTERED COLUMNSTORE (CounterID, EventDate, UserID, EventTime)
 );
 
-LOAD DATA INFILE '/opt/dump/dump_0.3/dump_hits_10m_meshed_utf8.tsv' INTO TABLE hits_10m FIELDS TERMINATED BY '\t'  ESCAPED BY '\\' ENCLOSED BY "NULL";
+Table creation takes about 15 seconds.
+
+LOAD DATA INFILE '/opt/dumps/hits_10m_corrected.tsv' INTO TABLE hits_10m;
+
+12 min 24.51 sec
+
+13422 rows/sec.
+
+data size: 1 613 773 528 bytes.

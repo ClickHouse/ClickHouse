@@ -349,29 +349,49 @@ inline void readDateText(mysqlxx::Date & date, ReadBuffer & buf)
 }
 
 
-/// в формате YYYY-MM-DD HH:MM:SS, согласно текущему часовому поясу
+template <typename T>
+inline T parse(const char * data, size_t size);
+
+
+void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf);
+
+/** В формате YYYY-MM-DD hh:mm:ss, согласно текущему часовому поясу
+  * В качестве исключения, также поддерживается парсинг из десятичного числа - unix timestamp.
+  */
 inline void readDateTimeText(time_t & datetime, ReadBuffer & buf)
 {
-	char s[19];
-	size_t size = buf.read(s, 19);
-	if (19 != size)
+	/** Считываем 10 символов, которые могут быть unix timestamp.
+	  * При этом, поддерживается только unix timestamp из 10 символов - от 9 сентября 2001.
+	  * Потом смотрим на пятый символ. Если это число - парсим unix timestamp.
+	  * Если это не число - парсим YYYY-MM-DD hh:mm:ss.
+	  */
+
+	/// Оптимистичный вариант, когда всё значение точно лежит в буфере.
+	const char * s = buf.position();
+	if (s + 19 < buf.buffer().end())
 	{
-		s[size] = 0;
-		throw Exception(std::string("Cannot parse datetime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
+		if (s[4] < '0' || s[4] > '9')
+		{
+			UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
+			UInt8 month = (s[5] - '0') * 10 + (s[6] - '0');
+			UInt8 day = (s[8] - '0') * 10 + (s[9] - '0');
+
+			UInt8 hour = (s[11] - '0') * 10 + (s[12] - '0');
+			UInt8 minute = (s[14] - '0') * 10 + (s[15] - '0');
+			UInt8 second = (s[17] - '0') * 10 + (s[18] - '0');
+
+			if (unlikely(year == 0))
+				datetime = 0;
+			else
+				datetime = DateLUT::instance().makeDateTime(year, month, day, hour, minute, second);
+
+			buf.position() += 19;
+		}
+		else
+			readIntTextUnsafe(datetime, buf);
 	}
-
-	UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
-	UInt8 month = (s[5] - '0') * 10 + (s[6] - '0');
-	UInt8 day = (s[8] - '0') * 10 + (s[9] - '0');
-
-	UInt8 hour = (s[11] - '0') * 10 + (s[12] - '0');
-	UInt8 minute = (s[14] - '0') * 10 + (s[15] - '0');
-	UInt8 second = (s[17] - '0') * 10 + (s[18] - '0');
-
-	if (unlikely(year == 0))
-		datetime = 0;
 	else
-		datetime = DateLUT::instance().makeDateTime(year, month, day, hour, minute, second);
+		readDateTimeTextFallback(datetime, buf);
 }
 
 inline void readDateTimeText(mysqlxx::DateTime & datetime, ReadBuffer & buf)

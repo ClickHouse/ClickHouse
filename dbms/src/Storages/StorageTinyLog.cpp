@@ -86,13 +86,22 @@ public:
 
 	~TinyLogBlockOutputStream()
 	{
-		writeSuffix();
+		try
+		{
+			writeSuffix();
+		}
+		catch (...)
+		{
+			tryLogCurrentException(__PRETTY_FUNCTION__);
+		}
 	}
 
 	void write(const Block & block);
 	void writeSuffix();
+
 private:
 	StorageTinyLog & storage;
+	bool done = false;
 
 	struct Stream
 	{
@@ -349,6 +358,10 @@ void TinyLogBlockOutputStream::writeData(const String & name, const IDataType & 
 
 void TinyLogBlockOutputStream::writeSuffix()
 {
+	if (done)
+		return;
+	done = true;
+
 	/// Заканчиваем запись.
 	for (FileStreams::iterator it = streams.begin(); it != streams.end(); ++it)
 		it->second->finalize();

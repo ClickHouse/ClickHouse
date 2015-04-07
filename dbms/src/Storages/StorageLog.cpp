@@ -103,13 +103,25 @@ public:
 			addStream(column.name, *column.type);
 	}
 
-	~LogBlockOutputStream() { writeSuffix(); }
+	~LogBlockOutputStream()
+	{
+		try
+		{
+			writeSuffix();
+		}
+		catch (...)
+		{
+			tryLogCurrentException(__PRETTY_FUNCTION__);
+		}
+	}
 
 	void write(const Block & block);
 	void writeSuffix();
+
 private:
 	StorageLog & storage;
 	Poco::ScopedWriteRWLock lock;
+	bool done = false;
 
 	struct Stream
 	{
@@ -362,6 +374,10 @@ void LogBlockOutputStream::write(const Block & block)
 
 void LogBlockOutputStream::writeSuffix()
 {
+	if (done)
+		return;
+	done = true;
+
 	/// Заканчиваем запись.
 	marks_stream.next();
 
