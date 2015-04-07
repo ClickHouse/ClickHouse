@@ -151,14 +151,14 @@ void ReadBufferAIO::synchronousRead()
 {
 	prepare();
 	bytes_read = ::pread(fd, buffer_begin, region_aligned_size, region_aligned_begin);
-	publish();
+	finalize();
 }
 
 void ReadBufferAIO::receive()
 {
 	if (!waitForAIOCompletion())
 		return;
-	publish();
+	finalize();
 }
 
 void ReadBufferAIO::skip()
@@ -221,7 +221,7 @@ void ReadBufferAIO::prepare()
 	buffer_begin = fill_buffer.internalBuffer().begin();
 }
 
-void ReadBufferAIO::publish()
+void ReadBufferAIO::finalize()
 {
 	if ((bytes_read < 0) || (static_cast<size_t>(bytes_read) < region_left_padding))
 		throw Exception("Asynchronous read error on file " + filename, ErrorCodes::AIO_READ_ERROR);

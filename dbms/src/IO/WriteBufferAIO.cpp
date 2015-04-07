@@ -99,9 +99,8 @@ void WriteBufferAIO::nextImpl()
 	if (waitForAIOCompletion())
 		finalize();
 
-	prepare();
-
 	/// Создать запрос на асинхронную запись.
+	prepare();
 
 	request.aio_lio_opcode = IOCB_CMD_PWRITE;
 	request.aio_fildes = fd;
@@ -240,6 +239,11 @@ void WriteBufferAIO::prepare()
 
 	/// Регион диска, в который хотим записать данные.
 	const off_t region_begin = pos_in_file;
+
+	if ((flush_buffer.offset() > std::numeric_limits<off_t>::max()) ||
+		(pos_in_file > (std::numeric_limits<off_t>::max() - static_cast<off_t>(flush_buffer.offset()))))
+		throw Exception("An overflow occurred during file operation", ErrorCodes::LOGICAL_ERROR);
+
 	const off_t region_end = pos_in_file + flush_buffer.offset();
 	const size_t region_size = region_end - region_begin;
 
@@ -248,6 +252,10 @@ void WriteBufferAIO::prepare()
 	const size_t region_right_padding = (DEFAULT_AIO_FILE_BLOCK_SIZE - (region_end % DEFAULT_AIO_FILE_BLOCK_SIZE)) % DEFAULT_AIO_FILE_BLOCK_SIZE;
 
 	region_aligned_begin = region_begin - region_left_padding;
+
+	if (region_end > (std::numeric_limits<off_t>::max() - static_cast<off_t>(region_right_padding)))
+		throw Exception("An overflow occurred during file operation", ErrorCodes::LOGICAL_ERROR);
+
 	const off_t region_aligned_end = region_end + region_right_padding;
 	region_aligned_size = region_aligned_end - region_aligned_begin;
 
@@ -348,7 +356,7 @@ void WriteBufferAIO::finalize()
 
 	off_t pos_offset = bytes_written - (pos_in_file - request.aio_offset);
 	if (pos_in_file > (std::numeric_limits<off_t>::max() - pos_offset))
-		throw Exception("File position overflowed", ErrorCodes::LOGICAL_ERROR);
+		throw Exception("An overflow occurred during file operation", ErrorCodes::LOGICAL_ERROR);
 	pos_in_file += pos_offset;
 
 	if (pos_in_file > max_pos_in_file)
