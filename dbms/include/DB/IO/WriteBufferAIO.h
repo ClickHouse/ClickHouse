@@ -41,8 +41,6 @@ private:
 	void nextImpl() override;
 	/// Ждать окончания текущей асинхронной задачи.
 	bool waitForAIOCompletion();
-	/// Менять местами основной и дублирующий буферы.
-	void swapBuffers() noexcept;
 	///
 	void prepare();
 	///

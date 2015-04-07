@@ -61,48 +61,6 @@ WriteBufferAIO::~WriteBufferAIO()
 		::close(fd2);
 }
 
-off_t WriteBufferAIO::doSeek(off_t off, int whence)
-{
-	flush();
-
-	if (whence == SEEK_SET)
-	{
-		if (off < 0)
-		{
-			got_exception = true;
-			throw Exception("SEEK_SET underflow", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-		}
-		pos_in_file = off;
-	}
-	else if (whence == SEEK_CUR)
-	{
-		if (off >= 0)
-		{
-			if (off > (std::numeric_limits<off_t>::max() - pos_in_file))
-			{
-				got_exception = true;
-				throw Exception("SEEK_CUR overflow", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-			}
-		}
-		else if (off < -pos_in_file)
-		{
-			got_exception = true;
-			throw Exception("SEEK_CUR underflow", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-		}
-		pos_in_file += off;
-	}
-	else
-	{
-		got_exception = true;
-		throw Exception("WriteBufferAIO::seek expects SEEK_SET or SEEK_CUR as whence", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-	}
-
-	if (pos_in_file > max_pos_in_file)
-		max_pos_in_file = pos_in_file;
-
-	return pos_in_file;
-}
-
 off_t WriteBufferAIO::getPositionInFile()
 {
 	return seek(0, SEEK_CUR);
@@ -133,13 +91,6 @@ void WriteBufferAIO::sync()
 	}
 }
 
-void WriteBufferAIO::flush()
-{
-	next();
-	if (waitForAIOCompletion())
-		finalize();
-}
-
 void WriteBufferAIO::nextImpl()
 {
 	if (!offset())
@@ -147,7 +98,6 @@ void WriteBufferAIO::nextImpl()
 
 	if (waitForAIOCompletion())
 		finalize();
-	swapBuffers();
 
 	prepare();
 
@@ -197,6 +147,55 @@ void WriteBufferAIO::nextImpl()
 	is_pending_write = true;
 }
 
+off_t WriteBufferAIO::doSeek(off_t off, int whence)
+{
+	flush();
+
+	if (whence == SEEK_SET)
+	{
+		if (off < 0)
+		{
+			got_exception = true;
+			throw Exception("SEEK_SET underflow", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+		}
+		pos_in_file = off;
+	}
+	else if (whence == SEEK_CUR)
+	{
+		if (off >= 0)
+		{
+			if (off > (std::numeric_limits<off_t>::max() - pos_in_file))
+			{
+				got_exception = true;
+				throw Exception("SEEK_CUR overflow", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+			}
+		}
+		else if (off < -pos_in_file)
+		{
+			got_exception = true;
+			throw Exception("SEEK_CUR underflow", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+		}
+		pos_in_file += off;
+	}
+	else
+	{
+		got_exception = true;
+		throw Exception("WriteBufferAIO::seek expects SEEK_SET or SEEK_CUR as whence", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+	}
+
+	if (pos_in_file > max_pos_in_file)
+		max_pos_in_file = pos_in_file;
+
+	return pos_in_file;
+}
+
+void WriteBufferAIO::flush()
+{
+	next();
+	if (waitForAIOCompletion())
+		finalize();
+}
+
 bool WriteBufferAIO::waitForAIOCompletion()
 {
 	if (!is_pending_write)
@@ -217,14 +216,12 @@ bool WriteBufferAIO::waitForAIOCompletion()
 	return true;
 }
 
-void WriteBufferAIO::swapBuffers() noexcept
-{
-	buffer().swap(flush_buffer.buffer());
-	std::swap(position(), flush_buffer.position());
-}
-
 void WriteBufferAIO::prepare()
 {
+	/// Менять местами основной и дублирующий буферы.
+	buffer().swap(flush_buffer.buffer());
+	std::swap(position(), flush_buffer.position());
+
 	truncation_count = 0;
 
 	/*
