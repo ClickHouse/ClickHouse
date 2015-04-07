@@ -110,7 +110,11 @@ public:
 	  */
 	TableFullWriteLockPtr lockForAlter()
 	{
-		return std::make_pair(lockDataForAlter(), lockStructureForAlter());
+		/// Порядок вычисления важен.
+		auto data_lock = lockDataForAlter();
+		auto structure_lock = lockStructureForAlter();
+
+		return {std::move(data_lock), std::move(structure_lock)};
 	}
 
 	/** Не дает изменять данные в таблице. (Более того, не дает посмотреть на структуру таблицы с намерением изменить данные).

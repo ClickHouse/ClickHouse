@@ -43,13 +43,15 @@ void InterpreterRenameQuery::execute()
 		String from_database_name_escaped = escapeForFileName(from_database_name);
 		String from_table_name = it->from.table;
 		String from_table_name_escaped = escapeForFileName(from_table_name);
-		String from_metadata_path = path + "metadata/" + from_database_name_escaped + "/" + (!from_table_name.empty() ?  from_table_name_escaped + ".sql" : "");
+		String from_metadata_path = path + "metadata/" + from_database_name_escaped + "/"
+			+ (!from_table_name.empty() ?  from_table_name_escaped + ".sql" : "");
 
 		String to_database_name = it->to.database.empty() ? current_database : it->to.database;
 		String to_database_name_escaped = escapeForFileName(to_database_name);
 		String to_table_name = it->to.table;
 		String to_table_name_escaped = escapeForFileName(to_table_name);
-		String to_metadata_path = path + "metadata/" + to_database_name_escaped + "/" + (!to_table_name.empty() ?  to_table_name_escaped + ".sql" : "");
+		String to_metadata_path = path + "metadata/" + to_database_name_escaped + "/"
+			+ (!to_table_name.empty() ?  to_table_name_escaped + ".sql" : "");
 
 		/// Заблокировать таблицу нужно при незаблокированном контексте.
 		StoragePtr table = context.getTable(from_database_name, from_table_name);
