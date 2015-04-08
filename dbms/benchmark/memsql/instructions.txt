@@ -1,3 +1,5 @@
+Note: column store in MemSQL was introduced in Feb 2014.
+
 http://www.memsql.com/download/
 http://docs.memsql.com/docs/latest/setup/setup_onprem.html
 wget http://download.memsql.com/8d9f4c4d99a547baa40ba097b171bd15/memsql-3.2.x86_64.deb
