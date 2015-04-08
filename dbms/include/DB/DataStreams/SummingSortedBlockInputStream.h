@@ -5,6 +5,8 @@
 #include <DB/Core/Row.h>
 #include <DB/Core/ColumnNumbers.h>
 #include <DB/DataStreams/MergingSortedBlockInputStream.h>
+#include <statdaemons/ext/range.hpp>
+#include <DB/Storages/MergeTree/PKCondition.h>
 
 
 namespace DB
@@ -60,6 +62,14 @@ private:
 	Names column_names_to_sum;	/// Если задано - преобразуется в column_numbers_to_sum при инициализации.
 	ColumnNumbers column_numbers_to_sum;
 
+	struct map_description
+	{
+		std::size_t key_col_num;
+		std::size_t val_col_num;
+	};
+
+	std::vector<map_description> maps_to_sum;
+
 	Row current_key;		/// Текущий первичный ключ.
 	Row next_key;			/// Первичный ключ следующей строки.
 
@@ -97,12 +107,96 @@ private:
 		bool operator() (Array 		& x) const { throw Exception("Cannot sum Arrays", ErrorCodes::LOGICAL_ERROR); }
 	};
 
+	using map_merge_t = std::map<Field, Field>;
+	class MapSumVisitor : public StaticVisitor<void>
+	{
+	public:
+		map_merge_t & map;
+		const Field & key;
+
+	public:
+		MapSumVisitor(map_merge_t & map, const Field & key) : map(map), key(key) {}
+
+		void operator()(const UInt64 val) const
+		{
+			const auto it = map.find(key);
+			if (it == std::end(map))
+				map.emplace(key, Field{val});
+			else
+				it->second.get<UInt64>() += val;
+		}
+
+		void operator()(const Int64 val) const
+		{
+			const auto it = map.find(key);
+			if (it == std::end(map))
+				map.emplace(key, Field{val});
+			else
+				it->second.get<Int64>() += val;
+		}
+
+		void operator()(const Float64 val) const
+		{
+			const auto it = map.find(key);
+			if (it == std::end(map))
+				map.emplace(key, Field{val});
+			else
+				it->second.get<Float64>() += val;
+		}
+
+		void operator() (Null) const { throw Exception("Cannot merge Nulls", ErrorCodes::LOGICAL_ERROR); }
+		void operator() (String) const { throw Exception("Cannot merge Strings", ErrorCodes::LOGICAL_ERROR); }
+		void operator() (Array) const { throw Exception("Cannot merge Arrays", ErrorCodes::LOGICAL_ERROR); }
+	};
+
 	/** Прибавить строчку под курсором к row.
 	  * Возвращает false, если результат получился нулевым.
 	  */
 	template<class TSortCursor>
 	bool addRow(Row & row, TSortCursor & cursor)
 	{
+		/// merge maps
+		for (const auto & map : maps_to_sum)
+		{
+			auto & key_array = row[map.key_col_num].get<Array>();
+			auto & val_array = row[map.val_col_num].get<Array>();
+			if (key_array.size() != val_array.size())
+				throw Exception{"Nested arrays have different sizes", ErrorCodes::LOGICAL_ERROR};
+
+			const auto key_field_rhs = (*cursor->all_columns[map.key_col_num])[cursor->pos];
+			const auto val_field_rhs = (*cursor->all_columns[map.val_col_num])[cursor->pos];
+
+			const auto & key_array_rhs = key_field_rhs.get<Array>();
+			const auto & val_array_rhs = val_field_rhs.get<Array>();
+			if (key_array_rhs.size() != val_array_rhs.size())
+				throw Exception{"Nested arrays have different sizes", ErrorCodes::LOGICAL_ERROR};
+
+			map_merge_t result;
+
+			/// merge accumulator-row and current row from cursor using std::map
+			for (const auto i : ext::range(0, key_array.size()))
+				apply_visitor(MapSumVisitor{result, key_array[i]}, val_array[i]);
+
+			for (const auto i : ext::range(0, key_array_rhs.size()))
+				apply_visitor(MapSumVisitor{result, key_array_rhs[i]}, val_array_rhs[i]);
+
+			Array key_array_result;
+			Array val_array_result;
+
+			/// skip items with value == 0
+			for (const auto & pair : result)
+			{
+				if (!apply_visitor(FieldVisitorAccurateEquals{}, pair.second, nearestFieldType(0)))
+				{
+					key_array_result.emplace_back(pair.first);
+					val_array_result.emplace_back(pair.second);
+				}
+			}
+
+			key_array = std::move(key_array_result);
+			val_array = std::move(val_array_result);
+		}
+
 		bool res = false;	/// Есть ли хотя бы одно ненулевое число.
 
 		for (size_t i = 0, size = column_numbers_to_sum.size(); i < size; ++i)

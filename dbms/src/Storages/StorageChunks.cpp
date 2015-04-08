@@ -164,7 +164,21 @@ StorageChunks::StorageChunks(
 	if (!attach)
 		reference_counter.add(1, true);
 
-	loadIndex();
+	_table_column_name = "_table" + VirtualColumnUtils::chooseSuffix(getColumnsList(), "_table");
+
+	try
+	{
+		loadIndex();
+	}
+	catch (Exception & e)
+	{
+		if (e.code() != ErrorCodes::SIZES_OF_MARKS_FILES_ARE_INCONSISTENT)
+			throw;
+
+		e.addMessage("Table " + name_ + " is broken and loaded as empty.");
+		tryLogCurrentException(__PRETTY_FUNCTION__);
+		return;
+	}
 
 	/// Создадим все таблицы типа ChunkRef. Они должны располагаться в той же БД.
 	{
@@ -180,8 +194,6 @@ StorageChunks::StorageChunks(
 			context.addTable(database_name, it->first, StorageChunkRef::create(it->first, context, database_name, name, true));
 		}
 	}
-
-	_table_column_name = "_table" + VirtualColumnUtils::chooseSuffix(getColumnsList(), "_table");
 }
 
 NameAndTypePair StorageChunks::getColumn(const String & column_name) const

@@ -395,14 +395,21 @@ struct MatchImpl
 
 			if (required_substring.empty())
 			{
-				size_t prev_offset = 0;
-				for (size_t i = 0; i < size; ++i)
+				if (!regexp->getRE2())	/// Пустой регексп. Всегда матчит.
 				{
-					res[i] = revert ^ regexp->getRE2()->Match(
-						re2_st::StringPiece(reinterpret_cast<const char *>(&data[prev_offset]), offsets[i] - prev_offset - 1),
-						0, offsets[i] - prev_offset - 1, re2_st::RE2::UNANCHORED, nullptr, 0);
+					memset(&res[0], 1, size * sizeof(res[0]));
+				}
+				else
+				{
+					size_t prev_offset = 0;
+					for (size_t i = 0; i < size; ++i)
+					{
+						res[i] = revert ^ regexp->getRE2()->Match(
+							re2_st::StringPiece(reinterpret_cast<const char *>(&data[prev_offset]), offsets[i] - prev_offset - 1),
+							0, offsets[i] - prev_offset - 1, re2_st::RE2::UNANCHORED, nullptr, 0);
 
-					prev_offset = offsets[i];
+						prev_offset = offsets[i];
+					}
 				}
 			}
 			else

@@ -192,14 +192,25 @@ private:
 		}
 		catch (const Exception & e)
 		{
+			bool print_stack_trace = config().getBool("stacktrace", false);
+
 			std::string text = e.displayText();
+
+			/** Если эксепшен пришёл с сервера, то стек трейс будет расположен внутри текста.
+			  * Если эксепшен на клиенте, то стек трейс расположен отдельно.
+			  */
+
+			auto embedded_stack_trace_pos = text.find("Stack trace");
+			if (std::string::npos != embedded_stack_trace_pos && !print_stack_trace)
+				text.resize(embedded_stack_trace_pos);
 
  			std::cerr << "Code: " << e.code() << ". " << text << std::endl << std::endl;
 
 			/// Если есть стек-трейс на сервере, то не будем писать стек-трейс на клиенте.
 			/// Также не будем писать стек-трейс в случае сетевых ошибок.
-			if (e.code() != ErrorCodes::NETWORK_ERROR
-				&& std::string::npos == text.find("Stack trace"))
+			if (print_stack_trace
+				&& e.code() != ErrorCodes::NETWORK_ERROR
+				&& std::string::npos == embedded_stack_trace_pos)
 			{
 				std::cerr << "Stack trace:" << std::endl
 					<< e.getStackTrace().toString();
@@ -989,8 +1000,14 @@ private:
 		resetOutput();
 		got_exception = true;
 
+		std::string text = e.displayText();
+
+		auto embedded_stack_trace_pos = text.find("Stack trace");
+		if (std::string::npos != embedded_stack_trace_pos && !config().getBool("stacktrace", false))
+			text.resize(embedded_stack_trace_pos);
+
 		std::cerr << "Received exception from server:" << std::endl
-			<< "Code: " << e.code() << ". " << e.displayText();
+			<< "Code: " << e.code() << ". " << text;
 	}
 
 
@@ -1039,6 +1056,7 @@ public:
 			("format,f",        boost::program_options::value<std::string>(), 	"default output format")
 			("vertical,E",      "vertical output format, same as --format=Vertical or FORMAT Vertical or \\G at end of command")
 			("time,t",			"print query execution time to stderr in non-interactive mode (for benchmarks)")
+			("stacktrace",		"print stack traces of exceptions")
 			APPLY_FOR_SETTINGS(DECLARE_SETTING)
 			APPLY_FOR_LIMITS(DECLARE_LIMIT)
 		;
@@ -1155,6 +1173,8 @@ public:
 			config().setString("format", options["format"].as<std::string>());
 		if (options.count("vertical"))
 			config().setBool("vertical", true);
+		if (options.count("stacktrace"))
+			config().setBool("stacktrace", true);
 		if (options.count("time"))
 			print_time_to_stderr = true;
 	}
