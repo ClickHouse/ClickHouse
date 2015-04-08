@@ -166,8 +166,8 @@ private:
 			const auto key_field_rhs = (*cursor->all_columns[map.key_col_num])[cursor->pos];
 			const auto val_field_rhs = (*cursor->all_columns[map.val_col_num])[cursor->pos];
 
-			const auto & key_array_rhs = key_field.get<Array>();
-			const auto & val_array_rhs = val_field.get<Array>();
+			const auto & key_array_rhs = key_field_rhs.get<Array>();
+			const auto & val_array_rhs = val_field_rhs.get<Array>();
 			if (key_array_rhs.size() != val_array_rhs.size())
 				throw Exception{"Nested arrays have different sizes", ErrorCodes::LOGICAL_ERROR};
 
