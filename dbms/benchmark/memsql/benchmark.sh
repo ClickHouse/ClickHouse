@@ -11,7 +11,7 @@ cat "$QUERIES_FILE" | sed "s/{table}/${TABLE}/g" | while read query; do
 	echo -n "["
 	for i in $(seq 1 $TRIES); do
 
-		RES=$(mysql -u root -h 127.0.0.1 -P 3306 --database=test -t -vvv -e "$query" 2>&1 | grep 'in set' | grep -oP '\d+\.\d+')
+		RES=$(mysql -u root -h 127.0.0.1 -P 3306 --database=test -t -vvv -e "$query" 2>&1 | grep ' set ' | grep -oP '\d+\.\d+')
 
 		[[ "$?" == "0" ]] && echo -n "$RES" || echo -n "null"
 		[[ "$i" != $TRIES ]] && echo -n ", "
