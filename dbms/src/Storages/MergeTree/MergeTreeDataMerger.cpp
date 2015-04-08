@@ -307,6 +307,10 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 	NamesAndTypesList union_columns = columns_list.filter(union_columns_set);
 	Names union_column_names = union_columns.getNames();
 
+	MergeTreeData::DataPart::ColumnToSize merged_column_to_size;
+	for (const MergeTreeData::DataPartPtr & part : parts)
+		part->accumulateColumnSizes(merged_column_to_size);
+
 	MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data);
 	ActiveDataPartSet::parsePartName(merged_name, *new_data_part);
 	new_data_part->name = "tmp_" + merged_name;
@@ -378,7 +382,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 
 	const String new_part_tmp_path = data.getFullPath() + "tmp_" + merged_name + "/";
 
-	MergedBlockOutputStream to{data, new_part_tmp_path, union_columns, CompressionMethod::LZ4};
+	MergedBlockOutputStream to{data, new_part_tmp_path, union_columns, CompressionMethod::LZ4, &merged_column_to_size};
 
 	merged_stream->readPrefix();
 	to.writePrefix();
