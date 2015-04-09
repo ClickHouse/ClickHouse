@@ -24,7 +24,7 @@ public:
 		: storage(storage_),
 		min_compress_block_size(min_compress_block_size_),
 		max_compress_block_size(max_compress_block_size_),
-		aio_threshold(storage.context.getSettings().min_bytes_to_use_direct_io),
+		aio_threshold(storage.context.getSettingsRef().min_bytes_to_use_direct_io),
 		compression_method(compression_method_)
 	{
 	}

@@ -40,9 +40,11 @@ class MergeTreeReader
 public:
 	MergeTreeReader(const String & path_, /// Путь к куску
 		const MergeTreeData::DataPartPtr & data_part, const NamesAndTypesList & columns_,
-		bool use_uncompressed_cache_, MergeTreeData & storage_, const MarkRanges & all_mark_ranges)
+		bool use_uncompressed_cache_, MergeTreeData & storage_, const MarkRanges & all_mark_ranges,
+		size_t aio_threshold_)
 		: path(path_), data_part(data_part), part_name(data_part->name), columns(columns_),
-		use_uncompressed_cache(use_uncompressed_cache_), storage(storage_), all_mark_ranges(all_mark_ranges)
+		use_uncompressed_cache(use_uncompressed_cache_), storage(storage_), all_mark_ranges(all_mark_ranges),
+		aio_threshold(aio_threshold_)
 	{
 		try
 		{
@@ -330,6 +332,7 @@ private:
 	MergeTreeData & storage;
 	const MarkRanges & all_mark_ranges;
 	const NameAndTypePair * added_column = nullptr;
+	size_t aio_threshold;
 
 	void addStream(const String & name, const IDataType & type, const MarkRanges & all_mark_ranges, size_t level = 0)
 	{
@@ -343,8 +346,6 @@ private:
 
 		UncompressedCache * uncompressed_cache = use_uncompressed_cache ? storage.context.getUncompressedCache() : NULL;
 		MarkCache * mark_cache = storage.context.getMarkCache();
-
-		size_t aio_threshold = storage.context.getSettingsRef().min_bytes_to_use_direct_io;
 
 		/// Для массивов используются отдельные потоки для размеров.
 		if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
