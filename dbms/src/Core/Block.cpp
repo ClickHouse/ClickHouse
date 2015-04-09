@@ -9,6 +9,7 @@
 
 #include <DB/Columns/ColumnArray.h>
 #include <DB/DataTypes/DataTypeNested.h>
+#include <DB/DataTypes/DataTypeArray.h>
 
 #include <DB/Parsers/ASTExpressionList.h>
 #include <memory>
@@ -28,9 +29,58 @@ Block::Block(const Block & other)
 
 void Block::addDefaults(const NamesAndTypesList & required_columns)
 {
-	for (const auto & column : required_columns)
-		if (!has(column.name))
-			insertDefault(column.name, column.type);
+	/// Для недостающих столбцов из вложенной структуры нужно создавать не столбец пустых массивов, а столбец массивов правильных длин.
+	/// Сначала запомним столбцы смещений для всех массивов в блоке.
+	std::map<String, ColumnPtr> offset_columns;
+
+	for (const auto & elem : data)
+	{
+		if (const ColumnArray * array = typeid_cast<const ColumnArray *>(&*elem.column))
+		{
+			String offsets_name = DataTypeNested::extractNestedTableName(elem.name);
+			auto & offsets_column = offset_columns[offsets_name];
+
+			/// Если почему-то есть разные столбцы смещений для одной вложенной структуры, то берём непустой.
+			if (!offsets_column || offsets_column->empty())
+				offsets_column = array->getOffsetsColumn();
+		}
+	}
+
+	for (const auto & requested_column : required_columns)
+	{
+		if (has(requested_column.name))
+			continue;
+
+		ColumnWithNameAndType column_to_add;
+		column_to_add.name = requested_column.name;
+		column_to_add.type = requested_column.type;
+
+		String offsets_name = DataTypeNested::extractNestedTableName(column_to_add.name);
+		if (offset_columns.count(offsets_name))
+		{
+			ColumnPtr offsets_column = offset_columns[offsets_name];
+			DataTypePtr nested_type = typeid_cast<DataTypeArray &>(*column_to_add.type).getNestedType();
+			size_t nested_rows = offsets_column->empty() ? 0
+				: typeid_cast<ColumnUInt64 &>(*offsets_column).getData().back();
+
+			ColumnPtr nested_column = dynamic_cast<IColumnConst &>(
+				*nested_type->createConstColumn(
+					nested_rows, nested_type->getDefault())).convertToFullColumn();
+
+			column_to_add.column = new ColumnArray(nested_column, offsets_column);
+		}
+		else
+		{
+			/** Нужно превратить константный столбец в полноценный, так как в части блоков (из других кусков),
+			  *  он может быть полноценным (а то интерпретатор может посчитать, что он константный везде).
+			  */
+			column_to_add.column = dynamic_cast<IColumnConst &>(
+				*column_to_add.type->createConstColumn(
+					rowsInFirstColumn(), column_to_add.type->getDefault())).convertToFullColumn();
+		}
+
+		insert(column_to_add);
+	}
 }
 
 Block & Block::operator= (const Block & other)
@@ -80,17 +130,6 @@ void Block::insert(const ColumnWithNameAndType & elem)
 	index_by_name[elem.name] = it;
 	index_by_position.push_back(it);
 }
-
-
-void Block::insertDefault(const String & name, const DataTypePtr & type)
-{
-	insert({
-		dynamic_cast<IColumnConst &>(*type->createConstColumn(rows(),
-			type->getDefault())).convertToFullColumn(),
-		type, name
-	});
-}
-
 
 
 void Block::insertUnique(const ColumnWithNameAndType & elem)
@@ -202,14 +241,14 @@ size_t Block::getPositionByName(const std::string & name) const
 size_t Block::rows() const
 {
 	size_t res = 0;
-	for (Container_t::const_iterator it = data.begin(); it != data.end(); ++it)
+	for (const auto & elem : data)
 	{
-		size_t size = it->column->size();
+		size_t size = elem.column->size();
 
 		if (res != 0 && size != res)
 			throw Exception("Sizes of columns doesn't match: "
 				+ data.begin()->name + ": " + toString(res)
-				+ ", " + it->name + ": " + toString(size)
+				+ ", " + elem.name + ": " + toString(size)
 				, ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
 		res = size;
@@ -223,10 +262,10 @@ size_t Block::rowsInFirstColumn() const
 {
 	if (data.empty())
 		return 0;
-	for (const ColumnWithNameAndType & column : data)
+	for (const auto & elem : data)
 	{
-		if (!column.column.isNull())
-			return column.column->size();
+		if (!elem.column.isNull())
+			return elem.column->size();
 	}
 
 	return 0;
@@ -236,8 +275,8 @@ size_t Block::rowsInFirstColumn() const
 size_t Block::bytes() const
 {
 	size_t res = 0;
-	for (const auto & col : data)
-		res += col.column->byteSize();
+	for (const auto & elem : data)
+		res += elem.column->byteSize();
 
 	return res;
 }
@@ -246,7 +285,7 @@ size_t Block::bytes() const
 std::string Block::dumpNames() const
 {
 	std::stringstream res;
-	for (Container_t::const_iterator it = data.begin(); it != data.end(); ++it)
+	for (auto it = data.begin(); it != data.end(); ++it)
 	{
 		if (it != data.begin())
 			res << ", ";
@@ -259,7 +298,7 @@ std::string Block::dumpNames() const
 std::string Block::dumpStructure() const
 {
 	std::stringstream res;
-	for (Container_t::const_iterator it = data.begin(); it != data.end(); ++it)
+	for (auto it = data.begin(); it != data.end(); ++it)
 	{
 		if (it != data.begin())
 			res << ", ";
@@ -273,8 +312,8 @@ Block Block::cloneEmpty() const
 {
 	Block res;
 
-	for (Container_t::const_iterator it = data.begin(); it != data.end(); ++it)
-		res.insert(it->cloneEmpty());
+	for (const auto & elem : data)
+		res.insert(elem.cloneEmpty());
 
 	return res;
 }
@@ -301,8 +340,8 @@ NamesAndTypesList Block::getColumnsList() const
 {
 	NamesAndTypesList res;
 
-	for (Container_t::const_iterator it = data.begin(); it != data.end(); ++it)
-		res.push_back(NameAndTypePair(it->name, it->type));
+	for (const auto & elem : data)
+		res.push_back(NameAndTypePair(elem.name, elem.type));
 
 	return res;
 }
@@ -314,13 +353,11 @@ void Block::checkNestedArraysOffsets() const
 	typedef std::map<String, const ColumnArray *> ArrayColumns;
 	ArrayColumns array_columns;
 
-	for (Container_t::const_iterator it = data.begin(); it != data.end(); ++it)
+	for (const auto & elem : data)
 	{
-		const ColumnWithNameAndType & column = *it;
-
-		if (const ColumnArray * column_array = typeid_cast<const ColumnArray *>(&*column.column))
+		if (const ColumnArray * column_array = typeid_cast<const ColumnArray *>(&*elem.column))
 		{
-			String name = DataTypeNested::extractNestedTableName(column.name);
+			String name = DataTypeNested::extractNestedTableName(elem.name);
 
 			ArrayColumns::const_iterator it = array_columns.find(name);
 			if (array_columns.end() == it)
@@ -341,13 +378,11 @@ void Block::optimizeNestedArraysOffsets()
 	typedef std::map<String, ColumnArray *> ArrayColumns;
 	ArrayColumns array_columns;
 
-	for (Container_t::iterator it = data.begin(); it != data.end(); ++it)
+	for (auto & elem : data)
 	{
-		ColumnWithNameAndType & column = *it;
-
-		if (ColumnArray * column_array = typeid_cast<ColumnArray *>(&*column.column))
+		if (ColumnArray * column_array = typeid_cast<ColumnArray *>(&*elem.column))
 		{
-			String name = DataTypeNested::extractNestedTableName(column.name);
+			String name = DataTypeNested::extractNestedTableName(elem.name);
 
 			ArrayColumns::const_iterator it = array_columns.find(name);
 			if (array_columns.end() == it)
