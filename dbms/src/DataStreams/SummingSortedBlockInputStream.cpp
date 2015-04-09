@@ -64,9 +64,11 @@ Block SummingSortedBlockInputStream::readImpl()
 		{
 			ColumnWithNameAndType & column = merged_block.getByPosition(i);
 
+			/// Discover nested Maps and find columns for summation
 			if (const auto array_type = typeid_cast<const DataTypeArray *>(column.type.get()))
 			{
 				const auto map_name = DataTypeNested::extractNestedTableName(column.name);
+				/// if nested table name ends with `Map` it is a possible candidate for special handling
 				if (map_name == column.name || !endsWith(map_name, "Map"))
 					continue;
 
@@ -92,6 +94,7 @@ Block SummingSortedBlockInputStream::readImpl()
 			}
 		}
 
+		/// select actual nested Maps from list of candidates
 		for (const auto & map : discovered_maps)
 		{
 			/// map can only contain a pair of elements (key -> value)
@@ -101,6 +104,7 @@ Block SummingSortedBlockInputStream::readImpl()
 			/// check types of key and value
 			const auto key_num = map.second.front();
 			auto & key_col = merged_block.getByPosition(key_num);
+			/// skip maps, whose members are part of primary key
 			if (isInPrimaryKey(description, key_col.name, key_num))
 				continue;
 
@@ -111,6 +115,7 @@ Block SummingSortedBlockInputStream::readImpl()
 
 			const auto value_num = map.second.back();
 			auto & value_col = merged_block.getByPosition(value_num);
+			/// skip maps, whose members are part of primary key
 			if (isInPrimaryKey(description, value_col.name, value_num))
 				continue;
 

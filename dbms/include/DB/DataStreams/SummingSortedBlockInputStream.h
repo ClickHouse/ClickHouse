@@ -62,12 +62,28 @@ private:
 	Names column_names_to_sum;	/// Если задано - преобразуется в column_numbers_to_sum при инициализации.
 	ColumnNumbers column_numbers_to_sum;
 
+	/** Таблица может вложенные таблицы, обрабатываемые особым образом.
+	 *	Если название вложенной таблицы заканчинвается на `Map` и она содержит ровно два столбца,
+	 *	удовлетворяющих следующим критериям:
+	 *		- первый столбец - числовой ((U)IntN, Date, DateTime), назовем его условно key,
+	 *		- второй столбец - арифметический ((U)IntN, Float32/64), условно value.
+	 *	Такая вложенная таблица воспринимается как отображение key => value и при слиянии
+	 *	ее строк выполняется слияние элементов двух множеств по key со сложением по value.
+	 *	Пример:
+	 *	[(1, 100)] + [(2, 150)] -> [(1, 100), (2, 150)]
+	 *	[(1, 100)] + [(1, 150)] -> [(1, 250)]
+	 *	[(1, 100)] + [(1, 150), (2, 150)] -> [(1, 250), (2, 150)]
+	 *	[(1, 100), (2, 150)] + [(1, -100)] -> [(2, 150)]
+	 */
+
+	/// Хранит номера столбца-ключа и столбца-значения
 	struct map_description
 	{
 		std::size_t key_col_num;
 		std::size_t val_col_num;
 	};
 
+	/// Найденные вложенные Map таблицы
 	std::vector<map_description> maps_to_sum;
 
 	Row current_key;		/// Текущий первичный ключ.
@@ -108,6 +124,7 @@ private:
 	};
 
 	using map_merge_t = std::map<Field, Field>;
+	/// Performs insertion of a new value into nested Map
 	class MapSumVisitor : public StaticVisitor<void>
 	{
 	public:
@@ -150,22 +167,26 @@ private:
 	};
 
 	/** Прибавить строчку под курсором к row.
+	  * Для вложенных Map выполняется слияние по ключу с выбрасыванием нулевых элементов.
 	  * Возвращает false, если результат получился нулевым.
 	  */
 	template<class TSortCursor>
 	bool addRow(Row & row, TSortCursor & cursor)
 	{
-		/// merge maps
+		/// merge nested maps
 		for (const auto & map : maps_to_sum)
 		{
+			/// fetch key and val array references from accumulator-row
 			auto & key_array = row[map.key_col_num].get<Array>();
 			auto & val_array = row[map.val_col_num].get<Array>();
 			if (key_array.size() != val_array.size())
 				throw Exception{"Nested arrays have different sizes", ErrorCodes::LOGICAL_ERROR};
 
+			/// copy key and value fields from current row under cursor
 			const auto key_field_rhs = (*cursor->all_columns[map.key_col_num])[cursor->pos];
 			const auto val_field_rhs = (*cursor->all_columns[map.val_col_num])[cursor->pos];
 
+			/// fetch key and val array references from current row
 			const auto & key_array_rhs = key_field_rhs.get<Array>();
 			const auto & val_array_rhs = val_field_rhs.get<Array>();
 			if (key_array_rhs.size() != val_array_rhs.size())
@@ -173,19 +194,21 @@ private:
 
 			map_merge_t result;
 
-			/// merge accumulator-row and current row from cursor using std::map
+			/// populate map from current row
 			for (const auto i : ext::range(0, key_array.size()))
 				apply_visitor(MapSumVisitor{result, key_array[i]}, val_array[i]);
 
+			/// merge current row into map
 			for (const auto i : ext::range(0, key_array_rhs.size()))
 				apply_visitor(MapSumVisitor{result, key_array_rhs[i]}, val_array_rhs[i]);
 
 			Array key_array_result;
 			Array val_array_result;
 
-			/// skip items with value == 0
+			/// serialize result key-value pairs back into separate arrays of keys and values
 			for (const auto & pair : result)
 			{
+				/// we do not store the resulting value if it is zero
 				if (!apply_visitor(FieldVisitorAccurateEquals{}, pair.second, nearestFieldType(0)))
 				{
 					key_array_result.emplace_back(pair.first);
@@ -193,6 +216,7 @@ private:
 				}
 			}
 
+			/// replace accumulator row key and value arrays with the merged ones
 			key_array = std::move(key_array_result);
 			val_array = std::move(val_array_result);
 		}
