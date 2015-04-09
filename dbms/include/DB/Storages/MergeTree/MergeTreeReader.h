@@ -408,7 +408,8 @@ private:
 					if (required_internal_size != read_internal_size)
 					{
 						if (read_internal_size != 0)
-							LOG_ERROR("Internal size of array " + name + " doesn't match offsets: corrupted data, filling with default values.");
+							LOG_ERROR((&Logger::get("MergeTreeReader")),
+								"Internal size of array " + name + " doesn't match offsets: corrupted data, filling with default values.");
 
 						array.getDataPtr() = dynamic_cast<IColumnConst &>(
 							*type_arr->getNestedType()->createConstColumn(
@@ -452,6 +453,7 @@ private:
 			  *  правильных длин.
 			  * TODO: Если для какой-то вложенной структуры были запрошены только отсутствующие столбцы, для них вернутся пустые
 			  *  массивы, даже если в куске есть смещения для этой вложенной структуры. Это можно исправить.
+			  * NOTE: Похожий код есть в Block::addDefaults, но он немного отличается.
 			  */
 
 			/// Сначала запомним столбцы смещений для всех массивов в блоке.
