@@ -1139,7 +1139,7 @@ private:
 	template <typename T>
 	bool executeNumber(const ColumnArray * array, ColumnVector<UInt32>::Container_t & res_values)
 	{
-		const ColumnVector<T> * nested = typeid_cast<const ColumnVector<T> *>(&*array->getDataPtr());
+		const ColumnVector<T> * nested = typeid_cast<const ColumnVector<T> *>(&array->getData());
 		if (!nested)
 			return false;
 		const ColumnArray::Offsets_t & offsets = array->getOffsets();
@@ -1165,7 +1165,7 @@ private:
 
 	bool executeString(const ColumnArray * array, ColumnVector<UInt32>::Container_t & res_values)
 	{
-		const ColumnString * nested = typeid_cast<const ColumnString *>(&*array->getDataPtr());
+		const ColumnString * nested = typeid_cast<const ColumnString *>(&array->getData());
 		if (!nested)
 			return false;
 		const ColumnArray::Offsets_t & offsets = array->getOffsets();
