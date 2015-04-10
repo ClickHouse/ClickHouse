@@ -63,13 +63,13 @@ private:
 	Names column_names_to_sum;	/// Если задано - преобразуется в column_numbers_to_sum при инициализации.
 	ColumnNumbers column_numbers_to_sum;
 
-	/** Таблица может вложенные таблицы, обрабатываемые особым образом.
-	 *	Если название вложенной таблицы заканчинвается на `Map` и она содержит ровно два столбца,
+	/** Таблица может иметь вложенные таблицы, обрабатываемые особым образом.
+	 *	Если название вложенной таблицы заканчинвается на `Map` и она содержит не менее двух столбцов,
 	 *	удовлетворяющих следующим критериям:
 	 *		- первый столбец - числовой ((U)IntN, Date, DateTime), назовем его условно key,
-	 *		- второй столбец - арифметический ((U)IntN, Float32/64), условно value.
-	 *	Такая вложенная таблица воспринимается как отображение key => value и при слиянии
-	 *	ее строк выполняется слияние элементов двух множеств по key со сложением по value.
+	 *		- остальные столбцы - арифметические ((U)IntN, Float32/64), условно (values...).
+	 *	Такая вложенная таблица воспринимается как отображение key => (values...) и при слиянии
+	 *	ее строк выполняется слияние элементов двух множеств по key со сложением соответствующих (values...).
 	 *	Пример:
 	 *	[(1, 100)] + [(2, 150)] -> [(1, 100), (2, 150)]
 	 *	[(1, 100)] + [(1, 150)] -> [(1, 250)]
@@ -77,7 +77,7 @@ private:
 	 *	[(1, 100), (2, 150)] + [(1, -100)] -> [(2, 150)]
 	 */
 
-	/// Хранит номера столбца-ключа и столбца-значения
+	/// Хранит номера столбца-ключа и столбцов-значений
 	struct map_description
 	{
 		std::size_t key_col_num;
@@ -124,108 +124,129 @@ private:
 		bool operator() (Array 		& x) const { throw Exception("Cannot sum Arrays", ErrorCodes::LOGICAL_ERROR); }
 	};
 
-	/** Прибавить строчку под курсором к row.
-	  * Для вложенных Map выполняется слияние по ключу с выбрасыванием нулевых элементов.
-	  * Возвращает false, если результат получился нулевым.
+	/** Для вложенных Map выполняется слияние по ключу с выбрасыванием строк вложенных массивов, в которых
+	  * все элементы - нулевые.
 	  */
 	template<class TSortCursor>
-	bool addRow(Row & row, TSortCursor & cursor)
+	void mergeMaps(Row & row, TSortCursor & cursor)
 	{
 		/// merge nested maps
 		for (const auto & map : maps_to_sum)
 		{
-			const auto value_count = map.val_col_nums.size();
+			const auto val_count = map.val_col_nums.size();
 
-			/// fetch key and val array references from accumulator-row
-			auto & key_array = row[map.key_col_num].get<Array>();
+			/// fetch key array reference from accumulator-row
+			auto & key_array_lhs = row[map.key_col_num].get<Array>();
+			/// returns a Field for pos-th item of val_index-th value
+			const auto val_getter_lhs = [&] (const auto val_index, const auto pos) -> decltype(auto) {
+				return row[map.val_col_nums[val_index]].get<Array>()[pos];
+			};
 
-			std::map<Field, std::vector<Field>> result;
+			/// we will be sorting key positions, not the entire rows, to minimize actions
+			std::vector<std::size_t> key_pos_lhs(ext::range_iterator<std::size_t>{0},
+				ext::range_iterator<std::size_t>{key_array_lhs.size()});
+			std::sort(std::begin(key_pos_lhs), std::end(key_pos_lhs), [&] (const auto pos1, const auto pos2) {
+				return key_array_lhs[pos1] < key_array_lhs[pos2];
+			});
 
-			/// populate map from current row
-			for (const auto i : ext::range(0, key_array.size()))
-			{
-				const auto it = result.find(key_array[i]);
-				/// row for such key is not key present in the map, emplace
-				if (it == std::end(result))
-				{
-					/// compose a vector of i-th elements of each one of `map.val_col_nums`
-					result.emplace(key_array[i],
-						ext::map<std::vector>(map.val_col_nums, [&] (const auto col_num) -> decltype(auto) {
-							return row[col_num].get<Array>()[i];
-						}));
-				}
-				else
-				{
-					/// row for requested key found, merge corresponding values
-					for (const auto val_col_index : ext::range(0, value_count))
-					{
-						const auto col_num = map.val_col_nums[val_col_index];
-						apply_visitor(FieldVisitorSum{row[col_num].get<Array>()[i]}, it->second[val_col_index]);
-					}
-				}
-			}
-
-			/// copy key and value fields from current row under cursor
+			/// copy key field from current row under cursor
 			const auto key_field_rhs = (*cursor->all_columns[map.key_col_num])[cursor->pos];
-			/// for each element of `map.val_col_nums` get corresponding array under cursor and put into vector
+			/// for each element of `map.val_col_nums` copy corresponding array under cursor into vector
 			const auto val_fields_rhs = ext::map<std::vector>(map.val_col_nums,
 				[&] (const auto col_num) -> decltype(auto) {
 					return (*cursor->all_columns[col_num])[cursor->pos];
 				});
 
-			/// fetch key array reference from current row
+			/// fetch key array reference from row under cursor
 			const auto & key_array_rhs = key_field_rhs.get<Array>();
+			/// returns a Field for pos-th item of val_index-th value
+			const auto val_getter_rhs = [&] (const auto val_index, const auto pos) -> decltype(auto) {
+				return val_fields_rhs[val_index].get<Array>()[pos];
+			};
 
-			/// merge current row into map
-			for (const auto i : ext::range(0, key_array_rhs.size()))
-			{
-				const auto it = result.find(key_array_rhs[i]);
-				/// row for such key is not key present in the map, emplace
-				if (it == std::end(result))
+			std::vector<std::size_t> key_pos_rhs(ext::range_iterator<std::size_t>{0},
+				ext::range_iterator<std::size_t>{key_array_rhs.size()});
+			std::sort(std::begin(key_pos_rhs), std::end(key_pos_rhs), [&] (const auto pos1, const auto pos2) {
+				return key_array_rhs[pos1] < key_array_rhs[pos2];
+			});
+
+			/// max size after merge estimation
+			const auto max_size = key_pos_lhs.size() + key_pos_rhs.size();
+
+			/// create arrays with a single element (it will be overwritten on first iteration)
+			Array key_array_result(1);
+			key_array_result.reserve(max_size);
+			std::vector<Array> val_arrays_result(val_count, Array(1));
+			for (auto & val_array_result : val_arrays_result)
+				val_array_result.reserve(max_size);
+
+			/// discard first element
+			auto discard_prev = true;
+
+			/// either insert or merge new element
+			const auto insert_or_sum = [&] (const auto & pos, const auto & key_array, auto && val_getter) {
+				const auto & key = key_array[pos];
+
+				if (discard_prev)
 				{
-					/// compose a vector of i-th elements of each one of `map.val_col_nums`
-					result.emplace(key_array_rhs[i],
-						ext::map<std::vector>(val_fields_rhs, [&] (const auto & val_field) -> decltype(auto) {
-							return val_field.get<Array>()[i];
-						}));
+					discard_prev = false;
+
+					key_array_result.back() = key;
+					for (const auto val_index : ext::range(0, val_count))
+						val_arrays_result[val_index].back() = val_getter(val_index, pos);
+				}
+				else if (key_array_result.back() == key)
+				{
+					/// merge with same key
+					auto should_discard = true;
+
+					for (const auto val_index : ext::range(0, val_count))
+						if (apply_visitor(FieldVisitorSum{val_getter(val_index, pos)},
+							val_arrays_result[val_index].back()))
+							should_discard = false;
+
+					discard_prev = should_discard;
 				}
 				else
 				{
-					/// row for requested key found, merge corresponding values
-					for (const auto val_col_index : ext::range(0, value_count))
-					{
-						apply_visitor(FieldVisitorSum{val_fields_rhs[val_col_index].get<Array>()[i]},
-							it->second[val_col_index]);
-					}
+					/// append new key
+					key_array_result.emplace_back(key);
+					for (const auto val_index : ext::range(0, val_count))
+						val_arrays_result[val_index].emplace_back(val_getter(val_index, pos));
 				}
-			}
+			};
 
-			Array key_array_result;
-			std::vector<Array> val_arrays_result(value_count);
+			std::size_t pos_lhs = 0;
+			std::size_t pos_rhs = 0;
 
-			/// serialize result key-value pairs back into separate arrays of keys and values
-			const auto zero_field = nearestFieldType(0);
-			for (const auto & key_values_pair : result)
-			{
-				auto only_zeroes = true;
+			/// perform 2-way merge
+			while (true)
+				if (pos_lhs < key_pos_lhs.size() && pos_rhs == key_pos_rhs.size())
+					insert_or_sum(key_pos_lhs[pos_lhs++], key_array_lhs, val_getter_lhs);
+				else if (pos_lhs == key_pos_lhs.size() && pos_rhs < key_pos_rhs.size())
+					insert_or_sum(key_pos_rhs[pos_rhs++], key_array_rhs, val_getter_rhs);
+				else if (pos_lhs < key_pos_lhs.size() && pos_rhs < key_pos_rhs.size())
+					if (key_array_lhs[key_pos_lhs[pos_lhs]] < key_array_rhs[key_pos_rhs[pos_rhs]])
+						insert_or_sum(key_pos_lhs[pos_lhs++], key_array_lhs, val_getter_lhs);
+					else
+						insert_or_sum(key_pos_rhs[pos_rhs++], key_array_rhs, val_getter_rhs);
+				else
+					break;
 
-				for (const auto & value : key_values_pair.second)
-					if (!apply_visitor(FieldVisitorAccurateEquals{}, value, zero_field))
-						only_zeroes = false;
-
-				if (only_zeroes)
-					continue;
-
-				key_array_result.emplace_back(key_values_pair.first);
-				for (const auto val_col_index : ext::range(0, value_count))
-					val_arrays_result[val_col_index].emplace_back(key_values_pair.second[val_col_index]);
-			}
-
-			/// replace accumulator row key and value arrays with the merged ones
-			key_array = std::move(key_array_result);
-			for (const auto val_col_index : ext::range(0, value_count))
+			/// store results into accumulator-row
+			key_array_lhs = std::move(key_array_result);
+			for (const auto val_col_index : ext::range(0, val_count))
 				row[map.val_col_nums[val_col_index]].get<Array>() = std::move(val_arrays_result[val_col_index]);
 		}
+	}
+
+	/** Прибавить строчку под курсором к row.
+	  * Возвращает false, если результат получился нулевым.
+	  */
+	template<class TSortCursor>
+	bool addRow(Row & row, TSortCursor & cursor)
+	{
+		mergeMaps(row, cursor);
 
 		bool res = false;	/// Есть ли хотя бы одно ненулевое число.
 

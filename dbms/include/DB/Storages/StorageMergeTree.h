@@ -79,13 +79,6 @@ public:
 
 	BlockOutputStreamPtr write(ASTPtr query) override;
 
-	/** Выполнить очередной шаг объединения кусков.
-	  */
-	bool optimize() override
-	{
-		return merge(true);
-	}
-
 	void dropPartition(const Field & partition, bool detach, const Settings & settings) override;
 	void attachPartition(const Field & partition, bool unreplicated, bool part, const Settings & settings) override;
 	void freezePartition(const Field & partition, const Settings & settings) override;
@@ -99,6 +92,14 @@ public:
 	bool supportsIndexForIn() const override { return true; }
 
 	MergeTreeData & getData() { return data; }
+
+private:
+	/** Выполнить очередной шаг объединения кусков.
+	  */
+	bool performOptimize(size_t aio_threshold) override
+	{
+		return merge(aio_threshold, true);
+	}
 
 private:
 	String path;
@@ -188,7 +189,7 @@ private:
 	  * Если aggressive - выбрать куски, не обращая внимание на соотношение размеров и их новизну (для запроса OPTIMIZE).
 	  * Возвращает, получилось ли что-нибудь объединить.
 	  */
-	bool merge(bool aggressive = false, BackgroundProcessingPool::Context * context = nullptr);
+	bool merge(size_t aio_threshold, bool aggressive = false, BackgroundProcessingPool::Context * context = nullptr);
 
 	bool mergeTask(BackgroundProcessingPool::Context & context);
 

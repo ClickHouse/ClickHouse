@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DB/IO/WriteBufferFromFileBase.h>
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/BufferWithOwnMemory.h>
 #include <DB/Core/Defines.h>
@@ -8,15 +9,13 @@
 #include <string>
 #include <unistd.h>
 #include <fcntl.h>
-#include <sys/uio.h>
 
 namespace DB
 {
 
 /** Класс для асинхронной записи данных.
-  * Все размеры и смещения должны быть кратны DEFAULT_AIO_FILE_BLOCK_SIZE байтам.
   */
-class WriteBufferAIO : public BufferWithOwnMemory<WriteBuffer>
+class WriteBufferAIO : public WriteBufferFromFileBase
 {
 public:
 	WriteBufferAIO(const std::string & filename_, size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE, int flags_ = -1, mode_t mode_ = 0666,
@@ -26,40 +25,45 @@ public:
 	WriteBufferAIO(const WriteBufferAIO &) = delete;
 	WriteBufferAIO & operator=(const WriteBufferAIO &) = delete;
 
-	off_t seek(off_t off, int whence = SEEK_SET);
-	off_t getPositionInFile();
-	void truncate(off_t length = 0);
-	void sync();
-	std::string getFileName() const noexcept { return filename; }
-	int getFD() const noexcept { return fd; }
+	off_t getPositionInFile() override;
+	void truncate(off_t length = 0) override;
+	void sync() override;
+	std::string getFileName() const noexcept override { return filename; }
+	int getFD() const noexcept override { return fd; }
 
 private:
+	///
+	void nextImpl() override;
+	///
+	off_t doSeek(off_t off, int whence) override;
 	/// Если в буфере ещё остались данные - запишем их.
 	void flush();
-	///
-	void nextImpl();
 	/// Ждать окончания текущей асинхронной задачи.
-	void waitForAIOCompletion();
-	/// Менять местами основной и дублирующий буферы.
-	void swapBuffers() noexcept;
+	bool waitForAIOCompletion();
+	/// Подготовить асинхронный запрос.
+	void prepare();
+	///
+	void finalize();
 
 private:
 	/// Буфер для асинхронных операций записи данных.
 	BufferWithOwnMemory<WriteBuffer> flush_buffer;
 
+	/// Описание асинхронного запроса на запись.
 	iocb request;
 	std::vector<iocb *> request_ptrs{&request};
 	std::vector<io_event> events{1};
 
 	AIOContext aio_context{1};
 
-	iovec iov[3];
-
-	Memory memory_page{DEFAULT_AIO_FILE_BLOCK_SIZE, DEFAULT_AIO_FILE_BLOCK_SIZE};
-
 	const std::string filename;
 
+	/// Количество байтов, которые будут записаны на диск.
 	off_t bytes_to_write = 0;
+	/// Количество записанных байтов при последнем запросе.
+	off_t bytes_written = 0;
+	/// Количество нулевых байтов, которые надо отрезать c конца файла
+	/// после завершения операции записи данных.
 	off_t truncation_count = 0;
 
 	/// Текущая позиция в файле.
@@ -67,15 +71,23 @@ private:
 	/// Максимальная достигнутая позиция в файле.
 	off_t max_pos_in_file = 0;
 
+	/// Начальная позиция выровненного региона диска, в который записываются данные.
+	off_t region_aligned_begin = 0;
+	/// Размер выровненного региона диска.
+	size_t region_aligned_size = 0;
+
 	/// Файловый дескриптор для записи.
 	int fd = -1;
 	/// Файловый дескриптор для чтения. Употребляется для невыровненных записей.
 	int fd2 = -1;
 
-	/// Асинхронная операция записи ещё не завершилась.
+	/// Буфер данных, которые хотим записать на диск.
+	Position buffer_begin = nullptr;
+
+	/// Асинхронная операция записи ещё не завершилась?
 	bool is_pending_write = false;
-	/// Было получено исключение.
-	bool got_exception = false;
+	/// Асинхронная операция завершилась неудачно?
+	bool aio_failed = false;
 };
 
 }
