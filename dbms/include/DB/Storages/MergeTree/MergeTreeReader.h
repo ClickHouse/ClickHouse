@@ -148,6 +148,11 @@ public:
 		}
 	}
 
+
+	/** Добавить столбец минимального размера.
+	  * Используется в случае, когда ни один столбец не нужен, но нужно хотя бы знать количество строк.
+	  * Добавляет в columns.
+	  */
 	void addMinimumSizeColumn()
 	{
 		const auto get_column_size = [this] (const String & name) {
@@ -186,7 +191,7 @@ public:
 		addStream(minimum_size_column->name, *minimum_size_column->type, all_mark_ranges);
 		columns.emplace(std::begin(columns), *minimum_size_column);
 
-		added_column = &columns.front();
+		added_minimum_size_column = &columns.front();
 	}
 
 
@@ -327,11 +332,14 @@ private:
 	const MergeTreeData::DataPartPtr & data_part;
 	String part_name;
 	FileStreams streams;
+
+	/// Запрашиваемые столбцы. Возможно, с добавлением minimum_size_column.
 	NamesAndTypesList columns;
+	const NameAndTypePair * added_minimum_size_column = nullptr;
+
 	bool use_uncompressed_cache;
 	MergeTreeData & storage;
 	const MarkRanges & all_mark_ranges;
-	const NameAndTypePair * added_column = nullptr;
 	size_t aio_threshold;
 
 	void addStream(const String & name, const IDataType & type, const MarkRanges & all_mark_ranges, size_t level = 0)
@@ -365,8 +373,9 @@ private:
 			streams[name].reset(new Stream(path + escaped_column_name, uncompressed_cache, mark_cache, all_mark_ranges, aio_threshold));
 	}
 
+
 	void readData(const String & name, const IDataType & type, IColumn & column, size_t from_mark, size_t max_rows_to_read,
-					size_t level = 0, bool read_offsets = true)
+		size_t level = 0, bool read_offsets = true)
 	{
 		/// Для массивов требуется сначала десериализовать размеры, а потом значения.
 		if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
@@ -384,38 +393,37 @@ private:
 			if (column.size())
 			{
 				ColumnArray & array = typeid_cast<ColumnArray &>(column);
-				readData(
-					name,
-					*type_arr->getNestedType(),
-					array.getData(),
-					from_mark,
-					array.getOffsets()[column.size() - 1] - array.getData().size(),
-					level + 1);
-			}
-		}
-		else if (const DataTypeNested * type_nested = typeid_cast<const DataTypeNested *>(&type))
-		{
-			Stream & stream = *streams[name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level)];
-			stream.seekToMark(from_mark);
-			type_nested->deserializeOffsets(
-				column,
-				*stream.data_buffer,
-				max_rows_to_read);
+				const size_t required_internal_size = array.getOffsets()[column.size() - 1];
 
-			if (column.size())
-			{
-				ColumnNested & column_nested = typeid_cast<ColumnNested &>(column);
-
-				NamesAndTypesList::const_iterator it = type_nested->getNestedTypesList()->begin();
-				for (size_t i = 0; i < column_nested.getData().size(); ++i, ++it)
+				if (required_internal_size)
 				{
 					readData(
-						DataTypeNested::concatenateNestedName(name, it->name),
-						*it->type,
-						*column_nested.getData()[i],
+						name,
+						*type_arr->getNestedType(),
+						array.getData(),
 						from_mark,
-						column_nested.getOffsets()[column.size() - 1] - column_nested.getData()[i]->size(),
+						required_internal_size - array.getData().size(),
 						level + 1);
+
+					/** Исправление для ошибочно записанных пустых файлов с данными массива.
+					  * Такое бывает после ALTER с добавлением новых столбцов во вложенную структуру данных.
+					  */
+					size_t read_internal_size = array.getData().size();
+					if (required_internal_size != read_internal_size)
+					{
+						if (read_internal_size != 0)
+							LOG_ERROR((&Logger::get("MergeTreeReader")),
+								"Internal size of array " + name + " doesn't match offsets: corrupted data, filling with default values.");
+
+						array.getDataPtr() = dynamic_cast<IColumnConst &>(
+							*type_arr->getNestedType()->createConstColumn(
+								required_internal_size,
+								type_arr->getNestedType()->getDefault())).convertToFullColumn();
+
+						/** NOTE Можно было бы занулять этот столбец, чтобы он не добавлялся в блок,
+						  *  а впоследствии создавался с более правильными (из определения таблицы) значениями по-умолчанию.
+						  */
+					}
 				}
 			}
 		}
@@ -440,6 +448,7 @@ private:
 		}
 	}
 
+
 	void fillMissingColumnsImpl(Block & res, const Names & ordered_names, bool always_reorder)
 	{
 		try
@@ -448,6 +457,7 @@ private:
 			  *  правильных длин.
 			  * TODO: Если для какой-то вложенной структуры были запрошены только отсутствующие столбцы, для них вернутся пустые
 			  *  массивы, даже если в куске есть смещения для этой вложенной структуры. Это можно исправить.
+			  * NOTE: Похожий код есть в Block::addDefaults, но он немного отличается.
 			  */
 
 			/// Сначала запомним столбцы смещений для всех массивов в блоке.
@@ -458,51 +468,56 @@ private:
 				if (const ColumnArray * array = typeid_cast<const ColumnArray *>(&*column.column))
 				{
 					String offsets_name = DataTypeNested::extractNestedTableName(column.name);
-					offset_columns[offsets_name] = array->getOffsetsColumn();
+					auto & offsets_column = offset_columns[offsets_name];
+
+					/// Если почему-то есть разные столбцы смещений для одной вложенной структуры, то берём непустой.
+					if (!offsets_column || offsets_column->empty())
+						offsets_column = array->getOffsetsColumn();
 				}
 			}
 
 			auto should_evaluate_defaults = false;
 			auto should_sort = always_reorder;
-			for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
+
+			for (const auto & requested_column : columns)
 			{
 				/// insert default values only for columns without default expressions
-				if (!res.has(it->name))
+				if (!res.has(requested_column.name))
 				{
 					should_sort = true;
-					if (storage.column_defaults.count(it->name) != 0)
+					if (storage.column_defaults.count(requested_column.name) != 0)
 					{
 						should_evaluate_defaults = true;
 						continue;
 					}
 
-					ColumnWithNameAndType column;
-					column.name = it->name;
-					column.type = it->type;
+					ColumnWithNameAndType column_to_add;
+					column_to_add.name = requested_column.name;
+					column_to_add.type = requested_column.type;
 
-					String offsets_name = DataTypeNested::extractNestedTableName(column.name);
+					String offsets_name = DataTypeNested::extractNestedTableName(column_to_add.name);
 					if (offset_columns.count(offsets_name))
 					{
 						ColumnPtr offsets_column = offset_columns[offsets_name];
-						DataTypePtr nested_type = typeid_cast<DataTypeArray &>(*column.type).getNestedType();
+						DataTypePtr nested_type = typeid_cast<DataTypeArray &>(*column_to_add.type).getNestedType();
 						size_t nested_rows = offsets_column->empty() ? 0
 							: typeid_cast<ColumnUInt64 &>(*offsets_column).getData().back();
 
 						ColumnPtr nested_column = dynamic_cast<IColumnConst &>(*nested_type->createConstColumn(
 							nested_rows, nested_type->getDefault())).convertToFullColumn();
 
-						column.column = new ColumnArray(nested_column, offsets_column);
+						column_to_add.column = new ColumnArray(nested_column, offsets_column);
 					}
 					else
 					{
 						/** Нужно превратить константный столбец в полноценный, так как в части блоков (из других кусков),
 						  *  он может быть полноценным (а то интерпретатор может посчитать, что он константный везде).
 						  */
-						column.column = dynamic_cast<IColumnConst &>(*column.type->createConstColumn(
-							res.rows(), column.type->getDefault())).convertToFullColumn();
+						column_to_add.column = dynamic_cast<IColumnConst &>(*column_to_add.type->createConstColumn(
+							res.rows(), column_to_add.type->getDefault())).convertToFullColumn();
 					}
 
-					res.insert(column);
+					res.insert(column_to_add);
 				}
 			}
 
@@ -511,12 +526,12 @@ private:
 				evaluateMissingDefaults(res, columns, storage.column_defaults, storage.context);
 
 			/// remove added column to ensure same content among all blocks
-			if (added_column)
+			if (added_minimum_size_column)
 			{
 				res.erase(0);
-				streams.erase(added_column->name);
+				streams.erase(added_minimum_size_column->name);
 				columns.erase(std::begin(columns));
-				added_column = nullptr;
+				added_minimum_size_column = nullptr;
 			}
 
 			/// sort columns to ensure consistent order among all blocks

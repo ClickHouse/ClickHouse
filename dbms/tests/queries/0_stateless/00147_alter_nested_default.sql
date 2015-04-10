@@ -14,11 +14,11 @@ SELECT * FROM test.alter;
 SELECT * FROM test.alter ARRAY JOIN n;
 SELECT * FROM test.alter ARRAY JOIN n WHERE n.x LIKE '%Hello%';
 
-INSERT INTO test.alter (`n.x`, `n.y`) VALUES (['Hello2', 'World2'], [123, 456]);
+INSERT INTO test.alter (`n.x`) VALUES (['Hello2', 'World2']);
 
-SELECT * FROM test.alter;
-SELECT * FROM test.alter ARRAY JOIN n;
-SELECT * FROM test.alter ARRAY JOIN n WHERE n.x LIKE '%Hello%';
+SELECT * FROM test.alter ORDER BY n.x;
+SELECT * FROM test.alter ARRAY JOIN n ORDER BY n.x;
+SELECT * FROM test.alter ARRAY JOIN n WHERE n.x LIKE '%Hello%' ORDER BY n.x;
 
 OPTIMIZE TABLE test.alter;
 
