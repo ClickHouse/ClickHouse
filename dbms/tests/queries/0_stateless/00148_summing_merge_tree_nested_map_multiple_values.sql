@@ -14,8 +14,6 @@ create table test.nested_not_a_map (d materialized today(), k UInt64, payload ma
 
 insert into test.nested_not_a_map values (0,[1],[1],['2015-04-09'],[1],[100]);
 insert into test.nested_not_a_map values (0,[1],[1],['2015-04-08'],[1],[200]);
-select * from test.nested_not_a_map;
-
 optimize table test.nested_not_a_map;
 select * from test.nested_not_a_map;
 
