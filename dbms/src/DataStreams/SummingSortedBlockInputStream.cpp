@@ -98,11 +98,11 @@ Block SummingSortedBlockInputStream::readImpl()
 		/// select actual nested Maps from list of candidates
 		for (const auto & map : discovered_maps)
 		{
-			/// map can only contain a pair of elements (key -> value)
+			/// map should contain at least two elements (key -> value)
 			if (map.second.size() < 2)
 				continue;
 
-			/// check types of key and value
+			/// check type of key
 			const auto key_num = map.second.front();
 			auto & key_col = merged_block.getByPosition(key_num);
 			/// skip maps, whose members are part of primary key
