@@ -105,7 +105,11 @@ private:
 			return;
 		}
 
-		int res = posix_memalign(reinterpret_cast<void **>(&new_m_data), alignment, (m_capacity + alignment - 1) / alignment * alignment);
+		size_t aligned_capacity = (m_capacity + alignment - 1) / alignment * alignment;
+		m_capacity = aligned_capacity;
+		m_size = m_capacity;
+
+		int res = posix_memalign(reinterpret_cast<void **>(&new_m_data), alignment, m_capacity);
 
 		if (0 != res)
 			DB::throwFromErrno("Cannot allocate memory (posix_memalign)", ErrorCodes::CANNOT_ALLOCATE_MEMORY, res);

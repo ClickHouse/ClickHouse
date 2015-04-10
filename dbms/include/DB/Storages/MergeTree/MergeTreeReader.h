@@ -40,9 +40,11 @@ class MergeTreeReader
 public:
 	MergeTreeReader(const String & path_, /// Путь к куску
 		const MergeTreeData::DataPartPtr & data_part, const NamesAndTypesList & columns_,
-		bool use_uncompressed_cache_, MergeTreeData & storage_, const MarkRanges & all_mark_ranges)
+		bool use_uncompressed_cache_, MergeTreeData & storage_, const MarkRanges & all_mark_ranges,
+		size_t aio_threshold_)
 		: path(path_), data_part(data_part), part_name(data_part->name), columns(columns_),
-		use_uncompressed_cache(use_uncompressed_cache_), storage(storage_), all_mark_ranges(all_mark_ranges)
+		use_uncompressed_cache(use_uncompressed_cache_), storage(storage_), all_mark_ranges(all_mark_ranges),
+		aio_threshold(aio_threshold_)
 	{
 		try
 		{
@@ -219,12 +221,14 @@ private:
 		Poco::SharedPtr<CompressedReadBufferFromFile> non_cached_buffer;
 		std::string path_prefix;
 		size_t max_mark_range;
+		size_t aio_threshold;
 
 		/// Используется в качестве подсказки, чтобы уменьшить количество реаллокаций при создании столбца переменной длины.
 		double avg_value_size_hint = 0;
 
-		Stream(const String & path_prefix, UncompressedCache * uncompressed_cache, MarkCache * mark_cache, const MarkRanges & all_mark_ranges)
-			: path_prefix(path_prefix)
+		Stream(const String & path_prefix_, UncompressedCache * uncompressed_cache, MarkCache * mark_cache, const MarkRanges & all_mark_ranges,
+			   size_t aio_threshold_)
+			: path_prefix(path_prefix_), aio_threshold(aio_threshold_)
 		{
 			loadMarks(mark_cache);
 			size_t max_mark_range = 0;
@@ -257,12 +261,12 @@ private:
 
 			if (uncompressed_cache)
 			{
-				cached_buffer = new CachedCompressedReadBuffer(path_prefix + ".bin", uncompressed_cache, buffer_size);
+				cached_buffer = new CachedCompressedReadBuffer(path_prefix + ".bin", uncompressed_cache, aio_threshold, buffer_size);
 				data_buffer = &*cached_buffer;
 			}
 			else
 			{
-				non_cached_buffer = new CompressedReadBufferFromFile(path_prefix + ".bin", buffer_size);
+				non_cached_buffer = new CompressedReadBufferFromFile(path_prefix + ".bin", aio_threshold, buffer_size);
 				data_buffer = &*non_cached_buffer;
 			}
 		}
@@ -336,7 +340,7 @@ private:
 	bool use_uncompressed_cache;
 	MergeTreeData & storage;
 	const MarkRanges & all_mark_ranges;
-
+	size_t aio_threshold;
 
 	void addStream(const String & name, const IDataType & type, const MarkRanges & all_mark_ranges, size_t level = 0)
 	{
@@ -361,12 +365,12 @@ private:
 
 			if (!streams.count(size_name))
 				streams.emplace(size_name, std::unique_ptr<Stream>(new Stream(
-					path + escaped_size_name, uncompressed_cache, mark_cache, all_mark_ranges)));
+					path + escaped_size_name, uncompressed_cache, mark_cache, all_mark_ranges, aio_threshold)));
 
 			addStream(name, *type_arr->getNestedType(), all_mark_ranges, level + 1);
 		}
 		else
-			streams[name].reset(new Stream(path + escaped_column_name, uncompressed_cache, mark_cache, all_mark_ranges));
+			streams[name].reset(new Stream(path + escaped_column_name, uncompressed_cache, mark_cache, all_mark_ranges, aio_threshold));
 	}
 
 

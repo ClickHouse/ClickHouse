@@ -282,7 +282,8 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 /// parts должны быть отсортированы.
 MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 	const MergeTreeData::DataPartsVector & parts, const String & merged_name, MergeList::Entry & merge_entry,
-	MergeTreeData::Transaction * out_transaction, DiskSpaceMonitor::Reservation * disk_reservation)
+	size_t aio_threshold, MergeTreeData::Transaction * out_transaction,
+	DiskSpaceMonitor::Reservation * disk_reservation)
 {
 	merge_entry->num_parts = parts.size();
 
@@ -307,6 +308,13 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 	NamesAndTypesList union_columns = columns_list.filter(union_columns_set);
 	Names union_column_names = union_columns.getNames();
 
+	MergeTreeData::DataPart::ColumnToSize merged_column_to_size;
+	if (aio_threshold > 0)
+	{
+		for (const MergeTreeData::DataPartPtr & part : parts)
+			part->accumulateColumnSizes(merged_column_to_size);
+	}
+
 	MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data);
 	ActiveDataPartSet::parsePartName(merged_name, *new_data_part);
 	new_data_part->name = "tmp_" + merged_name;
@@ -328,6 +336,8 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 		auto input = std::make_unique<MergeTreeBlockInputStream>(
 			data.getFullPath() + parts[i]->name + '/', DEFAULT_MERGE_BLOCK_SIZE, union_column_names, data,
 			parts[i], ranges, false, nullptr, "");
+
+		input->setAIOThreshold(aio_threshold);
 
 		input->setProgressCallback([&merge_entry, rows_total] (const Progress & value)
 			{
@@ -378,7 +388,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 
 	const String new_part_tmp_path = data.getFullPath() + "tmp_" + merged_name + "/";
 
-	MergedBlockOutputStream to{data, new_part_tmp_path, union_columns, CompressionMethod::LZ4};
+	MergedBlockOutputStream to{data, new_part_tmp_path, union_columns, CompressionMethod::LZ4, merged_column_to_size, aio_threshold};
 
 	merged_stream->readPrefix();
 	to.writePrefix();
