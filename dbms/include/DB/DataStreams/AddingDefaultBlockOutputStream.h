@@ -24,23 +24,25 @@ public:
 		BlockOutputStreamPtr output_,
 		NamesAndTypesListPtr required_columns_,
 		const ColumnDefaults & column_defaults_,
-		const Context & context_)
+		const Context & context_,
+		bool only_explicit_column_defaults_)
 		: output(output_), required_columns(required_columns_),
-		  column_defaults(column_defaults_), context(context_)
+		  column_defaults(column_defaults_), context(context_),
+		  only_explicit_column_defaults(only_explicit_column_defaults_)
 	{
 	}
-
-	AddingDefaultBlockOutputStream(BlockOutputStreamPtr output_, NamesAndTypesListPtr required_columns_, const Context & context_)
-		: AddingDefaultBlockOutputStream{output_, required_columns_, ColumnDefaults{}, context_}
-	{
-	}
-
 
 	void write(const Block & block) override
 	{
 		Block res = block;
+
+		/// Вычисляет явно указанные (в column_defaults) значения по-умолчанию.
 		evaluateMissingDefaults(res, *required_columns, column_defaults, context);
-		res.addDefaults(*required_columns);
+
+		/// Добавляет не указанные значения по-умолчанию.
+		if (!only_explicit_column_defaults)
+			res.addDefaults(*required_columns);
+
 		output->write(res);
 	}
 
@@ -54,6 +56,7 @@ private:
 	NamesAndTypesListPtr required_columns;
 	const ColumnDefaults & column_defaults;
 	Context context;
+	bool only_explicit_column_defaults;
 };
 
 
