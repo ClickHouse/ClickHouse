@@ -45,9 +45,9 @@ Block InterpreterInsertQuery::getSampleBlock()
 
 	/// Формируем блок, основываясь на именах столбцов из запроса
 	Block res;
-	for (const IAST & identifier : query.columns->children)
+	for (const auto & identifier : query.columns->children)
 	{
-		std::string current_name = identifier.getColumnName();
+		std::string current_name = identifier->getColumnName();
 
 		/// В таблице нет столбца с таким именем
 		if (!table_sample.has(current_name))
