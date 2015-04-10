@@ -20,11 +20,12 @@ public:
 		MergeTreeData & storage_,
 		size_t min_compress_block_size_,
 		size_t max_compress_block_size_,
-		CompressionMethod compression_method_)
+		CompressionMethod compression_method_,
+		size_t aio_threshold_)
 		: storage(storage_),
 		min_compress_block_size(min_compress_block_size_),
 		max_compress_block_size(max_compress_block_size_),
-		aio_threshold(storage.context.getSettingsRef().min_bytes_to_use_direct_io),
+		aio_threshold(aio_threshold_),
 		compression_method(compression_method_)
 	{
 	}
@@ -237,30 +238,38 @@ public:
 		MergeTreeData & storage_,
 		String part_path_,
 		const NamesAndTypesList & columns_list_,
-		CompressionMethod compression_method,
-		const std::map<std::string, size_t> * merged_column_to_size_ = nullptr)
+		CompressionMethod compression_method)
 		: IMergedBlockOutputStream(
 			storage_, storage_.context.getSettings().min_compress_block_size,
-			storage_.context.getSettings().max_compress_block_size, compression_method),
+			storage_.context.getSettings().max_compress_block_size, compression_method,
+			storage_.context.getSettings().min_bytes_to_use_direct_io),
 		columns_list(columns_list_), part_path(part_path_)
 	{
-		Poco::File(part_path).createDirectories();
+		init();
+		for (const auto & it : columns_list)
+			addStream(part_path, it.name, *it.type);
+	}
 
-		if (storage.mode != MergeTreeData::Unsorted)
-		{
-			index_file_stream = new WriteBufferFromFile(part_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
-			index_stream = new HashingWriteBuffer(*index_file_stream);
-		}
-
+	MergedBlockOutputStream(
+		MergeTreeData & storage_,
+		String part_path_,
+		const NamesAndTypesList & columns_list_,
+		CompressionMethod compression_method,
+		const std::map<std::string, size_t> & merged_column_to_size_,
+		size_t aio_threshold_)
+		: IMergedBlockOutputStream(
+			storage_, storage_.context.getSettings().min_compress_block_size,
+			storage_.context.getSettings().max_compress_block_size, compression_method,
+			aio_threshold_),
+		columns_list(columns_list_), part_path(part_path_)
+	{
+		init();
 		for (const auto & it : columns_list)
 		{
 			size_t estimated_size = 0;
-			if (merged_column_to_size_ != nullptr)
-			{
-				auto it2 = merged_column_to_size_->find(it.name);
-				if (it2 != merged_column_to_size_->end())
-					estimated_size = it2->second;
-			}
+			auto it2 = merged_column_to_size_.find(it.name);
+			if (it2 != merged_column_to_size_.end())
+				estimated_size = it2->second;
 			addStream(part_path, it.name, *it.type, estimated_size);
 		}
 	}
@@ -367,6 +376,18 @@ public:
 	}
 
 private:
+	void init()
+	{
+		Poco::File(part_path).createDirectories();
+
+		if (storage.mode != MergeTreeData::Unsorted)
+		{
+			index_file_stream = new WriteBufferFromFile(part_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
+			index_stream = new HashingWriteBuffer(*index_file_stream);
+		}
+	}
+
+private:
 	NamesAndTypesList columns_list;
 	String part_path;
 
@@ -386,7 +407,8 @@ public:
 	MergedColumnOnlyOutputStream(MergeTreeData & storage_, String part_path_, bool sync_, CompressionMethod compression_method)
 		: IMergedBlockOutputStream(
 			storage_, storage_.context.getSettings().min_compress_block_size,
-			storage_.context.getSettings().max_compress_block_size, compression_method),
+			storage_.context.getSettings().max_compress_block_size, compression_method,
+			storage_.context.getSettings().min_bytes_to_use_direct_io),
 		part_path(part_path_), sync(sync_)
 	{
 	}

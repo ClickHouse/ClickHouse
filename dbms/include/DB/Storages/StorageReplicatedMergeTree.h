@@ -83,7 +83,7 @@ public:
 
 	BlockOutputStreamPtr write(ASTPtr query) override;
 
-	bool optimize() override;
+	bool optimize(size_t aio_threshold) override;
 
 	void alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context) override;
 

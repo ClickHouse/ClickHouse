@@ -265,11 +265,12 @@ void StorageBuffer::shutdown()
 	if (flush_thread.joinable())
 		flush_thread.join();
 
-	optimize();
+	/// Параметр игнорируется.
+	optimize(0);
 }
 
 
-bool StorageBuffer::optimize()
+bool StorageBuffer::optimize(size_t /*aio_threshold*/)
 {
 	flushAllBuffers(false);
 
@@ -442,7 +443,8 @@ void StorageBuffer::alter(const AlterCommands & params, const String & database_
 	auto lock = lockStructureForAlter();
 
 	/// Чтобы не осталось блоков старой структуры.
-	optimize();
+	/// Параметр игнорируется.
+	optimize(0);
 
 	params.apply(*columns, materialized_columns, alias_columns, column_defaults);
 	InterpreterAlterQuery::updateMetadata(database_name, table_name,

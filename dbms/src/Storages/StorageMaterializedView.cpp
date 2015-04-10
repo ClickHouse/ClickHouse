@@ -129,8 +129,8 @@ void StorageMaterializedView::drop()
 	}
 }
 
-bool StorageMaterializedView::optimize() {
-	return data->optimize();
+bool StorageMaterializedView::optimize(size_t aio_threshold) {
+	return data->optimize(aio_threshold);
 }
 
 

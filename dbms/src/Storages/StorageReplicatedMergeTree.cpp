@@ -860,7 +860,8 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 
 			const auto & merge_entry = context.getMergeList().insert(database_name, table_name, entry.new_part_name);
 			MergeTreeData::Transaction transaction;
-			MergeTreeData::DataPartPtr part = merger.mergeParts(parts, entry.new_part_name, *merge_entry, &transaction);
+			size_t aio_threshold = context.getSettings().min_bytes_to_use_direct_io;
+			MergeTreeData::DataPartPtr part = merger.mergeParts(parts, entry.new_part_name, *merge_entry, aio_threshold, &transaction);
 
 			zkutil::Ops ops;
 			checkPartAndAddToZooKeeper(part, ops);
@@ -2058,7 +2059,7 @@ BlockOutputStreamPtr StorageReplicatedMergeTree::write(ASTPtr query)
 }
 
 
-bool StorageReplicatedMergeTree::optimize()
+bool StorageReplicatedMergeTree::optimize(size_t aio_threshold)
 {
 	/// Померджим какие-нибудь куски из директории unreplicated.
 	/// TODO: Мерджить реплицируемые куски тоже.
@@ -2077,7 +2078,7 @@ bool StorageReplicatedMergeTree::optimize()
 		return false;
 
 	const auto & merge_entry = context.getMergeList().insert(database_name, table_name, merged_name);
-	unreplicated_merger->mergeParts(parts, merged_name, *merge_entry);
+	unreplicated_merger->mergeParts(parts, merged_name, *merge_entry, aio_threshold);
 	return true;
 }
 
