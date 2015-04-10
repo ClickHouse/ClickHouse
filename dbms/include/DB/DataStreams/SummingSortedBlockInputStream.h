@@ -124,13 +124,11 @@ private:
 		bool operator() (Array 		& x) const { throw Exception("Cannot sum Arrays", ErrorCodes::LOGICAL_ERROR); }
 	};
 
-	/** Прибавить строчку под курсором к row.
-	  * Для вложенных Map выполняется слияние по ключу с выбрасыванием строк вложенных массивов, в которых
+	/** Для вложенных Map выполняется слияние по ключу с выбрасыванием строк вложенных массивов, в которых
 	  * все элементы - нулевые.
-	  * Возвращает false, если результат получился нулевым.
 	  */
 	template<class TSortCursor>
-	bool addRow(Row & row, TSortCursor & cursor)
+	void mergeMaps(Row & row, TSortCursor & cursor)
 	{
 		/// merge nested maps
 		for (const auto & map : maps_to_sum)
@@ -144,6 +142,7 @@ private:
 				return row[map.val_col_nums[val_index]].get<Array>()[pos];
 			};
 
+			/// we will be sorting key positions, not the entire rows, to minimize actions
 			std::vector<std::size_t> key_pos_lhs(ext::range_iterator<std::size_t>{0},
 				ext::range_iterator<std::size_t>{key_array_lhs.size()});
 			std::sort(std::begin(key_pos_lhs), std::end(key_pos_lhs), [&] (const auto pos1, const auto pos2) {
@@ -185,7 +184,7 @@ private:
 			auto discard_prev = true;
 
 			/// either insert or merge new element
-			const auto insert_or_sum = [&] (auto & pos, const auto & key_array, auto && val_getter) {
+			const auto insert_or_sum = [&] (const auto & pos, const auto & key_array, auto && val_getter) {
 				const auto & key = key_array[pos];
 
 				if (discard_prev)
@@ -215,8 +214,6 @@ private:
 					for (const auto val_index : ext::range(0, val_count))
 						val_arrays_result[val_index].emplace_back(val_getter(val_index, pos));
 				}
-
-				++pos;
 			};
 
 			std::size_t pos_lhs = 0;
@@ -225,14 +222,14 @@ private:
 			/// perform 2-way merge
 			while (true)
 				if (pos_lhs < key_pos_lhs.size() && pos_rhs == key_pos_rhs.size())
-					insert_or_sum(pos_lhs, key_array_lhs, val_getter_lhs);
+					insert_or_sum(key_pos_lhs[pos_lhs++], key_array_lhs, val_getter_lhs);
 				else if (pos_lhs == key_pos_lhs.size() && pos_rhs < key_pos_rhs.size())
-					insert_or_sum(pos_rhs, key_array_rhs, val_getter_rhs);
+					insert_or_sum(key_pos_rhs[pos_rhs++], key_array_rhs, val_getter_rhs);
 				else if (pos_lhs < key_pos_lhs.size() && pos_rhs < key_pos_rhs.size())
-					if (key_array_lhs[pos_lhs] < key_array_rhs[pos_rhs])
-						insert_or_sum(pos_lhs, key_array_lhs, val_getter_lhs);
+					if (key_array_lhs[key_pos_lhs[pos_lhs]] < key_array_rhs[key_pos_rhs[pos_rhs]])
+						insert_or_sum(key_pos_lhs[pos_lhs++], key_array_lhs, val_getter_lhs);
 					else
-						insert_or_sum(pos_rhs, key_array_rhs, val_getter_rhs);
+						insert_or_sum(key_pos_rhs[pos_rhs++], key_array_rhs, val_getter_rhs);
 				else
 					break;
 
@@ -240,7 +237,16 @@ private:
 			key_array_lhs = std::move(key_array_result);
 			for (const auto val_col_index : ext::range(0, val_count))
 				row[map.val_col_nums[val_col_index]].get<Array>() = std::move(val_arrays_result[val_col_index]);
-		};
+		}
+	}
+
+	/** Прибавить строчку под курсором к row.
+	  * Возвращает false, если результат получился нулевым.
+	  */
+	template<class TSortCursor>
+	bool addRow(Row & row, TSortCursor & cursor)
+	{
+		mergeMaps(row, cursor);
 
 		bool res = false;	/// Есть ли хотя бы одно ненулевое число.
 
