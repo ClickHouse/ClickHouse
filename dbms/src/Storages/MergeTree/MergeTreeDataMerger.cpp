@@ -309,8 +309,11 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 	Names union_column_names = union_columns.getNames();
 
 	MergeTreeData::DataPart::ColumnToSize merged_column_to_size;
-	for (const MergeTreeData::DataPartPtr & part : parts)
-		part->accumulateColumnSizes(merged_column_to_size);
+	if (aio_threshold > 0)
+	{
+		for (const MergeTreeData::DataPartPtr & part : parts)
+			part->accumulateColumnSizes(merged_column_to_size);
+	}
 
 	MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data);
 	ActiveDataPartSet::parsePartName(merged_name, *new_data_part);

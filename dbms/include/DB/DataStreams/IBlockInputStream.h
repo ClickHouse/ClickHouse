@@ -89,7 +89,7 @@ protected:
 
 	BlockInputStreams children;
 
-	size_t aio_threshold = std::numeric_limits<size_t>::max();
+	size_t aio_threshold = 0;
 
 private:
 	void getLeavesImpl(BlockInputStreams & res, BlockInputStreamPtr this_shared_ptr = nullptr);

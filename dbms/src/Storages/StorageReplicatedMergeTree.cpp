@@ -2059,7 +2059,7 @@ BlockOutputStreamPtr StorageReplicatedMergeTree::write(ASTPtr query)
 }
 
 
-bool StorageReplicatedMergeTree::optimize(size_t aio_threshold)
+bool StorageReplicatedMergeTree::performOptimize(size_t aio_threshold)
 {
 	/// Померджим какие-нибудь куски из директории unreplicated.
 	/// TODO: Мерджить реплицируемые куски тоже.

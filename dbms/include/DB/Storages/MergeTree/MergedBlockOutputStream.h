@@ -255,7 +255,7 @@ public:
 		String part_path_,
 		const NamesAndTypesList & columns_list_,
 		CompressionMethod compression_method,
-		const std::map<std::string, size_t> & merged_column_to_size_,
+		const MergeTreeData::DataPart::ColumnToSize & merged_column_to_size_,
 		size_t aio_threshold_)
 		: IMergedBlockOutputStream(
 			storage_, storage_.context.getSettings().min_compress_block_size,
@@ -267,9 +267,12 @@ public:
 		for (const auto & it : columns_list)
 		{
 			size_t estimated_size = 0;
-			auto it2 = merged_column_to_size_.find(it.name);
-			if (it2 != merged_column_to_size_.end())
-				estimated_size = it2->second;
+			if (aio_threshold > 0)
+			{
+				auto it2 = merged_column_to_size_.find(it.name);
+				if (it2 != merged_column_to_size_.end())
+					estimated_size = it2->second;
+			}
 			addStream(part_path, it.name, *it.type, estimated_size);
 		}
 	}
