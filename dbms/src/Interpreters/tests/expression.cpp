@@ -38,7 +38,6 @@ int main(int argc, char ** argv)
 			"s1 <= 'abc', s1 <= s2, s1 >= 'abc', s1 >= s2, "
 			"*/"
 			"s1 < s2 AND x % 3 < x % 5";
-		Expected expected = "";
 
 		ParserSelectQuery parser;
 		ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "");

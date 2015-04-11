@@ -72,7 +72,6 @@ int main(int argc, char ** argv)
 			"DontCountHits 			UInt8,\n"
 			"WithHash 				UInt8\n"
 			") ENGINE = Log";
-		Expected expected = "";
 
 		ParserCreateQuery parser;
 		ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "");
