@@ -12,6 +12,7 @@
 
 #include <DB/Parsers/ExpressionListParsers.h>
 #include <DB/Parsers/ParserSelectQuery.h>
+#include <DB/Parsers/parseQuery.h>
 
 using Poco::SharedPtr;
 
@@ -37,8 +38,9 @@ int main(int argc, char ** argv)
 		String primary_expr_str = "d";
 		const char * begin = primary_expr_str.data();
 		const char * end = begin + primary_expr_str.size();
+		const char * max_parsed_pos = begin;
 		ParserExpressionList parser;
-		if (!parser.parse(begin, end, primary_expr, expected))
+		if (!parser.parse(begin, end, primary_expr, max_parsed_pos, expected))
 			throw Poco::Exception("Cannot parse " + primary_expr_str);
 
 		StoragePtr table = StorageMergeTree::create(
@@ -90,8 +92,9 @@ int main(int argc, char ** argv)
 			String select_str = "SELECT * FROM test";
 			const char * begin = select_str.data();
 			const char * end = begin + select_str.size();
+			const char * max_parsed_pos = begin;
 			ParserSelectQuery parser;
-			if (!parser.parse(begin, end, select, expected))
+			if (!parser.parse(begin, end, select, max_parsed_pos, expected))
 				throw Poco::Exception("Cannot parse " + primary_expr_str);
 
 			SharedPtr<IBlockInputStream> in = table->read(column_names, select, context, Settings(), stage)[0];

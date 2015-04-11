@@ -3,6 +3,7 @@
 
 #include <DB/Parsers/ParserCreateQuery.h>
 #include <DB/Parsers/formatAST.h>
+#include <DB/Parsers/parseQuery.h>
 
 #include <DB/Interpreters/InterpreterCreateQuery.h>
 
@@ -13,8 +14,6 @@ int main(int argc, char ** argv)
 
 	try
 	{
-		ParserCreateQuery parser;
-		ASTPtr ast;
 		std::string input = "CREATE TABLE IF NOT EXISTS hits (\n"
 			"WatchID				UInt64,\n"
 			"JavaEnable 			UInt8,\n"
@@ -75,22 +74,8 @@ int main(int argc, char ** argv)
 			") ENGINE = Log";
 		Expected expected = "";
 
-		const char * begin = input.data();
-		const char * end = begin + input.size();
-		const char * pos = begin;
-
-		if (parser.parse(pos, end, ast, max_parsed_pos, expected))
-		{
-			std::cout << "Success." << std::endl;
-			formatAST(*ast, std::cout);
-			std::cout << std::endl;
-		}
-		else
-		{
-			std::cout << "Failed at position " << (pos - begin) << ": "
-				<< mysqlxx::quote << input.substr(pos - begin, 10)
-				<< ", expected " << expected << "." << std::endl;
-		}
+		ParserCreateQuery parser;
+		ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "");
 
 		Context context;
 
