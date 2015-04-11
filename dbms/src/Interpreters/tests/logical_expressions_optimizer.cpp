@@ -233,7 +233,7 @@ bool parse(DB::ASTPtr  & ast, const std::string & query)
 	const char * end = &query[0] + query.size();
 
 	DB::Expected expected = "";
-	return parser.parse(pos, end, ast, expected);
+	return parser.parse(pos, end, ast, max_parsed_pos, expected);
 }
 
 bool equals(const DB::ASTPtr & lhs, const DB::ASTPtr & rhs)

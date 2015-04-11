@@ -59,7 +59,7 @@ int main(int argc, char ** argv)
 		const char * end = begin + input.size();
 		const char * pos = begin;
 
-		if (!parser.parse(pos, end, ast, expected))
+		if (!parser.parse(pos, end, ast, max_parsed_pos, expected))
 		{
 			std::cout << "Failed at position " << (pos - begin) << ": "
 				<< mysqlxx::quote << input.substr(pos - begin, 10)

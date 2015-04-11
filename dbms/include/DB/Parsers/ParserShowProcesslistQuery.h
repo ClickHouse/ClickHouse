@@ -17,7 +17,7 @@ class ParserShowProcesslistQuery : public IParserBase
 protected:
 	const char * getName() const { return "SHOW PROCESSLIST query"; }
 
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 	{
 		Pos begin = pos;
 
@@ -30,23 +30,23 @@ protected:
 
 		ws.ignore(pos, end);
 
-		if (!s_show.ignore(pos, end, expected))
+		if (!s_show.ignore(pos, end, max_parsed_pos, expected))
 			return false;
 
 		ws.ignore(pos, end);
 
-		if (!s_processlist.ignore(pos, end, expected))
+		if (!s_processlist.ignore(pos, end, max_parsed_pos, expected))
 			return false;
 
 		ws.ignore(pos, end);
 
-		if (s_format.ignore(pos, end, expected))
+		if (s_format.ignore(pos, end, max_parsed_pos, expected))
 		{
 			ws.ignore(pos, end);
 
 			ParserIdentifier format_p;
 
-			if (!format_p.parse(pos, end, format, expected))
+			if (!format_p.parse(pos, end, format, max_parsed_pos, expected))
 				return false;
 			typeid_cast<ASTIdentifier &>(*format).kind = ASTIdentifier::Format;
 

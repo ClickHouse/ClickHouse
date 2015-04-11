@@ -7,6 +7,7 @@
 #include <DB/IO/copyData.h>
 #include <DB/Parsers/ASTCreateQuery.h>
 #include <DB/Parsers/ParserCreateQuery.h>
+#include <DB/Parsers/parseQuery.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/Client/ConnectionPoolWithFailover.h>
 
@@ -356,19 +357,8 @@ ASTPtr Context::getCreateQuery(const String & database_name, const String & tabl
 		copyData(in, out);
 	}
 
-	const char * begin = query->data();
-	const char * end = begin + query->size();
-	const char * pos = begin;
-
 	ParserCreateQuery parser;
-	ASTPtr ast;
-	Expected expected = "";
-	bool parse_res = parser.parse(pos, end, ast, expected);
-
-	/// Распарсенный запрос должен заканчиваться на конец входных данных или на точку с запятой.
-	if (!parse_res || (pos != end && *pos != ';'))
-		throw Exception(getSyntaxErrorMessage(parse_res, begin, end, pos, expected, "in file " + metadata_path),
-			DB::ErrorCodes::SYNTAX_ERROR);
+	ASTPtr ast = parseQuery(parser, query->data(), query->data() + query->size(), "in file " + metadata_path);
 
 	ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
 	ast_create_query.attach = false;

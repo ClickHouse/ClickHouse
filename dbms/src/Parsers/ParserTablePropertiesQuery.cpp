@@ -9,7 +9,7 @@ namespace DB
 {
 
 
-bool ParserTablePropertiesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
+bool ParserTablePropertiesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	Pos begin = pos;
 
@@ -31,19 +31,19 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Ex
 
 	ws.ignore(pos, end);
 
-	if (s_exists.ignore(pos, end, expected))
+	if (s_exists.ignore(pos, end, max_parsed_pos, expected))
 	{
 		query_ptr = new ASTExistsQuery;
 	}
-	else if (s_describe.ignore(pos, end, expected) || s_desc.ignore(pos, end, expected))
+	else if (s_describe.ignore(pos, end, max_parsed_pos, expected) || s_desc.ignore(pos, end, max_parsed_pos, expected))
 	{
 		query_ptr = new ASTDescribeQuery;
 	}
-	else if (s_show.ignore(pos, end, expected))
+	else if (s_show.ignore(pos, end, max_parsed_pos, expected))
 	{
 		ws.ignore(pos, end);
 
-		if (!s_create.ignore(pos, end, expected))
+		if (!s_create.ignore(pos, end, max_parsed_pos, expected))
 		{
 			pos = begin;
 			return false;
@@ -59,19 +59,19 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Ex
 
 	ws.ignore(pos, end);
 
-	s_table.ignore(pos, end, expected);
+	s_table.ignore(pos, end, max_parsed_pos, expected);
 
 	ws.ignore(pos, end);
 
-	if (!name_p.parse(pos, end, table, expected))
+	if (!name_p.parse(pos, end, table, max_parsed_pos, expected))
 		return false;
 
 	ws.ignore(pos, end);
 
-	if (s_dot.ignore(pos, end, expected))
+	if (s_dot.ignore(pos, end, max_parsed_pos, expected))
 	{
 		database = table;
-		if (!name_p.parse(pos, end, table, expected))
+		if (!name_p.parse(pos, end, table, max_parsed_pos, expected))
 			return false;
 
 		ws.ignore(pos, end);
@@ -79,13 +79,13 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Ex
 
 	ws.ignore(pos, end);
 
-	if (s_format.ignore(pos, end, expected))
+	if (s_format.ignore(pos, end, max_parsed_pos, expected))
 	{
 		ws.ignore(pos, end);
 
 		ParserIdentifier format_p;
 
-		if (!format_p.parse(pos, end, format, expected))
+		if (!format_p.parse(pos, end, format, max_parsed_pos, expected))
 			return false;
 		typeid_cast<ASTIdentifier &>(*format).kind = ASTIdentifier::Format;
 
