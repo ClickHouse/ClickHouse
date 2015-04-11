@@ -644,11 +644,11 @@ private:
 		if (is_interactive)
 		{
 			String message;
-			res = tryParseQuery(parser, pos, end, message, "");
+			res = tryParseQuery(parser, pos, end, message, true, "");
 
 			if (!res)
 			{
-				std::cerr << message << std::endl << std::endl;
+				std::cerr << std::endl << message << std::endl << std::endl;
 				return nullptr;
 			}
 		}
