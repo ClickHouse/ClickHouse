@@ -1,4 +1,5 @@
 #include <DB/Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <DB/Storages/MergeTree/MergeTreeBlockInputStream.h>
 #include <DB/Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Parsers/ASTIdentifier.h>
@@ -435,12 +436,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 				BlockInputStreamPtr source_stream = new MergeTreeBlockInputStream(
 					data.getFullPath() + part.data_part->name + '/', max_block_size, column_names, data,
 					part.data_part, ranges_to_get_from_part, use_uncompressed_cache,
-					prewhere_actions, prewhere_column);
-
-				source_stream->setAIOThreshold(settings.min_bytes_to_use_direct_io);
+					prewhere_actions, prewhere_column, true, settings.min_bytes_to_use_direct_io, settings.max_read_buffer_size);
 
 				res.push_back(source_stream);
-
 
 				for (const String & virt_column : virt_columns)
 				{
@@ -495,9 +493,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 		BlockInputStreamPtr source_stream = new MergeTreeBlockInputStream(
 			data.getFullPath() + part.data_part->name + '/', max_block_size, column_names, data,
 			part.data_part, part.ranges, use_uncompressed_cache,
-			prewhere_actions, prewhere_column);
-
-		source_stream->setAIOThreshold(settings.min_bytes_to_use_direct_io);
+			prewhere_actions, prewhere_column, true, settings.min_bytes_to_use_direct_io, settings.max_read_buffer_size);
 
 		for (const String & virt_column : virt_columns)
 		{
