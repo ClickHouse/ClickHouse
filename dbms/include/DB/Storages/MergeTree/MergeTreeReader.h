@@ -221,7 +221,6 @@ private:
 		Poco::SharedPtr<CompressedReadBufferFromFile> non_cached_buffer;
 		std::string path_prefix;
 		size_t max_mark_range;
-		size_t aio_threshold;
 
 		/// Используется в качестве подсказки, чтобы уменьшить количество реаллокаций при создании столбца переменной длины.
 		double avg_value_size_hint = 0;

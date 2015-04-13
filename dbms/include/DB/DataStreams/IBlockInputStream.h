@@ -80,16 +80,10 @@ public:
 	  */
 	void addTableLock(const IStorage::TableStructureReadLockPtr & lock) { table_locks.push_back(lock); }
 
-	/** Установить минимальное количество байтов для операций ввода/ввывода минуя кэш страниц.
-	  */
-	void setAIOThreshold(size_t aio_threshold_) { aio_threshold = aio_threshold_; }
-
 protected:
 	IStorage::TableStructureReadLocks table_locks;
 
 	BlockInputStreams children;
-
-	size_t aio_threshold = 0;
 
 private:
 	void getLeavesImpl(BlockInputStreams & res, BlockInputStreamPtr this_shared_ptr = nullptr);

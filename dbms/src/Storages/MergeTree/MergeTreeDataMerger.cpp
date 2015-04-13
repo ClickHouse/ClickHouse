@@ -337,8 +337,6 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 			data.getFullPath() + parts[i]->name + '/', DEFAULT_MERGE_BLOCK_SIZE, union_column_names, data,
 			parts[i], ranges, false, nullptr, "", true, aio_threshold, DBMS_DEFAULT_BUFFER_SIZE);
 
-		input->setAIOThreshold(aio_threshold);
-
 		input->setProgressCallback([&merge_entry, rows_total] (const Progress & value)
 			{
 				const auto new_rows_read = __sync_add_and_fetch(&merge_entry->rows_read, value.rows);
