@@ -184,7 +184,9 @@ private:
 			auto discard_prev = true;
 
 			/// either insert or merge new element
-			const auto insert_or_sum = [&] (const auto & pos, const auto & key_array, auto && val_getter) {
+			const auto insert_or_sum = [&] (std::size_t & index, const std::vector<std::size_t> & key_pos,
+											const auto & key_array, auto && val_getter) {
+				const auto pos = key_pos[index++];
 				const auto & key = key_array[pos];
 
 				if (discard_prev)
@@ -216,20 +218,20 @@ private:
 				}
 			};
 
-			std::size_t pos_lhs = 0;
-			std::size_t pos_rhs = 0;
+			std::size_t index_lhs = 0;
+			std::size_t index_rhs = 0;
 
 			/// perform 2-way merge
 			while (true)
-				if (pos_lhs < key_pos_lhs.size() && pos_rhs == key_pos_rhs.size())
-					insert_or_sum(key_pos_lhs[pos_lhs++], key_array_lhs, val_getter_lhs);
-				else if (pos_lhs == key_pos_lhs.size() && pos_rhs < key_pos_rhs.size())
-					insert_or_sum(key_pos_rhs[pos_rhs++], key_array_rhs, val_getter_rhs);
-				else if (pos_lhs < key_pos_lhs.size() && pos_rhs < key_pos_rhs.size())
-					if (key_array_lhs[key_pos_lhs[pos_lhs]] < key_array_rhs[key_pos_rhs[pos_rhs]])
-						insert_or_sum(key_pos_lhs[pos_lhs++], key_array_lhs, val_getter_lhs);
+				if (index_lhs < key_pos_lhs.size() && index_rhs == key_pos_rhs.size())
+					insert_or_sum(index_lhs, key_pos_lhs, key_array_lhs, val_getter_lhs);
+				else if (index_lhs == key_pos_lhs.size() && index_rhs < key_pos_rhs.size())
+					insert_or_sum(index_rhs, key_pos_rhs, key_array_rhs, val_getter_rhs);
+				else if (index_lhs < key_pos_lhs.size() && index_rhs < key_pos_rhs.size())
+					if (key_array_lhs[key_pos_lhs[index_lhs]] < key_array_rhs[key_pos_rhs[index_rhs]])
+						insert_or_sum(index_lhs, key_pos_lhs, key_array_lhs, val_getter_lhs);
 					else
-						insert_or_sum(key_pos_rhs[pos_rhs++], key_array_rhs, val_getter_rhs);
+						insert_or_sum(index_rhs, key_pos_rhs, key_array_rhs, val_getter_rhs);
 				else
 					break;
 
