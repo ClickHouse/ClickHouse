@@ -335,7 +335,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 
 		auto input = std::make_unique<MergeTreeBlockInputStream>(
 			data.getFullPath() + parts[i]->name + '/', DEFAULT_MERGE_BLOCK_SIZE, union_column_names, data,
-			parts[i], ranges, false, nullptr, "");
+			parts[i], ranges, false, nullptr, "", true, aio_threshold, DBMS_DEFAULT_BUFFER_SIZE);
 
 		input->setAIOThreshold(aio_threshold);
 
@@ -363,19 +363,23 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 	switch (data.mode)
 	{
 		case MergeTreeData::Ordinary:
-			merged_stream = std::make_unique<MergingSortedBlockInputStream>(src_streams, data.getSortDescription(), DEFAULT_MERGE_BLOCK_SIZE);
+			merged_stream = std::make_unique<MergingSortedBlockInputStream>(
+				src_streams, data.getSortDescription(), DEFAULT_MERGE_BLOCK_SIZE);
 			break;
 
 		case MergeTreeData::Collapsing:
-			merged_stream = std::make_unique<CollapsingSortedBlockInputStream>(src_streams, data.getSortDescription(), data.sign_column, DEFAULT_MERGE_BLOCK_SIZE);
+			merged_stream = std::make_unique<CollapsingSortedBlockInputStream>(
+				src_streams, data.getSortDescription(), data.sign_column, DEFAULT_MERGE_BLOCK_SIZE);
 			break;
 
 		case MergeTreeData::Summing:
-			merged_stream = std::make_unique<SummingSortedBlockInputStream>(src_streams, data.getSortDescription(), data.columns_to_sum, DEFAULT_MERGE_BLOCK_SIZE);
+			merged_stream = std::make_unique<SummingSortedBlockInputStream>(
+				src_streams, data.getSortDescription(), data.columns_to_sum, DEFAULT_MERGE_BLOCK_SIZE);
 			break;
 
 		case MergeTreeData::Aggregating:
-			merged_stream = std::make_unique<AggregatingSortedBlockInputStream>(src_streams, data.getSortDescription(), DEFAULT_MERGE_BLOCK_SIZE);
+			merged_stream = std::make_unique<AggregatingSortedBlockInputStream>(
+				src_streams, data.getSortDescription(), DEFAULT_MERGE_BLOCK_SIZE);
 			break;
 
 		case MergeTreeData::Unsorted:

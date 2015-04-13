@@ -540,7 +540,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 	{
 		MarkRanges ranges(1, MarkRange(0, part->size));
 		BlockInputStreamPtr part_in = new MergeTreeBlockInputStream(full_path + part->name + '/',
-			DEFAULT_MERGE_BLOCK_SIZE, expression->getRequiredColumns(), *this, part, ranges, false, nullptr, "", false);
+			DEFAULT_MERGE_BLOCK_SIZE, expression->getRequiredColumns(), *this, part, ranges, false, nullptr, "", false, 0, DBMS_DEFAULT_BUFFER_SIZE);
 		ExpressionBlockInputStream in(part_in, expression);
 		MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/', true, CompressionMethod::LZ4);
 		in.readPrefix();

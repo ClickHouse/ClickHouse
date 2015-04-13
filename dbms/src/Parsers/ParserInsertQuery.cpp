@@ -14,7 +14,7 @@ namespace DB
 {
 
 
-bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
+bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	Pos begin = pos;
 
@@ -45,22 +45,22 @@ bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 	ws.ignore(pos, end);
 
 	/// INSERT INTO
-	if (!s_insert.ignore(pos, end, expected)
+	if (!s_insert.ignore(pos, end, max_parsed_pos, expected)
 		|| !ws.ignore(pos, end)
-		|| !s_into.ignore(pos, end, expected))
+		|| !s_into.ignore(pos, end, max_parsed_pos, expected))
 		return false;
 
 	ws.ignore(pos, end);
 
-	if (!name_p.parse(pos, end, table, expected))
+	if (!name_p.parse(pos, end, table, max_parsed_pos, expected))
 		return false;
 
 	ws.ignore(pos, end);
 
-	if (s_dot.ignore(pos, end, expected))
+	if (s_dot.ignore(pos, end, max_parsed_pos, expected))
 	{
 		database = table;
-		if (!name_p.parse(pos, end, table, expected))
+		if (!name_p.parse(pos, end, table, max_parsed_pos, expected))
 			return false;
 
 		ws.ignore(pos, end);
@@ -68,24 +68,24 @@ bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 
 	ws.ignore(pos, end);
 
-	if (s_id.ignore(pos, end, expected))
+	if (s_id.ignore(pos, end, max_parsed_pos, expected))
 	{
-		if (!s_eq.ignore(pos, end, expected))
+		if (!s_eq.ignore(pos, end, max_parsed_pos, expected))
 			return false;
 
-		if (!id_p.parse(pos, end, id, expected))
+		if (!id_p.parse(pos, end, id, max_parsed_pos, expected))
 			return false;
 	}
 
 	ws.ignore(pos, end);
 
 	/// Есть ли список столбцов
-	if (s_lparen.ignore(pos, end, expected))
+	if (s_lparen.ignore(pos, end, max_parsed_pos, expected))
 	{
-		if (!columns_p.parse(pos, end, columns, expected))
+		if (!columns_p.parse(pos, end, columns, max_parsed_pos, expected))
 			return false;
 		ws.ignore(pos, end);
-		if (!s_rparen.ignore(pos, end, expected))
+		if (!s_rparen.ignore(pos, end, max_parsed_pos, expected))
 			return false;
 	}
 
@@ -94,17 +94,17 @@ bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 	Pos before_select = pos;
 
 	/// VALUES или FORMAT или SELECT
-	if (s_values.ignore(pos, end, expected))
+	if (s_values.ignore(pos, end, max_parsed_pos, expected))
 	{
 		ws.ignore(pos, end);
 		data = pos;
 		pos = end;
 	}
-	else if (s_format.ignore(pos, end, expected))
+	else if (s_format.ignore(pos, end, max_parsed_pos, expected))
 	{
 		ws.ignore(pos, end);
 
-		if (!name_p.parse(pos, end, format, expected))
+		if (!name_p.parse(pos, end, format, max_parsed_pos, expected))
 			return false;
 
 		/// Данные начинаются после первого перевода строки, если такой есть, или после всех пробельных символов, иначе.
@@ -126,11 +126,11 @@ bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 		data = pos;
 		pos = end;
 	}
-	else if (s_select.ignore(pos, end, expected))
+	else if (s_select.ignore(pos, end, max_parsed_pos, expected))
 	{
 		pos = before_select;
 		ParserSelectQuery select_p;
-		select_p.parse(pos, end, select, expected);
+		select_p.parse(pos, end, select, max_parsed_pos, expected);
 	}
 	else
 	{

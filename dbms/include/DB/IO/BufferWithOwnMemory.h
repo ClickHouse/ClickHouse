@@ -7,8 +7,7 @@
 
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
-
-#define DBMS_DEFAULT_BUFFER_SIZE 1048576ULL
+#include <DB/Core/Defines.h>
 
 
 namespace DB

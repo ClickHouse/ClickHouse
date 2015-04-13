@@ -12,7 +12,7 @@ namespace DB
 {
 
 
-bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
+bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	Pos begin = pos;
 
@@ -50,25 +50,25 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 
 	/// SELECT [DISTINCT] expr list
 	{
-		if (!s_select.ignore(pos, end, expected))
+		if (!s_select.ignore(pos, end, max_parsed_pos, expected))
 			return false;
 
 		ws.ignore(pos, end);
 
-		if (s_distinct.ignore(pos, end, expected))
+		if (s_distinct.ignore(pos, end, max_parsed_pos, expected))
 		{
 			select_query->distinct = true;
 			ws.ignore(pos, end);
 		}
 
-		if (!exp_list.parse(pos, end, select_query->select_expression_list, expected))
+		if (!exp_list.parse(pos, end, select_query->select_expression_list, max_parsed_pos, expected))
 			return false;
 
 		ws.ignore(pos, end);
 	}
 
 	/// FROM database.table или FROM table или FROM (subquery) или FROM tableFunction
-	if (s_from.ignore(pos, end, expected))
+	if (s_from.ignore(pos, end, max_parsed_pos, expected))
 	{
 		ws.ignore(pos, end);
 
@@ -79,28 +79,28 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 		ParserFunction table_function;
 		Pos before = pos;
 
-		if (s_lparen.ignore(pos, end, expected))
+		if (s_lparen.ignore(pos, end, max_parsed_pos, expected))
 		{
 			ws.ignore(pos, end);
 
 			ParserSelectQuery select_p;
-			if (!select_p.parse(pos, end, select_query->table, expected))
+			if (!select_p.parse(pos, end, select_query->table, max_parsed_pos, expected))
 				return false;
 
 			ws.ignore(pos, end);
 
-			if (!s_rparen.ignore(pos, end, expected))
+			if (!s_rparen.ignore(pos, end, max_parsed_pos, expected))
 				return false;
 
 			ws.ignore(pos, end);
 		}
-		else if (ident.parse(pos, end, select_query->table, expected))
+		else if (ident.parse(pos, end, select_query->table, max_parsed_pos, expected))
 		{
 			/// Если сразу после identifier идет скобка, значит это должна быть табличная функция
-			if (s_lparen.ignore(pos, end, expected))
+			if (s_lparen.ignore(pos, end, max_parsed_pos, expected))
 			{
 				pos = before;
-				if (!table_function.parse(pos, end, select_query->table, expected))
+				if (!table_function.parse(pos, end, select_query->table, max_parsed_pos, expected))
 					return false;
 				if (select_query->table)
 					typeid_cast<ASTFunction &>(*select_query->table).kind = ASTFunction::TABLE_FUNCTION;
@@ -109,10 +109,10 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 			else
 			{
 				ws.ignore(pos, end);
-				if (s_dot.ignore(pos, end, expected))
+				if (s_dot.ignore(pos, end, max_parsed_pos, expected))
 				{
 					select_query->database = select_query->table;
-					if (!ident.parse(pos, end, select_query->table, expected))
+					if (!ident.parse(pos, end, select_query->table, max_parsed_pos, expected))
 						return false;
 
 					ws.ignore(pos, end);
@@ -138,7 +138,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 	{
 		/// FINAL
 		if (!select_query->final
-			&& s_final.ignore(pos, end, expected))
+			&& s_final.ignore(pos, end, max_parsed_pos, expected))
 		{
 			select_query->final = true;
 
@@ -147,13 +147,13 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 
 		/// SAMPLE number
 		if (!select_query->sample_size
-			&& s_sample.ignore(pos, end, expected))
+			&& s_sample.ignore(pos, end, max_parsed_pos, expected))
 		{
 			ws.ignore(pos, end);
 
 			ParserNumber num;
 
-			if (!num.parse(pos, end, select_query->sample_size, expected))
+			if (!num.parse(pos, end, select_query->sample_size, max_parsed_pos, expected))
 				return false;
 
 			ws.ignore(pos, end);
@@ -166,67 +166,67 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 		return false;
 
 	/// ARRAY JOIN expr list
-	if (s_array.ignore(pos, end, expected))
+	if (s_array.ignore(pos, end, max_parsed_pos, expected))
 	{
 		ws.ignore(pos, end);
 
-		if (!s_join.ignore(pos, end, expected))
+		if (!s_join.ignore(pos, end, max_parsed_pos, expected))
 			return false;
 
 		ws.ignore(pos, end);
 
-		if (!exp_list.parse(pos, end, select_query->array_join_expression_list, expected))
+		if (!exp_list.parse(pos, end, select_query->array_join_expression_list, max_parsed_pos, expected))
 			return false;
 
 		ws.ignore(pos, end);
 	}
 
 	/// [GLOBAL] ANY|ALL INNER|LEFT JOIN (subquery) USING (tuple)
-	join.parse(pos, end, select_query->join, expected);
+	join.parse(pos, end, select_query->join, max_parsed_pos, expected);
 
 	if (!parse_final_and_sample())
 		return false;
 
 	/// PREWHERE expr
-	if (s_prewhere.ignore(pos, end, expected))
+	if (s_prewhere.ignore(pos, end, max_parsed_pos, expected))
 	{
 		ws.ignore(pos, end);
 
-		if (!exp_elem.parse(pos, end, select_query->prewhere_expression, expected))
+		if (!exp_elem.parse(pos, end, select_query->prewhere_expression, max_parsed_pos, expected))
 			return false;
 
 		ws.ignore(pos, end);
 	}
 
 	/// WHERE expr
-	if (s_where.ignore(pos, end, expected))
+	if (s_where.ignore(pos, end, max_parsed_pos, expected))
 	{
 		ws.ignore(pos, end);
 
-		if (!exp_elem.parse(pos, end, select_query->where_expression, expected))
+		if (!exp_elem.parse(pos, end, select_query->where_expression, max_parsed_pos, expected))
 			return false;
 
 		ws.ignore(pos, end);
 	}
 
 	/// GROUP BY expr list
-	if (s_group.ignore(pos, end, expected))
+	if (s_group.ignore(pos, end, max_parsed_pos, expected))
 	{
 		ws.ignore(pos, end);
-		if (!s_by.ignore(pos, end, expected))
+		if (!s_by.ignore(pos, end, max_parsed_pos, expected))
 			return false;
 
-		if (!exp_list.parse(pos, end, select_query->group_expression_list, expected))
+		if (!exp_list.parse(pos, end, select_query->group_expression_list, max_parsed_pos, expected))
 			return false;
 
 		ws.ignore(pos, end);
 	}
 
 	/// WITH TOTALS
-	if (s_with.ignore(pos, end, expected))
+	if (s_with.ignore(pos, end, max_parsed_pos, expected))
 	{
 		ws.ignore(pos, end);
-		if (!s_totals.ignore(pos, end, expected))
+		if (!s_totals.ignore(pos, end, max_parsed_pos, expected))
 			return false;
 
 		select_query->group_by_with_totals = true;
@@ -235,46 +235,46 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 	}
 
 	/// HAVING expr
-	if (s_having.ignore(pos, end, expected))
+	if (s_having.ignore(pos, end, max_parsed_pos, expected))
 	{
 		ws.ignore(pos, end);
 
-		if (!exp_elem.parse(pos, end, select_query->having_expression, expected))
+		if (!exp_elem.parse(pos, end, select_query->having_expression, max_parsed_pos, expected))
 			return false;
 
 		ws.ignore(pos, end);
 	}
 
 	/// ORDER BY expr ASC|DESC COLLATE 'locale' list
-	if (s_order.ignore(pos, end, expected))
+	if (s_order.ignore(pos, end, max_parsed_pos, expected))
 	{
 		ws.ignore(pos, end);
-		if (!s_by.ignore(pos, end, expected))
+		if (!s_by.ignore(pos, end, max_parsed_pos, expected))
 			return false;
 
-		if (!order_list.parse(pos, end, select_query->order_expression_list, expected))
+		if (!order_list.parse(pos, end, select_query->order_expression_list, max_parsed_pos, expected))
 			return false;
 
 		ws.ignore(pos, end);
 	}
 
 	/// LIMIT length или LIMIT offset, length
-	if (s_limit.ignore(pos, end, expected))
+	if (s_limit.ignore(pos, end, max_parsed_pos, expected))
 	{
 		ws.ignore(pos, end);
 
 		ParserString s_comma(",");
 		ParserNumber num;
 
-		if (!num.parse(pos, end, select_query->limit_length, expected))
+		if (!num.parse(pos, end, select_query->limit_length, max_parsed_pos, expected))
 			return false;
 
 		ws.ignore(pos, end);
 
-		if (s_comma.ignore(pos, end, expected))
+		if (s_comma.ignore(pos, end, max_parsed_pos, expected))
 		{
 			select_query->limit_offset = select_query->limit_length;
-			if (!num.parse(pos, end, select_query->limit_length, expected))
+			if (!num.parse(pos, end, select_query->limit_length, max_parsed_pos, expected))
 				return false;
 
 			ws.ignore(pos, end);
@@ -282,13 +282,13 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 	}
 
 	/// FORMAT format_name
-	if (s_format.ignore(pos, end, expected))
+	if (s_format.ignore(pos, end, max_parsed_pos, expected))
 	{
 		ws.ignore(pos, end);
 
 		ParserIdentifier format_p;
 
-		if (!format_p.parse(pos, end, select_query->format, expected))
+		if (!format_p.parse(pos, end, select_query->format, max_parsed_pos, expected))
 			return false;
 		typeid_cast<ASTIdentifier &>(*select_query->format).kind = ASTIdentifier::Format;
 
@@ -296,14 +296,14 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 	}
 
 	// UNION ALL select query
-	if (s_union.ignore(pos, end, expected))
+	if (s_union.ignore(pos, end, max_parsed_pos, expected))
 	{
 		ws.ignore(pos, end);
 
-		if (s_all.ignore(pos, end, expected))
+		if (s_all.ignore(pos, end, max_parsed_pos, expected))
 		{
 			ParserSelectQuery select_p;
-			if (!select_p.parse(pos, end, select_query->next_union_all, expected))
+			if (!select_p.parse(pos, end, select_query->next_union_all, max_parsed_pos, expected))
 				return false;
 		}
 		else

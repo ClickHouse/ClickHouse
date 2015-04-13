@@ -410,7 +410,8 @@ ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns)
 
 		ParserIdentifierWithOptionalParameters storage_p;
 		Expected expected{""};
-		if (!storage_p.parse(pos, end, column_declaration->type, expected))
+		IParser::Pos max_parsed_pos = pos;
+		if (!storage_p.parse(pos, end, column_declaration->type, max_parsed_pos, expected))
 			throw Exception("Cannot parse data type.", ErrorCodes::SYNTAX_ERROR);
 
 		column_declaration->type->query_string = type_name;
@@ -444,7 +445,8 @@ ASTPtr InterpreterCreateQuery::formatColumns(NamesAndTypesList columns,
 
 		ParserIdentifierWithOptionalParameters storage_p;
 		Expected expected{""};
-		if (!storage_p.parse(pos, end, column_declaration->type, expected))
+		IParser::Pos max_parsed_pos = pos;
+		if (!storage_p.parse(pos, end, column_declaration->type, max_parsed_pos, expected))
 			throw Exception("Cannot parse data type.", ErrorCodes::SYNTAX_ERROR);
 
 		column_declaration->type->query_string = type_name;

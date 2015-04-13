@@ -8,6 +8,7 @@ namespace DB
 {
 
 ReadBufferFromFileBase * createReadBufferFromFileBase(const std::string & filename_,
+		size_t estimated_size,
 		size_t aio_threshold,
 		size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
 		int flags_ = -1,
