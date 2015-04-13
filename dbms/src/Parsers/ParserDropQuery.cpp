@@ -9,7 +9,7 @@ namespace DB
 {
 
 
-bool ParserDropQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
+bool ParserDropQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	Pos begin = pos;
 
@@ -30,9 +30,9 @@ bool ParserDropQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & ex
 
 	ws.ignore(pos, end);
 
-	if (!s_drop.ignore(pos, end, expected))
+	if (!s_drop.ignore(pos, end, max_parsed_pos, expected))
 	{
-		if (s_detach.ignore(pos, end, expected))
+		if (s_detach.ignore(pos, end, max_parsed_pos, expected))
 			detach = true;
 		else
 			return false;
@@ -40,41 +40,41 @@ bool ParserDropQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & ex
 
 	ws.ignore(pos, end);
 
-	if (s_database.ignore(pos, end, expected))
+	if (s_database.ignore(pos, end, max_parsed_pos, expected))
 	{
 		ws.ignore(pos, end);
 
-		if (s_if.ignore(pos, end, expected)
+		if (s_if.ignore(pos, end, max_parsed_pos, expected)
 			&& ws.ignore(pos, end)
-			&& s_exists.ignore(pos, end, expected)
+			&& s_exists.ignore(pos, end, max_parsed_pos, expected)
 			&& ws.ignore(pos, end))
 			if_exists = true;
 
-		if (!name_p.parse(pos, end, database, expected))
+		if (!name_p.parse(pos, end, database, max_parsed_pos, expected))
 			return false;
 	}
 	else
 	{
-		if (!s_table.ignore(pos, end, expected))
+		if (!s_table.ignore(pos, end, max_parsed_pos, expected))
 			return false;
 
 		ws.ignore(pos, end);
 
-		if (s_if.ignore(pos, end, expected)
+		if (s_if.ignore(pos, end, max_parsed_pos, expected)
 			&& ws.ignore(pos, end)
-			&& s_exists.ignore(pos, end, expected)
+			&& s_exists.ignore(pos, end, max_parsed_pos, expected)
 			&& ws.ignore(pos, end))
 			if_exists = true;
 
-		if (!name_p.parse(pos, end, table, expected))
+		if (!name_p.parse(pos, end, table, max_parsed_pos, expected))
 			return false;
 
 		ws.ignore(pos, end);
 
-		if (s_dot.ignore(pos, end, expected))
+		if (s_dot.ignore(pos, end, max_parsed_pos, expected))
 		{
 			database = table;
-			if (!name_p.parse(pos, end, table, expected))
+			if (!name_p.parse(pos, end, table, max_parsed_pos, expected))
 				return false;
 
 			ws.ignore(pos, end);

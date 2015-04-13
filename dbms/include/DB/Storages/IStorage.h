@@ -110,7 +110,11 @@ public:
 	  */
 	TableFullWriteLockPtr lockForAlter()
 	{
-		return std::make_pair(lockDataForAlter(), lockStructureForAlter());
+		/// Порядок вычисления важен.
+		auto data_lock = lockDataForAlter();
+		auto structure_lock = lockStructureForAlter();
+
+		return {std::move(data_lock), std::move(structure_lock)};
 	}
 
 	/** Не дает изменять данные в таблице. (Более того, не дает посмотреть на структуру таблицы с намерением изменить данные).
@@ -232,9 +236,9 @@ public:
 	/** Выполнить какую-либо фоновую работу. Например, объединение кусков в таблице типа MergeTree.
 	  * Возвращает - была ли выполнена какая-либо работа.
 	  */
-	virtual bool optimize()
+	bool optimize(size_t aio_threshold = 0)
 	{
-		throw Exception("Method optimize is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+		return performOptimize(aio_threshold);
 	}
 
 	/** Получить запрос CREATE TABLE, который описывает данную таблицу.
@@ -274,6 +278,12 @@ public:
 
 	/// проверяет валидность данных
 	virtual bool checkData() const { throw DB::Exception("Check query is not supported for " + getName() + " storage"); }
+
+protected:
+	virtual bool performOptimize(size_t aio_threshold)
+	{
+		throw Exception("Method optimize is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+	}
 
 protected:
 	using ITableDeclaration::ITableDeclaration;

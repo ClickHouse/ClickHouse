@@ -40,9 +40,11 @@ using Poco::SharedPtr;
 class LogBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	LogBlockInputStream(size_t block_size_, const Names & column_names_, StorageLog & storage_, size_t mark_number_, size_t rows_limit_)
+	LogBlockInputStream(
+		size_t block_size_, const Names & column_names_, StorageLog & storage_,
+		size_t mark_number_, size_t rows_limit_, size_t max_read_buffer_size_)
 		: block_size(block_size_), column_names(column_names_), storage(storage_),
-		mark_number(mark_number_), rows_limit(rows_limit_), current_mark(mark_number_) {}
+		mark_number(mark_number_), rows_limit(rows_limit_), current_mark(mark_number_), max_read_buffer_size(max_read_buffer_size_) {}
 
 	String getName() const { return "LogBlockInputStream"; }
 
@@ -66,14 +68,14 @@ private:
 	StorageLog & storage;
 	size_t mark_number;		/// С какой засечки читать данные
 	size_t rows_limit;		/// Максимальное количество строк, которых можно прочитать
-
 	size_t rows_read = 0;
 	size_t current_mark;
+	size_t max_read_buffer_size;
 
 	struct Stream
 	{
-		Stream(const std::string & data_path, size_t offset)
-			: plain(data_path, std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(data_path).getSize())),
+		Stream(const std::string & data_path, size_t offset, size_t max_read_buffer_size)
+			: plain(data_path, std::min(max_read_buffer_size, Poco::File(data_path).getSize())),
 			compressed(plain)
 		{
 			if (offset)
@@ -103,13 +105,25 @@ public:
 			addStream(column.name, *column.type);
 	}
 
-	~LogBlockOutputStream() { writeSuffix(); }
+	~LogBlockOutputStream()
+	{
+		try
+		{
+			writeSuffix();
+		}
+		catch (...)
+		{
+			tryLogCurrentException(__PRETTY_FUNCTION__);
+		}
+	}
 
 	void write(const Block & block);
 	void writeSuffix();
+
 private:
 	StorageLog & storage;
 	Poco::ScopedWriteRWLock lock;
+	bool done = false;
 
 	struct Stream
 	{
@@ -266,29 +280,18 @@ void LogBlockInputStream::addStream(const String & name, const IDataType & type,
 				storage.files[size_name].data_file.path(),
 				mark_number
 					? storage.files[size_name].marks[mark_number].offset
-					: 0)));
+					: 0,
+				max_read_buffer_size)));
 
 		addStream(name, *type_arr->getNestedType(), level + 1);
-	}
-	else if (const DataTypeNested * type_nested = typeid_cast<const DataTypeNested *>(&type))
-	{
-		String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-		streams[size_name].reset(new Stream(
-			storage.files[size_name].data_file.path(),
-			mark_number
-				? storage.files[size_name].marks[mark_number].offset
-				: 0));
-
-		const NamesAndTypesList & columns = *type_nested->getNestedTypesList();
-		for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
-			addStream(DataTypeNested::concatenateNestedName(name, it->name), *it->type, level + 1);
 	}
 	else
 		streams[name].reset(new Stream(
 			storage.files[name].data_file.path(),
 			mark_number
 				? storage.files[name].marks[mark_number].offset
-				: 0));
+				: 0,
+			max_read_buffer_size));
 }
 
 
@@ -313,29 +316,6 @@ void LogBlockInputStream::readData(const String & name, const IDataType & type, 
 				typeid_cast<ColumnArray &>(column).getData(),
 				typeid_cast<const ColumnArray &>(column).getOffsets()[column.size() - 1],
 				level + 1);
-	}
-	else if (const DataTypeNested * type_nested = typeid_cast<const DataTypeNested *>(&type))
-	{
-		type_nested->deserializeOffsets(
-			column,
-			streams[name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level)]->compressed,
-			max_rows_to_read);
-
-		if (column.size())
-		{
-			ColumnNested & column_nested = typeid_cast<ColumnNested &>(column);
-
-			NamesAndTypesList::const_iterator it = type_nested->getNestedTypesList()->begin();
-			for (size_t i = 0; i < column_nested.getData().size(); ++i, ++it)
-			{
-				readData(
-					DataTypeNested::concatenateNestedName(name, it->name),
-					*it->type,
-					*column_nested.getData()[i],
-					column_nested.getOffsets()[column.size() - 1],
-					level + 1);
-			}
-		}
 	}
 	else
 		type.deserializeBinary(column, streams[name]->compressed, max_rows_to_read, 0);	/// TODO Использовать avg_value_size_hint.
@@ -362,6 +342,10 @@ void LogBlockOutputStream::write(const Block & block)
 
 void LogBlockOutputStream::writeSuffix()
 {
+	if (done)
+		return;
+	done = true;
+
 	/// Заканчиваем запись.
 	marks_stream.next();
 
@@ -391,15 +375,6 @@ void LogBlockOutputStream::addStream(const String & name, const IDataType & type
 
 		addStream(name, *type_arr->getNestedType(), level + 1);
 	}
-	else if (const DataTypeNested * type_nested = typeid_cast<const DataTypeNested *>(&type))
-	{
-		String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-		streams[size_name].reset(new Stream(storage.files[size_name].data_file.path(), storage.max_compress_block_size));
-
-		const NamesAndTypesList & columns = *type_nested->getNestedTypesList();
-		for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
-			addStream(DataTypeNested::concatenateNestedName(name, it->name), *it->type, level + 1);
-	}
 	else
 		streams[name].reset(new Stream(storage.files[name].data_file.path(), storage.max_compress_block_size));
 }
@@ -428,33 +403,6 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
 		}
 
 		writeData(name, *type_arr->getNestedType(), typeid_cast<const ColumnArray &>(column).getData(), out_marks, offset_columns, level + 1);
-	}
-	else if (const DataTypeNested * type_nested = typeid_cast<const DataTypeNested *>(&type))
-	{
-		String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-
-		Mark mark;
-		mark.rows = (storage.files[size_name].marks.empty() ? 0 : storage.files[size_name].marks.back().rows) + column.size();
-		mark.offset = streams[size_name]->plain_offset + streams[size_name]->plain.count();
-
-		out_marks.push_back(std::make_pair(storage.files[size_name].column_index, mark));
-
-		type_nested->serializeOffsets(column, streams[size_name]->compressed);
-		streams[size_name]->compressed.next();
-
-		const ColumnNested & column_nested = typeid_cast<const ColumnNested &>(column);
-
-		NamesAndTypesList::const_iterator it = type_nested->getNestedTypesList()->begin();
-		for (size_t i = 0; i < column_nested.getData().size(); ++i, ++it)
-		{
-			writeData(
-				DataTypeNested::concatenateNestedName(name, it->name),
-				*it->type,
-				*column_nested.getData()[i],
-				out_marks,
-				offset_columns,
-				level + 1);
-		}
 	}
 	else
 	{
@@ -574,21 +522,6 @@ void StorageLog::addFile(const String & column_name, const IDataType & type, siz
 
 		addFile(column_name, *type_arr->getNestedType(), level + 1);
 	}
-	else if (const DataTypeNested * type_nested = typeid_cast<const DataTypeNested *>(&type))
-	{
-		String size_column_suffix = ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-
-		ColumnData & column_data = files.insert(std::make_pair(column_name + size_column_suffix, ColumnData())).first->second;
-		column_data.column_index = column_names.size();
-		column_data.data_file = Poco::File(
-			path + escapeForFileName(name) + '/' + escapeForFileName(column_name) + size_column_suffix + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION);
-
-		column_names.push_back(column_name + size_column_suffix);
-
-		const NamesAndTypesList & columns = *type_nested->getNestedTypesList();
-		for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
-			addFile(DataTypeNested::concatenateNestedName(name, it->name), *it->type, level + 1);
-	}
 	else
 	{
 		ColumnData & column_data = files.insert(std::make_pair(column_name, ColumnData())).first->second;
@@ -685,10 +618,6 @@ const Marks & StorageLog::getMarksWithRealRowCount() const
 	{
 		file_name = DataTypeNested::extractNestedTableName(column_name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX "0";
 	}
-	else if (typeid_cast<const DataTypeNested *>(&column_type))
-	{
-		file_name = column_name + ARRAY_SIZES_COLUMN_NAME_SUFFIX "0";
-	}
 	else
 	{
 		file_name = column_name;
@@ -744,7 +673,8 @@ BlockInputStreams StorageLog::read(
 			max_block_size,
 			column_names,
 			*this,
-			0, std::numeric_limits<size_t>::max()));
+			0, std::numeric_limits<size_t>::max(),
+			settings.max_read_buffer_size));
 	}
 	else
 	{
@@ -770,7 +700,8 @@ BlockInputStreams StorageLog::read(
 				marks[from_mark + (thread + 1) * (to_mark - from_mark) / threads - 1].rows -
 					((thread == 0 && from_mark == 0)
 						? 0
-						: marks[from_mark + thread * (to_mark - from_mark) / threads - 1].rows)));
+						: marks[from_mark + thread * (to_mark - from_mark) / threads - 1].rows),
+				settings.max_read_buffer_size));
 		}
 	}
 

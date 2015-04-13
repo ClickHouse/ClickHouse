@@ -24,7 +24,7 @@ namespace DB
 {
 
 
-bool ParserArray::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
+bool ParserArray::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	Pos begin = pos;
 	ASTPtr contents_node;
@@ -32,15 +32,15 @@ bool ParserArray::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expect
 	ParserExpressionList contents;
 	ParserWhiteSpaceOrComments ws;
 
-	if (!open.ignore(pos, end, expected))
+	if (!open.ignore(pos, end, max_parsed_pos, expected))
 		return false;
 
 	ws.ignore(pos, end);
-	if (!contents.parse(pos, end, contents_node, expected))
+	if (!contents.parse(pos, end, contents_node, max_parsed_pos, expected))
 		return false;
 	ws.ignore(pos, end);
 
-	if (!close.ignore(pos, end, expected))
+	if (!close.ignore(pos, end, max_parsed_pos, expected))
 		return false;
 
 	ASTFunction * function_node = new ASTFunction(StringRange(begin, pos));
@@ -53,7 +53,7 @@ bool ParserArray::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expect
 }
 
 
-bool ParserParenthesisExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
+bool ParserParenthesisExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	Pos begin = pos;
 	ASTPtr contents_node;
@@ -61,15 +61,15 @@ bool ParserParenthesisExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, E
 	ParserExpressionList contents;
 	ParserWhiteSpaceOrComments ws;
 
-	if (!open.ignore(pos, end, expected))
+	if (!open.ignore(pos, end, max_parsed_pos, expected))
 		return false;
 
 	ws.ignore(pos, end);
-	if (!contents.parse(pos, end, contents_node, expected))
+	if (!contents.parse(pos, end, contents_node, max_parsed_pos, expected))
 		return false;
 	ws.ignore(pos, end);
 
-	if (!close.ignore(pos, end, expected))
+	if (!close.ignore(pos, end, max_parsed_pos, expected))
 		return false;
 
 	ASTExpressionList & expr_list = typeid_cast<ASTExpressionList &>(*contents_node);
@@ -98,7 +98,7 @@ bool ParserParenthesisExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, E
 }
 
 
-bool ParserSubquery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
+bool ParserSubquery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	Pos begin = pos;
 	ASTPtr select_node;
@@ -106,15 +106,15 @@ bool ParserSubquery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & exp
 	ParserSelectQuery select;
 	ParserWhiteSpaceOrComments ws;
 
-	if (!open.ignore(pos, end, expected))
+	if (!open.ignore(pos, end, max_parsed_pos, expected))
 		return false;
 
 	ws.ignore(pos, end);
-	if (!select.parse(pos, end, select_node, expected))
+	if (!select.parse(pos, end, select_node, max_parsed_pos, expected))
 		return false;
 	ws.ignore(pos, end);
 
-	if (!close.ignore(pos, end, expected))
+	if (!close.ignore(pos, end, max_parsed_pos, expected))
 		return false;
 
 	node = new ASTSubquery(StringRange(begin, pos));
@@ -123,7 +123,7 @@ bool ParserSubquery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & exp
 }
 
 
-bool ParserIdentifier::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
+bool ParserIdentifier::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	Pos begin = pos;
 
@@ -161,7 +161,7 @@ bool ParserIdentifier::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & e
 }
 
 
-bool ParserCompoundIdentifier::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
+bool ParserCompoundIdentifier::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	Pos begin = pos;
 
@@ -206,7 +206,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expe
 }
 
 
-bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
+bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	Pos begin = pos;
 
@@ -219,22 +219,22 @@ bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & exp
 	ASTPtr expr_list_args;
 	ASTPtr expr_list_params;
 
-	if (!id_parser.parse(pos, end, identifier, expected))
+	if (!id_parser.parse(pos, end, identifier, max_parsed_pos, expected))
 		return false;
 
 	ws.ignore(pos, end);
 
-	if (!open.ignore(pos, end, expected))
+	if (!open.ignore(pos, end, max_parsed_pos, expected))
 		return false;
 
 	ws.ignore(pos, end);
 	Pos contents_begin = pos;
-	if (!contents.parse(pos, end, expr_list_args, expected))
+	if (!contents.parse(pos, end, expr_list_args, max_parsed_pos, expected))
 		return false;
 	Pos contents_end = pos;
 	ws.ignore(pos, end);
 
-	if (!close.ignore(pos, end, expected))
+	if (!close.ignore(pos, end, max_parsed_pos, expected))
 		return false;
 
 	/** Проверка на распространённый случай ошибки - часто из-за сложности квотирования аргументов командной строки,
@@ -261,17 +261,17 @@ bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & exp
 	}
 
 	/// У параметрической агрегатной функции - два списка (параметры и аргументы) в круглых скобках. Пример: quantile(0.9)(x).
-	if (open.ignore(pos, end, expected))
+	if (open.ignore(pos, end, max_parsed_pos, expected))
 	{
 		expr_list_params = expr_list_args;
 		expr_list_args = nullptr;
 
 		ws.ignore(pos, end);
-		if (!contents.parse(pos, end, expr_list_args, expected))
+		if (!contents.parse(pos, end, expr_list_args, max_parsed_pos, expected))
 			return false;
 		ws.ignore(pos, end);
 
-		if (!close.ignore(pos, end, expected))
+		if (!close.ignore(pos, end, max_parsed_pos, expected))
 			return false;
 	}
 
@@ -292,11 +292,11 @@ bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & exp
 }
 
 
-bool ParserNull::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
+bool ParserNull::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	Pos begin = pos;
 	ParserString nested_parser("NULL", true);
-	if (nested_parser.parse(pos, end, node, expected))
+	if (nested_parser.parse(pos, end, node, max_parsed_pos, expected))
 	{
 		node = new ASTLiteral(StringRange(StringRange(begin, pos)), Null());
 		return true;
@@ -306,7 +306,7 @@ bool ParserNull::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expecte
 }
 
 
-bool ParserNumber::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
+bool ParserNumber::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	Field res;
 
@@ -357,7 +357,7 @@ bool ParserNumber::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expec
 }
 
 
-bool ParserStringLiteral::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
+bool ParserStringLiteral::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	Pos begin = pos;
 	String s;
@@ -405,7 +405,7 @@ bool ParserStringLiteral::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected 
 }
 
 
-bool ParserLiteral::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
+bool ParserLiteral::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	Pos begin = pos;
 
@@ -413,15 +413,15 @@ bool ParserLiteral::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expe
 	ParserNumber num_p;
 	ParserStringLiteral str_p;
 
-	if (null_p.parse(pos, end, node, expected))
+	if (null_p.parse(pos, end, node, max_parsed_pos, expected))
 		return true;
 	pos = begin;
 
-	if (num_p.parse(pos, end, node, expected))
+	if (num_p.parse(pos, end, node, max_parsed_pos, expected))
 		return true;
 	pos = begin;
 
-	if (str_p.parse(pos, end, node, expected))
+	if (str_p.parse(pos, end, node, max_parsed_pos, expected))
 		return true;
 	pos = begin;
 
@@ -430,25 +430,25 @@ bool ParserLiteral::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expe
 }
 
 
-bool ParserAlias::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
+bool ParserAlias::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	ParserWhiteSpaceOrComments ws;
 	ParserString s_as("AS", true, true);
 	ParserIdentifier id_p;
 
-	if (!s_as.parse(pos, end, node, expected))
+	if (!s_as.parse(pos, end, node, max_parsed_pos, expected))
 		return false;
 
 	ws.ignore(pos, end);
 
-	if (!id_p.parse(pos, end, node, expected))
+	if (!id_p.parse(pos, end, node, max_parsed_pos, expected))
 		return false;
 
 	return true;
 }
 
 
-bool ParserExpressionElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
+bool ParserExpressionElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	Pos begin = pos;
 
@@ -460,31 +460,31 @@ bool ParserExpressionElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expec
 	ParserCompoundIdentifier id_p;
 	ParserString asterisk_p("*");
 
-	if (subquery_p.parse(pos, end, node, expected))
+	if (subquery_p.parse(pos, end, node, max_parsed_pos, expected))
 		return true;
 	pos = begin;
 
-	if (paren_p.parse(pos, end, node, expected))
+	if (paren_p.parse(pos, end, node, max_parsed_pos, expected))
 		return true;
 	pos = begin;
 
-	if (array_p.parse(pos, end, node, expected))
+	if (array_p.parse(pos, end, node, max_parsed_pos, expected))
 		return true;
 	pos = begin;
 
-	if (lit_p.parse(pos, end, node, expected))
+	if (lit_p.parse(pos, end, node, max_parsed_pos, expected))
 		return true;
 	pos = begin;
 
-	if (fun_p.parse(pos, end, node, expected))
+	if (fun_p.parse(pos, end, node, max_parsed_pos, expected))
 		return true;
 	pos = begin;
 
-	if (id_p.parse(pos, end, node, expected))
+	if (id_p.parse(pos, end, node, max_parsed_pos, expected))
 		return true;
 	pos = begin;
 
-	if (asterisk_p.parse(pos, end, node, expected))
+	if (asterisk_p.parse(pos, end, node, max_parsed_pos, expected))
 	{
 		node = new ASTAsterisk(StringRange(begin, pos));
 		return true;
@@ -496,18 +496,18 @@ bool ParserExpressionElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expec
 }
 
 
-bool ParserWithOptionalAlias::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
+bool ParserWithOptionalAlias::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	ParserWhiteSpaceOrComments ws;
 	ParserAlias alias_p;
 
-	if (!elem_parser->parse(pos, end, node, expected))
+	if (!elem_parser->parse(pos, end, node, max_parsed_pos, expected))
 		return false;
 
 	ws.ignore(pos, end);
 
 	ASTPtr alias_node;
-	if (alias_p.parse(pos, end, alias_node, expected))
+	if (alias_p.parse(pos, end, alias_node, max_parsed_pos, expected))
 	{
 		String alias_name = typeid_cast<ASTIdentifier &>(*alias_node).name;
 
@@ -528,7 +528,7 @@ bool ParserWithOptionalAlias::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expec
 }
 
 
-bool ParserOrderByElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
+bool ParserOrderByElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	Pos begin = pos;
 
@@ -542,7 +542,7 @@ bool ParserOrderByElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected
 	ParserStringLiteral collate_locale_parser;
 
 	ASTPtr expr_elem;
-	if (!elem_p.parse(pos, end, expr_elem, expected))
+	if (!elem_p.parse(pos, end, expr_elem, max_parsed_pos, expected))
 		return false;
 
 	int direction = 1;
@@ -561,7 +561,7 @@ bool ParserOrderByElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected
 		ws.ignore(pos, end);
 
 		ASTPtr locale_node;
-		if (!collate_locale_parser.parse(pos, end, locale_node, expected))
+		if (!collate_locale_parser.parse(pos, end, locale_node, max_parsed_pos, expected))
 			return false;
 
 		const String & locale = typeid_cast<const ASTLiteral &>(*locale_node).value.safeGet<String>();

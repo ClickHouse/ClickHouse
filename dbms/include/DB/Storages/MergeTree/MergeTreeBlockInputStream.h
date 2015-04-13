@@ -17,7 +17,8 @@ public:
 		size_t block_size_, Names column_names,
 		MergeTreeData & storage_, const MergeTreeData::DataPartPtr & owned_data_part_,
 		const MarkRanges & mark_ranges_, bool use_uncompressed_cache_,
-		ExpressionActionsPtr prewhere_actions_, String prewhere_column_, bool check_columns = true)
+		ExpressionActionsPtr prewhere_actions_, String prewhere_column_, bool check_columns,
+		size_t min_bytes_to_use_direct_io_, size_t max_read_buffer_size_)
 		:
 		path(path_), block_size(block_size_),
 		storage(storage_), owned_data_part(owned_data_part_),
@@ -26,30 +27,44 @@ public:
 		use_uncompressed_cache(use_uncompressed_cache_),
 		prewhere_actions(prewhere_actions_), prewhere_column(prewhere_column_),
 		log(&Logger::get("MergeTreeBlockInputStream")),
-		ordered_names{column_names}
+		ordered_names{column_names},
+		min_bytes_to_use_direct_io(min_bytes_to_use_direct_io_), max_read_buffer_size(max_read_buffer_size_)
 	{
 		std::reverse(remaining_mark_ranges.begin(), remaining_mark_ranges.end());
+
+		/// inject columns required for defaults evaluation
+		const auto injected_columns = injectRequiredColumns(column_names);
+		/// insert injected columns into ordered columns list to avoid exception about different block structures
+		ordered_names.insert(std::end(ordered_names), std::begin(injected_columns), std::end(injected_columns));
 
 		Names pre_column_names;
 
 		if (prewhere_actions)
 		{
 			pre_column_names = prewhere_actions->getRequiredColumns();
+
+			/// @todo somehow decide which injected columns belong to PREWHERE, optimizing reads
+			pre_column_names.insert(std::end(pre_column_names),
+				std::begin(injected_columns), std::end(injected_columns));
+
 			if (pre_column_names.empty())
 				pre_column_names.push_back(column_names[0]);
-			NameSet pre_name_set(pre_column_names.begin(), pre_column_names.end());
+
+			const NameSet pre_name_set(pre_column_names.begin(), pre_column_names.end());
 			/// Если выражение в PREWHERE - не столбец таблицы, не нужно отдавать наружу столбец с ним
 			///  (от storage ожидают получить только столбцы таблицы).
 			remove_prewhere_column = !pre_name_set.count(prewhere_column);
+
 			Names post_column_names;
 			for (const auto & name : column_names)
-			{
 				if (!pre_name_set.count(name))
 					post_column_names.push_back(name);
-			}
+
 			column_names = post_column_names;
 		}
-		column_name_set.insert(column_names.begin(), column_names.end());
+
+		/// will be used to distinguish between PREWHERE and WHERE columns when applying filter
+		column_name_set = NameSet{column_names.begin(), column_names.end()};
 
 		if (check_columns)
 		{
@@ -111,46 +126,52 @@ protected:
 	/// Будем вызывать progressImpl самостоятельно.
 	void progress(const Progress & value) override {}
 
-	void injectRequiredColumns(NamesAndTypesList & columns) const {
-		std::set<NameAndTypePair> required_columns;
-		auto modified = false;
 
-		for (auto it = std::begin(columns); it != std::end(columns);)
+	/** Если некоторых запрошенных столбцов нет в куске,
+	  *  то выясняем, какие столбцы может быть необходимо дополнительно прочитать,
+	  *  чтобы можно было вычислить DEFAULT выражение для этих столбцов.
+	  * Добавляет их в columns.
+	  */
+	NameSet injectRequiredColumns(Names & columns) const
+	{
+		NameSet required_columns{std::begin(columns), std::end(columns)};
+		NameSet injected_columns;
+
+		for (size_t i = 0; i < columns.size(); ++i)
 		{
-			required_columns.emplace(*it);
+			const auto & column_name = columns[i];
 
-			if (!owned_data_part->hasColumnFiles(it->name))
+			/// column has files and hence does not require evaluation
+			if (owned_data_part->hasColumnFiles(column_name))
+				continue;
+
+			const auto default_it = storage.column_defaults.find(column_name);
+			/// columns has no explicit default expression
+			if (default_it == std::end(storage.column_defaults))
+				continue;
+
+			/// collect identifiers required for evaluation
+			IdentifierNameSet identifiers;
+			default_it->second.expression->collectIdentifierNames(identifiers);
+
+			for (const auto & identifier : identifiers)
 			{
-				const auto default_it = storage.column_defaults.find(it->name);
-				if (default_it != std::end(storage.column_defaults))
+				if (storage.hasColumn(identifier))
 				{
-					IdentifierNameSet identifiers;
-					default_it->second.expression->collectIdentifierNames(identifiers);
-
-					for (const auto & identifier : identifiers)
+					/// ensure each column is added only once
+					if (required_columns.count(identifier) == 0)
 					{
-						if (storage.hasColumn(identifier))
-						{
-							NameAndTypePair column{identifier, storage.getDataTypeByName(identifier)};
-							if (required_columns.count(column) == 0)
-							{
-								it = columns.emplace(++it, std::move(column));
-								modified = true;
-							}
-						}
+						columns.emplace_back(identifier);
+						required_columns.emplace(identifier);
+						injected_columns.emplace(identifier);
 					}
-
-					if (modified)
-						continue;
 				}
 			}
-
-			++it;
 		}
 
-		if (modified)
-			columns = NamesAndTypesList{std::begin(required_columns), std::end(required_columns)};
+		return injected_columns;
 	}
+
 
 	Block readImpl() override
 	{
@@ -161,14 +182,16 @@ protected:
 
 		if (!reader)
 		{
-			injectRequiredColumns(columns);
-			injectRequiredColumns(pre_columns);
+			UncompressedCache * uncompressed_cache = use_uncompressed_cache ? storage.context.getUncompressedCache() : nullptr;
 
-			UncompressedCache * uncompressed_cache = use_uncompressed_cache ? storage.context.getUncompressedCache() : NULL;
-			reader.reset(new MergeTreeReader(path, owned_data_part, columns, uncompressed_cache, storage, all_mark_ranges));
+			reader.reset(new MergeTreeReader(
+				path, owned_data_part, columns, uncompressed_cache, storage,
+				all_mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size));
+
 			if (prewhere_actions)
-				pre_reader.reset(new MergeTreeReader(path, owned_data_part, pre_columns, uncompressed_cache, storage,
-													 all_mark_ranges));
+				pre_reader.reset(new MergeTreeReader(
+					path, owned_data_part, pre_columns, uncompressed_cache, storage,
+					all_mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size));
 		}
 
 		if (prewhere_actions)
@@ -191,7 +214,7 @@ protected:
 					if (range.begin == range.end)
 						remaining_mark_ranges.pop_back();
 				}
-				progressImpl(Progress(res.rows(), res.bytes()));
+				progressImpl(Progress(res.rowsInFirstColumn(), res.bytes()));
 				pre_reader->fillMissingColumns(res, ordered_names);
 
 				/// Вычислим выражение в PREWHERE.
@@ -204,8 +227,8 @@ protected:
 				size_t pre_bytes = res.bytes();
 
 				/** Если фильтр - константа (например, написано PREWHERE 1),
-				*  то либо вернём пустой блок, либо вернём блок без изменений.
-				*/
+				  *  то либо вернём пустой блок, либо вернём блок без изменений.
+				  */
 				if (ColumnConstUInt8 * column_const = typeid_cast<ColumnConstUInt8 *>(&*column))
 				{
 					if (!column_const->getData())
@@ -295,7 +318,7 @@ protected:
 				else
 					throw Exception("Illegal type " + column->getName() + " of column for filter. Must be ColumnUInt8 or ColumnConstUInt8.", ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
 
-				reader->fillMissingColumns(res, ordered_names);
+				reader->fillMissingColumnsAndReorder(res, ordered_names);
 			}
 			while (!remaining_mark_ranges.empty() && !res && !isCancelled());
 		}
@@ -315,7 +338,7 @@ protected:
 					remaining_mark_ranges.pop_back();
 			}
 
-			progressImpl(Progress(res.rows(), res.bytes()));
+			progressImpl(Progress(res.rowsInFirstColumn(), res.bytes()));
 
 			reader->fillMissingColumns(res, ordered_names);
 		}
@@ -356,8 +379,11 @@ private:
 
 	Logger * log;
 
-	/// requested column names in specific order as expected by other stages
-	const Names ordered_names;
+	/// column names in specific order as expected by other stages
+	Names ordered_names;
+
+	size_t min_bytes_to_use_direct_io;
+	size_t max_read_buffer_size;
 };
 
 }

@@ -5,10 +5,8 @@
 
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Columns/ColumnArray.h>
-#include <DB/Columns/ColumnNested.h>
 
 #include <DB/DataTypes/DataTypeArray.h>
-#include <DB/DataTypes/DataTypeNested.h>
 
 #include <DB/DataStreams/NativeBlockOutputStream.h>
 
@@ -27,20 +25,6 @@ static void writeData(const IDataType & type, const IColumn & column, WriteBuffe
 
 		if (!typeid_cast<const ColumnArray &>(column).getData().empty())
 			writeData(*type_arr->getNestedType(), typeid_cast<const ColumnArray &>(column).getData(), ostr);
-	}
-	else if (const DataTypeNested * type_nested = typeid_cast<const DataTypeNested *>(&type))
-	{
-		const ColumnNested & column_nested = typeid_cast<const ColumnNested &>(column);
-
-		type_nested->getOffsetsType()->serializeBinary(*column_nested.getOffsetsColumn(), ostr);
-
-		NamesAndTypesList::const_iterator it = type_nested->getNestedTypesList()->begin();
-		for (size_t i = 0; i < column_nested.getData().size(); ++i, ++it)
-		{
-			if (column_nested.getData()[i]->empty())
-				break;
-			writeData(*it->type, *column_nested.getData()[i], ostr);
-		}
 	}
 	else
 		type.serializeBinary(column, ostr);

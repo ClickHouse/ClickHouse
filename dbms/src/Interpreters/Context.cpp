@@ -7,6 +7,7 @@
 #include <DB/IO/copyData.h>
 #include <DB/Parsers/ASTCreateQuery.h>
 #include <DB/Parsers/ParserCreateQuery.h>
+#include <DB/Parsers/parseQuery.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/Client/ConnectionPoolWithFailover.h>
 
@@ -356,19 +357,8 @@ ASTPtr Context::getCreateQuery(const String & database_name, const String & tabl
 		copyData(in, out);
 	}
 
-	const char * begin = query->data();
-	const char * end = begin + query->size();
-	const char * pos = begin;
-
 	ParserCreateQuery parser;
-	ASTPtr ast;
-	Expected expected = "";
-	bool parse_res = parser.parse(pos, end, ast, expected);
-
-	/// Распарсенный запрос должен заканчиваться на конец входных данных или на точку с запятой.
-	if (!parse_res || (pos != end && *pos != ';'))
-		throw Exception(getSyntaxErrorMessage(parse_res, begin, end, pos, expected, "in file " + metadata_path),
-			DB::ErrorCodes::SYNTAX_ERROR);
+	ASTPtr ast = parseQuery(parser, query->data(), query->data() + query->size(), "in file " + metadata_path);
 
 	ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
 	ast_create_query.attach = false;
@@ -492,37 +482,51 @@ Context & Context::getGlobalContext()
 
 const Dictionaries & Context::getDictionaries() const
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
-
-	tryCreateDictionaries();
-
-	return *shared->dictionaries;
+	return getDictionariesImpl(false);
 }
 
 
 const ExternalDictionaries & Context::getExternalDictionaries() const
 {
+	return getExternalDictionariesImpl(false);
+}
+
+
+const Dictionaries & Context::getDictionariesImpl(const bool throw_on_error) const
+{
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 
-	tryCreateExternalDictionaries();
-
-	return *shared->external_dictionaries;
-}
-
-void Context::tryCreateDictionaries(const bool throw_on_error) const
-{
 	if (!shared->dictionaries)
 		shared->dictionaries = new Dictionaries{throw_on_error};
+
+	return *shared->dictionaries;
 }
 
-void Context::tryCreateExternalDictionaries(const bool throw_on_error) const
+
+const ExternalDictionaries & Context::getExternalDictionariesImpl(const bool throw_on_error) const
 {
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+
 	if (!shared->external_dictionaries)
 	{
 		if (!this->global_context)
 			throw Exception("Logical error: there is no global context", ErrorCodes::LOGICAL_ERROR);
 		shared->external_dictionaries = new ExternalDictionaries{*this->global_context, throw_on_error};
 	}
+
+	return *shared->external_dictionaries;
+}
+
+
+void Context::tryCreateDictionaries() const
+{
+	static_cast<void>(getDictionariesImpl(true));
+}
+
+
+void Context::tryCreateExternalDictionaries() const
+{
+	static_cast<void>(getExternalDictionariesImpl(true));
 }
 
 

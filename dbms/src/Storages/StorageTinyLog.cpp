@@ -39,8 +39,8 @@ using Poco::SharedPtr;
 class TinyLogBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	TinyLogBlockInputStream(size_t block_size_, const Names & column_names_, StorageTinyLog & storage_)
-		: block_size(block_size_), column_names(column_names_), storage(storage_) {}
+	TinyLogBlockInputStream(size_t block_size_, const Names & column_names_, StorageTinyLog & storage_, size_t max_read_buffer_size_)
+		: block_size(block_size_), column_names(column_names_), storage(storage_), max_read_buffer_size(max_read_buffer_size_) {}
 
 	String getName() const { return "TinyLogBlockInputStream"; }
 
@@ -53,11 +53,12 @@ private:
 	Names column_names;
 	StorageTinyLog & storage;
 	bool finished = false;
+	size_t max_read_buffer_size;
 
 	struct Stream
 	{
-		Stream(const std::string & data_path)
-			: plain(data_path, std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(data_path).getSize())),
+		Stream(const std::string & data_path, size_t max_read_buffer_size)
+			: plain(data_path, std::min(max_read_buffer_size, Poco::File(data_path).getSize())),
 			compressed(plain)
 		{
 		}
@@ -86,13 +87,22 @@ public:
 
 	~TinyLogBlockOutputStream()
 	{
-		writeSuffix();
+		try
+		{
+			writeSuffix();
+		}
+		catch (...)
+		{
+			tryLogCurrentException(__PRETTY_FUNCTION__);
+		}
 	}
 
 	void write(const Block & block);
 	void writeSuffix();
+
 private:
 	StorageTinyLog & storage;
+	bool done = false;
 
 	struct Stream
 	{
@@ -211,21 +221,12 @@ void TinyLogBlockInputStream::addStream(const String & name, const IDataType & t
 	{
 		String size_name = DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 		if (!streams.count(size_name))
-			streams.emplace(size_name, std::unique_ptr<Stream>(new Stream(storage.files[size_name].data_file.path())));
+			streams.emplace(size_name, std::unique_ptr<Stream>(new Stream(storage.files[size_name].data_file.path(), max_read_buffer_size)));
 
 		addStream(name, *type_arr->getNestedType(), level + 1);
 	}
-	else if (const DataTypeNested * type_nested = typeid_cast<const DataTypeNested *>(&type))
-	{
-		String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-		streams[size_name].reset(new Stream(storage.files[size_name].data_file.path()));
-
-		const NamesAndTypesList & columns = *type_nested->getNestedTypesList();
-		for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
-			addStream(DataTypeNested::concatenateNestedName(name, it->name), *it->type, level + 1);
-	}
 	else
-		streams[name].reset(new Stream(storage.files[name].data_file.path()));
+		streams[name].reset(new Stream(storage.files[name].data_file.path(), max_read_buffer_size));
 }
 
 
@@ -252,29 +253,6 @@ void TinyLogBlockInputStream::readData(const String & name, const IDataType & ty
 				throw Exception("Cannot read array data for all offsets", ErrorCodes::CANNOT_READ_ALL_DATA);
 		}
 	}
-	else if (const DataTypeNested * type_nested = typeid_cast<const DataTypeNested *>(&type))
-	{
-		type_nested->deserializeOffsets(
-			column,
-			streams[name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level)]->compressed,
-			limit);
-
-		if (column.size())
-		{
-			ColumnNested & column_nested = typeid_cast<ColumnNested &>(column);
-
-			NamesAndTypesList::const_iterator it = type_nested->getNestedTypesList()->begin();
-			for (size_t i = 0; i < column_nested.getData().size(); ++i, ++it)
-			{
-				readData(
-					DataTypeNested::concatenateNestedName(name, it->name),
-					*it->type,
-					*column_nested.getData()[i],
-					column_nested.getOffsets()[column.size() - 1],
-					level + 1);
-			}
-		}
-	}
 	else
 		type.deserializeBinary(column, streams[name]->compressed, limit, 0);	/// TODO Использовать avg_value_size_hint.
 }
@@ -290,15 +268,6 @@ void TinyLogBlockOutputStream::addStream(const String & name, const IDataType & 
 			streams.emplace(size_name, std::unique_ptr<Stream>(new Stream(storage.files[size_name].data_file.path(), storage.max_compress_block_size)));
 
 		addStream(name, *type_arr->getNestedType(), level + 1);
-	}
-	else if (const DataTypeNested * type_nested = typeid_cast<const DataTypeNested *>(&type))
-	{
-		String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-		streams[size_name].reset(new Stream(storage.files[size_name].data_file.path(), storage.max_compress_block_size));
-
-		const NamesAndTypesList & columns = *type_nested->getNestedTypesList();
-		for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
-			addStream(DataTypeNested::concatenateNestedName(name, it->name), *it->type, level + 1);
 	}
 	else
 		streams[name].reset(new Stream(storage.files[name].data_file.path(), storage.max_compress_block_size));
@@ -323,25 +292,6 @@ void TinyLogBlockOutputStream::writeData(const String & name, const IDataType & 
 
 		writeData(name, *type_arr->getNestedType(), typeid_cast<const ColumnArray &>(column).getData(), offset_columns, level + 1);
 	}
-	else if (const DataTypeNested * type_nested = typeid_cast<const DataTypeNested *>(&type))
-	{
-		String size_name = name + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-
-		type_nested->serializeOffsets(column, streams[size_name]->compressed);
-
-		const ColumnNested & column_nested = typeid_cast<const ColumnNested &>(column);
-
-		NamesAndTypesList::const_iterator it = type_nested->getNestedTypesList()->begin();
-		for (size_t i = 0; i < column_nested.getData().size(); ++i, ++it)
-		{
-			writeData(
-				DataTypeNested::concatenateNestedName(name, it->name),
-				*it->type,
-				*column_nested.getData()[i],
-				offset_columns,
-				level + 1);
-		}
-	}
 	else
 		type.serializeBinary(column, streams[name]->compressed);
 }
@@ -349,6 +299,10 @@ void TinyLogBlockOutputStream::writeData(const String & name, const IDataType & 
 
 void TinyLogBlockOutputStream::writeSuffix()
 {
+	if (done)
+		return;
+	done = true;
+
 	/// Заканчиваем запись.
 	for (FileStreams::iterator it = streams.begin(); it != streams.end(); ++it)
 		it->second->finalize();
@@ -447,19 +401,6 @@ void StorageTinyLog::addFile(const String & column_name, const IDataType & type,
 
 		addFile(column_name, *type_arr->getNestedType(), level + 1);
 	}
-	else if (const DataTypeNested * type_nested = typeid_cast<const DataTypeNested *>(&type))
-	{
-		String size_column_suffix = ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-
-		ColumnData column_data;
-		files.insert(std::make_pair(column_name + size_column_suffix, column_data));
-		files[column_name + size_column_suffix].data_file = Poco::File(
-			path + escapeForFileName(name) + '/' + escapeForFileName(column_name) + size_column_suffix + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION);
-
-		const NamesAndTypesList & columns = *type_nested->getNestedTypesList();
-		for (NamesAndTypesList::const_iterator it = columns.begin(); it != columns.end(); ++it)
-			addFile(DataTypeNested::concatenateNestedName(name, it->name), *it->type, level + 1);
-	}
 	else
 	{
 		ColumnData column_data;
@@ -495,7 +436,7 @@ BlockInputStreams StorageTinyLog::read(
 {
 	check(column_names);
 	processed_stage = QueryProcessingStage::FetchColumns;
-	return BlockInputStreams(1, new TinyLogBlockInputStream(max_block_size, column_names, *this));
+	return BlockInputStreams(1, new TinyLogBlockInputStream(max_block_size, column_names, *this, settings.max_read_buffer_size));
 }
 
 

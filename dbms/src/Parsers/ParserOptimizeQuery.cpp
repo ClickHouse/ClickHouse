@@ -9,7 +9,7 @@ namespace DB
 {
 
 
-bool ParserOptimizeQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
+bool ParserOptimizeQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	Pos begin = pos;
 
@@ -24,25 +24,25 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected 
 
 	ws.ignore(pos, end);
 
-	if (!s_optimize.ignore(pos, end, expected))
+	if (!s_optimize.ignore(pos, end, max_parsed_pos, expected))
 		return false;
 
 	ws.ignore(pos, end);
 
-	if (!s_table.ignore(pos, end, expected))
+	if (!s_table.ignore(pos, end, max_parsed_pos, expected))
 		return false;
 
 	ws.ignore(pos, end);
 
-	if (!name_p.parse(pos, end, table, expected))
+	if (!name_p.parse(pos, end, table, max_parsed_pos, expected))
 		return false;
 
 	ws.ignore(pos, end);
 
-	if (s_dot.ignore(pos, end, expected))
+	if (s_dot.ignore(pos, end, max_parsed_pos, expected))
 	{
 		database = table;
-		if (!name_p.parse(pos, end, table, expected))
+		if (!name_p.parse(pos, end, table, max_parsed_pos, expected))
 			return false;
 
 		ws.ignore(pos, end);

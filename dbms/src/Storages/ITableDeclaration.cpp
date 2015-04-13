@@ -2,7 +2,6 @@
 #include <sparsehash/dense_hash_map>
 #include <sparsehash/dense_hash_set>
 #include <DB/Storages/ITableDeclaration.h>
-#include <DB/DataTypes/DataTypeNested.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTNameTypePair.h>
 #include <DB/Interpreters/Context.h>

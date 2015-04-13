@@ -6,7 +6,7 @@
 
 using namespace DB;
 
-bool ParserCheckQuery::parseImpl(IParser::Pos& pos, IParser::Pos end, ASTPtr& node, Expected& expected)
+bool ParserCheckQuery::parseImpl(IParser::Pos & pos, IParser::Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	ParserWhiteSpaceOrComments ws;
 	ParserString s_check("CHECK", true, true);
@@ -22,19 +22,19 @@ bool ParserCheckQuery::parseImpl(IParser::Pos& pos, IParser::Pos end, ASTPtr& no
 
 	ws.ignore(pos, end);
 
-	if (!s_check.ignore(pos, end, expected))
+	if (!s_check.ignore(pos, end, max_parsed_pos, expected))
 		return false;
 
 	ws.ignore(pos, end);
-	s_table.ignore(pos, end, expected);
+	s_table.ignore(pos, end, max_parsed_pos, expected);
 
 	ws.ignore(pos, end);
-	if (!table_parser.parse(pos, end, database, expected))
+	if (!table_parser.parse(pos, end, database, max_parsed_pos, expected))
 		return false;
 
 	if (s_dot.ignore(pos, end))
 	{
-		if (!table_parser.parse(pos, end, table, expected))
+		if (!table_parser.parse(pos, end, table, max_parsed_pos, expected))
 			return false;
 
 		query->database = typeid_cast<ASTIdentifier &>(*database).name;
