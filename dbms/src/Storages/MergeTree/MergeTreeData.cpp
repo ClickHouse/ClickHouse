@@ -362,6 +362,12 @@ void MergeTreeData::setPath(const String & new_full_path, bool move_data)
 {
 	if (move_data)
 	{
+		if (Poco::File{new_full_path}.exists())
+			throw Exception{
+				"Target path already exists: " + new_full_path,
+				/// @todo existing target can also be a file, not directory
+				ErrorCodes::DIRECTORY_ALREADY_EXISTS
+			};
 		Poco::File(full_path).renameTo(new_full_path);
 		/// Если данные перемещать не нужно, значит их переместил кто-то другой. Расчитываем, что он еще и сбросил кеши.
 		context.resetCaches();

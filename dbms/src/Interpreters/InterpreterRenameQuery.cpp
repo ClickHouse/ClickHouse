@@ -115,7 +115,15 @@ void InterpreterRenameQuery::execute()
 
 		/// Уведомляем таблицу о том, что она переименовывается. Если таблица не поддерживает переименование - кинется исключение.
 		StoragePtr table = context.getTable(elem.from_database_name, elem.from_table_name);
-		table->rename(path + "data/" + elem.to_database_name_escaped + "/", elem.to_database_name, elem.to_table_name);
+		try
+		{
+			table->rename(path + "data/" + elem.to_database_name_escaped + "/", elem.to_database_name,
+				elem.to_table_name);
+		}
+		catch (const Poco::Exception & e)
+		{
+			throw Exception{e};
+		}
 
 		/// Пишем новый файл с метаданными.
 		{
