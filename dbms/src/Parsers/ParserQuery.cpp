@@ -52,7 +52,7 @@ bool ParserQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_
 		|| check_p.parse(pos, end, node, max_parsed_pos, expected);
 	/*	|| multi_p.parse(pos, end, node, max_parsed_pos, expected)*/;
 
-	if (!res)
+	if (!res && (!expected || !*expected))
 		expected = "One of: SHOW TABLES, SHOW DATABASES, SHOW CREATE TABLE, SELECT, INSERT, CREATE, ATTACH, RENAME, DROP, DETACH, USE, SET, OPTIMIZE, EXISTS, DESCRIBE, DESC, ALTER, SHOW PROCESSLIST, CHECK, opening curly brace";
 
 	return res;
