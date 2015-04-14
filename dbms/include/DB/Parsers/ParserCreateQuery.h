@@ -83,7 +83,6 @@ bool IParserNameTypePair<NameParser>::parseImpl(Pos & pos, Pos end, ASTPtr & nod
 		return true;
 	}
 
-	pos = begin;
 	return false;
 }
 
@@ -119,10 +118,6 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, Pos end, ASTPtr 
 	ParserTernaryOperatorExpression expr_parser;
 
 	const auto begin = pos;
-	const auto reset_pos_and_return = [&pos, begin] {
-		pos = begin;
-		return false;
-	};
 
 	/// mandatory column name
 	ASTPtr name;
@@ -160,10 +155,10 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, Pos end, ASTPtr 
 		ws.ignore(pos, end, max_parsed_pos, expected);
 
 		if (!expr_parser.parse(pos, end, default_expression, max_parsed_pos, expected))
-			return reset_pos_and_return();
+			return false;
 	}
 	else if (!type)
-		return reset_pos_and_return(); /// reject sole column name without type
+		return false; /// reject sole column name without type
 
 	const auto column_declaration = new ASTColumnDeclaration{StringRange{begin, pos}};
 	node = column_declaration;

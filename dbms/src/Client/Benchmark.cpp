@@ -33,9 +33,6 @@
 
 #include <DB/DataStreams/RemoteBlockInputStream.h>
 
-#include <DB/Parsers/ParserQuery.h>
-#include <DB/Parsers/formatAST.h>
-
 #include <DB/Interpreters/Context.h>
 
 #include <DB/Client/Connection.h>

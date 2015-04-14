@@ -40,7 +40,10 @@ static std::string getSyntaxErrorMessage(
 
 	if (max_parsed_pos == end || *max_parsed_pos == ';')
 	{
-		message << ": failed at end of query";
+		message << ": failed at end of query.\n";
+
+		if (expected && *expected && *expected != '.')
+			message << "Expected " << expected;
 	}
 	else
 	{

@@ -227,15 +227,12 @@ TestResult check(const TestEntry & entry)
 	}
 }
 
-bool parse(DB::ASTPtr  & ast, const std::string & query)
+bool parse(DB::ASTPtr & ast, const std::string & query)
 {
 	DB::ParserSelectQuery parser;
-	const char * pos = &query[0];
-	const char * end = &query[0] + query.size();
-	const char * max_parsed_pos = pos;
-
-	DB::Expected expected = "";
-	return parser.parse(pos, end, ast, max_parsed_pos, expected);
+	std::string message;
+	ast = DB::tryParseQuery(parser, query.data(), query.data() + query.size(), message, false, "");
+	return !ast.isNull();
 }
 
 bool equals(const DB::ASTPtr & lhs, const DB::ASTPtr & rhs)
