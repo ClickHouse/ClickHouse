@@ -16,8 +16,8 @@ public:
 	virtual ~ReadBufferFromFileBase();
 	off_t seek(off_t off, int whence = SEEK_SET);
 	virtual off_t getPositionInFile() = 0;
-	virtual std::string getFileName() const noexcept = 0;
-	virtual int getFD() const noexcept = 0;
+	virtual std::string getFileName() const = 0;
+	virtual int getFD() const = 0;
 
 protected:
 	virtual off_t doSeek(off_t off, int whence) = 0;

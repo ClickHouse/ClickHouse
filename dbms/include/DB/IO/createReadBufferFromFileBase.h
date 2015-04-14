@@ -2,11 +2,17 @@
 
 #include <DB/IO/ReadBufferFromFileBase.h>
 #include <string>
-#include <sys/stat.h>
 
 namespace DB
 {
 
+/** Создать объект для чтения данных из файла.
+  * estimated_size - количество байтов, которые надо читать
+  * aio_threshold - минимальное количество байтов для асинхронных операций чтения
+  *
+  * Если aio_threshold = 0 или estimated_size < aio_threshold, операции чтения выполняются синхронно.
+  * В противном случае операции чтения выполняются асинхронно.
+  */
 ReadBufferFromFileBase * createReadBufferFromFileBase(const std::string & filename_,
 		size_t estimated_size,
 		size_t aio_threshold,

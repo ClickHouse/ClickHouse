@@ -41,7 +41,7 @@ protected:
 	}
 
 	/// Имя или описание файла
-	virtual std::string getFileName() const noexcept override
+	virtual std::string getFileName() const override
 	{
 		return "(fd = " + toString(fd) + ")";
 	}
@@ -70,7 +70,7 @@ public:
 		}
 	}
 
-	int getFD() const noexcept override
+	int getFD() const override
 	{
 		return fd;
 	}
