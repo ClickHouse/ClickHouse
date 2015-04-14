@@ -257,7 +257,24 @@ private:
 			}
 
 			size_t buffer_size = std::min(max_read_buffer_size, max_mark_range);
-			size_t estimated_size = (aio_threshold > 0) ? Poco::File(path_prefix + ".bin").getSize() : 0;
+
+			size_t estimated_size = 0;
+			if (aio_threshold > 0)
+			{
+				for (const auto & mark_range : all_mark_ranges)
+				{
+					size_t offset_begin = (*marks)[mark_range.begin].offset_in_compressed_file;
+
+					size_t offset_end;
+					if (mark_range.end < (*marks).size())
+						offset_end = (*marks)[mark_range.end].offset_in_compressed_file;
+					else
+						offset_end = Poco::File(path_prefix + ".bin").getSize();
+
+					if (offset_end > 0)
+						estimated_size += offset_end - offset_begin;
+				}
+			}
 
 			if (uncompressed_cache)
 			{
