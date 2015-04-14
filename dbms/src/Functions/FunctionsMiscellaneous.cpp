@@ -333,6 +333,10 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
 	factory.registerFunction<FunctionIn<false, true>>();
 	factory.registerFunction<FunctionIn<true, false>>();
 	factory.registerFunction<FunctionIn<true, true>>();
+
+	factory.registerFunction<FunctionIsFinite>();
+	factory.registerFunction<FunctionIsInfinite>();
+	factory.registerFunction<FunctionIsNaN>();
 }
 
 }
