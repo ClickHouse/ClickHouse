@@ -24,7 +24,7 @@ public:
 		const ASTOptimizeQuery & ast = typeid_cast<const ASTOptimizeQuery &>(*query_ptr);
 		StoragePtr table = context.getTable(ast.database, ast.table);
 		auto table_lock = table->lockStructure(true);
-		table->optimize(&context.getSettingsRef());
+		table->optimize(context.getSettings());
 	}
 
 private:

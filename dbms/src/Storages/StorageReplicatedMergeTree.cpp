@@ -2060,7 +2060,7 @@ BlockOutputStreamPtr StorageReplicatedMergeTree::write(ASTPtr query)
 }
 
 
-bool StorageReplicatedMergeTree::performOptimize(const Settings * settings)
+bool StorageReplicatedMergeTree::optimize(const Settings & settings)
 {
 	/// Померджим какие-нибудь куски из директории unreplicated.
 	/// TODO: Мерджить реплицируемые куски тоже.
@@ -2079,9 +2079,7 @@ bool StorageReplicatedMergeTree::performOptimize(const Settings * settings)
 		return false;
 
 	const auto & merge_entry = context.getMergeList().insert(database_name, table_name, merged_name);
-
-	const auto & applied_settings = (settings != nullptr) ? *settings : context.getSettings();
-	unreplicated_merger->mergeParts(parts, merged_name, *merge_entry, applied_settings.min_bytes_to_use_direct_io);
+	unreplicated_merger->mergeParts(parts, merged_name, *merge_entry, settings.min_bytes_to_use_direct_io);
 
 	return true;
 }
