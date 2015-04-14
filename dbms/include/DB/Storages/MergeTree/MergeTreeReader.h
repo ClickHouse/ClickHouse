@@ -256,16 +256,36 @@ private:
 					(*marks)[right].offset_in_compressed_file - (*marks)[all_mark_ranges[i].begin].offset_in_compressed_file);
 			}
 
-			size_t buffer_size = max_read_buffer_size < max_mark_range ? max_read_buffer_size : max_mark_range;
+			size_t buffer_size = std::min(max_read_buffer_size, max_mark_range);
+
+			size_t estimated_size = 0;
+			if (aio_threshold > 0)
+			{
+				for (const auto & mark_range : all_mark_ranges)
+				{
+					size_t offset_begin = (*marks)[mark_range.begin].offset_in_compressed_file;
+
+					size_t offset_end;
+					if (mark_range.end < (*marks).size())
+						offset_end = (*marks)[mark_range.end].offset_in_compressed_file;
+					else
+						offset_end = Poco::File(path_prefix + ".bin").getSize();
+
+					if (offset_end > 0)
+						estimated_size += offset_end - offset_begin;
+				}
+			}
 
 			if (uncompressed_cache)
 			{
-				cached_buffer = new CachedCompressedReadBuffer(path_prefix + ".bin", uncompressed_cache, aio_threshold, buffer_size);
+				cached_buffer = new CachedCompressedReadBuffer(path_prefix + ".bin", uncompressed_cache,
+															   estimated_size, aio_threshold, buffer_size);
 				data_buffer = &*cached_buffer;
 			}
 			else
 			{
-				non_cached_buffer = new CompressedReadBufferFromFile(path_prefix + ".bin", aio_threshold, buffer_size);
+				non_cached_buffer = new CompressedReadBufferFromFile(path_prefix + ".bin", estimated_size,
+																	 aio_threshold, buffer_size);
 				data_buffer = &*non_cached_buffer;
 			}
 		}

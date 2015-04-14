@@ -10,7 +10,6 @@
 #include <limits>
 #include <unistd.h>
 #include <fcntl.h>
-#include <sys/uio.h>
 
 namespace DB
 {
@@ -29,8 +28,8 @@ public:
 
 	void setMaxBytes(size_t max_bytes_read_);
 	off_t getPositionInFile() override { return first_unread_pos_in_file - (working_buffer.end() - pos); }
-	std::string getFileName() const noexcept override { return filename; }
-	int getFD() const noexcept override { return fd; }
+	std::string getFileName() const override { return filename; }
+	int getFD() const override { return fd; }
 
 private:
 	///

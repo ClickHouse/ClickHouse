@@ -2060,7 +2060,7 @@ BlockOutputStreamPtr StorageReplicatedMergeTree::write(ASTPtr query)
 }
 
 
-bool StorageReplicatedMergeTree::performOptimize(size_t aio_threshold)
+bool StorageReplicatedMergeTree::optimize(const Settings & settings)
 {
 	/// Померджим какие-нибудь куски из директории unreplicated.
 	/// TODO: Мерджить реплицируемые куски тоже.
@@ -2074,12 +2074,13 @@ bool StorageReplicatedMergeTree::performOptimize(size_t aio_threshold)
 
 	MergeTreeData::DataPartsVector parts;
 	String merged_name;
-	auto always_can_merge = [](const MergeTreeData::DataPartPtr &a, const MergeTreeData::DataPartPtr &b) { return true; };
+	auto always_can_merge = [](const MergeTreeData::DataPartPtr & a, const MergeTreeData::DataPartPtr & b) { return true; };
 	if (!unreplicated_merger->selectPartsToMerge(parts, merged_name, 0, true, true, false, always_can_merge))
 		return false;
 
 	const auto & merge_entry = context.getMergeList().insert(database_name, table_name, merged_name);
-	unreplicated_merger->mergeParts(parts, merged_name, *merge_entry, aio_threshold);
+	unreplicated_merger->mergeParts(parts, merged_name, *merge_entry, settings.min_bytes_to_use_direct_io);
+
 	return true;
 }
 

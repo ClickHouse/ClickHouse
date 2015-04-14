@@ -28,8 +28,8 @@ public:
 	off_t getPositionInFile() override;
 	void truncate(off_t length = 0) override;
 	void sync() override;
-	std::string getFileName() const noexcept override { return filename; }
-	int getFD() const noexcept override { return fd; }
+	std::string getFileName() const override { return filename; }
+	int getFD() const override { return fd; }
 
 private:
 	///

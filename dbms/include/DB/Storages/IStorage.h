@@ -236,9 +236,9 @@ public:
 	/** Выполнить какую-либо фоновую работу. Например, объединение кусков в таблице типа MergeTree.
 	  * Возвращает - была ли выполнена какая-либо работа.
 	  */
-	bool optimize(size_t aio_threshold = 0)
+	virtual bool optimize(const Settings & settings)
 	{
-		return performOptimize(aio_threshold);
+		throw Exception("Method optimize is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
 	/** Получить запрос CREATE TABLE, который описывает данную таблицу.
@@ -278,12 +278,6 @@ public:
 
 	/// проверяет валидность данных
 	virtual bool checkData() const { throw DB::Exception("Check query is not supported for " + getName() + " storage"); }
-
-protected:
-	virtual bool performOptimize(size_t aio_threshold)
-	{
-		throw Exception("Method optimize is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-	}
 
 protected:
 	using ITableDeclaration::ITableDeclaration;
