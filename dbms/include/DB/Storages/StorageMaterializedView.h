@@ -56,7 +56,7 @@ private:
 		const ColumnDefaults & column_defaults_,
 		bool attach_);
 
-	bool performOptimize(size_t aio_threshold) override;
+	bool performOptimize(const Settings * settings) override;
 };
 
 }

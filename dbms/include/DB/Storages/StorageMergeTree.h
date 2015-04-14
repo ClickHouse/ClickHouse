@@ -96,9 +96,10 @@ public:
 private:
 	/** Выполнить очередной шаг объединения кусков.
 	  */
-	bool performOptimize(size_t aio_threshold) override
+	bool performOptimize(const Settings * settings) override
 	{
-		return merge(aio_threshold, true);
+		const auto & applied_settings = (settings != nullptr) ? *settings : context.getSettings();
+		return merge(applied_settings.min_bytes_to_use_direct_io, true);
 	}
 
 private:

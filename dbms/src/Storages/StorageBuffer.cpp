@@ -269,7 +269,7 @@ void StorageBuffer::shutdown()
 }
 
 
-bool StorageBuffer::performOptimize(size_t aio_threshold)
+bool StorageBuffer::performOptimize(const Settings * settings)
 {
 	flushAllBuffers(false);
 

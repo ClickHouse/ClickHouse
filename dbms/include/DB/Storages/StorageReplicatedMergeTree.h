@@ -386,7 +386,7 @@ private:
 	  */
 	void waitForReplicaToProcessLogEntry(const String & replica_name, const LogEntry & entry);
 
-	bool performOptimize(size_t aio_threshold) override;
+	bool performOptimize(const Settings * settings) override;
 
 	/// Преобразовать число в строку формате суффиксов автоинкрементных нод в ZooKeeper.
 	static String padIndex(UInt64 index)
