@@ -330,10 +330,7 @@ bool ParserLambdaExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & 
 		ws.ignore(pos, end, max_parsed_pos, expected);
 
 		if (!elem_parser.parse(pos, end, expression, max_parsed_pos, expected))
-		{
-			pos = begin;
 			return false;
-		}
 
 		/// lambda(tuple(inner_arguments), expression)
 

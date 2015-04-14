@@ -231,7 +231,7 @@ bool parse(DB::ASTPtr & ast, const std::string & query)
 {
 	DB::ParserSelectQuery parser;
 	std::string message;
-	ast = DB::tryParseQuery(parser, query.begin(), query.begin() + query.size(), message, false, "");
+	ast = DB::tryParseQuery(parser, query.data(), query.data() + query.size(), message, false, "");
 	return !ast.isNull();
 }
 
