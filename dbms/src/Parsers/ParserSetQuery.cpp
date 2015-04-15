@@ -11,7 +11,7 @@ namespace DB
 
 
 /// Парсит name = value.
-static bool parseNameValuePair(ASTSetQuery::Change & change, IParser::Pos & pos, IParser::Pos end, Expected & expected)
+static bool parseNameValuePair(ASTSetQuery::Change & change, IParser::Pos & pos, IParser::Pos end, IParser::Pos & max_parsed_pos, Expected & expected)
 {
 	ParserIdentifier name_p;
 	ParserLiteral value_p;
@@ -23,17 +23,17 @@ static bool parseNameValuePair(ASTSetQuery::Change & change, IParser::Pos & pos,
 
 	ws.ignore(pos, end);
 
-	if (!name_p.parse(pos, end, name, expected))
+	if (!name_p.parse(pos, end, name, max_parsed_pos, expected))
 		return false;
 
 	ws.ignore(pos, end);
 
-	if (!s_eq.ignore(pos, end, expected))
+	if (!s_eq.ignore(pos, end, max_parsed_pos, expected))
 		return false;
 
 	ws.ignore(pos, end);
 
-	if (!value_p.parse(pos, end, value, expected))
+	if (!value_p.parse(pos, end, value, max_parsed_pos, expected))
 		return false;
 
 	ws.ignore(pos, end);
@@ -45,7 +45,7 @@ static bool parseNameValuePair(ASTSetQuery::Change & change, IParser::Pos & pos,
 }
 
 
-bool ParserSetQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
+bool ParserSetQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	Pos begin = pos;
 
@@ -56,12 +56,12 @@ bool ParserSetQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & exp
 
 	ws.ignore(pos, end);
 
-	if (!s_set.ignore(pos, end, expected))
+	if (!s_set.ignore(pos, end, max_parsed_pos, expected))
 		return false;
 
 	ws.ignore(pos, end);
 
-	bool global = s_global.ignore(pos, end, expected);
+	bool global = s_global.ignore(pos, end, max_parsed_pos, expected);
 
 	ASTSetQuery::Changes changes;
 
@@ -76,7 +76,7 @@ bool ParserSetQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & exp
 
 		changes.push_back(ASTSetQuery::Change());
 
-		if (!parseNameValuePair(changes.back(), pos, end, expected))
+		if (!parseNameValuePair(changes.back(), pos, end, max_parsed_pos, expected))
 			return false;
 	}
 

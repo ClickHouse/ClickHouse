@@ -5,6 +5,8 @@
 #include <DB/DataStreams/BlockIO.h>
 #include <DB/Parsers/ASTInsertQuery.h>
 #include <DB/Parsers/ASTShowProcesslistQuery.h>
+#include <DB/Parsers/ParserQuery.h>
+#include <DB/Parsers/parseQuery.h>
 #include <DB/Interpreters/executeQuery.h>
 
 
@@ -32,8 +34,6 @@ void executeQuery(
 	ProfileEvents::increment(ProfileEvents::Query);
 
 	ParserQuery parser;
-	ASTPtr ast;
-	Expected expected = "";
 
 	PODArray<char> parse_buf;
 	const char * begin;
@@ -61,21 +61,10 @@ void executeQuery(
 		end = begin + parse_buf.size();
 	}
 
-	const char * pos = begin;
-
-	bool parse_res = parser.parse(pos, end, ast, expected);
-
-	if (pos == begin && (end == begin || *pos == ';'))
-		throw Exception("Empty query", ErrorCodes::EMPTY_QUERY);
-
-	/// Распарсенный запрос должен заканчиваться на конец входных данных или на точку с запятой.
-	if (!parse_res || (pos != end && *pos != ';'))
-		throw Exception(getSyntaxErrorMessage(parse_res, begin, end, pos, expected),
-			ErrorCodes::SYNTAX_ERROR);
+	ASTPtr ast = parseQuery(parser, begin, end, "");
 
 	/// Засунем запрос в строку. Она выводится в лог и в processlist. Если запрос INSERT, то не будем включать данные для вставки.
-	auto insert = typeid_cast<const ASTInsertQuery *>(&*ast);
-	size_t query_size = (insert && insert->data) ? (insert->data - begin) : (pos - begin);
+	size_t query_size = ast->range.second - ast->range.first;
 
 	if (query_size > max_query_size)
 		throw Exception("Query is too large (" + toString(query_size) + ")."
@@ -132,22 +121,7 @@ BlockIO executeQuery(
 	ProfileEvents::increment(ProfileEvents::Query);
 
 	ParserQuery parser;
-	ASTPtr ast;
-	Expected expected = "";
-
-	const char * begin = query.data();
-	const char * end = begin + query.size();
-	const char * pos = begin;
-
-	bool parse_res = parser.parse(pos, end, ast, expected);
-
-	if (pos == begin && (end == begin || *pos == ';'))
-		throw Exception("Empty query", ErrorCodes::EMPTY_QUERY);
-
-	/// Распарсенный запрос должен заканчиваться на конец входных данных или на точку с запятой.
-	if (!parse_res || (pos != end && *pos != ';'))
-		throw Exception(getSyntaxErrorMessage(parse_res, begin, end, pos, expected),
-			ErrorCodes::SYNTAX_ERROR);
+	ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "");
 
 	/// Проверка ограничений.
 	checkLimits(*ast, context.getSettingsRef().limits);

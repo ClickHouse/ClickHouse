@@ -17,7 +17,8 @@ public:
 		size_t block_size_, Names column_names,
 		MergeTreeData & storage_, const MergeTreeData::DataPartPtr & owned_data_part_,
 		const MarkRanges & mark_ranges_, bool use_uncompressed_cache_,
-		ExpressionActionsPtr prewhere_actions_, String prewhere_column_, bool check_columns = true)
+		ExpressionActionsPtr prewhere_actions_, String prewhere_column_, bool check_columns,
+		size_t min_bytes_to_use_direct_io_, size_t max_read_buffer_size_)
 		:
 		path(path_), block_size(block_size_),
 		storage(storage_), owned_data_part(owned_data_part_),
@@ -26,7 +27,8 @@ public:
 		use_uncompressed_cache(use_uncompressed_cache_),
 		prewhere_actions(prewhere_actions_), prewhere_column(prewhere_column_),
 		log(&Logger::get("MergeTreeBlockInputStream")),
-		ordered_names{column_names}
+		ordered_names{column_names},
+		min_bytes_to_use_direct_io(min_bytes_to_use_direct_io_), max_read_buffer_size(max_read_buffer_size_)
 	{
 		std::reverse(remaining_mark_ranges.begin(), remaining_mark_ranges.end());
 
@@ -182,10 +184,14 @@ protected:
 		{
 			UncompressedCache * uncompressed_cache = use_uncompressed_cache ? storage.context.getUncompressedCache() : nullptr;
 
-			reader.reset(new MergeTreeReader(path, owned_data_part, columns, uncompressed_cache, storage, all_mark_ranges));
+			reader.reset(new MergeTreeReader(
+				path, owned_data_part, columns, uncompressed_cache, storage,
+				all_mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size));
 
 			if (prewhere_actions)
-				pre_reader.reset(new MergeTreeReader(path, owned_data_part, pre_columns, uncompressed_cache, storage, all_mark_ranges));
+				pre_reader.reset(new MergeTreeReader(
+					path, owned_data_part, pre_columns, uncompressed_cache, storage,
+					all_mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size));
 		}
 
 		if (prewhere_actions)
@@ -375,6 +381,9 @@ private:
 
 	/// column names in specific order as expected by other stages
 	Names ordered_names;
+
+	size_t min_bytes_to_use_direct_io;
+	size_t max_read_buffer_size;
 };
 
 }
