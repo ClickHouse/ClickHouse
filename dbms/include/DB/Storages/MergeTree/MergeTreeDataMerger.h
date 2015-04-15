@@ -42,7 +42,8 @@ public:
 	  */
 	MergeTreeData::DataPartPtr mergeParts(
 		const MergeTreeData::DataPartsVector & parts, const String & merged_name, MergeList::Entry & merge_entry,
-		MergeTreeData::Transaction * out_transaction = nullptr, DiskSpaceMonitor::Reservation * disk_reservation = nullptr);
+		size_t aio_threshold, MergeTreeData::Transaction * out_transaction = nullptr,
+		DiskSpaceMonitor::Reservation * disk_reservation = nullptr);
 
 	/// Примерное количество места на диске, нужное для мерджа. С запасом.
 	size_t estimateDiskSpaceForMerge(const MergeTreeData::DataPartsVector & parts);

@@ -9,7 +9,7 @@ namespace DB
 {
 
 
-bool ParserJoin::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
+bool ParserJoin::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	Pos begin = pos;
 
@@ -62,13 +62,13 @@ bool ParserJoin::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expecte
 
 	ws.ignore(pos, end);
 
-	if (!s_join.ignore(pos, end, expected))
+	if (!s_join.ignore(pos, end, max_parsed_pos, expected))
 		return false;
 
 	ws.ignore(pos, end);
 
-	if (!identifier.parse(pos, end, join->table, expected)
-		&& !subquery.parse(pos, end, join->table, expected))
+	if (!identifier.parse(pos, end, join->table, max_parsed_pos, expected)
+		&& !subquery.parse(pos, end, join->table, max_parsed_pos, expected))
 		return false;
 
 	ws.ignore(pos, end);
@@ -77,12 +77,12 @@ bool ParserJoin::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expecte
 	ParserAlias().ignore(pos, end);
 	ws.ignore(pos, end);
 
-	if (!s_using.ignore(pos, end, expected))
+	if (!s_using.ignore(pos, end, max_parsed_pos, expected))
 		return false;
 
 	ws.ignore(pos, end);
 
-	if (!exp_list.parse(pos, end, join->using_expr_list, expected))
+	if (!exp_list.parse(pos, end, join->using_expr_list, max_parsed_pos, expected))
 		return false;
 
 	ws.ignore(pos, end);

@@ -19,6 +19,7 @@
 
 #include <DB/Parsers/ParserSelectQuery.h>
 #include <DB/Parsers/formatAST.h>
+#include <DB/Parsers/parseQuery.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 
 
@@ -33,21 +34,10 @@ int main(int argc, char ** argv)
 	{
 		size_t n = argc == 2 ? parse<UInt64>(argv[1]) : 10ULL;
 
-		ParserSelectQuery parser;
-		ASTPtr ast;
 		std::string input = "SELECT number, number % 3 == 1";
-		Expected expected = "";
 
-		const char * begin = input.data();
-		const char * end = begin + input.size();
-		const char * pos = begin;
-
-		if (!parser.parse(pos, end, ast, expected))
-		{
-			std::cout << "Failed at position " << (pos - begin) << ": "
-				<< mysqlxx::quote << input.substr(pos - begin, 10)
-				<< ", expected " << expected << "." << std::endl;
-		}
+		ParserSelectQuery parser;
+		ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "");
 
 		formatAST(*ast, std::cerr);
 		std::cerr << std::endl;

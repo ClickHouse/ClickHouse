@@ -11,9 +11,13 @@
 namespace
 {
 
+namespace fs = boost::filesystem;
+
 void run();
 void die(const std::string & msg);
-void run_test(unsigned int num, const std::function<bool()> func);
+void runTest(unsigned int num, const std::function<bool()> func);
+std::string createTmpFile();
+std::string generateString(size_t n);
 
 bool test1();
 bool test2();
@@ -46,7 +50,7 @@ void run()
 	for (const auto & test : tests)
 	{
 		++num;
-		run_test(num, test);
+		runTest(num, test);
 	}
 }
 
@@ -56,7 +60,7 @@ void die(const std::string & msg)
 	::exit(EXIT_FAILURE);
 }
 
-void run_test(unsigned int num, const std::function<bool()> func)
+void runTest(unsigned int num, const std::function<bool()> func)
 {
 	bool ok;
 
@@ -81,27 +85,36 @@ void run_test(unsigned int num, const std::function<bool()> func)
 		std::cout << "Test " << num << " failed\n";
 }
 
-bool test1()
+std::string createTmpFile()
 {
-	namespace fs = boost::filesystem;
-
-	static const std::string symbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-
 	char pattern[] = "/tmp/fileXXXXXX";
 	char * dir = ::mkdtemp(pattern);
 	if (dir == nullptr)
 		die("Could not create directory");
 
-	const std::string directory = std::string(dir);
-	const std::string filename = directory + "/foo";
+	return std::string(dir) + "/foo";
+}
 
-	size_t n = 10 * DEFAULT_AIO_FILE_BLOCK_SIZE;
+std::string generateString(size_t n)
+{
+	static const std::string symbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
 	std::string buf;
 	buf.reserve(n);
 
 	for (size_t i = 0; i < n; ++i)
 		buf += symbols[i % symbols.length()];
+
+	return buf;
+}
+
+bool test1()
+{
+	std::string filename = createTmpFile();
+
+	size_t n = 10 * DEFAULT_AIO_FILE_BLOCK_SIZE;
+
+	std::string buf = generateString(n);
 
 	{
 		DB::WriteBufferAIO out(filename, 3 * DEFAULT_AIO_FILE_BLOCK_SIZE);
@@ -121,32 +134,18 @@ bool test1()
 	std::string received{ std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>() };
 
 	in.close();
-	fs::remove_all(directory);
+	fs::remove_all(fs::path(filename).parent_path().string());
 
 	return (received == buf);
 }
 
 bool test2()
 {
-	namespace fs = boost::filesystem;
-
-	static const std::string symbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-
-	char pattern[] = "/tmp/fileXXXXXX";
-	char * dir = ::mkdtemp(pattern);
-	if (dir == nullptr)
-		die("Could not create directory");
-
-	const std::string directory = std::string(dir);
-	const std::string filename = directory + "/foo";
+	std::string filename = createTmpFile();
 
 	size_t n = 10 * DEFAULT_AIO_FILE_BLOCK_SIZE;
 
-	std::string buf;
-	buf.reserve(n);
-
-	for (size_t i = 0; i < n; ++i)
-		buf += symbols[i % symbols.length()];
+	std::string buf = generateString(n);
 
 	{
 		DB::WriteBufferAIO out(filename, 3 * DEFAULT_AIO_FILE_BLOCK_SIZE);
@@ -168,7 +167,7 @@ bool test2()
 	std::string received{ std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>() };
 
 	in.close();
-	fs::remove_all(directory);
+	fs::remove_all(fs::path(filename).parent_path().string());
 
 	if (received.substr(0, buf.length() / 2) != buf.substr(0, buf.length() / 2))
 		return false;
@@ -182,25 +181,11 @@ bool test2()
 
 bool test3()
 {
-	namespace fs = boost::filesystem;
-
-	static const std::string symbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-
-	char pattern[] = "/tmp/fileXXXXXX";
-	char * dir = ::mkdtemp(pattern);
-	if (dir == nullptr)
-		die("Could not create directory");
-
-	const std::string directory = std::string(dir);
-	const std::string filename = directory + "/foo";
+	std::string filename = createTmpFile();
 
 	size_t n = 10 * DEFAULT_AIO_FILE_BLOCK_SIZE;
 
-	std::string buf;
-	buf.reserve(n);
-
-	for (size_t i = 0; i < n; ++i)
-		buf += symbols[i % symbols.length()];
+	std::string buf = generateString(n);
 
 	{
 		DB::WriteBufferAIO out(filename, 3 * DEFAULT_AIO_FILE_BLOCK_SIZE);
@@ -229,32 +214,18 @@ bool test3()
 	std::string received{ std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>() };
 
 	in.close();
-	fs::remove_all(directory);
+	fs::remove_all(fs::path(filename).parent_path().string());
 
 	return (received == buf.substr(0, buf.length() / 2));
 }
 
 bool test4()
 {
-	namespace fs = boost::filesystem;
-
-	static const std::string symbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-
-	char pattern[] = "/tmp/fileXXXXXX";
-	char * dir = ::mkdtemp(pattern);
-	if (dir == nullptr)
-		die("Could not create directory");
-
-	const std::string directory = std::string(dir);
-	const std::string filename = directory + "/foo";
+	std::string filename = createTmpFile();
 
 	size_t n = 10 * DEFAULT_AIO_FILE_BLOCK_SIZE;
 
-	std::string buf;
-	buf.reserve(n);
-
-	for (size_t i = 0; i < n; ++i)
-		buf += symbols[i % symbols.length()];
+	std::string buf = generateString(n);
 
 	{
 		DB::WriteBufferAIO out(filename, 3 * DEFAULT_AIO_FILE_BLOCK_SIZE);
@@ -283,7 +254,7 @@ bool test4()
 	std::string received{ std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>() };
 
 	in.close();
-	fs::remove_all(directory);
+	fs::remove_all(fs::path(filename).parent_path().string());
 
 	if (received.substr(0, buf.length()) != buf)
 		return false;
@@ -296,25 +267,11 @@ bool test4()
 
 bool test5()
 {
-	namespace fs = boost::filesystem;
-
-	static const std::string symbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-
-	char pattern[] = "/tmp/fileXXXXXX";
-	char * dir = ::mkdtemp(pattern);
-	if (dir == nullptr)
-		die("Could not create directory");
-
-	const std::string directory = std::string(dir);
-	const std::string filename = directory + "/foo";
+	std::string filename = createTmpFile();
 
 	size_t n = 10 * DEFAULT_AIO_FILE_BLOCK_SIZE;
 
-	std::string buf;
-	buf.reserve(n);
-
-	for (size_t i = 0; i < n; ++i)
-		buf += symbols[i % symbols.length()];
+	std::string buf = generateString(n);
 
 	{
 		DB::WriteBufferAIO out(filename, 3 * DEFAULT_AIO_FILE_BLOCK_SIZE);
@@ -335,32 +292,18 @@ bool test5()
 	std::string received{ std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>() };
 
 	in.close();
-	fs::remove_all(directory);
+	fs::remove_all(fs::path(filename).parent_path().string());
 
 	return received.substr(1) == buf;
 }
 
 bool test6()
 {
-	namespace fs = boost::filesystem;
-
-	static const std::string symbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-
-	char pattern[] = "/tmp/fileXXXXXX";
-	char * dir = ::mkdtemp(pattern);
-	if (dir == nullptr)
-		die("Could not create directory");
-
-	const std::string directory = std::string(dir);
-	const std::string filename = directory + "/foo";
+	std::string filename = createTmpFile();
 
 	size_t n = 10 * DEFAULT_AIO_FILE_BLOCK_SIZE;
 
-	std::string buf;
-	buf.reserve(n);
-
-	for (size_t i = 0; i < n; ++i)
-		buf += symbols[i % symbols.length()];
+	std::string buf = generateString(n);
 
 	std::string buf2 = "1111111111";
 
@@ -385,7 +328,7 @@ bool test6()
 	std::string received{ std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>() };
 
 	in.close();
-	fs::remove_all(directory);
+	fs::remove_all(fs::path(filename).parent_path().string());
 
 	if (received.substr(3, 8 * DEFAULT_AIO_FILE_BLOCK_SIZE) != buf.substr(0, 8 * DEFAULT_AIO_FILE_BLOCK_SIZE))
 		return false;
@@ -401,84 +344,12 @@ bool test6()
 
 bool test7()
 {
-	namespace fs = boost::filesystem;
-
-	static const std::string symbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-
-	char pattern[] = "/tmp/fileXXXXXX";
-	char * dir = ::mkdtemp(pattern);
-	if (dir == nullptr)
-		die("Could not create directory");
-
-	const std::string directory = std::string(dir);
-	const std::string filename = directory + "/foo";
-
-	size_t n = DEFAULT_AIO_FILE_BLOCK_SIZE;
-
-	std::string buf;
-	buf.reserve(n);
-
-	for (size_t i = 0; i < n; ++i)
-		buf += symbols[i % symbols.length()];
-
-	std::string buf2 = "1111111111";
-
-	{
-		DB::WriteBufferAIO out(filename, DEFAULT_AIO_FILE_BLOCK_SIZE);
-
-		if (out.getFileName() != filename)
-			return false;
-		if (out.getFD() == -1)
-			return false;
-
-		out.seek(3, SEEK_SET);
-		out.write(&buf[0], buf.length());
-		out.seek(3, SEEK_CUR);
-		out.write(&buf2[0], buf2.length());
-	}
-
-	std::ifstream in(filename.c_str());
-	if (!in.is_open())
-		die("Could not open file");
-
-	std::string received{ std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>() };
-
-	if (received.length() != (6 + buf.length() + buf2.length()))
-		return false;
-	if (received.substr(0, 3) != std::string(3, '\0'))
-		return false;
-	if (received.substr(3, buf.length()) != buf)
-		return false;
-	if (received.substr(3 + buf.length(), 3) != std::string(3, '\0'))
-		return false;
-	if (received.substr(6 + buf.length()) != buf2)
-		return false;
-
-	in.close();
-	fs::remove_all(directory);
-
-	return true;
-}
-
-bool test8()
-{
-	namespace fs = boost::filesystem;
-
-	static const std::string symbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-
-	char pattern[] = "/tmp/fileXXXXXX";
-	char * dir = ::mkdtemp(pattern);
-	if (dir == nullptr)
-		die("Could not create directory");
-
-	const std::string directory = std::string(dir);
-	const std::string filename = directory + "/foo";
+	std::string filename = createTmpFile();
 
 	std::string buf2 = "11111111112222222222";
 
 	{
-		// Minimal buffer size = 2 pages.
-		DB::WriteBufferAIO out(filename, 2 * DEFAULT_AIO_FILE_BLOCK_SIZE);
+		DB::WriteBufferAIO out(filename, DEFAULT_AIO_FILE_BLOCK_SIZE);
 
 		if (out.getFileName() != filename)
 			return false;
@@ -503,29 +374,18 @@ bool test8()
 		return false;
 
 	in.close();
-	fs::remove_all(directory);
+	fs::remove_all(fs::path(filename).parent_path().string());
 
 	return true;
 }
 
-bool test9()
+bool test8()
 {
-	namespace fs = boost::filesystem;
-
-	static const std::string symbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-
-	char pattern[] = "/tmp/fileXXXXXX";
-	char * dir = ::mkdtemp(pattern);
-	if (dir == nullptr)
-		die("Could not create directory");
-
-	const std::string directory = std::string(dir);
-	const std::string filename = directory + "/foo";
+	std::string filename = createTmpFile();
 
 	std::string buf2 = "11111111112222222222";
 
 	{
-		// Minimal buffer size = 2 pages.
 		DB::WriteBufferAIO out(filename, 2 * DEFAULT_AIO_FILE_BLOCK_SIZE);
 
 		if (out.getFileName() != filename)
@@ -551,32 +411,18 @@ bool test9()
 		return false;
 
 	in.close();
-	fs::remove_all(directory);
+	fs::remove_all(fs::path(filename).parent_path().string());
 
 	return true;
 }
 
-bool test10()
+bool test9()
 {
-	namespace fs = boost::filesystem;
-
-	static const std::string symbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-
-	char pattern[] = "/tmp/fileXXXXXX";
-	char * dir = ::mkdtemp(pattern);
-	if (dir == nullptr)
-		die("Could not create directory");
-
-	const std::string directory = std::string(dir);
-	const std::string filename = directory + "/foo";
+	std::string filename = createTmpFile();
 
 	size_t n = 3 * DEFAULT_AIO_FILE_BLOCK_SIZE;
 
-	std::string buf;
-	buf.reserve(n);
-
-	for (size_t i = 0; i < n; ++i)
-		buf += symbols[i % symbols.length()];
+	std::string buf = generateString(n);
 
 	std::string buf2(DEFAULT_AIO_FILE_BLOCK_SIZE + 10, '1');
 
@@ -601,7 +447,7 @@ bool test10()
 	std::string received{ std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>() };
 
 	in.close();
-	fs::remove_all(directory);
+	fs::remove_all(fs::path(filename).parent_path().string());
 
 	if (received.substr(3, 2 * DEFAULT_AIO_FILE_BLOCK_SIZE) != buf.substr(0, 2 * DEFAULT_AIO_FILE_BLOCK_SIZE))
 		return false;
@@ -610,6 +456,37 @@ bool test10()
 		return false;
 
 	return true;
+}
+
+bool test10()
+{
+	std::string filename = createTmpFile();
+
+	size_t n = 10 * DEFAULT_AIO_FILE_BLOCK_SIZE + 3;
+
+	std::string buf = generateString(n);
+
+	{
+		DB::WriteBufferAIO out(filename, 3 * DEFAULT_AIO_FILE_BLOCK_SIZE);
+
+		if (out.getFileName() != filename)
+			return false;
+		if (out.getFD() == -1)
+			return false;
+
+		out.write(&buf[0], buf.length());
+	}
+
+	std::ifstream in(filename.c_str());
+	if (!in.is_open())
+		die("Could not open file");
+
+	std::string received{ std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>() };
+
+	in.close();
+	fs::remove_all(fs::path(filename).parent_path().string());
+
+	return (received == buf);
 }
 
 }

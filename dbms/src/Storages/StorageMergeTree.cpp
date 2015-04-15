@@ -173,7 +173,7 @@ void StorageMergeTree::alter(const AlterCommands & params, const String & databa
 	}
 }
 
-bool StorageMergeTree::merge(bool aggressive, BackgroundProcessingPool::Context * pool_context)
+bool StorageMergeTree::merge(size_t aio_threshold, bool aggressive, BackgroundProcessingPool::Context * pool_context)
 {
 	auto structure_lock = lockStructure(true);
 
@@ -219,18 +219,19 @@ bool StorageMergeTree::merge(bool aggressive, BackgroundProcessingPool::Context 
 	}
 
 	const auto & merge_entry = context.getMergeList().insert(database_name, table_name, merged_name);
-	merger.mergeParts(merging_tagger->parts, merged_name, *merge_entry, nullptr, &*merging_tagger->reserved_space);
+	merger.mergeParts(merging_tagger->parts, merged_name, *merge_entry, aio_threshold, nullptr, &*merging_tagger->reserved_space);
 
 	return true;
 }
 
-bool StorageMergeTree::mergeTask(BackgroundProcessingPool::Context & context)
+bool StorageMergeTree::mergeTask(BackgroundProcessingPool::Context & background_processing_pool_context)
 {
 	if (shutdown_called)
 		return false;
 	try
 	{
-		return merge(false, &context);
+		size_t aio_threshold = context.getSettings().min_bytes_to_use_direct_io;
+		return merge(aio_threshold, false, &background_processing_pool_context);
 	}
 	catch (Exception & e)
 	{

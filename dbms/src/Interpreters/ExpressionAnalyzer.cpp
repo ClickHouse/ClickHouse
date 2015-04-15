@@ -9,7 +9,6 @@
 #include <DB/Parsers/ASTSubquery.h>
 #include <DB/Parsers/ASTSet.h>
 #include <DB/Parsers/ASTOrderByElement.h>
-#include <DB/Parsers/ParserSelectQuery.h>
 
 #include <DB/DataTypes/DataTypeSet.h>
 #include <DB/DataTypes/DataTypeTuple.h>

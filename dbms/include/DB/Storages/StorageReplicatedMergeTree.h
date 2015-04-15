@@ -83,7 +83,7 @@ public:
 
 	BlockOutputStreamPtr write(ASTPtr query) override;
 
-	bool optimize() override;
+	bool optimize(const Settings & settings) override;
 
 	void alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context) override;
 
@@ -387,7 +387,6 @@ private:
 	/** Дождаться, пока указанная реплика выполнит указанное действие из лога.
 	  */
 	void waitForReplicaToProcessLogEntry(const String & replica_name, const LogEntry & entry);
-
 
 	/// Преобразовать число в строку формате суффиксов автоинкрементных нод в ZooKeeper.
 	static String padIndex(UInt64 index)

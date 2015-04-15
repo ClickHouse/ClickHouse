@@ -11,6 +11,7 @@
 #include <DB/IO/copyData.h>
 #include <DB/Common/escapeForFileName.h>
 #include <DB/Parsers/formatAST.h>
+#include <DB/Parsers/parseQuery.h>
 
 #include <Poco/FileStream.h>
 
@@ -179,19 +180,8 @@ void InterpreterAlterQuery::updateMetadata(
 		copyData(in, out);
 	}
 
-	const char * begin = query->data();
-	const char * end = begin + query->size();
-	const char * pos = begin;
-
 	ParserCreateQuery parser;
-	ASTPtr ast;
-	Expected expected = "";
-	bool parse_res = parser.parse(pos, end, ast, expected);
-
-	/// Распарсенный запрос должен заканчиваться на конец входных данных или на точку с запятой.
-	if (!parse_res || (pos != end && *pos != ';'))
-		throw Exception(getSyntaxErrorMessage(parse_res, begin, end, pos, expected, "in file " + metadata_path),
-			DB::ErrorCodes::SYNTAX_ERROR);
+	ASTPtr ast = parseQuery(parser, query->data(), query->data() + query->size(), "in file " + metadata_path);
 
 	ast->query_string = query;
 

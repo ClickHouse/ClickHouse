@@ -39,8 +39,8 @@ using Poco::SharedPtr;
 class TinyLogBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	TinyLogBlockInputStream(size_t block_size_, const Names & column_names_, StorageTinyLog & storage_)
-		: block_size(block_size_), column_names(column_names_), storage(storage_) {}
+	TinyLogBlockInputStream(size_t block_size_, const Names & column_names_, StorageTinyLog & storage_, size_t max_read_buffer_size_)
+		: block_size(block_size_), column_names(column_names_), storage(storage_), max_read_buffer_size(max_read_buffer_size_) {}
 
 	String getName() const { return "TinyLogBlockInputStream"; }
 
@@ -53,11 +53,12 @@ private:
 	Names column_names;
 	StorageTinyLog & storage;
 	bool finished = false;
+	size_t max_read_buffer_size;
 
 	struct Stream
 	{
-		Stream(const std::string & data_path)
-			: plain(data_path, std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(data_path).getSize())),
+		Stream(const std::string & data_path, size_t max_read_buffer_size)
+			: plain(data_path, std::min(max_read_buffer_size, Poco::File(data_path).getSize())),
 			compressed(plain)
 		{
 		}
@@ -220,12 +221,12 @@ void TinyLogBlockInputStream::addStream(const String & name, const IDataType & t
 	{
 		String size_name = DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 		if (!streams.count(size_name))
-			streams.emplace(size_name, std::unique_ptr<Stream>(new Stream(storage.files[size_name].data_file.path())));
+			streams.emplace(size_name, std::unique_ptr<Stream>(new Stream(storage.files[size_name].data_file.path(), max_read_buffer_size)));
 
 		addStream(name, *type_arr->getNestedType(), level + 1);
 	}
 	else
-		streams[name].reset(new Stream(storage.files[name].data_file.path()));
+		streams[name].reset(new Stream(storage.files[name].data_file.path(), max_read_buffer_size));
 }
 
 
@@ -435,7 +436,7 @@ BlockInputStreams StorageTinyLog::read(
 {
 	check(column_names);
 	processed_stage = QueryProcessingStage::FetchColumns;
-	return BlockInputStreams(1, new TinyLogBlockInputStream(max_block_size, column_names, *this));
+	return BlockInputStreams(1, new TinyLogBlockInputStream(max_block_size, column_names, *this, settings.max_read_buffer_size));
 }
 
 
