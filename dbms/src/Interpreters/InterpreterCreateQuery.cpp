@@ -17,8 +17,10 @@
 #include <DB/Storages/StorageLog.h>
 #include <DB/Storages/StorageSystemNumbers.h>
 
-#include <DB/Parsers/ParserCreateQuery.h>
 #include <DB/Parsers/formatAST.h>
+#include <DB/Parsers/ASTIdentifier.h>
+#include <DB/Parsers/ParserCreateQuery.h>
+#include <DB/Parsers/parseQuery.h>
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/InterpreterCreateQuery.h>
@@ -409,10 +411,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns)
 		const auto end = pos + type_name->size();
 
 		ParserIdentifierWithOptionalParameters storage_p;
-		Expected expected{""};
-		if (!storage_p.parse(pos, end, column_declaration->type, expected))
-			throw Exception("Cannot parse data type.", ErrorCodes::SYNTAX_ERROR);
-
+		column_declaration->type = parseQuery(storage_p, pos, end, "data type");
 		column_declaration->type->query_string = type_name;
 		columns_list.children.push_back(column_declaration_ptr);
 	}
@@ -443,10 +442,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(NamesAndTypesList columns,
 		const auto end = pos + type_name->size();
 
 		ParserIdentifierWithOptionalParameters storage_p;
-		Expected expected{""};
-		if (!storage_p.parse(pos, end, column_declaration->type, expected))
-			throw Exception("Cannot parse data type.", ErrorCodes::SYNTAX_ERROR);
-
+		column_declaration->type = parseQuery(storage_p, pos, end, "data type");
 		column_declaration->type->query_string = type_name;
 
 		const auto it = column_defaults.find(column.name);

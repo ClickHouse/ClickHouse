@@ -13,6 +13,7 @@
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ParserSelectQuery.h>
 #include <DB/Parsers/formatAST.h>
+#include <DB/Parsers/parseQuery.h>
 
 #include <DB/DataStreams/TabSeparatedRowOutputStream.h>
 #include <DB/DataStreams/LimitBlockInputStream.h>
@@ -29,8 +30,6 @@ int main(int argc, char ** argv)
 
 	try
 	{
-		ParserSelectQuery parser;
-		ASTPtr ast;
 		std::string input = "SELECT x, s1, s2, "
 			"/*"
 			"2 + x * 2, x * 2, x % 3 == 1, "
@@ -39,24 +38,12 @@ int main(int argc, char ** argv)
 			"s1 <= 'abc', s1 <= s2, s1 >= 'abc', s1 >= s2, "
 			"*/"
 			"s1 < s2 AND x % 3 < x % 5";
-		Expected expected = "";
 
-		const char * begin = input.data();
-		const char * end = begin + input.size();
-		const char * pos = begin;
+		ParserSelectQuery parser;
+		ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "");
 
-		if (parser.parse(pos, end, ast, expected))
-		{
-			std::cout << "Success." << std::endl;
-			formatAST(*ast, std::cout);
-			std::cout << std::endl << ast->getTreeID() << std::endl;
-		}
-		else
-		{
-			std::cout << "Failed at position " << (pos - begin) << ": "
-				<< mysqlxx::quote << input.substr(pos - begin, 10)
-				<< ", expected " << expected << "." << std::endl;
-		}
+		formatAST(*ast, std::cerr);
+		std::cerr << std::endl;
 
 		Context context;
 		NamesAndTypesList columns

@@ -10,7 +10,8 @@ namespace DB
 
 
 /// Парсит database.table или table.
-static bool parseDatabaseAndTable(ASTRenameQuery::Table & db_and_table, IParser::Pos & pos, IParser::Pos end, Expected & expected)
+static bool parseDatabaseAndTable(
+	ASTRenameQuery::Table & db_and_table, IParser::Pos & pos, IParser::Pos end, IParser::Pos & max_parsed_pos, Expected & expected)
 {
 	ParserIdentifier name_p;
 	ParserWhiteSpaceOrComments ws;
@@ -21,15 +22,15 @@ static bool parseDatabaseAndTable(ASTRenameQuery::Table & db_and_table, IParser:
 
 	ws.ignore(pos, end);
 
-	if (!name_p.parse(pos, end, table, expected))
+	if (!name_p.parse(pos, end, table, max_parsed_pos, expected))
 		return false;
 
 	ws.ignore(pos, end);
 
-	if (s_dot.ignore(pos, end, expected))
+	if (s_dot.ignore(pos, end, max_parsed_pos, expected))
 	{
 		database = table;
-		if (!name_p.parse(pos, end, table, expected))
+		if (!name_p.parse(pos, end, table, max_parsed_pos, expected))
 			return false;
 
 		ws.ignore(pos, end);
@@ -42,7 +43,7 @@ static bool parseDatabaseAndTable(ASTRenameQuery::Table & db_and_table, IParser:
 }
 
 
-bool ParserRenameQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
+bool ParserRenameQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	Pos begin = pos;
 
@@ -54,12 +55,12 @@ bool ParserRenameQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 
 	ws.ignore(pos, end);
 
-	if (!s_rename.ignore(pos, end, expected))
+	if (!s_rename.ignore(pos, end, max_parsed_pos, expected))
 		return false;
 
 	ws.ignore(pos, end);
 
-	if (!s_table.ignore(pos, end, expected))
+	if (!s_table.ignore(pos, end, max_parsed_pos, expected))
 		return false;
 
 	ASTRenameQuery::Elements elements;
@@ -75,9 +76,9 @@ bool ParserRenameQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 
 		elements.push_back(ASTRenameQuery::Element());
 
-		if (!parseDatabaseAndTable(elements.back().from, pos, end, expected)
+		if (!parseDatabaseAndTable(elements.back().from, pos, end, max_parsed_pos, expected)
 			|| !s_to.ignore(pos, end)
-			|| !parseDatabaseAndTable(elements.back().to, pos, end, expected))
+			|| !parseDatabaseAndTable(elements.back().to, pos, end, max_parsed_pos, expected))
 			return false;
 	}
 

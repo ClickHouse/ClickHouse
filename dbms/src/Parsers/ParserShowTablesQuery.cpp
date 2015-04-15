@@ -11,7 +11,7 @@ namespace DB
 {
 
 
-bool ParserShowTablesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
+bool ParserShowTablesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	Pos begin = pos;
 
@@ -35,7 +35,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expecte
 
 	ws.ignore(pos, end);
 
-	if (!s_show.ignore(pos, end, expected))
+	if (!s_show.ignore(pos, end, max_parsed_pos, expected))
 		return false;
 
 	ws.ignore(pos, end);
@@ -44,52 +44,49 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expecte
 	{
 		query->databases = true;
 	}
-	else if (s_tables.ignore(pos, end, expected))
+	else if (s_tables.ignore(pos, end, max_parsed_pos, expected))
 	{
 		ws.ignore(pos, end);
 
-		if (s_from.ignore(pos, end, expected))
+		if (s_from.ignore(pos, end, max_parsed_pos, expected))
 		{
 			ws.ignore(pos, end);
 
-			if (!name_p.parse(pos, end, database, expected))
+			if (!name_p.parse(pos, end, database, max_parsed_pos, expected))
 				return false;
 		}
 
 		ws.ignore(pos, end);
 
-		if (s_not.ignore(pos, end, expected))
+		if (s_not.ignore(pos, end, max_parsed_pos, expected))
 		{
 			ws.ignore(pos, end);
 
 			query->not_like = true;
 		}
 
-		if (s_like.ignore(pos, end, expected))
+		if (s_like.ignore(pos, end, max_parsed_pos, expected))
 		{
 			ws.ignore(pos, end);
 
-			if (!like_p.parse(pos, end, like, expected))
+			if (!like_p.parse(pos, end, like, max_parsed_pos, expected))
 				return false;
 		}
 		else if (query->not_like)
 			return false;
 	}
 	else
-	{
-		pos = begin;
 		return false;
-	}
 
 	ws.ignore(pos, end);
 
-	if (s_format.ignore(pos, end, expected))
+	if (s_format.ignore(pos, end, max_parsed_pos, expected))
 	{
 		ws.ignore(pos, end);
 
 		ParserIdentifier format_p;
 
-		if (!format_p.parse(pos, end, format, expected))
+		if (!format_p.parse(pos, end, format, max_parsed_pos, expected))
 			return false;
 		typeid_cast<ASTIdentifier &>(*format).kind = ASTIdentifier::Format;
 

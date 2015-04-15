@@ -32,7 +32,7 @@ public:
 
 	BlockOutputStreamPtr write(ASTPtr query) override;
 	void drop() override;
-	bool optimize() override;
+	bool optimize(const Settings & settings) override;
 
 	BlockInputStreams read(
 		const Names & column_names,

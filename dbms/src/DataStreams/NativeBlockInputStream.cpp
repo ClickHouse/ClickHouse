@@ -4,10 +4,7 @@
 #include <DB/IO/VarInt.h>
 
 #include <DB/Columns/ColumnArray.h>
-#include <DB/Columns/ColumnNested.h>
-
 #include <DB/DataTypes/DataTypeArray.h>
-#include <DB/DataTypes/DataTypeNested.h>
 
 #include <DB/DataStreams/NativeBlockInputStream.h>
 
@@ -34,28 +31,6 @@ static void readData(const IDataType & type, IColumn & column, ReadBuffer & istr
 				typeid_cast<ColumnArray &>(column).getData(),
 				istr,
 				typeid_cast<const ColumnArray &>(column).getOffsets()[rows - 1]);
-	}
-	else if (const DataTypeNested * type_nested = typeid_cast<const DataTypeNested *>(&type))
-	{
-		ColumnNested & column_nested = typeid_cast<ColumnNested &>(column);
-		IColumn & offsets_column = *column_nested.getOffsetsColumn();
-		type_nested->getOffsetsType()->deserializeBinary(offsets_column, istr, rows, 0);
-
-		if (offsets_column.size() != rows)
-			throw Exception("Cannot read all data in NativeBlockInputStream.", ErrorCodes::CANNOT_READ_ALL_DATA);
-
-		if (rows)
-		{
-			NamesAndTypesList::const_iterator it = type_nested->getNestedTypesList()->begin();
-			for (size_t i = 0; i < column_nested.getData().size(); ++i, ++it)
-			{
-				readData(
-					*it->type,
-					*column_nested.getData()[i],
-					istr,
-					column_nested.getOffsets()[rows - 1]);
-			}
-		}
 	}
 	else
 		type.deserializeBinary(column, istr, rows, 0);	/// TODO Использовать avg_value_size_hint.

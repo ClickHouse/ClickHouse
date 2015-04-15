@@ -1,4 +1,5 @@
 #include <statdaemons/ext/range.hpp>
+#include <DB/Storages/ColumnsDescription.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreePartsExchange.h>
@@ -860,7 +861,8 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 
 			const auto & merge_entry = context.getMergeList().insert(database_name, table_name, entry.new_part_name);
 			MergeTreeData::Transaction transaction;
-			MergeTreeData::DataPartPtr part = merger.mergeParts(parts, entry.new_part_name, *merge_entry, &transaction);
+			size_t aio_threshold = context.getSettings().min_bytes_to_use_direct_io;
+			MergeTreeData::DataPartPtr part = merger.mergeParts(parts, entry.new_part_name, *merge_entry, aio_threshold, &transaction);
 
 			zkutil::Ops ops;
 			checkPartAndAddToZooKeeper(part, ops);
@@ -2058,7 +2060,7 @@ BlockOutputStreamPtr StorageReplicatedMergeTree::write(ASTPtr query)
 }
 
 
-bool StorageReplicatedMergeTree::optimize()
+bool StorageReplicatedMergeTree::optimize(const Settings & settings)
 {
 	/// Померджим какие-нибудь куски из директории unreplicated.
 	/// TODO: Мерджить реплицируемые куски тоже.
@@ -2072,12 +2074,13 @@ bool StorageReplicatedMergeTree::optimize()
 
 	MergeTreeData::DataPartsVector parts;
 	String merged_name;
-	auto always_can_merge = [](const MergeTreeData::DataPartPtr &a, const MergeTreeData::DataPartPtr &b) { return true; };
+	auto always_can_merge = [](const MergeTreeData::DataPartPtr & a, const MergeTreeData::DataPartPtr & b) { return true; };
 	if (!unreplicated_merger->selectPartsToMerge(parts, merged_name, 0, true, true, false, always_can_merge))
 		return false;
 
 	const auto & merge_entry = context.getMergeList().insert(database_name, table_name, merged_name);
-	unreplicated_merger->mergeParts(parts, merged_name, *merge_entry);
+	unreplicated_merger->mergeParts(parts, merged_name, *merge_entry, settings.min_bytes_to_use_direct_io);
+
 	return true;
 }
 

@@ -14,7 +14,7 @@ class ParserSetQuery : public IParserBase
 {
 protected:
 	const char * getName() const { return "SET query"; }
-	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected);
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 };
 
 }

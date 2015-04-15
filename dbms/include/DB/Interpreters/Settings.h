@@ -37,6 +37,8 @@ struct Settings
 	M(SettingUInt64, max_insert_block_size, DEFAULT_INSERT_BLOCK_SIZE) \
 	/** Максимальное количество потоков выполнения запроса. По-умолчанию - определять автоматически. */ \
 	M(SettingMaxThreads, max_threads, 0) \
+	/** Максимальный размер буфера для чтения из файловой системы. */ \
+	M(SettingUInt64, max_read_buffer_size, DBMS_DEFAULT_BUFFER_SIZE) \
 	/** Максимальное количество соединений при распределённой обработке одного запроса (должно быть больше, чем max_threads). */ \
 	M(SettingUInt64, max_distributed_connections, DEFAULT_MAX_DISTRIBUTED_CONNECTIONS) \
 	/** Какую часть запроса можно прочитать в оперативку для парсинга (оставшиеся данные для INSERT, если есть, считываются позже) */ \
@@ -110,11 +112,14 @@ struct Settings
 	/** Минимальная длина выражения expr = x1 OR ... expr = xN для оптимизации */ \
 	M(SettingUInt64, optimize_min_equality_disjunction_chain_length, 3) \
 	\
-	/** Минимальное количество байтов для операций ввода/ввывода минуя кэш страниц */ \
-	M(SettingUInt64, min_bytes_to_use_direct_io, (20U * 1024U * 1024U * 1024U)) \
+	/** Минимальное количество байт для операций ввода/ввывода минуя кэш страниц */ \
+	M(SettingUInt64, min_bytes_to_use_direct_io, (20ULL * 1024ULL * 1024ULL * 1024ULL)) \
 	\
 	/** Кидать исключение, если есть индекс по дате, и он не используется. */ \
 	M(SettingBool, force_index_by_date, 0) \
+	\
+	/** В запросе INSERT с указанием столбцов, заполнять значения по-умолчанию только для столбцов с явными DEFAULT-ами. */ \
+	M(SettingBool, strict_insert_defaults, 0) \
 
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;
