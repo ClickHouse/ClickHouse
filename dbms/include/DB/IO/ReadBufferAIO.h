@@ -67,7 +67,7 @@ private:
 	size_t max_bytes_read = std::numeric_limits<size_t>::max();
 	/// Количество запрашиваемых байтов.
 	size_t requested_byte_count = 0;
-	/// Количество прочитанных байтов при последнем запросе.
+	/// Количество прочитанных байт при последнем запросе.
 	ssize_t bytes_read = 0;
 	/// Итоговое количество прочитанных байтов.
 	size_t total_bytes_read = 0;
