@@ -42,4 +42,7 @@ INSTALL(
     PERMISSIONS OWNER_EXECUTE OWNER_READ GROUP_EXECUTE GROUP_READ WORLD_EXECUTE WORLD_READ
     COMPONENT ${daemonname}
 )
+
+add_dependencies(${daemonname} ${daemonname}-init.target)
+
 endmacro (CREATE_INIT_SCRIPT)

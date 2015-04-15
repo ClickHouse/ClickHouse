@@ -21,4 +21,6 @@ INSTALL(
     PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
     COMPONENT ${daemonname}
 )
+
+add_dependencies(${daemonname} ${daemonname}-logrotate.target)
 endmacro (CREATE_LOGROTATE)
