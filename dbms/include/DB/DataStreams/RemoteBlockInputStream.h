@@ -97,7 +97,7 @@ public:
 		  * все соединения, затем читаем и пропускаем оставшиеся пакеты чтобы
 		  * эти соединения не остались висеть в рассихронизированном состоянии.
 		  */
-		if (established || isQueryInProgress())
+		if (established || isQueryInProgress() || isQueryCancelled())
 			parallel_replicas->disconnect();
 	}
 
@@ -255,6 +255,12 @@ protected:
 	bool isQueryInProgress() const
 	{
 		return sent_query && !finished && !was_cancelled;
+	}
+
+	/// Возвращает true, если запрос отправлен, а отменён до его завершения.
+	bool isQueryCancelled() const
+	{
+		return sent_query && !finished && was_cancelled;
 	}
 
 	/// Возвращает true, если никакой запрос не отправлен или один запрос уже выполнен.
