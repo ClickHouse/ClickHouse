@@ -653,7 +653,7 @@ private:
 			}
 		}
 		else
-			res = DB::parseQuery(parser, pos, end, "");
+			res = DB::parseQueryAndMovePosition(parser, pos, end, "");
 
 		if (is_interactive)
 		{
