@@ -227,12 +227,11 @@ class StorageChunkMerger::MergeTask
 {
 public:
 	MergeTask(const StorageChunkMerger & chunk_merger_, DB::Context & context_, Logger * log_)
-	:
-	shutdown_called(false),
-	chunk_merger(chunk_merger_),
-	context(context_),
-	log(log_),
-	merging(false)
+		: shutdown_called(false),
+		chunk_merger(chunk_merger_),
+		context(context_),
+		log(log_),
+		merging(false)
 	{
 	}
 
@@ -551,6 +550,7 @@ bool StorageChunkMerger::MergeTask::mergeChunks(const Storages & chunks)
 			if (shutdown_called)
 			{
 				LOG_INFO(log, "Shutdown requested while merging chunks.");
+				output->writeSuffix();
 				new_storage.removeReference();	/// После этого временные данные удалятся.
 				return false;
 			}

@@ -73,8 +73,9 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 			Expected expected = "";
 			IParser::Pos pos = parameters.data();
 			IParser::Pos end = pos + parameters.size();
+			IParser::Pos max_parsed_pos = pos;
 
-			if (!(args_parser.parse(pos, end, args_ast, expected) && pos == end))
+			if (!(args_parser.parse(pos, end, args_ast, max_parsed_pos, expected) && pos == end))
 				throw Exception("Cannot parse parameters for data type " + name, ErrorCodes::SYNTAX_ERROR);
 
 			ASTExpressionList & args_list = typeid_cast<ASTExpressionList &>(*args_ast);
@@ -124,8 +125,9 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 			Expected expected = "";
 			IParser::Pos pos = parameters.data();
 			IParser::Pos end = pos + parameters.size();
+			IParser::Pos max_parsed_pos = pos;
 
-			if (!(columns_p.parse(pos, end, columns_ast, expected) && pos == end))
+			if (!(columns_p.parse(pos, end, columns_ast, max_parsed_pos, expected) && pos == end))
 				throw Exception("Cannot parse parameters for data type " + name, ErrorCodes::SYNTAX_ERROR);
 
 			NamesAndTypesListPtr columns = new NamesAndTypesList;
@@ -153,8 +155,9 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 			Expected expected = "";
 			IParser::Pos pos = parameters.data();
 			IParser::Pos end = pos + parameters.size();
+			IParser::Pos max_parsed_pos = pos;
 
-			if (!(columns_p.parse(pos, end, columns_ast, expected) && pos == end))
+			if (!(columns_p.parse(pos, end, columns_ast, max_parsed_pos, expected) && pos == end))
 				throw Exception("Cannot parse parameters for data type " + name, ErrorCodes::SYNTAX_ERROR);
 
 			DataTypes elems;

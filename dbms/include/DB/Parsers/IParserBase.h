@@ -16,10 +16,18 @@ namespace DB
 class IParserBase : public IParser
 {
 public:
-	bool parse(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
+	bool parse(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 	{
-		expected = getName();
-		bool res = parseImpl(pos, end, node, expected);
+		Pos new_max_parsed_pos = pos;
+		Expected new_expected = getName();
+
+		bool res = parseImpl(pos, end, node, new_max_parsed_pos, new_expected);
+
+		if (new_max_parsed_pos > max_parsed_pos)
+			max_parsed_pos = new_max_parsed_pos;
+
+		if (new_max_parsed_pos >= max_parsed_pos)
+			expected = new_expected;
 
 		if (!res)
 			node = nullptr;
@@ -29,8 +37,9 @@ public:
 
 		return res;
 	}
+
 protected:
-	virtual bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected) = 0;
+	virtual bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected) = 0;
 };
 
 }

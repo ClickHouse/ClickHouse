@@ -118,7 +118,7 @@ public:
 		while (bytes_copied < n && !eof())
 		{
 			size_t bytes_to_copy = std::min(static_cast<size_t>(working_buffer.end() - pos), n - bytes_copied);
-			std::memcpy(to + bytes_copied, pos, bytes_to_copy);
+			::memcpy(to + bytes_copied, pos, bytes_to_copy);
 			pos += bytes_to_copy;
 			bytes_copied += bytes_to_copy;
 		}
@@ -143,6 +143,10 @@ public:
 	{
 		return read(to, n);
 	}
+
+protected:
+	/// Количество игнорируемых байтов с начальной позиции буфера working_buffer.
+	size_t working_buffer_offset = 0;
 
 private:
 	/** Прочитать следующие данные и заполнить ими буфер.

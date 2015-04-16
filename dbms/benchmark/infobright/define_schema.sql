@@ -73,7 +73,7 @@ create table hits_10m
     RemoteIP BIGINT,
     WindowName INT,
     OpenerName INT,
-x    HistoryLength SMALLINT,
+    HistoryLength SMALLINT,
     BrowserLanguage CHAR(2),
     BrowserCountry CHAR(2),
     SocialNetwork VARCHAR(128),
@@ -108,4 +108,4 @@ x    HistoryLength SMALLINT,
     UserIDHash BIGINT
 );
 
-load data infile '/opt/dump/dump_0.3/dump_hits_10m_meshed_utf8.tsv' into table hits_10m FIELDS TERMINATED BY '\t'  ESCAPED BY '\\' ENCLOSED BY "NULL";
+LOAD DATA INFILE '/opt/dump/dump_0.3/dump_hits_10m_meshed_utf8.tsv' INTO TABLE hits_10m FIELDS TERMINATED BY '\t'  ESCAPED BY '\\' ENCLOSED BY "NULL";
