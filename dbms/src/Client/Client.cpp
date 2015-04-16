@@ -1,5 +1,3 @@
-#define DBMS_CLIENT 1	/// Используется в Context.h
-
 #include <unistd.h>
 #include <stdlib.h>
 #include <fcntl.h>

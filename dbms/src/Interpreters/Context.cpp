@@ -58,19 +58,6 @@ struct ContextShared
 {
 	Logger * log = &Logger::get("Context");					/// Логгер.
 
-	struct AfterDestroy
-	{
-		Logger * log;
-
-		AfterDestroy(Logger * log_) : log(log_) {}
-		~AfterDestroy()
-		{
-#ifndef DBMS_CLIENT
-			LOG_INFO(log, "Uninitialized shared context.");
-#endif
-		}
-	} after_destroy {log};
-
 	mutable Poco::Mutex mutex;								/// Для доступа и модификации разделяемых объектов.
 
 	mutable zkutil::ZooKeeperPtr zookeeper;					/// Клиент для ZooKeeper.
@@ -109,10 +96,6 @@ struct ContextShared
 
 	~ContextShared()
 	{
-#ifndef DBMS_CLIENT
-		LOG_INFO(log, "Uninitializing shared context.");
-#endif
-
 		try
 		{
 			shutdown();
