@@ -77,6 +77,13 @@ public:
 	  */
 	void joinBlock(Block & block) const;
 
+	/** Запомнить тотальные значения для последующего использования.
+	  */
+	void setTotals(const Block & block) { totals = block; }
+	bool hasTotals() const { return totals; };
+
+	void joinTotals(Block & block) const;
+
 	/// Считает суммарное число ключей во всех Join'ах
 	size_t getTotalRowCount() const;
 	/// Считает суммарный размер в байтах буфферов всех Join'ов + размер string_pool'а
@@ -175,6 +182,8 @@ private:
 	size_t max_rows;
 	size_t max_bytes;
 	OverflowMode overflow_mode;
+
+	Block totals;
 
 	/** Защищает работу с состоянием в функциях insertFromBlock и joinBlock.
 	  * Эти функции могут вызываться одновременно из разных потоков только при использовании StorageJoin,

@@ -40,9 +40,7 @@ public:
 		if (IProfilingBlockInputStream * child = dynamic_cast<IProfilingBlockInputStream *>(&*children.back()))
 		{
 			totals = child->getTotals();
-
-			if (totals)
-				expression->execute(totals);
+			expression->executeOnTotals(totals);
 		}
 
 		return totals;

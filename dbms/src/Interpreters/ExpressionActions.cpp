@@ -339,6 +339,16 @@ void ExpressionAction::execute(Block & block) const
 	}
 }
 
+
+void ExpressionAction::executeOnTotals(Block & block) const
+{
+	if (type != JOIN)
+		execute(block);
+	else
+		join->joinTotals(block);
+}
+
+
 std::string ExpressionAction::toString() const
 {
 	std::stringstream ss;
@@ -541,6 +551,38 @@ void ExpressionActions::execute(Block & block) const
 		action.execute(block);
 		checkLimits(block);
 	}
+}
+
+void ExpressionActions::executeOnTotals(Block & block) const
+{
+	/// Если в подзапросе для JOIN-а есть totals, а у нас нет, то возьмём блок со значениями по-умолчанию вместо totals.
+	if (!block)
+	{
+		bool has_totals_in_join = false;
+		for (const auto & action : actions)
+		{
+			if (action.join && action.join->hasTotals())
+			{
+				has_totals_in_join = true;
+				break;
+			}
+		}
+
+		if (has_totals_in_join)
+		{
+			for (const auto & name_and_type : input_columns)
+			{
+				ColumnWithNameAndType elem(name_and_type.type->createColumn(), name_and_type.type, name_and_type.name);
+				elem.column->insertDefault();
+				block.insert(elem);
+			}
+		}
+		else
+			return;	/// Нечего JOIN-ить.
+	}
+
+	for (const auto & action : actions)
+		action.executeOnTotals(block);
 }
 
 std::string ExpressionActions::getSmallestColumn(const NamesAndTypesList & columns)

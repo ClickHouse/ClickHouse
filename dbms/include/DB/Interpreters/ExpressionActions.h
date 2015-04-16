@@ -152,6 +152,7 @@ private:
 	std::vector<ExpressionAction> getPrerequisites(Block & sample_block);
 	void prepare(Block & sample_block);
 	void execute(Block & block) const;
+	void executeOnTotals(Block & block) const;
 };
 
 
@@ -226,6 +227,11 @@ public:
 
 	/// Выполнить выражение над блоком. Блок должен содержать все столбцы , возвращаемые getRequiredColumns.
 	void execute(Block & block) const;
+
+	/** Выполнить выражение над блоком тотальных значений.
+	  * Почти не отличается от execute. Разница лишь при выполнении JOIN-а.
+	  */
+	void executeOnTotals(Block & block) const;
 
 	/// Получить блок-образец, содержащий имена и типы столбцов результата.
 	const Block & getSampleBlock() const { return sample_block; }
