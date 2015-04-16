@@ -16,6 +16,7 @@
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/Common/localBackup.h>
 #include <DB/Functions/FunctionFactory.h>
+#include <Poco/DirectoryIterator.h>
 
 #include <algorithm>
 #include <iomanip>

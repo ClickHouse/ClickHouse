@@ -347,11 +347,7 @@ bool Join::insertFromBlock(const Block & block)
 
 
 template <ASTJoin::Kind KIND, ASTJoin::Strictness STRICTNESS, typename Map>
-struct Adder
-{
-	static void add(const Map & map, const typename Map::key_type & key, size_t num_columns_to_add, ColumnPlainPtrs & added_columns,
-		size_t i, IColumn::Filter * filter, IColumn::Offset_t & current_offset, IColumn::Offsets_t * offsets);
-};
+struct Adder;
 
 template <typename Map>
 struct Adder<ASTJoin::Left, ASTJoin::Any, Map>

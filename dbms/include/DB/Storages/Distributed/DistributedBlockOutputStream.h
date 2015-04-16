@@ -8,6 +8,7 @@
 #include <DB/IO/CompressedWriteBuffer.h>
 #include <DB/DataStreams/NativeBlockOutputStream.h>
 #include <DB/Interpreters/InterpreterInsertQuery.h>
+#include <DB/Interpreters/Cluster.h>
 
 #include <statdaemons/Increment.h>
 #include <memory>
@@ -15,6 +16,7 @@
 
 #include <iostream>
 #include <type_traits>
+
 
 namespace DB
 {

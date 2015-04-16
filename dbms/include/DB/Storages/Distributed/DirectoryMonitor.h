@@ -3,8 +3,10 @@
 #include <DB/DataStreams/RemoteBlockOutputStream.h>
 #include <DB/Common/escapeForFileName.h>
 #include <DB/Storages/StorageDistributed.h>
+#include <DB/IO/ReadBufferFromFile.h>
 #include <boost/algorithm/string/find_iterator.hpp>
 #include <boost/algorithm/string/finder.hpp>
+#include <Poco/DirectoryIterator.h>
 #include <thread>
 #include <mutex>
 

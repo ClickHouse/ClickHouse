@@ -1,19 +1,185 @@
+#include <map>
+#include <set>
+
+#include <Poco/SharedPtr.h>
+#include <Poco/Mutex.h>
 #include <Poco/File.h>
 #include <Poco/Net/NetworkInterface.h>
 
+#include <Yandex/logger_useful.h>
+
+#include <DB/Common/Macros.h>
 #include <DB/Common/escapeForFileName.h>
+#include <DB/DataStreams/FormatFactory.h>
+#include <DB/AggregateFunctions/AggregateFunctionFactory.h>
+#include <DB/TableFunctions/TableFunctionFactory.h>
+#include <DB/DataTypes/DataTypeFactory.h>
+#include <DB/Storages/IStorage.h>
+#include <DB/Storages/MarkCache.h>
+#include <DB/Storages/MergeTree/BackgroundProcessingPool.h>
+#include <DB/Storages/MergeTree/MergeList.h>
+#include <DB/Interpreters/Settings.h>
+#include <DB/Interpreters/Users.h>
+#include <DB/Interpreters/Quota.h>
+#include <DB/Interpreters/Dictionaries.h>
+#include <DB/Interpreters/ExternalDictionaries.h>
+#include <DB/Interpreters/ProcessList.h>
+#include <DB/Interpreters/Cluster.h>
+#include <DB/Interpreters/InterserverIOHandler.h>
+#include <DB/Interpreters/Compiler.h>
+#include <DB/Interpreters/Context.h>
 #include <DB/IO/ReadBufferFromFile.h>
 #include <DB/IO/WriteBufferFromString.h>
 #include <DB/IO/copyData.h>
+#include <DB/IO/UncompressedCache.h>
 #include <DB/Parsers/ASTCreateQuery.h>
 #include <DB/Parsers/ParserCreateQuery.h>
 #include <DB/Parsers/parseQuery.h>
-#include <DB/Interpreters/Context.h>
+#include <DB/Client/ConnectionPool.h>
 #include <DB/Client/ConnectionPoolWithFailover.h>
+
+#include <statdaemons/ConfigProcessor.h>
+#include <zkutil/ZooKeeper.h>
 
 
 namespace DB
 {
+
+
+class TableFunctionFactory;
+
+using Poco::SharedPtr;
+
+
+/** Набор известных объектов, которые могут быть использованы в запросе.
+  * Разделяемая часть. Порядок членов (порядок их уничтожения) очень важен.
+  */
+struct ContextShared
+{
+	Logger * log = &Logger::get("Context");					/// Логгер.
+
+	struct AfterDestroy
+	{
+		Logger * log;
+
+		AfterDestroy(Logger * log_) : log(log_) {}
+		~AfterDestroy()
+		{
+#ifndef DBMS_CLIENT
+			LOG_INFO(log, "Uninitialized shared context.");
+#endif
+		}
+	} after_destroy {log};
+
+	mutable Poco::Mutex mutex;								/// Для доступа и модификации разделяемых объектов.
+
+	mutable zkutil::ZooKeeperPtr zookeeper;					/// Клиент для ZooKeeper.
+
+	String interserver_io_host;								/// Имя хоста         по которым это сервер доступен для других серверов.
+	int interserver_io_port;								///           и порт,
+
+	String path;											/// Путь к директории с данными, со слешем на конце.
+	String tmp_path;										/// Путь ко временным файлам, возникающим при обработке запроса.
+	Databases databases;									/// Список БД и таблиц в них.
+	TableFunctionFactory table_function_factory;			/// Табличные функции.
+	AggregateFunctionFactory aggregate_function_factory; 	/// Агрегатные функции.
+	DataTypeFactory data_type_factory;						/// Типы данных.
+	FormatFactory format_factory;							/// Форматы.
+	mutable SharedPtr<Dictionaries> dictionaries;			/// Словари Метрики. Инициализируются лениво.
+	mutable SharedPtr<ExternalDictionaries> external_dictionaries;
+	Users users;											/// Известные пользователи.
+	Quotas quotas;											/// Известные квоты на использование ресурсов.
+	mutable UncompressedCachePtr uncompressed_cache;		/// Кэш разжатых блоков.
+	mutable MarkCachePtr mark_cache;						/// Кэш засечек в сжатых файлах.
+	ProcessList process_list;								/// Исполняющиеся в данный момент запросы.
+	MergeList merge_list;									/// Список выполняемых мерджей (для (Replicated)?MergeTree)
+	ViewDependencies view_dependencies;						/// Текущие зависимости
+	ConfigurationPtr users_config;							/// Конфиг с секциями users, profiles и quotas.
+	InterserverIOHandler interserver_io_handler;			/// Обработчик для межсерверной передачи данных.
+	BackgroundProcessingPoolPtr background_pool;			/// Пул потоков для фоновой работы, выполняемой таблицами.
+	Macros macros;											/// Подстановки из конфига.
+	std::unique_ptr<Compiler> compiler;						/// Для динамической компиляции частей запроса, при необходимости.
+
+	/// Кластеры для distributed таблиц
+	/// Создаются при создании Distributed таблиц, так как нужно дождаться пока будут выставлены Settings
+	Poco::SharedPtr<Clusters> clusters;
+
+	bool shutdown_called = false;
+
+
+	~ContextShared()
+	{
+#ifndef DBMS_CLIENT
+		LOG_INFO(log, "Uninitializing shared context.");
+#endif
+
+		try
+		{
+			shutdown();
+		}
+		catch (...)
+		{
+			tryLogCurrentException(__PRETTY_FUNCTION__);
+		}
+	}
+
+
+	/** Выполнить сложную работу по уничтожению объектов заранее.
+	  */
+	void shutdown()
+	{
+		if (shutdown_called)
+			return;
+		shutdown_called = true;
+
+		/** В этот момент, некоторые таблицы могут иметь потоки,
+		  *  которые модифицируют список таблиц, и блокируют наш mutex (см. StorageChunkMerger).
+		  * Чтобы корректно их завершить, скопируем текущий список таблиц,
+		  *  и попросим их всех закончить свою работу.
+		  * Потом удалим все объекты с таблицами.
+		  */
+
+		Databases current_databases;
+
+		{
+			Poco::ScopedLock<Poco::Mutex> lock(mutex);
+			current_databases = databases;
+		}
+
+		for (Databases::iterator it = current_databases.begin(); it != current_databases.end(); ++it)
+			for (Tables::iterator jt = it->second.begin(); jt != it->second.end(); ++jt)
+				jt->second->shutdown();
+
+		{
+			Poco::ScopedLock<Poco::Mutex> lock(mutex);
+			databases.clear();
+		}
+	}
+};
+
+
+Context::Context()
+	: shared(new ContextShared),
+	quota(new QuotaForIntervals)
+{
+}
+
+Context::~Context() = default;
+
+
+const TableFunctionFactory & Context::getTableFunctionFactory() const			{ return shared->table_function_factory; }
+const AggregateFunctionFactory & Context::getAggregateFunctionFactory() const	{ return shared->aggregate_function_factory; }
+const DataTypeFactory & Context::getDataTypeFactory() const						{ return shared->data_type_factory; }
+const FormatFactory & Context::getFormatFactory() const							{ return shared->format_factory; }
+InterserverIOHandler & Context::getInterserverIOHandler()						{ return shared->interserver_io_handler; }
+Poco::Mutex & Context::getMutex() const 										{ return shared->mutex; }
+const Databases & Context::getDatabases() const 								{ return shared->databases; }
+Databases & Context::getDatabases() 											{ return shared->databases; }
+ProcessList & Context::getProcessList()											{ return shared->process_list; }
+const ProcessList & Context::getProcessList() const								{ return shared->process_list; }
+MergeList & Context::getMergeList() 											{ return shared->merge_list; }
+const MergeList & Context::getMergeList() const 								{ return shared->merge_list; }
+
 
 String Context::getPath() const
 {
@@ -561,13 +727,13 @@ void Context::setUncompressedCache(size_t max_size_in_bytes)
 	if (shared->uncompressed_cache)
 		throw Exception("Uncompressed cache has been already created.", ErrorCodes::LOGICAL_ERROR);
 
-	shared->uncompressed_cache = new UncompressedCache(max_size_in_bytes);
+	shared->uncompressed_cache.reset(new UncompressedCache(max_size_in_bytes));
 }
 
 
 UncompressedCachePtr Context::getUncompressedCache() const
 {
-	/// Исходим из допущения, что функция setUncompressedCache, если вызывалась, то раньше. Иначе поставьте mutex.
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 	return shared->uncompressed_cache;
 }
 
@@ -578,12 +744,12 @@ void Context::setMarkCache(size_t cache_size_in_bytes)
 	if (shared->mark_cache)
 		throw Exception("Uncompressed cache has been already created.", ErrorCodes::LOGICAL_ERROR);
 
-	shared->mark_cache = new MarkCache(cache_size_in_bytes);
+	shared->mark_cache.reset(new MarkCache(cache_size_in_bytes));
 }
 
 MarkCachePtr Context::getMarkCache() const
 {
-	/// Исходим из допущения, что функция setMarksCache, если вызывалась, то раньше. Иначе поставьте mutex.
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 	return shared->mark_cache;
 }
 
@@ -597,7 +763,7 @@ BackgroundProcessingPool & Context::getBackgroundPool()
 
 void Context::resetCaches() const
 {
-	/// Исходим из допущения, что функции setUncompressedCache, setMarkCache, если вызывались, то раньше (при старте сервера). Иначе поставьте mutex.
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 
 	if (shared->uncompressed_cache)
 		shared->uncompressed_cache->reset();
@@ -674,5 +840,10 @@ Compiler & Context::getCompiler()
 	return *shared->compiler;
 }
 
+
+void Context::shutdown()
+{
+	shared->shutdown();
+}
 
 }

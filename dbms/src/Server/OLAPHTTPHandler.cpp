@@ -1,6 +1,7 @@
 #include <Poco/Net/HTTPBasicCredentials.h>
 
 #include <DB/Interpreters/executeQuery.h>
+#include <DB/Interpreters/Quota.h>
 #include <DB/IO/WriteBufferFromHTTPServerResponse.h>
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/ReadBufferFromIStream.h>

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DB/Storages/MarkCache.h>
 #include <DB/Storages/MergeTree/MergeTreeData.h>
 #include <DB/DataTypes/IDataType.h>
 #include <DB/DataTypes/DataTypeNested.h>
@@ -40,10 +41,12 @@ class MergeTreeReader
 public:
 	MergeTreeReader(const String & path_, /// Путь к куску
 		const MergeTreeData::DataPartPtr & data_part, const NamesAndTypesList & columns_,
-		bool use_uncompressed_cache_, MergeTreeData & storage_, const MarkRanges & all_mark_ranges,
+		UncompressedCache * uncompressed_cache_, MarkCache * mark_cache_,
+		MergeTreeData & storage_, const MarkRanges & all_mark_ranges,
 		size_t aio_threshold_, size_t max_read_buffer_size_)
 		: path(path_), data_part(data_part), part_name(data_part->name), columns(columns_),
-		use_uncompressed_cache(use_uncompressed_cache_), storage(storage_), all_mark_ranges(all_mark_ranges),
+		uncompressed_cache(uncompressed_cache_), mark_cache(mark_cache_),
+		storage(storage_), all_mark_ranges(all_mark_ranges),
 		aio_threshold(aio_threshold_), max_read_buffer_size(max_read_buffer_size_)
 	{
 		try
@@ -335,7 +338,7 @@ private:
 			{
 				/// Более хорошая диагностика.
 				if (e.code() == ErrorCodes::ARGUMENT_OUT_OF_BOUND)
-					throw Exception(e.message() + " (while seeking to mark " + Poco::NumberFormatter::format(index)
+					throw Exception(e.message() + " (while seeking to mark " + toString(index)
 						+ " of column " + path_prefix + "; offsets are: "
 						+ toString(mark.offset_in_compressed_file) + " "
 						+ toString(mark.offset_in_decompressed_block) + ")", e.code());
@@ -356,7 +359,9 @@ private:
 	NamesAndTypesList columns;
 	const NameAndTypePair * added_minimum_size_column = nullptr;
 
-	bool use_uncompressed_cache;
+	UncompressedCache * uncompressed_cache;
+	MarkCache * mark_cache;
+
 	MergeTreeData & storage;
 	const MarkRanges & all_mark_ranges;
 	size_t aio_threshold;
@@ -371,9 +376,6 @@ private:
 			*/
 		if (!Poco::File(path + escaped_column_name + ".bin").exists())
 			return;
-
-		UncompressedCache * uncompressed_cache = use_uncompressed_cache ? storage.context.getUncompressedCache() : NULL;
-		MarkCache * mark_cache = storage.context.getMarkCache();
 
 		/// Для массивов используются отдельные потоки для размеров.
 		if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))

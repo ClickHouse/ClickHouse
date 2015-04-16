@@ -4,6 +4,7 @@
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreePartsExchange.h>
 #include <DB/Storages/MergeTree/MergeTreePartChecker.h>
+#include <DB/Storages/MergeTree/MergeList.h>
 #include <DB/Parsers/formatAST.h>
 #include <DB/IO/WriteBufferFromOStream.h>
 #include <DB/IO/ReadBufferFromString.h>
@@ -11,6 +12,8 @@
 #include <DB/Common/VirtualColumnUtils.h>
 #include <DB/Parsers/ASTInsertQuery.h>
 #include <DB/DataStreams/AddingConstColumnBlockInputStream.h>
+#include <DB/Common/Macros.h>
+#include <Poco/DirectoryIterator.h>
 #include <time.h>
 
 

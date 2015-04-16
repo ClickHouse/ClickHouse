@@ -70,6 +70,6 @@ public:
 	}
 };
 
-typedef Poco::SharedPtr<UncompressedCache> UncompressedCachePtr;
+typedef std::shared_ptr<UncompressedCache> UncompressedCachePtr;
 
 }

@@ -10,6 +10,7 @@
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeCleanupThread.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeRestartingThread.h>
 #include <DB/Storages/MergeTree/AbandonableLockInZooKeeper.h>
+#include <DB/Storages/MergeTree/BackgroundProcessingPool.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <zkutil/ZooKeeper.h>
 #include <zkutil/LeaderElection.h>

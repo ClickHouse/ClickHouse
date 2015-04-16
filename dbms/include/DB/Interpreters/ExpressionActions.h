@@ -173,7 +173,7 @@ public:
 
 	/// Для константных столбцов в input_columns_ могут содержаться сами столбцы.
 	ExpressionActions(const ColumnsWithNameAndType & input_columns_, const Settings & settings_)
-	: settings(settings_)
+		: settings(settings_)
 	{
 		for (ColumnsWithNameAndType::const_iterator it = input_columns_.begin(); it != input_columns_.end(); ++it)
 		{

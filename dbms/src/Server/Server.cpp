@@ -2,6 +2,7 @@
 #include <sys/file.h>
 
 #include <Poco/Net/HTTPServerRequest.h>
+#include <Poco/Net/DNS.h>
 #include <Poco/Util/XMLConfiguration.h>
 
 #include <Yandex/ApplicationServerExt.h>
@@ -11,6 +12,7 @@
 #include <statdaemons/ext/scope_guard.hpp>
 #include <memory>
 
+#include <DB/Common/Macros.h>
 #include <DB/Interpreters/loadMetadata.h>
 #include <DB/Storages/StorageSystemNumbers.h>
 #include <DB/Storages/StorageSystemTables.h>

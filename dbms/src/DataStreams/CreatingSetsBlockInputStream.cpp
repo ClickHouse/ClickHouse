@@ -1,5 +1,6 @@
 #include <DB/Interpreters/Set.h>
 #include <DB/Interpreters/Join.h>
+#include <DB/DataStreams/IBlockOutputStream.h>
 #include <DB/DataStreams/CreatingSetsBlockInputStream.h>
 #include <iomanip>
 

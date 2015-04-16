@@ -1,8 +1,10 @@
 #include <DB/Storages/StorageMergeTree.h>
 #include <DB/Storages/MergeTree/MergeTreeBlockOutputStream.h>
 #include <DB/Storages/MergeTree/DiskSpaceMonitor.h>
+#include <DB/Storages/MergeTree/MergeList.h>
 #include <DB/Common/escapeForFileName.h>
 #include <DB/Interpreters/InterpreterAlterQuery.h>
+#include <Poco/DirectoryIterator.h>
 
 namespace DB
 {
