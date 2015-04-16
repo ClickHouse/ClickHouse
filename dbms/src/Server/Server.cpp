@@ -8,9 +8,14 @@
 #include <Yandex/ApplicationServerExt.h>
 #include <Yandex/ErrorHandlers.h>
 #include <Yandex/Revision.h>
+
 #include <statdaemons/ConfigProcessor.h>
 #include <statdaemons/ext/scope_guard.hpp>
+
 #include <memory>
+#include <thread>
+#include <atomic>
+#include <condition_variable>
 
 #include <DB/Common/Macros.h>
 #include <DB/Interpreters/loadMetadata.h>
@@ -32,15 +37,14 @@
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
 #include <DB/IO/Operators.h>
 
+#include <zkutil/ZooKeeper.h>
+
 #include "Server.h"
 #include "HTTPHandler.h"
 #include "InterserverIOHTTPHandler.h"
 #include "OLAPHTTPHandler.h"
 #include "TCPHandler.h"
 
-#include <thread>
-#include <atomic>
-#include <condition_variable>
 
 namespace
 {
