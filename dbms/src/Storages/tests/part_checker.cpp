@@ -1,3 +1,4 @@
+#include <Poco/ConsoleChannel.h>
 #include <DB/Storages/MergeTree/MergeTreePartChecker.h>
 
 

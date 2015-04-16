@@ -8,6 +8,7 @@
 #include <DB/Interpreters/loadMetadata.h>
 #include <DB/Interpreters/executeQuery.h>
 
+#include <DB/DataStreams/FormatFactory.h>
 #include <DB/DataStreams/glueBlockInputStreams.h>
 
 
