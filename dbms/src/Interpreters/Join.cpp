@@ -569,4 +569,34 @@ void Join::joinBlock(Block & block) const
 }
 
 
+void Join::joinTotals(Block & block) const
+{
+	Block totals_without_keys = totals;
+
+	if (totals_without_keys)
+	{
+		for (const auto & name : key_names_right)
+			totals_without_keys.erase(totals_without_keys.getPositionByName(name));
+
+		for (size_t i = 0; i < totals_without_keys.columns(); ++i)
+			block.insert(totals_without_keys.getByPosition(i));
+	}
+	else
+	{
+		if (blocks.empty())
+			return;
+
+		/// Будем присоединять пустые totals - из одной строчки со значениями по-умолчанию.
+		totals_without_keys = blocks.front().cloneEmpty();
+
+		for (size_t i = 0; i < totals_without_keys.columns(); ++i)
+		{
+			totals_without_keys.getByPosition(i).column->insertDefault();
+			block.insert(totals_without_keys.getByPosition(i));
+		}
+	}
+}
+
+
+
 }
