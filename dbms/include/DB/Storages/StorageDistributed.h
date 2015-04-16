@@ -5,6 +5,7 @@
 #include <DB/Client/ConnectionPoolWithFailover.h>
 #include <DB/Interpreters/Settings.h>
 #include <DB/Interpreters/Context.h>
+#include <DB/Interpreters/ExpressionActions.h>
 
 
 namespace DB

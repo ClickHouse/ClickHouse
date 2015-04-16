@@ -9,7 +9,9 @@
 #include <DB/Storages/MergeTree/ActiveDataPartSet.h>
 #include <DB/IO/ReadBufferFromString.h>
 #include <DB/IO/WriteBufferFromFile.h>
+#include <DB/IO/ReadBufferFromFile.h>
 #include <DB/Common/escapeForFileName.h>
+#include <DB/Common/SipHash.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <Poco/RWLock.h>

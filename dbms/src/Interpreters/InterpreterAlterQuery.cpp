@@ -9,6 +9,7 @@
 
 #include <DB/Parsers/ParserCreateQuery.h>
 #include <DB/IO/copyData.h>
+#include <DB/IO/ReadBufferFromFile.h>
 #include <DB/Common/escapeForFileName.h>
 #include <DB/Parsers/formatAST.h>
 #include <DB/Parsers/parseQuery.h>

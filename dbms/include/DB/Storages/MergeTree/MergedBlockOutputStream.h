@@ -9,6 +9,7 @@
 #include <DB/Common/escapeForFileName.h>
 #include <DB/DataTypes/DataTypeNested.h>
 #include <DB/DataTypes/DataTypeArray.h>
+#include <DB/DataStreams/IBlockOutputStream.h>
 
 
 namespace DB

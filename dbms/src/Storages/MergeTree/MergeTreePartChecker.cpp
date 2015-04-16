@@ -1,3 +1,4 @@
+#include <DB/Storages/MarkCache.h>
 #include <DB/Storages/MergeTree/MergeTreePartChecker.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeDate.h>

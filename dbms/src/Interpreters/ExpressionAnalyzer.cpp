@@ -22,6 +22,8 @@
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Interpreters/LogicalExpressionsOptimizer.h>
 
+#include <DB/AggregateFunctions/AggregateFunctionFactory.h>
+
 #include <DB/Storages/StorageDistributed.h>
 #include <DB/Storages/StorageMemory.h>
 #include <DB/Storages/StorageSet.h>
