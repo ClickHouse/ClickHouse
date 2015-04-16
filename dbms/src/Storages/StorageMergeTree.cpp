@@ -256,10 +256,10 @@ bool StorageMergeTree::canMergeParts(const MergeTreeData::DataPartPtr & left, co
 
 void StorageMergeTree::dropPartition(const Field & partition, bool detach, const Settings & settings)
 {
-	/** TODO В этот момент могут идти мерджи кусков в удаляемой партиции.
-	  * Когда эти мерджи завершатся, то часть данных из удаляемой партиции "оживёт".
-	  * Было бы удобно прерывать все мерджи.
-	  */
+	/// Просит завершить мерджи и не позволяет им начаться.
+	/// Это защищает от "оживания" данных за удалённую партицию после завершения мерджа.
+	const MergeTreeMergeBlocker merge_blocker{merger};
+	auto structure_lock = lockStructure(true);
 
 	DayNum_t month = MergeTreeData::getMonthDayNum(partition);
 
