@@ -470,7 +470,7 @@ int Server::main(const std::vector<std::string> & args)
 	bool has_zookeeper = false;
 	if (config().has("zookeeper"))
 	{
-		global_context->setZooKeeper(new zkutil::ZooKeeper(config(), "zookeeper"));
+		global_context->setZooKeeper(std::make_shared<zkutil::ZooKeeper>(config(), "zookeeper"));
 		has_zookeeper = true;
 	}
 
