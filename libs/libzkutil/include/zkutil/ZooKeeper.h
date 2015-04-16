@@ -5,6 +5,7 @@
 #include <Poco/Util/LayeredConfiguration.h>
 #include <unordered_set>
 #include <future>
+#include <memory>
 #include <Yandex/logger_useful.h>
 
 
@@ -28,7 +29,7 @@ struct WatchWithEvent;
 class ZooKeeper
 {
 public:
-	typedef Poco::SharedPtr<ZooKeeper> Ptr;
+	typedef std::shared_ptr<ZooKeeper> Ptr;
 
 	ZooKeeper(const std::string & hosts, int32_t session_timeout_ms = DEFAULT_SESSION_TIMEOUT);
 

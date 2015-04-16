@@ -8,9 +8,13 @@
 #include <DB/Interpreters/Settings.h>
 #include <DB/Storages/IStorage.h>
 
-#include <zkutil/ZooKeeper.h>
-
 #include <Poco/Net/IPAddress.h>
+
+
+namespace zkutil
+{
+	class ZooKeeper;
+}
 
 
 namespace DB
@@ -73,8 +77,8 @@ private:
 	ProgressCallback progress_callback;	/// Колбек для отслеживания прогресса выполнения запроса.
 	ProcessListElement * process_list_elem = nullptr;	/// Для отслеживания общего количества потраченных на запрос ресурсов.
 
-	String default_format;				/// Формат, используемый, если сервер сам форматирует данные, и если в запросе не задан FORMAT.
-										/// То есть, используется в HTTP-интерфейсе. Может быть не задан - тогда используется некоторый глобальный формат по-умолчанию.
+	String default_format;	/// Формат, используемый, если сервер сам форматирует данные, и если в запросе не задан FORMAT.
+							/// То есть, используется в HTTP-интерфейсе. Может быть не задан - тогда используется некоторый глобальный формат по-умолчанию.
 	Tables external_tables;				/// Временные таблицы.
 	Context * session_context = nullptr;	/// Контекст сессии или nullptr, если его нет. (Возможно, равен this.)
 	Context * global_context = nullptr;		/// Глобальный контекст или nullptr, если его нет. (Возможно, равен this.)
@@ -213,9 +217,9 @@ public:
 	void setUncompressedCache(size_t max_size_in_bytes);
 	std::shared_ptr<UncompressedCache> getUncompressedCache() const;
 
-	void setZooKeeper(zkutil::ZooKeeperPtr zookeeper);
+	void setZooKeeper(std::shared_ptr<zkutil::ZooKeeper> zookeeper);
 	/// Если в момент вызова текущая сессия просрочена, синхронно создает и возвращает новую вызовом startNewSession().
-	zkutil::ZooKeeperPtr getZooKeeper() const;
+	std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
 
 	/// Создать кэш засечек указанного размера. Это можно сделать только один раз.
 	void setMarkCache(size_t cache_size_in_bytes);
