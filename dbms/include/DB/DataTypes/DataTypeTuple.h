@@ -3,6 +3,8 @@
 #include <DB/DataTypes/IDataType.h>
 #include <DB/Columns/ColumnTuple.h>
 #include <DB/Columns/ColumnConst.h>
+#include <DB/DataStreams/NativeBlockInputStream.h>
+#include <DB/DataStreams/NativeBlockOutputStream.h>
 
 
 namespace DB
@@ -115,14 +117,7 @@ public:
 	{
 		const ColumnTuple & real_column = static_cast<const ColumnTuple &>(column);
 		for (size_t i = 0, size = elems.size(); i < size; ++i)
-		{
-			const IColumn & nested_column = *real_column.getData().getByPosition(i).column;
-
-			if (nested_column.isConst())
-				elems[i]->serializeBinary(*static_cast<const IColumnConst &>(nested_column).convertToFullColumn(), ostr, offset, limit);
-			else
-				elems[i]->serializeBinary(nested_column, ostr, offset, limit);
-		}
+			NativeBlockOutputStream::writeData(*elems[i], real_column.getData().getByPosition(i).column, ostr, offset, limit);
 	}
 
 	/** limit обязательно должен быть в точности равен количеству сериализованных значений.
@@ -133,7 +128,7 @@ public:
 	{
 		ColumnTuple & real_column = static_cast<ColumnTuple &>(column);
 		for (size_t i = 0, size = elems.size(); i < size; ++i)
-			elems[i]->deserializeBinary(*real_column.getData().getByPosition(i).column, istr, limit, avg_value_size_hint);
+			NativeBlockInputStream::readData(*elems[i], *real_column.getData().getByPosition(i).column, istr, limit);
 	}
 
 	ColumnPtr createColumn() const
