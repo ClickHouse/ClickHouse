@@ -24,7 +24,7 @@ class ReadBufferFromFileDescriptor : public ReadBufferFromFileBase
 protected:
 	int fd;
 	off_t pos_in_file; /// Какому сдвигу в файле соответствует working_buffer.end().
-	
+
 	bool nextImpl()
 	{
 		size_t bytes_read = 0;
@@ -35,7 +35,7 @@ protected:
 			ssize_t res = ::read(fd, internal_buffer.begin(), internal_buffer.size());
 			if (!res)
 				break;
-			
+
 			if (-1 == res && errno != EINTR)
 				throwFromErrno("Cannot read from file " + getFileName(), ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
 
@@ -46,7 +46,10 @@ protected:
 		pos_in_file += bytes_read;
 
 		if (bytes_read)
+		{
+			ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadBytes, bytes_read);
 			working_buffer.resize(bytes_read);
+		}
 		else
 			return false;
 

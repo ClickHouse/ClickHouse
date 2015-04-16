@@ -175,6 +175,9 @@ bool WriteBufferAIO::waitForAIOCompletion()
 	is_pending_write = false;
 	bytes_written = events[0].res;
 
+	ProfileEvents::increment(ProfileEvents::WriteBufferAIOWrite);
+	ProfileEvents::increment(ProfileEvents::WriteBufferAIOWriteBytes, bytes_written);
+
 	return true;
 }
 
