@@ -84,7 +84,7 @@ public:
 		if (!is_cancelled.compare_exchange_strong(old_val, true, std::memory_order_seq_cst, std::memory_order_relaxed))
 			return;
 
-		if (hasNoQueryInProgress() || hasThrownException())
+		if (!isQueryPending() || hasThrownException())
 			return;
 
 		tryCancel("Cancelling query");
@@ -97,7 +97,7 @@ public:
 		  * все соединения, затем читаем и пропускаем оставшиеся пакеты чтобы
 		  * эти соединения не остались висеть в рассихронизированном состоянии.
 		  */
-		if (established || isQueryInProgress() || isQueryCancelled())
+		if (established || isQueryPending())
 			parallel_replicas->disconnect();
 	}
 
@@ -212,7 +212,7 @@ protected:
 		 *   - получили с одной реплики неизвестный пакет;
 		 * - то больше читать ничего не нужно.
 		 */
-		if (hasNoQueryInProgress() || hasThrownException())
+		if (!isQueryPending() || hasThrownException())
 			return;
 
 		/** Если ещё прочитали не все данные, но они больше не нужны.
@@ -251,22 +251,10 @@ protected:
 			parallel_replicas = std::make_unique<ParallelReplicas>(pool, parallel_replicas_settings, throttler);
 	}
 
-	/// Возвращает true, если запрос отправлен, а ещё не выполнен.
-	bool isQueryInProgress() const
+	/// Возвращает true, если запрос отправлен.
+	bool isQueryPending() const
 	{
-		return sent_query && !finished && !was_cancelled;
-	}
-
-	/// Возвращает true, если запрос отправлен, а отменён до его завершения.
-	bool isQueryCancelled() const
-	{
-		return sent_query && !finished && was_cancelled;
-	}
-
-	/// Возвращает true, если никакой запрос не отправлен или один запрос уже выполнен.
-	bool hasNoQueryInProgress() const
-	{
-		return !sent_query || finished;
+		return sent_query && !finished;
 	}
 
 	/// Возвращает true, если исключение было выкинуто.
