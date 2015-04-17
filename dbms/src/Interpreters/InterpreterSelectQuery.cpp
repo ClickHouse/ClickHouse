@@ -293,7 +293,7 @@ Block InterpreterSelectQuery::getSampleBlock()
 
 BlockInputStreamPtr InterpreterSelectQuery::execute()
 {
-	(void) executeWithoutUnion();
+	(void) executeWithoutUnion(false);
 
 	if (streams.empty())
 		return new NullBlockInputStream;
@@ -323,8 +323,10 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	return streams[0];
 }
 
-const BlockInputStreams & InterpreterSelectQuery::executeWithoutUnion()
+const BlockInputStreams & InterpreterSelectQuery::executeWithoutUnion(bool force_no_union_)
 {
+	force_no_union = force_no_union_;
+
 	if (is_first_select_inside_union_all)
 	{
 		executeSingleQuery();
@@ -559,7 +561,7 @@ void InterpreterSelectQuery::executeSingleQuery()
 			if (need_second_distinct_pass)
 				do_execute_union = true;
 
-			if (do_execute_union)
+			if (do_execute_union && !force_no_union)
 				executeUnion(streams);
 
 			/// Если было более одного источника - то нужно выполнить DISTINCT ещё раз после их слияния.

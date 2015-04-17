@@ -63,8 +63,12 @@ public:
 	 */
 	BlockInputStreamPtr execute();
 
-	/// Выполнить запрос без объединения потоков.
-	const BlockInputStreams & executeWithoutUnion();
+	/** Выполнить запрос без объединения потоков.
+	 *  Если force_no_union = false, выполнить объединения, которые не могут быть отложены до оформления окончательного результата.
+	 *  Если же force_no_union = true, не выполнять никаких объединений. Это позволяет оптимизировать запросы, в которых таблица
+	 *  является представлением.
+	 */
+	const BlockInputStreams & executeWithoutUnion(bool force_no_union);
 
 	/** Выполнить запрос, записать результат в нужном формате в buf.
 	 * BlockInputStreamPtr возвращается, чтобы можно было потом получить информацию о плане выполнения запроса.
@@ -141,6 +145,9 @@ private:
 	/// Таблица, откуда читать данные, если не подзапрос.
 	StoragePtr storage;
 	IStorage::TableStructureReadLockPtr table_lock;
+
+	/// См. описание функции executeWithoutUnion().
+	bool force_no_union = false;
 
 	Logger * log;
 };

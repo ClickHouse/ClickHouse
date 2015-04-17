@@ -92,7 +92,7 @@ BlockInputStreams StorageView::read(
 	if (outer_select.final && !inner_select.final)
 		inner_select.final = outer_select.final;
 
-	return InterpreterSelectQuery(inner_query_clone, context, column_names).executeWithoutUnion();
+	return InterpreterSelectQuery(inner_query_clone, context, column_names).executeWithoutUnion(true);
 }
 
 
