@@ -7,6 +7,7 @@
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/Interpreters/Settings.h>
 #include <DB/Storages/IStorage.h>
+#include <DB/IO/CompressedStream.h>
 
 #include <Poco/Net/IPAddress.h>
 
@@ -239,6 +240,9 @@ public:
 	Cluster & getCluster(const std::string & cluster_name);
 
 	Compiler & getCompiler();
+
+	/// Позволяет выбрать метод сжатия по условиям, описанным в конфигурационном файле.
+	CompressionMethod chooseCompressionMethod(size_t part_size, double part_size_ratio) const;
 
 	void shutdown();
 

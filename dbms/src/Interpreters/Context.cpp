@@ -18,6 +18,7 @@
 #include <DB/Storages/MarkCache.h>
 #include <DB/Storages/MergeTree/BackgroundProcessingPool.h>
 #include <DB/Storages/MergeTree/MergeList.h>
+#include <DB/Storages/CompressionMethodSelector.h>
 #include <DB/Interpreters/Settings.h>
 #include <DB/Interpreters/Users.h>
 #include <DB/Interpreters/Quota.h>
@@ -86,6 +87,7 @@ struct ContextShared
 	BackgroundProcessingPoolPtr background_pool;			/// Пул потоков для фоновой работы, выполняемой таблицами.
 	Macros macros;											/// Подстановки из конфига.
 	std::unique_ptr<Compiler> compiler;						/// Для динамической компиляции частей запроса, при необходимости.
+	mutable std::unique_ptr<CompressionMethodSelector> compression_method_selector; /// Правила для выбора метода сжатия в зависимости от размера куска.
 
 	/// Кластеры для distributed таблиц
 	/// Создаются при создании Distributed таблиц, так как нужно дождаться пока будут выставлены Settings
@@ -821,6 +823,25 @@ Compiler & Context::getCompiler()
 		shared->compiler.reset(new Compiler{ shared->path + "build/", 1 });
 
 	return *shared->compiler;
+}
+
+
+CompressionMethod Context::chooseCompressionMethod(size_t part_size, double part_size_ratio) const
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+
+	if (!shared->compression_method_selector)
+	{
+		constexpr auto config_name = "compression";
+		auto & config = Poco::Util::Application::instance().config();
+
+		if (config.has(config_name))
+			shared->compression_method_selector.reset(new CompressionMethodSelector{config, "compression"});
+		else
+			shared->compression_method_selector.reset(new CompressionMethodSelector);
+	}
+
+	return shared->compression_method_selector->choose(part_size, part_size_ratio);
 }
 
 
