@@ -22,6 +22,9 @@ bool ParserJoin::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_p
 	ParserString s_all("ALL", true, true);
 	ParserString s_inner("INNER", true, true);
 	ParserString s_left("LEFT", true, true);
+	ParserString s_right("RIGHT", true, true);
+	ParserString s_full("FULL", true, true);
+	ParserString s_outer("OUTER", true, true);
 	ParserString s_join("JOIN", true, true);
 	ParserString s_using("USING", true, true);
 
@@ -54,13 +57,21 @@ bool ParserJoin::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_p
 		join->kind = ASTJoin::Inner;
 	else if (s_left.ignore(pos, end))
 		join->kind = ASTJoin::Left;
+	else if (s_right.ignore(pos, end))
+		join->kind = ASTJoin::Right;
+	else if (s_full.ignore(pos, end))
+		join->kind = ASTJoin::Full;
 	else
 	{
-		expected = "INNER|LEFT";
+		expected = "INNER|LEFT|RIGHT|FULL";
 		return false;
 	}
 
 	ws.ignore(pos, end);
+
+	/// Для всех JOIN-ов кроме INNER может присутствовать не обязательное слово "OUTER".
+	if (join->kind != ASTJoin::Inner && s_outer.ignore(pos, end))
+		ws.ignore(pos, end);
 
 	if (!s_join.ignore(pos, end, max_parsed_pos, expected))
 		return false;

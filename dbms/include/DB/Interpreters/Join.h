@@ -19,7 +19,7 @@ namespace DB
 /** Структура данных для реализации JOIN-а.
   * По сути, хэш-таблица: ключи -> строки присоединяемой таблицы.
   *
-  * JOIN-ы бывают четырёх типов: ANY/ALL x LEFT/INNER.
+  * JOIN-ы бывают восьми типов: ANY/ALL x LEFT/INNER/RIGHT/FULL.
   *
   * Если указано ANY - выбрать из "правой" таблицы только одну, первую попавшуюся строку, даже если там более одной соответствующей строки.
   * Если указано ALL - обычный вариант JOIN-а, при котором строки могут размножаться по числу соответствующих строк "правой" таблицы.
@@ -27,6 +27,12 @@ namespace DB
   *
   * Если указано INNER - оставить только строки, для которых есть хотя бы одна строка "правой" таблицы.
   * Если указано LEFT - в случае, если в "правой" таблице нет соответствующей строки, заполнить её значениями "по-умолчанию".
+  * Если указано RIGHT - выполнить так же, как INNER, запоминая те строки из правой таблицы, которые были присоединены,
+  *  в конце добавить строки из правой таблицы, которые не были присоединены, подставив в качестве значений для левой таблицы, значения "по-умолчанию".
+  * Если указано FULL - выполнить так же, как LEFT, запоминая те строки из правой таблицы, которые были присоединены,
+  *  в конце добавить строки из правой таблицы, которые не были присоединены, подставив в качестве значений для левой таблицы, значения "по-умолчанию".
+  *
+  * То есть, LEFT и RIGHT JOIN-ы не являются симметричными с точки зрения реализации.
   *
   * Все соединения делаются по равенству кортежа столбцов "ключей" (эквисоединение).
   * Неравенства и прочие условия не поддерживаются.
@@ -84,6 +90,12 @@ public:
 
 	void joinTotals(Block & block) const;
 
+	/** Для RIGHT и FULL JOIN-ов.
+	  * Поток, в котором значения по-умолчанию из левой таблицы соединены с неприсоединёнными ранее строками из правой таблицы.
+	  * Использовать только после того, как были сделаны все вызовы joinBlock.
+	  */
+	BlockInputStreamPtr createStreamWithNonJoinedRows(Block & left_sample_block, size_t max_block_size) const;
+
 	/// Считает суммарное число ключей во всех Join'ах
 	size_t getTotalRowCount() const;
 	/// Считает суммарный размер в байтах буфферов всех Join'ов + размер string_pool'а
@@ -109,40 +121,65 @@ public:
 		RowRefList(const Block * block_, size_t row_num_) : RowRef(block_, row_num_) {}
 	};
 
+
+	/** Добавляет или не добавляет флаг - был ли элемент использован.
+	  * Для реализации RIGHT и FULL JOIN-ов.
+	  * NOTE: Можно сохранять флаг в один из бит указателя block или номера row_num.
+	  */
+	template <bool enable, typename Base>
+	struct WithUsedFlag;
+
+	template <typename Base>
+	struct WithUsedFlag<true, Base> : Base
+	{
+		mutable bool used = false;
+		using Base::Base;
+		using Base_t = Base;
+		void setUsed() const { used = true; }	/// Может выполняться из разных потоков.
+		bool getUsed() const { return used; }
+	};
+
+	template <typename Base>
+	struct WithUsedFlag<false, Base> : Base
+	{
+		using Base::Base;
+		using Base_t = Base;
+		void setUsed() const {}
+		bool getUsed() const { return true; }
+	};
+
+
 	/** Разные структуры данных, которые могут использоваться для соединения.
 	  */
-	struct MapsAny
+	template <typename Mapped>
+	struct MapsTemplate
 	{
 		/// Специализация для случая, когда есть один числовой ключ.
-		typedef HashMap<UInt64, RowRef, HashCRC32<UInt64>> MapUInt64;
+		typedef HashMap<UInt64, Mapped, HashCRC32<UInt64>> MapUInt64;
 
 		/// Специализация для случая, когда есть один строковый ключ.
-		typedef HashMapWithSavedHash<StringRef, RowRef> MapString;
+		typedef HashMapWithSavedHash<StringRef, Mapped> MapString;
 
 		/** Сравнивает 128 битные хэши.
 		  * Если все ключи фиксированной длины, влезающие целиком в 128 бит, то укладывает их без изменений в 128 бит.
 		  * Иначе - вычисляет SipHash от набора из всех ключей.
 		  * (При этом, строки, содержащие нули посередине, могут склеиться.)
 		  */
-		typedef HashMap<UInt128, RowRef, UInt128HashCRC32> MapHashed;
+		typedef HashMap<UInt128, Mapped, UInt128HashCRC32> MapHashed;
 
 		std::unique_ptr<MapUInt64> key64;
 		std::unique_ptr<MapString> key_string;
 		std::unique_ptr<MapHashed> hashed;
 	};
 
-	struct MapsAll
-	{
-		typedef HashMap<UInt64, RowRefList, HashCRC32<UInt64>> MapUInt64;
-		typedef HashMapWithSavedHash<StringRef, RowRefList> MapString;
-		typedef HashMap<UInt128, RowRefList, UInt128HashCRC32> MapHashed;
-
-		std::unique_ptr<MapUInt64> key64;
-		std::unique_ptr<MapString> key_string;
-		std::unique_ptr<MapHashed> hashed;
-	};
+	using MapsAny = MapsTemplate<WithUsedFlag<false, RowRef>>;
+	using MapsAll = MapsTemplate<WithUsedFlag<false, RowRefList>>;
+	using MapsAnyFull = MapsTemplate<WithUsedFlag<true, RowRef>>;
+	using MapsAllFull = MapsTemplate<WithUsedFlag<true, RowRefList>>;
 
 private:
+	friend class NonJoinedBlockInputStream;
+
 	ASTJoin::Kind kind;
 	ASTJoin::Strictness strictness;
 
@@ -155,8 +192,10 @@ private:
 	  */
 	BlocksList blocks;
 
-	MapsAny maps_any;
-	MapsAll maps_all;
+	MapsAny maps_any;			/// Для ANY LEFT|INNER JOIN
+	MapsAll maps_all;			/// Для ALL LEFT|INNER JOIN
+	MapsAnyFull maps_any_full;	/// Для ANY RIGHT|FULL JOIN
+	MapsAllFull maps_all_full;	/// Для ALL RIGHT|FULL JOIN
 
 	/// Дополнительные данные - строки, а также продолжения односвязных списков строк.
 	Arena pool;
