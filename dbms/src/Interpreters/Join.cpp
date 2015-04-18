@@ -732,7 +732,11 @@ private:
 		ColumnPlainPtrs columns_left(num_columns_left);
 
 		for (size_t i = 0; i < num_columns_left; ++i)
-			columns_left[i] = block.getByPosition(i).column.get();
+		{
+			auto & column_with_name_and_type = block.getByPosition(i);
+			column_with_name_and_type.column = column_with_name_and_type.type->createColumn();
+			columns_left[i] = column_with_name_and_type.column.get();
+		}
 
 		/// Добавляем в блок новые столбцы.
 		const Block & first_mapped_block = parent.blocks.front();
@@ -758,8 +762,12 @@ private:
 		else
 			throw Exception("Unknown JOIN variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
 
+		std::cerr << "rows added: " << rows_added << "\n";
+
 		if (!rows_added)
 			return Block();
+
+		std::cerr << block.dumpStructure() << "\n";
 
 		return block;
 	}
@@ -782,6 +790,8 @@ private:
 
 		for (; it != end; ++it)
 		{
+			std::cerr << it->second.getUsed() << "\n";
+
 			if (it->second.getUsed())
 				continue;
 

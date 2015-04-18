@@ -101,6 +101,8 @@ public:
 	/// Считает суммарный размер в байтах буфферов всех Join'ов + размер string_pool'а
 	size_t getTotalByteCount() const;
 
+	ASTJoin::Kind getKind() const { return kind; }
+
 
 	/// Ссылка на строку в блоке.
 	struct RowRef
