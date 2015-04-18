@@ -215,7 +215,7 @@ void ExpressionAction::prepare(Block & sample_block)
 
 void ExpressionAction::execute(Block & block) const
 {
-//	std::cerr << "executing: " << toString() << std::endl;
+	std::cerr << "executing: " << toString() << std::endl;
 
 	if (type == REMOVE_COLUMN || type == COPY_COLUMN)
 		if (!block.has(source_name))
@@ -872,6 +872,24 @@ void ExpressionActions::optimizeArrayJoin()
 			}
 		}
 	}
+}
+
+
+BlockInputStreamPtr ExpressionActions::createStreamWithNonJoinedDataIfFullOrRightJoin(size_t max_block_size) const
+{
+	for (const auto & action : actions)
+	{
+		if (action.join && (action.join->getKind() == ASTJoin::Full || action.join->getKind() == ASTJoin::Right))
+		{
+			Block left_sample_block;
+			for (const auto & input_elem : input_columns)
+				left_sample_block.insert(ColumnWithNameAndType(nullptr, input_elem.type, input_elem.name));
+
+			return action.join->createStreamWithNonJoinedRows(left_sample_block, max_block_size);
+		}
+	}
+
+	return {};
 }
 
 

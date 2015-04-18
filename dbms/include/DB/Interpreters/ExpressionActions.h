@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DB/DataTypes/IDataType.h>
+#include <DB/DataStreams/IBlockInputStream.h>
 #include <DB/Interpreters/Settings.h>
 #include <DB/Core/Names.h>
 #include <DB/Core/ColumnWithNameAndType.h>
@@ -67,7 +68,7 @@ public:
 	NameSet array_joined_columns;
 
 	/// Для JOIN
-	Join * join = nullptr;
+	const Join * join = nullptr;
 	NamesAndTypesList columns_added_by_join;
 
 	/// Для PROJECT.
@@ -131,7 +132,7 @@ public:
 		return a;
 	}
 
-	static ExpressionAction ordinaryJoin(Join * join_, const NamesAndTypesList & columns_added_by_join_)
+	static ExpressionAction ordinaryJoin(const Join * join_, const NamesAndTypesList & columns_added_by_join_)
 	{
 		ExpressionAction a;
 		a.type = JOIN;
@@ -166,20 +167,18 @@ public:
 	ExpressionActions(const NamesAndTypesList & input_columns_, const Settings & settings_)
 		: input_columns(input_columns_), settings(settings_)
 	{
-		for (NamesAndTypesList::iterator it = input_columns.begin(); it != input_columns.end(); ++it)
-		{
-			sample_block.insert(ColumnWithNameAndType(nullptr, it->type, it->name));
-		}
+		for (const auto & input_elem : input_columns)
+			sample_block.insert(ColumnWithNameAndType(nullptr, input_elem.type, input_elem.name));
 	}
 
 	/// Для константных столбцов в input_columns_ могут содержаться сами столбцы.
 	ExpressionActions(const ColumnsWithNameAndType & input_columns_, const Settings & settings_)
 		: settings(settings_)
 	{
-		for (ColumnsWithNameAndType::const_iterator it = input_columns_.begin(); it != input_columns_.end(); ++it)
+		for (const auto & input_elem : input_columns_)
 		{
-			input_columns.emplace_back(it->name, it->type);
-			sample_block.insert(*it);
+			input_columns.emplace_back(input_elem.name, input_elem.type);
+			sample_block.insert(input_elem);
 		}
 	}
 
@@ -241,6 +240,8 @@ public:
 	std::string dumpActions() const;
 
 	static std::string getSmallestColumn(const NamesAndTypesList & columns);
+
+	BlockInputStreamPtr createStreamWithNonJoinedDataIfFullOrRightJoin(size_t max_block_size) const;
 
 private:
 	NamesAndTypesList input_columns;
