@@ -254,8 +254,11 @@ bool StorageMergeTree::canMergeParts(const MergeTreeData::DataPartPtr & left, co
 }
 
 
-void StorageMergeTree::dropPartition(const Field & partition, bool detach, const Settings & settings)
+void StorageMergeTree::dropPartition(const Field & partition, bool detach, bool unreplicated, const Settings & settings)
 {
+	if (unreplicated)
+		throw Exception("UNREPLICATED option for DROP has meaning only for ReplicatedMergeTree", ErrorCodes::BAD_ARGUMENTS);
+
 	/// Просит завершить мерджи и не позволяет им начаться.
 	/// Это защищает от "оживания" данных за удалённую партицию после завершения мерджа.
 	const MergeTreeMergeBlocker merge_blocker{merger};

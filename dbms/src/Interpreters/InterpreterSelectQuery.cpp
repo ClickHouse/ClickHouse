@@ -293,7 +293,7 @@ Block InterpreterSelectQuery::getSampleBlock()
 
 BlockInputStreamPtr InterpreterSelectQuery::execute()
 {
-	(void) executeWithoutUnion(false);
+	(void) executeWithoutUnion();
 
 	if (streams.empty())
 		return new NullBlockInputStream;
@@ -323,10 +323,8 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	return streams[0];
 }
 
-const BlockInputStreams & InterpreterSelectQuery::executeWithoutUnion(bool force_no_union_)
+const BlockInputStreams & InterpreterSelectQuery::executeWithoutUnion()
 {
-	force_no_union = force_no_union_;
-
 	if (is_first_select_inside_union_all)
 	{
 		executeSingleQuery();
@@ -360,7 +358,7 @@ void InterpreterSelectQuery::executeSingleQuery()
 	 *  то объединение источников данных выполняется не на этом уровне, а на верхнем уровне.
 	 */
 
-	bool do_execute_union = false;
+	union_within_single_query = false;
 
 	/** Вынем данные из Storage. from_stage - до какой стадии запрос был выполнен в Storage. */
 	QueryProcessingStage::Enum from_stage = executeFetchColumns(streams);
@@ -470,9 +468,6 @@ void InterpreterSelectQuery::executeSingleQuery()
 			to_stage > QueryProcessingStage::WithMergeableState &&
 			!query.group_by_with_totals;
 
-		if (need_aggregate || has_order_by)
-			do_execute_union = true;
-
 		if (first_stage)
 		{
 			if (has_where)
@@ -499,8 +494,6 @@ void InterpreterSelectQuery::executeSingleQuery()
 
 				if (query.limit_length)
 					executePreLimit(streams);
-
-				do_execute_union = true;
 			}
 		}
 
@@ -553,22 +546,21 @@ void InterpreterSelectQuery::executeSingleQuery()
 				* ограничивающий число записей в каждом до offset + limit.
 				*/
 			if (query.limit_length && streams.size() > 1 && !query.distinct)
-			{
 				executePreLimit(streams);
-				do_execute_union = true;
-			}
 
-			if (need_second_distinct_pass)
-				do_execute_union = true;
-
-			if (do_execute_union && !force_no_union)
+			if (union_within_single_query)
 				executeUnion(streams);
 
-			/// Если было более одного источника - то нужно выполнить DISTINCT ещё раз после их слияния.
-			if (need_second_distinct_pass)
-				executeDistinct(streams, false, Names());
+			if (streams.size() == 1)
+			{
+				/// Если было более одного источника - то нужно выполнить DISTINCT ещё раз после их слияния.
+				if (need_second_distinct_pass)
+				{
+					executeDistinct(streams, false, Names());
+				}
 
-			executeLimit(streams);
+				executeLimit(streams);
+			}
 		}
 	}
 
@@ -941,6 +933,7 @@ void InterpreterSelectQuery::executeUnion(BlockInputStreams & streams)
 	{
 		streams[0] = new UnionBlockInputStream(streams, settings.max_threads);
 		streams.resize(1);
+		union_within_single_query = false;
 	}
 }
 
@@ -959,6 +952,8 @@ void InterpreterSelectQuery::executePreLimit(BlockInputStreams & streams)
 		{
 			stream = new LimitBlockInputStream(stream, limit_length + limit_offset, 0);
 		}
+		if (streams.size() > 1)
+			union_within_single_query = true;
 	}
 }
 
