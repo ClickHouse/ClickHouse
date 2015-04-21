@@ -555,9 +555,7 @@ void InterpreterSelectQuery::executeSingleQuery()
 			{
 				/// Если было более одного источника - то нужно выполнить DISTINCT ещё раз после их слияния.
 				if (need_second_distinct_pass)
-				{
 					executeDistinct(streams, false, Names());
-				}
 
 				executeLimit(streams);
 			}
@@ -922,6 +920,9 @@ void InterpreterSelectQuery::executeDistinct(BlockInputStreams & streams, bool b
 		{
 			stream = new DistinctBlockInputStream(stream, settings.limits, limit_for_distinct, columns);
 		}
+
+		if (streams.size() > 1)
+			union_within_single_query = true;
 	}
 }
 
@@ -952,6 +953,7 @@ void InterpreterSelectQuery::executePreLimit(BlockInputStreams & streams)
 		{
 			stream = new LimitBlockInputStream(stream, limit_length + limit_offset, 0);
 		}
+
 		if (streams.size() > 1)
 			union_within_single_query = true;
 	}
