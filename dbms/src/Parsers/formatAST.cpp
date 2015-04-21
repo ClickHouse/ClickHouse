@@ -818,7 +818,10 @@ void formatAST(const ASTJoin & ast, std::ostream & s, size_t indent, bool hilite
 	s << (hilite ? hilite_keyword : "")
 		<< (ast.locality == ASTJoin::Global ? "GLOBAL " : "")
 		<< (ast.strictness == ASTJoin::Any ? "ANY " : "ALL ")
-		<< (ast.kind == ASTJoin::Inner ? "INNER " : "LEFT ")
+		<< (ast.kind == ASTJoin::Inner ? "INNER "
+			: (ast.kind == ASTJoin::Left ? "LEFT "
+			: (ast.kind == ASTJoin::Right ? "RIGHT "
+			: "FULL OUTER ")))
 		<< "JOIN "
 		<< (hilite ? hilite_none : "");
 

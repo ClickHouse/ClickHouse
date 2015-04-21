@@ -55,7 +55,10 @@ protected:
 			if (res)
 				break;
 			else
+			{
+				(*current_stream)->readSuffix();
 				++current_stream;
+			}
 		}
 
 		return res;

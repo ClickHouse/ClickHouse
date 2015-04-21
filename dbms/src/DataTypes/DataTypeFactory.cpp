@@ -18,6 +18,7 @@
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Parsers/ASTNameTypePair.h>
 #include <DB/Parsers/ASTLiteral.h>
+#include <DB/Parsers/parseQuery.h>
 
 namespace DB
 {
@@ -69,15 +70,7 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 			Array params_row;
 
 			ParserExpressionList args_parser;
-			ASTPtr args_ast;
-			Expected expected = "";
-			IParser::Pos pos = parameters.data();
-			IParser::Pos end = pos + parameters.size();
-			IParser::Pos max_parsed_pos = pos;
-
-			if (!(args_parser.parse(pos, end, args_ast, max_parsed_pos, expected) && pos == end))
-				throw Exception("Cannot parse parameters for data type " + name, ErrorCodes::SYNTAX_ERROR);
-
+			ASTPtr args_ast = parseQuery(args_parser, parameters.data(), parameters.data() + parameters.size(), "parameters for data type " + name);
 			ASTExpressionList & args_list = typeid_cast<ASTExpressionList &>(*args_ast);
 
 			if (args_list.children.empty())
@@ -121,14 +114,7 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 		if (base_name == "Nested")
 		{
 			ParserNameTypePairList columns_p;
-			ASTPtr columns_ast;
-			Expected expected = "";
-			IParser::Pos pos = parameters.data();
-			IParser::Pos end = pos + parameters.size();
-			IParser::Pos max_parsed_pos = pos;
-
-			if (!(columns_p.parse(pos, end, columns_ast, max_parsed_pos, expected) && pos == end))
-				throw Exception("Cannot parse parameters for data type " + name, ErrorCodes::SYNTAX_ERROR);
+			ASTPtr columns_ast = parseQuery(columns_p, parameters.data(), parameters.data() + parameters.size(), "parameters for data type " + name);
 
 			NamesAndTypesListPtr columns = new NamesAndTypesList;
 
@@ -151,14 +137,7 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 		if (base_name == "Tuple")
 		{
 			ParserExpressionList columns_p;
-			ASTPtr columns_ast;
-			Expected expected = "";
-			IParser::Pos pos = parameters.data();
-			IParser::Pos end = pos + parameters.size();
-			IParser::Pos max_parsed_pos = pos;
-
-			if (!(columns_p.parse(pos, end, columns_ast, max_parsed_pos, expected) && pos == end))
-				throw Exception("Cannot parse parameters for data type " + name, ErrorCodes::SYNTAX_ERROR);
+			ASTPtr columns_ast = parseQuery(columns_p, parameters.data(), parameters.data() + parameters.size(), "parameters for data type " + name);
 
 			DataTypes elems;
 

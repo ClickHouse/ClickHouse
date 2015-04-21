@@ -151,6 +151,10 @@ void ReadBufferAIO::synchronousRead()
 {
 	prepare();
 	bytes_read = ::pread(fd, buffer_begin, region_aligned_size, region_aligned_begin);
+
+	ProfileEvents::increment(ProfileEvents::ReadBufferAIORead);
+	ProfileEvents::increment(ProfileEvents::ReadBufferAIOReadBytes, bytes_read);
+
 	finalize();
 }
 
@@ -189,6 +193,9 @@ bool ReadBufferAIO::waitForAIOCompletion()
 
 	is_pending_read = false;
 	bytes_read = events[0].res;
+
+	ProfileEvents::increment(ProfileEvents::ReadBufferAIORead);
+	ProfileEvents::increment(ProfileEvents::ReadBufferAIOReadBytes, bytes_read);
 
 	return true;
 }

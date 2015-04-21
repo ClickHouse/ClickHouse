@@ -44,10 +44,7 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Po
 		ws.ignore(pos, end);
 
 		if (!s_create.ignore(pos, end, max_parsed_pos, expected))
-		{
-			pos = begin;
 			return false;
-		}
 
 		query_ptr = new ASTShowCreateQuery;
 	}

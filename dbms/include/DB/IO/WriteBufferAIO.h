@@ -28,8 +28,8 @@ public:
 	off_t getPositionInFile() override;
 	void truncate(off_t length = 0) override;
 	void sync() override;
-	std::string getFileName() const noexcept override { return filename; }
-	int getFD() const noexcept override { return fd; }
+	std::string getFileName() const override { return filename; }
+	int getFD() const override { return fd; }
 
 private:
 	///
@@ -60,7 +60,7 @@ private:
 
 	/// Количество байтов, которые будут записаны на диск.
 	off_t bytes_to_write = 0;
-	/// Количество записанных байтов при последнем запросе.
+	/// Количество записанных байт при последнем запросе.
 	off_t bytes_written = 0;
 	/// Количество нулевых байтов, которые надо отрезать c конца файла
 	/// после завершения операции записи данных.

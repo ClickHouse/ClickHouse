@@ -112,8 +112,8 @@ struct Settings
 	/** Минимальная длина выражения expr = x1 OR ... expr = xN для оптимизации */ \
 	M(SettingUInt64, optimize_min_equality_disjunction_chain_length, 3) \
 	\
-	/** Минимальное количество байтов для операций ввода/ввывода минуя кэш страниц */ \
-	M(SettingUInt64, min_bytes_to_use_direct_io, (20ULL * 1024ULL * 1024ULL * 1024ULL)) \
+	/** Минимальное количество байт для операций ввода/ввывода минуя кэш страниц. 0 - отключено. */ \
+	M(SettingUInt64, min_bytes_to_use_direct_io, 0) \
 	\
 	/** Кидать исключение, если есть индекс по дате, и он не используется. */ \
 	M(SettingBool, force_index_by_date, 0) \

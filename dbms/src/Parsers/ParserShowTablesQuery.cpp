@@ -76,10 +76,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & m
 			return false;
 	}
 	else
-	{
-		pos = begin;
 		return false;
-	}
 
 	ws.ignore(pos, end);
 

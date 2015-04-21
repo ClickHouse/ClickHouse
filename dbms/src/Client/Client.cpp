@@ -1,5 +1,3 @@
-#define DBMS_CLIENT 1	/// Используется в Context.h
-
 #include <unistd.h>
 #include <stdlib.h>
 #include <fcntl.h>
@@ -653,7 +651,7 @@ private:
 			}
 		}
 		else
-			res = DB::parseQuery(parser, pos, end, "");
+			res = DB::parseQueryAndMovePosition(parser, pos, end, "");
 
 		if (is_interactive)
 		{

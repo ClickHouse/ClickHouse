@@ -2,15 +2,22 @@
 #include <sys/file.h>
 
 #include <Poco/Net/HTTPServerRequest.h>
+#include <Poco/Net/DNS.h>
 #include <Poco/Util/XMLConfiguration.h>
 
 #include <Yandex/ApplicationServerExt.h>
 #include <Yandex/ErrorHandlers.h>
 #include <Yandex/Revision.h>
+
 #include <statdaemons/ConfigProcessor.h>
 #include <statdaemons/ext/scope_guard.hpp>
-#include <memory>
 
+#include <memory>
+#include <thread>
+#include <atomic>
+#include <condition_variable>
+
+#include <DB/Common/Macros.h>
 #include <DB/Interpreters/loadMetadata.h>
 #include <DB/Storages/StorageSystemNumbers.h>
 #include <DB/Storages/StorageSystemTables.h>
@@ -30,15 +37,14 @@
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
 #include <DB/IO/Operators.h>
 
+#include <zkutil/ZooKeeper.h>
+
 #include "Server.h"
 #include "HTTPHandler.h"
 #include "InterserverIOHTTPHandler.h"
 #include "OLAPHTTPHandler.h"
 #include "TCPHandler.h"
 
-#include <thread>
-#include <atomic>
-#include <condition_variable>
 
 namespace
 {
@@ -468,7 +474,7 @@ int Server::main(const std::vector<std::string> & args)
 	bool has_zookeeper = false;
 	if (config().has("zookeeper"))
 	{
-		global_context->setZooKeeper(new zkutil::ZooKeeper(config(), "zookeeper"));
+		global_context->setZooKeeper(std::make_shared<zkutil::ZooKeeper>(config(), "zookeeper"));
 		has_zookeeper = true;
 	}
 

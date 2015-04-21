@@ -182,15 +182,18 @@ protected:
 
 		if (!reader)
 		{
-			UncompressedCache * uncompressed_cache = use_uncompressed_cache ? storage.context.getUncompressedCache() : nullptr;
+			if (use_uncompressed_cache)
+				owned_uncompressed_cache = storage.context.getUncompressedCache();
+
+			owned_mark_cache = storage.context.getMarkCache();
 
 			reader.reset(new MergeTreeReader(
-				path, owned_data_part, columns, uncompressed_cache, storage,
+				path, owned_data_part, columns, owned_uncompressed_cache.get(), owned_mark_cache.get(), storage,
 				all_mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size));
 
 			if (prewhere_actions)
 				pre_reader.reset(new MergeTreeReader(
-					path, owned_data_part, pre_columns, uncompressed_cache, storage,
+					path, owned_data_part, pre_columns, owned_uncompressed_cache.get(), owned_mark_cache.get(), storage,
 					all_mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size));
 		}
 
@@ -384,6 +387,9 @@ private:
 
 	size_t min_bytes_to_use_direct_io;
 	size_t max_read_buffer_size;
+
+	UncompressedCachePtr owned_uncompressed_cache;
+	MarkCachePtr owned_mark_cache;
 };
 
 }

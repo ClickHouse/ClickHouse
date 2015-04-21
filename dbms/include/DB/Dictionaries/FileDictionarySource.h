@@ -4,6 +4,8 @@
 #include <DB/Dictionaries/DictionaryStructure.h>
 #include <DB/Dictionaries/IDictionarySource.h>
 #include <DB/Dictionaries/OwningBufferBlockInputStream.h>
+#include <DB/IO/ReadBufferFromFile.h>
+#include <DB/DataStreams/FormatFactory.h>
 #include <Poco/Timestamp.h>
 #include <Poco/File.h>
 

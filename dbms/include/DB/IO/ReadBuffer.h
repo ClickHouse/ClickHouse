@@ -145,7 +145,7 @@ public:
 	}
 
 protected:
-	/// Количество игнорируемых байтов с начальной позиции буфера working_buffer.
+	/// Количество игнорируемых байт с начальной позиции буфера working_buffer.
 	size_t working_buffer_offset = 0;
 
 private:

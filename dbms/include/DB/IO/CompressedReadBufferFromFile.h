@@ -42,9 +42,9 @@ private:
 	}
 
 public:
-	CompressedReadBufferFromFile(const std::string & path, size_t aio_threshold, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE)
+	CompressedReadBufferFromFile(const std::string & path, size_t estimated_size, size_t aio_threshold, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE)
 		: BufferWithOwnMemory<ReadBuffer>(0),
-		p_file_in(createReadBufferFromFileBase(path, aio_threshold, buf_size)),
+		p_file_in(createReadBufferFromFileBase(path, estimated_size, aio_threshold, buf_size)),
 		file_in(*p_file_in)
 	{
 		compressed_in = &file_in;

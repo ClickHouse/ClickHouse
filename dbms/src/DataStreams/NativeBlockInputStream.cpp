@@ -13,7 +13,7 @@ namespace DB
 {
 
 
-static void readData(const IDataType & type, IColumn & column, ReadBuffer & istr, size_t rows)
+void NativeBlockInputStream::readData(const IDataType & type, IColumn & column, ReadBuffer & istr, size_t rows)
 {
 	/** Для массивов требуется сначала десериализовать смещения, а потом значения.
 	  */

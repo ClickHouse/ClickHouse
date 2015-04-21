@@ -54,19 +54,13 @@ bool ParserNestedTable::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 
 bool ParserIdentifierWithParameters::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
-	Pos begin = pos;
-
 	ParserFunction function_or_array;
 	if (function_or_array.parse(pos, end, node, max_parsed_pos, expected))
 		return true;
 
-	pos = begin;
-
 	ParserNestedTable nested;
 	if (nested.parse(pos, end, node, max_parsed_pos, expected))
 		return true;
-
-	pos = begin;
 
 	return false;
 }
@@ -80,10 +74,7 @@ bool ParserIdentifierWithOptionalParameters::parseImpl(Pos & pos, Pos end, ASTPt
 	Pos begin = pos;
 
 	if (parametric.parse(pos, end, node, max_parsed_pos, expected))
-	{
 		return true;
-	}
-	pos = begin;
 
 	ASTPtr ident;
 	if (non_parametric.parse(pos, end, ident, max_parsed_pos, expected))
@@ -93,7 +84,6 @@ bool ParserIdentifierWithOptionalParameters::parseImpl(Pos & pos, Pos end, ASTPt
 		func->name = typeid_cast<ASTIdentifier &>(*ident).name;
 		return true;
 	}
-	pos = begin;
 
 	return false;
 }

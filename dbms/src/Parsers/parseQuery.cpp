@@ -40,7 +40,10 @@ static std::string getSyntaxErrorMessage(
 
 	if (max_parsed_pos == end || *max_parsed_pos == ';')
 	{
-		message << ": failed at end of query";
+		message << ": failed at end of query.\n";
+
+		if (expected && *expected && *expected != '.')
+			message << "Expected " << expected;
 	}
 	else
 	{
@@ -83,20 +86,20 @@ static std::string getSyntaxErrorMessage(
 
 ASTPtr tryParseQuery(
 	IParser & parser,
-	IParser::Pos begin,
+	IParser::Pos & pos,
 	IParser::Pos end,
 	std::string & out_error_message,
 	bool hilite,
 	const std::string & description)
 {
-	if (begin == end || *begin == ';')
+	if (pos == end || *pos == ';')
 	{
 		out_error_message = "Empty query";
 		return nullptr;
 	}
 
 	Expected expected = "";
-	IParser::Pos pos = begin;
+	IParser::Pos begin = pos;
 	IParser::Pos max_parsed_pos = pos;
 
 	ASTPtr res;
@@ -113,19 +116,30 @@ ASTPtr tryParseQuery(
 }
 
 
+ASTPtr parseQueryAndMovePosition(
+	IParser & parser,
+	IParser::Pos & pos,
+	IParser::Pos end,
+	const std::string & description)
+{
+	std::string error_message;
+	ASTPtr res = tryParseQuery(parser, pos, end, error_message, false, description);
+
+	if (res)
+		return res;
+
+	throw Exception(error_message, ErrorCodes::SYNTAX_ERROR);
+}
+
+
 ASTPtr parseQuery(
 	IParser & parser,
 	IParser::Pos begin,
 	IParser::Pos end,
 	const std::string & description)
 {
-	std::string error_message;
-	ASTPtr res = tryParseQuery(parser, begin, end, error_message, false, description);
-
-	if (res)
-		return res;
-
-	throw Exception(error_message, ErrorCodes::SYNTAX_ERROR);
+	auto pos = begin;
+	return parseQueryAndMovePosition(parser, pos, end, description);
 }
 
 }

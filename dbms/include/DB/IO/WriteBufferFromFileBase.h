@@ -18,8 +18,8 @@ public:
 	virtual off_t getPositionInFile() = 0;
 	virtual void truncate(off_t length) = 0;
 	virtual void sync() = 0;
-	virtual std::string getFileName() const noexcept = 0;
-	virtual int getFD() const noexcept = 0;
+	virtual std::string getFileName() const = 0;
+	virtual int getFD() const = 0;
 
 protected:
 	virtual off_t doSeek(off_t off, int whence) = 0;

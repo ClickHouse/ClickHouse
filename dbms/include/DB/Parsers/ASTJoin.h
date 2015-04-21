@@ -30,7 +30,9 @@ public:
 	enum Kind
 	{
 		Inner,	/// Оставить только записи, для которых в "правой" таблице есть соответствующая.
-		Left	/// Если в "правой" таблице нет соответствующих записей, заполнить столбцы значениями "по-умолчанию".
+		Left,	/// Если в "правой" таблице нет соответствующих записей, заполнить столбцы значениями "по-умолчанию".
+		Right,
+		Full
 	};
 
 	Locality locality = Local;
@@ -54,7 +56,13 @@ public:
 				writeString("Global", wb);
 
 			writeString(strictness == Any ? "Any" : "All", wb);
-			writeString(kind == Inner ? "Inner" : "Left", wb);
+
+			writeString(
+				kind == Inner ? "Inner"
+				: (kind == Left ? "Left"
+				: (kind == Right ? "Right"
+				: "Full")), wb);
+
 			writeString("Join", wb);
 		}
 

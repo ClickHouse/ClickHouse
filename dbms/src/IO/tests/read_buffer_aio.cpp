@@ -14,12 +14,13 @@ namespace
 {
 
 void run();
-void prepare(size_t s, std::string & directory, std::string  & filename, std::string & buf);
-void prepare2(std::string & directory, std::string  & filename, std::string & buf);
-void prepare3(std::string & directory, std::string  & filename, std::string & buf);
-void prepare4(std::string & directory, std::string  & filename, std::string & buf);
+void prepare(size_t s, std::string  & filename, std::string & buf);
+void prepare2(std::string  & filename, std::string & buf);
+void prepare3(std::string  & filename, std::string & buf);
+void prepare4(std::string  & filename, std::string & buf);
+std::string createTmpFile();
 void die(const std::string & msg);
-void run_test(unsigned int num, const std::function<bool()> func);
+void runTest(unsigned int num, const std::function<bool()> func);
 
 bool test1(const std::string & filename);
 bool test2(const std::string & filename, const std::string & buf);
@@ -46,30 +47,25 @@ void run()
 {
 	namespace fs = boost::filesystem;
 
-	std::string directory;
 	std::string filename;
 	std::string buf;
-	prepare(10 * DEFAULT_AIO_FILE_BLOCK_SIZE, directory, filename, buf);
+	prepare(10 * DEFAULT_AIO_FILE_BLOCK_SIZE, filename, buf);
 
-	std::string directory2;
 	std::string filename2;
 	std::string buf2;
-	prepare(2 * DEFAULT_AIO_FILE_BLOCK_SIZE - 3, directory2, filename2, buf2);
+	prepare(2 * DEFAULT_AIO_FILE_BLOCK_SIZE - 3, filename2, buf2);
 
-	std::string directory3;
 	std::string filename3;
 	std::string buf3;
-	prepare2(directory3, filename3, buf3);
+	prepare2(filename3, buf3);
 
-	std::string directory4;
 	std::string filename4;
 	std::string buf4;
-	prepare3(directory4, filename4, buf4);
+	prepare3(filename4, buf4);
 
-	std::string directory5;
 	std::string filename5;
 	std::string buf5;
-	prepare4(directory5, filename5, buf5);
+	prepare4(filename5, buf5);
 
 	const std::vector<std::function<bool()> > tests =
 	{
@@ -99,27 +95,21 @@ void run()
 	for (const auto & test : tests)
 	{
 		++num;
-		run_test(num, test);
+		runTest(num, test);
 	}
 
-	fs::remove_all(directory);
-	fs::remove_all(directory2);
-	fs::remove_all(directory3);
-	fs::remove_all(directory4);
-	fs::remove_all(directory5);
+	fs::remove_all(fs::path(filename).parent_path().string());
+	fs::remove_all(fs::path(filename2).parent_path().string());
+	fs::remove_all(fs::path(filename3).parent_path().string());
+	fs::remove_all(fs::path(filename4).parent_path().string());
+	fs::remove_all(fs::path(filename5).parent_path().string());
 }
 
-void prepare(size_t s, std::string & directory, std::string  & filename, std::string & buf)
+void prepare(size_t s, std::string  & filename, std::string & buf)
 {
 	static const std::string symbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
-	char pattern[] = "/tmp/fileXXXXXX";
-	char * dir = ::mkdtemp(pattern);
-	if (dir == nullptr)
-		die("Could not create directory");
-
-	directory = std::string(dir);
-	filename = directory + "/foo";
+	filename = createTmpFile();
 
 	size_t n = 10 * DEFAULT_AIO_FILE_BLOCK_SIZE;
 	buf.reserve(n);
@@ -134,15 +124,9 @@ void prepare(size_t s, std::string & directory, std::string  & filename, std::st
 	out << buf;
 }
 
-void prepare2(std::string & directory, std::string & filename, std::string & buf)
+void prepare2(std::string & filename, std::string & buf)
 {
-	char pattern[] = "/tmp/fileXXXXXX";
-	char * dir = ::mkdtemp(pattern);
-	if (dir == nullptr)
-		die("Could not create directory");
-
-	directory = std::string(dir);
-	filename = directory + "/foo";
+	filename = createTmpFile();
 
 	buf = "122333444455555666666777777788888888999999999";
 
@@ -153,15 +137,9 @@ void prepare2(std::string & directory, std::string & filename, std::string & buf
 	out << buf;
 }
 
-void prepare3(std::string & directory, std::string & filename, std::string & buf)
+void prepare3(std::string & filename, std::string & buf)
 {
-	char pattern[] = "/tmp/fileXXXXXX";
-	char * dir = ::mkdtemp(pattern);
-	if (dir == nullptr)
-		die("Could not create directory");
-
-	directory = std::string(dir);
-	filename = directory + "/foo";
+	filename = createTmpFile();
 
 	buf = "122333444455555666666777777788888888999999999";
 
@@ -173,17 +151,11 @@ void prepare3(std::string & directory, std::string & filename, std::string & buf
 	out << buf;
 }
 
-void prepare4(std::string & directory, std::string & filename, std::string & buf)
+void prepare4(std::string & filename, std::string & buf)
 {
 	static const std::string symbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
-	char pattern[] = "/tmp/fileXXXXXX";
-	char * dir = ::mkdtemp(pattern);
-	if (dir == nullptr)
-		die("Could not create directory");
-
-	directory = std::string(dir);
-	filename = directory + "/foo";
+	filename = createTmpFile();
 
 	std::ofstream out(filename.c_str());
 	if (!out.is_open())
@@ -196,13 +168,23 @@ void prepare4(std::string & directory, std::string & filename, std::string & buf
 	out << buf;
 }
 
+std::string createTmpFile()
+{
+	char pattern[] = "/tmp/fileXXXXXX";
+	char * dir = ::mkdtemp(pattern);
+	if (dir == nullptr)
+		die("Could not create directory");
+
+	return std::string(dir) + "/foo";
+}
+
 void die(const std::string & msg)
 {
 	std::cout << msg << "\n";
 	::exit(EXIT_FAILURE);
 }
 
-void run_test(unsigned int num, const std::function<bool()> func)
+void runTest(unsigned int num, const std::function<bool()> func)
 {
 	bool ok;
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <thread>
 #include <Yandex/MultiVersion.h>
 #include <Yandex/logger_useful.h>
 #include <statdaemons/RegionsHierarchies.h>

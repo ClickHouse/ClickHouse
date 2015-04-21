@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DB/Core/QueryProcessingStage.h>
-#include <DB/Parsers/ParserQuery.h>
 #include <DB/Interpreters/InterpreterQuery.h>
 
 

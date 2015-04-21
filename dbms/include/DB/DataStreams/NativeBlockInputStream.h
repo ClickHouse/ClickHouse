@@ -28,6 +28,8 @@ public:
 		return res.str();
 	}
 
+	static void readData(const IDataType & type, IColumn & column, ReadBuffer & istr, size_t rows);
+
 protected:
 	Block readImpl() override;
 

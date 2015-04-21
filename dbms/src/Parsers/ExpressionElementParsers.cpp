@@ -407,23 +407,18 @@ bool ParserStringLiteral::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max
 
 bool ParserLiteral::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
-	Pos begin = pos;
-
 	ParserNull null_p;
 	ParserNumber num_p;
 	ParserStringLiteral str_p;
 
 	if (null_p.parse(pos, end, node, max_parsed_pos, expected))
 		return true;
-	pos = begin;
 
 	if (num_p.parse(pos, end, node, max_parsed_pos, expected))
 		return true;
-	pos = begin;
 
 	if (str_p.parse(pos, end, node, max_parsed_pos, expected))
 		return true;
-	pos = begin;
 
 	expected = "literal: one of nullptr, number, single quoted string";
 	return false;
@@ -462,34 +457,27 @@ bool ParserExpressionElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos &
 
 	if (subquery_p.parse(pos, end, node, max_parsed_pos, expected))
 		return true;
-	pos = begin;
 
 	if (paren_p.parse(pos, end, node, max_parsed_pos, expected))
 		return true;
-	pos = begin;
 
 	if (array_p.parse(pos, end, node, max_parsed_pos, expected))
 		return true;
-	pos = begin;
 
 	if (lit_p.parse(pos, end, node, max_parsed_pos, expected))
 		return true;
-	pos = begin;
 
 	if (fun_p.parse(pos, end, node, max_parsed_pos, expected))
 		return true;
-	pos = begin;
 
 	if (id_p.parse(pos, end, node, max_parsed_pos, expected))
 		return true;
-	pos = begin;
 
 	if (asterisk_p.parse(pos, end, node, max_parsed_pos, expected))
 	{
 		node = new ASTAsterisk(StringRange(begin, pos));
 		return true;
 	}
-	pos = begin;
 
 	expected = "expression element: one of array, literal, function, identifier, asterisk, parenthised expression, subquery";
 	return false;

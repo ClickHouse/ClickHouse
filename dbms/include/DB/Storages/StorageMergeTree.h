@@ -5,6 +5,8 @@
 #include <DB/Storages/MergeTree/MergeTreeDataWriter.h>
 #include <DB/Storages/MergeTree/MergeTreeDataMerger.h>
 #include <DB/Storages/MergeTree/DiskSpaceMonitor.h>
+#include <DB/Storages/MergeTree/BackgroundProcessingPool.h>
+
 
 namespace DB
 {
@@ -79,7 +81,14 @@ public:
 
 	BlockOutputStreamPtr write(ASTPtr query) override;
 
-	void dropPartition(const Field & partition, bool detach, const Settings & settings) override;
+	/** Выполнить очередной шаг объединения кусков.
+	  */
+	bool optimize(const Settings & settings) override
+	{
+		return merge(settings.min_bytes_to_use_direct_io, true);
+	}
+
+	void dropPartition(const Field & partition, bool detach, bool unreplicated, const Settings & settings) override;
 	void attachPartition(const Field & partition, bool unreplicated, bool part, const Settings & settings) override;
 	void freezePartition(const Field & partition, const Settings & settings) override;
 
@@ -92,14 +101,6 @@ public:
 	bool supportsIndexForIn() const override { return true; }
 
 	MergeTreeData & getData() { return data; }
-
-private:
-	/** Выполнить очередной шаг объединения кусков.
-	  */
-	bool performOptimize(size_t aio_threshold) override
-	{
-		return merge(aio_threshold, true);
-	}
 
 private:
 	String path;
