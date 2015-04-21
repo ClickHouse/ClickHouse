@@ -50,9 +50,9 @@ private:
 
 		String from; /// Для FETCH PARTITION - путь в ZK к шарду, с которого скачивать партицию.
 
-		static PartitionCommand dropPartition(const Field & partition, bool detach)
+		static PartitionCommand dropPartition(const Field & partition, bool detach, bool unreplicated)
 		{
-			return {DROP_PARTITION, partition, detach};
+			return {DROP_PARTITION, partition, detach, unreplicated};
 		}
 
 		static PartitionCommand attachPartition(const Field & partition, bool unreplicated, bool part)

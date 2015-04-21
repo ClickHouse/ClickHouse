@@ -88,7 +88,7 @@ public:
 
 	void alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context) override;
 
-	void dropPartition(const Field & partition, bool detach, const Settings & settings) override;
+	void dropPartition(const Field & partition, bool detach, bool unreplicated, const Settings & settings) override;
 	void attachPartition(const Field & partition, bool unreplicated, bool part, const Settings & settings) override;
 	void fetchPartition(const Field & partition, const String & from, const Settings & settings) override;
 	void freezePartition(const Field & partition, const Settings & settings) override;
@@ -134,6 +134,8 @@ public:
 	void getStatus(Status & res, bool with_zk_fields = true);
 
 private:
+	void dropUnreplicatedPartition(const Field & partition, const Settings & settings);
+
 	friend class ReplicatedMergeTreeBlockOutputStream;
 	friend class ReplicatedMergeTreeRestartingThread;
 	friend class ReplicatedMergeTreeCleanupThread;

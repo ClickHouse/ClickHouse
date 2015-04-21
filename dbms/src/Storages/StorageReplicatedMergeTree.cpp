@@ -2211,8 +2211,51 @@ static String getFakePartNameForDrop(const String & month_name, UInt64 left, UIn
 }
 
 
-void StorageReplicatedMergeTree::dropPartition(const Field & field, bool detach, const Settings & settings)
+void StorageReplicatedMergeTree::dropUnreplicatedPartition(const Field & partition, const Settings & settings)
 {
+	if (!unreplicated_data)
+		return;
+
+	/// Просит завершить мерджи и не позволяет им начаться.
+	/// Это защищает от "оживания" данных за удалённую партицию после завершения мерджа.
+	const MergeTreeMergeBlocker merge_blocker{*unreplicated_merger};
+	auto structure_lock = lockStructure(true);
+
+	const DayNum_t month = MergeTreeData::getMonthDayNum(partition);
+
+	size_t removed_parts = 0;
+	MergeTreeData::DataParts parts = unreplicated_data->getDataParts();
+
+	for (const auto & part : parts)
+	{
+		if (!(part->left_month == part->right_month && part->left_month == month))
+			continue;
+
+		LOG_DEBUG(log, "Removing unreplicated part " << part->name);
+		++removed_parts;
+
+		unreplicated_data->replaceParts({part}, {}, false);
+	}
+
+	LOG_INFO(log, "Removed " << removed_parts << " unreplicated parts inside " << apply_visitor(FieldVisitorToString(), partition) << ".");
+}
+
+
+void StorageReplicatedMergeTree::dropPartition(const Field & field, bool detach, bool unreplicated, const Settings & settings)
+{
+	if (unreplicated)
+	{
+		if (detach)
+			throw Exception{
+				"DETACH UNREPLICATED PATITION not supported",
+				ErrorCodes::LOGICAL_ERROR
+			};
+
+		dropUnreplicatedPartition(field, settings);
+
+		return;
+	}
+
 	auto zookeeper = getZooKeeper();
 	String month_name = MergeTreeData::getMonthName(field);
 

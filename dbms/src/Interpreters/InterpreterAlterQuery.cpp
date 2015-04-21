@@ -42,7 +42,7 @@ void InterpreterAlterQuery::execute()
 		switch (command.type)
 		{
 			case PartitionCommand::DROP_PARTITION:
-				table->dropPartition(command.partition, command.detach, context.getSettingsRef());
+				table->dropPartition(command.partition, command.detach, command.unreplicated, context.getSettingsRef());
 				break;
 
 			case PartitionCommand::ATTACH_PARTITION:
@@ -135,7 +135,7 @@ void InterpreterAlterQuery::parseAlter(
 		else if (params.type == ASTAlterQuery::DROP_PARTITION)
 		{
 			const Field & partition = dynamic_cast<const ASTLiteral &>(*params.partition).value;
-			out_partition_commands.push_back(PartitionCommand::dropPartition(partition, params.detach));
+			out_partition_commands.push_back(PartitionCommand::dropPartition(partition, params.detach, params.unreplicated));
 		}
 		else if (params.type == ASTAlterQuery::ATTACH_PARTITION)
 		{
