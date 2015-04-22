@@ -60,6 +60,7 @@ struct ContextShared
 	Logger * log = &Logger::get("Context");					/// Логгер.
 
 	mutable Poco::Mutex mutex;								/// Для доступа и модификации разделяемых объектов.
+	mutable Poco::Mutex external_dictionaries_mutex;		/// Для доступа к внешним словарям. Отдельный мьютекс, чтобы избежать локов при обращении сервера к самому себе.
 
 	mutable zkutil::ZooKeeperPtr zookeeper;					/// Клиент для ZooKeeper.
 
@@ -656,7 +657,7 @@ const Dictionaries & Context::getDictionariesImpl(const bool throw_on_error) con
 
 const ExternalDictionaries & Context::getExternalDictionariesImpl(const bool throw_on_error) const
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	Poco::ScopedLock<Poco::Mutex> lock(shared->external_dictionaries_mutex);
 
 	if (!shared->external_dictionaries)
 	{
