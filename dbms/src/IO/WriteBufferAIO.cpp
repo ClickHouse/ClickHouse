@@ -25,7 +25,7 @@ WriteBufferAIO::WriteBufferAIO(const std::string & filename_, size_t buffer_size
 
 	ProfileEvents::increment(ProfileEvents::FileOpen);
 
-	int open_flags = (flags_ == -1) ? (O_WRONLY | O_TRUNC | O_CREAT) : flags_;
+	int open_flags = (flags_ == -1) ? (O_RDWR | O_TRUNC | O_CREAT) : flags_;
 	open_flags |= O_DIRECT;
 
 	fd = ::open(filename.c_str(), open_flags, mode_);
@@ -36,13 +36,6 @@ WriteBufferAIO::WriteBufferAIO(const std::string & filename_, size_t buffer_size
 	}
 
 	ProfileEvents::increment(ProfileEvents::FileOpen);
-
-	fd2 = ::open(filename.c_str(), O_RDONLY, mode_);
-	if (fd2 == -1)
-	{
-		auto error_code = (errno == ENOENT) ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE;
-		throwFromErrno("Cannot open file " + filename, error_code);
-	}
 
 	::memset(&request, 0, sizeof(request));
 }
@@ -63,8 +56,6 @@ WriteBufferAIO::~WriteBufferAIO()
 
 	if (fd != -1)
 		::close(fd);
-	if (fd2 != -1)
-		::close(fd2);
 }
 
 off_t WriteBufferAIO::getPositionInFile()
@@ -323,6 +314,18 @@ void WriteBufferAIO::prepare()
 		                             region_aligned_size
 	*/
 
+	bool has_padding = ((region_left_padding > 0) || (region_right_padding) > 0);
+	if (has_padding)
+	{
+		int current_flags = ::fcntl(fd, F_GETFL, 0);
+		if (current_flags == -1)
+			throwFromErrno("Cannot get file options", errno);
+
+		int ret = ::fcntl(fd, F_SETFL, current_flags & ~O_DIRECT);
+		if (ret == -1)
+			throwFromErrno("Cannot set file options", errno);
+	}
+
 	if (region_left_padding > 0)
 	{
 		/// Сдвинуть данные буфера вправо. Дополнить начало буфера данными из диска.
@@ -331,7 +334,7 @@ void WriteBufferAIO::prepare()
 
 		::memmove(buffer_begin + region_left_padding, buffer_begin, buffer_size - region_left_padding);
 
-		ssize_t read_count = ::pread(fd2, buffer_begin, region_left_padding, region_aligned_begin);
+		ssize_t read_count = ::pread(fd, buffer_begin, region_left_padding, region_aligned_begin);
 		if (read_count < 0)
 			throw Exception("Read error", ErrorCodes::AIO_READ_ERROR);
 
@@ -341,12 +344,23 @@ void WriteBufferAIO::prepare()
 	if (region_right_padding > 0)
 	{
 		/// Дополнить конец буфера данными из диска.
-		ssize_t read_count = ::pread(fd2, buffer_end, region_right_padding, region_end);
+		ssize_t read_count = ::pread(fd, buffer_end, region_right_padding, region_end);
 		if (read_count < 0)
 			throw Exception("Read error", ErrorCodes::AIO_READ_ERROR);
 
 		truncation_count = region_right_padding - read_count;
 		::memset(buffer_end + read_count, 0, truncation_count);
+	}
+
+	if (has_padding)
+	{
+		int current_flags = ::fcntl(fd, F_GETFL, 0);
+		if (current_flags == -1)
+			throwFromErrno("Cannot get file options", errno);
+
+		int ret = ::fcntl(fd, F_SETFL, current_flags | O_DIRECT);
+		if (ret == -1)
+			throwFromErrno("Cannot set file options", errno);
 	}
 }
 
