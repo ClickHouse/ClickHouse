@@ -28,8 +28,10 @@ using Poco::SharedPtr;
 class UnionBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	UnionBlockInputStream(BlockInputStreams inputs, unsigned max_threads)
-		: output_queue(max_threads), handler(*this), processor(inputs, max_threads, handler)
+	UnionBlockInputStream(BlockInputStreams inputs, size_t max_threads) :
+		output_queue(std::min(inputs.size(), max_threads)),
+		handler(*this),
+		processor(inputs, max_threads, handler)
 	{
 		children = inputs;
 	}
