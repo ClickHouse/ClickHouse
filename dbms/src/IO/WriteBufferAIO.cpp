@@ -314,53 +314,43 @@ void WriteBufferAIO::prepare()
 		                             region_aligned_size
 	*/
 
-	bool has_padding = ((region_left_padding > 0) || (region_right_padding) > 0);
-	if (has_padding)
+	if ((region_left_padding > 0) || (region_right_padding > 0))
 	{
-		int current_flags = ::fcntl(fd, F_GETFL, 0);
-		if (current_flags == -1)
-			throwFromErrno("Cannot get file options", errno);
+		char memory_page[DEFAULT_AIO_FILE_BLOCK_SIZE] __attribute__ ((aligned (DEFAULT_AIO_FILE_BLOCK_SIZE)));
 
-		int ret = ::fcntl(fd, F_SETFL, current_flags & ~O_DIRECT);
-		if (ret == -1)
-			throwFromErrno("Cannot set file options", errno);
-	}
+		if (region_left_padding > 0)
+		{
+			/// Сдвинуть данные буфера вправо. Дополнить начало буфера данными из диска.
+			buffer_size += region_left_padding;
+			buffer_end = buffer_begin + buffer_size;
 
-	if (region_left_padding > 0)
-	{
-		/// Сдвинуть данные буфера вправо. Дополнить начало буфера данными из диска.
-		buffer_size += region_left_padding;
-		buffer_end = buffer_begin + buffer_size;
+			::memmove(buffer_begin + region_left_padding, buffer_begin, buffer_size - region_left_padding);
 
-		::memmove(buffer_begin + region_left_padding, buffer_begin, buffer_size - region_left_padding);
+			ssize_t read_count = ::pread(fd, memory_page, DEFAULT_AIO_FILE_BLOCK_SIZE, region_aligned_begin);
+			if (read_count < 0)
+				throw Exception("Read error", ErrorCodes::AIO_READ_ERROR);
 
-		ssize_t read_count = ::pread(fd, buffer_begin, region_left_padding, region_aligned_begin);
-		if (read_count < 0)
-			throw Exception("Read error", ErrorCodes::AIO_READ_ERROR);
+			size_t to_copy = std::min(static_cast<size_t>(read_count), region_left_padding);
+			::memcpy(buffer_begin, memory_page, to_copy);
+			::memset(buffer_begin + to_copy, 0, region_left_padding - to_copy);
+		}
 
-		::memset(buffer_begin + read_count, 0, region_left_padding - read_count);
-	}
+		if (region_right_padding > 0)
+		{
+			/// Дополнить конец буфера данными из диска.
+			ssize_t read_count = ::pread(fd, memory_page, DEFAULT_AIO_FILE_BLOCK_SIZE, region_aligned_end - DEFAULT_AIO_FILE_BLOCK_SIZE);
+			if (read_count < 0)
+				throw Exception("Read error", ErrorCodes::AIO_READ_ERROR);
 
-	if (region_right_padding > 0)
-	{
-		/// Дополнить конец буфера данными из диска.
-		ssize_t read_count = ::pread(fd, buffer_end, region_right_padding, region_end);
-		if (read_count < 0)
-			throw Exception("Read error", ErrorCodes::AIO_READ_ERROR);
-
-		truncation_count = region_right_padding - read_count;
-		::memset(buffer_end + read_count, 0, truncation_count);
-	}
-
-	if (has_padding)
-	{
-		int current_flags = ::fcntl(fd, F_GETFL, 0);
-		if (current_flags == -1)
-			throwFromErrno("Cannot get file options", errno);
-
-		int ret = ::fcntl(fd, F_SETFL, current_flags | O_DIRECT);
-		if (ret == -1)
-			throwFromErrno("Cannot set file options", errno);
+			off_t offset = DEFAULT_AIO_FILE_BLOCK_SIZE - region_right_padding;
+			if (read_count > offset)
+			{
+				::memcpy(buffer_end, memory_page + offset, read_count - offset);
+				truncation_count = DEFAULT_AIO_FILE_BLOCK_SIZE - read_count;
+			}
+			else
+				truncation_count = region_right_padding;
+		}
 	}
 }
 
