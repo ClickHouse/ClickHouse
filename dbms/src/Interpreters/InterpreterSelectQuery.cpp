@@ -690,8 +690,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	else
 	{
 		auto & subquery_streams = interpreter_subquery->executeWithoutUnion();
-		streams.insert(streams.end(), std::make_move_iterator(subquery_streams.begin()),
-					   std::make_move_iterator(subquery_streams.end()));
+		streams.insert(streams.end(), subquery_streams.begin(), subquery_streams.end());
 	}
 
 	/** Установка ограничений и квоты на чтение данных, скорость и время выполнения запроса.
