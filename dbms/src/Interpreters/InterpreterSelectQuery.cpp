@@ -323,7 +323,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	return streams[0];
 }
 
-const BlockInputStreams & InterpreterSelectQuery::executeWithoutUnion()
+BlockInputStreams & InterpreterSelectQuery::executeWithoutUnion()
 {
 	if (is_first_select_inside_union_all)
 	{
@@ -689,7 +689,9 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	}
 	else
 	{
-		streams.push_back(interpreter_subquery->execute());
+		auto & subquery_streams = interpreter_subquery->executeWithoutUnion();
+		streams.insert(streams.end(), std::make_move_iterator(subquery_streams.begin()),
+					   std::make_move_iterator(subquery_streams.end()));
 	}
 
 	/** Установка ограничений и квоты на чтение данных, скорость и время выполнения запроса.
