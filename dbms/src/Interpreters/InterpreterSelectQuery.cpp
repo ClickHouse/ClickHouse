@@ -555,9 +555,7 @@ void InterpreterSelectQuery::executeSingleQuery()
 			{
 				/// Если было более одного источника - то нужно выполнить DISTINCT ещё раз после их слияния.
 				if (need_second_distinct_pass)
-				{
 					executeDistinct(streams, false, Names());
-				}
 
 				executeLimit(streams);
 			}
@@ -612,6 +610,8 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 
 		interpreter_subquery = new InterpreterSelectQuery(
 			query.table, subquery_context, required_columns, QueryProcessingStage::Complete, subquery_depth + 1);
+		if (query_analyzer->hasAggregation())
+			interpreter_subquery->ignoreWithTotals();
 	}
 
 	/// если в настройках установлен default_sample != 1, то все запросы выполняем с сэмплингом
@@ -689,7 +689,8 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	}
 	else
 	{
-		streams.push_back(interpreter_subquery->execute());
+		const auto & subquery_streams = interpreter_subquery->executeWithoutUnion();
+		streams.insert(streams.end(), subquery_streams.begin(), subquery_streams.end());
 	}
 
 	/** Установка ограничений и квоты на чтение данных, скорость и время выполнения запроса.
@@ -922,6 +923,9 @@ void InterpreterSelectQuery::executeDistinct(BlockInputStreams & streams, bool b
 		{
 			stream = new DistinctBlockInputStream(stream, settings.limits, limit_for_distinct, columns);
 		}
+
+		if (streams.size() > 1)
+			union_within_single_query = true;
 	}
 }
 
@@ -952,6 +956,7 @@ void InterpreterSelectQuery::executePreLimit(BlockInputStreams & streams)
 		{
 			stream = new LimitBlockInputStream(stream, limit_length + limit_offset, 0);
 		}
+
 		if (streams.size() > 1)
 			union_within_single_query = true;
 	}

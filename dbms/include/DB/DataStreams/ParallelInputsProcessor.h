@@ -1,7 +1,7 @@
 #pragma once
 
 #include <list>
-#include <stack>
+#include <queue>
 #include <atomic>
 #include <thread>
 #include <mutex>
@@ -49,7 +49,7 @@ public:
 		: inputs(inputs_), max_threads(std::min(inputs_.size(), max_threads_)), handler(handler_)
 	{
 		for (size_t i = 0; i < inputs_.size(); ++i)
-			input_stack.emplace(inputs_[i], i);
+			available_inputs.emplace(inputs_[i], i);
 	}
 
 	~ParallelInputsProcessor()
@@ -162,16 +162,16 @@ private:
 
 			/// Выбираем следующий источник.
 			{
-				std::lock_guard<std::mutex> lock(input_stack_mutex);
+				std::lock_guard<std::mutex> lock(available_inputs_mutex);
 
 				/// Если свободных источников нет, то этот поток больше не нужен. (Но другие потоки могут работать со своими источниками.)
-				if (input_stack.empty())
+				if (available_inputs.empty())
 					break;
 
-				input = input_stack.top();
+				input = available_inputs.front();
 
 				/// Убираем источник из очереди доступных источников.
-				input_stack.pop();
+				available_inputs.pop();
 			}
 
 			/// Основная работа.
@@ -183,15 +183,15 @@ private:
 
 				/// Если этот источник ещё не иссяк, то положим полученный блок в очередь готовых.
 				{
-					std::lock_guard<std::mutex> lock(input_stack_mutex);
+					std::lock_guard<std::mutex> lock(available_inputs_mutex);
 
 					if (block)
 					{
-						input_stack.push(input);
+						available_inputs.push(input);
 					}
 					else
 					{
-						if (input_stack.empty())
+						if (available_inputs.empty())
 							break;
 					}
 				}
@@ -214,15 +214,28 @@ private:
 	typedef std::vector<std::thread> ThreadsData;
 	ThreadsData threads;
 
-	/** Стек доступных источников, которые не заняты каким-либо потоком в данный момент.
-	  * Стек вместо очереди - чтобы выполнять работу по чтению одного источника более последовательно.
-	  * То есть, продолжать обработку источника, который недавно обрабатывался.
+	/** Набор доступных источников, которые не заняты каким-либо потоком в данный момент.
+	  * Каждый поток берёт из этого набора один источник, вынимает из источника блок (в этот момент источник делает вычисления),
+	  *  и (если источник не исчерпан), кладёт назад в набор доступных источников.
+	  *
+	  * Возникает вопрос, что лучше использовать:
+	  * - очередь (только что обработанный источник будет в следующий раз обработан позже остальных)
+	  * - стек (только что обработанный источник будет обработан как можно раньше).
+	  *
+	  * Стек лучше очереди, когда надо выполнять работу по чтению одного источника более последовательно,
+	  *  и теоретически, это позволяет достичь более последовательных чтений с диска.
+	  *
+	  * Но при использовании стека, возникает проблема при распределённой обработке запроса:
+	  *  данные всё-время читаются только с части серверов, а на остальных серверах
+	  *  возникает таймаут при send-е, и обработка запроса завершается с исключением.
+	  *
+	  * Поэтому, используется очередь. Это можно улучшить в дальнейшем.
 	  */
-	typedef std::stack<InputData> InputStack;
-	InputStack input_stack;
+	typedef std::queue<InputData> AvailableInputs;
+	AvailableInputs available_inputs;
 
-	/// Для операций с input_stack.
-	std::mutex input_stack_mutex;
+	/// Для операций с available_inputs.
+	std::mutex available_inputs_mutex;
 
 	/// Сколько источников иссякло.
 	std::atomic<size_t> active_threads { 0 };

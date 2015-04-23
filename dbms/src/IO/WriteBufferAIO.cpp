@@ -25,7 +25,7 @@ WriteBufferAIO::WriteBufferAIO(const std::string & filename_, size_t buffer_size
 
 	ProfileEvents::increment(ProfileEvents::FileOpen);
 
-	int open_flags = (flags_ == -1) ? (O_WRONLY | O_TRUNC | O_CREAT) : flags_;
+	int open_flags = (flags_ == -1) ? (O_RDWR | O_TRUNC | O_CREAT) : flags_;
 	open_flags |= O_DIRECT;
 
 	fd = ::open(filename.c_str(), open_flags, mode_);
@@ -36,13 +36,6 @@ WriteBufferAIO::WriteBufferAIO(const std::string & filename_, size_t buffer_size
 	}
 
 	ProfileEvents::increment(ProfileEvents::FileOpen);
-
-	fd2 = ::open(filename.c_str(), O_RDONLY, mode_);
-	if (fd2 == -1)
-	{
-		auto error_code = (errno == ENOENT) ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE;
-		throwFromErrno("Cannot open file " + filename, error_code);
-	}
 
 	::memset(&request, 0, sizeof(request));
 }
@@ -63,8 +56,6 @@ WriteBufferAIO::~WriteBufferAIO()
 
 	if (fd != -1)
 		::close(fd);
-	if (fd2 != -1)
-		::close(fd2);
 }
 
 off_t WriteBufferAIO::getPositionInFile()
@@ -323,30 +314,43 @@ void WriteBufferAIO::prepare()
 		                             region_aligned_size
 	*/
 
-	if (region_left_padding > 0)
+	if ((region_left_padding > 0) || (region_right_padding > 0))
 	{
-		/// Сдвинуть данные буфера вправо. Дополнить начало буфера данными из диска.
-		buffer_size += region_left_padding;
-		buffer_end = buffer_begin + buffer_size;
+		char memory_page[DEFAULT_AIO_FILE_BLOCK_SIZE] __attribute__ ((aligned (DEFAULT_AIO_FILE_BLOCK_SIZE)));
 
-		::memmove(buffer_begin + region_left_padding, buffer_begin, buffer_size - region_left_padding);
+		if (region_left_padding > 0)
+		{
+			/// Сдвинуть данные буфера вправо. Дополнить начало буфера данными из диска.
+			buffer_size += region_left_padding;
+			buffer_end = buffer_begin + buffer_size;
 
-		ssize_t read_count = ::pread(fd2, buffer_begin, region_left_padding, region_aligned_begin);
-		if (read_count < 0)
-			throw Exception("Read error", ErrorCodes::AIO_READ_ERROR);
+			::memmove(buffer_begin + region_left_padding, buffer_begin, buffer_size - region_left_padding);
 
-		::memset(buffer_begin + read_count, 0, region_left_padding - read_count);
-	}
+			ssize_t read_count = ::pread(fd, memory_page, DEFAULT_AIO_FILE_BLOCK_SIZE, region_aligned_begin);
+			if (read_count < 0)
+				throw Exception("Read error", ErrorCodes::AIO_READ_ERROR);
 
-	if (region_right_padding > 0)
-	{
-		/// Дополнить конец буфера данными из диска.
-		ssize_t read_count = ::pread(fd2, buffer_end, region_right_padding, region_end);
-		if (read_count < 0)
-			throw Exception("Read error", ErrorCodes::AIO_READ_ERROR);
+			size_t to_copy = std::min(static_cast<size_t>(read_count), region_left_padding);
+			::memcpy(buffer_begin, memory_page, to_copy);
+			::memset(buffer_begin + to_copy, 0, region_left_padding - to_copy);
+		}
 
-		truncation_count = region_right_padding - read_count;
-		::memset(buffer_end + read_count, 0, truncation_count);
+		if (region_right_padding > 0)
+		{
+			/// Дополнить конец буфера данными из диска.
+			ssize_t read_count = ::pread(fd, memory_page, DEFAULT_AIO_FILE_BLOCK_SIZE, region_aligned_end - DEFAULT_AIO_FILE_BLOCK_SIZE);
+			if (read_count < 0)
+				throw Exception("Read error", ErrorCodes::AIO_READ_ERROR);
+
+			off_t offset = DEFAULT_AIO_FILE_BLOCK_SIZE - region_right_padding;
+			if (read_count > offset)
+			{
+				::memcpy(buffer_end, memory_page + offset, read_count - offset);
+				truncation_count = DEFAULT_AIO_FILE_BLOCK_SIZE - read_count;
+			}
+			else
+				truncation_count = region_right_padding;
+		}
 	}
 }
 
