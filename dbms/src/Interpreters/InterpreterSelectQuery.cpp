@@ -323,7 +323,7 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 	return streams[0];
 }
 
-BlockInputStreams & InterpreterSelectQuery::executeWithoutUnion()
+const BlockInputStreams & InterpreterSelectQuery::executeWithoutUnion()
 {
 	if (is_first_select_inside_union_all)
 	{
@@ -689,7 +689,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	}
 	else
 	{
-		auto & subquery_streams = interpreter_subquery->executeWithoutUnion();
+		const auto & subquery_streams = interpreter_subquery->executeWithoutUnion();
 		streams.insert(streams.end(), subquery_streams.begin(), subquery_streams.end());
 	}
 
