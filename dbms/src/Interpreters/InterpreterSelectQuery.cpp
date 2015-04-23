@@ -610,6 +610,8 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 
 		interpreter_subquery = new InterpreterSelectQuery(
 			query.table, subquery_context, required_columns, QueryProcessingStage::Complete, subquery_depth + 1);
+		if (query_analyzer->hasAggregation())
+			interpreter_subquery->ignoreWithTotals();
 	}
 
 	/// если в настройках установлен default_sample != 1, то все запросы выполняем с сэмплингом

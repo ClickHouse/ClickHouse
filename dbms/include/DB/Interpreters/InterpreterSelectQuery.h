@@ -123,6 +123,8 @@ private:
 	void executeDistinct(                BlockInputStreams & streams, bool before_order, Names columns);
 	void executeSubqueriesInSetsAndJoins(BlockInputStreams & streams, SubqueriesForSets & subqueries_for_sets);
 
+	void ignoreWithTotals() { query.group_by_with_totals = false; }
+
 	ASTPtr query_ptr;
 	ASTSelectQuery & query;
 	Context context;
