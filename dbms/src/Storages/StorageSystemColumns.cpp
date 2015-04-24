@@ -37,12 +37,7 @@ BlockInputStreams StorageSystemColumns::read(
 	check(column_names);
 	processed_stage = QueryProcessingStage::FetchColumns;
 
-	ColumnWithNameAndType column_database{ new ColumnString, new DataTypeString, "database" };
-	ColumnWithNameAndType column_table{ new ColumnString, new DataTypeString, "table" };
-	ColumnWithNameAndType column_name{ new ColumnString, new DataTypeString, "name" };
-	ColumnWithNameAndType column_type{ new ColumnString, new DataTypeString, "type" };
-	ColumnWithNameAndType column_default_type{ new ColumnString, new DataTypeString, "default_type" };
-	ColumnWithNameAndType column_default_expression{ new ColumnString, new DataTypeString, "default_expression" };
+	Block block;
 
 	std::map<std::pair<std::string, std::string>, StoragePtr> storages;
 
@@ -51,30 +46,71 @@ BlockInputStreams StorageSystemColumns::read(
 
 		const Databases & databases = context.getDatabases();
 
+		/// Добавим столбец database.
+		ColumnPtr database_column = new ColumnString;
 		for (const auto & database : databases)
+			database_column->insert(database.first);
+		block.insert(ColumnWithNameAndType(database_column, new DataTypeString, "database"));
+
+		/// Отфильтруем блок со столбцом database.
+		VirtualColumnUtils::filterBlockWithQuery(query, block, context);
+
+		if (!block.rows())
+			return BlockInputStreams();
+
+		database_column = block.getByName("database").column;
+		size_t rows = database_column->size();
+		IColumn::Offsets_t offsets(rows);
+
+		/// Добавим столбец database.
+		ColumnPtr table_column = new ColumnString;
+
+		for (size_t i = 0; i < rows; ++i)
 		{
-			const Tables & tables = database.second;
+			std::string database_name = (*database_column)[i].get<std::string>();
+			const Tables & tables = databases.at(database_name);
+			offsets[i] = i ? offsets[i - 1] : 0;
+
 			for (const auto & table : tables)
 			{
-				column_database.column->insert(database.first);
-				column_table.column->insert(table.first);
-				storages.insert(std::make_pair(std::make_pair(database.first, table.first), table.second));
+				storages.insert(std::make_pair(std::make_pair(database_name, table.first), table.second));
+
+				table_column->insert(table.first);
+				offsets[i] += 1;
 			}
 		}
+
+		for (size_t i = 0; i < block.columns(); ++i)
+		{
+			ColumnPtr & column = block.getByPosition(i).column;
+			column = column->replicate(offsets);
+		}
+
+		block.insert(ColumnWithNameAndType(table_column, new DataTypeString, "table"));
 	}
 
-	{
-		Block filtered_block{ column_database, column_table };
-		VirtualColumnUtils::filterBlockWithQuery(query, filtered_block, context);
+	/// Отфильтруем блок со столбцами database и table.
+	VirtualColumnUtils::filterBlockWithQuery(query, block, context);
 
-		column_database = filtered_block.getByName("database");
-		column_table = filtered_block.getByName("table");
-	}
+	if (!block.rows())
+		return BlockInputStreams();
 
-	for (size_t i = 0; i < column_database.column->size(); ++i)
+	ColumnPtr filtered_database_column = block.getByName("database").column;
+	ColumnPtr filtered_table_column = block.getByName("table").column;
+
+	/// Наконец составим результат.
+	ColumnPtr database_column = new ColumnString;
+	ColumnPtr table_column = new ColumnString;
+	ColumnPtr name_column = new ColumnString;
+	ColumnPtr type_column = new ColumnString;
+	ColumnPtr default_type_column = new ColumnString;
+	ColumnPtr default_expression_column = new ColumnString;
+
+	size_t rows = filtered_database_column->size();
+	for (size_t i = 0; i < rows; ++i)
 	{
-		const auto & database_name = (*column_database.column)[i].safeGet<const std::string &>();
-		const auto & table_name = (*column_table.column)[i].safeGet<const std::string &>();
+		std::string database_name = (*filtered_database_column)[i].get<std::string>();
+		std::string table_name = (*filtered_table_column)[i].get<std::string>();
 
 		NamesAndTypesList columns;
 		ColumnDefaults column_defaults;
@@ -90,27 +126,35 @@ BlockInputStreams StorageSystemColumns::read(
 
 		for (const auto & column : columns)
 		{
-			column_name.column->insert(column.name);
-			column_type.column->insert(column.type->getName());
+			database_column->insert(database_name);
+			table_column->insert(table_name);
+			name_column->insert(column.name);
+			type_column->insert(column.type->getName());
 
 			const auto it = column_defaults.find(column.name);
 			if (it == std::end(column_defaults))
 			{
-				column_default_type.column->insertDefault();
-				column_default_expression.column->insertDefault();
+				default_type_column->insertDefault();
+				default_expression_column->insertDefault();
 			}
 			else
 			{
-				column_default_type.column->insert(toString(it->second.type));
-				column_default_expression.column->insert(queryToString(it->second.expression));
+				default_type_column->insert(toString(it->second.type));
+				default_expression_column->insert(queryToString(it->second.expression));
 			}
 		}
 	}
 
-	return BlockInputStreams{ 1, new OneBlockInputStream{
-			{ column_database, column_table, column_name, column_type, column_default_type, column_default_expression }
-		}
-	};
+	block.clear();
+
+	block.insert(ColumnWithNameAndType(database_column, new DataTypeString, "database"));
+	block.insert(ColumnWithNameAndType(table_column, new DataTypeString, "table"));
+	block.insert(ColumnWithNameAndType(name_column, new DataTypeString, "name"));
+	block.insert(ColumnWithNameAndType(type_column, new DataTypeString, "type"));
+	block.insert(ColumnWithNameAndType(default_type_column, new DataTypeString, "default_type"));
+	block.insert(ColumnWithNameAndType(default_expression_column, new DataTypeString, "default_expression"));
+
+	return BlockInputStreams{ 1, new OneBlockInputStream(block) };
 }
 
 }
