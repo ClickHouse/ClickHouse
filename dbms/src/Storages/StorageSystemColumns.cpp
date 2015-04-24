@@ -9,9 +9,9 @@ namespace DB
 StorageSystemColumns::StorageSystemColumns(const std::string & name_)
 	: name(name_)
 	, columns{
-		{ "database", 			new DataTypeString },
-		{ "table",			    new DataTypeString },
-		{ "name", 		        new DataTypeString },
+		{ "database",           new DataTypeString },
+		{ "table",              new DataTypeString },
+		{ "name",               new DataTypeString },
 		{ "type",               new DataTypeString },
 		{ "default_type",       new DataTypeString },
 		{ "default_expression", new DataTypeString }
