@@ -5,6 +5,7 @@
 
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
+#include <DB/Common/ProfileEvents.h>
 
 #include <DB/IO/WriteBufferFromFileBase.h>
 #include <DB/IO/WriteBuffer.h>
@@ -21,7 +22,7 @@ class WriteBufferFromFileDescriptor : public WriteBufferFromFileBase
 {
 protected:
 	int fd;
-	
+
 	void nextImpl()
 	{
 		if (!offset())
@@ -30,6 +31,8 @@ protected:
 		size_t bytes_written = 0;
 		while (bytes_written != offset())
 		{
+			ProfileEvents::increment(ProfileEvents::WriteBufferFromFileDescriptorWrite);
+
 			ssize_t res = ::write(fd, working_buffer.begin() + bytes_written, offset() - bytes_written);
 
 			if ((-1 == res || 0 == res) && errno != EINTR)
@@ -38,6 +41,8 @@ protected:
 			if (res > 0)
 				bytes_written += res;
 		}
+
+		ProfileEvents::increment(ProfileEvents::WriteBufferFromFileDescriptorWriteBytes, bytes_written);
 	}
 
 	/// Имя или описание файла

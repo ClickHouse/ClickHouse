@@ -7,6 +7,7 @@
 #include <DB/Parsers/ASTShowProcesslistQuery.h>
 #include <DB/Parsers/ParserQuery.h>
 #include <DB/Parsers/parseQuery.h>
+#include <DB/Interpreters/Quota.h>
 #include <DB/Interpreters/executeQuery.h>
 
 

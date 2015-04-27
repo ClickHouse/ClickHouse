@@ -2,6 +2,7 @@
 
 #include <mutex>
 #include <memory>
+#include <functional>
 
 #include <Yandex/logger_useful.h>
 #include <statdaemons/threadpool.hpp>
@@ -523,6 +524,7 @@ struct AggregatedDataVariants : private boost::noncopyable
 
 	AggregatedDataVariants() : aggregates_pools(1, new Arena), aggregates_pool(&*aggregates_pools.back()) {}
 	bool empty() const { return type == Type::EMPTY; }
+	void invalidate() { type = Type::EMPTY; }
 
 	~AggregatedDataVariants();
 
@@ -682,7 +684,8 @@ public:
 		: key_names(key_names_), aggregates(aggregates_), aggregates_size(aggregates.size()),
 		overflow_row(overflow_row_),
 		max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
-		compiler(compiler_), min_count_to_compile(min_count_to_compile_), group_by_two_level_threshold(group_by_two_level_threshold_)
+		compiler(compiler_), min_count_to_compile(min_count_to_compile_), group_by_two_level_threshold(group_by_two_level_threshold_),
+		isCancelled([]() { return false; })
 	{
 		std::sort(key_names.begin(), key_names.end());
 		key_names.erase(std::unique(key_names.begin(), key_names.end()), key_names.end());
@@ -722,6 +725,12 @@ public:
 	  * (Доагрегировать несколько блоков, которые представляют собой результат независимых агрегаций с удалённых серверов.)
 	  */
 	void mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants & result, size_t max_threads);
+
+	using CancellationHook = std::function<bool()>;
+
+	/** Установить функцию, которая проверяет, можно ли прервать текущую задачу.
+	  */
+	void setCancellationHook(const CancellationHook cancellation_hook);
 
 	/// Для IBlockInputStream.
 	String getID() const;
@@ -785,6 +794,9 @@ protected:
 	  * 0 - никогда не использовать.
 	  */
 	size_t group_by_two_level_threshold;
+
+	/// Возвращает true, если можно прервать текущую задачу.
+	CancellationHook isCancelled;
 
 	/** Если заданы только имена столбцов (key_names, а также aggregates[i].column_name), то вычислить номера столбцов.
 	  * Сформировать блок - пример результата.

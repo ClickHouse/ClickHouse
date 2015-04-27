@@ -2,6 +2,7 @@
 #include <DB/Storages/MergeTree/MergeTreeBlockInputStream.h>
 #include <DB/Storages/MergeTree/MergedBlockOutputStream.h>
 #include <DB/Storages/MergeTree/DiskSpaceMonitor.h>
+#include <DB/Storages/MergeTree/MergeList.h>
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
 #include <DB/DataStreams/MergingSortedBlockInputStream.h>
 #include <DB/DataStreams/CollapsingSortedBlockInputStream.h>
@@ -390,7 +391,11 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 
 	const String new_part_tmp_path = data.getFullPath() + "tmp_" + merged_name + "/";
 
-	MergedBlockOutputStream to{data, new_part_tmp_path, union_columns, CompressionMethod::LZ4, merged_column_to_size, aio_threshold};
+	auto compression_method = data.context.chooseCompressionMethod(
+		merge_entry->total_size_bytes_compressed,
+		static_cast<double>(merge_entry->total_size_bytes_compressed) / data.getTotalActiveSizeInBytes());
+
+	MergedBlockOutputStream to{data, new_part_tmp_path, union_columns, compression_method, merged_column_to_size, aio_threshold};
 
 	merged_stream->readPrefix();
 	to.writePrefix();

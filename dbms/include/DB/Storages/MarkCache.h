@@ -1,5 +1,7 @@
 #pragma once
 
+#include <memory>
+
 #include <DB/Common/LRUCache.h>
 #include <DB/Common/ProfileEvents.h>
 #include <DB/Common/SipHash.h>
@@ -79,6 +81,6 @@ public:
 	}
 };
 
-typedef Poco::SharedPtr<MarkCache> MarkCachePtr;
+typedef std::shared_ptr<MarkCache> MarkCachePtr;
 
 }

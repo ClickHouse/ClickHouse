@@ -49,6 +49,9 @@ public:
 		return res.str();
 	}
 
+	/// Берёт totals только из основного источника, а не из источников подзапросов.
+	const Block & getTotals() override;
+
 protected:
 	Block readImpl() override;
 

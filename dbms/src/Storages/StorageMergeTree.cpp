@@ -1,8 +1,10 @@
 #include <DB/Storages/StorageMergeTree.h>
 #include <DB/Storages/MergeTree/MergeTreeBlockOutputStream.h>
 #include <DB/Storages/MergeTree/DiskSpaceMonitor.h>
+#include <DB/Storages/MergeTree/MergeList.h>
 #include <DB/Common/escapeForFileName.h>
 #include <DB/Interpreters/InterpreterAlterQuery.h>
+#include <Poco/DirectoryIterator.h>
 
 namespace DB
 {
@@ -252,12 +254,15 @@ bool StorageMergeTree::canMergeParts(const MergeTreeData::DataPartPtr & left, co
 }
 
 
-void StorageMergeTree::dropPartition(const Field & partition, bool detach, const Settings & settings)
+void StorageMergeTree::dropPartition(const Field & partition, bool detach, bool unreplicated, const Settings & settings)
 {
-	/** TODO В этот момент могут идти мерджи кусков в удаляемой партиции.
-	  * Когда эти мерджи завершатся, то часть данных из удаляемой партиции "оживёт".
-	  * Было бы удобно прерывать все мерджи.
-	  */
+	if (unreplicated)
+		throw Exception("UNREPLICATED option for DROP has meaning only for ReplicatedMergeTree", ErrorCodes::BAD_ARGUMENTS);
+
+	/// Просит завершить мерджи и не позволяет им начаться.
+	/// Это защищает от "оживания" данных за удалённую партицию после завершения мерджа.
+	const MergeTreeMergeBlocker merge_blocker{merger};
+	auto structure_lock = lockStructure(true);
 
 	DayNum_t month = MergeTreeData::getMonthDayNum(partition);
 

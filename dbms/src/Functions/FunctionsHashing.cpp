@@ -17,6 +17,7 @@ void registerFunctionsHashing(FunctionFactory & factory)
 	factory.registerFunction<FunctionCityHash64>();
 	factory.registerFunction<FunctionIntHash32>();
 	factory.registerFunction<FunctionIntHash64>();
+	factory.registerFunction<FunctionURLHash>();
 }
 
 }

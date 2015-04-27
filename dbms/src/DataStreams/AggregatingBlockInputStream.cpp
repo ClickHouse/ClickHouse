@@ -13,6 +13,10 @@ Block AggregatingBlockInputStream::readImpl()
 	{
 		executed = true;
 		AggregatedDataVariants data_variants;
+
+		Aggregator::CancellationHook hook = [&]() { return this->isCancelled(); };
+		aggregator.setCancellationHook(hook);
+
 		aggregator.execute(children.back(), data_variants);
 		blocks = aggregator.convertToBlocks(data_variants, final, 1);
 		it = blocks.begin();
