@@ -689,7 +689,8 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	}
 	else
 	{
-		streams.push_back(interpreter_subquery->execute());
+		const auto & subquery_streams = interpreter_subquery->executeWithoutUnion();
+		streams.insert(streams.end(), subquery_streams.begin(), subquery_streams.end());
 	}
 
 	/** Установка ограничений и квоты на чтение данных, скорость и время выполнения запроса.
