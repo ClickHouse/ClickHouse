@@ -6,7 +6,6 @@
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
-#include <DB/Common/VirtualColumnUtils.h>
 
 namespace DB
 {
@@ -53,12 +52,6 @@ BlockInputStreams StorageSystemFunctions::read(
 		column_name.column->insert(it);
 		column_is_aggregate.column->insert(UInt64(1));
 	}
-
-	Block filtered_block{ column_name, column_is_aggregate };
-	VirtualColumnUtils::filterBlockWithQuery(query, filtered_block, context);
-
-	column_name = filtered_block.getByName("name");
-	column_is_aggregate = filtered_block.getByName("is_aggregate");
 
 	return BlockInputStreams{ 1, new OneBlockInputStream{{ column_name, column_is_aggregate }} };
 }

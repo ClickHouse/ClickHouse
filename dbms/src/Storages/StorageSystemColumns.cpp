@@ -46,7 +46,7 @@ BlockInputStreams StorageSystemColumns::read(
 
 		const Databases & databases = context.getDatabases();
 
-		/// Добавим столбец database.
+		/// Добавляем столбец database.
 		ColumnPtr database_column = new ColumnString;
 		for (const auto & database : databases)
 			database_column->insert(database.first);
@@ -60,21 +60,19 @@ BlockInputStreams StorageSystemColumns::read(
 
 		database_column = block.getByName("database").column;
 		size_t rows = database_column->size();
-		IColumn::Offsets_t offsets(rows);
 
-		/// Добавим столбец database.
+		/// Добавляем столбец table.
 		ColumnPtr table_column = new ColumnString;
-
+		IColumn::Offsets_t offsets(rows);
 		for (size_t i = 0; i < rows; ++i)
 		{
-			std::string database_name = (*database_column)[i].get<std::string>();
+			const std::string database_name = (*database_column)[i].get<std::string>();
 			const Tables & tables = databases.at(database_name);
 			offsets[i] = i ? offsets[i - 1] : 0;
 
 			for (const auto & table : tables)
 			{
 				storages.insert(std::make_pair(std::make_pair(database_name, table.first), table.second));
-
 				table_column->insert(table.first);
 				offsets[i] += 1;
 			}
@@ -98,7 +96,7 @@ BlockInputStreams StorageSystemColumns::read(
 	ColumnPtr filtered_database_column = block.getByName("database").column;
 	ColumnPtr filtered_table_column = block.getByName("table").column;
 
-	/// Наконец составим результат.
+	/// Составляем результат.
 	ColumnPtr database_column = new ColumnString;
 	ColumnPtr table_column = new ColumnString;
 	ColumnPtr name_column = new ColumnString;
@@ -109,8 +107,8 @@ BlockInputStreams StorageSystemColumns::read(
 	size_t rows = filtered_database_column->size();
 	for (size_t i = 0; i < rows; ++i)
 	{
-		std::string database_name = (*filtered_database_column)[i].get<std::string>();
-		std::string table_name = (*filtered_table_column)[i].get<std::string>();
+		const std::string database_name = (*filtered_database_column)[i].get<std::string>();
+		const std::string table_name = (*filtered_table_column)[i].get<std::string>();
 
 		NamesAndTypesList columns;
 		ColumnDefaults column_defaults;
