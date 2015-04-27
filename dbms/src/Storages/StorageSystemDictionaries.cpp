@@ -10,6 +10,7 @@
 #include <DB/Dictionaries/IDictionary.h>
 #include <DB/Dictionaries/IDictionarySource.h>
 #include <DB/Dictionaries/DictionaryStructure.h>
+#include <DB/Interpreters/ExternalDictionaries.h>
 #include <statdaemons/ext/map.hpp>
 #include <mutex>
 

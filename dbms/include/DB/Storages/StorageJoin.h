@@ -12,7 +12,7 @@ namespace DB
   *  а также записаны в файл-бэкап, для восстановления после перезапуска.
   * Чтение из таблицы напрямую невозможно - возможно лишь указание в правой части JOIN.
   *
-  * При использовании, JOIN должен быть соответствующего типа (ANY|ALL LEFT|INNER).
+  * При использовании, JOIN должен быть соответствующего типа (ANY|ALL LEFT|INNER ...).
   */
 class StorageJoin : public StorageSetOrJoinBase
 {
@@ -44,7 +44,7 @@ public:
 
 private:
 	const Names & key_names;
-	ASTJoin::Kind kind;					/// LEFT | INNER
+	ASTJoin::Kind kind;					/// LEFT | INNER ...
 	ASTJoin::Strictness strictness;		/// ANY | ALL
 
 	JoinPtr join;

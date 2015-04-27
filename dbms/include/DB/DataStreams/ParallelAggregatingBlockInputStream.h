@@ -70,6 +70,10 @@ protected:
 		if (!executed)
 		{
 			executed = true;
+
+			Aggregator::CancellationHook hook = [&]() { return this->isCancelled(); };
+			aggregator.setCancellationHook(hook);
+
 			AggregatedDataVariantsPtr data_variants = executeAndMerge();
 
 			if (data_variants)

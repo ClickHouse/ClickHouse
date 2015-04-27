@@ -3,10 +3,13 @@
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string.hpp>
 #include <DB/DataStreams/AsynchronousBlockInputStream.h>
+#include <DB/DataStreams/FormatFactory.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/IO/copyData.h>
 #include <DB/IO/ReadBufferFromIStream.h>
+#include <DB/IO/ReadBufferFromFile.h>
 #include <DB/Storages/StorageMemory.h>
+#include <DB/Client/Connection.h>
 #include <Poco/Net/HTMLForm.h>
 #include <Poco/Net/PartHandler.h>
 #include <Poco/Net/MessageHeader.h>

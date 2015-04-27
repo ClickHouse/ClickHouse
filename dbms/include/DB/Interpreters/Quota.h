@@ -2,6 +2,7 @@
 
 #include <string.h>
 #include <unordered_map>
+#include <memory>
 
 #include <Poco/Timespan.h>
 
@@ -129,7 +130,7 @@ public:
 	{
 		return cont.empty();
 	}
-	
+
 	void initFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config);
 
 	/// Обновляет максимальные значения значениями из quota.
@@ -154,7 +155,7 @@ public:
 	}
 };
 
-typedef Poco::SharedPtr<QuotaForIntervals> QuotaForIntervalsPtr;
+typedef std::shared_ptr<QuotaForIntervals> QuotaForIntervalsPtr;
 
 
 /// Ключ квоты -> квоты за интервалы. Если квота не допускает ключей, то накопленные значения хранятся по ключу 0.

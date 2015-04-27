@@ -9,7 +9,9 @@
 #include <DB/Storages/MergeTree/ActiveDataPartSet.h>
 #include <DB/IO/ReadBufferFromString.h>
 #include <DB/IO/WriteBufferFromFile.h>
+#include <DB/IO/ReadBufferFromFile.h>
 #include <DB/Common/escapeForFileName.h>
+#include <DB/Common/SipHash.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <Poco/RWLock.h>
@@ -301,7 +303,7 @@ public:
 			}
 		}
 
-		/// Вычисляем сумарный размер всей директории со всеми файлами
+		/// Вычисляем суммарный размер всей директории со всеми файлами
 		static size_t calcTotalSize(const String & from)
 		{
 			Poco::File cur(from);
@@ -714,6 +716,10 @@ public:
 	DataParts getDataParts();
 	DataPartsVector getDataPartsVector();
 	DataParts getAllDataParts();
+
+	/** Размер активной части в количестве байт.
+	  */
+	size_t getTotalActiveSizeInBytes();
 
 	/** Максимальное количество кусков в одном месяце.
 	  */

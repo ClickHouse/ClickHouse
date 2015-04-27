@@ -222,8 +222,12 @@ StoragePtr StorageFactory::get(
 			kind = ASTJoin::Kind::Left;
 		else if (kind_str == "inner")
 			kind = ASTJoin::Kind::Inner;
+		else if (kind_str == "right")
+			kind = ASTJoin::Kind::Right;
+		else if (kind_str == "full")
+			kind = ASTJoin::Kind::Full;
 		else
-			throw Exception("Second parameter of storage Join must be LEFT or INNER (without quotes).", ErrorCodes::BAD_ARGUMENTS);
+			throw Exception("Second parameter of storage Join must be LEFT or INNER or RIGHT or FULL (without quotes).", ErrorCodes::BAD_ARGUMENTS);
 
 		Names key_names;
 		key_names.reserve(args.size() - 2);

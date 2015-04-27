@@ -1,5 +1,6 @@
 #include <iostream>
 #include <iomanip>
+#include <thread>
 
 #include <Poco/SharedPtr.h>
 #include <Poco/Stopwatch.h>
@@ -13,6 +14,7 @@
 #include <DB/DataStreams/FilterBlockInputStream.h>
 #include <DB/DataStreams/TabSeparatedRowOutputStream.h>
 #include <DB/DataStreams/ForkBlockInputStreams.h>
+#include <DB/DataStreams/FormatFactory.h>
 #include <DB/DataStreams/copyData.h>
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>

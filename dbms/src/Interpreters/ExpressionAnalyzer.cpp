@@ -22,6 +22,8 @@
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Interpreters/LogicalExpressionsOptimizer.h>
 
+#include <DB/AggregateFunctions/AggregateFunctionFactory.h>
+
 #include <DB/Storages/StorageDistributed.h>
 #include <DB/Storages/StorageMemory.h>
 #include <DB/Storages/StorageSet.h>
@@ -983,7 +985,7 @@ struct ExpressionAnalyzer::ScopeStack
 		return res;
 	}
 
-	const Block & getSampleBlock()
+	const Block & getSampleBlock() const
 	{
 		return stack.back().actions->getSampleBlock();
 	}
@@ -1394,19 +1396,19 @@ void ExpressionAnalyzer::getAggregates(ASTPtr ast, ExpressionActionsPtr & action
 	}
 }
 
-void ExpressionAnalyzer::assertSelect()
+void ExpressionAnalyzer::assertSelect() const
 {
 	if (!select_query)
 		throw Exception("Not a select query", ErrorCodes::LOGICAL_ERROR);
 }
 
-void ExpressionAnalyzer::assertAggregation()
+void ExpressionAnalyzer::assertAggregation() const
 {
 	if (!has_aggregation)
 		throw Exception("No aggregation", ErrorCodes::LOGICAL_ERROR);
 }
 
-void ExpressionAnalyzer::initChain(ExpressionActionsChain & chain, NamesAndTypesList & columns)
+void ExpressionAnalyzer::initChain(ExpressionActionsChain & chain, const NamesAndTypesList & columns) const
 {
 	if (chain.steps.empty())
 	{
@@ -1415,14 +1417,14 @@ void ExpressionAnalyzer::initChain(ExpressionActionsChain & chain, NamesAndTypes
 	}
 }
 
-void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActionsPtr & actions)
+void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActionsPtr & actions) const
 {
 	NameSet result_columns;
-	for (NameToNameMap::iterator it = array_join_result_to_source.begin(); it != array_join_result_to_source.end(); ++it)
+	for (const auto & result_source : array_join_result_to_source)
 	{
-		if (it->first != it->second)
-			actions->add(ExpressionAction::copyColumn(it->second, it->first));
-		result_columns.insert(it->first);
+		if (result_source.first != result_source.second)
+			actions->add(ExpressionAction::copyColumn(result_source.second, result_source.first));
+		result_columns.insert(result_source.first);
 	}
 
 	actions->add(ExpressionAction::arrayJoin(result_columns));
@@ -1445,7 +1447,7 @@ bool ExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & chain, bool on
 	return true;
 }
 
-void ExpressionAnalyzer::addJoinAction(ExpressionActionsPtr & actions, bool only_types)
+void ExpressionAnalyzer::addJoinAction(ExpressionActionsPtr & actions, bool only_types) const
 {
 	if (only_types)
 		actions->add(ExpressionAction::ordinaryJoin(nullptr, columns_added_by_join));
@@ -1641,7 +1643,7 @@ bool ExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain, bool only
 	return true;
 }
 
-void ExpressionAnalyzer::appendProjectResult(DB::ExpressionActionsChain & chain, bool only_types)
+void ExpressionAnalyzer::appendProjectResult(DB::ExpressionActionsChain & chain, bool only_types) const
 {
 	assertSelect();
 
@@ -1701,7 +1703,7 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions(bool project_result)
 
 	ASTs asts;
 
-	if (ASTExpressionList * node = typeid_cast<ASTExpressionList *>(&*ast))
+	if (auto node = typeid_cast<const ASTExpressionList *>(&*ast))
 		asts = node->children;
 	else
 		asts = ASTs(1, ast);
@@ -1745,10 +1747,10 @@ ExpressionActionsPtr ExpressionAnalyzer::getConstActions()
 	return actions;
 }
 
-void ExpressionAnalyzer::getAggregateInfo(Names & key_names, AggregateDescriptions & aggregates)
+void ExpressionAnalyzer::getAggregateInfo(Names & key_names, AggregateDescriptions & aggregates) const
 {
-	for (NamesAndTypesList::iterator it = aggregation_keys.begin(); it != aggregation_keys.end(); ++it)
-		key_names.emplace_back(it->name);
+	for (const auto & name_and_type : aggregation_keys)
+		key_names.emplace_back(name_and_type.name);
 
 	aggregates = aggregate_descriptions;
 }

@@ -11,12 +11,15 @@
 #include <DB/Columns/ColumnString.h>
 
 #include <DB/Interpreters/Context.h>
+#include <DB/Interpreters/Dictionaries.h>
+#include <DB/Interpreters/ExternalDictionaries.h>
 
 #include <DB/Functions/IFunction.h>
-#include <statdaemons/ext/range.hpp>
 #include <DB/Dictionaries/FlatDictionary.h>
 #include <DB/Dictionaries/HashedDictionary.h>
 #include <DB/Dictionaries/CacheDictionary.h>
+
+#include <statdaemons/ext/range.hpp>
 
 
 namespace DB

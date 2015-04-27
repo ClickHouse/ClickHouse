@@ -22,46 +22,49 @@ namespace DB
   * Также реализует ограничение на их количество.
   */
 
+/// Запрос и данные о его выполнении.
+struct ProcessListElement
+{
+	String query;
+	String user;
+	String query_id;
+	Poco::Net::IPAddress ip_address;
+
+	Stopwatch watch;
+
+	Progress progress;
+
+	MemoryTracker memory_tracker;
+
+	bool is_cancelled = false;
+
+
+	ProcessListElement(const String & query_, const String & user_,
+		const String & query_id_, const Poco::Net::IPAddress & ip_address_,
+		size_t max_memory_usage)
+		: query(query_), user(user_), query_id(query_id_), ip_address(ip_address_), memory_tracker(max_memory_usage)
+	{
+		current_memory_tracker = &memory_tracker;
+	}
+
+	~ProcessListElement()
+	{
+		current_memory_tracker = nullptr;
+	}
+
+	bool update(const Progress & value)
+	{
+		progress.incrementPiecewiseAtomically(value);
+		return !is_cancelled;
+	}
+};
+
+
 class ProcessList
 {
 	friend class Entry;
 public:
-	/// Запрос и данные о его выполнении.
-	struct Element
-	{
-		String query;
-		String user;
-		String query_id;
-		Poco::Net::IPAddress ip_address;
-
-		Stopwatch watch;
-
-		Progress progress;
-
-		MemoryTracker memory_tracker;
-
-		bool is_cancelled = false;
-
-
-		Element(const String & query_, const String & user_,
-			const String & query_id_, const Poco::Net::IPAddress & ip_address_,
-			size_t max_memory_usage)
-			: query(query_), user(user_), query_id(query_id_), ip_address(ip_address_), memory_tracker(max_memory_usage)
-		{
-			current_memory_tracker = &memory_tracker;
-		}
-
-		~Element()
-		{
-			current_memory_tracker = nullptr;
-		}
-
-		bool update(const Progress & value)
-		{
-			progress.incrementPiecewiseAtomically(value);
-			return !is_cancelled;
-		}
-	};
+	using Element = ProcessListElement;
 
 	/// list, чтобы итераторы не инвалидировались. NOTE: можно заменить на cyclic buffer, но почти незачем.
 	typedef std::list<Element> Containter;

@@ -51,7 +51,7 @@ public:
 		bool detach = false; /// true для DETACH PARTITION.
 
 		bool part = false; /// true для ATTACH [UNREPLICATED] PART
-		bool unreplicated = false; /// true для ATTACH UNREPLICATED ...
+		bool unreplicated = false; /// true для ATTACH UNREPLICATED, DROP UNREPLICATED ...
 
 		/** Для FETCH PARTITION - путь в ZK к шарду, с которого скачивать партицию.
 		  */
