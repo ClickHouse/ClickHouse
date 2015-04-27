@@ -15,19 +15,50 @@ namespace DB
 {
 
 
-static void writeData(const IDataType & type, const IColumn & column, WriteBuffer & ostr)
+void NativeBlockOutputStream::writeData(const IDataType & type, const ColumnPtr & column, WriteBuffer & ostr, size_t offset, size_t limit)
 {
+	/** Если есть столбцы-константы - то материализуем их.
+	  * (Так как тип данных не умеет сериализовывать/десериализовывать константы.)
+	  */
+	ColumnPtr full_column = column->isConst()
+		? static_cast<const IColumnConst &>(*column).convertToFullColumn()
+		: column;
+
 	/** Для массивов требуется сначала сериализовать смещения, а потом значения.
 	  */
 	if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
 	{
-		type_arr->getOffsetsType()->serializeBinary(*typeid_cast<const ColumnArray &>(column).getOffsetsColumn(), ostr);
+		const ColumnArray & column_array = typeid_cast<const ColumnArray &>(*full_column);
+		type_arr->getOffsetsType()->serializeBinary(*column_array.getOffsetsColumn(), ostr, offset, limit);
 
-		if (!typeid_cast<const ColumnArray &>(column).getData().empty())
-			writeData(*type_arr->getNestedType(), typeid_cast<const ColumnArray &>(column).getData(), ostr);
+		if (!typeid_cast<const ColumnArray &>(*full_column).getData().empty())
+		{
+			const ColumnArray::Offsets_t & offsets = column_array.getOffsets();
+
+			if (offset > offsets.size())
+				return;
+
+			/** offset - с какого массива писать.
+			  * limit - сколько массивов максимум записать, или 0, если писать всё, что есть.
+			  * end - до какого массива заканчивается записываемый кусок.
+			  *
+			  * nested_offset - с какого элемента внутренностей писать.
+			  * nested_limit - сколько элементов внутренностей писать, или 0, если писать всё, что есть.
+			  */
+
+			size_t end = std::min(offset + limit, offsets.size());
+
+			size_t nested_offset = offset ? offsets[offset - 1] : 0;
+			size_t nested_limit = limit
+				? offsets[end - 1] - nested_offset
+				: 0;
+
+			if (limit == 0 || nested_limit)
+				writeData(*type_arr->getNestedType(), typeid_cast<const ColumnArray &>(*full_column).getDataPtr(), ostr, nested_offset, nested_limit);
+		}
 	}
 	else
-		type.serializeBinary(column, ostr);
+		type.serializeBinary(*full_column, ostr, offset, limit);
 }
 
 
@@ -54,15 +85,7 @@ void NativeBlockOutputStream::write(const Block & block)
 		writeStringBinary(column.type->getName(), ostr);
 
 		/// Данные
-
-		/** Если есть столбцы-константы - то материализуем их.
-		  * (Так как тип данных не умеет сериализовывать/десериализовывать константы.)
-		  */
-		ColumnPtr col = column.column->isConst()
-			? static_cast<const IColumnConst &>(*column.column).convertToFullColumn()
-			: column.column;
-
-		writeData(*column.type, *col, ostr);
+		writeData(*column.type, column.column, ostr, 0, 0);
 	}
 }
 

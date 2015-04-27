@@ -20,6 +20,8 @@
 #include <DB/Common/HashTable/Hash.h>
 #include <DB/Functions/IFunction.h>
 
+#include <statdaemons/ext/range.hpp>
+
 #include <stats/IntHash.h>
 
 
@@ -599,6 +601,215 @@ public:
 			else
 				executeAny<false>(from_type, icolumn, vec_to);
 		}
+	}
+};
+
+
+struct URLHashImpl
+{
+	static UInt64 apply(const char * data, const std::size_t size)
+	{
+		/// do not take last slash, '?' or '#' character into account
+		if (size > 0 && (data[size - 1] == '/' || data[size - 1] == '?' || data[size - 1] == '#'))
+			return CityHash64(data, size - 1);
+
+		return CityHash64(data, size);
+	}
+};
+
+
+struct URLHierarchyHashImpl
+{
+	static std::size_t findLevelLength(const UInt64 level, const char * begin, const char * const end)
+	{
+		auto pos = begin;
+
+		/// Распарсим всё, что идёт до пути
+
+		/// Предположим, что протокол уже переведён в нижний регистр.
+		while (pos < end && ((*pos > 'a' && *pos < 'z') || (*pos > '0' && *pos < '9')))
+			++pos;
+
+		/** Будем вычислять иерархию только для URL-ов, в которых есть протокол, и после него идут два слеша.
+		*	(http, file - подходят, mailto, magnet - не подходят), и после двух слешей ещё хоть что-нибудь есть
+		*	Для остальных просто вернём полный URL как единственный элемент иерархии.
+		*/
+		if (pos == begin || pos == end || !(*pos++ == ':' && pos < end && *pos++ == '/' && pos < end && *pos++ == '/' && pos < end))
+		{
+			pos = end;
+			return 0 == level ? pos - begin : 0;
+		}
+
+		/// Доменом для простоты будем считать всё, что после протокола и двух слешей, до следующего слеша или до ? или до #
+		while (pos < end && !(*pos == '/' || *pos == '?' || *pos == '#'))
+			++pos;
+
+		if (pos != end)
+			++pos;
+
+		if (0 == level)
+			return pos - begin;
+
+		UInt64 current_level = 0;
+
+		while (current_level != level && pos < end)
+		{
+			/// Идём до следующего / или ? или #, пропуская все те, что вначале.
+			while (pos < end && (*pos == '/' || *pos == '?' || *pos == '#'))
+				++pos;
+			if (pos == end)
+				break;
+			while (pos < end && !(*pos == '/' || *pos == '?' || *pos == '#'))
+				++pos;
+
+			if (pos != end)
+				++pos;
+
+			++current_level;
+		}
+
+		return current_level == level ? pos - begin : 0;
+	}
+
+	static UInt64 apply(const UInt64 level, const char * data, const std::size_t size)
+	{
+		return URLHashImpl::apply(data, findLevelLength(level, data, data + size));
+	}
+};
+
+
+class FunctionURLHash : public IFunction
+{
+public:
+	static constexpr auto name = "URLHash";
+	static IFunction * create(const Context &) { return new FunctionURLHash; }
+
+	String getName() const override { return name; }
+
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	{
+		const auto arg_count = arguments.size();
+		if (arg_count != 1 && arg_count != 2)
+			throw Exception{
+				"Number of arguments for function " + getName() + " doesn't match: passed " +
+					toString(arg_count) + ", should be 1 or 2.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
+			};
+
+		const auto first_arg = arguments.front().get();
+		if (!typeid_cast<const DataTypeString *>(first_arg))
+			throw Exception{
+				"Illegal type " + first_arg->getName() + " of argument of function " + getName(),
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+			};
+		
+		if (arg_count == 2)
+		{
+			const auto second_arg = arguments.back().get();
+			if (!typeid_cast<const DataTypeUInt8 *>(second_arg) &&
+				!typeid_cast<const DataTypeUInt16 *>(second_arg) &&
+				!typeid_cast<const DataTypeUInt32 *>(second_arg) &&
+				!typeid_cast<const DataTypeUInt64 *>(second_arg) &&
+				!typeid_cast<const DataTypeInt8 *>(second_arg) &&
+				!typeid_cast<const DataTypeInt16 *>(second_arg) &&
+				!typeid_cast<const DataTypeInt32 *>(second_arg) &&
+				!typeid_cast<const DataTypeInt64 *>(second_arg))
+				throw Exception{
+					"Illegal type " + second_arg->getName() + " of argument of function " + getName(),
+					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+				};
+		}
+
+		return new DataTypeUInt64;
+	}
+
+	void execute(Block & block, const ColumnNumbers & arguments, const size_t result)
+	{
+		const auto arg_count = arguments.size();
+
+		if (arg_count == 1)
+			executeSingleArg(block, arguments, result);
+		else if (arg_count == 2)
+			executeTwoArgs(block, arguments, result);
+		else
+			throw std::logic_error{"got into IFunction::execute with unexpected number of arguments"};
+	}
+
+private:
+	void executeSingleArg(Block & block, const ColumnNumbers & arguments, const std::size_t result) const
+	{
+		const auto col_untyped = block.getByPosition(arguments.front()).column.get();
+
+		if (const auto col_from = typeid_cast<const ColumnString *>(col_untyped))
+		{
+			const auto size = col_from->size();
+			const auto col_to = new ColumnVector<UInt64>{size};
+			block.getByPosition(result).column = col_to;
+
+			const auto & chars = col_from->getChars();
+			const auto & offsets = col_from->getOffsets();
+			auto & out = col_to->getData();
+
+			for (const auto i : ext::range(0, size))
+				out[i] = URLHashImpl::apply(
+					reinterpret_cast<const char *>(&chars[i == 0 ? 0 : offsets[i - 1]]),
+					i == 0 ? offsets[i] - 1 : (offsets[i] - 1 - offsets[i - 1]));
+		}
+		else if (const auto col_from = typeid_cast<const ColumnConstString *>(col_untyped))
+		{
+			block.getByPosition(result).column = new ColumnConstUInt64{
+				col_from->size(),
+				URLHashImpl::apply(col_from->getData().data(), col_from->getData().size())
+			};
+		}
+		else
+			throw Exception{
+				"Illegal column " + block.getByPosition(arguments[0]).column->getName() +
+				" of argument of function " + getName(),
+				ErrorCodes::ILLEGAL_COLUMN
+			};
+	}
+
+	void executeTwoArgs(Block & block, const ColumnNumbers & arguments, const std::size_t result) const
+	{
+		const auto level_col = block.getByPosition(arguments.back()).column.get();
+		if (!level_col->isConst())
+			throw Exception{
+				"Second argument of function " + getName() + " must be an integral constant",
+				ErrorCodes::ILLEGAL_COLUMN
+			};
+
+		const auto level = level_col->get64(0);
+
+		const auto col_untyped = block.getByPosition(arguments.front()).column.get();
+		if (const auto col_from = typeid_cast<const ColumnString *>(col_untyped))
+		{
+			const auto size = col_from->size();
+			const auto col_to = new ColumnVector<UInt64>{size};
+			block.getByPosition(result).column = col_to;
+
+			const auto & chars = col_from->getChars();
+			const auto & offsets = col_from->getOffsets();
+			auto & out = col_to->getData();
+
+			for (const auto i : ext::range(0, size))
+				out[i] = URLHierarchyHashImpl::apply(level,
+					reinterpret_cast<const char *>(&chars[i == 0 ? 0 : offsets[i - 1]]),
+					i == 0 ? offsets[i] - 1 : (offsets[i] - 1 - offsets[i - 1]));
+		}
+		else if (const auto col_from = typeid_cast<const ColumnConstString *>(col_untyped))
+		{
+			block.getByPosition(result).column = new ColumnConstUInt64{
+				col_from->size(),
+				URLHierarchyHashImpl::apply(level, col_from->getData().data(), col_from->getData().size())
+			};
+		}
+		else
+			throw Exception{
+				"Illegal column " + block.getByPosition(arguments[0]).column->getName() +
+				" of argument of function " + getName(),
+				ErrorCodes::ILLEGAL_COLUMN
+			};
 	}
 };
 

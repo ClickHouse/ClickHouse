@@ -215,7 +215,7 @@ void ExpressionAction::prepare(Block & sample_block)
 
 void ExpressionAction::execute(Block & block) const
 {
-//	std::cerr << "executing: " << toString() << std::endl;
+	std::cerr << "executing: " << toString() << std::endl;
 
 	if (type == REMOVE_COLUMN || type == COPY_COLUMN)
 		if (!block.has(source_name))
@@ -338,6 +338,16 @@ void ExpressionAction::execute(Block & block) const
 			throw Exception("Unknown action type", ErrorCodes::UNKNOWN_ACTION);
 	}
 }
+
+
+void ExpressionAction::executeOnTotals(Block & block) const
+{
+	if (type != JOIN)
+		execute(block);
+	else
+		join->joinTotals(block);
+}
+
 
 std::string ExpressionAction::toString() const
 {
@@ -541,6 +551,38 @@ void ExpressionActions::execute(Block & block) const
 		action.execute(block);
 		checkLimits(block);
 	}
+}
+
+void ExpressionActions::executeOnTotals(Block & block) const
+{
+	/// Если в подзапросе для JOIN-а есть totals, а у нас нет, то возьмём блок со значениями по-умолчанию вместо totals.
+	if (!block)
+	{
+		bool has_totals_in_join = false;
+		for (const auto & action : actions)
+		{
+			if (action.join && action.join->hasTotals())
+			{
+				has_totals_in_join = true;
+				break;
+			}
+		}
+
+		if (has_totals_in_join)
+		{
+			for (const auto & name_and_type : input_columns)
+			{
+				ColumnWithNameAndType elem(name_and_type.type->createColumn(), name_and_type.type, name_and_type.name);
+				elem.column->insertDefault();
+				block.insert(elem);
+			}
+		}
+		else
+			return;	/// Нечего JOIN-ить.
+	}
+
+	for (const auto & action : actions)
+		action.executeOnTotals(block);
 }
 
 std::string ExpressionActions::getSmallestColumn(const NamesAndTypesList & columns)
@@ -830,6 +872,24 @@ void ExpressionActions::optimizeArrayJoin()
 			}
 		}
 	}
+}
+
+
+BlockInputStreamPtr ExpressionActions::createStreamWithNonJoinedDataIfFullOrRightJoin(size_t max_block_size) const
+{
+	for (const auto & action : actions)
+	{
+		if (action.join && (action.join->getKind() == ASTJoin::Full || action.join->getKind() == ASTJoin::Right))
+		{
+			Block left_sample_block;
+			for (const auto & input_elem : input_columns)
+				left_sample_block.insert(ColumnWithNameAndType(nullptr, input_elem.type, input_elem.name));
+
+			return action.join->createStreamWithNonJoinedRows(left_sample_block, max_block_size);
+		}
+	}
+
+	return {};
 }
 
 

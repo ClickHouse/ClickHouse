@@ -63,7 +63,8 @@ public:
 	 */
 	BlockInputStreamPtr execute();
 
-	/// Выполнить запрос без объединения потоков.
+	/** Выполнить запрос без объединения потоков, если это возможно.
+	 */
 	const BlockInputStreams & executeWithoutUnion();
 
 	/** Выполнить запрос, записать результат в нужном формате в buf.
@@ -122,6 +123,8 @@ private:
 	void executeDistinct(                BlockInputStreams & streams, bool before_order, Names columns);
 	void executeSubqueriesInSetsAndJoins(BlockInputStreams & streams, SubqueriesForSets & subqueries_for_sets);
 
+	void ignoreWithTotals() { query.group_by_with_totals = false; }
+
 	ASTPtr query_ptr;
 	ASTSelectQuery & query;
 	Context context;
@@ -141,6 +144,9 @@ private:
 	/// Таблица, откуда читать данные, если не подзапрос.
 	StoragePtr storage;
 	IStorage::TableStructureReadLockPtr table_lock;
+
+	/// Выполнить объединение потоков внутри запроса SELECT?
+	bool union_within_single_query = false;
 
 	Logger * log;
 };

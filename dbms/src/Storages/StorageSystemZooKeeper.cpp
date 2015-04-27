@@ -7,6 +7,7 @@
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTLiteral.h>
+#include <zkutil/ZooKeeper.h>
 
 
 namespace DB

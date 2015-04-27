@@ -9,6 +9,7 @@
 #include <DB/Common/escapeForFileName.h>
 #include <DB/DataTypes/DataTypeNested.h>
 #include <DB/DataTypes/DataTypeArray.h>
+#include <DB/DataStreams/IBlockOutputStream.h>
 
 
 namespace DB
@@ -44,7 +45,7 @@ protected:
 			size_t estimated_size,
 			size_t aio_threshold) :
 			escaped_column_name(escaped_column_name_),
-			plain_file(createWriteBufferFromFileBase(data_path, estimated_size, aio_threshold, max_compress_block_size, O_TRUNC | O_CREAT | O_WRONLY)),
+			plain_file(createWriteBufferFromFileBase(data_path, estimated_size, aio_threshold, max_compress_block_size)),
 			plain_hashing(*plain_file), compressed_buf(plain_hashing, compression_method), compressed(compressed_buf),
 			marks_file(marks_path, 4096, O_TRUNC | O_CREAT | O_WRONLY), marks(marks_file) {}
 

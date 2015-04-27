@@ -14,7 +14,7 @@ using Poco::SharedPtr;
 
 /** Выполняет над блоком вычисление некоторого выражения.
   * Выражение состоит из идентификаторов столбцов из блока, констант, обычных функций.
-  * Например: hits * 2 + 3, instr("yandex", url)
+  * Например: hits * 2 + 3, url LIKE '%yandex%'
   * Выражение не меняет количество строк в потоке, и обрабатывает каждую строку независимо от других.
   */
 class ExpressionBlockInputStream : public IProfilingBlockInputStream
@@ -40,9 +40,7 @@ public:
 		if (IProfilingBlockInputStream * child = dynamic_cast<IProfilingBlockInputStream *>(&*children.back()))
 		{
 			totals = child->getTotals();
-
-			if (totals)
-				expression->execute(totals);
+			expression->executeOnTotals(totals);
 		}
 
 		return totals;

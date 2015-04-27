@@ -4,6 +4,7 @@
 #include <DB/Dictionaries/IDictionarySource.h>
 #include <DB/Dictionaries/DictionaryStructure.h>
 #include <DB/Columns/ColumnString.h>
+#include <DB/Common/Arena.h>
 #include <statdaemons/ext/range.hpp>
 #include <vector>
 #include <tuple>

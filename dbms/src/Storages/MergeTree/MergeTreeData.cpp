@@ -16,9 +16,11 @@
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/Common/localBackup.h>
 #include <DB/Functions/FunctionFactory.h>
+#include <Poco/DirectoryIterator.h>
 
 #include <algorithm>
 #include <iomanip>
+#include <thread>
 
 
 
@@ -898,6 +900,17 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector()
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 
 	return DataPartsVector(std::begin(data_parts), std::end(data_parts));
+}
+
+size_t MergeTreeData::getTotalActiveSizeInBytes()
+{
+	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
+
+	size_t res = 0;
+	for (auto & part : data_parts)
+		res += part->size_in_bytes;
+
+	return res;
 }
 
 MergeTreeData::DataParts MergeTreeData::getAllDataParts()

@@ -1,4 +1,5 @@
 #include "InterserverIOHTTPHandler.h"
+#include <DB/Interpreters/InterserverIOHandler.h>
 #include <DB/IO/WriteBufferFromHTTPServerResponse.h>
 #include <DB/IO/CompressedWriteBuffer.h>
 

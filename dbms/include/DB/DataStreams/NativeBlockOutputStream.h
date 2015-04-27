@@ -21,6 +21,8 @@ public:
 	void write(const Block & block) override;
 	void flush() override { ostr.next(); }
 
+	static void writeData(const IDataType & type, const ColumnPtr & column, WriteBuffer & ostr, size_t offset, size_t limit);
+
 private:
 	WriteBuffer & ostr;
 	UInt64 client_revision;
