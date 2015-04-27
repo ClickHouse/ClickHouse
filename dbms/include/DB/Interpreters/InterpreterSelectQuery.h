@@ -63,12 +63,9 @@ public:
 	 */
 	BlockInputStreamPtr execute();
 
-	/** Выполнить запрос без объединения потоков.
-	 *  Если force_no_union = false, выполнить объединения, которые не могут быть отложены до оформления окончательного результата.
-	 *  Если же force_no_union = true, не выполнять никаких объединений. Это позволяет оптимизировать запросы, в которых таблица
-	 *  является представлением.
+	/** Выполнить запрос без объединения потоков, если это возможно.
 	 */
-	const BlockInputStreams & executeWithoutUnion(bool force_no_union);
+	const BlockInputStreams & executeWithoutUnion();
 
 	/** Выполнить запрос, записать результат в нужном формате в buf.
 	 * BlockInputStreamPtr возвращается, чтобы можно было потом получить информацию о плане выполнения запроса.
@@ -126,6 +123,8 @@ private:
 	void executeDistinct(                BlockInputStreams & streams, bool before_order, Names columns);
 	void executeSubqueriesInSetsAndJoins(BlockInputStreams & streams, SubqueriesForSets & subqueries_for_sets);
 
+	void ignoreWithTotals() { query.group_by_with_totals = false; }
+
 	ASTPtr query_ptr;
 	ASTSelectQuery & query;
 	Context context;
@@ -146,8 +145,8 @@ private:
 	StoragePtr storage;
 	IStorage::TableStructureReadLockPtr table_lock;
 
-	/// См. описание функции executeWithoutUnion().
-	bool force_no_union = false;
+	/// Выполнить объединение потоков внутри запроса SELECT?
+	bool union_within_single_query = false;
 
 	Logger * log;
 };
