@@ -1000,31 +1000,23 @@ public:
 		if (!array_from && !array_to)
 			throw Exception("Second and third arguments of function " + getName() + " must be constant arrays.", ErrorCodes::ILLEGAL_COLUMN);
 
-		prepare(array_from->getData(), array_to->getData());
-
-		/// Задано ли значение по-умолчанию.
-		Field default_value;
-		if (arguments.size() == 4)
-		{
-			const IColumnConst * default_col = dynamic_cast<const IColumnConst *>(&*block.getByPosition(arguments[3]).column);
-			default_value = (*default_col)[0];
-		}
+		prepare(array_from->getData(), array_to->getData(), block, arguments);
 
 		const auto in = block.getByPosition(arguments.front()).column.get();
 		auto column_result = block.getByPosition(result).type->createColumn();
 		auto out = column_result.get();
 
-		if (!executeNum<UInt8>(in, out, default_value)
-			&& !executeNum<UInt16>(in, out, default_value)
-			&& !executeNum<UInt32>(in, out, default_value)
-			&& !executeNum<UInt64>(in, out, default_value)
-			&& !executeNum<Int8>(in, out, default_value)
-			&& !executeNum<Int16>(in, out, default_value)
-			&& !executeNum<Int32>(in, out, default_value)
-			&& !executeNum<Int64>(in, out, default_value)
-			&& !executeNum<Float32>(in, out, default_value)
-			&& !executeNum<Float64>(in, out, default_value)
-			&& !executeString(in, out, default_value))
+		if (!executeNum<UInt8>(in, out)
+			&& !executeNum<UInt16>(in, out)
+			&& !executeNum<UInt32>(in, out)
+			&& !executeNum<UInt64>(in, out)
+			&& !executeNum<Int8>(in, out)
+			&& !executeNum<Int16>(in, out)
+			&& !executeNum<Int32>(in, out)
+			&& !executeNum<Int64>(in, out)
+			&& !executeNum<Float32>(in, out)
+			&& !executeNum<Float64>(in, out)
+			&& !executeString(in, out))
 			throw Exception(
 				"Illegal column " + in->getName() + " of first argument of function " + getName(),
 				ErrorCodes::ILLEGAL_COLUMN);
@@ -1033,7 +1025,7 @@ public:
 	}
 
 	template <typename T>
-	bool executeNum(const IColumn * in_untyped, IColumn * out_untyped, const Field & default_value)
+	bool executeNum(const IColumn * in_untyped, IColumn * out_untyped)
 	{
 		if (const auto in = typeid_cast<const ColumnVector<T> *>(in_untyped))
 		{
@@ -1050,17 +1042,17 @@ public:
 			}
 			else
 			{
-				if (!executeNumToNumWithDefault<T, UInt8>(in, out_untyped, default_value)
-					&& !executeNumToNumWithDefault<T, UInt16>(in, out_untyped, default_value)
-					&& !executeNumToNumWithDefault<T, UInt32>(in, out_untyped, default_value)
-					&& !executeNumToNumWithDefault<T, UInt64>(in, out_untyped, default_value)
-					&& !executeNumToNumWithDefault<T, Int8>(in, out_untyped, default_value)
-					&& !executeNumToNumWithDefault<T, Int16>(in, out_untyped, default_value)
-					&& !executeNumToNumWithDefault<T, Int32>(in, out_untyped, default_value)
-					&& !executeNumToNumWithDefault<T, Int64>(in, out_untyped, default_value)
-					&& !executeNumToNumWithDefault<T, Float32>(in, out_untyped, default_value)
-					&& !executeNumToNumWithDefault<T, Float64>(in, out_untyped, default_value)
-					&& !executeNumToString<T>(in, out_untyped, default_value))
+				if (!executeNumToNumWithDefault<T, UInt8>(in, out_untyped)
+					&& !executeNumToNumWithDefault<T, UInt16>(in, out_untyped)
+					&& !executeNumToNumWithDefault<T, UInt32>(in, out_untyped)
+					&& !executeNumToNumWithDefault<T, UInt64>(in, out_untyped)
+					&& !executeNumToNumWithDefault<T, Int8>(in, out_untyped)
+					&& !executeNumToNumWithDefault<T, Int16>(in, out_untyped)
+					&& !executeNumToNumWithDefault<T, Int32>(in, out_untyped)
+					&& !executeNumToNumWithDefault<T, Int64>(in, out_untyped)
+					&& !executeNumToNumWithDefault<T, Float32>(in, out_untyped)
+					&& !executeNumToNumWithDefault<T, Float64>(in, out_untyped)
+					&& !executeNumToString<T>(in, out_untyped))
 				throw Exception(
 					"Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
 					ErrorCodes::ILLEGAL_COLUMN);
@@ -1078,21 +1070,21 @@ public:
 		return false;
 	}
 
-	bool executeString(const IColumn * in_untyped, IColumn * out_untyped, const Field & default_value)
+	bool executeString(const IColumn * in_untyped, IColumn * out_untyped)
 	{
 		if (const auto in = typeid_cast<const ColumnString *>(in_untyped))
 		{
-			if (!executeStringToNum<UInt8>(in, out_untyped, default_value)
-				&& !executeStringToNum<UInt16>(in, out_untyped, default_value)
-				&& !executeStringToNum<UInt32>(in, out_untyped, default_value)
-				&& !executeStringToNum<UInt64>(in, out_untyped, default_value)
-				&& !executeStringToNum<Int8>(in, out_untyped, default_value)
-				&& !executeStringToNum<Int16>(in, out_untyped, default_value)
-				&& !executeStringToNum<Int32>(in, out_untyped, default_value)
-				&& !executeStringToNum<Int64>(in, out_untyped, default_value)
-				&& !executeStringToNum<Float32>(in, out_untyped, default_value)
-				&& !executeStringToNum<Float64>(in, out_untyped, default_value)
-				&& !executeStringToString(in, out_untyped, default_value))
+			if (!executeStringToNum<UInt8>(in, out_untyped)
+				&& !executeStringToNum<UInt16>(in, out_untyped)
+				&& !executeStringToNum<UInt32>(in, out_untyped)
+				&& !executeStringToNum<UInt64>(in, out_untyped)
+				&& !executeStringToNum<Int8>(in, out_untyped)
+				&& !executeStringToNum<Int16>(in, out_untyped)
+				&& !executeStringToNum<Int32>(in, out_untyped)
+				&& !executeStringToNum<Int64>(in, out_untyped)
+				&& !executeStringToNum<Float32>(in, out_untyped)
+				&& !executeStringToNum<Float64>(in, out_untyped)
+				&& !executeStringToString(in, out_untyped))
 			throw Exception(
 				"Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
 				ErrorCodes::ILLEGAL_COLUMN);
@@ -1110,7 +1102,7 @@ public:
 	}
 
 	template <typename T, typename U>
-	bool executeNumToNumWithDefault(const ColumnVector<T> * in, IColumn * out_untyped, const Field & default_value)
+	bool executeNumToNumWithDefault(const ColumnVector<T> * in, IColumn * out_untyped)
 	{
 		auto out = typeid_cast<ColumnVector<U> *>(out_untyped);
 		if (!out)
@@ -1121,7 +1113,7 @@ public:
 	}
 
 	template <typename T>
-	bool executeNumToString(const ColumnVector<T> * in, IColumn * out_untyped, const Field & default_value)
+	bool executeNumToString(const ColumnVector<T> * in, IColumn * out_untyped)
 	{
 		auto out = typeid_cast<ColumnString *>(out_untyped);
 		if (!out)
@@ -1134,7 +1126,7 @@ public:
 	}
 
 	template <typename U>
-	bool executeStringToNum(const ColumnString * in, IColumn * out_untyped, const Field & default_value)
+	bool executeStringToNum(const ColumnString * in, IColumn * out_untyped)
 	{
 		auto out = typeid_cast<ColumnVector<U> *>(out_untyped);
 		if (!out)
@@ -1144,7 +1136,7 @@ public:
 		return true;
 	}
 
-	bool executeStringToString(const ColumnString * in, IColumn * out_untyped, const Field & default_value)
+	bool executeStringToString(const ColumnString * in, IColumn * out_untyped)
 	{
 		auto out = typeid_cast<ColumnString *>(out_untyped);
 		if (!out)
@@ -1275,11 +1267,13 @@ private:
 
 	Arena string_pool;
 
+	Field default_value;	/// Null, если не задано.
+
 	bool prepared = false;
 	std::mutex mutex;
 
 	/// Может вызываться из разных потоков. Срабатывает только при первом вызове.
-	void prepare(const Array & from, const Array & to)
+	void prepare(const Array & from, const Array & to, Block & block, const ColumnNumbers & arguments)
 	{
 		if (prepared)
 			return;
@@ -1296,6 +1290,30 @@ private:
 		if (from.size() != to.size())
 			throw Exception("Second and third arguments of function " + getName() + " must be arrays of same size", ErrorCodes::BAD_ARGUMENTS);
 
+		Array converted_to;
+		const Array * used_to = &to;
+
+		/// Задано ли значение по-умолчанию.
+
+		if (arguments.size() == 4)
+		{
+			const IColumnConst * default_col = dynamic_cast<const IColumnConst *>(&*block.getByPosition(arguments[3]).column);
+			default_value = (*default_col)[0];
+
+			/// Нужно ли преобразовать элементы to и default_value к наименьшему общему типу, который является Float64?
+			if (default_value.getType() == Field::Types::Float64 && to[0].getType() != Field::Types::Float64)
+			{
+				converted_to.resize(to.size());
+				for (size_t i = 0, size = to.size(); i < size; ++i)
+					converted_to[i] = apply_visitor(FieldVisitorConvertToNumber<Float64>(), to[i]);
+				used_to = &converted_to;
+			}
+			else if (default_value.getType() != Field::Types::Float64 && to[0].getType() == Field::Types::Float64)
+			{
+				default_value = apply_visitor(FieldVisitorConvertToNumber<Float64>(), default_value);
+			}
+		}
+
 		/// Замечание: не делается проверка дубликатов в массиве from.
 
 		if (from[0].getType() != Field::Types::String && to[0].getType() != Field::Types::String)
@@ -1303,7 +1321,7 @@ private:
 			table_num_to_num.reset(new NumToNum);
 			auto & table = *table_num_to_num;
 			for (size_t i = 0; i < size; ++i)
-				table[from[i].get<UInt64>()] = to[i].get<UInt64>();
+				table[from[i].get<UInt64>()] = (*used_to)[i].get<UInt64>();
 		}
 		else if (from[0].getType() != Field::Types::String && to[0].getType() == Field::Types::String)
 		{
@@ -1324,7 +1342,7 @@ private:
 			{
 				const String & str_from = from[i].get<const String &>();
 				StringRef ref{string_pool.insert(str_from.data(), str_from.size() + 1), str_from.size() + 1};
-				table[ref] = to[i].get<UInt64>();
+				table[ref] = (*used_to)[i].get<UInt64>();
 			}
 		}
 		else if (from[0].getType() == Field::Types::String && to[0].getType() == Field::Types::String)
