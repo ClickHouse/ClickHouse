@@ -1277,7 +1277,7 @@ private:
 
 		const size_t size = from.size();
 		if (0 == size)
-			return;
+			throw Exception("Empty arrays are illegal in function " + getName(), ErrorCodes::BAD_ARGUMENTS);
 
 		std::lock_guard<std::mutex> lock(mutex);
 
@@ -1285,7 +1285,7 @@ private:
 			return;
 
 		if (from.size() != to.size())
-			throw Exception("Second and third arguments of function " + getName() + " must be arrays of same size.", ErrorCodes::BAD_ARGUMENTS);
+			throw Exception("Second and third arguments of function " + getName() + " must be arrays of same size", ErrorCodes::BAD_ARGUMENTS);
 
 		/// Замечание: не делается проверка дубликатов в массиве from.
 
