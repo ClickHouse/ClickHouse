@@ -337,6 +337,8 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
 	factory.registerFunction<FunctionIsFinite>();
 	factory.registerFunction<FunctionIsInfinite>();
 	factory.registerFunction<FunctionIsNaN>();
+
+	factory.registerFunction<FunctionTransform>();
 }
 
 }
