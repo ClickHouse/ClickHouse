@@ -5,35 +5,19 @@
 #include <DB/Parsers/ASTCreateQuery.h>
 #include <DB/Parsers/ParserCreateQuery.h>
 #include <DB/Parsers/formatAST.h>
+#include <DB/Parsers/parseQuery.h>
 
 
 int main(int argc, char ** argv)
 {
 	using namespace DB;
-	
-	ParserCreateQuery parser;
-	ASTPtr ast;
+
 	std::string input = "CREATE TABLE hits (URL String, UserAgentMinor2 FixedString(2), EventTime DateTime) ENGINE = Log";
-	Expected expected = "";
+	ParserCreateQuery parser;
+	ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "");
 
-	const char * begin = input.data();
-	const char * end = begin + input.size();
-	const char * pos = begin;
-
-	if (parser.parse(pos, end, ast, expected))
-	{
-		std::cout << "Success." << std::endl;
-		formatAST(*ast, std::cout);
-		std::cout << std::endl;
-
-		std::cout << std::endl << ast->getTreeID() << std::endl;
-	}
-	else
-	{
-		std::cout << "Failed at position " << (pos - begin) << ": "
-			<< mysqlxx::quote << input.substr(pos - begin, 10)
-			<< ", expected " << expected << "." << std::endl;
-	}
+	formatAST(*ast, std::cerr);
+	std::cerr << std::endl;
 
 	return 0;
 }

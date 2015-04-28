@@ -10,6 +10,7 @@
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeCleanupThread.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeRestartingThread.h>
 #include <DB/Storages/MergeTree/AbandonableLockInZooKeeper.h>
+#include <DB/Storages/MergeTree/BackgroundProcessingPool.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <zkutil/ZooKeeper.h>
 #include <zkutil/LeaderElection.h>
@@ -83,11 +84,11 @@ public:
 
 	BlockOutputStreamPtr write(ASTPtr query) override;
 
-	bool optimize() override;
+	bool optimize(const Settings & settings) override;
 
 	void alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context) override;
 
-	void dropPartition(const Field & partition, bool detach, const Settings & settings) override;
+	void dropPartition(const Field & partition, bool detach, bool unreplicated, const Settings & settings) override;
 	void attachPartition(const Field & partition, bool unreplicated, bool part, const Settings & settings) override;
 	void fetchPartition(const Field & partition, const String & from, const Settings & settings) override;
 	void freezePartition(const Field & partition, const Settings & settings) override;
@@ -133,6 +134,8 @@ public:
 	void getStatus(Status & res, bool with_zk_fields = true);
 
 private:
+	void dropUnreplicatedPartition(const Field & partition, const Settings & settings);
+
 	friend class ReplicatedMergeTreeBlockOutputStream;
 	friend class ReplicatedMergeTreeRestartingThread;
 	friend class ReplicatedMergeTreeCleanupThread;
@@ -387,7 +390,6 @@ private:
 	/** Дождаться, пока указанная реплика выполнит указанное действие из лога.
 	  */
 	void waitForReplicaToProcessLogEntry(const String & replica_name, const LogEntry & entry);
-
 
 	/// Преобразовать число в строку формате суффиксов автоинкрементных нод в ZooKeeper.
 	static String padIndex(UInt64 index)

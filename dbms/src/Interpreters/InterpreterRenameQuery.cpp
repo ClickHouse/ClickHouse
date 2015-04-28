@@ -11,6 +11,7 @@
 #include <DB/Parsers/ASTCreateQuery.h>
 #include <DB/Parsers/ParserCreateQuery.h>
 #include <DB/Parsers/formatAST.h>
+#include <DB/Parsers/parseQuery.h>
 
 #include <DB/Interpreters/InterpreterRenameQuery.h>
 
@@ -114,7 +115,15 @@ void InterpreterRenameQuery::execute()
 
 		/// Уведомляем таблицу о том, что она переименовывается. Если таблица не поддерживает переименование - кинется исключение.
 		StoragePtr table = context.getTable(elem.from_database_name, elem.from_table_name);
-		table->rename(path + "data/" + elem.to_database_name_escaped + "/", elem.to_database_name, elem.to_table_name);
+		try
+		{
+			table->rename(path + "data/" + elem.to_database_name_escaped + "/", elem.to_database_name,
+				elem.to_table_name);
+		}
+		catch (const Poco::Exception & e)
+		{
+			throw Exception{e};
+		}
 
 		/// Пишем новый файл с метаданными.
 		{
@@ -126,16 +135,7 @@ void InterpreterRenameQuery::execute()
 			}
 
 			ParserCreateQuery parser;
-			const char * pos = create_query.data();
-			const char * end = pos + create_query.size();
-			ASTPtr ast;
-			Expected expected = "";
-			bool parse_res = parser.parse(pos, end, ast, expected);
-
-			/// Распарсенный запрос должен заканчиваться на конец входных данных или на точку с запятой.
-			if (!parse_res || (pos != end && *pos != ';'))
-				throw Exception(getSyntaxErrorMessage(parse_res, create_query.data(), end, pos, expected, "in file " + elem.from_metadata_path),
-					ErrorCodes::SYNTAX_ERROR);
+			ASTPtr ast = parseQuery(parser, create_query.data(), create_query.data() + create_query.size(), "in file " + elem.from_metadata_path);
 
 			typeid_cast<ASTCreateQuery &>(*ast).table = elem.to_table_name;
 

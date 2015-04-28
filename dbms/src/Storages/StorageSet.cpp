@@ -3,6 +3,7 @@
 #include <DB/IO/CompressedReadBuffer.h>
 #include <DB/DataStreams/NativeBlockInputStream.h>
 #include <DB/Common/escapeForFileName.h>
+#include <Poco/DirectoryIterator.h>
 
 
 namespace DB

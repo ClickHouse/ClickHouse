@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DB/IO/createWriteBufferFromFileBase.h>
 #include <DB/IO/WriteBufferFromFile.h>
 #include <DB/IO/CompressedWriteBuffer.h>
 #include <DB/IO/HashingWriteBuffer.h>
@@ -8,6 +9,7 @@
 #include <DB/Common/escapeForFileName.h>
 #include <DB/DataTypes/DataTypeNested.h>
 #include <DB/DataTypes/DataTypeArray.h>
+#include <DB/DataStreams/IBlockOutputStream.h>
 
 
 namespace DB
@@ -19,10 +21,12 @@ public:
 		MergeTreeData & storage_,
 		size_t min_compress_block_size_,
 		size_t max_compress_block_size_,
-		CompressionMethod compression_method_)
+		CompressionMethod compression_method_,
+		size_t aio_threshold_)
 		: storage(storage_),
 		min_compress_block_size(min_compress_block_size_),
 		max_compress_block_size(max_compress_block_size_),
+		aio_threshold(aio_threshold_),
 		compression_method(compression_method_)
 	{
 	}
@@ -37,16 +41,18 @@ protected:
 			const String & data_path,
 			const std::string & marks_path,
 			size_t max_compress_block_size,
-			CompressionMethod compression_method) :
+			CompressionMethod compression_method,
+			size_t estimated_size,
+			size_t aio_threshold) :
 			escaped_column_name(escaped_column_name_),
-			plain_file(data_path, max_compress_block_size, O_TRUNC | O_CREAT | O_WRONLY),
-			plain_hashing(plain_file), compressed_buf(plain_hashing, compression_method), compressed(compressed_buf),
+			plain_file(createWriteBufferFromFileBase(data_path, estimated_size, aio_threshold, max_compress_block_size)),
+			plain_hashing(*plain_file), compressed_buf(plain_hashing, compression_method), compressed(compressed_buf),
 			marks_file(marks_path, 4096, O_TRUNC | O_CREAT | O_WRONLY), marks(marks_file) {}
 
 		String escaped_column_name;
 
 		/// compressed -> compressed_buf -> plain_hashing -> plain_file
-		WriteBufferFromFile plain_file;
+		std::unique_ptr<WriteBufferFromFileBase> plain_file;
 		HashingWriteBuffer plain_hashing;
 		CompressedWriteBuffer compressed_buf;
 		HashingWriteBuffer compressed;
@@ -58,13 +64,13 @@ protected:
 		void finalize()
 		{
 			compressed.next();
-			plain_file.next();
+			plain_file->next();
 			marks.next();
 		}
 
 		void sync()
 		{
-			plain_file.sync();
+			plain_file->sync();
 			marks_file.sync();
 		}
 
@@ -86,7 +92,7 @@ protected:
 
 	using ColumnStreams = std::map<String, std::unique_ptr<ColumnStream>>;
 
-	void addStream(const String & path, const String & name, const IDataType & type, size_t level = 0, String filename = "")
+	void addStream(const String & path, const String & name, const IDataType & type, size_t estimated_size = 0, size_t level = 0, String filename = "")
 	{
 		String escaped_column_name;
 		if (filename.size())
@@ -107,9 +113,11 @@ protected:
 				path + escaped_size_name + ".bin",
 				path + escaped_size_name + ".mrk",
 				max_compress_block_size,
-				compression_method));
+				compression_method,
+				estimated_size,
+				aio_threshold));
 
-			addStream(path, name, *type_arr->getNestedType(), level + 1);
+			addStream(path, name, *type_arr->getNestedType(), estimated_size, level + 1);
 		}
 		else
 			column_streams[name].reset(new ColumnStream(
@@ -117,7 +125,9 @@ protected:
 				path + escaped_column_name + ".bin",
 				path + escaped_column_name + ".mrk",
 				max_compress_block_size,
-				compression_method));
+				compression_method,
+				estimated_size,
+				aio_threshold));
 	}
 
 
@@ -215,6 +225,8 @@ protected:
 	size_t min_compress_block_size;
 	size_t max_compress_block_size;
 
+	size_t aio_threshold;
+
 	CompressionMethod compression_method;
 };
 
@@ -230,19 +242,40 @@ public:
 		CompressionMethod compression_method)
 		: IMergedBlockOutputStream(
 			storage_, storage_.context.getSettings().min_compress_block_size,
-			storage_.context.getSettings().max_compress_block_size, compression_method),
+			storage_.context.getSettings().max_compress_block_size, compression_method,
+			storage_.context.getSettings().min_bytes_to_use_direct_io),
 		columns_list(columns_list_), part_path(part_path_)
 	{
-		Poco::File(part_path).createDirectories();
-
-		if (storage.mode != MergeTreeData::Unsorted)
-		{
-			index_file_stream = new WriteBufferFromFile(part_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
-			index_stream = new HashingWriteBuffer(*index_file_stream);
-		}
-
+		init();
 		for (const auto & it : columns_list)
 			addStream(part_path, it.name, *it.type);
+	}
+
+	MergedBlockOutputStream(
+		MergeTreeData & storage_,
+		String part_path_,
+		const NamesAndTypesList & columns_list_,
+		CompressionMethod compression_method,
+		const MergeTreeData::DataPart::ColumnToSize & merged_column_to_size_,
+		size_t aio_threshold_)
+		: IMergedBlockOutputStream(
+			storage_, storage_.context.getSettings().min_compress_block_size,
+			storage_.context.getSettings().max_compress_block_size, compression_method,
+			aio_threshold_),
+		columns_list(columns_list_), part_path(part_path_)
+	{
+		init();
+		for (const auto & it : columns_list)
+		{
+			size_t estimated_size = 0;
+			if (aio_threshold > 0)
+			{
+				auto it2 = merged_column_to_size_.find(it.name);
+				if (it2 != merged_column_to_size_.end())
+					estimated_size = it2->second;
+			}
+			addStream(part_path, it.name, *it.type, estimated_size);
+		}
 	}
 
 	void write(const Block & block) override
@@ -347,6 +380,18 @@ public:
 	}
 
 private:
+	void init()
+	{
+		Poco::File(part_path).createDirectories();
+
+		if (storage.mode != MergeTreeData::Unsorted)
+		{
+			index_file_stream = new WriteBufferFromFile(part_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
+			index_stream = new HashingWriteBuffer(*index_file_stream);
+		}
+	}
+
+private:
 	NamesAndTypesList columns_list;
 	String part_path;
 
@@ -366,7 +411,8 @@ public:
 	MergedColumnOnlyOutputStream(MergeTreeData & storage_, String part_path_, bool sync_, CompressionMethod compression_method)
 		: IMergedBlockOutputStream(
 			storage_, storage_.context.getSettings().min_compress_block_size,
-			storage_.context.getSettings().max_compress_block_size, compression_method),
+			storage_.context.getSettings().max_compress_block_size, compression_method,
+			storage_.context.getSettings().min_bytes_to_use_direct_io),
 		part_path(part_path_), sync(sync_)
 	{
 	}
@@ -379,7 +425,7 @@ public:
 			for (size_t i = 0; i < block.columns(); ++i)
 			{
 				addStream(part_path, block.getByPosition(i).name,
-					*block.getByPosition(i).type, 0, block.getByPosition(i).name);
+					*block.getByPosition(i).type, 0, 0, block.getByPosition(i).name);
 			}
 			initialized = true;
 		}

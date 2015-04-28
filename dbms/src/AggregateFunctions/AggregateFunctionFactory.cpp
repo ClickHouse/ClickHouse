@@ -600,10 +600,9 @@ AggregateFunctionPtr AggregateFunctionFactory::tryGet(const String & name, const
 		: NULL;
 }
 
-
-bool AggregateFunctionFactory::isAggregateFunctionName(const String & name, int recursion_level) const
+const AggregateFunctionFactory::FunctionNames & AggregateFunctionFactory::getFunctionNames() const
 {
-	static const char * names[]
+	static FunctionNames names
 	{
 		"debug",
 		"count",
@@ -631,13 +630,17 @@ bool AggregateFunctionFactory::isAggregateFunctionName(const String & name, int 
 		"quantilesTimingWeighted",
 		"medianTimingWeighted",
 		"quantileDeterministic",
-		"quantilesDeterministic",
-		nullptr
+		"quantilesDeterministic"
 	};
 
-	for (const char ** it = names; *it; ++it)
-		if (0 == strcmp(*it, name.data()))
-			return true;
+	return names;
+}
+
+bool AggregateFunctionFactory::isAggregateFunctionName(const String & name, int recursion_level) const
+{
+	const auto & names = getFunctionNames();
+	if (std::find(names.begin(), names.end(), name) != names.end())
+		return true;
 
 	/// Для агрегатных функций вида aggState, где agg - имя другой агрегатной функции.
 	if (recursion_level <= 0 && name.size() > strlen("State") && !(strcmp(name.data() + name.size() - strlen("State"), "State")))

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DB/Storages/StorageMergeTree.h>
+#include <DB/DataStreams/IBlockOutputStream.h>
 #include <iomanip>
 
 namespace DB

@@ -1,5 +1,6 @@
 #include <DB/Interpreters/Set.h>
 #include <DB/Interpreters/Join.h>
+#include <DB/DataStreams/IBlockOutputStream.h>
 #include <DB/DataStreams/CreatingSetsBlockInputStream.h>
 #include <iomanip>
 
@@ -30,6 +31,18 @@ Block CreatingSetsBlockInputStream::readImpl()
 
 	return children.back()->read();
 }
+
+
+const Block & CreatingSetsBlockInputStream::getTotals()
+{
+	auto input = dynamic_cast<IProfilingBlockInputStream *>(children.back().get());
+
+	if (input)
+		return input->getTotals();
+	else
+		return totals;
+}
+
 
 void CreatingSetsBlockInputStream::create(SubqueryForSet & subquery)
 {
@@ -121,7 +134,12 @@ void CreatingSetsBlockInputStream::create(SubqueryForSet & subquery)
 
 	size_t head_rows = 0;
 	if (IProfilingBlockInputStream * profiling_in = dynamic_cast<IProfilingBlockInputStream *>(&*subquery.source))
+	{
 		head_rows = profiling_in->getInfo().rows;
+
+		if (subquery.join)
+			subquery.join->setTotals(profiling_in->getTotals());
+	}
 
 	if (rows != 0)
 	{

@@ -2,6 +2,7 @@
 
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Storages/MergeTree/AbandonableLockInZooKeeper.h>
+#include <DB/DataStreams/IBlockOutputStream.h>
 
 
 namespace DB
@@ -11,7 +12,7 @@ class ReplicatedMergeTreeBlockOutputStream : public IBlockOutputStream
 {
 public:
 	ReplicatedMergeTreeBlockOutputStream(StorageReplicatedMergeTree & storage_, const String & insert_id_)
-		: storage(storage_), insert_id(insert_id_), block_index(0),
+		: storage(storage_), insert_id(insert_id_),
 		log(&Logger::get(storage.data.getLogName() + " (Replicated OutputStream)")) {}
 
 	void writePrefix() override
@@ -145,7 +146,7 @@ public:
 private:
 	StorageReplicatedMergeTree & storage;
 	String insert_id;
-	size_t block_index;
+	size_t block_index = 0;
 
 	Logger * log;
 

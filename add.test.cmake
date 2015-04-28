@@ -8,3 +8,8 @@ else()
 	add_custom_target(check COMMAND ${CMAKE_CTEST_COMMAND}
 		--force-new-ctest-process --output-on-failure)
 endif()
+
+macro (add_check target)
+	add_test(test_${target} ${target})
+	add_dependencies(check ${target})
+endmacro (add_check)

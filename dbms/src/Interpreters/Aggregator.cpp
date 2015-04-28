@@ -59,6 +59,9 @@ void AggregatedDataVariants::convertToTwoLevel()
 
 void Aggregator::initialize(Block & block)
 {
+	if (isCancelled())
+		return;
+
 	std::lock_guard<std::mutex> lock(mutex);
 
 	if (initialized)
@@ -84,6 +87,9 @@ void Aggregator::initialize(Block & block)
 			all_aggregates_has_trivial_destructor = false;
 	}
 
+	if (isCancelled())
+		return;
+
 	/** Всё остальное - только если передан непустой block.
 	  * (всё остальное не нужно в методе merge блоков с готовыми состояниями агрегатных функций).
 	  */
@@ -99,6 +105,9 @@ void Aggregator::initialize(Block & block)
 		if (it->arguments.empty() && !it->argument_names.empty())
 			for (Names::const_iterator jt = it->argument_names.begin(); jt != it->argument_names.end(); ++jt)
 				it->arguments.push_back(block.getPositionByName(*jt));
+
+	if (isCancelled())
+		return;
 
 	/// Создадим пример блока, описывающего результат
 	if (!sample)
@@ -539,6 +548,9 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 {
 	initialize(block);
 
+	if (isCancelled())
+		return true;
+
 	/// result будет уничтожать состояния агрегатных функций в деструкторе
 	result.aggregator = this;
 
@@ -569,6 +581,9 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 		}
 	}
 
+	if (isCancelled())
+		return true;
+
 	size_t rows = block.rows();
 
 	/// Каким способом выполнять агрегацию?
@@ -582,6 +597,9 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 		if (compiler)
 			compileIfPossible(result.type);
 	}
+
+	if (isCancelled())
+		return true;
 
 	if ((overflow_row || result.type == AggregatedDataVariants::Type::without_key) && !result.without_key)
 	{
@@ -686,6 +704,9 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
   */
 void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & result)
 {
+	if (isCancelled())
+		return;
+
 	StringRefs key(keys_size);
 	ConstColumnPlainPtrs key_columns(keys_size);
 	AggregateColumns aggregate_columns(aggregates_size);
@@ -708,6 +729,9 @@ void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & re
 	/// Читаем все данные
 	while (Block block = stream->read())
 	{
+		if (isCancelled())
+			return;
+
 		src_rows += block.rows();
 		src_bytes += block.bytes();
 
@@ -1053,6 +1077,9 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
 
 BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, bool final, size_t max_threads)
 {
+	if (isCancelled())
+		return BlocksList();
+
 	LOG_TRACE(log, "Converting aggregated data to blocks");
 
 	Stopwatch watch;
@@ -1070,8 +1097,14 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
 
 	try
 	{
+		if (isCancelled())
+			return BlocksList();
+
 		if (data_variants.type == AggregatedDataVariants::Type::without_key || overflow_row)
 			blocks.splice(blocks.end(), prepareBlocksAndFillWithoutKey(data_variants, final));
+
+		if (isCancelled())
+			return BlocksList();
 
 		if (data_variants.type != AggregatedDataVariants::Type::without_key)
 		{
@@ -1104,6 +1137,9 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
 		/// data_variants не будет уничтожать состояния агрегатных функций в деструкторе. Теперь состояниями владеют ColumnAggregateFunction.
 		data_variants.aggregator = nullptr;
 	}
+
+	if (isCancelled())
+		return BlocksList();
 
 	size_t rows = 0;
 	size_t bytes = 0;
@@ -1463,6 +1499,9 @@ void NO_INLINE Aggregator::mergeWithoutKeyStreamsImpl(
 
 void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants & result, size_t max_threads)
 {
+	if (isCancelled())
+		return;
+
 	StringRefs key(keys_size);
 	ConstColumnPlainPtrs key_columns(keys_size);
 
@@ -1470,6 +1509,9 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 
 	Block empty_block;
 	initialize(empty_block);
+
+	if (isCancelled())
+		return;
 
 	/** Если на удалённых серверах использовался двухуровневый метод агрегации,
 	  *  то в блоках будет расположена информация о номере корзины.
@@ -1486,6 +1528,9 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 	size_t total_input_blocks = 0;
 	while (Block block = stream->read())
 	{
+		if (isCancelled())
+			return;
+
 		total_input_rows += block.rowsInFirstColumn();
 		++total_input_blocks;
 		bucket_to_blocks[block.info.bucket_num].emplace_back(std::move(block));
@@ -1524,6 +1569,9 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 	#undef M
 	}
 
+	if (isCancelled())
+		return;
+
 	/// result будет уничтожать состояния агрегатных функций в деструкторе
 	result.aggregator = this;
 
@@ -1544,6 +1592,9 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 
 			for (Block & block : bucket_to_blocks[bucket])
 			{
+				if (isCancelled())
+					return;
+
 			#define M(NAME) \
 				else if (result.type == AggregatedDataVariants::Type::NAME) \
 					mergeStreamsImpl(block, key_sizes, aggregates_pool, *result.NAME, result.NAME->data.impls[bucket]);
@@ -1593,6 +1644,12 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 		LOG_TRACE(log, "Merged partially aggregated two-level data.");
 	}
 
+	if (isCancelled())
+	{
+		result.invalidate();
+		return;
+	}
+
 	if (has_blocks_with_unknown_bucket)
 	{
 		LOG_TRACE(log, "Merging partially aggregated single-level data.");
@@ -1600,6 +1657,12 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 		BlocksList & blocks = bucket_to_blocks[-1];
 		for (Block & block : blocks)
 		{
+			if (isCancelled())
+			{
+				result.invalidate();
+				return;
+			}
+
 			if (result.type == AggregatedDataVariants::Type::without_key || block.info.is_overflows)
 				mergeWithoutKeyStreamsImpl(block, result);
 
@@ -1692,6 +1755,11 @@ String Aggregator::getID() const
 		res << ", " << aggregates[i].column_name;
 
 	return res.str();
+}
+
+void Aggregator::setCancellationHook(const CancellationHook cancellation_hook)
+{
+	isCancelled = cancellation_hook;
 }
 
 }

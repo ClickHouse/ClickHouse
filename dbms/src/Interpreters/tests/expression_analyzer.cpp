@@ -1,6 +1,7 @@
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Parsers/ParserSelectQuery.h>
 #include <DB/Parsers/formatAST.h>
+#include <DB/Parsers/parseQuery.h>
 #include <DB/Parsers/ExpressionListParsers.h>
 
 
@@ -35,8 +36,9 @@ int main(int argc, char ** argv)
 		IParser & parser = *parsers[i];
 		const char * pos = argv[1];
 		const char * end = argv[1] + strlen(argv[1]);
+		const char * max_parsed_pos = pos;
 		Expected expected = "";
-		if (parser.parse(pos ,end, root, expected))
+		if (parser.parse(pos, end, root, max_parsed_pos, expected))
 			break;
 		else
 			root = nullptr;

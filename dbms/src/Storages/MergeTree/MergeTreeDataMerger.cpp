@@ -2,6 +2,7 @@
 #include <DB/Storages/MergeTree/MergeTreeBlockInputStream.h>
 #include <DB/Storages/MergeTree/MergedBlockOutputStream.h>
 #include <DB/Storages/MergeTree/DiskSpaceMonitor.h>
+#include <DB/Storages/MergeTree/MergeList.h>
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
 #include <DB/DataStreams/MergingSortedBlockInputStream.h>
 #include <DB/DataStreams/CollapsingSortedBlockInputStream.h>
@@ -282,7 +283,8 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 /// parts должны быть отсортированы.
 MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 	const MergeTreeData::DataPartsVector & parts, const String & merged_name, MergeList::Entry & merge_entry,
-	MergeTreeData::Transaction * out_transaction, DiskSpaceMonitor::Reservation * disk_reservation)
+	size_t aio_threshold, MergeTreeData::Transaction * out_transaction,
+	DiskSpaceMonitor::Reservation * disk_reservation)
 {
 	merge_entry->num_parts = parts.size();
 
@@ -307,6 +309,13 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 	NamesAndTypesList union_columns = columns_list.filter(union_columns_set);
 	Names union_column_names = union_columns.getNames();
 
+	MergeTreeData::DataPart::ColumnToSize merged_column_to_size;
+	if (aio_threshold > 0)
+	{
+		for (const MergeTreeData::DataPartPtr & part : parts)
+			part->accumulateColumnSizes(merged_column_to_size);
+	}
+
 	MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data);
 	ActiveDataPartSet::parsePartName(merged_name, *new_data_part);
 	new_data_part->name = "tmp_" + merged_name;
@@ -327,7 +336,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 
 		auto input = std::make_unique<MergeTreeBlockInputStream>(
 			data.getFullPath() + parts[i]->name + '/', DEFAULT_MERGE_BLOCK_SIZE, union_column_names, data,
-			parts[i], ranges, false, nullptr, "");
+			parts[i], ranges, false, nullptr, "", true, aio_threshold, DBMS_DEFAULT_BUFFER_SIZE);
 
 		input->setProgressCallback([&merge_entry, rows_total] (const Progress & value)
 			{
@@ -353,19 +362,23 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 	switch (data.mode)
 	{
 		case MergeTreeData::Ordinary:
-			merged_stream = std::make_unique<MergingSortedBlockInputStream>(src_streams, data.getSortDescription(), DEFAULT_MERGE_BLOCK_SIZE);
+			merged_stream = std::make_unique<MergingSortedBlockInputStream>(
+				src_streams, data.getSortDescription(), DEFAULT_MERGE_BLOCK_SIZE);
 			break;
 
 		case MergeTreeData::Collapsing:
-			merged_stream = std::make_unique<CollapsingSortedBlockInputStream>(src_streams, data.getSortDescription(), data.sign_column, DEFAULT_MERGE_BLOCK_SIZE);
+			merged_stream = std::make_unique<CollapsingSortedBlockInputStream>(
+				src_streams, data.getSortDescription(), data.sign_column, DEFAULT_MERGE_BLOCK_SIZE);
 			break;
 
 		case MergeTreeData::Summing:
-			merged_stream = std::make_unique<SummingSortedBlockInputStream>(src_streams, data.getSortDescription(), data.columns_to_sum, DEFAULT_MERGE_BLOCK_SIZE);
+			merged_stream = std::make_unique<SummingSortedBlockInputStream>(
+				src_streams, data.getSortDescription(), data.columns_to_sum, DEFAULT_MERGE_BLOCK_SIZE);
 			break;
 
 		case MergeTreeData::Aggregating:
-			merged_stream = std::make_unique<AggregatingSortedBlockInputStream>(src_streams, data.getSortDescription(), DEFAULT_MERGE_BLOCK_SIZE);
+			merged_stream = std::make_unique<AggregatingSortedBlockInputStream>(
+				src_streams, data.getSortDescription(), DEFAULT_MERGE_BLOCK_SIZE);
 			break;
 
 		case MergeTreeData::Unsorted:
@@ -378,7 +391,11 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 
 	const String new_part_tmp_path = data.getFullPath() + "tmp_" + merged_name + "/";
 
-	MergedBlockOutputStream to{data, new_part_tmp_path, union_columns, CompressionMethod::LZ4};
+	auto compression_method = data.context.chooseCompressionMethod(
+		merge_entry->total_size_bytes_compressed,
+		static_cast<double>(merge_entry->total_size_bytes_compressed) / data.getTotalActiveSizeInBytes());
+
+	MergedBlockOutputStream to{data, new_part_tmp_path, union_columns, compression_method, merged_column_to_size, aio_threshold};
 
 	merged_stream->readPrefix();
 	to.writePrefix();

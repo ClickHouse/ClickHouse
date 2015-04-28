@@ -6,6 +6,7 @@
 #include <DB/Interpreters/Context.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/DataStreams/BlockIO.h>
+#include <DB/DataStreams/FormatFactory.h>
 #include <DB/DataStreams/copyData.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 

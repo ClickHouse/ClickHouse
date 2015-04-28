@@ -5,6 +5,7 @@
 
 #include <DB/Parsers/ParserCreateQuery.h>
 #include <DB/Parsers/ASTCreateQuery.h>
+#include <DB/Parsers/parseQuery.h>
 
 #include <DB/Interpreters/InterpreterCreateQuery.h>
 #include <DB/Interpreters/loadMetadata.h>
@@ -22,19 +23,8 @@ namespace DB
 
 static void executeCreateQuery(const String & query, Context & context, const String & database, const String & file_name)
 {
-	const char * begin = query.data();
-	const char * end = begin + query.size();
-	const char * pos = begin;
-
 	ParserCreateQuery parser;
-	ASTPtr ast;
-	Expected expected = "";
-	bool parse_res = parser.parse(pos, end, ast, expected);
-
-	/// Распарсенный запрос должен заканчиваться на конец входных данных или на точку с запятой.
-	if (!parse_res || (pos != end && *pos != ';'))
-		throw Exception(getSyntaxErrorMessage(parse_res, begin, end, pos, expected, "in file " + file_name),
-			DB::ErrorCodes::SYNTAX_ERROR);
+	ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "in file " + file_name);
 
 	ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
 	ast_create_query.attach = true;

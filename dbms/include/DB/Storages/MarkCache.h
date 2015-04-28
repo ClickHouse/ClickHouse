@@ -1,5 +1,7 @@
 #pragma once
 
+#include <memory>
+
 #include <DB/Common/LRUCache.h>
 #include <DB/Common/ProfileEvents.h>
 #include <DB/Common/SipHash.h>
@@ -32,7 +34,7 @@ struct MarkInCompressedFile
 
 typedef std::vector<MarkInCompressedFile> MarksInCompressedFile;
 
-/// Оценка количества байт, занимаемых засечками в кеше.
+/// Оценка количества байтов, занимаемых засечками в кеше.
 struct MarksWeightFunction
 {
 	size_t operator()(const MarksInCompressedFile & marks) const
@@ -79,6 +81,6 @@ public:
 	}
 };
 
-typedef Poco::SharedPtr<MarkCache> MarkCachePtr;
+typedef std::shared_ptr<MarkCache> MarkCachePtr;
 
 }

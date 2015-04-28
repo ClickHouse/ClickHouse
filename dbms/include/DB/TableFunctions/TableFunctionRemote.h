@@ -5,6 +5,7 @@
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/DataStreams/RemoteBlockInputStream.h>
 #include <DB/Interpreters/reinterpretAsIdentifier.h>
+#include <DB/Interpreters/Cluster.h>
 
 
 struct data;

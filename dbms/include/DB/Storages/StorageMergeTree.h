@@ -5,6 +5,8 @@
 #include <DB/Storages/MergeTree/MergeTreeDataWriter.h>
 #include <DB/Storages/MergeTree/MergeTreeDataMerger.h>
 #include <DB/Storages/MergeTree/DiskSpaceMonitor.h>
+#include <DB/Storages/MergeTree/BackgroundProcessingPool.h>
+
 
 namespace DB
 {
@@ -81,12 +83,12 @@ public:
 
 	/** Выполнить очередной шаг объединения кусков.
 	  */
-	bool optimize() override
+	bool optimize(const Settings & settings) override
 	{
-		return merge(true);
+		return merge(settings.min_bytes_to_use_direct_io, true);
 	}
 
-	void dropPartition(const Field & partition, bool detach, const Settings & settings) override;
+	void dropPartition(const Field & partition, bool detach, bool unreplicated, const Settings & settings) override;
 	void attachPartition(const Field & partition, bool unreplicated, bool part, const Settings & settings) override;
 	void freezePartition(const Field & partition, const Settings & settings) override;
 
@@ -188,7 +190,7 @@ private:
 	  * Если aggressive - выбрать куски, не обращая внимание на соотношение размеров и их новизну (для запроса OPTIMIZE).
 	  * Возвращает, получилось ли что-нибудь объединить.
 	  */
-	bool merge(bool aggressive = false, BackgroundProcessingPool::Context * context = nullptr);
+	bool merge(size_t aio_threshold, bool aggressive = false, BackgroundProcessingPool::Context * context = nullptr);
 
 	bool mergeTask(BackgroundProcessingPool::Context & context);
 

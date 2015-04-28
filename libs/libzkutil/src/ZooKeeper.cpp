@@ -566,7 +566,7 @@ ZooKeeper::~ZooKeeper()
 
 ZooKeeperPtr ZooKeeper::startNewSession() const
 {
-	return new ZooKeeper(hosts, session_timeout_ms);
+	return std::make_shared<ZooKeeper>(hosts, session_timeout_ms);
 }
 
 Op::Create::Create(const std::string & path_, const std::string & value_, ACLPtr acl, int32_t flags)

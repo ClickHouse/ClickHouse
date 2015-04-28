@@ -5,6 +5,7 @@
 #include <DB/DataStreams/AddingDefaultBlockOutputStream.h>
 #include <DB/DataStreams/PushingToViewsBlockOutputStream.h>
 #include <DB/DataStreams/NullAndDoCopyBlockInputStream.h>
+#include <DB/DataStreams/FormatFactory.h>
 #include <DB/DataStreams/copyData.h>
 
 #include <DB/Parsers/ASTInsertQuery.h>
@@ -114,8 +115,8 @@ void InterpreterInsertQuery::execute(ReadBuffer * remaining_data_istr)
 		BlockInputStreamPtr in{
 			context.getFormatFactory().getInput(
 				format, istr, sample, context.getSettings().max_insert_block_size,
-				context.getDataTypeFactory())
-		};
+				context.getDataTypeFactory())};
+
 		copyData(*in, *out);
 	}
 	else
