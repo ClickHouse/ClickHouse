@@ -889,6 +889,8 @@ using FunctionIsInfinite = FunctionNumericPredicate<IsInfiniteImpl>;
 using FunctionIsNaN = FunctionNumericPredicate<IsNaNImpl>;
 
 
+DataTypePtr getSmallestCommonNumericType(const IDataType & t1, const IDataType & t2);
+
 /** transform(x, [from...], [to...], default)
   * - преобразует значения согласно явно указанному отображению.
   *
@@ -979,6 +981,13 @@ public:
 					+ " have signature: transform(T, Array(T), Array(U), U) -> U; or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
 					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
+			if (type_arr_to_nested->behavesAsNumber() && type_default->behavesAsNumber())
+			{
+				/// Берём наименьший общий тип для элементов массива значений to и для default-а.
+				return getSmallestCommonNumericType(*type_arr_to_nested, *type_default);
+			}
+
+			/// TODO Больше проверок.
 			return type_arr_to_nested->clone();
 		}
 	}
@@ -1164,7 +1173,7 @@ public:
 		{
 			auto it = table.find(src[i]);
 			if (it != table.end())
-				dst[i] = it->second;
+				memcpy(&dst[i], &it->second, sizeof(dst[i]));	/// little endian.
 			else
 				dst[i] = dst_default;
 		}
@@ -1180,7 +1189,7 @@ public:
 		{
 			auto it = table.find(src[i]);
 			if (it != table.end())
-				dst[i] = it->second;
+				memcpy(&dst[i], &it->second, sizeof(dst[i]));
 			else
 				dst[i] = src[i];
 		}
@@ -1220,7 +1229,7 @@ public:
 			current_offset = src_offsets[i];
 			auto it = table.find(ref);
 			if (it != table.end())
-				dst[i] = it->second;
+				memcpy(&dst[i], &it->second, sizeof(dst[i]));
 			else
 				dst[i] = dst_default;
 		}
@@ -1255,7 +1264,7 @@ private:
 	/// Разные варианты хэш-таблиц для реализации отображения.
 
 	using NumToNum = HashMap<UInt64, UInt64, HashCRC32<UInt64>>;
-	using NumToString = HashMap<UInt64, StringRef, HashCRC32<UInt64>>;
+	using NumToString = HashMap<UInt64, StringRef, HashCRC32<UInt64>>;		/// Везде StringRef-ы с завершающим нулём.
 	using StringToNum = HashMap<StringRef, UInt64>;
 	using StringToString = HashMap<StringRef, StringRef>;
 
@@ -1303,7 +1312,7 @@ private:
 			for (size_t i = 0; i < size; ++i)
 			{
 				const String & str_to = to[i].get<const String &>();
-				StringRef ref{string_pool.insert(str_to.data(), str_to.size() + 1), str_to.size() + 1};		/// С завершающим нулём.
+				StringRef ref{string_pool.insert(str_to.data(), str_to.size() + 1), str_to.size() + 1};
 				table[from[i].get<UInt64>()] = ref;
 			}
 		}
