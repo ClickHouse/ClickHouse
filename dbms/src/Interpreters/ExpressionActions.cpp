@@ -215,7 +215,7 @@ void ExpressionAction::prepare(Block & sample_block)
 
 void ExpressionAction::execute(Block & block) const
 {
-	std::cerr << "executing: " << toString() << std::endl;
+//	std::cerr << "executing: " << toString() << std::endl;
 
 	if (type == REMOVE_COLUMN || type == COPY_COLUMN)
 		if (!block.has(source_name))
