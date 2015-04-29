@@ -240,7 +240,9 @@ private:
 
 	void parsePattern()
 	{
-		decltype(actions) actions;
+		decltype(actions) actions{
+			{ PatternActionType::KleeneStar, 0 }
+		};
 
 		ParserString special_open_p("(?");
 		ParserString special_close_p(")");
@@ -338,23 +340,20 @@ private:
 
 		/// backtrack if possible
 		const auto do_backtrack = [&] {
-			if (back_stack.empty())
-				return false;
+			while (!back_stack.empty())
+			{
+				auto & top = back_stack.top();
 
-			auto & top = back_stack.top();
+				action_it = top.first;
+				events_it = std::next(top.second);
 
-			/// if we're backtracking to a specific action and it is not the first one in pattern - bail out
-			if (top.first != action_begin)
-				if (top.first->type == PatternActionType::SpecificEvent ||
-					top.first->type == PatternActionType::AnyEvent)
-					return false;
+				back_stack.pop();
 
-			action_it = top.first;
-			events_it = std::next(top.second);
+				if (events_it != events_end)
+					return true;
+			}
 
-			back_stack.pop();
-
-			return true;
+			return false;
 		};
 
 		while (action_it != action_end && events_it != events_end)
@@ -362,28 +361,14 @@ private:
 			if (action_it->type == PatternActionType::SpecificEvent)
 			{
 				if (events_it->second.test(action_it->extra))
-				{
-					if (action_it == action_begin)
-						/// store backtracking info to allow going back and matching from another starting point
-						back_stack.emplace(action_it, events_it);
-
 					/// move to the next action and events
 					++action_it, ++events_it;
-				}
-				else
-					if (action_it == action_begin)
-						/// try applying first action from another starting point
-						++events_it;
-					else if (!do_backtrack())
-						/// backtracking failed, bail out
-						break;
+				else if (!do_backtrack())
+					/// backtracking failed, bail out
+					break;
 			}
 			else if (action_it->type == PatternActionType::AnyEvent)
 			{
-				if (action_it == action_begin)
-					/// store backtracking info to allow going back and matching from another starting point
-					back_stack.emplace(action_it, events_it);
-
 				++action_it, ++events_it;
 			}
 			else if (action_it->type == PatternActionType::KleeneStar)
@@ -407,6 +392,10 @@ private:
 					ErrorCodes::LOGICAL_ERROR
 				};
 		}
+
+		/// skip multiple .* at the end
+		while (action_it->type == PatternActionType::KleeneStar)
+			++action_it;
 
 		return action_it == action_end;
 	}
