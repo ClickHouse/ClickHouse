@@ -374,10 +374,7 @@ private:
 					if (action_it == action_begin)
 						/// try applying first action from another starting point
 						++events_it;
-					else if (do_backtrack())
-						/// backtracking successful
-						continue;
-					else
+					else if (!do_backtrack())
 						/// backtracking failed, bail out
 						break;
 			}
