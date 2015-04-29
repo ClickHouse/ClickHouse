@@ -1003,6 +1003,13 @@ public:
 		prepare(array_from->getData(), array_to->getData(), block, arguments);
 
 		const auto in = block.getByPosition(arguments.front()).column.get();
+
+		if (in->isConst())
+		{
+			executeConst(block, arguments, result);
+			return;
+		}
+
 		auto column_result = block.getByPosition(result).type->createColumn();
 		auto out = column_result.get();
 
@@ -1022,6 +1029,34 @@ public:
 				ErrorCodes::ILLEGAL_COLUMN);
 
 		block.getByPosition(result).column = column_result;
+	}
+
+private:
+	void executeConst(Block & block, const ColumnNumbers & arguments, const size_t result)
+	{
+		/// Составим блок из полноценных столбцов размера 1 и вычислим функцию как обычно.
+
+		Block tmp_block;
+		ColumnNumbers tmp_arguments;
+
+		tmp_block.insert(block.getByPosition(arguments[0]));
+		tmp_block.getByPosition(0).column = static_cast<IColumnConst *>(tmp_block.getByPosition(0).column->cloneResized(1).get())->convertToFullColumn();
+		tmp_arguments.push_back(0);
+
+		for (size_t i = 1; i < arguments.size(); ++i)
+		{
+			tmp_block.insert(block.getByPosition(arguments[i]));
+			tmp_arguments.push_back(i);
+		}
+
+		tmp_block.insert(block.getByPosition(result));
+		size_t tmp_result = arguments.size();
+
+		execute(tmp_block, tmp_arguments, tmp_result);
+
+		block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(
+			block.rowsInFirstColumn(),
+			(*tmp_block.getByPosition(tmp_result).column)[0]);
 	}
 
 	template <typename T>
@@ -1060,12 +1095,6 @@ public:
 
 			return true;
 		}
-		else if (const auto in = typeid_cast<const ColumnConst<T> *>(in_untyped))
-		{
-			/* TODO */
-
-			return true;
-		}
 
 		return false;
 	}
@@ -1088,12 +1117,6 @@ public:
 			throw Exception(
 				"Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
 				ErrorCodes::ILLEGAL_COLUMN);
-
-			return true;
-		}
-		else if (const auto in = typeid_cast<const ColumnConstString *>(in_untyped))
-		{
-			/* TODO */
 
 			return true;
 		}
@@ -1252,7 +1275,7 @@ public:
 		}
 	}
 
-private:
+
 	/// Разные варианты хэш-таблиц для реализации отображения.
 
 	using NumToNum = HashMap<UInt64, UInt64, HashCRC32<UInt64>>;
@@ -1298,6 +1321,10 @@ private:
 		if (arguments.size() == 4)
 		{
 			const IColumnConst * default_col = dynamic_cast<const IColumnConst *>(&*block.getByPosition(arguments[3]).column);
+
+			if (!default_col)
+				throw Exception("Fourth argument of function " + getName() + " (default value) must be constant", ErrorCodes::ILLEGAL_COLUMN);
+
 			default_value = (*default_col)[0];
 
 			/// Нужно ли преобразовать элементы to и default_value к наименьшему общему типу, который является Float64?
