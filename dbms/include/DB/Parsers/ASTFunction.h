@@ -5,6 +5,7 @@
 #include <DB/Functions/IFunction.h>
 #include <DB/AggregateFunctions/IAggregateFunction.h>
 #include <DB/IO/WriteBufferFromString.h>
+#include <DB/Common/SipHash.h>
 
 
 namespace DB
@@ -39,32 +40,33 @@ public:
 
 	String getColumnName() const override
 	{
-		String res;
-		WriteBufferFromString wb(res);
-		writeString(name, wb);
+		SipHash hash;
+
+		hash.update(name.data(), name.size());
 
 		if (parameters)
 		{
-			writeChar('(', wb);
-			for (ASTs::const_iterator it = parameters->children.begin(); it != parameters->children.end(); ++it)
+			hash.update("(", 1);
+			for (const auto & param : parameters->children)
 			{
-				if (it != parameters->children.begin())
-					writeCString(", ", wb);
-				writeString((*it)->getColumnName(), wb);
+				String param_name = param->getColumnName();		/// TODO Сделать метод updateHashWith.
+				hash.update(param_name.data(), param_name.size() + 1);
 			}
-			writeChar(')', wb);
+			hash.update(")", 1);
 		}
 
-		writeChar('(', wb);
-		for (ASTs::const_iterator it = arguments->children.begin(); it != arguments->children.end(); ++it)
+		hash.update("(", 1);
+		for (const auto & arg : arguments->children)
 		{
-			if (it != arguments->children.begin())
-				writeCString(", ", wb);
-			writeString((*it)->getColumnName(), wb);
+			String arg_name = arg->getColumnName();
+			hash.update(arg_name.data(), arg_name.size() + 1);
 		}
-		writeChar(')', wb);
+		hash.update(")", 1);
 
-		return res;
+		UInt64 low, high;
+		hash.get128(low, high);
+
+		return toString(high) + "_" + toString(low);			/// TODO hex.
 	}
 
 	/** Получить текст, который идентифицирует этот элемент. */
