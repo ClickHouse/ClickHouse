@@ -223,25 +223,43 @@ private:
 		SpecificEvent,
 		AnyEvent,
 		KleeneStar,
-		TimeLess,
 		TimeLessOrEqual,
+		TimeLess,
 		TimeGreaterOrEqual,
 		TimeGreater
 	};
 
-	struct PatternAction
+	static std::string to_string(const PatternActionType type)
+	{
+		static const std::map<PatternActionType, std::string> map{
+			{ PatternActionType::SpecificEvent, "SpecificEvent" },
+			{ PatternActionType::AnyEvent, "AnyEvent" },
+			{ PatternActionType::KleeneStar, "KleeneStar" },
+			{ PatternActionType::TimeLessOrEqual, "TimeLessOrEqual" },
+			{ PatternActionType::TimeLess, "TimeLess", },
+			{ PatternActionType::TimeGreaterOrEqual, "TimeGreaterOrEqual" },
+			{ PatternActionType::TimeGreater, "TimeGreater" }
+		};
+
+		return map.find(type)->second;
+	}
+
+	struct PatternAction final
 	{
 		PatternActionType type;
 		std::uint32_t extra;
 
 		PatternAction() = default;
-		PatternAction(const PatternActionType type, const std::uint32_t extra) : type{type}, extra{extra} {}
+		PatternAction(const PatternActionType type, const std::uint32_t extra = 0) : type{type}, extra{extra} {}
 	};
+
+	using PatternActions = std::vector<PatternAction>;
+
 
 	void parsePattern()
 	{
-		decltype(actions) actions{
-			{ PatternActionType::KleeneStar, 0 }
+		PatternActions actions{
+			{ PatternActionType::KleeneStar }
 		};
 
 		ParserString special_open_p("(?");
@@ -266,7 +284,7 @@ private:
 		const auto throw_exception = [&] (const std::string & msg) {
 			throw Exception{
 				msg + " '" + std::string(pos, end) + "' at position " + std::to_string(pos - begin),
-				ErrorCodes::BAD_ARGUMENTS
+				ErrorCodes::SYNTAX_ERROR
 			};
 		};
 
@@ -313,9 +331,9 @@ private:
 
 			}
 			else if (dot_closure_p.ignore(pos, end))
-				actions.emplace_back(PatternActionType::KleeneStar, 0);
+				actions.emplace_back(PatternActionType::KleeneStar);
 			else if (dot_p.ignore(pos, end))
-				actions.emplace_back(PatternActionType::AnyEvent, 0);
+				actions.emplace_back(PatternActionType::AnyEvent);
 			else
 				throw_exception("Could not parse pattern, unexpected starting symbol");
 		}
@@ -334,9 +352,10 @@ private:
 		const auto events_end = std::end(data_ref.eventsList);
 		auto events_it = events_begin;
 
-		/// an iterator to action plus an iterator to row in events list
-		using backtrack_info = std::pair<decltype(action_it), decltype(events_it)>;
+		/// an iterator to action plus an iterator to row in events list plus timestamp at the start of sequence
+		using backtrack_info = std::tuple<decltype(action_it), decltype(events_it), Data::Timestamp>;
 		std::stack<backtrack_info> back_stack;
+		Data::Timestamp start_timestamp{};
 
 		/// backtrack if possible
 		const auto do_backtrack = [&] {
@@ -344,8 +363,9 @@ private:
 			{
 				auto & top = back_stack.top();
 
-				action_it = top.first;
-				events_it = std::next(top.second);
+				action_it = std::get<0>(top);
+				events_it = std::next(std::get<1>(top));
+				start_timestamp = std::get<2>(top);
 
 				back_stack.pop();
 
@@ -358,33 +378,78 @@ private:
 
 		while (action_it != action_end && events_it != events_end)
 		{
+			std::cout << "start_timestamp " << start_timestamp << "; ";
+			std::cout << "action " << (action_it - action_begin) << " { " << to_string(action_it->type) << ' ' << action_it->extra << " }; ";
+			std::cout << "symbol " << (events_it - events_begin) << " { " << events_it->first << ' ' << events_it->second.to_ulong() << " }" << std::endl;
+
 			if (action_it->type == PatternActionType::SpecificEvent)
 			{
 				if (events_it->second.test(action_it->extra))
+				{
 					/// move to the next action and events
+					start_timestamp = events_it->first;
 					++action_it, ++events_it;
+				}
 				else if (!do_backtrack())
 					/// backtracking failed, bail out
 					break;
 			}
 			else if (action_it->type == PatternActionType::AnyEvent)
 			{
+				start_timestamp = events_it->first;
 				++action_it, ++events_it;
 			}
 			else if (action_it->type == PatternActionType::KleeneStar)
 			{
-				back_stack.emplace(action_it, events_it);
+				back_stack.emplace(action_it, events_it, start_timestamp);
+				///  @todo fix off-by-one error caused by this assignment
+				start_timestamp = events_it->first;
 				++action_it;
 			}
-			else if (action_it->type == PatternActionType::TimeLess ||
-				action_it->type == PatternActionType::TimeLessOrEqual)
+			else if (action_it->type == PatternActionType::TimeLessOrEqual)
 			{
-				++action_it;
+				if (events_it->first - start_timestamp <= action_it->extra)
+				{
+					/// condition satisfied, move onto next action
+					back_stack.emplace(action_it, events_it, start_timestamp);
+					start_timestamp = events_it->first;
+					++action_it;
+				}
+				else if (!do_backtrack())
+					break;
 			}
-			else if (action_it->type == PatternActionType::TimeGreaterOrEqual ||
-				action_it->type == PatternActionType::TimeGreater)
+			else if (action_it->type == PatternActionType::TimeLess)
 			{
-				++action_it;
+				if (events_it->first - start_timestamp < action_it->extra)
+				{
+					back_stack.emplace(action_it, events_it, start_timestamp);
+					start_timestamp = events_it->first;
+					++action_it;
+				}
+				else if (!do_backtrack())
+					break;
+			}
+			else if (action_it->type == PatternActionType::TimeGreaterOrEqual)
+			{
+				if (events_it->first - start_timestamp >= action_it->extra)
+				{
+					back_stack.emplace(action_it, events_it, start_timestamp);
+					start_timestamp = events_it->first;
+					++action_it;
+				}
+				else if (++events_it == events_end && !do_backtrack())
+					break;
+			}
+			else if (action_it->type == PatternActionType::TimeGreater)
+			{
+				if (events_it->first - start_timestamp > action_it->extra)
+				{
+					back_stack.emplace(action_it, events_it, start_timestamp);
+					start_timestamp = events_it->first;
+					++action_it;
+				}
+				else if (++events_it == events_end && !do_backtrack())
+					break;
 			}
 			else
 				throw Exception{
@@ -393,16 +458,23 @@ private:
 				};
 		}
 
-		/// skip multiple .* at the end
-		while (action_it->type == PatternActionType::KleeneStar)
-			++action_it;
+		/// if there are some actions remaining
+		if (action_it != action_end)
+		{
+			/// match multiple empty strings at end
+			while (action_it->type == PatternActionType::KleeneStar ||
+				   action_it->type == PatternActionType::TimeLessOrEqual ||
+				   action_it->type == PatternActionType::TimeLess ||
+				   (action_it->type == PatternActionType::TimeGreaterOrEqual && action_it->extra == 0))
+				++action_it;
+		}
 
 		return action_it == action_end;
 	}
 
 	std::string pattern;
 	std::size_t arg_count;
-	std::vector<PatternAction> actions;
+	PatternActions actions;
 };
 
 }
