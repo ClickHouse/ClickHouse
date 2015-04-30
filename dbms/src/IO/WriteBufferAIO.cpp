@@ -35,8 +35,6 @@ WriteBufferAIO::WriteBufferAIO(const std::string & filename_, size_t buffer_size
 		throwFromErrno("Cannot open file " + filename, error_code);
 	}
 
-	ProfileEvents::increment(ProfileEvents::FileOpen);
-
 	::memset(&request, 0, sizeof(request));
 }
 
