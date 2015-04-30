@@ -26,7 +26,6 @@ public:
 	WriteBufferAIO & operator=(const WriteBufferAIO &) = delete;
 
 	off_t getPositionInFile() override;
-	void truncate(off_t length = 0) override;
 	void sync() override;
 	std::string getFileName() const override { return filename; }
 	int getFD() const override { return fd; }
@@ -36,6 +35,8 @@ private:
 	void nextImpl() override;
 	///
 	off_t doSeek(off_t off, int whence) override;
+	///
+	void doTruncate(off_t length) override;
 	/// Если в буфере ещё остались данные - запишем их.
 	void flush();
 	/// Ждать окончания текущей асинхронной задачи.

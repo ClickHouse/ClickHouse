@@ -17,4 +17,9 @@ off_t WriteBufferFromFileBase::seek(off_t off, int whence)
 	return doSeek(off, whence);
 }
 
+void WriteBufferFromFileBase::truncate(off_t length)
+{
+	return doTruncate(length);
+}
+
 }

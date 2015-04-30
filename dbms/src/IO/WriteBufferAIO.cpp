@@ -61,15 +61,6 @@ off_t WriteBufferAIO::getPositionInFile()
 	return seek(0, SEEK_CUR);
 }
 
-void WriteBufferAIO::truncate(off_t length)
-{
-	flush();
-
-	int res = ::ftruncate(fd, length);
-	if (res == -1)
-		throwFromErrno("Cannot truncate file " + filename, ErrorCodes::CANNOT_TRUNCATE_FILE);
-}
-
 void WriteBufferAIO::sync()
 {
 	flush();
@@ -138,6 +129,15 @@ off_t WriteBufferAIO::doSeek(off_t off, int whence)
 		max_pos_in_file = pos_in_file;
 
 	return pos_in_file;
+}
+
+void WriteBufferAIO::doTruncate(off_t length)
+{
+	flush();
+
+	int res = ::ftruncate(fd, length);
+	if (res == -1)
+		throwFromErrno("Cannot truncate file " + filename, ErrorCodes::CANNOT_TRUNCATE_FILE);
 }
 
 void WriteBufferAIO::flush()
