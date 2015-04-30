@@ -18,6 +18,7 @@
 #include <DB/IO/WriteBufferFromString.h>
 
 #include <DB/IO/DoubleConverter.h>
+#include <DB/Common/SipHash.h>
 
 
 namespace DB
@@ -571,6 +572,64 @@ public:
 		return res;
 	}
 };
+
+/** Обновляет состояние хэш-функции значением. */
+class FieldVisitorUpdateHash : public StaticVisitor<>
+{
+private:
+	SipHash & hash;
+
+public:
+	FieldVisitorUpdateHash(SipHash & hash_) : hash(hash_) {}
+
+	void operator() (const Null 	& x) const
+	{
+		auto type = Field::Types::Null;
+		hash.update(reinterpret_cast<const char *>(&type), 1);
+	}
+
+	void operator() (const UInt64 	& x) const
+	{
+		auto type = Field::Types::UInt64;
+		hash.update(reinterpret_cast<const char *>(&type), 1);
+		hash.update(reinterpret_cast<const char *>(&x), sizeof(x));
+	}
+
+	void operator() (const Int64 	& x) const
+	{
+		auto type = Field::Types::Int64;
+		hash.update(reinterpret_cast<const char *>(&type), 1);
+		hash.update(reinterpret_cast<const char *>(&x), sizeof(x));
+	}
+
+	void operator() (const Float64 	& x) const
+	{
+		auto type = Field::Types::Float64;
+		hash.update(reinterpret_cast<const char *>(&type), 1);
+		hash.update(reinterpret_cast<const char *>(&x), sizeof(x));
+	}
+
+	void operator() (const String 	& x) const
+	{
+		auto type = Field::Types::String;
+		hash.update(reinterpret_cast<const char *>(&type), 1);
+		size_t size = x.size();
+		hash.update(reinterpret_cast<const char *>(&size), sizeof(size));
+		hash.update(x.data(), x.size());
+	}
+
+	void operator() (const Array 	& x) const
+	{
+		auto type = Field::Types::Array;
+		hash.update(reinterpret_cast<const char *>(&type), 1);
+		size_t size = x.size();
+		hash.update(reinterpret_cast<const char *>(&size), sizeof(size));
+
+		for (const auto & elem : x)
+			apply_visitor(*this, elem);
+	}
+};
+
 
 /** Выводит текстовое представление типа, как литерала в SQL запросе */
 class FieldVisitorToString : public StaticVisitor<String>

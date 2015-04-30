@@ -35,6 +35,12 @@ public:
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() const override { return "Identifier_" + name; }
 
+	void updateHashWith(SipHash & hash) const override
+	{
+		hash.update("Identifier", strlen("Identifier") + 1);
+		hash.update(name.data(), name.size() + 1);
+	}
+
 	ASTPtr clone() const override { return new ASTIdentifier(*this); }
 
 	void collectIdentifierNames(IdentifierNameSet & set) const override

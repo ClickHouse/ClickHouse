@@ -21,6 +21,12 @@ public:
 
 	String getID() const override { return "ColumnDeclaration_" + name; }
 
+	void updateHashWith(SipHash & hash) const override
+	{
+		hash.update("ColumnDeclaration", strlen("ColumnDeclaration") + 1);
+		hash.update(name.data(), name.size() + 1);
+	}
+
 	ASTPtr clone() const override
 	{
 		const auto res = new ASTColumnDeclaration{*this};

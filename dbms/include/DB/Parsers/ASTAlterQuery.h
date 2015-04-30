@@ -89,6 +89,13 @@ public:
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() const override { return ("AlterQuery_" + database + "_" + table); };
 
+	void updateHashWith(SipHash & hash) const override
+	{
+		hash.update("AlterQuery", strlen("AlterQuery") + 1);
+		hash.update(database.data(), database.size() + 1);
+		hash.update(table.data(), table.size() + 1);
+	}
+
 	ASTPtr clone() const override
 	{
 		ASTAlterQuery * res = new ASTAlterQuery(*this);

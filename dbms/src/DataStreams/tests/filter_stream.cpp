@@ -41,7 +41,6 @@ int main(int argc, char ** argv)
 
 		formatAST(*ast, std::cerr);
 		std::cerr << std::endl;
-		std::cerr << ast->getTreeID() << std::endl;
 
 		Context context;
 		context.getColumns().push_back(NameAndTypePair("number", new DataTypeUInt64));

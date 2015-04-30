@@ -16,9 +16,14 @@ class ASTSubquery : public IAST
 public:
 	ASTSubquery() = default;
 	ASTSubquery(const StringRange range_) : IAST(range_) {}
-	
+
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() const override { return "Subquery"; }
+
+	void updateHashWith(SipHash & hash) const override
+	{
+		hash.update("Subquery", strlen("Subquery") + 1);
+	}
 
 	ASTPtr clone() const override
 	{
@@ -33,7 +38,11 @@ public:
 		return ptr;
 	}
 
-	String getColumnName() const override { return getTreeID(); }
+	String getColumnName() const override
+	{
+		auto id = getTreeID();
+		return toString(id.first) + "_" + toString(id.second);
+	}
 };
 
 }

@@ -16,16 +16,21 @@ class ASTExpressionList : public IAST
 public:
 	ASTExpressionList() = default;
 	ASTExpressionList(const StringRange range_) : IAST(range_) {}
-	
+
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() const override { return "ExpressionList"; }
+
+	void updateHashWith(SipHash & hash) const override
+	{
+		hash.update("ExpressionList", strlen("ExpressionList") + 1);
+	}
 
 	ASTPtr clone() const override
 	{
 		const auto res = new ASTExpressionList(*this);
 		ASTPtr ptr{res};
 		res->children.clear();
-		
+
 		for (const auto & child : children)
 			res->children.emplace_back(child->clone());
 

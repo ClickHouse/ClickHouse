@@ -5,8 +5,8 @@
 
 namespace DB
 {
-	
-	
+
+
 /** Запрос с секцией FORMAT.
 	*/
 class ASTQueryWithOutput : public IAST
@@ -27,6 +27,11 @@ public: \
 	Name() {} \
 	Name(StringRange range_) : ASTQueryWithOutput(range_) {} \
 	String getID() const override { return ID; }; \
+	\
+	void updateHashWith(SipHash & hash) const override \
+	{ \
+		hash.update(ID, strlen(ID) + 1); \
+	} \
 	\
 	ASTPtr clone() const override \
 	{ \

@@ -106,7 +106,6 @@ int main(int argc, char ** argv)
 
 		formatAST(*ast, std::cerr);
 		std::cerr << std::endl;
-		std::cerr << ast->getTreeID() << std::endl;
 
 		/// создаём объект существующей таблицы хит лога
 

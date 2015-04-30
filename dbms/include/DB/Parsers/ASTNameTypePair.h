@@ -23,6 +23,12 @@ public:
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() const override { return "NameTypePair_" + name; }
 
+	void updateHashWith(SipHash & hash) const override
+	{
+		hash.update("NameTypePair", strlen("NameTypePair") + 1);
+		hash.update(name.data(), name.size() + 1);
+	}
+
 	ASTPtr clone() const override
 	{
 		ASTNameTypePair * res = new ASTNameTypePair(*this);

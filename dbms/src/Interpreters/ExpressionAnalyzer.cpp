@@ -1653,10 +1653,43 @@ void ExpressionAnalyzer::appendProjectResult(DB::ExpressionActionsChain & chain,
 	NamesWithAliases result_columns;
 
 	ASTs asts = select_query->select_expression_list->children;
-	for (size_t i = 0; i < asts.size(); ++i)
+
+	/// Выбор имён для столбцов результата.
+	size_t i = 1;
+	for (const auto & ast : asts)
 	{
-		result_columns.emplace_back(asts[i]->getColumnName(), asts[i]->getAliasOrColumnName());
-		step.required_output.push_back(result_columns.back().second);
+		String source_column_name = ast->getColumnName();
+		String result_column_name = ast->tryGetAlias();
+
+		/// Если не задан алиас - нужно сгенерировать какое-нибудь имя автоматически.
+		if (result_column_name.empty())
+		{
+			if (typeid_cast<const ASTLiteral *>(ast.get()) || typeid_cast<const ASTIdentifier *>(ast.get()))
+			{
+				/// Если выражение простое, то будем использовать его имя.
+				result_column_name = source_column_name;
+			}
+			else if (auto func = typeid_cast<const ASTFunction *>(ast.get()))
+			{
+				/// Для функций используем имя вида _1_func, где func - имя функции.
+				WriteBufferFromString wb(result_column_name);
+				writeChar('_', wb);
+				writeIntText(i, wb);
+				writeChar('_', wb);
+				writeString(func->name, wb);
+			}
+			else
+			{
+				/// Если выражение сложное и для него не задан алиас, будем использовать имя вида _1, _2, ...
+				WriteBufferFromString wb(result_column_name);
+				writeChar('_', wb);
+				writeIntText(i, wb);
+			}
+		}
+
+		result_columns.emplace_back(source_column_name, result_column_name);
+		step.required_output.emplace_back(result_columns.back().second);
+		++i;
 	}
 
 	step.actions->add(ExpressionAction::project(result_columns));
