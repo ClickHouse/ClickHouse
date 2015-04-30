@@ -610,6 +610,8 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 
 		interpreter_subquery = new InterpreterSelectQuery(
 			query.table, subquery_context, required_columns, QueryProcessingStage::Complete, subquery_depth + 1);
+
+		/// Если во внешнем запросе есть аггрегация, то WITH TOTALS игнорируется в подзапросе.
 		if (query_analyzer->hasAggregation())
 			interpreter_subquery->ignoreWithTotals();
 	}
