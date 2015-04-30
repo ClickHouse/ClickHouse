@@ -33,6 +33,7 @@
 #include <DB/Storages/StorageSystemDictionaries.h>
 #include <DB/Storages/StorageSystemColumns.h>
 #include <DB/Storages/StorageSystemFunctions.h>
+#include <DB/Storages/StorageSystemClusters.h>
 
 #include <DB/IO/copyData.h>
 #include <DB/IO/LimitReadBuffer.h>
@@ -541,6 +542,7 @@ int Server::main(const std::vector<std::string> & args)
 	global_context->addTable("system", "dictionaries",	StorageSystemDictionaries::create("dictionaries"));
 	global_context->addTable("system", "columns",   StorageSystemColumns::create("columns"));
 	global_context->addTable("system", "functions", StorageSystemFunctions::create("functions"));
+	global_context->addTable("system", "clusters", StorageSystemClusters::create("clusters", *global_context));
 
 	if (has_zookeeper)
 		global_context->addTable("system", "zookeeper", StorageSystemZooKeeper::create("zookeeper"));

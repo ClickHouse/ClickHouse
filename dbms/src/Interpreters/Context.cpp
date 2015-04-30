@@ -815,6 +815,12 @@ Cluster & Context::getCluster(const std::string & cluster_name)
 		throw Poco::Exception("Failed to find cluster with name = " + cluster_name);
 }
 
+Poco::SharedPtr<Clusters> Context::getClusters() const
+{
+	if (!shared->clusters)
+		throw Poco::Exception("Clusters have not been initialized yet.");
+	return shared->clusters;
+}
 
 Compiler & Context::getCompiler()
 {
