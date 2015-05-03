@@ -809,76 +809,76 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 /// Случай явного перечисления значений.
 void ExpressionAnalyzer::makeExplicitSet(ASTFunction * node, const Block & sample_block, bool create_ordered_set)
 {
-		IAST & args = *node->arguments;
-		ASTPtr & arg = args.children.at(1);
+	IAST & args = *node->arguments;
+	ASTPtr & arg = args.children.at(1);
 
-		DataTypes set_element_types;
-		ASTPtr & left_arg = args.children.at(0);
+	DataTypes set_element_types;
+	ASTPtr & left_arg = args.children.at(0);
 
-		ASTFunction * left_arg_tuple = typeid_cast<ASTFunction *>(&*left_arg);
+	ASTFunction * left_arg_tuple = typeid_cast<ASTFunction *>(&*left_arg);
 
-		if (left_arg_tuple && left_arg_tuple->name == "tuple")
+	if (left_arg_tuple && left_arg_tuple->name == "tuple")
+	{
+		for (const auto & arg : left_arg_tuple->arguments->children)
 		{
-			for (const auto & arg : left_arg_tuple->arguments->children)
-			{
-				const auto & data_type = sample_block.getByName(arg->getColumnName()).type;
+			const auto & data_type = sample_block.getByName(arg->getColumnName()).type;
 
-				/// @note prevent crash in query: SELECT (1, [1]) in (1, 1)
-				if (const auto array = typeid_cast<const DataTypeArray * >(data_type.get()))
-					throw Exception("Incorrect element of tuple: " + array->getName(), ErrorCodes::INCORRECT_ELEMENT_OF_SET);
+			/// @note prevent crash in query: SELECT (1, [1]) in (1, 1)
+			if (const auto array = typeid_cast<const DataTypeArray * >(data_type.get()))
+				throw Exception("Incorrect element of tuple: " + array->getName(), ErrorCodes::INCORRECT_ELEMENT_OF_SET);
 
-				set_element_types.push_back(data_type);
-			}
+			set_element_types.push_back(data_type);
 		}
+	}
+	else
+	{
+		DataTypePtr left_type = sample_block.getByName(left_arg->getColumnName()).type;
+		if (DataTypeArray * array_type = typeid_cast<DataTypeArray *>(&*left_type))
+			set_element_types.push_back(array_type->getNestedType());
 		else
-		{
-			DataTypePtr left_type = sample_block.getByName(left_arg->getColumnName()).type;
-			if (DataTypeArray * array_type = typeid_cast<DataTypeArray *>(&*left_type))
-				set_element_types.push_back(array_type->getNestedType());
-			else
-				set_element_types.push_back(left_type);
-		}
+			set_element_types.push_back(left_type);
+	}
 
-		/// Отличим случай x in (1, 2) от случая x in 1 (он же x in (1)).
-		bool single_value = false;
-		ASTPtr elements_ast = arg;
+	/// Отличим случай x in (1, 2) от случая x in 1 (он же x in (1)).
+	bool single_value = false;
+	ASTPtr elements_ast = arg;
 
-		if (ASTFunction * set_func = typeid_cast<ASTFunction *>(&*arg))
-		{
-			if (set_func->name != "tuple")
-				throw Exception("Incorrect type of 2nd argument for function " + node->name + ". Must be subquery or set of values.",
-								ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-			/// Отличм случай (x, y) in ((1, 2), (3, 4)) от случая (x, y) in (1, 2).
-			ASTFunction * any_element = typeid_cast<ASTFunction *>(&*set_func->arguments->children.at(0));
-			if (set_element_types.size() >= 2 && (!any_element || any_element->name != "tuple"))
-				single_value = true;
-			else
-				elements_ast = set_func->arguments;
-		}
-		else if (typeid_cast<ASTLiteral *>(&*arg))
-		{
-			single_value = true;
-		}
-		else
-		{
+	if (ASTFunction * set_func = typeid_cast<ASTFunction *>(&*arg))
+	{
+		if (set_func->name != "tuple")
 			throw Exception("Incorrect type of 2nd argument for function " + node->name + ". Must be subquery or set of values.",
 							ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-		}
 
-		if (single_value)
-		{
-			ASTPtr exp_list = new ASTExpressionList;
-			exp_list->children.push_back(elements_ast);
-			elements_ast = exp_list;
-		}
+		/// Отличм случай (x, y) in ((1, 2), (3, 4)) от случая (x, y) in (1, 2).
+		ASTFunction * any_element = typeid_cast<ASTFunction *>(&*set_func->arguments->children.at(0));
+		if (set_element_types.size() >= 2 && (!any_element || any_element->name != "tuple"))
+			single_value = true;
+		else
+			elements_ast = set_func->arguments;
+	}
+	else if (typeid_cast<ASTLiteral *>(&*arg))
+	{
+		single_value = true;
+	}
+	else
+	{
+		throw Exception("Incorrect type of 2nd argument for function " + node->name + ". Must be subquery or set of values.",
+						ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+	}
 
-		ASTSet * ast_set = new ASTSet(arg->getColumnName());
-		ASTPtr ast_set_ptr = ast_set;
-		ast_set->set = new Set(settings.limits);
-		ast_set->is_explicit = true;
-		ast_set->set->createFromAST(set_element_types, elements_ast, create_ordered_set);
-		arg = ast_set_ptr;
+	if (single_value)
+	{
+		ASTPtr exp_list = new ASTExpressionList;
+		exp_list->children.push_back(elements_ast);
+		elements_ast = exp_list;
+	}
+
+	ASTSet * ast_set = new ASTSet(arg->getColumnName());
+	ASTPtr ast_set_ptr = ast_set;
+	ast_set->set = new Set(settings.limits);
+	ast_set->is_explicit = true;
+	ast_set->set->createFromAST(set_element_types, elements_ast, create_ordered_set);
+	arg = ast_set_ptr;
 }
 
 
