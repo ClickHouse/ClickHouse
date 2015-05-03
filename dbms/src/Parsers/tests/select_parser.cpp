@@ -27,6 +27,7 @@ int main(int argc, char ** argv)
 	std::cout << "Success." << std::endl;
 	formatAST(*ast, std::cerr);
 	std::cout << std::endl;
+	std::cout << std::endl << ast->getTreeID() << std::endl;
 
 	return 0;
 }

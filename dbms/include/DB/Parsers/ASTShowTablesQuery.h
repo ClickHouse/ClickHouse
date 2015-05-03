@@ -20,14 +20,9 @@ public:
 
 	ASTShowTablesQuery() = default;
 	ASTShowTablesQuery(const StringRange range_) : ASTQueryWithOutput(range_) {}
-
+	
 	/** Получить текст, который идентифицирует этот элемент. */
-	String getID() const override { return "ShowTablesQuery"; };
-
-	void updateHashWith(SipHash & hash) const override
-	{
-		hash.update("ShowTablesQuery", strlen("ShowTablesQuery") + 1);
-	}
+	String getID() const override { return "ShowTables"; };
 
 	ASTPtr clone() const override
 	{
@@ -35,13 +30,13 @@ public:
 		ASTPtr ptr{res};
 
 		res->children.clear();
-
+		
 		if (format)
 		{
 			res->format = format->clone();
 			res->children.push_back(res->format);
 		}
-
+		
 		return ptr;
 	}
 };

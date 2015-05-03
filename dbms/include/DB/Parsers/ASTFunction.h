@@ -5,6 +5,7 @@
 #include <DB/Functions/IFunction.h>
 #include <DB/AggregateFunctions/IAggregateFunction.h>
 #include <DB/IO/WriteBufferFromString.h>
+#include <DB/Common/SipHash.h>
 
 
 namespace DB
@@ -37,14 +38,39 @@ public:
 	ASTFunction() = default;
 	ASTFunction(const StringRange range_) : ASTWithAlias(range_) {}
 
+	String getColumnName() const override
+	{
+		SipHash hash;
+
+		hash.update(name.data(), name.size());
+
+		if (parameters)
+		{
+			hash.update("(", 1);
+			for (const auto & param : parameters->children)
+			{
+				String param_name = param->getColumnName();		/// TODO Сделать метод updateHashWith.
+				hash.update(param_name.data(), param_name.size() + 1);
+			}
+			hash.update(")", 1);
+		}
+
+		hash.update("(", 1);
+		for (const auto & arg : arguments->children)
+		{
+			String arg_name = arg->getColumnName();
+			hash.update(arg_name.data(), arg_name.size() + 1);
+		}
+		hash.update(")", 1);
+
+		UInt64 low, high;
+		hash.get128(low, high);
+
+		return toString(high) + "_" + toString(low);			/// TODO hex.
+	}
+
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() const override { return "Function_" + name; }
-
-	void updateHashWith(SipHash & hash) const override
-	{
-		hash.update("Function", strlen("Function") + 1);
-		hash.update(name.data(), name.size() + 1);
-	}
 
 	ASTPtr clone() const override
 	{

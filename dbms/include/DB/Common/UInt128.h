@@ -21,11 +21,6 @@ struct UInt128
 	bool operator!= (const UInt64 rhs) const { return first != rhs || second != 0; }
 
 	UInt128 & operator= (const UInt64 rhs) { first = rhs; second = 0; return *this; }
-
-	bool operator< (const UInt128 rhs) const
-	{
-		return std::tie(first, second) < std::tie(rhs.first, rhs.second);
-	}
 };
 
 struct UInt128Hash

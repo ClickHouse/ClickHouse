@@ -12,7 +12,7 @@
 namespace DB
 {
 
-LogicalExpressionsOptimizer::OrWithExpression::OrWithExpression(ASTFunction * or_function_, UInt128 expression_)
+LogicalExpressionsOptimizer::OrWithExpression::OrWithExpression(ASTFunction * or_function_, const std::string & expression_)
 	: or_function(or_function_), expression(expression_)
 {
 }

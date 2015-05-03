@@ -69,14 +69,6 @@ public:
 		return res;
 	};
 
-	void updateHashWith(SipHash & hash) const override
-	{
-		hash.update("Join", strlen("Join") + 1);
-		hash.update(reinterpret_cast<const char *>(&locality), sizeof(locality));
-		hash.update(reinterpret_cast<const char *>(&strictness), sizeof(strictness));
-		hash.update(reinterpret_cast<const char *>(&kind), sizeof(kind));
-	}
-
 	ASTPtr clone() const override
 	{
 		ASTJoin * res = new ASTJoin(*this);

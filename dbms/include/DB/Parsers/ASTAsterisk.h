@@ -16,11 +16,6 @@ public:
 	String getID() const override { return "Asterisk"; }
 	ASTPtr clone() const override { return new ASTAsterisk(*this); }
 	String getColumnName() const override { return "*"; }
-
-	void updateHashWith(SipHash & hash) const override
-	{
-		hash.update("Asterisk", strlen("Asterisk") + 1);
-	}
 };
 
 }

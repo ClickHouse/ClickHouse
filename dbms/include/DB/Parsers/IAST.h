@@ -9,10 +9,8 @@
 #include <Yandex/Common.h>
 
 #include <DB/Core/Types.h>
-#include <DB/Common/UInt128.h>
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
-#include <DB/Common/SipHash.h>
 #include <DB/IO/WriteHelpers.h>
 #include <DB/Parsers/StringRange.h>
 
@@ -45,66 +43,14 @@ public:
 	IAST(const StringRange range_) : range(range_) {}
 	virtual ~IAST() = default;
 
-	/** Получить имя, однозначно идентифицирующее выражение, если элемент является столбцом. У одинаковых выражений будет одинаковое имя. */
-	virtual String getColumnName() const
-	{
-		/// По-умолчанию - подчёркивание, а затем getTreeID в hex-е.
+	/** Получить каноническое имя столбца, если элемент является столбцом */
+	virtual String getColumnName() const { throw Exception("Trying to get name of not a column: " + getID(), ErrorCodes::NOT_A_COLUMN); }
 
-		union
-		{
-			UInt128 id;
-			UInt8 id_bytes[16];
-		};
-
-		id = getTreeID();
-		String res(1 + 2 * sizeof(id), '_');
-
-		for (size_t i = 0; i < sizeof(id); ++i)
-		{
-			res[i * 2 + 1] = (id_bytes[i] / 16) < 10 ? ('0' + (id_bytes[i] / 16)) : ('A' + (id_bytes[i] / 16 - 10));
-			res[i * 2 + 2] = (id_bytes[i] % 16) < 10 ? ('0' + (id_bytes[i] % 16)) : ('A' + (id_bytes[i] % 16 - 10));
-		}
-
-		return res;
-	}
-
-	/** Получить алиас, если он есть, или имя столбца, если его нет. */
+	/** Получить алиас, если он есть, или каноническое имя столбца, если его нет. */
 	virtual String getAliasOrColumnName() const { return getColumnName(); }
 
 	/** Получить алиас, если он есть, или пустую строку, если его нет, или если элемент не поддерживает алиасы. */
 	virtual String tryGetAlias() const { return String(); }
-
-	/** Обновить состояние хэш-функции элементом дерева. */
-	virtual void updateHashWith(SipHash & hash) const = 0;
-
-	/** Обновить состояние хэш-функции целым поддеревом. Используется для склейки одинаковых выражений. */
-	void updateHashWithTree(SipHash & hash) const
-	{
-		updateHashWith(hash);
-
-		if (!children.empty())
-		{
-			size_t size = children.size();
-			hash.update(reinterpret_cast<const char *>(&size), sizeof(size));
-
-			for (size_t i = 0; i < size; ++i)
-			{
-				hash.update(reinterpret_cast<const char *>(&i), sizeof(i));
-				children[i]->updateHashWithTree(hash);
-			}
-		}
-	}
-
-	/** Получить идентификатор поддерева. Используется для склейки одинаковых выражений.
-	  */
-	UInt128 getTreeID() const
-	{
-		SipHash hash;
-		updateHashWithTree(hash);
-		UInt128 res;
-		hash.get128(reinterpret_cast<char *>(&res));
-		return res;
-	}
 
 	/** Установить алиас. */
 	virtual void setAlias(const String & to)
@@ -125,6 +71,37 @@ public:
 			(*it)->is_visited = false;
 	}
 
+	/** Получить текст, который идентифицирует этот элемент и всё поддерево.
+	  * Обычно он содержит идентификатор элемента и getTreeID от всех детей.
+	  */
+	String getTreeID() const
+	{
+		std::stringstream s;
+		s << getID();
+
+		if (!children.empty())
+		{
+			s << "(";
+			for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
+			{
+				if (it != children.begin())
+					s << ", ";
+				s << (*it)->getTreeID();
+			}
+			s << ")";
+		}
+
+		return s.str();
+	}
+
+	void dumpTree(std::ostream & ostr, size_t indent = 0) const
+	{
+		String indent_str(indent, '-');
+		ostr << indent_str << getID() << ", " << this << std::endl;
+		for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
+			(*it)->dumpTree(ostr, indent + 1);
+	}
+
 	/** Проверить глубину дерева.
 	  * Если задано max_depth и глубина больше - кинуть исключение.
 	  * Возвращает глубину дерева.
@@ -139,8 +116,8 @@ public:
 	size_t checkSize(size_t max_size) const
 	{
 		size_t res = 1;
-		for (const auto & ast : children)
-			res += ast->checkSize(max_size);
+		for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
+			res += (*it)->checkSize(max_size);
 
 		if (res > max_size)
 			throw Exception("AST is too big. Maximum: " + toString(max_size), ErrorCodes::TOO_BIG_AST);
@@ -149,22 +126,22 @@ public:
 	}
 
 	/**  Получить set из имен индентификаторов
-	  */
+	 */
 	virtual void collectIdentifierNames(IdentifierNameSet & set) const
 	{
-		for (const auto & ast : children)
-			ast->collectIdentifierNames(set);
+		for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
+			(*it)->collectIdentifierNames(set);
 	}
 
 private:
 	size_t checkDepthImpl(size_t max_depth, size_t level) const
 	{
 		size_t res = level + 1;
-		for (const auto & ast : children)
+		for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
 		{
 			if (level >= max_depth)
 				throw Exception("AST is too deep. Maximum: " + toString(max_depth), ErrorCodes::TOO_DEEP_AST);
-			res = std::max(res, ast->checkDepthImpl(max_depth, level + 1));
+			res = std::max(res, (*it)->checkDepthImpl(max_depth, level + 1));
 		}
 
 		return res;

@@ -26,14 +26,9 @@ public:
 
 	ASTSetQuery() = default;
 	ASTSetQuery(const StringRange range_) : IAST(range_) {}
-
+	
 	/** Получить текст, который идентифицирует этот элемент. */
-	String getID() const override { return "SetQuery"; };
-
-	void updateHashWith(SipHash & hash) const override
-	{
-		hash.update("SetQuery", strlen("SetQuery") + 1);
-	}
+	String getID() const override { return "Set"; };
 
 	ASTPtr clone() const override { return new ASTSetQuery(*this); }
 };

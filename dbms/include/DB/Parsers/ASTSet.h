@@ -22,11 +22,6 @@ public:
 	String getID() const override { return "Set_" + getColumnName(); }
 	ASTPtr clone() const override { return new ASTSet(*this); }
 	String getColumnName() const override { return column_name; }
-
-	void updateHashWith(SipHash & hash) const override
-	{
-		hash.update("Set", strlen("Set") + 1);
-	}
 };
 
 }

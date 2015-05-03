@@ -25,12 +25,6 @@ public:
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() const override { return "Literal_" + apply_visitor(FieldVisitorDump(), value); }
 
-	void updateHashWith(SipHash & hash) const override
-	{
-		hash.update("Literal", strlen("Literal") + 1);
-		apply_visitor(FieldVisitorUpdateHash(hash), value);
-	}
-
 	ASTPtr clone() const override { return new ASTLiteral(*this); }
 };
 

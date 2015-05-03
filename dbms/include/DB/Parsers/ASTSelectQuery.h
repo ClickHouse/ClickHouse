@@ -39,11 +39,6 @@ public:
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() const override { return "SelectQuery"; };
 
-	void updateHashWith(SipHash & hash) const override
-	{
-		hash.update("SelectQuery", strlen("SelectQuery") + 1);
-	}
-
 	/// Проверить наличие функции arrayJoin. (Не большого ARRAY JOIN.)
 	static bool hasArrayJoin(const ASTPtr & ast)
 	{
