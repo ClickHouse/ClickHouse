@@ -7,11 +7,13 @@
 #include <DB/Core/ColumnNumbers.h>
 #include <DB/Core/ColumnsWithNameAndType.h>
 #include <DB/DataTypes/IDataType.h>
-#include <DB/Interpreters/ExpressionActions.h>
 
 
 namespace DB
 {
+
+class ExpressionAction;
+
 
 /** Интерфейс для обычных функций.
   * Обычные функции - это функции, которые не меняют количество строк в таблице,
@@ -54,7 +56,7 @@ public:
 	virtual void getReturnTypeAndPrerequisites(
 		const ColumnsWithNameAndType & arguments,
 		DataTypePtr & out_return_type,
-		ExpressionActions::Actions & out_prerequisites)
+		std::vector<ExpressionAction> & out_prerequisites)
 	{
 		DataTypes types(arguments.size());
 		for (size_t i = 0; i < arguments.size(); ++i)

@@ -24,6 +24,7 @@
 #include <DB/Common/UnicodeBar.h>
 #include <DB/Common/HashTable/HashMap.h>
 #include <DB/Functions/IFunction.h>
+#include <DB/Interpreters/ExpressionActions.h>
 #include <statdaemons/ext/range.hpp>
 
 

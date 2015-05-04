@@ -490,8 +490,8 @@ public:
 	  * Для неконстантных столбцов arguments[i].column = nullptr.
 	  */
 	void getReturnTypeAndPrerequisites(const ColumnsWithNameAndType & arguments,
-												DataTypePtr & out_return_type,
-												ExpressionActions::Actions & out_prerequisites)
+		DataTypePtr & out_return_type,
+		std::vector<ExpressionAction> & out_prerequisites)
 	{
 		if (arguments.size() != 2)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
