@@ -13,8 +13,9 @@ Cluster::Address::Address(const String & config_prefix)
 {
 	auto & config = Poco::Util::Application::instance().config();
 
+	host_name = config.getString(config_prefix + ".host");
 	host_port = Poco::Net::SocketAddress(
-		config.getString(config_prefix + ".host"),
+		host_name,
 		config.getInt(config_prefix + ".port")
 	);
 
