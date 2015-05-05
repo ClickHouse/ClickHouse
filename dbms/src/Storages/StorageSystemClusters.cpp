@@ -62,15 +62,7 @@ BlockInputStreams StorageSystemClusters::read(
 		replica_num_column->insert(static_cast<UInt64>(address.replica_num));
 
 		host_name_column->insert(address.host_name);
-
-		const auto & ip_address = address.host_port.host();
-		Poco::Net::IPAddress presented_ip_address;
-		if (ip_address.family() == Poco::Net::IPAddress::IPv6)
-			presented_ip_address = ip_address;
-		else
-			presented_ip_address = Poco::Net::IPAddress("::FFFF:" + ip_address.toString());
-
-		host_address_column->insert(presented_ip_address.toString());
+		host_address_column->insert(address.host_port.host().toString());
 		port_column->insert(static_cast<UInt64>(address.host_port.port()));
 		user_column->insert(address.user);
 	};
