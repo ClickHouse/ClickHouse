@@ -191,6 +191,8 @@ void Compiler::compile(
 	CodeGenerator get_code,
 	ReadyCallback on_ready)
 {
+	ProfileEvents::increment(ProfileEvents::CompileAttempt);
+
 	std::string prefix = path + "/" + file_name;
 	std::string cpp_file_path = prefix + ".cpp";
 	std::string so_file_path = prefix + ".so";
@@ -257,6 +259,7 @@ void Compiler::compile(
 	}
 
 	LOG_INFO(log, "Compiled code " << file_name);
+	ProfileEvents::increment(ProfileEvents::CompileSuccess);
 
 	on_ready(lib);
 }
