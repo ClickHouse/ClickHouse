@@ -499,7 +499,7 @@ void InterpreterSelectQuery::executeSingleQuery()
 
 		if (second_stage)
 		{
-			bool need_second_distinct_pass = true;
+			bool need_second_distinct_pass = query.distinct;
 
 			if (need_aggregate)
 			{
@@ -515,7 +515,7 @@ void InterpreterSelectQuery::executeSingleQuery()
 				executeExpression(streams, before_order_and_select);
 				executeDistinct(streams, true, selected_columns);
 
-				need_second_distinct_pass = streams.size() > 1;
+				need_second_distinct_pass = query.distinct && (streams.size() > 1);
 			}
 			else if (query.group_by_with_totals && !aggregate_final)
 			{
@@ -547,6 +547,9 @@ void InterpreterSelectQuery::executeSingleQuery()
 				*/
 			if (query.limit_length && streams.size() > 1 && !query.distinct)
 				executePreLimit(streams);
+
+			if (need_second_distinct_pass)
+				union_within_single_query = true;
 
 			if (union_within_single_query)
 				executeUnion(streams);
