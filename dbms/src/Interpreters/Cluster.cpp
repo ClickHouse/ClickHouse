@@ -69,7 +69,7 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 
 	const auto & config_prefix = cluster_name + ".";
 
-	UInt32 current_shard_num = 0;
+	UInt32 current_shard_num = 1;
 
 	for (auto it = config_keys.begin(); it != config_keys.end(); ++it)
 	{
@@ -81,7 +81,7 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 				continue;
 
 			addresses.emplace_back(prefix);
-			addresses.back().replica_num = 0;
+			addresses.back().replica_num = 1;
 
 			slot_to_shard.insert(std::end(slot_to_shard), weight, shard_info_vec.size());
 			if (const auto is_local = isLocal(addresses.back()))
@@ -96,7 +96,7 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 
 			addresses_with_failover.emplace_back();
 			Addresses & replica_addresses = addresses_with_failover.back();
-			UInt32 current_replica_num = 0;
+			UInt32 current_replica_num = 1;
 
 			const auto & partial_prefix = config_prefix + *it + ".";
 			const auto weight = config.getInt(partial_prefix + ".weight", 1);
