@@ -63,6 +63,7 @@ public:
 		* </shard>
 		*/
 		Poco::Net::SocketAddress host_port;
+		String host_name;
 		String user;
 		String password;
 		UInt32 replica_num;

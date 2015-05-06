@@ -61,11 +61,8 @@ BlockInputStreams StorageSystemClusters::read(
 		shard_weight_column->insert(static_cast<UInt64>(shard_info.weight));
 		replica_num_column->insert(static_cast<UInt64>(address.replica_num));
 
-		const std::string & source = address.host_port.host().toString();
-		const auto host_entry = Poco::Net::DNS::resolve(source);
-		host_name_column->insert(host_entry.name());
-		host_address_column->insert(host_entry.addresses()[0].toString());
-
+		host_name_column->insert(address.host_name);
+		host_address_column->insert(address.host_port.host().toString());
 		port_column->insert(static_cast<UInt64>(address.host_port.port()));
 		user_column->insert(address.user);
 	};
