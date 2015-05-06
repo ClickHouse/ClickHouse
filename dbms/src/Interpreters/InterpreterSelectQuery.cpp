@@ -24,6 +24,7 @@
 #include <DB/Parsers/ASTOrderByElement.h>
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>
+#include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Storages/StorageView.h>
 #include <DB/TableFunctions/ITableFunction.h>
 #include <DB/TableFunctions/TableFunctionFactory.h>
@@ -32,6 +33,9 @@
 
 namespace DB
 {
+
+InterpreterSelectQuery::~InterpreterSelectQuery() = default;
+
 
 void InterpreterSelectQuery::init(BlockInputStreamPtr input, const Names & required_column_names, const NamesAndTypesList & table_column_names)
 {
@@ -269,10 +273,9 @@ DataTypes InterpreterSelectQuery::getReturnTypes()
 {
 	DataTypes res;
 	NamesAndTypesList columns = query_analyzer->getSelectSampleBlock().getColumnsList();
-	for (NamesAndTypesList::iterator it = columns.begin(); it != columns.end(); ++it)
-	{
-		res.push_back(it->type);
-	}
+	for (auto & column : columns)
+		res.push_back(column.type);
+
 	return res;
 }
 
@@ -1003,6 +1006,12 @@ BlockInputStreamPtr InterpreterSelectQuery::executeAndFormat(WriteBuffer & buf)
 	copyData(*in, *out);
 
 	return in;
+}
+
+
+void InterpreterSelectQuery::ignoreWithTotals()
+{
+	query.group_by_with_totals = false;
 }
 
 
