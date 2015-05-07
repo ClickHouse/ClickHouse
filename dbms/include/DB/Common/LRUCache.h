@@ -136,7 +136,7 @@ private:
 	public:
 		bool expired(const Timestamp & last_timestamp, const Delay & expiration_delay) const
 		{
-			return (expiration_delay == Delay::zero()) || 
+			return (expiration_delay == Delay::zero()) ||
 				((last_timestamp > timestamp) && ((last_timestamp - timestamp) > expiration_delay));
 		}
 
