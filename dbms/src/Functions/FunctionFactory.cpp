@@ -58,7 +58,6 @@ FunctionFactory::FunctionFactory()
 }
 
 
-
 FunctionPtr FunctionFactory::get(
 	const String & name,
 	const Context & context) const

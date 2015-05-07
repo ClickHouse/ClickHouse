@@ -9,7 +9,7 @@ namespace DB
 {
 
 
-bool ParserJoin::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
+bool ParserJoin::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	Pos begin = pos;
 
@@ -22,6 +22,9 @@ bool ParserJoin::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expecte
 	ParserString s_all("ALL", true, true);
 	ParserString s_inner("INNER", true, true);
 	ParserString s_left("LEFT", true, true);
+	ParserString s_right("RIGHT", true, true);
+	ParserString s_full("FULL", true, true);
+	ParserString s_outer("OUTER", true, true);
 	ParserString s_join("JOIN", true, true);
 	ParserString s_using("USING", true, true);
 
@@ -54,21 +57,29 @@ bool ParserJoin::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expecte
 		join->kind = ASTJoin::Inner;
 	else if (s_left.ignore(pos, end))
 		join->kind = ASTJoin::Left;
+	else if (s_right.ignore(pos, end))
+		join->kind = ASTJoin::Right;
+	else if (s_full.ignore(pos, end))
+		join->kind = ASTJoin::Full;
 	else
 	{
-		expected = "INNER|LEFT";
+		expected = "INNER|LEFT|RIGHT|FULL";
 		return false;
 	}
 
 	ws.ignore(pos, end);
 
-	if (!s_join.ignore(pos, end, expected))
+	/// Для всех JOIN-ов кроме INNER может присутствовать не обязательное слово "OUTER".
+	if (join->kind != ASTJoin::Inner && s_outer.ignore(pos, end))
+		ws.ignore(pos, end);
+
+	if (!s_join.ignore(pos, end, max_parsed_pos, expected))
 		return false;
 
 	ws.ignore(pos, end);
 
-	if (!identifier.parse(pos, end, join->table, expected)
-		&& !subquery.parse(pos, end, join->table, expected))
+	if (!identifier.parse(pos, end, join->table, max_parsed_pos, expected)
+		&& !subquery.parse(pos, end, join->table, max_parsed_pos, expected))
 		return false;
 
 	ws.ignore(pos, end);
@@ -77,12 +88,12 @@ bool ParserJoin::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expecte
 	ParserAlias().ignore(pos, end);
 	ws.ignore(pos, end);
 
-	if (!s_using.ignore(pos, end, expected))
+	if (!s_using.ignore(pos, end, max_parsed_pos, expected))
 		return false;
 
 	ws.ignore(pos, end);
 
-	if (!exp_list.parse(pos, end, join->using_expr_list, expected))
+	if (!exp_list.parse(pos, end, join->using_expr_list, max_parsed_pos, expected))
 		return false;
 
 	ws.ignore(pos, end);

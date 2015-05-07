@@ -4,6 +4,8 @@
 #include <DB/Columns/ColumnString.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/Interpreters/Context.h>
+#include <DB/Storages/MergeTree/MergeList.h>
+
 
 namespace DB
 {

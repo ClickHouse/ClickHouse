@@ -9,7 +9,9 @@
 #include <DB/Storages/MergeTree/ActiveDataPartSet.h>
 #include <DB/IO/ReadBufferFromString.h>
 #include <DB/IO/WriteBufferFromFile.h>
+#include <DB/IO/ReadBufferFromFile.h>
 #include <DB/Common/escapeForFileName.h>
+#include <DB/Common/SipHash.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <Poco/RWLock.h>
@@ -258,6 +260,8 @@ public:
 		/// Описание столбцов.
 		NamesAndTypesList columns;
 
+		using ColumnToSize = std::map<std::string, size_t>;
+
 		/** Блокируется на запись при изменении columns, checksums или любых файлов куска.
 		  * Блокируется на чтение при    чтении columns, checksums или любых файлов куска.
 		  */
@@ -299,7 +303,7 @@ public:
 			}
 		}
 
-		/// Вычисляем сумарный размер всей директории со всеми файлами
+		/// Вычисляем суммарный размер всей директории со всеми файлами
 		static size_t calcTotalSize(const String & from)
 		{
 			Poco::File cur(from);
@@ -435,6 +439,14 @@ public:
 			ReadBufferFromFile file(path, std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path).getSize()));
 			if (checksums.read(file))
 				assertEOF(file);
+		}
+
+		void accumulateColumnSizes(ColumnToSize & column_to_size) const
+		{
+			Poco::ScopedReadRWLock part_lock(columns_lock);
+			for (const NameAndTypePair & column : *storage.columns)
+				if (Poco::File(storage.full_path + name + "/" + escapeForFileName(column.name) + ".bin").exists())
+					column_to_size[column.name] += Poco::File(storage.full_path + name + "/" + escapeForFileName(column.name) + ".bin").getSize();
 		}
 
 		void loadColumns(bool require)
@@ -704,6 +716,10 @@ public:
 	DataParts getDataParts();
 	DataPartsVector getDataPartsVector();
 	DataParts getAllDataParts();
+
+	/** Размер активной части в количестве байт.
+	  */
+	size_t getTotalActiveSizeInBytes();
 
 	/** Максимальное количество кусков в одном месяце.
 	  */

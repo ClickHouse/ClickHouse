@@ -10,7 +10,7 @@
 namespace DB
 {
 
-bool ParserNestedTable::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
+bool ParserNestedTable::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	ParserWhiteSpaceOrComments ws;
 	ParserString open("(");
@@ -24,7 +24,7 @@ bool ParserNestedTable::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 	Pos begin = pos;
 
 	/// Пока name == 'Nested', возможно потом появятся альтернативные вложенные структуры данных
-	if (!name_p.parse(pos, end, name, expected))
+	if (!name_p.parse(pos, end, name, max_parsed_pos, expected))
 		return false;
 
 	ws.ignore(pos, end);
@@ -34,7 +34,7 @@ bool ParserNestedTable::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 
 	ws.ignore(pos, end);
 
-	if (!columns_p.parse(pos, end, columns, expected))
+	if (!columns_p.parse(pos, end, columns, max_parsed_pos, expected))
 		return false;
 
 	ws.ignore(pos, end);
@@ -52,64 +52,54 @@ bool ParserNestedTable::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 }
 
 
-bool ParserIdentifierWithParameters::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
+bool ParserIdentifierWithParameters::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
-	Pos begin = pos;
-
 	ParserFunction function_or_array;
-	if (function_or_array.parse(pos, end, node, expected))
+	if (function_or_array.parse(pos, end, node, max_parsed_pos, expected))
 		return true;
-
-	pos = begin;
 
 	ParserNestedTable nested;
-	if (nested.parse(pos, end, node, expected))
+	if (nested.parse(pos, end, node, max_parsed_pos, expected))
 		return true;
-
-	pos = begin;
 
 	return false;
 }
 
 
-bool ParserIdentifierWithOptionalParameters::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
+bool ParserIdentifierWithOptionalParameters::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	ParserIdentifier non_parametric;
 	ParserIdentifierWithParameters parametric;
 
 	Pos begin = pos;
 
-	if (parametric.parse(pos, end, node, expected))
-	{
+	if (parametric.parse(pos, end, node, max_parsed_pos, expected))
 		return true;
-	}
-	pos = begin;
 
 	ASTPtr ident;
-	if (non_parametric.parse(pos, end, ident, expected))
+	if (non_parametric.parse(pos, end, ident, max_parsed_pos, expected))
 	{
 		ASTFunction * func = new ASTFunction(StringRange(begin, pos));
 		node = func;
 		func->name = typeid_cast<ASTIdentifier &>(*ident).name;
 		return true;
 	}
-	pos = begin;
 
 	return false;
 }
 
-bool ParserNameTypePairList::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
+bool ParserNameTypePairList::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
-	return ParserList(ParserPtr(new ParserNameTypePair), ParserPtr(new ParserString(",")), false).parse(pos, end, node, expected);
+	return ParserList(ParserPtr(new ParserNameTypePair), ParserPtr(new ParserString(",")), false).parse(pos, end, node, max_parsed_pos, expected);
 }
 
-bool ParserColumnDeclarationList::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
+bool ParserColumnDeclarationList::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
-	return ParserList{ParserPtr{new ParserColumnDeclaration}, ParserPtr{new ParserString{","}}, false}.parse(pos, end, node, expected);
+	return ParserList{ParserPtr{new ParserColumnDeclaration}, ParserPtr{new ParserString{","}}, false}.parse(pos, end, node, max_parsed_pos, expected);
 }
 
 
-bool ParserEngine::parseImpl(Pos & pos, Pos end, ASTPtr & storage, Expected & expected)
+bool ParserEngine::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	ParserWhiteSpaceOrComments ws;
 	ParserString s_engine("ENGINE", true, true);
@@ -118,16 +108,16 @@ bool ParserEngine::parseImpl(Pos & pos, Pos end, ASTPtr & storage, Expected & ex
 
 	ws.ignore(pos, end);
 
-	if (s_engine.ignore(pos, end, expected))
+	if (s_engine.ignore(pos, end, max_parsed_pos, expected))
 	{
 		ws.ignore(pos, end);
 
-		if (!s_eq.ignore(pos, end, expected))
+		if (!s_eq.ignore(pos, end, max_parsed_pos, expected))
 			return false;
 
 		ws.ignore(pos, end);
 
-		if (!storage_p.parse(pos, end, storage, expected))
+		if (!storage_p.parse(pos, end, node, max_parsed_pos, expected))
 			return false;
 
 		ws.ignore(pos, end);
@@ -137,7 +127,7 @@ bool ParserEngine::parseImpl(Pos & pos, Pos end, ASTPtr & storage, Expected & ex
 }
 
 
-bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & expected)
+bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	Pos begin = pos;
 
@@ -179,9 +169,9 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 
 	ws.ignore(pos, end);
 
-	if (!s_create.ignore(pos, end, expected))
+	if (!s_create.ignore(pos, end, max_parsed_pos, expected))
 	{
-		if (s_attach.ignore(pos, end, expected))
+		if (s_attach.ignore(pos, end, max_parsed_pos, expected))
 			attach = true;
 		else
 			return false;
@@ -189,116 +179,116 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 
 	ws.ignore(pos, end);
 
-	if (s_temporary.ignore(pos, end, expected))
+	if (s_temporary.ignore(pos, end, max_parsed_pos, expected))
 	{
 		is_temporary = true;
 		ws.ignore(pos, end);
 	}
 
-	if (s_database.ignore(pos, end, expected))
+	if (s_database.ignore(pos, end, max_parsed_pos, expected))
 	{
 		ws.ignore(pos, end);
 
-		if (s_if.ignore(pos, end, expected)
+		if (s_if.ignore(pos, end, max_parsed_pos, expected)
 			&& ws.ignore(pos, end)
-			&& s_not.ignore(pos, end, expected)
+			&& s_not.ignore(pos, end, max_parsed_pos, expected)
 			&& ws.ignore(pos, end)
-			&& s_exists.ignore(pos, end, expected)
+			&& s_exists.ignore(pos, end, max_parsed_pos, expected)
 			&& ws.ignore(pos, end))
 			if_not_exists = true;
 
-		if (!name_p.parse(pos, end, database, expected))
+		if (!name_p.parse(pos, end, database, max_parsed_pos, expected))
 			return false;
 	}
-	else if (s_table.ignore(pos, end, expected))
+	else if (s_table.ignore(pos, end, max_parsed_pos, expected))
 	{
 		ws.ignore(pos, end);
 
-		if (s_if.ignore(pos, end, expected)
+		if (s_if.ignore(pos, end, max_parsed_pos, expected)
 			&& ws.ignore(pos, end)
-			&& s_not.ignore(pos, end, expected)
+			&& s_not.ignore(pos, end, max_parsed_pos, expected)
 			&& ws.ignore(pos, end)
-			&& s_exists.ignore(pos, end, expected)
+			&& s_exists.ignore(pos, end, max_parsed_pos, expected)
 			&& ws.ignore(pos, end))
 			if_not_exists = true;
 
-		if (!name_p.parse(pos, end, table, expected))
+		if (!name_p.parse(pos, end, table, max_parsed_pos, expected))
 			return false;
 
 		ws.ignore(pos, end);
 
-		if (s_dot.ignore(pos, end, expected))
+		if (s_dot.ignore(pos, end, max_parsed_pos, expected))
 		{
 			database = table;
-			if (!name_p.parse(pos, end, table, expected))
+			if (!name_p.parse(pos, end, table, max_parsed_pos, expected))
 				return false;
 
 			ws.ignore(pos, end);
 		}
 
 		/// Список столбцов
-		if (s_lparen.ignore(pos, end, expected))
+		if (s_lparen.ignore(pos, end, max_parsed_pos, expected))
 		{
 			ws.ignore(pos, end);
 
-			if (!columns_p.parse(pos, end, columns, expected))
+			if (!columns_p.parse(pos, end, columns, max_parsed_pos, expected))
 				return false;
 
 			ws.ignore(pos, end);
 
-			if (!s_rparen.ignore(pos, end, expected))
+			if (!s_rparen.ignore(pos, end, max_parsed_pos, expected))
 				return false;
 
 
 			ws.ignore(pos, end);
 
-			if (!engine_p.parse(pos, end, storage, expected))
+			if (!engine_p.parse(pos, end, storage, max_parsed_pos, expected))
 				return false;
 
 			/// Для engine VIEW необходимо так же считать запрос AS SELECT
 			if (storage && (typeid_cast<ASTFunction &>(*storage).name == "View"
 						|| typeid_cast<ASTFunction &>(*storage).name == "MaterializedView"))
 			{
-				if (!s_as.ignore(pos, end, expected))
+				if (!s_as.ignore(pos, end, max_parsed_pos, expected))
 					return false;
 				ws.ignore(pos, end);
 				Pos before_select = pos;
-				if (!s_select.ignore(pos, end, expected))
+				if (!s_select.ignore(pos, end, max_parsed_pos, expected))
 					return false;
 				pos = before_select;
 				ParserSelectQuery select_p;
-				select_p.parse(pos, end, select, expected);
+				select_p.parse(pos, end, select, max_parsed_pos, expected);
 			}
 		}
 		else
 		{
-			engine_p.parse(pos, end, storage, expected);
+			engine_p.parse(pos, end, storage, max_parsed_pos, expected);
 
-			if (!s_as.ignore(pos, end, expected))
+			if (!s_as.ignore(pos, end, max_parsed_pos, expected))
 				return false;
 
 			ws.ignore(pos, end);
 
 			/// AS SELECT ...
 			Pos before_select = pos;
-			if (s_select.ignore(pos, end, expected))
+			if (s_select.ignore(pos, end, max_parsed_pos, expected))
 			{
 				pos = before_select;
 				ParserSelectQuery select_p;
-				select_p.parse(pos, end, select, expected);
+				select_p.parse(pos, end, select, max_parsed_pos, expected);
 			}
 			else
 			{
 				/// AS [db.]table
-				if (!name_p.parse(pos, end, as_table, expected))
+				if (!name_p.parse(pos, end, as_table, max_parsed_pos, expected))
 					return false;
 
 				ws.ignore(pos, end);
 
-				if (s_dot.ignore(pos, end, expected))
+				if (s_dot.ignore(pos, end, max_parsed_pos, expected))
 				{
 					as_database = as_table;
-					if (!name_p.parse(pos, end, as_table, expected))
+					if (!name_p.parse(pos, end, as_table, max_parsed_pos, expected))
 						return false;
 
 					ws.ignore(pos, end);
@@ -307,76 +297,76 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Expected & 
 				ws.ignore(pos, end);
 
 				/// Опционально - может быть указана ENGINE.
-				engine_p.parse(pos, end, storage, expected);
+				engine_p.parse(pos, end, storage, max_parsed_pos, expected);
 			}
 		}
 	}
 	else
 	{
 		/// VIEW or MATERIALIZED VIEW
-		if (s_materialized.ignore(pos, end, expected) && ws.ignore(pos, end, expected))
+		if (s_materialized.ignore(pos, end, max_parsed_pos, expected) && ws.ignore(pos, end, max_parsed_pos, expected))
 			is_materialized_view = true;
 		else
 			is_view = true;
 
-		if (!s_view.ignore(pos, end, expected) || !ws.ignore(pos, end, expected))
+		if (!s_view.ignore(pos, end, max_parsed_pos, expected) || !ws.ignore(pos, end, max_parsed_pos, expected))
 			return false;
 
-		if (s_if.ignore(pos, end, expected)
+		if (s_if.ignore(pos, end, max_parsed_pos, expected)
 			&& ws.ignore(pos, end)
-			&& s_not.ignore(pos, end, expected)
+			&& s_not.ignore(pos, end, max_parsed_pos, expected)
 			&& ws.ignore(pos, end)
-			&& s_exists.ignore(pos, end, expected)
+			&& s_exists.ignore(pos, end, max_parsed_pos, expected)
 			&& ws.ignore(pos, end))
 			if_not_exists = true;
 
-		if (!name_p.parse(pos, end, table, expected))
+		if (!name_p.parse(pos, end, table, max_parsed_pos, expected))
 			return false;
 		ws.ignore(pos, end);
 
-		if (s_dot.ignore(pos, end, expected))
+		if (s_dot.ignore(pos, end, max_parsed_pos, expected))
 		{
 			database = table;
-			if (!name_p.parse(pos, end, table, expected))
+			if (!name_p.parse(pos, end, table, max_parsed_pos, expected))
 				return false;
 
 			ws.ignore(pos, end);
 		}
 
 		/// Опционально - может быть указан список столбцов. Он должен полностью соответствовать SELECT-у.
-		if (s_lparen.ignore(pos, end, expected))
+		if (s_lparen.ignore(pos, end, max_parsed_pos, expected))
 		{
 			ws.ignore(pos, end);
 
-			if (!columns_p.parse(pos, end, columns, expected))
+			if (!columns_p.parse(pos, end, columns, max_parsed_pos, expected))
 				return false;
 
 			ws.ignore(pos, end);
 
-			if (!s_rparen.ignore(pos, end, expected))
+			if (!s_rparen.ignore(pos, end, max_parsed_pos, expected))
 				return false;
 		}
 
 		/// Опционально - может быть указана внутренняя ENGINE для MATERIALIZED VIEW
-		engine_p.parse(pos, end, inner_storage, expected);
+		engine_p.parse(pos, end, inner_storage, max_parsed_pos, expected);
 
 		ws.ignore(pos, end);
 
-		if (s_populate.ignore(pos, end, expected))
+		if (s_populate.ignore(pos, end, max_parsed_pos, expected))
 			is_populate = true;
 
 		ws.ignore(pos, end);
 
 		/// AS SELECT ...
-		if (!s_as.ignore(pos, end, expected))
+		if (!s_as.ignore(pos, end, max_parsed_pos, expected))
 			return false;
 		ws.ignore(pos, end);
 		Pos before_select = pos;
-		if (!s_select.ignore(pos, end, expected))
+		if (!s_select.ignore(pos, end, max_parsed_pos, expected))
 			return false;
 		pos = before_select;
 		ParserSelectQuery select_p;
-		select_p.parse(pos, end, select, expected);
+		select_p.parse(pos, end, select, max_parsed_pos, expected);
 	}
 
 	ws.ignore(pos, end);

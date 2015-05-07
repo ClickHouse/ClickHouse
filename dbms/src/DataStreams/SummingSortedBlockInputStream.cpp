@@ -1,6 +1,7 @@
 #include <DB/DataStreams/SummingSortedBlockInputStream.h>
 #include <DB/DataTypes/DataTypeNested.h>
 #include <DB/DataTypes/DataTypeArray.h>
+#include <boost/range/iterator_range_core.hpp>
 
 
 namespace DB
@@ -97,11 +98,11 @@ Block SummingSortedBlockInputStream::readImpl()
 		/// select actual nested Maps from list of candidates
 		for (const auto & map : discovered_maps)
 		{
-			/// map can only contain a pair of elements (key -> value)
-			if (map.second.size() > 2)
+			/// map should contain at least two elements (key -> value)
+			if (map.second.size() < 2)
 				continue;
 
-			/// check types of key and value
+			/// check type of key
 			const auto key_num = map.second.front();
 			auto & key_col = merged_block.getByPosition(key_num);
 			/// skip maps, whose members are part of primary key
@@ -113,18 +114,30 @@ Block SummingSortedBlockInputStream::readImpl()
 			if (!key_nested_type->isNumeric() || key_nested_type->getName() == "Float32" || key_nested_type->getName() == "Float64")
 				continue;
 
-			const auto value_num = map.second.back();
-			auto & value_col = merged_block.getByPosition(value_num);
-			/// skip maps, whose members are part of primary key
-			if (isInPrimaryKey(description, value_col.name, value_num))
-				continue;
+			/// check each value type (skip the first column number which is for key)
+			auto correct_types = true;
+			for (auto & value_num : boost::make_iterator_range(std::next(map.second.begin()), map.second.end()))
+			{
+				auto & value_col = merged_block.getByPosition(value_num);
+				/// skip maps, whose members are part of primary key
+				if (isInPrimaryKey(description, value_col.name, value_num))
+				{
+					correct_types = false;
+					break;
+				}
 
-			auto & value_nested_type = static_cast<const DataTypeArray *>(value_col.type.get())->getNestedType();
-			/// value can be any arithmetic type except date and datetime
-			if (!value_nested_type->isNumeric() || value_nested_type->getName() == "Date" || value_nested_type->getName() == "DateTime")
-				continue;
+				auto & value_nested_type = static_cast<const DataTypeArray *>(value_col.type.get())->getNestedType();
+				/// value can be any arithmetic type except date and datetime
+				if (!value_nested_type->isNumeric() || value_nested_type->getName() == "Date" ||
+													   value_nested_type->getName() == "DateTime")
+				{
+					correct_types = false;
+					break;
+				}
+			}
 
-			maps_to_sum.push_back({ key_num, value_num });
+			if (correct_types)
+				maps_to_sum.push_back({ key_num, { std::next(map.second.begin()), map.second.end() } });
 		}
 	}
 

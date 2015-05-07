@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DB/Storages/MarkCache.h>
 #include <DB/Storages/MergeTree/MergeTreeData.h>
 #include <DB/DataTypes/IDataType.h>
 #include <DB/DataTypes/DataTypeNested.h>
@@ -40,9 +41,13 @@ class MergeTreeReader
 public:
 	MergeTreeReader(const String & path_, /// Путь к куску
 		const MergeTreeData::DataPartPtr & data_part, const NamesAndTypesList & columns_,
-		bool use_uncompressed_cache_, MergeTreeData & storage_, const MarkRanges & all_mark_ranges)
+		UncompressedCache * uncompressed_cache_, MarkCache * mark_cache_,
+		MergeTreeData & storage_, const MarkRanges & all_mark_ranges,
+		size_t aio_threshold_, size_t max_read_buffer_size_)
 		: path(path_), data_part(data_part), part_name(data_part->name), columns(columns_),
-		use_uncompressed_cache(use_uncompressed_cache_), storage(storage_), all_mark_ranges(all_mark_ranges)
+		uncompressed_cache(uncompressed_cache_), mark_cache(mark_cache_),
+		storage(storage_), all_mark_ranges(all_mark_ranges),
+		aio_threshold(aio_threshold_), max_read_buffer_size(max_read_buffer_size_)
 	{
 		try
 		{
@@ -223,8 +228,9 @@ private:
 		/// Используется в качестве подсказки, чтобы уменьшить количество реаллокаций при создании столбца переменной длины.
 		double avg_value_size_hint = 0;
 
-		Stream(const String & path_prefix, UncompressedCache * uncompressed_cache, MarkCache * mark_cache, const MarkRanges & all_mark_ranges)
-			: path_prefix(path_prefix)
+		Stream(const String & path_prefix_, UncompressedCache * uncompressed_cache, MarkCache * mark_cache, const MarkRanges & all_mark_ranges,
+			   size_t aio_threshold, size_t max_read_buffer_size)
+			: path_prefix(path_prefix_)
 		{
 			loadMarks(mark_cache);
 			size_t max_mark_range = 0;
@@ -245,7 +251,7 @@ private:
 				if (right >= (*marks).size() || (right + 1 == (*marks).size() &&
 					(*marks)[right].offset_in_compressed_file == (*marks)[all_mark_ranges[i].end].offset_in_compressed_file))
 				{
-					max_mark_range = DBMS_DEFAULT_BUFFER_SIZE;
+					max_mark_range = max_read_buffer_size;
 					break;
 				}
 
@@ -253,16 +259,36 @@ private:
 					(*marks)[right].offset_in_compressed_file - (*marks)[all_mark_ranges[i].begin].offset_in_compressed_file);
 			}
 
-			size_t buffer_size = DBMS_DEFAULT_BUFFER_SIZE < max_mark_range ? DBMS_DEFAULT_BUFFER_SIZE : max_mark_range;
+			size_t buffer_size = std::min(max_read_buffer_size, max_mark_range);
+
+			size_t estimated_size = 0;
+			if (aio_threshold > 0)
+			{
+				for (const auto & mark_range : all_mark_ranges)
+				{
+					size_t offset_begin = (*marks)[mark_range.begin].offset_in_compressed_file;
+
+					size_t offset_end;
+					if (mark_range.end < (*marks).size())
+						offset_end = (*marks)[mark_range.end].offset_in_compressed_file;
+					else
+						offset_end = Poco::File(path_prefix + ".bin").getSize();
+
+					if (offset_end > 0)
+						estimated_size += offset_end - offset_begin;
+				}
+			}
 
 			if (uncompressed_cache)
 			{
-				cached_buffer = new CachedCompressedReadBuffer(path_prefix + ".bin", uncompressed_cache, buffer_size);
+				cached_buffer = new CachedCompressedReadBuffer(path_prefix + ".bin", uncompressed_cache,
+															   estimated_size, aio_threshold, buffer_size);
 				data_buffer = &*cached_buffer;
 			}
 			else
 			{
-				non_cached_buffer = new CompressedReadBufferFromFile(path_prefix + ".bin", buffer_size);
+				non_cached_buffer = new CompressedReadBufferFromFile(path_prefix + ".bin", estimated_size,
+																	 aio_threshold, buffer_size);
 				data_buffer = &*non_cached_buffer;
 			}
 		}
@@ -312,7 +338,7 @@ private:
 			{
 				/// Более хорошая диагностика.
 				if (e.code() == ErrorCodes::ARGUMENT_OUT_OF_BOUND)
-					throw Exception(e.message() + " (while seeking to mark " + Poco::NumberFormatter::format(index)
+					throw Exception(e.message() + " (while seeking to mark " + toString(index)
 						+ " of column " + path_prefix + "; offsets are: "
 						+ toString(mark.offset_in_compressed_file) + " "
 						+ toString(mark.offset_in_decompressed_block) + ")", e.code());
@@ -333,10 +359,13 @@ private:
 	NamesAndTypesList columns;
 	const NameAndTypePair * added_minimum_size_column = nullptr;
 
-	bool use_uncompressed_cache;
+	UncompressedCache * uncompressed_cache;
+	MarkCache * mark_cache;
+
 	MergeTreeData & storage;
 	const MarkRanges & all_mark_ranges;
-
+	size_t aio_threshold;
+	size_t max_read_buffer_size;
 
 	void addStream(const String & name, const IDataType & type, const MarkRanges & all_mark_ranges, size_t level = 0)
 	{
@@ -348,9 +377,6 @@ private:
 		if (!Poco::File(path + escaped_column_name + ".bin").exists())
 			return;
 
-		UncompressedCache * uncompressed_cache = use_uncompressed_cache ? storage.context.getUncompressedCache() : NULL;
-		MarkCache * mark_cache = storage.context.getMarkCache();
-
 		/// Для массивов используются отдельные потоки для размеров.
 		if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
 		{
@@ -361,12 +387,13 @@ private:
 
 			if (!streams.count(size_name))
 				streams.emplace(size_name, std::unique_ptr<Stream>(new Stream(
-					path + escaped_size_name, uncompressed_cache, mark_cache, all_mark_ranges)));
+					path + escaped_size_name, uncompressed_cache, mark_cache, all_mark_ranges, aio_threshold, max_read_buffer_size)));
 
 			addStream(name, *type_arr->getNestedType(), all_mark_ranges, level + 1);
 		}
 		else
-			streams[name].reset(new Stream(path + escaped_column_name, uncompressed_cache, mark_cache, all_mark_ranges));
+			streams[name].reset(new Stream(
+				path + escaped_column_name, uncompressed_cache, mark_cache, all_mark_ranges, aio_threshold, max_read_buffer_size));
 	}
 
 

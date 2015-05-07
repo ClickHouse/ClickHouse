@@ -15,6 +15,7 @@
 #include <DB/DataStreams/copyData.h>
 #include <DB/DataStreams/CreatingSetsBlockInputStream.h>
 #include <DB/DataStreams/MaterializingBlockInputStream.h>
+#include <DB/DataStreams/FormatFactory.h>
 
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ASTIdentifier.h>
@@ -357,7 +358,7 @@ void InterpreterSelectQuery::executeSingleQuery()
 	 *  то объединение источников данных выполняется не на этом уровне, а на верхнем уровне.
 	 */
 
-	bool do_execute_union = false;
+	union_within_single_query = false;
 
 	/** Вынем данные из Storage. from_stage - до какой стадии запрос был выполнен в Storage. */
 	QueryProcessingStage::Enum from_stage = executeFetchColumns(streams);
@@ -467,9 +468,6 @@ void InterpreterSelectQuery::executeSingleQuery()
 			to_stage > QueryProcessingStage::WithMergeableState &&
 			!query.group_by_with_totals;
 
-		if (need_aggregate || has_order_by)
-			do_execute_union = true;
-
 		if (first_stage)
 		{
 			if (has_where)
@@ -496,8 +494,6 @@ void InterpreterSelectQuery::executeSingleQuery()
 
 				if (query.limit_length)
 					executePreLimit(streams);
-
-				do_execute_union = true;
 			}
 		}
 
@@ -550,22 +546,19 @@ void InterpreterSelectQuery::executeSingleQuery()
 				* ограничивающий число записей в каждом до offset + limit.
 				*/
 			if (query.limit_length && streams.size() > 1 && !query.distinct)
-			{
 				executePreLimit(streams);
-				do_execute_union = true;
-			}
 
-			if (need_second_distinct_pass)
-				do_execute_union = true;
-
-			if (do_execute_union)
+			if (union_within_single_query)
 				executeUnion(streams);
 
-			/// Если было более одного источника - то нужно выполнить DISTINCT ещё раз после их слияния.
-			if (need_second_distinct_pass)
-				executeDistinct(streams, false, Names());
+			if (streams.size() == 1)
+			{
+				/// Если было более одного источника - то нужно выполнить DISTINCT ещё раз после их слияния.
+				if (need_second_distinct_pass)
+					executeDistinct(streams, false, Names());
 
-			executeLimit(streams);
+				executeLimit(streams);
+			}
 		}
 	}
 
@@ -617,6 +610,8 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 
 		interpreter_subquery = new InterpreterSelectQuery(
 			query.table, subquery_context, required_columns, QueryProcessingStage::Complete, subquery_depth + 1);
+		if (query_analyzer->hasAggregation())
+			interpreter_subquery->ignoreWithTotals();
 	}
 
 	/// если в настройках установлен default_sample != 1, то все запросы выполняем с сэмплингом
@@ -694,7 +689,8 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	}
 	else
 	{
-		streams.push_back(interpreter_subquery->execute());
+		const auto & subquery_streams = interpreter_subquery->executeWithoutUnion();
+		streams.insert(streams.end(), subquery_streams.begin(), subquery_streams.end());
 	}
 
 	/** Установка ограничений и квоты на чтение данных, скорость и время выполнения запроса.
@@ -927,6 +923,9 @@ void InterpreterSelectQuery::executeDistinct(BlockInputStreams & streams, bool b
 		{
 			stream = new DistinctBlockInputStream(stream, settings.limits, limit_for_distinct, columns);
 		}
+
+		if (streams.size() > 1)
+			union_within_single_query = true;
 	}
 }
 
@@ -938,6 +937,7 @@ void InterpreterSelectQuery::executeUnion(BlockInputStreams & streams)
 	{
 		streams[0] = new UnionBlockInputStream(streams, settings.max_threads);
 		streams.resize(1);
+		union_within_single_query = false;
 	}
 }
 
@@ -956,6 +956,9 @@ void InterpreterSelectQuery::executePreLimit(BlockInputStreams & streams)
 		{
 			stream = new LimitBlockInputStream(stream, limit_length + limit_offset, 0);
 		}
+
+		if (streams.size() > 1)
+			union_within_single_query = true;
 	}
 }
 

@@ -1,5 +1,6 @@
 #include <iostream>
 #include <iomanip>
+#include <thread>
 
 #include <Poco/SharedPtr.h>
 #include <Poco/Stopwatch.h>
@@ -13,11 +14,13 @@
 #include <DB/DataStreams/FilterBlockInputStream.h>
 #include <DB/DataStreams/TabSeparatedRowOutputStream.h>
 #include <DB/DataStreams/ForkBlockInputStreams.h>
+#include <DB/DataStreams/FormatFactory.h>
 #include <DB/DataStreams/copyData.h>
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 
 #include <DB/Parsers/ParserSelectQuery.h>
+#include <DB/Parsers/parseQuery.h>
 #include <DB/Parsers/formatAST.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 
@@ -50,23 +53,13 @@ int main(int argc, char ** argv)
 
 	try
 	{
-		ParserSelectQuery parser;
-		ASTPtr ast;
 		std::string input = "SELECT number, number % 10000000 == 1";
-		Expected expected = "";
 
-		const char * begin = input.data();
-		const char * end = begin + input.size();
-		const char * pos = begin;
-
-		if (!parser.parse(pos, end, ast, expected))
-		{
-			std::cout << "Failed at position " << (pos - begin) << ": "
-				<< mysqlxx::quote << input.substr(pos - begin, 10)
-				<< ", expected " << expected << "." << std::endl;
-		}
+		ParserSelectQuery parser;
+		ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "");
 
 		formatAST(*ast, std::cerr);
+		std::cerr << std::endl;
 
 		Context context;
 		context.getColumns().push_back(NameAndTypePair("number", new DataTypeUInt64));

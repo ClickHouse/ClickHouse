@@ -5,6 +5,7 @@
 #include <DB/DataStreams/AddingDefaultBlockOutputStream.h>
 #include <DB/DataStreams/PushingToViewsBlockOutputStream.h>
 #include <DB/DataStreams/NullAndDoCopyBlockInputStream.h>
+#include <DB/DataStreams/FormatFactory.h>
 #include <DB/DataStreams/copyData.h>
 
 #include <DB/Parsers/ASTInsertQuery.h>
@@ -41,21 +42,21 @@ Block InterpreterInsertQuery::getSampleBlock()
 	if (!query.columns)
 		return getTable()->getSampleBlockNonMaterialized();
 
-	Block db_sample = getTable()->getSampleBlock();
+	Block table_sample = getTable()->getSampleBlock();
 
 	/// Формируем блок, основываясь на именах столбцов из запроса
 	Block res;
-	for (ASTs::iterator it = query.columns->children.begin(); it != query.columns->children.end(); ++ it)
+	for (const auto & identifier : query.columns->children)
 	{
-		std::string currentName = (*it)->getColumnName();
+		std::string current_name = identifier->getColumnName();
 
 		/// В таблице нет столбца с таким именем
-		if (!db_sample.has(currentName))
-			throw Exception("No such column " + currentName + " in table " + query.table, ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+		if (!table_sample.has(current_name))
+			throw Exception("No such column " + current_name + " in table " + query.table, ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
 		ColumnWithNameAndType col;
-		col.name = currentName;
-		col.type = db_sample.getByName(col.name).type;
+		col.name = current_name;
+		col.type = table_sample.getByName(current_name).type;
 		col.column = col.type->createColumn();
 		res.insert(col);
 	}
@@ -81,7 +82,7 @@ void InterpreterInsertQuery::execute(ReadBuffer * remaining_data_istr)
 				new MaterializingBlockOutputStream{
 					new PushingToViewsBlockOutputStream{query.database, query.table, context, query_ptr}
 				},
-				required_columns, table->column_defaults, context
+				required_columns, table->column_defaults, context, context.getSettingsRef().strict_insert_defaults
 			},
 			table->materialized_columns
 		}
@@ -114,8 +115,8 @@ void InterpreterInsertQuery::execute(ReadBuffer * remaining_data_istr)
 		BlockInputStreamPtr in{
 			context.getFormatFactory().getInput(
 				format, istr, sample, context.getSettings().max_insert_block_size,
-				context.getDataTypeFactory())
-		};
+				context.getDataTypeFactory())};
+
 		copyData(*in, *out);
 	}
 	else
@@ -144,7 +145,7 @@ BlockIO InterpreterInsertQuery::execute()
 				new MaterializingBlockOutputStream{
 					new PushingToViewsBlockOutputStream{query.database, query.table, context, query_ptr}
 				},
-				required_columns, table->column_defaults, context
+				required_columns, table->column_defaults, context, context.getSettingsRef().strict_insert_defaults
 			},
 			table->materialized_columns
 		}

@@ -4,6 +4,7 @@
 
 #include <DB/Interpreters/Context.h>
 #include <DB/Storages/IStorage.h>
+#include <DB/Storages/MergeTree/BackgroundProcessingPool.h>
 
 
 namespace DB
@@ -71,7 +72,7 @@ private:
 	class MergeTask;
 	using MergeTaskPtr = std::shared_ptr<MergeTask>;
 	MergeTaskPtr merge_task;
-	DB::BackgroundProcessingPool::TaskHandle merge_task_handle;
+	BackgroundProcessingPool::TaskHandle merge_task_handle;
 
 	StorageChunkMerger(
 		const std::string & this_database_,

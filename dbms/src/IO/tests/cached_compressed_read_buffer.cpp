@@ -1,5 +1,6 @@
 #include <iostream>
 #include <iomanip>
+#include <limits>
 
 #include <DB/IO/CachedCompressedReadBuffer.h>
 #include <DB/IO/WriteBufferFromFile.h>
@@ -24,7 +25,7 @@ int main(int argc, char ** argv)
 
 		{
 			Stopwatch watch;
-			CachedCompressedReadBuffer in(path, &cache);
+			CachedCompressedReadBuffer in(path, &cache, 0, 0);
 			WriteBufferFromFile out("/dev/null");
 			copyData(in, out);
 
@@ -36,7 +37,7 @@ int main(int argc, char ** argv)
 
 		{
 			Stopwatch watch;
-			CachedCompressedReadBuffer in(path, &cache);
+			CachedCompressedReadBuffer in(path, &cache, 0, 0);
 			WriteBufferFromFile out("/dev/null");
 			copyData(in, out);
 

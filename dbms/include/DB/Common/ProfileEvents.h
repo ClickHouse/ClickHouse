@@ -14,6 +14,13 @@
 	M(FileOpen) \
 	M(Seek) \
 	M(ReadBufferFromFileDescriptorRead) \
+	M(ReadBufferFromFileDescriptorReadBytes) \
+	M(WriteBufferFromFileDescriptorWrite) \
+	M(WriteBufferFromFileDescriptorWriteBytes) \
+	M(ReadBufferAIORead) \
+	M(ReadBufferAIOReadBytes) \
+	M(WriteBufferAIOWrite) \
+	M(WriteBufferAIOWriteBytes) \
 	M(ReadCompressedBytes) \
 	M(CompressedReadBufferBlocks) \
 	M(CompressedReadBufferBytes) \
@@ -27,6 +34,10 @@
 	M(FunctionExecute) \
 	M(MarkCacheHits) \
 	M(MarkCacheMisses) \
+	M(CreatedReadBufferOrdinary) \
+	M(CreatedReadBufferAIO) \
+	M(CreatedWriteBufferOrdinary) \
+	M(CreatedWriteBufferAIO) \
 	\
 	M(ReplicatedPartFetches) \
 	M(ReplicatedPartFailedFetches) \

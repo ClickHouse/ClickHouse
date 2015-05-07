@@ -40,9 +40,11 @@ using Poco::SharedPtr;
 class LogBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	LogBlockInputStream(size_t block_size_, const Names & column_names_, StorageLog & storage_, size_t mark_number_, size_t rows_limit_)
+	LogBlockInputStream(
+		size_t block_size_, const Names & column_names_, StorageLog & storage_,
+		size_t mark_number_, size_t rows_limit_, size_t max_read_buffer_size_)
 		: block_size(block_size_), column_names(column_names_), storage(storage_),
-		mark_number(mark_number_), rows_limit(rows_limit_), current_mark(mark_number_) {}
+		mark_number(mark_number_), rows_limit(rows_limit_), current_mark(mark_number_), max_read_buffer_size(max_read_buffer_size_) {}
 
 	String getName() const { return "LogBlockInputStream"; }
 
@@ -66,14 +68,14 @@ private:
 	StorageLog & storage;
 	size_t mark_number;		/// С какой засечки читать данные
 	size_t rows_limit;		/// Максимальное количество строк, которых можно прочитать
-
 	size_t rows_read = 0;
 	size_t current_mark;
+	size_t max_read_buffer_size;
 
 	struct Stream
 	{
-		Stream(const std::string & data_path, size_t offset)
-			: plain(data_path, std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(data_path).getSize())),
+		Stream(const std::string & data_path, size_t offset, size_t max_read_buffer_size)
+			: plain(data_path, std::min(max_read_buffer_size, Poco::File(data_path).getSize())),
 			compressed(plain)
 		{
 			if (offset)
@@ -278,7 +280,8 @@ void LogBlockInputStream::addStream(const String & name, const IDataType & type,
 				storage.files[size_name].data_file.path(),
 				mark_number
 					? storage.files[size_name].marks[mark_number].offset
-					: 0)));
+					: 0,
+				max_read_buffer_size)));
 
 		addStream(name, *type_arr->getNestedType(), level + 1);
 	}
@@ -287,7 +290,8 @@ void LogBlockInputStream::addStream(const String & name, const IDataType & type,
 			storage.files[name].data_file.path(),
 			mark_number
 				? storage.files[name].marks[mark_number].offset
-				: 0));
+				: 0,
+			max_read_buffer_size));
 }
 
 
@@ -669,7 +673,8 @@ BlockInputStreams StorageLog::read(
 			max_block_size,
 			column_names,
 			*this,
-			0, std::numeric_limits<size_t>::max()));
+			0, std::numeric_limits<size_t>::max(),
+			settings.max_read_buffer_size));
 	}
 	else
 	{
@@ -695,7 +700,8 @@ BlockInputStreams StorageLog::read(
 				marks[from_mark + (thread + 1) * (to_mark - from_mark) / threads - 1].rows -
 					((thread == 0 && from_mark == 0)
 						? 0
-						: marks[from_mark + thread * (to_mark - from_mark) / threads - 1].rows)));
+						: marks[from_mark + thread * (to_mark - from_mark) / threads - 1].rows),
+				settings.max_read_buffer_size));
 		}
 	}
 

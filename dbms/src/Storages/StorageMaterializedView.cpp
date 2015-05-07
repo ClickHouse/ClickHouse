@@ -129,8 +129,9 @@ void StorageMaterializedView::drop()
 	}
 }
 
-bool StorageMaterializedView::optimize() {
-	return data->optimize();
+bool StorageMaterializedView::optimize(const Settings & settings)
+{
+	return data->optimize(settings);
 }
 
 

@@ -1,8 +1,10 @@
 #include <DB/Storages/StorageMergeTree.h>
 #include <DB/Storages/MergeTree/MergeTreeBlockOutputStream.h>
 #include <DB/Storages/MergeTree/DiskSpaceMonitor.h>
+#include <DB/Storages/MergeTree/MergeList.h>
 #include <DB/Common/escapeForFileName.h>
 #include <DB/Interpreters/InterpreterAlterQuery.h>
+#include <Poco/DirectoryIterator.h>
 
 namespace DB
 {
@@ -173,7 +175,7 @@ void StorageMergeTree::alter(const AlterCommands & params, const String & databa
 	}
 }
 
-bool StorageMergeTree::merge(bool aggressive, BackgroundProcessingPool::Context * pool_context)
+bool StorageMergeTree::merge(size_t aio_threshold, bool aggressive, BackgroundProcessingPool::Context * pool_context)
 {
 	auto structure_lock = lockStructure(true);
 
@@ -219,18 +221,19 @@ bool StorageMergeTree::merge(bool aggressive, BackgroundProcessingPool::Context 
 	}
 
 	const auto & merge_entry = context.getMergeList().insert(database_name, table_name, merged_name);
-	merger.mergeParts(merging_tagger->parts, merged_name, *merge_entry, nullptr, &*merging_tagger->reserved_space);
+	merger.mergeParts(merging_tagger->parts, merged_name, *merge_entry, aio_threshold, nullptr, &*merging_tagger->reserved_space);
 
 	return true;
 }
 
-bool StorageMergeTree::mergeTask(BackgroundProcessingPool::Context & context)
+bool StorageMergeTree::mergeTask(BackgroundProcessingPool::Context & background_processing_pool_context)
 {
 	if (shutdown_called)
 		return false;
 	try
 	{
-		return merge(false, &context);
+		size_t aio_threshold = context.getSettings().min_bytes_to_use_direct_io;
+		return merge(aio_threshold, false, &background_processing_pool_context);
 	}
 	catch (Exception & e)
 	{
@@ -251,12 +254,15 @@ bool StorageMergeTree::canMergeParts(const MergeTreeData::DataPartPtr & left, co
 }
 
 
-void StorageMergeTree::dropPartition(const Field & partition, bool detach, const Settings & settings)
+void StorageMergeTree::dropPartition(const Field & partition, bool detach, bool unreplicated, const Settings & settings)
 {
-	/** TODO В этот момент могут идти мерджи кусков в удаляемой партиции.
-	  * Когда эти мерджи завершатся, то часть данных из удаляемой партиции "оживёт".
-	  * Было бы удобно прерывать все мерджи.
-	  */
+	if (unreplicated)
+		throw Exception("UNREPLICATED option for DROP has meaning only for ReplicatedMergeTree", ErrorCodes::BAD_ARGUMENTS);
+
+	/// Просит завершить мерджи и не позволяет им начаться.
+	/// Это защищает от "оживания" данных за удалённую партицию после завершения мерджа.
+	const MergeTreeMergeBlocker merge_blocker{merger};
+	auto structure_lock = lockStructure(true);
 
 	DayNum_t month = MergeTreeData::getMonthDayNum(partition);
 

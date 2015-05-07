@@ -1,5 +1,6 @@
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ParserSelectQuery.h>
+#include <DB/Parsers/parseQuery.h>
 #include <DB/Parsers/queryToString.h>
 #include <DB/Interpreters/LogicalExpressionsOptimizer.h>
 #include <DB/Interpreters/Settings.h>
@@ -44,19 +45,19 @@ void run()
 		// WHERE
 
 		{
-			"SELECT name, value FROM report WHERE (name = 'Alice') OR (name = 'Bob') OR (name = 'Carol')", 
+			"SELECT name, value FROM report WHERE (name = 'Alice') OR (name = 'Bob') OR (name = 'Carol')",
 			"SELECT name, value FROM report WHERE (name = 'Alice') OR (name = 'Bob') OR (name = 'Carol')",
 			4
 		},
 
 		{
-			"SELECT name, value FROM report WHERE (name = 'Alice') OR (name = 'Bob') OR (name = 'Carol')", 
+			"SELECT name, value FROM report WHERE (name = 'Alice') OR (name = 'Bob') OR (name = 'Carol')",
 			"SELECT name, value FROM report WHERE name IN ('Alice', 'Bob', 'Carol')",
 			3
 		},
 
 		{
-			"SELECT name, value FROM report WHERE (name = 'Alice') OR (name = 'Bob') OR (name = 'Carol')", 
+			"SELECT name, value FROM report WHERE (name = 'Alice') OR (name = 'Bob') OR (name = 'Carol')",
 			"SELECT name, value FROM report WHERE name IN ('Alice', 'Bob', 'Carol')",
 			2
 		},
@@ -88,19 +89,19 @@ void run()
 		// PREWHERE
 
 		{
-			"SELECT name, value FROM report PREWHERE (name = 'Alice') OR (name = 'Bob') OR (name = 'Carol')", 
+			"SELECT name, value FROM report PREWHERE (name = 'Alice') OR (name = 'Bob') OR (name = 'Carol')",
 			"SELECT name, value FROM report PREWHERE (name = 'Alice') OR (name = 'Bob') OR (name = 'Carol')",
 			4
 		},
 
 		{
-			"SELECT name, value FROM report PREWHERE (name = 'Alice') OR (name = 'Bob') OR (name = 'Carol')", 
+			"SELECT name, value FROM report PREWHERE (name = 'Alice') OR (name = 'Bob') OR (name = 'Carol')",
 			"SELECT name, value FROM report PREWHERE name IN ('Alice', 'Bob', 'Carol')",
 			3
 		},
 
 		{
-			"SELECT name, value FROM report PREWHERE (name = 'Alice') OR (name = 'Bob') OR (name = 'Carol')", 
+			"SELECT name, value FROM report PREWHERE (name = 'Alice') OR (name = 'Bob') OR (name = 'Carol')",
 			"SELECT name, value FROM report PREWHERE name IN ('Alice', 'Bob', 'Carol')",
 			2
 		},
@@ -226,14 +227,14 @@ TestResult check(const TestEntry & entry)
 	}
 }
 
-bool parse(DB::ASTPtr  & ast, const std::string & query)
+bool parse(DB::ASTPtr & ast, const std::string & query)
 {
 	DB::ParserSelectQuery parser;
-	const char * pos = &query[0];
-	const char * end = &query[0] + query.size();
-
-	DB::Expected expected = "";
-	return parser.parse(pos, end, ast, expected);
+	std::string message;
+	auto begin = query.data();
+	auto end = begin + query.size();
+	ast = DB::tryParseQuery(parser, begin, end, message, false, "");
+	return !ast.isNull();
 }
 
 bool equals(const DB::ASTPtr & lhs, const DB::ASTPtr & rhs)

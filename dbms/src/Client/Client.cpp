@@ -1,5 +1,3 @@
-#define DBMS_CLIENT 1	/// Используется в Context.h
-
 #include <unistd.h>
 #include <stdlib.h>
 #include <fcntl.h>
@@ -49,6 +47,7 @@
 #include <DB/Parsers/ASTQueryWithOutput.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/formatAST.h>
+#include <DB/Parsers/parseQuery.h>
 
 #include <DB/Interpreters/Context.h>
 
@@ -635,28 +634,24 @@ private:
 	}
 
 
-	ASTPtr parseQuery(Expected & pos, const char * end)
+	ASTPtr parseQuery(IParser::Pos & pos, const char * end)
 	{
 		ParserQuery parser;
-		Expected expected = "";
-
-		const char * begin = pos;
-
 		ASTPtr res;
-		bool parse_res = parser.parse(pos, end, res, expected);
 
-		/// Распарсенный запрос должен заканчиваться на конец входных данных или на точку с запятой.
-		if (!parse_res || (pos != end && *pos != ';'))
+		if (is_interactive)
 		{
-			std::string message = getSyntaxErrorMessage(parse_res, begin, end, pos, expected);
+			String message;
+			res = tryParseQuery(parser, pos, end, message, true, "");
 
-			if (is_interactive)
-				std::cerr << message << std::endl << std::endl;
-			else
-				throw Exception(message, ErrorCodes::SYNTAX_ERROR);
-
-			return nullptr;
+			if (!res)
+			{
+				std::cerr << std::endl << message << std::endl << std::endl;
+				return nullptr;
+			}
 		}
+		else
+			res = DB::parseQueryAndMovePosition(parser, pos, end, "");
 
 		if (is_interactive)
 		{

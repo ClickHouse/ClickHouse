@@ -8,6 +8,7 @@
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 
+#include <DB/IO/ReadBufferFromFileBase.h>
 #include <DB/IO/ReadBuffer.h>
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/BufferWithOwnMemory.h>
@@ -18,12 +19,12 @@ namespace DB
 
 /** Работает с готовым файловым дескриптором. Не открывает и не закрывает файл.
   */
-class ReadBufferFromFileDescriptor : public BufferWithOwnMemory<ReadBuffer>
+class ReadBufferFromFileDescriptor : public ReadBufferFromFileBase
 {
 protected:
 	int fd;
 	off_t pos_in_file; /// Какому сдвигу в файле соответствует working_buffer.end().
-	
+
 	bool nextImpl()
 	{
 		size_t bytes_read = 0;
@@ -34,7 +35,7 @@ protected:
 			ssize_t res = ::read(fd, internal_buffer.begin(), internal_buffer.size());
 			if (!res)
 				break;
-			
+
 			if (-1 == res && errno != EINTR)
 				throwFromErrno("Cannot read from file " + getFileName(), ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
 
@@ -45,7 +46,10 @@ protected:
 		pos_in_file += bytes_read;
 
 		if (bytes_read)
+		{
+			ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadBytes, bytes_read);
 			working_buffer.resize(bytes_read);
+		}
 		else
 			return false;
 
@@ -53,22 +57,28 @@ protected:
 	}
 
 	/// Имя или описание файла
-	virtual std::string getFileName()
+	virtual std::string getFileName() const override
 	{
 		return "(fd = " + toString(fd) + ")";
 	}
 
 public:
 	ReadBufferFromFileDescriptor(int fd_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, char * existing_memory = nullptr, size_t alignment = 0)
-		: BufferWithOwnMemory<ReadBuffer>(buf_size, existing_memory, alignment), fd(fd_), pos_in_file(0) {}
+		: ReadBufferFromFileBase(buf_size, existing_memory, alignment), fd(fd_), pos_in_file(0) {}
 
-	int getFD()
+	int getFD() const override
 	{
 		return fd;
 	}
 
+	off_t getPositionInFile() override
+	{
+		return pos_in_file - (working_buffer.end() - pos);
+	}
+
+private:
 	/// Если offset такой маленький, что мы не выйдем за пределы буфера, настоящий seek по файлу не делается.
-	off_t seek(off_t offset, int whence = SEEK_SET)
+	off_t doSeek(off_t offset, int whence) override
 	{
 		off_t new_pos = offset;
 		if (whence == SEEK_CUR)
@@ -97,11 +107,6 @@ public:
 			pos_in_file = new_pos;
 			return res;
 		}
-	}
-
-	off_t getPositionInFile()
-	{
-		return pos_in_file - (working_buffer.end() - pos);
 	}
 };
 

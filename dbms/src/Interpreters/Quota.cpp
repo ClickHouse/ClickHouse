@@ -260,7 +260,7 @@ QuotaForIntervalsPtr Quota::get(const String & quota_key, const String & user_na
 	Container::iterator it = quota_for_keys.find(quota_key_hashed);
 	if (quota_for_keys.end() == it)
 	{
-		it = quota_for_keys.insert(std::make_pair(quota_key_hashed, new QuotaForIntervals(max))).first;
+		it = quota_for_keys.insert(std::make_pair(quota_key_hashed, std::make_shared<QuotaForIntervals>(max))).first;
 	}
 
 	return it->second;

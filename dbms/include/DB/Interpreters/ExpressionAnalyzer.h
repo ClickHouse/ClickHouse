@@ -61,10 +61,10 @@ public:
 	}
 
 	/// Есть ли в выражении агрегатные функции или секция GROUP BY или HAVING.
-	bool hasAggregation() { return has_aggregation; }
+	bool hasAggregation() const { return has_aggregation; }
 
 	/// Получить список ключей агрегирования и описаний агрегатных функций, если в запросе есть GROUP BY.
-	void getAggregateInfo(Names & key_names, AggregateDescriptions & aggregates);
+	void getAggregateInfo(Names & key_names, AggregateDescriptions & aggregates) const;
 
 	/** Получить набор столбцов, которых достаточно прочитать из таблицы для вычисления выражения.
 	  * Не учитываются столбцы, добавляемые из другой таблицы путём JOIN-а.
@@ -97,7 +97,7 @@ public:
 	void appendSelect(ExpressionActionsChain & chain, bool only_types);
 	bool appendOrderBy(ExpressionActionsChain & chain, bool only_types);
 	/// Удаляет все столбцы кроме выбираемых SELECT, упорядочивает оставшиеся столбцы и переименовывает их в алиасы.
-	void appendProjectResult(ExpressionActionsChain & chain, bool only_types);
+	void appendProjectResult(ExpressionActionsChain & chain, bool only_types) const;
 
 	/// Если ast не запрос SELECT, просто получает все действия для вычисления выражения.
 	/// Если project_result, в выходном блоке останутся только вычисленные значения в нужном порядке, переименованные в алиасы.
@@ -117,7 +117,7 @@ public:
 
 	/** Таблицы, которые надо будет отправить на удалённые серверы при распределённой обработке запроса.
 	  */
-	const Tables & getExternalTables() { return external_tables; }
+	const Tables & getExternalTables() const { return external_tables; }
 
 	/// Если ast - запрос SELECT, получает имена (алиасы) и типы столбцов из секции SELECT.
 	Block getSelectSampleBlock();
@@ -238,9 +238,9 @@ private:
 
 	void getArrayJoinedColumns();
 	void getArrayJoinedColumnsImpl(ASTPtr ast);
-	void addMultipleArrayJoinAction(ExpressionActionsPtr & actions);
+	void addMultipleArrayJoinAction(ExpressionActionsPtr & actions) const;
 
-	void addJoinAction(ExpressionActionsPtr & actions, bool only_types);
+	void addJoinAction(ExpressionActionsPtr & actions, bool only_types) const;
 
 	struct ScopeStack;
 	void getActionsImpl(ASTPtr ast, bool no_subqueries, bool only_consts, ScopeStack & actions_stack);
@@ -270,11 +270,10 @@ private:
 	StoragePtr getTable();
 
 	/// columns - столбцы, присутствующие до начала преобразований.
-	void initChain(ExpressionActionsChain & chain, NamesAndTypesList & columns);
+	void initChain(ExpressionActionsChain & chain, const NamesAndTypesList & columns) const;
 
-	void assertSelect();
-	void assertAggregation();
-	void assertArrayJoin();
+	void assertSelect() const;
+	void assertAggregation() const;
 
 	/** Создать Set из явного перечисления значений в запросе.
 	  * Если create_ordered_set = true - создать структуру данных, подходящую для использования индекса.

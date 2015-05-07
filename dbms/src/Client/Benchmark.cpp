@@ -1,5 +1,3 @@
-#define DBMS_CLIENT 1	/// Используется в Context.h
-
 #include <unistd.h>
 #include <stdlib.h>
 #include <fcntl.h>
@@ -32,9 +30,6 @@
 #include <DB/IO/copyData.h>
 
 #include <DB/DataStreams/RemoteBlockInputStream.h>
-
-#include <DB/Parsers/ParserQuery.h>
-#include <DB/Parsers/formatAST.h>
 
 #include <DB/Interpreters/Context.h>
 
