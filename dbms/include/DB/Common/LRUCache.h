@@ -3,11 +3,11 @@
 #include <unordered_map>
 #include <list>
 #include <memory>
+#include <chrono>
 #include <Poco/ScopedLock.h>
 #include <Poco/Mutex.h>
 #include <DB/Core/ErrorCodes.h>
 #include <DB/Core/Exception.h>
-#include <DB/Common/TrivialCellAging.h>
 
 namespace DB
 {
@@ -26,24 +26,21 @@ struct TrivialWeightFunction
   * Кеш начинает выбрасывать значения, когда их суммарный вес превышает max_size и срок годности этих значений истёк.
   * После вставки значения его вес не должен меняться.
   */
-template <typename TKey, typename TMapped,
-	typename HashFunction = std::hash<TMapped>,
-	typename WeightFunction = TrivialWeightFunction<TMapped>,
-	typename TCellAging = TrivialCellAging>
+template <typename TKey, typename TMapped, typename HashFunction = std::hash<TMapped>, typename WeightFunction = TrivialWeightFunction<TMapped> >
 class LRUCache
 {
 public:
 	using Key = TKey;
 	using Mapped = TMapped;
 	using MappedPtr = std::shared_ptr<Mapped>;
+	using Delay = std::chrono::seconds;
 
 private:
-	using CacheCellAging = TCellAging;
+	using Clock = std::chrono::steady_clock;
+	using Timestamp = Clock::time_point;
 
 public:
-	using Delay = typename CacheCellAging::Delay;
-
-	LRUCache(size_t max_size_, const Delay & expiration_delay_ = Delay())
+	LRUCache(size_t max_size_, const Delay & expiration_delay_ = Delay::zero())
 		: max_size(std::max(1ul, max_size_)), expiration_delay(expiration_delay_) {}
 
 	MappedPtr get(const Key & key)
@@ -59,8 +56,7 @@ public:
 
 		++hits;
 		Cell & cell = it->second;
-
-		(void) cell.aging.update();
+		updateCellTimestamp(cell);
 
 		/// Переместим ключ в конец очереди. Итератор остается валидным.
 		queue.splice(queue.end(), queue, cell.queue_iterator);
@@ -92,9 +88,9 @@ public:
 		cell.value = mapped;
 		cell.size = cell.value ? weight_function(*cell.value) : 0;
 		current_size += cell.size;
+		updateCellTimestamp(cell);
 
-		const auto & last_timestamp = cell.aging.update();
-		removeOverflow(last_timestamp);
+		removeOverflow(cell.timestamp);
 	}
 
 	void getStats(size_t & out_hits, size_t & out_misses) const
@@ -137,10 +133,18 @@ private:
 
 	struct Cell
 	{
+	public:
+		bool expired(const Timestamp & last_timestamp, const Delay & expiration_delay) const
+		{
+			return (expiration_delay == Delay::zero()) || 
+				((last_timestamp > timestamp) && ((last_timestamp - timestamp) > expiration_delay));
+		}
+
+	public:
 		MappedPtr value;
 		size_t size;
 		LRUQueueIterator queue_iterator;
-		CacheCellAging aging;
+		Timestamp timestamp;
 	};
 
 	using Cells = std::unordered_map<Key, Cell, HashFunction>;
@@ -159,7 +163,11 @@ private:
 
 	WeightFunction weight_function;
 
-	using Timestamp = typename CacheCellAging::Timestamp;
+	void updateCellTimestamp(Cell & cell)
+	{
+		if (expiration_delay != Delay::zero())
+			cell.timestamp = Clock::now();
+	}
 
 	void removeOverflow(const Timestamp & last_timestamp)
 	{
@@ -174,7 +182,7 @@ private:
 					ErrorCodes::LOGICAL_ERROR);
 
 			const auto & cell = it->second;
-			if (!cell.aging.expired(last_timestamp, expiration_delay))
+			if (!cell.expired(last_timestamp, expiration_delay))
 				break;
 
 			current_size -= cell.size;

@@ -1,5 +1,4 @@
 #include <DB/Common/LRUCache.h>
-#include <DB/Common/CellAging.h>
 
 #include <iostream>
 #include <string>
@@ -125,7 +124,7 @@ bool test1()
 bool test2()
 {
 	using namespace std::literals;
-	using Cache = DB::LRUCache<std::string, std::string, std::hash<std::string>, Weight, DB::CellAging>;
+	using Cache = DB::LRUCache<std::string, std::string, std::hash<std::string>, Weight>;
 	using MappedPtr = Cache::MappedPtr;
 
 	auto ptr = [](const std::string & s)

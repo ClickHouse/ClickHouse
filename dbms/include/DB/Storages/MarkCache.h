@@ -3,7 +3,6 @@
 #include <memory>
 
 #include <DB/Common/LRUCache.h>
-#include <DB/Common/CellAging.h>
 #include <DB/Common/ProfileEvents.h>
 #include <DB/Common/SipHash.h>
 #include <DB/Interpreters/AggregationCommon.h>
@@ -48,10 +47,10 @@ struct MarksWeightFunction
 
 /** Кэш засечек в столбце из StorageMergeTree.
   */
-class MarkCache : public LRUCache<UInt128, MarksInCompressedFile, UInt128TrivialHash, MarksWeightFunction, CellAging>
+class MarkCache : public LRUCache<UInt128, MarksInCompressedFile, UInt128TrivialHash, MarksWeightFunction>
 {
 private:
-	typedef LRUCache<UInt128, MarksInCompressedFile, UInt128TrivialHash, MarksWeightFunction, CellAging> Base;
+	typedef LRUCache<UInt128, MarksInCompressedFile, UInt128TrivialHash, MarksWeightFunction> Base;
 
 public:
 	MarkCache(size_t max_size_in_bytes, const Delay & expiration_delay)
