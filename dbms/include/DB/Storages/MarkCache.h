@@ -3,6 +3,7 @@
 #include <memory>
 
 #include <DB/Common/LRUCache.h>
+#include <DB/Common/CellAging.h>
 #include <DB/Common/ProfileEvents.h>
 #include <DB/Common/SipHash.h>
 #include <DB/Interpreters/AggregationCommon.h>
@@ -47,14 +48,14 @@ struct MarksWeightFunction
 
 /** Кэш засечек в столбце из StorageMergeTree.
   */
-class MarkCache : public LRUCache<UInt128, MarksInCompressedFile, UInt128TrivialHash, MarksWeightFunction>
+class MarkCache : public LRUCache<UInt128, MarksInCompressedFile, UInt128TrivialHash, MarksWeightFunction, CellAging>
 {
 private:
-	typedef LRUCache<UInt128, MarksInCompressedFile, UInt128TrivialHash, MarksWeightFunction> Base;
+	typedef LRUCache<UInt128, MarksInCompressedFile, UInt128TrivialHash, MarksWeightFunction, CellAging> Base;
 
 public:
-	MarkCache(size_t max_size_in_bytes)
-		: Base(max_size_in_bytes) {}
+	MarkCache(size_t max_size_in_bytes, const Delay & expiration_delay)
+		: Base(max_size_in_bytes, expiration_delay) {}
 
 	/// Посчитать ключ от пути к файлу и смещения.
 	static UInt128 hash(const String & path_to_file)

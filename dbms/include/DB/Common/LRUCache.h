@@ -7,6 +7,7 @@
 #include <Poco/Mutex.h>
 #include <DB/Core/ErrorCodes.h>
 #include <DB/Core/Exception.h>
+#include <DB/Common/TrivialCellAging.h>
 
 namespace DB
 {
@@ -20,22 +21,30 @@ struct TrivialWeightFunction
 	}
 };
 
-
-/** Кеш, вытесняющий долго не использовавшиеся записи. thread-safe.
+/** Кеш, вытесняющий долго не использовавшиеся и устаревшие записи. thread-safe.
   * WeightFunction - тип, оператор () которого принимает Mapped и возвращает "вес" (примерный размер) этого значения.
-  * Кеш начинает выбрасывать значения, когда их суммарный вес превышает max_size.
+  * Кеш начинает выбрасывать значения, когда их суммарный вес превышает max_size и срок годности этих значений истёк.
   * После вставки значения его вес не должен меняться.
   */
-template <typename TKey, typename TMapped, typename HashFunction = std::hash<TMapped>, typename WeightFunction = TrivialWeightFunction<TMapped> >
+template <typename TKey, typename TMapped,
+	typename HashFunction = std::hash<TMapped>,
+	typename WeightFunction = TrivialWeightFunction<TMapped>,
+	typename TCellAging = TrivialCellAging>
 class LRUCache
 {
 public:
-	typedef TKey Key;
-	typedef TMapped Mapped;
-	typedef std::shared_ptr<Mapped> MappedPtr;
+	using Key = TKey;
+	using Mapped = TMapped;
+	using MappedPtr = std::shared_ptr<Mapped>;
 
-	LRUCache(size_t max_size_)
-		: max_size(std::max(1ul, max_size_)) {}
+private:
+	using CacheCellAging = TCellAging;
+
+public:
+	using Delay = typename CacheCellAging::Delay;
+
+	LRUCache(size_t max_size_, const Delay & expiration_delay_ = Delay())
+		: max_size(std::max(1ul, max_size_)), expiration_delay(expiration_delay_) {}
 
 	MappedPtr get(const Key & key)
 	{
@@ -50,6 +59,8 @@ public:
 
 		++hits;
 		Cell & cell = it->second;
+
+		(void) cell.aging.update();
 
 		/// Переместим ключ в конец очереди. Итератор остается валидным.
 		queue.splice(queue.end(), queue, cell.queue_iterator);
@@ -82,7 +93,8 @@ public:
 		cell.size = cell.value ? weight_function(*cell.value) : 0;
 		current_size += cell.size;
 
-		removeOverflow();
+		const auto & last_timestamp = cell.aging.update();
+		removeOverflow(last_timestamp);
 	}
 
 	void getStats(size_t & out_hits, size_t & out_misses) const
@@ -120,17 +132,18 @@ protected:
 	/// Суммарный вес выброшенных из кеша элементов.
 	/// Обнуляется каждый раз, когда информация добавляется в Profile events
 private:
-	typedef std::list<Key> LRUQueue;
-	typedef typename LRUQueue::iterator LRUQueueIterator;
+	using LRUQueue = std::list<Key>;
+	using LRUQueueIterator = typename LRUQueue::iterator;
 
 	struct Cell
 	{
 		MappedPtr value;
 		size_t size;
 		LRUQueueIterator queue_iterator;
+		CacheCellAging aging;
 	};
 
-	typedef std::unordered_map<Key, Cell, HashFunction> Cells;
+	using Cells = std::unordered_map<Key, Cell, HashFunction>;
 
 	LRUQueue queue;
 	Cells cells;
@@ -138,6 +151,7 @@ private:
 	/// Суммарный вес значений.
 	size_t current_size = 0;
 	const size_t max_size;
+	const Delay expiration_delay;
 
 	mutable Poco::FastMutex mutex;
 	size_t hits = 0;
@@ -145,15 +159,27 @@ private:
 
 	WeightFunction weight_function;
 
-	void removeOverflow()
+	using Timestamp = typename CacheCellAging::Timestamp;
+
+	void removeOverflow(const Timestamp & last_timestamp)
 	{
 		size_t queue_size = cells.size();
-		while (current_size > max_size && queue_size > 1)
+		while ((current_size > max_size) && (queue_size > 1))
 		{
 			const Key & key = queue.front();
+
 			auto it = cells.find(key);
-			current_size -= it->second.size;
-			current_weight_lost += it->second.size;
+			if (it == cells.end())
+				throw Exception("LRUCache became inconsistent. There must be a bug in it. Clearing it for now.",
+					ErrorCodes::LOGICAL_ERROR);
+
+			const auto & cell = it->second;
+			if (!cell.aging.expired(last_timestamp, expiration_delay))
+				break;
+
+			current_size -= cell.size;
+			current_weight_lost += cell.size;
+
 			cells.erase(it);
 			queue.pop_front();
 			--queue_size;

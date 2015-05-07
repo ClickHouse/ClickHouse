@@ -1,5 +1,6 @@
 #include <map>
 #include <set>
+#include <chrono>
 
 #include <Poco/SharedPtr.h>
 #include <Poco/Mutex.h>
@@ -730,7 +731,7 @@ void Context::setMarkCache(size_t cache_size_in_bytes)
 	if (shared->mark_cache)
 		throw Exception("Uncompressed cache has been already created.", ErrorCodes::LOGICAL_ERROR);
 
-	shared->mark_cache.reset(new MarkCache(cache_size_in_bytes));
+	shared->mark_cache.reset(new MarkCache(cache_size_in_bytes, std::chrono::seconds(settings.mark_cache_min_lifetime)));
 }
 
 MarkCachePtr Context::getMarkCache() const

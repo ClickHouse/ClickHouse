@@ -120,6 +120,9 @@ struct Settings
 	\
 	/** В запросе INSERT с указанием столбцов, заполнять значения по-умолчанию только для столбцов с явными DEFAULT-ами. */ \
 	M(SettingBool, strict_insert_defaults, 0) \
+	\
+	/** В случае превышения максимального размера mark_cache, удалять только записи, старше чем mark_cache_min_lifetime секунд. */ \
+	M(SettingUInt64, mark_cache_min_lifetime, 10000) \
 
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;
