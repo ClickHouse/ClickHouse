@@ -310,6 +310,14 @@ private:
 					if (!number_p.parse(pos, end, node, max_parsed_pos, expected))
 						throw_exception("Could not parse number");
 
+					if (actions.back().type != PatternActionType::SpecificEvent &&
+						actions.back().type != PatternActionType::AnyEvent &&
+						actions.back().type != PatternActionType::KleeneStar)
+						throw Exception{
+							"Temporal condition should be preceeded by an event condition",
+							ErrorCodes::BAD_ARGUMENTS
+						};
+
 					actions.emplace_back(type, typeid_cast<const ASTLiteral &>(*node).value.safeGet<UInt64>());
 				}
 				else if (number_p.parse(pos, end, node, max_parsed_pos, expected))
@@ -352,10 +360,11 @@ private:
 		const auto events_end = std::end(data_ref.eventsList);
 		auto events_it = events_begin;
 
+		auto base_it = events_begin;
+
 		/// an iterator to action plus an iterator to row in events list plus timestamp at the start of sequence
-		using backtrack_info = std::tuple<decltype(action_it), decltype(events_it), Data::Timestamp>;
+		using backtrack_info = std::tuple<decltype(action_it), decltype(events_it), decltype(base_it)>;
 		std::stack<backtrack_info> back_stack;
-		Data::Timestamp start_timestamp{};
 
 		/// backtrack if possible
 		const auto do_backtrack = [&] {
@@ -365,7 +374,7 @@ private:
 
 				action_it = std::get<0>(top);
 				events_it = std::next(std::get<1>(top));
-				start_timestamp = std::get<2>(top);
+				base_it = std::get<2>(top);
 
 				back_stack.pop();
 
@@ -378,16 +387,17 @@ private:
 
 		while (action_it != action_end && events_it != events_end)
 		{
-			std::cout << "start_timestamp " << start_timestamp << "; ";
-			std::cout << "action " << (action_it - action_begin) << " { " << to_string(action_it->type) << ' ' << action_it->extra << " }; ";
-			std::cout << "symbol " << (events_it - events_begin) << " { " << events_it->first << ' ' << events_it->second.to_ulong() << " }" << std::endl;
+//			std::cout << "start_timestamp " << base_it->first << "; ";
+//			std::cout << "elapsed " << (events_it->first - base_it->first) << "; ";
+//			std::cout << "action " << (action_it - action_begin) << " { " << to_string(action_it->type) << ' ' << action_it->extra << " }; ";
+//			std::cout << "symbol " << (events_it - events_begin) << " { " << events_it->first << ' ' << events_it->second.to_ulong() << " }" << std::endl;
 
 			if (action_it->type == PatternActionType::SpecificEvent)
 			{
 				if (events_it->second.test(action_it->extra))
 				{
 					/// move to the next action and events
-					start_timestamp = events_it->first;
+					base_it = events_it;
 					++action_it, ++events_it;
 				}
 				else if (!do_backtrack())
@@ -396,23 +406,22 @@ private:
 			}
 			else if (action_it->type == PatternActionType::AnyEvent)
 			{
-				start_timestamp = events_it->first;
+				base_it = events_it;
 				++action_it, ++events_it;
 			}
 			else if (action_it->type == PatternActionType::KleeneStar)
 			{
-				back_stack.emplace(action_it, events_it, start_timestamp);
-				///  @todo fix off-by-one error caused by this assignment
-				start_timestamp = events_it->first;
+				back_stack.emplace(action_it, events_it, base_it);
+				base_it = events_it;
 				++action_it;
 			}
 			else if (action_it->type == PatternActionType::TimeLessOrEqual)
 			{
-				if (events_it->first - start_timestamp <= action_it->extra)
+				if (events_it->first - base_it->first <= action_it->extra)
 				{
 					/// condition satisfied, move onto next action
-					back_stack.emplace(action_it, events_it, start_timestamp);
-					start_timestamp = events_it->first;
+					back_stack.emplace(action_it, events_it, base_it);
+					base_it = events_it;
 					++action_it;
 				}
 				else if (!do_backtrack())
@@ -420,10 +429,10 @@ private:
 			}
 			else if (action_it->type == PatternActionType::TimeLess)
 			{
-				if (events_it->first - start_timestamp < action_it->extra)
+				if (events_it->first - base_it->first < action_it->extra)
 				{
-					back_stack.emplace(action_it, events_it, start_timestamp);
-					start_timestamp = events_it->first;
+					back_stack.emplace(action_it, events_it, base_it);
+					base_it = events_it;
 					++action_it;
 				}
 				else if (!do_backtrack())
@@ -431,10 +440,10 @@ private:
 			}
 			else if (action_it->type == PatternActionType::TimeGreaterOrEqual)
 			{
-				if (events_it->first - start_timestamp >= action_it->extra)
+				if (events_it->first - base_it->first >= action_it->extra)
 				{
-					back_stack.emplace(action_it, events_it, start_timestamp);
-					start_timestamp = events_it->first;
+					back_stack.emplace(action_it, events_it, base_it);
+					base_it = events_it;
 					++action_it;
 				}
 				else if (++events_it == events_end && !do_backtrack())
@@ -442,10 +451,10 @@ private:
 			}
 			else if (action_it->type == PatternActionType::TimeGreater)
 			{
-				if (events_it->first - start_timestamp > action_it->extra)
+				if (events_it->first - base_it->first > action_it->extra)
 				{
-					back_stack.emplace(action_it, events_it, start_timestamp);
-					start_timestamp = events_it->first;
+					back_stack.emplace(action_it, events_it, base_it);
+					base_it = events_it;
 					++action_it;
 				}
 				else if (++events_it == events_end && !do_backtrack())
