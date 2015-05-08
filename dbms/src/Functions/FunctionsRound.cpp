@@ -9,6 +9,7 @@ void registerFunctionsRound(FunctionFactory & factory)
 	factory.registerFunction<FunctionRoundToExp2>();
 	factory.registerFunction<FunctionRoundDuration>();
 	factory.registerFunction<FunctionRoundAge>();
+	factory.registerFunction<FunctionRound>();
 }
 
 }

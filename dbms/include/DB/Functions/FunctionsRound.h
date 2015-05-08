@@ -3,6 +3,54 @@
 #include <DB/Functions/FunctionsArithmetic.h>
 #include <cmath>	// log2()
 
+namespace
+{
+
+template <size_t N>
+struct PowerOf10
+{
+    static const size_t value = 10 * PowerOf10<N - 1>::value;
+};
+
+template<>
+struct PowerOf10<0>
+{
+    static const size_t value = 1;
+};
+
+template <size_t... TArgs>
+struct TablePowersOf10
+{
+    static const size_t value[sizeof...(TArgs)];
+};
+
+template <size_t... TArgs>
+const size_t TablePowersOf10<TArgs...>::value[sizeof...(TArgs)] = { TArgs... };
+
+// Compute powers from 0 to N - 1.
+template <size_t N, size_t... TArgs>
+struct FillArrayImpl
+{
+    using result = typename FillArrayImpl<N - 1, PowerOf10<N>::value, TArgs...>::result;
+};
+
+// Fill array with computed powers.
+template <size_t... TArgs>
+struct FillArrayImpl<0, TArgs...>
+{
+    using result = TablePowersOf10<PowerOf10<0>::value, TArgs...>;
+};
+
+// Bootstrap.
+template <size_t N>
+struct FillArray
+{
+    using result = typename FillArrayImpl<N-1>::result;
+};
+
+using powers_of_10 = FillArray<16>::result;
+
+}
 
 namespace DB
 {
@@ -87,13 +135,31 @@ namespace DB
 		}
 	};
 
+	template<typename A, typename B>
+	struct RoundImpl
+	{
+		typedef A ResultType;
+
+		template <typename Result = ResultType>
+		static inline Result apply(A a, B b)
+		{
+			auto vb = typename NumberTraits::ToInteger<B>::Type(b);
+
+			if (vb < 0)
+				vb = 0;
+
+			size_t scale = (vb < 16) ? powers_of_10::value[vb] : pow(10, vb);
+			return static_cast<Result>(round(a * scale) / scale);
+		}
+	};
 
 	struct NameRoundToExp2		{ static constexpr auto name = "roundToExp2"; };
 	struct NameRoundDuration	{ static constexpr auto name = "roundDuration"; };
 	struct NameRoundAge 		{ static constexpr auto name = "roundAge"; };
+	struct NameRound			{ static constexpr auto name = "round"; };
 
 	typedef FunctionUnaryArithmetic<RoundToExp2Impl,	NameRoundToExp2> 	FunctionRoundToExp2;
 	typedef FunctionUnaryArithmetic<RoundDurationImpl,	NameRoundDuration>	FunctionRoundDuration;
 	typedef FunctionUnaryArithmetic<RoundAgeImpl,		NameRoundAge>		FunctionRoundAge;
-
+	typedef FunctionBinaryArithmetic<RoundImpl,			NameRound>			FunctionRound;
 }
