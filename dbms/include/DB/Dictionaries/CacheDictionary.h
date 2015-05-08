@@ -48,6 +48,8 @@ public:
 
 	std::size_t getBytesAllocated() const override { return bytes_allocated; }
 
+	std::size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
+
 	double getHitRate() const override
 	{
 		return static_cast<double>(hit_count.load(std::memory_order_acquire)) /

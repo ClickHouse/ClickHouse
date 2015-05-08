@@ -30,6 +30,8 @@ public:
 
 	virtual std::size_t getBytesAllocated() const = 0;
 
+	virtual std::size_t getQueryCount() const = 0;
+
 	virtual double getHitRate() const = 0;
 
 	virtual std::size_t getElementCount() const = 0;
