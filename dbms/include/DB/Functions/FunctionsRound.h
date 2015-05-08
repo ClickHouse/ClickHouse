@@ -6,6 +6,10 @@
 namespace
 {
 
+/// Этот код генерирует во время сборки таблицу степеней числа 10.
+
+/// Степени числа 10.
+
 template <size_t N>
 struct PowerOf10
 {
@@ -18,6 +22,8 @@ struct PowerOf10<0>
     static const size_t value = 1;
 };
 
+/// Объявление и определение таблицы.
+
 template <size_t... TArgs>
 struct TablePowersOf10
 {
@@ -27,28 +33,28 @@ struct TablePowersOf10
 template <size_t... TArgs>
 const size_t TablePowersOf10<TArgs...>::value[sizeof...(TArgs)] = { TArgs... };
 
-// Compute powers from 0 to N - 1.
+/// Сгенерить первые N степеней.
+
 template <size_t N, size_t... TArgs>
 struct FillArrayImpl
 {
     using result = typename FillArrayImpl<N - 1, PowerOf10<N>::value, TArgs...>::result;
 };
 
-// Fill array with computed powers.
 template <size_t... TArgs>
 struct FillArrayImpl<0, TArgs...>
 {
     using result = TablePowersOf10<PowerOf10<0>::value, TArgs...>;
 };
 
-// Bootstrap.
 template <size_t N>
 struct FillArray
 {
     using result = typename FillArrayImpl<N-1>::result;
 };
 
-using powers_of_10 = FillArray<16>::result;
+static const size_t powers_count = 16;
+using powers_of_10 = FillArray<powers_count>::result;
 
 }
 
@@ -59,6 +65,7 @@ namespace DB
 	 * roundToExp2 - вниз до ближайшей степени двойки;
 	 * roundDuration - вниз до ближайшего из: 0, 1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000;
 	 * roundAge - вниз до ближайшего из: 0, 18, 25, 35, 45.
+	 * round(x, N) - арифметическое округление (N - сколько знаков после запятой оставить).
 	 */
 
 	template<typename A>
@@ -148,7 +155,7 @@ namespace DB
 			if (vb < 0)
 				vb = 0;
 
-			size_t scale = (vb < 16) ? powers_of_10::value[vb] : pow(10, vb);
+			size_t scale = (vb < static_cast<int>(powers_count)) ? powers_of_10::value[vb] : pow(10, vb);
 			return static_cast<Result>(round(a * scale) / scale);
 		}
 	};
