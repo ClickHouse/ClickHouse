@@ -4,6 +4,7 @@
 #include <DB/Core/ErrorCodes.h>
 
 #include <DB/IO/WriteBufferFromPocoSocket.h>
+#include <statdaemons/NetException.h>
 
 
 namespace DB
@@ -26,19 +27,19 @@ void WriteBufferFromPocoSocket::nextImpl()
 		}
 		catch (const Poco::Net::NetException & e)
 		{
-			throw Exception(e.displayText() + " while writing to socket (" + peer_address.toString() + ")", ErrorCodes::NETWORK_ERROR);
+			throw NetException(e.displayText() + " while writing to socket (" + peer_address.toString() + ")", ErrorCodes::NETWORK_ERROR);
 		}
 		catch (const Poco::TimeoutException & e)
 		{
-			throw Exception("Timeout exceeded while writing to socket (" + peer_address.toString() + ")", ErrorCodes::SOCKET_TIMEOUT);
+			throw NetException("Timeout exceeded while writing to socket (" + peer_address.toString() + ")", ErrorCodes::SOCKET_TIMEOUT);
 		}
 		catch (const Poco::IOException & e)
 		{
-			throw Exception(e.displayText(), " while reading from socket (" + peer_address.toString() + ")", ErrorCodes::NETWORK_ERROR);
+			throw NetException(e.displayText(), " while reading from socket (" + peer_address.toString() + ")", ErrorCodes::NETWORK_ERROR);
 		}
 
 		if (res < 0)
-			throw Exception("Cannot write to socket (" + peer_address.toString() + ")", ErrorCodes::CANNOT_WRITE_TO_SOCKET);
+			throw NetException("Cannot write to socket (" + peer_address.toString() + ")", ErrorCodes::CANNOT_WRITE_TO_SOCKET);
 		bytes_written += res;
 	}
 }
