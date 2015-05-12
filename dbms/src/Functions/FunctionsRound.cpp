@@ -10,6 +10,8 @@ void registerFunctionsRound(FunctionFactory & factory)
 	factory.registerFunction<FunctionRoundDuration>();
 	factory.registerFunction<FunctionRoundAge>();
 	factory.registerFunction<FunctionRound>();
+	factory.registerFunction<FunctionCeil>();
+	factory.registerFunction<FunctionFloor>();
 }
 
 }

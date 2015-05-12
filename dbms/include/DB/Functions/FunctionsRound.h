@@ -2,6 +2,7 @@
 
 #include <DB/Functions/FunctionsArithmetic.h>
 #include <cmath>	// log2()
+#include <boost/concept_check.hpp>
 
 namespace
 {
@@ -65,7 +66,9 @@ namespace DB
 	 * roundToExp2 - вниз до ближайшей степени двойки;
 	 * roundDuration - вниз до ближайшего из: 0, 1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000;
 	 * roundAge - вниз до ближайшего из: 0, 18, 25, 35, 45.
-	 * round(x, N) - арифметическое округление (N - сколько знаков после запятой оставить).
+	 * round(x, N) - арифметическое округление (N - сколько знаков после запятой оставить; 0 по умолчанию).
+	 * ceil(x, N)
+	 * floor(x, N)
 	 */
 
 	template<typename A>
@@ -142,7 +145,33 @@ namespace DB
 		}
 	};
 
-	template<typename A>
+	// XXX Rename the following 3 functions.
+	struct RoundFunc
+	{
+		static inline double apply(double x)
+		{
+			return round(x);
+		}
+	};
+
+	struct CeilFunc
+	{
+		static inline double apply(double x)
+		{
+			return ceil(x);
+		}
+	};
+
+	struct FloorFunc
+	{
+		static inline double apply(double x)
+		{
+			return floor(x);
+		}
+	};
+
+	// XXX Rename this structure.
+	template<typename A, typename Op>
 	struct RoundImpl
 	{
 		static inline A apply(A a, Int8 scale)
@@ -151,15 +180,16 @@ namespace DB
 				scale = 0;
 
 			size_t power = (scale < static_cast<Int8>(powers_count)) ? powers_of_10::value[scale] : pow(10, scale);
-			return static_cast<A>(round(a * power) / power);
+			return static_cast<A>(Op::apply(a * power) / power);
 		}
 	};
 
-	class FunctionRound : public IFunction
+	template<typename Op, typename Name>
+	class FunctionApproximating : public IFunction
 	{
 	public:
-		static constexpr auto name = "round";
-		static IFunction * create(const Context & context) { return new FunctionRound; }
+		static constexpr auto name = Name::name;
+		static IFunction * create(const Context & context) { return new FunctionApproximating; }
 
 	private:
 		template <typename T0>
@@ -176,13 +206,13 @@ namespace DB
 				const PODArray<T0> & a = col->getData();
 				size_t size = a.size();
 				for (size_t i = 0; i < size; ++i)
-					vec_res[i] = RoundImpl<T0>::apply(a[i], scale);
+					vec_res[i] = RoundImpl<T0, Op>::apply(a[i], scale);
 
 				return true;
 			}
 			else if (ColumnConst<T0> * col = typeid_cast<ColumnConst<T0> *>(&*block.getByPosition(arguments[0]).column))
 			{
-				T0 res = RoundImpl<T0>::apply(col->getData(), scale);
+				T0 res = RoundImpl<T0, Op>::apply(col->getData(), scale);
 
 				ColumnConst<T0> * col_res = new ColumnConst<T0>(col->size(), res);
 				block.getByPosition(result).column = col_res;
@@ -257,8 +287,14 @@ namespace DB
 	struct NameRoundToExp2		{ static constexpr auto name = "roundToExp2"; };
 	struct NameRoundDuration	{ static constexpr auto name = "roundDuration"; };
 	struct NameRoundAge 		{ static constexpr auto name = "roundAge"; };
+	struct NameRound			{ static constexpr auto name = "round"; };
+	struct NameCeil				{ static constexpr auto name = "ceil"; };
+	struct NameFloor			{ static constexpr auto name = "floor"; };
 
 	typedef FunctionUnaryArithmetic<RoundToExp2Impl,	NameRoundToExp2> 	FunctionRoundToExp2;
 	typedef FunctionUnaryArithmetic<RoundDurationImpl,	NameRoundDuration>	FunctionRoundDuration;
 	typedef FunctionUnaryArithmetic<RoundAgeImpl,		NameRoundAge>		FunctionRoundAge;
+	typedef FunctionApproximating<RoundFunc,			NameRound>			FunctionRound;
+	typedef FunctionApproximating<CeilFunc,				NameCeil>			FunctionCeil;
+	typedef FunctionApproximating<FloorFunc,			NameFloor>			FunctionFloor;
 }
