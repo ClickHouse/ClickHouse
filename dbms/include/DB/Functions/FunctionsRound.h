@@ -67,8 +67,8 @@ namespace DB
 	 * roundDuration - вниз до ближайшего из: 0, 1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000;
 	 * roundAge - вниз до ближайшего из: 0, 18, 25, 35, 45.
 	 * round(x, N) - арифметическое округление (N - сколько знаков после запятой оставить; 0 по умолчанию).
-	 * ceil(x, N)
-	 * floor(x, N)
+	 * ceil(x, N) - наименьшее число, которое не меньше x (N - сколько знаков после запятой оставить; 0 по умолчанию).
+	 * floor(x, N) - наибольшее число, которое не больше x (N - сколько знаков после запятой оставить; 0 по умолчанию).
 	 */
 
 	template<typename A>
@@ -142,87 +142,6 @@ namespace DB
 				: (x < 35 ? 25
 				: (x < 45 ? 35
 				: 45)));
-		}
-	};
-
-	template<typename T>
-	struct RoundImpl
-	{
-		static inline T apply(T val)
-		{
-			return val;
-		}
-	};
-
-	template<>
-	struct RoundImpl<Float32>
-	{
-		static inline Float32 apply(Float32 val)
-		{
-			return roundf(val);
-		}
-	};
-
-	template<>
-	struct RoundImpl<Float64>
-	{
-		static inline Float64 apply(Float64 val)
-		{
-			return round(val);
-		}
-	};
-
-	template<typename T>
-	struct CeilImpl
-	{
-		static inline T apply(T val)
-		{
-			return val;
-		}
-	};
-
-	template<>
-	struct CeilImpl<Float32>
-	{
-		static inline Float32 apply(Float32 val)
-		{
-			return ceilf(val);
-		}
-	};
-
-	template<>
-	struct CeilImpl<Float64>
-	{
-		static inline Float64 apply(Float64 val)
-		{
-			return ceil(val);
-		}
-	};
-
-	template<typename T>
-	struct FloorImpl
-	{
-		static inline T apply(T val)
-		{
-			return val;
-		}
-	};
-
-	template<>
-	struct FloorImpl<Float32>
-	{
-		static inline Float32 apply(Float32 val)
-		{
-			return floorf(val);
-		}
-	};
-
-	template<>
-	struct FloorImpl<Float64>
-	{
-		static inline Float64 apply(Float64 val)
-		{
-			return floor(val);
 		}
 	};
 
@@ -398,6 +317,87 @@ namespace DB
 						+ " of argument of function " + getName(),
 						ErrorCodes::ILLEGAL_COLUMN);
 			}
+		}
+	};
+
+	template<typename T>
+	struct RoundImpl
+	{
+		static inline T apply(T val)
+		{
+			return val;
+		}
+	};
+
+	template<>
+	struct RoundImpl<Float32>
+	{
+		static inline Float32 apply(Float32 val)
+		{
+			return roundf(val);
+		}
+	};
+
+	template<>
+	struct RoundImpl<Float64>
+	{
+		static inline Float64 apply(Float64 val)
+		{
+			return round(val);
+		}
+	};
+
+	template<typename T>
+	struct CeilImpl
+	{
+		static inline T apply(T val)
+		{
+			return val;
+		}
+	};
+
+	template<>
+	struct CeilImpl<Float32>
+	{
+		static inline Float32 apply(Float32 val)
+		{
+			return ceilf(val);
+		}
+	};
+
+	template<>
+	struct CeilImpl<Float64>
+	{
+		static inline Float64 apply(Float64 val)
+		{
+			return ceil(val);
+		}
+	};
+
+	template<typename T>
+	struct FloorImpl
+	{
+		static inline T apply(T val)
+		{
+			return val;
+		}
+	};
+
+	template<>
+	struct FloorImpl<Float32>
+	{
+		static inline Float32 apply(Float32 val)
+		{
+			return floorf(val);
+		}
+	};
+
+	template<>
+	struct FloorImpl<Float64>
+	{
+		static inline Float64 apply(Float64 val)
+		{
+			return floor(val);
 		}
 	};
 
