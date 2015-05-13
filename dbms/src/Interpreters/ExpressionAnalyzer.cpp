@@ -363,10 +363,17 @@ void ExpressionAnalyzer::normalizeTreeImpl(
 			replaced = true;
 		}
 
-		/// может быть указано IN t, где t - таблица, что равносильно IN (SELECT * FROM t).
+		/// Может быть указано IN t, где t - таблица, что равносильно IN (SELECT * FROM t).
 		if (func_node->name == "in" || func_node->name == "notIn" || func_node->name == "globalIn" || func_node->name == "globalNotIn")
 			if (ASTIdentifier * right = typeid_cast<ASTIdentifier *>(&*func_node->arguments->children.at(1)))
 				right->kind = ASTIdentifier::Table;
+
+		/// А ещё, в качестве исключения, будем понимать count(*) как count(), а не count(список всех столбцов).
+		if (func_node->name == "count" && func_node->arguments->children.size() == 1
+			&& typeid_cast<const ASTAsterisk *>(func_node->arguments->children[0].get()))
+		{
+			func_node->arguments->children.clear();
+		}
 	}
 	else if (ASTIdentifier * node = typeid_cast<ASTIdentifier *>(&*ast))
 	{
