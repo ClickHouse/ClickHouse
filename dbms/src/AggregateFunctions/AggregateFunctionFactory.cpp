@@ -15,6 +15,7 @@
 #include <DB/AggregateFunctions/AggregateFunctionState.h>
 #include <DB/AggregateFunctions/AggregateFunctionMerge.h>
 #include <DB/AggregateFunctions/AggregateFunctionDebug.h>
+#include <DB/AggregateFunctions/AggregateFunctionSequenceMatch.h>
 
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
 
@@ -536,6 +537,13 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 		else
 			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
+	else if (name == "sequenceMatch")
+	{
+		if (!AggregateFunctionSequenceMatch::sufficientArgs(argument_types.size()))
+			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		return new AggregateFunctionSequenceMatch;
+	}
 	else if (recursion_level == 0 && name.size() > strlen("State") && !(strcmp(name.data() + name.size() - strlen("State"), "State")))
 	{
 		/// Для агрегатных функций вида aggState, где agg - имя другой агрегатной функции.
@@ -630,7 +638,8 @@ const AggregateFunctionFactory::FunctionNames & AggregateFunctionFactory::getFun
 		"quantilesTimingWeighted",
 		"medianTimingWeighted",
 		"quantileDeterministic",
-		"quantilesDeterministic"
+		"quantilesDeterministic",
+		"sequenceMatch"
 	};
 
 	return names;

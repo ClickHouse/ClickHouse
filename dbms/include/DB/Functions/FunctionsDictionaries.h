@@ -738,7 +738,7 @@ public:
 };
 
 
-class FunctionDictGetString : public IFunction
+class FunctionDictGetString final : public IFunction
 {
 public:
 	static constexpr auto name = "dictGetString";

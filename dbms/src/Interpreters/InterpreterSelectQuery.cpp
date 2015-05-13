@@ -648,9 +648,13 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	 *  - эти настройки будут переданы на удалённые серверы при распределённой обработке запроса,
 	 *  и там должно быть оригинальное значение max_threads, а не увеличенное.
 	 */
+	bool is_remote = false;
 	Settings settings_for_storage = settings;
 	if (storage && storage->isRemote())
+	{
+		is_remote = true;
 		settings.max_threads = settings.max_distributed_connections;
+	}
 
 	/// Ограничение на количество столбцов для чтения.
 	if (settings.limits.max_columns_to_read && required_columns.size() > settings.limits.max_columns_to_read)
@@ -665,7 +669,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 
 	/** Оптимизация - если не указаны DISTINCT, WHERE, GROUP, HAVING, ORDER, но указан LIMIT, и limit + offset < max_block_size,
 	 *  то в качестве размера блока будем использовать limit + offset (чтобы не читать из таблицы больше, чем запрошено),
-	 *  а также установим количество потоков в 1 и отменим асинхронное выполнение конвейера запроса.
+	 *  а также установим количество потоков в 1.
 	 */
 	if (!query.distinct
 		&& !query.prewhere_expression
@@ -688,9 +692,15 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	/// Инициализируем изначальные потоки данных, на которые накладываются преобразования запроса. Таблица или подзапрос?
 	if (!interpreter_subquery)
 	{
+		size_t max_streams = settings.max_threads;
+
+		/// Если надо - запрашиваем больше источников, чем количество потоков - для более равномерного распределения работы по потокам.
+		if (max_streams > 1 && !is_remote)
+			max_streams *= settings.max_streams_to_max_threads_ratio;
+
 		streams = storage->read(required_columns, query_ptr,
 			context, settings_for_storage, from_stage,
-			settings.max_block_size, settings.max_threads);
+			settings.max_block_size, max_streams);
 
 		for (auto & stream : streams)
 			stream->addTableLock(table_lock);

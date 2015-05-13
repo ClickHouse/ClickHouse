@@ -21,6 +21,7 @@
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Interpreters/LogicalExpressionsOptimizer.h>
+#include <DB/Interpreters/ExternalDictionaries.h>
 
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
 
@@ -31,6 +32,8 @@
 
 #include <DB/DataStreams/LazyBlockInputStream.h>
 #include <DB/DataStreams/copyData.h>
+
+#include <DB/Dictionaries/IDictionary.h>
 
 #include <DB/Common/typeid_cast.h>
 
@@ -65,6 +68,23 @@ const std::unordered_set<String> injective_function_names
 	"bitmaskToArray",
 	"tuple",
 	"regionToName",
+};
+
+const std::unordered_set<String> possibly_injective_function_names
+{
+	"dictGetString",
+	"dictGetUInt8",
+	"dictGetUInt16",
+	"dictGetUInt32",
+	"dictGetUInt64",
+	"dictGetInt8",
+	"dictGetInt16",
+	"dictGetInt32",
+	"dictGetInt64",
+	"dictGetFloat32",
+	"dictGetFloat64",
+	"dictGetDate",
+	"dictGetDateTime"
 };
 
 void ExpressionAnalyzer::init()
@@ -328,7 +348,8 @@ void ExpressionAnalyzer::normalizeTree()
 /// finished_asts - уже обработанные вершины (и на что они заменены)
 /// current_asts - вершины в текущем стеке вызовов этого метода
 /// current_alias - алиас, повешенный на предка ast (самого глубокого из предков с алиасами)
-void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts, std::string current_alias)
+void ExpressionAnalyzer::normalizeTreeImpl(
+	ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts, std::string current_alias)
 {
 	if (finished_asts.count(ast))
 	{
@@ -346,25 +367,33 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 	/// rewrite правила, которые действуют при обходе сверху-вниз.
 	bool replaced = false;
 
-	if (ASTFunction * node = typeid_cast<ASTFunction *>(&*ast))
+	ASTFunction * func_node = typeid_cast<ASTFunction *>(&*ast);
+	if (func_node)
 	{
 		/** Нет ли в таблице столбца, название которого полностью совпадает с записью функции?
 		  * Например, в таблице есть столбец "domain(URL)", и мы запросили domain(URL).
 		  */
-		String function_string = node->getColumnName();
+		String function_string = func_node->getColumnName();
 		NamesAndTypesList::const_iterator it = findColumn(function_string);
 		if (columns.end() != it)
 		{
-			ASTIdentifier * ast_id = new ASTIdentifier(node->range, function_string);
+			ASTIdentifier * ast_id = new ASTIdentifier(func_node->range, function_string);
 			ast = ast_id;
 			current_asts.insert(ast);
 			replaced = true;
 		}
 
-		/// может быть указано IN t, где t - таблица, что равносильно IN (SELECT * FROM t).
-		if (node->name == "in" || node->name == "notIn" || node->name == "globalIn" || node->name == "globalNotIn")
-			if (ASTIdentifier * right = typeid_cast<ASTIdentifier *>(&*node->arguments->children.at(1)))
+		/// Может быть указано IN t, где t - таблица, что равносильно IN (SELECT * FROM t).
+		if (func_node->name == "in" || func_node->name == "notIn" || func_node->name == "globalIn" || func_node->name == "globalNotIn")
+			if (ASTIdentifier * right = typeid_cast<ASTIdentifier *>(&*func_node->arguments->children.at(1)))
 				right->kind = ASTIdentifier::Table;
+
+		/// А ещё, в качестве исключения, будем понимать count(*) как count(), а не count(список всех столбцов).
+		if (func_node->name == "count" && func_node->arguments->children.size() == 1
+			&& typeid_cast<const ASTAsterisk *>(func_node->arguments->children[0].get()))
+		{
+			func_node->arguments->children.clear();
+		}
 	}
 	else if (ASTIdentifier * node = typeid_cast<ASTIdentifier *>(&*ast))
 	{
@@ -427,10 +456,32 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 	}
 
 	/// Рекурсивные вызовы. Не опускаемся в подзапросы.
+	/// Также не опускаемся в левый аргумент лямбда-выражений, чтобы не заменять формальные параметры
+	///  по алиасам в выражениях вида 123 AS x, arrayMap(x -> 1, [2]).
 
-	for (auto & child : ast->children)
-		if (!typeid_cast<ASTSelectQuery *>(&*child))
+	if (func_node && func_node->name == "lambda")
+	{
+		/// Пропускаем первый аргумент. Также предполагаем, что у функции lambda не может быть parameters.
+		for (size_t i = 1, size = func_node->arguments->children.size(); i < size; ++i)
+		{
+			auto & child = func_node->arguments->children[i];
+
+			if (typeid_cast<ASTSelectQuery *>(&*child))
+				continue;
+
 			normalizeTreeImpl(child, finished_asts, current_asts, current_alias);
+		}
+	}
+	else
+	{
+		for (auto & child : ast->children)
+		{
+			if (typeid_cast<ASTSelectQuery *>(&*child))
+				continue;
+
+			normalizeTreeImpl(child, finished_asts, current_asts, current_alias);
+		}
+	}
 
 	/// Если секция WHERE или HAVING состоит из одного алиаса, ссылку нужно заменить не только в children, но и в where_expression и having_expression.
 	if (ASTSelectQuery * select = typeid_cast<ASTSelectQuery *>(&*ast))
@@ -496,10 +547,33 @@ void ExpressionAnalyzer::optimizeGroupBy()
 	/// iterate over each GROUP BY expression, eliminate injective function calls and literals
 	for (size_t i = 0; i < group_exprs.size();)
 	{
-		if (const auto function = typeid_cast<ASTFunction*>(group_exprs[i].get()))
+		if (const auto function = typeid_cast<ASTFunction *>(group_exprs[i].get()))
 		{
 			/// assert function is injective
-			if (!injective_function_names.count(function->name))
+			if (possibly_injective_function_names.count(function->name))
+			{
+				/// do not handle semantic errors here
+				if (function->arguments->children.size() < 2)
+				{
+					++i;
+					continue;
+				}
+
+				const auto & dict_name = typeid_cast<const ASTLiteral &>(*function->arguments->children[0])
+					.value.safeGet<String>();
+
+				const auto & dict_ptr = context.getExternalDictionaries().getDictionary(dict_name);
+
+				const auto & attr_name = typeid_cast<const ASTLiteral &>(*function->arguments->children[1])
+					.value.safeGet<String>();
+
+				if (!dict_ptr->isInjective(attr_name))
+				{
+					++i;
+					continue;
+				}
+			}
+			else if (!injective_function_names.count(function->name))
 			{
 				++i;
 				continue;
