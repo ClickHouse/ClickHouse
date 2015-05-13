@@ -230,19 +230,19 @@ namespace DB
 	struct FunctionApproximatingImpl
 	{
 		template <typename U = T>
-		static inline U apply(U val, UInt8 scale, typename std::enable_if<std::is_floating_point<U>::value>::type * = nullptr)
+		static inline U apply(U val, UInt8 precision, typename std::enable_if<std::is_floating_point<U>::value>::type * = nullptr)
 		{
 			if (val == 0)
 				return val;
 			else
 			{
-				size_t power = PowersTable::values[scale];
+				size_t power = PowersTable::values[precision];
 				return Op<U>::apply(val * power) / power;
 			}
 		}
 
 		template <typename U = T>
-		static inline U apply(U val, UInt8 scale, typename std::enable_if<std::is_integral<U>::value>::type * = nullptr)
+		static inline U apply(U val, UInt8 precision, typename std::enable_if<std::is_integral<U>::value>::type * = nullptr)
 		{
 			return val;
 		}
@@ -263,7 +263,7 @@ namespace DB
 		}
 
 		template<typename T>
-		bool executeForType(Block & block, const ColumnNumbers & arguments, Int8 scale, size_t result)
+		bool executeForType(Block & block, const ColumnNumbers & arguments, Int8 precision, size_t result)
 		{
 			if (ColumnVector<T> * col = typeid_cast<ColumnVector<T> *>(&*block.getByPosition(arguments[0]).column))
 			{
@@ -276,13 +276,13 @@ namespace DB
 				const PODArray<T> & a = col->getData();
 				size_t size = a.size();
 				for (size_t i = 0; i < size; ++i)
-					vec_res[i] = FunctionApproximatingImpl<T, Op, PowersTable>::apply(a[i], scale);
+					vec_res[i] = FunctionApproximatingImpl<T, Op, PowersTable>::apply(a[i], precision);
 
 				return true;
 			}
 			else if (ColumnConst<T> * col = typeid_cast<ColumnConst<T> *>(&*block.getByPosition(arguments[0]).column))
 			{
-				T res = FunctionApproximatingImpl<T, Op, PowersTable>::apply(col->getData(), scale);
+				T res = FunctionApproximatingImpl<T, Op, PowersTable>::apply(col->getData(), precision);
 
 				ColumnConst<T> * col_res = new ColumnConst<T>(col->size(), res);
 				block.getByPosition(result).column = col_res;
@@ -294,45 +294,45 @@ namespace DB
 		}
 
 		template<typename T>
-		bool getScaleForType(const ColumnPtr & column, UInt8 & scale)
+		bool getPrecisionForType(const ColumnPtr & column, UInt8 & precision)
 		{
 			using ColumnType = ColumnConst<T>;
 
-			const ColumnType * scale_col = typeid_cast<const ColumnType *>(&*column);
-			if (scale_col == nullptr)
+			const ColumnType * precision_col = typeid_cast<const ColumnType *>(&*column);
+			if (precision_col == nullptr)
 				return false;
 
-			T val = scale_col->getData();
+			T val = precision_col->getData();
 			if (std::is_signed<T>::value && (val < 0))
 				val = 0;
 			else if (val >= static_cast<T>(PowersTable::values.size()))
 				val = static_cast<T>(PowersTable::values.size()) - 1;
 
-			scale = static_cast<UInt8>(val);
+			precision = static_cast<UInt8>(val);
 
 			return true;
 		}
 
-		UInt8 getScale(const ColumnPtr & column)
+		UInt8 getPrecision(const ColumnPtr & column)
 		{
-			UInt8 scale = 0;
+			UInt8 precision = 0;
 
-			if (!(	getScaleForType<UInt8>(column, scale)
-				||	getScaleForType<UInt16>(column, scale)
-				||	getScaleForType<UInt16>(column, scale)
-				||	getScaleForType<UInt32>(column, scale)
-				||	getScaleForType<UInt64>(column, scale)
-				||	getScaleForType<Int8>(column, scale)
-				||	getScaleForType<Int16>(column, scale)
-				||	getScaleForType<Int32>(column, scale)
-				||	getScaleForType<Int64>(column, scale)))
+			if (!(	getPrecisionForType<UInt8>(column, precision)
+				||	getPrecisionForType<UInt16>(column, precision)
+				||	getPrecisionForType<UInt16>(column, precision)
+				||	getPrecisionForType<UInt32>(column, precision)
+				||	getPrecisionForType<UInt64>(column, precision)
+				||	getPrecisionForType<Int8>(column, precision)
+				||	getPrecisionForType<Int16>(column, precision)
+				||	getPrecisionForType<Int32>(column, precision)
+				||	getPrecisionForType<Int64>(column, precision)))
 			{
 				throw Exception("Illegal column " + column->getName()
-						+ " of second ('scale') argument of function " + getName(),
+						+ " of second ('precision') argument of function " + getName(),
 						ErrorCodes::ILLEGAL_COLUMN);
 			}
 
-			return scale;
+			return precision;
 		}
 
 	public:
@@ -379,20 +379,20 @@ namespace DB
 		/// Выполнить функцию над блоком.
 		void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 		{
-			UInt8 scale = 0;
+			UInt8 precision = 0;
 			if (arguments.size() == 2)
-				scale = getScale(block.getByPosition(arguments[1]).column);
+				precision = getPrecision(block.getByPosition(arguments[1]).column);
 
-			if (!(	executeForType<UInt8>(block, arguments, scale, result)
-				||	executeForType<UInt16>(block, arguments, scale, result)
-				||	executeForType<UInt32>(block, arguments, scale, result)
-				||	executeForType<UInt64>(block, arguments, scale, result)
-				||	executeForType<Int8>(block, arguments, scale, result)
-				||	executeForType<Int16>(block, arguments, scale, result)
-				||	executeForType<Int32>(block, arguments, scale, result)
-				||	executeForType<Int64>(block, arguments, scale, result)
-				||	executeForType<Float32>(block, arguments, scale, result)
-				||	executeForType<Float64>(block, arguments, scale, result)))
+			if (!(	executeForType<UInt8>(block, arguments, precision, result)
+				||	executeForType<UInt16>(block, arguments, precision, result)
+				||	executeForType<UInt32>(block, arguments, precision, result)
+				||	executeForType<UInt64>(block, arguments, precision, result)
+				||	executeForType<Int8>(block, arguments, precision, result)
+				||	executeForType<Int16>(block, arguments, precision, result)
+				||	executeForType<Int32>(block, arguments, precision, result)
+				||	executeForType<Int64>(block, arguments, precision, result)
+				||	executeForType<Float32>(block, arguments, precision, result)
+				||	executeForType<Float64>(block, arguments, precision, result)))
 			{
 				throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
 						+ " of argument of function " + getName(),
