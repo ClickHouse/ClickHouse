@@ -145,8 +145,7 @@ namespace DB
 		}
 	};
 
-	// XXX Rename the following 3 functions.
-	struct RoundFunc
+	struct RoundImpl
 	{
 		static inline double apply(double x)
 		{
@@ -154,7 +153,7 @@ namespace DB
 		}
 	};
 
-	struct CeilFunc
+	struct CeilImpl
 	{
 		static inline double apply(double x)
 		{
@@ -162,7 +161,7 @@ namespace DB
 		}
 	};
 
-	struct FloorFunc
+	struct FloorImpl
 	{
 		static inline double apply(double x)
 		{
@@ -170,9 +169,8 @@ namespace DB
 		}
 	};
 
-	// XXX Rename this structure.
 	template<typename A, typename Op>
-	struct RoundImpl
+	struct FunctionApproximatingImpl
 	{
 		static inline A apply(A a, Int8 scale)
 		{
@@ -206,13 +204,13 @@ namespace DB
 				const PODArray<T0> & a = col->getData();
 				size_t size = a.size();
 				for (size_t i = 0; i < size; ++i)
-					vec_res[i] = RoundImpl<T0, Op>::apply(a[i], scale);
+					vec_res[i] = FunctionApproximatingImpl<T0, Op>::apply(a[i], scale);
 
 				return true;
 			}
 			else if (ColumnConst<T0> * col = typeid_cast<ColumnConst<T0> *>(&*block.getByPosition(arguments[0]).column))
 			{
-				T0 res = RoundImpl<T0, Op>::apply(col->getData(), scale);
+				T0 res = FunctionApproximatingImpl<T0, Op>::apply(col->getData(), scale);
 
 				ColumnConst<T0> * col_res = new ColumnConst<T0>(col->size(), res);
 				block.getByPosition(result).column = col_res;
@@ -294,7 +292,7 @@ namespace DB
 	typedef FunctionUnaryArithmetic<RoundToExp2Impl,	NameRoundToExp2> 	FunctionRoundToExp2;
 	typedef FunctionUnaryArithmetic<RoundDurationImpl,	NameRoundDuration>	FunctionRoundDuration;
 	typedef FunctionUnaryArithmetic<RoundAgeImpl,		NameRoundAge>		FunctionRoundAge;
-	typedef FunctionApproximating<RoundFunc,			NameRound>			FunctionRound;
-	typedef FunctionApproximating<CeilFunc,				NameCeil>			FunctionCeil;
-	typedef FunctionApproximating<FloorFunc,			NameFloor>			FunctionFloor;
+	typedef FunctionApproximating<RoundImpl,		NameRound>		FunctionRound;
+	typedef FunctionApproximating<CeilImpl,			NameCeil>		FunctionCeil;
+	typedef FunctionApproximating<FloorImpl,		NameFloor>		FunctionFloor;
 }
