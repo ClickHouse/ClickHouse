@@ -27,13 +27,13 @@ struct PowerOf10<0>
 /// Объявление и определение таблицы.
 
 template <size_t... TArgs>
-struct TablePowersOf10
+struct TableContainer
 {
-    static const std::array<size_t, sizeof...(TArgs)> value;
+    static const std::array<size_t, sizeof...(TArgs)> values;
 };
 
 template <size_t... TArgs>
-const std::array<size_t, sizeof...(TArgs)> TablePowersOf10<TArgs...>::value = { TArgs... };
+const std::array<size_t, sizeof...(TArgs)> TableContainer<TArgs...>::values = { TArgs... };
 
 /// Сгенерить первые N степеней.
 
@@ -46,7 +46,7 @@ struct FillArrayImpl
 template <size_t... TArgs>
 struct FillArrayImpl<0, TArgs...>
 {
-    using result = TablePowersOf10<PowerOf10<0>::value, TArgs...>;
+    using result = TableContainer<PowerOf10<0>::value, TArgs...>;
 };
 
 template <size_t N>
@@ -55,7 +55,7 @@ struct FillArray
     using result = typename FillArrayImpl<N-1>::result;
 };
 
-using powers_of_10 = FillArray<16>::result;
+using PowersOf10 = FillArray<16>::result;
 
 }
 
@@ -150,7 +150,7 @@ namespace DB
 	{
 		static inline T apply(T val)
 		{
-			throw Exception("Invalid invokation", ErrorCodes::LOGICAL_ERROR);
+			return val;
 		}
 	};
 
@@ -177,7 +177,7 @@ namespace DB
 	{
 		static inline T apply(T val)
 		{
-			throw Exception("Invalid invokation", ErrorCodes::LOGICAL_ERROR);
+			return val;
 		}
 	};
 
@@ -204,7 +204,7 @@ namespace DB
 	{
 		static inline T apply(T val)
 		{
-			throw Exception("Invalid invokation", ErrorCodes::LOGICAL_ERROR);
+			return val;
 		}
 	};
 
@@ -226,25 +226,25 @@ namespace DB
 		}
 	};
 
-	template<typename A, template<typename> class Op, typename PowersTable>
+	template<typename T, template<typename> class Op, typename PowersTable>
 	struct FunctionApproximatingImpl
 	{
-		template <typename A2 = A>
-		static inline A2 apply(A2 a, UInt8 scale, typename std::enable_if<std::is_floating_point<A2>::value>::type * = nullptr)
+		template <typename U = T>
+		static inline U apply(U val, UInt8 scale, typename std::enable_if<std::is_floating_point<U>::value>::type * = nullptr)
 		{
-			if (a == 0)
-				return a;
+			if (val == 0)
+				return val;
 			else
 			{
-				size_t power = PowersTable::value[scale];
-				return Op<A2>::apply(a * power) / power;
+				size_t power = PowersTable::values[scale];
+				return Op<U>::apply(val * power) / power;
 			}
 		}
 
-		template <typename A2 = A>
-		static inline A2 apply(A2 a, UInt8 scale, typename std::enable_if<std::is_integral<A2>::value>::type * = nullptr)
+		template <typename U = T>
+		static inline U apply(U val, UInt8 scale, typename std::enable_if<std::is_integral<U>::value>::type * = nullptr)
 		{
-			return a;
+			return val;
 		}
 	};
 
@@ -262,29 +262,29 @@ namespace DB
 			return typeid_cast<const T *>(type) != nullptr;
 		}
 
-		template<typename T0>
-		bool executeType(Block & block, const ColumnNumbers & arguments, Int8 scale, size_t result)
+		template<typename T>
+		bool executeForType(Block & block, const ColumnNumbers & arguments, Int8 scale, size_t result)
 		{
-			if (ColumnVector<T0> * col = typeid_cast<ColumnVector<T0> *>(&*block.getByPosition(arguments[0]).column))
+			if (ColumnVector<T> * col = typeid_cast<ColumnVector<T> *>(&*block.getByPosition(arguments[0]).column))
 			{
-				ColumnVector<T0> * col_res = new ColumnVector<T0>;
+				ColumnVector<T> * col_res = new ColumnVector<T>;
 				block.getByPosition(result).column = col_res;
 
-				typename ColumnVector<T0>::Container_t & vec_res = col_res->getData();
+				typename ColumnVector<T>::Container_t & vec_res = col_res->getData();
 				vec_res.resize(col->getData().size());
 
-				const PODArray<T0> & a = col->getData();
+				const PODArray<T> & a = col->getData();
 				size_t size = a.size();
 				for (size_t i = 0; i < size; ++i)
-					vec_res[i] = FunctionApproximatingImpl<T0, Op, PowersTable>::apply(a[i], scale);
+					vec_res[i] = FunctionApproximatingImpl<T, Op, PowersTable>::apply(a[i], scale);
 
 				return true;
 			}
-			else if (ColumnConst<T0> * col = typeid_cast<ColumnConst<T0> *>(&*block.getByPosition(arguments[0]).column))
+			else if (ColumnConst<T> * col = typeid_cast<ColumnConst<T> *>(&*block.getByPosition(arguments[0]).column))
 			{
-				T0 res = FunctionApproximatingImpl<T0, Op, PowersTable>::apply(col->getData(), scale);
+				T res = FunctionApproximatingImpl<T, Op, PowersTable>::apply(col->getData(), scale);
 
-				ColumnConst<T0> * col_res = new ColumnConst<T0>(col->size(), res);
+				ColumnConst<T> * col_res = new ColumnConst<T>(col->size(), res);
 				block.getByPosition(result).column = col_res;
 
 				return true;
@@ -305,8 +305,8 @@ namespace DB
 			T val = scale_col->getData();
 			if (std::is_signed<T>::value && (val < 0))
 				val = 0;
-			else if (val >= static_cast<T>(PowersTable::value.size()))
-				val = static_cast<T>(PowersTable::value.size()) - 1;
+			else if (val >= static_cast<T>(PowersTable::values.size()))
+				val = static_cast<T>(PowersTable::values.size()) - 1;
 
 			scale = static_cast<UInt8>(val);
 
@@ -383,19 +383,21 @@ namespace DB
 			if (arguments.size() == 2)
 				scale = getScale(block.getByPosition(arguments[1]).column);
 
-			if (!(	executeType<UInt8>(block, arguments, scale, result)
-				||	executeType<UInt16>(block, arguments, scale, result)
-				||	executeType<UInt32>(block, arguments, scale, result)
-				||	executeType<UInt64>(block, arguments, scale, result)
-				||	executeType<Int8>(block, arguments, scale, result)
-				||	executeType<Int16>(block, arguments, scale, result)
-				||	executeType<Int32>(block, arguments, scale, result)
-				||	executeType<Int64>(block, arguments, scale, result)
-				||	executeType<Float32>(block, arguments, scale, result)
-				||	executeType<Float64>(block, arguments, scale, result)))
-			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-					+ " of argument of function " + getName(),
-					ErrorCodes::ILLEGAL_COLUMN);
+			if (!(	executeForType<UInt8>(block, arguments, scale, result)
+				||	executeForType<UInt16>(block, arguments, scale, result)
+				||	executeForType<UInt32>(block, arguments, scale, result)
+				||	executeForType<UInt64>(block, arguments, scale, result)
+				||	executeForType<Int8>(block, arguments, scale, result)
+				||	executeForType<Int16>(block, arguments, scale, result)
+				||	executeForType<Int32>(block, arguments, scale, result)
+				||	executeForType<Int64>(block, arguments, scale, result)
+				||	executeForType<Float32>(block, arguments, scale, result)
+				||	executeForType<Float64>(block, arguments, scale, result)))
+			{
+				throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+						+ " of argument of function " + getName(),
+						ErrorCodes::ILLEGAL_COLUMN);
+			}
 		}
 	};
 
@@ -409,7 +411,7 @@ namespace DB
 	typedef FunctionUnaryArithmetic<RoundToExp2Impl,	NameRoundToExp2> 	FunctionRoundToExp2;
 	typedef FunctionUnaryArithmetic<RoundDurationImpl,	NameRoundDuration>	FunctionRoundDuration;
 	typedef FunctionUnaryArithmetic<RoundAgeImpl,		NameRoundAge>		FunctionRoundAge;
-	typedef FunctionApproximating<RoundImpl, 	powers_of_10,	NameRound>	FunctionRound;
-	typedef FunctionApproximating<CeilImpl,		powers_of_10,	NameCeil>	FunctionCeil;
-	typedef FunctionApproximating<FloorImpl,	powers_of_10,	NameFloor>	FunctionFloor;
+	typedef FunctionApproximating<RoundImpl,	PowersOf10,	NameRound>	FunctionRound;
+	typedef FunctionApproximating<CeilImpl,		PowersOf10,	NameCeil>	FunctionCeil;
+	typedef FunctionApproximating<FloorImpl,	PowersOf10,	NameFloor>	FunctionFloor;
 }
