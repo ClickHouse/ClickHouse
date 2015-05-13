@@ -167,6 +167,45 @@ namespace DB
 		}
 	};
 
+	template<typename T, typename U, typename PowersTable>
+	struct PrecisionForType
+	{
+		template<typename L = T>
+		static inline bool apply(const ColumnPtr & column, UInt8 & precision, typename std::enable_if<std::is_integral<L>::value>::type * = nullptr)
+		{
+			using ColumnType = ColumnConst<U>;
+
+			const ColumnType * precision_col = typeid_cast<const ColumnType *>(&*column);
+			if (precision_col == nullptr)
+				return false;
+
+			precision = 0;
+
+			return true;
+		}
+
+		// XXX Differentiate cases U = Float32 (half precision) and U = Float64 (full precision)
+		template<typename L = T>
+		static inline bool apply(const ColumnPtr & column, UInt8 & precision, typename std::enable_if<std::is_floating_point<L>::value>::type * = nullptr)
+		{
+			using ColumnType = ColumnConst<U>;
+
+			const ColumnType * precision_col = typeid_cast<const ColumnType *>(&*column);
+			if (precision_col == nullptr)
+				return false;
+
+			U val = precision_col->getData();
+			if (val < 0)
+				val = 0;
+			else if (val >= static_cast<U>(PowersTable::values.size()))
+				val = static_cast<U>(PowersTable::values.size()) - 1;
+
+			precision = static_cast<UInt8>(val);
+
+			return true;
+		}
+	};
+
 	template<template<typename> class Op, typename PowersTable, typename Name>
 	class FunctionApproximating : public IFunction
 	{
@@ -182,10 +221,14 @@ namespace DB
 		}
 
 		template<typename T>
-		bool executeForType(Block & block, const ColumnNumbers & arguments, UInt8 precision, size_t result)
+		bool executeForType(Block & block, const ColumnNumbers & arguments, size_t result)
 		{
 			if (ColumnVector<T> * col = typeid_cast<ColumnVector<T> *>(&*block.getByPosition(arguments[0]).column))
 			{
+				UInt8 precision = 0;
+				if (arguments.size() == 2)
+					precision = getPrecision<T>(block.getByPosition(arguments[1]).column);
+
 				ColumnVector<T> * col_res = new ColumnVector<T>;
 				block.getByPosition(result).column = col_res;
 
@@ -201,6 +244,10 @@ namespace DB
 			}
 			else if (ColumnConst<T> * col = typeid_cast<ColumnConst<T> *>(&*block.getByPosition(arguments[0]).column))
 			{
+				UInt8 precision = 0;
+				if (arguments.size() == 2)
+					precision = getPrecision<T>(block.getByPosition(arguments[1]).column);
+
 				T res = FunctionApproximatingImpl<T, Op, PowersTable>::apply(col->getData(), precision);
 
 				ColumnConst<T> * col_res = new ColumnConst<T>(col->size(), res);
@@ -213,38 +260,19 @@ namespace DB
 		}
 
 		template<typename T>
-		bool getPrecisionForType(const ColumnPtr & column, UInt8 & precision)
-		{
-			using ColumnType = ColumnConst<T>;
-
-			const ColumnType * precision_col = typeid_cast<const ColumnType *>(&*column);
-			if (precision_col == nullptr)
-				return false;
-
-			T val = precision_col->getData();
-			if (std::is_signed<T>::value && (val < 0))
-				val = 0;
-			else if (val >= static_cast<T>(PowersTable::values.size()))
-				val = static_cast<T>(PowersTable::values.size()) - 1;
-
-			precision = static_cast<UInt8>(val);
-
-			return true;
-		}
-
 		UInt8 getPrecision(const ColumnPtr & column)
 		{
 			UInt8 precision = 0;
 
-			if (!(	getPrecisionForType<UInt8>(column, precision)
-				||	getPrecisionForType<UInt16>(column, precision)
-				||	getPrecisionForType<UInt16>(column, precision)
-				||	getPrecisionForType<UInt32>(column, precision)
-				||	getPrecisionForType<UInt64>(column, precision)
-				||	getPrecisionForType<Int8>(column, precision)
-				||	getPrecisionForType<Int16>(column, precision)
-				||	getPrecisionForType<Int32>(column, precision)
-				||	getPrecisionForType<Int64>(column, precision)))
+			if (!(	PrecisionForType<T, UInt8, PowersTable>::apply(column, precision)
+				||	PrecisionForType<T, UInt16, PowersTable>::apply(column, precision)
+				||	PrecisionForType<T, UInt16, PowersTable>::apply(column, precision)
+				||	PrecisionForType<T, UInt32, PowersTable>::apply(column, precision)
+				||	PrecisionForType<T, UInt64, PowersTable>::apply(column, precision)
+				||	PrecisionForType<T, Int8, PowersTable>::apply(column, precision)
+				||	PrecisionForType<T, Int16, PowersTable>::apply(column, precision)
+				||	PrecisionForType<T, Int32, PowersTable>::apply(column, precision)
+				||	PrecisionForType<T, Int64, PowersTable>::apply(column, precision)))
 			{
 				throw Exception("Illegal column " + column->getName()
 						+ " of second ('precision') argument of function " + getName(),
@@ -298,20 +326,16 @@ namespace DB
 		/// Выполнить функцию над блоком.
 		void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 		{
-			UInt8 precision = 0;
-			if (arguments.size() == 2)
-				precision = getPrecision(block.getByPosition(arguments[1]).column);
-
-			if (!(	executeForType<UInt8>(block, arguments, precision, result)
-				||	executeForType<UInt16>(block, arguments, precision, result)
-				||	executeForType<UInt32>(block, arguments, precision, result)
-				||	executeForType<UInt64>(block, arguments, precision, result)
-				||	executeForType<Int8>(block, arguments, precision, result)
-				||	executeForType<Int16>(block, arguments, precision, result)
-				||	executeForType<Int32>(block, arguments, precision, result)
-				||	executeForType<Int64>(block, arguments, precision, result)
-				||	executeForType<Float32>(block, arguments, precision, result)
-				||	executeForType<Float64>(block, arguments, precision, result)))
+			if (!(	executeForType<UInt8>(block, arguments, result)
+				||	executeForType<UInt16>(block, arguments, result)
+				||	executeForType<UInt32>(block, arguments, result)
+				||	executeForType<UInt64>(block, arguments, result)
+				||	executeForType<Int8>(block, arguments, result)
+				||	executeForType<Int16>(block, arguments, result)
+				||	executeForType<Int32>(block, arguments, result)
+				||	executeForType<Int64>(block, arguments, result)
+				||	executeForType<Float32>(block, arguments, result)
+				||	executeForType<Float64>(block, arguments, result)))
 			{
 				throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
 						+ " of argument of function " + getName(),
