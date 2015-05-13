@@ -182,7 +182,7 @@ namespace DB
 		}
 
 		template<typename T>
-		bool executeForType(Block & block, const ColumnNumbers & arguments, Int8 precision, size_t result)
+		bool executeForType(Block & block, const ColumnNumbers & arguments, UInt8 precision, size_t result)
 		{
 			if (ColumnVector<T> * col = typeid_cast<ColumnVector<T> *>(&*block.getByPosition(arguments[0]).column))
 			{
