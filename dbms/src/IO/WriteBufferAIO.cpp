@@ -338,14 +338,21 @@ void WriteBufferAIO::prepare()
 			if (read_count < 0)
 				throw Exception("Read error", ErrorCodes::AIO_READ_ERROR);
 
+			Position truncation_begin;
 			off_t offset = DEFAULT_AIO_FILE_BLOCK_SIZE - region_right_padding;
 			if (read_count > offset)
 			{
 				::memcpy(buffer_end, memory_page + offset, read_count - offset);
+				truncation_begin = buffer_end + (read_count - offset);
 				truncation_count = DEFAULT_AIO_FILE_BLOCK_SIZE - read_count;
 			}
 			else
+			{
+				truncation_begin = buffer_end;
 				truncation_count = region_right_padding;
+			}
+
+			::memset(truncation_begin, 0, truncation_count);
 		}
 	}
 }
