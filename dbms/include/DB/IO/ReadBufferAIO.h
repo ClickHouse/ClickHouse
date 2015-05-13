@@ -55,7 +55,7 @@ private:
 	BufferWithOwnMemory<ReadBuffer> fill_buffer;
 
 	/// Описание асинхронного запроса на чтение.
-	iocb request;
+	iocb request = { 0 };
 	std::vector<iocb *> request_ptrs{&request};
 	std::vector<io_event> events{1};
 

@@ -34,8 +34,6 @@ WriteBufferAIO::WriteBufferAIO(const std::string & filename_, size_t buffer_size
 		auto error_code = (errno == ENOENT) ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE;
 		throwFromErrno("Cannot open file " + filename, error_code);
 	}
-
-	::memset(&request, 0, sizeof(request));
 }
 
 WriteBufferAIO::~WriteBufferAIO()
