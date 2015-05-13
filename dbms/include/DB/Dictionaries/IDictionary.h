@@ -49,6 +49,8 @@ public:
 
 	virtual std::chrono::time_point<std::chrono::system_clock> getCreationTime() const = 0;
 
+	virtual bool isInjective(const std::string & attribute_name) const = 0;
+
 	virtual bool hasHierarchy() const = 0;
 
 	/// do not call unless you ensure that hasHierarchy() returns true

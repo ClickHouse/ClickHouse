@@ -21,6 +21,7 @@
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Interpreters/LogicalExpressionsOptimizer.h>
+#include <DB/Interpreters/ExternalDictionaries.h>
 
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
 
@@ -31,6 +32,8 @@
 
 #include <DB/DataStreams/LazyBlockInputStream.h>
 #include <DB/DataStreams/copyData.h>
+
+#include <DB/Dictionaries/IDictionary.h>
 
 #include <DB/Common/typeid_cast.h>
 
@@ -65,6 +68,23 @@ const std::unordered_set<String> injective_function_names
 	"bitmaskToArray",
 	"tuple",
 	"regionToName",
+};
+
+const std::unordered_set<String> possibly_injective_function_names
+{
+	"dictGetString",
+	"dictGetUInt8",
+	"dictGetUInt16",
+	"dictGetUInt32",
+	"dictGetUInt64",
+	"dictGetInt8",
+	"dictGetInt16",
+	"dictGetInt32",
+	"dictGetInt64",
+	"dictGetFloat32",
+	"dictGetFloat64",
+	"dictGetDate",
+	"dictGetDateTime"
 };
 
 void ExpressionAnalyzer::init()
@@ -527,10 +547,33 @@ void ExpressionAnalyzer::optimizeGroupBy()
 	/// iterate over each GROUP BY expression, eliminate injective function calls and literals
 	for (size_t i = 0; i < group_exprs.size();)
 	{
-		if (const auto function = typeid_cast<ASTFunction*>(group_exprs[i].get()))
+		if (const auto function = typeid_cast<ASTFunction *>(group_exprs[i].get()))
 		{
 			/// assert function is injective
-			if (!injective_function_names.count(function->name))
+			if (possibly_injective_function_names.count(function->name))
+			{
+				/// do not handle semantic errors here
+				if (function->arguments->children.size() < 2)
+				{
+					++i;
+					continue;
+				}
+
+				const auto & dict_name = typeid_cast<const ASTLiteral &>(*function->arguments->children[0])
+					.value.safeGet<String>();
+
+				const auto & dict_ptr = context.getExternalDictionaries().getDictionary(dict_name);
+
+				const auto & attr_name = typeid_cast<const ASTLiteral &>(*function->arguments->children[1])
+					.value.safeGet<String>();
+
+				if (!dict_ptr->isInjective(attr_name))
+				{
+					++i;
+					continue;
+				}
+			}
+			else if (!injective_function_names.count(function->name))
 			{
 				++i;
 				continue;

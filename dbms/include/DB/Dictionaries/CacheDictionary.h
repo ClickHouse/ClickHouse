@@ -78,6 +78,11 @@ public:
 		return creation_time;
 	}
 
+	bool isInjective(const std::string & attribute_name) const override
+	{
+		return dict_struct.attributes[&getAttribute(attribute_name) - attributes.data()].injective;
+	}
+
 	bool hasHierarchy() const override { return hierarchical_attribute; }
 
 	id_t toParent(const id_t id) const override
