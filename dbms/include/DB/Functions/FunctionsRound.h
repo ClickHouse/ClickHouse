@@ -55,7 +55,7 @@ struct FillArray
     using result = typename FillArrayImpl<N-1>::result;
 };
 
-using PowersOf10 = FillArray<16>::result;
+using PowersOf10 = FillArray<std::numeric_limits<DB::Float64>::digits10 + 1>::result;
 
 }
 
@@ -155,7 +155,7 @@ namespace DB
 				return val;
 			else
 			{
-				size_t power = PowersTable::values[precision];
+				size_t power = PowersTable::values.at(precision);
 				return Op<U>::apply(val * power) / power;
 			}
 		}
@@ -167,24 +167,9 @@ namespace DB
 		}
 	};
 
-	template<typename T, typename U, typename PowersTable>
+	template<typename T, typename U>
 	struct PrecisionForType
 	{
-		template<typename L = T>
-		static inline bool apply(const ColumnPtr & column, UInt8 & precision, typename std::enable_if<std::is_integral<L>::value>::type * = nullptr)
-		{
-			using ColumnType = ColumnConst<U>;
-
-			const ColumnType * precision_col = typeid_cast<const ColumnType *>(&*column);
-			if (precision_col == nullptr)
-				return false;
-
-			precision = 0;
-
-			return true;
-		}
-
-		// XXX Differentiate cases U = Float32 (half precision) and U = Float64 (full precision)
 		template<typename L = T>
 		static inline bool apply(const ColumnPtr & column, UInt8 & precision, typename std::enable_if<std::is_floating_point<L>::value>::type * = nullptr)
 		{
@@ -197,10 +182,24 @@ namespace DB
 			U val = precision_col->getData();
 			if (val < 0)
 				val = 0;
-			else if (val >= static_cast<U>(PowersTable::values.size()))
-				val = static_cast<U>(PowersTable::values.size()) - 1;
+			else if (val >= static_cast<U>(std::numeric_limits<L>::digits10))
+				val = static_cast<U>(std::numeric_limits<L>::digits10);
 
 			precision = static_cast<UInt8>(val);
+
+			return true;
+		}
+
+		template<typename L = T>
+		static inline bool apply(const ColumnPtr & column, UInt8 & precision, typename std::enable_if<std::is_integral<L>::value>::type * = nullptr)
+		{
+			using ColumnType = ColumnConst<U>;
+
+			const ColumnType * precision_col = typeid_cast<const ColumnType *>(&*column);
+			if (precision_col == nullptr)
+				return false;
+
+			precision = 0;
 
 			return true;
 		}
@@ -264,15 +263,15 @@ namespace DB
 		{
 			UInt8 precision = 0;
 
-			if (!(	PrecisionForType<T, UInt8, PowersTable>::apply(column, precision)
-				||	PrecisionForType<T, UInt16, PowersTable>::apply(column, precision)
-				||	PrecisionForType<T, UInt16, PowersTable>::apply(column, precision)
-				||	PrecisionForType<T, UInt32, PowersTable>::apply(column, precision)
-				||	PrecisionForType<T, UInt64, PowersTable>::apply(column, precision)
-				||	PrecisionForType<T, Int8, PowersTable>::apply(column, precision)
-				||	PrecisionForType<T, Int16, PowersTable>::apply(column, precision)
-				||	PrecisionForType<T, Int32, PowersTable>::apply(column, precision)
-				||	PrecisionForType<T, Int64, PowersTable>::apply(column, precision)))
+			if (!(	PrecisionForType<T, UInt8>::apply(column, precision)
+				||	PrecisionForType<T, UInt16>::apply(column, precision)
+				||	PrecisionForType<T, UInt16>::apply(column, precision)
+				||	PrecisionForType<T, UInt32>::apply(column, precision)
+				||	PrecisionForType<T, UInt64>::apply(column, precision)
+				||	PrecisionForType<T, Int8>::apply(column, precision)
+				||	PrecisionForType<T, Int16>::apply(column, precision)
+				||	PrecisionForType<T, Int32>::apply(column, precision)
+				||	PrecisionForType<T, Int64>::apply(column, precision)))
 			{
 				throw Exception("Illegal column " + column->getName()
 						+ " of second ('precision') argument of function " + getName(),
