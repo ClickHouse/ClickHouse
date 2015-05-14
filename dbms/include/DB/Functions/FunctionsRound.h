@@ -369,18 +369,18 @@ namespace
 	};
 
 	template<>
-	struct RoundImpl<DB::Float32>
+	struct RoundImpl<Float32>
 	{
-		static inline DB::Float32 apply(DB::Float32 val)
+		static inline Float32 apply(Float32 val)
 		{
 			return roundf(val);
 		}
 	};
 
 	template<>
-	struct RoundImpl<DB::Float64>
+	struct RoundImpl<Float64>
 	{
-		static inline DB::Float64 apply(DB::Float64 val)
+		static inline Float64 apply(Float64 val)
 		{
 			return round(val);
 		}
@@ -396,18 +396,18 @@ namespace
 	};
 
 	template<>
-	struct CeilImpl<DB::Float32>
+	struct CeilImpl<Float32>
 	{
-		static inline DB::Float32 apply(DB::Float32 val)
+		static inline Float32 apply(Float32 val)
 		{
 			return ceilf(val);
 		}
 	};
 
 	template<>
-	struct CeilImpl<DB::Float64>
+	struct CeilImpl<Float64>
 	{
-		static inline DB::Float64 apply(DB::Float64 val)
+		static inline Float64 apply(Float64 val)
 		{
 			return ceil(val);
 		}
@@ -423,18 +423,18 @@ namespace
 	};
 
 	template<>
-	struct FloorImpl<DB::Float32>
+	struct FloorImpl<Float32>
 	{
-		static inline DB::Float32 apply(DB::Float32 val)
+		static inline Float32 apply(Float32 val)
 		{
 			return floorf(val);
 		}
 	};
 
 	template<>
-	struct FloorImpl<DB::Float64>
+	struct FloorImpl<Float64>
 	{
-		static inline DB::Float64 apply(DB::Float64 val)
+		static inline Float64 apply(Float64 val)
 		{
 			return floor(val);
 		}
