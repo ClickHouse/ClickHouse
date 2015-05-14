@@ -103,7 +103,7 @@ namespace DB
 				return val;
 			else
 			{
-				size_t power = PowersTable::values.at(precision);
+				size_t power = PowersTable::values[precision];
 				return Op<U>::apply(val * power) / power;
 			}
 		}
@@ -158,18 +158,70 @@ namespace DB
 		}
 	};
 
+namespace
+{
+	/// Следующий код генерирует во время сборки таблицу степеней числа 10.
+
+	/// Отдельные степени числа 10.
+
+	template <size_t N>
+	struct PowerOf10
+	{
+		static const size_t value = 10 * PowerOf10<N - 1>::value;
+	};
+
+	template<>
+	struct PowerOf10<0>
+	{
+		static const size_t value = 1;
+	};
+
+	/// Объявление и определение контейнера содержащего таблицу степеней числа 10.
+
+	template <size_t... TArgs>
+	struct TableContainer
+	{
+		static const std::array<size_t, sizeof...(TArgs)> values;
+	};
+
+	template <size_t... TArgs>
+	const std::array<size_t, sizeof...(TArgs)> TableContainer<TArgs...>::values = { TArgs... };
+
+	/// Генератор первых N степеней.
+
+	template <size_t N, size_t... TArgs>
+	struct FillArrayImpl
+	{
+		using result = typename FillArrayImpl<N - 1, PowerOf10<N>::value, TArgs...>::result;
+	};
+
+	template <size_t... TArgs>
+	struct FillArrayImpl<0, TArgs...>
+	{
+		using result = TableContainer<PowerOf10<0>::value, TArgs...>;
+	};
+
+	template <size_t N>
+	struct FillArray
+	{
+		using result = typename FillArrayImpl<N-1>::result;
+	};
+}
+
 	/** Шаблон для функцией, которые вычисляют приближенное значение входного параметра
 	  * типа (U)Int8/16/32/64 или Float32/64 и принимают дополнительный необязятельный
 	  * параметр указывающий сколько знаков после запятой оставить (по умолчанию - 0).
 	  * Op - функция (round/floor/ceil)
-	  * PowersTable - таблица степеней числа 10
 	  */
-	template<template<typename> class Op, typename PowersTable, typename Name>
+	template<template<typename> class Op, typename Name>
 	class FunctionApproximating : public IFunction
 	{
 	public:
 		static constexpr auto name = Name::name;
 		static IFunction * create(const Context & context) { return new FunctionApproximating; }
+
+	private:
+		using PowersOf10 = FillArray<std::numeric_limits<DB::Float64>::digits10 + 1>::result;
 
 	private:
 		template<typename T>
@@ -196,7 +248,7 @@ namespace DB
 				const PODArray<T> & a = col->getData();
 				size_t size = a.size();
 				for (size_t i = 0; i < size; ++i)
-					vec_res[i] = FunctionApproximatingImpl<T, Op, PowersTable>::apply(a[i], precision);
+					vec_res[i] = FunctionApproximatingImpl<T, Op, PowersOf10>::apply(a[i], precision);
 
 				return true;
 			}
@@ -206,7 +258,7 @@ namespace DB
 				if (arguments.size() == 2)
 					precision = getPrecision<T>(block.getByPosition(arguments[1]).column);
 
-				T res = FunctionApproximatingImpl<T, Op, PowersTable>::apply(col->getData(), precision);
+				T res = FunctionApproximatingImpl<T, Op, PowersOf10>::apply(col->getData(), precision);
 
 				ColumnConst<T> * col_res = new ColumnConst<T>(col->size(), res);
 				block.getByPosition(result).column = col_res;
@@ -387,57 +439,6 @@ namespace
 			return floor(val);
 		}
 	};
-
-	/// Следующий код генерирует во время сборки таблицу степеней числа 10.
-
-	/// Отдельные степени числа 10.
-
-	template <size_t N>
-	struct PowerOf10
-	{
-		static const size_t value = 10 * PowerOf10<N - 1>::value;
-	};
-
-	template<>
-	struct PowerOf10<0>
-	{
-		static const size_t value = 1;
-	};
-
-	/// Объявление и определение контейнера содержащего таблицу степеней числа 10.
-
-	template <size_t... TArgs>
-	struct TableContainer
-	{
-		static const std::array<size_t, sizeof...(TArgs)> values;
-	};
-
-	template <size_t... TArgs>
-	const std::array<size_t, sizeof...(TArgs)> TableContainer<TArgs...>::values = { TArgs... };
-
-	/// Генератор первых N степеней.
-
-	template <size_t N, size_t... TArgs>
-	struct FillArrayImpl
-	{
-		using result = typename FillArrayImpl<N - 1, PowerOf10<N>::value, TArgs...>::result;
-	};
-
-	template <size_t... TArgs>
-	struct FillArrayImpl<0, TArgs...>
-	{
-		using result = TableContainer<PowerOf10<0>::value, TArgs...>;
-	};
-
-	template <size_t N>
-	struct FillArray
-	{
-		using result = typename FillArrayImpl<N-1>::result;
-	};
-
-	/// Сгенерить таблицу.
-
-	using PowersOf10 = FillArray<std::numeric_limits<DB::Float64>::digits10 + 1>::result;
 }
 
 	struct NameRoundToExp2		{ static constexpr auto name = "roundToExp2"; };
@@ -450,7 +451,7 @@ namespace
 	typedef FunctionUnaryArithmetic<RoundToExp2Impl,	NameRoundToExp2> 	FunctionRoundToExp2;
 	typedef FunctionUnaryArithmetic<RoundDurationImpl,	NameRoundDuration>	FunctionRoundDuration;
 	typedef FunctionUnaryArithmetic<RoundAgeImpl,		NameRoundAge>		FunctionRoundAge;
-	typedef FunctionApproximating<RoundImpl,	PowersOf10,	NameRound>	FunctionRound;
-	typedef FunctionApproximating<CeilImpl,		PowersOf10,	NameCeil>	FunctionCeil;
-	typedef FunctionApproximating<FloorImpl,	PowersOf10,	NameFloor>	FunctionFloor;
+	typedef FunctionApproximating<RoundImpl,		NameRound>		FunctionRound;
+	typedef FunctionApproximating<CeilImpl,			NameCeil>		FunctionCeil;
+	typedef FunctionApproximating<FloorImpl,		NameFloor>		FunctionFloor;
 }
