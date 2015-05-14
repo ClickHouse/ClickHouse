@@ -5,59 +5,6 @@
 #include <type_traits>
 #include <array>
 
-namespace
-{
-
-/// Этот код генерирует во время сборки таблицу степеней числа 10.
-
-/// Степени числа 10.
-
-template <size_t N>
-struct PowerOf10
-{
-    static const size_t value = 10 * PowerOf10<N - 1>::value;
-};
-
-template<>
-struct PowerOf10<0>
-{
-    static const size_t value = 1;
-};
-
-/// Объявление и определение таблицы.
-
-template <size_t... TArgs>
-struct TableContainer
-{
-    static const std::array<size_t, sizeof...(TArgs)> values;
-};
-
-template <size_t... TArgs>
-const std::array<size_t, sizeof...(TArgs)> TableContainer<TArgs...>::values = { TArgs... };
-
-/// Сгенерить первые N степеней.
-
-template <size_t N, size_t... TArgs>
-struct FillArrayImpl
-{
-    using result = typename FillArrayImpl<N - 1, PowerOf10<N>::value, TArgs...>::result;
-};
-
-template <size_t... TArgs>
-struct FillArrayImpl<0, TArgs...>
-{
-    using result = TableContainer<PowerOf10<0>::value, TArgs...>;
-};
-
-template <size_t N>
-struct FillArray
-{
-    using result = typename FillArrayImpl<N-1>::result;
-};
-
-using PowersOf10 = FillArray<std::numeric_limits<DB::Float64>::digits10 + 1>::result;
-
-}
 
 namespace DB
 {
@@ -149,7 +96,8 @@ namespace DB
 	struct FunctionApproximatingImpl
 	{
 		template <typename U = T>
-		static inline U apply(U val, UInt8 precision, typename std::enable_if<std::is_floating_point<U>::value>::type * = nullptr)
+		static inline U apply(U val, UInt8 precision,
+							  typename std::enable_if<std::is_floating_point<U>::value>::type * = nullptr)
 		{
 			if (val == 0)
 				return val;
@@ -160,8 +108,10 @@ namespace DB
 			}
 		}
 
+		/// Для целых чисел ничего не надо делать.
 		template <typename U = T>
-		static inline U apply(U val, UInt8 precision, typename std::enable_if<std::is_integral<U>::value>::type * = nullptr)
+		static inline U apply(U val, UInt8 precision,
+							  typename std::enable_if<std::is_integral<U>::value>::type * = nullptr)
 		{
 			return val;
 		}
@@ -171,7 +121,8 @@ namespace DB
 	struct PrecisionForType
 	{
 		template<typename L = T>
-		static inline bool apply(const ColumnPtr & column, UInt8 & precision, typename std::enable_if<std::is_floating_point<L>::value>::type * = nullptr)
+		static inline bool apply(const ColumnPtr & column, UInt8 & precision,
+								 typename std::enable_if<std::is_floating_point<L>::value>::type * = nullptr)
 		{
 			using ColumnType = ColumnConst<U>;
 
@@ -190,8 +141,10 @@ namespace DB
 			return true;
 		}
 
+		/// Для целых чисел точность не имеет значения.
 		template<typename L = T>
-		static inline bool apply(const ColumnPtr & column, UInt8 & precision, typename std::enable_if<std::is_integral<L>::value>::type * = nullptr)
+		static inline bool apply(const ColumnPtr & column, UInt8 & precision,
+								 typename std::enable_if<std::is_integral<L>::value>::type * = nullptr)
 		{
 			using ColumnType = ColumnConst<U>;
 
@@ -205,6 +158,12 @@ namespace DB
 		}
 	};
 
+	/** Шаблон для функцией, которые вычисляют приближенное значение входного параметра
+	  * типа (U)Int8/16/32/64 или Float32/64 и принимают дополнительный необязятельный
+	  * параметр указывающий сколько знаков после запятой оставить (по умолчанию - 0).
+	  * Op - функция (round/floor/ceil)
+	  * PowersTable - таблица степеней числа 10
+	  */
 	template<template<typename> class Op, typename PowersTable, typename Name>
 	class FunctionApproximating : public IFunction
 	{
@@ -258,6 +217,8 @@ namespace DB
 			return false;
 		}
 
+		/// В зависимости от входного параметра, определить какая нужна точность
+		/// для результата.
 		template<typename T>
 		UInt8 getPrecision(const ColumnPtr & column)
 		{
@@ -293,7 +254,7 @@ namespace DB
 		{
 			if ((arguments.size() < 1) || (arguments.size() > 2))
 				throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-					+ toString(arguments.size()) + ", should be 1.",
+					+ toString(arguments.size()) + ", should be 1 or 2.",
 					ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 			if (arguments.size() == 2)
@@ -308,7 +269,8 @@ namespace DB
 					|| checkType<DataTypeInt32>(type)
 					|| checkType<DataTypeInt64>(type)))
 				{
-					throw Exception("Illegal type in second argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+					throw Exception("Illegal type in second argument of function " + getName(),
+									ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 				}
 			}
 
@@ -318,8 +280,6 @@ namespace DB
 					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
 			return arguments[0];
-
-			DataTypePtr result;
 		}
 
 		/// Выполнить функцию над блоком.
@@ -343,6 +303,10 @@ namespace DB
 		}
 	};
 
+namespace
+{
+	/// Определение функцией для использования в шаблоне FunctionApproximating.
+
 	template<typename T>
 	struct RoundImpl
 	{
@@ -353,18 +317,18 @@ namespace DB
 	};
 
 	template<>
-	struct RoundImpl<Float32>
+	struct RoundImpl<DB::Float32>
 	{
-		static inline Float32 apply(Float32 val)
+		static inline DB::Float32 apply(DB::Float32 val)
 		{
 			return roundf(val);
 		}
 	};
 
 	template<>
-	struct RoundImpl<Float64>
+	struct RoundImpl<DB::Float64>
 	{
-		static inline Float64 apply(Float64 val)
+		static inline DB::Float64 apply(DB::Float64 val)
 		{
 			return round(val);
 		}
@@ -380,18 +344,18 @@ namespace DB
 	};
 
 	template<>
-	struct CeilImpl<Float32>
+	struct CeilImpl<DB::Float32>
 	{
-		static inline Float32 apply(Float32 val)
+		static inline DB::Float32 apply(DB::Float32 val)
 		{
 			return ceilf(val);
 		}
 	};
 
 	template<>
-	struct CeilImpl<Float64>
+	struct CeilImpl<DB::Float64>
 	{
-		static inline Float64 apply(Float64 val)
+		static inline DB::Float64 apply(DB::Float64 val)
 		{
 			return ceil(val);
 		}
@@ -407,22 +371,74 @@ namespace DB
 	};
 
 	template<>
-	struct FloorImpl<Float32>
+	struct FloorImpl<DB::Float32>
 	{
-		static inline Float32 apply(Float32 val)
+		static inline DB::Float32 apply(DB::Float32 val)
 		{
 			return floorf(val);
 		}
 	};
 
 	template<>
-	struct FloorImpl<Float64>
+	struct FloorImpl<DB::Float64>
 	{
-		static inline Float64 apply(Float64 val)
+		static inline DB::Float64 apply(DB::Float64 val)
 		{
 			return floor(val);
 		}
 	};
+
+	/// Следующий код генерирует во время сборки таблицу степеней числа 10.
+
+	/// Отдельные степени числа 10.
+
+	template <size_t N>
+	struct PowerOf10
+	{
+		static const size_t value = 10 * PowerOf10<N - 1>::value;
+	};
+
+	template<>
+	struct PowerOf10<0>
+	{
+		static const size_t value = 1;
+	};
+
+	/// Объявление и определение контейнера содержащего таблицу степеней числа 10.
+
+	template <size_t... TArgs>
+	struct TableContainer
+	{
+		static const std::array<size_t, sizeof...(TArgs)> values;
+	};
+
+	template <size_t... TArgs>
+	const std::array<size_t, sizeof...(TArgs)> TableContainer<TArgs...>::values = { TArgs... };
+
+	/// Генератор первых N степеней.
+
+	template <size_t N, size_t... TArgs>
+	struct FillArrayImpl
+	{
+		using result = typename FillArrayImpl<N - 1, PowerOf10<N>::value, TArgs...>::result;
+	};
+
+	template <size_t... TArgs>
+	struct FillArrayImpl<0, TArgs...>
+	{
+		using result = TableContainer<PowerOf10<0>::value, TArgs...>;
+	};
+
+	template <size_t N>
+	struct FillArray
+	{
+		using result = typename FillArrayImpl<N-1>::result;
+	};
+
+	/// Сгенерить таблицу.
+
+	using PowersOf10 = FillArray<std::numeric_limits<DB::Float64>::digits10 + 1>::result;
+}
 
 	struct NameRoundToExp2		{ static constexpr auto name = "roundToExp2"; };
 	struct NameRoundDuration	{ static constexpr auto name = "roundDuration"; };
