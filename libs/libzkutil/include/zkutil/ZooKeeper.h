@@ -100,6 +100,11 @@ public:
 	  */
 	void remove(const std::string & path, int32_t version = -1);
 
+	/** Удаляет ноду. В случае сетевых ошибок пробует удалять повторно.
+	 *  Ошибка ZNONODE для второй и последующих попыток игнорируется
+	 */
+	void removeWithRetries(const std::string & path, int32_t version = -1);
+
 	/** Не бросает исключение при следующих ошибках:
 	  *  - Такой ноды нет.
 	  *  - У ноды другая версия.

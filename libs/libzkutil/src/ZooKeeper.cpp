@@ -294,6 +294,15 @@ void ZooKeeper::remove(const std::string & path, int32_t version)
 	check(tryRemove(path, version), path);
 }
 
+void ZooKeeper::removeWithRetries(const std::string & path, int32_t version)
+{
+	size_t attempt;
+	int code = tryRemoveWithRetries(path, version, &attempt);
+
+	if (!(code == ZOK || (code == ZNONODE && attempt > 0)))
+		throw KeeperException(code, path);
+}
+
 int32_t ZooKeeper::tryRemove(const std::string & path, int32_t version)
 {
 	int32_t code = removeImpl(path, version);
