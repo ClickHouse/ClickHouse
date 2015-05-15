@@ -117,7 +117,10 @@ struct VarSampImpl
 
 	static inline Float64 apply(Float64 m2, UInt64 count)
 	{
-		return m2 / (count - 1);
+		if (count == 1)
+			return 0.0;
+		else
+			return m2 / (count - 1);
 	}
 };
 
@@ -137,7 +140,10 @@ struct VarPopImpl
 
 	static inline Float64 apply(Float64 m2, UInt64 count)
 	{
-		return m2 / count;
+		if (count == 1)
+			return 0.0;
+		else
+			return m2 / count;
 	}
 };
 
