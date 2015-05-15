@@ -11,6 +11,19 @@
 namespace DB
 {
 
+/// XXX Реализовать корреляцию и ковариацию.
+
+/** Статистические аггрегатные функции:
+  * varSamp - выборочная дисперсия
+  * stddevSamp - среднее выборочное квадратичное отклонение
+  * varPop - дисперсия
+  * stddevPop - среднее квадратичное отклонение
+  */
+
+/** Параллельный и инкрементальный алгоритм для вычисления дисперсии.
+  * Источник: "Updating formulae and a pairwise algorithm for computing sample variances"
+  * (Chan et al., Stanford University, 12/1979)
+  */
 template<typename T, typename Op>
 class AggregateFunctionVarianceData
 {
@@ -31,12 +44,23 @@ public:
 	void mergeWith(const AggregateFunctionVarianceData & source)
 	{
 		UInt64 total_count = count + source.count;
+		if (total_count == 0)
+			return;
+
 		Float64 factor = static_cast<Float64>(count * source.count) / total_count;
 		Float64 delta = mean - source.mean;
 
-		count = total_count;
-		mean += delta * (source.count / count);
+		auto res = std::minmax(count, source.count);
+		if (((1 - static_cast<Float64>(res.first) / res.second) < 0.001) && (res.first > 10000))
+		{
+			/// Эта формула более стабильная, когда размеры обоих источников велики и сравнимы.
+			mean = (source.count * source.mean + count * mean) / total_count;
+		}
+		else
+			mean = source.mean + delta * (count / total_count);
+
 		m2 += source.m2 + delta * delta * factor;
+		count = total_count;
 	}
 
 	void serialize(WriteBuffer & buf) const
@@ -64,6 +88,8 @@ private:
 	Float64 m2 = 0.0;
 };
 
+/** Основной код для реализации функций varSamp, stddevSamp, varPop, stddevPop.
+  */
 template<typename T, typename Op>
 class AggregateFunctionVariance final : public IUnaryAggregateFunction<AggregateFunctionVarianceData<T, Op>, AggregateFunctionVariance<T, Op> >
 {
@@ -111,19 +137,26 @@ public:
 	}
 };
 
+/** Реализации функции varSamp.
+  */
 struct VarSampImpl
 {
 	static constexpr auto name = "varSamp";
 
 	static inline Float64 apply(Float64 m2, UInt64 count)
 	{
-		if (count == 1)
+		if (count < 2)
 			return 0.0;
 		else
 			return m2 / (count - 1);
 	}
 };
 
+namespace
+{
+
+/** Реализация функции stddevSamp.
+  */
 struct StdDevSampImpl
 {
 	static constexpr auto name = "stddevSamp";
@@ -134,19 +167,23 @@ struct StdDevSampImpl
 	}
 };
 
+/** Реализация функции varPop.
+  */
 struct VarPopImpl
 {
 	static constexpr auto name = "varPop";
 
 	static inline Float64 apply(Float64 m2, UInt64 count)
 	{
-		if (count == 1)
+		if (count < 2)
 			return 0.0;
 		else
 			return m2 / count;
 	}
 };
 
+/** Реализация функции stddevPop.
+  */
 struct StdDevPopImpl
 {
 	static constexpr auto name = "stddevPop";
@@ -156,6 +193,8 @@ struct StdDevPopImpl
 		return sqrt(VarPopImpl::apply(m2, count));
 	}
 };
+
+}
 
 template<typename T>
 using AggregateFunctionVarSamp = AggregateFunctionVariance<T, VarSampImpl>;
