@@ -22,7 +22,7 @@ namespace DB
 
 /** Параллельный и инкрементальный алгоритм для вычисления дисперсии.
   * Источник: "Updating formulae and a pairwise algorithm for computing sample variances"
-  * (Chan et al., Stanford University, 12/1979)
+  * (Chan et al., Stanford University, 12.1979)
   */
 template<typename T, typename Op>
 class AggregateFunctionVarianceData
@@ -137,6 +137,9 @@ public:
 	}
 };
 
+namespace
+{
+
 /** Реализации функции varSamp.
   */
 struct VarSampImpl
@@ -151,9 +154,6 @@ struct VarSampImpl
 			return m2 / (count - 1);
 	}
 };
-
-namespace
-{
 
 /** Реализация функции stddevSamp.
   */
