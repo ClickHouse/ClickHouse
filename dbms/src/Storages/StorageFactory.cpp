@@ -287,18 +287,17 @@ StoragePtr StorageFactory::get(
 		  */
 		ASTs & args_func = typeid_cast<ASTFunction &>(*typeid_cast<ASTCreateQuery &>(*query).storage).children;
 
+		const auto params_error_message = "Storage Distributed requires 3 or 4 parameters"
+			" - name of configuration section with list of remote servers, name of remote database, name of remote table,"
+			" sharding key expression (optional).";
+
 		if (args_func.size() != 1)
-			throw Exception("Storage Distributed requires 3 parameters"
-				" - name of configuration section with list of remote servers, name of remote database, name of remote table.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+			throw Exception(params_error_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 		ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
 
 		if (args.size() != 3 && args.size() != 4)
-			throw Exception("Storage Distributed requires 3 or 4 parameters"
-				" - name of configuration section with list of remote servers, name of remote database, name of remote table,"
-				" sharding key expression (optional).",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+			throw Exception(params_error_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 		String cluster_name 	= typeid_cast<ASTIdentifier &>(*args[0]).name;
 		String remote_database 	= reinterpretAsIdentifier(args[1], local_context).name;
@@ -433,7 +432,7 @@ SummingMergeTree(EventDate, (OrderID, EventDate, BannerID, PhraseID, ContextType
 ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/hits', '{replica}', EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192)
 
 
-For further info please read the documentation: http://clickhouse.yandex-team.ru/
+For further info please read the documentation: https://clickhouse.yandex-team.ru/
 )";
 
 		String name_part = name.substr(0, name.size() - strlen("MergeTree"));
