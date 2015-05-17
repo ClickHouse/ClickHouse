@@ -617,6 +617,18 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 
 		return res;
 	}
+	else if (name == "corr")
+	{
+		if (argument_types.size() != 2)
+			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		AggregateFunctionPtr res = createWithTwoNumericTypes<AggregateFunctionCorr>(*argument_types[0], *argument_types[1]);
+		if (!res)
+			throw Exception("Illegal types " + argument_types[0]->getName() + " and " + argument_types[1]->getName()
+				+ " of arguments for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		return res;
+	}
 	else if (recursion_level == 0 && name.size() > strlen("State") && !(strcmp(name.data() + name.size() - strlen("State"), "State")))
 	{
 		/// Для агрегатных функций вида aggState, где agg - имя другой агрегатной функции.
@@ -718,7 +730,8 @@ const AggregateFunctionFactory::FunctionNames & AggregateFunctionFactory::getFun
 		"stddevSamp",
 		"stddevPop",
 		"covarSamp",
-		"covarPop"
+		"covarPop",
+		"corr"
 	};
 
 	return names;
