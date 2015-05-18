@@ -162,6 +162,9 @@ namespace
 	template<typename PowersTable, int rounding_mode>
 	struct FunctionRoundingImpl<Float32, PowersTable, rounding_mode>
 	{
+		using Op = Rounding32<rounding_mode>;
+		using Data = typename Op::Data;
+
 		static inline void apply(const PODArray<Float32> & in, UInt8 precision, typename ColumnVector<Float32>::Container_t & out)
 		{
 			size_t scale = PowersTable::values[precision];
@@ -170,8 +173,8 @@ namespace
 			size_t i;
 			for (i = 0; i < (size - 3); i += 4)
 			{
-				typename Rounding32<rounding_mode>::Data res;
-				Rounding32<rounding_mode>::apply(std::make_tuple(in[i], in[i + 1], in[i + 2], in[i + 3]), scale, res);
+				Data res;
+				Op::apply(std::make_tuple(in[i], in[i + 1], in[i + 2], in[i + 3]), scale, res);
 				out[i] = std::get<0>(res);
 				out[i + 1] = std::get<1>(res);
 				out[i + 2] = std::get<2>(res);
@@ -179,23 +182,23 @@ namespace
 			}
 			if (i == (size - 3))
 			{
-				typename Rounding32<rounding_mode>::Data res;
-				Rounding32<rounding_mode>::apply(std::make_tuple(in[i], in[i + 1], in[i + 2], 0), scale, res);
+				Data res;
+				Op::apply(std::make_tuple(in[i], in[i + 1], in[i + 2], 0), scale, res);
 				out[i] = std::get<0>(res);
 				out[i + 1] = std::get<1>(res);
 				out[i + 2] = std::get<2>(res);
 			}
 			else if (i == (size - 2))
 			{
-				typename Rounding32<rounding_mode>::Data res;
-				Rounding32<rounding_mode>::apply(std::make_tuple(in[i], in[i + 1], 0, 0), scale, res);
+				Data res;
+				Op::apply(std::make_tuple(in[i], in[i + 1], 0, 0), scale, res);
 				out[i] = std::get<0>(res);
 				out[i + 1] = std::get<1>(res);
 			}
 			else if (i == (size - 1))
 			{
-				typename Rounding32<rounding_mode>::Data res;
-				Rounding32<rounding_mode>::apply(std::make_tuple(in[i], 0, 0, 0), scale, res);
+				Data res;
+				Op::apply(std::make_tuple(in[i], 0, 0, 0), scale, res);
 				out[i] = std::get<0>(res);
 			}
 		}
@@ -207,8 +210,8 @@ namespace
 			else
 			{
 				size_t scale = PowersTable::values[precision];
-				typename Rounding32<rounding_mode>::Data res;
-				Rounding32<rounding_mode>::apply(std::make_tuple(val, 0, 0, 0), scale, res);
+				Data res;
+				Op::apply(std::make_tuple(val, 0, 0, 0), scale, res);
 				return std::get<0>(res);
 			}
 		}
@@ -217,6 +220,9 @@ namespace
 	template<typename PowersTable, int rounding_mode>
 	struct FunctionRoundingImpl<Float64, PowersTable, rounding_mode>
 	{
+		using Op = Rounding64<rounding_mode>;
+		using Data = typename Op::Data;
+
 		static inline void apply(const PODArray<Float64> & in, UInt8 precision, typename ColumnVector<Float64>::Container_t & out)
 		{
 			size_t scale = PowersTable::values[precision];
@@ -225,15 +231,15 @@ namespace
 			size_t i;
 			for (i = 0; i < (size - 1); i += 2)
 			{
-				typename Rounding64<rounding_mode>::Data res;
-				Rounding64<rounding_mode>::apply(std::make_tuple(in[i], in[i + 1]), scale, res);
+				Data res;
+				Op::apply(std::make_tuple(in[i], in[i + 1]), scale, res);
 				out[i] = std::get<0>(res);
 				out[i + 1] = std::get<1>(res);
 			}
 			if (i == (size - 1))
 			{
-				typename Rounding64<rounding_mode>::Data res;
-				Rounding64<rounding_mode>::apply(std::make_tuple(in[i], 0), scale, res);
+				Data res;
+				Op::apply(std::make_tuple(in[i], 0), scale, res);
 				out[i] = std::get<0>(res);
 			}
 		}
@@ -245,8 +251,8 @@ namespace
 			else
 			{
 				size_t scale = PowersTable::values[precision];
-				typename Rounding64<rounding_mode>::Data res;
-				Rounding64<rounding_mode>::apply(std::make_tuple(val, 0), scale, res);
+				Data res;
+				Op::apply(std::make_tuple(val, 0), scale, res);
 				return std::get<0>(res);
 			}
 		}
