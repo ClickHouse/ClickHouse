@@ -10,6 +10,6 @@ else()
 endif()
 
 macro (add_check target)
-	add_test(test_${target} ${target})
+	add_test(NAME test_${target} COMMAND ${target} WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 	add_dependencies(check ${target})
 endmacro (add_check)
