@@ -73,6 +73,8 @@ bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 		if (!s_eq.ignore(pos, end, max_parsed_pos, expected))
 			return false;
 
+		ws.ignore(pos, end);
+
 		if (!id_p.parse(pos, end, id, max_parsed_pos, expected))
 			return false;
 	}
@@ -82,9 +84,13 @@ bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 	/// Есть ли список столбцов
 	if (s_lparen.ignore(pos, end, max_parsed_pos, expected))
 	{
+		ws.ignore(pos, end);
+
 		if (!columns_p.parse(pos, end, columns, max_parsed_pos, expected))
 			return false;
+
 		ws.ignore(pos, end);
+
 		if (!s_rparen.ignore(pos, end, max_parsed_pos, expected))
 			return false;
 	}
