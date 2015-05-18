@@ -100,14 +100,18 @@ namespace
 	struct Rounding32
 	{
 		using Data = std::tuple<Float32, Float32, Float32, Float32>;
+		using Scale = __m128;
 
-		static inline void apply(const Data & in, size_t scale, Data & out)
+		static inline void prepareScale(size_t scale, Scale & mm_scale)
+		{
+			Float32 fscale = static_cast<Float32>(scale);
+			mm_scale = _mm_load1_ps(&fscale);
+		}
+
+		static inline void apply(const Data & in, const Scale & mm_scale, Data & out)
 		{
 			Float32 input[4] __attribute__((aligned(16))) = { std::get<0>(in), std::get<1>(in), std::get<2>(in), std::get<3>(in) };
 			__m128 mm_value = _mm_load_ps(input);
-
-			Float32 fscale = static_cast<Float32>(scale);
-			__m128 mm_scale = _mm_load1_ps(&fscale);
 
 			mm_value = _mm_mul_ps(mm_value, mm_scale);
 			mm_value = _mm_round_ps(mm_value, rounding_mode);
@@ -123,14 +127,18 @@ namespace
 	struct Rounding64
 	{
 		using Data = std::tuple<Float64, Float64>;
+		using Scale = __m128d;
 
-		static inline void apply(const Data & in, size_t scale, Data & out)
+		static inline void prepareScale(size_t scale, Scale & mm_scale)
+		{
+			Float64 fscale = static_cast<Float64>(scale);
+			mm_scale = _mm_load1_pd(&fscale);
+		}
+
+		static inline void apply(const Data & in, const Scale & mm_scale, Data & out)
 		{
 			Float64 input[2] __attribute__((aligned(16))) = { std::get<0>(in), std::get<1>(in) };
 			__m128d mm_value = _mm_load_pd(input);
-
-			Float64 fscale = static_cast<Float64>(scale);
-			__m128d mm_scale = _mm_load1_pd(&fscale);
 
 			mm_value = _mm_mul_pd(mm_value, mm_scale);
 			mm_value = _mm_round_pd(mm_value, rounding_mode);
@@ -164,10 +172,13 @@ namespace
 	{
 		using Op = Rounding32<rounding_mode>;
 		using Data = typename Op::Data;
+		using Scale = typename Op::Scale;
 
 		static inline void apply(const PODArray<Float32> & in, UInt8 precision, typename ColumnVector<Float32>::Container_t & out)
 		{
-			size_t scale = PowersTable::values[precision];
+			Scale scale;
+			Op::prepareScale(PowersTable::values[precision], scale);
+
 			size_t size = in.size();
 
 			size_t i;
@@ -209,7 +220,9 @@ namespace
 				return val;
 			else
 			{
-				size_t scale = PowersTable::values[precision];
+				Scale scale;
+				Op::prepareScale(PowersTable::values[precision], scale);
+
 				Data res;
 				Op::apply(std::make_tuple(val, 0, 0, 0), scale, res);
 				return std::get<0>(res);
@@ -222,10 +235,13 @@ namespace
 	{
 		using Op = Rounding64<rounding_mode>;
 		using Data = typename Op::Data;
+		using Scale = typename Op::Scale;
 
 		static inline void apply(const PODArray<Float64> & in, UInt8 precision, typename ColumnVector<Float64>::Container_t & out)
 		{
-			size_t scale = PowersTable::values[precision];
+			Scale scale;
+			Op::prepareScale(PowersTable::values[precision], scale);
+
 			size_t size = in.size();
 
 			size_t i;
@@ -250,7 +266,9 @@ namespace
 				return val;
 			else
 			{
-				size_t scale = PowersTable::values[precision];
+				Scale scale;
+				Op::prepareScale(PowersTable::values[precision], scale);
+
 				Data res;
 				Op::apply(std::make_tuple(val, 0), scale, res);
 				return std::get<0>(res);
@@ -362,7 +380,7 @@ namespace
 		static IFunction * create(const Context & context) { return new FunctionRounding; }
 
 	private:
-		using PowersOf10 = FillArray<std::numeric_limits<DB::Float64>::digits10 + 1>::result;
+		using PowersOf10 = FillArray<std::numeric_limits<Float64>::digits10 + 1>::result;
 
 	private:
 		template<typename T>
