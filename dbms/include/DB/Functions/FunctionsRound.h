@@ -92,28 +92,159 @@ namespace DB
 		}
 	};
 
-	template<typename T, template<typename> class Op, typename PowersTable>
+namespace
+{
+	/// Определение функцией для использования в шаблоне FunctionApproximatingImpl.
+
+	template<int rounding_mode>
+	struct Rounding32
+	{
+		static inline void apply(const std::tuple<Float32, Float32, Float32, Float32> & in, size_t scale, std::tuple<Float32, Float32, Float32, Float32> & out)
+		{
+			Float32 input[4] __attribute__((aligned(16))) = { std::get<0>(in), std::get<1>(in), std::get<2>(in), std::get<3>(in) };
+			__m128 mm_value = _mm_load_ps(input);
+
+			Float32 fscale = static_cast<Float32>(scale);
+			__m128 mm_scale = _mm_load1_ps(&fscale);
+
+			mm_value = _mm_mul_ps(mm_value, mm_scale);
+			mm_value = _mm_round_ps(mm_value, rounding_mode);
+			mm_value = _mm_div_ps(mm_value, mm_scale);
+
+			Float32 res[4] __attribute__((aligned(16)));
+			_mm_store_ps(res, mm_value);
+			out = std::make_tuple(res[0], res[1], res[2], res[3]);
+		}
+	};
+
+	template<int rounding_mode>
+	struct Rounding64
+	{
+		static inline void apply(const std::tuple<Float64, Float64> & in, size_t scale, std::tuple<Float64, Float64> & out)
+		{
+			Float64 input[2] __attribute__((aligned(16))) = { std::get<0>(in), std::get<1>(in) };
+			__m128d mm_value = _mm_load_pd(input);
+
+			Float64 fscale = static_cast<Float64>(scale);
+			__m128d mm_scale = _mm_load1_pd(&fscale);
+
+			mm_value = _mm_mul_pd(mm_value, mm_scale);
+			mm_value = _mm_round_pd(mm_value, rounding_mode);
+			mm_value = _mm_div_pd(mm_value, mm_scale);
+
+			Float64 res[2] __attribute__((aligned(16)));
+			_mm_store_pd(res, mm_value);
+			out = std::make_pair(res[0], res[1]);
+		}
+	};
+}
+
+	template<typename T, typename PowersTable, int rounding_mode>
 	struct FunctionApproximatingImpl
 	{
-		template <typename U = T>
-		static inline U apply(U val, UInt8 precision,
-							  typename std::enable_if<std::is_floating_point<U>::value>::type * = nullptr)
+		static inline void apply(const PODArray<T> & in, UInt8 precision, typename ColumnVector<T>::Container_t & out)
+		{
+			size_t size = in.size();
+			for (size_t i = 0; i < size; ++i)
+				out[i] = apply(in[i], precision);
+		}
+
+		static inline T apply(T val, UInt8 precision)
+		{
+			return val;
+		}
+	};
+
+	template<typename PowersTable, int rounding_mode>
+	struct FunctionApproximatingImpl<Float64, PowersTable, rounding_mode>
+	{
+		static inline void apply(const PODArray<Float64> & in, UInt8 precision, typename ColumnVector<Float64>::Container_t & out)
+		{
+			size_t scale = PowersTable::values[precision];
+			size_t size = in.size();
+
+			size_t i;
+			for (i = 0; i < (size - 1); i += 2)
+			{
+				std::tuple<double, double> res;
+				Rounding64<rounding_mode>::apply(std::make_tuple(in[i], in[i + 1]), scale, res);
+				out[i] = std::get<0>(res);
+				out[i + 1] = std::get<1>(res);
+			}
+			if (i == (size - 1))
+			{
+				std::tuple<double, double> res;
+				Rounding64<rounding_mode>::apply(std::make_tuple(in[i], 0), scale, res);
+				out[i] = std::get<0>(res);
+			}
+		}
+
+		static inline Float64 apply(Float64 val, UInt8 precision)
 		{
 			if (val == 0)
 				return val;
 			else
 			{
-				size_t power = PowersTable::values[precision];
-				return Op<U>::apply(val * power) / power;
+				size_t scale = PowersTable::values[precision];
+				std::tuple<double, double> res;
+				Rounding64<rounding_mode>::apply(std::make_tuple(val, 0), scale, res);
+				return std::get<0>(res);
+			}
+		}
+	};
+
+	template<typename PowersTable, int rounding_mode>
+	struct FunctionApproximatingImpl<Float32, PowersTable, rounding_mode>
+	{
+		static inline void apply(const PODArray<Float32> & in, UInt8 precision, typename ColumnVector<Float32>::Container_t & out)
+		{
+			size_t scale = PowersTable::values[precision];
+			size_t size = in.size();
+
+			size_t i;
+			for (i = 0; i < (size - 3); i += 4)
+			{
+				std::tuple<Float32, Float32, Float32, Float32> res;
+				Rounding32<rounding_mode>::apply(std::make_tuple(in[i], in[i + 1], in[i + 2], in[i + 3]), scale, res);
+				out[i] = std::get<0>(res);
+				out[i + 1] = std::get<1>(res);
+				out[i + 2] = std::get<2>(res);
+				out[i + 3] = std::get<3>(res);
+			}
+			if (i == (size - 3))
+			{
+				std::tuple<Float32, Float32, Float32, Float32> res;
+				Rounding32<rounding_mode>::apply(std::make_tuple(in[i], in[i + 1], in[i + 2], 0), scale, res);
+				out[i] = std::get<0>(res);
+				out[i + 1] = std::get<1>(res);
+				out[i + 2] = std::get<2>(res);
+			}
+			else if (i == (size - 2))
+			{
+				std::tuple<Float32, Float32, Float32, Float32> res;
+				Rounding32<rounding_mode>::apply(std::make_tuple(in[i], in[i + 1], 0, 0), scale, res);
+				out[i] = std::get<0>(res);
+				out[i + 1] = std::get<1>(res);
+			}
+			else if (i == (size - 1))
+			{
+				std::tuple<Float32, Float32, Float32, Float32> res;
+				Rounding32<rounding_mode>::apply(std::make_tuple(in[i], 0, 0, 0), scale, res);
+				out[i] = std::get<0>(res);
 			}
 		}
 
-		/// Для целых чисел ничего не надо делать.
-		template <typename U = T>
-		static inline U apply(U val, UInt8 precision,
-							  typename std::enable_if<std::is_integral<U>::value>::type * = nullptr)
+		static inline Float32 apply(Float32 val, UInt8 precision)
 		{
-			return val;
+			if (val == 0)
+				return val;
+			else
+			{
+				size_t scale = PowersTable::values[precision];
+				std::tuple<Float32, Float32, Float32, Float32> res;
+				Rounding32<rounding_mode>::apply(std::make_tuple(val, 0, 0, 0), scale, res);
+				return std::get<0>(res);
+			}
 		}
 	};
 
@@ -213,7 +344,7 @@ namespace
 	  * параметр указывающий сколько знаков после запятой оставить (по умолчанию - 0).
 	  * Op - функция (round/floor/ceil)
 	  */
-	template<template<typename> class Op, typename Name>
+	template<typename Name, int rounding_mode>
 	class FunctionApproximating : public IFunction
 	{
 	public:
@@ -246,9 +377,7 @@ namespace
 				vec_res.resize(col->getData().size());
 
 				const PODArray<T> & a = col->getData();
-				size_t size = a.size();
-				for (size_t i = 0; i < size; ++i)
-					vec_res[i] = FunctionApproximatingImpl<T, Op, PowersOf10>::apply(a[i], precision);
+				FunctionApproximatingImpl<T, PowersOf10, rounding_mode>::apply(a, precision, vec_res);
 
 				return true;
 			}
@@ -258,7 +387,7 @@ namespace
 				if (arguments.size() == 2)
 					precision = getPrecision<T>(block.getByPosition(arguments[1]).column);
 
-				T res = FunctionApproximatingImpl<T, Op, PowersOf10>::apply(col->getData(), precision);
+				T res = FunctionApproximatingImpl<T, PowersOf10, rounding_mode>::apply(col->getData(), precision);
 
 				ColumnConst<T> * col_res = new ColumnConst<T>(col->size(), res);
 				block.getByPosition(result).column = col_res;
@@ -355,92 +484,6 @@ namespace
 		}
 	};
 
-namespace
-{
-	/// Определение функцией для использования в шаблоне FunctionApproximating.
-
-	template<typename T>
-	struct RoundImpl
-	{
-		static inline T apply(T val)
-		{
-			return val;
-		}
-	};
-
-	template<>
-	struct RoundImpl<DB::Float32>
-	{
-		static inline DB::Float32 apply(DB::Float32 val)
-		{
-			return roundf(val);
-		}
-	};
-
-	template<>
-	struct RoundImpl<DB::Float64>
-	{
-		static inline DB::Float64 apply(DB::Float64 val)
-		{
-			return round(val);
-		}
-	};
-
-	template<typename T>
-	struct CeilImpl
-	{
-		static inline T apply(T val)
-		{
-			return val;
-		}
-	};
-
-	template<>
-	struct CeilImpl<DB::Float32>
-	{
-		static inline DB::Float32 apply(DB::Float32 val)
-		{
-			return ceilf(val);
-		}
-	};
-
-	template<>
-	struct CeilImpl<DB::Float64>
-	{
-		static inline DB::Float64 apply(DB::Float64 val)
-		{
-			return ceil(val);
-		}
-	};
-
-	template<typename T>
-	struct FloorImpl
-	{
-		static inline T apply(T val)
-		{
-			return val;
-		}
-	};
-
-	template<>
-	struct FloorImpl<DB::Float32>
-	{
-		static inline DB::Float32 apply(DB::Float32 val)
-		{
-			return floorf(val);
-		}
-	};
-
-	template<>
-	struct FloorImpl<DB::Float64>
-	{
-		static inline DB::Float64 apply(DB::Float64 val)
-		{
-			return floor(val);
-		}
-	};
-}
-
 	struct NameRoundToExp2		{ static constexpr auto name = "roundToExp2"; };
 	struct NameRoundDuration	{ static constexpr auto name = "roundDuration"; };
 	struct NameRoundAge 		{ static constexpr auto name = "roundAge"; };
@@ -451,7 +494,7 @@ namespace
 	typedef FunctionUnaryArithmetic<RoundToExp2Impl,	NameRoundToExp2> 	FunctionRoundToExp2;
 	typedef FunctionUnaryArithmetic<RoundDurationImpl,	NameRoundDuration>	FunctionRoundDuration;
 	typedef FunctionUnaryArithmetic<RoundAgeImpl,		NameRoundAge>		FunctionRoundAge;
-	typedef FunctionApproximating<RoundImpl,		NameRound>		FunctionRound;
-	typedef FunctionApproximating<CeilImpl,			NameCeil>		FunctionCeil;
-	typedef FunctionApproximating<FloorImpl,		NameFloor>		FunctionFloor;
+	typedef FunctionApproximating<NameRound,	_MM_FROUND_NINT>	FunctionRound;
+	typedef FunctionApproximating<NameCeil,		_MM_FROUND_CEIL>	FunctionCeil;
+	typedef FunctionApproximating<NameFloor,	_MM_FROUND_FLOOR>	FunctionFloor;
 }
