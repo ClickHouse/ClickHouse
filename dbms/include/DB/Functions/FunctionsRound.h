@@ -99,7 +99,9 @@ namespace
 	template<int rounding_mode>
 	struct Rounding32
 	{
-		static inline void apply(const std::tuple<Float32, Float32, Float32, Float32> & in, size_t scale, std::tuple<Float32, Float32, Float32, Float32> & out)
+		using Data = std::tuple<Float32, Float32, Float32, Float32>;
+
+		static inline void apply(const Data & in, size_t scale, Data & out)
 		{
 			Float32 input[4] __attribute__((aligned(16))) = { std::get<0>(in), std::get<1>(in), std::get<2>(in), std::get<3>(in) };
 			__m128 mm_value = _mm_load_ps(input);
@@ -120,7 +122,9 @@ namespace
 	template<int rounding_mode>
 	struct Rounding64
 	{
-		static inline void apply(const std::tuple<Float64, Float64> & in, size_t scale, std::tuple<Float64, Float64> & out)
+		using Data = std::tuple<Float64, Float64>;
+
+		static inline void apply(const Data & in, size_t scale, Data & out)
 		{
 			Float64 input[2] __attribute__((aligned(16))) = { std::get<0>(in), std::get<1>(in) };
 			__m128d mm_value = _mm_load_pd(input);
@@ -166,7 +170,7 @@ namespace
 			size_t i;
 			for (i = 0; i < (size - 3); i += 4)
 			{
-				std::tuple<Float32, Float32, Float32, Float32> res;
+				typename Rounding32<rounding_mode>::Data res;
 				Rounding32<rounding_mode>::apply(std::make_tuple(in[i], in[i + 1], in[i + 2], in[i + 3]), scale, res);
 				out[i] = std::get<0>(res);
 				out[i + 1] = std::get<1>(res);
@@ -175,7 +179,7 @@ namespace
 			}
 			if (i == (size - 3))
 			{
-				std::tuple<Float32, Float32, Float32, Float32> res;
+				typename Rounding32<rounding_mode>::Data res;
 				Rounding32<rounding_mode>::apply(std::make_tuple(in[i], in[i + 1], in[i + 2], 0), scale, res);
 				out[i] = std::get<0>(res);
 				out[i + 1] = std::get<1>(res);
@@ -183,14 +187,14 @@ namespace
 			}
 			else if (i == (size - 2))
 			{
-				std::tuple<Float32, Float32, Float32, Float32> res;
+				typename Rounding32<rounding_mode>::Data res;
 				Rounding32<rounding_mode>::apply(std::make_tuple(in[i], in[i + 1], 0, 0), scale, res);
 				out[i] = std::get<0>(res);
 				out[i + 1] = std::get<1>(res);
 			}
 			else if (i == (size - 1))
 			{
-				std::tuple<Float32, Float32, Float32, Float32> res;
+				typename Rounding32<rounding_mode>::Data res;
 				Rounding32<rounding_mode>::apply(std::make_tuple(in[i], 0, 0, 0), scale, res);
 				out[i] = std::get<0>(res);
 			}
@@ -203,7 +207,7 @@ namespace
 			else
 			{
 				size_t scale = PowersTable::values[precision];
-				std::tuple<Float32, Float32, Float32, Float32> res;
+				typename Rounding32<rounding_mode>::Data res;
 				Rounding32<rounding_mode>::apply(std::make_tuple(val, 0, 0, 0), scale, res);
 				return std::get<0>(res);
 			}
@@ -221,14 +225,14 @@ namespace
 			size_t i;
 			for (i = 0; i < (size - 1); i += 2)
 			{
-				std::tuple<double, double> res;
+				typename Rounding64<rounding_mode>::Data res;
 				Rounding64<rounding_mode>::apply(std::make_tuple(in[i], in[i + 1]), scale, res);
 				out[i] = std::get<0>(res);
 				out[i + 1] = std::get<1>(res);
 			}
 			if (i == (size - 1))
 			{
-				std::tuple<double, double> res;
+				typename Rounding64<rounding_mode>::Data res;
 				Rounding64<rounding_mode>::apply(std::make_tuple(in[i], 0), scale, res);
 				out[i] = std::get<0>(res);
 			}
@@ -241,7 +245,7 @@ namespace
 			else
 			{
 				size_t scale = PowersTable::values[precision];
-				std::tuple<double, double> res;
+				typename Rounding64<rounding_mode>::Data res;
 				Rounding64<rounding_mode>::apply(std::make_tuple(val, 0), scale, res);
 				return std::get<0>(res);
 			}
