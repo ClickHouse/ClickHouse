@@ -60,6 +60,7 @@
 #include <DB/Common/formatReadable.h>
 #include <DB/Columns/ColumnString.h>
 
+#include <statdaemons/NetException.h>
 
 /// http://en.wikipedia.org/wiki/ANSI_escape_code
 #define SAVE_CURSOR_POSITION "\033[s"
@@ -827,7 +828,7 @@ private:
 				return false;
 
 			default:
-				throw Exception("Unexpected packet from server (expected Data, got "
+				throw NetException("Unexpected packet from server (expected Data, got "
 					+ String(Protocol::Server::toString(packet.type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
 		}
 	}

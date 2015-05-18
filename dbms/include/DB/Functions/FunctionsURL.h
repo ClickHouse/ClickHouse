@@ -279,7 +279,6 @@ struct ExtractPathFull
 
 		if (nullptr != (pos = strchr(data, '/')) && pos[1] == '/' && nullptr != (pos = strchr(pos + 2, '/')))
 		{
-			/// no leading slash
 			res_data = pos;
 			res_size = end - res_data;
 		}

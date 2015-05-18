@@ -39,6 +39,7 @@ class ProcessList;
 class ProcessListElement;
 class Macros;
 class Progress;
+class Clusters;
 
 
 /// имя таблицы -> таблица
@@ -238,6 +239,7 @@ public:
 
 	void initClusters();
 	Cluster & getCluster(const std::string & cluster_name);
+	Poco::SharedPtr<Clusters> getClusters() const;
 
 	Compiler & getCompiler();
 

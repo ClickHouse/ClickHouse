@@ -503,7 +503,7 @@ struct NameRegionToCity				{ static constexpr auto name = "regionToCity"; };
 struct NameRegionToArea				{ static constexpr auto name = "regionToArea"; };
 struct NameRegionToDistrict			{ static constexpr auto name = "regionToDistrict"; };
 struct NameRegionToCountry			{ static constexpr auto name = "regionToCountry"; };
-struct NameRegionToContinent		{ static constexpr auto name = "regionToContient"; };
+struct NameRegionToContinent		{ static constexpr auto name = "regionToContinent"; };
 struct NameRegionToPopulation		{ static constexpr auto name = "regionToPopulation"; };
 struct NameOSToRoot					{ static constexpr auto name = "OSToRoot"; };
 struct NameSEToRoot					{ static constexpr auto name = "SEToRoot"; };
@@ -738,7 +738,7 @@ public:
 };
 
 
-class FunctionDictGetString : public IFunction
+class FunctionDictGetString final : public IFunction
 {
 public:
 	static constexpr auto name = "dictGetString";

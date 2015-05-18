@@ -7,9 +7,11 @@
 #include <DB/Storages/Distributed/DirectoryMonitor.h>
 #include <DB/Common/escapeForFileName.h>
 #include <DB/Parsers/ASTInsertQuery.h>
+#include <DB/Parsers/ASTSelectQuery.h>
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/InterpreterAlterQuery.h>
+#include <DB/Interpreters/ExpressionAnalyzer.h>
 
 #include <DB/Core/Field.h>
 

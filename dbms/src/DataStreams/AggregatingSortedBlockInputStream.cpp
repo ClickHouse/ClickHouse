@@ -61,16 +61,16 @@ Block AggregatingSortedBlockInputStream::readImpl()
 		columns_to_aggregate[i] = typeid_cast<ColumnAggregateFunction *>(merged_columns[column_numbers_to_aggregate[i]]);
 
 	if (has_collation)
-		merge(merged_block, merged_columns, queue_with_collation);
+		merge(merged_columns, queue_with_collation);
 	else
-		merge(merged_block, merged_columns, queue);
+		merge(merged_columns, queue);
 
 	return merged_block;
 }
 
 
 template<class TSortCursor>
-void AggregatingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
+void AggregatingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
 {
 	size_t merged_rows = 0;
 
@@ -81,13 +81,15 @@ void AggregatingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainP
 
 		setPrimaryKey(next_key, current);
 
+		bool key_differs = next_key != current_key;
+
 		/// если накопилось достаточно строк и последняя посчитана полностью
-		if (next_key != current_key && merged_rows >= max_block_size)
+		if (key_differs && merged_rows >= max_block_size)
 			return;
 
 		queue.pop();
 
-		if (next_key != current_key)
+		if (key_differs)
 		{
 			current_key = std::move(next_key);
 			next_key.resize(description.size());

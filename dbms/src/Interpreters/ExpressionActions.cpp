@@ -215,7 +215,7 @@ void ExpressionAction::prepare(Block & sample_block)
 
 void ExpressionAction::execute(Block & block) const
 {
-	std::cerr << "executing: " << toString() << std::endl;
+//	std::cerr << "executing: " << toString() << std::endl;
 
 	if (type == REMOVE_COLUMN || type == COPY_COLUMN)
 		if (!block.has(source_name))
@@ -327,7 +327,7 @@ void ExpressionAction::execute(Block & block) const
 			break;
 
 		case ADD_COLUMN:
-			block.insert(ColumnWithNameAndType(added_column->cloneResized(block.rows()), result_type, result_name));
+			block.insert(ColumnWithNameAndType(added_column->cloneResized(block.rowsInFirstColumn()), result_type, result_name));
 			break;
 
 		case COPY_COLUMN:
@@ -608,6 +608,8 @@ std::string ExpressionActions::getSmallestColumn(const NamesAndTypesList & colum
 
 void ExpressionActions::finalize(const Names & output_columns)
 {
+//	std::cerr << "finalize\n";
+
 	NameSet final_columns;
 	for (size_t i = 0; i < output_columns.size(); ++i)
 	{
@@ -629,7 +631,7 @@ void ExpressionActions::finalize(const Names & output_columns)
 			unmodified_columns.insert(it->name);
 	}
 
-	/// Будем идти с конца и поодерживать множество нужных на данном этапе столбцов.
+	/// Будем идти с конца и поддерживать множество нужных на данном этапе столбцов.
 	/// Будем выбрасывать ненужные действия, хотя обычно их нет по построению.
 	for (int i = static_cast<int>(actions.size()) - 1; i >= 0; --i)
 	{
@@ -691,6 +693,23 @@ void ExpressionActions::finalize(const Names & output_columns)
 
 				unmodified_columns.erase(out);
 				needed_columns.erase(out);
+
+				/** Если функция - константное выражение, то заменим действие на добавление столбца-константы - результата.
+				  * То есть, осуществляем constant folding.
+				  */
+				if (action.type == ExpressionAction::APPLY_FUNCTION && sample_block.has(out))
+				{
+					auto & result = sample_block.getByName(out);
+					if (!result.column.isNull())
+					{
+						action.type = ExpressionAction::ADD_COLUMN;
+						action.result_type = result.type;
+						action.added_column = result.column;
+						action.function = nullptr;
+						action.argument_names.clear();
+						in.clear();
+					}
+				}
 			}
 
 			needed_columns.insert(in.begin(), in.end());

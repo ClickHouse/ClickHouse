@@ -136,7 +136,7 @@ struct ConvertImpl<DataTypeDateTime, DataTypeDate, Name>
 
 
 /** Отдельный случай для преобразования (U)Int32 или (U)Int64 в Date.
-  * Если число меньше 65536, то оно понимается, как DayNum, а если больше - как unix timestamp.
+  * Если число меньше 65536, то оно понимается, как DayNum, а если больше или равно - как unix timestamp.
   * Немного нелогично, что мы, по сути, помещаем две разные функции в одну.
   * Но зато это позволяет поддержать распространённый случай,
   *  когда пользователь пишет toDate(UInt32), ожидая, что это - перевод unix timestamp в дату
@@ -490,8 +490,8 @@ public:
 	  * Для неконстантных столбцов arguments[i].column = nullptr.
 	  */
 	void getReturnTypeAndPrerequisites(const ColumnsWithNameAndType & arguments,
-												DataTypePtr & out_return_type,
-												ExpressionActions::Actions & out_prerequisites)
+		DataTypePtr & out_return_type,
+		std::vector<ExpressionAction> & out_prerequisites)
 	{
 		if (arguments.size() != 2)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "

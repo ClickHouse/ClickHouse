@@ -26,6 +26,10 @@ public:
 	/// к локальным узлам обращаемся напрямую
 	size_t getLocalNodesNum() const { return local_nodes_num; }
 
+	/// используеться для выставления ограничения на размер таймаута
+	static Poco::Timespan saturate(const Poco::Timespan & v, const Poco::Timespan & limit);
+
+public:
 	/// Соединения с удалёнными серверами.
 	ConnectionPools pools;
 
@@ -33,14 +37,12 @@ public:
 	{
 		/// contains names of directories for asynchronous write to StorageDistributed
 		std::vector<std::string> dir_names;
+		UInt32 shard_num;
 		int weight;
 		size_t num_local_nodes;
 	};
 	std::vector<ShardInfo> shard_info_vec;
 	std::vector<size_t> slot_to_shard;
-
-	/// используеться для выставления ограничения на размер таймаута
-	static Poco::Timespan saturate(const Poco::Timespan & v, const Poco::Timespan & limit);
 
 	struct Address
 	{
@@ -61,8 +63,10 @@ public:
 		* </shard>
 		*/
 		Poco::Net::SocketAddress host_port;
+		String host_name;
 		String user;
 		String password;
+		UInt32 replica_num;
 
 		Address(const String & config_prefix);
 		Address(const String & host_port_, const String & user_, const String & password_);
@@ -71,12 +75,18 @@ public:
 private:
 	static bool isLocal(const Address & address);
 
+public:
 	/// Массив шардов. Каждый шард - адреса одного сервера.
 	typedef std::vector<Address> Addresses;
 
 	/// Массив шардов. Для каждого шарда - массив адресов реплик (серверов, считающихся идентичными).
 	typedef std::vector<Addresses> AddressesWithFailover;
 
+public:
+	const Addresses & getShardsInfo() const { return addresses; }
+	const AddressesWithFailover & getShardsWithFailoverInfo() const { return addresses_with_failover; }
+
+private:
 	Addresses addresses;
 	AddressesWithFailover addresses_with_failover;
 

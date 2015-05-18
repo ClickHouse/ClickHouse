@@ -181,7 +181,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 		ws.ignore(pos, end);
 	}
 
-	/// [GLOBAL] ANY|ALL INNER|LEFT JOIN (subquery) USING (tuple)
+	/// [GLOBAL] ANY|ALL INNER|LEFT JOIN (subquery) USING tuple
 	join.parse(pos, end, select_query->join, max_parsed_pos, expected);
 
 	if (!parse_final_and_sample())

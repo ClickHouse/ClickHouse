@@ -12,6 +12,7 @@
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 #include <DB/IO/WriteHelpers.h>
+#include <Yandex/logger_useful.h>
 
 namespace DB
 {
@@ -95,6 +96,8 @@ public:
 
 	BackgroundProcessingPool(int size_) : size(size_)
 	{
+		LOG_INFO(&Logger::get("BackgroundProcessingPool"), "Create BackgroundProcessingPool with " << size << " threads");
+
 		threads.resize(size);
 		for (auto & thread : threads)
 			 thread = std::thread([this] { threadFunction(); });

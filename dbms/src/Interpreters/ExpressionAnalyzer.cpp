@@ -21,6 +21,7 @@
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Interpreters/LogicalExpressionsOptimizer.h>
+#include <DB/Interpreters/ExternalDictionaries.h>
 
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
 
@@ -31,6 +32,8 @@
 
 #include <DB/DataStreams/LazyBlockInputStream.h>
 #include <DB/DataStreams/copyData.h>
+
+#include <DB/Dictionaries/IDictionary.h>
 
 #include <DB/Common/typeid_cast.h>
 
@@ -65,6 +68,23 @@ const std::unordered_set<String> injective_function_names
 	"bitmaskToArray",
 	"tuple",
 	"regionToName",
+};
+
+const std::unordered_set<String> possibly_injective_function_names
+{
+	"dictGetString",
+	"dictGetUInt8",
+	"dictGetUInt16",
+	"dictGetUInt32",
+	"dictGetUInt64",
+	"dictGetInt8",
+	"dictGetInt16",
+	"dictGetInt32",
+	"dictGetInt64",
+	"dictGetFloat32",
+	"dictGetFloat64",
+	"dictGetDate",
+	"dictGetDateTime"
 };
 
 void ExpressionAnalyzer::init()
@@ -328,7 +348,8 @@ void ExpressionAnalyzer::normalizeTree()
 /// finished_asts - уже обработанные вершины (и на что они заменены)
 /// current_asts - вершины в текущем стеке вызовов этого метода
 /// current_alias - алиас, повешенный на предка ast (самого глубокого из предков с алиасами)
-void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts, std::string current_alias)
+void ExpressionAnalyzer::normalizeTreeImpl(
+	ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts, std::string current_alias)
 {
 	if (finished_asts.count(ast))
 	{
@@ -346,25 +367,33 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 	/// rewrite правила, которые действуют при обходе сверху-вниз.
 	bool replaced = false;
 
-	if (ASTFunction * node = typeid_cast<ASTFunction *>(&*ast))
+	ASTFunction * func_node = typeid_cast<ASTFunction *>(&*ast);
+	if (func_node)
 	{
 		/** Нет ли в таблице столбца, название которого полностью совпадает с записью функции?
 		  * Например, в таблице есть столбец "domain(URL)", и мы запросили domain(URL).
 		  */
-		String function_string = node->getColumnName();
+		String function_string = func_node->getColumnName();
 		NamesAndTypesList::const_iterator it = findColumn(function_string);
 		if (columns.end() != it)
 		{
-			ASTIdentifier * ast_id = new ASTIdentifier(node->range, function_string);
+			ASTIdentifier * ast_id = new ASTIdentifier(func_node->range, function_string);
 			ast = ast_id;
 			current_asts.insert(ast);
 			replaced = true;
 		}
 
-		/// может быть указано IN t, где t - таблица, что равносильно IN (SELECT * FROM t).
-		if (node->name == "in" || node->name == "notIn" || node->name == "globalIn" || node->name == "globalNotIn")
-			if (ASTIdentifier * right = typeid_cast<ASTIdentifier *>(&*node->arguments->children.at(1)))
+		/// Может быть указано IN t, где t - таблица, что равносильно IN (SELECT * FROM t).
+		if (func_node->name == "in" || func_node->name == "notIn" || func_node->name == "globalIn" || func_node->name == "globalNotIn")
+			if (ASTIdentifier * right = typeid_cast<ASTIdentifier *>(&*func_node->arguments->children.at(1)))
 				right->kind = ASTIdentifier::Table;
+
+		/// А ещё, в качестве исключения, будем понимать count(*) как count(), а не count(список всех столбцов).
+		if (func_node->name == "count" && func_node->arguments->children.size() == 1
+			&& typeid_cast<const ASTAsterisk *>(func_node->arguments->children[0].get()))
+		{
+			func_node->arguments->children.clear();
+		}
 	}
 	else if (ASTIdentifier * node = typeid_cast<ASTIdentifier *>(&*ast))
 	{
@@ -427,10 +456,32 @@ void ExpressionAnalyzer::normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_as
 	}
 
 	/// Рекурсивные вызовы. Не опускаемся в подзапросы.
+	/// Также не опускаемся в левый аргумент лямбда-выражений, чтобы не заменять формальные параметры
+	///  по алиасам в выражениях вида 123 AS x, arrayMap(x -> 1, [2]).
 
-	for (auto & child : ast->children)
-		if (!typeid_cast<ASTSelectQuery *>(&*child))
+	if (func_node && func_node->name == "lambda")
+	{
+		/// Пропускаем первый аргумент. Также предполагаем, что у функции lambda не может быть parameters.
+		for (size_t i = 1, size = func_node->arguments->children.size(); i < size; ++i)
+		{
+			auto & child = func_node->arguments->children[i];
+
+			if (typeid_cast<ASTSelectQuery *>(&*child))
+				continue;
+
 			normalizeTreeImpl(child, finished_asts, current_asts, current_alias);
+		}
+	}
+	else
+	{
+		for (auto & child : ast->children)
+		{
+			if (typeid_cast<ASTSelectQuery *>(&*child))
+				continue;
+
+			normalizeTreeImpl(child, finished_asts, current_asts, current_alias);
+		}
+	}
 
 	/// Если секция WHERE или HAVING состоит из одного алиаса, ссылку нужно заменить не только в children, но и в where_expression и having_expression.
 	if (ASTSelectQuery * select = typeid_cast<ASTSelectQuery *>(&*ast))
@@ -496,10 +547,33 @@ void ExpressionAnalyzer::optimizeGroupBy()
 	/// iterate over each GROUP BY expression, eliminate injective function calls and literals
 	for (size_t i = 0; i < group_exprs.size();)
 	{
-		if (const auto function = typeid_cast<ASTFunction*>(group_exprs[i].get()))
+		if (const auto function = typeid_cast<ASTFunction *>(group_exprs[i].get()))
 		{
 			/// assert function is injective
-			if (!injective_function_names.count(function->name))
+			if (possibly_injective_function_names.count(function->name))
+			{
+				/// do not handle semantic errors here
+				if (function->arguments->children.size() < 2)
+				{
+					++i;
+					continue;
+				}
+
+				const auto & dict_name = typeid_cast<const ASTLiteral &>(*function->arguments->children[0])
+					.value.safeGet<String>();
+
+				const auto & dict_ptr = context.getExternalDictionaries().getDictionary(dict_name);
+
+				const auto & attr_name = typeid_cast<const ASTLiteral &>(*function->arguments->children[1])
+					.value.safeGet<String>();
+
+				if (!dict_ptr->isInjective(attr_name))
+				{
+					++i;
+					continue;
+				}
+			}
+			else if (!injective_function_names.count(function->name))
 			{
 				++i;
 				continue;
@@ -809,76 +883,76 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 /// Случай явного перечисления значений.
 void ExpressionAnalyzer::makeExplicitSet(ASTFunction * node, const Block & sample_block, bool create_ordered_set)
 {
-		IAST & args = *node->arguments;
-		ASTPtr & arg = args.children.at(1);
+	IAST & args = *node->arguments;
+	ASTPtr & arg = args.children.at(1);
 
-		DataTypes set_element_types;
-		ASTPtr & left_arg = args.children.at(0);
+	DataTypes set_element_types;
+	ASTPtr & left_arg = args.children.at(0);
 
-		ASTFunction * left_arg_tuple = typeid_cast<ASTFunction *>(&*left_arg);
+	ASTFunction * left_arg_tuple = typeid_cast<ASTFunction *>(&*left_arg);
 
-		if (left_arg_tuple && left_arg_tuple->name == "tuple")
+	if (left_arg_tuple && left_arg_tuple->name == "tuple")
+	{
+		for (const auto & arg : left_arg_tuple->arguments->children)
 		{
-			for (const auto & arg : left_arg_tuple->arguments->children)
-			{
-				const auto & data_type = sample_block.getByName(arg->getColumnName()).type;
+			const auto & data_type = sample_block.getByName(arg->getColumnName()).type;
 
-				/// @note prevent crash in query: SELECT (1, [1]) in (1, 1)
-				if (const auto array = typeid_cast<const DataTypeArray * >(data_type.get()))
-					throw Exception("Incorrect element of tuple: " + array->getName(), ErrorCodes::INCORRECT_ELEMENT_OF_SET);
+			/// @note prevent crash in query: SELECT (1, [1]) in (1, 1)
+			if (const auto array = typeid_cast<const DataTypeArray * >(data_type.get()))
+				throw Exception("Incorrect element of tuple: " + array->getName(), ErrorCodes::INCORRECT_ELEMENT_OF_SET);
 
-				set_element_types.push_back(data_type);
-			}
+			set_element_types.push_back(data_type);
 		}
+	}
+	else
+	{
+		DataTypePtr left_type = sample_block.getByName(left_arg->getColumnName()).type;
+		if (DataTypeArray * array_type = typeid_cast<DataTypeArray *>(&*left_type))
+			set_element_types.push_back(array_type->getNestedType());
 		else
-		{
-			DataTypePtr left_type = sample_block.getByName(left_arg->getColumnName()).type;
-			if (DataTypeArray * array_type = typeid_cast<DataTypeArray *>(&*left_type))
-				set_element_types.push_back(array_type->getNestedType());
-			else
-				set_element_types.push_back(left_type);
-		}
+			set_element_types.push_back(left_type);
+	}
 
-		/// Отличим случай x in (1, 2) от случая x in 1 (он же x in (1)).
-		bool single_value = false;
-		ASTPtr elements_ast = arg;
+	/// Отличим случай x in (1, 2) от случая x in 1 (он же x in (1)).
+	bool single_value = false;
+	ASTPtr elements_ast = arg;
 
-		if (ASTFunction * set_func = typeid_cast<ASTFunction *>(&*arg))
-		{
-			if (set_func->name != "tuple")
-				throw Exception("Incorrect type of 2nd argument for function " + node->name + ". Must be subquery or set of values.",
-								ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-			/// Отличм случай (x, y) in ((1, 2), (3, 4)) от случая (x, y) in (1, 2).
-			ASTFunction * any_element = typeid_cast<ASTFunction *>(&*set_func->arguments->children.at(0));
-			if (set_element_types.size() >= 2 && (!any_element || any_element->name != "tuple"))
-				single_value = true;
-			else
-				elements_ast = set_func->arguments;
-		}
-		else if (typeid_cast<ASTLiteral *>(&*arg))
-		{
-			single_value = true;
-		}
-		else
-		{
+	if (ASTFunction * set_func = typeid_cast<ASTFunction *>(&*arg))
+	{
+		if (set_func->name != "tuple")
 			throw Exception("Incorrect type of 2nd argument for function " + node->name + ". Must be subquery or set of values.",
 							ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-		}
 
-		if (single_value)
-		{
-			ASTPtr exp_list = new ASTExpressionList;
-			exp_list->children.push_back(elements_ast);
-			elements_ast = exp_list;
-		}
+		/// Отличм случай (x, y) in ((1, 2), (3, 4)) от случая (x, y) in (1, 2).
+		ASTFunction * any_element = typeid_cast<ASTFunction *>(&*set_func->arguments->children.at(0));
+		if (set_element_types.size() >= 2 && (!any_element || any_element->name != "tuple"))
+			single_value = true;
+		else
+			elements_ast = set_func->arguments;
+	}
+	else if (typeid_cast<ASTLiteral *>(&*arg))
+	{
+		single_value = true;
+	}
+	else
+	{
+		throw Exception("Incorrect type of 2nd argument for function " + node->name + ". Must be subquery or set of values.",
+						ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+	}
 
-		ASTSet * ast_set = new ASTSet(arg->getColumnName());
-		ASTPtr ast_set_ptr = ast_set;
-		ast_set->set = new Set(settings.limits);
-		ast_set->is_explicit = true;
-		ast_set->set->createFromAST(set_element_types, elements_ast, create_ordered_set);
-		arg = ast_set_ptr;
+	if (single_value)
+	{
+		ASTPtr exp_list = new ASTExpressionList;
+		exp_list->children.push_back(elements_ast);
+		elements_ast = exp_list;
+	}
+
+	ASTSet * ast_set = new ASTSet(arg->getColumnName());
+	ASTPtr ast_set_ptr = ast_set;
+	ast_set->set = new Set(settings.limits);
+	ast_set->is_explicit = true;
+	ast_set->set->createFromAST(set_element_types, elements_ast, create_ordered_set);
+	arg = ast_set_ptr;
 }
 
 

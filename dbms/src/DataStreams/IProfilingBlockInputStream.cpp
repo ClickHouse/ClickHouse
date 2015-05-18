@@ -248,7 +248,14 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
 						ErrorCodes::TOO_MUCH_ROWS);
 			}
 			else if (limits.read_overflow_mode == OverflowMode::BREAK)
-				cancel();
+			{
+				/// Для break будем останавливаться только если действительно было прочитано столько строк, а не только предполагается к чтению.
+				if ((limits.max_rows_to_read && rows_processed > limits.max_rows_to_read)
+					|| (limits.max_bytes_to_read && bytes_processed > limits.max_bytes_to_read))
+				{
+					cancel();
+				}
+			}
 			else
 				throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
 		}

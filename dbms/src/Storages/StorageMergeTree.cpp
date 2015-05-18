@@ -262,7 +262,8 @@ void StorageMergeTree::dropPartition(const Field & partition, bool detach, bool 
 	/// Просит завершить мерджи и не позволяет им начаться.
 	/// Это защищает от "оживания" данных за удалённую партицию после завершения мерджа.
 	const MergeTreeMergeBlocker merge_blocker{merger};
-	auto structure_lock = lockStructure(true);
+	/// Дожидается завершения мерджей и не даёт начаться новым.
+	auto lock = lockForAlter();
 
 	DayNum_t month = MergeTreeData::getMonthDayNum(partition);
 

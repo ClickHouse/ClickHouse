@@ -53,8 +53,8 @@ private:
 	typedef LRUCache<UInt128, MarksInCompressedFile, UInt128TrivialHash, MarksWeightFunction> Base;
 
 public:
-	MarkCache(size_t max_size_in_bytes)
-		: Base(max_size_in_bytes) {}
+	MarkCache(size_t max_size_in_bytes, const Delay & expiration_delay)
+		: Base(max_size_in_bytes, expiration_delay) {}
 
 	/// Посчитать ключ от пути к файлу и смещения.
 	static UInt128 hash(const String & path_to_file)

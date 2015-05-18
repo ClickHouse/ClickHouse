@@ -48,6 +48,8 @@ public:
 
 	std::size_t getBytesAllocated() const override { return bytes_allocated; }
 
+	std::size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
+
 	double getHitRate() const override
 	{
 		return static_cast<double>(hit_count.load(std::memory_order_acquire)) /
@@ -74,6 +76,11 @@ public:
 	std::chrono::time_point<std::chrono::system_clock> getCreationTime() const override
 	{
 		return creation_time;
+	}
+
+	bool isInjective(const std::string & attribute_name) const override
+	{
+		return dict_struct.attributes[&getAttribute(attribute_name) - attributes.data()].injective;
 	}
 
 	bool hasHierarchy() const override { return hierarchical_attribute; }
