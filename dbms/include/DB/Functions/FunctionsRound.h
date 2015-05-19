@@ -288,7 +288,7 @@ namespace
 {
 	/// Отдельные степени числа 10.
 
-	template <size_t N>
+	template<size_t N>
 	struct PowerOf10
 	{
 		static const size_t value = 10 * PowerOf10<N - 1>::value;
@@ -303,33 +303,33 @@ namespace
 
 	/// Объявление и определение контейнера содержащего таблицу степеней числа 10.
 
-	template <size_t... TArgs>
+	template<size_t... TArgs>
 	struct TableContainer
 	{
 		static const std::array<size_t, sizeof...(TArgs)> values;
 	};
 
-	template <size_t... TArgs>
+	template<size_t... TArgs>
 	const std::array<size_t, sizeof...(TArgs)> TableContainer<TArgs...>::values = { TArgs... };
 
 	/// Генератор первых N степеней.
 
-	template <size_t N, size_t... TArgs>
+	template<size_t N, size_t... TArgs>
 	struct FillArrayImpl
 	{
 		using result = typename FillArrayImpl<N - 1, PowerOf10<N>::value, TArgs...>::result;
 	};
 
-	template <size_t... TArgs>
+	template<size_t... TArgs>
 	struct FillArrayImpl<0, TArgs...>
 	{
 		using result = TableContainer<PowerOf10<0>::value, TArgs...>;
 	};
 
-	template <size_t N>
+	template<size_t N>
 	struct FillArray
 	{
-		using result = typename FillArrayImpl<N-1>::result;
+		using result = typename FillArrayImpl<N - 1>::result;
 	};
 
 	/** Шаблон для функций, которые вычисляют приближенное значение входного параметра
