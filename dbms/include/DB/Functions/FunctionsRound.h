@@ -211,13 +211,13 @@ namespace DB
 			if (i < size)
 			{
 				Data tmp{0};
-				for (size_t j = 0; (j < data_size) && (i + j) < size; ++j)
+				for (size_t j = 0; (j < data_size) && ((i + j) < size); ++j)
 					tmp[j] = in[i + j];
 
 				Data res;
 				Op::compute(tmp, mm_scale, res);
 
-				for (size_t j = 0; (j < data_size) && (i + j) < size; ++j)
+				for (size_t j = 0; (j < data_size) && ((i + j) < size); ++j)
 					out[i + j] = in[i + j];
 			}
 		}
@@ -288,7 +288,7 @@ namespace
 {
 	/// Отдельные степени числа 10.
 
-	template <size_t N>
+	template<size_t N>
 	struct PowerOf10
 	{
 		static const size_t value = 10 * PowerOf10<N - 1>::value;
@@ -303,33 +303,33 @@ namespace
 
 	/// Объявление и определение контейнера содержащего таблицу степеней числа 10.
 
-	template <size_t... TArgs>
+	template<size_t... TArgs>
 	struct TableContainer
 	{
 		static const std::array<size_t, sizeof...(TArgs)> values;
 	};
 
-	template <size_t... TArgs>
+	template<size_t... TArgs>
 	const std::array<size_t, sizeof...(TArgs)> TableContainer<TArgs...>::values = { TArgs... };
 
 	/// Генератор первых N степеней.
 
-	template <size_t N, size_t... TArgs>
+	template<size_t N, size_t... TArgs>
 	struct FillArrayImpl
 	{
 		using result = typename FillArrayImpl<N - 1, PowerOf10<N>::value, TArgs...>::result;
 	};
 
-	template <size_t... TArgs>
+	template<size_t... TArgs>
 	struct FillArrayImpl<0, TArgs...>
 	{
 		using result = TableContainer<PowerOf10<0>::value, TArgs...>;
 	};
 
-	template <size_t N>
+	template<size_t N>
 	struct FillArray
 	{
-		using result = typename FillArrayImpl<N-1>::result;
+		using result = typename FillArrayImpl<N - 1>::result;
 	};
 
 	/** Шаблон для функций, которые вычисляют приближенное значение входного параметра
@@ -357,6 +357,8 @@ namespace
 		template<typename T>
 		bool executeForType(Block & block, const ColumnNumbers & arguments, size_t result)
 		{
+			using Op = FunctionRoundingImpl<T, rounding_mode>;
+
 			if (ColumnVector<T> * col = typeid_cast<ColumnVector<T> *>(&*block.getByPosition(arguments[0]).column))
 			{
 				UInt8 precision = 0;
@@ -369,7 +371,7 @@ namespace
 				typename ColumnVector<T>::Container_t & vec_res = col_res->getData();
 				vec_res.resize(col->getData().size());
 
-				FunctionRoundingImpl<T, rounding_mode>::apply(col->getData(), PowersOf10::values[precision], vec_res);
+				Op::apply(col->getData(), PowersOf10::values[precision], vec_res);
 
 				return true;
 			}
@@ -379,7 +381,7 @@ namespace
 				if (arguments.size() == 2)
 					precision = getPrecision<T>(block.getByPosition(arguments[1]).column);
 
-				T res = FunctionRoundingImpl<T, rounding_mode>::apply(col->getData(), PowersOf10::values[precision]);
+				T res = Op::apply(col->getData(), PowersOf10::values[precision]);
 
 				ColumnConst<T> * col_res = new ColumnConst<T>(col->size(), res);
 				block.getByPosition(result).column = col_res;
