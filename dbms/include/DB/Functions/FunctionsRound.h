@@ -114,7 +114,7 @@ namespace DB
 	class FunctionRoundingImpl<Float32, rounding_mode>
 	{
 	private:
-		using Data = std::tuple<Float32, Float32, Float32, Float32>;
+		using Data = std::array<Float32, 4>;
 		using Scale = __m128;
 
 	public:
@@ -129,16 +129,14 @@ namespace DB
 			for (i = 0; i < (size - 3); i += 4)
 			{
 				Data res;
-				compute(std::make_tuple(in[i], in[i + 1], in[i + 2], in[i + 3]), mm_scale, res);
-				out[i] = std::get<0>(res);
-				out[i + 1] = std::get<1>(res);
-				out[i + 2] = std::get<2>(res);
-				out[i + 3] = std::get<3>(res);
+				compute({in[i], in[i + 1], in[i + 2], in[i + 3]}, mm_scale, res);
+				for (size_t j = 0; j < std::tuple_size<Data>(); ++j)
+					out[i + j] = res[j];
 			}
 
 			if (i <= (size - 1))
 			{
-				Data tmp(in[i], (i <= (size - 2)) ? in[i + 1] : 0, (i <= (size - 3)) ? in[i + 2] : 0, 0);
+				Data tmp{in[i], (i <= (size - 2)) ? in[i + 1] : 0, (i <= (size - 3)) ? in[i + 2] : 0, 0};
 				Data res;
 				compute(tmp, mm_scale, res);
 
@@ -162,8 +160,8 @@ namespace DB
 				prepareScale(scale, mm_scale);
 
 				Data res;
-				compute(std::make_tuple(val, 0, 0, 0), mm_scale, res);
-				return std::get<0>(res);
+				compute({val, 0, 0, 0}, mm_scale, res);
+				return res[0];
 			}
 		}
 
@@ -176,7 +174,7 @@ namespace DB
 
 		static inline void compute(const Data & in, const Scale & mm_scale, Data & out)
 		{
-			Float32 input[4] __attribute__((aligned(16))) = { std::get<0>(in), std::get<1>(in), std::get<2>(in), std::get<3>(in) };
+			Float32 input[4] __attribute__((aligned(16))) = {in[0], in[1], in[2], in[3]};
 			__m128 mm_value = _mm_load_ps(input);
 
 			mm_value = _mm_mul_ps(mm_value, mm_scale);
@@ -185,7 +183,7 @@ namespace DB
 
 			Float32 res[4] __attribute__((aligned(16)));
 			_mm_store_ps(res, mm_value);
-			out = std::make_tuple(res[0], res[1], res[2], res[3]);
+			out = {res[0], res[1], res[2], res[3]};
 		}
 	};
 
@@ -193,7 +191,7 @@ namespace DB
 	struct FunctionRoundingImpl<Float64, rounding_mode>
 	{
 	private:
-		using Data = std::tuple<Float64, Float64>;
+		using Data = std::array<Float64, 2>;
 		using Scale = __m128d;
 
 	public:
@@ -208,15 +206,15 @@ namespace DB
 			for (i = 0; i < (size - 1); i += 2)
 			{
 				Data res;
-				compute(std::make_tuple(in[i], in[i + 1]), mm_scale, res);
-				out[i] = std::get<0>(res);
-				out[i + 1] = std::get<1>(res);
+				compute({in[i], in[i + 1]}, mm_scale, res);
+				out[i] = res[0];
+				out[i + 1] = res[1];
 			}
 			if (i == (size - 1))
 			{
 				Data res;
-				compute(std::make_tuple(in[i], 0), mm_scale, res);
-				out[i] = std::get<0>(res);
+				compute({in[i], 0}, mm_scale, res);
+				out[i] = res[0];
 			}
 		}
 
@@ -230,8 +228,8 @@ namespace DB
 				prepareScale(scale, mm_scale);
 
 				Data res;
-				compute(std::make_tuple(val, 0), mm_scale, res);
-				return std::get<0>(res);
+				compute({val, 0}, mm_scale, res);
+				return res[0];
 			}
 		}
 
@@ -244,7 +242,7 @@ namespace DB
 
 		static inline void compute(const Data & in, const Scale & mm_scale, Data & out)
 		{
-			Float64 input[2] __attribute__((aligned(16))) = { std::get<0>(in), std::get<1>(in) };
+			Float64 input[2] __attribute__((aligned(16))) = { in[0], in[1] };
 			__m128d mm_value = _mm_load_pd(input);
 
 			mm_value = _mm_mul_pd(mm_value, mm_scale);
@@ -253,7 +251,7 @@ namespace DB
 
 			Float64 res[2] __attribute__((aligned(16)));
 			_mm_store_pd(res, mm_value);
-			out = std::make_pair(res[0], res[1]);
+			out = {res[0], res[1]};
 		}
 	};
 
