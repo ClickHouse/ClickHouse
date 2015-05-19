@@ -92,87 +92,19 @@ namespace DB
 		}
 	};
 
-	/// Определение функцией для использования в шаблоне FunctionRounding.
+	/// Реализация функций округления на низком уровне.
 
 	template<typename T, int rounding_mode>
-	struct FunctionRoundingImpl
+	struct RoundingComputation
 	{
-		static inline void apply(const PODArray<T> & in, size_t scale, typename ColumnVector<T>::Container_t & out)
-		{
-			size_t size = in.size();
-			for (size_t i = 0; i < size; ++i)
-				out[i] = in[i];
-		}
-
-		static inline T apply(T val, size_t scale)
-		{
-			return val;
-		}
 	};
 
 	template<int rounding_mode>
-	class FunctionRoundingImpl<Float32, rounding_mode>
+	struct RoundingComputation<Float32, rounding_mode>
 	{
-	private:
 		using Data = std::array<Float32, 4>;
 		using Scale = __m128;
 
-	public:
-		static inline void apply(const PODArray<Float32> & in, size_t scale, typename ColumnVector<Float32>::Container_t & out)
-		{
-			Scale mm_scale;
-			prepareScale(scale, mm_scale);
-
-			const size_t size = in.size();
-			const size_t data_size = std::tuple_size<Data>();
-
-			size_t i;
-			for (i = 0; i < (size - data_size + 1); i += data_size)
-			{
-				Data tmp;
-				for (size_t j = 0; j < data_size; ++j)
-					tmp[j] = in[i + j];
-
-				Data res;
-				compute(tmp, mm_scale, res);
-
-				for (size_t j = 0; j < data_size; ++j)
-					out[i + j] = res[j];
-			}
-
-			if (i <= (size - 1))
-			{
-				Data tmp{0};
-				for (size_t j = 0; (j < data_size) && (i + j) < size; ++j)
-					tmp[j] = in[i + j];
-
-				Data res;
-				compute(tmp, mm_scale, res);
-
-				for (size_t j = 0; (j < data_size) && (i + j) < size; ++j)
-					out[i + j] = in[i + j];
-			}
-		}
-
-		static inline Float32 apply(Float32 val, size_t scale)
-		{
-			if (val == 0)
-				return val;
-			else
-			{
-				Scale mm_scale;
-				prepareScale(scale, mm_scale);
-
-				Data tmp{0};
-				tmp[0] = val;
-
-				Data res;
-				compute(tmp, mm_scale, res);
-				return res[0];
-			}
-		}
-
-	private:
 		static inline void prepareScale(size_t scale, Scale & mm_scale)
 		{
 			Float32 fscale = static_cast<Float32>(scale);
@@ -195,68 +127,11 @@ namespace DB
 	};
 
 	template<int rounding_mode>
-	struct FunctionRoundingImpl<Float64, rounding_mode>
+	struct RoundingComputation<Float64, rounding_mode>
 	{
-	private:
 		using Data = std::array<Float64, 2>;
 		using Scale = __m128d;
 
-	public:
-		static inline void apply(const PODArray<Float64> & in, size_t scale, typename ColumnVector<Float64>::Container_t & out)
-		{
-			Scale mm_scale;
-			prepareScale(scale, mm_scale);
-
-			const size_t size = in.size();
-			const size_t data_size = std::tuple_size<Data>();
-
-			size_t i;
-			for (i = 0; i < (size - data_size + 1); i += data_size)
-			{
-				Data tmp;
-				for (size_t j = 0; j < data_size; ++j)
-					tmp[j] = in[i + j];
-
-				Data res;
-				compute(tmp, mm_scale, res);
-
-				for (size_t j = 0; j < data_size; ++j)
-					out[i + j] = res[j];
-			}
-
-			if (i <= (size - 1))
-			{
-				Data tmp{0};
-				for (size_t j = 0; (j < data_size) && (i + j) < size; ++j)
-					tmp[j] = in[i + j];
-
-				Data res;
-				compute(tmp, mm_scale, res);
-
-				for (size_t j = 0; (j < data_size) && (i + j) < size; ++j)
-					out[i + j] = in[i + j];
-			}
-		}
-
-		static inline Float64 apply(Float64 val, size_t scale)
-		{
-			if (val == 0)
-				return val;
-			else
-			{
-				Scale mm_scale;
-				prepareScale(scale, mm_scale);
-
-				Data tmp{0};
-				tmp[0] = val;
-
-				Data res;
-				compute(tmp, mm_scale, res);
-				return res[0];
-			}
-		}
-
-	private:
 		static inline void prepareScale(size_t scale, Scale & mm_scale)
 		{
 			Float64 fscale = static_cast<Float64>(scale);
@@ -275,6 +150,94 @@ namespace DB
 			Float64 res[2] __attribute__((aligned(16)));
 			_mm_store_pd(res, mm_value);
 			out = {res[0], res[1]};
+		}
+	};
+
+	/// Реализация функций округления на высоком уровне.
+
+	template<typename T, int rounding_mode, typename Enable = void>
+	struct FunctionRoundingImpl
+	{
+	};
+
+	/// В случае целочисленных значений не выполяется округления.
+	template<typename T, int rounding_mode>
+	struct FunctionRoundingImpl<T, rounding_mode, typename std::enable_if<std::is_integral<T>::value>::type>
+	{
+		static inline void apply(const PODArray<T> & in, size_t scale, typename ColumnVector<T>::Container_t & out)
+		{
+			size_t size = in.size();
+			for (size_t i = 0; i < size; ++i)
+				out[i] = in[i];
+		}
+
+		static inline T apply(T val, size_t scale)
+		{
+			return val;
+		}
+	};
+
+	template<typename T, int rounding_mode>
+	struct FunctionRoundingImpl<T, rounding_mode, typename std::enable_if<std::is_floating_point<T>::value>::type>
+	{
+	private:
+		using Op = RoundingComputation<T, rounding_mode>;
+		using Data = typename Op::Data;
+		using Scale = typename Op::Scale;
+
+	public:
+		static inline void apply(const PODArray<T> & in, size_t scale, typename ColumnVector<T>::Container_t & out)
+		{
+			Scale mm_scale;
+			Op::prepareScale(scale, mm_scale);
+
+			const size_t size = in.size();
+			const size_t data_size = std::tuple_size<Data>();
+
+			size_t i;
+			for (i = 0; i < (size - data_size + 1); i += data_size)
+			{
+				Data tmp;
+				for (size_t j = 0; j < data_size; ++j)
+					tmp[j] = in[i + j];
+
+				Data res;
+				Op::compute(tmp, mm_scale, res);
+
+				for (size_t j = 0; j < data_size; ++j)
+					out[i + j] = res[j];
+			}
+
+			if (i <= (size - 1))
+			{
+				Data tmp{0};
+				for (size_t j = 0; (j < data_size) && (i + j) < size; ++j)
+					tmp[j] = in[i + j];
+
+				Data res;
+				Op::compute(tmp, mm_scale, res);
+
+				for (size_t j = 0; (j < data_size) && (i + j) < size; ++j)
+					out[i + j] = in[i + j];
+			}
+		}
+
+		static inline T apply(T val, size_t scale)
+		{
+			if (val == 0)
+				return val;
+			else
+			{
+				Scale mm_scale;
+				Op::prepareScale(scale, mm_scale);
+
+				Data tmp{0};
+				tmp[0] = val;
+
+				Data res;
+				Op::compute(tmp, mm_scale, res);
+				return res[0];
+			}
 		}
 	};
 
@@ -369,7 +332,7 @@ namespace
 		using result = typename FillArrayImpl<N-1>::result;
 	};
 
-	/** Шаблон для функцией, которые вычисляют приближенное значение входного параметра
+	/** Шаблон для функций, которые вычисляют приближенное значение входного параметра
 	  * типа (U)Int8/16/32/64 или Float32/64 и принимают дополнительный необязятельный
 	  * параметр указывающий сколько знаков после запятой оставить (по умолчанию - 0).
 	  * Op - функция (round/floor/ceil)
