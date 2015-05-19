@@ -26,9 +26,11 @@ public:
 	NameAndTypePair getColumn(const String & column_name) const override;
 	bool hasColumn(const String & column_name) const override;
 
-	bool supportsSampling() const override { return data->supportsSampling(); }
-	bool supportsFinal() 	const override { return data->supportsFinal(); }
-	bool supportsPrewhere() const override { return data->supportsPrewhere(); }
+	bool supportsSampling() const override 			{ return data->supportsSampling(); }
+	bool supportsPrewhere() const override 			{ return data->supportsPrewhere(); }
+	bool supportsFinal() const override 			{ return data->supportsFinal(); }
+	bool supportsIndexForIn() const override 		{ return data->supportsIndexForIn(); }
+	bool supportsParallelReplicas() const override 	{ return data->supportsParallelReplicas(); }
 
 	BlockOutputStreamPtr write(ASTPtr query) override;
 	void drop() override;
