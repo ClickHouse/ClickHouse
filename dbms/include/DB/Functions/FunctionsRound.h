@@ -191,26 +191,20 @@ namespace
 				out[i + 2] = std::get<2>(res);
 				out[i + 3] = std::get<3>(res);
 			}
-			if (i == (size - 3))
+
+			if (i <= (size - 1))
 			{
+				Data tmp(in[i], (i <= (size - 2)) ? in[i + 1] : 0, (i <= (size - 3)) ? in[i + 2] : 0, 0);
 				Data res;
-				Op::apply(std::make_tuple(in[i], in[i + 1], in[i + 2], 0), mm_scale, res);
-				out[i] = std::get<0>(res);
-				out[i + 1] = std::get<1>(res);
-				out[i + 2] = std::get<2>(res);
-			}
-			else if (i == (size - 2))
-			{
-				Data res;
-				Op::apply(std::make_tuple(in[i], in[i + 1], 0, 0), mm_scale, res);
-				out[i] = std::get<0>(res);
-				out[i + 1] = std::get<1>(res);
-			}
-			else if (i == (size - 1))
-			{
-				Data res;
-				Op::apply(std::make_tuple(in[i], 0, 0, 0), mm_scale, res);
-				out[i] = std::get<0>(res);
+				Op::apply(tmp, mm_scale, res);
+
+				out[i] = in[i];
+				if (i <= (size - 2))
+				{
+					out[i + 1] = in[i + 1];
+					if (i <= (size - 3))
+						out[i + 2] = in[i + 2];
+				}
 			}
 		}
 
