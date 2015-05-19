@@ -208,7 +208,7 @@ namespace DB
 					out[i + j] = res[j];
 			}
 
-			if (i <= (size - 1))
+			if (i < size)
 			{
 				Data tmp{0};
 				for (size_t j = 0; (j < data_size) && (i + j) < size; ++j)
