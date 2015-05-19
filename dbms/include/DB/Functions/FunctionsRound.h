@@ -92,64 +92,7 @@ namespace DB
 		}
 	};
 
-namespace
-{
-	/// Определение функцией для использования в шаблоне FunctionRoundingImpl.
-
-	template<int rounding_mode>
-	struct Rounding32
-	{
-		using Data = std::tuple<Float32, Float32, Float32, Float32>;
-		using Scale = __m128;
-
-		static inline void prepareScale(size_t scale, Scale & mm_scale)
-		{
-			Float32 fscale = static_cast<Float32>(scale);
-			mm_scale = _mm_load1_ps(&fscale);
-		}
-
-		static inline void apply(const Data & in, const Scale & mm_scale, Data & out)
-		{
-			Float32 input[4] __attribute__((aligned(16))) = { std::get<0>(in), std::get<1>(in), std::get<2>(in), std::get<3>(in) };
-			__m128 mm_value = _mm_load_ps(input);
-
-			mm_value = _mm_mul_ps(mm_value, mm_scale);
-			mm_value = _mm_round_ps(mm_value, rounding_mode);
-			mm_value = _mm_div_ps(mm_value, mm_scale);
-
-			Float32 res[4] __attribute__((aligned(16)));
-			_mm_store_ps(res, mm_value);
-			out = std::make_tuple(res[0], res[1], res[2], res[3]);
-		}
-	};
-
-	template<int rounding_mode>
-	struct Rounding64
-	{
-		using Data = std::tuple<Float64, Float64>;
-		using Scale = __m128d;
-
-		static inline void prepareScale(size_t scale, Scale & mm_scale)
-		{
-			Float64 fscale = static_cast<Float64>(scale);
-			mm_scale = _mm_load1_pd(&fscale);
-		}
-
-		static inline void apply(const Data & in, const Scale & mm_scale, Data & out)
-		{
-			Float64 input[2] __attribute__((aligned(16))) = { std::get<0>(in), std::get<1>(in) };
-			__m128d mm_value = _mm_load_pd(input);
-
-			mm_value = _mm_mul_pd(mm_value, mm_scale);
-			mm_value = _mm_round_pd(mm_value, rounding_mode);
-			mm_value = _mm_div_pd(mm_value, mm_scale);
-
-			Float64 res[2] __attribute__((aligned(16)));
-			_mm_store_pd(res, mm_value);
-			out = std::make_pair(res[0], res[1]);
-		}
-	};
-}
+	/// Определение функцией для использования в шаблоне FunctionRounding.
 
 	template<typename T, int rounding_mode>
 	struct FunctionRoundingImpl
@@ -168,16 +111,17 @@ namespace
 	};
 
 	template<int rounding_mode>
-	struct FunctionRoundingImpl<Float32, rounding_mode>
+	class FunctionRoundingImpl<Float32, rounding_mode>
 	{
-		using Op = Rounding32<rounding_mode>;
-		using Data = typename Op::Data;
-		using Scale = typename Op::Scale;
+	private:
+		using Data = std::tuple<Float32, Float32, Float32, Float32>;
+		using Scale = __m128;
 
+	public:
 		static inline void apply(const PODArray<Float32> & in, size_t scale, typename ColumnVector<Float32>::Container_t & out)
 		{
 			Scale mm_scale;
-			Op::prepareScale(scale, mm_scale);
+			prepareScale(scale, mm_scale);
 
 			size_t size = in.size();
 
@@ -185,7 +129,7 @@ namespace
 			for (i = 0; i < (size - 3); i += 4)
 			{
 				Data res;
-				Op::apply(std::make_tuple(in[i], in[i + 1], in[i + 2], in[i + 3]), mm_scale, res);
+				compute(std::make_tuple(in[i], in[i + 1], in[i + 2], in[i + 3]), mm_scale, res);
 				out[i] = std::get<0>(res);
 				out[i + 1] = std::get<1>(res);
 				out[i + 2] = std::get<2>(res);
@@ -196,7 +140,7 @@ namespace
 			{
 				Data tmp(in[i], (i <= (size - 2)) ? in[i + 1] : 0, (i <= (size - 3)) ? in[i + 2] : 0, 0);
 				Data res;
-				Op::apply(tmp, mm_scale, res);
+				compute(tmp, mm_scale, res);
 
 				out[i] = in[i];
 				if (i <= (size - 2))
@@ -215,26 +159,48 @@ namespace
 			else
 			{
 				Scale mm_scale;
-				Op::prepareScale(scale, mm_scale);
+				prepareScale(scale, mm_scale);
 
 				Data res;
-				Op::apply(std::make_tuple(val, 0, 0, 0), mm_scale, res);
+				compute(std::make_tuple(val, 0, 0, 0), mm_scale, res);
 				return std::get<0>(res);
 			}
+		}
+
+	private:
+		static inline void prepareScale(size_t scale, Scale & mm_scale)
+		{
+			Float32 fscale = static_cast<Float32>(scale);
+			mm_scale = _mm_load1_ps(&fscale);
+		}
+
+		static inline void compute(const Data & in, const Scale & mm_scale, Data & out)
+		{
+			Float32 input[4] __attribute__((aligned(16))) = { std::get<0>(in), std::get<1>(in), std::get<2>(in), std::get<3>(in) };
+			__m128 mm_value = _mm_load_ps(input);
+
+			mm_value = _mm_mul_ps(mm_value, mm_scale);
+			mm_value = _mm_round_ps(mm_value, rounding_mode);
+			mm_value = _mm_div_ps(mm_value, mm_scale);
+
+			Float32 res[4] __attribute__((aligned(16)));
+			_mm_store_ps(res, mm_value);
+			out = std::make_tuple(res[0], res[1], res[2], res[3]);
 		}
 	};
 
 	template<int rounding_mode>
 	struct FunctionRoundingImpl<Float64, rounding_mode>
 	{
-		using Op = Rounding64<rounding_mode>;
-		using Data = typename Op::Data;
-		using Scale = typename Op::Scale;
+	private:
+		using Data = std::tuple<Float64, Float64>;
+		using Scale = __m128d;
 
+	public:
 		static inline void apply(const PODArray<Float64> & in, size_t scale, typename ColumnVector<Float64>::Container_t & out)
 		{
 			Scale mm_scale;
-			Op::prepareScale(scale, mm_scale);
+			prepareScale(scale, mm_scale);
 
 			size_t size = in.size();
 
@@ -242,14 +208,14 @@ namespace
 			for (i = 0; i < (size - 1); i += 2)
 			{
 				Data res;
-				Op::apply(std::make_tuple(in[i], in[i + 1]), mm_scale, res);
+				compute(std::make_tuple(in[i], in[i + 1]), mm_scale, res);
 				out[i] = std::get<0>(res);
 				out[i + 1] = std::get<1>(res);
 			}
 			if (i == (size - 1))
 			{
 				Data res;
-				Op::apply(std::make_tuple(in[i], 0), mm_scale, res);
+				compute(std::make_tuple(in[i], 0), mm_scale, res);
 				out[i] = std::get<0>(res);
 			}
 		}
@@ -261,12 +227,33 @@ namespace
 			else
 			{
 				Scale mm_scale;
-				Op::prepareScale(scale, mm_scale);
+				prepareScale(scale, mm_scale);
 
 				Data res;
-				Op::apply(std::make_tuple(val, 0), mm_scale, res);
+				compute(std::make_tuple(val, 0), mm_scale, res);
 				return std::get<0>(res);
 			}
+		}
+
+	private:
+		static inline void prepareScale(size_t scale, Scale & mm_scale)
+		{
+			Float64 fscale = static_cast<Float64>(scale);
+			mm_scale = _mm_load1_pd(&fscale);
+		}
+
+		static inline void compute(const Data & in, const Scale & mm_scale, Data & out)
+		{
+			Float64 input[2] __attribute__((aligned(16))) = { std::get<0>(in), std::get<1>(in) };
+			__m128d mm_value = _mm_load_pd(input);
+
+			mm_value = _mm_mul_pd(mm_value, mm_scale);
+			mm_value = _mm_round_pd(mm_value, rounding_mode);
+			mm_value = _mm_div_pd(mm_value, mm_scale);
+
+			Float64 res[2] __attribute__((aligned(16)));
+			_mm_store_pd(res, mm_value);
+			out = std::make_pair(res[0], res[1]);
 		}
 	};
 
