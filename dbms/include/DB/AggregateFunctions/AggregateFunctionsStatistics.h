@@ -244,8 +244,8 @@ public:
 		Float64 left_delta = left_mean - source.left_mean;
 		Float64 right_delta = right_mean - source.right_mean;
 
-		left_mean += left_delta * (static_cast<Float64>(source.count) / total_count);
-		right_mean += right_delta * (static_cast<Float64>(source.count) / total_count);
+		left_mean = source.left_mean + left_delta * (static_cast<Float64>(count) / total_count);
+		right_mean = source.right_mean + right_delta * (static_cast<Float64>(count) / total_count);
 		co_moment += source.co_moment + left_delta * right_delta * factor;
 		count = total_count;
 
