@@ -123,30 +123,34 @@ namespace DB
 			Scale mm_scale;
 			prepareScale(scale, mm_scale);
 
-			size_t size = in.size();
+			const size_t size = in.size();
+			const size_t data_size = std::tuple_size<Data>();
 
 			size_t i;
-			for (i = 0; i < (size - 3); i += 4)
+			for (i = 0; i < (size - data_size + 1); i += data_size)
 			{
+				Data tmp;
+				for (size_t j = 0; j < data_size; ++j)
+					tmp[j] = in[i + j];
+
 				Data res;
-				compute({in[i], in[i + 1], in[i + 2], in[i + 3]}, mm_scale, res);
-				for (size_t j = 0; j < std::tuple_size<Data>(); ++j)
+				compute(tmp, mm_scale, res);
+
+				for (size_t j = 0; j < data_size; ++j)
 					out[i + j] = res[j];
 			}
 
 			if (i <= (size - 1))
 			{
-				Data tmp{in[i], (i <= (size - 2)) ? in[i + 1] : 0, (i <= (size - 3)) ? in[i + 2] : 0, 0};
+				Data tmp{0};
+				for (size_t j = 0; (j < data_size) && (i + j) < size; ++j)
+					tmp[j] = in[i + j];
+
 				Data res;
 				compute(tmp, mm_scale, res);
 
-				out[i] = in[i];
-				if (i <= (size - 2))
-				{
-					out[i + 1] = in[i + 1];
-					if (i <= (size - 3))
-						out[i + 2] = in[i + 2];
-				}
+				for (size_t j = 0; (j < data_size) && (i + j) < size; ++j)
+					out[i + j] = in[i + j];
 			}
 		}
 
@@ -159,8 +163,11 @@ namespace DB
 				Scale mm_scale;
 				prepareScale(scale, mm_scale);
 
+				Data tmp{0};
+				tmp[0] = val;
+
 				Data res;
-				compute({val, 0, 0, 0}, mm_scale, res);
+				compute(tmp, mm_scale, res);
 				return res[0];
 			}
 		}
@@ -200,21 +207,34 @@ namespace DB
 			Scale mm_scale;
 			prepareScale(scale, mm_scale);
 
-			size_t size = in.size();
+			const size_t size = in.size();
+			const size_t data_size = std::tuple_size<Data>();
 
 			size_t i;
-			for (i = 0; i < (size - 1); i += 2)
+			for (i = 0; i < (size - data_size + 1); i += data_size)
 			{
+				Data tmp;
+				for (size_t j = 0; j < data_size; ++j)
+					tmp[j] = in[i + j];
+
 				Data res;
-				compute({in[i], in[i + 1]}, mm_scale, res);
-				out[i] = res[0];
-				out[i + 1] = res[1];
+				compute(tmp, mm_scale, res);
+
+				for (size_t j = 0; j < data_size; ++j)
+					out[i + j] = res[j];
 			}
-			if (i == (size - 1))
+
+			if (i <= (size - 1))
 			{
+				Data tmp{0};
+				for (size_t j = 0; (j < data_size) && (i + j) < size; ++j)
+					tmp[j] = in[i + j];
+
 				Data res;
-				compute({in[i], 0}, mm_scale, res);
-				out[i] = res[0];
+				compute(tmp, mm_scale, res);
+
+				for (size_t j = 0; (j < data_size) && (i + j) < size; ++j)
+					out[i + j] = in[i + j];
 			}
 		}
 
@@ -227,8 +247,11 @@ namespace DB
 				Scale mm_scale;
 				prepareScale(scale, mm_scale);
 
+				Data tmp{0};
+				tmp[0] = val;
+
 				Data res;
-				compute({val, 0}, mm_scale, res);
+				compute(tmp, mm_scale, res);
 				return res[0];
 			}
 		}
