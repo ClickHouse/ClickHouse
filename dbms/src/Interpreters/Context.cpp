@@ -5,7 +5,6 @@
 #include <Poco/SharedPtr.h>
 #include <Poco/Mutex.h>
 #include <Poco/File.h>
-#include <Poco/Net/NetworkInterface.h>
 
 #include <Yandex/logger_useful.h>
 

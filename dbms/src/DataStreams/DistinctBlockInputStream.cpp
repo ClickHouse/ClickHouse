@@ -32,15 +32,21 @@ Block DistinctBlockInputStream::readImpl()
 		size_t rows = block.rows();
 		size_t columns = columns_names.empty() ? block.columns() : columns_names.size();
 
-		ConstColumnPlainPtrs column_ptrs(columns);
+		ConstColumnPlainPtrs column_ptrs;
+		column_ptrs.reserve(columns);
 
 		for (size_t i = 0; i < columns; ++i)
 		{
-			if (columns_names.empty())
-				column_ptrs[i] = block.getByPosition(i).column;
-			else
-				column_ptrs[i] = block.getByName(columns_names[i]).column;
+			auto & column = columns_names.empty()
+				? block.getByPosition(i).column
+				: block.getByName(columns_names[i]).column;
+
+			/// Игнорируем все константные столбцы.
+			if (!column->isConst())
+				column_ptrs.emplace_back(column.get());
 		}
+
+		columns = column_ptrs.size();
 
 		/// Будем фильтровать блок, оставляя там только строки, которых мы ещё не видели.
 		IColumn::Filter filter(rows);

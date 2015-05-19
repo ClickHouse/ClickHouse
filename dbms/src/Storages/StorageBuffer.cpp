@@ -164,18 +164,21 @@ public:
 		{
 			destination = storage.context.tryGetTable(storage.destination_database, storage.destination_table);
 
-			if (destination.get() == &storage)
-				throw Exception("Destination table is myself. Write will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
+			if (destination)
+			{
+				if (destination.get() == &storage)
+					throw Exception("Destination table is myself. Write will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
 
-			/// Проверяем структуру таблицы.
-			try
-			{
-				destination->check(block, true);
-			}
-			catch (Exception & e)
-			{
-				e.addMessage("(when looking at destination table " + storage.destination_database + "." + storage.destination_table + ")");
-				throw;
+				/// Проверяем структуру таблицы.
+				try
+				{
+					destination->check(block, true);
+				}
+				catch (Exception & e)
+				{
+					e.addMessage("(when looking at destination table " + storage.destination_database + "." + storage.destination_table + ")");
+					throw;
+				}
 			}
 		}
 

@@ -24,7 +24,7 @@ class TableFunctionRemote : public ITableFunction
 {
 public:
 	/// Максимальное количество различных шардов и максимальное количество реплик одного шарда
-	const size_t MAX_ADDRESSES = 200;	/// TODO Перенести в Settings.
+	const size_t MAX_ADDRESSES = 1000;	/// TODO Перенести в Settings.
 
 	std::string getName() const override { return "remote"; }
 
