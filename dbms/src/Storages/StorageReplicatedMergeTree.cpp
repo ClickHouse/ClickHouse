@@ -5,6 +5,7 @@
 #include <DB/Storages/MergeTree/ReplicatedMergeTreePartsExchange.h>
 #include <DB/Storages/MergeTree/MergeTreePartChecker.h>
 #include <DB/Storages/MergeTree/MergeList.h>
+#include <DB/Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <DB/Parsers/formatAST.h>
 #include <DB/IO/WriteBufferFromOStream.h>
 #include <DB/IO/ReadBufferFromString.h>
@@ -1995,6 +1996,13 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 			virt_column_names.push_back(it);
 		else
 			real_column_names.push_back(it);
+
+	ASTSelectQuery & select = *typeid_cast<ASTSelectQuery*>(&*query);
+
+	/// Try transferring some condition from WHERE to PREWHERE if enabled and viable
+	if (settings.optimize_move_to_prewhere)
+		if (select.where_expression && !select.prewhere_expression)
+			MergeTreeWhereOptimizer{select, data, real_column_names, log};
 
 	Block virtual_columns_block;
 	ColumnUInt8 * column = new ColumnUInt8(2);
