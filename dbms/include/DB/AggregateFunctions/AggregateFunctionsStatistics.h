@@ -422,7 +422,6 @@ public:
 	{
 		CovarianceData<T, U, Op, compute_marginal_moments> source;
 		source.deserialize(buf);
-
 		this->data(place).mergeWith(source);
 	}
 
