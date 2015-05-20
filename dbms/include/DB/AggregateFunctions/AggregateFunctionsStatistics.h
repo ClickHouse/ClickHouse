@@ -444,7 +444,7 @@ struct CovarSampImpl
 	static inline Float64 apply(Float64 co_moment, UInt64 count)
 	{
 		if (count < 2)
-			return 0.0;
+			return std::numeric_limits<Float64>::infinity();
 		else
 			return co_moment / (count - 1);
 	}
@@ -458,7 +458,9 @@ struct CovarPopImpl
 
 	static inline Float64 apply(Float64 co_moment, UInt64 count)
 	{
-		if (count < 2)
+		if (count == 0)
+			return std::numeric_limits<Float64>::infinity();
+		else if (count == 1)
 			return 0.0;
 		else
 			return co_moment / count;
@@ -473,8 +475,8 @@ struct CorrImpl
 
 	static inline Float64 apply(Float64 co_moment, Float64 left_m2, Float64 right_m2, UInt64 count)
 	{
-		if (count < 2)
-			return 0.0;
+		if (count == 0)
+			return std::numeric_limits<Float64>::infinity();
 		else
 			return co_moment / sqrt(left_m2 * right_m2);
 	}
