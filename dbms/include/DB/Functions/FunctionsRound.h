@@ -113,16 +113,11 @@ namespace DB
 
 		static inline void compute(const Data & in, const Scale & mm_scale, Data & out)
 		{
-			Float32 input[4] __attribute__((aligned(16))) = {in[0], in[1], in[2], in[3]};
-			__m128 mm_value = _mm_load_ps(input);
-
+			__m128 mm_value = _mm_loadu_ps(reinterpret_cast<const Float32 *>(&in));
 			mm_value = _mm_mul_ps(mm_value, mm_scale);
 			mm_value = _mm_round_ps(mm_value, rounding_mode);
 			mm_value = _mm_div_ps(mm_value, mm_scale);
-
-			Float32 res[4] __attribute__((aligned(16)));
-			_mm_store_ps(res, mm_value);
-			out = {res[0], res[1], res[2], res[3]};
+			_mm_storeu_ps(reinterpret_cast<Float32 *>(&out), mm_value);
 		}
 	};
 
@@ -140,16 +135,11 @@ namespace DB
 
 		static inline void compute(const Data & in, const Scale & mm_scale, Data & out)
 		{
-			Float64 input[2] __attribute__((aligned(16))) = { in[0], in[1] };
-			__m128d mm_value = _mm_load_pd(input);
-
+			__m128d mm_value = _mm_loadu_pd(reinterpret_cast<const Float64 *>(&in));
 			mm_value = _mm_mul_pd(mm_value, mm_scale);
 			mm_value = _mm_round_pd(mm_value, rounding_mode);
 			mm_value = _mm_div_pd(mm_value, mm_scale);
-
-			Float64 res[2] __attribute__((aligned(16)));
-			_mm_store_pd(res, mm_value);
-			out = {res[0], res[1]};
+			_mm_storeu_pd(reinterpret_cast<Float64 *>(&out), mm_value);
 		}
 	};
 
