@@ -170,7 +170,7 @@ struct VarSampImpl
 	static inline Float64 apply(Float64 m2, UInt64 count)
 	{
 		if (count < 2)
-			return 0.0;
+			return std::numeric_limits<Float64>::infinity();
 		else
 			return m2 / (count - 1);
 	}
@@ -196,7 +196,9 @@ struct VarPopImpl
 
 	static inline Float64 apply(Float64 m2, UInt64 count)
 	{
-		if (count < 2)
+		if (count == 0)
+			return std::numeric_limits<Float64>::infinity();
+		else if (count == 1)
 			return 0.0;
 		else
 			return m2 / count;
@@ -217,11 +219,13 @@ struct StdDevPopImpl
 
 }
 
+/** Если флаг compute_marginal_moments установлен, этот класс предоставялет наследнику
+  * CovarianceData поддержку маргинальных моментов для вычисления корреляции.
+  */
 template<bool compute_marginal_moments>
 class BaseCovarianceData
 {
 protected:
-	BaseCovarianceData() = default;
 	virtual ~BaseCovarianceData() = default;
 	void incrementMarginalMoments(Float64 left_incr, Float64 right_incr) {}
 	void mergeWith(const BaseCovarianceData & source) {}
@@ -233,7 +237,6 @@ template<>
 class BaseCovarianceData<true>
 {
 protected:
-	BaseCovarianceData() = default;
 	virtual ~BaseCovarianceData() = default;
 
 	void incrementMarginalMoments(Float64 left_incr, Float64 right_incr)
@@ -277,8 +280,6 @@ private:
 	using Base = BaseCovarianceData<compute_marginal_moments>;
 
 public:
-	CovarianceData() = default;
-
 	void update(const IColumn & column_left, const IColumn & column_right, size_t row_num)
 	{
 		T left_received = static_cast<const ColumnVector<T> &>(column_left).getData()[row_num];
