@@ -475,7 +475,7 @@ struct CorrImpl
 
 	static inline Float64 apply(Float64 co_moment, Float64 left_m2, Float64 right_m2, UInt64 count)
 	{
-		if (count == 0)
+		if (count < 2)
 			return std::numeric_limits<Float64>::infinity();
 		else
 			return co_moment / sqrt(left_m2 * right_m2);
