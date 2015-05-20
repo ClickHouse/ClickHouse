@@ -226,7 +226,6 @@ template<bool compute_marginal_moments>
 class BaseCovarianceData
 {
 protected:
-	virtual ~BaseCovarianceData() = default;
 	void incrementMarginalMoments(Float64 left_incr, Float64 right_incr) {}
 	void mergeWith(const BaseCovarianceData & source) {}
 	void serialize(WriteBuffer & buf) const {}
@@ -237,8 +236,6 @@ template<>
 class BaseCovarianceData<true>
 {
 protected:
-	virtual ~BaseCovarianceData() = default;
-
 	void incrementMarginalMoments(Float64 left_incr, Float64 right_incr)
 	{
 		left_m2 += left_incr;
