@@ -217,14 +217,65 @@ struct StdDevPopImpl
 
 }
 
+template<bool compute_marginal_moments>
+class BaseCovarianceData
+{
+protected:
+	BaseCovarianceData() = default;
+	virtual ~BaseCovarianceData() = default;
+	void incrementMarginalMoments(Float64 left_incr, Float64 right_incr) {}
+	void mergeWith(const BaseCovarianceData & source) {}
+	void serialize(WriteBuffer & buf) const {}
+	void deserialize(const ReadBuffer & buf) {}
+};
+
+template<>
+class BaseCovarianceData<true>
+{
+protected:
+	BaseCovarianceData() = default;
+	virtual ~BaseCovarianceData() = default;
+
+	void incrementMarginalMoments(Float64 left_incr, Float64 right_incr)
+	{
+		left_m2 += left_incr;
+		right_m2 += right_incr;
+	}
+
+	void mergeWith(const BaseCovarianceData & source)
+	{
+		left_m2 += source.left_m2;
+		right_m2 += source.right_m2;
+	}
+
+	void serialize(WriteBuffer & buf) const
+	{
+		writeBinary(left_m2, buf);
+		writeBinary(right_m2, buf);
+	}
+
+	void deserialize(ReadBuffer & buf)
+	{
+		readBinary(left_m2, buf);
+		readBinary(right_m2, buf);
+	}
+
+protected:
+	Float64 left_m2 = 0.0;
+	Float64 right_m2 = 0.0;
+};
+
 /** Параллельный и инкрементальный алгоритм для вычисления ковариации.
   * Источник: "Numerically Stable, Single-Pass, Parallel Statistics Algorithms"
   * (J. Bennett et al., Sandia National Laboratories,
   *  2009 IEEE International Conference on Cluster Computing)
   */
 template<typename T, typename U, typename Op, bool compute_marginal_moments>
-class CovarianceData
+class CovarianceData : public BaseCovarianceData<compute_marginal_moments>
 {
+private:
+	using Base = BaseCovarianceData<compute_marginal_moments>;
+
 public:
 	CovarianceData() = default;
 
@@ -246,10 +297,12 @@ public:
 		right_mean += right_delta / count;
 		co_moment += (left_val - left_mean) * (right_val - old_right_mean);
 
+		/// Обновить маргинальные моменты, если они есть.
 		if (compute_marginal_moments)
 		{
-			left_m2 += left_delta * (left_val - left_mean);
-			right_m2 += right_delta * (right_val - right_mean);
+			Float64 left_incr = left_delta * (left_val - left_mean);
+			Float64 right_incr = right_delta * (right_val - right_mean);
+			Base::incrementMarginalMoments(left_incr, right_incr);
 		}
 	}
 
@@ -277,10 +330,13 @@ public:
 		co_moment += source.co_moment + left_delta * right_delta * factor;
 		count = total_count;
 
+		/// Обновить маргинальные моменты, если они есть.
 		if (compute_marginal_moments)
 		{
-			left_m2 += source.left_m2 + left_delta * left_delta * factor;
-			right_m2 += source.right_m2 + right_delta * right_delta * factor;
+			Float64 left_incr = left_delta * left_delta * factor;
+			Float64 right_incr = right_delta * right_delta * factor;
+			Base::mergeWith(source);
+			Base::incrementMarginalMoments(left_incr, right_incr);
 		}
 	}
 
@@ -290,12 +346,7 @@ public:
 		writeBinary(left_mean, buf);
 		writeBinary(right_mean, buf);
 		writeBinary(co_moment, buf);
-
-		if (compute_marginal_moments)
-		{
-			writeBinary(left_m2, buf);
-			writeBinary(right_m2, buf);
-		}
+		Base::serialize(buf);
 	}
 
 	void deserialize(ReadBuffer & buf)
@@ -304,17 +355,19 @@ public:
 		readBinary(left_mean, buf);
 		readBinary(right_mean, buf);
 		readBinary(co_moment, buf);
-
-		if (compute_marginal_moments)
-		{
-			readBinary(left_m2, buf);
-			readBinary(right_m2, buf);
-		}
+		Base::deserialize(buf);
 	}
 
-	void publish(IColumn & to) const
+	template<bool compute = compute_marginal_moments>
+	void publish(IColumn & to, typename std::enable_if<compute>::type * = nullptr) const
 	{
-		static_cast<ColumnFloat64 &>(to).getData().push_back(Op::apply(co_moment, left_m2, right_m2, count));
+		static_cast<ColumnFloat64 &>(to).getData().push_back(Op::apply(co_moment, Base::left_m2, Base::right_m2, count));
+	}
+
+	template<bool compute = compute_marginal_moments>
+	void publish(IColumn & to, typename std::enable_if<!compute>::type * = nullptr) const
+	{
+		static_cast<ColumnFloat64 &>(to).getData().push_back(Op::apply(co_moment, count));
 	}
 
 private:
@@ -322,8 +375,6 @@ private:
 	Float64 left_mean = 0.0;
 	Float64 right_mean = 0.0;
 	Float64 co_moment = 0.0;
-	Float64 left_m2 = 0.0;
-	Float64 right_m2 = 0.0;
 };
 
 template<typename T, typename U, typename Op, bool compute_marginal_moments = false>
@@ -389,7 +440,7 @@ struct CovarSampImpl
 {
 	static constexpr auto name = "covarSamp";
 
-	static inline Float64 apply(Float64 co_moment, Float64 left_m2, Float64 right_m2, UInt64 count)
+	static inline Float64 apply(Float64 co_moment, UInt64 count)
 	{
 		if (count < 2)
 			return 0.0;
@@ -404,7 +455,7 @@ struct CovarPopImpl
 {
 	static constexpr auto name = "covarPop";
 
-	static inline Float64 apply(Float64 co_moment, Float64 left_m2, Float64 right_m2, UInt64 count)
+	static inline Float64 apply(Float64 co_moment, UInt64 count)
 	{
 		if (count < 2)
 			return 0.0;
