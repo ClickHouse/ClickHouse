@@ -1,6 +1,5 @@
 #include <DB/Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <DB/Storages/MergeTree/MergeTreeBlockInputStream.h>
-#include <DB/Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
@@ -63,13 +62,6 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	if (real_column_names.empty())
 		real_column_names.push_back(ExpressionActions::getSmallestColumn(data.getColumnsList()));
 
-	ASTSelectQuery & select = *typeid_cast<ASTSelectQuery*>(&*query);
-
-	/// Try transferring some condition from WHERE to PREWHERE if enabled and viable
-	if (settings.optimize_move_to_prewhere)
-		if (select.where_expression && !select.prewhere_expression)
-			MergeTreeWhereOptimizer{select, data, column_names_to_return, log};
-
 	Block virtual_columns_block = getBlockWithVirtualColumns(parts);
 
 	/// Если запрошен хотя бы один виртуальный столбец, пробуем индексировать
@@ -113,6 +105,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	ASTFunctionPtr filter_function;
 	ExpressionActionsPtr filter_expression;
 	double relative_sample_size = 0;
+
+	ASTSelectQuery & select = *typeid_cast<ASTSelectQuery*>(&*query);
 
 	if (select.sample_size)
 	{
