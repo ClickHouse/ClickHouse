@@ -16,6 +16,7 @@
 #include <DB/AggregateFunctions/AggregateFunctionMerge.h>
 #include <DB/AggregateFunctions/AggregateFunctionDebug.h>
 #include <DB/AggregateFunctions/AggregateFunctionSequenceMatch.h>
+#include <DB/AggregateFunctions/AggregateFunctionsStatistics.h>
 
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
 
@@ -544,6 +545,90 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 
 		return new AggregateFunctionSequenceMatch;
 	}
+	else if (name == "varSamp")
+	{
+		if (argument_types.size() != 1)
+			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionVarSamp>(*argument_types[0]);
+
+		if (!res)
+			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		return res;
+	}
+	else if (name == "varPop")
+	{
+		if (argument_types.size() != 1)
+			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionVarPop>(*argument_types[0]);
+
+		if (!res)
+			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		return res;
+	}
+	else if (name == "stddevSamp")
+	{
+		if (argument_types.size() != 1)
+			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionStdDevSamp>(*argument_types[0]);
+
+		if (!res)
+			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		return res;
+	}
+	else if (name == "stddevPop")
+	{
+		if (argument_types.size() != 1)
+			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionStdDevPop>(*argument_types[0]);
+
+		if (!res)
+			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		return res;
+	}
+	else if (name == "covarSamp")
+	{
+		if (argument_types.size() != 2)
+			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		AggregateFunctionPtr res = createWithTwoNumericTypes<AggregateFunctionCovarSamp>(*argument_types[0], *argument_types[1]);
+		if (!res)
+			throw Exception("Illegal types " + argument_types[0]->getName() + " and " + argument_types[1]->getName()
+				+ " of arguments for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		return res;
+	}
+	else if (name == "covarPop")
+	{
+		if (argument_types.size() != 2)
+			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		AggregateFunctionPtr res = createWithTwoNumericTypes<AggregateFunctionCovarPop>(*argument_types[0], *argument_types[1]);
+		if (!res)
+			throw Exception("Illegal types " + argument_types[0]->getName() + " and " + argument_types[1]->getName()
+				+ " of arguments for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		return res;
+	}
+	else if (name == "corr")
+	{
+		if (argument_types.size() != 2)
+			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		AggregateFunctionPtr res = createWithTwoNumericTypes<AggregateFunctionCorr>(*argument_types[0], *argument_types[1]);
+		if (!res)
+			throw Exception("Illegal types " + argument_types[0]->getName() + " and " + argument_types[1]->getName()
+				+ " of arguments for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		return res;
+	}
 	else if (recursion_level == 0 && name.size() > strlen("State") && !(strcmp(name.data() + name.size() - strlen("State"), "State")))
 	{
 		/// Для агрегатных функций вида aggState, где agg - имя другой агрегатной функции.
@@ -639,7 +724,14 @@ const AggregateFunctionFactory::FunctionNames & AggregateFunctionFactory::getFun
 		"medianTimingWeighted",
 		"quantileDeterministic",
 		"quantilesDeterministic",
-		"sequenceMatch"
+		"sequenceMatch",
+		"varSamp",
+		"varPop",
+		"stddevSamp",
+		"stddevPop",
+		"covarSamp",
+		"covarPop",
+		"corr"
 	};
 
 	return names;
