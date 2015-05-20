@@ -246,7 +246,7 @@ namespace DB
 				Op::compute(tmp, mm_scale, res);
 
 				for (size_t j = 0; (j < data_size) && ((i + j) < size); ++j)
-					out[i + j] = in[i + j];
+					out[i + j] = res[j];
 			}
 		}
 
