@@ -1,10 +1,10 @@
 #include <map>
 #include <set>
+#include <chrono>
 
 #include <Poco/SharedPtr.h>
 #include <Poco/Mutex.h>
 #include <Poco/File.h>
-#include <Poco/Net/NetworkInterface.h>
 
 #include <Yandex/logger_useful.h>
 
@@ -730,7 +730,7 @@ void Context::setMarkCache(size_t cache_size_in_bytes)
 	if (shared->mark_cache)
 		throw Exception("Uncompressed cache has been already created.", ErrorCodes::LOGICAL_ERROR);
 
-	shared->mark_cache.reset(new MarkCache(cache_size_in_bytes));
+	shared->mark_cache.reset(new MarkCache(cache_size_in_bytes, std::chrono::seconds(settings.mark_cache_min_lifetime)));
 }
 
 MarkCachePtr Context::getMarkCache() const
@@ -815,6 +815,12 @@ Cluster & Context::getCluster(const std::string & cluster_name)
 		throw Poco::Exception("Failed to find cluster with name = " + cluster_name);
 }
 
+Poco::SharedPtr<Clusters> Context::getClusters() const
+{
+	if (!shared->clusters)
+		throw Poco::Exception("Clusters have not been initialized yet.");
+	return shared->clusters;
+}
 
 Compiler & Context::getCompiler()
 {

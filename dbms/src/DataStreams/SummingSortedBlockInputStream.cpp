@@ -142,16 +142,16 @@ Block SummingSortedBlockInputStream::readImpl()
 	}
 
 	if (has_collation)
-		merge(merged_block, merged_columns, queue_with_collation);
+		merge(merged_columns, queue_with_collation);
 	else
-		merge(merged_block, merged_columns, queue);
+		merge(merged_columns, queue);
 
 	return merged_block;
 }
 
 
 template<class TSortCursor>
-void SummingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
+void SummingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
 {
 	size_t merged_rows = 0;
 
@@ -159,11 +159,18 @@ void SummingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs 
 	while (!queue.empty())
 	{
 		TSortCursor current = queue.top();
-		queue.pop();
 
 		setPrimaryKey(next_key, current);
 
-		if (next_key != current_key)
+		bool key_differs = next_key != current_key;
+
+		/// если накопилось достаточно строк и последняя посчитана полностью
+		if (key_differs && merged_rows >= max_block_size)
+			return;
+
+		queue.pop();
+
+		if (key_differs)
 		{
 			/// Запишем данные для предыдущей группы.
 			if (!current_key[0].isNull() && !current_row_is_zero)
@@ -194,9 +201,6 @@ void SummingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs 
 			/// Достаём из соответствующего источника следующий блок, если есть.
 			fetchNextBlock(current, queue);
 		}
-
-		if (merged_rows >= max_block_size)
-			return;
 	}
 
 	/// Запишем данные для последней группы, если она ненулевая.

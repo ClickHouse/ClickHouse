@@ -111,15 +111,15 @@ Block MergingSortedBlockInputStream::readImpl()
 		return Block();
 
 	if (has_collation)
-		merge(merged_block, merged_columns, queue_with_collation);
+		merge(merged_columns, queue_with_collation);
 	else
-		merge(merged_block, merged_columns, queue);
+		merge(merged_columns, queue);
 
 	return merged_block;
 }
 
 template <typename TSortCursor>
-void MergingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
+void MergingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
 {
 	size_t merged_rows = 0;
 

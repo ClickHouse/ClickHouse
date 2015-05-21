@@ -34,10 +34,6 @@ WriteBufferAIO::WriteBufferAIO(const std::string & filename_, size_t buffer_size
 		auto error_code = (errno == ENOENT) ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE;
 		throwFromErrno("Cannot open file " + filename, error_code);
 	}
-
-	ProfileEvents::increment(ProfileEvents::FileOpen);
-
-	::memset(&request, 0, sizeof(request));
 }
 
 WriteBufferAIO::~WriteBufferAIO()
@@ -61,15 +57,6 @@ WriteBufferAIO::~WriteBufferAIO()
 off_t WriteBufferAIO::getPositionInFile()
 {
 	return seek(0, SEEK_CUR);
-}
-
-void WriteBufferAIO::truncate(off_t length)
-{
-	flush();
-
-	int res = ::ftruncate(fd, length);
-	if (res == -1)
-		throwFromErrno("Cannot truncate file " + filename, ErrorCodes::CANNOT_TRUNCATE_FILE);
 }
 
 void WriteBufferAIO::sync()
@@ -140,6 +127,15 @@ off_t WriteBufferAIO::doSeek(off_t off, int whence)
 		max_pos_in_file = pos_in_file;
 
 	return pos_in_file;
+}
+
+void WriteBufferAIO::doTruncate(off_t length)
+{
+	flush();
+
+	int res = ::ftruncate(fd, length);
+	if (res == -1)
+		throwFromErrno("Cannot truncate file " + filename, ErrorCodes::CANNOT_TRUNCATE_FILE);
 }
 
 void WriteBufferAIO::flush()
@@ -342,14 +338,21 @@ void WriteBufferAIO::prepare()
 			if (read_count < 0)
 				throw Exception("Read error", ErrorCodes::AIO_READ_ERROR);
 
+			Position truncation_begin;
 			off_t offset = DEFAULT_AIO_FILE_BLOCK_SIZE - region_right_padding;
 			if (read_count > offset)
 			{
 				::memcpy(buffer_end, memory_page + offset, read_count - offset);
+				truncation_begin = buffer_end + (read_count - offset);
 				truncation_count = DEFAULT_AIO_FILE_BLOCK_SIZE - read_count;
 			}
 			else
+			{
+				truncation_begin = buffer_end;
 				truncation_count = region_right_padding;
+			}
+
+			::memset(truncation_begin, 0, truncation_count);
 		}
 	}
 }

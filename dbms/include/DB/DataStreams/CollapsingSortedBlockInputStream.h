@@ -81,7 +81,7 @@ private:
 	 *  Шаблоны используем вместо полиморфных SortCursor'ов и вызовов виртуальных функций.
 	 */
 	template<class TSortCursor>
-	void merge(Block & merged_block, ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
+	void merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
 
 	/// Вставить в результат строки для текущего идентификатора "визита".
 	void insertRows(ColumnPlainPtrs & merged_columns, size_t & merged_rows, bool last_in_stream = false);

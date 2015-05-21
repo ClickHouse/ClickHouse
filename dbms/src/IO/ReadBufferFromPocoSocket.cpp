@@ -4,6 +4,7 @@
 #include <DB/Core/ErrorCodes.h>
 
 #include <DB/IO/ReadBufferFromPocoSocket.h>
+#include <statdaemons/NetException.h>
 
 
 namespace DB
@@ -20,19 +21,19 @@ bool ReadBufferFromPocoSocket::nextImpl()
 	}
 	catch (const Poco::Net::NetException & e)
 	{
-		throw Exception(e.displayText(), "while reading from socket (" + peer_address.toString() + ")", ErrorCodes::NETWORK_ERROR);
+		throw NetException(e.displayText(), "while reading from socket (" + peer_address.toString() + ")", ErrorCodes::NETWORK_ERROR);
 	}
 	catch (const Poco::TimeoutException & e)
 	{
-		throw Exception("Timeout exceeded while reading from socket (" + peer_address.toString() + ")", ErrorCodes::SOCKET_TIMEOUT);
+		throw NetException("Timeout exceeded while reading from socket (" + peer_address.toString() + ")", ErrorCodes::SOCKET_TIMEOUT);
 	}
 	catch (const Poco::IOException & e)
 	{
-		throw Exception(e.displayText(), "while reading from socket (" + peer_address.toString() + ")", ErrorCodes::NETWORK_ERROR);
+		throw NetException(e.displayText(), "while reading from socket (" + peer_address.toString() + ")", ErrorCodes::NETWORK_ERROR);
 	}
 
 	if (bytes_read < 0)
-		throw Exception("Cannot read from socket (" + peer_address.toString() + ")", ErrorCodes::CANNOT_READ_FROM_SOCKET);
+		throw NetException("Cannot read from socket (" + peer_address.toString() + ")", ErrorCodes::CANNOT_READ_FROM_SOCKET);
 
 	if (bytes_read)
 		working_buffer.resize(bytes_read);

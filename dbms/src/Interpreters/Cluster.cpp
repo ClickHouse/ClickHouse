@@ -3,7 +3,6 @@
 #include <DB/Common/isLocalAddress.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
-#include <Poco/Net/NetworkInterface.h>
 
 namespace DB
 {
@@ -13,8 +12,9 @@ Cluster::Address::Address(const String & config_prefix)
 {
 	auto & config = Poco::Util::Application::instance().config();
 
+	host_name = config.getString(config_prefix + ".host");
 	host_port = Poco::Net::SocketAddress(
-		config.getString(config_prefix + ".host"),
+		host_name,
 		config.getInt(config_prefix + ".port")
 	);
 
@@ -68,6 +68,8 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 
 	const auto & config_prefix = cluster_name + ".";
 
+	UInt32 current_shard_num = 1;
+
 	for (auto it = config_keys.begin(); it != config_keys.end(); ++it)
 	{
 		if (0 == strncmp(it->c_str(), "node", strlen("node")))
@@ -78,12 +80,13 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 				continue;
 
 			addresses.emplace_back(prefix);
+			addresses.back().replica_num = 1;
 
 			slot_to_shard.insert(std::end(slot_to_shard), weight, shard_info_vec.size());
 			if (const auto is_local = isLocal(addresses.back()))
-				shard_info_vec.push_back({{}, weight, is_local});
+				shard_info_vec.push_back({{}, current_shard_num, weight, is_local});
 			else
-				shard_info_vec.push_back({{addressToDirName(addresses.back())}, weight, is_local});
+				shard_info_vec.push_back({{addressToDirName(addresses.back())}, current_shard_num, weight, is_local});
 		}
 		else if (0 == strncmp(it->c_str(), "shard", strlen("shard")))
 		{
@@ -92,6 +95,7 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 
 			addresses_with_failover.emplace_back();
 			Addresses & replica_addresses = addresses_with_failover.back();
+			UInt32 current_replica_num = 1;
 
 			const auto & partial_prefix = config_prefix + *it + ".";
 			const auto weight = config.getInt(partial_prefix + ".weight", 1);
@@ -116,6 +120,8 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 				if (0 == strncmp(jt->c_str(), "replica", strlen("replica")))
 				{
 					replica_addresses.emplace_back(partial_prefix + *jt);
+					replica_addresses.back().replica_num = current_replica_num;
+					++current_replica_num;
 
 					if (isLocal(replica_addresses.back()))
 					{
@@ -142,10 +148,12 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 			}
 
 			slot_to_shard.insert(std::end(slot_to_shard), weight, shard_info_vec.size());
-			shard_info_vec.push_back({std::move(dir_names), weight, num_local_nodes});
+			shard_info_vec.push_back({std::move(dir_names), current_shard_num, weight, num_local_nodes});
 		}
 		else
 			throw Exception("Unknown element in config: " + *it, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+
+		++current_shard_num;
 	}
 
 	if (!addresses_with_failover.empty() && !addresses.empty())

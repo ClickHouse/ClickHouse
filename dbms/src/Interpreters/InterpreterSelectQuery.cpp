@@ -24,6 +24,7 @@
 #include <DB/Parsers/ASTOrderByElement.h>
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>
+#include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Storages/StorageView.h>
 #include <DB/TableFunctions/ITableFunction.h>
 #include <DB/TableFunctions/TableFunctionFactory.h>
@@ -32,6 +33,9 @@
 
 namespace DB
 {
+
+InterpreterSelectQuery::~InterpreterSelectQuery() = default;
+
 
 void InterpreterSelectQuery::init(BlockInputStreamPtr input, const Names & required_column_names, const NamesAndTypesList & table_column_names)
 {
@@ -269,10 +273,9 @@ DataTypes InterpreterSelectQuery::getReturnTypes()
 {
 	DataTypes res;
 	NamesAndTypesList columns = query_analyzer->getSelectSampleBlock().getColumnsList();
-	for (NamesAndTypesList::iterator it = columns.begin(); it != columns.end(); ++it)
-	{
-		res.push_back(it->type);
-	}
+	for (auto & column : columns)
+		res.push_back(column.type);
+
 	return res;
 }
 
@@ -499,7 +502,7 @@ void InterpreterSelectQuery::executeSingleQuery()
 
 		if (second_stage)
 		{
-			bool need_second_distinct_pass = true;
+			bool need_second_distinct_pass = query.distinct;
 
 			if (need_aggregate)
 			{
@@ -515,7 +518,7 @@ void InterpreterSelectQuery::executeSingleQuery()
 				executeExpression(streams, before_order_and_select);
 				executeDistinct(streams, true, selected_columns);
 
-				need_second_distinct_pass = streams.size() > 1;
+				need_second_distinct_pass = query.distinct && (streams.size() > 1);
 			}
 			else if (query.group_by_with_totals && !aggregate_final)
 			{
@@ -547,6 +550,9 @@ void InterpreterSelectQuery::executeSingleQuery()
 				*/
 			if (query.limit_length && streams.size() > 1 && !query.distinct)
 				executePreLimit(streams);
+
+			if (need_second_distinct_pass)
+				union_within_single_query = true;
 
 			if (union_within_single_query)
 				executeUnion(streams);
@@ -610,6 +616,8 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 
 		interpreter_subquery = new InterpreterSelectQuery(
 			query.table, subquery_context, required_columns, QueryProcessingStage::Complete, subquery_depth + 1);
+
+		/// Если во внешнем запросе есть аггрегация, то WITH TOTALS игнорируется в подзапросе.
 		if (query_analyzer->hasAggregation())
 			interpreter_subquery->ignoreWithTotals();
 	}
@@ -640,9 +648,13 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	 *  - эти настройки будут переданы на удалённые серверы при распределённой обработке запроса,
 	 *  и там должно быть оригинальное значение max_threads, а не увеличенное.
 	 */
+	bool is_remote = false;
 	Settings settings_for_storage = settings;
 	if (storage && storage->isRemote())
+	{
+		is_remote = true;
 		settings.max_threads = settings.max_distributed_connections;
+	}
 
 	/// Ограничение на количество столбцов для чтения.
 	if (settings.limits.max_columns_to_read && required_columns.size() > settings.limits.max_columns_to_read)
@@ -657,7 +669,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 
 	/** Оптимизация - если не указаны DISTINCT, WHERE, GROUP, HAVING, ORDER, но указан LIMIT, и limit + offset < max_block_size,
 	 *  то в качестве размера блока будем использовать limit + offset (чтобы не читать из таблицы больше, чем запрошено),
-	 *  а также установим количество потоков в 1 и отменим асинхронное выполнение конвейера запроса.
+	 *  а также установим количество потоков в 1.
 	 */
 	if (!query.distinct
 		&& !query.prewhere_expression
@@ -680,9 +692,15 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 	/// Инициализируем изначальные потоки данных, на которые накладываются преобразования запроса. Таблица или подзапрос?
 	if (!interpreter_subquery)
 	{
+		size_t max_streams = settings.max_threads;
+
+		/// Если надо - запрашиваем больше источников, чем количество потоков - для более равномерного распределения работы по потокам.
+		if (max_streams > 1 && !is_remote)
+			max_streams *= settings.max_streams_to_max_threads_ratio;
+
 		streams = storage->read(required_columns, query_ptr,
 			context, settings_for_storage, from_stage,
-			settings.max_block_size, settings.max_threads);
+			settings.max_block_size, max_streams);
 
 		for (auto & stream : streams)
 			stream->addTableLock(table_lock);
@@ -1001,6 +1019,12 @@ BlockInputStreamPtr InterpreterSelectQuery::executeAndFormat(WriteBuffer & buf)
 	copyData(*in, *out);
 
 	return in;
+}
+
+
+void InterpreterSelectQuery::ignoreWithTotals()
+{
+	query.group_by_with_totals = false;
 }
 
 

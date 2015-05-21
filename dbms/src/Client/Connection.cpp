@@ -21,6 +21,8 @@
 
 #include <DB/Client/Connection.h>
 
+#include <statdaemons/NetException.h>
+
 
 namespace DB
 {
@@ -58,14 +60,14 @@ void Connection::connect()
 		disconnect();
 
 		/// Добавляем в сообщение адрес сервера. Также объект Exception запомнит stack trace. Жаль, что более точный тип исключения теряется.
-		throw Exception(e.displayText(), "(" + getServerAddress() + ")", ErrorCodes::NETWORK_ERROR);
+		throw NetException(e.displayText(), "(" + getServerAddress() + ")", ErrorCodes::NETWORK_ERROR);
 	}
 	catch (Poco::TimeoutException & e)
 	{
 		disconnect();
 
 		/// Добавляем в сообщение адрес сервера. Также объект Exception запомнит stack trace. Жаль, что более точный тип исключения теряется.
-		throw Exception(e.displayText(), "(" + getServerAddress() + ")", ErrorCodes::SOCKET_TIMEOUT);
+		throw NetException(e.displayText(), "(" + getServerAddress() + ")", ErrorCodes::SOCKET_TIMEOUT);
 	}
 }
 
@@ -125,7 +127,7 @@ void Connection::receiveHello()
 		/// Закроем соединение, чтобы не было рассинхронизации.
 		disconnect();
 
-		throw Exception("Unexpected packet from server " + getServerAddress() + " (expected Hello or Exception, got "
+		throw NetException("Unexpected packet from server " + getServerAddress() + " (expected Hello or Exception, got "
 			+ String(Protocol::Server::toString(packet_type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
 	}
 }

@@ -2,6 +2,7 @@
 #include <DB/Storages/MergeTree/MergeTreeBlockOutputStream.h>
 #include <DB/Storages/MergeTree/DiskSpaceMonitor.h>
 #include <DB/Storages/MergeTree/MergeList.h>
+#include <DB/Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <DB/Common/escapeForFileName.h>
 #include <DB/Interpreters/InterpreterAlterQuery.h>
 #include <Poco/DirectoryIterator.h>
@@ -98,6 +99,13 @@ BlockInputStreams StorageMergeTree::read(
 	const size_t max_block_size,
 	const unsigned threads)
 {
+	ASTSelectQuery & select = *typeid_cast<ASTSelectQuery*>(&*query);
+
+	/// Try transferring some condition from WHERE to PREWHERE if enabled and viable
+	if (settings.optimize_move_to_prewhere)
+		if (select.where_expression && !select.prewhere_expression)
+			MergeTreeWhereOptimizer{select, data, column_names, log};
+
 	return reader.read(column_names, query, context, settings, processed_stage, max_block_size, threads);
 }
 
@@ -262,7 +270,8 @@ void StorageMergeTree::dropPartition(const Field & partition, bool detach, bool 
 	/// Просит завершить мерджи и не позволяет им начаться.
 	/// Это защищает от "оживания" данных за удалённую партицию после завершения мерджа.
 	const MergeTreeMergeBlocker merge_blocker{merger};
-	auto structure_lock = lockStructure(true);
+	/// Дожидается завершения мерджей и не даёт начаться новым.
+	auto lock = lockForAlter();
 
 	DayNum_t month = MergeTreeData::getMonthDayNum(partition);
 
