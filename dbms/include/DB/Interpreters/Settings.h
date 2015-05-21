@@ -72,7 +72,7 @@ struct Settings
 	M(SettingMilliseconds, distributed_directory_monitor_sleep_time_ms, DBMS_DISTRIBUTED_DIRECTORY_MONITOR_SLEEP_TIME_MS) \
 	\
 	/** Allows disabling WHERE to PREWHERE optimization in SELECT queries from MergeTree */ \
-	M(SettingBool, optimize_move_to_prewhere, false) \
+	M(SettingBool, optimize_move_to_prewhere, true) \
 	\
 	/** Ожидать выполнения действий по манипуляции с партициями. 0 - не ждать, 1 - ждать выполнения только у себя, 2 - ждать всех. */ \
 	M(SettingUInt64, replication_alter_partitions_sync, 1) \
