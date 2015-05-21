@@ -41,14 +41,14 @@ public:
 	bool isNumeric() const override { return IsNumber<T>::value; }
 	bool isFixed() const override { return IsNumber<T>::value; }
 	size_t sizeOfField() const override { return sizeof(T); }
-	ColumnPtr cloneResized(size_t s_) const override { return new ColumnConst(s_, data); }
+	ColumnPtr cloneResized(size_t s_) const override { return new ColumnConst(s_, data, data_type); }
 	size_t size() const override { return s; }
 	Field operator[](size_t n) const override { return FieldType(data); }
 	void get(size_t n, Field & res) const override { res = FieldType(data); }
 
 	ColumnPtr cut(size_t start, size_t length) const override
 	{
-		return new ColumnConst<T>(length, data, data_type);
+		return new ColumnConst(length, data, data_type);
 	}
 
 	void insert(const Field & x) override
@@ -79,7 +79,7 @@ public:
 		if (s != filt.size())
 			throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-		return new ColumnConst<T>(countBytesInFilter(filt), data, data_type);
+		return new ColumnConst(countBytesInFilter(filt), data, data_type);
 	}
 
 	ColumnPtr replicate(const Offsets_t & offsets) const override
@@ -88,7 +88,7 @@ public:
 			throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
 		size_t replicated_size = 0 == s ? 0 : offsets.back();
-		return new ColumnConst<T>(replicated_size, data, data_type);
+		return new ColumnConst(replicated_size, data, data_type);
 	}
 
 	size_t byteSize() const override { return sizeof(data) + sizeof(s); }
@@ -103,7 +103,7 @@ public:
 		if (perm.size() < limit)
 			throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-		return new ColumnConst<T>(limit, data, data_type);
+		return new ColumnConst(limit, data, data_type);
 	}
 
 	int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override

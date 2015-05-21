@@ -2,13 +2,16 @@
 
 #include <DB/Core/QueryProcessingStage.h>
 #include <DB/Interpreters/Context.h>
-#include <DB/Interpreters/ExpressionAnalyzer.h>
+#include <DB/Interpreters/ExpressionActions.h>
 #include <DB/DataStreams/IBlockInputStream.h>
-#include <DB/Parsers/ASTSelectQuery.h>
-#include <DB/TableFunctions/ITableFunction.h>
 
 namespace DB
 {
+
+class ExpressionAnalyzer;
+class ASTSelectQuery;
+class SubqueryForSet;
+
 
 /** Интерпретирует запрос SELECT. Возвращает поток блоков с результатами выполнения запроса до стадии to_stage.
   */
@@ -57,6 +60,8 @@ public:
 		QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
 		size_t subquery_depth_ = 0,
 		BlockInputStreamPtr input = nullptr);
+
+	~InterpreterSelectQuery();
 
 	/** Выполнить запрос, возможно являющиийся цепочкой UNION ALL.
 	 *  Получить поток блоков для чтения
@@ -121,9 +126,9 @@ private:
 	void executeLimit(                   BlockInputStreams & streams);
 	void executeProjection(              BlockInputStreams & streams, ExpressionActionsPtr expression);
 	void executeDistinct(                BlockInputStreams & streams, bool before_order, Names columns);
-	void executeSubqueriesInSetsAndJoins(BlockInputStreams & streams, SubqueriesForSets & subqueries_for_sets);
+	void executeSubqueriesInSetsAndJoins(BlockInputStreams & streams, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
 
-	void ignoreWithTotals() { query.group_by_with_totals = false; }
+	void ignoreWithTotals();
 
 	ASTPtr query_ptr;
 	ASTSelectQuery & query;

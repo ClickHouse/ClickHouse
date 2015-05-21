@@ -50,7 +50,7 @@ protected:
 	Block readImpl() override;
 
 private:
-	Logger * log = &Logger::get("SummingSortedBlockInputStream");
+	Logger * log = &Logger::get("AggregatingSortedBlockInputStream");
 
 	/// Прочитали до конца.
 	bool finished = false;
@@ -68,7 +68,7 @@ private:
 	 *  Шаблоны используем вместо полиморфных SortCursor'ов и вызовов виртуальных функций.
 	 */
 	template<class TSortCursor>
-	void merge(Block & merged_block, ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
+	void merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
 
 	/// Вставить в результат первую строку для текущей группы.
 	void insertCurrentRow(ColumnPlainPtrs & merged_columns);
