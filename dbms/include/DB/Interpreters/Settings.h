@@ -129,6 +129,9 @@ struct Settings
 	  *  но чтобы каждый источник динамически выбирал себе доступную работу. \
 	  */ \
 	M(SettingFloat, max_streams_to_max_threads_ratio, 1) \
+	\
+	/** Позволяет выбирать метод сжатия данных при записи */\
+	M(SettingNetworkCompressionMethod, network_compression_method, CompressionMethod::LZ4) \
 
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;

@@ -4,7 +4,7 @@
 #include <DB/IO/WriteHelpers.h>
 #include <Poco/Timespan.h>
 #include <cpuid/libcpuid.h>
-
+#include <DB/IO/CompressedStream.h>
 
 namespace DB
 {
@@ -534,5 +534,66 @@ struct SettingOverflowMode
 	}
 };
 
+struct SettingNetworkCompressionMethod
+{
+	CompressionMethod value;
+	bool changed = false;
 
+	SettingNetworkCompressionMethod(CompressionMethod x = CompressionMethod::LZ4) : value(x) {}
+
+	operator CompressionMethod() const { return value; }
+	SettingNetworkCompressionMethod & operator= (CompressionMethod x) { set(x); return *this; }
+
+	static CompressionMethod getCompressionMethod(const String & s)
+	{
+		if (s == "quicklz")
+			return CompressionMethod::QuickLZ;
+		if (s == "lz4")
+			return CompressionMethod::LZ4;
+		if (s == "lz4hc")
+			return CompressionMethod::LZ4HC;
+		if (s == "zstd")
+			return CompressionMethod::ZSTD;
+
+		throw Exception("Unknown network compression method: '" + s + "', must be one of 'quicklz', 'lz4', 'lz4hc', 'zstd' ", ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
+	}
+
+	String toString() const
+	{
+		const char * strings[] = { "quicklz", "lz4", "lz4hc", "zstd" };
+
+		if (value < CompressionMethod::QuickLZ || value > CompressionMethod::ZSTD)
+			throw Exception("Unknown compression method", ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
+
+		return strings[static_cast<size_t>(value)];
+	}
+
+	void set(CompressionMethod x)
+	{
+		value = x;
+		changed = true;
+	}
+
+	void set(const Field & x)
+	{
+		set(safeGet<const String &>(x));
+	}
+
+	void set(const String & x)
+	{
+		set(getCompressionMethod(x));
+	}
+
+	void set(ReadBuffer & buf)
+	{
+		String x;
+		readBinary(x, buf);
+		set(x);
+	}
+
+	void write(WriteBuffer & buf) const
+	{
+		writeBinary(toString(), buf);
+	}
+};
 }
