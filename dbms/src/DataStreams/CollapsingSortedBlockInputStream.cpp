@@ -104,15 +104,15 @@ Block CollapsingSortedBlockInputStream::readImpl()
 	}
 
 	if (has_collation)
-		merge(merged_block, merged_columns, queue_with_collation);
+		merge(merged_columns, queue_with_collation);
 	else
-		merge(merged_block, merged_columns, queue);
+		merge(merged_columns, queue);
 
 	return merged_block;
 }
 
 template<class TSortCursor>
-void CollapsingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
+void CollapsingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
 {
 	size_t merged_rows = 0;
 
@@ -120,12 +120,22 @@ void CollapsingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPt
 	while (!queue.empty())
 	{
 		TSortCursor current = queue.top();
-		queue.pop();
 
 		Int8 sign = get<Int64>((*current->all_columns[sign_column_number])[current->pos]);
 		setPrimaryKey(next_key, current);
 
-		if (next_key != current_key)
+		bool key_differs = next_key != current_key;
+
+		/// если накопилось достаточно строк и последняя посчитана полностью
+		if (key_differs && merged_rows >= max_block_size)
+		{
+			++blocks_written;
+			return;
+		}
+
+		queue.pop();
+
+		if (key_differs)
 		{
 			/// Запишем данные для предыдущего визита.
 			insertRows(merged_columns, merged_rows);
@@ -167,12 +177,6 @@ void CollapsingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPt
 		{
 			/// Достаём из соответствующего источника следующий блок, если есть.
 			fetchNextBlock(current, queue);
-		}
-
-		if (merged_rows >= max_block_size)
-		{
-			++blocks_written;
-			return;
 		}
 	}
 

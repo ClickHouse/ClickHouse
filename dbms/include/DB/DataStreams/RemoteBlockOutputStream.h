@@ -5,6 +5,7 @@
 #include <DB/Client/Connection.h>
 #include <Yandex/logger_useful.h>
 
+#include <statdaemons/NetException.h>
 
 namespace DB
 {
@@ -50,7 +51,7 @@ public:
 			return;
 		}
 		else
-			throw Exception("Unexpected packet from server (expected Data or Exception, got "
+			throw NetException("Unexpected packet from server (expected Data or Exception, got "
 				+ String(Protocol::Server::toString(packet.type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
 	}
 
@@ -97,7 +98,7 @@ public:
 		else if (Protocol::Server::Exception == packet.type)
 			packet.exception->rethrow();
 		else
-			throw Exception("Unexpected packet from server (expected EndOfStream or Exception, got "
+			throw NetException("Unexpected packet from server (expected EndOfStream or Exception, got "
 				+ String(Protocol::Server::toString(packet.type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
 	}
 

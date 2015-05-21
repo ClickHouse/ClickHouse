@@ -61,7 +61,7 @@ struct Limits
 	M(SettingUInt64, max_subquery_depth, 100) \
 	M(SettingUInt64, max_pipeline_depth, 1000) \
 	M(SettingUInt64, max_ast_depth, 1000)		/** Проверяются не во время парсинга, */ \
-	M(SettingUInt64, max_ast_elements, 10000)	/**  а уже после парсинга запроса. */ \
+	M(SettingUInt64, max_ast_elements, 50000)	/**  а уже после парсинга запроса. */ \
 	\
 	/** 0 - можно всё. 1 - только запросы на чтение. 2 - только запросы на чтение, а также изменение настроек, кроме настройки readonly. */ \
 	M(SettingUInt64, readonly, 0) \

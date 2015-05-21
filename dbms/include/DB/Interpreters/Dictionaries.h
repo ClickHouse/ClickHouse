@@ -134,12 +134,18 @@ private:
 
 public:
 	/// Справочники будут обновляться в отдельном потоке, каждые reload_period секунд.
-	Dictionaries(const bool throw_on_error, const int reload_period_ = 3600)
+	Dictionaries(const bool throw_on_error, const int reload_period_)
 		: reload_period(reload_period_), log(&Logger::get("Dictionaries"))
 	{
 		reloadImpl(throw_on_error);
 		reloading_thread = std::thread([this] { reloadPeriodically(); });
 	}
+
+	Dictionaries(const bool throw_on_error)
+		: Dictionaries(throw_on_error,
+					   Application::instance().config()
+						   .getInt("builtin_dictionaries_reload_interval", 3600))
+	{}
 
 	~Dictionaries()
 	{

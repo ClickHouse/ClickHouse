@@ -27,6 +27,7 @@ StorageSystemDictionaries::StorageSystemDictionaries(const std::string & name)
 		  { "attribute.types", new DataTypeArray{new DataTypeString} },
 		  { "has_hierarchy", new DataTypeUInt8 },
 		  { "bytes_allocated", new DataTypeUInt64 },
+		  { "query_count", new DataTypeUInt64 },
 		  { "hit_rate", new DataTypeFloat64 },
 		  { "element_count", new DataTypeUInt64 },
 		  { "load_factor", new DataTypeFloat64 },
@@ -69,6 +70,7 @@ BlockInputStreams StorageSystemDictionaries::read(
 	};
 	ColumnWithNameAndType col_has_hierarchy{new ColumnUInt8, new DataTypeUInt8, "has_hierarchy"};
 	ColumnWithNameAndType col_bytes_allocated{new ColumnUInt64, new DataTypeUInt64, "bytes_allocated"};
+	ColumnWithNameAndType col_query_count{new ColumnUInt64, new DataTypeUInt64, "query_count"};
 	ColumnWithNameAndType col_hit_rate{new ColumnFloat64, new DataTypeFloat64, "hit_rate"};
 	ColumnWithNameAndType col_element_count{new ColumnUInt64, new DataTypeUInt64, "element_count"};
 	ColumnWithNameAndType col_load_factor{new ColumnFloat64, new DataTypeFloat64, "load_factor"};
@@ -97,6 +99,7 @@ BlockInputStreams StorageSystemDictionaries::read(
 		}));
 		col_has_hierarchy.column->insert(UInt64{dict_ptr->hasHierarchy()});
 		col_bytes_allocated.column->insert(dict_ptr->getBytesAllocated());
+		col_query_count.column->insert(dict_ptr->getQueryCount());
 		col_hit_rate.column->insert(dict_ptr->getHitRate());
 		col_element_count.column->insert(dict_ptr->getElementCount());
 		col_load_factor.column->insert(dict_ptr->getLoadFactor());
@@ -140,6 +143,7 @@ BlockInputStreams StorageSystemDictionaries::read(
 		col_attribute_types,
 		col_has_hierarchy,
 		col_bytes_allocated,
+		col_query_count,
 		col_hit_rate,
 		col_element_count,
 		col_load_factor,

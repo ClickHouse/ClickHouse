@@ -85,13 +85,6 @@ public:
 		return seek(0, SEEK_CUR);
 	}
 
-	void truncate(off_t length = 0) override
-	{
-		int res = ftruncate(fd, length);
-		if (-1 == res)
-			throwFromErrno("Cannot truncate file " + getFileName(), ErrorCodes::CANNOT_TRUNCATE_FILE);
-	}
-
 	void sync() override
 	{
 		/// Если в буфере ещё остались данные - запишем их.
@@ -110,6 +103,13 @@ private:
 		if (-1 == res)
 			throwFromErrno("Cannot seek through file " + getFileName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 		return res;
+	}
+
+	void doTruncate(off_t length) override
+	{
+		int res = ftruncate(fd, length);
+		if (-1 == res)
+			throwFromErrno("Cannot truncate file " + getFileName(), ErrorCodes::CANNOT_TRUNCATE_FILE);
 	}
 };
 

@@ -7,6 +7,7 @@
 
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/BufferWithOwnMemory.h>
+#include <statdaemons/NetException.h>
 
 
 namespace DB
@@ -38,7 +39,7 @@ private:
 		ostr->flush();
 
 		if (!ostr->good())
-			throw Exception("Cannot write to ostream", ErrorCodes::CANNOT_WRITE_TO_OSTREAM);
+			throw NetException("Cannot write to ostream", ErrorCodes::CANNOT_WRITE_TO_OSTREAM);
 	}
 
 public:

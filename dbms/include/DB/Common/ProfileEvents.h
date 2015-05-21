@@ -66,6 +66,9 @@
 	M(DistributedConnectionFailTry) \
 	M(DistributedConnectionFailAtAll) \
 	\
+	M(CompileAttempt) \
+	M(CompileSuccess) \
+	\
 	M(END)
 
 namespace ProfileEvents

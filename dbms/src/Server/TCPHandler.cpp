@@ -27,6 +27,7 @@
 
 #include "TCPHandler.h"
 
+#include <statdaemons/NetException.h>
 
 namespace DB
 {
@@ -443,7 +444,7 @@ void TCPHandler::receiveHello()
 			throw Exception("Client has connected to wrong port", ErrorCodes::CLIENT_HAS_CONNECTED_TO_WRONG_PORT);
 		}
 		else
-			throw Exception("Unexpected packet from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+			throw NetException("Unexpected packet from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
 	}
 
 	readStringBinary(client_name, *in);
@@ -492,13 +493,13 @@ bool TCPHandler::receivePacket()
 	{
 		case Protocol::Client::Query:
 			if (!state.empty())
-				throw Exception("Unexpected packet Query received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+				throw NetException("Unexpected packet Query received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
 			receiveQuery();
 			return true;
 
 		case Protocol::Client::Data:
 			if (state.empty())
-				throw Exception("Unexpected packet Data received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+				throw NetException("Unexpected packet Data received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
 			return receiveData();
 
 		case Protocol::Client::Ping:
@@ -647,13 +648,13 @@ bool TCPHandler::isQueryCancelled()
 		{
 			case Protocol::Client::Cancel:
 				if (state.empty())
-					throw Exception("Unexpected packet Cancel received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+					throw NetException("Unexpected packet Cancel received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
 				LOG_INFO(log, "Query was cancelled.");
 				state.is_cancelled = true;
 				return true;
 
 			default:
-				throw Exception("Unknown packet from client", ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
+				throw NetException("Unknown packet from client", ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
 		}
 	}
 

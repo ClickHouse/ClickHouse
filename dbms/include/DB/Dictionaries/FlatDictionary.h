@@ -6,6 +6,7 @@
 #include <DB/Columns/ColumnString.h>
 #include <DB/Common/Arena.h>
 #include <statdaemons/ext/range.hpp>
+#include <atomic>
 #include <vector>
 #include <tuple>
 
@@ -39,6 +40,8 @@ public:
 
 	std::size_t getBytesAllocated() const override { return bytes_allocated; }
 
+	std::size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
+
 	double getHitRate() const override { return 1.0; }
 
 	std::size_t getElementCount() const override { return element_count; }
@@ -60,12 +63,19 @@ public:
 		return creation_time;
 	}
 
+	bool isInjective(const std::string & attribute_name) const override
+	{
+		return dict_struct.attributes[&getAttribute(attribute_name) - attributes.data()].injective;
+	}
+
 	bool hasHierarchy() const override { return hierarchical_attribute; }
 
 	id_t toParent(const id_t id) const override
 	{
 		const auto attr = hierarchical_attribute;
 		const auto & array = *std::get<std::unique_ptr<PODArray<UInt64>>>(attr->arrays);
+
+		query_count.fetch_add(1, std::memory_order_relaxed);
 
 		return id < array.size() ? array[id] : std::get<UInt64>(attr->null_values);
 	}
@@ -86,6 +96,8 @@ public:
 			};\
 		\
 		const auto & array = *std::get<std::unique_ptr<PODArray<TYPE>>>(attribute.arrays);\
+		\
+		query_count.fetch_add(1, std::memory_order_relaxed);\
 		\
 		return id < array.size() ? array[id] : std::get<TYPE>(attribute.null_values);\
 	}
@@ -110,6 +122,8 @@ public:
 			};
 
 		const auto & array = *std::get<std::unique_ptr<PODArray<StringRef>>>(attribute.arrays);
+
+		query_count.fetch_add(1, std::memory_order_relaxed);
 
 		return id < array.size() ? String{array[id]} : std::get<String>(attribute.null_values);
 	}
@@ -155,6 +169,8 @@ public:
 			const auto string_ref = id < attr.size() ? attr[id] : StringRef{null_value};
 			out->insertData(string_ref.data, string_ref.size);
 		}
+
+		query_count.fetch_add(ids.size(), std::memory_order_relaxed);
 	}
 
 private:
@@ -312,6 +328,8 @@ private:
 			const auto id = ids[i];
 			out[i] = id < attr.size() ? attr[id] : null_value;
 		}
+
+		query_count.fetch_add(ids.size(), std::memory_order_relaxed);
 	}
 
 	template <typename T>
@@ -382,6 +400,8 @@ private:
 	std::size_t bucket_count = 0;
 
 	std::chrono::time_point<std::chrono::system_clock> creation_time;
+
+	mutable std::atomic<std::size_t> query_count;
 };
 
 }

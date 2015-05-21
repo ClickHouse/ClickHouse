@@ -30,6 +30,8 @@ public:
 
 	virtual std::size_t getBytesAllocated() const = 0;
 
+	virtual std::size_t getQueryCount() const = 0;
+
 	virtual double getHitRate() const = 0;
 
 	virtual std::size_t getElementCount() const = 0;
@@ -46,6 +48,8 @@ public:
 	virtual const DictionaryStructure & getStructure() const = 0;
 
 	virtual std::chrono::time_point<std::chrono::system_clock> getCreationTime() const = 0;
+
+	virtual bool isInjective(const std::string & attribute_name) const = 0;
 
 	virtual bool hasHierarchy() const = 0;
 

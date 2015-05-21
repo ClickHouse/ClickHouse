@@ -37,12 +37,12 @@ public:
 
 	std::string getName() const override { return "Merge"; }
 	std::string getTableName() const override { return name; }
-	bool supportsSampling() const override { return true; }
 
 	/// Проверка откладывается до метода read. Там проверяется поддержка PREWHERE у использующихся таблиц.
+	bool supportsSampling() const override { return true; }
 	bool supportsPrewhere() const override { return true; }
-
-	bool supportsParallelReplicas() const override { return true; }
+	bool supportsFinal() const override { return true; }
+	bool supportsIndexForIn() const override { return true; }
 
 	const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
 	NameAndTypePair getColumn(const String &column_name) const override;
