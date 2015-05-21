@@ -236,7 +236,7 @@ bool Connection::ping()
 
 void Connection::sendQuery(const String & query, const String & query_id_, UInt64 stage, const Settings * settings, bool with_pending_data)
 {
-	network_compression_method = settings ? settings->network_compression_method : CompressionMethod::LZ4;
+	network_compression_method = settings ? settings->network_compression_method.value : CompressionMethod::LZ4;
 	
 	forceConnected();
 
