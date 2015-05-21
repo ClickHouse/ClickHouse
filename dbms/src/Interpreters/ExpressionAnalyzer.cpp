@@ -281,7 +281,7 @@ void ExpressionAnalyzer::addStorageAliases()
 		return;
 
 	for (const auto & alias : storage->alias_columns)
-		aliases[alias.name] = storage->column_defaults[alias.name].expression;
+		(aliases[alias.name] = storage->column_defaults[alias.name].expression->clone())->setAlias(alias.name);
 }
 
 
