@@ -534,15 +534,15 @@ struct SettingOverflowMode
 	}
 };
 
-struct SettingNetworkCompressionMethod
+struct SettingCompressionMethod
 {
 	CompressionMethod value;
 	bool changed = false;
 
-	SettingNetworkCompressionMethod(CompressionMethod x = CompressionMethod::LZ4) : value(x) {}
+	SettingCompressionMethod(CompressionMethod x = CompressionMethod::LZ4) : value(x) {}
 
 	operator CompressionMethod() const { return value; }
-	SettingNetworkCompressionMethod & operator= (CompressionMethod x) { set(x); return *this; }
+	SettingCompressionMethod & operator= (CompressionMethod x) { set(x); return *this; }
 
 	static CompressionMethod getCompressionMethod(const String & s)
 	{

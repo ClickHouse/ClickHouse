@@ -131,7 +131,7 @@ struct Settings
 	M(SettingFloat, max_streams_to_max_threads_ratio, 1) \
 	\
 	/** Позволяет выбирать метод сжатия данных при записи */\
-	M(SettingNetworkCompressionMethod, network_compression_method, CompressionMethod::LZ4) \
+	M(SettingCompressionMethod, network_compression_method, CompressionMethod::LZ4) \
 
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;
