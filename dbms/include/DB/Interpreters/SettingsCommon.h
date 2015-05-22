@@ -555,7 +555,7 @@ struct SettingCompressionMethod
 		if (s == "zstd")
 			return CompressionMethod::ZSTD;
 
-		throw Exception("Unknown network compression method: '" + s + "', must be one of 'quicklz', 'lz4', 'lz4hc', 'zstd' ", ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
+		throw Exception("Unknown compression method: '" + s + "', must be one of 'quicklz', 'lz4', 'lz4hc', 'zstd' ", ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
 	}
 
 	String toString() const
