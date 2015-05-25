@@ -5,8 +5,6 @@
 #include <type_traits>
 #include <array>
 
-#include <Yandex/logger_useful.h>
-
 namespace DB
 {
 
