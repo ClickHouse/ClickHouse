@@ -132,9 +132,6 @@ namespace DB
 		static inline T compute(T in, size_t scale)
 		{
 			T rem = in % scale;
-			if (rem == in)
-				return 0;
-
 			in -= rem;
 			if (static_cast<size_t>(2 * rem) < scale)
 				return in;
@@ -150,9 +147,6 @@ namespace DB
 		static inline T compute(const T in, size_t scale)
 		{
 			T rem = in % scale;
-			if (rem == in)
-				return 0;
-
 			return in - rem + scale;
 		}
 	};
@@ -164,9 +158,6 @@ namespace DB
 		static inline T compute(const T in, size_t scale)
 		{
 			T rem = in % scale;
-			if (rem == in)
-				return 0;
-
 			return in - rem;
 		}
 	};
@@ -231,7 +222,7 @@ namespace DB
 		{
 			__m128 val = _mm_loadu_ps(in);
 			val = _mm_div_ps(val, scale);
-			__m128 res = _mm_cmpge_ps(val, getOne());
+			__m128 res = _mm_cmpge_ps(val, getOneTenth());
 			val = _mm_round_ps(val, rounding_mode);
 			val = _mm_mul_ps(val, scale);
 			val = _mm_and_ps(val, res);
@@ -239,10 +230,10 @@ namespace DB
 		}
 
 	private:
-		static inline const __m128 & getOne()
+		static inline const __m128 & getOneTenth()
 		{
-			static const __m128 one = _mm_set1_ps(1.0);
-			return one;
+			static const __m128 one_tenth = _mm_set1_ps(0.1);
+			return one_tenth;
 		}
 	};
 
@@ -296,7 +287,7 @@ namespace DB
 		{
 			__m128d val = _mm_loadu_pd(in);
 			val = _mm_div_pd(val, scale);
-			__m128d res = _mm_cmpge_pd(val, getOne());
+			__m128d res = _mm_cmpge_pd(val, getOneTenth());
 			val = _mm_round_pd(val, rounding_mode);
 			val = _mm_mul_pd(val, scale);
 			val = _mm_and_pd(val, res);
@@ -304,10 +295,10 @@ namespace DB
 		}
 
 	private:
-		static inline const __m128d & getOne()
+		static inline const __m128d & getOneTenth()
 		{
-			static const __m128d one = _mm_set1_pd(1.0);
-			return one;
+			static const __m128d one_tenth = _mm_set1_pd(0.1);
+			return one_tenth;
 		}
 	};
 
@@ -423,9 +414,7 @@ namespace DB
 	public:
 		static inline void apply(const PODArray<T> & in, size_t scale, typename ColumnVector<T>::Container_t & out)
 		{
-			size_t size = in.size();
-			for (size_t i = 0; i < size; ++i)
-				out[i] = 0;
+			::memset(reinterpret_cast<T *>(&out[0]), 0, in.size());
 		}
 
 		static inline T apply(T val, size_t scale)
