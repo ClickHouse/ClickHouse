@@ -72,7 +72,7 @@ struct Settings
 	M(SettingMilliseconds, distributed_directory_monitor_sleep_time_ms, DBMS_DISTRIBUTED_DIRECTORY_MONITOR_SLEEP_TIME_MS) \
 	\
 	/** Allows disabling WHERE to PREWHERE optimization in SELECT queries from MergeTree */ \
-	M(SettingBool, optimize_move_to_prewhere, false) \
+	M(SettingBool, optimize_move_to_prewhere, true) \
 	\
 	/** Ожидать выполнения действий по манипуляции с партициями. 0 - не ждать, 1 - ждать выполнения только у себя, 2 - ждать всех. */ \
 	M(SettingUInt64, replication_alter_partitions_sync, 1) \
@@ -129,6 +129,9 @@ struct Settings
 	  *  но чтобы каждый источник динамически выбирал себе доступную работу. \
 	  */ \
 	M(SettingFloat, max_streams_to_max_threads_ratio, 1) \
+	\
+	/** Позволяет выбирать метод сжатия данных при записи */\
+	M(SettingCompressionMethod, network_compression_method, CompressionMethod::LZ4) \
 
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;

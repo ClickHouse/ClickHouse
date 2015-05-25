@@ -280,8 +280,9 @@ void ExpressionAnalyzer::addStorageAliases()
 	if (!storage)
 		return;
 
+	/// @todo: consider storing default expressions with alias set to avoid cloning
 	for (const auto & alias : storage->alias_columns)
-		aliases[alias.name] = storage->column_defaults[alias.name].expression;
+		(aliases[alias.name] = storage->column_defaults[alias.name].expression->clone())->setAlias(alias.name);
 }
 
 

@@ -236,6 +236,8 @@ bool Connection::ping()
 
 void Connection::sendQuery(const String & query, const String & query_id_, UInt64 stage, const Settings * settings, bool with_pending_data)
 {
+	network_compression_method = settings ? settings->network_compression_method.value : CompressionMethod::LZ4;
+	
 	forceConnected();
 
 	query_id = query_id_;
@@ -293,7 +295,7 @@ void Connection::sendData(const Block & block, const String & name)
 	if (!block_out)
 	{
 		if (compression == Protocol::Compression::Enable)
-			maybe_compressed_out = new CompressedWriteBuffer(*out);
+			maybe_compressed_out = new CompressedWriteBuffer(*out, network_compression_method);
 		else
 			maybe_compressed_out = out;
 
