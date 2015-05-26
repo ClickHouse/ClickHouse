@@ -64,11 +64,11 @@ public:
 		}
 		else if ("mysql" == source_type)
 		{
-			return std::make_unique<MySQLDictionarySource>(config, config_prefix + ".mysql", sample_block);
+			return std::make_unique<MySQLDictionarySource>(dict_struct, config, config_prefix + ".mysql", sample_block);
 		}
 		else if ("clickhouse" == source_type)
 		{
-			return std::make_unique<ClickHouseDictionarySource>(config, config_prefix + ".clickhouse",
+			return std::make_unique<ClickHouseDictionarySource>(dict_struct, config, config_prefix + ".clickhouse",
 				sample_block, context);
 		}
 

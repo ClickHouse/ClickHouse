@@ -16,9 +16,11 @@ class MySQLDictionarySource final : public IDictionarySource
 	static const auto max_block_size = 8192;
 
 public:
-	MySQLDictionarySource(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
+	MySQLDictionarySource(const DictionaryStructure & dict_struct,
+		const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
 		Block & sample_block)
-		: db{config.getString(config_prefix + ".db", "")},
+		: dict_struct{dict_struct},
+		  db{config.getString(config_prefix + ".db", "")},
 		  table{config.getString(config_prefix + ".table")},
 		  where{config.getString(config_prefix + ".where", "")},
 		  sample_block{sample_block},
@@ -29,7 +31,8 @@ public:
 
 	/// copy-constructor is provided in order to support cloneability
 	MySQLDictionarySource(const MySQLDictionarySource & other)
-		: db{other.db},
+		: dict_struct{other.dict_struct},
+		  db{other.db},
 		  table{other.table},
 		  where{other.where},
 		  sample_block{other.sample_block},
@@ -101,14 +104,19 @@ private:
 			WriteBufferFromString out{query};
 			writeString("SELECT ", out);
 
-			auto first = true;
-			for (const auto idx : ext::range(0, sample_block.columns()))
-			{
-				if (!first)
-					writeString(", ", out);
+			writeProbablyBackQuotedString(dict_struct.id_name, out);
 
-				writeString(sample_block.getByPosition(idx).name, out);
-				first = false;
+			for (const auto & attr : dict_struct.attributes)
+			{
+				writeString(", ", out);
+
+				if (!attr.expression.empty())
+				{
+					writeString(attr.expression, out);
+					writeString(" AS ", out);
+				}
+
+				writeProbablyBackQuotedString(attr.name, out);
 			}
 
 			writeString(" FROM ", out);
@@ -139,17 +147,21 @@ private:
 			WriteBufferFromString out{query};
 			writeString("SELECT ", out);
 
-			auto first = true;
-			for (const auto idx : ext::range(0, sample_block.columns()))
-			{
-				if (!first)
-					writeString(", ", out);
+			writeProbablyBackQuotedString(dict_struct.id_name, out);
 
-				writeString(sample_block.getByPosition(idx).name, out);
-				first = false;
+			for (const auto & attr : dict_struct.attributes)
+			{
+				writeString(", ", out);
+
+				if (!attr.expression.empty())
+				{
+					writeString(attr.expression, out);
+					writeString(" AS ", out);
+				}
+
+				writeProbablyBackQuotedString(attr.name, out);
 			}
 
-			const auto & id_column_name = sample_block.getByPosition(0).name;
 			writeString(" FROM ", out);
 			if (!db.empty())
 			{
@@ -166,10 +178,10 @@ private:
 				writeString(" AND ", out);
 			}
 
-			writeProbablyBackQuotedString(id_column_name, out);
+			writeProbablyBackQuotedString(dict_struct.id_name, out);
 			writeString(" IN (", out);
 
-			first = true;
+			auto first = true;
 			for (const auto id : ids)
 			{
 				if (!first)
@@ -185,6 +197,7 @@ private:
 		return query;
 	}
 
+	const DictionaryStructure dict_struct;
 	const std::string db;
 	const std::string table;
 	const std::string where;
