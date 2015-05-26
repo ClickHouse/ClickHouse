@@ -169,6 +169,8 @@ private:
 
 	String query_id;
 	UInt64 compression;		/// Сжимать ли данные при взаимодействии с сервером.
+	/// каким алгоритмом сжимать данные при INSERT и данные внешних таблиц
+	CompressionMethod network_compression_method = CompressionMethod::LZ4;
 
 	const DataTypeFactory & data_type_factory;
 

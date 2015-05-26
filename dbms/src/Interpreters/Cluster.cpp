@@ -3,7 +3,6 @@
 #include <DB/Common/isLocalAddress.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
-#include <Poco/Net/NetworkInterface.h>
 
 namespace DB
 {

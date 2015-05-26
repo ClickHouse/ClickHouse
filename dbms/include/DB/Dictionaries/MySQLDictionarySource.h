@@ -20,9 +20,10 @@ public:
 		Block & sample_block)
 		: db{config.getString(config_prefix + ".db", "")},
 		  table{config.getString(config_prefix + ".table")},
+		  where{config.getString(config_prefix + ".where", "")},
 		  sample_block{sample_block},
 		  pool{config, config_prefix},
-		  load_all_query{composeLoadAllQuery(sample_block, db, table)},
+		  load_all_query{composeLoadAllQuery()},
 		  last_modification{getLastModification()}
 	{}
 
@@ -30,6 +31,7 @@ public:
 	MySQLDictionarySource(const MySQLDictionarySource & other)
 		: db{other.db},
 		  table{other.table},
+		  where{other.where},
 		  sample_block{other.sample_block},
 		  pool{other.pool},
 		  load_all_query{other.load_all_query}, last_modification{other.last_modification}
@@ -41,7 +43,7 @@ public:
 		return new MySQLBlockInputStream{pool.Get(), load_all_query, sample_block, max_block_size};
 	}
 
-	BlockInputStreamPtr loadIds(const std::vector<std::uint64_t> ids) override
+	BlockInputStreamPtr loadIds(const std::vector<std::uint64_t> & ids) override
 	{
 		last_modification = getLastModification();
 		const auto query = composeLoadIdsQuery(ids);
@@ -54,7 +56,10 @@ public:
 
 	DictionarySourcePtr clone() const override { return std::make_unique<MySQLDictionarySource>(*this); }
 
-	std::string toString() const override { return "MySQL: " + db + '.' + table; }
+	std::string toString() const override
+	{
+		return "MySQL: " + db + '.' + table + (where.empty() ? "" : ", where: " + where);
+	}
 
 private:
 	mysqlxx::DateTime getLastModification() const
@@ -88,7 +93,7 @@ private:
 		return update_time;
 	}
 
-	static std::string composeLoadAllQuery(const Block & block, const std::string & db, const std::string & table)
+	std::string composeLoadAllQuery() const
 	{
 		std::string query;
 
@@ -97,12 +102,12 @@ private:
 			writeString("SELECT ", out);
 
 			auto first = true;
-			for (const auto idx : ext::range(0, block.columns()))
+			for (const auto idx : ext::range(0, sample_block.columns()))
 			{
 				if (!first)
 					writeString(", ", out);
 
-				writeString(block.getByPosition(idx).name, out);
+				writeString(sample_block.getByPosition(idx).name, out);
 				first = false;
 			}
 
@@ -113,13 +118,20 @@ private:
 				writeChar('.', out);
 			}
 			writeProbablyBackQuotedString(table, out);
+
+			if (!where.empty())
+			{
+				writeString(" WHERE ", out);
+				writeString(where, out);
+			}
+
 			writeChar(';', out);
 		}
 
 		return query;
 	}
 
-	std::string composeLoadIdsQuery(const std::vector<std::uint64_t> ids)
+	std::string composeLoadIdsQuery(const std::vector<std::uint64_t> & ids)
 	{
 		std::string query;
 
@@ -145,7 +157,15 @@ private:
 				writeChar('.', out);
 			}
 			writeProbablyBackQuotedString(table, out);
+
 			writeString(" WHERE ", out);
+
+			if (!where.empty())
+			{
+				writeString(where, out);
+				writeString(" AND ", out);
+			}
+
 			writeProbablyBackQuotedString(id_column_name, out);
 			writeString(" IN (", out);
 
@@ -167,6 +187,7 @@ private:
 
 	const std::string db;
 	const std::string table;
+	const std::string where;
 	Block sample_block;
 	mutable mysqlxx::PoolWithFailover pool;
 	const std::string load_all_query;

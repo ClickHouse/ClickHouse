@@ -323,9 +323,44 @@ void Join::insertFromBlockImpl(Maps & maps, size_t rows, const ConstColumnPlainP
 }
 
 
+void Join::setSampleBlock(const Block & block)
+{
+	Poco::ScopedWriteRWLock lock(rwlock);
+
+	if (!empty())
+		return;
+
+	size_t keys_size = key_names_right.size();
+	ConstColumnPlainPtrs key_columns(keys_size);
+
+	for (size_t i = 0; i < keys_size; ++i)
+		key_columns[i] = block.getByName(key_names_right[i]).column;
+
+	/// Выберем, какую структуру данных для множества использовать.
+	init(chooseMethod(key_columns, keys_fit_128_bits, key_sizes));
+
+	sample_block = block;
+
+	/// Удаляем из sample_block ключевые столбцы, так как они не нужны.
+	for (const auto & name : key_names_right)
+		sample_block.erase(sample_block.getPositionByName(name));
+
+	for (size_t i = 0, size = sample_block.columns(); i < size; ++i)
+	{
+		auto & column = sample_block.unsafeGetByPosition(i);
+		if (!column.column)
+			column.column = column.type->createColumn();
+	}
+}
+
+
 bool Join::insertFromBlock(const Block & block)
 {
 	Poco::ScopedWriteRWLock lock(rwlock);
+
+	/// Какую структуру данных для множества использовать?
+	if (empty())
+		throw Exception("Logical error: Join was not initialized", ErrorCodes::LOGICAL_ERROR);
 
 	size_t keys_size = key_names_right.size();
 	ConstColumnPlainPtrs key_columns(keys_size);
@@ -336,16 +371,20 @@ bool Join::insertFromBlock(const Block & block)
 
 	size_t rows = block.rows();
 
-	/// Какую структуру данных для множества использовать?
-	if (empty())
-		init(chooseMethod(key_columns, keys_fit_128_bits, key_sizes));
-
 	blocks.push_back(block);
 	Block * stored_block = &blocks.back();
 
 	/// Удаляем из stored_block ключевые столбцы, так как они не нужны.
 	for (const auto & name : key_names_right)
 		stored_block->erase(stored_block->getPositionByName(name));
+
+	/// Редкий случай, когда соединяемые столбцы являеются константами. Чтобы не поддерживать отдельный код, материализуем их.
+	for (size_t i = 0, size = stored_block->columns(); i < size; ++i)
+	{
+		ColumnPtr col = stored_block->getByPosition(i).column;
+		if (col->isConst())
+			stored_block->getByPosition(i).column = dynamic_cast<IColumnConst &>(*col).convertToFullColumn();
+	}
 
 	if (!getFullness(kind))
 	{
@@ -473,9 +512,6 @@ struct Adder<KIND, ASTJoin::All, Map>
 template <ASTJoin::Kind KIND, ASTJoin::Strictness STRICTNESS, typename Maps>
 void Join::joinBlockImpl(Block & block, const Maps & maps) const
 {
-	if (blocks.empty())
-		throw Exception("Attempt to JOIN with empty table", ErrorCodes::EMPTY_DATA_PASSED);
-
 	size_t keys_size = key_names_left.size();
 	ConstColumnPlainPtrs key_columns(keys_size);
 
@@ -484,15 +520,14 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 		key_columns[i] = block.getByName(key_names_left[i]).column;
 
 	/// Добавляем в блок новые столбцы.
-	const Block & first_mapped_block = blocks.front();
-	size_t num_columns_to_add = first_mapped_block.columns();
+	size_t num_columns_to_add = sample_block.columns();
 	ColumnPlainPtrs added_columns(num_columns_to_add);
 
 	size_t existing_columns = block.columns();
 
 	for (size_t i = 0; i < num_columns_to_add; ++i)
 	{
-		const ColumnWithNameAndType & src_column = first_mapped_block.getByPosition(i);
+		const ColumnWithNameAndType & src_column = sample_block.getByPosition(i);
 		ColumnWithNameAndType new_column = src_column.cloneEmpty();
 		block.insert(new_column);
 		added_columns[i] = new_column.column;
@@ -630,11 +665,8 @@ void Join::joinTotals(Block & block) const
 	}
 	else
 	{
-		if (blocks.empty())
-			return;
-
 		/// Будем присоединять пустые totals - из одной строчки со значениями по-умолчанию.
-		totals_without_keys = blocks.front().cloneEmpty();
+		totals_without_keys = sample_block.cloneEmpty();
 
 		for (size_t i = 0; i < totals_without_keys.columns(); ++i)
 		{
@@ -739,13 +771,12 @@ private:
 		}
 
 		/// Добавляем в блок новые столбцы.
-		const Block & first_mapped_block = parent.blocks.front();
-		size_t num_columns_right = first_mapped_block.columns();
+		size_t num_columns_right = parent.sample_block.columns();
 		ColumnPlainPtrs columns_right(num_columns_right);
 
 		for (size_t i = 0; i < num_columns_right; ++i)
 		{
-			const ColumnWithNameAndType & src_column = first_mapped_block.getByPosition(i);
+			const ColumnWithNameAndType & src_column = parent.sample_block.getByPosition(i);
 			ColumnWithNameAndType new_column = src_column.cloneEmpty();
 			block.insert(new_column);
 			columns_right[i] = new_column.column;

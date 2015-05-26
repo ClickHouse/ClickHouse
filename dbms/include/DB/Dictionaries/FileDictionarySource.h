@@ -40,7 +40,7 @@ public:
 		return new OwningBufferBlockInputStream{stream, std::move(in_ptr)};
 	}
 
-	BlockInputStreamPtr loadIds(const std::vector<std::uint64_t> ids) override
+	BlockInputStreamPtr loadIds(const std::vector<std::uint64_t> & ids) override
 	{
 		throw Exception{
 			"Method unsupported",

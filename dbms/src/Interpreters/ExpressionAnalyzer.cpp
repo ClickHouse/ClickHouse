@@ -280,8 +280,9 @@ void ExpressionAnalyzer::addStorageAliases()
 	if (!storage)
 		return;
 
+	/// @todo: consider storing default expressions with alias set to avoid cloning
 	for (const auto & alias : storage->alias_columns)
-		aliases[alias.name] = storage->column_defaults[alias.name].expression;
+		(aliases[alias.name] = storage->column_defaults[alias.name].expression->clone())->setAlias(alias.name);
 }
 
 
@@ -1590,6 +1591,7 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 		{
 			auto interpreter = interpretSubquery(ast_join.table, context, subquery_depth, required_joined_columns);
 			subquery_for_set.source = new LazyBlockInputStream([interpreter]() mutable { return interpreter->execute(); });
+			join->setSampleBlock(interpreter->getSampleBlock());
 		}
 
 		subquery_for_set.join = join;

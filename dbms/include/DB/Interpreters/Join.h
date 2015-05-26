@@ -74,6 +74,11 @@ public:
 
 	bool empty() { return type == Type::EMPTY; }
 
+	/** Передать информацию о структуре блока.
+	  * Следует обязательно вызвать до вызовов insertFromBlock.
+	  */
+	void setSampleBlock(const Block & block);
+
 	/** Добавить в отображение для соединения блок "правой" таблицы.
 	  * Возвращает false, если превышено какое-нибудь ограничение, и больше не нужно вставлять.
 	  */
@@ -216,6 +221,8 @@ private:
 
 	bool keys_fit_128_bits;
 	Sizes key_sizes;
+
+	Block sample_block;
 
 	Logger * log;
 

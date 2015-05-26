@@ -29,19 +29,21 @@ public:
 		  password{config.getString(config_prefix + ".password", "")},
 		  db{config.getString(config_prefix + ".db", "")},
 		  table{config.getString(config_prefix + ".table")},
+		  where{config.getString(config_prefix + ".where", "")},
 		  sample_block{sample_block}, context(context),
 		  is_local{isLocalAddress({ host, port })},
 		  pool{is_local ? nullptr : std::make_unique<ConnectionPool>(
 			  max_connections, host, port, db, user, password, context.getDataTypeFactory(),
 			  "ClickHouseDictionarySource")
 		  },
-		  load_all_query{composeLoadAllQuery(sample_block, db, table)}
+		  load_all_query{composeLoadAllQuery()}
 	{}
 
 	/// copy-constructor is provided in order to support cloneability
 	ClickHouseDictionarySource(const ClickHouseDictionarySource & other)
 		: host{other.host}, port{other.port}, user{other.user}, password{other.password},
 		  db{other.db}, table{other.table},
+		  where{other.where},
 		  sample_block{other.sample_block}, context(other.context),
 		  is_local{other.is_local},
 		  pool{is_local ? nullptr : std::make_unique<ConnectionPool>(
@@ -60,7 +62,7 @@ public:
 		return new RemoteBlockInputStream{pool.get(), load_all_query, nullptr};
 	}
 
-	BlockInputStreamPtr loadIds(const std::vector<std::uint64_t> ids) override
+	BlockInputStreamPtr loadIds(const std::vector<std::uint64_t> & ids) override
 	{
 		const auto query = composeLoadIdsQuery(ids);
 
@@ -74,10 +76,13 @@ public:
 
 	DictionarySourcePtr clone() const override { return std::make_unique<ClickHouseDictionarySource>(*this); }
 
-	std::string toString() const override { return "ClickHouse: " + db + '.' + table; }
+	std::string toString() const override
+	{
+		return "ClickHouse: " + db + '.' + table + (where.empty() ? "" : ", where: " + where);
+	}
 
 private:
-	static std::string composeLoadAllQuery(const Block & block, const std::string & db, const std::string & table)
+	std::string composeLoadAllQuery() const
 	{
 		std::string query;
 
@@ -86,12 +91,12 @@ private:
 			writeString("SELECT ", out);
 
 			auto first = true;
-			for (const auto idx : ext::range(0, block.columns()))
+			for (const auto idx : ext::range(0, sample_block.columns()))
 			{
 				if (!first)
 					writeString(", ", out);
 
-				writeString(block.getByPosition(idx).name, out);
+				writeString(sample_block.getByPosition(idx).name, out);
 				first = false;
 			}
 
@@ -102,6 +107,13 @@ private:
 				writeChar('.', out);
 			}
 			writeProbablyBackQuotedString(table, out);
+
+			if (!where.empty())
+			{
+				writeString(" WHERE ", out);
+				writeString(where, out);
+			}
+
 			writeChar(';', out);
 		}
 
@@ -134,7 +146,15 @@ private:
 				writeChar('.', out);
 			}
 			writeProbablyBackQuotedString(table, out);
+
 			writeString(" WHERE ", out);
+
+			if (!where.empty())
+			{
+				writeString(where, out);
+				writeString(" AND ", out);
+			}
+
 			writeProbablyBackQuotedString(id_column_name, out);
 			writeString(" IN (", out);
 
@@ -160,6 +180,7 @@ private:
 	const std::string password;
 	const std::string db;
 	const std::string table;
+	const std::string where;
 	Block sample_block;
 	Context & context;
 	const bool is_local;

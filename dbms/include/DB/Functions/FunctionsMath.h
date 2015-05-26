@@ -165,9 +165,8 @@ struct UnaryFunctionVectorized
 	template <typename T>
 	static void execute(const T * const src, Float64 * const dst)
 	{
-		const auto & result = Function(Vec2d(src[0], src[1]));
-		dst[0] = result[0];
-		dst[1] = result[1];
+		const auto result = Function(Vec2d(src[0], src[1]));
+		result.store(dst);
 	}
 };
 
@@ -432,9 +431,8 @@ struct BinaryFunctionVectorized
 	template <typename T1, typename T2>
 	static void execute(const T1 * const src_left, const T2 * const src_right, Float64 * const dst)
 	{
-		const auto & result = Function(Vec2d(src_left[0], src_left[1]), Vec2d(src_right[0], src_right[1]));
-		dst[0] = result[0];
-		dst[1] = result[1];
+		const auto result = Function(Vec2d(src_left[0], src_left[1]), Vec2d(src_right[0], src_right[1]));
+		result.store(dst);
 	}
 };
 
