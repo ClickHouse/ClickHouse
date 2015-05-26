@@ -48,7 +48,10 @@ void ExternalDictionaries::reloadImpl(const bool throw_on_error)
 
 		try
 		{
-			auto current = dictionary.second.first->get();
+			if (!dictionary.second.dict)
+				continue;
+
+			auto current = dictionary.second.dict->get();
 			const auto & lifetime = current->getLifetime();
 
 			/// do not update dictionaries with zero as lifetime
@@ -75,16 +78,16 @@ void ExternalDictionaries::reloadImpl(const bool throw_on_error)
 				{
 					/// create new version of dictionary
 					auto new_version = current->clone();
-					dictionary.second.first->set(new_version.release());
+					dictionary.second.dict->set(new_version.release());
 				}
 			}
 
 			/// erase stored exception on success
-			stored_exceptions.erase(name);
+			dictionary.second.exception = std::exception_ptr{};
 		}
 		catch (...)
 		{
-			stored_exceptions.emplace(name, std::current_exception());
+			dictionary.second.exception = std::current_exception();
 
 			try
 			{
@@ -162,8 +165,8 @@ void ExternalDictionaries::reloadFromFile(const std::string & config_path, const
 
 					auto it = dictionaries.find(name);
 					if (it != std::end(dictionaries))
-						if (it->second.second != config_path)
-							throw std::runtime_error{"Overriding dictionary from file " + it->second.second};
+						if (it->second.origin != config_path)
+							throw std::runtime_error{"Overriding dictionary from file " + it->second.origin};
 
 					auto dict_ptr = DictionaryFactory::instance().create(name, *config, key, context);
 					if (!dict_ptr->isCached())
@@ -184,22 +187,39 @@ void ExternalDictionaries::reloadFromFile(const std::string & config_path, const
 					if (it == std::end(dictionaries))
 					{
 						const std::lock_guard<std::mutex> lock{dictionaries_mutex};
-						dictionaries.emplace(name, dictionary_origin_pair_t{
+						dictionaries.emplace(name, dictionary_info{
 							std::make_shared<MultiVersion<IDictionary>>(dict_ptr.release()),
 							config_path
 						});
 					}
 					else
-						it->second.first->set(dict_ptr.release());
+					{
+						if (it->second.dict)
+							it->second.dict->set(dict_ptr.release());
+						else
+						{
+							const std::lock_guard<std::mutex> lock{dictionaries_mutex};
+							it->second.dict = std::make_shared<MultiVersion<IDictionary>>(dict_ptr.release());
+						}
 
-					/// erase stored exception on success
-					stored_exceptions.erase(name);
+						/// erase stored exception on success
+						it->second.exception = std::exception_ptr{};
+					}
 				}
 				catch (...)
 				{
-					const auto exception_ptr = std::current_exception();
 					if (!name.empty())
-						stored_exceptions.emplace(name, exception_ptr);
+					{
+						const auto exception_ptr = std::current_exception();
+						const auto it = dictionaries.find(name);
+						if (it == std::end(dictionaries))
+						{
+							const std::lock_guard<std::mutex> lock{dictionaries_mutex};
+							dictionaries.emplace(name, dictionary_info{nullptr, config_path, exception_ptr});
+						}
+						else
+							it->second.exception = exception_ptr;
+					}
 
 					try
 					{
@@ -223,11 +243,28 @@ void ExternalDictionaries::reloadFromFile(const std::string & config_path, const
 
 					/// propagate exception
 					if (throw_on_error)
-						std::rethrow_exception(exception_ptr);
+						throw;
 				}
 			}
 		}
 	}
+}
+
+MultiVersion<IDictionary>::Version ExternalDictionaries::getDictionary(const std::string & name) const
+{
+	const std::lock_guard<std::mutex> lock{dictionaries_mutex};
+	const auto it = dictionaries.find(name);
+
+	if (it == std::end(dictionaries))
+		throw Exception{
+			"No such dictionary: " + name,
+			ErrorCodes::BAD_ARGUMENTS
+		};
+
+	if (!it->second.dict && it->second.exception)
+		std::rethrow_exception(it->second.exception);
+
+	return it->second.dict->get();
 }
 
 }
