@@ -21,8 +21,8 @@ StorageSystemDictionaries::StorageSystemDictionaries(const std::string & name)
 	: name{name},
 	  columns{
 		  { "name", new DataTypeString },
-		  { "type", new DataTypeString },
 		  { "origin", new DataTypeString },
+		  { "type", new DataTypeString },
 		  { "attribute.names", new DataTypeArray{new DataTypeString} },
 		  { "attribute.types", new DataTypeArray{new DataTypeString} },
 		  { "has_hierarchy", new DataTypeUInt8 },
@@ -56,8 +56,8 @@ BlockInputStreams StorageSystemDictionaries::read(
 	processed_stage = QueryProcessingStage::FetchColumns;
 
 	ColumnWithNameAndType col_name{new ColumnString, new DataTypeString, "name"};
-	ColumnWithNameAndType col_type{new ColumnString, new DataTypeString, "type"};
 	ColumnWithNameAndType col_origin{new ColumnString, new DataTypeString, "origin"};
+	ColumnWithNameAndType col_type{new ColumnString, new DataTypeString, "type"};
 	ColumnWithNameAndType col_attribute_names{
 		new ColumnArray{new ColumnString},
 		new DataTypeArray{new DataTypeString},
@@ -83,34 +83,51 @@ BlockInputStreams StorageSystemDictionaries::read(
 
 	for (const auto & dict_info : external_dictionaries.dictionaries)
 	{
-		const auto & name = dict_info.first;
-		const auto dict_ptr = dict_info.second.first->get();
+		col_name.column->insert(dict_info.first);
+		col_origin.column->insert(dict_info.second.origin);
 
-		col_name.column->insert(name);
-		col_type.column->insert(dict_ptr->getTypeName());
-		col_origin.column->insert(dict_info.second.second);
+		if (dict_info.second.dict)
+		{
+			const auto dict_ptr = dict_info.second.dict->get();
 
-		const auto & dict_struct = dict_ptr->getStructure();
-		col_attribute_names.column->insert(ext::map<Array>(dict_struct.attributes, [] (auto & attr) -> decltype(auto) {
-			return attr.name;
-		}));
-		col_attribute_types.column->insert(ext::map<Array>(dict_struct.attributes, [] (auto & attr) -> decltype(auto) {
-			return attr.type->getName();
-		}));
-		col_has_hierarchy.column->insert(UInt64{dict_ptr->hasHierarchy()});
-		col_bytes_allocated.column->insert(dict_ptr->getBytesAllocated());
-		col_query_count.column->insert(dict_ptr->getQueryCount());
-		col_hit_rate.column->insert(dict_ptr->getHitRate());
-		col_element_count.column->insert(dict_ptr->getElementCount());
-		col_load_factor.column->insert(dict_ptr->getLoadFactor());
-		col_creation_time.column->insert(std::chrono::system_clock::to_time_t(dict_ptr->getCreationTime()));
+			col_type.column->insert(dict_ptr->getTypeName());
 
-		const auto exception_it = external_dictionaries.stored_exceptions.find(name);
-		if (exception_it != std::end(external_dictionaries.stored_exceptions))
+			const auto & dict_struct = dict_ptr->getStructure();
+			col_attribute_names.column->insert(ext::map<Array>(dict_struct.attributes, [] (auto & attr) -> decltype(auto) {
+				return attr.name;
+			}));
+			col_attribute_types.column->insert(ext::map<Array>(dict_struct.attributes, [] (auto & attr) -> decltype(auto) {
+				return attr.type->getName();
+			}));
+			col_has_hierarchy.column->insert(UInt64{dict_ptr->hasHierarchy()});
+			col_bytes_allocated.column->insert(dict_ptr->getBytesAllocated());
+			col_query_count.column->insert(dict_ptr->getQueryCount());
+			col_hit_rate.column->insert(dict_ptr->getHitRate());
+			col_element_count.column->insert(dict_ptr->getElementCount());
+			col_load_factor.column->insert(dict_ptr->getLoadFactor());
+			col_creation_time.column->insert(std::chrono::system_clock::to_time_t(dict_ptr->getCreationTime()));
+			col_source.column->insert(dict_ptr->getSource()->toString());
+		}
+		else
+		{
+			col_type.column->insertDefault();
+			col_attribute_names.column->insertDefault();
+			col_attribute_types.column->insertDefault();
+			col_has_hierarchy.column->insertDefault();
+			col_bytes_allocated.column->insertDefault();
+			col_query_count.column->insertDefault();
+			col_hit_rate.column->insertDefault();
+			col_element_count.column->insertDefault();
+			col_load_factor.column->insertDefault();
+			col_creation_time.column->insertDefault();
+			col_source.column->insertDefault();
+		}
+
+		if (dict_info.second.exception)
 		{
 			try
 			{
-				std::rethrow_exception(exception_it->second);
+				std::rethrow_exception(dict_info.second.exception);
 			}
 			catch (const Exception & e)
 			{
@@ -130,15 +147,13 @@ BlockInputStreams StorageSystemDictionaries::read(
 			}
 		}
 		else
-			col_last_exception.column->insert(std::string{});
-
-		col_source.column->insert(dict_ptr->getSource()->toString());
+			col_last_exception.column->insertDefault();
 	}
 
 	Block block{
 		col_name,
-		col_type,
 		col_origin,
+		col_type,
 		col_attribute_names,
 		col_attribute_types,
 		col_has_hierarchy,
