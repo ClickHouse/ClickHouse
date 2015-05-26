@@ -33,6 +33,7 @@ StorageJoin::StorageJoin(
 				ErrorCodes::NO_SUCH_COLUMN_IN_TABLE};
 
 	join = new Join(key_names, key_names, Limits(), kind, strictness);
+	join->setSampleBlock(getSampleBlock());
 	restore();
 }
 

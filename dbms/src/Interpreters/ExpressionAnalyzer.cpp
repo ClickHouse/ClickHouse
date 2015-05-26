@@ -1591,6 +1591,7 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 		{
 			auto interpreter = interpretSubquery(ast_join.table, context, subquery_depth, required_joined_columns);
 			subquery_for_set.source = new LazyBlockInputStream([interpreter]() mutable { return interpreter->execute(); });
+			join->setSampleBlock(interpreter->getSampleBlock());
 		}
 
 		subquery_for_set.join = join;
