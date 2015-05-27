@@ -97,6 +97,68 @@ namespace DB
 		}
 	};
 
+	/** Быстрое вычисление остатка от деления для применения к округлению целых чисел.
+	  * Без проверки, потому что делитель всегда положительный.
+	  */
+	template<typename T, typename Enable = void>
+	struct FastModulo
+	{
+	};
+
+	template<typename T>
+	struct FastModulo<T, typename std::enable_if<std::is_integral<T>::value>::type>
+	{
+	private:
+		template<typename InputType, typename Enable = void>
+		struct Extend
+		{
+		};
+
+		template<typename InputType>
+		struct Extend<InputType,
+			typename std::enable_if<std::is_same<InputType, Int8>::value
+				|| std::is_same<InputType, Int16>::value>::type>
+		{
+			using Type = Int64;
+		};
+
+		template<typename InputType>
+		struct Extend<InputType,
+			typename std::enable_if<std::is_same<InputType, UInt8>::value
+				|| std::is_same<InputType, UInt16>::value>::type>
+		{
+			using Type = UInt64;
+		};
+
+		template<typename InputType>
+		struct Extend<InputType,
+			typename std::enable_if<std::is_integral<InputType>::value
+				&& (sizeof(InputType) >= 4)>::type>
+		{
+			using Type = InputType;
+		};
+
+		using U = typename Extend<T>::Type;
+
+	public:
+		using Divisor = std::pair<size_t, typename libdivide::divider<U> >;
+
+		static inline Divisor prepare(size_t b)
+		{
+			return std::make_pair(b, libdivide::divider<U>(b));
+		}
+
+		static inline T compute(T a, const Divisor & divisor)
+		{
+			if (divisor.first == 1)
+				return 0;
+
+			U val = static_cast<U>(a);
+			U rem = val - (val / divisor.second) * static_cast<U>(divisor.first);
+			return static_cast<T>(rem);
+		}
+	};
+
 	/** Этот параметр контролирует поведение функций округления.
 	  */
 	enum ScaleMode
@@ -119,7 +181,14 @@ namespace DB
 		typename std::enable_if<std::is_integral<T>::value
 			&& ((scale_mode == PositiveScale) || (scale_mode == ZeroScale))>::type>
 	{
-		static inline T compute(const T in, size_t scale)
+		using Divisor = int;
+
+		static inline Divisor prepare(size_t scale)
+		{
+			return 0;
+		}
+
+		static inline T compute(T in, const Divisor & scale)
 		{
 			return in;
 		}
@@ -129,14 +198,26 @@ namespace DB
 	struct IntegerRoundingComputation<T, _MM_FROUND_NINT, NegativeScale,
 		typename std::enable_if<std::is_integral<T>::value>::type>
 	{
-		static inline T compute(T in, size_t scale)
+		using Op = FastModulo<T>;
+		using Divisor = typename Op::Divisor;
+
+		static inline Divisor prepare(size_t scale)
 		{
-			T rem = in % scale;
+			return Op::prepare(scale);
+		}
+
+		static inline T compute(T in, const Divisor & scale)
+		{
+			T factor = (in < 0) ? -1 : 1;
+			in *= factor;
+			T rem = Op::compute(in, scale);
 			in -= rem;
-			if (static_cast<size_t>(2 * rem) < scale)
-				return in;
+			T res;
+			if ((2 * rem) < static_cast<T>(scale.first))
+				res = in;
 			else
-				return in + scale;
+				res = in + scale.first;
+			return factor * res;
 		}
 	};
 
@@ -144,10 +225,21 @@ namespace DB
 	struct IntegerRoundingComputation<T, _MM_FROUND_CEIL, NegativeScale,
 		typename std::enable_if<std::is_integral<T>::value>::type>
 	{
-		static inline T compute(const T in, size_t scale)
+		using Op = FastModulo<T>;
+		using Divisor = typename Op::Divisor;
+
+		static inline Divisor prepare(size_t scale)
 		{
-			T rem = in % scale;
-			return in - rem + scale;
+			return Op::prepare(scale);
+		}
+
+		static inline T compute(T in, const Divisor & scale)
+		{
+			T factor = (in < 0) ? -1 : 1;
+			in *= factor;
+			T rem = Op::compute(in, scale);
+			T res = in - rem + scale.first;
+			return factor * res;
 		}
 	};
 
@@ -155,10 +247,21 @@ namespace DB
 	struct IntegerRoundingComputation<T, _MM_FROUND_FLOOR, NegativeScale,
 		typename std::enable_if<std::is_integral<T>::value>::type>
 	{
-		static inline T compute(const T in, size_t scale)
+		using Op = FastModulo<T>;
+		using Divisor = typename Op::Divisor;
+
+		static inline Divisor prepare(size_t scale)
 		{
-			T rem = in % scale;
-			return in - rem;
+			return Op::prepare(scale);
+		}
+
+		static inline T compute(T in, const Divisor & scale)
+		{
+			T factor = (in < 0) ? -1 : 1;
+			in *= factor;
+			T rem = Op::compute(in, scale);
+			T res = in - rem;
+			return factor * res;
 		}
 	};
 
@@ -221,11 +324,28 @@ namespace DB
 		static inline void compute(const Float32 * in, const Scale & scale, Float32 * out)
 		{
 			__m128 val = _mm_loadu_ps(in);
+
+			/// Превратить отрицательные значения в положительные.
+			__m128 factor = _mm_cmpge_ps(val, getZero());
+			factor = _mm_min_ps(factor, getTwo());
+			factor = _mm_sub_ps(factor, getOne());
+			val = _mm_mul_ps(val, factor);
+
+			/// Алгоритм округления.
 			val = _mm_div_ps(val, scale);
 			__m128 res = _mm_cmpge_ps(val, getOneTenth());
 			val = _mm_round_ps(val, rounding_mode);
 			val = _mm_mul_ps(val, scale);
 			val = _mm_and_ps(val, res);
+
+			/// Предотвратить появление отрицательных нолей определённых в стандарте IEEE-754.
+			__m128 check = _mm_cmpeq_ps(val, getZero());
+			check = _mm_min_ps(check, getOne());
+			factor = _mm_add_ps(factor, check);
+
+			/// Вернуть настоящие знаки всех значений.
+			val = _mm_mul_ps(val, factor);
+
 			_mm_storeu_ps(out, val);
 		}
 
@@ -234,6 +354,24 @@ namespace DB
 		{
 			static const __m128 one_tenth = _mm_set1_ps(0.1);
 			return one_tenth;
+		}
+
+		static inline const __m128 & getZero()
+		{
+			static const __m128 zero = _mm_set1_ps(0.0);
+			return zero;
+		}
+
+		static inline const __m128 & getOne()
+		{
+			static const __m128 one = _mm_set1_ps(1.0);
+			return one;
+		}
+
+		static inline const __m128 & getTwo()
+		{
+			static const __m128 two = _mm_set1_ps(2.0);
+			return two;
 		}
 	};
 
@@ -286,11 +424,28 @@ namespace DB
 		static inline void compute(const Float64 * in, const Scale & scale, Float64 * out)
 		{
 			__m128d val = _mm_loadu_pd(in);
+
+			/// Превратить отрицательные значения в положительные.
+			__m128d factor = _mm_cmpge_pd(val, getZero());
+			factor = _mm_min_pd(factor, getTwo());
+			factor = _mm_sub_pd(factor, getOne());
+			val = _mm_mul_pd(val, factor);
+
+			/// Алгоритм округления.
 			val = _mm_div_pd(val, scale);
 			__m128d res = _mm_cmpge_pd(val, getOneTenth());
 			val = _mm_round_pd(val, rounding_mode);
 			val = _mm_mul_pd(val, scale);
 			val = _mm_and_pd(val, res);
+
+			/// Предотвратить появление отрицательных нолей определённых в стандарте IEEE-754.
+			__m128d check = _mm_cmpeq_pd(val, getZero());
+			check = _mm_min_pd(check, getOne());
+			factor = _mm_add_pd(factor, check);
+
+			/// Вернуть настоящие знаки всех значений.
+			val = _mm_mul_pd(val, factor);
+
 			_mm_storeu_pd(out, val);
 		}
 
@@ -299,6 +454,24 @@ namespace DB
 		{
 			static const __m128d one_tenth = _mm_set1_pd(0.1);
 			return one_tenth;
+		}
+
+		static inline const __m128d & getZero()
+		{
+			static const __m128d zero = _mm_set1_pd(0.0);
+			return zero;
+		}
+
+		static inline const __m128d & getOne()
+		{
+			static const __m128d one = _mm_set1_pd(1.0);
+			return one;
+		}
+
+		static inline const __m128d & getTwo()
+		{
+			static const __m128d two = _mm_set1_pd(2.0);
+			return two;
 		}
 	};
 
@@ -337,14 +510,16 @@ namespace DB
 	public:
 		static inline void apply(const PODArray<T> & in, size_t scale, typename ColumnVector<T>::Container_t & out)
 		{
+			auto divisor = Op::prepare(scale);
 			size_t size = in.size();
 			for (size_t i = 0; i < size; ++i)
-				out[i] = Op::compute(in[i], scale);
+				out[i] = Op::compute(in[i], divisor);
 		}
 
 		static inline T apply(T val, size_t scale)
 		{
-			return Op::compute(val, scale);
+			auto divisor = Op::prepare(scale);
+			return Op::compute(val, divisor);
 		}
 	};
 
