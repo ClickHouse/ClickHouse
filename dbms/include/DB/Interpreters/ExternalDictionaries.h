@@ -43,10 +43,14 @@ private:
 	mutable std::mutex dictionaries_mutex;
 
 	using dictionary_ptr_t = std::shared_ptr<MultiVersion<IDictionary>>;
-	using dictionary_origin_pair_t = std::pair<dictionary_ptr_t, std::string>;
-	std::unordered_map<std::string, dictionary_origin_pair_t> dictionaries;
-	/// exception pointers for notifying user about failures on dictionary creation
-	std::unordered_map<std::string, std::exception_ptr> stored_exceptions;
+	struct dictionary_info final
+	{
+		dictionary_ptr_t dict;
+		std::string origin;
+		std::exception_ptr exception;
+	};
+
+	std::unordered_map<std::string, dictionary_info> dictionaries;
 	std::unordered_map<std::string, std::chrono::system_clock::time_point> update_times;
 	std::mt19937_64 rnd_engine{getSeed()};
 
@@ -95,24 +99,7 @@ public:
 		reloading_thread.join();
 	}
 
-	MultiVersion<IDictionary>::Version getDictionary(const std::string & name) const
-	{
-		const std::lock_guard<std::mutex> lock{dictionaries_mutex};
-		const auto it = dictionaries.find(name);
-		if (it == std::end(dictionaries))
-		{
-			const auto exception_it = stored_exceptions.find(name);
-			if (exception_it != std::end(stored_exceptions))
-				std::rethrow_exception(exception_it->second);
-			else
-				throw Exception{
-					"No such dictionary: " + name,
-					ErrorCodes::BAD_ARGUMENTS
-				};
-		}
-
-		return it->second.first->get();
-	}
+	MultiVersion<IDictionary>::Version getDictionary(const std::string & name) const;
 };
 
 }

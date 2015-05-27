@@ -22,6 +22,7 @@ struct SubqueryForSet
 {
 	/// Источник - получен с помощью InterpreterSelectQuery подзапроса.
 	BlockInputStreamPtr source;
+	Block source_sample;
 
 	/// Если задано - создать из результата Set.
 	SetPtr set;

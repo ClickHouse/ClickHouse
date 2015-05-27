@@ -20,10 +20,12 @@ const auto max_connections = 16;
 class ClickHouseDictionarySource final : public IDictionarySource
 {
 public:
-	ClickHouseDictionarySource(const Poco::Util::AbstractConfiguration & config,
+	ClickHouseDictionarySource(const DictionaryStructure & dict_struct,
+		const Poco::Util::AbstractConfiguration & config,
 		const std::string & config_prefix,
 		Block & sample_block, Context & context)
-		: host{config.getString(config_prefix + ".host")},
+		: dict_struct{dict_struct},
+		  host{config.getString(config_prefix + ".host")},
 		  port(config.getInt(config_prefix + ".port")),
 		  user{config.getString(config_prefix + ".user", "")},
 		  password{config.getString(config_prefix + ".password", "")},
@@ -41,7 +43,8 @@ public:
 
 	/// copy-constructor is provided in order to support cloneability
 	ClickHouseDictionarySource(const ClickHouseDictionarySource & other)
-		: host{other.host}, port{other.port}, user{other.user}, password{other.password},
+		: dict_struct{other.dict_struct},
+		  host{other.host}, port{other.port}, user{other.user}, password{other.password},
 		  db{other.db}, table{other.table},
 		  where{other.where},
 		  sample_block{other.sample_block}, context(other.context),
@@ -90,14 +93,19 @@ private:
 			WriteBufferFromString out{query};
 			writeString("SELECT ", out);
 
-			auto first = true;
-			for (const auto idx : ext::range(0, sample_block.columns()))
-			{
-				if (!first)
-					writeString(", ", out);
+			writeProbablyBackQuotedString(dict_struct.id_name, out);
 
-				writeString(sample_block.getByPosition(idx).name, out);
-				first = false;
+			for (const auto & attr : dict_struct.attributes)
+			{
+				writeString(", ", out);
+
+				if (!attr.expression.empty())
+				{
+					writeString(attr.expression, out);
+					writeString(" AS ", out);
+				}
+
+				writeProbablyBackQuotedString(attr.name, out);
 			}
 
 			writeString(" FROM ", out);
@@ -128,17 +136,21 @@ private:
 			WriteBufferFromString out{query};
 			writeString("SELECT ", out);
 
-			auto first = true;
-			for (const auto idx : ext::range(0, sample_block.columns()))
-			{
-				if (!first)
-					writeString(", ", out);
+			writeProbablyBackQuotedString(dict_struct.id_name, out);
 
-				writeString(sample_block.getByPosition(idx).name, out);
-				first = false;
+			for (const auto & attr : dict_struct.attributes)
+			{
+				writeString(", ", out);
+
+				if (!attr.expression.empty())
+				{
+					writeString(attr.expression, out);
+					writeString(" AS ", out);
+				}
+
+				writeProbablyBackQuotedString(attr.name, out);
 			}
 
-			const auto & id_column_name = sample_block.getByPosition(0).name;
 			writeString(" FROM ", out);
 			if (!db.empty())
 			{
@@ -155,10 +167,10 @@ private:
 				writeString(" AND ", out);
 			}
 
-			writeProbablyBackQuotedString(id_column_name, out);
+			writeProbablyBackQuotedString(dict_struct.id_name, out);
 			writeString(" IN (", out);
 
-			first = true;
+			auto first = true;
 			for (const auto id : ids)
 			{
 				if (!first)
@@ -174,6 +186,7 @@ private:
 		return query;
 	}
 
+	const DictionaryStructure dict_struct;
 	const std::string host;
 	const UInt16 port;
 	const std::string user;
