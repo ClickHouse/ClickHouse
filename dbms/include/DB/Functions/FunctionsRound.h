@@ -295,13 +295,13 @@ namespace DB
 	struct FloatRoundingComputation<Float32, rounding_mode, PositiveScale>
 		: public BaseFloatRoundingComputation<Float32>
 	{
-		static inline void prepareScale(size_t scale, Scale & mm_scale)
+		static inline void prepare(size_t scale, Scale & mm_scale)
 		{
 			Float32 fscale = static_cast<Float32>(scale);
 			mm_scale = _mm_load1_ps(&fscale);
 		}
 
-		static inline void compute(const Float32 * in, const Scale & scale, Float32 * out)
+		static inline void compute(const Float32 * __restrict in, const Scale & scale, Float32 * __restrict out)
 		{
 			__m128 val = _mm_loadu_ps(in);
 			val = _mm_mul_ps(val, scale);
@@ -315,13 +315,13 @@ namespace DB
 	struct FloatRoundingComputation<Float32, rounding_mode, NegativeScale>
 		: public BaseFloatRoundingComputation<Float32>
 	{
-		static inline void prepareScale(size_t scale, Scale & mm_scale)
+		static inline void prepare(size_t scale, Scale & mm_scale)
 		{
 			Float32 fscale = static_cast<Float32>(scale);
 			mm_scale = _mm_load1_ps(&fscale);
 		}
 
-		static inline void compute(const Float32 * in, const Scale & scale, Float32 * out)
+		static inline void compute(const Float32 * __restrict in, const Scale & scale, Float32 * __restrict out)
 		{
 			__m128 val = _mm_loadu_ps(in);
 
@@ -379,11 +379,11 @@ namespace DB
 	struct FloatRoundingComputation<Float32, rounding_mode, ZeroScale>
 		: public BaseFloatRoundingComputation<Float32>
 	{
-		static inline void prepareScale(size_t scale, Scale & mm_scale)
+		static inline void prepare(size_t scale, Scale & mm_scale)
 		{
 		}
 
-		static inline void compute(const Float32 * in, const Scale & scale, Float32 * out)
+		static inline void compute(const Float32 * __restrict in, const Scale & scale, Float32 * __restrict out)
 		{
 			__m128 val = _mm_loadu_ps(in);
 			val = _mm_round_ps(val, rounding_mode);
@@ -395,13 +395,13 @@ namespace DB
 	struct FloatRoundingComputation<Float64, rounding_mode, PositiveScale>
 		: public BaseFloatRoundingComputation<Float64>
 	{
-		static inline void prepareScale(size_t scale, Scale & mm_scale)
+		static inline void prepare(size_t scale, Scale & mm_scale)
 		{
 			Float64 fscale = static_cast<Float64>(scale);
 			mm_scale = _mm_load1_pd(&fscale);
 		}
 
-		static inline void compute(const Float64 * in, const Scale & scale, Float64 * out)
+		static inline void compute(const Float64 * __restrict in, const Scale & scale, Float64 * __restrict out)
 		{
 			__m128d val = _mm_loadu_pd(in);
 			val = _mm_mul_pd(val, scale);
@@ -415,13 +415,13 @@ namespace DB
 	struct FloatRoundingComputation<Float64, rounding_mode, NegativeScale>
 		: public BaseFloatRoundingComputation<Float64>
 	{
-		static inline void prepareScale(size_t scale, Scale & mm_scale)
+		static inline void prepare(size_t scale, Scale & mm_scale)
 		{
 			Float64 fscale = static_cast<Float64>(scale);
 			mm_scale = _mm_load1_pd(&fscale);
 		}
 
-		static inline void compute(const Float64 * in, const Scale & scale, Float64 * out)
+		static inline void compute(const Float64 * __restrict in, const Scale & scale, Float64 * __restrict out)
 		{
 			__m128d val = _mm_loadu_pd(in);
 
@@ -479,11 +479,11 @@ namespace DB
 	struct FloatRoundingComputation<Float64, rounding_mode, ZeroScale>
 		: public BaseFloatRoundingComputation<Float64>
 	{
-		static inline void prepareScale(size_t scale, Scale & mm_scale)
+		static inline void prepare(size_t scale, Scale & mm_scale)
 		{
 		}
 
-		static inline void compute(const Float64 * in, const Scale & scale, Float64 * out)
+		static inline void compute(const Float64 * __restrict in, const Scale & scale, Float64 * __restrict out)
 		{
 			__m128d val = _mm_loadu_pd(in);
 			val = _mm_round_pd(val, rounding_mode);
@@ -512,11 +512,11 @@ namespace DB
 		{
 			auto divisor = Op::prepare(scale);
 
-			auto begin_in = &in[0];
-			auto end_in = begin_in + in.size();
-			auto p_out = &out[0];
+			const T* begin_in = &in[0];
+			const T* end_in = begin_in + in.size();
 
-			for (auto p_in = begin_in; p_in != end_in; ++p_in)
+			T* __restrict p_out = &out[0];
+			for (const T* __restrict p_in = begin_in; p_in != end_in; ++p_in)
 			{
 				*p_out = Op::compute(*p_in, divisor);
 				++p_out;
@@ -545,43 +545,45 @@ namespace DB
 		static inline void apply(const PODArray<T> & in, size_t scale, typename ColumnVector<T>::Container_t & out)
 		{
 			Scale mm_scale;
-			Op::prepareScale(scale, mm_scale);
+			Op::prepare(scale, mm_scale);
 
 			const size_t data_count = std::tuple_size<Data>();
 
-			auto begin_in = &in[0];
-			auto end_in = begin_in + in.size();
-			auto limit = end_in - (data_count - 1);
+			const T* begin_in = &in[0];
+			const T* end_in = begin_in + in.size();
 
-			auto begin_out = &out[0];
-			auto end_out = begin_out + out.size();
+			T* begin_out = &out[0];
+			const T* end_out = begin_out + out.size();
 
-			auto p_in = begin_in;
-			auto p_out = begin_out;
+			const T* limit = end_in - (data_count - 1);
+
+			const T* __restrict p_in = begin_in;
+			T* __restrict p_out = begin_out;
 			for (; p_in < limit; p_in += data_count)
 			{
-				Op::compute(reinterpret_cast<const T *>(p_in), mm_scale, reinterpret_cast<T *>(p_out));
+				Op::compute(p_in, mm_scale, p_out);
 				p_out += data_count;
 			}
 
 			if (p_in < end_in)
 			{
 				Data tmp{0};
-				auto begin_tmp = &tmp[0];
-				auto end_tmp = begin_tmp + data_count;
+				T* begin_tmp = &tmp[0];
+				const T* end_tmp = begin_tmp + data_count;
 
-				for (auto p_tmp = begin_tmp; (p_tmp != end_tmp) && (p_in != end_in); ++p_tmp)
+				for (T* __restrict p_tmp = begin_tmp; (p_tmp != end_tmp) && (p_in != end_in); ++p_tmp)
 				{
 					*p_tmp = *p_in;
 					++p_in;
 				}
 
 				Data res;
+				const T* begin_res = &res[0];
+				const T* end_res = begin_res + data_count;
+
 				Op::compute(reinterpret_cast<T *>(&tmp), mm_scale, reinterpret_cast<T *>(&res));
 
-				auto begin_res = &res[0];
-				auto end_res = begin_res + data_count;
-				for (auto p_res = begin_res; (p_res != end_res) && (p_out != end_out); ++p_res)
+				for (const T* __restrict p_res = begin_res; (p_res != end_res) && (p_out != end_out); ++p_res)
 				{
 					*p_out = *p_res;
 					++p_out;
@@ -596,7 +598,7 @@ namespace DB
 			else
 			{
 				Scale mm_scale;
-				Op::prepareScale(scale, mm_scale);
+				Op::prepare(scale, mm_scale);
 
 				Data tmp{0};
 				tmp[0] = val;
