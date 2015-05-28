@@ -11,6 +11,7 @@
 #include <DB/IO/copyData.h>
 #include <DB/IO/ReadBufferFromFile.h>
 #include <DB/Common/escapeForFileName.h>
+#include <DB/DataTypes/DataTypeFactory.h>
 #include <DB/Parsers/formatAST.h>
 #include <DB/Parsers/parseQuery.h>
 
@@ -35,7 +36,7 @@ void InterpreterAlterQuery::execute()
 
 	AlterCommands alter_commands;
 	PartitionCommands partition_commands;
-	parseAlter(alter.parameters, context.getDataTypeFactory(), alter_commands, partition_commands);
+	parseAlter(alter.parameters, alter_commands, partition_commands);
 
 	for (const PartitionCommand & command : partition_commands)
 	{
@@ -71,9 +72,11 @@ void InterpreterAlterQuery::execute()
 }
 
 void InterpreterAlterQuery::parseAlter(
-	const ASTAlterQuery::ParameterContainer & params_container, const DataTypeFactory & data_type_factory,
+	const ASTAlterQuery::ParameterContainer & params_container,
 	AlterCommands & out_alter_commands, PartitionCommands & out_partition_commands)
 {
+	const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
+
 	for (const auto & params : params_container)
 	{
 		if (params.type == ASTAlterQuery::ADD_COLUMN)

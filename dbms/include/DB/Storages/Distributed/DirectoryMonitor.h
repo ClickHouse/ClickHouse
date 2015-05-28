@@ -126,7 +126,7 @@ private:
 												 const std::string & user, const std::string & password) {
 			return new ConnectionPool{
 				1, host, port, "",
-				user, password, storage.context.getDataTypeFactory(),
+				user, password,
 				storage.getName() + '_' + name};
 		};
 

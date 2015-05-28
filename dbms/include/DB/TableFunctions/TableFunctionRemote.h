@@ -3,6 +3,7 @@
 #include <DB/TableFunctions/ITableFunction.h>
 #include <DB/Storages/StorageDistributed.h>
 #include <DB/Parsers/ASTIdentifier.h>
+#include <DB/DataTypes/DataTypeFactory.h>
 #include <DB/DataStreams/RemoteBlockInputStream.h>
 #include <DB/Interpreters/reinterpretAsIdentifier.h>
 #include <DB/Interpreters/Cluster.h>
@@ -117,7 +118,7 @@ public:
 		if (names.empty())
 			throw Exception("Shard list is empty after parsing first argument", ErrorCodes::BAD_ARGUMENTS);
 
-		SharedPtr<Cluster> cluster = new Cluster(context.getSettings(), context.getDataTypeFactory(), names, username, password);
+		SharedPtr<Cluster> cluster = new Cluster(context.getSettings(), names, username, password);
 
 		return StorageDistributed::create(getName(), chooseColumns(*cluster, remote_database, remote_table, context),
 			remote_database, remote_table, cluster, context);
@@ -140,6 +141,8 @@ private:
 		};
 		input->readPrefix();
 
+		const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
+
 		while (true)
 		{
 			Block current = input->read();
@@ -153,7 +156,7 @@ private:
 				String column_name = (*name)[i].get<const String &>();
 				String data_type_name = (*type)[i].get<const String &>();
 
-				res.emplace_back(column_name, context.getDataTypeFactory().get(data_type_name));
+				res.emplace_back(column_name, data_type_factory.get(data_type_name));
 			}
 		}
 

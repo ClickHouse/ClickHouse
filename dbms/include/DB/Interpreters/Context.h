@@ -160,7 +160,6 @@ public:
 
 	const TableFunctionFactory & getTableFunctionFactory() const;
 	const AggregateFunctionFactory & getAggregateFunctionFactory() const;
-	const DataTypeFactory & getDataTypeFactory() const;
 	const FormatFactory & getFormatFactory() const;
 	const Dictionaries & getDictionaries() const;
 	const ExternalDictionaries & getExternalDictionaries() const;

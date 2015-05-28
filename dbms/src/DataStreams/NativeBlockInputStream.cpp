@@ -5,6 +5,7 @@
 
 #include <DB/Columns/ColumnArray.h>
 #include <DB/DataTypes/DataTypeArray.h>
+#include <DB/DataTypes/DataTypeFactory.h>
 
 #include <DB/DataStreams/NativeBlockInputStream.h>
 
@@ -43,6 +44,8 @@ void NativeBlockInputStream::readData(const IDataType & type, IColumn & column, 
 Block NativeBlockInputStream::readImpl()
 {
 	Block res;
+
+	const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
 
 	if (istr.eof())
 		return res;

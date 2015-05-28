@@ -35,7 +35,7 @@ public:
 		  sample_block{sample_block}, context(context),
 		  is_local{isLocalAddress({ host, port })},
 		  pool{is_local ? nullptr : std::make_unique<ConnectionPool>(
-			  max_connections, host, port, db, user, password, context.getDataTypeFactory(),
+			  max_connections, host, port, db, user, password,
 			  "ClickHouseDictionarySource")
 		  },
 		  load_all_query{composeLoadAllQuery()}
@@ -50,7 +50,7 @@ public:
 		  sample_block{other.sample_block}, context(other.context),
 		  is_local{other.is_local},
 		  pool{is_local ? nullptr : std::make_unique<ConnectionPool>(
-			  max_connections, host, port, db, user, password, context.getDataTypeFactory(),
+			  max_connections, host, port, db, user, password,
 			  "ClickHouseDictionarySource")},
 		  load_all_query{other.load_all_query}
 	{}

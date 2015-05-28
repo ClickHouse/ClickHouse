@@ -47,7 +47,7 @@ namespace
 }
 
 
-Clusters::Clusters(const Settings & settings, const DataTypeFactory & data_type_factory, const String & config_name)
+Clusters::Clusters(const Settings & settings, const String & config_name)
 {
 	Poco::Util::AbstractConfiguration & config = Poco::Util::Application::instance().config();
 	Poco::Util::AbstractConfiguration::Keys config_keys;
@@ -56,11 +56,11 @@ Clusters::Clusters(const Settings & settings, const DataTypeFactory & data_type_
 	for (Poco::Util::AbstractConfiguration::Keys::const_iterator it = config_keys.begin(); it != config_keys.end(); ++it)
 		impl.emplace(std::piecewise_construct,
 			std::forward_as_tuple(*it),
-			std::forward_as_tuple(settings, data_type_factory, config_name + "." + *it));
+			std::forward_as_tuple(settings, config_name + "." + *it));
 }
 
 
-Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_factory, const String & cluster_name)
+Cluster::Cluster(const Settings & settings, const String & cluster_name)
 {
 	Poco::Util::AbstractConfiguration & config = Poco::Util::Application::instance().config();
 	Poco::Util::AbstractConfiguration::Keys config_keys;
@@ -179,7 +179,7 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 					replicas.emplace_back(new ConnectionPool(
 						settings.distributed_connections_pool_size,
 						replica.host_port.host().toString(), replica.host_port.port(), "", replica.user, replica.password,
-						data_type_factory, "server", Protocol::Compression::Enable,
+						"server", Protocol::Compression::Enable,
 						saturate(settings.connect_timeout_with_failover_ms, settings.limits.max_execution_time),
 						saturate(settings.receive_timeout, settings.limits.max_execution_time),
 						saturate(settings.send_timeout, settings.limits.max_execution_time)));
@@ -205,7 +205,7 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 				pools.emplace_back(new ConnectionPool(
 					settings.distributed_connections_pool_size,
 					address.host_port.host().toString(), address.host_port.port(), "", address.user, address.password,
-					data_type_factory, "server", Protocol::Compression::Enable,
+					"server", Protocol::Compression::Enable,
 					saturate(settings.connect_timeout, settings.limits.max_execution_time),
 					saturate(settings.receive_timeout, settings.limits.max_execution_time),
 					saturate(settings.send_timeout, settings.limits.max_execution_time)));
@@ -217,7 +217,7 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 }
 
 
-Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_factory, std::vector<std::vector<String>> names,
+Cluster::Cluster(const Settings & settings, std::vector<std::vector<String>> names,
 				 const String & username, const String & password)
 {
 	for (const auto & shard : names)
@@ -238,7 +238,7 @@ Cluster::Cluster(const Settings & settings, const DataTypeFactory & data_type_fa
 			replicas.emplace_back(new ConnectionPool(
 				settings.distributed_connections_pool_size,
 				replica.host_port.host().toString(), replica.host_port.port(), "", replica.user, replica.password,
-				data_type_factory, "server", Protocol::Compression::Enable,
+				"server", Protocol::Compression::Enable,
 				saturate(settings.connect_timeout_with_failover_ms, settings.limits.max_execution_time),
 				saturate(settings.receive_timeout, settings.limits.max_execution_time),
 				saturate(settings.send_timeout, settings.limits.max_execution_time)));

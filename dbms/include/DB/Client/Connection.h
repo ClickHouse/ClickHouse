@@ -12,8 +12,6 @@
 #include <DB/Core/Protocol.h>
 #include <DB/Core/QueryProcessingStage.h>
 
-#include <DB/DataTypes/DataTypeFactory.h>
-
 #include <DB/DataStreams/IBlockInputStream.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
 #include <DB/DataStreams/BlockStreamProfileInfo.h>
@@ -50,7 +48,6 @@ class Connection : private boost::noncopyable
 public:
 	Connection(const String & host_, UInt16 port_, const String & default_database_,
 		const String & user_, const String & password_,
-		const DataTypeFactory & data_type_factory_,
 		const String & client_name_ = "client",
 		Protocol::Compression::Enum compression_ = Protocol::Compression::Enable,
 		Poco::Timespan connect_timeout_ = Poco::Timespan(DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, 0),
@@ -61,7 +58,7 @@ public:
 		host(host_), port(port_), default_database(default_database_),
 		user(user_), password(password_),
 		client_name(client_name_),
-		compression(compression_), data_type_factory(data_type_factory_),
+		compression(compression_),
 		connect_timeout(connect_timeout_), receive_timeout(receive_timeout_), send_timeout(send_timeout_),
 		ping_timeout(ping_timeout_),
 		log_wrapper(host, port)
@@ -171,8 +168,6 @@ private:
 	UInt64 compression;		/// Сжимать ли данные при взаимодействии с сервером.
 	/// каким алгоритмом сжимать данные при INSERT и данные внешних таблиц
 	CompressionMethod network_compression_method = CompressionMethod::LZ4;
-
-	const DataTypeFactory & data_type_factory;
 
 	/** Если не nullptr, то используется, чтобы ограничить сетевой трафик.
 	  * Учитывается только трафик при передаче блоков. Другие пакеты не учитываются.

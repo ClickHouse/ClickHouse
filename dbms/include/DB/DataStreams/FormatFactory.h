@@ -1,7 +1,5 @@
 #pragma once
 
-#include <DB/DataTypes/DataTypeFactory.h>
-
 #include <DB/DataStreams/IBlockInputStream.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
 
@@ -16,8 +14,8 @@ class FormatFactory
 {
 public:
 	BlockInputStreamPtr getInput(const String & name, ReadBuffer & buf,
-		Block & sample, size_t max_block_size, const DataTypeFactory & data_type_factory) const;
-		
+		Block & sample, size_t max_block_size) const;
+
 	BlockOutputStreamPtr getOutput(const String & name, WriteBuffer & buf,
 		Block & sample) const;
 };
