@@ -511,9 +511,16 @@ namespace DB
 		static inline void apply(const PODArray<T> & in, size_t scale, typename ColumnVector<T>::Container_t & out)
 		{
 			auto divisor = Op::prepare(scale);
-			size_t size = in.size();
-			for (size_t i = 0; i < size; ++i)
-				out[i] = Op::compute(in[i], divisor);
+
+			auto begin_in = &in[0];
+			auto end_in = begin_in + in.size();
+			auto p_out = &out[0];
+
+			for (auto p_in = begin_in; p_in != end_in; ++p_in)
+			{
+				*p_out = Op::compute(*p_in, divisor);
+				++p_out;
+			}
 		}
 
 		static inline T apply(T val, size_t scale)
@@ -540,24 +547,45 @@ namespace DB
 			Scale mm_scale;
 			Op::prepareScale(scale, mm_scale);
 
-			const size_t size = in.size();
 			const size_t data_count = std::tuple_size<Data>();
 
-			size_t i;
-			for (i = 0; i < (size - data_count + 1); i += data_count)
-				Op::compute(reinterpret_cast<const T *>(&in[i]), mm_scale, reinterpret_cast<T *>(&out[i]));
+			auto begin_in = &in[0];
+			auto end_in = begin_in + in.size();
+			auto limit = end_in - (data_count - 1);
 
-			if (i < size)
+			auto begin_out = &out[0];
+			auto end_out = begin_out + out.size();
+
+			auto p_in = begin_in;
+			auto p_out = begin_out;
+			for (; p_in < limit; p_in += data_count)
+			{
+				Op::compute(reinterpret_cast<const T *>(p_in), mm_scale, reinterpret_cast<T *>(p_out));
+				p_out += data_count;
+			}
+
+			if (p_in < end_in)
 			{
 				Data tmp{0};
-				for (size_t j = 0; (j < data_count) && ((i + j) < size); ++j)
-					tmp[j] = in[i + j];
+				auto begin_tmp = &tmp[0];
+				auto end_tmp = begin_tmp + data_count;
+
+				for (auto p_tmp = begin_tmp; (p_tmp != end_tmp) && (p_in != end_in); ++p_tmp)
+				{
+					*p_tmp = *p_in;
+					++p_in;
+				}
 
 				Data res;
 				Op::compute(reinterpret_cast<T *>(&tmp), mm_scale, reinterpret_cast<T *>(&res));
 
-				for (size_t j = 0; (j < data_count) && ((i + j) < size); ++j)
-					out[i + j] = res[j];
+				auto begin_res = &res[0];
+				auto end_res = begin_res + data_count;
+				for (auto p_res = begin_res; (p_res != end_res) && (p_out != end_out); ++p_res)
+				{
+					*p_out = *p_res;
+					++p_out;
+				}
 			}
 		}
 
