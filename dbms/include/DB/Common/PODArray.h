@@ -192,6 +192,8 @@ public:
 		return *this;
 	}
 
+	T * data() { return t_start(); }
+	const T * data() const { return t_start(); }
 
     size_t size() const { return t_end() - t_start(); }
     bool empty() const { return t_end() == t_start(); }
