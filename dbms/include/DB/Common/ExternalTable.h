@@ -4,6 +4,7 @@
 #include <boost/algorithm/string.hpp>
 #include <DB/DataStreams/AsynchronousBlockInputStream.h>
 #include <DB/DataStreams/FormatFactory.h>
+#include <DB/DataTypes/DataTypeFactory.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/IO/copyData.h>
 #include <DB/IO/ReadBufferFromIStream.h>
