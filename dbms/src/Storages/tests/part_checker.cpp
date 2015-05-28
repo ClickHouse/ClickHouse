@@ -4,6 +4,8 @@
 
 int main(int argc, char ** argv)
 {
+	using namespace DB;
+
 	Poco::AutoPtr<Poco::ConsoleChannel> channel = new Poco::ConsoleChannel(std::cerr);
 	Logger::root().setChannel(channel);
 	Logger::root().setLevel("trace");
@@ -16,18 +18,18 @@ int main(int argc, char ** argv)
 
 	try
 	{
-		DB::MergeTreePartChecker::Settings settings;
+		MergeTreePartChecker::Settings settings;
 		if (argc == 4)
-			settings.setIndexGranularity(DB::parse<size_t>(argv[3]));
+			settings.setIndexGranularity(parse<size_t>(argv[3]));
 		settings.setRequireChecksums(argv[2][0] == '1');
 		settings.setRequireColumnFiles(argv[2][0] == '1');
 		settings.setVerbose(true);
 
-		DB::MergeTreePartChecker::checkDataPart(argv[1], settings);
+		MergeTreePartChecker::checkDataPart(argv[1], settings, Block());
 	}
 	catch (...)
 	{
-		DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+		tryLogCurrentException(__PRETTY_FUNCTION__);
 		throw;
 	}
 

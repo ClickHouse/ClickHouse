@@ -1817,7 +1817,7 @@ void StorageReplicatedMergeTree::partCheckThread()
 						settings.setRequireChecksums(true);
 						settings.setRequireColumnFiles(true);
 						MergeTreePartChecker::checkDataPart(
-							data.getFullPath() + part_name, settings);
+							data.getFullPath() + part_name, settings, data.primary_key_sample);
 
 						LOG_INFO(log, "Part " << part_name << " looks good.");
 					}

@@ -249,7 +249,11 @@ static size_t checkColumn(const String & path, const String & name, DataTypePtr 
 	}
 }
 
-void MergeTreePartChecker::checkDataPart(String path, const Settings & settings, MergeTreeData::DataPart::Checksums * out_checksums)
+void MergeTreePartChecker::checkDataPart(
+	String path,
+	const Settings & settings,
+	const Block & primary_key_sample,
+	MergeTreeData::DataPart::Checksums * out_checksums)
 {
 	if (!path.empty() && path.back() != '/')
 		path += "/";
@@ -275,10 +279,29 @@ void MergeTreePartChecker::checkDataPart(String path, const Settings & settings,
 	/// Реальные чексуммы по содержимому данных. Их несоответствие checksums_txt будет говорить о битых данных.
 	MergeTreeData::DataPart::Checksums checksums_data;
 
+	size_t marks_in_primary_key = 0;
 	{
 		ReadBufferFromFile file_buf(path + "primary.idx");
 		HashingReadBuffer hashing_buf(file_buf);
-		size_t primary_idx_size = hashing_buf.tryIgnore(std::numeric_limits<size_t>::max());
+
+		if (primary_key_sample)
+		{
+			Field tmp_field;
+			size_t key_size = primary_key_sample.columns();
+			while (!hashing_buf.eof())
+			{
+				++marks_in_primary_key;
+				for (size_t j = 0; j < key_size; ++j)
+					primary_key_sample.unsafeGetByPosition(j).type->deserializeBinary(tmp_field, hashing_buf);
+			}
+		}
+		else
+		{
+			hashing_buf.tryIgnore(std::numeric_limits<size_t>::max());
+		}
+
+		size_t primary_idx_size = hashing_buf.count();
+
 		checksums_data.files["primary.idx"] = MergeTreeData::DataPart::Checksums::Checksum(primary_idx_size, hashing_buf.getHash());
 	}
 
@@ -343,9 +366,17 @@ void MergeTreePartChecker::checkDataPart(String path, const Settings & settings,
 	if (rows == Stream::UNKNOWN)
 		throw Exception("No columns", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
 
-/*	if (primary_idx_size % ((rows - 1) / settings.index_granularity + 1))
-		throw Exception("primary.idx size (" + toString(primary_idx_size) + ") not divisible by number of marks ("
-			+ toString(rows) + "/" + toString(settings.index_granularity) + " rounded up)", ErrorCodes::CORRUPTED_DATA);*/
+	if (primary_key_sample)
+	{
+		const size_t expected_marks = (rows - 1) / settings.index_granularity + 1;
+		if (expected_marks != marks_in_primary_key)
+			throw Exception("Size of primary key doesn't match expected number of marks."
+				" Number of rows in columns: " + toString(rows)
+				+ ", index_granularity: " + toString(settings.index_granularity)
+				+ ", expected number of marks: " + toString(expected_marks)
+				+ ", size of primary key: " + toString(marks_in_primary_key),
+				ErrorCodes::CORRUPTED_DATA);
+	}
 
 	if (settings.require_checksums || !checksums_txt.files.empty())
 		checksums_txt.checkEqual(checksums_data, true);

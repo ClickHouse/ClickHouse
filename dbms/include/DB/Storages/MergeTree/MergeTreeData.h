@@ -853,13 +853,13 @@ public:
 	const MergeTreeSettings settings;
 
 	const ASTPtr primary_expr_ast;
+	Block primary_key_sample;
 
 private:
 	bool require_part_metadata;
 
 	ExpressionActionsPtr primary_expr;
 	SortDescription sort_descr;
-	Block primary_key_sample;
 
 	String full_path;
 
