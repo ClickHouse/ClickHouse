@@ -15,7 +15,6 @@
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
-#include <DB/DataTypes/DataTypeFactory.h>
 
 #include <DB/DataStreams/NativeBlockInputStream.h>
 #include <DB/DataStreams/NativeBlockOutputStream.h>
@@ -117,8 +116,6 @@ int main(int argc, char ** argv)
 		/// читаем данные из native файла и одновременно пишем в таблицу
 		if (argc == 2 && 0 == strcmp(argv[1], "write"))
 		{
-			DataTypeFactory factory;
-
 			ReadBufferFromFileDescriptor in1(STDIN_FILENO);
 			CompressedReadBuffer in2(in1);
 			NativeBlockInputStream in3(in2, factory, Revision::get());

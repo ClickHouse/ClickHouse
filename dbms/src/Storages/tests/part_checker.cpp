@@ -23,7 +23,7 @@ int main(int argc, char ** argv)
 		settings.setRequireColumnFiles(argv[2][0] == '1');
 		settings.setVerbose(true);
 
-		DB::MergeTreePartChecker::checkDataPart(argv[1], settings, DB::DataTypeFactory());
+		DB::MergeTreePartChecker::checkDataPart(argv[1], settings);
 	}
 	catch (...)
 	{

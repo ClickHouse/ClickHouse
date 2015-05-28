@@ -45,7 +45,7 @@ protected:
 	void restore();
 
 private:
-	void restoreFromFile(const String & file_path, const DataTypeFactory & data_type_factory);
+	void restoreFromFile(const String & file_path);
 
 	/// Вставить блок в состояние.
 	virtual void insertBlock(const Block & block) = 0;

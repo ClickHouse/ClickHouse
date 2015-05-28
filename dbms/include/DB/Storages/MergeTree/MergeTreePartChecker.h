@@ -28,8 +28,7 @@ public:
 	  *  - Проверяет правильность засечек.
 	  * Бросает исключение, если кусок испорчен или если проверить не получилось (TODO: можно попробовать разделить эти случаи).
 	  */
-	static void checkDataPart(String path, const Settings & settings, const DataTypeFactory & data_type_factory,
-							  MergeTreeData::DataPart::Checksums * out_checksums = nullptr);
+	static void checkDataPart(String path, const Settings & settings, MergeTreeData::DataPart::Checksums * out_checksums = nullptr);
 };
 
 }

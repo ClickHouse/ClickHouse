@@ -477,7 +477,7 @@ public:
 			}
 
 			ReadBufferFromFile file(path, std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path).getSize()));
-			columns.readText(file, storage.context.getDataTypeFactory());
+			columns.readText(file);
 		}
 
 		void checkNotBroken(bool require_part_metadata)

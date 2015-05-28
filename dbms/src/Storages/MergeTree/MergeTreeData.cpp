@@ -1037,7 +1037,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const St
 		MergeTreePartChecker::Settings settings;
 		settings.setIndexGranularity(index_granularity);
 		settings.setRequireColumnFiles(true);
-		MergeTreePartChecker::checkDataPart(full_path + relative_path, settings, context.getDataTypeFactory(), &part->checksums);
+		MergeTreePartChecker::checkDataPart(full_path + relative_path, settings, &part->checksums);
 
 		{
 			WriteBufferFromFile out(full_path + relative_path + "/checksums.txt.tmp", 4096);

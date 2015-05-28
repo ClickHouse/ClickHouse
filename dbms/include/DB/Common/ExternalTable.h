@@ -42,11 +42,13 @@ public:
 	/// Инициализировать sample_block по структуре таблицы сохраненной в structure
 	virtual void initSampleBlock(const Context & context)
 	{
+		const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
+
 		for (size_t i = 0; i < structure.size(); ++i)
 		{
 			ColumnWithNameAndType column;
 			column.name = structure[i].first;
-			column.type = context.getDataTypeFactory().get(structure[i].second);
+			column.type = data_type_factory.get(structure[i].second);
 			column.column = column.type->createColumn();
 			sample_block.insert(column);
 		}
@@ -58,7 +60,7 @@ public:
 		initReadBuffer();
 		initSampleBlock(context);
 		ExternalTableData res = std::make_pair(new AsynchronousBlockInputStream(context.getFormatFactory().getInput(
-			format, *read_buffer, sample_block, DEFAULT_BLOCK_SIZE, context.getDataTypeFactory())), name);
+			format, *read_buffer, sample_block, DEFAULT_BLOCK_SIZE)), name);
 		return res;
 	}
 

@@ -606,7 +606,6 @@ void TCPHandler::initBlockInput()
 
 		state.block_in = new NativeBlockInputStream(
 			*state.maybe_compressed_in,
-			query_context.getDataTypeFactory(),
 			client_revision);
 	}
 }

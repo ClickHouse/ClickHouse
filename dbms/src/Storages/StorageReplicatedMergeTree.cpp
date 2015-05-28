@@ -268,8 +268,7 @@ void StorageReplicatedMergeTree::checkTableStructure(bool skip_sanity_checks, bo
 	assertEOF(buf);
 
 	zkutil::Stat stat;
-	auto columns_desc = ColumnsDescription<true>::parse(
-		zookeeper->get(zookeeper_path + "/columns", &stat), context.getDataTypeFactory());
+	auto columns_desc = ColumnsDescription<true>::parse(zookeeper->get(zookeeper_path + "/columns", &stat));
 
 	auto & columns = columns_desc.columns;
 	auto & materialized_columns = columns_desc.materialized;
@@ -1459,7 +1458,7 @@ void StorageReplicatedMergeTree::alterThread()
 
 			zkutil::Stat stat;
 			const String columns_str = zookeeper->get(zookeeper_path + "/columns", &stat, alter_thread_event);
-			auto columns_desc = ColumnsDescription<true>::parse(columns_str, context.getDataTypeFactory());
+			auto columns_desc = ColumnsDescription<true>::parse(columns_str);
 
 			auto & columns = columns_desc.columns;
 			auto & materialized_columns = columns_desc.materialized;
@@ -1809,7 +1808,7 @@ void StorageReplicatedMergeTree::partCheckThread()
 						zk_checksums.checkEqual(part->checksums, true);
 
 						auto zk_columns = NamesAndTypesList::parse(
-							zookeeper->get(replica_path + "/parts/" + part_name + "/columns"), context.getDataTypeFactory());
+							zookeeper->get(replica_path + "/parts/" + part_name + "/columns"));
 						if (part->columns != zk_columns)
 							throw Exception("Columns of local part " + part_name + " are different from ZooKeeper");
 
@@ -1818,7 +1817,7 @@ void StorageReplicatedMergeTree::partCheckThread()
 						settings.setRequireChecksums(true);
 						settings.setRequireColumnFiles(true);
 						MergeTreePartChecker::checkDataPart(
-							data.getFullPath() + part_name, settings, context.getDataTypeFactory());
+							data.getFullPath() + part_name, settings);
 
 						LOG_INFO(log, "Part " << part_name << " looks good.");
 					}

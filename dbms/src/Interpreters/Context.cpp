@@ -13,7 +13,6 @@
 #include <DB/DataStreams/FormatFactory.h>
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
 #include <DB/TableFunctions/TableFunctionFactory.h>
-#include <DB/DataTypes/DataTypeFactory.h>
 #include <DB/Storages/IStorage.h>
 #include <DB/Storages/MarkCache.h>
 #include <DB/Storages/MergeTree/BackgroundProcessingPool.h>
@@ -72,7 +71,6 @@ struct ContextShared
 	Databases databases;									/// Список БД и таблиц в них.
 	TableFunctionFactory table_function_factory;			/// Табличные функции.
 	AggregateFunctionFactory aggregate_function_factory; 	/// Агрегатные функции.
-	DataTypeFactory data_type_factory;						/// Типы данных.
 	FormatFactory format_factory;							/// Форматы.
 	mutable SharedPtr<Dictionaries> dictionaries;			/// Словари Метрики. Инициализируются лениво.
 	mutable SharedPtr<ExternalDictionaries> external_dictionaries;
@@ -155,7 +153,6 @@ Context::~Context() = default;
 
 const TableFunctionFactory & Context::getTableFunctionFactory() const			{ return shared->table_function_factory; }
 const AggregateFunctionFactory & Context::getAggregateFunctionFactory() const	{ return shared->aggregate_function_factory; }
-const DataTypeFactory & Context::getDataTypeFactory() const						{ return shared->data_type_factory; }
 const FormatFactory & Context::getFormatFactory() const							{ return shared->format_factory; }
 InterserverIOHandler & Context::getInterserverIOHandler()						{ return shared->interserver_io_handler; }
 Poco::Mutex & Context::getMutex() const 										{ return shared->mutex; }
@@ -800,7 +797,7 @@ void Context::initClusters()
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 	if (!shared->clusters)
-		shared->clusters = new Clusters(settings, shared->data_type_factory);
+		shared->clusters = new Clusters(settings);
 }
 
 Cluster & Context::getCluster(const std::string & cluster_name)

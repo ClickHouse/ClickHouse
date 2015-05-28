@@ -1,6 +1,7 @@
 #include <DB/Parsers/ExpressionListParsers.h>
 #include <DB/IO/WriteBufferFromString.h>
 #include <DB/Storages/ColumnsDescription.h>
+#include <DB/DataTypes/DataTypeFactory.h>
 
 
 namespace DB
@@ -50,7 +51,7 @@ String ColumnsDescription<store>::toString() const
 
 
 template <>
-ColumnsDescription<true> ColumnsDescription<true>::parse(const String & str, const DataTypeFactory & data_type_factory)
+ColumnsDescription<true> ColumnsDescription<true>::parse(const String & str)
 {
 	ReadBufferFromString buf{str};
 
@@ -60,6 +61,7 @@ ColumnsDescription<true> ColumnsDescription<true>::parse(const String & str, con
 	assertString(" columns:\n", buf);
 
 	ParserTernaryOperatorExpression expr_parser;
+	const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
 
 	ColumnsDescription<true> result{};
 	for (size_t i = 0; i < count; ++i)

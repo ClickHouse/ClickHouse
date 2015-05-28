@@ -249,8 +249,7 @@ static size_t checkColumn(const String & path, const String & name, DataTypePtr 
 	}
 }
 
-void MergeTreePartChecker::checkDataPart(String path, const Settings & settings, const DataTypeFactory & data_type_factory,
-										 MergeTreeData::DataPart::Checksums * out_checksums)
+void MergeTreePartChecker::checkDataPart(String path, const Settings & settings, MergeTreeData::DataPart::Checksums * out_checksums)
 {
 	if (!path.empty() && path.back() != '/')
 		path += "/";
@@ -262,7 +261,7 @@ void MergeTreePartChecker::checkDataPart(String path, const Settings & settings,
 
 	{
 		ReadBufferFromFile buf(path + "columns.txt");
-		columns.readText(buf, data_type_factory);
+		columns.readText(buf);
 		assertEOF(buf);
 	}
 
@@ -275,12 +274,11 @@ void MergeTreePartChecker::checkDataPart(String path, const Settings & settings,
 
 	/// Реальные чексуммы по содержимому данных. Их несоответствие checksums_txt будет говорить о битых данных.
 	MergeTreeData::DataPart::Checksums checksums_data;
-	size_t primary_idx_size;
 
 	{
 		ReadBufferFromFile file_buf(path + "primary.idx");
 		HashingReadBuffer hashing_buf(file_buf);
-		primary_idx_size = hashing_buf.tryIgnore(std::numeric_limits<size_t>::max());
+		size_t primary_idx_size = hashing_buf.tryIgnore(std::numeric_limits<size_t>::max());
 		checksums_data.files["primary.idx"] = MergeTreeData::DataPart::Checksums::Checksum(primary_idx_size, hashing_buf.getHash());
 	}
 
@@ -345,9 +343,9 @@ void MergeTreePartChecker::checkDataPart(String path, const Settings & settings,
 	if (rows == Stream::UNKNOWN)
 		throw Exception("No columns", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
 
-	if (primary_idx_size % ((rows - 1) / settings.index_granularity + 1))
+/*	if (primary_idx_size % ((rows - 1) / settings.index_granularity + 1))
 		throw Exception("primary.idx size (" + toString(primary_idx_size) + ") not divisible by number of marks ("
-			+ toString(rows) + "/" + toString(settings.index_granularity) + " rounded up)", ErrorCodes::CORRUPTED_DATA);
+			+ toString(rows) + "/" + toString(settings.index_granularity) + " rounded up)", ErrorCodes::CORRUPTED_DATA);*/
 
 	if (settings.require_checksums || !checksums_txt.files.empty())
 		checksums_txt.checkEqual(checksums_data, true);
