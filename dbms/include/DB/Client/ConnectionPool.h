@@ -54,16 +54,34 @@ public:
 	typedef PoolBase<Connection> Base;
 
 	ConnectionPool(unsigned max_connections_,
-			const String & host_, UInt16 port_, const String & default_database_,
+			const String & host_, UInt16 port_,
+			const String & default_database_,
 			const String & user_, const String & password_,
 			const String & client_name_ = "client",
 			Protocol::Compression::Enum compression_ = Protocol::Compression::Enable,
 			Poco::Timespan connect_timeout_ = Poco::Timespan(DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, 0),
 			Poco::Timespan receive_timeout_ = Poco::Timespan(DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, 0),
 			Poco::Timespan send_timeout_ = Poco::Timespan(DBMS_DEFAULT_SEND_TIMEOUT_SEC, 0))
-	   : Base(max_connections_, &Logger::get("ConnectionPool (" + Poco::Net::SocketAddress(host_, port_).toString() + ")")),
+	   : Base(max_connections_, &Logger::get("ConnectionPool (" + host_ + ":" + toString(port_) + ")")),
 		host(host_), port(port_), default_database(default_database_),
-		user(user_), password(password_),
+		user(user_), password(password_), resolved_address(host_, port_),
+		client_name(client_name_), compression(compression_),
+		connect_timeout(connect_timeout_), receive_timeout(receive_timeout_), send_timeout(send_timeout_)
+	{
+	}
+
+	ConnectionPool(unsigned max_connections_,
+			const String & host_, UInt16 port_, const Poco::Net::SocketAddress & resolved_address_,
+			const String & default_database_,
+			const String & user_, const String & password_,
+			const String & client_name_ = "client",
+			Protocol::Compression::Enum compression_ = Protocol::Compression::Enable,
+			Poco::Timespan connect_timeout_ = Poco::Timespan(DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, 0),
+			Poco::Timespan receive_timeout_ = Poco::Timespan(DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, 0),
+			Poco::Timespan send_timeout_ = Poco::Timespan(DBMS_DEFAULT_SEND_TIMEOUT_SEC, 0))
+		: Base(max_connections_, &Logger::get("ConnectionPool (" + host_ + ":" + toString(port_) + ")")),
+		host(host_), port(port_), default_database(default_database_),
+		user(user_), password(password_), resolved_address(resolved_address_),
 		client_name(client_name_), compression(compression_),
 		connect_timeout(connect_timeout_), receive_timeout(receive_timeout_), send_timeout(send_timeout_)
 	{
@@ -100,6 +118,9 @@ private:
 	String default_database;
 	String user;
 	String password;
+
+	/// Адрес может быть заранее отрезолвен и передан в конструктор. Тогда поля host и port имеют смысл только для логгирования.
+	Poco::Net::SocketAddress resolved_address;
 
 	String client_name;
 	Protocol::Compression::Enum compression;		/// Сжимать ли данные при взаимодействии с сервером.

@@ -34,9 +34,9 @@ void Connection::connect()
 		if (connected)
 			disconnect();
 
-		LOG_TRACE(log_wrapper.get(), "Connecting to " << default_database << "@" << host << ":" << port);
+		LOG_TRACE(log_wrapper.get(), "Connecting. Database: " << default_database << ". User: " << user);
 
-		socket.connect(Poco::Net::SocketAddress(host, port), connect_timeout);
+		socket.connect(resolved_address, connect_timeout);
 		socket.setReceiveTimeout(receive_timeout);
 		socket.setSendTimeout(send_timeout);
 		socket.setNoDelay(true);
@@ -501,7 +501,7 @@ void Connection::initBlockInput()
 
 String Connection::getServerAddress() const
 {
-	return Poco::Net::SocketAddress(host, port).toString();
+	return host + ":" + toString(resolved_address.port()) + ", " + resolved_address.host().toString();
 }
 
 
