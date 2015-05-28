@@ -14,6 +14,9 @@
 #include <DB/Functions/IFunction.h>
 #include <statdaemons/ext/range.hpp>
 
+#include <emmintrin.h>
+#include <nmmintrin.h>
+
 
 namespace DB
 {
@@ -338,9 +341,10 @@ private:
 	{
 		const auto src_end_sse = src_end - (src_end - src) % 16;
 
-		const auto not_case_a_16 = _mm_set1_epi8('A' - 1);
-		const auto not_case_z_16 = _mm_set1_epi8('Z' + 1);
-		const auto zero_16 = _mm_setzero_si128();
+//		const auto v_not_case_lower_bound = _mm_set1_epi8(not_case_lower_bound - 1);
+//		const auto v_not_case_upper_bound = _mm_set1_epi8(not_case_upper_bound + 1);
+		const auto v_not_case_range = _mm_set1_epi16((not_case_upper_bound << 8) | not_case_lower_bound);
+		const auto v_zero = _mm_setzero_si128();
 
 		auto is_case = true;
 
@@ -349,7 +353,7 @@ private:
 			const auto chars = _mm_loadu_si128(reinterpret_cast<const __m128i *>(src));
 
 			/// check for ASCII and case
-			const auto is_not_ascii = _mm_cmplt_epi8(chars, zero_16);
+			const auto is_not_ascii = _mm_cmplt_epi8(chars, v_zero);
 			const auto mask_is_not_ascii = _mm_movemask_epi8(is_not_ascii);
 
 			if (mask_is_not_ascii != 0)
@@ -358,12 +362,16 @@ private:
 				return false;
 			}
 
-			const auto is_not_case = _mm_and_si128(_mm_cmpgt_epi8(chars, not_case_a_16),
-												   _mm_cmplt_epi8(chars, not_case_z_16));
-			const auto mask_is_not_case = _mm_movemask_epi8(is_not_case);
-
-			if (mask_is_not_case != 0)
+			const auto is_case_result = _mm_cmpestra(v_not_case_range, 2, chars, 16, _SIDD_UBYTE_OPS | _SIDD_CMP_RANGES);
+			if (is_case_result == 0)
 				is_case = false;
+
+//			const auto is_not_case = _mm_and_si128(_mm_cmpgt_epi8(chars, v_not_case_lower_bound),
+//												   _mm_cmplt_epi8(chars, v_not_case_upper_bound));
+//			const auto mask_is_not_case = _mm_movemask_epi8(is_not_case);
+//
+//			if (mask_is_not_case != 0)
+//				is_case = false;
 		}
 
 		/// handle remaining symbols
@@ -373,7 +381,7 @@ private:
 				is_ascii = false;
 				return false;
 			}
-			else if (*src >= 'A' && *src <= 'Z')
+			else if (*src >= not_case_lower_bound && *src <= not_case_lower_bound)
 				is_case = false;
 
 		is_ascii = true;
