@@ -166,30 +166,30 @@ void Connection::forceConnected()
 
 struct PingTimeoutSetter
 {
-	PingTimeoutSetter(Poco::Net::StreamSocket & socket_, const Poco::Timespan & ping_timeout_) 
+	PingTimeoutSetter(Poco::Net::StreamSocket & socket_, const Poco::Timespan & ping_timeout_)
 	: socket(socket_), ping_timeout(ping_timeout_)
 	{
 		old_send_timeout = socket.getSendTimeout();
 		old_receive_timeout = socket.getReceiveTimeout();
-		
+
 		if (old_send_timeout > ping_timeout)
 			socket.setSendTimeout(ping_timeout);
 		if (old_receive_timeout > ping_timeout)
 			socket.setReceiveTimeout(ping_timeout);
 	}
-	
+
 	~PingTimeoutSetter()
 	{
 		socket.setSendTimeout(old_send_timeout);
 		socket.setReceiveTimeout(old_receive_timeout);
 	}
-	
+
 	Poco::Net::StreamSocket & socket;
 	Poco::Timespan ping_timeout;
 	Poco::Timespan old_send_timeout;
 	Poco::Timespan old_receive_timeout;
 };
-	
+
 bool Connection::ping()
 {
 	// LOG_TRACE(log_wrapper.get(), "Ping (" << getServerAddress() << ")");
@@ -237,7 +237,7 @@ bool Connection::ping()
 void Connection::sendQuery(const String & query, const String & query_id_, UInt64 stage, const Settings * settings, bool with_pending_data)
 {
 	network_compression_method = settings ? settings->network_compression_method.value : CompressionMethod::LZ4;
-	
+
 	forceConnected();
 
 	query_id = query_id_;
@@ -494,7 +494,7 @@ void Connection::initBlockInput()
 		else
 			maybe_compressed_in = in;
 
-		block_in = new NativeBlockInputStream(*maybe_compressed_in, data_type_factory, server_revision);
+		block_in = new NativeBlockInputStream(*maybe_compressed_in, server_revision);
 	}
 }
 

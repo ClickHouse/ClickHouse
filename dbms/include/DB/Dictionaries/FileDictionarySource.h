@@ -34,7 +34,7 @@ public:
 	{
 		auto in_ptr = std::make_unique<ReadBufferFromFile>(filename);
 		auto stream = context.getFormatFactory().getInput(
-			format, *in_ptr, sample_block, max_block_size, context.getDataTypeFactory());
+			format, *in_ptr, sample_block, max_block_size);
 		last_modification = getLastModification();
 
 		return new OwningBufferBlockInputStream{stream, std::move(in_ptr)};

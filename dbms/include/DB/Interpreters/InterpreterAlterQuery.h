@@ -77,7 +77,7 @@ private:
 
 	Context context;
 
-	static void parseAlter(const ASTAlterQuery::ParameterContainer & params, const DataTypeFactory & data_type_factory,
+	static void parseAlter(const ASTAlterQuery::ParameterContainer & params,
 		AlterCommands & out_alter_commands, PartitionCommands & out_partition_commands);
 };
 

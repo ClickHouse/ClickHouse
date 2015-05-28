@@ -66,9 +66,9 @@ public:
 	/// limit - если не 0, то можно выдать только первые limit строк в сортированном порядке.
 	MergeSortingBlockInputStream(BlockInputStreamPtr input_, SortDescription & description_,
 		size_t max_merged_block_size_, size_t limit_,
-		size_t max_bytes_before_external_sort_, const std::string & tmp_path_, const DataTypeFactory & data_type_factory_)
+		size_t max_bytes_before_external_sort_, const std::string & tmp_path_)
 		: description(description_), max_merged_block_size(max_merged_block_size_), limit(limit_),
-		max_bytes_before_external_sort(max_bytes_before_external_sort_), tmp_path(tmp_path_), data_type_factory(data_type_factory_)
+		max_bytes_before_external_sort(max_bytes_before_external_sort_), tmp_path(tmp_path_)
 	{
 		children.push_back(input_);
 	}
@@ -97,7 +97,6 @@ private:
 
 	size_t max_bytes_before_external_sort;
 	const std::string tmp_path;
-	const DataTypeFactory & data_type_factory;
 
 	Logger * log = &Logger::get("MergeSortingBlockInputStream");
 
@@ -115,8 +114,8 @@ private:
 		CompressedReadBuffer compressed_in;
 		BlockInputStreamPtr block_in;
 
-		TemporaryFileStream(const std::string & path, const DataTypeFactory & data_type_factory)
-			: file_in(path), compressed_in(file_in), block_in(new NativeBlockInputStream(compressed_in, data_type_factory)) {}
+		TemporaryFileStream(const std::string & path)
+			: file_in(path), compressed_in(file_in), block_in(new NativeBlockInputStream(compressed_in)) {}
 	};
 
 	std::vector<std::unique_ptr<TemporaryFileStream>> temporary_inputs;

@@ -56,7 +56,6 @@ public:
 	ConnectionPool(unsigned max_connections_,
 			const String & host_, UInt16 port_, const String & default_database_,
 			const String & user_, const String & password_,
-			const DataTypeFactory & data_type_factory_,
 			const String & client_name_ = "client",
 			Protocol::Compression::Enum compression_ = Protocol::Compression::Enable,
 			Poco::Timespan connect_timeout_ = Poco::Timespan(DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, 0),
@@ -65,7 +64,7 @@ public:
 	   : Base(max_connections_, &Logger::get("ConnectionPool (" + Poco::Net::SocketAddress(host_, port_).toString() + ")")),
 		host(host_), port(port_), default_database(default_database_),
 		user(user_), password(password_),
-		client_name(client_name_), compression(compression_), data_type_factory(data_type_factory_),
+		client_name(client_name_), compression(compression_),
 		connect_timeout(connect_timeout_), receive_timeout(receive_timeout_), send_timeout(send_timeout_)
 	{
 	}
@@ -91,7 +90,7 @@ protected:
 	{
 		return new Connection(
 			host, port, default_database, user, password,
-			data_type_factory, client_name, compression,
+			client_name, compression,
 			connect_timeout, receive_timeout, send_timeout);
 	}
 
@@ -104,8 +103,6 @@ private:
 
 	String client_name;
 	Protocol::Compression::Enum compression;		/// Сжимать ли данные при взаимодействии с сервером.
-
-	const DataTypeFactory & data_type_factory;
 
 	Poco::Timespan connect_timeout;
 	Poco::Timespan receive_timeout;

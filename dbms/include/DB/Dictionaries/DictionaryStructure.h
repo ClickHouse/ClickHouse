@@ -78,7 +78,7 @@ inline std::string toString(const AttributeUnderlyingType type)
 }
 
 /// Min and max lifetimes for a dictionary or it's entry
-struct DictionaryLifetime
+struct DictionaryLifetime final
 {
 	std::uint64_t min_sec;
 	std::uint64_t max_sec;
@@ -101,18 +101,19 @@ struct DictionaryLifetime
 *	- hierarchical, whether this attribute defines a hierarchy;
 *	- injective, whether the mapping to parent is injective (can be used for optimization of GROUP BY?)
 */
-struct DictionaryAttribute
+struct DictionaryAttribute final
 {
-	std::string name;
-	AttributeUnderlyingType underlying_type;
-	DataTypePtr type;
-	Field null_value;
-	bool hierarchical;
-	bool injective;
+	const std::string name;
+	const AttributeUnderlyingType underlying_type;
+	const DataTypePtr type;
+	const std::string expression;
+	const Field null_value;
+	const bool hierarchical;
+	const bool injective;
 };
 
 /// Name of identifier plus list of attributes
-struct DictionaryStructure
+struct DictionaryStructure final
 {
 	std::string id_name;
 	std::vector<DictionaryAttribute> attributes;
@@ -141,6 +142,8 @@ struct DictionaryStructure
 			const auto type_string = config.getString(prefix + "type");
 			const auto type = DataTypeFactory::instance().get(type_string);
 			const auto underlying_type = getAttributeUnderlyingType(type_string);
+
+			const auto expression = config.getString(prefix + "expression", "");
 
 			const auto null_value_string = config.getString(prefix + "null_value");
 			Field null_value;
@@ -174,7 +177,7 @@ struct DictionaryStructure
 			has_hierarchy = has_hierarchy || hierarchical;
 
 			attributes.emplace_back(DictionaryAttribute{
-				name, underlying_type, type, null_value, hierarchical, injective
+				name, underlying_type, type, expression, null_value, hierarchical, injective
 			});
 		}
 

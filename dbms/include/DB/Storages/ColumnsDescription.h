@@ -21,7 +21,7 @@ struct ColumnsDescription
 
 	String toString() const;
 
-	static ColumnsDescription parse(const String & str, const DataTypeFactory & data_type_factory);
+	static ColumnsDescription parse(const String & str);
 };
 
 
