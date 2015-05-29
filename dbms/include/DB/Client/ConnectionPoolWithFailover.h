@@ -5,6 +5,7 @@
 
 #include <statdaemons/PoolWithFailoverBase.h>
 
+#include <DB/Common/getFQDNOrHostName.h>
 #include <DB/Client/ConnectionPool.h>
 
 
@@ -33,7 +34,7 @@ public:
 	   : Base(nested_pools_, max_tries_, decrease_error_period_,
 			&Logger::get("ConnectionPoolWithFailover")), default_load_balancing(load_balancing)
 	{
-		std::string local_hostname = Poco::Net::DNS::hostName();
+		const std::string & local_hostname = getFQDNOrHostName();
 
 		hostname_differences.resize(nested_pools.size());
 		for (size_t i = 0; i < nested_pools.size(); ++i)

@@ -107,7 +107,8 @@ protected:
 	ConnectionPtr allocObject() override
 	{
 		return new Connection(
-			host, port, default_database, user, password,
+			host, port, resolved_address,
+			default_database, user, password,
 			client_name, compression,
 			connect_timeout, receive_timeout, send_timeout);
 	}
@@ -119,7 +120,9 @@ private:
 	String user;
 	String password;
 
-	/// Адрес может быть заранее отрезолвен и передан в конструктор. Тогда поля host и port имеют смысл только для логгирования.
+	/** Адрес может быть заранее отрезолвен и передан в конструктор. Тогда поля host и port имеют смысл только для логгирования.
+	  * Иначе адрес резолвится в конструкторе. То есть, DNS балансировка не поддерживается.
+	  */
 	Poco::Net::SocketAddress resolved_address;
 
 	String client_name;

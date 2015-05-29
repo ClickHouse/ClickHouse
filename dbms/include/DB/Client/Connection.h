@@ -67,6 +67,8 @@ public:
 
 		if (user.empty())
 			user = "default";
+
+		setDescription();
 	}
 
 	Connection(const String & host_, UInt16 port_, const Poco::Net::SocketAddress & resolved_address_,
@@ -93,6 +95,8 @@ public:
 
 		if (user.empty())
 			user = "default";
+
+		setDescription();
 	}
 
 	virtual ~Connection() {};
@@ -122,8 +126,11 @@ public:
 
 	void getServerVersion(String & name, UInt64 & version_major, UInt64 & version_minor, UInt64 & revision);
 
-	/// Адрес сервера - для сообщений в логе и в эксепшенах.
-	String getServerAddress() const;
+	/// Для сообщений в логе и в эксепшенах.
+	const String & getDescription() const
+	{
+		return description;
+	}
 
 	const String & getHost() const
 	{
@@ -177,8 +184,14 @@ private:
 	String user;
 	String password;
 
-	/// Адрес может быть заранее отрезолвен и передан в конструктор. Тогда поля host и port имеют смысл только для логгирования.
+	/** Адрес может быть заранее отрезолвен и передан в конструктор. Тогда поля host и port имеют смысл только для логгирования.
+	  * Иначе адрес резолвится в конструкторе. То есть, DNS балансировка не поддерживается.
+	  */
 	Poco::Net::SocketAddress resolved_address;
+
+	/// Для сообщений в логе и в эксепшенах.
+	String description;
+	void setDescription();
 
 	String client_name;
 
@@ -228,7 +241,7 @@ private:
 		Logger * get()
 		{
 			if (!log)
-				log = &Logger::get("Connection (" + parent.getServerAddress() + ")");
+				log = &Logger::get("Connection (" + parent.getDescription() + ")");
 
 			return log;
 		}
