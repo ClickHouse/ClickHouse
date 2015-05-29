@@ -606,7 +606,7 @@ namespace DB
 	public:
 		static inline void apply(const PODArray<T> & in, size_t scale, typename ColumnVector<T>::Container_t & out)
 		{
-			::memset(reinterpret_cast<T *>(&out[0]), 0, in.size());
+			::memset(reinterpret_cast<T *>(&out[0]), 0, in.size() * sizeof(T));
 		}
 
 		static inline T apply(T val, size_t scale)
