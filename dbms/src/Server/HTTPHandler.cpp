@@ -17,6 +17,7 @@
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 
 #include <DB/Interpreters/executeQuery.h>
+#include <DB/Interpreters/Quota.h>
 
 #include <DB/Common/ExternalTable.h>
 

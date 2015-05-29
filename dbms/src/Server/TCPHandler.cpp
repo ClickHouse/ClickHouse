@@ -20,6 +20,7 @@
 #include <DB/DataStreams/NativeBlockInputStream.h>
 #include <DB/DataStreams/NativeBlockOutputStream.h>
 #include <DB/Interpreters/executeQuery.h>
+#include <DB/Interpreters/Quota.h>
 
 #include <DB/Storages/StorageMemory.h>
 
