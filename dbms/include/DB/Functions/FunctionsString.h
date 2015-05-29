@@ -267,15 +267,16 @@ struct LowerUpperImplVectorized
 private:
 	static void array(const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
 	{
-		const auto src_end_sse = src_end - (src_end - src) % 16;
+		const auto bytes_sse = sizeof(__m128i);
+		const auto src_end_sse = src_end - (src_end - src) % bytes_sse;
 
-		const auto flip_case_mask = 1 << 5;
+		const auto flip_case_mask = 'A' ^ 'a';
 
 		const auto v_not_case_lower_bound = _mm_set1_epi8(not_case_lower_bound - 1);
 		const auto v_not_case_upper_bound = _mm_set1_epi8(not_case_upper_bound + 1);
 		const auto v_flip_case_mask = _mm_set1_epi8(flip_case_mask);
 
-		for (; src < src_end_sse; src += 16, dst += 16)
+		for (; src < src_end_sse; src += bytes_sse, dst += bytes_sse)
 		{
 			/// load 16 sequential 8-bit characters
 			const auto chars = _mm_loadu_si128(reinterpret_cast<const __m128i *>(src));
@@ -295,7 +296,10 @@ private:
 		}
 
 		for (; src < src_end; ++src, ++dst)
-			*dst = (*src >= not_case_lower_bound && *src <= not_case_upper_bound) ? *src ^ flip_case_mask : *src;
+			if (*src >= not_case_lower_bound && *src <= not_case_upper_bound)
+				*dst = *src ^ flip_case_mask;
+			else
+				*dst = *src;
 	}
 };
 
@@ -339,20 +343,23 @@ private:
 
 	static bool isCaseASCII(const UInt8 * src, const UInt8 * const src_end, bool & is_ascii)
 	{
-		const auto src_end_sse = src_end - (src_end - src) % 16;
+		const auto bytes_sse = sizeof(__m128i);
+		const auto src_end_sse = src_end - (src_end - src) % bytes_sse;
 
-//		const auto v_not_case_lower_bound = _mm_set1_epi8(not_case_lower_bound - 1);
-//		const auto v_not_case_upper_bound = _mm_set1_epi8(not_case_upper_bound + 1);
-		const auto v_not_case_range = _mm_set1_epi16((not_case_upper_bound << 8) | not_case_lower_bound);
+		const auto ascii_upper_bound = '\x7f';
+		/// SSE2 packed comparison operate on signed types, hence compare (c < 0) instead of (c > 0x7f)
 		const auto v_zero = _mm_setzero_si128();
+		const auto v_not_case_lower_bound = _mm_set1_epi8(not_case_lower_bound - 1);
+		const auto v_not_case_upper_bound = _mm_set1_epi8(not_case_upper_bound + 1);
+//		const auto v_not_case_range = _mm_set1_epi16((not_case_upper_bound << 8) | not_case_lower_bound);
 
 		auto is_case = true;
 
-		for (; src < src_end_sse; src += 16)
+		for (; src < src_end_sse; src += bytes_sse)
 		{
 			const auto chars = _mm_loadu_si128(reinterpret_cast<const __m128i *>(src));
 
-			/// check for ASCII and case
+			/// check for ASCII
 			const auto is_not_ascii = _mm_cmplt_epi8(chars, v_zero);
 			const auto mask_is_not_ascii = _mm_movemask_epi8(is_not_ascii);
 
@@ -362,26 +369,27 @@ private:
 				return false;
 			}
 
-			const auto is_case_result = _mm_cmpestra(v_not_case_range, 2, chars, 16, _SIDD_UBYTE_OPS | _SIDD_CMP_RANGES);
-			if (is_case_result == 0)
-				is_case = false;
-
-//			const auto is_not_case = _mm_and_si128(_mm_cmpgt_epi8(chars, v_not_case_lower_bound),
-//												   _mm_cmplt_epi8(chars, v_not_case_upper_bound));
-//			const auto mask_is_not_case = _mm_movemask_epi8(is_not_case);
-//
-//			if (mask_is_not_case != 0)
+			/// check for case
+//			const auto is_case_result = _mm_cmpestra(v_not_case_range, 2, chars, 16, _SIDD_UBYTE_OPS | _SIDD_CMP_RANGES);
+//			if (is_case_result == 0)
 //				is_case = false;
+
+			const auto is_not_case = _mm_and_si128(_mm_cmpgt_epi8(chars, v_not_case_lower_bound),
+												   _mm_cmplt_epi8(chars, v_not_case_upper_bound));
+			const auto mask_is_not_case = _mm_movemask_epi8(is_not_case);
+
+			if (mask_is_not_case != 0)
+				is_case = false;
 		}
 
 		/// handle remaining symbols
 		for (; src < src_end; ++src)
-			if (*src > '\x7f')
+			if (*src > ascii_upper_bound)
 			{
 				is_ascii = false;
 				return false;
 			}
-			else if (*src >= not_case_lower_bound && *src <= not_case_lower_bound)
+			else if (*src >= not_case_lower_bound && *src <= not_case_upper_bound)
 				is_case = false;
 
 		is_ascii = true;
@@ -390,6 +398,7 @@ private:
 
 	static void UTF8ToCase(const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
 	{
+		/// @todo pessimistic variant, maybe SSE4.2 can help speeding it up a little bit (at least for cyrillic)
 		static const Poco::UTF8Encoding utf8;
 
 		while (src < src_end)
