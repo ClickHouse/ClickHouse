@@ -4,6 +4,7 @@
 #include <Poco/Ext/ThreadNumber.h>*/
 
 #include <DB/Columns/ColumnConst.h>
+#include <DB/Interpreters/Quota.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 
 
