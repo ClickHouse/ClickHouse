@@ -72,13 +72,14 @@ struct QuotaForInterval
 {
 	time_t rounded_time;
 	size_t duration;
+	time_t offset;		/// Смещение интервала, для рандомизации.
 	QuotaValues max;
 	QuotaValues used;
 
 	QuotaForInterval() : rounded_time() {}
 	QuotaForInterval(time_t duration_) : duration(duration_) {}
 
-	void initFromConfig(const String & config_elem, time_t duration_, Poco::Util::AbstractConfiguration & config);
+	void initFromConfig(const String & config_elem, time_t duration_, time_t offset_, Poco::Util::AbstractConfiguration & config);
 
 	/// Увеличить соответствующее значение.
 	void addQuery(time_t current_time, const String & quota_name);
@@ -131,7 +132,7 @@ public:
 		return cont.empty();
 	}
 
-	void initFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config);
+	void initFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config, std::mt19937 & rng);
 
 	/// Обновляет максимальные значения значениями из quota.
 	/// Удаляет интервалы, которых нет в quota, добавляет интревалы, которых нет здесь, но есть в quota.
@@ -177,7 +178,7 @@ struct Quota
 
 	Quota() : is_keyed(false), keyed_by_ip(false) {}
 
-	void loadFromConfig(const String & config_elem, const String & name_, Poco::Util::AbstractConfiguration & config);
+	void loadFromConfig(const String & config_elem, const String & name_, Poco::Util::AbstractConfiguration & config, std::mt19937 & rng);
 	QuotaForIntervalsPtr get(const String & quota_key, const String & user_name, const Poco::Net::IPAddress & ip);
 };
 

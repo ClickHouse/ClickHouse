@@ -112,6 +112,7 @@ public:
 	}
 };
 
+
 /// Получить имя хоста. (Оно - константа, вычисляется один раз за весь запрос.)
 class FunctionHostName : public IFunction
 {
@@ -145,6 +146,7 @@ public:
 			Poco::Net::DNS::hostName()).convertToFullColumn();
 	}
 };
+
 
 class FunctionVisibleWidth : public IFunction
 {

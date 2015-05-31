@@ -101,18 +101,14 @@ namespace DB
 	  * Без проверки, потому что делитель всегда положительный.
 	  */
 	template<typename T, typename Enable = void>
-	struct FastModulo
-	{
-	};
+	struct FastModulo;
 
 	template<typename T>
 	struct FastModulo<T, typename std::enable_if<std::is_integral<T>::value>::type>
 	{
 	private:
 		template<typename InputType, typename Enable = void>
-		struct Extend
-		{
-		};
+		struct Extend;
 
 		template<typename InputType>
 		struct Extend<InputType,
@@ -150,9 +146,6 @@ namespace DB
 
 		static inline T compute(T a, const Divisor & divisor)
 		{
-			if (divisor.first == 1)
-				return 0;
-
 			U val = static_cast<U>(a);
 			U rem = val - (val / divisor.second) * static_cast<U>(divisor.first);
 			return static_cast<T>(rem);
@@ -172,9 +165,7 @@ namespace DB
 	/** Реализация низкоуровневых функций округления для целочисленных значений.
 	  */
 	template<typename T, int rounding_mode, ScaleMode scale_mode, typename Enable = void>
-	struct IntegerRoundingComputation
-	{
-	};
+	struct IntegerRoundingComputation;
 
 	template<typename T, int rounding_mode, ScaleMode scale_mode>
 	struct IntegerRoundingComputation<T, rounding_mode, scale_mode,
@@ -266,9 +257,7 @@ namespace DB
 	};
 
 	template<typename T>
-	struct BaseFloatRoundingComputation
-	{
-	};
+	struct BaseFloatRoundingComputation;
 
 	template<>
 	struct BaseFloatRoundingComputation<Float32>
@@ -494,9 +483,7 @@ namespace DB
 	/** Реализация высокоуровневых функций округления.
 	  */
 	template<typename T, int rounding_mode, ScaleMode scale_mode, typename Enable = void>
-	struct FunctionRoundingImpl
-	{
-	};
+	struct FunctionRoundingImpl;
 
 	/** Реализация высокоуровневых функций округления для целочисленных значений.
 	  */
@@ -619,7 +606,7 @@ namespace DB
 	public:
 		static inline void apply(const PODArray<T> & in, size_t scale, typename ColumnVector<T>::Container_t & out)
 		{
-			::memset(reinterpret_cast<T *>(&out[0]), 0, in.size());
+			::memset(reinterpret_cast<T *>(&out[0]), 0, in.size() * sizeof(T));
 		}
 
 		static inline T apply(T val, size_t scale)
@@ -683,9 +670,7 @@ namespace
 	  * умножения и деления. Поэтому оно называется масштабом.
 	  */
 	template<typename T, typename U, typename Enable = void>
-	struct ScaleForRightType
-	{
-	};
+	struct ScaleForRightType;
 
 	template<typename T, typename U>
 	struct ScaleForRightType<T, U,

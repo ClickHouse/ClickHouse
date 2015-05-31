@@ -8,6 +8,7 @@
 
 namespace DB
 {
+
 /// Cluster содержит пулы соединений до каждого из узлов
 /// С локальными узлами соединение не устанавливается, а выполяется запрос напрямую.
 /// Поэтому храним только количество локальных узлов
@@ -61,8 +62,9 @@ public:
 		*	</replica>
 		* </shard>
 		*/
-		Poco::Net::SocketAddress host_port;
+		Poco::Net::SocketAddress resolved_address;
 		String host_name;
+		UInt16 port;
 		String user;
 		String password;
 		UInt32 replica_num;

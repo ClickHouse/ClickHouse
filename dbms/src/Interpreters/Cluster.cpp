@@ -13,11 +13,8 @@ Cluster::Address::Address(const String & config_prefix)
 	auto & config = Poco::Util::Application::instance().config();
 
 	host_name = config.getString(config_prefix + ".host");
-	host_port = Poco::Net::SocketAddress(
-		host_name,
-		config.getInt(config_prefix + ".port")
-	);
-
+	port = config.getInt(config_prefix + ".port");
+	resolved_address = Poco::Net::SocketAddress(host_name, port);
 	user = config.getString(config_prefix + ".user", "default");
 	password = config.getString(config_prefix + ".password", "");
 }
@@ -29,9 +26,17 @@ Cluster::Address::Address(const String & host_port_, const String & user_, const
 
 	/// Похоже на то, что строка host_port_ содержит порт. Если условие срабатывает - не обязательно значит, что порт есть (пример: [::]).
 	if (nullptr != strchr(host_port_.c_str(), ':') || !default_port)
-		host_port = Poco::Net::SocketAddress(host_port_);
+	{
+		resolved_address = Poco::Net::SocketAddress(host_port_);
+		host_name = host_port_.substr(0, host_port_.find(':'));
+		port = resolved_address.port();
+	}
 	else
-		host_port = Poco::Net::SocketAddress(host_port_, default_port);
+	{
+		resolved_address = Poco::Net::SocketAddress(host_port_, default_port);
+		host_name = host_port_;
+		port = default_port;
+	}
 }
 
 namespace
@@ -41,8 +46,8 @@ namespace
 		return
 			escapeForFileName(address.user) +
 			(address.password.empty() ? "" : (':' + escapeForFileName(address.password))) + '@' +
-			escapeForFileName(address.host_port.host().toString()) + ':' +
-			std::to_string(address.host_port.port());
+			escapeForFileName(address.resolved_address.host().toString()) + ':' +
+			std::to_string(address.resolved_address.port());
 	}
 }
 
@@ -178,7 +183,8 @@ Cluster::Cluster(const Settings & settings, const String & cluster_name)
 				{
 					replicas.emplace_back(new ConnectionPool(
 						settings.distributed_connections_pool_size,
-						replica.host_port.host().toString(), replica.host_port.port(), "", replica.user, replica.password,
+						replica.host_name, replica.port, replica.resolved_address,
+						"", replica.user, replica.password,
 						"server", Protocol::Compression::Enable,
 						saturate(settings.connect_timeout_with_failover_ms, settings.limits.max_execution_time),
 						saturate(settings.receive_timeout, settings.limits.max_execution_time),
@@ -204,7 +210,8 @@ Cluster::Cluster(const Settings & settings, const String & cluster_name)
 			{
 				pools.emplace_back(new ConnectionPool(
 					settings.distributed_connections_pool_size,
-					address.host_port.host().toString(), address.host_port.port(), "", address.user, address.password,
+					address.host_name, address.port, address.resolved_address,
+					"", address.user, address.password,
 					"server", Protocol::Compression::Enable,
 					saturate(settings.connect_timeout, settings.limits.max_execution_time),
 					saturate(settings.receive_timeout, settings.limits.max_execution_time),
@@ -237,7 +244,8 @@ Cluster::Cluster(const Settings & settings, std::vector<std::vector<String>> nam
 		{
 			replicas.emplace_back(new ConnectionPool(
 				settings.distributed_connections_pool_size,
-				replica.host_port.host().toString(), replica.host_port.port(), "", replica.user, replica.password,
+				replica.host_name, replica.port, replica.resolved_address,
+				"", replica.user, replica.password,
 				"server", Protocol::Compression::Enable,
 				saturate(settings.connect_timeout_with_failover_ms, settings.limits.max_execution_time),
 				saturate(settings.receive_timeout, settings.limits.max_execution_time),
@@ -264,7 +272,7 @@ bool Cluster::isLocal(const Address & address)
 	/// - её порт совпадает с портом, который слушает сервер;
 	/// - её хост резолвится в набор адресов, один из которых совпадает с одним из адресов сетевых интерфейсов сервера
 	/// то нужно всегда ходить на этот шард без межпроцессного взаимодействия
-	return isLocalAddress(address.host_port);
+	return isLocalAddress(address.resolved_address);
 }
 
 }

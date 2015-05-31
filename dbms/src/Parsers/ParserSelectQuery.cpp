@@ -16,7 +16,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 {
 	Pos begin = pos;
 
-	ASTSelectQuery * select_query = new ASTSelectQuery(StringRange(begin, pos));
+	ASTSelectQuery * select_query = new ASTSelectQuery;
 	node = select_query;
 
 	ParserWhiteSpaceOrComments ws;
@@ -311,6 +311,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 
 		ws.ignore(pos, end);
 	}
+
+	select_query->range = StringRange(begin, pos);
 
 	select_query->children.push_back(select_query->select_expression_list);
 	if (select_query->database)

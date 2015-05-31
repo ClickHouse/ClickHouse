@@ -14,6 +14,9 @@
 #include <DB/Functions/IFunction.h>
 #include <statdaemons/ext/range.hpp>
 
+#include <emmintrin.h>
+#include <nmmintrin.h>
+
 
 namespace DB
 {
@@ -264,15 +267,16 @@ struct LowerUpperImplVectorized
 private:
 	static void array(const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
 	{
-		const auto src_end_sse = src_end - (src_end - src) % 16;
+		const auto bytes_sse = sizeof(__m128i);
+		const auto src_end_sse = src_end - (src_end - src) % bytes_sse;
 
-		const auto flip_case_mask = 1 << 5;
+		const auto flip_case_mask = 'A' ^ 'a';
 
 		const auto v_not_case_lower_bound = _mm_set1_epi8(not_case_lower_bound - 1);
 		const auto v_not_case_upper_bound = _mm_set1_epi8(not_case_upper_bound + 1);
 		const auto v_flip_case_mask = _mm_set1_epi8(flip_case_mask);
 
-		for (; src < src_end_sse; src += 16, dst += 16)
+		for (; src < src_end_sse; src += bytes_sse, dst += bytes_sse)
 		{
 			/// load 16 sequential 8-bit characters
 			const auto chars = _mm_loadu_si128(reinterpret_cast<const __m128i *>(src));
@@ -292,7 +296,10 @@ private:
 		}
 
 		for (; src < src_end; ++src, ++dst)
-			*dst = (*src >= not_case_lower_bound && *src <= not_case_upper_bound) ? *src ^ flip_case_mask : *src;
+			if (*src >= not_case_lower_bound && *src <= not_case_upper_bound)
+				*dst = *src ^ flip_case_mask;
+			else
+				*dst = *src;
 	}
 };
 
@@ -324,66 +331,77 @@ struct LowerUpperUTF8ImplVectorized
 private:
 	static void array(const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
 	{
-		auto is_ascii = false;
+		static const Poco::UTF8Encoding utf8;
 
-		if (isCaseASCII(src, src_end, is_ascii))
-			std::copy(src, src_end, dst);
-		else if (is_ascii)
-			LowerUpperImplVectorized<not_case_lower_bound, not_case_upper_bound>::array(src, src_end, dst);
-		else
-			UTF8ToCase(src, src_end, dst);
-	}
+		const auto bytes_sse = sizeof(__m128i);
+		auto src_end_sse = src + (src_end - src) * bytes_sse / bytes_sse;
 
-	static bool isCaseASCII(const UInt8 * src, const UInt8 * const src_end, bool & is_ascii)
-	{
-		const auto src_end_sse = src_end - (src_end - src) % 16;
+		const auto flip_case_mask = 'A' ^ 'a';
+		/// SSE2 packed comparison operate on signed types, hence compare (c < 0) instead of (c > 0x7f)
+		const auto v_zero = _mm_setzero_si128();
+		const auto v_not_case_lower_bound = _mm_set1_epi8(not_case_lower_bound - 1);
+		const auto v_not_case_upper_bound = _mm_set1_epi8(not_case_upper_bound + 1);
+//		const auto v_not_case_range = _mm_set1_epi16((not_case_upper_bound << 8) | not_case_lower_bound);
+		const auto v_flip_case_mask = _mm_set1_epi8(flip_case_mask);
 
-		const auto not_case_a_16 = _mm_set1_epi8('A' - 1);
-		const auto not_case_z_16 = _mm_set1_epi8('Z' + 1);
-		const auto zero_16 = _mm_setzero_si128();
-
-		auto is_case = true;
-
-		for (; src < src_end_sse; src += 16)
+		for (; src < src_end_sse; src += bytes_sse, dst += bytes_sse)
 		{
 			const auto chars = _mm_loadu_si128(reinterpret_cast<const __m128i *>(src));
 
-			/// check for ASCII and case
-			const auto is_not_ascii = _mm_cmplt_epi8(chars, zero_16);
+			/// check for ASCII
+			const auto is_not_ascii = _mm_cmplt_epi8(chars, v_zero);
 			const auto mask_is_not_ascii = _mm_movemask_epi8(is_not_ascii);
 
-			if (mask_is_not_ascii != 0)
+			/// ASCII
+			if (mask_is_not_ascii == 0)
 			{
-				is_ascii = false;
-				return false;
+				const auto is_not_case = _mm_and_si128(_mm_cmpgt_epi8(chars, v_not_case_lower_bound),
+													   _mm_cmplt_epi8(chars, v_not_case_upper_bound));
+				const auto mask_is_not_case = _mm_movemask_epi8(is_not_case);
+
+				/// check for case
+				//			const auto is_case_result = _mm_cmpestra(v_not_case_range, 2, chars, 16, _SIDD_UBYTE_OPS | _SIDD_CMP_RANGES);
+				//			if (is_case_result == 0)
+
+				/// not in case
+				if (mask_is_not_case != 0)
+				{
+					/// keep `flip_case_mask` only where necessary, zero out elsewhere
+					const auto xor_mask = _mm_and_si128(v_flip_case_mask, is_not_case);
+
+					/// flip case by applying calculated mask
+					const auto cased_chars = _mm_xor_si128(chars, xor_mask);
+
+					/// store result back to destination
+					_mm_storeu_si128(reinterpret_cast<__m128i *>(dst), cased_chars);
+				}
+				else
+					std::copy(src, src + bytes_sse, dst);
 			}
+			else
+			{
+				/// UTF-8
+				const auto end = src + bytes_sse;
+				while (src < end)
+				{
+					if (const auto chars = utf8.convert(to_case(utf8.convert(src)), dst, src_end_sse - src))
+					{
+						src += chars;
+						dst += chars;
+					}
+					else
+					{
+						++src;
+						++dst;
+					}
+				}
 
-			const auto is_not_case = _mm_and_si128(_mm_cmpgt_epi8(chars, not_case_a_16),
-												   _mm_cmplt_epi8(chars, not_case_z_16));
-			const auto mask_is_not_case = _mm_movemask_epi8(is_not_case);
-
-			if (mask_is_not_case != 0)
-				is_case = false;
+				const auto diff = src - end;
+				src_end_sse += diff;
+			}
 		}
 
 		/// handle remaining symbols
-		for (; src < src_end; ++src)
-			if (*src > '\x7f')
-			{
-				is_ascii = false;
-				return false;
-			}
-			else if (*src >= 'A' && *src <= 'Z')
-				is_case = false;
-
-		is_ascii = true;
-		return is_case;
-	}
-
-	static void UTF8ToCase(const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
-	{
-		static const Poco::UTF8Encoding utf8;
-
 		while (src < src_end)
 		{
 			if (const auto chars = utf8.convert(to_case(utf8.convert(src)), dst, src_end - src))
