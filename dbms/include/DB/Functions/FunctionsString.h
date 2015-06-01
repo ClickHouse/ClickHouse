@@ -334,9 +334,10 @@ private:
 		static const Poco::UTF8Encoding utf8;
 
 		const auto bytes_sse = sizeof(__m128i);
-		auto src_end_sse = src + (src_end - src) * bytes_sse / bytes_sse;
+		auto src_end_sse = src + (src_end - src) / bytes_sse * bytes_sse;
 
 		const auto flip_case_mask = 'A' ^ 'a';
+		const auto ascii_upper_bound = '\x7f';
 		/// SSE2 packed comparison operate on signed types, hence compare (c < 0) instead of (c > 0x7f)
 		const auto v_zero = _mm_setzero_si128();
 		const auto v_not_case_lower_bound = _mm_set1_epi8(not_case_lower_bound - 1);
@@ -344,7 +345,7 @@ private:
 //		const auto v_not_case_range = _mm_set1_epi16((not_case_upper_bound << 8) | not_case_lower_bound);
 		const auto v_flip_case_mask = _mm_set1_epi8(flip_case_mask);
 
-		for (; src < src_end_sse; src += bytes_sse, dst += bytes_sse)
+		while (src < src_end_sse)
 		{
 			const auto chars = _mm_loadu_si128(reinterpret_cast<const __m128i *>(src));
 
@@ -363,9 +364,12 @@ private:
 				//			const auto is_case_result = _mm_cmpestra(v_not_case_range, 2, chars, 16, _SIDD_UBYTE_OPS | _SIDD_CMP_RANGES);
 				//			if (is_case_result == 0)
 
-				/// not in case
-				if (mask_is_not_case != 0)
+				/// everything in correct case ASCII
+				if (mask_is_not_case == 0)
+					_mm_storeu_si128(reinterpret_cast<__m128i *>(dst), chars);
+				else
 				{
+					/// ASCII in mixed case
 					/// keep `flip_case_mask` only where necessary, zero out elsewhere
 					const auto xor_mask = _mm_and_si128(v_flip_case_mask, is_not_case);
 
@@ -375,24 +379,72 @@ private:
 					/// store result back to destination
 					_mm_storeu_si128(reinterpret_cast<__m128i *>(dst), cased_chars);
 				}
-				else
-					std::copy(src, src + bytes_sse, dst);
+
+				src += bytes_sse, dst += bytes_sse;
 			}
 			else
 			{
 				/// UTF-8
 				const auto end = src + bytes_sse;
+
 				while (src < end)
 				{
-					if (const auto chars = utf8.convert(to_case(utf8.convert(src)), dst, src_end_sse - src))
+					if (src[0] <= ascii_upper_bound)
 					{
-						src += chars;
-						dst += chars;
+						if (*src >= not_case_lower_bound && *src <= not_case_upper_bound)
+							*dst++ = *src++ ^ flip_case_mask;
+						else
+							*dst++ = *src++;
 					}
+//					else if (src + 1 < src_end		/// кириллица: русский алфавит, а также ЀЁЂЃЄЅІЇЈЉЊЋЌЍЎЏ
+//							 &&    ((src[0] == '\xD0' && (src[1] >= '\x80' && src[1] <= '\xBF'))
+//									|| (src[0] == '\xD1' && (src[1] >= '\x80' && src[1] <= '\x9F'))))
+//					{
+//						/** d0 80-8f -> +1 +10
+//						  * d0 90-9f -> +0 +20
+//						  * d0 a0-af -> +1 -20
+//						  */
+//
+//						if (src[0] == '\xD0' && (src[1] >= '\x80' && src[1] <= '\x8F'))
+//						{
+//							++res_pos[0];
+//							res_pos[1] += 0x10;
+//						}
+//						else if (src[0] == '\xD0' && (src[1] >= '\x90' && src[1] <= '\x9F'))
+//						{
+//							res_pos[1] += 0x20;
+//						}
+//						else if (src[0] == '\xD0' && (src[1] >= '\xA0' && src[1] <= '\xAF'))
+//						{
+//							++res_pos[0];
+//							res_pos[1] -= 0x20;
+//						}
+//
+//						pos += 2;
+//						res_pos += 2;
+//					}
+//					else if (pos + 1 < src_end && pos[0] == '\xC2') /// Пунктуация U+0080 - U+00BF, UTF-8: C2 80 - C2 BF
+//					{
+//						pos += 2;
+//						res_pos += 2;
+//					}
+//					else if (pos + 2 < src_end && pos[0] == '\xE2')	/// Символы U+2000 - U+2FFF, UTF-8: E2 80 80 - E2 BF BF
+//					{
+//						pos += 3;
+//						res_pos += 3;
+//					}
 					else
 					{
-						++src;
-						++dst;
+						if (const auto chars = utf8.convert(to_case(utf8.convert(src)), dst, src_end - src))
+						{
+							src += chars;
+							dst += chars;
+						}
+						else
+						{
+							++src;
+							++dst;
+						}
 					}
 				}
 
@@ -403,18 +455,10 @@ private:
 
 		/// handle remaining symbols
 		while (src < src_end)
-		{
 			if (const auto chars = utf8.convert(to_case(utf8.convert(src)), dst, src_end - src))
-			{
-				src += chars;
-				dst += chars;
-			}
+				src += chars, dst += chars;
 			else
-			{
-				++src;
-				++dst;
-			}
-		}
+				++src, ++dst;
 	}
 };
 
