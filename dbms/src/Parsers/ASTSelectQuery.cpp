@@ -107,11 +107,7 @@ void ASTSelectQuery::rewriteSelectExpressionList(const Names & column_names)
 	std::sort(from.begin(), from.end());
 
 	for (size_t i = 0; i < column_names.size(); ++i)
-	{
-		auto & arrow = mapping[from[i]];
-		if (!arrow.is_selected)
-			arrow = Arrow(to[i]);
-	}
+		mapping[from[i]] = Arrow(to[i]);
 
 	/// Составить новое выражение.
 	for (const auto & arrow : mapping)
