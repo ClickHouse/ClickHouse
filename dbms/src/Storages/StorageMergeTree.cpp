@@ -36,12 +36,13 @@ StorageMergeTree::StorageMergeTree(
 		 sampling_expression_, index_granularity_,mode_, sign_column_, columns_to_sum_,
 		 settings_, database_name_ + "." + table_name, false),
 	reader(data), writer(data), merger(data),
-	increment(data.getMaxDataPartIndex()),
+	increment(0),
 	log(&Logger::get(database_name_ + "." + table_name + " (StorageMergeTree)")),
 	shutdown_called(false)
 {
 	data.loadDataParts(false);
 	data.clearOldParts();
+	increment.set(data.getMaxDataPartIndex());
 }
 
 StoragePtr StorageMergeTree::create(
