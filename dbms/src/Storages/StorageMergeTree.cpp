@@ -341,7 +341,6 @@ void StorageMergeTree::attachPartition(const Field & field, bool unreplicated, b
 
 		LOG_INFO(log, "Attaching part " << source_part_name << " from " << source_path);
 		data.renameTempPartAndAdd(part, &increment);
-		data.attachPart(part);
 
 		LOG_INFO(log, "Finished attaching part");
 	}
