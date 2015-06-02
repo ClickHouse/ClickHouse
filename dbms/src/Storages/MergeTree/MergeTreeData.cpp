@@ -770,6 +770,7 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
 	if (obsolete)
 	{
 		LOG_WARNING(log, "Obsolete part " + part->name + " added");
+		part->remove_time = time(0);
 	}
 	else
 	{
