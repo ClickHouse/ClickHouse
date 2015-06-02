@@ -29,18 +29,17 @@ StorageMergeTree::StorageMergeTree(
 	const MergeTreeSettings & settings_)
     : IStorage{materialized_columns_, alias_columns_, column_defaults_},
 	path(path_), database_name(database_name_), table_name(table_name_), full_path(path + escapeForFileName(table_name) + '/'),
-	increment(full_path + "increment.txt"), context(context_), background_pool(context_.getBackgroundPool()),
+	context(context_), background_pool(context_.getBackgroundPool()),
 	data(full_path, columns_,
 		 materialized_columns_, alias_columns_, column_defaults_,
 		 context_, primary_expr_ast_, date_column_name_,
 		 sampling_expression_, index_granularity_,mode_, sign_column_, columns_to_sum_,
 		 settings_, database_name_ + "." + table_name, false),
 	reader(data), writer(data), merger(data),
+	increment(data.getMaxDataPartIndex()),
 	log(&Logger::get(database_name_ + "." + table_name + " (StorageMergeTree)")),
 	shutdown_called(false)
 {
-	increment.fixIfBroken(data.getMaxDataPartIndex());
-
 	data.loadDataParts(false);
 	data.clearOldParts();
 }
@@ -129,8 +128,6 @@ void StorageMergeTree::rename(const String & new_path_to_db, const String & new_
 	path = new_path_to_db;
 	table_name = new_table_name;
 	full_path = new_full_path;
-
-	increment.setPath(full_path + "increment.txt");
 
 	/// TODO: Можно обновить названия логгеров у this, data, reader, writer, merger.
 }
@@ -341,16 +338,11 @@ void StorageMergeTree::attachPartition(const Field & field, bool unreplicated, b
 		LOG_DEBUG(log, "Checking data");
 		MergeTreeData::MutableDataPartPtr part = data.loadPartAndFixMetadata(source_path);
 
-		UInt64 index = increment.get();
-		String new_part_name = ActiveDataPartSet::getPartName(part->left_date, part->right_date, index, index, 0);
-		part->renameTo(new_part_name);
-		part->name = new_part_name;
-		ActiveDataPartSet::parsePartName(part->name, *part);
-
-		LOG_INFO(log, "Attaching part " << source_part_name << " from " << source_path << " as " << new_part_name);
+		LOG_INFO(log, "Attaching part " << source_part_name << " from " << source_path);
+		data.renameTempPartAndAdd(part, &increment);
 		data.attachPart(part);
 
-		LOG_INFO(log, "Finished attaching part " << new_part_name);
+		LOG_INFO(log, "Finished attaching part");
 	}
 
 	/// На месте удаленных кусков могут появиться новые, с другими данными.
