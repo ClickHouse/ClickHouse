@@ -32,9 +32,6 @@ public:
 	/// Переписывает select_expression_list, чтобы вернуть только необходимые столбцы в правильном порядке.
 	void rewriteSelectExpressionList(const Names & column_names);
 
-	/// Переписывает select_expression_list, чтобы вернуть только необходимые столбцы в правильном порядке.
-	void rewriteSelectExpressionList3(const Names & column_names);
-
 	ASTPtr clone() const override;
 
 public:
