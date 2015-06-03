@@ -729,27 +729,33 @@ private:
 
 		if (arguments.size() == 4)
 		{
-			const IColumnConst * default_col = dynamic_cast<const IColumnConst *>(&*block.getByPosition(arguments[3]).column);
+			const IColumn * default_col = block.getByPosition(arguments[3]).column.get();
+			const IColumnConst * const_default_col = dynamic_cast<const IColumnConst *>(default_col);
 
-			if (default_col)
+			if (const_default_col)
+				const_default_value = (*const_default_col)[0];
+
+			/// Нужно ли преобразовать элементы to и default_value к наименьшему общему типу, который является Float64?
+			bool default_col_is_float =
+				   typeid_cast<const ColumnFloat32 *>(default_col)
+				|| typeid_cast<const ColumnFloat64 *>(default_col)
+				|| typeid_cast<const ColumnConstFloat32 *>(default_col)
+				|| typeid_cast<const ColumnConstFloat64 *>(default_col);
+
+			bool to_is_float = to[0].getType() == Field::Types::Float64;
+
+			if (default_col_is_float && !to_is_float)
 			{
-				const_default_value = (*default_col)[0];
-
-				/// Нужно ли преобразовать элементы to и default_value к наименьшему общему типу, который является Float64?
-				if (const_default_value.getType() == Field::Types::Float64 && to[0].getType() != Field::Types::Float64)
-				{
-					converted_to.resize(to.size());
-					for (size_t i = 0, size = to.size(); i < size; ++i)
-						converted_to[i] = apply_visitor(FieldVisitorConvertToNumber<Float64>(), to[i]);
-					used_to = &converted_to;
-				}
-				else if (const_default_value.getType() != Field::Types::Float64 && to[0].getType() == Field::Types::Float64)
-				{
-					const_default_value = apply_visitor(FieldVisitorConvertToNumber<Float64>(), const_default_value);
-				}
+				converted_to.resize(to.size());
+				for (size_t i = 0, size = to.size(); i < size; ++i)
+					converted_to[i] = apply_visitor(FieldVisitorConvertToNumber<Float64>(), to[i]);
+				used_to = &converted_to;
 			}
-
-			/// TODO Преобразование для to в случае неконстантного default
+			else if (!default_col_is_float && to_is_float)
+			{
+				if (const_default_col)
+					const_default_value = apply_visitor(FieldVisitorConvertToNumber<Float64>(), const_default_value);
+			}
 		}
 
 		/// Замечание: не делается проверка дубликатов в массиве from.
