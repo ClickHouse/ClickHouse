@@ -257,92 +257,25 @@ namespace DB
 	};
 
 	template<typename T>
-	struct BaseFloatRoundingComputation;
+	class BaseFloatRoundingComputation;
 
 	template<>
-	struct BaseFloatRoundingComputation<Float32>
+	class BaseFloatRoundingComputation<Float32>
 	{
+	public:
 		using Scale = __m128;
 		static const size_t data_count = 4;
-	};
 
-	template<>
-	struct BaseFloatRoundingComputation<Float64>
-	{
-		using Scale = __m128d;
-		static const size_t data_count = 2;
-	};
-
-	/** Реализация низкоуровневых функций округления для значений с плавающей точкой.
-	  */
-	template<typename T, int rounding_mode, ScaleMode scale_mode>
-	struct FloatRoundingComputation : public BaseFloatRoundingComputation<T>
-	{
-	};
-
-	template<int rounding_mode>
-	struct FloatRoundingComputation<Float32, rounding_mode, PositiveScale>
-		: public BaseFloatRoundingComputation<Float32>
-	{
-		static inline void prepare(size_t scale, Scale & mm_scale)
+	protected:
+		/// Предотвратить появление отрицательных нолей определённых в стандарте IEEE-754.
+		static inline void normalize(__m128 & val, const __m128 & mask)
 		{
-			Float32 fscale = static_cast<Float32>(scale);
-			mm_scale = _mm_load1_ps(&fscale);
-		}
-
-		static inline void compute(const Float32 * __restrict in, const Scale & scale, Float32 * __restrict out)
-		{
-			__m128 val = _mm_loadu_ps(in);
-			val = _mm_mul_ps(val, scale);
-			val = _mm_round_ps(val, rounding_mode);
-			val = _mm_div_ps(val, scale);
-			_mm_storeu_ps(out, val);
-		}
-	};
-
-	template<int rounding_mode>
-	struct FloatRoundingComputation<Float32, rounding_mode, NegativeScale>
-		: public BaseFloatRoundingComputation<Float32>
-	{
-		static inline void prepare(size_t scale, Scale & mm_scale)
-		{
-			Float32 fscale = static_cast<Float32>(scale);
-			mm_scale = _mm_load1_ps(&fscale);
-		}
-
-		static inline void compute(const Float32 * __restrict in, const Scale & scale, Float32 * __restrict out)
-		{
-			__m128 val = _mm_loadu_ps(in);
-
-			/// Превратить отрицательные значения в положительные.
-			__m128 factor = _mm_cmpge_ps(val, getZero());
-			factor = _mm_min_ps(factor, getTwo());
-			factor = _mm_sub_ps(factor, getOne());
-			val = _mm_mul_ps(val, factor);
-
-			/// Алгоритм округления.
-			val = _mm_div_ps(val, scale);
-			__m128 res = _mm_cmpge_ps(val, getOneTenth());
-			val = _mm_round_ps(val, rounding_mode);
-			val = _mm_mul_ps(val, scale);
-			val = _mm_and_ps(val, res);
-
-			/// Предотвратить появление отрицательных нолей определённых в стандарте IEEE-754.
-			__m128 check = _mm_cmpeq_ps(val, getZero());
-			check = _mm_min_ps(check, getOne());
-			factor = _mm_add_ps(factor, check);
-
-			/// Вернуть настоящие знаки всех значений.
-			val = _mm_mul_ps(val, factor);
-
-			_mm_storeu_ps(out, val);
-		}
-
-	private:
-		static inline const __m128 & getOneTenth()
-		{
-			static const __m128 one_tenth = _mm_set1_ps(0.1);
-			return one_tenth;
+			__m128 mask1 = _mm_cmpeq_ps(val, getZero());
+			__m128 mask2 = _mm_and_ps(mask, mask1);
+			mask2 = _mm_cmpeq_ps(mask2, getZero());
+			mask2 = _mm_min_ps(mask2, getTwo());
+			mask2 = _mm_sub_ps(mask2, getOne());
+			val = _mm_mul_ps(val, mask2);
 		}
 
 		static inline const __m128 & getZero()
@@ -364,85 +297,23 @@ namespace DB
 		}
 	};
 
-	template<int rounding_mode>
-	struct FloatRoundingComputation<Float32, rounding_mode, ZeroScale>
-		: public BaseFloatRoundingComputation<Float32>
+	template<>
+	class BaseFloatRoundingComputation<Float64>
 	{
-		static inline void prepare(size_t scale, Scale & mm_scale)
+	public:
+		using Scale = __m128d;
+		static const size_t data_count = 2;
+
+	protected:
+		/// Предотвратить появление отрицательных нолей определённых в стандарте IEEE-754.
+		static inline void normalize(__m128d & val, const __m128d & mask)
 		{
-		}
-
-		static inline void compute(const Float32 * __restrict in, const Scale & scale, Float32 * __restrict out)
-		{
-			__m128 val = _mm_loadu_ps(in);
-			val = _mm_round_ps(val, rounding_mode);
-			_mm_storeu_ps(out, val);
-		}
-	};
-
-	template<int rounding_mode>
-	struct FloatRoundingComputation<Float64, rounding_mode, PositiveScale>
-		: public BaseFloatRoundingComputation<Float64>
-	{
-		static inline void prepare(size_t scale, Scale & mm_scale)
-		{
-			Float64 fscale = static_cast<Float64>(scale);
-			mm_scale = _mm_load1_pd(&fscale);
-		}
-
-		static inline void compute(const Float64 * __restrict in, const Scale & scale, Float64 * __restrict out)
-		{
-			__m128d val = _mm_loadu_pd(in);
-			val = _mm_mul_pd(val, scale);
-			val = _mm_round_pd(val, rounding_mode);
-			val = _mm_div_pd(val, scale);
-			_mm_storeu_pd(out, val);
-		}
-	};
-
-	template<int rounding_mode>
-	struct FloatRoundingComputation<Float64, rounding_mode, NegativeScale>
-		: public BaseFloatRoundingComputation<Float64>
-	{
-		static inline void prepare(size_t scale, Scale & mm_scale)
-		{
-			Float64 fscale = static_cast<Float64>(scale);
-			mm_scale = _mm_load1_pd(&fscale);
-		}
-
-		static inline void compute(const Float64 * __restrict in, const Scale & scale, Float64 * __restrict out)
-		{
-			__m128d val = _mm_loadu_pd(in);
-
-			/// Превратить отрицательные значения в положительные.
-			__m128d factor = _mm_cmpge_pd(val, getZero());
-			factor = _mm_min_pd(factor, getTwo());
-			factor = _mm_sub_pd(factor, getOne());
-			val = _mm_mul_pd(val, factor);
-
-			/// Алгоритм округления.
-			val = _mm_div_pd(val, scale);
-			__m128d res = _mm_cmpge_pd(val, getOneTenth());
-			val = _mm_round_pd(val, rounding_mode);
-			val = _mm_mul_pd(val, scale);
-			val = _mm_and_pd(val, res);
-
-			/// Предотвратить появление отрицательных нолей определённых в стандарте IEEE-754.
-			__m128d check = _mm_cmpeq_pd(val, getZero());
-			check = _mm_min_pd(check, getOne());
-			factor = _mm_add_pd(factor, check);
-
-			/// Вернуть настоящие знаки всех значений.
-			val = _mm_mul_pd(val, factor);
-
-			_mm_storeu_pd(out, val);
-		}
-
-	private:
-		static inline const __m128d & getOneTenth()
-		{
-			static const __m128d one_tenth = _mm_set1_pd(0.1);
-			return one_tenth;
+			__m128d mask1 = _mm_cmpeq_pd(val, getZero());
+			__m128d mask2 = _mm_and_pd(mask, mask1);
+			mask2 = _mm_cmpeq_pd(mask2, getZero());
+			mask2 = _mm_min_pd(mask2, getTwo());
+			mask2 = _mm_sub_pd(mask2, getOne());
+			val = _mm_mul_pd(val, mask2);
 		}
 
 		static inline const __m128d & getZero()
@@ -464,10 +335,177 @@ namespace DB
 		}
 	};
 
+	/** Реализация низкоуровневых функций округления для значений с плавающей точкой.
+	  */
+	template<typename T, int rounding_mode, ScaleMode scale_mode>
+	class FloatRoundingComputation;
+
 	template<int rounding_mode>
-	struct FloatRoundingComputation<Float64, rounding_mode, ZeroScale>
+	class FloatRoundingComputation<Float32, rounding_mode, PositiveScale>
+		: public BaseFloatRoundingComputation<Float32>
+	{
+	public:
+		static inline void prepare(size_t scale, Scale & mm_scale)
+		{
+			Float32 fscale = static_cast<Float32>(scale);
+			mm_scale = _mm_load1_ps(&fscale);
+		}
+
+		static inline void compute(const Float32 * __restrict in, const Scale & scale, Float32 * __restrict out)
+		{
+			__m128 val = _mm_loadu_ps(in);
+			__m128 mask = _mm_cmplt_ps(val, getZero());
+
+			/// Алгоритм округления.
+			val = _mm_mul_ps(val, scale);
+			val = _mm_round_ps(val, rounding_mode);
+			val = _mm_div_ps(val, scale);
+
+			normalize(val, mask);
+			_mm_storeu_ps(out, val);
+		}
+	};
+
+	template<int rounding_mode>
+	class FloatRoundingComputation<Float32, rounding_mode, NegativeScale>
+		: public BaseFloatRoundingComputation<Float32>
+	{
+	public:
+		static inline void prepare(size_t scale, Scale & mm_scale)
+		{
+			Float32 fscale = static_cast<Float32>(scale);
+			mm_scale = _mm_load1_ps(&fscale);
+		}
+
+		static inline void compute(const Float32 * __restrict in, const Scale & scale, Float32 * __restrict out)
+		{
+			__m128 val = _mm_loadu_ps(in);
+			__m128 mask = _mm_cmplt_ps(val, getZero());
+
+			/// Превратить отрицательные значения в положительные.
+			__m128 factor = _mm_cmpge_ps(val, getZero());
+			factor = _mm_min_ps(factor, getTwo());
+			factor = _mm_sub_ps(factor, getOne());
+			val = _mm_mul_ps(val, factor);
+
+			/// Алгоритм округления.
+			val = _mm_div_ps(val, scale);
+			__m128 res = _mm_cmpge_ps(val, getOneTenth());
+			val = _mm_round_ps(val, rounding_mode);
+			val = _mm_mul_ps(val, scale);
+			val = _mm_and_ps(val, res);
+
+			/// Вернуть настоящие знаки всех значений.
+			val = _mm_mul_ps(val, factor);
+
+			normalize(val, mask);
+			_mm_storeu_ps(out, val);
+		}
+
+	private:
+		static inline const __m128 & getOneTenth()
+		{
+			static const __m128 one_tenth = _mm_set1_ps(0.1);
+			return one_tenth;
+		}
+	};
+
+	template<int rounding_mode>
+	class FloatRoundingComputation<Float32, rounding_mode, ZeroScale>
+		: public BaseFloatRoundingComputation<Float32>
+	{
+	public:
+		static inline void prepare(size_t scale, Scale & mm_scale)
+		{
+		}
+
+		static inline void compute(const Float32 * __restrict in, const Scale & scale, Float32 * __restrict out)
+		{
+			__m128 val = _mm_loadu_ps(in);
+			__m128 mask = _mm_cmplt_ps(val, getZero());
+
+			val = _mm_round_ps(val, rounding_mode);
+
+			normalize(val, mask);
+			_mm_storeu_ps(out, val);
+		}
+	};
+
+	template<int rounding_mode>
+	class FloatRoundingComputation<Float64, rounding_mode, PositiveScale>
 		: public BaseFloatRoundingComputation<Float64>
 	{
+	public:
+		static inline void prepare(size_t scale, Scale & mm_scale)
+		{
+			Float64 fscale = static_cast<Float64>(scale);
+			mm_scale = _mm_load1_pd(&fscale);
+		}
+
+		static inline void compute(const Float64 * __restrict in, const Scale & scale, Float64 * __restrict out)
+		{
+			__m128d val = _mm_loadu_pd(in);
+			__m128d mask = _mm_cmplt_pd(val, getZero());
+
+			/// Алгоритм округления.
+			val = _mm_mul_pd(val, scale);
+			val = _mm_round_pd(val, rounding_mode);
+			val = _mm_div_pd(val, scale);
+
+			normalize(val, mask);
+			_mm_storeu_pd(out, val);
+		}
+	};
+
+	template<int rounding_mode>
+	class FloatRoundingComputation<Float64, rounding_mode, NegativeScale>
+		: public BaseFloatRoundingComputation<Float64>
+	{
+	public:
+		static inline void prepare(size_t scale, Scale & mm_scale)
+		{
+			Float64 fscale = static_cast<Float64>(scale);
+			mm_scale = _mm_load1_pd(&fscale);
+		}
+
+		static inline void compute(const Float64 * __restrict in, const Scale & scale, Float64 * __restrict out)
+		{
+			__m128d val = _mm_loadu_pd(in);
+			__m128d mask = _mm_cmplt_pd(val, getZero());
+
+			/// Превратить отрицательные значения в положительные.
+			__m128d factor = _mm_cmpge_pd(val, getZero());
+			factor = _mm_min_pd(factor, getTwo());
+			factor = _mm_sub_pd(factor, getOne());
+			val = _mm_mul_pd(val, factor);
+
+			/// Алгоритм округления.
+			val = _mm_div_pd(val, scale);
+			__m128d res = _mm_cmpge_pd(val, getOneTenth());
+			val = _mm_round_pd(val, rounding_mode);
+			val = _mm_mul_pd(val, scale);
+			val = _mm_and_pd(val, res);
+
+			/// Вернуть настоящие знаки всех значений.
+			val = _mm_mul_pd(val, factor);
+
+			normalize(val, mask);
+			_mm_storeu_pd(out, val);
+		}
+
+	private:
+		static inline const __m128d & getOneTenth()
+		{
+			static const __m128d one_tenth = _mm_set1_pd(0.1);
+			return one_tenth;
+		}
+	};
+
+	template<int rounding_mode>
+	class FloatRoundingComputation<Float64, rounding_mode, ZeroScale>
+		: public BaseFloatRoundingComputation<Float64>
+	{
+	public:
 		static inline void prepare(size_t scale, Scale & mm_scale)
 		{
 		}
@@ -475,7 +513,11 @@ namespace DB
 		static inline void compute(const Float64 * __restrict in, const Scale & scale, Float64 * __restrict out)
 		{
 			__m128d val = _mm_loadu_pd(in);
+			__m128d mask = _mm_cmplt_pd(val, getZero());
+
 			val = _mm_round_pd(val, rounding_mode);
+
+			normalize(val, mask);
 			_mm_storeu_pd(out, val);
 		}
 	};
