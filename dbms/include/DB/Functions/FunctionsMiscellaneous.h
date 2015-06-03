@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Poco/Net/DNS.h>
+#include <Yandex/Revision.h>
 
-#include <math.h>
-
+#include <DB/Core/Defines.h>
 #include <DB/IO/WriteBufferFromString.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>
@@ -25,6 +25,7 @@
 #include <DB/Interpreters/ExpressionActions.h>
 #include <statdaemons/ext/range.hpp>
 
+#include <cmath>
 
 namespace DB
 {
@@ -55,6 +56,8 @@ namespace DB
   * sleep(n)		- спит n секунд каждый блок.
   *
   * bar(x, min, max, width) - рисует полосу из количества символов, пропорционального (x - min) и равного width при x == max.
+  *
+  * version()       - возвращает текущую версию сервера в строке.
   */
 
 
@@ -887,5 +890,34 @@ using FunctionIsFinite = FunctionNumericPredicate<IsFiniteImpl>;
 using FunctionIsInfinite = FunctionNumericPredicate<IsInfiniteImpl>;
 using FunctionIsNaN = FunctionNumericPredicate<IsNaNImpl>;
 
+class FunctionVersion : public IFunction
+{
+public:
+	static constexpr auto name = "version";
+	static IFunction * create(const Context & context) { return new FunctionVersion; }
+
+	String getName() const override { return name; }
+
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	{
+		if (!arguments.empty())
+			throw Exception("Function " + getName() + " must be called without arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+		return new DataTypeString;
+	}
+
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	{
+		static const std::string version = getVersion();
+		block.getByPosition(result).column = new ColumnConstString(version.length(), version);
+	}
+
+private:
+	std::string getVersion() const
+	{
+		std::ostringstream os;
+		os << DBMS_VERSION_MAJOR << "." << DBMS_VERSION_MINOR << "." << Revision::get();
+		return os.str();
+	}
+};
 
 }
