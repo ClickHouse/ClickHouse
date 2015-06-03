@@ -76,7 +76,7 @@ DataTypePtr getSmallestCommonNumericType(const IDataType & t1, const IDataType &
 namespace DB
 {
 
-void registerFunctionsMiscellaneous(FunctionFactory & factory)
+void registerFunctionsTransform(FunctionFactory & factory)
 {
 	factory.registerFunction<FunctionTransform>();
 }
