@@ -342,7 +342,6 @@ private:
 		const auto v_zero = _mm_setzero_si128();
 		const auto v_not_case_lower_bound = _mm_set1_epi8(not_case_lower_bound - 1);
 		const auto v_not_case_upper_bound = _mm_set1_epi8(not_case_upper_bound + 1);
-//		const auto v_not_case_range = _mm_set1_epi16((not_case_upper_bound << 8) | not_case_lower_bound);
 		const auto v_flip_case_mask = _mm_set1_epi8(flip_case_mask);
 
 		while (src < src_end_sse)
@@ -359,10 +358,6 @@ private:
 				const auto is_not_case = _mm_and_si128(_mm_cmpgt_epi8(chars, v_not_case_lower_bound),
 													   _mm_cmplt_epi8(chars, v_not_case_upper_bound));
 				const auto mask_is_not_case = _mm_movemask_epi8(is_not_case);
-
-				/// check for case
-				//			const auto is_case_result = _mm_cmpestra(v_not_case_range, 2, chars, 16, _SIDD_UBYTE_OPS | _SIDD_CMP_RANGES);
-				//			if (is_case_result == 0)
 
 				/// everything in correct case ASCII
 				if (mask_is_not_case == 0)
@@ -385,9 +380,9 @@ private:
 			else
 			{
 				/// UTF-8
-				const auto end = src + bytes_sse;
+				const auto expected_end = src + bytes_sse;
 
-				while (src < end)
+				while (src < expected_end)
 				{
 					if (src[0] <= ascii_upper_bound)
 					{
@@ -434,22 +429,20 @@ private:
 //						res_pos += 3;
 //					}
 					else
-					{
 						if (const auto chars = utf8.convert(to_case(utf8.convert(src)), dst, src_end - src))
-						{
-							src += chars;
-							dst += chars;
-						}
+							src += chars, dst += chars;
 						else
-						{
-							++src;
-							++dst;
-						}
-					}
+							++src, ++dst;
 				}
 
-				const auto diff = src - end;
-				src_end_sse += diff;
+				const auto diff = src - expected_end;
+				if (diff != 0)
+				{
+					if (src_end_sse + diff < src_end)
+						src_end_sse += diff;
+					else
+						src_end_sse -= bytes_sse - diff;
+				}
 			}
 		}
 

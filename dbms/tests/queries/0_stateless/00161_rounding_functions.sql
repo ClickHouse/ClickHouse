@@ -947,3 +947,8 @@ SELECT round(y,3) FROM (SELECT 2.718281828459045 + 1/(1+x*x) AS y ARRAY JOIN ran
 SELECT round(y,3) FROM (SELECT 2.718281828459045 + 1/(1+x*x) AS y ARRAY JOIN range(9) AS x);
 SELECT round(y,3) FROM (SELECT 2.718281828459045 + 1/(1+x*x) AS y ARRAY JOIN range(10) AS x);
 
+/* Negative zeroes. */
+
+SELECT round(-0.002);
+SELECT round(-0.002, -1);
+SELECT round(-0.002, 1);
