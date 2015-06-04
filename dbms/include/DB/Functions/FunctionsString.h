@@ -240,8 +240,6 @@ private:
 template <char not_case_lower_bound, char not_case_upper_bound>
 struct LowerUpperImplVectorized
 {
-	template <char, char, int(int)> friend class LowerUpperUTF8ImplVectorized;
-
 	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
 					   ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets)
 	{
@@ -303,7 +301,55 @@ private:
 	}
 };
 
-template <char not_case_lower_bound, char not_case_upper_bound, int to_case(int)>
+
+/// xor or do nothing
+template <bool> UInt8 xor_or_identity(const UInt8 c, const int mask) { return c ^ mask; };
+template <> inline UInt8 xor_or_identity<false>(const UInt8 c, const int) { return c; }
+
+/// It is caller's responsibility to ensure the presence of a valid cyrillic sequence in array
+template <bool to_lower>
+inline void UTF8CyrillicToCase(const UInt8 * & src, const UInt8 * const src_end, UInt8 * & dst)
+{
+	if (src[0] == 0xD0u && (src[1] >= 0x80u && src[1] <= 0x8Fu))
+	{
+		/// ЀЁЂЃЄЅІЇЈЉЊЋЌЍЎЏ
+		*dst++ = xor_or_identity<to_lower>(*src++, 0x1);
+		*dst++ = xor_or_identity<to_lower>(*src++, 0x10);
+	}
+	else if (src[0] == 0xD1u && (src[1] >= 0x90u && src[1] <= 0x9Fu))
+	{
+		/// ѐёђѓєѕіїјљњћќѝўџ
+		*dst++ = xor_or_identity<!to_lower>(*src++, 0x1);
+		*dst++ = xor_or_identity<!to_lower>(*src++, 0x10);
+	}
+	else if (src[0] == 0xD0u && (src[1] >= 0x90u && src[1] <= 0x9Fu))
+	{
+		/// А-П
+		*dst++ = *src++;
+		*dst++ = xor_or_identity<to_lower>(*src++, 0x20);
+	}
+	else if (src[0] == 0xD0u && (src[1] >= 0xB0u && src[1] <= 0xBFu))
+	{
+		/// а-п
+		*dst++ = *src++;
+		*dst++ = xor_or_identity<!to_lower>(*src++, 0x20);
+	}
+	else if (src[0] == 0xD0u && (src[1] >= 0xA0u && src[1] <= 0xAFu))
+	{
+		///	Р-Я
+		*dst++ = xor_or_identity<to_lower>(*src++, 0x1);
+		*dst++ = xor_or_identity<to_lower>(*src++, 0x20);
+	}
+	else if (src[0] == 0xD1u && (src[1] >= 0x80u && src[1] <= 0x8Fu))
+	{
+		/// р-я
+		*dst++ = xor_or_identity<!to_lower>(*src++, 0x1);
+		*dst++ = xor_or_identity<!to_lower>(*src++, 0x20);
+	}
+};
+
+template <char not_case_lower_bound, char not_case_upper_bound,
+	int to_case(int), void cyrillic_to_case(const UInt8 * &, const UInt8 *, UInt8 * &)>
 struct LowerUpperUTF8ImplVectorized
 {
 	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
@@ -391,50 +437,35 @@ private:
 						else
 							*dst++ = *src++;
 					}
-//					else if (src + 1 < src_end		/// кириллица: русский алфавит, а также ЀЁЂЃЄЅІЇЈЉЊЋЌЍЎЏ
-//							 &&    ((src[0] == '\xD0' && (src[1] >= '\x80' && src[1] <= '\xBF'))
-//									|| (src[0] == '\xD1' && (src[1] >= '\x80' && src[1] <= '\x9F'))))
-//					{
-//						/** d0 80-8f -> +1 +10
-//						  * d0 90-9f -> +0 +20
-//						  * d0 a0-af -> +1 -20
-//						  */
-//
-//						if (src[0] == '\xD0' && (src[1] >= '\x80' && src[1] <= '\x8F'))
-//						{
-//							++res_pos[0];
-//							res_pos[1] += 0x10;
-//						}
-//						else if (src[0] == '\xD0' && (src[1] >= '\x90' && src[1] <= '\x9F'))
-//						{
-//							res_pos[1] += 0x20;
-//						}
-//						else if (src[0] == '\xD0' && (src[1] >= '\xA0' && src[1] <= '\xAF'))
-//						{
-//							++res_pos[0];
-//							res_pos[1] -= 0x20;
-//						}
-//
-//						pos += 2;
-//						res_pos += 2;
-//					}
-//					else if (pos + 1 < src_end && pos[0] == '\xC2') /// Пунктуация U+0080 - U+00BF, UTF-8: C2 80 - C2 BF
-//					{
-//						pos += 2;
-//						res_pos += 2;
-//					}
-//					else if (pos + 2 < src_end && pos[0] == '\xE2')	/// Символы U+2000 - U+2FFF, UTF-8: E2 80 80 - E2 BF BF
-//					{
-//						pos += 3;
-//						res_pos += 3;
-//					}
+					else if (src + 1 < src_end &&
+						((src[0] == 0xD0u && (src[1] >= 0x80u && src[1] <= 0xBFu)) ||
+							(src[0] == 0xD1u && (src[1] >= 0x80u && src[1] <= 0x9Fu))))
+					{
+						cyrillic_to_case(src, src_end, dst);
+					}
+					else if (src + 1 < src_end && src[0] == 0xC2u)
+					{
+						/// Пунктуация U+0080 - U+00BF, UTF-8: C2 80 - C2 BF
+						*dst++ = *src++;
+						*dst++ = *src++;
+					}
+					else if (src + 2 < src_end && src[0] == 0xE2u)
+					{
+						/// Символы U+2000 - U+2FFF, UTF-8: E2 80 80 - E2 BF BF
+						*dst++ = *src++;
+						*dst++ = *src++;
+						*dst++ = *src++;
+					}
 					else
+					{
 						if (const auto chars = utf8.convert(to_case(utf8.convert(src)), dst, src_end - src))
 							src += chars, dst += chars;
 						else
 							++src, ++dst;
+					}
 				}
 
+				/// adjust src_end_sse by pushing it forward or backward
 				const auto diff = src - expected_end;
 				if (diff != 0)
 				{
@@ -1665,8 +1696,12 @@ typedef FunctionStringNumNumToString<SubstringUTF8Impl,	NameSubstringUTF8>		Func
 
 using FunctionSSELower = FunctionStringToString<LowerUpperImplVectorized<'A', 'Z'>, NameSSELower>;
 using FunctionSSEUpper = FunctionStringToString<LowerUpperImplVectorized<'a', 'z'>, NameSSEUpper>;
-using FunctionSSELowerUTF8 = FunctionStringToString<LowerUpperUTF8ImplVectorized<'A', 'Z', Poco::Unicode::toLower>, NameSSELowerUTF8>;
-using FunctionSSEUpperUTF8 = FunctionStringToString<LowerUpperUTF8ImplVectorized<'a', 'z', Poco::Unicode::toUpper>, NameSSEUpperUTF8>;
+using FunctionSSELowerUTF8 = FunctionStringToString<
+	LowerUpperUTF8ImplVectorized<'A', 'Z', Poco::Unicode::toLower, UTF8CyrillicToCase<true>>,
+	NameSSELowerUTF8>;
+using FunctionSSEUpperUTF8 = FunctionStringToString<
+	LowerUpperUTF8ImplVectorized<'a', 'z', Poco::Unicode::toUpper, UTF8CyrillicToCase<false>>,
+	NameSSEUpperUTF8>;
 
 
 }
