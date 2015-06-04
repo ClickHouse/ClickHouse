@@ -2511,54 +2511,138 @@ void StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(const String & 
 {
 	auto zookeeper = getZooKeeper();
 
-	UInt64 log_index = parse<UInt64>(entry.znode_name.substr(entry.znode_name.size() - 10));
-	String log_entry_str = entry.toString();
+	String entry_str = entry.toString();
+	String log_node_name;
 
-	LOG_DEBUG(log, "Waiting for " << replica << " to pull " << entry.znode_name << " to queue");
+	/** В эту функцию могут передать entry двух видов:
+	  * 1. (более часто) Из директории log - общего лога, откуда реплики копируют записи в свою queue.
+	  * 2. Из директории queue одной из реплик.
+	  *
+	  * Проблема в том, что номера (sequential нод) элементов очереди в log и в queue не совпадают.
+	  * (И в queue не совпадают номера у одного и того же элемента лога для разных реплик.)
+	  *
+	  * Поэтому следует рассматривать эти случаи по-отдельности.
+	  */
 
-	/// Дождемся, пока запись попадет в очередь реплики.
-	while (true)
+	/** Первое - нужно дождаться, пока реплика возьмёт к себе в queue элемент очереди из log,
+	  *  если она ещё этого не сделала (см. функцию pullLogsToQueue).
+	  *
+	  * Для этого проверяем её узел log_pointer - максимальный номер взятого элемента из log плюс единица.
+	  */
+
+	if (0 == entry.znode_name.compare(0, strlen("log-"), "log-"))
 	{
-		zkutil::EventPtr event = new Poco::Event;
+		/** В этом случае просто берём номер из имени ноды log-xxxxxxxxxx.
+		  */
 
-		String pointer = zookeeper->get(zookeeper_path + "/replicas/" + replica + "/log_pointer", nullptr, event);
-		if (!pointer.empty() && parse<UInt64>(pointer) > log_index)
-			break;
+		UInt64 log_index = parse<UInt64>(entry.znode_name.substr(entry.znode_name.size() - 10));
+		log_node_name = entry.znode_name;
 
-		event->wait();
+		LOG_DEBUG(log, "Waiting for " << replica << " to pull " << log_node_name << " to queue");
+
+		/// Дождемся, пока запись попадет в очередь реплики.
+		while (true)
+		{
+			zkutil::EventPtr event = new Poco::Event;
+
+			String log_pointer = zookeeper->get(zookeeper_path + "/replicas/" + replica + "/log_pointer", nullptr, event);
+			if (!log_pointer.empty() && parse<UInt64>(log_pointer) > log_index)
+				break;
+
+			event->wait();
+		}
 	}
+	else if (0 == entry.znode_name.compare(0, strlen("queue-"), "queue-"))
+	{
+		/** В этом случае номер log-ноды неизвестен. Нужно просмотреть все от log_pointer до конца,
+		  *  ища ноду с таким же содержимым. И если мы её не найдём - значит реплика уже взяла эту запись в свою queue.
+		  */
 
-	LOG_DEBUG(log, "Looking for " << entry.znode_name << " in " << replica << " queue");
+		String log_pointer = zookeeper->get(zookeeper_path + "/replicas/" + replica + "/log_pointer");
 
-	/// Найдем запись в очереди реплики.
+		Strings log_entries = zookeeper->getChildren(zookeeper_path + "/log");
+		UInt64 log_index = 0;
+		bool found = false;
+
+		for (const String & log_entry_name : log_entries)
+		{
+			log_index = parse<UInt64>(log_entry_name.substr(log_entry_name.size() - 10));
+
+			if (!log_pointer.empty() && log_index < parse<UInt64>(log_pointer))
+				continue;
+
+			String log_entry_str;
+			bool exists = zookeeper->tryGet(zookeeper_path + "/log/" + log_entry_name, log_entry_str);
+			if (exists && entry_str == log_entry_str)
+			{
+				found = true;
+				log_node_name = log_entry_name;
+				break;
+			}
+		}
+
+		if (found)
+		{
+			LOG_DEBUG(log, "Waiting for " << replica << " to pull " << log_node_name << " to queue");
+
+			/// Дождемся, пока запись попадет в очередь реплики.
+			while (true)
+			{
+				zkutil::EventPtr event = new Poco::Event;
+
+				String log_pointer = zookeeper->get(zookeeper_path + "/replicas/" + replica + "/log_pointer", nullptr, event);
+				if (!log_pointer.empty() && parse<UInt64>(log_pointer) > log_index)
+					break;
+
+				event->wait();
+			}
+		}
+	}
+	else
+		throw Exception("Logical error: unexpected name of log node: " + entry.znode_name, ErrorCodes::LOGICAL_ERROR);
+
+	if (!log_node_name.empty())
+		LOG_DEBUG(log, "Looking for node corresponding to " << log_node_name << " in " << replica << " queue");
+	else
+		LOG_DEBUG(log, "Looking for corresponding node in " << replica << " queue");
+
+	/** Второе - найдем соответствующую запись в очереди указанной реплики (replica).
+	  * Её номер может не совпадать ни с log-узлом, ни с queue-узлом у текущей реплики (у нас).
+	  * Поэтому, ищем путём сравнения содержимого.
+	  */
+
 	Strings queue_entries = zookeeper->getChildren(zookeeper_path + "/replicas/" + replica + "/queue");
-	String entry_to_wait_for;
+	String queue_entry_to_wait_for;
 
 	for (const String & entry_name : queue_entries)
 	{
 		String queue_entry_str;
 		bool exists = zookeeper->tryGet(zookeeper_path + "/replicas/" + replica + "/queue/" + entry_name, queue_entry_str);
-		if (exists && queue_entry_str == log_entry_str)
+		if (exists && queue_entry_str == entry_str)
 		{
-			entry_to_wait_for = entry_name;
+			queue_entry_to_wait_for = entry_name;
 			break;
 		}
 	}
 
 	/// Пока искали запись, ее уже выполнили и удалили.
-	if (entry_to_wait_for.empty())
+	if (queue_entry_to_wait_for.empty())
+	{
+		LOG_DEBUG(log, "No corresponding node found. Assuming it has been already processed.");
 		return;
+	}
 
-	LOG_DEBUG(log, "Waiting for " << entry_to_wait_for << " to disappear from " << replica << " queue");
+	LOG_DEBUG(log, "Waiting for " << queue_entry_to_wait_for << " to disappear from " << replica << " queue");
 
-	/// Дождемся, пока запись исчезнет из очереди реплики.
+	/// Третье - дождемся, пока запись исчезнет из очереди реплики.
+
 	while (true)
 	{
 		zkutil::EventPtr event = new Poco::Event;
 
 		String unused;
 		/// get вместо exists, чтобы не утек watch, если ноды уже нет.
-		if (!zookeeper->tryGet(zookeeper_path + "/replicas/" + replica + "/queue/" + entry_to_wait_for, unused, nullptr, event))
+		if (!zookeeper->tryGet(zookeeper_path + "/replicas/" + replica + "/queue/" + queue_entry_to_wait_for, unused, nullptr, event))
 			break;
 
 		event->wait();
