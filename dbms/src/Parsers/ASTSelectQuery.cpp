@@ -164,6 +164,7 @@ ASTPtr ASTSelectQuery::clone() const
 	CLONE(order_expression_list)
 	CLONE(limit_offset)
 	CLONE(limit_length)
+	CLONE(settings)
 	CLONE(format)
 	CLONE(next_union_all)
 
