@@ -9,11 +9,13 @@
 #include <DB/Parsers/ASTSubquery.h>
 #include <DB/Parsers/formatAST.h>
 #include <DB/Common/escapeForFileName.h>
+#include <statdaemons/ext/scope_guard.hpp>
 #include <memory>
 #include <unordered_map>
 #include <map>
 #include <limits>
 #include <cstddef>
+
 
 namespace DB
 {
@@ -96,28 +98,33 @@ private:
 		{
 			const auto condition = conditions[idx].get();
 
+			/// linearize sub-conjunctions
+			if (const auto function = typeid_cast<ASTFunction *>(condition))
+			{
+				if (function->name == and_function_name)
+				{
+					for (auto & child : function->arguments->children)
+						conditions.emplace_back(std::move(child));
+
+					/// remove the condition corresponding to conjunction
+					remove_condition_at_index(idx);
+
+					/// continue iterating without increment to ensure the just added conditions are processed
+					continue;
+				}
+			}
+
+			SCOPE_EXIT(++idx);
+
+			if (hasRestrictedFunctions(condition))
+				continue;
+
 			IdentifierNameSet identifiers{};
 			collectIdentifiersNoSubqueries(condition, identifiers);
 
 			/// do not take into consideration the conditions consisting only of primary key columns
 			if (hasNonPrimaryKeyColumns(identifiers) && isSubsetOfTableColumns(identifiers))
 			{
-				/// linearize sub-conjunctions
-				if (const auto function = typeid_cast<ASTFunction *>(condition))
-				{
-					if (function->name == and_function_name)
-					{
-						for (auto & child : function->arguments->children)
-							conditions.emplace_back(std::move(child));
-
-						/// remove the condition corresponding to conjunction
-						remove_condition_at_index(idx);
-
-						/// continue iterating without increment to ensure the just added conditions are processed
-						continue;
-					}
-				}
-
 				/// calculate size of columns involved in condition
 				const auto cond_columns_size = getIdentifiersColumnSize(identifiers);
 
@@ -129,8 +136,6 @@ private:
 					good_or_viable_condition.second = cond_columns_size;
 				}
 			}
-
-			++idx;
 		}
 
 		const auto move_condition_to_prewhere = [&] (const std::size_t idx) {
@@ -179,6 +184,10 @@ private:
 	void optimizeArbitrary(ASTSelectQuery & select) const
 	{
 		auto & condition = select.where_expression;
+
+		/// do not optimize restricted expressions
+		if (hasRestrictedFunctions(select.where_expression.get()))
+			return;
 
 		IdentifierNameSet identifiers{};
 		collectIdentifiersNoSubqueries(condition, identifiers);
@@ -298,6 +307,23 @@ private:
 				return false;
 
 		return true;
+	}
+
+	/// we assume all AS aliases have been expanded previously
+	static bool hasRestrictedFunctions(const IAST * ptr)
+	{
+		if (const auto function_ptr = typeid_cast<const ASTFunction *>(ptr))
+		{
+			/// disallow arrayJoin expressions to be moved to PREWHERE for now
+			if ("arrayJoin" == function_ptr->name)
+				return true;
+		}
+
+		for (const auto & child : ptr->children)
+			if (hasRestrictedFunctions(child.get()))
+				return true;
+
+		return false;
 	}
 
 	string_set_t primary_key_columns{};
