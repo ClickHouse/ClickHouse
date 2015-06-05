@@ -468,7 +468,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 
 		return res;
 	}
-	else if (name == "quantileDeterministic")
+	else if (name == "medianDeterministic" || name == "quantileDeterministic")
 	{
 		if (argument_types.size() != 2)
 			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -722,6 +722,7 @@ const AggregateFunctionFactory::FunctionNames & AggregateFunctionFactory::getFun
 		"quantileTimingWeighted",
 		"quantilesTimingWeighted",
 		"medianTimingWeighted",
+		"medianDeterministic",
 		"quantileDeterministic",
 		"quantilesDeterministic",
 		"sequenceMatch",

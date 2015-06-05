@@ -14,10 +14,10 @@ namespace DB
 /** Метод сжатия */
 enum class CompressionMethod
 {
-	QuickLZ,
-	LZ4,
-	LZ4HC,		/// Формат такой же, как у LZ4. Разница только при сжатии.
-	ZSTD,		/// Экспериментальный алгоритм: https://github.com/Cyan4973/zstd
+	QuickLZ = 0,
+	LZ4 = 1,
+	LZ4HC = 2,		/// Формат такой же, как у LZ4. Разница только при сжатии.
+	ZSTD = 3,		/// Экспериментальный алгоритм: https://github.com/Cyan4973/zstd
 };
 
 /** Формат сжатого блока следующий:

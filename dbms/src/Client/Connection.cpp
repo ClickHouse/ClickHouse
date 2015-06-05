@@ -34,9 +34,9 @@ void Connection::connect()
 		if (connected)
 			disconnect();
 
-		LOG_TRACE(log_wrapper.get(), "Connecting to " << default_database << "@" << host << ":" << port);
+		LOG_TRACE(log_wrapper.get(), "Connecting. Database: " << (default_database.empty() ? "(not specified)" : default_database) << ". User: " << user);
 
-		socket.connect(Poco::Net::SocketAddress(host, port), connect_timeout);
+		socket.connect(resolved_address, connect_timeout);
 		socket.setReceiveTimeout(receive_timeout);
 		socket.setSendTimeout(send_timeout);
 		socket.setNoDelay(true);
@@ -60,21 +60,21 @@ void Connection::connect()
 		disconnect();
 
 		/// Добавляем в сообщение адрес сервера. Также объект Exception запомнит stack trace. Жаль, что более точный тип исключения теряется.
-		throw NetException(e.displayText(), "(" + getServerAddress() + ")", ErrorCodes::NETWORK_ERROR);
+		throw NetException(e.displayText(), "(" + getDescription() + ")", ErrorCodes::NETWORK_ERROR);
 	}
 	catch (Poco::TimeoutException & e)
 	{
 		disconnect();
 
 		/// Добавляем в сообщение адрес сервера. Также объект Exception запомнит stack trace. Жаль, что более точный тип исключения теряется.
-		throw NetException(e.displayText(), "(" + getServerAddress() + ")", ErrorCodes::SOCKET_TIMEOUT);
+		throw NetException(e.displayText(), "(" + getDescription() + ")", ErrorCodes::SOCKET_TIMEOUT);
 	}
 }
 
 
 void Connection::disconnect()
 {
-	//LOG_TRACE(log_wrapper.get(), "Disconnecting (" << getServerAddress() << ")");
+	//LOG_TRACE(log_wrapper.get(), "Disconnecting");
 
 	socket.close();
 	in = nullptr;
@@ -85,7 +85,7 @@ void Connection::disconnect()
 
 void Connection::sendHello()
 {
-	//LOG_TRACE(log_wrapper.get(), "Sending hello (" << getServerAddress() << ")");
+	//LOG_TRACE(log_wrapper.get(), "Sending hello");
 
 	writeVarUInt(Protocol::Client::Hello, *out);
 	writeStringBinary((DBMS_NAME " ") + client_name, *out);
@@ -102,7 +102,7 @@ void Connection::sendHello()
 
 void Connection::receiveHello()
 {
-	//LOG_TRACE(log_wrapper.get(), "Receiving hello (" << getServerAddress() << ")");
+	//LOG_TRACE(log_wrapper.get(), "Receiving hello");
 
 	/// Получить hello пакет.
 	UInt64 packet_type = 0;
@@ -127,7 +127,7 @@ void Connection::receiveHello()
 		/// Закроем соединение, чтобы не было рассинхронизации.
 		disconnect();
 
-		throw NetException("Unexpected packet from server " + getServerAddress() + " (expected Hello or Exception, got "
+		throw NetException("Unexpected packet from server " + getDescription() + " (expected Hello or Exception, got "
 			+ String(Protocol::Server::toString(packet_type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
 	}
 }
@@ -166,33 +166,33 @@ void Connection::forceConnected()
 
 struct PingTimeoutSetter
 {
-	PingTimeoutSetter(Poco::Net::StreamSocket & socket_, const Poco::Timespan & ping_timeout_) 
+	PingTimeoutSetter(Poco::Net::StreamSocket & socket_, const Poco::Timespan & ping_timeout_)
 	: socket(socket_), ping_timeout(ping_timeout_)
 	{
 		old_send_timeout = socket.getSendTimeout();
 		old_receive_timeout = socket.getReceiveTimeout();
-		
+
 		if (old_send_timeout > ping_timeout)
 			socket.setSendTimeout(ping_timeout);
 		if (old_receive_timeout > ping_timeout)
 			socket.setReceiveTimeout(ping_timeout);
 	}
-	
+
 	~PingTimeoutSetter()
 	{
 		socket.setSendTimeout(old_send_timeout);
 		socket.setReceiveTimeout(old_receive_timeout);
 	}
-	
+
 	Poco::Net::StreamSocket & socket;
 	Poco::Timespan ping_timeout;
 	Poco::Timespan old_send_timeout;
 	Poco::Timespan old_receive_timeout;
 };
-	
+
 bool Connection::ping()
 {
-	// LOG_TRACE(log_wrapper.get(), "Ping (" << getServerAddress() << ")");
+	// LOG_TRACE(log_wrapper.get(), "Ping");
 
 	PingTimeoutSetter timeout_setter(socket, ping_timeout);
 	try
@@ -219,7 +219,7 @@ bool Connection::ping()
 
 		if (pong != Protocol::Server::Pong)
 		{
-			throw Exception("Unexpected packet from server " + getServerAddress() + " (expected Pong, got "
+			throw Exception("Unexpected packet from server " + getDescription() + " (expected Pong, got "
 				+ String(Protocol::Server::toString(pong)) + ")",
 				ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
 		}
@@ -236,11 +236,13 @@ bool Connection::ping()
 
 void Connection::sendQuery(const String & query, const String & query_id_, UInt64 stage, const Settings * settings, bool with_pending_data)
 {
+	network_compression_method = settings ? settings->network_compression_method.value : CompressionMethod::LZ4;
+
 	forceConnected();
 
 	query_id = query_id_;
 
-	//LOG_TRACE(log_wrapper.get(), "Sending query (" << getServerAddress() << ")");
+	//LOG_TRACE(log_wrapper.get(), "Sending query");
 
 	writeVarUInt(Protocol::Client::Query, *out);
 
@@ -279,7 +281,7 @@ void Connection::sendQuery(const String & query, const String & query_id_, UInt6
 
 void Connection::sendCancel()
 {
-	//LOG_TRACE(log_wrapper.get(), "Sending cancel (" << getServerAddress() << ")");
+	//LOG_TRACE(log_wrapper.get(), "Sending cancel");
 
 	writeVarUInt(Protocol::Client::Cancel, *out);
 	out->next();
@@ -288,12 +290,12 @@ void Connection::sendCancel()
 
 void Connection::sendData(const Block & block, const String & name)
 {
-	//LOG_TRACE(log_wrapper.get(), "Sending data (" << getServerAddress() << ")");
+	//LOG_TRACE(log_wrapper.get(), "Sending data");
 
 	if (!block_out)
 	{
 		if (compression == Protocol::Compression::Enable)
-			maybe_compressed_out = new CompressedWriteBuffer(*out);
+			maybe_compressed_out = new CompressedWriteBuffer(*out, network_compression_method);
 		else
 			maybe_compressed_out = out;
 
@@ -403,7 +405,7 @@ bool Connection::hasReadBufferPendingData() const
 
 Connection::Packet Connection::receivePacket()
 {
-	//LOG_TRACE(log_wrapper.get(), "Receiving packet (" << getServerAddress() << ")");
+	//LOG_TRACE(log_wrapper.get(), "Receiving packet");
 
 	try
 	{
@@ -446,14 +448,14 @@ Connection::Packet Connection::receivePacket()
 				disconnect();
 				throw Exception("Unknown packet "
 					+ toString(res.type)
-					+ " from server " + getServerAddress(), ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
+					+ " from server " + getDescription(), ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
 		}
 	}
 	catch (Exception & e)
 	{
 		/// Дописываем в текст исключения адрес сервера, если надо.
 		if (e.code() != ErrorCodes::UNKNOWN_PACKET_FROM_SERVER)
-			e.addMessage("while receiving packet from " + getServerAddress());
+			e.addMessage("while receiving packet from " + getDescription());
 
 		throw;
 	}
@@ -462,7 +464,7 @@ Connection::Packet Connection::receivePacket()
 
 Block Connection::receiveData()
 {
-	//LOG_TRACE(log_wrapper.get(), "Receiving data (" << getServerAddress() << ")");
+	//LOG_TRACE(log_wrapper.get(), "Receiving data");
 
 	initBlockInput();
 
@@ -492,30 +494,34 @@ void Connection::initBlockInput()
 		else
 			maybe_compressed_in = in;
 
-		block_in = new NativeBlockInputStream(*maybe_compressed_in, data_type_factory, server_revision);
+		block_in = new NativeBlockInputStream(*maybe_compressed_in, server_revision);
 	}
 }
 
 
-String Connection::getServerAddress() const
+void Connection::setDescription()
 {
-	return Poco::Net::SocketAddress(host, port).toString();
+	description = host + ":" + toString(resolved_address.port());
+	auto ip_address =  resolved_address.host().toString();
+
+	if (host != ip_address)
+		description += ", " + ip_address;
 }
 
 
 SharedPtr<Exception> Connection::receiveException()
 {
-	//LOG_TRACE(log_wrapper.get(), "Receiving exception (" << getServerAddress() << ")");
+	//LOG_TRACE(log_wrapper.get(), "Receiving exception");
 
 	Exception e;
-	readException(e, *in, "Received from " + getServerAddress());
+	readException(e, *in, "Received from " + getDescription());
 	return e.clone();
 }
 
 
 Progress Connection::receiveProgress()
 {
-	//LOG_TRACE(log_wrapper.get(), "Receiving progress (" << getServerAddress() << ")");
+	//LOG_TRACE(log_wrapper.get(), "Receiving progress");
 
 	Progress progress;
 	progress.read(*in, server_revision);

@@ -114,8 +114,7 @@ void InterpreterInsertQuery::execute(ReadBuffer * remaining_data_istr)
 
 		BlockInputStreamPtr in{
 			context.getFormatFactory().getInput(
-				format, istr, sample, context.getSettings().max_insert_block_size,
-				context.getDataTypeFactory())};
+				format, istr, sample, context.getSettings().max_insert_block_size)};
 
 		copyData(*in, *out);
 	}

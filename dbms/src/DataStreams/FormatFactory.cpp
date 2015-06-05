@@ -25,10 +25,10 @@ namespace DB
 {
 
 BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & buf,
-	Block & sample, size_t max_block_size, const DataTypeFactory & data_type_factory) const
+	Block & sample, size_t max_block_size) const
 {
 	if (name == "Native")
-		return new NativeBlockInputStream(buf, data_type_factory);
+		return new NativeBlockInputStream(buf);
 	else if (name == "TabSeparated")
 		return new BlockInputStreamFromRowInputStream(new TabSeparatedRowInputStream(buf, sample), sample, max_block_size);
 	else if (name == "RowBinary")

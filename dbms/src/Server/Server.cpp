@@ -18,6 +18,7 @@
 #include <condition_variable>
 
 #include <DB/Common/Macros.h>
+#include <DB/Common/getFQDNOrHostName.h>
 #include <DB/Interpreters/loadMetadata.h>
 #include <DB/Storages/StorageSystemNumbers.h>
 #include <DB/Storages/StorageSystemTables.h>
@@ -485,9 +486,14 @@ int Server::main(const std::vector<std::string> & args)
 	{
 		String this_host;
 		if (config().has("interserver_http_host"))
+		{
 			this_host = config().getString("interserver_http_host");
+		}
 		else
-			this_host = Poco::Net::DNS::hostName();
+		{
+			this_host = getFQDNOrHostName();
+			LOG_DEBUG(log, "Configuration parameter 'interserver_http_host' doesn't exist. Will use '" + this_host + "' as replica host.");
+		}
 
 		String port_str = config().getString("interserver_http_port");
 		int port = parse<int>(port_str);

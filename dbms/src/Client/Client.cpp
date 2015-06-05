@@ -336,7 +336,7 @@ private:
 				<< (!user.empty() ? " as user " + user : "")
 				<< "." << std::endl;
 
-		connection = new Connection(host, port, default_database, user, password, context.getDataTypeFactory(), "client", compression,
+		connection = new Connection(host, port, default_database, user, password, "client", compression,
 			Poco::Timespan(config().getInt("connect_timeout", DBMS_DEFAULT_CONNECT_TIMEOUT_SEC), 0),
 			Poco::Timespan(config().getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0),
 			Poco::Timespan(config().getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0));
@@ -698,7 +698,7 @@ private:
 				current_format = insert->format;
 
 		BlockInputStreamPtr block_input = context.getFormatFactory().getInput(
-			current_format, buf, sample, insert_format_max_block_size, context.getDataTypeFactory());
+			current_format, buf, sample, insert_format_max_block_size);
 
 		BlockInputStreamPtr async_block_input = new AsynchronousBlockInputStream(block_input);
 

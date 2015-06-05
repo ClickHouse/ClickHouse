@@ -280,8 +280,9 @@ void ExpressionAnalyzer::addStorageAliases()
 	if (!storage)
 		return;
 
+	/// @todo: consider storing default expressions with alias set to avoid cloning
 	for (const auto & alias : storage->alias_columns)
-		aliases[alias.name] = storage->column_defaults[alias.name].expression;
+		(aliases[alias.name] = storage->column_defaults[alias.name].expression->clone())->setAlias(alias.name);
 }
 
 
@@ -768,6 +769,7 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name)
 
 	external_tables[external_table_name] = external_storage;
 	subqueries_for_sets[external_table_name].source = interpreter->execute();
+	subqueries_for_sets[external_table_name].source_sample = interpreter->getSampleBlock();
 	subqueries_for_sets[external_table_name].table = external_storage;
 
 	/** NOTE Если было написано IN tmp_table - существующая временная (но не внешняя) таблица,
@@ -841,6 +843,7 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 		{
 			auto interpreter = interpretSubquery(arg, context, subquery_depth);
 			subquery_for_set.source = new LazyBlockInputStream([interpreter]() mutable { return interpreter->execute(); });
+			subquery_for_set.source_sample = interpreter->getSampleBlock();
 
 			/** Зачем используется LazyBlockInputStream?
 			  *
@@ -1590,9 +1593,12 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 		{
 			auto interpreter = interpretSubquery(ast_join.table, context, subquery_depth, required_joined_columns);
 			subquery_for_set.source = new LazyBlockInputStream([interpreter]() mutable { return interpreter->execute(); });
+			subquery_for_set.source_sample = interpreter->getSampleBlock();
 		}
 
+		/// TODO Это не нужно выставлять, когда JOIN нужен только на удалённых серверах.
 		subquery_for_set.join = join;
+		subquery_for_set.join->setSampleBlock(subquery_for_set.source_sample);
 	}
 
 	addJoinAction(step.actions, false);

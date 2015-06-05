@@ -887,7 +887,7 @@ void InterpreterSelectQuery::executeOrder(BlockInputStreams & streams)
 	/// Сливаем сортированные блоки.
 	stream = new MergeSortingBlockInputStream(
 		stream, order_descr, settings.max_block_size, limit,
-		settings.limits.max_bytes_before_external_sort, context.getTemporaryPath(), context.getDataTypeFactory());
+		settings.limits.max_bytes_before_external_sort, context.getTemporaryPath());
 }
 
 

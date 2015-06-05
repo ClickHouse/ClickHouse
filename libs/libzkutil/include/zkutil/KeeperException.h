@@ -2,21 +2,26 @@
 #include <statdaemons/Exception.h>
 #include <zkutil/Types.h>
 #include <DB/Common/ProfileEvents.h>
-
+#include <DB/Core/ErrorCodes.h>
 
 namespace zkutil
 {
 
 class KeeperException : public DB::Exception
 {
+private:
+	/// delegate constructor, used to minimize repetition; last parameter used for overload resolution
+	KeeperException(const std::string & msg, const int32_t code, int)
+		: DB::Exception(msg, DB::ErrorCodes::KEEPER_EXCEPTION), code(code) { incrementEventCounter(); }
+
 public:
-	KeeperException(const std::string & msg) : DB::Exception(msg), code(ZOK) { incrementEventCounter(); }
-	KeeperException(const std::string & msg, int32_t code_)
-		: DB::Exception(msg + " (" + zerror(code_) + ")"), code(code_) { incrementEventCounter(); }
-	KeeperException(int32_t code_)
-		: DB::Exception(zerror(code_)), code(code_) { incrementEventCounter(); }
-	KeeperException(int32_t code_, const std::string & path_)
-		: DB::Exception(std::string(zerror(code_)) + ", path: " + path_), code(code_) { incrementEventCounter(); }
+	KeeperException(const std::string & msg) : KeeperException(msg, ZOK, 0) {}
+	KeeperException(const std::string & msg, const int32_t code)
+		: KeeperException(msg + " (" + zerror(code) + ")", code, 0) {}
+	KeeperException(const int32_t code) : KeeperException(zerror(code), code, 0) {}
+	KeeperException(const int32_t code, const std::string & path)
+		: KeeperException(std::string{zerror(code)} + ", path: " + path, code, 0) {}
+
 	KeeperException(const KeeperException & exc) : DB::Exception(exc), code(exc.code) { incrementEventCounter(); }
 
 	const char * name() const throw() { return "zkutil::KeeperException"; }
@@ -26,12 +31,13 @@ public:
 	/// при этих ошибках надо переинициализировать сессию с zookeeper
 	bool isUnrecoverable() const
 	{
-		return code == ZINVALIDSTATE || code == ZSESSIONEXPIRED;
+		return code == ZINVALIDSTATE || code == ZSESSIONEXPIRED || code == ZSESSIONMOVED;
 	}
-	int32_t code;
+
+	const int32_t code;
 
 private:
-	void incrementEventCounter()
+	static void incrementEventCounter()
 	{
 		ProfileEvents::increment(ProfileEvents::ZooKeeperExceptions);
 	}

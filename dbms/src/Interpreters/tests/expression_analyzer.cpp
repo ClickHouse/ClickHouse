@@ -3,6 +3,7 @@
 #include <DB/Parsers/formatAST.h>
 #include <DB/Parsers/parseQuery.h>
 #include <DB/Parsers/ExpressionListParsers.h>
+#include <DB/DataTypes/DataTypeFactory.h>
 
 
 int main(int argc, char ** argv)
@@ -25,7 +26,7 @@ int main(int argc, char ** argv)
 	{
 		NameAndTypePair col;
 		col.name = argv[i];
-		col.type = context.getDataTypeFactory().get(argv[i + 1]);
+		col.type = DataTypeFactory::instance().get(argv[i + 1]);
 		columns.push_back(col);
 	}
 

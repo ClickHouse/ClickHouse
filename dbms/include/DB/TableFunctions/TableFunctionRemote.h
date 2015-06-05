@@ -3,6 +3,7 @@
 #include <DB/TableFunctions/ITableFunction.h>
 #include <DB/Storages/StorageDistributed.h>
 #include <DB/Parsers/ASTIdentifier.h>
+#include <DB/DataTypes/DataTypeFactory.h>
 #include <DB/DataStreams/RemoteBlockInputStream.h>
 #include <DB/Interpreters/reinterpretAsIdentifier.h>
 #include <DB/Interpreters/Cluster.h>
@@ -117,7 +118,7 @@ public:
 		if (names.empty())
 			throw Exception("Shard list is empty after parsing first argument", ErrorCodes::BAD_ARGUMENTS);
 
-		SharedPtr<Cluster> cluster = new Cluster(context.getSettings(), context.getDataTypeFactory(), names, username, password);
+		SharedPtr<Cluster> cluster = new Cluster(context.getSettings(), names, username, password);
 
 		return StorageDistributed::create(getName(), chooseColumns(*cluster, remote_database, remote_table, context),
 			remote_database, remote_table, cluster, context);
@@ -140,6 +141,8 @@ private:
 		};
 		input->readPrefix();
 
+		const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
+
 		while (true)
 		{
 			Block current = input->read();
@@ -153,7 +156,7 @@ private:
 				String column_name = (*name)[i].get<const String &>();
 				String data_type_name = (*type)[i].get<const String &>();
 
-				res.emplace_back(column_name, context.getDataTypeFactory().get(data_type_name));
+				res.emplace_back(column_name, data_type_factory.get(data_type_name));
 			}
 		}
 
@@ -194,7 +197,7 @@ private:
 		return true;
 	}
 
-	/* Парсит строку, генерирующую шарды и реплики. Splitter - один из двух символов | или '
+	/* Парсит строку, генерирующую шарды и реплики. Разделитель - один из двух символов | или ,
 	 * в зависимости от того генерируются шарды или реплики.
 	 * Например:
 	 * host1,host2,... - порождает множество шардов из host1, host2, ...
@@ -206,7 +209,7 @@ private:
 	 * abc{1..9}de{f,g,h} - прямое произведение, 27 шардов.
 	 * abc{1..9}de{0|1} - прямое произведение, 9 шардов, в каждом 2 реплики.
 	 */
-	std::vector<String> parseDescription(const String & description, size_t l, size_t r, char splitter) const
+	std::vector<String> parseDescription(const String & description, size_t l, size_t r, char separator) const
 	{
 		std::vector<String> res;
 		std::vector<String> cur;
@@ -235,7 +238,7 @@ private:
 					if (description[m] == '{') ++cnt;
 					if (description[m] == '}') --cnt;
 					if (description[m] == '.' && description[m-1] == '.') last_dot = m;
-					if (description[m] == splitter) have_splitter = true;
+					if (description[m] == separator) have_splitter = true;
 					if (cnt == 0) break;
 				}
 				if (cnt != 0)
@@ -279,13 +282,13 @@ private:
 						buffer.push_back(cur);
 					}
 				} else if (have_splitter) /// Если внутри есть текущий разделитель, то сгенерировать множество получаемых строк
-					buffer = parseDescription(description, i + 1, m, splitter);
+					buffer = parseDescription(description, i + 1, m, separator);
 				else 					/// Иначе просто скопировать, порождение произойдет при вызове с правильным разделителем
 					buffer.push_back(description.substr(i, m - i + 1));
 				/// К текущему множеству строк добавить все возможные полученные продолжения
 				append(cur, buffer);
 				i = m;
-			} else if (description[i] == splitter) {
+			} else if (description[i] == separator) {
 				/// Если разделитель, то добавляем в ответ найденные строки
 				res.insert(res.end(), cur.begin(), cur.end());
 				cur.clear();

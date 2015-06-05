@@ -375,6 +375,37 @@ bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, Pos end, ASTPtr &
 
 	ws.ignore(pos, end);
 
+	/// Позволяем парсить цепочки вида NOT NOT x. Это хак.
+	/** Так сделано, потому что среди унарных операторов есть только минус и NOT.
+	  * Но для минуса цепочку из унарных операторов не требуется поддерживать.
+	  */
+	if (it[0] && 0 == strncmp(it[0], "NOT", 3))
+	{
+		/// Было ли чётное количество NOT.
+		bool even = false;
+
+		const char ** jt;
+		while (true)
+		{
+			for (jt = operators; *jt; jt += 2)
+			{
+				ParserString op(jt[0], true, true);
+				if (op.ignore(pos, end, max_parsed_pos, expected))
+					break;
+			}
+
+			if (!*jt)
+				break;
+
+			even = !even;
+
+			ws.ignore(pos, end);
+		}
+
+		if (even)
+			it = jt;	/// Зануляем результат парсинга первого NOT. Получается, как будто цепочки NOT нет вообще.
+	}
+
 	ASTPtr elem;
 	if (!elem_parser->parse(pos, end, elem, max_parsed_pos, expected))
 		return false;

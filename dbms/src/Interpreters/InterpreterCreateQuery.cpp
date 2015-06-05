@@ -25,9 +25,11 @@
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/InterpreterCreateQuery.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
+
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeNested.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
+#include <DB/DataTypes/DataTypeFactory.h>
 
 
 namespace DB
@@ -272,6 +274,8 @@ InterpreterCreateQuery::ColumnsAndDefaults InterpreterCreateQuery::parseColumns(
 	ASTPtr default_expr_list{new ASTExpressionList};
 	default_expr_list->children.reserve(column_list_ast.children.size());
 
+	const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
+
 	for (auto & ast : column_list_ast.children)
 	{
 		auto & col_decl = typeid_cast<ASTColumnDeclaration &>(*ast);
@@ -280,7 +284,7 @@ InterpreterCreateQuery::ColumnsAndDefaults InterpreterCreateQuery::parseColumns(
 		{
 			const auto & type_range = col_decl.type->range;
 			columns.emplace_back(col_decl.name,
-				context.getDataTypeFactory().get({ type_range.first, type_range.second }));
+				data_type_factory.get({ type_range.first, type_range.second }));
 		}
 		else
 			/// we're creating dummy DataTypeUInt8 in order to prevent the NullPointerException in ExpressionActions

@@ -3,7 +3,6 @@
 #include <DB/Core/Progress.h>
 
 #include <DB/Interpreters/Limits.h>
-#include <DB/Interpreters/Quota.h>
 #include <DB/Interpreters/ProcessList.h>
 
 #include <DB/DataStreams/BlockStreamProfileInfo.h>
@@ -13,6 +12,8 @@
 
 namespace DB
 {
+
+class QuotaForIntervals;
 
 
 /** Смотрит за тем, как работает источник блоков.
