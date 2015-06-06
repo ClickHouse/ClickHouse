@@ -1034,16 +1034,7 @@ void InterpreterSelectQuery::ignoreWithTotals()
 void InterpreterSelectQuery::initSettings()
 {
 	if (query.settings)
-	{
 		InterpreterSetQuery(query.settings, context).executeForCurrentContext();
-
-		auto it = std::find(query.children.begin(), query.children.end(), query.settings);
-		if (query.children.end() == it)
-			throw Exception("Logical error: cannot find query.settings element in query.children", ErrorCodes::LOGICAL_ERROR);
-
-		query.children.erase(it);
-		query.settings = nullptr;
-	}
 
 	settings = context.getSettings();
 }
