@@ -340,6 +340,9 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
 	factory.registerFunction<FunctionIsNaN>();
 
 	factory.registerFunction<FunctionVersion>();
+
+	factory.registerFunction<FunctionRunningAccumulate>();
+	factory.registerFunction<FunctionFinalizeAggregation>();
 }
 
 }
