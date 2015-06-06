@@ -64,8 +64,15 @@ static std::string getSyntaxErrorMessage(
 		{
 			message << ":\n\n";
 			message.write(begin, max_parsed_pos - begin);
-			message << "\033[41;1m" << *max_parsed_pos << "\033[0m";		/// Ярко-красный фон.
-			message.write(max_parsed_pos + 1, end - max_parsed_pos - 1);
+
+			size_t bytes_to_hilite = 1;
+			while (max_parsed_pos + bytes_to_hilite < end
+				&& static_cast<unsigned char>(max_parsed_pos[bytes_to_hilite]) >= 0x80	/// UTF-8
+				&& static_cast<unsigned char>(max_parsed_pos[bytes_to_hilite]) <= 0xBF)
+				++bytes_to_hilite;
+
+			message << "\033[41;1m" << std::string(max_parsed_pos, bytes_to_hilite) << "\033[0m";		/// Ярко-красный фон.
+			message.write(max_parsed_pos + bytes_to_hilite, end - max_parsed_pos - bytes_to_hilite);
 			message << "\n\n";
 
 			if (expected && *expected && *expected != '.')
