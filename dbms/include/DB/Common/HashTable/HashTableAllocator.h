@@ -151,20 +151,18 @@ public:
 
 	void * realloc(void * buf, size_t old_size, size_t new_size)
 	{
+		/// Было в stack_memory, там и останется.
 		if (new_size <= N)
 			return buf;
 
+		/// Уже не помещалось в stack_memory.
 		if (old_size > N)
 			return HashTableAllocator::realloc(buf, old_size, new_size);
 
-		buf = ::malloc(new_size);
-		if (nullptr == buf)
-			DB::throwFromErrno("HashTableAllocator: Cannot malloc.", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
-
-		memcpy(buf, stack_memory, old_size);
-		memset(reinterpret_cast<char *>(buf) + old_size, 0, new_size - old_size);
-
-		return buf;
+		/// Было в stack_memory, но теперь не помещается.
+		void * new_buf = HashTableAllocator::alloc(new_size);
+		memcpy(new_buf, buf, old_size);
+		return new_buf;
 	}
 };
 

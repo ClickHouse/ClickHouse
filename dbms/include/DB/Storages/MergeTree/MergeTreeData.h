@@ -1,7 +1,5 @@
 #pragma once
 
-#include <statdaemons/Increment.h>
-
 #include <DB/Core/SortDescription.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/ExpressionActions.h>
@@ -18,6 +16,9 @@
 
 
 #define MERGE_TREE_MARK_SIZE (2 * sizeof(size_t))
+
+
+struct SimpleIncrement;
 
 
 namespace DB
@@ -743,12 +744,12 @@ public:
 	  * Предполагается, что кусок не пересекается с существующими.
 	  * Если out_transaction не nullptr, присваивает туда объект, позволяющий откатить добавление куска (но не переименование).
 	  */
-	void renameTempPartAndAdd(MutableDataPartPtr & part, Increment * increment = nullptr, Transaction * out_transaction = nullptr);
+	void renameTempPartAndAdd(MutableDataPartPtr & part, SimpleIncrement * increment = nullptr, Transaction * out_transaction = nullptr);
 
 	/** То же, что renameTempPartAndAdd, но кусок может покрывать существующие куски.
 	  * Удаляет и возвращает все куски, покрытые добавляемым (в возрастающем порядке).
 	  */
-	DataPartsVector renameTempPartAndReplace(MutableDataPartPtr & part, Increment * increment = nullptr, Transaction * out_transaction = nullptr);
+	DataPartsVector renameTempPartAndReplace(MutableDataPartPtr & part, SimpleIncrement * increment = nullptr, Transaction * out_transaction = nullptr);
 
 	/** Убирает из рабочего набора куски remove и добавляет куски add. add должны уже быть в all_data_parts.
 	  * Если clear_without_timeout, данные будут удалены при следующем clearOldParts, игнорируя old_parts_lifetime.

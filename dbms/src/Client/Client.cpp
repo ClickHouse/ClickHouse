@@ -263,10 +263,10 @@ private:
 		else
 			format = config().getString("format", is_interactive ? "PrettyCompact" : "TabSeparated");
 
-		format_max_block_size = config().getInt("format_max_block_size", DEFAULT_BLOCK_SIZE);
+		format_max_block_size = config().getInt("format_max_block_size", context.getSettingsRef().max_block_size);
 
 		insert_format = "Values";
-		insert_format_max_block_size = config().getInt("insert_format_max_block_size", DEFAULT_INSERT_BLOCK_SIZE);
+		insert_format_max_block_size = config().getInt("insert_format_max_block_size", context.getSettingsRef().max_insert_block_size);
 
 		connect();
 

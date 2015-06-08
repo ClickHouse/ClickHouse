@@ -17,6 +17,7 @@
 #include <DB/Common/localBackup.h>
 #include <DB/Functions/FunctionFactory.h>
 #include <Poco/DirectoryIterator.h>
+#include <statdaemons/Increment.h>
 
 #include <algorithm>
 #include <iomanip>
@@ -681,7 +682,7 @@ MergeTreeData::AlterDataPartTransaction::~AlterDataPartTransaction()
 }
 
 
-void MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr & part, Increment * increment, Transaction * out_transaction)
+void MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr & part, SimpleIncrement * increment, Transaction * out_transaction)
 {
 	auto removed = renameTempPartAndReplace(part, increment, out_transaction);
 	if (!removed.empty())
@@ -692,7 +693,7 @@ void MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr & part, Increment * 
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
-	MutableDataPartPtr & part, Increment * increment, Transaction * out_transaction)
+	MutableDataPartPtr & part, SimpleIncrement * increment, Transaction * out_transaction)
 {
 	if (out_transaction && out_transaction->data)
 		throw Exception("Using the same MergeTreeData::Transaction for overlapping transactions is invalid", ErrorCodes::LOGICAL_ERROR);
@@ -710,7 +711,7 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
 	  *  содержат ещё не добавленный кусок.
 	  */
 	if (increment)
-		part->left = part->right = increment->get(false);
+		part->left = part->right = increment->get();
 
 	String new_name = ActiveDataPartSet::getPartName(part->left_date, part->right_date, part->left, part->right, part->level);
 
@@ -770,6 +771,7 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
 	if (obsolete)
 	{
 		LOG_WARNING(log, "Obsolete part " + part->name + " added");
+		part->remove_time = time(0);
 	}
 	else
 	{
@@ -813,7 +815,9 @@ void MergeTreeData::attachPart(const DataPartPtr & part)
 
 	if (!all_data_parts.insert(part).second)
 		throw Exception("Part " + part->name + " is already attached", ErrorCodes::DUPLICATE_DATA_PART);
+
 	data_parts.insert(part);
+	addPartContributionToColumnSizes(part);
 }
 
 void MergeTreeData::renameAndDetachPart(const DataPartPtr & part, const String & prefix, bool restore_covered, bool move_to_detached)

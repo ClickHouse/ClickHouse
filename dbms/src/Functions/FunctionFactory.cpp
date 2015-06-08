@@ -29,6 +29,7 @@ void registerFunctionsStringSearch(FunctionFactory &);
 void registerFunctionsURL(FunctionFactory &);
 void registerFunctionsVisitParam(FunctionFactory &);
 void registerFunctionsMath(FunctionFactory &);
+void registerFunctionsTransform(FunctionFactory &);
 
 
 FunctionFactory::FunctionFactory()
@@ -55,6 +56,7 @@ FunctionFactory::FunctionFactory()
 	registerFunctionsURL(*this);
 	registerFunctionsVisitParam(*this);
 	registerFunctionsMath(*this);
+	registerFunctionsTransform(*this);
 }
 
 

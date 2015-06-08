@@ -320,15 +320,15 @@ void WriteBufferAIO::prepare()
 			buffer_size += region_left_padding;
 			buffer_end = buffer_begin + buffer_size;
 
-			::memmove(buffer_begin + region_left_padding, buffer_begin, buffer_size - region_left_padding);
+			::memmove(buffer_begin + region_left_padding, buffer_begin, (buffer_size - region_left_padding) * sizeof(*buffer_begin));
 
 			ssize_t read_count = ::pread(fd, memory_page, DEFAULT_AIO_FILE_BLOCK_SIZE, region_aligned_begin);
 			if (read_count < 0)
 				throw Exception("Read error", ErrorCodes::AIO_READ_ERROR);
 
 			size_t to_copy = std::min(static_cast<size_t>(read_count), region_left_padding);
-			::memcpy(buffer_begin, memory_page, to_copy);
-			::memset(buffer_begin + to_copy, 0, region_left_padding - to_copy);
+			::memcpy(buffer_begin, memory_page, to_copy * sizeof(*buffer_begin));
+			::memset(buffer_begin + to_copy, 0, (region_left_padding - to_copy) * sizeof(*buffer_begin));
 		}
 
 		if (region_right_padding > 0)
@@ -342,7 +342,7 @@ void WriteBufferAIO::prepare()
 			off_t offset = DEFAULT_AIO_FILE_BLOCK_SIZE - region_right_padding;
 			if (read_count > offset)
 			{
-				::memcpy(buffer_end, memory_page + offset, read_count - offset);
+				::memcpy(buffer_end, memory_page + offset, (read_count - offset) * sizeof(*buffer_end));
 				truncation_begin = buffer_end + (read_count - offset);
 				truncation_count = DEFAULT_AIO_FILE_BLOCK_SIZE - read_count;
 			}
@@ -352,7 +352,7 @@ void WriteBufferAIO::prepare()
 				truncation_count = region_right_padding;
 			}
 
-			::memset(truncation_begin, 0, truncation_count);
+			::memset(truncation_begin, 0, truncation_count * sizeof(*truncation_begin));
 		}
 	}
 }
