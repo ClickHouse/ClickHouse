@@ -29,8 +29,6 @@ struct BlockStreamProfileInfo
 	using BlockStreamProfileInfos = std::vector<const BlockStreamProfileInfo *>;
 	BlockStreamProfileInfos nested_infos;
 
-	String column_names;
-
 	/// Собрать BlockStreamProfileInfo для ближайших в дереве источников с именем name. Пример; собрать все info для PartialSorting stream-ов.
 	void collectInfosForStreamsWithName(const char * name, BlockStreamProfileInfos & res) const;
 
