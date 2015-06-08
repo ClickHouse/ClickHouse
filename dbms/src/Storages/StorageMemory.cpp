@@ -20,7 +20,7 @@ public:
 	MemoryBlockInputStream(const Names & column_names_, BlocksList::iterator begin_, BlocksList::iterator end_)
 		: column_names(column_names_), begin(begin_), end(end_), it(begin) {}
 
-	String getName() const { return "MemoryBlockInputStream"; }
+	String getName() const { return "Memory"; }
 
 	String getID() const
 	{

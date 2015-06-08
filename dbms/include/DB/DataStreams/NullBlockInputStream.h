@@ -12,7 +12,7 @@ class NullBlockInputStream : public IBlockInputStream
 {
 public:
 	Block read() override { return Block(); }
-	String getName() const override { return "NullBlockInputStream"; }
+	String getName() const override { return "Null"; }
 
 	String getID() const override
 	{

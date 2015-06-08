@@ -30,7 +30,7 @@ public:
 	{
 	}
 
-	String getName() const override { return "SummingSortedBlockInputStream"; }
+	String getName() const override { return "SummingSorted"; }
 
 	String getID() const override
 	{

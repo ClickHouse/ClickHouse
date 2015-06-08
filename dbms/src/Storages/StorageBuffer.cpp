@@ -43,7 +43,7 @@ public:
 	BufferBlockInputStream(const Names & column_names_, StorageBuffer::Buffer & buffer_)
 		: column_names(column_names_.begin(), column_names_.end()), buffer(buffer_) {}
 
-	String getName() const { return "BufferBlockInputStream"; }
+	String getName() const { return "Buffer"; }
 
 	String getID() const
 	{

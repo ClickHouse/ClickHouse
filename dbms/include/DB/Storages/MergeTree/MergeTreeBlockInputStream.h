@@ -100,7 +100,7 @@ public:
 		setTotalRowsApprox(total_rows);
 	}
 
-	String getName() const override { return "MergeTreeBlockInputStream"; }
+	String getName() const override { return "MergeTree"; }
 
 	String getID() const override
 	{

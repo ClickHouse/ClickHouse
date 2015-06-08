@@ -21,7 +21,7 @@ public:
 		children.push_back(input_);
 	}
 
-	String getName() const override { return "PartialSortingBlockInputStream"; }
+	String getName() const override { return "PartialSorting"; }
 
 	String getID() const override
 	{

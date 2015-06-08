@@ -31,7 +31,7 @@ public:
 	MergeSortingBlocksBlockInputStream(Blocks & blocks_, SortDescription & description_,
 		size_t max_merged_block_size_, size_t limit_ = 0);
 
-	String getName() const override { return "MergeSortingBlocksBlockInputStream"; }
+	String getName() const override { return "MergeSortingBlocks"; }
 	String getID() const override { return getName(); }
 
 protected:
@@ -73,7 +73,7 @@ public:
 		children.push_back(input_);
 	}
 
-	String getName() const override { return "MergeSortingBlockInputStream"; }
+	String getName() const override { return "MergeSorting"; }
 
 	String getID() const override
 	{

@@ -22,7 +22,7 @@ public:
 private:
 	Block readImpl() override { return stream->read(); }
 
-	String getName() const override { return "OwningBufferBlockInputStream"; }
+	String getName() const override { return "OwningBuffer"; }
 
 	String getID() const override {  return "OwningBuffer(" + stream->getID() + ")"; }
 

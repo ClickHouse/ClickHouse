@@ -723,7 +723,7 @@ public:
 	{
 	}
 
-	String getName() const override { return "NonJoinedBlockInputStream"; }
+	String getName() const override { return "NonJoined"; }
 
 	String getID() const override
 	{

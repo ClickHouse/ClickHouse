@@ -26,7 +26,7 @@ public:
 		children.push_back(input_);
 	}
 
-	String getName() const override { return "ExpressionBlockInputStream"; }
+	String getName() const override { return "Expression"; }
 
 	String getID() const override
 	{
