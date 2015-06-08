@@ -1082,13 +1082,11 @@ void ExpressionAnalyzer::getArrayJoinedColumns()
 	if (select_query && select_query->array_join_expression_list)
 	{
 		ASTs & array_join_asts = select_query->array_join_expression_list->children;
-		for (size_t i = 0; i < array_join_asts .size(); ++i)
+		for (const auto & ast : array_join_asts)
 		{
-			ASTPtr ast = array_join_asts [i];
-
-			String nested_table_name = ast->getColumnName();
-			String nested_table_alias = ast->getAliasOrColumnName();
-			if (nested_table_alias == nested_table_name && !typeid_cast<ASTIdentifier *>(&*ast))
+			const String nested_table_name = ast->getColumnName();
+			const String nested_table_alias = ast->getAliasOrColumnName();
+			if (nested_table_alias == nested_table_name && !typeid_cast<const ASTIdentifier *>(&*ast))
 				throw Exception("No alias for non-trivial value in ARRAY JOIN: " + nested_table_name, ErrorCodes::ALIAS_REQUIRED);
 
 			if (array_join_alias_to_name.count(nested_table_alias) || aliases.count(nested_table_alias))
@@ -1097,13 +1095,9 @@ void ExpressionAnalyzer::getArrayJoinedColumns()
 		}
 
 		ASTs & query_asts = select_query->children;
-		for (size_t i = 0; i < query_asts.size(); ++i)
-		{
-			ASTPtr ast = query_asts[i];
-			if (select_query && ast == select_query->array_join_expression_list)
-				continue;
-			getArrayJoinedColumnsImpl(ast);
-		}
+		for (const auto & ast : query_asts)
+			if (ast != select_query->array_join_expression_list)
+				getArrayJoinedColumnsImpl(ast);
 
 		/// Если результат ARRAY JOIN не используется, придется все равно по-ARRAY-JOIN-ить какой-нибудь столбец,
 		/// чтобы получить правильное количество строк.
