@@ -36,6 +36,7 @@ class MergeTreeWhereOptimizer
 	static constexpr auto max_columns_relative_size = 0.25f;
 	static constexpr auto and_function_name = "and";
 	static constexpr auto equals_function_name = "equals";
+	static constexpr auto array_join_function_name = "arrayJoin";
 
 public:
 	MergeTreeWhereOptimizer(const MergeTreeWhereOptimizer&) = delete;
@@ -48,6 +49,7 @@ public:
 		table_columns{toUnorderedSet(data.getColumnsList())}, log{log}
 	{
 		calculateColumnSizes(data, column_names);
+		determineArrayJoinedNames(select);
 		optimize(select);
 	}
 
@@ -116,7 +118,7 @@ private:
 
 			SCOPE_EXIT(++idx);
 
-			if (hasRestrictedFunctions(condition))
+			if (cannotBeMoved(condition))
 				continue;
 
 			IdentifierNameSet identifiers{};
@@ -186,7 +188,7 @@ private:
 		auto & condition = select.where_expression;
 
 		/// do not optimize restricted expressions
-		if (hasRestrictedFunctions(select.where_expression.get()))
+		if (cannotBeMoved(select.where_expression.get()))
 			return;
 
 		IdentifierNameSet identifiers{};
@@ -309,21 +311,41 @@ private:
 		return true;
 	}
 
-	/// we assume all AS aliases have been expanded previously
-	static bool hasRestrictedFunctions(const IAST * ptr)
+	/** ARRAY JOIN'ed columns as well as arrayJoin() result cannot be used in PREWHERE, therefore expressions
+	 *	containing said columns should not be moved to PREWHERE at all.
+	 *	We assume all AS aliases have been expanded prior to using this class */
+	bool cannotBeMoved(const IAST * ptr) const
 	{
 		if (const auto function_ptr = typeid_cast<const ASTFunction *>(ptr))
 		{
 			/// disallow arrayJoin expressions to be moved to PREWHERE for now
-			if ("arrayJoin" == function_ptr->name)
+			if (array_join_function_name == function_ptr->name)
 				return true;
+		}
+		else if (const auto identifier_ptr = typeid_cast<const ASTIdentifier *>(ptr))
+		{
+			/// disallow moving result of ARRAY JOIN to PREWHERE
+			if (identifier_ptr->kind == ASTIdentifier::Column)
+				if (array_joined_names.count(identifier_ptr->name) ||
+					array_joined_names.count(DataTypeNested::extractNestedTableName(identifier_ptr->name)))
+					return true;
 		}
 
 		for (const auto & child : ptr->children)
-			if (hasRestrictedFunctions(child.get()))
+			if (cannotBeMoved(child.get()))
 				return true;
 
 		return false;
+	}
+
+	void determineArrayJoinedNames(ASTSelectQuery & select)
+	{
+		/// much simplified code from ExpressionAnalyzer::getArrayJoinedColumns()
+		if (!select.array_join_expression_list)
+			return;
+
+		for (const auto & ast : select.array_join_expression_list->children)
+			array_joined_names.emplace(ast->getAliasOrColumnName());
 	}
 
 	string_set_t primary_key_columns{};
@@ -331,6 +353,7 @@ private:
 	Logger * log;
 	std::unordered_map<std::string, std::size_t> column_sizes{};
 	std::size_t total_column_size{};
+	NameSet array_joined_names;
 };
 
 
