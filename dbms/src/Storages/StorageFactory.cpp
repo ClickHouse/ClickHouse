@@ -373,7 +373,9 @@ StoragePtr StorageFactory::get(
 		size_t max_bytes = apply_visitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[8]).value);
 
 		return StorageBuffer::create(
-			table_name, columns, context,
+			table_name, columns,
+			materialized_columns, alias_columns, column_defaults,
+			context,
 			num_buckets, {min_time, min_rows, min_bytes}, {max_time, max_rows, max_bytes},
 			destination_database, destination_table);
 	}
