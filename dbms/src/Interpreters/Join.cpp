@@ -365,9 +365,20 @@ bool Join::insertFromBlock(const Block & block)
 	size_t keys_size = key_names_right.size();
 	ConstColumnPlainPtrs key_columns(keys_size);
 
+	/// Редкий случай, когда ключи являются константами. Чтобы не поддерживать отдельный код, материализуем их.
+	Columns materialized_columns;
+
 	/// Запоминаем столбцы ключей, с которыми будем работать
 	for (size_t i = 0; i < keys_size; ++i)
+	{
 		key_columns[i] = block.getByName(key_names_right[i]).column;
+
+		if (key_columns[i]->isConst())
+		{
+			materialized_columns.emplace_back(dynamic_cast<const IColumnConst &>(*key_columns[i]).convertToFullColumn());
+			key_columns[i] = materialized_columns.back();
+		}
+	}
 
 	size_t rows = block.rows();
 
@@ -378,7 +389,7 @@ bool Join::insertFromBlock(const Block & block)
 	for (const auto & name : key_names_right)
 		stored_block->erase(stored_block->getPositionByName(name));
 
-	/// Редкий случай, когда соединяемые столбцы являеются константами. Чтобы не поддерживать отдельный код, материализуем их.
+	/// Редкий случай, когда соединяемые столбцы являются константами. Чтобы не поддерживать отдельный код, материализуем их.
 	for (size_t i = 0, size = stored_block->columns(); i < size; ++i)
 	{
 		ColumnPtr col = stored_block->getByPosition(i).column;
@@ -515,9 +526,20 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 	size_t keys_size = key_names_left.size();
 	ConstColumnPlainPtrs key_columns(keys_size);
 
+	/// Редкий случай, когда ключи являются константами. Чтобы не поддерживать отдельный код, материализуем их.
+	Columns materialized_columns;
+
 	/// Запоминаем столбцы ключей, с которыми будем работать
 	for (size_t i = 0; i < keys_size; ++i)
+	{
 		key_columns[i] = block.getByName(key_names_left[i]).column;
+
+		if (key_columns[i]->isConst())
+		{
+			materialized_columns.emplace_back(dynamic_cast<const IColumnConst &>(*key_columns[i]).convertToFullColumn());
+			key_columns[i] = materialized_columns.back();
+		}
+	}
 
 	/// Добавляем в блок новые столбцы.
 	size_t num_columns_to_add = sample_block.columns();
