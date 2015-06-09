@@ -15,7 +15,7 @@ namespace DB
   * Также может быть использовать в качестве столбца - результата выполнения запроса.
   * Не может быть сохранён в таблицы.
   */
-class DataTypeTuple : public IDataType
+class DataTypeTuple final : public IDataType
 {
 private:
 	DataTypes elems;

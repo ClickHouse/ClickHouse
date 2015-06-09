@@ -13,7 +13,7 @@ namespace DB
 using Poco::SharedPtr;
 
 
-class DataTypeString : public IDataType
+class DataTypeString final : public IDataType
 {
 public:
 	using FieldType = String;

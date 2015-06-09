@@ -9,7 +9,7 @@ namespace DB
 using Poco::SharedPtr;
 
 
-class DataTypeNested : public IDataType
+class DataTypeNested final : public IDataType
 {
 private:
 	/// Имена и типы вложенных массивов.
