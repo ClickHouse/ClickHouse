@@ -222,7 +222,8 @@ private:
 	bool keys_fit_128_bits;
 	Sizes key_sizes;
 
-	Block sample_block;
+	Block sample_block_with_columns_to_add;
+	Block sample_block_with_keys;
 
 	Logger * log;
 

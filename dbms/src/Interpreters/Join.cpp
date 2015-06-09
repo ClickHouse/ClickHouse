@@ -339,15 +339,19 @@ void Join::setSampleBlock(const Block & block)
 	/// Выберем, какую структуру данных для множества использовать.
 	init(chooseMethod(key_columns, keys_fit_128_bits, key_sizes));
 
-	sample_block = block;
+	sample_block_with_columns_to_add = block;
 
-	/// Удаляем из sample_block ключевые столбцы, так как они не нужны.
+	/// Удаляем из sample_block_with_columns_to_add ключевые столбцы.
 	for (const auto & name : key_names_right)
-		sample_block.erase(sample_block.getPositionByName(name));
-
-	for (size_t i = 0, size = sample_block.columns(); i < size; ++i)
 	{
-		auto & column = sample_block.unsafeGetByPosition(i);
+		size_t pos = sample_block_with_columns_to_add.getPositionByName(name);
+		sample_block_with_keys.insert(sample_block_with_columns_to_add.unsafeGetByPosition(pos));
+		sample_block_with_columns_to_add.erase(pos);
+	}
+
+	for (size_t i = 0, size = sample_block_with_columns_to_add.columns(); i < size; ++i)
+	{
+		auto & column = sample_block_with_columns_to_add.unsafeGetByPosition(i);
 		if (!column.column)
 			column.column = column.type->createColumn();
 	}
@@ -542,14 +546,14 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 	}
 
 	/// Добавляем в блок новые столбцы.
-	size_t num_columns_to_add = sample_block.columns();
+	size_t num_columns_to_add = sample_block_with_columns_to_add.columns();
 	ColumnPlainPtrs added_columns(num_columns_to_add);
 
 	size_t existing_columns = block.columns();
 
 	for (size_t i = 0; i < num_columns_to_add; ++i)
 	{
-		const ColumnWithNameAndType & src_column = sample_block.getByPosition(i);
+		const ColumnWithNameAndType & src_column = sample_block_with_columns_to_add.getByPosition(i);
 		ColumnWithNameAndType new_column = src_column.cloneEmpty();
 		block.insert(new_column);
 		added_columns[i] = new_column.column;
@@ -658,7 +662,7 @@ void Join::checkTypesOfKeys(const Block & block_left, const Block & block_right)
 		if (block_left.getByName(key_names_left[i]).type->getName() != block_right.getByName(key_names_right[i]).type->getName())
 			throw Exception("Type mismatch of columns to JOIN by: "
 				+ key_names_left[i] + " " + block_left.getByName(key_names_left[i]).type->getName() + " at left, "
-				+ key_names_right[i] + " " + block_right.getByName(key_names_right[i]).type->getName() + " at right, ",
+				+ key_names_right[i] + " " + block_right.getByName(key_names_right[i]).type->getName() + " at right",
 				ErrorCodes::TYPE_MISMATCH);
 }
 
@@ -667,7 +671,7 @@ void Join::joinBlock(Block & block) const
 {
 	Poco::ScopedReadRWLock lock(rwlock);
 
-//	checkTypesOfKeys(block, sample_block);
+	checkTypesOfKeys(block, sample_block_with_keys);
 
 	if (kind == ASTJoin::Left && strictness == ASTJoin::Any)
 		joinBlockImpl<ASTJoin::Left, ASTJoin::Any>(block, maps_any);
@@ -703,7 +707,7 @@ void Join::joinTotals(Block & block) const
 	else
 	{
 		/// Будем присоединять пустые totals - из одной строчки со значениями по-умолчанию.
-		totals_without_keys = sample_block.cloneEmpty();
+		totals_without_keys = sample_block_with_columns_to_add.cloneEmpty();
 
 		for (size_t i = 0; i < totals_without_keys.columns(); ++i)
 		{
@@ -808,12 +812,12 @@ private:
 		}
 
 		/// Добавляем в блок новые столбцы.
-		size_t num_columns_right = parent.sample_block.columns();
+		size_t num_columns_right = parent.sample_block_with_columns_to_add.columns();
 		ColumnPlainPtrs columns_right(num_columns_right);
 
 		for (size_t i = 0; i < num_columns_right; ++i)
 		{
-			const ColumnWithNameAndType & src_column = parent.sample_block.getByPosition(i);
+			const ColumnWithNameAndType & src_column = parent.sample_block_with_columns_to_add.getByPosition(i);
 			ColumnWithNameAndType new_column = src_column.cloneEmpty();
 			block.insert(new_column);
 			columns_right[i] = new_column.column;
