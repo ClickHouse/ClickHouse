@@ -250,6 +250,9 @@ private:
 
 	/// Проверить не превышены ли допустимые размеры множества
 	bool checkSizeLimits() const;
+
+	/// Кинуть исключение, если в блоках не совпадают типы ключей.
+	void checkTypesOfKeys(const Block & block_left, const Block & block_right) const;
 };
 
 typedef Poco::SharedPtr<Join> JoinPtr;
