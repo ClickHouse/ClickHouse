@@ -418,6 +418,17 @@ void ZooKeeper::set(const std::string & path, const std::string & data, int32_t 
 	check(trySet(path, data, version, stat), path);
 }
 
+void ZooKeeper::createOrUpdate(const std::string & path, const std::string & data, int32_t mode)
+{
+	int code = trySet(path, data, -1);
+	if (code == ZNONODE)
+	{
+		create(path, data, mode);
+	}
+	else
+		throw zkutil::KeeperException(code, path);
+}
+
 int32_t ZooKeeper::trySet(const std::string & path, const std::string & data,
 									int32_t version, Stat * stat_)
 {

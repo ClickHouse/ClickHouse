@@ -126,6 +126,9 @@ public:
 	void set(const std::string & path, const std::string & data,
 			int32_t version = -1, Stat * stat = nullptr);
 
+	/** Создает ноду, если ее не существует. Иначе обновляет */
+	void createOrUpdate(const std::string & path, const std::string & data, int32_t mode);
+
 	/** Не бросает исключение при следующих ошибках:
 	  *  - Такой ноды нет.
 	  *  - У ноды другая версия.
