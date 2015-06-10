@@ -2,13 +2,13 @@
 
 #include <zkutil/ZooKeeper.h>
 
-namespace zkutil 
+namespace zkutil
 {
 	
 class Increment
 {
 public:
-	Increment(ZooKeeperPtr zk_, const std::string & path_) 
+	Increment(ZooKeeperPtr zk_, const std::string & path_)
 	: zk(zk_), path(path_)
 	{
 		zk->createAncestors(path);
@@ -34,8 +34,8 @@ public:
 			{
 				success = zk->tryCreate(path, std::to_string(result), zkutil::CreateMode::Persistent) == ZOK;
 			}
-		} 
-		while(!success);
+		}
+		while (!success);
 		
 		return result;
 	}
