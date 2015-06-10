@@ -202,46 +202,11 @@ struct LengthUTF8Impl
 };
 
 
-/** Переводит строку в нижний (верхний) регистр, в текущей локали, в однобайтовой кодировке.
-  */
-template <int F(int)>
+template <char not_case_lower_bound, char not_case_upper_bound>
 struct LowerUpperImpl
 {
 	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
 		ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets)
-	{
-		res_data.resize(data.size());
-		res_offsets.assign(offsets);
-		array(&*data.begin(), &*data.end(), &*res_data.begin());
-	}
-
-	static void vector_fixed(const ColumnString::Chars_t & data, size_t n,
-		ColumnString::Chars_t & res_data)
-	{
-		res_data.resize(data.size());
-		array(&*data.begin(), &*data.end(), &*res_data.begin());
-	}
-
-	static void constant(const std::string & data, std::string & res_data)
-	{
-		res_data.resize(data.size());
-		array(reinterpret_cast<const UInt8 *>(&*data.begin()), reinterpret_cast<const UInt8 *>(&*data.end()),
-			reinterpret_cast<UInt8 *>(&*res_data.begin()));
-	}
-
-private:
-	static void array(const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
-	{
-		for (; src < src_end; ++src, ++dst)
-			*dst = F(*src);
-	}
-};
-
-template <char not_case_lower_bound, char not_case_upper_bound>
-struct LowerUpperImplVectorized
-{
-	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
-					   ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets)
 	{
 		res_data.resize(data.size());
 		res_offsets.assign(offsets);
@@ -348,9 +313,14 @@ inline void UTF8CyrillicToCase(const UInt8 * & src, const UInt8 * const src_end,
 	}
 };
 
+/** Если строка содержит текст в кодировке UTF-8 - перевести его в нижний (верхний) регистр.
+  * Замечание: предполагается, что после перевода символа в другой регистр,
+  *  длина его мультибайтовой последовательности в UTF-8 не меняется.
+  * Иначе - поведение не определено.
+  */
 template <char not_case_lower_bound, char not_case_upper_bound,
 	int to_case(int), void cyrillic_to_case(const UInt8 * &, const UInt8 *, UInt8 * &)>
-struct LowerUpperUTF8ImplVectorized
+struct LowerUpperUTF8Impl
 {
 	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
 					   ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets)
@@ -483,59 +453,6 @@ private:
 				src += chars, dst += chars;
 			else
 				++src, ++dst;
-	}
-};
-
-
-/** Если строка содержит текст в кодировке UTF-8 - перевести его в нижний (верхний) регистр.
-  * Замечание: предполагается, что после перевода символа в другой регистр,
-  *  длина его мультибайтовой последовательности в UTF-8 не меняется.
-  * Иначе - поведение не определено.
-  */
-template <int F(int)>
-struct LowerUpperUTF8Impl
-{
-	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
-		ColumnString::Chars_t & res_data, ColumnString::Offsets_t & res_offsets)
-	{
-		res_data.resize(data.size());
-		res_offsets.assign(offsets);
-		array(&*data.begin(), &*data.end(), &*res_data.begin());
-	}
-
-	static void vector_fixed(const ColumnString::Chars_t & data, size_t n,
-		ColumnString::Chars_t & res_data)
-	{
-		res_data.resize(data.size());
-		array(&*data.begin(), &*data.end(), &*res_data.begin());
-	}
-
-	static void constant(const std::string & data, std::string & res_data)
-	{
-		res_data.resize(data.size());
-		array(reinterpret_cast<const UInt8 *>(&*data.begin()), reinterpret_cast<const UInt8 *>(&*data.end()),
-			reinterpret_cast<UInt8 *>(&*res_data.begin()));
-	}
-
-private:
-	static void array(const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
-	{
-		static Poco::UTF8Encoding utf8;
-
-		while (src < src_end)
-		{
-			int chars = utf8.convert(F(utf8.convert(src)), dst, src_end - src);
-			if (chars)
-			{
-				src += chars;
-				dst += chars;
-			}
-			else
-			{
-				++src;
-				++dst;
-			}
-		}
 	}
 };
 
@@ -1676,32 +1593,22 @@ struct NameReverseUTF8		{ static constexpr auto name = "reverseUTF8"; };
 struct NameSubstring		{ static constexpr auto name = "substring"; };
 struct NameSubstringUTF8	{ static constexpr auto name = "substringUTF8"; };
 
-struct NameSSELower { static constexpr auto name = "sse_lower"; };
-struct NameSSEUpper { static constexpr auto name = "sse_upper"; };
-struct NameSSELowerUTF8 { static constexpr auto name = "sse_lowerUTF8"; };
-struct NameSSEUpperUTF8 { static constexpr auto name = "sse_upperUTF8"; };
-
 typedef FunctionStringOrArrayToT<EmptyImpl<false>,		NameEmpty,		UInt8> 	FunctionEmpty;
 typedef FunctionStringOrArrayToT<EmptyImpl<true>, 		NameNotEmpty,	UInt8> 	FunctionNotEmpty;
 typedef FunctionStringOrArrayToT<LengthImpl, 			NameLength,		UInt64> FunctionLength;
 typedef FunctionStringOrArrayToT<LengthUTF8Impl, 		NameLengthUTF8,	UInt64> FunctionLengthUTF8;
-typedef FunctionStringToString<LowerUpperImpl<tolower>, NameLower>	 			FunctionLower;
-typedef FunctionStringToString<LowerUpperImpl<toupper>, NameUpper>	 			FunctionUpper;
-typedef FunctionStringToString<LowerUpperUTF8Impl<Poco::Unicode::toLower>,	NameLowerUTF8>	FunctionLowerUTF8;
-typedef FunctionStringToString<LowerUpperUTF8Impl<Poco::Unicode::toUpper>,	NameUpperUTF8>	FunctionUpperUTF8;
+typedef FunctionStringToString<LowerUpperImpl<'A', 'Z'>, NameLower>	FunctionLower;
+typedef FunctionStringToString<LowerUpperImpl<'a', 'z'>, NameUpper>	FunctionUpper;
+typedef FunctionStringToString<
+	LowerUpperUTF8Impl<'A', 'Z', Poco::Unicode::toLower, UTF8CyrillicToCase<true>>,
+	NameLowerUTF8>	FunctionLowerUTF8;
+typedef FunctionStringToString<
+	LowerUpperUTF8Impl<'a', 'z', Poco::Unicode::toUpper, UTF8CyrillicToCase<false>>,
+	NameUpperUTF8>	FunctionUpperUTF8;
 typedef FunctionStringToString<ReverseImpl,				NameReverse>			FunctionReverse;
 typedef FunctionStringToString<ReverseUTF8Impl,			NameReverseUTF8>		FunctionReverseUTF8;
 typedef FunctionStringNumNumToString<SubstringImpl,		NameSubstring>			FunctionSubstring;
 typedef FunctionStringNumNumToString<SubstringUTF8Impl,	NameSubstringUTF8>		FunctionSubstringUTF8;
-
-using FunctionSSELower = FunctionStringToString<LowerUpperImplVectorized<'A', 'Z'>, NameSSELower>;
-using FunctionSSEUpper = FunctionStringToString<LowerUpperImplVectorized<'a', 'z'>, NameSSEUpper>;
-using FunctionSSELowerUTF8 = FunctionStringToString<
-	LowerUpperUTF8ImplVectorized<'A', 'Z', Poco::Unicode::toLower, UTF8CyrillicToCase<true>>,
-	NameSSELowerUTF8>;
-using FunctionSSEUpperUTF8 = FunctionStringToString<
-	LowerUpperUTF8ImplVectorized<'a', 'z', Poco::Unicode::toUpper, UTF8CyrillicToCase<false>>,
-	NameSSEUpperUTF8>;
 
 
 }
