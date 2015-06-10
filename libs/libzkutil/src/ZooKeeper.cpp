@@ -390,7 +390,7 @@ bool ZooKeeper::tryGet(const std::string & path, std::string & res, Stat * stat_
 {
 	int32_t code = retry(std::bind(&ZooKeeper::getImpl, this, std::ref(path), std::ref(res), stat_, watch));
 
-	if (!(	code == ZOK ||
+	if (!(code == ZOK ||
 			code == ZNONODE))
 		throw KeeperException(code, path);
 
