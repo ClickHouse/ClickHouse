@@ -43,9 +43,7 @@ public:
 		{
 			pre_column_names = prewhere_actions->getRequiredColumns();
 
-			/// @todo somehow decide which injected columns belong to PREWHERE, optimizing reads
-			pre_column_names.insert(std::end(pre_column_names),
-				std::begin(injected_columns), std::end(injected_columns));
+			injectRequiredColumns(pre_column_names);
 
 			if (pre_column_names.empty())
 				pre_column_names.push_back(column_names[0]);
