@@ -425,7 +425,7 @@ void ZooKeeper::createOrUpdate(const std::string & path, const std::string & dat
 	{
 		create(path, data, mode);
 	}
-	else
+	else if (code != ZOK)
 		throw zkutil::KeeperException(code, path);
 }
 
