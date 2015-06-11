@@ -325,8 +325,21 @@ static Field convertToType(const Field & src, const IDataType & type)
 				+ Field::Types::toString(src.getType()) + " literal at right");
 		}
 	}
+	else
+	{
+		if (src.getType() == Field::Types::UInt64
+			|| src.getType() == Field::Types::Int64
+			|| src.getType() == Field::Types::Float64
+			|| src.getType() == Field::Types::Null
+			|| (src.getType() == Field::Types::String
+				&& !typeid_cast<const DataTypeString *>(&type)
+				&& !typeid_cast<const DataTypeFixedString *>(&type))
+			|| (src.getType() == Field::Types::Array
+				&& !typeid_cast<const DataTypeArray *>(&type)))
+			throw Exception("Type mismatch in IN section: " + type.getName() + " at left, "
+				+ Field::Types::toString(src.getType()) + " literal at right");
+	}
 
-	/// В остальных случаях, приведение типа не осуществляется.
 	return src;
 }
 
