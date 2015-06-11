@@ -220,10 +220,12 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 					{
 						disk_space_warning_time = now;
 						LOG_WARNING(log, "Won't merge parts from " << first_part->name << " to " << last_part->name
-							<< " because not enough free space: " << available_disk_space << " free and unreserved "
-							<< "(" << DiskSpaceMonitor::getReservedSpace() << " reserved in "
+							<< " because not enough free space: "
+							<< formatReadableSizeWithBinarySuffix(available_disk_space) << " free and unreserved "
+							<< "(" << formatReadableSizeWithBinarySuffix(DiskSpaceMonitor::getReservedSpace()) << " reserved in "
 							<< DiskSpaceMonitor::getReservationCount() << " chunks), "
-							<< cur_sum << " required now (+" << static_cast<int>((DISK_USAGE_COEFFICIENT_TO_SELECT - 1.0) * 100)
+							<< formatReadableSizeWithBinarySuffix(cur_sum)
+							<< " required now (+" << static_cast<int>((DISK_USAGE_COEFFICIENT_TO_SELECT - 1.0) * 100)
 							<< "% on overhead); suppressing similar warnings for the next hour");
 					}
 					break;
@@ -461,9 +463,8 @@ size_t MergeTreeDataMerger::estimateDiskSpaceForMerge(const MergeTreeData::DataP
 {
 	size_t res = 0;
 	for (const MergeTreeData::DataPartPtr & part : parts)
-	{
 		res += part->size_in_bytes;
-	}
+
 	return static_cast<size_t>(res * DISK_USAGE_COEFFICIENT_TO_RESERVE);
 }
 

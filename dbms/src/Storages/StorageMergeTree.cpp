@@ -229,7 +229,7 @@ bool StorageMergeTree::merge(size_t aio_threshold, bool aggressive, BackgroundPr
 			return false;
 		}
 
-		merging_tagger = new CurrentlyMergingPartsTagger(parts, merger.estimateDiskSpaceForMerge(parts), *this);
+		merging_tagger = new CurrentlyMergingPartsTagger(parts, MergeTreeDataMerger::estimateDiskSpaceForMerge(parts), *this);
 
 		/// Если собираемся сливать большие куски, увеличим счетчик потоков, сливающих большие куски.
 		if (pool_context)
