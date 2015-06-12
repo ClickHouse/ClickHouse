@@ -26,6 +26,10 @@ namespace DB
   * - даты;
   * - даты-с-временем;
   *   внутри каждой группы, но не из разных групп.
+  *
+  * Исключение: можно сравнивать дату и дату-с-временем с константной строкой. Пример: EventDate = '2015-01-01'.
+  *
+  * TODO Массивы, кортежи.
   */
 
 /** Игнорируем warning о сравнении signed и unsigned.
@@ -391,9 +395,9 @@ public:
 
 private:
 	template <typename T0, typename T1>
-	bool executeNumRightType(Block & block, const ColumnNumbers & arguments, size_t result, const ColumnVector<T0> * col_left)
+	bool executeNumRightType(Block & block, size_t result, const ColumnVector<T0> * col_left, const IColumn * col_right_untyped)
 	{
-		if (ColumnVector<T1> * col_right = typeid_cast<ColumnVector<T1> *>(&*block.getByPosition(arguments[1]).column))
+		if (const ColumnVector<T1> * col_right = typeid_cast<const ColumnVector<T1> *>(col_right_untyped))
 		{
 			ColumnUInt8 * col_res = new ColumnUInt8;
 			block.getByPosition(result).column = col_res;
@@ -404,7 +408,7 @@ private:
 
 			return true;
 		}
-		else if (ColumnConst<T1> * col_right = typeid_cast<ColumnConst<T1> *>(&*block.getByPosition(arguments[1]).column))
+		else if (const ColumnConst<T1> * col_right = typeid_cast<const ColumnConst<T1> *>(col_right_untyped))
 		{
 			ColumnUInt8 * col_res = new ColumnUInt8;
 			block.getByPosition(result).column = col_res;
@@ -420,9 +424,9 @@ private:
 	}
 
 	template <typename T0, typename T1>
-	bool executeNumConstRightType(Block & block, const ColumnNumbers & arguments, size_t result, const ColumnConst<T0> * col_left)
+	bool executeNumConstRightType(Block & block, size_t result, const ColumnConst<T0> * col_left, const IColumn * col_right_untyped)
 	{
-		if (ColumnVector<T1> * col_right = typeid_cast<ColumnVector<T1> *>(&*block.getByPosition(arguments[1]).column))
+		if (const ColumnVector<T1> * col_right = typeid_cast<const ColumnVector<T1> *>(col_right_untyped))
 		{
 			ColumnUInt8 * col_res = new ColumnUInt8;
 			block.getByPosition(result).column = col_res;
@@ -433,7 +437,7 @@ private:
 
 			return true;
 		}
-		else if (ColumnConst<T1> * col_right = typeid_cast<ColumnConst<T1> *>(&*block.getByPosition(arguments[1]).column))
+		else if (const ColumnConst<T1> * col_right = typeid_cast<const ColumnConst<T1> *>(col_right_untyped))
 		{
 			UInt8 res = 0;
 			NumComparisonImpl<T0, T1, Op<T0, T1>>::constant_constant(col_left->getData(), col_right->getData(), res);
@@ -448,41 +452,41 @@ private:
 	}
 
 	template <typename T0>
-	bool executeNumLeftType(Block & block, const ColumnNumbers & arguments, size_t result)
+	bool executeNumLeftType(Block & block, size_t result, const IColumn * col_left_untyped, const IColumn * col_right_untyped)
 	{
-		if (ColumnVector<T0> * col_left = typeid_cast<ColumnVector<T0> *>(&*block.getByPosition(arguments[0]).column))
+		if (const ColumnVector<T0> * col_left = typeid_cast<const ColumnVector<T0> *>(col_left_untyped))
 		{
-			if (	executeNumRightType<T0, UInt8>(block, arguments, result, col_left)
-				||	executeNumRightType<T0, UInt16>(block, arguments, result, col_left)
-				||	executeNumRightType<T0, UInt32>(block, arguments, result, col_left)
-				||	executeNumRightType<T0, UInt64>(block, arguments, result, col_left)
-				||	executeNumRightType<T0, Int8>(block, arguments, result, col_left)
-				||	executeNumRightType<T0, Int16>(block, arguments, result, col_left)
-				||	executeNumRightType<T0, Int32>(block, arguments, result, col_left)
-				||	executeNumRightType<T0, Int64>(block, arguments, result, col_left)
-				||	executeNumRightType<T0, Float32>(block, arguments, result, col_left)
-				||	executeNumRightType<T0, Float64>(block, arguments, result, col_left))
+			if (	executeNumRightType<T0, UInt8>(block, result, col_left, col_right_untyped)
+				||	executeNumRightType<T0, UInt16>(block, result, col_left, col_right_untyped)
+				||	executeNumRightType<T0, UInt32>(block, result, col_left, col_right_untyped)
+				||	executeNumRightType<T0, UInt64>(block, result, col_left, col_right_untyped)
+				||	executeNumRightType<T0, Int8>(block, result, col_left, col_right_untyped)
+				||	executeNumRightType<T0, Int16>(block, result, col_left, col_right_untyped)
+				||	executeNumRightType<T0, Int32>(block, result, col_left, col_right_untyped)
+				||	executeNumRightType<T0, Int64>(block, result, col_left, col_right_untyped)
+				||	executeNumRightType<T0, Float32>(block, result, col_left, col_right_untyped)
+				||	executeNumRightType<T0, Float64>(block, result, col_left, col_right_untyped))
 				return true;
 			else
-				throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
+				throw Exception("Illegal column " + col_right_untyped->getName()
 					+ " of second argument of function " + getName(),
 					ErrorCodes::ILLEGAL_COLUMN);
 		}
-		else if (ColumnConst<T0> * col_left = typeid_cast<ColumnConst<T0> *>(&*block.getByPosition(arguments[0]).column))
+		else if (const ColumnConst<T0> * col_left = typeid_cast<const ColumnConst<T0> *>(col_left_untyped))
 		{
-			if (	executeNumConstRightType<T0, UInt8>(block, arguments, result, col_left)
-				||	executeNumConstRightType<T0, UInt16>(block, arguments, result, col_left)
-				||	executeNumConstRightType<T0, UInt32>(block, arguments, result, col_left)
-				||	executeNumConstRightType<T0, UInt64>(block, arguments, result, col_left)
-				||	executeNumConstRightType<T0, Int8>(block, arguments, result, col_left)
-				||	executeNumConstRightType<T0, Int16>(block, arguments, result, col_left)
-				||	executeNumConstRightType<T0, Int32>(block, arguments, result, col_left)
-				||	executeNumConstRightType<T0, Int64>(block, arguments, result, col_left)
-				||	executeNumConstRightType<T0, Float32>(block, arguments, result, col_left)
-				||	executeNumConstRightType<T0, Float64>(block, arguments, result, col_left))
+			if (	executeNumConstRightType<T0, UInt8>(block, result, col_left, col_right_untyped)
+				||	executeNumConstRightType<T0, UInt16>(block, result, col_left, col_right_untyped)
+				||	executeNumConstRightType<T0, UInt32>(block, result, col_left, col_right_untyped)
+				||	executeNumConstRightType<T0, UInt64>(block, result, col_left, col_right_untyped)
+				||	executeNumConstRightType<T0, Int8>(block, result, col_left, col_right_untyped)
+				||	executeNumConstRightType<T0, Int16>(block, result, col_left, col_right_untyped)
+				||	executeNumConstRightType<T0, Int32>(block, result, col_left, col_right_untyped)
+				||	executeNumConstRightType<T0, Int64>(block, result, col_left, col_right_untyped)
+				||	executeNumConstRightType<T0, Float32>(block, result, col_left, col_right_untyped)
+				||	executeNumConstRightType<T0, Float64>(block, result, col_left, col_right_untyped))
 				return true;
 			else
-				throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
+				throw Exception("Illegal column " + col_right_untyped->getName()
 					+ " of second argument of function " + getName(),
 					ErrorCodes::ILLEGAL_COLUMN);
 		}
@@ -490,17 +494,14 @@ private:
 		return false;
 	}
 
-	void executeString(Block & block, const ColumnNumbers & arguments, size_t result)
+	void executeString(Block & block, size_t result, const IColumn * c0, const IColumn * c1)
 	{
-		IColumn * c0 = &*block.getByPosition(arguments[0]).column;
-		IColumn * c1 = &*block.getByPosition(arguments[1]).column;
-
-		ColumnString * c0_string = typeid_cast<ColumnString *>(c0);
-		ColumnString * c1_string = typeid_cast<ColumnString *>(c1);
-		ColumnFixedString * c0_fixed_string = typeid_cast<ColumnFixedString *>(c0);
-		ColumnFixedString * c1_fixed_string = typeid_cast<ColumnFixedString *>(c1);
-		ColumnConstString * c0_const = typeid_cast<ColumnConstString *>(c0);
-		ColumnConstString * c1_const = typeid_cast<ColumnConstString *>(c1);
+		const ColumnString * c0_string = typeid_cast<const ColumnString *>(c0);
+		const ColumnString * c1_string = typeid_cast<const ColumnString *>(c1);
+		const ColumnFixedString * c0_fixed_string = typeid_cast<const ColumnFixedString *>(c0);
+		const ColumnFixedString * c1_fixed_string = typeid_cast<const ColumnFixedString *>(c1);
+		const ColumnConstString * c0_const = typeid_cast<const ColumnConstString *>(c0);
+		const ColumnConstString * c1_const = typeid_cast<const ColumnConstString *>(c1);
 
 		using StringImpl = StringComparisonImpl<Op<int, int>>;
 
@@ -559,10 +560,63 @@ private:
 					c_res->getData());
 			else
 				throw Exception("Illegal columns "
-					+ block.getByPosition(arguments[0]).column->getName() + " and "
-					+ block.getByPosition(arguments[1]).column->getName()
+					+ c0->getName() + " and " + c1->getName()
 					+ " of arguments of function " + getName(),
 					ErrorCodes::ILLEGAL_COLUMN);
+		}
+	}
+
+	void executeDateOrDateTimeWithConstString(Block & block, size_t result,
+		const IColumn * col_left_untyped, const IColumn * col_right_untyped,
+		bool left_is_num, bool right_is_num)
+	{
+		/// Особый случай - сравнение дат и дат-с-временем со строковой константой.
+		const IColumn * column_date_or_datetime = left_is_num ? col_left_untyped : col_right_untyped;
+		const IColumn * column_string_untyped = !left_is_num ? col_left_untyped : col_right_untyped;
+
+		bool is_date = false;
+		bool is_date_time = false;
+
+		is_date = typeid_cast<const ColumnVector<DataTypeDate::FieldType> *>(column_date_or_datetime)
+			|| typeid_cast<const ColumnConst<DataTypeDate::FieldType> *>(column_date_or_datetime);
+
+		if (!is_date)
+			is_date_time = typeid_cast<const ColumnVector<DataTypeDateTime::FieldType> *>(column_date_or_datetime)
+				|| typeid_cast<const ColumnConst<DataTypeDateTime::FieldType> *>(column_date_or_datetime);
+
+		const ColumnConstString * column_string = typeid_cast<const ColumnConstString *>(column_string_untyped);
+
+		if (!column_string
+			|| (!is_date && !is_date_time))
+			throw Exception("Illegal columns " + col_left_untyped->getName() + " and " + col_right_untyped->getName()
+				+ " of arguments of function " + getName(),
+				ErrorCodes::ILLEGAL_COLUMN);
+
+		if (is_date)
+		{
+			DayNum_t date;
+			ReadBufferFromString in(column_string->getData());
+			readDateText(date, in);
+			if (!in.eof())
+				throw Exception("String is too long for Date: " + column_string->getData());
+
+			ColumnConst<DataTypeDate::FieldType> parsed_const_date(block.rowsInFirstColumn(), date);
+			executeNumLeftType<DataTypeDate::FieldType>(block, result,
+				left_is_num ? col_left_untyped : &parsed_const_date,
+				left_is_num ? &parsed_const_date : col_right_untyped);
+		}
+		else if (is_date_time)
+		{
+			time_t date_time;
+			ReadBufferFromString in(column_string->getData());
+			readDateTimeText(date_time, in);
+			if (!in.eof())
+				throw Exception("String is too long for DateTime: " + column_string->getData());
+
+			ColumnConst<DataTypeDateTime::FieldType> parsed_const_date_time(block.rowsInFirstColumn(), date_time);
+			executeNumLeftType<DataTypeDateTime::FieldType>(block, result,
+				left_is_num ? col_left_untyped : &parsed_const_date_time,
+				left_is_num ? &parsed_const_date_time : col_right_untyped);
 		}
 	}
 
@@ -581,12 +635,36 @@ public:
 				+ toString(arguments.size()) + ", should be 2.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		if (!(	(	arguments[0]->isNumeric() && arguments[0]->behavesAsNumber()
-				&&	arguments[1]->isNumeric() && arguments[1]->behavesAsNumber())
-			||	(	(arguments[0]->getName() == "String" || arguments[0]->getName().substr(0, 11) == "FixedString")
-				&& 	(arguments[1]->getName() == "String" || arguments[1]->getName().substr(0, 11) == "FixedString"))
-			||	(arguments[0]->getName() == "Date" && arguments[1]->getName() == "Date")
-			||	(arguments[0]->getName() == "DateTime" && arguments[1]->getName() == "DateTime")))
+		bool left_is_date = false;
+		bool left_is_date_time = false;
+		bool left_is_string = false;
+		bool left_is_fixed_string = false;
+
+		false
+			|| (left_is_date 		= typeid_cast<const DataTypeDate *>(arguments[0].get()))
+			|| (left_is_date_time 	= typeid_cast<const DataTypeDateTime *>(arguments[0].get()))
+			|| (left_is_string 		= typeid_cast<const DataTypeString *>(arguments[0].get()))
+			|| (left_is_fixed_string = typeid_cast<const DataTypeFixedString *>(arguments[0].get()));
+
+		bool right_is_date = false;
+		bool right_is_date_time = false;
+		bool right_is_string = false;
+		bool right_is_fixed_string = false;
+
+		false
+			|| (right_is_date 		= typeid_cast<const DataTypeDate *>(arguments[1].get()))
+			|| (right_is_date_time 	= typeid_cast<const DataTypeDateTime *>(arguments[1].get()))
+			|| (right_is_string 	= typeid_cast<const DataTypeString *>(arguments[1].get()))
+			|| (right_is_fixed_string = typeid_cast<const DataTypeFixedString *>(arguments[1].get()));
+
+		if (!(	(arguments[0]->behavesAsNumber() && arguments[1]->behavesAsNumber())
+			||	((left_is_string || left_is_fixed_string) && (right_is_string || right_is_fixed_string))
+			||	(left_is_date && right_is_date)
+			||	(left_is_date && right_is_string)	/// Можно сравнивать дату и дату-с-временем с константной строкой.
+			||	(left_is_string && right_is_date)
+			||	(left_is_date_time && right_is_date_time)
+			||	(left_is_date_time && right_is_string)
+			||	(left_is_string && right_is_date_time)))
 			throw Exception("Illegal types of arguments (" + arguments[0]->getName() + ", " + arguments[1]->getName() + ")"
 				" of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -596,24 +674,36 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (block.getByPosition(arguments[0]).column->isNumeric())
+		const IColumn * col_left_untyped = block.getByPosition(arguments[0]).column.get();
+		const IColumn * col_right_untyped = block.getByPosition(arguments[1]).column.get();
+
+		bool left_is_num = col_left_untyped->isNumeric();
+		bool right_is_num = col_right_untyped->isNumeric();
+
+		if (left_is_num && right_is_num)
 		{
-			if (!(	executeNumLeftType<UInt8>(block, arguments, result)
-				||	executeNumLeftType<UInt16>(block, arguments, result)
-				||	executeNumLeftType<UInt32>(block, arguments, result)
-				||	executeNumLeftType<UInt64>(block, arguments, result)
-				||	executeNumLeftType<Int8>(block, arguments, result)
-				||	executeNumLeftType<Int16>(block, arguments, result)
-				||	executeNumLeftType<Int32>(block, arguments, result)
-				||	executeNumLeftType<Int64>(block, arguments, result)
-				||	executeNumLeftType<Float32>(block, arguments, result)
-				||	executeNumLeftType<Float64>(block, arguments, result)))
-				throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+			if (!(	executeNumLeftType<UInt8>(block, result, col_left_untyped, col_right_untyped)
+				||	executeNumLeftType<UInt16>(block, result, col_left_untyped, col_right_untyped)
+				||	executeNumLeftType<UInt32>(block, result, col_left_untyped, col_right_untyped)
+				||	executeNumLeftType<UInt64>(block, result, col_left_untyped, col_right_untyped)
+				||	executeNumLeftType<Int8>(block, result, col_left_untyped, col_right_untyped)
+				||	executeNumLeftType<Int16>(block, result, col_left_untyped, col_right_untyped)
+				||	executeNumLeftType<Int32>(block, result, col_left_untyped, col_right_untyped)
+				||	executeNumLeftType<Int64>(block, result, col_left_untyped, col_right_untyped)
+				||	executeNumLeftType<Float32>(block, result, col_left_untyped, col_right_untyped)
+				||	executeNumLeftType<Float64>(block, result, col_left_untyped, col_right_untyped)))
+				throw Exception("Illegal column " + col_left_untyped->getName()
 					+ " of first argument of function " + getName(),
 					ErrorCodes::ILLEGAL_COLUMN);
 		}
+		else if (!left_is_num && !right_is_num)
+		{
+			executeString(block, result, col_left_untyped, col_right_untyped);
+		}
 		else
-			executeString(block, arguments, result);
+		{
+			executeDateOrDateTimeWithConstString(block, result, col_left_untyped, col_right_untyped, left_is_num, right_is_num);
+		}
 	}
 };
 
