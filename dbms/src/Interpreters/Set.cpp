@@ -10,7 +10,6 @@
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Parsers/ASTFunction.h>
 #include <DB/Parsers/ASTLiteral.h>
-#include <DB/Parsers/formatAST.h>
 
 #include <DB/Interpreters/Set.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
