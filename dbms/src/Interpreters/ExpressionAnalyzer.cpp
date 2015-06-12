@@ -954,7 +954,7 @@ void ExpressionAnalyzer::makeExplicitSet(ASTFunction * node, const Block & sampl
 	ASTPtr ast_set_ptr = ast_set;
 	ast_set->set = new Set(settings.limits);
 	ast_set->is_explicit = true;
-	ast_set->set->createFromAST(set_element_types, elements_ast, create_ordered_set);
+	ast_set->set->createFromAST(set_element_types, elements_ast, context, create_ordered_set);
 	arg = ast_set_ptr;
 }
 
