@@ -19,6 +19,8 @@
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
+#include <DB/DataTypes/DataTypeDate.h>
+#include <DB/DataTypes/DataTypeDateTime.h>
 
 
 namespace DB
@@ -234,7 +236,7 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
   */
 static Field convertToType(const Field & src, const IDataType & type)
 {
-	if (type.behavesAsNumber())
+	if (type.isNumeric())
 	{
 		bool is_uint8 	= false;
 		bool is_uint16 	= false;
@@ -246,6 +248,8 @@ static Field convertToType(const Field & src, const IDataType & type)
 		bool is_int64 	= false;
 		bool is_float32 = false;
 		bool is_float64 = false;
+		bool is_date	= false;
+		bool is_datetime = false;
 
 		false
 			|| (is_uint8 	= typeid_cast<const DataTypeUInt8 *		>(&type))
@@ -257,7 +261,10 @@ static Field convertToType(const Field & src, const IDataType & type)
 			|| (is_int32 	= typeid_cast<const DataTypeInt32 *		>(&type))
 			|| (is_int64 	= typeid_cast<const DataTypeInt64 *		>(&type))
 			|| (is_float32 	= typeid_cast<const DataTypeFloat32 *	>(&type))
-			|| (is_float64 	= typeid_cast<const DataTypeFloat64 *	>(&type));
+			|| (is_float64 	= typeid_cast<const DataTypeFloat64 *	>(&type))
+			|| (is_date 	= typeid_cast<const DataTypeDate *		>(&type))
+			|| (is_datetime	= typeid_cast<const DataTypeDateTime *	>(&type))
+			;
 
 		if (is_uint8 || is_uint16 || is_uint32 || is_uint64)
 		{
@@ -326,6 +333,14 @@ static Field convertToType(const Field & src, const IDataType & type)
 
 			throw Exception("Type mismatch in IN section: " + type.getName() + " at left, "
 				+ Field::Types::toString(src.getType()) + " at right");
+		}
+		else if (is_date || is_datetime)
+		{
+			if (src.getType() != Field::Types::UInt64)
+				throw Exception("Type mismatch in IN section: " + type.getName() + " at left, "
+					+ Field::Types::toString(src.getType()) + " at right");
+
+			return src;
 		}
 	}
 	else
