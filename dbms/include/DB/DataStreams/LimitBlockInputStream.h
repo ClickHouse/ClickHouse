@@ -18,7 +18,7 @@ class LimitBlockInputStream : public IProfilingBlockInputStream
 public:
 	LimitBlockInputStream(BlockInputStreamPtr input_, size_t limit_, size_t offset_ = 0);
 
-	String getName() const override { return "LimitBlockInputStream"; }
+	String getName() const override { return "Limit"; }
 
 	String getID() const override
 	{

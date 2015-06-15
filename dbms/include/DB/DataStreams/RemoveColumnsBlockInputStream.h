@@ -24,7 +24,7 @@ public:
 		children.push_back(input_);
 	}
 
-	String getName() const override { return "RemoveColumnsBlockInputStream"; }
+	String getName() const override { return "RemoveColumns"; }
 
 	String getID() const override
 	{

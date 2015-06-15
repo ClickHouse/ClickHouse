@@ -13,19 +13,29 @@ namespace DB
 {
 
 
-StoragePtr StorageBuffer::create(const std::string & name_, NamesAndTypesListPtr columns_, Context & context_,
+StoragePtr StorageBuffer::create(const std::string & name_, NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & materialized_columns_,
+	const NamesAndTypesList & alias_columns_,
+	const ColumnDefaults & column_defaults_,
+	Context & context_,
 	size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
 	const String & destination_database_, const String & destination_table_)
 {
 	return (new StorageBuffer{
-		name_, columns_, context_, num_shards_, min_thresholds_, max_thresholds_, destination_database_, destination_table_})->thisPtr();
+		name_, columns_, materialized_columns_, alias_columns_, column_defaults_,
+		context_, num_shards_, min_thresholds_, max_thresholds_, destination_database_, destination_table_})->thisPtr();
 }
 
 
-StorageBuffer::StorageBuffer(const std::string & name_, NamesAndTypesListPtr columns_, Context & context_,
+StorageBuffer::StorageBuffer(const std::string & name_, NamesAndTypesListPtr columns_,
+	const NamesAndTypesList & materialized_columns_,
+	const NamesAndTypesList & alias_columns_,
+	const ColumnDefaults & column_defaults_,
+	Context & context_,
 	size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
 	const String & destination_database_, const String & destination_table_)
-	: name(name_), columns(columns_), context(context_),
+	: IStorage{materialized_columns_, alias_columns_, column_defaults_},
+	name(name_), columns(columns_), context(context_),
 	num_shards(num_shards_), buffers(num_shards_),
 	min_thresholds(min_thresholds_), max_thresholds(max_thresholds_),
 	destination_database(destination_database_), destination_table(destination_table_),
@@ -43,7 +53,7 @@ public:
 	BufferBlockInputStream(const Names & column_names_, StorageBuffer::Buffer & buffer_)
 		: column_names(column_names_.begin(), column_names_.end()), buffer(buffer_) {}
 
-	String getName() const { return "BufferBlockInputStream"; }
+	String getName() const { return "Buffer"; }
 
 	String getID() const
 	{

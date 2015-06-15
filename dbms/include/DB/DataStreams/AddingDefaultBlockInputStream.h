@@ -35,7 +35,7 @@ public:
 	{
 	}
 
-	String getName() const override { return "AddingDefaultBlockInputStream"; }
+	String getName() const override { return "AddingDefault"; }
 
 	String getID() const override
 	{

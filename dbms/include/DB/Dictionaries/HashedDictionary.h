@@ -22,14 +22,25 @@ public:
 		  source_ptr{std::move(source_ptr)}, dict_lifetime(dict_lifetime)
 	{
 		createAttributes();
-		loadData();
-		calculateBytesAllocated();
+
+		try
+		{
+			loadData();
+			calculateBytesAllocated();
+		}
+		catch (...)
+		{
+			creation_exception = std::current_exception();
+		}
+
 		creation_time = std::chrono::system_clock::now();
 	}
 
 	HashedDictionary(const HashedDictionary & other)
 		: HashedDictionary{other.name, other.dict_struct, other.source_ptr->clone(), other.dict_lifetime}
 	{}
+
+	std::exception_ptr getCreationException() const override { return creation_exception; }
 
 	std::string getName() const override { return name; }
 
@@ -389,6 +400,8 @@ private:
 	mutable std::atomic<std::size_t> query_count{};
 
 	std::chrono::time_point<std::chrono::system_clock> creation_time;
+
+	std::exception_ptr creation_exception;
 };
 
 }

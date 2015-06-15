@@ -5,6 +5,7 @@
 #include <DB/Parsers/ExpressionElementParsers.h>
 #include <DB/Parsers/ExpressionListParsers.h>
 #include <DB/Parsers/ParserJoin.h>
+#include <DB/Parsers/ParserSetQuery.h>
 #include <DB/Parsers/ParserSelectQuery.h>
 
 
@@ -16,7 +17,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 {
 	Pos begin = pos;
 
-	ASTSelectQuery * select_query = new ASTSelectQuery(StringRange(begin, pos));
+	ASTSelectQuery * select_query = new ASTSelectQuery;
 	node = select_query;
 
 	ParserWhiteSpaceOrComments ws;
@@ -37,6 +38,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 	ParserString s_having("HAVING", true, true);
 	ParserString s_order("ORDER", true, true);
 	ParserString s_limit("LIMIT", true, true);
+	ParserString s_settings("SETTINGS", true, true);
 	ParserString s_format("FORMAT", true, true);
 	ParserString s_union("UNION", true, true);
 	ParserString s_all("ALL", true, true);
@@ -281,6 +283,19 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 		}
 	}
 
+	/// SETTINGS key1 = value1, key2 = value2, ...
+	if (s_settings.ignore(pos, end, max_parsed_pos, expected))
+	{
+		ws.ignore(pos, end);
+
+		ParserSetQuery parser_settings(true);
+
+		if (!parser_settings.parse(pos, end, select_query->settings, max_parsed_pos, expected))
+			return false;
+
+		ws.ignore(pos, end);
+	}
+
 	/// FORMAT format_name
 	if (s_format.ignore(pos, end, max_parsed_pos, expected))
 	{
@@ -312,6 +327,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 		ws.ignore(pos, end);
 	}
 
+	select_query->range = StringRange(begin, pos);
+
 	select_query->children.push_back(select_query->select_expression_list);
 	if (select_query->database)
 		select_query->children.push_back(select_query->database);
@@ -337,6 +354,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 		select_query->children.push_back(select_query->limit_offset);
 	if (select_query->limit_length)
 		select_query->children.push_back(select_query->limit_length);
+	if (select_query->settings)
+		select_query->children.push_back(select_query->settings);
 	if (select_query->format)
 		select_query->children.push_back(select_query->format);
 	if (select_query->next_union_all)

@@ -148,11 +148,10 @@ int main(int argc, char ** argv)
 		sort_columns.push_back(SortColumnDescription(3, 1));
 
 		QueryProcessingStage::Enum stage;
-		DataTypeFactory data_type_factory;
 
 		Poco::SharedPtr<IBlockInputStream> in = table->read(column_names, 0, Context{}, Settings(), stage, argc == 2 ? atoi(argv[1]) : 1048576)[0];
 		in = new PartialSortingBlockInputStream(in, sort_columns);
-		in = new MergeSortingBlockInputStream(in, sort_columns, DEFAULT_BLOCK_SIZE, 0, 0, "", data_type_factory);
+		in = new MergeSortingBlockInputStream(in, sort_columns, DEFAULT_BLOCK_SIZE, 0, 0, "");
 		//in = new LimitBlockInputStream(in, 10);
 
 		WriteBufferFromOStream ob(std::cout);

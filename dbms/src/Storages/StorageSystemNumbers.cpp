@@ -19,7 +19,7 @@ public:
 	NumbersBlockInputStream(size_t block_size_, size_t offset_, size_t step_)
 		: block_size(block_size_), next(offset_), step(step_) {}
 
-	String getName() const { return "NumbersBlockInputStream"; }
+	String getName() const { return "Numbers"; }
 	String getID() const { return "Numbers"; }
 
 protected:

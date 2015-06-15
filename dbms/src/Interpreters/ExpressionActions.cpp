@@ -124,12 +124,13 @@ void ExpressionAction::prepare(Block & sample_block)
 			/// Если все аргументы и требуемые столбцы - константы, выполним функцию.
 			if (all_const)
 			{
+				size_t result_position = sample_block.columns();
+
 				ColumnWithNameAndType new_column;
 				new_column.name = result_name;
 				new_column.type = result_type;
 				sample_block.insert(new_column);
 
-				size_t result_position = sample_block.getPositionByName(result_name);
 				function->execute(sample_block, arguments, prerequisites, result_position);
 
 				/// Если получилась не константа, на всякий случай будем считать результат неизвестным.

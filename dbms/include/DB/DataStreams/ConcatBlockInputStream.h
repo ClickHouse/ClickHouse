@@ -22,7 +22,7 @@ public:
 		current_stream = children.begin();
 	}
 
-	String getName() const override { return "ConcatBlockInputStream"; }
+	String getName() const override { return "Concat"; }
 
 	String getID() const override
 	{

@@ -87,8 +87,6 @@ void StorageSetOrJoinBase::restore()
 	constexpr auto file_suffix = ".bin";
 	constexpr auto file_suffix_size = strlen(file_suffix);
 
-	DataTypeFactory data_type_factory;
-
 	Poco::DirectoryIterator dir_end;
 	for (Poco::DirectoryIterator dir_it(path); dir_end != dir_it; ++dir_it)
 	{
@@ -104,17 +102,17 @@ void StorageSetOrJoinBase::restore()
 			if (file_num > increment)
 				increment = file_num;
 
-			restoreFromFile(dir_it->path(), data_type_factory);
+			restoreFromFile(dir_it->path());
 		}
 	}
 }
 
 
-void StorageSetOrJoinBase::restoreFromFile(const String & file_path, const DataTypeFactory & data_type_factory)
+void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
 {
 	ReadBufferFromFile backup_buf(file_path);
 	CompressedReadBuffer compressed_backup_buf(backup_buf);
-	NativeBlockInputStream backup_stream(compressed_backup_buf, data_type_factory);
+	NativeBlockInputStream backup_stream(compressed_backup_buf);
 
 	backup_stream.readPrefix();
 	while (Block block = backup_stream.read())

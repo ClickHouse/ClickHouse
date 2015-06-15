@@ -165,7 +165,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 		UInt64 sampling_column_value_lower_limit;
 		UInt64 sampling_column_value_upper_limit;
-		UInt64 upper_limit = static_cast<UInt64>(relative_sample_size * sampling_column_max);
+		UInt64 upper_limit = static_cast<UInt64>(static_cast<long double>(relative_sample_size) * sampling_column_max);
 
 		if (settings.parallel_replicas_count > 1)
 		{

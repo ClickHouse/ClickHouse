@@ -52,7 +52,7 @@ public:
 			const String & host_, UInt16 port_, const String & default_database_,
 			const String & user_, const String & password_, const Settings & settings_)
 		: concurrency(concurrency_), delay(delay_), queue(concurrency),
-		connections(concurrency, host_, port_, default_database_, user_, password_, data_type_factory),
+		connections(concurrency, host_, port_, default_database_, user_, password_),
 		settings(settings_), pool(concurrency)
 	{
 		std::cerr << std::fixed << std::setprecision(3);
@@ -73,7 +73,6 @@ private:
 	typedef ConcurrentBoundedQueue<Query> Queue;
 	Queue queue;
 
-	DataTypeFactory data_type_factory;
 	ConnectionPool connections;
 	Settings settings;
 

@@ -57,9 +57,9 @@ size_t IBlockInputStream::checkDepthImpl(size_t max_depth, size_t level) const
 void IBlockInputStream::dumpTree(std::ostream & ostr, size_t indent, size_t multiplier)
 {
 	/// Не будем отображать в дереве обёртку потока блоков в AsynchronousBlockInputStream.
-	if (getShortName() != "Asynchronous")
+	if (getName() != "Asynchronous")
 	{
-		ostr << String(indent, ' ') << getShortName();
+		ostr << String(indent, ' ') << getName();
 		if (multiplier > 1)
 			ostr << " × " << multiplier;
 		ostr << std::endl;
@@ -88,15 +88,6 @@ void IBlockInputStream::dumpTree(std::ostream & ostr, size_t indent, size_t mult
 		for (BlockInputStreams::iterator it = children.begin(); it != children.end(); ++it)
 			(*it)->dumpTree(ostr, indent, multiplier);
 	}
-}
-
-
-String IBlockInputStream::getShortName() const
-{
-	String res = getName();
-	if (0 == strcmp(res.c_str() + res.size() - strlen("BlockInputStream"), "BlockInputStream"))
-		res = res.substr(0, res.size() - strlen("BlockInputStream"));
-	return res;
 }
 
 

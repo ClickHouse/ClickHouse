@@ -9,7 +9,6 @@
 #include <sparsehash/dense_hash_map>
 
 #include <DB/DataTypes/IDataType.h>
-#include <DB/DataTypes/DataTypeFactory.h>
 #include <DB/IO/ReadBufferFromString.h>
 #include "Names.h"
 
@@ -45,11 +44,11 @@ class NamesAndTypesList : public std::list<NameAndTypePair>
 public:
 	using std::list<NameAndTypePair>::list;
 
-	void readText(ReadBuffer & buf, const DataTypeFactory & data_type_factory);
+	void readText(ReadBuffer & buf);
 	void writeText(WriteBuffer & buf) const;
 
 	String toString() const;
-	static NamesAndTypesList parse(const String & s, const DataTypeFactory & data_type_factory);
+	static NamesAndTypesList parse(const String & s);
 
 	/// Все элементы rhs должны быть различны.
 	bool isSubsetOf(const NamesAndTypesList & rhs) const;

@@ -9,7 +9,7 @@ namespace DB
 using Poco::SharedPtr;
 
 
-class DataTypeArray : public IDataType
+class DataTypeArray final : public IDataType
 {
 private:
 	/// Тип элементов массивов.

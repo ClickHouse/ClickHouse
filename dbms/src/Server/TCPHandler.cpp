@@ -20,6 +20,7 @@
 #include <DB/DataStreams/NativeBlockInputStream.h>
 #include <DB/DataStreams/NativeBlockOutputStream.h>
 #include <DB/Interpreters/executeQuery.h>
+#include <DB/Interpreters/Quota.h>
 
 #include <DB/Storages/StorageMemory.h>
 
@@ -225,14 +226,31 @@ void TCPHandler::readData(const Settings & global_settings)
 {
 	while (1)
 	{
-		/// Ждём пакета от клиента. При этом, каждые POLL_INTERVAL сек. проверяем, не требуется ли завершить работу.
-		while (!static_cast<ReadBufferFromPocoSocket &>(*in).poll(global_settings.poll_interval * 1000000) && !Daemon::instance().isCancelled())
-			;
+		Stopwatch watch(CLOCK_MONOTONIC_COARSE);
 
-		/// Если требуется завершить работу, или клиент отсоединился.
-		if (Daemon::instance().isCancelled() || in->eof())
+		/// Ждём пакета от клиента. При этом, каждые POLL_INTERVAL сек. проверяем, не требуется ли завершить работу.
+		while (1)
+		{
+			if (static_cast<ReadBufferFromPocoSocket &>(*in).poll(global_settings.poll_interval * 1000000))
+				break;
+
+			/// Если требуется завершить работу.
+			if (Daemon::instance().isCancelled())
+				return;
+
+			/** Если ждём данных уже слишком долго.
+			  * Если периодически poll-ить соединение, то receive_timeout у сокета сам по себе не срабатывает.
+			  * Поэтому, добавлена дополнительная проверка.
+			  */
+			if (watch.elapsedSeconds() > global_settings.receive_timeout.totalSeconds())
+				throw Exception("Timeout exceeded while receiving data from client", ErrorCodes::SOCKET_TIMEOUT);
+		}
+
+		/// Если клиент отсоединился.
+		if (in->eof())
 			return;
 
+		/// Принимаем и обрабатываем данные. А если они закончились, то выходим.
 		if (!receivePacket())
 			break;
 	}
@@ -606,7 +624,6 @@ void TCPHandler::initBlockInput()
 
 		state.block_in = new NativeBlockInputStream(
 			*state.maybe_compressed_in,
-			query_context.getDataTypeFactory(),
 			client_revision);
 	}
 }
@@ -617,7 +634,7 @@ void TCPHandler::initBlockOutput()
 	if (!state.block_out)
 	{
 		if (state.compression == Protocol::Compression::Enable)
-			state.maybe_compressed_out = new CompressedWriteBuffer(*out);
+			state.maybe_compressed_out = new CompressedWriteBuffer(*out, query_context.getSettings().network_compression_method);
 		else
 			state.maybe_compressed_out = out;
 

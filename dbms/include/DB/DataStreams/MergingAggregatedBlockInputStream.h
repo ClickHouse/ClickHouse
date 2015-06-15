@@ -24,7 +24,7 @@ public:
 		children.push_back(input_);
 	}
 
-	String getName() const override { return "MergingAggregatedBlockInputStream"; }
+	String getName() const override { return "MergingAggregated"; }
 
 	String getID() const override
 	{

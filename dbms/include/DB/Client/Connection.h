@@ -12,8 +12,6 @@
 #include <DB/Core/Protocol.h>
 #include <DB/Core/QueryProcessingStage.h>
 
-#include <DB/DataTypes/DataTypeFactory.h>
-
 #include <DB/DataStreams/IBlockInputStream.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
 #include <DB/DataStreams/BlockStreamProfileInfo.h>
@@ -50,7 +48,6 @@ class Connection : private boost::noncopyable
 public:
 	Connection(const String & host_, UInt16 port_, const String & default_database_,
 		const String & user_, const String & password_,
-		const DataTypeFactory & data_type_factory_,
 		const String & client_name_ = "client",
 		Protocol::Compression::Enum compression_ = Protocol::Compression::Enable,
 		Poco::Timespan connect_timeout_ = Poco::Timespan(DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, 0),
@@ -59,17 +56,47 @@ public:
 		Poco::Timespan ping_timeout_ = Poco::Timespan(DBMS_DEFAULT_PING_TIMEOUT_SEC, 0))
 		:
 		host(host_), port(port_), default_database(default_database_),
-		user(user_), password(password_),
+		user(user_), password(password_), resolved_address(host, port),
 		client_name(client_name_),
-		compression(compression_), data_type_factory(data_type_factory_),
+		compression(compression_),
 		connect_timeout(connect_timeout_), receive_timeout(receive_timeout_), send_timeout(send_timeout_),
 		ping_timeout(ping_timeout_),
-		log_wrapper(host, port)
+		log_wrapper(*this)
 	{
 		/// Соединеняемся не сразу, а при первой необходимости.
 
 		if (user.empty())
 			user = "default";
+
+		setDescription();
+	}
+
+	Connection(const String & host_, UInt16 port_, const Poco::Net::SocketAddress & resolved_address_,
+		const String & default_database_,
+		const String & user_, const String & password_,
+		const String & client_name_ = "client",
+		Protocol::Compression::Enum compression_ = Protocol::Compression::Enable,
+		Poco::Timespan connect_timeout_ = Poco::Timespan(DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, 0),
+		Poco::Timespan receive_timeout_ = Poco::Timespan(DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, 0),
+		Poco::Timespan send_timeout_ = Poco::Timespan(DBMS_DEFAULT_SEND_TIMEOUT_SEC, 0),
+		Poco::Timespan ping_timeout_ = Poco::Timespan(DBMS_DEFAULT_PING_TIMEOUT_SEC, 0))
+		:
+		host(host_), port(port_),
+		default_database(default_database_),
+		user(user_), password(password_),
+		resolved_address(resolved_address_),
+		client_name(client_name_),
+		compression(compression_),
+		connect_timeout(connect_timeout_), receive_timeout(receive_timeout_), send_timeout(send_timeout_),
+		ping_timeout(ping_timeout_),
+		log_wrapper(*this)
+	{
+		/// Соединеняемся не сразу, а при первой необходимости.
+
+		if (user.empty())
+			user = "default";
+
+		setDescription();
 	}
 
 	virtual ~Connection() {};
@@ -99,8 +126,21 @@ public:
 
 	void getServerVersion(String & name, UInt64 & version_major, UInt64 & version_minor, UInt64 & revision);
 
-	/// Адрес сервера - для сообщений в логе и в эксепшенах.
-	String getServerAddress() const;
+	/// Для сообщений в логе и в эксепшенах.
+	const String & getDescription() const
+	{
+		return description;
+	}
+
+	const String & getHost() const
+	{
+		return host;
+	}
+
+	UInt16 getPort() const
+	{
+		return port;
+	}
 
 	/// Если последний флаг true, то затем необходимо вызвать sendExternalTablesData
 	void sendQuery(const String & query, const String & query_id_ = "", UInt64 stage = QueryProcessingStage::Complete,
@@ -134,16 +174,6 @@ public:
 	  */
 	void disconnect();
 
-	const std::string & getHost() const
-	{
-		return host;
-	}
-
-	UInt16 getPort() const
-	{
-		return port;
-	}
-
 	size_t outBytesCount() const { return !out.isNull() ? out->count() : 0; }
 	size_t inBytesCount() const { return !in.isNull() ? in->count() : 0; }
 
@@ -153,6 +183,15 @@ private:
 	String default_database;
 	String user;
 	String password;
+
+	/** Адрес может быть заранее отрезолвен и передан в конструктор. Тогда поля host и port имеют смысл только для логгирования.
+	  * Иначе адрес резолвится в конструкторе. То есть, DNS балансировка не поддерживается.
+	  */
+	Poco::Net::SocketAddress resolved_address;
+
+	/// Для сообщений в логе и в эксепшенах.
+	String description;
+	void setDescription();
 
 	String client_name;
 
@@ -169,8 +208,8 @@ private:
 
 	String query_id;
 	UInt64 compression;		/// Сжимать ли данные при взаимодействии с сервером.
-
-	const DataTypeFactory & data_type_factory;
+	/// каким алгоритмом сжимать данные при INSERT и данные внешних таблиц
+	CompressionMethod network_compression_method = CompressionMethod::LZ4;
 
 	/** Если не nullptr, то используется, чтобы ограничить сетевой трафик.
 	  * Учитывается только трафик при передаче блоков. Другие пакеты не учитываются.
@@ -194,22 +233,22 @@ private:
 	class LoggerWrapper
 	{
 	public:
-		LoggerWrapper(std::string & host_, size_t port_) : log(nullptr), host(host_), port(port_)
+		LoggerWrapper(Connection & parent_)
+			: log(nullptr), parent(parent_)
 		{
 		}
 
 		Logger * get()
 		{
 			if (!log)
-				log = &Logger::get("Connection (" + Poco::Net::SocketAddress(host, port).toString() + ")");
+				log = &Logger::get("Connection (" + parent.getDescription() + ")");
 
 			return log;
 		}
 
 	private:
 		std::atomic<Logger *> log;
-		std::string host;
-		size_t port;
+		Connection & parent;
 	};
 
 	LoggerWrapper log_wrapper;

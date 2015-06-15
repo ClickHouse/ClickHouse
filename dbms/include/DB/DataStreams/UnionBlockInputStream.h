@@ -36,7 +36,7 @@ public:
 		children = inputs;
 	}
 
-	String getName() const override { return "UnionBlockInputStream"; }
+	String getName() const override { return "Union"; }
 
 	String getID() const override
 	{

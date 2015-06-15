@@ -24,6 +24,7 @@
 #include <DB/Parsers/ASTOrderByElement.h>
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>
+#include <DB/Interpreters/InterpreterSetQuery.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Storages/StorageView.h>
 #include <DB/TableFunctions/ITableFunction.h>
@@ -39,9 +40,11 @@ InterpreterSelectQuery::~InterpreterSelectQuery() = default;
 
 void InterpreterSelectQuery::init(BlockInputStreamPtr input, const Names & required_column_names, const NamesAndTypesList & table_column_names)
 {
-	original_max_threads = settings.max_threads;
-
 	ProfileEvents::increment(ProfileEvents::SelectQuery);
+
+	initSettings();
+
+	original_max_threads = settings.max_threads;
 
 	if (settings.limits.max_subquery_depth && subquery_depth > settings.limits.max_subquery_depth)
 		throw Exception("Too deep subqueries. Maximum: " + toString(settings.limits.max_subquery_depth),
@@ -174,7 +177,7 @@ void InterpreterSelectQuery::initQueryAnalyzer()
 InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_, QueryProcessingStage::Enum to_stage_,
 	size_t subquery_depth_, BlockInputStreamPtr input_, bool is_union_all_head_)
 	: query_ptr(query_ptr_), query(typeid_cast<ASTSelectQuery &>(*query_ptr)),
-	context(context_), settings(context.getSettings()), to_stage(to_stage_), subquery_depth(subquery_depth_),
+	context(context_), to_stage(to_stage_), subquery_depth(subquery_depth_),
 	is_first_select_inside_union_all(is_union_all_head_ && !query.next_union_all.isNull()),
 	log(&Logger::get("InterpreterSelectQuery"))
 {
@@ -185,7 +188,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context 
 	const Names & required_column_names_,
 	QueryProcessingStage::Enum to_stage_, size_t subquery_depth_, BlockInputStreamPtr input_)
 	: query_ptr(query_ptr_), query(typeid_cast<ASTSelectQuery &>(*query_ptr)),
-	context(context_), settings(context.getSettings()), to_stage(to_stage_), subquery_depth(subquery_depth_),
+	context(context_), to_stage(to_stage_), subquery_depth(subquery_depth_),
 	is_first_select_inside_union_all(!query.next_union_all.isNull()),
 	log(&Logger::get("InterpreterSelectQuery"))
 {
@@ -196,7 +199,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context 
 	const Names & required_column_names_,
 	const NamesAndTypesList & table_column_names, QueryProcessingStage::Enum to_stage_, size_t subquery_depth_, BlockInputStreamPtr input_)
 	: query_ptr(query_ptr_), query(typeid_cast<ASTSelectQuery &>(*query_ptr)),
-	context(context_), settings(context.getSettings()), to_stage(to_stage_), subquery_depth(subquery_depth_),
+	context(context_), to_stage(to_stage_), subquery_depth(subquery_depth_),
 	is_first_select_inside_union_all(!query.next_union_all.isNull()),
 	log(&Logger::get("InterpreterSelectQuery"))
 {
@@ -887,7 +890,7 @@ void InterpreterSelectQuery::executeOrder(BlockInputStreams & streams)
 	/// Сливаем сортированные блоки.
 	stream = new MergeSortingBlockInputStream(
 		stream, order_descr, settings.max_block_size, limit,
-		settings.limits.max_bytes_before_external_sort, context.getTemporaryPath(), context.getDataTypeFactory());
+		settings.limits.max_bytes_before_external_sort, context.getTemporaryPath());
 }
 
 
@@ -1027,5 +1030,13 @@ void InterpreterSelectQuery::ignoreWithTotals()
 	query.group_by_with_totals = false;
 }
 
+
+void InterpreterSelectQuery::initSettings()
+{
+	if (query.settings)
+		InterpreterSetQuery(query.settings, context).executeForCurrentContext();
+
+	settings = context.getSettings();
+}
 
 }

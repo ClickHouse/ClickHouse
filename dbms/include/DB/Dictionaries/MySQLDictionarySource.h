@@ -16,20 +16,25 @@ class MySQLDictionarySource final : public IDictionarySource
 	static const auto max_block_size = 8192;
 
 public:
-	MySQLDictionarySource(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
+	MySQLDictionarySource(const DictionaryStructure & dict_struct,
+		const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
 		Block & sample_block)
-		: db{config.getString(config_prefix + ".db", "")},
+		: dict_struct{dict_struct},
+		  db{config.getString(config_prefix + ".db", "")},
 		  table{config.getString(config_prefix + ".table")},
+		  where{config.getString(config_prefix + ".where", "")},
 		  sample_block{sample_block},
 		  pool{config, config_prefix},
-		  load_all_query{composeLoadAllQuery(sample_block, db, table)},
+		  load_all_query{composeLoadAllQuery()},
 		  last_modification{getLastModification()}
 	{}
 
 	/// copy-constructor is provided in order to support cloneability
 	MySQLDictionarySource(const MySQLDictionarySource & other)
-		: db{other.db},
+		: dict_struct{other.dict_struct},
+		  db{other.db},
 		  table{other.table},
+		  where{other.where},
 		  sample_block{other.sample_block},
 		  pool{other.pool},
 		  load_all_query{other.load_all_query}, last_modification{other.last_modification}
@@ -41,7 +46,7 @@ public:
 		return new MySQLBlockInputStream{pool.Get(), load_all_query, sample_block, max_block_size};
 	}
 
-	BlockInputStreamPtr loadIds(const std::vector<std::uint64_t> ids) override
+	BlockInputStreamPtr loadIds(const std::vector<std::uint64_t> & ids) override
 	{
 		last_modification = getLastModification();
 		const auto query = composeLoadIdsQuery(ids);
@@ -54,7 +59,10 @@ public:
 
 	DictionarySourcePtr clone() const override { return std::make_unique<MySQLDictionarySource>(*this); }
 
-	std::string toString() const override { return "MySQL: " + db + '.' + table; }
+	std::string toString() const override
+	{
+		return "MySQL: " + db + '.' + table + (where.empty() ? "" : ", where: " + where);
+	}
 
 private:
 	mysqlxx::DateTime getLastModification() const
@@ -88,7 +96,7 @@ private:
 		return update_time;
 	}
 
-	static std::string composeLoadAllQuery(const Block & block, const std::string & db, const std::string & table)
+	std::string composeLoadAllQuery() const
 	{
 		std::string query;
 
@@ -96,14 +104,19 @@ private:
 			WriteBufferFromString out{query};
 			writeString("SELECT ", out);
 
-			auto first = true;
-			for (const auto idx : ext::range(0, block.columns()))
-			{
-				if (!first)
-					writeString(", ", out);
+			writeProbablyBackQuotedString(dict_struct.id_name, out);
 
-				writeString(block.getByPosition(idx).name, out);
-				first = false;
+			for (const auto & attr : dict_struct.attributes)
+			{
+				writeString(", ", out);
+
+				if (!attr.expression.empty())
+				{
+					writeString(attr.expression, out);
+					writeString(" AS ", out);
+				}
+
+				writeProbablyBackQuotedString(attr.name, out);
 			}
 
 			writeString(" FROM ", out);
@@ -113,13 +126,20 @@ private:
 				writeChar('.', out);
 			}
 			writeProbablyBackQuotedString(table, out);
+
+			if (!where.empty())
+			{
+				writeString(" WHERE ", out);
+				writeString(where, out);
+			}
+
 			writeChar(';', out);
 		}
 
 		return query;
 	}
 
-	std::string composeLoadIdsQuery(const std::vector<std::uint64_t> ids)
+	std::string composeLoadIdsQuery(const std::vector<std::uint64_t> & ids)
 	{
 		std::string query;
 
@@ -127,17 +147,21 @@ private:
 			WriteBufferFromString out{query};
 			writeString("SELECT ", out);
 
-			auto first = true;
-			for (const auto idx : ext::range(0, sample_block.columns()))
-			{
-				if (!first)
-					writeString(", ", out);
+			writeProbablyBackQuotedString(dict_struct.id_name, out);
 
-				writeString(sample_block.getByPosition(idx).name, out);
-				first = false;
+			for (const auto & attr : dict_struct.attributes)
+			{
+				writeString(", ", out);
+
+				if (!attr.expression.empty())
+				{
+					writeString(attr.expression, out);
+					writeString(" AS ", out);
+				}
+
+				writeProbablyBackQuotedString(attr.name, out);
 			}
 
-			const auto & id_column_name = sample_block.getByPosition(0).name;
 			writeString(" FROM ", out);
 			if (!db.empty())
 			{
@@ -145,11 +169,19 @@ private:
 				writeChar('.', out);
 			}
 			writeProbablyBackQuotedString(table, out);
+
 			writeString(" WHERE ", out);
-			writeProbablyBackQuotedString(id_column_name, out);
+
+			if (!where.empty())
+			{
+				writeString(where, out);
+				writeString(" AND ", out);
+			}
+
+			writeProbablyBackQuotedString(dict_struct.id_name, out);
 			writeString(" IN (", out);
 
-			first = true;
+			auto first = true;
 			for (const auto id : ids)
 			{
 				if (!first)
@@ -165,8 +197,10 @@ private:
 		return query;
 	}
 
+	const DictionaryStructure dict_struct;
 	const std::string db;
 	const std::string table;
+	const std::string where;
 	Block sample_block;
 	mutable mysqlxx::PoolWithFailover pool;
 	const std::string load_all_query;

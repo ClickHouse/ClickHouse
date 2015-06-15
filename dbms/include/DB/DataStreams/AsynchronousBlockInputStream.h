@@ -25,7 +25,7 @@ public:
 		children.push_back(in_);
 	}
 
-	String getName() const override { return "AsynchronousBlockInputStream"; }
+	String getName() const override { return "Asynchronous"; }
 
 	String getID() const override
 	{

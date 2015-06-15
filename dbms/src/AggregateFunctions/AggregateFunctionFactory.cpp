@@ -14,7 +14,6 @@
 #include <DB/AggregateFunctions/AggregateFunctionArray.h>
 #include <DB/AggregateFunctions/AggregateFunctionState.h>
 #include <DB/AggregateFunctions/AggregateFunctionMerge.h>
-#include <DB/AggregateFunctions/AggregateFunctionDebug.h>
 #include <DB/AggregateFunctions/AggregateFunctionSequenceMatch.h>
 #include <DB/AggregateFunctions/AggregateFunctionsStatistics.h>
 
@@ -233,9 +232,7 @@ static IAggregateFunction * createAggregateFunctionArgMinMax(const String & name
 
 AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const DataTypes & argument_types, int recursion_level) const
 {
-	if (name == "debug")
-		return new AggregateFunctionDebug;
-	else if (name == "count")
+	if (name == "count")
 		return new AggregateFunctionCount;
 	else if (name == "any")
 		return createAggregateFunctionSingleValue<AggregateFunctionsSingleValue, AggregateFunctionAnyData>(name, argument_types);
@@ -468,7 +465,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 
 		return res;
 	}
-	else if (name == "quantileDeterministic")
+	else if (name == "medianDeterministic" || name == "quantileDeterministic")
 	{
 		if (argument_types.size() != 2)
 			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -697,7 +694,6 @@ const AggregateFunctionFactory::FunctionNames & AggregateFunctionFactory::getFun
 {
 	static FunctionNames names
 	{
-		"debug",
 		"count",
 		"any",
 		"anyLast",
@@ -722,6 +718,7 @@ const AggregateFunctionFactory::FunctionNames & AggregateFunctionFactory::getFun
 		"quantileTimingWeighted",
 		"quantilesTimingWeighted",
 		"medianTimingWeighted",
+		"medianDeterministic",
 		"quantileDeterministic",
 		"quantilesDeterministic",
 		"sequenceMatch",

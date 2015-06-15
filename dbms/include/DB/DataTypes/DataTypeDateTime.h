@@ -10,7 +10,7 @@
 namespace DB
 {
 
-class DataTypeDateTime : public IDataTypeNumberFixed<UInt32, ColumnUInt32>
+class DataTypeDateTime final : public IDataTypeNumberFixed<UInt32, ColumnUInt32>
 {
 public:
 	DataTypeDateTime() {}

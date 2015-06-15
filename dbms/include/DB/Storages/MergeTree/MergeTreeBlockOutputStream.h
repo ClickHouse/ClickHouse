@@ -15,7 +15,17 @@ public:
 
 	void writePrefix() override
 	{
-		storage.data.delayInsertIfNeeded();
+		/// Если слишком много кусков - делаем внеочередные мерджи, синхронно, в текущем потоке.
+		/// Почему 10? - на всякий случай, вместо бесконечного цикла.
+		for (size_t i = 0; i < 10; ++i)
+		{
+			size_t parts_count = storage.data.getMaxPartsCountForMonth();
+			if (parts_count <= storage.data.settings.parts_to_delay_insert)
+				break;
+
+			ProfileEvents::increment(ProfileEvents::SynchronousMergeOnInsert);
+			storage.merge(0, true);
+		}
 	}
 
 	void write(const Block & block) override
@@ -26,6 +36,8 @@ public:
 			UInt64 temp_index = storage.increment.get();
 			MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block, temp_index);
 			storage.data.renameTempPartAndAdd(part, &storage.increment);
+
+			/// Инициируем асинхронный мердж - он будет произведён, если пора делать мердж и если в background_pool-е есть место.
 			storage.merge_task_handle->wake();
 		}
 	}
