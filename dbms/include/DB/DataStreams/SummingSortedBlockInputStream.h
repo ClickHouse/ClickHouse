@@ -30,7 +30,7 @@ public:
 	{
 	}
 
-	String getName() const override { return "SummingSortedBlockInputStream"; }
+	String getName() const override { return "SummingSorted"; }
 
 	String getID() const override
 	{
@@ -128,8 +128,10 @@ private:
 	  * все элементы - нулевые.
 	  */
 	template<class TSortCursor>
-	void mergeMaps(Row & row, TSortCursor & cursor)
+	bool mergeMaps(Row & row, TSortCursor & cursor)
 	{
+		auto non_empty_map_present = false;
+
 		/// merge nested maps
 		for (const auto & map : maps_to_sum)
 		{
@@ -235,11 +237,26 @@ private:
 				else
 					break;
 
+			/// discard last row if necessary
+			if (discard_prev)
+				key_array_result.pop_back();
+
 			/// store results into accumulator-row
 			key_array_lhs = std::move(key_array_result);
 			for (const auto val_col_index : ext::range(0, val_count))
+			{
+				/// discard last row if necessary
+				if (discard_prev)
+					val_arrays_result[val_col_index].pop_back();
+
 				row[map.val_col_nums[val_col_index]].get<Array>() = std::move(val_arrays_result[val_col_index]);
+			}
+
+			if (!key_array_lhs.empty())
+				non_empty_map_present = true;
 		}
+
+		return non_empty_map_present;
 	}
 
 	/** Прибавить строчку под курсором к row.
@@ -248,9 +265,7 @@ private:
 	template<class TSortCursor>
 	bool addRow(Row & row, TSortCursor & cursor)
 	{
-		mergeMaps(row, cursor);
-
-		bool res = false;	/// Есть ли хотя бы одно ненулевое число.
+		bool res = mergeMaps(row, cursor);	/// Есть ли хотя бы одно ненулевое число или непустой массив
 
 		for (size_t i = 0, size = column_numbers_to_sum.size(); i < size; ++i)
 		{

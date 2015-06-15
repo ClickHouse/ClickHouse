@@ -1,10 +1,14 @@
 #include <DB/Core/NamesAndTypes.h>
+#include <DB/DataTypes/DataTypeFactory.h>
+
 
 namespace DB
 {
 
-void NamesAndTypesList::readText(ReadBuffer & buf, const DataTypeFactory & data_type_factory)
+void NamesAndTypesList::readText(ReadBuffer & buf)
 {
+	const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
+
 	DB::assertString("columns format version: 1\n", buf);
 	size_t count;
 	DB::readText(count, buf);
@@ -45,11 +49,11 @@ String NamesAndTypesList::toString() const
 	return s;
 }
 
-NamesAndTypesList NamesAndTypesList::parse(const String & s, const DataTypeFactory & data_type_factory)
+NamesAndTypesList NamesAndTypesList::parse(const String & s)
 {
 	ReadBufferFromString in(s);
 	NamesAndTypesList res;
-	res.readText(in, data_type_factory);
+	res.readText(in);
 	assertEOF(in);
 	return res;
 }

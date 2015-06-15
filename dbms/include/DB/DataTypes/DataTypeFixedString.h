@@ -13,7 +13,7 @@ namespace DB
 using Poco::SharedPtr;
 
 
-class DataTypeFixedString : public IDataType
+class DataTypeFixedString final : public IDataType
 {
 private:
 	size_t n;

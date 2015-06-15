@@ -280,8 +280,9 @@ void ExpressionAnalyzer::addStorageAliases()
 	if (!storage)
 		return;
 
+	/// @todo: consider storing default expressions with alias set to avoid cloning
 	for (const auto & alias : storage->alias_columns)
-		aliases[alias.name] = storage->column_defaults[alias.name].expression;
+		(aliases[alias.name] = storage->column_defaults[alias.name].expression->clone())->setAlias(alias.name);
 }
 
 
@@ -768,6 +769,7 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name)
 
 	external_tables[external_table_name] = external_storage;
 	subqueries_for_sets[external_table_name].source = interpreter->execute();
+	subqueries_for_sets[external_table_name].source_sample = interpreter->getSampleBlock();
 	subqueries_for_sets[external_table_name].table = external_storage;
 
 	/** NOTE Если было написано IN tmp_table - существующая временная (но не внешняя) таблица,
@@ -841,6 +843,7 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 		{
 			auto interpreter = interpretSubquery(arg, context, subquery_depth);
 			subquery_for_set.source = new LazyBlockInputStream([interpreter]() mutable { return interpreter->execute(); });
+			subquery_for_set.source_sample = interpreter->getSampleBlock();
 
 			/** Зачем используется LazyBlockInputStream?
 			  *
@@ -919,16 +922,24 @@ void ExpressionAnalyzer::makeExplicitSet(ASTFunction * node, const Block & sampl
 
 	if (ASTFunction * set_func = typeid_cast<ASTFunction *>(&*arg))
 	{
-		if (set_func->name != "tuple")
-			throw Exception("Incorrect type of 2nd argument for function " + node->name + ". Must be subquery or set of values.",
-							ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-		/// Отличм случай (x, y) in ((1, 2), (3, 4)) от случая (x, y) in (1, 2).
-		ASTFunction * any_element = typeid_cast<ASTFunction *>(&*set_func->arguments->children.at(0));
-		if (set_element_types.size() >= 2 && (!any_element || any_element->name != "tuple"))
-			single_value = true;
+		if (set_func->name == "tuple")
+		{
+			/// Отличм случай (x, y) in ((1, 2), (3, 4)) от случая (x, y) in (1, 2).
+			ASTFunction * any_element = typeid_cast<ASTFunction *>(&*set_func->arguments->children.at(0));
+			if (set_element_types.size() >= 2 && (!any_element || any_element->name != "tuple"))
+				single_value = true;
+			else
+				elements_ast = set_func->arguments;
+		}
 		else
-			elements_ast = set_func->arguments;
+		{
+			if (set_element_types.size() >= 2)
+				throw Exception("Incorrect type of 2nd argument for function " + node->name
+					+ ". Must be subquery or set of " + toString(set_element_types.size()) + "-element tuples.",
+					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+			single_value = true;
+		}
 	}
 	else if (typeid_cast<ASTLiteral *>(&*arg))
 	{
@@ -951,7 +962,7 @@ void ExpressionAnalyzer::makeExplicitSet(ASTFunction * node, const Block & sampl
 	ASTPtr ast_set_ptr = ast_set;
 	ast_set->set = new Set(settings.limits);
 	ast_set->is_explicit = true;
-	ast_set->set->createFromAST(set_element_types, elements_ast, create_ordered_set);
+	ast_set->set->createFromAST(set_element_types, elements_ast, context, create_ordered_set);
 	arg = ast_set_ptr;
 }
 
@@ -1079,13 +1090,11 @@ void ExpressionAnalyzer::getArrayJoinedColumns()
 	if (select_query && select_query->array_join_expression_list)
 	{
 		ASTs & array_join_asts = select_query->array_join_expression_list->children;
-		for (size_t i = 0; i < array_join_asts .size(); ++i)
+		for (const auto & ast : array_join_asts)
 		{
-			ASTPtr ast = array_join_asts [i];
-
-			String nested_table_name = ast->getColumnName();
-			String nested_table_alias = ast->getAliasOrColumnName();
-			if (nested_table_alias == nested_table_name && !typeid_cast<ASTIdentifier *>(&*ast))
+			const String nested_table_name = ast->getColumnName();
+			const String nested_table_alias = ast->getAliasOrColumnName();
+			if (nested_table_alias == nested_table_name && !typeid_cast<const ASTIdentifier *>(&*ast))
 				throw Exception("No alias for non-trivial value in ARRAY JOIN: " + nested_table_name, ErrorCodes::ALIAS_REQUIRED);
 
 			if (array_join_alias_to_name.count(nested_table_alias) || aliases.count(nested_table_alias))
@@ -1094,13 +1103,9 @@ void ExpressionAnalyzer::getArrayJoinedColumns()
 		}
 
 		ASTs & query_asts = select_query->children;
-		for (size_t i = 0; i < query_asts.size(); ++i)
-		{
-			ASTPtr ast = query_asts[i];
-			if (select_query && ast == select_query->array_join_expression_list)
-				continue;
-			getArrayJoinedColumnsImpl(ast);
-		}
+		for (const auto & ast : query_asts)
+			if (ast != select_query->array_join_expression_list)
+				getArrayJoinedColumnsImpl(ast);
 
 		/// Если результат ARRAY JOIN не используется, придется все равно по-ARRAY-JOIN-ить какой-нибудь столбец,
 		/// чтобы получить правильное количество строк.
@@ -1590,9 +1595,12 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 		{
 			auto interpreter = interpretSubquery(ast_join.table, context, subquery_depth, required_joined_columns);
 			subquery_for_set.source = new LazyBlockInputStream([interpreter]() mutable { return interpreter->execute(); });
+			subquery_for_set.source_sample = interpreter->getSampleBlock();
 		}
 
+		/// TODO Это не нужно выставлять, когда JOIN нужен только на удалённых серверах.
 		subquery_for_set.join = join;
+		subquery_for_set.join->setSampleBlock(subquery_for_set.source_sample);
 	}
 
 	addJoinAction(step.actions, false);

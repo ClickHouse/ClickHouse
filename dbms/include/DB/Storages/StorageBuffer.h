@@ -48,7 +48,11 @@ public:
 	/** num_shards - уровень внутреннего параллелизма (количество независимых буферов)
 	  * Буфер сбрасывается, если превышены все минимальные пороги или хотя бы один из максимальных.
 	  */
-	static StoragePtr create(const std::string & name_, NamesAndTypesListPtr columns_, Context & context_,
+	static StoragePtr create(const std::string & name_, NamesAndTypesListPtr columns_,
+		const NamesAndTypesList & materialized_columns_,
+		const NamesAndTypesList & alias_columns_,
+		const ColumnDefaults & column_defaults_,
+		Context & context_,
 		size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
 		const String & destination_database_, const String & destination_table_);
 
@@ -113,7 +117,11 @@ private:
 	/// Выполняет сброс данных по таймауту.
 	std::thread flush_thread;
 
-	StorageBuffer(const std::string & name_, NamesAndTypesListPtr columns_, Context & context_,
+	StorageBuffer(const std::string & name_, NamesAndTypesListPtr columns_,
+		const NamesAndTypesList & materialized_columns_,
+		const NamesAndTypesList & alias_columns_,
+		const ColumnDefaults & column_defaults_,
+		Context & context_,
 		size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
 		const String & destination_database_, const String & destination_table_);
 

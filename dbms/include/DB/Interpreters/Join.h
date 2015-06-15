@@ -74,6 +74,11 @@ public:
 
 	bool empty() { return type == Type::EMPTY; }
 
+	/** Передать информацию о структуре блока.
+	  * Следует обязательно вызвать до вызовов insertFromBlock.
+	  */
+	void setSampleBlock(const Block & block);
+
 	/** Добавить в отображение для соединения блок "правой" таблицы.
 	  * Возвращает false, если превышено какое-нибудь ограничение, и больше не нужно вставлять.
 	  */
@@ -217,6 +222,9 @@ private:
 	bool keys_fit_128_bits;
 	Sizes key_sizes;
 
+	Block sample_block_with_columns_to_add;
+	Block sample_block_with_keys;
+
 	Logger * log;
 
 	/// Ограничения на максимальный размер множества
@@ -243,6 +251,9 @@ private:
 
 	/// Проверить не превышены ли допустимые размеры множества
 	bool checkSizeLimits() const;
+
+	/// Кинуть исключение, если в блоках не совпадают типы ключей.
+	void checkTypesOfKeys(const Block & block_left, const Block & block_right) const;
 };
 
 typedef Poco::SharedPtr<Join> JoinPtr;

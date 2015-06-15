@@ -323,22 +323,68 @@ void Join::insertFromBlockImpl(Maps & maps, size_t rows, const ConstColumnPlainP
 }
 
 
-bool Join::insertFromBlock(const Block & block)
+void Join::setSampleBlock(const Block & block)
 {
 	Poco::ScopedWriteRWLock lock(rwlock);
+
+	if (!empty())
+		return;
 
 	size_t keys_size = key_names_right.size();
 	ConstColumnPlainPtrs key_columns(keys_size);
 
-	/// Запоминаем столбцы ключей, с которыми будем работать
 	for (size_t i = 0; i < keys_size; ++i)
 		key_columns[i] = block.getByName(key_names_right[i]).column;
 
-	size_t rows = block.rows();
+	/// Выберем, какую структуру данных для множества использовать.
+	init(chooseMethod(key_columns, keys_fit_128_bits, key_sizes));
+
+	sample_block_with_columns_to_add = block;
+
+	/// Удаляем из sample_block_with_columns_to_add ключевые столбцы.
+	for (const auto & name : key_names_right)
+	{
+		size_t pos = sample_block_with_columns_to_add.getPositionByName(name);
+		sample_block_with_keys.insert(sample_block_with_columns_to_add.unsafeGetByPosition(pos));
+		sample_block_with_columns_to_add.erase(pos);
+	}
+
+	for (size_t i = 0, size = sample_block_with_columns_to_add.columns(); i < size; ++i)
+	{
+		auto & column = sample_block_with_columns_to_add.unsafeGetByPosition(i);
+		if (!column.column)
+			column.column = column.type->createColumn();
+	}
+}
+
+
+bool Join::insertFromBlock(const Block & block)
+{
+	Poco::ScopedWriteRWLock lock(rwlock);
 
 	/// Какую структуру данных для множества использовать?
 	if (empty())
-		init(chooseMethod(key_columns, keys_fit_128_bits, key_sizes));
+		throw Exception("Logical error: Join was not initialized", ErrorCodes::LOGICAL_ERROR);
+
+	size_t keys_size = key_names_right.size();
+	ConstColumnPlainPtrs key_columns(keys_size);
+
+	/// Редкий случай, когда ключи являются константами. Чтобы не поддерживать отдельный код, материализуем их.
+	Columns materialized_columns;
+
+	/// Запоминаем столбцы ключей, с которыми будем работать
+	for (size_t i = 0; i < keys_size; ++i)
+	{
+		key_columns[i] = block.getByName(key_names_right[i]).column;
+
+		if (key_columns[i]->isConst())
+		{
+			materialized_columns.emplace_back(dynamic_cast<const IColumnConst &>(*key_columns[i]).convertToFullColumn());
+			key_columns[i] = materialized_columns.back();
+		}
+	}
+
+	size_t rows = block.rows();
 
 	blocks.push_back(block);
 	Block * stored_block = &blocks.back();
@@ -346,6 +392,14 @@ bool Join::insertFromBlock(const Block & block)
 	/// Удаляем из stored_block ключевые столбцы, так как они не нужны.
 	for (const auto & name : key_names_right)
 		stored_block->erase(stored_block->getPositionByName(name));
+
+	/// Редкий случай, когда соединяемые столбцы являются константами. Чтобы не поддерживать отдельный код, материализуем их.
+	for (size_t i = 0, size = stored_block->columns(); i < size; ++i)
+	{
+		ColumnPtr col = stored_block->getByPosition(i).column;
+		if (col->isConst())
+			stored_block->getByPosition(i).column = dynamic_cast<IColumnConst &>(*col).convertToFullColumn();
+	}
 
 	if (!getFullness(kind))
 	{
@@ -473,26 +527,33 @@ struct Adder<KIND, ASTJoin::All, Map>
 template <ASTJoin::Kind KIND, ASTJoin::Strictness STRICTNESS, typename Maps>
 void Join::joinBlockImpl(Block & block, const Maps & maps) const
 {
-	if (blocks.empty())
-		throw Exception("Attempt to JOIN with empty table", ErrorCodes::EMPTY_DATA_PASSED);
-
 	size_t keys_size = key_names_left.size();
 	ConstColumnPlainPtrs key_columns(keys_size);
 
+	/// Редкий случай, когда ключи являются константами. Чтобы не поддерживать отдельный код, материализуем их.
+	Columns materialized_columns;
+
 	/// Запоминаем столбцы ключей, с которыми будем работать
 	for (size_t i = 0; i < keys_size; ++i)
+	{
 		key_columns[i] = block.getByName(key_names_left[i]).column;
 
+		if (key_columns[i]->isConst())
+		{
+			materialized_columns.emplace_back(dynamic_cast<const IColumnConst &>(*key_columns[i]).convertToFullColumn());
+			key_columns[i] = materialized_columns.back();
+		}
+	}
+
 	/// Добавляем в блок новые столбцы.
-	const Block & first_mapped_block = blocks.front();
-	size_t num_columns_to_add = first_mapped_block.columns();
+	size_t num_columns_to_add = sample_block_with_columns_to_add.columns();
 	ColumnPlainPtrs added_columns(num_columns_to_add);
 
 	size_t existing_columns = block.columns();
 
 	for (size_t i = 0; i < num_columns_to_add; ++i)
 	{
-		const ColumnWithNameAndType & src_column = first_mapped_block.getByPosition(i);
+		const ColumnWithNameAndType & src_column = sample_block_with_columns_to_add.getByPosition(i);
 		ColumnWithNameAndType new_column = src_column.cloneEmpty();
 		block.insert(new_column);
 		added_columns[i] = new_column.column;
@@ -593,9 +654,24 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 }
 
 
+void Join::checkTypesOfKeys(const Block & block_left, const Block & block_right) const
+{
+	size_t keys_size = key_names_left.size();
+
+	for (size_t i = 0; i < keys_size; ++i)
+		if (block_left.getByName(key_names_left[i]).type->getName() != block_right.getByName(key_names_right[i]).type->getName())
+			throw Exception("Type mismatch of columns to JOIN by: "
+				+ key_names_left[i] + " " + block_left.getByName(key_names_left[i]).type->getName() + " at left, "
+				+ key_names_right[i] + " " + block_right.getByName(key_names_right[i]).type->getName() + " at right",
+				ErrorCodes::TYPE_MISMATCH);
+}
+
+
 void Join::joinBlock(Block & block) const
 {
 	Poco::ScopedReadRWLock lock(rwlock);
+
+	checkTypesOfKeys(block, sample_block_with_keys);
 
 	if (kind == ASTJoin::Left && strictness == ASTJoin::Any)
 		joinBlockImpl<ASTJoin::Left, ASTJoin::Any>(block, maps_any);
@@ -630,11 +706,8 @@ void Join::joinTotals(Block & block) const
 	}
 	else
 	{
-		if (blocks.empty())
-			return;
-
 		/// Будем присоединять пустые totals - из одной строчки со значениями по-умолчанию.
-		totals_without_keys = blocks.front().cloneEmpty();
+		totals_without_keys = sample_block_with_columns_to_add.cloneEmpty();
 
 		for (size_t i = 0; i < totals_without_keys.columns(); ++i)
 		{
@@ -691,7 +764,7 @@ public:
 	{
 	}
 
-	String getName() const override { return "NonJoinedBlockInputStream"; }
+	String getName() const override { return "NonJoined"; }
 
 	String getID() const override
 	{
@@ -739,13 +812,12 @@ private:
 		}
 
 		/// Добавляем в блок новые столбцы.
-		const Block & first_mapped_block = parent.blocks.front();
-		size_t num_columns_right = first_mapped_block.columns();
+		size_t num_columns_right = parent.sample_block_with_columns_to_add.columns();
 		ColumnPlainPtrs columns_right(num_columns_right);
 
 		for (size_t i = 0; i < num_columns_right; ++i)
 		{
-			const ColumnWithNameAndType & src_column = first_mapped_block.getByPosition(i);
+			const ColumnWithNameAndType & src_column = parent.sample_block_with_columns_to_add.getByPosition(i);
 			ColumnWithNameAndType new_column = src_column.cloneEmpty();
 			block.insert(new_column);
 			columns_right[i] = new_column.column;

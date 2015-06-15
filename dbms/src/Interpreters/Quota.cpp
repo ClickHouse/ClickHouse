@@ -24,10 +24,11 @@ void QuotaValues::initFromConfig(const String & config_elem, Poco::Util::Abstrac
 }
 
 
-void QuotaForInterval::initFromConfig(const String & config_elem, time_t duration_, Poco::Util::AbstractConfiguration & config)
+void QuotaForInterval::initFromConfig(const String & config_elem, time_t duration_, time_t offset_, Poco::Util::AbstractConfiguration & config)
 {
 	rounded_time = 0;
 	duration = duration_;
+	offset = offset_;
 	max.initFromConfig(config_elem, config);
 }
 
@@ -95,7 +96,7 @@ void QuotaForInterval::updateTime(time_t current_time)
 {
 	if (current_time >= rounded_time + static_cast<int>(duration))
 	{
-		rounded_time = current_time / duration * duration;
+		rounded_time = (current_time - offset) / duration * duration + offset;
 		used.clear();
 	}
 }
@@ -127,7 +128,7 @@ void QuotaForInterval::check(size_t max_amount, size_t used_amount, time_t curre
 }
 
 
-void QuotaForIntervals::initFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config)
+void QuotaForIntervals::initFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config, std::mt19937 & rng)
 {
 	Poco::Util::AbstractConfiguration::Keys config_keys;
 	config.keys(config_elem, config_keys);
@@ -139,8 +140,13 @@ void QuotaForIntervals::initFromConfig(const String & config_elem, Poco::Util::A
 
 		String interval_config_elem = config_elem + "." + *it;
 		time_t duration = config.getInt(interval_config_elem + ".duration");
+		time_t offset = 0;
 
-		cont[duration].initFromConfig(interval_config_elem, duration, config);
+		bool randomize = config.getBool(interval_config_elem + ".randomize", false);
+		if (randomize)
+			offset = std::uniform_int_distribution<decltype(duration)>(0, duration - 1)(rng);
+
+		cont[duration].initFromConfig(interval_config_elem, duration, offset, config);
 	}
 }
 
@@ -210,7 +216,7 @@ String QuotaForIntervals::toString() const
 }
 
 
-void Quota::loadFromConfig(const String & config_elem, const String & name_, Poco::Util::AbstractConfiguration & config)
+void Quota::loadFromConfig(const String & config_elem, const String & name_, Poco::Util::AbstractConfiguration & config, std::mt19937 & rng)
 {
 	name = name_;
 
@@ -226,7 +232,7 @@ void Quota::loadFromConfig(const String & config_elem, const String & name_, Poc
 	}
 
 	QuotaForIntervals new_max(name);
-	new_max.initFromConfig(config_elem, config);
+	new_max.initFromConfig(config_elem, config, rng);
 	if (!(new_max == max))
 	{
 		max = new_max;
@@ -269,6 +275,8 @@ QuotaForIntervalsPtr Quota::get(const String & quota_key, const String & user_na
 
 void Quotas::loadFromConfig(Poco::Util::AbstractConfiguration & config)
 {
+	std::mt19937 rng;
+
 	Poco::Util::AbstractConfiguration::Keys config_keys;
 	config.keys("quotas", config_keys);
 
@@ -286,7 +294,7 @@ void Quotas::loadFromConfig(Poco::Util::AbstractConfiguration & config)
 	{
 		if (!cont[*it])
 			cont[*it] = new Quota();
-		cont[*it]->loadFromConfig("quotas." + *it, *it, config);
+		cont[*it]->loadFromConfig("quotas." + *it, *it, config, rng);
 	}
 }
 

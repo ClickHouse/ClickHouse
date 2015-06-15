@@ -6,6 +6,7 @@
 #include <DB/Storages/MergeTree/MergeTreeDataMerger.h>
 #include <DB/Storages/MergeTree/DiskSpaceMonitor.h>
 #include <DB/Storages/MergeTree/BackgroundProcessingPool.h>
+#include <statdaemons/Increment.h>
 
 
 namespace DB
@@ -107,7 +108,6 @@ private:
 	String database_name;
 	String table_name;
 	String full_path;
-	Increment increment;
 
 	Context & context;
 	BackgroundProcessingPool & background_pool;
@@ -116,6 +116,9 @@ private:
 	MergeTreeDataSelectExecutor reader;
 	MergeTreeDataWriter writer;
 	MergeTreeDataMerger merger;
+
+	/// Для нумерации блоков.
+	SimpleIncrement increment;
 
 	MergeTreeData::DataParts currently_merging;
 	Poco::FastMutex currently_merging_mutex;

@@ -30,7 +30,7 @@ public:
 	{
 	}
 
-	String getName() const override { return "CollapsingSortedBlockInputStream"; }
+	String getName() const override { return "CollapsingSorted"; }
 
 	String getID() const override
 	{

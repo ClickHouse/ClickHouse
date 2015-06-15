@@ -18,7 +18,7 @@ class OneBlockInputStream : public IProfilingBlockInputStream
 public:
 	OneBlockInputStream(const Block & block_) : block(block_) {}
 
-	String getName() const override { return "OneBlockInputStream"; }
+	String getName() const override { return "One"; }
 
 	String getID() const override
 	{

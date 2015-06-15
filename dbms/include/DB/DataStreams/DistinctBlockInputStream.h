@@ -20,7 +20,7 @@ public:
 	/// Пустой columns_ значит все столбцы.
 	DistinctBlockInputStream(BlockInputStreamPtr input_, const Limits & limits, size_t limit_, Names columns_);
 
-	String getName() const override { return "DistinctBlockInputStream"; }
+	String getName() const override { return "Distinct"; }
 
 	String getID() const override
 	{

@@ -20,32 +20,37 @@ const auto max_connections = 16;
 class ClickHouseDictionarySource final : public IDictionarySource
 {
 public:
-	ClickHouseDictionarySource(const Poco::Util::AbstractConfiguration & config,
+	ClickHouseDictionarySource(const DictionaryStructure & dict_struct,
+		const Poco::Util::AbstractConfiguration & config,
 		const std::string & config_prefix,
 		Block & sample_block, Context & context)
-		: host{config.getString(config_prefix + ".host")},
+		: dict_struct{dict_struct},
+		  host{config.getString(config_prefix + ".host")},
 		  port(config.getInt(config_prefix + ".port")),
 		  user{config.getString(config_prefix + ".user", "")},
 		  password{config.getString(config_prefix + ".password", "")},
 		  db{config.getString(config_prefix + ".db", "")},
 		  table{config.getString(config_prefix + ".table")},
+		  where{config.getString(config_prefix + ".where", "")},
 		  sample_block{sample_block}, context(context),
 		  is_local{isLocalAddress({ host, port })},
 		  pool{is_local ? nullptr : std::make_unique<ConnectionPool>(
-			  max_connections, host, port, db, user, password, context.getDataTypeFactory(),
+			  max_connections, host, port, db, user, password,
 			  "ClickHouseDictionarySource")
 		  },
-		  load_all_query{composeLoadAllQuery(sample_block, db, table)}
+		  load_all_query{composeLoadAllQuery()}
 	{}
 
 	/// copy-constructor is provided in order to support cloneability
 	ClickHouseDictionarySource(const ClickHouseDictionarySource & other)
-		: host{other.host}, port{other.port}, user{other.user}, password{other.password},
+		: dict_struct{other.dict_struct},
+		  host{other.host}, port{other.port}, user{other.user}, password{other.password},
 		  db{other.db}, table{other.table},
+		  where{other.where},
 		  sample_block{other.sample_block}, context(other.context),
 		  is_local{other.is_local},
 		  pool{is_local ? nullptr : std::make_unique<ConnectionPool>(
-			  max_connections, host, port, db, user, password, context.getDataTypeFactory(),
+			  max_connections, host, port, db, user, password,
 			  "ClickHouseDictionarySource")},
 		  load_all_query{other.load_all_query}
 	{}
@@ -60,7 +65,7 @@ public:
 		return new RemoteBlockInputStream{pool.get(), load_all_query, nullptr};
 	}
 
-	BlockInputStreamPtr loadIds(const std::vector<std::uint64_t> ids) override
+	BlockInputStreamPtr loadIds(const std::vector<std::uint64_t> & ids) override
 	{
 		const auto query = composeLoadIdsQuery(ids);
 
@@ -74,10 +79,13 @@ public:
 
 	DictionarySourcePtr clone() const override { return std::make_unique<ClickHouseDictionarySource>(*this); }
 
-	std::string toString() const override { return "ClickHouse: " + db + '.' + table; }
+	std::string toString() const override
+	{
+		return "ClickHouse: " + db + '.' + table + (where.empty() ? "" : ", where: " + where);
+	}
 
 private:
-	static std::string composeLoadAllQuery(const Block & block, const std::string & db, const std::string & table)
+	std::string composeLoadAllQuery() const
 	{
 		std::string query;
 
@@ -85,14 +93,19 @@ private:
 			WriteBufferFromString out{query};
 			writeString("SELECT ", out);
 
-			auto first = true;
-			for (const auto idx : ext::range(0, block.columns()))
-			{
-				if (!first)
-					writeString(", ", out);
+			writeProbablyBackQuotedString(dict_struct.id_name, out);
 
-				writeString(block.getByPosition(idx).name, out);
-				first = false;
+			for (const auto & attr : dict_struct.attributes)
+			{
+				writeString(", ", out);
+
+				if (!attr.expression.empty())
+				{
+					writeString(attr.expression, out);
+					writeString(" AS ", out);
+				}
+
+				writeProbablyBackQuotedString(attr.name, out);
 			}
 
 			writeString(" FROM ", out);
@@ -102,6 +115,13 @@ private:
 				writeChar('.', out);
 			}
 			writeProbablyBackQuotedString(table, out);
+
+			if (!where.empty())
+			{
+				writeString(" WHERE ", out);
+				writeString(where, out);
+			}
+
 			writeChar(';', out);
 		}
 
@@ -116,17 +136,21 @@ private:
 			WriteBufferFromString out{query};
 			writeString("SELECT ", out);
 
-			auto first = true;
-			for (const auto idx : ext::range(0, sample_block.columns()))
-			{
-				if (!first)
-					writeString(", ", out);
+			writeProbablyBackQuotedString(dict_struct.id_name, out);
 
-				writeString(sample_block.getByPosition(idx).name, out);
-				first = false;
+			for (const auto & attr : dict_struct.attributes)
+			{
+				writeString(", ", out);
+
+				if (!attr.expression.empty())
+				{
+					writeString(attr.expression, out);
+					writeString(" AS ", out);
+				}
+
+				writeProbablyBackQuotedString(attr.name, out);
 			}
 
-			const auto & id_column_name = sample_block.getByPosition(0).name;
 			writeString(" FROM ", out);
 			if (!db.empty())
 			{
@@ -134,11 +158,19 @@ private:
 				writeChar('.', out);
 			}
 			writeProbablyBackQuotedString(table, out);
+
 			writeString(" WHERE ", out);
-			writeProbablyBackQuotedString(id_column_name, out);
+
+			if (!where.empty())
+			{
+				writeString(where, out);
+				writeString(" AND ", out);
+			}
+
+			writeProbablyBackQuotedString(dict_struct.id_name, out);
 			writeString(" IN (", out);
 
-			first = true;
+			auto first = true;
 			for (const auto id : ids)
 			{
 				if (!first)
@@ -154,12 +186,14 @@ private:
 		return query;
 	}
 
+	const DictionaryStructure dict_struct;
 	const std::string host;
 	const UInt16 port;
 	const std::string user;
 	const std::string password;
 	const std::string db;
 	const std::string table;
+	const std::string where;
 	Block sample_block;
 	Context & context;
 	const bool is_local;

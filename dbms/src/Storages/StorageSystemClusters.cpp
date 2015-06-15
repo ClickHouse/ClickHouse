@@ -62,8 +62,8 @@ BlockInputStreams StorageSystemClusters::read(
 		replica_num_column->insert(static_cast<UInt64>(address.replica_num));
 
 		host_name_column->insert(address.host_name);
-		host_address_column->insert(address.host_port.host().toString());
-		port_column->insert(static_cast<UInt64>(address.host_port.port()));
+		host_address_column->insert(address.resolved_address.host().toString());
+		port_column->insert(static_cast<UInt64>(address.port));
 		user_column->insert(address.user);
 	};
 

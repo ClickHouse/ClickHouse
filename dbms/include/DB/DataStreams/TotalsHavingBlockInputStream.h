@@ -28,7 +28,7 @@ public:
 		children.push_back(input_);
 	}
 
-	String getName() const override { return "TotalsHavingBlockInputStream"; }
+	String getName() const override { return "TotalsHaving"; }
 
 	String getID() const override
 	{

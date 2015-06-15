@@ -128,13 +128,13 @@ private:
 public:
 	Field left;				/// левая граница, если есть
 	Field right;			/// правая граница, если есть
-	bool left_bounded;		/// ограничен ли слева
-	bool right_bounded; 	/// ограничен ли справа
-	bool left_included; 	/// включает левую границу, если есть
-	bool right_included;	/// включает правую границу, если есть
+	bool left_bounded = false;		/// ограничен ли слева
+	bool right_bounded = false; 	/// ограничен ли справа
+	bool left_included = false; 	/// включает левую границу, если есть
+	bool right_included = false;	/// включает правую границу, если есть
 
 	/// Всё множество.
-	Range() : left(), right(), left_bounded(false), right_bounded(false), left_included(false), right_included(false) {}
+	Range() {}
 
 	/// Одна точка.
 	Range(const Field & point) : left(point), right(point), left_bounded(true), right_bounded(true), left_included(true), right_included(true) {}

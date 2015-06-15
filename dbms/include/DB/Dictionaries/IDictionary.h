@@ -24,6 +24,8 @@ class IDictionary
 public:
 	using id_t = std::uint64_t;
 
+	virtual std::exception_ptr getCreationException() const = 0;
+
 	virtual std::string getName() const = 0;
 
 	virtual std::string getTypeName() const = 0;

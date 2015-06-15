@@ -65,7 +65,7 @@ Block MergeSortingBlockInputStream::readImpl()
 			/// Сформируем сортированные потоки для слияния.
 			for (const auto & file : temporary_files)
 			{
-				temporary_inputs.emplace_back(new TemporaryFileStream(file->path(), data_type_factory));
+				temporary_inputs.emplace_back(new TemporaryFileStream(file->path()));
 				inputs_to_merge.emplace_back(temporary_inputs.back()->block_in);
 			}
 

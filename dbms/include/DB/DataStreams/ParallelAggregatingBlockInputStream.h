@@ -34,7 +34,7 @@ public:
 		children.insert(children.end(), inputs.begin(), inputs.end());
 	}
 
-	String getName() const override { return "ParallelAggregatingBlockInputStream"; }
+	String getName() const override { return "ParallelAggregating"; }
 
 	String getID() const override
 	{

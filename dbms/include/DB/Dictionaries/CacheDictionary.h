@@ -42,6 +42,8 @@ public:
 		: CacheDictionary{other.name, other.dict_struct, other.source_ptr->clone(), other.dict_lifetime, other.size}
 	{}
 
+	std::exception_ptr getCreationException() const override { return {}; }
+
 	std::string getName() const override { return name; }
 
 	std::string getTypeName() const override { return "Cache"; }

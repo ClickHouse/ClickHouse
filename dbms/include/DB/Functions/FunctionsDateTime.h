@@ -17,8 +17,8 @@ namespace DB
 /** Функции работы с датой и временем.
   *
   * toYear, toMonth, toDayOfMonth, toDayOfWeek, toHour, toMinute, toSecond,
-  * toMonday, toStartOfMonth, toStartOfYear, toStartOfMinute, toStartOfHour
-  * toTime,
+  * toMonday, toStartOfMonth, toStartOfYear, toStartOfMinute, toStartOfFiveMinute
+  * toStartOfHour, toTime,
   * now
   * TODO: makeDate, makeDateTime
   *
@@ -138,6 +138,15 @@ struct ToStartOfMinuteImpl
 	static inline UInt32 execute(UInt16 d, DateLUT & date_lut)
 	{
 		throw Exception("Illegal type Date of argument for function toStartOfMinute", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+	}
+};
+
+struct ToStartOfFiveMinuteImpl
+{
+	static inline UInt32 execute(UInt32 t, DateLUT & date_lut) { return date_lut.toStartOfFiveMinuteInaccurate(t); }
+	static inline UInt32 execute(UInt16 d, DateLUT & date_lut)
+	{
+		throw Exception("Illegal type Date of argument for function toStartOfFiveMinute", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
 };
 
@@ -597,6 +606,7 @@ struct NameToStartOfMonth		{ static constexpr auto name = "toStartOfMonth"; };
 struct NameToStartOfQuarter		{ static constexpr auto name = "toStartOfQuarter"; };
 struct NameToStartOfYear		{ static constexpr auto name = "toStartOfYear"; };
 struct NameToStartOfMinute		{ static constexpr auto name = "toStartOfMinute"; };
+struct NameToStartOfFiveMinute	{ static constexpr auto name = "toStartOfFiveMinute"; };
 struct NameToStartOfHour		{ static constexpr auto name = "toStartOfHour"; };
 struct NameToTime	 			{ static constexpr auto name = "toTime"; };
 struct NameToRelativeYearNum	{ static constexpr auto name = "toRelativeYearNum"; };
@@ -620,6 +630,7 @@ typedef FunctionDateOrDateTimeToSomething<DataTypeDate,		ToStartOfMonthImpl, Nam
 typedef FunctionDateOrDateTimeToSomething<DataTypeDate,	ToStartOfQuarterImpl, 	NameToStartOfQuarter> 	FunctionToStartOfQuarter;
 typedef FunctionDateOrDateTimeToSomething<DataTypeDate,		ToStartOfYearImpl, 	NameToStartOfYear> 	FunctionToStartOfYear;
 typedef FunctionDateOrDateTimeToSomething<DataTypeDateTime,	ToStartOfMinuteImpl, NameToStartOfMinute> FunctionToStartOfMinute;
+typedef FunctionDateOrDateTimeToSomething<DataTypeDateTime,	ToStartOfFiveMinuteImpl, NameToStartOfFiveMinute> FunctionToStartOfFiveMinute;
 typedef FunctionDateOrDateTimeToSomething<DataTypeDateTime,	ToStartOfHourImpl, 	NameToStartOfHour> 	FunctionToStartOfHour;
 typedef FunctionDateOrDateTimeToSomething<DataTypeDateTime,	ToTimeImpl, 		NameToTime> 		FunctionToTime;
 

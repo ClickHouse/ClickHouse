@@ -20,7 +20,7 @@ VerticalRowOutputStream::VerticalRowOutputStream(WriteBuffer & ostr_, const Bloc
 	typedef std::vector<size_t> Widths_t;
 	Widths_t name_widths(columns);
 	size_t max_name_width = 0;
-	
+
 	for (size_t i = 0; i < columns; ++i)
 	{
 		data_types[i] = sample.getByPosition(i).type;
@@ -41,7 +41,7 @@ void VerticalRowOutputStream::writeField(const Field & field)
 	writeEscapedString(names[field_number], ostr);
 	writeCString(": ", ostr);
 	writeString(pads[field_number], ostr);
-	
+
 	data_types[field_number]->serializeTextEscaped(field, ostr);
 
 	writeChar('\n', ostr);

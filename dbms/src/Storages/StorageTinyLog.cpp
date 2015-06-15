@@ -42,7 +42,7 @@ public:
 	TinyLogBlockInputStream(size_t block_size_, const Names & column_names_, StorageTinyLog & storage_, size_t max_read_buffer_size_)
 		: block_size(block_size_), column_names(column_names_), storage(storage_), max_read_buffer_size(max_read_buffer_size_) {}
 
-	String getName() const { return "TinyLogBlockInputStream"; }
+	String getName() const { return "TinyLog"; }
 
 	String getID() const;
 

@@ -28,7 +28,7 @@ public:
 		children.push_back(input);
 	}
 
-	String getName() const override { return "CreatingSetsBlockInputStream"; }
+	String getName() const override { return "CreatingSets"; }
 
 	String getID() const override
 	{

@@ -130,6 +130,12 @@ BlockInputStreams StorageMerge::read(
 
 	std::multiset<String> values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_table");
 
+	/** На всякий случай отключаем оптимизацию "перенос в PREWHERE",
+	  * так как нет уверенности, что она работает, когда одна из таблиц MergeTree, а другая - нет.
+	  */
+	Settings modified_settings = settings;
+	modified_settings.optimize_move_to_prewhere = false;
+
 	for (size_t i = 0, size = selected_tables.size(); i < size; ++i)
 	{
 		StoragePtr table = selected_tables[i];
@@ -150,7 +156,7 @@ BlockInputStreams StorageMerge::read(
 			real_column_names,
 			modified_query_ast,
 			context,
-			settings,
+			modified_settings,
 			tmp_processed_stage,
 			max_block_size,
 			size > threads ? 1 : (threads / size));

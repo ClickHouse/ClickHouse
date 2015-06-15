@@ -13,7 +13,7 @@ using Poco::SharedPtr;
 /** Тип - состояние агрегатной функции.
   * Параметры типа - это агрегатная функция, типы её аргументов и её параметры (для параметрических агрегатных функций).
   */
-class DataTypeAggregateFunction : public IDataType
+class DataTypeAggregateFunction final : public IDataType
 {
 private:
 	AggregateFunctionPtr function;

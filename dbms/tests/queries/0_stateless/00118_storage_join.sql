@@ -1,6 +1,6 @@
 DROP TABLE IF EXISTS test.join;
 
-CREATE TABLE test.join (k UInt8, s String) ENGINE = Join(ANY, LEFT, k);
+CREATE TABLE test.join (k UInt64, s String) ENGINE = Join(ANY, LEFT, k);
 
 USE test;
 

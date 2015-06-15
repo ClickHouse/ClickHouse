@@ -61,7 +61,7 @@ public:
 	}
 
 
-	String getName() const override { return "RemoteBlockInputStream"; }
+	String getName() const override { return "Remote"; }
 
 
 	String getID() const override

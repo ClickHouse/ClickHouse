@@ -2,13 +2,13 @@
 
 #include <map>
 #include <DB/Interpreters/Settings.h>
-#include <DB/DataTypes/DataTypeFactory.h>
 #include <DB/Client/ConnectionPool.h>
 #include <DB/Client/ConnectionPoolWithFailover.h>
 #include <Poco/Net/SocketAddress.h>
 
 namespace DB
 {
+
 /// Cluster содержит пулы соединений до каждого из узлов
 /// С локальными узлами соединение не устанавливается, а выполяется запрос напрямую.
 /// Поэтому храним только количество локальных узлов
@@ -16,10 +16,10 @@ namespace DB
 class Cluster : private boost::noncopyable
 {
 public:
-	Cluster(const Settings & settings, const DataTypeFactory & data_type_factory, const String & cluster_name);
+	Cluster(const Settings & settings, const String & cluster_name);
 
 	/// Построить кластер по именам шардов и реплик. Локальные обрабатываются так же как удаленные.
-	Cluster(const Settings & settings, const DataTypeFactory & data_type_factory, std::vector<std::vector<String>> names,
+	Cluster(const Settings & settings, std::vector<std::vector<String>> names,
 			const String & username, const String & password);
 
 	/// количество узлов clickhouse сервера, расположенных локально
@@ -62,8 +62,9 @@ public:
 		*	</replica>
 		* </shard>
 		*/
-		Poco::Net::SocketAddress host_port;
+		Poco::Net::SocketAddress resolved_address;
 		String host_name;
+		UInt16 port;
 		String user;
 		String password;
 		UInt32 replica_num;
@@ -98,8 +99,7 @@ struct Clusters
 	typedef std::map<String, Cluster> Impl;
 	Impl impl;
 
-	Clusters(const Settings & settings, const DataTypeFactory & data_type_factory,
-			 const String & config_name = "remote_servers");
+	Clusters(const Settings & settings, const String & config_name = "remote_servers");
 };
 
 }

@@ -25,7 +25,7 @@ public:
 		children.push_back(input_);
 	}
 
-	String getName() const override { return "AddingConstColumnBlockInputStream"; }
+	String getName() const override { return "AddingConstColumn"; }
 
 	String getID() const override
 	{

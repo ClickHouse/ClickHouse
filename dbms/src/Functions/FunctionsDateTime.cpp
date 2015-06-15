@@ -18,6 +18,7 @@ void registerFunctionsDateTime(FunctionFactory & factory)
 	factory.registerFunction<FunctionToStartOfQuarter>();
 	factory.registerFunction<FunctionToStartOfYear>();
 	factory.registerFunction<FunctionToStartOfMinute>();
+	factory.registerFunction<FunctionToStartOfFiveMinute>();
 	factory.registerFunction<FunctionToStartOfHour>();
 	factory.registerFunction<FunctionToRelativeYearNum>();
 	factory.registerFunction<FunctionToRelativeMonthNum>();
