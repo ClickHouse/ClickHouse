@@ -283,7 +283,7 @@ public:
 	  * node - это список значений: 1, 2, 3 или список tuple-ов: (1, 2), (3, 4), (5, 6).
 	  * create_ordered_set - создавать ли вектор упорядоченных элементов. Нужен для работы индекса
 	  */
-	void createFromAST(DataTypes & types, ASTPtr node, bool create_ordered_set);
+	void createFromAST(DataTypes & types, ASTPtr node, const Context & context, bool create_ordered_set);
 
 	// Возвращает false, если превышено какое-нибудь ограничение, и больше не нужно вставлять.
 	bool insertFromBlock(const Block & block, bool create_ordered_set = false);

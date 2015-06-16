@@ -138,6 +138,7 @@ public:
 		{
 			ColumnWithNameAndType col;
 			col.column = elems[i]->createColumn();
+			col.type = elems[i]->clone();
 			tuple_block.insert(col);
 		}
 		return new ColumnTuple(tuple_block);
