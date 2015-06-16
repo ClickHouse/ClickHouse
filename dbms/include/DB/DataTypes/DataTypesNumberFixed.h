@@ -13,11 +13,11 @@ template <typename T>
 struct DataTypeFromFieldType;
 
 #define DEFINE_DATA_TYPE_NUMBER_FIXED(TYPE) 										\
-	class DataType ## TYPE : public IDataTypeNumberFixed<TYPE, Column ## TYPE>		\
+	class DataType ## TYPE final : public IDataTypeNumberFixed<TYPE, Column ## TYPE>	\
 	{																				\
 	public:																			\
 		std::string getName() const { return #TYPE; }								\
-		DataTypePtr clone() const { return new DataType ## TYPE; }			\
+		DataTypePtr clone() const { return new DataType ## TYPE; }					\
 	};																				\
 																					\
 	template <> struct DataTypeFromFieldType<TYPE>									\

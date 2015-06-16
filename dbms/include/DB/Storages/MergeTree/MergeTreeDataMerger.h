@@ -49,7 +49,7 @@ public:
 		DiskSpaceMonitor::Reservation * disk_reservation = nullptr);
 
 	/// Примерное количество места на диске, нужное для мерджа. С запасом.
-	size_t estimateDiskSpaceForMerge(const MergeTreeData::DataPartsVector & parts);
+	static size_t estimateDiskSpaceForMerge(const MergeTreeData::DataPartsVector & parts);
 
 	/** Отменяет все мерджи. Все выполняющиеся сейчас вызовы mergeParts скоро бросят исключение.
 	  * Все новые вызовы будут бросать исключения, пока не будет вызван uncancelAll().

@@ -9,7 +9,7 @@ namespace DB
 /** Тип данных, соответствующий множеству значений в секции IN.
   * Используется только как промежуточный вариант при вычислении выражений.
   */
-class DataTypeSet : public IDataTypeDummy
+class DataTypeSet final : public IDataTypeDummy
 {
 public:
 	std::string getName() const { return "Set"; }

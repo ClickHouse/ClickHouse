@@ -6,6 +6,7 @@
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 #include <DB/IO/WriteHelpers.h>
+#include <DB/Common/formatReadable.h>
 
 namespace DB
 {
@@ -116,8 +117,8 @@ public:
 	{
 		size_t free_bytes = getUnreservedFreeSpace(path);
 		if (free_bytes < size)
-			throw Exception("Not enough free disk space to reserve: " + toString(free_bytes) + " available, "
-				+ toString(size) + " requested", ErrorCodes::NOT_ENOUGH_SPACE);
+			throw Exception("Not enough free disk space to reserve: " + formatReadableSizeWithBinarySuffix(free_bytes) + " available, "
+				+ formatReadableSizeWithBinarySuffix(size) + " requested", ErrorCodes::NOT_ENOUGH_SPACE);
 		return new Reservation(size);
 	}
 

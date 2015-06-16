@@ -1,23 +1,23 @@
 #pragma once
 
+#include <DB/Dictionaries/IDictionary.h>
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 #include <Yandex/MultiVersion.h>
 #include <Yandex/logger_useful.h>
 #include <Poco/Event.h>
+#include <unistd.h>
 #include <time.h>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
 #include <chrono>
 #include <random>
-#include <unistd.h>
 
 namespace DB
 {
 
 class Context;
-class IDictionary;
 
 /** Manages user-defined dictionaries.
 *	Monitors configuration file and automatically reloads dictionaries in a separate thread.
@@ -50,8 +50,16 @@ private:
 		std::exception_ptr exception;
 	};
 
+	struct failed_dictionary_info final
+	{
+		std::unique_ptr<IDictionary> dict;
+		std::chrono::system_clock::time_point next_attempt_time;
+		std::uint64_t error_count;
+	};
+
 	std::unordered_map<std::string, dictionary_info> dictionaries;
 	std::unordered_map<std::string, std::chrono::system_clock::time_point> update_times;
+	std::unordered_map<std::string, failed_dictionary_info> failed_dictionaries;
 	std::mt19937_64 rnd_engine{getSeed()};
 
 	Context & context;
@@ -81,7 +89,7 @@ private:
 	{
 		timespec ts;
 		clock_gettime(CLOCK_MONOTONIC, &ts);
-		return ts.tv_nsec ^ getpid();
+		return static_cast<std::uint64_t>(ts.tv_nsec ^ getpid());
 	}
 
 public:

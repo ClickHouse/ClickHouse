@@ -9,7 +9,7 @@ namespace DB
 /**
   * Лямбда-выражение.
   */
-class DataTypeExpression : public IDataTypeDummy
+class DataTypeExpression final : public IDataTypeDummy
 {
 private:
 	DataTypes argument_types;

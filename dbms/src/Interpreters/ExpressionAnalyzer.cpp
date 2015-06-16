@@ -922,16 +922,24 @@ void ExpressionAnalyzer::makeExplicitSet(ASTFunction * node, const Block & sampl
 
 	if (ASTFunction * set_func = typeid_cast<ASTFunction *>(&*arg))
 	{
-		if (set_func->name != "tuple")
-			throw Exception("Incorrect type of 2nd argument for function " + node->name + ". Must be subquery or set of values.",
-							ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-		/// Отличм случай (x, y) in ((1, 2), (3, 4)) от случая (x, y) in (1, 2).
-		ASTFunction * any_element = typeid_cast<ASTFunction *>(&*set_func->arguments->children.at(0));
-		if (set_element_types.size() >= 2 && (!any_element || any_element->name != "tuple"))
-			single_value = true;
+		if (set_func->name == "tuple")
+		{
+			/// Отличм случай (x, y) in ((1, 2), (3, 4)) от случая (x, y) in (1, 2).
+			ASTFunction * any_element = typeid_cast<ASTFunction *>(&*set_func->arguments->children.at(0));
+			if (set_element_types.size() >= 2 && (!any_element || any_element->name != "tuple"))
+				single_value = true;
+			else
+				elements_ast = set_func->arguments;
+		}
 		else
-			elements_ast = set_func->arguments;
+		{
+			if (set_element_types.size() >= 2)
+				throw Exception("Incorrect type of 2nd argument for function " + node->name
+					+ ". Must be subquery or set of " + toString(set_element_types.size()) + "-element tuples.",
+					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+			single_value = true;
+		}
 	}
 	else if (typeid_cast<ASTLiteral *>(&*arg))
 	{
@@ -954,7 +962,7 @@ void ExpressionAnalyzer::makeExplicitSet(ASTFunction * node, const Block & sampl
 	ASTPtr ast_set_ptr = ast_set;
 	ast_set->set = new Set(settings.limits);
 	ast_set->is_explicit = true;
-	ast_set->set->createFromAST(set_element_types, elements_ast, create_ordered_set);
+	ast_set->set->createFromAST(set_element_types, elements_ast, context, create_ordered_set);
 	arg = ast_set_ptr;
 }
 

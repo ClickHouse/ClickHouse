@@ -12,7 +12,6 @@ InterpreterCheckQuery::InterpreterCheckQuery(DB::ASTPtr query_ptr_, DB::Context&
 
 BlockInputStreamPtr InterpreterCheckQuery::execute()
 {
-	/// @TODO
 	ASTCheckQuery & alter = typeid_cast<ASTCheckQuery &>(*query_ptr);
 	String & table_name = alter.table;
 	String database_name = alter.database.empty() ? context.getCurrentDatabase() : alter.database;
