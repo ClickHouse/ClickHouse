@@ -22,7 +22,7 @@ public:
 		children.push_back(input_);
 	}
 
-	String getName() const override { return "NullAndDoCopyBlockInputStream"; }
+	String getName() const override { return "NullAndDoCopy"; }
 
 	String getID() const override
 	{

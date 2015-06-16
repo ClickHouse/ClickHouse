@@ -52,9 +52,6 @@ void BlockStreamProfileInfo::update(Block & block)
 	++blocks;
 	rows += block.rowsInFirstColumn();
 	bytes += block.bytes();
-
-	if (column_names.empty())
-		column_names = block.dumpNames();
 }
 
 

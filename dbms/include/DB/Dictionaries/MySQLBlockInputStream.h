@@ -90,7 +90,7 @@ public:
 		}
 	}
 
-	String getName() const override { return "MySQLBlockInputStream"; }
+	String getName() const override { return "MySQL"; }
 
 	String getID() const override
 	{

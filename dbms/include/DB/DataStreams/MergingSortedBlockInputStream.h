@@ -26,7 +26,7 @@ public:
 		children.insert(children.end(), inputs_.begin(), inputs_.end());
 	}
 
-	String getName() const override { return "MergingSortedBlockInputStream"; }
+	String getName() const override { return "MergingSorted"; }
 
 	String getID() const override
 	{

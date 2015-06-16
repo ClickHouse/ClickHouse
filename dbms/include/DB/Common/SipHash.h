@@ -76,6 +76,7 @@ public:
 		v3 = 0x7465646279746573ULL ^ k1;
 
 		cnt = 0;
+		current_word = 0;
 	}
 
 	void update(const char * data, u64 size)

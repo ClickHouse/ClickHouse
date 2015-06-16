@@ -20,10 +20,6 @@ void registerFunctionsString(FunctionFactory & factory)
 	factory.registerFunction<FunctionSubstring>();
 	factory.registerFunction<FunctionSubstringUTF8>();
 	factory.registerFunction<FunctionAppendTrailingCharIfAbsent>();
-	factory.registerFunction<FunctionSSELower>();
-	factory.registerFunction<FunctionSSEUpper>();
-	factory.registerFunction<FunctionSSELowerUTF8>();
-	factory.registerFunction<FunctionSSEUpperUTF8>();
 }
 
 }

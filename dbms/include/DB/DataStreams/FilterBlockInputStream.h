@@ -22,7 +22,7 @@ public:
 	FilterBlockInputStream(BlockInputStreamPtr input_, ssize_t filter_column_);
 	FilterBlockInputStream(BlockInputStreamPtr input_, const String & filter_column_name_);
 
-	String getName() const override { return "FilterBlockInputStream"; }
+	String getName() const override { return "Filter"; }
 
 	String getID() const override
 	{

@@ -211,6 +211,20 @@ void formatAST(const ASTSelectQuery 		& ast, std::ostream & s, size_t indent, bo
 		formatAST(*ast.limit_length, s, indent, hilite, one_line);
 	}
 
+	if (ast.settings)
+	{
+		s << (hilite ? hilite_keyword : "") << nl_or_ws << indent_str << "SETTINGS " << (hilite ? hilite_none : "");
+
+		const ASTSetQuery & ast_set = typeid_cast<const ASTSetQuery &>(*ast.settings);
+		for (ASTSetQuery::Changes::const_iterator it = ast_set.changes.begin(); it != ast_set.changes.end(); ++it)
+		{
+			if (it != ast_set.changes.begin())
+				s << ", ";
+
+			s << it->name << " = " << apply_visitor(FieldVisitorToString(), it->value);
+		}
+	}
+
 	if (ast.format)
 	{
 		s << (hilite ? hilite_keyword : "") << nl_or_ws << indent_str << "FORMAT " << (hilite ? hilite_none : "");

@@ -46,7 +46,7 @@ public:
 		: block_size(block_size_), column_names(column_names_), storage(storage_),
 		mark_number(mark_number_), rows_limit(rows_limit_), current_mark(mark_number_), max_read_buffer_size(max_read_buffer_size_) {}
 
-	String getName() const { return "LogBlockInputStream"; }
+	String getName() const { return "Log"; }
 
 	String getID() const
 	{

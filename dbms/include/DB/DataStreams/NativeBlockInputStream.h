@@ -18,7 +18,7 @@ public:
 	NativeBlockInputStream(ReadBuffer & istr_, UInt64 server_revision_ = 0)
 		: istr(istr_), server_revision(server_revision_) {}
 
-	String getName() const override { return "NativeBlockInputStream"; }
+	String getName() const override { return "Native"; }
 
 	String getID() const override
 	{

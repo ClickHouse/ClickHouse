@@ -23,7 +23,7 @@ public:
 
 	~CollapsingFinalBlockInputStream();
 
-	String getName() const override { return "CollapsingFinalBlockInputStream"; }
+	String getName() const override { return "CollapsingFinal"; }
 
 	String getID() const override
 	{

@@ -32,7 +32,7 @@ public:
 		children.push_back(input_);
 	}
 
-	String getName() const override { return "AggregatingBlockInputStream"; }
+	String getName() const override { return "Aggregating"; }
 
 	String getID() const override
 	{

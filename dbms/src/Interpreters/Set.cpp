@@ -12,10 +12,15 @@
 #include <DB/Parsers/ASTLiteral.h>
 
 #include <DB/Interpreters/Set.h>
+#include <DB/Interpreters/ExpressionAnalyzer.h>
+#include <DB/Interpreters/ExpressionActions.h>
+
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
+#include <DB/DataTypes/DataTypeDate.h>
+#include <DB/DataTypes/DataTypeDateTime.h>
 
 
 namespace DB
@@ -231,7 +236,7 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
   */
 static Field convertToType(const Field & src, const IDataType & type)
 {
-	if (type.behavesAsNumber())
+	if (type.isNumeric())
 	{
 		bool is_uint8 	= false;
 		bool is_uint16 	= false;
@@ -243,6 +248,8 @@ static Field convertToType(const Field & src, const IDataType & type)
 		bool is_int64 	= false;
 		bool is_float32 = false;
 		bool is_float64 = false;
+		bool is_date	= false;
+		bool is_datetime = false;
 
 		false
 			|| (is_uint8 	= typeid_cast<const DataTypeUInt8 *		>(&type))
@@ -254,15 +261,18 @@ static Field convertToType(const Field & src, const IDataType & type)
 			|| (is_int32 	= typeid_cast<const DataTypeInt32 *		>(&type))
 			|| (is_int64 	= typeid_cast<const DataTypeInt64 *		>(&type))
 			|| (is_float32 	= typeid_cast<const DataTypeFloat32 *	>(&type))
-			|| (is_float64 	= typeid_cast<const DataTypeFloat64 *	>(&type));
+			|| (is_float64 	= typeid_cast<const DataTypeFloat64 *	>(&type))
+			|| (is_date 	= typeid_cast<const DataTypeDate *		>(&type))
+			|| (is_datetime	= typeid_cast<const DataTypeDateTime *	>(&type))
+			;
 
 		if (is_uint8 || is_uint16 || is_uint32 || is_uint64)
 		{
 			if (src.getType() == Field::Types::Int64)
-				throw Exception("Type mismatch in IN section: " + type.getName() + " at left, signed literal at right");
+				throw Exception("Type mismatch in IN section: " + type.getName() + " at left, signed at right");
 
 			if (src.getType() == Field::Types::Float64)
-				throw Exception("Type mismatch in IN section: " + type.getName() + " at left, floating point literal at right");
+				throw Exception("Type mismatch in IN section: " + type.getName() + " at left, floating point at right");
 
 			if (src.getType() == Field::Types::UInt64)
 			{
@@ -276,12 +286,12 @@ static Field convertToType(const Field & src, const IDataType & type)
 			}
 
 			throw Exception("Type mismatch in IN section: " + type.getName() + " at left, "
-				+ Field::Types::toString(src.getType()) + " literal at right");
+				+ Field::Types::toString(src.getType()) + " at right");
 		}
 		else if (is_int8 || is_int16 || is_int32 || is_int64)
 		{
 			if (src.getType() == Field::Types::Float64)
-				throw Exception("Type mismatch in IN section: " + type.getName() + " at left, floating point literal at right");
+				throw Exception("Type mismatch in IN section: " + type.getName() + " at left, floating point at right");
 
 			if (src.getType() == Field::Types::UInt64)
 			{
@@ -308,7 +318,7 @@ static Field convertToType(const Field & src, const IDataType & type)
 			}
 
 			throw Exception("Type mismatch in IN section: " + type.getName() + " at left, "
-				+ Field::Types::toString(src.getType()) + " literal at right");
+				+ Field::Types::toString(src.getType()) + " at right");
 		}
 		else if (is_float32 || is_float64)
 		{
@@ -322,24 +332,77 @@ static Field convertToType(const Field & src, const IDataType & type)
 				return src;
 
 			throw Exception("Type mismatch in IN section: " + type.getName() + " at left, "
-				+ Field::Types::toString(src.getType()) + " literal at right");
+				+ Field::Types::toString(src.getType()) + " at right");
+		}
+		else if (is_date || is_datetime)
+		{
+			if (src.getType() != Field::Types::UInt64)
+				throw Exception("Type mismatch in IN section: " + type.getName() + " at left, "
+					+ Field::Types::toString(src.getType()) + " at right");
+
+			return src;
 		}
 	}
+	else
+	{
+		if (src.getType() == Field::Types::UInt64
+			|| src.getType() == Field::Types::Int64
+			|| src.getType() == Field::Types::Float64
+			|| src.getType() == Field::Types::Null
+			|| (src.getType() == Field::Types::String
+				&& !typeid_cast<const DataTypeString *>(&type)
+				&& !typeid_cast<const DataTypeFixedString *>(&type))
+			|| (src.getType() == Field::Types::Array
+				&& !typeid_cast<const DataTypeArray *>(&type)))
+			throw Exception("Type mismatch in IN section: " + type.getName() + " at left, "
+				+ Field::Types::toString(src.getType()) + " at right");
+	}
 
-	/// В остальных случаях, приведение типа не осуществляется.
 	return src;
 }
 
 
-void Set::createFromAST(DataTypes & types, ASTPtr node, bool create_ordered_set)
+/** Выполнить константное выражение (для элемента множества в IN). Весьма неоптимально. */
+static Field evaluateConstantExpression(ASTPtr & node, const Context & context)
 {
-	/** NOTE:
-	  * На данный момент в секции IN не поддерживаются выражения (вызовы функций), кроме кортежей.
-	  * То есть, например, не поддерживаются массивы. А по хорошему, хотелось бы поддерживать.
-	  * Для этого можно сделать constant folding с помощью ExpressionAnalyzer/ExpressionActions.
-	  * Но при этом, конечно же, не забыть про производительность работы с крупными множествами.
-	  */
+	ExpressionActionsPtr expr_for_constant_folding = ExpressionAnalyzer(
+		node, context, NamesAndTypesList{{ "_dummy", new DataTypeUInt8 }}).getConstActions();
 
+	/// В блоке должен быть хотя бы один столбец, чтобы у него было известно число строк.
+	Block block_with_constants{{ new ColumnConstUInt8(1, 0), new DataTypeUInt8, "_dummy" }};
+
+	expr_for_constant_folding->execute(block_with_constants);
+
+	if (!block_with_constants || block_with_constants.rows() == 0)
+		throw Exception("Logical error: empty block after evaluation constant expression for IN", ErrorCodes::LOGICAL_ERROR);
+
+	String name = node->getColumnName();
+
+	if (!block_with_constants.has(name))
+		throw Exception("Element of set in IN is not a constant expression: " + name, ErrorCodes::BAD_ARGUMENTS);
+
+	const IColumn & result_column = *block_with_constants.getByName(name).column;
+
+	if (!result_column.isConst())
+		throw Exception("Element of set in IN is not a constant expression: " + name, ErrorCodes::BAD_ARGUMENTS);
+
+	return result_column[0];
+}
+
+
+static Field extractValueFromNode(ASTPtr & node, const IDataType & type, const Context & context)
+{
+	if (ASTLiteral * lit = typeid_cast<ASTLiteral *>(node.get()))
+		return convertToType(lit->value, type);
+	else if (typeid_cast<ASTFunction *>(node.get()))
+		return convertToType(evaluateConstantExpression(node, context), type);
+	else
+		throw Exception("Incorrect element of set. Must be literal or constant expression.", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
+}
+
+
+void Set::createFromAST(DataTypes & types, ASTPtr node, const Context & context, bool create_ordered_set)
+{
 	data_types = types;
 
 	/// Засунем множество в блок.
@@ -359,10 +422,7 @@ void Set::createFromAST(DataTypes & types, ASTPtr node, bool create_ordered_set)
 	{
 		if (data_types.size() == 1)
 		{
-			if (ASTLiteral * lit = typeid_cast<ASTLiteral *>(&**it))
-				block.getByPosition(0).column->insert(convertToType(lit->value, *data_types[0]));
-			else
-				throw Exception("Incorrect element of set. Must be literal.", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
+			block.getByPosition(0).column->insert(extractValueFromNode(*it, *data_types[0], context));
 		}
 		else if (ASTFunction * func = typeid_cast<ASTFunction *>(&**it))
 		{
@@ -375,16 +435,11 @@ void Set::createFromAST(DataTypes & types, ASTPtr node, bool create_ordered_set)
 
 			for (size_t j = 0; j < tuple_size; ++j)
 			{
-				if (ASTLiteral * lit = typeid_cast<ASTLiteral *>(&*func->arguments->children[j]))
-					block.getByPosition(j).column->insert(convertToType(lit->value, *data_types[j]));
-				else
-					throw Exception("Incorrect element of tuple in set. Must be literal.", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
+				block.getByPosition(j).column->insert(extractValueFromNode(func->arguments->children[j], *data_types[j], context));
 			}
 		}
 		else
 			throw Exception("Incorrect element of set", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
-
-		/// NOTE: Потом можно реализовать возможность задавать константные выражения в множествах.
 	}
 
 	if (create_ordered_set)

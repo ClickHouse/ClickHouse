@@ -18,7 +18,7 @@ public:
 	LazyBlockInputStream(Generator generator_)
 		: generator(generator_) {}
 
-	String getName() const override { return "LazyBlockInputStream"; }
+	String getName() const override { return "Lazy"; }
 
 	String getID() const override
 	{

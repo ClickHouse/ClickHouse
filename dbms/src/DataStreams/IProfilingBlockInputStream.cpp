@@ -19,7 +19,7 @@ Block IProfilingBlockInputStream::read()
 	if (!info.started)
 	{
 		info.total_stopwatch.start();
-		info.stream_name = getShortName();
+		info.stream_name = getName();
 
 		for (const auto & child : children)
 			if (const IProfilingBlockInputStream * p_child = dynamic_cast<const IProfilingBlockInputStream *>(&*child))
@@ -43,7 +43,7 @@ Block IProfilingBlockInputStream::read()
 		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
 
 		std::cerr << std::endl;
-		std::cerr << "[ " << Poco::ThreadNumber::get() << " ]\t" << getShortName() << std::endl;
+		std::cerr << "[ " << Poco::ThreadNumber::get() << " ]\t" << getName() << std::endl;
 		std::cerr << "[ " << Poco::ThreadNumber::get() << " ]\t";
 
 		for (size_t i = 0; i < res.columns(); ++i)

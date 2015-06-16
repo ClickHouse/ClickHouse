@@ -26,7 +26,7 @@ public:
 	{
 	}
 
-	String getName() const override { return "AggregatingSortedBlockInputStream"; }
+	String getName() const override { return "AggregatingSorted"; }
 
 	String getID() const override
 	{

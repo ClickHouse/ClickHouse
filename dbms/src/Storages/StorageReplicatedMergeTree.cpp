@@ -14,6 +14,7 @@
 #include <DB/Parsers/ASTInsertQuery.h>
 #include <DB/DataStreams/AddingConstColumnBlockInputStream.h>
 #include <DB/Common/Macros.h>
+#include <DB/Common/formatReadable.h>
 #include <Poco/DirectoryIterator.h>
 #include <time.h>
 
@@ -860,12 +861,15 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 				}
 			}
 
+			size_t sum_parts_size_in_bytes = MergeTreeDataMerger::estimateDiskSpaceForMerge(parts);
+			DiskSpaceMonitor::ReservationPtr reserved_space = DiskSpaceMonitor::reserve(full_path, sum_parts_size_in_bytes); /// Может бросить исключение.
+
 			auto table_lock = lockStructure(false);
 
 			const auto & merge_entry = context.getMergeList().insert(database_name, table_name, entry.new_part_name);
 			MergeTreeData::Transaction transaction;
 			size_t aio_threshold = context.getSettings().min_bytes_to_use_direct_io;
-			MergeTreeData::DataPartPtr part = merger.mergeParts(parts, entry.new_part_name, *merge_entry, aio_threshold, &transaction);
+			MergeTreeData::DataPartPtr part = merger.mergeParts(parts, entry.new_part_name, *merge_entry, aio_threshold, &transaction, reserved_space);
 
 			zkutil::Ops ops;
 			checkPartAndAddToZooKeeper(part, ops);
@@ -1360,8 +1364,10 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 
 				String merged_name;
 
-				if (   !merger.selectPartsToMerge(parts, merged_name, MergeTreeDataMerger::NO_LIMIT, false, false, only_small, can_merge)
-					&& !merger.selectPartsToMerge(parts, merged_name, MergeTreeDataMerger::NO_LIMIT, true, false, only_small, can_merge))
+				size_t disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
+
+				if (   !merger.selectPartsToMerge(parts, merged_name, disk_space, false, false, only_small, can_merge)
+					&& !merger.selectPartsToMerge(parts, merged_name, disk_space, true, false, only_small, can_merge))
 				{
 					break;
 				}

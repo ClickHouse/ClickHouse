@@ -112,6 +112,7 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, Pos end, ASTP
 {
 	bool first = true;
 	ParserWhiteSpaceOrComments ws;
+	Pos begin = pos;
 
 	while (1)
 	{
@@ -129,7 +130,6 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, Pos end, ASTP
 			ws.ignore(pos, end);
 
 			/// пробуем найти какой-нибудь из допустимых операторов
-			Pos begin = pos;
 
 			const char ** it;
 			for (it = operators; *it; it += 2)

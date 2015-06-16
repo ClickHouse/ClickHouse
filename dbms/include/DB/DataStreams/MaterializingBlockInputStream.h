@@ -18,7 +18,7 @@ public:
 		children.push_back(input_);
 	}
 
-	String getName() const override { return "MaterializingBlockInputStream"; }
+	String getName() const override { return "Materializing"; }
 
 	String getID() const override
 	{

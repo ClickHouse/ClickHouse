@@ -10,7 +10,7 @@
 namespace DB
 {
 
-class DataTypeDate : public IDataTypeNumberFixed<UInt16, ColumnUInt16>
+class DataTypeDate final : public IDataTypeNumberFixed<UInt16, ColumnUInt16>
 {
 public:
 	DataTypeDate() {}
