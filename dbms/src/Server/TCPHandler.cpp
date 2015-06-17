@@ -568,10 +568,6 @@ void TCPHandler::receiveQuery()
 	state.compression = Protocol::Compression::Enum(compression);
 
 	readStringBinary(state.query, *in);
-
-	LOG_DEBUG(log, "Query ID: " << state.query_id);
-	LOG_DEBUG(log, "Query: " << state.query);
-	LOG_DEBUG(log, "Requested stage: " << QueryProcessingStage::toString(stage));
 }
 
 

@@ -24,6 +24,14 @@ static void checkLimits(const IAST & ast, const Limits & limits)
 }
 
 
+static void logQuery(const String & query, const Context & context)
+{
+	String logged_query = query;
+	std::replace(logged_query.begin(), logged_query.end(), '\n', ' ');
+	LOG_DEBUG(&Logger::get("executeQuery"), "(from " << context.getIPAddress().toString() << ") " << logged_query);
+}
+
+
 void executeQuery(
 	ReadBuffer & istr,
 	WriteBuffer & ostr,
@@ -73,9 +81,7 @@ void executeQuery(
 
 	String query(begin, query_size);
 
-	String logged_query = query;
-	std::replace(logged_query.begin(), logged_query.end(), '\n', ' ');
-	LOG_DEBUG(&Logger::get("executeQuery"), logged_query);
+	logQuery(query, context);
 
 	/// Положим запрос в список процессов. Но запрос SHOW PROCESSLIST класть не будем.
 	ProcessList::EntryPtr process_list_entry;
@@ -123,6 +129,8 @@ BlockIO executeQuery(
 
 	ParserQuery parser;
 	ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "");
+
+	logQuery(query, context);
 
 	/// Проверка ограничений.
 	checkLimits(*ast, context.getSettingsRef().limits);
