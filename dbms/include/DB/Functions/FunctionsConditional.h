@@ -295,10 +295,9 @@ struct NumArrayIfImpl
 		to_offsets[i] = to_prev_offset;
 	}
 
-	template <typename FromT>
 	static ALWAYS_INLINE void copy_from_constant(
 		size_t i,
-		const PODArray<FromT> & from_data,
+		const PODArray<ResultType> & from_data,
 		PODArray<ResultType> & to_data, ColumnArray::Offsets_t & to_offsets, ColumnArray::Offset_t & to_prev_offset)
 	{
 		size_t size_to_write = from_data.size();
@@ -361,7 +360,7 @@ struct NumArrayIfImpl
 		ColumnArray::Offsets_t * c_offsets = nullptr;
 		create_result_column(block, result, &c_data, &c_offsets);
 
-		PODArray<B> b_converted(b.size());
+		PODArray<ResultType> b_converted(b.size());
 		for (size_t i = 0, size = b.size(); i < size; ++i)
 			b_converted[i] = b[i].get<typename NearestFieldType<B>::Type>();
 
@@ -393,7 +392,7 @@ struct NumArrayIfImpl
 		ColumnArray::Offsets_t * c_offsets = nullptr;
 		create_result_column(block, result, &c_data, &c_offsets);
 
-		PODArray<A> a_converted(a.size());
+		PODArray<ResultType> a_converted(a.size());
 		for (size_t i = 0, size = a.size(); i < size; ++i)
 			a_converted[i] = a[i].get<typename NearestFieldType<A>::Type>();
 
@@ -424,11 +423,11 @@ struct NumArrayIfImpl
 		ColumnArray::Offsets_t * c_offsets = nullptr;
 		create_result_column(block, result, &c_data, &c_offsets);
 
-		PODArray<A> a_converted(a.size());
+		PODArray<ResultType> a_converted(a.size());
 		for (size_t i = 0, size = a.size(); i < size; ++i)
 			a_converted[i] = a[i].get<typename NearestFieldType<A>::Type>();
 
-		PODArray<B> b_converted(b.size());
+		PODArray<ResultType> b_converted(b.size());
 		for (size_t i = 0, size = b.size(); i < size; ++i)
 			b_converted[i] = b[i].get<typename NearestFieldType<B>::Type>();
 
@@ -627,14 +626,10 @@ private:
 
 		if (col_right_array)
 		{
-			std::cerr << "col_right_array\n";
-
 			const ColumnVector<T1> * col_right_vec = typeid_cast<const ColumnVector<T1> *>(&col_right_array->getData());
 
 			if (!col_right_vec)
 				return false;
-
-			std::cerr << "!\n";
 
 			NumArrayIfImpl<T0, T1, ResultType>::vector_vector(
 				cond_col->getData(),
@@ -644,7 +639,9 @@ private:
 		}
 		else
 		{
-			std::cerr << "col_right_const_array\n";
+			if (!typeid_cast<const typename DataTypeFromFieldType<T1>::Type *>(
+				typeid_cast<const DataTypeArray &>(*col_right_const_array->getDataType()).getNestedType().get()))
+				return false;
 
 			NumArrayIfImpl<T0, T1, ResultType>::vector_constant(
 				cond_col->getData(),
@@ -676,14 +673,10 @@ private:
 
 		if (col_right_array)
 		{
-			std::cerr << "col_right_array\n";
-
 			const ColumnVector<T1> * col_right_vec = typeid_cast<const ColumnVector<T1> *>(&col_right_array->getData());
 
 			if (!col_right_vec)
 				return false;
-
-			std::cerr << "!\n";
 
 			NumArrayIfImpl<T0, T1, ResultType>::constant_vector(
 				cond_col->getData(),
@@ -693,7 +686,9 @@ private:
 		}
 		else
 		{
-			std::cerr << "col_right_const_array\n";
+			if (!typeid_cast<const typename DataTypeFromFieldType<T1>::Type *>(
+				typeid_cast<const DataTypeArray &>(*col_right_const_array->getDataType()).getNestedType().get()))
+				return false;
 
 			NumArrayIfImpl<T0, T1, ResultType>::constant_constant(
 				cond_col->getData(),
@@ -713,6 +708,7 @@ private:
 		const ColumnVector<T0> * col_left = nullptr;
 		const ColumnConst<T0> * col_const_left = nullptr;
 		const ColumnArray * col_arr_left = nullptr;
+		const ColumnVector<T0> * col_arr_left_elems = nullptr;
 		const ColumnConstArray * col_const_arr_left = nullptr;
 
 		col_left = typeid_cast<const ColumnVector<T0> *>(col_left_untyped);
@@ -724,7 +720,7 @@ private:
 				col_arr_left = typeid_cast<const ColumnArray *>(col_left_untyped);
 
 				if (col_arr_left)
-					col_left = typeid_cast<const ColumnVector<T0> *>(&col_arr_left->getData());
+					col_arr_left_elems = typeid_cast<const ColumnVector<T0> *>(&col_arr_left->getData());
 				else
 					col_const_arr_left = typeid_cast<const ColumnConstArray *>(col_left_untyped);
 			}
@@ -766,30 +762,28 @@ private:
 					+ " of third argument of function " + getName(),
 					ErrorCodes::ILLEGAL_COLUMN);
 		}
-		else if (col_arr_left && col_left)
+		else if (col_arr_left && col_arr_left_elems)
 		{
-			std::cerr << "col_arr_left\n";
-
-			if (	executeRightTypeArray<T0, UInt8>(cond_col, block, arguments, result, col_arr_left, col_left)
-				||	executeRightTypeArray<T0, UInt16>(cond_col, block, arguments, result, col_arr_left, col_left)
-				||	executeRightTypeArray<T0, UInt32>(cond_col, block, arguments, result, col_arr_left, col_left)
-				||	executeRightTypeArray<T0, UInt64>(cond_col, block, arguments, result, col_arr_left, col_left)
-				||	executeRightTypeArray<T0, Int8>(cond_col, block, arguments, result, col_arr_left, col_left)
-				||	executeRightTypeArray<T0, Int16>(cond_col, block, arguments, result, col_arr_left, col_left)
-				||	executeRightTypeArray<T0, Int32>(cond_col, block, arguments, result, col_arr_left, col_left)
-				||	executeRightTypeArray<T0, Int64>(cond_col, block, arguments, result, col_arr_left, col_left)
-				||	executeRightTypeArray<T0, Float32>(cond_col, block, arguments, result, col_arr_left, col_left)
-				||	executeRightTypeArray<T0, Float64>(cond_col, block, arguments, result, col_arr_left, col_left))
+			if (	executeRightTypeArray<T0, UInt8>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems)
+				||	executeRightTypeArray<T0, UInt16>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems)
+				||	executeRightTypeArray<T0, UInt32>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems)
+				||	executeRightTypeArray<T0, UInt64>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems)
+				||	executeRightTypeArray<T0, Int8>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems)
+				||	executeRightTypeArray<T0, Int16>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems)
+				||	executeRightTypeArray<T0, Int32>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems)
+				||	executeRightTypeArray<T0, Int64>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems)
+				||	executeRightTypeArray<T0, Float32>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems)
+				||	executeRightTypeArray<T0, Float64>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems))
 				return true;
 			else
 				throw Exception("Illegal column " + block.getByPosition(arguments[2]).column->getName()
 					+ " of third argument of function " + getName(),
 					ErrorCodes::ILLEGAL_COLUMN);
 		}
-		else if (col_const_arr_left)
+		else if (col_const_arr_left
+			&& typeid_cast<const typename DataTypeFromFieldType<T0>::Type *>(
+				typeid_cast<const DataTypeArray &>(*col_const_arr_left->getDataType()).getNestedType().get()))
 		{
-			std::cerr << "col_const_arr_left\n";
-
 			if (	executeConstRightTypeArray<T0, UInt8>(cond_col, block, arguments, result, col_const_arr_left)
 				||	executeConstRightTypeArray<T0, UInt16>(cond_col, block, arguments, result, col_const_arr_left)
 				||	executeConstRightTypeArray<T0, UInt32>(cond_col, block, arguments, result, col_const_arr_left)
