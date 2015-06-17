@@ -100,7 +100,7 @@ private:
 	// Переименовать столбцы каждого запроса цепочки UNION ALL в такие же имена, как в первом запросе.
 	void renameColumns();
 
-	/** Из какой таблицы читать. JOIN-ы не поддерживаются.
+	/** Из какой таблицы читать. При JOIN, возвращается "левая" таблицы.
 	 */
 	void getDatabaseAndTableNames(String & database_name, String & table_name);
 
