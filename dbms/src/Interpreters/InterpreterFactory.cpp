@@ -24,7 +24,6 @@
 #include <DB/Interpreters/InterpreterExistsQuery.h>
 #include <DB/Interpreters/InterpreterDescribeQuery.h>
 #include <DB/Interpreters/InterpreterShowCreateQuery.h>
-#include <DB/Interpreters/InterpreterQuery.h>
 #include <DB/Interpreters/InterpreterAlterQuery.h>
 #include <DB/Interpreters/InterpreterShowProcesslistQuery.h>
 #include <DB/Interpreters/InterpreterCheckQuery.h>
