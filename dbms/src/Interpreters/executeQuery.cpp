@@ -66,7 +66,8 @@ static std::tuple<ASTPtr, ProcessList::EntryPtr> prepareQuery(
 
 	String query(begin, query_size);
 
-	logQuery(query, context);
+	if (!internal)
+		logQuery(query, context);
 
 	/// Проверка ограничений.
 	checkLimits(*ast, context.getSettingsRef().limits);
