@@ -80,6 +80,8 @@ void InterpreterCreateQuery::executeImpl(bool assume_metadata_exists)
 
 		if (!create.if_not_exists || !context.isDatabaseExist(database_name))
 			context.addDatabase(database_name);
+
+		return;
 	}
 
 	SharedPtr<InterpreterSelectQuery> interpreter_select;
