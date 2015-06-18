@@ -24,7 +24,7 @@ BlockIO InterpreterCheckQuery::execute()
 
 	BlockIO res;
 	res.in = new OneBlockInputStream(result);
-	res.in_sample = result;
+	res.in_sample = result.cloneEmpty();
 
 	return res;
 }
