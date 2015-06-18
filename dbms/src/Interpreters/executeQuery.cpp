@@ -32,6 +32,62 @@ static void logQuery(const String & query, const Context & context)
 }
 
 
+/** Распарсить запрос. Записать его в лог вместе с IP адресом клиента.
+  * Проверить ограничения. Записать запрос в ProcessList.
+  */
+static std::tuple<ASTPtr, ProcessList::EntryPtr> prepareQuery(
+	IParser::Pos begin, IParser::Pos end, Context & context, bool internal)
+{
+	ProfileEvents::increment(ProfileEvents::Query);
+
+	ParserQuery parser;
+	ASTPtr ast;
+	size_t query_size;
+	size_t max_query_size = context.getSettingsRef().max_query_size;
+
+	try
+	{
+		ast = parseQuery(parser, begin, end, "");
+
+		/// Засунем запрос в строку. Она выводится в лог и в processlist. Если запрос INSERT, то не будем включать данные для вставки.
+		query_size = ast->range.second - ast->range.first;
+
+		if (max_query_size && query_size > max_query_size)
+			throw Exception("Query is too large (" + toString(query_size) + ")."
+				" max_query_size = " + toString(max_query_size), ErrorCodes::QUERY_IS_TOO_LARGE);
+	}
+	catch (...)
+	{
+		/// Всё равно логгируем запрос.
+		logQuery(String(begin, begin + std::min(end - begin, static_cast<ptrdiff_t>(max_query_size))), context);
+
+		throw;
+	}
+
+	String query(begin, query_size);
+
+	logQuery(query, context);
+
+	/// Проверка ограничений.
+	checkLimits(*ast, context.getSettingsRef().limits);
+
+	/// Положим запрос в список процессов. Но запрос SHOW PROCESSLIST класть не будем.
+	ProcessList::EntryPtr process_list_entry;
+	if (!internal && nullptr == typeid_cast<const ASTShowProcesslistQuery *>(&*ast))
+	{
+		process_list_entry = context.getProcessList().insert(
+			query, context.getUser(), context.getCurrentQueryId(), context.getIPAddress(),
+			context.getSettingsRef().limits.max_memory_usage,
+			context.getSettingsRef().queue_max_wait_ms.totalMilliseconds(),
+			context.getSettingsRef().replace_running_query);
+
+		context.setProcessListElement(&process_list_entry->get());
+	}
+
+	return std::make_tuple(ast, process_list_entry);
+}
+
+
 void executeQuery(
 	ReadBuffer & istr,
 	WriteBuffer & ostr,
@@ -40,10 +96,6 @@ void executeQuery(
 	bool internal,
 	QueryProcessingStage::Enum stage)
 {
-	ProfileEvents::increment(ProfileEvents::Query);
-
-	ParserQuery parser;
-
 	PODArray<char> parse_buf;
 	const char * begin;
 	const char * end;
@@ -52,7 +104,7 @@ void executeQuery(
 	if (istr.buffer().size() == 0)
 		istr.next();
 
-	size_t max_query_size = context.getSettings().max_query_size;
+	size_t max_query_size = context.getSettingsRef().max_query_size;
 
 	if (istr.buffer().end() - istr.position() >= static_cast<ssize_t>(max_query_size))
 	{
@@ -70,34 +122,10 @@ void executeQuery(
 		end = begin + parse_buf.size();
 	}
 
-	ASTPtr ast = parseQuery(parser, begin, end, "");
-
-	/// Засунем запрос в строку. Она выводится в лог и в processlist. Если запрос INSERT, то не будем включать данные для вставки.
-	size_t query_size = ast->range.second - ast->range.first;
-
-	if (query_size > max_query_size)
-		throw Exception("Query is too large (" + toString(query_size) + ")."
-			" max_query_size = " + toString(max_query_size), ErrorCodes::QUERY_IS_TOO_LARGE);
-
-	String query(begin, query_size);
-
-	logQuery(query, context);
-
-	/// Положим запрос в список процессов. Но запрос SHOW PROCESSLIST класть не будем.
+	ASTPtr ast;
 	ProcessList::EntryPtr process_list_entry;
-	if (!internal && nullptr == typeid_cast<const ASTShowProcesslistQuery *>(&*ast))
-	{
-		process_list_entry = context.getProcessList().insert(
-			query, context.getUser(), context.getCurrentQueryId(), context.getIPAddress(),
-			context.getSettingsRef().limits.max_memory_usage,
-			context.getSettingsRef().queue_max_wait_ms.totalMilliseconds(),
-			context.getSettingsRef().replace_running_query);
 
-		context.setProcessListElement(&process_list_entry->get());
-	}
-
-	/// Проверка ограничений.
-	checkLimits(*ast, context.getSettingsRef().limits);
+	std::tie(ast, process_list_entry) = prepareQuery(begin, end, context, internal);
 
 	QuotaForIntervals & quota = context.getQuota();
 	time_t current_time = time(0);
@@ -125,15 +153,10 @@ BlockIO executeQuery(
 	bool internal,
 	QueryProcessingStage::Enum stage)
 {
-	ProfileEvents::increment(ProfileEvents::Query);
+	ASTPtr ast;
+	ProcessList::EntryPtr process_list_entry;
 
-	ParserQuery parser;
-	ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "");
-
-	logQuery(query, context);
-
-	/// Проверка ограничений.
-	checkLimits(*ast, context.getSettingsRef().limits);
+	std::tie(ast, process_list_entry) = prepareQuery(query.data(), query.data() + query.size(), context, internal);
 
 	QuotaForIntervals & quota = context.getQuota();
 	time_t current_time = time(0);
@@ -141,19 +164,6 @@ BlockIO executeQuery(
 	quota.checkExceeded(current_time);
 
 	BlockIO res;
-
-	/// Положим запрос в список процессов. Но запрос SHOW PROCESSLIST класть не будем.
-	ProcessList::EntryPtr process_list_entry;
-	if (!internal && nullptr == typeid_cast<const ASTShowProcesslistQuery *>(&*ast))
-	{
-		process_list_entry = context.getProcessList().insert(
-			query, context.getUser(), context.getCurrentQueryId(), context.getIPAddress(),
-			context.getSettingsRef().limits.max_memory_usage,
-			context.getSettingsRef().queue_max_wait_ms.totalMilliseconds(),
-			context.getSettingsRef().replace_running_query);
-
-		context.setProcessListElement(&process_list_entry->get());
-	}
 
 	try
 	{
