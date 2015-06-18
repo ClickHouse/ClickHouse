@@ -181,7 +181,7 @@ void executeQuery(
 		if (format.empty())
 			format = "Values";
 
-		/// Данные могут содержаться в распарсенной (query.data) и ещё не распарсенной (remaining_data_istr) части запроса.
+		/// Данные могут содержаться в распарсенной (ast_insert_query.data) и ещё не распарсенной (istr) части запроса.
 
 		ConcatReadBuffer::ReadBuffers buffers;
 		ReadBuffer buf1(const_cast<char *>(ast_insert_query->data), ast_insert_query->data ? ast_insert_query->end - ast_insert_query->data : 0, 0);
@@ -190,7 +190,7 @@ void executeQuery(
 			buffers.push_back(&buf1);
 		buffers.push_back(&istr);
 
-		/** NOTE Нельзя читать из istr до того, как прочтём всё между query.data и query.end.
+		/** NOTE Нельзя читать из istr до того, как прочтём всё между ast_insert_query.data и ast_insert_query.end.
 		  * - потому что query.data может ссылаться на кусок памяти, использующийся в качестве буфера в istr.
 		  */
 
