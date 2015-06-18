@@ -2,6 +2,7 @@
 
 #include <DB/Parsers/ASTSetQuery.h>
 #include <DB/Interpreters/Context.h>
+#include <DB/Interpreters/IInterpreter.h>
 
 
 namespace DB
@@ -10,20 +11,20 @@ namespace DB
 
 /** Установить один или несколько параметров, для сессии или глобально... или для текущего запроса.
   */
-class InterpreterSetQuery
+class InterpreterSetQuery : public IInterpreter
 {
 public:
 	InterpreterSetQuery(ASTPtr query_ptr_, Context & context_)
 		: query_ptr(query_ptr_), context(context_) {}
 
-
 	/** Обычный запрос SET. Задать настройку на сессию или глобальную (если указано GLOBAL).
 	  */
-	void execute()
+	BlockIO execute() override
 	{
 		ASTSetQuery & ast = typeid_cast<ASTSetQuery &>(*query_ptr);
 		Context & target = ast.global ? context.getGlobalContext() : context.getSessionContext();
 		executeImpl(ast, target);
+		return {};
 	}
 
 	/** Задать настроку для текущего контекста (контекста запроса).

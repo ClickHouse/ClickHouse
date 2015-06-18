@@ -1,13 +1,19 @@
 #include <DB/Common/ProfileEvents.h>
 
-#include <DB/Parsers/formatAST.h>
+#include <DB/IO/ConcatReadBuffer.h>
 
 #include <DB/DataStreams/BlockIO.h>
+#include <DB/DataStreams/FormatFactory.h>
+#include <DB/DataStreams/copyData.h>
+
 #include <DB/Parsers/ASTInsertQuery.h>
 #include <DB/Parsers/ASTShowProcesslistQuery.h>
+#include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ParserQuery.h>
 #include <DB/Parsers/parseQuery.h>
+
 #include <DB/Interpreters/Quota.h>
+#include <DB/Interpreters/InterpreterFactory.h>
 #include <DB/Interpreters/executeQuery.h>
 
 
@@ -32,11 +38,12 @@ static void logQuery(const String & query, const Context & context)
 }
 
 
-/** Распарсить запрос. Записать его в лог вместе с IP адресом клиента.
-  * Проверить ограничения. Записать запрос в ProcessList.
-  */
-static std::tuple<ASTPtr, ProcessList::EntryPtr> prepareQuery(
-	IParser::Pos begin, IParser::Pos end, Context & context, bool internal)
+static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
+	IParser::Pos begin,
+	IParser::Pos end,
+	Context & context,
+	bool internal,
+	QueryProcessingStage::Enum stage)
 {
 	ProfileEvents::increment(ProfileEvents::Query);
 
@@ -72,6 +79,11 @@ static std::tuple<ASTPtr, ProcessList::EntryPtr> prepareQuery(
 	/// Проверка ограничений.
 	checkLimits(*ast, context.getSettingsRef().limits);
 
+	QuotaForIntervals & quota = context.getQuota();
+	time_t current_time = time(0);
+
+	quota.checkExceeded(current_time);
+
 	/// Положим запрос в список процессов. Но запрос SHOW PROCESSLIST класть не будем.
 	ProcessList::EntryPtr process_list_entry;
 	if (!internal && nullptr == typeid_cast<const ASTShowProcesslistQuery *>(&*ast))
@@ -85,7 +97,37 @@ static std::tuple<ASTPtr, ProcessList::EntryPtr> prepareQuery(
 		context.setProcessListElement(&process_list_entry->get());
 	}
 
-	return std::make_tuple(ast, process_list_entry);
+	BlockIO res;
+
+	try
+	{
+		auto interpreter = InterpreterFactory::get(ast, context, stage);
+		res = interpreter->execute();
+
+		/// Держим элемент списка процессов до конца обработки запроса.
+		res.process_list_entry = process_list_entry;
+	}
+	catch (...)
+	{
+		quota.addError(current_time);
+		throw;
+	}
+
+	quota.addQuery(current_time);
+
+	return std::make_tuple(ast, res);
+}
+
+
+BlockIO executeQuery(
+	const String & query,
+	Context & context,
+	bool internal,
+	QueryProcessingStage::Enum stage)
+{
+	BlockIO streams;
+	std::tie(std::ignore, streams) = executeQueryImpl(query.data(), query.data() + query.size(), context, internal, stage);
+	return streams;
 }
 
 
@@ -124,65 +166,55 @@ void executeQuery(
 	}
 
 	ASTPtr ast;
-	ProcessList::EntryPtr process_list_entry;
+	BlockIO streams;
 
-	std::tie(ast, process_list_entry) = prepareQuery(begin, end, context, internal);
+	std::tie(ast, streams) = executeQueryImpl(begin, end, context, internal, stage);
 
-	QuotaForIntervals & quota = context.getQuota();
-	time_t current_time = time(0);
-
-	quota.checkExceeded(current_time);
-
-	try
+	if (streams.out)
 	{
-		InterpreterQuery interpreter(ast, context, stage);
-		interpreter.execute(ostr, &istr, query_plan);
-	}
-	catch (...)
-	{
-		quota.addError(current_time);
-		throw;
+		const ASTInsertQuery * ast_insert_query = dynamic_cast<const ASTInsertQuery *>(ast.get());
+
+		if (!ast_insert_query)
+			throw Exception("Logical error: query requires data to insert, but it is not INSERT query", ErrorCodes::LOGICAL_ERROR);
+
+		String format = ast_insert_query->format;
+		if (format.empty())
+			format = "Values";
+
+		/// Данные могут содержаться в распарсенной (query.data) и ещё не распарсенной (remaining_data_istr) части запроса.
+
+		ConcatReadBuffer::ReadBuffers buffers;
+		ReadBuffer buf1(const_cast<char *>(ast_insert_query->data), ast_insert_query->data ? ast_insert_query->end - ast_insert_query->data : 0, 0);
+
+		if (ast_insert_query->data)
+			buffers.push_back(&buf1);
+		buffers.push_back(&istr);
+
+		/** NOTE Нельзя читать из istr до того, как прочтём всё между query.data и query.end.
+		  * - потому что query.data может ссылаться на кусок памяти, использующийся в качестве буфера в istr.
+		  */
+
+		ConcatReadBuffer data_istr(buffers);
+
+		BlockInputStreamPtr in{
+			context.getFormatFactory().getInput(
+				format, data_istr, streams.out_sample, context.getSettings().max_insert_block_size)};
+
+		copyData(*in, *streams.out);
 	}
 
-	quota.addQuery(current_time);
+	if (streams.in)
+	{
+		const ASTQueryWithOutput * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
+
+		String format_name = ast_query_with_output && ast_query_with_output->format
+			? typeid_cast<const ASTIdentifier &>(*ast_query_with_output->format).name
+			: context.getDefaultFormat();
+
+		BlockOutputStreamPtr out = context.getFormatFactory().getOutput(format_name, ostr, streams.in_sample);
+
+		copyData(*streams.in, *out);
+	}
 }
-
-
-BlockIO executeQuery(
-	const String & query,
-	Context & context,
-	bool internal,
-	QueryProcessingStage::Enum stage)
-{
-	ASTPtr ast;
-	ProcessList::EntryPtr process_list_entry;
-
-	std::tie(ast, process_list_entry) = prepareQuery(query.data(), query.data() + query.size(), context, internal);
-
-	QuotaForIntervals & quota = context.getQuota();
-	time_t current_time = time(0);
-
-	quota.checkExceeded(current_time);
-
-	BlockIO res;
-
-	try
-	{
-		InterpreterQuery interpreter(ast, context, stage);
-		res = interpreter.execute();
-
-		/// Держим элемент списка процессов до конца обработки запроса.
-		res.process_list_entry = process_list_entry;
-	}
-	catch (...)
-	{
-		quota.addError(current_time);
-		throw;
-	}
-
-	quota.addQuery(current_time);
-	return res;
-}
-
 
 }
