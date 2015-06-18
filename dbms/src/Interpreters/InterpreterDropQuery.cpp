@@ -16,7 +16,7 @@ InterpreterDropQuery::InterpreterDropQuery(ASTPtr query_ptr_, Context & context_
 }
 
 
-void InterpreterDropQuery::execute()
+BlockIO InterpreterDropQuery::execute()
 {
 	String path = context.getPath();
 	String current_database = context.getCurrentDatabase();
@@ -43,7 +43,7 @@ void InterpreterDropQuery::execute()
 		if (table)
 			tables_to_drop.push_back(table);
 		else
-			return;
+			return {};
 	}
 	else
 	{
@@ -52,7 +52,7 @@ void InterpreterDropQuery::execute()
 		if (!drop.if_exists)
 			context.assertDatabaseExists(database_name);
 		else if (!context.isDatabaseExist(database_name))
-			return;
+			return {};
 
 		Tables tables = context.getDatabases()[database_name];
 
@@ -111,6 +111,8 @@ void InterpreterDropQuery::execute()
 		Poco::File(data_path).remove(false);
 		Poco::File(metadata_path).remove(false);
 	}
+
+	return {};
 }
 
 void InterpreterDropQuery::dropDetachedTable(String database_name, StoragePtr table, Context & context)

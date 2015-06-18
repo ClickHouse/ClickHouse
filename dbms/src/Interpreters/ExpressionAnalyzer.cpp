@@ -768,7 +768,7 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name)
 	StoragePtr external_storage = StorageMemory::create(external_table_name, columns);
 
 	external_tables[external_table_name] = external_storage;
-	subqueries_for_sets[external_table_name].source = interpreter->execute();
+	subqueries_for_sets[external_table_name].source = interpreter->execute().in;
 	subqueries_for_sets[external_table_name].source_sample = interpreter->getSampleBlock();
 	subqueries_for_sets[external_table_name].table = external_storage;
 
@@ -842,7 +842,7 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 		if (!subquery_for_set.source)
 		{
 			auto interpreter = interpretSubquery(arg, context, subquery_depth);
-			subquery_for_set.source = new LazyBlockInputStream([interpreter]() mutable { return interpreter->execute(); });
+			subquery_for_set.source = new LazyBlockInputStream([interpreter]() mutable { return interpreter->execute().in; });
 			subquery_for_set.source_sample = interpreter->getSampleBlock();
 
 			/** Зачем используется LazyBlockInputStream?
@@ -1594,7 +1594,7 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 		if (!subquery_for_set.source)
 		{
 			auto interpreter = interpretSubquery(ast_join.table, context, subquery_depth, required_joined_columns);
-			subquery_for_set.source = new LazyBlockInputStream([interpreter]() mutable { return interpreter->execute(); });
+			subquery_for_set.source = new LazyBlockInputStream([interpreter]() mutable { return interpreter->execute().in; });
 			subquery_for_set.source_sample = interpreter->getSampleBlock();
 		}
 

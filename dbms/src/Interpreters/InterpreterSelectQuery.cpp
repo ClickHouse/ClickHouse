@@ -297,12 +297,17 @@ Block InterpreterSelectQuery::getSampleBlock()
 }
 
 
-BlockInputStreamPtr InterpreterSelectQuery::execute()
+BlockIO InterpreterSelectQuery::execute()
 {
 	(void) executeWithoutUnion();
 
 	if (streams.empty())
-		return new NullBlockInputStream;
+	{
+		BlockIO res;
+		res.in = new NullBlockInputStream;
+		res.in_sample = getSampleBlock();
+		return res;
+	}
 
 	executeUnion(streams);
 
@@ -326,7 +331,11 @@ BlockInputStreamPtr InterpreterSelectQuery::execute()
 		}
 	}
 
-	return streams[0];
+	BlockIO res;
+	res.in = streams[0];
+	res.in_sample = getSampleBlock();
+
+	return res;
 }
 
 const BlockInputStreams & InterpreterSelectQuery::executeWithoutUnion()
@@ -1008,20 +1017,6 @@ void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(BlockInputStreams &
 
 	executeUnion(streams);
 	streams[0] = new CreatingSetsBlockInputStream(streams[0], subqueries_for_sets, settings.limits);
-}
-
-
-BlockInputStreamPtr InterpreterSelectQuery::executeAndFormat(WriteBuffer & buf)
-{
-	Block sample = getSampleBlock();
-	String format_name = query.format ? typeid_cast<ASTIdentifier &>(*query.format).name : context.getDefaultFormat();
-
-	BlockInputStreamPtr in = execute();
-	BlockOutputStreamPtr out = context.getFormatFactory().getOutput(format_name, buf, sample);
-
-	copyData(*in, *out);
-
-	return in;
 }
 
 
