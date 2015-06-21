@@ -2,11 +2,12 @@
 
 #include <DB/DataStreams/IBlockInputStream.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
-#include <DB/Interpreters/ProcessList.h>
 
 
 namespace DB
 {
+
+class ProcessListEntry;
 
 struct BlockIO
 {
@@ -15,7 +16,7 @@ struct BlockIO
 	  *  (MemoryTracker * current_memory_tracker),
 	  *  которая может использоваться до уничтожения in и out.
 	  */
-	ProcessList::EntryPtr process_list_entry;
+	std::shared_ptr<ProcessListEntry> process_list_entry;
 
 	BlockInputStreamPtr in;
 	BlockOutputStreamPtr out;
@@ -38,6 +39,8 @@ struct BlockIO
 
 		return *this;
 	}
+
+	~BlockIO();
 };
 
 }
