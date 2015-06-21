@@ -14,6 +14,7 @@
 
 #include <DB/Interpreters/Quota.h>
 #include <DB/Interpreters/InterpreterFactory.h>
+#include <DB/Interpreters/ProcessList.h>
 #include <DB/Interpreters/executeQuery.h>
 
 
@@ -88,11 +89,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 	ProcessList::EntryPtr process_list_entry;
 	if (!internal && nullptr == typeid_cast<const ASTShowProcesslistQuery *>(&*ast))
 	{
+		const Settings & settings = context.getSettingsRef();
+
 		process_list_entry = context.getProcessList().insert(
 			query, context.getUser(), context.getCurrentQueryId(), context.getIPAddress(),
-			context.getSettingsRef().limits.max_memory_usage,
-			context.getSettingsRef().queue_max_wait_ms.totalMilliseconds(),
-			context.getSettingsRef().replace_running_query);
+			settings.limits.max_memory_usage,
+			settings.queue_max_wait_ms.totalMilliseconds(),
+			settings.replace_running_query,
+			settings.priority);
 
 		context.setProcessListElement(&process_list_entry->get());
 	}
