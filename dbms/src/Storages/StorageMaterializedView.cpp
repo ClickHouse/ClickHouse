@@ -48,6 +48,7 @@ StorageMaterializedView::StorageMaterializedView(
 	/// Если запрос ATTACH, то к этому моменту внутренняя таблица уже должна быть подключена.
 	if (attach_)
 	{
+		data = context.tryGetTable(database_name, inner_table_name);
 		if (!data)
 			throw Exception("Inner table is not attached yet."
 				" Materialized view: " + database_name + "." + table_name + "."
