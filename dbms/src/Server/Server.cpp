@@ -20,6 +20,7 @@
 #include <DB/Common/Macros.h>
 #include <DB/Common/getFQDNOrHostName.h>
 #include <DB/Interpreters/loadMetadata.h>
+#include <DB/Interpreters/ProcessList.h>
 #include <DB/Storages/StorageSystemNumbers.h>
 #include <DB/Storages/StorageSystemTables.h>
 #include <DB/Storages/StorageSystemParts.h>

@@ -132,6 +132,9 @@ struct Settings
 	\
 	/** Позволяет выбирать метод сжатия данных при записи */\
 	M(SettingCompressionMethod, network_compression_method, CompressionMethod::LZ4) \
+	\
+	/** Приоритет запроса. 1 - самый высокий, больше - ниже; 0 - не использовать приоритеты. */ \
+	M(SettingUInt64, priority, 0) \
 
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;
