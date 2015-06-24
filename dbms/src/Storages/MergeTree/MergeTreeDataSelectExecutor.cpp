@@ -1,6 +1,7 @@
 #include <DB/Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <DB/Storages/MergeTree/MergeTreeBlockInputStream.h>
-#include <DB/Interpreters/ExpressionAnalyzer.h>
+#include <DB/Storages/MergeTree/MergeTreeReadPool.h>
+#include <DB/Storages/MergeTree/MergeTreeThreadBlockInputStream.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
 #include <DB/DataStreams/FilterBlockInputStream.h>
@@ -8,7 +9,6 @@
 #include <DB/DataStreams/AddingConstColumnBlockInputStream.h>
 #include <DB/DataStreams/CreatingSetsBlockInputStream.h>
 #include <DB/DataStreams/NullBlockInputStream.h>
-#include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Common/VirtualColumnUtils.h>
 
 
@@ -340,9 +340,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 	const Names & virt_columns,
 	const Settings & settings)
 {
-	const size_t min_marks_for_concurrent_read =
+	const std::size_t min_marks_for_concurrent_read =
 		(settings.merge_tree_min_rows_for_concurrent_read + data.index_granularity - 1) / data.index_granularity;
-	const size_t max_marks_to_use_cache =
+	const std::size_t max_marks_to_use_cache =
 		(settings.merge_tree_max_rows_to_use_cache + data.index_granularity - 1) / data.index_granularity;
 
 	/// На всякий случай перемешаем куски.
@@ -365,89 +365,26 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 	if (sum_marks > max_marks_to_use_cache)
 		use_uncompressed_cache = false;
 
+	MergeTreeReadPoolPtr pool = std::make_shared<MergeTreeReadPool>(
+		parts, sum_marks_in_parts, sum_marks, data, prewhere_actions, prewhere_column, true, column_names);
+
 	BlockInputStreams res;
 
 	if (sum_marks > 0)
 	{
-		const size_t min_marks_per_thread = (sum_marks - 1) / threads + 1;
+		for (std::size_t i = 0; i < threads; ++i)
+			res.emplace_back(new MergeTreeThreadBlockInputStream{
+				pool, min_marks_for_concurrent_read, max_block_size, data, use_uncompressed_cache, prewhere_actions,
+				prewhere_column, settings.min_bytes_to_use_direct_io, settings.max_read_buffer_size, virt_columns
+			});
 
-		for (size_t i = 0; i < threads && !parts.empty(); ++i)
-		{
-			size_t need_marks = min_marks_per_thread;
+		/// Оценим общее количество строк - для прогресс-бара.
+		const std::size_t total_rows = data.index_granularity * sum_marks;
 
-			/// Цикл по кускам.
-			while (need_marks > 0 && !parts.empty())
-			{
-				RangesInDataPart & part = parts.back();
-				size_t & marks_in_part = sum_marks_in_parts.back();
+		/// Выставим приблизительное количество строк только для первого источника
+		static_cast<IProfilingBlockInputStream &>(*res.front()).setTotalRowsApprox(total_rows);
 
-				/// Не будем брать из куска слишком мало строк.
-				if (marks_in_part >= min_marks_for_concurrent_read &&
-					need_marks < min_marks_for_concurrent_read)
-					need_marks = min_marks_for_concurrent_read;
-
-				/// Не будем оставлять в куске слишком мало строк.
-				if (marks_in_part > need_marks &&
-					marks_in_part - need_marks < min_marks_for_concurrent_read)
-					need_marks = marks_in_part;
-
-				MarkRanges ranges_to_get_from_part;
-
-				/// Возьмем весь кусок, если он достаточно мал.
-				if (marks_in_part <= need_marks)
-				{
-					/// Восстановим порядок отрезков.
-					std::reverse(part.ranges.begin(), part.ranges.end());
-
-					ranges_to_get_from_part = part.ranges;
-
-					need_marks -= marks_in_part;
-					parts.pop_back();
-					sum_marks_in_parts.pop_back();
-				}
-				else
-				{
-					/// Цикл по отрезкам куска.
-					while (need_marks > 0)
-					{
-						if (part.ranges.empty())
-							throw Exception("Unexpected end of ranges while spreading marks among threads", ErrorCodes::LOGICAL_ERROR);
-
-						MarkRange & range = part.ranges.back();
-
-						const size_t marks_in_range = range.end - range.begin;
-						const size_t marks_to_get_from_range = std::min(marks_in_range, need_marks);
-
-						ranges_to_get_from_part.emplace_back(range.begin, range.begin + marks_to_get_from_range);
-						range.begin += marks_to_get_from_range;
-						marks_in_part -= marks_to_get_from_range;
-						need_marks -= marks_to_get_from_range;
-						if (range.begin == range.end)
-							part.ranges.pop_back();
-					}
-				}
-
-				BlockInputStreamPtr source_stream = new MergeTreeBlockInputStream(
-					data.getFullPath() + part.data_part->name + '/', max_block_size, column_names, data,
-					part.data_part, ranges_to_get_from_part, use_uncompressed_cache,
-					prewhere_actions, prewhere_column, true, settings.min_bytes_to_use_direct_io, settings.max_read_buffer_size);
-
-				res.push_back(source_stream);
-
-				for (const String & virt_column : virt_columns)
-				{
-					if (virt_column == "_part")
-						res.back() = new AddingConstColumnBlockInputStream<String>(
-							res.back(), new DataTypeString, part.data_part->name, "_part");
-					else if (virt_column == "_part_index")
-						res.back() = new AddingConstColumnBlockInputStream<UInt64>(
-							res.back(), new DataTypeUInt64, part.part_index_in_query, "_part_index");
-				}
-			}
-		}
-
-		if (!parts.empty())
-			throw Exception("Couldn't spread marks among threads", ErrorCodes::LOGICAL_ERROR);
+		LOG_TRACE(log, "Reading approx. " << total_rows);
 	}
 
 	return res;

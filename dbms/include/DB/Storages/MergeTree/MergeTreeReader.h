@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DB/Storages/MarkCache.h>
+#include <DB/Storages/MergeTree/MarkRange.h>
 #include <DB/Storages/MergeTree/MergeTreeData.h>
 #include <DB/DataTypes/IDataType.h>
 #include <DB/DataTypes/DataTypeNested.h>
@@ -16,19 +17,6 @@
 
 namespace DB
 {
-
-/** Пара засечек, определяющая диапазон строк в куске. Именно, диапазон имеет вид [begin * index_granularity, end * index_granularity).
-  */
-struct MarkRange
-{
-	size_t begin;
-	size_t end;
-
-	MarkRange() {}
-	MarkRange(size_t begin_, size_t end_) : begin(begin_), end(end_) {}
-};
-
-typedef std::vector<MarkRange> MarkRanges;
 
 
 /** Умеет читать данные между парой засечек из одного куска. При чтении последовательных отрезков не делает лишних seek-ов.
