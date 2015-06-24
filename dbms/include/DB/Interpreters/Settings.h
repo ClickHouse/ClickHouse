@@ -109,6 +109,8 @@ struct Settings
 	  * (Чтобы большие запросы не вымывали кэш.) */ \
 	M(SettingUInt64, merge_tree_max_rows_to_use_cache, (1024 * 1024)) \
 	\
+	M(SettingBool, merge_tree_uniform_read_distribution, false) \
+	\
 	/** Минимальная длина выражения expr = x1 OR ... expr = xN для оптимизации */ \
 	M(SettingUInt64, optimize_min_equality_disjunction_chain_length, 3) \
 	\

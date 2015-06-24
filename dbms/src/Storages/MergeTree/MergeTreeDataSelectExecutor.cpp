@@ -370,7 +370,90 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 
 	BlockInputStreams res;
 
-	if (sum_marks > 0)
+	/// @todo remove old code
+	if (sum_marks > 0 && settings.merge_tree_uniform_read_distribution == 0)
+	{
+		const size_t min_marks_per_thread = (sum_marks - 1) / threads + 1;
+
+		for (size_t i = 0; i < threads && !parts.empty(); ++i)
+		{
+			size_t need_marks = min_marks_per_thread;
+
+			/// Цикл по кускам.
+			while (need_marks > 0 && !parts.empty())
+			{
+				RangesInDataPart & part = parts.back();
+				size_t & marks_in_part = sum_marks_in_parts.back();
+
+				/// Не будем брать из куска слишком мало строк.
+				if (marks_in_part >= min_marks_for_concurrent_read &&
+					need_marks < min_marks_for_concurrent_read)
+					need_marks = min_marks_for_concurrent_read;
+
+				/// Не будем оставлять в куске слишком мало строк.
+				if (marks_in_part > need_marks &&
+					marks_in_part - need_marks < min_marks_for_concurrent_read)
+					need_marks = marks_in_part;
+
+				MarkRanges ranges_to_get_from_part;
+
+				/// Возьмем весь кусок, если он достаточно мал.
+				if (marks_in_part <= need_marks)
+				{
+					/// Восстановим порядок отрезков.
+					std::reverse(part.ranges.begin(), part.ranges.end());
+
+					ranges_to_get_from_part = part.ranges;
+
+					need_marks -= marks_in_part;
+					parts.pop_back();
+					sum_marks_in_parts.pop_back();
+				}
+				else
+				{
+					/// Цикл по отрезкам куска.
+					while (need_marks > 0)
+					{
+						if (part.ranges.empty())
+							throw Exception("Unexpected end of ranges while spreading marks among threads", ErrorCodes::LOGICAL_ERROR);
+
+						MarkRange & range = part.ranges.back();
+
+						const size_t marks_in_range = range.end - range.begin;
+						const size_t marks_to_get_from_range = std::min(marks_in_range, need_marks);
+
+						ranges_to_get_from_part.emplace_back(range.begin, range.begin + marks_to_get_from_range);
+						range.begin += marks_to_get_from_range;
+						marks_in_part -= marks_to_get_from_range;
+						need_marks -= marks_to_get_from_range;
+						if (range.begin == range.end)
+							part.ranges.pop_back();
+					}
+				}
+
+				BlockInputStreamPtr source_stream = new MergeTreeBlockInputStream(
+					data.getFullPath() + part.data_part->name + '/', max_block_size, column_names, data,
+					part.data_part, ranges_to_get_from_part, use_uncompressed_cache,
+					prewhere_actions, prewhere_column, true, settings.min_bytes_to_use_direct_io, settings.max_read_buffer_size);
+
+				res.push_back(source_stream);
+
+				for (const String & virt_column : virt_columns)
+				{
+					if (virt_column == "_part")
+						res.back() = new AddingConstColumnBlockInputStream<String>(
+							res.back(), new DataTypeString, part.data_part->name, "_part");
+					else if (virt_column == "_part_index")
+						res.back() = new AddingConstColumnBlockInputStream<UInt64>(
+							res.back(), new DataTypeUInt64, part.part_index_in_query, "_part_index");
+				}
+			}
+		}
+
+		if (!parts.empty())
+			throw Exception("Couldn't spread marks among threads", ErrorCodes::LOGICAL_ERROR);
+	}
+	else if (sum_marks > 0)
 	{
 		for (std::size_t i = 0; i < threads; ++i)
 			res.emplace_back(new MergeTreeThreadBlockInputStream{
