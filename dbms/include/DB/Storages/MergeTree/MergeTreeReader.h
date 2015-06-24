@@ -203,13 +203,15 @@ public:
 		fillMissingColumnsImpl(res, ordered_names, true);
 	}
 
+	const MergeTreeData::DataPartPtr & getDataPart() const { return data_part; }
+
 private:
 	struct Stream
 	{
 		MarkCache::MappedPtr marks;
 		ReadBuffer * data_buffer;
-		Poco::SharedPtr<CachedCompressedReadBuffer> cached_buffer;
-		Poco::SharedPtr<CompressedReadBufferFromFile> non_cached_buffer;
+		std::unique_ptr<CachedCompressedReadBuffer> cached_buffer;
+		std::unique_ptr<CompressedReadBufferFromFile> non_cached_buffer;
 		std::string path_prefix;
 		size_t max_mark_range;
 
@@ -269,15 +271,15 @@ private:
 
 			if (uncompressed_cache)
 			{
-				cached_buffer = new CachedCompressedReadBuffer(path_prefix + ".bin", uncompressed_cache,
-															   estimated_size, aio_threshold, buffer_size);
-				data_buffer = &*cached_buffer;
+				cached_buffer = std::make_unique<CachedCompressedReadBuffer>(
+					path_prefix + ".bin", uncompressed_cache, estimated_size, aio_threshold, buffer_size);
+				data_buffer = cached_buffer.get();
 			}
 			else
 			{
-				non_cached_buffer = new CompressedReadBufferFromFile(path_prefix + ".bin", estimated_size,
-																	 aio_threshold, buffer_size);
-				data_buffer = &*non_cached_buffer;
+				non_cached_buffer = std::make_unique<CompressedReadBufferFromFile>(
+					path_prefix + ".bin", estimated_size, aio_threshold, buffer_size);
+				data_buffer = non_cached_buffer.get();
 			}
 		}
 

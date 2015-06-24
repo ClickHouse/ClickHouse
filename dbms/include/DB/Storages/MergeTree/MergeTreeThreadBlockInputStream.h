@@ -77,16 +77,18 @@ protected:
 
 				const auto path = storage.getFullPath() + task->data_part->name + '/';
 
-				reader = std::make_unique<MergeTreeReader>(
-					path, task->data_part, task->columns, owned_uncompressed_cache.get(), owned_mark_cache.get(),
-					storage,
-					task->mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size);
+				if (!reader || reader->getDataPart() != task->data_part)
+				{
+					reader = std::make_unique<MergeTreeReader>(
+						path, task->data_part, task->columns, owned_uncompressed_cache.get(), owned_mark_cache.get(),
+						storage, task->all_ranges, min_bytes_to_use_direct_io, max_read_buffer_size);
 
-				if (prewhere_actions)
-					pre_reader = std::make_unique<MergeTreeReader>(
-						path, task->data_part, task->pre_columns, owned_uncompressed_cache.get(),
-						owned_mark_cache.get(),
-						storage, task->mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size);
+					if (prewhere_actions)
+						pre_reader = std::make_unique<MergeTreeReader>(
+							path, task->data_part, task->pre_columns, owned_uncompressed_cache.get(),
+							owned_mark_cache.get(), storage, task->all_ranges, min_bytes_to_use_direct_io,
+							max_read_buffer_size);
+				}
 			}
 
 			res = readFromPart();

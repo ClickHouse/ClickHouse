@@ -20,14 +20,16 @@ struct MergeTreeReadTask
 	const NamesAndTypesList & columns;
 	const NamesAndTypesList & pre_columns;
 	const bool remove_prewhere_column;
+	const MarkRanges & all_ranges;
 
 	MergeTreeReadTask(const MergeTreeData::DataPartPtr & data_part, const MarkRanges & ranges,
 					  const std::size_t part_index_in_query, const Names & ordered_names,
 					  const NameSet & column_name_set, const NamesAndTypesList & columns,
-					  const NamesAndTypesList & pre_columns, const bool remove_prewhere_column)
+					  const NamesAndTypesList & pre_columns, const bool remove_prewhere_column,
+					  const MarkRanges & all_ranges)
 		: data_part{data_part}, mark_ranges{ranges}, part_index_in_query{part_index_in_query},
 		  ordered_names{ordered_names}, column_name_set{column_name_set}, columns{columns}, pre_columns{pre_columns},
-		  remove_prewhere_column{remove_prewhere_column}
+		  remove_prewhere_column{remove_prewhere_column}, all_ranges{all_ranges}
 	{}
 };
 
@@ -115,7 +117,7 @@ public:
 
 		return std::make_unique<MergeTreeReadTask>(
 			part.data_part, ranges_to_get_from_part, part.part_index_in_query, ordered_names, column_name_set, columns,
-			pre_columns, remove_prewhere_column);
+			pre_columns, remove_prewhere_column, per_part_all_ranges[part_id]);
 	}
 
 public:
@@ -124,6 +126,8 @@ public:
 	{
 		for (const auto & part : parts)
 		{
+			per_part_all_ranges.push_back(part.ranges);
+
 			per_part_columns_lock.push_back(std::make_unique<Poco::ScopedReadRWLock>(
 				part.data_part->columns_lock));
 
@@ -238,6 +242,7 @@ public:
 
 	std::vector<std::unique_ptr<Poco::ScopedReadRWLock>> per_part_columns_lock;
 	RangesInDataParts parts;
+	std::vector<MarkRanges> per_part_all_ranges;
 	std::vector<std::size_t> per_part_sum_marks;
 	std::size_t sum_marks;
 	MergeTreeData & data;
