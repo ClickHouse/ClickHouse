@@ -156,8 +156,6 @@ struct Stream
 				return;
 		}
 
-		std::cout << "mrk_mark " << mrk_mark.offset_in_compressed_file << ' ' << mrk_mark.offset_in_decompressed_block << std::endl;
-
 		data_mark.offset_in_compressed_file = compressed_hashing_buf.count() - uncompressing_buf.getSizeCompressed();
 		data_mark.offset_in_decompressed_block = uncompressed_hashing_buf.offset();
 
