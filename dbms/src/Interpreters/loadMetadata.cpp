@@ -30,8 +30,7 @@ static void executeCreateQuery(const String & query, Context & context, const St
 	ast_create_query.attach = true;
 	ast_create_query.database = database;
 
-	InterpreterCreateQuery interpreter(ast, context);
-	interpreter.execute(true);
+	InterpreterCreateQuery(ast, context).executeLoadExisting();
 }
 
 

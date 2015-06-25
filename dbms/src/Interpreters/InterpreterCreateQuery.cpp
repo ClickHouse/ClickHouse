@@ -42,7 +42,7 @@ InterpreterCreateQuery::InterpreterCreateQuery(ASTPtr query_ptr_, Context & cont
 }
 
 
-StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
+void InterpreterCreateQuery::executeImpl(bool assume_metadata_exists)
 {
 	String path = context.getPath();
 	String current_database = context.getCurrentDatabase();
@@ -81,7 +81,7 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 		if (!create.if_not_exists || !context.isDatabaseExist(database_name))
 			context.addDatabase(database_name);
 
-		return StoragePtr();
+		return;
 	}
 
 	SharedPtr<InterpreterSelectQuery> interpreter_select;
@@ -118,7 +118,7 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 			if (context.isTableExist(database_name, table_name))
 			{
 				if (create.if_not_exists)
-					return context.getTable(database_name, table_name);
+					return;
 				else
 					throw Exception("Table " + database_name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 			}
@@ -251,11 +251,9 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 	/// Если запрос CREATE SELECT, то вставим в таблицу данные
 	if (create.select && storage_name != "View" && (storage_name != "MaterializedView" || create.is_populate))
 	{
-		BlockInputStreamPtr from = new MaterializingBlockInputStream(interpreter_select->execute());
+		BlockInputStreamPtr from = new MaterializingBlockInputStream(interpreter_select->execute().in);
 		copyData(*from, *res->write(query_ptr));
 	}
-
-	return res;
 }
 
 InterpreterCreateQuery::ColumnsAndDefaults InterpreterCreateQuery::parseColumns(ASTPtr expression_list)

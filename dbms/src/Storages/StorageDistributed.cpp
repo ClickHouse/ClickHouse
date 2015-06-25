@@ -190,7 +190,7 @@ BlockInputStreams StorageDistributed::read(
 			  * Если этого не делать, то в разных потоках будут получаться разные типы (Const и не-Const) столбцов,
 			  *  а это не разрешено, так как весь код исходит из допущения, что в потоке блоков все типы одинаковые.
 			  */
-			res.emplace_back(new MaterializingBlockInputStream(interpreter.execute()));
+			res.emplace_back(new MaterializingBlockInputStream(interpreter.execute().in));
 		}
 	}
 
