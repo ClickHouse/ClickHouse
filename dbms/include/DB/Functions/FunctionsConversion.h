@@ -69,7 +69,7 @@ struct ConvertImpl<DataTypeDate, DataTypeDateTime, Name>
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		typedef DataTypeDate::FieldType FromFieldType;
-		DateLUT & date_lut = DateLUT::instance();
+		auto & date_lut = DateLUT::instance();
 
 		if (const ColumnVector<FromFieldType> * col_from = typeid_cast<const ColumnVector<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
 		{
@@ -108,7 +108,7 @@ struct ConvertImpl<DataTypeDateTime, DataTypeDate, Name>
 
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		DateLUT & date_lut = DateLUT::instance();
+		auto & date_lut = DateLUT::instance();
 
 		if (const ColumnVector<FromFieldType> * col_from = typeid_cast<const ColumnVector<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
 		{
@@ -149,7 +149,7 @@ struct ConvertImpl32Or64ToDate
 	typedef DataTypeDate::FieldType ToFieldType;
 
 	template <typename To, typename From>
-	static To convert(const From & from, const DateLUT & date_lut)
+	static To convert(const From & from, const DateLUTImpl & date_lut)
 	{
 		return from < 0xFFFF
 			? from
@@ -158,7 +158,7 @@ struct ConvertImpl32Or64ToDate
 
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		DateLUT & date_lut = DateLUT::instance();
+		auto & date_lut = DateLUT::instance();
 
 		if (const ColumnVector<FromFieldType> * col_from
 			= typeid_cast<const ColumnVector<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))

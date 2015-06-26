@@ -326,7 +326,7 @@ inline void writeDateText(DayNum_t date, WriteBuffer & buf)
 		return;
 	}
 
-	const DateLUT::Values & values = DateLUT::instance().getValues(date);
+	const auto & values = DateLUT::instance().getValues(date);
 
 	s[0] += values.year / 1000;
 	s[1] += (values.year / 100) % 10;
@@ -368,8 +368,8 @@ inline void writeDateTimeText(time_t datetime, WriteBuffer & buf, char date_deli
 		return;
 	}
 
-	DateLUT & date_lut = DateLUT::instance();
-	const DateLUT::Values & values = date_lut.getValues(datetime);
+	auto & date_lut = DateLUT::instance();
+	const auto & values = date_lut.getValues(datetime);
 
 	s[0] += values.year / 1000;
 	s[1] += (values.year / 100) % 10;

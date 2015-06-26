@@ -12,7 +12,7 @@ BlocksWithDateIntervals MergeTreeDataWriter::splitBlockIntoParts(const Block & b
 {
 	data.check(block, true);
 
-	DateLUT & date_lut = DateLUT::instance();
+	auto & date_lut = DateLUT::instance();
 
 	size_t rows = block.rows();
 	size_t columns = block.columns();
@@ -77,7 +77,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 	UInt16 min_date = block_with_dates.min_date;
 	UInt16 max_date = block_with_dates.max_date;
 
-	DateLUT & date_lut = DateLUT::instance();
+	auto & date_lut = DateLUT::instance();
 
 	size_t part_size = (block.rows() + data.index_granularity - 1) / data.index_granularity;
 
