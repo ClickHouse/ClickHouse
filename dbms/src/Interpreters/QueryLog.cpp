@@ -12,7 +12,6 @@
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
-#include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/InterpreterCreateQuery.h>
 #include <DB/Interpreters/InterpreterRenameQuery.h>
 #include <DB/Interpreters/QueryLog.h>
@@ -263,6 +262,7 @@ void QueryLog::flush()
 		tryLogCurrentException(__PRETTY_FUNCTION__);
 	}
 
+	/// В случае ошибки тоже очищаем накопленные записи, чтобы не блокироваться.
 	data.clear();
 }
 

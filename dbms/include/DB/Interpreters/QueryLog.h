@@ -6,6 +6,7 @@
 #include <DB/Core/Types.h>
 #include <DB/Common/ConcurrentBoundedQueue.h>
 #include <DB/Storages/IStorage.h>
+#include <DB/Interpreters/Context.h>
 
 
 namespace DB
@@ -35,38 +36,24 @@ struct QueryLogElement
 		QUERY_FINISH = 2,
 	};
 
-	enum Interface
-	{
-		TCP = 1,
-		HTTP = 2,
-		OLAP_HTTP = 3,
-	};
-
-	enum HTTPMethod
-	{
-		UNKNOWN = 0,
-		GET = 1,
-		POST = 2,
-	};
-
-	Type type;
+	Type type = QUERY_START;
 
 	/// В зависимости от типа, не все поля могут быть заполнены.
 
-	time_t event_time;
-	time_t query_start_time;
-	UInt64 query_duration_ms;
+	time_t event_time{};
+	time_t query_start_time{};
+	UInt64 query_duration_ms{};
 
-	UInt64 read_rows;
-	UInt64 read_bytes;
+	UInt64 read_rows{};
+	UInt64 read_bytes{};
 
-	UInt64 result_rows;
-	UInt64 result_bytes;
+	UInt64 result_rows{};
+	UInt64 result_bytes{};
 
 	String query;
 
-	Interface interface;
-	HTTPMethod http_method;
+	Context::Interface interface = Context::Interface::TCP;
+	Context::HTTPMethod http_method = Context::HTTPMethod::UNKNOWN;
 	Poco::Net::IPAddress ip_address;
 	String user;
 	String query_id;

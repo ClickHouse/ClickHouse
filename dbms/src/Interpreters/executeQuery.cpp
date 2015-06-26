@@ -15,6 +15,7 @@
 #include <DB/Interpreters/Quota.h>
 #include <DB/Interpreters/InterpreterFactory.h>
 #include <DB/Interpreters/ProcessList.h>
+#include <DB/Interpreters/QueryLog.h>
 #include <DB/Interpreters/executeQuery.h>
 
 
@@ -31,6 +32,7 @@ static void checkLimits(const IAST & ast, const Limits & limits)
 }
 
 
+/// Логгировать запрос в обычный лог (не в таблицу).
 static void logQuery(const String & query, const Context & context)
 {
 	String logged_query = query;
@@ -85,12 +87,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
 	quota.checkExceeded(current_time);
 
+	const Settings & settings = context.getSettingsRef();
+
 	/// Положим запрос в список процессов. Но запрос SHOW PROCESSLIST класть не будем.
 	ProcessList::EntryPtr process_list_entry;
 	if (!internal && nullptr == typeid_cast<const ASTShowProcesslistQuery *>(&*ast))
 	{
-		const Settings & settings = context.getSettingsRef();
-
 		process_list_entry = context.getProcessList().insert(
 			query, context.getUser(), context.getCurrentQueryId(), context.getIPAddress(),
 			settings.limits.max_memory_usage,
@@ -99,6 +101,27 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 			settings.priority);
 
 		context.setProcessListElement(&process_list_entry->get());
+	}
+
+	/// Логгируем в таблицу начало выполнения запроса, если нужно.
+	if (settings.log_queries)
+	{
+		QueryLogElement elem;
+
+		elem.type = QueryLogElement::QUERY_START;
+
+		elem.event_time = current_time;
+		elem.query_start_time = current_time;
+
+		elem.query = query;
+
+		elem.interface = context.getInterface();
+		elem.http_method = context.getHTTPMethod();
+		elem.ip_address = context.getIPAddress();
+		elem.user = context.getUser();
+		elem.query_id = context.getCurrentQueryId();
+
+		context.getQueryLog().add(elem);
 	}
 
 	BlockIO res;

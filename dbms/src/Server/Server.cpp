@@ -533,6 +533,8 @@ int Server::main(const std::vector<std::string> & args)
 	LOG_DEBUG(log, "Loaded metadata.");
 
 	/// Создаём системные таблицы.
+	Poco::File(path + "data/system").createDirectories();
+	Poco::File(path + "metadata/system").createDirectories();
 	global_context->addDatabase("system");
 
 	global_context->addTable("system", "one",		StorageSystemOne::create("one"));
