@@ -1,8 +1,9 @@
 #include <Yandex/DateLUT.h>
 #include <Poco/Exception.h>
-#include <Yandex/likely.h>
+
 #include <unicode/timezone.h>
 #include <unicode/unistr.h>
+#include <memory>
 
 std::string DateLUT::default_time_zone;
 
@@ -27,12 +28,34 @@ DateLUT::DateLUT()
 	if (zone_id == nullptr)
 		throw Poco::Exception("No time zone available.");
 
+	std::vector<UnicodeString> time_zones;
 	while ((zone_id != nullptr) && (status == U_ZERO_ERROR))
 	{
-		std::string zone_id_str;
-		zone_id->toUTF8String(zone_id_str);
-		date_lut_impl_list.emplace(std::piecewise_construct, std::forward_as_tuple(zone_id_str), std::forward_as_tuple(nullptr));
+		time_zones.push_back(*zone_id);
 		zone_id = time_zone_ids->snext(status);
+	}
+
+	for (const auto & time_zone : time_zones)
+	{
+		auto count = TimeZone::countEquivalentIDs(time_zone);
+
+		const UnicodeString & u_group_id = TimeZone::getEquivalentID(time_zone, 0);
+		std::string group_id;
+		u_group_id.toUTF8String(group_id);
+
+		auto it = time_zone_to_group.find(group_id);
+		if (it == time_zone_to_group.end())
+		{
+			for (auto i = 1; i < count; ++i)
+			{
+				const UnicodeString & u_equivalent_id = TimeZone::getEquivalentID(time_zone, i);
+				std::string equivalent_id;
+				u_equivalent_id.toUTF8String(equivalent_id);
+				time_zone_to_group.insert(std::make_pair(equivalent_id, group_id));
+			}
+		}
+
+		date_lut_impl_list.emplace(std::piecewise_construct, std::forward_as_tuple(group_id), std::forward_as_tuple(nullptr));
 	}
 }
 
@@ -44,16 +67,21 @@ DateLUTImpl & DateLUT::instance(const std::string & time_zone)
 
 DateLUTImpl & DateLUT::get(const std::string & time_zone)
 {
-	auto it = date_lut_impl_list.find(time_zone);
-	if (it == date_lut_impl_list.end())
+	auto it = time_zone_to_group.find(time_zone);
+	if (it == time_zone_to_group.end())
 		throw Poco::Exception("Invalid time zone " + time_zone);
+	const auto & group_id = it->second;
 
-	auto & wrapper = it->second;
+	auto it2 = date_lut_impl_list.find(group_id);
+	if (it2 == date_lut_impl_list.end())
+		throw Poco::Exception("Invalid group of equivalent time zones.");
+
+	auto & wrapper = it2->second;
 
 	DateLUTImpl * tmp = wrapper.load(std::memory_order_acquire);
 	if (tmp == nullptr)
 	{
-		std::lock_guard<std::mutex> guard(mux);
+		std::lock_guard<std::mutex> guard(mutex);
 		tmp = wrapper.load(std::memory_order_acquire);
 		if (tmp == nullptr)
 		{

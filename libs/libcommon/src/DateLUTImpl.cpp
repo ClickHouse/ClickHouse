@@ -1,8 +1,9 @@
-#include <cstring>
 #include <Yandex/DateLUTImpl.h>
 #include <Poco/Exception.h>
-#include <glib.h>
+
 #include <memory>
+#include <cstring>
+#include <glib.h>
 
 namespace details { namespace {
 
@@ -121,7 +122,7 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone)
 	while (start_of_day <= DATE_LUT_MAX);
 
 	/// Заполняем lookup таблицу для годов
-	memset(years_lut, 0, DATE_LUT_YEARS * sizeof(years_lut[0]));
+	::memset(years_lut, 0, DATE_LUT_YEARS * sizeof(years_lut[0]));
 	for (size_t day = 0; day < i && lut[day].year <= DATE_LUT_MAX_YEAR; ++day)
 	{
 		if (lut[day].month == 1 && lut[day].day_of_month == 1)
