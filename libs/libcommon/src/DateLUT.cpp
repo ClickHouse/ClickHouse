@@ -46,7 +46,7 @@ DateLUT::DateLUT()
 		auto it = time_zone_to_group.find(group_id);
 		if (it == time_zone_to_group.end())
 		{
-			for (auto i = 1; i < count; ++i)
+			for (auto i = 0; i < count; ++i)
 			{
 				const UnicodeString & u_equivalent_id = TimeZone::getEquivalentID(time_zone, i);
 				std::string equivalent_id;
