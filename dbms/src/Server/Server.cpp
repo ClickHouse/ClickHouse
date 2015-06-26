@@ -548,7 +548,7 @@ int Server::main(const std::vector<std::string> & args)
 	global_context->addTable("system", "events", 	StorageSystemEvents::create("events"));
 	global_context->addTable("system", "merges",	StorageSystemMerges::create("merges"));
 	global_context->addTable("system", "replicas",	StorageSystemReplicas::create("replicas"));
-	global_context->addTable("system", "dictionaries",	StorageSystemDictionaries::create("dictionaries"));
+	global_context->addTable("system", "dictionaries", StorageSystemDictionaries::create("dictionaries"));
 	global_context->addTable("system", "columns",   StorageSystemColumns::create("columns"));
 	global_context->addTable("system", "functions", StorageSystemFunctions::create("functions"));
 	global_context->addTable("system", "clusters", StorageSystemClusters::create("clusters", *global_context));
