@@ -97,6 +97,9 @@ struct Settings
 	M(SettingUInt64, parallel_replicas_count, 0) \
 	M(SettingUInt64, parallel_replica_offset, 0) \
 	\
+	/** Тихо пропускать недоступные шарды. */ \
+	M(SettingBool, skip_unavailable_shards, false) \
+	\
 	/** Тонкие настройки для чтения из MergeTree */ \
 	\
 	/** Если из одного файла читается хотя бы столько строк, чтение можно распараллелить. */ \
