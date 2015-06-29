@@ -51,7 +51,9 @@ DateLUT::DateLUT()
 				const UnicodeString & u_equivalent_id = TimeZone::getEquivalentID(time_zone, i);
 				std::string equivalent_id;
 				u_equivalent_id.toUTF8String(equivalent_id);
-				time_zone_to_group.insert(std::make_pair(equivalent_id, group_id));
+				auto res = time_zone_to_group.insert(std::make_pair(equivalent_id, group_id));
+				if (!res.second)
+					throw Poco::Exception("Failed to initialize time zone information.");
 			}
 		}
 
@@ -85,7 +87,7 @@ DateLUTImpl & DateLUT::get(const std::string & time_zone)
 		tmp = wrapper.load(std::memory_order_acquire);
 		if (tmp == nullptr)
 		{
-			tmp = new DateLUTImpl(time_zone);
+			tmp = new DateLUTImpl(group_id);
 			wrapper.store(tmp, std::memory_order_release);
 		}
 	}
