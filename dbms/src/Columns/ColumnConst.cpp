@@ -62,7 +62,7 @@ template <> ColumnPtr ColumnConst<String>::convertToFullColumn() const
 }
 
 
-template <> ColumnPtr ColumnConst<Array>::convertToFullColumn() const
+ColumnPtr ColumnConst<Array>::convertToFullColumn() const
 {
 	if (!data_type)
 		throw Exception("No data type specified for ColumnConstArray", ErrorCodes::LOGICAL_ERROR);
@@ -71,7 +71,8 @@ template <> ColumnPtr ColumnConst<Array>::convertToFullColumn() const
 	if (!type)
 		throw Exception("Non-array data type specified for ColumnConstArray", ErrorCodes::LOGICAL_ERROR);
 
-	size_t array_size = data.size();
+	const Array & array = getDataFromHolderImpl();
+	size_t array_size = array.size();
 	ColumnPtr nested_column = type->getNestedType()->createColumn();
 
 	ColumnArray * res = new ColumnArray(nested_column);
@@ -82,10 +83,26 @@ template <> ColumnPtr ColumnConst<Array>::convertToFullColumn() const
 	{
 		offsets[i] = (i + 1) * array_size;
 		for (size_t j = 0; j < array_size; ++j)
-			nested_column->insert(data[j]);
+			nested_column->insert(array[j]);
 	}
 
 	return res;
+}
+
+
+StringRef ColumnConst<Array>::getDataAt(size_t n) const
+{
+	throw Exception("Method getDataAt is not supported for " + this->getName(), ErrorCodes::NOT_IMPLEMENTED);
+}
+
+UInt64 ColumnConst<Array>::get64(size_t n) const
+{
+	throw Exception("Method get64 is not supported for " + this->getName(), ErrorCodes::NOT_IMPLEMENTED);
+}
+
+StringRef ColumnConst<Array>::getDataAtWithTerminatingZero(size_t n) const
+{
+	throw Exception("Method getDataAt is not supported for " + this->getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
 
