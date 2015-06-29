@@ -37,27 +37,42 @@ DateLUT::DateLUT()
 
 	for (const auto & time_zone : time_zones)
 	{
-		auto count = TimeZone::countEquivalentIDs(time_zone);
-
 		const UnicodeString & u_group_id = TimeZone::getEquivalentID(time_zone, 0);
 		std::string group_id;
-		u_group_id.toUTF8String(group_id);
 
-		auto it = time_zone_to_group.find(group_id);
-		if (it == time_zone_to_group.end())
+		if (u_group_id.isEmpty())
 		{
-			for (auto i = 0; i < count; ++i)
+			time_zone.toUTF8String(group_id);
+
+			auto res = time_zone_to_group.insert(std::make_pair(group_id, group_id));
+			if (!res.second)
+				throw Poco::Exception("Failed to initialize time zone information.");
+			auto res2 = date_lut_impl_list.emplace(std::piecewise_construct, std::forward_as_tuple(group_id), std::forward_as_tuple(nullptr));
+			if (!res2.second)
+				throw Poco::Exception("Failed to initialize time zone information.");
+		}
+		else
+		{
+			u_group_id.toUTF8String(group_id);
+
+			auto it = time_zone_to_group.find(group_id);
+			if (it == time_zone_to_group.end())
 			{
-				const UnicodeString & u_equivalent_id = TimeZone::getEquivalentID(time_zone, i);
-				std::string equivalent_id;
-				u_equivalent_id.toUTF8String(equivalent_id);
-				auto res = time_zone_to_group.insert(std::make_pair(equivalent_id, group_id));
+				auto count = TimeZone::countEquivalentIDs(time_zone);
+				for (auto i = 0; i < count; ++i)
+				{
+					const UnicodeString & u_equivalent_id = TimeZone::getEquivalentID(time_zone, i);
+					std::string equivalent_id;
+					u_equivalent_id.toUTF8String(equivalent_id);
+					auto res = time_zone_to_group.insert(std::make_pair(equivalent_id, group_id));
+					if (!res.second)
+						throw Poco::Exception("Failed to initialize time zone information.");
+				}
+				auto res = date_lut_impl_list.emplace(std::piecewise_construct, std::forward_as_tuple(group_id), std::forward_as_tuple(nullptr));
 				if (!res.second)
 					throw Poco::Exception("Failed to initialize time zone information.");
 			}
 		}
-
-		date_lut_impl_list.emplace(std::piecewise_construct, std::forward_as_tuple(group_id), std::forward_as_tuple(nullptr));
 	}
 }
 
