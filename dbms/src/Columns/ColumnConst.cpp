@@ -1,5 +1,6 @@
-#include <DB/DataTypes/FieldToDataType.h>
+#include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
+#include <DB/DataTypes/DataTypeArray.h>
 
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnConst.h>
