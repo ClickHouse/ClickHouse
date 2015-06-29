@@ -50,6 +50,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 	bool internal,
 	QueryProcessingStage::Enum stage)
 {
+	/// TODO Логгировать здесь эксепшены, возникающие до начала выполнения запроса.
+
 	ProfileEvents::increment(ProfileEvents::Query);
 
 	ParserQuery parser;
@@ -107,7 +109,23 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
 	BlockIO res;
 
-	/// Всё, что связано с логгированием запросов.
+	try
+	{
+		auto interpreter = InterpreterFactory::get(ast, context, stage);
+		res = interpreter->execute();
+
+		/// Держим элемент списка процессов до конца обработки запроса.
+		res.process_list_entry = process_list_entry;
+	}
+	catch (...)
+	{
+		quota.addError(current_time);		/// TODO Было бы лучше добавить ещё в exception_callback
+		throw;
+	}
+
+	quota.addQuery(current_time);
+
+	/// Всё, что связано с логом запросов.
 	{
 		QueryLogElement elem;
 
@@ -142,7 +160,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 			{
 				const BlockStreamProfileInfo & info = profiling_stream->getInfo();
 
-				elem.query_duration_ms = info.total_stopwatch.elapsed() / 1000000;
+				double elapsed_seconds = info.total_stopwatch.elapsed();	/// TODO этот Stopwatch - coarse, использовать другой
+				elem.query_duration_ms = elapsed_seconds * 1000;
 
 				stream.getLeafRowsBytes(elem.read_rows, elem.read_bytes);	/// TODO неверно для распределённых запросов?
 
@@ -153,9 +172,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 				{
 					LOG_INFO(&Logger::get("executeQuery"), std::fixed << std::setprecision(3)
 						<< "Read " << elem.read_rows << " rows, "
-						<< formatReadableSizeWithBinarySuffix(elem.read_bytes) << " in " << elem.query_duration_ms / 1000.0 << " sec., "
-						<< static_cast<size_t>(elem.read_rows * 1000.0 / elem.query_duration_ms) << " rows/sec., "
-						<< formatReadableSizeWithBinarySuffix(elem.read_bytes * 1000.0 / elem.query_duration_ms) << "/sec.");
+						<< formatReadableSizeWithBinarySuffix(elem.read_bytes) << " in " << elapsed_seconds << " sec., "
+						<< static_cast<size_t>(elem.read_rows / elapsed_seconds) << " rows/sec., "
+						<< formatReadableSizeWithBinarySuffix(elem.read_bytes / elapsed_seconds) << "/sec.");
 				}
 			}
 
@@ -190,30 +209,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 			if (log_queries)
 				context.getQueryLog().add(elem);
 		};
-	}
 
-	try
-	{
-		auto interpreter = InterpreterFactory::get(ast, context, stage);
-		res = interpreter->execute();
-
-		/// Держим элемент списка процессов до конца обработки запроса.
-		res.process_list_entry = process_list_entry;
-	}
-	catch (...)
-	{
-		quota.addError(current_time);
-		throw;
-	}
-
-	quota.addQuery(current_time);
-
-	if (res.in)
-	{
-		std::stringstream log_str;
-		log_str << "Query pipeline:\n";
-		res.in->dumpTree(log_str);
-		LOG_DEBUG(&Logger::get("executeQuery"), log_str.str());
+		if (!internal && res.in)
+		{
+			std::stringstream log_str;
+			log_str << "Query pipeline:\n";
+			res.in->dumpTree(log_str);
+			LOG_DEBUG(&Logger::get("executeQuery"), log_str.str());
+		}
 	}
 
 	return std::make_tuple(ast, res);

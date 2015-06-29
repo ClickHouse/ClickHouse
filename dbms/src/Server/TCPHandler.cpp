@@ -283,10 +283,6 @@ void TCPHandler::processOrdinaryQuery()
 		AsynchronousBlockInputStream async_in(state.io.in);
 		async_in.readPrefix();
 
-		std::stringstream query_pipeline;
-		async_in.dumpTree(query_pipeline);
-		LOG_DEBUG(log, "Query pipeline:\n" << query_pipeline.rdbuf());
-
 		while (true)
 		{
 			Block block;

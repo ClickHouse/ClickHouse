@@ -190,6 +190,8 @@ Block QueryLog::createBlock()
 		{new ColumnUInt64, 	new DataTypeUInt64, 	"result_bytes"},
 
 		{new ColumnString, 	new DataTypeString, 	"query"},
+		{new ColumnString, 	new DataTypeString, 	"exception"},
+		{new ColumnString, 	new DataTypeString, 	"stack_trace"},
 
 		{new ColumnUInt8, 	new DataTypeUInt8, 		"interface"},
 		{new ColumnUInt8, 	new DataTypeUInt8, 		"http_method"},
@@ -225,9 +227,11 @@ void QueryLog::flush()
 			block.unsafeGetByPosition(8).column.get()->insert(static_cast<UInt64>(elem.result_bytes));
 
 			block.unsafeGetByPosition(9).column.get()->insertData(elem.query.data(), elem.query.size());
+			block.unsafeGetByPosition(10).column.get()->insertData(elem.exception.data(), elem.exception.size());
+			block.unsafeGetByPosition(11).column.get()->insertData(elem.stack_trace.data(), elem.stack_trace.size());
 
-			block.unsafeGetByPosition(10).column.get()->insert(static_cast<UInt64>(elem.interface));
-			block.unsafeGetByPosition(11).column.get()->insert(static_cast<UInt64>(elem.http_method));
+			block.unsafeGetByPosition(12).column.get()->insert(static_cast<UInt64>(elem.interface));
+			block.unsafeGetByPosition(13).column.get()->insert(static_cast<UInt64>(elem.http_method));
 
 			char ipv6_binary[16];
 			if (Poco::Net::IPAddress::IPv6 == elem.ip_address.family())
@@ -245,10 +249,10 @@ void QueryLog::flush()
 			else
 				memset(ipv6_binary, 0, 16);
 
-			block.unsafeGetByPosition(12).column.get()->insertData(ipv6_binary, 16);
+			block.unsafeGetByPosition(14).column.get()->insertData(ipv6_binary, 16);
 
-			block.unsafeGetByPosition(13).column.get()->insertData(elem.user.data(), elem.user.size());
-			block.unsafeGetByPosition(14).column.get()->insertData(elem.query_id.data(), elem.query_id.size());
+			block.unsafeGetByPosition(15).column.get()->insertData(elem.user.data(), elem.user.size());
+			block.unsafeGetByPosition(16).column.get()->insertData(elem.query_id.data(), elem.query_id.size());
 		}
 
 		BlockOutputStreamPtr stream = table->write(nullptr);
