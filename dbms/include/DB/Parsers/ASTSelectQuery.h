@@ -34,6 +34,9 @@ public:
 
 	ASTPtr clone() const override;
 
+	/// Возвращает указатель на формат из последнего SELECT'а цепочки UNION ALL.
+	const IAST * getFormat() const override;
+
 public:
 	bool distinct = false;
 	ASTPtr select_expression_list;

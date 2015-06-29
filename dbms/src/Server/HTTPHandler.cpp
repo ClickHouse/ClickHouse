@@ -136,6 +136,16 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 	if (readonly)
 		context.getSettingsRef().limits.readonly = true;
 
+	context.setInterface(Context::Interface::HTTP);
+
+	Context::HTTPMethod http_method = Context::HTTPMethod::UNKNOWN;
+	if (request.getMethod() == Poco::Net::HTTPServerRequest::HTTP_GET)
+		http_method = Context::HTTPMethod::GET;
+	else if (request.getMethod() == Poco::Net::HTTPServerRequest::HTTP_POST)
+		http_method = Context::HTTPMethod::POST;
+
+	context.setHTTPMethod(http_method);
+
 	Stopwatch watch;
 	executeQuery(*in, *used_output.out_maybe_compressed, context, query_plan);
 	watch.stop();

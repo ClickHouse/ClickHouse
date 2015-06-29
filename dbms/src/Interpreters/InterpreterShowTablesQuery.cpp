@@ -52,14 +52,4 @@ BlockIO InterpreterShowTablesQuery::execute()
 }
 
 
-BlockInputStreamPtr InterpreterShowTablesQuery::executeAndFormat(WriteBuffer & buf)
-{
-	String query = getRewrittenQuery();
-	ReadBufferFromString in(query);
-	BlockInputStreamPtr query_plan;
-	executeQuery(in, buf, context, query_plan, true);
-	return query_plan;
-}
-
-
 }

@@ -15,7 +15,7 @@ namespace DB
 class RemoteBlockOutputStream : public IBlockOutputStream
 {
 public:
-	RemoteBlockOutputStream(Connection & connection_, const String & query_, Settings * settings_ = nullptr)
+	RemoteBlockOutputStream(Connection & connection_, const String & query_, const Settings * settings_ = nullptr)
 		: connection(connection_), query(query_), settings(settings_)
 	{
 	}
@@ -105,7 +105,7 @@ public:
 private:
 	Connection & connection;
 	String query;
-	Settings * settings;
+	const Settings * settings;
 	Block sample_block;
 };
 

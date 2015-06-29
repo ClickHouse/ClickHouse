@@ -111,6 +111,7 @@ void TCPHandler::runImpl()
 		{
 			/// Восстанавливаем контекст запроса.
 			query_context = connection_context;
+			query_context.setInterface(Context::Interface::TCP);
 
 			/** Если Query - обрабатываем. Если Ping или Cancel - возвращаемся в начало.
 			  * Могут прийти настройки на отдельный запрос, которые модифицируют query_context.
@@ -568,10 +569,6 @@ void TCPHandler::receiveQuery()
 	state.compression = Protocol::Compression::Enum(compression);
 
 	readStringBinary(state.query, *in);
-
-	LOG_DEBUG(log, "Query ID: " << state.query_id);
-	LOG_DEBUG(log, "Query: " << state.query);
-	LOG_DEBUG(log, "Requested stage: " << QueryProcessingStage::toString(stage));
 }
 
 
