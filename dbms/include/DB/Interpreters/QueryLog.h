@@ -34,6 +34,7 @@ struct QueryLogElement
 		SHUTDOWN = 0,		/// Эта запись имеет служебное значение.
 		QUERY_START = 1,
 		QUERY_FINISH = 2,
+		EXCEPTION = 3,
 	};
 
 	Type type = QUERY_START;
@@ -51,6 +52,9 @@ struct QueryLogElement
 	UInt64 result_bytes{};
 
 	String query;
+
+	String exception;
+	String stack_trace;
 
 	Context::Interface interface = Context::Interface::TCP;
 	Context::HTTPMethod http_method = Context::HTTPMethod::UNKNOWN;

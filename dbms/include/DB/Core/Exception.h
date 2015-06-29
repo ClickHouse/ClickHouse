@@ -31,6 +31,8 @@ ExceptionPtr cloneCurrentException();
 void tryLogCurrentException(const char * log_name);
 void tryLogCurrentException(Poco::Logger * logger);
 
+std::string getCurrentExceptionMessage(bool with_stacktrace);
+
 
 void rethrowFirstException(Exceptions & exceptions);
 

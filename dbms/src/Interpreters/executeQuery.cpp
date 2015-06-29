@@ -1,10 +1,12 @@
 #include <DB/Common/ProfileEvents.h>
+#include <DB/Common/formatReadable.h>
 
 #include <DB/IO/ConcatReadBuffer.h>
 
 #include <DB/DataStreams/BlockIO.h>
 #include <DB/DataStreams/FormatFactory.h>
 #include <DB/DataStreams/copyData.h>
+#include <DB/DataStreams/IProfilingBlockInputStream.h>
 
 #include <DB/Parsers/ASTInsertQuery.h>
 #include <DB/Parsers/ASTShowProcesslistQuery.h>
@@ -103,8 +105,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 		context.setProcessListElement(&process_list_entry->get());
 	}
 
-	/// Логгируем в таблицу начало выполнения запроса, если нужно.
-	if (settings.log_queries)
+	BlockIO res;
+
+	/// Всё, что связано с логгированием запросов.
 	{
 		QueryLogElement elem;
 
@@ -121,10 +124,73 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 		elem.user = context.getUser();
 		elem.query_id = context.getCurrentQueryId();
 
-		context.getQueryLog().add(elem);
-	}
+		bool log_queries = settings.log_queries;
 
-	BlockIO res;
+		/// Логгируем в таблицу начало выполнения запроса, если нужно.
+		if (log_queries)
+			context.getQueryLog().add(elem);
+
+		/// Также дадим вызывающему коду в дальнейшем логгировать завершение запроса и эксепшен.
+		res.finish_callback = [elem, &context, log_queries] (IBlockInputStream & stream) mutable
+		{
+			elem.type = QueryLogElement::QUERY_FINISH;
+
+			elem.event_time = time(0);
+			elem.query_duration_ms = 1000 * (elem.event_time - elem.query_start_time);	/// Грубое время для запросов без profiling_stream;
+
+			if (IProfilingBlockInputStream * profiling_stream = dynamic_cast<IProfilingBlockInputStream *>(&stream))
+			{
+				const BlockStreamProfileInfo & info = profiling_stream->getInfo();
+
+				elem.query_duration_ms = info.total_stopwatch.elapsed() / 1000000;
+
+				stream.getLeafRowsBytes(elem.read_rows, elem.read_bytes);	/// TODO неверно для распределённых запросов?
+
+				elem.result_rows = info.rows;
+				elem.result_bytes = info.bytes;
+
+				if (elem.read_rows != 0)
+				{
+					LOG_INFO(&Logger::get("executeQuery"), std::fixed << std::setprecision(3)
+						<< "Read " << elem.read_rows << " rows, "
+						<< formatReadableSizeWithBinarySuffix(elem.read_bytes) << " in " << elem.query_duration_ms / 1000.0 << " sec., "
+						<< static_cast<size_t>(elem.read_rows * 1000.0 / elem.query_duration_ms) << " rows/sec., "
+						<< formatReadableSizeWithBinarySuffix(elem.read_bytes * 1000.0 / elem.query_duration_ms) << "/sec.");
+				}
+			}
+
+			if (log_queries)
+				context.getQueryLog().add(elem);
+		};
+
+		res.exception_callback = [elem, &context, log_queries] () mutable
+		{
+			elem.type = QueryLogElement::EXCEPTION;
+
+			elem.event_time = time(0);
+			elem.query_duration_ms = 1000 * (elem.event_time - elem.query_start_time);	/// Низкая точность. Можно сделать лучше.
+			elem.exception = getCurrentExceptionMessage(false);
+
+			/// Достаём стек трейс, если возможно.
+			try
+			{
+				throw;
+			}
+			catch (const Exception & e)
+			{
+				elem.stack_trace = e.getStackTrace().toString();
+
+				LOG_ERROR(&Logger::get("executeQuery"), elem.exception << ", Stack trace:\n\n" << elem.stack_trace);
+			}
+			catch (...)
+			{
+				LOG_ERROR(&Logger::get("executeQuery"), elem.exception);
+			}
+
+			if (log_queries)
+				context.getQueryLog().add(elem);
+		};
+	}
 
 	try
 	{
@@ -141,6 +207,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 	}
 
 	quota.addQuery(current_time);
+
+	if (res.in)
+	{
+		std::stringstream log_str;
+		log_str << "Query pipeline:\n";
+		res.in->dumpTree(log_str);
+		LOG_DEBUG(&Logger::get("executeQuery"), log_str.str());
+	}
 
 	return std::make_tuple(ast, res);
 }
@@ -197,51 +271,63 @@ void executeQuery(
 
 	std::tie(ast, streams) = executeQueryImpl(begin, end, context, internal, stage);
 
-	if (streams.out)
+	bool exception = false;
+	try
 	{
-		const ASTInsertQuery * ast_insert_query = dynamic_cast<const ASTInsertQuery *>(ast.get());
+		if (streams.out)
+		{
+			const ASTInsertQuery * ast_insert_query = dynamic_cast<const ASTInsertQuery *>(ast.get());
 
-		if (!ast_insert_query)
-			throw Exception("Logical error: query requires data to insert, but it is not INSERT query", ErrorCodes::LOGICAL_ERROR);
+			if (!ast_insert_query)
+				throw Exception("Logical error: query requires data to insert, but it is not INSERT query", ErrorCodes::LOGICAL_ERROR);
 
-		String format = ast_insert_query->format;
-		if (format.empty())
-			format = "Values";
+			String format = ast_insert_query->format;
+			if (format.empty())
+				format = "Values";
 
-		/// Данные могут содержаться в распарсенной (ast_insert_query.data) и ещё не распарсенной (istr) части запроса.
+			/// Данные могут содержаться в распарсенной (ast_insert_query.data) и ещё не распарсенной (istr) части запроса.
 
-		ConcatReadBuffer::ReadBuffers buffers;
-		ReadBuffer buf1(const_cast<char *>(ast_insert_query->data), ast_insert_query->data ? ast_insert_query->end - ast_insert_query->data : 0, 0);
+			ConcatReadBuffer::ReadBuffers buffers;
+			ReadBuffer buf1(const_cast<char *>(ast_insert_query->data), ast_insert_query->data ? ast_insert_query->end - ast_insert_query->data : 0, 0);
 
-		if (ast_insert_query->data)
-			buffers.push_back(&buf1);
-		buffers.push_back(&istr);
+			if (ast_insert_query->data)
+				buffers.push_back(&buf1);
+			buffers.push_back(&istr);
 
-		/** NOTE Нельзя читать из istr до того, как прочтём всё между ast_insert_query.data и ast_insert_query.end.
-		  * - потому что query.data может ссылаться на кусок памяти, использующийся в качестве буфера в istr.
-		  */
+			/** NOTE Нельзя читать из istr до того, как прочтём всё между ast_insert_query.data и ast_insert_query.end.
+			* - потому что query.data может ссылаться на кусок памяти, использующийся в качестве буфера в istr.
+			*/
 
-		ConcatReadBuffer data_istr(buffers);
+			ConcatReadBuffer data_istr(buffers);
 
-		BlockInputStreamPtr in{
-			context.getFormatFactory().getInput(
-				format, data_istr, streams.out_sample, context.getSettings().max_insert_block_size)};
+			BlockInputStreamPtr in{
+				context.getFormatFactory().getInput(
+					format, data_istr, streams.out_sample, context.getSettings().max_insert_block_size)};
 
-		copyData(*in, *streams.out);
+			copyData(*in, *streams.out);
+		}
+
+		if (streams.in)
+		{
+			const ASTQueryWithOutput * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
+
+			String format_name = ast_query_with_output && (ast_query_with_output->getFormat() != nullptr)
+				? typeid_cast<const ASTIdentifier &>(*ast_query_with_output->getFormat()).name
+				: context.getDefaultFormat();
+
+			BlockOutputStreamPtr out = context.getFormatFactory().getOutput(format_name, ostr, streams.in_sample);
+
+			copyData(*streams.in, *out);
+		}
+	}
+	catch (...)
+	{
+		exception = true;
+		streams.onException();
 	}
 
-	if (streams.in)
-	{
-		const ASTQueryWithOutput * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
-
-		String format_name = ast_query_with_output && (ast_query_with_output->getFormat() != nullptr)
-			? typeid_cast<const ASTIdentifier &>(*ast_query_with_output->getFormat()).name
-			: context.getDefaultFormat();
-
-		BlockOutputStreamPtr out = context.getFormatFactory().getOutput(format_name, ostr, streams.in_sample);
-
-		copyData(*streams.in, *out);
-	}
+	if (!exception)
+		streams.onFinish();
 }
 
 }
