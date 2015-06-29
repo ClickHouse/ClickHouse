@@ -850,11 +850,11 @@ private:
 			/// Формат может быть указан в запросе.
 			if (ASTQueryWithOutput * query_with_output = dynamic_cast<ASTQueryWithOutput *>(&*parsed_query))
 			{
-				if (query_with_output->format)
+				if (query_with_output->getFormat() != nullptr)
 				{
 					if (has_vertical_output_suffix)
 						throw Exception("Output format already specified", ErrorCodes::CLIENT_OUTPUT_FORMAT_SPECIFIED);
-					if (ASTIdentifier * id = typeid_cast<ASTIdentifier *>(&*query_with_output->format))
+					if (const ASTIdentifier * id = typeid_cast<const ASTIdentifier *>(query_with_output->getFormat()))
 						current_format = id->name;
 				}
 			}

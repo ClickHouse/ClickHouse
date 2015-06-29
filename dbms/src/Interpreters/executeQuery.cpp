@@ -211,8 +211,8 @@ void executeQuery(
 	{
 		const ASTQueryWithOutput * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
 
-		String format_name = ast_query_with_output && ast_query_with_output->format
-			? typeid_cast<const ASTIdentifier &>(*ast_query_with_output->format).name
+		String format_name = ast_query_with_output && (ast_query_with_output->getFormat() != nullptr)
+			? typeid_cast<const ASTIdentifier &>(*ast_query_with_output->getFormat()).name
 			: context.getDefaultFormat();
 
 		BlockOutputStreamPtr out = context.getFormatFactory().getOutput(format_name, ostr, streams.in_sample);
