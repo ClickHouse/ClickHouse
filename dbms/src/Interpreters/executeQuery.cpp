@@ -160,7 +160,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 			{
 				const BlockStreamProfileInfo & info = profiling_stream->getInfo();
 
-				double elapsed_seconds = info.total_stopwatch.elapsed();	/// TODO этот Stopwatch - coarse, использовать другой
+				double elapsed_seconds = info.total_stopwatch.elapsedSeconds();	/// TODO этот Stopwatch - coarse, использовать другой
 				elem.query_duration_ms = elapsed_seconds * 1000;
 
 				stream.getLeafRowsBytes(elem.read_rows, elem.read_bytes);	/// TODO неверно для распределённых запросов?
