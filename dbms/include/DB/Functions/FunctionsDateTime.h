@@ -4,6 +4,7 @@
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/DataTypes/DataTypeArray.h>
+#include <DB/DataTypes/DataTypeString.h>
 
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Columns/ColumnArray.h>
@@ -217,7 +218,16 @@ struct DateTimeTransformImpl
 {
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		auto & date_lut = DateLUT::instance();
+		std::string time_zone;
+
+		if (arguments.size() == 2)
+		{
+			const ColumnPtr column = block.getByPosition(arguments[1]).column;
+			if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(&*column))
+				time_zone = col->getData();
+		}
+
+		auto & date_lut = DateLUT::instance(time_zone);
 
 		if (const ColumnVector<FromType> * col_from = typeid_cast<const ColumnVector<FromType> *>(&*block.getByPosition(arguments[0]).column))
 		{
@@ -260,10 +270,18 @@ public:
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnType(const DataTypes & arguments) const
 	{
-		if (arguments.size() != 1)
+		if ((arguments.size() < 1) || (arguments.size() > 2))
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 1.",
+				+ toString(arguments.size()) + ", should be 1 or 2.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		if ((arguments.size()) == 2 && typeid_cast<const DataTypeString *>(&*arguments[1]) == nullptr)
+		{
+			throw Exception{
+				"Illegal type " + arguments[1]->getName() + " of argument of function " + getName(),
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+			};
+		}
 
 		return new ToDataType;
 	}
