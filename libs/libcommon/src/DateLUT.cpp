@@ -89,9 +89,11 @@ DateLUTImpl & DateLUT::instance(const std::string & time_zone)
 
 DateLUTImpl & DateLUT::get(const std::string & time_zone)
 {
-	auto it = time_zone_to_group.find(time_zone);
+	const std::string & actual_time_zone = time_zone.empty() ? default_time_zone : time_zone;
+
+	auto it = time_zone_to_group.find(actual_time_zone);
 	if (it == time_zone_to_group.end())
-		throw Poco::Exception("Invalid time zone " + time_zone);
+		throw Poco::Exception("Invalid time zone " + actual_time_zone);
 
 	const auto & group_id = it->second;
 	auto & wrapper = (*date_lut_impl_list)[group_id];
@@ -103,7 +105,7 @@ DateLUTImpl & DateLUT::get(const std::string & time_zone)
 		tmp = wrapper.load(std::memory_order_acquire);
 		if (tmp == nullptr)
 		{
-			tmp = new DateLUTImpl(time_zone);
+			tmp = new DateLUTImpl(actual_time_zone);
 			wrapper.store(tmp, std::memory_order_release);
 		}
 	}
