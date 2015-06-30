@@ -90,7 +90,7 @@ namespace DB
 		static inline ResultType apply(A x)
 		{
 			return x < 1 ? 0
-				: (x < 18 ? 1
+				: (x < 18 ? 17
 				: (x < 25 ? 18
 				: (x < 35 ? 25
 				: (x < 45 ? 35
