@@ -11,6 +11,7 @@
 
 #include <DB/Functions/IFunction.h>
 
+#include <type_traits>
 
 namespace DB
 {
@@ -212,11 +213,19 @@ struct ToRelativeSecondNumImpl
 	}
 };
 
-
-template <typename FromType, typename ToType, typename Transform, typename Name>
-struct DateTimeTransformImpl
+template<typename FromType, typename ToType>
+struct DateLUTAccessor
 {
-	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	static DateLUTImpl & execute(Block & block, const ColumnNumbers & arguments)
+	{
+		return DateLUT::instance();
+	}
+};
+
+template<>
+struct DateLUTAccessor<DataTypeDateTime::FieldType, DataTypeDate::FieldType>
+{
+	static DateLUTImpl & execute(Block & block, const ColumnNumbers & arguments)
 	{
 		std::string time_zone;
 
@@ -227,7 +236,16 @@ struct DateTimeTransformImpl
 				time_zone = col->getData();
 		}
 
-		auto & date_lut = DateLUT::instance(time_zone);
+		return DateLUT::instance(time_zone);
+	}
+};
+
+template <typename FromType, typename ToType, typename Transform, typename Name>
+struct DateTimeTransformImpl
+{
+	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		auto & date_lut = DateLUTAccessor<FromType, ToType>::execute(block, arguments);
 
 		if (const ColumnVector<FromType> * col_from = typeid_cast<const ColumnVector<FromType> *>(&*block.getByPosition(arguments[0]).column))
 		{
@@ -267,23 +285,9 @@ public:
 		return name;
 	}
 
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
 	{
-		if ((arguments.size() < 1) || (arguments.size() > 2))
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 1 or 2.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		if ((arguments.size()) == 2 && typeid_cast<const DataTypeString *>(&*arguments[1]) == nullptr)
-		{
-			throw Exception{
-				"Illegal type " + arguments[1]->getName() + " of argument of function " + getName(),
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-			};
-		}
-
-		return new ToDataType;
+		return getReturnTypeImpl(arguments);
 	}
 
 	/// Выполнить функцию над блоком.
@@ -298,6 +302,45 @@ public:
 		else
 			throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+	}
+
+private:
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	template<typename ToDataType2 = ToDataType>
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments, typename std::enable_if<!std::is_same<ToDataType2, DataTypeDate>::value, void>::type * = nullptr) const
+	{
+		if (arguments.size() != 1)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ toString(arguments.size()) + ", should be 1.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		return new ToDataType;
+	}
+
+	template<typename ToDataType2 = ToDataType>
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments, typename std::enable_if<std::is_same<ToDataType2, DataTypeDate>::value, void>::type * = nullptr) const
+	{
+		if ((arguments.size() < 1) || (arguments.size() > 2))
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ toString(arguments.size()) + ", should be 1 or 2.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		if (typeid_cast<const DataTypeDateTime *>(&*arguments[0]) == nullptr)
+		{
+			if (arguments.size() != 1)
+				throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+					+ toString(arguments.size()) + ", should be 1.",
+					ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+		}
+		else if ((arguments.size()) == 2 && typeid_cast<const DataTypeString *>(&*arguments[1]) == nullptr)
+		{
+			throw Exception{
+				"Illegal type " + arguments[1]->getName() + " of argument of function " + getName(),
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+			};
+		}
+
+		return new ToDataType;
 	}
 };
 
