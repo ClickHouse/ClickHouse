@@ -210,7 +210,7 @@ void QueryLog::flush()
 	{
 		LOG_TRACE(log, "Flushing query log");
 
-		DateLUT & date_lut = DateLUT::instance();
+		auto & date_lut = DateLUT::instance();
 
 		Block block = createBlock();
 
