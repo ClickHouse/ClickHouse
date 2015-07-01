@@ -242,6 +242,77 @@ struct ConvertImpl<FromDataType, DataTypeString, Name>
 	}
 };
 
+time_t convert_time(time_t remote_time, DateLUTImpl & remote_date_lut, DateLUTImpl &  local_date_lut)
+{
+	if (&remote_date_lut == &local_date_lut)
+		return remote_time;
+	else
+	{
+		const auto & values = remote_date_lut.getValues(remote_time);
+		return local_date_lut.makeDateTime(values.year, values.month, values.day_of_month,
+										remote_date_lut.toHourInaccurate(remote_time),
+										remote_date_lut.toMinuteInaccurate(remote_time),
+										remote_date_lut.toSecondInaccurate(remote_time));
+	}
+}
+
+template<typename Name>
+struct ConvertImpl<DataTypeDateTime, DataTypeString, Name>
+{
+	typedef typename DataTypeDateTime::FieldType FromFieldType;
+
+	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		std::string time_zone;
+
+		if (arguments.size() == 2)
+		{
+			const ColumnPtr column = block.getByPosition(arguments[1]).column;
+			if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(&*column))
+				time_zone = col->getData();
+		}
+
+		auto & remote_date_lut = DateLUT::instance(time_zone);
+		auto & local_date_lut = DateLUT::instance();
+
+		if (const ColumnVector<FromFieldType> * col_from = typeid_cast<const ColumnVector<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
+		{
+			ColumnString * col_to = new ColumnString;
+			block.getByPosition(result).column = col_to;
+
+			const typename ColumnVector<FromFieldType>::Container_t & vec_from = col_from->getData();
+			ColumnString::Chars_t & data_to = col_to->getChars();
+			ColumnString::Offsets_t & offsets_to = col_to->getOffsets();
+			size_t size = vec_from.size();
+			data_to.resize(size * 2);
+			offsets_to.resize(size);
+
+			WriteBufferFromVector<ColumnString::Chars_t> write_buffer(data_to);
+
+			for (size_t i = 0; i < size; ++i)
+			{
+				auto ti = convert_time(vec_from[i], remote_date_lut, local_date_lut);
+				formatImpl<DataTypeDateTime>(ti, write_buffer);
+				writeChar(0, write_buffer);
+				offsets_to[i] = write_buffer.count();
+			}
+			data_to.resize(write_buffer.count());
+		}
+		else if (const ColumnConst<FromFieldType> * col_from = typeid_cast<const ColumnConst<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
+		{
+			std::vector<char> buf;
+			WriteBufferFromVector<std::vector<char> > write_buffer(buf);
+			auto ti = convert_time(col_from->getData(), remote_date_lut, local_date_lut);
+			formatImpl<DataTypeDateTime>(ti, write_buffer);
+			block.getByPosition(result).column = new ColumnConstString(col_from->size(), std::string(&buf[0], write_buffer.count()));
+		}
+		else
+			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+					+ " of first argument of function " + Name::name,
+				ErrorCodes::ILLEGAL_COLUMN);
+	}
+};
+
 
 /** Преобразование строк в числа, даты, даты-с-временем: через парсинг.
   */
@@ -437,12 +508,7 @@ public:
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnType(const DataTypes & arguments) const
 	{
-		if (arguments.size() != 1)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 1.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		return new ToDataType;
+		return getReturnTypeImpl(arguments);
 	}
 
 	/// Выполнить функцию над блоком.
@@ -467,6 +533,46 @@ public:
 		else
 			throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+	}
+
+private:
+	template<typename ToDataType2 = ToDataType>
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments,
+		typename std::enable_if<!std::is_same<ToDataType2, DataTypeString>::value, void>::type * = nullptr) const
+	{
+		if (arguments.size() != 1)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ toString(arguments.size()) + ", should be 1.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		return new ToDataType;
+	}
+
+	template<typename ToDataType2 = ToDataType>
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments,
+		typename std::enable_if<std::is_same<ToDataType2, DataTypeString>::value, void>::type * = nullptr) const
+	{
+		if ((arguments.size() < 1) || (arguments.size() > 2))
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ toString(arguments.size()) + ", should be 1 or 2.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		if (typeid_cast<const DataTypeDateTime *>(&*arguments[0]) == nullptr)
+		{
+			if (arguments.size() != 1)
+				throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+					+ toString(arguments.size()) + ", should be 1.",
+					ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+		}
+		else if ((arguments.size()) == 2 && typeid_cast<const DataTypeString *>(&*arguments[1]) == nullptr)
+		{
+			throw Exception{
+				"Illegal type " + arguments[1]->getName() + " of argument of function " + getName(),
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+			};
+		}
+
+		return new ToDataType2;
 	}
 };
 
