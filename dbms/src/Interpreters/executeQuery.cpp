@@ -123,7 +123,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 		{
 			String query = String(begin, begin + std::min(end - begin, static_cast<ptrdiff_t>(max_query_size)));
 			logQuery(query, context);
-			tryLogCurrentException(__PRETTY_FUNCTION__);
 			onExceptionBeforeStart(query, context, current_time);
 		}
 

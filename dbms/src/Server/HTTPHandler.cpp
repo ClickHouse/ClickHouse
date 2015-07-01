@@ -229,6 +229,7 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
 	}
 	catch (...)
 	{
+		tryLogCurrentException(log);
 		trySendExceptionToClient(getCurrentExceptionMessage(true), request, response, used_output);
 	}
 }
