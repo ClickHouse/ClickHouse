@@ -375,6 +375,67 @@ struct ConvertImpl<DataTypeString, ToDataType, Name>
 	}
 };
 
+struct NameToUnixTimestamp	{ static constexpr auto name = "toUnixTimestamp"; };
+
+template<>
+struct ConvertImpl<DataTypeString, DataTypeInt32, NameToUnixTimestamp>
+{
+	typedef typename DataTypeInt32::FieldType ToFieldType;
+
+	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		std::string time_zone;
+
+		if (arguments.size() == 2)
+		{
+			const ColumnPtr column = block.getByPosition(arguments[1]).column;
+			if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(&*column))
+				time_zone = col->getData();
+		}
+
+		auto & remote_date_lut = DateLUT::instance(time_zone);
+		auto & local_date_lut = DateLUT::instance();
+
+		if (const ColumnString * col_from = typeid_cast<const ColumnString *>(&*block.getByPosition(arguments[0]).column))
+		{
+			ColumnVector<ToFieldType> * col_to = new ColumnVector<ToFieldType>;
+			block.getByPosition(result).column = col_to;
+
+			const ColumnString::Chars_t & data_from = col_from->getChars();
+			typename ColumnVector<ToFieldType>::Container_t & vec_to = col_to->getData();
+			size_t size = col_from->size();
+			vec_to.resize(size);
+
+			ReadBuffer read_buffer(const_cast<char *>(reinterpret_cast<const char *>(&data_from[0])), data_from.size(), 0);
+
+			char zero = 0;
+			for (size_t i = 0; i < size; ++i)
+			{
+				DataTypeDateTime::FieldType x = 0;
+				parseImpl<DataTypeDateTime>(x, read_buffer);
+				auto ti = convert_time(x, local_date_lut, remote_date_lut);
+				vec_to[i] = ti;
+				readChar(zero, read_buffer);
+				if (zero != 0)
+					throw Exception("Cannot parse from string.", ErrorCodes::CANNOT_PARSE_NUMBER);
+			}
+		}
+		else if (const ColumnConstString * col_from = typeid_cast<const ColumnConstString *>(&*block.getByPosition(arguments[0]).column))
+		{
+			const String & s = col_from->getData();
+			ReadBufferFromString read_buffer(s);
+			DataTypeDateTime::FieldType x = 0;
+			parseImpl<DataTypeDateTime>(x, read_buffer);
+			auto ti = convert_time(x, local_date_lut, remote_date_lut);
+			block.getByPosition(result).column = new ColumnConst<ToFieldType>(col_from->size(), ti);
+		}
+		else
+			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+					+ " of first argument of function " + NameToUnixTimestamp::name,
+				ErrorCodes::ILLEGAL_COLUMN);
+	}
+};
+
 /** Если типы совпадают - просто скопируем ссылку на столбец.
   */
 template <typename Name>
@@ -536,9 +597,9 @@ public:
 	}
 
 private:
-	template<typename ToDataType2 = ToDataType>
+	template<typename ToDataType2 = ToDataType, typename Name2 = Name>
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments,
-		typename std::enable_if<!std::is_same<ToDataType2, DataTypeString>::value, void>::type * = nullptr) const
+		typename std::enable_if<!(std::is_same<ToDataType2, DataTypeString>::value || std::is_same<Name2, NameToUnixTimestamp>::value), void>::type * = nullptr) const
 	{
 		if (arguments.size() != 1)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -548,9 +609,9 @@ private:
 		return new ToDataType;
 	}
 
-	template<typename ToDataType2 = ToDataType>
+	template<typename ToDataType2 = ToDataType, typename Name2 = Name>
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments,
-		typename std::enable_if<std::is_same<ToDataType2, DataTypeString>::value, void>::type * = nullptr) const
+		typename std::enable_if<std::is_same<ToDataType2, DataTypeString>::value>::type * = nullptr) const
 	{
 		if ((arguments.size() < 1) || (arguments.size() > 2))
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -558,6 +619,33 @@ private:
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 		if (typeid_cast<const DataTypeDateTime *>(&*arguments[0]) == nullptr)
+		{
+			if (arguments.size() != 1)
+				throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+					+ toString(arguments.size()) + ", should be 1.",
+					ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+		}
+		else if ((arguments.size()) == 2 && typeid_cast<const DataTypeString *>(&*arguments[1]) == nullptr)
+		{
+			throw Exception{
+				"Illegal type " + arguments[1]->getName() + " of argument of function " + getName(),
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+			};
+		}
+
+		return new ToDataType2;
+	}
+
+	template<typename ToDataType2 = ToDataType, typename Name2 = Name>
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments,
+		typename std::enable_if<std::is_same<Name2, NameToUnixTimestamp>::value, void>::type * = nullptr) const
+	{
+		if ((arguments.size() < 1) || (arguments.size() > 2))
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ toString(arguments.size()) + ", should be 1 or 2.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		if (typeid_cast<const DataTypeString *>(&*arguments[0]) == nullptr)
 		{
 			if (arguments.size() != 1)
 				throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -734,6 +822,6 @@ typedef FunctionConvert<DataTypeFloat64,	NameToFloat64> 		FunctionToFloat64;
 typedef FunctionConvert<DataTypeDate,		NameToDate> 		FunctionToDate;
 typedef FunctionConvert<DataTypeDateTime,	NameToDateTime> 	FunctionToDateTime;
 typedef FunctionConvert<DataTypeString,		NameToString> 		FunctionToString;
-
+typedef FunctionConvert<DataTypeInt32,		NameToUnixTimestamp> FunctionToUnixTimestamp;
 
 }
