@@ -146,41 +146,14 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 
 	context.setHTTPMethod(http_method);
 
-	Stopwatch watch;
 	executeQuery(*in, *used_output.out_maybe_compressed, context, query_plan);
-	watch.stop();
-
-	if (query_plan)
-	{
-		std::stringstream log_str;
-		log_str << "Query pipeline:\n";
-		query_plan->dumpTree(log_str);
-		LOG_DEBUG(log, log_str.str());
-
-		/// Выведем информацию о том, сколько считано строк и байт.
-		size_t rows = 0;
-		size_t bytes = 0;
-
-		query_plan->getLeafRowsBytes(rows, bytes);
-
-		if (rows != 0)
-		{
-			LOG_INFO(log, std::fixed << std::setprecision(3)
-				<< "Read " << rows << " rows, " << bytes / 1048576.0 << " MiB in " << watch.elapsedSeconds() << " sec., "
-				<< static_cast<size_t>(rows / watch.elapsedSeconds()) << " rows/sec., " << bytes / 1048576.0 / watch.elapsedSeconds() << " MiB/sec.");
-		}
-	}
-
-	QuotaForIntervals & quota = context.getQuota();
-	if (!quota.empty())
-		LOG_INFO(log, "Quota:\n" << quota.toString());
 
 	/// Если не было эксепшена и данные ещё не отправлены - отправляются HTTP заголовки с кодом 200.
 	used_output.out->finalize();
 }
 
 
-void HTTPHandler::trySendExceptionToClient(std::stringstream & s,
+void HTTPHandler::trySendExceptionToClient(const std::string & s,
 	Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response,
 	Output & used_output)
 {
@@ -201,7 +174,7 @@ void HTTPHandler::trySendExceptionToClient(std::stringstream & s,
 		if (!response.sent() && !used_output.out_maybe_compressed)
 		{
 			/// Ещё ничего не отправляли, и даже не знаем, нужно ли сжимать ответ.
-			response.send() << s.str() << std::endl;
+			response.send() << s << std::endl;
 		}
 		else if (used_output.out_maybe_compressed)
 		{
@@ -217,8 +190,7 @@ void HTTPHandler::trySendExceptionToClient(std::stringstream & s,
 				used_output.out->position() = used_output.out->buffer().begin();
 			}
 
-			std::string exception_message = s.str();
-			writeString(exception_message, *used_output.out_maybe_compressed);
+			writeString(s, *used_output.out_maybe_compressed);
 			writeChar('\n', *used_output.out_maybe_compressed);
 			used_output.out_maybe_compressed->next();
 			used_output.out->finalize();
@@ -255,35 +227,10 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
 		processQuery(request, response, used_output);
 		LOG_INFO(log, "Done processing query");
 	}
-	catch (Exception & e)
-	{
-		std::stringstream s;
-		s << "Code: " << e.code() << ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what()
-			<< ", Stack trace:\n\n" << e.getStackTrace().toString();
-		LOG_ERROR(log, s.str());
-		trySendExceptionToClient(s, request, response, used_output);
-	}
-	catch (Poco::Exception & e)
-	{
-		std::stringstream s;
-		s << "Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
-			<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what();
-		LOG_ERROR(log, s.str());
-		trySendExceptionToClient(s, request, response, used_output);
-	}
-	catch (std::exception & e)
-	{
-		std::stringstream s;
-		s << "Code: " << ErrorCodes::STD_EXCEPTION << ". " << e.what();
-		LOG_ERROR(log, s.str());
-		trySendExceptionToClient(s, request, response, used_output);
-	}
 	catch (...)
 	{
-		std::stringstream s;
-		s << "Code: " << ErrorCodes::UNKNOWN_EXCEPTION << ". Unknown exception.";
-		LOG_ERROR(log, s.str());
-		trySendExceptionToClient(s, request, response, used_output);
+		tryLogCurrentException(log);
+		trySendExceptionToClient(getCurrentExceptionMessage(true), request, response, used_output);
 	}
 }
 
