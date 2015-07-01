@@ -130,9 +130,6 @@ private:
 
 	/// Эта функция вызывается из разных потоков.
 	void updateProgress(const Progress & value);
-
-	/// Вывести информацию о скорости выполнения SELECT запроса.
-	void logProfileInfo(Stopwatch & watch, IBlockInputStream & in);
 };
 
 

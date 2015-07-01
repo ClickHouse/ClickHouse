@@ -40,6 +40,7 @@ class ProcessListElement;
 class Macros;
 class Progress;
 class Clusters;
+class QueryLog;
 
 
 /// имя таблицы -> таблица
@@ -64,12 +65,30 @@ typedef std::vector<DatabaseAndTableName> Dependencies;
   */
 class Context
 {
+public:
+	enum class Interface
+	{
+		TCP = 1,
+		HTTP = 2,
+		OLAP_HTTP = 3,
+	};
+
+	enum class HTTPMethod
+	{
+		UNKNOWN = 0,
+		GET = 1,
+		POST = 2,
+	};
+
 private:
 	typedef std::shared_ptr<ContextShared> Shared;
 	Shared shared;
 
 	String user;						/// Текущий пользователь.
 	Poco::Net::IPAddress ip_address;	/// IP-адрес, с которого задан запрос.
+	Interface interface = Interface::TCP;
+	HTTPMethod http_method = HTTPMethod::UNKNOWN;	/// NOTE Возможно, перенести это в отдельный struct ClientInfo.
+
 	std::shared_ptr<QuotaForIntervals> quota;	/// Текущая квота. По-умолчанию - пустая квота, которая ничего не ограничивает.
 	String current_database;			/// Текущая БД.
 	String current_query_id;			/// Id текущего запроса.
@@ -107,6 +126,12 @@ public:
 	void setUser(const String & name, const String & password, const Poco::Net::IPAddress & address, const String & quota_key);
 	String getUser() const { return user; }
 	Poco::Net::IPAddress getIPAddress() const { return ip_address; }
+
+	Interface getInterface() const { return interface; }
+	void setInterface(Interface interface_) { interface = interface_; }
+
+	HTTPMethod getHTTPMethod() const { return http_method; }
+	void setHTTPMethod(HTTPMethod http_method_) { http_method = http_method_; }
 
 	void setQuota(const String & name, const String & quota_key, const String & user_name, const Poco::Net::IPAddress & address);
 	QuotaForIntervals & getQuota();
@@ -241,6 +266,8 @@ public:
 	Poco::SharedPtr<Clusters> getClusters() const;
 
 	Compiler & getCompiler();
+
+	QueryLog & getQueryLog();
 
 	/// Позволяет выбрать метод сжатия по условиям, описанным в конфигурационном файле.
 	CompressionMethod chooseCompressionMethod(size_t part_size, double part_size_ratio) const;

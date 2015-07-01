@@ -252,13 +252,19 @@ void writeAnyEscapedString(const String & s, WriteBuffer & buf)
 }
 
 
-inline void writeEscapedString(const String & s, WriteBuffer & buf)
+inline void writeEscapedString(const char * str, size_t size, WriteBuffer & buf)
 {
 	/// strpbrk в libc под Linux на процессорах с SSE 4.2 хорошо оптимизирована (этот if ускоряет код в 1.5 раза)
-	if (nullptr == strpbrk(s.data(), "\b\f\n\r\t\'\\") && strlen(s.data()) == s.size())
-		writeString(s, buf);
+	if (nullptr == strpbrk(str, "\b\f\n\r\t\'\\") && strlen(str) == size)
+		writeString(str, size, buf);
 	else
-		writeAnyEscapedString<'\''>(s, buf);
+		writeAnyEscapedString<'\''>(str, str + size, buf);
+}
+
+
+inline void writeEscapedString(const String & s, WriteBuffer & buf)
+{
+	writeEscapedString(s.data(), s.size(), buf);
 }
 
 
@@ -470,6 +476,10 @@ inline void writeText(const Float32 & x, 	WriteBuffer & buf) { writeFloatText(x,
 inline void writeText(const Float64 & x, 	WriteBuffer & buf) { writeFloatText(x, buf); }
 inline void writeText(const String & x,		WriteBuffer & buf) { writeEscapedString(x, buf); }
 inline void writeText(const bool & x, 		WriteBuffer & buf) { writeBoolText(x, buf); }
+/// в отличие от метода для std::string
+/// здесь предполагается, что x null-terminated строка.
+inline void writeText(const char * x, 		WriteBuffer & buf) { writeEscapedString(x, strlen(x), buf); }
+inline void writeText(const char * x, size_t size, WriteBuffer & buf) { writeEscapedString(x, size, buf); }
 
 inline void writeText(const VisitID_t & x, 	WriteBuffer & buf) { writeIntText(static_cast<const UInt64 &>(x), buf); }
 inline void writeText(const mysqlxx::Date & x,		WriteBuffer & buf) { writeDateText(x, buf); }
