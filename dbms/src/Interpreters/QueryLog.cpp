@@ -189,6 +189,8 @@ Block QueryLog::createBlock()
 		{new ColumnUInt64, 	new DataTypeUInt64, 	"result_rows"},
 		{new ColumnUInt64, 	new DataTypeUInt64, 	"result_bytes"},
 
+		{new ColumnUInt64, 	new DataTypeUInt64, 	"memory_usage"},
+
 		{new ColumnString, 	new DataTypeString, 	"query"},
 		{new ColumnString, 	new DataTypeString, 	"exception"},
 		{new ColumnString, 	new DataTypeString, 	"stack_trace"},
@@ -214,25 +216,6 @@ void QueryLog::flush()
 
 		for (const QueryLogElement & elem : data)
 		{
-			block.unsafeGetByPosition(0).column.get()->insert(static_cast<UInt64>(elem.type));
-			block.unsafeGetByPosition(1).column.get()->insert(static_cast<UInt64>(date_lut.toDayNum(elem.event_time)));
-			block.unsafeGetByPosition(2).column.get()->insert(static_cast<UInt64>(elem.event_time));
-			block.unsafeGetByPosition(3).column.get()->insert(static_cast<UInt64>(elem.query_start_time));
-			block.unsafeGetByPosition(4).column.get()->insert(static_cast<UInt64>(elem.query_duration_ms));
-
-			block.unsafeGetByPosition(5).column.get()->insert(static_cast<UInt64>(elem.read_rows));
-			block.unsafeGetByPosition(6).column.get()->insert(static_cast<UInt64>(elem.read_bytes));
-
-			block.unsafeGetByPosition(7).column.get()->insert(static_cast<UInt64>(elem.result_rows));
-			block.unsafeGetByPosition(8).column.get()->insert(static_cast<UInt64>(elem.result_bytes));
-
-			block.unsafeGetByPosition(9).column.get()->insertData(elem.query.data(), elem.query.size());
-			block.unsafeGetByPosition(10).column.get()->insertData(elem.exception.data(), elem.exception.size());
-			block.unsafeGetByPosition(11).column.get()->insertData(elem.stack_trace.data(), elem.stack_trace.size());
-
-			block.unsafeGetByPosition(12).column.get()->insert(static_cast<UInt64>(elem.interface));
-			block.unsafeGetByPosition(13).column.get()->insert(static_cast<UInt64>(elem.http_method));
-
 			char ipv6_binary[16];
 			if (Poco::Net::IPAddress::IPv6 == elem.ip_address.family())
 			{
@@ -249,10 +232,33 @@ void QueryLog::flush()
 			else
 				memset(ipv6_binary, 0, 16);
 
-			block.unsafeGetByPosition(14).column.get()->insertData(ipv6_binary, 16);
+			size_t i = 0;
 
-			block.unsafeGetByPosition(15).column.get()->insertData(elem.user.data(), elem.user.size());
-			block.unsafeGetByPosition(16).column.get()->insertData(elem.query_id.data(), elem.query_id.size());
+			block.unsafeGetByPosition(i++).column.get()->insert(static_cast<UInt64>(elem.type));
+			block.unsafeGetByPosition(i++).column.get()->insert(static_cast<UInt64>(date_lut.toDayNum(elem.event_time)));
+			block.unsafeGetByPosition(i++).column.get()->insert(static_cast<UInt64>(elem.event_time));
+			block.unsafeGetByPosition(i++).column.get()->insert(static_cast<UInt64>(elem.query_start_time));
+			block.unsafeGetByPosition(i++).column.get()->insert(static_cast<UInt64>(elem.query_duration_ms));
+
+			block.unsafeGetByPosition(i++).column.get()->insert(static_cast<UInt64>(elem.read_rows));
+			block.unsafeGetByPosition(i++).column.get()->insert(static_cast<UInt64>(elem.read_bytes));
+
+			block.unsafeGetByPosition(i++).column.get()->insert(static_cast<UInt64>(elem.result_rows));
+			block.unsafeGetByPosition(i++).column.get()->insert(static_cast<UInt64>(elem.result_bytes));
+
+			block.unsafeGetByPosition(i++).column.get()->insert(static_cast<UInt64>(elem.memory_usage));
+
+			block.unsafeGetByPosition(i++).column.get()->insertData(elem.query.data(), elem.query.size());
+			block.unsafeGetByPosition(i++).column.get()->insertData(elem.exception.data(), elem.exception.size());
+			block.unsafeGetByPosition(i++).column.get()->insertData(elem.stack_trace.data(), elem.stack_trace.size());
+
+			block.unsafeGetByPosition(i++).column.get()->insert(static_cast<UInt64>(elem.interface));
+			block.unsafeGetByPosition(i++).column.get()->insert(static_cast<UInt64>(elem.http_method));
+
+			block.unsafeGetByPosition(i++).column.get()->insertData(ipv6_binary, 16);
+
+			block.unsafeGetByPosition(i++).column.get()->insertData(elem.user.data(), elem.user.size());
+			block.unsafeGetByPosition(i++).column.get()->insertData(elem.query_id.data(), elem.query_id.size());
 		}
 
 		BlockOutputStreamPtr stream = table->write(nullptr);

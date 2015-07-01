@@ -34,7 +34,8 @@ struct QueryLogElement
 		SHUTDOWN = 0,		/// Эта запись имеет служебное значение.
 		QUERY_START = 1,
 		QUERY_FINISH = 2,
-		EXCEPTION = 3,
+		EXCEPTION_BEFORE_START = 3,
+		EXCEPTION_WHILE_PROCESSING = 4,
 	};
 
 	Type type = QUERY_START;
@@ -50,6 +51,8 @@ struct QueryLogElement
 
 	UInt64 result_rows{};
 	UInt64 result_bytes{};
+
+	UInt64 memory_usage{};
 
 	String query;
 

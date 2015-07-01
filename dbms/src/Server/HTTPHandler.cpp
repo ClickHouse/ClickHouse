@@ -146,9 +146,7 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 
 	context.setHTTPMethod(http_method);
 
-	Stopwatch watch;
 	executeQuery(*in, *used_output.out_maybe_compressed, context, query_plan);
-	watch.stop();
 
 	/// Если не было эксепшена и данные ещё не отправлены - отправляются HTTP заголовки с кодом 200.
 	used_output.out->finalize();

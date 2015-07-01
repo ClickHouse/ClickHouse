@@ -43,6 +43,53 @@ static void logQuery(const String & query, const Context & context)
 }
 
 
+static void setClientInfo(QueryLogElement & elem, Context & context)
+{
+	elem.interface = context.getInterface();
+	elem.http_method = context.getHTTPMethod();
+	elem.ip_address = context.getIPAddress();
+	elem.user = context.getUser();
+	elem.query_id = context.getCurrentQueryId();
+}
+
+
+static void onExceptionBeforeStart(const String & query, Context & context, time_t current_time)
+{
+	/// Эксепшен до начала выполнения запроса.
+	context.getQuota().addError(current_time);
+
+	bool log_queries = context.getSettingsRef().log_queries;
+
+	/// Логгируем в таблицу начало выполнения запроса, если нужно.
+	if (log_queries)
+	{
+		QueryLogElement elem;
+
+		elem.type = QueryLogElement::EXCEPTION_BEFORE_START;
+
+		elem.event_time = current_time;
+		elem.query_start_time = current_time;
+
+		elem.query = query;
+		elem.exception = getCurrentExceptionMessage(false);
+
+		setClientInfo(elem, context);
+
+		try
+		{
+			throw;
+		}
+		catch (const Exception & e)
+		{
+			elem.stack_trace = e.getStackTrace().toString();
+		}
+		catch (...) {}
+
+		context.getQueryLog().add(elem);
+	}
+}
+
+
 static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 	IParser::Pos begin,
 	IParser::Pos end,
@@ -50,9 +97,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 	bool internal,
 	QueryProcessingStage::Enum stage)
 {
-	/// TODO Логгировать здесь эксепшены, возникающие до начала выполнения запроса.
-
 	ProfileEvents::increment(ProfileEvents::Query);
+	time_t current_time = time(0);
 
 	ParserQuery parser;
 	ASTPtr ast;
@@ -73,100 +119,103 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 	catch (...)
 	{
 		/// Всё равно логгируем запрос.
-		logQuery(String(begin, begin + std::min(end - begin, static_cast<ptrdiff_t>(max_query_size))), context);
+		if (!internal)
+		{
+			String query = String(begin, begin + std::min(end - begin, static_cast<ptrdiff_t>(max_query_size)));
+			logQuery(query, context);
+			tryLogCurrentException(__PRETTY_FUNCTION__);
+			onExceptionBeforeStart(query, context, current_time);
+		}
 
 		throw;
 	}
 
 	String query(begin, query_size);
-
-	if (!internal)
-		logQuery(query, context);
-
-	/// Проверка ограничений.
-	checkLimits(*ast, context.getSettingsRef().limits);
-
-	QuotaForIntervals & quota = context.getQuota();
-	time_t current_time = time(0);
-
-	quota.checkExceeded(current_time);
-
-	const Settings & settings = context.getSettingsRef();
-
-	/// Положим запрос в список процессов. Но запрос SHOW PROCESSLIST класть не будем.
-	ProcessList::EntryPtr process_list_entry;
-	if (!internal && nullptr == typeid_cast<const ASTShowProcesslistQuery *>(&*ast))
-	{
-		process_list_entry = context.getProcessList().insert(
-			query, context.getUser(), context.getCurrentQueryId(), context.getIPAddress(),
-			settings.limits.max_memory_usage,
-			settings.queue_max_wait_ms.totalMilliseconds(),
-			settings.replace_running_query,
-			settings.priority);
-
-		context.setProcessListElement(&process_list_entry->get());
-	}
-
 	BlockIO res;
 
 	try
 	{
+		if (!internal)
+			logQuery(query, context);
+
+		/// Проверка ограничений.
+		checkLimits(*ast, context.getSettingsRef().limits);
+
+		QuotaForIntervals & quota = context.getQuota();
+
+		quota.checkExceeded(current_time);
+
+		const Settings & settings = context.getSettingsRef();
+
+		/// Положим запрос в список процессов. Но запрос SHOW PROCESSLIST класть не будем.
+		ProcessList::EntryPtr process_list_entry;
+		if (!internal && nullptr == typeid_cast<const ASTShowProcesslistQuery *>(&*ast))
+		{
+			process_list_entry = context.getProcessList().insert(
+				query, context.getUser(), context.getCurrentQueryId(), context.getIPAddress(),
+				settings.limits.max_memory_usage,
+				settings.queue_max_wait_ms.totalMilliseconds(),
+				settings.replace_running_query,
+				settings.priority);
+
+			context.setProcessListElement(&process_list_entry->get());
+		}
+
 		auto interpreter = InterpreterFactory::get(ast, context, stage);
 		res = interpreter->execute();
 
 		/// Держим элемент списка процессов до конца обработки запроса.
 		res.process_list_entry = process_list_entry;
-	}
-	catch (...)
-	{
-		quota.addError(current_time);		/// TODO Было бы лучше добавить ещё в exception_callback
-		throw;
-	}
 
-	quota.addQuery(current_time);
+		quota.addQuery(current_time);
 
-	/// Всё, что связано с логом запросов.
-	{
-		QueryLogElement elem;
-
-		elem.type = QueryLogElement::QUERY_START;
-
-		elem.event_time = current_time;
-		elem.query_start_time = current_time;
-
-		elem.query = query;
-
-		elem.interface = context.getInterface();
-		elem.http_method = context.getHTTPMethod();
-		elem.ip_address = context.getIPAddress();
-		elem.user = context.getUser();
-		elem.query_id = context.getCurrentQueryId();
-
-		bool log_queries = settings.log_queries;
-
-		/// Логгируем в таблицу начало выполнения запроса, если нужно.
-		if (log_queries)
-			context.getQueryLog().add(elem);
-
-		/// Также дадим вызывающему коду в дальнейшем логгировать завершение запроса и эксепшен.
-		res.finish_callback = [elem, &context, log_queries] (IBlockInputStream & stream) mutable
+		/// Всё, что связано с логом запросов.
 		{
-			elem.type = QueryLogElement::QUERY_FINISH;
+			QueryLogElement elem;
 
-			elem.event_time = time(0);
-			elem.query_duration_ms = 1000 * (elem.event_time - elem.query_start_time);	/// Грубое время для запросов без profiling_stream;
+			elem.type = QueryLogElement::QUERY_START;
 
-			if (IProfilingBlockInputStream * profiling_stream = dynamic_cast<IProfilingBlockInputStream *>(&stream))
+			elem.event_time = current_time;
+			elem.query_start_time = current_time;
+
+			elem.query = query;
+
+			setClientInfo(elem, context);
+
+			bool log_queries = settings.log_queries;
+
+			/// Логгируем в таблицу начало выполнения запроса, если нужно.
+			if (log_queries)
+				context.getQueryLog().add(elem);
+
+			/// Также дадим вызывающему коду в дальнейшем логгировать завершение запроса и эксепшен.
+			res.finish_callback = [elem, &context, log_queries] (IBlockInputStream & stream) mutable
 			{
-				const BlockStreamProfileInfo & info = profiling_stream->getInfo();
+				ProcessListElement * process_list_elem = context.getProcessListElement();
 
-				double elapsed_seconds = info.total_stopwatch.elapsedSeconds();	/// TODO этот Stopwatch - coarse, использовать другой
+				if (!process_list_elem)
+					return;
+
+				double elapsed_seconds = process_list_elem->watch.elapsedSeconds();
+
+				elem.type = QueryLogElement::QUERY_FINISH;
+
+				elem.event_time = time(0);
 				elem.query_duration_ms = elapsed_seconds * 1000;
 
-				stream.getLeafRowsBytes(elem.read_rows, elem.read_bytes);	/// TODO неверно для распределённых запросов?
+				elem.read_rows = process_list_elem->progress.rows;
+				elem.read_bytes = process_list_elem->progress.bytes;
 
-				elem.result_rows = info.rows;
-				elem.result_bytes = info.bytes;
+				auto memory_usage = process_list_elem->memory_tracker.getPeak();
+				elem.memory_usage = memory_usage > 0 ? memory_usage : 0;
+
+				if (IProfilingBlockInputStream * profiling_stream = dynamic_cast<IProfilingBlockInputStream *>(&stream))
+				{
+					const BlockStreamProfileInfo & info = profiling_stream->getInfo();
+
+					elem.result_rows = info.rows;
+					elem.result_bytes = info.bytes;
+				}
 
 				if (elem.read_rows != 0)
 				{
@@ -176,47 +225,69 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 						<< static_cast<size_t>(elem.read_rows / elapsed_seconds) << " rows/sec., "
 						<< formatReadableSizeWithBinarySuffix(elem.read_bytes / elapsed_seconds) << "/sec.");
 				}
-			}
 
-			if (log_queries)
-				context.getQueryLog().add(elem);
-		};
+				if (log_queries)
+					context.getQueryLog().add(elem);
+			};
 
-		res.exception_callback = [elem, &context, log_queries] () mutable
-		{
-			elem.type = QueryLogElement::EXCEPTION;
-
-			elem.event_time = time(0);
-			elem.query_duration_ms = 1000 * (elem.event_time - elem.query_start_time);	/// Низкая точность. Можно сделать лучше.
-			elem.exception = getCurrentExceptionMessage(false);
-
-			/// Достаём стек трейс, если возможно.
-			try
+			res.exception_callback = [elem, &context, log_queries, current_time] () mutable
 			{
-				throw;
-			}
-			catch (const Exception & e)
+				context.getQuota().addError(current_time);
+
+				elem.type = QueryLogElement::EXCEPTION_WHILE_PROCESSING;
+
+				elem.event_time = time(0);
+				elem.query_duration_ms = 1000 * (elem.event_time - elem.query_start_time);
+				elem.exception = getCurrentExceptionMessage(false);
+
+				ProcessListElement * process_list_elem = context.getProcessListElement();
+
+				if (process_list_elem)
+				{
+					double elapsed_seconds = process_list_elem->watch.elapsedSeconds();
+
+					elem.query_duration_ms = elapsed_seconds * 1000;
+
+					elem.read_rows = process_list_elem->progress.rows;
+					elem.read_bytes = process_list_elem->progress.bytes;
+
+					auto memory_usage = process_list_elem->memory_tracker.getPeak();
+					elem.memory_usage = memory_usage > 0 ? memory_usage : 0;
+				}
+
+				/// Достаём стек трейс, если возможно.
+				try
+				{
+					throw;
+				}
+				catch (const Exception & e)
+				{
+					elem.stack_trace = e.getStackTrace().toString();
+
+					LOG_ERROR(&Logger::get("executeQuery"), elem.exception << ", Stack trace:\n\n" << elem.stack_trace);
+				}
+				catch (...)
+				{
+					LOG_ERROR(&Logger::get("executeQuery"), elem.exception);
+				}
+
+				if (log_queries)
+					context.getQueryLog().add(elem);
+			};
+
+			if (!internal && res.in)
 			{
-				elem.stack_trace = e.getStackTrace().toString();
-
-				LOG_ERROR(&Logger::get("executeQuery"), elem.exception << ", Stack trace:\n\n" << elem.stack_trace);
+				std::stringstream log_str;
+				log_str << "Query pipeline:\n";
+				res.in->dumpTree(log_str);
+				LOG_DEBUG(&Logger::get("executeQuery"), log_str.str());
 			}
-			catch (...)
-			{
-				LOG_ERROR(&Logger::get("executeQuery"), elem.exception);
-			}
-
-			if (log_queries)
-				context.getQueryLog().add(elem);
-		};
-
-		if (!internal && res.in)
-		{
-			std::stringstream log_str;
-			log_str << "Query pipeline:\n";
-			res.in->dumpTree(log_str);
-			LOG_DEBUG(&Logger::get("executeQuery"), log_str.str());
 		}
+	}
+	catch (...)
+	{
+		onExceptionBeforeStart(query, context, current_time);
+		throw;
 	}
 
 	return std::make_tuple(ast, res);
@@ -274,7 +345,6 @@ void executeQuery(
 
 	std::tie(ast, streams) = executeQueryImpl(begin, end, context, internal, stage);
 
-	bool exception = false;
 	try
 	{
 		if (streams.out)
@@ -325,12 +395,11 @@ void executeQuery(
 	}
 	catch (...)
 	{
-		exception = true;
 		streams.onException();
+		throw;
 	}
 
-	if (!exception)
-		streams.onFinish();
+	streams.onFinish();
 }
 
 }
