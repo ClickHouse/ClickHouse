@@ -261,15 +261,6 @@ struct Transformer
 		}
 	}
 
-	static void vector_fixed(const typename ColumnVector<FromType>::Container_t & vec_from, const ColumnString::Chars_t & data,
-							 size_t n, typename ColumnVector<ToType>::Container_t & vec_to)
-	{
-		auto & local_date_lut = DateLUT::instance();
-		auto & remote_date_lut = DateLUT::instance(std::string(reinterpret_cast<const char*>(&data[0]), n));
-		for (size_t i = 0; i < vec_from.size(); ++i)
-			vec_to[i] = Transform::execute(vec_from[i], remote_date_lut, local_date_lut);
-	}
-
 	static void vector_constant(const typename ColumnVector<FromType>::Container_t & vec_from, const std::string & data,
 								typename ColumnVector<ToType>::Container_t & vec_to)
 	{
@@ -293,13 +284,6 @@ struct Transformer
 			vec_to[i] = Transform::execute(from, remote_date_lut, local_date_lut);
 			prev_offset = cur_offset;
 		}
-	}
-
-	static void constant_fixed(const FromType & from, const ColumnString::Chars_t & data, size_t n, ToType & to)
-	{
-		auto & local_date_lut = DateLUT::instance();
-		auto & remote_date_lut = DateLUT::instance(std::string(reinterpret_cast<const char*>(&data[0]), n));
-		to = Transform::execute(from, remote_date_lut, local_date_lut);
 	}
 
 	static void constant_constant(const FromType & from, const std::string & data, ToType & to)
@@ -352,7 +336,6 @@ struct DateTimeTransformImpl
 		{
 			const ColumnPtr time_zone_col = block.getByPosition(arguments[1]).column;
 			const ColumnString * time_zones = typeid_cast<const ColumnString *>(&*time_zone_col);
-			const ColumnFixedString * fixed_time_zone = typeid_cast<const ColumnFixedString *>(&*time_zone_col);
 			const ColumnConstString * const_time_zone = typeid_cast<const ColumnConstString *>(&*time_zone_col);
 
 			if (sources)
@@ -366,8 +349,6 @@ struct DateTimeTransformImpl
 
 				if (time_zones)
 					Op::vector_vector(vec_from, time_zones->getChars(), time_zones->getOffsets(), vec_to);
-				else if (fixed_time_zone)
-					Op::vector_fixed(vec_from, fixed_time_zone->getChars(), fixed_time_zone->getN(), vec_to);
 				else if (const_time_zone)
 					Op::vector_constant(vec_from, const_time_zone->getData(), vec_to);
 				else
@@ -386,12 +367,6 @@ struct DateTimeTransformImpl
 					vec_to.resize(time_zones->getOffsets().size());
 
 					Op::constant_vector(const_source->getData(), time_zones->getChars(), time_zones->getOffsets(), vec_to);
-				}
-				else if (fixed_time_zone)
-				{
-					ToType res;
-					Op::constant_fixed(const_source->getData(), fixed_time_zone->getChars(), fixed_time_zone->getN(), res);
-					block.getByPosition(result).column = new ColumnConst<ToType>(const_source->size(), res);
 				}
 				else if (const_time_zone)
 				{
