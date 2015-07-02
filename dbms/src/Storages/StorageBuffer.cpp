@@ -130,7 +130,7 @@ BlockInputStreams StorageBuffer::read(
 	  */
 	if (processed_stage > QueryProcessingStage::FetchColumns)
 		for (auto & stream : streams_from_buffers)
-			stream = InterpreterSelectQuery(query, context, processed_stage, 0, stream).execute();
+			stream = InterpreterSelectQuery(query, context, processed_stage, 0, stream).execute().in;
 
 	streams_from_dst.insert(streams_from_dst.end(), streams_from_buffers.begin(), streams_from_buffers.end());
 	return streams_from_dst;

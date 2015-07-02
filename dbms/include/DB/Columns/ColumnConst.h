@@ -24,36 +24,51 @@ public:
 };
 
 
-/** шаблон для столбцов-констант (столбцов одинаковых значений).
+/** Столбец-константа может содержать внутри себя само значение,
+  *  или, в случае массивов, SharedPtr от значения-массива,
+  *  чтобы избежать проблем производительности при копировании очень больших массивов.
+  *
+  * T - тип значения,
+  * DataHolder - как значение хранится в таблице (либо T, либо SharedPtr<T>)
+  * Derived должен реализовать методы getDataFromHolderImpl - получить ссылку на значение из holder-а.
+  *
+  * Для строк и массивов реализации sizeOfField и byteSize могут быть некорректными.
   */
-template <typename T>
-class ColumnConst final : public IColumnConst
+template <typename T, typename DataHolder, typename Derived>
+class ColumnConstBase : public IColumnConst
 {
+protected:
+	size_t s;
+	DataHolder data;
+	DataTypePtr data_type;
+
+	T & getDataFromHolder() { return static_cast<Derived *>(this)->getDataFromHolderImpl(); }
+	const T & getDataFromHolder() const { return static_cast<const Derived *>(this)->getDataFromHolderImpl(); }
+
+	ColumnConstBase(size_t s_, const DataHolder & data_, DataTypePtr data_type_)
+		: s(s_), data(data_), data_type(data_type_) {}
+
 public:
 	typedef T Type;
 	typedef typename NearestFieldType<T>::Type FieldType;
-
-	/// Для ColumnConst<Array> data_type_ должен быть ненулевым.
-	/// Для ColumnConst<String> data_type_ должен быть ненулевым, если тип данных FixedString.
-	ColumnConst(size_t s_, const T & data_, DataTypePtr data_type_ = DataTypePtr()) : s(s_), data(data_), data_type(data_type_) {}
 
 	std::string getName() const override { return "ColumnConst<" + TypeName<T>::get() + ">"; }
 	bool isNumeric() const override { return IsNumber<T>::value; }
 	bool isFixed() const override { return IsNumber<T>::value; }
 	size_t sizeOfField() const override { return sizeof(T); }
-	ColumnPtr cloneResized(size_t s_) const override { return new ColumnConst(s_, data, data_type); }
+	ColumnPtr cloneResized(size_t s_) const override { return new Derived(s_, data, data_type); }
 	size_t size() const override { return s; }
-	Field operator[](size_t n) const override { return FieldType(data); }
-	void get(size_t n, Field & res) const override { res = FieldType(data); }
+	Field operator[](size_t n) const override { return FieldType(getDataFromHolder()); }
+	void get(size_t n, Field & res) const override { res = FieldType(getDataFromHolder()); }
 
 	ColumnPtr cut(size_t start, size_t length) const override
 	{
-		return new ColumnConst(length, data, data_type);
+		return new Derived(length, data, data_type);
 	}
 
 	void insert(const Field & x) override
 	{
-		if (x.get<FieldType>() != FieldType(data))
+		if (x.get<FieldType>() != FieldType(getDataFromHolder()))
 			throw Exception("Cannot insert different element into constant column " + getName(),
 				ErrorCodes::CANNOT_INSERT_ELEMENT_INTO_CONSTANT_COLUMN);
 		++s;
@@ -66,7 +81,7 @@ public:
 
 	void insertFrom(const IColumn & src, size_t n) override
 	{
-		if (data != static_cast<const ColumnConst<T> &>(src).data)
+		if (getDataFromHolder() != static_cast<const Derived &>(src).getDataFromHolder())
 			throw Exception("Cannot insert different element into constant column " + getName(),
 				ErrorCodes::CANNOT_INSERT_ELEMENT_INTO_CONSTANT_COLUMN);
 		++s;
@@ -79,7 +94,7 @@ public:
 		if (s != filt.size())
 			throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-		return new ColumnConst(countBytesInFilter(filt), data, data_type);
+		return new Derived(countBytesInFilter(filt), data, data_type);
 	}
 
 	ColumnPtr replicate(const Offsets_t & offsets) const override
@@ -88,7 +103,7 @@ public:
 			throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
 		size_t replicated_size = 0 == s ? 0 : offsets.back();
-		return new ColumnConst(replicated_size, data, data_type);
+		return new Derived(replicated_size, data, data_type);
 	}
 
 	size_t byteSize() const override { return sizeof(data) + sizeof(s); }
@@ -103,13 +118,13 @@ public:
 		if (perm.size() < limit)
 			throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-		return new ColumnConst(limit, data, data_type);
+		return new Derived(limit, data, data_type);
 	}
 
 	int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
 	{
-		const ColumnConst<T> & rhs = static_cast<const ColumnConst<T> &>(rhs_);
-		return data < rhs.data	/// TODO: правильное сравнение NaN-ов в константных столбцах.
+		const Derived & rhs = static_cast<const Derived &>(rhs_);
+		return getDataFromHolder() < rhs.getDataFromHolder()	/// TODO: правильное сравнение NaN-ов в константных столбцах.
 			? -1
 			: (data == rhs.data
 				? 0
@@ -123,30 +138,79 @@ public:
 			res[i] = i;
 	}
 
+	DataTypePtr & getDataType() { return data_type; }
+	const DataTypePtr & getDataType() const { return data_type; }
+};
+
+
+/** шаблон для столбцов-констант (столбцов одинаковых значений).
+  */
+template <typename T>
+class ColumnConst final : public ColumnConstBase<T, T, ColumnConst<T>>
+{
+private:
+	friend class ColumnConstBase<T, T, ColumnConst<T>>;
+
+	T & getDataFromHolderImpl() { return this->data; }
+	const T & getDataFromHolderImpl() const { return this->data; }
+
+public:
+	/// Для ColumnConst<Array> data_type_ должен быть ненулевым.
+	/// Для ColumnConst<String> data_type_ должен быть ненулевым, если тип данных FixedString.
+	ColumnConst(size_t s_, const T & data_, DataTypePtr data_type_ = DataTypePtr())
+		: ColumnConstBase<T, T, ColumnConst<T>>(s_, data_, data_type_) {}
+
 	StringRef getDataAt(size_t n) const override;
 	StringRef getDataAtWithTerminatingZero(size_t n) const override;
 	UInt64 get64(size_t n) const override;
 
 	/** Более эффективные методы манипуляции */
-	T & getData() { return data; }
-	const T & getData() const { return data; }
+	T & getData() { return this->data; }
+	const T & getData() const { return this->data; }
 
 	/** Преобразование из константы в полноценный столбец */
 	ColumnPtr convertToFullColumn() const override;
 
 	void getExtremes(Field & min, Field & max) const override
 	{
-		min = FieldType(data);
-		max = FieldType(data);
+		min = typename ColumnConstBase<T, T, ColumnConst<T>>::FieldType(this->data);
+		max = typename ColumnConstBase<T, T, ColumnConst<T>>::FieldType(this->data);
 	}
+};
 
-	DataTypePtr & getDataType() { return data_type; }
-	const DataTypePtr & getDataType() const { return data_type; }
 
+template <>
+class ColumnConst<Array> final : public ColumnConstBase<Array, SharedPtr<Array>, ColumnConst<Array>>
+{
 private:
-	size_t s;
-	T data;
-	DataTypePtr data_type;
+	friend class ColumnConstBase<Array, SharedPtr<Array>, ColumnConst<Array>>;
+
+	Array & getDataFromHolderImpl() { return *data; }
+	const Array & getDataFromHolderImpl() const { return *data; }
+
+public:
+	/// data_type_ должен быть ненулевым.
+	ColumnConst(size_t s_, const Array & data_, DataTypePtr data_type_ = DataTypePtr())
+		: ColumnConstBase<Array, SharedPtr<Array>, ColumnConst<Array>>(s_, new Array(data_), data_type_) {}
+
+	ColumnConst(size_t s_, const SharedPtr<Array> & data_, DataTypePtr data_type_ = DataTypePtr())
+		: ColumnConstBase<Array, SharedPtr<Array>, ColumnConst<Array>>(s_, data_, data_type_) {}
+
+	StringRef getDataAt(size_t n) const override;
+	StringRef getDataAtWithTerminatingZero(size_t n) const override;
+	UInt64 get64(size_t n) const override;
+
+	/** Более эффективные методы манипуляции */
+	const Array & getData() const { return *data; }
+
+	/** Преобразование из константы в полноценный столбец */
+	ColumnPtr convertToFullColumn() const override;
+
+	void getExtremes(Field & min, Field & max) const override
+	{
+		min = FieldType();
+		max = FieldType();
+	}
 };
 
 
@@ -158,19 +222,17 @@ template <typename T> ColumnPtr ColumnConst<T>::convertToFullColumn() const
 {
 	ColumnVector<T> * res_ = new ColumnVector<T>;
 	ColumnPtr res = res_;
-	res_->getData().assign(s, data);
+	res_->getData().assign(this->s, this->data);
 	return res;
 }
 
 
 template <> ColumnPtr ColumnConst<String>::convertToFullColumn() const;
 
-template <> ColumnPtr ColumnConst<Array>::convertToFullColumn() const;
-
 
 template <typename T> StringRef ColumnConst<T>::getDataAt(size_t n) const
 {
-	throw Exception("Method getDataAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+	throw Exception("Method getDataAt is not supported for " + this->getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
 template <> inline StringRef ColumnConst<String>::getDataAt(size_t n) const
@@ -180,7 +242,7 @@ template <> inline StringRef ColumnConst<String>::getDataAt(size_t n) const
 
 template <typename T> UInt64 ColumnConst<T>::get64(size_t n) const
 {
-	throw Exception("Method get64 is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+	throw Exception("Method get64 is not supported for " + this->getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
 /// Для элементарных типов.

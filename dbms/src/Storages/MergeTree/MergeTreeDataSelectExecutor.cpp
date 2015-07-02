@@ -340,8 +340,10 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 	const Names & virt_columns,
 	const Settings & settings)
 {
-	size_t min_marks_for_concurrent_read = (settings.merge_tree_min_rows_for_concurrent_read + data.index_granularity - 1) / data.index_granularity;
-	size_t max_marks_to_use_cache = (settings.merge_tree_max_rows_to_use_cache + data.index_granularity - 1) / data.index_granularity;
+	const size_t min_marks_for_concurrent_read =
+		(settings.merge_tree_min_rows_for_concurrent_read + data.index_granularity - 1) / data.index_granularity;
+	const size_t max_marks_to_use_cache =
+		(settings.merge_tree_max_rows_to_use_cache + data.index_granularity - 1) / data.index_granularity;
 
 	/// На всякий случай перемешаем куски.
 	std::random_shuffle(parts.begin(), parts.end());
@@ -354,12 +356,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 		/// Пусть отрезки будут перечислены справа налево, чтобы можно было выбрасывать самый левый отрезок с помощью pop_back().
 		std::reverse(parts[i].ranges.begin(), parts[i].ranges.end());
 
-		sum_marks_in_parts[i] = 0;
-		for (size_t j = 0; j < parts[i].ranges.size(); ++j)
-		{
-			MarkRange & range = parts[i].ranges[j];
+		for (const auto & range : parts[i].ranges)
 			sum_marks_in_parts[i] += range.end - range.begin;
-		}
+
 		sum_marks += sum_marks_in_parts[i];
 	}
 
@@ -370,7 +369,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 
 	if (sum_marks > 0)
 	{
-		size_t min_marks_per_thread = (sum_marks - 1) / threads + 1;
+		const size_t min_marks_per_thread = (sum_marks - 1) / threads + 1;
 
 		for (size_t i = 0; i < threads && !parts.empty(); ++i)
 		{
@@ -415,10 +414,11 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 							throw Exception("Unexpected end of ranges while spreading marks among threads", ErrorCodes::LOGICAL_ERROR);
 
 						MarkRange & range = part.ranges.back();
-						size_t marks_in_range = range.end - range.begin;
 
-						size_t marks_to_get_from_range = std::min(marks_in_range, need_marks);
-						ranges_to_get_from_part.push_back(MarkRange(range.begin, range.begin + marks_to_get_from_range));
+						const size_t marks_in_range = range.end - range.begin;
+						const size_t marks_to_get_from_range = std::min(marks_in_range, need_marks);
+
+						ranges_to_get_from_part.emplace_back(range.begin, range.begin + marks_to_get_from_range);
 						range.begin += marks_to_get_from_range;
 						marks_in_part -= marks_to_get_from_range;
 						need_marks -= marks_to_get_from_range;
