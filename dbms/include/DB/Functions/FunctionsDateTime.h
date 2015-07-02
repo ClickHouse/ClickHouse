@@ -232,19 +232,6 @@ struct ToRelativeSecondNumImpl
 template<typename FromType, typename ToType, typename Transform>
 struct Transformer
 {
-	static void vector(const typename ColumnVector<FromType>::Container_t & vec_from, typename ColumnVector<ToType>::Container_t & vec_to)
-	{
-		auto & local_date_lut = DateLUT::instance();
-		for (size_t i = 0; i < vec_from.size(); ++i)
-			vec_to[i] = Transform::execute(vec_from[i], local_date_lut, local_date_lut);
-	}
-
-	static void constant(const FromType & from, ToType & to)
-	{
-		auto & local_date_lut = DateLUT::instance();
-		to = Transform::execute(from, local_date_lut, local_date_lut);
-	}
-
 	static void vector_vector(const typename ColumnVector<FromType>::Container_t & vec_from, const ColumnString::Chars_t & data,
 							  const ColumnString::Offsets_t & offsets, typename ColumnVector<ToType>::Container_t & vec_to)
 	{
@@ -317,12 +304,12 @@ struct DateTimeTransformImpl
 				size_t size = vec_from.size();
 				vec_to.resize(size);
 
-				Op::vector(vec_from, vec_to);
+				Op::vector_constant(vec_from, "", vec_to);
 			}
 			else if (const_source)
 			{
 				ToType res;
-				Op::constant(const_source->getData(), res);
+				Op::constant_constant(const_source->getData(), "", res);
 				block.getByPosition(result).column = new ColumnConst<ToType>(const_source->size(), res);
 			}
 			else
