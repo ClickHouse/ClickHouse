@@ -8,6 +8,7 @@
 
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Columns/ColumnArray.h>
+#include <DB/Columns/ColumnFixedString.h>
 
 #include <DB/Functions/IFunction.h>
 
@@ -228,81 +229,188 @@ struct ToRelativeSecondNumImpl
 	}
 };
 
-template<typename FromType, typename ToType, typename Transform, typename Enable = void>
-struct DateLUTAccessor;
-
 template<typename FromType, typename ToType, typename Transform>
-struct DateLUTAccessor<FromType, ToType, Transform,
-	typename std::enable_if<
-		!((std::is_same<FromType, DataTypeDateTime::FieldType>::value
-			&& std::is_same<ToType, DataTypeDate::FieldType>::value)
-		|| (std::is_same<FromType, DataTypeDateTime::FieldType>::value
-			&& std::is_same<ToType, DataTypeDateTime::FieldType>::value
-			&& std::is_same<Transform, ToTimeImpl>::value))>::type>
+struct Transformer
 {
-	static DateLUTImpl & execute(Block & block, const ColumnNumbers & arguments)
+	static void vector(const typename ColumnVector<FromType>::Container_t & vec_from, typename ColumnVector<ToType>::Container_t & vec_to)
 	{
-		return DateLUT::instance();
+		auto & local_date_lut = DateLUT::instance();
+		for (size_t i = 0; i < vec_from.size(); ++i)
+			vec_to[i] = Transform::execute(vec_from[i], local_date_lut, local_date_lut);
 	}
-};
 
-template<typename FromType, typename ToType, typename Transform>
-struct DateLUTAccessor<FromType, ToType, Transform,
-	typename std::enable_if<
-		(std::is_same<FromType, DataTypeDateTime::FieldType>::value
-			&& std::is_same<ToType, DataTypeDate::FieldType>::value)
-		|| (std::is_same<FromType, DataTypeDateTime::FieldType>::value
-			&& std::is_same<ToType, DataTypeDateTime::FieldType>::value
-			&& std::is_same<Transform, ToTimeImpl>::value)>::type>
-{
-	static DateLUTImpl & execute(Block & block, const ColumnNumbers & arguments)
+	static void constant(const FromType & from, ToType & to)
 	{
-		std::string time_zone;
+		auto & local_date_lut = DateLUT::instance();
+		to = Transform::execute(from, local_date_lut, local_date_lut);
+	}
 
-		if (arguments.size() == 2)
+	static void vector_vector(const typename ColumnVector<FromType>::Container_t & vec_from, const ColumnString::Chars_t & data,
+							  const ColumnString::Offsets_t & offsets, typename ColumnVector<ToType>::Container_t & vec_to)
+	{
+		auto & local_date_lut = DateLUT::instance();
+		ColumnString::Offset_t prev_offset = 0;
+
+		for (size_t i = 0; i < vec_from.size(); ++i)
 		{
-			const ColumnPtr column = block.getByPosition(arguments[1]).column;
-			if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(&*column))
-				time_zone = col->getData();
+			ColumnString::Offset_t cur_offset = offsets[i];
+			const std::string time_zone(reinterpret_cast<const char *>(&data[prev_offset]), cur_offset - prev_offset - 1);
+			auto & remote_date_lut = DateLUT::instance(time_zone);
+			vec_to[i] = Transform::execute(vec_from[i], remote_date_lut, local_date_lut);
+			prev_offset = cur_offset;
 		}
+	}
 
-		return DateLUT::instance(time_zone);
+	static void vector_fixed(const typename ColumnVector<FromType>::Container_t & vec_from, const ColumnString::Chars_t & data,
+							 size_t n, typename ColumnVector<ToType>::Container_t & vec_to)
+	{
+		auto & local_date_lut = DateLUT::instance();
+		auto & remote_date_lut = DateLUT::instance(std::string(reinterpret_cast<const char*>(&data[0]), n));
+		for (size_t i = 0; i < vec_from.size(); ++i)
+			vec_to[i] = Transform::execute(vec_from[i], remote_date_lut, local_date_lut);
+	}
+
+	static void vector_constant(const typename ColumnVector<FromType>::Container_t & vec_from, const std::string & data,
+								typename ColumnVector<ToType>::Container_t & vec_to)
+	{
+		auto & local_date_lut = DateLUT::instance();
+		auto & remote_date_lut = DateLUT::instance(data);
+		for (size_t i = 0; i < vec_from.size(); ++i)
+			vec_to[i] = Transform::execute(vec_from[i], remote_date_lut, local_date_lut);
+	}
+
+	static void constant_vector(const FromType & from, const ColumnString::Chars_t & data,
+								const ColumnString::Offsets_t & offsets, typename ColumnVector<ToType>::Container_t & vec_to)
+	{
+		auto & local_date_lut = DateLUT::instance();
+		ColumnString::Offset_t prev_offset = 0;
+
+		for (size_t i = 0; i < offsets.size(); ++i)
+		{
+			ColumnString::Offset_t cur_offset = offsets[i];
+			const std::string time_zone(reinterpret_cast<const char *>(&data[prev_offset]), cur_offset - prev_offset - 1);
+			auto & remote_date_lut = DateLUT::instance(time_zone);
+			vec_to[i] = Transform::execute(from, remote_date_lut, local_date_lut);
+			prev_offset = cur_offset;
+		}
+	}
+
+	static void constant_fixed(const FromType & from, const ColumnString::Chars_t & data, size_t n, ToType & to)
+	{
+		auto & local_date_lut = DateLUT::instance();
+		auto & remote_date_lut = DateLUT::instance(std::string(reinterpret_cast<const char*>(&data[0]), n));
+		to = Transform::execute(from, remote_date_lut, local_date_lut);
+	}
+
+	static void constant_constant(const FromType & from, const std::string & data, ToType & to)
+	{
+		auto & local_date_lut = DateLUT::instance();
+		auto & remote_date_lut = DateLUT::instance(data);
+		to = Transform::execute(from, remote_date_lut, local_date_lut);
 	}
 };
-
 
 template <typename FromType, typename ToType, typename Transform, typename Name>
 struct DateTimeTransformImpl
 {
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		auto & remote_date_lut = DateLUTAccessor<FromType, ToType, Transform>::execute(block, arguments);
-		auto & local_date_lut = DateLUT::instance();
+		using Op = Transformer<FromType, ToType, Transform>;
 
-		if (const ColumnVector<FromType> * col_from = typeid_cast<const ColumnVector<FromType> *>(&*block.getByPosition(arguments[0]).column))
+		const ColumnPtr source_col = block.getByPosition(arguments[0]).column;
+		const ColumnVector<FromType> * sources = typeid_cast<const ColumnVector<FromType> *>(&*source_col);
+		const ColumnConst<FromType> * const_source = typeid_cast<const ColumnConst<FromType> *>(&*source_col);
+
+		if (arguments.size() == 1)
 		{
-			ColumnVector<ToType> * col_to = new ColumnVector<ToType>;
-			block.getByPosition(result).column = col_to;
+			if (sources)
+			{
+				ColumnVector<ToType> * col_to = new ColumnVector<ToType>;
+				block.getByPosition(result).column = col_to;
 
-			const typename ColumnVector<FromType>::Container_t & vec_from = col_from->getData();
-			typename ColumnVector<ToType>::Container_t & vec_to = col_to->getData();
-			size_t size = vec_from.size();
-			vec_to.resize(size);
+				auto & vec_from = sources->getData();
+				auto & vec_to = col_to->getData();
+				size_t size = vec_from.size();
+				vec_to.resize(size);
 
-			for (size_t i = 0; i < size; ++i)
-				vec_to[i] = Transform::execute(vec_from[i], remote_date_lut, local_date_lut);
+				Op::vector(vec_from, vec_to);
+			}
+			else if (const_source)
+			{
+				ToType res;
+				Op::constant(const_source->getData(), res);
+				block.getByPosition(result).column = new ColumnConst<ToType>(const_source->size(), res);
+			}
+			else
+			{
+				throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+						+ " of first argument of function " + Name::name,
+					ErrorCodes::ILLEGAL_COLUMN);
+			}
 		}
-		else if (const ColumnConst<FromType> * col_from = typeid_cast<const ColumnConst<FromType> *>(&*block.getByPosition(arguments[0]).column))
+		else if (arguments.size() == 2)
 		{
-			block.getByPosition(result).column = new ColumnConst<ToType>(col_from->size(), Transform::execute(col_from->getData(), remote_date_lut, local_date_lut));
+			const ColumnPtr time_zone_col = block.getByPosition(arguments[1]).column;
+			const ColumnString * time_zones = typeid_cast<const ColumnString *>(&*time_zone_col);
+			const ColumnFixedString * fixed_time_zone = typeid_cast<const ColumnFixedString *>(&*time_zone_col);
+			const ColumnConstString * const_time_zone = typeid_cast<const ColumnConstString *>(&*time_zone_col);
+
+			if (sources)
+			{
+				ColumnVector<ToType> * col_to = new ColumnVector<ToType>;
+				block.getByPosition(result).column = col_to;
+
+				auto & vec_from = sources->getData();
+				auto & vec_to = col_to->getData();
+				vec_to.resize(vec_from.size());
+
+				if (time_zones)
+					Op::vector_vector(vec_from, time_zones->getChars(), time_zones->getOffsets(), vec_to);
+				else if (fixed_time_zone)
+					Op::vector_fixed(vec_from, fixed_time_zone->getChars(), fixed_time_zone->getN(), vec_to);
+				else if (const_time_zone)
+					Op::vector_constant(vec_from, const_time_zone->getData(), vec_to);
+				else
+					throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
+							+ " of second argument of function " + Name::name,
+						ErrorCodes::ILLEGAL_COLUMN);
+			}
+			else if (const_source)
+			{
+				if (time_zones)
+				{
+					ColumnVector<ToType> * col_to = new ColumnVector<ToType>;
+					block.getByPosition(result).column = col_to;
+
+					auto & vec_to = col_to->getData();
+					vec_to.resize(time_zones->getOffsets().size());
+
+					Op::constant_vector(const_source->getData(), time_zones->getChars(), time_zones->getOffsets(), vec_to);
+				}
+				else if (fixed_time_zone)
+				{
+					ToType res;
+					Op::constant_fixed(const_source->getData(), fixed_time_zone->getChars(), fixed_time_zone->getN(), res);
+					block.getByPosition(result).column = new ColumnConst<ToType>(const_source->size(), res);
+				}
+				else if (const_time_zone)
+				{
+					ToType res;
+					Op::constant_constant(const_source->getData(), const_time_zone->getData(), res);
+					block.getByPosition(result).column = new ColumnConst<ToType>(const_source->size(), res);
+				}
+				else
+					throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
+							+ " of second argument of function " + Name::name,
+						ErrorCodes::ILLEGAL_COLUMN);
+			}
+			else
+				throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+						+ " of first argument of function " + Name::name,
+					ErrorCodes::ILLEGAL_COLUMN);
 		}
-		else
-			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-					+ " of first argument of function " + Name::name,
-				ErrorCodes::ILLEGAL_COLUMN);
 	}
 };
-
 
 template <typename ToDataType, typename Transform, typename Name>
 class FunctionDateOrDateTimeToSomething : public IFunction
