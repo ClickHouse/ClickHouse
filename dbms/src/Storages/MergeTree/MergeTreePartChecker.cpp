@@ -11,7 +11,6 @@
 #include <DB/IO/CompressedReadBuffer.h>
 #include <DB/IO/HashingReadBuffer.h>
 #include <DB/Columns/ColumnsNumber.h>
-#include <statdaemons/ext/scope_guard.hpp>
 
 
 namespace DB
@@ -116,12 +115,6 @@ struct Stream
 		readIntBinary(mrk_mark.offset_in_compressed_file, mrk_hashing_buf);
 		readIntBinary(mrk_mark.offset_in_decompressed_block, mrk_hashing_buf);
 
-		/// На всякий случай, сохраним смещение в файле и размер предыдущего блока.
-		SCOPE_EXIT(
-			prev_offset_in_compressed_file = mrk_mark.offset_in_compressed_file;
-			prev_buffer_size = uncompressed_hashing_buf.buffer().size();
-		);
-
 		bool has_alternative_mark = false;
 		MarkInCompressedFile alternative_data_mark;
 		MarkInCompressedFile data_mark;
@@ -145,18 +138,6 @@ struct Stream
 			if (uncompressed_hashing_buf.eof())
 				return;
 		}
-		else if (uncompressed_hashing_buf.offset() == 0)
-		{
-			/// Восстановим засечку на конец предыдущего блока по сохраненным данным
-			has_alternative_mark = true;
-			alternative_data_mark.offset_in_compressed_file = prev_offset_in_compressed_file;
-			alternative_data_mark.offset_in_decompressed_block = prev_buffer_size;
-
-			if (mrk_mark == alternative_data_mark)
-				return;
-		}
-
-		std::cout << "mrk_mark " << mrk_mark.offset_in_compressed_file << ' ' << mrk_mark.offset_in_decompressed_block << std::endl;
 
 		data_mark.offset_in_compressed_file = compressed_hashing_buf.count() - uncompressing_buf.getSizeCompressed();
 		data_mark.offset_in_decompressed_block = uncompressed_hashing_buf.offset();
@@ -180,10 +161,6 @@ struct Stream
 		checksums.files[name + ".mrk"] = MergeTreeData::DataPart::Checksums::Checksum(
 			mrk_hashing_buf.count(), mrk_hashing_buf.getHash());
 	}
-
-private:
-	size_t prev_offset_in_compressed_file{};
-	size_t prev_buffer_size{};
 };
 
 /// Возвращает количество строк. Добавляет в checksums чексуммы всех файлов столбца.

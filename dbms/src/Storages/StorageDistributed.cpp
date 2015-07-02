@@ -154,7 +154,7 @@ BlockInputStreams StorageDistributed::read(
 
 	size_t result_size = (cluster.pools.size() * settings.max_parallel_replicas) + cluster.getLocalNodesNum();
 
-	processed_stage = result_size == 1
+	processed_stage = result_size == 1 || settings.distributed_group_by_no_merge
 		? QueryProcessingStage::Complete
 		: QueryProcessingStage::WithMergeableState;
 

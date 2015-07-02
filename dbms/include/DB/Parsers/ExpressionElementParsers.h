@@ -100,6 +100,20 @@ protected:
 };
 
 
+/** Массив литералов.
+  * Массивы могут распарситься и как применение оператора [].
+  * Но парсинг всего массива как целой константы серьёзно ускоряет анализ выражений в случае очень больших массивов.
+  * Мы пробуем распарсить массив как массив литералов сначала (fast path),
+  *  а если не получилось (когда массив состоит из сложных выражений) - парсим как применение оператора [] (slow path).
+  */
+class ParserArrayOfLiterals : public IParserBase
+{
+protected:
+	const char * getName() const { return "array"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+};
+
+
 /** Литерал - одно из: NULL, UInt64, Int64, Float64, String.
   */
 class ParserLiteral : public IParserBase
