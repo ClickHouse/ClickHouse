@@ -128,13 +128,6 @@ ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std
 	init(args.hosts, args.session_timeout_ms);
 }
 
-ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration& config, const std::string& config_name, int32_t session_timeout_ms_)
-{
-	ZooKeeperArgs args(config, config_name);
-	init(args.hosts, session_timeout_ms_);
-}
-
-
 void * ZooKeeper::watchForEvent(EventPtr event)
 {
 	if (event)
