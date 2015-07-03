@@ -56,72 +56,15 @@ protected:
 	{
 		Block res;
 
-		while (true)
+		while (!res)
 		{
-			if (!task)
-			{
-				task = pool->getTask(min_marks_to_read);
-
-				if (!task)
-					break;
-
-				if (!initialized)
-				{
-					if (use_uncompressed_cache)
-						owned_uncompressed_cache = storage.context.getUncompressedCache();
-
-					owned_mark_cache = storage.context.getMarkCache();
-
-					initialized = true;
-				}
-
-				const auto path = storage.getFullPath() + task->data_part->name + '/';
-
-				if (!reader || reader->getDataPart() != task->data_part)
-				{
-					reader = std::make_unique<MergeTreeReader>(
-						path, task->data_part, task->columns, owned_uncompressed_cache.get(), owned_mark_cache.get(),
-						storage, task->all_ranges, min_bytes_to_use_direct_io, max_read_buffer_size);
-
-					if (prewhere_actions)
-						pre_reader = std::make_unique<MergeTreeReader>(
-							path, task->data_part, task->pre_columns, owned_uncompressed_cache.get(),
-							owned_mark_cache.get(), storage, task->all_ranges, min_bytes_to_use_direct_io,
-							max_read_buffer_size);
-				}
-			}
+			if (!task && !getNewTask())
+				break;
 
 			res = readFromPart();
 
 			if (res)
-			{
-				const auto rows = res.rowsInFirstColumn();
-
-				/// add virtual columns
-				if (!virt_column_names.empty())
-				{
-
-					for (const auto & virt_column_name : virt_column_names)
-					{
-						if (virt_column_name == "_part")
-						{
-							res.insert(ColumnWithNameAndType{
-								ColumnConst<String>{rows, task->data_part->name}.convertToFullColumn(),
-								new DataTypeString,
-								virt_column_name
-							});
-						}
-						else if (virt_column_name == "_part_index")
-						{
-							res.insert(ColumnWithNameAndType{
-								ColumnConst<UInt64>{rows, task->part_index_in_query}.convertToFullColumn(),
-								new DataTypeUInt64,
-								virt_column_name
-							});
-						}
-					}
-				}
-			}
+				injectVirtualColumns(res);
 
 			if (task->mark_ranges.empty())
 			{
@@ -132,15 +75,44 @@ protected:
 				reader = {};
 				pre_reader = {};
 			}
-
-			if (res)
-				break;
 		}
 
 		return res;
 	}
 
 private:
+	bool getNewTask()
+	{
+		task = pool->getTask(min_marks_to_read);
+
+		if (!task)
+			return false;
+
+		if (!initialized)
+		{
+			if (use_uncompressed_cache)
+				owned_uncompressed_cache = storage.context.getUncompressedCache();
+
+			owned_mark_cache = storage.context.getMarkCache();
+
+			initialized = true;
+		}
+
+		const auto path = storage.getFullPath() + task->data_part->name + '/';
+
+		reader = std::make_unique<MergeTreeReader>(
+			path, task->data_part, task->columns, owned_uncompressed_cache.get(), owned_mark_cache.get(),
+			storage, task->mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size);
+
+		if (prewhere_actions)
+			pre_reader = std::make_unique<MergeTreeReader>(
+				path, task->data_part, task->pre_columns, owned_uncompressed_cache.get(),
+				owned_mark_cache.get(), storage, task->mark_ranges, min_bytes_to_use_direct_io,
+				max_read_buffer_size);
+
+		return true;
+	}
+
 	Block readFromPart()
 	{
 		Block res;
@@ -166,7 +138,7 @@ private:
 						task->mark_ranges.pop_back();
 				}
 				progressImpl({ res.rowsInFirstColumn(), res.bytes() });
-				pre_reader->fillMissingColumns(res, task->ordered_names);
+				pre_reader->fillMissingColumns(res, task->ordered_names, task->should_reorder);
 
 				/// Вычислим выражение в PREWHERE.
 				prewhere_actions->execute(res);
@@ -296,10 +268,39 @@ private:
 
 			progressImpl({ res.rowsInFirstColumn(), res.bytes() });
 
-			reader->fillMissingColumns(res, task->ordered_names);
+			reader->fillMissingColumns(res, task->ordered_names, task->should_reorder);
 		}
 
 		return res;
+	}
+
+	void injectVirtualColumns(Block & block)
+	{
+		const auto rows = block.rowsInFirstColumn();
+
+		/// add virtual columns
+		if (!virt_column_names.empty())
+		{
+			for (const auto & virt_column_name : virt_column_names)
+			{
+				if (virt_column_name == "_part")
+				{
+					block.insert(ColumnWithNameAndType{
+						ColumnConst<String>{rows, task->data_part->name}.convertToFullColumn(),
+						new DataTypeString,
+						virt_column_name
+					});
+				}
+				else if (virt_column_name == "_part_index")
+				{
+					block.insert(ColumnWithNameAndType{
+						ColumnConst<UInt64>{rows, task->part_index_in_query}.convertToFullColumn(),
+						new DataTypeUInt64,
+						virt_column_name
+					});
+				}
+			}
+		}
 	}
 
 	MergeTreeReadPoolPtr pool;
@@ -317,7 +318,7 @@ private:
 
 	using MergeTreeReaderPtr = std::unique_ptr<MergeTreeReader>;
 
-	bool initialized;
+	bool initialized{false};
 	UncompressedCachePtr owned_uncompressed_cache;
 	MarkCachePtr owned_mark_cache;
 

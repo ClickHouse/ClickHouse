@@ -20,16 +20,15 @@ struct MergeTreeReadTask
 	const NamesAndTypesList & columns;
 	const NamesAndTypesList & pre_columns;
 	const bool remove_prewhere_column;
-	const MarkRanges & all_ranges;
+	const bool should_reorder;
 
-	MergeTreeReadTask(const MergeTreeData::DataPartPtr & data_part, const MarkRanges & ranges,
-					  const std::size_t part_index_in_query, const Names & ordered_names,
-					  const NameSet & column_name_set, const NamesAndTypesList & columns,
-					  const NamesAndTypesList & pre_columns, const bool remove_prewhere_column,
-					  const MarkRanges & all_ranges)
+	MergeTreeReadTask(
+		const MergeTreeData::DataPartPtr & data_part, const MarkRanges & ranges, const std::size_t part_index_in_query,
+		const Names & ordered_names, const NameSet & column_name_set, const NamesAndTypesList & columns,
+		const NamesAndTypesList & pre_columns, const bool remove_prewhere_column, const bool should_reorder)
 		: data_part{data_part}, mark_ranges{ranges}, part_index_in_query{part_index_in_query},
 		  ordered_names{ordered_names}, column_name_set{column_name_set}, columns{columns}, pre_columns{pre_columns},
-		  remove_prewhere_column{remove_prewhere_column}, all_ranges{all_ranges}
+		  remove_prewhere_column{remove_prewhere_column}, should_reorder{should_reorder}
 	{}
 };
 
@@ -38,12 +37,12 @@ using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;
 class MergeTreeReadPool
 {
 public:
-	MergeTreeReadPool(const RangesInDataParts & parts, const std::vector<std::size_t> & per_part_sum_marks,
-					  const std::size_t sum_marks, MergeTreeData & data, const ExpressionActionsPtr & prewhere_actions,
-					  const String & prewhere_column_name, const bool check_columns, const Names & column_names)
-		: parts{parts}, per_part_sum_marks{per_part_sum_marks}, sum_marks{sum_marks}, data{data}
+	MergeTreeReadPool(
+		const RangesInDataParts & parts, MergeTreeData & data, const ExpressionActionsPtr & prewhere_actions,
+		const String & prewhere_column_name, const bool check_columns, const Names & column_names)
+		: parts{parts}, data{data}, column_names{column_names}
 	{
-		fillPerPartInfo(column_names, prewhere_actions, prewhere_column_name, check_columns);
+		fillPerPartInfo(prewhere_actions, prewhere_column_name, check_columns);
 	}
 
 	MergeTreeReadPool(const MergeTreeReadPool &) = delete;
@@ -53,18 +52,13 @@ public:
 	{
 		const std::lock_guard<std::mutex> lock{mutex};
 
-		if (0 == sum_marks)
+		if (remaining_part_indices.empty())
 			return nullptr;
 
-		/// @todo use map to speedup lookup
 		/// find a part which has marks remaining
-		std::size_t part_id = 0;
-		for (; part_id < parts.size(); ++part_id)
-			if (0 != per_part_sum_marks[part_id])
-				break;
+		const auto part_id = remaining_part_indices.back();
 
 		auto & part = parts[part_id];
-		const auto & ordered_names = per_part_ordered_names[part_id];
 		const auto & column_name_set = per_part_column_name_set[part_id];
 		const auto & columns = per_part_columns[part_id];
 		const auto & pre_columns = per_part_pre_columns[part_id];
@@ -92,7 +86,8 @@ public:
 			ranges_to_get_from_part = part.ranges;
 
 			marks_in_part -= marks_to_get_from_range;
-			sum_marks -= marks_to_get_from_range;
+
+			remaining_part_indices.pop_back();
 		}
 		else
 		{
@@ -111,22 +106,39 @@ public:
 
 				marks_in_part -= marks_to_get_from_range;
 				need_marks -= marks_to_get_from_range;
-				sum_marks -= marks_to_get_from_range;
 			}
+
+			if (0 == marks_in_part)
+				remaining_part_indices.pop_back();
 		}
 
 		return std::make_unique<MergeTreeReadTask>(
-			part.data_part, ranges_to_get_from_part, part.part_index_in_query, ordered_names, column_name_set, columns,
-			pre_columns, remove_prewhere_column, per_part_all_ranges[part_id]);
+			part.data_part, ranges_to_get_from_part, part.part_index_in_query, column_names, column_name_set, columns,
+			pre_columns, remove_prewhere_column, per_part_should_reorder[part_id]);
 	}
 
 public:
-	void fillPerPartInfo(const Names & column_names, const ExpressionActionsPtr & prewhere_actions,
-						 const String & prewhere_column_name, const bool check_columns)
+	void fillPerPartInfo(
+		const ExpressionActionsPtr & prewhere_actions, const String & prewhere_column_name, const bool check_columns)
 	{
-		for (const auto & part : parts)
+		remaining_part_indices.reserve(parts.size());
+
+		for (const auto i : ext::range(0, parts.size()))
 		{
-			per_part_all_ranges.push_back(part.ranges);
+			auto & part = parts[i];
+
+			/// Посчитаем засечки для каждого куска.
+			size_t sum_marks = 0;
+			/// Пусть отрезки будут перечислены справа налево, чтобы можно было выбрасывать самый левый отрезок с помощью pop_back().
+			std::reverse(std::begin(part.ranges), std::end(part.ranges));
+
+			for (const auto & range : part.ranges)
+				sum_marks += range.end - range.begin;
+
+			per_part_sum_marks.push_back(sum_marks);
+
+			if (0 != sum_marks)
+				remaining_part_indices.push_back(i);
 
 			per_part_columns_lock.push_back(std::make_unique<Poco::ScopedReadRWLock>(
 				part.data_part->columns_lock));
@@ -135,18 +147,13 @@ public:
 			auto required_column_names = column_names;
 
 			const auto injected_columns = injectRequiredColumns(part.data_part, required_column_names);
-
-			/// insert injected columns into ordered columns list to avoid exception about different block structures
-			auto ordered_names = column_names;
-			ordered_names.insert(std::end(ordered_names), std::begin(injected_columns), std::end(injected_columns));
-			per_part_ordered_names.emplace_back(ordered_names);
+			auto should_reoder = !injected_columns.empty();
 
 			Names required_pre_column_names;
 
 			if (prewhere_actions)
 			{
 				/// collect columns required for PREWHERE evaluation
-				/// @todo minimum size column may be added here due to const condition, thus invalidating ordered_names
 				required_pre_column_names = prewhere_actions->getRequiredColumns();
 
 				/// there must be at least one column required for PREWHERE
@@ -154,7 +161,9 @@ public:
 					required_pre_column_names.push_back(required_column_names[0]);
 
 				/// PREWHERE columns may require some additional columns for DEFAULT evaluation
-				(void) injectRequiredColumns(part.data_part, required_pre_column_names);
+				const auto injected_pre_columns = injectRequiredColumns(part.data_part, required_pre_column_names);
+				if (!injected_pre_columns.empty())
+					should_reoder = true;
 
 				/// will be used to distinguish between PREWHERE and WHERE columns when applying filter
 				const NameSet pre_name_set{
@@ -193,6 +202,8 @@ public:
 				per_part_pre_columns.push_back(part.data_part->columns.addTypes(required_pre_column_names));
 				per_part_columns.push_back(part.data_part->columns.addTypes(required_column_names));
 			}
+
+			per_part_should_reorder.push_back(should_reoder);
 		}
 	}
 
@@ -205,13 +216,18 @@ public:
 		NameSet required_columns{std::begin(columns), std::end(columns)};
 		NameSet injected_columns;
 
+		auto all_column_files_missing = true;
+
 		for (size_t i = 0; i < columns.size(); ++i)
 		{
 			const auto & column_name = columns[i];
 
 			/// column has files and hence does not require evaluation
 			if (part->hasColumnFiles(column_name))
+			{
+				all_column_files_missing = false;
 				continue;
+			}
 
 			const auto default_it = data.column_defaults.find(column_name);
 			/// columns has no explicit default expression
@@ -237,21 +253,70 @@ public:
 			}
 		}
 
+		if (all_column_files_missing)
+		{
+			addMinimumSizeColumn(part, columns);
+			/// correctly report added column
+			injected_columns.insert(columns.back());
+		}
+
 		return injected_columns;
+	}
+
+	/** Добавить столбец минимального размера.
+	  * Используется в случае, когда ни один столбец не нужен, но нужно хотя бы знать количество строк.
+	  * Добавляет в columns.
+	  */
+	void addMinimumSizeColumn(const MergeTreeData::DataPartPtr & part, Names & columns) const
+	{
+		const auto get_column_size = [this, &part] (const String & name) {
+			const auto & files = part->checksums.files;
+
+			const auto escaped_name = escapeForFileName(name);
+			const auto bin_file_name = escaped_name + ".bin";
+			const auto mrk_file_name = escaped_name + ".mrk";
+
+			return files.find(bin_file_name)->second.file_size + files.find(mrk_file_name)->second.file_size;
+		};
+
+		const auto & storage_columns = data.getColumnsList();
+		const NameAndTypePair * minimum_size_column = nullptr;
+		auto minimum_size = std::numeric_limits<size_t>::max();
+
+		for (const auto & column : storage_columns)
+		{
+			if (!part->hasColumnFiles(column.name))
+				continue;
+
+			const auto size = get_column_size(column.name);
+			if (size < minimum_size)
+			{
+				minimum_size = size;
+				minimum_size_column = &column;
+			}
+		}
+
+		if (!minimum_size_column)
+			throw Exception{
+				"Could not find a column of minimum size in MergeTree",
+				ErrorCodes::LOGICAL_ERROR
+			};
+
+		columns.push_back(minimum_size_column->name);
 	}
 
 	std::vector<std::unique_ptr<Poco::ScopedReadRWLock>> per_part_columns_lock;
 	RangesInDataParts parts;
-	std::vector<MarkRanges> per_part_all_ranges;
 	std::vector<std::size_t> per_part_sum_marks;
-	std::size_t sum_marks;
+	std::vector<std::size_t> remaining_part_indices;
 	MergeTreeData & data;
-	std::vector<Names> per_part_ordered_names;
+	Names column_names;
 	std::vector<NameSet> per_part_column_name_set;
 	std::vector<NamesAndTypesList> per_part_columns;
 	std::vector<NamesAndTypesList> per_part_pre_columns;
 	/// @todo actually all of these values are either true or false for the whole query, thus no vector required
 	std::vector<bool> per_part_remove_prewhere_column;
+	std::vector<bool> per_part_should_reorder;
 
 	mutable std::mutex mutex;
 };

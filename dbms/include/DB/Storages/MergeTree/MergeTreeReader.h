@@ -62,20 +62,14 @@ public:
 		{
 			size_t max_rows_to_read = (to_mark - from_mark) * storage.index_granularity;
 
-			/** Для некоторых столбцов файлы с данными могут отсутствовать.
-				* Это бывает для старых кусков, после добавления новых столбцов в структуру таблицы.
-				*/
-			auto has_missing_columns = false;
-
 			/// Указатели на столбцы смещений, общие для столбцов из вложенных структур данных
 			/// Если append, все значения nullptr, и offset_columns используется только для проверки, что столбец смещений уже прочитан.
 			OffsetColumns offset_columns;
-			const auto read_column = [&] (const NameAndTypePair & it) {
+
+			for (const NameAndTypePair & it : columns)
+			{
 				if (streams.end() == streams.find(it.name))
-				{
-					has_missing_columns = true;
-					return;
-				}
+					continue;
 
 				/// Все столбцы уже есть в блоке. Будем добавлять значения в конец.
 				bool append = res.has(it.name);
@@ -108,24 +102,12 @@ public:
 
 				if (!append && column.column->size())
 					res.insert(column);
-			};
-
-			for (const NameAndTypePair & it : columns)
-				read_column(it);
-
-			if (has_missing_columns && !res)
-			{
-				addMinimumSizeColumn();
-				/// minimum size column is necessarily at list's front
-				read_column(columns.front());
 			}
 		}
 		catch (const Exception & e)
 		{
 			if (e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
-			{
 				storage.reportBrokenPart(part_name);
-			}
 
 			/// Более хорошая диагностика.
 			throw Exception(e.message() +  "\n(while reading from part " + path + " from mark " + toString(from_mark) + " to "
@@ -139,60 +121,13 @@ public:
 		}
 	}
 
-
-	/** Добавить столбец минимального размера.
-	  * Используется в случае, когда ни один столбец не нужен, но нужно хотя бы знать количество строк.
-	  * Добавляет в columns.
-	  */
-	void addMinimumSizeColumn()
-	{
-		const auto get_column_size = [this] (const String & name) {
-			const auto & files = data_part->checksums.files;
-
-			const auto escaped_name = escapeForFileName(name);
-			const auto bin_file_name = escaped_name + ".bin";
-			const auto mrk_file_name = escaped_name + ".mrk";
-
-			return files.find(bin_file_name)->second.file_size + files.find(mrk_file_name)->second.file_size;
-		};
-
-		const auto & storage_columns = storage.getColumnsList();
-		const NameAndTypePair * minimum_size_column = nullptr;
-		auto minimum_size = std::numeric_limits<size_t>::max();
-
-		for (const auto & column : storage_columns)
-		{
-			if (!data_part->hasColumnFiles(column.name))
-				continue;
-
-			const auto size = get_column_size(column.name);
-			if (size < minimum_size)
-			{
-				minimum_size = size;
-				minimum_size_column = &column;
-			}
-		}
-
-		if (!minimum_size_column)
-			throw Exception{
-				"could not find a column of minimum size in MergeTree",
-				ErrorCodes::LOGICAL_ERROR
-			};
-
-		addStream(minimum_size_column->name, *minimum_size_column->type, all_mark_ranges);
-		columns.emplace(std::begin(columns), *minimum_size_column);
-
-		added_minimum_size_column = &columns.front();
-	}
-
-
 	/** Добавляет в блок недостающие столбцы из ordered_names, состоящие из значений по-умолчанию.
 	  * Недостающие столбцы добавляются в позиции, такие же как в ordered_names.
 	  * Если был добавлен хотя бы один столбец - то все столбцы в блоке переупорядочиваются как в ordered_names.
 	  */
-	void fillMissingColumns(Block & res, const Names & ordered_names)
+	void fillMissingColumns(Block & res, const Names & ordered_names, const bool always_reorder = false)
 	{
-		fillMissingColumnsImpl(res, ordered_names, false);
+		fillMissingColumnsImpl(res, ordered_names, always_reorder);
 	}
 
 	/** То же самое, но всегда переупорядочивает столбцы в блоке, как в ordered_names
@@ -345,9 +280,8 @@ private:
 	String part_name;
 	FileStreams streams;
 
-	/// Запрашиваемые столбцы. Возможно, с добавлением minimum_size_column.
+	/// Запрашиваемые столбцы.
 	NamesAndTypesList columns;
-	const NameAndTypePair * added_minimum_size_column = nullptr;
 
 	UncompressedCache * uncompressed_cache;
 	MarkCache * mark_cache;
@@ -538,15 +472,6 @@ private:
 			if (should_evaluate_defaults)
 				evaluateMissingDefaults(res, columns, storage.column_defaults, storage.context);
 
-			/// remove added column to ensure same content among all blocks
-			if (added_minimum_size_column)
-			{
-				res.erase(0);
-				streams.erase(added_minimum_size_column->name);
-				columns.erase(std::begin(columns));
-				added_minimum_size_column = nullptr;
-			}
-
 			/// sort columns to ensure consistent order among all blocks
 			if (should_sort)
 			{
@@ -555,12 +480,6 @@ private:
 				for (const auto & name : ordered_names)
 					if (res.has(name))
 						ordered_block.insert(res.getByName(name));
-
-				if (res.columns() != ordered_block.columns())
-					throw Exception{
-						"Ordered block has different number of columns than original one:\n" +
-							ordered_block.dumpNames() + "\nvs.\n" + res.dumpNames(),
-						ErrorCodes::LOGICAL_ERROR};
 
 				std::swap(res, ordered_block);
 			}
