@@ -54,7 +54,7 @@ INSERT INTO foo(x, y) VALUES(1419800400, 'Europe/London');
 INSERT INTO foo(x, y) VALUES(1436956200, 'Asia/Tokyo');
 INSERT INTO foo(x, y) VALUES(1426415400, 'Pacific/Pitcairn');
 
-SELECT toMonday(toDateTime(x), y), toStartOfMonth(toDateTime(x), y), toStartOfQuarter(toDateTime(x), y), toTime(toDateTime(x), y) FROM foo ORDER BY x ASC;
+SELECT toMonday(toDateTime(x), y), toStartOfMonth(toDateTime(x), y), toStartOfQuarter(toDateTime(x), y), toTime(toDateTime(x), y) FROM foo ORDER BY y ASC;
 SELECT toMonday(toDateTime(x), 'Europe/Paris'), toStartOfMonth(toDateTime(x), 'Europe/London'), toStartOfQuarter(toDateTime(x), 'Asia/Tokyo'), toTime(toDateTime(x), 'Pacific/Pitcairn') FROM foo ORDER BY x ASC;
 SELECT toMonday(toDateTime(1426415400), y), toStartOfMonth(toDateTime(1426415400), y), toStartOfQuarter(toDateTime(1426415400), y), toTime(toDateTime(1426415400), y) FROM foo ORDER BY y ASC;
 
@@ -84,6 +84,6 @@ SELECT toUnixTimestamp(toString(toDateTime(1426415400), 'Europe/London'), 'Europ
 SELECT toUnixTimestamp(toString(toDateTime(1426415400), 'Asia/Tokyo'), 'Asia/Tokyo');
 SELECT toUnixTimestamp(toString(toDateTime(1426415400), 'Pacific/Pitcairn'), 'Pacific/Pitcairn');
 
-SELECT toUnixTimestamp(toString(toDateTime(x)), y) FROM foo ORDER BY x ASC;
+SELECT toUnixTimestamp(toString(toDateTime(x)), y) FROM foo ORDER BY y ASC;
 SELECT toUnixTimestamp(toString(toDateTime(1426415400)), y) FROM foo ORDER BY y ASC;
 SELECT toUnixTimestamp(toString(toDateTime(x)), 'Europe/Paris') FROM foo ORDER BY x ASC;

@@ -72,12 +72,15 @@ GDateTimePtr toNextDay(const GTimeZonePtr & p_tz, const GDateTimePtr & p_dt)
 
 	dt = g_date_time_add_days(dt, 1);
 	if (dt == nullptr)
-		throw Poco::Exception("Null pointer");
+		throw Poco::Exception("Failed to create GDateTime object.");
+
+	GDateTimePtr p_next_dt = GDateTimePtr(dt);
+	GDateTime * next_dt = p_next_dt.get();
 
 	dt = g_date_time_new(p_tz.get(),
-						 g_date_time_get_year(dt),
-						 g_date_time_get_month(dt),
-						 g_date_time_get_day_of_month(dt),
+						 g_date_time_get_year(next_dt),
+						 g_date_time_get_month(next_dt),
+						 g_date_time_get_day_of_month(next_dt),
 						 0, 0, 0);
 	if (dt == nullptr)
 		throw Poco::Exception("Failed to create GDateTime object.");

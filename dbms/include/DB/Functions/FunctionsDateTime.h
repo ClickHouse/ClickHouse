@@ -232,8 +232,8 @@ struct ToRelativeSecondNumImpl
 template<typename FromType, typename ToType, typename Transform>
 struct Transformer
 {
-	static void vector_vector(const typename ColumnVector<FromType>::Container_t & vec_from, const ColumnString::Chars_t & data,
-							  const ColumnString::Offsets_t & offsets, typename ColumnVector<ToType>::Container_t & vec_to)
+	static void vector_vector(const PODArray<FromType> & vec_from, const ColumnString::Chars_t & data,
+							  const ColumnString::Offsets_t & offsets, PODArray<ToType> & vec_to)
 	{
 		auto & local_date_lut = DateLUT::instance();
 		ColumnString::Offset_t prev_offset = 0;
@@ -248,8 +248,8 @@ struct Transformer
 		}
 	}
 
-	static void vector_constant(const typename ColumnVector<FromType>::Container_t & vec_from, const std::string & data,
-								typename ColumnVector<ToType>::Container_t & vec_to)
+	static void vector_constant(const PODArray<FromType> & vec_from, const std::string & data,
+								PODArray<ToType> & vec_to)
 	{
 		auto & local_date_lut = DateLUT::instance();
 		auto & remote_date_lut = DateLUT::instance(data);
@@ -258,7 +258,7 @@ struct Transformer
 	}
 
 	static void constant_vector(const FromType & from, const ColumnString::Chars_t & data,
-								const ColumnString::Offsets_t & offsets, typename ColumnVector<ToType>::Container_t & vec_to)
+								const ColumnString::Offsets_t & offsets, PODArray<ToType> & vec_to)
 	{
 		auto & local_date_lut = DateLUT::instance();
 		ColumnString::Offset_t prev_offset = 0;
@@ -289,14 +289,14 @@ struct DateTimeTransformImpl
 		using Op = Transformer<FromType, ToType, Transform>;
 
 		const ColumnPtr source_col = block.getByPosition(arguments[0]).column;
-		const ColumnVector<FromType> * sources = typeid_cast<const ColumnVector<FromType> *>(&*source_col);
-		const ColumnConst<FromType> * const_source = typeid_cast<const ColumnConst<FromType> *>(&*source_col);
+		const auto * sources = typeid_cast<const ColumnVector<FromType> *>(&*source_col);
+		const auto * const_source = typeid_cast<const ColumnConst<FromType> *>(&*source_col);
 
 		if (arguments.size() == 1)
 		{
 			if (sources)
 			{
-				ColumnVector<ToType> * col_to = new ColumnVector<ToType>;
+				auto * col_to = new ColumnVector<ToType>;
 				block.getByPosition(result).column = col_to;
 
 				auto & vec_from = sources->getData();
@@ -322,12 +322,12 @@ struct DateTimeTransformImpl
 		else if (arguments.size() == 2)
 		{
 			const ColumnPtr time_zone_col = block.getByPosition(arguments[1]).column;
-			const ColumnString * time_zones = typeid_cast<const ColumnString *>(&*time_zone_col);
-			const ColumnConstString * const_time_zone = typeid_cast<const ColumnConstString *>(&*time_zone_col);
+			const auto * time_zones = typeid_cast<const ColumnString *>(&*time_zone_col);
+			const auto * const_time_zone = typeid_cast<const ColumnConstString *>(&*time_zone_col);
 
 			if (sources)
 			{
-				ColumnVector<ToType> * col_to = new ColumnVector<ToType>;
+				auto * col_to = new ColumnVector<ToType>;
 				block.getByPosition(result).column = col_to;
 
 				auto & vec_from = sources->getData();
@@ -347,7 +347,7 @@ struct DateTimeTransformImpl
 			{
 				if (time_zones)
 				{
-					ColumnVector<ToType> * col_to = new ColumnVector<ToType>;
+					auto * col_to = new ColumnVector<ToType>;
 					block.getByPosition(result).column = col_to;
 
 					auto & vec_to = col_to->getData();
@@ -371,6 +371,8 @@ struct DateTimeTransformImpl
 						+ " of first argument of function " + Name::name,
 					ErrorCodes::ILLEGAL_COLUMN);
 		}
+		else
+			throw Exception("Internal error.", ErrorCodes::LOGICAL_ERROR);
 	}
 };
 

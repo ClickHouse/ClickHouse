@@ -12,7 +12,7 @@ DateLUT::DateLUT()
 
 	std::unique_ptr<TimeZone> tz(TimeZone::createDefault());
 	if (tz == nullptr)
-		throw Poco::Exception("Failed to query the host time zone.");
+		throw Poco::Exception("Failed to determine the host time zone.");
 
 	UnicodeString u_out;
 	tz->getID(u_out);
