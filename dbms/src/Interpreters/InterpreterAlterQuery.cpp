@@ -27,7 +27,7 @@ InterpreterAlterQuery::InterpreterAlterQuery(ASTPtr query_ptr_, Context & contex
 {
 }
 
-void InterpreterAlterQuery::execute()
+BlockIO InterpreterAlterQuery::execute()
 {
 	auto & alter = typeid_cast<ASTAlterQuery &>(*query_ptr);
 	const String & table_name = alter.table;
@@ -64,11 +64,13 @@ void InterpreterAlterQuery::execute()
 	}
 
 	if (alter_commands.empty())
-		return;
+		return {};
 
 	alter_commands.validate(table.get(), context);
 
 	table->alter(alter_commands, database_name, table_name, context);
+
+	return {};
 }
 
 void InterpreterAlterQuery::parseAlter(

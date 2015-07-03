@@ -2,6 +2,7 @@
 
 #include <DB/Core/QueryProcessingStage.h>
 #include <DB/Interpreters/Context.h>
+#include <DB/Interpreters/IInterpreter.h>
 #include <DB/Interpreters/ExpressionActions.h>
 #include <DB/DataStreams/IBlockInputStream.h>
 
@@ -15,7 +16,7 @@ class SubqueryForSet;
 
 /** Интерпретирует запрос SELECT. Возвращает поток блоков с результатами выполнения запроса до стадии to_stage.
   */
-class InterpreterSelectQuery
+class InterpreterSelectQuery : public IInterpreter
 {
 public:
 	/** to_stage
@@ -66,16 +67,11 @@ public:
 	/** Выполнить запрос, возможно являющиийся цепочкой UNION ALL.
 	 *  Получить поток блоков для чтения
 	 */
-	BlockInputStreamPtr execute();
+	BlockIO execute() override;
 
 	/** Выполнить запрос без объединения потоков, если это возможно.
 	 */
 	const BlockInputStreams & executeWithoutUnion();
-
-	/** Выполнить запрос, записать результат в нужном формате в buf.
-	 * BlockInputStreamPtr возвращается, чтобы можно было потом получить информацию о плане выполнения запроса.
-	 */
-	BlockInputStreamPtr executeAndFormat(WriteBuffer & buf);
 
 	DataTypes getReturnTypes();
 	Block getSampleBlock();
