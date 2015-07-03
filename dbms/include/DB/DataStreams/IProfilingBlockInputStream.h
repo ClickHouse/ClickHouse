@@ -3,7 +3,6 @@
 #include <DB/Core/Progress.h>
 
 #include <DB/Interpreters/Limits.h>
-#include <DB/Interpreters/ProcessList.h>
 
 #include <DB/DataStreams/BlockStreamProfileInfo.h>
 #include <DB/DataStreams/IBlockInputStream.h>
@@ -14,6 +13,7 @@ namespace DB
 {
 
 class QuotaForIntervals;
+class ProcessListElement;
 
 
 /** Смотрит за тем, как работает источник блоков.
@@ -82,7 +82,7 @@ public:
 	  * На основе этой информации будет проверяться квота, и некоторые ограничения.
 	  * Также эта информация будет доступна в запросе SHOW PROCESSLIST.
 	  */
-	void setProcessListElement(ProcessList::Element * elem);
+	void setProcessListElement(ProcessListElement * elem);
 
 	/** Установить информацию о приблизительном общем количестве строк, которых нужно прочитать.
 	  */
@@ -154,7 +154,7 @@ protected:
 	BlockStreamProfileInfo info;
 	std::atomic<bool> is_cancelled{false};
 	ProgressCallback progress_callback;
-	ProcessList::Element * process_list_elem = nullptr;
+	ProcessListElement * process_list_elem = nullptr;
 
 	bool enabled_extremes = false;
 

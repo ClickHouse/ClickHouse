@@ -2,11 +2,12 @@
 
 #include <DB/DataStreams/IBlockInputStream.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
-#include <DB/Interpreters/ProcessList.h>
 
 
 namespace DB
 {
+
+class ProcessListEntry;
 
 struct BlockIO
 {
@@ -15,13 +16,32 @@ struct BlockIO
 	  *  (MemoryTracker * current_memory_tracker),
 	  *  которая может использоваться до уничтожения in и out.
 	  */
-	ProcessList::EntryPtr process_list_entry;
+	std::shared_ptr<ProcessListEntry> process_list_entry;
 
 	BlockInputStreamPtr in;
 	BlockOutputStreamPtr out;
 
 	Block in_sample;	/// Пример блока, который будет прочитан из in.
 	Block out_sample;	/// Пример блока, которого нужно писать в out.
+
+	/// Здесь могут быть установлены колбэки для логгирования запроса.
+	std::function<void(IBlockInputStream &)> 	finish_callback;
+	std::function<void()> 						exception_callback;
+
+	/// Вызывайте эти функции, если нужно логгировать запрос.
+	void onFinish()
+	{
+		if (in && finish_callback)
+			finish_callback(*in);
+	}
+
+	void onException()
+	{
+		if (exception_callback)
+			exception_callback();
+		else
+			tryLogCurrentException(__PRETTY_FUNCTION__);
+	}
 
 	BlockIO & operator= (const BlockIO & rhs)
 	{
@@ -36,8 +56,13 @@ struct BlockIO
 		in_sample 			= rhs.in_sample;
 		out_sample 			= rhs.out_sample;
 
+		finish_callback		= rhs.finish_callback;
+		exception_callback	= rhs.exception_callback;
+
 		return *this;
 	}
+
+	~BlockIO();
 };
 
 }

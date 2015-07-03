@@ -3,6 +3,7 @@
 #include <DB/DataStreams/IBlockOutputStream.h>
 #include <DB/DataStreams/BlockIO.h>
 #include <DB/Interpreters/Context.h>
+#include <DB/Interpreters/IInterpreter.h>
 
 
 namespace DB
@@ -11,23 +12,17 @@ namespace DB
 
 /** Интерпретирует запрос INSERT.
   */
-class InterpreterInsertQuery
+class InterpreterInsertQuery : public IInterpreter
 {
 public:
 	InterpreterInsertQuery(ASTPtr query_ptr_, Context & context_);
-
-	/** Выполнить запрос.
-	  * remaining_data_istr, если не nullptr, может содержать нераспарсенные данные для вставки.
-	  * (заранее может быть считан в оперативку для парсинга лишь небольшой кусок запроса, который содержит не все данные)
-	  */
-	void execute(ReadBuffer * remaining_data_istr);
 
 	/** Подготовить запрос к выполнению. Вернуть потоки блоков
 	  * - поток, в который можно писать данные для выполнения запроса, если INSERT;
 	  * - поток, из которого можно читать результат выполнения запроса, если SELECT и подобные;
 	  * Или ничего, если запрос INSERT SELECT (самодостаточный запрос - не принимает входные данные, не отдаёт результат).
 	  */
-	BlockIO execute();
+	BlockIO execute() override;
 
 private:
 	StoragePtr getTable();

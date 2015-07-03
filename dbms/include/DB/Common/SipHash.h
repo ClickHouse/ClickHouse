@@ -13,6 +13,7 @@
 
 #include <stdint.h>
 #include <cstdlib>
+#include <stddef.h>
 
 #define ROTL(x,b) (u64)( ((x) << (b)) | ( (x) >> (64 - (b))) )
 

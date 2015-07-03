@@ -2224,7 +2224,7 @@ static String getFakePartNameForDrop(const String & month_name, UInt64 left, UIn
 }
 
 
-void StorageReplicatedMergeTree::dropUnreplicatedPartition(const Field & partition, const Settings & settings)
+void StorageReplicatedMergeTree::dropUnreplicatedPartition(const Field & partition, const bool detach, const Settings & settings)
 {
 	if (!unreplicated_data)
 		return;
@@ -2247,10 +2247,13 @@ void StorageReplicatedMergeTree::dropUnreplicatedPartition(const Field & partiti
 		LOG_DEBUG(log, "Removing unreplicated part " << part->name);
 		++removed_parts;
 
-		unreplicated_data->replaceParts({part}, {}, false);
+		if (detach)
+			unreplicated_data->renameAndDetachPart(part, "");
+		else
+			unreplicated_data->replaceParts({part}, {}, false);
 	}
 
-	LOG_INFO(log, "Removed " << removed_parts << " unreplicated parts inside " << apply_visitor(FieldVisitorToString(), partition) << ".");
+	LOG_INFO(log, (detach ? "Detached " : "Removed ") << removed_parts << " unreplicated parts inside " << apply_visitor(FieldVisitorToString(), partition) << ".");
 }
 
 
@@ -2258,13 +2261,7 @@ void StorageReplicatedMergeTree::dropPartition(const Field & field, bool detach,
 {
 	if (unreplicated)
 	{
-		if (detach)
-			throw Exception{
-				"DETACH UNREPLICATED PATITION not supported",
-				ErrorCodes::LOGICAL_ERROR
-			};
-
-		dropUnreplicatedPartition(field, settings);
+		dropUnreplicatedPartition(field, detach, settings);
 
 		return;
 	}
