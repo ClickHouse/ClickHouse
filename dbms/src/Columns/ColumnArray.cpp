@@ -298,16 +298,14 @@ ColumnPtr ColumnArray::replicateConst(const Offsets_t & replicate_offsets) const
 	if (col_size != replicate_offsets.size())
 		throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-	ColumnPtr res = cloneEmpty();
-
 	if (0 == col_size)
-		return res;
-
-	ColumnArray & res_ = typeid_cast<ColumnArray &>(*res);
+		return cloneEmpty();
 
 	const Offsets_t & cur_offsets = getOffsets();
-	Offsets_t & res_offsets = res_.getOffsets();
 
+	ColumnOffsets_t * res_column_offsets = new ColumnOffsets_t;
+	ColumnPtr res_column_offsets_holder = res_column_offsets;
+	Offsets_t & res_offsets = res_column_offsets->getData();
 	res_offsets.reserve(replicate_offsets.back());
 
 	Offset_t prev_replicate_offset = 0;
@@ -329,9 +327,7 @@ ColumnPtr ColumnArray::replicateConst(const Offsets_t & replicate_offsets) const
 		prev_data_offset = cur_offsets[i];
 	}
 
-	res_.getDataPtr() = res_.getData().cloneResized(res_offsets.back());
-
-	return res;
+	return new ColumnArray(getData().cloneResized(current_new_offset), res_column_offsets_holder);
 }
 
 
