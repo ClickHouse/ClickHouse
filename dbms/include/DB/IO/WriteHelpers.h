@@ -364,7 +364,8 @@ inline void writeDateText(mysqlxx::Date date, WriteBuffer & buf)
 
 
 /// в формате YYYY-MM-DD HH:MM:SS, согласно текущему часовому поясу
-inline void writeDateTimeText(time_t datetime, WriteBuffer & buf, char date_delimeter = '-', char time_delimeter = ':')
+template <char date_delimeter = '-', char time_delimeter = ':'>
+inline void writeDateTimeText(time_t datetime, WriteBuffer & buf)
 {
 	char s[19] = {'0', '0', '0', '0', date_delimeter, '0', '0', date_delimeter, '0', '0', ' ', '0', '0', time_delimeter, '0', '0', time_delimeter, '0', '0'};
 
@@ -400,7 +401,8 @@ inline void writeDateTimeText(time_t datetime, WriteBuffer & buf, char date_deli
 	buf.write(s, 19);
 }
 
-inline void writeDateTimeText(mysqlxx::DateTime datetime, WriteBuffer & buf, char date_delimeter = '-', char time_delimeter = ':')
+template <char date_delimeter = '-', char time_delimeter = ':'>
+inline void writeDateTimeText(mysqlxx::DateTime datetime, WriteBuffer & buf)
 {
 	char s[19] = {'0', '0', '0', '0', date_delimeter, '0', '0', date_delimeter, '0', '0', ' ', '0', '0', time_delimeter, '0', '0', time_delimeter, '0', '0'};
 
