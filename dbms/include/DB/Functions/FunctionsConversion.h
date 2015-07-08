@@ -248,7 +248,7 @@ namespace details { namespace {
   * объекту from_date_lut. Эта функция возвращает timestamp представлящий те же дату и время
   * в часовом поясе соответствующем объекту to_date_lut.
   */
-time_t convertTimestamp(time_t source_timestamp, const DateLUTImpl & from_date_lut, const DateLUTImpl &  to_date_lut)
+time_t convertTimestamp(time_t source_timestamp, const DateLUTImpl & from_date_lut, const DateLUTImpl & to_date_lut)
 {
 	if (&from_date_lut == &to_date_lut)
 		return source_timestamp;
