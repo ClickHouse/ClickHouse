@@ -298,9 +298,6 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 		if (!data.sign_column.empty())
 			column_names_to_read.push_back(data.sign_column);
 
-		if (!data.columns_to_sum.empty())
-			column_names_to_read.insert(column_names_to_read.end(), data.columns_to_sum.begin(), data.columns_to_sum.end());
-
 		std::sort(column_names_to_read.begin(), column_names_to_read.end());
 		column_names_to_read.erase(std::unique(column_names_to_read.begin(), column_names_to_read.end()), column_names_to_read.end());
 
