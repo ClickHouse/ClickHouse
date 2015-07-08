@@ -91,9 +91,7 @@ DateLUT::DateLUT()
 
 const DateLUTImpl & DateLUT::getImplementation(const std::string & time_zone, size_t group_id) const
 {
-	static auto & date_lut_table = *date_lut_impl_list;
-
-	auto & wrapper = date_lut_table[group_id];
+	auto & wrapper = (*date_lut_impl_list)[group_id];
 
 	DateLUTImpl * tmp = wrapper.load(std::memory_order_acquire);
 	if (tmp == nullptr)

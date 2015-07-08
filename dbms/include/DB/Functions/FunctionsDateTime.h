@@ -130,17 +130,17 @@ struct ToTimeImpl
 	/// При переводе во время, дату будем приравнивать к 1970-01-02.
 	static inline UInt32 execute(UInt32 t, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut)
 	{
-		time_t remote_t = remote_date_lut.toTimeInaccurate(t) + 86400;
+		time_t remote_ts = remote_date_lut.toTimeInaccurate(t) + 86400;
 
 		if (&remote_date_lut == &local_date_lut)
-			return remote_t;
+			return remote_ts;
 		else
 		{
-			const auto & values = remote_date_lut.getValues(remote_t);
+			const auto & values = remote_date_lut.getValues(remote_ts);
 			return local_date_lut.makeDateTime(values.year, values.month, values.day_of_month,
-											remote_date_lut.toHourInaccurate(remote_t),
-											remote_date_lut.toMinuteInaccurate(remote_t),
-											remote_date_lut.toSecondInaccurate(remote_t));
+											remote_date_lut.toHourInaccurate(remote_ts),
+											remote_date_lut.toMinuteInaccurate(remote_ts),
+											remote_date_lut.toSecondInaccurate(remote_ts));
 		}
 	}
 
@@ -257,6 +257,13 @@ struct Transformer
 			vec_to[i] = Transform::execute(vec_from[i], remote_date_lut, local_date_lut);
 	}
 
+	static void vector_constant(const PODArray<FromType> & vec_from, PODArray<ToType> & vec_to)
+	{
+		const auto & local_date_lut = DateLUT::instance();
+		for (size_t i = 0; i < vec_from.size(); ++i)
+			vec_to[i] = Transform::execute(vec_from[i], local_date_lut, local_date_lut);
+	}
+
 	static void constant_vector(const FromType & from, const ColumnString::Chars_t & data,
 								const ColumnString::Offsets_t & offsets, PODArray<ToType> & vec_to)
 	{
@@ -278,6 +285,12 @@ struct Transformer
 		const auto & local_date_lut = DateLUT::instance();
 		const auto & remote_date_lut = DateLUT::instance(data);
 		to = Transform::execute(from, remote_date_lut, local_date_lut);
+	}
+
+	static void constant_constant(const FromType & from, ToType & to)
+	{
+		const auto & local_date_lut = DateLUT::instance();
+		to = Transform::execute(from, local_date_lut, local_date_lut);
 	}
 };
 
@@ -304,12 +317,12 @@ struct DateTimeTransformImpl
 				size_t size = vec_from.size();
 				vec_to.resize(size);
 
-				Op::vector_constant(vec_from, "", vec_to);
+				Op::vector_constant(vec_from, vec_to);
 			}
 			else if (const_source)
 			{
 				ToType res;
-				Op::constant_constant(const_source->getData(), "", res);
+				Op::constant_constant(const_source->getData(), res);
 				block.getByPosition(result).column = new ColumnConst<ToType>(const_source->size(), res);
 			}
 			else
