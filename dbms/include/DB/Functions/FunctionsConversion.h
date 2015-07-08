@@ -323,6 +323,25 @@ struct DateTimeToStringConverter
 		data_to.resize(write_buffer.count());
 	}
 
+	static void vector_constant(const PODArray<FromFieldType> & vec_from, ColumnString & vec_to)
+	{
+		ColumnString::Chars_t & data_to = vec_to.getChars();
+		ColumnString::Offsets_t & offsets_to = vec_to.getOffsets();
+		size_t size = vec_from.size();
+		data_to.resize(size * 2);
+		offsets_to.resize(size);
+
+		WriteBufferFromVector<ColumnString::Chars_t> write_buffer(data_to);
+
+		for (size_t i = 0; i < size; ++i)
+		{
+			formatImpl<DataTypeDateTime>(vec_from[i], write_buffer);
+			writeChar(0, write_buffer);
+			offsets_to[i] = write_buffer.count();
+		}
+		data_to.resize(write_buffer.count());
+	}
+
 	static void constant_vector(FromFieldType from, const ColumnString::Chars_t & data,
 								const ColumnString::Offsets_t & offsets,
 								ColumnString & vec_to)
@@ -366,6 +385,14 @@ struct DateTimeToStringConverter
 		formatImpl<DataTypeDateTime>(ti, write_buffer);
 		to = std::string(&buf[0], write_buffer.count());
 	}
+
+	static void constant_constant(FromFieldType from, std::string & to)
+	{
+		std::vector<char> buf;
+		WriteBufferFromVector<std::vector<char> > write_buffer(buf);
+		formatImpl<DataTypeDateTime>(from, write_buffer);
+		to = std::string(&buf[0], write_buffer.count());
+	}
 };
 
 }}
@@ -392,12 +419,12 @@ struct ConvertImpl<DataTypeDateTime, DataTypeString, Name>
 				auto & vec_from = sources->getData();
 				auto & vec_to = *col_to;
 
-				Op::vector_constant(vec_from, "", vec_to);
+				Op::vector_constant(vec_from, vec_to);
 			}
 			else if (const_source)
 			{
 				std::string res;
-				Op::constant_constant(const_source->getData(), "", res);
+				Op::constant_constant(const_source->getData(), res);
 				block.getByPosition(result).column = new ColumnConstString(const_source->size(), res);
 			}
 			else
@@ -581,6 +608,22 @@ struct StringToTimestampConverter
 		}
 	}
 
+	static void vector_constant(const ColumnString::Chars_t & vec_from, PODArray<ToFieldType> & vec_to)
+	{
+		ReadBuffer read_buffer(const_cast<char *>(reinterpret_cast<const char *>(&vec_from[0])), vec_from.size(), 0);
+
+		char zero = 0;
+		for (size_t i = 0; i < vec_to.size(); ++i)
+		{
+			DataTypeDateTime::FieldType x = 0;
+			parseImpl<DataTypeDateTime>(x, read_buffer);
+			vec_to[i] = x;
+			readChar(zero, read_buffer);
+			if (zero != 0)
+				throw Exception("Cannot parse from string.", ErrorCodes::CANNOT_PARSE_NUMBER);
+		}
+	}
+
 	static void constant_vector(const std::string & from, const ColumnString::Chars_t & data,
 								const ColumnString::Offsets_t & offsets, PODArray<ToFieldType> & vec_to)
 	{
@@ -616,6 +659,14 @@ struct StringToTimestampConverter
 
 		to = convertTimestamp(x, local_date_lut, remote_date_lut);
 	}
+
+	static void constant_constant(const std::string & from, ToFieldType & to)
+	{
+		ReadBufferFromString read_buffer(from);
+		DataTypeDateTime::FieldType x = 0;
+		parseImpl<DataTypeDateTime>(x, read_buffer);
+		to = x;
+	}
 };
 
 }}
@@ -646,12 +697,12 @@ struct ConvertImpl<DataTypeString, DataTypeInt32, NameToUnixTimestamp>
 				size_t size = sources->size();
 				vec_to.resize(size);
 
-				Op::vector_constant(vec_from, "", vec_to);
+				Op::vector_constant(vec_from, vec_to);
 			}
 			else if (const_source)
 			{
 				ToFieldType res;
-				Op::constant_constant(const_source->getData(), "", res);
+				Op::constant_constant(const_source->getData(), res);
 				block.getByPosition(result).column = new ColumnConst<ToFieldType>(const_source->size(), res);
 			}
 			else
