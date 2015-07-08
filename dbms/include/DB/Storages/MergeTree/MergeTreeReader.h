@@ -32,11 +32,25 @@ public:
 		UncompressedCache * uncompressed_cache_, MarkCache * mark_cache_,
 		MergeTreeData & storage_, const MarkRanges & all_mark_ranges,
 		size_t aio_threshold_, size_t max_read_buffer_size_)
-		: path(path_), data_part(data_part), part_name(data_part->name), columns(columns_),
-		uncompressed_cache(uncompressed_cache_), mark_cache(mark_cache_),
-		storage(storage_), all_mark_ranges(all_mark_ranges),
-		aio_threshold(aio_threshold_), max_read_buffer_size(max_read_buffer_size_)
+		: uncompressed_cache(uncompressed_cache_), mark_cache(mark_cache_), storage(storage_),
+		  aio_threshold(aio_threshold_), max_read_buffer_size(max_read_buffer_size_)
 	{
+		reconf(path_, data_part, columns_, all_mark_ranges);
+	}
+
+	void reconf(
+		const String & path, const MergeTreeData::DataPartPtr & data_part, const NamesAndTypesList & columns,
+		const MarkRanges & all_mark_ranges)
+	{
+		this->path = path;
+		this->data_part = data_part;
+		this->part_name = data_part->name;
+		this->columns = columns;
+		this->all_mark_ranges = all_mark_ranges;
+		this->streams.clear();
+
+		/// @todo sort buffers using capacity, find best match for Stream.
+
 		try
 		{
 			if (!Poco::File(path).exists())
@@ -138,12 +152,11 @@ public:
 		fillMissingColumnsImpl(res, ordered_names, true);
 	}
 
-	const MergeTreeData::DataPartPtr & getDataPart() const { return data_part; }
-
 private:
 	struct Stream
 	{
 		MarkCache::MappedPtr marks;
+		Memory & memory;
 		ReadBuffer * data_buffer;
 		std::unique_ptr<CachedCompressedReadBuffer> cached_buffer;
 		std::unique_ptr<CompressedReadBufferFromFile> non_cached_buffer;
@@ -153,9 +166,10 @@ private:
 		/// Используется в качестве подсказки, чтобы уменьшить количество реаллокаций при создании столбца переменной длины.
 		double avg_value_size_hint = 0;
 
-		Stream(const String & path_prefix_, UncompressedCache * uncompressed_cache, MarkCache * mark_cache, const MarkRanges & all_mark_ranges,
-			   size_t aio_threshold, size_t max_read_buffer_size)
-			: path_prefix(path_prefix_)
+		Stream(
+			const String & path_prefix_, UncompressedCache * uncompressed_cache, MarkCache * mark_cache,
+			const MarkRanges & all_mark_ranges, size_t aio_threshold, size_t max_read_buffer_size, Memory & memory)
+			: memory(memory), path_prefix(path_prefix_)
 		{
 			loadMarks(mark_cache);
 			size_t max_mark_range = 0;
@@ -204,16 +218,21 @@ private:
 				}
 			}
 
+			if (aio_threshold == 0 || estimated_size < aio_threshold)
+				memory.resize(buffer_size);
+			else
+				memory.resize(2 * (buffer_size + DEFAULT_AIO_FILE_BLOCK_SIZE));
+
 			if (uncompressed_cache)
 			{
 				cached_buffer = std::make_unique<CachedCompressedReadBuffer>(
-					path_prefix + ".bin", uncompressed_cache, estimated_size, aio_threshold, buffer_size);
+					path_prefix + ".bin", uncompressed_cache, estimated_size, aio_threshold, buffer_size, &memory);
 				data_buffer = cached_buffer.get();
 			}
 			else
 			{
 				non_cached_buffer = std::make_unique<CompressedReadBufferFromFile>(
-					path_prefix + ".bin", estimated_size, aio_threshold, buffer_size);
+					path_prefix + ".bin", estimated_size, aio_threshold, buffer_size, &memory[0]);
 				data_buffer = non_cached_buffer.get();
 			}
 		}
@@ -276,9 +295,10 @@ private:
 	typedef std::map<std::string, std::unique_ptr<Stream> > FileStreams;
 
 	String path;
-	const MergeTreeData::DataPartPtr & data_part;
+	MergeTreeData::DataPartPtr data_part;
 	String part_name;
 	FileStreams streams;
+	std::vector<std::unique_ptr<Memory>> buffers;
 
 	/// Запрашиваемые столбцы.
 	NamesAndTypesList columns;
@@ -287,7 +307,7 @@ private:
 	MarkCache * mark_cache;
 
 	MergeTreeData & storage;
-	const MarkRanges & all_mark_ranges;
+	MarkRanges all_mark_ranges;
 	size_t aio_threshold;
 	size_t max_read_buffer_size;
 
@@ -301,6 +321,10 @@ private:
 		if (!Poco::File(path + escaped_column_name + ".bin").exists())
 			return;
 
+		const auto buffer_idx = streams.size();
+		if (buffer_idx >= buffers.size())
+			buffers.push_back(std::make_unique<Memory>(0, DEFAULT_AIO_FILE_BLOCK_SIZE));
+
 		/// Для массивов используются отдельные потоки для размеров.
 		if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
 		{
@@ -310,14 +334,16 @@ private:
 				+ ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 
 			if (!streams.count(size_name))
-				streams.emplace(size_name, std::unique_ptr<Stream>(new Stream(
-					path + escaped_size_name, uncompressed_cache, mark_cache, all_mark_ranges, aio_threshold, max_read_buffer_size)));
+				streams.emplace(size_name, std::make_unique<Stream>(
+					path + escaped_size_name, uncompressed_cache, mark_cache,
+					all_mark_ranges, aio_threshold, max_read_buffer_size, *buffers[buffer_idx]));
 
 			addStream(name, *type_arr->getNestedType(), all_mark_ranges, level + 1);
 		}
 		else
-			streams[name].reset(new Stream(
-				path + escaped_column_name, uncompressed_cache, mark_cache, all_mark_ranges, aio_threshold, max_read_buffer_size));
+			streams.emplace(name, std::make_unique<Stream>(
+				path + escaped_column_name, uncompressed_cache, mark_cache,
+				all_mark_ranges, aio_threshold, max_read_buffer_size, *buffers[buffer_idx]));
 	}
 
 

@@ -88,27 +88,31 @@ private:
 		if (!task)
 			return false;
 
-		if (!initialized)
+		const auto path = storage.getFullPath() + task->data_part->name + '/';
+
+		if (!reader)
 		{
 			if (use_uncompressed_cache)
 				owned_uncompressed_cache = storage.context.getUncompressedCache();
 
 			owned_mark_cache = storage.context.getMarkCache();
 
-			initialized = true;
+			reader = std::make_unique<MergeTreeReader>(
+				path, task->data_part, task->columns, owned_uncompressed_cache.get(), owned_mark_cache.get(),
+				storage, task->mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size);
+
+			if (prewhere_actions)
+				pre_reader = std::make_unique<MergeTreeReader>(
+					path, task->data_part, task->pre_columns, owned_uncompressed_cache.get(),
+					owned_mark_cache.get(), storage, task->mark_ranges, min_bytes_to_use_direct_io,
+					max_read_buffer_size);
 		}
-
-		const auto path = storage.getFullPath() + task->data_part->name + '/';
-
-		reader = std::make_unique<MergeTreeReader>(
-			path, task->data_part, task->columns, owned_uncompressed_cache.get(), owned_mark_cache.get(),
-			storage, task->mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size);
-
-		if (prewhere_actions)
-			pre_reader = std::make_unique<MergeTreeReader>(
-				path, task->data_part, task->pre_columns, owned_uncompressed_cache.get(),
-				owned_mark_cache.get(), storage, task->mark_ranges, min_bytes_to_use_direct_io,
-				max_read_buffer_size);
+		else
+		{
+			reader->reconf(path, task->data_part, task->columns, task->mark_ranges);
+			if (prewhere_actions)
+				pre_reader->reconf(path, task->data_part, task->pre_columns, task->mark_ranges);
+		}
 
 		return true;
 	}
@@ -318,7 +322,6 @@ private:
 
 	using MergeTreeReaderPtr = std::unique_ptr<MergeTreeReader>;
 
-	bool initialized{false};
 	UncompressedCachePtr owned_uncompressed_cache;
 	MarkCachePtr owned_mark_cache;
 
