@@ -78,7 +78,7 @@ DateLUT::DateLUT()
 
 	date_lut_impl_list = std::make_unique<DateLUTImplList>(group_id);
 
-	/// Инициализация указателя на реализацию для часового пояса по умолчанию.
+	/// Инициализация указателя на реализацию для часового пояса по-умолчанию.
 	auto it = time_zone_to_group.find(default_time_zone);
 	if (it == time_zone_to_group.end())
 		throw Poco::Exception("Failed to get default time zone information.");
