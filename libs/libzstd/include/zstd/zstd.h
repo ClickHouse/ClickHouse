@@ -48,7 +48,7 @@ extern "C" {
 #define ZSTD_VERSION_MAJOR    0    /* for breaking interface changes  */
 #define ZSTD_VERSION_MINOR    0    /* for new (non-breaking) interface capabilities */
 #define ZSTD_VERSION_RELEASE  2    /* for tweaks, bug-fixes, or development */
-#define ZSTD_VERSION_NUMBER (ZSTD_VERSION_MAJOR *100*100 + ZSTD_VERSION_MINOR *100 + ZSTD_VERSION_RELEASE)
+#define ZSTD_VERSION_NUMBER  (ZSTD_VERSION_MAJOR *100*100 + ZSTD_VERSION_MINOR *100 + ZSTD_VERSION_RELEASE)
 unsigned ZSTD_versionNumber (void);
 
 
@@ -70,7 +70,7 @@ ZSTD_compress() :
              or an error code if it fails (which can be tested using ZSTD_isError())
 
 ZSTD_decompress() :
-    compressedSize : is obviously the source size
+    compressedSize : is the exact source size
     maxOriginalSize : is the size of the 'dst' buffer, which must be already allocated.
                       It must be equal or larger than originalSize, otherwise decompression will fail.
     return : the number of bytes decompressed into destination buffer (originalSize)
@@ -81,7 +81,7 @@ ZSTD_decompress() :
 /**************************************
 *  Tool functions
 **************************************/
-size_t      ZSTD_compressBound(size_t srcSize);   /* maximum compressed size */
+size_t      ZSTD_compressBound(size_t srcSize);   /* maximum compressed size (worst case scenario) */
 
 /* Error Management */
 unsigned    ZSTD_isError(size_t code);         /* tells if a return value is an error code */
