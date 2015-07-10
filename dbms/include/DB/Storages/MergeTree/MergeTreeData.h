@@ -678,8 +678,14 @@ public:
 	std::string getModePrefix() const;
 
 	bool supportsSampling() const { return !!sampling_expression; }
-	bool supportsFinal() const { return !sign_column.empty(); }
 	bool supportsPrewhere() const { return true; }
+
+	bool supportsFinal() const
+	{
+		return mode == Mode::Collapsing
+			|| mode == Mode::Summing
+			|| mode == Mode::Aggregating;
+	}
 
 	UInt64 getMaxDataPartIndex();
 

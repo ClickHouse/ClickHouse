@@ -1007,7 +1007,7 @@ private:
 			text.resize(embedded_stack_trace_pos);
 
 		std::cerr << "Received exception from server:" << std::endl
-			<< "Code: " << e.code() << ". " << text;
+			<< "Code: " << e.code() << ". " << text << std::endl;
 	}
 
 

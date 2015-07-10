@@ -8,6 +8,8 @@
 #include <DB/DataStreams/AddingConstColumnBlockInputStream.h>
 #include <DB/DataStreams/CreatingSetsBlockInputStream.h>
 #include <DB/DataStreams/NullBlockInputStream.h>
+#include <DB/DataStreams/SummingSortedBlockInputStream.h>
+#include <DB/DataStreams/AggregatingSortedBlockInputStream.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Common/VirtualColumnUtils.h>
 
@@ -292,7 +294,10 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 		/// Добавим столбцы, нужные для вычисления первичного ключа и знака.
 		std::vector<String> add_columns = data.getPrimaryExpression()->getRequiredColumns();
 		column_names_to_read.insert(column_names_to_read.end(), add_columns.begin(), add_columns.end());
-		column_names_to_read.push_back(data.sign_column);
+
+		if (!data.sign_column.empty())
+			column_names_to_read.push_back(data.sign_column);
+
 		std::sort(column_names_to_read.begin(), column_names_to_read.end());
 		column_names_to_read.erase(std::unique(column_names_to_read.begin(), column_names_to_read.end()), column_names_to_read.end());
 
@@ -474,11 +479,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 	if (sum_marks > max_marks_to_use_cache)
 		use_uncompressed_cache = false;
 
-	ExpressionActionsPtr sign_filter_expression;
-	String sign_filter_column;
-	createPositiveSignCondition(sign_filter_expression, sign_filter_column);
-
-	BlockInputStreams to_collapse;
+	BlockInputStreams to_merge;
 
 	for (size_t part_index = 0; part_index < parts.size(); ++part_index)
 	{
@@ -499,14 +500,51 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 					source_stream, new DataTypeUInt64, part.part_index_in_query, "_part_index");
 		}
 
-		to_collapse.push_back(new ExpressionBlockInputStream(source_stream, data.getPrimaryExpression()));
+		to_merge.push_back(new ExpressionBlockInputStream(source_stream, data.getPrimaryExpression()));
 	}
 
 	BlockInputStreams res;
-	if (to_collapse.size() == 1)
-		res.push_back(new FilterBlockInputStream(new ExpressionBlockInputStream(to_collapse[0], sign_filter_expression), sign_filter_column));
-	else if (to_collapse.size() > 1)
-		res.push_back(new CollapsingFinalBlockInputStream(to_collapse, data.getSortDescription(), data.sign_column));
+	if (to_merge.size() == 1)
+	{
+		if (!data.sign_column.empty())
+		{
+			ExpressionActionsPtr sign_filter_expression;
+			String sign_filter_column;
+
+			createPositiveSignCondition(sign_filter_expression, sign_filter_column);
+
+			res.push_back(new FilterBlockInputStream(new ExpressionBlockInputStream(to_merge[0], sign_filter_expression), sign_filter_column));
+		}
+		else
+			res = to_merge;
+	}
+	else if (to_merge.size() > 1)
+	{
+		BlockInputStreamPtr merged;
+
+		switch (data.mode)
+		{
+			case MergeTreeData::Ordinary:
+				throw Exception("Ordinary MergeTree doesn't support FINAL", ErrorCodes::LOGICAL_ERROR);
+
+			case MergeTreeData::Collapsing:
+				merged = new CollapsingFinalBlockInputStream(to_merge, data.getSortDescription(), data.sign_column);
+				break;
+
+			case MergeTreeData::Summing:
+				merged = new SummingSortedBlockInputStream(to_merge, data.getSortDescription(), data.columns_to_sum, max_block_size);
+				break;
+
+			case MergeTreeData::Aggregating:
+				merged = new AggregatingSortedBlockInputStream(to_merge, data.getSortDescription(), max_block_size);
+				break;
+
+			case MergeTreeData::Unsorted:
+				throw Exception("UnsortedMergeTree doesn't support FINAL", ErrorCodes::LOGICAL_ERROR);
+		}
+
+		res.push_back(merged);
+	}
 
 	return res;
 }
