@@ -29,7 +29,7 @@ private:
 
 	void init(time_t time)
 	{
-		auto & date_lut = DateLUT::instance();
+		const auto & date_lut = DateLUT::instance();
 		const auto & values = date_lut.getValues(time);
 
 		m_year = values.year;

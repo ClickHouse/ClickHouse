@@ -51,10 +51,12 @@ GDateTimePtr createGDateTime(const GTimeZonePtr & p_tz, const GDateTimePtr & p_d
 	if (dt == nullptr)
 		throw Poco::Exception("Null pointer.");
 
-	GDateTime * local_dt = g_date_time_new(p_tz.get(),
-										   g_date_time_get_year(dt),
-										   g_date_time_get_month(dt),
-										   g_date_time_get_day_of_month(dt),
+	gint year;
+	gint month;
+	gint day;
+	g_date_time_get_ymd(dt, &year, &month, &day);
+
+	GDateTime * local_dt = g_date_time_new(p_tz.get(), year, month, day,
 										   g_date_time_get_hour(dt),
 										   g_date_time_get_minute(dt),
 										   g_date_time_get_second(dt));
@@ -77,11 +79,12 @@ GDateTimePtr toNextDay(const GTimeZonePtr & p_tz, const GDateTimePtr & p_dt)
 	GDateTimePtr p_next_dt = GDateTimePtr(dt);
 	GDateTime * next_dt = p_next_dt.get();
 
-	dt = g_date_time_new(p_tz.get(),
-						 g_date_time_get_year(next_dt),
-						 g_date_time_get_month(next_dt),
-						 g_date_time_get_day_of_month(next_dt),
-						 0, 0, 0);
+	gint year;
+	gint month;
+	gint day;
+	g_date_time_get_ymd(next_dt, &year, &month, &day);
+
+	dt = g_date_time_new(p_tz.get(), year, month, day, 0, 0, 0);
 	if (dt == nullptr)
 		throw Poco::Exception("Failed to create GDateTime object.");
 
@@ -110,12 +113,16 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone)
 
 		start_of_day = g_date_time_to_unix(dt);
 
-		Values & values = lut[i];
+		gint year;
+		gint month;
+		gint day;
+		g_date_time_get_ymd(dt, &year, &month, &day);
 
-		values.year = g_date_time_get_year(dt);
-		values.month = g_date_time_get_month(dt);
+		Values & values = lut[i];
+		values.year = year;
+		values.month = month;
+		values.day_of_month = day;
 		values.day_of_week = g_date_time_get_day_of_week(dt);
-		values.day_of_month = g_date_time_get_day_of_month(dt);
 		values.date = start_of_day;
 
 		/// Переходим на следующий день.

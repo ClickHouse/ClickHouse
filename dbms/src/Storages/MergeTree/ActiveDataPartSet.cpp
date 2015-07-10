@@ -105,7 +105,7 @@ size_t ActiveDataPartSet::size() const
 
 String ActiveDataPartSet::getPartName(DayNum_t left_date, DayNum_t right_date, UInt64 left_id, UInt64 right_id, UInt64 level)
 {
-	auto & date_lut = DateLUT::instance();
+	const auto & date_lut = DateLUT::instance();
 
 	/// Имя директории для куска иммет вид: YYYYMMDD_YYYYMMDD_N_N_L.
 	String res;
@@ -153,7 +153,7 @@ void ActiveDataPartSet::parsePartName(const String & file_name, Part & part, con
 
 	const Poco::RegularExpression::MatchVec & matches = *matches_p;
 
-	auto & date_lut = DateLUT::instance();
+	const auto & date_lut = DateLUT::instance();
 
 	part.left_date = date_lut.YYYYMMDDToDayNum(parse<UInt32>(file_name.substr(matches[1].offset, matches[1].length)));
 	part.right_date = date_lut.YYYYMMDDToDayNum(parse<UInt32>(file_name.substr(matches[2].offset, matches[2].length)));

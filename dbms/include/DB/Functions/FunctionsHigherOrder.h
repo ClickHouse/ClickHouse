@@ -725,7 +725,11 @@ public:
 					column_first_array = column_array;
 				}
 
-				temp_block.insert(ColumnWithNameAndType(column_array->getDataPtr(), argument_type, argument_name));
+				temp_block.insert(ColumnWithNameAndType(
+					column_array->getDataPtr(),
+					argument_type,
+					argument_name));
+
 				argument_names.insert(argument_name);
 			}
 
@@ -745,6 +749,7 @@ public:
 
 				replicated_column.name = name;
 				replicated_column.column = typeid_cast<ColumnArray &>(*replicated_column.column).getDataPtr();
+				replicated_column.type = typeid_cast<const DataTypeArray &>(*replicated_column.type).getNestedType(),
 				temp_block.insert(replicated_column);
 
 				++prerequisite_index;

@@ -7,7 +7,7 @@ int main(int argc, char ** argv)
 	/** В DateLUT был глюк - для времён из дня 1970-01-01, возвращался номер часа больше 23. */
 	static const time_t TIME = 66130;
 
-	auto & date_lut = DateLUT::instance();
+	const auto & date_lut = DateLUT::instance();
 
 	std::cerr << date_lut.toHourInaccurate(TIME) << std::endl;
 	std::cerr << date_lut.toDayNum(TIME) << std::endl;
