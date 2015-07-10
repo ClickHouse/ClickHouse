@@ -329,6 +329,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 			ParserSelectQuery select_p;
 			if (!select_p.parse(pos, end, select_query->next_union_all, max_parsed_pos, expected))
 				return false;
+			auto next_select_query = static_cast<ASTSelectQuery *>(&*select_query->next_union_all);
+			next_select_query->prev_union_all = node;
 		}
 		else
 			return false;
@@ -367,6 +369,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 		select_query->children.push_back(select_query->settings);
 	if (select_query->format)
 		select_query->children.push_back(select_query->format);
+	if (select_query->prev_union_all)
+		select_query->children.push_back(select_query->prev_union_all);
 	if (select_query->next_union_all)
 		select_query->children.push_back(select_query->next_union_all);
 

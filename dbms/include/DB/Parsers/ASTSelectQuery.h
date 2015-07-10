@@ -32,6 +32,8 @@ public:
 	/// Переписывает select_expression_list, чтобы вернуть только необходимые столбцы в правильном порядке.
 	void rewriteSelectExpressionList(const Names & column_names);
 
+	bool isUnionAllHead() const { return prev_union_all.isNull() && !next_union_all.isNull(); }
+
 	ASTPtr clone() const override;
 
 	/// Возвращает указатель на формат из последнего SELECT'а цепочки UNION ALL.
@@ -55,6 +57,7 @@ public:
 	ASTPtr limit_offset;
 	ASTPtr limit_length;
 	ASTPtr settings;
+	ASTPtr prev_union_all;
 	ASTPtr next_union_all; /// Следующий запрос SELECT в цепочке UNION ALL, если такой есть
 };
 

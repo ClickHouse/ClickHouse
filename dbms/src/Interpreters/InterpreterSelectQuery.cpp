@@ -55,7 +55,6 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input, const Names & requi
 		/// Создать цепочку запросов SELECT.
 		InterpreterSelectQuery * interpreter = this;
 		ASTPtr tail = query.next_union_all;
-		query.next_union_all = nullptr;
 
 		while (!tail.isNull())
 		{
@@ -63,7 +62,6 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input, const Names & requi
 
 			ASTSelectQuery & head_query = static_cast<ASTSelectQuery &>(*head);
 			tail = head_query.next_union_all;
-			head_query.next_union_all = nullptr;
 
 			interpreter->next_select_in_union_all.reset(new InterpreterSelectQuery(head, context, to_stage, subquery_depth, nullptr, false));
 			interpreter = interpreter->next_select_in_union_all.get();
@@ -178,7 +176,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context 
 	size_t subquery_depth_, BlockInputStreamPtr input_, bool is_union_all_head_)
 	: query_ptr(query_ptr_), query(typeid_cast<ASTSelectQuery &>(*query_ptr)),
 	context(context_), to_stage(to_stage_), subquery_depth(subquery_depth_),
-	is_first_select_inside_union_all(is_union_all_head_ && !query.next_union_all.isNull()),
+	is_first_select_inside_union_all(is_union_all_head_ && query.isUnionAllHead()),
 	log(&Logger::get("InterpreterSelectQuery"))
 {
 	init(input_);
@@ -189,7 +187,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context 
 	QueryProcessingStage::Enum to_stage_, size_t subquery_depth_, BlockInputStreamPtr input_)
 	: query_ptr(query_ptr_), query(typeid_cast<ASTSelectQuery &>(*query_ptr)),
 	context(context_), to_stage(to_stage_), subquery_depth(subquery_depth_),
-	is_first_select_inside_union_all(!query.next_union_all.isNull()),
+	is_first_select_inside_union_all(query.isUnionAllHead()),
 	log(&Logger::get("InterpreterSelectQuery"))
 {
 	init(input_, required_column_names_);
@@ -200,7 +198,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context 
 	const NamesAndTypesList & table_column_names, QueryProcessingStage::Enum to_stage_, size_t subquery_depth_, BlockInputStreamPtr input_)
 	: query_ptr(query_ptr_), query(typeid_cast<ASTSelectQuery &>(*query_ptr)),
 	context(context_), to_stage(to_stage_), subquery_depth(subquery_depth_),
-	is_first_select_inside_union_all(!query.next_union_all.isNull()),
+	is_first_select_inside_union_all(query.isUnionAllHead()),
 	log(&Logger::get("InterpreterSelectQuery"))
 {
 	init(input_, required_column_names_, table_column_names);
@@ -212,11 +210,13 @@ bool InterpreterSelectQuery::hasAsterisk() const
 		return true;
 
 	if (is_first_select_inside_union_all)
+	{
 		for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->next_select_in_union_all.get())
 		{
 			if (p->query.hasAsterisk())
 				return true;
 		}
+	}
 
 	return false;
 }
@@ -224,8 +224,10 @@ bool InterpreterSelectQuery::hasAsterisk() const
 void InterpreterSelectQuery::renameColumns()
 {
 	if (is_first_select_inside_union_all)
+	{
 		for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->next_select_in_union_all.get())
 			p->query.renameColumns(query);
+	}
 }
 
 void InterpreterSelectQuery::rewriteExpressionList(const Names & required_column_names)
@@ -234,17 +236,21 @@ void InterpreterSelectQuery::rewriteExpressionList(const Names & required_column
 		return;
 
 	if (is_first_select_inside_union_all)
+	{
 		for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->next_select_in_union_all.get())
 		{
 			if (p->query.distinct)
 				return;
 		}
+	}
 
 	query.rewriteSelectExpressionList(required_column_names);
 
 	if (is_first_select_inside_union_all)
+	{
 		for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->next_select_in_union_all.get())
 			p->query.rewriteSelectExpressionList(required_column_names);
+	}
 }
 
 void InterpreterSelectQuery::getDatabaseAndTableNames(String & database_name, String & table_name)
@@ -710,7 +716,18 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 		if (max_streams > 1 && !is_remote)
 			max_streams *= settings.max_streams_to_max_threads_ratio;
 
-		streams = storage->read(required_columns, query_ptr,
+		ASTPtr actual_query_ptr;
+		if (storage->isRemote())
+		{
+			/// В случае удаленного запроса отправляем только SELECT, который выполнится.
+			actual_query_ptr = query_ptr->clone();
+			auto actual_select_query = static_cast<ASTSelectQuery *>(&*actual_query_ptr);
+			actual_select_query->next_union_all = nullptr;
+		}
+		else
+			actual_query_ptr = query_ptr;
+
+		streams = storage->read(required_columns, actual_query_ptr,
 			context, settings_for_storage, from_stage,
 			settings.max_block_size, max_streams);
 
