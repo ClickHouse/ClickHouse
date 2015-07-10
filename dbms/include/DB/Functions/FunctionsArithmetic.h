@@ -262,6 +262,7 @@ struct BitShiftRightImpl
 	}
 };
 
+
 template<typename A, typename B>
 struct LeastImpl
 {
@@ -270,6 +271,7 @@ struct LeastImpl
 	template <typename Result = ResultType>
 	static inline Result apply(A a, B b)
 	{
+		/** gcc 4.9.2 успешно векторизует цикл из этой функции. */
 		return static_cast<Result>(a) < static_cast<Result>(b) ? static_cast<Result>(a) : static_cast<Result>(b);
 	}
 };
