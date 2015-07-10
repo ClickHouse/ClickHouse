@@ -839,9 +839,12 @@ private:
 		}
 		else if (const auto id_col = typeid_cast<const ColumnConst<UInt64> *>(id_col_untyped))
 		{
+			const PODArray<UInt64> ids{1, id_col->getData()};
+			auto out = std::make_unique<ColumnString>();
+			dictionary->getString(attr_name, ids, out.get());
+
 			block.getByPosition(result).column = new ColumnConst<String>{
-				id_col->size(),
-				dictionary->getString(attr_name, id_col->getData())
+				id_col->size(), out->getDataAtWithTerminatingZero(0).toString()
 			};
 		}
 		else
@@ -863,10 +866,6 @@ template <typename DataType> struct DictGetTraits;
 #define DECLARE_DICT_GET_TRAITS(TYPE, DATA_TYPE) \
 template <> struct DictGetTraits<DATA_TYPE>\
 {\
-	static TYPE get(const IDictionary * const dict, const std::string & name, const IDictionary::id_t id)\
-	{\
-		return dict->get##TYPE(name, id);\
-	}\
 	static void get(const IDictionary * const dict, const std::string & name, const PODArray<IDictionary::id_t> & ids, PODArray<TYPE> & out)\
 	{\
 		dict->get##TYPE(name, ids, out);\
@@ -996,10 +995,11 @@ private:
 		}
 		else if (const auto id_col = typeid_cast<const ColumnConst<UInt64> *>(id_col_untyped))
 		{
-			block.getByPosition(result).column = new ColumnConst<Type>{
-				id_col->size(),
-				DictGetTraits<DataType>::get(dictionary, attr_name, id_col->getData())
-			};
+			const PODArray<UInt64> ids{1, id_col->getData()};
+			PODArray<Type> data(1);
+			DictGetTraits<DataType>::get(dictionary, attr_name, ids, data);
+
+			block.getByPosition(result).column = new ColumnConst<Type>{id_col->size(), data.front()};
 		}
 		else
 		{
@@ -1113,10 +1113,7 @@ private:
 		if (!dict)
 			return false;
 
-		const auto id_col_untyped = block.getByPosition(arguments[1]).column.get();
-		if (const auto id_col = typeid_cast<const ColumnVector<UInt64> *>(id_col_untyped))
-		{
-			const auto & in = id_col->getData();
+		const auto get_hierarchies = [&] (const PODArray<UInt64> & in, PODArray<UInt64> & out, PODArray<UInt64> & offsets) {
 			const auto size = in.size();
 
 			/// copy of `in` array
@@ -1157,12 +1154,6 @@ private:
 				std::swap(in_array, out_array);
 			}
 
-			const auto backend = new ColumnVector<UInt64>;
-			const auto array = new ColumnArray{backend};
-			block.getByPosition(result).column = array;
-
-			auto & out = backend->getData();
-			auto & offsets = array->getOffsets();
 			out.reserve(total_count);
 			offsets.resize(size);
 
@@ -1172,21 +1163,29 @@ private:
 				out.insert_assume_reserved(std::begin(ids), std::end(ids));
 				offsets[i] = out.size();
 			}
+		};
+
+		const auto id_col_untyped = block.getByPosition(arguments[1]).column.get();
+		if (const auto id_col = typeid_cast<const ColumnVector<UInt64> *>(id_col_untyped))
+		{
+			const auto & in = id_col->getData();
+			const auto backend = new ColumnVector<UInt64>;
+			const auto array = new ColumnArray{backend};
+			block.getByPosition(result).column = array;
+
+			get_hierarchies(in, backend->getData(), array->getOffsets());
 		}
 		else if (const auto id_col = typeid_cast<const ColumnConst<UInt64> *>(id_col_untyped))
 		{
-			Array res;
+			const PODArray<UInt64> in(1, id_col->getData());
+			const auto backend = new ColumnVector<UInt64>;
+			const auto array = new ColumnArray{backend};
 
-			IDictionary::id_t cur = id_col->getData();
-			while (cur)
-			{
-				res.push_back(cur);
-				cur = dictionary->toParent(cur);
-			}
+			get_hierarchies(in, backend->getData(), array->getOffsets());
 
 			block.getByPosition(result).column = new ColumnConstArray{
 				id_col->size(),
-				res,
+				(*array)[0].get<Array>(),
 				new DataTypeArray{new DataTypeUInt64}
 			};
 		}
