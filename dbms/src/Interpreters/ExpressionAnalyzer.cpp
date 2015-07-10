@@ -1965,7 +1965,7 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAnd
 	else if (typeid_cast<const ASTSubquery *>(node.table.get()))
 	{
 		const auto & subquery = node.table->children.at(0);
-		nested_result_sample = InterpreterSelectQuery(subquery, context, QueryProcessingStage::Complete, subquery_depth + 1).getSampleBlock();
+		nested_result_sample = InterpreterSelectQuery(subquery, context, QueryProcessingStage::Complete, subquery_depth + 1, nullptr, false).getSampleBlock();
 	}
 
 	auto & keys = typeid_cast<ASTExpressionList &>(*node.using_expr_list);
