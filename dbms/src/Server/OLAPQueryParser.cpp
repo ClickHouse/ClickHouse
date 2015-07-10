@@ -95,7 +95,7 @@ QueryParseResult QueryParser::parse(std::istream & s)
 	if (result.date_first > result.date_last)
 		throw Exception("First date is bigger than last date.", ErrorCodes::FIRST_DATE_IS_BIGGER_THAN_LAST_DATE);
 
-	auto & date_lut = DateLUT::instance();
+	const auto & date_lut = DateLUT::instance();
 	result.days = 1 + date_lut.toDayNum(result.date_last) - date_lut.toDayNum(result.date_first);
 
 	result.cut_date_last = false;

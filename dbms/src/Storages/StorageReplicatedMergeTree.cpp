@@ -2214,7 +2214,7 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 static String getFakePartNameForDrop(const String & month_name, UInt64 left, UInt64 right)
 {
 	/// Диапазон дат - весь месяц.
-	auto & lut = DateLUT::instance();
+	const auto & lut = DateLUT::instance();
 	time_t start_time = lut.YYYYMMDDToDate(parse<UInt32>(month_name + "01"));
 	DayNum_t left_date = lut.toDayNum(start_time);
 	DayNum_t right_date = DayNum_t(static_cast<size_t>(left_date) + lut.daysInMonth(start_time) - 1);

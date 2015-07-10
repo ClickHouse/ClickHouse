@@ -375,7 +375,7 @@ inline void writeDateTimeText(time_t datetime, WriteBuffer & buf)
 		return;
 	}
 
-	auto & date_lut = DateLUT::instance();
+	const auto & date_lut = DateLUT::instance();
 	const auto & values = date_lut.getValues(datetime);
 
 	s[0] += values.year / 1000;
