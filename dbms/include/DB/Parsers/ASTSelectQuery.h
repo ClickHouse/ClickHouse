@@ -36,11 +36,14 @@ public:
 
 	ASTPtr clone() const override;
 
+	/// Получить глубокую копию дерева первого запроса SELECT.
+	ASTPtr cloneFirstSelect() const;
+
 	/// Возвращает указатель на формат из последнего SELECT'а цепочки UNION ALL.
 	const IAST * getFormat() const override;
 
 private:
-	ASTPtr cloneImpl() const;
+	ASTPtr cloneImpl(bool traverse_union_all) const;
 
 public:
 	bool distinct = false;

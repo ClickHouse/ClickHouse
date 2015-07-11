@@ -134,7 +134,7 @@ void ASTSelectQuery::rewriteSelectExpressionList(const Names & column_names)
 
 ASTPtr ASTSelectQuery::clone() const
 {
-	ASTPtr ptr = cloneImpl();
+	ASTPtr ptr = cloneImpl(true);
 
 	/// Установить указатели на предыдущие запросы SELECT.
 	ASTPtr current = ptr;
@@ -150,7 +150,14 @@ ASTPtr ASTSelectQuery::clone() const
 	return ptr;
 }
 
-ASTPtr ASTSelectQuery::cloneImpl() const
+ASTPtr ASTSelectQuery::cloneFirstSelect() const
+{
+	ASTPtr res = cloneImpl(false);
+	static_cast<ASTSelectQuery *>(&*res)->prev_union_all = nullptr;
+	return res;
+}
+
+ASTPtr ASTSelectQuery::cloneImpl(bool traverse_union_all) const
 {
 	ASTSelectQuery * res = new ASTSelectQuery(*this);
 	ASTPtr ptr{res};
@@ -187,11 +194,16 @@ ASTPtr ASTSelectQuery::cloneImpl() const
 
 #undef CLONE
 
-	if (next_union_all)
+	if (traverse_union_all)
 	{
-		res->next_union_all = static_cast<const ASTSelectQuery *>(&*next_union_all)->cloneImpl();
-		res->children.push_back(res->next_union_all);
+		if (next_union_all)
+		{
+			res->next_union_all = static_cast<const ASTSelectQuery *>(&*next_union_all)->cloneImpl(true);
+			res->children.push_back(res->next_union_all);
+		}
 	}
+	else
+		res->next_union_all = nullptr;
 
 	return ptr;
 }
