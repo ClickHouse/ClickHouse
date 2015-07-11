@@ -722,6 +722,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 			/// В случае удаленного запроса отправляем только SELECT, который выполнится.
 			actual_query_ptr = query_ptr->clone();
 			auto actual_select_query = static_cast<ASTSelectQuery *>(&*actual_query_ptr);
+			actual_select_query->prev_union_all = nullptr;
 			actual_select_query->next_union_all = nullptr;
 		}
 		else

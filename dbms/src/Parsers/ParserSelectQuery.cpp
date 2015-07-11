@@ -369,8 +369,6 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 		select_query->children.push_back(select_query->settings);
 	if (select_query->format)
 		select_query->children.push_back(select_query->format);
-	if (select_query->prev_union_all)
-		select_query->children.push_back(select_query->prev_union_all);
 	if (select_query->next_union_all)
 		select_query->children.push_back(select_query->next_union_all);
 

@@ -39,6 +39,9 @@ public:
 	/// Возвращает указатель на формат из последнего SELECT'а цепочки UNION ALL.
 	const IAST * getFormat() const override;
 
+private:
+	ASTPtr cloneImpl() const;
+
 public:
 	bool distinct = false;
 	ASTPtr select_expression_list;
@@ -57,8 +60,10 @@ public:
 	ASTPtr limit_offset;
 	ASTPtr limit_length;
 	ASTPtr settings;
+	/// Предыдущий запрос SELECT в цепочке UNION ALL (не вставляется в children и не клонируется)
 	ASTPtr prev_union_all;
-	ASTPtr next_union_all; /// Следующий запрос SELECT в цепочке UNION ALL, если такой есть
+	/// Следующий запрос SELECT в цепочке UNION ALL, если такой есть
+	ASTPtr next_union_all;
 };
 
 }
