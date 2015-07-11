@@ -184,9 +184,14 @@ ASTPtr ASTSelectQuery::cloneImpl() const
 	CLONE(limit_length)
 	CLONE(settings)
 	CLONE(format)
-	CLONE(next_union_all)
 
 #undef CLONE
+
+	if (next_union_all)
+	{
+		res->next_union_all = static_cast<const ASTSelectQuery *>(&*next_union_all)->cloneImpl();
+		res->children.push_back(res->next_union_all);
+	}
 
 	return ptr;
 }
