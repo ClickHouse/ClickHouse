@@ -42,8 +42,7 @@ public:
 		const Context & context_,
 		QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
 		size_t subquery_depth_ = 0,
-		BlockInputStreamPtr input = nullptr,
-		bool is_union_all_head_ = true);
+		BlockInputStreamPtr input = nullptr);
 
 	InterpreterSelectQuery(
 		ASTPtr query_ptr_,
@@ -76,7 +75,26 @@ public:
 	DataTypes getReturnTypes();
 	Block getSampleBlock();
 
+	static Block getSampleBlock(
+		ASTPtr query_ptr_,
+		const Context & context_,
+		QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
+		size_t subquery_depth_ = 0);
+
 private:
+	/**
+	 * ignore_union_all_tail
+	 * - Оптимизация, если объект создаётся только, чтобы вызвать getSampleBlock(): учитываем только первый SELECT цепочки UNION ALL, потом что
+	 *   первый SELECT достаточен для определения нужных столбцов.
+	 */
+	InterpreterSelectQuery(
+		ASTPtr query_ptr_,
+		const Context & context_,
+		bool ignore_union_all_tail,
+		QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
+		size_t subquery_depth_ = 0,
+		BlockInputStreamPtr input = nullptr);
+
 	void init(BlockInputStreamPtr input, const Names & required_column_names = Names(), const NamesAndTypesList & table_column_names = NamesAndTypesList());
 	void basicInit(BlockInputStreamPtr input, const NamesAndTypesList & table_column_names);
 	void initQueryAnalyzer();

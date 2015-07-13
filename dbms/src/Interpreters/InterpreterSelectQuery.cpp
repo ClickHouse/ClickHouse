@@ -63,7 +63,7 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input, const Names & requi
 			ASTSelectQuery & head_query = static_cast<ASTSelectQuery &>(*head);
 			tail = head_query.next_union_all;
 
-			interpreter->next_select_in_union_all.reset(new InterpreterSelectQuery(head, context, to_stage, subquery_depth, nullptr, false));
+			interpreter->next_select_in_union_all.reset(new InterpreterSelectQuery(head, context, to_stage, subquery_depth));
 			interpreter = interpreter->next_select_in_union_all.get();
 		}
 	}
@@ -99,11 +99,7 @@ void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_, const NamesAn
 	if (query.table && typeid_cast<ASTSelectQuery *>(&*query.table))
 	{
 		if (table_column_names.empty())
-		{
-			/// Оптимизация: мы считаем, что запрос содержит только один SELECT, даже если это может быть
-			/// в самом деле цепочкой UNION ALL. Первый запрос достаточен для определения нужных столбцов.
-			context.setColumns(InterpreterSelectQuery(query.table, context, to_stage, subquery_depth, nullptr, false).getSampleBlock().getColumnsList());
-		}
+			context.setColumns(InterpreterSelectQuery::getSampleBlock(query.table, context, to_stage, subquery_depth).getColumnsList());
 	}
 	else
 	{
@@ -173,10 +169,17 @@ void InterpreterSelectQuery::initQueryAnalyzer()
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_, QueryProcessingStage::Enum to_stage_,
-	size_t subquery_depth_, BlockInputStreamPtr input_, bool is_union_all_head_)
+	size_t subquery_depth_, BlockInputStreamPtr input_)
+	: InterpreterSelectQuery(query_ptr_, context_, false, to_stage_, subquery_depth_, input_)
+{
+}
+
+InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_, bool ignore_union_all_tail,
+	QueryProcessingStage::Enum to_stage_,
+	size_t subquery_depth_, BlockInputStreamPtr input_)
 	: query_ptr(query_ptr_), query(typeid_cast<ASTSelectQuery &>(*query_ptr)),
 	context(context_), to_stage(to_stage_), subquery_depth(subquery_depth_),
-	is_first_select_inside_union_all(is_union_all_head_ && query.isUnionAllHead()),
+	is_first_select_inside_union_all(!ignore_union_all_tail && query.isUnionAllHead()),
 	log(&Logger::get("InterpreterSelectQuery"))
 {
 	init(input_);
@@ -300,6 +303,15 @@ Block InterpreterSelectQuery::getSampleBlock()
 		col.column = col.type->createColumn();
 	}
 	return block;
+}
+
+
+Block InterpreterSelectQuery::getSampleBlock(ASTPtr query_ptr_,
+	const Context & context_,
+	QueryProcessingStage::Enum to_stage_,
+	size_t subquery_depth_)
+{
+	return InterpreterSelectQuery(query_ptr_, context_, true, to_stage_, subquery_depth_).getSampleBlock();
 }
 
 

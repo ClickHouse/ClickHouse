@@ -138,6 +138,7 @@ ASTPtr ASTSelectQuery::clone() const
 
 	/// Установить указатели на предыдущие запросы SELECT.
 	ASTPtr current = ptr;
+	static_cast<ASTSelectQuery *>(&*current)->prev_union_all = nullptr;
 	ASTPtr next = static_cast<ASTSelectQuery *>(&*current)->next_union_all;
 	while (!next.isNull())
 	{
