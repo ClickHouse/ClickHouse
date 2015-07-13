@@ -18,6 +18,7 @@
 #include <DB/Dictionaries/FlatDictionary.h>
 #include <DB/Dictionaries/HashedDictionary.h>
 #include <DB/Dictionaries/CacheDictionary.h>
+#include <DB/Dictionaries/RangeHashedDictionary.h>
 
 #include <statdaemons/ext/range.hpp>
 
@@ -806,7 +807,8 @@ private:
 
 		if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
 			!executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
-			!executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr))
+			!executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr) &&
+			!executeDispatch<RangeHashedDictionary>(block, arguments, result, dict_ptr))
 			throw Exception{
 				"Unsupported dictionary type " + dict_ptr->getTypeName(),
 				ErrorCodes::UNKNOWN_TYPE
@@ -839,7 +841,7 @@ private:
 		}
 		else if (const auto id_col = typeid_cast<const ColumnConst<UInt64> *>(id_col_untyped))
 		{
-			const PODArray<UInt64> ids{1, id_col->getData()};
+			const PODArray<UInt64> ids(1, id_col->getData());
 			auto out = std::make_unique<ColumnString>();
 			dictionary->getString(attr_name, ids, out.get());
 
@@ -956,7 +958,8 @@ private:
 
 		if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
 			!executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
-			!executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr))
+			!executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr) &&
+			!executeDispatch<RangeHashedDictionary>(block, arguments, result, dict_ptr))
 			throw Exception{
 				"Unsupported dictionary type " + dict_ptr->getTypeName(),
 				ErrorCodes::UNKNOWN_TYPE
@@ -995,7 +998,7 @@ private:
 		}
 		else if (const auto id_col = typeid_cast<const ColumnConst<UInt64> *>(id_col_untyped))
 		{
-			const PODArray<UInt64> ids{1, id_col->getData()};
+			const PODArray<UInt64> ids(1, id_col->getData());
 			PODArray<Type> data(1);
 			DictGetTraits<DataType>::get(dictionary, attr_name, ids, data);
 
@@ -1098,7 +1101,8 @@ private:
 
 		if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
 			!executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
-			!executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr))
+			!executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr) &&
+			!executeDispatch<RangeHashedDictionary>(block, arguments, result, dict_ptr))
 			throw Exception{
 				"Unsupported dictionary type " + dict_ptr->getTypeName(),
 				ErrorCodes::UNKNOWN_TYPE
@@ -1287,7 +1291,8 @@ private:
 
 		if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
 			!executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
-			!executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr))
+			!executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr) &&
+			!executeDispatch<RangeHashedDictionary>(block, arguments, result, dict_ptr))
 			throw Exception{
 				"Unsupported dictionary type " + dict_ptr->getTypeName(),
 				ErrorCodes::UNKNOWN_TYPE
