@@ -2,6 +2,7 @@
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
+#include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/Storages/StorageSystemParts.h>
 #include <DB/Storages/StorageMergeTree.h>
@@ -26,6 +27,11 @@ StorageSystemParts::StorageSystemParts(const std::string & name_)
 		{"modification_time",	new DataTypeDateTime},
 		{"remove_time",			new DataTypeDateTime},
 		{"refcount",			new DataTypeUInt32},
+		{"min_date",			new DataTypeDate},
+		{"max_date",			new DataTypeDate},
+		{"min_block_number",	new DataTypeUInt64},
+		{"max_block_number",	new DataTypeUInt64},
+		{"level",				new DataTypeUInt32},
 
 		{"database", 			new DataTypeString},
 		{"table", 				new DataTypeString},
@@ -161,6 +167,11 @@ BlockInputStreams StorageSystemParts::read(
 	ColumnPtr modification_time_column = new ColumnUInt32;
 	ColumnPtr remove_time_column = new ColumnUInt32;
 	ColumnPtr refcount_column = new ColumnUInt32;
+	ColumnPtr min_date_column = new ColumnUInt16;
+	ColumnPtr max_date_column = new ColumnUInt16;
+	ColumnPtr min_block_number_column = new ColumnUInt64;
+	ColumnPtr max_block_number_column = new ColumnUInt64;
+	ColumnPtr level_column = new ColumnUInt32;
 
 	for (size_t i = 0; i < filtered_database_column->size();)
 	{
@@ -227,6 +238,11 @@ BlockInputStreams StorageSystemParts::read(
 				bytes_column->insert(static_cast<size_t>(part->size_in_bytes));
 				modification_time_column->insert(part->modification_time);
 				remove_time_column->insert(part->remove_time);
+				min_date_column->insert(static_cast<UInt64>(part->left_date));
+				max_date_column->insert(static_cast<UInt64>(part->right_date));
+				min_block_number_column->insert(part->left);
+				max_block_number_column->insert(part->right);
+				level_column->insert(static_cast<UInt64>(part->level));
 
 				/// В выводимом refcount, для удобства, не учиытываем тот, что привнесён локальными переменными all_parts, active_parts.
 				refcount_column->insert(part.use_count() - (active_parts.count(part) ? 2 : 1));
@@ -245,6 +261,11 @@ BlockInputStreams StorageSystemParts::read(
 	block.insert(ColumnWithNameAndType(modification_time_column, 	new DataTypeDateTime, 	"modification_time"));
 	block.insert(ColumnWithNameAndType(remove_time_column, 			new DataTypeDateTime, 	"remove_time"));
 	block.insert(ColumnWithNameAndType(refcount_column, 			new DataTypeUInt32, 	"refcount"));
+	block.insert(ColumnWithNameAndType(min_date_column,				new DataTypeDate,		"min_date"));
+	block.insert(ColumnWithNameAndType(max_date_column,				new DataTypeDate,		"max_date"));
+	block.insert(ColumnWithNameAndType(min_block_number_column,		new DataTypeUInt64,		"min_block_number"));
+	block.insert(ColumnWithNameAndType(max_block_number_column,		new DataTypeUInt64,		"max_block_number"));
+	block.insert(ColumnWithNameAndType(level_column,				new DataTypeUInt32,		"level"));
 	block.insert(ColumnWithNameAndType(database_column, 			new DataTypeString, 	"database"));
 	block.insert(ColumnWithNameAndType(table_column, 				new DataTypeString, 	"table"));
 	block.insert(ColumnWithNameAndType(engine_column, 				new DataTypeString, 	"engine"));
