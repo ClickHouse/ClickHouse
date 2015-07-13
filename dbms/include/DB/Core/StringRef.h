@@ -43,14 +43,31 @@ inline bool compareSSE2(const char * p1, const char * p2)
 		_mm_loadu_si128(reinterpret_cast<const __m128i *>(p2))));
 }
 
+inline bool compareSSE2x4(const char * p1, const char * p2)
+{
+	return 0xFFFF == _mm_movemask_epi8(
+		_mm_and_si128(
+			_mm_and_si128(
+				_mm_cmpeq_epi8(
+					_mm_loadu_si128(reinterpret_cast<const __m128i *>(p1)),
+					_mm_loadu_si128(reinterpret_cast<const __m128i *>(p2))),
+				_mm_cmpeq_epi8(
+					_mm_loadu_si128(reinterpret_cast<const __m128i *>(p1) + 1),
+					_mm_loadu_si128(reinterpret_cast<const __m128i *>(p2) + 1))),
+			_mm_and_si128(
+				_mm_cmpeq_epi8(
+					_mm_loadu_si128(reinterpret_cast<const __m128i *>(p1) + 2),
+					_mm_loadu_si128(reinterpret_cast<const __m128i *>(p2) + 2)),
+				_mm_cmpeq_epi8(
+					_mm_loadu_si128(reinterpret_cast<const __m128i *>(p1) + 3),
+					_mm_loadu_si128(reinterpret_cast<const __m128i *>(p2) + 3)))));
+}
+
 inline bool memequalSSE2Wide(const char * p1, const char * p2, size_t size)
 {
 	while (size >= 64)
 	{
-		if (   compareSSE2(p1,      p2)
-			&& compareSSE2(p1 + 16, p2 + 16)
-			&& compareSSE2(p1 + 32, p2 + 32)
-			&& compareSSE2(p1 + 48, p2 + 48))
+		if (compareSSE2x4(p1, p2))
 		{
 			p1 += 64;
 			p2 += 64;
