@@ -12,16 +12,15 @@ namespace DB
 
 class IDictionarySource;
 
-class IDictionary;
-using DictionaryPtr = std::unique_ptr<IDictionary>;
+class IDictionaryBase;
+using DictionaryPtr = std::unique_ptr<IDictionaryBase>;
 
 class DictionaryLifetime;
 class DictionaryStructure;
 class ColumnString;
 
-class IDictionary
+struct IDictionaryBase
 {
-public:
 	using id_t = std::uint64_t;
 
 	virtual std::exception_ptr getCreationException() const = 0;
@@ -53,6 +52,11 @@ public:
 
 	virtual bool isInjective(const std::string & attribute_name) const = 0;
 
+	virtual ~IDictionaryBase() = default;
+};
+
+struct IDictionary : IDictionaryBase
+{
 	virtual bool hasHierarchy() const = 0;
 
 	/// do not call unless you ensure that hasHierarchy() returns true
@@ -88,8 +92,6 @@ public:
 	virtual void getFloat32(const std::string & attr_name, const PODArray<id_t> & ids, PODArray<Float32> & out) const = 0;
 	virtual void getFloat64(const std::string & attr_name, const PODArray<id_t> & ids, PODArray<Float64> & out) const = 0;
 	virtual void getString(const std::string & attr_name, const PODArray<id_t> & ids, ColumnString * out) const = 0;
-
-	virtual ~IDictionary() = default;
 };
 
 }

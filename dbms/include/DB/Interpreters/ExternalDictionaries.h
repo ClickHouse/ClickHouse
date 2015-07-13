@@ -42,7 +42,7 @@ private:
 
 	mutable std::mutex dictionaries_mutex;
 
-	using dictionary_ptr_t = std::shared_ptr<MultiVersion<IDictionary>>;
+	using dictionary_ptr_t = std::shared_ptr<MultiVersion<IDictionaryBase>>;
 	struct dictionary_info final
 	{
 		dictionary_ptr_t dict;
@@ -52,7 +52,7 @@ private:
 
 	struct failed_dictionary_info final
 	{
-		std::unique_ptr<IDictionary> dict;
+		std::unique_ptr<IDictionaryBase> dict;
 		std::chrono::system_clock::time_point next_attempt_time;
 		std::uint64_t error_count;
 	};
@@ -107,7 +107,7 @@ public:
 		reloading_thread.join();
 	}
 
-	MultiVersion<IDictionary>::Version getDictionary(const std::string & name) const;
+	MultiVersion<IDictionaryBase>::Version getDictionary(const std::string & name) const;
 };
 
 }

@@ -14,7 +14,7 @@
 namespace DB
 {
 
-class RangeHashedDictionary final : public IDictionary
+class RangeHashedDictionary final : public IDictionaryBase
 {
 public:
 	RangeHashedDictionary(const std::string & name, const DictionaryStructure & dict_struct,
@@ -77,15 +77,8 @@ public:
 		return dict_struct.attributes[&getAttribute(attribute_name) - attributes.data()].injective;
 	}
 
-	bool hasHierarchy() const override { return hierarchical_attribute; }
-
-	void toParent(const PODArray<id_t> & ids, PODArray<id_t> & out) const override
-	{
-		getItems<UInt64>(*hierarchical_attribute, ids, out);
-	}
-
 #define DECLARE_MULTIPLE_GETTER(TYPE)\
-	void get##TYPE(const std::string & attribute_name, const PODArray<id_t> & ids, PODArray<TYPE> & out) const override\
+	void get##TYPE(const std::string & attribute_name, const PODArray<id_t> & ids, PODArray<TYPE> & out) const\
 	{\
 		const auto & attribute = getAttribute(attribute_name);\
 		if (attribute.type != AttributeUnderlyingType::TYPE)\
@@ -107,7 +100,7 @@ public:
 	DECLARE_MULTIPLE_GETTER(Float32)
 	DECLARE_MULTIPLE_GETTER(Float64)
 #undef DECLARE_MULTIPLE_GETTER
-	void getString(const std::string & attribute_name, const PODArray<id_t> & ids, ColumnString * out) const override
+	void getString(const std::string & attribute_name, const PODArray<id_t> & ids, ColumnString * out) const
 	{
 		const auto & attribute = getAttribute(attribute_name);
 		if (attribute.type != AttributeUnderlyingType::String)
@@ -199,15 +192,10 @@ private:
 			attributes.push_back(createAttributeWithType(attribute.underlying_type, attribute.null_value));
 
 			if (attribute.hierarchical)
-			{
-				hierarchical_attribute = &attributes.back();
-
-				if (hierarchical_attribute->type != AttributeUnderlyingType::UInt64)
-					throw Exception{
-						"Hierarchical attribute must be UInt64.",
-						ErrorCodes::TYPE_MISMATCH
-					};
-			}
+				throw Exception{
+					"Hierarchical attributes not supported by " + getName() + " dictionary.",
+					ErrorCodes::BAD_ARGUMENTS
+				};
 		}
 	}
 
@@ -419,7 +407,6 @@ private:
 
 	std::map<std::string, std::size_t> attribute_index_by_name;
 	std::vector<attribute_t> attributes;
-	const attribute_t * hierarchical_attribute = nullptr;
 
 	std::size_t bytes_allocated = 0;
 	std::size_t element_count = 0;

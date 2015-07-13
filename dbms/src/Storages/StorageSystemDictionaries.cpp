@@ -25,7 +25,6 @@ StorageSystemDictionaries::StorageSystemDictionaries(const std::string & name)
 		  { "type", new DataTypeString },
 		  { "attribute.names", new DataTypeArray{new DataTypeString} },
 		  { "attribute.types", new DataTypeArray{new DataTypeString} },
-		  { "has_hierarchy", new DataTypeUInt8 },
 		  { "bytes_allocated", new DataTypeUInt64 },
 		  { "query_count", new DataTypeUInt64 },
 		  { "hit_rate", new DataTypeFloat64 },
@@ -99,7 +98,6 @@ BlockInputStreams StorageSystemDictionaries::read(
 			col_attribute_types.column->insert(ext::map<Array>(dict_struct.attributes, [] (auto & attr) -> decltype(auto) {
 				return attr.type->getName();
 			}));
-			col_has_hierarchy.column->insert(UInt64{dict_ptr->hasHierarchy()});
 			col_bytes_allocated.column->insert(dict_ptr->getBytesAllocated());
 			col_query_count.column->insert(dict_ptr->getQueryCount());
 			col_hit_rate.column->insert(dict_ptr->getHitRate());
@@ -113,7 +111,6 @@ BlockInputStreams StorageSystemDictionaries::read(
 			col_type.column->insertDefault();
 			col_attribute_names.column->insertDefault();
 			col_attribute_types.column->insertDefault();
-			col_has_hierarchy.column->insertDefault();
 			col_bytes_allocated.column->insertDefault();
 			col_query_count.column->insertDefault();
 			col_hit_rate.column->insertDefault();
@@ -156,7 +153,6 @@ BlockInputStreams StorageSystemDictionaries::read(
 		col_type,
 		col_attribute_names,
 		col_attribute_types,
-		col_has_hierarchy,
 		col_bytes_allocated,
 		col_query_count,
 		col_hit_rate,

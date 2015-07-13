@@ -817,7 +817,7 @@ private:
 
 	template <typename DictionaryType>
 	bool executeDispatch(Block & block, const ColumnNumbers & arguments, const size_t result,
-		const IDictionary * const dictionary)
+		const IDictionaryBase * const dictionary)
 	{
 		const auto dict = typeid_cast<const DictionaryType *>(dictionary);
 		if (!dict)
@@ -837,13 +837,13 @@ private:
 		{
 			const auto out = new ColumnString;
 			block.getByPosition(result).column = out;
-			dictionary->getString(attr_name, id_col->getData(), out);
+			dict->getString(attr_name, id_col->getData(), out);
 		}
 		else if (const auto id_col = typeid_cast<const ColumnConst<UInt64> *>(id_col_untyped))
 		{
 			const PODArray<UInt64> ids(1, id_col->getData());
 			auto out = std::make_unique<ColumnString>();
-			dictionary->getString(attr_name, ids, out.get());
+			dict->getString(attr_name, ids, out.get());
 
 			block.getByPosition(result).column = new ColumnConst<String>{
 				id_col->size(), out->getDataAtWithTerminatingZero(0).toString()
@@ -868,7 +868,8 @@ template <typename DataType> struct DictGetTraits;
 #define DECLARE_DICT_GET_TRAITS(TYPE, DATA_TYPE) \
 template <> struct DictGetTraits<DATA_TYPE>\
 {\
-	static void get(const IDictionary * const dict, const std::string & name, const PODArray<IDictionary::id_t> & ids, PODArray<TYPE> & out)\
+	template <typename DictionaryType>\
+	static void get(const DictionaryType * const dict, const std::string & name, const PODArray<UInt64> & ids, PODArray<TYPE> & out)\
 	{\
 		dict->get##TYPE(name, ids, out);\
 	}\
@@ -968,7 +969,7 @@ private:
 
 	template <typename DictionaryType>
 	bool executeDispatch(Block & block, const ColumnNumbers & arguments, const size_t result,
-		const IDictionary * const dictionary)
+		const IDictionaryBase * const dictionary)
 	{
 		const auto dict = typeid_cast<const DictionaryType *>(dictionary);
 		if (!dict)
@@ -994,13 +995,13 @@ private:
 			const auto size = ids.size();
 			data.resize(size);
 
-			DictGetTraits<DataType>::get(dictionary, attr_name, ids, data);
+			DictGetTraits<DataType>::get(dict, attr_name, ids, data);
 		}
 		else if (const auto id_col = typeid_cast<const ColumnConst<UInt64> *>(id_col_untyped))
 		{
 			const PODArray<UInt64> ids(1, id_col->getData());
 			PODArray<Type> data(1);
-			DictGetTraits<DataType>::get(dictionary, attr_name, ids, data);
+			DictGetTraits<DataType>::get(dict, attr_name, ids, data);
 
 			block.getByPosition(result).column = new ColumnConst<Type>{id_col->size(), data.front()};
 		}
@@ -1093,16 +1094,9 @@ private:
 		auto dict = dictionaries.getDictionary(dict_name_col->getData());
 		const auto dict_ptr = dict.get();
 
-		if (!dict->hasHierarchy())
-			throw Exception{
-				"Dictionary does not have a hierarchy",
-				ErrorCodes::UNSUPPORTED_METHOD
-			};
-
 		if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
 			!executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
-			!executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr) &&
-			!executeDispatch<RangeHashedDictionary>(block, arguments, result, dict_ptr))
+			!executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr))
 			throw Exception{
 				"Unsupported dictionary type " + dict_ptr->getTypeName(),
 				ErrorCodes::UNKNOWN_TYPE
@@ -1111,11 +1105,17 @@ private:
 
 	template <typename DictionaryType>
 	bool executeDispatch(Block & block, const ColumnNumbers & arguments, const size_t result,
-		const IDictionary * const dictionary)
+		const IDictionaryBase * const dictionary)
 	{
 		const auto dict = typeid_cast<const DictionaryType *>(dictionary);
 		if (!dict)
 			return false;
+
+		if (!dict->hasHierarchy())
+			throw Exception{
+				"Dictionary does not have a hierarchy",
+				ErrorCodes::UNSUPPORTED_METHOD
+			};
 
 		const auto get_hierarchies = [&] (const PODArray<UInt64> & in, PODArray<UInt64> & out, PODArray<UInt64> & offsets) {
 			const auto size = in.size();
@@ -1152,7 +1152,7 @@ private:
 					break;
 
 				/// translate all non-zero identifiers at once
-				dictionary->toParent(*in_array, *out_array);
+				dict->toParent(*in_array, *out_array);
 
 				/// we're going to use the `in_array` from this iteration as `out_array` on the next one
 				std::swap(in_array, out_array);
@@ -1283,16 +1283,9 @@ private:
 		auto dict = dictionaries.getDictionary(dict_name_col->getData());
 		const auto dict_ptr = dict.get();
 
-		if (!dict->hasHierarchy())
-			throw Exception{
-				"Dictionary does not have a hierarchy",
-				ErrorCodes::UNSUPPORTED_METHOD
-			};
-
 		if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
 			!executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
-			!executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr) &&
-			!executeDispatch<RangeHashedDictionary>(block, arguments, result, dict_ptr))
+			!executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr))
 			throw Exception{
 				"Unsupported dictionary type " + dict_ptr->getTypeName(),
 				ErrorCodes::UNKNOWN_TYPE
@@ -1301,19 +1294,25 @@ private:
 
 	template <typename DictionaryType>
 	bool executeDispatch(Block & block, const ColumnNumbers & arguments, const size_t result,
-		const IDictionary * const dictionary)
+		const IDictionaryBase * const dictionary)
 	{
 		const auto dict = typeid_cast<const DictionaryType *>(dictionary);
 		if (!dict)
 			return false;
 
+		if (!dict->hasHierarchy())
+			throw Exception{
+				"Dictionary does not have a hierarchy",
+				ErrorCodes::UNSUPPORTED_METHOD
+			};
+
 		const auto child_id_col_untyped = block.getByPosition(arguments[1]).column.get();
 		const auto ancestor_id_col_untyped = block.getByPosition(arguments[2]).column.get();
 
 		if (const auto child_id_col = typeid_cast<const ColumnVector<UInt64> *>(child_id_col_untyped))
-			execute(block, result, dictionary, child_id_col, ancestor_id_col_untyped);
+			execute(block, result, dict, child_id_col, ancestor_id_col_untyped);
 		else if (const auto child_id_col = typeid_cast<const ColumnConst<UInt64> *>(child_id_col_untyped))
-			execute(block, result, dictionary, child_id_col, ancestor_id_col_untyped);
+			execute(block, result, dict, child_id_col, ancestor_id_col_untyped);
 		else
 			throw Exception{
 				"Illegal column " + child_id_col_untyped->getName()
