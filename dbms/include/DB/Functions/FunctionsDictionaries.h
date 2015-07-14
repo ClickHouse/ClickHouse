@@ -756,10 +756,10 @@ public:
 private:
 	DataTypePtr getReturnType(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 3)
+		if (arguments.size() != 3 && arguments.size() != 4)
 			throw Exception{
 				"Number of arguments for function " + getName() + " doesn't match: passed "
-					+ toString(arguments.size()) + ", should be 3.",
+					+ toString(arguments.size()) + ", should be 3 or 4.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
 			};
 
@@ -790,6 +790,15 @@ private:
 			};
 		}
 
+		if (arguments.size() == 4 && !typeid_cast<const DataTypeDate *>(arguments[3].get()))
+		{
+			throw Exception{
+				"Illegal type " + arguments[3]->getName() + " of fourth argument of function " + getName()
+				+ ", must be Date.",
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+			};
+		}
+
 		return new DataTypeString;
 	}
 
@@ -808,7 +817,7 @@ private:
 		if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
 			!executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
 			!executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr) &&
-			!executeDispatch<RangeHashedDictionary>(block, arguments, result, dict_ptr))
+			!executeDispatchRange<RangeHashedDictionary>(block, arguments, result, dict_ptr))
 			throw Exception{
 				"Unsupported dictionary type " + dict_ptr->getTypeName(),
 				ErrorCodes::UNKNOWN_TYPE
@@ -816,12 +825,19 @@ private:
 	}
 
 	template <typename DictionaryType>
-	bool executeDispatch(Block & block, const ColumnNumbers & arguments, const size_t result,
-		const IDictionaryBase * const dictionary)
+	bool executeDispatch(
+		Block & block, const ColumnNumbers & arguments, const size_t result, const IDictionaryBase * const dictionary)
 	{
 		const auto dict = typeid_cast<const DictionaryType *>(dictionary);
 		if (!dict)
 			return false;
+
+		if (arguments.size() != 3)
+			throw Exception{
+				"Function " + getName() + " for dictionary of type " + dict->getTypeName() +
+				" requires exactly 3 arguments",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
+			};
 
 		const auto attr_name_col = typeid_cast<const ColumnConst<String> *>(block.getByPosition(arguments[1]).column.get());
 		if (!attr_name_col)
@@ -860,6 +876,109 @@ private:
 		return true;
 	}
 
+	template <typename DictionaryType>
+	bool executeDispatchRange(
+		Block & block, const ColumnNumbers & arguments, const size_t result, const IDictionaryBase * const dictionary)
+	{
+		const auto dict = typeid_cast<const DictionaryType *>(dictionary);
+		if (!dict)
+			return false;
+
+		if (arguments.size() != 4)
+			throw Exception{
+				"Function " + getName() + " for dictionary of type " + dict->getTypeName() +
+				" requires exactly 4 arguments",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
+			};
+
+		const auto attr_name_col = typeid_cast<const ColumnConst<String> *>(block.getByPosition(arguments[1]).column.get());
+		if (!attr_name_col)
+			throw Exception{
+				"Second argument of function " + getName() + " must be a constant string",
+				ErrorCodes::ILLEGAL_COLUMN
+			};
+
+		const auto & attr_name = attr_name_col->getData();
+
+		const auto id_col_untyped = block.getByPosition(arguments[2]).column.get();
+		const auto date_col_untyped = block.getByPosition(arguments[3]).column.get();
+		if (const auto id_col = typeid_cast<const ColumnVector<UInt64> *>(id_col_untyped))
+			executeRange(block, result, dict, attr_name, id_col, date_col_untyped);
+		else if (const auto id_col = typeid_cast<const ColumnConst<UInt64> *>(id_col_untyped))
+			executeRange(block, result, dict, attr_name, id_col, date_col_untyped);
+		else
+		{
+			throw Exception{
+				"Third argument of function " + getName() + " must be UInt64",
+				ErrorCodes::ILLEGAL_COLUMN
+			};
+		}
+
+		return true;
+	}
+
+	template <typename DictionaryType>
+	void executeRange(
+		Block & block, const size_t result, const DictionaryType * const dictionary, const std::string & attr_name,
+		const ColumnVector<UInt64> * const id_col, const IColumn * const date_col_untyped)
+	{
+		if (const auto date_col = typeid_cast<const ColumnVector<UInt16> *>(date_col_untyped))
+		{
+			const auto out = new ColumnString;
+			block.getByPosition(result).column = out;
+			dictionary->getString(attr_name, id_col->getData(), date_col->getData(), out);
+		}
+		else if (const auto date_col = typeid_cast<const ColumnConst<UInt16> *>(date_col_untyped))
+		{
+			auto out = new ColumnString;
+			block.getByPosition(result).column = out;
+
+			const PODArray<UInt16> dates(id_col->size(), date_col->getData());
+			dictionary->getString(attr_name, id_col->getData(), dates, out);
+		}
+		else
+		{
+			throw Exception{
+				"Fourth argument of function " + getName() + " must be Date",
+				ErrorCodes::ILLEGAL_COLUMN
+			};
+		}
+	}
+
+	template <typename DictionaryType>
+	void executeRange(
+		Block & block, const size_t result, const DictionaryType * const dictionary, const std::string & attr_name,
+		const ColumnConst<UInt64> * const id_col, const IColumn * const date_col_untyped)
+	{
+		if (const auto date_col = typeid_cast<const ColumnVector<UInt16> *>(date_col_untyped))
+		{
+			const auto out = new ColumnString;
+			block.getByPosition(result).column = out;
+
+			const PODArray<UInt64> ids(date_col->size(), id_col->getData());
+			dictionary->getString(attr_name, ids, date_col->getData(), out);
+		}
+		else if (const auto date_col = typeid_cast<const ColumnConst<UInt16> *>(date_col_untyped))
+		{
+			const PODArray<UInt64> ids(1, id_col->getData());
+			const PODArray<UInt16> dates(1, date_col->getData());
+
+			auto out = std::make_unique<ColumnString>();
+			dictionary->getString(attr_name, ids, dates, out.get());
+
+			block.getByPosition(result).column = new ColumnConst<String>{
+				id_col->size(), out->getDataAtWithTerminatingZero(0).toString()
+			};
+		}
+		else
+		{
+			throw Exception{
+				"Fourth argument of function " + getName() + " must be Date",
+				ErrorCodes::ILLEGAL_COLUMN
+			};
+		}
+	}
+
 	const ExternalDictionaries & dictionaries;
 };
 
@@ -869,9 +988,18 @@ template <typename DataType> struct DictGetTraits;
 template <> struct DictGetTraits<DATA_TYPE>\
 {\
 	template <typename DictionaryType>\
-	static void get(const DictionaryType * const dict, const std::string & name, const PODArray<UInt64> & ids, PODArray<TYPE> & out)\
+	static void get(\
+		const DictionaryType * const dict, const std::string & name, const PODArray<UInt64> & ids,\
+		PODArray<TYPE> & out)\
 	{\
 		dict->get##TYPE(name, ids, out);\
+	}\
+	template <typename DictionaryType>\
+	static void get(\
+		const DictionaryType * const dict, const std::string & name, const PODArray<UInt64> & ids,\
+		const PODArray<UInt16> & dates, PODArray<TYPE> & out)\
+	{\
+		dict->get##TYPE(name, ids, dates, out);\
 	}\
 };
 DECLARE_DICT_GET_TRAITS(UInt8, DataTypeUInt8)
@@ -908,10 +1036,10 @@ public:
 private:
 	DataTypePtr getReturnType(const DataTypes & arguments) const override
 	{
-		if (arguments.size() != 3)
+		if (arguments.size() != 3 && arguments.size() != 4)
 			throw Exception{
 				"Number of arguments for function " + getName() + " doesn't match: passed "
-					+ toString(arguments.size()) + ", should be 3.",
+					+ toString(arguments.size()) + ", should be 3 or 4.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
 			};
 
@@ -942,6 +1070,15 @@ private:
 			};
 		}
 
+		if (arguments.size() == 4 && !typeid_cast<const DataTypeDate *>(arguments[3].get()))
+		{
+			throw Exception{
+				"Illegal type " + arguments[3]->getName() + " of fourth argument of function " + getName()
+				+ ", must be Date.",
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+			};
+		}
+
 		return new DataType;
 	}
 
@@ -960,7 +1097,7 @@ private:
 		if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
 			!executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
 			!executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr) &&
-			!executeDispatch<RangeHashedDictionary>(block, arguments, result, dict_ptr))
+			!executeDispatchRange<RangeHashedDictionary>(block, arguments, result, dict_ptr))
 			throw Exception{
 				"Unsupported dictionary type " + dict_ptr->getTypeName(),
 				ErrorCodes::UNKNOWN_TYPE
@@ -974,6 +1111,13 @@ private:
 		const auto dict = typeid_cast<const DictionaryType *>(dictionary);
 		if (!dict)
 			return false;
+
+		if (arguments.size() != 3)
+			throw Exception{
+				"Function " + getName() + " for dictionary of type " + dict->getTypeName() +
+				" requires exactly 3 arguments.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
+			};
 
 		const auto attr_name_col = typeid_cast<const ColumnConst<String> *>(block.getByPosition(arguments[1]).column.get());
 		if (!attr_name_col)
@@ -1014,6 +1158,120 @@ private:
 		}
 
 		return true;
+	}
+
+	template <typename DictionaryType>
+	bool executeDispatchRange(
+		Block & block, const ColumnNumbers & arguments, const size_t result, const IDictionaryBase * const dictionary)
+	{
+		const auto dict = typeid_cast<const DictionaryType *>(dictionary);
+		if (!dict)
+			return false;
+
+		if (arguments.size() != 4)
+			throw Exception{
+				"Function " + getName() + " for dictionary of type " + dict->getTypeName() +
+				" requires exactly 4 arguments",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
+			};
+
+		const auto attr_name_col = typeid_cast<const ColumnConst<String> *>(block.getByPosition(arguments[1]).column.get());
+		if (!attr_name_col)
+			throw Exception{
+				"Second argument of function " + getName() + " must be a constant string",
+				ErrorCodes::ILLEGAL_COLUMN
+			};
+
+		const auto & attr_name = attr_name_col->getData();
+
+		const auto id_col_untyped = block.getByPosition(arguments[2]).column.get();
+		const auto date_col_untyped = block.getByPosition(arguments[3]).column.get();
+		if (const auto id_col = typeid_cast<const ColumnVector<UInt64> *>(id_col_untyped))
+			executeRange(block, result, dict, attr_name, id_col, date_col_untyped);
+		else if (const auto id_col = typeid_cast<const ColumnConst<UInt64> *>(id_col_untyped))
+			executeRange(block, result, dict, attr_name, id_col, date_col_untyped);
+		else
+		{
+			throw Exception{
+				"Third argument of function " + getName() + " must be UInt64",
+				ErrorCodes::ILLEGAL_COLUMN
+			};
+		}
+
+		return true;
+	}
+
+	template <typename DictionaryType>
+	void executeRange(
+		Block & block, const size_t result, const DictionaryType * const dictionary, const std::string & attr_name,
+		const ColumnVector<UInt64> * const id_col, const IColumn * const date_col_untyped)
+	{
+		if (const auto date_col = typeid_cast<const ColumnVector<UInt16> *>(date_col_untyped))
+		{
+			const auto size = id_col->size();
+			const auto & ids = id_col->getData();
+			const auto & dates = date_col->getData();
+
+			const auto out = new ColumnVector<Type>{size};
+			block.getByPosition(result).column = out;
+
+			auto & data = out->getData();
+			DictGetTraits<DataType>::get(dictionary, attr_name, ids, dates, data);
+		}
+		else if (const auto date_col = typeid_cast<const ColumnConst<UInt16> *>(date_col_untyped))
+		{
+			const auto size = id_col->size();
+			const auto & ids = id_col->getData();
+			const PODArray<UInt16> dates(size, date_col->getData());
+
+			const auto out = new ColumnVector<Type>;
+			block.getByPosition(result).column = out;
+
+			auto & data = out->getData();
+			DictGetTraits<DataType>::get(dictionary, attr_name, ids, dates, data);
+		}
+		else
+		{
+			throw Exception{
+				"Fourth argument of function " + getName() + " must be Date",
+				ErrorCodes::ILLEGAL_COLUMN
+			};
+		}
+	}
+
+	template <typename DictionaryType>
+	void executeRange(
+		Block & block, const size_t result, const DictionaryType * const dictionary, const std::string & attr_name,
+		const ColumnConst<UInt64> * const id_col, const IColumn * const date_col_untyped)
+	{
+		if (const auto date_col = typeid_cast<const ColumnVector<UInt16> *>(date_col_untyped))
+		{
+			const auto size = date_col->size();
+			const PODArray<UInt64> ids(size, id_col->getData());
+			const auto & dates = date_col->getData();
+
+			const auto out = new ColumnVector<Type>{size};
+			block.getByPosition(result).column = out;
+
+			auto & data = out->getData();
+			DictGetTraits<DataType>::get(dictionary, attr_name, ids, dates, data);
+		}
+		else if (const auto date_col = typeid_cast<const ColumnConst<UInt16> *>(date_col_untyped))
+		{
+			const PODArray<UInt64> ids(1, id_col->getData());
+			const PODArray<UInt16> dates(1, date_col->getData());
+			PODArray<Type> data(1);
+			DictGetTraits<DataType>::get(dictionary, attr_name, ids, dates, data);
+
+			block.getByPosition(result).column = new ColumnConst<Type>{id_col->size(), data.front()};
+		}
+		else
+		{
+			throw Exception{
+				"Fourth argument of function " + getName() + " must be Date",
+				ErrorCodes::ILLEGAL_COLUMN
+			};
+		}
 	}
 
 	const ExternalDictionaries & dictionaries;

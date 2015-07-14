@@ -78,16 +78,12 @@ public:
 	}
 
 #define DECLARE_MULTIPLE_GETTER(TYPE)\
-	void get##TYPE(const std::string & attribute_name, const PODArray<id_t> & ids, PODArray<TYPE> & out) const\
+	void get##TYPE(\
+		const std::string & attribute_name, const PODArray<id_t> & ids, const PODArray<UInt16> & dates,\
+		PODArray<TYPE> & out) const\
 	{\
-		const auto & attribute = getAttribute(attribute_name);\
-		if (attribute.type != AttributeUnderlyingType::TYPE)\
-			throw Exception{\
-				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
-				ErrorCodes::TYPE_MISMATCH\
-			};\
-		\
-		getItems<TYPE>(attribute, ids, out);\
+		const auto & attribute = getAttributeWithType(attribute_name, AttributeUnderlyingType::TYPE);\
+		getItems<TYPE>(attribute, ids, dates, out);\
 	}
 	DECLARE_MULTIPLE_GETTER(UInt8)
 	DECLARE_MULTIPLE_GETTER(UInt16)
@@ -100,25 +96,21 @@ public:
 	DECLARE_MULTIPLE_GETTER(Float32)
 	DECLARE_MULTIPLE_GETTER(Float64)
 #undef DECLARE_MULTIPLE_GETTER
-	void getString(const std::string & attribute_name, const PODArray<id_t> & ids, ColumnString * out) const
-	{
-		const auto & attribute = getAttribute(attribute_name);
-		if (attribute.type != AttributeUnderlyingType::String)
-			throw Exception{
-				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-				ErrorCodes::TYPE_MISMATCH
-			};
 
+	void getString(
+		const std::string & attribute_name, const PODArray<id_t> & ids, const PODArray<UInt16> & dates,
+		ColumnString * out) const
+	{
+		const auto & attribute = getAttributeWithType(attribute_name, AttributeUnderlyingType::String);
 		const auto & attr = *std::get<ptr_t<StringRef>>(attribute.maps);
 		const auto & null_value = std::get<String>(attribute.null_values);
-
-		const UInt16 date = 10;
 
 		for (const auto i : ext::range(0, ids.size()))
 		{
 			const auto it = attr.find(ids[i]);
 			if (it != std::end(attr))
 			{
+				const auto date = dates[i];
 				const auto & ranges_and_values = it->second;
 				const auto val_it = std::find_if(std::begin(ranges_and_values), std::end(ranges_and_values),
 					[date] (const value_t<StringRef> & v) { return v.range.contains(date); });
@@ -300,18 +292,19 @@ private:
 	}
 
 	template <typename T>
-	void getItems(const attribute_t & attribute, const PODArray<id_t> & ids, PODArray<T> & out) const
+	void getItems(
+		const attribute_t & attribute, const PODArray<id_t> & ids, const PODArray<UInt16> & dates,
+		PODArray<T> & out) const
 	{
 		const auto & attr = *std::get<ptr_t<T>>(attribute.maps);
 		const auto null_value = std::get<T>(attribute.null_values);
-
-		const UInt16 date = 10;
 
 		for (const auto i : ext::range(0, ids.size()))
 		{
 			const auto it = attr.find(ids[i]);
 			if (it != std::end(attr))
 			{
+				const auto date = dates[i];
 				const auto & ranges_and_values = it->second;
 				const auto val_it = std::find_if(std::begin(ranges_and_values), std::end(ranges_and_values),
 					[date] (const value_t<T> & v) { return v.range.contains(date); });
@@ -398,6 +391,18 @@ private:
 			};
 
 		return attributes[it->second];
+	}
+
+	const attribute_t & getAttributeWithType(const std::string & name, const AttributeUnderlyingType type) const
+	{
+		const auto & attribute = getAttribute(name);
+		if (attribute.type != type)
+			throw Exception{
+				"Type mismatch: attribute " + name + " has type " + toString(attribute.type),
+				ErrorCodes::TYPE_MISMATCH
+			};
+
+		return attribute;
 	}
 
 	const std::string name;
