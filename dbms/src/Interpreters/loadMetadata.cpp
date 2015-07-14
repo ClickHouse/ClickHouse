@@ -39,7 +39,7 @@ static void executeCreateQuery(const String & query, Context & context, const St
 		/// Исправление для ChunkMerger.
 		if (e.code() == ErrorCodes::TABLE_ALREADY_EXISTS)
 		{
-			if (const auto id = dynamic_cast<const ASTIdentifier *>(ast_create_query.storage.get()))
+			if (const auto id = dynamic_cast<const ASTFunction *>(ast_create_query.storage.get()))
 			{
 				if (id->name == "TinyLog")
 				{
