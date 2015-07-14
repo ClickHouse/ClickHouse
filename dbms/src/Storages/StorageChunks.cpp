@@ -35,7 +35,7 @@ StoragePtr StorageChunks::create(
 
 void StorageChunks::addReference()
 {
-	reference_counter.add(1, false);
+	reference_counter.add(1, true);
 }
 
 void StorageChunks::removeReference()
