@@ -30,7 +30,27 @@ static void executeCreateQuery(const String & query, Context & context, const St
 	ast_create_query.attach = true;
 	ast_create_query.database = database;
 
-	InterpreterCreateQuery(ast, context).executeLoadExisting();
+	try
+	{
+		InterpreterCreateQuery(ast, context).executeLoadExisting();
+	}
+	catch (const Exception & e)
+	{
+		/// Исправление для ChunkMerger.
+		if (e.code() == ErrorCodes::TABLE_ALREADY_EXISTS)
+		{
+			if (const auto id = dynamic_cast<const ASTIdentifier *>(ast_create_query.storage.get()))
+			{
+				if (id->name == "TinyLog")
+				{
+					tryLogCurrentException(__PRETTY_FUNCTION__);
+					return;
+				}
+			}
+		}
+
+		throw;
+	}
 }
 
 
