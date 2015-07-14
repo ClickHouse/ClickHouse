@@ -14,11 +14,11 @@
 namespace DB
 {
 
-class HashedDictionary final : public IDictionary
+class RangeHashedDictionary final : public IDictionaryBase
 {
 public:
-	HashedDictionary(const std::string & name, const DictionaryStructure & dict_struct,
-		DictionarySourcePtr source_ptr, const DictionaryLifetime dict_lifetime)
+	RangeHashedDictionary(const std::string & name, const DictionaryStructure & dict_struct,
+					 DictionarySourcePtr source_ptr, const DictionaryLifetime dict_lifetime)
 		: name{name}, dict_struct(dict_struct),
 		  source_ptr{std::move(source_ptr)}, dict_lifetime(dict_lifetime)
 	{
@@ -37,15 +37,15 @@ public:
 		creation_time = std::chrono::system_clock::now();
 	}
 
-	HashedDictionary(const HashedDictionary & other)
-		: HashedDictionary{other.name, other.dict_struct, other.source_ptr->clone(), other.dict_lifetime}
+	RangeHashedDictionary(const RangeHashedDictionary & other)
+		: RangeHashedDictionary{other.name, other.dict_struct, other.source_ptr->clone(), other.dict_lifetime}
 	{}
 
 	std::exception_ptr getCreationException() const override { return creation_exception; }
 
 	std::string getName() const override { return name; }
 
-	std::string getTypeName() const override { return "Hashed"; }
+	std::string getTypeName() const override { return "RangeHashed"; }
 
 	std::size_t getBytesAllocated() const override { return bytes_allocated; }
 
@@ -59,7 +59,7 @@ public:
 
 	bool isCached() const override { return false; }
 
-	DictionaryPtr clone() const override { return std::make_unique<HashedDictionary>(*this); }
+	DictionaryPtr clone() const override { return std::make_unique<RangeHashedDictionary>(*this); }
 
 	const IDictionarySource * getSource() const override { return source_ptr.get(); }
 
@@ -77,24 +77,13 @@ public:
 		return dict_struct.attributes[&getAttribute(attribute_name) - attributes.data()].injective;
 	}
 
-	bool hasHierarchy() const override { return hierarchical_attribute; }
-
-	void toParent(const PODArray<id_t> & ids, PODArray<id_t> & out) const override
-	{
-		getItems<UInt64>(*hierarchical_attribute, ids, out);
-	}
-
 #define DECLARE_MULTIPLE_GETTER(TYPE)\
-	void get##TYPE(const std::string & attribute_name, const PODArray<id_t> & ids, PODArray<TYPE> & out) const override\
+	void get##TYPE(\
+		const std::string & attribute_name, const PODArray<id_t> & ids, const PODArray<UInt16> & dates,\
+		PODArray<TYPE> & out) const\
 	{\
-		const auto & attribute = getAttribute(attribute_name);\
-		if (attribute.type != AttributeUnderlyingType::TYPE)\
-			throw Exception{\
-				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
-				ErrorCodes::TYPE_MISMATCH\
-			};\
-		\
-		getItems<TYPE>(attribute, ids, out);\
+		const auto & attribute = getAttributeWithType(attribute_name, AttributeUnderlyingType::TYPE);\
+		getItems<TYPE>(attribute, ids, dates, out);\
 	}
 	DECLARE_MULTIPLE_GETTER(UInt8)
 	DECLARE_MULTIPLE_GETTER(UInt16)
@@ -107,47 +96,80 @@ public:
 	DECLARE_MULTIPLE_GETTER(Float32)
 	DECLARE_MULTIPLE_GETTER(Float64)
 #undef DECLARE_MULTIPLE_GETTER
-	void getString(const std::string & attribute_name, const PODArray<id_t> & ids, ColumnString * out) const override
-	{
-		const auto & attribute = getAttribute(attribute_name);
-		if (attribute.type != AttributeUnderlyingType::String)
-			throw Exception{
-				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-				ErrorCodes::TYPE_MISMATCH
-			};
 
-		const auto & attr = *std::get<std::unique_ptr<HashMap<UInt64, StringRef>>>(attribute.maps);
+	void getString(
+		const std::string & attribute_name, const PODArray<id_t> & ids, const PODArray<UInt16> & dates,
+		ColumnString * out) const
+	{
+		const auto & attribute = getAttributeWithType(attribute_name, AttributeUnderlyingType::String);
+		const auto & attr = *std::get<ptr_t<StringRef>>(attribute.maps);
 		const auto & null_value = std::get<String>(attribute.null_values);
 
 		for (const auto i : ext::range(0, ids.size()))
 		{
 			const auto it = attr.find(ids[i]);
-			const auto string_ref = it != attr.end() ? it->second : StringRef{null_value};
-			out->insertData(string_ref.data, string_ref.size);
+			if (it != std::end(attr))
+			{
+				const auto date = dates[i];
+				const auto & ranges_and_values = it->second;
+				const auto val_it = std::find_if(std::begin(ranges_and_values), std::end(ranges_and_values),
+					[date] (const value_t<StringRef> & v) { return v.range.contains(date); });
+
+				const auto string_ref = val_it != std::end(ranges_and_values) ? val_it->value : null_value;
+				out->insertData(string_ref.data, string_ref.size);
+			}
+			else
+				out->insertData(null_value.data(), null_value.size());
 		}
 
 		query_count.fetch_add(ids.size(), std::memory_order_relaxed);
 	}
 
 private:
+	struct range_t : std::pair<UInt16, UInt16>
+	{
+		using std::pair<UInt16, UInt16>::pair;
+
+		bool contains(const UInt16 date) const
+		{
+			const auto & left = first;
+			const auto & right = second;
+
+			if (left <= date && date <= right)
+				return true;
+
+			const auto has_left_bound = 0 < left && left <= DATE_LUT_MAX_DAY_NUM;
+			const auto has_right_bound = 0 < right && right <= DATE_LUT_MAX_DAY_NUM;
+
+			if ((!has_left_bound || left <= date) && (!has_right_bound || date <= right))
+				return true;
+
+			return false;
+		}
+	};
+
+	template <typename T>
+	struct value_t final
+	{
+		range_t range;
+		T value;
+	};
+
+	template <typename T> using values_t = std::vector<value_t<T>>;
+	template <typename T> using collection_t = HashMap<UInt64, values_t<T>>;
+	template <typename T> using ptr_t = std::unique_ptr<collection_t<T>>;
+
 	struct attribute_t final
 	{
+	public:
 		AttributeUnderlyingType type;
 		std::tuple<UInt8, UInt16, UInt32, UInt64,
-			Int8, Int16, Int32, Int64,
-			Float32, Float64,
-			String> null_values;
-		std::tuple<std::unique_ptr<HashMap<UInt64, UInt8>>,
-			std::unique_ptr<HashMap<UInt64, UInt16>>,
-			std::unique_ptr<HashMap<UInt64, UInt32>>,
-			std::unique_ptr<HashMap<UInt64, UInt64>>,
-			std::unique_ptr<HashMap<UInt64, Int8>>,
-			std::unique_ptr<HashMap<UInt64, Int16>>,
-			std::unique_ptr<HashMap<UInt64, Int32>>,
-			std::unique_ptr<HashMap<UInt64, Int64>>,
-			std::unique_ptr<HashMap<UInt64, Float32>>,
-			std::unique_ptr<HashMap<UInt64, Float64>>,
-			std::unique_ptr<HashMap<UInt64, StringRef>>> maps;
+				   Int8, Int16, Int32, Int64,
+				   Float32, Float64,
+				   String> null_values;
+		std::tuple<ptr_t<UInt8>, ptr_t<UInt16>, ptr_t<UInt32>, ptr_t<UInt64>,
+				   ptr_t<Int8>, ptr_t<Int16>, ptr_t<Int32>, ptr_t<Int64>,
+				   ptr_t<Float32>, ptr_t<Float64>, ptr_t<StringRef>> maps;
 		std::unique_ptr<Arena> string_arena;
 	};
 
@@ -162,15 +184,10 @@ private:
 			attributes.push_back(createAttributeWithType(attribute.underlying_type, attribute.null_value));
 
 			if (attribute.hierarchical)
-			{
-				hierarchical_attribute = &attributes.back();
-
-				if (hierarchical_attribute->type != AttributeUnderlyingType::UInt64)
-					throw Exception{
-						"Hierarchical attribute must be UInt64.",
-						ErrorCodes::TYPE_MISMATCH
-					};
-			}
+				throw Exception{
+					"Hierarchical attributes not supported by " + getName() + " dictionary.",
+					ErrorCodes::BAD_ARGUMENTS
+				};
 		}
 	}
 
@@ -182,16 +199,20 @@ private:
 		while (const auto block = stream->read())
 		{
 			const auto & id_column = *block.getByPosition(0).column;
+			const auto & min_range_column = *block.getByPosition(1).column;
+			const auto & max_range_column = *block.getByPosition(2).column;
 
 			element_count += id_column.size();
 
 			for (const auto attribute_idx : ext::range(0, attributes.size()))
 			{
-				const auto & attribute_column = *block.getByPosition(attribute_idx + 1).column;
+				const auto & attribute_column = *block.getByPosition(attribute_idx + 3).column;
 				auto & attribute = attributes[attribute_idx];
 
 				for (const auto row_idx : ext::range(0, id_column.size()))
-					setAttributeValue(attribute, id_column[row_idx].get<UInt64>(), attribute_column[row_idx]);
+					setAttributeValue(attribute, id_column[row_idx].get<UInt64>(),
+						range_t(min_range_column[row_idx].get<UInt64>(), max_range_column[row_idx].get<UInt64>()),
+						attribute_column[row_idx]);
 			}
 		}
 
@@ -201,8 +222,8 @@ private:
 	template <typename T>
 	void addAttributeSize(const attribute_t & attribute)
 	{
-		const auto & map_ref = std::get<std::unique_ptr<HashMap<UInt64, T>>>(attribute.maps);
-		bytes_allocated += sizeof(HashMap<UInt64, T>) + map_ref->getBufferSizeInBytes();
+		const auto & map_ref = std::get<ptr_t<T>>(attribute.maps);
+		bytes_allocated += sizeof(collection_t<T>) + map_ref->getBufferSizeInBytes();
 		bucket_count = map_ref->getBufferSizeInCells();
 	}
 
@@ -239,7 +260,7 @@ private:
 	void createAttributeImpl(attribute_t & attribute, const Field & null_value)
 	{
 		std::get<T>(attribute.null_values) = null_value.get<typename NearestFieldType<T>::Type>();
-		std::get<std::unique_ptr<HashMap<UInt64, T>>>(attribute.maps) = std::make_unique<HashMap<UInt64, T>>();
+		std::get<ptr_t<T>>(attribute.maps) = std::make_unique<collection_t<T>>();
 	}
 
 	attribute_t createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
@@ -261,8 +282,7 @@ private:
 			case AttributeUnderlyingType::String:
 			{
 				const auto & null_value_ref = std::get<String>(attr.null_values) = null_value.get<String>();
-				std::get<std::unique_ptr<HashMap<UInt64, StringRef>>>(attr.maps) =
-					std::make_unique<HashMap<UInt64, StringRef>>();
+				std::get<ptr_t<StringRef>>(attr.maps) = std::make_unique<collection_t<StringRef>>();
 				attr.string_arena = std::make_unique<Arena>();
 				break;
 			}
@@ -272,47 +292,90 @@ private:
 	}
 
 	template <typename T>
-	void getItems(const attribute_t & attribute, const PODArray<id_t> & ids, PODArray<T> & out) const
+	void getItems(
+		const attribute_t & attribute, const PODArray<id_t> & ids, const PODArray<UInt16> & dates,
+		PODArray<T> & out) const
 	{
-		const auto & attr = *std::get<std::unique_ptr<HashMap<UInt64, T>>>(attribute.maps);
+		const auto & attr = *std::get<ptr_t<T>>(attribute.maps);
 		const auto null_value = std::get<T>(attribute.null_values);
 
 		for (const auto i : ext::range(0, ids.size()))
 		{
 			const auto it = attr.find(ids[i]);
-			out[i] = it != attr.end() ? it->second : null_value;
+			if (it != std::end(attr))
+			{
+				const auto date = dates[i];
+				const auto & ranges_and_values = it->second;
+				const auto val_it = std::find_if(std::begin(ranges_and_values), std::end(ranges_and_values),
+					[date] (const value_t<T> & v) { return v.range.contains(date); });
+
+				out[i] = val_it != std::end(ranges_and_values) ? val_it->value : null_value;
+			}
+			else
+				out[i] = null_value;
 		}
 
 		query_count.fetch_add(ids.size(), std::memory_order_relaxed);
 	}
 
 	template <typename T>
-	void setAttributeValueImpl(attribute_t & attribute, const id_t id, const T value)
+	void setAttributeValueImpl(attribute_t & attribute, const id_t id, const range_t & range, const T value)
 	{
-		auto & map = *std::get<std::unique_ptr<HashMap<UInt64, T>>>(attribute.maps);
-		map.insert({ id, value });
+		auto & map = *std::get<ptr_t<T>>(attribute.maps);
+		const auto it = map.find(id);
+
+		if (it != map.end())
+		{
+			auto & values = it->second;
+
+			const auto insert_it = std::lower_bound(std::begin(values), std::end(values), range,
+				[] (const value_t<T> & lhs, const range_t & range) {
+					return lhs.range < range;
+				});
+
+			values.insert(insert_it, value_t<T>{ range, value });
+		}
+		else
+			map.insert({ id, values_t<T>{ value_t<T>{ range, value } } });
 	}
 
-	void setAttributeValue(attribute_t & attribute, const id_t id, const Field & value)
+	void setAttributeValue(attribute_t & attribute, const id_t id, const range_t & range, const Field & value)
 	{
 		switch (attribute.type)
 		{
-			case AttributeUnderlyingType::UInt8: setAttributeValueImpl<UInt8>(attribute, id, value.get<UInt64>()); break;
-			case AttributeUnderlyingType::UInt16: setAttributeValueImpl<UInt16>(attribute, id, value.get<UInt64>()); break;
-			case AttributeUnderlyingType::UInt32: setAttributeValueImpl<UInt32>(attribute, id, value.get<UInt64>()); break;
-			case AttributeUnderlyingType::UInt64: setAttributeValueImpl<UInt64>(attribute, id, value.get<UInt64>()); break;
-			case AttributeUnderlyingType::Int8: setAttributeValueImpl<Int8>(attribute, id, value.get<Int64>()); break;
-			case AttributeUnderlyingType::Int16: setAttributeValueImpl<Int16>(attribute, id, value.get<Int64>()); break;
-			case AttributeUnderlyingType::Int32: setAttributeValueImpl<Int32>(attribute, id, value.get<Int64>()); break;
-			case AttributeUnderlyingType::Int64: setAttributeValueImpl<Int64>(attribute, id, value.get<Int64>()); break;
-			case AttributeUnderlyingType::Float32: setAttributeValueImpl<Float32>(attribute, id, value.get<Float64>()); break;
-			case AttributeUnderlyingType::Float64: setAttributeValueImpl<Float64>(attribute, id, value.get<Float64>()); break;
+			case AttributeUnderlyingType::UInt8: setAttributeValueImpl<UInt8>(attribute, id, range, value.get<UInt64>()); break;
+			case AttributeUnderlyingType::UInt16: setAttributeValueImpl<UInt16>(attribute, id, range, value.get<UInt64>()); break;
+			case AttributeUnderlyingType::UInt32: setAttributeValueImpl<UInt32>(attribute, id, range, value.get<UInt64>()); break;
+			case AttributeUnderlyingType::UInt64: setAttributeValueImpl<UInt64>(attribute, id, range, value.get<UInt64>()); break;
+			case AttributeUnderlyingType::Int8: setAttributeValueImpl<Int8>(attribute, id, range, value.get<Int64>()); break;
+			case AttributeUnderlyingType::Int16: setAttributeValueImpl<Int16>(attribute, id, range, value.get<Int64>()); break;
+			case AttributeUnderlyingType::Int32: setAttributeValueImpl<Int32>(attribute, id, range, value.get<Int64>()); break;
+			case AttributeUnderlyingType::Int64: setAttributeValueImpl<Int64>(attribute, id, range, value.get<Int64>()); break;
+			case AttributeUnderlyingType::Float32: setAttributeValueImpl<Float32>(attribute, id, range, value.get<Float64>()); break;
+			case AttributeUnderlyingType::Float64: setAttributeValueImpl<Float64>(attribute, id, range, value.get<Float64>()); break;
 			case AttributeUnderlyingType::String:
 			{
-				auto & map = *std::get<std::unique_ptr<HashMap<UInt64, StringRef>>>(attribute.maps);
+				auto & map = *std::get<ptr_t<StringRef>>(attribute.maps);
 				const auto & string = value.get<String>();
 				const auto string_in_arena = attribute.string_arena->insert(string.data(), string.size());
-				map.insert({ id, StringRef{string_in_arena, string.size()} });
+				const StringRef string_ref{string_in_arena, string.size()};
+
+				const auto it = map.find(id);
+
+				if (it != map.end())
+				{
+					auto & values = it->second;
+
+					const auto insert_it = std::lower_bound(std::begin(values), std::end(values), range,
+						[] (const value_t<StringRef> & lhs, const range_t & range) {
+							return lhs.range < range;
+						});
+
+					values.insert(insert_it, value_t<StringRef>{ range, string_ref });
+				}
+				else
+					map.insert({ id, values_t<StringRef>{ value_t<StringRef>{ range, string_ref } } });
+
 				break;
 			}
 		}
@@ -330,6 +393,18 @@ private:
 		return attributes[it->second];
 	}
 
+	const attribute_t & getAttributeWithType(const std::string & name, const AttributeUnderlyingType type) const
+	{
+		const auto & attribute = getAttribute(name);
+		if (attribute.type != type)
+			throw Exception{
+				"Type mismatch: attribute " + name + " has type " + toString(attribute.type),
+				ErrorCodes::TYPE_MISMATCH
+			};
+
+		return attribute;
+	}
+
 	const std::string name;
 	const DictionaryStructure dict_struct;
 	const DictionarySourcePtr source_ptr;
@@ -337,7 +412,6 @@ private:
 
 	std::map<std::string, std::size_t> attribute_index_by_name;
 	std::vector<attribute_t> attributes;
-	const attribute_t * hierarchical_attribute = nullptr;
 
 	std::size_t bytes_allocated = 0;
 	std::size_t element_count = 0;

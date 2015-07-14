@@ -106,6 +106,14 @@ private:
 
 			writeProbablyBackQuotedString(dict_struct.id_name, out);
 
+			if (!dict_struct.range_min.empty() && !dict_struct.range_max.empty())
+			{
+				writeString(", ", out);
+				writeProbablyBackQuotedString(dict_struct.range_min, out);
+				writeString(", ", out);
+				writeProbablyBackQuotedString(dict_struct.range_max, out);
+			}
+
 			for (const auto & attr : dict_struct.attributes)
 			{
 				writeString(", ", out);
