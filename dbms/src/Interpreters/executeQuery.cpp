@@ -188,7 +188,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 				context.getQueryLog().add(elem);
 
 			/// Также дадим вызывающему коду в дальнейшем логгировать завершение запроса и эксепшен.
-			res.finish_callback = [elem, &context, log_queries] (IBlockInputStream & stream) mutable
+			res.finish_callback = [elem, &context, log_queries] (IBlockInputStream * stream) mutable
 			{
 				ProcessListElement * process_list_elem = context.getProcessListElement();
 
@@ -208,12 +208,15 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 				auto memory_usage = process_list_elem->memory_tracker.getPeak();
 				elem.memory_usage = memory_usage > 0 ? memory_usage : 0;
 
-				if (IProfilingBlockInputStream * profiling_stream = dynamic_cast<IProfilingBlockInputStream *>(&stream))
+				if (stream)
 				{
-					const BlockStreamProfileInfo & info = profiling_stream->getInfo();
+					if (IProfilingBlockInputStream * profiling_stream = dynamic_cast<IProfilingBlockInputStream *>(stream))
+					{
+						const BlockStreamProfileInfo & info = profiling_stream->getInfo();
 
-					elem.result_rows = info.rows;
-					elem.result_bytes = info.bytes;
+						elem.result_rows = info.rows;
+						elem.result_bytes = info.bytes;
+					}
 				}
 
 				if (elem.read_rows != 0)
