@@ -83,17 +83,14 @@ public:
 
 private:
 	/**
-	 * ignore_union_all_tail
 	 * - Оптимизация, если объект создаётся только, чтобы вызвать getSampleBlock(): учитываем только первый SELECT цепочки UNION ALL, потому что
 	 *   первый SELECT достаточен для определения нужных столбцов.
 	 */
+	struct OnlyAnalyzeTag {};
 	InterpreterSelectQuery(
+		OnlyAnalyzeTag,
 		ASTPtr query_ptr_,
-		const Context & context_,
-		bool ignore_union_all_tail,
-		QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
-		size_t subquery_depth_ = 0,
-		BlockInputStreamPtr input = nullptr);
+		const Context & context_);
 
 	void init(BlockInputStreamPtr input, const Names & required_column_names = Names{});
 	void basicInit(BlockInputStreamPtr input);
@@ -166,6 +163,9 @@ private:
 
 	/// Являемся ли мы первым запросом SELECT цепочки UNION ALL?
 	bool is_first_select_inside_union_all;
+
+	/// Объект создан только для анализа запроса.
+	bool only_analyze = false;
 
 	/// Следующий запрос SELECT в цепочке UNION ALL, если есть.
 	std::unique_ptr<InterpreterSelectQuery> next_select_in_union_all;

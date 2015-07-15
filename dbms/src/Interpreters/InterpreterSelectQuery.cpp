@@ -99,7 +99,9 @@ void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_)
 	if (query.table && typeid_cast<ASTSelectQuery *>(&*query.table))
 	{
 		if (table_column_names.empty())
+		{
 			table_column_names = InterpreterSelectQuery::getSampleBlock(query.table, context, to_stage, subquery_depth).getColumnsList();
+		}
 	}
 	else
 	{
@@ -133,7 +135,7 @@ void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_)
 	if (table_column_names.empty())
 		throw Exception("There are no available columns", ErrorCodes::THERE_IS_NO_COLUMN);
 
-	query_analyzer.reset(new ExpressionAnalyzer(query_ptr, context, storage, table_column_names, subquery_depth, true));
+	query_analyzer.reset(new ExpressionAnalyzer(query_ptr, context, storage, table_column_names, subquery_depth, !only_analyze));
 
 	/// Сохраняем в query context новые временные таблицы
 	for (auto & it : query_analyzer->getExternalTables())
@@ -160,38 +162,38 @@ void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_)
 
 void InterpreterSelectQuery::initQueryAnalyzer()
 {
-	query_analyzer.reset(new ExpressionAnalyzer(query_ptr, context, storage, table_column_names, subquery_depth, true));
+	query_analyzer.reset(
+		new ExpressionAnalyzer(query_ptr, context, storage, table_column_names, subquery_depth, !only_analyze));
 
 	for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->next_select_in_union_all.get())
-		p->query_analyzer.reset(new ExpressionAnalyzer(p->query_ptr, p->context, p->storage, p->table_column_names, p->subquery_depth, true));
+		p->query_analyzer.reset(
+			new ExpressionAnalyzer(p->query_ptr, p->context, p->storage, p->table_column_names, p->subquery_depth, !only_analyze));
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_, QueryProcessingStage::Enum to_stage_,
 	size_t subquery_depth_, BlockInputStreamPtr input_)
-	: InterpreterSelectQuery(query_ptr_, context_, false, to_stage_, subquery_depth_, input_)
-{
-}
-
-InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_, bool ignore_union_all_tail,
-	QueryProcessingStage::Enum to_stage_,
-	size_t subquery_depth_, BlockInputStreamPtr input_)
-	: query_ptr(query_ptr_), query(typeid_cast<ASTSelectQuery &>(*query_ptr)),
-	context(context_), to_stage(to_stage_), subquery_depth(subquery_depth_),
-	is_first_select_inside_union_all(!ignore_union_all_tail && query.isUnionAllHead()),
-	log(&Logger::get("InterpreterSelectQuery"))
-{
-	init(input_);
-}
-
-InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_,
-	const Names & required_column_names_,
-	QueryProcessingStage::Enum to_stage_, size_t subquery_depth_, BlockInputStreamPtr input_)
 	: query_ptr(query_ptr_), query(typeid_cast<ASTSelectQuery &>(*query_ptr)),
 	context(context_), to_stage(to_stage_), subquery_depth(subquery_depth_),
 	is_first_select_inside_union_all(query.isUnionAllHead()),
 	log(&Logger::get("InterpreterSelectQuery"))
 {
-	init(input_, required_column_names_);
+	init(input_);
+}
+
+InterpreterSelectQuery::InterpreterSelectQuery(OnlyAnalyzeTag, ASTPtr query_ptr_, const Context & context_)
+	: query_ptr(query_ptr_), query(typeid_cast<ASTSelectQuery &>(*query_ptr)),
+	context(context_), to_stage(QueryProcessingStage::Complete), subquery_depth(0),
+	is_first_select_inside_union_all(false), only_analyze(true),
+	log(&Logger::get("InterpreterSelectQuery"))
+{
+	init({});
+}
+
+InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_,
+	const Names & required_column_names_,
+	QueryProcessingStage::Enum to_stage_, size_t subquery_depth_, BlockInputStreamPtr input_)
+	: InterpreterSelectQuery(query_ptr_, context_, required_column_names_, {}, to_stage_, subquery_depth_, input_)
+{
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_,
@@ -309,7 +311,7 @@ Block InterpreterSelectQuery::getSampleBlock(ASTPtr query_ptr_,
 	QueryProcessingStage::Enum to_stage_,
 	size_t subquery_depth_)
 {
-	return InterpreterSelectQuery(query_ptr_, context_, true, to_stage_, subquery_depth_).getSampleBlock();
+	return InterpreterSelectQuery(OnlyAnalyzeTag(), query_ptr_, context_).getSampleBlock();
 }
 
 
