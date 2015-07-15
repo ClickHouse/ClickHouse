@@ -77,9 +77,7 @@ public:
 
 	static Block getSampleBlock(
 		ASTPtr query_ptr_,
-		const Context & context_,
-		QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
-		size_t subquery_depth_ = 0);
+		const Context & context_);
 
 private:
 	/**

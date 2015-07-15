@@ -100,7 +100,7 @@ void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_)
 	{
 		if (table_column_names.empty())
 		{
-			table_column_names = InterpreterSelectQuery::getSampleBlock(query.table, context, to_stage, subquery_depth).getColumnsList();
+			table_column_names = InterpreterSelectQuery::getSampleBlock(query.table, context).getColumnsList();
 		}
 	}
 	else
@@ -306,10 +306,7 @@ Block InterpreterSelectQuery::getSampleBlock()
 }
 
 
-Block InterpreterSelectQuery::getSampleBlock(ASTPtr query_ptr_,
-	const Context & context_,
-	QueryProcessingStage::Enum to_stage_,
-	size_t subquery_depth_)
+Block InterpreterSelectQuery::getSampleBlock(ASTPtr query_ptr_, const Context & context_)
 {
 	return InterpreterSelectQuery(OnlyAnalyzeTag(), query_ptr_, context_).getSampleBlock();
 }
