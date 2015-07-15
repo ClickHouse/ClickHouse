@@ -53,7 +53,7 @@ int main(int argc, char ** argv)
 	formatAST(*root, std::cout);
 	std::cout << std::endl;
 
-	ExpressionAnalyzer analyzer(root, context, columns);
+	ExpressionAnalyzer analyzer(root, context, {}, columns);
 
 	Names required = analyzer.getRequiredColumns();
 	std::cout << "required columns:\n";
