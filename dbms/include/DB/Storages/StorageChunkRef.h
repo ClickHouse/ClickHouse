@@ -17,10 +17,10 @@ public:
 	std::string getName() const override { return "ChunkRef"; }
 	std::string getTableName() const override { return name; }
 
-	const NamesAndTypesList & getColumnsListImpl() const override { return getSource().getColumnsListImpl(); }
+	const NamesAndTypesList & getColumnsListImpl() const override { return typeid_cast<const StorageChunks &>(*getSource()).getColumnsListImpl(); }
 	/// В таблице, на которую мы ссылаемся, могут быть виртуальные столбцы.
-	NameAndTypePair getColumn(const String & column_name) const override { return getSource().getColumn(column_name); };
-	bool hasColumn(const String & column_name) const override { return getSource().hasColumn(column_name); };
+	NameAndTypePair getColumn(const String & column_name) const override { return getSource()->getColumn(column_name); };
+	bool hasColumn(const String & column_name) const override { return getSource()->hasColumn(column_name); };
 
 	BlockInputStreams read(
 		const Names & column_names,
@@ -47,8 +47,8 @@ private:
 	StorageChunkRef(const std::string & name_, const Context & context_, const std::string & source_database_name_, const std::string & source_table_name_, bool attach);
 
 	/// TODO: может быть, можно просто хранить указатель на родительскую таблицу?
-	StorageChunks & getSource();
-	const StorageChunks & getSource() const;
+	StoragePtr getSource();
+	const StoragePtr getSource() const;
 };
 
 }
