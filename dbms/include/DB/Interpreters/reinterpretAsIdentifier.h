@@ -22,7 +22,7 @@ namespace DB
 			/** pass a dummy column name because ExpressionAnalyzer
 		     *  does not work with no columns so far. */
 			ExpressionAnalyzer{
-				expr, context,
+				expr, context, {},
 				{ { "", new DataTypeString } }
 			}.getActions(false)->execute(block);
 

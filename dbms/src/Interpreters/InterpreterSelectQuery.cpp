@@ -38,7 +38,7 @@ namespace DB
 InterpreterSelectQuery::~InterpreterSelectQuery() = default;
 
 
-void InterpreterSelectQuery::init(BlockInputStreamPtr input, const Names & required_column_names, const NamesAndTypesList & table_column_names)
+void InterpreterSelectQuery::init(BlockInputStreamPtr input, const Names & required_column_names)
 {
 	ProfileEvents::increment(ProfileEvents::SelectQuery);
 
@@ -70,14 +70,14 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input, const Names & requi
 
 	if (is_first_select_inside_union_all && hasAsterisk())
 	{
-		basicInit(input, table_column_names);
+		basicInit(input);
 
 		// Мы выполняем этот код именно здесь, потому что в противном случае следующего рода запрос бы не срабатывал:
 		// SELECT X FROM (SELECT * FROM (SELECT 1 AS X, 2 AS Y) UNION ALL SELECT 3, 4)
 		// из-за того, что астериски заменены столбцами только при создании объектов query_analyzer в basicInit().
 		renameColumns();
 
-		if (!required_column_names.empty() && (context.getColumns().size() != required_column_names.size()))
+		if (!required_column_names.empty() && (table_column_names.size() != required_column_names.size()))
 		{
 			rewriteExpressionList(required_column_names);
 			/// Теперь имеется устаревшая информация для выполнения запроса. Обновляем эту информацию.
@@ -90,16 +90,16 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input, const Names & requi
 		if (!required_column_names.empty())
 			rewriteExpressionList(required_column_names);
 
-		basicInit(input, table_column_names);
+		basicInit(input);
 	}
 }
 
-void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_, const NamesAndTypesList & table_column_names)
+void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_)
 {
 	if (query.table && typeid_cast<ASTSelectQuery *>(&*query.table))
 	{
 		if (table_column_names.empty())
-			context.setColumns(InterpreterSelectQuery::getSampleBlock(query.table, context, to_stage, subquery_depth).getColumnsList());
+			table_column_names = InterpreterSelectQuery::getSampleBlock(query.table, context, to_stage, subquery_depth).getColumnsList();
 	}
 	else
 	{
@@ -127,16 +127,13 @@ void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_, const NamesAn
 
 		table_lock = storage->lockStructure(false);
 		if (table_column_names.empty())
-			context.setColumns(storage->getColumnsListNonMaterialized());
+			table_column_names = storage->getColumnsListNonMaterialized();
 	}
 
-	if (!table_column_names.empty())
-		context.setColumns(table_column_names);
-
-	if (context.getColumns().empty())
+	if (table_column_names.empty())
 		throw Exception("There are no available columns", ErrorCodes::THERE_IS_NO_COLUMN);
 
-	query_analyzer.reset(new ExpressionAnalyzer(query_ptr, context, storage, subquery_depth, true));
+	query_analyzer.reset(new ExpressionAnalyzer(query_ptr, context, storage, table_column_names, subquery_depth, true));
 
 	/// Сохраняем в query context новые временные таблицы
 	for (auto & it : query_analyzer->getExternalTables())
@@ -163,9 +160,10 @@ void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_, const NamesAn
 
 void InterpreterSelectQuery::initQueryAnalyzer()
 {
-	query_analyzer.reset(new ExpressionAnalyzer(query_ptr, context, storage, subquery_depth, true));
+	query_analyzer.reset(new ExpressionAnalyzer(query_ptr, context, storage, table_column_names, subquery_depth, true));
+
 	for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->next_select_in_union_all.get())
-		p->query_analyzer.reset(new ExpressionAnalyzer(p->query_ptr, p->context, p->storage, p->subquery_depth, true));
+		p->query_analyzer.reset(new ExpressionAnalyzer(p->query_ptr, p->context, p->storage, p->table_column_names, p->subquery_depth, true));
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_, QueryProcessingStage::Enum to_stage_,
@@ -198,13 +196,13 @@ InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context 
 
 InterpreterSelectQuery::InterpreterSelectQuery(ASTPtr query_ptr_, const Context & context_,
 	const Names & required_column_names_,
-	const NamesAndTypesList & table_column_names, QueryProcessingStage::Enum to_stage_, size_t subquery_depth_, BlockInputStreamPtr input_)
+	const NamesAndTypesList & table_column_names_, QueryProcessingStage::Enum to_stage_, size_t subquery_depth_, BlockInputStreamPtr input_)
 	: query_ptr(query_ptr_), query(typeid_cast<ASTSelectQuery &>(*query_ptr)),
-	context(context_), to_stage(to_stage_), subquery_depth(subquery_depth_),
+	context(context_), to_stage(to_stage_), subquery_depth(subquery_depth_), table_column_names(table_column_names_),
 	is_first_select_inside_union_all(query.isUnionAllHead()),
 	log(&Logger::get("InterpreterSelectQuery"))
 {
-	init(input_, required_column_names_, table_column_names);
+	init(input_, required_column_names_);
 }
 
 bool InterpreterSelectQuery::hasAsterisk() const

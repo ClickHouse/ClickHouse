@@ -103,9 +103,9 @@ MergeTreeData::MergeTreeData(
 			sort_descr.push_back(SortColumnDescription(name, 1));
 		}
 
-		primary_expr = ExpressionAnalyzer(primary_expr_ast, context, getColumnsList()).getActions(false);
+		primary_expr = ExpressionAnalyzer(primary_expr_ast, context, nullptr, getColumnsList()).getActions(false);
 
-		ExpressionActionsPtr projected_expr = ExpressionAnalyzer(primary_expr_ast, context, getColumnsList()).getActions(true);
+		ExpressionActionsPtr projected_expr = ExpressionAnalyzer(primary_expr_ast, context, nullptr, getColumnsList()).getActions(true);
 		primary_key_sample = projected_expr->getSampleBlock();
 	}
 	else if (mode != Unsorted)

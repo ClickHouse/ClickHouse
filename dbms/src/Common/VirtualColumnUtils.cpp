@@ -152,7 +152,7 @@ bool filterBlockWithQuery(ASTPtr query, Block & block, const Context & context)
 		return false;
 
 	/// Распарсим и вычислим выражение.
-	ExpressionAnalyzer analyzer(expression_ast, context, block.getColumnsList());
+	ExpressionAnalyzer analyzer(expression_ast, context, {}, block.getColumnsList());
 	ExpressionActionsPtr actions = analyzer.getActions(false);
 	actions->execute(block);
 

@@ -52,9 +52,8 @@ int main(int argc, char ** argv)
 			{"s1", new DataTypeString},
 			{"s2", new DataTypeString}
 		};
-		context.setColumns(columns);
 
-		ExpressionAnalyzer analyzer(ast, context, context.getColumns());
+		ExpressionAnalyzer analyzer(ast, context, {}, columns);
 		ExpressionActionsChain chain;
 		analyzer.appendSelect(chain, false);
 		analyzer.appendProjectResult(chain, false);

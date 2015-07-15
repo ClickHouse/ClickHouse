@@ -33,7 +33,7 @@ public:
 	 * - удалить из запроса все столбцы кроме указанных - используется для удаления ненужных столбцов из подзапросов.
 	 *
 	 * table_column_names
-	 * - поместить в контекст в качестве известных столбцов только указанные столбцы, а не все столбцы таблицы.
+	 * - список доступных столбцов таблицы.
 	 *   Используется, например, совместно с указанием input.
 	 */
 
@@ -56,7 +56,7 @@ public:
 		ASTPtr query_ptr_,
 		const Context & context_,
 		const Names & required_column_names,
-		const NamesAndTypesList & table_column_names,
+		const NamesAndTypesList & table_column_names_,
 		QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
 		size_t subquery_depth_ = 0,
 		BlockInputStreamPtr input = nullptr);
@@ -84,7 +84,7 @@ public:
 private:
 	/**
 	 * ignore_union_all_tail
-	 * - Оптимизация, если объект создаётся только, чтобы вызвать getSampleBlock(): учитываем только первый SELECT цепочки UNION ALL, потом что
+	 * - Оптимизация, если объект создаётся только, чтобы вызвать getSampleBlock(): учитываем только первый SELECT цепочки UNION ALL, потому что
 	 *   первый SELECT достаточен для определения нужных столбцов.
 	 */
 	InterpreterSelectQuery(
@@ -95,8 +95,8 @@ private:
 		size_t subquery_depth_ = 0,
 		BlockInputStreamPtr input = nullptr);
 
-	void init(BlockInputStreamPtr input, const Names & required_column_names = Names(), const NamesAndTypesList & table_column_names = NamesAndTypesList());
-	void basicInit(BlockInputStreamPtr input, const NamesAndTypesList & table_column_names);
+	void init(BlockInputStreamPtr input, const Names & required_column_names = Names{});
+	void basicInit(BlockInputStreamPtr input);
 	void initQueryAnalyzer();
 
 	/// Выполнить один запрос SELECT из цепочки UNION ALL.
@@ -162,11 +162,12 @@ private:
 	size_t subquery_depth;
 	std::unique_ptr<ExpressionAnalyzer> query_analyzer;
 	BlockInputStreams streams;
+	NamesAndTypesList table_column_names;
 
 	/// Являемся ли мы первым запросом SELECT цепочки UNION ALL?
 	bool is_first_select_inside_union_all;
 
-	/// Следующий запрос SELECT в цепочке UNION ALL.
+	/// Следующий запрос SELECT в цепочке UNION ALL, если есть.
 	std::unique_ptr<InterpreterSelectQuery> next_select_in_union_all;
 
 	/// Таблица, откуда читать данные, если не подзапрос.

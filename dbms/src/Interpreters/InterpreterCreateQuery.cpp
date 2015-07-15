@@ -336,7 +336,7 @@ InterpreterCreateQuery::ColumnsAndDefaults InterpreterCreateQuery::parseColumns(
 	/// set missing types and wrap default_expression's in a conversion-function if necessary
 	if (!defaulted_columns.empty())
 	{
-		const auto actions = ExpressionAnalyzer{default_expr_list, context, columns}.getActions(true);
+		const auto actions = ExpressionAnalyzer{default_expr_list, context, {}, columns}.getActions(true);
 		const auto block = actions->getSampleBlock();
 
 		for (auto & column : defaulted_columns)

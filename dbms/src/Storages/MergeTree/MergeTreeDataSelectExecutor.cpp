@@ -230,7 +230,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 			filter_function = upper_filter_function;
 		}
 
-		filter_expression = ExpressionAnalyzer(filter_function, data.context, data.getColumnsList()).getActions(false);
+		filter_expression = ExpressionAnalyzer(filter_function, data.context, nullptr, data.getColumnsList()).getActions(false);
 
 		/// Добавим столбцы, нужные для sampling_expression.
 		std::vector<String> add_columns = filter_expression->getRequiredColumns();
@@ -247,7 +247,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	String prewhere_column;
 	if (select.prewhere_expression)
 	{
-		ExpressionAnalyzer analyzer(select.prewhere_expression, data.context, data.getColumnsList());
+		ExpressionAnalyzer analyzer(select.prewhere_expression, data.context, nullptr, data.getColumnsList());
 		prewhere_actions = analyzer.getActions(false);
 		prewhere_column = select.prewhere_expression->getColumnName();
 		SubqueriesForSets prewhere_subqueries = analyzer.getSubqueriesForSets();
@@ -576,7 +576,7 @@ void MergeTreeDataSelectExecutor::createPositiveSignCondition(ExpressionActionsP
 	one->type = new DataTypeInt8;
 	one->value = Field(static_cast<Int64>(1));
 
-	out_expression = ExpressionAnalyzer(function_ptr, data.context, data.getColumnsList()).getActions(false);
+	out_expression = ExpressionAnalyzer(function_ptr, data.context, {}, data.getColumnsList()).getActions(false);
 	out_column = function->getColumnName();
 }
 
