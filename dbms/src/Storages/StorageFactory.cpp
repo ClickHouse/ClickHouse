@@ -646,13 +646,13 @@ For further info please read the documentation: https://clickhouse.yandex-team.r
 				zookeeper_path, replica_name, attach, data_path, database_name, table_name,
 				columns, materialized_columns, alias_columns, column_defaults,
 				context, primary_expr_list, date_column_name,
-				sampling_expression, index_granularity, mode, sign_column_name, columns_to_sum);
+				sampling_expression, index_granularity, mode, sign_column_name, columns_to_sum, MergeTreeSettings());
 		else
 			return StorageMergeTree::create(
 				data_path, database_name, table_name,
 				columns, materialized_columns, alias_columns, column_defaults,
 				context, primary_expr_list, date_column_name,
-				sampling_expression, index_granularity, mode, sign_column_name, columns_to_sum);
+				sampling_expression, index_granularity, mode, sign_column_name, columns_to_sum, MergeTreeSettings());
 	}
 	else
 		throw Exception("Unknown storage " + name, ErrorCodes::UNKNOWN_STORAGE);

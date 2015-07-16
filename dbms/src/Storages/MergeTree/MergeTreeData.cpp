@@ -240,7 +240,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 		data_parts.insert(part);
 	}
 
-	if (suspicious_broken_parts > 5 && !skip_sanity_checks)
+	if (suspicious_broken_parts > settings.max_suspicious_broken_parts && !skip_sanity_checks)
 		throw Exception("Suspiciously many (" + toString(suspicious_broken_parts) + ") broken parts to remove.",
 			ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS);
 
