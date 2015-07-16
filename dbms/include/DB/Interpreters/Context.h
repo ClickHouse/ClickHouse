@@ -41,6 +41,7 @@ class Macros;
 class Progress;
 class Clusters;
 class QueryLog;
+struct MergeTreeSettings;
 
 
 /// имя таблицы -> таблица
@@ -260,8 +261,8 @@ public:
 	Poco::SharedPtr<Clusters> getClusters() const;
 
 	Compiler & getCompiler();
-
 	QueryLog & getQueryLog();
+	const MergeTreeSettings & getMergeTreeSettings();
 
 	/// Позволяет выбрать метод сжатия по условиям, описанным в конфигурационном файле.
 	CompressionMethod chooseCompressionMethod(size_t part_size, double part_size_ratio) const;

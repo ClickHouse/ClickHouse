@@ -78,7 +78,7 @@ struct MergeTreeSettings
 	double replicated_max_ratio_of_wrong_parts = 0.05;
 
 
-	void readFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config)
+	void loadFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config)
 	{
 	#define SET_DOUBLE(NAME) \
 		NAME = config.getDouble(config_elem + "." #NAME, NAME);
