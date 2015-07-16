@@ -156,7 +156,7 @@ StoragePtr StorageReplicatedMergeTree::create(
 	size_t index_granularity_,
 	MergeTreeData::Mode mode_,
 	const String & sign_column_,
-	const Names & columns_to_sum_ = Names(),
+	const Names & columns_to_sum_,
 	const MergeTreeSettings & settings_)
 {
 	auto res = new StorageReplicatedMergeTree{
