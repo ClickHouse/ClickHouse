@@ -27,7 +27,7 @@ public:
 		
 	void serializeText(const Field & field, WriteBuffer & ostr) const
 	{
-		writeText(get<typename NearestFieldType<FieldType>::Type>(field), ostr);
+		writeText(static_cast<FieldType>(get<typename NearestFieldType<FieldType>::Type>(field)), ostr);
 	}
 	
 	inline void deserializeText(Field & field, ReadBuffer & istr) const;
