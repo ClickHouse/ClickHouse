@@ -69,7 +69,7 @@ struct ConvertImpl<DataTypeDate, DataTypeDateTime, Name>
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		typedef DataTypeDate::FieldType FromFieldType;
-		DateLUT & date_lut = DateLUT::instance();
+		const auto & date_lut = DateLUT::instance();
 
 		if (const ColumnVector<FromFieldType> * col_from = typeid_cast<const ColumnVector<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
 		{
@@ -108,7 +108,7 @@ struct ConvertImpl<DataTypeDateTime, DataTypeDate, Name>
 
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		DateLUT & date_lut = DateLUT::instance();
+		const auto & date_lut = DateLUT::instance();
 
 		if (const ColumnVector<FromFieldType> * col_from = typeid_cast<const ColumnVector<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
 		{
@@ -149,7 +149,7 @@ struct ConvertImpl32Or64ToDate
 	typedef DataTypeDate::FieldType ToFieldType;
 
 	template <typename To, typename From>
-	static To convert(const From & from, const DateLUT & date_lut)
+	static To convert(const From & from, const DateLUTImpl & date_lut)
 	{
 		return from < 0xFFFF
 			? from
@@ -158,7 +158,7 @@ struct ConvertImpl32Or64ToDate
 
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		DateLUT & date_lut = DateLUT::instance();
+		const auto & date_lut = DateLUT::instance();
 
 		if (const ColumnVector<FromFieldType> * col_from
 			= typeid_cast<const ColumnVector<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
@@ -242,6 +242,251 @@ struct ConvertImpl<FromDataType, DataTypeString, Name>
 	}
 };
 
+namespace details { namespace {
+
+/** Пусть source_timestamp представляет дату и время в исходном часовом поясе соответствующем
+  * объекту from_date_lut. Эта функция возвращает timestamp представлящий те же дату и время
+  * в часовом поясе соответствующем объекту to_date_lut.
+  */
+time_t convertTimestamp(time_t source_timestamp, const DateLUTImpl & from_date_lut, const DateLUTImpl & to_date_lut)
+{
+	if (&from_date_lut == &to_date_lut)
+		return source_timestamp;
+	else
+	{
+		const auto & values = from_date_lut.getValues(source_timestamp);
+		return to_date_lut.makeDateTime(values.year, values.month, values.day_of_month,
+										from_date_lut.toHourInaccurate(source_timestamp),
+										from_date_lut.toMinuteInaccurate(source_timestamp),
+										from_date_lut.toSecondInaccurate(source_timestamp));
+	}
+}
+
+/** Функции для преобразования даты + времени в строку.
+  */
+struct DateTimeToStringConverter
+{
+	using FromFieldType = typename DataTypeDateTime::FieldType;
+
+	static void vector_vector(const PODArray<FromFieldType> & vec_from, const ColumnString::Chars_t & data,
+							  const ColumnString::Offsets_t & offsets, ColumnString & vec_to)
+	{
+		const auto & local_date_lut = DateLUT::instance();
+
+		ColumnString::Chars_t & data_to = vec_to.getChars();
+		ColumnString::Offsets_t & offsets_to = vec_to.getOffsets();
+		size_t size = vec_from.size();
+		data_to.resize(size * 2);
+		offsets_to.resize(size);
+
+		WriteBufferFromVector<ColumnString::Chars_t> write_buffer(data_to);
+
+		ColumnString::Offset_t prev_offset = 0;
+
+		for (size_t i = 0; i < size; ++i)
+		{
+			ColumnString::Offset_t cur_offset = offsets[i];
+			const std::string time_zone(reinterpret_cast<const char *>(&data[prev_offset]), cur_offset - prev_offset - 1);
+			const auto & remote_date_lut = DateLUT::instance(time_zone);
+
+			auto ti = convertTimestamp(vec_from[i], remote_date_lut, local_date_lut);
+			formatImpl<DataTypeDateTime>(ti, write_buffer);
+			writeChar(0, write_buffer);
+			offsets_to[i] = write_buffer.count();
+
+			prev_offset = cur_offset;
+		}
+		data_to.resize(write_buffer.count());
+	}
+
+	static void vector_constant(const PODArray<FromFieldType> & vec_from, const std::string & data,
+								ColumnString & vec_to)
+	{
+		const auto & local_date_lut = DateLUT::instance();
+		const auto & remote_date_lut = DateLUT::instance(data);
+
+		ColumnString::Chars_t & data_to = vec_to.getChars();
+		ColumnString::Offsets_t & offsets_to = vec_to.getOffsets();
+		size_t size = vec_from.size();
+		data_to.resize(size * 2);
+		offsets_to.resize(size);
+
+		WriteBufferFromVector<ColumnString::Chars_t> write_buffer(data_to);
+
+		for (size_t i = 0; i < size; ++i)
+		{
+			auto ti = convertTimestamp(vec_from[i], remote_date_lut, local_date_lut);
+			formatImpl<DataTypeDateTime>(ti, write_buffer);
+			writeChar(0, write_buffer);
+			offsets_to[i] = write_buffer.count();
+		}
+		data_to.resize(write_buffer.count());
+	}
+
+	static void vector_constant(const PODArray<FromFieldType> & vec_from, ColumnString & vec_to)
+	{
+		ColumnString::Chars_t & data_to = vec_to.getChars();
+		ColumnString::Offsets_t & offsets_to = vec_to.getOffsets();
+		size_t size = vec_from.size();
+		data_to.resize(size * 2);
+		offsets_to.resize(size);
+
+		WriteBufferFromVector<ColumnString::Chars_t> write_buffer(data_to);
+
+		for (size_t i = 0; i < size; ++i)
+		{
+			formatImpl<DataTypeDateTime>(vec_from[i], write_buffer);
+			writeChar(0, write_buffer);
+			offsets_to[i] = write_buffer.count();
+		}
+		data_to.resize(write_buffer.count());
+	}
+
+	static void constant_vector(FromFieldType from, const ColumnString::Chars_t & data,
+								const ColumnString::Offsets_t & offsets,
+								ColumnString & vec_to)
+	{
+		const auto & local_date_lut = DateLUT::instance();
+
+		ColumnString::Chars_t & data_to = vec_to.getChars();
+		ColumnString::Offsets_t & offsets_to = vec_to.getOffsets();
+		size_t size = offsets.size();
+		data_to.resize(size * 2);
+		offsets_to.resize(size);
+
+		WriteBufferFromVector<ColumnString::Chars_t> write_buffer(data_to);
+
+		ColumnString::Offset_t prev_offset = 0;
+
+		for (size_t i = 0; i < size; ++i)
+		{
+			ColumnString::Offset_t cur_offset = offsets[i];
+			const std::string time_zone(reinterpret_cast<const char *>(&data[prev_offset]), cur_offset - prev_offset - 1);
+			const auto & remote_date_lut = DateLUT::instance(time_zone);
+
+			auto ti = convertTimestamp(from, remote_date_lut, local_date_lut);
+			formatImpl<DataTypeDateTime>(ti, write_buffer);
+			writeChar(0, write_buffer);
+			offsets_to[i] = write_buffer.count();
+
+			prev_offset = cur_offset;
+		}
+		data_to.resize(write_buffer.count());
+	}
+
+	static void constant_constant(FromFieldType from, const std::string & data, std::string & to)
+	{
+		const auto & local_date_lut = DateLUT::instance();
+		const auto & remote_date_lut = DateLUT::instance(data);
+
+		std::vector<char> buf;
+		WriteBufferFromVector<std::vector<char> > write_buffer(buf);
+		auto ti = convertTimestamp(from, remote_date_lut, local_date_lut);
+		formatImpl<DataTypeDateTime>(ti, write_buffer);
+		to = std::string(&buf[0], write_buffer.count());
+	}
+
+	static void constant_constant(FromFieldType from, std::string & to)
+	{
+		std::vector<char> buf;
+		WriteBufferFromVector<std::vector<char> > write_buffer(buf);
+		formatImpl<DataTypeDateTime>(from, write_buffer);
+		to = std::string(&buf[0], write_buffer.count());
+	}
+};
+
+}}
+
+template<typename Name>
+struct ConvertImpl<DataTypeDateTime, DataTypeString, Name>
+{
+	using Op = details::DateTimeToStringConverter;
+	using FromFieldType = Op::FromFieldType;
+
+	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		const ColumnPtr source_col = block.getByPosition(arguments[0]).column;
+		const auto * sources = typeid_cast<const ColumnVector<FromFieldType> *>(&*source_col);
+		const auto * const_source = typeid_cast<const ColumnConst<FromFieldType> *>(&*source_col);
+
+		if (arguments.size() == 1)
+		{
+			if (sources)
+			{
+				ColumnString * col_to = new ColumnString;
+				block.getByPosition(result).column = col_to;
+
+				auto & vec_from = sources->getData();
+				auto & vec_to = *col_to;
+
+				Op::vector_constant(vec_from, vec_to);
+			}
+			else if (const_source)
+			{
+				std::string res;
+				Op::constant_constant(const_source->getData(), res);
+				block.getByPosition(result).column = new ColumnConstString(const_source->size(), res);
+			}
+			else
+			{
+				throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+						+ " of first argument of function " + Name::name,
+					ErrorCodes::ILLEGAL_COLUMN);
+			}
+		}
+		else if (arguments.size() == 2)
+		{
+			const ColumnPtr time_zone_col = block.getByPosition(arguments[1]).column;
+			const auto * time_zones = typeid_cast<const ColumnString *>(&*time_zone_col);
+			const auto * const_time_zone = typeid_cast<const ColumnConstString *>(&*time_zone_col);
+
+			if (sources)
+			{
+				ColumnString * col_to = new ColumnString;
+				block.getByPosition(result).column = col_to;
+
+				auto & vec_from = sources->getData();
+				auto & vec_to = *col_to;
+
+				if (time_zones)
+					Op::vector_vector(vec_from, time_zones->getChars(), time_zones->getOffsets(), vec_to);
+				else if (const_time_zone)
+					Op::vector_constant(vec_from, const_time_zone->getData(), vec_to);
+				else
+					throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
+							+ " of second argument of function " + Name::name,
+						ErrorCodes::ILLEGAL_COLUMN);
+			}
+			else if (const_source)
+			{
+				if (time_zones)
+				{
+					ColumnString * col_to = new ColumnString;
+					block.getByPosition(result).column = col_to;
+					auto & vec_to = *col_to;
+
+					Op::constant_vector(const_source->getData(), time_zones->getChars(), time_zones->getOffsets(), vec_to);
+				}
+				else if (const_time_zone)
+				{
+					std::string res;
+					Op::constant_constant(const_source->getData(), const_time_zone->getData(), res);
+					block.getByPosition(result).column = new ColumnConstString(const_source->size(), res);
+				}
+				else
+					throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
+							+ " of second argument of function " + Name::name,
+						ErrorCodes::ILLEGAL_COLUMN);
+			}
+			else
+				throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+						+ " of first argument of function " + Name::name,
+					ErrorCodes::ILLEGAL_COLUMN);
+		}
+		else
+			throw Exception("Internal error.", ErrorCodes::LOGICAL_ERROR);
+	}
+};
 
 /** Преобразование строк в числа, даты, даты-с-временем: через парсинг.
   */
@@ -303,6 +548,228 @@ struct ConvertImpl<DataTypeString, ToDataType, Name>
 				ErrorCodes::ILLEGAL_COLUMN);
 	}
 };
+
+namespace details { namespace {
+
+/** Функции для преобразования строк в timestamp.
+  */
+struct StringToTimestampConverter
+{
+	using ToFieldType = typename DataTypeInt32::FieldType;
+
+	static void vector_vector(const ColumnString::Chars_t & vec_from, const ColumnString::Chars_t & data,
+							  const ColumnString::Offsets_t & offsets, PODArray<ToFieldType> & vec_to)
+	{
+		const auto & local_date_lut = DateLUT::instance();
+		ReadBuffer read_buffer(const_cast<char *>(reinterpret_cast<const char *>(&vec_from[0])), vec_from.size(), 0);
+
+		ColumnString::Offset_t prev_offset = 0;
+
+		char zero = 0;
+		for (size_t i = 0; i < vec_to.size(); ++i)
+		{
+			DataTypeDateTime::FieldType x = 0;
+			parseImpl<DataTypeDateTime>(x, read_buffer);
+
+			ColumnString::Offset_t cur_offset = offsets[i];
+			const std::string time_zone(reinterpret_cast<const char *>(&data[prev_offset]), cur_offset - prev_offset - 1);
+			const auto & remote_date_lut = DateLUT::instance(time_zone);
+
+			auto ti = convertTimestamp(x, local_date_lut, remote_date_lut);
+
+			vec_to[i] = ti;
+			readChar(zero, read_buffer);
+			if (zero != 0)
+				throw Exception("Cannot parse from string.", ErrorCodes::CANNOT_PARSE_NUMBER);
+
+			prev_offset = cur_offset;
+		}
+	}
+
+	static void vector_constant(const ColumnString::Chars_t & vec_from, const std::string & data,
+								PODArray<ToFieldType> & vec_to)
+	{
+		const auto & local_date_lut = DateLUT::instance();
+		const auto & remote_date_lut = DateLUT::instance(data);
+		ReadBuffer read_buffer(const_cast<char *>(reinterpret_cast<const char *>(&vec_from[0])), vec_from.size(), 0);
+
+		char zero = 0;
+		for (size_t i = 0; i < vec_to.size(); ++i)
+		{
+			DataTypeDateTime::FieldType x = 0;
+			parseImpl<DataTypeDateTime>(x, read_buffer);
+
+			auto ti = convertTimestamp(x, local_date_lut, remote_date_lut);
+
+			vec_to[i] = ti;
+			readChar(zero, read_buffer);
+			if (zero != 0)
+				throw Exception("Cannot parse from string.", ErrorCodes::CANNOT_PARSE_NUMBER);
+		}
+	}
+
+	static void vector_constant(const ColumnString::Chars_t & vec_from, PODArray<ToFieldType> & vec_to)
+	{
+		ReadBuffer read_buffer(const_cast<char *>(reinterpret_cast<const char *>(&vec_from[0])), vec_from.size(), 0);
+
+		char zero = 0;
+		for (size_t i = 0; i < vec_to.size(); ++i)
+		{
+			DataTypeDateTime::FieldType x = 0;
+			parseImpl<DataTypeDateTime>(x, read_buffer);
+			vec_to[i] = x;
+			readChar(zero, read_buffer);
+			if (zero != 0)
+				throw Exception("Cannot parse from string.", ErrorCodes::CANNOT_PARSE_NUMBER);
+		}
+	}
+
+	static void constant_vector(const std::string & from, const ColumnString::Chars_t & data,
+								const ColumnString::Offsets_t & offsets, PODArray<ToFieldType> & vec_to)
+	{
+		const auto & local_date_lut = DateLUT::instance();
+
+		ReadBufferFromString read_buffer(from);
+		DataTypeDateTime::FieldType x = 0;
+		parseImpl<DataTypeDateTime>(x, read_buffer);
+
+		ColumnString::Offset_t prev_offset = 0;
+
+		for (size_t i = 0; i < offsets.size(); ++i)
+		{
+			ColumnString::Offset_t cur_offset = offsets[i];
+			const std::string time_zone(reinterpret_cast<const char *>(&data[prev_offset]), cur_offset - prev_offset - 1);
+			const auto & remote_date_lut = DateLUT::instance(time_zone);
+
+			auto ti = convertTimestamp(x, local_date_lut, remote_date_lut);
+
+			vec_to[i] = ti;
+			prev_offset = cur_offset;
+		}
+	}
+
+	static void constant_constant(const std::string & from, const std::string & data, ToFieldType & to)
+	{
+		const auto & local_date_lut = DateLUT::instance();
+		const auto & remote_date_lut = DateLUT::instance(data);
+
+		ReadBufferFromString read_buffer(from);
+		DataTypeDateTime::FieldType x = 0;
+		parseImpl<DataTypeDateTime>(x, read_buffer);
+
+		to = convertTimestamp(x, local_date_lut, remote_date_lut);
+	}
+
+	static void constant_constant(const std::string & from, ToFieldType & to)
+	{
+		ReadBufferFromString read_buffer(from);
+		DataTypeDateTime::FieldType x = 0;
+		parseImpl<DataTypeDateTime>(x, read_buffer);
+		to = x;
+	}
+};
+
+}}
+
+struct NameToUnixTimestamp	{ static constexpr auto name = "toUnixTimestamp"; };
+
+template<>
+struct ConvertImpl<DataTypeString, DataTypeInt32, NameToUnixTimestamp>
+{
+	using Op = details::StringToTimestampConverter;
+	using ToFieldType = Op::ToFieldType;
+
+	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		const ColumnPtr source_col = block.getByPosition(arguments[0]).column;
+		const auto * sources = typeid_cast<const ColumnString *>(&*source_col);
+		const auto * const_source = typeid_cast<const ColumnConstString *>(&*source_col);
+
+		if (arguments.size() == 1)
+		{
+			if (sources)
+			{
+				auto * col_to = new ColumnVector<ToFieldType>;
+				block.getByPosition(result).column = col_to;
+
+				auto & vec_from = sources->getChars();
+				auto & vec_to = col_to->getData();
+				size_t size = sources->size();
+				vec_to.resize(size);
+
+				Op::vector_constant(vec_from, vec_to);
+			}
+			else if (const_source)
+			{
+				ToFieldType res;
+				Op::constant_constant(const_source->getData(), res);
+				block.getByPosition(result).column = new ColumnConst<ToFieldType>(const_source->size(), res);
+			}
+			else
+			{
+				throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+						+ " of first argument of function " + NameToUnixTimestamp::name,
+					ErrorCodes::ILLEGAL_COLUMN);
+			}
+		}
+		else if (arguments.size() == 2)
+		{
+			const ColumnPtr time_zone_col = block.getByPosition(arguments[1]).column;
+			const auto * time_zones = typeid_cast<const ColumnString *>(&*time_zone_col);
+			const auto * const_time_zone = typeid_cast<const ColumnConstString *>(&*time_zone_col);
+
+			if (sources)
+			{
+				auto * col_to = new ColumnVector<ToFieldType>;
+				block.getByPosition(result).column = col_to;
+
+				auto & vec_from = sources->getChars();
+				auto & vec_to = col_to->getData();
+				size_t size = sources->size();
+				vec_to.resize(size);
+
+				if (time_zones)
+					Op::vector_vector(vec_from, time_zones->getChars(), time_zones->getOffsets(), vec_to);
+				else if (const_time_zone)
+					Op::vector_constant(vec_from, const_time_zone->getData(), vec_to);
+				else
+					throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
+							+ " of second argument of function " + NameToUnixTimestamp::name,
+						ErrorCodes::ILLEGAL_COLUMN);
+			}
+			else if (const_source)
+			{
+				if (time_zones)
+				{
+					auto * col_to = new ColumnVector<ToFieldType>;
+					block.getByPosition(result).column = col_to;
+
+					auto & vec_to = col_to->getData();
+					vec_to.resize(time_zones->getOffsets().size());
+
+					Op::constant_vector(const_source->getData(), time_zones->getChars(), time_zones->getOffsets(), vec_to);
+				}
+				else if (const_time_zone)
+				{
+					ToFieldType res;
+					Op::constant_constant(const_source->getData(), const_time_zone->getData(), res);
+					block.getByPosition(result).column = new ColumnConst<ToFieldType>(const_source->size(), res);
+				}
+				else
+					throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
+							+ " of second argument of function " + NameToUnixTimestamp::name,
+						ErrorCodes::ILLEGAL_COLUMN);
+			}
+			else
+				throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+						+ " of first argument of function " + NameToUnixTimestamp::name,
+					ErrorCodes::ILLEGAL_COLUMN);
+		}
+		else
+			throw Exception("Internal error.", ErrorCodes::LOGICAL_ERROR);
+	}
+};
+
 
 /** Если типы совпадают - просто скопируем ссылку на столбец.
   */
@@ -437,12 +904,7 @@ public:
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnType(const DataTypes & arguments) const
 	{
-		if (arguments.size() != 1)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 1.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		return new ToDataType;
+		return getReturnTypeImpl(arguments);
 	}
 
 	/// Выполнить функцию над блоком.
@@ -467,6 +929,73 @@ public:
 		else
 			throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+	}
+
+private:
+	template<typename ToDataType2 = ToDataType, typename Name2 = Name>
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments,
+		typename std::enable_if<!(std::is_same<ToDataType2, DataTypeString>::value || std::is_same<Name2, NameToUnixTimestamp>::value), void>::type * = nullptr) const
+	{
+		if (arguments.size() != 1)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ toString(arguments.size()) + ", should be 1.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		return new ToDataType;
+	}
+
+	template<typename ToDataType2 = ToDataType, typename Name2 = Name>
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments,
+		typename std::enable_if<std::is_same<ToDataType2, DataTypeString>::value>::type * = nullptr) const
+	{
+		if ((arguments.size() < 1) || (arguments.size() > 2))
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ toString(arguments.size()) + ", should be 1 or 2.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		if (typeid_cast<const DataTypeDateTime *>(&*arguments[0]) == nullptr)
+		{
+			if (arguments.size() != 1)
+				throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+					+ toString(arguments.size()) + ", should be 1.",
+					ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+		}
+		else if ((arguments.size()) == 2 && typeid_cast<const DataTypeString *>(&*arguments[1]) == nullptr)
+		{
+			throw Exception{
+				"Illegal type " + arguments[1]->getName() + " of argument of function " + getName(),
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+			};
+		}
+
+		return new ToDataType2;
+	}
+
+	template<typename ToDataType2 = ToDataType, typename Name2 = Name>
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments,
+		typename std::enable_if<std::is_same<Name2, NameToUnixTimestamp>::value, void>::type * = nullptr) const
+	{
+		if ((arguments.size() < 1) || (arguments.size() > 2))
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ toString(arguments.size()) + ", should be 1 or 2.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		if (typeid_cast<const DataTypeString *>(&*arguments[0]) == nullptr)
+		{
+			if (arguments.size() != 1)
+				throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+					+ toString(arguments.size()) + ", should be 1.",
+					ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+		}
+		else if ((arguments.size()) == 2 && typeid_cast<const DataTypeString *>(&*arguments[1]) == nullptr)
+		{
+			throw Exception{
+				"Illegal type " + arguments[1]->getName() + " of argument of function " + getName(),
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+			};
+		}
+
+		return new ToDataType2;
 	}
 };
 
@@ -628,6 +1157,6 @@ typedef FunctionConvert<DataTypeFloat64,	NameToFloat64> 		FunctionToFloat64;
 typedef FunctionConvert<DataTypeDate,		NameToDate> 		FunctionToDate;
 typedef FunctionConvert<DataTypeDateTime,	NameToDateTime> 	FunctionToDateTime;
 typedef FunctionConvert<DataTypeString,		NameToString> 		FunctionToString;
-
+typedef FunctionConvert<DataTypeInt32,		NameToUnixTimestamp> FunctionToUnixTimestamp;
 
 }
