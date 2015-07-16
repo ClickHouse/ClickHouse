@@ -35,14 +35,26 @@ static void numWidthConstant(T a, UInt64 & c)
 
 inline UInt64 floatWidth(const double x)
 {
-	/// Не быстро.
 	char tmp[25];
 	double_conversion::StringBuilder builder{tmp, sizeof(tmp)};
 
 	const auto result = getDoubleToStringConverter<false>().ToShortest(x, &builder);
 
 	if (!result)
-		throw Exception("Cannot print float or double number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
+		throw Exception("Cannot print double number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
+
+	return builder.position();
+}
+
+inline UInt64 floatWidth(const float x)
+{
+	char tmp[25];
+	double_conversion::StringBuilder builder{tmp, sizeof(tmp)};
+
+	const auto result = getDoubleToStringConverter<false>().ToShortestSingle(x, &builder);
+
+	if (!result)
+		throw Exception("Cannot print float number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
 
 	return builder.position();
 }
@@ -141,7 +153,7 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 		|| VisibleWidth::executeConstNumber<Int16>(block, column, result)
 		|| VisibleWidth::executeConstNumber<Int32>(block, column, result)
 		|| VisibleWidth::executeConstNumber<Int64>(block, column, result)
-		|| VisibleWidth::executeConstNumber<Float32>(block, column, result)	/// TODO: правильная работа с float
+		|| VisibleWidth::executeConstNumber<Float32>(block, column, result)
 		|| VisibleWidth::executeConstNumber<Float64>(block, column, result)
 		|| VisibleWidth::executeNumber<UInt8>(block, column, result)
 		|| VisibleWidth::executeNumber<UInt16>(block, column, result)
