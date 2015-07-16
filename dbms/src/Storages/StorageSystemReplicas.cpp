@@ -31,6 +31,8 @@ StorageSystemReplicas::StorageSystemReplicas(const std::string & name_)
 		{ "inserts_in_queue",		new DataTypeUInt32	},
 		{ "merges_in_queue",		new DataTypeUInt32	},
 		{ "queue_oldest_time",		new DataTypeDateTime},
+		{ "inserts_oldest_time",	new DataTypeDateTime},
+		{ "merges_oldest_time",		new DataTypeDateTime},
 		{ "log_max_index",			new DataTypeUInt64	},
 		{ "log_pointer", 			new DataTypeUInt64	},
 		{ "total_replicas",			new DataTypeUInt8	},
@@ -123,6 +125,8 @@ BlockInputStreams StorageSystemReplicas::read(
 	ColumnWithNameAndType col_inserts_in_queue	{ new ColumnUInt32,	new DataTypeUInt32,	"inserts_in_queue"};
 	ColumnWithNameAndType col_merges_in_queue	{ new ColumnUInt32,	new DataTypeUInt32,	"merges_in_queue"};
 	ColumnWithNameAndType col_queue_oldest_time	{ new ColumnUInt32,	new DataTypeDateTime, "queue_oldest_time"};
+	ColumnWithNameAndType col_inserts_oldest_time{ new ColumnUInt32,new DataTypeDateTime, "inserts_oldest_time"};
+	ColumnWithNameAndType col_merges_oldest_time{ new ColumnUInt32,	new DataTypeDateTime, "merges_oldest_time"};
 	ColumnWithNameAndType col_log_max_index		{ new ColumnUInt64,	new DataTypeUInt64,	"log_max_index"};
 	ColumnWithNameAndType col_log_pointer		{ new ColumnUInt64,	new DataTypeUInt64,	"log_pointer"};
 	ColumnWithNameAndType col_total_replicas	{ new ColumnUInt8,	new DataTypeUInt8,	"total_replicas"};
@@ -149,6 +153,8 @@ BlockInputStreams StorageSystemReplicas::read(
 		col_inserts_in_queue	.column->insert(UInt64(status.inserts_in_queue));
 		col_merges_in_queue		.column->insert(UInt64(status.merges_in_queue));
 		col_queue_oldest_time	.column->insert(UInt64(status.queue_oldest_time));
+		col_inserts_oldest_time	.column->insert(UInt64(status.inserts_oldest_time));
+		col_merges_oldest_time	.column->insert(UInt64(status.merges_oldest_time));
 		col_log_max_index		.column->insert(status.log_max_index);
 		col_log_pointer			.column->insert(status.log_pointer);
 		col_total_replicas		.column->insert(UInt64(status.total_replicas));
@@ -172,6 +178,8 @@ BlockInputStreams StorageSystemReplicas::read(
 		col_inserts_in_queue,
 		col_merges_in_queue,
 		col_queue_oldest_time,
+		col_inserts_oldest_time,
+		col_merges_oldest_time,
 		col_log_max_index,
 		col_log_pointer,
 		col_total_replicas,

@@ -2669,16 +2669,29 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
 		res.inserts_in_queue = 0;
 		res.merges_in_queue = 0;
 		res.queue_oldest_time = 0;
+		res.inserts_oldest_time = 0;
+		res.merges_oldest_time = 0;
 
 		for (const LogEntryPtr & entry : queue)
 		{
-			if (entry->type == LogEntry::GET_PART)
-				++res.inserts_in_queue;
-			if (entry->type == LogEntry::MERGE_PARTS)
-				++res.merges_in_queue;
-
 			if (entry->create_time && (!res.queue_oldest_time || entry->create_time < res.queue_oldest_time))
 				res.queue_oldest_time = entry->create_time;
+
+			if (entry->type == LogEntry::GET_PART)
+			{
+				++res.inserts_in_queue;
+
+				if (entry->create_time && (!res.inserts_oldest_time || entry->create_time < res.inserts_oldest_time))
+					res.inserts_oldest_time = entry->create_time;
+			}
+
+			if (entry->type == LogEntry::MERGE_PARTS)
+			{
+				++res.merges_in_queue;
+
+				if (entry->create_time && (!res.merges_oldest_time || entry->create_time < res.merges_oldest_time))
+					res.merges_oldest_time = entry->create_time;
+			}
 		}
 	}
 
