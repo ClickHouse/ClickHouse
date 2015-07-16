@@ -43,22 +43,24 @@ StorageMaterializedView::StorageMaterializedView(
 {
 	ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*query_);
 
+	auto inner_table_name = getInnerTableName();
+
 	/// Если запрос ATTACH, то к этому моменту внутренняя таблица уже должна быть подключена.
 	if (attach_)
 	{
-		if (!context.isTableExist(database_name, getInnerTableName()))
+		data = context.tryGetTable(database_name, inner_table_name);
+		if (!data)
 			throw Exception("Inner table is not attached yet."
 				" Materialized view: " + database_name + "." + table_name + "."
-				" Inner table: " + database_name + "." + getInnerTableName() + ".",
+				" Inner table: " + database_name + "." + inner_table_name + ".",
 				DB::ErrorCodes::LOGICAL_ERROR);
-		data = context.getTable(database_name, getInnerTableName());
 	}
 	else
 	{
 		/// Составим запрос для создания внутреннего хранилища.
 		ASTCreateQuery * manual_create_query = new ASTCreateQuery();
 		manual_create_query->database = database_name;
-		manual_create_query->table = getInnerTableName();
+		manual_create_query->table = inner_table_name;
 		manual_create_query->columns = create.columns;
 		manual_create_query->children.push_back(manual_create_query->columns);
 		ASTPtr ast_create_query = manual_create_query;
@@ -78,7 +80,9 @@ StorageMaterializedView::StorageMaterializedView(
 
 		/// Выполним запрос.
 		InterpreterCreateQuery create_interpreter(ast_create_query, context);
-		data = create_interpreter.execute();
+		create_interpreter.execute();
+
+		data = context.getTable(database_name, inner_table_name);
 	}
 }
 
@@ -115,14 +119,18 @@ BlockOutputStreamPtr StorageMaterializedView::write(ASTPtr query)
 
 void StorageMaterializedView::drop()
 {
-	context.getGlobalContext().removeDependency(DatabaseAndTableName(select_database_name, select_table_name), 	DatabaseAndTableName(database_name, table_name));
+	context.getGlobalContext().removeDependency(
+		DatabaseAndTableName(select_database_name, select_table_name),
+		DatabaseAndTableName(database_name, table_name));
 
-	if (context.tryGetTable(database_name, getInnerTableName()))
+	auto inner_table_name = getInnerTableName();
+
+	if (context.tryGetTable(database_name, inner_table_name))
 	{
 		/// Состваляем и выполняем запрос drop для внутреннего хранилища.
 		ASTDropQuery *drop_query = new ASTDropQuery;
 		drop_query->database = database_name;
-		drop_query->table = getInnerTableName();
+		drop_query->table = inner_table_name;
 		ASTPtr ast_drop_query = drop_query;
 		InterpreterDropQuery drop_interpreter(ast_drop_query, context);
 		drop_interpreter.execute();

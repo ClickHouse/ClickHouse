@@ -29,8 +29,8 @@ private:
 
 	void init(time_t time)
 	{
-		DateLUT & date_lut = DateLUT::instance();
-		const DateLUT::Values & values = date_lut.getValues(time);
+		const auto & date_lut = DateLUT::instance();
+		const auto & values = date_lut.getValues(time);
 
 		m_year = values.year;
 		m_month = values.month;
@@ -66,7 +66,7 @@ public:
 
 	Date(DayNum_t day_num)
 	{
-		const DateLUT::Values & values = DateLUT::instance().getValues(day_num);
+		const auto & values = DateLUT::instance().getValues(day_num);
 		m_year 	= values.year;
 		m_month = values.month;
 		m_day 	= values.day_of_month;
