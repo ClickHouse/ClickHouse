@@ -17,8 +17,9 @@ namespace DB
 class RangeHashedDictionary final : public IDictionaryBase
 {
 public:
-	RangeHashedDictionary(const std::string & name, const DictionaryStructure & dict_struct,
-					 DictionarySourcePtr source_ptr, const DictionaryLifetime dict_lifetime)
+	RangeHashedDictionary(
+		const std::string & name, const DictionaryStructure & dict_struct, DictionarySourcePtr source_ptr,
+		const DictionaryLifetime dict_lifetime)
 		: name{name}, dict_struct(dict_struct),
 		  source_ptr{std::move(source_ptr)}, dict_lifetime(dict_lifetime)
 	{
