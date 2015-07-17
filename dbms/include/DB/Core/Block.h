@@ -6,11 +6,11 @@
 #include <initializer_list>
 
 #include <DB/Core/BlockInfo.h>
-#include <DB/Core/ColumnWithNameAndType.h>
+#include <DB/Core/ColumnWithTypeAndName.h>
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
-#include "ColumnsWithNameAndType.h"
+#include "ColumnsWithTypeAndName.h"
 
 
 namespace DB
@@ -26,7 +26,7 @@ class Context;
 class Block
 {
 public:
-	typedef std::list<ColumnWithNameAndType> Container_t;
+	typedef std::list<ColumnWithTypeAndName> Container_t;
 	typedef std::vector<Container_t::iterator> IndexByPosition_t;
 	typedef std::map<String, Container_t::iterator> IndexByName_t;
 
@@ -39,7 +39,7 @@ public:
 	BlockInfo info;
 
 	Block() = default;
-	Block(std::initializer_list<ColumnWithNameAndType> il) : data{il}
+	Block(std::initializer_list<ColumnWithTypeAndName> il) : data{il}
 	{
 		index_by_position.reserve(il.size());
 		for (auto it = std::begin(data); it != std::end(data); ++it)
@@ -56,11 +56,11 @@ public:
 	Block & operator= (Block && other) = default;
 
 	/// вставить столбец в заданную позицию
-	void insert(size_t position, const ColumnWithNameAndType & elem);
+	void insert(size_t position, const ColumnWithTypeAndName & elem);
 	/// вставить столбец в конец
-	void insert(const ColumnWithNameAndType & elem);
+	void insert(const ColumnWithTypeAndName & elem);
 	/// вставить столбец в конец, если столбца с таким именем ещё нет
-	void insertUnique(const ColumnWithNameAndType & elem);
+	void insertUnique(const ColumnWithTypeAndName & elem);
 	/// удалить столбец в заданной позиции
 	void erase(size_t position);
 	/// удалить столбец с заданным именем
@@ -68,20 +68,20 @@ public:
 	/// Добавляет в блок недостающие столбцы со значениями по-умолчанию
 	void addDefaults(const NamesAndTypesList & required_columns);
 
-	ColumnWithNameAndType & getByPosition(size_t position);
-	const ColumnWithNameAndType & getByPosition(size_t position) const;
+	ColumnWithTypeAndName & getByPosition(size_t position);
+	const ColumnWithTypeAndName & getByPosition(size_t position) const;
 
-	ColumnWithNameAndType & unsafeGetByPosition(size_t position) { return *index_by_position[position]; }
-	const ColumnWithNameAndType & unsafeGetByPosition(size_t position) const { return *index_by_position[position]; }
+	ColumnWithTypeAndName & unsafeGetByPosition(size_t position) { return *index_by_position[position]; }
+	const ColumnWithTypeAndName & unsafeGetByPosition(size_t position) const { return *index_by_position[position]; }
 
-	ColumnWithNameAndType & getByName(const std::string & name);
-	const ColumnWithNameAndType & getByName(const std::string & name) const;
+	ColumnWithTypeAndName & getByName(const std::string & name);
+	const ColumnWithTypeAndName & getByName(const std::string & name) const;
 
 	bool has(const std::string & name) const;
 
 	size_t getPositionByName(const std::string & name) const;
 
-	ColumnsWithNameAndType getColumns() const;
+	ColumnsWithTypeAndName getColumns() const;
 	NamesAndTypesList getColumnsList() const;
 
 	/** Возвращает количество строк в блоке.

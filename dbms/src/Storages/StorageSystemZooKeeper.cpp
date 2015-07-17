@@ -119,20 +119,20 @@ BlockInputStreams StorageSystemZooKeeper::read(
 	if (path.empty())
 		throw Exception("SELECT from system.zookeeper table must contain condition like path = 'path' in WHERE clause.");
 
-	ColumnWithNameAndType col_name			{ new ColumnString,	new DataTypeString,	"name" };
-	ColumnWithNameAndType col_value			{ new ColumnString,	new DataTypeString,	"value" };
-	ColumnWithNameAndType col_czxid			{ new ColumnInt64,	new DataTypeInt64,	"czxid" };
-	ColumnWithNameAndType col_mzxid			{ new ColumnInt64,	new DataTypeInt64,	"mzxid" };
-	ColumnWithNameAndType col_ctime			{ new ColumnUInt32,	new DataTypeDateTime, "ctime" };
-	ColumnWithNameAndType col_mtime			{ new ColumnUInt32,	new DataTypeDateTime, "mtime" };
-	ColumnWithNameAndType col_version		{ new ColumnInt32,	new DataTypeInt32,	"version" };
-	ColumnWithNameAndType col_cversion		{ new ColumnInt32,	new DataTypeInt32,	"cversion" };
-	ColumnWithNameAndType col_aversion		{ new ColumnInt32,	new DataTypeInt32,	"aversion" };
-	ColumnWithNameAndType col_ephemeralOwner{ new ColumnInt64,	new DataTypeInt64,	"ephemeralOwner" };
-	ColumnWithNameAndType col_dataLength	{ new ColumnInt32,	new DataTypeInt32,	"dataLength" };
-	ColumnWithNameAndType col_numChildren	{ new ColumnInt32,	new DataTypeInt32,	"numChildren" };
-	ColumnWithNameAndType col_pzxid			{ new ColumnInt64,	new DataTypeInt64,	"pzxid" };
-	ColumnWithNameAndType col_path			{ new ColumnString,	new DataTypeString,	"path" };
+	ColumnWithTypeAndName col_name			{ new ColumnString,	new DataTypeString,	"name" };
+	ColumnWithTypeAndName col_value			{ new ColumnString,	new DataTypeString,	"value" };
+	ColumnWithTypeAndName col_czxid			{ new ColumnInt64,	new DataTypeInt64,	"czxid" };
+	ColumnWithTypeAndName col_mzxid			{ new ColumnInt64,	new DataTypeInt64,	"mzxid" };
+	ColumnWithTypeAndName col_ctime			{ new ColumnUInt32,	new DataTypeDateTime, "ctime" };
+	ColumnWithTypeAndName col_mtime			{ new ColumnUInt32,	new DataTypeDateTime, "mtime" };
+	ColumnWithTypeAndName col_version		{ new ColumnInt32,	new DataTypeInt32,	"version" };
+	ColumnWithTypeAndName col_cversion		{ new ColumnInt32,	new DataTypeInt32,	"cversion" };
+	ColumnWithTypeAndName col_aversion		{ new ColumnInt32,	new DataTypeInt32,	"aversion" };
+	ColumnWithTypeAndName col_ephemeralOwner{ new ColumnInt64,	new DataTypeInt64,	"ephemeralOwner" };
+	ColumnWithTypeAndName col_dataLength	{ new ColumnInt32,	new DataTypeInt32,	"dataLength" };
+	ColumnWithTypeAndName col_numChildren	{ new ColumnInt32,	new DataTypeInt32,	"numChildren" };
+	ColumnWithTypeAndName col_pzxid			{ new ColumnInt64,	new DataTypeInt64,	"pzxid" };
+	ColumnWithTypeAndName col_path			{ new ColumnString,	new DataTypeString,	"path" };
 
 	zkutil::ZooKeeperPtr zookeeper = context.getZooKeeper();
 

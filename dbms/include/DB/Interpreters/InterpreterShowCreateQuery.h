@@ -40,7 +40,7 @@ private:
 
 	Block getSampleBlock()
 	{
-		ColumnWithNameAndType col;
+		ColumnWithTypeAndName col;
 		col.name = "statement";
 		col.type = new DataTypeString;
 		col.column = col.type->createColumn();
@@ -59,7 +59,7 @@ private:
 		formatAST(*context.getCreateQuery(ast.database, ast.table), stream, 0, false, true);
 		String res = stream.str();
 
-		ColumnWithNameAndType col;
+		ColumnWithTypeAndName col;
 		col.name = "statement";
 		col.type = new DataTypeString;
 		col.column = new ColumnConstString(1, res);

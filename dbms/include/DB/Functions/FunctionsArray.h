@@ -634,12 +634,12 @@ private:
 
 		for (size_t i = 0; i < tuple_size; ++i)
 		{
-			ColumnWithNameAndType array_of_tuple_section;
+			ColumnWithTypeAndName array_of_tuple_section;
 			array_of_tuple_section.column = new ColumnArray(tuple_block.getByPosition(i).column, col_array->getOffsetsColumn());
 			array_of_tuple_section.type = new DataTypeArray(tuple_block.getByPosition(i).type);
 			block_of_temporary_results.insert(array_of_tuple_section);
 
-			ColumnWithNameAndType array_elements_of_tuple_section;
+			ColumnWithTypeAndName array_elements_of_tuple_section;
 			block_of_temporary_results.insert(array_elements_of_tuple_section);
 
 			execute(block_of_temporary_results, ColumnNumbers{i * 2 + 1, 0}, i * 2 + 2);

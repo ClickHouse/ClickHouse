@@ -89,7 +89,7 @@ BlockInputStreams StorageChunks::read(
 Block StorageChunks::getBlockWithVirtualColumns() const
 {
 	Block res;
-	ColumnWithNameAndType _table(new ColumnString, new DataTypeString, _table_column_name);
+	ColumnWithTypeAndName _table(new ColumnString, new DataTypeString, _table_column_name);
 
 	for (const auto & it : chunk_names)
 		_table.column->insert(it);

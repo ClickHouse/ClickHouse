@@ -155,7 +155,7 @@ PKCondition::PKCondition(ASTPtr query, const Context & context_, const NamesAndT
 	Block block_with_constants;
 
 	/// В блоке должен быть хотя бы один столбец, чтобы у него было известно число строк.
-	ColumnWithNameAndType dummy_column;
+	ColumnWithTypeAndName dummy_column;
 	dummy_column.name = "_dummy";
 	dummy_column.type = new DataTypeUInt8;
 	dummy_column.column = new ColumnConstUInt8(1, 0);

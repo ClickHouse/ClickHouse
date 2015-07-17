@@ -33,7 +33,7 @@ BlockInputStreams StorageSystemDatabases::read(
 
 	Block block;
 
-	ColumnWithNameAndType col_name;
+	ColumnWithTypeAndName col_name;
 	col_name.name = "name";
 	col_name.type = new DataTypeString;
 	col_name.column = new ColumnString;

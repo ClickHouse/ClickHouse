@@ -553,8 +553,8 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 
 	for (size_t i = 0; i < num_columns_to_add; ++i)
 	{
-		const ColumnWithNameAndType & src_column = sample_block_with_columns_to_add.getByPosition(i);
-		ColumnWithNameAndType new_column = src_column.cloneEmpty();
+		const ColumnWithTypeAndName & src_column = sample_block_with_columns_to_add.getByPosition(i);
+		ColumnWithTypeAndName new_column = src_column.cloneEmpty();
 		block.insert(new_column);
 		added_columns[i] = new_column.column;
 		added_columns[i]->reserve(src_column.column->size());
@@ -817,8 +817,8 @@ private:
 
 		for (size_t i = 0; i < num_columns_right; ++i)
 		{
-			const ColumnWithNameAndType & src_column = parent.sample_block_with_columns_to_add.getByPosition(i);
-			ColumnWithNameAndType new_column = src_column.cloneEmpty();
+			const ColumnWithTypeAndName & src_column = parent.sample_block_with_columns_to_add.getByPosition(i);
+			ColumnWithTypeAndName new_column = src_column.cloneEmpty();
 			block.insert(new_column);
 			columns_right[i] = new_column.column;
 			columns_right[i]->reserve(src_column.column->size());

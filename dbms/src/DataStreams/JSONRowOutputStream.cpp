@@ -139,7 +139,7 @@ void JSONRowOutputStream::writeTotals()
 		size_t totals_columns = totals.columns();
 		for (size_t i = 0; i < totals_columns; ++i)
 		{
-			const ColumnWithNameAndType & column = totals.getByPosition(i);
+			const ColumnWithTypeAndName & column = totals.getByPosition(i);
 
 			if (i != 0)
 				writeCString(",\n", *ostr);
@@ -166,7 +166,7 @@ static void writeExtremesElement(const char * title, const Block & extremes, siz
 	size_t extremes_columns = extremes.columns();
 	for (size_t i = 0; i < extremes_columns; ++i)
 	{
-		const ColumnWithNameAndType & column = extremes.getByPosition(i);
+		const ColumnWithTypeAndName & column = extremes.getByPosition(i);
 
 		if (i != 0)
 			writeCString(",\n", ostr);

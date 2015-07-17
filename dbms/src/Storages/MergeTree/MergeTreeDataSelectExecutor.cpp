@@ -26,7 +26,7 @@ MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(MergeTreeData & data_)
 static Block getBlockWithVirtualColumns(const MergeTreeData::DataPartsVector & parts)
 {
 	Block res;
-	ColumnWithNameAndType _part(new ColumnString, new DataTypeString, "_part");
+	ColumnWithTypeAndName _part(new ColumnString, new DataTypeString, "_part");
 
 	for (const auto & part : parts)
 		_part.column->insert(part->name);

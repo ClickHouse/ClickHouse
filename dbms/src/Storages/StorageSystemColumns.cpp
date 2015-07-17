@@ -50,7 +50,7 @@ BlockInputStreams StorageSystemColumns::read(
 		ColumnPtr database_column = new ColumnString;
 		for (const auto & database : databases)
 			database_column->insert(database.first);
-		block.insert(ColumnWithNameAndType(database_column, new DataTypeString, "database"));
+		block.insert(ColumnWithTypeAndName(database_column, new DataTypeString, "database"));
 
 		/// Отфильтруем блок со столбцом database.
 		VirtualColumnUtils::filterBlockWithQuery(query, block, context);
@@ -84,7 +84,7 @@ BlockInputStreams StorageSystemColumns::read(
 			column = column->replicate(offsets);
 		}
 
-		block.insert(ColumnWithNameAndType(table_column, new DataTypeString, "table"));
+		block.insert(ColumnWithTypeAndName(table_column, new DataTypeString, "table"));
 	}
 
 	/// Отфильтруем блок со столбцами database и table.
@@ -145,12 +145,12 @@ BlockInputStreams StorageSystemColumns::read(
 
 	block.clear();
 
-	block.insert(ColumnWithNameAndType(database_column, new DataTypeString, "database"));
-	block.insert(ColumnWithNameAndType(table_column, new DataTypeString, "table"));
-	block.insert(ColumnWithNameAndType(name_column, new DataTypeString, "name"));
-	block.insert(ColumnWithNameAndType(type_column, new DataTypeString, "type"));
-	block.insert(ColumnWithNameAndType(default_type_column, new DataTypeString, "default_type"));
-	block.insert(ColumnWithNameAndType(default_expression_column, new DataTypeString, "default_expression"));
+	block.insert(ColumnWithTypeAndName(database_column, new DataTypeString, "database"));
+	block.insert(ColumnWithTypeAndName(table_column, new DataTypeString, "table"));
+	block.insert(ColumnWithTypeAndName(name_column, new DataTypeString, "name"));
+	block.insert(ColumnWithTypeAndName(type_column, new DataTypeString, "type"));
+	block.insert(ColumnWithTypeAndName(default_type_column, new DataTypeString, "default_type"));
+	block.insert(ColumnWithTypeAndName(default_expression_column, new DataTypeString, "default_expression"));
 
 	return BlockInputStreams{ 1, new OneBlockInputStream(block) };
 }

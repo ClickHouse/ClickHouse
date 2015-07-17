@@ -5,7 +5,7 @@
 #include <DB/Core/Names.h>
 #include <DB/Core/Block.h>
 #include <DB/Core/ColumnNumbers.h>
-#include <DB/Core/ColumnsWithNameAndType.h>
+#include <DB/Core/ColumnsWithTypeAndName.h>
 #include <DB/DataTypes/IDataType.h>
 
 
@@ -54,7 +54,7 @@ public:
 	  * Осмысленные типы элементов в out_prerequisites: APPLY_FUNCTION, ADD_COLUMN.
 	  */
 	virtual void getReturnTypeAndPrerequisites(
-		const ColumnsWithNameAndType & arguments,
+		const ColumnsWithTypeAndName & arguments,
 		DataTypePtr & out_return_type,
 		std::vector<ExpressionAction> & out_prerequisites)
 	{

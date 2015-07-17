@@ -189,12 +189,12 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 	{
 		/// Вычисляем видимую ширину для значений массива.
 		Block nested_block;
-		ColumnWithNameAndType nested_values;
+		ColumnWithTypeAndName nested_values;
 		nested_values.type = typeid_cast<const DataTypeArray &>(*type).getNestedType();
 		nested_values.column = col->getDataPtr();
 		nested_block.insert(nested_values);
 
-		ColumnWithNameAndType nested_result;
+		ColumnWithTypeAndName nested_result;
 		nested_result.type = new DataTypeUInt64;
 		nested_block.insert(nested_result);
 
@@ -253,7 +253,7 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 			  * x1, x2, x3... , width1, width2, width1 + width2, width3, width1 + width2 + width3, ...
 			  */
 
-			ColumnWithNameAndType nested_result;
+			ColumnWithTypeAndName nested_result;
 			nested_result.type = new DataTypeUInt64;
 			nested_block.insert(nested_result);
 
@@ -262,7 +262,7 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 
 			if (i != 0)
 			{
-				ColumnWithNameAndType plus_result;
+				ColumnWithTypeAndName plus_result;
 				plus_result.type = new DataTypeUInt64;
 				nested_block.insert(plus_result);
 

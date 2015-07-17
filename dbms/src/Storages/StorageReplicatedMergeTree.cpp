@@ -2014,7 +2014,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 	ColumnPtr column_ptr = column;
 	column->getData()[0] = 0;
 	column->getData()[1] = 1;
-	virtual_columns_block.insert(ColumnWithNameAndType(column_ptr, new DataTypeUInt8, "_replicated"));
+	virtual_columns_block.insert(ColumnWithTypeAndName(column_ptr, new DataTypeUInt8, "_replicated"));
 
 	/// Если запрошен хотя бы один виртуальный столбец, пробуем индексировать
 	if (!virt_column_names.empty())

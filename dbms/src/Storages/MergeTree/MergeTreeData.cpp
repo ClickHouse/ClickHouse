@@ -487,7 +487,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 				if (!out_expression)
 					out_expression = new ExpressionActions(NamesAndTypesList(), context.getSettingsRef());
 
-				out_expression->addInput(ColumnWithNameAndType(nullptr, column.type, column.name));
+				out_expression->addInput(ColumnWithTypeAndName(nullptr, column.type, column.name));
 
 				Names out_names;
 

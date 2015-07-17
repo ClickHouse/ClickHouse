@@ -54,28 +54,28 @@ BlockInputStreams StorageSystemDictionaries::read(
 	check(column_names);
 	processed_stage = QueryProcessingStage::FetchColumns;
 
-	ColumnWithNameAndType col_name{new ColumnString, new DataTypeString, "name"};
-	ColumnWithNameAndType col_origin{new ColumnString, new DataTypeString, "origin"};
-	ColumnWithNameAndType col_type{new ColumnString, new DataTypeString, "type"};
-	ColumnWithNameAndType col_attribute_names{
+	ColumnWithTypeAndName col_name{new ColumnString, new DataTypeString, "name"};
+	ColumnWithTypeAndName col_origin{new ColumnString, new DataTypeString, "origin"};
+	ColumnWithTypeAndName col_type{new ColumnString, new DataTypeString, "type"};
+	ColumnWithTypeAndName col_attribute_names{
 		new ColumnArray{new ColumnString},
 		new DataTypeArray{new DataTypeString},
 		"attribute.names"
 	};
-	ColumnWithNameAndType col_attribute_types{
+	ColumnWithTypeAndName col_attribute_types{
 		new ColumnArray{new ColumnString},
 		new DataTypeArray{new DataTypeString},
 		"attribute.types"
 	};
-	ColumnWithNameAndType col_has_hierarchy{new ColumnUInt8, new DataTypeUInt8, "has_hierarchy"};
-	ColumnWithNameAndType col_bytes_allocated{new ColumnUInt64, new DataTypeUInt64, "bytes_allocated"};
-	ColumnWithNameAndType col_query_count{new ColumnUInt64, new DataTypeUInt64, "query_count"};
-	ColumnWithNameAndType col_hit_rate{new ColumnFloat64, new DataTypeFloat64, "hit_rate"};
-	ColumnWithNameAndType col_element_count{new ColumnUInt64, new DataTypeUInt64, "element_count"};
-	ColumnWithNameAndType col_load_factor{new ColumnFloat64, new DataTypeFloat64, "load_factor"};
-	ColumnWithNameAndType col_creation_time{new ColumnUInt32, new DataTypeDateTime, "creation_time"};
-	ColumnWithNameAndType col_last_exception{new ColumnString, new DataTypeString, "last_exception"};
-	ColumnWithNameAndType col_source{new ColumnString, new DataTypeString, "source"};
+	ColumnWithTypeAndName col_has_hierarchy{new ColumnUInt8, new DataTypeUInt8, "has_hierarchy"};
+	ColumnWithTypeAndName col_bytes_allocated{new ColumnUInt64, new DataTypeUInt64, "bytes_allocated"};
+	ColumnWithTypeAndName col_query_count{new ColumnUInt64, new DataTypeUInt64, "query_count"};
+	ColumnWithTypeAndName col_hit_rate{new ColumnFloat64, new DataTypeFloat64, "hit_rate"};
+	ColumnWithTypeAndName col_element_count{new ColumnUInt64, new DataTypeUInt64, "element_count"};
+	ColumnWithTypeAndName col_load_factor{new ColumnFloat64, new DataTypeFloat64, "load_factor"};
+	ColumnWithTypeAndName col_creation_time{new ColumnUInt32, new DataTypeDateTime, "creation_time"};
+	ColumnWithTypeAndName col_last_exception{new ColumnString, new DataTypeString, "last_exception"};
+	ColumnWithTypeAndName col_source{new ColumnString, new DataTypeString, "source"};
 
 	const auto & external_dictionaries = context.getExternalDictionaries();
 	const std::lock_guard<std::mutex> lock{external_dictionaries.dictionaries_mutex};

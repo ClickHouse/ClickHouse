@@ -84,9 +84,9 @@ BlockInputStreams StorageSystemReplicas::read(
 		}
 	}
 
-	ColumnWithNameAndType col_database			{ new ColumnString,	new DataTypeString,	"database"};
-	ColumnWithNameAndType col_table				{ new ColumnString,	new DataTypeString,	"table"};
-	ColumnWithNameAndType col_engine			{ new ColumnString,	new DataTypeString,	"engine"};
+	ColumnWithTypeAndName col_database			{ new ColumnString,	new DataTypeString,	"database"};
+	ColumnWithTypeAndName col_table				{ new ColumnString,	new DataTypeString,	"table"};
+	ColumnWithTypeAndName col_engine			{ new ColumnString,	new DataTypeString,	"engine"};
 
 	for (auto & db : replicated_tables)
 	{
@@ -112,25 +112,25 @@ BlockInputStreams StorageSystemReplicas::read(
 		col_engine 		= filtered_block.getByName("engine");
 	}
 
-	ColumnWithNameAndType col_is_leader			{ new ColumnUInt8,	new DataTypeUInt8,	"is_leader"};
-	ColumnWithNameAndType col_is_readonly		{ new ColumnUInt8,	new DataTypeUInt8,	"is_readonly"};
-	ColumnWithNameAndType col_is_session_expired{ new ColumnUInt8,	new DataTypeUInt8,	"is_session_expired"};
-	ColumnWithNameAndType col_future_parts		{ new ColumnUInt32,	new DataTypeUInt32,	"future_parts"};
-	ColumnWithNameAndType col_parts_to_check	{ new ColumnUInt32,	new DataTypeUInt32,	"parts_to_check"};
-	ColumnWithNameAndType col_zookeeper_path	{ new ColumnString,	new DataTypeString,	"zookeeper_path"};
-	ColumnWithNameAndType col_replica_name		{ new ColumnString,	new DataTypeString,	"replica_name"};
-	ColumnWithNameAndType col_replica_path		{ new ColumnString,	new DataTypeString,	"replica_path"};
-	ColumnWithNameAndType col_columns_version	{ new ColumnInt32,	new DataTypeInt32,	"columns_version"};
-	ColumnWithNameAndType col_queue_size		{ new ColumnUInt32,	new DataTypeUInt32,	"queue_size"};
-	ColumnWithNameAndType col_inserts_in_queue	{ new ColumnUInt32,	new DataTypeUInt32,	"inserts_in_queue"};
-	ColumnWithNameAndType col_merges_in_queue	{ new ColumnUInt32,	new DataTypeUInt32,	"merges_in_queue"};
-	ColumnWithNameAndType col_queue_oldest_time	{ new ColumnUInt32,	new DataTypeDateTime, "queue_oldest_time"};
-	ColumnWithNameAndType col_inserts_oldest_time{ new ColumnUInt32,new DataTypeDateTime, "inserts_oldest_time"};
-	ColumnWithNameAndType col_merges_oldest_time{ new ColumnUInt32,	new DataTypeDateTime, "merges_oldest_time"};
-	ColumnWithNameAndType col_log_max_index		{ new ColumnUInt64,	new DataTypeUInt64,	"log_max_index"};
-	ColumnWithNameAndType col_log_pointer		{ new ColumnUInt64,	new DataTypeUInt64,	"log_pointer"};
-	ColumnWithNameAndType col_total_replicas	{ new ColumnUInt8,	new DataTypeUInt8,	"total_replicas"};
-	ColumnWithNameAndType col_active_replicas	{ new ColumnUInt8,	new DataTypeUInt8,	"active_replicas"};
+	ColumnWithTypeAndName col_is_leader			{ new ColumnUInt8,	new DataTypeUInt8,	"is_leader"};
+	ColumnWithTypeAndName col_is_readonly		{ new ColumnUInt8,	new DataTypeUInt8,	"is_readonly"};
+	ColumnWithTypeAndName col_is_session_expired{ new ColumnUInt8,	new DataTypeUInt8,	"is_session_expired"};
+	ColumnWithTypeAndName col_future_parts		{ new ColumnUInt32,	new DataTypeUInt32,	"future_parts"};
+	ColumnWithTypeAndName col_parts_to_check	{ new ColumnUInt32,	new DataTypeUInt32,	"parts_to_check"};
+	ColumnWithTypeAndName col_zookeeper_path	{ new ColumnString,	new DataTypeString,	"zookeeper_path"};
+	ColumnWithTypeAndName col_replica_name		{ new ColumnString,	new DataTypeString,	"replica_name"};
+	ColumnWithTypeAndName col_replica_path		{ new ColumnString,	new DataTypeString,	"replica_path"};
+	ColumnWithTypeAndName col_columns_version	{ new ColumnInt32,	new DataTypeInt32,	"columns_version"};
+	ColumnWithTypeAndName col_queue_size		{ new ColumnUInt32,	new DataTypeUInt32,	"queue_size"};
+	ColumnWithTypeAndName col_inserts_in_queue	{ new ColumnUInt32,	new DataTypeUInt32,	"inserts_in_queue"};
+	ColumnWithTypeAndName col_merges_in_queue	{ new ColumnUInt32,	new DataTypeUInt32,	"merges_in_queue"};
+	ColumnWithTypeAndName col_queue_oldest_time	{ new ColumnUInt32,	new DataTypeDateTime, "queue_oldest_time"};
+	ColumnWithTypeAndName col_inserts_oldest_time{ new ColumnUInt32,new DataTypeDateTime, "inserts_oldest_time"};
+	ColumnWithTypeAndName col_merges_oldest_time{ new ColumnUInt32,	new DataTypeDateTime, "merges_oldest_time"};
+	ColumnWithTypeAndName col_log_max_index		{ new ColumnUInt64,	new DataTypeUInt64,	"log_max_index"};
+	ColumnWithTypeAndName col_log_pointer		{ new ColumnUInt64,	new DataTypeUInt64,	"log_pointer"};
+	ColumnWithTypeAndName col_total_replicas	{ new ColumnUInt8,	new DataTypeUInt8,	"total_replicas"};
+	ColumnWithTypeAndName col_active_replicas	{ new ColumnUInt8,	new DataTypeUInt8,	"active_replicas"};
 
 	for (size_t i = 0, size = col_database.column->size(); i < size; ++i)
 	{

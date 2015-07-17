@@ -435,7 +435,7 @@ void Set::createFromAST(DataTypes & types, ASTPtr node, const Context & context,
 	Block block;
 	for (size_t i = 0, size = data_types.size(); i < size; ++i)
 	{
-		ColumnWithNameAndType col;
+		ColumnWithTypeAndName col;
 		col.type = data_types[i];
 		col.column = data_types[i]->createColumn();
 		col.name = "_" + toString(i);

@@ -136,7 +136,7 @@ public:
 		Block tuple_block;
 		for (size_t i = 0, size = elems.size(); i < size; ++i)
 		{
-			ColumnWithNameAndType col;
+			ColumnWithTypeAndName col;
 			col.column = elems[i]->createColumn();
 			col.type = elems[i]->clone();
 			tuple_block.insert(col);

@@ -299,7 +299,7 @@ Block InterpreterSelectQuery::getSampleBlock()
 	/// писать (читать) с помощью BlockOut(In)putStream'ов
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
-		ColumnWithNameAndType & col = block.getByPosition(i);
+		ColumnWithTypeAndName & col = block.getByPosition(i);
 		col.column = col.type->createColumn();
 	}
 	return block;
