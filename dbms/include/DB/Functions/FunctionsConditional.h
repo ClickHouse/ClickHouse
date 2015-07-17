@@ -2,10 +2,13 @@
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeArray.h>
+#include <DB/DataTypes/DataTypeString.h>
+#include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/Columns/ColumnVector.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Columns/ColumnArray.h>
+#include <DB/Columns/ColumnFixedString.h>
 #include <DB/Functions/IFunction.h>
 #include <DB/Functions/NumberTraits.h>
 
@@ -170,7 +173,83 @@ struct StringIfImpl
 		}
 	}
 
-	static void vector_constant(
+	static void vector_fixed_vector_fixed(
+		const PODArray<UInt8> & cond,
+		const ColumnFixedString::Chars_t & a_data,
+		const ColumnFixedString::Chars_t & b_data,
+		const size_t N,
+		ColumnFixedString::Chars_t & c_data)
+	{
+		size_t size = cond.size();
+		c_data.resize(a_data.size());
+
+		for (size_t i = 0; i < size; ++i)
+		{
+			if (cond[i])
+				memcpy(&c_data[i * N], &a_data[i * N], N);
+			else
+				memcpy(&c_data[i * N], &b_data[i * N], N);
+		}
+	}
+
+	template <bool negative>
+	static void vector_vector_fixed_impl(
+		const PODArray<UInt8> & cond,
+		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
+		const ColumnFixedString::Chars_t & b_data, const size_t b_N,
+		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
+	{
+		size_t size = cond.size();
+		c_offsets.resize(size);
+		c_data.reserve(std::max(a_data.size(), b_data.size() + size));
+
+		ColumnString::Offset_t a_prev_offset = 0;
+		ColumnString::Offset_t c_prev_offset = 0;
+
+		for (size_t i = 0; i < size; ++i)
+		{
+			if (negative != cond[i])
+			{
+				size_t size_to_write = a_offsets[i] - a_prev_offset;
+				c_data.resize(c_data.size() + size_to_write);
+				memcpy(&c_data[c_prev_offset], &a_data[a_prev_offset], size_to_write);
+				c_prev_offset += size_to_write;
+				c_offsets[i] = c_prev_offset;
+			}
+			else
+			{
+				size_t size_to_write = b_N;
+				c_data.resize(c_data.size() + size_to_write + 1);
+				memcpy(&c_data[c_prev_offset], &b_data[i * b_N], size_to_write);
+				c_data.back() = 0;
+				c_prev_offset += size_to_write + 1;
+				c_offsets[i] = c_prev_offset;
+			}
+
+			a_prev_offset = a_offsets[i];
+		}
+	}
+
+	static void vector_vector_fixed(
+		const PODArray<UInt8> & cond,
+		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
+		const ColumnFixedString::Chars_t & b_data, const size_t b_N,
+		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
+	{
+		vector_vector_fixed_impl<false>(cond, a_data, a_offsets, b_data, b_N, c_data, c_offsets);
+	}
+
+	static void vector_fixed_vector(
+		const PODArray<UInt8> & cond,
+		const ColumnFixedString::Chars_t & a_data, const size_t a_N,
+		const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
+		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
+	{
+		vector_vector_fixed_impl<true>(cond, b_data, b_offsets, a_data, a_N, c_data, c_offsets);
+	}
+
+	template <bool negative>
+	static void vector_constant_impl(
 		const PODArray<UInt8> & cond,
 		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
 		const String & b,
@@ -185,7 +264,7 @@ struct StringIfImpl
 
 		for (size_t i = 0; i < size; ++i)
 		{
-			if (cond[i])
+			if (negative != cond[i])
 			{
 				size_t size_to_write = a_offsets[i] - a_prev_offset;
 				c_data.resize(c_data.size() + size_to_write);
@@ -206,40 +285,75 @@ struct StringIfImpl
 		}
 	}
 
+	static void vector_constant(
+		const PODArray<UInt8> & cond,
+		const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
+		const String & b,
+		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
+	{
+		return vector_constant_impl<false>(cond, a_data, a_offsets, b, c_data, c_offsets);
+	}
+
 	static void constant_vector(
 		const PODArray<UInt8> & cond,
 		const String & a,
 		const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
 		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
 	{
+		return vector_constant_impl<true>(cond, b_data, b_offsets, a, c_data, c_offsets);
+	}
+
+	template <bool negative>
+	static void vector_fixed_constant_impl(
+		const PODArray<UInt8> & cond,
+		const ColumnFixedString::Chars_t & a_data, const size_t a_N,
+		const String & b,
+		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
+	{
 		size_t size = cond.size();
 		c_offsets.resize(size);
-		c_data.reserve(b_data.size());
+		c_data.reserve(a_data.size());
 
-		ColumnString::Offset_t b_prev_offset = 0;
 		ColumnString::Offset_t c_prev_offset = 0;
 
 		for (size_t i = 0; i < size; ++i)
 		{
-			if (cond[i])
+			if (negative != cond[i])
 			{
-				size_t size_to_write = a.size() + 1;
-				c_data.resize(c_data.size() + size_to_write);
-				memcpy(&c_data[c_prev_offset], a.data(), size_to_write);
-				c_prev_offset += size_to_write;
+				size_t size_to_write = a_N;
+				c_data.resize(c_data.size() + size_to_write + 1);
+				memcpy(&c_data[c_prev_offset], &a_data[i * a_N], size_to_write);
+				c_data.back() = 0;
+				c_prev_offset += size_to_write + 1;
 				c_offsets[i] = c_prev_offset;
 			}
 			else
 			{
-				size_t size_to_write = b_offsets[i] - b_prev_offset;
+				size_t size_to_write = b.size() + 1;
 				c_data.resize(c_data.size() + size_to_write);
-				memcpy(&c_data[c_prev_offset], &b_data[b_prev_offset], size_to_write);
+				memcpy(&c_data[c_prev_offset], b.data(), size_to_write);
 				c_prev_offset += size_to_write;
 				c_offsets[i] = c_prev_offset;
 			}
-
-			b_prev_offset = b_offsets[i];
 		}
+	}
+
+	static void vector_fixed_constant(
+		const PODArray<UInt8> & cond,
+		const ColumnFixedString::Chars_t & a_data, const size_t N,
+		const String & b,
+		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
+	{
+		vector_fixed_constant_impl<false>(cond, a_data, N, b, c_data, c_offsets);
+	}
+
+	static void constant_vector_fixed(
+		const PODArray<UInt8> & cond,
+		const String & a,
+		const ColumnFixedString::Chars_t & b_data, const size_t N,
+		ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_offsets)
+	{
+		vector_fixed_constant_impl<true>(cond, b_data, N, a, c_data, c_offsets);
 	}
 
 	static void constant_constant(
@@ -495,6 +609,7 @@ public:
 
 /** Реализация для массивов строк.
   * NOTE: Код слишком сложный, потому что он работает в внутренностями массивов строк.
+  * NOTE: Массивы из FixedString не поддерживаются.
   */
 struct StringArrayIfImpl
 {
@@ -1013,43 +1128,94 @@ private:
 
 		const ColumnString * col_then = typeid_cast<const ColumnString *>(col_then_untyped);
 		const ColumnString * col_else = typeid_cast<const ColumnString *>(col_else_untyped);
+		const ColumnFixedString * col_then_fixed = typeid_cast<const ColumnFixedString *>(col_then_untyped);
+		const ColumnFixedString * col_else_fixed = typeid_cast<const ColumnFixedString *>(col_else_untyped);
 		const ColumnConstString * col_then_const = typeid_cast<const ColumnConstString *>(col_then_untyped);
 		const ColumnConstString * col_else_const = typeid_cast<const ColumnConstString *>(col_else_untyped);
 
-		if ((col_then || col_then_const) && (col_else || col_else_const))
+		if ((col_then || col_then_const || col_then_fixed) && (col_else || col_else_const || col_else_fixed))
 		{
-			ColumnString * col_res = new ColumnString;
-			block.getByPosition(result).column = col_res;
+			if (col_then_fixed && col_else_fixed)
+			{
+				/// Результат - FixedString.
 
-			ColumnString::Chars_t & res_vec = col_res->getChars();
-			ColumnString::Offsets_t & res_offsets = col_res->getOffsets();
+				if (col_then_fixed->getN() != col_else_fixed->getN())
+					throw Exception("FixedString columns as 'then' and 'else' arguments of function 'if' has different sizes", ErrorCodes::ILLEGAL_COLUMN);
 
-			if (col_then && col_else)
-				StringIfImpl::vector_vector(
+				size_t N = col_then_fixed->getN();
+
+				ColumnFixedString * col_res = new ColumnFixedString(N);
+				block.getByPosition(result).column = col_res;
+
+				ColumnFixedString::Chars_t & res_vec = col_res->getChars();
+
+				StringIfImpl::vector_fixed_vector_fixed(
 					cond_col->getData(),
-					col_then->getChars(), col_then->getOffsets(),
-					col_else->getChars(), col_else->getOffsets(),
-					res_vec, res_offsets);
-			else if (col_then && col_else_const)
-				StringIfImpl::vector_constant(
-					cond_col->getData(),
-					col_then->getChars(), col_then->getOffsets(),
-					col_else_const->getData(),
-					res_vec, res_offsets);
-			else if (col_then_const && col_else)
-				StringIfImpl::constant_vector(
-					cond_col->getData(),
-					col_then_const->getData(),
-					col_else->getChars(), col_else->getOffsets(),
-					res_vec, res_offsets);
-			else if (col_then_const && col_else_const)
-				StringIfImpl::constant_constant(
-					cond_col->getData(),
-					col_then_const->getData(),
-					col_else_const->getData(),
-					res_vec, res_offsets);
+					col_then_fixed->getChars(),
+					col_else_fixed->getChars(),
+					N,
+					res_vec);
+			}
 			else
-				return false;
+			{
+				/// Результат - String.
+				ColumnString * col_res = new ColumnString;
+				block.getByPosition(result).column = col_res;
+
+				ColumnString::Chars_t & res_vec = col_res->getChars();
+				ColumnString::Offsets_t & res_offsets = col_res->getOffsets();
+
+				if (col_then && col_else)
+					StringIfImpl::vector_vector(
+						cond_col->getData(),
+						col_then->getChars(), col_then->getOffsets(),
+						col_else->getChars(), col_else->getOffsets(),
+						res_vec, res_offsets);
+				else if (col_then && col_else_const)
+					StringIfImpl::vector_constant(
+						cond_col->getData(),
+						col_then->getChars(), col_then->getOffsets(),
+						col_else_const->getData(),
+						res_vec, res_offsets);
+				else if (col_then_const && col_else)
+					StringIfImpl::constant_vector(
+						cond_col->getData(),
+						col_then_const->getData(),
+						col_else->getChars(), col_else->getOffsets(),
+						res_vec, res_offsets);
+				else if (col_then_const && col_else_const)
+					StringIfImpl::constant_constant(
+						cond_col->getData(),
+						col_then_const->getData(),
+						col_else_const->getData(),
+						res_vec, res_offsets);
+				else if (col_then && col_else_fixed)
+					StringIfImpl::vector_vector_fixed(
+						cond_col->getData(),
+						col_then->getChars(), col_then->getOffsets(),
+						col_else_fixed->getChars(), col_else_fixed->getN(),
+						res_vec, res_offsets);
+				else if (col_then_fixed && col_else)
+					StringIfImpl::vector_fixed_vector(
+						cond_col->getData(),
+						col_then_fixed->getChars(), col_then_fixed->getN(),
+						col_else->getChars(), col_else->getOffsets(),
+						res_vec, res_offsets);
+				else if (col_then_const && col_else_fixed)
+					StringIfImpl::constant_vector_fixed(
+						cond_col->getData(),
+						col_then_const->getData(),
+						col_else_fixed->getChars(), col_else_fixed->getN(),
+						res_vec, res_offsets);
+				else if (col_then_fixed && col_else_const)
+					StringIfImpl::vector_fixed_constant(
+						cond_col->getData(),
+						col_then_fixed->getChars(), col_then_fixed->getN(),
+						col_else_const->getData(),
+						res_vec, res_offsets);
+				else
+					return false;
+			}
 
 			return true;
 		}
@@ -1149,14 +1315,30 @@ public:
 			/// NOTE Сообщения об ошибках будут относится к типам элементов массивов, что немного некорректно.
 			return new DataTypeArray(getReturnType({arguments[0], type_arr1->getNestedType(), type_arr2->getNestedType()}));
 		}
-		else if (arguments[1]->getName() != arguments[2]->getName())
+		else
 		{
-			throw Exception("Incompatible second and third arguments for function " + getName() + ": "
-				+ arguments[1]->getName() + " and " + arguments[2]->getName(),
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+			const DataTypeString * type_string1 = typeid_cast<const DataTypeString *>(arguments[1].get());
+			const DataTypeString * type_string2 = typeid_cast<const DataTypeString *>(arguments[2].get());
+			const DataTypeFixedString * type_fixed_string1 = typeid_cast<const DataTypeFixedString *>(arguments[1].get());
+			const DataTypeFixedString * type_fixed_string2 = typeid_cast<const DataTypeFixedString *>(arguments[2].get());
+
+			if (type_fixed_string1 && type_fixed_string2)
+			{
+				if (type_fixed_string1->getN() != type_fixed_string2->getN())
+					throw Exception("FixedString types as 'then' and 'else' arguments of function 'if' has different sizes",
+						ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+				return new DataTypeFixedString(type_fixed_string1->getN());
+			}
+			else if ((type_string1 || type_fixed_string1) && (type_string2 || type_fixed_string2))
+			{
+				return new DataTypeString;
+			}
 		}
 
-		return arguments[1];
+		throw Exception("Incompatible second and third arguments for function " + getName() + ": "
+			+ arguments[1]->getName() + " and " + arguments[2]->getName(),
+			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
 
 	/// Выполнить функцию над блоком.
