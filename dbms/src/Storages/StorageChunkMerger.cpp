@@ -207,7 +207,7 @@ BlockInputStreams StorageChunkMerger::read(
 Block StorageChunkMerger::getBlockWithVirtualColumns(const Storages & selected_tables) const
 {
 	Block res;
-	ColumnWithNameAndType _table(new ColumnString, new DataTypeString, _table_column_name);
+	ColumnWithTypeAndName _table(new ColumnString, new DataTypeString, _table_column_name);
 
 	for (Storages::const_iterator it = selected_tables.begin(); it != selected_tables.end(); ++it)
 		if ((*it)->getName() != "Chunks")

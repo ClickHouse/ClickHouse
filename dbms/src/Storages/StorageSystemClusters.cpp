@@ -113,14 +113,14 @@ BlockInputStreams StorageSystemClusters::read(
 
 	Block block;
 
-	block.insert(ColumnWithNameAndType(cluster_column, new DataTypeString, "cluster"));
-	block.insert(ColumnWithNameAndType(shard_num_column, new DataTypeUInt32, "shard_num"));
-	block.insert(ColumnWithNameAndType(shard_weight_column, new DataTypeUInt32, "shard_weight"));
-	block.insert(ColumnWithNameAndType(replica_num_column, new DataTypeUInt32, "replica_num"));
-	block.insert(ColumnWithNameAndType(host_name_column, new DataTypeString, "host_name"));
-	block.insert(ColumnWithNameAndType(host_address_column, new DataTypeString, "host_address"));
-	block.insert(ColumnWithNameAndType(port_column, new DataTypeUInt16, "port"));
-	block.insert(ColumnWithNameAndType(user_column, new DataTypeString, "user"));
+	block.insert(ColumnWithTypeAndName(cluster_column, new DataTypeString, "cluster"));
+	block.insert(ColumnWithTypeAndName(shard_num_column, new DataTypeUInt32, "shard_num"));
+	block.insert(ColumnWithTypeAndName(shard_weight_column, new DataTypeUInt32, "shard_weight"));
+	block.insert(ColumnWithTypeAndName(replica_num_column, new DataTypeUInt32, "replica_num"));
+	block.insert(ColumnWithTypeAndName(host_name_column, new DataTypeString, "host_name"));
+	block.insert(ColumnWithTypeAndName(host_address_column, new DataTypeString, "host_address"));
+	block.insert(ColumnWithTypeAndName(port_column, new DataTypeUInt16, "port"));
+	block.insert(ColumnWithTypeAndName(user_column, new DataTypeString, "user"));
 
 	return BlockInputStreams{ 1, new OneBlockInputStream(block) };
 }

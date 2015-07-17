@@ -75,7 +75,7 @@ Block FilterBlockInputStream::readImpl()
 		size_t filtered_rows = 0;
 		if (first_non_constant_column != static_cast<size_t>(filter_column))
 		{
-			ColumnWithNameAndType & current_column = res.getByPosition(first_non_constant_column);
+			ColumnWithTypeAndName & current_column = res.getByPosition(first_non_constant_column);
 			current_column.column = current_column.column->filter(filter);
 			filtered_rows = current_column.column->size();
 		}
@@ -100,7 +100,7 @@ Block FilterBlockInputStream::readImpl()
 		/// Фильтруем остальные столбцы.
 		for (size_t i = 0; i < columns; ++i)
 		{
-			ColumnWithNameAndType & current_column = res.getByPosition(i);
+			ColumnWithTypeAndName & current_column = res.getByPosition(i);
 
 			if (i == static_cast<size_t>(filter_column))
 			{

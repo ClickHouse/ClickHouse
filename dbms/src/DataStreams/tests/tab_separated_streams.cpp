@@ -21,12 +21,12 @@ int main(int argc, char ** argv)
 	{
 		DB::Block sample;
 		{
-			DB::ColumnWithNameAndType col;
+			DB::ColumnWithTypeAndName col;
 			col.type = new DB::DataTypeUInt64;
 			sample.insert(col);
 		}
 		{
-			DB::ColumnWithNameAndType col;
+			DB::ColumnWithTypeAndName col;
 			col.type = new DB::DataTypeString;
 			sample.insert(col);
 		}

@@ -4,7 +4,7 @@
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/Columns/ColumnConst.h>
-#include <DB/Core/ColumnWithNameAndType.h>
+#include <DB/Core/ColumnWithTypeAndName.h>
 
 namespace DB
 {
@@ -41,7 +41,7 @@ protected:
 		if (!res)
 			return res;
 		ColumnPtr column_ptr = ColumnConst<ColumnType>(res.rows(), value, data_type).convertToFullColumn();
-		ColumnWithNameAndType column(column_ptr, data_type, column_name);
+		ColumnWithTypeAndName column(column_ptr, data_type, column_name);
 		res.insert(column);
 		return res;
 	}

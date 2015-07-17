@@ -32,7 +32,7 @@ void PrettyBlockOutputStream::calculateWidths(Block & block, Widths_t & max_widt
 	/// Вычислим ширину всех значений
 	for (size_t i = 0; i < columns; ++i)
 	{
-		ColumnWithNameAndType column;
+		ColumnWithTypeAndName column;
 		column.type = visible_width_type;
 		column.name = "visibleWidth(" + block.getByPosition(i).name + ")";
 
@@ -137,7 +137,7 @@ void PrettyBlockOutputStream::write(const Block & block_)
 		if (i != 0)
 			writeCString(" ┃ ", ostr);
 
-		const ColumnWithNameAndType & col = block.getByPosition(i);
+		const ColumnWithTypeAndName & col = block.getByPosition(i);
 
 		if (!no_escapes)
 			writeCString("\033[1m", ostr);
@@ -176,7 +176,7 @@ void PrettyBlockOutputStream::write(const Block & block_)
 			if (j != 0)
 				writeCString(" │ ", ostr);
 
-			const ColumnWithNameAndType & col = block.getByPosition(j);
+			const ColumnWithTypeAndName & col = block.getByPosition(j);
 
 			if (col.type->isNumeric())
 			{

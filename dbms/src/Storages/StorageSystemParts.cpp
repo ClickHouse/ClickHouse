@@ -74,7 +74,7 @@ BlockInputStreams StorageSystemParts::read(
 		ColumnPtr database_column = new ColumnString;
 		for (const auto & database : databases)
 			database_column->insert(database.first);
-		block.insert(ColumnWithNameAndType(database_column, new DataTypeString, "database"));
+		block.insert(ColumnWithTypeAndName(database_column, new DataTypeString, "database"));
 
 		/// Отфильтруем блок со столбцом database.
 		VirtualColumnUtils::filterBlockWithQuery(query, block, context);
@@ -137,10 +137,10 @@ BlockInputStreams StorageSystemParts::read(
 			column = column->replicate(offsets);
 		}
 
-		block.insert(ColumnWithNameAndType(table_column, new DataTypeString, "table"));
-		block.insert(ColumnWithNameAndType(engine_column, new DataTypeString, "engine"));
-		block.insert(ColumnWithNameAndType(replicated_column, new DataTypeUInt8, "replicated"));
-		block.insert(ColumnWithNameAndType(active_column, new DataTypeUInt8, "active"));
+		block.insert(ColumnWithTypeAndName(table_column, new DataTypeString, "table"));
+		block.insert(ColumnWithTypeAndName(engine_column, new DataTypeString, "engine"));
+		block.insert(ColumnWithTypeAndName(replicated_column, new DataTypeUInt8, "replicated"));
+		block.insert(ColumnWithTypeAndName(active_column, new DataTypeUInt8, "active"));
 	}
 
 	/// Отфильтруем блок со столбцами database, table, engine, replicated и active.
@@ -252,23 +252,23 @@ BlockInputStreams StorageSystemParts::read(
 
 	block.clear();
 
-	block.insert(ColumnWithNameAndType(partition_column, 			new DataTypeString, 	"partition"));
-	block.insert(ColumnWithNameAndType(name_column, 				new DataTypeString, 	"name"));
-	block.insert(ColumnWithNameAndType(replicated_column, 			new DataTypeUInt8,		"replicated"));
-	block.insert(ColumnWithNameAndType(active_column, 				new DataTypeUInt8, 		"active"));
-	block.insert(ColumnWithNameAndType(marks_column, 				new DataTypeUInt64, 	"marks"));
-	block.insert(ColumnWithNameAndType(bytes_column, 				new DataTypeUInt64, 	"bytes"));
-	block.insert(ColumnWithNameAndType(modification_time_column, 	new DataTypeDateTime, 	"modification_time"));
-	block.insert(ColumnWithNameAndType(remove_time_column, 			new DataTypeDateTime, 	"remove_time"));
-	block.insert(ColumnWithNameAndType(refcount_column, 			new DataTypeUInt32, 	"refcount"));
-	block.insert(ColumnWithNameAndType(min_date_column,				new DataTypeDate,		"min_date"));
-	block.insert(ColumnWithNameAndType(max_date_column,				new DataTypeDate,		"max_date"));
-	block.insert(ColumnWithNameAndType(min_block_number_column,		new DataTypeUInt64,		"min_block_number"));
-	block.insert(ColumnWithNameAndType(max_block_number_column,		new DataTypeUInt64,		"max_block_number"));
-	block.insert(ColumnWithNameAndType(level_column,				new DataTypeUInt32,		"level"));
-	block.insert(ColumnWithNameAndType(database_column, 			new DataTypeString, 	"database"));
-	block.insert(ColumnWithNameAndType(table_column, 				new DataTypeString, 	"table"));
-	block.insert(ColumnWithNameAndType(engine_column, 				new DataTypeString, 	"engine"));
+	block.insert(ColumnWithTypeAndName(partition_column, 			new DataTypeString, 	"partition"));
+	block.insert(ColumnWithTypeAndName(name_column, 				new DataTypeString, 	"name"));
+	block.insert(ColumnWithTypeAndName(replicated_column, 			new DataTypeUInt8,		"replicated"));
+	block.insert(ColumnWithTypeAndName(active_column, 				new DataTypeUInt8, 		"active"));
+	block.insert(ColumnWithTypeAndName(marks_column, 				new DataTypeUInt64, 	"marks"));
+	block.insert(ColumnWithTypeAndName(bytes_column, 				new DataTypeUInt64, 	"bytes"));
+	block.insert(ColumnWithTypeAndName(modification_time_column, 	new DataTypeDateTime, 	"modification_time"));
+	block.insert(ColumnWithTypeAndName(remove_time_column, 			new DataTypeDateTime, 	"remove_time"));
+	block.insert(ColumnWithTypeAndName(refcount_column, 			new DataTypeUInt32, 	"refcount"));
+	block.insert(ColumnWithTypeAndName(min_date_column,				new DataTypeDate,		"min_date"));
+	block.insert(ColumnWithTypeAndName(max_date_column,				new DataTypeDate,		"max_date"));
+	block.insert(ColumnWithTypeAndName(min_block_number_column,		new DataTypeUInt64,		"min_block_number"));
+	block.insert(ColumnWithTypeAndName(max_block_number_column,		new DataTypeUInt64,		"max_block_number"));
+	block.insert(ColumnWithTypeAndName(level_column,				new DataTypeUInt32,		"level"));
+	block.insert(ColumnWithTypeAndName(database_column, 			new DataTypeString, 	"database"));
+	block.insert(ColumnWithTypeAndName(table_column, 				new DataTypeString, 	"table"));
+	block.insert(ColumnWithTypeAndName(engine_column, 				new DataTypeString, 	"engine"));
 
 	return BlockInputStreams(1, new OneBlockInputStream(block));
 }

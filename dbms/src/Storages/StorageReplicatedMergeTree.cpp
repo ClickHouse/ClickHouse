@@ -156,7 +156,7 @@ StoragePtr StorageReplicatedMergeTree::create(
 	size_t index_granularity_,
 	MergeTreeData::Mode mode_,
 	const String & sign_column_,
-	const Names & columns_to_sum_ = Names(),
+	const Names & columns_to_sum_,
 	const MergeTreeSettings & settings_)
 {
 	auto res = new StorageReplicatedMergeTree{
@@ -2014,7 +2014,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 	ColumnPtr column_ptr = column;
 	column->getData()[0] = 0;
 	column->getData()[1] = 1;
-	virtual_columns_block.insert(ColumnWithNameAndType(column_ptr, new DataTypeUInt8, "_replicated"));
+	virtual_columns_block.insert(ColumnWithTypeAndName(column_ptr, new DataTypeUInt8, "_replicated"));
 
 	/// Если запрошен хотя бы один виртуальный столбец, пробуем индексировать
 	if (!virt_column_names.empty())
@@ -2669,16 +2669,29 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
 		res.inserts_in_queue = 0;
 		res.merges_in_queue = 0;
 		res.queue_oldest_time = 0;
+		res.inserts_oldest_time = 0;
+		res.merges_oldest_time = 0;
 
 		for (const LogEntryPtr & entry : queue)
 		{
-			if (entry->type == LogEntry::GET_PART)
-				++res.inserts_in_queue;
-			if (entry->type == LogEntry::MERGE_PARTS)
-				++res.merges_in_queue;
-
 			if (entry->create_time && (!res.queue_oldest_time || entry->create_time < res.queue_oldest_time))
 				res.queue_oldest_time = entry->create_time;
+
+			if (entry->type == LogEntry::GET_PART)
+			{
+				++res.inserts_in_queue;
+
+				if (entry->create_time && (!res.inserts_oldest_time || entry->create_time < res.inserts_oldest_time))
+					res.inserts_oldest_time = entry->create_time;
+			}
+
+			if (entry->type == LogEntry::MERGE_PARTS)
+			{
+				++res.merges_in_queue;
+
+				if (entry->create_time && (!res.merges_oldest_time || entry->create_time < res.merges_oldest_time))
+					res.merges_oldest_time = entry->create_time;
+			}
 		}
 	}
 

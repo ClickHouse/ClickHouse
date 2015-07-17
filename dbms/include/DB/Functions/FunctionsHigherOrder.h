@@ -586,7 +586,7 @@ public:
 		arguments[0] = new DataTypeExpression(nested_types);
 	}
 
-	void getReturnTypeAndPrerequisites(const ColumnsWithNameAndType & arguments,
+	void getReturnTypeAndPrerequisites(const ColumnsWithTypeAndName & arguments,
 										DataTypePtr & out_return_type,
 										ExpressionActions::Actions & out_prerequisites)
 	{
@@ -725,7 +725,7 @@ public:
 					column_first_array = column_array;
 				}
 
-				temp_block.insert(ColumnWithNameAndType(
+				temp_block.insert(ColumnWithTypeAndName(
 					column_array->getDataPtr(),
 					argument_type,
 					argument_name));
@@ -745,7 +745,7 @@ public:
 				if (argument_names.count(name))
 					continue;
 
-				ColumnWithNameAndType replicated_column = block.getByPosition(prerequisites[prerequisite_index]);
+				ColumnWithTypeAndName replicated_column = block.getByPosition(prerequisites[prerequisite_index]);
 
 				replicated_column.name = name;
 				replicated_column.column = typeid_cast<ColumnArray &>(*replicated_column.column).getDataPtr();

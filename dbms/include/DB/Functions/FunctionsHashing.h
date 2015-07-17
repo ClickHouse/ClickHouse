@@ -592,7 +592,7 @@ public:
 
 		for (size_t i = 0; i < arguments.size(); ++i)
 		{
-			const ColumnWithNameAndType & column = block.getByPosition(arguments[i]);
+			const ColumnWithTypeAndName & column = block.getByPosition(arguments[i]);
 			const IDataType * from_type = &*column.type;
 			const IColumn * icolumn = &*column.column;
 

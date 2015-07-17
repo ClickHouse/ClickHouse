@@ -4,7 +4,7 @@
 #include <DB/DataStreams/IBlockInputStream.h>
 #include <DB/Interpreters/Settings.h>
 #include <DB/Core/Names.h>
-#include <DB/Core/ColumnWithNameAndType.h>
+#include <DB/Core/ColumnWithTypeAndName.h>
 #include <DB/Core/Block.h>
 
 #include <unordered_set>
@@ -77,7 +77,7 @@ public:
 	/// Если result_name_ == "", в качестве имени используется "имя_функции(аргументы через запятую)".
 	static ExpressionAction applyFunction(FunctionPtr function_, const std::vector<std::string> & argument_names_, std::string result_name_ = "");
 
-	static ExpressionAction addColumn(ColumnWithNameAndType added_column_)
+	static ExpressionAction addColumn(ColumnWithTypeAndName added_column_)
 	{
 		ExpressionAction a;
 		a.type = ADD_COLUMN;
@@ -168,11 +168,11 @@ public:
 		: input_columns(input_columns_), settings(settings_)
 	{
 		for (const auto & input_elem : input_columns)
-			sample_block.insert(ColumnWithNameAndType(nullptr, input_elem.type, input_elem.name));
+			sample_block.insert(ColumnWithTypeAndName(nullptr, input_elem.type, input_elem.name));
 	}
 
 	/// Для константных столбцов в input_columns_ могут содержаться сами столбцы.
-	ExpressionActions(const ColumnsWithNameAndType & input_columns_, const Settings & settings_)
+	ExpressionActions(const ColumnsWithTypeAndName & input_columns_, const Settings & settings_)
 		: settings(settings_)
 	{
 		for (const auto & input_elem : input_columns_)
@@ -185,7 +185,7 @@ public:
 	/// Добавить входной столбец.
 	/// Название столбца не должно совпадать с названиями промежуточных столбцов, возникающих при вычислении выражения.
 	/// В выражении не должно быть действий PROJECT.
-	void addInput(const ColumnWithNameAndType & column);
+	void addInput(const ColumnWithTypeAndName & column);
 	void addInput(const NameAndTypePair & column);
 
 	void add(const ExpressionAction & action);

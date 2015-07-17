@@ -33,7 +33,7 @@ int main(int argc, char ** argv)
 		{
 			DB::Block block;
 
-			DB::ColumnWithNameAndType column1;
+			DB::ColumnWithTypeAndName column1;
 			column1.name = "a";
 			column1.type = table->getDataTypeByName("a");
 			column1.column = column1.type->createColumn();
@@ -45,7 +45,7 @@ int main(int argc, char ** argv)
 
 			block.insert(column1);
 
-			DB::ColumnWithNameAndType column2;
+			DB::ColumnWithTypeAndName column2;
 			column2.name = "b";
 			column2.type = table->getDataTypeByName("b");
 			column2.column = column2.type->createColumn();
@@ -73,12 +73,12 @@ int main(int argc, char ** argv)
 
 			DB::Block sample;
 			{
-				DB::ColumnWithNameAndType col;
+				DB::ColumnWithTypeAndName col;
 				col.type = new DB::DataTypeUInt64;
 				sample.insert(col);
 			}
 			{
-				DB::ColumnWithNameAndType col;
+				DB::ColumnWithTypeAndName col;
 				col.type = new DB::DataTypeUInt8;
 				sample.insert(col);
 			}

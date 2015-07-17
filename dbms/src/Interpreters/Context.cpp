@@ -17,6 +17,7 @@
 #include <DB/Storages/MarkCache.h>
 #include <DB/Storages/MergeTree/BackgroundProcessingPool.h>
 #include <DB/Storages/MergeTree/MergeList.h>
+#include <DB/Storages/MergeTree/MergeTreeSettings.h>
 #include <DB/Storages/CompressionMethodSelector.h>
 #include <DB/Interpreters/Settings.h>
 #include <DB/Interpreters/Users.h>
@@ -89,6 +90,7 @@ struct ContextShared
 	std::unique_ptr<Compiler> compiler;						/// Для динамической компиляции частей запроса, при необходимости.
 	std::unique_ptr<QueryLog> query_log;					/// Для логгирования запросов.
 	mutable std::unique_ptr<CompressionMethodSelector> compression_method_selector; /// Правила для выбора метода сжатия в зависимости от размера куска.
+	std::unique_ptr<MergeTreeSettings> merge_tree_settings;	/// Настройки для движка MergeTree.
 
 	/// Кластеры для distributed таблиц
 	/// Создаются при создании Distributed таблиц, так как нужно дождаться пока будут выставлены Settings
@@ -868,6 +870,21 @@ CompressionMethod Context::chooseCompressionMethod(size_t part_size, double part
 	}
 
 	return shared->compression_method_selector->choose(part_size, part_size_ratio);
+}
+
+
+const MergeTreeSettings & Context::getMergeTreeSettings()
+{
+	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+
+	if (!shared->merge_tree_settings)
+	{
+		auto & config = Poco::Util::Application::instance().config();
+		shared->merge_tree_settings.reset(new MergeTreeSettings());
+		shared->merge_tree_settings->loadFromConfig("merge_tree", config);
+	}
+
+	return *shared->merge_tree_settings;
 }
 
 

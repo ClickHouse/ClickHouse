@@ -26,7 +26,7 @@ MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(MergeTreeData & data_)
 static Block getBlockWithVirtualColumns(const MergeTreeData::DataPartsVector & parts)
 {
 	Block res;
-	ColumnWithNameAndType _part(new ColumnString, new DataTypeString, "_part");
+	ColumnWithTypeAndName _part(new ColumnString, new DataTypeString, "_part");
 
 	for (const auto & part : parts)
 		_part.column->insert(part->name);
@@ -167,20 +167,20 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 		UInt64 sampling_column_value_lower_limit;
 		UInt64 sampling_column_value_upper_limit;
-		UInt64 upper_limit = static_cast<UInt64>(static_cast<long double>(relative_sample_size) * sampling_column_max);
+		UInt64 upper_limit = static_cast<long double>(relative_sample_size) * sampling_column_max;
 
 		if (settings.parallel_replicas_count > 1)
 		{
-			sampling_column_value_lower_limit = (settings.parallel_replica_offset * upper_limit) / settings.parallel_replicas_count;
+			sampling_column_value_lower_limit = (static_cast<long double>(settings.parallel_replica_offset) / settings.parallel_replicas_count) * upper_limit;
 			if ((settings.parallel_replica_offset + 1) < settings.parallel_replicas_count)
-				sampling_column_value_upper_limit = ((settings.parallel_replica_offset + 1) * upper_limit) / settings.parallel_replicas_count;
+				sampling_column_value_upper_limit = (static_cast<long double>(settings.parallel_replica_offset + 1) / settings.parallel_replicas_count) * upper_limit;
 			else
-				sampling_column_value_upper_limit = upper_limit + 1;
+				sampling_column_value_upper_limit = (upper_limit < sampling_column_max) ? (upper_limit + 1) : upper_limit;
 		}
 		else
 		{
 			sampling_column_value_lower_limit = 0;
-			sampling_column_value_upper_limit = upper_limit + 1;
+			sampling_column_value_upper_limit = (upper_limit < sampling_column_max) ? (upper_limit + 1) : upper_limit;
 		}
 
 		/// Добавим условие, чтобы отсечь еще что-нибудь при повторном просмотре индекса.
