@@ -218,7 +218,7 @@ private:
 
 	void toLarge()
 	{
-		if (container_type != details::ContainerType::MEDIUM)
+		if ((container_type != details::ContainerType::SMALL) && (container_type != details::ContainerType::MEDIUM))
 			throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
 
 		container_type = details::ContainerType::LARGE;
