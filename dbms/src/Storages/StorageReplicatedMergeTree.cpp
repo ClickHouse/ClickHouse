@@ -2271,7 +2271,7 @@ void StorageReplicatedMergeTree::dropPartition(const Field & field, bool detach,
 
 	/// TODO: Делать запрос в лидера по TCP.
 	if (!is_leader_node)
-		throw Exception("DROP PARTITION can only be done on leader replica.", ErrorCodes::NOT_LEADER);
+		throw Exception(String(detach ? "DETACH" : "DROP") + " PARTITION can only be done on leader replica.", ErrorCodes::NOT_LEADER);
 
 	/** Пропустим один номер в block_numbers для удаляемого месяца, и будем удалять только куски до этого номера.
 	  * Это запретит мерджи удаляемых кусков с новыми вставляемыми данными.
