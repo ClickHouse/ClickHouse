@@ -1360,7 +1360,17 @@ private:
 		{
 			const auto & in_data = in->getData();
 			const auto total_values = std::accumulate(std::begin(in_data), std::end(in_data), std::size_t{},
-				std::plus<std::size_t>{});
+				[this] (const std::size_t lhs, const std::size_t rhs) {
+					const auto sum = lhs + rhs;
+					if (sum < lhs)
+						throw Exception{
+							"A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
+							ErrorCodes::ARGUMENT_OUT_OF_BOUND
+						};
+
+					return sum;
+				});
+
 			if (total_values > max_elements)
 				throw Exception{
 					"A call to function " + getName() + " would produce " + std::to_string(total_values) +
@@ -1391,6 +1401,12 @@ private:
 		else if (const auto in = typeid_cast<const ColumnConst<T> *>(arg))
 		{
 			const auto & in_data = in->getData();
+			if (in->size() > std::numeric_limits<std::size_t>::max() / in_data)
+				throw Exception{
+					"A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
+					ErrorCodes::ARGUMENT_OUT_OF_BOUND
+				};
+
 			const std::size_t total_values = in->size() * in_data;
 			if (total_values > max_elements)
 				throw Exception{
