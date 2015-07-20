@@ -4,32 +4,45 @@
 #include <DB/Common/HashTable/HashSet.h>
 #include <DB/Common/HyperLogLogWithSmallSetOptimization.h>
 
+
 namespace DB
 {
 
-template <typename Key, typename HashType, UInt8 small_set_size, UInt8 medium_set_power, UInt8 K>
+namespace details
+{
+
+enum class ContainerType { SMALL, MEDIUM, LARGE };
+
+ContainerType max(const ContainerType & lhs, const ContainerType & rhs)
+{
+	unsigned int res = std::max(static_cast<unsigned int>(lhs), static_cast<unsigned int>(rhs));
+	return static_cast<ContainerType>(res);
+}
+
+}
+
+template <typename Key, typename HashContainer, UInt8 small_set_size_max, UInt8 medium_set_power2_max, UInt8 K>
 class CombinedCardinalityEstimator
 {
 public:
-	using Self = CombinedCardinalityEstimator<Key, HashType, small_set_size, medium_set_power, K>;
+	using Self = CombinedCardinalityEstimator<Key, HashContainer, small_set_size_max, medium_set_power2_max, K>;
 
 private:
-	using Small = SmallSet<Key, small_set_size>;
-	using Medium = HashType;
-	using Large = HyperLogLogWithSmallSetOptimization<Key, small_set_size, K>;
-	enum class ContainerType { SMALL, MEDIUM, LARGE };
+	using Small = SmallSet<Key, small_set_size_max>;
+	using Medium = HashContainer;
+	using Large = HyperLogLogWithSmallSetOptimization<Key, small_set_size_max, K>;
 
 public:
 	~CombinedCardinalityEstimator()
 	{
-		if (container_type == ContainerType::MEDIUM)
+		if (container_type == details::ContainerType::MEDIUM)
 		{
 			delete medium;
 
 			if (current_memory_tracker)
 				current_memory_tracker->free(sizeof(medium));
 		}
-		else if (container_type == ContainerType::LARGE)
+		else if (container_type == details::ContainerType::LARGE)
 		{
 			delete large;
 
@@ -40,7 +53,7 @@ public:
 
 	void insert(Key value)
 	{
-		if (container_type == ContainerType::SMALL)
+		if (container_type == details::ContainerType::SMALL)
 		{
 			if (small.find(value) == small.end())
 			{
@@ -53,9 +66,9 @@ public:
 				}
 			}
 		}
-		else if (container_type == ContainerType::MEDIUM)
+		else if (container_type == details::ContainerType::MEDIUM)
 		{
-			if (medium->size() < medium_set_size)
+			if (medium->size() < medium_set_size_max)
 				medium->insert(value);
 			else
 			{
@@ -63,7 +76,7 @@ public:
 				large->insert(value);
 			}
 		}
-		else if (container_type == ContainerType::LARGE)
+		else if (container_type == details::ContainerType::LARGE)
 			large->insert(value);
 		else
 			throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
@@ -71,11 +84,11 @@ public:
 
 	UInt32 size() const
 	{
-		if (container_type == ContainerType::SMALL)
+		if (container_type == details::ContainerType::SMALL)
 			return small.size();
-		else if (container_type == ContainerType::MEDIUM)
+		else if (container_type == details::ContainerType::MEDIUM)
 			return medium->size();
-		else if (container_type == ContainerType::LARGE)
+		else if (container_type == details::ContainerType::LARGE)
 			return large->size();
 		else
 			throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
@@ -83,47 +96,47 @@ public:
 
 	void merge(const Self & rhs)
 	{
-		ContainerType res = max(container_type, rhs.container_type);
+		details::ContainerType max_container_type = details::max(container_type, rhs.container_type);
 
-		if (container_type != res)
+		if (container_type != max_container_type)
 		{
-			if (res == ContainerType::MEDIUM)
+			if (max_container_type == details::ContainerType::MEDIUM)
 				toMedium();
-			else if (res == ContainerType::LARGE)
+			else if (max_container_type == details::ContainerType::LARGE)
 				toLarge();
 		}
 
-		if (container_type == ContainerType::SMALL)
+		if (container_type == details::ContainerType::SMALL)
 		{
 			for (const auto & x : rhs.small)
 				insert(x);
 		}
-		else if (container_type == ContainerType::MEDIUM)
+		else if (container_type == details::ContainerType::MEDIUM)
 		{
-			if (rhs.container_type == ContainerType::SMALL)
+			if (rhs.container_type == details::ContainerType::SMALL)
 			{
 				for (const auto & x : rhs.small)
 					insert(x);
 			}
-			else if (rhs.container_type == ContainerType::MEDIUM)
+			else if (rhs.container_type == details::ContainerType::MEDIUM)
 			{
 				for (const auto & x : *rhs.medium)
 					insert(x);
 			}
 		}
-		else if (container_type == ContainerType::LARGE)
+		else if (container_type == details::ContainerType::LARGE)
 		{
-			if (rhs.container_type == ContainerType::SMALL)
+			if (rhs.container_type == details::ContainerType::SMALL)
 			{
 				for (const auto & x : rhs.small)
 					insert(x);
 			}
-			else if (rhs.container_type == ContainerType::MEDIUM)
+			else if (rhs.container_type == details::ContainerType::MEDIUM)
 			{
 				for (const auto & x : *rhs.medium)
 					insert(x);
 			}
-			else if (rhs.container_type == ContainerType::LARGE)
+			else if (rhs.container_type == details::ContainerType::LARGE)
 				large->merge(*rhs.large);
 		}
 		else
@@ -134,16 +147,16 @@ public:
 	{
 		UInt8 v;
 		readBinary(v, in);
-		ContainerType t = static_cast<ContainerType>(v);
+		details::ContainerType t = static_cast<details::ContainerType>(v);
 
-		if (t == ContainerType::SMALL)
+		if (t == details::ContainerType::SMALL)
 			small.read(in);
-		else if (t == ContainerType::MEDIUM)
+		else if (t == details::ContainerType::MEDIUM)
 		{
 			toMedium();
 			medium->read(in);
 		}
-		else if (t == ContainerType::LARGE)
+		else if (t == details::ContainerType::LARGE)
 		{
 			toLarge();
 			large->read(in);
@@ -164,11 +177,11 @@ public:
 		UInt8 v = static_cast<UInt8>(container_type);
 		writeBinary(v, out);
 
-		if (container_type == ContainerType::SMALL)
+		if (container_type == details::ContainerType::SMALL)
 			small.write(out);
-		else if (container_type == ContainerType::MEDIUM)
+		else if (container_type == details::ContainerType::MEDIUM)
 			medium->write(out);
-		else if (container_type == ContainerType::LARGE)
+		else if (container_type == details::ContainerType::LARGE)
 			large->write(out);
 		else
 			throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
@@ -176,12 +189,17 @@ public:
 
 	bool isMedium() const
 	{
-		return container_type == ContainerType::MEDIUM;
+		return container_type == details::ContainerType::MEDIUM;
 	}
 
 private:
 	void toMedium()
 	{
+		if (container_type != details::ContainerType::SMALL)
+			throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
+
+		container_type = details::ContainerType::MEDIUM;
+
 		if (current_memory_tracker)
 			current_memory_tracker->alloc(sizeof(medium));
 
@@ -191,12 +209,15 @@ private:
 			tmp_medium->insert(x);
 
 		medium = tmp_medium;
-
-		container_type = ContainerType::MEDIUM;
 	}
 
 	void toLarge()
 	{
+		if (container_type != details::ContainerType::MEDIUM)
+			throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
+
+		container_type = details::ContainerType::LARGE;
+
 		if (current_memory_tracker)
 			current_memory_tracker->alloc(sizeof(large));
 
@@ -212,22 +233,14 @@ private:
 
 		if (current_memory_tracker)
 			current_memory_tracker->free(sizeof(medium));
-
-		container_type = ContainerType::LARGE;
-	}
-
-	ContainerType max(const ContainerType & lhs, const ContainerType & rhs)
-	{
-		unsigned int res = std::max(static_cast<unsigned int>(lhs), static_cast<unsigned int>(rhs));
-		return static_cast<ContainerType>(res);
 	}
 
 private:
-	ContainerType container_type = ContainerType::SMALL;
-	const UInt32 medium_set_size = 1UL << medium_set_power;
 	Small small;
 	Medium * medium = nullptr;
 	Large * large = nullptr;
+	const UInt32 medium_set_size_max = 1UL << medium_set_power2_max;
+	details::ContainerType container_type = details::ContainerType::SMALL;
 };
 
 }
