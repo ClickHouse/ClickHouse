@@ -351,6 +351,26 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 		else
 			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
+	else if (name == "uniqCombined")
+	{
+		if (argument_types.size() != 1)
+			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		const IDataType & argument_type = *argument_types[0];
+
+		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionUniq, AggregateFunctionUniqCombinedData>(*argument_types[0]);
+
+		if (res)
+			return res;
+		else if (typeid_cast<const DataTypeDate 	*>(&argument_type))
+			return new AggregateFunctionUniq<DataTypeDate::FieldType, AggregateFunctionUniqCombinedData<DataTypeDate::FieldType>>;
+		else if (typeid_cast<const DataTypeDateTime*>(&argument_type))
+			return new AggregateFunctionUniq<DataTypeDateTime::FieldType, AggregateFunctionUniqCombinedData<DataTypeDateTime::FieldType>>;
+		else if (typeid_cast<const DataTypeString*>(&argument_type) || typeid_cast<const DataTypeFixedString*>(&argument_type))
+			return new AggregateFunctionUniq<String, AggregateFunctionUniqCombinedData<String>>;
+		else
+			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+	}
 	else if (name == "uniqUpTo")
 	{
 		if (argument_types.size() != 1)
@@ -706,6 +726,7 @@ const AggregateFunctionFactory::FunctionNames & AggregateFunctionFactory::getFun
 		"uniq",
 		"uniqHLL12",
 		"uniqExact",
+		"uniqCombined",
 		"uniqUpTo",
 		"groupArray",
 		"groupUniqArray",
