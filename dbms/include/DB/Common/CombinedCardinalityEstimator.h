@@ -65,6 +65,8 @@ public:
 		}
 		else if (container_type == ContainerType::LARGE)
 			large->insert(value);
+		else
+			throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
 	}
 
 	UInt32 size() const
@@ -75,8 +77,8 @@ public:
 			return medium->size();
 		else if (container_type == ContainerType::LARGE)
 			return large->size();
-
-		return 0;
+		else
+			throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
 	}
 
 	void merge(const Self & rhs)
@@ -124,6 +126,8 @@ public:
 			else if (rhs.container_type == ContainerType::LARGE)
 				large->merge(*rhs.large);
 		}
+		else
+			throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
 	}
 
 	void read(DB::ReadBuffer & in)
@@ -144,6 +148,8 @@ public:
 			toLarge();
 			large->read(in);
 		}
+		else
+			throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
 	}
 
 	void readAndMerge(DB::ReadBuffer & in)
@@ -155,7 +161,7 @@ public:
 
 	void write(DB::WriteBuffer & out) const
 	{
-		UInt8 v = static_cast<unsigned int>(container_type);
+		UInt8 v = static_cast<UInt8>(container_type);
 		writeBinary(v, out);
 
 		if (container_type == ContainerType::SMALL)
@@ -164,6 +170,8 @@ public:
 			medium->write(out);
 		else if (container_type == ContainerType::LARGE)
 			large->write(out);
+		else
+			throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
 	}
 
 	bool isMedium() const
