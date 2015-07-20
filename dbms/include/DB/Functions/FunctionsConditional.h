@@ -1315,7 +1315,7 @@ public:
 			/// NOTE Сообщения об ошибках будут относится к типам элементов массивов, что немного некорректно.
 			return new DataTypeArray(getReturnType({arguments[0], type_arr1->getNestedType(), type_arr2->getNestedType()}));
 		}
-		else
+		else if (arguments[1]->getName() != arguments[2]->getName())
 		{
 			const DataTypeString * type_string1 = typeid_cast<const DataTypeString *>(arguments[1].get());
 			const DataTypeString * type_string2 = typeid_cast<const DataTypeString *>(arguments[2].get());
@@ -1334,11 +1334,15 @@ public:
 			{
 				return new DataTypeString;
 			}
+
+			throw Exception{
+				"Incompatible second and third arguments for function " + getName() + ": " +
+					arguments[1]->getName() + " and " + arguments[2]->getName(),
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+			};
 		}
 
-		throw Exception("Incompatible second and third arguments for function " + getName() + ": "
-			+ arguments[1]->getName() + " and " + arguments[2]->getName(),
-			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		return arguments[1];
 	}
 
 	/// Выполнить функцию над блоком.
