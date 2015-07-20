@@ -21,6 +21,10 @@ ContainerType max(const ContainerType & lhs, const ContainerType & rhs)
 
 }
 
+/** Для маленького количества ключей - массив фиксированного размера "на стеке".
+  * Для среднего - выделяется HashSet.
+  * Для большого - выделяется HyperLogLog.
+  */
 template <typename Key, typename HashContainer, UInt8 small_set_size_max, UInt8 medium_set_power2_max, UInt8 K>
 class CombinedCardinalityEstimator
 {
@@ -143,6 +147,7 @@ public:
 			throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
 	}
 
+	/// Можно вызывать только для пустого объекта.
 	void read(DB::ReadBuffer & in)
 	{
 		UInt8 v;
