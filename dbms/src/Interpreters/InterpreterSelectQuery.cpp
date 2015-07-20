@@ -522,6 +522,9 @@ void InterpreterSelectQuery::executeSingleQuery()
 				if (has_order_by)
 					executeOrder(streams);
 
+				if (has_order_by && query.limit_length)
+					executeDistinct(streams, false, selected_columns);
+
 				if (query.limit_length)
 					executePreLimit(streams);
 			}
