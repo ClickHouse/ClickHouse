@@ -4,6 +4,7 @@
 #include <openssl/sha.h>
 #include <city.h>
 #include <farmhash.h>
+#include <metrohash.h>
 
 #include <Poco/ByteOrder.h>
 
@@ -839,6 +840,25 @@ struct ImplFarmHash64
 	static auto Hash64(const char * const s, const std::size_t len) { return farmhash::Hash64(s, len); }
 };
 
+struct ImplMetroHash64
+{
+	static constexpr auto name = "metroHash64";
+	using uint128_t = uint128;
+
+	static auto Hash128to64(const uint128_t & x) { return ::Hash128to64(x); }
+	static auto Hash64(const char * const s, const std::size_t len)
+	{
+		union {
+			std::uint64_t u64;
+			std::uint8_t u8[sizeof(u64)];
+		};
+
+		metrohash64_1(reinterpret_cast<const std::uint8_t *>(s), len, 0, u8);
+
+		return u64;
+	}
+};
+
 using FunctionHalfMD5 = FunctionStringHash64<HalfMD5Impl, NameHalfMD5>;
 using FunctionSipHash64 = FunctionStringHash64<SipHash64Impl, NameSipHash64>;
 using FunctionIntHash32 = FunctionIntHash<IntHash32Impl, NameIntHash32>;
@@ -850,5 +870,6 @@ using FunctionSHA256 = FunctionStringHashFixedString<SHA256Impl>;
 using FunctionSipHash128 = FunctionStringHashFixedString<SipHash128Impl>;
 using FunctionCityHash64 = FunctionNeighbourhoodHash64<ImplCityHash64>;
 using FunctionFarmHash64 = FunctionNeighbourhoodHash64<ImplFarmHash64>;
+using FunctionMetroHash64 = FunctionNeighbourhoodHash64<ImplMetroHash64>;
 
 }
