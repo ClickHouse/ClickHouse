@@ -203,8 +203,6 @@ private:
 		if (container_type != details::ContainerType::SMALL)
 			throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
 
-		container_type = details::ContainerType::MEDIUM;
-
 		if (current_memory_tracker)
 			current_memory_tracker->alloc(sizeof(medium));
 
@@ -214,6 +212,8 @@ private:
 			tmp_medium->insert(x);
 
 		medium = tmp_medium;
+
+		container_type = details::ContainerType::MEDIUM;
 	}
 
 	void toLarge()
@@ -221,23 +221,34 @@ private:
 		if ((container_type != details::ContainerType::SMALL) && (container_type != details::ContainerType::MEDIUM))
 			throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
 
-		container_type = details::ContainerType::LARGE;
-
 		if (current_memory_tracker)
 			current_memory_tracker->alloc(sizeof(large));
 
 		Large * tmp_large = new Large;
 
-		for (const auto & x : *medium)
-			tmp_large->insert(x);
+		if (container_type == details::ContainerType::SMALL)
+		{
+			for (const auto & x : small)
+				tmp_large->insert(x);
+		}
+		else if (container_type == details::ContainerType::MEDIUM)
+		{
+			for (const auto & x : *medium)
+				tmp_large->insert(x);
+		}
 
 		large = tmp_large;
 
-		delete medium;
-		medium = nullptr;
+		if (container_type == details::ContainerType::MEDIUM)
+		{
+			delete medium;
+			medium = nullptr;
 
-		if (current_memory_tracker)
-			current_memory_tracker->free(sizeof(medium));
+			if (current_memory_tracker)
+				current_memory_tracker->free(sizeof(medium));
+		}
+
+		container_type = details::ContainerType::LARGE;
 	}
 
 private:
