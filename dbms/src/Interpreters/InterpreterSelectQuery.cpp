@@ -474,6 +474,7 @@ void InterpreterSelectQuery::executeSingleQuery()
 		 *  Эта проверка специально вынесена чуть ниже, чем она могла бы быть (сразу после executeFetchColumns),
 		 *  чтобы запрос был проанализирован, и в нём могли бы быть обнаружены ошибки (например, несоответствия типов).
 		 *  Иначе мог бы вернуться пустой результат на некорректный запрос.
+		 * TODO FULL и RIGHT JOIN
 		 */
 		if (streams.empty())
 			return;
@@ -808,7 +809,7 @@ void InterpreterSelectQuery::executeAggregation(BlockInputStreams & streams, Exp
 	/// Если источников несколько, то выполняем параллельную агрегацию
 	if (streams.size() > 1)
 	{
-		stream = new ParallelAggregatingBlockInputStream(streams, key_names, aggregates, overflow_row, final,
+		stream = new ParallelAggregatingBlockInputStream(streams, nullptr, key_names, aggregates, overflow_row, final,
 			settings.max_threads, settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode,
 			settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile, settings.group_by_two_level_threshold);
 
@@ -992,7 +993,7 @@ void InterpreterSelectQuery::executeUnion(BlockInputStreams & streams)
 	/// Если до сих пор есть несколько потоков, то объединяем их в один
 	if (streams.size() > 1)
 	{
-		streams[0] = new UnionBlockInputStream(streams, settings.max_threads);
+		streams[0] = new UnionBlockInputStream(streams, nullptr, settings.max_threads);
 		streams.resize(1);
 		union_within_single_query = false;
 	}

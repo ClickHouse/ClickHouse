@@ -45,8 +45,16 @@ template <typename Handler>
 class ParallelInputsProcessor
 {
 public:
-	ParallelInputsProcessor(BlockInputStreams inputs_, size_t max_threads_, Handler & handler_)
-		: inputs(inputs_), max_threads(std::min(inputs_.size(), max_threads_)), handler(handler_)
+	/** additional_input_at_end - если не nullptr,
+	  *  то из этого источника начинают доставаться блоки лишь после того, как все остальные источники обработаны.
+	  * Это делается в основном потоке.
+	  *
+	  * Предназначено для реализации FULL и RIGHT JOIN
+	  * - где нужно сначала параллельно сделать JOIN, при этом отмечая, какие ключи не найдены,
+	  *   и только после завершения этой работы, создать блоки из ненайденных ключей.
+	  */
+	ParallelInputsProcessor(BlockInputStreams inputs_, BlockInputStreamPtr additional_input_at_end_, size_t max_threads_, Handler & handler_)
+		: inputs(inputs_), additional_input_at_end(additional_input_at_end_), max_threads(std::min(inputs_.size(), max_threads_)), handler(handler_)
 	{
 		for (size_t i = 0; i < inputs_.size(); ++i)
 			available_inputs.emplace(inputs_[i], i);
@@ -71,6 +79,16 @@ public:
 		threads.reserve(max_threads);
 		for (size_t i = 0; i < max_threads; ++i)
 			threads.emplace_back(std::bind(&ParallelInputsProcessor::thread, this, current_memory_tracker, i));
+
+		if (additional_input_at_end)
+		{
+			wait();
+
+			while (Block block = additional_input_at_end->read())
+				handler.onBlock(block, 0);
+
+			handler.onFinish();
+		}
 	}
 
 	/// Попросить все источники остановиться раньше, чем они иссякнут.
@@ -148,7 +166,7 @@ private:
 		}
 
 		/// Последний поток при выходе сообщает, что данных больше нет.
-		if (0 == --active_threads)
+		if (0 == --active_threads && !additional_input_at_end)
 		{
 			handler.onFinish();
 		}
@@ -206,6 +224,7 @@ private:
 	}
 
 	BlockInputStreams inputs;
+	BlockInputStreamPtr additional_input_at_end;
 	unsigned max_threads;
 
 	Handler & handler;
