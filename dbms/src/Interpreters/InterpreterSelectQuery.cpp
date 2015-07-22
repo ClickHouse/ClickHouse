@@ -324,7 +324,7 @@ BlockIO InterpreterSelectQuery::execute()
 		return res;
 	}
 
-	executeUnion(streams);
+	executeUnion();
 
 	/// Ограничения на результат, квота на результат, а также колбек для прогресса.
 	if (IProfilingBlockInputStream * stream = dynamic_cast<IProfilingBlockInputStream *>(&*streams[0]))
@@ -365,8 +365,10 @@ const BlockInputStreams & InterpreterSelectQuery::executeWithoutUnion()
 			streams.insert(streams.end(), others.begin(), others.end());
 		}
 
-		for (auto & stream : streams)
+		transformStreams([&](auto & stream)
+		{
 			stream = new MaterializingBlockInputStream(stream);
+		});
 	}
 	else
 		executeSingleQuery();
@@ -391,7 +393,7 @@ void InterpreterSelectQuery::executeSingleQuery()
 	union_within_single_query = false;
 
 	/** Вынем данные из Storage. from_stage - до какой стадии запрос был выполнен в Storage. */
-	QueryProcessingStage::Enum from_stage = executeFetchColumns(streams);
+	QueryProcessingStage::Enum from_stage = executeFetchColumns();
 
 	LOG_TRACE(log, QueryProcessingStage::toString(from_stage) << " -> " << QueryProcessingStage::toString(to_stage));
 
@@ -502,14 +504,14 @@ void InterpreterSelectQuery::executeSingleQuery()
 		if (first_stage)
 		{
 			if (has_where)
-				executeWhere(streams, before_where);
+				executeWhere(before_where);
 
 			if (need_aggregate)
-				executeAggregation(streams, before_aggregation, aggregate_overflow_row, aggregate_final);
+				executeAggregation(before_aggregation, aggregate_overflow_row, aggregate_final);
 			else
 			{
-				executeExpression(streams, before_order_and_select);
-				executeDistinct(streams, true, selected_columns);
+				executeExpression(before_order_and_select);
+				executeDistinct(true, selected_columns);
 			}
 
 			/** При распределённой обработке запроса,
@@ -521,13 +523,13 @@ void InterpreterSelectQuery::executeSingleQuery()
 				&& !need_aggregate && !has_having)
 			{
 				if (has_order_by)
-					executeOrder(streams);
+					executeOrder();
 
 				if (has_order_by && query.limit_length)
-					executeDistinct(streams, false, selected_columns);
+					executeDistinct(false, selected_columns);
 
 				if (query.limit_length)
-					executePreLimit(streams);
+					executePreLimit();
 			}
 		}
 
@@ -539,21 +541,21 @@ void InterpreterSelectQuery::executeSingleQuery()
 			{
 				/// Если нужно объединить агрегированные результаты с нескольких серверов
 				if (!first_stage)
-					executeMergeAggregated(streams, aggregate_overflow_row, aggregate_final);
+					executeMergeAggregated(aggregate_overflow_row, aggregate_final);
 
 				if (!aggregate_final)
-					executeTotalsAndHaving(streams, has_having, before_having, aggregate_overflow_row);
+					executeTotalsAndHaving(has_having, before_having, aggregate_overflow_row);
 				else if (has_having)
-					executeHaving(streams, before_having);
+					executeHaving(before_having);
 
-				executeExpression(streams, before_order_and_select);
-				executeDistinct(streams, true, selected_columns);
+				executeExpression(before_order_and_select);
+				executeDistinct(true, selected_columns);
 
 				need_second_distinct_pass = query.distinct && (streams.size() > 1);
 			}
 			else if (query.group_by_with_totals && !aggregate_final)
 			{
-				executeTotalsAndHaving(streams, false, nullptr, aggregate_overflow_row);
+				executeTotalsAndHaving(false, nullptr, aggregate_overflow_row);
 			}
 
 			if (has_order_by)
@@ -563,38 +565,42 @@ void InterpreterSelectQuery::executeSingleQuery()
 				  *  - поэтому, делаем merge сортированных потоков с удалённых серверов.
 				  */
 				if (!first_stage && !need_aggregate && !(query.group_by_with_totals && !aggregate_final))
-					executeMergeSorted(streams);
+					executeMergeSorted();
 				else	/// Иначе просто сортировка.
-					executeOrder(streams);
+					executeOrder();
 			}
 
-			executeProjection(streams, final_projection);
+			executeProjection(final_projection);
 
 			/// На этой стадии можно считать минимумы и максимумы, если надо.
 			if (settings.extremes)
-				for (auto & stream : streams)
+			{
+				transformStreams([&](auto & stream)
+				{
 					if (IProfilingBlockInputStream * p_stream = dynamic_cast<IProfilingBlockInputStream *>(&*stream))
 						p_stream->enableExtremes();
+				});
+			}
 
 			/** Оптимизация - если источников несколько и есть LIMIT, то сначала применим предварительный LIMIT,
 				* ограничивающий число записей в каждом до offset + limit.
 				*/
 			if (query.limit_length && streams.size() > 1 && !query.distinct)
-				executePreLimit(streams);
+				executePreLimit();
 
 			if (need_second_distinct_pass)
 				union_within_single_query = true;
 
 			if (union_within_single_query)
-				executeUnion(streams);
+				executeUnion();
 
 			if (streams.size() == 1)
 			{
 				/// Если было более одного источника - то нужно выполнить DISTINCT ещё раз после их слияния.
 				if (need_second_distinct_pass)
-					executeDistinct(streams, false, Names());
+					executeDistinct(false, Names());
 
-				executeLimit(streams);
+				executeLimit();
 			}
 		}
 	}
@@ -605,7 +611,7 @@ void InterpreterSelectQuery::executeSingleQuery()
 
 	SubqueriesForSets subqueries_for_sets = query_analyzer->getSubqueriesForSets();
 	if (!subqueries_for_sets.empty())
-		executeSubqueriesInSetsAndJoins(streams, subqueries_for_sets);
+		executeSubqueriesInSetsAndJoins(subqueries_for_sets);
 }
 
 
@@ -621,7 +627,7 @@ static void getLimitLengthAndOffset(ASTSelectQuery & query, size_t & length, siz
 	}
 }
 
-QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInputStreams & streams)
+QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
 {
 	if (!streams.empty())
 		return QueryProcessingStage::FetchColumns;
@@ -742,8 +748,10 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 			context, settings_for_storage, from_stage,
 			settings.max_block_size, max_streams);
 
-		for (auto & stream : streams)
+		transformStreams([&](auto & stream)
+		{
 			stream->addTableLock(table_lock);
+		});
 	}
 	else
 	{
@@ -769,36 +777,36 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(BlockInpu
 
 		QuotaForIntervals & quota = context.getQuota();
 
-		for (auto & stream : streams)
+		transformStreams([&](auto & stream)
 		{
 			if (IProfilingBlockInputStream * p_stream = dynamic_cast<IProfilingBlockInputStream *>(&*stream))
 			{
 				p_stream->setLimits(limits);
 				p_stream->setQuota(quota);
 			}
-		}
+		});
 	}
 
 	return from_stage;
 }
 
 
-void InterpreterSelectQuery::executeWhere(BlockInputStreams & streams, ExpressionActionsPtr expression)
+void InterpreterSelectQuery::executeWhere(ExpressionActionsPtr expression)
 {
-	for (auto & stream : streams)
+	transformStreams([&](auto & stream)
 	{
 		stream = new ExpressionBlockInputStream(stream, expression);
 		stream = new FilterBlockInputStream(stream, query.where_expression->getColumnName());
-	}
+	});
 }
 
 
-void InterpreterSelectQuery::executeAggregation(BlockInputStreams & streams, ExpressionActionsPtr expression, bool overflow_row, bool final)
+void InterpreterSelectQuery::executeAggregation(ExpressionActionsPtr expression, bool overflow_row, bool final)
 {
-	for (auto & stream : streams)
+	transformStreams([&](auto & stream)
 	{
 		stream = new ExpressionBlockInputStream(stream, expression);
-	}
+	});
 
 	BlockInputStreamPtr & stream = streams[0];
 
@@ -822,10 +830,10 @@ void InterpreterSelectQuery::executeAggregation(BlockInputStreams & streams, Exp
 }
 
 
-void InterpreterSelectQuery::executeMergeAggregated(BlockInputStreams & streams, bool overflow_row, bool final)
+void InterpreterSelectQuery::executeMergeAggregated(bool overflow_row, bool final)
 {
 	/// Склеим несколько источников в один
-	executeUnion(streams);
+	executeUnion();
 
 	/// Теперь объединим агрегированные блоки
 	Names key_names;
@@ -835,20 +843,19 @@ void InterpreterSelectQuery::executeMergeAggregated(BlockInputStreams & streams,
 }
 
 
-void InterpreterSelectQuery::executeHaving(BlockInputStreams & streams, ExpressionActionsPtr expression)
+void InterpreterSelectQuery::executeHaving(ExpressionActionsPtr expression)
 {
-	for (auto & stream : streams)
+	transformStreams([&](auto & stream)
 	{
 		stream = new ExpressionBlockInputStream(stream, expression);
 		stream = new FilterBlockInputStream(stream, query.having_expression->getColumnName());
-	}
+	});
 }
 
 
-void InterpreterSelectQuery::executeTotalsAndHaving(BlockInputStreams & streams, bool has_having,
-	ExpressionActionsPtr expression, bool overflow_row)
+void InterpreterSelectQuery::executeTotalsAndHaving(bool has_having, ExpressionActionsPtr expression, bool overflow_row)
 {
-	executeUnion(streams);
+	executeUnion();
 
 	Names key_names;
 	AggregateDescriptions aggregates;
@@ -859,12 +866,12 @@ void InterpreterSelectQuery::executeTotalsAndHaving(BlockInputStreams & streams,
 }
 
 
-void InterpreterSelectQuery::executeExpression(BlockInputStreams & streams, ExpressionActionsPtr expression)
+void InterpreterSelectQuery::executeExpression(ExpressionActionsPtr expression)
 {
-	for (auto & stream : streams)
+	transformStreams([&](auto & stream)
 	{
 		stream = new ExpressionBlockInputStream(stream, expression);
-	}
+	});
 }
 
 
@@ -899,12 +906,12 @@ static size_t getLimitForSorting(ASTSelectQuery & query)
 }
 
 
-void InterpreterSelectQuery::executeOrder(BlockInputStreams & streams)
+void InterpreterSelectQuery::executeOrder()
 {
 	SortDescription order_descr = getSortDescription(query);
 	size_t limit = getLimitForSorting(query);
 
-	for (auto & stream : streams)
+	transformStreams([&](auto & stream)
 	{
 		IProfilingBlockInputStream * sorting_stream = new PartialSortingBlockInputStream(stream, order_descr, limit);
 
@@ -917,12 +924,12 @@ void InterpreterSelectQuery::executeOrder(BlockInputStreams & streams)
 		sorting_stream->setLimits(limits);
 
 		stream = sorting_stream;
-	}
+	});
 
 	BlockInputStreamPtr & stream = streams[0];
 
 	/// Если потоков несколько, то объединяем их в один
-	executeUnion(streams);
+	executeUnion();
 
 	/// Сливаем сортированные блоки.
 	stream = new MergeSortingBlockInputStream(
@@ -931,7 +938,7 @@ void InterpreterSelectQuery::executeOrder(BlockInputStreams & streams)
 }
 
 
-void InterpreterSelectQuery::executeMergeSorted(BlockInputStreams & streams)
+void InterpreterSelectQuery::executeMergeSorted()
 {
 	SortDescription order_descr = getSortDescription(query);
 	size_t limit = getLimitForSorting(query);
@@ -944,8 +951,10 @@ void InterpreterSelectQuery::executeMergeSorted(BlockInputStreams & streams)
 		/** MergingSortedBlockInputStream читает источники последовательно.
 		  * Чтобы данные на удалённых серверах готовились параллельно, оборачиваем в AsynchronousBlockInputStream.
 		  */
-		for (auto & stream : streams)
+		transformStreams([&](auto & stream)
+		{
 			stream = new AsynchronousBlockInputStream(stream);
+		});
 
 		/// Сливаем сортированные источники в один сортированный источник.
 		stream = new MergingSortedBlockInputStream(streams, order_descr, settings.max_block_size, limit);
@@ -954,16 +963,16 @@ void InterpreterSelectQuery::executeMergeSorted(BlockInputStreams & streams)
 }
 
 
-void InterpreterSelectQuery::executeProjection(BlockInputStreams & streams, ExpressionActionsPtr expression)
+void InterpreterSelectQuery::executeProjection(ExpressionActionsPtr expression)
 {
-	for (auto & stream : streams)
+	transformStreams([&](auto & stream)
 	{
 		stream = new ExpressionBlockInputStream(stream, expression);
-	}
+	});
 }
 
 
-void InterpreterSelectQuery::executeDistinct(BlockInputStreams & streams, bool before_order, Names columns)
+void InterpreterSelectQuery::executeDistinct(bool before_order, Names columns)
 {
 	if (query.distinct)
 	{
@@ -977,10 +986,10 @@ void InterpreterSelectQuery::executeDistinct(BlockInputStreams & streams, bool b
 		if (!query.order_expression_list || !before_order)
 			limit_for_distinct = limit_length + limit_offset;
 
-		for (auto & stream : streams)
+		transformStreams([&](auto & stream)
 		{
 			stream = new DistinctBlockInputStream(stream, settings.limits, limit_for_distinct, columns);
-		}
+		});
 
 		if (streams.size() > 1)
 			union_within_single_query = true;
@@ -988,7 +997,7 @@ void InterpreterSelectQuery::executeDistinct(BlockInputStreams & streams, bool b
 }
 
 
-void InterpreterSelectQuery::executeUnion(BlockInputStreams & streams)
+void InterpreterSelectQuery::executeUnion()
 {
 	/// Если до сих пор есть несколько потоков, то объединяем их в один
 	if (streams.size() > 1)
@@ -1001,7 +1010,7 @@ void InterpreterSelectQuery::executeUnion(BlockInputStreams & streams)
 
 
 /// Предварительный LIMIT - применяется в каждом источнике, если источников несколько, до их объединения.
-void InterpreterSelectQuery::executePreLimit(BlockInputStreams & streams)
+void InterpreterSelectQuery::executePreLimit()
 {
 	size_t limit_length = 0;
 	size_t limit_offset = 0;
@@ -1010,10 +1019,10 @@ void InterpreterSelectQuery::executePreLimit(BlockInputStreams & streams)
 	/// Если есть LIMIT
 	if (query.limit_length)
 	{
-		for (auto & stream : streams)
+		transformStreams([&](auto & stream)
 		{
 			stream = new LimitBlockInputStream(stream, limit_length + limit_offset, 0);
-		}
+		});
 
 		if (streams.size() > 1)
 			union_within_single_query = true;
@@ -1021,7 +1030,7 @@ void InterpreterSelectQuery::executePreLimit(BlockInputStreams & streams)
 }
 
 
-void InterpreterSelectQuery::executeLimit(BlockInputStreams & streams)
+void InterpreterSelectQuery::executeLimit()
 {
 	size_t limit_length = 0;
 	size_t limit_offset = 0;
@@ -1036,14 +1045,14 @@ void InterpreterSelectQuery::executeLimit(BlockInputStreams & streams)
 }
 
 
-void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(BlockInputStreams & streams, SubqueriesForSets & subqueries_for_sets)
+void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(SubqueriesForSets & subqueries_for_sets)
 {
 	/// Если запрос не распределённый, то удалим создание временных таблиц из подзапросов (предназначавшихся для отправки на удалённые серверы).
 	if (!(storage && storage->isRemote()))
 		for (auto & elem : subqueries_for_sets)
 			elem.second.table.reset();
 
-	executeUnion(streams);
+	executeUnion();
 	streams[0] = new CreatingSetsBlockInputStream(streams[0], subqueries_for_sets, settings.limits);
 }
 

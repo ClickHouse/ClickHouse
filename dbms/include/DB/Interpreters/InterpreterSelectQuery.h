@@ -120,22 +120,29 @@ private:
 	/// Разные стадии выполнения запроса.
 
 	/// Вынимает данные из таблицы. Возвращает стадию, до которой запрос был обработан в Storage.
-	QueryProcessingStage::Enum executeFetchColumns(BlockInputStreams & streams);
+	QueryProcessingStage::Enum executeFetchColumns();
 
-	void executeWhere(                   BlockInputStreams & streams, ExpressionActionsPtr expression);
-	void executeAggregation(             BlockInputStreams & streams, ExpressionActionsPtr expression, bool overflow_row, bool final);
-	void executeMergeAggregated(         BlockInputStreams & streams, bool overflow_row, bool final);
-	void executeTotalsAndHaving(         BlockInputStreams & streams, bool has_having, ExpressionActionsPtr expression, bool overflow_row);
-	void executeHaving(                  BlockInputStreams & streams, ExpressionActionsPtr expression);
-	void executeExpression(              BlockInputStreams & streams, ExpressionActionsPtr expression);
-	void executeOrder(                   BlockInputStreams & streams);
-	void executeMergeSorted(             BlockInputStreams & streams);
-	void executePreLimit(                BlockInputStreams & streams);
-	void executeUnion(                   BlockInputStreams & streams);
-	void executeLimit(                   BlockInputStreams & streams);
-	void executeProjection(              BlockInputStreams & streams, ExpressionActionsPtr expression);
-	void executeDistinct(                BlockInputStreams & streams, bool before_order, Names columns);
-	void executeSubqueriesInSetsAndJoins(BlockInputStreams & streams, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
+	void executeWhere(ExpressionActionsPtr expression);
+	void executeAggregation(ExpressionActionsPtr expression, bool overflow_row, bool final);
+	void executeMergeAggregated(bool overflow_row, bool final);
+	void executeTotalsAndHaving(bool has_having, ExpressionActionsPtr expression, bool overflow_row);
+	void executeHaving(ExpressionActionsPtr expression);
+	void executeExpression(ExpressionActionsPtr expression);
+	void executeOrder();
+	void executeMergeSorted();
+	void executePreLimit();
+	void executeUnion();
+	void executeLimit();
+	void executeProjection(ExpressionActionsPtr expression);
+	void executeDistinct(bool before_order, Names columns);
+	void executeSubqueriesInSetsAndJoins(std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
+
+	template <typename Transform>
+	void transformStreams(Transform && transform)
+	{
+		for (auto & stream : streams)
+			transform(stream);
+	}
 
 	void ignoreWithTotals();
 
