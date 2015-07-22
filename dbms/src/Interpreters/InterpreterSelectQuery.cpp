@@ -16,6 +16,7 @@
 #include <DB/DataStreams/CreatingSetsBlockInputStream.h>
 #include <DB/DataStreams/MaterializingBlockInputStream.h>
 #include <DB/DataStreams/FormatFactory.h>
+#include <DB/DataStreams/ConcatBlockInputStream.h>
 
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ASTIdentifier.h>
@@ -316,7 +317,7 @@ BlockIO InterpreterSelectQuery::execute()
 {
 	(void) executeWithoutUnion();
 
-	if (streams.empty())
+	if (hasNoData())
 	{
 		BlockIO res;
 		res.in = new NullBlockInputStream;
@@ -434,6 +435,13 @@ void InterpreterSelectQuery::executeSingleQuery()
 			query_analyzer->appendArrayJoin(chain, !first_stage);
 			query_analyzer->appendJoin(chain, !first_stage);
 
+			if (query.join)
+			{
+				auto join = typeid_cast<const ASTJoin &>(*query.join);
+				if (join.kind == ASTJoin::Full || join.kind == ASTJoin::Right)
+					stream_with_non_joined_data = chain.getLastActions()->createStreamWithNonJoinedDataIfFullOrRightJoin(settings.max_block_size);
+			}
+
 			if (query_analyzer->appendWhere(chain, !first_stage))
 			{
 				has_where = true;
@@ -476,9 +484,8 @@ void InterpreterSelectQuery::executeSingleQuery()
 		 *  Эта проверка специально вынесена чуть ниже, чем она могла бы быть (сразу после executeFetchColumns),
 		 *  чтобы запрос был проанализирован, и в нём могли бы быть обнаружены ошибки (например, несоответствия типов).
 		 *  Иначе мог бы вернуться пустой результат на некорректный запрос.
-		 * TODO FULL и RIGHT JOIN
 		 */
-		if (streams.empty())
+		if (hasNoData())
 			return;
 
 		/// Перед выполнением HAVING уберем из блока лишние столбцы (в основном, ключи агрегации).
@@ -606,7 +613,7 @@ void InterpreterSelectQuery::executeSingleQuery()
 	}
 
 	/** Если данных нет. */
-	if (streams.empty())
+	if (hasNoData())
 		return;
 
 	SubqueriesForSets subqueries_for_sets = query_analyzer->getSubqueriesForSets();
@@ -629,7 +636,7 @@ static void getLimitLengthAndOffset(ASTSelectQuery & query, size_t & length, siz
 
 QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
 {
-	if (!streams.empty())
+	if (!hasNoData())
 		return QueryProcessingStage::FetchColumns;
 
 	/// Интерпретатор подзапроса, если подзапрос
@@ -808,8 +815,6 @@ void InterpreterSelectQuery::executeAggregation(ExpressionActionsPtr expression,
 		stream = new ExpressionBlockInputStream(stream, expression);
 	});
 
-	BlockInputStreamPtr & stream = streams[0];
-
 	Names key_names;
 	AggregateDescriptions aggregates;
 	query_analyzer->getAggregateInfo(key_names, aggregates);
@@ -817,16 +822,27 @@ void InterpreterSelectQuery::executeAggregation(ExpressionActionsPtr expression,
 	/// Если источников несколько, то выполняем параллельную агрегацию
 	if (streams.size() > 1)
 	{
-		stream = new ParallelAggregatingBlockInputStream(streams, nullptr, key_names, aggregates, overflow_row, final,
+		streams[0] = new ParallelAggregatingBlockInputStream(streams, stream_with_non_joined_data, key_names, aggregates, overflow_row, final,
 			settings.max_threads, settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode,
 			settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile, settings.group_by_two_level_threshold);
 
 		streams.resize(1);
 	}
 	else
-		stream = new AggregatingBlockInputStream(stream, key_names, aggregates, overflow_row, final,
+	{
+		BlockInputStreams inputs;
+		if (!streams.empty())
+			inputs.push_back(streams[0]);
+		else
+			streams.resize(1);
+
+		if (stream_with_non_joined_data)
+			inputs.push_back(stream_with_non_joined_data);
+
+		streams[0] = new AggregatingBlockInputStream(new ConcatBlockInputStream(inputs), key_names, aggregates, overflow_row, final,
 			settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode,
 			settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile, 0);
+	}
 }
 
 
@@ -926,14 +942,12 @@ void InterpreterSelectQuery::executeOrder()
 		stream = sorting_stream;
 	});
 
-	BlockInputStreamPtr & stream = streams[0];
-
 	/// Если потоков несколько, то объединяем их в один
 	executeUnion();
 
 	/// Сливаем сортированные блоки.
-	stream = new MergeSortingBlockInputStream(
-		stream, order_descr, settings.max_block_size, limit,
+	streams[0] = new MergeSortingBlockInputStream(
+		streams[0], order_descr, settings.max_block_size, limit,
 		settings.limits.max_bytes_before_external_sort, context.getTemporaryPath());
 }
 
@@ -942,8 +956,6 @@ void InterpreterSelectQuery::executeMergeSorted()
 {
 	SortDescription order_descr = getSortDescription(query);
 	size_t limit = getLimitForSorting(query);
-
-	BlockInputStreamPtr & stream = streams[0];
 
 	/// Если потоков несколько, то объединяем их в один
 	if (streams.size() > 1)
@@ -957,7 +969,7 @@ void InterpreterSelectQuery::executeMergeSorted()
 		});
 
 		/// Сливаем сортированные источники в один сортированный источник.
-		stream = new MergingSortedBlockInputStream(streams, order_descr, settings.max_block_size, limit);
+		streams[0] = new MergingSortedBlockInputStream(streams, order_descr, settings.max_block_size, limit);
 		streams.resize(1);
 	}
 }
@@ -1002,7 +1014,7 @@ void InterpreterSelectQuery::executeUnion()
 	/// Если до сих пор есть несколько потоков, то объединяем их в один
 	if (streams.size() > 1)
 	{
-		streams[0] = new UnionBlockInputStream(streams, nullptr, settings.max_threads);
+		streams[0] = new UnionBlockInputStream(streams, stream_with_non_joined_data, settings.max_threads);
 		streams.resize(1);
 		union_within_single_query = false;
 	}
@@ -1039,8 +1051,10 @@ void InterpreterSelectQuery::executeLimit()
 	/// Если есть LIMIT
 	if (query.limit_length)
 	{
-		BlockInputStreamPtr & stream = streams[0];
-		stream = new LimitBlockInputStream(stream, limit_length, limit_offset);
+		transformStreams([&](auto & stream)
+		{
+			stream = new LimitBlockInputStream(stream, limit_length, limit_offset);
+		});
 	}
 }
 

@@ -109,7 +109,7 @@ private:
 	// Переименовать столбцы каждого запроса цепочки UNION ALL в такие же имена, как в первом запросе.
 	void renameColumns();
 
-	/** Из какой таблицы читать. При JOIN, возвращается "левая" таблицы.
+	/** Из какой таблицы читать. При JOIN, возвращается "левая" таблица.
 	 */
 	void getDatabaseAndTableNames(String & database_name, String & table_name);
 
@@ -142,6 +142,14 @@ private:
 	{
 		for (auto & stream : streams)
 			transform(stream);
+
+		if (stream_with_non_joined_data)
+			transform(stream_with_non_joined_data);
+	}
+
+	bool hasNoData() const
+	{
+		return streams.empty() && !stream_with_non_joined_data;
 	}
 
 	void ignoreWithTotals();
@@ -163,8 +171,20 @@ private:
 	QueryProcessingStage::Enum to_stage;
 	size_t subquery_depth;
 	std::unique_ptr<ExpressionAnalyzer> query_analyzer;
-	BlockInputStreams streams;
 	NamesAndTypesList table_column_names;
+
+	/** Потоки данных.
+	  * Исходные потоки данных получаются в функции executeFetchColumns.
+	  * Затем они преобразуются (оборачиваются в другие потоки) с помощью функций execute*,
+	  *  чтобы получить целый конвейер выполнения запроса.
+	  */
+	BlockInputStreams streams;
+
+	/** При выполнении FULL или RIGHT JOIN, здесь будет поток данных, из которого можно прочитать "неприсоединённые" строки.
+	  * Он имеет особое значение, так как чтение из него должно осуществляться после чтения из основных потоков.
+	  * Он подклеивается к основным потокам в UnionBlockInputStream или ParallelAggregatingBlockInputStream.
+	  */
+	BlockInputStreamPtr stream_with_non_joined_data;
 
 	/// Являемся ли мы первым запросом SELECT цепочки UNION ALL?
 	bool is_first_select_inside_union_all;
