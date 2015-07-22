@@ -152,6 +152,12 @@ private:
 		return streams.empty() && !stream_with_non_joined_data;
 	}
 
+	bool hasMoreThanOneStream() const
+	{
+		return streams.size() + (stream_with_non_joined_data ? 1 : 0) > 1;
+	}
+
+
 	void ignoreWithTotals();
 
 	/** Если в запросе SELECT есть секция SETTINGS, то применить настройки из неё.

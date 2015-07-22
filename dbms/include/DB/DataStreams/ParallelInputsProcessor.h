@@ -79,16 +79,6 @@ public:
 		threads.reserve(max_threads);
 		for (size_t i = 0; i < max_threads; ++i)
 			threads.emplace_back(std::bind(&ParallelInputsProcessor::thread, this, current_memory_tracker, i));
-
-		if (additional_input_at_end)
-		{
-			wait();
-
-			while (Block block = additional_input_at_end->read())
-				handler.onBlock(block, 0);
-
-			handler.onFinish();
-		}
 	}
 
 	/// Попросить все источники остановиться раньше, чем они иссякнут.
@@ -166,8 +156,27 @@ private:
 		}
 
 		/// Последний поток при выходе сообщает, что данных больше нет.
-		if (0 == --active_threads && !additional_input_at_end)
+		if (0 == --active_threads)
 		{
+			/// И ещё обрабатывает дополнительный источник, если такой есть.
+			if (additional_input_at_end)
+			{
+				try
+				{
+					while (Block block = additional_input_at_end->read())
+						handler.onBlock(block, thread_num);
+				}
+				catch (...)
+				{
+					exception = cloneCurrentException();
+				}
+
+				if (exception)
+				{
+					handler.onException(exception, thread_num);
+				}
+			}
+
 			handler.onFinish();
 		}
 	}

@@ -558,7 +558,7 @@ void InterpreterSelectQuery::executeSingleQuery()
 				executeExpression(before_order_and_select);
 				executeDistinct(true, selected_columns);
 
-				need_second_distinct_pass = query.distinct && (streams.size() > 1);
+				need_second_distinct_pass = query.distinct && hasMoreThanOneStream();
 			}
 			else if (query.group_by_with_totals && !aggregate_final)
 			{
@@ -592,13 +592,13 @@ void InterpreterSelectQuery::executeSingleQuery()
 			/** Оптимизация - если источников несколько и есть LIMIT, то сначала применим предварительный LIMIT,
 				* ограничивающий число записей в каждом до offset + limit.
 				*/
-			if (query.limit_length && streams.size() > 1 && !query.distinct)
+			if (query.limit_length && hasMoreThanOneStream() && !query.distinct)
 				executePreLimit();
 
 			if (need_second_distinct_pass)
 				union_within_single_query = true;
 
-			if (union_within_single_query)
+			if (union_within_single_query || stream_with_non_joined_data)
 				executeUnion();
 
 			if (streams.size() == 1)
@@ -826,6 +826,7 @@ void InterpreterSelectQuery::executeAggregation(ExpressionActionsPtr expression,
 			settings.max_threads, settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode,
 			settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile, settings.group_by_two_level_threshold);
 
+		stream_with_non_joined_data = nullptr;
 		streams.resize(1);
 	}
 	else
@@ -842,6 +843,8 @@ void InterpreterSelectQuery::executeAggregation(ExpressionActionsPtr expression,
 		streams[0] = new AggregatingBlockInputStream(new ConcatBlockInputStream(inputs), key_names, aggregates, overflow_row, final,
 			settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode,
 			settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile, 0);
+
+		stream_with_non_joined_data = nullptr;
 	}
 }
 
@@ -958,7 +961,7 @@ void InterpreterSelectQuery::executeMergeSorted()
 	size_t limit = getLimitForSorting(query);
 
 	/// Если потоков несколько, то объединяем их в один
-	if (streams.size() > 1)
+	if (hasMoreThanOneStream())
 	{
 		/** MergingSortedBlockInputStream читает источники последовательно.
 		  * Чтобы данные на удалённых серверах готовились параллельно, оборачиваем в AsynchronousBlockInputStream.
@@ -1003,7 +1006,7 @@ void InterpreterSelectQuery::executeDistinct(bool before_order, Names columns)
 			stream = new DistinctBlockInputStream(stream, settings.limits, limit_for_distinct, columns);
 		});
 
-		if (streams.size() > 1)
+		if (hasMoreThanOneStream())
 			union_within_single_query = true;
 	}
 }
@@ -1012,10 +1015,17 @@ void InterpreterSelectQuery::executeDistinct(bool before_order, Names columns)
 void InterpreterSelectQuery::executeUnion()
 {
 	/// Если до сих пор есть несколько потоков, то объединяем их в один
-	if (streams.size() > 1)
+	if (hasMoreThanOneStream())
 	{
 		streams[0] = new UnionBlockInputStream(streams, stream_with_non_joined_data, settings.max_threads);
+		stream_with_non_joined_data = nullptr;
 		streams.resize(1);
+		union_within_single_query = false;
+	}
+	else if (stream_with_non_joined_data)
+	{
+		streams.push_back(stream_with_non_joined_data);
+		stream_with_non_joined_data = nullptr;
 		union_within_single_query = false;
 	}
 }
@@ -1036,7 +1046,7 @@ void InterpreterSelectQuery::executePreLimit()
 			stream = new LimitBlockInputStream(stream, limit_length + limit_offset, 0);
 		});
 
-		if (streams.size() > 1)
+		if (hasMoreThanOneStream())
 			union_within_single_query = true;
 	}
 }
