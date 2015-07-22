@@ -400,12 +400,13 @@ void InterpreterSelectQuery::executeSingleQuery()
 
 	if (to_stage > QueryProcessingStage::FetchColumns)
 	{
+		bool has_join		= false;
 		bool has_where      = false;
 		bool need_aggregate = false;
 		bool has_having     = false;
 		bool has_order_by   = false;
 
-		ExpressionActionsPtr array_join;
+		ExpressionActionsPtr before_join;
 		ExpressionActionsPtr before_where;
 		ExpressionActionsPtr before_aggregation;
 		ExpressionActionsPtr before_having;
@@ -433,13 +434,16 @@ void InterpreterSelectQuery::executeSingleQuery()
 			need_aggregate = query_analyzer->hasAggregation();
 
 			query_analyzer->appendArrayJoin(chain, !first_stage);
-			query_analyzer->appendJoin(chain, !first_stage);
 
-			if (query.join)
+			if (query_analyzer->appendJoin(chain, !first_stage))
 			{
+				has_join = true;
+				before_join = chain.getLastActions();
+				chain.addStep();
+
 				auto join = typeid_cast<const ASTJoin &>(*query.join);
 				if (join.kind == ASTJoin::Full || join.kind == ASTJoin::Right)
-					stream_with_non_joined_data = chain.getLastActions()->createStreamWithNonJoinedDataIfFullOrRightJoin(settings.max_block_size);
+					stream_with_non_joined_data = before_join->createStreamWithNonJoinedDataIfFullOrRightJoin(settings.max_block_size);
 			}
 
 			if (query_analyzer->appendWhere(chain, !first_stage))
@@ -510,6 +514,10 @@ void InterpreterSelectQuery::executeSingleQuery()
 
 		if (first_stage)
 		{
+			if (has_join)
+				for (auto & stream : streams)	/// Применяем ко всем источникам кроме stream_with_non_joined_data.
+					stream = new ExpressionBlockInputStream(stream, before_join);
+
 			if (has_where)
 				executeWhere(before_where);
 
