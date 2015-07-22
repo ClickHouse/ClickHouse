@@ -41,6 +41,7 @@ class Macros;
 class Progress;
 class Clusters;
 class QueryLog;
+struct MergeTreeSettings;
 
 
 /// имя таблицы -> таблица
@@ -92,7 +93,6 @@ private:
 	std::shared_ptr<QuotaForIntervals> quota;	/// Текущая квота. По-умолчанию - пустая квота, которая ничего не ограничивает.
 	String current_database;			/// Текущая БД.
 	String current_query_id;			/// Id текущего запроса.
-	NamesAndTypesList columns;			/// Столбцы текущей обрабатываемой таблицы.
 	Settings settings;					/// Настройки выполнения запроса.
 	using ProgressCallback = std::function<void(const Progress & progress)>;
 	ProgressCallback progress_callback;	/// Колбек для отслеживания прогресса выполнения запроса.
@@ -207,11 +207,6 @@ public:
 	const Databases & getDatabases() const;
 	Databases & getDatabases();
 
-	/// При работе со списком столбцов, используйте локальный контекст, чтобы никто больше его не менял.
-	const NamesAndTypesList & getColumns() const							{ return columns; }
-	NamesAndTypesList & getColumns()										{ return columns; }
-	void setColumns(const NamesAndTypesList & columns_)						{ columns = columns_; }
-
 	Context & getSessionContext();
 	Context & getGlobalContext();
 
@@ -266,8 +261,8 @@ public:
 	Poco::SharedPtr<Clusters> getClusters() const;
 
 	Compiler & getCompiler();
-
 	QueryLog & getQueryLog();
+	const MergeTreeSettings & getMergeTreeSettings();
 
 	/// Позволяет выбрать метод сжатия по условиям, описанным в конфигурационном файле.
 	CompressionMethod chooseCompressionMethod(size_t part_size, double part_size_ratio) const;

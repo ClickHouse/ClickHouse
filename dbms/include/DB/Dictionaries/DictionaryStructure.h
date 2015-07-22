@@ -117,9 +117,13 @@ struct DictionaryStructure final
 {
 	std::string id_name;
 	std::vector<DictionaryAttribute> attributes;
+	std::string range_min;
+	std::string range_max;
 
 	DictionaryStructure(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
-		: id_name{config.getString(config_prefix + ".id.name")}
+		: id_name{config.getString(config_prefix + ".id.name")},
+		  range_min{config.getString(config_prefix + ".range_min.name", "")},
+		  range_max{config.getString(config_prefix + ".range_max.name", "")}
 	{
 		if (id_name.empty())
 			throw Exception{

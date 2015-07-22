@@ -453,7 +453,7 @@ public:
 		return name;
 	}
 
-	void getReturnTypeAndPrerequisites(const ColumnsWithNameAndType & arguments,
+	void getReturnTypeAndPrerequisites(const ColumnsWithTypeAndName & arguments,
 										DataTypePtr & out_return_type,
 										ExpressionActions::Actions & out_prerequisites)
 	{
@@ -530,6 +530,36 @@ public:
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		block.getByPosition(result).column = new ColumnConstUInt8(block.rowsInFirstColumn(), 0);
+	}
+};
+
+
+class FunctionIdentity : public IFunction
+{
+public:
+	static constexpr auto name = "identity";
+	static IFunction * create(const Context & context) { return new FunctionIdentity; }
+
+	/// Получить имя функции.
+	String getName() const
+	{
+		return name;
+	}
+
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnType(const DataTypes & arguments) const
+	{
+		if (arguments.size() != 1)
+			throw Exception("Function " + getName() + " requires exactly one argument.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		return arguments.front()->clone();
+	}
+
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		block.getByPosition(result).column = block.getByPosition(arguments.front()).column;
 	}
 };
 

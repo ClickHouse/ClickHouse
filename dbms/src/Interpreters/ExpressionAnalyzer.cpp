@@ -1011,7 +1011,7 @@ struct ExpressionAnalyzer::ScopeStack
 		stack.emplace_back();
 		Level & prev = stack[stack.size() - 2];
 
-		ColumnsWithNameAndType all_columns;
+		ColumnsWithTypeAndName all_columns;
 		NameSet new_names;
 
 		for (NamesAndTypesList::const_iterator it = input_columns.begin(); it != input_columns.end(); ++it)
@@ -1024,7 +1024,7 @@ struct ExpressionAnalyzer::ScopeStack
 		const Block & prev_sample_block = prev.actions->getSampleBlock();
 		for (size_t i = 0, size = prev_sample_block.columns(); i < size; ++i)
 		{
-			const ColumnWithNameAndType & col = prev_sample_block.unsafeGetByPosition(i);
+			const ColumnWithTypeAndName & col = prev_sample_block.unsafeGetByPosition(i);
 			if (!new_names.count(col.name))
 				all_columns.push_back(col);
 		}
@@ -1057,7 +1057,7 @@ struct ExpressionAnalyzer::ScopeStack
 
 		for (size_t i = 0; i < added.size(); ++i)
 		{
-			const ColumnWithNameAndType & col = stack[level].actions->getSampleBlock().getByName(added[i]);
+			const ColumnWithTypeAndName & col = stack[level].actions->getSampleBlock().getByName(added[i]);
 			for (size_t j = level + 1; j < stack.size(); ++j)
 				stack[j].actions->addInput(col);
 		}
@@ -1234,7 +1234,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 					{
 						/// Мы в той части дерева, которую не собираемся вычислять. Нужно только определить типы.
 						/// Не будем выполнять подзапросы и составлять множества. Вставим произвольный столбец правильного типа.
-						ColumnWithNameAndType fake_column;
+						ColumnWithTypeAndName fake_column;
 						fake_column.name = node->getColumnName();
 						fake_column.type = new DataTypeUInt8;
 						actions_stack.addAction(ExpressionAction::addColumn(fake_column));
@@ -1275,7 +1275,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 				}
 				else if (set)
 				{
-					ColumnWithNameAndType column;
+					ColumnWithTypeAndName column;
 					column.type = new DataTypeSet;
 
 					/// Если аргумент - множество, заданное перечислением значений, дадим ему уникальное имя,
@@ -1370,7 +1370,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 						///  потому что оно не однозначно определяет выражение (типы аргументов могут быть разными).
 						argument_names[i] = getUniqueName(actions_stack.getSampleBlock(), "__lambda");
 
-						ColumnWithNameAndType lambda_column;
+						ColumnWithTypeAndName lambda_column;
 						lambda_column.column = new ColumnExpression(1, lambda_actions, lambda_arguments, result_type, result_name);
 						lambda_column.type = argument_types[i];
 						lambda_column.name = argument_names[i];
@@ -1400,7 +1400,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 	{
 		DataTypePtr type = apply_visitor(FieldToDataType(), node->value);
 
-		ColumnWithNameAndType column;
+		ColumnWithTypeAndName column;
 		column.column = type->createConstColumn(1, node->value);
 		column.type = type;
 		column.name = node->getColumnName();
@@ -1965,7 +1965,7 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAnd
 	else if (typeid_cast<const ASTSubquery *>(node.table.get()))
 	{
 		const auto & subquery = node.table->children.at(0);
-		nested_result_sample = InterpreterSelectQuery(subquery, context, QueryProcessingStage::Complete, subquery_depth + 1).getSampleBlock();
+		nested_result_sample = InterpreterSelectQuery::getSampleBlock(subquery, context);
 	}
 
 	auto & keys = typeid_cast<ASTExpressionList &>(*node.using_expr_list);

@@ -2,7 +2,6 @@
 
 #include <DB/Storages/StorageLog.h>
 #include <DB/Interpreters/Context.h>
-#include <statdaemons/CounterInFile.h>
 
 
 namespace DB
@@ -89,7 +88,9 @@ private:
 	ChunkIndices chunk_indices;
 	ChunkNumToChunkName chunk_names;
 
-	CounterInFile reference_counter;
+	size_t refcount = 0;
+	std::mutex refcount_mutex;
+
 	Context & context;
 
 	Logger * log;

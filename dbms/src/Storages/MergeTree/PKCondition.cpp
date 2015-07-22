@@ -151,11 +151,11 @@ PKCondition::PKCondition(ASTPtr query, const Context & context_, const NamesAndT
 	/** Вычисление выражений, зависящих только от констант.
 	 * Чтобы индекс мог использоваться, если написано, например WHERE Date = toDate(now()).
 	 */
-	ExpressionActionsPtr expr_for_constant_folding = ExpressionAnalyzer(query, context_, all_columns).getConstActions();
+	ExpressionActionsPtr expr_for_constant_folding = ExpressionAnalyzer(query, context_, nullptr, all_columns).getConstActions();
 	Block block_with_constants;
 
 	/// В блоке должен быть хотя бы один столбец, чтобы у него было известно число строк.
-	ColumnWithNameAndType dummy_column;
+	ColumnWithTypeAndName dummy_column;
 	dummy_column.name = "_dummy";
 	dummy_column.type = new DataTypeUInt8;
 	dummy_column.column = new ColumnConstUInt8(1, 0);

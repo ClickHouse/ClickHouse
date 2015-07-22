@@ -757,7 +757,7 @@ public:
 		{
 			Cell x;
 			x.read(rb);
-			insert(x);
+			insert(Cell::getKey(x.getValue()));
 		}
 	}
 
@@ -781,7 +781,7 @@ public:
 			Cell x;
 			DB::assertString(",", rb);
 			x.readText(rb);
-			insert(x);
+			insert(Cell::getKey(x.getValue()));
 		}
 	}
 

@@ -296,7 +296,7 @@ namespace DB
 			defaulted_columns.emplace_back(column_name, nullptr);
 		}
 
-		const auto actions = ExpressionAnalyzer{default_expr_list, context, columns}.getActions(true);
+		const auto actions = ExpressionAnalyzer{default_expr_list, context, {}, columns}.getActions(true);
 		const auto block = actions->getSampleBlock();
 
 		/// set deduced types, modify default expression if necessary

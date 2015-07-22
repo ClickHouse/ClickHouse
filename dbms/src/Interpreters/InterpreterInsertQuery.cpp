@@ -54,7 +54,7 @@ Block InterpreterInsertQuery::getSampleBlock()
 		if (!table_sample.has(current_name))
 			throw Exception("No such column " + current_name + " in table " + query.table, ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
-		ColumnWithNameAndType col;
+		ColumnWithTypeAndName col;
 		col.name = current_name;
 		col.type = table_sample.getByName(current_name).type;
 		col.column = col.type->createColumn();

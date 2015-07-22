@@ -32,10 +32,18 @@ public:
 	/// Переписывает select_expression_list, чтобы вернуть только необходимые столбцы в правильном порядке.
 	void rewriteSelectExpressionList(const Names & column_names);
 
+	bool isUnionAllHead() const { return prev_union_all.isNull() && !next_union_all.isNull(); }
+
 	ASTPtr clone() const override;
+
+	/// Получить глубокую копию дерева первого запроса SELECT.
+	ASTPtr cloneFirstSelect() const;
 
 	/// Возвращает указатель на формат из последнего SELECT'а цепочки UNION ALL.
 	const IAST * getFormat() const override;
+
+private:
+	ASTPtr cloneImpl(bool traverse_union_all) const;
 
 public:
 	bool distinct = false;
@@ -55,7 +63,10 @@ public:
 	ASTPtr limit_offset;
 	ASTPtr limit_length;
 	ASTPtr settings;
-	ASTPtr next_union_all; /// Следующий запрос SELECT в цепочке UNION ALL, если такой есть
+	/// Предыдущий запрос SELECT в цепочке UNION ALL (не вставляется в children и не клонируется)
+	ASTPtr prev_union_all;
+	/// Следующий запрос SELECT в цепочке UNION ALL, если такой есть
+	ASTPtr next_union_all;
 };
 
 }
