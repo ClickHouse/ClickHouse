@@ -61,22 +61,23 @@ public:
 				else
 				{
 					toMedium();
-					getObject<Medium>()->insert(value);
+					getContainer<Medium>().insert(value);
 				}
 			}
 		}
 		else if (container_type == details::ContainerType::MEDIUM)
 		{
-			if (getObject<Medium>()->size() < medium_set_size_max)
-				getObject<Medium>()->insert(value);
+			auto & container = getContainer<Medium>();
+			if (container.size() < medium_set_size_max)
+				container.insert(value);
 			else
 			{
 				toLarge();
-				getObject<Large>()->insert(value);
+				getContainer<Large>().insert(value);
 			}
 		}
 		else if (container_type == details::ContainerType::LARGE)
-			getObject<Large>()->insert(value);
+			getContainer<Large>().insert(value);
 		else
 			throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
 	}
@@ -88,9 +89,9 @@ public:
 		if (container_type == details::ContainerType::SMALL)
 			return small.size();
 		else if (container_type == details::ContainerType::MEDIUM)
-			return getObject<Medium>()->size();
+			return getContainer<Medium>().size();
 		else if (container_type == details::ContainerType::LARGE)
-			return getObject<Large>()->size();
+			return getContainer<Large>().size();
 		else
 			throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
 	}
@@ -122,7 +123,7 @@ public:
 			}
 			else if (rhs.getContainerType() == details::ContainerType::MEDIUM)
 			{
-				for (const auto & x : *rhs.getObject<Medium>())
+				for (const auto & x : rhs.getContainer<Medium>())
 					insert(x);
 			}
 		}
@@ -135,11 +136,11 @@ public:
 			}
 			else if (rhs.getContainerType() == details::ContainerType::MEDIUM)
 			{
-				for (const auto & x : *rhs.getObject<Medium>())
+				for (const auto & x : rhs.getContainer<Medium>())
 					insert(x);
 			}
 			else if (rhs.getContainerType() == details::ContainerType::LARGE)
-				getObject<Large>()->merge(*rhs.getObject<Large>());
+				getContainer<Large>().merge(rhs.getContainer<Large>());
 		}
 		else
 			throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
@@ -150,19 +151,19 @@ public:
 	{
 		UInt8 v;
 		readBinary(v, in);
-		details::ContainerType t = static_cast<details::ContainerType>(v);
+		auto container_type = static_cast<details::ContainerType>(v);
 
-		if (t == details::ContainerType::SMALL)
+		if (container_type == details::ContainerType::SMALL)
 			small.read(in);
-		else if (t == details::ContainerType::MEDIUM)
+		else if (container_type == details::ContainerType::MEDIUM)
 		{
 			toMedium();
-			getObject<Medium>()->read(in);
+			getContainer<Medium>().read(in);
 		}
-		else if (t == details::ContainerType::LARGE)
+		else if (container_type == details::ContainerType::LARGE)
 		{
 			toLarge();
-			getObject<Large>()->read(in);
+			getContainer<Large>().read(in);
 		}
 		else
 			throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
@@ -178,16 +179,14 @@ public:
 	void write(DB::WriteBuffer & out) const
 	{
 		auto container_type = getContainerType();
-
-		UInt8 v = static_cast<UInt8>(container_type);
-		writeBinary(v, out);
+		writeBinary(static_cast<UInt8>(container_type), out);
 
 		if (container_type == details::ContainerType::SMALL)
 			small.write(out);
 		else if (container_type == details::ContainerType::MEDIUM)
-			getObject<Medium>()->write(out);
+			getContainer<Medium>().write(out);
 		else if (container_type == details::ContainerType::LARGE)
-			getObject<Large>()->write(out);
+			getContainer<Large>().write(out);
 		else
 			throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
 	}
@@ -236,7 +235,7 @@ private:
 		}
 		else if (container_type == details::ContainerType::MEDIUM)
 		{
-			for (const auto & x : *getObject<Medium>())
+			for (const auto & x : getContainer<Medium>())
 				tmp_large->insert(x);
 
 			destroy();
@@ -276,15 +275,15 @@ private:
 	}
 
 	template<typename T>
-	T * getObject()
+	T & getContainer()
 	{
-		return reinterpret_cast<T *>(address & mask);
+		return *reinterpret_cast<T *>(address & mask);
 	}
 
 	template<typename T>
-	const T * getObject() const
+	const T & getContainer() const
 	{
-		return reinterpret_cast<T *>(address & mask);
+		return *reinterpret_cast<T *>(address & mask);
 	}
 
 	void setContainerType(details::ContainerType t)
@@ -292,7 +291,7 @@ private:
 		address |= static_cast<UInt8>(t);
 	}
 
-	details::ContainerType getContainerType() const
+	inline details::ContainerType getContainerType() const
 	{
 		return static_cast<details::ContainerType>(address & ~mask);
 	}
