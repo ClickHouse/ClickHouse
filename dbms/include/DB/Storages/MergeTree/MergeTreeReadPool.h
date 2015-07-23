@@ -36,15 +36,15 @@ using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;
 
 class MergeTreeReadPool
 {
-	std::size_t threads;
 public:
 	MergeTreeReadPool(
-		const std::size_t threads,
-		const RangesInDataParts & parts, MergeTreeData & data, const ExpressionActionsPtr & prewhere_actions,
+		const std::size_t threads, const std::size_t sum_marks, const std::size_t min_marks_for_concurrent_read,
+		RangesInDataParts parts, MergeTreeData & data, const ExpressionActionsPtr & prewhere_actions,
 		const String & prewhere_column_name, const bool check_columns, const Names & column_names)
-		: threads{threads}, parts{parts}, data{data}, column_names{column_names}
+		: data{data}, column_names{column_names}
 	{
-		fillPerPartInfo(prewhere_actions, prewhere_column_name, check_columns);
+		const auto per_part_sum_marks = fillPerPartInfo(parts, prewhere_actions, prewhere_column_name, check_columns);
+		fillPerThreadInfo(threads, sum_marks, per_part_sum_marks, parts, min_marks_for_concurrent_read);
 	}
 
 	MergeTreeReadPool(const MergeTreeReadPool &) = delete;
@@ -54,20 +54,18 @@ public:
 	{
 		const std::lock_guard<std::mutex> lock{mutex};
 
-		if (remaining_part_indices.empty())
+		if (remaining_thread_tasks.empty())
 			return nullptr;
 
-		const auto idx = remaining_part_indices.size() - (1 + remaining_part_indices.size() * thread / threads);
-		/// find a part which has marks remaining
-//		const auto part_id = remaining_part_indices.back();
-		const auto part_id = remaining_part_indices[idx];
+		const auto thread_idx = !threads_tasks[thread].sum_marks_in_parts.empty() ? thread :
+								*std::begin(remaining_thread_tasks);
+		auto & thread_tasks = threads_tasks[thread_idx];
 
-		auto & part = parts[part_id];
-		const auto & column_name_set = per_part_column_name_set[part_id];
-		const auto & columns = per_part_columns[part_id];
-		const auto & pre_columns = per_part_pre_columns[part_id];
-		const auto remove_prewhere_column = per_part_remove_prewhere_column[part_id];
-		auto & marks_in_part = per_part_sum_marks[part_id];
+		auto & thread_task = thread_tasks.parts_and_ranges.back();
+		const auto part_idx = thread_task.part_idx;
+
+		auto & part = parts[part_idx];
+		auto & marks_in_part = thread_tasks.sum_marks_in_parts.back();
 
 		/// Берём весь кусок, если он достаточно мал
 		auto need_marks = std::min(marks_in_part, min_marks_to_read);
@@ -84,24 +82,27 @@ public:
 		{
 			const auto marks_to_get_from_range = marks_in_part;
 
+			/// @todo fix double reverse
 			/// Восстановим порядок отрезков.
-			std::reverse(part.ranges.begin(), part.ranges.end());
+			std::reverse(thread_task.ranges.begin(), thread_task.ranges.end());
 
-			ranges_to_get_from_part = part.ranges;
+			ranges_to_get_from_part = thread_task.ranges;
 
 			marks_in_part -= marks_to_get_from_range;
 
-			std::swap(remaining_part_indices[idx], remaining_part_indices.back());
-			remaining_part_indices.pop_back();
+			thread_tasks.parts_and_ranges.pop_back();
+			thread_tasks.sum_marks_in_parts.pop_back();
+
+			if (thread_tasks.sum_marks_in_parts.empty())
+				remaining_thread_tasks.erase(thread_idx);
 		}
 		else
 		{
 			/// Цикл по отрезкам куска.
-			while (need_marks > 0 && !part.ranges.empty())
+			while (need_marks > 0 && !thread_task.ranges.empty())
 			{
-				const auto idx = part.ranges.size() - (1 + part.ranges.size() * thread / threads);
-//				auto & range = part.ranges.back();
-				auto & range = part.ranges[idx];
+				/// @todo fix double reverse
+				auto & range = thread_task.ranges.back();
 
 				const std::size_t marks_in_range = range.end - range.begin;
 				const std::size_t marks_to_get_from_range = std::min(marks_in_range, need_marks);
@@ -110,31 +111,27 @@ public:
 				range.begin += marks_to_get_from_range;
 				if (range.begin == range.end)
 				{
-					std::swap(range, part.ranges.back());
-					part.ranges.pop_back();
+					std::swap(range, thread_task.ranges.back());
+					thread_task.ranges.pop_back();
 				}
 
 				marks_in_part -= marks_to_get_from_range;
 				need_marks -= marks_to_get_from_range;
 			}
-
-			if (0 == marks_in_part)
-			{
-				std::swap(remaining_part_indices[idx], remaining_part_indices.back());
-				remaining_part_indices.pop_back();
-			}
 		}
 
 		return std::make_unique<MergeTreeReadTask>(
-			part.data_part, ranges_to_get_from_part, part.part_index_in_query, column_names, column_name_set, columns,
-			pre_columns, remove_prewhere_column, per_part_should_reorder[part_id]);
+			part.data_part, thread_task.ranges, part.part_index_in_query, column_names,
+			per_part_column_name_set[part_idx], per_part_columns[part_idx], per_part_pre_columns[part_idx],
+			per_part_remove_prewhere_column[part_idx], per_part_should_reorder[part_idx]);
 	}
 
 public:
-	void fillPerPartInfo(
-		const ExpressionActionsPtr & prewhere_actions, const String & prewhere_column_name, const bool check_columns)
+	std::vector<std::size_t> fillPerPartInfo(
+		RangesInDataParts & parts, const ExpressionActionsPtr & prewhere_actions, const String & prewhere_column_name,
+		const bool check_columns)
 	{
-		remaining_part_indices.reserve(parts.size());
+		std::vector<std::size_t> per_part_sum_marks;
 
 		for (const auto i : ext::range(0, parts.size()))
 		{
@@ -149,9 +146,6 @@ public:
 				sum_marks += range.end - range.begin;
 
 			per_part_sum_marks.push_back(sum_marks);
-
-			if (0 != sum_marks)
-				remaining_part_indices.push_back(i);
 
 			per_part_columns_lock.push_back(std::make_unique<Poco::ScopedReadRWLock>(
 				part.data_part->columns_lock));
@@ -217,6 +211,86 @@ public:
 			}
 
 			per_part_should_reorder.push_back(should_reoder);
+
+			this->parts.push_back({ part.data_part, part.part_index_in_query });
+		}
+
+		return per_part_sum_marks;
+	}
+
+	void fillPerThreadInfo(
+		const std::size_t threads, const std::size_t sum_marks, std::vector<std::size_t> per_part_sum_marks,
+		RangesInDataParts & parts, const std::size_t min_marks_for_concurrent_read)
+	{
+		threads_tasks.resize(threads);
+
+		const size_t min_marks_per_thread = (sum_marks - 1) / threads + 1;
+
+		for (std::size_t i = 0; i < threads && !parts.empty(); ++i)
+		{
+			auto need_marks = min_marks_per_thread;
+
+			while (need_marks > 0 && !parts.empty())
+			{
+				const auto part_idx = parts.size() - 1;
+				RangesInDataPart & part = parts.back();
+				size_t & marks_in_part = per_part_sum_marks.back();
+
+				/// Не будем брать из куска слишком мало строк.
+				if (marks_in_part >= min_marks_for_concurrent_read &&
+					need_marks < min_marks_for_concurrent_read)
+					need_marks = min_marks_for_concurrent_read;
+
+				/// Не будем оставлять в куске слишком мало строк.
+				if (marks_in_part > need_marks &&
+					marks_in_part - need_marks < min_marks_for_concurrent_read)
+					need_marks = marks_in_part;
+
+				MarkRanges ranges_to_get_from_part;
+				size_t marks_in_ranges = need_marks;
+
+				/// Возьмем весь кусок, если он достаточно мал.
+				if (marks_in_part <= need_marks)
+				{
+					/// @todo fix double reverse
+					/// Восстановим порядок отрезков.
+					std::reverse(part.ranges.begin(), part.ranges.end());
+
+					ranges_to_get_from_part = part.ranges;
+					marks_in_ranges = marks_in_part;
+
+					need_marks -= marks_in_part;
+					parts.pop_back();
+					per_part_sum_marks.pop_back();
+				}
+				else
+				{
+					/// Цикл по отрезкам куска.
+					while (need_marks > 0)
+					{
+						/// @todo fix double reverse
+						if (part.ranges.empty())
+							throw Exception("Unexpected end of ranges while spreading marks among threads", ErrorCodes::LOGICAL_ERROR);
+
+						MarkRange & range = part.ranges.back();
+
+						const size_t marks_in_range = range.end - range.begin;
+						const size_t marks_to_get_from_range = std::min(marks_in_range, need_marks);
+
+						ranges_to_get_from_part.emplace_back(range.begin, range.begin + marks_to_get_from_range);
+						range.begin += marks_to_get_from_range;
+						marks_in_part -= marks_to_get_from_range;
+						need_marks -= marks_to_get_from_range;
+						if (range.begin == range.end)
+							part.ranges.pop_back();
+					}
+				}
+
+				threads_tasks[i].parts_and_ranges.push_back({ part_idx, ranges_to_get_from_part });
+				threads_tasks[i].sum_marks_in_parts.push_back(marks_in_ranges);
+				if (marks_in_ranges != 0)
+					remaining_thread_tasks.insert(i);
+			}
 		}
 	}
 
@@ -319,9 +393,6 @@ public:
 	}
 
 	std::vector<std::unique_ptr<Poco::ScopedReadRWLock>> per_part_columns_lock;
-	RangesInDataParts parts;
-	std::vector<std::size_t> per_part_sum_marks;
-	std::vector<std::size_t> remaining_part_indices;
 	MergeTreeData & data;
 	Names column_names;
 	std::vector<NameSet> per_part_column_name_set;
@@ -330,6 +401,30 @@ public:
 	/// @todo actually all of these values are either true or false for the whole query, thus no vector required
 	std::vector<bool> per_part_remove_prewhere_column;
 	std::vector<bool> per_part_should_reorder;
+
+	struct part_t
+	{
+		MergeTreeData::DataPartPtr data_part;
+		std::size_t part_index_in_query;
+	};
+
+	std::vector<part_t> parts;
+
+	struct thread_task_t
+	{
+		struct part_index_and_range_t
+		{
+			std::size_t part_idx;
+			MarkRanges ranges;
+		};
+
+		std::vector<part_index_and_range_t> parts_and_ranges;
+		std::vector<std::size_t> sum_marks_in_parts;
+	};
+
+	std::vector<thread_task_t> threads_tasks;
+
+	std::unordered_set<std::size_t> remaining_thread_tasks;
 
 	mutable std::mutex mutex;
 };

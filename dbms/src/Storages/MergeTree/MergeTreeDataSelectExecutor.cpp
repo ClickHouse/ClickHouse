@@ -366,7 +366,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 		use_uncompressed_cache = false;
 
 	MergeTreeReadPoolPtr pool = std::make_shared<MergeTreeReadPool>(
-		threads, parts, data, prewhere_actions, prewhere_column, true, column_names);
+		threads, sum_marks, min_marks_for_concurrent_read, parts, data, prewhere_actions, prewhere_column, true,
+		column_names);
 
 	BlockInputStreams res;
 
