@@ -22,6 +22,9 @@ Join::Type Join::chooseMethod(const ConstColumnPlainPtrs & key_columns, bool & k
 	size_t keys_bytes = 0;
 	key_sizes.resize(keys_size);
 
+	if (keys_size == 0)
+		return Type::CROSS;
+
 	for (size_t j = 0; j < keys_size; ++j)
 	{
 		if (!key_columns[j]->isFixed())
@@ -61,6 +64,7 @@ static void initImpl(Maps & maps, Join::Type type)
 		case Join::Type::KEY_64:		maps.key64		.reset(new typename Maps::MapUInt64); 	break;
 		case Join::Type::KEY_STRING:	maps.key_string	.reset(new typename Maps::MapString); 	break;
 		case Join::Type::HASHED:		maps.hashed		.reset(new typename Maps::MapHashed);	break;
+		case Join::Type::CROSS:																	break;
 
 		default:
 			throw Exception("Unknown JOIN keys variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
@@ -105,6 +109,9 @@ void Join::init(Type type_)
 {
 	type = type_;
 
+	if (kind == ASTJoin::Cross)
+		return;
+
 	if (!getFullness(kind))
 	{
 		if (strictness == ASTJoin::Any)
@@ -124,21 +131,41 @@ void Join::init(Type type_)
 size_t Join::getTotalRowCount() const
 {
 	size_t res = 0;
-	res += getTotalRowCountImpl(maps_any);
-	res += getTotalRowCountImpl(maps_all);
-	res += getTotalRowCountImpl(maps_any_full);
-	res += getTotalRowCountImpl(maps_all_full);
+
+	if (type == Type::CROSS)
+	{
+		for (const auto & block : blocks)
+			res += block.rowsInFirstColumn();
+	}
+	else
+	{
+		res += getTotalRowCountImpl(maps_any);
+		res += getTotalRowCountImpl(maps_all);
+		res += getTotalRowCountImpl(maps_any_full);
+		res += getTotalRowCountImpl(maps_all_full);
+	}
+
 	return res;
 }
 
 size_t Join::getTotalByteCount() const
 {
 	size_t res = 0;
-	res += getTotalByteCountImpl(maps_any);
-	res += getTotalByteCountImpl(maps_all);
-	res += getTotalByteCountImpl(maps_any_full);
-	res += getTotalByteCountImpl(maps_all_full);
-	res += pool.size();
+
+	if (type == Type::CROSS)
+	{
+		for (const auto & block : blocks)
+			res += block.bytes();
+	}
+	else
+	{
+		res += getTotalByteCountImpl(maps_any);
+		res += getTotalByteCountImpl(maps_all);
+		res += getTotalByteCountImpl(maps_any_full);
+		res += getTotalByteCountImpl(maps_all_full);
+		res += pool.size();
+	}
+
 	return res;
 }
 
@@ -258,7 +285,11 @@ template <> struct Inserter<ASTJoin::All, Join::MapsAllFull::MapString> : Insert
 template <ASTJoin::Strictness STRICTNESS, typename Maps>
 void Join::insertFromBlockImpl(Maps & maps, size_t rows, const ConstColumnPlainPtrs & key_columns, size_t keys_size, Block * stored_block)
 {
-	if (type == Type::KEY_64)
+	if (type == Type::CROSS)
+	{
+		/// Ничего не делаем. Уже сохранили блок, и этого достаточно.
+	}
+	else if (type == Type::KEY_64)
 	{
 		typedef typename Maps::MapUInt64 Map;
 		Map & res = *maps.key64;
@@ -409,19 +440,23 @@ bool Join::insertFromBlock(const Block & block)
 			stored_block->getByPosition(i).column = dynamic_cast<IColumnConst &>(*col).convertToFullColumn();
 	}
 
-	if (!getFullness(kind))
+	if (kind != ASTJoin::Cross)
 	{
-		if (strictness == ASTJoin::Any)
-			insertFromBlockImpl<ASTJoin::Any>(maps_any, rows, key_columns, keys_size, stored_block);
+		/// Заполняем нужную хэш-таблицу.
+		if (!getFullness(kind))
+		{
+			if (strictness == ASTJoin::Any)
+				insertFromBlockImpl<ASTJoin::Any>(maps_any, rows, key_columns, keys_size, stored_block);
+			else
+				insertFromBlockImpl<ASTJoin::All>(maps_all, rows, key_columns, keys_size, stored_block);
+		}
 		else
-			insertFromBlockImpl<ASTJoin::All>(maps_all, rows, key_columns, keys_size, stored_block);
-	}
-	else
-	{
-		if (strictness == ASTJoin::Any)
-			insertFromBlockImpl<ASTJoin::Any>(maps_any_full, rows, key_columns, keys_size, stored_block);
-		else
-			insertFromBlockImpl<ASTJoin::All>(maps_all_full, rows, key_columns, keys_size, stored_block);
+		{
+			if (strictness == ASTJoin::Any)
+				insertFromBlockImpl<ASTJoin::Any>(maps_any_full, rows, key_columns, keys_size, stored_block);
+			else
+				insertFromBlockImpl<ASTJoin::All>(maps_all_full, rows, key_columns, keys_size, stored_block);
+		}
 	}
 
 	if (!checkSizeLimits())
@@ -677,6 +712,60 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 }
 
 
+void Join::joinBlockImplCross(Block & block) const
+{
+	Block res = block.cloneEmpty();
+
+	/// Добавляем в блок новые столбцы.
+	size_t num_existing_columns = res.columns();
+	size_t num_columns_to_add = sample_block_with_columns_to_add.columns();
+
+	ColumnPlainPtrs src_left_columns(num_existing_columns);
+	ColumnPlainPtrs dst_left_columns(num_existing_columns);
+	ColumnPlainPtrs dst_right_columns(num_columns_to_add);
+
+	for (size_t i = 0; i < num_existing_columns; ++i)
+	{
+		src_left_columns[i] = block.unsafeGetByPosition(i).column;
+		dst_left_columns[i] = res.unsafeGetByPosition(i).column;
+	}
+
+	for (size_t i = 0; i < num_columns_to_add; ++i)
+	{
+		const ColumnWithTypeAndName & src_column = sample_block_with_columns_to_add.unsafeGetByPosition(i);
+		ColumnWithTypeAndName new_column = src_column.cloneEmpty();
+		res.insert(new_column);
+		dst_right_columns[i] = new_column.column;
+	}
+
+	size_t rows_left = block.rowsInFirstColumn();
+
+	/// NOTE Было бы оптимальнее использовать reserve, а также методы replicate для размножения значений левого блока.
+
+	for (size_t i = 0; i < rows_left; ++i)
+	{
+		for (const Block & block_right : blocks)
+		{
+			size_t rows_right = block_right.rowsInFirstColumn();
+
+			for (size_t col_num = 0; col_num < num_existing_columns; ++col_num)
+				for (size_t j = 0; j < rows_right; ++j)
+					dst_left_columns[col_num]->insertFrom(*src_left_columns[col_num], i);
+
+			for (size_t col_num = 0; col_num < num_columns_to_add; ++col_num)
+			{
+				const IColumn * column_right = block_right.unsafeGetByPosition(col_num).column;
+
+				for (size_t j = 0; j < rows_right; ++j)
+					dst_right_columns[col_num]->insertFrom(*column_right, j);
+			}
+		}
+	}
+
+	block = res;
+}
+
+
 void Join::checkTypesOfKeys(const Block & block_left, const Block & block_right) const
 {
 	size_t keys_size = key_names_left.size();
@@ -712,6 +801,10 @@ void Join::joinBlock(Block & block) const
 		joinBlockImpl<ASTJoin::Left, ASTJoin::All>(block, maps_all_full);
 	else if (kind == ASTJoin::Right && strictness == ASTJoin::All)
 		joinBlockImpl<ASTJoin::Inner, ASTJoin::All>(block, maps_all_full);
+	else if (kind == ASTJoin::Cross)
+		joinBlockImplCross(block);
+	else
+		throw Exception("Logical error: unknown combination of JOIN", ErrorCodes::LOGICAL_ERROR);
 }
 
 

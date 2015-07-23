@@ -146,7 +146,10 @@ void ExpressionAnalyzer::analyzeAggregation()
 
 	if (select_query && select_query->join)
 	{
-		getRootActions(typeid_cast<ASTJoin &>(*select_query->join).using_expr_list, true, false, temp_actions);
+		auto join = typeid_cast<ASTJoin &>(*select_query->join);
+		if (join.using_expr_list)
+			getRootActions(join.using_expr_list, true, false, temp_actions);
+
 		addJoinAction(temp_actions, true);
 	}
 
@@ -1548,7 +1551,8 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 	ExpressionActionsChain::Step & step = chain.steps.back();
 
 	ASTJoin & ast_join = typeid_cast<ASTJoin &>(*select_query->join);
-	getRootActions(ast_join.using_expr_list, only_types, false, step.actions);
+	if (ast_join.using_expr_list)
+		getRootActions(ast_join.using_expr_list, only_types, false, step.actions);
 
 	/// Не поддерживается два JOIN-а с одинаковым подзапросом, но разными USING-ами.
 	String join_id = ast_join.table->getColumnName();
@@ -1888,7 +1892,7 @@ void ExpressionAnalyzer::collectUsedColumns()
 	}
 
 /*	for (const auto & name_type : columns_added_by_join)
-		std::cerr << "JOINed column (required, not key): " << name_type.first << std::endl;
+		std::cerr << "JOINed column (required, not key): " << name_type.name << std::endl;
 	std::cerr << std::endl;*/
 
 	/// Вставляем в список требуемых столбцов столбцы, нужные для вычисления ARRAY JOIN.
@@ -1968,14 +1972,17 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAnd
 		nested_result_sample = InterpreterSelectQuery::getSampleBlock(subquery, context);
 	}
 
-	auto & keys = typeid_cast<ASTExpressionList &>(*node.using_expr_list);
-	for (const auto & key : keys.children)
+	if (node.using_expr_list)
 	{
-		if (!join_key_names_left_set.insert(key->getColumnName()).second)
-			throw Exception("Duplicate column in USING list", ErrorCodes::DUPLICATE_COLUMN);
+		auto & keys = typeid_cast<ASTExpressionList &>(*node.using_expr_list);
+		for (const auto & key : keys.children)
+		{
+			if (!join_key_names_left_set.insert(key->getColumnName()).second)
+				throw Exception("Duplicate column in USING list", ErrorCodes::DUPLICATE_COLUMN);
 
-		if (!join_key_names_right_set.insert(key->getAliasOrColumnName()).second)
-			throw Exception("Duplicate column in USING list", ErrorCodes::DUPLICATE_COLUMN);
+			if (!join_key_names_right_set.insert(key->getAliasOrColumnName()).second)
+				throw Exception("Duplicate column in USING list", ErrorCodes::DUPLICATE_COLUMN);
+		}
 	}
 
 	for (const auto i : ext::range(0, nested_result_sample.columns()))
