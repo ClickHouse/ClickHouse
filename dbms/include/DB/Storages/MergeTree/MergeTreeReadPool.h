@@ -36,11 +36,13 @@ using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;
 
 class MergeTreeReadPool
 {
+	std::size_t threads;
 public:
 	MergeTreeReadPool(
+		const std::size_t threads,
 		const RangesInDataParts & parts, MergeTreeData & data, const ExpressionActionsPtr & prewhere_actions,
 		const String & prewhere_column_name, const bool check_columns, const Names & column_names)
-		: parts{parts}, data{data}, column_names{column_names}
+		: threads{threads}, parts{parts}, data{data}, column_names{column_names}
 	{
 		fillPerPartInfo(prewhere_actions, prewhere_column_name, check_columns);
 	}
@@ -48,15 +50,17 @@ public:
 	MergeTreeReadPool(const MergeTreeReadPool &) = delete;
 	MergeTreeReadPool & operator=(const MergeTreeReadPool &) = delete;
 
-	MergeTreeReadTaskPtr getTask(const std::size_t min_marks_to_read)
+	MergeTreeReadTaskPtr getTask(const std::size_t min_marks_to_read, const std::size_t thread)
 	{
 		const std::lock_guard<std::mutex> lock{mutex};
 
 		if (remaining_part_indices.empty())
 			return nullptr;
 
+		const auto idx = remaining_part_indices.size() - (1 + remaining_part_indices.size() * thread / threads);
 		/// find a part which has marks remaining
-		const auto part_id = remaining_part_indices.back();
+//		const auto part_id = remaining_part_indices.back();
+		const auto part_id = remaining_part_indices[idx];
 
 		auto & part = parts[part_id];
 		const auto & column_name_set = per_part_column_name_set[part_id];
@@ -87,6 +91,7 @@ public:
 
 			marks_in_part -= marks_to_get_from_range;
 
+			std::swap(remaining_part_indices[idx], remaining_part_indices.back());
 			remaining_part_indices.pop_back();
 		}
 		else
@@ -109,7 +114,10 @@ public:
 			}
 
 			if (0 == marks_in_part)
+			{
+				std::swap(remaining_part_indices[idx], remaining_part_indices.back());
 				remaining_part_indices.pop_back();
+			}
 		}
 
 		return std::make_unique<MergeTreeReadTask>(

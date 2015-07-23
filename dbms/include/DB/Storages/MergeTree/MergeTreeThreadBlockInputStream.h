@@ -13,13 +13,15 @@ namespace DB
 
 class MergeTreeThreadBlockInputStream : public IProfilingBlockInputStream
 {
+	std::size_t thread;
 public:
 	MergeTreeThreadBlockInputStream(
+		const std::size_t thread,
 		const MergeTreeReadPoolPtr & pool, const std::size_t min_marks_to_read, const std::size_t block_size,
 		MergeTreeData & storage, const bool use_uncompressed_cache, const ExpressionActionsPtr & prewhere_actions,
 		const String & prewhere_column, const std::size_t min_bytes_to_use_direct_io,
 		const std::size_t max_read_buffer_size, const Names & virt_column_names)
-		: pool{pool}, min_marks_to_read{min_marks_to_read}, block_size{block_size}, storage{storage},
+		: thread{thread}, pool{pool}, min_marks_to_read{min_marks_to_read}, block_size{block_size}, storage{storage},
 		  use_uncompressed_cache{use_uncompressed_cache}, prewhere_actions{prewhere_actions},
 		  prewhere_column{prewhere_column}, min_bytes_to_use_direct_io{min_bytes_to_use_direct_io},
 		  max_read_buffer_size{max_read_buffer_size}, virt_column_names{virt_column_names},
@@ -83,7 +85,7 @@ protected:
 private:
 	bool getNewTask()
 	{
-		task = pool->getTask(min_marks_to_read);
+		task = pool->getTask(min_marks_to_read, thread);
 
 		if (!task)
 			return false;

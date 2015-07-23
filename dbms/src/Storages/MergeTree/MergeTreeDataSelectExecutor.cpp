@@ -366,7 +366,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 		use_uncompressed_cache = false;
 
 	MergeTreeReadPoolPtr pool = std::make_shared<MergeTreeReadPool>(
-		parts, data, prewhere_actions, prewhere_column, true, column_names);
+		threads, parts, data, prewhere_actions, prewhere_column, true, column_names);
 
 	BlockInputStreams res;
 
@@ -457,7 +457,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 	{
 		for (std::size_t i = 0; i < threads; ++i)
 			res.emplace_back(new MergeTreeThreadBlockInputStream{
-				pool, min_marks_for_concurrent_read, max_block_size, data, use_uncompressed_cache, prewhere_actions,
+				i, pool, min_marks_for_concurrent_read, max_block_size, data, use_uncompressed_cache, prewhere_actions,
 				prewhere_column, settings.min_bytes_to_use_direct_io, settings.max_read_buffer_size, virt_columns
 			});
 
@@ -523,6 +523,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 	}
 
 	BlockInputStreams res;
+	/// @todo parts.size() == 1 ? Filter : Collapse
 	if (to_collapse.size() == 1)
 		res.push_back(new FilterBlockInputStream(new ExpressionBlockInputStream(to_collapse[0], sign_filter_expression), sign_filter_column));
 	else if (to_collapse.size() > 1)
