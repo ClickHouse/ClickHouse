@@ -140,7 +140,7 @@ public:
 			/// Посчитаем засечки для каждого куска.
 			size_t sum_marks = 0;
 			/// Пусть отрезки будут перечислены справа налево, чтобы можно было выбрасывать самый левый отрезок с помощью pop_back().
-			std::reverse(std::begin(part.ranges), std::end(part.ranges));
+//			std::reverse(std::begin(part.ranges), std::end(part.ranges));
 
 			for (const auto & range : part.ranges)
 				sum_marks += range.end - range.begin;

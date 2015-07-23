@@ -74,8 +74,6 @@ protected:
 				 *	Чтобы при создании многих источников, но одновременном чтении только из нескольких,
 				 *	буферы не висели в памяти. */
 				task = {};
-				reader = {};
-				pre_reader = {};
 			}
 		}
 
@@ -88,7 +86,11 @@ private:
 		task = pool->getTask(min_marks_to_read, thread);
 
 		if (!task)
+		{
+			reader = {};
+			pre_reader = {};
 			return false;
+		}
 
 		const auto path = storage.getFullPath() + task->data_part->name + '/';
 
