@@ -99,7 +99,9 @@ public:
 			/// Цикл по отрезкам куска.
 			while (need_marks > 0 && !part.ranges.empty())
 			{
-				auto & range = part.ranges.back();
+				const auto idx = part.ranges.size() - (1 + part.ranges.size() * thread / threads);
+//				auto & range = part.ranges.back();
+				auto & range = part.ranges[idx];
 
 				const std::size_t marks_in_range = range.end - range.begin;
 				const std::size_t marks_to_get_from_range = std::min(marks_in_range, need_marks);
@@ -107,7 +109,10 @@ public:
 				ranges_to_get_from_part.emplace_back(range.begin, range.begin + marks_to_get_from_range);
 				range.begin += marks_to_get_from_range;
 				if (range.begin == range.end)
+				{
+					std::swap(range, part.ranges.back());
 					part.ranges.pop_back();
+				}
 
 				marks_in_part -= marks_to_get_from_range;
 				need_marks -= marks_to_get_from_range;
