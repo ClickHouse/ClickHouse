@@ -424,13 +424,25 @@ bool Join::insertFromBlock(const Block & block)
 	blocks.push_back(block);
 	Block * stored_block = &blocks.back();
 
-	if (!getFullness(kind))
+	if (getFullness(kind))
+	{
+		/// Переносим ключевые столбцы в начало блока.
+		size_t key_num = 0;
+		for (const auto & name : key_names_right)
+		{
+			size_t pos = stored_block->getPositionByName(name);
+			ColumnWithTypeAndName col = stored_block->getByPosition(pos);
+			stored_block->erase(pos);
+			stored_block->insert(key_num, col);
+			++key_num;
+		}
+	}
+	else
 	{
 		/// Удаляем из stored_block ключевые столбцы, так как они не нужны.
 		for (const auto & name : key_names_right)
 			stored_block->erase(stored_block->getPositionByName(name));
 	}
-	/// TODO Переупорядочивать, класть ключи в начало.
 
 	/// Редкий случай, когда соединяемые столбцы являются константами. Чтобы не поддерживать отдельный код, материализуем их.
 	for (size_t i = 0, size = stored_block->columns(); i < size; ++i)
@@ -628,6 +640,8 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 	size_t num_columns_to_skip = 0;
 	if (getFullness(kind))
 		num_columns_to_skip = keys_size;
+
+//	std::cerr << num_columns_to_skip << "\n" << block.dumpStructure() << "\n" << blocks.front().dumpStructure() << "\n";
 
 	if (type == Type::KEY_64)
 	{
