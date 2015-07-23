@@ -412,9 +412,9 @@ bool Join::insertFromBlock(const Block & block)
 	{
 		key_columns[i] = block.getByName(key_names_right[i]).column;
 
-		if (key_columns[i]->isConst())
+		if (auto * col_const = dynamic_cast<const IColumnConst *>(key_columns[i]))
 		{
-			materialized_columns.emplace_back(dynamic_cast<const IColumnConst &>(*key_columns[i]).convertToFullColumn());
+			materialized_columns.emplace_back(col_const->convertToFullColumn());
 			key_columns[i] = materialized_columns.back();
 		}
 	}
@@ -448,8 +448,8 @@ bool Join::insertFromBlock(const Block & block)
 	for (size_t i = 0, size = stored_block->columns(); i < size; ++i)
 	{
 		ColumnPtr col = stored_block->getByPosition(i).column;
-		if (col->isConst())
-			stored_block->getByPosition(i).column = dynamic_cast<IColumnConst &>(*col).convertToFullColumn();
+		if (auto * col_const = dynamic_cast<const IColumnConst *>(col.get()))
+			stored_block->getByPosition(i).column = col_const->convertToFullColumn();
 	}
 
 	if (kind != ASTJoin::Cross)
@@ -596,18 +596,33 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 	{
 		key_columns[i] = block.getByName(key_names_left[i]).column;
 
-		if (key_columns[i]->isConst())
+		if (auto * col_const = dynamic_cast<const IColumnConst *>(key_columns[i]))
 		{
-			materialized_columns.emplace_back(dynamic_cast<const IColumnConst &>(*key_columns[i]).convertToFullColumn());
+			materialized_columns.emplace_back(col_const->convertToFullColumn());
 			key_columns[i] = materialized_columns.back();
+		}
+	}
+
+	size_t existing_columns = block.columns();
+
+	/** Если используется FULL или RIGHT JOIN, то столбцы из "левой" части надо материализовать.
+	  * Потому что, если они константы, то в "неприсоединённых" строчках, у них могут быть другие значения
+	  *  - значения по-умолчанию, которые могут отличаться от значений этих констант.
+	  */
+	if (getFullness(kind))
+	{
+		for (size_t i = 0; i < existing_columns; ++i)
+		{
+			auto & col = block.getByPosition(i).column;
+
+			if (auto * col_const = dynamic_cast<IColumnConst *>(col.get()))
+				col = col_const->convertToFullColumn();
 		}
 	}
 
 	/// Добавляем в блок новые столбцы.
 	size_t num_columns_to_add = sample_block_with_columns_to_add.columns();
 	ColumnPlainPtrs added_columns(num_columns_to_add);
-
-	size_t existing_columns = block.columns();
 
 	for (size_t i = 0; i < num_columns_to_add; ++i)
 	{
