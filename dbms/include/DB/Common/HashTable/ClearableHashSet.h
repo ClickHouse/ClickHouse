@@ -46,10 +46,6 @@ struct ClearableHashTableCell : public BaseCell
 
 	ClearableHashTableCell() {}
 	ClearableHashTableCell(const Key & key_, const State & state) : BaseCell(key_, state), version(state.version) {}
-
-	ClearableHashTableCell(const value_type & value_, const State & state,
-		typename std::enable_if<!std::is_same<Key, value_type>::value>::type* = nullptr)
-		: BaseCell(value_, state), version(state.version) {}
 };
 
 

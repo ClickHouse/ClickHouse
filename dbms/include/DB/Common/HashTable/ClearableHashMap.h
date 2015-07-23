@@ -5,7 +5,14 @@
 
 
 template <typename Key, typename Mapped, typename Hash>
-using ClearableHashMapCell = ClearableHashTableCell<Key, HashMapCell<Key, Mapped, Hash, ClearableHashSetState>>;
+struct ClearableHashMapCell : public ClearableHashTableCell<Key, HashMapCell<Key, Mapped, Hash, ClearableHashSetState>>
+{
+	using Base = ClearableHashTableCell<Key, HashMapCell<Key, Mapped, Hash, ClearableHashSetState>>;
+	using Base::Base;
+
+	ClearableHashMapCell(const typename Base::value_type & value_, const typename Base::State & state)
+		: Base::BaseCell(value_, state), Base::version(state.version) {}
+};
 
 
 template
