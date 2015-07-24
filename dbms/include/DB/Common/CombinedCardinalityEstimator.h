@@ -2,7 +2,7 @@
 
 #include <DB/Common/HashTable/SmallTable.h>
 #include <DB/Common/HashTable/HashSet.h>
-#include <DB/Common/HyperLogLogWithSmallSetOptimization.h>
+#include <statdaemons/HyperLogLogCounter.h>
 #include <DB/Core/Defines.h>
 
 
@@ -16,7 +16,7 @@ enum class ContainerType : UInt8 { SMALL = 1, MEDIUM = 2, LARGE = 3 };
 
 static inline ContainerType max(const ContainerType & lhs, const ContainerType & rhs)
 {
-	unsigned int res = std::max(static_cast<unsigned int>(lhs), static_cast<unsigned int>(rhs));
+	UInt8 res = std::max(static_cast<UInt8>(lhs), static_cast<UInt8>(rhs));
 	return static_cast<ContainerType>(res);
 }
 
@@ -26,16 +26,25 @@ static inline ContainerType max(const ContainerType & lhs, const ContainerType &
   * Для среднего - выделяется HashSet.
   * Для большого - выделяется HyperLogLog.
   */
-template <typename Key, typename HashContainer, UInt8 small_set_size_max, UInt8 medium_set_power2_max, UInt8 K>
+template
+<
+	typename Key,
+	typename HashContainer,
+	UInt8 small_set_size_max,
+	UInt8 medium_set_power2_max,
+	UInt8 K,
+	typename Hash = IntHash32<Key>,
+	typename DenominatorType = float
+>
 class CombinedCardinalityEstimator
 {
 public:
-	using Self = CombinedCardinalityEstimator<Key, HashContainer, small_set_size_max, medium_set_power2_max, K>;
+	using Self = CombinedCardinalityEstimator<Key, HashContainer, small_set_size_max, medium_set_power2_max, K, Hash, DenominatorType>;
 
 private:
 	using Small = SmallSet<Key, small_set_size_max>;
 	using Medium = HashContainer;
-	using Large = HyperLogLogWithSmallSetOptimization<Key, small_set_size_max, K>;
+	using Large = HyperLogLogCounter<K, Hash, DenominatorType>;
 
 public:
 	CombinedCardinalityEstimator()
@@ -109,41 +118,18 @@ public:
 				toLarge();
 		}
 
-		if (container_type == details::ContainerType::SMALL)
+		if (rhs.getContainerType() == details::ContainerType::SMALL)
 		{
 			for (const auto & x : rhs.small)
 				insert(x);
 		}
-		else if (container_type == details::ContainerType::MEDIUM)
+		else if (rhs.getContainerType() == details::ContainerType::MEDIUM)
 		{
-			if (rhs.getContainerType() == details::ContainerType::SMALL)
-			{
-				for (const auto & x : rhs.small)
-					insert(x);
-			}
-			else if (rhs.getContainerType() == details::ContainerType::MEDIUM)
-			{
-				for (const auto & x : rhs.getContainer<Medium>())
-					insert(x);
-			}
+			for (const auto & x : rhs.getContainer<Medium>())
+				insert(x);
 		}
-		else if (container_type == details::ContainerType::LARGE)
-		{
-			if (rhs.getContainerType() == details::ContainerType::SMALL)
-			{
-				for (const auto & x : rhs.small)
-					insert(x);
-			}
-			else if (rhs.getContainerType() == details::ContainerType::MEDIUM)
-			{
-				for (const auto & x : rhs.getContainer<Medium>())
-					insert(x);
-			}
-			else if (rhs.getContainerType() == details::ContainerType::LARGE)
-				getContainer<Large>().merge(rhs.getContainer<Large>());
-		}
-		else
-			throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
+		else if (rhs.getContainerType() == details::ContainerType::LARGE)
+			getContainer<Large>().merge(rhs.getContainer<Large>());
 	}
 
 	/// Можно вызывать только для пустого объекта.
@@ -171,9 +157,36 @@ public:
 
 	void readAndMerge(DB::ReadBuffer & in)
 	{
-		Self other;
-		other.read(in);
-		merge(other);
+		auto container_type = getContainerType();
+
+		UInt8 v;
+		readBinary(v, in);
+		auto rhs_container_type = static_cast<details::ContainerType>(v);
+
+		auto max_container_type = details::max(container_type, rhs_container_type);
+
+		if (container_type != max_container_type)
+		{
+			if (max_container_type == details::ContainerType::MEDIUM)
+				toMedium();
+			else if (max_container_type == details::ContainerType::LARGE)
+				toLarge();
+		}
+
+		if (rhs_container_type == details::ContainerType::SMALL)
+		{
+			typename Small::Reader reader(in);
+			while (reader.next())
+				insert(reader.get());
+		}
+		else if (rhs_container_type == details::ContainerType::MEDIUM)
+		{
+			typename Medium::Reader reader(in);
+			while (reader.next())
+				insert(reader.get());
+		}
+		else if (rhs_container_type == details::ContainerType::LARGE)
+			getContainer<Large>().readAndMerge(in);
 	}
 
 	void write(DB::WriteBuffer & out) const
@@ -275,13 +288,13 @@ private:
 	}
 
 	template<typename T>
-	T & getContainer()
+	inline T & getContainer()
 	{
 		return *reinterpret_cast<T *>(address & mask);
 	}
 
 	template<typename T>
-	const T & getContainer() const
+	inline const T & getContainer() const
 	{
 		return *reinterpret_cast<T *>(address & mask);
 	}

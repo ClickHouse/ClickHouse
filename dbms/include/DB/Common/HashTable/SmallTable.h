@@ -27,6 +27,7 @@ class SmallTable :
 protected:
 	friend class const_iterator;
 	friend class iterator;
+	friend class Reader;
 
 	typedef SmallTable<Key, Cell, capacity> Self;
 	typedef Cell cell_type;
@@ -65,6 +66,55 @@ public:
 	typedef Key key_type;
 	typedef typename Cell::value_type value_type;
 
+
+	class Reader final : private Cell::State
+	{
+	public:
+		Reader(DB::ReadBuffer & in_)
+		: in(in_)
+		{
+		}
+
+		Reader(const Reader &) = delete;
+		Reader & operator=(const Reader &) = delete;
+
+		bool next()
+		{
+			if (read_count == size)
+			{
+				is_eof = true;
+				return false;
+			}
+			else if (read_count == 0)
+			{
+				Cell::State::read(in);
+				DB::readVarUInt(size, in);
+
+				if (size > capacity)
+					throw DB::Exception("Illegal size");
+			}
+
+			cell.read(in);
+			++read_count;
+
+			return true;
+		}
+
+		inline const value_type & get() const
+		{
+			if ((read_count == 0) || is_eof)
+				throw DB::Exception("No available data", DB::ErrorCodes::NO_AVAILABLE_DATA);
+
+			return Cell::getKey(cell.getValue());
+		}
+
+	private:
+		DB::ReadBuffer in;
+		Cell cell;
+		size_t read_count = 0;
+		size_t size;
+		bool is_eof = false;
+	};
 
 	class iterator
 	{
