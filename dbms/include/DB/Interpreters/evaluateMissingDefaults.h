@@ -39,11 +39,16 @@ inline void evaluateMissingDefaults(Block & block,
 	 *	we are going to operate on a copy instead of  the original block */
 	Block copy_block{block};
 	/// evaluate default values for defaulted columns
-	ExpressionAnalyzer{default_expr_list, context, required_columns}.getActions(true)->execute(copy_block);
+	ExpressionAnalyzer{default_expr_list, context, {}, required_columns}.getActions(true)->execute(copy_block);
 
-	/// move evaluated columns to the original block
+	/// move evaluated columns to the original block, materializing them at the same time
 	for (auto & column_name_type : copy_block.getColumns())
+	{
+		if (column_name_type.column->isConst())
+			column_name_type.column = static_cast<const IColumnConst &>(*column_name_type.column).convertToFullColumn();
+
 		block.insert(std::move(column_name_type));
+	}
 }
 
 }

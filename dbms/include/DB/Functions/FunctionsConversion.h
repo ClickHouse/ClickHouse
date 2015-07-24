@@ -1018,7 +1018,7 @@ public:
 	  * Если функция неприменима для данных аргументов - кинуть исключение.
 	  * Для неконстантных столбцов arguments[i].column = nullptr.
 	  */
-	void getReturnTypeAndPrerequisites(const ColumnsWithNameAndType & arguments,
+	void getReturnTypeAndPrerequisites(const ColumnsWithTypeAndName & arguments,
 		DataTypePtr & out_return_type,
 		std::vector<ExpressionAction> & out_prerequisites)
 	{
@@ -1099,7 +1099,7 @@ public:
 
 private:
 	template <typename T>
-	bool getSizeTyped(const ColumnWithNameAndType & column, size_t & out_size)
+	bool getSizeTyped(const ColumnWithTypeAndName & column, size_t & out_size)
 	{
 		if (!typeid_cast<const typename DataTypeFromFieldType<T>::Type *>(&*column.type))
 			return false;
@@ -1113,7 +1113,7 @@ private:
 		return true;
 	}
 
-	size_t getSize(const ColumnWithNameAndType & column)
+	size_t getSize(const ColumnWithTypeAndName & column)
 	{
 		size_t res;
 		if (getSizeTyped<UInt8>(column, res) ||

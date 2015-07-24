@@ -17,6 +17,7 @@
 #include <DB/DataStreams/BlockOutputStreamFromRowOutputStream.h>
 #include <DB/DataStreams/JSONRowOutputStream.h>
 #include <DB/DataStreams/JSONCompactRowOutputStream.h>
+#include <DB/DataStreams/TSKVRowOutputStream.h>
 #include <DB/DataStreams/PrettyCompactMonoBlockOutputStream.h>
 #include <DB/DataStreams/FormatFactory.h>
 
@@ -83,6 +84,8 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer &
 		return new BlockOutputStreamFromRowOutputStream(new JSONRowOutputStream(buf, sample));
 	else if (name == "JSONCompact")
 		return new BlockOutputStreamFromRowOutputStream(new JSONCompactRowOutputStream(buf, sample));
+	else if (name == "TSKV")
+		return new BlockOutputStreamFromRowOutputStream(new TSKVRowOutputStream(buf, sample));
 	else if (name == "Null")
 		return new NullBlockOutputStream;
 	else if (name == "PrettyCompactMonoBlock")

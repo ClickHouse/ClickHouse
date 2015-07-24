@@ -58,7 +58,7 @@ void JSONCompactRowOutputStream::writeTotals()
 			if (i != 0)
 				writeChar(',', *ostr);
 
-			const ColumnWithNameAndType & column = totals.getByPosition(i);
+			const ColumnWithTypeAndName & column = totals.getByPosition(i);
 			column.type->serializeTextJSON((*column.column)[0], *ostr);
 		}
 
@@ -79,7 +79,7 @@ static void writeExtremesElement(const char * title, const Block & extremes, siz
 		if (i != 0)
 			writeChar(',', ostr);
 
-		const ColumnWithNameAndType & column = extremes.getByPosition(i);
+		const ColumnWithTypeAndName & column = extremes.getByPosition(i);
 		column.type->serializeTextJSON((*column.column)[row_num], ostr);
 	}
 

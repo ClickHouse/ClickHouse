@@ -829,21 +829,30 @@ void formatAST(const ASTSet & ast, std::ostream & s, size_t indent, bool hilite,
 
 void formatAST(const ASTJoin & ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
 {
-	s << (hilite ? hilite_keyword : "")
-		<< (ast.locality == ASTJoin::Global ? "GLOBAL " : "")
-		<< (ast.strictness == ASTJoin::Any ? "ANY " : "ALL ")
-		<< (ast.kind == ASTJoin::Inner ? "INNER "
-			: (ast.kind == ASTJoin::Left ? "LEFT "
-			: (ast.kind == ASTJoin::Right ? "RIGHT "
-			: "FULL OUTER ")))
-		<< "JOIN "
+	s << (hilite ? hilite_keyword : "");
+
+	if (ast.locality == ASTJoin::Global)
+		s << "GLOBAL ";
+
+	if (ast.kind != ASTJoin::Cross)
+		s << (ast.strictness == ASTJoin::Any ? "ANY " : "ALL ");
+
+	s << (ast.kind == ASTJoin::Inner ? "INNER "
+		: (ast.kind == ASTJoin::Left ? "LEFT "
+		: (ast.kind == ASTJoin::Right ? "RIGHT "
+		: (ast.kind == ASTJoin::Cross ? "CROSS "
+		: "FULL OUTER "))));
+
+	s << "JOIN "
 		<< (hilite ? hilite_none : "");
 
 	formatAST(*ast.table, s, indent, hilite, one_line, need_parens);
 
-	s << (hilite ? hilite_keyword : "") << " USING " << (hilite ? hilite_none : "");
-
-	formatAST(*ast.using_expr_list, s, indent, hilite, one_line, need_parens);
+	if (ast.kind != ASTJoin::Cross)
+	{
+		s << (hilite ? hilite_keyword : "") << " USING " << (hilite ? hilite_none : "");
+		formatAST(*ast.using_expr_list, s, indent, hilite, one_line, need_parens);
+	}
 }
 
 void formatAST(const ASTCheckQuery & ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)

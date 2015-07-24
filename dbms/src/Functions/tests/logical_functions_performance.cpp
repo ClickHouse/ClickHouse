@@ -337,7 +337,7 @@ int main(int argc, char ** argv)
 			for (size_t i = 0; i < columns; ++i)
 			{
 				ColumnVector<UInt8> * column = new ColumnVector<UInt8>(block_size);
-				blocks[b].insert(ColumnWithNameAndType(column, new DataTypeUInt8, "v" + toString(i)));
+				blocks[b].insert(ColumnWithTypeAndName(column, new DataTypeUInt8, "v" + toString(i)));
 
 				ColumnVector<UInt8>::Container_t & vec = column->getData();
 				vec.resize(block_size);
@@ -351,7 +351,7 @@ int main(int argc, char ** argv)
 		for (size_t b = 0; b < block_count; ++b)
 		{
 			ColumnVector<UInt8> * result_column = new ColumnVector<UInt8>;
-			blocks[b].insert(ColumnWithNameAndType(result_column, new DataTypeUInt8, "x"));
+			blocks[b].insert(ColumnWithTypeAndName(result_column, new DataTypeUInt8, "x"));
 			result_column->getData().resize(block_size);
 		}
 

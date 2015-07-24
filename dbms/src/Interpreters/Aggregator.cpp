@@ -121,7 +121,7 @@ void Aggregator::initialize(Block & block)
 
 		for (size_t i = 0; i < aggregates_size; ++i)
 		{
-			ColumnWithNameAndType col;
+			ColumnWithTypeAndName col;
 			col.name = aggregates[i].column_name;
 
 			size_t arguments_size = aggregates[i].arguments.size();
@@ -848,7 +848,7 @@ Block Aggregator::prepareBlockAndFill(
 			}
 			else
 			{
-				ColumnWithNameAndType & column = res.getByPosition(i + keys_size);
+				ColumnWithTypeAndName & column = res.getByPosition(i + keys_size);
 				column.type = aggregate_functions[i]->getReturnType();
 				column.column = column.type->createColumn();
 				column.column->reserve(rows);

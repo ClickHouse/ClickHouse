@@ -24,6 +24,7 @@ bool ParserJoin::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_p
 	ParserString s_left("LEFT", true, true);
 	ParserString s_right("RIGHT", true, true);
 	ParserString s_full("FULL", true, true);
+	ParserString s_cross("CROSS", true, true);
 	ParserString s_outer("OUTER", true, true);
 	ParserString s_join("JOIN", true, true);
 	ParserString s_using("USING", true, true);
@@ -41,15 +42,13 @@ bool ParserJoin::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_p
 
 	ws.ignore(pos, end);
 
+	bool has_strictness = true;
 	if (s_any.ignore(pos, end))
 		join->strictness = ASTJoin::Any;
 	else if (s_all.ignore(pos, end))
 		join->strictness = ASTJoin::All;
 	else
-	{
-		expected = "ANY|ALL";
-		return false;
-	}
+		has_strictness = false;
 
 	ws.ignore(pos, end);
 
@@ -61,16 +60,24 @@ bool ParserJoin::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_p
 		join->kind = ASTJoin::Right;
 	else if (s_full.ignore(pos, end))
 		join->kind = ASTJoin::Full;
+	else if (s_cross.ignore(pos, end))
+		join->kind = ASTJoin::Cross;
 	else
 	{
-		expected = "INNER|LEFT|RIGHT|FULL";
+		expected = "INNER|LEFT|RIGHT|FULL|CROSS";
 		return false;
 	}
 
+	if (!has_strictness && join->kind != ASTJoin::Cross)
+		throw Exception("You must specify ANY or ALL for JOIN, before INNER or LEFT or RIGHT or FULL.", ErrorCodes::SYNTAX_ERROR);
+
+	if (has_strictness && join->kind == ASTJoin::Cross)
+		throw Exception("You must not specify ANY or ALL for CROSS JOIN.", ErrorCodes::SYNTAX_ERROR);
+
 	ws.ignore(pos, end);
 
-	/// Для всех JOIN-ов кроме INNER может присутствовать не обязательное слово "OUTER".
-	if (join->kind != ASTJoin::Inner && s_outer.ignore(pos, end))
+	/// Для всех JOIN-ов кроме INNER и CROSS может присутствовать не обязательное слово "OUTER".
+	if (join->kind != ASTJoin::Inner && join->kind != ASTJoin::Cross && s_outer.ignore(pos, end))
 		ws.ignore(pos, end);
 
 	if (!s_join.ignore(pos, end, max_parsed_pos, expected))
@@ -88,18 +95,23 @@ bool ParserJoin::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_p
 	ParserAlias().ignore(pos, end);
 	ws.ignore(pos, end);
 
-	if (!s_using.ignore(pos, end, max_parsed_pos, expected))
-		return false;
+	if (join->kind != ASTJoin::Cross)
+	{
+		if (!s_using.ignore(pos, end, max_parsed_pos, expected))
+			return false;
 
-	ws.ignore(pos, end);
+		ws.ignore(pos, end);
 
-	if (!exp_list.parse(pos, end, join->using_expr_list, max_parsed_pos, expected))
-		return false;
+		if (!exp_list.parse(pos, end, join->using_expr_list, max_parsed_pos, expected))
+			return false;
 
-	ws.ignore(pos, end);
+		ws.ignore(pos, end);
+	}
 
 	join->children.push_back(join->table);
-	join->children.push_back(join->using_expr_list);
+
+	if (join->using_expr_list)
+		join->children.push_back(join->using_expr_list);
 
 	return true;
 }

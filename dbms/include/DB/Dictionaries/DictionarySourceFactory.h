@@ -18,7 +18,7 @@ namespace
 Block createSampleBlock(const DictionaryStructure & dict_struct)
 {
 	Block block{
-		ColumnWithNameAndType{
+		ColumnWithTypeAndName{
 			new ColumnUInt64,
 			new DataTypeUInt64,
 			dict_struct.id_name
@@ -26,7 +26,7 @@ Block createSampleBlock(const DictionaryStructure & dict_struct)
 	};
 
 	for (const auto & attribute : dict_struct.attributes)
-		block.insert(ColumnWithNameAndType{
+		block.insert(ColumnWithTypeAndName{
 			attribute.type->createColumn(), attribute.type, attribute.name
 		});
 

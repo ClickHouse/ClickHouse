@@ -374,8 +374,20 @@ struct AggregationMethodConcat
 		/// См. функцию extractKeysAndPlaceInPoolContiguous.
 		const StringRef * key_refs = reinterpret_cast<const StringRef *>(value.first.data + value.first.size);
 
-		for (size_t i = 0; i < keys_size; ++i)
-			key_columns[i]->insertDataWithTerminatingZero(key_refs[i].data, key_refs[i].size);
+		if (unlikely(0 == value.first.size))
+		{
+			/** Исправление, если все ключи - пустые массивы. Для них в хэш-таблицу записывается StringRef нулевой длины, но с ненулевым указателем.
+			  * Но при вставке в хэш-таблицу, такой StringRef оказывается равен другому ключу нулевой длины,
+			  *  у которого указатель на данные может быть любым мусором и использовать его нельзя.
+			  */
+			for (size_t i = 0; i < keys_size; ++i)
+				key_columns[i]->insertDefault();
+		}
+		else
+		{
+			for (size_t i = 0; i < keys_size; ++i)
+				key_columns[i]->insertDataWithTerminatingZero(key_refs[i].data, key_refs[i].size);
+		}
 	}
 };
 

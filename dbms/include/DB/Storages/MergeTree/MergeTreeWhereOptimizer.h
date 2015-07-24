@@ -37,6 +37,8 @@ class MergeTreeWhereOptimizer
 	static constexpr auto and_function_name = "and";
 	static constexpr auto equals_function_name = "equals";
 	static constexpr auto array_join_function_name = "arrayJoin";
+	static constexpr auto global_in_function_name = "globalIn";
+	static constexpr auto global_not_in_function_name = "globalNotIn";
 
 public:
 	MergeTreeWhereOptimizer(const MergeTreeWhereOptimizer&) = delete;
@@ -312,14 +314,22 @@ private:
 	}
 
 	/** ARRAY JOIN'ed columns as well as arrayJoin() result cannot be used in PREWHERE, therefore expressions
-	 *	containing said columns should not be moved to PREWHERE at all.
-	 *	We assume all AS aliases have been expanded prior to using this class */
+	  *	containing said columns should not be moved to PREWHERE at all.
+	  *	We assume all AS aliases have been expanded prior to using this class
+	  *
+	  * Also, disallow moving expressions with GLOBAL [NOT] IN.
+	  */
 	bool cannotBeMoved(const IAST * ptr) const
 	{
 		if (const auto function_ptr = typeid_cast<const ASTFunction *>(ptr))
 		{
 			/// disallow arrayJoin expressions to be moved to PREWHERE for now
 			if (array_join_function_name == function_ptr->name)
+				return true;
+
+			/// disallow GLOBAL IN, GLOBAL NOT IN
+			if (global_in_function_name == function_ptr->name
+				|| global_not_in_function_name == function_ptr->name)
 				return true;
 		}
 		else if (const auto identifier_ptr = typeid_cast<const ASTIdentifier *>(ptr))

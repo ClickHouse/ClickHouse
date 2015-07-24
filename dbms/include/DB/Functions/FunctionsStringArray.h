@@ -132,7 +132,8 @@ public:
 		const ColumnConstString * col = typeid_cast<const ColumnConstString *>(&*block.getByPosition(arguments[0]).column);
 
 		if (!col)
-			throw Exception("Illegal column " + col->getName() + " of first argument of function " + getName() + ". Must be constant string.",
+			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+				+ " of first argument of function " + getName() + ". Must be constant string.",
 				ErrorCodes::ILLEGAL_COLUMN);
 
 		const String & sep_str = col->getData();
@@ -198,7 +199,8 @@ public:
 		const ColumnConstString * col = typeid_cast<const ColumnConstString *>(&*block.getByPosition(arguments[0]).column);
 
 		if (!col)
-			throw Exception("Illegal column " + col->getName() + " of first argument of function " + getName() + ". Must be constant string.",
+			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+				+ " of first argument of function " + getName() + ". Must be constant string.",
 				ErrorCodes::ILLEGAL_COLUMN);
 
 		sep = col->getData();
@@ -264,7 +266,8 @@ public:
 		const ColumnConstString * col = typeid_cast<const ColumnConstString *>(&*block.getByPosition(arguments[1]).column);
 
 		if (!col)
-			throw Exception("Illegal column " + col->getName() + " of first argument of function " + getName() + ". Must be constant string.",
+			throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
+				+ " of first argument of function " + getName() + ". Must be constant string.",
 				ErrorCodes::ILLEGAL_COLUMN);
 
 		re = Regexps::get<false, false>(col->getData());

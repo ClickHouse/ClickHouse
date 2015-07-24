@@ -1224,7 +1224,7 @@ private:
 			const auto & ids = id_col->getData();
 			const PODArray<UInt16> dates(size, date_col->getData());
 
-			const auto out = new ColumnVector<Type>;
+			const auto out = new ColumnVector<Type>{size};
 			block.getByPosition(result).column = out;
 
 			auto & data = out->getData();

@@ -453,7 +453,7 @@ public:
 		return name;
 	}
 
-	void getReturnTypeAndPrerequisites(const ColumnsWithNameAndType & arguments,
+	void getReturnTypeAndPrerequisites(const ColumnsWithTypeAndName & arguments,
 										DataTypePtr & out_return_type,
 										ExpressionActions::Actions & out_prerequisites)
 	{

@@ -136,7 +136,7 @@ int main(int argc, char ** argv)
 		Block sample;
 		for (DataTypes::const_iterator it = result_types->begin(); it != result_types->end(); ++it)
 		{
-			ColumnWithNameAndType col;
+			ColumnWithTypeAndName col;
 			col.type = *it;
 			sample.insert(col);
 		}
