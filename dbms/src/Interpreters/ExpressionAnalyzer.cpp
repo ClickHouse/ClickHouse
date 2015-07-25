@@ -603,7 +603,7 @@ void ExpressionAnalyzer::executeScalarSubqueriesImpl(ASTPtr & ast)
 			tuple->name = "tuple";
 			ASTExpressionList * exp_list = new ASTExpressionList(ast->range);
 			tuple->arguments = exp_list;
-			tuple->children.push_back(exp_list);
+			tuple->children.push_back(tuple->arguments);
 
 			exp_list->children.resize(columns);
 			for (size_t i = 0; i < columns; ++i)
