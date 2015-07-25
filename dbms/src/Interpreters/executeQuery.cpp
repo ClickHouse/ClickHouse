@@ -166,6 +166,15 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 		/// Держим элемент списка процессов до конца обработки запроса.
 		res.process_list_entry = process_list_entry;
 
+		if (res.in)
+		{
+			if (IProfilingBlockInputStream * stream = dynamic_cast<IProfilingBlockInputStream *>(res.in.get()))
+			{
+				stream->setProgressCallback(context.getProgressCallback());
+				stream->setProcessListElement(context.getProcessListElement());
+			}
+		}
+
 		quota.addQuery(current_time);
 
 		/// Всё, что связано с логом запросов.
