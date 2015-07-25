@@ -369,6 +369,19 @@ private:
 	}
 
 
+	/** Проверка для случая, когда в терминал вставляется многострочный запрос из буфера обмена.
+	  * Позволяет не начинать выполнение одной строчки запроса, пока весь запрос не будет вставлен.
+	  */
+	static bool hasDataInSTDIN()
+	{
+		timeval timeout = { 0, 0 };
+		fd_set fds;
+		FD_ZERO(&fds);
+		FD_SET(STDIN_FILENO, &fds);
+		return select(1, &fds, 0, 0, &timeout) == 1;
+	}
+
+
 	void loop()
 	{
 		String query;
@@ -395,7 +408,7 @@ private:
 
 			query += line;
 
-			if (!ends_with_backslash && (ends_with_semicolon || has_vertical_output_suffix || !config().has("multiline")))
+			if (!ends_with_backslash && (ends_with_semicolon || has_vertical_output_suffix || (!config().has("multiline") && !hasDataInSTDIN())))
 			{
 				if (query != prev_query)
 				{
