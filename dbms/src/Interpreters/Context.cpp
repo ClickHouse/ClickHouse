@@ -5,6 +5,7 @@
 #include <Poco/SharedPtr.h>
 #include <Poco/Mutex.h>
 #include <Poco/File.h>
+#include <Poco/UUIDGenerator.h>
 
 #include <Yandex/logger_useful.h>
 
@@ -95,6 +96,8 @@ struct ContextShared
 	/// Кластеры для distributed таблиц
 	/// Создаются при создании Distributed таблиц, так как нужно дождаться пока будут выставлены Settings
 	Poco::SharedPtr<Clusters> clusters;
+
+	Poco::UUIDGenerator uuid_generator;
 
 	bool shutdown_called = false;
 
@@ -587,8 +590,12 @@ void Context::setCurrentDatabase(const String & name)
 
 void Context::setCurrentQueryId(const String & query_id)
 {
+	String query_id_to_set = query_id;
+	if (query_id_to_set.empty())	/// Если пользователь не передал свой query_id, то генерируем его самостоятельно.
+		query_id_to_set = shared->uuid_generator.createRandom().toString();
+
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
-	current_query_id = query_id;
+	current_query_id = query_id_to_set;
 }
 
 
