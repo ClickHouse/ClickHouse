@@ -95,6 +95,7 @@ void ExpressionAnalyzer::init()
 	LogicalExpressionsOptimizer logical_expressions_optimizer(select_query, settings);
 	logical_expressions_optimizer.optimizeDisjunctiveEqualityChains();
 
+	/// Добавляет в множество известных алиасов те, которые объявлены в структуре таблицы (ALIAS-столбцы).
 	addStorageAliases();
 
 	/// Создаёт словарь aliases: alias -> ASTPtr
@@ -102,6 +103,9 @@ void ExpressionAnalyzer::init()
 
 	/// Common subexpression elimination. Rewrite rules.
 	normalizeTree();
+
+	/// Выполнение скалярных подзапросов - замена их на значения-константы.
+	executeScalarSubqueries();
 
 	/// GROUP BY injective function elimination.
 	optimizeGroupBy();
@@ -528,6 +532,90 @@ void ExpressionAnalyzer::normalizeTreeImpl(
 	finished_asts[initial_ast] = ast;
 }
 
+
+void ExpressionAnalyzer::executeScalarSubqueries()
+{
+	executeScalarSubqueriesImpl(ast);
+}
+
+void ExpressionAnalyzer::executeScalarSubqueriesImpl(ASTPtr & ast)
+{
+	/** Заменяем подзапросы, возвращающие ровно одну строку
+	  * ("скалярные" подзапросы) на соответствующие константы.
+	  *
+	  * Если подзапрос возвращает более одного столбца, то он заменяется на кортеж констант.
+	  *
+	  * Особенности:
+	  *
+	  * Замена происходит во время анализа запроса, а не во время основной стадии выполнения.
+	  * Это значит, что не будет работать индикатор прогресса во время выполнения этих запросов,
+	  *  а также такие запросы нельзя будет прервать.
+	  *
+	  * Зато результат запросов может быть использован для индекса в таблице.
+	  *
+	  * Скалярные подзапросы выполняются на сервере-инициаторе запроса.
+	  * На удалённые серверы запрос отправляется с уже подставленными константами.
+	  *
+	  * Замечения:
+	  * Нет возможности указать алиас для подзапроса.
+	  */
+
+	if (ASTSubquery * subquery = typeid_cast<ASTSubquery *>(ast.get()))
+	{
+		Context subquery_context = context;
+		Settings subquery_settings = context.getSettings();
+		subquery_settings.limits.max_result_rows = 1;
+		subquery_settings.extremes = 0;
+		subquery_context.setSettings(subquery_settings);
+
+		ASTPtr query = subquery->children.at(0);
+		BlockIO res = InterpreterSelectQuery(query, subquery_context, QueryProcessingStage::Complete, subquery_depth + 1).execute();
+
+		Block block;
+		try
+		{
+			block = res.in->read();
+
+			if (!block)
+				throw Exception("Scalar subquery returned empty result", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
+
+			if (block.rows() != 1 || res.in->read())
+				throw Exception("Scalar subquery returned more than one row", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
+		}
+		catch (const Exception & e)
+		{
+			if (e.code() == ErrorCodes::TOO_MUCH_ROWS)
+				throw Exception("Scalar subquery returned more than one row", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
+			else
+				throw;
+		}
+
+		size_t columns = block.columns();
+		if (columns == 1)
+		{
+			ast = new ASTLiteral(ast->range, (*block.getByPosition(0).column)[0]);
+		}
+		else
+		{
+			ASTFunction * tuple = new ASTFunction(ast->range);
+			ast = tuple;
+			tuple->kind = ASTFunction::FUNCTION;
+			tuple->name = "tuple";
+			ASTExpressionList * exp_list = new ASTExpressionList(ast->range);
+			tuple->arguments = exp_list;
+			tuple->children.push_back(exp_list);
+
+			exp_list->children.resize(columns);
+			for (size_t i = 0; i < columns; ++i)
+				exp_list->children[i] = new ASTLiteral(ast->range, (*block.getByPosition(i).column)[0]);
+		}
+	}
+	else
+		for (auto & child : ast->children)
+			executeScalarSubqueriesImpl(child);
+}
+
+
 void ExpressionAnalyzer::optimizeGroupBy()
 {
 	if (!(select_query && select_query->group_expression_list))
@@ -693,7 +781,8 @@ static SharedPtr<InterpreterSelectQuery> interpretSubquery(
 	  * Так как результат этого поздапроса - ещё не результат всего запроса.
 	  * Вместо этого работают ограничения
 	  *  max_rows_in_set, max_bytes_in_set, set_overflow_mode,
-	  *  max_rows_in_join, max_bytes_in_join, join_overflow_mode.
+	  *  max_rows_in_join, max_bytes_in_join, join_overflow_mode,
+	  *  которые проверяются отдельно (в объектах Set, Join).
 	  */
 	Context subquery_context = context;
 	Settings subquery_settings = context.getSettings();
