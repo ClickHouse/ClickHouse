@@ -477,6 +477,12 @@ private:
 			copyData(in, out);
 		}
 
+		process(line);
+	}
+
+
+	bool process(const String & line)
+	{
 		if (config().has("multiquery"))
 		{
 			/// Несколько запросов, разделенных ';'.
@@ -507,17 +513,20 @@ private:
 				while (isWhitespace(*begin) || *begin == ';')
 					++begin;
 
-				process(query, ast);
+				if (!processSingleQuery(query, ast))
+					return false;
 			}
+
+			return true;
 		}
 		else
 		{
-			process(line);
+			return processSingleQuery(line);
 		}
 	}
 
 
-	bool process(const String & line, ASTPtr parsed_query_ = nullptr)
+	bool processSingleQuery(const String & line, ASTPtr parsed_query_ = nullptr)
 	{
 		if (exit_strings.end() != exit_strings.find(line))
 			return false;
