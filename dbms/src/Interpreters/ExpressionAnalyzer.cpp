@@ -87,6 +87,18 @@ const std::unordered_set<String> possibly_injective_function_names
 	"dictGetDateTime"
 };
 
+static bool functionIsInOperator(const String & name)
+{
+	return name == "in" || name == "notIn";
+}
+
+static bool functionIsInOrGlobalInOperator(const String & name)
+{
+	return name == "in" || name == "notIn" || name == "globalIn" || name == "globalNotIn";
+}
+
+
+
 void ExpressionAnalyzer::init()
 {
 	select_query = typeid_cast<ASTSelectQuery *>(&*ast);
@@ -392,7 +404,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(
 		}
 
 		/// Может быть указано IN t, где t - таблица, что равносильно IN (SELECT * FROM t).
-		if (func_node->name == "in" || func_node->name == "notIn" || func_node->name == "globalIn" || func_node->name == "globalNotIn")
+		if (functionIsInOrGlobalInOperator(func_node->name))
 			if (ASTIdentifier * right = typeid_cast<ASTIdentifier *>(&*func_node->arguments->children.at(1)))
 				right->kind = ASTIdentifier::Table;
 
@@ -535,7 +547,12 @@ void ExpressionAnalyzer::normalizeTreeImpl(
 
 void ExpressionAnalyzer::executeScalarSubqueries()
 {
-	executeScalarSubqueriesImpl(ast);
+	for (auto & child : ast->children)
+	{
+		/// Не опускаемся в FROM и JOIN.
+		if (!select_query || (child.get() != select_query->table.get() && child.get() != select_query->join.get()))
+			executeScalarSubqueriesImpl(child);
+	}
 }
 
 void ExpressionAnalyzer::executeScalarSubqueriesImpl(ASTPtr & ast)
@@ -611,8 +628,28 @@ void ExpressionAnalyzer::executeScalarSubqueriesImpl(ASTPtr & ast)
 		}
 	}
 	else
-		for (auto & child : ast->children)
-			executeScalarSubqueriesImpl(child);
+	{
+		/** Не опускаемся в подзапросы в аргументах IN.
+		  * Но если аргумент - не подзапрос, то глубже внутри него могут быть подзапросы, и в них надо опускаться.
+		  */
+		ASTFunction * func = typeid_cast<ASTFunction *>(ast.get());
+		if (func && func->kind == ASTFunction::FUNCTION
+			&& functionIsInOrGlobalInOperator(func->name))
+		{
+			for (auto & child : ast->children)
+			{
+				if (child.get() != func->arguments)
+					executeScalarSubqueriesImpl(child);
+				else
+					for (size_t i = 0, size = func->arguments->children.size(); i < size; ++i)
+						if (i != 1 || !typeid_cast<ASTSubquery *>(func->arguments->children[i].get()))
+							executeScalarSubqueriesImpl(func->arguments->children[i]);
+			}
+		}
+		else
+			for (auto & child : ast->children)
+				executeScalarSubqueriesImpl(child);
+	}
 }
 
 
@@ -745,7 +782,7 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(ASTPtr & node, const Block & sampl
 		makeSetsForIndexImpl(child, sample_block);
 
 	ASTFunction * func = typeid_cast<ASTFunction *>(node.get());
-	if (func && func->kind == ASTFunction::FUNCTION && (func->name == "in" || func->name == "notIn"))
+	if (func && func->kind == ASTFunction::FUNCTION && functionIsInOperator(func->name))
 	{
 		IAST & args = *func->arguments;
 		ASTPtr & arg = args.children.at(1);
@@ -1310,7 +1347,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 
 		if (node->kind == ASTFunction::FUNCTION)
 		{
-			if (node->name == "in" || node->name == "notIn" || node->name == "globalIn" || node->name == "globalNotIn")
+			if (functionIsInOrGlobalInOperator(node->name))
 			{
 				if (!no_subqueries)
 				{
