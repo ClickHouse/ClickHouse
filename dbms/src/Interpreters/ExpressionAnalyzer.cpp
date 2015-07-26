@@ -547,11 +547,16 @@ void ExpressionAnalyzer::normalizeTreeImpl(
 
 void ExpressionAnalyzer::executeScalarSubqueries()
 {
-	for (auto & child : ast->children)
+	if (!select_query)
+		executeScalarSubqueriesImpl(ast);
+	else
 	{
-		/// Не опускаемся в FROM и JOIN.
-		if (!select_query || (child.get() != select_query->table.get() && child.get() != select_query->join.get()))
-			executeScalarSubqueriesImpl(child);
+		for (auto & child : ast->children)
+		{
+			/// Не опускаемся в FROM и JOIN.
+			if (child.get() != select_query->table.get() && child.get() != select_query->join.get())
+				executeScalarSubqueriesImpl(child);
+		}
 	}
 }
 
