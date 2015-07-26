@@ -555,6 +555,27 @@ void ExpressionAnalyzer::executeScalarSubqueries()
 	}
 }
 
+
+static ASTPtr addTypeConversion(ASTLiteral * ast_, const String & type_name)
+{
+	if (0 == type_name.compare(0, strlen("Array"), "Array"))
+		return ast_;	/// Преобразование типов для массивов пока не поддерживаем.
+
+	auto ast = std::unique_ptr<ASTLiteral>(ast_);
+	ASTFunction * func = new ASTFunction(ast->range);
+	ASTPtr res = func;
+	func->alias = ast->alias;
+	ast->alias.clear();
+	func->kind = ASTFunction::FUNCTION;
+	func->name = "to" + type_name;
+	ASTExpressionList * exp_list = new ASTExpressionList(ast->range);
+	func->arguments = exp_list;
+	func->children.push_back(func->arguments);
+	exp_list->children.push_back(ast.release());
+	return res;
+}
+
+
 void ExpressionAnalyzer::executeScalarSubqueriesImpl(ASTPtr & ast)
 {
 	/** Заменяем подзапросы, возвращающие ровно одну строку
@@ -610,11 +631,14 @@ void ExpressionAnalyzer::executeScalarSubqueriesImpl(ASTPtr & ast)
 		size_t columns = block.columns();
 		if (columns == 1)
 		{
-			ast = new ASTLiteral(ast->range, (*block.getByPosition(0).column)[0]);
+			ASTLiteral * lit = new ASTLiteral(ast->range, (*block.getByPosition(0).column)[0]);
+			lit->alias = subquery->alias;
+			ast = addTypeConversion(lit, block.getByPosition(0).type->getName());
 		}
 		else
 		{
 			ASTFunction * tuple = new ASTFunction(ast->range);
+			tuple->alias = subquery->alias;
 			ast = tuple;
 			tuple->kind = ASTFunction::FUNCTION;
 			tuple->name = "tuple";
@@ -624,7 +648,11 @@ void ExpressionAnalyzer::executeScalarSubqueriesImpl(ASTPtr & ast)
 
 			exp_list->children.resize(columns);
 			for (size_t i = 0; i < columns; ++i)
-				exp_list->children[i] = new ASTLiteral(ast->range, (*block.getByPosition(i).column)[0]);
+			{
+				exp_list->children[i] = addTypeConversion(
+					new ASTLiteral(ast->range, (*block.getByPosition(i).column)[0]),
+					block.getByPosition(i).type->getName());
+			}
 		}
 	}
 	else

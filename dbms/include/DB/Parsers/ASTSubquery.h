@@ -2,7 +2,7 @@
 
 #include <DB/DataTypes/IDataType.h>
 
-#include <DB/Parsers/IAST.h>
+#include <DB/Parsers/ASTWithAlias.h>
 
 
 namespace DB
@@ -11,12 +11,12 @@ namespace DB
 
 /** Подзарос SELECT
   */
-class ASTSubquery : public IAST
+class ASTSubquery : public ASTWithAlias
 {
 public:
 	ASTSubquery() = default;
-	ASTSubquery(const StringRange range_) : IAST(range_) {}
-	
+	ASTSubquery(const StringRange range_) : ASTWithAlias(range_) {}
+
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() const override { return "Subquery"; }
 
