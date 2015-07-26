@@ -163,7 +163,9 @@ void formatAST(const ASTSelectQuery 		& ast, std::ostream & s, size_t indent, bo
 
 	if (ast.array_join_expression_list)
 	{
-		s << (hilite ? hilite_keyword : "") << nl_or_ws << indent_str << "ARRAY JOIN " << (hilite ? hilite_none : "");
+		s << (hilite ? hilite_keyword : "") << nl_or_ws << indent_str
+			<< (ast.array_join_is_left ? "LEFT " : "") << "ARRAY JOIN " << (hilite ? hilite_none : "");
+
 		one_line
 			? formatAST(*ast.array_join_expression_list, s, indent, hilite, one_line)
 			: formatExpressionListMultiline(typeid_cast<const ASTExpressionList &>(*ast.array_join_expression_list), s, indent, hilite);

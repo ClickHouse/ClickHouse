@@ -1369,7 +1369,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 				actions_stack.addAction(ExpressionAction::copyColumn(arg->getColumnName(), result_name));
 				NameSet joined_columns;
 				joined_columns.insert(result_name);
-				actions_stack.addAction(ExpressionAction::arrayJoin(joined_columns));
+				actions_stack.addAction(ExpressionAction::arrayJoin(joined_columns, false));
 			}
 
 			return;
@@ -1666,7 +1666,7 @@ void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActionsPtr & actio
 		result_columns.insert(result_source.first);
 	}
 
-	actions->add(ExpressionAction::arrayJoin(result_columns));
+	actions->add(ExpressionAction::arrayJoin(result_columns, select_query->array_join_is_left));
 }
 
 bool ExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & chain, bool only_types)
