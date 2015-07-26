@@ -30,7 +30,7 @@ bool ParserJoin::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_p
 	ParserString s_using("USING", true, true);
 
 	ParserNotEmptyExpressionList exp_list;
-	ParserSubquery subquery;
+	ParserWithOptionalAlias subquery(ParserPtr(new ParserSubquery));
 	ParserIdentifier identifier;
 
 	ws.ignore(pos, end);
@@ -89,10 +89,6 @@ bool ParserJoin::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_p
 		&& !subquery.parse(pos, end, join->table, max_parsed_pos, expected))
 		return false;
 
-	ws.ignore(pos, end);
-
-	/// Может быть указан алиас. На данный момент, он ничего не значит и не используется.
-	ParserAlias().ignore(pos, end);
 	ws.ignore(pos, end);
 
 	if (join->kind != ASTJoin::Cross)
