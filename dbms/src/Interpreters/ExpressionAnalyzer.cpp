@@ -593,9 +593,6 @@ void ExpressionAnalyzer::executeScalarSubqueriesImpl(ASTPtr & ast)
 	  *
 	  * Скалярные подзапросы выполняются на сервере-инициаторе запроса.
 	  * На удалённые серверы запрос отправляется с уже подставленными константами.
-	  *
-	  * Замечения:
-	  * Нет возможности указать алиас для подзапроса.
 	  */
 
 	if (ASTSubquery * subquery = typeid_cast<ASTSubquery *>(ast.get()))

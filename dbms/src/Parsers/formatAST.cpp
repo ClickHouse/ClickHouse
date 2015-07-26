@@ -63,9 +63,21 @@ String backQuoteIfNeed(const String & x)
 }
 
 
-String hightlight(const String & keyword, const String & color_sequence, const bool hilite)
+static String hightlight(const String & keyword, const String & color_sequence, const bool hilite)
 {
 	return hilite ? color_sequence + keyword + hilite_none : keyword;
+}
+
+
+static void writeAlias(const String & name, std::ostream & s, bool hilite, bool one_line)
+{
+	s << (hilite ? hilite_keyword : "") << " AS " << (hilite ? hilite_alias : "");
+
+	WriteBufferFromOStream wb(s, 32);
+	writeProbablyBackQuotedString(name, wb);
+	wb.next();
+
+	s << (hilite ? hilite_none : "");
 }
 
 
@@ -245,12 +257,23 @@ void formatAST(const ASTSelectQuery 		& ast, std::ostream & s, size_t indent, bo
 
 void formatAST(const ASTSubquery 			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
 {
+	/// Если есть алиас, то требуются скобки вокруг всего выражения, включая алиас. Потому что запись вида 0 AS x + 0 синтаксически некорректна.
+	if (need_parens && !ast.alias.empty())
+		s << '(';
+
 	std::string indent_str = one_line ? "" : std::string(4 * indent, ' ');
 	std::string nl_or_nothing = one_line ? "" : "\n";
 
 	s << nl_or_nothing << indent_str << "(" << nl_or_nothing;
 	formatAST(*ast.children[0], s, indent + 1, hilite, one_line);
 	s << nl_or_nothing << indent_str << ")";
+
+	if (!ast.alias.empty())
+	{
+		writeAlias(ast.alias, s, hilite, one_line);
+		if (need_parens)
+			s << ')';
+	}
 }
 
 void formatAST(const ASTCreateQuery 		& ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
@@ -459,17 +482,6 @@ void formatAST(const ASTInsertQuery 		& ast, std::ostream & s, size_t indent, bo
 			s << (hilite ? hilite_keyword : "") << " VALUES" << (hilite ? hilite_none : "");
 		}
 	}
-}
-
-static void writeAlias(const String & name, std::ostream & s, bool hilite, bool one_line)
-{
-	s << (hilite ? hilite_keyword : "") << " AS " << (hilite ? hilite_alias : "");
-
-	WriteBufferFromOStream wb(s, 32);
-	writeProbablyBackQuotedString(name, wb);
-	wb.next();
-
-	s << (hilite ? hilite_none : "");
 }
 
 void formatAST(const ASTFunction 			& ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
