@@ -252,6 +252,7 @@ BlockIO InterpreterCreateQuery::executeImpl(bool assume_metadata_exists)
 	if (create.select && storage_name != "View" && (storage_name != "MaterializedView" || create.is_populate))
 	{
 		BlockIO io;
+		io.in_sample = select_sample;
 		io.in = new NullAndDoCopyBlockInputStream(
 			new MaterializingBlockInputStream(interpreter_select->execute().in),
 			res->write(query_ptr));

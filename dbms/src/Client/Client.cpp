@@ -860,15 +860,8 @@ private:
 	}
 
 
-	void onData(Block & block)
+	void initBlockOutputStream(const Block & block)
 	{
-		if (written_progress_chars)
-			clearProgress();
-
-		if (!block)
-			return;
-
-		processed_rows += block.rows();
 		if (!block_std_out)
 		{
 			String current_format = format;
@@ -891,8 +884,21 @@ private:
 			block_std_out = context.getFormatFactory().getOutput(current_format, std_out, block);
 			block_std_out->writePrefix();
 		}
+	}
 
-		/// Загаловочный блок с нулем строк использовался для инициализации block_std_out,
+
+	void onData(Block & block)
+	{
+		if (written_progress_chars)
+			clearProgress();
+
+		if (!block)
+			return;
+
+		processed_rows += block.rows();
+		initBlockOutputStream(block);
+
+		/// Заголовочный блок с нулем строк использовался для инициализации block_std_out,
 		/// выводить его не нужно
 		if (block.rows() != 0)
 		{
@@ -907,11 +913,13 @@ private:
 
 	void onTotals(Block & block)
 	{
+		initBlockOutputStream(block);
 		block_std_out->setTotals(block);
 	}
 
 	void onExtremes(Block & block)
 	{
+		initBlockOutputStream(block);
 		block_std_out->setExtremes(block);
 	}
 
