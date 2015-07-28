@@ -556,12 +556,8 @@ bool ParserWithOptionalAlias::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos &
 	{
 		String alias_name = typeid_cast<ASTIdentifier &>(*alias_node).name;
 
-		if (ASTFunction * func = typeid_cast<ASTFunction *>(&*node))
-			func->alias = alias_name;
-		else if (ASTIdentifier * ident = typeid_cast<ASTIdentifier *>(&*node))
-			ident->alias = alias_name;
-		else if (ASTLiteral * lit = typeid_cast<ASTLiteral *>(&*node))
-			lit->alias = alias_name;
+		if (ASTWithAlias * ast_with_alias = dynamic_cast<ASTWithAlias *>(node.get()))
+			ast_with_alias->alias = alias_name;
 		else
 		{
 			expected = "alias cannot be here";

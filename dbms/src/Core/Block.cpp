@@ -302,7 +302,13 @@ std::string Block::dumpStructure() const
 	{
 		if (it != data.begin())
 			res << ", ";
-		res << it->name << ' ' << it->type->getName() << ' ' << it->column->getName() << ' ' << it->column->size();
+
+		res << it->name << ' ' << it->type->getName();
+
+		if (it->column)
+			res << ' ' << it->column->getName() << ' ' << it->column->size();
+		else
+			res << "nullptr";
 	}
 	return res.str();
 }

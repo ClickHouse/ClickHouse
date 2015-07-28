@@ -779,6 +779,13 @@ public:
 		return it == std::end(column_sizes) ? 0 : it->second;
 	}
 
+	using ColumnSizes = std::unordered_map<std::string, size_t>;
+	ColumnSizes getColumnSizes() const
+	{
+		Poco::ScopedLock<Poco::FastMutex> lock{data_parts_mutex};
+		return column_sizes;
+	}
+
 	/// Для ATTACH/DETACH/DROP PARTITION.
 	static String getMonthName(const Field & partition);
 	static DayNum_t getMonthDayNum(const Field & partition);
@@ -810,7 +817,7 @@ private:
 
 	NamesAndTypesListPtr columns;
 	/// Актуальные размеры столбцов в сжатом виде
-	std::unordered_map<std::string, size_t> column_sizes;
+	ColumnSizes column_sizes;
 
 	BrokenPartCallback broken_part_callback;
 
