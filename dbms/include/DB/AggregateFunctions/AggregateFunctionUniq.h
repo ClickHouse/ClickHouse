@@ -122,7 +122,7 @@ template <typename T>
 struct AggregateFunctionUniqCombinedData
 {
 	using Key = T;
-	using Set = CombinedCardinalityEstimator<Key, HashSet<Key, TrivialHash, HashTableGrower<> >, 16, 16, 19>;
+	using Set = CombinedCardinalityEstimator<Key, HashSet<Key, TrivialHash, HashTableGrower<> >, 16, 16, 19, TrivialHash>;
 	Set set;
 
 	static String getName() { return "uniqCombined"; }
@@ -132,7 +132,7 @@ template <>
 struct AggregateFunctionUniqCombinedData<String>
 {
 	using Key = UInt64;
-	using Set = CombinedCardinalityEstimator<Key, HashSet<Key, TrivialHash, HashTableGrower<> >, 16, 16, 19>;
+	using Set = CombinedCardinalityEstimator<Key, HashSet<Key, TrivialHash, HashTableGrower<> >, 16, 16, 19, TrivialHash>;
 	Set set;
 
 	static String getName() { return "uniqCombined"; }
