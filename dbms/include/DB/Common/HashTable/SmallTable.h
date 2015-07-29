@@ -105,7 +105,7 @@ public:
 			if ((read_count == 0) || is_eof)
 				throw DB::Exception("No available data", DB::ErrorCodes::NO_AVAILABLE_DATA);
 
-			return Cell::getKey(cell.getValue());
+			return cell.getValue();
 		}
 
 	private:

@@ -465,7 +465,7 @@ public:
 			if ((read_count == 0) || is_eof)
 				throw DB::Exception("No available data", DB::ErrorCodes::NO_AVAILABLE_DATA);
 
-			return Cell::getKey(cell.getValue());
+			return cell.getValue();
 		}
 
 	private:
@@ -803,7 +803,7 @@ public:
 		{
 			Cell x;
 			x.read(rb);
-			insert(Cell::getKey(x.getValue()));
+			insert(x.getValue());
 		}
 	}
 
@@ -827,7 +827,7 @@ public:
 			Cell x;
 			DB::assertString(",", rb);
 			x.readText(rb);
-			insert(Cell::getKey(x.getValue()));
+			insert(x.getValue());
 		}
 	}
 
