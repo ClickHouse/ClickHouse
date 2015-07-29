@@ -193,10 +193,7 @@ namespace detail
 	{
 		static void addOne(AggregateFunctionUniqCombinedData<T> & data, const IColumn & column, size_t row_num)
 		{
-			if (data.set.isMedium())
-				data.set.insert(static_cast<const ColumnVector<T> &>(column).getData()[row_num]);
-			else
-				data.set.insert(AggregateFunctionUniqTraits<T>::hash(static_cast<const ColumnVector<T> &>(column).getData()[row_num]));
+			data.set.insert(static_cast<const ColumnVector<T> &>(column).getData()[row_num]);
 		}
 	};
 

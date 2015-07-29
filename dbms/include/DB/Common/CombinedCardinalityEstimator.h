@@ -204,11 +204,6 @@ public:
 			throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
 	}
 
-	bool isMedium() const
-	{
-		return getContainerType() == details::ContainerType::MEDIUM;
-	}
-
 private:
 	void toMedium()
 	{
