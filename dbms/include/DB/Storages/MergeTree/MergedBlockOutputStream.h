@@ -283,7 +283,7 @@ public:
 		size_t rows = block.rows();
 
 		/// Сначала пишем индекс. Индекс содержит значение Primary Key для каждой index_granularity строки.
-		typedef std::vector<const ColumnWithNameAndType *> PrimaryColumns;
+		typedef std::vector<const ColumnWithTypeAndName *> PrimaryColumns;
 		PrimaryColumns primary_columns;
 
 		for (const auto & descr : storage.getSortDescription())
@@ -311,7 +311,7 @@ public:
 		/// Теперь пишем данные.
 		for (const auto & it : columns_list)
 		{
-			const ColumnWithNameAndType & column = block.getByName(it.name);
+			const ColumnWithTypeAndName & column = block.getByName(it.name);
 			writeData(column.name, *column.type, *column.column, offset_columns);
 		}
 
@@ -435,7 +435,7 @@ public:
 		OffsetColumns offset_columns;
 		for (size_t i = 0; i < block.columns(); ++i)
 		{
-			const ColumnWithNameAndType & column = block.getByPosition(i);
+			const ColumnWithTypeAndName & column = block.getByPosition(i);
 			writeData(column.name, *column.type, *column.column, offset_columns);
 		}
 

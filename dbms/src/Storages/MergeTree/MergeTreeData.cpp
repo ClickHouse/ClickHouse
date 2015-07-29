@@ -103,9 +103,9 @@ MergeTreeData::MergeTreeData(
 			sort_descr.push_back(SortColumnDescription(name, 1));
 		}
 
-		primary_expr = ExpressionAnalyzer(primary_expr_ast, context, getColumnsList()).getActions(false);
+		primary_expr = ExpressionAnalyzer(primary_expr_ast, context, nullptr, getColumnsList()).getActions(false);
 
-		ExpressionActionsPtr projected_expr = ExpressionAnalyzer(primary_expr_ast, context, getColumnsList()).getActions(true);
+		ExpressionActionsPtr projected_expr = ExpressionAnalyzer(primary_expr_ast, context, nullptr, getColumnsList()).getActions(true);
 		primary_key_sample = projected_expr->getSampleBlock();
 	}
 	else if (mode != Unsorted)
@@ -240,7 +240,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 		data_parts.insert(part);
 	}
 
-	if (suspicious_broken_parts > 5 && !skip_sanity_checks)
+	if (suspicious_broken_parts > settings.max_suspicious_broken_parts && !skip_sanity_checks)
 		throw Exception("Suspiciously many (" + toString(suspicious_broken_parts) + ") broken parts to remove.",
 			ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS);
 
@@ -487,7 +487,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 				if (!out_expression)
 					out_expression = new ExpressionActions(NamesAndTypesList(), context.getSettingsRef());
 
-				out_expression->addInput(ColumnWithNameAndType(nullptr, column.type, column.name));
+				out_expression->addInput(ColumnWithTypeAndName(nullptr, column.type, column.name));
 
 				Names out_names;
 

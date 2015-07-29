@@ -392,7 +392,7 @@ static Field convertToType(const Field & src, const IDataType & type)
 static Field evaluateConstantExpression(ASTPtr & node, const Context & context)
 {
 	ExpressionActionsPtr expr_for_constant_folding = ExpressionAnalyzer(
-		node, context, NamesAndTypesList{{ "_dummy", new DataTypeUInt8 }}).getConstActions();
+		node, context, nullptr, NamesAndTypesList{{ "_dummy", new DataTypeUInt8 }}).getConstActions();
 
 	/// В блоке должен быть хотя бы один столбец, чтобы у него было известно число строк.
 	Block block_with_constants{{ new ColumnConstUInt8(1, 0), new DataTypeUInt8, "_dummy" }};
@@ -435,7 +435,7 @@ void Set::createFromAST(DataTypes & types, ASTPtr node, const Context & context,
 	Block block;
 	for (size_t i = 0, size = data_types.size(); i < size; ++i)
 	{
-		ColumnWithNameAndType col;
+		ColumnWithTypeAndName col;
 		col.type = data_types[i];
 		col.column = data_types[i]->createColumn();
 		col.name = "_" + toString(i);

@@ -12,14 +12,14 @@ int main(int argc, char ** argv)
 	{
 		size_t n = atoi(argv[1]);
 
-		DB::ColumnWithNameAndType descr1;
+		DB::ColumnWithTypeAndName descr1;
 		DB::ColumnUInt8 * col1 = new DB::ColumnUInt8;
 		descr1.type = new DB::DataTypeUInt8;
 		descr1.column = col1;
 		descr1.name = "x";
 		col1->getData().resize(n);
 
-		DB::ColumnWithNameAndType descr2;
+		DB::ColumnWithTypeAndName descr2;
 		DB::ColumnInt16 * col2 = new DB::ColumnInt16;
 		descr2.type = new DB::DataTypeInt16;
 		descr2.column = col2;
@@ -49,7 +49,7 @@ int main(int argc, char ** argv)
 
 		DB::DataTypePtr res_type = f.getReturnType(arg_types);
 
-		DB::ColumnWithNameAndType descr_res;
+		DB::ColumnWithTypeAndName descr_res;
 		descr_res.type = res_type;
 		descr_res.name = "z";
 

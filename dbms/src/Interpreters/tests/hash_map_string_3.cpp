@@ -4,6 +4,9 @@
 
 #include <statdaemons/Stopwatch.h>
 
+#include <farmhash.h>
+#include <metrohash.h>
+
 #define DBMS_HASH_MAP_COUNT_COLLISIONS
 #define DBMS_HASH_MAP_DEBUG_RESIZES
 
@@ -32,8 +35,8 @@ for file in MobilePhoneModel PageCharset Params URLDomain UTMSource Referer URL 
 	if [[ $TOTAL_ELEMS -gt 25000000 ]]; then break; fi
     ./hash_map_string_3 $size $method < ${file}.bin 2>&1 |
      grep HashMap | grep -oE '[0-9\.]+ elem';
-   done | awk -W interactive '{ if ($1 > x) { x = $1 }; printf(".") } END { print x }' | tee /tmp/hash_map_string_2_res;
-   CUR_RESULT=$(cat /tmp/hash_map_string_2_res | tr -d '.')
+   done | awk -W interactive '{ if ($1 > x) { x = $1 }; printf(".") } END { print x }' | tee /tmp/hash_map_string_3_res;
+   CUR_RESULT=$(cat /tmp/hash_map_string_3_res | tr -d '.')
    if [[ $CUR_RESULT -gt $BEST_RESULT ]]; then
     BEST_METHOD=$method
     BEST_RESULT=$CUR_RESULT
@@ -277,6 +280,32 @@ struct VerySimpleHash
 };
 
 
+struct FarmHash64
+{
+	size_t operator() (StringRef x) const
+	{
+		return farmhash::Hash64(x.data, x.size);
+	}
+};
+
+
+template <void metrohash64(const uint8_t * key, uint64_t len, uint32_t seed, uint8_t * out)>
+struct MetroHash64
+{
+	size_t operator() (StringRef x) const
+	{
+		union {
+			std::uint64_t u64;
+			std::uint8_t u8[sizeof(u64)];
+		};
+
+		metrohash64(reinterpret_cast<const std::uint8_t *>(x.data), x.size, 0, u8);
+
+		return u64;
+	}
+};
+
+
 /*struct CRC32Hash
 {
 	size_t operator() (StringRef x) const
@@ -426,6 +455,9 @@ int main(int argc, char ** argv)
 	if (!m || m == 5) bench<StringRef_CompareMemcmp, CRC32Hash>		(data, "StringRef_CRC32Hash");
 	if (!m || m == 6) bench<StringRef_CompareMemcmp, CRC32ILPHash>	(data, "StringRef_CRC32ILPHash");
 	if (!m || m == 7) bench<StringRef_CompareMemcmp, VerySimpleHash>(data, "StringRef_VerySimpleHash");
+	if (!m || m == 8) bench<StringRef_CompareMemcmp, FarmHash64>(data, "StringRef_FarmHash64");
+	if (!m || m == 9) bench<StringRef_CompareMemcmp, MetroHash64<metrohash64_1>>(data, "StringRef_MetroHash64_1");
+	if (!m || m == 10) bench<StringRef_CompareMemcmp, MetroHash64<metrohash64_2>>(data, "StringRef_MetroHash64_2");
 
 	return 0;
 }

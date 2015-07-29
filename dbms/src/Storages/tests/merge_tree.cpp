@@ -47,13 +47,13 @@ int main(int argc, char ** argv)
 			"./", "default", "test",
 			names_and_types, {}, {}, ColumnDefaults{},
 			context, primary_expr, "d",
-			nullptr, 101, MergeTreeData::Ordinary, {}, {});
+			nullptr, 101, MergeTreeData::Ordinary, {}, {}, {});
 
 		/// пишем в неё
 		{
 			Block block;
 
-			ColumnWithNameAndType column1;
+			ColumnWithTypeAndName column1;
 			column1.name = "d";
 			column1.type = table->getDataTypeByName("d");
 			column1.column = column1.type->createColumn();
@@ -65,7 +65,7 @@ int main(int argc, char ** argv)
 
 			block.insert(column1);
 
-			ColumnWithNameAndType column2;
+			ColumnWithTypeAndName column2;
 			column2.name = "a";
 			column2.type = table->getDataTypeByName("a");
 			column2.column = column2.type->createColumn();
@@ -101,12 +101,12 @@ int main(int argc, char ** argv)
 
 			Block sample;
 			{
-				ColumnWithNameAndType col;
+				ColumnWithTypeAndName col;
 				col.type = names_and_types->front().type;
 				sample.insert(col);
 			}
 			{
-				ColumnWithNameAndType col;
+				ColumnWithTypeAndName col;
 				col.type = names_and_types->back().type;
 				sample.insert(col);
 			}

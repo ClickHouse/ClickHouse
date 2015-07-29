@@ -62,9 +62,8 @@ int main(int argc, char ** argv)
 		std::cerr << std::endl;
 
 		Context context;
-		context.getColumns().push_back(NameAndTypePair("number", new DataTypeUInt64));
 
-		ExpressionAnalyzer analyzer(ast, context, context.getColumns());
+		ExpressionAnalyzer analyzer(ast, context, {}, {NameAndTypePair("number", new DataTypeUInt64)});
 		ExpressionActionsChain chain;
 		analyzer.appendSelect(chain, false);
 		analyzer.appendProjectResult(chain, false);

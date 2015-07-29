@@ -43,7 +43,7 @@ public:
 		MergeTreeData::Mode mode_,
 		const String & sign_column_,			/// Для Collapsing режима.
 		const Names & columns_to_sum_,			/// Для Summing режима.
-		const MergeTreeSettings & settings_ = MergeTreeSettings());
+		const MergeTreeSettings & settings_);
 
 	void shutdown() override;
 	~StorageMergeTree() override;

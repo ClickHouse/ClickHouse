@@ -268,6 +268,7 @@ void TCPHandler::processInsertQuery(const Settings & global_settings)
 
 	readData(global_settings);
 	state.io.out->writeSuffix();
+	state.io.onFinish();
 }
 
 
@@ -334,8 +335,9 @@ void TCPHandler::processOrdinaryQuery()
 		}
 
 		async_in.readSuffix();
-		state.io.onFinish();
 	}
+
+	state.io.onFinish();
 }
 
 

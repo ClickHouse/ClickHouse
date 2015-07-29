@@ -37,7 +37,7 @@ Block AggregatingSortedBlockInputStream::readImpl()
 		/// Заполним номера столбцов, которые нужно доагрегировать.
 		for (size_t i = 0; i < num_columns; ++i)
 		{
-			ColumnWithNameAndType & column = merged_block.getByPosition(i);
+			ColumnWithTypeAndName & column = merged_block.getByPosition(i);
 
 			/// Оставляем только состояния аггрегатных функций.
 			if (strncmp(column.type->getName().data(), "AggregateFunction", strlen("AggregateFunction")) != 0)

@@ -369,6 +369,19 @@ private:
 	}
 
 
+	/** Проверка для случая, когда в терминал вставляется многострочный запрос из буфера обмена.
+	  * Позволяет не начинать выполнение одной строчки запроса, пока весь запрос не будет вставлен.
+	  */
+	static bool hasDataInSTDIN()
+	{
+		timeval timeout = { 0, 0 };
+		fd_set fds;
+		FD_ZERO(&fds);
+		FD_SET(STDIN_FILENO, &fds);
+		return select(1, &fds, 0, 0, &timeout) == 1;
+	}
+
+
 	void loop()
 	{
 		String query;
@@ -395,7 +408,7 @@ private:
 
 			query += line;
 
-			if (!ends_with_backslash && (ends_with_semicolon || has_vertical_output_suffix || !config().has("multiline")))
+			if (!ends_with_backslash && (ends_with_semicolon || has_vertical_output_suffix || (!config().has("multiline") && !hasDataInSTDIN())))
 			{
 				if (query != prev_query)
 				{
@@ -464,6 +477,12 @@ private:
 			copyData(in, out);
 		}
 
+		process(line);
+	}
+
+
+	bool process(const String & line)
+	{
 		if (config().has("multiquery"))
 		{
 			/// Несколько запросов, разделенных ';'.
@@ -494,17 +513,20 @@ private:
 				while (isWhitespace(*begin) || *begin == ';')
 					++begin;
 
-				process(query, ast);
+				if (!processSingleQuery(query, ast))
+					return false;
 			}
+
+			return true;
 		}
 		else
 		{
-			process(line);
+			return processSingleQuery(line);
 		}
 	}
 
 
-	bool process(const String & line, ASTPtr parsed_query_ = nullptr)
+	bool processSingleQuery(const String & line, ASTPtr parsed_query_ = nullptr)
 	{
 		if (exit_strings.end() != exit_strings.find(line))
 			return false;
@@ -838,15 +860,8 @@ private:
 	}
 
 
-	void onData(Block & block)
+	void initBlockOutputStream(const Block & block)
 	{
-		if (written_progress_chars)
-			clearProgress();
-
-		if (!block)
-			return;
-
-		processed_rows += block.rows();
 		if (!block_std_out)
 		{
 			String current_format = format;
@@ -869,8 +884,21 @@ private:
 			block_std_out = context.getFormatFactory().getOutput(current_format, std_out, block);
 			block_std_out->writePrefix();
 		}
+	}
 
-		/// Загаловочный блок с нулем строк использовался для инициализации block_std_out,
+
+	void onData(Block & block)
+	{
+		if (written_progress_chars)
+			clearProgress();
+
+		if (!block)
+			return;
+
+		processed_rows += block.rows();
+		initBlockOutputStream(block);
+
+		/// Заголовочный блок с нулем строк использовался для инициализации block_std_out,
 		/// выводить его не нужно
 		if (block.rows() != 0)
 		{
@@ -885,11 +913,13 @@ private:
 
 	void onTotals(Block & block)
 	{
+		initBlockOutputStream(block);
 		block_std_out->setTotals(block);
 	}
 
 	void onExtremes(Block & block)
 	{
+		initBlockOutputStream(block);
 		block_std_out->setExtremes(block);
 	}
 

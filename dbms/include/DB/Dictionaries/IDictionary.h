@@ -12,16 +12,15 @@ namespace DB
 
 class IDictionarySource;
 
-class IDictionary;
-using DictionaryPtr = std::unique_ptr<IDictionary>;
+class IDictionaryBase;
+using DictionaryPtr = std::unique_ptr<IDictionaryBase>;
 
 class DictionaryLifetime;
 class DictionaryStructure;
 class ColumnString;
 
-class IDictionary
+struct IDictionaryBase
 {
-public:
 	using id_t = std::uint64_t;
 
 	virtual std::exception_ptr getCreationException() const = 0;
@@ -53,10 +52,24 @@ public:
 
 	virtual bool isInjective(const std::string & attribute_name) const = 0;
 
+	virtual ~IDictionaryBase() = default;
+};
+
+struct IDictionary : IDictionaryBase
+{
 	virtual bool hasHierarchy() const = 0;
 
 	/// do not call unless you ensure that hasHierarchy() returns true
-	virtual id_t toParent(id_t id) const = 0;
+	id_t toParent(id_t id) const
+	{
+		const PODArray<UInt64> ids(1, id);
+		PODArray<UInt64> out(1);
+
+		toParent(ids, out);
+
+		return out.front();
+	}
+
 	virtual void toParent(const PODArray<id_t> & ids, PODArray<id_t> & out) const = 0;
 
 	bool in(id_t child_id, const id_t ancestor_id) const
@@ -67,20 +80,7 @@ public:
 		return child_id != 0;
 	}
 
-	/// functions for individual access
-	virtual UInt8 getUInt8(const std::string & attribute_name, id_t id) const = 0;
-	virtual UInt16 getUInt16(const std::string & attribute_name, id_t id) const = 0;
-	virtual UInt32 getUInt32(const std::string & attribute_name, id_t id) const = 0;
-	virtual UInt64 getUInt64(const std::string & attribute_name, id_t id) const = 0;
-	virtual Int8 getInt8(const std::string & attribute_name, id_t id) const = 0;
-	virtual Int16 getInt16(const std::string & attribute_name, id_t id) const = 0;
-	virtual Int32 getInt32(const std::string & attribute_name, id_t id) const = 0;
-	virtual Int64 getInt64(const std::string & attribute_name, id_t id) const = 0;
-	virtual Float32 getFloat32(const std::string & attribute_name, id_t id) const = 0;
-	virtual Float64 getFloat64(const std::string & attribute_name, id_t id) const = 0;
-	virtual String getString(const std::string & attribute_name, id_t id) const = 0;
-
-	/// functions for multiple access
+	/// return mapped values for a collection of identifiers
 	virtual void getUInt8(const std::string & attr_name, const PODArray<id_t> & ids, PODArray<UInt8> & out) const = 0;
 	virtual void getUInt16(const std::string & attr_name, const PODArray<id_t> & ids, PODArray<UInt16> & out) const = 0;
 	virtual void getUInt32(const std::string & attr_name, const PODArray<id_t> & ids, PODArray<UInt32> & out) const = 0;
@@ -92,8 +92,6 @@ public:
 	virtual void getFloat32(const std::string & attr_name, const PODArray<id_t> & ids, PODArray<Float32> & out) const = 0;
 	virtual void getFloat64(const std::string & attr_name, const PODArray<id_t> & ids, PODArray<Float64> & out) const = 0;
 	virtual void getString(const std::string & attr_name, const PODArray<id_t> & ids, ColumnString * out) const = 0;
-
-	virtual ~IDictionary() = default;
 };
 
 }
