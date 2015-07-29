@@ -146,6 +146,7 @@ namespace detail
 	template<typename T>
 	struct Hash64To32<T, typename std::enable_if<std::is_same<T, Int64>::value || std::is_same<T, UInt64>::value>::type>
 	{
+		/// https://gist.github.com/badboy/6267743
 		static UInt32 compute(T key)
 		{
 			using U = typename std::make_unsigned<T>::type;
