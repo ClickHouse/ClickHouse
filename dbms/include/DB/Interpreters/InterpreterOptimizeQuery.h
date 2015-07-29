@@ -3,7 +3,6 @@
 #include <DB/Storages/IStorage.h>
 #include <DB/Parsers/ASTOptimizeQuery.h>
 #include <DB/Interpreters/Context.h>
-#include <DB/Interpreters/IInterpreter.h>
 
 
 namespace DB
@@ -12,7 +11,7 @@ namespace DB
 
 /** Просто вызвать метод optimize у таблицы.
   */
-class InterpreterOptimizeQuery : public IInterpreter
+class InterpreterOptimizeQuery
 {
 public:
 	InterpreterOptimizeQuery(ASTPtr query_ptr_, Context & context_)
@@ -20,13 +19,12 @@ public:
 	{
 	}
 
-	BlockIO execute() override
+	void execute()
 	{
 		const ASTOptimizeQuery & ast = typeid_cast<const ASTOptimizeQuery &>(*query_ptr);
 		StoragePtr table = context.getTable(ast.database, ast.table);
 		auto table_lock = table->lockStructure(true);
 		table->optimize(context.getSettings());
-		return {};
 	}
 
 private:

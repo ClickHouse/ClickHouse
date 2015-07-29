@@ -2214,8 +2214,8 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 static String getFakePartNameForDrop(const String & month_name, UInt64 left, UInt64 right)
 {
 	/// Диапазон дат - весь месяц.
-	const auto & lut = DateLUT::instance();
-	time_t start_time = lut.YYYYMMDDToDate(parse<UInt32>(month_name + "01"));
+	DateLUT & lut = DateLUT::instance();
+	time_t start_time = DateLUT::instance().YYYYMMDDToDate(parse<UInt32>(month_name + "01"));
 	DayNum_t left_date = lut.toDayNum(start_time);
 	DayNum_t right_date = DayNum_t(static_cast<size_t>(left_date) + lut.daysInMonth(start_time) - 1);
 
@@ -2224,7 +2224,7 @@ static String getFakePartNameForDrop(const String & month_name, UInt64 left, UIn
 }
 
 
-void StorageReplicatedMergeTree::dropUnreplicatedPartition(const Field & partition, const bool detach, const Settings & settings)
+void StorageReplicatedMergeTree::dropUnreplicatedPartition(const Field & partition, const Settings & settings)
 {
 	if (!unreplicated_data)
 		return;
@@ -2247,13 +2247,10 @@ void StorageReplicatedMergeTree::dropUnreplicatedPartition(const Field & partiti
 		LOG_DEBUG(log, "Removing unreplicated part " << part->name);
 		++removed_parts;
 
-		if (detach)
-			unreplicated_data->renameAndDetachPart(part, "");
-		else
-			unreplicated_data->replaceParts({part}, {}, false);
+		unreplicated_data->replaceParts({part}, {}, false);
 	}
 
-	LOG_INFO(log, (detach ? "Detached " : "Removed ") << removed_parts << " unreplicated parts inside " << apply_visitor(FieldVisitorToString(), partition) << ".");
+	LOG_INFO(log, "Removed " << removed_parts << " unreplicated parts inside " << apply_visitor(FieldVisitorToString(), partition) << ".");
 }
 
 
@@ -2261,7 +2258,13 @@ void StorageReplicatedMergeTree::dropPartition(const Field & field, bool detach,
 {
 	if (unreplicated)
 	{
-		dropUnreplicatedPartition(field, detach, settings);
+		if (detach)
+			throw Exception{
+				"DETACH UNREPLICATED PATITION not supported",
+				ErrorCodes::LOGICAL_ERROR
+			};
+
+		dropUnreplicatedPartition(field, settings);
 
 		return;
 	}

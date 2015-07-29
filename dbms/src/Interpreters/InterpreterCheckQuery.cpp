@@ -4,14 +4,13 @@
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 
-namespace DB
-{
+using namespace DB;
 
 InterpreterCheckQuery::InterpreterCheckQuery(DB::ASTPtr query_ptr_, DB::Context& context_) : query_ptr(query_ptr_), context(context_)
 {
 }
 
-BlockIO InterpreterCheckQuery::execute()
+BlockInputStreamPtr InterpreterCheckQuery::execute()
 {
 	ASTCheckQuery & alter = typeid_cast<ASTCheckQuery &>(*query_ptr);
 	String & table_name = alter.table;
@@ -19,14 +18,16 @@ BlockIO InterpreterCheckQuery::execute()
 
 	StoragePtr table = context.getTable(database_name, table_name);
 
-	result = Block{{ new ColumnUInt8, new DataTypeUInt8, "result" }};
+	result = getSampleBlock();
 	result.getByPosition(0).column->insert(Field(UInt64(table->checkData())));
 
-	BlockIO res;
-	res.in = new OneBlockInputStream(result);
-	res.in_sample = result.cloneEmpty();
-
-	return res;
+	return BlockInputStreamPtr(new OneBlockInputStream(result));
 }
 
+Block InterpreterCheckQuery::getSampleBlock()
+{
+	DB::Block b;
+	ColumnPtr column(new ColumnUInt8);
+	b.insert(ColumnWithNameAndType(column, new DataTypeUInt8, "result"));
+	return b;
 }

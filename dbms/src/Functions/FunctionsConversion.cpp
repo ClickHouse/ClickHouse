@@ -20,7 +20,6 @@ void registerFunctionsConversion(FunctionFactory & factory)
 	factory.registerFunction<FunctionToDateTime>();
 	factory.registerFunction<FunctionToString>();
 	factory.registerFunction<FunctionToFixedString>();
-	factory.registerFunction<FunctionToUnixTimestamp>();
 }
 
 }

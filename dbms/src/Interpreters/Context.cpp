@@ -27,7 +27,6 @@
 #include <DB/Interpreters/Cluster.h>
 #include <DB/Interpreters/InterserverIOHandler.h>
 #include <DB/Interpreters/Compiler.h>
-#include <DB/Interpreters/QueryLog.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/IO/ReadBufferFromFile.h>
 #include <DB/IO/WriteBufferFromString.h>
@@ -87,7 +86,6 @@ struct ContextShared
 	BackgroundProcessingPoolPtr background_pool;			/// Пул потоков для фоновой работы, выполняемой таблицами.
 	Macros macros;											/// Подстановки из конфига.
 	std::unique_ptr<Compiler> compiler;						/// Для динамической компиляции частей запроса, при необходимости.
-	std::unique_ptr<QueryLog> query_log;					/// Для логгирования запросов.
 	mutable std::unique_ptr<CompressionMethodSelector> compression_method_selector; /// Правила для выбора метода сжатия в зависимости от размера куска.
 
 	/// Кластеры для distributed таблиц
@@ -829,26 +827,6 @@ Compiler & Context::getCompiler()
 		shared->compiler.reset(new Compiler{ shared->path + "build/", 1 });
 
 	return *shared->compiler;
-}
-
-
-QueryLog & Context::getQueryLog()
-{
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
-
-	if (!shared->query_log)
-	{
-		auto & config = Poco::Util::Application::instance().config();
-
-		String database = config.getString("query_log.database", "system");
-		String table = config.getString("query_log.table", "query_log");
-		size_t flush_interval_milliseconds = parse<size_t>(
-			config.getString("query_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS_STR));
-
-		shared->query_log.reset(new QueryLog{ *this, database, table, flush_interval_milliseconds });
-	}
-
-	return *shared->query_log;
 }
 
 

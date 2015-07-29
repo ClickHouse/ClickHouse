@@ -8,6 +8,7 @@
 #include <DB/Parsers/ParserSetQuery.h>
 #include <DB/Parsers/ParserSelectQuery.h>
 
+
 namespace DB
 {
 
@@ -295,8 +296,6 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 		ws.ignore(pos, end);
 	}
 
-	bool has_format = false;
-
 	/// FORMAT format_name
 	if (s_format.ignore(pos, end, max_parsed_pos, expected))
 	{
@@ -309,7 +308,6 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 		typeid_cast<ASTIdentifier &>(*select_query->format).kind = ASTIdentifier::Format;
 
 		ws.ignore(pos, end);
-		has_format = true;
 	}
 
 	// UNION ALL select query
@@ -319,13 +317,6 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 
 		if (s_all.ignore(pos, end, max_parsed_pos, expected))
 		{
-			if (has_format)
-			{
-				/// FORMAT может быть задан только в последнем запросе цепочки UNION ALL.
-				expected = "FORMAT only in the last SELECT of the UNION ALL chain";
-				return false;
-			}
-
 			ParserSelectQuery select_p;
 			if (!select_p.parse(pos, end, select_query->next_union_all, max_parsed_pos, expected))
 				return false;

@@ -5,9 +5,10 @@
 
 namespace DB
 {
-
+	
+	
 /** Запрос с секцией FORMAT.
-  */
+	*/
 class ASTQueryWithOutput : public IAST
 {
 public:
@@ -15,11 +16,6 @@ public:
 
 	ASTQueryWithOutput() = default;
 	ASTQueryWithOutput(const StringRange range_) : IAST(range_) {}
-
-	/** Возвращает указатель на формат. Если типом объекта является ASTSelectQuery,
-	  * то эта функция возвращает указатель на формат из последнего SELECT'а цепочки UNION ALL.
-	  */
-	virtual const IAST * getFormat() const { return format.get(); }
 };
 
 

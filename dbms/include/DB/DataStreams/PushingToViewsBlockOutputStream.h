@@ -41,7 +41,7 @@ public:
 		{
 			BlockInputStreamPtr from = new OneBlockInputStream(block);
 			InterpreterSelectQuery select(queries[i], context, QueryProcessingStage::Complete, 0, from);
-			BlockInputStreamPtr data = new MaterializingBlockInputStream(select.execute().in);
+			BlockInputStreamPtr data = new MaterializingBlockInputStream(select.execute());
 			copyData(*data, *children[i]);
 		}
 

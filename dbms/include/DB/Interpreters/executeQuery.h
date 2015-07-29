@@ -1,7 +1,7 @@
 #pragma once
 
 #include <DB/Core/QueryProcessingStage.h>
-#include <DB/DataStreams/BlockIO.h>
+#include <DB/Interpreters/InterpreterQuery.h>
 
 
 namespace DB

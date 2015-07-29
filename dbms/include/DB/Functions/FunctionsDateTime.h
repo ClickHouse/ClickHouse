@@ -4,15 +4,12 @@
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/DataTypes/DataTypeArray.h>
-#include <DB/DataTypes/DataTypeString.h>
 
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Columns/ColumnArray.h>
-#include <DB/Columns/ColumnFixedString.h>
 
 #include <DB/Functions/IFunction.h>
 
-#include <type_traits>
 
 namespace DB
 {
@@ -51,32 +48,32 @@ namespace DB
 
 struct ToYearImpl
 {
-	static inline UInt16 execute(UInt32 t, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut) { return remote_date_lut.toYear(t); }
-	static inline UInt16 execute(UInt16 d, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut) { return remote_date_lut.toYear(DayNum_t(d)); }
+	static inline UInt16 execute(UInt32 t, DateLUT & date_lut) { return date_lut.toYear(t); }
+	static inline UInt16 execute(UInt16 d, DateLUT & date_lut) { return date_lut.toYear(DayNum_t(d)); }
 };
 
 struct ToMonthImpl
 {
-	static inline UInt8 execute(UInt32 t, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut) { return remote_date_lut.toMonth(t); }
-	static inline UInt8 execute(UInt16 d, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut) { return remote_date_lut.toMonth(DayNum_t(d)); }
+	static inline UInt8 execute(UInt32 t, DateLUT & date_lut) { return date_lut.toMonth(t); }
+	static inline UInt8 execute(UInt16 d, DateLUT & date_lut) { return date_lut.toMonth(DayNum_t(d)); }
 };
 
 struct ToDayOfMonthImpl
 {
-	static inline UInt8 execute(UInt32 t, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut) { return remote_date_lut.toDayOfMonth(t); }
-	static inline UInt8 execute(UInt16 d, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut) { return remote_date_lut.toDayOfMonth(DayNum_t(d)); }
+	static inline UInt8 execute(UInt32 t, DateLUT & date_lut) { return date_lut.toDayOfMonth(t); }
+	static inline UInt8 execute(UInt16 d, DateLUT & date_lut) { return date_lut.toDayOfMonth(DayNum_t(d)); }
 };
 
 struct ToDayOfWeekImpl
 {
-	static inline UInt8 execute(UInt32 t, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut) { return remote_date_lut.toDayOfWeek(t); }
-	static inline UInt8 execute(UInt16 d, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut) { return remote_date_lut.toDayOfWeek(DayNum_t(d)); }
+	static inline UInt8 execute(UInt32 t, DateLUT & date_lut) { return date_lut.toDayOfWeek(t); }
+	static inline UInt8 execute(UInt16 d, DateLUT & date_lut) { return date_lut.toDayOfWeek(DayNum_t(d)); }
 };
 
 struct ToHourImpl
 {
-	static inline UInt8 execute(UInt32 t, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut) { return remote_date_lut.toHourInaccurate(t); }
-	static inline UInt8 execute(UInt16 d, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut)
+	static inline UInt8 execute(UInt32 t, DateLUT & date_lut) { return date_lut.toHourInaccurate(t); }
+	static inline UInt8 execute(UInt16 d, DateLUT & date_lut)
 	{
 		throw Exception("Illegal type Date of argument for function toHour", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
@@ -84,8 +81,8 @@ struct ToHourImpl
 
 struct ToMinuteImpl
 {
-	static inline UInt8 execute(UInt32 t, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut) { return remote_date_lut.toMinuteInaccurate(t); }
-	static inline UInt8 execute(UInt16 d, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut)
+	static inline UInt8 execute(UInt32 t, DateLUT & date_lut) { return date_lut.toMinuteInaccurate(t); }
+	static inline UInt8 execute(UInt16 d, DateLUT & date_lut)
 	{
 		throw Exception("Illegal type Date of argument for function toMinute", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
@@ -93,8 +90,8 @@ struct ToMinuteImpl
 
 struct ToSecondImpl
 {
-	static inline UInt8 execute(UInt32 t, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut) { return remote_date_lut.toSecondInaccurate(t); }
-	static inline UInt8 execute(UInt16 d, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut)
+	static inline UInt8 execute(UInt32 t, DateLUT & date_lut) { return date_lut.toSecondInaccurate(t); }
+	static inline UInt8 execute(UInt16 d, DateLUT & date_lut)
 	{
 		throw Exception("Illegal type Date of argument for function toSecond", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
@@ -102,49 +99,34 @@ struct ToSecondImpl
 
 struct ToMondayImpl
 {
-	static inline UInt16 execute(UInt32 t, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut) { return remote_date_lut.toFirstDayNumOfWeek(remote_date_lut.toDayNum(t)); }
-	static inline UInt16 execute(UInt16 d, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut) { return remote_date_lut.toFirstDayNumOfWeek(DayNum_t(d)); }
+	static inline UInt16 execute(UInt32 t, DateLUT & date_lut) { return date_lut.toFirstDayNumOfWeek(date_lut.toDayNum(t)); }
+	static inline UInt16 execute(UInt16 d, DateLUT & date_lut) { return date_lut.toFirstDayNumOfWeek(DayNum_t(d)); }
 };
 
 struct ToStartOfMonthImpl
 {
-	static inline UInt16 execute(UInt32 t, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut) { return remote_date_lut.toFirstDayNumOfMonth(remote_date_lut.toDayNum(t)); }
-	static inline UInt16 execute(UInt16 d, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut) { return remote_date_lut.toFirstDayNumOfMonth(DayNum_t(d)); }
+	static inline UInt16 execute(UInt32 t, DateLUT & date_lut) { return date_lut.toFirstDayNumOfMonth(date_lut.toDayNum(t)); }
+	static inline UInt16 execute(UInt16 d, DateLUT & date_lut) { return date_lut.toFirstDayNumOfMonth(DayNum_t(d)); }
 };
 
 struct ToStartOfQuarterImpl
 {
-	static inline UInt16 execute(UInt32 t, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut) { return remote_date_lut.toFirstDayNumOfQuarter(remote_date_lut.toDayNum(t)); }
-	static inline UInt16 execute(UInt16 d, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut) { return remote_date_lut.toFirstDayNumOfQuarter(DayNum_t(d)); }
+	static inline UInt16 execute(UInt32 t, DateLUT & date_lut) { return date_lut.toFirstDayNumOfQuarter(date_lut.toDayNum(t)); }
+	static inline UInt16 execute(UInt16 d, DateLUT & date_lut) { return date_lut.toFirstDayNumOfQuarter(DayNum_t(d)); }
 };
 
 struct ToStartOfYearImpl
 {
-	static inline UInt16 execute(UInt32 t, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut) { return remote_date_lut.toFirstDayNumOfYear(remote_date_lut.toDayNum(t)); }
-	static inline UInt16 execute(UInt16 d, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut) { return remote_date_lut.toFirstDayNumOfYear(DayNum_t(d)); }
+	static inline UInt16 execute(UInt32 t, DateLUT & date_lut) { return date_lut.toFirstDayNumOfYear(date_lut.toDayNum(t)); }
+	static inline UInt16 execute(UInt16 d, DateLUT & date_lut) { return date_lut.toFirstDayNumOfYear(DayNum_t(d)); }
 };
 
 
 struct ToTimeImpl
 {
 	/// При переводе во время, дату будем приравнивать к 1970-01-02.
-	static inline UInt32 execute(UInt32 t, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut)
-	{
-		time_t remote_ts = remote_date_lut.toTimeInaccurate(t) + 86400;
-
-		if (&remote_date_lut == &local_date_lut)
-			return remote_ts;
-		else
-		{
-			const auto & values = remote_date_lut.getValues(remote_ts);
-			return local_date_lut.makeDateTime(values.year, values.month, values.day_of_month,
-											remote_date_lut.toHourInaccurate(remote_ts),
-											remote_date_lut.toMinuteInaccurate(remote_ts),
-											remote_date_lut.toSecondInaccurate(remote_ts));
-		}
-	}
-
-	static inline UInt32 execute(UInt16 d, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut)
+	static inline UInt32 execute(UInt32 t, DateLUT & date_lut) { return date_lut.toTimeInaccurate(t) + 86400; }
+	static inline UInt32 execute(UInt16 d, DateLUT & date_lut)
 	{
 		throw Exception("Illegal type Date of argument for function toTime", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
@@ -152,8 +134,8 @@ struct ToTimeImpl
 
 struct ToStartOfMinuteImpl
 {
-	static inline UInt32 execute(UInt32 t, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut) { return remote_date_lut.toStartOfMinuteInaccurate(t); }
-	static inline UInt32 execute(UInt16 d, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut)
+	static inline UInt32 execute(UInt32 t, DateLUT & date_lut) { return date_lut.toStartOfMinuteInaccurate(t); }
+	static inline UInt32 execute(UInt16 d, DateLUT & date_lut)
 	{
 		throw Exception("Illegal type Date of argument for function toStartOfMinute", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
@@ -161,8 +143,8 @@ struct ToStartOfMinuteImpl
 
 struct ToStartOfFiveMinuteImpl
 {
-	static inline UInt32 execute(UInt32 t, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut) { return remote_date_lut.toStartOfFiveMinuteInaccurate(t); }
-	static inline UInt32 execute(UInt16 d, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut)
+	static inline UInt32 execute(UInt32 t, DateLUT & date_lut) { return date_lut.toStartOfFiveMinuteInaccurate(t); }
+	static inline UInt32 execute(UInt16 d, DateLUT & date_lut)
 	{
 		throw Exception("Illegal type Date of argument for function toStartOfFiveMinute", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
@@ -170,8 +152,8 @@ struct ToStartOfFiveMinuteImpl
 
 struct ToStartOfHourImpl
 {
-	static inline UInt32 execute(UInt32 t, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut) { return remote_date_lut.toStartOfHourInaccurate(t); }
-	static inline UInt32 execute(UInt16 d, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut)
+	static inline UInt32 execute(UInt32 t, DateLUT & date_lut) { return date_lut.toStartOfHourInaccurate(t); }
+	static inline UInt32 execute(UInt16 d, DateLUT & date_lut)
 	{
 		throw Exception("Illegal type Date of argument for function toStartOfHour", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
@@ -179,33 +161,33 @@ struct ToStartOfHourImpl
 
 struct ToRelativeYearNumImpl
 {
-	static inline UInt16 execute(UInt32 t, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut) { return remote_date_lut.toYear(t); }
-	static inline UInt16 execute(UInt16 d, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut) { return remote_date_lut.toYear(DayNum_t(d)); }
+	static inline UInt16 execute(UInt32 t, DateLUT & date_lut) { return date_lut.toYear(t); }
+	static inline UInt16 execute(UInt16 d, DateLUT & date_lut) { return date_lut.toYear(DayNum_t(d)); }
 };
 
 struct ToRelativeMonthNumImpl
 {
-	static inline UInt16 execute(UInt32 t, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut) { return remote_date_lut.toRelativeMonthNum(t); }
-	static inline UInt16 execute(UInt16 d, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut) { return remote_date_lut.toRelativeMonthNum(DayNum_t(d)); }
+	static inline UInt16 execute(UInt32 t, DateLUT & date_lut) { return date_lut.toRelativeMonthNum(t); }
+	static inline UInt16 execute(UInt16 d, DateLUT & date_lut) { return date_lut.toRelativeMonthNum(DayNum_t(d)); }
 };
 
 struct ToRelativeWeekNumImpl
 {
-	static inline UInt16 execute(UInt32 t, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut) { return remote_date_lut.toRelativeWeekNum(t); }
-	static inline UInt16 execute(UInt16 d, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut) { return remote_date_lut.toRelativeWeekNum(DayNum_t(d)); }
+	static inline UInt16 execute(UInt32 t, DateLUT & date_lut) { return date_lut.toRelativeWeekNum(t); }
+	static inline UInt16 execute(UInt16 d, DateLUT & date_lut) { return date_lut.toRelativeWeekNum(DayNum_t(d)); }
 };
 
 struct ToRelativeDayNumImpl
 {
-	static inline UInt16 execute(UInt32 t, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut) { return remote_date_lut.toDayNum(t); }
-	static inline UInt16 execute(UInt16 d, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut) { return static_cast<DayNum_t>(d); }
+	static inline UInt16 execute(UInt32 t, DateLUT & date_lut) { return date_lut.toDayNum(t); }
+	static inline UInt16 execute(UInt16 d, DateLUT & date_lut) { return static_cast<DayNum_t>(d); }
 };
 
 
 struct ToRelativeHourNumImpl
 {
-	static inline UInt32 execute(UInt32 t, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut) { return remote_date_lut.toRelativeHourNum(t); }
-	static inline UInt32 execute(UInt16 d, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut)
+	static inline UInt32 execute(UInt32 t, DateLUT & date_lut) { return date_lut.toRelativeHourNum(t); }
+	static inline UInt32 execute(UInt16 d, DateLUT & date_lut)
 	{
 		throw Exception("Illegal type Date of argument for function toRelativeHourNum", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
@@ -213,8 +195,8 @@ struct ToRelativeHourNumImpl
 
 struct ToRelativeMinuteNumImpl
 {
-	static inline UInt32 execute(UInt32 t, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut) { return remote_date_lut.toRelativeMinuteNum(t); }
-	static inline UInt32 execute(UInt16 d, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut)
+	static inline UInt32 execute(UInt32 t, DateLUT & date_lut) { return date_lut.toRelativeMinuteNum(t); }
+	static inline UInt32 execute(UInt16 d, DateLUT & date_lut)
 	{
 		throw Exception("Illegal type Date of argument for function toRelativeMinuteNum", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
@@ -222,172 +204,45 @@ struct ToRelativeMinuteNumImpl
 
 struct ToRelativeSecondNumImpl
 {
-	static inline UInt32 execute(UInt32 t, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut) { return t; }
-	static inline UInt32 execute(UInt16 d, const DateLUTImpl & remote_date_lut, const DateLUTImpl & local_date_lut)
+	static inline UInt32 execute(UInt32 t, DateLUT & date_lut) { return t; }
+	static inline UInt32 execute(UInt16 d, DateLUT & date_lut)
 	{
 		throw Exception("Illegal type Date of argument for function toRelativeSecondNum", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
 };
 
-template<typename FromType, typename ToType, typename Transform>
-struct Transformer
-{
-	static void vector_vector(const PODArray<FromType> & vec_from, const ColumnString::Chars_t & data,
-							  const ColumnString::Offsets_t & offsets, PODArray<ToType> & vec_to)
-	{
-		const auto & local_date_lut = DateLUT::instance();
-		ColumnString::Offset_t prev_offset = 0;
-
-		for (size_t i = 0; i < vec_from.size(); ++i)
-		{
-			ColumnString::Offset_t cur_offset = offsets[i];
-			const std::string time_zone(reinterpret_cast<const char *>(&data[prev_offset]), cur_offset - prev_offset - 1);
-			const auto & remote_date_lut = DateLUT::instance(time_zone);
-			vec_to[i] = Transform::execute(vec_from[i], remote_date_lut, local_date_lut);
-			prev_offset = cur_offset;
-		}
-	}
-
-	static void vector_constant(const PODArray<FromType> & vec_from, const std::string & data,
-								PODArray<ToType> & vec_to)
-	{
-		const auto & local_date_lut = DateLUT::instance();
-		const auto & remote_date_lut = DateLUT::instance(data);
-		for (size_t i = 0; i < vec_from.size(); ++i)
-			vec_to[i] = Transform::execute(vec_from[i], remote_date_lut, local_date_lut);
-	}
-
-	static void vector_constant(const PODArray<FromType> & vec_from, PODArray<ToType> & vec_to)
-	{
-		const auto & local_date_lut = DateLUT::instance();
-		for (size_t i = 0; i < vec_from.size(); ++i)
-			vec_to[i] = Transform::execute(vec_from[i], local_date_lut, local_date_lut);
-	}
-
-	static void constant_vector(const FromType & from, const ColumnString::Chars_t & data,
-								const ColumnString::Offsets_t & offsets, PODArray<ToType> & vec_to)
-	{
-		const auto & local_date_lut = DateLUT::instance();
-		ColumnString::Offset_t prev_offset = 0;
-
-		for (size_t i = 0; i < offsets.size(); ++i)
-		{
-			ColumnString::Offset_t cur_offset = offsets[i];
-			const std::string time_zone(reinterpret_cast<const char *>(&data[prev_offset]), cur_offset - prev_offset - 1);
-			const auto & remote_date_lut = DateLUT::instance(time_zone);
-			vec_to[i] = Transform::execute(from, remote_date_lut, local_date_lut);
-			prev_offset = cur_offset;
-		}
-	}
-
-	static void constant_constant(const FromType & from, const std::string & data, ToType & to)
-	{
-		const auto & local_date_lut = DateLUT::instance();
-		const auto & remote_date_lut = DateLUT::instance(data);
-		to = Transform::execute(from, remote_date_lut, local_date_lut);
-	}
-
-	static void constant_constant(const FromType & from, ToType & to)
-	{
-		const auto & local_date_lut = DateLUT::instance();
-		to = Transform::execute(from, local_date_lut, local_date_lut);
-	}
-};
 
 template <typename FromType, typename ToType, typename Transform, typename Name>
 struct DateTimeTransformImpl
 {
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		using Op = Transformer<FromType, ToType, Transform>;
+		DateLUT & date_lut = DateLUT::instance();
 
-		const ColumnPtr source_col = block.getByPosition(arguments[0]).column;
-		const auto * sources = typeid_cast<const ColumnVector<FromType> *>(&*source_col);
-		const auto * const_source = typeid_cast<const ColumnConst<FromType> *>(&*source_col);
-
-		if (arguments.size() == 1)
+		if (const ColumnVector<FromType> * col_from = typeid_cast<const ColumnVector<FromType> *>(&*block.getByPosition(arguments[0]).column))
 		{
-			if (sources)
-			{
-				auto * col_to = new ColumnVector<ToType>;
-				block.getByPosition(result).column = col_to;
+			ColumnVector<ToType> * col_to = new ColumnVector<ToType>;
+			block.getByPosition(result).column = col_to;
 
-				auto & vec_from = sources->getData();
-				auto & vec_to = col_to->getData();
-				size_t size = vec_from.size();
-				vec_to.resize(size);
+			const typename ColumnVector<FromType>::Container_t & vec_from = col_from->getData();
+			typename ColumnVector<ToType>::Container_t & vec_to = col_to->getData();
+			size_t size = vec_from.size();
+			vec_to.resize(size);
 
-				Op::vector_constant(vec_from, vec_to);
-			}
-			else if (const_source)
-			{
-				ToType res;
-				Op::constant_constant(const_source->getData(), res);
-				block.getByPosition(result).column = new ColumnConst<ToType>(const_source->size(), res);
-			}
-			else
-			{
-				throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-						+ " of first argument of function " + Name::name,
-					ErrorCodes::ILLEGAL_COLUMN);
-			}
+			for (size_t i = 0; i < size; ++i)
+				vec_to[i] = Transform::execute(vec_from[i], date_lut);
 		}
-		else if (arguments.size() == 2)
+		else if (const ColumnConst<FromType> * col_from = typeid_cast<const ColumnConst<FromType> *>(&*block.getByPosition(arguments[0]).column))
 		{
-			const ColumnPtr time_zone_col = block.getByPosition(arguments[1]).column;
-			const auto * time_zones = typeid_cast<const ColumnString *>(&*time_zone_col);
-			const auto * const_time_zone = typeid_cast<const ColumnConstString *>(&*time_zone_col);
-
-			if (sources)
-			{
-				auto * col_to = new ColumnVector<ToType>;
-				block.getByPosition(result).column = col_to;
-
-				auto & vec_from = sources->getData();
-				auto & vec_to = col_to->getData();
-				vec_to.resize(vec_from.size());
-
-				if (time_zones)
-					Op::vector_vector(vec_from, time_zones->getChars(), time_zones->getOffsets(), vec_to);
-				else if (const_time_zone)
-					Op::vector_constant(vec_from, const_time_zone->getData(), vec_to);
-				else
-					throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
-							+ " of second argument of function " + Name::name,
-						ErrorCodes::ILLEGAL_COLUMN);
-			}
-			else if (const_source)
-			{
-				if (time_zones)
-				{
-					auto * col_to = new ColumnVector<ToType>;
-					block.getByPosition(result).column = col_to;
-
-					auto & vec_to = col_to->getData();
-					vec_to.resize(time_zones->getOffsets().size());
-
-					Op::constant_vector(const_source->getData(), time_zones->getChars(), time_zones->getOffsets(), vec_to);
-				}
-				else if (const_time_zone)
-				{
-					ToType res;
-					Op::constant_constant(const_source->getData(), const_time_zone->getData(), res);
-					block.getByPosition(result).column = new ColumnConst<ToType>(const_source->size(), res);
-				}
-				else
-					throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
-							+ " of second argument of function " + Name::name,
-						ErrorCodes::ILLEGAL_COLUMN);
-			}
-			else
-				throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-						+ " of first argument of function " + Name::name,
-					ErrorCodes::ILLEGAL_COLUMN);
+			block.getByPosition(result).column = new ColumnConst<ToType>(col_from->size(), Transform::execute(col_from->getData(), date_lut));
 		}
 		else
-			throw Exception("Internal error.", ErrorCodes::LOGICAL_ERROR);
+			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+					+ " of first argument of function " + Name::name,
+				ErrorCodes::ILLEGAL_COLUMN);
 	}
 };
+
 
 template <typename ToDataType, typename Transform, typename Name>
 class FunctionDateOrDateTimeToSomething : public IFunction
@@ -402,9 +257,15 @@ public:
 		return name;
 	}
 
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnType(const DataTypes & arguments) const
 	{
-		return getReturnTypeImpl(arguments);
+		if (arguments.size() != 1)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ toString(arguments.size()) + ", should be 1.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		return new ToDataType;
 	}
 
 	/// Выполнить функцию над блоком.
@@ -419,54 +280,6 @@ public:
 		else
 			throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-	}
-
-private:
-	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-
-	template<typename ToDataType2 = ToDataType, typename Transform2 = Transform>
-	DataTypePtr getReturnTypeImpl(const DataTypes & arguments,
-		typename std::enable_if<
-			!(std::is_same<ToDataType2, DataTypeDate>::value
-			|| (std::is_same<ToDataType2, DataTypeDateTime>::value && std::is_same<Transform2, ToTimeImpl>::value))
-		, void>::type * = nullptr) const
-	{
-		if (arguments.size() != 1)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 1.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		return new ToDataType;
-	}
-
-	template<typename ToDataType2 = ToDataType, typename Transform2 = Transform>
-	DataTypePtr getReturnTypeImpl(const DataTypes & arguments,
-		typename std::enable_if<
-			std::is_same<ToDataType2, DataTypeDate>::value
-			|| (std::is_same<ToDataType2, DataTypeDateTime>::value && std::is_same<Transform2, ToTimeImpl>::value)
-		, void>::type * = nullptr) const
-	{
-		if ((arguments.size() < 1) || (arguments.size() > 2))
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 1 or 2.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		if (typeid_cast<const DataTypeDateTime *>(&*arguments[0]) == nullptr)
-		{
-			if (arguments.size() != 1)
-				throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-					+ toString(arguments.size()) + ", should be 1.",
-					ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-		}
-		else if ((arguments.size()) == 2 && typeid_cast<const DataTypeString *>(&*arguments[1]) == nullptr)
-		{
-			throw Exception{
-				"Illegal type " + arguments[1]->getName() + " of argument of function " + getName(),
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-			};
-		}
-
-		return new ToDataType;
 	}
 };
 

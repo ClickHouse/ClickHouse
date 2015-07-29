@@ -105,7 +105,6 @@ void readVectorBinary(std::vector<T> & v, ReadBuffer & buf, size_t MAX_VECTOR_SI
 
 void assertString(const char * s, ReadBuffer & buf);
 void assertEOF(ReadBuffer & buf);
-void assertChar(char symbol, ReadBuffer & buf);
 
 inline void assertString(const String & s, ReadBuffer & buf)
 {

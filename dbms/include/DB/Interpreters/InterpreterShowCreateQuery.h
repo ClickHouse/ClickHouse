@@ -5,7 +5,6 @@
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/formatAST.h>
 #include <DB/Interpreters/Context.h>
-#include <DB/Interpreters/IInterpreter.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/DataStreams/BlockIO.h>
 #include <DB/DataStreams/copyData.h>
@@ -19,19 +18,33 @@ namespace DB
 
 /** Вернуть одну строку с одним столбцом statement типа String с текстом запроса, создающего указанную таблицу.
 	*/
-class InterpreterShowCreateQuery : public IInterpreter
+class InterpreterShowCreateQuery
 {
 public:
 	InterpreterShowCreateQuery(ASTPtr query_ptr_, Context & context_)
 		: query_ptr(query_ptr_), context(context_) {}
 
-	BlockIO execute() override
+	BlockIO execute()
 	{
 		BlockIO res;
 		res.in = executeImpl();
 		res.in_sample = getSampleBlock();
 
 		return res;
+	}
+
+	BlockInputStreamPtr executeAndFormat(WriteBuffer & buf)
+	{
+		Block sample = getSampleBlock();
+		ASTPtr format_ast = typeid_cast<ASTShowCreateQuery &>(*query_ptr).format;
+		String format_name = format_ast ? typeid_cast<ASTIdentifier &>(*format_ast).name : context.getDefaultFormat();
+
+		BlockInputStreamPtr in = executeImpl();
+		BlockOutputStreamPtr out = context.getFormatFactory().getOutput(format_name, buf, sample);
+
+		copyData(*in, *out);
+
+		return in;
 	}
 
 private:

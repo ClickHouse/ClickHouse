@@ -52,9 +52,6 @@ void OLAPHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco:
 
 	context.setUser(user, password, request.clientAddress().host(), quota_key);
 
-	context.setInterface(Context::Interface::HTTP);
-	context.setHTTPMethod(Context::HTTPMethod::POST);
-
 	OLAP::QueryParseResult olap_query = server.olap_parser->parse(request_istream);
 
 	std::string clickhouse_query;
@@ -68,6 +65,31 @@ void OLAPHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco:
 	Stopwatch watch;
 	executeQuery(in, out, context, query_plan);
 	watch.stop();
+
+	if (query_plan)
+	{
+		std::stringstream log_str;
+		log_str << "Query pipeline:\n";
+		query_plan->dumpTree(log_str);
+		LOG_DEBUG(log, log_str.str());
+
+		/// Выведем информацию о том, сколько считано строк и байт.
+		size_t rows = 0;
+		size_t bytes = 0;
+
+		query_plan->getLeafRowsBytes(rows, bytes);
+
+		if (rows != 0)
+		{
+			LOG_INFO(log, std::fixed << std::setprecision(3)
+			<< "Read " << rows << " rows, " << bytes / 1048576.0 << " MiB in " << watch.elapsedSeconds() << " sec., "
+			<< static_cast<size_t>(rows / watch.elapsedSeconds()) << " rows/sec., " << bytes / 1048576.0 / watch.elapsedSeconds() << " MiB/sec.");
+		}
+	}
+
+	QuotaForIntervals & quota = context.getQuota();
+	if (!quota.empty())
+		LOG_INFO(log, "Quota:\n" << quota.toString());
 
 	/// Если не было эксепшена и данные ещё не отправлены - отправляются HTTP заголовки с кодом 200.
 	out.finalize();

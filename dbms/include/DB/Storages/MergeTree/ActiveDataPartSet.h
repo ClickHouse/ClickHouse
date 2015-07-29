@@ -42,6 +42,9 @@ public:
 			if (right != rhs.right)
 				return right < rhs.right;
 
+			if (level != rhs.level)
+				return level < rhs.level;
+
 			return false;
 		}
 
@@ -50,6 +53,7 @@ public:
 		{
 			return left_month == rhs.left_month		/// Куски за разные месяцы не объединяются
 				&& right_month == rhs.right_month
+				&& level > rhs.level
 				&& left_date <= rhs.left_date
 				&& right_date >= rhs.right_date
 				&& left <= rhs.left

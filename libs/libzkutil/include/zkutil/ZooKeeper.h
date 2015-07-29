@@ -47,6 +47,7 @@ public:
 		</zookeeper>
 	*/
 	ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name);
+	ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, int32_t session_timeout_ms);
 
 	~ZooKeeper();
 
@@ -124,9 +125,6 @@ public:
 
 	void set(const std::string & path, const std::string & data,
 			int32_t version = -1, Stat * stat = nullptr);
-
-	/** Создает ноду, если ее не существует. Иначе обновляет */
-	void createOrUpdate(const std::string & path, const std::string & data, int32_t mode);
 
 	/** Не бросает исключение при следующих ошибках:
 	  *  - Такой ноды нет.

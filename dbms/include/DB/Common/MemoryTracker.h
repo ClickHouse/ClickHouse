@@ -38,11 +38,6 @@ public:
 	{
 		return amount;
 	}
-
-	Int64 getPeak() const
-	{
-		return peak;
-	}
 };
 
 

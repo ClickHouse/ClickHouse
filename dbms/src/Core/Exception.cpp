@@ -61,29 +61,14 @@ void tryLogCurrentException(Poco::Logger * logger)
 {
 	try
 	{
-		LOG_ERROR(logger, getCurrentExceptionMessage(true));
-	}
-	catch (...)
-	{
-	}
-}
-
-std::string getCurrentExceptionMessage(bool with_stacktrace)
-{
-	std::stringstream stream;
-
-	try
-	{
 		throw;
 	}
 	catch (const Exception & e)
 	{
 		try
 		{
-			stream << "Code: " << e.code() << ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what();
-
-			if (with_stacktrace)
-				stream << ", Stack trace:\n\n" << e.getStackTrace().toString();
+			LOG_ERROR(logger, "Code: " << e.code() << ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what()
+				<< ", Stack trace:\n\n" << e.getStackTrace().toString());
 		}
 		catch (...) {}
 	}
@@ -91,8 +76,8 @@ std::string getCurrentExceptionMessage(bool with_stacktrace)
 	{
 		try
 		{
-			stream << "Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
-				<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what();
+			LOG_ERROR(logger, "Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
+				<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what());
 		}
 		catch (...) {}
 	}
@@ -106,7 +91,7 @@ std::string getCurrentExceptionMessage(bool with_stacktrace)
 			if (status)
 				name += " (demangling status: " + toString(status) + ")";
 
-			stream << "std::exception. Code: " << ErrorCodes::STD_EXCEPTION << ", type: " << name << ", e.what() = " << e.what();
+			LOG_ERROR(logger, "std::exception. Code: " << ErrorCodes::STD_EXCEPTION << ", type: " << name << ", e.what() = " << e.what());
 		}
 		catch (...) {}
 	}
@@ -120,12 +105,10 @@ std::string getCurrentExceptionMessage(bool with_stacktrace)
 			if (status)
 				name += " (demangling status: " + toString(status) + ")";
 
-			stream << "Unknown exception. Code: " << ErrorCodes::UNKNOWN_EXCEPTION << ", type: " << name;
+			LOG_ERROR(logger, "Unknown exception. Code: " << ErrorCodes::UNKNOWN_EXCEPTION << ", type: " << name);
 		}
 		catch (...) {}
 	}
-
-	return stream.str();
 }
 
 

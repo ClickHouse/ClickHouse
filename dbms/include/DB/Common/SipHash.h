@@ -11,8 +11,8 @@
   * (~ 700 МБ/сек., 15 млн. строк в секунду)
   */
 
-#include <cstdint>
-#include <cstddef>
+#include <stdint.h>
+#include <cstdlib>
 
 #define ROTL(x,b) (u64)( ((x) << (b)) | ( (x) >> (64 - (b))) )
 

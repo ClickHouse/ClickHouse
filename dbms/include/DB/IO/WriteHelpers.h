@@ -252,19 +252,13 @@ void writeAnyEscapedString(const String & s, WriteBuffer & buf)
 }
 
 
-inline void writeEscapedString(const char * str, size_t size, WriteBuffer & buf)
-{
-	/// strpbrk в libc под Linux на процессорах с SSE 4.2 хорошо оптимизирована (этот if ускоряет код в 1.5 раза)
-	if (nullptr == strpbrk(str, "\b\f\n\r\t\'\\") && strlen(str) == size)
-		writeString(str, size, buf);
-	else
-		writeAnyEscapedString<'\''>(str, str + size, buf);
-}
-
-
 inline void writeEscapedString(const String & s, WriteBuffer & buf)
 {
-	writeEscapedString(s.data(), s.size(), buf);
+	/// strpbrk в libc под Linux на процессорах с SSE 4.2 хорошо оптимизирована (этот if ускоряет код в 1.5 раза)
+	if (nullptr == strpbrk(s.data(), "\b\f\n\r\t\'\\") && strlen(s.data()) == s.size())
+		writeString(s, buf);
+	else
+		writeAnyEscapedString<'\''>(s, buf);
 }
 
 
@@ -332,7 +326,7 @@ inline void writeDateText(DayNum_t date, WriteBuffer & buf)
 		return;
 	}
 
-	const auto & values = DateLUT::instance().getValues(date);
+	const DateLUT::Values & values = DateLUT::instance().getValues(date);
 
 	s[0] += values.year / 1000;
 	s[1] += (values.year / 100) % 10;
@@ -364,8 +358,7 @@ inline void writeDateText(mysqlxx::Date date, WriteBuffer & buf)
 
 
 /// в формате YYYY-MM-DD HH:MM:SS, согласно текущему часовому поясу
-template <char date_delimeter = '-', char time_delimeter = ':'>
-inline void writeDateTimeText(time_t datetime, WriteBuffer & buf)
+inline void writeDateTimeText(time_t datetime, WriteBuffer & buf, char date_delimeter = '-', char time_delimeter = ':')
 {
 	char s[19] = {'0', '0', '0', '0', date_delimeter, '0', '0', date_delimeter, '0', '0', ' ', '0', '0', time_delimeter, '0', '0', time_delimeter, '0', '0'};
 
@@ -375,8 +368,8 @@ inline void writeDateTimeText(time_t datetime, WriteBuffer & buf)
 		return;
 	}
 
-	const auto & date_lut = DateLUT::instance();
-	const auto & values = date_lut.getValues(datetime);
+	DateLUT & date_lut = DateLUT::instance();
+	const DateLUT::Values & values = date_lut.getValues(datetime);
 
 	s[0] += values.year / 1000;
 	s[1] += (values.year / 100) % 10;
@@ -401,8 +394,7 @@ inline void writeDateTimeText(time_t datetime, WriteBuffer & buf)
 	buf.write(s, 19);
 }
 
-template <char date_delimeter = '-', char time_delimeter = ':'>
-inline void writeDateTimeText(mysqlxx::DateTime datetime, WriteBuffer & buf)
+inline void writeDateTimeText(mysqlxx::DateTime datetime, WriteBuffer & buf, char date_delimeter = '-', char time_delimeter = ':')
 {
 	char s[19] = {'0', '0', '0', '0', date_delimeter, '0', '0', date_delimeter, '0', '0', ' ', '0', '0', time_delimeter, '0', '0', time_delimeter, '0', '0'};
 
@@ -478,10 +470,6 @@ inline void writeText(const Float32 & x, 	WriteBuffer & buf) { writeFloatText(x,
 inline void writeText(const Float64 & x, 	WriteBuffer & buf) { writeFloatText(x, buf); }
 inline void writeText(const String & x,		WriteBuffer & buf) { writeEscapedString(x, buf); }
 inline void writeText(const bool & x, 		WriteBuffer & buf) { writeBoolText(x, buf); }
-/// в отличие от метода для std::string
-/// здесь предполагается, что x null-terminated строка.
-inline void writeText(const char * x, 		WriteBuffer & buf) { writeEscapedString(x, strlen(x), buf); }
-inline void writeText(const char * x, size_t size, WriteBuffer & buf) { writeEscapedString(x, size, buf); }
 
 inline void writeText(const VisitID_t & x, 	WriteBuffer & buf) { writeIntText(static_cast<const UInt64 &>(x), buf); }
 inline void writeText(const mysqlxx::Date & x,		WriteBuffer & buf) { writeDateText(x, buf); }

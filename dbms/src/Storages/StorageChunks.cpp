@@ -161,6 +161,9 @@ StorageChunks::StorageChunks(
 	context(context_),
 	log(&Logger::get("StorageChunks"))
 {
+	if (!attach)
+		reference_counter.add(1, true);
+
 	_table_column_name = "_table" + VirtualColumnUtils::chooseSuffix(getColumnsList(), "_table");
 
 	try

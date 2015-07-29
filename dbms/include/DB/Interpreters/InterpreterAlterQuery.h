@@ -3,7 +3,6 @@
 #include <DB/Storages/IStorage.h>
 #include <DB/Storages/AlterCommands.h>
 #include <DB/Interpreters/Context.h>
-#include <DB/Interpreters/IInterpreter.h>
 #include <DB/Parsers/ASTIdentifier.h>
 
 namespace DB
@@ -14,12 +13,12 @@ namespace DB
 /** Позволяет добавить или удалить столбец в таблице.
   * Также позволяет осуществить манипуляции с партициями таблиц семейства MergeTree.
   */
-class InterpreterAlterQuery : public IInterpreter
+class InterpreterAlterQuery
 {
 public:
 	InterpreterAlterQuery(ASTPtr query_ptr_, Context & context_);
 
-	BlockIO execute() override;
+	void execute();
 
 	/** Изменяет список столбцов в метаданных таблицы на диске. Нужно вызывать под TableStructureLock соответствующей таблицы.
 	  */

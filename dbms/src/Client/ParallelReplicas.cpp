@@ -3,7 +3,7 @@
 namespace DB
 {
 
-ParallelReplicas::ParallelReplicas(Connection * connection_, const Settings * settings_, ThrottlerPtr throttler_)
+ParallelReplicas::ParallelReplicas(Connection * connection_, Settings * settings_, ThrottlerPtr throttler_)
 	: settings(settings_), throttler(throttler_),
 	active_replica_count(1),
 	supports_parallel_execution(false)
@@ -11,7 +11,7 @@ ParallelReplicas::ParallelReplicas(Connection * connection_, const Settings * se
 	registerReplica(connection_);
 }
 
-ParallelReplicas::ParallelReplicas(IConnectionPool * pool_, const Settings * settings_, ThrottlerPtr throttler_)
+ParallelReplicas::ParallelReplicas(IConnectionPool * pool_, Settings * settings_, ThrottlerPtr throttler_)
 	: settings(settings_), throttler(throttler_)
 {
 	if (pool_ == nullptr)
@@ -37,8 +37,7 @@ ParallelReplicas::ParallelReplicas(IConnectionPool * pool_, const Settings * set
 		supports_parallel_execution = false;
 
 		pool_entry = pool_->get(settings);
-		if (!pool_entry.isNull())
-			registerReplica(&*pool_entry);
+		registerReplica(&*pool_entry);
 	}
 }
 

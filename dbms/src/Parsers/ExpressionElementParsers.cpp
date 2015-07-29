@@ -405,59 +405,6 @@ bool ParserStringLiteral::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max
 }
 
 
-bool ParserArrayOfLiterals::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
-{
-	Pos begin = pos;
-	Array arr;
-
-	if (pos == end || *pos != '[')
-	{
-		expected = "opening square bracket";
-		return false;
-	}
-
-	ParserWhiteSpaceOrComments ws;
-	ParserLiteral literal_p;
-
-	++pos;
-
-	while (pos != end)
-	{
-		ws.ignore(pos, end);
-
-		if (!arr.empty())
-		{
-			if (*pos == ']')
-			{
-				++pos;
-				node = new ASTLiteral(StringRange(begin, pos), arr);
-				return true;
-			}
-			else if (*pos == ',')
-			{
-				++pos;
-			}
-			else
-			{
-				expected = "comma or closing square bracket";
-				return false;
-			}
-		}
-
-		ws.ignore(pos, end);
-
-		ASTPtr literal_node;
-		if (!literal_p.parse(pos, end, literal_node, max_parsed_pos, expected))
-			return false;
-
-		arr.push_back(typeid_cast<const ASTLiteral &>(*literal_node).value);
-	}
-
-	expected = "closing square bracket";
-	return false;
-}
-
-
 bool ParserLiteral::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	ParserNull null_p;
@@ -503,7 +450,6 @@ bool ParserExpressionElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos &
 	ParserParenthesisExpression paren_p;
 	ParserSubquery subquery_p;
 	ParserArray array_p;
-	ParserArrayOfLiterals array_lite_p;
 	ParserLiteral lit_p;
 	ParserFunction fun_p;
 	ParserCompoundIdentifier id_p;
@@ -513,9 +459,6 @@ bool ParserExpressionElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos &
 		return true;
 
 	if (paren_p.parse(pos, end, node, max_parsed_pos, expected))
-		return true;
-
-	if (array_lite_p.parse(pos, end, node, max_parsed_pos, expected))
 		return true;
 
 	if (array_p.parse(pos, end, node, max_parsed_pos, expected))

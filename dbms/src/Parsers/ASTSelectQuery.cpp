@@ -172,14 +172,5 @@ ASTPtr ASTSelectQuery::clone() const
 
 	return ptr;
 }
-
-const IAST * ASTSelectQuery::getFormat() const
-{
-	const ASTSelectQuery * query = this;
-	while (!query->next_union_all.isNull())
-		query = static_cast<const ASTSelectQuery *>(query->next_union_all.get());
-	return query->format.get();
-}
-
 };
 

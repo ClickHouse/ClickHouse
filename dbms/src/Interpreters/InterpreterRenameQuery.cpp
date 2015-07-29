@@ -58,7 +58,7 @@ struct RenameDescription
 };
 
 
-BlockIO InterpreterRenameQuery::execute()
+void InterpreterRenameQuery::execute()
 {
 	String path = context.getPath();
 	String current_database = context.getCurrentDatabase();
@@ -151,8 +151,6 @@ BlockIO InterpreterRenameQuery::execute()
 		/// Удаляем старый файл с метаданными.
 		Poco::File(elem.from_metadata_path).remove();
 	}
-
-	return {};
 }
 
 

@@ -336,37 +336,11 @@ static Field convertToType(const Field & src, const IDataType & type)
 		}
 		else if (is_date || is_datetime)
 		{
-			if (src.getType() == Field::Types::UInt64)
-				return src;
+			if (src.getType() != Field::Types::UInt64)
+				throw Exception("Type mismatch in IN section: " + type.getName() + " at left, "
+					+ Field::Types::toString(src.getType()) + " at right");
 
-			if (src.getType() == Field::Types::String)
-			{
-				/// Возможность сравнивать даты и даты-с-временем со строкой.
-				const String & str = src.get<const String &>();
-				ReadBufferFromString in(str);
-
-				if (is_date)
-				{
-					DayNum_t date{};
-					readDateText(date, in);
-					if (!in.eof())
-						throw Exception("String is too long for Date: " + str);
-
-					return Field(UInt64(date));
-				}
-				else
-				{
-					time_t date_time{};
-					readDateTimeText(date_time, in);
-					if (!in.eof())
-						throw Exception("String is too long for DateTime: " + str);
-
-					return Field(UInt64(date_time));
-				}
-			}
-
-			throw Exception("Type mismatch in IN section: " + type.getName() + " at left, "
-				+ Field::Types::toString(src.getType()) + " at right");
+			return src;
 		}
 	}
 	else

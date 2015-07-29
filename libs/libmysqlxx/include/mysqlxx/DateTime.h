@@ -43,8 +43,8 @@ private:
 			return;
 		}
 
-		const auto & date_lut = DateLUT::instance();
-		const auto & values = date_lut.getValues(time);
+		DateLUT & date_lut = DateLUT::instance();
+		const DateLUT::Values & values = date_lut.getValues(time);
 
 		m_year = values.year;
 		m_month = values.month;

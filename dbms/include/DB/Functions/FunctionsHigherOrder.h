@@ -5,6 +5,7 @@
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 
 #include <DB/Columns/ColumnArray.h>
+#include <DB/Columns/ColumnReplicated.h>
 #include <DB/Columns/ColumnExpression.h>
 
 #include <DB/Functions/IFunction.h>
@@ -41,9 +42,7 @@ struct ArrayMapImpl
 
 	static ColumnPtr execute(const ColumnArray * array, ColumnPtr mapped)
 	{
-		return mapped->isConst()
-			? new ColumnArray(dynamic_cast<const IColumnConst &>(*mapped).convertToFullColumn(), array->getOffsetsColumn())
-			: new ColumnArray(mapped, array->getOffsetsColumn());
+		return new ColumnArray(mapped, array->getOffsetsColumn());
 	}
 };
 
@@ -61,20 +60,9 @@ struct ArrayFilterImpl
 	/// Если массивов несколько, сюда передается первый.
 	static ColumnPtr execute(const ColumnArray * array, ColumnPtr mapped)
 	{
-		const ColumnVector<UInt8> * column_filter = typeid_cast<const ColumnVector<UInt8> *>(&*mapped);
-
+		ColumnVector<UInt8> * column_filter = typeid_cast<ColumnVector<UInt8> *>(&*mapped);
 		if (!column_filter)
-		{
-			const ColumnConstUInt8 * column_filter_const = typeid_cast<const ColumnConstUInt8 *>(&*mapped);
-
-			if (!column_filter_const)
-				throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
-
-			if (column_filter_const->getData())
-				return array->clone();
-			else
-				return new ColumnArray(array->getDataPtr()->cloneEmpty(), new ColumnArray::ColumnOffsets_t(array->size(), 0));
-		}
+			throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
 
 		const IColumn::Filter & filter = column_filter->getData();
 		ColumnPtr filtered = array->getData().filter(filter);
@@ -113,34 +101,9 @@ struct ArrayCountImpl
 
 	static ColumnPtr execute(const ColumnArray * array, ColumnPtr mapped)
 	{
-		const ColumnVector<UInt8> * column_filter = typeid_cast<const ColumnVector<UInt8> *>(&*mapped);
-
+		ColumnVector<UInt8> * column_filter = typeid_cast<ColumnVector<UInt8> *>(&*mapped);
 		if (!column_filter)
-		{
-			const ColumnConstUInt8 * column_filter_const = typeid_cast<const ColumnConstUInt8 *>(&*mapped);
-
-			if (!column_filter_const)
-				throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
-
-			if (column_filter_const->getData())
-			{
-				const IColumn::Offsets_t & offsets = array->getOffsets();
-				ColumnVector<UInt32> * out_column = new ColumnVector<UInt32>(offsets.size());
-				ColumnPtr out_column_ptr = out_column;
-				ColumnVector<UInt32>::Container_t & out_counts = out_column->getData();
-
-				size_t pos = 0;
-				for (size_t i = 0; i < offsets.size(); ++i)
-				{
-					out_counts[i] = offsets[i] - pos;
-					pos = offsets[i];
-				}
-
-				return out_column_ptr;
-			}
-			else
-				return new ColumnConstUInt32(array->size(), 0);
-		}
+			throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
 
 		const IColumn::Filter & filter = column_filter->getData();
 		const IColumn::Offsets_t & offsets = array->getOffsets();
@@ -177,34 +140,9 @@ struct ArrayExistsImpl
 
 	static ColumnPtr execute(const ColumnArray * array, ColumnPtr mapped)
 	{
-		const ColumnVector<UInt8> * column_filter = typeid_cast<const ColumnVector<UInt8> *>(&*mapped);
-
+		ColumnVector<UInt8> * column_filter = typeid_cast<ColumnVector<UInt8> *>(&*mapped);
 		if (!column_filter)
-		{
-			const ColumnConstUInt8 * column_filter_const = typeid_cast<const ColumnConstUInt8 *>(&*mapped);
-
-			if (!column_filter_const)
-				throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
-
-			if (column_filter_const->getData())
-			{
-				const IColumn::Offsets_t & offsets = array->getOffsets();
-				ColumnVector<UInt8> * out_column = new ColumnVector<UInt8>(offsets.size());
-				ColumnPtr out_column_ptr = out_column;
-				ColumnVector<UInt8>::Container_t & out_exists = out_column->getData();
-
-				size_t pos = 0;
-				for (size_t i = 0; i < offsets.size(); ++i)
-				{
-					out_exists[i] = offsets[i] - pos > 0;
-					pos = offsets[i];
-				}
-
-				return out_column_ptr;
-			}
-			else
-				return new ColumnConstUInt8(array->size(), 0);
-		}
+			throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
 
 		const IColumn::Filter & filter = column_filter->getData();
 		const IColumn::Offsets_t & offsets = array->getOffsets();
@@ -245,34 +183,9 @@ struct ArrayAllImpl
 
 	static ColumnPtr execute(const ColumnArray * array, ColumnPtr mapped)
 	{
-		const ColumnVector<UInt8> * column_filter = typeid_cast<const ColumnVector<UInt8> *>(&*mapped);
-
+		ColumnVector<UInt8> * column_filter = typeid_cast<ColumnVector<UInt8> *>(&*mapped);
 		if (!column_filter)
-		{
-			const ColumnConstUInt8 * column_filter_const = typeid_cast<const ColumnConstUInt8 *>(&*mapped);
-
-			if (!column_filter_const)
-				throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
-
-			if (column_filter_const->getData())
-				return new ColumnConstUInt8(array->size(), 1);
-			else
-			{
-				const IColumn::Offsets_t & offsets = array->getOffsets();
-				ColumnVector<UInt8> * out_column = new ColumnVector<UInt8>(offsets.size());
-				ColumnPtr out_column_ptr = out_column;
-				ColumnVector<UInt8>::Container_t & out_all = out_column->getData();
-
-				size_t pos = 0;
-				for (size_t i = 0; i < offsets.size(); ++i)
-				{
-					out_all[i] = offsets[i] == pos;
-					pos = offsets[i];
-				}
-
-				return out_column_ptr;
-			}
-		}
+			throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
 
 		const IColumn::Filter & filter = column_filter->getData();
 		const IColumn::Offsets_t & offsets = array->getOffsets();
@@ -333,27 +246,7 @@ struct ArraySumImpl
 		const ColumnVector<Element> * column = typeid_cast<const ColumnVector<Element> *>(&*mapped);
 
 		if (!column)
-		{
-			const ColumnConst<Element> * column_const = typeid_cast<const ColumnConst<Element> *>(&*mapped);
-
-			if (!column_const)
-				return false;
-
-			const Element x = column_const->getData();
-
-			ColumnVector<Result> * res_column = new ColumnVector<Result>(offsets.size());
-			res_ptr = res_column;
-			typename ColumnVector<Result>::Container_t & res = res_column->getData();
-
-			size_t pos = 0;
-			for (size_t i = 0; i < offsets.size(); ++i)
-			{
-				res[i] = x * (offsets[i] - pos);
-				pos = offsets[i];
-			}
-
-			return true;
-		}
+			return false;
 
 		const typename ColumnVector<Element>::Container_t & data = column->getData();
 		ColumnVector<Result> * res_column = new ColumnVector<Result>(offsets.size());
@@ -408,41 +301,9 @@ struct ArrayFirstImpl
 
 	static ColumnPtr execute(const ColumnArray * array, ColumnPtr mapped)
 	{
-		auto column_filter = typeid_cast<const ColumnVector<UInt8> *>(&*mapped);
-
+		auto column_filter = typeid_cast<ColumnVector<UInt8> *>(&*mapped);
 		if (!column_filter)
-		{
-			const ColumnConstUInt8 * column_filter_const = typeid_cast<const ColumnConstUInt8 *>(&*mapped);
-
-			if (!column_filter_const)
-				throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
-
-			if (column_filter_const->getData())
-			{
-				const auto & offsets = array->getOffsets();
-				const auto & data = array->getData();
-				ColumnPtr out{data.cloneEmpty()};
-
-				size_t pos{};
-				for (size_t i = 0; i < offsets.size(); ++i)
-				{
-					if (offsets[i] - pos > 0)
-						out->insert(data[pos]);
-					else
-						out->insertDefault();
-
-					pos = offsets[i];
-				}
-
-				return out;
-			}
-			else
-			{
-				ColumnPtr out{array->getData().cloneEmpty()};
-				out->insertDefault();
-				return out->replicate(IColumn::Offsets_t(1, array->size()));
-			}
-		}
+			throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
 
 		const auto & filter = column_filter->getData();
 		const auto & offsets = array->getOffsets();
@@ -485,34 +346,9 @@ struct ArrayFirstIndexImpl
 
 	static ColumnPtr execute(const ColumnArray * array, ColumnPtr mapped)
 	{
-		auto column_filter = typeid_cast<const ColumnVector<UInt8> *>(&*mapped);
-
+		auto column_filter = typeid_cast<ColumnVector<UInt8> *>(&*mapped);
 		if (!column_filter)
-		{
-			const ColumnConstUInt8 * column_filter_const = typeid_cast<const ColumnConstUInt8 *>(&*mapped);
-
-			if (!column_filter_const)
-				throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
-
-			if (column_filter_const->getData())
-			{
-				const auto & offsets = array->getOffsets();
-				auto out_column = new ColumnVector<UInt32>{offsets.size()};
-				ColumnPtr out_column_ptr{out_column};
-				auto & out_index = out_column->getData();
-
-				size_t pos{};
-				for (size_t i = 0; i < offsets.size(); ++i)
-				{
-					out_index[i] = offsets[i] - pos > 0;
-					pos = offsets[i];
-				}
-
-				return out_column_ptr;
-			}
-			else
-				return new ColumnConstUInt32(array->size(), 0);
-		}
+			throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
 
 		const auto & filter = column_filter->getData();
 		const auto & offsets = array->getOffsets();
@@ -725,11 +561,7 @@ public:
 					column_first_array = column_array;
 				}
 
-				temp_block.insert(ColumnWithNameAndType(
-					column_array->getDataPtr(),
-					argument_type,
-					argument_name));
-
+				temp_block.insert(ColumnWithNameAndType(column_array->getDataPtr(), argument_type, argument_name));
 				argument_names.insert(argument_name);
 			}
 
@@ -748,8 +580,7 @@ public:
 				ColumnWithNameAndType replicated_column = block.getByPosition(prerequisites[prerequisite_index]);
 
 				replicated_column.name = name;
-				replicated_column.column = typeid_cast<ColumnArray &>(*replicated_column.column).getDataPtr();
-				replicated_column.type = typeid_cast<const DataTypeArray &>(*replicated_column.type).getNestedType(),
+				replicated_column.column = typeid_cast<ColumnReplicated &>(*replicated_column.column).getData();
 				temp_block.insert(replicated_column);
 
 				++prerequisite_index;

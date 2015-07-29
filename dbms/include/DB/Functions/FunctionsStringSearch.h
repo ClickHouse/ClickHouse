@@ -447,15 +447,10 @@ struct MatchImpl
 							const char * str_data = reinterpret_cast<const char *>(&data[i != 0 ? offsets[i - 1] : 0]);
 							size_t str_size = (i != 0 ? offsets[i] - offsets[i - 1] : offsets[0]) - 1;
 
-							/** Даже в случае required_substring_is_prefix используем UNANCHORED проверку регекспа,
-							  *  чтобы он мог сматчиться, когда required_substring встречается в строке несколько раз,
-							  *  и на первом вхождении регексп не матчит.
-							  */
-
 							if (required_substring_is_prefix)
 								res[i] = revert ^ regexp->getRE2()->Match(
 									re2_st::StringPiece(str_data, str_size),
-									reinterpret_cast<const char *>(pos) - str_data, str_size, re2_st::RE2::UNANCHORED, nullptr, 0);
+									reinterpret_cast<const char *>(pos) - str_data, str_size, re2_st::RE2::ANCHOR_START, nullptr, 0);
 							else
 								res[i] = revert ^ regexp->getRE2()->Match(
 									re2_st::StringPiece(str_data, str_size),

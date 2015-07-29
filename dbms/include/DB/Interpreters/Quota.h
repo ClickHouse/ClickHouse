@@ -83,7 +83,7 @@ struct QuotaForInterval
 
 	/// Увеличить соответствующее значение.
 	void addQuery(time_t current_time, const String & quota_name);
-	void addError(time_t current_time, const String & quota_name) noexcept;
+	void addError(time_t current_time, const String & quota_name);
 
 	/// Проверить, не превышена ли квота уже. Если превышена - кидает исключение.
 	void checkExceeded(time_t current_time, const String & quota_name);
@@ -139,7 +139,7 @@ public:
 	void setMax(const QuotaForIntervals & quota);
 
 	void addQuery(time_t current_time);
-	void addError(time_t current_time) noexcept;
+	void addError(time_t current_time);
 
 	void checkExceeded(time_t current_time);
 

@@ -21,17 +21,17 @@ class ParallelReplicas final : private boost::noncopyable
 {
 public:
 	/// Принимает готовое соединение.
-	ParallelReplicas(Connection * connection_, const Settings * settings_, ThrottlerPtr throttler_);
+	ParallelReplicas(Connection * connection_, Settings * settings_, ThrottlerPtr throttler_);
 
 	/// Принимает пул, из которого нужно будет достать одно или несколько соединений.
-	ParallelReplicas(IConnectionPool * pool_, const Settings * settings_, ThrottlerPtr throttler_);
+	ParallelReplicas(IConnectionPool * pool_, Settings * settings_, ThrottlerPtr throttler_);
 
 	/// Отправить на реплики всё содержимое внешних таблиц.
 	void sendExternalTablesData(std::vector<ExternalTablesData> & data);
 
 	/// Отправить запрос на реплики.
 	void sendQuery(const String & query, const String & query_id = "",
-		UInt64 stage = QueryProcessingStage::Complete, bool with_pending_data = false);
+					UInt64 stage = QueryProcessingStage::Complete, bool with_pending_data = false);
 
 	/// Получить пакет от какой-нибудь реплики.
 	Connection::Packet receivePacket();
@@ -82,7 +82,7 @@ private:
 	void invalidateReplica(ReplicaMap::iterator it);
 
 private:
-	const Settings * settings;
+	Settings * settings;
 	ReplicaMap replica_map;
 
 	/// Если не nullptr, то используется, чтобы ограничить сетевой трафик.

@@ -326,7 +326,6 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
 	factory.registerFunction<FunctionMaterialize>();
 	factory.registerFunction<FunctionIgnore>();
 	factory.registerFunction<FunctionArrayJoin>();
-	factory.registerFunction<FunctionReplicate>();
 	factory.registerFunction<FunctionBar>();
 
 	factory.registerFunction<FunctionTuple>();

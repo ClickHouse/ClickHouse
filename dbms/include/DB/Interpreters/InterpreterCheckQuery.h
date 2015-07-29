@@ -1,22 +1,22 @@
 #pragma once
 
 #include <DB/Interpreters/Context.h>
-#include <DB/Interpreters/IInterpreter.h>
 #include <DB/Parsers/ASTIdentifier.h>
 
 namespace DB
 {
 
-class InterpreterCheckQuery : public IInterpreter
+class InterpreterCheckQuery
 {
 public:
 	InterpreterCheckQuery(ASTPtr query_ptr_, Context & context_);
-	BlockIO execute() override;
+	BlockInputStreamPtr execute();
+	DB::Block getSampleBlock();
 
 private:
 	ASTPtr query_ptr;
 	Context context;
-	Block result;
+	DB::Block result;
 };
 
 }

@@ -198,15 +198,7 @@ Block TinyLogBlockInputStream::readImpl()
 		else
 			column.column = column.type->createColumn();
 
-		try
-		{
-			readData(*it, *column.type, *column.column, block_size, 0, read_offsets);
-		}
-		catch (Exception & e)
-		{
-			e.addMessage("while reading column " + *it + " at " + storage.full_path());
-			throw;
-		}
+		readData(*it, *column.type, *column.column, block_size, 0, read_offsets);
 
 		if (column.column->size())
 			res.insert(column);

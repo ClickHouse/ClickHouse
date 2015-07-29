@@ -20,7 +20,6 @@
 #include <DB/Common/Macros.h>
 #include <DB/Common/getFQDNOrHostName.h>
 #include <DB/Interpreters/loadMetadata.h>
-#include <DB/Interpreters/ProcessList.h>
 #include <DB/Storages/StorageSystemNumbers.h>
 #include <DB/Storages/StorageSystemTables.h>
 #include <DB/Storages/StorageSystemParts.h>
@@ -533,12 +532,7 @@ int Server::main(const std::vector<std::string> & args)
 	LOG_DEBUG(log, "Loaded metadata.");
 
 	/// Создаём системные таблицы.
-	if (!global_context->isDatabaseExist("system"))
-	{
-		Poco::File(path + "data/system").createDirectories();
-		Poco::File(path + "metadata/system").createDirectories();
-		global_context->addDatabase("system");
-	}
+	global_context->addDatabase("system");
 
 	global_context->addTable("system", "one",		StorageSystemOne::create("one"));
 	global_context->addTable("system", "numbers", 	StorageSystemNumbers::create("numbers"));
@@ -551,7 +545,7 @@ int Server::main(const std::vector<std::string> & args)
 	global_context->addTable("system", "events", 	StorageSystemEvents::create("events"));
 	global_context->addTable("system", "merges",	StorageSystemMerges::create("merges"));
 	global_context->addTable("system", "replicas",	StorageSystemReplicas::create("replicas"));
-	global_context->addTable("system", "dictionaries", StorageSystemDictionaries::create("dictionaries"));
+	global_context->addTable("system", "dictionaries",	StorageSystemDictionaries::create("dictionaries"));
 	global_context->addTable("system", "columns",   StorageSystemColumns::create("columns"));
 	global_context->addTable("system", "functions", StorageSystemFunctions::create("functions"));
 	global_context->addTable("system", "clusters", StorageSystemClusters::create("clusters", *global_context));

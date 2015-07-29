@@ -1,6 +1,5 @@
-#include <DB/DataTypes/DataTypeString.h>
+#include <DB/DataTypes/FieldToDataType.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
-#include <DB/DataTypes/DataTypeArray.h>
 
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnConst.h>
@@ -62,7 +61,7 @@ template <> ColumnPtr ColumnConst<String>::convertToFullColumn() const
 }
 
 
-ColumnPtr ColumnConst<Array>::convertToFullColumn() const
+template <> ColumnPtr ColumnConst<Array>::convertToFullColumn() const
 {
 	if (!data_type)
 		throw Exception("No data type specified for ColumnConstArray", ErrorCodes::LOGICAL_ERROR);
@@ -71,8 +70,7 @@ ColumnPtr ColumnConst<Array>::convertToFullColumn() const
 	if (!type)
 		throw Exception("Non-array data type specified for ColumnConstArray", ErrorCodes::LOGICAL_ERROR);
 
-	const Array & array = getDataFromHolderImpl();
-	size_t array_size = array.size();
+	size_t array_size = data.size();
 	ColumnPtr nested_column = type->getNestedType()->createColumn();
 
 	ColumnArray * res = new ColumnArray(nested_column);
@@ -83,26 +81,10 @@ ColumnPtr ColumnConst<Array>::convertToFullColumn() const
 	{
 		offsets[i] = (i + 1) * array_size;
 		for (size_t j = 0; j < array_size; ++j)
-			nested_column->insert(array[j]);
+			nested_column->insert(data[j]);
 	}
 
 	return res;
-}
-
-
-StringRef ColumnConst<Array>::getDataAt(size_t n) const
-{
-	throw Exception("Method getDataAt is not supported for " + this->getName(), ErrorCodes::NOT_IMPLEMENTED);
-}
-
-UInt64 ColumnConst<Array>::get64(size_t n) const
-{
-	throw Exception("Method get64 is not supported for " + this->getName(), ErrorCodes::NOT_IMPLEMENTED);
-}
-
-StringRef ColumnConst<Array>::getDataAtWithTerminatingZero(size_t n) const
-{
-	throw Exception("Method getDataAt is not supported for " + this->getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
 

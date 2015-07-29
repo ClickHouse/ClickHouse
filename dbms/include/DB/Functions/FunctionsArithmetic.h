@@ -262,32 +262,6 @@ struct BitShiftRightImpl
 	}
 };
 
-
-template<typename A, typename B>
-struct LeastImpl
-{
-	typedef typename NumberTraits::ResultOfIf<A, B>::Type ResultType;
-
-	template <typename Result = ResultType>
-	static inline Result apply(A a, B b)
-	{
-		/** gcc 4.9.2 успешно векторизует цикл из этой функции. */
-		return static_cast<Result>(a) < static_cast<Result>(b) ? static_cast<Result>(a) : static_cast<Result>(b);
-	}
-};
-
-template<typename A, typename B>
-struct GreatestImpl
-{
-	typedef typename NumberTraits::ResultOfIf<A, B>::Type ResultType;
-
-	template <typename Result = ResultType>
-	static inline Result apply(A a, B b)
-	{
-		return static_cast<Result>(a) > static_cast<Result>(b) ? static_cast<Result>(a) : static_cast<Result>(b);
-	}
-};
-
 template<typename A>
 struct NegateImpl
 {
@@ -345,12 +319,6 @@ template <typename T> using Else = T;
 /// Used to indicate undefined operation
 struct InvalidType;
 
-template <>
-struct DataTypeFromFieldType<NumberTraits::Error>
-{
-	using Type = InvalidType;
-};
-
 template <typename DataType> struct IsIntegral { static constexpr auto value = false; };
 template <> struct IsIntegral<DataTypeUInt8> { static constexpr auto value = true; };
 template <> struct IsIntegral<DataTypeUInt16> { static constexpr auto value = true; };
@@ -374,13 +342,11 @@ template <typename DataType> struct IsDateOrDateTime { static constexpr auto val
 template <> struct IsDateOrDateTime<DataTypeDate> { static constexpr auto value = true; };
 template <> struct IsDateOrDateTime<DataTypeDateTime> { static constexpr auto value = true; };
 
-/** Returns appropriate result type for binary operator on dates (or datetimes):
+/** Returns appropriate result type for binary operator on dates:
  *  Date + Integral -> Date
  *  Integral + Date -> Date
  *  Date - Date     -> Int32
  *  Date - Integral -> Date
- *  least(Date, Date) -> Date
- *  greatest(Date, Date) -> Date
  *  All other operations are not defined and return InvalidType, operations on
  *  distinct date types are also undefined (e.g. DataTypeDate - DataTypeDateTime) */
 template <template <typename, typename> class Operation, typename LeftDataType, typename RightDataType>
@@ -421,13 +387,7 @@ struct DateBinaryOperationTraits
 							Else<InvalidType>
 						>
 					>,
-					Else<
-						If<std::is_same<T0, T1>::value
-							&& (std::is_same<Op, LeastImpl<T0, T1>>::value || std::is_same<Op, GreatestImpl<T0, T1>>::value),
-							Then<LeftDataType>,
-							Else<InvalidType>
-						>
-					>
+					Else<InvalidType>
 				>
 			>
 		>;
@@ -519,16 +479,26 @@ private:
 	}
 
 	/// Overload for date operations
-	template <typename LeftDataType, typename RightDataType, typename ColumnType>
+	template <typename LeftDataType, typename RightDataType, typename ColumnType,
+			  typename std::enable_if<IsDateOrDateTime<LeftDataType>::value || IsDateOrDateTime<RightDataType>::value>::type * = nullptr>
 	bool executeRightType(Block & block, const ColumnNumbers & arguments, const size_t result, const ColumnType * col_left)
 	{
 		if (!typeid_cast<const RightDataType *>(block.getByPosition(arguments[1]).type.get()))
 			return false;
 
-		using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
+		using ResultDataType = typename DateBinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
 
 		return executeRightTypeDispatch<LeftDataType, RightDataType, ResultDataType>(
 			block, arguments, result, col_left);
+	}
+
+	/// Overload for numeric operations
+	template <typename LeftDataType, typename RightDataType, typename ColumnType,
+			  typename T0 = typename LeftDataType::FieldType, typename T1 = typename RightDataType::FieldType,
+			  typename std::enable_if<IsNumeric<LeftDataType>::value && IsNumeric<RightDataType>::value>::type * = nullptr>
+	bool executeRightType(Block & block, const ColumnNumbers & arguments, const size_t result, const ColumnType * col_left)
+	{
+		return executeRightTypeImpl<T0, T1>(block, arguments, result, col_left);
 	}
 
 	/// Overload for InvalidType
@@ -537,9 +507,7 @@ private:
 	bool executeRightTypeDispatch(Block & block, const ColumnNumbers & arguments, const size_t result,
 								  const ColumnType * col_left)
 	{
-		throw Exception("Types " + TypeName<typename LeftDataType::FieldType>::get()
-			+ " and " + TypeName<typename LeftDataType::FieldType>::get()
-			+ " are incompatible for function " + getName() + " or not upscaleable to common type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		return false;
 	}
 
 	/// Overload for well-defined operations
@@ -559,7 +527,7 @@ private:
 	template <typename T0, typename T1, typename ResultType = typename Op<T0, T1>::ResultType>
 	bool executeRightTypeImpl(Block & block, const ColumnNumbers & arguments, size_t result, const ColumnVector<T0> * col_left)
 	{
-		if (auto col_right = typeid_cast<const ColumnVector<T1> *>(block.getByPosition(arguments[1]).column.get()))
+		if (auto col_right = typeid_cast<ColumnVector<T1> *>(block.getByPosition(arguments[1]).column.get()))
 		{
 			auto col_res = new ColumnVector<ResultType>;
 			block.getByPosition(result).column = col_res;
@@ -570,7 +538,7 @@ private:
 
 			return true;
 		}
-		else if (auto col_right = typeid_cast<const ColumnConst<T1> *>(block.getByPosition(arguments[1]).column.get()))
+		else if (auto col_right = typeid_cast<ColumnConst<T1> *>(block.getByPosition(arguments[1]).column.get()))
 		{
 			auto col_res = new ColumnVector<ResultType>;
 			block.getByPosition(result).column = col_res;
@@ -582,14 +550,14 @@ private:
 			return true;
 		}
 
-		throw Exception("Logical error: unexpected type of column", ErrorCodes::LOGICAL_ERROR);
+		return false;
 	}
 
 	/// ColumnConst overload
 	template <typename T0, typename T1, typename ResultType = typename Op<T0, T1>::ResultType>
 	bool executeRightTypeImpl(Block & block, const ColumnNumbers & arguments, size_t result, const ColumnConst<T0> * col_left)
 	{
-		if (auto col_right = typeid_cast<const ColumnVector<T1> *>(block.getByPosition(arguments[1]).column.get()))
+		if (auto col_right = typeid_cast<ColumnVector<T1> *>(block.getByPosition(arguments[1]).column.get()))
 		{
 			auto col_res = new ColumnVector<ResultType>;
 			block.getByPosition(result).column = col_res;
@@ -600,7 +568,7 @@ private:
 
 			return true;
 		}
-		else if (auto col_right = typeid_cast<const ColumnConst<T1> *>(block.getByPosition(arguments[1]).column.get()))
+		else if (auto col_right = typeid_cast<ColumnConst<T1> *>(block.getByPosition(arguments[1]).column.get()))
 		{
 			ResultType res = 0;
 			BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>::constant_constant(col_left->getData(), col_right->getData(), res);
@@ -614,12 +582,26 @@ private:
 		return false;
 	}
 
-	template <typename LeftDataType>
+	template <typename LeftDataType,
+			  typename std::enable_if<IsDateOrDateTime<LeftDataType>::value>::type * = nullptr>
 	bool executeLeftType(Block & block, const ColumnNumbers & arguments, const size_t result)
 	{
 		if (!typeid_cast<const LeftDataType *>(block.getByPosition(arguments[0]).type.get()))
 			return false;
 
+		return executeLeftTypeDispatch<LeftDataType>(block, arguments, result);
+	}
+
+	template <typename LeftDataType,
+			  typename std::enable_if<IsNumeric<LeftDataType>::value>::type * = nullptr>
+	bool executeLeftType(Block & block, const ColumnNumbers & arguments, const size_t result)
+	{
+		return executeLeftTypeDispatch<LeftDataType>(block, arguments, result);
+	}
+
+	template <typename LeftDataType>
+	bool executeLeftTypeDispatch(Block & block, const ColumnNumbers & arguments, const size_t result)
+	{
 		using T0 = typename LeftDataType::FieldType;
 
 		if (	executeLeftTypeImpl<LeftDataType, ColumnVector<T0>>(block, arguments, result)
@@ -632,7 +614,7 @@ private:
 	template <typename LeftDataType, typename ColumnType>
 	bool executeLeftTypeImpl(Block & block, const ColumnNumbers & arguments, const size_t result)
 	{
-		if (auto col_left = typeid_cast<const ColumnType *>(block.getByPosition(arguments[0]).column.get()))
+		if (auto col_left = typeid_cast<ColumnType *>(block.getByPosition(arguments[0]).column.get()))
 		{
 			if (	executeRightType<LeftDataType, DataTypeDate>(block, arguments, result, col_left)
 				||  executeRightType<LeftDataType, DataTypeDateTime>(block, arguments, result, col_left)
@@ -736,7 +718,7 @@ private:
 	template <typename T0>
 	bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (const ColumnVector<T0> * col = typeid_cast<const ColumnVector<T0> *>(&*block.getByPosition(arguments[0]).column))
+		if (ColumnVector<T0> * col = typeid_cast<ColumnVector<T0> *>(&*block.getByPosition(arguments[0]).column))
 		{
 			typedef typename Op<T0>::ResultType ResultType;
 
@@ -749,7 +731,7 @@ private:
 
 			return true;
 		}
-		else if (const ColumnConst<T0> * col = typeid_cast<const ColumnConst<T0> *>(&*block.getByPosition(arguments[0]).column))
+		else if (ColumnConst<T0> * col = typeid_cast<ColumnConst<T0> *>(&*block.getByPosition(arguments[0]).column))
 		{
 			typedef typename Op<T0>::ResultType ResultType;
 
@@ -833,8 +815,6 @@ struct NameBitXor			{ static constexpr auto name = "bitXor"; };
 struct NameBitNot			{ static constexpr auto name = "bitNot"; };
 struct NameBitShiftLeft		{ static constexpr auto name = "bitShiftLeft"; };
 struct NameBitShiftRight	{ static constexpr auto name = "bitShiftRight"; };
-struct NameLeast			{ static constexpr auto name = "least"; };
-struct NameGreatest			{ static constexpr auto name = "greatest"; };
 
 typedef FunctionBinaryArithmetic<PlusImpl,				NamePlus> 				FunctionPlus;
 typedef FunctionBinaryArithmetic<MinusImpl, 			NameMinus> 				FunctionMinus;
@@ -851,8 +831,7 @@ typedef FunctionBinaryArithmetic<BitXorImpl,			NameBitXor> 			FunctionBitXor;
 typedef FunctionUnaryArithmetic<BitNotImpl,				NameBitNot> 			FunctionBitNot;
 typedef FunctionBinaryArithmetic<BitShiftLeftImpl,		NameBitShiftLeft> 		FunctionBitShiftLeft;
 typedef FunctionBinaryArithmetic<BitShiftRightImpl,		NameBitShiftRight> 		FunctionBitShiftRight;
-typedef FunctionBinaryArithmetic<LeastImpl,				NameLeast> 				FunctionLeast;
-typedef FunctionBinaryArithmetic<GreatestImpl,			NameGreatest> 			FunctionGreatest;
+
 
 
 /// Оптимизации для целочисленного деления на константу.

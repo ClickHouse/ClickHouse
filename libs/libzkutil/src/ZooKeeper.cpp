@@ -128,6 +128,13 @@ ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std
 	init(args.hosts, args.session_timeout_ms);
 }
 
+ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration& config, const std::string& config_name, int32_t session_timeout_ms_)
+{
+	ZooKeeperArgs args(config, config_name);
+	init(args.hosts, session_timeout_ms_);
+}
+
+
 void * ZooKeeper::watchForEvent(EventPtr event)
 {
 	if (event)
@@ -383,7 +390,7 @@ bool ZooKeeper::tryGet(const std::string & path, std::string & res, Stat * stat_
 {
 	int32_t code = retry(std::bind(&ZooKeeper::getImpl, this, std::ref(path), std::ref(res), stat_, watch));
 
-	if (!(code == ZOK ||
+	if (!(	code == ZOK ||
 			code == ZNONODE))
 		throw KeeperException(code, path);
 
@@ -409,17 +416,6 @@ int32_t ZooKeeper::setImpl(const std::string & path, const std::string & data,
 void ZooKeeper::set(const std::string & path, const std::string & data, int32_t version, Stat * stat)
 {
 	check(trySet(path, data, version, stat), path);
-}
-
-void ZooKeeper::createOrUpdate(const std::string & path, const std::string & data, int32_t mode)
-{
-	int code = trySet(path, data, -1);
-	if (code == ZNONODE)
-	{
-		create(path, data, mode);
-	}
-	else if (code != ZOK)
-		throw zkutil::KeeperException(code, path);
 }
 
 int32_t ZooKeeper::trySet(const std::string & path, const std::string & data,

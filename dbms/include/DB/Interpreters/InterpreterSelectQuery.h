@@ -2,7 +2,6 @@
 
 #include <DB/Core/QueryProcessingStage.h>
 #include <DB/Interpreters/Context.h>
-#include <DB/Interpreters/IInterpreter.h>
 #include <DB/Interpreters/ExpressionActions.h>
 #include <DB/DataStreams/IBlockInputStream.h>
 
@@ -16,7 +15,7 @@ class SubqueryForSet;
 
 /** Интерпретирует запрос SELECT. Возвращает поток блоков с результатами выполнения запроса до стадии to_stage.
   */
-class InterpreterSelectQuery : public IInterpreter
+class InterpreterSelectQuery
 {
 public:
 	/** to_stage
@@ -67,11 +66,16 @@ public:
 	/** Выполнить запрос, возможно являющиийся цепочкой UNION ALL.
 	 *  Получить поток блоков для чтения
 	 */
-	BlockIO execute() override;
+	BlockInputStreamPtr execute();
 
 	/** Выполнить запрос без объединения потоков, если это возможно.
 	 */
 	const BlockInputStreams & executeWithoutUnion();
+
+	/** Выполнить запрос, записать результат в нужном формате в buf.
+	 * BlockInputStreamPtr возвращается, чтобы можно было потом получить информацию о плане выполнения запроса.
+	 */
+	BlockInputStreamPtr executeAndFormat(WriteBuffer & buf);
 
 	DataTypes getReturnTypes();
 	Block getSampleBlock();
@@ -96,7 +100,7 @@ private:
 	// Переименовать столбцы каждого запроса цепочки UNION ALL в такие же имена, как в первом запросе.
 	void renameColumns();
 
-	/** Из какой таблицы читать. При JOIN, возвращается "левая" таблицы.
+	/** Из какой таблицы читать. JOIN-ы не поддерживаются.
 	 */
 	void getDatabaseAndTableNames(String & database_name, String & table_name);
 

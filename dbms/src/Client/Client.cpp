@@ -96,7 +96,6 @@ private:
 	};
 
 	bool is_interactive = true;			/// Использовать readline интерфейс или batch режим.
-	bool need_render_progress = true;	/// Рисовать прогресс выполнения запроса.
 	bool print_time_to_stderr = false;	/// В неинтерактивном режиме, выводить время выполнения в stderr.
 	bool stdin_is_not_tty = false;		/// stdin - не терминал.
 
@@ -268,9 +267,6 @@ private:
 
 		insert_format = "Values";
 		insert_format_max_block_size = config().getInt("insert_format_max_block_size", context.getSettingsRef().max_insert_block_size);
-
-		if (!is_interactive)
-			need_render_progress = config().getBool("progress", false);
 
 		connect();
 
@@ -854,11 +850,11 @@ private:
 			/// Формат может быть указан в запросе.
 			if (ASTQueryWithOutput * query_with_output = dynamic_cast<ASTQueryWithOutput *>(&*parsed_query))
 			{
-				if (query_with_output->getFormat() != nullptr)
+				if (query_with_output->format)
 				{
 					if (has_vertical_output_suffix)
 						throw Exception("Output format already specified", ErrorCodes::CLIENT_OUTPUT_FORMAT_SPECIFIED);
-					if (const ASTIdentifier * id = typeid_cast<const ASTIdentifier *>(query_with_output->getFormat()))
+					if (ASTIdentifier * id = typeid_cast<ASTIdentifier *>(&*query_with_output->format))
 						current_format = id->name;
 				}
 			}
@@ -910,7 +906,7 @@ private:
 
 	void writeProgress()
 	{
-		if (!need_render_progress)
+		if (!is_interactive)
 			return;
 
 		static size_t increment = 0;
@@ -1007,7 +1003,7 @@ private:
 			text.resize(embedded_stack_trace_pos);
 
 		std::cerr << "Received exception from server:" << std::endl
-			<< "Code: " << e.code() << ". " << text << std::endl;
+			<< "Code: " << e.code() << ". " << text;
 	}
 
 
@@ -1057,7 +1053,6 @@ public:
 			("vertical,E",      "vertical output format, same as --format=Vertical or FORMAT Vertical or \\G at end of command")
 			("time,t",			"print query execution time to stderr in non-interactive mode (for benchmarks)")
 			("stacktrace",		"print stack traces of exceptions")
-			("progress",		"print progress even in non-interactive mode")
 			APPLY_FOR_SETTINGS(DECLARE_SETTING)
 			APPLY_FOR_LIMITS(DECLARE_LIMIT)
 		;
@@ -1176,8 +1171,6 @@ public:
 			config().setBool("vertical", true);
 		if (options.count("stacktrace"))
 			config().setBool("stacktrace", true);
-		if (options.count("progress"))
-			config().setBool("progress", true);
 		if (options.count("time"))
 			print_time_to_stderr = true;
 	}

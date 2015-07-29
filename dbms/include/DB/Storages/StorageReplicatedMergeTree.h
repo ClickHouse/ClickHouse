@@ -134,7 +134,7 @@ public:
 	void getStatus(Status & res, bool with_zk_fields = true);
 
 private:
-	void dropUnreplicatedPartition(const Field & partition, bool detach, const Settings & settings);
+	void dropUnreplicatedPartition(const Field & partition, const Settings & settings);
 
 	friend class ReplicatedMergeTreeBlockOutputStream;
 	friend class ReplicatedMergeTreeRestartingThread;

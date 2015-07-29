@@ -26,13 +26,13 @@ class IConnectionPool : private boost::noncopyable
 {
 public:
 	typedef PoolBase<Connection>::Entry Entry;
-	virtual Entry get(const Settings * settings = nullptr) = 0;
+	virtual Entry get(Settings * settings = nullptr) = 0;
 
 	/** Выделяет до указанного количества соединений для работы.
 	  * Соединения предоставляют доступ к разным репликам одного шарда.
 	  * Выкидывает исключение, если не удалось выделить ни одного соединения.
 	  */
-	virtual std::vector<Entry> getMany(const Settings * settings = nullptr)
+	virtual std::vector<Entry> getMany(Settings * settings = nullptr)
 	{
 		return std::vector<Entry>{ get(settings) };
 	}
@@ -89,7 +89,7 @@ public:
 
 
 	/** Выделяет соединение для работы. */
-	Entry get(const Settings * settings = nullptr) override
+	Entry get(Settings * settings = nullptr) override
 	{
 		if (settings)
 			return Base::get(settings->queue_max_wait_ms.totalMilliseconds());

@@ -26,7 +26,7 @@ public:
 
 	void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response);
 
-	void trySendExceptionToClient(const std::string & s,
+	void trySendExceptionToClient(std::stringstream & s,
 		Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response,
 		Output & used_output);
 

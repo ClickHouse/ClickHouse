@@ -20,6 +20,7 @@
 #include <DB/Columns/ColumnSet.h>
 #include <DB/Columns/ColumnTuple.h>
 #include <DB/Columns/ColumnArray.h>
+#include <DB/Columns/ColumnReplicated.h>
 #include <DB/Columns/ColumnAggregateFunction.h>
 #include <DB/Common/UnicodeBar.h>
 #include <DB/Functions/IFunction.h>
@@ -50,8 +51,9 @@ namespace DB
   * arrayJoin(arr)	- особая функция - выполнить её напрямую нельзя;
   *                   используется только чтобы получить тип результата соответствующего выражения.
   *
-  * replicate(x, arr) - создаёт массив такого же размера как arr, все элементы которого равны x;
-  * 					например: replicate(1, ['a', 'b', 'c']) = [1, 1, 1].
+  * replicate(x, arr) - копирует x столько раз, сколько элементов в массиве arr;
+  * 					например: replicate(1, ['a', 'b', 'c']) = 1, 1, 1.
+  *                     не предназначена для пользователя, а используется только как prerequisites для функций высшего порядка.
   *
   * sleep(n)		- спит n секунд каждый блок.
   *
@@ -568,14 +570,17 @@ public:
 };
 
 
-/** Создаёт массив, размножая столбец (первый аргумент) по количеству элементов в массиве (втором аргументе).
+/** Размножает столбец (первый аргумент) по количеству элементов в массиве (втором аргументе).
+  * Не предназначена для внешнего использования.
+  * Так как возвращаемый столбец будет иметь несовпадающий размер с исходными,
+  *  то результат не может быть потом использован в том же блоке, что и аргументы.
   * Используется только в качестве prerequisites для функций высшего порядка.
   */
 class FunctionReplicate : public IFunction
 {
-public:
 	static constexpr auto name = "replicate";
 	static IFunction * create(const Context & context) { return new FunctionReplicate; }
+
 
 	/// Получить имя функции.
 	String getName() const
@@ -595,7 +600,7 @@ public:
 		if (!array_type)
 			throw Exception("Second argument for function " + getName() + " must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new DataTypeArray(arguments[0]->clone());
+		return arguments[0]->clone();
 	}
 
 	/// Выполнить функцию над блоком.
@@ -615,9 +620,7 @@ public:
 			array_column = typeid_cast<ColumnArray *>(&*temp_column);
 		}
 
-		block.getByPosition(result).column = new ColumnArray(
-			first_column->replicate(array_column->getOffsets()),
-			array_column->getOffsetsColumn());
+		block.getByPosition(result).column = new ColumnReplicated(first_column->size(), first_column->replicate(array_column->getOffsets()));
 	}
 };
 

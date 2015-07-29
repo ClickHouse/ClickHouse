@@ -154,7 +154,7 @@ BlockInputStreams StorageDistributed::read(
 
 	size_t result_size = (cluster.pools.size() * settings.max_parallel_replicas) + cluster.getLocalNodesNum();
 
-	processed_stage = result_size == 1 || settings.distributed_group_by_no_merge
+	processed_stage = result_size == 1
 		? QueryProcessingStage::Complete
 		: QueryProcessingStage::WithMergeableState;
 
@@ -190,7 +190,7 @@ BlockInputStreams StorageDistributed::read(
 			  * Если этого не делать, то в разных потоках будут получаться разные типы (Const и не-Const) столбцов,
 			  *  а это не разрешено, так как весь код исходит из допущения, что в потоке блоков все типы одинаковые.
 			  */
-			res.emplace_back(new MaterializingBlockInputStream(interpreter.execute().in));
+			res.emplace_back(new MaterializingBlockInputStream(interpreter.execute()));
 		}
 	}
 

@@ -21,11 +21,11 @@ namespace DB
   *
   * Замечание: если один из вложенных пулов заблокируется из-за переполнения, то этот пул тоже заблокируется.
   */
-class ConnectionPoolWithFailover : public PoolWithFailoverBase<IConnectionPool>, public IConnectionPool
+class ConnectionPoolWithFailover : public PoolWithFailoverBase<IConnectionPool, Settings *>, public IConnectionPool
 {
 public:
 	typedef IConnectionPool::Entry Entry;
-	typedef PoolWithFailoverBase<IConnectionPool> Base;
+	typedef PoolWithFailoverBase<IConnectionPool, Settings *> Base;
 
 	ConnectionPoolWithFailover(ConnectionPools & nested_pools_,
 		LoadBalancing load_balancing,
@@ -52,7 +52,7 @@ public:
 	}
 
 	/** Выделяет соединение для работы. */
-	Entry get(const Settings * settings = nullptr) override
+	Entry get(Settings * settings = nullptr) override
 	{
 		applyLoadBalancing(settings);
 		return Base::get(settings);
@@ -61,14 +61,14 @@ public:
 	/** Выделяет до указанного количества соединений для работы.
 	  * Соединения предоставляют доступ к разным репликам одного шарда.
 	  */
-	std::vector<Entry> getMany(const Settings * settings = nullptr) override
+	std::vector<Entry> getMany(Settings * settings = nullptr) override
 	{
 		applyLoadBalancing(settings);
 		return Base::getMany(settings);
 	}
 
 protected:
-	bool tryGet(ConnectionPoolPtr pool, const Settings * settings, Entry & out_entry, std::stringstream & fail_message) override
+	bool tryGet(ConnectionPoolPtr pool, Settings * settings, Entry & out_entry, std::stringstream & fail_message) override
 	{
 		try
 		{
@@ -90,7 +90,7 @@ private:
 	std::vector<size_t> hostname_differences; /// Расстояния от имени этого хоста до имен хостов пулов.
 	LoadBalancing default_load_balancing;
 
-	void applyLoadBalancing(const Settings * settings)
+	void applyLoadBalancing(Settings * settings)
 	{
 		LoadBalancing load_balancing = default_load_balancing;
 		if (settings)

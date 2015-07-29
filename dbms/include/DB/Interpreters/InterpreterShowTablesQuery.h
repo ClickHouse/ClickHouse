@@ -1,7 +1,8 @@
 #pragma once
 
+#include <DB/DataStreams/BlockIO.h>
+
 #include <DB/Interpreters/Context.h>
-#include <DB/Interpreters/IInterpreter.h>
 
 
 namespace DB
@@ -11,12 +12,13 @@ namespace DB
 /** Вывести список имён таблиц/баз данных по некоторым условиям.
   * Интерпретирует запрос путём замены его на запрос SELECT из таблицы system.tables или system.databases.
   */
-class InterpreterShowTablesQuery : public IInterpreter
+class InterpreterShowTablesQuery
 {
 public:
 	InterpreterShowTablesQuery(ASTPtr query_ptr_, Context & context_);
 
-	BlockIO execute() override;
+	BlockIO execute();
+	BlockInputStreamPtr executeAndFormat(WriteBuffer & buf);
 
 private:
 	ASTPtr query_ptr;

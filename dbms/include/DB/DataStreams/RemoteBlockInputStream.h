@@ -136,9 +136,6 @@ protected:
 		{
 			createParallelReplicas();
 
-			if (settings.skip_unavailable_shards && 0 == parallel_replicas->size())
-				return Block();
-
 			established = true;
 
 			parallel_replicas->sendQuery(query, "", stage, true);

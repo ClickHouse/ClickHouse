@@ -20,7 +20,7 @@ public:
 	ASTLiteral() = default;
 	ASTLiteral(const StringRange range_, const Field & value_) : ASTWithAlias(range_), value(value_) {}
 
-	String getColumnName() const override;
+	String getColumnName() const override { return apply_visitor(FieldVisitorToString(), value); }
 
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() const override { return "Literal_" + apply_visitor(FieldVisitorDump(), value); }

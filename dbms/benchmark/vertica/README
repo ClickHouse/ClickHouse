@@ -8,7 +8,6 @@ Download HP Vertica 7.1.1 Analytic Database Server, Debian or Ubuntu 14.04 versi
 sudo apt-get install sysstat pstack mcelog
 sudo dpkg -i vertica_7.1.1-0_amd64.deb
 sudo sh -c "echo 'export TZ=Europe/Moscow' >> /home/dbadmin/.bash_profile"
-# Don't specify localhost due to poor support of IPv6.
 sudo /opt/vertica/sbin/install_vertica --hosts=127.0.0.1 --failure-threshold=NONE
 sudo mkdir /opt/vertica-data/
 sudo chown dbadmin /opt/vertica-data/
@@ -23,6 +22,8 @@ empty password
 both directories: /opt/vertica-data/
 main menu
 exit
+
+PS. Note that Vertica doesn't support IPv6.
 
 How to prepare data
 -------------------

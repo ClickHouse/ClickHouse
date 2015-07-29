@@ -233,15 +233,7 @@ Block LogBlockInputStream::readImpl()
 		else
 			column.column = column.type->createColumn();
 
-		try
-		{
-			readData(*it, *column.type, *column.column, max_rows_to_read, 0, read_offsets);
-		}
-		catch (Exception & e)
-		{
-			e.addMessage("while reading column " + *it + " at " + storage.path + escapeForFileName(storage.name));
-			throw;
-		}
+		readData(*it, *column.type, *column.column, max_rows_to_read, 0, read_offsets);
 
 		if (column.column->size())
 			res.insert(column);

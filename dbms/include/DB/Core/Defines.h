@@ -78,7 +78,5 @@
 /// Граница, на которых должны быть выровнены блоки для асинхронных файловых операций.
 #define DEFAULT_AIO_FILE_BLOCK_SIZE								4096
 
-#define DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS_STR		"7500"
-
 #define ALWAYS_INLINE 	__attribute__((__always_inline__))
 #define NO_INLINE 		__attribute__((__noinline__))

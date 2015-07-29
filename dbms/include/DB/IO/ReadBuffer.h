@@ -84,7 +84,7 @@ public:
 
 	void ignore(size_t n)
 	{
-		while (n != 0 && !eof())
+		while (!eof() && n != 0)
 		{
 			size_t bytes_to_ignore = std::min(static_cast<size_t>(working_buffer.end() - pos), n);
 			pos += bytes_to_ignore;

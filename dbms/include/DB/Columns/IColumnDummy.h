@@ -41,7 +41,12 @@ public:
 
 	ColumnPtr filter(const Filter & filt) const override
 	{
-		return cloneDummy(countBytesInFilter(filt));
+		size_t new_size = 0;
+		for (Filter::const_iterator it = filt.begin(); it != filt.end(); ++it)
+			if (*it)
+				++new_size;
+
+			return cloneDummy(new_size);
 	}
 
 	ColumnPtr permute(const Permutation & perm, size_t limit) const override

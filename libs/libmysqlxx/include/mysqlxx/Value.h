@@ -145,7 +145,7 @@ private:
 
 	time_t getDateTimeImpl() const
 	{
-		const auto & date_lut = DateLUT::instance();
+		DateLUT & date_lut = DateLUT::instance();
 
 		if (m_length == 10)
 		{
@@ -173,7 +173,7 @@ private:
 
 	time_t getDateImpl() const
 	{
-		const auto & date_lut = DateLUT::instance();
+		DateLUT & date_lut = DateLUT::instance();
 
 		if (m_length == 10 || m_length == 19)
 		{
@@ -216,7 +216,7 @@ private:
 			return getDateImpl();
 		else
 		{
-			const auto & date_lut = DateLUT::instance();
+			DateLUT & date_lut = DateLUT::instance();
 			return date_lut.toDate(getIntImpl());
 		}
 	}
