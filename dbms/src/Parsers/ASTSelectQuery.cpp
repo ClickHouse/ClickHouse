@@ -134,6 +134,32 @@ void ASTSelectQuery::rewriteSelectExpressionList(const Names & column_names)
 
 ASTPtr ASTSelectQuery::clone() const
 {
+	ASTPtr ptr = cloneImpl(true);
+
+	/// Установить указатели на предыдущие запросы SELECT.
+	ASTPtr current = ptr;
+	static_cast<ASTSelectQuery *>(&*current)->prev_union_all = nullptr;
+	ASTPtr next = static_cast<ASTSelectQuery *>(&*current)->next_union_all;
+	while (!next.isNull())
+	{
+		ASTSelectQuery * next_select_query = static_cast<ASTSelectQuery *>(&*next);
+		next_select_query->prev_union_all = current;
+		current = next;
+		next = next_select_query->next_union_all;
+	}
+
+	return ptr;
+}
+
+ASTPtr ASTSelectQuery::cloneFirstSelect() const
+{
+	ASTPtr res = cloneImpl(false);
+	static_cast<ASTSelectQuery *>(&*res)->prev_union_all = nullptr;
+	return res;
+}
+
+ASTPtr ASTSelectQuery::cloneImpl(bool traverse_union_all) const
+{
 	ASTSelectQuery * res = new ASTSelectQuery(*this);
 	ASTPtr ptr{res};
 
@@ -166,11 +192,30 @@ ASTPtr ASTSelectQuery::clone() const
 	CLONE(limit_length)
 	CLONE(settings)
 	CLONE(format)
-	CLONE(next_union_all)
 
 #undef CLONE
 
+	if (traverse_union_all)
+	{
+		if (next_union_all)
+		{
+			res->next_union_all = static_cast<const ASTSelectQuery *>(&*next_union_all)->cloneImpl(true);
+			res->children.push_back(res->next_union_all);
+		}
+	}
+	else
+		res->next_union_all = nullptr;
+
 	return ptr;
 }
+
+const IAST * ASTSelectQuery::getFormat() const
+{
+	const ASTSelectQuery * query = this;
+	while (!query->next_union_all.isNull())
+		query = static_cast<const ASTSelectQuery *>(query->next_union_all.get());
+	return query->format.get();
+}
+
 };
 

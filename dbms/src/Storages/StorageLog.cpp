@@ -212,7 +212,7 @@ Block LogBlockInputStream::readImpl()
 		if (*it == storage._table_column_name)
 			continue;
 
-		ColumnWithNameAndType column;
+		ColumnWithTypeAndName column;
 		column.name = *it;
 		column.type = storage.getDataTypeByName(*it);
 
@@ -233,7 +233,15 @@ Block LogBlockInputStream::readImpl()
 		else
 			column.column = column.type->createColumn();
 
-		readData(*it, *column.type, *column.column, max_rows_to_read, 0, read_offsets);
+		try
+		{
+			readData(*it, *column.type, *column.column, max_rows_to_read, 0, read_offsets);
+		}
+		catch (Exception & e)
+		{
+			e.addMessage("while reading column " + *it + " at " + storage.path + escapeForFileName(storage.name));
+			throw;
+		}
 
 		if (column.column->size())
 			res.insert(column);
@@ -248,7 +256,7 @@ Block LogBlockInputStream::readImpl()
 		if (rows > 0)
 		{
 			ColumnPtr column_ptr = ColumnConst<String> (rows, current_table.first, new DataTypeString).convertToFullColumn();
-			ColumnWithNameAndType column(column_ptr, new DataTypeString, storage._table_column_name);
+			ColumnWithTypeAndName column(column_ptr, new DataTypeString, storage._table_column_name);
 			res.insert(column);
 		}
 	}
@@ -333,7 +341,7 @@ void LogBlockOutputStream::write(const Block & block)
 	marks.reserve(storage.files.size());
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
-		const ColumnWithNameAndType & column = block.getByPosition(i);
+		const ColumnWithTypeAndName & column = block.getByPosition(i);
 		writeData(column.name, *column.type, *column.column, marks, offset_columns);
 	}
 	writeMarks(marks);

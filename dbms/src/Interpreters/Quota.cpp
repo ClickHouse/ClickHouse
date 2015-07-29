@@ -66,7 +66,7 @@ void QuotaForInterval::addQuery(time_t current_time, const String & quota_name)
 	__sync_fetch_and_add(&used.queries, 1);
 }
 
-void QuotaForInterval::addError(time_t current_time, const String & quota_name)
+void QuotaForInterval::addError(time_t current_time, const String & quota_name) noexcept
 {
 	__sync_fetch_and_add(&used.errors, 1);
 }
@@ -181,7 +181,7 @@ void QuotaForIntervals::addQuery(time_t current_time)
 		it->second.addQuery(current_time, name);
 }
 
-void QuotaForIntervals::addError(time_t current_time)
+void QuotaForIntervals::addError(time_t current_time) noexcept
 {
 	for (Container::reverse_iterator it = cont.rbegin(); it != cont.rend(); ++it)
 		it->second.addError(current_time, name);

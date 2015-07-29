@@ -8,6 +8,8 @@
 #include <DB/DataStreams/AddingConstColumnBlockInputStream.h>
 #include <DB/DataStreams/CreatingSetsBlockInputStream.h>
 #include <DB/DataStreams/NullBlockInputStream.h>
+#include <DB/DataStreams/SummingSortedBlockInputStream.h>
+#include <DB/DataStreams/AggregatingSortedBlockInputStream.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Common/VirtualColumnUtils.h>
 
@@ -24,7 +26,7 @@ MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(MergeTreeData & data_)
 static Block getBlockWithVirtualColumns(const MergeTreeData::DataPartsVector & parts)
 {
 	Block res;
-	ColumnWithNameAndType _part(new ColumnString, new DataTypeString, "_part");
+	ColumnWithTypeAndName _part(new ColumnString, new DataTypeString, "_part");
 
 	for (const auto & part : parts)
 		_part.column->insert(part->name);
@@ -165,20 +167,20 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 		UInt64 sampling_column_value_lower_limit;
 		UInt64 sampling_column_value_upper_limit;
-		UInt64 upper_limit = static_cast<UInt64>(static_cast<long double>(relative_sample_size) * sampling_column_max);
+		UInt64 upper_limit = static_cast<long double>(relative_sample_size) * sampling_column_max;
 
 		if (settings.parallel_replicas_count > 1)
 		{
-			sampling_column_value_lower_limit = (settings.parallel_replica_offset * upper_limit) / settings.parallel_replicas_count;
+			sampling_column_value_lower_limit = (static_cast<long double>(settings.parallel_replica_offset) / settings.parallel_replicas_count) * upper_limit;
 			if ((settings.parallel_replica_offset + 1) < settings.parallel_replicas_count)
-				sampling_column_value_upper_limit = ((settings.parallel_replica_offset + 1) * upper_limit) / settings.parallel_replicas_count;
+				sampling_column_value_upper_limit = (static_cast<long double>(settings.parallel_replica_offset + 1) / settings.parallel_replicas_count) * upper_limit;
 			else
-				sampling_column_value_upper_limit = upper_limit + 1;
+				sampling_column_value_upper_limit = (upper_limit < sampling_column_max) ? (upper_limit + 1) : upper_limit;
 		}
 		else
 		{
 			sampling_column_value_lower_limit = 0;
-			sampling_column_value_upper_limit = upper_limit + 1;
+			sampling_column_value_upper_limit = (upper_limit < sampling_column_max) ? (upper_limit + 1) : upper_limit;
 		}
 
 		/// Добавим условие, чтобы отсечь еще что-нибудь при повторном просмотре индекса.
@@ -228,7 +230,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 			filter_function = upper_filter_function;
 		}
 
-		filter_expression = ExpressionAnalyzer(filter_function, data.context, data.getColumnsList()).getActions(false);
+		filter_expression = ExpressionAnalyzer(filter_function, context, nullptr, data.getColumnsList()).getActions(false);
 
 		/// Добавим столбцы, нужные для sampling_expression.
 		std::vector<String> add_columns = filter_expression->getRequiredColumns();
@@ -245,7 +247,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	String prewhere_column;
 	if (select.prewhere_expression)
 	{
-		ExpressionAnalyzer analyzer(select.prewhere_expression, data.context, data.getColumnsList());
+		ExpressionAnalyzer analyzer(select.prewhere_expression, context, nullptr, data.getColumnsList());
 		prewhere_actions = analyzer.getActions(false);
 		prewhere_column = select.prewhere_expression->getColumnName();
 		SubqueriesForSets prewhere_subqueries = analyzer.getSubqueriesForSets();
@@ -292,7 +294,10 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 		/// Добавим столбцы, нужные для вычисления первичного ключа и знака.
 		std::vector<String> add_columns = data.getPrimaryExpression()->getRequiredColumns();
 		column_names_to_read.insert(column_names_to_read.end(), add_columns.begin(), add_columns.end());
-		column_names_to_read.push_back(data.sign_column);
+
+		if (!data.sign_column.empty())
+			column_names_to_read.push_back(data.sign_column);
+
 		std::sort(column_names_to_read.begin(), column_names_to_read.end());
 		column_names_to_read.erase(std::unique(column_names_to_read.begin(), column_names_to_read.end()), column_names_to_read.end());
 
@@ -305,7 +310,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 			prewhere_actions,
 			prewhere_column,
 			virt_column_names,
-			settings);
+			settings,
+			context);
 	}
 	else
 	{
@@ -340,8 +346,10 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 	const Names & virt_columns,
 	const Settings & settings)
 {
-	size_t min_marks_for_concurrent_read = (settings.merge_tree_min_rows_for_concurrent_read + data.index_granularity - 1) / data.index_granularity;
-	size_t max_marks_to_use_cache = (settings.merge_tree_max_rows_to_use_cache + data.index_granularity - 1) / data.index_granularity;
+	const size_t min_marks_for_concurrent_read =
+		(settings.merge_tree_min_rows_for_concurrent_read + data.index_granularity - 1) / data.index_granularity;
+	const size_t max_marks_to_use_cache =
+		(settings.merge_tree_max_rows_to_use_cache + data.index_granularity - 1) / data.index_granularity;
 
 	/// На всякий случай перемешаем куски.
 	std::random_shuffle(parts.begin(), parts.end());
@@ -354,12 +362,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 		/// Пусть отрезки будут перечислены справа налево, чтобы можно было выбрасывать самый левый отрезок с помощью pop_back().
 		std::reverse(parts[i].ranges.begin(), parts[i].ranges.end());
 
-		sum_marks_in_parts[i] = 0;
-		for (size_t j = 0; j < parts[i].ranges.size(); ++j)
-		{
-			MarkRange & range = parts[i].ranges[j];
+		for (const auto & range : parts[i].ranges)
 			sum_marks_in_parts[i] += range.end - range.begin;
-		}
+
 		sum_marks += sum_marks_in_parts[i];
 	}
 
@@ -370,7 +375,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 
 	if (sum_marks > 0)
 	{
-		size_t min_marks_per_thread = (sum_marks - 1) / threads + 1;
+		const size_t min_marks_per_thread = (sum_marks - 1) / threads + 1;
 
 		for (size_t i = 0; i < threads && !parts.empty(); ++i)
 		{
@@ -415,10 +420,11 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 							throw Exception("Unexpected end of ranges while spreading marks among threads", ErrorCodes::LOGICAL_ERROR);
 
 						MarkRange & range = part.ranges.back();
-						size_t marks_in_range = range.end - range.begin;
 
-						size_t marks_to_get_from_range = std::min(marks_in_range, need_marks);
-						ranges_to_get_from_part.push_back(MarkRange(range.begin, range.begin + marks_to_get_from_range));
+						const size_t marks_in_range = range.end - range.begin;
+						const size_t marks_to_get_from_range = std::min(marks_in_range, need_marks);
+
+						ranges_to_get_from_part.emplace_back(range.begin, range.begin + marks_to_get_from_range);
 						range.begin += marks_to_get_from_range;
 						marks_in_part -= marks_to_get_from_range;
 						need_marks -= marks_to_get_from_range;
@@ -462,7 +468,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 	ExpressionActionsPtr prewhere_actions,
 	const String & prewhere_column,
 	const Names & virt_columns,
-	const Settings & settings)
+	const Settings & settings,
+	const Context & context)
 {
 	size_t max_marks_to_use_cache = (settings.merge_tree_max_rows_to_use_cache + data.index_granularity - 1) / data.index_granularity;
 
@@ -474,11 +481,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 	if (sum_marks > max_marks_to_use_cache)
 		use_uncompressed_cache = false;
 
-	ExpressionActionsPtr sign_filter_expression;
-	String sign_filter_column;
-	createPositiveSignCondition(sign_filter_expression, sign_filter_column);
-
-	BlockInputStreams to_collapse;
+	BlockInputStreams to_merge;
 
 	for (size_t part_index = 0; part_index < parts.size(); ++part_index)
 	{
@@ -499,19 +502,56 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 					source_stream, new DataTypeUInt64, part.part_index_in_query, "_part_index");
 		}
 
-		to_collapse.push_back(new ExpressionBlockInputStream(source_stream, data.getPrimaryExpression()));
+		to_merge.push_back(new ExpressionBlockInputStream(source_stream, data.getPrimaryExpression()));
 	}
 
 	BlockInputStreams res;
-	if (to_collapse.size() == 1)
-		res.push_back(new FilterBlockInputStream(new ExpressionBlockInputStream(to_collapse[0], sign_filter_expression), sign_filter_column));
-	else if (to_collapse.size() > 1)
-		res.push_back(new CollapsingFinalBlockInputStream(to_collapse, data.getSortDescription(), data.sign_column));
+	if (to_merge.size() == 1)
+	{
+		if (!data.sign_column.empty())
+		{
+			ExpressionActionsPtr sign_filter_expression;
+			String sign_filter_column;
+
+			createPositiveSignCondition(sign_filter_expression, sign_filter_column, context);
+
+			res.push_back(new FilterBlockInputStream(new ExpressionBlockInputStream(to_merge[0], sign_filter_expression), sign_filter_column));
+		}
+		else
+			res = to_merge;
+	}
+	else if (to_merge.size() > 1)
+	{
+		BlockInputStreamPtr merged;
+
+		switch (data.mode)
+		{
+			case MergeTreeData::Ordinary:
+				throw Exception("Ordinary MergeTree doesn't support FINAL", ErrorCodes::LOGICAL_ERROR);
+
+			case MergeTreeData::Collapsing:
+				merged = new CollapsingFinalBlockInputStream(to_merge, data.getSortDescription(), data.sign_column);
+				break;
+
+			case MergeTreeData::Summing:
+				merged = new SummingSortedBlockInputStream(to_merge, data.getSortDescription(), data.columns_to_sum, max_block_size);
+				break;
+
+			case MergeTreeData::Aggregating:
+				merged = new AggregatingSortedBlockInputStream(to_merge, data.getSortDescription(), max_block_size);
+				break;
+
+			case MergeTreeData::Unsorted:
+				throw Exception("UnsortedMergeTree doesn't support FINAL", ErrorCodes::LOGICAL_ERROR);
+		}
+
+		res.push_back(merged);
+	}
 
 	return res;
 }
 
-void MergeTreeDataSelectExecutor::createPositiveSignCondition(ExpressionActionsPtr & out_expression, String & out_column)
+void MergeTreeDataSelectExecutor::createPositiveSignCondition(ExpressionActionsPtr & out_expression, String & out_column, const Context & context)
 {
 	ASTFunction * function = new ASTFunction;
 	ASTPtr function_ptr = function;
@@ -538,7 +578,7 @@ void MergeTreeDataSelectExecutor::createPositiveSignCondition(ExpressionActionsP
 	one->type = new DataTypeInt8;
 	one->value = Field(static_cast<Int64>(1));
 
-	out_expression = ExpressionAnalyzer(function_ptr, data.context, data.getColumnsList()).getActions(false);
+	out_expression = ExpressionAnalyzer(function_ptr, context, {}, data.getColumnsList()).getActions(false);
 	out_column = function->getColumnName();
 }
 

@@ -87,60 +87,10 @@ public:
 
 	bool hasHierarchy() const override { return hierarchical_attribute; }
 
-	id_t toParent(const id_t id) const override
-	{
-		PODArray<UInt64> ids{1, id};
-		PODArray<UInt64> out{1};
-		getItems<UInt64>(*hierarchical_attribute, ids, out);
-		return out.front();
-	}
-
 	void toParent(const PODArray<id_t> & ids, PODArray<id_t> & out) const override
 	{
 		getItems<UInt64>(*hierarchical_attribute, ids, out);
 	}
-
-#define DECLARE_INDIVIDUAL_GETTER(TYPE) \
-	TYPE get##TYPE(const std::string & attribute_name, const id_t id) const override\
-    {\
-		auto & attribute = getAttribute(attribute_name);\
-		if (attribute.type != AttributeUnderlyingType::TYPE)\
-			throw Exception{\
-				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
-				ErrorCodes::TYPE_MISMATCH\
-			};\
-		\
-		PODArray<UInt64> ids{1, id};\
-		PODArray<TYPE> out{1};\
-		getItems<TYPE>(attribute, ids, out);\
-        return out.front();\
-	}
-	DECLARE_INDIVIDUAL_GETTER(UInt8)
-	DECLARE_INDIVIDUAL_GETTER(UInt16)
-	DECLARE_INDIVIDUAL_GETTER(UInt32)
-	DECLARE_INDIVIDUAL_GETTER(UInt64)
-	DECLARE_INDIVIDUAL_GETTER(Int8)
-	DECLARE_INDIVIDUAL_GETTER(Int16)
-	DECLARE_INDIVIDUAL_GETTER(Int32)
-	DECLARE_INDIVIDUAL_GETTER(Int64)
-	DECLARE_INDIVIDUAL_GETTER(Float32)
-	DECLARE_INDIVIDUAL_GETTER(Float64)
-#undef DECLARE_INDIVIDUAL_GETTER
-	String getString(const std::string & attribute_name, const id_t id) const override
-	{
-		auto & attribute = getAttribute(attribute_name);
-		if (attribute.type != AttributeUnderlyingType::String)
-			throw Exception{
-				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-				ErrorCodes::TYPE_MISMATCH
-			};
-
-		PODArray<UInt64> ids{1, id};
-		ColumnString out;
-		getItems(attribute, ids, &out);
-
-        return String{out.getDataAt(0)};
-	};
 
 #define DECLARE_MULTIPLE_GETTER(TYPE)\
 	void get##TYPE(const std::string & attribute_name, const PODArray<id_t> & ids, PODArray<TYPE> & out) const override\

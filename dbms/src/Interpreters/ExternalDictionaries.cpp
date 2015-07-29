@@ -81,18 +81,18 @@ void ExternalDictionaries::reloadImpl(const bool throw_on_error)
 			{
 				const std::lock_guard<std::mutex> lock{dictionaries_mutex};
 
+				const auto & lifetime = dict_ptr->getLifetime();
+				std::uniform_int_distribution<std::uint64_t> distribution{lifetime.min_sec, lifetime.max_sec};
+				update_times[name] = std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
+
 				const auto dict_it = dictionaries.find(name);
 				if (dict_it->second.dict)
 					dict_it->second.dict->set(dict_ptr.release());
 				else
-					dict_it->second.dict = std::make_shared<MultiVersion<IDictionary>>(dict_ptr.release());
+					dict_it->second.dict = std::make_shared<MultiVersion<IDictionaryBase>>(dict_ptr.release());
 
 				/// erase stored exception on success
 				dict_it->second.exception = std::exception_ptr{};
-
-				const auto & lifetime = dict_ptr->getLifetime();
-				std::uniform_int_distribution<std::uint64_t> distribution{lifetime.min_sec, lifetime.max_sec};
-				update_times[name] = std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
 
 				recreated_failed_dictionaries.push_back(name);
 			}
@@ -273,7 +273,7 @@ void ExternalDictionaries::reloadFromFile(const std::string & config_path, const
 					/// add new dictionary or update an existing version
 					if (dict_it == std::end(dictionaries))
 						dictionaries.emplace(name, dictionary_info{
-							std::make_shared<MultiVersion<IDictionary>>(dict_ptr.release()),
+							std::make_shared<MultiVersion<IDictionaryBase>>(dict_ptr.release()),
 							config_path
 						});
 					else
@@ -281,7 +281,7 @@ void ExternalDictionaries::reloadFromFile(const std::string & config_path, const
 						if (dict_it->second.dict)
 							dict_it->second.dict->set(dict_ptr.release());
 						else
-							dict_it->second.dict = std::make_shared<MultiVersion<IDictionary>>(dict_ptr.release());
+							dict_it->second.dict = std::make_shared<MultiVersion<IDictionaryBase>>(dict_ptr.release());
 
 						/// erase stored exception on success
 						dict_it->second.exception = std::exception_ptr{};
@@ -331,7 +331,7 @@ void ExternalDictionaries::reloadFromFile(const std::string & config_path, const
 	}
 }
 
-MultiVersion<IDictionary>::Version ExternalDictionaries::getDictionary(const std::string & name) const
+MultiVersion<IDictionaryBase>::Version ExternalDictionaries::getDictionary(const std::string & name) const
 {
 	const std::lock_guard<std::mutex> lock{dictionaries_mutex};
 

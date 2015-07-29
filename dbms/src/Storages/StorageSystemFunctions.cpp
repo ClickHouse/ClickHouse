@@ -36,8 +36,8 @@ BlockInputStreams StorageSystemFunctions::read(
 	check(column_names);
 	processed_stage = QueryProcessingStage::FetchColumns;
 
-	ColumnWithNameAndType column_name{ new ColumnString, new DataTypeString, "name" };
-	ColumnWithNameAndType column_is_aggregate{ new ColumnUInt8, new DataTypeUInt8, "is_aggregate" };
+	ColumnWithTypeAndName column_name{ new ColumnString, new DataTypeString, "name" };
+	ColumnWithTypeAndName column_is_aggregate{ new ColumnUInt8, new DataTypeUInt8, "is_aggregate" };
 
 	const auto & functions = FunctionFactory::instance().functions;
 	for (const auto & it : functions)

@@ -54,7 +54,7 @@ Block InterpreterInsertQuery::getSampleBlock()
 		if (!table_sample.has(current_name))
 			throw Exception("No such column " + current_name + " in table " + query.table, ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
-		ColumnWithNameAndType col;
+		ColumnWithTypeAndName col;
 		col.name = current_name;
 		col.type = table_sample.getByName(current_name).type;
 		col.column = col.type->createColumn();
@@ -62,69 +62,6 @@ Block InterpreterInsertQuery::getSampleBlock()
 	}
 
 	return res;
-}
-
-void InterpreterInsertQuery::execute(ReadBuffer * remaining_data_istr)
-{
-	ASTInsertQuery & query = typeid_cast<ASTInsertQuery &>(*query_ptr);
-	StoragePtr table = getTable();
-
-	auto table_lock = table->lockStructure(true);
-
-	/** @note looks suspicious, first we ask to create block from NamesAndTypesList (internally in ITableDeclaration),
-	 *  then we compose the same list from the resulting block */
-	NamesAndTypesListPtr required_columns = new NamesAndTypesList(table->getColumnsList());
-
-	/// Создаем кортеж из нескольких стримов, в которые будем писать данные.
-	BlockOutputStreamPtr out{
-		new ProhibitColumnsBlockOutputStream{
-			new AddingDefaultBlockOutputStream{
-				new MaterializingBlockOutputStream{
-					new PushingToViewsBlockOutputStream{query.database, query.table, context, query_ptr}
-				},
-				required_columns, table->column_defaults, context, context.getSettingsRef().strict_insert_defaults
-			},
-			table->materialized_columns
-		}
-	};
-
-	/// Какой тип запроса: INSERT VALUES | INSERT FORMAT | INSERT SELECT?
-	if (!query.select)
-	{
-
-		String format = query.format;
-		if (format.empty())
-			format = "Values";
-
-		/// Данные могут содержаться в распарсенной (query.data) и ещё не распарсенной (remaining_data_istr) части запроса.
-
-		ConcatReadBuffer::ReadBuffers buffers;
-		ReadBuffer buf1(const_cast<char *>(query.data), query.data ? query.end - query.data : 0, 0);
-
-		if (query.data)
-			buffers.push_back(&buf1);
-		buffers.push_back(remaining_data_istr);
-
-		/** NOTE Нельзя читать из remaining_data_istr до того, как прочтём всё между query.data и query.end.
-		  * - потому что query.data может ссылаться на кусок памяти, использующийся в качестве буфера в remaining_data_istr.
-		  */
-
-		ConcatReadBuffer istr(buffers);
-		Block sample = getSampleBlock();
-
-		BlockInputStreamPtr in{
-			context.getFormatFactory().getInput(
-				format, istr, sample, context.getSettings().max_insert_block_size)};
-
-		copyData(*in, *out);
-	}
-	else
-	{
-		InterpreterSelectQuery interpreter_select(query.select, context);
-		BlockInputStreamPtr in{interpreter_select.execute()};
-
-		copyData(*in, *out);
-	}
 }
 
 
@@ -161,8 +98,9 @@ BlockIO InterpreterInsertQuery::execute()
 	else
 	{
 		InterpreterSelectQuery interpreter_select{query.select, context};
-		BlockInputStreamPtr in{interpreter_select.execute()};
+		BlockInputStreamPtr in{interpreter_select.execute().in};
 		res.in = new NullAndDoCopyBlockInputStream{in, out};
+		res.in_sample = interpreter_select.getSampleBlock();
 	}
 
 	return res;

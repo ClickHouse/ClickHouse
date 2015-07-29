@@ -76,7 +76,7 @@ void NativeBlockOutputStream::write(const Block & block)
 
 	for (size_t i = 0; i < columns; ++i)
 	{
-		const ColumnWithNameAndType & column = block.getByPosition(i);
+		const ColumnWithTypeAndName & column = block.getByPosition(i);
 
 		/// Имя
 		writeStringBinary(column.name, ostr);

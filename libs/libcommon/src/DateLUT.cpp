@@ -1,57 +1,109 @@
-#include <cstring>
 #include <Yandex/DateLUT.h>
-#include <Poco/Exception.h>
 
+#include <unicode/timezone.h>
+#include <unicode/unistr.h>
 
 DateLUT::DateLUT()
 {
-	size_t i = 0;
-	time_t start_of_day = DATE_LUT_MIN;
+	using namespace icu;
 
-	do
+	std::unique_ptr<TimeZone> tz(TimeZone::createDefault());
+	if (tz == nullptr)
+		throw Poco::Exception("Failed to determine the host time zone.");
+
+	UnicodeString u_out;
+	tz->getID(u_out);
+	std::string default_time_zone;
+	u_out.toUTF8String(default_time_zone);
+
+	std::unique_ptr<StringEnumeration> time_zone_ids(TimeZone::createEnumeration());
+	if (time_zone_ids == nullptr)
+		throw Poco::Exception("Failed to query the list of time zones.");
+
+	UErrorCode status = U_ZERO_ERROR;
+	const UnicodeString * zone_id = time_zone_ids->snext(status);
+	if (zone_id == nullptr)
+		throw Poco::Exception("No time zone available.");
+
+	std::vector<UnicodeString> time_zones;
+	while ((zone_id != nullptr) && (status == U_ZERO_ERROR))
 	{
-		if (i > DATE_LUT_MAX_DAY_NUM)
-			throw Poco::Exception("Cannot create DateLUT: i > DATE_LUT_MAX_DAY_NUM.");
-
-		tm time_descr;
-		localtime_r(&start_of_day, &time_descr);
-
-		time_descr.tm_hour = 0;
-		time_descr.tm_min = 0;
-		time_descr.tm_sec = 0;
-		time_descr.tm_isdst = -1;
-
-		start_of_day = mktime(&time_descr);
-
-		Values & values = lut[i];
-
-		values.year = time_descr.tm_year + 1900;
-		values.month = time_descr.tm_mon + 1;
-		values.day_of_week = time_descr.tm_wday == 0 ? 7 : time_descr.tm_wday;
-		values.day_of_month = time_descr.tm_mday;
-
-		values.date = start_of_day;
-
-		/// Переходим на следующий день.
-		++time_descr.tm_mday;
-
-		/** Обратите внимание, что в 1981-1984 году в России,
-		  * 1 апреля начиналось в час ночи, а не в полночь.
-		  * Если здесь оставить час равным нулю, то прибавление единицы к дню, привело бы к 23 часам того же дня.
-		  */
-		time_descr.tm_hour = 12;
-		start_of_day = mktime(&time_descr);
-
-		++i;
-	} while (start_of_day <= DATE_LUT_MAX);
-
-	/// Заполняем lookup таблицу для годов
-	memset(years_lut, 0, DATE_LUT_YEARS * sizeof(years_lut[0]));
-	for (size_t day = 0; day < i && lut[day].year <= DATE_LUT_MAX_YEAR; ++day)
-	{
-		if (lut[day].month == 1 && lut[day].day_of_month == 1)
-			years_lut[lut[day].year - DATE_LUT_MIN_YEAR] = day;
+		time_zones.push_back(*zone_id);
+		zone_id = time_zone_ids->snext(status);
 	}
 
-	offset_at_start_of_epoch = 86400 - lut[findIndex(86400)].date;
+	size_t group_id = 0;
+
+	for (const auto & time_zone : time_zones)
+	{
+		const UnicodeString & u_group_name = TimeZone::getEquivalentID(time_zone, 0);
+		std::string group_name;
+
+		if (u_group_name.isEmpty())
+		{
+			time_zone.toUTF8String(group_name);
+
+			auto res = time_zone_to_group.insert(std::make_pair(group_name, group_id));
+			if (!res.second)
+				throw Poco::Exception("Failed to initialize time zone information.");
+			++group_id;
+		}
+		else
+		{
+			u_group_name.toUTF8String(group_name);
+
+			auto it = time_zone_to_group.find(group_name);
+			if (it == time_zone_to_group.end())
+			{
+				auto count = TimeZone::countEquivalentIDs(time_zone);
+				if (count == 0)
+					throw Poco::Exception("Inconsistent time zone information.");
+
+				for (auto i = 0; i < count; ++i)
+				{
+					const UnicodeString & u_name = TimeZone::getEquivalentID(time_zone, i);
+					std::string name;
+					u_name.toUTF8String(name);
+					auto res = time_zone_to_group.insert(std::make_pair(name, group_id));
+					if (!res.second)
+						throw Poco::Exception("Failed to initialize time zone information.");
+				}
+				++group_id;
+			}
+		}
+	}
+
+	if (group_id == 0)
+		throw Poco::Exception("Could not find any time zone information.");
+
+	date_lut_impl_list = std::make_unique<DateLUTImplList>(group_id);
+
+	/// Инициализация указателя на реализацию для часового пояса по-умолчанию.
+	auto it = time_zone_to_group.find(default_time_zone);
+	if (it == time_zone_to_group.end())
+		throw Poco::Exception("Failed to get default time zone information.");
+	default_group_id = it->second;
+
+	default_date_lut_impl = new DateLUTImpl(default_time_zone);
+	auto & wrapper = (*date_lut_impl_list)[default_group_id];
+	wrapper.store(default_date_lut_impl, std::memory_order_seq_cst);
+}
+
+const DateLUTImpl & DateLUT::getImplementation(const std::string & time_zone, size_t group_id) const
+{
+	auto & wrapper = (*date_lut_impl_list)[group_id];
+
+	DateLUTImpl * tmp = wrapper.load(std::memory_order_acquire);
+	if (tmp == nullptr)
+	{
+		std::lock_guard<std::mutex> guard(mutex);
+		tmp = wrapper.load(std::memory_order_relaxed);
+		if (tmp == nullptr)
+		{
+			tmp = new DateLUTImpl(time_zone);
+			wrapper.store(tmp, std::memory_order_release);
+		}
+	}
+
+	return *tmp;
 }

@@ -20,7 +20,6 @@
 #include <DB/Columns/ColumnSet.h>
 #include <DB/Columns/ColumnTuple.h>
 #include <DB/Columns/ColumnArray.h>
-#include <DB/Columns/ColumnReplicated.h>
 #include <DB/Columns/ColumnAggregateFunction.h>
 #include <DB/Common/UnicodeBar.h>
 #include <DB/Functions/IFunction.h>
@@ -51,9 +50,8 @@ namespace DB
   * arrayJoin(arr)	- особая функция - выполнить её напрямую нельзя;
   *                   используется только чтобы получить тип результата соответствующего выражения.
   *
-  * replicate(x, arr) - копирует x столько раз, сколько элементов в массиве arr;
-  * 					например: replicate(1, ['a', 'b', 'c']) = 1, 1, 1.
-  *                     не предназначена для пользователя, а используется только как prerequisites для функций высшего порядка.
+  * replicate(x, arr) - создаёт массив такого же размера как arr, все элементы которого равны x;
+  * 					например: replicate(1, ['a', 'b', 'c']) = [1, 1, 1].
   *
   * sleep(n)		- спит n секунд каждый блок.
   *
@@ -455,7 +453,7 @@ public:
 		return name;
 	}
 
-	void getReturnTypeAndPrerequisites(const ColumnsWithNameAndType & arguments,
+	void getReturnTypeAndPrerequisites(const ColumnsWithTypeAndName & arguments,
 										DataTypePtr & out_return_type,
 										ExpressionActions::Actions & out_prerequisites)
 	{
@@ -536,6 +534,36 @@ public:
 };
 
 
+class FunctionIdentity : public IFunction
+{
+public:
+	static constexpr auto name = "identity";
+	static IFunction * create(const Context & context) { return new FunctionIdentity; }
+
+	/// Получить имя функции.
+	String getName() const
+	{
+		return name;
+	}
+
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnType(const DataTypes & arguments) const
+	{
+		if (arguments.size() != 1)
+			throw Exception("Function " + getName() + " requires exactly one argument.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		return arguments.front()->clone();
+	}
+
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		block.getByPosition(result).column = block.getByPosition(arguments.front()).column;
+	}
+};
+
+
 class FunctionArrayJoin : public IFunction
 {
 public:
@@ -570,17 +598,14 @@ public:
 };
 
 
-/** Размножает столбец (первый аргумент) по количеству элементов в массиве (втором аргументе).
-  * Не предназначена для внешнего использования.
-  * Так как возвращаемый столбец будет иметь несовпадающий размер с исходными,
-  *  то результат не может быть потом использован в том же блоке, что и аргументы.
+/** Создаёт массив, размножая столбец (первый аргумент) по количеству элементов в массиве (втором аргументе).
   * Используется только в качестве prerequisites для функций высшего порядка.
   */
 class FunctionReplicate : public IFunction
 {
+public:
 	static constexpr auto name = "replicate";
 	static IFunction * create(const Context & context) { return new FunctionReplicate; }
-
 
 	/// Получить имя функции.
 	String getName() const
@@ -600,7 +625,7 @@ class FunctionReplicate : public IFunction
 		if (!array_type)
 			throw Exception("Second argument for function " + getName() + " must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return arguments[0]->clone();
+		return new DataTypeArray(arguments[0]->clone());
 	}
 
 	/// Выполнить функцию над блоком.
@@ -620,7 +645,9 @@ class FunctionReplicate : public IFunction
 			array_column = typeid_cast<ColumnArray *>(&*temp_column);
 		}
 
-		block.getByPosition(result).column = new ColumnReplicated(first_column->size(), first_column->replicate(array_column->getOffsets()));
+		block.getByPosition(result).column = new ColumnArray(
+			first_column->replicate(array_column->getOffsets()),
+			array_column->getOffsetsColumn());
 	}
 };
 

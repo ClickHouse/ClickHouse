@@ -14,19 +14,19 @@ using Poco::SharedPtr;
 /** Тип данных для представления столбца вместе с его типом и именем в оперативке.
   */
 
-struct ColumnWithNameAndType
+struct ColumnWithTypeAndName
 {
 	ColumnPtr column;
 	DataTypePtr type;
 	String name;
-	
-	ColumnWithNameAndType() {}
-	ColumnWithNameAndType(const ColumnPtr & column_, const DataTypePtr & type_, const String name_)
+
+	ColumnWithTypeAndName() {}
+	ColumnWithTypeAndName(const ColumnPtr & column_, const DataTypePtr & type_, const String name_)
 		: column(column_), type(type_), name(name_) {}
 
-	ColumnWithNameAndType cloneEmpty() const
+	ColumnWithTypeAndName cloneEmpty() const
 	{
-		ColumnWithNameAndType res;
+		ColumnWithTypeAndName res;
 
 		res.name = name;
 		res.type = type->clone();

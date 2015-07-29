@@ -35,15 +35,16 @@ StoragePtr StorageChunks::create(
 
 void StorageChunks::addReference()
 {
-	reference_counter.add(1, false);
+	std::lock_guard<std::mutex> lock(refcount_mutex);
+	++refcount;
 }
 
 void StorageChunks::removeReference()
 {
-	Int64 c = reference_counter.add(-1, false);
-	if (c < 0)
-		throw Exception("Negative refcount on table " + name, ErrorCodes::NEGATIVE_REFCOUNT);
-	if (c == 0)
+	std::lock_guard<std::mutex> lock(refcount_mutex);
+
+	--refcount;
+	if (refcount == 0)
 		dropThis();
 }
 
@@ -88,7 +89,7 @@ BlockInputStreams StorageChunks::read(
 Block StorageChunks::getBlockWithVirtualColumns() const
 {
 	Block res;
-	ColumnWithNameAndType _table(new ColumnString, new DataTypeString, _table_column_name);
+	ColumnWithTypeAndName _table(new ColumnString, new DataTypeString, _table_column_name);
 
 	for (const auto & it : chunk_names)
 		_table.column->insert(it);
@@ -157,13 +158,9 @@ StorageChunks::StorageChunks(
 			   materialized_columns_, alias_columns_, column_defaults_,
 			   context_.getSettings().max_compress_block_size),
 	database_name(database_name_),
-	reference_counter(path_ + escapeForFileName(name_) + "/refcount.txt"),
 	context(context_),
 	log(&Logger::get("StorageChunks"))
 {
-	if (!attach)
-		reference_counter.add(1, true);
-
 	_table_column_name = "_table" + VirtualColumnUtils::chooseSuffix(getColumnsList(), "_table");
 
 	try
@@ -187,11 +184,12 @@ StorageChunks::StorageChunks(
 		{
 			if (context.isTableExist(database_name, it->first))
 			{
-				LOG_WARNING(log, "Chunk " << it->first << " exists in more than one Chunks tables.");
+				LOG_WARNING(log, "Chunk " << it->first << " already exists.");
 				context.detachTable(database_name, it->first);
 			}
 
 			context.addTable(database_name, it->first, StorageChunkRef::create(it->first, context, database_name, name, true));
+			++refcount;
 		}
 	}
 }

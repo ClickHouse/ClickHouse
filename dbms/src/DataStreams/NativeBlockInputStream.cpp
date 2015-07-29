@@ -62,7 +62,7 @@ Block NativeBlockInputStream::readImpl()
 
 	for (size_t i = 0; i < columns; ++i)
 	{
-		ColumnWithNameAndType column;
+		ColumnWithTypeAndName column;
 
 		/// Имя
 		readStringBinary(column.name, istr);

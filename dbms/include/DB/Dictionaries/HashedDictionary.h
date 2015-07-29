@@ -10,6 +10,7 @@
 #include <memory>
 #include <tuple>
 
+
 namespace DB
 {
 
@@ -78,65 +79,9 @@ public:
 
 	bool hasHierarchy() const override { return hierarchical_attribute; }
 
-	id_t toParent(const id_t id) const override
-	{
-		const auto attr = hierarchical_attribute;
-		const auto & map = *std::get<std::unique_ptr<HashMap<UInt64, UInt64>>>(attr->maps);
-		const auto it = map.find(id);
-
-		query_count.fetch_add(1, std::memory_order_relaxed);
-
-		return it != map.end() ? it->second : std::get<UInt64>(attr->null_values);
-	}
-
 	void toParent(const PODArray<id_t> & ids, PODArray<id_t> & out) const override
 	{
 		getItems<UInt64>(*hierarchical_attribute, ids, out);
-	}
-
-#define DECLARE_INDIVIDUAL_GETTER(TYPE) \
-	TYPE get##TYPE(const std::string & attribute_name, const id_t id) const override\
-	{\
-		const auto & attribute = getAttribute(attribute_name);\
-		if (attribute.type != AttributeUnderlyingType::TYPE)\
-			throw Exception{\
-				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
-				ErrorCodes::TYPE_MISMATCH\
-			};\
-		\
-		const auto & map = *std::get<std::unique_ptr<HashMap<UInt64, TYPE>>>(attribute.maps);\
-		const auto it = map.find(id);\
-		\
-		query_count.fetch_add(1, std::memory_order_relaxed);\
-		\
-		return it != map.end() ? TYPE{it->second} : std::get<TYPE>(attribute.null_values);\
-	}
-	DECLARE_INDIVIDUAL_GETTER(UInt8)
-	DECLARE_INDIVIDUAL_GETTER(UInt16)
-	DECLARE_INDIVIDUAL_GETTER(UInt32)
-	DECLARE_INDIVIDUAL_GETTER(UInt64)
-	DECLARE_INDIVIDUAL_GETTER(Int8)
-	DECLARE_INDIVIDUAL_GETTER(Int16)
-	DECLARE_INDIVIDUAL_GETTER(Int32)
-	DECLARE_INDIVIDUAL_GETTER(Int64)
-	DECLARE_INDIVIDUAL_GETTER(Float32)
-	DECLARE_INDIVIDUAL_GETTER(Float64)
-#undef DECLARE_INDIVIDUAL_GETTER
-	String getString(const std::string & attribute_name, const id_t id) const override
-	{
-		const auto & attribute = getAttribute(attribute_name);
-		if (attribute.type != AttributeUnderlyingType::String)
-			throw Exception{
-				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-				ErrorCodes::TYPE_MISMATCH
-			};
-
-		const auto & map = *std::get<std::unique_ptr<HashMap<UInt64, StringRef>>>(attribute.maps);
-		const auto it = map.find(id);
-
-		query_count.fetch_add(1, std::memory_order_relaxed);
-
-		return it != map.end() ? String{it->second} : std::get<String>(attribute.null_values);
 	}
 
 #define DECLARE_MULTIPLE_GETTER(TYPE)\

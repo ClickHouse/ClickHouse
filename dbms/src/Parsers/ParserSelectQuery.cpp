@@ -8,7 +8,6 @@
 #include <DB/Parsers/ParserSetQuery.h>
 #include <DB/Parsers/ParserSelectQuery.h>
 
-
 namespace DB
 {
 
@@ -24,6 +23,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 	ParserString s_select("SELECT", true, true);
 	ParserString s_distinct("DISTINCT", true, true);
 	ParserString s_from("FROM", true, true);
+	ParserString s_left("LEFT", true, true);
 	ParserString s_array("ARRAY", true, true);
 	ParserString s_join("JOIN", true, true);
 	ParserString s_using("USING", true, true);
@@ -167,8 +167,22 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 	if (!parse_final_and_sample())
 		return false;
 
-	/// ARRAY JOIN expr list
-	if (s_array.ignore(pos, end, max_parsed_pos, expected))
+	/// [LEFT] ARRAY JOIN expr list
+	Pos saved_pos = pos;
+	bool has_array_join = false;
+	if (s_left.ignore(pos, end, max_parsed_pos, expected) && ws.ignore(pos, end) && s_array.ignore(pos, end, max_parsed_pos, expected))
+	{
+		select_query->array_join_is_left = true;
+		has_array_join = true;
+	}
+	else
+	{
+		pos = saved_pos;
+		if (s_array.ignore(pos, end, max_parsed_pos, expected))
+			has_array_join = true;
+	}
+
+	if (has_array_join)
 	{
 		ws.ignore(pos, end);
 
@@ -183,7 +197,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 		ws.ignore(pos, end);
 	}
 
-	/// [GLOBAL] ANY|ALL INNER|LEFT JOIN (subquery) USING tuple
+	/// [GLOBAL] [ANY|ALL] INNER|LEFT|RIGHT|FULL|CROSS [OUTER] JOIN (subquery)|table_name USING tuple
 	join.parse(pos, end, select_query->join, max_parsed_pos, expected);
 
 	if (!parse_final_and_sample())
@@ -296,6 +310,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 		ws.ignore(pos, end);
 	}
 
+	bool has_format = false;
+
 	/// FORMAT format_name
 	if (s_format.ignore(pos, end, max_parsed_pos, expected))
 	{
@@ -308,6 +324,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 		typeid_cast<ASTIdentifier &>(*select_query->format).kind = ASTIdentifier::Format;
 
 		ws.ignore(pos, end);
+		has_format = true;
 	}
 
 	// UNION ALL select query
@@ -317,9 +334,18 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 
 		if (s_all.ignore(pos, end, max_parsed_pos, expected))
 		{
+			if (has_format)
+			{
+				/// FORMAT может быть задан только в последнем запросе цепочки UNION ALL.
+				expected = "FORMAT only in the last SELECT of the UNION ALL chain";
+				return false;
+			}
+
 			ParserSelectQuery select_p;
 			if (!select_p.parse(pos, end, select_query->next_union_all, max_parsed_pos, expected))
 				return false;
+			auto next_select_query = static_cast<ASTSelectQuery *>(&*select_query->next_union_all);
+			next_select_query->prev_union_all = node;
 		}
 		else
 			return false;

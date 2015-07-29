@@ -6,6 +6,7 @@
 #include <DB/DataTypes/DataTypeNested.h>
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/Functions/IFunction.h>
+#include <DB/Functions/FunctionsArray.h>
 #include <set>
 
 
@@ -61,7 +62,7 @@ ExpressionActions::Actions ExpressionAction::getPrerequisites(Block & sample_blo
 		if (sample_block.has(result_name))
 			throw Exception("Column '" + result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
 
-		ColumnsWithNameAndType arguments(argument_names.size());
+		ColumnsWithTypeAndName arguments(argument_names.size());
 		for (size_t i = 0; i < argument_names.size(); ++i)
 		{
 			if (!sample_block.has(argument_names[i]))
@@ -126,7 +127,7 @@ void ExpressionAction::prepare(Block & sample_block)
 			{
 				size_t result_position = sample_block.columns();
 
-				ColumnWithNameAndType new_column;
+				ColumnWithTypeAndName new_column;
 				new_column.name = result_name;
 				new_column.type = result_type;
 				sample_block.insert(new_column);
@@ -134,13 +135,13 @@ void ExpressionAction::prepare(Block & sample_block)
 				function->execute(sample_block, arguments, prerequisites, result_position);
 
 				/// Если получилась не константа, на всякий случай будем считать результат неизвестным.
-				ColumnWithNameAndType & col = sample_block.getByPosition(result_position);
+				ColumnWithTypeAndName & col = sample_block.getByPosition(result_position);
 				if (!col.column->isConst())
 					col.column = nullptr;
 			}
 			else
 			{
-				sample_block.insert(ColumnWithNameAndType(nullptr, result_type, result_name));
+				sample_block.insert(ColumnWithTypeAndName(nullptr, result_type, result_name));
 			}
 
 			break;
@@ -150,7 +151,7 @@ void ExpressionAction::prepare(Block & sample_block)
 		{
 			for (NameSet::iterator it = array_joined_columns.begin(); it != array_joined_columns.end(); ++it)
 			{
-				ColumnWithNameAndType & current = sample_block.getByName(*it);
+				ColumnWithTypeAndName & current = sample_block.getByName(*it);
 				const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(&*current.type);
 				if (!array_type)
 					throw Exception("ARRAY JOIN requires array argument", ErrorCodes::TYPE_MISMATCH);
@@ -164,7 +165,7 @@ void ExpressionAction::prepare(Block & sample_block)
 		case JOIN:
 		{
 			for (const auto & col : columns_added_by_join)
-				sample_block.insert(ColumnWithNameAndType(nullptr, col.type, col.name));
+				sample_block.insert(ColumnWithTypeAndName(nullptr, col.type, col.name));
 
 			break;
 		}
@@ -177,7 +178,7 @@ void ExpressionAction::prepare(Block & sample_block)
 			{
 				const std::string & name = projection[i].first;
 				const std::string & alias = projection[i].second;
-				ColumnWithNameAndType column = sample_block.getByName(name);
+				ColumnWithTypeAndName column = sample_block.getByName(name);
 				if (alias != "")
 					column.name = alias;
 				new_block.insert(column);
@@ -198,14 +199,14 @@ void ExpressionAction::prepare(Block & sample_block)
 			if (sample_block.has(result_name))
 				throw Exception("Column '" + result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
 
-			sample_block.insert(ColumnWithNameAndType(added_column, result_type, result_name));
+			sample_block.insert(ColumnWithTypeAndName(added_column, result_type, result_name));
 			break;
 		}
 
 		case COPY_COLUMN:
 		{
 			result_type = sample_block.getByName(source_name).type;
-			sample_block.insert(ColumnWithNameAndType(sample_block.getByName(source_name).column, result_type, result_name));
+			sample_block.insert(ColumnWithTypeAndName(sample_block.getByName(source_name).column, result_type, result_name));
 			break;
 		}
 
@@ -246,7 +247,7 @@ void ExpressionAction::execute(Block & block) const
 				prerequisites[i] = block.getPositionByName(prerequisite_names[i]);
 			}
 
-			ColumnWithNameAndType new_column;
+			ColumnWithTypeAndName new_column;
 			new_column.name = result_name;
 			new_column.type = result_type;
 			block.insert(new_column);
@@ -268,17 +269,36 @@ void ExpressionAction::execute(Block & block) const
 			if (!any_array)
 				throw Exception("ARRAY JOIN of not array: " + *array_joined_columns.begin(), ErrorCodes::TYPE_MISMATCH);
 
+			/// Если LEFT ARRAY JOIN, то создаём столбцы, в которых пустые массивы заменены на массивы с одним элементом - значением по-умолчанию.
+			std::map<String, ColumnPtr> non_empty_array_columns;
+			if (array_join_is_left)
+			{
+				for (const auto & name : array_joined_columns)
+				{
+					auto src_col = block.getByName(name);
+
+					Block tmp_block{src_col, {{}, src_col.type, {}}};
+
+					FunctionEmptyArrayToSingle().execute(tmp_block, {0}, 1);
+					non_empty_array_columns[name] = tmp_block.getByPosition(1).column;
+				}
+
+				any_array_ptr = non_empty_array_columns.begin()->second;
+				any_array = typeid_cast<const ColumnArray *>(&*any_array_ptr);
+			}
+
 			size_t columns = block.columns();
 			for (size_t i = 0; i < columns; ++i)
 			{
-				ColumnWithNameAndType & current = block.getByPosition(i);
+				ColumnWithTypeAndName & current = block.getByPosition(i);
 
 				if (array_joined_columns.count(current.name))
 				{
 					if (!typeid_cast<const DataTypeArray *>(&*current.type))
 						throw Exception("ARRAY JOIN of not array: " + current.name, ErrorCodes::TYPE_MISMATCH);
 
-					ColumnPtr array_ptr = current.column;
+					ColumnPtr array_ptr = array_join_is_left ? non_empty_array_columns[current.name] : current.column;
+
 					if (array_ptr->isConst())
 						array_ptr = dynamic_cast<const IColumnConst &>(*array_ptr).convertToFullColumn();
 
@@ -312,7 +332,7 @@ void ExpressionAction::execute(Block & block) const
 			{
 				const std::string & name = projection[i].first;
 				const std::string & alias = projection[i].second;
-				ColumnWithNameAndType column = block.getByName(name);
+				ColumnWithTypeAndName column = block.getByName(name);
 				if (alias != "")
 					column.name = alias;
 				new_block.insert(column);
@@ -328,11 +348,11 @@ void ExpressionAction::execute(Block & block) const
 			break;
 
 		case ADD_COLUMN:
-			block.insert(ColumnWithNameAndType(added_column->cloneResized(block.rowsInFirstColumn()), result_type, result_name));
+			block.insert(ColumnWithTypeAndName(added_column->cloneResized(block.rowsInFirstColumn()), result_type, result_name));
 			break;
 
 		case COPY_COLUMN:
-			block.insert(ColumnWithNameAndType(block.getByName(source_name).column, result_type, result_name));
+			block.insert(ColumnWithTypeAndName(block.getByName(source_name).column, result_type, result_name));
 			break;
 
 		default:
@@ -379,7 +399,7 @@ std::string ExpressionAction::toString() const
 			break;
 
 		case ARRAY_JOIN:
-			ss << "ARRAY JOIN ";
+			ss << (array_join_is_left ? "LEFT " : "") << "ARRAY JOIN ";
 			for (NameSet::const_iterator it = array_joined_columns.begin(); it != array_joined_columns.end(); ++it)
 			{
 				if (it != array_joined_columns.begin())
@@ -446,7 +466,7 @@ void ExpressionActions::checkLimits(Block & block) const
 	}
 }
 
-void ExpressionActions::addInput(const ColumnWithNameAndType & column)
+void ExpressionActions::addInput(const ColumnWithTypeAndName & column)
 {
 	input_columns.emplace_back(column.name, column.type);
 	sample_block.insert(column);
@@ -454,7 +474,7 @@ void ExpressionActions::addInput(const ColumnWithNameAndType & column)
 
 void ExpressionActions::addInput(const NameAndTypePair & column)
 {
-	addInput(ColumnWithNameAndType(nullptr, column.type, column.name));
+	addInput(ColumnWithTypeAndName(nullptr, column.type, column.name));
 }
 
 void ExpressionActions::add(const ExpressionAction & action, Names & out_new_columns)
@@ -573,7 +593,7 @@ void ExpressionActions::executeOnTotals(Block & block) const
 		{
 			for (const auto & name_and_type : input_columns)
 			{
-				ColumnWithNameAndType elem(name_and_type.type->createColumn(), name_and_type.type, name_and_type.name);
+				ColumnWithTypeAndName elem(name_and_type.type->createColumn(), name_and_type.type, name_and_type.name);
 				elem.column->insertDefault();
 				block.insert(elem);
 			}
@@ -761,7 +781,7 @@ std::string ExpressionActions::getID() const
 			ss << actions[i].result_name;
 		if (actions[i].type == ExpressionAction::ARRAY_JOIN)
 		{
-			ss << "{";
+			ss << (actions[i].array_join_is_left ? "LEFT ARRAY JOIN" : "ARRAY JOIN") << "{";
 			for (NameSet::const_iterator it = actions[i].array_joined_columns.begin();
 				 it != actions[i].array_joined_columns.end(); ++it)
 			{
@@ -903,7 +923,7 @@ BlockInputStreamPtr ExpressionActions::createStreamWithNonJoinedDataIfFullOrRigh
 		{
 			Block left_sample_block;
 			for (const auto & input_elem : input_columns)
-				left_sample_block.insert(ColumnWithNameAndType(nullptr, input_elem.type, input_elem.name));
+				left_sample_block.insert(ColumnWithTypeAndName(nullptr, input_elem.type, input_elem.name));
 
 			return action.join->createStreamWithNonJoinedRows(left_sample_block, max_block_size);
 		}
@@ -918,7 +938,7 @@ void ExpressionActionsChain::addStep()
 	if (steps.empty())
 		throw Exception("Cannot add action to empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
 
-	ColumnsWithNameAndType columns = steps.back().actions->getSampleBlock().getColumns();
+	ColumnsWithTypeAndName columns = steps.back().actions->getSampleBlock().getColumns();
 	steps.push_back(Step(new ExpressionActions(columns, settings)));
 }
 

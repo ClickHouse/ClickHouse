@@ -14,10 +14,10 @@ class FormatFactory
 {
 public:
 	BlockInputStreamPtr getInput(const String & name, ReadBuffer & buf,
-		Block & sample, size_t max_block_size) const;
+		const Block & sample, size_t max_block_size) const;
 
 	BlockOutputStreamPtr getOutput(const String & name, WriteBuffer & buf,
-		Block & sample) const;
+		const Block & sample) const;
 };
 
 }

@@ -28,12 +28,14 @@ using Poco::SharedPtr;
 class UnionBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	UnionBlockInputStream(BlockInputStreams inputs, size_t max_threads) :
+	UnionBlockInputStream(BlockInputStreams inputs, BlockInputStreamPtr additional_input_at_end, size_t max_threads) :
 		output_queue(std::min(inputs.size(), max_threads)),
 		handler(*this),
-		processor(inputs, max_threads, handler)
+		processor(inputs, additional_input_at_end, max_threads, handler)
 	{
 		children = inputs;
+		if (additional_input_at_end)
+			children.push_back(additional_input_at_end);
 	}
 
 	String getName() const override { return "Union"; }

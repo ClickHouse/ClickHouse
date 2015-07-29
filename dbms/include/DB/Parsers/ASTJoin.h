@@ -32,7 +32,8 @@ public:
 		Inner,	/// Оставить только записи, для которых в "правой" таблице есть соответствующая.
 		Left,	/// Если в "правой" таблице нет соответствующих записей, заполнить столбцы значениями "по-умолчанию".
 		Right,
-		Full
+		Full,
+		Cross	/// Прямое произведение. strictness и using_expr_list не используются.
 	};
 
 	Locality locality = Local;
@@ -61,7 +62,8 @@ public:
 				kind == Inner ? "Inner"
 				: (kind == Left ? "Left"
 				: (kind == Right ? "Right"
-				: "Full")), wb);
+				: (kind == Full ? "Full"
+				: "Cross"))), wb);
 
 			writeString("Join", wb);
 		}

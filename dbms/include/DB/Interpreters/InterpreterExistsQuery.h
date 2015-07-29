@@ -4,6 +4,7 @@
 #include <DB/Parsers/TablePropertiesQueriesASTs.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Interpreters/Context.h>
+#include <DB/Interpreters/IInterpreter.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/DataStreams/BlockIO.h>
 #include <DB/DataStreams/FormatFactory.h>
@@ -17,13 +18,13 @@ namespace DB
 
 /** Проверить, существует ли таблица. Вернуть одну строку с одним столбцом result типа UInt8 со значением 0 или 1.
   */
-class InterpreterExistsQuery
+class InterpreterExistsQuery : public IInterpreter
 {
 public:
 	InterpreterExistsQuery(ASTPtr query_ptr_, Context & context_)
 		: query_ptr(query_ptr_), context(context_) {}
 
-	BlockIO execute()
+	BlockIO execute() override
 	{
 		BlockIO res;
 		res.in = executeImpl();
@@ -32,27 +33,13 @@ public:
 		return res;
 	}
 
-	BlockInputStreamPtr executeAndFormat(WriteBuffer & buf)
-	{
-		Block sample = getSampleBlock();
-		ASTPtr format_ast = typeid_cast<ASTExistsQuery &>(*query_ptr).format;
-		String format_name = format_ast ? typeid_cast<ASTIdentifier &>(*format_ast).name : context.getDefaultFormat();
-
-		BlockInputStreamPtr in = executeImpl();
-		BlockOutputStreamPtr out = context.getFormatFactory().getOutput(format_name, buf, sample);
-
-		copyData(*in, *out);
-
-		return in;
-	}
-
 private:
 	ASTPtr query_ptr;
 	Context context;
 
 	Block getSampleBlock()
 	{
-		ColumnWithNameAndType col;
+		ColumnWithTypeAndName col;
 		col.name = "result";
 		col.type = new DataTypeUInt8;
 		col.column = col.type->createColumn();
@@ -69,7 +56,7 @@ private:
 
 		bool res = context.isTableExist(ast.database, ast.table);
 
-		ColumnWithNameAndType col;
+		ColumnWithTypeAndName col;
 		col.name = "result";
 		col.type = new DataTypeUInt8;
 		col.column = new ColumnConstUInt8(1, res);

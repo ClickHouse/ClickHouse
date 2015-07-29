@@ -4,6 +4,7 @@
 #include <DB/Parsers/TablePropertiesQueriesASTs.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Interpreters/Context.h>
+#include <DB/Interpreters/IInterpreter.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/DataStreams/BlockIO.h>
 #include <DB/DataStreams/copyData.h>
@@ -20,33 +21,19 @@ namespace DB
 
 /** Вернуть названия и типы столбцов указанной таблицы.
 	*/
-class InterpreterDescribeQuery
+class InterpreterDescribeQuery : public IInterpreter
 {
 public:
 	InterpreterDescribeQuery(ASTPtr query_ptr_, Context & context_)
 		: query_ptr(query_ptr_), context(context_) {}
 
-	BlockIO execute()
+	BlockIO execute() override
 	{
 		BlockIO res;
 		res.in = executeImpl();
 		res.in_sample = getSampleBlock();
 
 		return res;
-	}
-
-	BlockInputStreamPtr executeAndFormat(WriteBuffer & buf)
-	{
-		Block sample = getSampleBlock();
-		ASTPtr format_ast = typeid_cast<ASTDescribeQuery &>(*query_ptr).format;
-		String format_name = format_ast ? typeid_cast<ASTIdentifier &>(*format_ast).name : context.getDefaultFormat();
-
-		BlockInputStreamPtr in = executeImpl();
-		BlockOutputStreamPtr out = context.getFormatFactory().getOutput(format_name, buf, sample);
-
-		copyData(*in, *out);
-
-		return in;
 	}
 
 private:
@@ -57,7 +44,7 @@ private:
 	{
 		Block block;
 
-		ColumnWithNameAndType col;
+		ColumnWithTypeAndName col;
 		col.name = "name";
 		col.type = new DataTypeString;
 		col.column = col.type->createColumn();
@@ -91,10 +78,10 @@ private:
 			column_defaults = table->column_defaults;
 		}
 
-		ColumnWithNameAndType name_column{new ColumnString, new DataTypeString, "name"};
-		ColumnWithNameAndType type_column{new ColumnString, new DataTypeString, "type" };
-		ColumnWithNameAndType default_type_column{new ColumnString, new DataTypeString, "default_type" };
-		ColumnWithNameAndType default_expression_column{new ColumnString, new DataTypeString, "default_expression" };;
+		ColumnWithTypeAndName name_column{new ColumnString, new DataTypeString, "name"};
+		ColumnWithTypeAndName type_column{new ColumnString, new DataTypeString, "type" };
+		ColumnWithTypeAndName default_type_column{new ColumnString, new DataTypeString, "default_type" };
+		ColumnWithTypeAndName default_expression_column{new ColumnString, new DataTypeString, "default_expression" };;
 
 		for (const auto column : columns)
 		{

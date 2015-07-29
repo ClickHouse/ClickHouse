@@ -336,11 +336,37 @@ static Field convertToType(const Field & src, const IDataType & type)
 		}
 		else if (is_date || is_datetime)
 		{
-			if (src.getType() != Field::Types::UInt64)
-				throw Exception("Type mismatch in IN section: " + type.getName() + " at left, "
-					+ Field::Types::toString(src.getType()) + " at right");
+			if (src.getType() == Field::Types::UInt64)
+				return src;
 
-			return src;
+			if (src.getType() == Field::Types::String)
+			{
+				/// Возможность сравнивать даты и даты-с-временем со строкой.
+				const String & str = src.get<const String &>();
+				ReadBufferFromString in(str);
+
+				if (is_date)
+				{
+					DayNum_t date{};
+					readDateText(date, in);
+					if (!in.eof())
+						throw Exception("String is too long for Date: " + str);
+
+					return Field(UInt64(date));
+				}
+				else
+				{
+					time_t date_time{};
+					readDateTimeText(date_time, in);
+					if (!in.eof())
+						throw Exception("String is too long for DateTime: " + str);
+
+					return Field(UInt64(date_time));
+				}
+			}
+
+			throw Exception("Type mismatch in IN section: " + type.getName() + " at left, "
+				+ Field::Types::toString(src.getType()) + " at right");
 		}
 	}
 	else
@@ -366,7 +392,7 @@ static Field convertToType(const Field & src, const IDataType & type)
 static Field evaluateConstantExpression(ASTPtr & node, const Context & context)
 {
 	ExpressionActionsPtr expr_for_constant_folding = ExpressionAnalyzer(
-		node, context, NamesAndTypesList{{ "_dummy", new DataTypeUInt8 }}).getConstActions();
+		node, context, nullptr, NamesAndTypesList{{ "_dummy", new DataTypeUInt8 }}).getConstActions();
 
 	/// В блоке должен быть хотя бы один столбец, чтобы у него было известно число строк.
 	Block block_with_constants{{ new ColumnConstUInt8(1, 0), new DataTypeUInt8, "_dummy" }};
@@ -409,7 +435,7 @@ void Set::createFromAST(DataTypes & types, ASTPtr node, const Context & context,
 	Block block;
 	for (size_t i = 0, size = data_types.size(); i < size; ++i)
 	{
-		ColumnWithNameAndType col;
+		ColumnWithTypeAndName col;
 		col.type = data_types[i];
 		col.column = data_types[i]->createColumn();
 		col.name = "_" + toString(i);

@@ -43,7 +43,7 @@ public:
 		MergeTreeData::Mode mode_,
 		const String & sign_column_,		/// Для Collapsing режима.
 		const Names & columns_to_sum_,		/// Для Summing режима.
-		const MergeTreeSettings & settings_ = MergeTreeSettings());
+		const MergeTreeSettings & settings_);
 
 	void shutdown() override;
 	~StorageReplicatedMergeTree() override;
@@ -124,6 +124,8 @@ public:
 		UInt32 inserts_in_queue;
 		UInt32 merges_in_queue;
 		UInt32 queue_oldest_time;
+		UInt32 inserts_oldest_time;
+		UInt32 merges_oldest_time;
 		UInt64 log_max_index;
 		UInt64 log_pointer;
 		UInt8 total_replicas;
@@ -134,7 +136,7 @@ public:
 	void getStatus(Status & res, bool with_zk_fields = true);
 
 private:
-	void dropUnreplicatedPartition(const Field & partition, const Settings & settings);
+	void dropUnreplicatedPartition(const Field & partition, bool detach, const Settings & settings);
 
 	friend class ReplicatedMergeTreeBlockOutputStream;
 	friend class ReplicatedMergeTreeRestartingThread;
@@ -282,7 +284,7 @@ private:
 		MergeTreeData::Mode mode_,
 		const String & sign_column_,
 		const Names & columns_to_sum_,
-		const MergeTreeSettings & settings_ = MergeTreeSettings());
+		const MergeTreeSettings & settings_);
 
 	/// Инициализация.
 

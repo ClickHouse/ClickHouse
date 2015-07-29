@@ -156,7 +156,7 @@ StoragePtr StorageReplicatedMergeTree::create(
 	size_t index_granularity_,
 	MergeTreeData::Mode mode_,
 	const String & sign_column_,
-	const Names & columns_to_sum_ = Names(),
+	const Names & columns_to_sum_,
 	const MergeTreeSettings & settings_)
 {
 	auto res = new StorageReplicatedMergeTree{
@@ -2014,7 +2014,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 	ColumnPtr column_ptr = column;
 	column->getData()[0] = 0;
 	column->getData()[1] = 1;
-	virtual_columns_block.insert(ColumnWithNameAndType(column_ptr, new DataTypeUInt8, "_replicated"));
+	virtual_columns_block.insert(ColumnWithTypeAndName(column_ptr, new DataTypeUInt8, "_replicated"));
 
 	/// Если запрошен хотя бы один виртуальный столбец, пробуем индексировать
 	if (!virt_column_names.empty())
@@ -2214,8 +2214,8 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 static String getFakePartNameForDrop(const String & month_name, UInt64 left, UInt64 right)
 {
 	/// Диапазон дат - весь месяц.
-	DateLUT & lut = DateLUT::instance();
-	time_t start_time = DateLUT::instance().YYYYMMDDToDate(parse<UInt32>(month_name + "01"));
+	const auto & lut = DateLUT::instance();
+	time_t start_time = lut.YYYYMMDDToDate(parse<UInt32>(month_name + "01"));
 	DayNum_t left_date = lut.toDayNum(start_time);
 	DayNum_t right_date = DayNum_t(static_cast<size_t>(left_date) + lut.daysInMonth(start_time) - 1);
 
@@ -2224,7 +2224,7 @@ static String getFakePartNameForDrop(const String & month_name, UInt64 left, UIn
 }
 
 
-void StorageReplicatedMergeTree::dropUnreplicatedPartition(const Field & partition, const Settings & settings)
+void StorageReplicatedMergeTree::dropUnreplicatedPartition(const Field & partition, const bool detach, const Settings & settings)
 {
 	if (!unreplicated_data)
 		return;
@@ -2247,10 +2247,13 @@ void StorageReplicatedMergeTree::dropUnreplicatedPartition(const Field & partiti
 		LOG_DEBUG(log, "Removing unreplicated part " << part->name);
 		++removed_parts;
 
-		unreplicated_data->replaceParts({part}, {}, false);
+		if (detach)
+			unreplicated_data->renameAndDetachPart(part, "");
+		else
+			unreplicated_data->replaceParts({part}, {}, false);
 	}
 
-	LOG_INFO(log, "Removed " << removed_parts << " unreplicated parts inside " << apply_visitor(FieldVisitorToString(), partition) << ".");
+	LOG_INFO(log, (detach ? "Detached " : "Removed ") << removed_parts << " unreplicated parts inside " << apply_visitor(FieldVisitorToString(), partition) << ".");
 }
 
 
@@ -2258,13 +2261,7 @@ void StorageReplicatedMergeTree::dropPartition(const Field & field, bool detach,
 {
 	if (unreplicated)
 	{
-		if (detach)
-			throw Exception{
-				"DETACH UNREPLICATED PATITION not supported",
-				ErrorCodes::LOGICAL_ERROR
-			};
-
-		dropUnreplicatedPartition(field, settings);
+		dropUnreplicatedPartition(field, detach, settings);
 
 		return;
 	}
@@ -2274,7 +2271,7 @@ void StorageReplicatedMergeTree::dropPartition(const Field & field, bool detach,
 
 	/// TODO: Делать запрос в лидера по TCP.
 	if (!is_leader_node)
-		throw Exception("DROP PARTITION can only be done on leader replica.", ErrorCodes::NOT_LEADER);
+		throw Exception(String(detach ? "DETACH" : "DROP") + " PARTITION can only be done on leader replica.", ErrorCodes::NOT_LEADER);
 
 	/** Пропустим один номер в block_numbers для удаляемого месяца, и будем удалять только куски до этого номера.
 	  * Это запретит мерджи удаляемых кусков с новыми вставляемыми данными.
@@ -2672,16 +2669,29 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
 		res.inserts_in_queue = 0;
 		res.merges_in_queue = 0;
 		res.queue_oldest_time = 0;
+		res.inserts_oldest_time = 0;
+		res.merges_oldest_time = 0;
 
 		for (const LogEntryPtr & entry : queue)
 		{
-			if (entry->type == LogEntry::GET_PART)
-				++res.inserts_in_queue;
-			if (entry->type == LogEntry::MERGE_PARTS)
-				++res.merges_in_queue;
-
 			if (entry->create_time && (!res.queue_oldest_time || entry->create_time < res.queue_oldest_time))
 				res.queue_oldest_time = entry->create_time;
+
+			if (entry->type == LogEntry::GET_PART)
+			{
+				++res.inserts_in_queue;
+
+				if (entry->create_time && (!res.inserts_oldest_time || entry->create_time < res.inserts_oldest_time))
+					res.inserts_oldest_time = entry->create_time;
+			}
+
+			if (entry->type == LogEntry::MERGE_PARTS)
+			{
+				++res.merges_in_queue;
+
+				if (entry->create_time && (!res.merges_oldest_time || entry->create_time < res.merges_oldest_time))
+					res.merges_oldest_time = entry->create_time;
+			}
 		}
 	}
 

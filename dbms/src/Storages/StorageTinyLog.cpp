@@ -177,7 +177,7 @@ Block TinyLogBlockInputStream::readImpl()
 
 	for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
 	{
-		ColumnWithNameAndType column;
+		ColumnWithTypeAndName column;
 		column.name = *it;
 		column.type = storage.getDataTypeByName(*it);
 
@@ -198,7 +198,15 @@ Block TinyLogBlockInputStream::readImpl()
 		else
 			column.column = column.type->createColumn();
 
-		readData(*it, *column.type, *column.column, block_size, 0, read_offsets);
+		try
+		{
+			readData(*it, *column.type, *column.column, block_size, 0, read_offsets);
+		}
+		catch (Exception & e)
+		{
+			e.addMessage("while reading column " + *it + " at " + storage.full_path());
+			throw;
+		}
 
 		if (column.column->size())
 			res.insert(column);
@@ -326,7 +334,7 @@ void TinyLogBlockOutputStream::write(const Block & block)
 
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
-		const ColumnWithNameAndType & column = block.getByPosition(i);
+		const ColumnWithTypeAndName & column = block.getByPosition(i);
 		writeData(column.name, *column.type, *column.column, offset_columns);
 	}
 }

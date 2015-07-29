@@ -21,7 +21,7 @@ void PrettyCompactBlockOutputStream::writeHeader(
 		if (i != 0)
 			writeCString("─┬─", ostr);
 
-		const ColumnWithNameAndType & col = block.getByPosition(i);
+		const ColumnWithTypeAndName & col = block.getByPosition(i);
 
 		if (col.type->isNumeric())
 		{
@@ -83,7 +83,7 @@ void PrettyCompactBlockOutputStream::writeRow(
 		if (j != 0)
 			writeCString(" │ ", ostr);
 
-		const ColumnWithNameAndType & col = block.getByPosition(j);
+		const ColumnWithTypeAndName & col = block.getByPosition(j);
 
 		if (col.type->isNumeric())
 		{

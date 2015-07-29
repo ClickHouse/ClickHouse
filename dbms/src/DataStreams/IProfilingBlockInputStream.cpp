@@ -5,6 +5,7 @@
 
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Interpreters/Quota.h>
+#include <DB/Interpreters/ProcessList.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 
 
@@ -320,7 +321,7 @@ void IProfilingBlockInputStream::setProgressCallback(ProgressCallback callback)
 }
 
 
-void IProfilingBlockInputStream::setProcessListElement(ProcessList::Element * elem)
+void IProfilingBlockInputStream::setProcessListElement(ProcessListElement * elem)
 {
 	process_list_elem = elem;
 

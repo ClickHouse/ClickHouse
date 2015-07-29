@@ -111,6 +111,7 @@ void TCPHandler::runImpl()
 		{
 			/// Восстанавливаем контекст запроса.
 			query_context = connection_context;
+			query_context.setInterface(Context::Interface::TCP);
 
 			/** Если Query - обрабатываем. Если Ping или Cancel - возвращаемся в начало.
 			  * Могут прийти настройки на отдельный запрос, которые модифицируют query_context.
@@ -148,8 +149,7 @@ void TCPHandler::runImpl()
 		}
 		catch (const Exception & e)
 		{
-			LOG_ERROR(log, "Code: " << e.code() << ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what()
-				<< ", Stack trace:\n\n" << e.getStackTrace().toString());
+			state.io.onException();
 			exception = e.clone();
 
 			if (e.code() == ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT)
@@ -163,24 +163,22 @@ void TCPHandler::runImpl()
 			  * Хотя в одном из них, мы должны отправить эксепшен клиенту, а в другом - не можем.
 			  * Будем пытаться отправить эксепшен клиенту в любом случае - см. ниже.
 			  */
-			LOG_ERROR(log, "Poco::Net::NetException. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
-				<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what());
+			state.io.onException();
 			exception = new Exception(e.displayText(), ErrorCodes::POCO_EXCEPTION);
 		}
 		catch (const Poco::Exception & e)
 		{
-			LOG_ERROR(log, "Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
-				<< ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what());
+			state.io.onException();
 			exception = new Exception(e.displayText(), ErrorCodes::POCO_EXCEPTION);
 		}
 		catch (const std::exception & e)
 		{
-			LOG_ERROR(log, "std::exception. Code: " << ErrorCodes::STD_EXCEPTION << ", e.what() = " << e.what());
+			state.io.onException();
 			exception = new Exception(e.what(), ErrorCodes::STD_EXCEPTION);
 		}
 		catch (...)
 		{
-			LOG_ERROR(log, "Unknown exception. Code: " << ErrorCodes::UNKNOWN_EXCEPTION);
+			state.io.onException();
 			exception = new Exception("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
 		}
 
@@ -270,6 +268,7 @@ void TCPHandler::processInsertQuery(const Settings & global_settings)
 
 	readData(global_settings);
 	state.io.out->writeSuffix();
+	state.io.onFinish();
 }
 
 
@@ -285,11 +284,6 @@ void TCPHandler::processOrdinaryQuery()
 		AsynchronousBlockInputStream async_in(state.io.in);
 		async_in.readPrefix();
 
-		std::stringstream query_pipeline;
-		async_in.dumpTree(query_pipeline);
-		LOG_DEBUG(log, "Query pipeline:\n" << query_pipeline.rdbuf());
-
-		Stopwatch watch;
 		while (true)
 		{
 			Block block;
@@ -341,10 +335,9 @@ void TCPHandler::processOrdinaryQuery()
 		}
 
 		async_in.readSuffix();
-
-		watch.stop();
-		logProfileInfo(watch, *state.io.in);
 	}
+
+	state.io.onFinish();
 }
 
 
@@ -409,27 +402,6 @@ void TCPHandler::sendExtremes()
 			out->next();
 		}
 	}
-}
-
-
-void TCPHandler::logProfileInfo(Stopwatch & watch, IBlockInputStream & in)
-{
-	/// Выведем информацию о том, сколько считано строк и байт.
-	size_t rows = 0;
-	size_t bytes = 0;
-
-	in.getLeafRowsBytes(rows, bytes);
-
-	if (rows != 0)
-	{
-		LOG_INFO(log, std::fixed << std::setprecision(3)
-			<< "Read " << rows << " rows, " << bytes / 1048576.0 << " MiB in " << watch.elapsedSeconds() << " sec., "
-			<< static_cast<size_t>(rows / watch.elapsedSeconds()) << " rows/sec., " << bytes / 1048576.0 / watch.elapsedSeconds() << " MiB/sec.");
-	}
-
-	QuotaForIntervals & quota = query_context.getQuota();
-	if (!quota.empty())
-		LOG_INFO(log, "Quota:\n" << quota.toString());
 }
 
 
@@ -568,10 +540,6 @@ void TCPHandler::receiveQuery()
 	state.compression = Protocol::Compression::Enum(compression);
 
 	readStringBinary(state.query, *in);
-
-	LOG_DEBUG(log, "Query ID: " << state.query_id);
-	LOG_DEBUG(log, "Query: " << state.query);
-	LOG_DEBUG(log, "Requested stage: " << QueryProcessingStage::toString(stage));
 }
 
 

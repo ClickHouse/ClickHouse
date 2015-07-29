@@ -1,6 +1,10 @@
 #include <DB/Storages/StorageSystemColumns.h>
+#include <DB/Storages/MergeTree/MergeTreeData.h>
+#include <DB/Storages/StorageMergeTree.h>
+#include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/DataTypes/DataTypeString.h>
+#include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/Common/VirtualColumnUtils.h>
 
@@ -15,7 +19,8 @@ StorageSystemColumns::StorageSystemColumns(const std::string & name_)
 		{ "name",               new DataTypeString },
 		{ "type",               new DataTypeString },
 		{ "default_type",       new DataTypeString },
-		{ "default_expression", new DataTypeString }
+		{ "default_expression", new DataTypeString },
+		{ "bytes",				new DataTypeUInt64 },
 	}
 {
 }
@@ -50,7 +55,7 @@ BlockInputStreams StorageSystemColumns::read(
 		ColumnPtr database_column = new ColumnString;
 		for (const auto & database : databases)
 			database_column->insert(database.first);
-		block.insert(ColumnWithNameAndType(database_column, new DataTypeString, "database"));
+		block.insert(ColumnWithTypeAndName(database_column, new DataTypeString, "database"));
 
 		/// Отфильтруем блок со столбцом database.
 		VirtualColumnUtils::filterBlockWithQuery(query, block, context);
@@ -84,7 +89,7 @@ BlockInputStreams StorageSystemColumns::read(
 			column = column->replicate(offsets);
 		}
 
-		block.insert(ColumnWithNameAndType(table_column, new DataTypeString, "table"));
+		block.insert(ColumnWithTypeAndName(table_column, new DataTypeString, "table"));
 	}
 
 	/// Отфильтруем блок со столбцами database и table.
@@ -103,6 +108,7 @@ BlockInputStreams StorageSystemColumns::read(
 	ColumnPtr type_column = new ColumnString;
 	ColumnPtr default_type_column = new ColumnString;
 	ColumnPtr default_expression_column = new ColumnString;
+	ColumnPtr bytes_column = new ColumnUInt64;
 
 	size_t rows = filtered_database_column->size();
 	for (size_t i = 0; i < rows; ++i)
@@ -112,6 +118,7 @@ BlockInputStreams StorageSystemColumns::read(
 
 		NamesAndTypesList columns;
 		ColumnDefaults column_defaults;
+		std::unordered_map<String, size_t> column_sizes;
 
 		{
 			StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
@@ -120,6 +127,26 @@ BlockInputStreams StorageSystemColumns::read(
 			columns = storage->getColumnsList();
 			columns.insert(std::end(columns), std::begin(storage->alias_columns), std::end(storage->alias_columns));
 			column_defaults = storage->column_defaults;
+
+			/** Данные о размерах столбцов для таблиц семейства MergeTree.
+			  * NOTE: В дальнейшем можно сделать интерфейс, позволяющий получить размеры столбцов у IStorage.
+			  */
+			if (auto storage_concrete = dynamic_cast<StorageMergeTree *>(storage.get()))
+			{
+				column_sizes = storage_concrete->getData().getColumnSizes();
+			}
+			else if (auto storage_concrete = dynamic_cast<StorageReplicatedMergeTree *>(storage.get()))
+			{
+				column_sizes = storage_concrete->getData().getColumnSizes();
+
+				auto unreplicated_data = storage_concrete->getUnreplicatedData();
+				if (unreplicated_data)
+				{
+					auto unreplicated_column_sizes = unreplicated_data->getColumnSizes();
+					for (const auto & name_size : unreplicated_column_sizes)
+						column_sizes[name_size.first] += name_size.second;
+				}
+			}
 		}
 
 		for (const auto & column : columns)
@@ -129,28 +156,39 @@ BlockInputStreams StorageSystemColumns::read(
 			name_column->insert(column.name);
 			type_column->insert(column.type->getName());
 
-			const auto it = column_defaults.find(column.name);
-			if (it == std::end(column_defaults))
 			{
-				default_type_column->insertDefault();
-				default_expression_column->insertDefault();
+				const auto it = column_defaults.find(column.name);
+				if (it == std::end(column_defaults))
+				{
+					default_type_column->insertDefault();
+					default_expression_column->insertDefault();
+				}
+				else
+				{
+					default_type_column->insert(toString(it->second.type));
+					default_expression_column->insert(queryToString(it->second.expression));
+				}
 			}
-			else
+
 			{
-				default_type_column->insert(toString(it->second.type));
-				default_expression_column->insert(queryToString(it->second.expression));
+				const auto it = column_sizes.find(column.name);
+				if (it == std::end(column_sizes))
+					bytes_column->insertDefault();
+				else
+					bytes_column->insert(it->second);
 			}
 		}
 	}
 
 	block.clear();
 
-	block.insert(ColumnWithNameAndType(database_column, new DataTypeString, "database"));
-	block.insert(ColumnWithNameAndType(table_column, new DataTypeString, "table"));
-	block.insert(ColumnWithNameAndType(name_column, new DataTypeString, "name"));
-	block.insert(ColumnWithNameAndType(type_column, new DataTypeString, "type"));
-	block.insert(ColumnWithNameAndType(default_type_column, new DataTypeString, "default_type"));
-	block.insert(ColumnWithNameAndType(default_expression_column, new DataTypeString, "default_expression"));
+	block.insert(ColumnWithTypeAndName(database_column, new DataTypeString, "database"));
+	block.insert(ColumnWithTypeAndName(table_column, new DataTypeString, "table"));
+	block.insert(ColumnWithTypeAndName(name_column, new DataTypeString, "name"));
+	block.insert(ColumnWithTypeAndName(type_column, new DataTypeString, "type"));
+	block.insert(ColumnWithTypeAndName(default_type_column, new DataTypeString, "default_type"));
+	block.insert(ColumnWithTypeAndName(default_expression_column, new DataTypeString, "default_expression"));
+	block.insert(ColumnWithTypeAndName(bytes_column, new DataTypeUInt64, "bytes"));
 
 	return BlockInputStreams{ 1, new OneBlockInputStream(block) };
 }

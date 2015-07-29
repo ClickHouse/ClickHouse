@@ -121,7 +121,7 @@ void Aggregator::initialize(Block & block)
 
 		for (size_t i = 0; i < aggregates_size; ++i)
 		{
-			ColumnWithNameAndType col;
+			ColumnWithTypeAndName col;
 			col.name = aggregates[i].column_name;
 
 			size_t arguments_size = aggregates[i].arguments.size();
@@ -557,14 +557,21 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 	for (size_t i = 0; i < aggregates_size; ++i)
 		aggregate_columns[i].resize(aggregates[i].arguments.size());
 
+	/** Константные столбцы не поддерживаются напрямую при агрегации.
+	  * Чтобы они всё-равно работали, материализуем их.
+	  */
+	Columns materialized_columns;
+
 	/// Запоминаем столбцы, с которыми будем работать
 	for (size_t i = 0; i < keys_size; ++i)
 	{
 		key_columns[i] = block.getByPosition(keys[i]).column;
 
-		if (key_columns[i]->isConst())
-			throw Exception("Constants are not allowed as GROUP BY keys"
-				" (but all of them must be eliminated in ExpressionAnalyzer)", ErrorCodes::ILLEGAL_COLUMN);
+		if (const IColumnConst * column_const = dynamic_cast<const IColumnConst *>(key_columns[i]))
+		{
+			materialized_columns.push_back(column_const->convertToFullColumn());
+			key_columns[i] = materialized_columns.back().get();
+		}
 	}
 
 	for (size_t i = 0; i < aggregates_size; ++i)
@@ -573,11 +580,11 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 		{
 			aggregate_columns[i][j] = block.getByPosition(aggregates[i].arguments[j]).column;
 
-			/** Агрегатные функции рассчитывают, что в них передаются полноценные столбцы.
-				* Поэтому, стобцы-константы не разрешены в качестве аргументов агрегатных функций.
-				*/
-			if (aggregate_columns[i][j]->isConst())
-				throw Exception("Constants are not allowed as arguments of aggregate functions", ErrorCodes::ILLEGAL_COLUMN);
+			if (const IColumnConst * column_const = dynamic_cast<const IColumnConst *>(aggregate_columns[i][j]))
+			{
+				materialized_columns.push_back(column_const->convertToFullColumn());
+				aggregate_columns[i][j] = materialized_columns.back().get();
+			}
 		}
 	}
 
@@ -841,7 +848,7 @@ Block Aggregator::prepareBlockAndFill(
 			}
 			else
 			{
-				ColumnWithNameAndType & column = res.getByPosition(i + keys_size);
+				ColumnWithTypeAndName & column = res.getByPosition(i + keys_size);
 				column.type = aggregate_functions[i]->getReturnType();
 				column.column = column.type->createColumn();
 				column.column->reserve(rows);

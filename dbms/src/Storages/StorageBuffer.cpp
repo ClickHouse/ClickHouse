@@ -84,7 +84,7 @@ protected:
 		for (const auto & name : column_names)
 		{
 			auto & col = buffer.data.getByName(name);
-			res.insert(ColumnWithNameAndType(col.column->clone(), col.type, name));
+			res.insert(ColumnWithTypeAndName(col.column->clone(), col.type, name));
 		}
 
 		return res;
@@ -130,7 +130,7 @@ BlockInputStreams StorageBuffer::read(
 	  */
 	if (processed_stage > QueryProcessingStage::FetchColumns)
 		for (auto & stream : streams_from_buffers)
-			stream = InterpreterSelectQuery(query, context, processed_stage, 0, stream).execute();
+			stream = InterpreterSelectQuery(query, context, processed_stage, 0, stream).execute().in;
 
 	streams_from_dst.insert(streams_from_dst.end(), streams_from_buffers.begin(), streams_from_buffers.end());
 	return streams_from_dst;

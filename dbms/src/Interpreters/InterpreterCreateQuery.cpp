@@ -7,7 +7,7 @@
 #include <DB/IO/WriteHelpers.h>
 
 #include <DB/DataStreams/MaterializingBlockInputStream.h>
-#include <DB/DataStreams/copyData.h>
+#include <DB/DataStreams/NullAndDoCopyBlockInputStream.h>
 
 #include <DB/Parsers/ASTCreateQuery.h>
 #include <DB/Parsers/ASTNameTypePair.h>
@@ -42,7 +42,7 @@ InterpreterCreateQuery::InterpreterCreateQuery(ASTPtr query_ptr_, Context & cont
 }
 
 
-StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
+BlockIO InterpreterCreateQuery::executeImpl(bool assume_metadata_exists)
 {
 	String path = context.getPath();
 	String current_database = context.getCurrentDatabase();
@@ -81,7 +81,7 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 		if (!create.if_not_exists || !context.isDatabaseExist(database_name))
 			context.addDatabase(database_name);
 
-		return StoragePtr();
+		return {};
 	}
 
 	SharedPtr<InterpreterSelectQuery> interpreter_select;
@@ -118,7 +118,7 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 			if (context.isTableExist(database_name, table_name))
 			{
 				if (create.if_not_exists)
-					return context.getTable(database_name, table_name);
+					return {};
 				else
 					throw Exception("Table " + database_name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 			}
@@ -251,11 +251,16 @@ StoragePtr InterpreterCreateQuery::execute(bool assume_metadata_exists)
 	/// Если запрос CREATE SELECT, то вставим в таблицу данные
 	if (create.select && storage_name != "View" && (storage_name != "MaterializedView" || create.is_populate))
 	{
-		BlockInputStreamPtr from = new MaterializingBlockInputStream(interpreter_select->execute());
-		copyData(*from, *res->write(query_ptr));
+		BlockIO io;
+		io.in_sample = select_sample;
+		io.in = new NullAndDoCopyBlockInputStream(
+			new MaterializingBlockInputStream(interpreter_select->execute().in),
+			res->write(query_ptr));
+
+		return io;
 	}
 
-	return res;
+	return {};
 }
 
 InterpreterCreateQuery::ColumnsAndDefaults InterpreterCreateQuery::parseColumns(ASTPtr expression_list)
@@ -338,7 +343,7 @@ InterpreterCreateQuery::ColumnsAndDefaults InterpreterCreateQuery::parseColumns(
 	/// set missing types and wrap default_expression's in a conversion-function if necessary
 	if (!defaulted_columns.empty())
 	{
-		const auto actions = ExpressionAnalyzer{default_expr_list, context, columns}.getActions(true);
+		const auto actions = ExpressionAnalyzer{default_expr_list, context, {}, columns}.getActions(true);
 		const auto block = actions->getSampleBlock();
 
 		for (auto & column : defaulted_columns)

@@ -8,6 +8,136 @@
 namespace DB
 {
 
+
+/// Преобразование строки с датой или датой-с-временем в UInt64, содержащим числовое значение даты или даты-с-временем.
+UInt64 stringToDateOrDateTime(const String & s)
+{
+	ReadBufferFromString in(s);
+
+	if (s.size() == strlen("YYYY-MM-DD"))
+	{
+		DayNum_t date{};
+		readDateText(date, in);
+		return UInt64(date);
+	}
+	else
+	{
+		time_t date_time{};
+		readDateTimeText(date_time, in);
+		if (!in.eof())
+			throw Exception("String is too long for DateTime: " + s);
+		return UInt64(date_time);
+	}
+}
+
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-compare"
+
+/** Более точное сравнение.
+  * Отличается от Field::operator< и Field::operator== тем, что сравнивает значения разных числовых типов между собой.
+  * Правила сравнения - такие же, что и в FunctionsComparison.
+  * В том числе, сравнение знаковых и беззнаковых оставляем UB.
+  */
+class FieldVisitorAccurateEquals : public StaticVisitor<bool>
+{
+public:
+	bool operator() (const Null & l, const Null & r)        const { return true; }
+	bool operator() (const Null & l, const UInt64 & r)      const { return false; }
+	bool operator() (const Null & l, const Int64 & r)       const { return false; }
+	bool operator() (const Null & l, const Float64 & r)     const { return false; }
+	bool operator() (const Null & l, const String & r)      const { return false; }
+	bool operator() (const Null & l, const Array & r)       const { return false; }
+
+	bool operator() (const UInt64 & l, const Null & r)      const { return false; }
+	bool operator() (const UInt64 & l, const UInt64 & r)    const { return l == r; }
+	bool operator() (const UInt64 & l, const Int64 & r)     const { return l == r; }
+	bool operator() (const UInt64 & l, const Float64 & r)   const { return l == r; }
+	bool operator() (const UInt64 & l, const String & r)    const { return l == stringToDateOrDateTime(r); }
+	bool operator() (const UInt64 & l, const Array & r)     const { return false; }
+
+	bool operator() (const Int64 & l, const Null & r)       const { return false; }
+	bool operator() (const Int64 & l, const UInt64 & r)     const { return l == r; }
+	bool operator() (const Int64 & l, const Int64 & r)      const { return l == r; }
+	bool operator() (const Int64 & l, const Float64 & r)    const { return l == r; }
+	bool operator() (const Int64 & l, const String & r)     const { return false; }
+	bool operator() (const Int64 & l, const Array & r)      const { return false; }
+
+	bool operator() (const Float64 & l, const Null & r)     const { return false; }
+	bool operator() (const Float64 & l, const UInt64 & r)   const { return l == r; }
+	bool operator() (const Float64 & l, const Int64 & r)    const { return l == r; }
+	bool operator() (const Float64 & l, const Float64 & r)  const { return l == r; }
+	bool operator() (const Float64 & l, const String & r)   const { return false; }
+	bool operator() (const Float64 & l, const Array & r)    const { return false; }
+
+	bool operator() (const String & l, const Null & r)      const { return false; }
+	bool operator() (const String & l, const UInt64 & r)    const { return stringToDateOrDateTime(l) == r; }
+	bool operator() (const String & l, const Int64 & r)     const { return false; }
+	bool operator() (const String & l, const Float64 & r)   const { return false; }
+	bool operator() (const String & l, const String & r)    const { return l == r; }
+	bool operator() (const String & l, const Array & r)     const { return false; }
+
+	bool operator() (const Array & l, const Null & r)       const { return false; }
+	bool operator() (const Array & l, const UInt64 & r)     const { return false; }
+	bool operator() (const Array & l, const Int64 & r)      const { return false; }
+	bool operator() (const Array & l, const Float64 & r)    const { return false; }
+	bool operator() (const Array & l, const String & r)     const { return false; }
+	bool operator() (const Array & l, const Array & r)      const { return l == r; }
+};
+
+class FieldVisitorAccurateLess : public StaticVisitor<bool>
+{
+public:
+	bool operator() (const Null & l, const Null & r)        const { return false; }
+	bool operator() (const Null & l, const UInt64 & r)      const { return true; }
+	bool operator() (const Null & l, const Int64 & r)       const { return true; }
+	bool operator() (const Null & l, const Float64 & r)     const { return true; }
+	bool operator() (const Null & l, const String & r)      const { return true; }
+	bool operator() (const Null & l, const Array & r)       const { return true; }
+
+	bool operator() (const UInt64 & l, const Null & r)      const { return false; }
+	bool operator() (const UInt64 & l, const UInt64 & r)    const { return l < r; }
+	bool operator() (const UInt64 & l, const Int64 & r)     const { return l < r; }
+	bool operator() (const UInt64 & l, const Float64 & r)   const { return l < r; }
+	bool operator() (const UInt64 & l, const String & r)    const { return l < stringToDateOrDateTime(r); }
+	bool operator() (const UInt64 & l, const Array & r)     const { return true; }
+
+	bool operator() (const Int64 & l, const Null & r)       const { return false; }
+	bool operator() (const Int64 & l, const UInt64 & r)     const { return l < r; }
+	bool operator() (const Int64 & l, const Int64 & r)      const { return l < r; }
+	bool operator() (const Int64 & l, const Float64 & r)    const { return l < r; }
+	bool operator() (const Int64 & l, const String & r)     const { return true; }
+	bool operator() (const Int64 & l, const Array & r)      const { return true; }
+
+	bool operator() (const Float64 & l, const Null & r)     const { return false; }
+	bool operator() (const Float64 & l, const UInt64 & r)   const { return l < r; }
+	bool operator() (const Float64 & l, const Int64 & r)    const { return l < r; }
+	bool operator() (const Float64 & l, const Float64 & r)  const { return l < r; }
+	bool operator() (const Float64 & l, const String & r)   const { return true; }
+	bool operator() (const Float64 & l, const Array & r)    const { return true; }
+
+	bool operator() (const String & l, const Null & r)      const { return false; }
+	bool operator() (const String & l, const UInt64 & r)    const { return stringToDateOrDateTime(l) < r; }
+	bool operator() (const String & l, const Int64 & r)     const { return false; }
+	bool operator() (const String & l, const Float64 & r)   const { return false; }
+	bool operator() (const String & l, const String & r)    const { return l < r; }
+	bool operator() (const String & l, const Array & r)     const { return true; }
+
+	bool operator() (const Array & l, const Null & r)       const { return false; }
+	bool operator() (const Array & l, const UInt64 & r)     const { return false; }
+	bool operator() (const Array & l, const Int64 & r)      const { return false; }
+	bool operator() (const Array & l, const Float64 & r)    const { return false; }
+	bool operator() (const Array & l, const String & r)     const { return false; }
+	bool operator() (const Array & l, const Array & r)      const { return l < r; }
+};
+
+#pragma GCC diagnostic pop
+
+
+inline bool Range::equals(const Field & lhs, const Field & rhs) { return apply_visitor(FieldVisitorAccurateEquals(), lhs, rhs); }
+inline bool Range::less(const Field & lhs, const Field & rhs) { return apply_visitor(FieldVisitorAccurateLess(), lhs, rhs); }
+
+
 PKCondition::PKCondition(ASTPtr query, const Context & context_, const NamesAndTypesList & all_columns, const SortDescription & sort_descr_)
 	: sort_descr(sort_descr_)
 {
@@ -21,11 +151,11 @@ PKCondition::PKCondition(ASTPtr query, const Context & context_, const NamesAndT
 	/** Вычисление выражений, зависящих только от констант.
 	 * Чтобы индекс мог использоваться, если написано, например WHERE Date = toDate(now()).
 	 */
-	ExpressionActionsPtr expr_for_constant_folding = ExpressionAnalyzer(query, context_, all_columns).getConstActions();
+	ExpressionActionsPtr expr_for_constant_folding = ExpressionAnalyzer(query, context_, nullptr, all_columns).getConstActions();
 	Block block_with_constants;
 
 	/// В блоке должен быть хотя бы один столбец, чтобы у него было известно число строк.
-	ColumnWithNameAndType dummy_column;
+	ColumnWithTypeAndName dummy_column;
 	dummy_column.name = "_dummy";
 	dummy_column.type = new DataTypeUInt8;
 	dummy_column.column = new ColumnConstUInt8(1, 0);

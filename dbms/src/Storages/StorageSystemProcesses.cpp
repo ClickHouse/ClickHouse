@@ -2,6 +2,7 @@
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
+#include <DB/Interpreters/ProcessList.h>
 #include <DB/Storages/StorageSystemProcesses.h>
 
 
@@ -43,15 +44,15 @@ BlockInputStreams StorageSystemProcesses::read(
 	check(column_names);
 	processed_stage = QueryProcessingStage::FetchColumns;
 
-	ColumnWithNameAndType col_user{new ColumnString, new DataTypeString, "user"};
-	ColumnWithNameAndType col_address{new ColumnString, new DataTypeString, "address"};
-	ColumnWithNameAndType col_elapsed{new ColumnFloat64, new DataTypeFloat64, "elapsed"};
-	ColumnWithNameAndType col_rows_read{new ColumnUInt64, new DataTypeUInt64, "rows_read"};
-	ColumnWithNameAndType col_bytes_read{new ColumnUInt64, new DataTypeUInt64, "bytes_read"};
-	ColumnWithNameAndType col_total_rows_approx{new ColumnUInt64, new DataTypeUInt64, "total_rows_approx"};
-	ColumnWithNameAndType col_memory_usage{new ColumnUInt64, new DataTypeUInt64, "memory_usage"};
-	ColumnWithNameAndType col_query{new ColumnString, new DataTypeString, "query"};
-	ColumnWithNameAndType col_query_id{new ColumnString, new DataTypeString, "query_id"};
+	ColumnWithTypeAndName col_user{new ColumnString, new DataTypeString, "user"};
+	ColumnWithTypeAndName col_address{new ColumnString, new DataTypeString, "address"};
+	ColumnWithTypeAndName col_elapsed{new ColumnFloat64, new DataTypeFloat64, "elapsed"};
+	ColumnWithTypeAndName col_rows_read{new ColumnUInt64, new DataTypeUInt64, "rows_read"};
+	ColumnWithTypeAndName col_bytes_read{new ColumnUInt64, new DataTypeUInt64, "bytes_read"};
+	ColumnWithTypeAndName col_total_rows_approx{new ColumnUInt64, new DataTypeUInt64, "total_rows_approx"};
+	ColumnWithTypeAndName col_memory_usage{new ColumnUInt64, new DataTypeUInt64, "memory_usage"};
+	ColumnWithTypeAndName col_query{new ColumnString, new DataTypeString, "query"};
+	ColumnWithTypeAndName col_query_id{new ColumnString, new DataTypeString, "query_id"};
 
 	for (const auto & process : context.getProcessList().get())
 	{
