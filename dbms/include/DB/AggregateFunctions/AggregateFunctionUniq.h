@@ -122,7 +122,7 @@ template <typename T>
 struct AggregateFunctionUniqCombinedData
 {
 	using Key = T;
-	using Set = CombinedCardinalityEstimator<Key, HashSet<Key, DefaultHash<Key>, HashTableGrower<4> >, 16, 16, 19>;
+	using Set = CombinedCardinalityEstimator<Key, HashSet<Key, TrivialHash, HashTableGrower<> >, 16, 16, 19>;
 	Set set;
 
 	static String getName() { return "uniqCombined"; }
@@ -132,7 +132,7 @@ template <>
 struct AggregateFunctionUniqCombinedData<String>
 {
 	using Key = UInt64;
-	using Set = CombinedCardinalityEstimator<Key, HashSet<Key, DefaultHash<Key>, HashTableGrower<4> >, 16, 16, 19>;
+	using Set = CombinedCardinalityEstimator<Key, HashSet<Key, TrivialHash, HashTableGrower<> >, 16, 16, 19>;
 	Set set;
 
 	static String getName() { return "uniqCombined"; }
@@ -140,6 +140,60 @@ struct AggregateFunctionUniqCombinedData<String>
 
 namespace detail
 {
+	template<typename T, typename Enable = void>
+	struct Hash64To32;
+
+	template<typename T>
+	struct Hash64To32<T, typename std::enable_if<std::is_same<T, Int64>::value || std::is_same<T, UInt64>::value>::type>
+	{
+		static UInt32 compute(T key)
+		{
+			using U = typename std::make_unsigned<T>::type;
+			auto x = static_cast<U>(key);
+
+			x = (~x) + (x << 18);
+			x = x ^ (x >> 31);
+			x = x * 21;
+			x = x ^ (x >> 11);
+			x = x + (x << 6);
+			x = x ^ (x >> 22);
+			return static_cast<UInt32>(x);
+		}
+	};
+
+	template<typename T, typename Enable = void>
+	struct CombinedCardinalityTraits
+	{
+		static UInt32 hash(T key)
+		{
+			return key;
+		}
+	};
+
+	template<typename T>
+	struct CombinedCardinalityTraits<T, typename std::enable_if<std::is_same<T, Int64>::value || std::is_same<T, UInt64>::value>::type>
+	{
+		using Op = Hash64To32<T>;
+
+		static UInt32 hash(T key)
+		{
+			return Op::compute(key);
+		};
+	};
+
+	template<typename T>
+	struct CombinedCardinalityTraits<T, typename std::enable_if<std::is_floating_point<T>::value>::type>
+	{
+		using Op = Hash64To32<UInt64>;
+
+		static UInt32 hash(T key)
+		{
+			UInt64 res = 0;
+			memcpy(reinterpret_cast<char *>(&res), reinterpret_cast<char *>(&key), sizeof(key));
+			return Op::compute(res);
+		}
+	};
+
 	/** Структура для делегации работы по добавлению одного элемента в агрегатные функции uniq.
 	  * Используется для частичной специализации для добавления строк.
 	  */
@@ -193,7 +247,8 @@ namespace detail
 	{
 		static void addOne(AggregateFunctionUniqCombinedData<T> & data, const IColumn & column, size_t row_num)
 		{
-			data.set.insert(static_cast<const ColumnVector<T> &>(column).getData()[row_num]);
+			const auto & value = static_cast<const ColumnVector<T> &>(column).getData()[row_num];
+			data.set.insert(CombinedCardinalityTraits<T>::hash(value));
 		}
 	};
 
