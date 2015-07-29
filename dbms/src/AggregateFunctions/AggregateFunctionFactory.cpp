@@ -652,7 +652,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 		AggregateFunctionPtr nested = get(String(name.data(), name.size() - strlen("State")), argument_types, recursion_level + 1);
 		return new AggregateFunctionState(nested);
 	}
-	else if (recursion_level == 0 && name.size() > strlen("Merge") && !(strcmp(name.data() + name.size() - strlen("Merge"), "Merge")))
+	else if (recursion_level <= 1 && name.size() > strlen("Merge") && !(strcmp(name.data() + name.size() - strlen("Merge"), "Merge")))
 	{
 		/// Для агрегатных функций вида aggMerge, где agg - имя другой агрегатной функции.
 		if (argument_types.size() != 1)
@@ -668,7 +668,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 
 		return new AggregateFunctionMerge(nested);
 	}
-	else if (recursion_level <= 1 && name.size() >= 3 && name[name.size() - 2] == 'I' && name[name.size() - 1] == 'f')
+	else if (recursion_level <= 2 && name.size() >= 3 && name[name.size() - 2] == 'I' && name[name.size() - 1] == 'f')
 	{
 		if (argument_types.empty())
 			throw Exception{
@@ -682,7 +682,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 		AggregateFunctionPtr nested = get(String(name.data(), name.size() - 2), nested_dt, recursion_level + 1);
 		return new AggregateFunctionIf(nested);
 	}
-	else if (recursion_level <= 2 && name.size() > strlen("Array") && !(strcmp(name.data() + name.size() - strlen("Array"), "Array")))
+	else if (recursion_level <= 3 && name.size() > strlen("Array") && !(strcmp(name.data() + name.size() - strlen("Array"), "Array")))
 	{
 		/// Для агрегатных функций вида aggArray, где agg - имя другой агрегатной функции.
 		size_t num_agruments = argument_types.size();
@@ -695,7 +695,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 			else
 				throw Exception("Illegal type " + argument_types[i]->getName() + " of argument #" + toString(i + 1) + " for aggregate function " + name + ". Must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 		}
-		AggregateFunctionPtr nested = get(String(name.data(), name.size() - strlen("Array")), nested_arguments, recursion_level + 2); /// + 2, чтобы ни один другой модификатор не мог идти перед Array
+		AggregateFunctionPtr nested = get(String(name.data(), name.size() - strlen("Array")), nested_arguments, recursion_level + 3); /// + 3, чтобы ни один другой модификатор не мог идти перед Array
 		return new AggregateFunctionArray(nested);
 	}
 	else
@@ -765,14 +765,14 @@ bool AggregateFunctionFactory::isAggregateFunctionName(const String & name, int 
 	if (recursion_level <= 0 && name.size() > strlen("State") && !(strcmp(name.data() + name.size() - strlen("State"), "State")))
 		return isAggregateFunctionName(String(name.data(), name.size() - strlen("State")), recursion_level + 1);
 	/// Для агрегатных функций вида aggMerge, где agg - имя другой агрегатной функции.
-	if (recursion_level <= 0 && name.size() > strlen("Merge") && !(strcmp(name.data() + name.size() - strlen("Merge"), "Merge")))
+	if (recursion_level <= 1 && name.size() > strlen("Merge") && !(strcmp(name.data() + name.size() - strlen("Merge"), "Merge")))
 		return isAggregateFunctionName(String(name.data(), name.size() - strlen("Merge")), recursion_level + 1);
 	/// Для агрегатных функций вида aggIf, где agg - имя другой агрегатной функции.
-	if (recursion_level <= 1 && name.size() >= 3 && name[name.size() - 2] == 'I' && name[name.size() - 1] == 'f')
+	if (recursion_level <= 2 && name.size() >= 3 && name[name.size() - 2] == 'I' && name[name.size() - 1] == 'f')
 		return isAggregateFunctionName(String(name.data(), name.size() - 2), recursion_level + 1);
 	/// Для агрегатных функций вида aggArray, где agg - имя другой агрегатной функции.
-	if (recursion_level <= 2 && name.size() > strlen("Array") && !(strcmp(name.data() + name.size() - strlen("Array"), "Array")))
-		return isAggregateFunctionName(String(name.data(), name.size() - strlen("Array")), recursion_level + 2); /// + 2, чтобы ни один другой модификатор не мог идти перед Array
+	if (recursion_level <= 3 && name.size() > strlen("Array") && !(strcmp(name.data() + name.size() - strlen("Array"), "Array")))
+		return isAggregateFunctionName(String(name.data(), name.size() - strlen("Array")), recursion_level + 3); /// + 3, чтобы ни один другой модификатор не мог идти перед Array
 
 	return false;
 }

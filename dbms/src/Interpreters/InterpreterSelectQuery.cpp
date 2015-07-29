@@ -330,9 +330,6 @@ BlockIO InterpreterSelectQuery::execute()
 	/// Ограничения на результат, квота на результат, а также колбек для прогресса.
 	if (IProfilingBlockInputStream * stream = dynamic_cast<IProfilingBlockInputStream *>(&*streams[0]))
 	{
-		stream->setProgressCallback(context.getProgressCallback());
-		stream->setProcessListElement(context.getProcessListElement());
-
 		/// Ограничения действуют только на конечный результат.
 		if (to_stage == QueryProcessingStage::Complete)
 		{

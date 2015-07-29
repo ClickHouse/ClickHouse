@@ -247,7 +247,7 @@ private:
 						++right;
 				}
 
-				/// Если правее засечек нет, просто используем DEFAULT_BUFFER_SIZE
+				/// Если правее засечек нет, просто используем max_read_buffer_size
 				if (right >= (*marks).size() || (right + 1 == (*marks).size() &&
 					(*marks)[right].offset_in_compressed_file == (*marks)[all_mark_ranges[i].end].offset_in_compressed_file))
 				{
