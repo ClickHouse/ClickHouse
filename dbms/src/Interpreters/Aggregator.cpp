@@ -9,6 +9,7 @@
 #include <DB/DataTypes/DataTypeAggregateFunction.h>
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/AggregateFunctions/AggregateFunctionCount.h>
+#include <DB/DataStreams/IProfilingBlockInputStream.h>
 
 #include <DB/Interpreters/Aggregator.h>
 
@@ -1688,6 +1689,66 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 }
 
 
+Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
+{
+	if (blocks.empty())
+		return {};
+
+	StringRefs key(keys_size);
+	ConstColumnPlainPtrs key_columns(keys_size);
+
+	AggregateColumnsData aggregate_columns(aggregates_size);
+
+	initialize(blocks.front());
+
+	/// Каким способом выполнять агрегацию?
+	for (size_t i = 0; i < keys_size; ++i)
+		key_columns[i] = sample.getByPosition(i).column;
+
+	Sizes key_sizes;
+	AggregatedDataVariants::Type method = chooseAggregationMethod(key_columns, key_sizes);
+
+	/// Временные данные для агрегации.
+	AggregatedDataVariants result;
+
+	/// result будет уничтожать состояния агрегатных функций в деструкторе
+	result.aggregator = this;
+
+	result.init(method);
+	result.keys_size = keys_size;
+	result.key_sizes = key_sizes;
+
+	LOG_TRACE(log, "Merging partially aggregated blocks.");
+
+	for (Block & block : blocks)
+	{
+		if (result.type == AggregatedDataVariants::Type::without_key || block.info.is_overflows)
+			mergeWithoutKeyStreamsImpl(block, result);
+
+	#define M(NAME, IS_TWO_LEVEL) \
+		else if (result.type == AggregatedDataVariants::Type::NAME) \
+			mergeStreamsImpl(block, key_sizes, result.aggregates_pool, *result.NAME, result.NAME->data);
+
+		APPLY_FOR_AGGREGATED_VARIANTS(M)
+	#undef M
+		else if (result.type != AggregatedDataVariants::Type::without_key)
+			throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+	}
+
+	BlocksList merged_block = convertToBlocks(result, final, 1);
+
+	if (merged_block.size() > 1)	/// TODO overflows
+		throw Exception("Logical error: temporary result is not single-level", ErrorCodes::LOGICAL_ERROR);
+
+	LOG_TRACE(log, "Merged partially aggregated blocks.");
+
+	if (merged_block.empty())
+		return {};
+
+	return merged_block.front();
+}
+
+
 template <typename Method>
 void NO_INLINE Aggregator::destroyImpl(
 	Method & method) const
@@ -1768,5 +1829,6 @@ void Aggregator::setCancellationHook(const CancellationHook cancellation_hook)
 {
 	isCancelled = cancellation_hook;
 }
+
 
 }
