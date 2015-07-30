@@ -24,8 +24,7 @@ public:
 	  */
 	BlockIO execute() override
 	{
-		executeImpl(false);
-		return {};
+		return executeImpl(false);
 	}
 
 	/** assume_metadata_exists - не проверять наличие файла с метаданными и не создавать его
@@ -45,7 +44,7 @@ public:
 		const ColumnDefaults & column_defaults);
 
 private:
-	void executeImpl(bool assume_metadata_exists);
+	BlockIO executeImpl(bool assume_metadata_exists);
 
 	/// AST в список столбцов с типами. Столбцы типа Nested развернуты в список настоящих столбцов.
 	using ColumnsAndDefaults = std::pair<NamesAndTypesList, ColumnDefaults>;

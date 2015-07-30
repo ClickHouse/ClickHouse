@@ -33,12 +33,19 @@ namespace DB
   * has(arr, x) - есть ли в массиве элемент x.
   * indexOf(arr, x) - возвращает индекс элемента x (начиная с 1), если он есть в массиве, или 0, если его нет.
   * arrayEnumerate(arr) - возаращает массив [1,2,3,..., length(arr)]
-  * arrayEnumerateUniq(arr) - возаращает массив,  параллельный данному, где для каждого элемента указано,
-  * 						  какой он по счету среди элементов с таким значением.
-  * 						  Например: arrayEnumerateUniq([10, 20, 10, 30]) = [1,  1,  2,  1]
+  *
+  * arrayUniq(arr) - считает количество разных элементов в массиве,
+  * arrayUniq(arr1, arr2, ...) - считает количество разных кортежей из элементов на соответствующих позициях в нескольких массивах.
+  *
+  * arrayEnumerateUniq(arr)
+  *  - возаращает массив,  параллельный данному, где для каждого элемента указано,
+  *  какой он по счету среди элементов с таким значением.
+  *  Например: arrayEnumerateUniq([10, 20, 10, 30]) = [1,  1,  2,  1]
+  * arrayEnumerateUniq(arr1, arr2...)
+  *  - для кортежей из элементов на соответствующих позициях в нескольких массивах.
+  *
+  * emptyArrayToSingle(arr) - заменить пустые массивы на массивы из одного элемента со значением "по-умолчанию".
   */
-
-
 
 
 class FunctionArray : public IFunction
@@ -995,11 +1002,11 @@ public:
 		{
 			const ColumnArray::Offsets_t & offsets = array->getOffsets();
 
-			ColumnVector<UInt32> * res_nested = new ColumnVector<UInt32>;
+			ColumnUInt32 * res_nested = new ColumnUInt32;
 			ColumnArray * res_array = new ColumnArray(res_nested, array->getOffsetsColumn());
 			block.getByPosition(result).column = res_array;
 
-			ColumnVector<UInt32>::Container_t & res_values = res_nested->getData();
+			ColumnUInt32::Container_t & res_values = res_nested->getData();
 			res_values.resize(array->getData().size());
 			size_t prev_off = 0;
 			for (size_t i = 0; i < offsets.size(); ++i)
@@ -1033,6 +1040,239 @@ public:
 		}
 	}
 };
+
+
+/// Считает количество разных элементов в массиве, или количество разных кортежей из элементов на соответствующих позициях в нескольких массивах.
+/// NOTE Реализация частично совпадает с arrayEnumerateUniq.
+class FunctionArrayUniq : public IFunction
+{
+public:
+	static constexpr auto name = "arrayUniq";
+	static IFunction * create(const Context & context) { return new FunctionArrayUniq; }
+
+	/// Получить имя функции.
+	String getName() const
+	{
+		return name;
+	}
+
+	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnType(const DataTypes & arguments) const
+	{
+		if (arguments.size() == 0)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ toString(arguments.size()) + ", should be at least 1.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		for (size_t i = 0; i < arguments.size(); ++i)
+		{
+			const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(&*arguments[i]);
+			if (!array_type)
+				throw Exception("All arguments for function " + getName() + " must be arrays; argument " + toString(i + 1) + " isn't.",
+					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+		}
+
+		return new DataTypeUInt32;
+	}
+
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		if (arguments.size() == 1 && executeConst(block, arguments, result))
+			return;
+
+		Columns array_columns(arguments.size());
+		const ColumnArray::Offsets_t * offsets = nullptr;
+		ConstColumnPlainPtrs data_columns(arguments.size());
+
+		for (size_t i = 0; i < arguments.size(); ++i)
+		{
+			ColumnPtr array_ptr = block.getByPosition(arguments[i]).column;
+			const ColumnArray * array = typeid_cast<const ColumnArray *>(&*array_ptr);
+			if (!array)
+			{
+				const ColumnConstArray * const_array = typeid_cast<const ColumnConstArray *>(&*block.getByPosition(arguments[i]).column);
+				if (!const_array)
+					throw Exception("Illegal column " + block.getByPosition(arguments[i]).column->getName()
+						+ " of " + toString(i + 1) + "-th argument of function " + getName(),
+						ErrorCodes::ILLEGAL_COLUMN);
+				array_ptr = const_array->convertToFullColumn();
+				array = typeid_cast<const ColumnArray *>(&*array_ptr);
+			}
+			array_columns[i] = array_ptr;
+			const ColumnArray::Offsets_t & offsets_i = array->getOffsets();
+			if (!i)
+				offsets = &offsets_i;
+			else if (offsets_i != *offsets)
+				throw Exception("Lengths of all arrays passsed to " + getName() + " must be equal.",
+					ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
+			data_columns[i] = &array->getData();
+		}
+
+		const ColumnArray * first_array = typeid_cast<const ColumnArray *>(&*array_columns[0]);
+		ColumnUInt32 * res = new ColumnUInt32;
+		block.getByPosition(result).column = res;
+
+		ColumnUInt32::Container_t & res_values = res->getData();
+		res_values.resize(offsets->size());
+
+		if (arguments.size() == 1)
+		{
+			if (!(	executeNumber<UInt8>	(first_array, res_values)
+				||	executeNumber<UInt16>	(first_array, res_values)
+				||	executeNumber<UInt32>	(first_array, res_values)
+				||	executeNumber<UInt64>	(first_array, res_values)
+				||	executeNumber<Int8>		(first_array, res_values)
+				||	executeNumber<Int16>	(first_array, res_values)
+				||	executeNumber<Int32>	(first_array, res_values)
+				||	executeNumber<Int64>	(first_array, res_values)
+				||	executeNumber<Float32>	(first_array, res_values)
+				||	executeNumber<Float64>	(first_array, res_values)
+				||	executeString			(first_array, res_values)))
+				throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+						+ " of first argument of function " + getName(),
+					ErrorCodes::ILLEGAL_COLUMN);
+		}
+		else
+		{
+			if (!execute128bit(*offsets, data_columns, res_values))
+				executeHashed(*offsets, data_columns, res_values);
+		}
+	}
+
+private:
+	/// Изначально выделить кусок памяти для 512 элементов.
+	static constexpr size_t INITIAL_SIZE_DEGREE = 9;
+
+	template <typename T>
+	bool executeNumber(const ColumnArray * array, ColumnUInt32::Container_t & res_values)
+	{
+		const ColumnVector<T> * nested = typeid_cast<const ColumnVector<T> *>(&array->getData());
+		if (!nested)
+			return false;
+		const ColumnArray::Offsets_t & offsets = array->getOffsets();
+		const typename ColumnVector<T>::Container_t & values = nested->getData();
+
+		typedef ClearableHashSet<T, DefaultHash<T>, HashTableGrower<INITIAL_SIZE_DEGREE>,
+			HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(T)> > Set;
+
+		Set set;
+		size_t prev_off = 0;
+		for (size_t i = 0; i < offsets.size(); ++i)
+		{
+			set.clear();
+			size_t off = offsets[i];
+			for (size_t j = prev_off; j < off; ++j)
+				set.insert(values[j]);
+
+			res_values[i] = set.size();
+			prev_off = off;
+		}
+		return true;
+	}
+
+	bool executeString(const ColumnArray * array, ColumnUInt32::Container_t & res_values)
+	{
+		const ColumnString * nested = typeid_cast<const ColumnString *>(&array->getData());
+		if (!nested)
+			return false;
+		const ColumnArray::Offsets_t & offsets = array->getOffsets();
+
+		typedef ClearableHashSet<StringRef, StringRefHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
+			HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(StringRef)> > Set;
+
+		Set set;
+		size_t prev_off = 0;
+		for (size_t i = 0; i < offsets.size(); ++i)
+		{
+			set.clear();
+			size_t off = offsets[i];
+			for (size_t j = prev_off; j < off; ++j)
+				set.insert(nested->getDataAt(j));
+
+			res_values[i] = set.size();
+			prev_off = off;
+		}
+		return true;
+	}
+
+	bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		const ColumnConstArray * array = typeid_cast<const ColumnConstArray *>(&*block.getByPosition(arguments[0]).column);
+		if (!array)
+			return false;
+		const Array & values = array->getData();
+
+		std::set<Field> set;
+		for (size_t i = 0; i < values.size(); ++i)
+			set.insert(values[i]);
+
+		block.getByPosition(result).column = new ColumnConstUInt32(array->size(), set.size());
+		return true;
+	}
+
+	bool execute128bit(
+		const ColumnArray::Offsets_t & offsets,
+		const ConstColumnPlainPtrs & columns,
+		ColumnUInt32::Container_t & res_values)
+	{
+		size_t count = columns.size();
+		size_t keys_bytes = 0;
+		Sizes key_sizes(count);
+		for (size_t j = 0; j < count; ++j)
+		{
+			if (!columns[j]->isFixed())
+				return false;
+			key_sizes[j] = columns[j]->sizeOfField();
+			keys_bytes += key_sizes[j];
+		}
+		if (keys_bytes > 16)
+			return false;
+
+		typedef ClearableHashSet<UInt128, UInt128HashCRC32, HashTableGrower<INITIAL_SIZE_DEGREE>,
+			HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(UInt128)> > Set;
+
+		Set set;
+		size_t prev_off = 0;
+		for (size_t i = 0; i < offsets.size(); ++i)
+		{
+			set.clear();
+			size_t off = offsets[i];
+			for (size_t j = prev_off; j < off; ++j)
+				set.insert(packFixed<UInt128>(j, count, columns, key_sizes));
+
+			res_values[i] = set.size();
+			prev_off = off;
+		}
+
+		return true;
+	}
+
+	void executeHashed(
+		const ColumnArray::Offsets_t & offsets,
+		const ConstColumnPlainPtrs & columns,
+		ColumnUInt32::Container_t & res_values)
+	{
+		size_t count = columns.size();
+
+		typedef ClearableHashSet<UInt128, UInt128TrivialHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
+			HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(UInt128)> > Set;
+
+		Set set;
+		size_t prev_off = 0;
+		for (size_t i = 0; i < offsets.size(); ++i)
+		{
+			set.clear();
+			size_t off = offsets[i];
+			for (size_t j = prev_off; j < off; ++j)
+				set.insert(hash128(j, count, columns));
+
+			res_values[i] = set.size();
+			prev_off = off;
+		}
+	}
+};
+
 
 class FunctionArrayEnumerateUniq : public IFunction
 {
@@ -1100,11 +1340,11 @@ public:
 		}
 
 		const ColumnArray * first_array = typeid_cast<const ColumnArray *>(&*array_columns[0]);
-		ColumnVector<UInt32> * res_nested = new ColumnVector<UInt32>;
+		ColumnUInt32 * res_nested = new ColumnUInt32;
 		ColumnArray * res_array = new ColumnArray(res_nested, first_array->getOffsetsColumn());
 		block.getByPosition(result).column = res_array;
 
-		ColumnVector<UInt32>::Container_t & res_values = res_nested->getData();
+		ColumnUInt32::Container_t & res_values = res_nested->getData();
 		if (!offsets->empty())
 			res_values.resize(offsets->back());
 
@@ -1137,7 +1377,7 @@ private:
 	static constexpr size_t INITIAL_SIZE_DEGREE = 9;
 
 	template <typename T>
-	bool executeNumber(const ColumnArray * array, ColumnVector<UInt32>::Container_t & res_values)
+	bool executeNumber(const ColumnArray * array, ColumnUInt32::Container_t & res_values)
 	{
 		const ColumnVector<T> * nested = typeid_cast<const ColumnVector<T> *>(&array->getData());
 		if (!nested)
@@ -1163,7 +1403,7 @@ private:
 		return true;
 	}
 
-	bool executeString(const ColumnArray * array, ColumnVector<UInt32>::Container_t & res_values)
+	bool executeString(const ColumnArray * array, ColumnUInt32::Container_t & res_values)
 	{
 		const ColumnString * nested = typeid_cast<const ColumnString *>(&array->getData());
 		if (!nested)
@@ -1211,7 +1451,7 @@ private:
 	bool execute128bit(
 		const ColumnArray::Offsets_t & offsets,
 		const ConstColumnPlainPtrs & columns,
-		ColumnVector<UInt32>::Container_t & res_values)
+		ColumnUInt32::Container_t & res_values)
 	{
 		size_t count = columns.size();
 		size_t keys_bytes = 0;
@@ -1248,7 +1488,7 @@ private:
 	void executeHashed(
 		const ColumnArray::Offsets_t & offsets,
 		const ConstColumnPlainPtrs & columns,
-		ColumnVector<UInt32>::Container_t & res_values)
+		ColumnUInt32::Container_t & res_values)
 	{
 		size_t count = columns.size();
 
@@ -1457,13 +1697,263 @@ private:
 };
 
 
+class FunctionEmptyArrayToSingle : public IFunction
+{
+public:
+	static constexpr auto name = "emptyArrayToSingle";
+	static IFunction * create(const Context & context) { return new FunctionEmptyArrayToSingle; }
+
+	/// Получить имя функции.
+	String getName() const
+	{
+		return name;
+	}
+
+	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnType(const DataTypes & arguments) const
+	{
+		if (arguments.size() != 1)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ toString(arguments.size()) + ", should be 1.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
+		if (!array_type)
+			throw Exception("Argument for function " + getName() + " must be array.",
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		return arguments[0]->clone();
+	}
+
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		if (executeConst(block, arguments, result))
+			return;
+
+		const ColumnArray * array = typeid_cast<const ColumnArray *>(block.getByPosition(arguments[0]).column.get());
+		if (!array)
+			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of first argument of function " + getName(),
+				ErrorCodes::ILLEGAL_COLUMN);
+
+		ColumnPtr res_ptr = array->cloneEmpty();
+		block.getByPosition(result).column = res_ptr;
+		ColumnArray & res = static_cast<ColumnArray &>(*res_ptr);
+
+		const IColumn & src_data = array->getData();
+		const ColumnArray::Offsets_t & src_offsets = array->getOffsets();
+		IColumn & res_data = res.getData();
+		ColumnArray::Offsets_t & res_offsets = res.getOffsets();
+
+		if (!(	executeNumber<UInt8>	(src_data, src_offsets, res_data, res_offsets)
+			||	executeNumber<UInt16>	(src_data, src_offsets, res_data, res_offsets)
+			||	executeNumber<UInt32>	(src_data, src_offsets, res_data, res_offsets)
+			||	executeNumber<UInt64>	(src_data, src_offsets, res_data, res_offsets)
+			||	executeNumber<Int8>		(src_data, src_offsets, res_data, res_offsets)
+			||	executeNumber<Int16>	(src_data, src_offsets, res_data, res_offsets)
+			||	executeNumber<Int32>	(src_data, src_offsets, res_data, res_offsets)
+			||	executeNumber<Int64>	(src_data, src_offsets, res_data, res_offsets)
+			||	executeNumber<Float32>	(src_data, src_offsets, res_data, res_offsets)
+			||	executeNumber<Float64>	(src_data, src_offsets, res_data, res_offsets)
+			||	executeString			(src_data, src_offsets, res_data, res_offsets)
+			||	executeFixedString		(src_data, src_offsets, res_data, res_offsets)))
+			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+				+ " of first argument of function " + getName(),
+				ErrorCodes::ILLEGAL_COLUMN);
+	}
+
+private:
+	bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		if (const ColumnConstArray * const_array = typeid_cast<const ColumnConstArray *>(block.getByPosition(arguments[0]).column.get()))
+		{
+			if (const_array->getData().empty())
+			{
+				auto nested_type = typeid_cast<const DataTypeArray &>(*block.getByPosition(arguments[0]).type).getNestedType();
+
+				block.getByPosition(result).column = new ColumnConstArray(
+					block.rowsInFirstColumn(),
+					{nested_type->getDefault()},
+					nested_type->clone());
+			}
+			else
+				block.getByPosition(result).column = block.getByPosition(arguments[0]).column;
+
+			return true;
+		}
+		else
+			return false;
+	}
+
+	template <typename T>
+	bool executeNumber(
+		const IColumn & src_data, const ColumnArray::Offsets_t & src_offsets,
+		IColumn & res_data_col, ColumnArray::Offsets_t & res_offsets)
+	{
+		if (const ColumnVector<T> * src_data_concrete = typeid_cast<const ColumnVector<T> *>(&src_data))
+		{
+			const PODArray<T> & src_data = src_data_concrete->getData();
+			PODArray<T> & res_data = typeid_cast<ColumnVector<T> &>(res_data_col).getData();
+			size_t size = src_offsets.size();
+			res_offsets.resize(size);
+			res_data.reserve(src_data.size());
+
+			ColumnArray::Offset_t src_prev_offset = 0;
+			ColumnArray::Offset_t res_prev_offset = 0;
+
+			for (size_t i = 0; i < size; ++i)
+			{
+				if (src_offsets[i] != src_prev_offset)
+				{
+					size_t size_to_write = src_offsets[i] - src_prev_offset;
+					size_t prev_res_data_size = res_data.size();
+					res_data.resize(prev_res_data_size + size_to_write);
+					memcpy(&res_data[prev_res_data_size], &src_data[src_prev_offset], size_to_write * sizeof(T));
+					res_prev_offset += size_to_write;
+					res_offsets[i] = res_prev_offset;
+				}
+				else
+				{
+					res_data.push_back(T());
+					++res_prev_offset;
+					res_offsets[i] = res_prev_offset;
+				}
+
+				src_prev_offset = src_offsets[i];
+			}
+
+			return true;
+		}
+		else
+			return false;
+	}
+
+	bool executeFixedString(
+		const IColumn & src_data, const ColumnArray::Offsets_t & src_offsets,
+		IColumn & res_data_col, ColumnArray::Offsets_t & res_offsets)
+	{
+		if (const ColumnFixedString * src_data_concrete = typeid_cast<const ColumnFixedString *>(&src_data))
+		{
+			const size_t n = src_data_concrete->getN();
+			const ColumnFixedString::Chars_t & src_data = src_data_concrete->getChars();
+			ColumnFixedString::Chars_t & res_data = typeid_cast<ColumnFixedString &>(res_data_col).getChars();
+			size_t size = src_offsets.size();
+			res_offsets.resize(size);
+			res_data.reserve(src_data.size());
+
+			ColumnArray::Offset_t src_prev_offset = 0;
+			ColumnArray::Offset_t res_prev_offset = 0;
+
+			for (size_t i = 0; i < size; ++i)
+			{
+				if (src_offsets[i] != src_prev_offset)
+				{
+					size_t size_to_write = src_offsets[i] - src_prev_offset;
+					size_t prev_res_data_size = res_data.size();
+					res_data.resize(prev_res_data_size + size_to_write * n);
+					memcpy(&res_data[prev_res_data_size], &src_data[src_prev_offset], size_to_write * n);
+					res_prev_offset += size_to_write;
+					res_offsets[i] = res_prev_offset;
+				}
+				else
+				{
+					size_t prev_res_data_size = res_data.size();
+					res_data.resize(prev_res_data_size + n);
+					memset(&res_data[prev_res_data_size], 0, n);
+					++res_prev_offset;
+					res_offsets[i] = res_prev_offset;
+				}
+
+				src_prev_offset = src_offsets[i];
+			}
+
+			return true;
+		}
+		else
+			return false;
+	}
+
+	bool executeString(
+		const IColumn & src_data, const ColumnArray::Offsets_t & src_array_offsets,
+		IColumn & res_data_col, ColumnArray::Offsets_t & res_array_offsets)
+	{
+		if (const ColumnString * src_data_concrete = typeid_cast<const ColumnString *>(&src_data))
+		{
+			const ColumnString::Offsets_t & src_string_offsets = src_data_concrete->getOffsets();
+			ColumnString::Offsets_t & res_string_offsets = typeid_cast<ColumnString &>(res_data_col).getOffsets();
+
+			const ColumnString::Chars_t & src_data = src_data_concrete->getChars();
+			ColumnString::Chars_t & res_data = typeid_cast<ColumnString &>(res_data_col).getChars();
+
+			size_t size = src_array_offsets.size();
+			res_array_offsets.resize(size);
+			res_string_offsets.reserve(src_string_offsets.size());
+			res_data.reserve(src_data.size());
+
+			ColumnArray::Offset_t src_array_prev_offset = 0;
+			ColumnArray::Offset_t res_array_prev_offset = 0;
+
+			ColumnString::Offset_t src_string_prev_offset = 0;
+			ColumnString::Offset_t res_string_prev_offset = 0;
+
+			for (size_t i = 0; i < size; ++i)
+			{
+				if (src_array_offsets[i] != src_array_prev_offset)
+				{
+					size_t array_size = src_array_offsets[i] - src_array_prev_offset;
+
+					size_t bytes_to_copy = 0;
+					size_t from_string_prev_offset_local = src_string_prev_offset;
+					for (size_t j = 0; j < array_size; ++j)
+					{
+						size_t string_size = src_string_offsets[src_array_prev_offset + j] - from_string_prev_offset_local;
+
+						res_string_prev_offset += string_size;
+						res_string_offsets.push_back(res_string_prev_offset);
+
+						from_string_prev_offset_local += string_size;
+						bytes_to_copy += string_size;
+					}
+
+					size_t res_data_old_size = res_data.size();
+					res_data.resize(res_data_old_size + bytes_to_copy);
+					memcpy(&res_data[res_data_old_size], &src_data[src_string_prev_offset], bytes_to_copy);
+
+					res_array_prev_offset += array_size;
+					res_array_offsets[i] = res_array_prev_offset;
+				}
+				else
+				{
+					res_data.push_back(0);	/// Пустая строка, включая ноль на конце.
+
+					++res_string_prev_offset;
+					res_string_offsets.push_back(res_string_prev_offset);
+
+					++res_array_prev_offset;
+					res_array_offsets[i] = res_array_prev_offset;
+				}
+
+				src_array_prev_offset = src_array_offsets[i];
+
+				if (src_array_prev_offset)
+					src_string_prev_offset = src_string_offsets[src_array_prev_offset - 1];
+			}
+
+			return true;
+		}
+		else
+			return false;
+	}
+};
+
+
 struct NameHas			{ static constexpr auto name = "has"; };
 struct NameIndexOf		{ static constexpr auto name = "indexOf"; };
 struct NameCountEqual	{ static constexpr auto name = "countEqual"; };
 
-typedef FunctionArrayIndex<IndexToOne, 		NameHas>	FunctionHas;
+typedef FunctionArrayIndex<IndexToOne, 		NameHas>		FunctionHas;
 typedef FunctionArrayIndex<IndexIdentity, 	NameIndexOf>	FunctionIndexOf;
-typedef FunctionArrayIndex<IndexCount, 	NameCountEqual>	FunctionCountEqual;
+typedef FunctionArrayIndex<IndexCount, 	NameCountEqual>		FunctionCountEqual;
 
 using FunctionEmptyArrayUInt8 = FunctionEmptyArray<DataTypeUInt8>;
 using FunctionEmptyArrayUInt16 = FunctionEmptyArray<DataTypeUInt16>;

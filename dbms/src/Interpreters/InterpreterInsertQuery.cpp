@@ -100,6 +100,7 @@ BlockIO InterpreterInsertQuery::execute()
 		InterpreterSelectQuery interpreter_select{query.select, context};
 		BlockInputStreamPtr in{interpreter_select.execute().in};
 		res.in = new NullAndDoCopyBlockInputStream{in, out};
+		res.in_sample = interpreter_select.getSampleBlock();
 	}
 
 	return res;

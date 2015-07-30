@@ -404,31 +404,36 @@ struct ExtractURLParameterImpl
 		{
 			size_t cur_offset = offsets[i];
 
+			const char * str = reinterpret_cast<const char *>(&data[prev_offset]);
+
 			const char * pos = nullptr;
-
-			do
+			const char * begin = strchr(str, '?');
+			if (begin != nullptr)
 			{
-				const char * str = reinterpret_cast<const char *>(&data[prev_offset]);
-
-				const char * begin = strchr(str, '?');
-				if (begin == nullptr)
-					break;
-
-				pos = strstr(begin + 1, param_str);
-				if (pos == nullptr)
-					break;
-				if (pos != begin + 1 && *(pos - 1) != ';' && *(pos - 1) != '&')
+				pos = begin + 1;
+				while (true)
 				{
-					pos = nullptr;
-					break;
-				}
+					pos = strstr(pos, param_str);
 
-				pos += param_len;
-			} while (false);
+					if (pos == nullptr)
+						break;
+
+					if (pos[-1] != '?' && pos[-1] != '&')
+					{
+						pos += param_len;
+						continue;
+					}
+					else
+					{
+						pos += param_len;
+						break;
+					}
+				}
+			}
 
 			if (pos != nullptr)
 			{
-				const char * end = strpbrk(pos, "&;#");
+				const char * end = strpbrk(pos, "&#");
 				if (end == nullptr)
 					end = pos + strlen(pos);
 

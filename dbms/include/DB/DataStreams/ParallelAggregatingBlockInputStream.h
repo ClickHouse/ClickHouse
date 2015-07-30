@@ -21,17 +21,21 @@ class ParallelAggregatingBlockInputStream : public IProfilingBlockInputStream
 public:
 	/** Столбцы из key_names и аргументы агрегатных функций, уже должны быть вычислены.
 	  */
-	ParallelAggregatingBlockInputStream(BlockInputStreams inputs, const Names & key_names,
-		const AggregateDescriptions & aggregates,	bool overflow_row_, bool final_, size_t max_threads_,
+	ParallelAggregatingBlockInputStream(
+		BlockInputStreams inputs, BlockInputStreamPtr additional_input_at_end,
+		const Names & key_names, const AggregateDescriptions & aggregates,
+		bool overflow_row_, bool final_, size_t max_threads_,
 		size_t max_rows_to_group_by_, OverflowMode group_by_overflow_mode_,
 		Compiler * compiler_, UInt32 min_count_to_compile_, size_t group_by_two_level_threshold_)
 		: aggregator(key_names, aggregates, overflow_row_, max_rows_to_group_by_, group_by_overflow_mode_,
 			compiler_, min_count_to_compile_, group_by_two_level_threshold_),
 		final(final_), max_threads(std::min(inputs.size(), max_threads_)),
 		keys_size(aggregator.getNumberOfKeys()), aggregates_size(aggregator.getNumberOfAggregates()),
-		handler(*this), processor(inputs, max_threads, handler)
+		handler(*this), processor(inputs, additional_input_at_end, max_threads, handler)
 	{
-		children.insert(children.end(), inputs.begin(), inputs.end());
+		children = inputs;
+		if (additional_input_at_end)
+			children.push_back(additional_input_at_end);
 	}
 
 	String getName() const override { return "ParallelAggregating"; }
