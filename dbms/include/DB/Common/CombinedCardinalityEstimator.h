@@ -87,8 +87,6 @@ public:
 		}
 		else if (container_type == details::ContainerType::LARGE)
 			getContainer<Large>().insert(value);
-		else
-			throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
 	}
 
 	UInt32 size() const
@@ -151,8 +149,6 @@ public:
 			toLarge();
 			getContainer<Large>().read(in);
 		}
-		else
-			throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
 	}
 
 	void readAndMerge(DB::ReadBuffer & in)
@@ -200,8 +196,6 @@ public:
 			getContainer<Medium>().write(out);
 		else if (container_type == details::ContainerType::LARGE)
 			getContainer<Large>().write(out);
-		else
-			throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
 	}
 
 private:
@@ -217,11 +211,7 @@ private:
 
 		new (&medium) std::unique_ptr<Medium>{ std::move(tmp_medium) };
 
-		std::atomic_signal_fence(std::memory_order_seq_cst);
-
 		setContainerType(details::ContainerType::MEDIUM);
-
-		std::atomic_signal_fence(std::memory_order_seq_cst);
 
 		if (current_memory_tracker)
 			current_memory_tracker->alloc(sizeof(medium));
@@ -251,11 +241,7 @@ private:
 
 		new (&large) std::unique_ptr<Large>{ std::move(tmp_large) };
 
-		std::atomic_signal_fence(std::memory_order_seq_cst);
-
 		setContainerType(details::ContainerType::LARGE);
-
-		std::atomic_signal_fence(std::memory_order_seq_cst);
 
 		if (current_memory_tracker)
 			current_memory_tracker->alloc(sizeof(large));
