@@ -308,7 +308,7 @@ std::string Block::dumpStructure() const
 		if (it->column)
 			res << ' ' << it->column->getName() << ' ' << it->column->size();
 		else
-			res << "nullptr";
+			res << " nullptr";
 	}
 	return res.str();
 }
