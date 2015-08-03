@@ -6,6 +6,7 @@
 #include <DB/DataStreams/MergingSortedBlockInputStream.h>
 #include <DB/DataStreams/AggregatingBlockInputStream.h>
 #include <DB/DataStreams/MergingAggregatedBlockInputStream.h>
+#include <DB/DataStreams/MergingAggregatedMemoryEfficientBlockInputStream.h>
 #include <DB/DataStreams/AsynchronousBlockInputStream.h>
 #include <DB/DataStreams/UnionBlockInputStream.h>
 #include <DB/DataStreams/ParallelAggregatingBlockInputStream.h>
@@ -856,14 +857,38 @@ void InterpreterSelectQuery::executeAggregation(ExpressionActionsPtr expression,
 
 void InterpreterSelectQuery::executeMergeAggregated(bool overflow_row, bool final)
 {
-	/// Склеим несколько источников в один
-	executeUnion();
-
-	/// Теперь объединим агрегированные блоки
 	Names key_names;
 	AggregateDescriptions aggregates;
 	query_analyzer->getAggregateInfo(key_names, aggregates);
-	streams[0] = new MergingAggregatedBlockInputStream(streams[0], key_names, aggregates, overflow_row, final, original_max_threads);
+
+	/** Есть два режима распределённой агрегации.
+	  *
+	  * 1. В разных потоках читать из удалённых серверов блоки.
+	  * Сохранить все блоки в оперативку. Объединить блоки.
+	  * Если агрегация двухуровневая - распараллелить по номерам корзин.
+	  *
+	  * 2. В одном потоке читать по очереди блоки с разных серверов.
+	  * В оперативке хранится только по одному блоку с каждого сервера.
+	  * Если агрегация двухуровневая - последовательно объединяем блоки каждого следующего уровня.
+	  *
+	  * Второй вариант расходует меньше памяти (до 256 раз меньше)
+	  *  в случае двухуровневой агрегации, которая используется для больших результатов после GROUP BY,
+	  *  но при этом может работать медленнее.
+	  */
+
+	if (!settings.distributed_aggregation_memory_efficient)
+	{
+		/// Склеим несколько источников в один, распараллеливая работу.
+		executeUnion();
+
+		/// Теперь объединим агрегированные блоки
+		streams[0] = new MergingAggregatedBlockInputStream(streams[0], key_names, aggregates, overflow_row, final, original_max_threads);
+	}
+	else
+	{
+		streams[0] = new MergingAggregatedMemoryEfficientBlockInputStream(streams, key_names, aggregates, overflow_row, final);
+		streams.resize(1);
+	}
 }
 
 

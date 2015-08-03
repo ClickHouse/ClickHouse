@@ -141,9 +141,12 @@ void Block::insertUnique(const ColumnWithTypeAndName & elem)
 
 void Block::erase(size_t position)
 {
+	if (index_by_position.empty())
+		throw Exception("Block is empty", ErrorCodes::POSITION_OUT_OF_BOUND);
+
 	if (position >= index_by_position.size())
 		throw Exception("Position out of bound in Block::erase(), max position = "
-			+ toString(index_by_position.size()), ErrorCodes::POSITION_OUT_OF_BOUND);
+			+ toString(index_by_position.size() - 1), ErrorCodes::POSITION_OUT_OF_BOUND);
 
 	Container_t::iterator it = index_by_position[position];
 	index_by_name.erase(index_by_name.find(it->name));
@@ -177,6 +180,9 @@ void Block::erase(const String & name)
 
 ColumnWithTypeAndName & Block::getByPosition(size_t position)
 {
+	if (index_by_position.empty())
+		throw Exception("Block is empty", ErrorCodes::POSITION_OUT_OF_BOUND);
+
 	if (position >= index_by_position.size())
 		throw Exception("Position " + toString(position)
 			+ " is out of bound in Block::getByPosition(), max position = "
@@ -189,6 +195,9 @@ ColumnWithTypeAndName & Block::getByPosition(size_t position)
 
 const ColumnWithTypeAndName & Block::getByPosition(size_t position) const
 {
+	if (index_by_position.empty())
+		throw Exception("Block is empty", ErrorCodes::POSITION_OUT_OF_BOUND);
+
 	if (position >= index_by_position.size())
 		throw Exception("Position " + toString(position)
 			+ " is out of bound in Block::getByPosition(), max position = "
