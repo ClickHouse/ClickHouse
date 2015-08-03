@@ -674,17 +674,6 @@ typedef SharedPtr<AggregatedDataVariants> AggregatedDataVariantsPtr;
 typedef std::vector<AggregatedDataVariantsPtr> ManyAggregatedDataVariants;
 
 
-/** Достать вариант агрегации по его типу. */
-template <typename Method> Method & getDataVariant(AggregatedDataVariants & variants);
-
-#define M(NAME, IS_TWO_LEVEL) \
-	template <> inline decltype(AggregatedDataVariants::NAME)::element_type & getDataVariant<decltype(AggregatedDataVariants::NAME)::element_type>(AggregatedDataVariants & variants) { return *variants.NAME; }
-
-APPLY_FOR_AGGREGATED_VARIANTS(M)
-
-#undef M
-
-
 /** Агрегирует источник блоков.
   */
 class Aggregator
@@ -733,10 +722,14 @@ public:
 	  */
 	AggregatedDataVariantsPtr merge(ManyAggregatedDataVariants & data_variants, size_t max_threads);
 
-	/** Объединить несколько агрегированных блоков в одну структуру данных.
+	/** Объединить поток частично агрегированных блоков в одну структуру данных.
 	  * (Доагрегировать несколько блоков, которые представляют собой результат независимых агрегаций с удалённых серверов.)
 	  */
 	void mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants & result, size_t max_threads);
+
+	/** Объединить несколько частично агрегированных блоков в один.
+	  */
+	Block mergeBlocks(BlocksList & blocks, bool final);
 
 	using CancellationHook = std::function<bool()>;
 
@@ -972,6 +965,17 @@ protected:
 	void destroyImpl(
 		Method & method) const;
 };
+
+
+/** Достать вариант агрегации по его типу. */
+template <typename Method> Method & getDataVariant(AggregatedDataVariants & variants);
+
+#define M(NAME, IS_TWO_LEVEL) \
+	template <> inline decltype(AggregatedDataVariants::NAME)::element_type & getDataVariant<decltype(AggregatedDataVariants::NAME)::element_type>(AggregatedDataVariants & variants) { return *variants.NAME; }
+
+APPLY_FOR_AGGREGATED_VARIANTS(M)
+
+#undef M
 
 
 }
