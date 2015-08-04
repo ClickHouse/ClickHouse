@@ -183,7 +183,7 @@ namespace detail
 	};
 
 	template<typename T>
-	struct CombinedCardinalityTraits<T, typename std::enable_if<std::is_floating_point<T>::value>::type>
+	struct CombinedCardinalityTraits<T, typename std::enable_if<std::is_same<T, Float64>::value>::type>
 	{
 		using Op = Hash64To32<UInt64>;
 
@@ -192,6 +192,17 @@ namespace detail
 			UInt64 res = 0;
 			memcpy(reinterpret_cast<char *>(&res), reinterpret_cast<char *>(&key), sizeof(key));
 			return Op::compute(res);
+		}
+	};
+
+	template<typename T>
+	struct CombinedCardinalityTraits<T, typename std::enable_if<std::is_same<T, Float32>::value>::type>
+	{
+		static UInt32 hash(T key)
+		{
+			UInt32 res = 0;
+			memcpy(reinterpret_cast<char *>(&res), reinterpret_cast<char *>(&key), sizeof(key));
+			return res;
 		}
 	};
 
