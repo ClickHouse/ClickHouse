@@ -133,6 +133,65 @@ public:
 			(*it)->collectIdentifierNames(set);
 	}
 
+
+	/// Преобразовать в строку.
+
+	/// Настройки формата.
+	struct FormatSettings
+	{
+		std::ostream & ostr;
+		bool hilite;
+		bool one_line;
+
+		char nl_or_ws;
+
+		FormatSettings(std::ostream & ostr_, bool hilite_, bool one_line_)
+			: ostr(ostr_), hilite(hilite_), one_line(one_line_)
+		{
+			nl_or_ws = one_line ? ' ' : '\n';
+		}
+	};
+
+	/// Состояние. Например, множество узлов DAG, которых мы уже обошли.
+	struct FormatState
+	{
+		/// TODO
+	};
+
+	/// Состояние, которое копируется при форматировании каждого узла. Например, уровень вложенности.
+	struct FormatStateStacked
+	{
+		bool indent = 0;
+		bool need_parens = false;
+	};
+
+	void format(const FormatSettings & settings) const
+	{
+		FormatState state;
+		formatImpl(settings, state, FormatStateStacked());
+	}
+
+protected:
+	/// Для подсветки синтаксиса.
+	static const char * hilite_keyword;
+	static const char * hilite_identifier;
+	static const char * hilite_function;
+	static const char * hilite_operator;
+	static const char * hilite_alias;
+	static const char * hilite_none;
+
+
+	virtual void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+	{
+		throw Exception("Unknown element in AST: " + getID()
+			+ ((range.first && (range.second > range.first))
+				? " '" + std::string(range.first, range.second - range.first) + "'"
+				: ""),
+			ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
+	}
+
+	void writeAlias(const String & name, std::ostream & s, bool hilite);
+
 private:
 	size_t checkDepthImpl(size_t max_depth, size_t level) const
 	{
@@ -151,5 +210,10 @@ private:
 
 typedef SharedPtr<IAST> ASTPtr;
 typedef std::vector<ASTPtr> ASTs;
+
+
+/// Квотировать идентификатор обратными кавычками, если это требуется.
+String backQuoteIfNeed(const String & x);
+
 
 }

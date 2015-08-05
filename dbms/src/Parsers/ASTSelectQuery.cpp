@@ -1,4 +1,6 @@
+#include <DB/Parsers/ASTSetQuery.h>
 #include <DB/Parsers/ASTSelectQuery.h>
+
 
 namespace DB
 {
@@ -215,6 +217,152 @@ const IAST * ASTSelectQuery::getFormat() const
 	while (!query->next_union_all.isNull())
 		query = static_cast<const ASTSelectQuery *>(query->next_union_all.get());
 	return query->format.get();
+}
+
+
+void ASTSelectQuery::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+{
+	frame.need_parens = false;
+	std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
+
+	settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "SELECT " << (distinct ? "DISTINCT " : "") << (settings.hilite ? hilite_none : "");
+
+	settings.one_line
+		? select_expression_list->formatImpl(settings, state, frame)
+		: typeid_cast<const ASTExpressionList &>(*select_expression_list).formatImplMultiline(settings, state, frame);
+
+	if (table)
+	{
+		settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << settings.ostr << indent_str << "FROM " << (settings.hilite ? hilite_none : "");
+		if (database)
+		{
+			database->formatImpl(settings, state, frame);
+			settings.ostr << ".";
+		}
+
+		if (typeid_cast<const ASTSelectQuery *>(&*table))
+		{
+			if (settings.one_line)
+				settings.ostr << " (";
+			else
+				settings.ostr << "\n" << indent_str << "(\n";
+
+			table->formatImpl(settings, state, frame);
+
+			if (settings.one_line)
+				settings.ostr << ")";
+			else
+				settings.ostr << "\n" << indent_str << ")";
+		}
+		else
+			table->formatImpl(settings, state, frame);
+	}
+
+	if (final)
+	{
+		settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << settings.ostr << indent_str << "FINAL" << (settings.hilite ? hilite_none : "");
+	}
+
+	if (sample_size)
+	{
+		settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << settings.ostr << indent_str << "SAMPLE " << (settings.hilite ? hilite_none : "");
+		sample_size->formatImpl(settings, state, frame);
+	}
+
+	if (array_join_expression_list)
+	{
+		settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << settings.ostr << indent_str
+		<< (array_join_is_left ? "LEFT " : "") << "ARRAY JOIN " << (settings.hilite ? hilite_none : "");
+
+		settings.one_line
+			? array_join_expression_list->formatImpl(settings, state, frame)
+			: typeid_cast<const ASTExpressionList &>(*array_join_expression_list).formatImplMultiline(settings, state, frame);
+	}
+
+	if (join)
+	{
+		settings.ostr << " ";
+		join->formatImpl(settings, state, frame);
+	}
+
+	if (prewhere_expression)
+	{
+		settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << settings.ostr << indent_str << "PREWHERE " << (settings.hilite ? hilite_none : "");
+		prewhere_expression->formatImpl(settings, state, frame);
+	}
+
+	if (where_expression)
+	{
+		settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << settings.ostr << indent_str << "WHERE " << (settings.hilite ? hilite_none : "");
+		where_expression, s, indent, hilite, settings.one_line);
+	}
+
+	if (group_expression_list)
+	{
+		settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << settings.ostr << indent_str << "GROUP BY " << (settings.hilite ? hilite_none : "");
+		settings.one_line
+			? group_expression_list->formatImpl(settings, state, frame)
+			: typeid_cast<const ASTExpressionList &>(*group_expression_list).formatImplMultiline(settings, state, frame);
+	}
+
+	if (group_by_with_totals)
+		settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << settings.ostr << indent_str << (settings.one_line ? "" : "    ") << "WITH TOTALS" << (settings.hilite ? hilite_none : "");
+
+	if (having_expression)
+	{
+		settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << settings.ostr << indent_str << "HAVING " << (settings.hilite ? hilite_none : "");
+		having_expression->formatImpl(settings, state, frame);
+	}
+
+	if (order_expression_list)
+	{
+		settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << settings.ostr << indent_str << "ORDER BY " << (settings.hilite ? hilite_none : "");
+		settings.one_line
+			? order_expression_list->formatImpl(settings, state, frame)
+			: typeid_cast<const ASTExpressionList &>(*order_expression_list).formatImplMultiline(settings, state, frame);
+	}
+
+	if (limit_length)
+	{
+		settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << settings.ostr << indent_str << "LIMIT " << (settings.hilite ? hilite_none : "");
+		if (limit_offset)
+		{
+			limit_offset->formatImpl(settings, state, frame);
+			settings.ostr << ", ";
+		}
+		limit_length->formatImpl(settings, state, frame);
+	}
+
+	if (settings)
+	{
+		settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << settings.ostr << indent_str << "SETTINGS " << (settings.hilite ? hilite_none : "");
+
+		const ASTSetQuery & ast_set = typeid_cast<const ASTSetQuery &>(*settings);
+		for (ASTSetQuery::Changes::const_iterator it = ast_set.changes.begin(); it != ast_set.changes.end(); ++it)
+		{
+			if (it != ast_set.changes.begin())
+				settings.ostr << ", ";
+
+			settings.ostr << it->name << " = " << apply_visitor(FieldVisitorToString(), it->value);
+		}
+	}
+
+	if (format)
+	{
+		settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << settings.ostr << indent_str << "FORMAT " << (settings.hilite ? hilite_none : "");
+		format->formatImpl(settings, state, frame);
+	}
+
+	if (next_union_all)
+	{
+		settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << settings.ostr << indent_str << "UNION ALL " << settings.nl_or_ws << settings.ostr << (settings.hilite ? hilite_none : "");
+
+		// NOTE Мы можем безопасно применить static_cast вместо typeid_cast, потому что знаем, что в цепочке UNION ALL
+		// имеются только деревья типа SELECT.
+		const ASTSelectQuery & next_ast = static_cast<const ASTSelectQuery &>(*next_union_all);
+
+		next_ast->formatImpl(settings, state, frame);
+	}
 }
 
 };

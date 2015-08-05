@@ -1,6 +1,8 @@
 #pragma once
 
 #include <DB/Parsers/IAST.h>
+#include <mysqlxx/Manip.h>
+
 
 namespace DB
 {
@@ -98,5 +100,87 @@ public:
 		}
 		return res;
 	}
+
+protected:
+	void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+	{
+		frame.need_parens = false;
+
+		std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
+
+		settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ALTER TABLE " << (settings.hilite ? hilite_none : "");
+
+		if (!table.empty())
+		{
+			if (!database.empty())
+			{
+				settings.ostr << indent_str << database;
+				settings.ostr << ".";
+			}
+			settings.ostr << indent_str << table;
+		}
+		settings.ostr << nl_or_ws;
+
+		for (size_t i = 0; i < parameters.size(); ++i)
+		{
+			const ASTAlterQuery::Parameters & p = parameters[i];
+
+			if (p.type == ASTAlterQuery::ADD_COLUMN)
+			{
+				settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ADD COLUMN " << (settings.hilite ? hilite_none : "");
+				p.col_decl->formatImpl(settings, state, frame);
+
+				/// AFTER
+				if (p.column)
+				{
+					settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " AFTER " << (settings.hilite ? hilite_none : "");
+					p.column->formatImpl(settings, state, frame);
+				}
+			}
+			else if (p.type == ASTAlterQuery::DROP_COLUMN)
+			{
+				settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "DROP COLUMN " << (settings.hilite ? hilite_none : "");
+				p.column->formatImpl(settings, state, frame);
+			}
+			else if (p.type == ASTAlterQuery::MODIFY_COLUMN)
+			{
+				settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY COLUMN " << (settings.hilite ? hilite_none : "");
+				p.col_decl->formatImpl(settings, state, frame);
+			}
+			else if (p.type == ASTAlterQuery::DROP_PARTITION)
+			{
+				settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << (p.detach ? "DETACH" : "DROP") << " PARTITION "
+				<< (settings.hilite ? hilite_none : "");
+				p.partition->formatImpl(settings, state, frame);
+			}
+			else if (p.type == ASTAlterQuery::ATTACH_PARTITION)
+			{
+				settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ATTACH " << (p.unreplicated ? "UNREPLICATED " : "")
+				<< (p.part ? "PART " : "PARTITION ") << (settings.hilite ? hilite_none : "");
+				p.partition->formatImpl(settings, state, frame);
+			}
+			else if (p.type == ASTAlterQuery::FETCH_PARTITION)
+			{
+				settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "FETCH " << (p.unreplicated ? "UNREPLICATED " : "")
+				<< "PARTITION " << (settings.hilite ? hilite_none : "");
+				p.partition->formatImpl(settings, state, frame);
+				settings.ostr << (settings.hilite ? hilite_keyword : "")
+					<< " FROM " << (settings.hilite ? hilite_none : "") << mysqlxx::quote << p.from;
+			}
+			else if (p.type == ASTAlterQuery::FREEZE_PARTITION)
+			{
+				settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "FREEZE PARTITION " << (settings.hilite ? hilite_none : "");
+				p.partition->formatImpl(settings, state, frame);
+			}
+			else
+				throw Exception("Unexpected type of ALTER", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
+
+			std::string comma = (i < (parameters.size() -1) ) ? "," : "";
+			settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << comma << (settings.hilite ? hilite_none : "");
+
+			settings.ostr << settings.nl_or_ws;
+		}
+	}
 };
+
 }

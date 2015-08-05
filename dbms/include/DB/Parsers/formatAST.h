@@ -12,7 +12,7 @@ namespace DB
 /** Берёт синтаксическое дерево и превращает его обратно в текст.
   * В случае запроса INSERT, данные будут отсутствовать.
   */
-void formatAST(const IAST 				& ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false, bool need_parens = false);
+void formatAST(const IAST & ast, std::ostream & s, size_t indent = 0, bool hilite = true, bool one_line = false, bool need_parens = false);
 
 
 String formatColumnsForCreateQuery(NamesAndTypesList & columns);

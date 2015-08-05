@@ -26,6 +26,22 @@ public:
 	String getID() const override { return "Literal_" + apply_visitor(FieldVisitorDump(), value); }
 
 	ASTPtr clone() const override { return new ASTLiteral(*this); }
+
+protected:
+	void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+	{
+		if (frame.need_parens && !alias.empty())
+			settings.ostr <<'(';
+
+		settings.ostr <<apply_visitor(FieldVisitorToString(), value);
+
+		if (!alias.empty())
+		{
+			writeAlias(alias, settings.ostr, settings.hilite);
+			if (frame.need_parens)
+				settings.ostr <<')';
+		}
+	}
 };
 
 }

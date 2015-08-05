@@ -63,7 +63,7 @@ String backQuoteIfNeed(const String & x)
 }
 
 
-static String hightlight(const String & keyword, const String & color_sequence, const bool hilite)
+static String highlight(const String & keyword, const String & color_sequence, const bool hilite)
 {
 	return hilite ? color_sequence + keyword + hilite_none : keyword;
 }
@@ -79,6 +79,21 @@ static void writeAlias(const String & name, std::ostream & s, bool hilite, bool 
 
 	s << (hilite ? hilite_none : "");
 }
+
+
+struct FormatState
+{
+	std::ostream & s;
+	bool hilite;
+	bool one_line;
+
+	void formatImpl(const IAST & ast, size_t indent, bool need_parens);
+
+
+};
+
+
+
 
 
 void formatAST(const ASTExpressionList 		& ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
@@ -729,7 +744,7 @@ void formatAST(const ASTColumnDeclaration	& ast, std::ostream & s, size_t indent
 
 	if (ast.default_expression)
 	{
-		s << ' ' << hightlight(ast.default_specifier, hilite_keyword, hilite) << ' ';
+		s << ' ' << highlight(ast.default_specifier, hilite_keyword, hilite) << ' ';
 		formatAST(*ast.default_expression, s, indent, hilite, one_line);
 	}
 }
@@ -908,10 +923,16 @@ void formatAST(const ASTMultiQuery & ast, std::ostream & s, size_t indent, bool 
 
 void formatAST(const IAST & ast, std::ostream & s, size_t indent, bool hilite, bool one_line, bool need_parens)
 {
+	FormatState state = { .s = s, .hilite = hilite, .one_line = one_line };
+	state.formatImpl(ast, indent, need_parens);
+}
 
+
+void FormatState::formatImpl(const IAST & ast, size_t indent, bool need_parens)
+{
 #define DISPATCH(NAME) \
 	else if (const AST ## NAME * concrete = typeid_cast<const AST ## NAME *>(&ast)) \
-		formatAST(*concrete, s, indent, hilite, one_line, need_parens);
+		state.formatImpl(*concrete, indent, need_parens);
 
 	if (false) {}
 	DISPATCH(SelectQuery)

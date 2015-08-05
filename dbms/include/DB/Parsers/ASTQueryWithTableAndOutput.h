@@ -8,17 +8,17 @@ namespace DB
 {
 	
 	
-	/** Запрос с указанием названия таблицы и, возможно, БД и секцией FORMAT.
-	 */
-	class ASTQueryWithTableAndOutput : public ASTQueryWithOutput
-	{
-	public:
-		String database;
-		String table;
-		
-		ASTQueryWithTableAndOutput() = default;
-		ASTQueryWithTableAndOutput(const StringRange range_) : ASTQueryWithOutput(range_) {}
-	};
+/** Запрос с указанием названия таблицы и, возможно, БД и секцией FORMAT.
+	*/
+class ASTQueryWithTableAndOutput : public ASTQueryWithOutput
+{
+public:
+	String database;
+	String table;
+
+	ASTQueryWithTableAndOutput() = default;
+	ASTQueryWithTableAndOutput(const StringRange range_) : ASTQueryWithOutput(range_) {}
+};
 	
 	
 /// Объявляет класс-наследник ASTQueryWithTableAndOutput с реализованными методами getID и clone.
