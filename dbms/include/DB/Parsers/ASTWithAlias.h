@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DB/IO/WriteBufferFromOStream.h>
 #include <DB/Parsers/IAST.h>
 
 
@@ -19,6 +20,11 @@ public:
 	String getAliasOrColumnName() const override 	{ return alias.empty() ? getColumnName() : alias; }
 	String tryGetAlias() const override 			{ return alias; }
 	void setAlias(const String & to) override 		{ alias = to; }
+
+	/// Вызывает formatImplWithAlias, а также выводит алиас. Если надо - заключает всё выражение в скобки.
+	void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override final;
+
+	virtual void formatImplWithAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const = 0;
 };
 
 /// helper for setting aliases and chaining result to other functions

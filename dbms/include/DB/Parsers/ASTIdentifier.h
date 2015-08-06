@@ -2,6 +2,7 @@
 
 #include <DB/DataTypes/IDataType.h>
 #include <DB/Parsers/ASTWithAlias.h>
+#include <DB/IO/WriteBufferFromOStream.h>
 
 
 namespace DB
@@ -40,6 +41,18 @@ public:
 	void collectIdentifierNames(IdentifierNameSet & set) const override
 	{
 		set.insert(name);
+	}
+
+protected:
+	void formatImplWithAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+	{
+		settings.ostr << (settings.hilite ? hilite_identifier : "");
+
+		WriteBufferFromOStream wb(settings.ostr, 32);
+		writeProbablyBackQuotedString(name, wb);
+		wb.next();
+
+		settings.ostr << (settings.hilite ? hilite_none : "");
 	}
 };
 

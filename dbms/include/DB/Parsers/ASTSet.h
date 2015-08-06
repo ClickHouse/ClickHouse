@@ -22,6 +22,17 @@ public:
 	String getID() const override { return "Set_" + getColumnName(); }
 	ASTPtr clone() const override { return new ASTSet(*this); }
 	String getColumnName() const override { return column_name; }
+
+protected:
+	void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+	{
+		/** Подготовленное множество. В пользовательских запросах такого не бывает, но такое бывает после промежуточных преобразований запроса.
+		  * Выведем его не по-настоящему (это не будет корректным запросом, но покажет, что здесь было множество).
+		  */
+		settings.ostr << (settings.hilite ? hilite_keyword : "")
+			<< "(...)"
+			<< (settings.hilite ? hilite_none : "");
+	}
 };
 
 }

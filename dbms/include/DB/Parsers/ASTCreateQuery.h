@@ -48,6 +48,73 @@ public:
 
 		return ptr;
 	}
+
+protected:
+	void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+	{
+		frame.need_parens = false;
+
+		if (!database.empty() && table.empty())
+		{
+			settings.ostr << (settings.hilite ? hilite_keyword : "") << (attach ? "ATTACH DATABASE " : "CREATE DATABASE ") << (if_not_exists ? "IF NOT EXISTS " : "") << (settings.hilite ? hilite_none : "")
+			<< backQuoteIfNeed(database);
+			return;
+		}
+
+		{
+			std::string what = "TABLE";
+			if (is_view)
+				what = "VIEW";
+			if (is_materialized_view)
+				what = "MATERIALIZED VIEW";
+
+			settings.ostr
+				<< (settings.hilite ? hilite_keyword : "")
+					<< (attach ? "ATTACH " : "CREATE ")
+					<< (is_temporary ? "TEMPORARY " : "")
+					<< what
+					<< " " << (if_not_exists ? "IF NOT EXISTS " : "")
+				<< (settings.hilite ? hilite_none : "")
+				<< (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
+		}
+
+		if (!as_table.empty())
+		{
+			settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "")
+			<< (!as_database.empty() ? backQuoteIfNeed(as_database) + "." : "") << backQuoteIfNeed(as_table);
+		}
+
+		if (columns)
+		{
+			settings.ostr << (settings.one_line ? " (" : "\n(");
+			++frame.indent;
+			columns->formatImpl(settings, state, frame);
+			settings.ostr << (settings.one_line ? ")" : "\n)");
+		}
+
+		if (storage && !is_materialized_view && !is_view)
+		{
+			settings.ostr << (settings.hilite ? hilite_keyword : "") << " ENGINE" << (settings.hilite ? hilite_none : "") << " = ";
+			storage->formatImpl(settings, state, frame);
+		}
+
+		if (inner_storage)
+		{
+			settings.ostr << (settings.hilite ? hilite_keyword : "") << " ENGINE" << (settings.hilite ? hilite_none : "") << " = ";
+			inner_storage->formatImpl(settings, state, frame);
+		}
+
+		if (is_populate)
+		{
+			settings.ostr << (settings.hilite ? hilite_keyword : "") << " POPULATE" << (settings.hilite ? hilite_none : "");
+		}
+
+		if (select)
+		{
+			settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS" << settings.nl_or_ws << (settings.hilite ? hilite_none : "");
+			select->formatImpl(settings, state, frame);
+		}
+	}
 };
 
 }

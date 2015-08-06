@@ -34,6 +34,19 @@ public:
 	}
 
 	String getColumnName() const override { return getTreeID(); }
+
+protected:
+	void formatImplWithAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+	{
+		std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
+		std::string nl_or_nothing = settings.one_line ? "" : "\n";
+
+		settings.ostr << nl_or_nothing << indent_str << "(" << nl_or_nothing;
+		FormatStateStacked frame_dont_need_parens = frame;
+		frame_dont_need_parens.need_parens = false;
+		children[0]->formatImpl(settings, state, frame_dont_need_parens);
+		settings.ostr << nl_or_nothing << indent_str << ")";
+	}
 };
 
 }

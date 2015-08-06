@@ -82,6 +82,9 @@ public:
 
 		return ptr;
 	}
+
+protected:
+	void formatImplWithAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
 

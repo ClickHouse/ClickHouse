@@ -5,5 +5,7 @@
 
 namespace DB
 {
-	DEFINE_AST_QUERY_WITH_OUTPUT(ASTShowProcesslistQuery, "ShowProcesslistQuery")
+
+DEFINE_AST_QUERY_WITH_OUTPUT(ASTShowProcesslistQuery, "ShowProcesslistQuery", "SHOW PROCESSLIST")
+
 }
