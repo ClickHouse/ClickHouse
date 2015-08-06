@@ -129,18 +129,20 @@ void readIntText(T & x, ReadBuffer & buf)
 	if (buf.eof())
 		throwReadAfterEOF();
 
+	if (*buf.position() == '-')
+	{
+		if (!std::is_signed<T>::value)
+			return;
+		negative = true;
+		++buf.position();
+	}
+	else if (*buf.position() == '+')
+		++buf.position();
+
 	while (!buf.eof())
 	{
 		switch (*buf.position())
 		{
-			case '+':
-				break;
-			case '-':
-			    if (std::is_signed<T>::value)
-					negative = true;
-				else
-					return;
-				break;
 			case '0':
 			case '1':
 			case '2':
@@ -216,6 +218,9 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
 template <typename T>
 void readFloatText(T & x, ReadBuffer & buf)
 {
+	/// Если вдруг тут перед каждым return надо будет еще что-то делать, типа домножать на экспоненту -- это можно сделать тут.
+#define SCOPE_GUARDED_RETURN do { if (negative) x = -x; return; } while (0)
+
 	bool negative = false;
 	x = 0;
 	bool after_point = false;
@@ -224,16 +229,21 @@ void readFloatText(T & x, ReadBuffer & buf)
 	if (buf.eof())
 		throwReadAfterEOF();
 
+	if (*buf.position() == '-')
+	{
+		negative = true;
+		++buf.position();
+	}
+	else if (*buf.position() == '+')
+		++buf.position();
+
 	while (!buf.eof())
 	{
 		switch (*buf.position())
 		{
-			case '+':
-				break;
-			case '-':
-				negative = true;
-				break;
 			case '.':
+				if (after_point)
+					SCOPE_GUARDED_RETURN;
 				after_point = true;
 				break;
 			case '0':
@@ -264,24 +274,18 @@ void readFloatText(T & x, ReadBuffer & buf)
 				Int32 exponent = 0;
 				readIntText(exponent, buf);
 				x *= exp10(exponent);
-				if (negative)
-					x = -x;
-				return;
+				SCOPE_GUARDED_RETURN;
 			}
 			case 'i':
 				++buf.position();
 				assertString("nf", buf);
 				x = std::numeric_limits<T>::infinity();
-				if (negative)
-					x = -x;
-				return;
+				SCOPE_GUARDED_RETURN;
 			case 'I':
 				++buf.position();
 				assertString("NF", buf);
 				x = std::numeric_limits<T>::infinity();
-				if (negative)
-					x = -x;
-				return;
+				SCOPE_GUARDED_RETURN;
 			case 'n':
 				++buf.position();
 				assertString("an", buf);
@@ -293,14 +297,13 @@ void readFloatText(T & x, ReadBuffer & buf)
 				x = std::numeric_limits<T>::quiet_NaN();
 				return;
 			default:
-				if (negative)
-					x = -x;
-				return;
+				SCOPE_GUARDED_RETURN;
 		}
 		++buf.position();
 	}
-	if (negative)
-		x = -x;
+	SCOPE_GUARDED_RETURN;
+
+#undef SCOPE_GUARDED_RETURN
 }
 
 
