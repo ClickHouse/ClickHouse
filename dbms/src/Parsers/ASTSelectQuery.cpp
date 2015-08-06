@@ -222,6 +222,7 @@ const IAST * ASTSelectQuery::getFormat() const
 
 void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
 {
+	frame.current_select = this;
 	frame.need_parens = false;
 	std::string indent_str = s.one_line ? "" : std::string(4 * frame.indent, ' ');
 

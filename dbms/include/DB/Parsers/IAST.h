@@ -4,7 +4,7 @@
 #include <set>
 #include <sstream>
 #include <iostream>
-#include <unordered_set>
+#include <set>
 
 #include <Poco/SharedPtr.h>
 
@@ -152,10 +152,13 @@ public:
 		}
 	};
 
-	/// Состояние. Например, множество узлов DAG, которых мы уже обошли.
+	/// Состояние. Например, может запоминаться множество узлов, которых мы уже обошли.
 	struct FormatState
 	{
-		std::unordered_set<const IAST *> printed_asts_with_alias;
+		/** Запрос SELECT, в котором найден алиас; идентификатор узла с таким алиасом.
+		  * Нужно, чтобы когда узел встретился повторно, выводить только алиас.
+		  */
+		std::set<std::pair<const IAST *, std::string>> printed_asts_with_alias;
 	};
 
 	/// Состояние, которое копируется при форматировании каждого узла. Например, уровень вложенности.
@@ -163,6 +166,7 @@ public:
 	{
 		bool indent = 0;
 		bool need_parens = false;
+		const IAST * current_select = nullptr;
 	};
 
 	void format(const FormatSettings & settings) const
@@ -170,16 +174,6 @@ public:
 		FormatState state;
 		formatImpl(settings, state, FormatStateStacked());
 	}
-
-
-	/// Для подсветки синтаксиса.
-	static const char * hilite_keyword;
-	static const char * hilite_identifier;
-	static const char * hilite_function;
-	static const char * hilite_operator;
-	static const char * hilite_alias;
-	static const char * hilite_none;
-
 
 	virtual void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 	{
@@ -191,6 +185,15 @@ public:
 	}
 
 	void writeAlias(const String & name, std::ostream & s, bool hilite) const;
+
+protected:
+	/// Для подсветки синтаксиса.
+	static const char * hilite_keyword;
+	static const char * hilite_identifier;
+	static const char * hilite_function;
+	static const char * hilite_operator;
+	static const char * hilite_alias;
+	static const char * hilite_none;
 
 private:
 	size_t checkDepthImpl(size_t max_depth, size_t level) const
