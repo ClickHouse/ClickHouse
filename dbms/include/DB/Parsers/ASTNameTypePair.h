@@ -40,7 +40,7 @@ protected:
 	{
 		std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
 
-		s << settings.nl_or_ws << indent_str << backQuoteIfNeed(name) << " ";
+		settings.ostr << settings.nl_or_ws << indent_str << backQuoteIfNeed(name) << " ";
 		type->formatImpl(settings, state, frame);
 	}
 };

@@ -25,7 +25,7 @@ String backQuoteIfNeed(const String & x)
 }
 
 
-void IAST::writeAlias(const String & name, std::ostream & s, bool hilite)
+void IAST::writeAlias(const String & name, std::ostream & s, bool hilite) const
 {
 	s << (hilite ? hilite_keyword : "") << " AS " << (hilite ? hilite_alias : "");
 

@@ -119,7 +119,7 @@ protected:
 			}
 			settings.ostr << indent_str << table;
 		}
-		settings.ostr << nl_or_ws;
+		settings.ostr << settings.nl_or_ws;
 
 		for (size_t i = 0; i < parameters.size(); ++i)
 		{

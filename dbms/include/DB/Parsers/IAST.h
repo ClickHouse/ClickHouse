@@ -171,7 +171,7 @@ public:
 		formatImpl(settings, state, FormatStateStacked());
 	}
 
-protected:
+
 	/// Для подсветки синтаксиса.
 	static const char * hilite_keyword;
 	static const char * hilite_identifier;
@@ -190,7 +190,7 @@ protected:
 			ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
 	}
 
-	void writeAlias(const String & name, std::ostream & s, bool hilite);
+	void writeAlias(const String & name, std::ostream & s, bool hilite) const;
 
 private:
 	size_t checkDepthImpl(size_t max_depth, size_t level) const
