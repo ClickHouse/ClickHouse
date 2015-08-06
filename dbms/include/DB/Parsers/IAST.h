@@ -3,6 +3,8 @@
 #include <list>
 #include <set>
 #include <sstream>
+#include <iostream>
+#include <unordered_set>
 
 #include <Poco/SharedPtr.h>
 
@@ -13,8 +15,6 @@
 #include <DB/Core/ErrorCodes.h>
 #include <DB/IO/WriteHelpers.h>
 #include <DB/Parsers/StringRange.h>
-
-#include <iostream>
 
 
 namespace DB
@@ -155,7 +155,7 @@ public:
 	/// Состояние. Например, множество узлов DAG, которых мы уже обошли.
 	struct FormatState
 	{
-		/// TODO
+		std::unordered_set<const IAST *> printed_asts_with_alias;
 	};
 
 	/// Состояние, которое копируется при форматировании каждого узла. Например, уровень вложенности.

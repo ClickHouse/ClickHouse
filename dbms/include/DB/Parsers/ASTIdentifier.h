@@ -44,11 +44,8 @@ public:
 	}
 
 protected:
-	void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+	void formatImplWithAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
 	{
-		if (frame.need_parens && !alias.empty())
-			settings.ostr << '(';
-
 		settings.ostr << (settings.hilite ? hilite_identifier : "");
 
 		WriteBufferFromOStream wb(settings.ostr, 32);
@@ -56,13 +53,6 @@ protected:
 		wb.next();
 
 		settings.ostr << (settings.hilite ? hilite_none : "");
-
-		if (!alias.empty())
-		{
-			writeAlias(alias, settings.ostr, settings.hilite);
-			if (frame.need_parens)
-				settings.ostr << ')';
-		}
 	}
 };
 

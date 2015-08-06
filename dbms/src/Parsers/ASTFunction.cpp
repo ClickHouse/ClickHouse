@@ -5,12 +5,8 @@
 namespace DB
 {
 
-void ASTFunction::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTFunction::formatImplWithAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-	/// Если есть алиас, то требуются скобки вокруг всего выражения, включая алиас. Потому что запись вида 0 AS x + 0 синтаксически некорректна.
-	if (frame.need_parens && !alias.empty())
-		settings.ostr << '(';
-
 	FormatStateStacked nested_need_parens = frame;
 	FormatStateStacked nested_dont_need_parens = frame;
 	nested_need_parens.need_parens = true;
@@ -186,13 +182,6 @@ void ASTFunction::formatImpl(const FormatSettings & settings, FormatState & stat
 		}
 
 		settings.ostr << (settings.hilite ? hilite_none : "");
-	}
-
-	if (!alias.empty())
-	{
-		writeAlias(alias, settings.ostr, settings.hilite);
-		if (frame.need_parens)
-			settings.ostr << ')';
 	}
 }
 
