@@ -28,7 +28,7 @@ public:
 	ASTPtr clone() const override { return new ASTLiteral(*this); }
 
 protected:
-	void formatImplWithAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+	void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
 	{
 		settings.ostr << apply_visitor(FieldVisitorToString(), value);
 	}

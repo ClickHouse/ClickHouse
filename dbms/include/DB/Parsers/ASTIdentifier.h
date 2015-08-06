@@ -44,7 +44,7 @@ public:
 	}
 
 protected:
-	void formatImplWithAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+	void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
 	{
 		settings.ostr << (settings.hilite ? hilite_identifier : "");
 

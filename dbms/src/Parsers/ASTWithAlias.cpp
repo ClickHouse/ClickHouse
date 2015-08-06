@@ -8,7 +8,7 @@ void ASTWithAlias::formatImpl(const FormatSettings & settings, FormatState & sta
 	if (!alias.empty())
 	{
 		/// Если мы уже ранее вывели этот узел в другом месте запроса, то теперь достаточно вывести лишь алиас.
-		if (!state.printed_asts_with_alias.emplace(frame.current_select, getID()).second)
+		if (!state.printed_asts_with_alias.emplace(frame.current_select, alias).second)
 		{
 			WriteBufferFromOStream wb(settings.ostr, 32);
 			writeProbablyBackQuotedString(alias, wb);
@@ -20,7 +20,7 @@ void ASTWithAlias::formatImpl(const FormatSettings & settings, FormatState & sta
 	if (frame.need_parens && !alias.empty())
 		settings.ostr <<'(';
 
-	formatImplWithAlias(settings, state, frame);
+	formatImplWithoutAlias(settings, state, frame);
 
 	if (!alias.empty())
 	{

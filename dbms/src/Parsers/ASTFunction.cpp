@@ -5,7 +5,7 @@
 namespace DB
 {
 
-void ASTFunction::formatImplWithAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
 	FormatStateStacked nested_need_parens = frame;
 	FormatStateStacked nested_dont_need_parens = frame;
