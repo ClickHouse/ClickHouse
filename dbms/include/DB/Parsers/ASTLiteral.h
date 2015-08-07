@@ -26,6 +26,12 @@ public:
 	String getID() const override { return "Literal_" + apply_visitor(FieldVisitorDump(), value); }
 
 	ASTPtr clone() const override { return new ASTLiteral(*this); }
+
+protected:
+	void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+	{
+		settings.ostr << apply_visitor(FieldVisitorToString(), value);
+	}
 };
 
 }

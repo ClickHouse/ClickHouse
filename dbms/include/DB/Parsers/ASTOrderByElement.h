@@ -29,6 +29,18 @@ public:
 	String getID() const override { return "OrderByElement"; }
 
 	ASTPtr clone() const override { return new ASTOrderByElement(*this); }
+
+protected:
+	void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+	{
+		children.front()->formatImpl(settings, state, frame);
+		settings.ostr << (settings.hilite ? hilite_keyword : "") << (direction == -1 ? " DESC" : " ASC") << (settings.hilite ? hilite_none : "");
+		if (!collator.isNull())
+		{
+			settings.ostr << (settings.hilite ? hilite_keyword : "") << " COLLATE " << (settings.hilite ? hilite_none : "")
+				<< "'" << collator->getLocale() << "'";
+		}
+	}
 };
 
 }

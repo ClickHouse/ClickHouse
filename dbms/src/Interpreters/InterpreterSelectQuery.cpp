@@ -404,7 +404,7 @@ void InterpreterSelectQuery::executeSingleQuery()
 		bool has_having     = false;
 		bool has_order_by   = false;
 
-		ExpressionActionsPtr before_join;
+		ExpressionActionsPtr before_join;	/// включая JOIN
 		ExpressionActionsPtr before_where;
 		ExpressionActionsPtr before_aggregation;
 		ExpressionActionsPtr before_having;
