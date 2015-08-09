@@ -106,7 +106,9 @@ protected:
 		settings.ostr << "JOIN "
 		<< (settings.hilite ? hilite_none : "");
 
-		table->formatImpl(settings, state, frame);
+		FormatStateStacked frame_with_indent = frame;
+		++frame_with_indent.indent;
+		table->formatImpl(settings, state, frame_with_indent);
 
 		if (kind != ASTJoin::Cross)
 		{
