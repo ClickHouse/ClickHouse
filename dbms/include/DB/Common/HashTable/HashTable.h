@@ -803,7 +803,7 @@ public:
 		{
 			Cell x;
 			x.read(rb);
-			insert(x.getValue());
+			insert(x);
 		}
 	}
 
@@ -827,7 +827,7 @@ public:
 			Cell x;
 			DB::assertString(",", rb);
 			x.readText(rb);
-			insert(x.getValue());
+			insert(x);
 		}
 	}
 

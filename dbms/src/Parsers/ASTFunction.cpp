@@ -39,8 +39,6 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 					if (name == "negate" && typeid_cast<const ASTLiteral *>(&*arguments->children[0]))
 						settings.ostr << ' ';
 
-					FormatStateStacked nested_frame;
-					nested_frame.need_parens = true;
 					arguments->formatImpl(settings, state, nested_need_parens);
 					written = true;
 				}

@@ -30,7 +30,7 @@ public:
 
 	ASTCreateQuery() = default;
 	ASTCreateQuery(const StringRange range_) : IAST(range_) {}
-	
+
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() const override { return (attach ? "AttachQuery_" : "CreateQuery_") + database + "_" + table; };
 
@@ -87,8 +87,9 @@ protected:
 		if (columns)
 		{
 			settings.ostr << (settings.one_line ? " (" : "\n(");
-			++frame.indent;
-			columns->formatImpl(settings, state, frame);
+			FormatStateStacked frame_nested = frame;
+			++frame_nested.indent;
+			columns->formatImpl(settings, state, frame_nested);
 			settings.ostr << (settings.one_line ? ")" : "\n)");
 		}
 

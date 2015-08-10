@@ -164,7 +164,7 @@ public:
 	/// Состояние, которое копируется при форматировании каждого узла. Например, уровень вложенности.
 	struct FormatStateStacked
 	{
-		bool indent = 0;
+		UInt8 indent = 0;
 		bool need_parens = false;
 		const IAST * current_select = nullptr;
 	};

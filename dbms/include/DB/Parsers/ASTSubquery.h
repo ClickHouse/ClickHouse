@@ -42,9 +42,10 @@ protected:
 		std::string nl_or_nothing = settings.one_line ? "" : "\n";
 
 		settings.ostr << nl_or_nothing << indent_str << "(" << nl_or_nothing;
-		FormatStateStacked frame_dont_need_parens = frame;
-		frame_dont_need_parens.need_parens = false;
-		children[0]->formatImpl(settings, state, frame_dont_need_parens);
+		FormatStateStacked frame_nested = frame;
+		frame_nested.need_parens = false;
+		++frame_nested.indent;
+		children[0]->formatImpl(settings, state, frame_nested);
 		settings.ostr << nl_or_nothing << indent_str << ")";
 	}
 };

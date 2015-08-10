@@ -248,7 +248,9 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
 			else
 				s.ostr << "\n" << indent_str << "(\n";
 
-			table->formatImpl(s, state, frame);
+			FormatStateStacked frame_with_indent = frame;
+			++frame_with_indent.indent;
+			table->formatImpl(s, state, frame_with_indent);
 
 			if (s.one_line)
 				s.ostr << ")";
