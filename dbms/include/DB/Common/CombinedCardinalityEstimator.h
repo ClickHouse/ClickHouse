@@ -209,8 +209,7 @@ private:
 		for (const auto & x : small)
 			tmp_medium->insert(x);
 
-		new (&medium) std::unique_ptr<Medium>{ std::move(tmp_medium) };
-
+		medium = tmp_medium.release();
 		setContainerType(details::ContainerType::MEDIUM);
 
 		if (current_memory_tracker)
@@ -239,8 +238,7 @@ private:
 			destroy();
 		}
 
-		new (&large) std::unique_ptr<Large>{ std::move(tmp_large) };
-
+		large = tmp_large.release();
 		setContainerType(details::ContainerType::LARGE);
 
 		if (current_memory_tracker)
@@ -256,13 +254,17 @@ private:
 
 		if (container_type == details::ContainerType::MEDIUM)
 		{
-			medium.std::unique_ptr<Medium>::~unique_ptr();
+			delete medium;
+			medium = nullptr;
+
 			if (current_memory_tracker)
 				current_memory_tracker->free(sizeof(medium));
 		}
 		else if (container_type == details::ContainerType::LARGE)
 		{
-			large.std::unique_ptr<Large>::~unique_ptr();
+			delete large;
+			large = nullptr;
+
 			if (current_memory_tracker)
 				current_memory_tracker->free(sizeof(large));
 		}
@@ -282,6 +284,7 @@ private:
 
 	void setContainerType(details::ContainerType t)
 	{
+		address &= mask;
 		address |= static_cast<UInt8>(t);
 	}
 
@@ -299,11 +302,11 @@ private:
 	Small small;
 	union
 	{
-		std::unique_ptr<Medium> medium;
-		std::unique_ptr<Large> large;
+		Medium * medium;
+		Large * large;
 		UInt64 address = 0;
 	};
-	static const UInt64 mask = 0xFFFFFFFC;
+	static const UInt64 mask = 0xFFFFFFFFFFFFFFFC;
 	static const UInt32 medium_set_size_max = 1UL << medium_set_power2_max;
 };
 
