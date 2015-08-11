@@ -15,6 +15,7 @@
 #include <DB/Interpreters/AggregationCommon.h>
 #include <DB/Common/HashTable/HashSet.h>
 #include <DB/Common/HyperLogLogWithSmallSetOptimization.h>
+#include <DB/Common/CombinedCardinalityEstimator.h>
 
 #include <DB/Columns/ColumnString.h>
 
@@ -117,6 +118,26 @@ struct AggregateFunctionUniqExactData<String>
 };
 
 
+template <typename T>
+struct AggregateFunctionUniqCombinedData
+{
+	using Key = T;
+	using Set = CombinedCardinalityEstimator<Key, HashSet<Key, DefaultHash<Key>, HashTableGrower<4> >, 16, 16, 19>;
+	Set set;
+
+	static String getName() { return "uniqCombined"; }
+};
+
+template <>
+struct AggregateFunctionUniqCombinedData<String>
+{
+	using Key = UInt64;
+	using Set = CombinedCardinalityEstimator<Key, HashSet<Key, DefaultHash<Key>, HashTableGrower<4> >, 16, 16, 19>;
+	Set set;
+
+	static String getName() { return "uniqCombined"; }
+};
+
 namespace detail
 {
 	/** Структура для делегации работы по добавлению одного элемента в агрегатные функции uniq.
@@ -164,6 +185,28 @@ namespace detail
 			hash.get128(key.first, key.second);
 
 			data.set.insert(key);
+		}
+	};
+
+	template<typename T>
+	struct OneAdder<T, AggregateFunctionUniqCombinedData<T> >
+	{
+		static void addOne(AggregateFunctionUniqCombinedData<T> & data, const IColumn & column, size_t row_num)
+		{
+			if (data.set.isMedium())
+				data.set.insert(static_cast<const ColumnVector<T> &>(column).getData()[row_num]);
+			else
+				data.set.insert(AggregateFunctionUniqTraits<T>::hash(static_cast<const ColumnVector<T> &>(column).getData()[row_num]));
+		}
+	};
+
+	template<>
+	struct OneAdder<String, AggregateFunctionUniqCombinedData<String> >
+	{
+		static void addOne(AggregateFunctionUniqCombinedData<String> & data, const IColumn & column, size_t row_num)
+		{
+			StringRef value = column.getDataAt(row_num);
+			data.set.insert(CityHash64(value.data, value.size));
 		}
 	};
 }

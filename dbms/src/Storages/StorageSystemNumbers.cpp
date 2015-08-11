@@ -27,7 +27,7 @@ protected:
 	{
 		Block res;
 
-		ColumnWithNameAndType column_with_name_and_type;
+		ColumnWithTypeAndName column_with_name_and_type;
 
 		column_with_name_and_type.name = "number";
 		column_with_name_and_type.type = new DataTypeUInt64();

@@ -85,8 +85,7 @@ inline void writeBoolText(bool x, WriteBuffer & buf)
 }
 
 
-template <typename T>
-void writeFloatText(T x, WriteBuffer & buf)
+inline void writeFloatText(double x, WriteBuffer & buf)
 {
 	char tmp[25];
 	double_conversion::StringBuilder builder{tmp, sizeof(tmp)};
@@ -94,7 +93,20 @@ void writeFloatText(T x, WriteBuffer & buf)
 	const auto result = getDoubleToStringConverter<false>().ToShortest(x, &builder);
 
 	if (!result)
-		throw Exception("Cannot print float or double number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
+		throw Exception("Cannot print double number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
+
+	buf.write(tmp, builder.position());
+}
+
+inline void writeFloatText(float x, WriteBuffer & buf)
+{
+	char tmp[25];
+	double_conversion::StringBuilder builder{tmp, sizeof(tmp)};
+
+	const auto result = getDoubleToStringConverter<false>().ToShortestSingle(x, &builder);
+
+	if (!result)
+		throw Exception("Cannot print float number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
 
 	buf.write(tmp, builder.position());
 }

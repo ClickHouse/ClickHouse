@@ -26,9 +26,9 @@ StoragePtr StorageSystemTables::create(const std::string & name_)
 }
 
 
-static ColumnWithNameAndType getFilteredDatabases(ASTPtr query, const Context & context)
+static ColumnWithTypeAndName getFilteredDatabases(ASTPtr query, const Context & context)
 {
-	ColumnWithNameAndType column;
+	ColumnWithTypeAndName column;
 	column.name = "database";
 	column.type = new DataTypeString;
 	column.column = new ColumnString;
@@ -58,19 +58,19 @@ BlockInputStreams StorageSystemTables::read(
 
 	Block block;
 
-	ColumnWithNameAndType col_db;
+	ColumnWithTypeAndName col_db;
 	col_db.name = "database";
 	col_db.type = new DataTypeString;
 	col_db.column = new ColumnString;
 	block.insert(col_db);
 
-	ColumnWithNameAndType col_name;
+	ColumnWithTypeAndName col_name;
 	col_name.name = "name";
 	col_name.type = new DataTypeString;
 	col_name.column = new ColumnString;
 	block.insert(col_name);
 
-	ColumnWithNameAndType col_engine;
+	ColumnWithTypeAndName col_engine;
 	col_engine.name = "engine";
 	col_engine.type = new DataTypeString;
 	col_engine.column = new ColumnString;
@@ -78,7 +78,7 @@ BlockInputStreams StorageSystemTables::read(
 
 	Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
 
-	ColumnWithNameAndType filtered_databases_column = getFilteredDatabases(query, context);
+	ColumnWithTypeAndName filtered_databases_column = getFilteredDatabases(query, context);
 
 	for (size_t row_number = 0; row_number < filtered_databases_column.column->size(); ++row_number)
 	{

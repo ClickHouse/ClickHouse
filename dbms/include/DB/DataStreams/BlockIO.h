@@ -25,14 +25,14 @@ struct BlockIO
 	Block out_sample;	/// Пример блока, которого нужно писать в out.
 
 	/// Здесь могут быть установлены колбэки для логгирования запроса.
-	std::function<void(IBlockInputStream &)> 	finish_callback;
+	std::function<void(IBlockInputStream *)> 	finish_callback;
 	std::function<void()> 						exception_callback;
 
 	/// Вызывайте эти функции, если нужно логгировать запрос.
 	void onFinish()
 	{
-		if (in && finish_callback)
-			finish_callback(*in);
+		if (finish_callback)
+			finish_callback(in.get());
 	}
 
 	void onException()

@@ -13,6 +13,7 @@ void registerFunctionsArray(FunctionFactory & factory)
 	factory.registerFunction<FunctionCountEqual>();
 	factory.registerFunction<FunctionArrayEnumerate>();
 	factory.registerFunction<FunctionArrayEnumerateUniq>();
+	factory.registerFunction<FunctionArrayUniq>();
 	factory.registerFunction<FunctionEmptyArrayUInt8>();
 	factory.registerFunction<FunctionEmptyArrayUInt16>();
 	factory.registerFunction<FunctionEmptyArrayUInt32>();
@@ -26,6 +27,7 @@ void registerFunctionsArray(FunctionFactory & factory)
 	factory.registerFunction<FunctionEmptyArrayDate>();
 	factory.registerFunction<FunctionEmptyArrayDateTime>();
 	factory.registerFunction<FunctionEmptyArrayString>();
+	factory.registerFunction<FunctionEmptyArrayToSingle>();
 	factory.registerFunction<FunctionRange>();
 }
 

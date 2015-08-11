@@ -3,6 +3,8 @@
 #include <openssl/md5.h>
 #include <openssl/sha.h>
 #include <city.h>
+#include <farmhash.h>
+#include <metrohash.h>
 
 #include <Poco/ByteOrder.h>
 
@@ -397,11 +399,12 @@ UInt64 toInteger<Float64>(Float64 x)
 }
 
 
-class FunctionCityHash64 : public IFunction
+template <typename Impl>
+class FunctionNeighbourhoodHash64 : public IFunction
 {
 public:
-	static constexpr auto name = "cityHash64";
-	static IFunction * create(const Context & context) { return new FunctionCityHash64; };
+	static constexpr auto name = Impl::name;
+	static IFunction * create(const Context & context) { return new FunctionNeighbourhoodHash64; };
 
 private:
 	template <typename FromType, bool first>
@@ -417,12 +420,12 @@ private:
 				if (first)
 					vec_to[i] = h;
 				else
-					vec_to[i] = Hash128to64(uint128(vec_to[i], h));
+					vec_to[i] = Impl::Hash128to64(typename Impl::uint128_t(vec_to[i], h));
 			}
 		}
 		else if (const ColumnConst<FromType> * col_from = typeid_cast<const ColumnConst<FromType> *>(column))
 		{
-			UInt64 hash = IntHash64Impl::apply(toInteger(col_from->getData()));
+			const UInt64 hash = IntHash64Impl::apply(toInteger(col_from->getData()));
 			size_t size = vec_to.size();
 			if (first)
 			{
@@ -431,7 +434,7 @@ private:
 			else
 			{
 				for (size_t i = 0; i < size; ++i)
-					vec_to[i] = Hash128to64(uint128(vec_to[i], hash));
+					vec_to[i] = Impl::Hash128to64(typename Impl::uint128_t(vec_to[i], hash));
 			}
 		}
 		else
@@ -451,13 +454,13 @@ private:
 
 			for (size_t i = 0; i < size; ++i)
 			{
-				UInt64 h = CityHash64(
+				const UInt64 h = Impl::Hash64(
 					reinterpret_cast<const char *>(&data[i == 0 ? 0 : offsets[i - 1]]),
 					i == 0 ? offsets[i] - 1 : (offsets[i] - 1 - offsets[i - 1]));
 				if (first)
 					vec_to[i] = h;
 				else
-					vec_to[i] = Hash128to64(uint128(vec_to[i], h));
+					vec_to[i] = Impl::Hash128to64(typename Impl::uint128_t(vec_to[i], h));
 			}
 		}
 		else if (const ColumnFixedString * col_from = typeid_cast<const ColumnFixedString *>(column))
@@ -467,17 +470,17 @@ private:
 			size_t size = data.size() / n;
 			for (size_t i = 0; i < size; ++i)
 			{
-				UInt64 h = CityHash64(reinterpret_cast<const char *>(&data[i * n]), n);
+				const UInt64 h = Impl::Hash64(reinterpret_cast<const char *>(&data[i * n]), n);
 				if (first)
 					vec_to[i] = h;
 				else
-					vec_to[i] = Hash128to64(uint128(vec_to[i], h));
+					vec_to[i] = Impl::Hash128to64(typename Impl::uint128_t(vec_to[i], h));
 			}
 		}
 		else if (const ColumnConstString * col_from = typeid_cast<const ColumnConstString *>(column))
 		{
-			UInt64 hash = CityHash64(col_from->getData().data(), col_from->getData().size());
-			size_t size = vec_to.size();
+			const UInt64 hash = Impl::Hash64(col_from->getData().data(), col_from->getData().size());
+			const size_t size = vec_to.size();
 			if (first)
 			{
 				vec_to.assign(size, hash);
@@ -486,7 +489,7 @@ private:
 			{
 				for (size_t i = 0; i < size; ++i)
 				{
-					vec_to[i] = Hash128to64(uint128(vec_to[i], hash));
+					vec_to[i] = Impl::Hash128to64(typename Impl::uint128_t(vec_to[i], hash));
 				}
 			}
 		}
@@ -505,26 +508,26 @@ private:
 		{
 			const IColumn * nested_column = &col_from->getData();
 			const ColumnArray::Offsets_t & offsets = col_from->getOffsets();
-			size_t nested_size = nested_column->size();
+			const size_t nested_size = nested_column->size();
 
 			ColumnUInt64::Container_t vec_temp(nested_size);
 			executeAny<true>(nested_type, nested_column, vec_temp);
 
-			size_t size = offsets.size();
+			const size_t size = offsets.size();
 
 			for (size_t i = 0; i < size; ++i)
 			{
-				size_t begin = i == 0 ? 0 : offsets[i - 1];
-				size_t end = offsets[i];
+				const size_t begin = i == 0 ? 0 : offsets[i - 1];
+				const size_t end = offsets[i];
 
 				UInt64 h = IntHash64Impl::apply(end - begin);
 				if (first)
 					vec_to[i] = h;
 				else
-					vec_to[i] = Hash128to64(uint128(vec_to[i], h));
+					vec_to[i] = Impl::Hash128to64(typename Impl::uint128_t(vec_to[i], h));
 
 				for (size_t j = begin; j < end; ++j)
-					vec_to[i] = Hash128to64(uint128(vec_to[i], vec_temp[j]));
+					vec_to[i] = Impl::Hash128to64(typename Impl::uint128_t(vec_to[i], vec_temp[j]));
 			}
 		}
 		else if (const ColumnConstArray * col_from = typeid_cast<const ColumnConstArray *>(column))
@@ -592,7 +595,7 @@ public:
 
 		for (size_t i = 0; i < arguments.size(); ++i)
 		{
-			const ColumnWithNameAndType & column = block.getByPosition(arguments[i]);
+			const ColumnWithTypeAndName & column = block.getByPosition(arguments[i]);
 			const IDataType * from_type = &*column.type;
 			const IColumn * icolumn = &*column.column;
 
@@ -702,7 +705,7 @@ public:
 				"Illegal type " + first_arg->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
 			};
-		
+
 		if (arg_count == 2)
 		{
 			const auto second_arg = arguments.back().get();
@@ -816,18 +819,57 @@ private:
 
 struct NameHalfMD5 			{ static constexpr auto name = "halfMD5"; };
 struct NameSipHash64		{ static constexpr auto name = "sipHash64"; };
-struct NameCityHash64 		{ static constexpr auto name = "cityHash64"; };
 struct NameIntHash32 		{ static constexpr auto name = "intHash32"; };
 struct NameIntHash64 		{ static constexpr auto name = "intHash64"; };
 
-typedef FunctionStringHash64<HalfMD5Impl,		NameHalfMD5> 		FunctionHalfMD5;
-typedef FunctionStringHash64<SipHash64Impl,		NameSipHash64> 		FunctionSipHash64;
-typedef FunctionIntHash<IntHash32Impl,			NameIntHash32> 		FunctionIntHash32;
-typedef FunctionIntHash<IntHash64Impl,			NameIntHash64> 		FunctionIntHash64;
-typedef FunctionStringHashFixedString<MD5Impl>						FunctionMD5;
-typedef FunctionStringHashFixedString<SHA1Impl>						FunctionSHA1;
-typedef FunctionStringHashFixedString<SHA224Impl>					FunctionSHA224;
-typedef FunctionStringHashFixedString<SHA256Impl>					FunctionSHA256;
-typedef FunctionStringHashFixedString<SipHash128Impl>				FunctionSipHash128;
+struct ImplCityHash64
+{
+	static constexpr auto name = "cityHash64";
+	using uint128_t = uint128;
+
+	static auto Hash128to64(const uint128_t & x) { return ::Hash128to64(x); }
+	static auto Hash64(const char * const s, const std::size_t len) { return CityHash64(s, len); }
+};
+
+struct ImplFarmHash64
+{
+	static constexpr auto name = "farmHash64";
+	using uint128_t = farmhash::uint128_t;
+
+	static auto Hash128to64(const uint128_t & x) { return farmhash::Hash128to64(x); }
+	static auto Hash64(const char * const s, const std::size_t len) { return farmhash::Hash64(s, len); }
+};
+
+struct ImplMetroHash64
+{
+	static constexpr auto name = "metroHash64";
+	using uint128_t = uint128;
+
+	static auto Hash128to64(const uint128_t & x) { return ::Hash128to64(x); }
+	static auto Hash64(const char * const s, const std::size_t len)
+	{
+		union {
+			std::uint64_t u64;
+			std::uint8_t u8[sizeof(u64)];
+		};
+
+		metrohash64_1(reinterpret_cast<const std::uint8_t *>(s), len, 0, u8);
+
+		return u64;
+	}
+};
+
+using FunctionHalfMD5 = FunctionStringHash64<HalfMD5Impl, NameHalfMD5>;
+using FunctionSipHash64 = FunctionStringHash64<SipHash64Impl, NameSipHash64>;
+using FunctionIntHash32 = FunctionIntHash<IntHash32Impl, NameIntHash32>;
+using FunctionIntHash64 = FunctionIntHash<IntHash64Impl, NameIntHash64>;
+using FunctionMD5 = FunctionStringHashFixedString<MD5Impl>;
+using FunctionSHA1 = FunctionStringHashFixedString<SHA1Impl>;
+using FunctionSHA224 = FunctionStringHashFixedString<SHA224Impl>;
+using FunctionSHA256 = FunctionStringHashFixedString<SHA256Impl>;
+using FunctionSipHash128 = FunctionStringHashFixedString<SipHash128Impl>;
+using FunctionCityHash64 = FunctionNeighbourhoodHash64<ImplCityHash64>;
+using FunctionFarmHash64 = FunctionNeighbourhoodHash64<ImplFarmHash64>;
+using FunctionMetroHash64 = FunctionNeighbourhoodHash64<ImplMetroHash64>;
 
 }

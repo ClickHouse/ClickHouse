@@ -35,7 +35,7 @@ BlockInputStreams StorageSystemOne::read(
 	processed_stage = QueryProcessingStage::FetchColumns;
 
 	Block block;
-	ColumnWithNameAndType col;
+	ColumnWithTypeAndName col;
 	col.name = "dummy";
 	col.type = new DataTypeUInt8;
 	col.column = ColumnConstUInt8(1, 0).convertToFullColumn();

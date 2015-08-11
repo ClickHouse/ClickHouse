@@ -7,7 +7,7 @@
 #include <Poco/SharedPtr.h>
 
 #include <DB/Core/Block.h>
-#include <DB/Core/ColumnWithNameAndType.h>
+#include <DB/Core/ColumnWithTypeAndName.h>
 
 #include <DB/IO/ReadBufferFromIStream.h>
 #include <DB/IO/WriteBufferFromOStream.h>
@@ -28,13 +28,13 @@ int main(int argc, char ** argv)
 	{
 		DB::Block sample;
 
-		DB::ColumnWithNameAndType col1;
+		DB::ColumnWithTypeAndName col1;
 		col1.name = "col1";
 		col1.type = new DB::DataTypeUInt64;
 		col1.column = col1.type->createColumn();
 		sample.insert(col1);
 
-		DB::ColumnWithNameAndType col2;
+		DB::ColumnWithTypeAndName col2;
 		col2.name = "col2";
 		col2.type = new DB::DataTypeString;
 		col2.column = col2.type->createColumn();
