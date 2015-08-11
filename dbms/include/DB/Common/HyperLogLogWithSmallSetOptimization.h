@@ -16,7 +16,7 @@ template <
 	UInt8 small_set_size,
 	UInt8 K,
 	typename Hash = IntHash32<Key>,
-	typename DenominatorType = float>
+	typename DenominatorType = double>
 class HyperLogLogWithSmallSetOptimization
 {
 private:
