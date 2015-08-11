@@ -65,6 +65,8 @@ public:
 	}
 
 private:
+	Logger * log = &Logger::get("MySQLDictionarySource");
+
 	mysqlxx::DateTime getLastModification() const
 	{
 		const auto Update_time_idx = 12;
@@ -74,6 +76,9 @@ private:
 		{
 			auto connection = pool.Get();
 			auto query = connection->query("SHOW TABLE STATUS LIKE '%" + strconvert::escaped_for_like(table) + "%';");
+
+			LOG_TRACE(log, query.str());
+
 			auto result = query.use();
 
 			if (auto row = result.fetch())
@@ -143,6 +148,8 @@ private:
 
 			writeChar(';', out);
 		}
+
+		LOG_TRACE(log, query);
 
 		return query;
 	}
