@@ -18,9 +18,10 @@ class HashedDictionary final : public IDictionary
 {
 public:
 	HashedDictionary(const std::string & name, const DictionaryStructure & dict_struct,
-		DictionarySourcePtr source_ptr, const DictionaryLifetime dict_lifetime)
+		DictionarySourcePtr source_ptr, const DictionaryLifetime dict_lifetime, bool require_nonempty)
 		: name{name}, dict_struct(dict_struct),
-		  source_ptr{std::move(source_ptr)}, dict_lifetime(dict_lifetime)
+		  source_ptr{std::move(source_ptr)}, dict_lifetime(dict_lifetime),
+		  require_nonempty(require_nonempty)
 	{
 		createAttributes();
 
@@ -38,7 +39,7 @@ public:
 	}
 
 	HashedDictionary(const HashedDictionary & other)
-		: HashedDictionary{other.name, other.dict_struct, other.source_ptr->clone(), other.dict_lifetime}
+		: HashedDictionary{other.name, other.dict_struct, other.source_ptr->clone(), other.dict_lifetime, other.require_nonempty}
 	{}
 
 	std::exception_ptr getCreationException() const override { return creation_exception; }
@@ -196,6 +197,9 @@ private:
 		}
 
 		stream->readSuffix();
+
+		if (require_nonempty && 0 == element_count)
+			throw Exception("Dictionary source is empty and 'require_nonempty' property is set.", ErrorCodes::DICTIONARY_IS_EMPTY);
 	}
 
 	template <typename T>
@@ -334,6 +338,7 @@ private:
 	const DictionaryStructure dict_struct;
 	const DictionarySourcePtr source_ptr;
 	const DictionaryLifetime dict_lifetime;
+	const bool require_nonempty;
 
 	std::map<std::string, std::size_t> attribute_index_by_name;
 	std::vector<attribute_t> attributes;

@@ -31,6 +31,8 @@ DictionaryPtr DictionaryFactory::create(const std::string & name, Poco::Util::Ab
 
 	const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
 
+	const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
+
 	const auto & layout_type = keys.front();
 
 	if ("range_hashed" == layout_type)
@@ -41,7 +43,7 @@ DictionaryPtr DictionaryFactory::create(const std::string & name, Poco::Util::Ab
 				ErrorCodes::BAD_ARGUMENTS
 			};
 
-		return std::make_unique<RangeHashedDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime);
+		return std::make_unique<RangeHashedDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
 	}
 	else
 	{
@@ -49,16 +51,15 @@ DictionaryPtr DictionaryFactory::create(const std::string & name, Poco::Util::Ab
 			throw Exception{
 				"Elements .structure.range_min and .structure.range_max should be defined only "
 					"for a dictionary of layout 'range_hashed'",
-				ErrorCodes::BAD_ARGUMENTS
-			};
+				ErrorCodes::BAD_ARGUMENTS};
 
 		if ("flat" == layout_type)
 		{
-			return std::make_unique<FlatDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime);
+			return std::make_unique<FlatDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
 		}
 		else if ("hashed" == layout_type)
 		{
-			return std::make_unique<HashedDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime);
+			return std::make_unique<HashedDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
 		}
 		else if ("cache" == layout_type)
 		{
@@ -66,8 +67,12 @@ DictionaryPtr DictionaryFactory::create(const std::string & name, Poco::Util::Ab
 			if (size == 0)
 				throw Exception{
 					"Dictionary of layout 'cache' cannot have 0 cells",
-					ErrorCodes::TOO_SMALL_BUFFER_SIZE
-				};
+					ErrorCodes::TOO_SMALL_BUFFER_SIZE};
+
+			if (require_nonempty)
+				throw Exception{
+					"Dictionary of layout 'cache' cannot have 'require_nonempty' attribute set",
+					ErrorCodes::BAD_ARGUMENTS};
 
 			return std::make_unique<CacheDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, size);
 		}
