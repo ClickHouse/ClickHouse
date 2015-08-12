@@ -98,7 +98,7 @@ struct AggregateFunctionUniqExactData<String>
 template <typename T>
 struct AggregateFunctionUniqCombinedData
 {
-	using Key = T;
+	using Key = UInt32;
 	using Set = CombinedCardinalityEstimator<Key, HashSet<Key, TrivialHash, HashTableGrower<> >, 16, 14, 17, TrivialHash>;
 	Set set;
 
@@ -118,30 +118,6 @@ struct AggregateFunctionUniqCombinedData<String>
 namespace detail
 {
 
-/** Хэширование 64-битных целочисленных значений в 32-битные.
-  * Источник: https://gist.github.com/badboy/6267743
-  */
-template<typename T, typename Enable = void>
-struct Hash64To32;
-
-template<typename T>
-struct Hash64To32<T, typename std::enable_if<std::is_same<T, Int64>::value || std::is_same<T, UInt64>::value>::type>
-{
-	static UInt32 compute(T key)
-	{
-		using U = typename std::make_unsigned<T>::type;
-		auto x = static_cast<U>(key);
-
-		x = (~x) + (x << 18);
-		x = x ^ (x >> 31);
-		x = x * 21;
-		x = x ^ (x >> 11);
-		x = x + (x << 6);
-		x = x ^ (x >> 22);
-		return static_cast<UInt32>(x);
-	}
-};
-
 /** Хэш-функция для uniqCombined.
   */
 template<typename T, typename Enable = void>
@@ -154,26 +130,33 @@ struct CombinedCardinalityTraits
 };
 
 template<typename T>
-struct CombinedCardinalityTraits<T, typename std::enable_if<std::is_same<T, Int64>::value || std::is_same<T, UInt64>::value>::type>
+struct CombinedCardinalityTraits<T, typename std::enable_if<std::is_same<T, Int64>::value>::type>
 {
-	using Op = Hash64To32<T>;
+	using U = typename std::make_unsigned<T>::type;
 
 	static UInt32 hash(T key)
 	{
-		return Op::compute(key);
+		return intHash32<0>(static_cast<U>(key));
+	};
+};
+
+template<typename T>
+struct CombinedCardinalityTraits<T, typename std::enable_if<std::is_same<T, UInt64>::value>::type>
+{
+	static UInt32 hash(T key)
+	{
+		return intHash32<0>(key);
 	};
 };
 
 template<typename T>
 struct CombinedCardinalityTraits<T, typename std::enable_if<std::is_same<T, Float64>::value>::type>
 {
-	using Op = Hash64To32<UInt64>;
-
 	static UInt32 hash(T key)
 	{
 		UInt64 res = 0;
 		memcpy(reinterpret_cast<char *>(&res), reinterpret_cast<char *>(&key), sizeof(key));
-		return Op::compute(res);
+		return intHash32<0>(res);
 	}
 };
 
