@@ -862,7 +862,7 @@ private:
 			dict->getString(attr_name, ids, out.get());
 
 			block.getByPosition(result).column = new ColumnConst<String>{
-				id_col->size(), out->getDataAtWithTerminatingZero(0).toString()
+				id_col->size(), out->getDataAt(0).toString()
 			};
 		}
 		else
@@ -967,7 +967,7 @@ private:
 			dictionary->getString(attr_name, ids, dates, out.get());
 
 			block.getByPosition(result).column = new ColumnConst<String>{
-				id_col->size(), out->getDataAtWithTerminatingZero(0).toString()
+				id_col->size(), out->getDataAt(0).toString()
 			};
 		}
 		else
