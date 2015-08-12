@@ -361,7 +361,7 @@ private:
 	std::size_t bytes_allocated = 0;
 	std::size_t element_count = 0;
 	std::size_t bucket_count = 0;
-	mutable std::atomic<std::size_t> query_count;
+	mutable std::atomic<std::size_t> query_count{0};
 
 	std::chrono::time_point<std::chrono::system_clock> creation_time;
 

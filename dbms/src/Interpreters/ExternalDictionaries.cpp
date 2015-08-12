@@ -161,7 +161,7 @@ void ExternalDictionaries::reloadImpl(const bool throw_on_error)
 		{
 			dictionary.second.exception = std::current_exception();
 
-			tryLogCurrentException(log, "Cannot update external dictionary '" + name + "', leaving old version.");
+			tryLogCurrentException(log, "Cannot update external dictionary '" + name + "', leaving old version");
 		}
 	}
 }
