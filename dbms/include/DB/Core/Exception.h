@@ -28,8 +28,8 @@ ExceptionPtr cloneCurrentException();
 /** Попробовать записать исключение в лог (и забыть про него).
   * Можно использовать в деструкторах в блоке catch (...).
   */
-void tryLogCurrentException(const char * log_name);
-void tryLogCurrentException(Poco::Logger * logger);
+void tryLogCurrentException(const char * log_name, const std::string & start_of_message = "");
+void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message = "");
 
 std::string getCurrentExceptionMessage(bool with_stacktrace);
 

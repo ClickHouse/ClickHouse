@@ -64,7 +64,7 @@ void ExternalDictionaries::reloadImpl(const bool throw_on_error)
 		try
 		{
 			auto dict_ptr = failed_dictionary.second.dict->clone();
-			if (dict_ptr->getCreationException())
+			if (const auto exception_ptr = dict_ptr->getCreationException())
 			{
 				/// recalculate next attempt time
 				std::uniform_int_distribution<std::uint64_t> distribution(
@@ -72,10 +72,11 @@ void ExternalDictionaries::reloadImpl(const bool throw_on_error)
 
 				failed_dictionary.second.next_attempt_time = std::chrono::system_clock::now() +
 					std::chrono::seconds{
-						std::min<std::uint64_t>(backoff_max_sec, backoff_initial_sec + distribution(rnd_engine))
-					};
+						std::min<std::uint64_t>(backoff_max_sec, backoff_initial_sec + distribution(rnd_engine))};
 
 				++failed_dictionary.second.error_count;
+
+				std::rethrow_exception(exception_ptr);
 			}
 			else
 			{
@@ -99,7 +100,7 @@ void ExternalDictionaries::reloadImpl(const bool throw_on_error)
 		}
 		catch (...)
 		{
-			LOG_ERROR(log, "Failed reloading " << name << " dictionary due to unexpected error");
+			tryLogCurrentException(log, "Failed reloading '" + name + "' dictionary");
 		}
 	}
 
@@ -114,6 +115,7 @@ void ExternalDictionaries::reloadImpl(const bool throw_on_error)
 
 		try
 		{
+			/// Если словарь не удалось ни разу загрузить или даже не удалось инициализировать из конфига.
 			if (!dictionary.second.dict)
 				continue;
 
@@ -144,6 +146,10 @@ void ExternalDictionaries::reloadImpl(const bool throw_on_error)
 				{
 					/// create new version of dictionary
 					auto new_version = current->clone();
+
+					if (const auto exception_ptr = new_version->getCreationException())
+						std::rethrow_exception(exception_ptr);
+
 					dictionary.second.dict->set(new_version.release());
 				}
 			}
@@ -155,25 +161,7 @@ void ExternalDictionaries::reloadImpl(const bool throw_on_error)
 		{
 			dictionary.second.exception = std::current_exception();
 
-			try
-			{
-				throw;
-			}
-			catch (const Poco::Exception & e)
-			{
-				LOG_ERROR(log, "Cannot update external dictionary '" << name
-					<< "'! You must resolve this manually. " << e.displayText());
-			}
-			catch (const std::exception & e)
-			{
-				LOG_ERROR(log, "Cannot update external dictionary '" << name
-					<< "'! You must resolve this manually. " << e.what());
-			}
-			catch (...)
-			{
-				LOG_ERROR(log, "Cannot update external dictionary '" << name
-					<< "'! You must resolve this manually.");
-			}
+			tryLogCurrentException(log, "Cannot update external dictionary '" + name + "', leaving old version");
 		}
 	}
 }
@@ -235,6 +223,8 @@ void ExternalDictionaries::reloadFromFile(const std::string & config_path, const
 							throw std::runtime_error{"Overriding dictionary from file " + dict_it->second.origin};
 
 					auto dict_ptr = DictionaryFactory::instance().create(name, *config, key, context);
+
+					/// Если словарь не удалось загрузить.
 					if (const auto exception_ptr = dict_ptr->getCreationException())
 					{
 						const auto failed_dict_it = failed_dictionaries.find(name);
@@ -292,6 +282,9 @@ void ExternalDictionaries::reloadFromFile(const std::string & config_path, const
 				{
 					if (!name.empty())
 					{
+						/// Если для словаря не удалось загрузить данные или даже не удалось инициализировать из конфига.
+						/// - всё-равно вставляем информацию в dictionaries, с нулевым указателем dict.
+
 						const std::lock_guard<std::mutex> lock{dictionaries_mutex};
 
 						const auto exception_ptr = std::current_exception();
@@ -302,25 +295,7 @@ void ExternalDictionaries::reloadFromFile(const std::string & config_path, const
 							dict_it->second.exception = exception_ptr;
 					}
 
-					try
-					{
-						throw;
-					}
-					catch (const Poco::Exception & e)
-					{
-						LOG_ERROR(log, config_path << ": cannot create external dictionary '" << name
-							<< "'! You must resolve this manually. " << e.displayText());
-					}
-					catch (const std::exception & e)
-					{
-						LOG_ERROR(log, config_path << ": cannot create external dictionary '" << name
-							<< "'! You must resolve this manually. " << e.what());
-					}
-					catch (...)
-					{
-						LOG_ERROR(log, config_path << ": cannot create external dictionary '" << name
-							<< "'! You must resolve this manually.");
-					}
+					tryLogCurrentException(log, "Cannot create external dictionary '" + name + "' from config path " + config_path);
 
 					/// propagate exception
 					if (throw_on_error)

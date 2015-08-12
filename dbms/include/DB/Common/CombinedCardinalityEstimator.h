@@ -34,7 +34,7 @@ template
 	UInt8 medium_set_power2_max,
 	UInt8 K,
 	typename Hash = IntHash32<Key>,
-	typename DenominatorType = float
+	typename DenominatorType = double
 >
 class CombinedCardinalityEstimator
 {
