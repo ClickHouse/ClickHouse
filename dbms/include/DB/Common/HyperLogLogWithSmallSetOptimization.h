@@ -16,7 +16,7 @@ template <
 	UInt8 small_set_size,
 	UInt8 K,
 	typename Hash = IntHash32<Key>,
-	typename DenominatorType = float>
+	typename DenominatorType = double>
 class HyperLogLogWithSmallSetOptimization
 {
 private:
@@ -114,10 +114,20 @@ public:
 
 	void readAndMerge(DB::ReadBuffer & in)
 	{
-		/// Немного не оптимально.
-		HyperLogLogWithSmallSetOptimization other;
-		other.read(in);
-		merge(other);
+		bool is_rhs_large;
+		readBinary(is_rhs_large, in);
+
+		if (!isLarge() && is_rhs_large)
+			toLarge();
+
+		if (!is_rhs_large)
+		{
+			typename Small::Reader reader(in);
+			while (reader.next())
+				insert(reader.get());
+		}
+		else
+			large->readAndMerge(in);
 	}
 
 	void write(DB::WriteBuffer & out) const

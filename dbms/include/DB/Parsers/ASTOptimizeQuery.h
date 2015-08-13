@@ -22,6 +22,13 @@ public:
 	String getID() const override { return "OptimizeQuery_" + database + "_" + table; };
 
 	ASTPtr clone() const override { return new ASTOptimizeQuery(*this); }
+
+protected:
+	void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+	{
+		settings.ostr << (settings.hilite ? hilite_keyword : "") << "OPTIMIZE TABLE " << (settings.hilite ? hilite_none : "")
+			<< (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
+	}
 };
 
 }

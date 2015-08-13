@@ -16,6 +16,12 @@ public:
 	String getID() const override { return "Asterisk"; }
 	ASTPtr clone() const override { return new ASTAsterisk(*this); }
 	String getColumnName() const override { return "*"; }
+
+protected:
+	void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+	{
+		settings.ostr << "*";
+	}
 };
 
 }

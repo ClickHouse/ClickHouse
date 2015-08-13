@@ -620,9 +620,9 @@ private:
 	mutable std::mt19937_64 rnd_engine{getSeed()};
 
 	mutable std::size_t bytes_allocated = 0;
-	mutable std::atomic<std::size_t> element_count{};
-	mutable std::atomic<std::size_t> hit_count{};
-	mutable std::atomic<std::size_t> query_count{};
+	mutable std::atomic<std::size_t> element_count{0};
+	mutable std::atomic<std::size_t> hit_count{0};
+	mutable std::atomic<std::size_t> query_count{0};
 
 	const std::chrono::time_point<std::chrono::system_clock> creation_time = std::chrono::system_clock::now();
 };
