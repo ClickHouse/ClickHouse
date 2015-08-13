@@ -485,15 +485,12 @@ int Server::main(const std::vector<std::string> & args)
 
 	if (config().has("interserver_http_port"))
 	{
-		String this_host;
-		if (config().has("interserver_http_host"))
-		{
-			this_host = config().getString("interserver_http_host");
-		}
-		else
+		String this_host = config().getString("interserver_http_host", "");
+
+		if (this_host.empty())
 		{
 			this_host = getFQDNOrHostName();
-			LOG_DEBUG(log, "Configuration parameter 'interserver_http_host' doesn't exist. Will use '" + this_host + "' as replica host.");
+			LOG_DEBUG(log, "Configuration parameter 'interserver_http_host' doesn't exist or exists and empty. Will use '" + this_host + "' as replica host.");
 		}
 
 		String port_str = config().getString("interserver_http_port");
