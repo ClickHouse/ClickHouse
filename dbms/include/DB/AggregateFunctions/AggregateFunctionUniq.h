@@ -25,32 +25,7 @@
 namespace DB
 {
 
-
-template <typename T> struct AggregateFunctionUniqTraits
-{
-	static UInt64 hash(T x) { return x; }
-};
-
-template <> struct AggregateFunctionUniqTraits<Float32>
-{
-	static UInt64 hash(Float32 x)
-	{
-		UInt64 res = 0;
-		memcpy(reinterpret_cast<char *>(&res), reinterpret_cast<char *>(&x), sizeof(x));
-		return res;
-	}
-};
-
-template <> struct AggregateFunctionUniqTraits<Float64>
-{
-	static UInt64 hash(Float64 x)
-	{
-		UInt64 res = 0;
-		memcpy(reinterpret_cast<char *>(&res), reinterpret_cast<char *>(&x), sizeof(x));
-		return res;
-	}
-};
-
+/// uniq
 
 struct AggregateFunctionUniqUniquesHashSetData
 {
@@ -60,6 +35,7 @@ struct AggregateFunctionUniqUniquesHashSetData
 	static String getName() { return "uniq"; }
 };
 
+/// uniqHLL12
 
 template <typename T>
 struct AggregateFunctionUniqHLL12Data
@@ -79,6 +55,7 @@ struct AggregateFunctionUniqHLL12Data<String>
 	static String getName() { return "uniqHLL12"; }
 };
 
+/// uniqExact
 
 template <typename T>
 struct AggregateFunctionUniqExactData
@@ -121,8 +98,8 @@ struct AggregateFunctionUniqExactData<String>
 template <typename T>
 struct AggregateFunctionUniqCombinedData
 {
-	using Key = T;
-	using Set = CombinedCardinalityEstimator<Key, HashSet<Key, DefaultHash<Key>, HashTableGrower<4> >, 16, 16, 19>;
+	using Key = UInt32;
+	using Set = CombinedCardinalityEstimator<Key, HashSet<Key, TrivialHash, HashTableGrower<> >, 16, 14, 17, TrivialHash>;
 	Set set;
 
 	static String getName() { return "uniqCombined"; }
@@ -132,7 +109,7 @@ template <>
 struct AggregateFunctionUniqCombinedData<String>
 {
 	using Key = UInt64;
-	using Set = CombinedCardinalityEstimator<Key, HashSet<Key, DefaultHash<Key>, HashTableGrower<4> >, 16, 16, 19>;
+	using Set = CombinedCardinalityEstimator<Key, HashSet<Key, TrivialHash, HashTableGrower<> >, 16, 14, 17, TrivialHash>;
 	Set set;
 
 	static String getName() { return "uniqCombined"; }
@@ -140,75 +117,155 @@ struct AggregateFunctionUniqCombinedData<String>
 
 namespace detail
 {
-	/** Структура для делегации работы по добавлению одного элемента в агрегатные функции uniq.
-	  * Используется для частичной специализации для добавления строк.
-	  */
-	template<typename T, typename Data>
-	struct OneAdder
+
+/** Хэш-функция для uniqCombined.
+  */
+template<typename T, typename Enable = void>
+struct CombinedCardinalityTraits
+{
+	static UInt32 hash(T key)
 	{
-		static void addOne(Data & data, const IColumn & column, size_t row_num)
-		{
-			data.set.insert(AggregateFunctionUniqTraits<T>::hash(static_cast<const ColumnVector<T> &>(column).getData()[row_num]));
-		}
-	};
+		return key;
+	}
+};
 
-	template<typename Data>
-	struct OneAdder<String, Data>
+template<typename T>
+struct CombinedCardinalityTraits<T, typename std::enable_if<std::is_same<T, Int64>::value>::type>
+{
+	using U = typename std::make_unsigned<T>::type;
+
+	static UInt32 hash(T key)
 	{
-		static void addOne(Data & data, const IColumn & column, size_t row_num)
-		{
-			/// Имейте ввиду, что вычисление приближённое.
-			StringRef value = column.getDataAt(row_num);
-			data.set.insert(CityHash64(value.data, value.size));
-		}
+		return intHash32<0>(static_cast<U>(key));
 	};
+};
 
-	template<typename T>
-	struct OneAdder<T, AggregateFunctionUniqExactData<T> >
+template<typename T>
+struct CombinedCardinalityTraits<T, typename std::enable_if<std::is_same<T, UInt64>::value>::type>
+{
+	static UInt32 hash(T key)
 	{
-		static void addOne(AggregateFunctionUniqExactData<T> & data, const IColumn & column, size_t row_num)
-		{
-			data.set.insert(static_cast<const ColumnVector<T> &>(column).getData()[row_num]);
-		}
+		return intHash32<0>(key);
 	};
+};
 
-	template<>
-	struct OneAdder<String, AggregateFunctionUniqExactData<String> >
+template<typename T>
+struct CombinedCardinalityTraits<T, typename std::enable_if<std::is_same<T, Float64>::value>::type>
+{
+	static UInt32 hash(T key)
 	{
-		static void addOne(AggregateFunctionUniqExactData<String> & data, const IColumn & column, size_t row_num)
-		{
-			StringRef value = column.getDataAt(row_num);
+		UInt64 res = 0;
+		memcpy(reinterpret_cast<char *>(&res), reinterpret_cast<char *>(&key), sizeof(key));
+		return intHash32<0>(res);
+	}
+};
 
-			UInt128 key;
-			SipHash hash;
-			hash.update(value.data, value.size);
-			hash.get128(key.first, key.second);
-
-			data.set.insert(key);
-		}
-	};
-
-	template<typename T>
-	struct OneAdder<T, AggregateFunctionUniqCombinedData<T> >
+template<typename T>
+struct CombinedCardinalityTraits<T, typename std::enable_if<std::is_same<T, Float32>::value>::type>
+{
+	static UInt32 hash(T key)
 	{
-		static void addOne(AggregateFunctionUniqCombinedData<T> & data, const IColumn & column, size_t row_num)
-		{
-			if (data.set.isMedium())
-				data.set.insert(static_cast<const ColumnVector<T> &>(column).getData()[row_num]);
-			else
-				data.set.insert(AggregateFunctionUniqTraits<T>::hash(static_cast<const ColumnVector<T> &>(column).getData()[row_num]));
-		}
-	};
+		UInt32 res = 0;
+		memcpy(reinterpret_cast<char *>(&res), reinterpret_cast<char *>(&key), sizeof(key));
+		return res;
+	}
+};
 
-	template<>
-	struct OneAdder<String, AggregateFunctionUniqCombinedData<String> >
+/** Хэш-функция для uniq.
+  */
+template <typename T> struct AggregateFunctionUniqTraits
+{
+	static UInt64 hash(T x) { return x; }
+};
+
+template <> struct AggregateFunctionUniqTraits<Float32>
+{
+	static UInt64 hash(Float32 x)
 	{
-		static void addOne(AggregateFunctionUniqCombinedData<String> & data, const IColumn & column, size_t row_num)
-		{
-			StringRef value = column.getDataAt(row_num);
-			data.set.insert(CityHash64(value.data, value.size));
-		}
-	};
+		UInt64 res = 0;
+		memcpy(reinterpret_cast<char *>(&res), reinterpret_cast<char *>(&x), sizeof(x));
+		return res;
+	}
+};
+
+template <> struct AggregateFunctionUniqTraits<Float64>
+{
+	static UInt64 hash(Float64 x)
+	{
+		UInt64 res = 0;
+		memcpy(reinterpret_cast<char *>(&res), reinterpret_cast<char *>(&x), sizeof(x));
+		return res;
+	}
+};
+
+/** Структура для делегации работы по добавлению одного элемента в агрегатные функции uniq.
+	* Используется для частичной специализации для добавления строк.
+	*/
+template<typename T, typename Data>
+struct OneAdder
+{
+	static void addOne(Data & data, const IColumn & column, size_t row_num)
+	{
+		data.set.insert(AggregateFunctionUniqTraits<T>::hash(static_cast<const ColumnVector<T> &>(column).getData()[row_num]));
+	}
+};
+
+template<typename Data>
+struct OneAdder<String, Data>
+{
+	static void addOne(Data & data, const IColumn & column, size_t row_num)
+	{
+		/// Имейте ввиду, что вычисление приближённое.
+		StringRef value = column.getDataAt(row_num);
+		data.set.insert(CityHash64(value.data, value.size));
+	}
+};
+
+template<typename T>
+struct OneAdder<T, AggregateFunctionUniqExactData<T> >
+{
+	static void addOne(AggregateFunctionUniqExactData<T> & data, const IColumn & column, size_t row_num)
+	{
+		data.set.insert(static_cast<const ColumnVector<T> &>(column).getData()[row_num]);
+	}
+};
+
+template<>
+struct OneAdder<String, AggregateFunctionUniqExactData<String> >
+{
+	static void addOne(AggregateFunctionUniqExactData<String> & data, const IColumn & column, size_t row_num)
+	{
+		StringRef value = column.getDataAt(row_num);
+
+		UInt128 key;
+		SipHash hash;
+		hash.update(value.data, value.size);
+		hash.get128(key.first, key.second);
+
+		data.set.insert(key);
+	}
+};
+
+template<typename T>
+struct OneAdder<T, AggregateFunctionUniqCombinedData<T> >
+{
+	static void addOne(AggregateFunctionUniqCombinedData<T> & data, const IColumn & column, size_t row_num)
+	{
+		const auto & value = static_cast<const ColumnVector<T> &>(column).getData()[row_num];
+		data.set.insert(CombinedCardinalityTraits<T>::hash(value));
+	}
+};
+
+template<>
+struct OneAdder<String, AggregateFunctionUniqCombinedData<String> >
+{
+	static void addOne(AggregateFunctionUniqCombinedData<String> & data, const IColumn & column, size_t row_num)
+	{
+		StringRef value = column.getDataAt(row_num);
+		data.set.insert(CityHash64(value.data, value.size));
+	}
+};
+
 }
 
 
