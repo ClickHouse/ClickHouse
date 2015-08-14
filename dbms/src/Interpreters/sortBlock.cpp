@@ -161,7 +161,7 @@ void stableGetPermutation(const Block & block, const SortDescription & descripti
 
 	for (size_t i = 0, size = description.size(); i < size; ++i)
 	{
-		IColumn * column = !description[i].column_name.empty()
+		const IColumn * column = !description[i].column_name.empty()
 			? block.getByName(description[i].column_name).column
 			: block.getByPosition(description[i].column_number).column;
 
