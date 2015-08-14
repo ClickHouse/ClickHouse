@@ -375,31 +375,25 @@ private:
 	{
 		size_t rows = block.rows();
 
-		/// Сначала пишем индекс. Индекс содержит значение Primary Key для каждой index_granularity строки.
-		typedef std::vector<const ColumnWithTypeAndName *> PrimaryColumns;
-		PrimaryColumns primary_columns;
-
-		for (const auto & descr : storage.getSortDescription())
-			primary_columns.push_back(
-				!descr.column_name.empty()
-				? &block.getByName(descr.column_name)
-				: &block.getByPosition(descr.column_number));
-
-		for (size_t i = index_offset; i < rows; i += storage.index_granularity)
-		{
-			for (PrimaryColumns::const_iterator it = primary_columns.begin(); it != primary_columns.end(); ++it)
-			{
-				if (storage.mode != MergeTreeData::Unsorted)
-					index_vec.push_back((*(*it)->column)[i]);
-
-				(*it)->type->serializeBinary(index_vec.back(), *index_stream);
-			}
-
-			++marks_count;
-		}
-
 		/// Множество записанных столбцов со смещениями, чтобы не писать общие для вложенных структур столбцы несколько раз
 		OffsetColumns offset_columns;
+
+		auto sort_description = storage.getSortDescription();
+
+		/// Сюда будем складывать столбцы, относящиеся к Primary Key, чтобы потом записать индекс.
+		std::vector<ColumnWithTypeAndName> primary_columns(sort_description.size());
+		std::map<String, size_t> primary_columns_name_to_position;
+
+		for (size_t i = 0, size = sort_description.size(); i < size; ++i)
+		{
+			const auto & descr = sort_description[i];
+
+			String name = !descr.column_name.empty()
+				? descr.column_name
+				: block.getByPosition(descr.column_number).name;
+
+			primary_columns_name_to_position[name] = i;
+		}
 
 		/// Теперь пишем данные.
 		for (const auto & it : columns_list)
@@ -410,9 +404,33 @@ private:
 			{
 				ColumnPtr permutted_column = column.column->permute(*permutation, 0);
 				writeData(column.name, *column.type, *permutted_column, offset_columns);
+
+				auto primary_column_it = primary_columns_name_to_position.find(it.name);
+				if (primary_columns_name_to_position.end() != primary_column_it)
+					primary_columns[primary_column_it->second] = ColumnWithTypeAndName{permutted_column, it.type, it.name};
 			}
 			else
+			{
 				writeData(column.name, *column.type, *column.column, offset_columns);
+
+				auto primary_column_it = primary_columns_name_to_position.find(it.name);
+				if (primary_columns_name_to_position.end() != primary_column_it)
+					primary_columns[primary_column_it->second] = column;
+			}
+		}
+
+		/// Пишем индекс. Индекс содержит значение Primary Key для каждой index_granularity строки.
+		for (size_t i = index_offset; i < rows; i += storage.index_granularity)
+		{
+			for (auto & primary_column : primary_columns)
+			{
+				if (storage.mode != MergeTreeData::Unsorted)
+					index_vec.push_back((*primary_column.column)[i]);
+
+				primary_column.type->serializeBinary(index_vec.back(), *index_stream);
+			}
+
+			++marks_count;
 		}
 
 		size_t written_for_last_mark = (storage.index_granularity - index_offset + rows) % storage.index_granularity;
