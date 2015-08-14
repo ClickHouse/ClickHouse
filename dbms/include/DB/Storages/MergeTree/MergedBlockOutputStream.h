@@ -14,6 +14,8 @@
 
 namespace DB
 {
+
+
 class IMergedBlockOutputStream : public IBlockOutputStream
 {
 public:
@@ -230,7 +232,9 @@ protected:
 	CompressionMethod compression_method;
 };
 
-/** Для записи одного куска. Данные уже отсортированы, относятся к одному месяцу, и пишутся в один кускок.
+
+/** Для записи одного куска.
+  * Данные относятся к одному месяцу, и пишутся в один кускок.
   */
 class MergedBlockOutputStream : public IMergedBlockOutputStream
 {
@@ -278,45 +282,18 @@ public:
 		}
 	}
 
+	/// Если данные заранее отсортированы.
 	void write(const Block & block) override
 	{
-		size_t rows = block.rows();
+		writeImpl(block, nullptr);
+	}
 
-		/// Сначала пишем индекс. Индекс содержит значение Primary Key для каждой index_granularity строки.
-		typedef std::vector<const ColumnWithTypeAndName *> PrimaryColumns;
-		PrimaryColumns primary_columns;
-
-		for (const auto & descr : storage.getSortDescription())
-			primary_columns.push_back(
-				!descr.column_name.empty()
-				? &block.getByName(descr.column_name)
-				: &block.getByPosition(descr.column_number));
-
-		for (size_t i = index_offset; i < rows; i += storage.index_granularity)
-		{
-			for (PrimaryColumns::const_iterator it = primary_columns.begin(); it != primary_columns.end(); ++it)
-			{
-				if (storage.mode != MergeTreeData::Unsorted)
-					index_vec.push_back((*(*it)->column)[i]);
-
-				(*it)->type->serializeBinary(index_vec.back(), *index_stream);
-			}
-
-			++marks_count;
-		}
-
-		/// Множество записанных столбцов со смещениями, чтобы не писать общие для вложенных структур столбцы несколько раз
-		OffsetColumns offset_columns;
-
-		/// Теперь пишем данные.
-		for (const auto & it : columns_list)
-		{
-			const ColumnWithTypeAndName & column = block.getByName(it.name);
-			writeData(column.name, *column.type, *column.column, offset_columns);
-		}
-
-		size_t written_for_last_mark = (storage.index_granularity - index_offset + rows) % storage.index_granularity;
-		index_offset = (storage.index_granularity - written_for_last_mark) % storage.index_granularity;
+	/** Если данные не отсортированы, но мы заранее вычислили перестановку, после которой они станут сортированными.
+	  * Этот метод используется для экономии оперативки, так как не нужно держать одновременно два блока - исходный и отсортированный.
+	  */
+	void writeWithPermutation(const Block & block, const IColumn::Permutation * permutation)
+	{
+		writeImpl(block, permutation);
 	}
 
 	void writeSuffix() override
@@ -389,6 +366,57 @@ private:
 			index_file_stream = new WriteBufferFromFile(part_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
 			index_stream = new HashingWriteBuffer(*index_file_stream);
 		}
+	}
+
+	/** Если задана permutation, то переставляет значения в столбцах при записи.
+	  * Это нужно, чтобы не держать целый блок в оперативке для его сортировки.
+	  */
+	void writeImpl(const Block & block, const IColumn::Permutation * permutation)
+	{
+		size_t rows = block.rows();
+
+		/// Сначала пишем индекс. Индекс содержит значение Primary Key для каждой index_granularity строки.
+		typedef std::vector<const ColumnWithTypeAndName *> PrimaryColumns;
+		PrimaryColumns primary_columns;
+
+		for (const auto & descr : storage.getSortDescription())
+			primary_columns.push_back(
+				!descr.column_name.empty()
+				? &block.getByName(descr.column_name)
+				: &block.getByPosition(descr.column_number));
+
+		for (size_t i = index_offset; i < rows; i += storage.index_granularity)
+		{
+			for (PrimaryColumns::const_iterator it = primary_columns.begin(); it != primary_columns.end(); ++it)
+			{
+				if (storage.mode != MergeTreeData::Unsorted)
+					index_vec.push_back((*(*it)->column)[i]);
+
+				(*it)->type->serializeBinary(index_vec.back(), *index_stream);
+			}
+
+			++marks_count;
+		}
+
+		/// Множество записанных столбцов со смещениями, чтобы не писать общие для вложенных структур столбцы несколько раз
+		OffsetColumns offset_columns;
+
+		/// Теперь пишем данные.
+		for (const auto & it : columns_list)
+		{
+			const ColumnWithTypeAndName & column = block.getByName(it.name);
+
+			if (permutation)
+			{
+				ColumnPtr permutted_column = column.column->permute(*permutation, 0);
+				writeData(column.name, *column.type, *permutted_column, offset_columns);
+			}
+			else
+				writeData(column.name, *column.type, *column.column, offset_columns);
+		}
+
+		size_t written_for_last_mark = (storage.index_granularity - index_offset + rows) % storage.index_granularity;
+		index_offset = (storage.index_granularity - written_for_last_mark) % storage.index_granularity;
 	}
 
 private:

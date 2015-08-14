@@ -100,8 +100,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 	SortDescription sort_descr = data.getSortDescription();
 
 	/// Сортируем.
+	IColumn::Permutation * perm_ptr = nullptr;
+	IColumn::Permutation perm;
 	if (data.mode != MergeTreeData::Unsorted)
-		stableSortBlock(block, sort_descr);
+	{
+		stableGetPermutation(block, sort_descr, perm);
+		perm_ptr = &perm;
+	}
 
 	NamesAndTypesList columns = data.getColumnsList().filter(block.getColumnsList().getNames());
 	MergedBlockOutputStream out(data, part_tmp_path, columns, CompressionMethod::LZ4);
@@ -109,7 +114,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 	out.getIndex().reserve(part_size * sort_descr.size());
 
 	out.writePrefix();
-	out.write(block);
+	out.writeWithPermutation(block, perm_ptr);
 	MergeTreeData::DataPart::Checksums checksums = out.writeSuffixAndGetChecksums();
 
 	new_data_part->left_date = DayNum_t(min_date);
