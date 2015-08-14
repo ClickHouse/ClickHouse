@@ -393,6 +393,10 @@ private:
 				: block.getByPosition(descr.column_number).name;
 
 			primary_columns_name_to_position[name] = i;
+
+			primary_columns[i] = !descr.column_name.empty()
+				? block.getByName(descr.column_name)
+				: block.getByPosition(descr.column_number);
 		}
 
 		/// Теперь пишем данные.
@@ -412,17 +416,13 @@ private:
 			else
 			{
 				writeData(column.name, *column.type, *column.column, offset_columns);
-
-				auto primary_column_it = primary_columns_name_to_position.find(it.name);
-				if (primary_columns_name_to_position.end() != primary_column_it)
-					primary_columns[primary_column_it->second] = column;
 			}
 		}
 
 		/// Пишем индекс. Индекс содержит значение Primary Key для каждой index_granularity строки.
 		for (size_t i = index_offset; i < rows; i += storage.index_granularity)
 		{
-			for (auto & primary_column : primary_columns)
+			for (const auto & primary_column : primary_columns)
 			{
 				if (storage.mode != MergeTreeData::Unsorted)
 					index_vec.push_back((*primary_column.column)[i]);
