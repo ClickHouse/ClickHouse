@@ -97,8 +97,11 @@ Block NativeBlockInputStream::readImpl()
 
 	for (size_t i = 0; i < columns; ++i)
 	{
-		if (index)	/// Если текущая позиция какая требуется, то реального seek-а не происходит.
+		if (index)
+		{
+			/// Если текущая позиция и так какая требуется, то реального seek-а не происходит.
 			istr_concrete->seek(index_column_it->location.offset_in_compressed_file, index_column_it->location.offset_in_decompressed_block);
+		}
 
 		ColumnWithTypeAndName column;
 
@@ -135,6 +138,8 @@ Block NativeBlockInputStream::readImpl()
 			throw Exception("Inconsistent index: not all columns were read", ErrorCodes::INCORRECT_INDEX);
 
 		++index_block_it;
+		if (index_block_it != index->blocks.end())
+			index_column_it = index_block_it->columns.begin();
 	}
 
 	return res;
