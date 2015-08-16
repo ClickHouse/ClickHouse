@@ -84,8 +84,6 @@ public:
 	};
 	typedef std::map<String, ColumnData> Files_t;
 
-	Files_t & getFiles() { return files; }
-
 	bool checkData() const override;
 
 protected:
@@ -149,7 +147,7 @@ private:
 	size_t max_compress_block_size;
 
 protected:
-	FileChecker<StorageLog> file_checker;
+	FileChecker file_checker;
 
 private:
 	/** Для обычных столбцов, в засечках указано количество строчек в блоке.
