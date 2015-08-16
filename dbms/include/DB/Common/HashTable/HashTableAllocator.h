@@ -36,7 +36,6 @@ private:
 	  * PS. Также это требуется, потому что tcmalloc не может выделить кусок памяти больше 16 GB.
 	  */
 	static constexpr size_t MMAP_THRESHOLD = 64 * (1 << 20);
-	static constexpr size_t HUGE_PAGE_SIZE = 2 * (1 << 20);
 
 public:
 	/// Выделить кусок памяти и заполнить его нулями.
@@ -52,14 +51,6 @@ public:
 			buf = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 			if (MAP_FAILED == buf)
 				DB::throwFromErrno("HashTableAllocator: Cannot mmap.", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
-
-			/** Использование huge pages позволяет увеличить производительность более чем в три раза
-			  *  в запросе SELECT number % 1000000 AS k, count() FROM system.numbers GROUP BY k,
-			  *  (хэш-таблица на 1 000 000 элементов)
-			  * и примерно на 15% в случае хэш-таблицы на 100 000 000 элементов.
-			  */
-			if (size >= HUGE_PAGE_SIZE && 0 != madvise(buf, size, MADV_HUGEPAGE))
-				DB::throwFromErrno("HashTableAllocator: Cannot madvise with MADV_HUGEPAGE.", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
 			/// Заполнение нулями не нужно - mmap сам это делает.
 		}
@@ -116,10 +107,6 @@ public:
 			buf = mremap(buf, old_size, new_size, MREMAP_MAYMOVE);
 			if (MAP_FAILED == buf)
 				DB::throwFromErrno("HashTableAllocator: Cannot mremap.", DB::ErrorCodes::CANNOT_MREMAP);
-
-			/** Здесь не получается сделать madvise с MADV_HUGEPAGE.
-			  * Похоже, что при mremap, huge pages сами расширяются на новую область.
-			  */
 
 			/// Заполнение нулями не нужно.
 		}

@@ -44,6 +44,8 @@
 
 #include <zkutil/ZooKeeper.h>
 
+#include <gperftools/malloc_hook.h>
+
 #include "Server.h"
 #include "HTTPHandler.h"
 #include "InterserverIOHTTPHandler.h"
@@ -423,6 +425,23 @@ private:
 int Server::main(const std::vector<std::string> & args)
 {
 	Logger * log = &logger();
+
+	/** Использование huge pages позволяет увеличить производительность более чем в три раза
+	  *  в запросе SELECT number % 1000000 AS k, count() FROM system.numbers GROUP BY k,
+	  *  (хэш-таблица на 1 000 000 элементов)
+	  * и примерно на 15% в случае хэш-таблицы на 100 000 000 элементов.
+	  */
+	if (!MallocHook::AddMmapHook([](const void * result, const void * start, size_t size, int protection, int flags, int fd, off_t offset)
+	{
+		const auto HUGE_PAGE_SIZE = 1 << 21;
+
+		if (result != MAP_FAILED
+			&& size >= HUGE_PAGE_SIZE
+			&& (flags & MAP_PRIVATE)
+			&& (flags & MAP_ANONYMOUS))
+			(void)madvise(const_cast<void *>(result), size, MADV_HUGEPAGE);
+	}))
+		LOG_WARNING(log, "Cannot set mmap hook.");
 
 	std::string path = config().getString("path");
 	Poco::trimInPlace(path);
