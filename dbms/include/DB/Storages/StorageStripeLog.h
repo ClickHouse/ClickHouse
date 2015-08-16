@@ -50,8 +50,6 @@ public:
 
 	BlockOutputStreamPtr write(ASTPtr query) override;
 
-	void drop() override;
-
 	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
 
 	bool checkData() const override;
@@ -73,6 +71,7 @@ private:
 	size_t max_compress_block_size;
 
 	FileChecker file_checker;
+	Poco::RWLock rwlock;
 
 	Logger * log;
 

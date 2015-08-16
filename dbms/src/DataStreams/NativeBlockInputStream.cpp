@@ -17,16 +17,18 @@ namespace DB
 
 NativeBlockInputStream::NativeBlockInputStream(
 	ReadBuffer & istr_, UInt64 server_revision_,
-	const IndexForNativeFormat * index_)
-	: istr(istr_), server_revision(server_revision_), index(index_)
+	bool use_index_,
+	IndexForNativeFormat::Blocks::const_iterator index_block_it_,
+	IndexForNativeFormat::Blocks::const_iterator index_block_end_)
+	: istr(istr_), server_revision(server_revision_),
+	use_index(use_index_), index_block_it(index_block_it_), index_block_end(index_block_end_)
 {
-	if (index)
+	if (use_index)
 	{
 		istr_concrete = typeid_cast<CompressedReadBufferFromFile *>(&istr);
 		if (!istr_concrete)
 			throw Exception("When need to use index for NativeBlockInputStream, istr must be CompressedReadBufferFromFile.", ErrorCodes::LOGICAL_ERROR);
 
-		index_block_it = index->blocks.begin();
 		index_column_it = index_block_it->columns.begin();
 	}
 }
@@ -65,12 +67,12 @@ Block NativeBlockInputStream::readImpl()
 
 	const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
 
-	if (index && index_block_it == index->blocks.end())
+	if (use_index && index_block_it == index_block_end)
 		return res;
 
 	if (istr.eof())
 	{
-		if (index)
+		if (use_index)
 			throw Exception("Input doesn't contain all data for index.", ErrorCodes::CANNOT_READ_ALL_DATA);
 
 		return res;
@@ -84,7 +86,7 @@ Block NativeBlockInputStream::readImpl()
 	size_t columns = 0;
 	size_t rows = 0;
 
-	if (!index)
+	if (!use_index)
 	{
 		readVarUInt(columns, istr);
 		readVarUInt(rows, istr);
@@ -97,7 +99,7 @@ Block NativeBlockInputStream::readImpl()
 
 	for (size_t i = 0; i < columns; ++i)
 	{
-		if (index)
+		if (use_index)
 		{
 			/// Если текущая позиция и так какая требуется, то реального seek-а не происходит.
 			istr_concrete->seek(index_column_it->location.offset_in_compressed_file, index_column_it->location.offset_in_decompressed_block);
@@ -113,7 +115,7 @@ Block NativeBlockInputStream::readImpl()
 		readBinary(type_name, istr);
 		column.type = data_type_factory.get(type_name);
 
-		if (index)
+		if (use_index)
 		{
 			/// Индекс позволяет сделать проверки.
 			if (index_column_it->name != column.name)
@@ -128,17 +130,17 @@ Block NativeBlockInputStream::readImpl()
 
 		res.insert(column);
 
-		if (index)
+		if (use_index)
 			++index_column_it;
 	}
 
-	if (index)
+	if (use_index)
 	{
 		if (index_column_it != index_block_it->columns.end())
 			throw Exception("Inconsistent index: not all columns were read", ErrorCodes::INCORRECT_INDEX);
 
 		++index_block_it;
-		if (index_block_it != index->blocks.end())
+		if (index_block_it != index_block_end)
 			index_column_it = index_block_it->columns.begin();
 	}
 

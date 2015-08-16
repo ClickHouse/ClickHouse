@@ -39,12 +39,14 @@ namespace DB
 class StripeLogBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	StripeLogBlockInputStream(const Names & column_names_, StorageStripeLog & storage_, size_t max_read_buffer_size_)
+	StripeLogBlockInputStream(const NameSet & column_names_, StorageStripeLog & storage_, size_t max_read_buffer_size_,
+		const Poco::SharedPtr<IndexForNativeFormat> & index_,
+		IndexForNativeFormat::Blocks::const_iterator index_begin_,
+		IndexForNativeFormat::Blocks::const_iterator index_end_)
 		: column_names(column_names_.begin(), column_names_.end()), storage(storage_),
+		index(index_), index_begin(index_begin_), index_end(index_end_),
 		data_in(storage.full_path() + "data.bin", 0, 0, max_read_buffer_size_),
-		index_in(storage.full_path() + "index.mrk", 0, 0, INDEX_BUFFER_SIZE),
-		index(index_in, column_names),
-		block_in(data_in, 0, &index)
+		block_in(data_in, 0, true, index_begin, index_end)
 	{
 	}
 
@@ -69,9 +71,11 @@ private:
 	NameSet column_names;
 	StorageStripeLog & storage;
 
+	const Poco::SharedPtr<IndexForNativeFormat> index;
+	IndexForNativeFormat::Blocks::const_iterator index_begin;
+	IndexForNativeFormat::Blocks::const_iterator index_end;
+
 	CompressedReadBufferFromFile data_in;
-	CompressedReadBufferFromFile index_in;
-	IndexForNativeFormat index;
 	NativeBlockInputStream block_in;
 };
 
@@ -80,7 +84,7 @@ class StripeLogBlockOutputStream : public IBlockOutputStream
 {
 public:
 	StripeLogBlockOutputStream(StorageStripeLog & storage_)
-		: storage(storage_),
+		: storage(storage_), lock(storage.rwlock),
 		data_out_compressed(storage.full_path() + "data.bin"),
 		data_out(data_out_compressed, CompressionMethod::LZ4, storage.max_compress_block_size),
 		index_out_compressed(storage.full_path() + "index.mrk", INDEX_BUFFER_SIZE),
@@ -125,6 +129,7 @@ public:
 
 private:
 	StorageStripeLog & storage;
+	Poco::ScopedWriteRWLock lock;
 
 	WriteBufferFromFile data_out_compressed;
 	CompressedWriteBuffer data_out;
@@ -183,6 +188,8 @@ StoragePtr StorageStripeLog::create(
 
 void StorageStripeLog::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
 {
+	Poco::ScopedWriteRWLock lock(rwlock);
+
 	/// Переименовываем директорию с данными.
 	Poco::File(path + escapeForFileName(name)).renameTo(new_path_to_db + escapeForFileName(new_table_name));
 
@@ -199,11 +206,38 @@ BlockInputStreams StorageStripeLog::read(
 	const Settings & settings,
 	QueryProcessingStage::Enum & processed_stage,
 	const size_t max_block_size,
-	const unsigned threads)
+	unsigned threads)
 {
+	Poco::ScopedReadRWLock lock(rwlock);
+
 	check(column_names);
 	processed_stage = QueryProcessingStage::FetchColumns;
-	return BlockInputStreams(1, new StripeLogBlockInputStream(column_names, *this, settings.max_read_buffer_size));
+
+	NameSet column_names_set(column_names.begin(), column_names.end());
+
+	CompressedReadBufferFromFile index_in(full_path() + "index.mrk", 0, 0, INDEX_BUFFER_SIZE);
+	Poco::SharedPtr<IndexForNativeFormat> index = new IndexForNativeFormat(index_in, column_names_set);
+
+	BlockInputStreams res;
+
+	size_t size = index->blocks.size();
+	if (threads > size)
+		threads = size;
+
+	for (size_t thread = 0; thread < threads; ++thread)
+	{
+		IndexForNativeFormat::Blocks::const_iterator begin = index->blocks.begin();
+		IndexForNativeFormat::Blocks::const_iterator end = index->blocks.begin();
+
+		std::advance(begin, thread * size / threads);
+		std::advance(end, (thread + 1) * size / threads);
+
+		res.emplace_back(new StripeLogBlockInputStream(column_names_set, *this, settings.max_read_buffer_size, index, begin, end));
+	}
+
+	/// Непосредственно во время чтения не держим read lock, потому что мы читаем диапазоны данных, которые не меняются.
+
+	return res;
 }
 
 
@@ -214,12 +248,9 @@ BlockOutputStreamPtr StorageStripeLog::write(
 }
 
 
-void StorageStripeLog::drop()
-{
-}
-
 bool StorageStripeLog::checkData() const
 {
+	Poco::ScopedReadRWLock lock(const_cast<Poco::RWLock &>(rwlock));
 	return file_checker.check();
 }
 

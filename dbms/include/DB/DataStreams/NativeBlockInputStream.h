@@ -67,7 +67,9 @@ public:
 	  */
 	NativeBlockInputStream(
 		ReadBuffer & istr_, UInt64 server_revision_ = 0,
-		const IndexForNativeFormat * index_ = nullptr);
+		bool use_index_ = false,
+		IndexForNativeFormat::Blocks::const_iterator index_block_it_ = IndexForNativeFormat::Blocks::const_iterator{},
+		IndexForNativeFormat::Blocks::const_iterator index_block_end_ = IndexForNativeFormat::Blocks::const_iterator{});
 
 	String getName() const override { return "Native"; }
 
@@ -87,8 +89,9 @@ private:
 	ReadBuffer & istr;
 	UInt64 server_revision;
 
-	const IndexForNativeFormat * index;
+	bool use_index;
 	IndexForNativeFormat::Blocks::const_iterator index_block_it;
+	IndexForNativeFormat::Blocks::const_iterator index_block_end;
 	IndexOfBlockForNativeFormat::Columns::const_iterator index_column_it;
 
 	/// Если задан индекс, то istr должен быть CompressedReadBufferFromFile.
