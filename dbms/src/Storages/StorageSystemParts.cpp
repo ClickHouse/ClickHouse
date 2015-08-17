@@ -29,8 +29,8 @@ StorageSystemParts::StorageSystemParts(const std::string & name_)
 		{"refcount",			new DataTypeUInt32},
 		{"min_date",			new DataTypeDate},
 		{"max_date",			new DataTypeDate},
-		{"min_block_number",	new DataTypeUInt64},
-		{"max_block_number",	new DataTypeUInt64},
+		{"min_block_number",	new DataTypeInt64},
+		{"max_block_number",	new DataTypeInt64},
 		{"level",				new DataTypeUInt32},
 
 		{"database", 			new DataTypeString},
@@ -169,8 +169,8 @@ BlockInputStreams StorageSystemParts::read(
 	ColumnPtr refcount_column = new ColumnUInt32;
 	ColumnPtr min_date_column = new ColumnUInt16;
 	ColumnPtr max_date_column = new ColumnUInt16;
-	ColumnPtr min_block_number_column = new ColumnUInt64;
-	ColumnPtr max_block_number_column = new ColumnUInt64;
+	ColumnPtr min_block_number_column = new ColumnInt64;
+	ColumnPtr max_block_number_column = new ColumnInt64;
 	ColumnPtr level_column = new ColumnUInt32;
 
 	for (size_t i = 0; i < filtered_database_column->size();)
@@ -227,7 +227,7 @@ BlockInputStreams StorageSystemParts::read(
 				table_column->insert(table);
 				engine_column->insert(engine);
 
-				mysqlxx::Date partition_date {part->left_month};
+				mysqlxx::Date partition_date {part->month};
 				String partition = toString(partition_date.year()) + (partition_date.month() < 10 ? "0" : "") + toString(partition_date.month());
 				partition_column->insert(partition);
 
@@ -263,8 +263,8 @@ BlockInputStreams StorageSystemParts::read(
 	block.insert(ColumnWithTypeAndName(refcount_column, 			new DataTypeUInt32, 	"refcount"));
 	block.insert(ColumnWithTypeAndName(min_date_column,				new DataTypeDate,		"min_date"));
 	block.insert(ColumnWithTypeAndName(max_date_column,				new DataTypeDate,		"max_date"));
-	block.insert(ColumnWithTypeAndName(min_block_number_column,		new DataTypeUInt64,		"min_block_number"));
-	block.insert(ColumnWithTypeAndName(max_block_number_column,		new DataTypeUInt64,		"max_block_number"));
+	block.insert(ColumnWithTypeAndName(min_block_number_column,		new DataTypeInt64,		"min_block_number"));
+	block.insert(ColumnWithTypeAndName(max_block_number_column,		new DataTypeInt64,		"max_block_number"));
 	block.insert(ColumnWithTypeAndName(level_column,				new DataTypeUInt32,		"level"));
 	block.insert(ColumnWithTypeAndName(database_column, 			new DataTypeString, 	"database"));
 	block.insert(ColumnWithTypeAndName(table_column, 				new DataTypeString, 	"table"));

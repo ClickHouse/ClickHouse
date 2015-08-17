@@ -393,8 +393,11 @@ private:
 	  */
 	void waitForReplicaToProcessLogEntry(const String & replica_name, const LogEntry & entry);
 
-	/// Преобразовать число в строку формате суффиксов автоинкрементных нод в ZooKeeper.
-	static String padIndex(UInt64 index)
+	/** Преобразовать число в строку формате суффиксов автоинкрементных нод в ZooKeeper.
+	  * Поддерживаются также отрицательные числа - для них имя ноды выглядит несколько глупо
+	  *  и не соответствует никакой автоинкрементной ноде в ZK.
+	  */
+	static String padIndex(Int64 index)
 	{
 		String index_str = toString(index);
 		return std::string(10 - index_str.size(), '0') + index_str;

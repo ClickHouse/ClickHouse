@@ -625,7 +625,7 @@ public:
 			|| mode == Mode::Aggregating;
 	}
 
-	UInt64 getMaxDataPartIndex();
+	Int64 getMaxDataPartIndex();
 
 	std::string getTableName() const override
 	{
