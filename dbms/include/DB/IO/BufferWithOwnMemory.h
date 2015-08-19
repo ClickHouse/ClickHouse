@@ -3,7 +3,7 @@
 #include <boost/noncopyable.hpp>
 
 #include <DB/Common/ProfileEvents.h>
-#include <DB/Common/MemoryTracker.h>
+#include <DB/Common/Allocator.h>
 
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
@@ -18,7 +18,7 @@ namespace DB
   * Отличается тем, что не делает лишний memset. (И почти ничего не делает.)
   * Также можно попросить выделять выровненный кусок памяти.
   */
-struct Memory : boost::noncopyable
+struct Memory : boost::noncopyable, Allocator
 {
 	size_t m_capacity = 0;
 	size_t m_size = 0;
@@ -66,16 +66,22 @@ struct Memory : boost::noncopyable
 		}
 		else
 		{
-			dealloc();
-
+			new_size = align(new_size);
+			m_data = reinterpret_cast<char *>(Allocator::realloc(m_data, m_capacity, new_size, alignment));
 			m_capacity = new_size;
 			m_size = m_capacity;
-
-			alloc();
 		}
 	}
 
 private:
+	size_t align(size_t value) const
+	{
+		if (!alignment)
+			return value;
+
+		return (value + alignment - 1) / alignment * alignment;
+	}
+
 	void alloc()
 	{
 		if (!m_capacity)
@@ -87,33 +93,10 @@ private:
 		ProfileEvents::increment(ProfileEvents::IOBufferAllocs);
 		ProfileEvents::increment(ProfileEvents::IOBufferAllocBytes, m_capacity);
 
-		if (current_memory_tracker)
-			current_memory_tracker->alloc(m_capacity);
-
-		char * new_m_data = nullptr;
-
-		if (!alignment)
-		{
-			new_m_data = reinterpret_cast<char *>(malloc(m_capacity));
-
-			if (!new_m_data)
-				throw Exception("Cannot allocate memory (malloc)", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
-
-			m_data = new_m_data;
-
-			return;
-		}
-
-		size_t aligned_capacity = (m_capacity + alignment - 1) / alignment * alignment;
-		m_capacity = aligned_capacity;
+		size_t new_capacity = align(m_capacity);
+		m_data = reinterpret_cast<char *>(Allocator::alloc(new_capacity, alignment));
+		m_capacity = new_capacity;
 		m_size = m_capacity;
-
-		int res = posix_memalign(reinterpret_cast<void **>(&new_m_data), alignment, m_capacity);
-
-		if (0 != res)
-			DB::throwFromErrno("Cannot allocate memory (posix_memalign)", ErrorCodes::CANNOT_ALLOCATE_MEMORY, res);
-
-		m_data = new_m_data;
 	}
 
 	void dealloc()
@@ -121,11 +104,8 @@ private:
 		if (!m_data)
 			return;
 
-		free(reinterpret_cast<void *>(m_data));
+		Allocator::free(reinterpret_cast<void *>(m_data), m_capacity);
 		m_data = nullptr;	/// Чтобы избежать double free, если последующий вызов alloc кинет исключение.
-
-		if (current_memory_tracker)
-			current_memory_tracker->free(m_capacity);
 	}
 };
 

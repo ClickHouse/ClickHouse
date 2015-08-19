@@ -26,7 +26,7 @@ namespace DB
 const auto ERROR_SLEEP_MS = 1000;
 const auto MERGE_SELECTING_SLEEP_MS = 5 * 1000;
 
-const auto RESERVED_BLOCK_NUMBERS = 200;
+const Int64 RESERVED_BLOCK_NUMBERS = 200;
 
 
 StorageReplicatedMergeTree::StorageReplicatedMergeTree(
@@ -1272,7 +1272,8 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 		auto zookeeper = getZooKeeper();
 
 		/// Можно слить куски, если все номера между ними заброшены - не соответствуют никаким блокам.
-		for (UInt64 number = left->right + 1; number <= right->left - 1; ++number)	/// Номера блоков больше нуля.
+		/// Номера до RESERVED_BLOCK_NUMBERS всегда не соответствуют никаким блокам.
+		for (Int64 number = std::max(RESERVED_BLOCK_NUMBERS, left->right + 1); number <= right->left - 1; ++number)
 		{
 			String path1 = zookeeper_path +              "/block_numbers/" + month_name + "/block-" + padIndex(number);
 			String path2 = zookeeper_path + "/nonincrement_block_numbers/" + month_name + "/block-" + padIndex(number);
@@ -1402,7 +1403,7 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 				for (size_t i = 0; i + 1 < parts.size(); ++i)
 				{
 					/// Уберем больше не нужные отметки о несуществующих блоках.
-					for (UInt64 number = parts[i]->right + 1; number <= parts[i + 1]->left - 1; ++number)
+					for (Int64 number = std::max(RESERVED_BLOCK_NUMBERS, parts[i]->right + 1); number <= parts[i + 1]->left - 1; ++number)
 					{
 						zookeeper->tryRemove(zookeeper_path +              "/block_numbers/" + month_name + "/block-" + padIndex(number));
 						zookeeper->tryRemove(zookeeper_path + "/nonincrement_block_numbers/" + month_name + "/block-" + padIndex(number));
@@ -2241,7 +2242,7 @@ void StorageReplicatedMergeTree::dropUnreplicatedPartition(const Field & partiti
 
 	for (const auto & part : parts)
 	{
-		if (!(part->left_month == part->right_month && part->left_month == month))
+		if (part->month != month)
 			continue;
 
 		LOG_DEBUG(log, "Removing unreplicated part " << part->name);
@@ -2279,7 +2280,7 @@ void StorageReplicatedMergeTree::dropPartition(const Field & field, bool detach,
 	  * NOTE: Если понадобится аналогично поддержать запрос DROP PART, для него придется придумать какой-нибудь новый механизм,
 	  *        чтобы гарантировать этот инвариант.
 	  */
-	UInt64 right;
+	Int64 right;
 
 	{
 		AbandonableLockInZooKeeper block_number_lock = allocateBlockNumber(month_name);
@@ -2329,7 +2330,7 @@ void StorageReplicatedMergeTree::attachPartition(const Field & field, bool unrep
 	String partition;
 
 	if (attach_part)
-		partition = field.getType() == Field::Types::UInt64 ? toString(field.get<UInt64>()) : field.safeGet<String>();
+		partition = field.safeGet<String>();
 	else
 		partition = MergeTreeData::getMonthName(field);
 
@@ -2369,18 +2370,15 @@ void StorageReplicatedMergeTree::attachPartition(const Field & field, bool unrep
 
 	/// Выделим добавляемым кускам максимальные свободные номера, меньшие RESERVED_BLOCK_NUMBERS.
 	/// NOTE: Проверка свободности номеров никак не синхронизируется. Выполнять несколько запросов ATTACH/DETACH/DROP одновременно нельзя.
-	UInt64 min_used_number = RESERVED_BLOCK_NUMBERS;
+	Int64 min_used_number = RESERVED_BLOCK_NUMBERS;
+	DayNum_t month = DateLUT::instance().makeDayNum(parse<UInt16>(partition.substr(0, 4)), parse<UInt8>(partition.substr(4, 2)), 0);
 
 	{
-		/// TODO Это необходимо лишь в пределах одного месяца.
 		auto existing_parts = data.getDataParts();
 		for (const auto & part : existing_parts)
-			min_used_number = std::min(min_used_number, part->left);
+			if (part->month == month)
+				min_used_number = std::min(min_used_number, part->left);
 	}
-
-	if (parts.size() > min_used_number)
-		throw Exception("Not enough free small block numbers for attaching parts: "
-			+ toString(parts.size()) + " needed, " + toString(min_used_number) + " available", ErrorCodes::NOT_ENOUGH_BLOCK_NUMBERS);
 
 	/// Добавим записи в лог.
 	std::reverse(parts.begin(), parts.end());

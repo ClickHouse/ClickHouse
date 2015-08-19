@@ -93,7 +93,7 @@ public:
 		const auto & attribute = getAttribute(attribute_name);\
 		if (attribute.type != AttributeUnderlyingType::TYPE)\
 			throw Exception{\
-				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
+				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
 				ErrorCodes::TYPE_MISMATCH\
 			};\
 		\
@@ -115,7 +115,7 @@ public:
 		const auto & attribute = getAttribute(attribute_name);
 		if (attribute.type != AttributeUnderlyingType::String)
 			throw Exception{
-				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
+				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
 				ErrorCodes::TYPE_MISMATCH
 			};
 
@@ -170,7 +170,7 @@ private:
 
 				if (hierarchical_attribute->type != AttributeUnderlyingType::UInt64)
 					throw Exception{
-						"Hierarchical attribute must be UInt64.",
+						name + ": hierarchical attribute must be UInt64.",
 						ErrorCodes::TYPE_MISMATCH
 					};
 			}
@@ -201,7 +201,10 @@ private:
 		stream->readSuffix();
 
 		if (require_nonempty && 0 == element_count)
-			throw Exception("Dictionary source is empty and 'require_nonempty' property is set.", ErrorCodes::DICTIONARY_IS_EMPTY);
+			throw Exception{
+				name + ": dictionary source is empty and 'require_nonempty' property is set.",
+				ErrorCodes::DICTIONARY_IS_EMPTY
+			};
 	}
 
 	template <typename T>
@@ -307,7 +310,7 @@ private:
 	{
 		if (id >= max_array_size)
 			throw Exception{
-				"Identifier should be less than " + toString(max_array_size),
+				name + ": identifier should be less than " + toString(max_array_size),
 				ErrorCodes::ARGUMENT_OUT_OF_BOUND
 			};
 
@@ -341,7 +344,7 @@ private:
 		const auto it = attribute_index_by_name.find(attribute_name);
 		if (it == std::end(attribute_index_by_name))
 			throw Exception{
-				"No such attribute '" + attribute_name + "'",
+				name + ": no such attribute '" + attribute_name + "'",
 				ErrorCodes::BAD_ARGUMENTS
 			};
 

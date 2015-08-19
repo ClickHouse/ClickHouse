@@ -33,7 +33,7 @@ public:
 		auto part_blocks = storage.writer.splitBlockIntoParts(block);
 		for (auto & current_block : part_blocks)
 		{
-			UInt64 temp_index = storage.increment.get();
+			Int64 temp_index = storage.increment.get();
 			MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block, temp_index);
 			storage.data.renameTempPartAndAdd(part, &storage.increment);
 

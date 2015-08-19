@@ -1,0 +1,1 @@
+SELECT 1 GLOBAL IN (SELECT 1), 2 GLOBAL IN (SELECT 2) FROM remote('127.0.0.2', system.one);

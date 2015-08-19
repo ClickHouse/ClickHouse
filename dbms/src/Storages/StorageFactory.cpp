@@ -10,6 +10,7 @@
 
 #include <DB/Storages/StorageLog.h>
 #include <DB/Storages/StorageTinyLog.h>
+#include <DB/Storages/StorageStripeLog.h>
 #include <DB/Storages/StorageMemory.h>
 #include <DB/Storages/StorageBuffer.h>
 #include <DB/Storages/StorageNull.h>
@@ -173,6 +174,13 @@ StoragePtr StorageFactory::get(
 	else if (name == "TinyLog")
 	{
 		return StorageTinyLog::create(
+			data_path, table_name, columns,
+			materialized_columns, alias_columns, column_defaults,
+			attach, context.getSettings().max_compress_block_size);
+	}
+	else if (name == "StripeLog")
+	{
+		return StorageStripeLog::create(
 			data_path, table_name, columns,
 			materialized_columns, alias_columns, column_defaults,
 			attach, context.getSettings().max_compress_block_size);
