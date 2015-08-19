@@ -31,7 +31,7 @@ public:
 	{
 		if (!this->source_ptr->supportsSelectiveLoad())
 			throw Exception{
-				"Source cannot be used with CacheDictionary",
+				name + ": source cannot be used with CacheDictionary",
 				ErrorCodes::UNSUPPORTED_METHOD
 			};
 
@@ -98,7 +98,7 @@ public:
 		auto & attribute = getAttribute(attribute_name);\
 		if (attribute.type != AttributeUnderlyingType::TYPE)\
 			throw Exception{\
-				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
+				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
 				ErrorCodes::TYPE_MISMATCH\
 			};\
 		\
@@ -120,7 +120,7 @@ public:
 		auto & attribute = getAttribute(attribute_name);
 		if (attribute.type != AttributeUnderlyingType::String)
 			throw Exception{
-				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
+				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
 				ErrorCodes::TYPE_MISMATCH
 			};
 
@@ -173,7 +173,7 @@ private:
 
 				if (hierarchical_attribute->type != AttributeUnderlyingType::UInt64)
 					throw Exception{
-						"Hierarchical attribute must be UInt64.",
+						name + ": hierarchical attribute must be UInt64.",
 						ErrorCodes::TYPE_MISMATCH
 					};
 			}
@@ -422,7 +422,7 @@ private:
 			const auto id_column = typeid_cast<const ColumnVector<UInt64> *>(block.getByPosition(0).column.get());
 			if (!id_column)
 				throw Exception{
-					"Id column has type different from UInt64.",
+					name + ": id column has type different from UInt64.",
 					ErrorCodes::TYPE_MISMATCH
 				};
 
@@ -576,7 +576,7 @@ private:
 		const auto it = attribute_index_by_name.find(attribute_name);
 		if (it == std::end(attribute_index_by_name))
 			throw Exception{
-				"No such attribute '" + attribute_name + "'",
+				name + ": no such attribute '" + attribute_name + "'",
 				ErrorCodes::BAD_ARGUMENTS
 			};
 
