@@ -128,11 +128,12 @@ BlockInputStreams StorageSystemDictionaries::read(
 			}
 			catch (const Exception & e)
 			{
-				col_last_exception.column->insert("DB::Exception. Code " + toString(e.code()) + ". " + e.message());
+				col_last_exception.column->insert("DB::Exception. Code " + toString(e.code()) + ". " +
+													  std::string{e.displayText()});
 			}
 			catch (const Poco::Exception & e)
 			{
-				col_last_exception.column->insert("Poco::Exception. " + e.message());
+				col_last_exception.column->insert("Poco::Exception. " + std::string{e.displayText()});
 			}
 			catch (const std::exception & e)
 			{
