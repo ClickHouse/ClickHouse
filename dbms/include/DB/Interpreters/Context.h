@@ -272,6 +272,8 @@ public:
 private:
 	const Dictionaries & getDictionariesImpl(bool throw_on_error) const;
 	const ExternalDictionaries & getExternalDictionariesImpl(bool throw_on_error) const;
+
+	StoragePtr getTableImpl(const String & database_name, const String & table_name, Exception * exception) const;
 };
 
 
