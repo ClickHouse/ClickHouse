@@ -38,7 +38,7 @@ public:
 
 			AbandonableLockInZooKeeper block_number_lock = storage.allocateBlockNumber(month_name);
 
-			UInt64 part_number = block_number_lock.getNumber();
+			Int64 part_number = block_number_lock.getNumber();
 
 			MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block, part_number);
 			String part_name = ActiveDataPartSet::getPartName(part->left_date, part->right_date, part->left, part->right, part->level);

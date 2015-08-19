@@ -6,33 +6,12 @@
 #include <DB/Common/ProfileEvents.h>
 #include <DB/Common/SipHash.h>
 #include <DB/Interpreters/AggregationCommon.h>
+#include <DB/DataStreams/MarkInCompressedFile.h>
+
 
 
 namespace DB
 {
-
-struct MarkInCompressedFile
-{
-	size_t offset_in_compressed_file;
-	size_t offset_in_decompressed_block;
-
-	bool operator==(const MarkInCompressedFile & rhs) const
-	{
-		return std::forward_as_tuple(offset_in_compressed_file, offset_in_decompressed_block) ==
-				std::forward_as_tuple(rhs.offset_in_compressed_file, rhs.offset_in_decompressed_block);
-	}
-	bool operator!=(const MarkInCompressedFile & rhs) const
-	{
-		return !(*this == rhs);
-	}
-
-	String toString() const
-	{
-		return "(" + DB::toString(offset_in_compressed_file) + "," + DB::toString(offset_in_decompressed_block) + ")";
-	}
-};
-
-typedef std::vector<MarkInCompressedFile> MarksInCompressedFile;
 
 /// Оценка количества байтов, занимаемых засечками в кеше.
 struct MarksWeightFunction

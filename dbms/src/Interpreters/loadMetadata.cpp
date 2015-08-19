@@ -41,7 +41,7 @@ static void executeCreateQuery(const String & query, Context & context, const St
 		{
 			if (const auto id = dynamic_cast<const ASTFunction *>(ast_create_query.storage.get()))
 			{
-				if (id->name == "TinyLog")
+				if (id->name == "TinyLog" || id->name == "StripeLog")
 				{
 					tryLogCurrentException(__PRETTY_FUNCTION__);
 					return;

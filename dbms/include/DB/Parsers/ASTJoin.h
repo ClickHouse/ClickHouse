@@ -98,17 +98,15 @@ protected:
 			settings.ostr << (strictness == ASTJoin::Any ? "ANY " : "ALL ");
 
 		settings.ostr << (kind == ASTJoin::Inner ? "INNER "
-		: (kind == ASTJoin::Left ? "LEFT "
-		: (kind == ASTJoin::Right ? "RIGHT "
-		: (kind == ASTJoin::Cross ? "CROSS "
-		: "FULL OUTER "))));
+			: (kind == ASTJoin::Left ? "LEFT "
+			: (kind == ASTJoin::Right ? "RIGHT "
+			: (kind == ASTJoin::Cross ? "CROSS "
+			: "FULL OUTER "))));
 
 		settings.ostr << "JOIN "
-		<< (settings.hilite ? hilite_none : "");
+			<< (settings.hilite ? hilite_none : "");
 
-		FormatStateStacked frame_with_indent = frame;
-		++frame_with_indent.indent;
-		table->formatImpl(settings, state, frame_with_indent);
+		table->formatImpl(settings, state, frame);
 
 		if (kind != ASTJoin::Cross)
 		{

@@ -108,7 +108,7 @@ private:
 	{
 		Stream(const std::string & data_path, size_t max_compress_block_size) :
 			plain(data_path, max_compress_block_size, O_APPEND | O_CREAT | O_WRONLY),
-			compressed(plain)
+			compressed(plain, CompressionMethod::LZ4, max_compress_block_size)
 		{
 		}
 
@@ -352,7 +352,7 @@ StorageTinyLog::StorageTinyLog(
 	: IStorage{materialized_columns_, alias_columns_, column_defaults_},
 	path(path_), name(name_), columns(columns_),
 	max_compress_block_size(max_compress_block_size_),
-	file_checker(path + escapeForFileName(name) + '/' + "sizes.json", *this),
+	file_checker(path + escapeForFileName(name) + '/' + "sizes.json"),
 	log(&Logger::get("StorageTinyLog"))
 {
 	if (columns->empty())
@@ -465,11 +465,6 @@ void StorageTinyLog::drop()
 bool StorageTinyLog::checkData() const
 {
 	return file_checker.check();
-}
-
-StorageTinyLog::Files_t & StorageTinyLog::getFiles()
-{
-	return files;
 }
 
 }

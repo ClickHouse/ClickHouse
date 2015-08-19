@@ -187,7 +187,7 @@ private:
 
 			if (attribute.hierarchical)
 				throw Exception{
-					"Hierarchical attributes not supported by " + getName() + " dictionary.",
+					name + ": hierarchical attributes not supported by " + getName() + " dictionary.",
 					ErrorCodes::BAD_ARGUMENTS
 				};
 		}
@@ -221,7 +221,10 @@ private:
 		stream->readSuffix();
 
 		if (require_nonempty && 0 == element_count)
-			throw Exception("Dictionary source is empty and 'require_nonempty' property is set.", ErrorCodes::DICTIONARY_IS_EMPTY);
+			throw Exception{
+				name + ": dictionary source is empty and 'require_nonempty' property is set.",
+				ErrorCodes::DICTIONARY_IS_EMPTY
+			};
 	}
 
 	template <typename T>
@@ -391,7 +394,7 @@ private:
 		const auto it = attribute_index_by_name.find(attribute_name);
 		if (it == std::end(attribute_index_by_name))
 			throw Exception{
-				"No such attribute '" + attribute_name + "'",
+				name + ": no such attribute '" + attribute_name + "'",
 				ErrorCodes::BAD_ARGUMENTS
 			};
 
@@ -403,7 +406,7 @@ private:
 		const auto & attribute = getAttribute(name);
 		if (attribute.type != type)
 			throw Exception{
-				"Type mismatch: attribute " + name + " has type " + toString(attribute.type),
+				name + ": type mismatch: attribute " + name + " has type " + toString(attribute.type),
 				ErrorCodes::TYPE_MISMATCH
 			};
 
