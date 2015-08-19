@@ -57,9 +57,19 @@ private:
 		std::uint64_t error_count;
 	};
 
+	/** Имя словаря -> словарь.
+	  */
 	std::unordered_map<std::string, dictionary_info> dictionaries;
-	std::unordered_map<std::string, std::chrono::system_clock::time_point> update_times;
+
+	/** Здесь находятся словари, которых ещё ни разу не удалось загрузить.
+	  * В dictionaries они тоже присутствуют, но с нулевым указателем dict.
+	  */
 	std::unordered_map<std::string, failed_dictionary_info> failed_dictionaries;
+
+	/** И для обычных и для failed_dictionaries.
+	  */
+	std::unordered_map<std::string, std::chrono::system_clock::time_point> update_times;
+
 	std::mt19937_64 rnd_engine{getSeed()};
 
 	Context & context;

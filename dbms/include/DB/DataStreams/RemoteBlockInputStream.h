@@ -111,6 +111,14 @@ public:
 			parallel_replicas->disconnect();
 	}
 
+
+	/// Отправляет запрос (инициирует вычисления) раньше, чем read.
+	void readPrefix() override
+	{
+		if (!sent_query)
+			sendQuery();
+	}
+
 protected:
 	/// Отправить на удаленные реплики все временные таблицы
 	void sendExternalTables()
@@ -147,19 +155,10 @@ protected:
 	{
 		if (!sent_query)
 		{
-			createParallelReplicas();
+			sendQuery();
 
 			if (settings.skip_unavailable_shards && 0 == parallel_replicas->size())
-				return Block();
-
-			established = true;
-
-			parallel_replicas->sendQuery(query, "", stage, true);
-
-			established = false;
-			sent_query = true;
-
-			sendExternalTables();
+				return {};
 		}
 
 		while (true)
@@ -280,6 +279,23 @@ protected:
 	}
 
 private:
+	void sendQuery()
+	{
+		createParallelReplicas();
+
+		if (settings.skip_unavailable_shards && 0 == parallel_replicas->size())
+			return;
+
+		established = true;
+
+		parallel_replicas->sendQuery(query, "", stage, true);
+
+		established = false;
+		sent_query = true;
+
+		sendExternalTables();
+	}
+
 	/// ITable::read requires a Context, therefore we should create one if the user can't supply it
 	static Context & getDefaultContext()
 	{

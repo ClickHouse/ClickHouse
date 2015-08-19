@@ -68,6 +68,9 @@ public:
 	ASTPtr prev_union_all;
 	/// Следующий запрос SELECT в цепочке UNION ALL, если такой есть
 	ASTPtr next_union_all;
+
+protected:
+	void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
 }

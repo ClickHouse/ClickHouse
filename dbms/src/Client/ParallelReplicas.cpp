@@ -214,7 +214,7 @@ Connection::Packet ParallelReplicas::receivePacketUnlocked()
 
 	auto it = getReplicaForReading();
 	if (it == replica_map.end())
-		throw Exception("No available replica", ErrorCodes::NO_AVAILABLE_REPLICA);
+		throw Exception("Logical error: no available replica", ErrorCodes::NO_AVAILABLE_REPLICA);
 
 	Connection * connection = it->second;
 	Connection::Packet packet = connection->receivePacket();
@@ -263,9 +263,8 @@ ParallelReplicas::ReplicaMap::iterator ParallelReplicas::waitForReadEvent()
 	Poco::Net::Socket::SocketList read_list;
 	read_list.reserve(active_replica_count);
 
-	/** Сначала проверяем, есть ли данные, которые уже лежат в буфере
-		* хоть одного соединения.
-		*/
+	/// Сначала проверяем, есть ли данные, которые уже лежат в буфере
+	/// хоть одного соединения.
 	for (auto & e : replica_map)
 	{
 		Connection * connection = e.second;
@@ -273,9 +272,8 @@ ParallelReplicas::ReplicaMap::iterator ParallelReplicas::waitForReadEvent()
 			read_list.push_back(connection->socket);
 	}
 
-	/** Если не было найдено никаких данных, то проверяем, есть ли соединения
-		* готовые для чтения.
-		*/
+	/// Если не было найдено никаких данных, то проверяем, есть ли соединения
+	/// готовые для чтения.
 	if (read_list.empty())
 	{
 		Poco::Net::Socket::SocketList write_list;
@@ -287,9 +285,17 @@ ParallelReplicas::ReplicaMap::iterator ParallelReplicas::waitForReadEvent()
 			if (connection != nullptr)
 				read_list.push_back(connection->socket);
 		}
-		int n = Poco::Net::Socket::select(read_list, write_list, except_list, settings->poll_interval * 1000000);
+
+		int n = Poco::Net::Socket::select(read_list, write_list, except_list, settings->receive_timeout);
+
 		if (n == 0)
-			return replica_map.end();
+		{
+			std::stringstream description;
+			for (auto it = replica_map.begin(); it != replica_map.end(); ++it)
+				description << (it != replica_map.begin() ? ", " : "") << it->second->getDescription();
+
+			throw Exception("Timeout exceeded while reading from " + description.str(), ErrorCodes::TIMEOUT_EXCEEDED);
+		}
 	}
 
 	auto & socket = read_list[rand() % read_list.size()];
