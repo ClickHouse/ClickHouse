@@ -66,6 +66,7 @@ public:
 
 	/// Для ARRAY_JOIN
 	NameSet array_joined_columns;
+	bool array_join_is_left;
 
 	/// Для JOIN
 	const Join * join = nullptr;
@@ -122,13 +123,14 @@ public:
 		return a;
 	}
 
-	static ExpressionAction arrayJoin(const NameSet & array_joined_columns)
+	static ExpressionAction arrayJoin(const NameSet & array_joined_columns, bool array_join_is_left)
 	{
 		if (array_joined_columns.empty())
 			throw Exception("No arrays to join", ErrorCodes::LOGICAL_ERROR);
 		ExpressionAction a;
 		a.type = ARRAY_JOIN;
 		a.array_joined_columns = array_joined_columns;
+		a.array_join_is_left = array_join_is_left;
 		return a;
 	}
 

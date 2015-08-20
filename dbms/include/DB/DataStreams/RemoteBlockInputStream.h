@@ -84,6 +84,16 @@ public:
 		if (!is_cancelled.compare_exchange_strong(old_val, true, std::memory_order_seq_cst, std::memory_order_relaxed))
 			return;
 
+		{
+			std::lock_guard<std::mutex> lock(external_tables_mutex);
+
+			/// Останавливаем отправку внешних данных.
+			for (auto & vec : external_tables_data)
+				for (auto & elem : vec)
+					if (IProfilingBlockInputStream * stream = dynamic_cast<IProfilingBlockInputStream *>(elem.first.get()))
+						stream->cancel();
+		}
+
 		if (!isQueryPending() || hasThrownException())
 			return;
 
@@ -101,52 +111,54 @@ public:
 			parallel_replicas->disconnect();
 	}
 
+
+	/// Отправляет запрос (инициирует вычисления) раньше, чем read.
+	void readPrefix() override
+	{
+		if (!sent_query)
+			sendQuery();
+	}
+
 protected:
 	/// Отправить на удаленные реплики все временные таблицы
 	void sendExternalTables()
 	{
 		size_t count = parallel_replicas->size();
 
-		std::vector<ExternalTablesData> instances;
-		instances.reserve(count);
-
-		for (size_t i = 0; i < count; ++i)
 		{
-			ExternalTablesData res;
-			for (const auto & table : external_tables)
+			std::lock_guard<std::mutex> lock(external_tables_mutex);
+
+			external_tables_data.reserve(count);
+
+			for (size_t i = 0; i < count; ++i)
 			{
-				StoragePtr cur = table.second;
-				QueryProcessingStage::Enum stage = QueryProcessingStage::Complete;
-				DB::BlockInputStreams input = cur->read(cur->getColumnNamesList(), ASTPtr(), context, settings,
-					stage, DEFAULT_BLOCK_SIZE, 1);
-				if (input.size() == 0)
-					res.push_back(std::make_pair(new OneBlockInputStream(cur->getSampleBlock()), table.first));
-				else
-					res.push_back(std::make_pair(input[0], table.first));
+				ExternalTablesData res;
+				for (const auto & table : external_tables)
+				{
+					StoragePtr cur = table.second;
+					QueryProcessingStage::Enum stage = QueryProcessingStage::Complete;
+					DB::BlockInputStreams input = cur->read(cur->getColumnNamesList(), ASTPtr(), context, settings,
+						stage, DEFAULT_BLOCK_SIZE, 1);
+					if (input.size() == 0)
+						res.push_back(std::make_pair(new OneBlockInputStream(cur->getSampleBlock()), table.first));
+					else
+						res.push_back(std::make_pair(input[0], table.first));
+				}
+				external_tables_data.push_back(std::move(res));
 			}
-			instances.push_back(std::move(res));
 		}
 
-		parallel_replicas->sendExternalTablesData(instances);
+		parallel_replicas->sendExternalTablesData(external_tables_data);
 	}
 
 	Block readImpl() override
 	{
 		if (!sent_query)
 		{
-			createParallelReplicas();
+			sendQuery();
 
 			if (settings.skip_unavailable_shards && 0 == parallel_replicas->size())
-				return Block();
-
-			established = true;
-
-			parallel_replicas->sendQuery(query, "", stage, true);
-
-			established = false;
-			sent_query = true;
-
-			sendExternalTables();
+				return {};
 		}
 
 		while (true)
@@ -267,6 +279,23 @@ protected:
 	}
 
 private:
+	void sendQuery()
+	{
+		createParallelReplicas();
+
+		if (settings.skip_unavailable_shards && 0 == parallel_replicas->size())
+			return;
+
+		established = true;
+
+		parallel_replicas->sendQuery(query, "", stage, true);
+
+		established = false;
+		sent_query = true;
+
+		sendExternalTables();
+	}
+
 	/// ITable::read requires a Context, therefore we should create one if the user can't supply it
 	static Context & getDefaultContext()
 	{
@@ -301,6 +330,10 @@ private:
 	Tables external_tables;
 	QueryProcessingStage::Enum stage;
 	Context context;
+
+	/// Потоки для чтения из временных таблиц - для последующей отправки данных на удалённые серверы для GLOBAL-подзапросов.
+	std::vector<ExternalTablesData> external_tables_data;
+	std::mutex external_tables_mutex;
 
 	/// Установили соединения с репликами, но ещё не отправили запрос.
 	std::atomic<bool> established { false };

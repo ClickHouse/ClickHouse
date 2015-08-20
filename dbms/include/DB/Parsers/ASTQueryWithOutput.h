@@ -24,7 +24,7 @@ public:
 
 
 /// Объявляет класс-наследник ASTQueryWithOutput с реализованными методами getID и clone.
-#define DEFINE_AST_QUERY_WITH_OUTPUT(Name, ID) \
+#define DEFINE_AST_QUERY_WITH_OUTPUT(Name, ID, Query) \
 class Name : public ASTQueryWithOutput \
 { \
 public: \
@@ -43,6 +43,12 @@ public: \
 			res->children.push_back(res->format); \
 		} \
 		return ptr; \
+	} \
+\
+protected: \
+	void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override \
+	{ \
+		settings.ostr << (settings.hilite ? hilite_keyword : "") << Query << (settings.hilite ? hilite_none : ""); \
 	} \
 };
 

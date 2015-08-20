@@ -83,6 +83,37 @@ public:
 
 		return ptr;
 	}
+
+protected:
+	void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+	{
+		frame.need_parens = false;
+
+		settings.ostr << (settings.hilite ? hilite_keyword : "");
+
+		if (locality == ASTJoin::Global)
+			settings.ostr << "GLOBAL ";
+
+		if (kind != ASTJoin::Cross)
+			settings.ostr << (strictness == ASTJoin::Any ? "ANY " : "ALL ");
+
+		settings.ostr << (kind == ASTJoin::Inner ? "INNER "
+			: (kind == ASTJoin::Left ? "LEFT "
+			: (kind == ASTJoin::Right ? "RIGHT "
+			: (kind == ASTJoin::Cross ? "CROSS "
+			: "FULL OUTER "))));
+
+		settings.ostr << "JOIN "
+			<< (settings.hilite ? hilite_none : "");
+
+		table->formatImpl(settings, state, frame);
+
+		if (kind != ASTJoin::Cross)
+		{
+			settings.ostr << (settings.hilite ? hilite_keyword : "") << " USING " << (settings.hilite ? hilite_none : "");
+			using_expr_list->formatImpl(settings, state, frame);
+		}
+	}
 };
 
 }

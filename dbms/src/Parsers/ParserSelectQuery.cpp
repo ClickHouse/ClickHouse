@@ -23,6 +23,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 	ParserString s_select("SELECT", true, true);
 	ParserString s_distinct("DISTINCT", true, true);
 	ParserString s_from("FROM", true, true);
+	ParserString s_left("LEFT", true, true);
 	ParserString s_array("ARRAY", true, true);
 	ParserString s_join("JOIN", true, true);
 	ParserString s_using("USING", true, true);
@@ -166,8 +167,22 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 	if (!parse_final_and_sample())
 		return false;
 
-	/// ARRAY JOIN expr list
-	if (s_array.ignore(pos, end, max_parsed_pos, expected))
+	/// [LEFT] ARRAY JOIN expr list
+	Pos saved_pos = pos;
+	bool has_array_join = false;
+	if (s_left.ignore(pos, end, max_parsed_pos, expected) && ws.ignore(pos, end) && s_array.ignore(pos, end, max_parsed_pos, expected))
+	{
+		select_query->array_join_is_left = true;
+		has_array_join = true;
+	}
+	else
+	{
+		pos = saved_pos;
+		if (s_array.ignore(pos, end, max_parsed_pos, expected))
+			has_array_join = true;
+	}
+
+	if (has_array_join)
 	{
 		ws.ignore(pos, end);
 
@@ -182,7 +197,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 		ws.ignore(pos, end);
 	}
 
-	/// [GLOBAL] ANY|ALL INNER|LEFT JOIN (subquery) USING tuple
+	/// [GLOBAL] [ANY|ALL] INNER|LEFT|RIGHT|FULL|CROSS [OUTER] JOIN (subquery)|table_name USING tuple
 	join.parse(pos, end, select_query->join, max_parsed_pos, expected);
 
 	if (!parse_final_and_sample())

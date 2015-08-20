@@ -3,6 +3,8 @@
 #include <list>
 #include <set>
 #include <sstream>
+#include <iostream>
+#include <set>
 
 #include <Poco/SharedPtr.h>
 
@@ -13,8 +15,6 @@
 #include <DB/Core/ErrorCodes.h>
 #include <DB/IO/WriteHelpers.h>
 #include <DB/Parsers/StringRange.h>
-
-#include <iostream>
 
 
 namespace DB
@@ -133,6 +133,68 @@ public:
 			(*it)->collectIdentifierNames(set);
 	}
 
+
+	/// Преобразовать в строку.
+
+	/// Настройки формата.
+	struct FormatSettings
+	{
+		std::ostream & ostr;
+		bool hilite;
+		bool one_line;
+
+		char nl_or_ws;
+
+		FormatSettings(std::ostream & ostr_, bool hilite_, bool one_line_)
+			: ostr(ostr_), hilite(hilite_), one_line(one_line_)
+		{
+			nl_or_ws = one_line ? ' ' : '\n';
+		}
+	};
+
+	/// Состояние. Например, может запоминаться множество узлов, которых мы уже обошли.
+	struct FormatState
+	{
+		/** Запрос SELECT, в котором найден алиас; идентификатор узла с таким алиасом.
+		  * Нужно, чтобы когда узел встретился повторно, выводить только алиас.
+		  */
+		std::set<std::pair<const IAST *, std::string>> printed_asts_with_alias;
+	};
+
+	/// Состояние, которое копируется при форматировании каждого узла. Например, уровень вложенности.
+	struct FormatStateStacked
+	{
+		UInt8 indent = 0;
+		bool need_parens = false;
+		const IAST * current_select = nullptr;
+	};
+
+	void format(const FormatSettings & settings) const
+	{
+		FormatState state;
+		formatImpl(settings, state, FormatStateStacked());
+	}
+
+	virtual void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+	{
+		throw Exception("Unknown element in AST: " + getID()
+			+ ((range.first && (range.second > range.first))
+				? " '" + std::string(range.first, range.second - range.first) + "'"
+				: ""),
+			ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
+	}
+
+	void writeAlias(const String & name, std::ostream & s, bool hilite) const;
+
+protected:
+	/// Для подсветки синтаксиса.
+	static const char * hilite_keyword;
+	static const char * hilite_identifier;
+	static const char * hilite_function;
+	static const char * hilite_operator;
+	static const char * hilite_alias;
+	static const char * hilite_none;
+
 private:
 	size_t checkDepthImpl(size_t max_depth, size_t level) const
 	{
@@ -151,5 +213,10 @@ private:
 
 typedef SharedPtr<IAST> ASTPtr;
 typedef std::vector<ASTPtr> ASTs;
+
+
+/// Квотировать идентификатор обратными кавычками, если это требуется.
+String backQuoteIfNeed(const String & x);
+
 
 }
