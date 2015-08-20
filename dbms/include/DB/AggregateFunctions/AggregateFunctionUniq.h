@@ -94,24 +94,71 @@ struct AggregateFunctionUniqExactData<String>
 	static String getName() { return "uniqExact"; }
 };
 
+template <typename T, HyperLogLogMode mode>
+struct BaseUniqCombinedData
+{
+	using Key = UInt32;
+	using Set = CombinedCardinalityEstimator
+		<
+			Key,
+			HashSet<Key, TrivialHash, HashTableGrower<> >,
+			16,
+			14,
+			17,
+			TrivialHash,
+			mode
+		>;
+
+	Set set;
+};
+
+template <HyperLogLogMode mode>
+struct BaseUniqCombinedData<String, mode>
+{
+	using Key = UInt64;
+	using Set = CombinedCardinalityEstimator
+		<
+			Key,
+			HashSet<Key, TrivialHash, HashTableGrower<> >,
+			16,
+			14,
+			17,
+			TrivialHash,
+			mode
+		>;
+
+	Set set;
+};
+
+template <typename T>
+struct AggregateFunctionUniqCombinedRawData
+	: public BaseUniqCombinedData<T, HyperLogLogMode::Raw>
+{
+	using Type = T;
+	static String getName() { return "uniqCombinedRaw"; }
+};
+
+template <typename T>
+struct AggregateFunctionUniqCombinedLinearCountingData
+	: public BaseUniqCombinedData<T, HyperLogLogMode::LinearCounting>
+{
+	using Type = T;
+	static String getName() { return "uniqCombinedLinearCounting"; }
+};
+
+template <typename T>
+struct AggregateFunctionUniqCombinedBiasCorrectedData
+	: public BaseUniqCombinedData<T, HyperLogLogMode::BiasCorrected>
+{
+	using Type = T;
+	static String getName() { return "uniqCombinedBiasCorrected"; }
+};
 
 template <typename T>
 struct AggregateFunctionUniqCombinedData
+	: public BaseUniqCombinedData<T, HyperLogLogMode::FullFeatured>
 {
-	using Key = UInt32;
-	using Set = CombinedCardinalityEstimator<Key, HashSet<Key, TrivialHash, HashTableGrower<> >, 16, 14, 17, TrivialHash>;
-	Set set;
-
-	static String getName() { return "uniqCombined"; }
-};
-
-template <>
-struct AggregateFunctionUniqCombinedData<String>
-{
-	using Key = UInt64;
-	using Set = CombinedCardinalityEstimator<Key, HashSet<Key, TrivialHash, HashTableGrower<> >, 16, 14, 17, TrivialHash>;
-	Set set;
-
+	using Type = T;
 	static String getName() { return "uniqCombined"; }
 };
 
@@ -120,7 +167,7 @@ namespace detail
 
 /** Хэш-функция для uniqCombined.
   */
-template<typename T, typename Enable = void>
+template <typename T, typename Enable = void>
 struct CombinedCardinalityTraits
 {
 	static UInt32 hash(T key)
@@ -129,7 +176,7 @@ struct CombinedCardinalityTraits
 	}
 };
 
-template<typename T>
+template <typename T>
 struct CombinedCardinalityTraits<T, typename std::enable_if<std::is_same<T, Int64>::value>::type>
 {
 	using U = typename std::make_unsigned<T>::type;
@@ -140,7 +187,7 @@ struct CombinedCardinalityTraits<T, typename std::enable_if<std::is_same<T, Int6
 	};
 };
 
-template<typename T>
+template <typename T>
 struct CombinedCardinalityTraits<T, typename std::enable_if<std::is_same<T, UInt64>::value>::type>
 {
 	static UInt32 hash(T key)
@@ -149,7 +196,7 @@ struct CombinedCardinalityTraits<T, typename std::enable_if<std::is_same<T, UInt
 	};
 };
 
-template<typename T>
+template <typename T>
 struct CombinedCardinalityTraits<T, typename std::enable_if<std::is_same<T, Float64>::value>::type>
 {
 	static UInt32 hash(T key)
@@ -160,7 +207,7 @@ struct CombinedCardinalityTraits<T, typename std::enable_if<std::is_same<T, Floa
 	}
 };
 
-template<typename T>
+template <typename T>
 struct CombinedCardinalityTraits<T, typename std::enable_if<std::is_same<T, Float32>::value>::type>
 {
 	static UInt32 hash(T key)
@@ -201,7 +248,7 @@ template <> struct AggregateFunctionUniqTraits<Float64>
 /** Структура для делегации работы по добавлению одного элемента в агрегатные функции uniq.
 	* Используется для частичной специализации для добавления строк.
 	*/
-template<typename T, typename Data>
+template <typename T, typename Data>
 struct OneAdder
 {
 	static void addOne(Data & data, const IColumn & column, size_t row_num)
@@ -210,7 +257,7 @@ struct OneAdder
 	}
 };
 
-template<typename Data>
+template <typename Data>
 struct OneAdder<String, Data>
 {
 	static void addOne(Data & data, const IColumn & column, size_t row_num)
@@ -221,7 +268,7 @@ struct OneAdder<String, Data>
 	}
 };
 
-template<typename T>
+template <typename T>
 struct OneAdder<T, AggregateFunctionUniqExactData<T> >
 {
 	static void addOne(AggregateFunctionUniqExactData<T> & data, const IColumn & column, size_t row_num)
@@ -230,7 +277,7 @@ struct OneAdder<T, AggregateFunctionUniqExactData<T> >
 	}
 };
 
-template<>
+template <>
 struct OneAdder<String, AggregateFunctionUniqExactData<String> >
 {
 	static void addOne(AggregateFunctionUniqExactData<String> & data, const IColumn & column, size_t row_num)
@@ -246,23 +293,111 @@ struct OneAdder<String, AggregateFunctionUniqExactData<String> >
 	}
 };
 
-template<typename T>
-struct OneAdder<T, AggregateFunctionUniqCombinedData<T> >
+template <typename Data>
+struct UniqCombinedAdder
 {
-	static void addOne(AggregateFunctionUniqCombinedData<T> & data, const IColumn & column, size_t row_num)
+	template <typename Type2 = typename Data::Type>
+	static ALWAYS_INLINE void addOne(Data & data, const IColumn & column, size_t row_num,
+		typename std::enable_if<!std::is_same<Type2, String>::value>::type * = nullptr)
 	{
-		const auto & value = static_cast<const ColumnVector<T> &>(column).getData()[row_num];
-		data.set.insert(CombinedCardinalityTraits<T>::hash(value));
+		const auto & value = static_cast<const ColumnVector<typename Data::Type> &>(column).getData()[row_num];
+		data.set.insert(CombinedCardinalityTraits<typename Data::Type>::hash(value));
 	}
-};
 
-template<>
-struct OneAdder<String, AggregateFunctionUniqCombinedData<String> >
-{
-	static void addOne(AggregateFunctionUniqCombinedData<String> & data, const IColumn & column, size_t row_num)
+	template <typename Type2 = typename Data::Type>
+	static ALWAYS_INLINE void addOne(Data & data, const IColumn & column, size_t row_num,
+		typename std::enable_if<std::is_same<Type2, String>::value>::type * = nullptr)
 	{
 		StringRef value = column.getDataAt(row_num);
 		data.set.insert(CityHash64(value.data, value.size));
+	}
+};
+
+template <typename T>
+struct OneAdder<T, AggregateFunctionUniqCombinedRawData<T> >
+{
+	using Data = AggregateFunctionUniqCombinedRawData<T>;
+
+	static void addOne(Data & data, const IColumn & column, size_t row_num)
+	{
+		UniqCombinedAdder<Data>::addOne(data, column, row_num);
+	}
+};
+
+template <>
+struct OneAdder<String, AggregateFunctionUniqCombinedRawData<String> >
+{
+	using Data = AggregateFunctionUniqCombinedRawData<String>;
+
+	static void addOne(Data & data, const IColumn & column, size_t row_num)
+	{
+		UniqCombinedAdder<Data>::addOne(data, column, row_num);
+	}
+};
+
+template <typename T>
+struct OneAdder<T, AggregateFunctionUniqCombinedLinearCountingData<T> >
+{
+	using Data = AggregateFunctionUniqCombinedLinearCountingData<T>;
+
+	static void addOne(Data & data, const IColumn & column,	size_t row_num)
+	{
+		UniqCombinedAdder<Data>::addOne(data, column, row_num);
+	}
+};
+
+template <>
+struct OneAdder<String, AggregateFunctionUniqCombinedLinearCountingData<String> >
+{
+	using Data = AggregateFunctionUniqCombinedLinearCountingData<String>;
+
+	static void addOne(Data & data, const IColumn & column, size_t row_num)
+	{
+		UniqCombinedAdder<Data>::addOne(data, column, row_num);
+	}
+};
+
+template <typename T>
+struct OneAdder<T, AggregateFunctionUniqCombinedBiasCorrectedData<T> >
+{
+	using Data = AggregateFunctionUniqCombinedBiasCorrectedData<T>;
+
+	static void addOne(Data & data, const IColumn & column,	size_t row_num)
+	{
+		UniqCombinedAdder<Data>::addOne(data, column, row_num);
+	}
+};
+
+template <>
+struct OneAdder<String, AggregateFunctionUniqCombinedBiasCorrectedData<String> >
+{
+	using Data = AggregateFunctionUniqCombinedBiasCorrectedData<String>;
+
+	static void addOne(Data & data, const IColumn & column,	size_t row_num)
+	{
+		UniqCombinedAdder<Data>::addOne(data, column, row_num);
+	}
+};
+
+template <typename T>
+struct OneAdder<T, AggregateFunctionUniqCombinedData<T> >
+{
+	using Data = AggregateFunctionUniqCombinedData<T>;
+
+	static void addOne(Data & data, const IColumn & column, size_t row_num)
+	{
+		UniqCombinedAdder<Data>::addOne(data, column, row_num);
+	}
+};
+
+template <>
+struct OneAdder<String, AggregateFunctionUniqCombinedData<String> >
+{
+	using Data = AggregateFunctionUniqCombinedData<String>;
+
+	static void addOne(Data & data, const IColumn & column, size_t row_num)
+	{
+		UniqCombinedAdder<Data>::addOne(data, column, row_num);
 	}
 };
 
