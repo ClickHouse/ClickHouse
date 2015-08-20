@@ -147,28 +147,38 @@ void sortBlock(Block & block, const SortDescription & description, size_t limit)
 }
 
 
-void stableSortBlock(Block & block, const SortDescription & description)
+void stableGetPermutation(const Block & block, const SortDescription & description, IColumn::Permutation & out_permutation)
 {
 	if (!block)
 		return;
 
 	size_t size = block.rows();
-	IColumn::Permutation perm(size);
+	out_permutation.resize(size);
 	for (size_t i = 0; i < size; ++i)
-		perm[i] = i;
+		out_permutation[i] = i;
 
 	ColumnsWithSortDescriptions columns_with_sort_desc;
 
 	for (size_t i = 0, size = description.size(); i < size; ++i)
 	{
-		IColumn * column = !description[i].column_name.empty()
+		const IColumn * column = !description[i].column_name.empty()
 			? block.getByName(description[i].column_name).column
 			: block.getByPosition(description[i].column_number).column;
 
 		columns_with_sort_desc.push_back(std::make_pair(column, description[i]));
 	}
 
-	std::stable_sort(perm.begin(), perm.end(), PartialSortingLess(columns_with_sort_desc));
+	std::stable_sort(out_permutation.begin(), out_permutation.end(), PartialSortingLess(columns_with_sort_desc));
+}
+
+
+void stableSortBlock(Block & block, const SortDescription & description)
+{
+	if (!block)
+		return;
+
+	IColumn::Permutation perm;
+	stableGetPermutation(block, description, perm);
 
 	size_t columns = block.columns();
 	for (size_t i = 0; i < columns; ++i)

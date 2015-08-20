@@ -18,4 +18,9 @@ void sortBlock(Block & block, const SortDescription & description, size_t limit 
   */
 void stableSortBlock(Block & block, const SortDescription & description);
 
+/** То же, что и stableSortBlock, но не сортировать блок, а только рассчитать перестановку значений,
+  *  чтобы потом можно было переставить значения столбцов самостоятельно.
+  */
+void stableGetPermutation(const Block & block, const SortDescription & description, IColumn::Permutation & out_permutation);
+
 }

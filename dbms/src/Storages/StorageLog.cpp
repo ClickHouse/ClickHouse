@@ -129,7 +129,7 @@ private:
 	{
 		Stream(const std::string & data_path, size_t max_compress_block_size) :
 			plain(data_path, max_compress_block_size, O_APPEND | O_CREAT | O_WRONLY),
-			compressed(plain)
+			compressed(plain, CompressionMethod::LZ4, max_compress_block_size)
 		{
 			plain_offset = Poco::File(data_path).getSize();
 		}
@@ -463,7 +463,7 @@ StorageLog::StorageLog(
 	: IStorage{materialized_columns_, alias_columns_, column_defaults_},
 	path(path_), name(name_), columns(columns_),
 	loaded_marks(false), max_compress_block_size(max_compress_block_size_),
-	file_checker(path + escapeForFileName(name) + '/' + "sizes.json", *this)
+	file_checker(path + escapeForFileName(name) + '/' + "sizes.json")
 {
 	if (columns->empty())
 		throw Exception("Empty list of columns passed to StorageLog constructor", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);

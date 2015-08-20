@@ -6,7 +6,7 @@
 #include <Poco/SharedPtr.h>
 #include <Yandex/likely.h>
 #include <DB/Common/ProfileEvents.h>
-#include <DB/Common/MemoryTracker.h>
+#include <DB/Common/Allocator.h>
 
 
 namespace DB
@@ -25,7 +25,7 @@ class Arena
 {
 private:
 	/// Непрерывный кусок памяти и указатель на свободное место в нём. Односвязный список.
-	struct Chunk : private std::allocator<char>	/// empty base optimization
+	struct Chunk : private Allocator	/// empty base optimization
 	{
 		char * begin;
 		char * pos;
@@ -38,10 +38,7 @@ private:
 			ProfileEvents::increment(ProfileEvents::ArenaAllocChunks);
 			ProfileEvents::increment(ProfileEvents::ArenaAllocBytes, size_);
 
-			if (current_memory_tracker)
-				current_memory_tracker->alloc(size_);
-
-			begin = allocate(size_);
+			begin = reinterpret_cast<char *>(Allocator::alloc(size_));
 			pos = begin;
 			end = begin + size_;
 			prev = prev_;
@@ -49,10 +46,7 @@ private:
 
 		~Chunk()
 		{
-			deallocate(begin, size());
-
-			if (current_memory_tracker)
-				current_memory_tracker->free(size());
+			Allocator::free(begin, size());
 
 			if (prev)
 				delete prev;

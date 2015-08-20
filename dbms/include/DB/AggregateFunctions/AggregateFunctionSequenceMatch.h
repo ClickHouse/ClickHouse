@@ -120,6 +120,10 @@ struct AggregateFunctionSequenceMatchData final
 	}
 };
 
+
+/// Max number of iterations to match the pattern against a sequence, exception thrown when exceeded
+constexpr auto sequence_match_max_iterations = 1000000;
+
 class AggregateFunctionSequenceMatch final : public IAggregateFunctionHelper<AggregateFunctionSequenceMatchData>
 {
 public:
@@ -385,6 +389,7 @@ private:
 			return false;
 		};
 
+		std::size_t i = 0;
 		while (action_it != action_end && events_it != events_end)
 		{
 //			std::cout << "start_timestamp " << base_it->first << "; ";
@@ -464,6 +469,12 @@ private:
 				throw Exception{
 					"Unknown PatternActionType",
 					ErrorCodes::LOGICAL_ERROR
+				};
+
+			if (++i > sequence_match_max_iterations)
+				throw Exception{
+					"Pattern application proves too difficult, exceeding max iterations (" + toString(sequence_match_max_iterations) + ")",
+					ErrorCodes::TOO_SLOW
 				};
 		}
 
