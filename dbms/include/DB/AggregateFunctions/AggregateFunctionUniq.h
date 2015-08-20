@@ -97,7 +97,7 @@ struct AggregateFunctionUniqExactData<String>
 template <typename T, HyperLogLogMode mode>
 struct BaseUniqCombinedData
 {
-	using Key = UInt32;
+	using Key = UInt64;
 	using Set = CombinedCardinalityEstimator
 		<
 			Key,
@@ -106,6 +106,7 @@ struct BaseUniqCombinedData
 			14,
 			17,
 			TrivialHash,
+			UInt64,
 			mode
 		>;
 
@@ -124,6 +125,7 @@ struct BaseUniqCombinedData<String, mode>
 			14,
 			17,
 			TrivialHash,
+			UInt64,
 			mode
 		>;
 
@@ -170,7 +172,7 @@ namespace detail
 template <typename T, typename Enable = void>
 struct CombinedCardinalityTraits
 {
-	static UInt32 hash(T key)
+	static UInt64 hash(T key)
 	{
 		return key;
 	}
@@ -181,40 +183,40 @@ struct CombinedCardinalityTraits<T, typename std::enable_if<std::is_same<T, Int6
 {
 	using U = typename std::make_unsigned<T>::type;
 
-	static UInt32 hash(T key)
+	static UInt64 hash(T key)
 	{
-		return intHash32<0>(static_cast<U>(key));
+		return intHash64(static_cast<U>(key));
 	};
 };
 
 template <typename T>
 struct CombinedCardinalityTraits<T, typename std::enable_if<std::is_same<T, UInt64>::value>::type>
 {
-	static UInt32 hash(T key)
+	static UInt64 hash(T key)
 	{
-		return intHash32<0>(key);
+		return intHash64(key);
 	};
 };
 
 template <typename T>
 struct CombinedCardinalityTraits<T, typename std::enable_if<std::is_same<T, Float64>::value>::type>
 {
-	static UInt32 hash(T key)
+	static UInt64 hash(T key)
 	{
 		UInt64 res = 0;
 		memcpy(reinterpret_cast<char *>(&res), reinterpret_cast<char *>(&key), sizeof(key));
-		return intHash32<0>(res);
+		return intHash64(res);
 	}
 };
 
 template <typename T>
 struct CombinedCardinalityTraits<T, typename std::enable_if<std::is_same<T, Float32>::value>::type>
 {
-	static UInt32 hash(T key)
+	static UInt64 hash(T key)
 	{
-		UInt32 res = 0;
+		UInt64 res = 0;
 		memcpy(reinterpret_cast<char *>(&res), reinterpret_cast<char *>(&key), sizeof(key));
-		return res;
+		return intHash64(res);
 	}
 };
 

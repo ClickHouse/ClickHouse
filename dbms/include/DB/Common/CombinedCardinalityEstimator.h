@@ -34,6 +34,7 @@ template
 	UInt8 medium_set_power2_max,
 	UInt8 K,
 	typename Hash = IntHash32<Key>,
+	typename HashValueType = UInt32,
 	HyperLogLogMode mode = HyperLogLogMode::FullFeatured,
 	typename DenominatorType = double
 >
@@ -48,6 +49,7 @@ public:
 			medium_set_power2_max,
 			K,
 			Hash,
+			HashValueType,
 			mode,
 			DenominatorType
 		>;
@@ -55,7 +57,7 @@ public:
 private:
 	using Small = SmallSet<Key, small_set_size_max>;
 	using Medium = HashContainer;
-	using Large = HyperLogLogCounter<K, Hash, DenominatorType, mode>;
+	using Large = HyperLogLogCounter<K, Hash, HashValueType, DenominatorType, mode>;
 
 public:
 	CombinedCardinalityEstimator()
