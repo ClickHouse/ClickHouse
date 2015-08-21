@@ -1569,7 +1569,7 @@ template <typename Impl>
 struct FunctionBitTestMany : public IFunction
 {
 public:
-	static constexpr auto && name = Impl::name;
+	static constexpr auto name = Impl::name;
 	static IFunction * create(const Context &) { return new FunctionBitTestMany; }
 
 	String getName() const override { return name; }
