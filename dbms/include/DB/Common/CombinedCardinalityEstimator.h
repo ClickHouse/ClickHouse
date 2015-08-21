@@ -35,6 +35,7 @@ template
 	UInt8 K,
 	typename Hash = IntHash32<Key>,
 	typename HashValueType = UInt32,
+	typename BiasEstimator = TrivialBiasEstimator,
 	HyperLogLogMode mode = HyperLogLogMode::FullFeatured,
 	typename DenominatorType = double
 >
@@ -50,6 +51,7 @@ public:
 			K,
 			Hash,
 			HashValueType,
+			BiasEstimator,
 			mode,
 			DenominatorType
 		>;
@@ -57,7 +59,7 @@ public:
 private:
 	using Small = SmallSet<Key, small_set_size_max>;
 	using Medium = HashContainer;
-	using Large = HyperLogLogCounter<K, Hash, HashValueType, DenominatorType, mode>;
+	using Large = HyperLogLogCounter<K, Hash, HashValueType, DenominatorType, BiasEstimator, mode>;
 
 public:
 	CombinedCardinalityEstimator()

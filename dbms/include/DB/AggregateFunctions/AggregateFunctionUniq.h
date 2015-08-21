@@ -20,6 +20,7 @@
 #include <DB/Columns/ColumnString.h>
 
 #include <DB/AggregateFunctions/IUnaryAggregateFunction.h>
+#include <DB/AggregateFunctions/UniqCombinedBiasData.h>
 
 
 namespace DB
@@ -107,6 +108,7 @@ struct BaseUniqCombinedData
 			17,
 			TrivialHash,
 			UInt64,
+			HyperLogLogBiasEstimator<UniqCombinedBiasData>,
 			mode
 		>;
 
@@ -126,6 +128,7 @@ struct BaseUniqCombinedData<String, mode>
 			17,
 			TrivialHash,
 			UInt64,
+			HyperLogLogBiasEstimator<UniqCombinedBiasData>,
 			mode
 		>;
 
