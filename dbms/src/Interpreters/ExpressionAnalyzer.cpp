@@ -239,9 +239,10 @@ void ExpressionAnalyzer::analyzeAggregation()
 
 void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables()
 {
+	/// Преобразует GLOBAL-подзапросы во внешние таблицы; кладёт их в словарь external_tables: name -> StoragePtr.
 	initGlobalSubqueries(ast);
 
-	/// Создаёт словарь external_tables: name -> StoragePtr.
+	/// Добавляет уже существующие внешние таблицы (не подзапросы) в словарь external_tables.
 	findExternalTables(ast);
 }
 
@@ -896,10 +897,6 @@ static SharedPtr<InterpreterSelectQuery> interpretSubquery(
 
 void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name)
 {
-	/// Сгенерируем имя для внешней таблицы.
-	while (context.tryGetExternalTable("_data" + toString(external_table_id)))
-		++external_table_id;
-
 	if (const ASTIdentifier * table = typeid_cast<const ASTIdentifier *>(&*subquery_or_table_name))
 	{
 		/// Если это уже внешняя таблица, ничего заполять не нужно. Просто запоминаем ее наличие.
@@ -910,12 +907,19 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name)
 		}
 	}
 
+	/// Сгенерируем имя для внешней таблицы.
+	String external_table_name = "_data" + toString(external_table_id);
+	while (context.tryGetExternalTable(external_table_name)
+		|| external_tables.count(external_table_name))
+	{
+		++external_table_id;
+		external_table_name = "_data" + toString(external_table_id);
+	}
+
 	SharedPtr<InterpreterSelectQuery> interpreter = interpretSubquery(subquery_or_table_name, context, subquery_depth + 1);
 
 	Block sample = interpreter->getSampleBlock();
 	NamesAndTypesListPtr columns = new NamesAndTypesList(sample.getColumnsList());
-
-	String external_table_name = "_data" + toString(external_table_id);
 
 	/** Заменяем подзапрос на имя временной таблицы.
 	  * Именно в таком виде, запрос отправится на удалённый сервер.
