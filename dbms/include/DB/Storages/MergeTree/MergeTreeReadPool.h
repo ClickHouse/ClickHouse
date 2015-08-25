@@ -121,7 +121,7 @@ public:
 		}
 
 		return std::make_unique<MergeTreeReadTask>(
-			part.data_part, thread_task.ranges, part.part_index_in_query, column_names,
+			part.data_part, ranges_to_get_from_part, part.part_index_in_query, column_names,
 			per_part_column_name_set[part_idx], per_part_columns[part_idx], per_part_pre_columns[part_idx],
 			per_part_remove_prewhere_column[part_idx], per_part_should_reorder[part_idx]);
 	}
