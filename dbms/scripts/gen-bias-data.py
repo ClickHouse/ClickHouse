@@ -1,6 +1,7 @@
 #!/usr/bin/python3.4
 # -*- coding: utf-8 -*-
 
+import sys
 import argparse
 import tempfile
 import random
@@ -8,14 +9,40 @@ import subprocess
 import bisect
 from copy import deepcopy
 
+# http://preshing.com/20121224/how-to-generate-a-sequence-of-unique-random-integers/
+class UniqueRandomGenerator:
+	prime = 4294967291
+
+	def __init__(self, seed_base, seed_offset):
+		self.index = self.permutePQR(self.permutePQR(seed_base) + 0x682f0161)
+		self.intermediate_offset = self.permutePQR(self.permutePQR(seed_offset) + 0x46790905)
+
+	def next(self):
+		val = self.permutePQR((self.permutePQR(self.index) + self.intermediate_offset) ^ 0x5bf03635)
+		self.index = self.index + 1
+		return val
+
+	def permutePQR(self, x):
+		if x >=self.prime:
+			return x
+		else:
+			residue = (x * x) % self.prime
+			if x <= self.prime/2:
+				return residue
+			else:
+				return self.prime - residue
+
 def generate_data_source(host, port, http_port, begin, end, count):
 	chunk_size = round((end - begin) / float(count))
-	used_values = set()
+	used_values = 0
 
 	cur_count = 0
 	next_size = 0
-	i = 0
 	j = 0
+
+	n1 = random.randrange(0, 32767)
+	n2 = random.randrange(0, 32767)
+	urng = UniqueRandomGenerator(n1, n2)
 
 	with tempfile.TemporaryDirectory() as tmp_dir:
 		filename = tmp_dir + '/table.txt'
@@ -24,12 +51,15 @@ def generate_data_source(host, port, http_port, begin, end, count):
 		while cur_count < count:
 			next_size += chunk_size
 
-			while len(used_values) < next_size:
-				h = random.randrange(begin, end + 1)
-				used_values.add(h)
+			while used_values < next_size:
+				h = urng.next()
+				used_values = used_values + 1
+				multiplicity = random.randrange(1, 11)
 				outstr = str(h) + "\t" + str(j) + "\n";
-				file_handle.write(bytes(str(outstr), 'UTF-8'));
-				i = i + 1
+
+				for i in range(0, multiplicity):
+					file_handle.write(bytes(outstr, 'UTF-8'));
+
 			cur_count = cur_count + 1
 			j = j + 1
 
@@ -97,7 +127,7 @@ def generate_sample(raw_estimates, biases, n_generated):
 		else:
 			# Найти 6 ближайших соседей. Вычислить среднее арифметическое.
 
-			# 6 точек слева x [ j-6 j-5 j-4 j-3 j-2 j-1]
+			# 6 точек слева x [j-6 j-5 j-4 j-3 j-2 j-1]
 
 			begin = max(j - 6, 0) - 1
 			end = j - 1
@@ -132,7 +162,7 @@ def generate_sample(raw_estimates, biases, n_generated):
 					k2 = k2 + 1
 
 			# Выбираем 6 ближайших точек.
-			# Вычилсяем средние.
+			# Вычисляем средние.
 
 			begin = 0
 			end = min(len(V), 6)
@@ -188,6 +218,7 @@ def start():
 
 	for i in range(0, args.iterations):
 		print(i + 1)
+		sys.stdout.flush()
 		generate_data_source(args.host, str(args.port), str(args.http_port), 0, args.samples, 1000)
 		output = perform_query(args.host, str(args.port))
 		data = parse_result(output)
