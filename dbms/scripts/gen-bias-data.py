@@ -8,16 +8,49 @@ import subprocess
 import bisect
 from copy import deepcopy
 
-def generate_query(n_samples):
-    n1 = random.randrange(0, 32767)
-    n2 = random.randrange(0, 32767)
-    query =  "SELECT exact, approx FROM (SELECT UserID % 1000 AS k, runningAccumulate(uniqCombinedRawState(UserID)) "
-    query += "AS approx, runningAccumulate(uniqExactState(UserID)) AS exact FROM "
-    query += "(SELECT sipHash64(reinterpretAsString((number + {0}) * {1})) AS UserID FROM system.numbers "
-    query += "LIMIT {2}) GROUP BY k ORDER BY k)"
-    return query.format(n1, n2, n_samples)
+def generate_data_source(host, port, begin, end, count):
+	chunk_size = round((end - begin) / float(count))
+	used_values = set()
 
-def perform_query(host, port, query):
+	cur_count = 0
+	next_size = 0
+	i = 0
+	j = 0
+
+	with tempfile.TemporaryDirectory() as tmp_dir:
+		filename = tmp_dir + '/table.txt'
+		file_handle = open(filename, 'w+b')
+
+		while cur_count < count:
+			next_size += chunk_size
+
+			while len(used_values) < next_size:
+				h = random.randrange(begin, end + 1)
+				used_values.add(h)
+				outstr = str(h) + "\t" + str(j) + "\n";
+				file_handle.write(bytes(str(outstr), 'UTF-8'));
+				i = i + 1
+			cur_count = cur_count + 1
+			j = j + 1
+
+		file_handle.close()
+
+		host = 'localhost'
+		port = 9000
+
+		query = 'DROP TABLE IF EXISTS data_source'
+		subprocess.check_output(["clickhouse-client", "--host", host, "--port", str(port), "--query", query])
+		query = 'CREATE TABLE data_source(UserID UInt64, KeyID UInt64) ENGINE=TinyLog'
+		subprocess.check_output(["clickhouse-client", "--host", host, "--port", str(port), "--query", query])
+
+		cat = subprocess.Popen(('cat', filename), stdout=subprocess.PIPE)
+		subprocess.check_output(('POST', 'http://localhost:8123/?query=INSERT INTO data_source FORMAT TabSeparated'), stdin=cat.stdout)
+		cat.wait()
+
+def perform_query(host, port):
+    query  = "SELECT runningAccumulate(uniqExactState(UserID), KeyID) AS exact, "
+    query += "runningAccumulate(uniqCombinedRawState(UserID), KeyID) AS approx "
+    query += "FROM data_source GROUP BY KeyID"
     return subprocess.check_output(["clickhouse-client", "--host", host, "--port", port, "--query", query])
 
 def parse_result(output):
@@ -156,8 +189,9 @@ def start():
 	stats = []
 
 	for i in range(0, args.iterations):
-		query = generate_query(args.samples)
-		output = perform_query(args.host, str(args.port), query)
+		print(i)
+		generate_data_source(args.host, str(args.port), 0, args.samples, 1000)
+		output = perform_query(args.host, str(args.port))
 		data = parse_result(output)
 		stats = accumulate(stats, data)
 
