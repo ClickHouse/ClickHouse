@@ -187,7 +187,7 @@ def start():
 	stats = []
 
 	for i in range(0, args.iterations):
-		print(i)
+		print(i + 1)
 		generate_data_source(args.host, str(args.port), str(args.http_port), 0, args.samples, 1000)
 		output = perform_query(args.host, str(args.port))
 		data = parse_result(output)
