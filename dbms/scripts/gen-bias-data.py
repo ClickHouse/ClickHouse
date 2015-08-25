@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3.4
 # -*- coding: utf-8 -*-
 
 import argparse
@@ -22,9 +22,9 @@ def perform_query(host, port, query):
 
 def parse_result(output):
     parsed = []
-    lines = output.split('\n')
+    lines = output.decode().split("\n")
     for cur_line in lines:
-        rows = cur_line.split('\t')
+        rows = cur_line.split("\t")
         if len(rows) == 2:
             parsed.append([float(rows[0]), float(rows[1])])
     return parsed
@@ -73,7 +73,7 @@ def generate_sample(raw_estimates, biases, n_generated):
 			end = j - 1
 
 			T = []
-			for k in xrange(end, begin, -1):
+			for k in range(end, begin, -1):
 				T.append(x - raw_estimates[k])
 
 			# 6 точек справа x [j j+1 j+2 j+3 j+4 j+5]
@@ -82,7 +82,7 @@ def generate_sample(raw_estimates, biases, n_generated):
 			end = min(j + 5, len(raw_estimates) - 1) + 1
 
 			U = []
-			for k in xrange(begin, end):
+			for k in range(begin, end):
 				U.append(raw_estimates[k] - x)
 
 			# Сливаем расстояния.
@@ -93,7 +93,7 @@ def generate_sample(raw_estimates, biases, n_generated):
 			lim = len(T) + len(U)
 			k1 = 0
 			k2 = 0
-			for k in xrange(0, lim):
+			for k in range(0, lim):
 				if k1 < end and T[k1] < U[k1]:
 					V.append(j - k1 - 1)
 					k1 = k1 + 1
@@ -109,7 +109,7 @@ def generate_sample(raw_estimates, biases, n_generated):
 
 			sum = 0
 			bias = 0
-			for k in xrange(begin, end):
+			for k in range(begin, end):
 				sum += raw_estimates[V[k]]
 				bias += biases[V[k]]
 			sum /= float(end)
@@ -123,34 +123,34 @@ def dump_tables(stats):
 	is_first = True
 	sep = ''
 
-	print "// For UniqCombinedBiasData::getRawEstimates():"
-	print "{"
+	print("// For UniqCombinedBiasData::getRawEstimates():")
+	print("{")
 	for row in stats:
-		print "\t{0}{1}".format(sep, row[0])
+		print("\t{0}{1}".format(sep, row[0]))
 		if is_first == True:
 			is_first = False
-			sep = ','
-	print "}"
+			sep = ","
+	print("}")
 
 	is_first = True
-	sep = ''
+	sep = ""
 
-	print "\n// For UniqCombinedBiasData::getBiases():"
-	print "{"
+	print("\n// For UniqCombinedBiasData::getBiases():")
+	print("{")
 	for row in stats:
-		print "\t{0}{1}".format(sep, row[1])
+		print("\t{0}{1}".format(sep, row[1]))
 		if is_first == True:
 			is_first = False
-			sep = ','
-	print "}"
+			sep = ","
+	print("}")
 
 def start():
-	parser = argparse.ArgumentParser(description = 'Generate bias correction tables.')
-	parser.add_argument('-x', '--host', default='127.0.0.1', help='clickhouse host name');
-	parser.add_argument('-p', '--port', type=int, default=9000, help='clickhouse port');
-	parser.add_argument('-i', '--iterations', type=int, default=5000, help='number of iterations');
-	parser.add_argument('-s', '--samples', type=int, default=700000, help='number of sample values');
-	parser.add_argument('-g', '--generated', type=int, default=200, help='number of generated values');
+	parser = argparse.ArgumentParser(description = "Generate bias correction tables.")
+	parser.add_argument("-x", "--host", default="127.0.0.1", help="clickhouse host name");
+	parser.add_argument("-p", "--port", type=int, default=9000, help="clickhouse port");
+	parser.add_argument("-i", "--iterations", type=int, default=5000, help="number of iterations");
+	parser.add_argument("-s", "--samples", type=int, default=700000, help="number of sample values");
+	parser.add_argument("-g", "--generated", type=int, default=200, help="number of generated values");
 	args = parser.parse_args()
 
 	stats = []
