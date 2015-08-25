@@ -8,7 +8,7 @@ import subprocess
 import bisect
 from copy import deepcopy
 
-def generate_data_source(host, port, begin, end, count):
+def generate_data_source(host, port, http_port, begin, end, count):
 	chunk_size = round((end - begin) / float(count))
 	used_values = set()
 
@@ -35,16 +35,13 @@ def generate_data_source(host, port, begin, end, count):
 
 		file_handle.close()
 
-		host = 'localhost'
-		port = 9000
-
 		query = 'DROP TABLE IF EXISTS data_source'
 		subprocess.check_output(["clickhouse-client", "--host", host, "--port", str(port), "--query", query])
 		query = 'CREATE TABLE data_source(UserID UInt64, KeyID UInt64) ENGINE=TinyLog'
 		subprocess.check_output(["clickhouse-client", "--host", host, "--port", str(port), "--query", query])
 
-		cat = subprocess.Popen(('cat', filename), stdout=subprocess.PIPE)
-		subprocess.check_output(('POST', 'http://localhost:8123/?query=INSERT INTO data_source FORMAT TabSeparated'), stdin=cat.stdout)
+		cat = subprocess.Popen(("cat", filename), stdout=subprocess.PIPE)
+		subprocess.check_output(("POST", "http://localhost:{0}/?query=INSERT INTO data_source FORMAT TabSeparated".format(http_port)), stdin=cat.stdout)
 		cat.wait()
 
 def perform_query(host, port):
@@ -180,7 +177,8 @@ def dump_tables(stats):
 def start():
 	parser = argparse.ArgumentParser(description = "Generate bias correction tables.")
 	parser.add_argument("-x", "--host", default="127.0.0.1", help="clickhouse host name");
-	parser.add_argument("-p", "--port", type=int, default=9000, help="clickhouse port");
+	parser.add_argument("-p", "--port", type=int, default=9000, help="clickhouse client TCP port");
+	parser.add_argument("-t", "--http_port", type=int, default=8123, help="clickhouse HTTP port");
 	parser.add_argument("-i", "--iterations", type=int, default=5000, help="number of iterations");
 	parser.add_argument("-s", "--samples", type=int, default=700000, help="number of sample values");
 	parser.add_argument("-g", "--generated", type=int, default=200, help="number of generated values");
@@ -190,7 +188,7 @@ def start():
 
 	for i in range(0, args.iterations):
 		print(i)
-		generate_data_source(args.host, str(args.port), 0, args.samples, 1000)
+		generate_data_source(args.host, str(args.port), str(args.http_port), 0, args.samples, 1000)
 		output = perform_query(args.host, str(args.port))
 		data = parse_result(output)
 		stats = accumulate(stats, data)
