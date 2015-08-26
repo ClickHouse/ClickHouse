@@ -38,10 +38,10 @@ def generate_data_source(host, port, http_port, begin, end, count):
 
 	cur_count = 0
 	next_size = 0
-	j = 0
 
-	n1 = random.randrange(0, 32767)
-	n2 = random.randrange(0, 32767)
+	sup = 32768
+	n1 = random.randrange(0, sup)
+	n2 = random.randrange(0, sup)
 	urng = UniqueRandomGenerator(n1, n2)
 
 	with tempfile.TemporaryDirectory() as tmp_dir:
@@ -55,13 +55,12 @@ def generate_data_source(host, port, http_port, begin, end, count):
 				h = urng.next()
 				used_values = used_values + 1
 				multiplicity = random.randrange(1, 11)
-				outstr = str(h) + "\t" + str(j) + "\n";
+				outstr = str(h) + "\t" + str(cur_count) + "\n";
 
 				for i in range(0, multiplicity):
 					file_handle.write(bytes(outstr, 'UTF-8'));
 
 			cur_count = cur_count + 1
-			j = j + 1
 
 		file_handle.close()
 
