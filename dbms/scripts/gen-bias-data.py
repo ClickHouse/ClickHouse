@@ -145,15 +145,29 @@ def generate_sample(raw_estimates, biases, n_generated):
 
 			V = []
 
-			end = min(len(T), len(U))
-			lim = len(T) + len(U)
+			lim = min(len(T), len(U))
 			k1 = 0
 			k2 = 0
-			for k in range(0, lim):
-				if k1 < end and T[k1] < U[k1]:
+
+			while k1 < lim and k2 < lim:
+				if T[k1] == U[k2]:
+					V.append(j - k1 - 1)
+					V.append(j + k2)
+					k1 = k1 + 1
+					k2 = k2 + 1
+				elif T[k1] < U[k2]:
 					V.append(j - k1 - 1)
 					k1 = k1 + 1
 				else:
+					V.append(j + k2)
+					k2 = k2 + 1
+
+			if k1 < len(T):
+				while k1 < len(T):
+					V.append(j - k1 - 1)
+					k1 = k1 + 1
+			elif k2 < len(U):
+				while k2 < len(U):
 					V.append(j + k2)
 					k2 = k2 + 1
 
