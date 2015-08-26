@@ -54,11 +54,8 @@ def generate_data_source(host, port, http_port, begin, end, count):
 			while used_values < next_size:
 				h = urng.next()
 				used_values = used_values + 1
-				multiplicity = random.randrange(1, 11)
 				outstr = str(h) + "\t" + str(cur_count) + "\n";
-
-				for i in range(0, multiplicity):
-					file_handle.write(bytes(outstr, 'UTF-8'));
+				file_handle.write(bytes(outstr, 'UTF-8'));
 
 			cur_count = cur_count + 1
 
@@ -74,8 +71,8 @@ def generate_data_source(host, port, http_port, begin, end, count):
 		cat.wait()
 
 def perform_query(host, port):
-    query  = "SELECT runningAccumulate(uniqExactState(UserID), KeyID) AS exact, "
-    query += "runningAccumulate(uniqCombinedRawState(UserID), KeyID) AS approx "
+    query  = "SELECT runningAccumulate(uniqExactState(UserID)) AS exact, "
+    query += "runningAccumulate(uniqCombinedRawState(UserID)) AS approx "
     query += "FROM data_source GROUP BY KeyID"
     return subprocess.check_output(["clickhouse-client", "--host", host, "--port", port, "--query", query])
 
