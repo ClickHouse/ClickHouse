@@ -187,7 +187,15 @@ def generate_sample(raw_estimates, biases, n_generated):
 
 			result.append((sum, bias))
 
-	return result
+	# Пропустить последовательные результаты, чьи оценки одинаковые.
+	final_result = []
+	last = -1
+	for entry in result:
+		if entry[0] != last:
+			final_result.append((entry[0], entry[1]))
+			last = entry[0]
+
+	return final_result
 
 def dump_tables(stats):
 	is_first = True
