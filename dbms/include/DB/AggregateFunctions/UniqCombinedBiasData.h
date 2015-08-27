@@ -7,7 +7,7 @@ namespace DB
 
 struct UniqCombinedBiasData
 {
-	using InterpolatedData = std::array<double, 201>;
+	using InterpolatedData = std::array<double, 178>;
 
 	static double getThreshold();
 	static const InterpolatedData & getRawEstimates();
