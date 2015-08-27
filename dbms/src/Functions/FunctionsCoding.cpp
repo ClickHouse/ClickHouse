@@ -15,6 +15,9 @@ void registerFunctionsCoding(FunctionFactory & factory)
 	factory.registerFunction<FunctionHex>();
 	factory.registerFunction<FunctionUnhex>();
 	factory.registerFunction<FunctionBitmaskToArray>();
+	factory.registerFunction<FunctionBitTest>();
+	factory.registerFunction<FunctionBitTestAny>();
+	factory.registerFunction<FunctionBitTestAll>();
 }
 
 }
