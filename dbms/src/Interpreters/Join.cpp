@@ -4,6 +4,10 @@
 #include <DB/Parsers/ASTJoin.h>
 #include <DB/Interpreters/Join.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
+#include <DB/Core/ColumnNumbers.h>
+
+/*#include <DB/DataStreams/TabSeparatedBlockOutputStream.h>
+ *#include <DB/IO/WriteBufferFromFileDescriptor.h>*/
 
 
 namespace DB
@@ -17,6 +21,9 @@ Join::Type Join::chooseMethod(const ConstColumnPlainPtrs & key_columns, bool & k
 	keys_fit_128_bits = true;
 	size_t keys_bytes = 0;
 	key_sizes.resize(keys_size);
+
+	if (keys_size == 0)
+		return Type::CROSS;
 
 	for (size_t j = 0; j < keys_size; ++j)
 	{
@@ -57,6 +64,7 @@ static void initImpl(Maps & maps, Join::Type type)
 		case Join::Type::KEY_64:		maps.key64		.reset(new typename Maps::MapUInt64); 	break;
 		case Join::Type::KEY_STRING:	maps.key_string	.reset(new typename Maps::MapString); 	break;
 		case Join::Type::HASHED:		maps.hashed		.reset(new typename Maps::MapHashed);	break;
+		case Join::Type::CROSS:																	break;
 
 		default:
 			throw Exception("Unknown JOIN keys variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
@@ -101,6 +109,9 @@ void Join::init(Type type_)
 {
 	type = type_;
 
+	if (kind == ASTJoin::Cross)
+		return;
+
 	if (!getFullness(kind))
 	{
 		if (strictness == ASTJoin::Any)
@@ -120,21 +131,41 @@ void Join::init(Type type_)
 size_t Join::getTotalRowCount() const
 {
 	size_t res = 0;
-	res += getTotalRowCountImpl(maps_any);
-	res += getTotalRowCountImpl(maps_all);
-	res += getTotalRowCountImpl(maps_any_full);
-	res += getTotalRowCountImpl(maps_all_full);
+
+	if (type == Type::CROSS)
+	{
+		for (const auto & block : blocks)
+			res += block.rowsInFirstColumn();
+	}
+	else
+	{
+		res += getTotalRowCountImpl(maps_any);
+		res += getTotalRowCountImpl(maps_all);
+		res += getTotalRowCountImpl(maps_any_full);
+		res += getTotalRowCountImpl(maps_all_full);
+	}
+
 	return res;
 }
 
 size_t Join::getTotalByteCount() const
 {
 	size_t res = 0;
-	res += getTotalByteCountImpl(maps_any);
-	res += getTotalByteCountImpl(maps_all);
-	res += getTotalByteCountImpl(maps_any_full);
-	res += getTotalByteCountImpl(maps_all_full);
-	res += pool.size();
+
+	if (type == Type::CROSS)
+	{
+		for (const auto & block : blocks)
+			res += block.bytes();
+	}
+	else
+	{
+		res += getTotalByteCountImpl(maps_any);
+		res += getTotalByteCountImpl(maps_all);
+		res += getTotalByteCountImpl(maps_any_full);
+		res += getTotalByteCountImpl(maps_all_full);
+		res += pool.size();
+	}
+
 	return res;
 }
 
@@ -254,7 +285,11 @@ template <> struct Inserter<ASTJoin::All, Join::MapsAllFull::MapString> : Insert
 template <ASTJoin::Strictness STRICTNESS, typename Maps>
 void Join::insertFromBlockImpl(Maps & maps, size_t rows, const ConstColumnPlainPtrs & key_columns, size_t keys_size, Block * stored_block)
 {
-	if (type == Type::KEY_64)
+	if (type == Type::CROSS)
+	{
+		/// Ничего не делаем. Уже сохранили блок, и этого достаточно.
+	}
+	else if (type == Type::KEY_64)
 	{
 		typedef typename Maps::MapUInt64 Map;
 		Map & res = *maps.key64;
@@ -377,9 +412,9 @@ bool Join::insertFromBlock(const Block & block)
 	{
 		key_columns[i] = block.getByName(key_names_right[i]).column;
 
-		if (key_columns[i]->isConst())
+		if (auto * col_const = dynamic_cast<const IColumnConst *>(key_columns[i]))
 		{
-			materialized_columns.emplace_back(dynamic_cast<const IColumnConst &>(*key_columns[i]).convertToFullColumn());
+			materialized_columns.emplace_back(col_const->convertToFullColumn());
 			key_columns[i] = materialized_columns.back();
 		}
 	}
@@ -389,31 +424,51 @@ bool Join::insertFromBlock(const Block & block)
 	blocks.push_back(block);
 	Block * stored_block = &blocks.back();
 
-	/// Удаляем из stored_block ключевые столбцы, так как они не нужны.
-	for (const auto & name : key_names_right)
-		stored_block->erase(stored_block->getPositionByName(name));
+	if (getFullness(kind))
+	{
+		/// Переносим ключевые столбцы в начало блока.
+		size_t key_num = 0;
+		for (const auto & name : key_names_right)
+		{
+			size_t pos = stored_block->getPositionByName(name);
+			ColumnWithTypeAndName col = stored_block->getByPosition(pos);
+			stored_block->erase(pos);
+			stored_block->insert(key_num, col);
+			++key_num;
+		}
+	}
+	else
+	{
+		/// Удаляем из stored_block ключевые столбцы, так как они не нужны.
+		for (const auto & name : key_names_right)
+			stored_block->erase(stored_block->getPositionByName(name));
+	}
 
 	/// Редкий случай, когда соединяемые столбцы являются константами. Чтобы не поддерживать отдельный код, материализуем их.
 	for (size_t i = 0, size = stored_block->columns(); i < size; ++i)
 	{
 		ColumnPtr col = stored_block->getByPosition(i).column;
-		if (col->isConst())
-			stored_block->getByPosition(i).column = dynamic_cast<IColumnConst &>(*col).convertToFullColumn();
+		if (auto * col_const = dynamic_cast<const IColumnConst *>(col.get()))
+			stored_block->getByPosition(i).column = col_const->convertToFullColumn();
 	}
 
-	if (!getFullness(kind))
+	if (kind != ASTJoin::Cross)
 	{
-		if (strictness == ASTJoin::Any)
-			insertFromBlockImpl<ASTJoin::Any>(maps_any, rows, key_columns, keys_size, stored_block);
+		/// Заполняем нужную хэш-таблицу.
+		if (!getFullness(kind))
+		{
+			if (strictness == ASTJoin::Any)
+				insertFromBlockImpl<ASTJoin::Any>(maps_any, rows, key_columns, keys_size, stored_block);
+			else
+				insertFromBlockImpl<ASTJoin::All>(maps_all, rows, key_columns, keys_size, stored_block);
+		}
 		else
-			insertFromBlockImpl<ASTJoin::All>(maps_all, rows, key_columns, keys_size, stored_block);
-	}
-	else
-	{
-		if (strictness == ASTJoin::Any)
-			insertFromBlockImpl<ASTJoin::Any>(maps_any_full, rows, key_columns, keys_size, stored_block);
-		else
-			insertFromBlockImpl<ASTJoin::All>(maps_all_full, rows, key_columns, keys_size, stored_block);
+		{
+			if (strictness == ASTJoin::Any)
+				insertFromBlockImpl<ASTJoin::Any>(maps_any_full, rows, key_columns, keys_size, stored_block);
+			else
+				insertFromBlockImpl<ASTJoin::All>(maps_all_full, rows, key_columns, keys_size, stored_block);
+		}
 	}
 
 	if (!checkSizeLimits())
@@ -443,7 +498,8 @@ template <typename Map>
 struct Adder<ASTJoin::Left, ASTJoin::Any, Map>
 {
 	static void add(const Map & map, const typename Map::key_type & key, size_t num_columns_to_add, ColumnPlainPtrs & added_columns,
-		size_t i, IColumn::Filter * filter, IColumn::Offset_t & current_offset, IColumn::Offsets_t * offsets)
+		size_t i, IColumn::Filter * filter, IColumn::Offset_t & current_offset, IColumn::Offsets_t * offsets,
+		size_t num_columns_to_skip)
 	{
 		typename Map::const_iterator it = map.find(key);
 
@@ -451,7 +507,7 @@ struct Adder<ASTJoin::Left, ASTJoin::Any, Map>
 		{
 			it->second.setUsed();
 			for (size_t j = 0; j < num_columns_to_add; ++j)
-				added_columns[j]->insertFrom(*it->second.block->unsafeGetByPosition(j).column.get(), it->second.row_num);
+				added_columns[j]->insertFrom(*it->second.block->unsafeGetByPosition(num_columns_to_skip + j).column.get(), it->second.row_num);
 		}
 		else
 		{
@@ -465,7 +521,8 @@ template <typename Map>
 struct Adder<ASTJoin::Inner, ASTJoin::Any, Map>
 {
 	static void add(const Map & map, const typename Map::key_type & key, size_t num_columns_to_add, ColumnPlainPtrs & added_columns,
-					size_t i, IColumn::Filter * filter, IColumn::Offset_t & current_offset, IColumn::Offsets_t * offsets)
+		size_t i, IColumn::Filter * filter, IColumn::Offset_t & current_offset, IColumn::Offsets_t * offsets,
+		size_t num_columns_to_skip)
 	{
 		typename Map::const_iterator it = map.find(key);
 
@@ -475,7 +532,7 @@ struct Adder<ASTJoin::Inner, ASTJoin::Any, Map>
 
 			it->second.setUsed();
 			for (size_t j = 0; j < num_columns_to_add; ++j)
-				added_columns[j]->insertFrom(*it->second.block->unsafeGetByPosition(j).column.get(), it->second.row_num);
+				added_columns[j]->insertFrom(*it->second.block->unsafeGetByPosition(num_columns_to_skip + j).column.get(), it->second.row_num);
 		}
 		else
 			(*filter)[i] = 0;
@@ -486,7 +543,8 @@ template <ASTJoin::Kind KIND, typename Map>
 struct Adder<KIND, ASTJoin::All, Map>
 {
 	static void add(const Map & map, const typename Map::key_type & key, size_t num_columns_to_add, ColumnPlainPtrs & added_columns,
-					size_t i, IColumn::Filter * filter, IColumn::Offset_t & current_offset, IColumn::Offsets_t * offsets)
+		size_t i, IColumn::Filter * filter, IColumn::Offset_t & current_offset, IColumn::Offsets_t * offsets,
+		size_t num_columns_to_skip)
 	{
 		typename Map::const_iterator it = map.find(key);
 
@@ -497,7 +555,7 @@ struct Adder<KIND, ASTJoin::All, Map>
 			for (auto current = &static_cast<const typename Map::mapped_type::Base_t &>(it->second); current != nullptr; current = current->next)
 			{
 				for (size_t j = 0; j < num_columns_to_add; ++j)
-					added_columns[j]->insertFrom(*current->block->unsafeGetByPosition(j).column.get(), current->row_num);
+					added_columns[j]->insertFrom(*current->block->unsafeGetByPosition(num_columns_to_skip + j).column.get(), current->row_num);
 
 				++rows_joined;
 			}
@@ -538,18 +596,33 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 	{
 		key_columns[i] = block.getByName(key_names_left[i]).column;
 
-		if (key_columns[i]->isConst())
+		if (auto * col_const = dynamic_cast<const IColumnConst *>(key_columns[i]))
 		{
-			materialized_columns.emplace_back(dynamic_cast<const IColumnConst &>(*key_columns[i]).convertToFullColumn());
+			materialized_columns.emplace_back(col_const->convertToFullColumn());
 			key_columns[i] = materialized_columns.back();
+		}
+	}
+
+	size_t existing_columns = block.columns();
+
+	/** Если используется FULL или RIGHT JOIN, то столбцы из "левой" части надо материализовать.
+	  * Потому что, если они константы, то в "неприсоединённых" строчках, у них могут быть другие значения
+	  *  - значения по-умолчанию, которые могут отличаться от значений этих констант.
+	  */
+	if (getFullness(kind))
+	{
+		for (size_t i = 0; i < existing_columns; ++i)
+		{
+			auto & col = block.getByPosition(i).column;
+
+			if (auto * col_const = dynamic_cast<IColumnConst *>(col.get()))
+				col = col_const->convertToFullColumn();
 		}
 	}
 
 	/// Добавляем в блок новые столбцы.
 	size_t num_columns_to_add = sample_block_with_columns_to_add.columns();
 	ColumnPlainPtrs added_columns(num_columns_to_add);
-
-	size_t existing_columns = block.columns();
 
 	for (size_t i = 0; i < num_columns_to_add; ++i)
 	{
@@ -575,6 +648,16 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 	if (strictness == ASTJoin::All)
 		offsets_to_replicate.reset(new IColumn::Offsets_t(rows));
 
+	/** Для LEFT/INNER JOIN, сохранённые блоки не содержат ключи.
+	  * Для FULL/RIGHT JOIN, сохранённые блоки содержат ключи;
+	  *  но они не будут использоваться на этой стадии соединения (а будут в AdderNonJoined), и их нужно пропустить.
+	  */
+	size_t num_columns_to_skip = 0;
+	if (getFullness(kind))
+		num_columns_to_skip = keys_size;
+
+//	std::cerr << num_columns_to_skip << "\n" << block.dumpStructure() << "\n" << blocks.front().dumpStructure() << "\n";
+
 	if (type == Type::KEY_64)
 	{
 		typedef typename Maps::MapUInt64 Map;
@@ -586,7 +669,8 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 		{
 			/// Строим ключ
 			UInt64 key = column.get64(i);
-			Adder<KIND, STRICTNESS, Map>::add(map, key, num_columns_to_add, added_columns, i, filter.get(), current_offset, offsets_to_replicate.get());
+			Adder<KIND, STRICTNESS, Map>::add(
+				map, key, num_columns_to_add, added_columns, i, filter.get(), current_offset, offsets_to_replicate.get(), num_columns_to_skip);
 		}
 	}
 	else if (type == Type::KEY_STRING)
@@ -605,7 +689,8 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 			{
 				/// Строим ключ
 				StringRef key(&data[i == 0 ? 0 : offsets[i - 1]], (i == 0 ? offsets[i] : (offsets[i] - offsets[i - 1])) - 1);
-				Adder<KIND, STRICTNESS, Map>::add(map, key, num_columns_to_add, added_columns, i, filter.get(), current_offset, offsets_to_replicate.get());
+				Adder<KIND, STRICTNESS, Map>::add(
+					map, key, num_columns_to_add, added_columns, i, filter.get(), current_offset, offsets_to_replicate.get(), num_columns_to_skip);
 			}
 		}
 		else if (const ColumnFixedString * column_string = typeid_cast<const ColumnFixedString *>(&column))
@@ -618,7 +703,8 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 			{
 				/// Строим ключ
 				StringRef key(&data[i * n], n);
-				Adder<KIND, STRICTNESS, Map>::add(map, key, num_columns_to_add, added_columns, i, filter.get(), current_offset, offsets_to_replicate.get());
+				Adder<KIND, STRICTNESS, Map>::add(
+					map, key, num_columns_to_add, added_columns, i, filter.get(), current_offset, offsets_to_replicate.get(), num_columns_to_skip);
 			}
 		}
 		else
@@ -636,7 +722,8 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 				? packFixed<UInt128>(i, keys_size, key_columns, key_sizes)
 				: hash128(i, keys_size, key_columns);
 
-			Adder<KIND, STRICTNESS, Map>::add(map, key, num_columns_to_add, added_columns, i, filter.get(), current_offset, offsets_to_replicate.get());
+			Adder<KIND, STRICTNESS, Map>::add(
+				map, key, num_columns_to_add, added_columns, i, filter.get(), current_offset, offsets_to_replicate.get(), num_columns_to_skip);
 		}
 	}
 	else
@@ -651,6 +738,60 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 	if (offsets_to_replicate)
 		for (size_t i = 0; i < existing_columns; ++i)
 			block.getByPosition(i).column = block.getByPosition(i).column->replicate(*offsets_to_replicate);
+}
+
+
+void Join::joinBlockImplCross(Block & block) const
+{
+	Block res = block.cloneEmpty();
+
+	/// Добавляем в блок новые столбцы.
+	size_t num_existing_columns = res.columns();
+	size_t num_columns_to_add = sample_block_with_columns_to_add.columns();
+
+	ColumnPlainPtrs src_left_columns(num_existing_columns);
+	ColumnPlainPtrs dst_left_columns(num_existing_columns);
+	ColumnPlainPtrs dst_right_columns(num_columns_to_add);
+
+	for (size_t i = 0; i < num_existing_columns; ++i)
+	{
+		src_left_columns[i] = block.unsafeGetByPosition(i).column;
+		dst_left_columns[i] = res.unsafeGetByPosition(i).column;
+	}
+
+	for (size_t i = 0; i < num_columns_to_add; ++i)
+	{
+		const ColumnWithTypeAndName & src_column = sample_block_with_columns_to_add.unsafeGetByPosition(i);
+		ColumnWithTypeAndName new_column = src_column.cloneEmpty();
+		res.insert(new_column);
+		dst_right_columns[i] = new_column.column;
+	}
+
+	size_t rows_left = block.rowsInFirstColumn();
+
+	/// NOTE Было бы оптимальнее использовать reserve, а также методы replicate для размножения значений левого блока.
+
+	for (size_t i = 0; i < rows_left; ++i)
+	{
+		for (const Block & block_right : blocks)
+		{
+			size_t rows_right = block_right.rowsInFirstColumn();
+
+			for (size_t col_num = 0; col_num < num_existing_columns; ++col_num)
+				for (size_t j = 0; j < rows_right; ++j)
+					dst_left_columns[col_num]->insertFrom(*src_left_columns[col_num], i);
+
+			for (size_t col_num = 0; col_num < num_columns_to_add; ++col_num)
+			{
+				const IColumn * column_right = block_right.unsafeGetByPosition(col_num).column;
+
+				for (size_t j = 0; j < rows_right; ++j)
+					dst_right_columns[col_num]->insertFrom(*column_right, j);
+			}
+		}
+	}
+
+	block = res;
 }
 
 
@@ -689,6 +830,10 @@ void Join::joinBlock(Block & block) const
 		joinBlockImpl<ASTJoin::Left, ASTJoin::All>(block, maps_all_full);
 	else if (kind == ASTJoin::Right && strictness == ASTJoin::All)
 		joinBlockImpl<ASTJoin::Inner, ASTJoin::All>(block, maps_all_full);
+	else if (kind == ASTJoin::Cross)
+		joinBlockImplCross(block);
+	else
+		throw Exception("Logical error: unknown combination of JOIN", ErrorCodes::LOGICAL_ERROR);
 }
 
 
@@ -759,9 +904,45 @@ struct AdderNonJoined<ASTJoin::All, Mapped>
 class NonJoinedBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	NonJoinedBlockInputStream(const Join & parent_, Block & left_sample_block_, size_t max_block_size_)
-		: parent(parent_), left_sample_block(left_sample_block_), max_block_size(max_block_size_)
+	NonJoinedBlockInputStream(const Join & parent_, Block & left_sample_block, size_t max_block_size_)
+		: parent(parent_), max_block_size(max_block_size_)
 	{
+		/** left_sample_block содержит ключи и "левые" столбцы.
+		  * result_sample_block - ключи, "левые" столбцы и "правые" столбцы.
+		  */
+
+		size_t num_keys = parent.key_names_left.size();
+		size_t num_columns_left = left_sample_block.columns() - num_keys;
+		size_t num_columns_right = parent.sample_block_with_columns_to_add.columns();
+
+		result_sample_block = left_sample_block;
+
+		/// Добавляем в блок новые столбцы.
+		for (size_t i = 0; i < num_columns_right; ++i)
+		{
+			const ColumnWithTypeAndName & src_column = parent.sample_block_with_columns_to_add.getByPosition(i);
+			ColumnWithTypeAndName new_column = src_column.cloneEmpty();
+			result_sample_block.insert(new_column);
+		}
+
+		column_numbers_left.reserve(num_columns_left);
+		column_numbers_keys_and_right.reserve(num_keys + num_columns_right);
+
+		for (size_t i = 0; i < num_keys + num_columns_left; ++i)
+		{
+			const String & name = left_sample_block.getByPosition(i).name;
+
+			if (parent.key_names_left.end() == std::find(parent.key_names_left.begin(), parent.key_names_left.end(), name))
+				column_numbers_left.push_back(i);
+			else
+				column_numbers_keys_and_right.push_back(i);
+		}
+
+		for (size_t i = 0; i < num_columns_right; ++i)
+			column_numbers_keys_and_right.push_back(num_keys + num_columns_left + i);
+
+		columns_left.resize(num_columns_left);
+		columns_keys_and_right.resize(num_keys + num_columns_right);
 	}
 
 	String getName() const override { return "NonJoined"; }
@@ -790,8 +971,13 @@ protected:
 
 private:
 	const Join & parent;
-	Block left_sample_block;
 	size_t max_block_size;
+
+	Block result_sample_block;
+	ColumnNumbers column_numbers_left;
+	ColumnNumbers column_numbers_keys_and_right;
+	ColumnPlainPtrs columns_left;
+	ColumnPlainPtrs columns_keys_and_right;
 
 	std::unique_ptr<void, std::function<void(void *)>> position;	/// type erasure
 
@@ -799,47 +985,45 @@ private:
 	template <ASTJoin::Strictness STRICTNESS, typename Maps>
 	Block createBlock(const Maps & maps)
 	{
-		Block block = left_sample_block.cloneEmpty();
+		Block block = result_sample_block.cloneEmpty();
 
-		size_t num_columns_left = left_sample_block.columns();
-		ColumnPlainPtrs columns_left(num_columns_left);
+		size_t num_columns_left = column_numbers_left.size();
+		size_t num_columns_right = column_numbers_keys_and_right.size();
 
 		for (size_t i = 0; i < num_columns_left; ++i)
 		{
-			auto & column_with_name_and_type = block.getByPosition(i);
+			auto & column_with_name_and_type = block.getByPosition(column_numbers_left[i]);
 			column_with_name_and_type.column = column_with_name_and_type.type->createColumn();
 			columns_left[i] = column_with_name_and_type.column.get();
 		}
 
-		/// Добавляем в блок новые столбцы.
-		size_t num_columns_right = parent.sample_block_with_columns_to_add.columns();
-		ColumnPlainPtrs columns_right(num_columns_right);
-
 		for (size_t i = 0; i < num_columns_right; ++i)
 		{
-			const ColumnWithTypeAndName & src_column = parent.sample_block_with_columns_to_add.getByPosition(i);
-			ColumnWithTypeAndName new_column = src_column.cloneEmpty();
-			block.insert(new_column);
-			columns_right[i] = new_column.column;
-			columns_right[i]->reserve(src_column.column->size());
+			auto & column_with_name_and_type = block.getByPosition(column_numbers_keys_and_right[i]);
+			column_with_name_and_type.column = column_with_name_and_type.type->createColumn();
+			columns_keys_and_right[i] = column_with_name_and_type.column.get();
+			columns_keys_and_right[i]->reserve(column_with_name_and_type.column->size());
 		}
 
 		size_t rows_added = 0;
 		if (parent.type == Join::Type::KEY_64)
-			rows_added = fillColumns<STRICTNESS>(*maps.key64, num_columns_left, columns_left, num_columns_right, columns_right);
+			rows_added = fillColumns<STRICTNESS>(*maps.key64, num_columns_left, columns_left, num_columns_right, columns_keys_and_right);
 		else if (parent.type == Join::Type::KEY_STRING)
-			rows_added = fillColumns<STRICTNESS>(*maps.key_string, num_columns_left, columns_left, num_columns_right, columns_right);
+			rows_added = fillColumns<STRICTNESS>(*maps.key_string, num_columns_left, columns_left, num_columns_right, columns_keys_and_right);
 		else if (parent.type == Join::Type::HASHED)
-			rows_added = fillColumns<STRICTNESS>(*maps.hashed, num_columns_left, columns_left, num_columns_right, columns_right);
+			rows_added = fillColumns<STRICTNESS>(*maps.hashed, num_columns_left, columns_left, num_columns_right, columns_keys_and_right);
 		else
 			throw Exception("Unknown JOIN variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
 
-		std::cerr << "rows added: " << rows_added << "\n";
+//		std::cerr << "rows added: " << rows_added << "\n";
 
 		if (!rows_added)
 			return Block();
 
-		std::cerr << block.dumpStructure() << "\n";
+/*		std::cerr << block.dumpStructure() << "\n";
+		WriteBufferFromFileDescriptor wb(STDERR_FILENO);
+		TabSeparatedBlockOutputStream out(wb);
+		out.write(block);*/
 
 		return block;
 	}
@@ -862,7 +1046,7 @@ private:
 
 		for (; it != end; ++it)
 		{
-			std::cerr << it->second.getUsed() << "\n";
+//			std::cerr << it->second.getUsed() << "\n";
 
 			if (it->second.getUsed())
 				continue;

@@ -6,6 +6,7 @@
 #include <DB/DataStreams/MergingSortedBlockInputStream.h>
 #include <DB/DataStreams/AggregatingBlockInputStream.h>
 #include <DB/DataStreams/MergingAggregatedBlockInputStream.h>
+#include <DB/DataStreams/MergingAggregatedMemoryEfficientBlockInputStream.h>
 #include <DB/DataStreams/AsynchronousBlockInputStream.h>
 #include <DB/DataStreams/UnionBlockInputStream.h>
 #include <DB/DataStreams/ParallelAggregatingBlockInputStream.h>
@@ -330,9 +331,6 @@ BlockIO InterpreterSelectQuery::execute()
 	/// Ограничения на результат, квота на результат, а также колбек для прогресса.
 	if (IProfilingBlockInputStream * stream = dynamic_cast<IProfilingBlockInputStream *>(&*streams[0]))
 	{
-		stream->setProgressCallback(context.getProgressCallback());
-		stream->setProcessListElement(context.getProcessListElement());
-
 		/// Ограничения действуют только на конечный результат.
 		if (to_stage == QueryProcessingStage::Complete)
 		{
@@ -400,12 +398,13 @@ void InterpreterSelectQuery::executeSingleQuery()
 
 	if (to_stage > QueryProcessingStage::FetchColumns)
 	{
+		bool has_join		= false;
 		bool has_where      = false;
 		bool need_aggregate = false;
 		bool has_having     = false;
 		bool has_order_by   = false;
 
-		ExpressionActionsPtr array_join;
+		ExpressionActionsPtr before_join;	/// включая JOIN
 		ExpressionActionsPtr before_where;
 		ExpressionActionsPtr before_aggregation;
 		ExpressionActionsPtr before_having;
@@ -433,13 +432,16 @@ void InterpreterSelectQuery::executeSingleQuery()
 			need_aggregate = query_analyzer->hasAggregation();
 
 			query_analyzer->appendArrayJoin(chain, !first_stage);
-			query_analyzer->appendJoin(chain, !first_stage);
 
-			if (query.join)
+			if (query_analyzer->appendJoin(chain, !first_stage))
 			{
+				has_join = true;
+				before_join = chain.getLastActions();
+				chain.addStep();
+
 				auto join = typeid_cast<const ASTJoin &>(*query.join);
 				if (join.kind == ASTJoin::Full || join.kind == ASTJoin::Right)
-					stream_with_non_joined_data = chain.getLastActions()->createStreamWithNonJoinedDataIfFullOrRightJoin(settings.max_block_size);
+					stream_with_non_joined_data = before_join->createStreamWithNonJoinedDataIfFullOrRightJoin(settings.max_block_size);
 			}
 
 			if (query_analyzer->appendWhere(chain, !first_stage))
@@ -510,6 +512,10 @@ void InterpreterSelectQuery::executeSingleQuery()
 
 		if (first_stage)
 		{
+			if (has_join)
+				for (auto & stream : streams)	/// Применяем ко всем источникам кроме stream_with_non_joined_data.
+					stream = new ExpressionBlockInputStream(stream, before_join);
+
 			if (has_where)
 				executeWhere(before_where);
 
@@ -851,14 +857,38 @@ void InterpreterSelectQuery::executeAggregation(ExpressionActionsPtr expression,
 
 void InterpreterSelectQuery::executeMergeAggregated(bool overflow_row, bool final)
 {
-	/// Склеим несколько источников в один
-	executeUnion();
-
-	/// Теперь объединим агрегированные блоки
 	Names key_names;
 	AggregateDescriptions aggregates;
 	query_analyzer->getAggregateInfo(key_names, aggregates);
-	streams[0] = new MergingAggregatedBlockInputStream(streams[0], key_names, aggregates, overflow_row, final, original_max_threads);
+
+	/** Есть два режима распределённой агрегации.
+	  *
+	  * 1. В разных потоках читать из удалённых серверов блоки.
+	  * Сохранить все блоки в оперативку. Объединить блоки.
+	  * Если агрегация двухуровневая - распараллелить по номерам корзин.
+	  *
+	  * 2. В одном потоке читать по очереди блоки с разных серверов.
+	  * В оперативке хранится только по одному блоку с каждого сервера.
+	  * Если агрегация двухуровневая - последовательно объединяем блоки каждого следующего уровня.
+	  *
+	  * Второй вариант расходует меньше памяти (до 256 раз меньше)
+	  *  в случае двухуровневой агрегации, которая используется для больших результатов после GROUP BY,
+	  *  но при этом может работать медленнее.
+	  */
+
+	if (!settings.distributed_aggregation_memory_efficient)
+	{
+		/// Склеим несколько источников в один, распараллеливая работу.
+		executeUnion();
+
+		/// Теперь объединим агрегированные блоки
+		streams[0] = new MergingAggregatedBlockInputStream(streams[0], key_names, aggregates, overflow_row, final, original_max_threads);
+	}
+	else
+	{
+		streams[0] = new MergingAggregatedMemoryEfficientBlockInputStream(streams, key_names, aggregates, overflow_row, final);
+		streams.resize(1);
+	}
 }
 
 

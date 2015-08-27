@@ -16,12 +16,11 @@ namespace DB
 {
 
 /// хранит размеры всех столбцов, и может проверять не побились ли столбцы
-template <class Storage>
 class FileChecker
 {
 public:
-	FileChecker(const std::string &file_info_path_, Storage & storage_) :
-		files_info_path(file_info_path_), files_info(), storage(storage_), log(&Logger::get("FileChecker"))
+	FileChecker(const std::string & file_info_path_) :
+		files_info_path(file_info_path_), files_info(), log(&Logger::get("FileChecker"))
 	{
 		Poco::Path path(files_info_path);
 		tmp_files_info_path = path.parent().toString() + "tmp_" + path.getFileName();
@@ -107,7 +106,6 @@ private:
 	using PropertyTree = boost::property_tree::ptree;
 	PropertyTree files_info;
 
-	Storage & storage;
 	Logger * log;
 };
 }

@@ -137,12 +137,28 @@ void DataTypeString::deserializeBinary(IColumn & column, ReadBuffer & istr, size
 	ColumnString::Chars_t & data = column_string.getChars();
 	ColumnString::Offsets_t & offsets = column_string.getOffsets();
 
-	/// Выбрано наугад.
-	constexpr auto avg_value_size_hint_reserve_multiplier = 1.2;
+	double avg_chars_size;
 
-	double avg_chars_size = (avg_value_size_hint && avg_value_size_hint > sizeof(offsets[0])
-		? (avg_value_size_hint - sizeof(offsets[0])) * avg_value_size_hint_reserve_multiplier
-		: DBMS_APPROX_STRING_SIZE);
+	if (avg_value_size_hint && avg_value_size_hint > sizeof(offsets[0]))
+	{
+		/// Выбрано наугад.
+		constexpr auto avg_value_size_hint_reserve_multiplier = 1.2;
+
+		avg_chars_size = (avg_value_size_hint - sizeof(offsets[0])) * avg_value_size_hint_reserve_multiplier;
+	}
+	else
+	{
+		/** Небольшая эвристика для оценки того, что в столбце много пустых строк.
+		  * В этом случае, для экономии оперативки, будем говорить, что средний размер значения маленький.
+		  */
+		if (istr.position() + sizeof(UInt32) <= istr.buffer().end()
+			&& *reinterpret_cast<const UInt32 *>(istr.position()) == 0)	/// Первые 4 строки находятся в буфере и являются пустыми.
+		{
+			avg_chars_size = 1;
+		}
+		else
+			avg_chars_size = DBMS_APPROX_STRING_SIZE;
+	}
 
 	data.reserve(data.size() + std::ceil(limit * avg_chars_size));
 

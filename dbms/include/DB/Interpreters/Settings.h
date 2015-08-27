@@ -91,6 +91,8 @@ struct Settings
 	M(SettingUInt64, min_count_to_compile, 3) \
 	/** При каком количестве ключей, начинает использоваться двухуровневая агрегация. 0 - никогда не использовать. */ \
 	M(SettingUInt64, group_by_two_level_threshold, 100000) \
+	/** Включён ли экономный по памяти режим распределённой агрегации. */ \
+	M(SettingBool, distributed_aggregation_memory_efficient, false) \
 	\
 	/** Максимальное количество используемых реплик каждого шарда при выполнении запроса */ \
 	M(SettingUInt64, max_parallel_replicas, 1) \

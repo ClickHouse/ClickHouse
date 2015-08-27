@@ -52,16 +52,16 @@ inline std::string demangle(const char * const mangled, int & status)
 	return demangled;
 }
 
-void tryLogCurrentException(const char * log_name)
+void tryLogCurrentException(const char * log_name, const std::string & start_of_message)
 {
-	tryLogCurrentException(&Logger::get(log_name));
+	tryLogCurrentException(&Logger::get(log_name), start_of_message);
 }
 
-void tryLogCurrentException(Poco::Logger * logger)
+void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message)
 {
 	try
 	{
-		LOG_ERROR(logger, getCurrentExceptionMessage(true));
+		LOG_ERROR(logger, start_of_message << (start_of_message.empty() ? "" : ": ") << getCurrentExceptionMessage(true));
 	}
 	catch (...)
 	{

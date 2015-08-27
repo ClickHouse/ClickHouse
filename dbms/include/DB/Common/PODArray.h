@@ -1,7 +1,6 @@
 #pragma once
 
 #include <string.h>
-#include <malloc.h>
 #include <cstddef>
 #include <algorithm>
 #include <memory>
@@ -12,7 +11,7 @@
 #include <Yandex/likely.h>
 #include <Yandex/strong_typedef.h>
 
-#include <DB/Common/MemoryTracker.h>
+#include <DB/Common/Allocator.h>
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 
@@ -32,27 +31,17 @@ namespace DB
   * Конструктор по-умолчанию создаёт пустой объект, который не выделяет память.
   * Затем выделяется память минимум под POD_ARRAY_INITIAL_SIZE элементов.
   *
-  * При первом выделении памяти использует std::allocator.
-  *  В реализации из libstdc++ он кэширует куски памяти несколько больше, чем обычный malloc.
-  *
-  * При изменении размера, использует realloc, который может (но не обязан) использовать mremap для больших кусков памяти.
-  * По факту, mremap используется при использовании аллокатора из glibc, но не используется, например, в tcmalloc.
-  *
   * Если вставлять элементы push_back-ом, не делая reserve, то PODArray примерно в 2.5 раза быстрее std::vector.
   */
 #define POD_ARRAY_INITIAL_SIZE 4096UL
 
 template <typename T>
-class PODArray : private boost::noncopyable, private std::allocator<char>	/// empty base optimization
+class PODArray : private boost::noncopyable, private Allocator	/// empty base optimization
 {
 private:
-	typedef std::allocator<char> Allocator;
-
 	char * c_start;
 	char * c_end;
 	char * c_end_of_storage;
-
-	bool use_libc_realloc = false;
 
 	T * t_start() 						{ return reinterpret_cast<T *>(c_start); }
 	T * t_end() 						{ return reinterpret_cast<T *>(c_end); }
@@ -90,10 +79,7 @@ private:
 
 		size_t bytes_to_alloc = to_size(n);
 
-		if (current_memory_tracker)
-			current_memory_tracker->alloc(bytes_to_alloc);
-
-		c_start = c_end = Allocator::allocate(bytes_to_alloc);
+		c_start = c_end = reinterpret_cast<char *>(Allocator::alloc(bytes_to_alloc));
 		c_end_of_storage = c_start + bytes_to_alloc;
 	}
 
@@ -102,13 +88,7 @@ private:
 		if (c_start == nullptr)
 			return;
 
-		if (use_libc_realloc)
-			::free(c_start);
-		else
-			Allocator::deallocate(c_start, storage_size());
-
-		if (current_memory_tracker)
-			current_memory_tracker->free(storage_size());
+		Allocator::free(c_start, storage_size());
 	}
 
 	void realloc(size_t n)
@@ -122,38 +102,10 @@ private:
 		ptrdiff_t end_diff = c_end - c_start;
 		size_t bytes_to_alloc = to_size(n);
 
-		char * old_c_start = c_start;
-		char * old_c_end_of_storage = c_end_of_storage;
-
-		if (current_memory_tracker)
-			current_memory_tracker->realloc(storage_size(), bytes_to_alloc);
-
-		if (use_libc_realloc)
-		{
-			auto new_c_start = reinterpret_cast<char *>(::realloc(c_start, bytes_to_alloc));
-
-			if (nullptr == new_c_start)
-				throwFromErrno("PODArray: cannot realloc", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
-
-			c_start = new_c_start;
-		}
-		else
-		{
-			auto new_c_start = reinterpret_cast<char *>(malloc(bytes_to_alloc));
-
-			if (nullptr == new_c_start)
-				throwFromErrno("PODArray: cannot realloc", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
-
-			c_start = new_c_start;
-
-			memcpy(c_start, old_c_start, std::min(bytes_to_alloc, static_cast<size_t>(end_diff)));
-			Allocator::deallocate(old_c_start, old_c_end_of_storage - old_c_start);
-		}
+		c_start = reinterpret_cast<char *>(Allocator::realloc(c_start, storage_size(), bytes_to_alloc));
 
 		c_end = c_start + end_diff;
 		c_end_of_storage = c_start + bytes_to_alloc;
-
-		use_libc_realloc = true;
 	}
 
 public:
@@ -187,7 +139,6 @@ public:
 		std::swap(c_start, other.c_start);
 		std::swap(c_end, other.c_end);
 		std::swap(c_end_of_storage, other.c_end_of_storage);
-		std::swap(use_libc_realloc, other.use_libc_realloc);
 
 		return *this;
 	}

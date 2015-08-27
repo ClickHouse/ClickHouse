@@ -6,6 +6,7 @@
 #include <DB/DataTypes/DataTypeNested.h>
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/Functions/IFunction.h>
+#include <DB/Functions/FunctionsArray.h>
 #include <set>
 
 
@@ -268,6 +269,24 @@ void ExpressionAction::execute(Block & block) const
 			if (!any_array)
 				throw Exception("ARRAY JOIN of not array: " + *array_joined_columns.begin(), ErrorCodes::TYPE_MISMATCH);
 
+			/// Если LEFT ARRAY JOIN, то создаём столбцы, в которых пустые массивы заменены на массивы с одним элементом - значением по-умолчанию.
+			std::map<String, ColumnPtr> non_empty_array_columns;
+			if (array_join_is_left)
+			{
+				for (const auto & name : array_joined_columns)
+				{
+					auto src_col = block.getByName(name);
+
+					Block tmp_block{src_col, {{}, src_col.type, {}}};
+
+					FunctionEmptyArrayToSingle().execute(tmp_block, {0}, 1);
+					non_empty_array_columns[name] = tmp_block.getByPosition(1).column;
+				}
+
+				any_array_ptr = non_empty_array_columns.begin()->second;
+				any_array = typeid_cast<const ColumnArray *>(&*any_array_ptr);
+			}
+
 			size_t columns = block.columns();
 			for (size_t i = 0; i < columns; ++i)
 			{
@@ -278,7 +297,8 @@ void ExpressionAction::execute(Block & block) const
 					if (!typeid_cast<const DataTypeArray *>(&*current.type))
 						throw Exception("ARRAY JOIN of not array: " + current.name, ErrorCodes::TYPE_MISMATCH);
 
-					ColumnPtr array_ptr = current.column;
+					ColumnPtr array_ptr = array_join_is_left ? non_empty_array_columns[current.name] : current.column;
+
 					if (array_ptr->isConst())
 						array_ptr = dynamic_cast<const IColumnConst &>(*array_ptr).convertToFullColumn();
 
@@ -379,7 +399,7 @@ std::string ExpressionAction::toString() const
 			break;
 
 		case ARRAY_JOIN:
-			ss << "ARRAY JOIN ";
+			ss << (array_join_is_left ? "LEFT " : "") << "ARRAY JOIN ";
 			for (NameSet::const_iterator it = array_joined_columns.begin(); it != array_joined_columns.end(); ++it)
 			{
 				if (it != array_joined_columns.begin())
@@ -761,7 +781,7 @@ std::string ExpressionActions::getID() const
 			ss << actions[i].result_name;
 		if (actions[i].type == ExpressionAction::ARRAY_JOIN)
 		{
-			ss << "{";
+			ss << (actions[i].array_join_is_left ? "LEFT ARRAY JOIN" : "ARRAY JOIN") << "{";
 			for (NameSet::const_iterator it = actions[i].array_joined_columns.begin();
 				 it != actions[i].array_joined_columns.end(); ++it)
 			{

@@ -110,13 +110,6 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 			continue;
 		}
 
-		/// Кусок в одном месяце.
-		if (first_part->left_month != first_part->right_month)
-		{
-			LOG_WARNING(log, "Part " << first_part->name << " spans more than one month");
-			continue;
-		}
-
 		/// Самый длинный валидный отрезок, начинающийся здесь.
 		size_t cur_longest_max = -1U;
 		size_t cur_longest_min = -1U;
@@ -128,8 +121,8 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 		size_t cur_sum = first_part->size_in_bytes;
 		int cur_len = 1;
 
-		DayNum_t month = first_part->left_month;
-		UInt64 cur_id = first_part->right;
+		DayNum_t month = first_part->month;
+		Int64 cur_id = first_part->right;
 
 		/// Этот месяц кончился хотя бы день назад.
 		bool is_old_month = now_day - now_month >= 1 && now_month > month;
@@ -151,9 +144,8 @@ bool MergeTreeDataMerger::selectPartsToMerge(MergeTreeData::DataPartsVector & pa
 			const MergeTreeData::DataPartPtr & last_part = *jt;
 
 			/// Кусок разрешено сливать с предыдущим, и в одном правильном месяце.
-			if (last_part->left_month != last_part->right_month ||
-				last_part->left_month != month ||
-				!can_merge(prev_part, last_part))
+			if (last_part->month != month
+				|| !can_merge(prev_part, last_part))
 			{
 				break;
 			}

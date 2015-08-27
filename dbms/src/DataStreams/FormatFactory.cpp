@@ -26,7 +26,7 @@ namespace DB
 {
 
 BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & buf,
-	Block & sample, size_t max_block_size) const
+	const Block & sample, size_t max_block_size) const
 {
 	if (name == "Native")
 		return new NativeBlockInputStream(buf);
@@ -48,7 +48,7 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
 
 
 BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer & buf,
-	Block & sample) const
+	const Block & sample) const
 {
 	if (name == "Native")
 		return new NativeBlockOutputStream(buf);

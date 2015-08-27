@@ -2,17 +2,34 @@
 
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/VarInt.h>
+#include <DB/IO/CompressedWriteBuffer.h>
 
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Columns/ColumnArray.h>
 
 #include <DB/DataTypes/DataTypeArray.h>
 
+#include <DB/DataStreams/MarkInCompressedFile.h>
 #include <DB/DataStreams/NativeBlockOutputStream.h>
 
 
 namespace DB
 {
+
+
+NativeBlockOutputStream::NativeBlockOutputStream(
+	WriteBuffer & ostr_, UInt64 client_revision_,
+	WriteBuffer * index_ostr_)
+	: ostr(ostr_), client_revision(client_revision_),
+	index_ostr(index_ostr_)
+{
+	if (index_ostr)
+	{
+		ostr_concrete = typeid_cast<CompressedWriteBuffer *>(&ostr);
+		if (!ostr_concrete)
+			throw Exception("When need to write index for NativeBlockOutputStream, ostr must be CompressedWriteBuffer.", ErrorCodes::LOGICAL_ERROR);
+	}
+}
 
 
 void NativeBlockOutputStream::writeData(const IDataType & type, const ColumnPtr & column, WriteBuffer & ostr, size_t offset, size_t limit)
@@ -71,11 +88,31 @@ void NativeBlockOutputStream::write(const Block & block)
 	/// Размеры
 	size_t columns = block.columns();
 	size_t rows = block.rows();
+
 	writeVarUInt(columns, ostr);
 	writeVarUInt(rows, ostr);
 
+	/** Индекс имеет ту же структуру, что и поток с данными.
+	  * Но вместо значений столбца он содержит засечку, ссылающуюся на место в файле с данными, где находится этот кусочек столбца.
+	  */
+	if (index_ostr)
+	{
+		writeVarUInt(columns, *index_ostr);
+		writeVarUInt(rows, *index_ostr);
+	}
+
 	for (size_t i = 0; i < columns; ++i)
 	{
+		/// Для индекса.
+		MarkInCompressedFile mark;
+
+		if (index_ostr)
+		{
+			ostr_concrete->next();	/// Заканчиваем сжатый блок.
+			mark.offset_in_compressed_file = ostr_concrete->getCompressedBytes();
+			mark.offset_in_decompressed_block = ostr_concrete->getRemainingBytes();
+		}
+
 		const ColumnWithTypeAndName & column = block.getByPosition(i);
 
 		/// Имя
@@ -86,6 +123,15 @@ void NativeBlockOutputStream::write(const Block & block)
 
 		/// Данные
 		writeData(*column.type, column.column, ostr, 0, 0);
+
+		if (index_ostr)
+		{
+			writeStringBinary(column.name, *index_ostr);
+			writeStringBinary(column.type->getName(), *index_ostr);
+
+			writeBinary(mark.offset_in_compressed_file, *index_ostr);
+			writeBinary(mark.offset_in_decompressed_block, *index_ostr);
+		}
 	}
 }
 

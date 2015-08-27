@@ -226,6 +226,10 @@ private:
 	/// Превратить перечисление значений или подзапрос в ASTSet. node - функция in или notIn.
 	void makeSet(ASTFunction * node, const Block & sample_block);
 
+	/// Замена скалярных подзапросов на значения-константы.
+	void executeScalarSubqueries();
+	void executeScalarSubqueriesImpl(ASTPtr & ast);
+
 	/// Находит глобальные подзапросы в секциях GLOBAL IN/JOIN. Заполняет external_tables.
 	void initGlobalSubqueriesAndExternalTables();
 	void initGlobalSubqueries(ASTPtr & ast);
