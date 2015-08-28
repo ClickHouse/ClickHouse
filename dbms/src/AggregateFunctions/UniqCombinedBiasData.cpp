@@ -5,7 +5,7 @@ namespace DB
 
 double UniqCombinedBiasData::getThreshold()
 {
-	return 110000;
+	return 176000;
 }
 
 const UniqCombinedBiasData::InterpolatedData & UniqCombinedBiasData::getRawEstimates()
