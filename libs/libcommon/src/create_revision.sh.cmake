@@ -16,8 +16,8 @@ if [[ "$revision" = "" ]]; then
 	revision=$( ( git describe --tags || echo 1 ) | cut -d "-" -f 1 )
 fi
 
-is_it_github=$( git config --get remote.origin.url | grep 'github')
-if [[ "$is_it_github" = "" ]] then
+is_it_github=$( git config --get remote.origin.url | grep 'github' )
+if [[ "$is_it_github" = "" ]]; then
 	revision=53190
 fi
 
