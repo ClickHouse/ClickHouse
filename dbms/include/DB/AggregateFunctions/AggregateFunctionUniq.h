@@ -133,6 +133,10 @@ struct BaseUniqCombinedData<String, mode>
 	Set set;
 };
 
+/// Агрегатные функции uniqCombinedRaw, uniqCombinedLinearCounting, и uniqCombinedBiasCorrected
+/// предназначены для разработки новых версий функции uniqCombined.
+/// Пользователи должны использовать только uniqCombined.
+
 template <typename T>
 struct AggregateFunctionUniqCombinedRawData
 	: public BaseUniqCombinedData<T, HyperLogLogMode::Raw>
