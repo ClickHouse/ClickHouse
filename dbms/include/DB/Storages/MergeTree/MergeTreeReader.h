@@ -295,11 +295,13 @@ private:
 
 	typedef std::map<std::string, std::unique_ptr<Stream> > FileStreams;
 
+	/** @todo placing buffers after streams (and causing buffers to be deleted bebfore streams in destructor)
+		causes memory corruption, investigate why */
+	std::vector<std::unique_ptr<Memory>> buffers;
 	String path;
 	MergeTreeData::DataPartPtr data_part;
 	String part_name;
 	FileStreams streams;
-	std::vector<std::unique_ptr<Memory>> buffers;
 
 	/// Запрашиваемые столбцы.
 	NamesAndTypesList columns;
