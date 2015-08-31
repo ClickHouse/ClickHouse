@@ -105,14 +105,14 @@ def generate_raw_result(stats, count):
 		bias_tab.append(bias)
 	return [ expected_tab, bias_tab ]
 
-def generate_sample(raw_estimates, biases, n_generated):
+def generate_sample(raw_estimates, biases, n_samples):
 	result = []
 
 	min_card = raw_estimates[0]
 	max_card = raw_estimates[len(raw_estimates) - 1]
-	step = (max_card - min_card) / n_generated
+	step = (max_card - min_card) / n_samples
 
-	for i in range(0, n_generated + 1):
+	for i in range(0, n_samples + 1):
 		x = min_card + i * step
 		j = bisect.bisect_left(raw_estimates, x)
 
