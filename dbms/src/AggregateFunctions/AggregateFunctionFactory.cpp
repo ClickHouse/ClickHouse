@@ -628,6 +628,13 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 
 		return new AggregateFunctionSequenceMatch;
 	}
+	else if (name == "sequenceCount")
+	{
+		if (!AggregateFunctionSequenceCount::sufficientArgs(argument_types.size()))
+			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		return new AggregateFunctionSequenceCount;
+	}
 	else if (name == "varSamp")
 	{
 		if (argument_types.size() != 1)
@@ -812,6 +819,7 @@ const AggregateFunctionFactory::FunctionNames & AggregateFunctionFactory::getFun
 		"quantileDeterministic",
 		"quantilesDeterministic",
 		"sequenceMatch",
+		"sequenceCount",
 		"varSamp",
 		"varPop",
 		"stddevSamp",
