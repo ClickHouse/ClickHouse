@@ -21,7 +21,7 @@ class HyperLogLogWithSmallSetOptimization
 {
 private:
 	using Small = SmallSet<Key, small_set_size>;
-	using Large = HyperLogLogCounter<K, Hash, DenominatorType>;
+	using Large = HyperLogLogCounter<K, Hash, UInt32, DenominatorType>;
 
 	Small small;
 	Large * large = nullptr;
