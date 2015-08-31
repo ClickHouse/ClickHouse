@@ -66,15 +66,15 @@ struct Memory : boost::noncopyable, Allocator
 		}
 		else
 		{
-			new_size = align(new_size);
+			new_size = align(new_size, alignment);
+			/// @todo pointer to void can be converted to pointer to any type with static_cast by ISO C++, reinterpret_cast has no advantages
 			m_data = reinterpret_cast<char *>(Allocator::realloc(m_data, m_capacity, new_size, alignment));
 			m_capacity = new_size;
 			m_size = m_capacity;
 		}
 	}
 
-private:
-	size_t align(size_t value) const
+	static size_t align(const size_t value, const size_t alignment)
 	{
 		if (!alignment)
 			return value;
@@ -82,6 +82,7 @@ private:
 		return (value + alignment - 1) / alignment * alignment;
 	}
 
+private:
 	void alloc()
 	{
 		if (!m_capacity)
@@ -93,8 +94,8 @@ private:
 		ProfileEvents::increment(ProfileEvents::IOBufferAllocs);
 		ProfileEvents::increment(ProfileEvents::IOBufferAllocBytes, m_capacity);
 
-		size_t new_capacity = align(m_capacity);
-		/// @todo void can be casted to any type with static_cast by ISO C++, reinterpret_cast has no advantages
+		size_t new_capacity = align(m_capacity, alignment);
+		/// @todo pointer to void can be converted to pointer to any type with static_cast by ISO C++, reinterpret_cast has no advantages
 		m_data = reinterpret_cast<char *>(Allocator::alloc(new_capacity, alignment));
 		m_capacity = new_capacity;
 		m_size = m_capacity;

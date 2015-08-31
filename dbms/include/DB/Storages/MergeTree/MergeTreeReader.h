@@ -221,7 +221,8 @@ private:
 			if (aio_threshold == 0 || estimated_size < aio_threshold)
 				memory.resize(buffer_size);
 			else
-				memory.resize(2 * (buffer_size + DEFAULT_AIO_FILE_BLOCK_SIZE));
+				memory.resize(2 * Memory::align(buffer_size + DEFAULT_AIO_FILE_BLOCK_SIZE,
+					DEFAULT_AIO_FILE_BLOCK_SIZE));
 
 			if (uncompressed_cache)
 			{

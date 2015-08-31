@@ -13,7 +13,9 @@ namespace DB
 /// не влезают в основной буфер.
 ReadBufferAIO::ReadBufferAIO(const std::string & filename_, size_t buffer_size_, int flags_, char * existing_memory_)
 	: ReadBufferFromFileBase(buffer_size_ + DEFAULT_AIO_FILE_BLOCK_SIZE, existing_memory_, DEFAULT_AIO_FILE_BLOCK_SIZE),
-	  fill_buffer(BufferWithOwnMemory<ReadBuffer>(internalBuffer().size(), existing_memory_ + internalBuffer().size(),
+	  fill_buffer(BufferWithOwnMemory<ReadBuffer>(internalBuffer().size(),
+		  existing_memory_ ? existing_memory_ + Memory::align(internalBuffer().size(), DEFAULT_AIO_FILE_BLOCK_SIZE)
+						   : nullptr,
 		  DEFAULT_AIO_FILE_BLOCK_SIZE)),
 	  filename(filename_)
 {

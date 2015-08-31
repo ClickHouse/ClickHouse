@@ -36,7 +36,14 @@ private:
 		if (!file_in)
 		{
 			if (memory)
-				memory->resize(buf_size);
+			{
+				if (aio_threshold == 0 || estimated_size < aio_threshold)
+					memory->resize(buf_size);
+				else
+					memory->resize(
+						2 * Memory::align(buf_size + DEFAULT_AIO_FILE_BLOCK_SIZE, DEFAULT_AIO_FILE_BLOCK_SIZE));
+			}
+
 			file_in = createReadBufferFromFileBase(
 				path, estimated_size, aio_threshold, buf_size, -1, memory ? &(*memory)[0] : nullptr);
 			compressed_in = &*file_in;
