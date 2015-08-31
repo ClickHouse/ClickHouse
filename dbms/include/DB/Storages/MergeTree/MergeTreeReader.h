@@ -156,7 +156,6 @@ private:
 	struct Stream
 	{
 		MarkCache::MappedPtr marks;
-		Memory & memory;
 		ReadBuffer * data_buffer;
 		std::unique_ptr<CachedCompressedReadBuffer> cached_buffer;
 		std::unique_ptr<CompressedReadBufferFromFile> non_cached_buffer;
@@ -169,7 +168,7 @@ private:
 		Stream(
 			const String & path_prefix_, UncompressedCache * uncompressed_cache, MarkCache * mark_cache,
 			const MarkRanges & all_mark_ranges, size_t aio_threshold, size_t max_read_buffer_size, Memory & memory)
-			: memory(memory), path_prefix(path_prefix_)
+			: path_prefix(path_prefix_)
 		{
 			loadMarks(mark_cache);
 			size_t max_mark_range = 0;
