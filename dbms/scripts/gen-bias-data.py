@@ -76,7 +76,7 @@ def perform_query(host, port):
     query += "FROM data_source GROUP BY KeyID"
     return subprocess.check_output(["clickhouse-client", "--host", host, "--port", port, "--query", query])
 
-def parse_result(output):
+def parse_clickhouse_response(output):
     parsed = []
     lines = output.decode().split("\n")
     for cur_line in lines:
@@ -85,7 +85,7 @@ def parse_result(output):
             parsed.append([float(rows[0]), float(rows[1])])
     return parsed
 
-def accumulate(stats, data):
+def accumulate_data(stats, data):
     if not stats:
         stats = deepcopy(data)
     else:
@@ -93,7 +93,7 @@ def accumulate(stats, data):
             row1[1] += row2[1];
     return stats
 
-def generate_result(stats, count):
+def generate_raw_result(stats, count):
 	expected_tab = []
 	bias_tab = []
 	for row in stats:
@@ -197,7 +197,10 @@ def generate_sample(raw_estimates, biases, n_generated):
 
 	return final_result
 
-def dump_tables(stats):
+def dump_arrays(stats):
+
+	print("Size of each array: {0}\n".format(len(stats)))
+
 	is_first = True
 	sep = ''
 
@@ -228,8 +231,8 @@ def start():
 	parser.add_argument("-p", "--port", type=int, default=9000, help="clickhouse client TCP port");
 	parser.add_argument("-t", "--http_port", type=int, default=8123, help="clickhouse HTTP port");
 	parser.add_argument("-i", "--iterations", type=int, default=5000, help="number of iterations");
-	parser.add_argument("-s", "--samples", type=int, default=700000, help="number of sample values");
-	parser.add_argument("-g", "--generated", type=int, default=200, help="number of generated values");
+	parser.add_argument("-s", "--generated", type=int, default=700000, help="number of generated values");
+	parser.add_argument("-g", "--samples", type=int, default=200, help="number of sampled values");
 	args = parser.parse_args()
 
 	stats = []
@@ -237,13 +240,13 @@ def start():
 	for i in range(0, args.iterations):
 		print(i + 1)
 		sys.stdout.flush()
-		generate_data_source(args.host, str(args.port), str(args.http_port), 0, args.samples, 1000)
+		generate_data_source(args.host, str(args.port), str(args.http_port), 0, args.generated, 1000)
 		output = perform_query(args.host, str(args.port))
-		data = parse_result(output)
-		stats = accumulate(stats, data)
+		data = parse_clickhouse_response(output)
+		stats = accumulate_data(stats, data)
 
-	result = generate_result(stats, args.iterations)
-	sample = generate_sample(result[0], result[1], args.generated)
-	dump_tables(sample)
+	result = generate_raw_result(stats, args.iterations)
+	sample = generate_sample(result[0], result[1], args.samples)
+	dump_arrays(sample)
 
 if __name__ == "__main__": start()
