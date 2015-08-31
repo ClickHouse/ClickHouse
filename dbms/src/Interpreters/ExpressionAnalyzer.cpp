@@ -87,6 +87,18 @@ const std::unordered_set<String> possibly_injective_function_names
 	"dictGetDateTime"
 };
 
+static bool functionIsInOperator(const String & name)
+{
+	return name == "in" || name == "notIn";
+}
+
+static bool functionIsInOrGlobalInOperator(const String & name)
+{
+	return name == "in" || name == "notIn" || name == "globalIn" || name == "globalNotIn";
+}
+
+
+
 void ExpressionAnalyzer::init()
 {
 	select_query = typeid_cast<ASTSelectQuery *>(&*ast);
@@ -95,6 +107,7 @@ void ExpressionAnalyzer::init()
 	LogicalExpressionsOptimizer logical_expressions_optimizer(select_query, settings);
 	logical_expressions_optimizer.optimizeDisjunctiveEqualityChains();
 
+	/// Добавляет в множество известных алиасов те, которые объявлены в структуре таблицы (ALIAS-столбцы).
 	addStorageAliases();
 
 	/// Создаёт словарь aliases: alias -> ASTPtr
@@ -102,6 +115,9 @@ void ExpressionAnalyzer::init()
 
 	/// Common subexpression elimination. Rewrite rules.
 	normalizeTree();
+
+	/// Выполнение скалярных подзапросов - замена их на значения-константы.
+	executeScalarSubqueries();
 
 	/// GROUP BY injective function elimination.
 	optimizeGroupBy();
@@ -146,7 +162,10 @@ void ExpressionAnalyzer::analyzeAggregation()
 
 	if (select_query && select_query->join)
 	{
-		getRootActions(typeid_cast<ASTJoin &>(*select_query->join).using_expr_list, true, false, temp_actions);
+		auto join = typeid_cast<ASTJoin &>(*select_query->join);
+		if (join.using_expr_list)
+			getRootActions(join.using_expr_list, true, false, temp_actions);
+
 		addJoinAction(temp_actions, true);
 	}
 
@@ -220,9 +239,10 @@ void ExpressionAnalyzer::analyzeAggregation()
 
 void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables()
 {
+	/// Преобразует GLOBAL-подзапросы во внешние таблицы; кладёт их в словарь external_tables: name -> StoragePtr.
 	initGlobalSubqueries(ast);
 
-	/// Создаёт словарь external_tables: name -> StoragePtr.
+	/// Добавляет уже существующие внешние таблицы (не подзапросы) в словарь external_tables.
 	findExternalTables(ast);
 }
 
@@ -385,7 +405,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(
 		}
 
 		/// Может быть указано IN t, где t - таблица, что равносильно IN (SELECT * FROM t).
-		if (func_node->name == "in" || func_node->name == "notIn" || func_node->name == "globalIn" || func_node->name == "globalNotIn")
+		if (functionIsInOrGlobalInOperator(func_node->name))
 			if (ASTIdentifier * right = typeid_cast<ASTIdentifier *>(&*func_node->arguments->children.at(1)))
 				right->kind = ASTIdentifier::Table;
 
@@ -525,6 +545,145 @@ void ExpressionAnalyzer::normalizeTreeImpl(
 	finished_asts[initial_ast] = ast;
 }
 
+
+void ExpressionAnalyzer::executeScalarSubqueries()
+{
+	if (!select_query)
+		executeScalarSubqueriesImpl(ast);
+	else
+	{
+		for (auto & child : ast->children)
+		{
+			/// Не опускаемся в FROM и JOIN.
+			if (child.get() != select_query->table.get() && child.get() != select_query->join.get())
+				executeScalarSubqueriesImpl(child);
+		}
+	}
+}
+
+
+static ASTPtr addTypeConversion(ASTLiteral * ast_, const String & type_name)
+{
+	if (0 == type_name.compare(0, strlen("Array"), "Array"))
+		return ast_;	/// Преобразование типов для массивов пока не поддерживаем.
+
+	auto ast = std::unique_ptr<ASTLiteral>(ast_);
+	ASTFunction * func = new ASTFunction(ast->range);
+	ASTPtr res = func;
+	func->alias = ast->alias;
+	ast->alias.clear();
+	func->kind = ASTFunction::FUNCTION;
+	func->name = "to" + type_name;
+	ASTExpressionList * exp_list = new ASTExpressionList(ast->range);
+	func->arguments = exp_list;
+	func->children.push_back(func->arguments);
+	exp_list->children.push_back(ast.release());
+	return res;
+}
+
+
+void ExpressionAnalyzer::executeScalarSubqueriesImpl(ASTPtr & ast)
+{
+	/** Заменяем подзапросы, возвращающие ровно одну строку
+	  * ("скалярные" подзапросы) на соответствующие константы.
+	  *
+	  * Если подзапрос возвращает более одного столбца, то он заменяется на кортеж констант.
+	  *
+	  * Особенности:
+	  *
+	  * Замена происходит во время анализа запроса, а не во время основной стадии выполнения.
+	  * Это значит, что не будет работать индикатор прогресса во время выполнения этих запросов,
+	  *  а также такие запросы нельзя будет прервать.
+	  *
+	  * Зато результат запросов может быть использован для индекса в таблице.
+	  *
+	  * Скалярные подзапросы выполняются на сервере-инициаторе запроса.
+	  * На удалённые серверы запрос отправляется с уже подставленными константами.
+	  */
+
+	if (ASTSubquery * subquery = typeid_cast<ASTSubquery *>(ast.get()))
+	{
+		Context subquery_context = context;
+		Settings subquery_settings = context.getSettings();
+		subquery_settings.limits.max_result_rows = 1;
+		subquery_settings.extremes = 0;
+		subquery_context.setSettings(subquery_settings);
+
+		ASTPtr query = subquery->children.at(0);
+		BlockIO res = InterpreterSelectQuery(query, subquery_context, QueryProcessingStage::Complete, subquery_depth + 1).execute();
+
+		Block block;
+		try
+		{
+			block = res.in->read();
+
+			if (!block)
+				throw Exception("Scalar subquery returned empty result", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
+
+			if (block.rows() != 1 || res.in->read())
+				throw Exception("Scalar subquery returned more than one row", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
+		}
+		catch (const Exception & e)
+		{
+			if (e.code() == ErrorCodes::TOO_MUCH_ROWS)
+				throw Exception("Scalar subquery returned more than one row", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
+			else
+				throw;
+		}
+
+		size_t columns = block.columns();
+		if (columns == 1)
+		{
+			ASTLiteral * lit = new ASTLiteral(ast->range, (*block.getByPosition(0).column)[0]);
+			lit->alias = subquery->alias;
+			ast = addTypeConversion(lit, block.getByPosition(0).type->getName());
+		}
+		else
+		{
+			ASTFunction * tuple = new ASTFunction(ast->range);
+			tuple->alias = subquery->alias;
+			ast = tuple;
+			tuple->kind = ASTFunction::FUNCTION;
+			tuple->name = "tuple";
+			ASTExpressionList * exp_list = new ASTExpressionList(ast->range);
+			tuple->arguments = exp_list;
+			tuple->children.push_back(tuple->arguments);
+
+			exp_list->children.resize(columns);
+			for (size_t i = 0; i < columns; ++i)
+			{
+				exp_list->children[i] = addTypeConversion(
+					new ASTLiteral(ast->range, (*block.getByPosition(i).column)[0]),
+					block.getByPosition(i).type->getName());
+			}
+		}
+	}
+	else
+	{
+		/** Не опускаемся в подзапросы в аргументах IN.
+		  * Но если аргумент - не подзапрос, то глубже внутри него могут быть подзапросы, и в них надо опускаться.
+		  */
+		ASTFunction * func = typeid_cast<ASTFunction *>(ast.get());
+		if (func && func->kind == ASTFunction::FUNCTION
+			&& functionIsInOrGlobalInOperator(func->name))
+		{
+			for (auto & child : ast->children)
+			{
+				if (child.get() != func->arguments)
+					executeScalarSubqueriesImpl(child);
+				else
+					for (size_t i = 0, size = func->arguments->children.size(); i < size; ++i)
+						if (i != 1 || !typeid_cast<ASTSubquery *>(func->arguments->children[i].get()))
+							executeScalarSubqueriesImpl(func->arguments->children[i]);
+			}
+		}
+		else
+			for (auto & child : ast->children)
+				executeScalarSubqueriesImpl(child);
+	}
+}
+
+
 void ExpressionAnalyzer::optimizeGroupBy()
 {
 	if (!(select_query && select_query->group_expression_list))
@@ -654,7 +813,7 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(ASTPtr & node, const Block & sampl
 		makeSetsForIndexImpl(child, sample_block);
 
 	ASTFunction * func = typeid_cast<ASTFunction *>(node.get());
-	if (func && func->kind == ASTFunction::FUNCTION && (func->name == "in" || func->name == "notIn"))
+	if (func && func->kind == ASTFunction::FUNCTION && functionIsInOperator(func->name))
 	{
 		IAST & args = *func->arguments;
 		ASTPtr & arg = args.children.at(1);
@@ -690,7 +849,8 @@ static SharedPtr<InterpreterSelectQuery> interpretSubquery(
 	  * Так как результат этого поздапроса - ещё не результат всего запроса.
 	  * Вместо этого работают ограничения
 	  *  max_rows_in_set, max_bytes_in_set, set_overflow_mode,
-	  *  max_rows_in_join, max_bytes_in_join, join_overflow_mode.
+	  *  max_rows_in_join, max_bytes_in_join, join_overflow_mode,
+	  *  которые проверяются отдельно (в объектах Set, Join).
 	  */
 	Context subquery_context = context;
 	Settings subquery_settings = context.getSettings();
@@ -737,10 +897,6 @@ static SharedPtr<InterpreterSelectQuery> interpretSubquery(
 
 void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name)
 {
-	/// Сгенерируем имя для внешней таблицы.
-	while (context.tryGetExternalTable("_data" + toString(external_table_id)))
-		++external_table_id;
-
 	if (const ASTIdentifier * table = typeid_cast<const ASTIdentifier *>(&*subquery_or_table_name))
 	{
 		/// Если это уже внешняя таблица, ничего заполять не нужно. Просто запоминаем ее наличие.
@@ -751,12 +907,19 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name)
 		}
 	}
 
+	/// Сгенерируем имя для внешней таблицы.
+	String external_table_name = "_data" + toString(external_table_id);
+	while (context.tryGetExternalTable(external_table_name)
+		|| external_tables.count(external_table_name))
+	{
+		++external_table_id;
+		external_table_name = "_data" + toString(external_table_id);
+	}
+
 	SharedPtr<InterpreterSelectQuery> interpreter = interpretSubquery(subquery_or_table_name, context, subquery_depth + 1);
 
 	Block sample = interpreter->getSampleBlock();
 	NamesAndTypesListPtr columns = new NamesAndTypesList(sample.getColumnsList());
-
-	String external_table_name = "_data" + toString(external_table_id);
 
 	/** Заменяем подзапрос на имя временной таблицы.
 	  * Именно в таком виде, запрос отправится на удалённый сервер.
@@ -1011,7 +1174,7 @@ struct ExpressionAnalyzer::ScopeStack
 		stack.emplace_back();
 		Level & prev = stack[stack.size() - 2];
 
-		ColumnsWithNameAndType all_columns;
+		ColumnsWithTypeAndName all_columns;
 		NameSet new_names;
 
 		for (NamesAndTypesList::const_iterator it = input_columns.begin(); it != input_columns.end(); ++it)
@@ -1024,7 +1187,7 @@ struct ExpressionAnalyzer::ScopeStack
 		const Block & prev_sample_block = prev.actions->getSampleBlock();
 		for (size_t i = 0, size = prev_sample_block.columns(); i < size; ++i)
 		{
-			const ColumnWithNameAndType & col = prev_sample_block.unsafeGetByPosition(i);
+			const ColumnWithTypeAndName & col = prev_sample_block.unsafeGetByPosition(i);
 			if (!new_names.count(col.name))
 				all_columns.push_back(col);
 		}
@@ -1057,7 +1220,7 @@ struct ExpressionAnalyzer::ScopeStack
 
 		for (size_t i = 0; i < added.size(); ++i)
 		{
-			const ColumnWithNameAndType & col = stack[level].actions->getSampleBlock().getByName(added[i]);
+			const ColumnWithTypeAndName & col = stack[level].actions->getSampleBlock().getByName(added[i]);
 			for (size_t j = level + 1; j < stack.size(); ++j)
 				stack[j].actions->addInput(col);
 		}
@@ -1210,7 +1373,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 				actions_stack.addAction(ExpressionAction::copyColumn(arg->getColumnName(), result_name));
 				NameSet joined_columns;
 				joined_columns.insert(result_name);
-				actions_stack.addAction(ExpressionAction::arrayJoin(joined_columns));
+				actions_stack.addAction(ExpressionAction::arrayJoin(joined_columns, false));
 			}
 
 			return;
@@ -1218,7 +1381,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 
 		if (node->kind == ASTFunction::FUNCTION)
 		{
-			if (node->name == "in" || node->name == "notIn" || node->name == "globalIn" || node->name == "globalNotIn")
+			if (functionIsInOrGlobalInOperator(node->name))
 			{
 				if (!no_subqueries)
 				{
@@ -1234,7 +1397,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 					{
 						/// Мы в той части дерева, которую не собираемся вычислять. Нужно только определить типы.
 						/// Не будем выполнять подзапросы и составлять множества. Вставим произвольный столбец правильного типа.
-						ColumnWithNameAndType fake_column;
+						ColumnWithTypeAndName fake_column;
 						fake_column.name = node->getColumnName();
 						fake_column.type = new DataTypeUInt8;
 						actions_stack.addAction(ExpressionAction::addColumn(fake_column));
@@ -1275,7 +1438,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 				}
 				else if (set)
 				{
-					ColumnWithNameAndType column;
+					ColumnWithTypeAndName column;
 					column.type = new DataTypeSet;
 
 					/// Если аргумент - множество, заданное перечислением значений, дадим ему уникальное имя,
@@ -1370,7 +1533,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 						///  потому что оно не однозначно определяет выражение (типы аргументов могут быть разными).
 						argument_names[i] = getUniqueName(actions_stack.getSampleBlock(), "__lambda");
 
-						ColumnWithNameAndType lambda_column;
+						ColumnWithTypeAndName lambda_column;
 						lambda_column.column = new ColumnExpression(1, lambda_actions, lambda_arguments, result_type, result_name);
 						lambda_column.type = argument_types[i];
 						lambda_column.name = argument_names[i];
@@ -1399,7 +1562,8 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 	else if (ASTLiteral * node = typeid_cast<ASTLiteral *>(&*ast))
 	{
 		DataTypePtr type = apply_visitor(FieldToDataType(), node->value);
-		ColumnWithNameAndType column;
+
+		ColumnWithTypeAndName column;
 		column.column = type->createConstColumn(1, node->value);
 		column.type = type;
 		column.name = node->getColumnName();
@@ -1506,7 +1670,7 @@ void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActionsPtr & actio
 		result_columns.insert(result_source.first);
 	}
 
-	actions->add(ExpressionAction::arrayJoin(result_columns));
+	actions->add(ExpressionAction::arrayJoin(result_columns, select_query->array_join_is_left));
 }
 
 bool ExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & chain, bool only_types)
@@ -1547,7 +1711,8 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 	ExpressionActionsChain::Step & step = chain.steps.back();
 
 	ASTJoin & ast_join = typeid_cast<ASTJoin &>(*select_query->join);
-	getRootActions(ast_join.using_expr_list, only_types, false, step.actions);
+	if (ast_join.using_expr_list)
+		getRootActions(ast_join.using_expr_list, only_types, false, step.actions);
 
 	/// Не поддерживается два JOIN-а с одинаковым подзапросом, но разными USING-ами.
 	String join_id = ast_join.table->getColumnName();
@@ -1887,7 +2052,7 @@ void ExpressionAnalyzer::collectUsedColumns()
 	}
 
 /*	for (const auto & name_type : columns_added_by_join)
-		std::cerr << "JOINed column (required, not key): " << name_type.first << std::endl;
+		std::cerr << "JOINed column (required, not key): " << name_type.name << std::endl;
 	std::cerr << std::endl;*/
 
 	/// Вставляем в список требуемых столбцов столбцы, нужные для вычисления ARRAY JOIN.
@@ -1964,17 +2129,20 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAnd
 	else if (typeid_cast<const ASTSubquery *>(node.table.get()))
 	{
 		const auto & subquery = node.table->children.at(0);
-		nested_result_sample = InterpreterSelectQuery(subquery, context, QueryProcessingStage::Complete, subquery_depth + 1).getSampleBlock();
+		nested_result_sample = InterpreterSelectQuery::getSampleBlock(subquery, context);
 	}
 
-	auto & keys = typeid_cast<ASTExpressionList &>(*node.using_expr_list);
-	for (const auto & key : keys.children)
+	if (node.using_expr_list)
 	{
-		if (!join_key_names_left_set.insert(key->getColumnName()).second)
-			throw Exception("Duplicate column in USING list", ErrorCodes::DUPLICATE_COLUMN);
+		auto & keys = typeid_cast<ASTExpressionList &>(*node.using_expr_list);
+		for (const auto & key : keys.children)
+		{
+			if (!join_key_names_left_set.insert(key->getColumnName()).second)
+				throw Exception("Duplicate column in USING list", ErrorCodes::DUPLICATE_COLUMN);
 
-		if (!join_key_names_right_set.insert(key->getAliasOrColumnName()).second)
-			throw Exception("Duplicate column in USING list", ErrorCodes::DUPLICATE_COLUMN);
+			if (!join_key_names_right_set.insert(key->getAliasOrColumnName()).second)
+				throw Exception("Duplicate column in USING list", ErrorCodes::DUPLICATE_COLUMN);
+		}
 	}
 
 	for (const auto i : ext::range(0, nested_result_sample.columns()))

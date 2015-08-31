@@ -207,7 +207,7 @@ BlockInputStreams StorageChunkMerger::read(
 Block StorageChunkMerger::getBlockWithVirtualColumns(const Storages & selected_tables) const
 {
 	Block res;
-	ColumnWithNameAndType _table(new ColumnString, new DataTypeString, _table_column_name);
+	ColumnWithTypeAndName _table(new ColumnString, new DataTypeString, _table_column_name);
 
 	for (Storages::const_iterator it = selected_tables.begin(); it != selected_tables.end(); ++it)
 		if ((*it)->getName() != "Chunks")
@@ -545,7 +545,8 @@ bool StorageChunkMerger::MergeTask::mergeChunks(const Storages & chunks)
 			{
 				LOG_INFO(log, "Shutdown requested while merging chunks.");
 				output->writeSuffix();
-				new_storage.removeReference();	/// После этого временные данные удалятся.
+				output = nullptr;
+				executeQuery("DROP TABLE IF EXISTS " + new_table_full_name, context, true);
 				return false;
 			}
 
@@ -575,14 +576,16 @@ bool StorageChunkMerger::MergeTask::mergeChunks(const Storages & chunks)
 					/// Отцепляем исходную таблицу. Ее данные и метаданные остаются на диске.
 					tables_to_drop.push_back(context.detachTable(chunk_merger.source_database, src_name));
 
-					/// Создаем на ее месте ChunkRef. Это возможно только потому что у ChunkRef нет ни, ни метаданных.
+					/// Создаем на ее месте ChunkRef. Это возможно только потому что у ChunkRef нет ни данных, ни метаданных.
 					try
 					{
-						context.addTable(chunk_merger.source_database, src_name, StorageChunkRef::create(src_name, context, chunk_merger.source_database, new_table_name, false));
+						context.addTable(chunk_merger.source_database, src_name,
+							StorageChunkRef::create(src_name, context, chunk_merger.source_database, new_table_name, false));
 					}
 					catch (...)
 					{
-						LOG_ERROR(log, "Chunk " + src_name + " was removed but not replaced. Its data is stored in table " << new_table_name << ". You may need to resolve this manually.");
+						LOG_ERROR(log, "Chunk " + src_name + " was removed but not replaced. Its data is stored in table "
+							<< new_table_name << ". You may need to resolve this manually.");
 
 						throw;
 					}
@@ -601,9 +604,6 @@ bool StorageChunkMerger::MergeTask::mergeChunks(const Storages & chunks)
 			///  что-нибудь может сломаться.
 		}
 
-		/// Сейчас на new_storage ссылаются таблицы типа ChunkRef. Удалим лишнюю ссылку, которая была при создании.
-		new_storage.removeReference();
-
 		LOG_TRACE(log, "Merged chunks.");
 
 		return true;
@@ -613,6 +613,7 @@ bool StorageChunkMerger::MergeTask::mergeChunks(const Storages & chunks)
 		Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
 
 		currently_written_groups.erase(new_table_full_name);
+		executeQuery("DROP TABLE IF EXISTS " + new_table_full_name, context, true);
 
 		throw;
 	}

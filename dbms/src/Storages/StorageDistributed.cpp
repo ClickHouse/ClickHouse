@@ -64,7 +64,7 @@ StorageDistributed::StorageDistributed(
 	: name(name_), columns(columns_),
 	remote_database(remote_database_), remote_table(remote_table_),
 	context(context_), cluster(cluster_),
-	sharding_key_expr(sharding_key_ ? ExpressionAnalyzer(sharding_key_, context, *columns).getActions(false) : nullptr),
+	sharding_key_expr(sharding_key_ ? ExpressionAnalyzer(sharding_key_, context, nullptr, *columns).getActions(false) : nullptr),
 	sharding_key_column_name(sharding_key_ ? sharding_key_->getColumnName() : String{}),
 	write_enabled(!data_path_.empty() && (cluster.getLocalNodesNum() + cluster.pools.size() < 2 || sharding_key_)),
 	path(data_path_.empty() ? "" : (data_path_ + escapeForFileName(name) + '/'))
@@ -88,7 +88,7 @@ StorageDistributed::StorageDistributed(
 	name(name_), columns(columns_),
 	remote_database(remote_database_), remote_table(remote_table_),
 	context(context_), cluster(cluster_),
-	sharding_key_expr(sharding_key_ ? ExpressionAnalyzer(sharding_key_, context, *columns).getActions(false) : nullptr),
+	sharding_key_expr(sharding_key_ ? ExpressionAnalyzer(sharding_key_, context, nullptr, *columns).getActions(false) : nullptr),
 	sharding_key_column_name(sharding_key_ ? sharding_key_->getColumnName() : String{}),
 	write_enabled(!data_path_.empty() && (cluster.getLocalNodesNum() + cluster.pools.size() < 2 || sharding_key_)),
 	path(data_path_.empty() ? "" : (data_path_ + escapeForFileName(name) + '/'))
@@ -154,7 +154,7 @@ BlockInputStreams StorageDistributed::read(
 
 	size_t result_size = (cluster.pools.size() * settings.max_parallel_replicas) + cluster.getLocalNodesNum();
 
-	processed_stage = result_size == 1
+	processed_stage = result_size == 1 || settings.distributed_group_by_no_merge
 		? QueryProcessingStage::Complete
 		: QueryProcessingStage::WithMergeableState;
 

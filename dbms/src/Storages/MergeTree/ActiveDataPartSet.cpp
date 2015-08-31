@@ -103,9 +103,9 @@ size_t ActiveDataPartSet::size() const
 }
 
 
-String ActiveDataPartSet::getPartName(DayNum_t left_date, DayNum_t right_date, UInt64 left_id, UInt64 right_id, UInt64 level)
+String ActiveDataPartSet::getPartName(DayNum_t left_date, DayNum_t right_date, Int64 left_id, Int64 right_id, UInt64 level)
 {
-	DateLUT & date_lut = DateLUT::instance();
+	const auto & date_lut = DateLUT::instance();
 
 	/// Имя директории для куска иммет вид: YYYYMMDD_YYYYMMDD_N_N_L.
 	String res;
@@ -133,7 +133,7 @@ String ActiveDataPartSet::getPartName(DayNum_t left_date, DayNum_t right_date, U
 bool ActiveDataPartSet::isPartDirectory(const String & dir_name, Poco::RegularExpression::MatchVec * out_matches)
 {
 	Poco::RegularExpression::MatchVec matches;
-	static Poco::RegularExpression file_name_regexp("^(\\d{8})_(\\d{8})_(\\d+)_(\\d+)_(\\d+)");
+	static Poco::RegularExpression file_name_regexp("^(\\d{8})_(\\d{8})_(-?\\d+)_(-?\\d+)_(\\d+)");
 	bool res = (file_name_regexp.match(dir_name, 0, matches) && 6 == matches.size());
 	if (out_matches)
 		*out_matches = matches;
@@ -153,16 +153,21 @@ void ActiveDataPartSet::parsePartName(const String & file_name, Part & part, con
 
 	const Poco::RegularExpression::MatchVec & matches = *matches_p;
 
-	DateLUT & date_lut = DateLUT::instance();
+	const auto & date_lut = DateLUT::instance();
 
 	part.left_date = date_lut.YYYYMMDDToDayNum(parse<UInt32>(file_name.substr(matches[1].offset, matches[1].length)));
 	part.right_date = date_lut.YYYYMMDDToDayNum(parse<UInt32>(file_name.substr(matches[2].offset, matches[2].length)));
-	part.left = parse<UInt64>(file_name.substr(matches[3].offset, matches[3].length));
-	part.right = parse<UInt64>(file_name.substr(matches[4].offset, matches[4].length));
+	part.left = parse<Int64>(file_name.substr(matches[3].offset, matches[3].length));
+	part.right = parse<Int64>(file_name.substr(matches[4].offset, matches[4].length));
 	part.level = parse<UInt32>(file_name.substr(matches[5].offset, matches[5].length));
 
-	part.left_month = date_lut.toFirstDayNumOfMonth(part.left_date);
-	part.right_month = date_lut.toFirstDayNumOfMonth(part.right_date);
+	DayNum_t left_month = date_lut.toFirstDayNumOfMonth(part.left_date);
+	DayNum_t right_month = date_lut.toFirstDayNumOfMonth(part.right_date);
+
+	if (left_month != right_month)
+		throw Exception("Part name " + file_name + " contains different months", ErrorCodes::BAD_DATA_PART_NAME);
+
+	part.month = left_month;
 }
 
 

@@ -9,7 +9,7 @@ void TabSeparatedBlockOutputStream::write(const Block & block)
 	size_t columns = block.columns();
 	for (size_t i = 0; i < columns; ++i)
 	{
-		const ColumnWithNameAndType & col = block.getByPosition(i);
+		const ColumnWithTypeAndName & col = block.getByPosition(i);
 
 		size_t rows = block.rows();
 		for (size_t j = 0; j < rows; ++j)

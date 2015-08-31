@@ -1,0 +1,7 @@
+origin: git@github.com:jandrewrogers/MetroHash.git
+commit d9dee18a54a8a6766e24c1950b814ac7ca9d1a89
+Merge: 761e8a4 3d06b24
+Author: J. Andrew Rogers <andrew@jarbox.org>
+Date:   Sat Jun 6 16:12:06 2015 -0700
+
+    modified README

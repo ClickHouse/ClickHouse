@@ -39,7 +39,7 @@ private:
 
 	Block getSampleBlock()
 	{
-		ColumnWithNameAndType col;
+		ColumnWithTypeAndName col;
 		col.name = "result";
 		col.type = new DataTypeUInt8;
 		col.column = col.type->createColumn();
@@ -56,7 +56,7 @@ private:
 
 		bool res = context.isTableExist(ast.database, ast.table);
 
-		ColumnWithNameAndType col;
+		ColumnWithTypeAndName col;
 		col.name = "result";
 		col.type = new DataTypeUInt8;
 		col.column = new ColumnConstUInt8(1, res);

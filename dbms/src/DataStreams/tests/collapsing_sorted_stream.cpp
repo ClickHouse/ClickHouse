@@ -32,7 +32,7 @@ int main(int argc, char ** argv)
 		Block block1;
 
 		{
-			ColumnWithNameAndType column1;
+			ColumnWithTypeAndName column1;
 			column1.name = "Sign";
 			column1.type = new DataTypeInt8;
 			column1.column = new ColumnInt8;
@@ -40,7 +40,7 @@ int main(int argc, char ** argv)
 			column1.column->insert(DB::Int64(-1));
 			block1.insert(column1);
 
-			ColumnWithNameAndType column2;
+			ColumnWithTypeAndName column2;
 			column2.name = "CounterID";
 			column2.type = new DataTypeUInt32;
 			column2.column = new ColumnUInt32;
@@ -52,7 +52,7 @@ int main(int argc, char ** argv)
 		Block block2;
 
 		{
-			ColumnWithNameAndType column1;
+			ColumnWithTypeAndName column1;
 			column1.name = "Sign";
 			column1.type = new DataTypeInt8;
 			column1.column = new ColumnInt8;
@@ -60,7 +60,7 @@ int main(int argc, char ** argv)
 			column1.column->insert(DB::Int64(1));
 			block2.insert(column1);
 
-			ColumnWithNameAndType column2;
+			ColumnWithTypeAndName column2;
 			column2.name = "CounterID";
 			column2.type = new DataTypeUInt32;
 			column2.column = new ColumnUInt32;

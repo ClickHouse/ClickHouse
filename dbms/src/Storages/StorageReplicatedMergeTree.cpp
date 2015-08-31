@@ -26,7 +26,7 @@ namespace DB
 const auto ERROR_SLEEP_MS = 1000;
 const auto MERGE_SELECTING_SLEEP_MS = 5 * 1000;
 
-const auto RESERVED_BLOCK_NUMBERS = 200;
+const Int64 RESERVED_BLOCK_NUMBERS = 200;
 
 
 StorageReplicatedMergeTree::StorageReplicatedMergeTree(
@@ -156,7 +156,7 @@ StoragePtr StorageReplicatedMergeTree::create(
 	size_t index_granularity_,
 	MergeTreeData::Mode mode_,
 	const String & sign_column_,
-	const Names & columns_to_sum_ = Names(),
+	const Names & columns_to_sum_,
 	const MergeTreeSettings & settings_)
 {
 	auto res = new StorageReplicatedMergeTree{
@@ -1272,7 +1272,8 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 		auto zookeeper = getZooKeeper();
 
 		/// Можно слить куски, если все номера между ними заброшены - не соответствуют никаким блокам.
-		for (UInt64 number = left->right + 1; number <= right->left - 1; ++number)	/// Номера блоков больше нуля.
+		/// Номера до RESERVED_BLOCK_NUMBERS всегда не соответствуют никаким блокам.
+		for (Int64 number = std::max(RESERVED_BLOCK_NUMBERS, left->right + 1); number <= right->left - 1; ++number)
 		{
 			String path1 = zookeeper_path +              "/block_numbers/" + month_name + "/block-" + padIndex(number);
 			String path2 = zookeeper_path + "/nonincrement_block_numbers/" + month_name + "/block-" + padIndex(number);
@@ -1402,7 +1403,7 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 				for (size_t i = 0; i + 1 < parts.size(); ++i)
 				{
 					/// Уберем больше не нужные отметки о несуществующих блоках.
-					for (UInt64 number = parts[i]->right + 1; number <= parts[i + 1]->left - 1; ++number)
+					for (Int64 number = std::max(RESERVED_BLOCK_NUMBERS, parts[i]->right + 1); number <= parts[i + 1]->left - 1; ++number)
 					{
 						zookeeper->tryRemove(zookeeper_path +              "/block_numbers/" + month_name + "/block-" + padIndex(number));
 						zookeeper->tryRemove(zookeeper_path + "/nonincrement_block_numbers/" + month_name + "/block-" + padIndex(number));
@@ -2014,7 +2015,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 	ColumnPtr column_ptr = column;
 	column->getData()[0] = 0;
 	column->getData()[1] = 1;
-	virtual_columns_block.insert(ColumnWithNameAndType(column_ptr, new DataTypeUInt8, "_replicated"));
+	virtual_columns_block.insert(ColumnWithTypeAndName(column_ptr, new DataTypeUInt8, "_replicated"));
 
 	/// Если запрошен хотя бы один виртуальный столбец, пробуем индексировать
 	if (!virt_column_names.empty())
@@ -2214,8 +2215,8 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 static String getFakePartNameForDrop(const String & month_name, UInt64 left, UInt64 right)
 {
 	/// Диапазон дат - весь месяц.
-	DateLUT & lut = DateLUT::instance();
-	time_t start_time = DateLUT::instance().YYYYMMDDToDate(parse<UInt32>(month_name + "01"));
+	const auto & lut = DateLUT::instance();
+	time_t start_time = lut.YYYYMMDDToDate(parse<UInt32>(month_name + "01"));
 	DayNum_t left_date = lut.toDayNum(start_time);
 	DayNum_t right_date = DayNum_t(static_cast<size_t>(left_date) + lut.daysInMonth(start_time) - 1);
 
@@ -2241,7 +2242,7 @@ void StorageReplicatedMergeTree::dropUnreplicatedPartition(const Field & partiti
 
 	for (const auto & part : parts)
 	{
-		if (!(part->left_month == part->right_month && part->left_month == month))
+		if (part->month != month)
 			continue;
 
 		LOG_DEBUG(log, "Removing unreplicated part " << part->name);
@@ -2271,7 +2272,7 @@ void StorageReplicatedMergeTree::dropPartition(const Field & field, bool detach,
 
 	/// TODO: Делать запрос в лидера по TCP.
 	if (!is_leader_node)
-		throw Exception("DROP PARTITION can only be done on leader replica.", ErrorCodes::NOT_LEADER);
+		throw Exception(String(detach ? "DETACH" : "DROP") + " PARTITION can only be done on leader replica.", ErrorCodes::NOT_LEADER);
 
 	/** Пропустим один номер в block_numbers для удаляемого месяца, и будем удалять только куски до этого номера.
 	  * Это запретит мерджи удаляемых кусков с новыми вставляемыми данными.
@@ -2279,7 +2280,7 @@ void StorageReplicatedMergeTree::dropPartition(const Field & field, bool detach,
 	  * NOTE: Если понадобится аналогично поддержать запрос DROP PART, для него придется придумать какой-нибудь новый механизм,
 	  *        чтобы гарантировать этот инвариант.
 	  */
-	UInt64 right;
+	Int64 right;
 
 	{
 		AbandonableLockInZooKeeper block_number_lock = allocateBlockNumber(month_name);
@@ -2329,7 +2330,7 @@ void StorageReplicatedMergeTree::attachPartition(const Field & field, bool unrep
 	String partition;
 
 	if (attach_part)
-		partition = field.getType() == Field::Types::UInt64 ? toString(field.get<UInt64>()) : field.safeGet<String>();
+		partition = field.safeGet<String>();
 	else
 		partition = MergeTreeData::getMonthName(field);
 
@@ -2369,18 +2370,15 @@ void StorageReplicatedMergeTree::attachPartition(const Field & field, bool unrep
 
 	/// Выделим добавляемым кускам максимальные свободные номера, меньшие RESERVED_BLOCK_NUMBERS.
 	/// NOTE: Проверка свободности номеров никак не синхронизируется. Выполнять несколько запросов ATTACH/DETACH/DROP одновременно нельзя.
-	UInt64 min_used_number = RESERVED_BLOCK_NUMBERS;
+	Int64 min_used_number = RESERVED_BLOCK_NUMBERS;
+	DayNum_t month = DateLUT::instance().makeDayNum(parse<UInt16>(partition.substr(0, 4)), parse<UInt8>(partition.substr(4, 2)), 0);
 
 	{
-		/// TODO Это необходимо лишь в пределах одного месяца.
 		auto existing_parts = data.getDataParts();
 		for (const auto & part : existing_parts)
-			min_used_number = std::min(min_used_number, part->left);
+			if (part->month == month)
+				min_used_number = std::min(min_used_number, part->left);
 	}
-
-	if (parts.size() > min_used_number)
-		throw Exception("Not enough free small block numbers for attaching parts: "
-			+ toString(parts.size()) + " needed, " + toString(min_used_number) + " available", ErrorCodes::NOT_ENOUGH_BLOCK_NUMBERS);
 
 	/// Добавим записи в лог.
 	std::reverse(parts.begin(), parts.end());
@@ -2669,16 +2667,29 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
 		res.inserts_in_queue = 0;
 		res.merges_in_queue = 0;
 		res.queue_oldest_time = 0;
+		res.inserts_oldest_time = 0;
+		res.merges_oldest_time = 0;
 
 		for (const LogEntryPtr & entry : queue)
 		{
-			if (entry->type == LogEntry::GET_PART)
-				++res.inserts_in_queue;
-			if (entry->type == LogEntry::MERGE_PARTS)
-				++res.merges_in_queue;
-
 			if (entry->create_time && (!res.queue_oldest_time || entry->create_time < res.queue_oldest_time))
 				res.queue_oldest_time = entry->create_time;
+
+			if (entry->type == LogEntry::GET_PART)
+			{
+				++res.inserts_in_queue;
+
+				if (entry->create_time && (!res.inserts_oldest_time || entry->create_time < res.inserts_oldest_time))
+					res.inserts_oldest_time = entry->create_time;
+			}
+
+			if (entry->type == LogEntry::MERGE_PARTS)
+			{
+				++res.merges_in_queue;
+
+				if (entry->create_time && (!res.merges_oldest_time || entry->create_time < res.merges_oldest_time))
+					res.merges_oldest_time = entry->create_time;
+			}
 		}
 	}
 

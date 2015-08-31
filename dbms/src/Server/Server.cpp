@@ -485,15 +485,12 @@ int Server::main(const std::vector<std::string> & args)
 
 	if (config().has("interserver_http_port"))
 	{
-		String this_host;
-		if (config().has("interserver_http_host"))
-		{
-			this_host = config().getString("interserver_http_host");
-		}
-		else
+		String this_host = config().getString("interserver_http_host", "");
+
+		if (this_host.empty())
 		{
 			this_host = getFQDNOrHostName();
-			LOG_DEBUG(log, "Configuration parameter 'interserver_http_host' doesn't exist. Will use '" + this_host + "' as replica host.");
+			LOG_DEBUG(log, "Configuration parameter 'interserver_http_host' doesn't exist or exists and empty. Will use '" + this_host + "' as replica host.");
 		}
 
 		String port_str = config().getString("interserver_http_port");
@@ -533,7 +530,12 @@ int Server::main(const std::vector<std::string> & args)
 	LOG_DEBUG(log, "Loaded metadata.");
 
 	/// Создаём системные таблицы.
-	global_context->addDatabase("system");
+	if (!global_context->isDatabaseExist("system"))
+	{
+		Poco::File(path + "data/system").createDirectories();
+		Poco::File(path + "metadata/system").createDirectories();
+		global_context->addDatabase("system");
+	}
 
 	global_context->addTable("system", "one",		StorageSystemOne::create("one"));
 	global_context->addTable("system", "numbers", 	StorageSystemNumbers::create("numbers"));
@@ -546,7 +548,7 @@ int Server::main(const std::vector<std::string> & args)
 	global_context->addTable("system", "events", 	StorageSystemEvents::create("events"));
 	global_context->addTable("system", "merges",	StorageSystemMerges::create("merges"));
 	global_context->addTable("system", "replicas",	StorageSystemReplicas::create("replicas"));
-	global_context->addTable("system", "dictionaries",	StorageSystemDictionaries::create("dictionaries"));
+	global_context->addTable("system", "dictionaries", StorageSystemDictionaries::create("dictionaries"));
 	global_context->addTable("system", "columns",   StorageSystemColumns::create("columns"));
 	global_context->addTable("system", "functions", StorageSystemFunctions::create("functions"));
 	global_context->addTable("system", "clusters", StorageSystemClusters::create("clusters", *global_context));

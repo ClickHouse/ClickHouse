@@ -31,7 +31,7 @@ int main(int argc, char ** argv)
 
 		Block block;
 
-		ColumnWithNameAndType column_x;
+		ColumnWithTypeAndName column_x;
 		column_x.name = "x";
 		column_x.type = new DataTypeInt16;
 		ColumnInt16 * x = new ColumnInt16;
@@ -46,7 +46,7 @@ int main(int argc, char ** argv)
 
 		const char * strings[] = {"abc", "def", "abcd", "defg", "ac"};
 
-		ColumnWithNameAndType column_s1;
+		ColumnWithTypeAndName column_s1;
 		column_s1.name = "s1";
 		column_s1.type = new DataTypeString;
 		column_s1.column = new ColumnString;
@@ -56,7 +56,7 @@ int main(int argc, char ** argv)
 
 		block.insert(column_s1);
 
-		ColumnWithNameAndType column_s2;
+		ColumnWithTypeAndName column_s2;
 		column_s2.name = "s2";
 		column_s2.type = new DataTypeString;
 		column_s2.column = new ColumnString;
@@ -86,7 +86,7 @@ int main(int argc, char ** argv)
 		Block sample;
 		for (DataTypes::const_iterator it = result_types->begin(); it != result_types->end(); ++it)
 		{
-			ColumnWithNameAndType col;
+			ColumnWithTypeAndName col;
 			col.type = *it;
 			sample.insert(col);
 		}

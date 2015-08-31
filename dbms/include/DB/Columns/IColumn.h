@@ -176,6 +176,7 @@ public:
 
 	/** Размножить все значения столько раз, сколько прописано в offsets.
 	  * (i-е значение размножается в offsets[i] - offsets[i - 1] значений.)
+	  * Необходимо для реализации операции ARRAY JOIN.
 	  */
 	typedef UInt64 Offset_t;
 	typedef PODArray<Offset_t> Offsets_t;

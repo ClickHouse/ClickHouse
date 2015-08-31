@@ -40,7 +40,7 @@ void PrettySpaceBlockOutputStream::write(const Block & block_)
 		if (i != 0)
 			writeCString("   ", ostr);
 
-		const ColumnWithNameAndType & col = block.getByPosition(i);
+		const ColumnWithTypeAndName & col = block.getByPosition(i);
 
 		if (col.type->isNumeric())
 		{
@@ -74,7 +74,7 @@ void PrettySpaceBlockOutputStream::write(const Block & block_)
 			if (j != 0)
 				writeCString("   ", ostr);
 
-			const ColumnWithNameAndType & col = block.getByPosition(j);
+			const ColumnWithTypeAndName & col = block.getByPosition(j);
 
 			if (col.type->isNumeric())
 			{

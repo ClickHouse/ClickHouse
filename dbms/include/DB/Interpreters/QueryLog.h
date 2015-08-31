@@ -5,8 +5,8 @@
 #include <Poco/Net/IPAddress.h>
 #include <DB/Core/Types.h>
 #include <DB/Common/ConcurrentBoundedQueue.h>
+#include <DB/Storages/IStorage.h>
 #include <DB/Interpreters/Context.h>
-#include <statdaemons/Stopwatch.h>
 
 
 namespace DB
@@ -34,40 +34,33 @@ struct QueryLogElement
 		SHUTDOWN = 0,		/// Эта запись имеет служебное значение.
 		QUERY_START = 1,
 		QUERY_FINISH = 2,
+		EXCEPTION_BEFORE_START = 3,
+		EXCEPTION_WHILE_PROCESSING = 4,
 	};
 
-	enum Interface
-	{
-		TCP = 1,
-		HTTP = 2,
-		OLAP_HTTP = 3,
-	};
-
-	enum HTTPMethod
-	{
-		UNKNOWN = 0,
-		GET = 1,
-		POST = 2,
-	};
-
-	Type type;
+	Type type = QUERY_START;
 
 	/// В зависимости от типа, не все поля могут быть заполнены.
 
-	time_t event_time;
-	time_t query_start_time;
-	UInt64 query_duration_ms;
+	time_t event_time{};
+	time_t query_start_time{};
+	UInt64 query_duration_ms{};
 
-	UInt64 read_rows;
-	UInt64 read_bytes;
+	UInt64 read_rows{};
+	UInt64 read_bytes{};
 
-	UInt64 result_rows;
-	UInt64 result_bytes;
+	UInt64 result_rows{};
+	UInt64 result_bytes{};
+
+	UInt64 memory_usage{};
 
 	String query;
 
-	Interface interface;
-	HTTPMethod http_method;
+	String exception;
+	String stack_trace;
+
+	Context::Interface interface = Context::Interface::TCP;
+	Context::HTTPMethod http_method = Context::HTTPMethod::UNKNOWN;
 	Poco::Net::IPAddress ip_address;
 	String user;
 	String query_id;
@@ -75,6 +68,8 @@ struct QueryLogElement
 
 
 #define DBMS_QUERY_LOG_QUEUE_SIZE 1024
+
+class Context;
 
 
 class QueryLog : private boost::noncopyable
@@ -89,25 +84,8 @@ public:
 	  *  где N - минимальное число, начиная с 1 такое, что таблицы с таким именем ещё нет;
 	  *  и создаётся новая таблица, как будто существующей таблицы не было.
 	  */
-	QueryLog(Context & context_, const String & database_name_, const String & table_name_, size_t flush_interval_milliseconds_)
-		: context(context_), database_name(database_name_), table_name(table_name_), flush_interval_milliseconds(flush_interval_milliseconds_)
-	{
-		data.reserve(DBMS_QUERY_LOG_QUEUE_SIZE);
-
-		// TODO
-
-		saving_thread = std::thread([this] { threadFunction(); });
-	}
-
-	~QueryLog()
-	{
-		/// Говорим потоку, что надо завершиться.
-		QueryLogElement elem;
-		elem.type = QueryLogElement::SHUTDOWN;
-		queue.push(elem);
-
-		saving_thread.join();
-	}
+	QueryLog(Context & context_, const String & database_name_, const String & table_name_, size_t flush_interval_milliseconds_);
+	~QueryLog();
 
 	/** Добавить запись в лог.
 	  * Сохранение в таблицу делается асинхронно, и в случае сбоя, запись может никуда не попасть.
@@ -134,111 +112,15 @@ private:
 	  */
 	std::vector<QueryLogElement> data;
 
+	Logger * log {&Logger::get("QueryLog")};
+
 	/** В этом потоке данные вынимаются из queue, складываются в data, а затем вставляются в таблицу.
 	  */
 	std::thread saving_thread;
 
-
-	void threadFunction()
-	{
-		Stopwatch time_after_last_write;
-		bool first = true;
-
-		while (true)
-		{
-			try
-			{
-				if (first)
-				{
-					time_after_last_write.restart();
-					first = false;
-				}
-
-				QueryLogElement element;
-				bool has_element = false;
-
-				if (data.empty())
-				{
-					element = queue.pop();
-					has_element = true;
-				}
-				else
-				{
-					size_t milliseconds_elapsed = time_after_last_write.elapsed() / 1000000;
-					if (milliseconds_elapsed < flush_interval_milliseconds)
-						has_element = queue.tryPop(element, flush_interval_milliseconds - milliseconds_elapsed);
-				}
-
-				if (has_element)
-				{
-					if (element.type = QueryLogElement::SHUTDOWN)
-					{
-						flush();
-						break;
-					}
-					else
-						data.push_back(element);
-				}
-
-				size_t milliseconds_elapsed = time_after_last_write.elapsed() / 1000000;
-				if (milliseconds_elapsed >= flush_interval_milliseconds)
-				{
-					/// Записываем данные в таблицу.
-					flush();
-					time_after_last_write.restart();
-				}
-			}
-			catch (...)
-			{
-				/// В случае ошибки теряем накопленные записи, чтобы не блокироваться.
-				data.clear();
-				tryLogCurrentException(__PRETTY_FUNCTION__);
-			}
-		}
-	}
-
-	Block createBlock()
-	{
-		return {
-			{new ColumnUInt8, 	new DataTypeUInt8, 		"type"},
-			{new ColumnUInt32, 	new DataTypeDateTime, 	"event_time"},
-			{new ColumnUInt32, 	new DataTypeDateTime, 	"query_start_time"},
-		};
-
-	/*	time_t event_time;
-		time_t query_start_time;
-		UInt64 query_duration_ms;
-
-		UInt64 read_rows;
-		UInt64 read_bytes;
-
-		UInt64 result_rows;
-		UInt64 result_bytes;
-
-		String query;
-
-		Interface interface;
-		HTTPMethod http_method;
-		Poco::Net::IPAddress ip_address;
-		String user;
-		String query_id;*/
-	}
-
-	void flush()
-	{
-		try
-		{
-			Block block = createBlock();
-
-			// TODO Формирование блока и запись.
-		}
-		catch (...)
-		{
-			tryLogCurrentException(__PRETTY_FUNCTION__);
-		}
-
-		data.clear();
-	}
+	void threadFunction();
+	static Block createBlock();
+	void flush();
 };
 
 

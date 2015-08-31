@@ -291,7 +291,7 @@ private:
 			{
 				if (virt_column_name == "_part")
 				{
-					block.insert(ColumnWithNameAndType{
+					block.insert(ColumnWithTypeAndName{
 						ColumnConst<String>{rows, task->data_part->name}.convertToFullColumn(),
 						new DataTypeString,
 						virt_column_name
@@ -299,7 +299,7 @@ private:
 				}
 				else if (virt_column_name == "_part_index")
 				{
-					block.insert(ColumnWithNameAndType{
+					block.insert(ColumnWithTypeAndName{
 						ColumnConst<UInt64>{rows, task->part_index_in_query}.convertToFullColumn(),
 						new DataTypeUInt64,
 						virt_column_name

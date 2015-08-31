@@ -88,7 +88,7 @@ public:
 				/// Все столбцы уже есть в блоке. Будем добавлять значения в конец.
 				bool append = res.has(it.name);
 
-				ColumnWithNameAndType column;
+				ColumnWithTypeAndName column;
 				column.name = it.name;
 				column.type = it.type;
 				if (append)
@@ -186,7 +186,7 @@ private:
 						++right;
 				}
 
-				/// Если правее засечек нет, просто используем DEFAULT_BUFFER_SIZE
+				/// Если правее засечек нет, просто используем max_read_buffer_size
 				if (right >= (*marks).size() || (right + 1 == (*marks).size() &&
 					(*marks)[right].offset_in_compressed_file == (*marks)[all_mark_ranges[i].end].offset_in_compressed_file))
 				{
@@ -437,7 +437,7 @@ private:
 			OffsetColumns offset_columns;
 			for (size_t i = 0; i < res.columns(); ++i)
 			{
-				const ColumnWithNameAndType & column = res.getByPosition(i);
+				const ColumnWithTypeAndName & column = res.getByPosition(i);
 				if (const ColumnArray * array = typeid_cast<const ColumnArray *>(&*column.column))
 				{
 					String offsets_name = DataTypeNested::extractNestedTableName(column.name);
@@ -464,7 +464,7 @@ private:
 						continue;
 					}
 
-					ColumnWithNameAndType column_to_add;
+					ColumnWithTypeAndName column_to_add;
 					column_to_add.name = requested_column.name;
 					column_to_add.type = requested_column.type;
 

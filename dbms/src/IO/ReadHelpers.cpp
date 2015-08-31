@@ -36,6 +36,16 @@ void assertString(const char * s, ReadBuffer & buf)
 	}
 }
 
+void assertChar(char symbol, ReadBuffer & buf)
+{
+	if (buf.eof() || *buf.position() != symbol)
+	{
+		char err[2] = {symbol, '\0'};
+		throwAtAssertionFailed(err, buf);
+	}
+	++buf.position();
+}
+
 void assertEOF(ReadBuffer & buf)
 {
 	if (!buf.eof())

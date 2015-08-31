@@ -251,6 +251,7 @@ class HashTable :
 protected:
 	friend class const_iterator;
 	friend class iterator;
+	friend class Reader;
 
 	template <typename, typename, typename, typename, typename, typename, size_t>
 	friend class TwoLevelHashTable;
@@ -429,6 +430,51 @@ public:
 		free();
 	}
 
+	class Reader final : private Cell::State
+	{
+	public:
+		Reader(DB::ReadBuffer & in_)
+		: in(in_)
+		{
+		}
+
+		Reader(const Reader &) = delete;
+		Reader & operator=(const Reader &) = delete;
+
+		bool next()
+		{
+			if (read_count == size)
+			{
+				is_eof = true;
+				return false;
+			}
+			else if (read_count == 0)
+			{
+				Cell::State::read(in);
+				DB::readVarUInt(size, in);
+			}
+
+			cell.read(in);
+			++read_count;
+
+			return true;
+		}
+
+		inline const value_type & get() const
+		{
+			if ((read_count == 0) || is_eof)
+				throw DB::Exception("No available data", DB::ErrorCodes::NO_AVAILABLE_DATA);
+
+			return cell.getValue();
+		}
+
+	private:
+		DB::ReadBuffer in;
+		Cell cell;
+		size_t read_count = 0;
+		size_t size;
+		bool is_eof = false;
+	};
 
 	class iterator
 	{

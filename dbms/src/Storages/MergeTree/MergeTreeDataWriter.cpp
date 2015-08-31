@@ -12,7 +12,7 @@ BlocksWithDateIntervals MergeTreeDataWriter::splitBlockIntoParts(const Block & b
 {
 	data.check(block, true);
 
-	DateLUT & date_lut = DateLUT::instance();
+	const auto & date_lut = DateLUT::instance();
 
 	size_t rows = block.rows();
 	size_t columns = block.columns();
@@ -71,13 +71,19 @@ BlocksWithDateIntervals MergeTreeDataWriter::splitBlockIntoParts(const Block & b
 	return res;
 }
 
-MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDateInterval & block_with_dates, UInt64 temp_index)
+MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDateInterval & block_with_dates, Int64 temp_index)
 {
 	Block & block = block_with_dates.block;
 	UInt16 min_date = block_with_dates.min_date;
 	UInt16 max_date = block_with_dates.max_date;
 
-	DateLUT & date_lut = DateLUT::instance();
+	const auto & date_lut = DateLUT::instance();
+
+	DayNum_t min_month = date_lut.toFirstDayNumOfMonth(DayNum_t(min_date));
+	DayNum_t max_month = date_lut.toFirstDayNumOfMonth(DayNum_t(max_date));
+
+	if (min_month != max_month)
+		throw Exception("Logical error: part spans more than one month.");
 
 	size_t part_size = (block.rows() + data.index_granularity - 1) / data.index_granularity;
 
@@ -100,8 +106,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 	SortDescription sort_descr = data.getSortDescription();
 
 	/// Сортируем.
+	IColumn::Permutation * perm_ptr = nullptr;
+	IColumn::Permutation perm;
 	if (data.mode != MergeTreeData::Unsorted)
-		stableSortBlock(block, sort_descr);
+	{
+		stableGetPermutation(block, sort_descr, perm);
+		perm_ptr = &perm;
+	}
 
 	NamesAndTypesList columns = data.getColumnsList().filter(block.getColumnsList().getNames());
 	MergedBlockOutputStream out(data, part_tmp_path, columns, CompressionMethod::LZ4);
@@ -109,7 +120,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 	out.getIndex().reserve(part_size * sort_descr.size());
 
 	out.writePrefix();
-	out.write(block);
+	out.writeWithPermutation(block, perm_ptr);
 	MergeTreeData::DataPart::Checksums checksums = out.writeSuffixAndGetChecksums();
 
 	new_data_part->left_date = DayNum_t(min_date);
@@ -119,8 +130,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 	new_data_part->level = 0;
 	new_data_part->size = part_size;
 	new_data_part->modification_time = time(0);
-	new_data_part->left_month = date_lut.toFirstDayNumOfMonth(new_data_part->left_date);
-	new_data_part->right_month = date_lut.toFirstDayNumOfMonth(new_data_part->right_date);
+	new_data_part->month = min_month;
 	new_data_part->columns = columns;
 	new_data_part->checksums = checksums;
 	new_data_part->index.swap(out.getIndex());

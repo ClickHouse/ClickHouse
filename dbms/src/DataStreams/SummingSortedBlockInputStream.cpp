@@ -63,7 +63,7 @@ Block SummingSortedBlockInputStream::readImpl()
 		  */
 		for (size_t i = 0; i < num_columns; ++i)
 		{
-			ColumnWithNameAndType & column = merged_block.getByPosition(i);
+			ColumnWithTypeAndName & column = merged_block.getByPosition(i);
 
 			/// Discover nested Maps and find columns for summation
 			if (const auto array_type = typeid_cast<const DataTypeArray *>(column.type.get()))

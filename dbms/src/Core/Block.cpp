@@ -51,7 +51,7 @@ void Block::addDefaults(const NamesAndTypesList & required_columns)
 		if (has(requested_column.name))
 			continue;
 
-		ColumnWithNameAndType column_to_add;
+		ColumnWithTypeAndName column_to_add;
 		column_to_add.name = requested_column.name;
 		column_to_add.type = requested_column.type;
 
@@ -101,7 +101,7 @@ Block & Block::operator= (const Block & other)
 	return *this;
 }
 
-void Block::insert(size_t position, const ColumnWithNameAndType & elem)
+void Block::insert(size_t position, const ColumnWithTypeAndName & elem)
 {
 	if (position > index_by_position.size())
 		throw Exception("Position out of bound in Block::insert(), max position = "
@@ -124,7 +124,7 @@ void Block::insert(size_t position, const ColumnWithNameAndType & elem)
 }
 
 
-void Block::insert(const ColumnWithNameAndType & elem)
+void Block::insert(const ColumnWithTypeAndName & elem)
 {
 	Container_t::iterator it = data.insert(data.end(), elem);
 	index_by_name[elem.name] = it;
@@ -132,7 +132,7 @@ void Block::insert(const ColumnWithNameAndType & elem)
 }
 
 
-void Block::insertUnique(const ColumnWithNameAndType & elem)
+void Block::insertUnique(const ColumnWithTypeAndName & elem)
 {
 	if (index_by_name.end() == index_by_name.find(elem.name))
 		insert(elem);
@@ -141,9 +141,12 @@ void Block::insertUnique(const ColumnWithNameAndType & elem)
 
 void Block::erase(size_t position)
 {
+	if (index_by_position.empty())
+		throw Exception("Block is empty", ErrorCodes::POSITION_OUT_OF_BOUND);
+
 	if (position >= index_by_position.size())
 		throw Exception("Position out of bound in Block::erase(), max position = "
-			+ toString(index_by_position.size()), ErrorCodes::POSITION_OUT_OF_BOUND);
+			+ toString(index_by_position.size() - 1), ErrorCodes::POSITION_OUT_OF_BOUND);
 
 	Container_t::iterator it = index_by_position[position];
 	index_by_name.erase(index_by_name.find(it->name));
@@ -175,8 +178,11 @@ void Block::erase(const String & name)
 }
 
 
-ColumnWithNameAndType & Block::getByPosition(size_t position)
+ColumnWithTypeAndName & Block::getByPosition(size_t position)
 {
+	if (index_by_position.empty())
+		throw Exception("Block is empty", ErrorCodes::POSITION_OUT_OF_BOUND);
+
 	if (position >= index_by_position.size())
 		throw Exception("Position " + toString(position)
 			+ " is out of bound in Block::getByPosition(), max position = "
@@ -187,8 +193,11 @@ ColumnWithNameAndType & Block::getByPosition(size_t position)
 }
 
 
-const ColumnWithNameAndType & Block::getByPosition(size_t position) const
+const ColumnWithTypeAndName & Block::getByPosition(size_t position) const
 {
+	if (index_by_position.empty())
+		throw Exception("Block is empty", ErrorCodes::POSITION_OUT_OF_BOUND);
+
 	if (position >= index_by_position.size())
 		throw Exception("Position " + toString(position)
 			+ " is out of bound in Block::getByPosition(), max position = "
@@ -199,7 +208,7 @@ const ColumnWithNameAndType & Block::getByPosition(size_t position) const
 }
 
 
-ColumnWithNameAndType & Block::getByName(const std::string & name)
+ColumnWithTypeAndName & Block::getByName(const std::string & name)
 {
 	IndexByName_t::const_iterator it = index_by_name.find(name);
 	if (index_by_name.end() == it)
@@ -210,7 +219,7 @@ ColumnWithNameAndType & Block::getByName(const std::string & name)
 }
 
 
-const ColumnWithNameAndType & Block::getByName(const std::string & name) const
+const ColumnWithTypeAndName & Block::getByName(const std::string & name) const
 {
 	IndexByName_t::const_iterator it = index_by_name.find(name);
 	if (index_by_name.end() == it)
@@ -302,7 +311,13 @@ std::string Block::dumpStructure() const
 	{
 		if (it != data.begin())
 			res << ", ";
-		res << it->name << ' ' << it->type->getName() << ' ' << it->column->getName() << ' ' << it->column->size();
+
+		res << it->name << ' ' << it->type->getName();
+
+		if (it->column)
+			res << ' ' << it->column->getName() << ' ' << it->column->size();
+		else
+			res << " nullptr";
 	}
 	return res.str();
 }
@@ -330,9 +345,9 @@ Block Block::sortColumns() const
 }
 
 
-ColumnsWithNameAndType Block::getColumns() const
+ColumnsWithTypeAndName Block::getColumns() const
 {
-	return ColumnsWithNameAndType(data.begin(), data.end());
+	return ColumnsWithTypeAndName(data.begin(), data.end());
 }
 
 

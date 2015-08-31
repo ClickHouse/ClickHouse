@@ -23,19 +23,16 @@ public:
 	{
 		DayNum_t left_date;
 		DayNum_t right_date;
-		UInt64 left;
-		UInt64 right;
+		Int64 left;
+		Int64 right;
 		UInt32 level;
 		std::string name;
-		DayNum_t left_month;
-		DayNum_t right_month;
+		DayNum_t month;
 
 		bool operator<(const Part & rhs) const
 		{
-			if (left_month != rhs.left_month)
-				return left_month < rhs.left_month;
-			if (right_month != rhs.right_month)
-				return right_month < rhs.right_month;
+			if (month != rhs.month)
+				return month < rhs.month;
 
 			if (left != rhs.left)
 				return left < rhs.left;
@@ -48,8 +45,7 @@ public:
 		/// Содержит другой кусок (получен после объединения другого куска с каким-то ещё)
 		bool contains(const Part & rhs) const
 		{
-			return left_month == rhs.left_month		/// Куски за разные месяцы не объединяются
-				&& right_month == rhs.right_month
+			return month == rhs.month		/// Куски за разные месяцы не объединяются
 				&& left_date <= rhs.left_date
 				&& right_date >= rhs.right_date
 				&& left <= rhs.left
@@ -66,7 +62,7 @@ public:
 
 	size_t size() const;
 
-	static String getPartName(DayNum_t left_date, DayNum_t right_date, UInt64 left_id, UInt64 right_id, UInt64 level);
+	static String getPartName(DayNum_t left_date, DayNum_t right_date, Int64 left_id, Int64 right_id, UInt64 level);
 
 	/// Возвращает true если имя директории совпадает с форматом имени директории кусочков
 	static bool isPartDirectory(const String & dir_name, Poco::RegularExpression::MatchVec * out_matches = nullptr);

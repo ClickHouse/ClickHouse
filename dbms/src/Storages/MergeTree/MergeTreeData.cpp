@@ -103,18 +103,18 @@ MergeTreeData::MergeTreeData(
 			sort_descr.push_back(SortColumnDescription(name, 1));
 		}
 
-		primary_expr = ExpressionAnalyzer(primary_expr_ast, context, getColumnsList()).getActions(false);
+		primary_expr = ExpressionAnalyzer(primary_expr_ast, context, nullptr, getColumnsList()).getActions(false);
 
-		ExpressionActionsPtr projected_expr = ExpressionAnalyzer(primary_expr_ast, context, getColumnsList()).getActions(true);
+		ExpressionActionsPtr projected_expr = ExpressionAnalyzer(primary_expr_ast, context, nullptr, getColumnsList()).getActions(true);
 		primary_key_sample = projected_expr->getSampleBlock();
 	}
 	else if (mode != Unsorted)
 		throw Exception("Primary key could be empty only for UnsortedMergeTree", ErrorCodes::BAD_ARGUMENTS);
 }
 
-UInt64 MergeTreeData::getMaxDataPartIndex()
+Int64 MergeTreeData::getMaxDataPartIndex()
 {
-	UInt64 max_part_id = 0;
+	Int64 max_part_id = 0;
 	for (const auto & part : data_parts)
 		max_part_id = std::max(max_part_id, part->right);
 
@@ -240,7 +240,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 		data_parts.insert(part);
 	}
 
-	if (suspicious_broken_parts > 5 && !skip_sanity_checks)
+	if (suspicious_broken_parts > settings.max_suspicious_broken_parts && !skip_sanity_checks)
 		throw Exception("Suspiciously many (" + toString(suspicious_broken_parts) + ") broken parts to remove.",
 			ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS);
 
@@ -264,9 +264,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 		while (curr_jt != data_parts.end())
 		{
 			/// Куски данных за разные месяцы рассматривать не будем
-			if ((*curr_jt)->left_month != (*curr_jt)->right_month
-				|| (*curr_jt)->right_month != (*prev_jt)->left_month
-				|| (*prev_jt)->left_month != (*prev_jt)->right_month)
+			if ((*curr_jt)->month != (*prev_jt)->month)
 			{
 				++prev_jt;
 				++curr_jt;
@@ -487,7 +485,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 				if (!out_expression)
 					out_expression = new ExpressionActions(NamesAndTypesList(), context.getSettingsRef());
 
-				out_expression->addInput(ColumnWithNameAndType(nullptr, column.type, column.name));
+				out_expression->addInput(ColumnWithTypeAndName(nullptr, column.type, column.name));
 
 				Names out_names;
 
@@ -734,6 +732,7 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
 
 	bool obsolete = false; /// Покрыт ли part каким-нибудь куском.
 	DataPartsVector res;
+
 	/// Куски, содержащиеся в part, идут в data_parts подряд, задевая место, куда вставился бы сам part.
 	DataParts::iterator it = data_parts.lower_bound(part);
 	/// Пойдем влево.
@@ -841,7 +840,7 @@ void MergeTreeData::renameAndDetachPart(const DataPartPtr & part, const String &
 		Strings restored;
 		bool error = false;
 
-		UInt64 pos = part->left;
+		Int64 pos = part->left;
 
 		if (it != all_data_parts.begin())
 		{
@@ -934,13 +933,13 @@ size_t MergeTreeData::getMaxPartsCountForMonth()
 
 	for (const auto & part : data_parts)
 	{
-		if (part->left_month == cur_month)
+		if (part->month == cur_month)
 		{
 			++cur_count;
 		}
 		else
 		{
-			cur_month = part->left_month;
+			cur_month = part->month;
 			cur_count = 1;
 		}
 

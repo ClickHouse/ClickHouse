@@ -40,13 +40,13 @@ BlockInputStreams StorageSystemEvents::read(
 
 	Block block;
 
-	ColumnWithNameAndType col_event;
+	ColumnWithTypeAndName col_event;
 	col_event.name = "event";
 	col_event.type = new DataTypeString;
 	col_event.column = new ColumnString;
 	block.insert(col_event);
 
-	ColumnWithNameAndType col_value;
+	ColumnWithTypeAndName col_value;
 	col_value.name = "value";
 	col_value.type = new DataTypeUInt64;
 	col_value.column = new ColumnUInt64;

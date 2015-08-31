@@ -42,7 +42,7 @@ private:
 
 	mutable std::mutex dictionaries_mutex;
 
-	using dictionary_ptr_t = std::shared_ptr<MultiVersion<IDictionary>>;
+	using dictionary_ptr_t = std::shared_ptr<MultiVersion<IDictionaryBase>>;
 	struct dictionary_info final
 	{
 		dictionary_ptr_t dict;
@@ -52,14 +52,24 @@ private:
 
 	struct failed_dictionary_info final
 	{
-		std::unique_ptr<IDictionary> dict;
+		std::unique_ptr<IDictionaryBase> dict;
 		std::chrono::system_clock::time_point next_attempt_time;
 		std::uint64_t error_count;
 	};
 
+	/** Имя словаря -> словарь.
+	  */
 	std::unordered_map<std::string, dictionary_info> dictionaries;
-	std::unordered_map<std::string, std::chrono::system_clock::time_point> update_times;
+
+	/** Здесь находятся словари, которых ещё ни разу не удалось загрузить.
+	  * В dictionaries они тоже присутствуют, но с нулевым указателем dict.
+	  */
 	std::unordered_map<std::string, failed_dictionary_info> failed_dictionaries;
+
+	/** И для обычных и для failed_dictionaries.
+	  */
+	std::unordered_map<std::string, std::chrono::system_clock::time_point> update_times;
+
 	std::mt19937_64 rnd_engine{getSeed()};
 
 	Context & context;
@@ -107,7 +117,7 @@ public:
 		reloading_thread.join();
 	}
 
-	MultiVersion<IDictionary>::Version getDictionary(const std::string & name) const;
+	MultiVersion<IDictionaryBase>::Version getDictionary(const std::string & name) const;
 };
 
 }

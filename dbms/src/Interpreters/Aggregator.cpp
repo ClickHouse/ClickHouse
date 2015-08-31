@@ -9,6 +9,7 @@
 #include <DB/DataTypes/DataTypeAggregateFunction.h>
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/AggregateFunctions/AggregateFunctionCount.h>
+#include <DB/DataStreams/IProfilingBlockInputStream.h>
 
 #include <DB/Interpreters/Aggregator.h>
 
@@ -121,7 +122,7 @@ void Aggregator::initialize(Block & block)
 
 		for (size_t i = 0; i < aggregates_size; ++i)
 		{
-			ColumnWithNameAndType col;
+			ColumnWithTypeAndName col;
 			col.name = aggregates[i].column_name;
 
 			size_t arguments_size = aggregates[i].arguments.size();
@@ -557,14 +558,21 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 	for (size_t i = 0; i < aggregates_size; ++i)
 		aggregate_columns[i].resize(aggregates[i].arguments.size());
 
+	/** Константные столбцы не поддерживаются напрямую при агрегации.
+	  * Чтобы они всё-равно работали, материализуем их.
+	  */
+	Columns materialized_columns;
+
 	/// Запоминаем столбцы, с которыми будем работать
 	for (size_t i = 0; i < keys_size; ++i)
 	{
 		key_columns[i] = block.getByPosition(keys[i]).column;
 
-		if (key_columns[i]->isConst())
-			throw Exception("Constants are not allowed as GROUP BY keys"
-				" (but all of them must be eliminated in ExpressionAnalyzer)", ErrorCodes::ILLEGAL_COLUMN);
+		if (const IColumnConst * column_const = dynamic_cast<const IColumnConst *>(key_columns[i]))
+		{
+			materialized_columns.push_back(column_const->convertToFullColumn());
+			key_columns[i] = materialized_columns.back().get();
+		}
 	}
 
 	for (size_t i = 0; i < aggregates_size; ++i)
@@ -573,11 +581,11 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 		{
 			aggregate_columns[i][j] = block.getByPosition(aggregates[i].arguments[j]).column;
 
-			/** Агрегатные функции рассчитывают, что в них передаются полноценные столбцы.
-				* Поэтому, стобцы-константы не разрешены в качестве аргументов агрегатных функций.
-				*/
-			if (aggregate_columns[i][j]->isConst())
-				throw Exception("Constants are not allowed as arguments of aggregate functions", ErrorCodes::ILLEGAL_COLUMN);
+			if (const IColumnConst * column_const = dynamic_cast<const IColumnConst *>(aggregate_columns[i][j]))
+			{
+				materialized_columns.push_back(column_const->convertToFullColumn());
+				aggregate_columns[i][j] = materialized_columns.back().get();
+			}
 		}
 	}
 
@@ -841,7 +849,7 @@ Block Aggregator::prepareBlockAndFill(
 			}
 			else
 			{
-				ColumnWithNameAndType & column = res.getByPosition(i + keys_size);
+				ColumnWithTypeAndName & column = res.getByPosition(i + keys_size);
 				column.type = aggregate_functions[i]->getReturnType();
 				column.column = column.type->createColumn();
 				column.column->reserve(rows);
@@ -1681,6 +1689,66 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 }
 
 
+Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
+{
+	if (blocks.empty())
+		return {};
+
+	StringRefs key(keys_size);
+	ConstColumnPlainPtrs key_columns(keys_size);
+
+	AggregateColumnsData aggregate_columns(aggregates_size);
+
+	initialize(blocks.front());
+
+	/// Каким способом выполнять агрегацию?
+	for (size_t i = 0; i < keys_size; ++i)
+		key_columns[i] = sample.getByPosition(i).column;
+
+	Sizes key_sizes;
+	AggregatedDataVariants::Type method = chooseAggregationMethod(key_columns, key_sizes);
+
+	/// Временные данные для агрегации.
+	AggregatedDataVariants result;
+
+	/// result будет уничтожать состояния агрегатных функций в деструкторе
+	result.aggregator = this;
+
+	result.init(method);
+	result.keys_size = keys_size;
+	result.key_sizes = key_sizes;
+
+	LOG_TRACE(log, "Merging partially aggregated blocks.");
+
+	for (Block & block : blocks)
+	{
+		if (result.type == AggregatedDataVariants::Type::without_key || block.info.is_overflows)
+			mergeWithoutKeyStreamsImpl(block, result);
+
+	#define M(NAME, IS_TWO_LEVEL) \
+		else if (result.type == AggregatedDataVariants::Type::NAME) \
+			mergeStreamsImpl(block, key_sizes, result.aggregates_pool, *result.NAME, result.NAME->data);
+
+		APPLY_FOR_AGGREGATED_VARIANTS(M)
+	#undef M
+		else if (result.type != AggregatedDataVariants::Type::without_key)
+			throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+	}
+
+	BlocksList merged_block = convertToBlocks(result, final, 1);
+
+	if (merged_block.size() > 1)	/// TODO overflows
+		throw Exception("Logical error: temporary result is not single-level", ErrorCodes::LOGICAL_ERROR);
+
+	LOG_TRACE(log, "Merged partially aggregated blocks.");
+
+	if (merged_block.empty())
+		return {};
+
+	return merged_block.front();
+}
+
+
 template <typename Method>
 void NO_INLINE Aggregator::destroyImpl(
 	Method & method) const
@@ -1761,5 +1829,6 @@ void Aggregator::setCancellationHook(const CancellationHook cancellation_hook)
 {
 	isCancelled = cancellation_hook;
 }
+
 
 }

@@ -20,9 +20,10 @@ BlockInputStreams StorageChunkRef::read(
 	const size_t max_block_size,
 	const unsigned threads)
 {
-	return getSource().readFromChunk(name, column_names, query,
-									 context, settings, processed_stage,
-									 max_block_size, threads);
+	return typeid_cast<StorageChunks &>(*getSource()).readFromChunk(
+		name, column_names, query,
+		context, settings, processed_stage,
+		max_block_size, threads);
 }
 
 ASTPtr StorageChunkRef::getCustomCreateQuery(const Context & context) const
@@ -50,7 +51,7 @@ void StorageChunkRef::drop()
 {
 	try
 	{
-		getSource().removeReference();
+		typeid_cast<StorageChunks &>(*getSource()).removeReference();
 	}
 	catch (const Exception & e)
 	{
@@ -66,28 +67,27 @@ StorageChunkRef::StorageChunkRef(const std::string & name_, const Context & cont
 	: source_database_name(source_database_name_), source_table_name(source_table_name_), name(name_), context(context_)
 {
 	if (!attach)
-		getSource().addReference();
+		typeid_cast<StorageChunks &>(*getSource()).addReference();
 }
 
-StorageChunks & StorageChunkRef::getSource()
+StoragePtr StorageChunkRef::getSource()
 {
-	return typeid_cast<StorageChunks &>(*context.getTable(source_database_name, source_table_name));
+	return context.getTable(source_database_name, source_table_name);
 }
 
-const StorageChunks & StorageChunkRef::getSource() const
+const StoragePtr StorageChunkRef::getSource() const
 {
 	const StoragePtr table_ptr = context.getTable(source_database_name, source_table_name);
-	const StorageChunks * chunks = typeid_cast<const StorageChunks *>(&*table_ptr);
 
-	if (chunks == nullptr)
+	if (!table_ptr)
 		throw Exception("Referenced table " + source_table_name + " in database " + source_database_name + " doesn't exist", ErrorCodes::UNKNOWN_TABLE);
 
-	return *chunks;
+	return table_ptr;
 }
 
 bool StorageChunkRef::checkData() const
 {
-	return getSource().checkData();
+	return getSource()->checkData();
 }
 
 

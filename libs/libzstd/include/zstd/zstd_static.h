@@ -45,20 +45,21 @@ extern "C" {
 /**************************************
 *  Streaming functions
 **************************************/
-typedef void* ZSTD_cctx_t;
-ZSTD_cctx_t ZSTD_createCCtx(void);
-size_t      ZSTD_freeCCtx(ZSTD_cctx_t cctx);
+typedef struct ZSTD_Cctx_s ZSTD_Cctx;
+ZSTD_Cctx* ZSTD_createCCtx(void);
+size_t     ZSTD_freeCCtx(ZSTD_Cctx* cctx);
 
-size_t ZSTD_compressBegin(ZSTD_cctx_t cctx, void* dst, size_t maxDstSize);
-size_t ZSTD_compressContinue(ZSTD_cctx_t cctx, void* dst, size_t maxDstSize, const void* src, size_t srcSize);
-size_t ZSTD_compressEnd(ZSTD_cctx_t cctx, void* dst, size_t maxDstSize);
+size_t ZSTD_compressBegin(ZSTD_Cctx* cctx, void* dst, size_t maxDstSize);
+size_t ZSTD_compressContinue(ZSTD_Cctx* cctx, void* dst, size_t maxDstSize, const void* src, size_t srcSize);
+size_t ZSTD_compressEnd(ZSTD_Cctx* cctx, void* dst, size_t maxDstSize);
 
-typedef void* ZSTD_dctx_t;
-ZSTD_dctx_t ZSTD_createDCtx(void);
-size_t      ZSTD_freeDCtx(ZSTD_dctx_t dctx);
 
-size_t ZSTD_nextSrcSizeToDecompress(ZSTD_dctx_t dctx);
-size_t ZSTD_decompressContinue(ZSTD_dctx_t dctx, void* dst, size_t maxDstSize, const void* src, size_t srcSize);
+typedef struct ZSTD_Dctx_s ZSTD_Dctx;
+ZSTD_Dctx* ZSTD_createDCtx(void);
+size_t     ZSTD_freeDCtx(ZSTD_Dctx* dctx);
+
+size_t ZSTD_nextSrcSizeToDecompress(ZSTD_Dctx* dctx);
+size_t ZSTD_decompressContinue(ZSTD_Dctx* dctx, void* dst, size_t maxDstSize, const void* src, size_t srcSize);
 /*
   Use above functions alternatively.
   ZSTD_nextSrcSizeToDecompress() tells how much bytes to provide as input to ZSTD_decompressContinue().

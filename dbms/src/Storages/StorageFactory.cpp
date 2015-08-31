@@ -10,6 +10,7 @@
 
 #include <DB/Storages/StorageLog.h>
 #include <DB/Storages/StorageTinyLog.h>
+#include <DB/Storages/StorageStripeLog.h>
 #include <DB/Storages/StorageMemory.h>
 #include <DB/Storages/StorageBuffer.h>
 #include <DB/Storages/StorageNull.h>
@@ -173,6 +174,13 @@ StoragePtr StorageFactory::get(
 	else if (name == "TinyLog")
 	{
 		return StorageTinyLog::create(
+			data_path, table_name, columns,
+			materialized_columns, alias_columns, column_defaults,
+			attach, context.getSettings().max_compress_block_size);
+	}
+	else if (name == "StripeLog")
+	{
+		return StorageStripeLog::create(
 			data_path, table_name, columns,
 			materialized_columns, alias_columns, column_defaults,
 			attach, context.getSettings().max_compress_block_size);
@@ -646,13 +654,15 @@ For further info please read the documentation: https://clickhouse.yandex-team.r
 				zookeeper_path, replica_name, attach, data_path, database_name, table_name,
 				columns, materialized_columns, alias_columns, column_defaults,
 				context, primary_expr_list, date_column_name,
-				sampling_expression, index_granularity, mode, sign_column_name, columns_to_sum);
+				sampling_expression, index_granularity, mode, sign_column_name, columns_to_sum,
+				context.getMergeTreeSettings());
 		else
 			return StorageMergeTree::create(
 				data_path, database_name, table_name,
 				columns, materialized_columns, alias_columns, column_defaults,
 				context, primary_expr_list, date_column_name,
-				sampling_expression, index_granularity, mode, sign_column_name, columns_to_sum);
+				sampling_expression, index_granularity, mode, sign_column_name, columns_to_sum,
+				context.getMergeTreeSettings());
 	}
 	else
 		throw Exception("Unknown storage " + name, ErrorCodes::UNKNOWN_STORAGE);

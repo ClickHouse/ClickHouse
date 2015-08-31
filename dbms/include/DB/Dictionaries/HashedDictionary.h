@@ -10,6 +10,7 @@
 #include <memory>
 #include <tuple>
 
+
 namespace DB
 {
 
@@ -17,9 +18,10 @@ class HashedDictionary final : public IDictionary
 {
 public:
 	HashedDictionary(const std::string & name, const DictionaryStructure & dict_struct,
-		DictionarySourcePtr source_ptr, const DictionaryLifetime dict_lifetime)
+		DictionarySourcePtr source_ptr, const DictionaryLifetime dict_lifetime, bool require_nonempty)
 		: name{name}, dict_struct(dict_struct),
-		  source_ptr{std::move(source_ptr)}, dict_lifetime(dict_lifetime)
+		  source_ptr{std::move(source_ptr)}, dict_lifetime(dict_lifetime),
+		  require_nonempty(require_nonempty)
 	{
 		createAttributes();
 
@@ -37,7 +39,7 @@ public:
 	}
 
 	HashedDictionary(const HashedDictionary & other)
-		: HashedDictionary{other.name, other.dict_struct, other.source_ptr->clone(), other.dict_lifetime}
+		: HashedDictionary{other.name, other.dict_struct, other.source_ptr->clone(), other.dict_lifetime, other.require_nonempty}
 	{}
 
 	std::exception_ptr getCreationException() const override { return creation_exception; }
@@ -78,65 +80,9 @@ public:
 
 	bool hasHierarchy() const override { return hierarchical_attribute; }
 
-	id_t toParent(const id_t id) const override
-	{
-		const auto attr = hierarchical_attribute;
-		const auto & map = *std::get<std::unique_ptr<HashMap<UInt64, UInt64>>>(attr->maps);
-		const auto it = map.find(id);
-
-		query_count.fetch_add(1, std::memory_order_relaxed);
-
-		return it != map.end() ? it->second : std::get<UInt64>(attr->null_values);
-	}
-
 	void toParent(const PODArray<id_t> & ids, PODArray<id_t> & out) const override
 	{
 		getItems<UInt64>(*hierarchical_attribute, ids, out);
-	}
-
-#define DECLARE_INDIVIDUAL_GETTER(TYPE) \
-	TYPE get##TYPE(const std::string & attribute_name, const id_t id) const override\
-	{\
-		const auto & attribute = getAttribute(attribute_name);\
-		if (attribute.type != AttributeUnderlyingType::TYPE)\
-			throw Exception{\
-				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
-				ErrorCodes::TYPE_MISMATCH\
-			};\
-		\
-		const auto & map = *std::get<std::unique_ptr<HashMap<UInt64, TYPE>>>(attribute.maps);\
-		const auto it = map.find(id);\
-		\
-		query_count.fetch_add(1, std::memory_order_relaxed);\
-		\
-		return it != map.end() ? TYPE{it->second} : std::get<TYPE>(attribute.null_values);\
-	}
-	DECLARE_INDIVIDUAL_GETTER(UInt8)
-	DECLARE_INDIVIDUAL_GETTER(UInt16)
-	DECLARE_INDIVIDUAL_GETTER(UInt32)
-	DECLARE_INDIVIDUAL_GETTER(UInt64)
-	DECLARE_INDIVIDUAL_GETTER(Int8)
-	DECLARE_INDIVIDUAL_GETTER(Int16)
-	DECLARE_INDIVIDUAL_GETTER(Int32)
-	DECLARE_INDIVIDUAL_GETTER(Int64)
-	DECLARE_INDIVIDUAL_GETTER(Float32)
-	DECLARE_INDIVIDUAL_GETTER(Float64)
-#undef DECLARE_INDIVIDUAL_GETTER
-	String getString(const std::string & attribute_name, const id_t id) const override
-	{
-		const auto & attribute = getAttribute(attribute_name);
-		if (attribute.type != AttributeUnderlyingType::String)
-			throw Exception{
-				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-				ErrorCodes::TYPE_MISMATCH
-			};
-
-		const auto & map = *std::get<std::unique_ptr<HashMap<UInt64, StringRef>>>(attribute.maps);
-		const auto it = map.find(id);
-
-		query_count.fetch_add(1, std::memory_order_relaxed);
-
-		return it != map.end() ? String{it->second} : std::get<String>(attribute.null_values);
 	}
 
 #define DECLARE_MULTIPLE_GETTER(TYPE)\
@@ -145,7 +91,7 @@ public:
 		const auto & attribute = getAttribute(attribute_name);\
 		if (attribute.type != AttributeUnderlyingType::TYPE)\
 			throw Exception{\
-				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
+				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
 				ErrorCodes::TYPE_MISMATCH\
 			};\
 		\
@@ -167,7 +113,7 @@ public:
 		const auto & attribute = getAttribute(attribute_name);
 		if (attribute.type != AttributeUnderlyingType::String)
 			throw Exception{
-				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
+				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
 				ErrorCodes::TYPE_MISMATCH
 			};
 
@@ -222,7 +168,7 @@ private:
 
 				if (hierarchical_attribute->type != AttributeUnderlyingType::UInt64)
 					throw Exception{
-						"Hierarchical attribute must be UInt64.",
+						name + ": hierarchical attribute must be UInt64.",
 						ErrorCodes::TYPE_MISMATCH
 					};
 			}
@@ -251,6 +197,12 @@ private:
 		}
 
 		stream->readSuffix();
+
+		if (require_nonempty && 0 == element_count)
+			throw Exception{
+				name + ": dictionary source is empty and 'require_nonempty' property is set.",
+				ErrorCodes::DICTIONARY_IS_EMPTY
+			};
 	}
 
 	template <typename T>
@@ -378,7 +330,7 @@ private:
 		const auto it = attribute_index_by_name.find(attribute_name);
 		if (it == std::end(attribute_index_by_name))
 			throw Exception{
-				"No such attribute '" + attribute_name + "'",
+				name + ": no such attribute '" + attribute_name + "'",
 				ErrorCodes::BAD_ARGUMENTS
 			};
 
@@ -389,6 +341,7 @@ private:
 	const DictionaryStructure dict_struct;
 	const DictionarySourcePtr source_ptr;
 	const DictionaryLifetime dict_lifetime;
+	const bool require_nonempty;
 
 	std::map<std::string, std::size_t> attribute_index_by_name;
 	std::vector<attribute_t> attributes;
@@ -397,7 +350,7 @@ private:
 	std::size_t bytes_allocated = 0;
 	std::size_t element_count = 0;
 	std::size_t bucket_count = 0;
-	mutable std::atomic<std::size_t> query_count{};
+	mutable std::atomic<std::size_t> query_count{0};
 
 	std::chrono::time_point<std::chrono::system_clock> creation_time;
 

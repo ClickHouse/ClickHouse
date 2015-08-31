@@ -91,11 +91,21 @@ struct Settings
 	M(SettingUInt64, min_count_to_compile, 3) \
 	/** При каком количестве ключей, начинает использоваться двухуровневая агрегация. 0 - никогда не использовать. */ \
 	M(SettingUInt64, group_by_two_level_threshold, 100000) \
+	/** Включён ли экономный по памяти режим распределённой агрегации. */ \
+	M(SettingBool, distributed_aggregation_memory_efficient, false) \
 	\
 	/** Максимальное количество используемых реплик каждого шарда при выполнении запроса */ \
 	M(SettingUInt64, max_parallel_replicas, 1) \
 	M(SettingUInt64, parallel_replicas_count, 0) \
 	M(SettingUInt64, parallel_replica_offset, 0) \
+	\
+	/** Тихо пропускать недоступные шарды. */ \
+	M(SettingBool, skip_unavailable_shards, false) \
+	\
+	/** Не мерджить состояния агрегации с разных серверов при распределённой обработке запроса \
+	  *  - на случай, когда доподлинно известно, что на разных шардах разные ключи. \
+	  */ \
+	M(SettingBool, distributed_group_by_no_merge, false) \
 	\
 	/** Тонкие настройки для чтения из MergeTree */ \
 	\
@@ -137,6 +147,9 @@ struct Settings
 	\
 	/** Приоритет запроса. 1 - самый высокий, больше - ниже; 0 - не использовать приоритеты. */ \
 	M(SettingUInt64, priority, 0) \
+	\
+	/** Логгировать запросы и писать лог в системную таблицу. */ \
+	M(SettingBool, log_queries, 0) \
 
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;

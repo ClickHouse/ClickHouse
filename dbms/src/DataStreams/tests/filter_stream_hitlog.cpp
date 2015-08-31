@@ -98,8 +98,6 @@ int main(int argc, char ** argv)
 
 		Context context;
 
-		context.getColumns() = *names_and_types_list;
-
 		std::string input = "SELECT UniqID, URL, CounterID, IsLink WHERE URL = 'http://mail.yandex.ru/neo2/#inbox'";
 		ParserSelectQuery parser;
 		ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "");
@@ -114,7 +112,7 @@ int main(int argc, char ** argv)
 
 		/// читаем из неё, применяем выражение, фильтруем, и пишем в tsv виде в консоль
 
-		ExpressionAnalyzer analyzer(ast, context, context.getColumns());
+		ExpressionAnalyzer analyzer(ast, context, nullptr, *names_and_types_list);
 		ExpressionActionsChain chain;
 		analyzer.appendSelect(chain, false);
 		analyzer.appendWhere(chain, false);

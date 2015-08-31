@@ -108,7 +108,7 @@ private:
 	{
 		Stream(const std::string & data_path, size_t max_compress_block_size) :
 			plain(data_path, max_compress_block_size, O_APPEND | O_CREAT | O_WRONLY),
-			compressed(plain)
+			compressed(plain, CompressionMethod::LZ4, max_compress_block_size)
 		{
 		}
 
@@ -177,7 +177,7 @@ Block TinyLogBlockInputStream::readImpl()
 
 	for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
 	{
-		ColumnWithNameAndType column;
+		ColumnWithTypeAndName column;
 		column.name = *it;
 		column.type = storage.getDataTypeByName(*it);
 
@@ -198,7 +198,15 @@ Block TinyLogBlockInputStream::readImpl()
 		else
 			column.column = column.type->createColumn();
 
-		readData(*it, *column.type, *column.column, block_size, 0, read_offsets);
+		try
+		{
+			readData(*it, *column.type, *column.column, block_size, 0, read_offsets);
+		}
+		catch (Exception & e)
+		{
+			e.addMessage("while reading column " + *it + " at " + storage.full_path());
+			throw;
+		}
 
 		if (column.column->size())
 			res.insert(column);
@@ -326,7 +334,7 @@ void TinyLogBlockOutputStream::write(const Block & block)
 
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
-		const ColumnWithNameAndType & column = block.getByPosition(i);
+		const ColumnWithTypeAndName & column = block.getByPosition(i);
 		writeData(column.name, *column.type, *column.column, offset_columns);
 	}
 }
@@ -344,7 +352,7 @@ StorageTinyLog::StorageTinyLog(
 	: IStorage{materialized_columns_, alias_columns_, column_defaults_},
 	path(path_), name(name_), columns(columns_),
 	max_compress_block_size(max_compress_block_size_),
-	file_checker(path + escapeForFileName(name) + '/' + "sizes.json", *this),
+	file_checker(path + escapeForFileName(name) + '/' + "sizes.json"),
 	log(&Logger::get("StorageTinyLog"))
 {
 	if (columns->empty())
@@ -457,11 +465,6 @@ void StorageTinyLog::drop()
 bool StorageTinyLog::checkData() const
 {
 	return file_checker.check();
-}
-
-StorageTinyLog::Files_t & StorageTinyLog::getFiles()
-{
-	return files;
 }
 
 }

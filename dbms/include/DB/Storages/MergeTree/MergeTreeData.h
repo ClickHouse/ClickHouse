@@ -5,6 +5,7 @@
 #include <DB/Interpreters/ExpressionActions.h>
 #include <DB/Storages/IStorage.h>
 #include <DB/Storages/MergeTree/ActiveDataPartSet.h>
+#include <DB/Storages/MergeTree/MergeTreeSettings.h>
 #include <DB/IO/ReadBufferFromString.h>
 #include <DB/IO/WriteBufferFromFile.h>
 #include <DB/IO/ReadBufferFromFile.h>
@@ -68,69 +69,6 @@ namespace DB
   *  - MergeTreeDataWriter
   *  - MergeTreeDataMerger
   */
-
-struct MergeTreeSettings
-{
-	/** Настройки слияний. */
-
-	/// Опеределяет, насколько разбалансированные объединения мы готовы делать.
-	/// Чем больше, тем более разбалансированные. Желательно, чтобы было больше, чем 1 / max_parts_to_merge_at_once.
-	double size_ratio_coefficient_to_merge_parts = 0.25;
-
-	/// Сколько за раз сливать кусков.
-	/// Трудоемкость выбора кусков O(N * max_parts_to_merge_at_once).
-	size_t max_parts_to_merge_at_once = 10;
-
-	/// Но пока суммарный размер кусков слишком маленький (меньше такого количества байт), можно сливать и больше кусков за раз.
-	/// Это сделано, чтобы быстрее сливать очень уж маленькие куски, которых может быстро накопиться много.
-	size_t merge_more_parts_if_sum_bytes_is_less_than = 100 * 1024 * 1024;
-	size_t max_parts_to_merge_at_once_if_small = 100;
-
-	/// Куски настолько большого размера объединять нельзя вообще.
-	size_t max_bytes_to_merge_parts = 10ul * 1024 * 1024 * 1024;
-
-	/// Не больше половины потоков одновременно могут выполнять слияния, в которых участвует хоть один кусок хотя бы такого размера.
-	size_t max_bytes_to_merge_parts_small = 250 * 1024 * 1024;
-
-	/// Куски настолько большого размера в сумме, объединять нельзя вообще.
-	size_t max_sum_bytes_to_merge_parts = 25ul * 1024 * 1024 * 1024;
-
-	/// Во столько раз ночью увеличиваем коэффициент.
-	size_t merge_parts_at_night_inc = 10;
-
-	/// Сколько заданий на слияние кусков разрешено одновременно иметь в очереди ReplicatedMergeTree.
-	size_t max_replicated_merges_in_queue = 6;
-
-	/// Через сколько секунд удалять ненужные куски.
-	time_t old_parts_lifetime = 8 * 60;
-
-	/** Настройки вставок. */
-
-	/// Если в таблице хотя бы столько активных кусков, искусственно замедлять вставки в таблицу.
-	size_t parts_to_delay_insert = 150;
-
-	/// Если в таблице parts_to_delay_insert + k кусков, спать insert_delay_step^k миллисекунд перед вставкой каждого блока.
-	/// Таким образом, скорость вставок автоматически замедлится примерно до скорости слияний.
-	double insert_delay_step = 1.1;
-
-	/** Настройки репликации. */
-
-	/// Для скольки последних блоков хранить хеши в ZooKeeper.
-	size_t replicated_deduplication_window = 100;
-
-	/// Хранить примерно столько последних записей в логе в ZooKeeper, даже если они никому уже не нужны.
-	/// Не влияет на работу таблиц; используется только чтобы успеть посмотреть на лог в ZooKeeper глазами прежде, чем его очистят.
-	size_t replicated_logs_to_keep = 100;
-
-	/// Максимальное количество ошибок при загрузке кусков, при котором ReplicatedMergeTree соглашается запускаться.
-	size_t replicated_max_unexpected_parts = 3;
-	size_t replicated_max_unexpectedly_merged_parts = 2;
-	size_t replicated_max_missing_obsolete_parts = 5;
-	size_t replicated_max_missing_active_parts = 20;
-	/// Если отношение количества ошибок к общему количеству кусков меньше указанного значения, то всё-равно можно запускаться.
-	double replicated_max_ratio_of_wrong_parts = 0.05;
-};
-
 
 class MergeTreeData : public ITableDeclaration
 {
@@ -678,10 +616,16 @@ public:
 	std::string getModePrefix() const;
 
 	bool supportsSampling() const { return !!sampling_expression; }
-	bool supportsFinal() const { return !sign_column.empty(); }
 	bool supportsPrewhere() const { return true; }
 
-	UInt64 getMaxDataPartIndex();
+	bool supportsFinal() const
+	{
+		return mode == Mode::Collapsing
+			|| mode == Mode::Summing
+			|| mode == Mode::Aggregating;
+	}
+
+	Int64 getMaxDataPartIndex();
 
 	std::string getTableName() const override
 	{
@@ -835,6 +779,13 @@ public:
 		return it == std::end(column_sizes) ? 0 : it->second;
 	}
 
+	using ColumnSizes = std::unordered_map<std::string, size_t>;
+	ColumnSizes getColumnSizes() const
+	{
+		Poco::ScopedLock<Poco::FastMutex> lock{data_parts_mutex};
+		return column_sizes;
+	}
+
 	/// Для ATTACH/DETACH/DROP PARTITION.
 	static String getMonthName(const Field & partition);
 	static DayNum_t getMonthDayNum(const Field & partition);
@@ -866,7 +817,7 @@ private:
 
 	NamesAndTypesListPtr columns;
 	/// Актуальные размеры столбцов в сжатом виде
-	std::unordered_map<std::string, size_t> column_sizes;
+	ColumnSizes column_sizes;
 
 	BrokenPartCallback broken_part_callback;
 

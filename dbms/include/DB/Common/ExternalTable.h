@@ -47,7 +47,7 @@ public:
 
 		for (size_t i = 0; i < structure.size(); ++i)
 		{
-			ColumnWithNameAndType column;
+			ColumnWithTypeAndName column;
 			column.name = structure[i].first;
 			column.type = data_type_factory.get(structure[i].second);
 			column.column = column.type->createColumn();

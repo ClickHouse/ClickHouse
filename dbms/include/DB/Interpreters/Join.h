@@ -18,8 +18,9 @@ namespace DB
 
 /** Структура данных для реализации JOIN-а.
   * По сути, хэш-таблица: ключи -> строки присоединяемой таблицы.
+  * Исключение - CROSS JOIN, где вместо хэш-таблицы просто набор блоков без ключей.
   *
-  * JOIN-ы бывают восьми типов: ANY/ALL x LEFT/INNER/RIGHT/FULL.
+  * JOIN-ы бывают девяти типов: ANY/ALL × LEFT/INNER/RIGHT/FULL, а также CROSS.
   *
   * Если указано ANY - выбрать из "правой" таблицы только одну, первую попавшуюся строку, даже если там более одной соответствующей строки.
   * Если указано ALL - обычный вариант JOIN-а, при котором строки могут размножаться по числу соответствующих строк "правой" таблицы.
@@ -213,6 +214,7 @@ private:
 		KEY_64,
 		KEY_STRING,
 		HASHED,
+		CROSS,
 	};
 
 	Type type = Type::EMPTY;
@@ -248,6 +250,8 @@ private:
 
 	template <ASTJoin::Kind KIND, ASTJoin::Strictness STRICTNESS, typename Maps>
 	void joinBlockImpl(Block & block, const Maps & maps) const;
+
+	void joinBlockImplCross(Block & block) const;
 
 	/// Проверить не превышены ли допустимые размеры множества
 	bool checkSizeLimits() const;

@@ -38,7 +38,7 @@ int main(int argc, char ** argv)
 		streams.emplace_back(new DB::LimitBlockInputStream(table->read(column_names, 0, DB::Context{}, DB::Settings(), stage2, 1)[0], 30, 2000));
 		streams.emplace_back(new DB::LimitBlockInputStream(table->read(column_names, 0, DB::Context{}, DB::Settings(), stage3, 1)[0], 30, 100));
 
-		DB::UnionBlockInputStream union_stream(streams, 2);
+		DB::UnionBlockInputStream union_stream(streams, nullptr, 2);
 
 		DB::FormatFactory format_factory;
 		DB::WriteBufferFromFileDescriptor wb(STDERR_FILENO);

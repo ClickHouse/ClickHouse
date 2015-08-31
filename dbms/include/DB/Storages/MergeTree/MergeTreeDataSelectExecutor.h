@@ -54,10 +54,11 @@ private:
 		ExpressionActionsPtr prewhere_actions,
 		const String & prewhere_column,
 		const Names & virt_columns,
-		const Settings & settings);
+		const Settings & settings,
+		const Context & context);
 
 	/// Создать выражение "Sign == 1".
-	void createPositiveSignCondition(ExpressionActionsPtr & out_expression, String & out_column);
+	void createPositiveSignCondition(ExpressionActionsPtr & out_expression, String & out_column, const Context & context);
 
 	MarkRanges markRangesFromPkRange(const MergeTreeData::DataPart::Index & index, PKCondition & key_condition, const Settings & settings);
 };

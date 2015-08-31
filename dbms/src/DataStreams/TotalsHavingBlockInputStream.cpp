@@ -9,7 +9,7 @@ static void finalize(Block & block)
 {
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
-		ColumnWithNameAndType & current = block.getByPosition(i);
+		ColumnWithTypeAndName & current = block.getByPosition(i);
 		ColumnAggregateFunction * unfinalized_column = typeid_cast<ColumnAggregateFunction *>(&*current.column);
 		if (unfinalized_column)
 		{
@@ -106,7 +106,7 @@ Block TotalsHavingBlockInputStream::readImpl()
 
 			for (size_t i = 0; i < columns; ++i)
 			{
-				ColumnWithNameAndType & current_column = finalized.getByPosition(i);
+				ColumnWithTypeAndName & current_column = finalized.getByPosition(i);
 				current_column.column = current_column.column->filter(filter);
 				if (current_column.column->empty())
 				{
@@ -134,7 +134,7 @@ void TotalsHavingBlockInputStream::addToTotals(Block & totals, Block & block, co
 
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
-		const ColumnWithNameAndType & current = block.getByPosition(i);
+		const ColumnWithTypeAndName & current = block.getByPosition(i);
 		const ColumnAggregateFunction * column = typeid_cast<const ColumnAggregateFunction *>(&*current.column);
 
 		if (!column)
@@ -143,7 +143,7 @@ void TotalsHavingBlockInputStream::addToTotals(Block & totals, Block & block, co
 			{
 				ColumnPtr new_column = current.type->createColumn();
 				new_column->insertDefault();
-				totals.insert(ColumnWithNameAndType(new_column, current.type, current.name));
+				totals.insert(ColumnWithTypeAndName(new_column, current.type, current.name));
 			}
 			continue;
 		}
@@ -156,7 +156,7 @@ void TotalsHavingBlockInputStream::addToTotals(Block & totals, Block & block, co
 		{
 			function = column->getAggregateFunction();
 			target = new ColumnAggregateFunction(column->getAggregateFunction(), Arenas(1, arena));
-			totals.insert(ColumnWithNameAndType(target, current.type, current.name));
+			totals.insert(ColumnWithTypeAndName(target, current.type, current.name));
 
 			data = arena->alloc(function->sizeOfData());
 			function->create(data);

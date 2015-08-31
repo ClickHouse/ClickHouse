@@ -64,8 +64,6 @@ public:
 	};
 	typedef std::map<String, ColumnData> Files_t;
 
-	Files_t & getFiles();
-
 	std::string full_path() { return path + escapeForFileName(name) + '/';}
 
 private:
@@ -77,7 +75,7 @@ private:
 
 	Files_t files;
 
-	FileChecker<StorageTinyLog> file_checker;
+	FileChecker file_checker;
 
 	Logger * log;
 

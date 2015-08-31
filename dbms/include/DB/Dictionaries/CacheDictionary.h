@@ -31,7 +31,7 @@ public:
 	{
 		if (!this->source_ptr->supportsSelectiveLoad())
 			throw Exception{
-				"Source cannot be used with CacheDictionary",
+				name + ": source cannot be used with CacheDictionary",
 				ErrorCodes::UNSUPPORTED_METHOD
 			};
 
@@ -87,60 +87,10 @@ public:
 
 	bool hasHierarchy() const override { return hierarchical_attribute; }
 
-	id_t toParent(const id_t id) const override
-	{
-		PODArray<UInt64> ids{1, id};
-		PODArray<UInt64> out{1};
-		getItems<UInt64>(*hierarchical_attribute, ids, out);
-		return out.front();
-	}
-
 	void toParent(const PODArray<id_t> & ids, PODArray<id_t> & out) const override
 	{
 		getItems<UInt64>(*hierarchical_attribute, ids, out);
 	}
-
-#define DECLARE_INDIVIDUAL_GETTER(TYPE) \
-	TYPE get##TYPE(const std::string & attribute_name, const id_t id) const override\
-    {\
-		auto & attribute = getAttribute(attribute_name);\
-		if (attribute.type != AttributeUnderlyingType::TYPE)\
-			throw Exception{\
-				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
-				ErrorCodes::TYPE_MISMATCH\
-			};\
-		\
-		PODArray<UInt64> ids{1, id};\
-		PODArray<TYPE> out{1};\
-		getItems<TYPE>(attribute, ids, out);\
-        return out.front();\
-	}
-	DECLARE_INDIVIDUAL_GETTER(UInt8)
-	DECLARE_INDIVIDUAL_GETTER(UInt16)
-	DECLARE_INDIVIDUAL_GETTER(UInt32)
-	DECLARE_INDIVIDUAL_GETTER(UInt64)
-	DECLARE_INDIVIDUAL_GETTER(Int8)
-	DECLARE_INDIVIDUAL_GETTER(Int16)
-	DECLARE_INDIVIDUAL_GETTER(Int32)
-	DECLARE_INDIVIDUAL_GETTER(Int64)
-	DECLARE_INDIVIDUAL_GETTER(Float32)
-	DECLARE_INDIVIDUAL_GETTER(Float64)
-#undef DECLARE_INDIVIDUAL_GETTER
-	String getString(const std::string & attribute_name, const id_t id) const override
-	{
-		auto & attribute = getAttribute(attribute_name);
-		if (attribute.type != AttributeUnderlyingType::String)
-			throw Exception{
-				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-				ErrorCodes::TYPE_MISMATCH
-			};
-
-		PODArray<UInt64> ids{1, id};
-		ColumnString out;
-		getItems(attribute, ids, &out);
-
-        return String{out.getDataAt(0)};
-	};
 
 #define DECLARE_MULTIPLE_GETTER(TYPE)\
 	void get##TYPE(const std::string & attribute_name, const PODArray<id_t> & ids, PODArray<TYPE> & out) const override\
@@ -148,7 +98,7 @@ public:
 		auto & attribute = getAttribute(attribute_name);\
 		if (attribute.type != AttributeUnderlyingType::TYPE)\
 			throw Exception{\
-				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
+				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
 				ErrorCodes::TYPE_MISMATCH\
 			};\
 		\
@@ -170,7 +120,7 @@ public:
 		auto & attribute = getAttribute(attribute_name);
 		if (attribute.type != AttributeUnderlyingType::String)
 			throw Exception{
-				"Type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
+				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
 				ErrorCodes::TYPE_MISMATCH
 			};
 
@@ -223,7 +173,7 @@ private:
 
 				if (hierarchical_attribute->type != AttributeUnderlyingType::UInt64)
 					throw Exception{
-						"Hierarchical attribute must be UInt64.",
+						name + ": hierarchical attribute must be UInt64.",
 						ErrorCodes::TYPE_MISMATCH
 					};
 			}
@@ -472,7 +422,7 @@ private:
 			const auto id_column = typeid_cast<const ColumnVector<UInt64> *>(block.getByPosition(0).column.get());
 			if (!id_column)
 				throw Exception{
-					"Id column has type different from UInt64.",
+					name + ": id column has type different from UInt64.",
 					ErrorCodes::TYPE_MISMATCH
 				};
 
@@ -626,7 +576,7 @@ private:
 		const auto it = attribute_index_by_name.find(attribute_name);
 		if (it == std::end(attribute_index_by_name))
 			throw Exception{
-				"No such attribute '" + attribute_name + "'",
+				name + ": no such attribute '" + attribute_name + "'",
 				ErrorCodes::BAD_ARGUMENTS
 			};
 
@@ -670,9 +620,9 @@ private:
 	mutable std::mt19937_64 rnd_engine{getSeed()};
 
 	mutable std::size_t bytes_allocated = 0;
-	mutable std::atomic<std::size_t> element_count{};
-	mutable std::atomic<std::size_t> hit_count{};
-	mutable std::atomic<std::size_t> query_count{};
+	mutable std::atomic<std::size_t> element_count{0};
+	mutable std::atomic<std::size_t> hit_count{0};
+	mutable std::atomic<std::size_t> query_count{0};
 
 	const std::chrono::time_point<std::chrono::system_clock> creation_time = std::chrono::system_clock::now();
 };

@@ -43,7 +43,7 @@ public:
 		MergeTreeData::Mode mode_,
 		const String & sign_column_,		/// Для Collapsing режима.
 		const Names & columns_to_sum_,		/// Для Summing режима.
-		const MergeTreeSettings & settings_ = MergeTreeSettings());
+		const MergeTreeSettings & settings_);
 
 	void shutdown() override;
 	~StorageReplicatedMergeTree() override;
@@ -124,6 +124,8 @@ public:
 		UInt32 inserts_in_queue;
 		UInt32 merges_in_queue;
 		UInt32 queue_oldest_time;
+		UInt32 inserts_oldest_time;
+		UInt32 merges_oldest_time;
 		UInt64 log_max_index;
 		UInt64 log_pointer;
 		UInt8 total_replicas;
@@ -282,7 +284,7 @@ private:
 		MergeTreeData::Mode mode_,
 		const String & sign_column_,
 		const Names & columns_to_sum_,
-		const MergeTreeSettings & settings_ = MergeTreeSettings());
+		const MergeTreeSettings & settings_);
 
 	/// Инициализация.
 
@@ -391,8 +393,11 @@ private:
 	  */
 	void waitForReplicaToProcessLogEntry(const String & replica_name, const LogEntry & entry);
 
-	/// Преобразовать число в строку формате суффиксов автоинкрементных нод в ZooKeeper.
-	static String padIndex(UInt64 index)
+	/** Преобразовать число в строку формате суффиксов автоинкрементных нод в ZooKeeper.
+	  * Поддерживаются также отрицательные числа - для них имя ноды выглядит несколько глупо
+	  *  и не соответствует никакой автоинкрементной ноде в ZK.
+	  */
+	static String padIndex(Int64 index)
 	{
 		String index_str = toString(index);
 		return std::string(10 - index_str.size(), '0') + index_str;

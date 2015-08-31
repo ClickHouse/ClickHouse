@@ -24,7 +24,7 @@ int main(int argc, char ** argv)
 		column_names.push_back("number");
 
 		DB::Block sample;
-		DB::ColumnWithNameAndType col;
+		DB::ColumnWithTypeAndName col;
 		col.type = new DB::DataTypeUInt64;
 		sample.insert(col);
 

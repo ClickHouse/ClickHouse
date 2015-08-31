@@ -374,8 +374,20 @@ struct AggregationMethodConcat
 		/// См. функцию extractKeysAndPlaceInPoolContiguous.
 		const StringRef * key_refs = reinterpret_cast<const StringRef *>(value.first.data + value.first.size);
 
-		for (size_t i = 0; i < keys_size; ++i)
-			key_columns[i]->insertDataWithTerminatingZero(key_refs[i].data, key_refs[i].size);
+		if (unlikely(0 == value.first.size))
+		{
+			/** Исправление, если все ключи - пустые массивы. Для них в хэш-таблицу записывается StringRef нулевой длины, но с ненулевым указателем.
+			  * Но при вставке в хэш-таблицу, такой StringRef оказывается равен другому ключу нулевой длины,
+			  *  у которого указатель на данные может быть любым мусором и использовать его нельзя.
+			  */
+			for (size_t i = 0; i < keys_size; ++i)
+				key_columns[i]->insertDefault();
+		}
+		else
+		{
+			for (size_t i = 0; i < keys_size; ++i)
+				key_columns[i]->insertDataWithTerminatingZero(key_refs[i].data, key_refs[i].size);
+		}
 	}
 };
 
@@ -662,17 +674,6 @@ typedef SharedPtr<AggregatedDataVariants> AggregatedDataVariantsPtr;
 typedef std::vector<AggregatedDataVariantsPtr> ManyAggregatedDataVariants;
 
 
-/** Достать вариант агрегации по его типу. */
-template <typename Method> Method & getDataVariant(AggregatedDataVariants & variants);
-
-#define M(NAME, IS_TWO_LEVEL) \
-	template <> inline decltype(AggregatedDataVariants::NAME)::element_type & getDataVariant<decltype(AggregatedDataVariants::NAME)::element_type>(AggregatedDataVariants & variants) { return *variants.NAME; }
-
-APPLY_FOR_AGGREGATED_VARIANTS(M)
-
-#undef M
-
-
 /** Агрегирует источник блоков.
   */
 class Aggregator
@@ -721,10 +722,14 @@ public:
 	  */
 	AggregatedDataVariantsPtr merge(ManyAggregatedDataVariants & data_variants, size_t max_threads);
 
-	/** Объединить несколько агрегированных блоков в одну структуру данных.
+	/** Объединить поток частично агрегированных блоков в одну структуру данных.
 	  * (Доагрегировать несколько блоков, которые представляют собой результат независимых агрегаций с удалённых серверов.)
 	  */
 	void mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants & result, size_t max_threads);
+
+	/** Объединить несколько частично агрегированных блоков в один.
+	  */
+	Block mergeBlocks(BlocksList & blocks, bool final);
 
 	using CancellationHook = std::function<bool()>;
 
@@ -960,6 +965,17 @@ protected:
 	void destroyImpl(
 		Method & method) const;
 };
+
+
+/** Достать вариант агрегации по его типу. */
+template <typename Method> Method & getDataVariant(AggregatedDataVariants & variants);
+
+#define M(NAME, IS_TWO_LEVEL) \
+	template <> inline decltype(AggregatedDataVariants::NAME)::element_type & getDataVariant<decltype(AggregatedDataVariants::NAME)::element_type>(AggregatedDataVariants & variants) { return *variants.NAME; }
+
+APPLY_FOR_AGGREGATED_VARIANTS(M)
+
+#undef M
 
 
 }

@@ -18,7 +18,7 @@ namespace
 Block createSampleBlock(const DictionaryStructure & dict_struct)
 {
 	Block block{
-		ColumnWithNameAndType{
+		ColumnWithTypeAndName{
 			new ColumnUInt64,
 			new DataTypeUInt64,
 			dict_struct.id_name
@@ -26,7 +26,7 @@ Block createSampleBlock(const DictionaryStructure & dict_struct)
 	};
 
 	for (const auto & attribute : dict_struct.attributes)
-		block.insert(ColumnWithNameAndType{
+		block.insert(ColumnWithTypeAndName{
 			attribute.type->createColumn(), attribute.type, attribute.name
 		});
 
@@ -39,16 +39,15 @@ Block createSampleBlock(const DictionaryStructure & dict_struct)
 class DictionarySourceFactory : public Singleton<DictionarySourceFactory>
 {
 public:
-	DictionarySourcePtr create(Poco::Util::AbstractConfiguration & config,
-		const std::string & config_prefix,
-		const DictionaryStructure & dict_struct,
-		Context & context) const
+	DictionarySourcePtr create(
+		const std::string & name, Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
+		const DictionaryStructure & dict_struct, Context & context) const
 	{
 		Poco::Util::AbstractConfiguration::Keys keys;
 		config.keys(config_prefix, keys);
 		if (keys.size() != 1)
 			throw Exception{
-				"Element dictionary.source should have exactly one child element",
+				name +": element dictionary.source should have exactly one child element",
 				ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG
 			};
 
@@ -73,7 +72,7 @@ public:
 		}
 
 		throw Exception{
-			"Unknown dictionary source type: " + source_type,
+			name + ": unknown dictionary source type: " + source_type,
 			ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG
 		};
 	}

@@ -20,8 +20,7 @@ class FileDictionarySource final : public IDictionarySource
 public:
 	FileDictionarySource(const std::string & filename, const std::string & format, Block & sample_block,
 		const Context & context)
-		: filename{filename}, format{format}, sample_block{sample_block}, context(context),
-		  last_modification{getLastModification()}
+		: filename{filename}, format{format}, sample_block{sample_block}, context(context)
 	{}
 
 	FileDictionarySource(const FileDictionarySource & other)
