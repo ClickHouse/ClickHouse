@@ -217,12 +217,6 @@ private:
 				}
 			}
 
-			if (aio_threshold == 0 || estimated_size < aio_threshold)
-				memory.resize(buffer_size);
-			else
-				memory.resize(2 * Memory::align(buffer_size + DEFAULT_AIO_FILE_BLOCK_SIZE,
-					DEFAULT_AIO_FILE_BLOCK_SIZE));
-
 			if (uncompressed_cache)
 			{
 				cached_buffer = std::make_unique<CachedCompressedReadBuffer>(
@@ -231,6 +225,14 @@ private:
 			}
 			else
 			{
+				if (aio_threshold == 0 || estimated_size < aio_threshold)
+					memory.resize(buffer_size);
+				else
+					memory.resize(2 * Memory::align(buffer_size + DEFAULT_AIO_FILE_BLOCK_SIZE,
+						DEFAULT_AIO_FILE_BLOCK_SIZE));
+
+				/** @todo CompressedReadBufferFromFile creates buffer for decompressed blocks, consider providing another
+				 *	instance of Memory type for it */
 				non_cached_buffer = std::make_unique<CompressedReadBufferFromFile>(
 					path_prefix + ".bin", estimated_size, aio_threshold, buffer_size, &memory[0]);
 				data_buffer = non_cached_buffer.get();
@@ -325,7 +327,7 @@ private:
 			return;
 
 		const auto buffer_idx = streams.size();
-		if (buffer_idx >= buffers.size())
+		if (buffer_idx == buffers.size())
 			buffers.push_back(std::make_unique<Memory>(0, DEFAULT_AIO_FILE_BLOCK_SIZE));
 
 		/// Для массивов используются отдельные потоки для размеров.
