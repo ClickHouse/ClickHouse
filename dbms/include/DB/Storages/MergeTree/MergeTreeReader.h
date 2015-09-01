@@ -294,8 +294,9 @@ private:
 
 	typedef std::map<std::string, std::unique_ptr<Stream> > FileStreams;
 
-	/** @todo placing buffers after streams (and causing buffers to be deleted bebfore streams in destructor)
-		causes memory corruption, investigate why */
+	/** buffers shall be deleted after streams because some streams may use existing_memory even inside destructor
+	 *	(ReadBufferAIO passes pointer to buffer to a syscall and waits for it's completion in destructor, thus there is
+	 *	a chance that system will write to memory after it has been freed */
 	std::vector<std::unique_ptr<Memory>> buffers;
 	String path;
 	MergeTreeData::DataPartPtr data_part;

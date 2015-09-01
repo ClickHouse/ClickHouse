@@ -40,8 +40,9 @@ public:
 	MergeTreeReadPool(
 		const std::size_t threads, const std::size_t sum_marks, const std::size_t min_marks_for_concurrent_read,
 		RangesInDataParts parts, MergeTreeData & data, const ExpressionActionsPtr & prewhere_actions,
-		const String & prewhere_column_name, const bool check_columns, const Names & column_names)
-		: data{data}, column_names{column_names}
+		const String & prewhere_column_name, const bool check_columns, const Names & column_names,
+		const bool do_not_steal_tasks = false)
+		: data{data}, column_names{column_names}, do_not_steal_tasks{do_not_steal_tasks}
 	{
 		const auto per_part_sum_marks = fillPerPartInfo(parts, prewhere_actions, prewhere_column_name, check_columns);
 		fillPerThreadInfo(threads, sum_marks, per_part_sum_marks, parts, min_marks_for_concurrent_read);
@@ -57,8 +58,11 @@ public:
 		if (remaining_thread_tasks.empty())
 			return nullptr;
 
-		const auto thread_idx = !threads_tasks[thread].sum_marks_in_parts.empty() ? thread :
-								*std::begin(remaining_thread_tasks);
+		const auto tasks_remaining_for_this_thread = !threads_tasks[thread].sum_marks_in_parts.empty();
+		if (!tasks_remaining_for_this_thread && do_not_steal_tasks)
+			return nullptr;
+
+		const auto thread_idx = tasks_remaining_for_this_thread ? thread : *std::begin(remaining_thread_tasks);
 		auto & thread_tasks = threads_tasks[thread_idx];
 
 		auto & thread_task = thread_tasks.parts_and_ranges.back();
@@ -395,6 +399,7 @@ public:
 	std::vector<std::unique_ptr<Poco::ScopedReadRWLock>> per_part_columns_lock;
 	MergeTreeData & data;
 	Names column_names;
+	const bool do_not_steal_tasks;
 	std::vector<NameSet> per_part_column_name_set;
 	std::vector<NamesAndTypesList> per_part_columns;
 	std::vector<NamesAndTypesList> per_part_pre_columns;

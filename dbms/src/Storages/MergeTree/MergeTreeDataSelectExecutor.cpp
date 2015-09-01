@@ -490,7 +490,10 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 	const Settings & settings,
 	const Context & context)
 {
-	size_t max_marks_to_use_cache = (settings.merge_tree_max_rows_to_use_cache + data.index_granularity - 1) / data.index_granularity;
+	const size_t max_marks_to_use_cache =
+		(settings.merge_tree_max_rows_to_use_cache + data.index_granularity - 1) / data.index_granularity;
+	const size_t min_marks_for_read_task =
+		(settings.merge_tree_min_rows_for_concurrent_read + data.index_granularity - 1) / data.index_granularity;
 
 	size_t sum_marks = 0;
 	for (size_t i = 0; i < parts.size(); ++i)
@@ -500,29 +503,31 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 	if (sum_marks > max_marks_to_use_cache)
 		use_uncompressed_cache = false;
 
+	MergeTreeReadPoolPtr pool = std::make_shared<MergeTreeReadPool>(
+		parts.size(), sum_marks, min_marks_for_read_task, parts, data, prewhere_actions, prewhere_column, true,
+		column_names, true);
+
 	BlockInputStreams to_merge;
 
-	for (size_t part_index = 0; part_index < parts.size(); ++part_index)
+	for (const auto i : ext::range(0, parts.size()))
 	{
-		RangesInDataPart & part = parts[part_index];
-
-		BlockInputStreamPtr source_stream = new MergeTreeBlockInputStream(
-			data.getFullPath() + part.data_part->name + '/', max_block_size, column_names, data,
-			part.data_part, part.ranges, use_uncompressed_cache,
-			prewhere_actions, prewhere_column, true, settings.min_bytes_to_use_direct_io, settings.max_read_buffer_size);
-
-		for (const String & virt_column : virt_columns)
-		{
-			if (virt_column == "_part")
-				source_stream = new AddingConstColumnBlockInputStream<String>(
-					source_stream, new DataTypeString, part.data_part->name, "_part");
-			else if (virt_column == "_part_index")
-				source_stream = new AddingConstColumnBlockInputStream<UInt64>(
-					source_stream, new DataTypeUInt64, part.part_index_in_query, "_part_index");
-		}
+		BlockInputStreamPtr source_stream{
+			new MergeTreeThreadBlockInputStream{
+				i, pool, min_marks_for_read_task, max_block_size, data, use_uncompressed_cache, prewhere_actions,
+				prewhere_column, settings.min_bytes_to_use_direct_io, settings.max_read_buffer_size, virt_columns
+			}
+		};
 
 		to_merge.push_back(new ExpressionBlockInputStream(source_stream, data.getPrimaryExpression()));
 	}
+
+	/// Оценим общее количество строк - для прогресс-бара.
+	const std::size_t total_rows = data.index_granularity * sum_marks;
+
+	/// Выставим приблизительное количество строк только для первого источника
+	static_cast<IProfilingBlockInputStream &>(*to_merge.front()).setTotalRowsApprox(total_rows);
+
+	LOG_TRACE(log, "Reading approx. " << total_rows);
 
 	BlockInputStreams res;
 	if (to_merge.size() == 1)
