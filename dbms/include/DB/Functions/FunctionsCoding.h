@@ -1379,4 +1379,360 @@ public:
 	}
 };
 
+namespace
+{
+	template <typename T1, typename T2> UInt8 bitTest(const T1 val, const T2 pos) { return (val >> pos) & 1; };
+}
+
+class FunctionBitTest : public IFunction
+{
+public:
+	static constexpr auto name = "bitTest";
+	static IFunction * create(const Context &) { return new FunctionBitTest; }
+
+	String getName() const override { return name; }
+
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	{
+		if (arguments.size() != 2)
+			throw Exception{
+				"Number of arguments for function " + getName() + " doesn't match: passed "
+				+ toString(arguments.size()) + ", should be 2.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
+			};
+
+		const auto first_arg = arguments.front().get();
+		if (!typeid_cast<const DataTypeUInt8 *>(first_arg) &&
+			!typeid_cast<const DataTypeUInt16 *>(first_arg) &&
+			!typeid_cast<const DataTypeUInt32 *>(first_arg) &&
+			!typeid_cast<const DataTypeUInt64 *>(first_arg) &&
+			!typeid_cast<const DataTypeInt8 *>(first_arg) &&
+			!typeid_cast<const DataTypeInt16 *>(first_arg) &&
+			!typeid_cast<const DataTypeInt32 *>(first_arg) &&
+			!typeid_cast<const DataTypeInt64 *>(first_arg))
+			throw Exception{
+				"Illegal type " + first_arg->getName() + " of first argument of function " + getName(),
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+			};
+
+
+		const auto second_arg = arguments.back().get();
+		if (!typeid_cast<const DataTypeUInt8 *>(second_arg) &&
+			!typeid_cast<const DataTypeUInt16 *>(second_arg) &&
+			!typeid_cast<const DataTypeUInt32 *>(second_arg) &&
+			!typeid_cast<const DataTypeUInt64 *>(second_arg))
+			throw Exception{
+				"Illegal type " + second_arg->getName() + " of second argument of function " + getName(),
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+			};
+
+		return new DataTypeUInt8;
+	}
+
+	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
+	{
+		const auto value_col = block.getByPosition(arguments.front()).column.get();
+
+		if (!execute<UInt8>(block, arguments, result, value_col) &&
+			!execute<UInt16>(block, arguments, result, value_col) &&
+			!execute<UInt32>(block, arguments, result, value_col) &&
+			!execute<UInt64>(block, arguments, result, value_col) &&
+			!execute<Int8>(block, arguments, result, value_col) &&
+			!execute<Int16>(block, arguments, result, value_col) &&
+			!execute<Int32>(block, arguments, result, value_col) &&
+			!execute<Int64>(block, arguments, result, value_col))
+			throw Exception{
+				"Illegal column " + value_col->getName() + " of argument of function " + getName(),
+				ErrorCodes::ILLEGAL_COLUMN
+			};
+	}
+
+private:
+	template <typename T> bool execute(
+		Block & block, const ColumnNumbers & arguments, const size_t result,
+		const IColumn * const value_col_untyped)
+	{
+		if (const auto value_col = typeid_cast<const ColumnVector<T> *>(value_col_untyped))
+		{
+			const auto pos_col = block.getByPosition(arguments.back()).column.get();
+
+			if (!execute(block, arguments, result, value_col, pos_col))
+				throw Exception{
+					"Illegal column " + pos_col->getName() + " of argument of function " + getName(),
+					ErrorCodes::ILLEGAL_COLUMN
+				};
+
+			return true;
+		}
+		else if (const auto value_col = typeid_cast<const ColumnConst<T> *>(value_col_untyped))
+		{
+			const auto pos_col = block.getByPosition(arguments.back()).column.get();
+
+			if (!execute(block, arguments, result, value_col, pos_col))
+				throw Exception{
+					"Illegal column " + pos_col->getName() + " of argument of function " + getName(),
+					ErrorCodes::ILLEGAL_COLUMN
+				};
+
+			return true;
+		}
+
+		return false;
+	}
+
+	template <typename ValueColumn> bool execute(
+		Block & block, const ColumnNumbers & arguments, const size_t result,
+		const ValueColumn * const value_col, const IColumn * const pos_col)
+	{
+		return execute<UInt8>(block, arguments, result, value_col, pos_col) ||
+			   execute<UInt16>(block, arguments, result, value_col, pos_col) ||
+			   execute<UInt32>(block, arguments, result, value_col, pos_col) ||
+			   execute<UInt64>(block, arguments, result, value_col, pos_col);
+	}
+
+	template <typename T, typename ValueType> bool execute(
+		Block & block, const ColumnNumbers & arguments, const size_t result,
+		const ColumnVector<ValueType> * const value_col, const IColumn * const pos_col_untyped)
+	{
+		if (const auto pos_col = typeid_cast<const ColumnVector<T> *>(pos_col_untyped))
+		{
+			const auto & values = value_col->getData();
+			const auto & positions = pos_col->getData();
+
+			const auto size = value_col->size();
+			const auto out_col = new ColumnVector<UInt8>(size);
+			ColumnPtr out_col_ptr{out_col};
+			block.getByPosition(result).column = out_col_ptr;
+
+			auto & out = out_col->getData();
+
+			for (const auto i : ext::range(0, size))
+				out[i] = bitTest(values[i], positions[i]);
+
+			return true;
+		}
+		else if (const auto pos_col = typeid_cast<const ColumnConst<T> *>(pos_col_untyped))
+		{
+			const auto & values = value_col->getData();
+
+			const auto size = value_col->size();
+			const auto out_col = new ColumnVector<UInt8>(size);
+			ColumnPtr out_col_ptr{out_col};
+			block.getByPosition(result).column = out_col_ptr;
+
+			auto & out = out_col->getData();
+
+			for (const auto i : ext::range(0, size))
+				out[i] = bitTest(values[i], pos_col->getData());
+
+			return true;
+		}
+
+		return false;
+	}
+
+	template <typename T, typename ValueType> bool execute(
+		Block & block, const ColumnNumbers & arguments, const size_t result,
+		const ColumnConst<ValueType> * const value_col, const IColumn * const pos_col_untyped)
+	{
+		if (const auto pos_col = typeid_cast<const ColumnVector<T> *>(pos_col_untyped))
+		{
+			const auto & positions = pos_col->getData();
+
+			const auto size = value_col->size();
+			const auto out_col = new ColumnVector<UInt8>(size);
+			ColumnPtr out_col_ptr{out_col};
+			block.getByPosition(result).column = out_col_ptr;
+
+			auto & out = out_col->getData();
+
+			for (const auto i : ext::range(0, size))
+				out[i] = bitTest(value_col->getData(), positions[i]);
+
+			return true;
+		}
+		else if (const auto pos_col = typeid_cast<const ColumnConst<T> *>(pos_col_untyped))
+		{
+			block.getByPosition(result).column = new ColumnConst<UInt8>{
+				value_col->size(),
+				bitTest(value_col->getData(), pos_col->getData())
+			};
+
+			return true;
+		}
+
+		return false;
+	}
+};
+
+template <typename Impl>
+struct FunctionBitTestMany : public IFunction
+{
+public:
+	static constexpr auto name = Impl::name;
+	static IFunction * create(const Context &) { return new FunctionBitTestMany; }
+
+	String getName() const override { return name; }
+
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	{
+		if (arguments.size() < 2)
+			throw Exception{
+				"Number of arguments for function " + getName() + " doesn't match: passed "
+				+ toString(arguments.size()) + ", should be at least 2.",
+				ErrorCodes::TOO_LESS_ARGUMENTS_FOR_FUNCTION
+			};
+
+		const auto first_arg = arguments.front().get();
+		if (!typeid_cast<const DataTypeUInt8 *>(first_arg) && !typeid_cast<const DataTypeUInt16 *>(first_arg) &&
+			!typeid_cast<const DataTypeUInt32 *>(first_arg) && !typeid_cast<const DataTypeUInt64 *>(first_arg) &&
+			!typeid_cast<const DataTypeInt8 *>(first_arg) && !typeid_cast<const DataTypeInt16 *>(first_arg) &&
+			!typeid_cast<const DataTypeInt32 *>(first_arg) && !typeid_cast<const DataTypeInt64 *>(first_arg))
+			throw Exception{
+				"Illegal type " + first_arg->getName() + " of first argument of function " + getName(),
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+			};
+
+
+		for (const auto i : ext::range(1, arguments.size()))
+		{
+			const auto pos_arg = arguments[i].get();
+
+			if (!typeid_cast<const DataTypeUInt8 *>(pos_arg) && !typeid_cast<const DataTypeUInt16 *>(pos_arg) &&
+				!typeid_cast<const DataTypeUInt32 *>(pos_arg) && !typeid_cast<const DataTypeUInt64 *>(pos_arg))
+				throw Exception{
+					"Illegal type " + pos_arg->getName() + " of " + toString(i) + " argument of function " + getName(),
+					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+				};
+		}
+
+		return new DataTypeUInt8;
+	}
+
+	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
+	{
+		const auto value_col = block.getByPosition(arguments.front()).column.get();
+
+		if (!execute<UInt8>(block, arguments, result, value_col) &&
+			!execute<UInt16>(block, arguments, result, value_col) &&
+			!execute<UInt32>(block, arguments, result, value_col) &&
+			!execute<UInt64>(block, arguments, result, value_col) &&
+			!execute<Int8>(block, arguments, result, value_col) &&
+			!execute<Int16>(block, arguments, result, value_col) &&
+			!execute<Int32>(block, arguments, result, value_col) &&
+			!execute<Int64>(block, arguments, result, value_col))
+			throw Exception{
+				"Illegal column " + value_col->getName() + " of argument of function " + getName(),
+				ErrorCodes::ILLEGAL_COLUMN
+			};
+	}
+
+private:
+	template <typename T> bool execute(
+		Block & block, const ColumnNumbers & arguments, const size_t result,
+		const IColumn * const value_col_untyped)
+	{
+		if (const auto value_col = typeid_cast<const ColumnVector<T> *>(value_col_untyped))
+		{
+			const auto size = value_col->size();
+			const auto & mask = createMask<T>(size, block, arguments);
+			const auto & val = value_col->getData();
+
+			const auto out_col = new ColumnVector<UInt8>(size);
+			ColumnPtr out_col_ptr{out_col};
+			block.getByPosition(result).column = out_col_ptr;
+
+			auto & out = out_col->getData();
+
+			for (const auto i : ext::range(0, size))
+				out[i] = Impl::combine(val[i], mask[i]);
+
+			return true;
+		}
+		else if (const auto value_col = typeid_cast<const ColumnConst<T> *>(value_col_untyped))
+		{
+			const auto size = value_col->size();
+			const auto & mask = createMask<T>(size, block, arguments);
+			const auto & val = value_col->getData();
+
+			const auto out_col = new ColumnVector<UInt8>(size);
+			ColumnPtr out_col_ptr{out_col};
+			block.getByPosition(result).column = out_col_ptr;
+
+			auto & out = out_col->getData();
+
+			for (const auto i : ext::range(0, size))
+				out[i] = Impl::combine(val, mask[i]);
+
+			return true;
+		}
+
+		return false;
+	}
+
+	template <typename T>
+	PODArray<T> createMask(const std::size_t size, const Block & block, const ColumnNumbers & arguments)
+	{
+		PODArray<T> mask(size, T{});
+
+		for (const auto i : ext::range(1, arguments.size()))
+			addToMask(mask, block.getByPosition(arguments[i]).column.get());
+
+		return mask;
+	}
+
+	template <typename ValueType>
+	void addToMask(PODArray<ValueType> & mask, const IColumn * const pos_col)
+	{
+		if (!addToMaskImpl<UInt8>(mask, pos_col) && !addToMaskImpl<UInt16>(mask, pos_col) &&
+			!addToMaskImpl<UInt32>(mask, pos_col) && !addToMaskImpl<UInt64>(mask, pos_col))
+			throw Exception{
+				"Illegal column " + pos_col->getName() + " of argument of function " + getName(),
+				ErrorCodes::ILLEGAL_COLUMN
+			};
+	}
+
+	template <typename PosType, typename ValueType>
+	bool addToMaskImpl(PODArray<ValueType> & mask, const IColumn * const pos_col_untyped)
+	{
+		if (const auto pos_col = typeid_cast<const ColumnVector<PosType> *>(pos_col_untyped))
+		{
+			const auto & pos = pos_col->getData();
+
+			for (const auto i : ext::range(0, mask.size()))
+				mask[i] = mask[i] | (1 << pos[i]);
+
+			return true;
+		}
+		else if (const auto pos_col = typeid_cast<const ColumnConst<PosType> *>(pos_col_untyped))
+		{
+			const auto & pos = pos_col->getData();
+			const auto new_mask = 1 << pos;
+
+			for (const auto i : ext::range(0, mask.size()))
+				mask[i] = mask[i] | new_mask;
+
+			return true;
+		}
+
+		return false;
+	}
+};
+
+struct BitTestAnyImpl
+{
+	static constexpr auto name = "bitTestAny";
+	template <typename T> static UInt8 combine(const T val, const T mask) { return (val & mask) != 0; }
+};
+
+struct BitTestAllImpl
+{
+	static constexpr auto name = "bitTestAll";
+	template <typename T> static UInt8 combine(const T val, const T mask) { return (val & mask) == mask; }
+};
+
+using FunctionBitTestAny = FunctionBitTestMany<BitTestAnyImpl>;
+using FunctionBitTestAll = FunctionBitTestMany<BitTestAllImpl>;
+
+
 }

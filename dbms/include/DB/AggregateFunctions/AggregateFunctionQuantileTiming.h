@@ -15,6 +15,7 @@
 #include <DB/Columns/ColumnArray.h>
 
 #include <stats/IntHash.h>
+#include <statdaemons/ext/range.hpp>
 
 
 namespace DB
@@ -234,9 +235,16 @@ namespace detail
 		template <typename ResultType>
 		void getMany(const double * levels, size_t size, ResultType * result) const
 		{
-			const double * levels_end = levels + size;
-			const double * level = levels;
-			UInt64 pos = count * *level;
+			std::size_t indices[size];
+			std::copy(ext::range_iterator<size_t>{}, ext::make_range_iterator(size), indices);
+			std::sort(indices, indices + size, [levels] (auto i1, auto i2) {
+				return levels[i1] < levels[i2];
+			});
+
+			const auto indices_end = indices + size;
+			auto index = indices;
+
+			UInt64 pos = count * levels[*index];
 
 			UInt64 accumulated = 0;
 
@@ -251,15 +259,14 @@ namespace detail
 
 				if (i < SMALL_THRESHOLD)
 				{
-					*result = i;
+					result[*index] = i;
 
-					++level;
-					++result;
+					++index;
 
-					if (level == levels_end)
+					if (index == indices_end)
 						return;
 
-					pos = count * *level;
+					pos = count * levels[*index];
 				}
 			}
 
@@ -274,24 +281,22 @@ namespace detail
 
 				if (i < BIG_SIZE)
 				{
-					*result = indexInBigToValue(i);
+					result[*index] = indexInBigToValue(i);
 
-					++level;
-					++result;
+					++index;
 
-					if (level == levels_end)
+					if (index == indices_end)
 						return;
 
-					pos = count * *level;
+					pos = count * levels[*index];
 				}
 			}
 
-			while (level < levels_end)
+			while (index < indices_end)
 			{
-				*result = BIG_THRESHOLD;
+				result[*index] = BIG_THRESHOLD;
 
-				++level;
-				++result;
+				++index;
 			}
 		}
 
@@ -466,7 +471,7 @@ public:
 
 				large = new detail::QuantileTimingLarge;
 			}
-			
+
 			large->merge(detail::QuantileTimingLarge(buf));
 		}
 		else
@@ -712,11 +717,11 @@ public:
 
 		size_t size = levels.size();
 		offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + size);
-		
+
 		typename ColumnFloat32::Container_t & data_to = static_cast<ColumnFloat32 &>(arr_to.getData()).getData();
 		size_t old_size = data_to.size();
 		data_to.resize(data_to.size() + size);
-			
+
 		this->data(place).getManyFloat(&levels[0], size, &data_to[old_size]);
 	}
 };
