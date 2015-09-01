@@ -69,7 +69,14 @@ protected:
 				injectVirtualColumns(res);
 
 			if (task->mark_ranges.empty())
+			{
+				if (0 == storage.context.getSettings().merge_tree_uniform_read_reuse_readers)
+				{
+					reader = {};
+					pre_reader = {};
+				}
 				task = {};
+			}
 		}
 
 		return res;

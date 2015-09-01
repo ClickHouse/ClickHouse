@@ -119,7 +119,10 @@ struct Settings
 	  * (Чтобы большие запросы не вымывали кэш.) */ \
 	M(SettingUInt64, merge_tree_max_rows_to_use_cache, (1024 * 1024)) \
 	\
+	/** Распределять чтение из MergeTree по потокам равномерно, обеспечивая стабильное среднее время исполнения каждого потока в пределах одного чтения. */ \
 	M(SettingBool, merge_tree_uniform_read_distribution, false) \
+	/** Переиспользовать MergeTreeReader'ы после вычитывания подзадачи на чтение. */ \
+	M(SettingBool, merge_tree_uniform_read_reuse_readers, false) \
 	\
 	/** Минимальная длина выражения expr = x1 OR ... expr = xN для оптимизации */ \
 	M(SettingUInt64, optimize_min_equality_disjunction_chain_length, 3) \
