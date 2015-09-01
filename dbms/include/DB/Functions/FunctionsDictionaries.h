@@ -1462,15 +1462,6 @@ private:
 		return true;
 	}
 
-	template <typename T, typename DictionaryType>
-	bool execute(Block & block, const size_t result, const DictionaryType * const dictionary,
-		const IColumn * const id_col_untyped)
-	{
-
-
-		return false;
-	}
-
 	const ExternalDictionaries & dictionaries;
 };
 

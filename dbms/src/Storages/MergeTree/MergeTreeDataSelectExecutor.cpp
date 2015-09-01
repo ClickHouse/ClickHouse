@@ -351,9 +351,6 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 	const size_t max_marks_to_use_cache =
 		(settings.merge_tree_max_rows_to_use_cache + data.index_granularity - 1) / data.index_granularity;
 
-	/// На всякий случай перемешаем куски.
-	std::random_shuffle(parts.begin(), parts.end());
-
 	/// Посчитаем засечки для каждого куска.
 	std::vector<size_t> sum_marks_in_parts(parts.size());
 	size_t sum_marks = 0;
