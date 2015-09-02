@@ -7,11 +7,11 @@ namespace DB
 
 /** Данные для HyperLogLogBiasEstimator в функции uniqCombined.
   * Схема разработки следующая:
-  * 1. Собрать clickhouse.
+  * 1. Собрать ClickHouse.
   * 2. Запустить скрипт src/dbms/scripts/gen-bias-data.py, который возвращает один массив для getRawEstimates()
   *    и другой массив для getBiases().
   * 3. Обновить массивы raw_estimates и biases. Также обновить размер массивов в InterpolatedData.
-  * 4. Собрать clickhouse.
+  * 4. Собрать ClickHouse.
   * 5. Запустить скрипт src/dbms/scripts/linear-counting-threshold.py, который создаёт 3 файла:
   *    - raw_graph.txt (1-й столбец: настоящее количество уникальных значений;
   *      2-й столбец: относительная погрешность в случае HyperLogLog без применения каких-либо поправок)
@@ -23,7 +23,7 @@ namespace DB
   * 7. Определить минимальное количество уникальных значений, при котором лучше исправить погрешность
   *    с помощью её оценки (т.е. по алгоритму HyperLogLog++), чем применить алгоритм LinearCounting.
   * 7. Соответственно обновить константу в функции getThreshold()
-  * 8. Собрать clickhouse.
+  * 8. Собрать ClickHouse.
   */
 struct UniqCombinedBiasData
 {
