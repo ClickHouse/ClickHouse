@@ -9,6 +9,7 @@ import subprocess
 import bisect
 from copy import deepcopy
 
+# Псевдослучайный генератор уникальных чисел.
 # http://preshing.com/20121224/how-to-generate-a-sequence-of-unique-random-integers/
 class UniqueRandomGenerator:
 	prime = 4294967291
@@ -32,6 +33,7 @@ class UniqueRandomGenerator:
 			else:
 				return self.prime - residue
 
+# Создать таблицу содержащую уникальные значения.
 def generate_data_source(host, port, http_port, begin, end, count):
 	chunk_size = round((end - begin) / float(count))
 	used_values = 0
@@ -46,28 +48,23 @@ def generate_data_source(host, port, http_port, begin, end, count):
 
 	with tempfile.TemporaryDirectory() as tmp_dir:
 		filename = tmp_dir + '/table.txt'
-		file_handle = open(filename, 'w+b')
+		with open(filename, 'w+b') as file_handle:
+			while cur_count < count:
+				next_size += chunk_size
+				while used_values < next_size:
+					h = urng.next()
+					used_values = used_values + 1
+					out = str(h) + "\t" + str(cur_count) + "\n";
+					file_handle.write(bytes(out, 'UTF-8'));
+				cur_count = cur_count + 1
 
-		while cur_count < count:
-			next_size += chunk_size
-
-			while used_values < next_size:
-				h = urng.next()
-				used_values = used_values + 1
-				outstr = str(h) + "\t" + str(cur_count) + "\n";
-				file_handle.write(bytes(outstr, 'UTF-8'));
-
-			cur_count = cur_count + 1
-
-		file_handle.close()
-
-		query = 'DROP TABLE IF EXISTS data_source'
+		query = "DROP TABLE IF EXISTS data_source"
 		subprocess.check_output(["clickhouse-client", "--host", host, "--port", str(port), "--query", query])
-		query = 'CREATE TABLE data_source(UserID UInt64, KeyID UInt64) ENGINE=TinyLog'
+		query = "CREATE TABLE data_source(UserID UInt64, KeyID UInt64) ENGINE=TinyLog"
 		subprocess.check_output(["clickhouse-client", "--host", host, "--port", str(port), "--query", query])
 
 		cat = subprocess.Popen(("cat", filename), stdout=subprocess.PIPE)
-		subprocess.check_output(("POST", "http://localhost:{0}/?query=INSERT INTO data_source FORMAT TabSeparated".format(http_port)), stdin=cat.stdout)
+		subprocess.check_output(("POST", "http://{0}:{1}/?query=INSERT INTO data_source FORMAT TabSeparated".format(host, http_port)), stdin=cat.stdout)
 		cat.wait()
 
 def perform_query(host, port):
@@ -76,27 +73,27 @@ def perform_query(host, port):
     query += "FROM data_source GROUP BY KeyID"
     return subprocess.check_output(["clickhouse-client", "--host", host, "--port", port, "--query", query])
 
-def parse_clickhouse_response(output):
+def parse_clickhouse_response(response):
     parsed = []
-    lines = output.decode().split("\n")
+    lines = response.decode().split("\n")
     for cur_line in lines:
         rows = cur_line.split("\t")
         if len(rows) == 2:
             parsed.append([float(rows[0]), float(rows[1])])
     return parsed
 
-def accumulate_data(stats, data):
-    if not stats:
-        stats = deepcopy(data)
+def accumulate_data(accumulated_data, data):
+    if not accumulated_data:
+        accumulated_data = deepcopy(data)
     else:
-        for row1, row2 in zip(stats, data):
+        for row1, row2 in zip(accumulated_data, data):
             row1[1] += row2[1];
-    return stats
+    return accumulated_data
 
-def generate_raw_result(stats, count):
+def generate_raw_result(accumulated_data, count):
 	expected_tab = []
 	bias_tab = []
-	for row in stats:
+	for row in accumulated_data:
 		exact = row[0]
 		expected = row[1] / count
 		bias = expected - exact
@@ -204,48 +201,49 @@ def dump_arrays(stats):
 	is_first = True
 	sep = ''
 
-	print("// For UniqCombinedBiasData::getRawEstimates():")
+	print("raw_estimates = ")
 	print("{")
 	for row in stats:
 		print("\t{0}{1}".format(sep, row[0]))
 		if is_first == True:
 			is_first = False
 			sep = ","
-	print("}")
+	print("};")
 
 	is_first = True
 	sep = ""
 
-	print("\n// For UniqCombinedBiasData::getBiases():")
+	print("\nbiases = ")
 	print("{")
 	for row in stats:
 		print("\t{0}{1}".format(sep, row[1]))
 		if is_first == True:
 			is_first = False
 			sep = ","
-	print("}")
+	print("};")
 
 def start():
-	parser = argparse.ArgumentParser(description = "Generate bias correction tables.")
-	parser.add_argument("-x", "--host", default="127.0.0.1", help="clickhouse host name");
-	parser.add_argument("-p", "--port", type=int, default=9000, help="clickhouse client TCP port");
-	parser.add_argument("-t", "--http_port", type=int, default=8123, help="clickhouse HTTP port");
+	parser = argparse.ArgumentParser(description = "Generate bias correction tables for HyperLogLog-based functions.")
+	parser.add_argument("-x", "--host", default="127.0.0.1", help="ClickHouse server host name");
+	parser.add_argument("-p", "--port", type=int, default=9000, help="ClickHouse server TCP port");
+	parser.add_argument("-t", "--http_port", type=int, default=8123, help="ClickHouse server HTTP port");
 	parser.add_argument("-i", "--iterations", type=int, default=5000, help="number of iterations");
 	parser.add_argument("-s", "--generated", type=int, default=700000, help="number of generated values");
 	parser.add_argument("-g", "--samples", type=int, default=200, help="number of sampled values");
 	args = parser.parse_args()
 
-	stats = []
+	accumulated_data = []
 
 	for i in range(0, args.iterations):
 		print(i + 1)
 		sys.stdout.flush()
-		generate_data_source(args.host, str(args.port), str(args.http_port), 0, args.generated, 1000)
-		output = perform_query(args.host, str(args.port))
-		data = parse_clickhouse_response(output)
-		stats = accumulate_data(stats, data)
 
-	result = generate_raw_result(stats, args.iterations)
+		generate_data_source(args.host, str(args.port), str(args.http_port), 0, args.generated, 1000)
+		response = perform_query(args.host, str(args.port))
+		data = parse_clickhouse_response(response)
+		accumulated_data = accumulate_data(accumulated_data, data)
+
+	result = generate_raw_result(accumulated_data, args.iterations)
 	sample = generate_sample(result[0], result[1], args.samples)
 	dump_arrays(sample)
 
