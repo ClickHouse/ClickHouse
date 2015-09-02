@@ -229,7 +229,7 @@ struct OneAdder<T, Data, typename std::enable_if<
 
 template <typename T, typename Data>
 struct OneAdder<T, Data, typename std::enable_if<
-	std::is_same<Data, AggregateFunctionUniqExactData<T>>::value>::type>
+	std::is_same<Data, AggregateFunctionUniqExactData<T> >::value>::type>
 {
 	template <typename T2 = T>
 	static void addOne(Data & data, const IColumn & column, size_t row_num,
