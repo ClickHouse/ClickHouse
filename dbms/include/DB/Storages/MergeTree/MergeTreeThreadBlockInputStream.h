@@ -20,8 +20,9 @@ public:
 		const MergeTreeReadPoolPtr & pool, const std::size_t min_marks_to_read, const std::size_t block_size,
 		MergeTreeData & storage, const bool use_uncompressed_cache, const ExpressionActionsPtr & prewhere_actions,
 		const String & prewhere_column, const Settings & settings, const Names & virt_column_names)
-		: thread{thread}, pool{pool}, min_marks_to_read{min_marks_to_read}, block_size{block_size}, storage{storage},
-		  use_uncompressed_cache{use_uncompressed_cache}, prewhere_actions{prewhere_actions},
+		: thread{thread}, pool{pool}, block_size_marks{block_size / storage.index_granularity},
+		  min_marks_to_read{(min_marks_to_read + block_size_marks - 1) / block_size_marks * block_size_marks},
+		  storage{storage}, use_uncompressed_cache{use_uncompressed_cache}, prewhere_actions{prewhere_actions},
 		  prewhere_column{prewhere_column}, min_bytes_to_use_direct_io{settings.min_bytes_to_use_direct_io},
 		  max_read_buffer_size{settings.max_read_buffer_size},
 		  reuse_buffers(settings.merge_tree_uniform_read_reuse_buffers), virt_column_names{virt_column_names},
@@ -33,6 +34,7 @@ public:
 	String getID() const override
 	{
 		std::stringstream res;
+		/// @todo print some meaningful information
 //		res << "MergeTreeThread(columns";
 //
 //		for (const auto & column : columns)
@@ -128,7 +130,7 @@ private:
 			do
 			{
 				/// Прочитаем полный блок столбцов, нужных для вычисления выражения в PREWHERE.
-				size_t space_left = std::max(1LU, block_size / storage.index_granularity);
+				size_t space_left = std::max(1LU, block_size_marks);
 				MarkRanges ranges_to_read;
 				while (!task->mark_ranges.empty() && space_left)
 				{
@@ -257,7 +259,7 @@ private:
 		}
 		else
 		{
-			size_t space_left = std::max(1LU, block_size / storage.index_granularity);
+			size_t space_left = std::max(1LU, block_size_marks);
 
 			while (!task->mark_ranges.empty() && space_left)
 			{
@@ -310,8 +312,8 @@ private:
 	}
 
 	MergeTreeReadPoolPtr pool;
+	const std::size_t block_size_marks;
 	const std::size_t min_marks_to_read;
-	const std::size_t block_size;
 	MergeTreeData & storage;
 	const bool use_uncompressed_cache;
 	ExpressionActionsPtr prewhere_actions;
