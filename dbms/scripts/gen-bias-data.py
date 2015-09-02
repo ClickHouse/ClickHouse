@@ -34,8 +34,8 @@ class UniqueRandomGenerator:
 				return self.prime - residue
 
 # Создать таблицу содержащую уникальные значения.
-def generate_data_source(host, port, http_port, begin, end, count):
-	chunk_size = round((end - begin) / float(count))
+def generate_data_source(host, port, http_port, min_cardinality, max_cardinality, count):
+	chunk_size = round((max_cardinality - min_cardinality) / float(count))
 	used_values = 0
 
 	cur_count = 0
@@ -46,11 +46,22 @@ def generate_data_source(host, port, http_port, begin, end, count):
 	n2 = random.randrange(0, sup)
 	urng = UniqueRandomGenerator(n1, n2)
 
+	is_first = True
+
 	with tempfile.TemporaryDirectory() as tmp_dir:
 		filename = tmp_dir + '/table.txt'
 		with open(filename, 'w+b') as file_handle:
 			while cur_count < count:
-				next_size += chunk_size
+
+				if is_first == True:
+					is_first = False
+					if min_cardinality != 0:
+						next_size = min_cardinality + 1
+					else:
+						next_size = chunk_size
+				else:
+					next_size += chunk_size
+
 				while used_values < next_size:
 					h = urng.next()
 					used_values = used_values + 1
@@ -107,7 +118,7 @@ def generate_sample(raw_estimates, biases, n_samples):
 
 	min_card = raw_estimates[0]
 	max_card = raw_estimates[len(raw_estimates) - 1]
-	step = (max_card - min_card) / n_samples
+	step = (max_card - min_card) / (n_samples - 1)
 
 	for i in range(0, n_samples + 1):
 		x = min_card + i * step
@@ -194,16 +205,16 @@ def generate_sample(raw_estimates, biases, n_samples):
 
 	return final_result
 
-def dump_arrays(stats):
+def dump_arrays(data):
 
-	print("Size of each array: {0}\n".format(len(stats)))
+	print("Size of each array: {0}\n".format(len(data)))
 
 	is_first = True
 	sep = ''
 
 	print("raw_estimates = ")
 	print("{")
-	for row in stats:
+	for row in data:
 		print("\t{0}{1}".format(sep, row[0]))
 		if is_first == True:
 			is_first = False
@@ -215,7 +226,7 @@ def dump_arrays(stats):
 
 	print("\nbiases = ")
 	print("{")
-	for row in stats:
+	for row in data:
 		print("\t{0}{1}".format(sep, row[1]))
 		if is_first == True:
 			is_first = False
@@ -228,8 +239,9 @@ def start():
 	parser.add_argument("-p", "--port", type=int, default=9000, help="ClickHouse server TCP port");
 	parser.add_argument("-t", "--http_port", type=int, default=8123, help="ClickHouse server HTTP port");
 	parser.add_argument("-i", "--iterations", type=int, default=5000, help="number of iterations");
-	parser.add_argument("-s", "--generated", type=int, default=700000, help="number of generated values");
-	parser.add_argument("-g", "--samples", type=int, default=200, help="number of sampled values");
+	parser.add_argument("-m", "--min_cardinality", type=int, default=16384, help="minimal cardinality");
+	parser.add_argument("-M", "--max_cardinality", type=int, default=655360, help="maximal cardinality");
+	parser.add_argument("-s", "--samples", type=int, default=200, help="number of sampled values");
 	args = parser.parse_args()
 
 	accumulated_data = []
@@ -238,13 +250,13 @@ def start():
 		print(i + 1)
 		sys.stdout.flush()
 
-		generate_data_source(args.host, str(args.port), str(args.http_port), 0, args.generated, 1000)
+		generate_data_source(args.host, str(args.port), str(args.http_port), args.min_cardinality, args.max_cardinality, 1000)
 		response = perform_query(args.host, str(args.port))
 		data = parse_clickhouse_response(response)
 		accumulated_data = accumulate_data(accumulated_data, data)
 
 	result = generate_raw_result(accumulated_data, args.iterations)
-	sample = generate_sample(result[0], result[1], args.samples)
-	dump_arrays(sample)
+	sampled_data = generate_sample(result[0], result[1], args.samples)
+	dump_arrays(sampled_data)
 
 if __name__ == "__main__": start()
