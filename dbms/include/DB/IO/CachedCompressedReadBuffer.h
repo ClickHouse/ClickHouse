@@ -37,11 +37,20 @@ private:
 		{
 			if (memory)
 			{
+				auto & memory = *this->memory;
+
+				const auto resize = [&memory] (const std::size_t size) {
+					const auto growth_factor = 1.6f; /// close to golden ratio
+					if (memory.m_capacity == 0)
+						memory.resize(size);
+					else if (memory.m_capacity < size)
+						memory.resize(growth_factor * size);
+				};
+
 				if (aio_threshold == 0 || estimated_size < aio_threshold)
-					memory->resize(buf_size);
+					resize(buf_size);
 				else
-					memory->resize(
-						2 * Memory::align(buf_size + DEFAULT_AIO_FILE_BLOCK_SIZE, DEFAULT_AIO_FILE_BLOCK_SIZE));
+					resize(2 * Memory::align(buf_size + DEFAULT_AIO_FILE_BLOCK_SIZE, DEFAULT_AIO_FILE_BLOCK_SIZE));
 			}
 
 			file_in = createReadBufferFromFileBase(

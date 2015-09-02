@@ -225,11 +225,18 @@ private:
 			}
 			else
 			{
+				const auto resize = [&memory] (const std::size_t size) {
+					const auto growth_factor = 1.6f; /// close to golden ratio
+					if (memory.m_capacity == 0)
+						memory.resize(size);
+					else if (memory.m_capacity < size)
+						memory.resize(growth_factor * size);
+				};
+
 				if (aio_threshold == 0 || estimated_size < aio_threshold)
-					memory.resize(buffer_size);
+					resize(buffer_size);
 				else
-					memory.resize(2 * Memory::align(buffer_size + DEFAULT_AIO_FILE_BLOCK_SIZE,
-						DEFAULT_AIO_FILE_BLOCK_SIZE));
+					resize(2 * Memory::align(buffer_size + DEFAULT_AIO_FILE_BLOCK_SIZE, DEFAULT_AIO_FILE_BLOCK_SIZE));
 
 				/** @todo CompressedReadBufferFromFile creates buffer for decompressed blocks, consider providing another
 				 *	instance of Memory type for it */
