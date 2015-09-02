@@ -42,10 +42,6 @@ public:
 		const String & path, const MergeTreeData::DataPartPtr & data_part, const NamesAndTypesList & columns,
 		const MarkRanges & all_mark_ranges)
 	{
-		/// @todo should avg_value_size_hints be cleared on this->data_part != data_part? supposedly so
-		if (this->data_part != data_part)
-			avg_value_size_hints.clear();
-
 		if (!reuse_buffers)
 			buffers.clear();
 
