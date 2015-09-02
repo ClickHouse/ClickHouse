@@ -381,7 +381,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 		for (std::size_t i = 0; i < threads; ++i)
 			res.emplace_back(new MergeTreeThreadBlockInputStream{
 				i, pool, min_marks_for_concurrent_read, max_block_size, data, use_uncompressed_cache, prewhere_actions,
-				prewhere_column, settings.min_bytes_to_use_direct_io, settings.max_read_buffer_size, virt_columns
+				prewhere_column, settings, virt_columns
 			});
 
 		/// Оценим общее количество строк - для прогресс-бара.
@@ -516,7 +516,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 			BlockInputStreamPtr source_stream{
 				new MergeTreeThreadBlockInputStream{
 					i, pool, min_marks_for_read_task, max_block_size, data, use_uncompressed_cache, prewhere_actions,
-					prewhere_column, settings.min_bytes_to_use_direct_io, settings.max_read_buffer_size, virt_columns
+					prewhere_column, settings, virt_columns
 				}
 			};
 
