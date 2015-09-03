@@ -86,7 +86,6 @@ public:
 		{
 			const auto marks_to_get_from_range = marks_in_part;
 
-			/// @todo fix double reverse
 			/// Восстановим порядок отрезков.
 			std::reverse(thread_task.ranges.begin(), thread_task.ranges.end());
 
@@ -105,7 +104,6 @@ public:
 			/// Цикл по отрезкам куска.
 			while (need_marks > 0 && !thread_task.ranges.empty())
 			{
-				/// @todo fix double reverse
 				auto & range = thread_task.ranges.back();
 
 				const std::size_t marks_in_range = range.end - range.begin;
@@ -143,9 +141,7 @@ public:
 
 			/// Посчитаем засечки для каждого куска.
 			size_t sum_marks = 0;
-			/// Пусть отрезки будут перечислены справа налево, чтобы можно было выбрасывать самый левый отрезок с помощью pop_back().
-//			std::reverse(std::begin(part.ranges), std::end(part.ranges));
-
+			/// Отрезки уже перечислены справа налево, reverse в MergeTreeDataSelectExecutor.
 			for (const auto & range : part.ranges)
 				sum_marks += range.end - range.begin;
 
@@ -256,10 +252,7 @@ public:
 				/// Возьмем весь кусок, если он достаточно мал.
 				if (marks_in_part <= need_marks)
 				{
-					/// @todo fix double reverse
-					/// Восстановим порядок отрезков.
-					std::reverse(part.ranges.begin(), part.ranges.end());
-
+					/// Оставим отрезки перечисленными справа налево для удобства.
 					ranges_to_get_from_part = part.ranges;
 					marks_in_ranges = marks_in_part;
 
@@ -272,7 +265,6 @@ public:
 					/// Цикл по отрезкам куска.
 					while (need_marks > 0)
 					{
-						/// @todo fix double reverse
 						if (part.ranges.empty())
 							throw Exception("Unexpected end of ranges while spreading marks among threads", ErrorCodes::LOGICAL_ERROR);
 
@@ -288,6 +280,9 @@ public:
 						if (range.begin == range.end)
 							part.ranges.pop_back();
 					}
+
+					/// Вновь перечислим отрезки справа налево, чтобы .getTask() мог забирать их с помощью .pop_back().
+					std::reverse(std::begin(ranges_to_get_from_part), std::end(ranges_to_get_from_part));
 				}
 
 				threads_tasks[i].parts_and_ranges.push_back({ part_idx, ranges_to_get_from_part });

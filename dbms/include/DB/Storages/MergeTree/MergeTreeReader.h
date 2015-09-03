@@ -165,9 +165,6 @@ private:
 		std::string path_prefix;
 		size_t max_mark_range;
 
-		/// Используется в качестве подсказки, чтобы уменьшить количество реаллокаций при создании столбца переменной длины.
-		double avg_value_size_hint = 0;
-
 		Stream(
 			const String & path_prefix_, UncompressedCache * uncompressed_cache, MarkCache * mark_cache,
 			const MarkRanges & all_mark_ranges, size_t aio_threshold, size_t max_read_buffer_size, Memory & memory)
@@ -310,6 +307,7 @@ private:
 	 *	(ReadBufferAIO passes pointer to buffer to a syscall and waits for it's completion in destructor, thus there is
 	 *	a chance that system will write to memory after it has been freed */
 	std::vector<std::unique_ptr<Memory>> buffers;
+	/// Используется в качестве подсказки, чтобы уменьшить количество реаллокаций при создании столбца переменной длины.
 	std::map<std::string, double> avg_value_size_hints;
 	String path;
 	MergeTreeData::DataPartPtr data_part;
