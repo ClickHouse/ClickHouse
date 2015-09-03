@@ -323,12 +323,12 @@ namespace Regexps
 		if (known_regexps.end() == it)
 			it = known_regexps.emplace(pattern, std::make_unique<Holder>()).first;
 
-		return it->second->get([&pattern] {
-			int flags = 0;
-			if (like)
-				flags |= OptimizedRegularExpression::RE_DOT_NL;
+		return it->second->get([&pattern]
+		{
+			int flags = OptimizedRegularExpression::RE_DOT_NL;
 			if (no_capture)
 				flags |= OptimizedRegularExpression::RE_NO_CAPTURE;
+
 			return new Regexp{createRegexp<like>(pattern, flags)};
 		});
 	}
