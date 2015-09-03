@@ -886,7 +886,44 @@ static SharedPtr<InterpreterSelectQuery> interpretSubquery(
 		select_query->children.emplace_back(select_query->table);
 	}
 	else
+	{
 		query = subquery->children.at(0);
+
+		/** В подзапросе могут быть указаны столбцы с одинаковыми именами. Например, SELECT x, x FROM t
+		  * Это плохо, потому что результат такого запроса нельзя сохранить в таблицу, потому что в таблице не может быть одноимённых столбцов.
+		  * Сохранение в таблицу требуется для GLOBAL-подзапросов.
+		  *
+		  * Чтобы избежать такой ситуации, будем переименовывать одинаковые столбцы.
+		  */
+
+		std::set<std::string> all_column_names;
+		std::set<std::string> assigned_column_names;
+
+		if (ASTSelectQuery * select = typeid_cast<ASTSelectQuery *>(query.get()))
+		{
+			for (auto & expr : select->select_expression_list->children)
+				all_column_names.insert(expr->getAliasOrColumnName());
+
+			for (auto & expr : select->select_expression_list->children)
+			{
+				auto name = expr->getAliasOrColumnName();
+
+				if (!assigned_column_names.insert(name).second)
+				{
+					size_t i = 1;
+					while (all_column_names.end() != all_column_names.find(name + "_" + toString(i)))
+						++i;
+
+					name = name + "_" + toString(i);
+					expr = expr->clone();	/// Отменяет склейку одинаковых выражений в дереве.
+					expr->setAlias(name);
+
+					all_column_names.insert(name);
+					assigned_column_names.insert(name);
+				}
+			}
+		}
+	}
 
 	if (required_columns.empty())
 		return new InterpreterSelectQuery(query, subquery_context, QueryProcessingStage::Complete, subquery_depth + 1);

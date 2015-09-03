@@ -66,7 +66,7 @@ struct MergeTreeSettings
 	size_t replicated_logs_to_keep = 100;
 
 	/// Настройки минимального количества битых данных, при котором отказываться автоматически их удалять.
-	size_t max_suspicious_broken_parts = 5;
+	size_t max_suspicious_broken_parts = 10;
 
 	/// Максимальное количество ошибок при загрузке кусков, при котором ReplicatedMergeTree соглашается запускаться.
 	size_t replicated_max_unexpected_parts = 3;

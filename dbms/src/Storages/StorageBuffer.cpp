@@ -275,7 +275,14 @@ void StorageBuffer::shutdown()
 	if (flush_thread.joinable())
 		flush_thread.join();
 
-	optimize(context.getSettings());
+	try
+	{
+		optimize(context.getSettings());
+	}
+	catch (...)
+	{
+		tryLogCurrentException(__PRETTY_FUNCTION__);
+	}
 }
 
 
