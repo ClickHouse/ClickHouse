@@ -1870,7 +1870,8 @@ private:
 		if (const auto value_col = typeid_cast<const ColumnVector<T> *>(value_col_untyped))
 		{
 			const auto size = value_col->size();
-			const auto & mask = createMask<T>(size, block, arguments);
+			bool is_const;
+			const auto mask = createConstMask<T>(size, block, arguments, is_const);
 			const auto & val = value_col->getData();
 
 			const auto out_col = new ColumnVector<UInt8>(size);
@@ -1879,25 +1880,46 @@ private:
 
 			auto & out = out_col->getData();
 
-			for (const auto i : ext::range(0, size))
-				out[i] = Impl::combine(val[i], mask[i]);
+			if (is_const)
+			{
+				for (const auto i : ext::range(0, size))
+					out[i] = Impl::combine(val[i], mask);
+			}
+			else
+			{
+				const auto mask = createMask<T>(size, block, arguments);
+
+				for (const auto i : ext::range(0, size))
+					out[i] = Impl::combine(val[i], mask[i]);
+			}
 
 			return true;
 		}
 		else if (const auto value_col = typeid_cast<const ColumnConst<T> *>(value_col_untyped))
 		{
 			const auto size = value_col->size();
-			const auto & mask = createMask<T>(size, block, arguments);
-			const auto & val = value_col->getData();
+			bool is_const;
+			const auto mask = createConstMask<T>(size, block, arguments, is_const);
+			const auto val = value_col->getData();
 
-			const auto out_col = new ColumnVector<UInt8>(size);
-			ColumnPtr out_col_ptr{out_col};
-			block.getByPosition(result).column = out_col_ptr;
+			if (is_const)
+			{
+				block.getByPosition(result).column = new ColumnConst<UInt8>{
+					size, Impl::combine(val, mask)
+				};
+			}
+			else
+			{
+				const auto mask = createMask<T>(size, block, arguments);
+				const auto out_col = new ColumnVector<UInt8>(size);
+				ColumnPtr out_col_ptr{out_col};
+				block.getByPosition(result).column = out_col_ptr;
 
-			auto & out = out_col->getData();
+				auto & out = out_col->getData();
 
-			for (const auto i : ext::range(0, size))
-				out[i] = Impl::combine(val, mask[i]);
+				for (const auto i : ext::range(0, size))
+					out[i] = Impl::combine(val, mask[i]);
+			}
 
 			return true;
 		}
@@ -1905,26 +1927,49 @@ private:
 		return false;
 	}
 
-	template <typename T>
-	PODArray<T> createMask(const std::size_t size, const Block & block, const ColumnNumbers & arguments)
+	template <typename ValueType>
+	ValueType createConstMask(const std::size_t size, const Block & block, const ColumnNumbers & arguments, bool & is_const)
 	{
-		PODArray<T> mask(size, T{});
+		is_const = true;
+		ValueType mask{};
 
 		for (const auto i : ext::range(1, arguments.size()))
-			addToMask(mask, block.getByPosition(arguments[i]).column.get());
+		{
+			const auto pos_col = block.getByPosition(arguments[i]).column.get();
+
+			if (pos_col->isConst())
+			{
+				const auto pos = static_cast<const ColumnConst<ValueType> *>(pos_col)->getData();
+				mask = mask | 1 << pos;
+			}
+			else
+			{
+				is_const = false;
+				return {};
+			}
+		}
 
 		return mask;
 	}
 
 	template <typename ValueType>
-	void addToMask(PODArray<ValueType> & mask, const IColumn * const pos_col)
+	PODArray<ValueType> createMask(const std::size_t size, const Block & block, const ColumnNumbers & arguments)
 	{
-		if (!addToMaskImpl<UInt8>(mask, pos_col) && !addToMaskImpl<UInt16>(mask, pos_col) &&
-			!addToMaskImpl<UInt32>(mask, pos_col) && !addToMaskImpl<UInt64>(mask, pos_col))
-			throw Exception{
-				"Illegal column " + pos_col->getName() + " of argument of function " + getName(),
-				ErrorCodes::ILLEGAL_COLUMN
-			};
+		PODArray<ValueType> mask(size, ValueType{});
+
+		for (const auto i : ext::range(1, arguments.size()))
+		{
+			const auto pos_col = block.getByPosition(arguments[i]).column.get();
+
+			if (!addToMaskImpl<UInt8>(mask, pos_col) && !addToMaskImpl<UInt16>(mask, pos_col) &&
+				!addToMaskImpl<UInt32>(mask, pos_col) && !addToMaskImpl<UInt64>(mask, pos_col))
+				throw Exception{
+					"Illegal column " + pos_col->getName() + " of argument of function " + getName(),
+					ErrorCodes::ILLEGAL_COLUMN
+				};
+		}
+
+		return mask;
 	}
 
 	template <typename PosType, typename ValueType>
