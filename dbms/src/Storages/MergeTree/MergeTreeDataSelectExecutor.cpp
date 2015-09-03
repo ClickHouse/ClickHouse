@@ -371,7 +371,6 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 
 	BlockInputStreams res;
 
-	/// @todo remove old code
 	if (sum_marks > 0 && settings.merge_tree_uniform_read_distribution == 1)
 	{
 		MergeTreeReadPoolPtr pool = std::make_shared<MergeTreeReadPool>(
