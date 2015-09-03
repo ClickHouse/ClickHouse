@@ -19,7 +19,6 @@ class CachedCompressedReadBuffer : public CompressedReadBufferBase, public ReadB
 private:
 	const std::string path;
 	UncompressedCache * cache;
-	Memory * memory;
 	size_t buf_size;
 	size_t estimated_size;
 	size_t aio_threshold;
@@ -35,26 +34,7 @@ private:
 	{
 		if (!file_in)
 		{
-			if (memory)
-			{
-				auto & memory = *this->memory;
-
-				const auto resize = [&memory] (const std::size_t size) {
-					const auto growth_factor = 1.6f; /// close to golden ratio
-					if (memory.m_capacity == 0)
-						memory.resize(size);
-					else if (memory.m_capacity < size)
-						memory.resize(growth_factor * size);
-				};
-
-				if (aio_threshold == 0 || estimated_size < aio_threshold)
-					resize(buf_size);
-				else
-					resize(2 * Memory::align(buf_size + DEFAULT_AIO_FILE_BLOCK_SIZE, DEFAULT_AIO_FILE_BLOCK_SIZE));
-			}
-
-			file_in = createReadBufferFromFileBase(
-				path, estimated_size, aio_threshold, buf_size, -1, memory ? &(*memory)[0] : nullptr);
+			file_in = createReadBufferFromFileBase(path, estimated_size, aio_threshold, buf_size);
 			compressed_in = &*file_in;
 		}
 	}
@@ -104,9 +84,9 @@ private:
 public:
 	CachedCompressedReadBuffer(
 		const std::string & path_, UncompressedCache * cache_, size_t estimated_size_, size_t aio_threshold_,
-		size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE, Memory * memory = nullptr)
-		: ReadBuffer(nullptr, 0), path(path_), cache(cache_), memory{memory}, buf_size(buf_size_),
-		  estimated_size(estimated_size_), aio_threshold(aio_threshold_), file_pos(0)
+		size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE)
+		: ReadBuffer(nullptr, 0), path(path_), cache(cache_), buf_size(buf_size_), estimated_size(estimated_size_),
+		  aio_threshold(aio_threshold_), file_pos(0)
 	{
 	}
 

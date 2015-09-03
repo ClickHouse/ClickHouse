@@ -21,11 +21,15 @@ public:
 		MergeTreeData & storage, const bool use_uncompressed_cache, const ExpressionActionsPtr & prewhere_actions,
 		const String & prewhere_column, const Settings & settings, const Names & virt_column_names)
 		: thread{thread}, pool{pool}, block_size_marks{block_size / storage.index_granularity},
-		  min_marks_to_read{(min_marks_to_read + block_size_marks - 1) / block_size_marks * block_size_marks},
+		  /// round min_marks_to_read up to nearest multiple of block_size expressed in marks
+		  min_marks_to_read{block_size
+							? (min_marks_to_read * storage.index_granularity + block_size - 1)
+							  / block_size * block_size / storage.index_granularity
+							: min_marks_to_read
+		  },
 		  storage{storage}, use_uncompressed_cache{use_uncompressed_cache}, prewhere_actions{prewhere_actions},
 		  prewhere_column{prewhere_column}, min_bytes_to_use_direct_io{settings.min_bytes_to_use_direct_io},
-		  max_read_buffer_size{settings.max_read_buffer_size},
-		  reuse_buffers(settings.merge_tree_uniform_read_reuse_buffers), virt_column_names{virt_column_names},
+		  max_read_buffer_size{settings.max_read_buffer_size}, virt_column_names{virt_column_names},
 		  log{&Logger::get("MergeTreeThreadBlockInputStream")}
 	{}
 
@@ -103,13 +107,13 @@ private:
 
 			reader = std::make_unique<MergeTreeReader>(
 				path, task->data_part, task->columns, owned_uncompressed_cache.get(), owned_mark_cache.get(),
-				storage, task->mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size, reuse_buffers);
+				storage, task->mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size);
 
 			if (prewhere_actions)
 				pre_reader = std::make_unique<MergeTreeReader>(
 					path, task->data_part, task->pre_columns, owned_uncompressed_cache.get(),
 					owned_mark_cache.get(), storage, task->mark_ranges, min_bytes_to_use_direct_io,
-					max_read_buffer_size, reuse_buffers);
+					max_read_buffer_size);
 		}
 		else
 		{
@@ -320,7 +324,6 @@ private:
 	const String prewhere_column;
 	const std::size_t min_bytes_to_use_direct_io;
 	const std::size_t max_read_buffer_size;
-	const bool reuse_buffers;
 	const Names virt_column_names;
 
 	Logger * log;

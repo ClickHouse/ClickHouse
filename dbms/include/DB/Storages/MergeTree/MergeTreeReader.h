@@ -31,9 +31,9 @@ public:
 		const MergeTreeData::DataPartPtr & data_part, const NamesAndTypesList & columns_,
 		UncompressedCache * uncompressed_cache_, MarkCache * mark_cache_,
 		MergeTreeData & storage_, const MarkRanges & all_mark_ranges,
-		size_t aio_threshold_, size_t max_read_buffer_size_, bool reuse_buffers = false)
+		size_t aio_threshold_, size_t max_read_buffer_size_)
 		: uncompressed_cache(uncompressed_cache_), mark_cache(mark_cache_), storage(storage_),
-		  aio_threshold(aio_threshold_), max_read_buffer_size(max_read_buffer_size_), reuse_buffers{reuse_buffers}
+		  aio_threshold(aio_threshold_), max_read_buffer_size(max_read_buffer_size_)
 	{
 		reconf(path_, data_part, columns_, all_mark_ranges);
 	}
@@ -42,17 +42,12 @@ public:
 		const String & path, const MergeTreeData::DataPartPtr & data_part, const NamesAndTypesList & columns,
 		const MarkRanges & all_mark_ranges)
 	{
-		if (!reuse_buffers)
-			buffers.clear();
-
 		this->path = path;
 		this->data_part = data_part;
 		this->part_name = data_part->name;
 		this->columns = columns;
 		this->all_mark_ranges = all_mark_ranges;
 		this->streams.clear();
-
-		/// @todo sort buffers using capacity, find best match for Stream.
 
 		try
 		{
@@ -167,7 +162,7 @@ private:
 
 		Stream(
 			const String & path_prefix_, UncompressedCache * uncompressed_cache, MarkCache * mark_cache,
-			const MarkRanges & all_mark_ranges, size_t aio_threshold, size_t max_read_buffer_size, Memory & memory)
+			const MarkRanges & all_mark_ranges, size_t aio_threshold, size_t max_read_buffer_size)
 			: path_prefix(path_prefix_)
 		{
 			loadMarks(mark_cache);
@@ -220,28 +215,13 @@ private:
 			if (uncompressed_cache)
 			{
 				cached_buffer = std::make_unique<CachedCompressedReadBuffer>(
-					path_prefix + ".bin", uncompressed_cache, estimated_size, aio_threshold, buffer_size, &memory);
+					path_prefix + ".bin", uncompressed_cache, estimated_size, aio_threshold, buffer_size);
 				data_buffer = cached_buffer.get();
 			}
 			else
 			{
-				const auto resize = [&memory] (const std::size_t size) {
-					const auto growth_factor = 1.6f; /// close to golden ratio
-					if (memory.m_capacity == 0)
-						memory.resize(size);
-					else if (memory.m_capacity < size)
-						memory.resize(growth_factor * size);
-				};
-
-				if (aio_threshold == 0 || estimated_size < aio_threshold)
-					resize(buffer_size);
-				else
-					resize(2 * Memory::align(buffer_size + DEFAULT_AIO_FILE_BLOCK_SIZE, DEFAULT_AIO_FILE_BLOCK_SIZE));
-
-				/** @todo CompressedReadBufferFromFile creates buffer for decompressed blocks, consider providing another
-				 *	instance of Memory type for it */
 				non_cached_buffer = std::make_unique<CompressedReadBufferFromFile>(
-					path_prefix + ".bin", estimated_size, aio_threshold, buffer_size, &memory[0]);
+					path_prefix + ".bin", estimated_size, aio_threshold, buffer_size);
 				data_buffer = non_cached_buffer.get();
 			}
 		}
@@ -303,10 +283,6 @@ private:
 
 	typedef std::map<std::string, std::unique_ptr<Stream> > FileStreams;
 
-	/** buffers shall be deleted after streams because some streams may use existing_memory even inside destructor
-	 *	(ReadBufferAIO passes pointer to buffer to a syscall and waits for it's completion in destructor, thus there is
-	 *	a chance that system will write to memory after it has been freed */
-	std::vector<std::unique_ptr<Memory>> buffers;
 	/// Используется в качестве подсказки, чтобы уменьшить количество реаллокаций при создании столбца переменной длины.
 	std::map<std::string, double> avg_value_size_hints;
 	String path;
@@ -324,7 +300,6 @@ private:
 	MarkRanges all_mark_ranges;
 	size_t aio_threshold;
 	size_t max_read_buffer_size;
-	bool reuse_buffers;
 
 	void addStream(const String & name, const IDataType & type, const MarkRanges & all_mark_ranges, size_t level = 0)
 	{
@@ -335,10 +310,6 @@ private:
 			*/
 		if (!Poco::File(path + escaped_column_name + ".bin").exists())
 			return;
-
-		const auto buffer_idx = streams.size();
-		if (buffer_idx == buffers.size())
-			buffers.push_back(std::make_unique<Memory>(0, DEFAULT_AIO_FILE_BLOCK_SIZE));
 
 		/// Для массивов используются отдельные потоки для размеров.
 		if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
@@ -351,14 +322,14 @@ private:
 			if (!streams.count(size_name))
 				streams.emplace(size_name, std::make_unique<Stream>(
 					path + escaped_size_name, uncompressed_cache, mark_cache,
-					all_mark_ranges, aio_threshold, max_read_buffer_size, *buffers[buffer_idx]));
+					all_mark_ranges, aio_threshold, max_read_buffer_size));
 
 			addStream(name, *type_arr->getNestedType(), all_mark_ranges, level + 1);
 		}
 		else
 			streams.emplace(name, std::make_unique<Stream>(
 				path + escaped_column_name, uncompressed_cache, mark_cache,
-				all_mark_ranges, aio_threshold, max_read_buffer_size, *buffers[buffer_idx]));
+				all_mark_ranges, aio_threshold, max_read_buffer_size));
 	}
 
 
