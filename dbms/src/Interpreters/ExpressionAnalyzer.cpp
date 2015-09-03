@@ -1780,8 +1780,6 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 
 	if (!subquery_for_set.join)
 	{
-		Names join_key_names_left(join_key_names_left_set.begin(), join_key_names_left_set.end());
-		Names join_key_names_right(join_key_names_right_set.begin(), join_key_names_right_set.end());
 		JoinPtr join = new Join(join_key_names_left, join_key_names_right, settings.limits, ast_join.kind, ast_join.strictness);
 
 		Names required_joined_columns(join_key_names_right.begin(), join_key_names_right.end());
@@ -2174,27 +2172,31 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAnd
 		auto & keys = typeid_cast<ASTExpressionList &>(*node.using_expr_list);
 		for (const auto & key : keys.children)
 		{
-			if (!join_key_names_left_set.insert(key->getColumnName()).second)
-				throw Exception("Duplicate column in USING list", ErrorCodes::DUPLICATE_COLUMN);
+			if (join_key_names_left.end() == std::find(join_key_names_left.begin(), join_key_names_left.end(), key->getColumnName()))
+				join_key_names_left.push_back(key->getColumnName());
+			else
+				throw Exception("Duplicate column " + key->getColumnName() + " in USING list", ErrorCodes::DUPLICATE_COLUMN);
 
-			if (!join_key_names_right_set.insert(key->getAliasOrColumnName()).second)
-				throw Exception("Duplicate column in USING list", ErrorCodes::DUPLICATE_COLUMN);
+			if (join_key_names_right.end() == std::find(join_key_names_right.begin(), join_key_names_right.end(), key->getAliasOrColumnName()))
+				join_key_names_right.push_back(key->getAliasOrColumnName());
+			else
+				throw Exception("Duplicate column " + key->getAliasOrColumnName() + " in USING list", ErrorCodes::DUPLICATE_COLUMN);
 		}
 	}
 
 	for (const auto i : ext::range(0, nested_result_sample.columns()))
 	{
 		const auto & col = nested_result_sample.getByPosition(i);
-		if (!join_key_names_right_set.count(col.name))
+		if (join_key_names_right.end() == std::find(join_key_names_right.begin(), join_key_names_right.end(), col.name))
 		{
 			joined_columns.insert(col.name);
 			joined_columns_name_type.emplace_back(col.name, col.type);
 		}
 	}
 
-/*	for (const auto & name : join_key_names_left_set)
+/*	for (const auto & name : join_key_names_left)
 		std::cerr << "JOIN key (left): " << name << std::endl;
-	for (const auto & name : join_key_names_right_set)
+	for (const auto & name : join_key_names_right)
 		std::cerr << "JOIN key (right): " << name << std::endl;
 	std::cerr << std::endl;
 	for (const auto & name : joined_columns)
