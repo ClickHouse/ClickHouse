@@ -180,7 +180,7 @@ inline String likePatternToRegexp(const String & pattern)
 				break;
 			case '%':
 				if (pos + 1 != end)
-					res += ".*";
+					res += "(?:.|\n)*";
 				else
 					return res;
 				break;
