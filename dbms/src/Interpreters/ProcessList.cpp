@@ -69,4 +69,34 @@ ProcessListEntry::~ProcessListEntry()
 	parent.have_space.signal();
 }
 
+
+void ProcessList::addTemporaryTable(ProcessListElement & elem, const String & table_name, StoragePtr storage)
+{
+	Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+
+	elem.temporary_tables[table_name] = storage;
+}
+
+
+StoragePtr ProcessList::tryGetTemporaryTable(const String & query_id, const String & table_name) const
+{
+	Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+
+	/// NOTE Ищем по всем user-ам. То есть, нет изоляции, и сложность O(users).
+	for (const auto & user_queries : user_to_queries)
+	{
+		auto it = user_queries.second.find(query_id);
+		if (user_queries.second.end() == it)
+			continue;
+
+		auto jt = (*it->second).temporary_tables.find(table_name);
+		if ((*it->second).temporary_tables.end() == jt)
+			continue;
+
+		return jt->second;
+	}
+
+	return {};
+}
+
 }

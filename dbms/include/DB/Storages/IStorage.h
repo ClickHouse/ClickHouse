@@ -308,7 +308,14 @@ private:
 	mutable Poco::RWLock structure_lock;
 };
 
-typedef std::vector<StoragePtr> StorageVector;
-typedef IStorage::TableStructureReadLocks TableLocks;
+using StorageVector = std::vector<StoragePtr>;
+using TableLocks = IStorage::TableStructureReadLocks;
+
+/// имя таблицы -> таблица
+using Tables = std::map<String, StoragePtr>;
+
+/// имя БД -> таблицы
+using Databases = std::map<String, Tables>;
+
 
 }

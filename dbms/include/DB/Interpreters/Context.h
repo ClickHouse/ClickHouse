@@ -44,12 +44,6 @@ class QueryLog;
 struct MergeTreeSettings;
 
 
-/// имя таблицы -> таблица
-typedef std::map<String, StoragePtr> Tables;
-
-/// имя БД -> таблицы
-typedef std::map<String, Tables> Databases;
-
 /// (имя базы данных, имя таблицы)
 typedef std::pair<String, String> DatabaseAndTableName;
 

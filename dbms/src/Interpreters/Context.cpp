@@ -93,13 +93,6 @@ struct ContextShared
 	mutable std::unique_ptr<CompressionMethodSelector> compression_method_selector; /// Правила для выбора метода сжатия в зависимости от размера куска.
 	std::unique_ptr<MergeTreeSettings> merge_tree_settings;	/// Настройки для движка MergeTree.
 
-	/** Позволяет обращаться к временным таблицам конкретного запроса.
-	  * Используется для реализации GLOBAL-подзапросов по pull-схеме,
-	  *  в которой запрос отправляется на удалённый сервер, а удалённый сервер,
-	  *  для получения данных подзапроса, отправляет запрос за временной таблицей на исходный сервер.
-	  */
-	std::map<String, Tables> temporary_tables_by_query_id;
-
 	/// Кластеры для distributed таблиц
 	/// Создаются при создании Distributed таблиц, так как нужно дождаться пока будут выставлены Settings
 	Poco::SharedPtr<Clusters> clusters;
@@ -162,23 +155,7 @@ Context::Context()
 {
 }
 
-Context::~Context()
-{
-	/// Удаляем запись из словаря query_id -> временные таблицы.
-	if (!current_query_id.empty() && !external_tables.empty())
-	{
-		Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
-
-		auto it = shared->temporary_tables_by_query_id.find(current_query_id);
-		if (shared->temporary_tables_by_query_id.end() == it)
-		{
-			LOG_ERROR(shared->log, "Logical error: cannot find entry for query_id in shared->temporary_tables_by_query_id map");
-			return;
-		}
-
-		shared->temporary_tables_by_query_id.erase(it);
-	}
-}
+Context::~Context() = default;
 
 
 const TableFunctionFactory & Context::getTableFunctionFactory() const			{ return shared->table_function_factory; }
@@ -414,30 +391,14 @@ StoragePtr Context::getTableImpl(const String & database_name, const String & ta
 		&& database_name.compare(0, strlen("_query_"), "_query_") == 0)
 	{
 		String requested_query_id = database_name.substr(strlen("_query_"));
-		auto it = shared->temporary_tables_by_query_id.find(requested_query_id);
 
-		for (auto & kv : shared->temporary_tables_by_query_id)
-			std::cerr << kv.first << "\n";
+		auto res = shared->process_list.tryGetTemporaryTable(requested_query_id, table_name);
 
-		if (shared->temporary_tables_by_query_id.end() == it)
-		{
-			if (exception)
-				*exception = Exception(
-					"Cannot find any temporary tables for query with id " + requested_query_id, ErrorCodes::UNKNOWN_TABLE);
-			return {};
-		}
+		if (!res && exception)
+			*exception = Exception(
+				"Cannot find temporary table with name " + table_name + " for query with id " + requested_query_id, ErrorCodes::UNKNOWN_TABLE);
 
-		auto jt = it->second.find(table_name);
-
-		if (it->second.end() == jt)
-		{
-			if (exception)
-				*exception = Exception(
-					"Cannot find temporary table with name " + table_name + " for query with id " + requested_query_id, ErrorCodes::UNKNOWN_TABLE);
-			return {};
-		}
-
-		return jt->second;
+		return res;
 	}
 
 	if (database_name.empty())
@@ -479,15 +440,16 @@ void Context::addExternalTable(const String & table_name, StoragePtr storage)
 
 	external_tables[table_name] = storage;
 
-	if (!current_query_id.empty())
+	if (process_list_elem)
 	{
 		Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 
-		std::cerr << "adding to temporary_tables_by_query_id with " << current_query_id << ", " << table_name << " \n";
+		std::cerr << "adding temporary table with " << current_query_id << ", " << table_name << " \n";
 
-		/// NOTE Проблема при совпадении query_id у разных запросов.
-		shared->temporary_tables_by_query_id[current_query_id].emplace(table_name, storage);
+		shared->process_list.addTemporaryTable(*process_list_elem, table_name, storage);
 	}
+	else
+		std::cerr << "no process list element";
 }
 
 
@@ -662,14 +624,6 @@ void Context::setCurrentQueryId(const String & query_id)
 
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 	current_query_id = query_id_to_set;
-
-	if (!external_tables.empty())
-	{
-		Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
-
-		/// NOTE Проблема при совпадении query_id у разных запросов.
-		shared->temporary_tables_by_query_id[current_query_id].insert(external_tables.begin(), external_tables.end());
-	}
 }
 
 
