@@ -1,3 +1,5 @@
+#include <Poco/Util/Application.h>
+
 #include <DB/DataTypes/FieldToDataType.h>
 
 #include <DB/Parsers/ASTFunction.h>
@@ -934,6 +936,10 @@ static SharedPtr<InterpreterSelectQuery> interpretSubquery(
 
 void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name)
 {
+	/// При нераспределённых запросах, создание временных таблиц не имеет смысла.
+	if (!storage->isRemote())
+		return;
+
 	if (const ASTIdentifier * table = typeid_cast<const ASTIdentifier *>(&*subquery_or_table_name))
 	{
 		/// Если это уже внешняя таблица, ничего заполять не нужно. Просто запоминаем ее наличие.
@@ -958,14 +964,71 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name)
 	Block sample = interpreter->getSampleBlock();
 	NamesAndTypesListPtr columns = new NamesAndTypesList(sample.getColumnsList());
 
-	/** Заменяем подзапрос на имя временной таблицы.
-	  * Именно в таком виде, запрос отправится на удалённый сервер.
-	  * На удалённый сервер отправится эта временная таблица, и на его стороне,
-	  *  вместо выполнения подзапроса, надо будет просто из неё прочитать.
-	  */
-	subquery_or_table_name = new ASTIdentifier(StringRange(), external_table_name, ASTIdentifier::Table);
-
 	StoragePtr external_storage = StorageMemory::create(external_table_name, columns);
+
+	/** Есть два способа выполнения распределённых GLOBAL-подзапросов.
+	  *
+	  * Способ push:
+	  * Данные подзапроса отправляются на все удалённые серверы, где они затем используются.
+	  * Для этого способа, данные отправляются в виде "внешних таблиц" и будут доступны на каждом удалённом сервере по имени типа _data1.
+	  * Заменяем в запросе подзапрос на это имя.
+	  *
+	  * Способ pull:
+	  * Удалённые серверы скачивают данные подзапроса с сервера-инициатора запроса.
+	  * Для этого способа, заменяем подзапрос на другой подзапрос вида (SELECT * FROM remote('host:port', _query_QUERY_ID, _data1))
+	  * Этот подзапрос, по факту, говорит - "надо скачать данные оттуда".
+	  *
+	  * Способ pull имеет преимущество, потому что в нём удалённый сервер может решить, что ему не нужны данные и не скачивать их в таких случаях.
+	  *
+	  * TODO Проверить JOIN.
+	  */
+
+	if (settings.global_subqueries_method == GlobalSubqueriesMethod::PUSH)
+	{
+		/** Заменяем подзапрос на имя временной таблицы.
+		  * Именно в таком виде, запрос отправится на удалённый сервер.
+		  * На удалённый сервер отправится эта временная таблица, и на его стороне,
+		  *  вместо выполнения подзапроса, надо будет просто из неё прочитать.
+		  */
+
+		subquery_or_table_name = new ASTIdentifier(StringRange(), external_table_name, ASTIdentifier::Table);
+	}
+	else if (settings.global_subqueries_method == GlobalSubqueriesMethod::PULL)
+	{
+		String host_port = getFQDNOrHostName() + ":" + Poco::Util::Application::instance().config().getString("tcp_port");
+		String database = "_query_" + context.getCurrentQueryId();
+
+		auto subquery = new ASTSubquery;
+		subquery_or_table_name = subquery;
+
+		auto select = new ASTSelectQuery;
+		subquery->children.push_back(select);
+
+		auto exp_list = new ASTExpressionList;
+		select->select_expression_list = exp_list;
+		select->children.push_back(select->select_expression_list);
+		exp_list->children.push_back(new ASTAsterisk);
+
+		auto table_func = new ASTFunction;
+		select->table = table_func;
+		select->children.push_back(select->table);
+
+		table_func->name = "remote";
+		auto args = new ASTExpressionList;
+		table_func->arguments = args;
+		table_func->children.push_back(table_func->arguments);
+
+		auto address_lit = new ASTLiteral({}, host_port);
+		args->children.push_back(address_lit);
+
+		auto database_lit = new ASTLiteral({}, database);
+		args->children.push_back(database_lit);
+
+		auto table_lit = new ASTLiteral({}, external_table_name);
+		args->children.push_back(table_lit);
+	}
+	else
+		throw Exception("Unknown global subqueries execution method", ErrorCodes::UNKNOWN_GLOBAL_SUBQUERIES_METHOD);
 
 	external_tables[external_table_name] = external_storage;
 	subqueries_for_sets[external_table_name].source = interpreter->execute().in;
