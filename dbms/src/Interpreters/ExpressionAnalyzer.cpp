@@ -886,7 +886,44 @@ static SharedPtr<InterpreterSelectQuery> interpretSubquery(
 		select_query->children.emplace_back(select_query->table);
 	}
 	else
+	{
 		query = subquery->children.at(0);
+
+		/** В подзапросе могут быть указаны столбцы с одинаковыми именами. Например, SELECT x, x FROM t
+		  * Это плохо, потому что результат такого запроса нельзя сохранить в таблицу, потому что в таблице не может быть одноимённых столбцов.
+		  * Сохранение в таблицу требуется для GLOBAL-подзапросов.
+		  *
+		  * Чтобы избежать такой ситуации, будем переименовывать одинаковые столбцы.
+		  */
+
+		std::set<std::string> all_column_names;
+		std::set<std::string> assigned_column_names;
+
+		if (ASTSelectQuery * select = typeid_cast<ASTSelectQuery *>(query.get()))
+		{
+			for (auto & expr : select->select_expression_list->children)
+				all_column_names.insert(expr->getAliasOrColumnName());
+
+			for (auto & expr : select->select_expression_list->children)
+			{
+				auto name = expr->getAliasOrColumnName();
+
+				if (!assigned_column_names.insert(name).second)
+				{
+					size_t i = 1;
+					while (all_column_names.end() != all_column_names.find(name + "_" + toString(i)))
+						++i;
+
+					name = name + "_" + toString(i);
+					expr = expr->clone();	/// Отменяет склейку одинаковых выражений в дереве.
+					expr->setAlias(name);
+
+					all_column_names.insert(name);
+					assigned_column_names.insert(name);
+				}
+			}
+		}
+	}
 
 	if (required_columns.empty())
 		return new InterpreterSelectQuery(query, subquery_context, QueryProcessingStage::Complete, subquery_depth + 1);
@@ -1743,8 +1780,6 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 
 	if (!subquery_for_set.join)
 	{
-		Names join_key_names_left(join_key_names_left_set.begin(), join_key_names_left_set.end());
-		Names join_key_names_right(join_key_names_right_set.begin(), join_key_names_right_set.end());
 		JoinPtr join = new Join(join_key_names_left, join_key_names_right, settings.limits, ast_join.kind, ast_join.strictness);
 
 		Names required_joined_columns(join_key_names_right.begin(), join_key_names_right.end());
@@ -2137,27 +2172,31 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAnd
 		auto & keys = typeid_cast<ASTExpressionList &>(*node.using_expr_list);
 		for (const auto & key : keys.children)
 		{
-			if (!join_key_names_left_set.insert(key->getColumnName()).second)
-				throw Exception("Duplicate column in USING list", ErrorCodes::DUPLICATE_COLUMN);
+			if (join_key_names_left.end() == std::find(join_key_names_left.begin(), join_key_names_left.end(), key->getColumnName()))
+				join_key_names_left.push_back(key->getColumnName());
+			else
+				throw Exception("Duplicate column " + key->getColumnName() + " in USING list", ErrorCodes::DUPLICATE_COLUMN);
 
-			if (!join_key_names_right_set.insert(key->getAliasOrColumnName()).second)
-				throw Exception("Duplicate column in USING list", ErrorCodes::DUPLICATE_COLUMN);
+			if (join_key_names_right.end() == std::find(join_key_names_right.begin(), join_key_names_right.end(), key->getAliasOrColumnName()))
+				join_key_names_right.push_back(key->getAliasOrColumnName());
+			else
+				throw Exception("Duplicate column " + key->getAliasOrColumnName() + " in USING list", ErrorCodes::DUPLICATE_COLUMN);
 		}
 	}
 
 	for (const auto i : ext::range(0, nested_result_sample.columns()))
 	{
 		const auto & col = nested_result_sample.getByPosition(i);
-		if (!join_key_names_right_set.count(col.name))
+		if (join_key_names_right.end() == std::find(join_key_names_right.begin(), join_key_names_right.end(), col.name))
 		{
 			joined_columns.insert(col.name);
 			joined_columns_name_type.emplace_back(col.name, col.type);
 		}
 	}
 
-/*	for (const auto & name : join_key_names_left_set)
+/*	for (const auto & name : join_key_names_left)
 		std::cerr << "JOIN key (left): " << name << std::endl;
-	for (const auto & name : join_key_names_right_set)
+	for (const auto & name : join_key_names_right)
 		std::cerr << "JOIN key (right): " << name << std::endl;
 	std::cerr << std::endl;
 	for (const auto & name : joined_columns)

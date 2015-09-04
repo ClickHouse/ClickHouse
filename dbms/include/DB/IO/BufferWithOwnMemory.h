@@ -59,22 +59,27 @@ struct Memory : boost::noncopyable, Allocator
 
 	void resize(size_t new_size)
 	{
-		if (new_size < m_capacity)
+		if (0 == m_capacity)
+		{
+			m_size = m_capacity = new_size;
+			alloc();
+		}
+		else if (new_size < m_capacity)
 		{
 			m_size = new_size;
 			return;
 		}
 		else
 		{
-			new_size = align(new_size);
+			new_size = align(new_size, alignment);
+			/// @todo pointer to void can be converted to pointer to any type with static_cast by ISO C++, reinterpret_cast has no advantages
 			m_data = reinterpret_cast<char *>(Allocator::realloc(m_data, m_capacity, new_size, alignment));
 			m_capacity = new_size;
 			m_size = m_capacity;
 		}
 	}
 
-private:
-	size_t align(size_t value) const
+	static size_t align(const size_t value, const size_t alignment)
 	{
 		if (!alignment)
 			return value;
@@ -82,6 +87,7 @@ private:
 		return (value + alignment - 1) / alignment * alignment;
 	}
 
+private:
 	void alloc()
 	{
 		if (!m_capacity)
@@ -93,7 +99,8 @@ private:
 		ProfileEvents::increment(ProfileEvents::IOBufferAllocs);
 		ProfileEvents::increment(ProfileEvents::IOBufferAllocBytes, m_capacity);
 
-		size_t new_capacity = align(m_capacity);
+		size_t new_capacity = align(m_capacity, alignment);
+		/// @todo pointer to void can be converted to pointer to any type with static_cast by ISO C++, reinterpret_cast has no advantages
 		m_data = reinterpret_cast<char *>(Allocator::alloc(new_capacity, alignment));
 		m_capacity = new_capacity;
 		m_size = m_capacity;
@@ -104,6 +111,7 @@ private:
 		if (!m_data)
 			return;
 
+		/// @todo pointer to any type can be implicitly converted to pointer to void, no cast required
 		Allocator::free(reinterpret_cast<void *>(m_data), m_capacity);
 		m_data = nullptr;	/// Чтобы избежать double free, если последующий вызов alloc кинет исключение.
 	}

@@ -34,17 +34,32 @@ template
 	UInt8 medium_set_power2_max,
 	UInt8 K,
 	typename Hash = IntHash32<Key>,
+	typename HashValueType = UInt32,
+	typename BiasEstimator = TrivialBiasEstimator,
+	HyperLogLogMode mode = HyperLogLogMode::FullFeatured,
 	typename DenominatorType = double
 >
 class CombinedCardinalityEstimator
 {
 public:
-	using Self = CombinedCardinalityEstimator<Key, HashContainer, small_set_size_max, medium_set_power2_max, K, Hash, DenominatorType>;
+	using Self = CombinedCardinalityEstimator
+		<
+			Key,
+			HashContainer,
+			small_set_size_max,
+			medium_set_power2_max,
+			K,
+			Hash,
+			HashValueType,
+			BiasEstimator,
+			mode,
+			DenominatorType
+		>;
 
 private:
 	using Small = SmallSet<Key, small_set_size_max>;
 	using Medium = HashContainer;
-	using Large = HyperLogLogCounter<K, Hash, DenominatorType>;
+	using Large = HyperLogLogCounter<K, Hash, HashValueType, DenominatorType, BiasEstimator, mode>;
 
 public:
 	CombinedCardinalityEstimator()
