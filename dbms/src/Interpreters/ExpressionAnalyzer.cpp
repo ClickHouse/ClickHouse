@@ -937,7 +937,7 @@ static SharedPtr<InterpreterSelectQuery> interpretSubquery(
 void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name)
 {
 	/// При нераспределённых запросах, создание временных таблиц не имеет смысла.
-	if (!storage->isRemote())
+	if (!(storage && storage->isRemote()))
 		return;
 
 	if (const ASTIdentifier * table = typeid_cast<const ASTIdentifier *>(&*subquery_or_table_name))
