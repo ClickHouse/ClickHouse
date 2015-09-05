@@ -443,13 +443,8 @@ void Context::addExternalTable(const String & table_name, StoragePtr storage)
 	if (process_list_elem)
 	{
 		Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
-
-		std::cerr << "adding temporary table with " << current_query_id << ", " << table_name << " \n";
-
 		shared->process_list.addTemporaryTable(*process_list_elem, table_name, storage);
 	}
-	else
-		std::cerr << "no process list element";
 }
 
 

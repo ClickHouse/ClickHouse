@@ -120,7 +120,7 @@ public:
 	}
 
 protected:
-	/// Отправить на удаленные реплики все временные таблицы
+	/// Отправить на удаленные серверы все временные таблицы.
 	void sendExternalTables()
 	{
 		size_t count = parallel_replicas->size();
@@ -150,6 +150,7 @@ protected:
 
 		parallel_replicas->sendExternalTablesData(external_tables_data);
 	}
+
 
 	Block readImpl() override
 	{
