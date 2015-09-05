@@ -979,8 +979,6 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name)
 	  * Этот подзапрос, по факту, говорит - "надо скачать данные оттуда".
 	  *
 	  * Способ pull имеет преимущество, потому что в нём удалённый сервер может решить, что ему не нужны данные и не скачивать их в таких случаях.
-	  *
-	  * TODO Проверить JOIN.
 	  */
 
 	if (settings.global_subqueries_method == GlobalSubqueriesMethod::PUSH)
@@ -1007,7 +1005,10 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name)
 		auto exp_list = new ASTExpressionList;
 		select->select_expression_list = exp_list;
 		select->children.push_back(select->select_expression_list);
-		exp_list->children.push_back(new ASTAsterisk);
+
+		Names column_names = external_storage->getColumnNamesList();
+		for (const auto & name : column_names)
+			exp_list->children.push_back(new ASTIdentifier({}, name));
 
 		auto table_func = new ASTFunction;
 		select->table = table_func;
@@ -1849,7 +1850,7 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 		for (const auto & name_type : columns_added_by_join)
 			required_joined_columns.push_back(name_type.name);
 
-		/** Для GLOBAL JOIN-ов происходит следующее:
+		/** Для GLOBAL JOIN-ов (в случае, например, push-метода выполнения GLOBAL подзапросов) происходит следующее:
 		  * - в функции addExternalStorage подзапрос JOIN (SELECT ...) заменяется на JOIN _data1,
 		  *   в объекте subquery_for_set выставляется этот подзапрос в качестве source и временная таблица _data1 в качестве table.
 		  * - в этой функции видно выражение JOIN _data1.
