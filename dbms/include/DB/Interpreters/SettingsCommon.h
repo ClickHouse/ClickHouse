@@ -555,7 +555,7 @@ struct SettingCompressionMethod
 		if (s == "zstd")
 			return CompressionMethod::ZSTD;
 
-		throw Exception("Unknown compression method: '" + s + "', must be one of 'quicklz', 'lz4', 'lz4hc', 'zstd' ", ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
+		throw Exception("Unknown compression method: '" + s + "', must be one of 'quicklz', 'lz4', 'lz4hc', 'zstd'", ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
 	}
 
 	String toString() const
@@ -596,4 +596,72 @@ struct SettingCompressionMethod
 		writeBinary(toString(), buf);
 	}
 };
+
+/// Способ выполнения глобальных распределённых подзапросов.
+enum class GlobalSubqueriesMethod
+{
+	PUSH 	= 0,	/// Отправлять данные подзапроса на все удалённые серверы.
+	PULL 	= 1,	/// Удалённые серверы будут скачивать данные подзапроса с сервера-инициатора.
+};
+
+struct SettingGlobalSubqueriesMethod
+{
+	GlobalSubqueriesMethod value;
+	bool changed = false;
+
+	SettingGlobalSubqueriesMethod(GlobalSubqueriesMethod x = GlobalSubqueriesMethod::PUSH) : value(x) {}
+
+	operator GlobalSubqueriesMethod() const { return value; }
+	SettingGlobalSubqueriesMethod & operator= (GlobalSubqueriesMethod x) { set(x); return *this; }
+
+	static GlobalSubqueriesMethod getGlobalSubqueriesMethod(const String & s)
+	{
+		if (s == "push")
+			return GlobalSubqueriesMethod::PUSH;
+		if (s == "pull")
+			return GlobalSubqueriesMethod::PULL;
+
+		throw Exception("Unknown global subqueries execution method: '" + s + "', must be one of 'push', 'pull'",
+			ErrorCodes::UNKNOWN_GLOBAL_SUBQUERIES_METHOD);
+	}
+
+	String toString() const
+	{
+		const char * strings[] = { "push", "pull" };
+
+		if (value < GlobalSubqueriesMethod::PUSH || value > GlobalSubqueriesMethod::PULL)
+			throw Exception("Unknown global subqueries execution method", ErrorCodes::UNKNOWN_GLOBAL_SUBQUERIES_METHOD);
+
+		return strings[static_cast<size_t>(value)];
+	}
+
+	void set(GlobalSubqueriesMethod x)
+	{
+		value = x;
+		changed = true;
+	}
+
+	void set(const Field & x)
+	{
+		set(safeGet<const String &>(x));
+	}
+
+	void set(const String & x)
+	{
+		set(getGlobalSubqueriesMethod(x));
+	}
+
+	void set(ReadBuffer & buf)
+	{
+		String x;
+		readBinary(x, buf);
+		set(x);
+	}
+
+	void write(WriteBuffer & buf) const
+	{
+		writeBinary(toString(), buf);
+	}
+};
+
 }

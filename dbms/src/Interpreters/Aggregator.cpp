@@ -58,7 +58,7 @@ void AggregatedDataVariants::convertToTwoLevel()
 }
 
 
-void Aggregator::initialize(Block & block)
+void Aggregator::initialize(const Block & block)
 {
 	if (isCancelled())
 		return;
@@ -1746,6 +1746,106 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
 		return {};
 
 	return merged_block.front();
+}
+
+
+template <typename Method>
+void NO_INLINE Aggregator::convertBlockToTwoLevelImpl(
+	Method & method,
+	Arena * pool,
+	ConstColumnPlainPtrs & key_columns,
+	const Sizes & key_sizes,
+	StringRefs & keys,
+	const Block & source,
+	std::vector<Block> & destinations) const
+{
+	typename Method::State state;
+	state.init(key_columns);
+
+	size_t rows = source.rowsInFirstColumn();
+	size_t columns = source.columns();
+
+	/// Для всех строчек.
+	for (size_t i = 0; i < rows; ++i)
+	{
+		/// Получаем ключ. Вычисляем на его основе номер корзины.
+		typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes, keys, *pool);
+
+		auto hash = method.data.hash(key);
+		auto bucket = method.data.getBucketFromHash(hash);
+
+		/// Этот ключ нам больше не нужен.
+		method.onExistingKey(key, keys, *pool);
+
+		Block & dst = destinations[bucket];
+		if (unlikely(!dst))
+		{
+			dst = source.cloneEmpty();
+			dst.info.bucket_num = bucket;
+		}
+
+		for (size_t j = 0; j < columns; ++j)
+			dst.unsafeGetByPosition(j).column.get()->insertFrom(*source.unsafeGetByPosition(j).column.get(), i);
+	}
+}
+
+
+std::vector<Block> Aggregator::convertBlockToTwoLevel(const Block & block)
+{
+	if (!block)
+		return {};
+
+	initialize(block);
+	AggregatedDataVariants data;
+
+	StringRefs key(keys_size);
+	ConstColumnPlainPtrs key_columns(keys_size);
+	Sizes key_sizes;
+
+	/// Запоминаем столбцы, с которыми будем работать
+	for (size_t i = 0; i < keys_size; ++i)
+		key_columns[i] = block.getByPosition(i).column;
+
+	AggregatedDataVariants::Type type = chooseAggregationMethod(key_columns, key_sizes);
+
+#define M(NAME) \
+	else if (type == AggregatedDataVariants::Type::NAME) \
+		type = AggregatedDataVariants::Type::NAME ## _two_level;
+
+	if (false) {}
+	APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
+#undef M
+	else
+		throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+
+	data.init(type);
+
+	size_t num_buckets = 0;
+
+#define M(NAME) \
+	else if (data.type == AggregatedDataVariants::Type::NAME) \
+		num_buckets = data.NAME->data.NUM_BUCKETS;
+
+	if (false) {}
+	APPLY_FOR_VARIANTS_TWO_LEVEL(M)
+#undef M
+	else
+		throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+
+	std::vector<Block> splitted_blocks(num_buckets);
+
+#define M(NAME) \
+	else if (data.type == AggregatedDataVariants::Type::NAME) \
+		convertBlockToTwoLevelImpl(*data.NAME, data.aggregates_pool, \
+			key_columns, data.key_sizes, key, block, splitted_blocks);
+
+	if (false) {}
+	APPLY_FOR_VARIANTS_TWO_LEVEL(M)
+#undef M
+	else
+		throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+
+	return splitted_blocks;
 }
 
 

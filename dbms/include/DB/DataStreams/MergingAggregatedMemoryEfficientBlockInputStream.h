@@ -19,12 +19,10 @@ public:
 	MergingAggregatedMemoryEfficientBlockInputStream(BlockInputStreams inputs_, const Names & keys_names_,
 		const AggregateDescriptions & aggregates_, bool overflow_row_, bool final_)
 		: aggregator(keys_names_, aggregates_, overflow_row_, 0, OverflowMode::THROW, nullptr, 0, 0),
-		final(final_)
+		final(final_),
+		inputs(inputs_.begin(), inputs_.end())
 	{
 		children = inputs_;
-		current_blocks.resize(children.size());
-		overflow_blocks.resize(children.size());
-		is_exhausted.resize(children.size());
 	}
 
 	String getName() const override { return "MergingAggregatedMemorySavvy"; }
@@ -43,68 +41,196 @@ protected:
 	Block readImpl() override
 	{
 		/// Если child - RemoteBlockInputStream, то отправляет запрос на все удалённые серверы, инициируя вычисления.
-		if (current_bucket_num == -1)
+		if (!started)
+		{
+			started = true;
 			for (auto & child : children)
 				child->readPrefix();
+		}
 
-		/// Всё прочитали.
-		if (current_bucket_num > 255)
-			return {};
+		/** Имеем несколько источников.
+		  * Из каждого из них могут приходить следующие данные:
+		  *
+		  * 1. Блок, с указанным bucket_num.
+		  * Это значит, что на удалённом сервере, данные были разрезаны по корзинам.
+		  * И данные для одного bucket_num с разных серверов можно независимо объединять.
+		  * При этом, даннные для разных bucket_num будут идти по возрастанию.
+		  *
+		  * 2. Блок без указания bucket_num.
+		  * Это значит, что на удалённом сервере, данные не были разрезаны по корзинам.
+		  * В случае, когда со всех серверов прийдут такие данные, их можно всех объединить.
+		  * А если с другой части серверов прийдут данные, разрезанные по корзинам,
+		  *  то данные, не разрезанные по корзинам, нужно сначала разрезать, а потом объединять.
+		  *
+		  * 3. Блоки с указанием is_overflows.
+		  * Это дополнительные данные для строк, не прошедших через max_rows_to_group_by.
+		  * Они должны объединяться друг с другом отдельно.
+		  */
 
-		/// Читаем следующие блоки для current_bucket_num
-		for (size_t i = 0, size = children.size(); i < size; ++i)
+		constexpr size_t NUM_BUCKETS = 256;
+
+		++current_bucket_num;
+
+		for (auto & input : inputs)
 		{
-			while (!is_exhausted[i] && (!current_blocks[i] || current_blocks[i].info.bucket_num < current_bucket_num))
-			{
-				current_blocks[i] = children[i]->read();
+			if (input.is_exhausted)
+				continue;
 
-				if (!current_blocks[i])
-				{
-					is_exhausted[i] = true;
-				}
-				else if (current_blocks[i].info.is_overflows)
-				{
-					overflow_blocks[i].swap(current_blocks[i]);
-				}
+			if (input.block.info.bucket_num >= current_bucket_num)
+				continue;
+
+			//std::cerr << "reading block\n";
+			Block block = input.stream->read();
+
+			if (!block)
+			{
+				//std::cerr << "input is exhausted\n";
+				input.is_exhausted = true;
+				continue;
+			}
+
+			if (block.info.bucket_num != -1)
+			{
+				//std::cerr << "block for bucket " << block.info.bucket_num << "\n";
+
+				has_two_level = true;
+				input.block = block;
+			}
+			else if (block.info.is_overflows)
+			{
+				//std::cerr << "block for overflows\n";
+
+				has_overflows = true;
+				input.overflow_block = block;
+			}
+			else
+			{
+				//std::cerr << "block without bucket\n";
+
+				input.block = block;
 			}
 		}
 
-		/// Может быть, нет блоков для current_bucket_num, а все блоки имеют больший bucket_num.
-		Int32 min_bucket_num = 256;
-		for (size_t i = 0, size = children.size(); i < size; ++i)
-			if (!is_exhausted[i] && current_blocks[i].info.bucket_num < min_bucket_num)
-				min_bucket_num = current_blocks[i].info.bucket_num;
+		while (true)
+		{
+			if (current_bucket_num == NUM_BUCKETS)
+			{
+				//std::cerr << "at end\n";
 
-		current_bucket_num = min_bucket_num;
+				if (has_overflows)
+				{
+					//std::cerr << "merging overflows\n";
 
-		/// Все потоки исчерпаны.
-		if (current_bucket_num > 255)
-			return {};	/// TODO overflow_blocks.
+					has_overflows = false;
+					BlocksList blocks_to_merge;
 
-		/// TODO Если есть single_level и two_level блоки.
+					for (auto & input : inputs)
+						if (input.overflow_block)
+							blocks_to_merge.emplace_back(std::move(input.overflow_block));
 
-		/// Объединяем все блоки с current_bucket_num.
+					return aggregator.mergeBlocks(blocks_to_merge, final);
+				}
+				else
+					return {};
+			}
+			else if (has_two_level)
+			{
+				//std::cerr << "has two level\n";
 
-		BlocksList blocks_to_merge;
-		for (size_t i = 0, size = children.size(); i < size; ++i)
-			if (current_blocks[i].info.bucket_num == current_bucket_num)
-				blocks_to_merge.emplace_back(std::move(current_blocks[i]));
+				int min_bucket_num = NUM_BUCKETS;
 
-		Block res = aggregator.mergeBlocks(blocks_to_merge, final);
+				for (auto & input : inputs)
+				{
+					if (input.block.info.bucket_num != -1 && input.block.info.bucket_num < min_bucket_num)
+						min_bucket_num = input.block.info.bucket_num;
 
-		++current_bucket_num;
-		return res;
+					if (input.block.info.bucket_num == -1 && input.block && input.splitted_blocks.empty())
+					{
+						//std::cerr << "having block without bucket; will split\n";
+
+						input.splitted_blocks = aggregator.convertBlockToTwoLevel(input.block);
+						/// Нельзя уничтожать исходный блок.
+					}
+
+					if (!input.splitted_blocks.empty())
+					{
+						for (const auto & block : input.splitted_blocks)
+						{
+							if (block && block.info.bucket_num < min_bucket_num)
+							{
+								min_bucket_num = block.info.bucket_num;
+								break;
+							}
+						}
+					}
+				}
+
+				current_bucket_num = min_bucket_num;
+
+				//std::cerr << "current_bucket_num = " << current_bucket_num << "\n";
+
+				if (current_bucket_num == NUM_BUCKETS)
+					continue;
+
+				BlocksList blocks_to_merge;
+
+				for (auto & input : inputs)
+				{
+					if (input.block.info.bucket_num == current_bucket_num)
+					{
+						//std::cerr << "having block for current_bucket_num\n";
+
+						blocks_to_merge.emplace_back(std::move(input.block));
+						input.block = Block();
+					}
+					else if (!input.splitted_blocks.empty() && input.splitted_blocks[min_bucket_num])
+					{
+						//std::cerr << "having splitted data for bucket\n";
+
+						blocks_to_merge.emplace_back(std::move(input.splitted_blocks[min_bucket_num]));
+						input.splitted_blocks[min_bucket_num] = Block();
+					}
+				}
+
+				return aggregator.mergeBlocks(blocks_to_merge, final);
+			}
+			else
+			{
+				//std::cerr << "don't have two level\n";
+
+				BlocksList blocks_to_merge;
+
+				for (auto & input : inputs)
+					if (input.block)
+						blocks_to_merge.emplace_back(std::move(input.block));
+
+				current_bucket_num = NUM_BUCKETS;
+				return aggregator.mergeBlocks(blocks_to_merge, final);
+			}
+		}
 	}
 
 private:
 	Aggregator aggregator;
 	bool final;
 
-	Int32 current_bucket_num = -1;
-	std::vector<Block> current_blocks;
-	std::vector<UInt8> is_exhausted;
+	bool started = false;
+	bool has_two_level = false;
+	bool has_overflows = false;
+	int current_bucket_num = -1;
 
-	std::vector<Block> overflow_blocks;
+	struct Input
+	{
+		BlockInputStreamPtr stream;
+		Block block;
+		Block overflow_block;
+		std::vector<Block> splitted_blocks;
+		bool is_exhausted = false;
+
+		Input(BlockInputStreamPtr & stream_) : stream(stream_) {}
+	};
+
+	std::vector<Input> inputs;
 };
 
 }

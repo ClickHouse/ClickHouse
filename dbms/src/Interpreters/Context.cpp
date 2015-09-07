@@ -366,55 +366,68 @@ StoragePtr Context::tryGetExternalTable(const String & table_name) const
 
 StoragePtr Context::getTable(const String & database_name, const String & table_name) const
 {
-	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
-
-	if (database_name.empty())
-	{
-		StoragePtr res;
-		if ((res = tryGetExternalTable(table_name)))
-			return res;
-		if (session_context && (res = session_context->tryGetExternalTable(table_name)))
-			return res;
-		if (global_context && (res = global_context->tryGetExternalTable(table_name)))
-			return res;
-	}
-	String db = database_name.empty() ? current_database : database_name;
-
-	Databases::const_iterator it = shared->databases.find(db);
-	if (shared->databases.end() == it)
-		throw Exception("Database " + db + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
-
-	Tables::const_iterator jt = it->second.find(table_name);
-	if (it->second.end() == jt)
-		throw Exception("Table " + db + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
-
-	return jt->second;
+	Exception exc;
+	auto res = getTableImpl(database_name, table_name, &exc);
+	if (!res)
+		throw exc;
+	return res;
 }
 
 
 StoragePtr Context::tryGetTable(const String & database_name, const String & table_name) const
 {
+	return getTableImpl(database_name, table_name, nullptr);
+}
+
+
+StoragePtr Context::getTableImpl(const String & database_name, const String & table_name, Exception * exception) const
+{
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+
+	/** Возможность обратиться к временным таблицам другого запроса в виде _query_QUERY_ID.table
+	  * NOTE В дальнейшем может потребоваться подумать об изоляции.
+	  */
+	if (database_name.size() > strlen("_query_")
+		&& database_name.compare(0, strlen("_query_"), "_query_") == 0)
+	{
+		String requested_query_id = database_name.substr(strlen("_query_"));
+
+		auto res = shared->process_list.tryGetTemporaryTable(requested_query_id, table_name);
+
+		if (!res && exception)
+			*exception = Exception(
+				"Cannot find temporary table with name " + table_name + " for query with id " + requested_query_id, ErrorCodes::UNKNOWN_TABLE);
+
+		return res;
+	}
 
 	if (database_name.empty())
 	{
-		StoragePtr res;
-		if ((res = tryGetExternalTable(table_name)))
-			return res;
-		if (session_context && (res = session_context->tryGetExternalTable(table_name)))
-			return res;
-		if (global_context && (res = global_context->tryGetExternalTable(table_name)))
+		StoragePtr res = tryGetExternalTable(table_name);
+		if (res)
 			return res;
 	}
+
 	String db = database_name.empty() ? current_database : database_name;
 
 	Databases::const_iterator it = shared->databases.find(db);
 	if (shared->databases.end() == it)
-		return StoragePtr();
+	{
+		if (exception)
+			*exception = Exception("Database " + db + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
+		return {};
+	}
 
 	Tables::const_iterator jt = it->second.find(table_name);
 	if (it->second.end() == jt)
-		return StoragePtr();
+	{
+		if (exception)
+			*exception = Exception("Table " + db + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+		return {};
+	}
+
+	if (!jt->second)
+		throw Exception("Logical error: entry for table " + db + "." + table_name + " exists in Context but it is nullptr.", ErrorCodes::LOGICAL_ERROR);
 
 	return jt->second;
 }
@@ -424,7 +437,14 @@ void Context::addExternalTable(const String & table_name, StoragePtr storage)
 {
 	if (external_tables.end() != external_tables.find(table_name))
 		throw Exception("Temporary table " + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+
 	external_tables[table_name] = storage;
+
+	if (process_list_elem)
+	{
+		Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+		shared->process_list.addTemporaryTable(*process_list_elem, table_name, storage);
+	}
 }
 
 
@@ -590,6 +610,9 @@ void Context::setCurrentDatabase(const String & name)
 
 void Context::setCurrentQueryId(const String & query_id)
 {
+	if (!current_query_id.empty())
+		throw Exception("Logical error: attempt to set query_id twice", ErrorCodes::LOGICAL_ERROR);
+
 	String query_id_to_set = query_id;
 	if (query_id_to_set.empty())	/// Если пользователь не передал свой query_id, то генерируем его самостоятельно.
 		query_id_to_set = shared->uuid_generator.createRandom().toString();

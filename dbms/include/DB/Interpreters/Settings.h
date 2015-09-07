@@ -151,6 +151,9 @@ struct Settings
 	\
 	/** Логгировать запросы и писать лог в системную таблицу. */ \
 	M(SettingBool, log_queries, 0) \
+	\
+	/** Схема выполнения GLOBAL-подзапросов. */ \
+	M(SettingGlobalSubqueriesMethod, global_subqueries_method, GlobalSubqueriesMethod::PUSH) \
 
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;
