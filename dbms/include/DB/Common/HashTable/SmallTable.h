@@ -80,18 +80,21 @@ public:
 
 		bool next()
 		{
-			if (read_count == size)
-			{
-				is_eof = true;
-				return false;
-			}
-			else if (read_count == 0)
+			if (!is_initialized)
 			{
 				Cell::State::read(in);
 				DB::readVarUInt(size, in);
 
 				if (size > capacity)
 					throw DB::Exception("Illegal size");
+
+				is_initialized = true;
+			}
+
+			if (read_count == size)
+			{
+				is_eof = true;
+				return false;
 			}
 
 			cell.read(in);
@@ -102,18 +105,19 @@ public:
 
 		inline const value_type & get() const
 		{
-			if ((read_count == 0) || is_eof)
+			if (!is_initialized || is_eof)
 				throw DB::Exception("No available data", DB::ErrorCodes::NO_AVAILABLE_DATA);
 
 			return cell.getValue();
 		}
 
 	private:
-		DB::ReadBuffer in;
+		DB::ReadBuffer & in;
 		Cell cell;
 		size_t read_count = 0;
 		size_t size;
 		bool is_eof = false;
+		bool is_initialized = false;
 	};
 
 	class iterator
