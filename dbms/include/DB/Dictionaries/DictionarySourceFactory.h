@@ -21,9 +21,17 @@ Block createSampleBlock(const DictionaryStructure & dict_struct)
 		ColumnWithTypeAndName{
 			new ColumnUInt64,
 			new DataTypeUInt64,
-			dict_struct.id_name
+			dict_struct.id.name
 		}
 	};
+
+	if (dict_struct.range_min)
+		for (const auto & attribute : { dict_struct.range_min, dict_struct.range_max })
+			block.insert(ColumnWithTypeAndName{
+				new ColumnUInt16,
+				new DataTypeDate,
+				attribute->name
+			});
 
 	for (const auto & attribute : dict_struct.attributes)
 		block.insert(ColumnWithTypeAndName{
@@ -57,6 +65,12 @@ public:
 
 		if ("file" == source_type)
 		{
+			if (dict_struct.has_expressions)
+				throw Exception{
+					"Dictionary source of type `file` does not support attribute expressions",
+					ErrorCodes::LOGICAL_ERROR
+				};
+
 			const auto filename = config.getString(config_prefix + ".file.path");
 			const auto format = config.getString(config_prefix + ".file.format");
 			return std::make_unique<FileDictionarySource>(filename, format, sample_block, context);

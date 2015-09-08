@@ -147,6 +147,16 @@ private:
 		return type_res;
 	}
 
+	static const DataTypePtr & getScalarType(const DataTypePtr & type)
+	{
+		const auto array = typeid_cast<const DataTypeArray *>(type.get());
+
+		if (!array)
+			return type;
+
+		return getScalarType(array->getNestedType());
+	}
+
 public:
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnType(const DataTypes & arguments) const
@@ -176,12 +186,16 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		/// Все аргументы должны быть константами.
-		for (size_t i = 0, size = arguments.size(); i < size; ++i)
-			if (!block.getByPosition(arguments[i]).column->isConst())
-				throw Exception("Arguments for function array must be constant.", ErrorCodes::ILLEGAL_COLUMN);
+		const auto is_const = [&] {
+			for (const auto arg_num : arguments)
+				if (!block.getByPosition(arg_num).column->isConst())
+					return false;
 
-		DataTypePtr result_type = block.getByPosition(arguments[0]).type;
+			return true;
+		}();
+
+		const auto first_arg = block.getByPosition(arguments[0]);
+		DataTypePtr result_type = first_arg.type;
 		if (result_type->behavesAsNumber())
 		{
 			/// Если тип числовой, вычисляем наименьший общий тип
@@ -189,16 +203,43 @@ public:
 				result_type = getLeastCommonType(result_type, block.getByPosition(arguments[i]).type);
 		}
 
-		Array arr;
-		for (size_t i = 0, size = arguments.size(); i < size; ++i)
-			if (block.getByPosition(arguments[i]).type->getName() == result_type->getName())
-				/// Если элемент такого же типа как результат, просто добавляем его в ответ
-				arr.push_back((*block.getByPosition(arguments[i]).column)[0]);
-			else
-				/// Иначе необходимо привести его к типу результата
-				addField(result_type, (*block.getByPosition(arguments[i]).column)[0], arr);
+		if (is_const)
+		{
+			Array arr;
+			for (const auto arg_num : arguments)
+				if (block.getByPosition(arg_num).type->getName() == result_type->getName())
+					/// Если элемент такого же типа как результат, просто добавляем его в ответ
+					arr.push_back((*block.getByPosition(arg_num).column)[0]);
+				else
+					/// Иначе необходимо привести его к типу результата
+					addField(result_type, (*block.getByPosition(arg_num).column)[0], arr);
 
-		block.getByPosition(result).column = new ColumnConstArray(block.getByPosition(arguments[0]).column->size(), arr, new DataTypeArray(result_type));
+			block.getByPosition(result).column = new ColumnConstArray{
+				first_arg.column->size(), arr, new DataTypeArray{result_type}
+			};
+		}
+		else
+		{
+			auto out = new ColumnArray{result_type->createColumn()};
+			ColumnPtr out_ptr{out};
+
+			for (const auto row_num : ext::range(0, first_arg.column->size()))
+			{
+				Array arr;
+
+				for (const auto arg_num : arguments)
+					if (block.getByPosition(arg_num).type->getName() == result_type->getName())
+						/// Если элемент такого же типа как результат, просто добавляем его в ответ
+						arr.push_back((*block.getByPosition(arg_num).column)[row_num]);
+					else
+						/// Иначе необходимо привести его к типу результата
+						addField(result_type, (*block.getByPosition(arg_num).column)[row_num], arr);
+
+				out->insert(arr);
+			}
+
+			block.getByPosition(result).column = out_ptr;
+		}
 	}
 };
 
