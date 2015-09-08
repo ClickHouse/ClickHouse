@@ -219,7 +219,27 @@ public:
 			};
 		}
 		else
-			throw Exception("Arguments for function array must be constant.", ErrorCodes::ILLEGAL_COLUMN);
+		{
+			auto out = new ColumnArray{result_type->createColumn()};
+			ColumnPtr out_ptr{out};
+
+			for (const auto row_num : ext::range(0, first_arg.column->size()))
+			{
+				Array arr;
+
+				for (const auto arg_num : arguments)
+					if (block.getByPosition(arg_num).type->getName() == result_type->getName())
+						/// Если элемент такого же типа как результат, просто добавляем его в ответ
+						arr.push_back((*block.getByPosition(arg_num).column)[row_num]);
+					else
+						/// Иначе необходимо привести его к типу результата
+						addField(result_type, (*block.getByPosition(arg_num).column)[row_num], arr);
+
+				out->insert(arr);
+			}
+
+			block.getByPosition(result).column = out_ptr;
+		}
 	}
 };
 
