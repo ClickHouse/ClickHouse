@@ -1699,7 +1699,11 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
 
 	AggregateColumnsData aggregate_columns(aggregates_size);
 
-	initialize(blocks.front());
+	Block empty_block;
+	initialize(empty_block);
+
+	if (!sample)
+		sample = blocks.front().cloneEmpty();
 
 	/// Каким способом выполнять агрегацию?
 	for (size_t i = 0; i < keys_size; ++i)
@@ -1840,7 +1844,12 @@ std::vector<Block> Aggregator::convertBlockToTwoLevel(const Block & block)
 	if (!block)
 		return {};
 
-	initialize(block);
+	Block empty_block;
+	initialize(empty_block);
+
+	if (!sample)
+		sample = block.cloneEmpty();
+
 	AggregatedDataVariants data;
 
 	StringRefs key(keys_size);
