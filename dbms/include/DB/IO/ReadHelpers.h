@@ -315,6 +315,8 @@ void readDoubleQuotedString(String & s, ReadBuffer & buf);
 
 void readBackQuotedString(String & s, ReadBuffer & buf);
 
+void readStringUntilEOF(String & s, ReadBuffer & buf);
+
 
 /// в формате YYYY-MM-DD
 inline void readDateText(DayNum_t & date, ReadBuffer & buf)
