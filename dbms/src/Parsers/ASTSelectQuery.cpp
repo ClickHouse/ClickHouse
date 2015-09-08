@@ -145,7 +145,7 @@ ASTPtr ASTSelectQuery::clone() const
 	while (!next.isNull())
 	{
 		ASTSelectQuery * next_select_query = static_cast<ASTSelectQuery *>(&*next);
-		next_select_query->prev_union_all = current;
+		next_select_query->prev_union_all = current.get();
 		current = next;
 		next = next_select_query->next_union_all;
 	}
