@@ -346,17 +346,18 @@ private:
 	}
 
 protected:
-	template <typename T1, typename T2>
-	bool match(T1 & events_it, const T2 events_end) const
+	template <typename T>
+	bool match(T & events_it, const T events_end) const
 	{
 		const auto action_begin = std::begin(actions);
 		const auto action_end = std::end(actions);
 		auto action_it = action_begin;
 
+		const auto events_begin = events_it;
 		auto base_it = events_it;
 
 		/// an iterator to action plus an iterator to row in events list plus timestamp at the start of sequence
-		using backtrack_info = std::tuple<decltype(action_it), decltype(events_it), decltype(base_it)>;
+		using backtrack_info = std::tuple<decltype(action_it), T, T>;
 		std::stack<backtrack_info> back_stack;
 
 		/// backtrack if possible
@@ -472,6 +473,9 @@ protected:
 				   (action_it->type == PatternActionType::TimeGreaterOrEqual && action_it->extra == 0))
 				++action_it;
 		}
+
+		if (events_it == events_begin)
+			++events_it;
 
 		return action_it == action_end;
 	}

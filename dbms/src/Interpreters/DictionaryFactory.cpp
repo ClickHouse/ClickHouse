@@ -37,7 +37,7 @@ DictionaryPtr DictionaryFactory::create(const std::string & name, Poco::Util::Ab
 
 	if ("range_hashed" == layout_type)
 	{
-		if (dict_struct.range_min.empty() || dict_struct.range_min.empty())
+		if (!dict_struct.range_min || !dict_struct.range_min)
 			throw Exception{
 				name + ": dictionary of layout 'range_hashed' requires .structure.range_min and .structure.range_max",
 				ErrorCodes::BAD_ARGUMENTS
@@ -47,7 +47,7 @@ DictionaryPtr DictionaryFactory::create(const std::string & name, Poco::Util::Ab
 	}
 	else
 	{
-		if (!dict_struct.range_min.empty() || !dict_struct.range_min.empty())
+		if (dict_struct.range_min || dict_struct.range_min)
 			throw Exception{
 				name + ": elements .structure.range_min and .structure.range_max should be defined only "
 					"for a dictionary of layout 'range_hashed'",

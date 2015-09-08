@@ -119,6 +119,9 @@ struct Settings
 	  * (Чтобы большие запросы не вымывали кэш.) */ \
 	M(SettingUInt64, merge_tree_max_rows_to_use_cache, (1024 * 1024)) \
 	\
+	/** Распределять чтение из MergeTree по потокам равномерно, обеспечивая стабильное среднее время исполнения каждого потока в пределах одного чтения. */ \
+	M(SettingBool, merge_tree_uniform_read_distribution, false) \
+	\
 	/** Минимальная длина выражения expr = x1 OR ... expr = xN для оптимизации */ \
 	M(SettingUInt64, optimize_min_equality_disjunction_chain_length, 3) \
 	\
@@ -148,6 +151,9 @@ struct Settings
 	\
 	/** Логгировать запросы и писать лог в системную таблицу. */ \
 	M(SettingBool, log_queries, 0) \
+	\
+	/** Схема выполнения GLOBAL-подзапросов. */ \
+	M(SettingGlobalSubqueriesMethod, global_subqueries_method, GlobalSubqueriesMethod::PUSH) \
 
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;

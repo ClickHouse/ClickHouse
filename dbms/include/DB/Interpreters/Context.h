@@ -44,12 +44,6 @@ class QueryLog;
 struct MergeTreeSettings;
 
 
-/// имя таблицы -> таблица
-typedef std::map<String, StoragePtr> Tables;
-
-/// имя БД -> таблицы
-typedef std::map<String, Tables> Databases;
-
 /// (имя базы данных, имя таблицы)
 typedef std::pair<String, String> DatabaseAndTableName;
 
@@ -272,6 +266,8 @@ public:
 private:
 	const Dictionaries & getDictionariesImpl(bool throw_on_error) const;
 	const ExternalDictionaries & getExternalDictionariesImpl(bool throw_on_error) const;
+
+	StoragePtr getTableImpl(const String & database_name, const String & table_name, Exception * exception) const;
 };
 
 
