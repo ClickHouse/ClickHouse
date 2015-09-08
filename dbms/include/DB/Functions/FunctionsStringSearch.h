@@ -323,8 +323,13 @@ namespace Regexps
 		if (known_regexps.end() == it)
 			it = known_regexps.emplace(pattern, std::make_unique<Holder>()).first;
 
-		return it->second->get([&pattern] {
-			return new Regexp{createRegexp<like>(pattern, no_capture ? OptimizedRegularExpression::RE_NO_CAPTURE : 0)};
+		return it->second->get([&pattern]
+		{
+			int flags = OptimizedRegularExpression::RE_DOT_NL;
+			if (no_capture)
+				flags |= OptimizedRegularExpression::RE_NO_CAPTURE;
+
+			return new Regexp{createRegexp<like>(pattern, flags)};
 		});
 	}
 }

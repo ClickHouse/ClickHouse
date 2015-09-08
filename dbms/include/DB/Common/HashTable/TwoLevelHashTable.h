@@ -53,7 +53,7 @@ public:
 	size_t hash(const Key & x) const { return Hash::operator()(x); }
 
 	/// NOTE Плохо для хэш-таблиц больше чем на 2^32 ячеек.
-	size_t getBucketFromHash(size_t hash_value) const { return (hash_value >> (32 - BITS_FOR_BUCKET)) & MAX_BUCKET; }
+	static size_t getBucketFromHash(size_t hash_value) { return (hash_value >> (32 - BITS_FOR_BUCKET)) & MAX_BUCKET; }
 
 protected:
 	typename Impl::iterator beginOfNextNonEmptyBucket(size_t & bucket)

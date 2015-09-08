@@ -82,10 +82,11 @@ private:
 	}
 
 public:
-	CachedCompressedReadBuffer(const std::string & path_, UncompressedCache * cache_, size_t estimated_size_,
-							   size_t aio_threshold_, size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE)
-		: ReadBuffer(nullptr, 0), path(path_), cache(cache_), buf_size(buf_size_),
-		estimated_size(estimated_size_), aio_threshold(aio_threshold_), file_pos(0)
+	CachedCompressedReadBuffer(
+		const std::string & path_, UncompressedCache * cache_, size_t estimated_size_, size_t aio_threshold_,
+		size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE)
+		: ReadBuffer(nullptr, 0), path(path_), cache(cache_), buf_size(buf_size_), estimated_size(estimated_size_),
+		  aio_threshold(aio_threshold_), file_pos(0)
 	{
 	}
 
