@@ -376,12 +376,18 @@ void Join::setSampleBlock(const Block & block)
 
 	sample_block_with_columns_to_add = block;
 
-	/// Удаляем из sample_block_with_columns_to_add ключевые столбцы.
-	for (const auto & name : key_names_right)
+	/// Переносим из sample_block_with_columns_to_add ключевые столбцы в sample_block_with_keys, сохраняя порядок.
+	size_t pos = 0;
+	while (pos < sample_block_with_columns_to_add.columns())
 	{
-		size_t pos = sample_block_with_columns_to_add.getPositionByName(name);
-		sample_block_with_keys.insert(sample_block_with_columns_to_add.unsafeGetByPosition(pos));
-		sample_block_with_columns_to_add.erase(pos);
+		const auto & name = sample_block_with_columns_to_add.unsafeGetByPosition(pos).name;
+		if (key_names_right.end() != std::find(key_names_right.begin(), key_names_right.end(), name))
+		{
+			sample_block_with_keys.insert(sample_block_with_columns_to_add.unsafeGetByPosition(pos));
+			sample_block_with_columns_to_add.erase(pos);
+		}
+		else
+			++pos;
 	}
 
 	for (size_t i = 0, size = sample_block_with_columns_to_add.columns(); i < size; ++i)
@@ -426,7 +432,9 @@ bool Join::insertFromBlock(const Block & block)
 
 	if (getFullness(kind))
 	{
-		/// Переносим ключевые столбцы в начало блока.
+		/** Переносим ключевые столбцы в начало блока.
+		  * Именно там их будет ожидать NonJoinedBlockInputStream.
+		  */
 		size_t key_num = 0;
 		for (const auto & name : key_names_right)
 		{
@@ -810,6 +818,8 @@ void Join::checkTypesOfKeys(const Block & block_left, const Block & block_right)
 
 void Join::joinBlock(Block & block) const
 {
+//	std::cerr << "joinBlock: " << block.dumpStructure() << "\n";
+
 	Poco::ScopedReadRWLock lock(rwlock);
 
 	checkTypesOfKeys(block, sample_block_with_keys);
@@ -917,6 +927,8 @@ public:
 
 		result_sample_block = left_sample_block;
 
+//		std::cerr << result_sample_block.dumpStructure() << "\n";
+
 		/// Добавляем в блок новые столбцы.
 		for (size_t i = 0; i < num_columns_right; ++i)
 		{
@@ -932,10 +944,11 @@ public:
 		{
 			const String & name = left_sample_block.getByPosition(i).name;
 
-			if (parent.key_names_left.end() == std::find(parent.key_names_left.begin(), parent.key_names_left.end(), name))
+			auto found_key_column = std::find(parent.key_names_left.begin(), parent.key_names_left.end(), name);
+			if (parent.key_names_left.end() == found_key_column)
 				column_numbers_left.push_back(i);
 			else
-				column_numbers_keys_and_right.push_back(i);
+				column_numbers_keys_and_right.push_back(found_key_column - parent.key_names_left.begin());
 		}
 
 		for (size_t i = 0; i < num_columns_right; ++i)
@@ -1046,8 +1059,6 @@ private:
 
 		for (; it != end; ++it)
 		{
-//			std::cerr << it->second.getUsed() << "\n";
-
 			if (it->second.getUsed())
 				continue;
 

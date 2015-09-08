@@ -7,6 +7,8 @@
 #include <vector>
 #include <string>
 #include <map>
+#include <experimental/optional>
+
 
 namespace DB
 {
@@ -112,24 +114,50 @@ struct DictionaryAttribute final
 	const bool injective;
 };
 
+struct DictionarySpecialAttribute final
+{
+	const std::string name;
+	const std::string expression;
+
+	DictionarySpecialAttribute(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
+		: name{config.getString(config_prefix + ".name", "")},
+		  expression{config.getString(config_prefix + ".expression", "")}
+	{
+		if (name.empty() && !expression.empty())
+			throw Exception{
+				"Element " + config_prefix + ".name is empty",
+				ErrorCodes::BAD_ARGUMENTS
+			};
+	}
+};
+
 /// Name of identifier plus list of attributes
 struct DictionaryStructure final
 {
-	std::string id_name;
+	DictionarySpecialAttribute id;
 	std::vector<DictionaryAttribute> attributes;
-	std::string range_min;
-	std::string range_max;
+	std::experimental::optional<DictionarySpecialAttribute> range_min;
+	std::experimental::optional<DictionarySpecialAttribute> range_max;
+	bool has_expressions = false;
 
 	DictionaryStructure(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
-		: id_name{config.getString(config_prefix + ".id.name")},
-		  range_min{config.getString(config_prefix + ".range_min.name", "")},
-		  range_max{config.getString(config_prefix + ".range_max.name", "")}
+		: id{config, config_prefix + ".id"}
 	{
-		if (id_name.empty())
+		if (id.name.empty())
 			throw Exception{
 				"No 'id' specified for dictionary",
 				ErrorCodes::BAD_ARGUMENTS
 			};
+
+		if (config.has(config_prefix + ".range_min"))
+			range_min.emplace(config, config_prefix + ".range_min");
+
+		if (config.has(config_prefix + ".range_max"))
+			range_max.emplace(config, config_prefix + ".range_max");
+
+		if (!id.expression.empty() ||
+			(range_min && !range_min->expression.empty()) || (range_max && !range_max->expression.empty()))
+			has_expressions = true;
 
 		Poco::Util::AbstractConfiguration::Keys keys;
 		config.keys(config_prefix, keys);
@@ -148,6 +176,8 @@ struct DictionaryStructure final
 			const auto underlying_type = getAttributeUnderlyingType(type_string);
 
 			const auto expression = config.getString(prefix + "expression", "");
+			if (!expression.empty())
+				has_expressions = true;
 
 			const auto null_value_string = config.getString(prefix + "null_value");
 			Field null_value;
