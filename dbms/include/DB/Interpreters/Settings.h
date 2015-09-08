@@ -154,6 +154,9 @@ struct Settings
 	\
 	/** Схема выполнения GLOBAL-подзапросов. */ \
 	M(SettingGlobalSubqueriesMethod, global_subqueries_method, GlobalSubqueriesMethod::PUSH) \
+	\
+	/** Максимальное количество одновременно выполняющихся запросов на одного user-а. */ \
+	M(SettingUInt64, max_concurrent_queries_for_user, 0) \
 
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;

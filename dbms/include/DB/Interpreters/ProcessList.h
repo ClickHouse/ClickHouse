@@ -131,7 +131,7 @@ public:
 	  * Если времени не хватило - кинуть исключение.
 	  */
 	EntryPtr insert(const String & query_, const String & user_, const String & query_id_, const Poco::Net::IPAddress & ip_address_,
-		size_t max_memory_usage, size_t max_wait_milliseconds, bool replace_running_query, QueryPriorities::Priority priority);
+		const Settings & settings);
 
 	/// Количество одновременно выполняющихся запросов.
 	size_t size() const { return cur_size; }
