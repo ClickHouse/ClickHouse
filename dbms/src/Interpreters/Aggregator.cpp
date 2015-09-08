@@ -1735,17 +1735,62 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
 			throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 	}
 
-	BlocksList merged_block = convertToBlocks(result, final, 1);
+	BlocksList merged_blocks = convertToBlocks(result, final, 1);
 
-	if (merged_block.size() > 1)	/// TODO overflows
-		throw Exception("Logical error: temporary result is not single-level", ErrorCodes::LOGICAL_ERROR);
+	if (merged_blocks.size() > 1)
+	{
+		/** Может быть два блока. Один с is_overflows, другой - нет.
+		  * Если есть непустой блок не is_overflows, то удаляем блок с is_overflows.
+		  * Если есть пустой блок не is_overflows и блок с is_overflows, то удаляем пустой блок.
+		  *
+		  * Это делаем, потому что исходим из допущения, что в функцию передаются
+		  *  либо все блоки не is_overflows, либо все блоки is_overflows.
+		  */
+
+		bool has_nonempty_nonoverflows = false;
+		bool has_overflows = false;
+
+		for (const auto & block : merged_blocks)
+		{
+			if (block && !block.info.is_overflows)
+				has_nonempty_nonoverflows = true;
+			else if (block.info.is_overflows)
+				has_overflows = true;
+		}
+
+		if (has_nonempty_nonoverflows)
+		{
+			for (auto it = merged_blocks.begin(); it != merged_blocks.end(); ++it)
+			{
+				if (it->info.is_overflows)
+				{
+					merged_blocks.erase(it);
+					break;
+				}
+			}
+		}
+		else if (has_overflows)
+		{
+			for (auto it = merged_blocks.begin(); it != merged_blocks.end(); ++it)
+			{
+				if (!*it)
+				{
+					merged_blocks.erase(it);
+					break;
+				}
+			}
+		}
+
+		if (merged_blocks.size() > 1)
+			throw Exception("Logical error: temporary result is not single-level", ErrorCodes::LOGICAL_ERROR);
+	}
 
 	LOG_TRACE(log, "Merged partially aggregated blocks.");
 
-	if (merged_block.empty())
+	if (merged_blocks.empty())
 		return {};
 
-	return merged_block.front();
+	return merged_blocks.front();
 }
 
 

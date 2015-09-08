@@ -12,6 +12,19 @@ namespace DB
   * Это экономит оперативку в случае использования двухуровневой агрегации, где в каждом потоке будет до 256 блоков с частями результата.
   *
   * Агрегатные функции в блоках не должны быть финализированы, чтобы их состояния можно было объединить.
+  *
+  * Замечания:
+  *
+  * На хорошей сети (10Gbit) может работать заметно медленнее, так как чтения блоков с разных
+  *  удалённых серверов делаются последовательно, при этом, чтение упирается в CPU.
+  * Это несложно исправить.
+  *
+  * Также, чтения и вычисления (слияние состояний) делаются по очереди.
+  * Есть возможность делать чтения асинхронно - при этом будет расходоваться в два раза больше памяти, но всё-равно немного.
+  * Это можно сделать с помощью UnionBlockInputStream.
+  *
+  * Можно держать в памяти не по одному блоку из каждого источника, а по несколько, и распараллелить мердж.
+  * При этом будет расходоваться кратно больше оперативки.
   */
 class MergingAggregatedMemoryEfficientBlockInputStream : public IProfilingBlockInputStream
 {
@@ -25,12 +38,12 @@ public:
 		children = inputs_;
 	}
 
-	String getName() const override { return "MergingAggregatedMemorySavvy"; }
+	String getName() const override { return "MergingAggregatedMemoryEfficient"; }
 
 	String getID() const override
 	{
 		std::stringstream res;
-		res << "MergingAggregatedMemorySavvy(" << aggregator.getID();
+		res << "MergingAggregatedMemoryEfficient(" << aggregator.getID();
 		for (size_t i = 0, size = children.size(); i < size; ++i)
 			res << ", " << children.back()->getID();
 		res << ")";
@@ -79,35 +92,45 @@ protected:
 			if (input.block.info.bucket_num >= current_bucket_num)
 				continue;
 
-			//std::cerr << "reading block\n";
-			Block block = input.stream->read();
-
-			if (!block)
+			/// Если придёт блок не с основными данными, а с overflows, то запомним его и повторим чтение.
+			while (true)
 			{
-				//std::cerr << "input is exhausted\n";
-				input.is_exhausted = true;
-				continue;
-			}
+	//			std::cerr << "reading block\n";
+				Block block = input.stream->read();
 
-			if (block.info.bucket_num != -1)
-			{
-				//std::cerr << "block for bucket " << block.info.bucket_num << "\n";
+				if (!block)
+				{
+	//				std::cerr << "input is exhausted\n";
+					input.is_exhausted = true;
+					break;
+				}
 
-				has_two_level = true;
-				input.block = block;
-			}
-			else if (block.info.is_overflows)
-			{
-				//std::cerr << "block for overflows\n";
+				if (block.info.bucket_num != -1)
+				{
+					/// Один из разрезанных блоков для двухуровневых данных.
+	//				std::cerr << "block for bucket " << block.info.bucket_num << "\n";
 
-				has_overflows = true;
-				input.overflow_block = block;
-			}
-			else
-			{
-				//std::cerr << "block without bucket\n";
+					has_two_level = true;
+					input.block = block;
+				}
+				else if (block.info.is_overflows)
+				{
+	//				std::cerr << "block for overflows\n";
 
-				input.block = block;
+					has_overflows = true;
+					input.overflow_block = block;
+
+					continue;
+				}
+				else
+				{
+					/// Блок для неразрезанных (одноуровневых) данных.
+	//				std::cerr << "block without bucket\n";
+
+					input.block = block;
+				}
+
+				break;
 			}
 		}
 
@@ -115,11 +138,12 @@ protected:
 		{
 			if (current_bucket_num == NUM_BUCKETS)
 			{
-				//std::cerr << "at end\n";
+				/// Обработали все основные данные. Остались, возможно, только overflows-блоки.
+	//			std::cerr << "at end\n";
 
 				if (has_overflows)
 				{
-					//std::cerr << "merging overflows\n";
+	//				std::cerr << "merging overflows\n";
 
 					has_overflows = false;
 					BlocksList blocks_to_merge;
@@ -135,23 +159,35 @@ protected:
 			}
 			else if (has_two_level)
 			{
-				//std::cerr << "has two level\n";
+				/** Есть двухуровневые данные.
+				  * Будем обрабатывать номера корзин по возрастанию.
+				  * Найдём минимальный номер корзины, для которой есть данные,
+				  *  затем померджим эти данные.
+				  */
+	//			std::cerr << "has two level\n";
 
 				int min_bucket_num = NUM_BUCKETS;
 
 				for (auto & input : inputs)
 				{
+					/// Изначально разрезанные (двухуровневые) блоки.
 					if (input.block.info.bucket_num != -1 && input.block.info.bucket_num < min_bucket_num)
 						min_bucket_num = input.block.info.bucket_num;
 
+					/// Ещё не разрезанный по корзинам блок. Разрезаем его и кладём результат в splitted_blocks.
 					if (input.block.info.bucket_num == -1 && input.block && input.splitted_blocks.empty())
 					{
-						//std::cerr << "having block without bucket; will split\n";
+						LOG_TRACE(&Logger::get("MergingAggregatedMemoryEfficient"), "Having block without bucket: will split.");
 
 						input.splitted_blocks = aggregator.convertBlockToTwoLevel(input.block);
-						/// Нельзя уничтожать исходный блок.
+
+						/** Нельзя уничтожать исходный блок.
+						  * Потому что он владеет Arena с состояниями агрегатных функций,
+						  *  а splitted_blocks ей не владеют, но ссылаются на эти состояния.
+						  */
 					}
 
+					/// Блоки, которые мы получили разрезанием одноуровневых блоков.
 					if (!input.splitted_blocks.empty())
 					{
 						for (const auto & block : input.splitted_blocks)
@@ -167,25 +203,27 @@ protected:
 
 				current_bucket_num = min_bucket_num;
 
-				//std::cerr << "current_bucket_num = " << current_bucket_num << "\n";
+	//			std::cerr << "current_bucket_num = " << current_bucket_num << "\n";
 
+				/// Блоков с основными данными больше нет.
 				if (current_bucket_num == NUM_BUCKETS)
 					continue;
 
+				/// Теперь собираем блоки для current_bucket_num, чтобы их померджить.
 				BlocksList blocks_to_merge;
 
 				for (auto & input : inputs)
 				{
 					if (input.block.info.bucket_num == current_bucket_num)
 					{
-						//std::cerr << "having block for current_bucket_num\n";
+	//					std::cerr << "having block for current_bucket_num\n";
 
 						blocks_to_merge.emplace_back(std::move(input.block));
 						input.block = Block();
 					}
 					else if (!input.splitted_blocks.empty() && input.splitted_blocks[min_bucket_num])
 					{
-						//std::cerr << "having splitted data for bucket\n";
+	//					std::cerr << "having splitted data for bucket\n";
 
 						blocks_to_merge.emplace_back(std::move(input.splitted_blocks[min_bucket_num]));
 						input.splitted_blocks[min_bucket_num] = Block();
@@ -196,7 +234,8 @@ protected:
 			}
 			else
 			{
-				//std::cerr << "don't have two level\n";
+				/// Есть только одноуровневые данные. Просто мерджим их.
+	//			std::cerr << "don't have two level\n";
 
 				BlocksList blocks_to_merge;
 
