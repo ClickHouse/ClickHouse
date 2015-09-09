@@ -11,8 +11,11 @@ namespace DB
 {
 
 
+/** Used in conjunction with MergeTreeReadPool, asking it for more work to do and performing whatever reads it is asked
+ *	to perform. */
 class MergeTreeThreadBlockInputStream : public IProfilingBlockInputStream
 {
+	/// "thread" index (there are N threads and each thread is assigned index in interval [0..N-1])
 	std::size_t thread;
 public:
 	MergeTreeThreadBlockInputStream(
@@ -82,6 +85,7 @@ protected:
 	}
 
 private:
+	/// Requests read task from MergeTreeReadPool and signals whether it got one
 	bool getNewTask()
 	{
 		task = pool->getTask(min_marks_to_read, thread);
@@ -117,9 +121,11 @@ private:
 		}
 		else
 		{
-			reader->reconf(path, task->data_part, task->columns, task->mark_ranges);
+			/** reader and possible pre_reader were already created, just configure them to a new data part, ranges and
+			 *	columns to preserve internal state. */
+			reader->reconfigure(path, task->data_part, task->columns, task->mark_ranges);
 			if (prewhere_actions)
-				pre_reader->reconf(path, task->data_part, task->pre_columns, task->mark_ranges);
+				pre_reader->reconfigure(path, task->data_part, task->pre_columns, task->mark_ranges);
 		}
 
 		return true;

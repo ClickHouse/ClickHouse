@@ -35,10 +35,12 @@ public:
 		: uncompressed_cache(uncompressed_cache_), mark_cache(mark_cache_), storage(storage_),
 		  aio_threshold(aio_threshold_), max_read_buffer_size(max_read_buffer_size_)
 	{
-		reconf(path_, data_part, columns_, all_mark_ranges);
+		reconfigure(path_, data_part, columns_, all_mark_ranges);
 	}
 
-	void reconf(
+	/** Allows to use the same MergeTreeReader across multiple data parts and/or columns and/or ranges,
+	 *	all while preserving avg_value_size_hints (may and does significantly improve read times). */
+	void reconfigure(
 		const String & path, const MergeTreeData::DataPartPtr & data_part, const NamesAndTypesList & columns,
 		const MarkRanges & all_mark_ranges)
 	{
