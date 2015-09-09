@@ -1861,6 +1861,8 @@ std::vector<Block> Aggregator::convertBlockToTwoLevel(const Block & block)
 		key_columns[i] = block.getByPosition(i).column;
 
 	AggregatedDataVariants::Type type = chooseAggregationMethod(key_columns, key_sizes);
+	data.keys_size = keys_size;
+	data.key_sizes = key_sizes;
 
 #define M(NAME) \
 	else if (type == AggregatedDataVariants::Type::NAME) \
