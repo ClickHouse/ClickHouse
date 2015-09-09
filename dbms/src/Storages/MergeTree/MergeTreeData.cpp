@@ -783,8 +783,8 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
 	if (out_transaction)
 	{
 		out_transaction->data = this;
-		out_transaction->added_parts = res;
-		out_transaction->removed_parts = DataPartsVector(1, part);
+		out_transaction->parts_to_add_on_rollback = res;
+		out_transaction->parts_to_remove_on_rollback = DataPartsVector(1, part);
 	}
 
 	return res;
