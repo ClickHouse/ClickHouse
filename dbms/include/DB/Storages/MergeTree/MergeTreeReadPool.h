@@ -10,16 +10,26 @@ namespace DB
 {
 
 
+/// A batch of work for MergeTreeThreadBlockInputStream
 struct MergeTreeReadTask
 {
+	/// data part which should be read while performing this task
 	MergeTreeData::DataPartPtr data_part;
+	/// ranges to read from `data_part`
 	MarkRanges mark_ranges;
+	/// for virtual `part_index` virtual column
 	std::size_t part_index_in_query;
+	/// ordered list of column names used in this query, allows returning blocks with consistent ordering
 	const Names & ordered_names;
+	/// used to determine whether column should be filtered during PREWHERE or WHERE
 	const NameSet & column_name_set;
+	/// column names to read during WHERE
 	const NamesAndTypesList & columns;
+	/// column names to read during PREWHERE
 	const NamesAndTypesList & pre_columns;
+	/// should PREWHERE column be returned to requesting side?
 	const bool remove_prewhere_column;
+	/// resulting block may require reordering in accordance with `ordered_names`
 	const bool should_reorder;
 
 	MergeTreeReadTask(
@@ -34,6 +44,13 @@ struct MergeTreeReadTask
 
 using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;
 
+/**	Provides read tasks for MergeTreeThreadBlockInputStream`s in fine-grained batches, allowing for more
+ *	uniform distribution of work amongst multiple threads. All parts and their ranges are divided into `threads`
+ *	workloads with at most `sum_marks / threads` marks. Then, threads are performing reads from these workloads
+ *	in "sequential" manner, requesting work in small batches. As soon as some thread some thread has exhausted
+ *	it's workload, it either is signaled that no more work is available (`do_not_steal_tasks == false`) or
+ *	continues taking small batches from other threads' workloads (`do_not_steal_tasks == true`).
+ */
 class MergeTreeReadPool
 {
 public:
@@ -399,30 +416,30 @@ public:
 	std::vector<NamesAndTypesList> per_part_columns;
 	std::vector<NamesAndTypesList> per_part_pre_columns;
 	/// @todo actually all of these values are either true or false for the whole query, thus no vector required
-	std::vector<bool> per_part_remove_prewhere_column;
-	std::vector<bool> per_part_should_reorder;
+	std::vector<char> per_part_remove_prewhere_column;
+	std::vector<char> per_part_should_reorder;
 
-	struct part_t
+	struct Part
 	{
 		MergeTreeData::DataPartPtr data_part;
 		std::size_t part_index_in_query;
 	};
 
-	std::vector<part_t> parts;
+	std::vector<Part> parts;
 
-	struct thread_task_t
+	struct ThreadTask
 	{
-		struct part_index_and_range_t
+		struct PartIndexAndRange
 		{
 			std::size_t part_idx;
 			MarkRanges ranges;
 		};
 
-		std::vector<part_index_and_range_t> parts_and_ranges;
+		std::vector<PartIndexAndRange> parts_and_ranges;
 		std::vector<std::size_t> sum_marks_in_parts;
 	};
 
-	std::vector<thread_task_t> threads_tasks;
+	std::vector<ThreadTask> threads_tasks;
 
 	std::unordered_set<std::size_t> remaining_thread_tasks;
 
