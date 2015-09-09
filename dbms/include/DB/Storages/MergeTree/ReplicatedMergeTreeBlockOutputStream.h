@@ -113,6 +113,10 @@ public:
 
 						/// Если данные отличались от тех, что были вставлены ранее с тем же ID, бросим исключение.
 						expected_checksums.checkEqual(part->checksums, true);
+
+						/// У part-а уменьшится refcount, и его смогут удалить сразу при откате транзакции, а не позже.
+						part.reset();
+						transaction.rollback();
 					}
 					else
 					{

@@ -799,6 +799,17 @@ void MergeTreeData::replaceParts(const DataPartsVector & remove, const DataParts
 		part->remove_time = clear_without_timeout ? 0 : time(0);
 		removePartContributionToColumnSizes(part);
 		data_parts.erase(part);
+
+		/// use_count равен двум, если part-ом владеет только remove и all_data_parts.
+		if (clear_without_timeout && part.use_count() <= 2)
+		{
+			LOG_DEBUG(log, "Removing part " << part->name);
+			part->remove();
+
+			Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
+			all_data_parts.erase(part);
+		}
+		/// Иначе кусок будет удалён с диска позже.
 	}
 	for (const DataPartPtr & part : add)
 	{

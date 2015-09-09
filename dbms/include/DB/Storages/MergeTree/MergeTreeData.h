@@ -498,7 +498,7 @@ public:
 
 
 	/// Некоторые операции над множеством кусков могут возвращать такой объект.
-	/// Если не был вызван commit, деструктор откатывает операцию.
+	/// Если не был вызван commit или rollback, деструктор откатывает операцию.
 	class Transaction : private boost::noncopyable
 	{
 	public:
@@ -506,20 +506,25 @@ public:
 
 		void commit()
 		{
-			data = nullptr;
-			parts_to_remove_on_rollback.clear();
-			parts_to_add_on_rollback.clear();
+			clear();
+		}
+
+		void rollback()
+		{
+			if (data && (!parts_to_remove_on_rollback.empty() || !parts_to_add_on_rollback.empty()))
+			{
+				LOG_DEBUG(data->log, "Undoing transaction");
+				data->replaceParts(parts_to_remove_on_rollback, parts_to_add_on_rollback, true);
+
+				clear();
+			}
 		}
 
 		~Transaction()
 		{
 			try
 			{
-				if (data && (!parts_to_remove_on_rollback.empty() || !parts_to_add_on_rollback.empty()))
-				{
-					LOG_DEBUG(data->log, "Undoing transaction");
-					data->replaceParts(parts_to_remove_on_rollback, parts_to_add_on_rollback, true);
-				}
+				rollback();
 			}
 			catch(...)
 			{
@@ -534,6 +539,13 @@ public:
 		/// Что делать для отката операции.
 		DataPartsVector parts_to_remove_on_rollback;
 		DataPartsVector parts_to_add_on_rollback;
+
+		void clear()
+		{
+			data = nullptr;
+			parts_to_remove_on_rollback.clear();
+			parts_to_add_on_rollback.clear();
+		}
 	};
 
 	/// Объект, помнящий какие временные файлы были созданы в директории с куском в ходе изменения (ALTER) его столбцов.
