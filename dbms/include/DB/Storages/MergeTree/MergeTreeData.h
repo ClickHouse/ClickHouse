@@ -507,18 +507,18 @@ public:
 		void commit()
 		{
 			data = nullptr;
-			removed_parts.clear();
-			added_parts.clear();
+			parts_to_remove_on_rollback.clear();
+			parts_to_add_on_rollback.clear();
 		}
 
 		~Transaction()
 		{
 			try
 			{
-				if (data && (!removed_parts.empty() || !added_parts.empty()))
+				if (data && (!parts_to_remove_on_rollback.empty() || !parts_to_add_on_rollback.empty()))
 				{
 					LOG_DEBUG(data->log, "Undoing transaction");
-					data->replaceParts(removed_parts, added_parts, true);
+					data->replaceParts(parts_to_remove_on_rollback, parts_to_add_on_rollback, true);
 				}
 			}
 			catch(...)
@@ -532,8 +532,8 @@ public:
 		MergeTreeData * data = nullptr;
 
 		/// Что делать для отката операции.
-		DataPartsVector removed_parts;
-		DataPartsVector added_parts;
+		DataPartsVector parts_to_remove_on_rollback;
+		DataPartsVector parts_to_add_on_rollback;
 	};
 
 	/// Объект, помнящий какие временные файлы были созданы в директории с куском в ходе изменения (ALTER) его столбцов.

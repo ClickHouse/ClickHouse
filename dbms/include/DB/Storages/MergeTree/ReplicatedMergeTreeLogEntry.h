@@ -67,6 +67,8 @@ struct ReplicatedMergeTreeLogEntry
 	/// Время создания или время копирования из общего лога в очередь конкретной реплики.
 	time_t create_time = 0;
 
+	/// Величина кворума (для GET_PART) - ненулевое значение при включенной кворумной записи.
+	size_t quorum = 0;
 
 	void addResultToVirtualParts(StorageReplicatedMergeTree & storage);
 	void tagPartAsFuture(StorageReplicatedMergeTree & storage);
