@@ -2251,7 +2251,8 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAnd
 	for (const auto i : ext::range(0, nested_result_sample.columns()))
 	{
 		const auto & col = nested_result_sample.getByPosition(i);
-		if (join_key_names_right.end() == std::find(join_key_names_right.begin(), join_key_names_right.end(), col.name))
+		if (join_key_names_right.end() == std::find(join_key_names_right.begin(), join_key_names_right.end(), col.name)
+			&& !joined_columns.count(col.name))	/// Дублирующиеся столбцы в подзапросе для JOIN-а не имеют смысла.
 		{
 			joined_columns.insert(col.name);
 			joined_columns_name_type.emplace_back(col.name, col.type);
