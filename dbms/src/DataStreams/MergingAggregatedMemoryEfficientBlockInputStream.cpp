@@ -28,6 +28,9 @@ String MergingAggregatedMemoryEfficientBlockInputStream::getID() const
 Block MergingAggregatedMemoryEfficientBlockInputStream::readImpl()
 {
 	/// Если child - RemoteBlockInputStream, то отправляет запрос на все удалённые серверы, инициируя вычисления.
+	/** NOTE: Если соединения ещё не установлены, то устанавливает их последовательно.
+	  * И отправляет запрос последовательно. Это медленно.
+	  */
 	if (!started)
 	{
 		started = true;
@@ -154,11 +157,7 @@ Block MergingAggregatedMemoryEfficientBlockInputStream::readImpl()
 					LOG_TRACE(&Logger::get("MergingAggregatedMemoryEfficient"), "Having block without bucket: will split.");
 
 					input.splitted_blocks = aggregator.convertBlockToTwoLevel(input.block);
-
-					/** Нельзя уничтожать исходный блок.
-						* Потому что он владеет Arena с состояниями агрегатных функций,
-						*  а splitted_blocks ей не владеют, но ссылаются на эти состояния.
-						*/
+					input.block = Block();
 				}
 
 				/// Блоки, которые мы получили разрезанием одноуровневых блоков.

@@ -1814,6 +1814,9 @@ void NO_INLINE Aggregator::convertBlockToTwoLevelImpl(
 	size_t rows = source.rowsInFirstColumn();
 	size_t columns = source.columns();
 
+	/// Для каждого номера корзины создадим фильтр, где будут отмечены строки, относящиеся к этой корзине.
+	std::vector<IColumn::Filter> filters(destinations.size());
+
 	/// Для всех строчек.
 	for (size_t i = 0; i < rows; ++i)
 	{
@@ -1826,15 +1829,33 @@ void NO_INLINE Aggregator::convertBlockToTwoLevelImpl(
 		/// Этот ключ нам больше не нужен.
 		method.onExistingKey(key, keys, *pool);
 
+		auto & filter = filters[bucket];
+
+		if (unlikely(filter.empty()))
+			filter.resize_fill(rows);
+
+		filter[i] = 1;
+	}
+
+	for (size_t bucket = 0, size = destinations.size(); bucket < size; ++bucket)
+	{
+		const auto & filter = filters[bucket];
+
+		if (filter.empty())
+			continue;
+
 		Block & dst = destinations[bucket];
-		if (unlikely(!dst))
-		{
-			dst = source.cloneEmpty();
-			dst.info.bucket_num = bucket;
-		}
+		dst.info.bucket_num = bucket;
 
 		for (size_t j = 0; j < columns; ++j)
-			dst.unsafeGetByPosition(j).column.get()->insertFrom(*source.unsafeGetByPosition(j).column.get(), i);
+		{
+			const ColumnWithTypeAndName & src_col = source.unsafeGetByPosition(j);
+			dst.insert({src_col.column->filter(filter), src_col.type, src_col.name});
+
+			/** Вставленные в блок столбцы типа ColumnAggregateFunction будут владеть состояниями агрегатных функций
+			  *  путём удержания SharedPtr-а на исходный столбец. См. ColumnAggregateFunction.h
+			  */
+		}
 	}
 }
 
