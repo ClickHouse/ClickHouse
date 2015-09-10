@@ -3,6 +3,7 @@
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Storages/MergeTree/AbandonableLockInZooKeeper.h>
 #include <DB/DataStreams/IBlockOutputStream.h>
+#include <DB/IO/Operators.h>
 
 
 namespace DB
@@ -32,7 +33,33 @@ public:
 		  */
 		if (quorum)
 		{
-			// TODO
+			/// Список живых реплик. Все они регистрируют эфемерную ноду для leader_election.
+			auto live_replicas = zookeeper->getChildren(storage.zookeeper_path + "/leader_election");
+
+			if (live_replicas.size() < quorum)
+			{
+				String list_of_replicas;
+
+				if (live_replicas.empty())
+					list_of_replicas = "none";
+				else
+				{
+					WriteBufferFromString out(list_of_replicas);
+					for (auto it = live_replicas.begin(); it != live_replicas.end(); ++it)
+						out << (it == live_replicas.begin() ? "" : ", ") << *it;
+				}
+
+				throw Exception("Number of alive replicas ("
+					+ toString(live_replicas.size()) + ") is less than requested quorum ("
+					+ toString(quorum) + "). Alive replicas: " + list_of_replicas,
+					ErrorCodes::TOO_LESS_LIVE_REPLICAS);
+			}
+
+			/// Разумеется, реплики могут перестать быть живыми после этой проверки. Это не проблема.
+
+			/** Есть ли у нас последний кусок, записанный с кворумом?
+			  * В ZK будем иметь следующую структуру директорий:
+			  */
 		}
 
 		auto part_blocks = storage.writer.splitBlockIntoParts(block);
