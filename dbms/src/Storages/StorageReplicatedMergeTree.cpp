@@ -2063,7 +2063,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 }
 
 
-BlockOutputStreamPtr StorageReplicatedMergeTree::write(ASTPtr query)
+BlockOutputStreamPtr StorageReplicatedMergeTree::write(ASTPtr query, const Settings & settings)
 {
 	if (is_readonly)
 		throw Exception("Table is in readonly mode", ErrorCodes::TABLE_IS_READ_ONLY);
@@ -2073,7 +2073,7 @@ BlockOutputStreamPtr StorageReplicatedMergeTree::write(ASTPtr query)
 		if (ASTInsertQuery * insert = typeid_cast<ASTInsertQuery *>(&*query))
 			insert_id = insert->insert_id;
 
-	return new ReplicatedMergeTreeBlockOutputStream(*this, insert_id);
+	return new ReplicatedMergeTreeBlockOutputStream(*this, insert_id, settings.insert_quorum);
 }
 
 

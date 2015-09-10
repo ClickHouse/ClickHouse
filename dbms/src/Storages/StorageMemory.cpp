@@ -158,7 +158,7 @@ BlockInputStreams StorageMemory::read(
 
 
 BlockOutputStreamPtr StorageMemory::write(
-	ASTPtr query)
+	ASTPtr query, const Settings & settings)
 {
 	return new MemoryBlockOutputStream(*this);
 }

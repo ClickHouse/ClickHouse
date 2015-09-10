@@ -11,8 +11,8 @@ namespace DB
 class ReplicatedMergeTreeBlockOutputStream : public IBlockOutputStream
 {
 public:
-	ReplicatedMergeTreeBlockOutputStream(StorageReplicatedMergeTree & storage_, const String & insert_id_)
-		: storage(storage_), insert_id(insert_id_),
+	ReplicatedMergeTreeBlockOutputStream(StorageReplicatedMergeTree & storage_, const String & insert_id_, size_t quorum_)
+		: storage(storage_), insert_id(insert_id_), quorum(quorum_),
 		log(&Logger::get(storage.data.getLogName() + " (Replicated OutputStream)")) {}
 
 	void writePrefix() override
@@ -26,6 +26,15 @@ public:
 		auto zookeeper = storage.getZooKeeper();
 
 		assertSessionIsNotExpired(zookeeper);
+
+		/** Если запись с кворумом, то проверим, что требуемое количество реплик сейчас живо,
+		  *  а также что у нас есть все предыдущие куски, которые были записаны с кворумом.
+		  */
+		if (quorum)
+		{
+			// TODO
+		}
+
 		auto part_blocks = storage.writer.splitBlockIntoParts(block);
 
 		for (auto & current_block : part_blocks)
@@ -150,6 +159,7 @@ public:
 private:
 	StorageReplicatedMergeTree & storage;
 	String insert_id;
+	size_t quorum;
 	size_t block_index = 0;
 
 	Logger * log;

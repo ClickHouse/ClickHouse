@@ -59,7 +59,7 @@ public:
 		const std::string & chunk_name);
 
 	/// Если бы запись была разрешена, непонятно, как назвать новый чанк.
-	BlockOutputStreamPtr write(ASTPtr query) override
+	BlockOutputStreamPtr write(ASTPtr query, const Settings & settings) override
 	{
 		throw Exception("Table doesn't support writing", ErrorCodes::NOT_IMPLEMENTED);
 	}

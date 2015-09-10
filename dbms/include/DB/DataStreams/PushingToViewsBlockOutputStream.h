@@ -32,7 +32,7 @@ public:
 		}
 
 		if (storage->getName() != "View")
-			output = storage->write(query_ptr);
+			output = storage->write(query_ptr, context.getSettingsRef());
 	}
 
 	void write(const Block & block) override

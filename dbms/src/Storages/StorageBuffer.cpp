@@ -262,7 +262,7 @@ private:
 };
 
 
-BlockOutputStreamPtr StorageBuffer::write(ASTPtr query)
+BlockOutputStreamPtr StorageBuffer::write(ASTPtr query, const Settings & settings)
 {
 	return new BufferBlockOutputStream(*this);
 }

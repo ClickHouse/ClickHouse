@@ -176,7 +176,8 @@ public:
 	  * Гарантируется, что структура таблицы не изменится за время жизни возвращенных потоков (то есть не будет ALTER, RENAME и DROP).
 	  */
 	virtual BlockOutputStreamPtr write(
-		ASTPtr query)
+		ASTPtr query,
+		const Settings & settings)
 	{
 		throw Exception("Method write is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}

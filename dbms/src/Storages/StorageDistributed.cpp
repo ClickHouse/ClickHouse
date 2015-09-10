@@ -200,7 +200,7 @@ BlockInputStreams StorageDistributed::read(
 	return res;
 }
 
-BlockOutputStreamPtr StorageDistributed::write(ASTPtr query)
+BlockOutputStreamPtr StorageDistributed::write(ASTPtr query, const Settings & settings)
 {
 	if (!write_enabled)
 		throw Exception{

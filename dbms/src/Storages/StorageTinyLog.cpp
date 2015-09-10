@@ -449,7 +449,7 @@ BlockInputStreams StorageTinyLog::read(
 
 
 BlockOutputStreamPtr StorageTinyLog::write(
-	ASTPtr query)
+	ASTPtr query, const Settings & settings)
 {
 	return new TinyLogBlockOutputStream(*this);
 }
