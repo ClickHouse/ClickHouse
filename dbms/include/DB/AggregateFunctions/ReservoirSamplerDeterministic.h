@@ -67,6 +67,7 @@ public:
 
 	void insertImpl(const T & v, const UInt32 hash)
 	{
+		/// @todo why + 1? I don't quite recall
  		while (samples.size() + 1 >= sample_count)
 		{
 			if (++skip_degree > detail::MAX_SKIP_DEGREE)
@@ -119,6 +120,7 @@ public:
 
 	/** Если T не числовой тип, использование этого метода вызывает ошибку компиляции,
 	  *  но использование класса ошибки не вызывает. SFINAE.
+	  *  Не SFINAE. Функции члены шаблонов типов просто не проверяются, пока не используются.
 	  */
 	double quantileInterpolated(double level)
 	{
@@ -153,9 +155,9 @@ public:
 			thinOut();
 		}
 
-		for (size_t i = 0; i < b.samples.size(); ++i)
-			if (good(b.samples[i].second))
-				insertImpl(b.samples[i].first, b.samples[i].second);
+		for (const auto & sample : b.samples)
+			if (good(sample.second))
+				insertImpl(sample.first, sample.second);
 
 		total_values += b.total_values;
 	}
@@ -167,7 +169,7 @@ public:
 		samples.resize(std::min(total_values, sample_count));
 
 		for (size_t i = 0; i < samples.size(); ++i)
-			DB::readBinary(samples[i].first, buf);
+			DB::readPODBinary(samples[i], buf);
 
 		sorted = false;
 	}
@@ -178,7 +180,7 @@ public:
 		DB::writeIntBinary<size_t>(total_values, buf);
 
 		for (size_t i = 0; i < std::min(sample_count, total_values); ++i)
-			DB::writeBinary(samples[i].first, buf);
+			DB::writePODBinary(samples[i], buf);
 	}
 
 private:
