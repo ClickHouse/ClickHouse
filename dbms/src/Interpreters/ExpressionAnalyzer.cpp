@@ -1151,6 +1151,10 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 void ExpressionAnalyzer::makeExplicitSet(ASTFunction * node, const Block & sample_block, bool create_ordered_set)
 {
 	IAST & args = *node->arguments;
+
+	if (args.children.size() != 2)
+		throw Exception("Wrong number of arguments passed to function in", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
 	ASTPtr & arg = args.children.at(1);
 
 	DataTypes set_element_types;
@@ -1188,12 +1192,20 @@ void ExpressionAnalyzer::makeExplicitSet(ASTFunction * node, const Block & sampl
 	{
 		if (set_func->name == "tuple")
 		{
-			/// Отличм случай (x, y) in ((1, 2), (3, 4)) от случая (x, y) in (1, 2).
-			ASTFunction * any_element = typeid_cast<ASTFunction *>(&*set_func->arguments->children.at(0));
-			if (set_element_types.size() >= 2 && (!any_element || any_element->name != "tuple"))
-				single_value = true;
-			else
+			if (set_func->arguments->children.empty())
+			{
+				/// Пустое множество.
 				elements_ast = set_func->arguments;
+			}
+			else
+			{
+				/// Отличм случай (x, y) in ((1, 2), (3, 4)) от случая (x, y) in (1, 2).
+				ASTFunction * any_element = typeid_cast<ASTFunction *>(&*set_func->arguments->children.at(0));
+				if (set_element_types.size() >= 2 && (!any_element || any_element->name != "tuple"))
+					single_value = true;
+				else
+					elements_ast = set_func->arguments;
+			}
 		}
 		else
 		{
