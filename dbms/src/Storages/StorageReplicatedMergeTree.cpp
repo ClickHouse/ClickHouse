@@ -1969,7 +1969,11 @@ static void updateQuorum(
 			/// Кворум достигнут. Удаляем узел.
 			auto code = zookeeper->tryRemove(quorum_status_path, stat.version);
 
-			if (code == ZNONODE)
+			if (code == ZOK)
+			{
+				break;
+			}
+			else if (code == ZNONODE)
 			{
 				/// Кворум уже был достигнут.
 				break;
@@ -1987,7 +1991,11 @@ static void updateQuorum(
 			/// Обновляем узел, прописывая туда на одну реплику больше.
 			auto code = zookeeper->trySet(quorum_status_path, quorum_entry.toString(), stat.version);
 
-			if (code == ZNONODE)
+			if (code == ZOK)
+			{
+				break;
+			}
+			else if (code == ZNONODE)
 			{
 				/// Кворум уже был достигнут.
 				break;

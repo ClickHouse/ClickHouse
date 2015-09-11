@@ -44,23 +44,9 @@ public:
 			auto live_replicas = zookeeper->getChildren(storage.zookeeper_path + "/leader_election");
 
 			if (live_replicas.size() < quorum)
-			{
-				String list_of_replicas;
-
-				if (live_replicas.empty())
-					list_of_replicas = "none";
-				else
-				{
-					WriteBufferFromString out(list_of_replicas);
-					for (auto it = live_replicas.begin(); it != live_replicas.end(); ++it)
-						out << (it == live_replicas.begin() ? "" : ", ") << *it;
-				}
-
 				throw Exception("Number of alive replicas ("
-					+ toString(live_replicas.size()) + ") is less than requested quorum ("
-					+ toString(quorum) + "). Alive replicas: " + list_of_replicas,
+					+ toString(live_replicas.size()) + ") is less than requested quorum (" + toString(quorum) + ").",
 					ErrorCodes::TOO_LESS_LIVE_REPLICAS);
-			}
 
 			/** Достигнут ли кворум для последнего куска, для которого нужен кворум?
 			  * Запись всех кусков с включенным кворумом линейно упорядочена.
