@@ -32,8 +32,8 @@ enum class ReservoirSamplerDeterministicOnEmpty
 	RETURN_NAN_OR_ZERO,
 };
 
-template<typename T,
-		 ReservoirSamplerDeterministicOnEmpty OnEmpty = ReservoirSamplerDeterministicOnEmpty::THROW>
+template <typename T,
+	ReservoirSamplerDeterministicOnEmpty OnEmpty = ReservoirSamplerDeterministicOnEmpty::THROW>
 class ReservoirSamplerDeterministic
 {
 	bool good(const UInt32 hash)
@@ -63,41 +63,6 @@ public:
 		insertImpl(v, hash);
 		sorted = false;
 		++total_values;
-	}
-
-	void insertImpl(const T & v, const UInt32 hash)
-	{
-		/// @todo why + 1? I don't quite recall
- 		while (samples.size() + 1 >= sample_count)
-		{
-			if (++skip_degree > detail::MAX_SKIP_DEGREE)
-				throw DB::Exception{"skip_degree exceeds maximum value", DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED};
-			thinOut();
-		}
-
-		samples.emplace_back(v, hash);
-	}
-
-	void thinOut()
-	{
-		auto size = samples.size();
-		for (size_t i = 0; i < size;)
-		{
-			if (!good(samples[i].second))
-			{
-				/// swap current element with the last one
-				std::swap(samples[size - 1], samples[i]);
-				--size;
-			}
-			else
-				++i;
-		}
-
-		if (size != samples.size())
-		{
-			samples.resize(size);
-			sorted = false;
-		}
 	}
 
 	size_t size() const
@@ -192,6 +157,41 @@ private:
 	bool sorted{};
 	std::vector<std::pair<T, UInt32>> samples;
 	UInt8 skip_degree{};
+
+	void insertImpl(const T & v, const UInt32 hash)
+	{
+		/// @todo why + 1? I don't quite recall
+		while (samples.size() + 1 >= sample_count)
+		{
+			if (++skip_degree > detail::MAX_SKIP_DEGREE)
+				throw DB::Exception{"skip_degree exceeds maximum value", DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED};
+			thinOut();
+		}
+
+		samples.emplace_back(v, hash);
+	}
+
+	void thinOut()
+	{
+		auto size = samples.size();
+		for (size_t i = 0; i < size;)
+		{
+			if (!good(samples[i].second))
+			{
+				/// swap current element with the last one
+				std::swap(samples[size - 1], samples[i]);
+				--size;
+			}
+			else
+				++i;
+		}
+
+		if (size != samples.size())
+		{
+			samples.resize(size);
+			sorted = false;
+		}
+	}
 
 	void sortIfNeeded()
 	{
