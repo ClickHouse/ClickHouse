@@ -379,8 +379,9 @@ private:
 
 	/** Скачать указанный кусок с указанной реплики.
 	  * Если to_detached, то кусок помещается в директорию detached.
+	  * Если quorum != 0, то обновляется узел для отслеживания кворума.
 	  */
-	void fetchPart(const String & part_name, const String & replica_path, bool to_detached = false);
+	void fetchPart(const String & part_name, const String & replica_path, bool to_detached, size_t quorum);
 
 	AbandonableLockInZooKeeper allocateBlockNumber(const String & month_name);
 

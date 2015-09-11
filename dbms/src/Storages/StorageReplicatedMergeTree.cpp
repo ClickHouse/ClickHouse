@@ -3,6 +3,7 @@
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreePartsExchange.h>
+#include <DB/Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <DB/Storages/MergeTree/MergeTreePartChecker.h>
 #include <DB/Storages/MergeTree/MergeList.h>
 #include <DB/Storages/MergeTree/MergeTreeWhereOptimizer.h>
@@ -921,10 +922,13 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 			if (replica.empty())
 			{
 				ProfileEvents::increment(ProfileEvents::ReplicatedPartFailedFetches);
+
+				// TODO Проверить, может быть куска нет ни на одной живой или мёртвой реплике, и он исчез навсегда?
+
 				throw Exception("No active replica has part " + entry.new_part_name, ErrorCodes::NO_REPLICA_HAS_PART);
 			}
 
-			fetchPart(entry.new_part_name, zookeeper_path + "/replicas/" + replica);
+			fetchPart(entry.new_part_name, zookeeper_path + "/replicas/" + replica, false, entry.quorum);
 
 			if (entry.type == LogEntry::MERGE_PARTS)
 				ProfileEvents::increment(ProfileEvents::ReplicatedPartFetchesOfMerged);
@@ -1270,6 +1274,24 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 
 		String month_name = left->name.substr(0, 6);
 		auto zookeeper = getZooKeeper();
+
+		/// Нельзя сливать куски, среди которых находится кусок, для которого неудовлетворён кворум.
+		/// Замечание: теоретически, это можно было бы разрешить. Но это сделает логику более сложной.
+		String quorum_node_value;
+		if (zookeeper->tryGet(zookeeper_path + "/quorum/status", quorum_node_value))
+		{
+			ReplicatedMergeTreeQuorumEntry quorum_entry;
+			quorum_entry.fromString(quorum_node_value);
+
+			ActiveDataPartSet::Part part_info;
+			ActiveDataPartSet::parsePartName(quorum_entry.part_name, part_info);
+
+			if (part_info.left != part_info.right)
+				throw Exception("Logical error: part written with quorum covers more than one block numbers", ErrorCodes::LOGICAL_ERROR);
+
+			if (left->right <= part_info.left && right->left >= part_info.right)
+				return false;
+		}
 
 		/// Можно слить куски, если все номера между ними заброшены - не соответствуют никаким блокам.
 		/// Номера до RESERVED_BLOCK_NUMBERS всегда не соответствуют никаким блокам.
@@ -1908,7 +1930,81 @@ String StorageReplicatedMergeTree::findReplicaHavingPart(const String & part_nam
 }
 
 
-void StorageReplicatedMergeTree::fetchPart(const String & part_name, const String & replica_path, bool to_detached)
+/** Если для куска отслеживается кворум, то обновить информацию о нём в ZK.
+  */
+static void updateQuorum(
+	zkutil::ZooKeeperPtr & zookeeper,
+	const String & zookeeper_path,
+	const String & replica_name,
+	const String & part_name,
+	size_t quorum)
+{
+	if (!quorum)
+		return;
+
+	const String quorum_status_path = zookeeper_path + "/quorum/status";
+	String value;
+	zkutil::Stat stat;
+
+	/// Если узла нет, значит по всем кворумным INSERT-ам уже был достигнут кворум, и ничего делать не нужно.
+	while (zookeeper->tryGet(quorum_status_path, value, &stat))
+	{
+		ReplicatedMergeTreeQuorumEntry quorum_entry;
+		quorum_entry.fromString(value);
+
+		if (quorum_entry.part_name != part_name)
+		{
+			/// Кворум уже был достигнут. Более того, уже начался другой INSERT с кворумом.
+			break;
+		}
+
+		if (quorum_entry.required_number_of_replicas != quorum)
+			throw Exception("Logical error: quorum size in log entry is different than quorum size in node /quorum/status",
+				ErrorCodes::LOGICAL_ERROR);
+
+		quorum_entry.replicas.insert(replica_name);
+
+		if (quorum_entry.replicas.size() >= quorum_entry.required_number_of_replicas)
+		{
+			/// Кворум достигнут. Удаляем узел.
+			auto code = zookeeper->tryRemove(quorum_status_path, stat.version);
+
+			if (code == ZNONODE)
+			{
+				/// Кворум уже был достигнут.
+				break;
+			}
+			else if (code == ZBADVERSION)
+			{
+				/// Узел успели обновить. Надо заново его прочитать и повторить все действия.
+				continue;
+			}
+			else
+				throw zkutil::KeeperException(code, quorum_status_path);
+		}
+		else
+		{
+			/// Обновляем узел, прописывая туда на одну реплику больше.
+			auto code = zookeeper->trySet(quorum_status_path, quorum_entry.toString(), stat.version);
+
+			if (code == ZNONODE)
+			{
+				/// Кворум уже был достигнут.
+				break;
+			}
+			else if (code == ZBADVERSION)
+			{
+				/// Узел успели обновить. Надо заново его прочитать и повторить все действия.
+				continue;
+			}
+			else
+				throw zkutil::KeeperException(code, quorum_status_path);
+		}
+	}
+}
+
+
+void StorageReplicatedMergeTree::fetchPart(const String & part_name, const String & replica_path, bool to_detached, size_t quorum)
 {
 	auto zookeeper = getZooKeeper();
 
@@ -1942,6 +2038,12 @@ void StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 
 		zookeeper->multi(ops);
 		transaction.commit();
+
+		/** Если для этого куска отслеживается кворум, то надо его обновить.
+		  * TODO Обработка в случае неизвестной ошибки, потери сессии, при перезапуске сервера.
+		  */
+		updateQuorum(zookeeper, zookeeper_path, replica_name, part_name, quorum);
+
 		merge_selecting_event.set();
 
 		for (const auto & removed_part : removed_parts)
@@ -2636,18 +2738,7 @@ void StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(const String & 
 	LOG_DEBUG(log, "Waiting for " << queue_entry_to_wait_for << " to disappear from " << replica << " queue");
 
 	/// Третье - дождемся, пока запись исчезнет из очереди реплики.
-
-	while (true)
-	{
-		zkutil::EventPtr event = new Poco::Event;
-
-		String unused;
-		/// get вместо exists, чтобы не утек watch, если ноды уже нет.
-		if (!zookeeper->tryGet(zookeeper_path + "/replicas/" + replica + "/queue/" + queue_entry_to_wait_for, unused, nullptr, event))
-			break;
-
-		event->wait();
-	}
+	zookeeper->waitForDisappear(zookeeper_path + "/replicas/" + replica + "/queue/" + queue_entry_to_wait_for);
 }
 
 
@@ -2865,7 +2956,7 @@ void StorageReplicatedMergeTree::fetchPartition(const Field & partition, const S
 		{
 			try
 			{
-				fetchPart(part, best_replica_path, true);
+				fetchPart(part, best_replica_path, true, 0);
 			}
 			catch (const DB::Exception & e)
 			{

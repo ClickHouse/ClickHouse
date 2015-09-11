@@ -167,6 +167,10 @@ public:
 	  */
 	void tryRemoveRecursive(const std::string & path);
 
+	/** Подождать, пока нода перестанет существовать или вернуть сразу, если нода не существует.
+	  */
+	void waitForDisappear(const std::string & path);
+
 
 	/** Асинхронный интерфейс (реализовано небольшое подмножество операций).
 	  *
