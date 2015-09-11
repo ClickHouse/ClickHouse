@@ -33,7 +33,8 @@ namespace DB
 class MergeTreeWhereOptimizer
 {
 	static constexpr auto threshold = 10;
-	static constexpr auto max_columns_relative_size = 0.25f;
+	/// Решили убрать ограничение в виду отсутствия штрафа по скорости на перенос в PREWHERE
+	static constexpr auto max_columns_relative_size = 1.0f;
 	static constexpr auto and_function_name = "and";
 	static constexpr auto equals_function_name = "equals";
 	static constexpr auto array_join_function_name = "arrayJoin";
