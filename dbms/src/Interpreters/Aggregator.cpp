@@ -1756,7 +1756,7 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
 
 		for (const auto & block : merged_blocks)
 		{
-			if (block && !block.info.is_overflows)
+			if (block && block.rowsInFirstColumn() && !block.info.is_overflows)
 				has_nonempty_nonoverflows = true;
 			else if (block.info.is_overflows)
 				has_overflows = true;
@@ -1777,7 +1777,7 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
 		{
 			for (auto it = merged_blocks.begin(); it != merged_blocks.end(); ++it)
 			{
-				if (!*it)
+				if (!*it || it->rowsInFirstColumn() == 0)
 				{
 					merged_blocks.erase(it);
 					break;

@@ -100,9 +100,9 @@ public:
 		arenas.push_back(arena_);
 	}
 
-	ColumnPtr convertToValues()
+	ColumnPtr convertToValues() const
 	{
-		IAggregateFunction * function = holder->func;
+		const IAggregateFunction * function = holder->func;
 		ColumnPtr res = function->getReturnType()->createColumn();
 		IColumn & column = *res;
 		res->reserve(getData().size());
