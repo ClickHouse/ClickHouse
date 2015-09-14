@@ -34,8 +34,7 @@ public:
 
 		/// inject columns required for defaults evaluation
 		const auto injected_columns = injectRequiredColumns(column_names);
-		/// insert injected columns into ordered columns list to avoid exception about different block structures
-		ordered_names.insert(std::end(ordered_names), std::begin(injected_columns), std::end(injected_columns));
+		should_reorder = !injected_columns.empty();
 
 		Names pre_column_names;
 
@@ -43,10 +42,12 @@ public:
 		{
 			pre_column_names = prewhere_actions->getRequiredColumns();
 
-			injectRequiredColumns(pre_column_names);
-
 			if (pre_column_names.empty())
 				pre_column_names.push_back(column_names[0]);
+
+			const auto injected_pre_columns = injectRequiredColumns(pre_column_names);
+			if (!injected_pre_columns.empty())
+				should_reorder = true;
 
 			const NameSet pre_name_set(pre_column_names.begin(), pre_column_names.end());
 			/// Если выражение в PREWHERE - не столбец таблицы, не нужно отдавать наружу столбец с ним
@@ -135,13 +136,18 @@ protected:
 		NameSet required_columns{std::begin(columns), std::end(columns)};
 		NameSet injected_columns;
 
+		auto all_column_files_missing = true;
+
 		for (size_t i = 0; i < columns.size(); ++i)
 		{
 			const auto & column_name = columns[i];
 
 			/// column has files and hence does not require evaluation
 			if (owned_data_part->hasColumnFiles(column_name))
+			{
+				all_column_files_missing = false;
 				continue;
+			}
 
 			const auto default_it = storage.column_defaults.find(column_name);
 			/// columns has no explicit default expression
@@ -165,6 +171,12 @@ protected:
 					}
 				}
 			}
+		}
+
+		if (all_column_files_missing)
+		{
+			addMinimumSizeColumn(columns);
+			injected_columns.insert(columns.back());
 		}
 
 		return injected_columns;
@@ -216,7 +228,7 @@ protected:
 						remaining_mark_ranges.pop_back();
 				}
 				progressImpl(Progress(res.rowsInFirstColumn(), res.bytes()));
-				pre_reader->fillMissingColumns(res, ordered_names);
+				pre_reader->fillMissingColumns(res, ordered_names, should_reorder);
 
 				/// Вычислим выражение в PREWHERE.
 				prewhere_actions->execute(res);
@@ -360,6 +372,48 @@ protected:
 	}
 
 private:
+	/** Добавить столбец минимального размера.
+	  * Используется в случае, когда ни один столбец не нужен, но нужно хотя бы знать количество строк.
+	  * Добавляет в columns.
+	  */
+	void addMinimumSizeColumn(Names & columns) const
+	{
+		const auto get_column_size = [this] (const String & name) {
+			const auto & files = owned_data_part->checksums.files;
+
+			const auto escaped_name = escapeForFileName(name);
+			const auto bin_file_name = escaped_name + ".bin";
+			const auto mrk_file_name = escaped_name + ".mrk";
+
+			return files.find(bin_file_name)->second.file_size + files.find(mrk_file_name)->second.file_size;
+		};
+
+		const auto & storage_columns = storage.getColumnsList();
+		const NameAndTypePair * minimum_size_column = nullptr;
+		auto minimum_size = std::numeric_limits<size_t>::max();
+
+		for (const auto & column : storage_columns)
+		{
+			if (!owned_data_part->hasColumnFiles(column.name))
+				continue;
+
+			const auto size = get_column_size(column.name);
+			if (size < minimum_size)
+			{
+				minimum_size = size;
+				minimum_size_column = &column;
+			}
+		}
+
+		if (!minimum_size_column)
+			throw Exception{
+					"Could not find a column of minimum size in MergeTree",
+					ErrorCodes::LOGICAL_ERROR
+			};
+
+		columns.push_back(minimum_size_column->name);
+	}
+
 	const String path;
 	size_t block_size;
 	NamesAndTypesList columns;
@@ -382,6 +436,7 @@ private:
 
 	/// column names in specific order as expected by other stages
 	Names ordered_names;
+	bool should_reorder{false};
 
 	size_t min_bytes_to_use_direct_io;
 	size_t max_read_buffer_size;
