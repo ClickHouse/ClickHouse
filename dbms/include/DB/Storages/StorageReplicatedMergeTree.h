@@ -368,8 +368,11 @@ private:
 	void alterThread();
 
 	/** Проверяет целостность кусков.
+	  * Находит отсутствующие куски.
 	  */
 	void partCheckThread();
+	void checkPart(const String & part_name);
+	void searchForMissingPart(const String & part_name);
 
 	/// Обмен кусками.
 
