@@ -103,8 +103,10 @@ public:
 		{
 			const auto marks_to_get_from_range = marks_in_part;
 
+			/// @todo find out why this reverse causes bug in [#METR-18009] when max_block_size < index_granularity
+			/// maybe I've messed with other reverses and perform them inconsistently?
 			/// Восстановим порядок отрезков.
-			std::reverse(thread_task.ranges.begin(), thread_task.ranges.end());
+//			std::reverse(thread_task.ranges.begin(), thread_task.ranges.end());
 
 			ranges_to_get_from_part = thread_task.ranges;
 
