@@ -708,7 +708,7 @@ public:
 	DataPartsVector renameTempPartAndReplace(MutableDataPartPtr & part, SimpleIncrement * increment = nullptr, Transaction * out_transaction = nullptr);
 
 	/** Убирает из рабочего набора куски remove и добавляет куски add. add должны уже быть в all_data_parts.
-	  * Если clear_without_timeout, данные будут удалены при следующем clearOldParts, игнорируя old_parts_lifetime.
+	  * Если clear_without_timeout, данные будут удалены сразу, либо при следующем clearOldParts, игнорируя old_parts_lifetime.
 	  */
 	void replaceParts(const DataPartsVector & remove, const DataPartsVector & add, bool clear_without_timeout);
 

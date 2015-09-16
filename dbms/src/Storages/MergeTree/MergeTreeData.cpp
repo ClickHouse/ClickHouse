@@ -811,6 +811,7 @@ void MergeTreeData::replaceParts(const DataPartsVector & remove, const DataParts
 		}
 		/// Иначе кусок будет удалён с диска позже.
 	}
+
 	for (const DataPartPtr & part : add)
 	{
 		data_parts.insert(part);
@@ -1266,8 +1267,11 @@ void MergeTreeData::addPartContributionToColumnSizes(const DataPartPtr & part)
 
 		auto & column_size = column_sizes[column.name];
 
-		if (files.count(bin_file_name)) column_size += files.find(bin_file_name)->second.file_size;
-		if (files.count(mrk_file_name)) column_size += files.find(mrk_file_name)->second.file_size;
+		if (files.count(bin_file_name))
+			column_size += files.find(bin_file_name)->second.file_size;
+
+		if (files.count(mrk_file_name))
+			column_size += files.find(mrk_file_name)->second.file_size;
 	}
 }
 
@@ -1283,8 +1287,11 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
 
 		auto & column_size = column_sizes[column.name];
 
-		if (files.count(bin_file_name)) column_size -= files.find(bin_file_name)->second.file_size;
-		if (files.count(mrk_file_name)) column_size -= files.find(mrk_file_name)->second.file_size;
+		if (files.count(bin_file_name))
+			column_size -= files.find(bin_file_name)->second.file_size;
+
+		if (files.count(mrk_file_name))
+			column_size -= files.find(mrk_file_name)->second.file_size;
 	}
 }
 

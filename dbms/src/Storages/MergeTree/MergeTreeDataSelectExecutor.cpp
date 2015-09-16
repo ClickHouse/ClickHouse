@@ -288,6 +288,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	LOG_DEBUG(log, "Selected " << parts.size() << " parts by date, " << parts_with_ranges.size() << " parts by key, "
 		<< sum_marks << " marks to read from " << sum_ranges << " ranges");
 
+	if (parts_with_ranges.empty())
+		return {};
+
 	BlockInputStreams res;
 
 	if (select.final)
@@ -387,7 +390,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 		const std::size_t total_rows = data.index_granularity * sum_marks;
 
 		/// Выставим приблизительное количество строк только для первого источника
-		static_cast<IProfilingBlockInputStream &>(*res.front()).setTotalRowsApprox(total_rows);
+		if (!res.empty())
+			static_cast<IProfilingBlockInputStream &>(*res.front()).setTotalRowsApprox(total_rows);
 
 		LOG_TRACE(log, "Reading approx. " << total_rows);
 	}
@@ -526,7 +530,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 		const std::size_t total_rows = data.index_granularity * sum_marks;
 
 		/// Выставим приблизительное количество строк только для первого источника
-		static_cast<IProfilingBlockInputStream &>(*to_merge.front()).setTotalRowsApprox(total_rows);
+		if (!to_merge.empty())
+			static_cast<IProfilingBlockInputStream &>(*to_merge.front()).setTotalRowsApprox(total_rows);
 
 		LOG_TRACE(log, "Reading approx. " << total_rows);
 	}
