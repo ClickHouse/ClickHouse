@@ -121,11 +121,17 @@ private:
 		}
 		else
 		{
-			/** reader and possible pre_reader were already created, just configure them to a new data part, ranges and
-			 *	columns to preserve internal state. */
-			reader->reconfigure(path, task->data_part, task->columns, task->mark_ranges);
+			/// retain avg_value_size_hints
+			reader = std::make_unique<MergeTreeReader>(
+				path, task->data_part, task->columns, owned_uncompressed_cache.get(), owned_mark_cache.get(),
+				storage, task->mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size,
+				reader->getAvgValueSizeHints());
+
 			if (prewhere_actions)
-				pre_reader->reconfigure(path, task->data_part, task->pre_columns, task->mark_ranges);
+				pre_reader = std::make_unique<MergeTreeReader>(
+					path, task->data_part, task->pre_columns, owned_uncompressed_cache.get(),
+					owned_mark_cache.get(), storage, task->mark_ranges, min_bytes_to_use_direct_io,
+					max_read_buffer_size, pre_reader->getAvgValueSizeHints());
 		}
 
 		return true;
