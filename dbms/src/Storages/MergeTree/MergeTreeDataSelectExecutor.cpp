@@ -380,19 +380,23 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 			threads, sum_marks, min_marks_for_concurrent_read, parts, data, prewhere_actions, prewhere_column, true,
 			column_names);
 
-		for (std::size_t i = 0; i < threads; ++i)
-			res.emplace_back(new MergeTreeThreadBlockInputStream{
-				i, pool, min_marks_for_concurrent_read, max_block_size, data, use_uncompressed_cache, prewhere_actions,
-				prewhere_column, settings, virt_columns
-			});
-
 		/// Оценим общее количество строк - для прогресс-бара.
 		const std::size_t total_rows = data.index_granularity * sum_marks;
-
-		/// Выставим приблизительное количество строк только для первого источника
-		static_cast<IProfilingBlockInputStream &>(*res.front()).setTotalRowsApprox(total_rows);
-
 		LOG_TRACE(log, "Reading approx. " << total_rows << " rows");
+
+		for (std::size_t i = 0; i < threads; ++i)
+		{
+			res.emplace_back(new MergeTreeThreadBlockInputStream{
+					i, pool, min_marks_for_concurrent_read, max_block_size, data, use_uncompressed_cache,
+					prewhere_actions,
+					prewhere_column, settings, virt_columns
+			});
+
+
+			if (i == 0)
+				/// Выставим приблизительное количество строк только для первого источника
+				static_cast<IProfilingBlockInputStream &>(*res.front()).setTotalRowsApprox(total_rows);
+		}
 	}
 	else if (sum_marks > 0)
 	{
