@@ -390,10 +390,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 		const std::size_t total_rows = data.index_granularity * sum_marks;
 
 		/// Выставим приблизительное количество строк только для первого источника
-		if (!res.empty())
-			static_cast<IProfilingBlockInputStream &>(*res.front()).setTotalRowsApprox(total_rows);
+		static_cast<IProfilingBlockInputStream &>(*res.front()).setTotalRowsApprox(total_rows);
 
-		LOG_TRACE(log, "Reading approx. " << total_rows);
+		LOG_TRACE(log, "Reading approx. " << total_rows << " rows");
 	}
 	else if (sum_marks > 0)
 	{
@@ -514,6 +513,10 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 			parts.size(), sum_marks, min_marks_for_read_task, parts, data, prewhere_actions, prewhere_column, true,
 			column_names, true);
 
+		/// Оценим общее количество строк - для прогресс-бара.
+		const std::size_t total_rows = data.index_granularity * sum_marks;
+		LOG_TRACE(log, "Reading approx. " << total_rows << " rows");
+
 		for (const auto i : ext::range(0, parts.size()))
 		{
 			BlockInputStreamPtr source_stream{
@@ -523,17 +526,12 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 				}
 			};
 
+			if (i == 0)
+				/// Выставим приблизительное количество строк только для первого источника
+				static_cast<IProfilingBlockInputStream &>(*source_stream).setTotalRowsApprox(total_rows);
+
 			to_merge.push_back(new ExpressionBlockInputStream(source_stream, data.getPrimaryExpression()));
 		}
-
-		/// Оценим общее количество строк - для прогресс-бара.
-		const std::size_t total_rows = data.index_granularity * sum_marks;
-
-		/// Выставим приблизительное количество строк только для первого источника
-		if (!to_merge.empty())
-			static_cast<IProfilingBlockInputStream &>(*to_merge.front()).setTotalRowsApprox(total_rows);
-
-		LOG_TRACE(log, "Reading approx. " << total_rows);
 	}
 	else
 	{
