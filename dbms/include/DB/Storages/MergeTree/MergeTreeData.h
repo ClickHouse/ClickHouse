@@ -360,7 +360,7 @@ public:
 				  * Это делается только в случае to_detached, потому что считается, что в этом случае, точное имя не имеет значения.
 				  * Больше 10 попыток не делается, чтобы не оставалось слишком много мусорных директорий.
 				  */
-				while (try_no < 10 && Poco::File(dst_name()).exists())
+				while (try_no < 10 && Poco::File(storage.full_path + dst_name()).exists())
 				{
 					LOG_WARNING(storage.log, "Directory " << dst_name() << " (to detach to) is already exist."
 						" Will detach to directory with '_tryN' suffix.");
