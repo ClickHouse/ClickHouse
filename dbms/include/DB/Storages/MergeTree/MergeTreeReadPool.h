@@ -15,7 +15,8 @@ struct MergeTreeReadTask
 {
 	/// data part which should be read while performing this task
 	MergeTreeData::DataPartPtr data_part;
-	/// ranges to read from `data_part`
+	/** Ranges to read from `data_part`.
+	 *	Specified in reverse order for MergeTreeThreadBlockInputStream's convenience of calling .pop_back(). */
 	MarkRanges mark_ranges;
 	/// for virtual `part_index` virtual column
 	std::size_t part_index_in_query;
@@ -103,6 +104,8 @@ public:
 		{
 			const auto marks_to_get_from_range = marks_in_part;
 
+			/** Отрезки уже перечислены справа налево, reverse изначально сделан в MergeTreeDataSelectExecutor и
+			 *	поддержан в fillPerThreadInfo. */
 			ranges_to_get_from_part = thread_task.ranges;
 
 			marks_in_part -= marks_to_get_from_range;
@@ -135,7 +138,9 @@ public:
 				need_marks -= marks_to_get_from_range;
 			}
 
-			/// Восстановим порядкок отрезков.
+			/** Перечислим справа налево, чтобы MergeTreeThreadBlockInputStream забирал
+			 *	отрезки с помощью .pop_back() (их порядок был сменен на "слева направо"
+			 *	из-за .pop_back() в этой ветке). */
 			std::reverse(std::begin(ranges_to_get_from_part), std::end(ranges_to_get_from_part));
 		}
 
@@ -269,7 +274,7 @@ public:
 				/// Возьмем весь кусок, если он достаточно мал.
 				if (marks_in_part <= need_marks)
 				{
-					/// Оставим отрезки перечисленными справа налево для удобства.
+					/// Оставим отрезки перечисленными справа налево для удобства использования .pop_back() в .getTask()
 					ranges_to_get_from_part = part.ranges;
 					marks_in_ranges = marks_in_part;
 
@@ -298,7 +303,9 @@ public:
 							part.ranges.pop_back();
 					}
 
-					/// Вновь перечислим отрезки справа налево, чтобы .getTask() мог забирать их с помощью .pop_back().
+					/** Вновь перечислим отрезки справа налево, чтобы .getTask() мог забирать их
+					 *	с помощью .pop_back() (их порядок был сменен на "слева направо"
+					 *	из-за .pop_back() в этой ветке). */
 					std::reverse(std::begin(ranges_to_get_from_part), std::end(ranges_to_get_from_part));
 				}
 

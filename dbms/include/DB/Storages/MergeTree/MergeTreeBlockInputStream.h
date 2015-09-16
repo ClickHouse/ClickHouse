@@ -30,6 +30,8 @@ public:
 		ordered_names{column_names},
 		min_bytes_to_use_direct_io(min_bytes_to_use_direct_io_), max_read_buffer_size(max_read_buffer_size_)
 	{
+		/** @note можно было бы просто поменять местами reverse в if и else ветках MergeTreeDataSelectExecutor,
+		 *	а этот reverse убрать. */
 		std::reverse(remaining_mark_ranges.begin(), remaining_mark_ranges.end());
 
 		/// inject columns required for defaults evaluation
