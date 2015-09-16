@@ -582,7 +582,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 		switch (data.mode)
 		{
 			case MergeTreeData::Ordinary:
-				throw Exception("Ordinary MergeTree doesn't support FINAL", ErrorCodes::LOGICAL_ERROR);
+				merged = new MergingSortedBlockInputStream(to_merge, data.getSortDescription(), max_block_size);
+				break;
 
 			case MergeTreeData::Collapsing:
 				merged = new CollapsingFinalBlockInputStream(to_merge, data.getSortDescription(), data.sign_column);
