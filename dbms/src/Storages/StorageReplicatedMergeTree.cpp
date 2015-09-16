@@ -1742,8 +1742,8 @@ void StorageReplicatedMergeTree::searchForMissingPart(const String & part_name)
 				ActiveDataPartSet::Part part_on_replica_info;
 				ActiveDataPartSet::parsePartName(part_on_replica, part_on_replica_info);
 
-				for (auto i = part_on_replica_info.left; i <= part_on_replica_info.right; ++i)
-					found_blocks[i] = 1;
+				for (auto block_num = part_on_replica_info.left; block_num <= part_on_replica_info.right; ++block_num)
+					found_blocks[block_num - part_info.left] = 1;
 			}
 		}
 		if (found)
