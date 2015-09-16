@@ -103,9 +103,6 @@ public:
 		{
 			const auto marks_to_get_from_range = marks_in_part;
 
-			/// Восстановим порядок отрезков.
-			std::reverse(thread_task.ranges.begin(), thread_task.ranges.end());
-
 			ranges_to_get_from_part = thread_task.ranges;
 
 			marks_in_part -= marks_to_get_from_range;
@@ -137,6 +134,9 @@ public:
 				marks_in_part -= marks_to_get_from_range;
 				need_marks -= marks_to_get_from_range;
 			}
+
+			/// Восстановим порядкок отрезков.
+			std::reverse(std::begin(ranges_to_get_from_part), std::end(ranges_to_get_from_part));
 		}
 
 		return std::make_unique<MergeTreeReadTask>(
