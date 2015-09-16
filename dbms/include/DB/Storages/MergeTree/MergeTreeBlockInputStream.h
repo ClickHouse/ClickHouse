@@ -173,10 +173,12 @@ protected:
 			}
 		}
 
+		/// If all files are missing read at least one column to determine correct column sizes
 		if (all_column_files_missing)
 		{
-			addMinimumSizeColumn(columns);
-			injected_columns.insert(columns.back());
+			const auto minimum_size_column_name = owned_data_part->getMinimumSizeColumnName();
+			columns.push_back(minimum_size_column_name);
+			injected_columns.insert(minimum_size_column_name);
 		}
 
 		return injected_columns;
@@ -372,48 +374,6 @@ protected:
 	}
 
 private:
-	/** Добавить столбец минимального размера.
-	  * Используется в случае, когда ни один столбец не нужен, но нужно хотя бы знать количество строк.
-	  * Добавляет в columns.
-	  */
-	void addMinimumSizeColumn(Names & columns) const
-	{
-		const auto get_column_size = [this] (const String & name) {
-			const auto & files = owned_data_part->checksums.files;
-
-			const auto escaped_name = escapeForFileName(name);
-			const auto bin_file_name = escaped_name + ".bin";
-			const auto mrk_file_name = escaped_name + ".mrk";
-
-			return files.find(bin_file_name)->second.file_size + files.find(mrk_file_name)->second.file_size;
-		};
-
-		const auto & storage_columns = storage.getColumnsList();
-		const NameAndTypePair * minimum_size_column = nullptr;
-		auto minimum_size = std::numeric_limits<size_t>::max();
-
-		for (const auto & column : storage_columns)
-		{
-			if (!owned_data_part->hasColumnFiles(column.name))
-				continue;
-
-			const auto size = get_column_size(column.name);
-			if (size < minimum_size)
-			{
-				minimum_size = size;
-				minimum_size_column = &column;
-			}
-		}
-
-		if (!minimum_size_column)
-			throw Exception{
-					"Could not find a column of minimum size in MergeTree",
-					ErrorCodes::LOGICAL_ERROR
-			};
-
-		columns.push_back(minimum_size_column->name);
-	}
-
 	const String path;
 	size_t block_size;
 	NamesAndTypesList columns;

@@ -177,6 +177,47 @@ public:
 
 		DataPart(MergeTreeData & storage_) : storage(storage_) {}
 
+		/** If no checksums are present returns name for the first physically existing column.
+		 *	Either returns a name or throws .*/
+		std::string getMinimumSizeColumnName() const
+		{
+			const auto & columns = storage.getColumnsList();
+			const std::string * minimum_size_column = nullptr;
+			auto minimum_size = std::numeric_limits<std::size_t>::max();
+
+			/// return .bin file size or zero if checksums are empty
+			const auto get_column_size = [this] (const String & name) {
+				const auto & files = checksums.files;
+				const auto bin_file_name = escapeForFileName(name) + ".bin";
+
+				if (0 != files.count(bin_file_name))
+					return files.find(bin_file_name)->second.file_size;
+
+				return std::size_t{};
+			};
+
+			for (const auto & column : columns)
+			{
+				if (!hasColumnFiles(column.name))
+					continue;
+
+				const auto size = get_column_size(column.name);
+				if (size < minimum_size)
+				{
+					minimum_size = size;
+					minimum_size_column = &column.name;
+				}
+			}
+
+			if (!minimum_size_column)
+				throw Exception{
+						"Could not find a column of minimum size in MergeTree",
+						ErrorCodes::LOGICAL_ERROR
+				};
+
+			return *minimum_size_column;
+		}
+
  		MergeTreeData & storage;
 
 		size_t size = 0;				/// в количестве засечек.
