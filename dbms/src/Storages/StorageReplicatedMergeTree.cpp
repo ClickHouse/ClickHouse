@@ -1756,10 +1756,6 @@ void StorageReplicatedMergeTree::searchForMissingPart(const String & part_name)
 		return;
 	}
 
-	/// TODO Временное решение, так как логика ниже не верна для остальных случаев.
-	if (part_length_in_blocks != 1)
-		return;
-
 	size_t num_found_blocks = 0;
 	for (auto found_block : found_blocks)
 		num_found_blocks += (found_block == 1);
