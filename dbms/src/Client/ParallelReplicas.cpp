@@ -177,7 +177,7 @@ Connection::Packet ParallelReplicas::drain()
 std::string ParallelReplicas::dumpAddresses() const
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(cancel_mutex);
-	dumpAddressesUnlocked();
+	return dumpAddressesUnlocked();
 }
 
 std::string ParallelReplicas::dumpAddressesUnlocked() const
