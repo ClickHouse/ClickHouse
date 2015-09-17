@@ -379,13 +379,24 @@ void MergeTreeData::setPath(const String & new_full_path, bool move_data)
 
 void MergeTreeData::dropAllData()
 {
+	LOG_TRACE(log, "dropAllData: waiting for locks.");
+
+	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
+	Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
+
+	LOG_TRACE(log, "dropAllData: removing data from memory.");
+
 	data_parts.clear();
 	all_data_parts.clear();
 	column_sizes.clear();
 
 	context.resetCaches();
 
+	LOG_TRACE(log, "dropAllData: removing data from filesystem.");
+
 	Poco::File(full_path).remove(true);
+
+	LOG_TRACE(log, "dropAllData: done.");
 }
 
 
