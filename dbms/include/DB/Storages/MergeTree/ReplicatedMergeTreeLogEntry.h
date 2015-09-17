@@ -3,8 +3,12 @@
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 #include <DB/Core/Types.h>
+
 #include <mutex>
 #include <condition_variable>
+
+
+struct Stat;
 
 
 namespace DB
@@ -77,7 +81,7 @@ struct ReplicatedMergeTreeLogEntry
 	void readText(ReadBuffer & in);
 
 	String toString() const;
-	static Ptr parse(const String & s);
+	static Ptr parse(const String & s, const Stat & stat);
 };
 
 

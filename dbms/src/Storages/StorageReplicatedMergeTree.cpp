@@ -422,6 +422,18 @@ void StorageReplicatedMergeTree::createReplica()
 			log_entry.source_replica = "";
 			log_entry.new_part_name = name;
 
+			/// Узнаем время создания part-а, если он ещё не удалён (не был, например, смерджен).
+			{
+				zkutil::Stat stat;
+				String unused;
+				if (zookeeper->tryGet(source_path + "/parts/" + name, unused, &stat))
+					log_entry.create_time = stat.ctime / 1000;
+
+				/** Иначе временем создания будет текущее время.
+				  * Это время используется для измерения отставания реплик.
+				  */
+			}
+
 			zookeeper->create(replica_path + "/queue/queue-", log_entry.toString(), zkutil::CreateMode::PersistentSequential);
 		}
 		LOG_DEBUG(log, "Queued " << active_parts.size() << " parts to be fetched");
@@ -665,8 +677,7 @@ void StorageReplicatedMergeTree::loadQueue()
 	{
 		zkutil::Stat stat;
 		String s = zookeeper->get(replica_path + "/queue/" + child, &stat);
-		LogEntryPtr entry = LogEntry::parse(s);
-		entry->create_time = stat.ctime / 1000;
+		LogEntryPtr entry = LogEntry::parse(s, stat);
 		entry->znode_name = child;
 		entry->addResultToVirtualParts(*this);
 		queue.push_back(entry);
@@ -706,8 +717,7 @@ void StorageReplicatedMergeTree::pullLogsToQueue(zkutil::EventPtr next_update_ev
 		++count;
 		++index;
 
-		LogEntryPtr entry = LogEntry::parse(entry_str);
-		entry->create_time = stat.ctime / 1000;
+		LogEntryPtr entry = LogEntry::parse(entry_str, stat);
 
 		/// Одновременно добавим запись в очередь и продвинем указатель на лог.
 		zkutil::Ops ops;

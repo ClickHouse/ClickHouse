@@ -1,3 +1,5 @@
+#include <zkutil/Types.h>
+
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/IO/Operators.h>
@@ -43,7 +45,8 @@ void ReplicatedMergeTreeLogEntry::tagPartAsFuture(StorageReplicatedMergeTree & s
 
 void ReplicatedMergeTreeLogEntry::writeText(WriteBuffer & out) const
 {
-	out << "format version: 1\n"
+	out << "format version: 2\n"
+		<< "create_time: " << mysqlxx::DateTime(create_time ? create_time : time(0)) << "\n"
 		<< "source replica: " << source_replica << '\n';
 
 	switch (type)
@@ -85,10 +88,22 @@ void ReplicatedMergeTreeLogEntry::writeText(WriteBuffer & out) const
 
 void ReplicatedMergeTreeLogEntry::readText(ReadBuffer & in)
 {
+	UInt8 format_version = 0;
 	String type_str;
 
-	in >> "format version: 1\n"
-		>> "source replica: " >> source_replica >> "\n"
+	in >> "format version: " >> format_version >> "\n";
+
+	if (format_version != 1 && format_version != 2)
+		throw Exception("Unknown ReplicatedMergeTreeLogEntry format version: " + DB::toString(format_version), ErrorCodes::UNKNOWN_FORMAT_VERSION);
+
+	if (format_version == 2)
+	{
+		mysqlxx::DateTime create_time_dt;
+		in >> "create_time: " >> create_time_dt >> "\n";
+		create_time = create_time_dt;
+	}
+
+	in >> "source replica: " >> source_replica >> "\n"
 		>> type_str >> "\n";
 
 	if (type_str == "get")
@@ -146,12 +161,16 @@ String ReplicatedMergeTreeLogEntry::toString() const
 	return s;
 }
 
-ReplicatedMergeTreeLogEntry::Ptr ReplicatedMergeTreeLogEntry::parse(const String & s)
+ReplicatedMergeTreeLogEntry::Ptr ReplicatedMergeTreeLogEntry::parse(const String & s, const zkutil::Stat & stat)
 {
 	ReadBufferFromString in(s);
 	Ptr res = new ReplicatedMergeTreeLogEntry;
 	res->readText(in);
 	assertEOF(in);
+
+	if (!res->create_time)
+		res->create_time = stat.ctime / 1000;
+
 	return res;
 }
 
