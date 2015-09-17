@@ -177,7 +177,11 @@ Connection::Packet ParallelReplicas::drain()
 std::string ParallelReplicas::dumpAddresses() const
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(cancel_mutex);
+	dumpAddressesUnlocked();
+}
 
+std::string ParallelReplicas::dumpAddressesUnlocked() const
+{
 	bool is_first = true;
 	std::ostringstream os;
 	for (auto & e : replica_map)
@@ -289,7 +293,7 @@ ParallelReplicas::ReplicaMap::iterator ParallelReplicas::waitForReadEvent()
 		int n = Poco::Net::Socket::select(read_list, write_list, except_list, settings->receive_timeout);
 
 		if (n == 0)
-			throw Exception("Timeout exceeded while reading from " + dumpAddresses(), ErrorCodes::TIMEOUT_EXCEEDED);
+			throw Exception("Timeout exceeded while reading from " + dumpAddressesUnlocked(), ErrorCodes::TIMEOUT_EXCEEDED);
 	}
 
 	auto & socket = read_list[rand() % read_list.size()];
