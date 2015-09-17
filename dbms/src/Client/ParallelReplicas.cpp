@@ -289,13 +289,7 @@ ParallelReplicas::ReplicaMap::iterator ParallelReplicas::waitForReadEvent()
 		int n = Poco::Net::Socket::select(read_list, write_list, except_list, settings->receive_timeout);
 
 		if (n == 0)
-		{
-			std::stringstream description;
-			for (auto it = replica_map.begin(); it != replica_map.end(); ++it)
-				description << (it != replica_map.begin() ? ", " : "") << it->second->getDescription();
-
-			throw Exception("Timeout exceeded while reading from " + description.str(), ErrorCodes::TIMEOUT_EXCEEDED);
-		}
+			throw Exception("Timeout exceeded while reading from " + dumpAddresses(), ErrorCodes::TIMEOUT_EXCEEDED);
 	}
 
 	auto & socket = read_list[rand() % read_list.size()];
