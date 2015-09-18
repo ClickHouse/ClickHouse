@@ -168,7 +168,10 @@ BlockInputStreams StorageDistributed::read(
 	if (settings.limits.max_network_bandwidth)
 		throttler.reset(new Throttler(settings.limits.max_network_bandwidth));
 
-	Tables external_tables = context.getExternalTables();
+	Tables external_tables;
+
+	if (settings.global_subqueries_method == GlobalSubqueriesMethod::PUSH)
+		external_tables = context.getExternalTables();
 
 	/// Цикл по шардам.
 	for (auto & conn_pool : cluster.pools)
@@ -197,7 +200,7 @@ BlockInputStreams StorageDistributed::read(
 	return res;
 }
 
-BlockOutputStreamPtr StorageDistributed::write(ASTPtr query)
+BlockOutputStreamPtr StorageDistributed::write(ASTPtr query, const Settings & settings)
 {
 	if (!write_enabled)
 		throw Exception{
@@ -260,6 +263,11 @@ void StorageDistributed::requireDirectoryMonitor(const std::string & name)
 {
 	if (!directory_monitors.count(name))
 		createDirectoryMonitor(name);
+}
+
+size_t StorageDistributed::getShardCount() const
+{
+	return cluster.pools.size();
 }
 
 }

@@ -3,8 +3,12 @@
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 #include <DB/Core/Types.h>
+
 #include <mutex>
 #include <condition_variable>
+
+
+struct Stat;
 
 
 namespace DB
@@ -67,6 +71,8 @@ struct ReplicatedMergeTreeLogEntry
 	/// Время создания или время копирования из общего лога в очередь конкретной реплики.
 	time_t create_time = 0;
 
+	/// Величина кворума (для GET_PART) - ненулевое значение при включенной кворумной записи.
+	size_t quorum = 0;
 
 	void addResultToVirtualParts(StorageReplicatedMergeTree & storage);
 	void tagPartAsFuture(StorageReplicatedMergeTree & storage);
@@ -75,7 +81,7 @@ struct ReplicatedMergeTreeLogEntry
 	void readText(ReadBuffer & in);
 
 	String toString() const;
-	static Ptr parse(const String & s);
+	static Ptr parse(const String & s, const Stat & stat);
 };
 
 

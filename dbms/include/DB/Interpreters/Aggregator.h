@@ -731,6 +731,11 @@ public:
 	  */
 	Block mergeBlocks(BlocksList & blocks, bool final);
 
+	/** Преобразовать (разрезать) блок частично-агрегированных данных на много блоков, как если бы использовался двухуровневый метод агрегации.
+	  * Это нужно, чтобы потом было проще объединить результат с другими результатами, уже являющимися двухуровневыми.
+	  */
+	std::vector<Block> convertBlockToTwoLevel(const Block & block);
+
 	using CancellationHook = std::function<bool()>;
 
 	/** Установить функцию, которая проверяет, можно ли прервать текущую задачу.
@@ -806,7 +811,7 @@ protected:
 	/** Если заданы только имена столбцов (key_names, а также aggregates[i].column_name), то вычислить номера столбцов.
 	  * Сформировать блок - пример результата.
 	  */
-	void initialize(Block & block);
+	void initialize(const Block & block);
 
 	/** Выбрать способ агрегации на основе количества и типов ключей. */
 	AggregatedDataVariants::Type chooseAggregationMethod(const ConstColumnPlainPtrs & key_columns, Sizes & key_sizes);
@@ -960,6 +965,16 @@ protected:
 	void mergeWithoutKeyStreamsImpl(
 		Block & block,
 		AggregatedDataVariants & result) const;
+
+	template <typename Method>
+	void convertBlockToTwoLevelImpl(
+		Method & method,
+		Arena * pool,
+		ConstColumnPlainPtrs & key_columns,
+		const Sizes & key_sizes,
+		StringRefs & keys,
+		const Block & source,
+		std::vector<Block> & destinations) const;
 
 	template <typename Method>
 	void destroyImpl(

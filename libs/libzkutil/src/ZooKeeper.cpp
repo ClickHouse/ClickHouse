@@ -558,6 +558,23 @@ void ZooKeeper::tryRemoveRecursive(const std::string & path)
 	tryRemove(path);
 }
 
+
+void ZooKeeper::waitForDisappear(const std::string & path)
+{
+	while (true)
+	{
+		zkutil::EventPtr event = new Poco::Event;
+
+		std::string unused;
+		/// get вместо exists, чтобы не утек watch, если ноды уже нет.
+		if (!tryGet(path, unused, nullptr, event))
+			break;
+
+		event->wait();
+	}
+}
+
+
 ZooKeeper::~ZooKeeper()
 {
 	LOG_INFO(&Logger::get("~ZooKeeper"), "Closing ZooKeeper session");

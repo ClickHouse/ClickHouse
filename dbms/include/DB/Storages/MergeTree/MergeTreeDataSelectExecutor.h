@@ -2,6 +2,7 @@
 
 #include <DB/Storages/MergeTree/MergeTreeData.h>
 #include <DB/Storages/MergeTree/MergeTreeReader.h>
+#include <DB/Storages/MergeTree/RangesInDataPart.h>
 
 
 namespace DB
@@ -32,22 +33,6 @@ private:
 	MergeTreeData & data;
 
 	Logger * log;
-
-	struct RangesInDataPart
-	{
-		MergeTreeData::DataPartPtr data_part;
-		size_t part_index_in_query;
-		MarkRanges ranges;
-
-		RangesInDataPart() {}
-
-		RangesInDataPart(MergeTreeData::DataPartPtr data_part_, size_t part_index_in_query_)
-			: data_part(data_part_), part_index_in_query(part_index_in_query_)
-		{
-		}
-	};
-
-	typedef std::vector<RangesInDataPart> RangesInDataParts;
 
 	BlockInputStreams spreadMarkRangesAmongThreads(
 		RangesInDataParts parts,

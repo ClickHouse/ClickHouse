@@ -261,7 +261,7 @@ void QueryLog::flush()
 			block.unsafeGetByPosition(i++).column.get()->insertData(elem.query_id.data(), elem.query_id.size());
 		}
 
-		BlockOutputStreamPtr stream = table->write(nullptr);
+		BlockOutputStreamPtr stream = table->write({}, {});
 
 		stream->writePrefix();
 		stream->write(block);

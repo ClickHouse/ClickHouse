@@ -78,6 +78,8 @@ void ASTSelectQuery::rewriteSelectExpressionList(const Names & column_names)
 	using Mapping = std::vector<Arrow>;
 
 	Mapping mapping(asts.size());
+
+	/// На какой позиции в SELECT-выражении находится соответствующий столбец из column_names.
 	std::vector<size_t> from(column_names.size());
 
 	/// Не будем выбрасывать выражения, содержащие функцию arrayJoin.
@@ -106,6 +108,8 @@ void ASTSelectQuery::rewriteSelectExpressionList(const Names & column_names)
 	}
 
 	auto to = from;
+
+	/// Теперь from - список позиций column_names по возрастанию.
 	std::sort(from.begin(), from.end());
 
 	for (size_t i = 0; i < column_names.size(); ++i)
@@ -130,7 +134,7 @@ void ASTSelectQuery::rewriteSelectExpressionList(const Names & column_names)
 
 	/** NOTE: Может показаться, что мы могли испортить запрос, выбросив выражение с алиасом, который используется где-то еще.
 		*       Такого произойти не может, потому что этот метод вызывается всегда для запроса, на котором хоть раз создавали
-		*       ExpressionAnalyzer, что гарантирует, что в нем все алиасы уже подставлены. Не совсем очевидная логика :)
+		*       ExpressionAnalyzer, что гарантирует, что в нем все алиасы уже подставлены. Не совсем очевидная логика.
 		*/
 }
 
@@ -145,7 +149,7 @@ ASTPtr ASTSelectQuery::clone() const
 	while (!next.isNull())
 	{
 		ASTSelectQuery * next_select_query = static_cast<ASTSelectQuery *>(&*next);
-		next_select_query->prev_union_all = current;
+		next_select_query->prev_union_all = current.get();
 		current = next;
 		next = next_select_query->next_union_all;
 	}

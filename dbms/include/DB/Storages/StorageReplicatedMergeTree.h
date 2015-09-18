@@ -82,7 +82,7 @@ public:
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
 		unsigned threads = 1) override;
 
-	BlockOutputStreamPtr write(ASTPtr query) override;
+	BlockOutputStreamPtr write(ASTPtr query, const Settings & settings) override;
 
 	bool optimize(const Settings & settings) override;
 
@@ -368,8 +368,11 @@ private:
 	void alterThread();
 
 	/** Проверяет целостность кусков.
+	  * Находит отсутствующие куски.
 	  */
 	void partCheckThread();
+	void checkPart(const String & part_name);
+	void searchForMissingPart(const String & part_name);
 
 	/// Обмен кусками.
 
@@ -379,8 +382,9 @@ private:
 
 	/** Скачать указанный кусок с указанной реплики.
 	  * Если to_detached, то кусок помещается в директорию detached.
+	  * Если quorum != 0, то обновляется узел для отслеживания кворума.
 	  */
-	void fetchPart(const String & part_name, const String & replica_path, bool to_detached = false);
+	void fetchPart(const String & part_name, const String & replica_path, bool to_detached, size_t quorum);
 
 	AbandonableLockInZooKeeper allocateBlockNumber(const String & month_name);
 

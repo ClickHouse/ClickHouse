@@ -119,6 +119,9 @@ struct Settings
 	  * (Чтобы большие запросы не вымывали кэш.) */ \
 	M(SettingUInt64, merge_tree_max_rows_to_use_cache, (1024 * 1024)) \
 	\
+	/** Распределять чтение из MergeTree по потокам равномерно, обеспечивая стабильное среднее время исполнения каждого потока в пределах одного чтения. */ \
+	M(SettingBool, merge_tree_uniform_read_distribution, false) \
+	\
 	/** Минимальная длина выражения expr = x1 OR ... expr = xN для оптимизации */ \
 	M(SettingUInt64, optimize_min_equality_disjunction_chain_length, 3) \
 	\
@@ -148,6 +151,18 @@ struct Settings
 	\
 	/** Логгировать запросы и писать лог в системную таблицу. */ \
 	M(SettingBool, log_queries, 0) \
+	\
+	/** Как выполняются распределённые подзапросы внутри секций IN или JOIN? */ \
+	M(SettingDistributedProductMode, distributed_product_mode, DistributedProductMode::DENY) \
+	\
+	/** Схема выполнения GLOBAL-подзапросов. */ \
+	M(SettingGlobalSubqueriesMethod, global_subqueries_method, GlobalSubqueriesMethod::PUSH) \
+	\
+	/** Максимальное количество одновременно выполняющихся запросов на одного user-а. */ \
+	M(SettingUInt64, max_concurrent_queries_for_user, 0) \
+	\
+	/** Для запросов INSERT в реплицируемую таблицу, ждать записи на указанное число реплик и лианеризовать добавление данных. 0 - отключено. */ \
+	M(SettingUInt64, insert_quorum, 0) \
 
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;
@@ -176,6 +191,9 @@ struct Settings
 	  * Профиль также может быть установлен с помощью функций set, как настройка profile.
 	  */
 	void setProfile(const String & profile_name, Poco::Util::AbstractConfiguration & config);
+
+	/// Загрузить настройки по пути из конфига
+	void loadSettingsFromConfig(const String & path, Poco::Util::AbstractConfiguration & config);
 
 	/// Прочитать настройки из буфера. Они записаны как набор name-value пар, идущих подряд, заканчивающихся пустым name.
 	/// Если в настройках выставлено readonly=1, то игнорировать настройки.

@@ -107,7 +107,29 @@ public:
 	ExternalDictionaries(Context & context, const bool throw_on_error)
 		: context(context), log(&Logger::get("ExternalDictionaries"))
 	{
-		reloadImpl(throw_on_error);
+		{
+			/** При синхронной загрузки внешних словарей в момент выполнения запроса,
+			  *  не нужно использовать ограничение на расход памяти запросом.
+			  */
+			struct TemporarilyDisableMemoryTracker
+			{
+				MemoryTracker * memory_tracker;
+
+				TemporarilyDisableMemoryTracker()
+				{
+					memory_tracker = current_memory_tracker;
+					current_memory_tracker = nullptr;
+				}
+
+				~TemporarilyDisableMemoryTracker()
+				{
+					current_memory_tracker = memory_tracker;
+				}
+			} temporarily_disable_memory_tracker;
+
+			reloadImpl(throw_on_error);
+		}
+
 		reloading_thread = std::thread{&ExternalDictionaries::reloadPeriodically, this};
 	}
 

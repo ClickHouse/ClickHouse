@@ -36,21 +36,16 @@ public:
 
 		if (size >= MMAP_THRESHOLD)
 		{
-			if (alignment <= MMAP_MIN_ALIGNMENT)
-			{
-				buf = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-				if (MAP_FAILED == buf)
-					DB::throwFromErrno("Allocator: Cannot mmap.", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+			if (alignment > MMAP_MIN_ALIGNMENT)
+				throw DB::Exception("Too large alignment: more than page size.", DB::ErrorCodes::BAD_ARGUMENTS);
 
-				/// См. комментарий в HashTableAllocator.h
-				if (size >= HUGE_PAGE_SIZE && 0 != madvise(buf, size, MADV_HUGEPAGE))
-					DB::throwFromErrno("HashTableAllocator: Cannot madvise with MADV_HUGEPAGE.", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
-			}
-			else
-			{
-				/// если выравнивание больше, чем размер страницы используем posix_memalign
-				buf = allocateUsingPosixMemalign(size, alignment);
-			}
+			buf = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+			if (MAP_FAILED == buf)
+				DB::throwFromErrno("Allocator: Cannot mmap.", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+
+			/// См. комментарий в HashTableAllocator.h
+			if (size >= HUGE_PAGE_SIZE && 0 != madvise(buf, size, MADV_HUGEPAGE))
+				DB::throwFromErrno("HashTableAllocator: Cannot madvise with MADV_HUGEPAGE.", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 		}
 		else
 		{
@@ -63,7 +58,11 @@ public:
 			}
 			else
 			{
-				buf = allocateUsingPosixMemalign(size, alignment);
+				buf = nullptr;
+				int res = posix_memalign(&buf, alignment, size);
+
+				if (0 != res)
+					DB::throwFromErrno("Cannot allocate memory (posix_memalign)", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, res);
 			}
 		}
 
@@ -119,19 +118,6 @@ public:
 			free(buf, old_size);
 			buf = new_buf;
 		}
-
-		return buf;
-	}
-
-private:
-	void * allocateUsingPosixMemalign(size_t size, size_t alignment)
-	{
-		void * buf = nullptr;
-
-		int res = posix_memalign(&buf, alignment, size);
-
-		if (0 != res)
-			DB::throwFromErrno("Cannot allocate memory (posix_memalign)", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, res);
 
 		return buf;
 	}

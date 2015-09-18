@@ -57,7 +57,7 @@ int main(int argc, char ** argv)
 
 			block.insert(column2);
 
-			SharedPtr<DB::IBlockOutputStream> out = table->write(0);
+			SharedPtr<DB::IBlockOutputStream> out = table->write({}, {});
 			out->write(block);
 		}
 
@@ -85,7 +85,7 @@ int main(int argc, char ** argv)
 
 			DB::WriteBufferFromOStream out_buf(std::cout);
 
-			DB::LimitBlockInputStream in_limit(in, 10);
+			DB::LimitBlockInputStream in_limit(in, 10, 0);
 			DB::RowOutputStreamPtr output_ = new DB::TabSeparatedRowOutputStream(out_buf, sample);
 			DB::BlockOutputStreamFromRowOutputStream output(output_);
 

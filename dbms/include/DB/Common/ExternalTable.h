@@ -167,7 +167,7 @@ public:
 
 	ExternalTablesHandler(Context & context_, Poco::Net::NameValueCollection params_) : context(context_), params(params_) { }
 
-	void handlePart(const Poco::Net::MessageHeader& header, std::istream& stream)
+	void handlePart(const Poco::Net::MessageHeader & header, std::istream & stream)
 	{
 		/// Буфер инициализируется здесь, а не в виртуальной функции initReadBuffer
 		read_buffer.reset(new ReadBufferFromIStream(stream));
@@ -194,7 +194,7 @@ public:
 		NamesAndTypesListPtr columns = new NamesAndTypesList(sample_block.getColumnsList());
 		StoragePtr storage = StorageMemory::create(data.second, columns);
 		context.addExternalTable(data.second, storage);
-		BlockOutputStreamPtr output = storage->write(ASTPtr());
+		BlockOutputStreamPtr output = storage->write(ASTPtr(), context.getSettingsRef());
 
 		/// Записываем данные
 		data.first->readPrefix();

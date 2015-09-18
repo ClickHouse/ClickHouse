@@ -98,7 +98,7 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input, const Names & requi
 
 void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_)
 {
-	if (query.table && typeid_cast<ASTSelectQuery *>(&*query.table))
+	if (query.table && typeid_cast<ASTSelectQuery *>(query.table.get()))
 	{
 		if (table_column_names.empty())
 		{
@@ -107,10 +107,10 @@ void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_)
 	}
 	else
 	{
-		if (query.table && typeid_cast<const ASTFunction *>(&*query.table))
+		if (query.table && typeid_cast<const ASTFunction *>(query.table.get()))
 		{
 			/// Получить табличную функцию
-			TableFunctionPtr table_function_ptr = context.getTableFunctionFactory().get(typeid_cast<const ASTFunction *>(&*query.table)->name, context);
+			TableFunctionPtr table_function_ptr = context.getTableFunctionFactory().get(typeid_cast<const ASTFunction *>(query.table.get())->name, context);
 			/// Выполнить ее и запомнить результат
 			storage = table_function_ptr->execute(query.table, context);
 		}
@@ -329,7 +329,7 @@ BlockIO InterpreterSelectQuery::execute()
 	executeUnion();
 
 	/// Ограничения на результат, квота на результат, а также колбек для прогресса.
-	if (IProfilingBlockInputStream * stream = dynamic_cast<IProfilingBlockInputStream *>(&*streams[0]))
+	if (IProfilingBlockInputStream * stream = dynamic_cast<IProfilingBlockInputStream *>(streams[0].get()))
 	{
 		/// Ограничения действуют только на конечный результат.
 		if (to_stage == QueryProcessingStage::Complete)
@@ -590,7 +590,7 @@ void InterpreterSelectQuery::executeSingleQuery()
 			{
 				transformStreams([&](auto & stream)
 				{
-					if (IProfilingBlockInputStream * p_stream = dynamic_cast<IProfilingBlockInputStream *>(&*stream))
+					if (IProfilingBlockInputStream * p_stream = dynamic_cast<IProfilingBlockInputStream *>(stream.get()))
 						p_stream->enableExtremes();
 				});
 			}
@@ -651,7 +651,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
 	/// Список столбцов, которых нужно прочитать, чтобы выполнить запрос.
 	Names required_columns = query_analyzer->getRequiredColumns();
 
-	if (query.table && typeid_cast<ASTSelectQuery *>(&*query.table))
+	if (query.table && typeid_cast<ASTSelectQuery *>(query.table.get()))
 	{
 		/** Для подзапроса не действуют ограничения на максимальный размер результата.
 		 *  Так как результат поздапроса - ещё не результат всего запроса.
@@ -792,7 +792,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
 
 		transformStreams([&](auto & stream)
 		{
-			if (IProfilingBlockInputStream * p_stream = dynamic_cast<IProfilingBlockInputStream *>(&*stream))
+			if (IProfilingBlockInputStream * p_stream = dynamic_cast<IProfilingBlockInputStream *>(stream.get()))
 			{
 				p_stream->setLimits(limits);
 				p_stream->setQuota(quota);
@@ -1091,9 +1091,38 @@ void InterpreterSelectQuery::executeLimit()
 	/// Если есть LIMIT
 	if (query.limit_length)
 	{
+		/** Редкий случай:
+		  *  если нет WITH TOTALS и есть подзапрос в FROM, и там на одном из уровней есть WITH TOTALS,
+		  *  то при использовании LIMIT-а следует читать данные до конца, а не отменять выполнение запроса раньше,
+		  *  потому что при отмене выполнения запроса, мы не получим данные для totals с удалённого сервера.
+		  */
+		bool always_read_till_end = false;
+		if (!query.group_by_with_totals && query.table && typeid_cast<const ASTSelectQuery *>(query.table.get()))
+		{
+			const ASTSelectQuery * subquery = static_cast<const ASTSelectQuery *>(query.table.get());
+
+			while (subquery->table)
+			{
+				if (subquery->group_by_with_totals)
+				{
+					/** NOTE Можно ещё проверять, что таблица в подзапросе - распределённая, и что она смотрит только на один шард.
+					  * В остальных случаях totals будет вычислен на сервере-инициаторе запроса, и читать данные до конца не обязательно.
+					  */
+
+					always_read_till_end = true;
+					break;
+				}
+
+				if (typeid_cast<const ASTSelectQuery *>(subquery->table.get()))
+					subquery = static_cast<const ASTSelectQuery *>(subquery->table.get());
+				else
+					break;
+			}
+		}
+
 		transformStreams([&](auto & stream)
 		{
-			stream = new LimitBlockInputStream(stream, limit_length, limit_offset);
+			stream = new LimitBlockInputStream(stream, limit_length, limit_offset, always_read_till_end);
 		});
 	}
 }
