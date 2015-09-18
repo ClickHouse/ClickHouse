@@ -216,7 +216,8 @@ private:
 		if (settings.distributed_product_mode == DistributedProductMode::DENY)
 		{
 			/// Согласно профиля пользователя распределённые подзапросы внутри секций IN и JOIN запрещены.
-			throw Exception("You are not allowed to perform distributed IN/JOIN subqueries",
+			throw Exception("Double-distributed IN/JOIN subqueries is denied (distributed_product_mode = 'deny')."
+				" You may rewrite query to use local tables in subqueries, or use GLOBAL keyword, or set distributed_product_mode to suitable value.",
 				ErrorCodes::DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED);
 		}
 		else if (settings.distributed_product_mode == DistributedProductMode::GLOBAL)
@@ -237,7 +238,7 @@ private:
 					function.name = getNameFromInSubqueryAttributes(function.attributes | IAST::IsGlobal);
 				}
 				else
-					throw Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
+					throw Exception("InJoinSubqueriesPreprocessor: Internal error", ErrorCodes::LOGICAL_ERROR);
 			}
 		}
 		else if (settings.distributed_product_mode == DistributedProductMode::LOCAL)
@@ -260,7 +261,7 @@ private:
 			table_name = distributed_storage.getRemoteTableName();
 		}
 		else
-			throw Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
+			throw Exception("InJoinSubqueriesPreprocessor: Internal error", ErrorCodes::LOGICAL_ERROR);
 	}
 
 	StoragePtr getDistributedSubqueryStorage(const ASTSelectQuery & sub_select_query) const
