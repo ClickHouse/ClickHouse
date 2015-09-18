@@ -754,8 +754,8 @@ bool StorageReplicatedMergeTree::shouldExecuteLogEntry(const LogEntry & entry)
 	if ((entry.type == LogEntry::MERGE_PARTS || entry.type == LogEntry::GET_PART || entry.type == LogEntry::ATTACH_PART)
 		&& future_parts.count(entry.new_part_name))
 	{
-		LOG_DEBUG(log, "Not executing log entry for part " << entry.new_part_name <<
-			" because another log entry for the same part is being processed. This shouldn't happen often.");
+		LOG_DEBUG(log, "Not executing log entry for part " << entry.new_part_name
+			<< " because another log entry for the same part is being processed. This shouldn't happen often.");
 		return false;
 	}
 
@@ -773,6 +773,12 @@ bool StorageReplicatedMergeTree::shouldExecuteLogEntry(const LogEntry & entry)
 				LOG_TRACE(log, "Not merging into part " << entry.new_part_name << " because part " << name << " is not ready yet.");
 				return false;
 			}
+		}
+
+		if (merger.isCancelled())
+		{
+			LOG_DEBUG(log, "Not executing log entry for part " << entry.new_part_name << " because merges are cancelled now.");
+			return false;
 		}
 	}
 
@@ -1210,11 +1216,18 @@ bool StorageReplicatedMergeTree::queueTask(BackgroundProcessingPool::Context & p
 
 		exception = false;
 	}
-	catch (Exception & e)
+	catch (const Exception & e)
 	{
 		if (e.code() == ErrorCodes::NO_REPLICA_HAS_PART)
+		{
 			/// Если ни у кого нет нужного куска, наверно, просто не все реплики работают; не будем писать в лог с уровнем Error.
 			LOG_INFO(log, e.displayText());
+		}
+		else if (e.code() == ErrorCodes::ABORTED)
+		{
+			/// Прерванный мердж - не ошибка.
+			LOG_INFO(log, "Merge cancelled");
+		}
 		else
 			tryLogCurrentException(__PRETTY_FUNCTION__);
 	}

@@ -398,7 +398,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 	const size_t initial_reservation = disk_reservation ? disk_reservation->getSize() : 0;
 
 	Block block;
-	while (!canceled.load(std::memory_order_relaxed) && (block = merged_stream->read()))
+	while (!isCancelled() && (block = merged_stream->read()))
 	{
 		rows_written += block.rows();
 		to.write(block);
@@ -410,8 +410,8 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 			disk_reservation->update(static_cast<size_t>((1 - std::min(1., 1. * rows_written / sum_rows_approx)) * initial_reservation));
 	}
 
-	if (canceled.load(std::memory_order_relaxed))
-		throw Exception("Canceled merging parts", ErrorCodes::ABORTED);
+	if (isCancelled())
+		throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
 
 	merged_stream->readSuffix();
 	new_data_part->columns = union_columns;
