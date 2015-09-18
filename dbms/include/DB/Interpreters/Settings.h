@@ -152,6 +152,9 @@ struct Settings
 	/** Логгировать запросы и писать лог в системную таблицу. */ \
 	M(SettingBool, log_queries, 0) \
 	\
+	/** Как выполняются распределённые подзапросы внутри секций IN или JOIN? */ \
+	M(SettingDistributedProductMode, distributed_product_mode, DistributedProductMode::DENY) \
+	\
 	/** Схема выполнения GLOBAL-подзапросов. */ \
 	M(SettingGlobalSubqueriesMethod, global_subqueries_method, GlobalSubqueriesMethod::PUSH) \
 	\
