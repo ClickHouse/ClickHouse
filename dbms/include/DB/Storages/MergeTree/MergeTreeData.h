@@ -177,31 +177,36 @@ public:
 
 		DataPart(MergeTreeData & storage_) : storage(storage_) {}
 
-		/** If no checksums are present returns name for the first physically existing column.
-		 *	Either returns a name or throws .*/
-		std::string getMinimumSizeColumnName() const
+		/// Returns the size of .bin file for column `name` if found, zero otherwise
+		std::size_t getColumnSize(const String & name) const
+		{
+			if (checksums.empty())
+				return {};
+
+			const auto & files = checksums.files;
+			const auto bin_file_name = escapeForFileName(name) + ".bin";
+
+			/// Probably a logic error, not sure if this can ever happen if checksums are not empty
+			if (0 == files.count(bin_file_name))
+				return {};
+
+			return files.find(bin_file_name)->second.file_size;
+		}
+
+		/** Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
+		 *	If no checksums are present returns the name of the first physically existing column. */
+		String getMinimumSizeColumnName() const
 		{
 			const auto & columns = storage.getColumnsList();
 			const std::string * minimum_size_column = nullptr;
 			auto minimum_size = std::numeric_limits<std::size_t>::max();
-
-			/// return .bin file size or zero if checksums are empty
-			const auto get_column_size = [this] (const String & name) {
-				const auto & files = checksums.files;
-				const auto bin_file_name = escapeForFileName(name) + ".bin";
-
-				if (0 != files.count(bin_file_name))
-					return files.find(bin_file_name)->second.file_size;
-
-				return std::size_t{};
-			};
 
 			for (const auto & column : columns)
 			{
 				if (!hasColumnFiles(column.name))
 					continue;
 
-				const auto size = get_column_size(column.name);
+				const auto size = getColumnSize(column.name);
 				if (size < minimum_size)
 				{
 					minimum_size = size;
