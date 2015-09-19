@@ -18,9 +18,10 @@ namespace DB
 {
 
 /** Используя фиксированное количество потоков, выполнять произвольное количество задач в бесконечном цикле.
+  * При этом, одна задача может выполняться одновременно из разных потоков.
   * Предназначена для задач, выполняющих постоянную фоновую работу (например, слияния).
   * Задача - функция, возвращающая bool - сделала ли она какую-либо работу.
-  * Если сделала - надо выполнить ещё раз. Если нет - надо подождать несколько секунд, или до события wake, и выполнить ещё раз.
+  * Если не сделала, то в следующий раз будет выполнена позже.
   *
   * Также, задача во время выполнения может временно увеличить какой-либо счётчик, относящийся ко всем задачам
   *  - например, число одновременно идующих слияний.
@@ -61,7 +62,7 @@ public:
 	class TaskInfo
 	{
 	public:
-		/// Переставить таск в начало очереди и разбудить какой-нибудь поток.
+		/// Разбудить какой-нибудь поток.
 		void wake()
 		{
 			Poco::ScopedReadRWLock rlock(rwlock);
@@ -71,8 +72,12 @@ public:
 			std::unique_lock<std::mutex> lock(pool.mutex);
 			pool.tasks.splice(pool.tasks.begin(), pool.tasks, iterator);
 
-			/// Не очень надёжно: если все потоки сейчас выполняют работу, этот вызов никого не разбудит,
-			///  и все будут спать в конце итерации.
+			/// Если эта задача в прошлый раз ничего не сделала, и ей было назначено спать, то отменим время сна.
+			time_t current_time = time(0);
+			if (next_time_to_execute > current_time)
+				next_time_to_execute = current_time;
+
+			/// Если все потоки сейчас выполняют работу, этот вызов никого не разбудит.
 			pool.wake_event.notify_one();
 		}
 
@@ -85,6 +90,7 @@ public:
 		/// При выполнении задачи, держится read lock. Переменная removed меняется под write lock-ом.
 		Poco::RWLock rwlock;
 		volatile bool removed = false;
+		volatile time_t next_time_to_execute = 0;	/// Приоритет задачи. Для совпадающего времени в секундах берётся первая по списку задача.
 
 		std::list<std::shared_ptr<TaskInfo>>::iterator iterator;
 
@@ -121,8 +127,7 @@ public:
 
 		{
 			std::unique_lock<std::mutex> lock(mutex);
-			tasks.push_back(res);
-			res->iterator = --tasks.end();
+			res->iterator = tasks.insert(tasks.begin(), res);
 		}
 
 		wake_event.notify_all();
@@ -181,20 +186,32 @@ private:
 		while (!shutdown)
 		{
 			Counters counters_diff;
-			bool need_sleep = false;
+			bool has_exception = false;
 
 			try
 			{
 				TaskHandle task;
+				time_t min_time = std::numeric_limits<time_t>::max();
 
 				{
 					std::unique_lock<std::mutex> lock(mutex);
 
 					if (!tasks.empty())
 					{
-						need_sleep = true;
-						task = tasks.front();
-						tasks.splice(tasks.end(), tasks, tasks.begin());
+						/// O(n), n - число задач. По сути, количество таблиц. Обычно их мало.
+						for (const auto & handle : tasks)
+						{
+							time_t next_time_to_execute = handle->next_time_to_execute;
+
+							if (next_time_to_execute < min_time)
+							{
+								min_time = next_time_to_execute;
+								task = handle;
+							}
+						}
+
+						if (task)	/// Переложим в конец очереди (уменьшим приоритет среди задач с одинаковым next_time_to_execute).
+							tasks.splice(tasks.end(), tasks, task->iterator);
 					}
 				}
 
@@ -212,20 +229,25 @@ private:
 				if (task->removed)
 					continue;
 
+				/// Лучшей задачи не нашлось, а эта задача в прошлый раз ничего не сделала, и поэтому ей назначено некоторое время спать.
+				time_t current_time = time(0);
+				if (min_time > current_time)
+				{
+					std::unique_lock<std::mutex> lock(mutex);
+					wake_event.wait_for(lock, std::chrono::duration<double>(min_time - current_time));
+				}
+
 				Context context(*this, counters_diff);
 
-				if (task->function(context))
-				{
-					/// Если у задачи получилось выполнить какую-то работу, запустим её снова без паузы.
-					need_sleep = false;
+				bool done_work = task->function(context);
 
-					std::unique_lock<std::mutex> lock(mutex);
-					tasks.splice(tasks.begin(), tasks, task->iterator);
-				}
+				/// Если задача сделала полезную работу, то она сможет выполняться в следующий раз хоть сразу.
+				/// Если нет - добавляем задержку перед повторным исполнением.
+				task->next_time_to_execute = time(0) + (done_work ? 0 : sleep_seconds);
 			}
 			catch (...)
 			{
-				need_sleep = true;
+				has_exception = true;
 				tryLogCurrentException(__PRETTY_FUNCTION__);
 			}
 
@@ -240,7 +262,7 @@ private:
 			if (shutdown)
 				break;
 
-			if (need_sleep)
+			if (has_exception)
 			{
 				std::unique_lock<std::mutex> lock(mutex);
 				wake_event.wait_for(lock, std::chrono::duration<double>(sleep_seconds));
