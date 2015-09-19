@@ -2199,7 +2199,7 @@ void StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 
 	ProfileEvents::increment(ProfileEvents::ReplicatedPartFetches);
 
-	LOG_DEBUG(log, "Fetched part " << part_name << " from " << replica_name << (to_detached ? " (to 'detached' directory)" : ""));
+	LOG_DEBUG(log, "Fetched part " << part_name << " from " << replica_path << (to_detached ? " (to 'detached' directory)" : ""));
 }
 
 
