@@ -126,6 +126,8 @@ public:
 		UInt32 queue_oldest_time;
 		UInt32 inserts_oldest_time;
 		UInt32 merges_oldest_time;
+		String oldest_part_to_get;
+		String oldest_part_to_merge_to;
 		UInt64 log_max_index;
 		UInt64 log_pointer;
 		UInt8 total_replicas;

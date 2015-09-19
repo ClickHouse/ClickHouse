@@ -30,6 +30,43 @@ const auto MERGE_SELECTING_SLEEP_MS = 5 * 1000;
 const Int64 RESERVED_BLOCK_NUMBERS = 200;
 
 
+/** Для каждого куска есть сразу три места, где он должен быть:
+  * 1. В оперативке (RAM), MergeTreeData::data_parts, all_data_parts.
+  * 2. В файловой системе (FS), директория с данными таблицы.
+  * 3. В ZooKeeper (ZK).
+  *
+  * При добавлении куска, его надо добавить сразу в эти три места.
+  * Это делается так:
+  * - [FS] сначала записываем кусок во временную директорию на файловой системе;
+  * - [FS] переименовываем временный кусок в результирующий на файловой системе;
+  * - [RAM] сразу же после этого добавляем его в data_parts, и удаляем из data_parts покрываемые им куски;
+  * - [RAM] также устанавливаем объект Transaction, который в случае исключения (в следующем пункте),
+  *   откатит изменения в data_parts (из предыдущего пункта) назад;
+  * - [ZK] затем отправляем транзакцию (multi) на добавление куска в ZooKeeper (и ещё некоторых действий);
+  * - [FS, ZK] кстати, удаление покрываемых (старых) кусков из файловой системы, из ZooKeeper и из all_data_parts
+  *   делается отложенно, через несколько минут.
+  *
+  * Здесь нет никакой атомарности.
+  * Можно было бы добиться атомарности с помощью undo/redo логов и флага в DataPart, когда он полностью готов.
+  * Но это было бы неудобно - пришлось бы писать undo/redo логи для каждого Part-а в ZK, а это увеличило бы и без того большое количество взаимодействий.
+  *
+  * Вместо этого, мы вынуждены работать в ситуации, когда в любой момент времени
+  *  (из другого потока, или после рестарта сервера) может наблюдаться недоделанная до конца транзакция.
+  *  (заметим - для этого кусок должен быть в RAM)
+  * Из этих случаев наиболее частый - когда кусок уже есть в data_parts, но его ещё нет в ZooKeeper.
+  * Этот случай надо отличить от случая, когда такая ситуация достигается вследствие какого-то повреждения состояния.
+  *
+  * Делаем это с помощью порога на время.
+  * Если кусок достаточно молодой, то его отсутствие в ZooKeeper будем воспринимать оптимистично - как будто он просто не успел ещё туда добавиться
+  *  - как будто транзакция ещё не выполнена, но скоро выполнится.
+  * А если кусок старый, то его отсутствие в ZooKeeper будем воспринимать как недоделанную транзакцию, которую нужно откатить.
+  *
+  * PS. Возможно, было бы лучше добавить в DataPart флаг о том, что кусок вставлен в ZK.
+  * Но здесь уже слишком легко запутаться с консистентностью этого флага.
+  */
+const auto MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER = 5 * 60;
+
+
 StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	const String & zookeeper_path_,
 	const String & replica_name_,
@@ -1400,7 +1437,9 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 
 				if (merges_queued >= data.settings.max_replicated_merges_in_queue)
 				{
-					LOG_TRACE(log, "Number of queued merges is greater than max_replicated_merges_in_queue, so won't select new parts to merge.");
+					LOG_TRACE(log, "Number of queued merges (" << merges_queued
+						<< ") is greater than max_replicated_merges_in_queue ("
+						<< data.settings.max_replicated_merges_in_queue << "), so won't select new parts to merge.");
 					break;
 				}
 
@@ -1422,9 +1461,16 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 					/// Если о каком-то из кусков нет информации в ZK, не будем сливать.
 					if (!zookeeper->exists(replica_path + "/parts/" + part->name))
 					{
-						LOG_WARNING(log, "Part " << part->name << " exists locally but not in ZooKeeper.");
-						enqueuePartForCheck(part->name);
 						all_in_zk = false;
+
+						if (part->modification_time + MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER < time(0))
+						{
+							LOG_WARNING(log, "Part " << part->name << " (that was selected for merge)"
+								<< " with age " << (time(0) - part->modification_time)
+								<< " seconds exists locally but not in ZooKeeper."
+								<< " Won't do merge with that part and will check it.");
+							enqueuePartForCheck(part->name);
+						}
 					}
 				}
 				if (!all_in_zk)
@@ -1906,15 +1952,21 @@ void StorageReplicatedMergeTree::checkPart(const String & part_name)
 				data.renameAndDetachPart(part, "broken_");
 			}
 		}
-		else if (part->modification_time + 5 * 60 < time(0))
+		else if (part->modification_time + MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER < time(0))
 		{
 			/// Если куска нет в ZooKeeper, удалим его локально.
 			/// Возможно, кусок кто-то только что записал, и еще не успел добавить в ZK.
 			/// Поэтому удаляем только если кусок старый (не очень надежно).
 			ProfileEvents::increment(ProfileEvents::ReplicatedPartChecksFailed);
 
-			LOG_ERROR(log, "Checker: Unexpected part " << part_name << ". Removing.");
+			LOG_ERROR(log, "Checker: Unexpected part " << part_name << " in filesystem. Removing.");
 			data.renameAndDetachPart(part, "unexpected_");
+		}
+		else
+		{
+			LOG_TRACE(log, "Checker: Young part " << part_name
+				<< " with age " << (time(0) - part->modification_time)
+				<< " seconds hasn't been added to ZooKeeper yet. It's ok.");
 		}
 	}
 	else
@@ -2859,7 +2911,10 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
 				++res.inserts_in_queue;
 
 				if (entry->create_time && (!res.inserts_oldest_time || entry->create_time < res.inserts_oldest_time))
+				{
 					res.inserts_oldest_time = entry->create_time;
+					res.oldest_part_to_get = entry->new_part_name;
+				}
 			}
 
 			if (entry->type == LogEntry::MERGE_PARTS)
@@ -2867,7 +2922,10 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
 				++res.merges_in_queue;
 
 				if (entry->create_time && (!res.merges_oldest_time || entry->create_time < res.merges_oldest_time))
+				{
 					res.merges_oldest_time = entry->create_time;
+					res.oldest_part_to_merge_to = entry->new_part_name;
+				}
 			}
 		}
 	}
