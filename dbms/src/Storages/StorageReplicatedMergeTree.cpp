@@ -782,6 +782,8 @@ void StorageReplicatedMergeTree::pullLogsToQueue(zkutil::EventPtr next_update_ev
 		queue.push_back(entry);
 	}
 
+	last_queue_update = time(0);
+
 	if (next_update_event)
 	{
 		if (zookeeper->exists(zookeeper_path + "/log/log-" + padIndex(index), nullptr, next_update_event))
@@ -1225,8 +1227,6 @@ void StorageReplicatedMergeTree::queueUpdatingThread()
 		try
 		{
 			pullLogsToQueue(queue_updating_event);
-			last_queue_update = time(0);
-
 			queue_updating_event->wait();
 		}
 		catch (const zkutil::KeeperException & e)
