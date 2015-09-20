@@ -780,7 +780,7 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
 
 	if (obsolete)
 	{
-		LOG_WARNING(log, "Obsolete part " + part->name + " added");
+		LOG_WARNING(log, "Obsolete part " << part->name << " added");
 		part->remove_time = time(0);
 	}
 	else
@@ -1313,7 +1313,7 @@ void MergeTreeData::freezePartition(const std::string & prefix)
 	{
 		if (0 == it.name().compare(0, prefix.size(), prefix))
 		{
-			LOG_DEBUG(log, "Freezing part " + it.name());
+			LOG_DEBUG(log, "Freezing part " << it.name());
 
 			String part_absolute_path = it.path().absolute().toString();
 			if (0 != part_absolute_path.compare(0, clickhouse_path.size(), clickhouse_path))
