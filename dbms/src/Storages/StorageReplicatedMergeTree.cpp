@@ -2435,7 +2435,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 	{
 		res = unreplicated_reader->read(real_column_names, query,
 										context, settings, processed_stage,
-										max_block_size, threads, &part_index);
+										max_block_size, threads, &part_index, 0);
 
 		for (auto & virtual_column : virt_column_names)
 		{
@@ -2449,7 +2449,44 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 
 	if (values.count(1))
 	{
-		auto res2 = reader.read(real_column_names, query, context, settings, processed_stage, max_block_size, threads, &part_index);
+		/** Настройка select_sequential_consistency имеет два смысла:
+		  * 1. Кидать исключение, если на реплике есть не все куски, которые были записаны на кворум остальных реплик.
+		  * 2. Не читать куски, которые ещё не были записаны на кворум реплик.
+		  * Для этого приходится синхронно сходить в ZooKeeper.
+		  */
+		Int64 max_block_number_to_read = 0;
+		if (settings.select_sequential_consistency)
+		{
+			auto zookeeper = getZooKeeper();
+			String last_part;
+			zookeeper->tryGet(zookeeper_path + "/quorum/last_part", last_part);
+
+			if (!last_part.empty() && !data.getPartIfExists(last_part))	/// TODO Отключение реплики при распределённых запросах.
+				throw Exception("Replica doesn't have part " + last_part + " which was successfully written to quorum of other replicas."
+					" Send query to another replica or disable 'select_sequential_consistency' setting.", ErrorCodes::REPLICA_IS_NOT_IN_QUORUM);
+
+			if (last_part.empty())	/// Если ещё ни один кусок не был записан с кворумом.
+			{
+				String quorum_str;
+				if (zookeeper->tryGet(zookeeper_path + "/quorum/status", quorum_str))
+				{
+					ReplicatedMergeTreeQuorumEntry quorum_entry;
+					quorum_entry.fromString(quorum_str);
+					ActiveDataPartSet::Part part_info;
+					ActiveDataPartSet::parsePartName(quorum_entry.part_name, part_info);
+					max_block_number_to_read = part_info.left - 1;
+				}
+			}
+			else
+			{
+				ActiveDataPartSet::Part part_info;
+				ActiveDataPartSet::parsePartName(last_part, part_info);
+				max_block_number_to_read = part_info.right;
+			}
+		}
+
+		auto res2 = reader.read(
+			real_column_names, query, context, settings, processed_stage, max_block_size, threads, &part_index, max_block_number_to_read);
 
 		for (auto & virtual_column : virt_column_names)
 		{

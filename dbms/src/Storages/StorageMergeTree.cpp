@@ -125,7 +125,7 @@ BlockInputStreams StorageMergeTree::read(
 		if (select.where_expression && !select.prewhere_expression)
 			MergeTreeWhereOptimizer{select, data, column_names, log};
 
-	return reader.read(column_names, query, context, settings, processed_stage, max_block_size, threads);
+	return reader.read(column_names, query, context, settings, processed_stage, max_block_size, threads, nullptr, 0);
 }
 
 BlockOutputStreamPtr StorageMergeTree::write(ASTPtr query, const Settings & settings)
