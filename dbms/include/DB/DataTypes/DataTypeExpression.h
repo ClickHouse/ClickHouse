@@ -5,7 +5,7 @@
 
 namespace DB
 {
-	
+
 /**
   * Лямбда-выражение.
   */
@@ -14,13 +14,13 @@ class DataTypeExpression final : public IDataTypeDummy
 private:
 	DataTypes argument_types;
 	DataTypePtr return_type;
-	
+
 public:
 	/// Некоторые типы могут быть еще не известны.
 	DataTypeExpression(DataTypes argument_types_ = DataTypes(), DataTypePtr return_type_ = nullptr)
 		: argument_types(argument_types_), return_type(return_type_) {}
-	
-	std::string getName() const
+
+	std::string getName() const override
 	{
 		std::string res = "Expression(";
 		if (argument_types.size() > 1)
@@ -39,21 +39,21 @@ public:
 		res += ")";
 		return res;
 	}
-	
-	DataTypePtr clone() const
+
+	DataTypePtr clone() const override
 	{
 		return new DataTypeExpression(argument_types, return_type);
 	}
-	
+
 	const DataTypes & getArgumentTypes() const
 	{
 		return argument_types;
 	}
-	
+
 	const DataTypePtr & getReturnType() const
 	{
 		return return_type;
 	}
 };
-	
+
 }
