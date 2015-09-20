@@ -100,7 +100,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 			if (!date_condition.mayBeTrueInRange(&left, &right))
 				continue;
 
-			if (part->right > max_block_number_to_read)
+			if (max_block_number_to_read && part->right > max_block_number_to_read)
 				continue;
 
 			parts.push_back(part);
