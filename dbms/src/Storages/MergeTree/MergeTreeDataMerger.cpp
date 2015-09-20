@@ -447,6 +447,8 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 		  * - мердж AB закончился. Добавился кусок AB. Но это устаревший кусок. В логе будет сообщение Obsolete part added,
 		  *   затем попадаем сюда.
 		  * Ситуация - было заменено M > N кусков тоже нормальная.
+		  *
+		  * Хотя это должно предотвращаться проверкой в методе StorageReplicatedMergeTree::shouldExecuteLogEntry.
 		  */
 		LOG_WARNING(log, "Unexpected number of parts removed when adding " << new_data_part->name << ": " << replaced_parts.size()
 			<< " instead of " << parts.size());
