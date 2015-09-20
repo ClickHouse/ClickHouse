@@ -65,7 +65,6 @@ public:
 		/// Разбудить какой-нибудь поток.
 		void wake()
 		{
-			Poco::ScopedReadRWLock rlock(rwlock);
 			if (removed)
 				return;
 
@@ -87,7 +86,7 @@ public:
 		BackgroundProcessingPool & pool;
 		Task function;
 
-		/// При выполнении задачи, держится read lock. Переменная removed меняется под write lock-ом.
+		/// При выполнении задачи, держится read lock.
 		Poco::RWLock rwlock;
 		volatile bool removed = false;
 		volatile time_t next_time_to_execute = 0;	/// Приоритет задачи. Для совпадающего времени в секундах берётся первая по списку задача.
@@ -137,10 +136,11 @@ public:
 
 	void removeTask(const TaskHandle & task)
 	{
+		task->removed = true;
+
 		/// Дождёмся завершения всех выполнений этой задачи.
 		{
 			Poco::ScopedWriteRWLock wlock(task->rwlock);
-			task->removed = true;
 		}
 
 		{
@@ -225,7 +225,6 @@ private:
 					continue;
 				}
 
-				Poco::ScopedReadRWLock rlock(task->rwlock);
 				if (task->removed)
 					continue;
 
@@ -237,8 +236,12 @@ private:
 					wake_event.wait_for(lock, std::chrono::duration<double>(min_time - current_time));
 				}
 
-				Context context(*this, counters_diff);
+				Poco::ScopedReadRWLock rlock(task->rwlock);
 
+				if (task->removed)
+					continue;
+
+				Context context(*this, counters_diff);
 				bool done_work = task->function(context);
 
 				/// Если задача сделала полезную работу, то она сможет выполняться в следующий раз хоть сразу.
