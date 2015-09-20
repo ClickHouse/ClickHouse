@@ -912,14 +912,18 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 			}
 
 			size_t sum_parts_size_in_bytes = MergeTreeDataMerger::estimateDiskSpaceForMerge(parts);
-			DiskSpaceMonitor::ReservationPtr reserved_space = DiskSpaceMonitor::reserve(full_path, sum_parts_size_in_bytes); /// Может бросить исключение.
+
+			/// Может бросить исключение.
+			DiskSpaceMonitor::ReservationPtr reserved_space = DiskSpaceMonitor::reserve(full_path, sum_parts_size_in_bytes);
 
 			auto table_lock = lockStructure(false);
 
 			const auto & merge_entry = context.getMergeList().insert(database_name, table_name, entry.new_part_name);
 			MergeTreeData::Transaction transaction;
 			size_t aio_threshold = context.getSettings().min_bytes_to_use_direct_io;
-			MergeTreeData::DataPartPtr part = merger.mergeParts(parts, entry.new_part_name, *merge_entry, aio_threshold, &transaction, reserved_space);
+
+			MergeTreeData::DataPartPtr part = merger.mergeParts(
+				parts, entry.new_part_name, *merge_entry, aio_threshold, &transaction, reserved_space);
 
 			zkutil::Ops ops;
 			checkPartAndAddToZooKeeper(part, ops);
@@ -1179,6 +1183,7 @@ void StorageReplicatedMergeTree::queueUpdatingThread()
 		try
 		{
 			pullLogsToQueue(queue_updating_event);
+			last_queue_update = time(0);
 
 			queue_updating_event->wait();
 		}
@@ -2894,6 +2899,7 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
 		std::lock_guard<std::mutex> lock(queue_mutex);
 		res.future_parts = future_parts.size();
 		res.queue_size = queue.size();
+		res.last_queue_update = last_queue_update;
 
 		res.inserts_in_queue = 0;
 		res.merges_in_queue = 0;
