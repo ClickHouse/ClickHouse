@@ -363,6 +363,9 @@ private:
 	  */
 	void checkPartAndAddToZooKeeper(const MergeTreeData::DataPartPtr & part, zkutil::Ops & ops, String name_override = "");
 
+	/// Кладет в ops действия, удаляющие кусок из ZooKeeper.
+	void removePartFromZooKeeper(const String & part_name, zkutil::Ops & ops);
+
 	/// Убирает кусок из ZooKeeper и добавляет в очередь задание скачать его. Предполагается это делать с битыми кусками.
 	void removePartAndEnqueueFetch(const String & part_name);
 
@@ -428,6 +431,10 @@ private:
 	  * Если quorum != 0, то обновляется узел для отслеживания кворума.
 	  */
 	void fetchPart(const String & part_name, const String & replica_path, bool to_detached, size_t quorum);
+
+	/** При отслеживаемом кворуме - добавить реплику в кворум для куска.
+	  */
+	void updateQuorum(const String & part_name);
 
 	AbandonableLockInZooKeeper allocateBlockNumber(const String & month_name);
 

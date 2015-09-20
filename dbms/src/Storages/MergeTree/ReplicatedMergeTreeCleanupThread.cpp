@@ -71,9 +71,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldParts()
 			LOG_DEBUG(log, "Removing " << part->name);
 
 			zkutil::Ops ops;
-			ops.push_back(new zkutil::Op::Remove(storage.replica_path + "/parts/" + part->name + "/columns", -1));
-			ops.push_back(new zkutil::Op::Remove(storage.replica_path + "/parts/" + part->name + "/checksums", -1));
-			ops.push_back(new zkutil::Op::Remove(storage.replica_path + "/parts/" + part->name, -1));
+			storage.removePartFromZooKeeper(part->name, ops);
 			auto code = zookeeper->tryMulti(ops);
 			if (code != ZOK)
 				LOG_WARNING(log, "Couldn't remove " << part->name << " from ZooKeeper: " << zkutil::ZooKeeper::error2string(code));
