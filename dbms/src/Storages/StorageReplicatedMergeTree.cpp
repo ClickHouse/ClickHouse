@@ -2399,6 +2399,14 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 	const size_t max_block_size,
 	const unsigned threads)
 {
+	/** У таблицы может быть два вида данных:
+	  * - реплицируемые данные;
+	  * - старые, нереплицируемые данные - они лежат отдельно и их целостность никак не контролируется.
+	  * А ещё движок таблицы предоставляет возможность использовать "виртуальные столбцы".
+	  * Один из них - _replicated позволяет определить, из какой части прочитаны данные,
+	  *  или, при использовании в WHERE - выбрать данные только из одной части.
+	  */
+
 	Names virt_column_names;
 	Names real_column_names;
 	for (const auto & it : column_names)
@@ -2421,7 +2429,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 	column->getData()[1] = 1;
 	virtual_columns_block.insert(ColumnWithTypeAndName(column_ptr, new DataTypeUInt8, "_replicated"));
 
-	/// Если запрошен хотя бы один виртуальный столбец, пробуем индексировать
+	/// Если запрошен столбец _replicated, пробуем индексировать.
 	if (!virt_column_names.empty())
 		VirtualColumnUtils::filterBlockWithQuery(query, virtual_columns_block, context);
 
@@ -2430,6 +2438,12 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 	BlockInputStreams res;
 
 	size_t part_index = 0;
+
+	/** Настройки parallel_replica_offset и parallel_replicas_count позволяют читать с одной реплики одну часть данных, а с другой - другую.
+	  * Для реплицируемых, данные разбиваются таким же механизмом, как работает секция SAMPLE.
+	  * А для нереплицируемых данных, так как их целостность между репликами не контролируется,
+	  *  с первой (settings.parallel_replica_offset == 0) реплики выбираются все данные, а с остальных - никакие.
+	  */
 
 	if ((settings.parallel_replica_offset == 0) && unreplicated_reader && values.count(0))
 	{
