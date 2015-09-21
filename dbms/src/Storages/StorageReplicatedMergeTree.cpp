@@ -893,7 +893,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 		LOG_WARNING(log, "Part " << entry.new_part_name << " from own log doesn't exist.");
 
 	/// Возможно, этот кусок нам не нужен, так как при записи с кворумом, кворум пофейлился (см. ниже про /quorum/failed_parts).
-	if (entry.quorum && zookeeper->exists(zookeeper_path + "/quorum/failed_parts"))
+	if (entry.quorum && zookeeper->exists(zookeeper_path + "/quorum/failed_parts/" + entry.new_part_name))
 	{
 		LOG_DEBUG(log, "Skipping action for part " << entry.new_part_name << " because quorum for that part was failed.");
 		return true;	/// NOTE Удаление из virtual_parts не делается, но оно нужно только для мерджей.
