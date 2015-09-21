@@ -65,7 +65,17 @@ struct ReplicatedMergeTreeLogEntry
 	bool attach_unreplicated;
 
 	FuturePartTaggerPtr future_part_tagger;
-	bool currently_executing = false; /// Доступ под queue_mutex.
+
+	/// Доступ под queue_mutex.
+	bool currently_executing = false;	/// Выполняется ли действие сейчас.
+	/// Эти несколько полей имеют лишь информационный характер (для просмотра пользователем с помощью системных таблиц).
+	/// Доступ под queue_mutex.
+	size_t num_tries = 0;				/// Количество попыток выполнить действие (с момента старта сервера; включая выполняющееся).
+	ExceptionPtr exception;				/// Последний эксепшен, в случае безуспешной попытки выполнить действие.
+	time_t last_attempt_time = 0;		/// Время начала последней попытки выполнить действие.
+	String last_action;					/// Что делается сейчас или делалось в последний раз.
+	String postpone_reason;				/// Причина, по которой действие было отложено, если оно отложено.
+
 	std::condition_variable execution_complete; /// Пробуждается когда currently_executing становится false.
 
 	/// Время создания или время копирования из общего лога в очередь конкретной реплики.
