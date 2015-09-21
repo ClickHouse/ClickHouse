@@ -1044,6 +1044,8 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 					  * - установим nonincrement_block_numbers, чтобы разрешить мерджи через номер потерянного куска;
 					  * - добавим кусок в список quorum/failed_parts.
 					  *
+					  * TODO Удаление из blocks.
+					  *
 					  * Если что-то изменится, то ничего не сделаем - попадём сюда снова в следующий раз.
 					  */
 
@@ -1374,6 +1376,8 @@ bool StorageReplicatedMergeTree::queueTask(BackgroundProcessingPool::Context & p
 					entry->tagPartAsFuture(*this);
 					queue.splice(queue.end(), queue, it);
 					entry->currently_executing = true;
+					++entry->num_tries;
+					entry->last_attempt_time = time(0);
 					break;
 				}
 			}
@@ -1387,24 +1391,33 @@ bool StorageReplicatedMergeTree::queueTask(BackgroundProcessingPool::Context & p
 	if (!entry)
 		return false;
 
-	bool exception = true;
+	bool was_exception = true;
 	bool success = false;
+	ExceptionPtr saved_exception;
 
 	try
 	{
-		if (executeLogEntry(*entry, pool_context))
+		try
 		{
-			auto zookeeper = getZooKeeper();
-			auto code = zookeeper->tryRemove(replica_path + "/queue/" + entry->znode_name);
+			if (executeLogEntry(*entry, pool_context))
+			{
+				auto zookeeper = getZooKeeper();
+				auto code = zookeeper->tryRemove(replica_path + "/queue/" + entry->znode_name);
 
-			if (code != ZOK)
-				LOG_ERROR(log, "Couldn't remove " << replica_path + "/queue/" + entry->znode_name << ": "
-					<< zkutil::ZooKeeper::error2string(code) + ". This shouldn't happen often.");
+				if (code != ZOK)
+					LOG_ERROR(log, "Couldn't remove " << replica_path + "/queue/" + entry->znode_name << ": "
+						<< zkutil::ZooKeeper::error2string(code) + ". This shouldn't happen often.");
 
-			success = true;
+				success = true;
+			}
+		}
+		catch (...)
+		{
+			saved_exception = cloneCurrentException();
+			throw;
 		}
 
-		exception = false;
+		was_exception = false;
 	}
 	catch (const Exception & e)
 	{
@@ -1431,6 +1444,7 @@ bool StorageReplicatedMergeTree::queueTask(BackgroundProcessingPool::Context & p
 	std::lock_guard<std::mutex> lock(queue_mutex);
 
 	entry->currently_executing = false;
+	entry->exception = saved_exception;
 	entry->execution_complete.notify_all();
 
 	if (success)
@@ -1449,7 +1463,7 @@ bool StorageReplicatedMergeTree::queueTask(BackgroundProcessingPool::Context & p
 	}
 
 	/// Если не было исключения, не нужно спать.
-	return !exception;
+	return !was_exception;
 }
 
 
