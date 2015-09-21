@@ -2407,12 +2407,12 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 		else
 			real_column_names.push_back(it);
 
-	ASTSelectQuery & select = *typeid_cast<ASTSelectQuery*>(&*query);
+	auto & select = typeid_cast<const ASTSelectQuery &>(*query);
 
 	/// Try transferring some condition from WHERE to PREWHERE if enabled and viable
 	if (settings.optimize_move_to_prewhere)
 		if (select.where_expression && !select.prewhere_expression)
-			MergeTreeWhereOptimizer{select, data, real_column_names, log};
+			MergeTreeWhereOptimizer{query, context, data, real_column_names, log};
 
 	Block virtual_columns_block;
 	ColumnUInt8 * column = new ColumnUInt8(2);

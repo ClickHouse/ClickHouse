@@ -9,6 +9,60 @@ namespace DB
 {
 
 
+const PKCondition::AtomMap PKCondition::atom_map{
+	{
+		"notEquals",
+		[] (RPNElement & out, const Field & value, ASTPtr &) {
+			out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
+			out.range = Range(value);
+		}
+	},
+	{
+		"equals",
+		[] (RPNElement & out, const Field & value, ASTPtr &) {
+			out.range = Range(value);
+		}
+	},
+	{
+		"less",
+		[] (RPNElement & out, const Field & value, ASTPtr &) {
+			out.range = Range::createRightBounded(value, false);
+		}
+},
+{
+		"greater",
+		[] (RPNElement & out, const Field & value, ASTPtr &) {
+			out.range = Range::createLeftBounded(value, false);
+		}
+	},
+	{
+		"lessOrEquals",
+		[] (RPNElement & out, const Field & value, ASTPtr &) {
+			out.range = Range::createRightBounded(value, true);
+		}
+	},
+	{
+		"greaterOrEquals",
+		[] (RPNElement & out, const Field & value, ASTPtr &) {
+			out.range = Range::createLeftBounded(value, true);
+		}
+	},
+	{
+		"in",
+		[] (RPNElement & out, const Field & value, ASTPtr & node) {
+			out.function = RPNElement::FUNCTION_IN_SET;
+			out.in_function = node;
+		}
+	},
+	{
+		"notIn",
+		[] (RPNElement & out, const Field & value, ASTPtr & node) {
+			out.function = RPNElement::FUNCTION_NOT_IN_SET;
+			out.in_function = node;
+		}
+	}
+};
+
 /// Преобразование строки с датой или датой-с-временем в UInt64, содержащим числовое значение даты или даты-с-временем.
 UInt64 stringToDateOrDateTime(const String & s)
 {
@@ -138,6 +192,22 @@ inline bool Range::equals(const Field & lhs, const Field & rhs) { return apply_v
 inline bool Range::less(const Field & lhs, const Field & rhs) { return apply_visitor(FieldVisitorAccurateLess(), lhs, rhs); }
 
 
+Block PKCondition::getBlockWithConstants(
+	const ASTPtr & query, const Context & context, const NamesAndTypesList & all_columns)
+{
+	Block result{
+		{ new ColumnConstUInt8{1, 0}, new DataTypeUInt8, "_dummy" }
+	};
+
+	const auto expr_for_constant_folding = ExpressionAnalyzer{query, context, nullptr, all_columns}
+		.getConstActions();
+
+	expr_for_constant_folding->execute(result);
+
+	return result;
+}
+
+
 PKCondition::PKCondition(ASTPtr query, const Context & context_, const NamesAndTypesList & all_columns, const SortDescription & sort_descr_)
 	: sort_descr(sort_descr_)
 {
@@ -151,17 +221,7 @@ PKCondition::PKCondition(ASTPtr query, const Context & context_, const NamesAndT
 	/** Вычисление выражений, зависящих только от констант.
 	 * Чтобы индекс мог использоваться, если написано, например WHERE Date = toDate(now()).
 	 */
-	ExpressionActionsPtr expr_for_constant_folding = ExpressionAnalyzer(query, context_, nullptr, all_columns).getConstActions();
-	Block block_with_constants;
-
-	/// В блоке должен быть хотя бы один столбец, чтобы у него было известно число строк.
-	ColumnWithTypeAndName dummy_column;
-	dummy_column.name = "_dummy";
-	dummy_column.type = new DataTypeUInt8;
-	dummy_column.column = new ColumnConstUInt8(1, 0);
-	block_with_constants.insert(dummy_column);
-
-	expr_for_constant_folding->execute(block_with_constants);
+	Block block_with_constants = getBlockWithConstants(query, context_, all_columns);
 
 	/// Преобразуем секцию WHERE в обратную польскую строку.
 	ASTSelectQuery & select = typeid_cast<ASTSelectQuery &>(*query);
@@ -300,28 +360,11 @@ bool PKCondition::atomFromAST(ASTPtr & node, Block & block_with_constants, RPNEl
 		out.function = RPNElement::FUNCTION_IN_RANGE;
 		out.key_column = column;
 
-		if (func_name == "notEquals")
-		{
-			out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
-			out.range = Range(value);
-		}
-		else if (func_name == "equals")
-			out.range = Range(value);
-		else if (func_name == "less")
-			out.range = Range::createRightBounded(value, false);
-		else if (func_name == "greater")
-			out.range = Range::createLeftBounded(value, false);
-		else if (func_name == "lessOrEquals")
-			out.range = Range::createRightBounded(value, true);
-		else if (func_name == "greaterOrEquals")
-			out.range = Range::createLeftBounded(value, true);
-		else if (func_name == "in" || func_name == "notIn")
-		{
-			out.function = func_name == "in" ? RPNElement::FUNCTION_IN_SET : RPNElement::FUNCTION_NOT_IN_SET;
-			out.in_function = node;
-		}
-		else
+		const auto atom_it = atom_map.find(func_name);
+		if (atom_it == std::end(atom_map))
 			return false;
+
+		atom_it->second(out, value, node);
 
 		return true;
 	}
@@ -331,7 +374,7 @@ bool PKCondition::atomFromAST(ASTPtr & node, Block & block_with_constants, RPNEl
 
 bool PKCondition::operatorFromAST(ASTFunction * func, RPNElement & out)
 {
-	/// Фнукции AND, OR, NOT.
+	/// Функции AND, OR, NOT.
 	ASTs & args = typeid_cast<ASTExpressionList &>(*func->arguments).children;
 
 	if (func->name == "not")
