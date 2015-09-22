@@ -341,9 +341,10 @@ struct PositionCaseInsensitiveUTF8Impl
 	static void constant(const std::string & data, const std::string & needle, UInt64 & res)
 	{
 		throw Exception{
-				"Not yet implemented",
-				ErrorCodes::NOT_IMPLEMENTED
+			"Not yet implemented",
+			ErrorCodes::NOT_IMPLEMENTED
 		};
+	}
 };
 
 
