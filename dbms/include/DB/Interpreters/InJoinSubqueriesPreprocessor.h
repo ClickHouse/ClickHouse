@@ -269,25 +269,17 @@ private:
 		if (sub_select_query.table.isNull())
 			return {};
 
-		if (typeid_cast<const ASTSelectQuery *>(sub_select_query.table.get()) != nullptr)
+		const auto identifier = typeid_cast<const ASTIdentifier *>(sub_select_query.table.get());
+		if (identifier == nullptr)
 			return {};
 
-		if (typeid_cast<const ASTFunction *>(sub_select_query.table.get()) != nullptr)
-			return {};
+		const std::string & table_name = identifier->name;
 
-		std::string table_name = typeid_cast<const ASTIdentifier &>(*sub_select_query.table).name;
-
-		/// Если база данных не указана - используем текущую базу данных.
 		std::string database_name;
 		if (sub_select_query.database)
 			database_name = typeid_cast<const ASTIdentifier &>(*sub_select_query.database).name;
 		else
-		{
-			if (context.tryGetTable("", table_name))
-				database_name = "";
-			else
-				database_name = context.getCurrentDatabase();
-		}
+			database_name = "";
 
 		auto subquery_table_storage = context.tryGetTable(database_name, table_name);
 		if (!subquery_table_storage)
