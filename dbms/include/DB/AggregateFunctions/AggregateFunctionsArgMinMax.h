@@ -14,6 +14,9 @@ namespace DB
 template <typename ResultData, typename ValueData>
 struct AggregateFunctionsArgMinMaxData
 {
+	using ResultData_t = ResultData;
+	using ValueData_t = ValueData;
+
 	ResultData result;	// аргумент, при котором достигается минимальное/максимальное значение value.
 	ValueData value;	// значение, для которого считается минимум/максимум.
 };
@@ -27,7 +30,7 @@ private:
 	DataTypePtr type_val;
 
 public:
-	String getName() const { return (0 == strcmp(decltype(Data::value)::name(), "min")) ? "argMin" : "argMax"; }
+	String getName() const { return (0 == strcmp(Data::ValueData_t::name(), "min")) ? "argMin" : "argMax"; }
 
 	DataTypePtr getReturnType() const
 	{
