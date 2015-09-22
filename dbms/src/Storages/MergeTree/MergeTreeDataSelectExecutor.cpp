@@ -44,7 +44,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	QueryProcessingStage::Enum & processed_stage,
 	const size_t max_block_size,
 	const unsigned threads,
-	size_t * part_index)
+	size_t * part_index,
+	Int64 max_block_number_to_read)
 {
 	size_t part_index_var = 0;
 	if (!part_index)
@@ -82,7 +83,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	if (settings.force_index_by_date && date_condition.alwaysUnknown())
 		throw Exception("Index by date is not used and setting 'force_index_by_date' is set.", ErrorCodes::INDEX_NOT_USED);
 
-	/// Выберем куски, в которых могут быть данные, удовлетворяющие date_condition, и которые подходят под условие на _part.
+	/// Выберем куски, в которых могут быть данные, удовлетворяющие date_condition, и которые подходят под условие на _part,
+	///  а также max_block_number_to_read.
 	{
 		auto prev_parts = parts;
 		parts.clear();
@@ -96,6 +98,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 			Field right = static_cast<UInt64>(part->right_date);
 
 			if (!date_condition.mayBeTrueInRange(&left, &right))
+				continue;
+
+			if (max_block_number_to_read && part->right > max_block_number_to_read)
 				continue;
 
 			parts.push_back(part);

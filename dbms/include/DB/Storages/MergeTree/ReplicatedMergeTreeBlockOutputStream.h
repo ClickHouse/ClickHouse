@@ -154,6 +154,8 @@ public:
 				std::call_once(once_flag, [&]
 				{
 					zookeeper->createIfNotExists(storage.zookeeper_path + "/quorum", "");
+					zookeeper->createIfNotExists(storage.zookeeper_path + "/quorum/last_part", "");
+					zookeeper->createIfNotExists(storage.zookeeper_path + "/quorum/failed_parts", "");
 				});
 
 				ReplicatedMergeTreeQuorumEntry quorum_entry;

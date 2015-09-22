@@ -597,6 +597,73 @@ struct SettingCompressionMethod
 	}
 };
 
+/// Настройка для выполнения распределённых подзапросов внутри секций IN или JOIN.
+enum class DistributedProductMode
+{
+	DENY = 0,	/// Запретить
+	LOCAL,		/// Конвертировать в локальный запрос
+	GLOBAL,		/// Конвертировать в глобальный запрос
+	ALLOW		/// Разрешить
+};
+
+struct SettingDistributedProductMode
+{
+	DistributedProductMode value;
+	bool changed = false;
+
+	SettingDistributedProductMode(DistributedProductMode x) : value(x) {}
+
+	operator DistributedProductMode() const { return value; }
+	SettingDistributedProductMode & operator= (DistributedProductMode x) { set(x); return *this; }
+
+	static DistributedProductMode getDistributedProductMode(const String & s)
+	{
+		if (s == "deny") 	return DistributedProductMode::DENY;
+		if (s == "local") 	return DistributedProductMode::LOCAL;
+		if (s == "global") 	return DistributedProductMode::GLOBAL;
+		if (s == "allow")	return DistributedProductMode::ALLOW;
+
+		throw Exception("Unknown distributed product mode: '" + s + "', must be one of 'deny', 'local', 'global', 'allow'",
+			ErrorCodes::UNKNOWN_DISTRIBUTED_PRODUCT_MODE);
+	}
+
+	String toString() const
+	{
+		const char * strings[] = {"deny", "local", "global", "allow"};
+		if (value < DistributedProductMode::DENY || value > DistributedProductMode::ALLOW)
+			throw Exception("Unknown distributed product mode", ErrorCodes::UNKNOWN_OVERFLOW_MODE);
+		return strings[static_cast<size_t>(value)];
+	}
+
+	void set(DistributedProductMode x)
+	{
+		value = x;
+		changed = true;
+	}
+
+	void set(const Field & x)
+	{
+		set(safeGet<const String &>(x));
+	}
+
+	void set(const String & x)
+	{
+		set(getDistributedProductMode(x));
+	}
+
+	void set(ReadBuffer & buf)
+	{
+		String x;
+		readBinary(x, buf);
+		set(x);
+	}
+
+	void write(WriteBuffer & buf) const
+	{
+		writeBinary(toString(), buf);
+	}
+};
+
 /// Способ выполнения глобальных распределённых подзапросов.
 enum class GlobalSubqueriesMethod
 {

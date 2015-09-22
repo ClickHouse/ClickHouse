@@ -675,7 +675,7 @@ ZooKeeper::TryGetFuture ZooKeeper::asyncTryGet(const std::string & path)
 			if (rc != ZOK && rc != ZNONODE)
 				throw KeeperException(rc, path);
 
-			return ValueAndStatAndExists{ {value, size_t(value_len)}, *stat, rc != ZNONODE };
+			return ValueAndStatAndExists{ {value, size_t(value_len)}, stat ? *stat : Stat(), rc != ZNONODE };
 		}};
 
 	int32_t code = zoo_aget(
@@ -704,7 +704,7 @@ ZooKeeper::ExistsFuture ZooKeeper::asyncExists(const std::string & path)
 			if (rc != ZOK && rc != ZNONODE)
 				throw KeeperException(rc, path);
 
-			return StatAndExists{ *stat, rc != ZNONODE };
+			return StatAndExists{ stat ? *stat : Stat(), rc != ZNONODE };
 		}};
 
 	int32_t code = zoo_aexists(

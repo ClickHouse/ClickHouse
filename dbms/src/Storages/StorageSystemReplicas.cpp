@@ -33,8 +33,11 @@ StorageSystemReplicas::StorageSystemReplicas(const std::string & name_)
 		{ "queue_oldest_time",		new DataTypeDateTime},
 		{ "inserts_oldest_time",	new DataTypeDateTime},
 		{ "merges_oldest_time",		new DataTypeDateTime},
+		{ "oldest_part_to_get",		new DataTypeString	},
+		{ "oldest_part_to_merge_to",new DataTypeString	},
 		{ "log_max_index",			new DataTypeUInt64	},
 		{ "log_pointer", 			new DataTypeUInt64	},
+		{ "last_queue_update",		new DataTypeDateTime},
 		{ "total_replicas",			new DataTypeUInt8	},
 		{ "active_replicas", 		new DataTypeUInt8	},
 	}
@@ -127,8 +130,11 @@ BlockInputStreams StorageSystemReplicas::read(
 	ColumnWithTypeAndName col_queue_oldest_time	{ new ColumnUInt32,	new DataTypeDateTime, "queue_oldest_time"};
 	ColumnWithTypeAndName col_inserts_oldest_time{ new ColumnUInt32,new DataTypeDateTime, "inserts_oldest_time"};
 	ColumnWithTypeAndName col_merges_oldest_time{ new ColumnUInt32,	new DataTypeDateTime, "merges_oldest_time"};
+	ColumnWithTypeAndName col_oldest_part_to_get{ new ColumnString,	new DataTypeString, "oldest_part_to_get"};
+	ColumnWithTypeAndName col_oldest_part_to_merge_to{ new ColumnString, new DataTypeString, "oldest_part_to_merge_to"};
 	ColumnWithTypeAndName col_log_max_index		{ new ColumnUInt64,	new DataTypeUInt64,	"log_max_index"};
 	ColumnWithTypeAndName col_log_pointer		{ new ColumnUInt64,	new DataTypeUInt64,	"log_pointer"};
+	ColumnWithTypeAndName col_last_queue_update	{ new ColumnUInt32,	new DataTypeDateTime, "last_queue_update"};
 	ColumnWithTypeAndName col_total_replicas	{ new ColumnUInt8,	new DataTypeUInt8,	"total_replicas"};
 	ColumnWithTypeAndName col_active_replicas	{ new ColumnUInt8,	new DataTypeUInt8,	"active_replicas"};
 
@@ -155,8 +161,11 @@ BlockInputStreams StorageSystemReplicas::read(
 		col_queue_oldest_time	.column->insert(UInt64(status.queue_oldest_time));
 		col_inserts_oldest_time	.column->insert(UInt64(status.inserts_oldest_time));
 		col_merges_oldest_time	.column->insert(UInt64(status.merges_oldest_time));
+		col_oldest_part_to_get	.column->insert(status.oldest_part_to_get);
+		col_oldest_part_to_merge_to.column->insert(status.oldest_part_to_merge_to);
 		col_log_max_index		.column->insert(status.log_max_index);
 		col_log_pointer			.column->insert(status.log_pointer);
+		col_last_queue_update	.column->insert(UInt64(status.last_queue_update));
 		col_total_replicas		.column->insert(UInt64(status.total_replicas));
 		col_active_replicas		.column->insert(UInt64(status.active_replicas));
 	}
@@ -180,8 +189,11 @@ BlockInputStreams StorageSystemReplicas::read(
 		col_queue_oldest_time,
 		col_inserts_oldest_time,
 		col_merges_oldest_time,
+		col_oldest_part_to_get,
+		col_oldest_part_to_merge_to,
 		col_log_max_index,
 		col_log_pointer,
+		col_last_queue_update,
 		col_total_replicas,
 		col_active_replicas,
 	};

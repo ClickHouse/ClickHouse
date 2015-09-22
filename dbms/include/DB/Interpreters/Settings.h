@@ -152,6 +152,9 @@ struct Settings
 	/** Логгировать запросы и писать лог в системную таблицу. */ \
 	M(SettingBool, log_queries, 0) \
 	\
+	/** Как выполняются распределённые подзапросы внутри секций IN или JOIN? */ \
+	M(SettingDistributedProductMode, distributed_product_mode, DistributedProductMode::DENY) \
+	\
 	/** Схема выполнения GLOBAL-подзапросов. */ \
 	M(SettingGlobalSubqueriesMethod, global_subqueries_method, GlobalSubqueriesMethod::PUSH) \
 	\
@@ -160,6 +163,9 @@ struct Settings
 	\
 	/** Для запросов INSERT в реплицируемую таблицу, ждать записи на указанное число реплик и лианеризовать добавление данных. 0 - отключено. */ \
 	M(SettingUInt64, insert_quorum, 0) \
+	/** Для запросов SELECT из реплицируемой таблицы, кидать исключение, если на реплике нет куска, записанного с кворумом; \
+	  * не читать куски, которые ещё не были записаны с кворумом. */ \
+	M(SettingUInt64, select_sequential_consistency, 0) \
 
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;

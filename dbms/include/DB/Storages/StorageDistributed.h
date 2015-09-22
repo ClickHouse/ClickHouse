@@ -78,7 +78,10 @@ public:
 
 	const ExpressionActionsPtr & getShardingKeyExpr() const { return sharding_key_expr; }
 	const String & getShardingKeyColumnName() const { return sharding_key_column_name; }
+	size_t getShardCount() const;
 	const String & getPath() const { return path; }
+	std::string getRemoteDatabaseName() const { return remote_database; }
+	std::string getRemoteTableName() const { return remote_table; }
 
 
 private:

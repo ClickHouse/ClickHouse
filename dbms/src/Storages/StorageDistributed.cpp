@@ -265,4 +265,9 @@ void StorageDistributed::requireDirectoryMonitor(const std::string & name)
 		createDirectoryMonitor(name);
 }
 
+size_t StorageDistributed::getShardCount() const
+{
+	return cluster.pools.size();
+}
+
 }

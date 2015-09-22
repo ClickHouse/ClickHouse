@@ -22,6 +22,7 @@
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
+#include <DB/Interpreters/InJoinSubqueriesPreprocessor.h>
 #include <DB/Interpreters/LogicalExpressionsOptimizer.h>
 #include <DB/Interpreters/ExternalDictionaries.h>
 
@@ -89,25 +90,31 @@ const std::unordered_set<String> possibly_injective_function_names
 	"dictGetDateTime"
 };
 
-static bool functionIsInOperator(const String & name)
+namespace
+{
+
+bool functionIsInOperator(const String & name)
 {
 	return name == "in" || name == "notIn";
 }
 
-static bool functionIsInOrGlobalInOperator(const String & name)
+bool functionIsInOrGlobalInOperator(const String & name)
 {
 	return name == "in" || name == "notIn" || name == "globalIn" || name == "globalNotIn";
 }
 
-
+}
 
 void ExpressionAnalyzer::init()
 {
 	select_query = typeid_cast<ASTSelectQuery *>(&*ast);
 
+	/// В зависимости от профиля пользователя проверить наличие прав на выполнение
+	/// распределённых подзапросов внутри секций IN или JOIN и обработать эти подзапросы.
+	InJoinSubqueriesPreprocessor<>(select_query, context, storage).perform();
+
 	/// Оптимизирует логические выражения.
-	LogicalExpressionsOptimizer logical_expressions_optimizer(select_query, settings);
-	logical_expressions_optimizer.optimizeDisjunctiveEqualityChains();
+	LogicalExpressionsOptimizer(select_query, settings).optimizeDisjunctiveEqualityChains();
 
 	/// Добавляет в множество известных алиасов те, которые объявлены в структуре таблицы (ALIAS-столбцы).
 	addStorageAliases();

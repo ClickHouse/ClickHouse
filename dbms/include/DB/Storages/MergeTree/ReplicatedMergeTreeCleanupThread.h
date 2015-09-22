@@ -39,6 +39,8 @@ private:
 
 	/// Удалить из ZooKeeper старые хеши блоков. Это делает ведущая реплика.
 	void clearOldBlocks();
+
+	/// TODO Удаление старых quorum/failed_parts
 };
 
 
