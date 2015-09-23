@@ -41,6 +41,7 @@ private:
 	void clearOldBlocks();
 
 	/// TODO Удаление старых quorum/failed_parts
+	/// TODO Удаление старых nonincrement_block_numbers
 };
 
 

@@ -2060,7 +2060,25 @@ void StorageReplicatedMergeTree::searchForMissingPart(const String & part_name)
 		* Специально из-за этого приходится отдельно иметь nonincrement_block_numbers.
 		*
 		* Кстати, если мы здесь сдохнем, то слияния не будут делаться сквозь эти отсутствующие куски.
+		*
+		* А ещё, не будем добавлять, если:
+		* - потребовалось бы создать слишком много (больше 1000) узлов;
+		* - кусок является первым в партиции или был при-ATTACH-ен.
+		* NOTE Возможно, добавить также условие, если запись в очереди очень старая.
 		*/
+
+	if (part_length_in_blocks > 1000)
+	{
+		LOG_ERROR(log, "Won't add nonincrement_block_numbers because part spans too much blocks (" << part_length_in_blocks << ")");
+		return;
+	}
+
+	if (part_info.left <= RESERVED_BLOCK_NUMBERS)
+	{
+		LOG_ERROR(log, "Won't add nonincrement_block_numbers because part is one of first in partition");
+		return;
+	}
+
 	const auto partition_str = part_name.substr(0, 6);
 	for (auto i = part_info.left; i <= part_info.right; ++i)
 	{
