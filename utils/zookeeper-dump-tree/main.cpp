@@ -19,6 +19,7 @@ CallbackStates states;
 
 zkutil::ZooKeeper * zookeeper;
 
+std::mutex mutex;
 Poco::Event completed;
 
 
@@ -30,6 +31,8 @@ void callback(
 	const Stat * stat,
 	const void * data)
 {
+	std::lock_guard<std::mutex> lock(mutex);
+
 	const CallbackState * state = reinterpret_cast<const CallbackState *>(data);
 
 	if (rc != ZOK && rc != ZNONODE)
