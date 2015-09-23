@@ -273,6 +273,10 @@ public:
 	/// Размер прибавляемого ZooKeeper суффикса при создании Sequential ноды
 	/// На самом деле размер меньше, но для удобства округлим в верхнюю сторону
 	static const size_t SEQUENTIAL_SUFFIX_SIZE = 64;
+
+
+	zhandle_t * getHandle() { return impl; }
+
 private:
 	friend struct WatchWithEvent;
 	friend class EphemeralNodeHolder;
