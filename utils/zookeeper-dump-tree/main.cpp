@@ -35,7 +35,6 @@ void callback(
 	if (rc != ZOK && rc != ZNONODE)
 	{
 		std::cerr << zerror(rc) << ", path: " << state->path << "\n";
-		completed.set();
 	}
 
 	if (rc == ZOK && strings)
