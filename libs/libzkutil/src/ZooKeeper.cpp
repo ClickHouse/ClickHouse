@@ -760,4 +760,32 @@ ZooKeeper::GetChildrenFuture ZooKeeper::asyncGetChildren(const std::string & pat
 	return future;
 }
 
+ZooKeeper::RemoveFuture ZooKeeper::asyncRemove(const std::string & path)
+{
+	RemoveFuture future {
+		[path] (int rc)
+		{
+			if (rc != ZOK)
+				throw KeeperException(rc, path);
+		}};
+
+	int32_t code = zoo_adelete(
+		impl, path.c_str(), -1,
+		[] (int rc, const void * data)
+		{
+			RemoveFuture::TaskPtr owned_task =
+				std::move(const_cast<RemoveFuture::TaskPtr &>(*static_cast<const RemoveFuture::TaskPtr *>(data)));
+			(*owned_task)(rc);
+		},
+		future.task.get());
+
+	ProfileEvents::increment(ProfileEvents::ZooKeeperRemove);
+	ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
+
+	if (code != ZOK)
+		throw KeeperException(code, path);
+
+	return future;
+}
+
 }
