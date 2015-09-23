@@ -84,7 +84,7 @@ try
 	zookeeper = &zookeeper_;
 
 	states.emplace_back();
-	states.back().path = "/";
+	states.back().path = options.at("path").as<std::string>();
 	states.back().it = --states.end();
 
 	process(states.back());
