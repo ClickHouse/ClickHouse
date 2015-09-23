@@ -33,7 +33,10 @@ void callback(
 	const CallbackState * state = reinterpret_cast<const CallbackState *>(data);
 
 	if (rc != ZOK && rc != ZNONODE)
-		throw zkutil::KeeperException(rc, state->path);
+	{
+		std::cerr << zerror(rc) << ", path: " << state->path << "\n";
+		completed.set();
+	}
 
 	for (int32_t i = 0; i < strings->count; ++i)
 	{
