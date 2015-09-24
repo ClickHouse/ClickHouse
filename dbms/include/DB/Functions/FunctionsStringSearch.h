@@ -539,7 +539,13 @@ struct PositionCaseInsensitiveUTF8Impl
 
 			/// Проверяем, что вхождение не переходит через границы строк.
 			if (pos + needle.size() < begin + offsets[i])
-				res[i] = (i != 0) ? pos - begin - offsets[i - 1] + 1 : (pos - begin + 1);
+			{
+				/// А теперь надо найти, сколько кодовых точек находится перед pos.
+				res[i] = 1;
+				for (const UInt8 * c = begin + (i != 0 ? offsets[i - 1] : 0); c < pos; ++c)
+					if (*c <= 0x7F || *c >= 0xC0)
+						++res[i];
+			}
 			else
 				res[i] = 0;
 
