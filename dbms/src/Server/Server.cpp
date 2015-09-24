@@ -428,7 +428,6 @@ private:
 
 int Server::main(const std::vector<std::string> & args)
 {
-	setThreadName("Server");
 	Logger * log = &logger();
 
 	std::string path = config().getString("path");
