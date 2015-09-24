@@ -41,6 +41,7 @@ struct ReplicatedMergeTreeLogEntryData
 {
 	enum Type
 	{
+		EMPTY,		 /// Не используется.
 		GET_PART,    /// Получить кусок с другой реплики.
 		MERGE_PARTS, /// Слить куски.
 		DROP_RANGE,  /// Удалить куски в указанном месяце в указанном диапазоне номеров.
@@ -62,7 +63,7 @@ struct ReplicatedMergeTreeLogEntryData
 
 	String znode_name;
 
-	Type type;
+	Type type = EMPTY;
 	String source_replica; /// Пустая строка значит, что эта запись была добавлена сразу в очередь, а не скопирована из лога.
 
 	/// Имя куска, получающегося в результате.
@@ -77,7 +78,7 @@ struct ReplicatedMergeTreeLogEntryData
 	/// Для ATTACH_PART имя куска в директории detached или unreplicated.
 	String source_part_name;
 	/// Нужно переносить из директории unreplicated, а не detached.
-	bool attach_unreplicated;
+	bool attach_unreplicated = false;
 
 	/// Доступ под queue_mutex.
 	bool currently_executing = false;	/// Выполняется ли действие сейчас.

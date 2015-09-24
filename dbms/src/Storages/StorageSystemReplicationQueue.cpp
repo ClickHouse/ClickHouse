@@ -133,7 +133,8 @@ BlockInputStreams StorageSystemReplicationQueue::read(
 		{
 			const auto & entry = queue[j];
 
-			Array parts_to_merge(entry.parts_to_merge.size());
+			Array parts_to_merge;
+			parts_to_merge.reserve(entry.parts_to_merge.size());
 			for (const auto & name : entry.parts_to_merge)
 				parts_to_merge.push_back(name);
 

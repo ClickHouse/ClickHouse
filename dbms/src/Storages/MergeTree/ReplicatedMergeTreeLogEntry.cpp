@@ -78,6 +78,9 @@ void ReplicatedMergeTreeLogEntry::writeText(WriteBuffer & out) const
 				out << "detached\n";
 			out << source_part_name << "\ninto\n" << new_part_name;
 			break;
+
+		default:
+			throw Exception("Unknown log entry type: " + DB::toString(type), ErrorCodes::LOGICAL_ERROR);
 	}
 
 	out << '\n';
