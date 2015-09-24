@@ -826,6 +826,11 @@ std::pair<String, UInt16> Context::getInterserverIOAddress() const
 	return { shared->interserver_io_host, shared->interserver_io_port };
 }
 
+UInt16 Context::getTCPPort() const
+{
+	return Poco::Util::Application::instance().config().getInt("tcp_port");
+}
+
 
 void Context::initClusters()
 {

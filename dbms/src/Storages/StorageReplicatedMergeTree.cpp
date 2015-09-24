@@ -10,6 +10,7 @@
 #include <DB/Parsers/formatAST.h>
 #include <DB/IO/WriteBufferFromOStream.h>
 #include <DB/IO/ReadBufferFromString.h>
+#include <DB/IO/Operators.h>
 #include <DB/Interpreters/InterpreterAlterQuery.h>
 #include <DB/Common/VirtualColumnUtils.h>
 #include <DB/Parsers/ASTInsertQuery.h>
@@ -2380,12 +2381,8 @@ void StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 
 	String host_port_str = zookeeper->get(replica_path + "/host");
 	ReadBufferFromString buf(host_port_str);
-	assertString("host: ", buf);
-	readString(host, buf);
-	assertString("\nport: ", buf);
-	readText(port, buf);
-	assertString("\n", buf);
-	assertEOF(buf);
+	buf >> "host: " >> host >> "\n"
+		>> "\nport: " >> port >> "\n";
 
 	MergeTreeData::MutableDataPartPtr part = fetcher.fetchPart(part_name, replica_path, host, port, to_detached);
 

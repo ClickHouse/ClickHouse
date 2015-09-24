@@ -226,7 +226,8 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
 		WriteBufferFromString address_buf(address);
 		address_buf
 			<< "host: " << host_port.first << '\n'
-			<< "port: " << host_port.second << '\n';
+			<< "port: " << host_port.second << '\n'
+			<< "tcp_port: " << storage.context.getTCPPort() << '\n';
 	}
 
 	String is_active_path = storage.replica_path + "/is_active";
