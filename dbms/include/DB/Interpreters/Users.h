@@ -8,11 +8,16 @@
 #include <Poco/Net/DNS.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/String.h>
 
 #include <DB/Core/Types.h>
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 #include <DB/IO/ReadHelpers.h>
+#include <DB/IO/HexWriteBuffer.h>
+#include <DB/IO/WriteBufferFromString.h>
+
+#include <openssl/sha.h>
 
 #include <Yandex/logger_useful.h>
 
@@ -64,7 +69,7 @@ public:
 			construct(Poco::Net::IPAddress(addr), prefix_bits_);
 		}
 	}
-	
+
 	bool contains(const Poco::Net::IPAddress & addr) const
 	{
 		return prefixBitsEquals(reinterpret_cast<const char *>(toIPv6(addr).addr()), reinterpret_cast<const char *>(mask_address.addr()), prefix_bits);
@@ -168,7 +173,7 @@ private:
 
 public:
 	HostRegexpPattern(const String & host_regexp_) : host_regexp(host_regexp_) {}
-	
+
 	bool contains(const Poco::Net::IPAddress & addr) const
 	{
 		Poco::Net::SocketAddress sock_addr(addr, 0);
@@ -243,7 +248,7 @@ public:
 				pattern = new HostExactPattern(value);
 			else
 				throw Exception("Unknown address pattern type: " + *it, ErrorCodes::UNKNOWN_ADDRESS_PATTERN_TYPE);
-			
+
 			patterns.push_back(pattern);
 		}
 	}
@@ -256,8 +261,9 @@ struct User
 {
 	String name;
 
-	/// Требуемый пароль. Хранится в открытом виде.
+	/// Требуемый пароль. Может храниться либо в открытом виде, либо в виде SHA256.
 	String password;
+	String password_sha256_hex;
 
 	String profile;
 	String quota;
@@ -267,7 +273,26 @@ struct User
 	User(const String & name_, const String & config_elem, Poco::Util::AbstractConfiguration & config)
 		: name(name_)
 	{
-		password 	= config.getString(config_elem + ".password");
+		bool has_password = config.has(config_elem + ".password");
+		bool has_password_sha256_hex = config.has(config_elem + ".password_sha256_hex");
+
+		if (has_password && has_password_sha256_hex)
+			throw Exception("Both fields 'password' and 'password_sha256_hex' are specified for user " + name + ". Must be only one of them.", ErrorCodes::BAD_ARGUMENTS);
+
+		if (!has_password && !has_password_sha256_hex)
+			throw Exception("Either 'password' or 'password_sha256_hex' must be specified for user " + name + ".", ErrorCodes::BAD_ARGUMENTS);
+
+		if (has_password)
+			password 	= config.getString(config_elem + ".password");
+
+		if (has_password_sha256_hex)
+		{
+			password_sha256_hex = Poco::toLower(config.getString(config_elem + ".password_sha256_hex"));
+
+			if (password_sha256_hex.size() != 64)
+				throw Exception("password_sha256_hex for user " + name + " has length " + toString(password_sha256_hex.size()) + " but must be exactly 64 symbols.", ErrorCodes::BAD_ARGUMENTS);
+		}
+
 		profile 	= config.getString(config_elem + ".profile");
 		quota 		= config.getString(config_elem + ".quota");
 
@@ -285,7 +310,7 @@ class Users
 private:
 	typedef std::map<String, User> Container;
 	Container cont;
-	
+
 public:
 	void loadFromConfig(Poco::Util::AbstractConfiguration & config)
 	{
@@ -308,12 +333,38 @@ public:
 		if (!it->second.addresses.contains(address))
 			throw Exception("User " + name + " is not allowed to connect from address " + address.toString(), ErrorCodes::IP_ADDRESS_NOT_ALLOWED);
 
-		if (password != it->second.password)
+		auto on_wrong_password = [&]()
 		{
 			if (password.empty())
 				throw Exception("Password required for user " + name, ErrorCodes::REQUIRED_PASSWORD);
 			else
 				throw Exception("Wrong password for user " + name, ErrorCodes::WRONG_PASSWORD);
+		};
+
+		if (!it->second.password_sha256_hex.empty())
+		{
+			unsigned char hash[32];
+
+			SHA256_CTX ctx;
+			SHA256_Init(&ctx);
+			SHA256_Update(&ctx, reinterpret_cast<const unsigned char *>(password.data()), password.size());
+			SHA256_Final(hash, &ctx);
+
+			String hash_hex;
+			{
+				WriteBufferFromString buf(hash_hex);
+				HexWriteBuffer hex_buf(buf);
+				hex_buf.write(reinterpret_cast<const char *>(hash), sizeof(hash));
+			}
+
+			Poco::toLowerInPlace(hash_hex);
+
+			if (hash_hex != it->second.password_sha256_hex)
+				on_wrong_password();
+		}
+		else if (password != it->second.password)
+		{
+			on_wrong_password();
 		}
 
 		return it->second;
