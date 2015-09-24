@@ -72,31 +72,33 @@ BlockInputStreams StorageSystemReplicationQueue::read(
 					replicated_tables[db.first][table.first] = table.second;
 	}
 
-	ColumnWithTypeAndName col_database			{ new ColumnString,	new DataTypeString,	"database" };
-	ColumnWithTypeAndName col_table				{ new ColumnString,	new DataTypeString,	"table" };
+	ColumnWithTypeAndName col_database_to_filter		{ new ColumnString,	new DataTypeString,	"database" };
+	ColumnWithTypeAndName col_table_to_filter			{ new ColumnString,	new DataTypeString,	"table" };
 
 	for (auto & db : replicated_tables)
 	{
 		for (auto & table : db.second)
 		{
-			col_database.column->insert(db.first);
-			col_table.column->insert(table.first);
+			col_database_to_filter.column->insert(db.first);
+			col_table_to_filter.column->insert(table.first);
 		}
 	}
 
 	/// Определяем, какие нужны таблицы, по условиям в запросе.
 	{
-		Block filtered_block { col_database, col_table };
+		Block filtered_block { col_database_to_filter, col_table_to_filter };
 
 		VirtualColumnUtils::filterBlockWithQuery(query, filtered_block, context);
 
 		if (!filtered_block.rows())
 			return BlockInputStreams();
 
-		col_database 	= filtered_block.getByName("database");
-		col_table 		= filtered_block.getByName("table");
+		col_database_to_filter 	= filtered_block.getByName("database");
+		col_table_to_filter 	= filtered_block.getByName("table");
 	}
 
+	ColumnWithTypeAndName col_database					{ new ColumnString,	new DataTypeString,	"database" };
+	ColumnWithTypeAndName col_table						{ new ColumnString,	new DataTypeString,	"table" };
 	ColumnWithTypeAndName col_replica_name 				{ new ColumnString, 	new DataTypeString, "replica_name" };
 	ColumnWithTypeAndName col_position 					{ new ColumnUInt32, 	new DataTypeUInt32, "position" };
 	ColumnWithTypeAndName col_node_name 				{ new ColumnString, 	new DataTypeString, "node_name" };
@@ -120,12 +122,12 @@ BlockInputStreams StorageSystemReplicationQueue::read(
 	StorageReplicatedMergeTree::LogEntriesData queue;
 	String replica_name;
 
-	for (size_t i = 0, tables_size = col_database.column->size(); i < tables_size; ++i)
+	for (size_t i = 0, tables_size = col_database_to_filter.column->size(); i < tables_size; ++i)
 	{
-		typeid_cast<StorageReplicatedMergeTree &>(
-			*replicated_tables
-				[(*col_database.column)[i].safeGet<const String &>()]
-				[(*col_table.column)[i].safeGet<const String &>()]).getQueue(queue, replica_name);
+		String database = (*col_database_to_filter.column)[i].safeGet<const String &>();
+		String table = (*col_table_to_filter.column)[i].safeGet<const String &>();
+
+		typeid_cast<StorageReplicatedMergeTree &>(*replicated_tables[database][table]).getQueue(queue, replica_name);
 
 		for (size_t j = 0, queue_size = queue.size(); j < queue_size; ++j)
 		{
@@ -135,6 +137,8 @@ BlockInputStreams StorageSystemReplicationQueue::read(
 			for (const auto & name : entry.parts_to_merge)
 				parts_to_merge.push_back(name);
 
+			col_database				.column->insert(database);
+			col_table					.column->insert(table);
 			col_replica_name			.column->insert(replica_name);
 			col_position				.column->insert(UInt64(j));
 			col_node_name				.column->insert(entry.znode_name);
