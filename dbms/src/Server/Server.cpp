@@ -32,6 +32,7 @@
 #include <DB/Storages/StorageSystemSettings.h>
 #include <DB/Storages/StorageSystemZooKeeper.h>
 #include <DB/Storages/StorageSystemReplicas.h>
+#include <DB/Storages/StorageSystemReplicationQueue.h>
 #include <DB/Storages/StorageSystemDictionaries.h>
 #include <DB/Storages/StorageSystemColumns.h>
 #include <DB/Storages/StorageSystemFunctions.h>
@@ -548,6 +549,7 @@ int Server::main(const std::vector<std::string> & args)
 	global_context->addTable("system", "events", 	StorageSystemEvents::create("events"));
 	global_context->addTable("system", "merges",	StorageSystemMerges::create("merges"));
 	global_context->addTable("system", "replicas",	StorageSystemReplicas::create("replicas"));
+	global_context->addTable("system", "replication_queue", StorageSystemReplicationQueue::create("replication_queue"));
 	global_context->addTable("system", "dictionaries", StorageSystemDictionaries::create("dictionaries"));
 	global_context->addTable("system", "columns",   StorageSystemColumns::create("columns"));
 	global_context->addTable("system", "functions", StorageSystemFunctions::create("functions"));

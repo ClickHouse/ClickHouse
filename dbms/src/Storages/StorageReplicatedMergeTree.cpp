@@ -796,7 +796,7 @@ void StorageReplicatedMergeTree::pullLogsToQueue(zkutil::EventPtr next_update_ev
 }
 
 
-bool StorageReplicatedMergeTree::shouldExecuteLogEntry(const LogEntry & entry)
+bool StorageReplicatedMergeTree::shouldExecuteLogEntry(const LogEntry & entry, String & out_postpone_reason)
 {
 	/// queue_mutex уже захвачен. Функция вызывается только из queueTask.
 
@@ -805,8 +805,10 @@ bool StorageReplicatedMergeTree::shouldExecuteLogEntry(const LogEntry & entry)
 		/// Проверим, не создаётся ли сейчас этот же кусок другим действием.
 		if (future_parts.count(entry.new_part_name))
 		{
-			LOG_DEBUG(log, "Not executing log entry for part " << entry.new_part_name
-				<< " because another log entry for the same part is being processed. This shouldn't happen often.");
+			String reason = "Not executing log entry for part " + entry.new_part_name
+				+ " because another log entry for the same part is being processed. This shouldn't happen often.";
+			LOG_DEBUG(log, reason);
+			out_postpone_reason = reason;
 			return false;
 
 			/** Когда соответствующее действие завершится, то shouldExecuteLogEntry, в следующий раз, пройдёт успешно,
@@ -828,8 +830,10 @@ bool StorageReplicatedMergeTree::shouldExecuteLogEntry(const LogEntry & entry)
 
 			if (future_part.contains(result_part))
 			{
-				LOG_DEBUG(log, "Not executing log entry for part " << entry.new_part_name
-					<< " because another log entry for covering part " << future_part_name << " is being processed.");
+				String reason = "Not executing log entry for part " + entry.new_part_name
+					+ " because another log entry for covering part " + future_part_name + " is being processed.";
+				LOG_DEBUG(log, reason);
+				out_postpone_reason = reason;
 				return false;
 			}
 		}
@@ -846,15 +850,19 @@ bool StorageReplicatedMergeTree::shouldExecuteLogEntry(const LogEntry & entry)
 		{
 			if (future_parts.count(name))
 			{
-				LOG_TRACE(log, "Not merging into part " << entry.new_part_name
-					<< " because part " << name << " is not ready yet (log entry for that part is being processed).");
+				String reason = "Not merging into part " + entry.new_part_name
+					+ " because part " + name + " is not ready yet (log entry for that part is being processed).";
+				LOG_TRACE(log, reason);
+				out_postpone_reason = reason;
 				return false;
 			}
 		}
 
 		if (merger.isCancelled())
 		{
-			LOG_DEBUG(log, "Not executing log entry for part " << entry.new_part_name << " because merges are cancelled now.");
+			String reason = "Not executing log entry for part " + entry.new_part_name + " because merges are cancelled now.";
+			LOG_DEBUG(log, reason);
+			out_postpone_reason = reason;
 			return false;
 		}
 	}
@@ -1370,7 +1378,10 @@ bool StorageReplicatedMergeTree::queueTask(BackgroundProcessingPool::Context & p
 		{
 			for (LogEntries::iterator it = queue.begin(); it != queue.end(); ++it)
 			{
-				if (!(*it)->currently_executing && shouldExecuteLogEntry(**it))
+				if ((*it)->currently_executing)
+					continue;
+
+				if (shouldExecuteLogEntry(**it, (*it)->postpone_reason))
 				{
 					entry = *it;
 					entry->tagPartAsFuture(*this);
@@ -1379,6 +1390,11 @@ bool StorageReplicatedMergeTree::queueTask(BackgroundProcessingPool::Context & p
 					++entry->num_tries;
 					entry->last_attempt_time = time(0);
 					break;
+				}
+				else
+				{
+					++entry->num_postponed;
+					entry->last_postpone_time = time(0);
 				}
 			}
 		}
@@ -3218,6 +3234,18 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
 			if (zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
 				++res.active_replicas;
 	}
+}
+
+
+void StorageReplicatedMergeTree::getQueue(LogEntriesData & res, String & replica_name_)
+{
+	res.clear();
+	replica_name_ = replica_name;
+
+	std::lock_guard<std::mutex> lock(queue_mutex);
+	res.reserve(queue.size());
+	for (const auto & entry : queue)
+		res.emplace_back(*entry);
 }
 
 
