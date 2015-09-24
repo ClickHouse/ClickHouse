@@ -250,29 +250,31 @@ void StorageReplicatedMergeTree::createTableIfNotExists()
 	metadata << "sign column: " << data.sign_column << std::endl;
 	metadata << "primary key: " << formattedAST(data.primary_expr_ast) << std::endl;
 
+	auto acl = zookeeper->getDefaultACL();
+
 	zkutil::Ops ops;
 	ops.push_back(new zkutil::Op::Create(zookeeper_path, "",
-										 zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
+										 acl, zkutil::CreateMode::Persistent));
 	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/metadata", metadata.str(),
-										 zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
+										 acl, zkutil::CreateMode::Persistent));
 	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/columns", ColumnsDescription<false>{
 				data.getColumnsListNonMaterialized(), data.materialized_columns,
 				data.alias_columns, data.column_defaults}.toString(),
-										 zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
+										 acl, zkutil::CreateMode::Persistent));
 	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/log", "",
-										 zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
+										 acl, zkutil::CreateMode::Persistent));
 	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/blocks", "",
-										 zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
+										 acl, zkutil::CreateMode::Persistent));
 	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/block_numbers", "",
-										 zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
+										 acl, zkutil::CreateMode::Persistent));
 	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/nonincrement_block_numbers", "",
-										 zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
+										 acl, zkutil::CreateMode::Persistent));
 	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/leader_election", "",
-										 zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
+										 acl, zkutil::CreateMode::Persistent));
 	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/temp", "",
-										 zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
+										 acl, zkutil::CreateMode::Persistent));
 	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/replicas", "",
-										 zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
+										 acl, zkutil::CreateMode::Persistent));
 
 	auto code = zookeeper->tryMulti(ops);
 	if (code != ZOK && code != ZNODEEXISTS)
@@ -371,13 +373,14 @@ void StorageReplicatedMergeTree::createReplica()
 	LOG_DEBUG(log, "Creating replica " << replica_path);
 
 	/// Создадим пустую реплику. Ноду columns создадим в конце - будем использовать ее в качестве признака, что создание реплики завершено.
+	auto acl = zookeeper->getDefaultACL();
 	zkutil::Ops ops;
-	ops.push_back(new zkutil::Op::Create(replica_path, "", zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
-	ops.push_back(new zkutil::Op::Create(replica_path + "/host", "", zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
-	ops.push_back(new zkutil::Op::Create(replica_path + "/log_pointer", "", zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
-	ops.push_back(new zkutil::Op::Create(replica_path + "/queue", "", zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
-	ops.push_back(new zkutil::Op::Create(replica_path + "/parts", "", zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
-	ops.push_back(new zkutil::Op::Create(replica_path + "/flags", "", zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
+	ops.push_back(new zkutil::Op::Create(replica_path, "", acl, zkutil::CreateMode::Persistent));
+	ops.push_back(new zkutil::Op::Create(replica_path + "/host", "", acl, zkutil::CreateMode::Persistent));
+	ops.push_back(new zkutil::Op::Create(replica_path + "/log_pointer", "", acl, zkutil::CreateMode::Persistent));
+	ops.push_back(new zkutil::Op::Create(replica_path + "/queue", "", acl, zkutil::CreateMode::Persistent));
+	ops.push_back(new zkutil::Op::Create(replica_path + "/parts", "", acl, zkutil::CreateMode::Persistent));
+	ops.push_back(new zkutil::Op::Create(replica_path + "/flags", "", acl, zkutil::CreateMode::Persistent));
 
 	try
 	{
@@ -702,23 +705,25 @@ void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(const MergeTreeData:
 		return;
 	}
 
+	auto acl = zookeeper->getDefaultACL();
+
 	ops.push_back(new zkutil::Op::Check(
 		zookeeper_path + "/columns",
 		expected_columns_version));
 	ops.push_back(new zkutil::Op::Create(
 		replica_path + "/parts/" + part_name,
 		"",
-		zookeeper->getDefaultACL(),
+		acl,
 		zkutil::CreateMode::Persistent));
 	ops.push_back(new zkutil::Op::Create(
 		replica_path + "/parts/" + part_name + "/columns",
 		part->columns.toString(),
-		zookeeper->getDefaultACL(),
+		acl,
 		zkutil::CreateMode::Persistent));
 	ops.push_back(new zkutil::Op::Create(
 		replica_path + "/parts/" + part_name + "/checksums",
 		part->checksums.toString(),
-		zookeeper->getDefaultACL(),
+		acl,
 		zkutil::CreateMode::Persistent));
 }
 
@@ -1112,16 +1117,18 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 								throw Exception("Logical error: log entry with quorum for part covering more than one block number",
 									ErrorCodes::LOGICAL_ERROR);
 
+							auto acl = zookeeper->getDefaultACL();
+
 							ops.push_back(new zkutil::Op::Create(
 								zookeeper_path + "/nonincrement_block_numbers/" + partition_str + "/block-" + padIndex(part_info.left),
 								"",
-								zookeeper->getDefaultACL(),
+								acl,
 								zkutil::CreateMode::Persistent));
 
 							ops.push_back(new zkutil::Op::Create(
 								zookeeper_path + "/quorum/failed_parts/" + entry.new_part_name,
 								"",
-								zookeeper->getDefaultACL(),
+								acl,
 								zkutil::CreateMode::Persistent));
 
 							auto code = zookeeper->tryMulti(ops);
