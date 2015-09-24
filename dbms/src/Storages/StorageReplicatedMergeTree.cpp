@@ -142,6 +142,9 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
 	if (!attach)
 	{
+		if (!data.getDataParts().empty())
+			throw Exception("Data directory for table already containing data parts - probably it was unclean DROP table or manual intervention. You must either clear directory by hand or use ATTACH TABLE instead of CREATE TABLE if you need to use that parts.", ErrorCodes::INCORRECT_DATA);
+
 		createTableIfNotExists();
 
 		checkTableStructure(false, false);
@@ -241,21 +244,24 @@ void StorageReplicatedMergeTree::createTableIfNotExists()
 	zookeeper->createAncestors(zookeeper_path);
 
 	/// Запишем метаданные таблицы, чтобы реплики могли сверять с ними параметры таблицы.
-	std::stringstream metadata;
-	metadata << "metadata format version: 1" << std::endl;
-	metadata << "date column: " << data.date_column_name << std::endl;
-	metadata << "sampling expression: " << formattedAST(data.sampling_expression) << std::endl;
-	metadata << "index granularity: " << data.index_granularity << std::endl;
-	metadata << "mode: " << static_cast<int>(data.mode) << std::endl;
-	metadata << "sign column: " << data.sign_column << std::endl;
-	metadata << "primary key: " << formattedAST(data.primary_expr_ast) << std::endl;
+	std::string metadata;
+	{
+		WriteBufferFromString out(metadata);
+		out << "metadata format version: 1" << "\n"
+			<< "date column: " << data.date_column_name << "\n"
+			<< "sampling expression: " << formattedAST(data.sampling_expression) << "\n"
+			<< "index granularity: " << data.index_granularity << "\n"
+			<< "mode: " << static_cast<int>(data.mode) << "\n"
+			<< "sign column: " << data.sign_column << "\n"
+			<< "primary key: " << formattedAST(data.primary_expr_ast) << "\n";
+	}
 
 	auto acl = zookeeper->getDefaultACL();
 
 	zkutil::Ops ops;
 	ops.push_back(new zkutil::Op::Create(zookeeper_path, "",
 										 acl, zkutil::CreateMode::Persistent));
-	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/metadata", metadata.str(),
+	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/metadata", metadata,
 										 acl, zkutil::CreateMode::Persistent));
 	ops.push_back(new zkutil::Op::Create(zookeeper_path + "/columns", ColumnsDescription<false>{
 				data.getColumnsListNonMaterialized(), data.materialized_columns,
