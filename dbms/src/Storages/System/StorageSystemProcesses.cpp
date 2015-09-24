@@ -3,7 +3,7 @@
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
 #include <DB/Interpreters/ProcessList.h>
-#include <DB/Storages/StorageSystemProcesses.h>
+#include <DB/Storages/System/StorageSystemProcesses.h>
 
 
 namespace DB

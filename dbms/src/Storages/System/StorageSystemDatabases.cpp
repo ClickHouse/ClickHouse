@@ -1,7 +1,7 @@
 #include <DB/Columns/ColumnString.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
-#include <DB/Storages/StorageSystemDatabases.h>
+#include <DB/Storages/System/StorageSystemDatabases.h>
 
 
 namespace DB

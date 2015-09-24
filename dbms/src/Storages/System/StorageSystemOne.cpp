@@ -4,7 +4,7 @@
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
-#include <DB/Storages/StorageSystemOne.h>
+#include <DB/Storages/System/StorageSystemOne.h>
 
 
 namespace DB

@@ -2,7 +2,7 @@
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
-#include <DB/Storages/StorageSystemSettings.h>
+#include <DB/Storages/System/StorageSystemSettings.h>
 
 
 namespace DB

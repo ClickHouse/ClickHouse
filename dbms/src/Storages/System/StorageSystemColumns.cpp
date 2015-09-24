@@ -1,4 +1,4 @@
-#include <DB/Storages/StorageSystemColumns.h>
+#include <DB/Storages/System/StorageSystemColumns.h>
 #include <DB/Storages/MergeTree/MergeTreeData.h>
 #include <DB/Storages/StorageMergeTree.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>

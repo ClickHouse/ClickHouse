@@ -3,7 +3,7 @@
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
-#include <DB/Storages/StorageSystemReplicationQueue.h>
+#include <DB/Storages/System/StorageSystemReplicationQueue.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Common/VirtualColumnUtils.h>
 

@@ -3,7 +3,7 @@
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
-#include <DB/Storages/StorageSystemEvents.h>
+#include <DB/Storages/System/StorageSystemEvents.h>
 
 
 namespace DB

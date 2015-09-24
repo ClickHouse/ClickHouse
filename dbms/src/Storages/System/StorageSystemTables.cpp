@@ -1,7 +1,7 @@
 #include <DB/Columns/ColumnString.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
-#include <DB/Storages/StorageSystemTables.h>
+#include <DB/Storages/System/StorageSystemTables.h>
 #include <DB/Common/VirtualColumnUtils.h>
 
 
