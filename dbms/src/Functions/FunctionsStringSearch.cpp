@@ -13,8 +13,7 @@ void registerFunctionsStringSearch(FunctionFactory & factory)
 	factory.registerFunction<FunctionPosition>();
 	factory.registerFunction<FunctionPositionUTF8>();
 	factory.registerFunction<FunctionPositionCaseInsensitive>();
-///	@todo implement
-//	factory.registerFunction<FunctionPositionCaseInsensitiveUTF8>();
+	factory.registerFunction<FunctionPositionCaseInsensitiveUTF8>();
 	factory.registerFunction<FunctionMatch>();
 	factory.registerFunction<FunctionLike>();
 	factory.registerFunction<FunctionNotLike>();

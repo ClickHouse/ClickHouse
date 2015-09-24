@@ -3,6 +3,7 @@
 #include <DB/Dictionaries/IDictionary.h>
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
+#include <DB/Common/setThreadName.h>
 #include <Yandex/MultiVersion.h>
 #include <Yandex/logger_useful.h>
 #include <Poco/Event.h>
@@ -86,6 +87,8 @@ private:
 
 	void reloadPeriodically()
 	{
+		setThreadName("ExterDictReload");
+
 		while (true)
 		{
 			if (destroy.tryWait(check_period_sec * 1000))

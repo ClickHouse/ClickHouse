@@ -2,6 +2,7 @@
 
 #include <DB/DataStreams/RemoteBlockOutputStream.h>
 #include <DB/Common/escapeForFileName.h>
+#include <DB/Common/setThreadName.h>
 #include <DB/Storages/StorageDistributed.h>
 #include <DB/IO/ReadBufferFromFile.h>
 
@@ -86,6 +87,8 @@ public:
 private:
 	void run()
 	{
+		setThreadName("DistrDirMonitor");
+
 		std::unique_lock<std::mutex> lock{mutex};
 
 		const auto quit_requested = [this] { return quit; };

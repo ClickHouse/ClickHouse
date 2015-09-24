@@ -4,7 +4,7 @@
 #include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataStreams/OneBlockInputStream.h>
-#include <DB/Storages/StorageSystemParts.h>
+#include <DB/Storages/System/StorageSystemParts.h>
 #include <DB/Storages/StorageMergeTree.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Common/VirtualColumnUtils.h>

@@ -1,4 +1,4 @@
-#include <DB/Storages/StorageSystemMerges.h>
+#include <DB/Storages/System/StorageSystemMerges.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Columns/ColumnString.h>

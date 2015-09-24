@@ -264,6 +264,10 @@ public:
 	GetChildrenFuture asyncGetChildren(const std::string & path);
 
 
+	using RemoveFuture = Future<void, int>;
+	RemoveFuture asyncRemove(const std::string & path);
+
+
 	static std::string error2string(int32_t code);
 
 	/// максимальный размер данных в узле в байтах

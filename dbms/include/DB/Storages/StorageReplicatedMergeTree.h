@@ -177,6 +177,9 @@ public:
 	/// Получить статус таблицы. Если with_zk_fields = false - не заполнять поля, требующие запросов в ZK.
 	void getStatus(Status & res, bool with_zk_fields = true);
 
+	using LogEntriesData = std::vector<ReplicatedMergeTreeLogEntryData>;
+	void getQueue(LogEntriesData & res, String & replica_name);
+
 private:
 	void dropUnreplicatedPartition(const Field & partition, bool detach, const Settings & settings);
 
@@ -383,7 +386,7 @@ private:
 	/** Можно ли сейчас попробовать выполнить это действие. Если нет, нужно оставить его в очереди и попробовать выполнить другое.
 	  * Вызывается под queue_mutex.
 	  */
-	bool shouldExecuteLogEntry(const LogEntry & entry);
+	bool shouldExecuteLogEntry(const LogEntry & entry, String & out_postpone_reason);
 
 	/** Выполнить действие из очереди. Бросает исключение, если что-то не так.
 	  * Возвращает, получилось ли выполнить. Если не получилось, запись нужно положить в конец очереди.

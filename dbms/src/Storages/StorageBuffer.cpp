@@ -4,6 +4,7 @@
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/Storages/StorageBuffer.h>
 #include <DB/Parsers/ASTInsertQuery.h>
+#include <DB/Common/setThreadName.h>
 #include <Poco/Ext/ThreadNumber.h>
 
 #include <statdaemons/ext/range.hpp>
@@ -449,6 +450,8 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 
 void StorageBuffer::flushThread()
 {
+	setThreadName("BufferFlush");
+
 	do
 	{
 		try

@@ -190,6 +190,8 @@ public:
 	/// Как другие серверы могут обратиться к этому для скачивания реплицируемых данных.
 	void setInterserverIOAddress(const String & host, UInt16 port);
 	std::pair<String, UInt16> getInterserverIOAddress() const;
+	/// Порт, который сервер слушает для выполнения SQL-запросов.
+	UInt16 getTCPPort() const;
 
 	/// Получить запрос на CREATE таблицы.
 	ASTPtr getCreateQuery(const String & database_name, const String & table_name) const;

@@ -255,6 +255,7 @@ bool StorageMergeTree::mergeTask(BackgroundProcessingPool::Context & background_
 {
 	if (shutdown_called)
 		return false;
+
 	try
 	{
 		size_t aio_threshold = context.getSettings().min_bytes_to_use_direct_io;

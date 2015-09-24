@@ -5,7 +5,7 @@
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
-#include <DB/Storages/StorageSystemNumbers.h>
+#include <DB/Storages/System/StorageSystemNumbers.h>
 
 
 namespace DB

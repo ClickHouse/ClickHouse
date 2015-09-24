@@ -18,7 +18,7 @@
 
 #include <DB/Storages/StorageFactory.h>
 #include <DB/Storages/StorageLog.h>
-#include <DB/Storages/StorageSystemNumbers.h>
+#include <DB/Storages/System/StorageSystemNumbers.h>
 
 #include <DB/Parsers/formatAST.h>
 #include <DB/Parsers/ASTIdentifier.h>

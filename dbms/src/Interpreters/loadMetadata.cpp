@@ -13,6 +13,7 @@
 #include <DB/IO/ReadBufferFromFile.h>
 #include <DB/IO/WriteBufferFromString.h>
 #include <DB/IO/copyData.h>
+#include <DB/Common/escapeForFileName.h>
 
 #include <statdaemons/Stopwatch.h>
 
@@ -75,9 +76,10 @@ void loadMetadata(Context & context)
 		if (it.name().at(0) == '.')
 			continue;
 
-		LOG_INFO(log, "Loading database " << it.name());
+		String database = unescapeForFileName(it.name());
 
-		executeCreateQuery("ATTACH DATABASE " + it.name(), context, it.name(), it->path());
+		LOG_INFO(log, "Loading database " << database);
+		executeCreateQuery("ATTACH DATABASE " + backQuoteIfNeed(database), context, database, it->path());
 
 		/// Цикл по таблицам
 		typedef std::vector<std::string> Tables;
@@ -135,7 +137,7 @@ void loadMetadata(Context & context)
 
 			try
 			{
-				executeCreateQuery(s, context, it.name(), tables[j]);
+				executeCreateQuery(s, context, database, tables[j]);
 			}
 			catch (const Exception & e)
 			{

@@ -5,6 +5,7 @@
 #include <Poco/Event.h>
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
+#include <DB/Common/setThreadName.h>
 
 
 namespace DB
@@ -120,6 +121,7 @@ protected:
 	/// Вычисления, которые могут выполняться в отдельном потоке
 	void calculate(MemoryTracker * memory_tracker)
 	{
+		setThreadName("AsyncBlockInput");
 		current_memory_tracker = memory_tracker;
 
 		try
