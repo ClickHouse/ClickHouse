@@ -190,7 +190,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
 			setClientInfo(elem, context);
 
-			bool log_queries = settings.log_queries;
+			bool log_queries = settings.log_queries && !internal;
 
 			/// Логгируем в таблицу начало выполнения запроса, если нужно.
 			if (log_queries)
