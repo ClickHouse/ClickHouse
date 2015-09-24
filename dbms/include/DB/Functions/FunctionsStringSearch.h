@@ -105,6 +105,32 @@ struct PositionImpl
 };
 
 
+namespace
+{
+
+
+const UInt8 utf8_continuation_octet_mask = 0b11000000u;
+const UInt8 utf8_continuation_octet = 0b10000000u;
+
+
+/// return true if `octet` binary repr starts with 10 (octet is a UTF-8 sequence continuation)
+bool utf8_is_continuation_octet(const UInt8 octet)
+{
+	return (octet & utf8_continuation_octet_mask) == utf8_continuation_octet;
+}
+
+
+/// moves `s` forward until either first non-continuation octet or string end is met
+void utf8_sync_forward(const UInt8 * & s, const UInt8 * const end = nullptr)
+{
+	while (s < end && utf8_is_continuation_octet(*s))
+		++s;
+}
+
+
+}
+
+
 struct PositionUTF8Impl
 {
 	typedef UInt64 ResultType;
@@ -138,7 +164,7 @@ struct PositionUTF8Impl
 				/// А теперь надо найти, сколько кодовых точек находится перед pos.
 				res[i] = 1;
 				for (const UInt8 * c = begin + (i != 0 ? offsets[i - 1] : 0); c < pos; ++c)
-					if (*c <= 0x7F || *c >= 0xC0)
+					if (!utf8_is_continuation_octet(*c))
 						++res[i];
 			}
 			else
@@ -153,11 +179,17 @@ struct PositionUTF8Impl
 
 	static void constant(const std::string & data, const std::string & needle, UInt64 & res)
 	{
-		res = data.find(needle);
-		if (res == std::string::npos)
-			res = 0;
+		const auto pos = data.find(needle);
+		if (pos != std::string::npos)
+		{
+			/// А теперь надо найти, сколько кодовых точек находится перед pos.
+			res = 1;
+			for (const auto i : ext::range(0, pos))
+				if (!utf8_is_continuation_octet(static_cast<UInt8>(data[i])))
+					++res;
+		}
 		else
-			++res;
+			res = 0;
 	}
 };
 
@@ -373,12 +405,6 @@ struct PositionCaseInsensitiveUTF8Impl
 		const auto needle_end = needle_begin + needle.size();
 		auto needle_pos = needle_begin;
 
-		const auto utf8_sync_forward = [] (const UInt8 * & s) {
-			const UInt8 continuation_octet_mask = 0b11000000u;
-			while ((*s & continuation_octet_mask) == continuation_octet_mask)
-				++s;
-		};
-
 		for (std::size_t i = 0; i < n;)
 		{
 			if (needle_pos == needle_end)
@@ -449,7 +475,7 @@ struct PositionCaseInsensitiveUTF8Impl
 					if (mask == 0)
 					{
 						haystack += n;
-						utf8_sync_forward(haystack);
+						utf8_sync_forward(haystack, haystack_end);
 						continue;
 					}
 
@@ -543,7 +569,7 @@ struct PositionCaseInsensitiveUTF8Impl
 				/// А теперь надо найти, сколько кодовых точек находится перед pos.
 				res[i] = 1;
 				for (const UInt8 * c = begin + (i != 0 ? offsets[i - 1] : 0); c < pos; ++c)
-					if (*c <= 0x7F || *c >= 0xC0)
+					if (!utf8_is_continuation_octet(*c))
 						++res[i];
 			}
 			else
@@ -576,11 +602,17 @@ struct PositionCaseInsensitiveUTF8Impl
 			needle_pos += len;
 		}
 
-		res = data.find(needle);
-		if (res == std::string::npos)
-			res = 0;
+		const auto pos = data.find(needle);
+		if (pos != std::string::npos)
+		{
+			/// А теперь надо найти, сколько кодовых точек находится перед pos.
+			res = 1;
+			for (const auto i : ext::range(0, pos))
+				if (!utf8_is_continuation_octet(static_cast<UInt8>(data[i])))
+					++res;
+		}
 		else
-			++res;
+			res = 0;
 	}
 };
 
