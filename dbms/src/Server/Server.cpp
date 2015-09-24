@@ -19,6 +19,7 @@
 
 #include <DB/Common/Macros.h>
 #include <DB/Common/getFQDNOrHostName.h>
+#include <DB/Common/setThreadName.h>
 #include <DB/Interpreters/loadMetadata.h>
 #include <DB/Interpreters/ProcessList.h>
 #include <DB/Storages/System/StorageSystemNumbers.h>
@@ -82,6 +83,8 @@ public:
 private:
 	void run()
 	{
+		setThreadName("ProfileEventsTx");
+
 		const auto get_next_minute = [] {
 			return std::chrono::time_point_cast<std::chrono::minutes, std::chrono::system_clock>(
 				std::chrono::system_clock::now() + std::chrono::minutes(1)
@@ -260,6 +263,8 @@ UsersConfigReloader::~UsersConfigReloader()
 
 void UsersConfigReloader::run()
 {
+	setThreadName("UserConfReload");
+
 	while (!quit)
 	{
 		std::this_thread::sleep_for(std::chrono::seconds(2));
@@ -423,6 +428,7 @@ private:
 
 int Server::main(const std::vector<std::string> & args)
 {
+	setThreadName("Server");
 	Logger * log = &logger();
 
 	std::string path = config().getString("path");

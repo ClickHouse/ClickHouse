@@ -17,6 +17,7 @@
 #include <DB/DataStreams/AddingConstColumnBlockInputStream.h>
 #include <DB/Common/Macros.h>
 #include <DB/Common/formatReadable.h>
+#include <DB/Common/setThreadName.h>
 #include <Poco/DirectoryIterator.h>
 #include <time.h>
 
@@ -1364,6 +1365,8 @@ bool StorageReplicatedMergeTree::executeAttachPart(const StorageReplicatedMergeT
 
 void StorageReplicatedMergeTree::queueUpdatingThread()
 {
+	setThreadName("ReplMTQueueUpd");
+
 	while (!shutdown_called)
 	{
 		try
@@ -1511,6 +1514,8 @@ bool StorageReplicatedMergeTree::queueTask(BackgroundProcessingPool::Context & p
 
 void StorageReplicatedMergeTree::mergeSelectingThread()
 {
+	setThreadName("ReplMTMergeSel");
+
 	bool need_pull = true;
 
 	/** Может много времени тратиться на определение, можно ли мерджить два рядом стоящих куска.
@@ -1730,6 +1735,8 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 
 void StorageReplicatedMergeTree::alterThread()
 {
+	setThreadName("ReplMTAlter");
+
 	bool force_recheck_parts = true;
 
 	while (!shutdown_called)
@@ -2217,6 +2224,8 @@ void StorageReplicatedMergeTree::checkPart(const String & part_name)
 
 void StorageReplicatedMergeTree::partCheckThread()
 {
+	setThreadName("ReplMTPartCheck");
+
 	while (!shutdown_called)
 	{
 		try

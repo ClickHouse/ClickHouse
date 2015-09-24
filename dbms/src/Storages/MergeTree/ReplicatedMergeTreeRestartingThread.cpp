@@ -2,6 +2,7 @@
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeRestartingThread.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
+#include <DB/Common/setThreadName.h>
 
 
 namespace DB
@@ -31,6 +32,8 @@ void ReplicatedMergeTreeRestartingThread::run()
 {
 	constexpr auto retry_delay_ms = 10 * 1000;
 	constexpr auto check_delay_ms = 60 * 1000;
+
+	setThreadName("ReplMTRestart");
 
 	try
 	{

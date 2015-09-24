@@ -6,6 +6,7 @@
 #include <statdaemons/RegionsHierarchies.h>
 #include <statdaemons/TechDataHierarchy.h>
 #include <statdaemons/RegionsNames.h>
+#include <DB/Common/setThreadName.h>
 
 
 namespace DB
@@ -123,6 +124,8 @@ private:
 	/// Обновляет каждые reload_period секунд.
 	void reloadPeriodically()
 	{
+		setThreadName("DictReload");
+
 		while (true)
 		{
 			if (destroy.tryWait(reload_period * 1000))

@@ -1,5 +1,6 @@
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
+#include <DB/Common/setThreadName.h>
 #include <DB/IO/WriteHelpers.h>
 #include <Yandex/logger_useful.h>
 #include <DB/Storages/MergeTree/BackgroundProcessingPool.h>
@@ -94,6 +95,8 @@ BackgroundProcessingPool::~BackgroundProcessingPool()
 
 void BackgroundProcessingPool::threadFunction()
 {
+	setThreadName("BackgrProcPool");
+
 	std::mt19937 rng(reinterpret_cast<intptr_t>(&rng));
 	std::this_thread::sleep_for(std::chrono::duration<double>(std::uniform_real_distribution<double>(0, sleep_seconds_random_part)(rng)));
 

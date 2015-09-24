@@ -1,5 +1,6 @@
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeCleanupThread.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
+#include <DB/Common/setThreadName.h>
 
 
 namespace DB
@@ -13,6 +14,8 @@ ReplicatedMergeTreeCleanupThread::ReplicatedMergeTreeCleanupThread(StorageReplic
 
 void ReplicatedMergeTreeCleanupThread::run()
 {
+	setThreadName("ReplMTCleanup");
+
 	const auto CLEANUP_SLEEP_MS = 30 * 1000;
 
 	while (!storage.shutdown_called)

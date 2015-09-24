@@ -15,6 +15,7 @@
 #include <DB/Interpreters/InterpreterCreateQuery.h>
 #include <DB/Interpreters/InterpreterRenameQuery.h>
 #include <DB/Interpreters/QueryLog.h>
+#include <DB/Common/setThreadName.h>
 
 
 namespace DB
@@ -116,6 +117,8 @@ QueryLog::~QueryLog()
 
 void QueryLog::threadFunction()
 {
+	setThreadName("QueryLogFlush");
+
 	Stopwatch time_after_last_write;
 	bool first = true;
 
