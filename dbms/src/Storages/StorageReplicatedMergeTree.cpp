@@ -554,36 +554,48 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 	for (const String & name : parts_to_fetch)
 		expected_parts.erase(name);
 
-	String sanity_report =
-		"There are " + toString(unexpected_parts.size()) + " unexpected parts, "
-					 + toString(parts_to_add.size()) + " unexpectedly merged parts, "
-					 + toString(expected_parts.size()) + " missing obsolete parts, "
-					 + toString(parts_to_fetch.size()) + " missing parts";
+	/** Для проверки адекватности, для кусков, которые есть в ФС, но нет в ZK, будем учитывать только не самые новые куски.
+	  * Потому что неожиданные новые куски обычно возникают лишь оттого, что они не успели записаться в ZK при грубом перезапуске сервера.
+	  * Также это возникает от дедуплицированных кусков, которые не успели удалиться.
+	  */
+	size_t unexpected_parts_nonnew = 0;
+	for (const auto & part : unexpected_parts)
+		if (part->level > 0 || part->right < RESERVED_BLOCK_NUMBERS)
+			++unexpected_parts_nonnew;
+
+	String sanity_report = "There are "
+			+ toString(unexpected_parts.size()) + " unexpected parts ("
+			+ toString(unexpected_parts_nonnew) + " of them is not just-written), "
+			+ toString(parts_to_add.size()) + " unexpectedly merged parts, "
+			+ toString(expected_parts.size()) + " missing obsolete parts, "
+			+ toString(parts_to_fetch.size()) + " missing parts";
 
 	/** Можно автоматически синхронизировать данные,
-	  * если количество ошибок каждого из четырёх типов не больше соответствующих порогов,
-	  * или если отношение общего количества ошибок к общему количеству кусков (минимальному - в локальной файловой системе или в ZK)
+	  *  если количество ошибок каждого из четырёх типов не больше соответствующих порогов,
+	  *  или если отношение общего количества ошибок к общему количеству кусков (минимальному - в локальной файловой системе или в ZK)
 	  *  не больше некоторого отношения (например 5%).
+	  *
+	  * Большое количество несовпадений в данных на файловой системе и ожидаемых данных
+	  *  может свидетельствовать об ошибке конфигурации (сервер случайно подключили как реплику не от того шарда).
+	  * В этом случае, защитный механизм не даёт стартовать серверу.
 	  */
 
 	size_t min_parts_local_or_expected = std::min(expected_parts_vec.size(), parts.size());
+	size_t total_difference = parts_to_add.size() + unexpected_parts_nonnew + expected_parts.size() + parts_to_fetch.size();
 
 	bool insane =
 		(parts_to_add.size() > data.settings.replicated_max_unexpectedly_merged_parts
-			|| unexpected_parts.size() > data.settings.replicated_max_unexpected_parts
+			|| unexpected_parts_nonnew > data.settings.replicated_max_unexpected_parts
 			|| expected_parts.size() > data.settings.replicated_max_missing_obsolete_parts
 			|| parts_to_fetch.size() > data.settings.replicated_max_missing_active_parts)
-		&& ((parts_to_add.size() + unexpected_parts.size() + expected_parts.size() + parts_to_fetch.size())
-			> min_parts_local_or_expected * data.settings.replicated_max_ratio_of_wrong_parts);
+		&& (total_difference > min_parts_local_or_expected * data.settings.replicated_max_ratio_of_wrong_parts);
 
-	if (insane)
-	{
-		if (skip_sanity_checks)
-			LOG_WARNING(log, sanity_report);
-		else
-			throw Exception("The local set of parts of table " + getTableName() + " doesn't look like the set of parts in ZooKeeper. "
-				+ sanity_report, ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS);
-	}
+	if (insane && !skip_sanity_checks)
+		throw Exception("The local set of parts of table " + getTableName() + " doesn't look like the set of parts in ZooKeeper. "
+			+ sanity_report, ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS);
+
+	if (total_difference > 0)
+		LOG_WARNING(log, sanity_report);
 
 	/// Добавим в ZK информацию о кусках, покрывающих недостающие куски.
 	for (const MergeTreeData::DataPartPtr & part : parts_to_add)
