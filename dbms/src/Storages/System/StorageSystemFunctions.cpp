@@ -46,11 +46,14 @@ BlockInputStreams StorageSystemFunctions::read(
 		column_is_aggregate.column->insert(UInt64(0));
 	}
 
-	const auto & aggregate_functions = context.getAggregateFunctionFactory().getFunctionNames();
-	for (const auto & it : aggregate_functions)
+	const auto & aggregate_function_factory = context.getAggregateFunctionFactory();
+	for (const auto & details : aggregate_function_factory)
 	{
-		column_name.column->insert(it);
-		column_is_aggregate.column->insert(UInt64(1));
+		if (!details.is_alias)
+		{
+			column_name.column->insert(details.name);
+			column_is_aggregate.column->insert(UInt64(1));
+		}
 	}
 
 	return BlockInputStreams{ 1, new OneBlockInputStream{{ column_name, column_is_aggregate }} };
