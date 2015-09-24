@@ -2389,7 +2389,7 @@ void StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 	String host_port_str = zookeeper->get(replica_path + "/host");
 	ReadBufferFromString buf(host_port_str);
 	buf >> "host: " >> host >> "\n"
-		>> "\nport: " >> port >> "\n";
+		>> "port: " >> port >> "\n";
 
 	MergeTreeData::MutableDataPartPtr part = fetcher.fetchPart(part_name, replica_path, host, port, to_detached);
 
