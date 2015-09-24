@@ -119,12 +119,23 @@ bool utf8_is_continuation_octet(const UInt8 octet)
 	return (octet & utf8_continuation_octet_mask) == utf8_continuation_octet;
 }
 
-
 /// moves `s` forward until either first non-continuation octet or string end is met
 void utf8_sync_forward(const UInt8 * & s, const UInt8 * const end = nullptr)
 {
 	while (s < end && utf8_is_continuation_octet(*s))
 		++s;
+}
+
+/// returns UTF-8 code point sequence length judging by it's first octet
+std::size_t utf8_seq_length(const UInt8 first_octet)
+{
+	if (first_octet < 0x80u)
+		return 1;
+
+	const std::size_t bits = 8;
+	const auto first_zero = _bit_scan_reverse(static_cast<UInt8>(~first_octet));
+
+	return bits - 1 - first_zero;
 }
 
 
@@ -367,17 +378,6 @@ struct PositionCaseInsensitiveUTF8Impl
 	{
 		using UTF8SequenceBuffer = UInt8[6];
 
-		/// returns UTF-8 code point sequence length judging by it's first octet
-		const auto utf8_seq_length = [] (const UInt8 first_octet) {
-			if (first_octet < 0x80u)
-				return 1ul;
-
-			const std::size_t bits = 8;
-			const auto first_zero = _bit_scan_reverse(static_cast<UInt8>(~first_octet));
-
-			return bits - 1 - first_zero;
-		};
-
 		static const Poco::UTF8Encoding utf8;
 		UTF8SequenceBuffer l_seq, u_seq;
 
@@ -401,7 +401,7 @@ struct PositionCaseInsensitiveUTF8Impl
 		std::size_t cache_actual_len{};
 
 		const auto n = sizeof(cachel);
-		const auto needle_begin = needle.data();
+		const auto needle_begin = reinterpret_cast<const UInt8 *>(needle.data());
 		const auto needle_end = needle_begin + needle.size();
 		auto needle_pos = needle_begin;
 
@@ -416,8 +416,8 @@ struct PositionCaseInsensitiveUTF8Impl
 				continue;
 			}
 
-			const auto src_len = utf8_seq_length(static_cast<UInt8>(*needle_pos));
-			const auto c_u32 = utf8.convert(reinterpret_cast<const UInt8 *>(needle_pos));
+			const auto src_len = utf8_seq_length(*needle_pos);
+			const auto c_u32 = utf8.convert(needle_pos);
 
 			const auto c_l_u32 = Poco::Unicode::toLower(c_u32);
 			const auto c_u_u32 = Poco::Unicode::toUpper(c_u32);
@@ -529,7 +529,7 @@ struct PositionCaseInsensitiveUTF8Impl
 
 					while (s1 < haystack_end && s2 < needle_end &&
 						   Poco::Unicode::toLower(utf8.convert(s1)) ==
-							   Poco::Unicode::toLower(utf8.convert(reinterpret_cast<const UInt8 *>(s2))))
+							   Poco::Unicode::toLower(utf8.convert(s2)))
 					{
 						const auto len = utf8_seq_length(*s1);
 						s1 += len, s2 += len;
