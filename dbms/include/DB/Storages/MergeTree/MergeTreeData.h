@@ -131,10 +131,8 @@ public:
 			}
 
 			/// Контрольная сумма от множества контрольных сумм .bin файлов.
-			String summaryDataChecksum() const
+			void summaryDataChecksum(SipHash & hash) const
 			{
-				SipHash hash;
-
 				/// Пользуемся тем, что итерирование в детерминированном (лексикографическом) порядке.
 				for (const auto & it : files)
 				{
@@ -148,10 +146,6 @@ public:
 					hash.update(reinterpret_cast<const char *>(&sum.uncompressed_size), sizeof(sum.uncompressed_size));
 					hash.update(reinterpret_cast<const char *>(&sum.uncompressed_hash), sizeof(sum.uncompressed_hash));
 				}
-
-				UInt64 lo, hi;
-				hash.get128(lo, hi);
-				return DB::toString(lo) + "_" + DB::toString(hi);
 			}
 
 			String toString() const

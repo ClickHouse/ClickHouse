@@ -2809,7 +2809,7 @@ void StorageReplicatedMergeTree::dropPartition(const Field & field, bool detach,
 
 	/// Такого никогда не должно происходить.
 	if (right == 0)
-		return;
+		throw Exception("Logical error: just allocated block number is zero", ErrorCodes::LOGICAL_ERROR);
 	--right;
 
 	String fake_part_name = getFakePartNameForDrop(month_name, 0, right);
