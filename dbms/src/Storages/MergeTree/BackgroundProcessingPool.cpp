@@ -8,6 +8,11 @@
 namespace DB
 {
 
+
+constexpr double BackgroundProcessingPool::sleep_seconds;
+constexpr double BackgroundProcessingPool::sleep_seconds_random_part;
+
+
 void BackgroundProcessingPool::TaskInfo::wake()
 {
 	if (removed)
