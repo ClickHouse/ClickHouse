@@ -173,8 +173,24 @@ public:
 	{
 		try
 		{
-			const char * data = "Ok.\n";
-			response.sendBuffer(data, strlen(data));
+			if (request.getURI() == "/" || request.getURI() == "/ping")
+			{
+				const char * data = "Ok.\n";
+				response.sendBuffer(data, strlen(data));
+			}
+			else
+			{
+				response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
+				response.send() << "There is no handle " << request.getURI() << "\n\n"
+					<< "Use / or /ping for health checks.\n"
+					<< "Send queries from your program with POST method or GET /?query=...\n\n"
+					<< "Use clickhouse-client:\n\n"
+					<< "For interactive data analysis:\n"
+					<< "    clickhouse-client\n\n"
+					<< "For batch query processing:\n"
+					<< "    clickhouse-client --query='SELECT 1' > result\n"
+					<< "    clickhouse-client < query > result\n";
+			}
 		}
 		catch (...)
 		{
@@ -184,7 +200,7 @@ public:
 };
 
 
-template<typename HandlerType>
+template <typename HandlerType>
 class HTTPRequestHandlerFactory : public Poco::Net::HTTPRequestHandlerFactory
 {
 private:
@@ -203,13 +219,18 @@ public:
 			<< ", Address: " << request.clientAddress().toString()
 			<< ", User-Agent: " << (request.has("User-Agent") ? request.get("User-Agent") : "none"));
 
-		if (request.getURI().find('?') != std::string::npos || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
+		if (request.getURI().find('?') != std::string::npos
+			|| request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
+		{
 			return new HandlerType(server);
+		}
 		else if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
 			|| request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD)
+		{
 			return new PingRequestHandler();
+		}
 		else
-			return 0;
+			return nullptr;
 	}
 };
 
