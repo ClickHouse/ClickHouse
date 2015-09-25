@@ -342,7 +342,7 @@ protected:
 		else
 		{
 			size_t space_left = std::max(1LU, block_size / storage.index_granularity);
-			while (!remaining_mark_ranges.empty() && space_left)
+			while (!remaining_mark_ranges.empty() && space_left && !isCancelled())
 			{
 				MarkRange & range = remaining_mark_ranges.back();
 
