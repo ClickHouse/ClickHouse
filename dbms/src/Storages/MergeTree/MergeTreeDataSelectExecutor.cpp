@@ -392,9 +392,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 		for (std::size_t i = 0; i < threads; ++i)
 		{
 			res.emplace_back(new MergeTreeThreadBlockInputStream{
-					i, pool, min_marks_for_concurrent_read, max_block_size, data, use_uncompressed_cache,
-					prewhere_actions,
-					prewhere_column, settings, virt_columns
+				i, pool, min_marks_for_concurrent_read, max_block_size, data, use_uncompressed_cache,
+				prewhere_actions,
+				prewhere_column, settings, virt_columns
 			});
 
 

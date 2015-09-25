@@ -411,7 +411,7 @@ public:
 
 	std::vector<ThreadTask> threads_tasks;
 
-	std::unordered_set<std::size_t> remaining_thread_tasks;
+	std::set<std::size_t> remaining_thread_tasks;
 
 	mutable std::mutex mutex;
 };
