@@ -205,7 +205,8 @@ public:
 
 		if (request.getURI().find('?') != std::string::npos || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
 			return new HandlerType(server);
-		else if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET)
+		else if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
+			|| request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD)
 			return new PingRequestHandler();
 		else
 			return 0;
