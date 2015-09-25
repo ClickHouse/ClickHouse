@@ -67,7 +67,7 @@ protected:
 	{
 		Block res;
 
-		while (!res)
+		while (!res && !isCancelled())
 		{
 			if (!task && !getNewTask())
 				break;
