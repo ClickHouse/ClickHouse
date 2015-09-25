@@ -151,6 +151,8 @@ BlockInputStreams StorageDistributed::read(
 {
 	Settings new_settings = settings;
 	new_settings.queue_max_wait_ms = Cluster::saturate(new_settings.queue_max_wait_ms, settings.limits.max_execution_time);
+	/// Не имеет смысла на удалённых серверах, так как запрос отправляется обычно с другим user-ом.
+	new_settings.max_concurrent_queries_for_user = 0;
 
 	size_t result_size = (cluster.pools.size() * settings.max_parallel_replicas) + cluster.getLocalNodesNum();
 
