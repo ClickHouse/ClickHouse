@@ -167,8 +167,11 @@ BlockInputStreams StorageDistributed::read(
 
 	/// Ограничение сетевого трафика, если нужно.
 	ThrottlerPtr throttler;
-	if (settings.limits.max_network_bandwidth)
-		throttler.reset(new Throttler(settings.limits.max_network_bandwidth));
+	if (settings.limits.max_network_bandwidth || settings.limits.max_network_bytes)
+		throttler.reset(new Throttler(
+			settings.limits.max_network_bandwidth,
+			settings.limits.max_network_bytes,
+			"Limit for bytes to send or receive over network exceeded."));
 
 	Tables external_tables;
 
