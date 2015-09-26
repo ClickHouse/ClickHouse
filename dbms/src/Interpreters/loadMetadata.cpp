@@ -61,9 +61,6 @@ static void executeCreateQuery(const String & query, Context & context, const St
 
 void loadMetadata(Context & context)
 {
-	/// Создадим все таблицы атомарно (иначе какой-нибудь движок таблицы может успеть в фоновом потоке попытаться выполнить запрос).
-	Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
-
 	Logger * log = &Logger::get("loadMetadata");
 
 	/// Здесь хранятся определения таблиц
@@ -133,18 +130,21 @@ void loadMetadata(Context & context)
 	StopwatchWithLock watch;
 	size_t tables_processed = 0;
 
-	static constexpr size_t MIN_TABLES_TO_PARALLEL_LOAD = 1000;
+	static constexpr size_t MIN_TABLES_TO_PARALLEL_LOAD = 1;
 	static constexpr size_t PRINT_MESSAGE_EACH_N_TABLES = 256;
 	static constexpr size_t PRINT_MESSAGE_EACH_N_SECONDS = 5;
 	static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 	static constexpr size_t TABLES_PARALLEL_LOAD_BUNCH_SIZE = 100;
 
+	size_t num_threads = std::min(total_tables, SettingMaxThreads().getAutoValue());
+
 	std::unique_ptr<boost::threadpool::pool> thread_pool;
-	if (total_tables > MIN_TABLES_TO_PARALLEL_LOAD)
-	{
-		LOG_INFO(log, "Will load in multiple threads");
-		thread_pool.reset(new boost::threadpool::pool(SettingMaxThreads().getAutoValue()));
-	}
+	if (total_tables > MIN_TABLES_TO_PARALLEL_LOAD && num_threads > 1)
+		thread_pool.reset(new boost::threadpool::pool(num_threads));
+
+	size_t bunch_size = TABLES_PARALLEL_LOAD_BUNCH_SIZE;
+	if (total_tables < bunch_size * num_threads)
+		bunch_size = total_tables / num_threads;
 
 	auto task_function = [&](Tables::const_iterator begin, Tables::const_iterator end)
 	{
@@ -196,15 +196,15 @@ void loadMetadata(Context & context)
 	  * Недостаток - исключения попадают в основной поток только после окончания работы всех task-ов.
 	  */
 
-	size_t num_bunches = (total_tables + TABLES_PARALLEL_LOAD_BUNCH_SIZE - 1) / TABLES_PARALLEL_LOAD_BUNCH_SIZE;
+	size_t num_bunches = (total_tables + bunch_size - 1) / bunch_size;
 	std::vector<std::packaged_task<void()>> tasks(num_bunches);
 
 	for (size_t i = 0; i < num_bunches; ++i)
 	{
-		auto begin = tables.begin() + i * TABLES_PARALLEL_LOAD_BUNCH_SIZE;
+		auto begin = tables.begin() + i * bunch_size;
 		auto end = (i + 1 == num_bunches)
 			? tables.end()
-			: (tables.begin() + (i + 1) * TABLES_PARALLEL_LOAD_BUNCH_SIZE);
+			: (tables.begin() + (i + 1) * bunch_size);
 
 		tasks[i] = std::packaged_task<void()>(std::bind(task_function, begin, end));
 
