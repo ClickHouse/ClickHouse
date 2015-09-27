@@ -107,13 +107,14 @@ void ReplicatedMergeTreeLogEntry::readText(ReadBuffer & in)
 		create_time = create_time_dt;
 	}
 
-	in >> "source replica: " >> source_replica >> "\n"
-		>> type_str >> "\n";
+	in >> "source replica: " >> source_replica >> "\n";
 
 	if (format_version >= 3)
 	{
 		in >> "block_id: " >> escape >> block_id >> "\n";
 	}
+
+	in >> type_str >> "\n";
 
 	if (type_str == "get")
 	{
