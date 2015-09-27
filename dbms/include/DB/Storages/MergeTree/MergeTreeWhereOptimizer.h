@@ -329,7 +329,8 @@ private:
 
 			if ((primary_key_columns.count(first_arg_name) && isConstant(args[1])) ||
 				(primary_key_columns.count(second_arg_name) && isConstant(args[0])) ||
-				(primary_key_columns.count(first_arg_name) && typeid_cast<const ASTSet *>(args[1].get())))
+				(primary_key_columns.count(first_arg_name)
+					&& (typeid_cast<const ASTSet *>(args[1].get()) || typeid_cast<const ASTSubquery *>(args[1].get()))))
 				return true;
 		}
 
