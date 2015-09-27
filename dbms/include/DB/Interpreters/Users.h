@@ -16,6 +16,7 @@
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/HexWriteBuffer.h>
 #include <DB/IO/WriteBufferFromString.h>
+#include <DB/IO/WriteHelpers.h>
 #include <DB/Common/SimpleCache.h>
 
 #include <openssl/sha.h>
