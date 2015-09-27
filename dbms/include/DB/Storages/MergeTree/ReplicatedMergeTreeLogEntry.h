@@ -69,6 +69,7 @@ struct ReplicatedMergeTreeLogEntryData
 	/// Имя куска, получающегося в результате.
 	/// Для DROP_RANGE имя несуществующего куска. Нужно удалить все куски, покрытые им.
 	String new_part_name;
+	String block_id;	/// Для кусков нулевого уровня - идентификатор блока для дедупликации (имя ноды в /blocks/).
 
 	Strings parts_to_merge;
 

@@ -1073,6 +1073,9 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 					if (entry.type != LogEntry::GET_PART)
 						throw Exception("Logical error: log entry with quorum but type is not GET_PART", ErrorCodes::LOGICAL_ERROR);
 
+					if (entry.block_id.empty())
+						throw Exception("Logical error: log entry with quorum have empty block_id", ErrorCodes::LOGICAL_ERROR);
+
 					LOG_DEBUG(log, "No active replica has part " << entry.new_part_name << " which needs to be written with quorum."
 						" Will try to mark that quorum as failed.");
 
@@ -1081,9 +1084,8 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 					  * - если существует узел quorum с этим куском;
 					  * - удалим узел quorum;
 					  * - установим nonincrement_block_numbers, чтобы разрешить мерджи через номер потерянного куска;
-					  * - добавим кусок в список quorum/failed_parts.
-					  *
-					  * TODO Удаление из blocks.
+					  * - добавим кусок в список quorum/failed_parts;
+					  * - если кусок ещё не удалён из списка для дедупликации blocks/block_num, то удалим его;
 					  *
 					  * Если что-то изменится, то ничего не сделаем - попадём сюда снова в следующий раз.
 					  */
@@ -1143,6 +1145,14 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 								"",
 								acl,
 								zkutil::CreateMode::Persistent));
+
+							/// Удаление из blocks.
+							if (zookeeper->exists(zookeeper_path + "/blocks/" + entry.block_id))
+							{
+								ops.push_back(new zkutil::Op::Remove(zookeeper_path + "/blocks/" + entry.block_id + "/number", -1));
+								ops.push_back(new zkutil::Op::Remove(zookeeper_path + "/blocks/" + entry.block_id + "/checksum", -1));
+								ops.push_back(new zkutil::Op::Remove(zookeeper_path + "/blocks/" + entry.block_id, -1));
+							}
 
 							auto code = zookeeper->tryMulti(ops);
 
