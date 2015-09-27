@@ -97,7 +97,7 @@ void ReplicatedMergeTreeLogEntry::readText(ReadBuffer & in)
 
 	in >> "format version: " >> format_version >> "\n";
 
-	if (format_version != 1 && format_version != 2)
+	if (format_version != 1 && format_version != 2 && format_version != 3)
 		throw Exception("Unknown ReplicatedMergeTreeLogEntry format version: " + DB::toString(format_version), ErrorCodes::UNKNOWN_FORMAT_VERSION);
 
 	if (format_version == 2)
