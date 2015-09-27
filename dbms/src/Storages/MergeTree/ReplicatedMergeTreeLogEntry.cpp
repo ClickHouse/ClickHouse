@@ -100,14 +100,14 @@ void ReplicatedMergeTreeLogEntry::readText(ReadBuffer & in)
 	if (format_version != 1 && format_version != 2 && format_version != 3)
 		throw Exception("Unknown ReplicatedMergeTreeLogEntry format version: " + DB::toString(format_version), ErrorCodes::UNKNOWN_FORMAT_VERSION);
 
-	if (format_version == 2)
+	if (format_version >= 2)
 	{
 		mysqlxx::DateTime create_time_dt;
 		in >> "create_time: " >> create_time_dt >> "\n";
 		create_time = create_time_dt;
 	}
 
-	if (format_version == 3)
+	if (format_version >= 3)
 	{
 		in >> "block_id: " >> escape >> block_id >> "\n";
 	}
