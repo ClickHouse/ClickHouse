@@ -1710,6 +1710,7 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 				entry.type = LogEntry::MERGE_PARTS;
 				entry.source_replica = replica_name;
 				entry.new_part_name = merged_name;
+				entry.create_time = time(0);
 
 				for (const auto & part : parts)
 					entry.parts_to_merge.push_back(part->name);
@@ -2862,6 +2863,7 @@ void StorageReplicatedMergeTree::dropPartition(const Field & field, bool detach,
 	entry.detach = detach;
 	String log_znode_path = zookeeper->create(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential);
 	entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
+	entry.create_time = time(0);
 
 	/// Если надо - дожидаемся выполнения операции на себе или на всех репликах.
 	if (settings.replication_alter_partitions_sync != 0)
@@ -2950,6 +2952,8 @@ void StorageReplicatedMergeTree::attachPartition(const Field & field, bool unrep
 		entry.source_part_name = part_name;
 		entry.new_part_name = new_part_name;
 		entry.attach_unreplicated = unreplicated;
+		entry.create_time = time(0);
+
 		ops.push_back(new zkutil::Op::Create(
 			zookeeper_path + "/log/log-", entry.toString(), zookeeper->getDefaultACL(), zkutil::CreateMode::PersistentSequential));
 	}
