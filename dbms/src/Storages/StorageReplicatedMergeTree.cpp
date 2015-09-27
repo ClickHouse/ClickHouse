@@ -1438,8 +1438,8 @@ bool StorageReplicatedMergeTree::queueTask(BackgroundProcessingPool::Context & p
 				}
 				else
 				{
-					++entry->num_postponed;
-					entry->last_postpone_time = time(0);
+					++(*it)->num_postponed;
+					(*it)->last_postpone_time = time(0);
 				}
 			}
 		}
