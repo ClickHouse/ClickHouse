@@ -16,6 +16,7 @@
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/HexWriteBuffer.h>
 #include <DB/IO/WriteBufferFromString.h>
+#include <DB/Common/SimpleCache.h>
 
 #include <openssl/sha.h>
 
@@ -108,10 +109,7 @@ class HostExactPattern : public IAddressPattern
 private:
 	String host;
 
-public:
-	HostExactPattern(const String & host_) : host(host_) {}
-
-	bool contains(const Poco::Net::IPAddress & addr) const
+	static bool containsImpl(const String & host, const Poco::Net::IPAddress & addr)
 	{
 		Poco::Net::IPAddress addr_v6 = toIPv6(addr);
 
@@ -162,6 +160,15 @@ public:
 
 		return false;
 	}
+
+public:
+	HostExactPattern(const String & host_) : host(host_) {}
+
+	bool contains(const Poco::Net::IPAddress & addr) const
+	{
+		static SimpleCache<decltype(containsImpl), &containsImpl> cache;
+		return cache(host, addr);
+	}
 };
 
 
@@ -171,10 +178,7 @@ class HostRegexpPattern : public IAddressPattern
 private:
 	Poco::RegularExpression host_regexp;
 
-public:
-	HostRegexpPattern(const String & host_regexp_) : host_regexp(host_regexp_) {}
-
-	bool contains(const Poco::Net::IPAddress & addr) const
+	static String getDomain(const Poco::Net::IPAddress & addr)
 	{
 		Poco::Net::SocketAddress sock_addr(addr, 0);
 
@@ -184,10 +188,20 @@ public:
 		if (0 != gai_errno)
 			throw Exception("Cannot getnameinfo: " + std::string(gai_strerror(gai_errno)), ErrorCodes::DNS_ERROR);
 
-		String domain_str = domain;
+		return domain;
+	}
+
+public:
+	HostRegexpPattern(const String & host_regexp_) : host_regexp(host_regexp_) {}
+
+	bool contains(const Poco::Net::IPAddress & addr) const
+	{
+		static SimpleCache<decltype(getDomain), &getDomain> cache;
+
+		String domain = cache(addr);
 		Poco::RegularExpression::Match match;
 
-		if (host_regexp.match(domain_str, match) && HostExactPattern(domain_str).contains(addr))
+		if (host_regexp.match(domain, match) && HostExactPattern(domain).contains(addr))
 			return true;
 
 		return false;
