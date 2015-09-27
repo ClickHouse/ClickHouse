@@ -162,8 +162,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	String unreplicated_path = full_path + "unreplicated/";
 	if (Poco::File(unreplicated_path).exists())
 	{
-		LOG_INFO(log, "Have unreplicated data");
-
 		unreplicated_data.reset(new MergeTreeData(unreplicated_path, columns_,
 			materialized_columns_, alias_columns_, column_defaults_,
 			context_, primary_expr_ast_,
@@ -172,8 +170,16 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
 		unreplicated_data->loadDataParts(skip_sanity_checks);
 
-		unreplicated_reader.reset(new MergeTreeDataSelectExecutor(*unreplicated_data));
-		unreplicated_merger.reset(new MergeTreeDataMerger(*unreplicated_data));
+		if (unreplicated_data->getDataPartsVector().empty())
+		{
+			unreplicated_data.reset();
+		}
+		else
+		{
+			LOG_INFO(log, "Have unreplicated data");
+			unreplicated_reader.reset(new MergeTreeDataSelectExecutor(*unreplicated_data));
+			unreplicated_merger.reset(new MergeTreeDataMerger(*unreplicated_data));
+		}
 	}
 
 	loadQueue();
