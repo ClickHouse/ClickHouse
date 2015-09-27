@@ -21,7 +21,10 @@ template <typename F, F* f>
 class SimpleCache
 {
 private:
-	using Key = typename function_traits<F>::arguments;
+	template <typename... T>
+	using tuple_with_removed_refs = std::tuple<typename std::remove_reference<T>::type...>;
+
+	using Key = typename function_traits<F>::arguments_remove_reference;
 	using Result = typename function_traits<F>::result;
 
 	std::map<Key, Result> cache;
