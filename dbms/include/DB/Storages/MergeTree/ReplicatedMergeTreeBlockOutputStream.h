@@ -109,9 +109,11 @@ public:
 
 			StorageReplicatedMergeTree::LogEntry log_entry;
 			log_entry.type = StorageReplicatedMergeTree::LogEntry::GET_PART;
+			log_entry.create_time = time(0);
 			log_entry.source_replica = storage.replica_name;
 			log_entry.new_part_name = part_name;
 			log_entry.quorum = quorum;
+			log_entry.block_id = block_id;
 
 			/// Одновременно добавим информацию о куске во все нужные места в ZooKeeper и снимем block_number_lock.
 

@@ -20,13 +20,10 @@ class FileChecker
 {
 public:
 	FileChecker(const std::string & file_info_path_) :
-		files_info_path(file_info_path_), files_info(), log(&Logger::get("FileChecker"))
+		files_info_path(file_info_path_)
 	{
 		Poco::Path path(files_info_path);
 		tmp_files_info_path = path.parent().toString() + "tmp_" + path.getFileName();
-
-		if (Poco::File(files_info_path).exists())
-			boost::property_tree::read_json(files_info_path, files_info);
 	}
 
 	void setPath(const std::string & file_info_path_)
@@ -38,12 +35,14 @@ public:
 
 	void update(const Poco::File & file)
 	{
+		initialize();
 		updateTree(file);
 		saveTree();
 	}
 
 	void update(const Files::iterator & begin, const Files::iterator & end)
 	{
+		initialize();
 		for (auto it = begin; it != end; ++it)
 			updateTree(*it);
 		saveTree();
@@ -52,9 +51,17 @@ public:
 	/// Проверяем файлы, параметры которых указаны в sizes.json
 	bool check() const
 	{
+		/** Читаем файлы заново при каждом вызове check - чтобы не нарушать константность.
+		  * Метод check вызывается редко.
+		  */
+		PropertyTree local_files_info;
+		if (Poco::File(files_info_path).exists())
+			boost::property_tree::read_json(files_info_path, local_files_info);
+
 		bool correct = true;
-		if (!files_info.empty())
-			for (auto & node : files_info.get_child("yandex"))
+		if (!local_files_info.empty())
+		{
+			for (auto & node : local_files_info.get_child("yandex"))
 			{
 				std::string filename = unescapeForFileName(node.first);
 				size_t expected_size = std::stoull(node.second.template get<std::string>("size"));
@@ -74,10 +81,22 @@ public:
 					correct = false;
 				}
 			}
+		}
 		return correct;
 	}
 
 private:
+	void initialize()
+	{
+		if (initialized)
+			return;
+
+		if (Poco::File(files_info_path).exists())
+			boost::property_tree::read_json(files_info_path, files_info);
+
+		initialized = true;
+	}
+
 	void updateTree(const Poco::File & file)
 	{
 		files_info.put(std::string("yandex.") + escapeForFileName(Poco::Path(file.path()).getFileName()) + ".size", std::to_string(file.getSize()));
@@ -104,8 +123,11 @@ private:
 	std::string tmp_files_info_path;
 
 	using PropertyTree = boost::property_tree::ptree;
-	PropertyTree files_info;
 
-	Logger * log;
+	/// Данные из файла читаются лениво.
+	PropertyTree files_info;
+	bool initialized = false;
+
+	Logger * log = &Logger::get("FileChecker");
 };
 }

@@ -162,8 +162,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 	String unreplicated_path = full_path + "unreplicated/";
 	if (Poco::File(unreplicated_path).exists())
 	{
-		LOG_INFO(log, "Have unreplicated data");
-
 		unreplicated_data.reset(new MergeTreeData(unreplicated_path, columns_,
 			materialized_columns_, alias_columns_, column_defaults_,
 			context_, primary_expr_ast_,
@@ -172,8 +170,16 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
 		unreplicated_data->loadDataParts(skip_sanity_checks);
 
-		unreplicated_reader.reset(new MergeTreeDataSelectExecutor(*unreplicated_data));
-		unreplicated_merger.reset(new MergeTreeDataMerger(*unreplicated_data));
+		if (unreplicated_data->getDataPartsVector().empty())
+		{
+			unreplicated_data.reset();
+		}
+		else
+		{
+			LOG_INFO(log, "Have unreplicated data");
+			unreplicated_reader.reset(new MergeTreeDataSelectExecutor(*unreplicated_data));
+			unreplicated_merger.reset(new MergeTreeDataMerger(*unreplicated_data));
+		}
 	}
 
 	loadQueue();
@@ -1067,6 +1073,9 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 					if (entry.type != LogEntry::GET_PART)
 						throw Exception("Logical error: log entry with quorum but type is not GET_PART", ErrorCodes::LOGICAL_ERROR);
 
+					if (entry.block_id.empty())
+						throw Exception("Logical error: log entry with quorum have empty block_id", ErrorCodes::LOGICAL_ERROR);
+
 					LOG_DEBUG(log, "No active replica has part " << entry.new_part_name << " which needs to be written with quorum."
 						" Will try to mark that quorum as failed.");
 
@@ -1075,9 +1084,8 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 					  * - если существует узел quorum с этим куском;
 					  * - удалим узел quorum;
 					  * - установим nonincrement_block_numbers, чтобы разрешить мерджи через номер потерянного куска;
-					  * - добавим кусок в список quorum/failed_parts.
-					  *
-					  * TODO Удаление из blocks.
+					  * - добавим кусок в список quorum/failed_parts;
+					  * - если кусок ещё не удалён из списка для дедупликации blocks/block_num, то удалим его;
 					  *
 					  * Если что-то изменится, то ничего не сделаем - попадём сюда снова в следующий раз.
 					  */
@@ -1137,6 +1145,14 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry, Backgro
 								"",
 								acl,
 								zkutil::CreateMode::Persistent));
+
+							/// Удаление из blocks.
+							if (zookeeper->exists(zookeeper_path + "/blocks/" + entry.block_id))
+							{
+								ops.push_back(new zkutil::Op::Remove(zookeeper_path + "/blocks/" + entry.block_id + "/number", -1));
+								ops.push_back(new zkutil::Op::Remove(zookeeper_path + "/blocks/" + entry.block_id + "/checksum", -1));
+								ops.push_back(new zkutil::Op::Remove(zookeeper_path + "/blocks/" + entry.block_id, -1));
+							}
 
 							auto code = zookeeper->tryMulti(ops);
 
@@ -1422,8 +1438,8 @@ bool StorageReplicatedMergeTree::queueTask(BackgroundProcessingPool::Context & p
 				}
 				else
 				{
-					++entry->num_postponed;
-					entry->last_postpone_time = time(0);
+					++(*it)->num_postponed;
+					(*it)->last_postpone_time = time(0);
 				}
 			}
 		}
@@ -1694,6 +1710,7 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 				entry.type = LogEntry::MERGE_PARTS;
 				entry.source_replica = replica_name;
 				entry.new_part_name = merged_name;
+				entry.create_time = time(0);
 
 				for (const auto & part : parts)
 					entry.parts_to_merge.push_back(part->name);
@@ -2846,6 +2863,7 @@ void StorageReplicatedMergeTree::dropPartition(const Field & field, bool detach,
 	entry.detach = detach;
 	String log_znode_path = zookeeper->create(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential);
 	entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
+	entry.create_time = time(0);
 
 	/// Если надо - дожидаемся выполнения операции на себе или на всех репликах.
 	if (settings.replication_alter_partitions_sync != 0)
@@ -2934,6 +2952,8 @@ void StorageReplicatedMergeTree::attachPartition(const Field & field, bool unrep
 		entry.source_part_name = part_name;
 		entry.new_part_name = new_part_name;
 		entry.attach_unreplicated = unreplicated;
+		entry.create_time = time(0);
+
 		ops.push_back(new zkutil::Op::Create(
 			zookeeper_path + "/log/log-", entry.toString(), zookeeper->getDefaultACL(), zkutil::CreateMode::PersistentSequential));
 	}

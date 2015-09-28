@@ -392,9 +392,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 		for (std::size_t i = 0; i < threads; ++i)
 		{
 			res.emplace_back(new MergeTreeThreadBlockInputStream{
-					i, pool, min_marks_for_concurrent_read, max_block_size, data, use_uncompressed_cache,
-					prewhere_actions,
-					prewhere_column, settings, virt_columns
+				i, pool, min_marks_for_concurrent_read, max_block_size, data, use_uncompressed_cache,
+				prewhere_actions,
+				prewhere_column, settings, virt_columns
 			});
 
 
@@ -518,6 +518,10 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 
 	if (settings.merge_tree_uniform_read_distribution == 1)
 	{
+		/// Пусть отрезки будут перечислены справа налево, чтобы можно было выбрасывать самый левый отрезок с помощью pop_back().
+		for (auto & part : parts)
+			std::reverse(std::begin(part.ranges), std::end(part.ranges));
+
 		MergeTreeReadPoolPtr pool = std::make_shared<MergeTreeReadPool>(
 			parts.size(), sum_marks, min_marks_for_read_task, parts, data, prewhere_actions, prewhere_column, true,
 			column_names, true);

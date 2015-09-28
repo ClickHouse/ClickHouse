@@ -67,7 +67,7 @@ protected:
 	{
 		Block res;
 
-		while (!res)
+		while (!res && !isCancelled())
 		{
 			if (!task && !getNewTask())
 				break;
@@ -277,7 +277,7 @@ private:
 		{
 			size_t space_left = std::max(1LU, block_size_marks);
 
-			while (!task->mark_ranges.empty() && space_left)
+			while (!task->mark_ranges.empty() && space_left && !isCancelled())
 			{
 				auto & range = task->mark_ranges.back();
 
