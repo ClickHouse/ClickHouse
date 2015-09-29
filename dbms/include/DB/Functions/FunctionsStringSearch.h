@@ -52,6 +52,7 @@ namespace DB
   */
 
 
+template <bool CaseSensitive>
 struct PositionImpl
 {
 	typedef UInt64 ResultType;
@@ -69,7 +70,7 @@ struct PositionImpl
 		/// Текущий индекс в массиве строк.
 		size_t i = 0;
 
-		Volnitsky searcher(needle.data(), needle.size(), end - pos);
+		VolnitskyImpl<CaseSensitive, true> searcher(needle.data(), needle.size(), end - pos);
 
 		/// Искать будем следующее вхождение сразу во всех строках.
 		while (pos < end && end != (pos = searcher.search(pos, end - pos)))
@@ -94,8 +95,14 @@ struct PositionImpl
 		memset(&res[i], 0, (res.size() - i) * sizeof(res[0]));
 	}
 
-	static void constant(const std::string & data, const std::string & needle, UInt64 & res)
+	static void constant(std::string data, std::string needle, UInt64 & res)
 	{
+		if (!CaseSensitive)
+		{
+			std::transform(std::begin(data), std::end(data), std::begin(data), tolower);
+			std::transform(std::begin(needle), std::end(needle), std::begin(needle), tolower);
+		}
+
 		res = data.find(needle);
 		if (res == std::string::npos)
 			res = 0;
@@ -142,6 +149,7 @@ std::size_t utf8_seq_length(const UInt8 first_octet)
 }
 
 
+template <bool CaseSensitive>
 struct PositionUTF8Impl
 {
 	typedef UInt64 ResultType;
@@ -157,7 +165,7 @@ struct PositionUTF8Impl
 		/// Текущий индекс в массиве строк.
 		size_t i = 0;
 
-		Volnitsky searcher(needle.data(), needle.size(), end - pos);
+		VolnitskyImpl<CaseSensitive, false> searcher(needle.data(), needle.size(), end - pos);
 
 		/// Искать будем следующее вхождение сразу во всех строках.
 		while (pos < end && end != (pos = searcher.search(pos, end - pos)))
@@ -188,8 +196,29 @@ struct PositionUTF8Impl
 		memset(&res[i], 0, (res.size() - i) * sizeof(res[0]));
 	}
 
-	static void constant(const std::string & data, const std::string & needle, UInt64 & res)
+	static void constant(std::string data, std::string needle, UInt64 & res)
 	{
+		if (!CaseSensitive)
+		{
+			static const Poco::UTF8Encoding utf8;
+
+			auto data_pos = reinterpret_cast<UInt8 *>(&data[0]);
+			const auto data_end = data_pos + data.size();
+			while (data_pos < data_end)
+			{
+				const auto len = utf8.convert(Poco::Unicode::toLower(utf8.convert(data_pos)), data_pos, data_end - data_pos);
+				data_pos += len;
+			}
+
+			auto needle_pos = reinterpret_cast<UInt8 *>(&needle[0]);
+			const auto needle_end = needle_pos + needle.size();
+			while (needle_pos < needle_end)
+			{
+				const auto len = utf8.convert(Poco::Unicode::toLower(utf8.convert(needle_pos)), needle_pos, needle_end - needle_pos);
+				needle_pos += len;
+			}
+		}
+
 		const auto pos = data.find(needle);
 		if (pos != std::string::npos)
 		{
@@ -1734,6 +1763,8 @@ struct NamePosition 					{ static constexpr auto name = "position"; };
 struct NamePositionUTF8					{ static constexpr auto name = "positionUTF8"; };
 struct NamePositionCaseInsensitive 		{ static constexpr auto name = "positionCaseInsensitive"; };
 struct NamePositionCaseInsensitiveUTF8	{ static constexpr auto name = "positionCaseInsensitiveUTF8"; };
+struct NamePositionCaseInsensitiveVolnitsky 		{ static constexpr auto name = "positionCaseInsensitiveVolnitsky"; };
+struct NamePositionCaseInsensitiveUTF8Volnitsky	{ static constexpr auto name = "positionCaseInsensitiveUTF8Volnitsky"; };
 struct NameMatch						{ static constexpr auto name = "match"; };
 struct NameLike							{ static constexpr auto name = "like"; };
 struct NameNotLike						{ static constexpr auto name = "notLike"; };
@@ -1743,10 +1774,13 @@ struct NameReplaceAll					{ static constexpr auto name = "replaceAll"; };
 struct NameReplaceRegexpOne				{ static constexpr auto name = "replaceRegexpOne"; };
 struct NameReplaceRegexpAll				{ static constexpr auto name = "replaceRegexpAll"; };
 
-typedef FunctionsStringSearch<PositionImpl, 					NamePosition> 						FunctionPosition;
-typedef FunctionsStringSearch<PositionUTF8Impl, 				NamePositionUTF8> 					FunctionPositionUTF8;
+typedef FunctionsStringSearch<PositionImpl<true>, 				NamePosition> 						FunctionPosition;
+typedef FunctionsStringSearch<PositionUTF8Impl<true>, 			NamePositionUTF8> 					FunctionPositionUTF8;
 typedef FunctionsStringSearch<PositionCaseInsensitiveImpl,		NamePositionCaseInsensitive> 		FunctionPositionCaseInsensitive;
 typedef FunctionsStringSearch<PositionCaseInsensitiveUTF8Impl,	NamePositionCaseInsensitiveUTF8>	FunctionPositionCaseInsensitiveUTF8;
+typedef FunctionsStringSearch<PositionImpl<false>,				NamePositionCaseInsensitiveVolnitsky> 		FunctionPositionCaseInsensitiveVolnitsky;
+typedef FunctionsStringSearch<PositionUTF8Impl<false>,			NamePositionCaseInsensitiveUTF8Volnitsky>	FunctionPositionCaseInsensitiveUTF8Volnitsky;
+
 typedef FunctionsStringSearch<MatchImpl<false>, 				NameMatch> 							FunctionMatch;
 typedef FunctionsStringSearch<MatchImpl<true>, 					NameLike> 							FunctionLike;
 typedef FunctionsStringSearch<MatchImpl<true, true>, 			NameNotLike> 						FunctionNotLike;
