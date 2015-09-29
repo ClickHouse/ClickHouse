@@ -1000,7 +1000,7 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name)
 	}
 	else if (settings.global_subqueries_method == GlobalSubqueriesMethod::PULL)
 	{
-		String host_port = getFQDNOrHostName() + ":" + Poco::Util::Application::instance().config().getString("tcp_port");
+		String host_port = getFQDNOrHostName() + ":" + toString(context.getTCPPort());
 		String database = "_query_" + context.getCurrentQueryId();
 
 		auto subquery = new ASTSubquery;
