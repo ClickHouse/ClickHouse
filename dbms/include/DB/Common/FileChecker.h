@@ -1,16 +1,16 @@
 #pragma once
 
-#include <Yandex/logger_useful.h>
-#include <DB/Columns/IColumn.h>
-#include <Poco/AutoPtr.h>
-#include <Poco/Util/XMLConfiguration.h>
-#include <Poco/Path.h>
 #include <string>
+#include <Yandex/logger_useful.h>
+#include <statdaemons/JSON.h>
+#include <Poco/Path.h>
 #include <Poco/File.h>
+#include <DB/IO/WriteBufferFromFile.h>
+#include <DB/IO/WriteBufferFromString.h>
+#include <DB/IO/ReadBufferFromFile.h>
+#include <DB/IO/copyData.h>
 #include <DB/Common/escapeForFileName.h>
 
-#include <boost/property_tree/ptree.hpp>
-#include <boost/property_tree/json_parser.hpp>
 
 namespace DB
 {
@@ -18,6 +18,10 @@ namespace DB
 /// хранит размеры всех столбцов, и может проверять не побились ли столбцы
 class FileChecker
 {
+private:
+	/// Имя файла -> размер.
+	using Map = std::map<std::string, size_t>;
+
 public:
 	FileChecker(const std::string & file_info_path_) :
 		files_info_path(file_info_path_)
@@ -36,16 +40,16 @@ public:
 	void update(const Poco::File & file)
 	{
 		initialize();
-		updateTree(file);
-		saveTree();
+		updateImpl(file);
+		save();
 	}
 
 	void update(const Files::iterator & begin, const Files::iterator & end)
 	{
 		initialize();
 		for (auto it = begin; it != end; ++it)
-			updateTree(*it);
-		saveTree();
+			updateImpl(*it);
+		save();
 	}
 
 	/// Проверяем файлы, параметры которых указаны в sizes.json
@@ -54,35 +58,30 @@ public:
 		/** Читаем файлы заново при каждом вызове check - чтобы не нарушать константность.
 		  * Метод check вызывается редко.
 		  */
-		PropertyTree local_files_info;
-		if (Poco::File(files_info_path).exists())
-			boost::property_tree::read_json(files_info_path, local_files_info);
+		Map local_map;
+		load(local_map);
 
-		bool correct = true;
-		if (!local_files_info.empty())
+		if (local_map.empty())
+			return true;
+
+		for (const auto & name_size : local_map)
 		{
-			for (auto & node : local_files_info.get_child("yandex"))
+			Poco::File file(Poco::Path(files_info_path).parent().toString() + "/" + name_size.first);
+			if (!file.exists())
 			{
-				std::string filename = unescapeForFileName(node.first);
-				size_t expected_size = std::stoull(node.second.template get<std::string>("size"));
+				LOG_ERROR(log, "File " << file.path() << " doesn't exist");
+				return false;
+			}
 
-				Poco::File file(Poco::Path(files_info_path).parent().toString() + "/" + filename);
-				if (!file.exists())
-				{
-					LOG_ERROR(log, "File " << file.path() << " doesn't exist");
-					correct = false;
-					continue;
-				}
-
-				size_t real_size = file.getSize();
-				if (real_size != expected_size)
-				{
-					LOG_ERROR(log, "Size of " << file.path() << " is wrong. Size is " << real_size << " but should be " << expected_size);
-					correct = false;
-				}
+			size_t real_size = file.getSize();
+			if (real_size != name_size.second)
+			{
+				LOG_ERROR(log, "Size of " << file.path() << " is wrong. Size is " << real_size << " but should be " << name_size.second);
+				return false;
 			}
 		}
-		return correct;
+
+		return true;
 	}
 
 private:
@@ -91,20 +90,38 @@ private:
 		if (initialized)
 			return;
 
-		if (Poco::File(files_info_path).exists())
-			boost::property_tree::read_json(files_info_path, files_info);
-
+		load(map);
 		initialized = true;
 	}
 
-	void updateTree(const Poco::File & file)
+	void updateImpl(const Poco::File & file)
 	{
-		files_info.put(std::string("yandex.") + escapeForFileName(Poco::Path(file.path()).getFileName()) + ".size", std::to_string(file.getSize()));
+		map[Poco::Path(file.path()).getFileName()] = file.getSize();
 	}
 
-	void saveTree()
+	void save() const
 	{
-		boost::property_tree::write_json(tmp_files_info_path, files_info, std::locale());
+		{
+			WriteBufferFromFile out(tmp_files_info_path);
+
+			/// Столь сложная структура JSON-а - для совместимости со старым форматом.
+			writeCString("{\"yandex\":{", out);
+
+			for (auto it = map.begin(); it != map.end(); ++it)
+			{
+				if (it != map.begin())
+					writeString(",", out);
+
+				/// escapeForFileName на самом деле не нужен. Но он оставлен для совместимости со старым кодом.
+				writeJSONString(escapeForFileName(it->first), out);
+				writeString(":{\"size\":\"", out);
+				writeIntText(it->second, out);
+				writeString("\"}", out);
+			}
+
+			writeCString("}}", out);
+			out.next();
+		}
 
 		Poco::File current_file(files_info_path);
 
@@ -119,13 +136,39 @@ private:
 			Poco::File(tmp_files_info_path).renameTo(files_info_path);
 	}
 
+	void load(Map & map) const
+	{
+		map.clear();
+
+		if (!Poco::File(files_info_path).exists())
+			return;
+
+		std::string content;
+		{
+			ReadBufferFromFile in(files_info_path);
+			WriteBufferFromString out(content);
+
+			/// Библиотека JSON не поддерживает пробельные символы. Удаляем их. Неэффективно.
+			while (!in.eof())
+			{
+				char c;
+				readChar(c, in);
+				if (!isspace(c))
+					writeChar(c, out);
+			}
+		}
+		JSON json(content);
+
+		JSON files = json["yandex"];
+		for (const auto & name_value : files)
+			map[unescapeForFileName(name_value.getName())] = name_value.getValue()["size"].toUInt();
+	}
+
 	std::string files_info_path;
 	std::string tmp_files_info_path;
 
-	using PropertyTree = boost::property_tree::ptree;
-
 	/// Данные из файла читаются лениво.
-	PropertyTree files_info;
+	Map map;
 	bool initialized = false;
 
 	Logger * log = &Logger::get("FileChecker");
