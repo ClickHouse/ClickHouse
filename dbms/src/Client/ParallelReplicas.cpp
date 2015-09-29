@@ -205,8 +205,7 @@ void ParallelReplicas::registerReplica(Connection * connection)
 	if (!res.second)
 		throw Exception("Invalid set of connections.", ErrorCodes::LOGICAL_ERROR);
 
-	if (throttler)
-		connection->setThrottler(throttler);
+	connection->setThrottler(throttler);
 }
 
 Connection::Packet ParallelReplicas::receivePacketUnlocked()
