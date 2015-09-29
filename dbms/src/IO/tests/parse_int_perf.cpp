@@ -3,7 +3,7 @@
 
 #include <boost/type_traits.hpp>
 
-#include <Yandex/Common.h>
+#include <common/Common.h>
 
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>

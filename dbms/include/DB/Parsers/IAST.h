@@ -8,7 +8,7 @@
 
 #include <Poco/SharedPtr.h>
 
-#include <Yandex/Common.h>
+#include <common/Common.h>
 
 #include <DB/Core/Types.h>
 #include <DB/Core/Exception.h>

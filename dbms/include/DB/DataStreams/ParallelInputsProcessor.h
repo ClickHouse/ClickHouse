@@ -6,7 +6,7 @@
 #include <thread>
 #include <mutex>
 
-#include <Yandex/logger_useful.h>
+#include <common/logger_useful.h>
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/Common/setThreadName.h>

@@ -6,8 +6,8 @@
 
 #include <type_traits>
 
-#include <Yandex/Common.h>
-#include <Yandex/DateLUT.h>
+#include <common/Common.h>
+#include <common/DateLUT.h>
 
 #include <mysqlxx/Date.h>
 #include <mysqlxx/DateTime.h>

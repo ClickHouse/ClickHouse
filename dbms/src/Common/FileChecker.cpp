@@ -1,4 +1,4 @@
-#include <statdaemons/JSON.h>
+#include <common/JSON.h>
 #include <Poco/Path.h>
 #include <DB/IO/WriteBufferFromFile.h>
 #include <DB/IO/WriteBufferFromString.h>

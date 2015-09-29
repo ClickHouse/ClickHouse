@@ -2,7 +2,7 @@
 
 #include <map>
 
-#include <Yandex/singleton.h>
+#include <common/singleton.h>
 
 #include <Poco/RegularExpression.h>
 

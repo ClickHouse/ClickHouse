@@ -6,7 +6,7 @@
 #include <climits>
 #include <sstream>
 #include <stats/ReservoirSampler.h>
-#include <Yandex/Common.h>
+#include <common/Common.h>
 #include <DB/Common/HashTable/Hash.h>
 #include <DB/IO/ReadBuffer.h>
 #include <DB/IO/ReadHelpers.h>

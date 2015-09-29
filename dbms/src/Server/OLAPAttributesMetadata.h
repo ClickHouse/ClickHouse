@@ -9,7 +9,7 @@
 
 #include <DB/IO/WriteHelpers.h>
 
-#include <Yandex/DateLUT.h>
+#include <common/DateLUT.h>
 #include <strconvert/hash64.h>
 #include <statdaemons/RegionsHierarchy.h>
 #include <statdaemons/TechDataHierarchy.h>

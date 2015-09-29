@@ -4,7 +4,7 @@
 #include <memory>
 #include <vector>
 #include <Poco/SharedPtr.h>
-#include <Yandex/likely.h>
+#include <common/likely.h>
 #include <DB/Common/ProfileEvents.h>
 #include <DB/Common/Allocator.h>
 
