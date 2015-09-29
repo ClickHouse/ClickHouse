@@ -27,9 +27,11 @@ LogicalExpressionsOptimizer::LogicalExpressionsOptimizer(ASTSelectQuery * select
 {
 }
 
-void LogicalExpressionsOptimizer::optimizeDisjunctiveEqualityChains()
+void LogicalExpressionsOptimizer::perform()
 {
-	if ((select_query == nullptr) || hasOptimizedDisjunctiveEqualityChains)
+	if (select_query == nullptr)
+		return;
+	if (select_query->attributes & IAST::IsVisited)
 		return;
 
 	collectDisjunctiveEqualityChains();
@@ -50,8 +52,6 @@ void LogicalExpressionsOptimizer::optimizeDisjunctiveEqualityChains()
 		cleanupOrExpressions();
 		fixBrokenOrExpressions();
 	}
-
-	hasOptimizedDisjunctiveEqualityChains = true;
 }
 
 void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
@@ -62,7 +62,7 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 	using Edge = std::pair<IAST *, IAST *>;
 	std::deque<Edge> to_visit;
 
-	to_visit.push_back(Edge(nullptr, select_query));
+	to_visit.emplace_back(nullptr, select_query);
 	while (!to_visit.empty())
 	{
 		auto edge = to_visit.back();
@@ -70,7 +70,6 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 		auto to_node = edge.second;
 
 		to_visit.pop_back();
-		to_node->attributes |= IAST::IsVisited;
 
 		bool found_chain = false;
 
@@ -103,6 +102,8 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 				}
 			}
 		}
+
+		to_node->attributes |= IAST::IsVisited;
 
 		if (found_chain)
 		{
@@ -196,6 +197,14 @@ void LogicalExpressionsOptimizer::addInExpression(const DisjunctiveEqualityChain
 		value_list->children.push_back(operands[1]);
 	}
 
+	/// Отсортировать литералы.
+	std::sort(value_list->children.begin(), value_list->children.end(), [](const DB::ASTPtr & lhs, const DB::ASTPtr & rhs)
+	{
+		const auto val_lhs = static_cast<const ASTLiteral *>(&*lhs);
+		const auto val_rhs = static_cast<const ASTLiteral *>(&*rhs);
+		return val_lhs->value < val_rhs->value;
+	});
+
 	/// Получить выражение expr из цепочки expr = x1 OR ... OR expr = xN
 	ASTPtr equals_expr_lhs;
 	{
@@ -241,7 +250,7 @@ void LogicalExpressionsOptimizer::cleanupOrExpressions()
 
 		const auto & or_with_expression = chain.first;
 		auto & operands = getFunctionOperands(or_with_expression.or_function);
-		garbage_map.insert(std::make_pair(or_with_expression.or_function, operands.end()));
+		garbage_map.emplace(or_with_expression.or_function, operands.end());
 	}
 
 	/// Собрать мусор.

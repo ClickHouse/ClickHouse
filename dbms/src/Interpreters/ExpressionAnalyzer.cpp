@@ -114,7 +114,7 @@ void ExpressionAnalyzer::init()
 	InJoinSubqueriesPreprocessor<>(select_query, context, storage).perform();
 
 	/// Оптимизирует логические выражения.
-	LogicalExpressionsOptimizer(select_query, settings).optimizeDisjunctiveEqualityChains();
+	LogicalExpressionsOptimizer(select_query, settings).perform();
 
 	/// Добавляет в множество известных алиасов те, которые объявлены в структуре таблицы (ALIAS-столбцы).
 	addStorageAliases();
