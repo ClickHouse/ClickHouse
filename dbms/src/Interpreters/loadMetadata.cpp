@@ -59,6 +59,58 @@ static void executeCreateQuery(const String & query, Context & context, const St
 }
 
 
+struct Table
+{
+	String database_name;
+	String dir_name;
+	String file_name;
+};
+
+
+static constexpr size_t MIN_TABLES_TO_PARALLEL_LOAD = 1;
+static constexpr size_t PRINT_MESSAGE_EACH_N_TABLES = 256;
+static constexpr size_t PRINT_MESSAGE_EACH_N_SECONDS = 5;
+static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
+static constexpr size_t TABLES_PARALLEL_LOAD_BUNCH_SIZE = 100;
+
+
+static void loadTable(Context & context, const String & path, const Table & table)
+{
+	Logger * log = &Logger::get("loadTable");
+
+	const String path_to_metadata = path + "/" + table.dir_name + "/" + table.file_name;
+
+	String s;
+	{
+		char in_buf[METADATA_FILE_BUFFER_SIZE];
+		ReadBufferFromFile in(path_to_metadata, METADATA_FILE_BUFFER_SIZE, -1, in_buf);
+		WriteBufferFromString out(s);
+		copyData(in, out);
+	}
+
+	/** Пустые файлы с метаданными образуются после грубого перезапуска сервера.
+	  * Удаляем эти файлы, чтобы чуть-чуть уменьшить работу админов по запуску.
+	  */
+	if (s.empty())
+	{
+		LOG_ERROR(log, "File " << path_to_metadata << " is empty. Removing.");
+		Poco::File(path_to_metadata).remove();
+		return;
+	}
+
+	try
+	{
+		executeCreateQuery(s, context, table.database_name, path_to_metadata);
+	}
+	catch (const Exception & e)
+	{
+		throw Exception("Cannot create table from metadata file " + path_to_metadata + ", error: " + e.displayText() +
+			", stack trace:\n" + e.getStackTrace().toString(),
+			ErrorCodes::CANNOT_CREATE_TABLE_FROM_METADATA);
+	}
+}
+
+
 void loadMetadata(Context & context)
 {
 	Logger * log = &Logger::get("loadMetadata");
@@ -66,15 +118,14 @@ void loadMetadata(Context & context)
 	/// Здесь хранятся определения таблиц
 	String path = context.getPath() + "metadata";
 
-	struct Table
-	{
-		String database_name;
-		String dir_name;
-		String file_name;
-	};
-
 	using Tables = std::vector<Table>;
 	Tables tables;
+
+	/** Часть таблиц должны быть загружены раньше других, так как используются в конструкторе этих других.
+	  * Это таблицы, имя которых начинается на .inner.
+	  * NOTE Это довольно криво. Можно сделать лучше.
+	  */
+	Tables tables_to_load_first;
 
 	/// Цикл по базам данных
 	Poco::DirectoryIterator dir_end;
@@ -116,12 +167,25 @@ void loadMetadata(Context & context)
 		std::sort(file_names.begin(), file_names.end());
 
 		for (const auto & name : file_names)
-			tables.emplace_back(Table{
-				.database_name = database,
-				.dir_name = it.name(),
-				.file_name = name});
+		{
+			(0 == name.compare(0, strlen("%2Einner%2E"), "%2Einner%2E")
+				? tables_to_load_first
+				: tables).emplace_back(
+				Table{
+					.database_name = database,
+					.dir_name = it.name(),
+					.file_name = name});
+		}
 
 		LOG_INFO(log, "Found " << file_names.size() << " tables.");
+	}
+
+	if (!tables_to_load_first.empty())
+	{
+		LOG_INFO(log, "Loading inner tables for materialized views (total " << tables_to_load_first.size() << " tables).");
+
+		for (const auto & table : tables_to_load_first)
+			loadTable(context, path, table);
 	}
 
 	size_t total_tables = tables.size();
@@ -129,12 +193,6 @@ void loadMetadata(Context & context)
 
 	StopwatchWithLock watch;
 	size_t tables_processed = 0;
-
-	static constexpr size_t MIN_TABLES_TO_PARALLEL_LOAD = 1;
-	static constexpr size_t PRINT_MESSAGE_EACH_N_TABLES = 256;
-	static constexpr size_t PRINT_MESSAGE_EACH_N_SECONDS = 5;
-	static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
-	static constexpr size_t TABLES_PARALLEL_LOAD_BUNCH_SIZE = 100;
 
 	size_t num_threads = std::min(total_tables, SettingMaxThreads().getAutoValue());
 
@@ -151,7 +209,6 @@ void loadMetadata(Context & context)
 		for (Tables::const_iterator it = begin; it != end; ++it)
 		{
 			const Table & table = *it;
-			const String path_to_metadata = path + "/" + table.dir_name + "/" + table.file_name;
 
 			/// Сообщения, чтобы было не скучно ждать, когда сервер долго загружается.
 			if (__sync_add_and_fetch(&tables_processed, 1) % PRINT_MESSAGE_EACH_N_TABLES == 0
@@ -161,34 +218,7 @@ void loadMetadata(Context & context)
 				watch.restart();
 			}
 
-			String s;
-			{
-				char in_buf[METADATA_FILE_BUFFER_SIZE];
-				ReadBufferFromFile in(path_to_metadata, METADATA_FILE_BUFFER_SIZE, -1, in_buf);
-				WriteBufferFromString out(s);
-				copyData(in, out);
-			}
-
-			/** Пустые файлы с метаданными образуются после грубого перезапуска сервера.
-				* Удаляем эти файлы, чтобы чуть-чуть уменьшить работу админов по запуску.
-				*/
-			if (s.empty())
-			{
-				LOG_ERROR(log, "File " << path_to_metadata << " is empty. Removing.");
-				Poco::File(path_to_metadata).remove();
-				continue;
-			}
-
-			try
-			{
-				executeCreateQuery(s, context, table.database_name, path_to_metadata);
-			}
-			catch (const Exception & e)
-			{
-				throw Exception("Cannot create table from metadata file " + path_to_metadata + ", error: " + e.displayText() +
-					", stack trace:\n" + e.getStackTrace().toString(),
-					ErrorCodes::CANNOT_CREATE_TABLE_FROM_METADATA);
-			}
+			loadTable(context, path, table);
 		}
 	};
 
