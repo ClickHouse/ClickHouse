@@ -8,8 +8,8 @@
 #include <boost/noncopyable.hpp>
 #include <boost/iterator_adaptors.hpp>
 
-#include <Yandex/likely.h>
-#include <Yandex/strong_typedef.h>
+#include <common/likely.h>
+#include <common/strong_typedef.h>
 
 #include <DB/Common/Allocator.h>
 #include <DB/Core/Exception.h>

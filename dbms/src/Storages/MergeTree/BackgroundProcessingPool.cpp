@@ -2,7 +2,7 @@
 #include <DB/Core/ErrorCodes.h>
 #include <DB/Common/setThreadName.h>
 #include <DB/IO/WriteHelpers.h>
-#include <Yandex/logger_useful.h>
+#include <common/logger_useful.h>
 #include <DB/Storages/MergeTree/BackgroundProcessingPool.h>
 
 

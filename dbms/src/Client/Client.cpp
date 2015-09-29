@@ -19,7 +19,7 @@
 #include <Poco/SharedPtr.h>
 #include <Poco/Util/Application.h>
 
-#include <Yandex/Revision.h>
+#include <common/Revision.h>
 
 #include <statdaemons/Stopwatch.h>
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Yandex/Common.h>
+#include <common/Common.h>
 
 
 /** Отслеживает потребление памяти.

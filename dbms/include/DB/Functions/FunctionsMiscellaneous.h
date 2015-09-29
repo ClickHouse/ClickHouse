@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Poco/Net/DNS.h>
-#include <Yandex/Revision.h>
+#include <common/Revision.h>
 
 #include <DB/Core/Defines.h>
 #include <DB/IO/WriteBufferFromString.h>

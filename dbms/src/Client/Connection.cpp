@@ -2,7 +2,7 @@
 
 #include <Poco/Net/NetException.h>
 
-#include <Yandex/Revision.h>
+#include <common/Revision.h>
 
 #include <DB/Core/Defines.h>
 #include <DB/Core/Exception.h>

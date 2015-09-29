@@ -4,8 +4,8 @@
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 #include <DB/Common/setThreadName.h>
-#include <Yandex/MultiVersion.h>
-#include <Yandex/logger_useful.h>
+#include <common/MultiVersion.h>
+#include <common/logger_useful.h>
 #include <Poco/Event.h>
 #include <unistd.h>
 #include <time.h>

@@ -21,7 +21,7 @@ template <typename F, F* f>
 class SimpleCache
 {
 private:
-	using Key = typename function_traits<F>::arguments_remove_reference;
+	using Key = typename function_traits<F>::arguments_decay;
 	using Result = typename function_traits<F>::result;
 
 	std::map<Key, Result> cache;

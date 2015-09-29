@@ -9,7 +9,7 @@
 
 #include <boost/noncopyable.hpp>
 
-#include <Yandex/likely.h>
+#include <common/likely.h>
 
 #include <stats/IntHash.h>
 

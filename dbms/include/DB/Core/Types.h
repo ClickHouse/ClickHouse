@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 #include <Poco/Types.h>
-#include <Yandex/strong_typedef.h>
+#include <common/strong_typedef.h>
 
 
 namespace DB
