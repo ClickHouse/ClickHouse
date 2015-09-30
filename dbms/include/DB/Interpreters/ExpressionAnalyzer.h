@@ -163,8 +163,8 @@ private:
 	  *  - в "левой" таблице, он будет доступен по имени expr(x), так как ещё не было выполнено действие Project.
 	  * Надо запомнить оба этих варианта.
 	  */
-	NameSet join_key_names_left_set;
-	NameSet join_key_names_right_set;
+	Names join_key_names_left;
+	Names join_key_names_right;
 
 	NamesAndTypesList columns_added_by_join;
 

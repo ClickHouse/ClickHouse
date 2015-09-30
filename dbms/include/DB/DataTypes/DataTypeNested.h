@@ -20,7 +20,7 @@ private:
 public:
 	DataTypeNested(NamesAndTypesListPtr nested_);
 
-	std::string getName() const;
+	std::string getName() const override;
 
 	static std::string concatenateNestedName(const std::string & nested_table_name, const std::string & nested_field_name);
 	/// Возвращает префикс имени до первой точки '.'. Или имя без изменений, если точки нет.
@@ -28,24 +28,24 @@ public:
 	/// Возвращает суффикс имени после первой точки справа '.'. Или имя без изменений, если точки нет.
 	static std::string extractNestedColumnName(const std::string & nested_name);
 
-	DataTypePtr clone() const
+	DataTypePtr clone() const override
 	{
 		return new DataTypeNested(nested);
 	}
 
-	void serializeBinary(const Field & field, WriteBuffer & ostr) const;
-	void deserializeBinary(Field & field, ReadBuffer & istr) const;
+	void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
+	void deserializeBinary(Field & field, ReadBuffer & istr) const override;
 
-	void serializeText(const Field & field, WriteBuffer & ostr) const;
-	void deserializeText(Field & field, ReadBuffer & istr) const;
+	void serializeText(const Field & field, WriteBuffer & ostr) const override;
+	void deserializeText(Field & field, ReadBuffer & istr) const override;
 
-	void serializeTextEscaped(const Field & field, WriteBuffer & ostr) const;
-	void deserializeTextEscaped(Field & field, ReadBuffer & istr) const;
+	void serializeTextEscaped(const Field & field, WriteBuffer & ostr) const override;
+	void deserializeTextEscaped(Field & field, ReadBuffer & istr) const override;
 
-	void serializeTextQuoted(const Field & field, WriteBuffer & ostr) const;
-	void deserializeTextQuoted(Field & field, ReadBuffer & istr) const;
+	void serializeTextQuoted(const Field & field, WriteBuffer & ostr) const override;
+	void deserializeTextQuoted(Field & field, ReadBuffer & istr) const override;
 
-	void serializeTextJSON(const Field & field, WriteBuffer & ostr) const;
+	void serializeTextJSON(const Field & field, WriteBuffer & ostr) const override;
 
 	/** Потоковая сериализация массивов устроена по-особенному:
 	  * - записываются/читаются элементы, уложенные подряд, без размеров массивов;
@@ -55,12 +55,12 @@ public:
 	  */
 
 	/** Записать только значения, без размеров. Вызывающая сторона также должна куда-нибудь записать смещения. */
-	void serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset = 0, size_t limit = 0) const;
+	void serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset = 0, size_t limit = 0) const override;
 
 	/** Прочитать только значения, без размеров.
 	  * При этом, в column уже заранее должны быть считаны все размеры.
 	  */
-	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const;
+	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
 
 	/** Записать размеры. */
 	void serializeOffsets(const IColumn & column, WriteBuffer & ostr, size_t offset = 0, size_t limit = 0) const;
@@ -68,10 +68,10 @@ public:
 	/** Прочитать размеры. Вызывайте этот метод перед чтением значений. */
 	void deserializeOffsets(IColumn & column, ReadBuffer & istr, size_t limit) const;
 
-	ColumnPtr createColumn() const;
-	ColumnPtr createConstColumn(size_t size, const Field & field) const;
+	ColumnPtr createColumn() const override;
+	ColumnPtr createConstColumn(size_t size, const Field & field) const override;
 
-	Field getDefault() const
+	Field getDefault() const override
 	{
 		throw Exception("Method getDefault is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}

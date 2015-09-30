@@ -76,7 +76,7 @@ do
 			continue
 		fi
 
-		printf "%-64s" "$test_name: "
+		printf "%-70s" "$test_name: "
 
 		if [ $ZOOKEEPER -eq 0 ] && (echo "$test_name" | grep -q 'zookeeper'); then
 			echo -e "$MSG_SKIPPED - no zookeeper"

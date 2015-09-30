@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Yandex/logger_useful.h>
+#include <common/logger_useful.h>
 
 #include <DB/Core/Defines.h>
 #include <DB/Core/Names.h>
@@ -176,7 +176,8 @@ public:
 	  * Гарантируется, что структура таблицы не изменится за время жизни возвращенных потоков (то есть не будет ALTER, RENAME и DROP).
 	  */
 	virtual BlockOutputStreamPtr write(
-		ASTPtr query)
+		ASTPtr query,
+		const Settings & settings)
 	{
 		throw Exception("Method write is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
@@ -308,7 +309,14 @@ private:
 	mutable Poco::RWLock structure_lock;
 };
 
-typedef std::vector<StoragePtr> StorageVector;
-typedef IStorage::TableStructureReadLocks TableLocks;
+using StorageVector = std::vector<StoragePtr>;
+using TableLocks = IStorage::TableStructureReadLocks;
+
+/// имя таблицы -> таблица
+using Tables = std::map<String, StoragePtr>;
+
+/// имя БД -> таблицы
+using Databases = std::map<String, Tables>;
+
 
 }

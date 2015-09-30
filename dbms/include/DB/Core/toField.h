@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Yandex/Common.h>		/// VisitID_t
+#include <common/Common.h>		/// VisitID_t
 
 #include <DB/Core/Field.h>
 

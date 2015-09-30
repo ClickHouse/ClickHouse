@@ -23,7 +23,7 @@
 #include <DB/Storages/StorageLog.h>
 
 #include <DB/Interpreters/Context.h>
-#include <Yandex/Revision.h>
+#include <common/Revision.h>
 
 
 int main(int argc, char ** argv)
@@ -119,7 +119,7 @@ int main(int argc, char ** argv)
 			ReadBufferFromFileDescriptor in1(STDIN_FILENO);
 			CompressedReadBuffer in2(in1);
 			NativeBlockInputStream in3(in2, Revision::get());
-			SharedPtr<IBlockOutputStream> out = table->write(0);
+			SharedPtr<IBlockOutputStream> out = table->write({}, {});
 			copyData(in3, *out);
 		}
 	}

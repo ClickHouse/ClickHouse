@@ -1,7 +1,7 @@
 #include <functional>
 #include <zkutil/ZooKeeper.h>
 #include <boost/make_shared.hpp>
-#include <Yandex/logger_useful.h>
+#include <common/logger_useful.h>
 #include <DB/Common/ProfileEvents.h>
 
 
@@ -558,6 +558,23 @@ void ZooKeeper::tryRemoveRecursive(const std::string & path)
 	tryRemove(path);
 }
 
+
+void ZooKeeper::waitForDisappear(const std::string & path)
+{
+	while (true)
+	{
+		zkutil::EventPtr event = new Poco::Event;
+
+		std::string unused;
+		/// get вместо exists, чтобы не утек watch, если ноды уже нет.
+		if (!tryGet(path, unused, nullptr, event))
+			break;
+
+		event->wait();
+	}
+}
+
+
 ZooKeeper::~ZooKeeper()
 {
 	LOG_INFO(&Logger::get("~ZooKeeper"), "Closing ZooKeeper session");
@@ -658,7 +675,7 @@ ZooKeeper::TryGetFuture ZooKeeper::asyncTryGet(const std::string & path)
 			if (rc != ZOK && rc != ZNONODE)
 				throw KeeperException(rc, path);
 
-			return ValueAndStatAndExists{ {value, size_t(value_len)}, *stat, rc != ZNONODE };
+			return ValueAndStatAndExists{ {value, size_t(value_len)}, stat ? *stat : Stat(), rc != ZNONODE };
 		}};
 
 	int32_t code = zoo_aget(
@@ -687,7 +704,7 @@ ZooKeeper::ExistsFuture ZooKeeper::asyncExists(const std::string & path)
 			if (rc != ZOK && rc != ZNONODE)
 				throw KeeperException(rc, path);
 
-			return StatAndExists{ *stat, rc != ZNONODE };
+			return StatAndExists{ stat ? *stat : Stat(), rc != ZNONODE };
 		}};
 
 	int32_t code = zoo_aexists(
@@ -735,6 +752,34 @@ ZooKeeper::GetChildrenFuture ZooKeeper::asyncGetChildren(const std::string & pat
 		future.task.get());
 
 	ProfileEvents::increment(ProfileEvents::ZooKeeperGetChildren);
+	ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
+
+	if (code != ZOK)
+		throw KeeperException(code, path);
+
+	return future;
+}
+
+ZooKeeper::RemoveFuture ZooKeeper::asyncRemove(const std::string & path)
+{
+	RemoveFuture future {
+		[path] (int rc)
+		{
+			if (rc != ZOK)
+				throw KeeperException(rc, path);
+		}};
+
+	int32_t code = zoo_adelete(
+		impl, path.c_str(), -1,
+		[] (int rc, const void * data)
+		{
+			RemoveFuture::TaskPtr owned_task =
+				std::move(const_cast<RemoveFuture::TaskPtr &>(*static_cast<const RemoveFuture::TaskPtr *>(data)));
+			(*owned_task)(rc);
+		},
+		future.task.get());
+
+	ProfileEvents::increment(ProfileEvents::ZooKeeperRemove);
 	ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
 
 	if (code != ZOK)

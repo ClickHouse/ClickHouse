@@ -4,7 +4,7 @@
 
 #include <Poco/Util/Application.h>
 
-#include <Yandex/singleton.h>
+#include <common/singleton.h>
 
 #include <mysqlxx/Query.h>
 

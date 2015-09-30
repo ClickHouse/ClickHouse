@@ -5,9 +5,9 @@
 #include <Poco/Net/DNS.h>
 #include <Poco/Util/XMLConfiguration.h>
 
-#include <Yandex/ApplicationServerExt.h>
-#include <Yandex/ErrorHandlers.h>
-#include <Yandex/Revision.h>
+#include <common/ApplicationServerExt.h>
+#include <common/ErrorHandlers.h>
+#include <common/Revision.h>
 
 #include <statdaemons/ConfigProcessor.h>
 #include <statdaemons/ext/scope_guard.hpp>
@@ -19,23 +19,25 @@
 
 #include <DB/Common/Macros.h>
 #include <DB/Common/getFQDNOrHostName.h>
+#include <DB/Common/setThreadName.h>
 #include <DB/Interpreters/loadMetadata.h>
 #include <DB/Interpreters/ProcessList.h>
-#include <DB/Storages/StorageSystemNumbers.h>
-#include <DB/Storages/StorageSystemTables.h>
-#include <DB/Storages/StorageSystemParts.h>
-#include <DB/Storages/StorageSystemDatabases.h>
-#include <DB/Storages/StorageSystemProcesses.h>
-#include <DB/Storages/StorageSystemEvents.h>
-#include <DB/Storages/StorageSystemOne.h>
-#include <DB/Storages/StorageSystemMerges.h>
-#include <DB/Storages/StorageSystemSettings.h>
-#include <DB/Storages/StorageSystemZooKeeper.h>
-#include <DB/Storages/StorageSystemReplicas.h>
-#include <DB/Storages/StorageSystemDictionaries.h>
-#include <DB/Storages/StorageSystemColumns.h>
-#include <DB/Storages/StorageSystemFunctions.h>
-#include <DB/Storages/StorageSystemClusters.h>
+#include <DB/Storages/System/StorageSystemNumbers.h>
+#include <DB/Storages/System/StorageSystemTables.h>
+#include <DB/Storages/System/StorageSystemParts.h>
+#include <DB/Storages/System/StorageSystemDatabases.h>
+#include <DB/Storages/System/StorageSystemProcesses.h>
+#include <DB/Storages/System/StorageSystemEvents.h>
+#include <DB/Storages/System/StorageSystemOne.h>
+#include <DB/Storages/System/StorageSystemMerges.h>
+#include <DB/Storages/System/StorageSystemSettings.h>
+#include <DB/Storages/System/StorageSystemZooKeeper.h>
+#include <DB/Storages/System/StorageSystemReplicas.h>
+#include <DB/Storages/System/StorageSystemReplicationQueue.h>
+#include <DB/Storages/System/StorageSystemDictionaries.h>
+#include <DB/Storages/System/StorageSystemColumns.h>
+#include <DB/Storages/System/StorageSystemFunctions.h>
+#include <DB/Storages/System/StorageSystemClusters.h>
 
 #include <DB/IO/copyData.h>
 #include <DB/IO/LimitReadBuffer.h>
@@ -81,6 +83,8 @@ public:
 private:
 	void run()
 	{
+		setThreadName("ProfileEventsTx");
+
 		const auto get_next_minute = [] {
 			return std::chrono::time_point_cast<std::chrono::minutes, std::chrono::system_clock>(
 				std::chrono::system_clock::now() + std::chrono::minutes(1)
@@ -169,8 +173,24 @@ public:
 	{
 		try
 		{
-			const char * data = "Ok.\n";
-			response.sendBuffer(data, strlen(data));
+			if (request.getURI() == "/" || request.getURI() == "/ping")
+			{
+				const char * data = "Ok.\n";
+				response.sendBuffer(data, strlen(data));
+			}
+			else
+			{
+				response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
+				response.send() << "There is no handle " << request.getURI() << "\n\n"
+					<< "Use / or /ping for health checks.\n"
+					<< "Send queries from your program with POST method or GET /?query=...\n\n"
+					<< "Use clickhouse-client:\n\n"
+					<< "For interactive data analysis:\n"
+					<< "    clickhouse-client\n\n"
+					<< "For batch query processing:\n"
+					<< "    clickhouse-client --query='SELECT 1' > result\n"
+					<< "    clickhouse-client < query > result\n";
+			}
 		}
 		catch (...)
 		{
@@ -180,7 +200,7 @@ public:
 };
 
 
-template<typename HandlerType>
+template <typename HandlerType>
 class HTTPRequestHandlerFactory : public Poco::Net::HTTPRequestHandlerFactory
 {
 private:
@@ -199,12 +219,18 @@ public:
 			<< ", Address: " << request.clientAddress().toString()
 			<< ", User-Agent: " << (request.has("User-Agent") ? request.get("User-Agent") : "none"));
 
-		if (request.getURI().find('?') != std::string::npos || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
+		if (request.getURI().find('?') != std::string::npos
+			|| request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
+		{
 			return new HandlerType(server);
-		else if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET)
+		}
+		else if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
+			|| request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD)
+		{
 			return new PingRequestHandler();
+		}
 		else
-			return 0;
+			return nullptr;
 	}
 };
 
@@ -259,6 +285,8 @@ UsersConfigReloader::~UsersConfigReloader()
 
 void UsersConfigReloader::run()
 {
+	setThreadName("UserConfReload");
+
 	while (!quit)
 	{
 		std::this_thread::sleep_for(std::chrono::seconds(2));
@@ -548,6 +576,7 @@ int Server::main(const std::vector<std::string> & args)
 	global_context->addTable("system", "events", 	StorageSystemEvents::create("events"));
 	global_context->addTable("system", "merges",	StorageSystemMerges::create("merges"));
 	global_context->addTable("system", "replicas",	StorageSystemReplicas::create("replicas"));
+	global_context->addTable("system", "replication_queue", StorageSystemReplicationQueue::create("replication_queue"));
 	global_context->addTable("system", "dictionaries", StorageSystemDictionaries::create("dictionaries"));
 	global_context->addTable("system", "columns",   StorageSystemColumns::create("columns"));
 	global_context->addTable("system", "functions", StorageSystemFunctions::create("functions"));

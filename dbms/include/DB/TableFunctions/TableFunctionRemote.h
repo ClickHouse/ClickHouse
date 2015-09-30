@@ -129,7 +129,7 @@ private:
 	NamesAndTypesListPtr chooseColumns(Cluster & cluster, const String & database, const String & table, const Context & context) const
 	{
 		/// Запрос на описание таблицы
-		String query = "DESC TABLE " + database + "." + table;
+		String query = "DESC TABLE " + backQuoteIfNeed(database) + "." + backQuoteIfNeed(table);
 		Settings settings = context.getSettings();
 		NamesAndTypesList res;
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DB/Storages/MarkCache.h>
+#include <DB/Storages/MergeTree/MarkRange.h>
 #include <DB/Storages/MergeTree/MergeTreeData.h>
 #include <DB/DataTypes/IDataType.h>
 #include <DB/DataTypes/DataTypeNested.h>
@@ -17,37 +18,24 @@
 namespace DB
 {
 
-/** Пара засечек, определяющая диапазон строк в куске. Именно, диапазон имеет вид [begin * index_granularity, end * index_granularity).
-  */
-struct MarkRange
-{
-	size_t begin;
-	size_t end;
-
-	MarkRange() {}
-	MarkRange(size_t begin_, size_t end_) : begin(begin_), end(end_) {}
-};
-
-typedef std::vector<MarkRange> MarkRanges;
-
 
 /** Умеет читать данные между парой засечек из одного куска. При чтении последовательных отрезков не делает лишних seek-ов.
   * При чтении почти последовательных отрезков делает seek-и быстро, не выбрасывая содержимое буфера.
   */
 class MergeTreeReader
 {
-	typedef std::map<std::string, ColumnPtr> OffsetColumns;
+	using OffsetColumns = std::map<std::string, ColumnPtr>;
+	using ValueSizeMap = std::map<std::string, double>;
 
 public:
-	MergeTreeReader(const String & path_, /// Путь к куску
-		const MergeTreeData::DataPartPtr & data_part, const NamesAndTypesList & columns_,
-		UncompressedCache * uncompressed_cache_, MarkCache * mark_cache_,
-		MergeTreeData & storage_, const MarkRanges & all_mark_ranges,
-		size_t aio_threshold_, size_t max_read_buffer_size_)
-		: path(path_), data_part(data_part), part_name(data_part->name), columns(columns_),
-		uncompressed_cache(uncompressed_cache_), mark_cache(mark_cache_),
-		storage(storage_), all_mark_ranges(all_mark_ranges),
-		aio_threshold(aio_threshold_), max_read_buffer_size(max_read_buffer_size_)
+	MergeTreeReader(const String & path, /// Путь к куску
+		const MergeTreeData::DataPartPtr & data_part, const NamesAndTypesList & columns,
+		UncompressedCache * uncompressed_cache, MarkCache * mark_cache,
+		MergeTreeData & storage, const MarkRanges & all_mark_ranges,
+		size_t aio_threshold, size_t max_read_buffer_size, const ValueSizeMap & avg_value_size_hints = ValueSizeMap{})
+		: avg_value_size_hints(avg_value_size_hints), path(path), data_part(data_part), columns(columns),
+		  uncompressed_cache(uncompressed_cache), mark_cache(mark_cache), storage(storage),
+		  all_mark_ranges(all_mark_ranges), aio_threshold(aio_threshold), max_read_buffer_size(max_read_buffer_size)
 	{
 		try
 		{
@@ -59,10 +47,12 @@ public:
 		}
 		catch (...)
 		{
-			storage.reportBrokenPart(part_name);
+			storage.reportBrokenPart(data_part->name);
 			throw;
 		}
 	}
+
+	const ValueSizeMap & getAvgValueSizeHints() const { return avg_value_size_hints; }
 
 	/** Если столбцов нет в блоке, добавляет их, если есть - добавляет прочитанные значения к ним в конец.
 	  * Не добавляет столбцы, для которых нет файлов. Чтобы их добавить, нужно вызвать fillMissingColumns.
@@ -74,20 +64,14 @@ public:
 		{
 			size_t max_rows_to_read = (to_mark - from_mark) * storage.index_granularity;
 
-			/** Для некоторых столбцов файлы с данными могут отсутствовать.
-				* Это бывает для старых кусков, после добавления новых столбцов в структуру таблицы.
-				*/
-			auto has_missing_columns = false;
-
 			/// Указатели на столбцы смещений, общие для столбцов из вложенных структур данных
 			/// Если append, все значения nullptr, и offset_columns используется только для проверки, что столбец смещений уже прочитан.
 			OffsetColumns offset_columns;
-			const auto read_column = [&] (const NameAndTypePair & it) {
+
+			for (const NameAndTypePair & it : columns)
+			{
 				if (streams.end() == streams.find(it.name))
-				{
-					has_missing_columns = true;
-					return;
-				}
+					continue;
 
 				/// Все столбцы уже есть в блоке. Будем добавлять значения в конец.
 				bool append = res.has(it.name);
@@ -120,24 +104,12 @@ public:
 
 				if (!append && column.column->size())
 					res.insert(column);
-			};
-
-			for (const NameAndTypePair & it : columns)
-				read_column(it);
-
-			if (has_missing_columns && !res)
-			{
-				addMinimumSizeColumn();
-				/// minimum size column is necessarily at list's front
-				read_column(columns.front());
 			}
 		}
 		catch (const Exception & e)
 		{
 			if (e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
-			{
-				storage.reportBrokenPart(part_name);
-			}
+				storage.reportBrokenPart(data_part->name);
 
 			/// Более хорошая диагностика.
 			throw Exception(e.message() +  "\n(while reading from part " + path + " from mark " + toString(from_mark) + " to "
@@ -145,66 +117,19 @@ public:
 		}
 		catch (...)
 		{
-			storage.reportBrokenPart(part_name);
+			storage.reportBrokenPart(data_part->name);
 
 			throw;
 		}
 	}
 
-
-	/** Добавить столбец минимального размера.
-	  * Используется в случае, когда ни один столбец не нужен, но нужно хотя бы знать количество строк.
-	  * Добавляет в columns.
-	  */
-	void addMinimumSizeColumn()
-	{
-		const auto get_column_size = [this] (const String & name) {
-			const auto & files = data_part->checksums.files;
-
-			const auto escaped_name = escapeForFileName(name);
-			const auto bin_file_name = escaped_name + ".bin";
-			const auto mrk_file_name = escaped_name + ".mrk";
-
-			return files.find(bin_file_name)->second.file_size + files.find(mrk_file_name)->second.file_size;
-		};
-
-		const auto & storage_columns = storage.getColumnsList();
-		const NameAndTypePair * minimum_size_column = nullptr;
-		auto minimum_size = std::numeric_limits<size_t>::max();
-
-		for (const auto & column : storage_columns)
-		{
-			if (!data_part->hasColumnFiles(column.name))
-				continue;
-
-			const auto size = get_column_size(column.name);
-			if (size < minimum_size)
-			{
-				minimum_size = size;
-				minimum_size_column = &column;
-			}
-		}
-
-		if (!minimum_size_column)
-			throw Exception{
-				"could not find a column of minimum size in MergeTree",
-				ErrorCodes::LOGICAL_ERROR
-			};
-
-		addStream(minimum_size_column->name, *minimum_size_column->type, all_mark_ranges);
-		columns.emplace(std::begin(columns), *minimum_size_column);
-
-		added_minimum_size_column = &columns.front();
-	}
-
-
 	/** Добавляет в блок недостающие столбцы из ordered_names, состоящие из значений по-умолчанию.
 	  * Недостающие столбцы добавляются в позиции, такие же как в ordered_names.
 	  * Если был добавлен хотя бы один столбец - то все столбцы в блоке переупорядочиваются как в ordered_names.
 	  */
-	void fillMissingColumns(Block & res, const Names & ordered_names)
+	void fillMissingColumns(Block & res, const Names & ordered_names, const bool always_reorder = false)
 	{
-		fillMissingColumnsImpl(res, ordered_names, false);
+		fillMissingColumnsImpl(res, ordered_names, always_reorder);
 	}
 
 	/** То же самое, но всегда переупорядочивает столбцы в блоке, как в ordered_names
@@ -220,16 +145,14 @@ private:
 	{
 		MarkCache::MappedPtr marks;
 		ReadBuffer * data_buffer;
-		Poco::SharedPtr<CachedCompressedReadBuffer> cached_buffer;
-		Poco::SharedPtr<CompressedReadBufferFromFile> non_cached_buffer;
+		std::unique_ptr<CachedCompressedReadBuffer> cached_buffer;
+		std::unique_ptr<CompressedReadBufferFromFile> non_cached_buffer;
 		std::string path_prefix;
 		size_t max_mark_range;
 
-		/// Используется в качестве подсказки, чтобы уменьшить количество реаллокаций при создании столбца переменной длины.
-		double avg_value_size_hint = 0;
-
-		Stream(const String & path_prefix_, UncompressedCache * uncompressed_cache, MarkCache * mark_cache, const MarkRanges & all_mark_ranges,
-			   size_t aio_threshold, size_t max_read_buffer_size)
+		Stream(
+			const String & path_prefix_, UncompressedCache * uncompressed_cache, MarkCache * mark_cache,
+			const MarkRanges & all_mark_ranges, size_t aio_threshold, size_t max_read_buffer_size)
 			: path_prefix(path_prefix_)
 		{
 			loadMarks(mark_cache);
@@ -281,15 +204,15 @@ private:
 
 			if (uncompressed_cache)
 			{
-				cached_buffer = new CachedCompressedReadBuffer(path_prefix + ".bin", uncompressed_cache,
-															   estimated_size, aio_threshold, buffer_size);
-				data_buffer = &*cached_buffer;
+				cached_buffer = std::make_unique<CachedCompressedReadBuffer>(
+					path_prefix + ".bin", uncompressed_cache, estimated_size, aio_threshold, buffer_size);
+				data_buffer = cached_buffer.get();
 			}
 			else
 			{
-				non_cached_buffer = new CompressedReadBufferFromFile(path_prefix + ".bin", estimated_size,
-																	 aio_threshold, buffer_size);
-				data_buffer = &*non_cached_buffer;
+				non_cached_buffer = std::make_unique<CompressedReadBufferFromFile>(
+					path_prefix + ".bin", estimated_size, aio_threshold, buffer_size);
+				data_buffer = non_cached_buffer.get();
 			}
 		}
 
@@ -350,20 +273,20 @@ private:
 
 	typedef std::map<std::string, std::unique_ptr<Stream> > FileStreams;
 
+	/// Используется в качестве подсказки, чтобы уменьшить количество реаллокаций при создании столбца переменной длины.
+	ValueSizeMap avg_value_size_hints;
 	String path;
-	const MergeTreeData::DataPartPtr & data_part;
-	String part_name;
+	MergeTreeData::DataPartPtr data_part;
 	FileStreams streams;
 
-	/// Запрашиваемые столбцы. Возможно, с добавлением minimum_size_column.
+	/// Запрашиваемые столбцы.
 	NamesAndTypesList columns;
-	const NameAndTypePair * added_minimum_size_column = nullptr;
 
 	UncompressedCache * uncompressed_cache;
 	MarkCache * mark_cache;
 
 	MergeTreeData & storage;
-	const MarkRanges & all_mark_ranges;
+	MarkRanges all_mark_ranges;
 	size_t aio_threshold;
 	size_t max_read_buffer_size;
 
@@ -386,14 +309,16 @@ private:
 				+ ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
 
 			if (!streams.count(size_name))
-				streams.emplace(size_name, std::unique_ptr<Stream>(new Stream(
-					path + escaped_size_name, uncompressed_cache, mark_cache, all_mark_ranges, aio_threshold, max_read_buffer_size)));
+				streams.emplace(size_name, std::make_unique<Stream>(
+					path + escaped_size_name, uncompressed_cache, mark_cache,
+					all_mark_ranges, aio_threshold, max_read_buffer_size));
 
 			addStream(name, *type_arr->getNestedType(), all_mark_ranges, level + 1);
 		}
 		else
-			streams[name].reset(new Stream(
-				path + escaped_column_name, uncompressed_cache, mark_cache, all_mark_ranges, aio_threshold, max_read_buffer_size));
+			streams.emplace(name, std::make_unique<Stream>(
+				path + escaped_column_name, uncompressed_cache, mark_cache,
+				all_mark_ranges, aio_threshold, max_read_buffer_size));
 	}
 
 
@@ -453,8 +378,9 @@ private:
 		else
 		{
 			Stream & stream = *streams[name];
+			double & avg_value_size_hint = avg_value_size_hints[name];
 			stream.seekToMark(from_mark);
-			type.deserializeBinary(column, *stream.data_buffer, max_rows_to_read, stream.avg_value_size_hint);
+			type.deserializeBinary(column, *stream.data_buffer, max_rows_to_read, avg_value_size_hint);
 
 			/// Вычисление подсказки о среднем размере значения.
 			size_t column_size = column.size();
@@ -463,10 +389,10 @@ private:
 				double current_avg_value_size = static_cast<double>(column.byteSize()) / column_size;
 
 				/// Эвристика, чтобы при изменениях, значение avg_value_size_hint быстро росло, но медленно уменьшалось.
-				if (current_avg_value_size > stream.avg_value_size_hint)
-					stream.avg_value_size_hint = current_avg_value_size;
-				else if (current_avg_value_size * 2 < stream.avg_value_size_hint)
-					stream.avg_value_size_hint = (current_avg_value_size + stream.avg_value_size_hint * 3) / 4;
+				if (current_avg_value_size > avg_value_size_hint)
+					avg_value_size_hint = current_avg_value_size;
+				else if (current_avg_value_size * 2 < avg_value_size_hint)
+					avg_value_size_hint = (current_avg_value_size + avg_value_size_hint * 3) / 4;
 			}
 		}
 	}
@@ -548,15 +474,6 @@ private:
 			if (should_evaluate_defaults)
 				evaluateMissingDefaults(res, columns, storage.column_defaults, storage.context);
 
-			/// remove added column to ensure same content among all blocks
-			if (added_minimum_size_column)
-			{
-				res.erase(0);
-				streams.erase(added_minimum_size_column->name);
-				columns.erase(std::begin(columns));
-				added_minimum_size_column = nullptr;
-			}
-
 			/// sort columns to ensure consistent order among all blocks
 			if (should_sort)
 			{
@@ -565,12 +482,6 @@ private:
 				for (const auto & name : ordered_names)
 					if (res.has(name))
 						ordered_block.insert(res.getByName(name));
-
-				if (res.columns() != ordered_block.columns())
-					throw Exception{
-						"Ordered block has different number of columns than original one:\n" +
-							ordered_block.dumpNames() + "\nvs.\n" + res.dumpNames(),
-						ErrorCodes::LOGICAL_ERROR};
 
 				std::swap(res, ordered_block);
 			}

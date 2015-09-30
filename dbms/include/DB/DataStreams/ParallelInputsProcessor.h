@@ -6,9 +6,10 @@
 #include <thread>
 #include <mutex>
 
-#include <Yandex/logger_useful.h>
+#include <common/logger_useful.h>
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
+#include <DB/Common/setThreadName.h>
 
 
 /** Позволяет обработать множество источников блоков параллельно, используя указанное количество потоков.
@@ -140,6 +141,8 @@ private:
 	{
 		current_memory_tracker = memory_tracker;
 		ExceptionPtr exception;
+
+		setThreadName("ParalInputsProc");
 
 		try
 		{

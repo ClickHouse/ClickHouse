@@ -32,7 +32,7 @@ public:
 	bool supportsIndexForIn() const override 		{ return data->supportsIndexForIn(); }
 	bool supportsParallelReplicas() const override 	{ return data->supportsParallelReplicas(); }
 
-	BlockOutputStreamPtr write(ASTPtr query) override;
+	BlockOutputStreamPtr write(ASTPtr query, const Settings & settings) override;
 	void drop() override;
 	bool optimize(const Settings & settings) override;
 

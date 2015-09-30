@@ -25,12 +25,12 @@ public:
 			throw Exception("FixedString size must be positive", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 	}
 
-	std::string getName() const
+	std::string getName() const override
 	{
 		return "FixedString(" + toString(n) + ")";
 	}
 
-	DataTypePtr clone() const
+	DataTypePtr clone() const override
 	{
 		return new DataTypeFixedString(n);
 	}
@@ -40,28 +40,28 @@ public:
 		return n;
 	}
 
-	void serializeBinary(const Field & field, WriteBuffer & ostr) const;
-	void deserializeBinary(Field & field, ReadBuffer & istr) const;
-	void serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset = 0, size_t limit = 0) const;
-	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const;
+	void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
+	void deserializeBinary(Field & field, ReadBuffer & istr) const override;
+	void serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset = 0, size_t limit = 0) const override;
+	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
 
-	void serializeText(const Field & field, WriteBuffer & ostr) const;
-	void deserializeText(Field & field, ReadBuffer & istr) const;
+	void serializeText(const Field & field, WriteBuffer & ostr) const override;
+	void deserializeText(Field & field, ReadBuffer & istr) const override;
 
-	void serializeTextEscaped(const Field & field, WriteBuffer & ostr) const;
-	void deserializeTextEscaped(Field & field, ReadBuffer & istr) const;
+	void serializeTextEscaped(const Field & field, WriteBuffer & ostr) const override;
+	void deserializeTextEscaped(Field & field, ReadBuffer & istr) const override;
 
-	void serializeTextQuoted(const Field & field, WriteBuffer & ostr) const;
-	void deserializeTextQuoted(Field & field, ReadBuffer & istr) const;
+	void serializeTextQuoted(const Field & field, WriteBuffer & ostr) const override;
+	void deserializeTextQuoted(Field & field, ReadBuffer & istr) const override;
 
-	void serializeTextJSON(const Field & field, WriteBuffer & ostr) const;
+	void serializeTextJSON(const Field & field, WriteBuffer & ostr) const override;
 
-	ColumnPtr createColumn() const;
-	ColumnPtr createConstColumn(size_t size, const Field & field) const;
+	ColumnPtr createColumn() const override;
+	ColumnPtr createConstColumn(size_t size, const Field & field) const override;
 
-	Field getDefault() const
+	Field getDefault() const override
 	{
-		return String("");
+		return String();
 	}
 };
 

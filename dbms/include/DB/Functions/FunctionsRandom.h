@@ -24,6 +24,8 @@ namespace DB
   * rand   - linear congruental generator 0 .. 2^32 - 1.
   * rand64 - комбинирует несколько значений rand, чтобы получить значения из диапазона 0 .. 2^64 - 1.
   *
+  * randConstant - служебная функция, выдаёт константный столбец со случайным значением.
+  *
   * В качестве затравки используют время.
   * Замечание: переинициализируется на каждый блок.
   * Это значит, что таймер должен быть достаточного разрешения, чтобы выдавать разные значения на каждый блок.
@@ -182,11 +184,60 @@ public:
 };
 
 
-struct NameRand 	{ static constexpr auto name = "rand"; };
-struct NameRand64 	{ static constexpr auto name = "rand64"; };
+template <typename Impl, typename Name>
+class FunctionRandomConstant : public IFunction
+{
+private:
+	typedef typename Impl::ReturnType ToType;
+
+	/// Значение одно для разных блоков.
+	bool is_initialized = false;
+	ToType value;
+
+public:
+	static constexpr auto name = Name::name;
+	static IFunction * create(const Context & context) { return new FunctionRandomConstant; }
+
+	/// Получить имя функции.
+	String getName() const
+	{
+		return name;
+	}
+
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnType(const DataTypes & arguments) const
+	{
+		if (arguments.size() > 1)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ toString(arguments.size()) + ", should be 0 or 1.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		return new typename DataTypeFromFieldType<typename Impl::ReturnType>::Type;
+	}
+
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		if (!is_initialized)
+		{
+			is_initialized = true;
+			typename ColumnVector<ToType>::Container_t vec_to(1);
+			Impl::execute(vec_to);
+			value = vec_to[0];
+		}
+
+		block.getByPosition(result).column = new ColumnConst<ToType>(block.rowsInFirstColumn(), value);
+	}
+};
+
+
+struct NameRand 		{ static constexpr auto name = "rand"; };
+struct NameRand64 		{ static constexpr auto name = "rand64"; };
+struct NameRandConstant { static constexpr auto name = "randConstant"; };
 
 typedef FunctionRandom<RandImpl,	NameRand> 	FunctionRand;
 typedef FunctionRandom<Rand64Impl,	NameRand64> FunctionRand64;
+typedef FunctionRandomConstant<RandImpl, NameRandConstant> FunctionRandConstant;
 
 
 }

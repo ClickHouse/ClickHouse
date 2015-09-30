@@ -140,7 +140,7 @@ BlockOutputStreamPtr StorageChunks::writeToNewChunk(
 		chunk_names.push_back(chunk_name);
 	}
 
-	return StorageLog::write(nullptr);
+	return StorageLog::write({}, {});
 }
 
 StorageChunks::StorageChunks(

@@ -42,7 +42,7 @@ public:
 		return { new NullBlockInputStream };
 	}
 
-	BlockOutputStreamPtr write(ASTPtr query) override
+	BlockOutputStreamPtr write(ASTPtr query, const Settings & settings) override
 	{
 		return new NullBlockOutputStream;
 	}

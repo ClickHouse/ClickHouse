@@ -52,7 +52,7 @@ void OLAPHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco:
 
 	context.setUser(user, password, request.clientAddress().host(), quota_key);
 
-	context.setInterface(Context::Interface::HTTP);
+	context.setInterface(Context::Interface::OLAP_HTTP);
 	context.setHTTPMethod(Context::HTTPMethod::POST);
 
 	OLAP::QueryParseResult olap_query = server.olap_parser->parse(request_istream);

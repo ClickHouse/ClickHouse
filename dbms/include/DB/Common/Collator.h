@@ -6,7 +6,7 @@
 #include <DB/Core/Exception.h>
 #include <DB/IO/WriteHelpers.h>
 
-#include <Yandex/Common.h>
+#include <common/Common.h>
 
 #include <Poco/String.h>
 

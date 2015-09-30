@@ -15,6 +15,12 @@ revision=$(git tag --points-at HEAD 2> /dev/null | tail -1)
 if [[ "$revision" = "" ]]; then
 	revision=$( ( git describe --tags || echo 1 ) | cut -d "-" -f 1 )
 fi
+
+is_it_github=$( git config --get remote.origin.url | grep 'github' )
+if [[ "$is_it_github" = "" ]]; then
+	revision=53190
+fi
+
 echo $revision >> "${CMAKE_CURRENT_BINARY_DIR}/src/revision.h";
 
 echo "#endif" >> "${CMAKE_CURRENT_BINARY_DIR}/src/revision.h"

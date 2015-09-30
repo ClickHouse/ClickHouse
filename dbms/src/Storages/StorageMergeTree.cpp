@@ -118,17 +118,17 @@ BlockInputStreams StorageMergeTree::read(
 	const size_t max_block_size,
 	const unsigned threads)
 {
-	ASTSelectQuery & select = *typeid_cast<ASTSelectQuery*>(&*query);
+	auto & select = typeid_cast<const ASTSelectQuery &>(*query);
 
 	/// Try transferring some condition from WHERE to PREWHERE if enabled and viable
 	if (settings.optimize_move_to_prewhere)
 		if (select.where_expression && !select.prewhere_expression)
-			MergeTreeWhereOptimizer{select, data, column_names, log};
+			MergeTreeWhereOptimizer{query, context, data, column_names, log};
 
-	return reader.read(column_names, query, context, settings, processed_stage, max_block_size, threads);
+	return reader.read(column_names, query, context, settings, processed_stage, max_block_size, threads, nullptr, 0);
 }
 
-BlockOutputStreamPtr StorageMergeTree::write(ASTPtr query)
+BlockOutputStreamPtr StorageMergeTree::write(ASTPtr query, const Settings & settings)
 {
 	return new MergeTreeBlockOutputStream(*this);
 }
@@ -255,6 +255,7 @@ bool StorageMergeTree::mergeTask(BackgroundProcessingPool::Context & background_
 {
 	if (shutdown_called)
 		return false;
+
 	try
 	{
 		size_t aio_threshold = context.getSettings().min_bytes_to_use_direct_io;

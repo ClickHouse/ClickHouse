@@ -58,7 +58,7 @@ void AggregatedDataVariants::convertToTwoLevel()
 }
 
 
-void Aggregator::initialize(Block & block)
+void Aggregator::initialize(const Block & block)
 {
 	if (isCancelled())
 		return;
@@ -1699,7 +1699,11 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
 
 	AggregateColumnsData aggregate_columns(aggregates_size);
 
-	initialize(blocks.front());
+	Block empty_block;
+	initialize(empty_block);
+
+	if (!sample)
+		sample = blocks.front().cloneEmpty();
 
 	/// Каким способом выполнять агрегацию?
 	for (size_t i = 0; i < keys_size; ++i)
@@ -1735,17 +1739,190 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
 			throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 	}
 
-	BlocksList merged_block = convertToBlocks(result, final, 1);
+	BlocksList merged_blocks = convertToBlocks(result, final, 1);
 
-	if (merged_block.size() > 1)	/// TODO overflows
-		throw Exception("Logical error: temporary result is not single-level", ErrorCodes::LOGICAL_ERROR);
+	if (merged_blocks.size() > 1)
+	{
+		/** Может быть два блока. Один с is_overflows, другой - нет.
+		  * Если есть непустой блок не is_overflows, то удаляем блок с is_overflows.
+		  * Если есть пустой блок не is_overflows и блок с is_overflows, то удаляем пустой блок.
+		  *
+		  * Это делаем, потому что исходим из допущения, что в функцию передаются
+		  *  либо все блоки не is_overflows, либо все блоки is_overflows.
+		  */
+
+		bool has_nonempty_nonoverflows = false;
+		bool has_overflows = false;
+
+		for (const auto & block : merged_blocks)
+		{
+			if (block && block.rowsInFirstColumn() && !block.info.is_overflows)
+				has_nonempty_nonoverflows = true;
+			else if (block.info.is_overflows)
+				has_overflows = true;
+		}
+
+		if (has_nonempty_nonoverflows)
+		{
+			for (auto it = merged_blocks.begin(); it != merged_blocks.end(); ++it)
+			{
+				if (it->info.is_overflows)
+				{
+					merged_blocks.erase(it);
+					break;
+				}
+			}
+		}
+		else if (has_overflows)
+		{
+			for (auto it = merged_blocks.begin(); it != merged_blocks.end(); ++it)
+			{
+				if (!*it || it->rowsInFirstColumn() == 0)
+				{
+					merged_blocks.erase(it);
+					break;
+				}
+			}
+		}
+
+		if (merged_blocks.size() > 1)
+			throw Exception("Logical error: temporary result is not single-level", ErrorCodes::LOGICAL_ERROR);
+	}
 
 	LOG_TRACE(log, "Merged partially aggregated blocks.");
 
-	if (merged_block.empty())
+	if (merged_blocks.empty())
 		return {};
 
-	return merged_block.front();
+	return merged_blocks.front();
+}
+
+
+template <typename Method>
+void NO_INLINE Aggregator::convertBlockToTwoLevelImpl(
+	Method & method,
+	Arena * pool,
+	ConstColumnPlainPtrs & key_columns,
+	const Sizes & key_sizes,
+	StringRefs & keys,
+	const Block & source,
+	std::vector<Block> & destinations) const
+{
+	typename Method::State state;
+	state.init(key_columns);
+
+	size_t rows = source.rowsInFirstColumn();
+	size_t columns = source.columns();
+
+	/// Для каждого номера корзины создадим фильтр, где будут отмечены строки, относящиеся к этой корзине.
+	std::vector<IColumn::Filter> filters(destinations.size());
+
+	/// Для всех строчек.
+	for (size_t i = 0; i < rows; ++i)
+	{
+		/// Получаем ключ. Вычисляем на его основе номер корзины.
+		typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes, keys, *pool);
+
+		auto hash = method.data.hash(key);
+		auto bucket = method.data.getBucketFromHash(hash);
+
+		/// Этот ключ нам больше не нужен.
+		method.onExistingKey(key, keys, *pool);
+
+		auto & filter = filters[bucket];
+
+		if (unlikely(filter.empty()))
+			filter.resize_fill(rows);
+
+		filter[i] = 1;
+	}
+
+	for (size_t bucket = 0, size = destinations.size(); bucket < size; ++bucket)
+	{
+		const auto & filter = filters[bucket];
+
+		if (filter.empty())
+			continue;
+
+		Block & dst = destinations[bucket];
+		dst.info.bucket_num = bucket;
+
+		for (size_t j = 0; j < columns; ++j)
+		{
+			const ColumnWithTypeAndName & src_col = source.unsafeGetByPosition(j);
+			dst.insert({src_col.column->filter(filter), src_col.type, src_col.name});
+
+			/** Вставленные в блок столбцы типа ColumnAggregateFunction будут владеть состояниями агрегатных функций
+			  *  путём удержания SharedPtr-а на исходный столбец. См. ColumnAggregateFunction.h
+			  */
+		}
+	}
+}
+
+
+std::vector<Block> Aggregator::convertBlockToTwoLevel(const Block & block)
+{
+	if (!block)
+		return {};
+
+	Block empty_block;
+	initialize(empty_block);
+
+	if (!sample)
+		sample = block.cloneEmpty();
+
+	AggregatedDataVariants data;
+
+	StringRefs key(keys_size);
+	ConstColumnPlainPtrs key_columns(keys_size);
+	Sizes key_sizes;
+
+	/// Запоминаем столбцы, с которыми будем работать
+	for (size_t i = 0; i < keys_size; ++i)
+		key_columns[i] = block.getByPosition(i).column;
+
+	AggregatedDataVariants::Type type = chooseAggregationMethod(key_columns, key_sizes);
+	data.keys_size = keys_size;
+	data.key_sizes = key_sizes;
+
+#define M(NAME) \
+	else if (type == AggregatedDataVariants::Type::NAME) \
+		type = AggregatedDataVariants::Type::NAME ## _two_level;
+
+	if (false) {}
+	APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
+#undef M
+	else
+		throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+
+	data.init(type);
+
+	size_t num_buckets = 0;
+
+#define M(NAME) \
+	else if (data.type == AggregatedDataVariants::Type::NAME) \
+		num_buckets = data.NAME->data.NUM_BUCKETS;
+
+	if (false) {}
+	APPLY_FOR_VARIANTS_TWO_LEVEL(M)
+#undef M
+	else
+		throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+
+	std::vector<Block> splitted_blocks(num_buckets);
+
+#define M(NAME) \
+	else if (data.type == AggregatedDataVariants::Type::NAME) \
+		convertBlockToTwoLevelImpl(*data.NAME, data.aggregates_pool, \
+			key_columns, data.key_sizes, key, block, splitted_blocks);
+
+	if (false) {}
+	APPLY_FOR_VARIANTS_TWO_LEVEL(M)
+#undef M
+	else
+		throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+
+	return splitted_blocks;
 }
 
 

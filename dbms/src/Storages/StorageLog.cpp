@@ -733,7 +733,7 @@ BlockInputStreams StorageLog::read(
 
 
 BlockOutputStreamPtr StorageLog::write(
-	ASTPtr query)
+	ASTPtr query, const Settings & settings)
 {
 	loadMarks();
 	return new LogBlockOutputStream(*this);

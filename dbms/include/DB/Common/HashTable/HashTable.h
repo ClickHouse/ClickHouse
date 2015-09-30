@@ -9,7 +9,7 @@
 
 #include <boost/noncopyable.hpp>
 
-#include <Yandex/likely.h>
+#include <common/likely.h>
 
 #include <stats/IntHash.h>
 
@@ -443,15 +443,17 @@ public:
 
 		bool next()
 		{
+			if (!is_initialized)
+			{
+				Cell::State::read(in);
+				DB::readVarUInt(size, in);
+				is_initialized = true;
+			}
+
 			if (read_count == size)
 			{
 				is_eof = true;
 				return false;
-			}
-			else if (read_count == 0)
-			{
-				Cell::State::read(in);
-				DB::readVarUInt(size, in);
 			}
 
 			cell.read(in);
@@ -462,18 +464,19 @@ public:
 
 		inline const value_type & get() const
 		{
-			if ((read_count == 0) || is_eof)
+			if (!is_initialized || is_eof)
 				throw DB::Exception("No available data", DB::ErrorCodes::NO_AVAILABLE_DATA);
 
 			return cell.getValue();
 		}
 
 	private:
-		DB::ReadBuffer in;
+		DB::ReadBuffer & in;
 		Cell cell;
 		size_t read_count = 0;
 		size_t size;
 		bool is_eof = false;
+		bool is_initialized = false;
 	};
 
 	class iterator

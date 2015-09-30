@@ -2,7 +2,7 @@
 
 #include <Poco/Net/NetException.h>
 
-#include <Yandex/Revision.h>
+#include <common/Revision.h>
 
 #include <statdaemons/Stopwatch.h>
 
@@ -570,7 +570,7 @@ bool TCPHandler::receiveData()
 				query_context.addExternalTable(external_table_name, storage);
 			}
 			/// Данные будем писать напрямую в таблицу.
-			state.io.out = storage->write(ASTPtr());
+			state.io.out = storage->write(ASTPtr(), query_context.getSettingsRef());
 		}
 		if (block)
 			state.io.out->write(block);

@@ -5,8 +5,8 @@
 #include <limits>
 #include <algorithm>
 
-#include <Yandex/Common.h>
-#include <Yandex/DateLUT.h>
+#include <common/Common.h>
+#include <common/DateLUT.h>
 
 #include <mysqlxx/Row.h>
 #include <mysqlxx/Null.h>

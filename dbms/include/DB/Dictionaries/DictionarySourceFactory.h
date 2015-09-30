@@ -6,7 +6,7 @@
 #include <DB/Dictionaries/MySQLDictionarySource.h>
 #include <DB/Dictionaries/ClickHouseDictionarySource.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
-#include <Yandex/singleton.h>
+#include <common/singleton.h>
 #include <memory>
 
 namespace DB
@@ -21,9 +21,17 @@ Block createSampleBlock(const DictionaryStructure & dict_struct)
 		ColumnWithTypeAndName{
 			new ColumnUInt64,
 			new DataTypeUInt64,
-			dict_struct.id_name
+			dict_struct.id.name
 		}
 	};
+
+	if (dict_struct.range_min)
+		for (const auto & attribute : { dict_struct.range_min, dict_struct.range_max })
+			block.insert(ColumnWithTypeAndName{
+				new ColumnUInt16,
+				new DataTypeDate,
+				attribute->name
+			});
 
 	for (const auto & attribute : dict_struct.attributes)
 		block.insert(ColumnWithTypeAndName{
@@ -39,16 +47,15 @@ Block createSampleBlock(const DictionaryStructure & dict_struct)
 class DictionarySourceFactory : public Singleton<DictionarySourceFactory>
 {
 public:
-	DictionarySourcePtr create(Poco::Util::AbstractConfiguration & config,
-		const std::string & config_prefix,
-		const DictionaryStructure & dict_struct,
-		Context & context) const
+	DictionarySourcePtr create(
+		const std::string & name, Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
+		const DictionaryStructure & dict_struct, Context & context) const
 	{
 		Poco::Util::AbstractConfiguration::Keys keys;
 		config.keys(config_prefix, keys);
 		if (keys.size() != 1)
 			throw Exception{
-				"Element dictionary.source should have exactly one child element",
+				name +": element dictionary.source should have exactly one child element",
 				ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG
 			};
 
@@ -58,6 +65,12 @@ public:
 
 		if ("file" == source_type)
 		{
+			if (dict_struct.has_expressions)
+				throw Exception{
+					"Dictionary source of type `file` does not support attribute expressions",
+					ErrorCodes::LOGICAL_ERROR
+				};
+
 			const auto filename = config.getString(config_prefix + ".file.path");
 			const auto format = config.getString(config_prefix + ".file.format");
 			return std::make_unique<FileDictionarySource>(filename, format, sample_block, context);
@@ -73,7 +86,7 @@ public:
 		}
 
 		throw Exception{
-			"Unknown dictionary source type: " + source_type,
+			name + ": unknown dictionary source type: " + source_type,
 			ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG
 		};
 	}

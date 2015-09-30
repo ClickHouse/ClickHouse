@@ -6,8 +6,11 @@
 #include <DB/IO/WriteBufferFromString.h>
 #include <DB/IO/WriteHelpers.h>
 
-#include <DB/DataStreams/MaterializingBlockInputStream.h>
 #include <DB/DataStreams/NullAndDoCopyBlockInputStream.h>
+#include <DB/DataStreams/ProhibitColumnsBlockOutputStream.h>
+#include <DB/DataStreams/MaterializingBlockOutputStream.h>
+#include <DB/DataStreams/AddingDefaultBlockOutputStream.h>
+#include <DB/DataStreams/PushingToViewsBlockOutputStream.h>
 
 #include <DB/Parsers/ASTCreateQuery.h>
 #include <DB/Parsers/ASTNameTypePair.h>
@@ -15,7 +18,7 @@
 
 #include <DB/Storages/StorageFactory.h>
 #include <DB/Storages/StorageLog.h>
-#include <DB/Storages/StorageSystemNumbers.h>
+#include <DB/Storages/System/StorageSystemNumbers.h>
 
 #include <DB/Parsers/formatAST.h>
 #include <DB/Parsers/ASTIdentifier.h>
@@ -251,11 +254,24 @@ BlockIO InterpreterCreateQuery::executeImpl(bool assume_metadata_exists)
 	/// Если запрос CREATE SELECT, то вставим в таблицу данные
 	if (create.select && storage_name != "View" && (storage_name != "MaterializedView" || create.is_populate))
 	{
+		auto table_lock = res->lockStructure(true);
+
+		/// Также см. InterpreterInsertQuery.
+		BlockOutputStreamPtr out{
+			new ProhibitColumnsBlockOutputStream{
+				new AddingDefaultBlockOutputStream{
+					new MaterializingBlockOutputStream{
+						new PushingToViewsBlockOutputStream{create.database, create.table, context, query_ptr}
+					},
+					columns, column_defaults, context, context.getSettingsRef().strict_insert_defaults
+				},
+				materialized_columns
+			}
+		};
+
 		BlockIO io;
 		io.in_sample = select_sample;
-		io.in = new NullAndDoCopyBlockInputStream(
-			new MaterializingBlockInputStream(interpreter_select->execute().in),
-			res->write(query_ptr));
+		io.in = new NullAndDoCopyBlockInputStream(interpreter_select->execute().in, out);
 
 		return io;
 	}

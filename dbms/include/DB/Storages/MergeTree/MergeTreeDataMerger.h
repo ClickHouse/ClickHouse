@@ -54,8 +54,9 @@ public:
 	/** Отменяет все мерджи. Все выполняющиеся сейчас вызовы mergeParts скоро бросят исключение.
 	  * Все новые вызовы будут бросать исключения, пока не будет вызван uncancelAll().
 	  */
-	bool cancelAll() { return canceled.exchange(true, std::memory_order_relaxed); }
-	bool uncancelAll() { return canceled.exchange(false, std::memory_order_relaxed); }
+	bool cancelAll() { return cancelled.exchange(true, std::memory_order_relaxed); }
+	bool uncancelAll() { return cancelled.exchange(false, std::memory_order_relaxed); }
+	bool isCancelled() const { return cancelled.load(std::memory_order_relaxed); }
 
 private:
 	MergeTreeData & data;
@@ -65,7 +66,7 @@ private:
 	/// Когда в последний раз писали в лог, что место на диске кончилось (чтобы не писать об этом слишком часто).
 	time_t disk_space_warning_time = 0;
 
-	std::atomic<bool> canceled{false};
+	std::atomic<bool> cancelled{false};
 };
 
 class MergeTreeMergeBlocker

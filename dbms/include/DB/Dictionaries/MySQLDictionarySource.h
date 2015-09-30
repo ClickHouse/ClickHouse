@@ -6,6 +6,8 @@
 #include <mysqlxx/Pool.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <strconvert/escape.h>
+#include "writeParenthesisedString.h"
+
 
 namespace DB
 {
@@ -134,14 +136,35 @@ private:
 			WriteBufferFromString out{query};
 			writeString("SELECT ", out);
 
-			writeProbablyBackQuotedString(dict_struct.id_name, out);
+			if (!dict_struct.id.expression.empty())
+			{
+				writeParenthesisedString(dict_struct.id.expression, out);
+				writeString(" AS ", out);
+			}
 
-			if (!dict_struct.range_min.empty() && !dict_struct.range_max.empty())
+			writeProbablyBackQuotedString(dict_struct.id.name, out);
+
+			if (dict_struct.range_min && dict_struct.range_max)
 			{
 				writeString(", ", out);
-				writeProbablyBackQuotedString(dict_struct.range_min, out);
+
+				if (!dict_struct.range_min->expression.empty())
+				{
+					writeParenthesisedString(dict_struct.range_min->expression, out);
+					writeString(" AS ", out);
+				}
+
+				writeProbablyBackQuotedString(dict_struct.range_min->name, out);
+
 				writeString(", ", out);
-				writeProbablyBackQuotedString(dict_struct.range_max, out);
+
+				if (!dict_struct.range_max->expression.empty())
+				{
+					writeParenthesisedString(dict_struct.range_max->expression, out);
+					writeString(" AS ", out);
+				}
+
+				writeProbablyBackQuotedString(dict_struct.range_max->name, out);
 			}
 
 			for (const auto & attr : dict_struct.attributes)
@@ -150,7 +173,7 @@ private:
 
 				if (!attr.expression.empty())
 				{
-					writeString(attr.expression, out);
+					writeParenthesisedString(attr.expression, out);
 					writeString(" AS ", out);
 				}
 
@@ -185,7 +208,13 @@ private:
 			WriteBufferFromString out{query};
 			writeString("SELECT ", out);
 
-			writeProbablyBackQuotedString(dict_struct.id_name, out);
+			if (!dict_struct.id.expression.empty())
+			{
+				writeParenthesisedString(dict_struct.id.expression, out);
+				writeString(" AS ", out);
+			}
+
+			writeProbablyBackQuotedString(dict_struct.id.name, out);
 
 			for (const auto & attr : dict_struct.attributes)
 			{
@@ -193,7 +222,7 @@ private:
 
 				if (!attr.expression.empty())
 				{
-					writeString(attr.expression, out);
+					writeParenthesisedString(attr.expression, out);
 					writeString(" AS ", out);
 				}
 
@@ -216,7 +245,7 @@ private:
 				writeString(" AND ", out);
 			}
 
-			writeProbablyBackQuotedString(dict_struct.id_name, out);
+			writeProbablyBackQuotedString(dict_struct.id.name, out);
 			writeString(" IN (", out);
 
 			auto first = true;

@@ -12,7 +12,7 @@
 
 #include <statdaemons/Increment.h>
 #include <memory>
-#include <Yandex/Revision.h>
+#include <common/Revision.h>
 
 #include <iostream>
 #include <type_traits>

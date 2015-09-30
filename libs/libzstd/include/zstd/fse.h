@@ -55,12 +55,11 @@ size_t FSE_decompress(void* dst,  size_t maxDstSize,
 /*
 FSE_compress():
     Compress content of buffer 'src', of size 'srcSize', into destination buffer 'dst'.
-    'dst' buffer must be already allocated, and sized to handle worst case situations.
-    Worst case size evaluation is provided by FSE_compressBound().
-    return : size of compressed data
-    Special values : if return == 0, srcData is not compressible => Nothing is stored within cSrc !!!
-                     if return == 1, srcData is a single byte symbol * srcSize times. Use RLE compression.
-                     if FSE_isError(return), it's an error code.
+    'dst' buffer must be already allocated. Compression runs faster is maxDstSize >= FSE_compressBound(srcSize)
+    return : size of compressed data (<= maxDstSize)
+    Special values : if return == 0, srcData is not compressible => Nothing is stored within dst !!!
+                     if return == 1, srcData is a single byte symbol * srcSize times. Use RLE compression instead.
+                     if FSE_isError(return), compression failed (more details using FSE_getErrorName())
 
 FSE_decompress():
     Decompress FSE data from buffer 'cSrc', of size 'cSrcSize',
@@ -70,7 +69,33 @@ FSE_decompress():
 
     ** Important ** : FSE_decompress() doesn't decompress non-compressible nor RLE data !!!
     Why ? : making this distinction requires a header.
-    FSE library doesn't manage headers, which are intentionally left to the user layer.
+    Header management is intentionally delegated to the user layer, which can better manage special cases.
+*/
+
+
+/******************************************
+*  Huff0 simple functions
+******************************************/
+size_t HUF_compress(void* dst, size_t maxDstSize,
+              const void* src, size_t srcSize);
+size_t HUF_decompress(void* dst,  size_t maxDstSize,
+                const void* cSrc, size_t cSrcSize);
+/*
+HUF_compress():
+    Compress content of buffer 'src', of size 'srcSize', into destination buffer 'dst'.
+    'dst' buffer must be already allocated. Compression runs faster is maxDstSize >= HUF_compressBound(srcSize)
+    return : size of compressed data (<= maxDstSize)
+    Special values : if return == 0, srcData is not compressible => Nothing is stored within dst !!!
+                     if return == 1, srcData is a single byte symbol * srcSize times. Use RLE compression.
+                     if FSE_isError(return), compression failed (more details using FSE_getErrorName())
+
+HUF_decompress():
+    Decompress Huff0 data from buffer 'cSrc', of size 'cSrcSize',
+    into already allocated destination buffer 'dst', of size 'maxDstSize'.
+    return : size of regenerated data (<= maxDstSize)
+             or an error code, which can be tested using FSE_isError()
+
+    ** Important ** : HUF_decompress() doesn't decompress non-compressible nor RLE data !!!
 */
 
 
@@ -98,6 +123,8 @@ FSE_compress2():
 */
 size_t FSE_compress2 (void* dst, size_t dstSize, const void* src, size_t srcSize, unsigned maxSymbolValue, unsigned tableLog);
 
+size_t HUF_compress2 (void* dst, size_t dstSize, const void* src, size_t srcSize, unsigned maxSymbolValue, unsigned tableLog);
+
 
 /******************************************
 *  FSE detailed API
@@ -106,18 +133,18 @@ size_t FSE_compress2 (void* dst, size_t dstSize, const void* src, size_t srcSize
 FSE_compress() does the following:
 1. count symbol occurrence from source[] into table count[]
 2. normalize counters so that sum(count[]) == Power_of_2 (2^tableLog)
-3. save normalized counters to memory buffer using writeHeader()
+3. save normalized counters to memory buffer using writeNCount()
 4. build encoding table 'CTable' from normalized counters
 5. encode the data stream using encoding table 'CTable'
 
 FSE_decompress() does the following:
-1. read normalized counters with readHeader()
+1. read normalized counters with readNCount()
 2. build decoding table 'DTable' from normalized counters
 3. decode the data stream using decoding table 'DTable'
 
-The following API allows to trigger specific sub-functions for advanced tasks.
+The following API allows targeting specific sub-functions for advanced tasks.
 For example, it's possible to compress several blocks using the same 'CTable',
-or to save and provide normalized distribution using one's own method.
+or to save and provide normalized distribution using external method.
 */
 
 /* *** COMPRESSION *** */
@@ -163,8 +190,8 @@ size_t FSE_writeNCount (void* buffer, size_t bufferSize, const short* normalized
 
 /*
 Constructor and Destructor of type FSE_CTable
-Not that its size depends on parameters 'tableLog' and 'maxSymbolValue' */
-typedef unsigned FSE_CTable;   /* don't allocate that. It's just a way to be more restrictive than void */
+    Note that its size depends on 'tableLog' and 'maxSymbolValue' */
+typedef unsigned FSE_CTable;   /* don't allocate that. It's just a way to be more restrictive than void* */
 FSE_CTable* FSE_createCTable (unsigned tableLog, unsigned maxSymbolValue);
 void        FSE_freeCTable (FSE_CTable* ct);
 
@@ -173,30 +200,32 @@ FSE_buildCTable():
    Builds 'ct', which must be already allocated, using FSE_createCTable()
    return : 0
             or an errorCode, which can be tested using FSE_isError() */
-size_t   FSE_buildCTable(FSE_CTable* ct, const short* normalizedCounter, unsigned maxSymbolValue, unsigned tableLog);
+size_t FSE_buildCTable(FSE_CTable* ct, const short* normalizedCounter, unsigned maxSymbolValue, unsigned tableLog);
 
 /*
 FSE_compress_usingCTable():
    Compress 'src' using 'ct' into 'dst' which must be already allocated
-   return : size of compressed data
+   return : size of compressed data (<= maxDstSize)
+            or 0 if compressed data could not fit into 'dst'
             or an errorCode, which can be tested using FSE_isError() */
-size_t FSE_compress_usingCTable (void* dst, size_t dstSize, const void* src, size_t srcSize, const FSE_CTable* ct);
+size_t FSE_compress_usingCTable (void* dst, size_t maxDstSize, const void* src, size_t srcSize, const FSE_CTable* ct);
 
 /*
 Tutorial :
 ----------
-The first step is to count all symbols. FSE_count() provides one quick way to do this job.
+The first step is to count all symbols. FSE_count() does this job very fast.
 Result will be saved into 'count', a table of unsigned int, which must be already allocated, and have 'maxSymbolValuePtr[0]+1' cells.
 'src' is a table of bytes of size 'srcSize'. All values within 'src' MUST be <= maxSymbolValuePtr[0]
 maxSymbolValuePtr[0] will be updated, with its real value (necessarily <= original value)
 FSE_count() will return the number of occurrence of the most frequent symbol.
+This can be used to know if there is a single symbol within 'src', and to quickly evaluate its compressibility.
 If there is an error, the function will return an ErrorCode (which can be tested using FSE_isError()).
 
 The next step is to normalize the frequencies.
 FSE_normalizeCount() will ensure that sum of frequencies is == 2 ^'tableLog'.
-It also guarantees a minimum of 1 to any Symbol which frequency is >= 1.
-You can use input 'tableLog'==0 to mean "use default tableLog value".
-If you are unsure of which tableLog value to use, you can optionally call FSE_optimalTableLog(),
+It also guarantees a minimum of 1 to any Symbol with frequency >= 1.
+You can use 'tableLog'==0 to mean "use default tableLog value".
+If you are unsure of which tableLog value to use, you can ask FSE_optimalTableLog(),
 which will provide the optimal valid tableLog given sourceSize, maxSymbolValue, and a user-defined maximum (0 means "default").
 
 The result of FSE_normalizeCount() will be saved into a table,
@@ -204,23 +233,23 @@ called 'normalizedCounter', which is a table of signed short.
 'normalizedCounter' must be already allocated, and have at least 'maxSymbolValue+1' cells.
 The return value is tableLog if everything proceeded as expected.
 It is 0 if there is a single symbol within distribution.
-If there is an error(typically, invalid tableLog value), the function will return an ErrorCode (which can be tested using FSE_isError()).
+If there is an error (ex: invalid tableLog value), the function will return an ErrorCode (which can be tested using FSE_isError()).
 
-'normalizedCounter' can be saved in a compact manner to a memory area using FSE_writeHeader().
-'header' buffer must be already allocated.
+'normalizedCounter' can be saved in a compact manner to a memory area using FSE_writeNCount().
+'buffer' must be already allocated.
 For guaranteed success, buffer size must be at least FSE_headerBound().
-The result of the function is the number of bytes written into 'header'.
-If there is an error, the function will return an ErrorCode (which can be tested using FSE_isError()) (for example, buffer size too small).
+The result of the function is the number of bytes written into 'buffer'.
+If there is an error, the function will return an ErrorCode (which can be tested using FSE_isError(); ex : buffer size too small).
 
 'normalizedCounter' can then be used to create the compression table 'CTable'.
-The space required by 'CTable' must be already allocated. Its size is provided by FSE_sizeof_CTable().
-'CTable' must be aligned of 4 bytes boundaries.
+The space required by 'CTable' must be already allocated, using FSE_createCTable().
 You can then use FSE_buildCTable() to fill 'CTable'.
-In both cases, if there is an error, the function will return an ErrorCode (which can be tested using FSE_isError()).
+If there is an error, both functions will return an ErrorCode (which can be tested using FSE_isError()).
 
 'CTable' can then be used to compress 'src', with FSE_compress_usingCTable().
 Similar to FSE_count(), the convention is that 'src' is assumed to be a table of char of size 'srcSize'
-The function returns the size of compressed data (without header).
+The function returns the size of compressed data (without header), necessarily <= maxDstSize.
+If it returns '0', compressed data could not fit into 'dst'.
 If there is an error, the function will return an ErrorCode (which can be tested using FSE_isError()).
 */
 
@@ -237,26 +266,25 @@ size_t FSE_readNCount (short* normalizedCounter, unsigned* maxSymbolValuePtr, un
 
 /*
 Constructor and Destructor of type FSE_DTable
-Note that its size depends on parameters 'tableLog' */
-typedef unsigned FSE_DTable;   /* don't allocate that. It's just a way to be more restrictive than void */
+    Note that its size depends on 'tableLog' */
+typedef unsigned FSE_DTable;   /* don't allocate that. It's just a way to be more restrictive than void* */
 FSE_DTable* FSE_createDTable(unsigned tableLog);
 void        FSE_freeDTable(FSE_DTable* dt);
 
 /*
 FSE_buildDTable():
    Builds 'dt', which must be already allocated, using FSE_createDTable()
-   return : 1 if 'dt' is compatible with fast mode, 0 otherwise,
+   return : 0,
             or an errorCode, which can be tested using FSE_isError() */
 size_t FSE_buildDTable (FSE_DTable* dt, const short* normalizedCounter, unsigned maxSymbolValue, unsigned tableLog);
 
 /*
 FSE_decompress_usingDTable():
-   Decompress compressed source 'cSrc' of size 'cSrcSize'
-   using 'dt' into 'dst' which must be already allocated.
-   Use fastMode==1 only if authorized by result of FSE_buildDTable().
+   Decompress compressed source 'cSrc' of size 'cSrcSize' using 'dt'
+   into 'dst' which must be already allocated.
    return : size of regenerated data (necessarily <= maxDstSize)
             or an errorCode, which can be tested using FSE_isError() */
-size_t FSE_decompress_usingDTable(void* dst, size_t maxDstSize, const void* cSrc, size_t cSrcSize, const FSE_DTable* dt, size_t fastMode);
+size_t FSE_decompress_usingDTable(void* dst, size_t maxDstSize, const void* cSrc, size_t cSrcSize, const FSE_DTable* dt);
 
 /*
 Tutorial :
@@ -266,26 +294,24 @@ Tutorial :
  If block is a single repeated byte, use memset() instead )
 
 The first step is to obtain the normalized frequencies of symbols.
-This can be performed by reading a header with FSE_readHeader().
-'normalizedCounter' must be already allocated, and have at least 'maxSymbolValuePtr[0]+1' cells of short.
+This can be performed by FSE_readNCount() if it was saved using FSE_writeNCount().
+'normalizedCounter' must be already allocated, and have at least 'maxSymbolValuePtr[0]+1' cells of signed short.
 In practice, that means it's necessary to know 'maxSymbolValue' beforehand,
 or size the table to handle worst case situations (typically 256).
-FSE_readHeader will provide 'tableLog' and 'maxSymbolValue' stored into the header.
-The result of FSE_readHeader() is the number of bytes read from 'header'.
-Note that 'headerSize' must be at least 4 bytes, even if useful information is less than that.
+FSE_readNCount() will provide 'tableLog' and 'maxSymbolValue'.
+The result of FSE_readNCount() is the number of bytes read from 'rBuffer'.
+Note that 'rBufferSize' must be at least 4 bytes, even if useful information is less than that.
 If there is an error, the function will return an error code, which can be tested using FSE_isError().
 
-The next step is to create the decompression tables 'FSE_DTable' from 'normalizedCounter'.
+The next step is to build the decompression tables 'FSE_DTable' from 'normalizedCounter'.
 This is performed by the function FSE_buildDTable().
 The space required by 'FSE_DTable' must be already allocated using FSE_createDTable().
-The function will return 1 if FSE_DTable is compatible with fastMode, 0 otherwise.
 If there is an error, the function will return an error code, which can be tested using FSE_isError().
 
 'FSE_DTable' can then be used to decompress 'cSrc', with FSE_decompress_usingDTable().
-Only trigger fastMode if it was authorized by the result of FSE_buildDTable(), otherwise decompression will fail.
-cSrcSize must be correct, otherwise decompression will fail.
-FSE_decompress_usingDTable() result will tell how many bytes were regenerated.
-If there is an error, the function will return an error code, which can be tested using FSE_isError().
+'cSrcSize' must be strictly correct, otherwise decompression will fail.
+FSE_decompress_usingDTable() result will tell how many bytes were regenerated (<=maxDstSize).
+If there is an error, the function will return an error code, which can be tested using FSE_isError(). (ex: dst buffer too small)
 */
 
 

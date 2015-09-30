@@ -11,7 +11,7 @@
 #include <Poco/Exception.h>
 #include <Poco/SharedPtr.h>
 
-#include <Yandex/logger_useful.h>
+#include <common/logger_useful.h>
 #include <statdaemons/daemon.h>
 
 #include <mysqlxx/Connection.h>

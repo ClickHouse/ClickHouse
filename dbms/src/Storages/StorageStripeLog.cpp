@@ -242,7 +242,7 @@ BlockInputStreams StorageStripeLog::read(
 
 
 BlockOutputStreamPtr StorageStripeLog::write(
-	ASTPtr query)
+	ASTPtr query, const Settings & settings)
 {
 	return new StripeLogBlockOutputStream(*this);
 }

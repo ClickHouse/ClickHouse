@@ -259,7 +259,7 @@ void ITableDeclaration::check(const Block & block, bool need_all) const
 		const ColumnWithTypeAndName & column = block.getByPosition(i);
 
 		if (names_in_block.count(column.name))
-			throw Exception("Duplicate column  " + column.name + " in block",
+			throw Exception("Duplicate column " + column.name + " in block",
 							ErrorCodes::DUPLICATE_COLUMN);
 
 		names_in_block.insert(column.name);

@@ -14,6 +14,7 @@
 #include <DB/Common/MemoryTracker.h>
 #include <DB/IO/WriteHelpers.h>
 #include <DB/Interpreters/QueryPriorities.h>
+#include <DB/Storages/IStorage.h>
 
 
 namespace DB
@@ -40,6 +41,9 @@ struct ProcessListElement
 	QueryPriorities::Handle priority_handle;
 
 	bool is_cancelled = false;
+
+	/// Здесь могут быть зарегистрированы временные таблицы. Изменять под mutex-ом.
+	Tables temporary_tables;
 
 
 	ProcessListElement(const String & query_, const String & user_,
@@ -127,7 +131,7 @@ public:
 	  * Если времени не хватило - кинуть исключение.
 	  */
 	EntryPtr insert(const String & query_, const String & user_, const String & query_id_, const Poco::Net::IPAddress & ip_address_,
-		size_t max_memory_usage, size_t max_wait_milliseconds, bool replace_running_query, QueryPriorities::Priority priority);
+		const Settings & settings);
 
 	/// Количество одновременно выполняющихся запросов.
 	size_t size() const { return cur_size; }
@@ -144,6 +148,12 @@ public:
 		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
 		max_size = max_size_;
 	}
+
+	/// Зарегистрировать временную таблицу. Потом её можно будет получить по query_id и по названию.
+	void addTemporaryTable(ProcessListElement & elem, const String & table_name, StoragePtr storage);
+
+	/// Найти временную таблицу по query_id и по названию. Замечание: плохо работает, если есть разные запросы с одним query_id.
+	StoragePtr tryGetTemporaryTable(const String & query_id, const String & table_name) const;
 };
 
 }
