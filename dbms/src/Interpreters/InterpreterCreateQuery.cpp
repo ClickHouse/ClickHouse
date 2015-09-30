@@ -244,9 +244,7 @@ BlockIO InterpreterCreateQuery::executeImpl(bool assume_metadata_exists)
 		}
 
 		if (create.is_temporary)
-		{
 			context.getSessionContext().addExternalTable(table_name, res);
-		}
 		else
 			context.addTable(database_name, table_name, res);
 	}
@@ -261,8 +259,13 @@ BlockIO InterpreterCreateQuery::executeImpl(bool assume_metadata_exists)
 			new ProhibitColumnsBlockOutputStream{
 				new AddingDefaultBlockOutputStream{
 					new MaterializingBlockOutputStream{
-						new PushingToViewsBlockOutputStream{create.database, create.table, context, query_ptr}
+						new PushingToViewsBlockOutputStream{
+							create.database, create.table,
+							create.is_temporary ? context.getSessionContext() : context,
+							query_ptr
+						}
 					},
+					/// @note shouldn't these two contexts be session contexts in case of temporary table?
 					columns, column_defaults, context, context.getSettingsRef().strict_insert_defaults
 				},
 				materialized_columns
