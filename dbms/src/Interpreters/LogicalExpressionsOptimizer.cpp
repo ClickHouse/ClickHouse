@@ -197,7 +197,8 @@ void LogicalExpressionsOptimizer::addInExpression(const DisjunctiveEqualityChain
 		value_list->children.push_back(operands[1]);
 	}
 
-	/// Отсортировать литералы.
+	/// Отсортировать литералы, чтобы они были указаны в одном и том же порядке в выражении IN.
+	/// Иначе они указывались бы в порядке адресов ASTLiteral, который недетерминирован.
 	std::sort(value_list->children.begin(), value_list->children.end(), [](const DB::ASTPtr & lhs, const DB::ASTPtr & rhs)
 	{
 		const auto val_lhs = static_cast<const ASTLiteral *>(&*lhs);
