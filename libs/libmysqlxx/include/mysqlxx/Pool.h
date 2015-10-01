@@ -1,6 +1,7 @@
 #pragma once
 
 #include <list>
+#include <memory>
 
 #include <mysql/mysqld_error.h>
 
@@ -242,7 +243,7 @@ public:
 				cfg.getInt("mysql_rw_timeout",
 					MYSQLXX_DEFAULT_RW_TIMEOUT));
 	}
-	
+
 	/**
 	 * @param db_					Имя БД
 	 * @param server_				Хост для подключения
@@ -367,7 +368,7 @@ private:
 	Poco::FastMutex lock;
 	/** Описание соединения. */
 	std::string description;
-	
+
 	/** Параметры подключения. **/
 	std::string db;
 	std::string server;
@@ -398,9 +399,9 @@ private:
 	Connection * allocConnection(bool dont_throw_if_failed_first_time = false)
 	{
 		Poco::Util::Application & app = Poco::Util::Application::instance();
-		Connection * conn;
 
-		conn = new Connection();
+		std::unique_ptr<Connection> conn(new Connection);
+
 		try
 		{
 			app.logger().information("MYSQL: Connecting to " + description);
@@ -427,7 +428,6 @@ private:
 			else
 			{
 				app.logger().error(e.what());
-				delete conn;
 
 				if (Daemon::instance().isCancelled())
 					throw Poco::Exception("Daemon is cancelled while trying to connect to MySQL server.");
@@ -437,8 +437,9 @@ private:
 		}
 
 		was_successful = true;
-		connections.push_back(conn);
-		return conn;
+		auto * connection = conn.release();
+		connections.push_back(connection);
+		return connection;
 	}
 };
 
