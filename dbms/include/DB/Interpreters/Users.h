@@ -23,6 +23,7 @@
 
 #include <common/logger_useful.h>
 
+#include <unordered_set>
 
 namespace DB
 {
@@ -285,6 +286,10 @@ struct User
 
 	AddressPatterns addresses;
 
+	/// Список разрешённых баз данных.
+	using DatabaseSet = std::unordered_set<std::string>;
+	DatabaseSet databases;
+
 	User(const String & name_, const String & config_elem, Poco::Util::AbstractConfiguration & config)
 		: name(name_)
 	{
@@ -312,6 +317,21 @@ struct User
 		quota 		= config.getString(config_elem + ".quota");
 
 		addresses.addFromConfig(config_elem + ".networks", config);
+
+		/// Заполнить список разрешённых баз данных.
+		const auto config_sub_elem = config_elem + ".allow_databases";
+		if (config.has(config_sub_elem))
+		{
+			Poco::Util::AbstractConfiguration::Keys config_keys;
+			config.keys(config_sub_elem, config_keys);
+
+			databases.reserve(config_keys.size());
+			for (const auto & key : config_keys)
+			{
+				const auto database_name = config.getString(config_sub_elem + "." + key);
+				databases.insert(database_name);
+			}
+		}
 	}
 
 	/// Для вставки в контейнер.
@@ -383,6 +403,17 @@ public:
 		}
 
 		return it->second;
+	}
+
+	/// Проверить, имеет ли заданный клиент доступ к заданной базе данных.
+	bool isAllowedDatabase(const std::string & user_name, const std::string & database_name) const
+	{
+		auto it = cont.find(user_name);
+		if (it == cont.end())
+			throw Exception("Unknown user " + user_name, ErrorCodes::UNKNOWN_USER);
+
+		const auto & user = it->second;
+		return user.databases.empty() || user.databases.count(database_name);
 	}
 };
 
