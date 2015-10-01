@@ -242,7 +242,7 @@ void Context::checkDatabaseAccessRights(const std::string & database_name) const
 {
 	if (user.empty() || (database_name == "system"))
 	{
-		/// Безымянный пользователь, т.е. сервер, имеет доступ к всем БД.
+		/// Безымянный пользователь, т.е. сервер, имеет доступ ко всем БД.
 		/// Все пользователи имеют доступ к БД system.
 		return;
 	}
