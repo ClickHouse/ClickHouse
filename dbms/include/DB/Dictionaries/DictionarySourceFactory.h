@@ -6,7 +6,7 @@
 #include <DB/Dictionaries/MySQLDictionarySource.h>
 #include <DB/Dictionaries/ClickHouseDictionarySource.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
-#include <Yandex/singleton.h>
+#include <common/singleton.h>
 #include <memory>
 
 namespace DB

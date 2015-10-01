@@ -137,12 +137,20 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 				MergeTreeData::DataPartPtr & part = parts[i];
 				MarkRanges ranges = markRangesFromPkRange(part->index, key_condition, settings);
 
+				/** Для того, чтобы получить оценку снизу количества строк, подходящих под условие на PK,
+				  *  учитываем только гарантированно полные засечки.
+				  * То есть, не учитываем первую и последнюю засечку, которые могут быть неполными.
+				  */
 				for (size_t j = 0; j < ranges.size(); ++j)
-					total_count += ranges[j].end - ranges[j].begin;
+					if (ranges[j].end - ranges[j].begin > 2)
+						total_count += ranges[j].end - ranges[j].begin - 2;
 			}
 			total_count *= data.index_granularity;
 
-			relative_sample_size = std::min(1., static_cast<double>(requested_count) / total_count);
+			if (total_count == 0)
+				relative_sample_size = 1;
+			else
+				relative_sample_size = std::min(1., static_cast<double>(requested_count) / total_count);
 
 			LOG_DEBUG(log, "Selected relative sample size: " << relative_sample_size);
 		}

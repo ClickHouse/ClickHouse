@@ -114,7 +114,7 @@ void ExpressionAnalyzer::init()
 	InJoinSubqueriesPreprocessor<>(select_query, context, storage).perform();
 
 	/// Оптимизирует логические выражения.
-	LogicalExpressionsOptimizer(select_query, settings).optimizeDisjunctiveEqualityChains();
+	LogicalExpressionsOptimizer(select_query, settings).perform();
 
 	/// Добавляет в множество известных алиасов те, которые объявлены в структуре таблицы (ALIAS-столбцы).
 	addStorageAliases();
@@ -1000,7 +1000,7 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name)
 	}
 	else if (settings.global_subqueries_method == GlobalSubqueriesMethod::PULL)
 	{
-		String host_port = getFQDNOrHostName() + ":" + Poco::Util::Application::instance().config().getString("tcp_port");
+		String host_port = getFQDNOrHostName() + ":" + toString(context.getTCPPort());
 		String database = "_query_" + context.getCurrentQueryId();
 
 		auto subquery = new ASTSubquery;

@@ -17,7 +17,7 @@
 #include <Poco/Net/TCPServerConnectionFactory.h>
 #include <Poco/Net/TCPServerConnection.h>
 
-#include <Yandex/logger_useful.h>
+#include <common/logger_useful.h>
 #include <statdaemons/daemon.h>
 #include <statdaemons/HTMLForm.h>
 

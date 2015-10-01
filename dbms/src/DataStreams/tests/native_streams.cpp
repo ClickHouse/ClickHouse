@@ -23,7 +23,7 @@
 #include <DB/Storages/StorageLog.h>
 
 #include <DB/Interpreters/Context.h>
-#include <Yandex/Revision.h>
+#include <common/Revision.h>
 
 
 int main(int argc, char ** argv)

@@ -11,7 +11,7 @@
 #include <DB/IO/WriteBufferFromOStream.h>
 #include <DB/IO/HashingWriteBuffer.h>
 
-#include <Yandex/logger_useful.h>
+#include <common/logger_useful.h>
 
 #define DEFAULT_REMOTE_WRITE_BUFFER_CONNECTION_TIMEOUT 1
 #define DEFAULT_REMOTE_WRITE_BUFFER_RECEIVE_TIMEOUT 1800

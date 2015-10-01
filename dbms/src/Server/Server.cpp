@@ -5,9 +5,9 @@
 #include <Poco/Net/DNS.h>
 #include <Poco/Util/XMLConfiguration.h>
 
-#include <Yandex/ApplicationServerExt.h>
-#include <Yandex/ErrorHandlers.h>
-#include <Yandex/Revision.h>
+#include <common/ApplicationServerExt.h>
+#include <common/ErrorHandlers.h>
+#include <common/Revision.h>
 
 #include <statdaemons/ConfigProcessor.h>
 #include <statdaemons/ext/scope_guard.hpp>

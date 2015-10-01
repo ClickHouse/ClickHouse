@@ -1,7 +1,7 @@
 #pragma once
 
 #include <DB/Storages/IStorage.h>
-#include <Yandex/singleton.h>
+#include <common/singleton.h>
 
 
 namespace DB

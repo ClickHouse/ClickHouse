@@ -1,7 +1,7 @@
 #include <stdio.h>
 
 #include <Poco/DirectoryIterator.h>
-#include <Yandex/Revision.h>
+#include <common/Revision.h>
 #include <statdaemons/ext/unlock_guard.hpp>
 
 #include <DB/Common/SipHash.h>
