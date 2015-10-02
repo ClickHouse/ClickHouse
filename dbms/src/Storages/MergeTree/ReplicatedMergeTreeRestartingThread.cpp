@@ -2,6 +2,7 @@
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeRestartingThread.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
+#include <DB/Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <DB/Common/setThreadName.h>
 
 
@@ -224,14 +225,13 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
 	auto host_port = storage.context.getInterserverIOAddress();
 	auto zookeeper = storage.getZooKeeper();
 
-	std::string address;
-	{
-		WriteBufferFromString address_buf(address);
-		address_buf
-			<< "host: " << host_port.first << '\n'
-			<< "port: " << host_port.second << '\n'
-			<< "tcp_port: " << storage.context.getTCPPort() << '\n';
-	}
+	/// Как другие реплики могут обращаться к данной.
+	ReplicatedMergeTreeAddress address;
+	address.host = host_port.first;
+	address.replication_port = host_port.second;
+	address.queries_port = storage.context.getTCPPort();
+	address.database = storage.database_name;
+	address.table = storage.table_name;
 
 	String is_active_path = storage.replica_path + "/is_active";
 
@@ -258,7 +258,7 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
 	zkutil::Ops ops;
 	ops.push_back(new zkutil::Op::Create(is_active_path,
 		active_node_identifier, zookeeper->getDefaultACL(), zkutil::CreateMode::Ephemeral));
-	ops.push_back(new zkutil::Op::SetData(storage.replica_path + "/host", address, -1));
+	ops.push_back(new zkutil::Op::SetData(storage.replica_path + "/host", address.toString(), -1));
 
 	try
 	{

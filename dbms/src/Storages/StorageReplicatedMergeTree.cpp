@@ -7,6 +7,7 @@
 #include <DB/Storages/MergeTree/MergeTreePartChecker.h>
 #include <DB/Storages/MergeTree/MergeList.h>
 #include <DB/Storages/MergeTree/MergeTreeWhereOptimizer.h>
+#include <DB/Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <DB/Parsers/formatAST.h>
 #include <DB/IO/WriteBufferFromOStream.h>
 #include <DB/IO/ReadBufferFromString.h>
@@ -2415,15 +2416,9 @@ void StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 	if (!to_detached)
 		table_lock = lockStructure(true);
 
-	String host;
-	int port;
+	ReplicatedMergeTreeAddress address(zookeeper->get(replica_path + "/host"));
 
-	String host_port_str = zookeeper->get(replica_path + "/host");
-	ReadBufferFromString buf(host_port_str);
-	buf >> "host: " >> host >> "\n"
-		>> "port: " >> port >> "\n";
-
-	MergeTreeData::MutableDataPartPtr part = fetcher.fetchPart(part_name, replica_path, host, port, to_detached);
+	MergeTreeData::MutableDataPartPtr part = fetcher.fetchPart(part_name, replica_path, address.host, address.replication_port, to_detached);
 
 	if (!to_detached)
 	{
