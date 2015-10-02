@@ -16,6 +16,9 @@
 #include <DB/Common/VirtualColumnUtils.h>
 #include <DB/Parsers/ASTInsertQuery.h>
 #include <DB/DataStreams/AddingConstColumnBlockInputStream.h>
+#include <DB/DataStreams/RemoteBlockInputStream.h>
+#include <DB/DataStreams/NullBlockOutputStream.h>
+#include <DB/DataStreams/copyData.h>
 #include <DB/Common/Macros.h>
 #include <DB/Common/formatReadable.h>
 #include <DB/Common/setThreadName.h>
@@ -2804,21 +2807,52 @@ void StorageReplicatedMergeTree::dropUnreplicatedPartition(const Field & partiti
 }
 
 
-void StorageReplicatedMergeTree::dropPartition(const Field & field, bool detach, bool unreplicated, const Settings & settings)
+void StorageReplicatedMergeTree::dropPartition(ASTPtr query, const Field & field, bool detach, bool unreplicated, const Settings & settings)
 {
 	if (unreplicated)
 	{
 		dropUnreplicatedPartition(field, detach, settings);
-
 		return;
 	}
 
 	auto zookeeper = getZooKeeper();
 	String month_name = MergeTreeData::getMonthName(field);
 
-	/// TODO: Делать запрос в лидера по TCP.
 	if (!is_leader_node)
-		throw Exception(String(detach ? "DETACH" : "DROP") + " PARTITION can only be done on leader replica.", ErrorCodes::NOT_LEADER);
+	{
+		/// Проксируем запрос в лидера.
+
+		auto live_replicas = zookeeper->getChildren(zookeeper_path + "/leader_election");
+		if (live_replicas.empty())
+			throw Exception("No active replicas", ErrorCodes::NO_ACTIVE_REPLICAS);
+
+		const auto leader = zookeeper->get(zookeeper_path + "/leader_election/" + live_replicas.front());
+
+		if (leader == replica_name)
+			throw Exception("Leader was suddenly changed or logical error.", ErrorCodes::LEADERSHIP_CHANGED);
+
+		ReplicatedMergeTreeAddress leader_address(zookeeper->get(zookeeper_path + "/replicas/" + leader + "/host"));
+
+		auto new_query = query->clone();
+		auto & alter = typeid_cast<ASTAlterQuery &>(*new_query);
+
+		alter.database = leader_address.database;
+		alter.table = leader_address.table;
+
+		/// NOTE Работает только если есть доступ от пользователя default без пароля. Можно исправить с помощью добавления параметра в конфиг сервера.
+
+		Connection connection(
+			leader_address.host,
+			leader_address.queries_port,
+			leader_address.database,
+			"", "", "ClickHouse replica");
+
+		RemoteBlockInputStream stream(connection, formattedAST(new_query), &settings);
+		NullBlockOutputStream output;
+
+		copyData(stream, output);
+		return;
+	}
 
 	/** Пропустим один номер в block_numbers для удаляемого месяца, и будем удалять только куски до этого номера.
 	  * Это запретит мерджи удаляемых кусков с новыми вставляемыми данными.
@@ -2871,7 +2905,7 @@ void StorageReplicatedMergeTree::dropPartition(const Field & field, bool detach,
 }
 
 
-void StorageReplicatedMergeTree::attachPartition(const Field & field, bool unreplicated, bool attach_part, const Settings & settings)
+void StorageReplicatedMergeTree::attachPartition(ASTPtr query, const Field & field, bool unreplicated, bool attach_part, const Settings & settings)
 {
 	auto zookeeper = getZooKeeper();
 	String partition;
