@@ -613,7 +613,6 @@ int Server::main(const std::vector<std::string> & args)
 
 		const std::string listen_host = config().getString("listen_host", "::");
 
-		bool use_olap_server = config().getBool("use_olap_http_server", false);
 		Poco::Timespan keep_alive_timeout(config().getInt("keep_alive_timeout", 10), 0);
 
 		Poco::ThreadPool server_pool(3, config().getInt("max_connections", 1024));
@@ -657,12 +656,13 @@ int Server::main(const std::vector<std::string> & args)
 
 		/// OLAP HTTP
 		Poco::SharedPtr<Poco::Net::HTTPServer> olap_http_server;
+		bool use_olap_server = config().has("olap_compatibility.port");
 		if (use_olap_server)
 		{
 			olap_parser.reset(new OLAP::QueryParser());
 			olap_converter.reset(new OLAP::QueryConverter(config()));
 
-			Poco::Net::ServerSocket olap_http_socket(Poco::Net::SocketAddress(listen_host, config().getInt("olap_http_port")));
+			Poco::Net::ServerSocket olap_http_socket(Poco::Net::SocketAddress(listen_host, config().getInt("olap_compatibility.port")));
 			olap_http_socket.setReceiveTimeout(settings.receive_timeout);
 			olap_http_socket.setSendTimeout(settings.send_timeout);
 			olap_http_server = new Poco::Net::HTTPServer(

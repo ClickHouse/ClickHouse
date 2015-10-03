@@ -280,7 +280,7 @@ bool StorageMergeTree::canMergeParts(const MergeTreeData::DataPartPtr & left, co
 }
 
 
-void StorageMergeTree::dropPartition(const Field & partition, bool detach, bool unreplicated, const Settings & settings)
+void StorageMergeTree::dropPartition(ASTPtr query, const Field & partition, bool detach, bool unreplicated, const Settings & settings)
 {
 	if (unreplicated)
 		throw Exception("UNREPLICATED option for DROP has meaning only for ReplicatedMergeTree", ErrorCodes::BAD_ARGUMENTS);
@@ -314,7 +314,7 @@ void StorageMergeTree::dropPartition(const Field & partition, bool detach, bool 
 }
 
 
-void StorageMergeTree::attachPartition(const Field & field, bool unreplicated, bool part, const Settings & settings)
+void StorageMergeTree::attachPartition(ASTPtr query, const Field & field, bool unreplicated, bool part, const Settings & settings)
 {
 	if (unreplicated)
 		throw Exception("UNREPLICATED option for ATTACH has meaning only for ReplicatedMergeTree", ErrorCodes::BAD_ARGUMENTS);
