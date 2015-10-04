@@ -22,6 +22,8 @@ typedef std::vector<ColumnPtr> Columns;
 typedef std::vector<IColumn *> ColumnPlainPtrs;
 typedef std::vector<const IColumn *> ConstColumnPlainPtrs;
 
+class Arena;
+
 
 /** Интерфейс для хранения столбцов значений в оперативке.
   */
@@ -133,6 +135,20 @@ public:
 	  * Например, для ColumnNullable, если взведён флаг null, то соответствующее значение во вложенном столбце игнорируется.
 	  */
 	virtual void insertDefault() = 0;
+
+	/** Сериализовать значение, расположив его в непрерывном куске памяти в Arena.
+	  * Значение можно будет потом прочитать обратно. Используется для агрегации.
+	  * Метод похож на getDataAt, но может работать для тех случаев,
+	  *  когда значение не однозначно соответствует какому-то уже существующему непрерывному куску памяти
+	  *  - например, для массива строк, чтобы получить однозначное соответствие, надо укладывать строки вместе с их размерами.
+	  * Параметр begin - см. метод Arena::allocContinue.
+	  */
+	virtual StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const = 0;
+
+	/** Десериализовать значение, которое было сериализовано с помощью serializeValueIntoArena.
+	  * Вернуть указатель на позицию после прочитанных данных.
+	  */
+	virtual const char * deserializeAndInsertFromArena(const char * pos) = 0;
 
 	/** Соединить столбец с одним или несколькими другими.
 	  * Используется при склейке маленьких блоков.

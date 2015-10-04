@@ -89,6 +89,16 @@ public:
 
 	void insertDefault() override { ++s; }
 
+	StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override
+	{
+		throw Exception("Method serializeValueIntoArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+	}
+
+	const char * deserializeAndInsertFromArena(const char * pos) override
+	{
+		throw Exception("Method deserializeAndInsertFromArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+	}
+
 	ColumnPtr filter(const Filter & filt) const override
 	{
 		if (s != filt.size())

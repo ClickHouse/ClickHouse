@@ -24,7 +24,6 @@
 #include <DB/DataStreams/NativeBlockOutputStream.h>
 
 #include <DB/Columns/ColumnArray.h>
-#include <DB/Columns/ColumnNested.h>
 
 #include <DB/Storages/StorageStripeLog.h>
 #include <Poco/DirectoryIterator.h>

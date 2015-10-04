@@ -19,7 +19,6 @@
 #include <DB/DataStreams/IBlockOutputStream.h>
 
 #include <DB/Columns/ColumnArray.h>
-#include <DB/Columns/ColumnNested.h>
 
 #include <DB/Storages/StorageLog.h>
 

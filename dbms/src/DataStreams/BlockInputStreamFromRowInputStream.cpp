@@ -2,7 +2,6 @@
 #include <DB/Core/ErrorCodes.h>
 
 #include <DB/DataStreams/BlockInputStreamFromRowInputStream.h>
-#include <DB/DataTypes/DataTypeNested.h>
 #include <DB/Columns/ColumnArray.h>
 
 
@@ -53,9 +52,9 @@ Block BlockInputStreamFromRowInputStream::readImpl()
 		e.addMessage("(at row " + toString(total_rows + 1) + ")");
 		throw;
 	}
-	
+
 	res.optimizeNestedArraysOffsets();
-	
+
 	return res;
 }
 

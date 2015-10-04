@@ -182,6 +182,16 @@ public:
 		throw Exception("Method insertDefault is not supported for ColumnAggregateFunction.", ErrorCodes::NOT_IMPLEMENTED);
 	}
 
+	StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override
+	{
+		throw Exception("Method serializeValueIntoArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+	}
+
+	const char * deserializeAndInsertFromArena(const char * pos) override
+	{
+		throw Exception("Method deserializeAndInsertFromArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+	}
+
 	size_t byteSize() const override
 	{
 		return getData().size() * sizeof(getData()[0]);
