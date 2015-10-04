@@ -127,16 +127,15 @@ public:
 	  */
 	char * allocContinue(size_t size, char const *& begin)
 	{
-		if (unlikely(head->pos + size > head->end))
+		while (unlikely(head->pos + size > head->end))
 		{
 			char * prev_end = head->pos;
 			addChunk(size);
 
 			if (begin)
-			{
 				begin = insert(begin, prev_end - begin);
-				return allocContinue(size, begin);
-			}
+			else
+				break;
 		}
 
 		char * res = head->pos;
