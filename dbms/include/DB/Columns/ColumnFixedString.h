@@ -3,6 +3,7 @@
 #include <string.h> // memcpy
 
 #include <DB/Common/PODArray.h>
+#include <DB/Common/Arena.h>
 #include <DB/Columns/IColumn.h>
 
 

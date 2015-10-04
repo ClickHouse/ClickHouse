@@ -7,6 +7,7 @@
 #include <DB/Columns/IColumn.h>
 #include <DB/Common/Collator.h>
 #include <DB/Common/PODArray.h>
+#include <DB/Common/Arena.h>
 
 
 namespace DB

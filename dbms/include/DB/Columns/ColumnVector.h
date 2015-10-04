@@ -4,6 +4,7 @@
 
 #include <DB/Core/Exception.h>
 #include <DB/Core/ErrorCodes.h>
+#include <DB/Common/Arena.h>
 
 #include <DB/Columns/IColumn.h>
 
