@@ -28,7 +28,7 @@
 
 #include "TCPHandler.h"
 
-#include <statdaemons/NetException.h>
+#include <DB/Common/NetException.h>
 
 namespace DB
 {

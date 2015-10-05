@@ -21,7 +21,7 @@
 
 #include <DB/Client/Connection.h>
 
-#include <statdaemons/NetException.h>
+#include <DB/Common/NetException.h>
 
 
 namespace DB

@@ -3,7 +3,7 @@
 #include <cerrno>
 #include <vector>
 
-#include <statdaemons/Exception.h>
+#include <DB/Common/Exception.h>
 #include <Poco/SharedPtr.h>
 
 namespace Poco { class Logger; }

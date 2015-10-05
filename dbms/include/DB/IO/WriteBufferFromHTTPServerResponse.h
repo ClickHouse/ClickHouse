@@ -7,7 +7,7 @@
 
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/BufferWithOwnMemory.h>
-#include <statdaemons/NetException.h>
+#include <DB/Common/NetException.h>
 
 
 namespace DB

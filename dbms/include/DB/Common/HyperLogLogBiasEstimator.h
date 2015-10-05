@@ -1,6 +1,6 @@
 #pragma once
 
-#include <statdaemons/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 
 #include <algorithm>

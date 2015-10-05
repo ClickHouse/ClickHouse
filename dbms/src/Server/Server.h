@@ -19,7 +19,7 @@
 
 #include <common/logger_useful.h>
 #include <statdaemons/daemon.h>
-#include <statdaemons/HTMLForm.h>
+#include <DB/Common/HTMLForm.h>
 
 #include <DB/Interpreters/Context.h>
 #include "OLAPQueryParser.h"
@@ -44,7 +44,7 @@ class Server : public Daemon
 public:
 	/// Глобальные настройки севрера
 	std::unique_ptr<Context> global_context;
-	
+
 	std::unique_ptr<OLAP::QueryParser> olap_parser;
 	std::unique_ptr<OLAP::QueryConverter> olap_converter;
 
@@ -54,7 +54,7 @@ protected:
 		Daemon::initialize(self);
 		logger().information("starting up");
 	}
-		
+
 	void uninitialize()
 	{
 		logger().information("shutting down");

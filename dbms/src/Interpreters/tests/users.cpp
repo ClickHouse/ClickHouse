@@ -1,4 +1,4 @@
-#include <statdaemons/ConfigProcessor.h>
+#include <DB/Common/ConfigProcessor.h>
 #include <DB/Interpreters/Users.h>
 
 #include <boost/filesystem.hpp>

@@ -9,7 +9,7 @@
 #include <common/ErrorHandlers.h>
 #include <common/Revision.h>
 
-#include <statdaemons/ConfigProcessor.h>
+#include <DB/Common/ConfigProcessor.h>
 #include <ext/scope_guard.hpp>
 
 #include <memory>

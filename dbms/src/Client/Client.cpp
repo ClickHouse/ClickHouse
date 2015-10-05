@@ -60,7 +60,7 @@
 #include <DB/Common/formatReadable.h>
 #include <DB/Columns/ColumnString.h>
 
-#include <statdaemons/NetException.h>
+#include <DB/Common/NetException.h>
 
 /// http://en.wikipedia.org/wiki/ANSI_escape_code
 #define SAVE_CURSOR_POSITION "\033[s"

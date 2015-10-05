@@ -14,7 +14,7 @@
 #include <Poco/Net/HTMLForm.h>
 #include <Poco/Net/PartHandler.h>
 #include <Poco/Net/MessageHeader.h>
-#include <statdaemons/HTMLForm.h>
+#include <DB/Common/HTMLForm.h>
 
 
 namespace DB
