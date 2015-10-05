@@ -2,7 +2,7 @@
 
 #include <DB/Dictionaries/IDictionarySource.h>
 #include <DB/Dictionaries/MySQLBlockInputStream.h>
-#include <statdaemons/ext/range.hpp>
+#include <ext/range.hpp>
 #include <mysqlxx/Pool.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <strconvert/escape.h>

@@ -44,7 +44,7 @@
 
 #include <DB/Functions/FunctionFactory.h>
 
-#include <statdaemons/ext/range.hpp>
+#include <ext/range.hpp>
 
 
 namespace DB

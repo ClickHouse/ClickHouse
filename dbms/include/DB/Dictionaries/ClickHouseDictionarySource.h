@@ -5,7 +5,7 @@
 #include <DB/DataStreams/RemoteBlockInputStream.h>
 #include <DB/Interpreters/executeQuery.h>
 #include <DB/Common/isLocalAddress.h>
-#include <statdaemons/ext/range.hpp>
+#include <ext/range.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
 #include "writeParenthesisedString.h"
 

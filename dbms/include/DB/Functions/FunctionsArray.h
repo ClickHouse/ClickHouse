@@ -17,7 +17,7 @@
 #include <DB/Functions/NumberTraits.h>
 #include <DB/Functions/FunctionsConditional.h>
 
-#include <statdaemons/ext/range.hpp>
+#include <ext/range.hpp>
 
 #include <unordered_map>
 

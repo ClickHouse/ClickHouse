@@ -6,8 +6,8 @@
 #include <DB/Core/ColumnNumbers.h>
 #include <DB/DataStreams/MergingSortedBlockInputStream.h>
 #include <DB/Storages/MergeTree/PKCondition.h>
-#include <statdaemons/ext/range.hpp>
-#include <statdaemons/ext/map.hpp>
+#include <ext/range.hpp>
+#include <ext/map.hpp>
 
 
 namespace DB

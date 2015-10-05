@@ -10,7 +10,7 @@
 #include <common/Revision.h>
 
 #include <statdaemons/ConfigProcessor.h>
-#include <statdaemons/ext/scope_guard.hpp>
+#include <ext/scope_guard.hpp>
 
 #include <memory>
 #include <thread>

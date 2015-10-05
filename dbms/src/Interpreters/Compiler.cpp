@@ -2,7 +2,7 @@
 
 #include <Poco/DirectoryIterator.h>
 #include <common/Revision.h>
-#include <statdaemons/ext/unlock_guard.hpp>
+#include <ext/unlock_guard.hpp>
 
 #include <DB/Common/SipHash.h>
 
