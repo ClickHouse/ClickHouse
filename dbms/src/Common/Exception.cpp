@@ -6,7 +6,7 @@
 
 #include <DB/IO/WriteHelpers.h>
 
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 
 
 namespace DB
