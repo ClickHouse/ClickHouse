@@ -146,7 +146,7 @@ public:
 
 	Dictionaries(const bool throw_on_error)
 		: Dictionaries(throw_on_error,
-					   Application::instance().config()
+					   Poco::Util::Application::instance().config()
 						   .getInt("builtin_dictionaries_reload_interval", 3600))
 	{}
 
