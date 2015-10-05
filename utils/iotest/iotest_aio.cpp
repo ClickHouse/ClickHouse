@@ -111,10 +111,8 @@ struct AioContext
 	}
 };
 
-typedef Poco::SharedPtr<Poco::Exception> ExceptionPtr;
 
-
-void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block_size, size_t buffers_count, size_t count, ExceptionPtr & exception)
+void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block_size, size_t buffers_count, size_t count, std::exception_ptr & exception)
 {
 	try
 	{
@@ -261,7 +259,7 @@ int mainImpl(int argc, char ** argv)
 	if (-1 == fd)
 		throwFromErrno("Cannot open file");
 
-	typedef std::vector<ExceptionPtr> Exceptions;
+	typedef std::vector<std::exception_ptr> Exceptions;
 
 	boost::threadpool::pool pool(threads_count);
 	Exceptions exceptions(threads_count);
@@ -276,7 +274,7 @@ int mainImpl(int argc, char ** argv)
 
 	for (size_t i = 0; i < threads_count; ++i)
 		if (exceptions[i])
-			exceptions[i]->rethrow();
+			std::rethrow_exception(exceptions[i];
 
 	if (0 != close(fd))
 		throwFromErrno("Cannot close file");

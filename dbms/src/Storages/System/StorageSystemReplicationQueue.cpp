@@ -154,7 +154,7 @@ BlockInputStreams StorageSystemReplicationQueue::read(
 			col_attach_source_part_name	.column->insert(entry.source_part_name);
 			col_is_currently_executing	.column->insert(UInt64(entry.currently_executing));
 			col_num_tries				.column->insert(UInt64(entry.num_tries));
-			col_last_exception			.column->insert(entry.exception ? entry.exception->displayText() : "");
+			col_last_exception			.column->insert(entry.exception ? getExceptionMessage(entry.exception, false) : "");
 			col_last_attempt_time		.column->insert(UInt64(entry.last_attempt_time));
 			col_num_postponed			.column->insert(UInt64(entry.num_postponed));
 			col_postpone_reason			.column->insert(entry.postpone_reason);

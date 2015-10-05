@@ -135,7 +135,7 @@ private:
 	ASTPtr parsed_query;
 
 	/// Последнее полученное от сервера исключение. Для кода возврата в неинтерактивном режиме.
-	ExceptionPtr last_exception;
+	std::exception_ptr last_exception;
 
 	/// Было ли в последнем запросе исключение.
 	bool got_exception = false;

@@ -38,7 +38,7 @@ struct ParallelInputsHandler
 	void onFinish() {}
 
 	/// Обработка исключения. Разумно вызывать в этом методе метод ParallelInputsProcessor::cancel, а также передавать эксепшен в основной поток.
-	void onException(ExceptionPtr & exception, size_t thread_num) {}
+	void onException(std::exception_ptr & exception, size_t thread_num) {}
 };
 
 
@@ -140,7 +140,7 @@ private:
 	void thread(MemoryTracker * memory_tracker, size_t thread_num)
 	{
 		current_memory_tracker = memory_tracker;
-		ExceptionPtr exception;
+		std::exception_ptr exception;
 
 		setThreadName("ParalInputsProc");
 
@@ -150,7 +150,7 @@ private:
 		}
 		catch (...)
 		{
-			exception = cloneCurrentException();
+			exception = std::current_exception();
 		}
 
 		if (exception)
@@ -171,7 +171,7 @@ private:
 				}
 				catch (...)
 				{
-					exception = cloneCurrentException();
+					exception = std::current_exception();
 				}
 
 				if (exception)

@@ -46,7 +46,7 @@ private:
 			started = true;
 
 		if (exception)
-			exception->rethrow();
+			std::rethrow_exception(exception);
 
 		swapBuffers();
 
@@ -77,7 +77,7 @@ public:
 		}
 	}
 
-	ExceptionPtr exception;
+	std::exception_ptr exception;
 
 	/// То, что выполняется в отдельном потоке
 	void thread()
@@ -88,7 +88,7 @@ public:
 		}
 		catch (...)
 		{
-			exception = cloneCurrentException();
+			exception = std::current_exception();
 		}
 	}
 };

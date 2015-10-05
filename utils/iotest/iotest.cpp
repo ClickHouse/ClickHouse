@@ -35,9 +35,6 @@ enum Mode
 };
 
 
-typedef Poco::SharedPtr<Poco::Exception> ExceptionPtr;
-
-
 struct AlignedBuffer
 {
 	int size;
@@ -58,7 +55,7 @@ struct AlignedBuffer
 	}
 };
 
-void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block_size, size_t count, ExceptionPtr & exception)
+void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block_size, size_t count, std::exception_ptr & exception)
 {
 	try
 	{
@@ -171,7 +168,7 @@ int mainImpl(int argc, char ** argv)
 	if (-1 == fd)
 		throwFromErrno("Cannot open file");
 
-	typedef std::vector<ExceptionPtr> Exceptions;
+	typedef std::vector<std::exception_ptr> Exceptions;
 	Exceptions exceptions(threads);
 
 	Stopwatch watch;
@@ -184,7 +181,7 @@ int mainImpl(int argc, char ** argv)
 
 	for (size_t i = 0; i < threads; ++i)
 		if (exceptions[i])
-			exceptions[i]->rethrow();
+			std::rethrow_exception(exceptions[i];
 
 	watch.stop();
 

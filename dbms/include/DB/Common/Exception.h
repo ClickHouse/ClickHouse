@@ -67,17 +67,11 @@ private:
 };
 
 
-typedef Poco::SharedPtr<Poco::Exception> ExceptionPtr;
-typedef std::vector<ExceptionPtr> Exceptions;
+typedef std::vector<std::exception_ptr> Exceptions;
 
 
 void throwFromErrno(const std::string & s, int code = 0, int the_errno = errno);
 
-
-/** Для использования в блоке catch (...).
-  * Преобразует Exception, Poco::Exception, std::exception или неизвестный exception в ExceptionPtr.
-  */
-ExceptionPtr cloneCurrentException();
 
 /** Попробовать записать исключение в лог (и забыть про него).
   * Можно использовать в деструкторах в блоке catch (...).
@@ -88,6 +82,32 @@ void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_
 std::string getCurrentExceptionMessage(bool with_stacktrace);
 
 
+void tryLogException(std::exception_ptr e, const char * log_name, const std::string & start_of_message = "");
+void tryLogException(std::exception_ptr e, Poco::Logger * logger, const std::string & start_of_message = "");
+
+std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace);
+
+
 void rethrowFirstException(Exceptions & exceptions);
+
+Poco::SharedPtr<Poco::Exception> convertCurrentException();
+
+
+template <typename T>
+typename std::enable_if<std::is_pointer<T>::value, T>::type exception_cast(std::exception_ptr e)
+{
+	try
+	{
+		std::rethrow_exception(e);
+	}
+	catch (typename std::remove_pointer<T>::type & concrete)
+	{
+		return &concrete;
+	}
+	catch (...)
+	{
+		return nullptr;
+	}
+}
 
 }
