@@ -2,7 +2,7 @@
 
 #include <Poco/Mutex.h>
 
-#include <statdaemons/OptimizedRegularExpression.h>
+#include <DB/Common/OptimizedRegularExpression.h>
 #include <memory>
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
