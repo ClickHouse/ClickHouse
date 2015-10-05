@@ -203,27 +203,10 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
 				buffer_used[b] = false;
 			}
 		}
-
-// 		iocb cb;
-// 		memset(&cb, 0, sizeof(cb));
-// 		cb.aio_lio_opcode = IOCB_CMD_FSYNC;
-// 		cb.aio_fildes = fd;
-// 		iocb *cbs = &cb;
-// 		if (io_submit(ctx.ctx, 1, &cbs) < 0)
-// 			throwFromErrno("io_submit of fdatasync failed");
-// 		io_event e;
-// 		if (io_getevents(ctx.ctx, 1, 1, &e, nullptr) < 0)
-// 			throwFromErrno("io_getevents failed");
-// 		if (e.res < 0)
-// 			throw Poco::Exception("sync failed");
-	}
-	catch (const Poco::Exception & e)
-	{
-		exception = e.clone();
 	}
 	catch (...)
 	{
-		exception = new Poco::Exception("Unknown exception");
+		exception = std::current_exception();
 	}
 }
 
@@ -274,7 +257,7 @@ int mainImpl(int argc, char ** argv)
 
 	for (size_t i = 0; i < threads_count; ++i)
 		if (exceptions[i])
-			std::rethrow_exception(exceptions[i];
+			std::rethrow_exception(exceptions[i]);
 
 	if (0 != close(fd))
 		throwFromErrno("Cannot close file");

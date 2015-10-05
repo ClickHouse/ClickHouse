@@ -102,13 +102,9 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
 			}
 		}
 	}
-	catch (const Poco::Exception & e)
-	{
-		exception = e.clone();
-	}
 	catch (...)
 	{
-		exception = new Poco::Exception("Unknown exception");
+		exception = std::current_exception();
 	}
 }
 
@@ -181,7 +177,7 @@ int mainImpl(int argc, char ** argv)
 
 	for (size_t i = 0; i < threads; ++i)
 		if (exceptions[i])
-			std::rethrow_exception(exceptions[i];
+			std::rethrow_exception(exceptions[i]);
 
 	watch.stop();
 
