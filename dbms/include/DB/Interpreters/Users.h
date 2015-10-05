@@ -265,7 +265,7 @@ public:
 			else
 				throw Exception("Unknown address pattern type: " + *it, ErrorCodes::UNKNOWN_ADDRESS_PATTERN_TYPE);
 
-			patterns.push_back(pattern);
+			patterns.emplace_back(std::move(pattern));
 		}
 	}
 };
