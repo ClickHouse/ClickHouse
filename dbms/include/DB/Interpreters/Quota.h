@@ -187,7 +187,7 @@ class Quotas
 {
 private:
 	/// Имя квоты -> квоты.
-	typedef std::unordered_map<String, SharedPtr<Quota> > Container;
+	typedef std::unordered_map<String, std::unique_ptr<Quota>> Container;
 	Container cont;
 
 public:
