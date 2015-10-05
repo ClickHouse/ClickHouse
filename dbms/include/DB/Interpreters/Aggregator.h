@@ -5,7 +5,7 @@
 #include <functional>
 
 #include <common/logger_useful.h>
-#include <statdaemons/threadpool.hpp>
+#include <common/threadpool.hpp>
 
 #include <DB/Core/StringRef.h>
 #include <DB/Common/Arena.h>

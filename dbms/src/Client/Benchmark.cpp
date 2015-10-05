@@ -12,7 +12,7 @@
 #include <Poco/Util/Application.h>
 
 #include <DB/Common/Stopwatch.h>
-#include <statdaemons/threadpool.hpp>
+#include <common/threadpool.hpp>
 #include <stats/ReservoirSampler.h>
 
 #include <boost/program_options.hpp>

@@ -17,7 +17,7 @@
 
 #include <DB/Core/Exception.h>
 
-#include <statdaemons/threadpool.hpp>
+#include <common/threadpool.hpp>
 #include <DB/Common/Stopwatch.h>
 
 
