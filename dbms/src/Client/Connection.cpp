@@ -5,7 +5,7 @@
 #include <common/Revision.h>
 
 #include <DB/Core/Defines.h>
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 
 #include <DB/IO/CompressedReadBuffer.h>

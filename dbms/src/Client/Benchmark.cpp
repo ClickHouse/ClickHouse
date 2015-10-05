@@ -19,7 +19,7 @@
 
 #include <DB/Common/ConcurrentBoundedQueue.h>
 
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/Types.h>
 
 #include <DB/IO/ReadBufferFromFileDescriptor.h>

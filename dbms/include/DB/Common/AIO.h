@@ -6,7 +6,7 @@
 
 #include <boost/noncopyable.hpp>
 
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 
 
 /** Небольшие обёртки для асинхронного ввода-вывода.

@@ -12,7 +12,7 @@
 #include <common/threadpool.hpp>
 
 #include <DB/Core/Types.h>
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Common/UInt128.h>
 
 

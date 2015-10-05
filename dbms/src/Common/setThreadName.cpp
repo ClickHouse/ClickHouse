@@ -1,5 +1,5 @@
 #include <sys/prctl.h>
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Common/setThreadName.h>
 
 

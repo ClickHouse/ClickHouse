@@ -3,7 +3,7 @@
 #include <Poco/SharedPtr.h>
 
 #include <DB/Core/Field.h>
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 #include <DB/Columns/ColumnVector.h>
 #include <DB/Columns/IColumn.h>

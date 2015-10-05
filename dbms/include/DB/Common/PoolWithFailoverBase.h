@@ -4,7 +4,7 @@
 #include <DB/Common/PoolBase.h>
 #include <DB/Common/ProfileEvents.h>
 #include <DB/Common/NetException.h>
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 #include <DB/Interpreters/Settings.h>
 

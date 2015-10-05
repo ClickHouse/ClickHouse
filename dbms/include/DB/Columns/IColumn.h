@@ -6,7 +6,7 @@
 #include <DB/Common/typeid_cast.h>
 
 #include <DB/Core/Field.h>
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 #include <DB/Core/StringRef.h>
 

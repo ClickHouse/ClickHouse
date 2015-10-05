@@ -23,7 +23,7 @@
 
 #include <DB/Common/Stopwatch.h>
 
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/Types.h>
 #include <DB/Core/QueryProcessingStage.h>
 

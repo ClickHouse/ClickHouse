@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 #include <DB/Core/Types.h>
 #include <DB/IO/WriteHelpers.h>
