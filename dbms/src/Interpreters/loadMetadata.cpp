@@ -19,7 +19,7 @@
 #include <DB/IO/copyData.h>
 #include <DB/Common/escapeForFileName.h>
 
-#include <statdaemons/Stopwatch.h>
+#include <DB/Common/Stopwatch.h>
 
 
 namespace DB

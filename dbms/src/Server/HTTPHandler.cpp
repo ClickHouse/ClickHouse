@@ -2,7 +2,7 @@
 
 #include <Poco/Net/HTTPBasicCredentials.h>
 
-#include <statdaemons/Stopwatch.h>
+#include <DB/Common/Stopwatch.h>
 
 #include <DB/Core/ErrorCodes.h>
 

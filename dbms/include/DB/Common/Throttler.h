@@ -2,7 +2,7 @@
 
 #include <mutex>
 #include <memory>
-#include <statdaemons/Stopwatch.h>
+#include <DB/Common/Stopwatch.h>
 #include <DB/Core/Exception.h>
 #include <DB/IO/WriteHelpers.h>
 

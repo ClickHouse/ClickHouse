@@ -21,7 +21,7 @@
 
 #include <common/Revision.h>
 
-#include <statdaemons/Stopwatch.h>
+#include <DB/Common/Stopwatch.h>
 
 #include <DB/Core/Exception.h>
 #include <DB/Core/Types.h>

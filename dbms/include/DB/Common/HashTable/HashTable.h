@@ -29,7 +29,7 @@
 #ifdef DBMS_HASH_MAP_DEBUG_RESIZES
 	#include <iostream>
 	#include <iomanip>
-	#include <statdaemons/Stopwatch.h>
+	#include <DB/Common/Stopwatch.h>
 #endif
 
 

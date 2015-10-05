@@ -11,7 +11,7 @@
 #include <Poco/SharedPtr.h>
 #include <Poco/Util/Application.h>
 
-#include <statdaemons/Stopwatch.h>
+#include <DB/Common/Stopwatch.h>
 #include <statdaemons/threadpool.hpp>
 #include <stats/ReservoirSampler.h>
 

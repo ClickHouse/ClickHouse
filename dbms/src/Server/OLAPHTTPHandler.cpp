@@ -12,7 +12,7 @@
 
 #include "OLAPHTTPHandler.h"
 
-#include <statdaemons/Stopwatch.h>
+#include <DB/Common/Stopwatch.h>
 #include <iomanip>
 
 

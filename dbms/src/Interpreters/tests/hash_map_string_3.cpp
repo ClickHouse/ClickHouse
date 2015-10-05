@@ -2,7 +2,7 @@
 #include <iomanip>
 #include <vector>
 
-#include <statdaemons/Stopwatch.h>
+#include <DB/Common/Stopwatch.h>
 
 #include <farmhash.h>
 #include <metrohash.h>

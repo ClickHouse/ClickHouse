@@ -6,7 +6,7 @@
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/ReadBufferFromFileDescriptor.h>
 
-#include <statdaemons/Stopwatch.h>
+#include <DB/Common/Stopwatch.h>
 
 
 std::ostream & operator<< (std::ostream & ostr, const __m128i vec)
