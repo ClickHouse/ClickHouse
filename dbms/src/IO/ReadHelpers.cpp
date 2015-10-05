@@ -26,14 +26,21 @@ static void __attribute__((__noinline__)) throwAtAssertionFailed(const char * s,
 }
 
 
-void assertString(const char * s, ReadBuffer & buf)
+bool checkString(const char * s, ReadBuffer & buf)
 {
 	for (; *s; ++s)
 	{
 		if (buf.eof() || *buf.position() != *s)
-			throwAtAssertionFailed(s, buf);
+			return false;
 		++buf.position();
 	}
+	return true;
+}
+
+void assertString(const char * s, ReadBuffer & buf)
+{
+	if (!checkString(s, buf))
+		throwAtAssertionFailed(s, buf);
 }
 
 void assertChar(char symbol, ReadBuffer & buf)
