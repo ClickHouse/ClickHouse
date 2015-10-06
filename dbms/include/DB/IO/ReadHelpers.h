@@ -260,7 +260,10 @@ ReturnType readFloatTextImpl(T & x, ReadBuffer & buf)
 	double power_of_ten = 1;
 
 	if (buf.eof())
-		throwReadAfterEOF();
+		if (throw_exception)
+			throwReadAfterEOF();
+		else
+			return ReturnType(false);
 
 	auto parse_special_value = [&buf, &x, &negative](const char * str, T value)
 	{
