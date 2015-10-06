@@ -52,7 +52,7 @@ namespace DB
   */
 
 
-template <bool CaseSensitive>
+template <bool CaseSensitive, bool EnforceSSE = false>
 struct PositionImpl
 {
 	typedef UInt64 ResultType;
@@ -70,7 +70,7 @@ struct PositionImpl
 		/// Текущий индекс в массиве строк.
 		size_t i = 0;
 
-		VolnitskyImpl<CaseSensitive, true> searcher(needle.data(), needle.size(), end - pos);
+		VolnitskyImpl<CaseSensitive, true> searcher(needle.data(), needle.size(), EnforceSSE ? 1 : end - pos);
 
 		/// Искать будем следующее вхождение сразу во всех строках.
 		while (pos < end && end != (pos = searcher.search(pos, end - pos)))
@@ -149,7 +149,7 @@ std::size_t utf8_seq_length(const UInt8 first_octet)
 }
 
 
-template <bool CaseSensitive>
+template <bool CaseSensitive, bool EnforceSSE = false>
 struct PositionUTF8Impl
 {
 	typedef UInt64 ResultType;
@@ -165,7 +165,7 @@ struct PositionUTF8Impl
 		/// Текущий индекс в массиве строк.
 		size_t i = 0;
 
-		VolnitskyImpl<CaseSensitive, false> searcher(needle.data(), needle.size(), end - pos);
+		VolnitskyImpl<CaseSensitive, false> searcher(needle.data(), needle.size(), EnforceSSE ? 1 : end - pos);
 
 		/// Искать будем следующее вхождение сразу во всех строках.
 		while (pos < end && end != (pos = searcher.search(pos, end - pos)))
@@ -1761,6 +1761,8 @@ public:
 
 struct NamePosition 					{ static constexpr auto name = "position"; };
 struct NamePositionUTF8					{ static constexpr auto name = "positionUTF8"; };
+struct NamePositionSSE 					{ static constexpr auto name = "positionSSE"; };
+struct NamePositionUTF8SSE					{ static constexpr auto name = "positionUTF8SSE"; };
 struct NamePositionCaseInsensitive 		{ static constexpr auto name = "positionCaseInsensitive"; };
 struct NamePositionCaseInsensitiveUTF8	{ static constexpr auto name = "positionCaseInsensitiveUTF8"; };
 struct NamePositionCaseInsensitiveVolnitsky 		{ static constexpr auto name = "positionCaseInsensitiveVolnitsky"; };
@@ -1776,6 +1778,8 @@ struct NameReplaceRegexpAll				{ static constexpr auto name = "replaceRegexpAll"
 
 typedef FunctionsStringSearch<PositionImpl<true>, 				NamePosition> 						FunctionPosition;
 typedef FunctionsStringSearch<PositionUTF8Impl<true>, 			NamePositionUTF8> 					FunctionPositionUTF8;
+typedef FunctionsStringSearch<PositionImpl<true, true>, 				NamePositionSSE> 						FunctionPositionSSE;
+typedef FunctionsStringSearch<PositionUTF8Impl<true, true>, 			NamePositionUTF8SSE> 					FunctionPositionUTF8SSE;
 typedef FunctionsStringSearch<PositionCaseInsensitiveImpl,		NamePositionCaseInsensitive> 		FunctionPositionCaseInsensitive;
 typedef FunctionsStringSearch<PositionCaseInsensitiveUTF8Impl,	NamePositionCaseInsensitiveUTF8>	FunctionPositionCaseInsensitiveUTF8;
 typedef FunctionsStringSearch<PositionImpl<false>,				NamePositionCaseInsensitiveVolnitsky> 		FunctionPositionCaseInsensitiveVolnitsky;
