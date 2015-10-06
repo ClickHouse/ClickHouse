@@ -6,7 +6,7 @@
 #include <DB/Common/HashTable/Hash.h>
 #include <stats/IntHash.h>
 
-#include <statdaemons/Stopwatch.h>
+#include <DB/Common/Stopwatch.h>
 
 #include "AvalancheTest.h"	/// Взято из SMHasher.
 

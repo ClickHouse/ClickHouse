@@ -3,7 +3,7 @@
 #include <Poco/SharedPtr.h>
 
 #include <DB/Core/Field.h>
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 #include <DB/Columns/ColumnVector.h>
 #include <DB/Columns/IColumn.h>
@@ -88,6 +88,16 @@ public:
 	}
 
 	void insertDefault() override { ++s; }
+
+	StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override
+	{
+		throw Exception("Method serializeValueIntoArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+	}
+
+	const char * deserializeAndInsertFromArena(const char * pos) override
+	{
+		throw Exception("Method deserializeAndInsertFromArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+	}
 
 	ColumnPtr filter(const Filter & filt) const override
 	{

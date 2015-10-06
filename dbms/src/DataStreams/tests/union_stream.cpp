@@ -6,7 +6,7 @@
 
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
 
-#include <DB/Storages/StorageSystemNumbers.h>
+#include <DB/Storages/System/StorageSystemNumbers.h>
 
 #include <DB/DataStreams/LimitBlockInputStream.h>
 #include <DB/DataStreams/UnionBlockInputStream.h>

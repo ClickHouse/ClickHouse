@@ -22,7 +22,7 @@
 #include <DB/Common/HashTable/Hash.h>
 #include <DB/Functions/IFunction.h>
 
-#include <statdaemons/ext/range.hpp>
+#include <ext/range.hpp>
 
 #include <stats/IntHash.h>
 

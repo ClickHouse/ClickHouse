@@ -112,9 +112,9 @@ BlockInputStreams StorageMaterializedView::read(
 	return data->read(column_names, query, context, settings, processed_stage, max_block_size, threads);
 }
 
-BlockOutputStreamPtr StorageMaterializedView::write(ASTPtr query)
+BlockOutputStreamPtr StorageMaterializedView::write(ASTPtr query, const Settings & settings)
 {
-	return data->write(query);
+	return data->write(query, settings);
 }
 
 void StorageMaterializedView::drop()

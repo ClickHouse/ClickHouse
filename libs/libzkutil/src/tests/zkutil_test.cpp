@@ -5,7 +5,7 @@
 #include <readline/history.h>
 #include <sstream>
 #include <Poco/ConsoleChannel.h>
-#include <Yandex/logger_useful.h>
+#include <common/logger_useful.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/ReadBufferFromString.h>
 

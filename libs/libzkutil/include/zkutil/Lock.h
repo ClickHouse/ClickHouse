@@ -1,8 +1,8 @@
 #pragma once
 
 #include <zkutil/ZooKeeper.h>
-#include <Yandex/logger_useful.h>
-#include <DB/Core/Exception.h>
+#include <common/logger_useful.h>
+#include <DB/Common/Exception.h>
 
 namespace zkutil
 {

@@ -9,7 +9,7 @@
 #include <DB/IO/ReadBuffer.h>
 #include <DB/IO/ReadBufferFromIStream.h>
 
-#include <Yandex/logger_useful.h>
+#include <common/logger_useful.h>
 
 #define DEFAULT_HTTP_READ_BUFFER_TIMEOUT 1800
 #define DEFAULT_HTTP_READ_BUFFER_CONNECTION_TIMEOUT 1

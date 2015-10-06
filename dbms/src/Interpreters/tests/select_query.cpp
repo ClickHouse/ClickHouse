@@ -9,8 +9,8 @@
 #include <DB/IO/WriteBufferFromOStream.h>
 
 #include <DB/Storages/StorageLog.h>
-#include <DB/Storages/StorageSystemNumbers.h>
-#include <DB/Storages/StorageSystemOne.h>
+#include <DB/Storages/System/StorageSystemNumbers.h>
+#include <DB/Storages/System/StorageSystemOne.h>
 #include <DB/Storages/StorageFactory.h>
 
 #include <DB/Interpreters/loadMetadata.h>

@@ -18,6 +18,7 @@ public:
 
 	/** При чтении, выбирается набор кусков, покрывающий нужный диапазон индекса.
 	  * Если inout_part_index != nullptr, из этого счетчика берутся значения для виртуального столбца _part_index.
+	  * max_block_number_to_read - если не ноль - не читать все куски, у которых правая граница больше этого порога.
 	  */
 	BlockInputStreams read(
 		const Names & column_names,
@@ -25,9 +26,10 @@ public:
 		const Context & context,
 		const Settings & settings,
 		QueryProcessingStage::Enum & processed_stage,
-		size_t max_block_size = DEFAULT_BLOCK_SIZE,
-		unsigned threads = 1,
-		size_t * inout_part_index = nullptr);
+		size_t max_block_size,
+		unsigned threads,
+		size_t * inout_part_index,
+		Int64 max_block_number_to_read);
 
 private:
 	MergeTreeData & data;

@@ -307,7 +307,7 @@ void MergeTreePartChecker::checkDataPart(
 
 	String any_column_name;
 	size_t rows = Stream::UNKNOWN;
-	ExceptionPtr first_exception;
+	std::exception_ptr first_exception;
 
 	for (const NameAndTypePair & column : columns)
 	{
@@ -348,15 +348,12 @@ void MergeTreePartChecker::checkDataPart(
 		{
 			if (!settings.verbose)
 				throw;
-			ExceptionPtr e = cloneCurrentException();
+
+			std::exception_ptr e = std::current_exception();
 			if (!first_exception)
 				first_exception = e;
 
-			std::cerr << " exception" << std::endl;
-			std::cerr << "Code: " << e->code() << ", e.displayText() = " << e->displayText() << ", e.what() = " << e->what() << std::endl;
-			if (auto dbe = dynamic_cast<Exception *>(&*e))
-				std::cerr << "Stack trace:\n\n" << dbe->getStackTrace().toString() << std::endl;
-			 std::cerr << std::endl;
+			std::cerr << getCurrentExceptionMessage(true) << std::endl;
 		}
 
 		if (settings.verbose && ok)
@@ -382,7 +379,7 @@ void MergeTreePartChecker::checkDataPart(
 		checksums_txt.checkEqual(checksums_data, true);
 
 	if (first_exception)
-		first_exception->rethrow();
+		std::rethrow_exception(first_exception);
 
 	if (out_checksums)
 		*out_checksums = checksums_data;

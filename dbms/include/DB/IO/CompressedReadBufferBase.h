@@ -9,7 +9,7 @@
 
 #include <DB/Common/PODArray.h>
 #include <DB/Common/ProfileEvents.h>
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 #include <DB/IO/ReadBuffer.h>
 #include <DB/IO/BufferWithOwnMemory.h>

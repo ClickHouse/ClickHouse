@@ -172,7 +172,13 @@ class ASTSet;
   */
 class PKCondition
 {
+	struct RPNElement;
+
 public:
+	/// Словарь, содержащий действия к соответствующим функциям по превращению их в RPNElement
+	using AtomMap = std::unordered_map<std::string, void(*)(RPNElement & out, const Field & value, ASTPtr & node)>;
+	static const AtomMap atom_map;
+
 	/// Не учитывает секцию SAMPLE. all_columns - набор всех столбцов таблицы.
 	PKCondition(ASTPtr query, const Context & context, const NamesAndTypesList & all_columns, const SortDescription & sort_descr);
 
@@ -192,6 +198,12 @@ public:
 	bool addCondition(const String & column, const Range & range);
 
 	String toString() const;
+
+	/** Вычисление выражений, зависящих только от констант.
+	 * Чтобы индекс мог использоваться, если написано, например WHERE Date = toDate(now()).
+	 */
+	static Block getBlockWithConstants(
+		const ASTPtr & query, const Context & context, const NamesAndTypesList & all_columns);
 private:
 	/// Выражение хранится в виде обратной польской строки (Reverse Polish Notation).
 	struct RPNElement

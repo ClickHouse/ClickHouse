@@ -75,7 +75,7 @@ int main(int argc, char ** argv)
 
 			block.insert(column2);
 
-			SharedPtr<IBlockOutputStream> out = table->write(nullptr);
+			SharedPtr<IBlockOutputStream> out = table->write({}, {});
 			out->write(block);
 		}
 

@@ -1,5 +1,6 @@
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeCleanupThread.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
+#include <DB/Common/setThreadName.h>
 
 
 namespace DB
@@ -13,6 +14,8 @@ ReplicatedMergeTreeCleanupThread::ReplicatedMergeTreeCleanupThread(StorageReplic
 
 void ReplicatedMergeTreeCleanupThread::run()
 {
+	setThreadName("ReplMTCleanup");
+
 	const auto CLEANUP_SLEEP_MS = 30 * 1000;
 
 	while (!storage.shutdown_called)
@@ -71,9 +74,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldParts()
 			LOG_DEBUG(log, "Removing " << part->name);
 
 			zkutil::Ops ops;
-			ops.push_back(new zkutil::Op::Remove(storage.replica_path + "/parts/" + part->name + "/columns", -1));
-			ops.push_back(new zkutil::Op::Remove(storage.replica_path + "/parts/" + part->name + "/checksums", -1));
-			ops.push_back(new zkutil::Op::Remove(storage.replica_path + "/parts/" + part->name, -1));
+			storage.removePartFromZooKeeper(part->name, ops);
 			auto code = zookeeper->tryMulti(ops);
 			if (code != ZOK)
 				LOG_WARNING(log, "Couldn't remove " << part->name << " from ZooKeeper: " << zkutil::ZooKeeper::error2string(code));
@@ -174,20 +175,26 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
 		timed_blocks.push_back(std::make_pair(stat.czxid, block));
 	}
 
-	zkutil::Ops ops;
+	//zkutil::Ops ops;
 	std::sort(timed_blocks.begin(), timed_blocks.end(), std::greater<std::pair<Int64, String>>());
-	for (size_t i = storage.data.settings.replicated_deduplication_window; i <  timed_blocks.size(); ++i)
+	for (size_t i = storage.data.settings.replicated_deduplication_window; i < timed_blocks.size(); ++i)
 	{
-		ops.push_back(new zkutil::Op::Remove(storage.zookeeper_path + "/blocks/" + timed_blocks[i].second + "/number", -1));
-		ops.push_back(new zkutil::Op::Remove(storage.zookeeper_path + "/blocks/" + timed_blocks[i].second + "/columns", -1));
-		ops.push_back(new zkutil::Op::Remove(storage.zookeeper_path + "/blocks/" + timed_blocks[i].second + "/checksums", -1));
+		/// Устаревшие ноды. Этот код можно будет убрать через пол года.
+		zookeeper->tryRemove(storage.zookeeper_path + "/blocks/" + timed_blocks[i].second + "/columns");
+		zookeeper->tryRemove(storage.zookeeper_path + "/blocks/" + timed_blocks[i].second + "/checksums");
+		zookeeper->tryRemove(storage.zookeeper_path + "/blocks/" + timed_blocks[i].second + "/checksum");
+		zookeeper->tryRemove(storage.zookeeper_path + "/blocks/" + timed_blocks[i].second + "/number");
+		zookeeper->tryRemove(storage.zookeeper_path + "/blocks/" + timed_blocks[i].second);
+
+		/*ops.push_back(new zkutil::Op::Remove(storage.zookeeper_path + "/blocks/" + timed_blocks[i].second + "/number", -1));
+		ops.push_back(new zkutil::Op::Remove(storage.zookeeper_path + "/blocks/" + timed_blocks[i].second + "/checksum", -1));
 		ops.push_back(new zkutil::Op::Remove(storage.zookeeper_path + "/blocks/" + timed_blocks[i].second, -1));
 
 		if (ops.size() > 400 || i + 1 == timed_blocks.size())
 		{
 			zookeeper->multi(ops);
 			ops.clear();
-		}
+		}*/
 	}
 
 	LOG_TRACE(log, "Cleared " << blocks.size() - storage.data.settings.replicated_deduplication_window << " old blocks from ZooKeeper");

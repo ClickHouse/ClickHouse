@@ -1,6 +1,6 @@
-#include <Yandex/likely.h>
-#include <Yandex/logger_useful.h>
-#include <DB/Core/Exception.h>
+#include <common/likely.h>
+#include <common/logger_useful.h>
+#include <DB/Common/Exception.h>
 #include <DB/Common/formatReadable.h>
 #include <DB/IO/WriteHelpers.h>
 #include <iomanip>

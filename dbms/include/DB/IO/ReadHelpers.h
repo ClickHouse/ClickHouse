@@ -6,14 +6,14 @@
 
 #include <type_traits>
 
-#include <Yandex/Common.h>
-#include <Yandex/DateLUT.h>
+#include <common/Common.h>
+#include <common/DateLUT.h>
 
 #include <mysqlxx/Date.h>
 #include <mysqlxx/DateTime.h>
 
 #include <DB/Core/Types.h>
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 
 #include <DB/IO/ReadBuffer.h>

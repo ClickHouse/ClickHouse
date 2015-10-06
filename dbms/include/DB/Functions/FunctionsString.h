@@ -12,7 +12,7 @@
 #include <DB/Columns/ColumnFixedString.h>
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Functions/IFunction.h>
-#include <statdaemons/ext/range.hpp>
+#include <ext/range.hpp>
 
 #include <emmintrin.h>
 #include <nmmintrin.h>
@@ -344,16 +344,56 @@ struct LowerUpperUTF8Impl
 			  reinterpret_cast<UInt8 *>(&res_data[0]));
 	}
 
+	/** Converts a single code point starting at `src` to desired case, storing result starting at `dst`.
+	 *	`src` and `dst` are incremented by corresponding sequence lengths. */
+	static void toCase(const UInt8 * & src, const UInt8 * const src_end, UInt8 * & dst)
+	{
+		if (src[0] <= ascii_upper_bound)
+		{
+			if (*src >= not_case_lower_bound && *src <= not_case_upper_bound)
+				*dst++ = *src++ ^ flip_case_mask;
+			else
+				*dst++ = *src++;
+		}
+		else if (src + 1 < src_end &&
+				 ((src[0] == 0xD0u && (src[1] >= 0x80u && src[1] <= 0xBFu)) ||
+				  (src[0] == 0xD1u && (src[1] >= 0x80u && src[1] <= 0x9Fu))))
+		{
+			cyrillic_to_case(src, src_end, dst);
+		}
+		else if (src + 1 < src_end && src[0] == 0xC2u)
+		{
+			/// Пунктуация U+0080 - U+00BF, UTF-8: C2 80 - C2 BF
+			*dst++ = *src++;
+			*dst++ = *src++;
+		}
+		else if (src + 2 < src_end && src[0] == 0xE2u)
+		{
+			/// Символы U+2000 - U+2FFF, UTF-8: E2 80 80 - E2 BF BF
+			*dst++ = *src++;
+			*dst++ = *src++;
+			*dst++ = *src++;
+		}
+		else
+		{
+			static const Poco::UTF8Encoding utf8;
+
+			if (const auto chars = utf8.convert(to_case(utf8.convert(src)), dst, src_end - src))
+				src += chars, dst += chars;
+			else
+				++src, ++dst;
+		}
+	}
+
 private:
+	static constexpr auto ascii_upper_bound = '\x7f';
+	static constexpr auto flip_case_mask = 'A' ^ 'a';
+
 	static void array(const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
 	{
-		static const Poco::UTF8Encoding utf8;
-
 		const auto bytes_sse = sizeof(__m128i);
 		auto src_end_sse = src + (src_end - src) / bytes_sse * bytes_sse;
 
-		const auto flip_case_mask = 'A' ^ 'a';
-		const auto ascii_upper_bound = '\x7f';
 		/// SSE2 packed comparison operate on signed types, hence compare (c < 0) instead of (c > 0x7f)
 		const auto v_zero = _mm_setzero_si128();
 		const auto v_not_case_lower_bound = _mm_set1_epi8(not_case_lower_bound - 1);
@@ -399,41 +439,7 @@ private:
 				const auto expected_end = src + bytes_sse;
 
 				while (src < expected_end)
-				{
-					if (src[0] <= ascii_upper_bound)
-					{
-						if (*src >= not_case_lower_bound && *src <= not_case_upper_bound)
-							*dst++ = *src++ ^ flip_case_mask;
-						else
-							*dst++ = *src++;
-					}
-					else if (src + 1 < src_end &&
-						((src[0] == 0xD0u && (src[1] >= 0x80u && src[1] <= 0xBFu)) ||
-							(src[0] == 0xD1u && (src[1] >= 0x80u && src[1] <= 0x9Fu))))
-					{
-						cyrillic_to_case(src, src_end, dst);
-					}
-					else if (src + 1 < src_end && src[0] == 0xC2u)
-					{
-						/// Пунктуация U+0080 - U+00BF, UTF-8: C2 80 - C2 BF
-						*dst++ = *src++;
-						*dst++ = *src++;
-					}
-					else if (src + 2 < src_end && src[0] == 0xE2u)
-					{
-						/// Символы U+2000 - U+2FFF, UTF-8: E2 80 80 - E2 BF BF
-						*dst++ = *src++;
-						*dst++ = *src++;
-						*dst++ = *src++;
-					}
-					else
-					{
-						if (const auto chars = utf8.convert(to_case(utf8.convert(src)), dst, src_end - src))
-							src += chars, dst += chars;
-						else
-							++src, ++dst;
-					}
-				}
+					toCase(src, src_end, dst);
 
 				/// adjust src_end_sse by pushing it forward or backward
 				const auto diff = src - expected_end;
@@ -449,10 +455,7 @@ private:
 
 		/// handle remaining symbols
 		while (src < src_end)
-			if (const auto chars = utf8.convert(to_case(utf8.convert(src)), dst, src_end - src))
-				src += chars, dst += chars;
-			else
-				++src, ++dst;
+			toCase(src, src_end, dst);
 	}
 };
 

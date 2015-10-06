@@ -2,8 +2,9 @@
 
 #include <DB/AggregateFunctions/IAggregateFunction.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
+#include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Parsers/CommonParsers.h>
-#include <statdaemons/ext/range.hpp>
+#include <ext/range.hpp>
 #include <boost/range/iterator_range_core.hpp>
 #include <DB/Parsers/ExpressionElementParsers.h>
 #include <DB/Parsers/ASTLiteral.h>

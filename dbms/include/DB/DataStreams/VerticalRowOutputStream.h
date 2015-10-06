@@ -27,7 +27,9 @@ public:
 
 	void flush() override { ostr.next(); }
 
-private:
+protected:
+	virtual void writeValue(const Field & field) const;
+
 	WriteBuffer & ostr;
 	const Block sample;
 	DataTypes data_types;
@@ -37,6 +39,19 @@ private:
 
 	typedef std::vector<String> Pads_t;
 	Pads_t pads;
+};
+
+
+/** То же самое, но строки выводятся без экранирования.
+  */
+class VerticalRawRowOutputStream : public VerticalRowOutputStream
+{
+public:
+	VerticalRawRowOutputStream(WriteBuffer & ostr_, const Block & sample_)
+		: VerticalRowOutputStream(ostr_, sample_) {}
+
+protected:
+	void writeValue(const Field & field) const override;
 };
 
 }
