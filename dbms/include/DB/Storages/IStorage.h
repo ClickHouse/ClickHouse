@@ -1,11 +1,11 @@
 #pragma once
 
-#include <Yandex/logger_useful.h>
+#include <common/logger_useful.h>
 
 #include <DB/Core/Defines.h>
 #include <DB/Core/Names.h>
 #include <DB/Core/NamesAndTypes.h>
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/QueryProcessingStage.h>
 #include <DB/Parsers/IAST.h>
 #include <DB/Parsers/ASTAlterQuery.h>
@@ -176,7 +176,8 @@ public:
 	  * Гарантируется, что структура таблицы не изменится за время жизни возвращенных потоков (то есть не будет ALTER, RENAME и DROP).
 	  */
 	virtual BlockOutputStreamPtr write(
-		ASTPtr query)
+		ASTPtr query,
+		const Settings & settings)
 	{
 		throw Exception("Method write is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
@@ -207,14 +208,14 @@ public:
 
 	/** Выполнить запрос (DROP|DETACH) PARTITION.
 	  */
-	virtual void dropPartition(const Field & partition, bool detach, bool unreplicated, const Settings & settings)
+	virtual void dropPartition(ASTPtr query, const Field & partition, bool detach, bool unreplicated, const Settings & settings)
 	{
 		throw Exception("Method dropPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
 	/** Выполнить запрос ATTACH [UNREPLICATED] (PART|PARTITION).
 	  */
-	virtual void attachPartition(const Field & partition, bool unreplicated, bool part, const Settings & settings)
+	virtual void attachPartition(ASTPtr query, const Field & partition, bool unreplicated, bool part, const Settings & settings)
 	{
 		throw Exception("Method attachPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}

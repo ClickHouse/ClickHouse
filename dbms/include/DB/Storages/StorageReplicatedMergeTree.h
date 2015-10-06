@@ -19,8 +19,47 @@
 namespace DB
 {
 
-/** Движок, использующий merge-дерево и реплицируемый через ZooKeeper.
+/** Движок, использующий merge-дерево (см. MergeTreeData) и реплицируемый через ZooKeeper.
+  *
+  * ZooKeeper используется для следующих вещей:
+  * - структура таблицы (/metadata, /columns)
+  * - лог действий с данными (/log/log-..., /replicas/replica_name/queue/queue-...);
+  * - список реплик (/replicas), признак активности реплики (/replicas/replica_name/is_active), адреса реплик (/replicas/replica_name/host);
+  * - выбор реплики-лидера (/leader_election) - это та реплика, которая назначает мерджи;
+  * - набор кусков данных на каждой реплике (/replicas/replica_name/parts);
+  * - список последних N блоков данных с чексуммами, для дедупликации (/blocks);
+  * - список инкрементальных номеров блоков (/block_numbers), которые мы сейчас собираемся вставить,
+  *   или которые были неиспользованы (/nonincremental_block_numbers)
+  *   для обеспечения линейного порядка вставки данных и мерджа данных только по интервалам в этой последовательности;
+  * - координация записей с кворумом (/quorum).
   */
+
+/** У реплицируемых таблиц есть общий лог (/log/log-...).
+  * Лог - последовательность записей (LogEntry) о том, что делать.
+  * Каждая запись - это одно из:
+  * - обычная вставка данных (GET),
+  * - мердж (MERGE),
+  * - чуть менее обычная вставка данных (ATTACH),
+  * - удаление партиции (DROP).
+  *
+  * Каждая реплика копирует (queueUpdatingThread, pullLogsToQueue) записи из лога в свою очередь (/replicas/replica_name/queue/queue-...),
+  *  и затем выполняет их (queueTask).
+  * Не смотря на название "очередь", выполнение может переупорядочиваться, при необходимости (shouldExecuteLogEntry, executeLogEntry).
+  * Кроме того, записи в очереди могут генерироваться самостоятельно (не из лога), в следующих случаях:
+  * - при создании новой реплики, туда помещаются действия на GET с других реплик (createReplica);
+  * - если кусок повреждён (removePartAndEnqueueFetch) или отсутствовал при проверке (при старте - checkParts, во время работы - searchForMissingPart),
+  *   туда помещаются действия на GET с других реплик;
+  *
+  * У реплики, на которую был сделан INSERT, в очереди тоже будет запись о GET этих данных.
+  * Такая запись считается выполненной, как только обработчик очереди её увидит.
+  *
+  * У записи в логе есть время создания. Это время генерируется по часам на сервере, который создал запись
+  * - того, на которых пришёл соответствующий запрос INSERT или ALTER.
+  *
+  * Для записей в очереди, которые реплика сделала для себя самостоятельно,
+  * в качестве времени будет браться время создания соответствующего куска на какой-либо из реплик.
+  */
+
 class StorageReplicatedMergeTree : public IStorage
 {
 public:
@@ -82,14 +121,14 @@ public:
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
 		unsigned threads = 1) override;
 
-	BlockOutputStreamPtr write(ASTPtr query) override;
+	BlockOutputStreamPtr write(ASTPtr query, const Settings & settings) override;
 
 	bool optimize(const Settings & settings) override;
 
 	void alter(const AlterCommands & params, const String & database_name, const String & table_name, Context & context) override;
 
-	void dropPartition(const Field & partition, bool detach, bool unreplicated, const Settings & settings) override;
-	void attachPartition(const Field & partition, bool unreplicated, bool part, const Settings & settings) override;
+	void dropPartition(ASTPtr query, const Field & partition, bool detach, bool unreplicated, const Settings & settings) override;
+	void attachPartition(ASTPtr query, const Field & partition, bool unreplicated, bool part, const Settings & settings) override;
 	void fetchPartition(const Field & partition, const String & from, const Settings & settings) override;
 	void freezePartition(const Field & partition, const Settings & settings) override;
 
@@ -126,14 +165,20 @@ public:
 		UInt32 queue_oldest_time;
 		UInt32 inserts_oldest_time;
 		UInt32 merges_oldest_time;
+		String oldest_part_to_get;
+		String oldest_part_to_merge_to;
 		UInt64 log_max_index;
 		UInt64 log_pointer;
+		UInt32 last_queue_update;
 		UInt8 total_replicas;
 		UInt8 active_replicas;
 	};
 
 	/// Получить статус таблицы. Если with_zk_fields = false - не заполнять поля, требующие запросов в ZK.
 	void getStatus(Status & res, bool with_zk_fields = true);
+
+	using LogEntriesData = std::vector<ReplicatedMergeTreeLogEntryData>;
+	void getQueue(LogEntriesData & res, String & replica_name);
 
 private:
 	void dropUnreplicatedPartition(const Field & partition, bool detach, const Settings & settings);
@@ -179,6 +224,7 @@ private:
 	  * В ZK записи в хронологическом порядке. Здесь - не обязательно.
 	  */
 	LogEntries queue;
+	time_t last_queue_update = 0;
 	std::mutex queue_mutex;
 
 	/** Куски, которые появятся в результате действий, выполняемых прямо сейчас фоновыми потоками (этих действий нет в очереди).
@@ -320,6 +366,9 @@ private:
 	  */
 	void checkPartAndAddToZooKeeper(const MergeTreeData::DataPartPtr & part, zkutil::Ops & ops, String name_override = "");
 
+	/// Кладет в ops действия, удаляющие кусок из ZooKeeper.
+	void removePartFromZooKeeper(const String & part_name, zkutil::Ops & ops);
+
 	/// Убирает кусок из ZooKeeper и добавляет в очередь задание скачать его. Предполагается это делать с битыми кусками.
 	void removePartAndEnqueueFetch(const String & part_name);
 
@@ -337,7 +386,7 @@ private:
 	/** Можно ли сейчас попробовать выполнить это действие. Если нет, нужно оставить его в очереди и попробовать выполнить другое.
 	  * Вызывается под queue_mutex.
 	  */
-	bool shouldExecuteLogEntry(const LogEntry & entry);
+	bool shouldExecuteLogEntry(const LogEntry & entry, String & out_postpone_reason);
 
 	/** Выполнить действие из очереди. Бросает исключение, если что-то не так.
 	  * Возвращает, получилось ли выполнить. Если не получилось, запись нужно положить в конец очереди.
@@ -368,8 +417,11 @@ private:
 	void alterThread();
 
 	/** Проверяет целостность кусков.
+	  * Находит отсутствующие куски.
 	  */
 	void partCheckThread();
+	void checkPart(const String & part_name);
+	void searchForMissingPart(const String & part_name);
 
 	/// Обмен кусками.
 
@@ -379,8 +431,13 @@ private:
 
 	/** Скачать указанный кусок с указанной реплики.
 	  * Если to_detached, то кусок помещается в директорию detached.
+	  * Если quorum != 0, то обновляется узел для отслеживания кворума.
 	  */
-	void fetchPart(const String & part_name, const String & replica_path, bool to_detached = false);
+	void fetchPart(const String & part_name, const String & replica_path, bool to_detached, size_t quorum);
+
+	/** При отслеживаемом кворуме - добавить реплику в кворум для куска.
+	  */
+	void updateQuorum(const String & part_name);
 
 	AbandonableLockInZooKeeper allocateBlockNumber(const String & month_name);
 

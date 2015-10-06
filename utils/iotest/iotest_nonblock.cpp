@@ -15,10 +15,10 @@
 #include <Poco/Exception.h>
 #include <Poco/SharedPtr.h>
 
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 
-#include <statdaemons/threadpool.hpp>
-#include <statdaemons/Stopwatch.h>
+#include <common/threadpool.hpp>
+#include <DB/Common/Stopwatch.h>
 
 
 using DB::throwFromErrno;

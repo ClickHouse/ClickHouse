@@ -11,8 +11,8 @@
 #include <Poco/RegularExpression.h>
 #include <Poco/AutoPtr.h>
 
-#include <Yandex/logger_useful.h>
-#include <Yandex/Common.h>
+#include <common/logger_useful.h>
+#include <common/Common.h>
 
 namespace DB
 {

@@ -131,10 +131,8 @@ public:
 			}
 
 			/// Контрольная сумма от множества контрольных сумм .bin файлов.
-			String summaryDataChecksum() const
+			void summaryDataChecksum(SipHash & hash) const
 			{
-				SipHash hash;
-
 				/// Пользуемся тем, что итерирование в детерминированном (лексикографическом) порядке.
 				for (const auto & it : files)
 				{
@@ -148,10 +146,6 @@ public:
 					hash.update(reinterpret_cast<const char *>(&sum.uncompressed_size), sizeof(sum.uncompressed_size));
 					hash.update(reinterpret_cast<const char *>(&sum.uncompressed_hash), sizeof(sum.uncompressed_hash));
 				}
-
-				UInt64 lo, hi;
-				hash.get128(lo, hi);
-				return DB::toString(lo) + "_" + DB::toString(hi);
 			}
 
 			String toString() const
@@ -176,6 +170,52 @@ public:
 		};
 
 		DataPart(MergeTreeData & storage_) : storage(storage_) {}
+
+		/// Returns the size of .bin file for column `name` if found, zero otherwise
+		std::size_t getColumnSize(const String & name) const
+		{
+			if (checksums.empty())
+				return {};
+
+			const auto & files = checksums.files;
+			const auto bin_file_name = escapeForFileName(name) + ".bin";
+
+			/// Probably a logic error, not sure if this can ever happen if checksums are not empty
+			if (0 == files.count(bin_file_name))
+				return {};
+
+			return files.find(bin_file_name)->second.file_size;
+		}
+
+		/** Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
+		 *	If no checksums are present returns the name of the first physically existing column. */
+		String getMinimumSizeColumnName() const
+		{
+			const auto & columns = storage.getColumnsList();
+			const std::string * minimum_size_column = nullptr;
+			auto minimum_size = std::numeric_limits<std::size_t>::max();
+
+			for (const auto & column : columns)
+			{
+				if (!hasColumnFiles(column.name))
+					continue;
+
+				const auto size = getColumnSize(column.name);
+				if (size < minimum_size)
+				{
+					minimum_size = size;
+					minimum_size_column = &column.name;
+				}
+			}
+
+			if (!minimum_size_column)
+				throw Exception{
+						"Could not find a column of minimum size in MergeTree",
+						ErrorCodes::LOGICAL_ERROR
+				};
+
+			return *minimum_size_column;
+		}
 
  		MergeTreeData & storage;
 
@@ -319,7 +359,7 @@ public:
 				  * Это делается только в случае to_detached, потому что считается, что в этом случае, точное имя не имеет значения.
 				  * Больше 10 попыток не делается, чтобы не оставалось слишком много мусорных директорий.
 				  */
-				while (try_no < 10 && Poco::File(dst_name()).exists())
+				while (try_no < 10 && Poco::File(storage.full_path + dst_name()).exists())
 				{
 					LOG_WARNING(storage.log, "Directory " << dst_name() << " (to detach to) is already exist."
 						" Will detach to directory with '_tryN' suffix.");
@@ -498,7 +538,7 @@ public:
 
 
 	/// Некоторые операции над множеством кусков могут возвращать такой объект.
-	/// Если не был вызван commit, деструктор откатывает операцию.
+	/// Если не был вызван commit или rollback, деструктор откатывает операцию.
 	class Transaction : private boost::noncopyable
 	{
 	public:
@@ -506,20 +546,25 @@ public:
 
 		void commit()
 		{
-			data = nullptr;
-			removed_parts.clear();
-			added_parts.clear();
+			clear();
+		}
+
+		void rollback()
+		{
+			if (data && (!parts_to_remove_on_rollback.empty() || !parts_to_add_on_rollback.empty()))
+			{
+				LOG_DEBUG(data->log, "Undoing transaction");
+				data->replaceParts(parts_to_remove_on_rollback, parts_to_add_on_rollback, true);
+
+				clear();
+			}
 		}
 
 		~Transaction()
 		{
 			try
 			{
-				if (data && (!removed_parts.empty() || !added_parts.empty()))
-				{
-					LOG_DEBUG(data->log, "Undoing transaction");
-					data->replaceParts(removed_parts, added_parts, true);
-				}
+				rollback();
 			}
 			catch(...)
 			{
@@ -532,8 +577,15 @@ public:
 		MergeTreeData * data = nullptr;
 
 		/// Что делать для отката операции.
-		DataPartsVector removed_parts;
-		DataPartsVector added_parts;
+		DataPartsVector parts_to_remove_on_rollback;
+		DataPartsVector parts_to_add_on_rollback;
+
+		void clear()
+		{
+			data = nullptr;
+			parts_to_remove_on_rollback.clear();
+			parts_to_add_on_rollback.clear();
+		}
 	};
 
 	/// Объект, помнящий какие временные файлы были созданы в директории с куском в ходе изменения (ALTER) его столбцов.
@@ -696,7 +748,7 @@ public:
 	DataPartsVector renameTempPartAndReplace(MutableDataPartPtr & part, SimpleIncrement * increment = nullptr, Transaction * out_transaction = nullptr);
 
 	/** Убирает из рабочего набора куски remove и добавляет куски add. add должны уже быть в all_data_parts.
-	  * Если clear_without_timeout, данные будут удалены при следующем clearOldParts, игнорируя old_parts_lifetime.
+	  * Если clear_without_timeout, данные будут удалены сразу, либо при следующем clearOldParts, игнорируя old_parts_lifetime.
 	  */
 	void replaceParts(const DataPartsVector & remove, const DataPartsVector & add, bool clear_without_timeout);
 

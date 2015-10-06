@@ -3,7 +3,7 @@
 
 #include <boost/type_traits.hpp>
 
-#include <Yandex/Common.h>
+#include <common/Common.h>
 
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
@@ -14,7 +14,7 @@
 #include <DB/IO/CompressedReadBuffer.h>
 #include <DB/IO/AsynchronousWriteBuffer.h>
 
-#include <statdaemons/Stopwatch.h>
+#include <DB/Common/Stopwatch.h>
 
 
 #if 0

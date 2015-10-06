@@ -208,7 +208,7 @@ TestResult check(const TestEntry & entry)
 		settings.optimize_min_equality_disjunction_chain_length = entry.limit;
 
 		DB::LogicalExpressionsOptimizer optimizer(select_query, settings);
-		optimizer.optimizeDisjunctiveEqualityChains();
+		optimizer.perform();
 
 		/// Парсить ожидаемый результат.
 		DB::ASTPtr ast_expected;

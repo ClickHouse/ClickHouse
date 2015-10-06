@@ -3,9 +3,9 @@
 #include <DB/DataStreams/IBlockOutputStream.h>
 
 #include <DB/Client/Connection.h>
-#include <Yandex/logger_useful.h>
+#include <common/logger_useful.h>
 
-#include <statdaemons/NetException.h>
+#include <DB/Common/NetException.h>
 
 namespace DB
 {

@@ -19,11 +19,11 @@
 #include <Poco/SharedPtr.h>
 #include <Poco/Util/Application.h>
 
-#include <Yandex/Revision.h>
+#include <common/Revision.h>
 
-#include <statdaemons/Stopwatch.h>
+#include <DB/Common/Stopwatch.h>
 
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/Types.h>
 #include <DB/Core/QueryProcessingStage.h>
 
@@ -60,7 +60,7 @@
 #include <DB/Common/formatReadable.h>
 #include <DB/Columns/ColumnString.h>
 
-#include <statdaemons/NetException.h>
+#include <DB/Common/NetException.h>
 
 /// http://en.wikipedia.org/wiki/ANSI_escape_code
 #define SAVE_CURSOR_POSITION "\033[s"
@@ -135,7 +135,7 @@ private:
 	ASTPtr parsed_query;
 
 	/// Последнее полученное от сервера исключение. Для кода возврата в неинтерактивном режиме.
-	ExceptionPtr last_exception;
+	Poco::SharedPtr<DB::Exception> last_exception;
 
 	/// Было ли в последнем запросе исключение.
 	bool got_exception = false;

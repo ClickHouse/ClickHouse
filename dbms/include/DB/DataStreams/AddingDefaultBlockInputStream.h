@@ -55,6 +55,9 @@ protected:
 		Block res = children.back()->read();
 		if (!res)
 			return res;
+		/** @todo if somehow block does not contain values for implicitly-defaulted columns that are prerequisites
+		 *	for explicitly-defaulted ones, exception will be thrown during evaluating such columns
+		 *	(implicitly-defaulted columns are evaluated on the line after following one. */
 		evaluateMissingDefaults(res, *required_columns, column_defaults, context);
 		res.addDefaults(*required_columns);
 		return res;

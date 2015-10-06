@@ -163,7 +163,7 @@ private:
 		{
 		}
 
-		void onException(ExceptionPtr & exception, size_t thread_num)
+		void onException(std::exception_ptr & exception, size_t thread_num)
 		{
 			parent.exceptions[thread_num] = exception;
 			parent.cancel();

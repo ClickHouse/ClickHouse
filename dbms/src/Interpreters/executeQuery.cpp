@@ -151,11 +151,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 		if (!internal && nullptr == typeid_cast<const ASTShowProcesslistQuery *>(&*ast))
 		{
 			process_list_entry = context.getProcessList().insert(
-				query, context.getUser(), context.getCurrentQueryId(), context.getIPAddress(),
-				settings.limits.max_memory_usage,
-				settings.queue_max_wait_ms.totalMilliseconds(),
-				settings.replace_running_query,
-				settings.priority);
+				query,
+				context.getUser(),
+				context.getCurrentQueryId(),
+				context.getIPAddress(),
+				settings);
 
 			context.setProcessListElement(&process_list_entry->get());
 		}
@@ -190,7 +190,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
 			setClientInfo(elem, context);
 
-			bool log_queries = settings.log_queries;
+			bool log_queries = settings.log_queries && !internal;
 
 			/// Логгируем в таблицу начало выполнения запроса, если нужно.
 			if (log_queries)

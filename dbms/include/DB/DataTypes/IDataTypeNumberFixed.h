@@ -25,21 +25,21 @@ public:
 	/** Формат платформозависимый (зависит от представления данных в памяти).
 	  */
 
-	void serializeBinary(const Field & field, WriteBuffer & ostr) const
+	void serializeBinary(const Field & field, WriteBuffer & ostr) const override
 	{
 		/// ColumnType::value_type - более узкий тип. Например, UInt8, когда тип Field - UInt64
 		typename ColumnType::value_type x = get<typename NearestFieldType<FieldType>::Type>(field);
 		writeBinary(x, ostr);
 	}
 
-	void deserializeBinary(Field & field, ReadBuffer & istr) const
+	void deserializeBinary(Field & field, ReadBuffer & istr) const override
 	{
 		typename ColumnType::value_type x;
 		readBinary(x, istr);
 		field = typename NearestFieldType<FieldType>::Type(x);
 	}
 
-	void serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset = 0, size_t limit = 0) const
+	void serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset = 0, size_t limit = 0) const override
 	{
 		const typename ColumnType::Container_t & x = typeid_cast<const ColumnType &>(column).getData();
 
@@ -51,7 +51,7 @@ public:
 		ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(typename ColumnType::value_type) * limit);
 	}
 
-	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
+	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override
 	{
 		typename ColumnType::Container_t & x = typeid_cast<ColumnType &>(column).getData();
 		size_t initial_size = x.size();
@@ -60,12 +60,12 @@ public:
 		x.resize(initial_size + size / sizeof(typename ColumnType::value_type));
 	}
 
-	ColumnPtr createColumn() const
+	ColumnPtr createColumn() const override
 	{
 		return new ColumnType;
 	}
 
-	ColumnPtr createConstColumn(size_t size, const Field & field) const
+	ColumnPtr createConstColumn(size_t size, const Field & field) const override
 	{
 		return new ColumnConst<FieldType>(size, get<typename NearestFieldType<FieldType>::Type>(field));
 	}

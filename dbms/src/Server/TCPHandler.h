@@ -8,7 +8,7 @@
 
 #include <DB/DataStreams/BlockIO.h>
 
-#include <statdaemons/Stopwatch.h>
+#include <DB/Common/Stopwatch.h>
 
 #include "Server.h"
 

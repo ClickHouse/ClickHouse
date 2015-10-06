@@ -53,7 +53,7 @@ void CreatingSetsBlockInputStream::create(SubqueryForSet & subquery)
 
 	BlockOutputStreamPtr table_out;
 	if (subquery.table)
-		table_out = subquery.table->write(ASTPtr());
+		table_out = subquery.table->write({}, {});
 
 	bool done_with_set = !subquery.set;
 	bool done_with_join = !subquery.join;

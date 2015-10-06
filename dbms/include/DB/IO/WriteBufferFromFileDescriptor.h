@@ -3,7 +3,7 @@
 #include <unistd.h>
 #include <errno.h>
 
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 #include <DB/Common/ProfileEvents.h>
 
