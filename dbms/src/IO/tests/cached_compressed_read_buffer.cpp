@@ -6,7 +6,7 @@
 #include <DB/IO/WriteBufferFromFile.h>
 #include <DB/IO/copyData.h>
 
-#include <statdaemons/Stopwatch.h>
+#include <DB/Common/Stopwatch.h>
 
 
 int main(int argc, char ** argv)

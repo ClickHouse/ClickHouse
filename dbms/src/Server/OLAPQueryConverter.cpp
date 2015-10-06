@@ -10,8 +10,8 @@ namespace OLAP
 
 QueryConverter::QueryConverter(Poco::Util::AbstractConfiguration & config)
 {
-	table_for_single_counter = config.getString("olap_table_for_single_counter");
-	table_for_all_counters = config.getString("olap_table_for_all_counters");
+	table_for_single_counter = config.getString("olap_compatibility.table_for_single_counter");
+	table_for_all_counters = config.getString("olap_compatibility.table_for_all_counters");
 	
 	fillFormattedAttributeMap();
 	fillNumericAttributeMap();

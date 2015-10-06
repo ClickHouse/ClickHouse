@@ -2,6 +2,7 @@
 
 #include <DB/DataTypes/DataTypeAggregateFunction.h>
 #include <DB/AggregateFunctions/IAggregateFunction.h>
+#include <DB/Columns/ColumnAggregateFunction.h>
 
 
 namespace DB

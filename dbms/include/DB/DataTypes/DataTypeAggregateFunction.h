@@ -28,7 +28,7 @@ public:
 
 	std::string getFunctionName() const { return function->getName(); }
 
-	std::string getName() const
+	std::string getName() const override
 	{
 		std::stringstream stream;
 		stream << "AggregateFunction(" << function->getName();
@@ -55,24 +55,24 @@ public:
 	DataTypePtr getReturnType() const { return function->getReturnType(); };
 	DataTypes getArgumentsDataTypes() const { return argument_types; }
 
-	DataTypePtr clone() const { return new DataTypeAggregateFunction(function, argument_types, parameters); }
+	DataTypePtr clone() const override { return new DataTypeAggregateFunction(function, argument_types, parameters); }
 
-	void serializeBinary(const Field & field, WriteBuffer & ostr) const;
-	void deserializeBinary(Field & field, ReadBuffer & istr) const;
-	void serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset = 0, size_t limit = 0) const;
-	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const;
-	void serializeText(const Field & field, WriteBuffer & ostr) const;
-	void deserializeText(Field & field, ReadBuffer & istr) const;
-	void serializeTextEscaped(const Field & field, WriteBuffer & ostr) const;
-	void deserializeTextEscaped(Field & field, ReadBuffer & istr) const;
-	void serializeTextQuoted(const Field & field, WriteBuffer & ostr) const;
-	void deserializeTextQuoted(Field & field, ReadBuffer & istr) const;
-	void serializeTextJSON(const Field & field, WriteBuffer & ostr) const;
+	void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
+	void deserializeBinary(Field & field, ReadBuffer & istr) const override;
+	void serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset = 0, size_t limit = 0) const override;
+	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
+	void serializeText(const Field & field, WriteBuffer & ostr) const override;
+	void deserializeText(Field & field, ReadBuffer & istr) const override;
+	void serializeTextEscaped(const Field & field, WriteBuffer & ostr) const override;
+	void deserializeTextEscaped(Field & field, ReadBuffer & istr) const override;
+	void serializeTextQuoted(const Field & field, WriteBuffer & ostr) const override;
+	void deserializeTextQuoted(Field & field, ReadBuffer & istr) const override;
+	void serializeTextJSON(const Field & field, WriteBuffer & ostr) const override;
 
-	ColumnPtr createColumn() const;
-	ColumnPtr createConstColumn(size_t size, const Field & field) const;
+	ColumnPtr createColumn() const override;
+	ColumnPtr createConstColumn(size_t size, const Field & field) const override;
 
-	Field getDefault() const
+	Field getDefault() const override
 	{
 		throw Exception("There is no default value for AggregateFunction data type", ErrorCodes::THERE_IS_NO_DEFAULT_VALUE);
 	}

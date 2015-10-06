@@ -4,7 +4,7 @@
 #include <unordered_map>
 #include <sparsehash/dense_hash_map>
 
-#include <statdaemons/Stopwatch.h>
+#include <DB/Common/Stopwatch.h>
 
 #include <DB/Core/StringRef.h>
 #include <DB/Common/Arena.h>

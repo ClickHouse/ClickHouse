@@ -11,9 +11,7 @@
 #include <Poco/Exception.h>
 #include <Poco/SharedPtr.h>
 
-#include <Yandex/logger_useful.h>
-#include <statdaemons/daemon.h>
-
+#include <common/logger_useful.h>
 #include <mysqlxx/Connection.h>
 
 
@@ -151,7 +149,7 @@ public:
 				if (first)
 					first = false;
 				else
-					Daemon::instance().sleep(MYSQLXX_POOL_SLEEP_ON_CONNECT_FAIL);
+					::sleep(MYSQLXX_POOL_SLEEP_ON_CONNECT_FAIL);
 
 				app.logger().information("MYSQL: Reconnecting to " + pool->description);
 				data->conn.connect(
@@ -242,7 +240,7 @@ public:
 				cfg.getInt("mysql_rw_timeout",
 					MYSQLXX_DEFAULT_RW_TIMEOUT));
 	}
-	
+
 	/**
 	 * @param db_					Имя БД
 	 * @param server_				Хост для подключения
@@ -306,7 +304,7 @@ public:
 			}
 
 			lock.unlock();
-			Daemon::instance().sleep(MYSQLXX_POOL_SLEEP_ON_CONNECT_FAIL);
+			::sleep(MYSQLXX_POOL_SLEEP_ON_CONNECT_FAIL);
 			lock.lock();
 		}
 	}
@@ -367,7 +365,7 @@ private:
 	Poco::FastMutex lock;
 	/** Описание соединения. */
 	std::string description;
-	
+
 	/** Параметры подключения. **/
 	std::string db;
 	std::string server;
@@ -428,10 +426,6 @@ private:
 			{
 				app.logger().error(e.what());
 				delete conn;
-
-				if (Daemon::instance().isCancelled())
-					throw Poco::Exception("Daemon is cancelled while trying to connect to MySQL server.");
-
 				return nullptr;
 			}
 		}

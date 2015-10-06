@@ -6,6 +6,7 @@
 #include <DB/DataStreams/ConcatBlockInputStream.h>
 #include <DB/DataStreams/AddingDefaultBlockInputStream.h>
 #include <DB/DataStreams/AddingConstColumnBlockInputStream.h>
+#include <DB/DataStreams/narrowBlockInputStreams.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/formatAST.h>
 #include <DB/Common/VirtualColumnUtils.h>
@@ -200,7 +201,7 @@ BlockInputStreams StorageChunkMerger::read(
 			processed_stage = tmp_processed_stage;
 	}
 
-	return res;
+	return narrowBlockInputStreams(res, threads);
 }
 
 /// Построить блок состоящий только из возможных значений виртуальных столбцов

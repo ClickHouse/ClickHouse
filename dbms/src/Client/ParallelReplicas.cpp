@@ -177,7 +177,11 @@ Connection::Packet ParallelReplicas::drain()
 std::string ParallelReplicas::dumpAddresses() const
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(cancel_mutex);
+	return dumpAddressesUnlocked();
+}
 
+std::string ParallelReplicas::dumpAddressesUnlocked() const
+{
 	bool is_first = true;
 	std::ostringstream os;
 	for (auto & e : replica_map)
@@ -201,8 +205,7 @@ void ParallelReplicas::registerReplica(Connection * connection)
 	if (!res.second)
 		throw Exception("Invalid set of connections.", ErrorCodes::LOGICAL_ERROR);
 
-	if (throttler)
-		connection->setThrottler(throttler);
+	connection->setThrottler(throttler);
 }
 
 Connection::Packet ParallelReplicas::receivePacketUnlocked()
@@ -289,13 +292,7 @@ ParallelReplicas::ReplicaMap::iterator ParallelReplicas::waitForReadEvent()
 		int n = Poco::Net::Socket::select(read_list, write_list, except_list, settings->receive_timeout);
 
 		if (n == 0)
-		{
-			std::stringstream description;
-			for (auto it = replica_map.begin(); it != replica_map.end(); ++it)
-				description << (it != replica_map.begin() ? ", " : "") << it->second->getDescription();
-
-			throw Exception("Timeout exceeded while reading from " + description.str(), ErrorCodes::TIMEOUT_EXCEEDED);
-		}
+			throw Exception("Timeout exceeded while reading from " + dumpAddressesUnlocked(), ErrorCodes::TIMEOUT_EXCEEDED);
 	}
 
 	auto & socket = read_list[rand() % read_list.size()];

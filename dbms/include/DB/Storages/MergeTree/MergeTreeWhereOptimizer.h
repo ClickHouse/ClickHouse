@@ -7,9 +7,11 @@
 #include <DB/Parsers/ASTLiteral.h>
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Parsers/ASTSubquery.h>
+#include <DB/Parsers/ASTSet.h>
 #include <DB/Parsers/formatAST.h>
 #include <DB/Common/escapeForFileName.h>
-#include <statdaemons/ext/scope_guard.hpp>
+#include <ext/scope_guard.hpp>
+#include <ext/map.hpp>
 #include <memory>
 #include <unordered_map>
 #include <map>
@@ -33,7 +35,8 @@ namespace DB
 class MergeTreeWhereOptimizer
 {
 	static constexpr auto threshold = 10;
-	static constexpr auto max_columns_relative_size = 0.25f;
+	/// Решили убрать ограничение в виду отсутствия штрафа по скорости на перенос в PREWHERE
+	static constexpr auto max_columns_relative_size = 1.0f;
 	static constexpr auto and_function_name = "and";
 	static constexpr auto equals_function_name = "equals";
 	static constexpr auto array_join_function_name = "arrayJoin";
@@ -45,12 +48,18 @@ public:
 	MergeTreeWhereOptimizer& operator=(const MergeTreeWhereOptimizer&) = delete;
 
 	MergeTreeWhereOptimizer(
-		ASTSelectQuery & select, const MergeTreeData & data,
-		const Names & column_names, Logger * log)
-		: primary_key_columns{toUnorderedSet(data.getPrimaryExpression()->getRequiredColumnsWithTypes())},
-		table_columns{toUnorderedSet(data.getColumnsList())}, log{log}
+		ASTPtr & query, const Context & context, const MergeTreeData & data, const Names & column_names,
+		Logger * log)
+		: primary_key_columns{ext::map<std::unordered_set>(data.getSortDescription(),
+			[] (const SortColumnDescription & col) { return col.column_name; })
+		  },
+		  table_columns{ext::map<std::unordered_set>(data.getColumnsList(),
+			[] (const NameAndTypePair & col) { return col.name; })
+		  }, block_with_constants{PKCondition::getBlockWithConstants(query, context, data.getColumnsList())},
+		  log{log}
 	{
 		calculateColumnSizes(data, column_names);
+		auto & select = typeid_cast<ASTSelectQuery &>(*query);
 		determineArrayJoinedNames(select);
 		optimize(select);
 	}
@@ -127,7 +136,7 @@ private:
 			collectIdentifiersNoSubqueries(condition, identifiers);
 
 			/// do not take into consideration the conditions consisting only of primary key columns
-			if (hasNonPrimaryKeyColumns(identifiers) && isSubsetOfTableColumns(identifiers))
+			if (!hasPrimaryKeyAtoms(condition) && isSubsetOfTableColumns(identifiers))
 			{
 				/// calculate size of columns involved in condition
 				const auto cond_columns_size = getIdentifiersColumnSize(identifiers);
@@ -196,7 +205,7 @@ private:
 		IdentifierNameSet identifiers{};
 		collectIdentifiersNoSubqueries(condition, identifiers);
 
-		if (!hasNonPrimaryKeyColumns(identifiers) || !isSubsetOfTableColumns(identifiers))
+		if (hasPrimaryKeyAtoms(condition) || !isSubsetOfTableColumns(identifiers))
 			return;
 
 		/// if condition is not "good" - check that it can be moved
@@ -285,27 +294,62 @@ private:
 			collectIdentifiersNoSubqueries(child.get(), set);
 	}
 
-	using string_set_t = std::unordered_set<std::string>;
-
-	static string_set_t toUnorderedSet(const NamesAndTypesList & columns)
+	bool hasPrimaryKeyAtoms(const IAST * ast) const
 	{
-		string_set_t result{};
+		if (const auto func = typeid_cast<const ASTFunction *>(ast))
+		{
+			const auto & args = func->arguments->children;
 
-		for (const auto column : columns)
-			result.insert(column.name);
+			if ((func->name == "not" && 1 == args.size()) || func->name == "and" || func->name == "or")
+			{
+				for (const auto & arg : args)
+					if (hasPrimaryKeyAtoms(arg.get()))
+						return true;
 
-		return result;
+				return false;
+			}
+		}
+
+		return isPrimaryKeyAtom(ast);
 	}
 
-	bool hasNonPrimaryKeyColumns(const IdentifierNameSet & identifiers) const {
-		for (const auto & identifier : identifiers)
-			if (primary_key_columns.count(identifier) == 0)
+	bool isPrimaryKeyAtom(const IAST * const ast) const
+	{
+		if (const auto func = typeid_cast<const ASTFunction *>(ast))
+		{
+			if (!PKCondition::atom_map.count(func->name))
+				return false;
+
+			const auto & args = func->arguments->children;
+			if (args.size() != 2)
+				return false;
+
+			const auto & first_arg_name = args.front()->getColumnName();
+			const auto & second_arg_name = args.back()->getColumnName();
+
+			if ((primary_key_columns.count(first_arg_name) && isConstant(args[1])) ||
+				(primary_key_columns.count(second_arg_name) && isConstant(args[0])) ||
+				(primary_key_columns.count(first_arg_name)
+					&& (typeid_cast<const ASTSet *>(args[1].get()) || typeid_cast<const ASTSubquery *>(args[1].get()))))
 				return true;
+		}
 
 		return false;
 	}
 
-	bool isSubsetOfTableColumns(const IdentifierNameSet & identifiers) const {
+	bool isConstant(const ASTPtr & expr) const
+	{
+		const auto column_name = expr->getColumnName();
+
+		if (typeid_cast<const ASTLiteral *>(expr.get()) ||
+			(block_with_constants.has(column_name) && block_with_constants.getByName(column_name).column->isConst()))
+			return true;
+
+		return false;
+	}
+
+	bool isSubsetOfTableColumns(const IdentifierNameSet & identifiers) const
+	{
 		for (const auto & identifier : identifiers)
 			if (table_columns.count(identifier) == 0)
 				return false;
@@ -358,8 +402,11 @@ private:
 			array_joined_names.emplace(ast->getAliasOrColumnName());
 	}
 
-	string_set_t primary_key_columns{};
-	string_set_t table_columns{};
+	using string_set_t = std::unordered_set<std::string>;
+
+	const string_set_t primary_key_columns;
+	const string_set_t table_columns;
+	const Block block_with_constants;
 	Logger * log;
 	std::unordered_map<std::string, std::size_t> column_sizes{};
 	std::size_t total_column_size{};

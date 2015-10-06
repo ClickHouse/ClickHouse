@@ -11,8 +11,11 @@ namespace DB
 {
 
 
+/** Used in conjunction with MergeTreeReadPool, asking it for more work to do and performing whatever reads it is asked
+ *	to perform. */
 class MergeTreeThreadBlockInputStream : public IProfilingBlockInputStream
 {
+	/// "thread" index (there are N threads and each thread is assigned index in interval [0..N-1])
 	std::size_t thread;
 public:
 	MergeTreeThreadBlockInputStream(
@@ -64,7 +67,7 @@ protected:
 	{
 		Block res;
 
-		while (!res)
+		while (!res && !isCancelled())
 		{
 			if (!task && !getNewTask())
 				break;
@@ -82,6 +85,7 @@ protected:
 	}
 
 private:
+	/// Requests read task from MergeTreeReadPool and signals whether it got one
 	bool getNewTask()
 	{
 		task = pool->getTask(min_marks_to_read, thread);
@@ -117,9 +121,17 @@ private:
 		}
 		else
 		{
-			reader->reconf(path, task->data_part, task->columns, task->mark_ranges);
+			/// retain avg_value_size_hints
+			reader = std::make_unique<MergeTreeReader>(
+				path, task->data_part, task->columns, owned_uncompressed_cache.get(), owned_mark_cache.get(),
+				storage, task->mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size,
+				reader->getAvgValueSizeHints());
+
 			if (prewhere_actions)
-				pre_reader->reconf(path, task->data_part, task->pre_columns, task->mark_ranges);
+				pre_reader = std::make_unique<MergeTreeReader>(
+					path, task->data_part, task->pre_columns, owned_uncompressed_cache.get(),
+					owned_mark_cache.get(), storage, task->mark_ranges, min_bytes_to_use_direct_io,
+					max_read_buffer_size, pre_reader->getAvgValueSizeHints());
 		}
 
 		return true;
@@ -265,7 +277,7 @@ private:
 		{
 			size_t space_left = std::max(1LU, block_size_marks);
 
-			while (!task->mark_ranges.empty() && space_left)
+			while (!task->mark_ranges.empty() && space_left && !isCancelled())
 			{
 				auto & range = task->mark_ranges.back();
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <statdaemons/HyperLogLogCounter.h>
+#include <DB/Common/HyperLogLogCounter.h>
 #include <DB/Common/HashTable/SmallTable.h>
 
 namespace DB

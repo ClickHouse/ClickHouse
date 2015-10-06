@@ -8,14 +8,22 @@
 #include <Poco/Net/DNS.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/String.h>
 
 #include <DB/Core/Types.h>
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 #include <DB/IO/ReadHelpers.h>
+#include <DB/IO/HexWriteBuffer.h>
+#include <DB/IO/WriteBufferFromString.h>
+#include <DB/IO/WriteHelpers.h>
+#include <DB/Common/SimpleCache.h>
 
-#include <Yandex/logger_useful.h>
+#include <openssl/sha.h>
 
+#include <common/logger_useful.h>
+
+#include <unordered_set>
 
 namespace DB
 {
@@ -64,7 +72,7 @@ public:
 			construct(Poco::Net::IPAddress(addr), prefix_bits_);
 		}
 	}
-	
+
 	bool contains(const Poco::Net::IPAddress & addr) const
 	{
 		return prefixBitsEquals(reinterpret_cast<const char *>(toIPv6(addr).addr()), reinterpret_cast<const char *>(mask_address.addr()), prefix_bits);
@@ -103,10 +111,7 @@ class HostExactPattern : public IAddressPattern
 private:
 	String host;
 
-public:
-	HostExactPattern(const String & host_) : host(host_) {}
-
-	bool contains(const Poco::Net::IPAddress & addr) const
+	static bool containsImpl(const String & host, const Poco::Net::IPAddress & addr)
 	{
 		Poco::Net::IPAddress addr_v6 = toIPv6(addr);
 
@@ -157,6 +162,15 @@ public:
 
 		return false;
 	}
+
+public:
+	HostExactPattern(const String & host_) : host(host_) {}
+
+	bool contains(const Poco::Net::IPAddress & addr) const
+	{
+		static SimpleCache<decltype(containsImpl), &containsImpl> cache;
+		return cache(host, addr);
+	}
 };
 
 
@@ -166,10 +180,7 @@ class HostRegexpPattern : public IAddressPattern
 private:
 	Poco::RegularExpression host_regexp;
 
-public:
-	HostRegexpPattern(const String & host_regexp_) : host_regexp(host_regexp_) {}
-	
-	bool contains(const Poco::Net::IPAddress & addr) const
+	static String getDomain(const Poco::Net::IPAddress & addr)
 	{
 		Poco::Net::SocketAddress sock_addr(addr, 0);
 
@@ -179,10 +190,20 @@ public:
 		if (0 != gai_errno)
 			throw Exception("Cannot getnameinfo: " + std::string(gai_strerror(gai_errno)), ErrorCodes::DNS_ERROR);
 
-		String domain_str = domain;
+		return domain;
+	}
+
+public:
+	HostRegexpPattern(const String & host_regexp_) : host_regexp(host_regexp_) {}
+
+	bool contains(const Poco::Net::IPAddress & addr) const
+	{
+		static SimpleCache<decltype(getDomain), &getDomain> cache;
+
+		String domain = cache(addr);
 		Poco::RegularExpression::Match match;
 
-		if (host_regexp.match(domain_str, match) && HostExactPattern(domain_str).contains(addr))
+		if (host_regexp.match(domain, match) && HostExactPattern(domain).contains(addr))
 			return true;
 
 		return false;
@@ -194,7 +215,7 @@ public:
 class AddressPatterns
 {
 private:
-	typedef std::vector<SharedPtr<IAddressPattern> > Container;
+	typedef std::vector<std::unique_ptr<IAddressPattern>> Container;
 	Container patterns;
 
 public:
@@ -232,19 +253,19 @@ public:
 
 		for (Poco::Util::AbstractConfiguration::Keys::const_iterator it = config_keys.begin(); it != config_keys.end(); ++it)
 		{
-			SharedPtr<IAddressPattern> pattern;
+			Container::value_type pattern;
 			String value = config.getString(config_elem + "." + *it);
 
 			if (0 == it->compare(0, strlen("ip"), "ip"))
-				pattern = new IPAddressPattern(value);
+				pattern.reset(new IPAddressPattern(value));
 			else if (0 == it->compare(0, strlen("host_regexp"), "host_regexp"))
-				pattern = new HostRegexpPattern(value);
+				pattern.reset(new HostRegexpPattern(value));
 			else if (0 == it->compare(0, strlen("host"), "host"))
-				pattern = new HostExactPattern(value);
+				pattern.reset(new HostExactPattern(value));
 			else
 				throw Exception("Unknown address pattern type: " + *it, ErrorCodes::UNKNOWN_ADDRESS_PATTERN_TYPE);
-			
-			patterns.push_back(pattern);
+
+			patterns.emplace_back(std::move(pattern));
 		}
 	}
 };
@@ -256,22 +277,61 @@ struct User
 {
 	String name;
 
-	/// Требуемый пароль. Хранится в открытом виде.
+	/// Требуемый пароль. Может храниться либо в открытом виде, либо в виде SHA256.
 	String password;
+	String password_sha256_hex;
 
 	String profile;
 	String quota;
 
 	AddressPatterns addresses;
 
+	/// Список разрешённых баз данных.
+	using DatabaseSet = std::unordered_set<std::string>;
+	DatabaseSet databases;
+
 	User(const String & name_, const String & config_elem, Poco::Util::AbstractConfiguration & config)
 		: name(name_)
 	{
-		password 	= config.getString(config_elem + ".password");
+		bool has_password = config.has(config_elem + ".password");
+		bool has_password_sha256_hex = config.has(config_elem + ".password_sha256_hex");
+
+		if (has_password && has_password_sha256_hex)
+			throw Exception("Both fields 'password' and 'password_sha256_hex' are specified for user " + name + ". Must be only one of them.", ErrorCodes::BAD_ARGUMENTS);
+
+		if (!has_password && !has_password_sha256_hex)
+			throw Exception("Either 'password' or 'password_sha256_hex' must be specified for user " + name + ".", ErrorCodes::BAD_ARGUMENTS);
+
+		if (has_password)
+			password 	= config.getString(config_elem + ".password");
+
+		if (has_password_sha256_hex)
+		{
+			password_sha256_hex = Poco::toLower(config.getString(config_elem + ".password_sha256_hex"));
+
+			if (password_sha256_hex.size() != 64)
+				throw Exception("password_sha256_hex for user " + name + " has length " + toString(password_sha256_hex.size()) + " but must be exactly 64 symbols.", ErrorCodes::BAD_ARGUMENTS);
+		}
+
 		profile 	= config.getString(config_elem + ".profile");
 		quota 		= config.getString(config_elem + ".quota");
 
 		addresses.addFromConfig(config_elem + ".networks", config);
+
+		/// Заполнить список разрешённых баз данных.
+		const auto config_sub_elem = config_elem + ".allow_databases";
+		if (config.has(config_sub_elem))
+		{
+			Poco::Util::AbstractConfiguration::Keys config_keys;
+			config.keys(config_sub_elem, config_keys);
+
+			databases.reserve(config_keys.size());
+			for (const auto & key : config_keys)
+			{
+				const auto database_name = config.getString(config_sub_elem + "." + key);
+				databases.insert(database_name);
+			}
+		}
 	}
 
 	/// Для вставки в контейнер.
@@ -285,7 +345,7 @@ class Users
 private:
 	typedef std::map<String, User> Container;
 	Container cont;
-	
+
 public:
 	void loadFromConfig(Poco::Util::AbstractConfiguration & config)
 	{
@@ -308,15 +368,52 @@ public:
 		if (!it->second.addresses.contains(address))
 			throw Exception("User " + name + " is not allowed to connect from address " + address.toString(), ErrorCodes::IP_ADDRESS_NOT_ALLOWED);
 
-		if (password != it->second.password)
+		auto on_wrong_password = [&]()
 		{
 			if (password.empty())
 				throw Exception("Password required for user " + name, ErrorCodes::REQUIRED_PASSWORD);
 			else
 				throw Exception("Wrong password for user " + name, ErrorCodes::WRONG_PASSWORD);
+		};
+
+		if (!it->second.password_sha256_hex.empty())
+		{
+			unsigned char hash[32];
+
+			SHA256_CTX ctx;
+			SHA256_Init(&ctx);
+			SHA256_Update(&ctx, reinterpret_cast<const unsigned char *>(password.data()), password.size());
+			SHA256_Final(hash, &ctx);
+
+			String hash_hex;
+			{
+				WriteBufferFromString buf(hash_hex);
+				HexWriteBuffer hex_buf(buf);
+				hex_buf.write(reinterpret_cast<const char *>(hash), sizeof(hash));
+			}
+
+			Poco::toLowerInPlace(hash_hex);
+
+			if (hash_hex != it->second.password_sha256_hex)
+				on_wrong_password();
+		}
+		else if (password != it->second.password)
+		{
+			on_wrong_password();
 		}
 
 		return it->second;
+	}
+
+	/// Проверить, имеет ли заданный клиент доступ к заданной базе данных.
+	bool isAllowedDatabase(const std::string & user_name, const std::string & database_name) const
+	{
+		auto it = cont.find(user_name);
+		if (it == cont.end())
+			throw Exception("Unknown user " + user_name, ErrorCodes::UNKNOWN_USER);
+
+		const auto & user = it->second;
+		return user.databases.empty() || user.databases.count(database_name);
 	}
 };
 

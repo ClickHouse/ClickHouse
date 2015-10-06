@@ -6,26 +6,33 @@ namespace DB
 
 ProcessList::EntryPtr ProcessList::insert(
 	const String & query_, const String & user_, const String & query_id_, const Poco::Net::IPAddress & ip_address_,
-	size_t max_memory_usage, size_t max_wait_milliseconds, bool replace_running_query, QueryPriorities::Priority priority)
+	const Settings & settings)
 {
 	EntryPtr res;
 
 	{
 		Poco::ScopedLock<Poco::FastMutex> lock(mutex);
 
-		if (max_size && cur_size >= max_size && (!max_wait_milliseconds || !have_space.tryWait(mutex, max_wait_milliseconds)))
+		if (max_size && cur_size >= max_size
+			&& (!settings.queue_max_wait_ms.totalMilliseconds() || !have_space.tryWait(mutex, settings.queue_max_wait_ms.totalMilliseconds())))
 			throw Exception("Too much simultaneous queries. Maximum: " + toString(max_size), ErrorCodes::TOO_MUCH_SIMULTANEOUS_QUERIES);
 
-		if (!query_id_.empty())
-		{
-			UserToQueries::iterator queries = user_to_queries.find(user_);
+		UserToQueries::iterator queries = user_to_queries.find(user_);
 
-			if (queries != user_to_queries.end())
+		if (queries != user_to_queries.end())
+		{
+			if (settings.max_concurrent_queries_for_user && queries->second.size() >= settings.max_concurrent_queries_for_user)
+				throw Exception("Too much simultaneous queries for user " + user_
+					+ ". Current: " + toString(queries->second.size())
+					+ ", maximum: " + toString(settings.max_concurrent_queries_for_user),
+					ErrorCodes::TOO_MUCH_SIMULTANEOUS_QUERIES);
+
+			if (!query_id_.empty())
 			{
 				QueryToElement::iterator element = queries->second.find(query_id_);
 				if (element != queries->second.end())
 				{
-					if (!replace_running_query)
+					if (!settings.replace_running_query)
 						throw Exception("Query with id = " + query_id_ + " is already running.",
 							ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING);
 					element->second->is_cancelled = true;
@@ -38,7 +45,7 @@ ProcessList::EntryPtr ProcessList::insert(
 		++cur_size;
 
 		res.reset(new Entry(*this, cont.emplace(cont.end(),
-			query_, user_, query_id_, ip_address_, max_memory_usage, priorities.insert(priority))));
+			query_, user_, query_id_, ip_address_, settings.limits.max_memory_usage, priorities.insert(settings.priority))));
 
 		if (!query_id_.empty())
 			user_to_queries[user_][query_id_] = &res->get();

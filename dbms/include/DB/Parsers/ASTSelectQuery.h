@@ -32,7 +32,7 @@ public:
 	/// Переписывает select_expression_list, чтобы вернуть только необходимые столбцы в правильном порядке.
 	void rewriteSelectExpressionList(const Names & column_names);
 
-	bool isUnionAllHead() const { return prev_union_all.isNull() && !next_union_all.isNull(); }
+	bool isUnionAllHead() const { return (prev_union_all == nullptr) && !next_union_all.isNull(); }
 
 	ASTPtr clone() const override;
 
@@ -64,10 +64,16 @@ public:
 	ASTPtr limit_offset;
 	ASTPtr limit_length;
 	ASTPtr settings;
-	/// Предыдущий запрос SELECT в цепочке UNION ALL (не вставляется в children и не клонируется)
-	ASTPtr prev_union_all;
+
+	/// Двусвязный список запросов SELECT внутри запроса UNION ALL.
+
 	/// Следующий запрос SELECT в цепочке UNION ALL, если такой есть
 	ASTPtr next_union_all;
+	/// Предыдущий запрос SELECT в цепочке UNION ALL (не вставляется в children и не клонируется)
+	/// Указатель голый по следующим двум причинам:
+	/// 1. чтобы предотвратить появление циклических зависимостей и, значит, утечки памяти;
+	/// 2. библиотека Poco не поддерживает указателей наподобие std::weak_ptr.
+	IAST * prev_union_all = nullptr;
 
 protected:
 	void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

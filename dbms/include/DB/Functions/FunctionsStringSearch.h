@@ -2,7 +2,7 @@
 
 #include <Poco/Mutex.h>
 
-#include <statdaemons/OptimizedRegularExpression.h>
+#include <DB/Common/OptimizedRegularExpression.h>
 #include <memory>
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
@@ -15,9 +15,13 @@
 #include <DB/Functions/IFunction.h>
 #include <re2/re2.h>
 #include <re2/stringpiece.h>
+#include <Poco/UTF8Encoding.h>
 
 #include <mutex>
 #include <stack>
+#include <ext/range.hpp>
+#include <Poco/Unicode.h>
+
 
 namespace DB
 {
@@ -52,6 +56,7 @@ struct PositionImpl
 {
 	typedef UInt64 ResultType;
 
+	/// @note res[i] = 0 намекает, что инициализации нулями не предполагается.
 	/// Предполагается, что res нужного размера и инициализирован нулями.
 	static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,
 		const std::string & needle,
@@ -100,6 +105,43 @@ struct PositionImpl
 };
 
 
+namespace
+{
+
+
+const UInt8 utf8_continuation_octet_mask = 0b11000000u;
+const UInt8 utf8_continuation_octet = 0b10000000u;
+
+
+/// return true if `octet` binary repr starts with 10 (octet is a UTF-8 sequence continuation)
+bool utf8_is_continuation_octet(const UInt8 octet)
+{
+	return (octet & utf8_continuation_octet_mask) == utf8_continuation_octet;
+}
+
+/// moves `s` forward until either first non-continuation octet or string end is met
+void utf8_sync_forward(const UInt8 * & s, const UInt8 * const end = nullptr)
+{
+	while (s < end && utf8_is_continuation_octet(*s))
+		++s;
+}
+
+/// returns UTF-8 code point sequence length judging by it's first octet
+std::size_t utf8_seq_length(const UInt8 first_octet)
+{
+	if (first_octet < 0x80u)
+		return 1;
+
+	const std::size_t bits = 8;
+	const auto first_zero = _bit_scan_reverse(static_cast<UInt8>(~first_octet));
+
+	return bits - 1 - first_zero;
+}
+
+
+}
+
+
 struct PositionUTF8Impl
 {
 	typedef UInt64 ResultType;
@@ -133,7 +175,7 @@ struct PositionUTF8Impl
 				/// А теперь надо найти, сколько кодовых точек находится перед pos.
 				res[i] = 1;
 				for (const UInt8 * c = begin + (i != 0 ? offsets[i - 1] : 0); c < pos; ++c)
-					if (*c <= 0x7F || *c >= 0xC0)
+					if (!utf8_is_continuation_octet(*c))
 						++res[i];
 			}
 			else
@@ -148,6 +190,204 @@ struct PositionUTF8Impl
 
 	static void constant(const std::string & data, const std::string & needle, UInt64 & res)
 	{
+		const auto pos = data.find(needle);
+		if (pos != std::string::npos)
+		{
+			/// А теперь надо найти, сколько кодовых точек находится перед pos.
+			res = 1;
+			for (const auto i : ext::range(0, pos))
+				if (!utf8_is_continuation_octet(static_cast<UInt8>(data[i])))
+					++res;
+		}
+		else
+			res = 0;
+	}
+};
+
+
+struct PositionCaseInsensitiveImpl
+{
+private:
+	class CaseInsensitiveSearcher
+	{
+		static constexpr auto n = sizeof(__m128i);
+
+		const int page_size = getpagesize();
+
+		/// string to be searched for
+		const std::string & needle;
+		/// lower and uppercase variants of the first character in `needle`
+		UInt8 l{};
+		UInt8 u{};
+		/// vectors filled with `l` and `u`, for determining leftmost position of the first symbol
+		__m128i patl, patu;
+		/// lower and uppercase vectors of first 16 characters of `needle`
+		__m128i cachel = _mm_setzero_si128(), cacheu = _mm_setzero_si128();
+		int cachemask{};
+
+		bool page_safe(const void * const ptr) const
+		{
+			return ((page_size - 1) & reinterpret_cast<std::uintptr_t>(ptr)) <= page_size - n;
+		}
+
+	public:
+		CaseInsensitiveSearcher(const std::string & needle) : needle(needle)
+		{
+			if (needle.empty())
+				return;
+
+			auto needle_pos = needle.data();
+
+			l = std::tolower(*needle_pos);
+			u = std::toupper(*needle_pos);
+
+			patl = _mm_set1_epi8(l);
+			patu = _mm_set1_epi8(u);
+
+			const auto needle_end = needle_pos + needle.size();
+
+			for (const auto i : ext::range(0, n))
+			{
+				cachel = _mm_srli_si128(cachel, 1);
+				cacheu = _mm_srli_si128(cacheu, 1);
+
+				if (needle_pos != needle_end)
+				{
+					cachel = _mm_insert_epi8(cachel, std::tolower(*needle_pos), n - 1);
+					cacheu = _mm_insert_epi8(cacheu, std::toupper(*needle_pos), n - 1);
+					cachemask |= 1 << i;
+					++needle_pos;
+				}
+			}
+		}
+
+		const UInt8 * find(const UInt8 * haystack, const UInt8 * const haystack_end) const
+		{
+			if (needle.empty())
+				return haystack;
+
+			const auto needle_begin = reinterpret_cast<const UInt8 *>(needle.data());
+			const auto needle_end = needle_begin + needle.size();
+
+			while (haystack < haystack_end)
+			{
+				/// @todo supposedly for long strings spanning across multiple pages. Why don't we use this technique in other places?
+				if (haystack + n <= haystack_end && page_safe(haystack))
+				{
+					const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
+					const auto v_against_l = _mm_cmpeq_epi8(v_haystack, patl);
+					const auto v_against_u = _mm_cmpeq_epi8(v_haystack, patu);
+					const auto v_against_l_or_u = _mm_or_si128(v_against_l, v_against_u);
+
+					const auto mask = _mm_movemask_epi8(v_against_l_or_u);
+
+					if (mask == 0)
+					{
+						haystack += n;
+						continue;
+					}
+
+					const auto offset = _bit_scan_forward(mask);
+					haystack += offset;
+
+					if (haystack < haystack_end && haystack + n <= haystack_end && page_safe(haystack))
+					{
+						const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
+						const auto v_against_l = _mm_cmpeq_epi8(v_haystack, cachel);
+						const auto v_against_u = _mm_cmpeq_epi8(v_haystack, cacheu);
+						const auto v_against_l_or_u = _mm_or_si128(v_against_l, v_against_u);
+						const auto mask = _mm_movemask_epi8(v_against_l_or_u);
+
+						if (0xffff == cachemask)
+						{
+							if (mask == cachemask)
+							{
+								auto haystack_pos = haystack + n;
+								auto needle_pos = needle_begin + n;
+
+								while (haystack_pos < haystack_end && needle_pos < needle_end &&
+									   std::tolower(*haystack_pos) == std::tolower(*needle_pos))
+									++haystack_pos, ++needle_pos;
+
+								if (needle_pos == needle_end)
+									return haystack;
+							}
+						}
+						else if ((mask & cachemask) == cachemask)
+							return haystack;
+
+						++haystack;
+						continue;
+					}
+				}
+
+				if (haystack == haystack_end)
+					return haystack_end;
+
+				if (*haystack == l || *haystack == u)
+				{
+					auto haystack_pos = haystack + 1;
+					auto needle_pos = needle_begin + 1;
+
+					while (haystack_pos < haystack_end && needle_pos < needle_end &&
+						   std::tolower(*haystack_pos) == std::tolower(*needle_pos))
+						++haystack_pos, ++needle_pos;
+
+					if (needle_pos == needle_end)
+						return haystack;
+				}
+
+				++haystack;
+			}
+
+			return haystack_end;
+		}
+	};
+
+public:
+	using ResultType = UInt64;
+
+	static void vector(
+		const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets, const std::string & needle,
+		PODArray<UInt64> & res)
+	{
+		const CaseInsensitiveSearcher searcher{needle};
+
+		const UInt8 * begin = &data[0];
+		const UInt8 * pos = begin;
+		const UInt8 * end = pos + data.size();
+
+		/// Текущий индекс в массиве строк.
+		size_t i = 0;
+
+		/// Искать будем следующее вхождение сразу во всех строках.
+		while (pos < end && end != (pos = searcher.find(pos, end)))
+		{
+			/// Определим, к какому индексу оно относится.
+			while (begin + offsets[i] < pos)
+			{
+				res[i] = 0;
+				++i;
+			}
+
+			/// Проверяем, что вхождение не переходит через границы строк.
+			if (pos + needle.size() < begin + offsets[i])
+				res[i] = (i != 0) ? pos - begin - offsets[i - 1] + 1 : (pos - begin + 1);
+			else
+				res[i] = 0;
+
+			pos = begin + offsets[i];
+			++i;
+		}
+
+		memset(&res[i], 0, (res.size() - i) * sizeof(res[0]));
+	}
+
+	static void constant(std::string data, std::string needle, UInt64 & res)
+	{
+		std::transform(std::begin(data), std::end(data), std::begin(data), tolower);
+		std::transform(std::begin(needle), std::end(needle), std::begin(needle), tolower);
+
 		res = data.find(needle);
 		if (res == std::string::npos)
 			res = 0;
@@ -155,6 +395,297 @@ struct PositionUTF8Impl
 			++res;
 	}
 };
+
+
+struct PositionCaseInsensitiveUTF8Impl
+{
+private:
+	class CaseInsensitiveSearcher
+	{
+		using UTF8SequenceBuffer = UInt8[6];
+
+		static constexpr auto n = sizeof(__m128i);
+
+		const int page_size = getpagesize();
+
+		/// string to be searched for
+		const std::string & needle;
+		bool first_needle_symbol_is_ascii{};
+		/// lower and uppercase variants of the first octet of the first character in `needle`
+		UInt8 l{};
+		UInt8 u{};
+		/// vectors filled with `l` and `u`, for determining leftmost position of the first symbol
+		__m128i patl, patu;
+		/// lower and uppercase vectors of first 16 characters of `needle`
+		__m128i cachel = _mm_setzero_si128(), cacheu = _mm_setzero_si128();
+		int cachemask{};
+		std::size_t cache_valid_len{};
+		std::size_t cache_actual_len{};
+
+		bool page_safe(const void * const ptr) const
+		{
+			return ((page_size - 1) & reinterpret_cast<std::uintptr_t>(ptr)) <= page_size - n;
+		}
+
+	public:
+		CaseInsensitiveSearcher(const std::string & needle) : needle(needle)
+		{
+			if (needle.empty())
+				return;
+
+			static const Poco::UTF8Encoding utf8;
+			UTF8SequenceBuffer l_seq, u_seq;
+
+			auto needle_pos = reinterpret_cast<const UInt8 *>(needle.data());
+			if (*needle_pos < 0x80u)
+			{
+				first_needle_symbol_is_ascii = true;
+				l = std::tolower(*needle_pos);
+				u = std::toupper(*needle_pos);
+			}
+			else
+			{
+				const auto first_u32 = utf8.convert(needle_pos);
+				const auto first_l_u32 = Poco::Unicode::toLower(first_u32);
+				const auto first_u_u32 = Poco::Unicode::toUpper(first_u32);
+
+				/// lower and uppercase variants of the first octet of the first character in `needle`
+				utf8.convert(first_l_u32, l_seq, sizeof(l_seq));
+				l = l_seq[0];
+				utf8.convert(first_u_u32, u_seq, sizeof(u_seq));
+				u = u_seq[0];
+			}
+
+			/// for detecting leftmost position of the first symbol
+			patl = _mm_set1_epi8(l);
+			patu = _mm_set1_epi8(u);
+			/// lower and uppercase vectors of first 16 octets of `needle`
+
+			const auto needle_end = needle_pos + needle.size();
+
+			for (std::size_t i = 0; i < n;)
+			{
+				if (needle_pos == needle_end)
+				{
+					cachel = _mm_srli_si128(cachel, 1);
+					cacheu = _mm_srli_si128(cacheu, 1);
+					++i;
+
+					continue;
+				}
+
+				const auto src_len = utf8_seq_length(*needle_pos);
+				const auto c_u32 = utf8.convert(needle_pos);
+
+				const auto c_l_u32 = Poco::Unicode::toLower(c_u32);
+				const auto c_u_u32 = Poco::Unicode::toUpper(c_u32);
+
+				const auto dst_l_len = static_cast<UInt8>(utf8.convert(c_l_u32, l_seq, sizeof(l_seq)));
+				const auto dst_u_len = static_cast<UInt8>(utf8.convert(c_u_u32, u_seq, sizeof(u_seq)));
+
+				/// @note Unicode standard states it is a rare but possible occasion
+				if (!(dst_l_len == dst_u_len && dst_u_len == src_len))
+					throw Exception{
+							"UTF8 sequences with different lowercase and uppercase lengths are not supported",
+							ErrorCodes::UNSUPPORTED_PARAMETER
+					};
+
+				cache_actual_len += src_len;
+				if (cache_actual_len < n)
+					cache_valid_len += src_len;
+
+				for (std::size_t j = 0; j < src_len && i < n; ++j, ++i)
+				{
+					cachel = _mm_srli_si128(cachel, 1);
+					cacheu = _mm_srli_si128(cacheu, 1);
+
+					if (needle_pos != needle_end)
+					{
+						cachel = _mm_insert_epi8(cachel, l_seq[j], n - 1);
+						cacheu = _mm_insert_epi8(cacheu, u_seq[j], n - 1);
+
+						cachemask |= 1 << i;
+						++needle_pos;
+					}
+				}
+			}
+		}
+
+		const UInt8 * find(const UInt8 * haystack, const UInt8 * const haystack_end) const
+		{
+			if (needle.empty())
+				return haystack;
+
+			static const Poco::UTF8Encoding utf8;
+
+			const auto needle_begin = reinterpret_cast<const UInt8 *>(needle.data());
+			const auto needle_end = needle_begin + needle.size();
+
+			while (haystack < haystack_end)
+			{
+				if (haystack + n <= haystack_end && page_safe(haystack))
+				{
+					const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
+					const auto v_against_l = _mm_cmpeq_epi8(v_haystack, patl);
+					const auto v_against_u = _mm_cmpeq_epi8(v_haystack, patu);
+					const auto v_against_l_or_u = _mm_or_si128(v_against_l, v_against_u);
+
+					const auto mask = _mm_movemask_epi8(v_against_l_or_u);
+
+					if (mask == 0)
+					{
+						haystack += n;
+						utf8_sync_forward(haystack, haystack_end);
+						continue;
+					}
+
+					const auto offset = _bit_scan_forward(mask);
+					haystack += offset;
+
+					if (haystack < haystack_end && haystack + n <= haystack_end && page_safe(haystack))
+					{
+						const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
+						const auto v_against_l = _mm_cmpeq_epi8(v_haystack, cachel);
+						const auto v_against_u = _mm_cmpeq_epi8(v_haystack, cacheu);
+						const auto v_against_l_or_u = _mm_or_si128(v_against_l, v_against_u);
+						const auto mask = _mm_movemask_epi8(v_against_l_or_u);
+
+						if (0xffff == cachemask)
+						{
+							if (mask == cachemask)
+							{
+								auto haystack_pos = haystack + cache_valid_len;
+								auto needle_pos = needle_begin + cache_valid_len;
+
+								while (haystack_pos < haystack_end && needle_pos < needle_end &&
+									   Poco::Unicode::toLower(utf8.convert(haystack_pos)) ==
+									   Poco::Unicode::toLower(utf8.convert(needle_pos)))
+								{
+									/// @note assuming sequences for lowercase and uppercase have exact same length
+									const auto len = utf8_seq_length(*haystack_pos);
+									haystack_pos += len, needle_pos += len;
+								}
+
+								if (needle_pos == needle_end)
+									return haystack;
+							}
+						}
+						else if ((mask & cachemask) == cachemask)
+							return haystack;
+
+						/// first octet was ok, but not the first 16, move to start of next sequence and reapply
+						haystack += utf8_seq_length(*haystack);
+						continue;
+					}
+				}
+
+				if (haystack == haystack_end)
+					return haystack_end;
+
+				if (*haystack == l || *haystack == u)
+				{
+					auto haystack_pos = haystack + first_needle_symbol_is_ascii;
+					auto needle_pos = needle_begin + first_needle_symbol_is_ascii;
+
+					while (haystack_pos < haystack_end && needle_pos < needle_end &&
+						   Poco::Unicode::toLower(utf8.convert(haystack_pos)) ==
+						   Poco::Unicode::toLower(utf8.convert(needle_pos)))
+					{
+						const auto len = utf8_seq_length(*haystack_pos);
+						haystack_pos += len, needle_pos += len;
+					}
+
+					if (needle_pos == needle_end)
+						return haystack;
+				}
+
+				/// advance to the start of the next sequence
+				haystack += utf8_seq_length(*haystack);
+			}
+
+			return haystack_end;
+		}
+	};
+
+public:
+	using ResultType = UInt64;
+
+	static void vector(
+		const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets, const std::string & needle,
+		PODArray<UInt64> & res)
+	{
+		const CaseInsensitiveSearcher searcher{needle};
+
+		const UInt8 * begin = &data[0];
+		const UInt8 * pos = begin;
+		const UInt8 * end = pos + data.size();
+
+		/// Текущий индекс в массиве строк.
+		size_t i = 0;
+
+		/// Искать будем следующее вхождение сразу во всех строках.
+		while (pos < end && end != (pos = searcher.find(pos, end)))
+		{
+			/// Определим, к какому индексу оно относится.
+			while (begin + offsets[i] < pos)
+			{
+				res[i] = 0;
+				++i;
+			}
+
+			/// Проверяем, что вхождение не переходит через границы строк.
+			if (pos + needle.size() < begin + offsets[i])
+			{
+				/// А теперь надо найти, сколько кодовых точек находится перед pos.
+				res[i] = 1;
+				for (const UInt8 * c = begin + (i != 0 ? offsets[i - 1] : 0); c < pos; ++c)
+					if (!utf8_is_continuation_octet(*c))
+						++res[i];
+			}
+			else
+				res[i] = 0;
+
+			pos = begin + offsets[i];
+			++i;
+		}
+
+		memset(&res[i], 0, (res.size() - i) * sizeof(res[0]));
+	}
+
+	static void constant(std::string data, std::string needle, UInt64 & res)
+	{
+		static const Poco::UTF8Encoding utf8;
+
+		auto data_pos = reinterpret_cast<UInt8 *>(&data[0]);
+		const auto data_end = data_pos + data.size();
+		while (data_pos < data_end)
+		{
+			const auto len = utf8.convert(Poco::Unicode::toLower(utf8.convert(data_pos)), data_pos, data_end - data_pos);
+			data_pos += len;
+		}
+
+		auto needle_pos = reinterpret_cast<UInt8 *>(&needle[0]);
+		const auto needle_end = needle_pos + needle.size();
+		while (needle_pos < needle_end)
+		{
+			const auto len = utf8.convert(Poco::Unicode::toLower(utf8.convert(needle_pos)), needle_pos, needle_end - needle_pos);
+			needle_pos += len;
+		}
+
+		const auto pos = data.find(needle);
+		if (pos != std::string::npos)
+		{
+			/// А теперь надо найти, сколько кодовых точек находится перед pos.
+			res = 1;
+			for (const auto i : ext::range(0, pos))
+				if (!utf8_is_continuation_octet(static_cast<UInt8>(data[i])))
+					++res;
+		}
+		else
+			res = 0;
+	}
+};
+
 
 
 /// Переводит выражение LIKE в regexp re2. Например, abc%def -> ^abc.*def$
@@ -1107,7 +1638,7 @@ public:
 		}
 		else if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(&*column))
 		{
-			ResultType res = 0;
+			ResultType res{};
 			Impl::constant(col->getData(), col_needle->getData(), res);
 
 			ColumnConst<ResultType> * col_res = new ColumnConst<ResultType>(col->size(), res);
@@ -1199,26 +1730,30 @@ public:
 };
 
 
-struct NamePosition 		{ static constexpr auto name = "position"; };
-struct NamePositionUTF8		{ static constexpr auto name = "positionUTF8"; };
-struct NameMatch			{ static constexpr auto name = "match"; };
-struct NameLike				{ static constexpr auto name = "like"; };
-struct NameNotLike			{ static constexpr auto name = "notLike"; };
-struct NameExtract			{ static constexpr auto name = "extract"; };
-struct NameReplaceOne		{ static constexpr auto name = "replaceOne"; };
-struct NameReplaceAll		{ static constexpr auto name = "replaceAll"; };
-struct NameReplaceRegexpOne	{ static constexpr auto name = "replaceRegexpOne"; };
-struct NameReplaceRegexpAll	{ static constexpr auto name = "replaceRegexpAll"; };
+struct NamePosition 					{ static constexpr auto name = "position"; };
+struct NamePositionUTF8					{ static constexpr auto name = "positionUTF8"; };
+struct NamePositionCaseInsensitive 		{ static constexpr auto name = "positionCaseInsensitive"; };
+struct NamePositionCaseInsensitiveUTF8	{ static constexpr auto name = "positionCaseInsensitiveUTF8"; };
+struct NameMatch						{ static constexpr auto name = "match"; };
+struct NameLike							{ static constexpr auto name = "like"; };
+struct NameNotLike						{ static constexpr auto name = "notLike"; };
+struct NameExtract						{ static constexpr auto name = "extract"; };
+struct NameReplaceOne					{ static constexpr auto name = "replaceOne"; };
+struct NameReplaceAll					{ static constexpr auto name = "replaceAll"; };
+struct NameReplaceRegexpOne				{ static constexpr auto name = "replaceRegexpOne"; };
+struct NameReplaceRegexpAll				{ static constexpr auto name = "replaceRegexpAll"; };
 
-typedef FunctionsStringSearch<PositionImpl, 			NamePosition> 		FunctionPosition;
-typedef FunctionsStringSearch<PositionUTF8Impl, 		NamePositionUTF8> 	FunctionPositionUTF8;
-typedef FunctionsStringSearch<MatchImpl<false>, 		NameMatch> 			FunctionMatch;
-typedef FunctionsStringSearch<MatchImpl<true>, 			NameLike> 			FunctionLike;
-typedef FunctionsStringSearch<MatchImpl<true, true>, 	NameNotLike> 		FunctionNotLike;
-typedef FunctionsStringSearchToString<ExtractImpl, 		NameExtract> 		FunctionExtract;
-typedef FunctionStringReplace<ReplaceStringImpl<true>,		NameReplaceOne>		FunctionReplaceOne;
-typedef FunctionStringReplace<ReplaceStringImpl<false>,		NameReplaceAll>		FunctionReplaceAll;
-typedef FunctionStringReplace<ReplaceRegexpImpl<true>,		NameReplaceRegexpOne>		FunctionReplaceRegexpOne;
-typedef FunctionStringReplace<ReplaceRegexpImpl<false>,		NameReplaceRegexpAll>		FunctionReplaceRegexpAll;
+typedef FunctionsStringSearch<PositionImpl, 					NamePosition> 						FunctionPosition;
+typedef FunctionsStringSearch<PositionUTF8Impl, 				NamePositionUTF8> 					FunctionPositionUTF8;
+typedef FunctionsStringSearch<PositionCaseInsensitiveImpl,		NamePositionCaseInsensitive> 		FunctionPositionCaseInsensitive;
+typedef FunctionsStringSearch<PositionCaseInsensitiveUTF8Impl,	NamePositionCaseInsensitiveUTF8>	FunctionPositionCaseInsensitiveUTF8;
+typedef FunctionsStringSearch<MatchImpl<false>, 				NameMatch> 							FunctionMatch;
+typedef FunctionsStringSearch<MatchImpl<true>, 					NameLike> 							FunctionLike;
+typedef FunctionsStringSearch<MatchImpl<true, true>, 			NameNotLike> 						FunctionNotLike;
+typedef FunctionsStringSearchToString<ExtractImpl, 				NameExtract> 						FunctionExtract;
+typedef FunctionStringReplace<ReplaceStringImpl<true>,			NameReplaceOne>						FunctionReplaceOne;
+typedef FunctionStringReplace<ReplaceStringImpl<false>,			NameReplaceAll>						FunctionReplaceAll;
+typedef FunctionStringReplace<ReplaceRegexpImpl<true>,			NameReplaceRegexpOne>				FunctionReplaceRegexpOne;
+typedef FunctionStringReplace<ReplaceRegexpImpl<false>,			NameReplaceRegexpAll>				FunctionReplaceRegexpAll;
 
 }

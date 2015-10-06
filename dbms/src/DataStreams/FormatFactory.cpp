@@ -38,10 +38,24 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
 		return new BlockInputStreamFromRowInputStream(new TabSeparatedRowInputStream(buf, sample, true), sample, max_block_size);
 	else if (name == "TabSeparatedWithNamesAndTypes")
 		return new BlockInputStreamFromRowInputStream(new TabSeparatedRowInputStream(buf, sample, true, true), sample, max_block_size);
-	else if (name == "BlockTabSeparated" || name == "Pretty" || name == "PrettyCompact" || name == "PrettySpace" || name == "Vertical" || name == "Null" || name == "TabSeparatedRaw")
-		throw Exception("Format " + name + " is not suitable for input", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT);
 	else if (name == "Values")
 		return new BlockInputStreamFromRowInputStream(new ValuesRowInputStream(buf, sample), sample, max_block_size);
+	else if (name == "TabSeparatedRaw"
+		|| name == "BlockTabSeparated"
+		|| name == "Pretty"
+		|| name == "PrettyCompact"
+		|| name == "PrettyCompactMonoBlock"
+		|| name == "PrettySpace"
+		|| name == "PrettyNoEscapes"
+		|| name == "PrettyCompactNoEscapes"
+		|| name == "PrettySpaceNoEscapes"
+		|| name == "Vertical"
+		|| name == "VerticalRaw"
+		|| name == "Null"
+		|| name == "JSON"
+		|| name == "JSONCompact"
+		|| name == "TSKV")
+		throw Exception("Format " + name + " is not suitable for input", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT);
 	else
 		throw Exception("Unknown format " + name, ErrorCodes::UNKNOWN_FORMAT);
 }
@@ -68,6 +82,8 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer &
 		return new PrettyBlockOutputStream(buf);
 	else if (name == "PrettyCompact")
 		return new PrettyCompactBlockOutputStream(buf);
+	else if (name == "PrettyCompactMonoBlock")
+		return new PrettyCompactMonoBlockOutputStream(buf);
 	else if (name == "PrettySpace")
 		return new PrettySpaceBlockOutputStream(buf);
 	else if (name == "PrettyNoEscapes")
@@ -78,6 +94,8 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer &
 		return new PrettySpaceBlockOutputStream(buf, true);
 	else if (name == "Vertical")
 		return new BlockOutputStreamFromRowOutputStream(new VerticalRowOutputStream(buf, sample));
+	else if (name == "VerticalRaw")
+		return new BlockOutputStreamFromRowOutputStream(new VerticalRawRowOutputStream(buf, sample));
 	else if (name == "Values")
 		return new BlockOutputStreamFromRowOutputStream(new ValuesRowOutputStream(buf, sample));
 	else if (name == "JSON")
@@ -88,8 +106,6 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer &
 		return new BlockOutputStreamFromRowOutputStream(new TSKVRowOutputStream(buf, sample));
 	else if (name == "Null")
 		return new NullBlockOutputStream;
-	else if (name == "PrettyCompactMonoBlock")
-		return new PrettyCompactMonoBlockOutputStream(buf);
 	else
 		throw Exception("Unknown format " + name, ErrorCodes::UNKNOWN_FORMAT);
 }

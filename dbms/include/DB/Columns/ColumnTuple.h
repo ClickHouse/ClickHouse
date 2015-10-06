@@ -42,8 +42,8 @@ public:
 	{
 		Array res;
 
-		for (Columns::const_iterator it = columns.begin(); it != columns.end(); ++it)
-			res.push_back((**it)[n]);
+		for (const auto & column : columns)
+			res.push_back((*column)[n]);
 
 		return res;
 	}
@@ -93,8 +93,26 @@ public:
 
 	void insertDefault() override
 	{
-		for (Columns::iterator it = columns.begin(); it != columns.end(); ++it)
-			(*it)->insertDefault();
+		for (auto & column : columns)
+			column->insertDefault();
+	}
+
+
+	StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override
+	{
+		size_t values_size = 0;
+		for (auto & column : columns)
+			values_size += column->serializeValueIntoArena(n, arena, begin).size;
+
+		return StringRef(begin, values_size);
+	}
+
+	const char * deserializeAndInsertFromArena(const char * pos) override
+	{
+		for (auto & column : columns)
+			pos = column->deserializeAndInsertFromArena(pos);
+
+		return pos;
 	}
 
 
@@ -155,8 +173,8 @@ public:
 
 		Less(const Columns & columns)
 		{
-			for (Columns::const_iterator it = columns.begin(); it != columns.end(); ++it)
-				plain_columns.push_back(&**it);
+			for (const auto & column : columns)
+				plain_columns.push_back(column.get());
 		}
 
 		bool operator() (size_t a, size_t b) const
@@ -201,15 +219,15 @@ public:
 
 	void reserve(size_t n) override
 	{
-		for (Columns::iterator it = columns.begin(); it != columns.end(); ++it)
-			(*it)->reserve(n);
+		for (auto & column : columns)
+			column->reserve(n);
 	}
 
 	size_t byteSize() const override
 	{
 		size_t res = 0;
-		for (Columns::const_iterator it = columns.begin(); it != columns.end(); ++it)
-			res += (*it)->byteSize();
+		for (const auto & column : columns)
+			res += column->byteSize();
 		return res;
 	}
 

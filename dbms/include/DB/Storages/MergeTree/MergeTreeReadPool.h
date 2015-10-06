@@ -2,7 +2,7 @@
 
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/Storages/MergeTree/RangesInDataPart.h>
-#include <statdaemons/ext/range.hpp>
+#include <ext/range.hpp>
 #include <mutex>
 
 
@@ -10,16 +10,27 @@ namespace DB
 {
 
 
+/// A batch of work for MergeTreeThreadBlockInputStream
 struct MergeTreeReadTask
 {
+	/// data part which should be read while performing this task
 	MergeTreeData::DataPartPtr data_part;
+	/** Ranges to read from `data_part`.
+	 *	Specified in reverse order for MergeTreeThreadBlockInputStream's convenience of calling .pop_back(). */
 	MarkRanges mark_ranges;
+	/// for virtual `part_index` virtual column
 	std::size_t part_index_in_query;
+	/// ordered list of column names used in this query, allows returning blocks with consistent ordering
 	const Names & ordered_names;
+	/// used to determine whether column should be filtered during PREWHERE or WHERE
 	const NameSet & column_name_set;
+	/// column names to read during WHERE
 	const NamesAndTypesList & columns;
+	/// column names to read during PREWHERE
 	const NamesAndTypesList & pre_columns;
+	/// should PREWHERE column be returned to requesting side?
 	const bool remove_prewhere_column;
+	/// resulting block may require reordering in accordance with `ordered_names`
 	const bool should_reorder;
 
 	MergeTreeReadTask(
@@ -34,6 +45,13 @@ struct MergeTreeReadTask
 
 using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;
 
+/**	Provides read tasks for MergeTreeThreadBlockInputStream`s in fine-grained batches, allowing for more
+ *	uniform distribution of work amongst multiple threads. All parts and their ranges are divided into `threads`
+ *	workloads with at most `sum_marks / threads` marks. Then, threads are performing reads from these workloads
+ *	in "sequential" manner, requesting work in small batches. As soon as some thread some thread has exhausted
+ *	it's workload, it either is signaled that no more work is available (`do_not_steal_tasks == false`) or
+ *	continues taking small batches from other threads' workloads (`do_not_steal_tasks == true`).
+ */
 class MergeTreeReadPool
 {
 public:
@@ -86,9 +104,8 @@ public:
 		{
 			const auto marks_to_get_from_range = marks_in_part;
 
-			/// Восстановим порядок отрезков.
-			std::reverse(thread_task.ranges.begin(), thread_task.ranges.end());
-
+			/** Отрезки уже перечислены справа налево, reverse изначально сделан в MergeTreeDataSelectExecutor и
+			 *	поддержан в fillPerThreadInfo. */
 			ranges_to_get_from_part = thread_task.ranges;
 
 			marks_in_part -= marks_to_get_from_range;
@@ -120,6 +137,11 @@ public:
 				marks_in_part -= marks_to_get_from_range;
 				need_marks -= marks_to_get_from_range;
 			}
+
+			/** Перечислим справа налево, чтобы MergeTreeThreadBlockInputStream забирал
+			 *	отрезки с помощью .pop_back() (их порядок был сменен на "слева направо"
+			 *	из-за .pop_back() в этой ветке). */
+			std::reverse(std::begin(ranges_to_get_from_part), std::end(ranges_to_get_from_part));
 		}
 
 		return std::make_unique<MergeTreeReadTask>(
@@ -252,7 +274,7 @@ public:
 				/// Возьмем весь кусок, если он достаточно мал.
 				if (marks_in_part <= need_marks)
 				{
-					/// Оставим отрезки перечисленными справа налево для удобства.
+					/// Оставим отрезки перечисленными справа налево для удобства использования .pop_back() в .getTask()
 					ranges_to_get_from_part = part.ranges;
 					marks_in_ranges = marks_in_part;
 
@@ -281,7 +303,9 @@ public:
 							part.ranges.pop_back();
 					}
 
-					/// Вновь перечислим отрезки справа налево, чтобы .getTask() мог забирать их с помощью .pop_back().
+					/** Вновь перечислим отрезки справа налево, чтобы .getTask() мог забирать их
+					 *	с помощью .pop_back() (их порядок был сменен на "слева направо"
+					 *	из-за .pop_back() в этой ветке). */
 					std::reverse(std::begin(ranges_to_get_from_part), std::end(ranges_to_get_from_part));
 				}
 
@@ -339,56 +363,19 @@ public:
 			}
 		}
 
+		/** Добавить столбец минимального размера.
+		  * Используется в случае, когда ни один столбец не нужен или файлы отсутствуют, но нужно хотя бы знать количество строк.
+		  * Добавляет в columns.
+		  */
 		if (all_column_files_missing)
 		{
-			addMinimumSizeColumn(part, columns);
+			const auto minimum_size_column_name = part->getMinimumSizeColumnName();
+			columns.push_back(minimum_size_column_name);
 			/// correctly report added column
 			injected_columns.insert(columns.back());
 		}
 
 		return injected_columns;
-	}
-
-	/** Добавить столбец минимального размера.
-	  * Используется в случае, когда ни один столбец не нужен, но нужно хотя бы знать количество строк.
-	  * Добавляет в columns.
-	  */
-	void addMinimumSizeColumn(const MergeTreeData::DataPartPtr & part, Names & columns) const
-	{
-		const auto get_column_size = [this, &part] (const String & name) {
-			const auto & files = part->checksums.files;
-
-			const auto escaped_name = escapeForFileName(name);
-			const auto bin_file_name = escaped_name + ".bin";
-			const auto mrk_file_name = escaped_name + ".mrk";
-
-			return files.find(bin_file_name)->second.file_size + files.find(mrk_file_name)->second.file_size;
-		};
-
-		const auto & storage_columns = data.getColumnsList();
-		const NameAndTypePair * minimum_size_column = nullptr;
-		auto minimum_size = std::numeric_limits<size_t>::max();
-
-		for (const auto & column : storage_columns)
-		{
-			if (!part->hasColumnFiles(column.name))
-				continue;
-
-			const auto size = get_column_size(column.name);
-			if (size < minimum_size)
-			{
-				minimum_size = size;
-				minimum_size_column = &column;
-			}
-		}
-
-		if (!minimum_size_column)
-			throw Exception{
-				"Could not find a column of minimum size in MergeTree",
-				ErrorCodes::LOGICAL_ERROR
-			};
-
-		columns.push_back(minimum_size_column->name);
 	}
 
 	std::vector<std::unique_ptr<Poco::ScopedReadRWLock>> per_part_columns_lock;
@@ -399,32 +386,32 @@ public:
 	std::vector<NamesAndTypesList> per_part_columns;
 	std::vector<NamesAndTypesList> per_part_pre_columns;
 	/// @todo actually all of these values are either true or false for the whole query, thus no vector required
-	std::vector<bool> per_part_remove_prewhere_column;
-	std::vector<bool> per_part_should_reorder;
+	std::vector<char> per_part_remove_prewhere_column;
+	std::vector<char> per_part_should_reorder;
 
-	struct part_t
+	struct Part
 	{
 		MergeTreeData::DataPartPtr data_part;
 		std::size_t part_index_in_query;
 	};
 
-	std::vector<part_t> parts;
+	std::vector<Part> parts;
 
-	struct thread_task_t
+	struct ThreadTask
 	{
-		struct part_index_and_range_t
+		struct PartIndexAndRange
 		{
 			std::size_t part_idx;
 			MarkRanges ranges;
 		};
 
-		std::vector<part_index_and_range_t> parts_and_ranges;
+		std::vector<PartIndexAndRange> parts_and_ranges;
 		std::vector<std::size_t> sum_marks_in_parts;
 	};
 
-	std::vector<thread_task_t> threads_tasks;
+	std::vector<ThreadTask> threads_tasks;
 
-	std::unordered_set<std::size_t> remaining_thread_tasks;
+	std::set<std::size_t> remaining_thread_tasks;
 
 	mutable std::mutex mutex;
 };

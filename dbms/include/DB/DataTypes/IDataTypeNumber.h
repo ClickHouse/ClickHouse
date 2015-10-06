@@ -21,42 +21,42 @@ class IDataTypeNumber : public IDataType
 public:
 	typedef FType FieldType;
 
-	bool isNumeric() const { return true; }
-		
-	bool behavesAsNumber() const { return true; }
-		
-	void serializeText(const Field & field, WriteBuffer & ostr) const
+	bool isNumeric() const override { return true; }
+
+	bool behavesAsNumber() const override { return true; }
+
+	void serializeText(const Field & field, WriteBuffer & ostr) const override
 	{
 		writeText(static_cast<FieldType>(get<typename NearestFieldType<FieldType>::Type>(field)), ostr);
 	}
-	
-	inline void deserializeText(Field & field, ReadBuffer & istr) const;
 
-	void serializeTextEscaped(const Field & field, WriteBuffer & ostr) const
+	inline void deserializeText(Field & field, ReadBuffer & istr) const override;
+
+	void serializeTextEscaped(const Field & field, WriteBuffer & ostr) const override
 	{
 		serializeText(field, ostr);
 	}
-	
-	void deserializeTextEscaped(Field & field, ReadBuffer & istr) const
+
+	void deserializeTextEscaped(Field & field, ReadBuffer & istr) const override
 	{
 		deserializeText(field, istr);
 	}
-	
-	void serializeTextQuoted(const Field & field, WriteBuffer & ostr) const
+
+	void serializeTextQuoted(const Field & field, WriteBuffer & ostr) const override
 	{
 		serializeText(field, ostr);
 	}
-	
-	void deserializeTextQuoted(Field & field, ReadBuffer & istr) const
+
+	void deserializeTextQuoted(Field & field, ReadBuffer & istr) const override
 	{
 		deserializeText(field, istr);
 	}
-	
-	inline void serializeTextJSON(const Field & field, WriteBuffer & ostr) const;
 
-	size_t getSizeOfField() const { return sizeof(FieldType); }
+	inline void serializeTextJSON(const Field & field, WriteBuffer & ostr) const override;
 
-	Field getDefault() const
+	size_t getSizeOfField() const override { return sizeof(FieldType); }
+
+	Field getDefault() const override
 	{
 		return typename NearestFieldType<FieldType>::Type();
 	}
