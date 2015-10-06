@@ -22,6 +22,7 @@
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
+#include <DB/Interpreters/InJoinSubqueriesPreprocessor.h>
 #include <DB/Interpreters/LogicalExpressionsOptimizer.h>
 #include <DB/Interpreters/ExternalDictionaries.h>
 
@@ -43,7 +44,7 @@
 
 #include <DB/Functions/FunctionFactory.h>
 
-#include <statdaemons/ext/range.hpp>
+#include <ext/range.hpp>
 
 
 namespace DB
@@ -89,25 +90,31 @@ const std::unordered_set<String> possibly_injective_function_names
 	"dictGetDateTime"
 };
 
-static bool functionIsInOperator(const String & name)
+namespace
+{
+
+bool functionIsInOperator(const String & name)
 {
 	return name == "in" || name == "notIn";
 }
 
-static bool functionIsInOrGlobalInOperator(const String & name)
+bool functionIsInOrGlobalInOperator(const String & name)
 {
 	return name == "in" || name == "notIn" || name == "globalIn" || name == "globalNotIn";
 }
 
-
+}
 
 void ExpressionAnalyzer::init()
 {
 	select_query = typeid_cast<ASTSelectQuery *>(&*ast);
 
+	/// В зависимости от профиля пользователя проверить наличие прав на выполнение
+	/// распределённых подзапросов внутри секций IN или JOIN и обработать эти подзапросы.
+	InJoinSubqueriesPreprocessor<>(select_query, context, storage).perform();
+
 	/// Оптимизирует логические выражения.
-	LogicalExpressionsOptimizer logical_expressions_optimizer(select_query, settings);
-	logical_expressions_optimizer.optimizeDisjunctiveEqualityChains();
+	LogicalExpressionsOptimizer(select_query, settings).perform();
 
 	/// Добавляет в множество известных алиасов те, которые объявлены в структуре таблицы (ALIAS-столбцы).
 	addStorageAliases();
@@ -993,7 +1000,7 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name)
 	}
 	else if (settings.global_subqueries_method == GlobalSubqueriesMethod::PULL)
 	{
-		String host_port = getFQDNOrHostName() + ":" + Poco::Util::Application::instance().config().getString("tcp_port");
+		String host_port = getFQDNOrHostName() + ":" + toString(context.getTCPPort());
 		String database = "_query_" + context.getCurrentQueryId();
 
 		auto subquery = new ASTSubquery;
@@ -1151,6 +1158,10 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 void ExpressionAnalyzer::makeExplicitSet(ASTFunction * node, const Block & sample_block, bool create_ordered_set)
 {
 	IAST & args = *node->arguments;
+
+	if (args.children.size() != 2)
+		throw Exception("Wrong number of arguments passed to function in", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
 	ASTPtr & arg = args.children.at(1);
 
 	DataTypes set_element_types;
@@ -1188,12 +1199,20 @@ void ExpressionAnalyzer::makeExplicitSet(ASTFunction * node, const Block & sampl
 	{
 		if (set_func->name == "tuple")
 		{
-			/// Отличм случай (x, y) in ((1, 2), (3, 4)) от случая (x, y) in (1, 2).
-			ASTFunction * any_element = typeid_cast<ASTFunction *>(&*set_func->arguments->children.at(0));
-			if (set_element_types.size() >= 2 && (!any_element || any_element->name != "tuple"))
-				single_value = true;
-			else
+			if (set_func->arguments->children.empty())
+			{
+				/// Пустое множество.
 				elements_ast = set_func->arguments;
+			}
+			else
+			{
+				/// Отличм случай (x, y) in ((1, 2), (3, 4)) от случая (x, y) in (1, 2).
+				ASTFunction * any_element = typeid_cast<ASTFunction *>(&*set_func->arguments->children.at(0));
+				if (set_element_types.size() >= 2 && (!any_element || any_element->name != "tuple"))
+					single_value = true;
+				else
+					elements_ast = set_func->arguments;
+			}
 		}
 		else
 		{
@@ -2251,7 +2270,8 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAnd
 	for (const auto i : ext::range(0, nested_result_sample.columns()))
 	{
 		const auto & col = nested_result_sample.getByPosition(i);
-		if (join_key_names_right.end() == std::find(join_key_names_right.begin(), join_key_names_right.end(), col.name))
+		if (join_key_names_right.end() == std::find(join_key_names_right.begin(), join_key_names_right.end(), col.name)
+			&& !joined_columns.count(col.name))	/// Дублирующиеся столбцы в подзапросе для JOIN-а не имеют смысла.
 		{
 			joined_columns.insert(col.name);
 			joined_columns_name_type.emplace_back(col.name, col.type);

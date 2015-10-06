@@ -6,7 +6,8 @@
 #include <climits>
 #include <sstream>
 #include <stats/ReservoirSampler.h>
-#include <Yandex/Common.h>
+#include <common/Common.h>
+#include <DB/Common/HashTable/Hash.h>
 #include <DB/IO/ReadBuffer.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
@@ -32,8 +33,8 @@ enum class ReservoirSamplerDeterministicOnEmpty
 	RETURN_NAN_OR_ZERO,
 };
 
-template<typename T,
-		 ReservoirSamplerDeterministicOnEmpty OnEmpty = ReservoirSamplerDeterministicOnEmpty::THROW>
+template <typename T,
+	ReservoirSamplerDeterministicOnEmpty OnEmpty = ReservoirSamplerDeterministicOnEmpty::THROW>
 class ReservoirSamplerDeterministic
 {
 	bool good(const UInt32 hash)
@@ -65,40 +66,6 @@ public:
 		++total_values;
 	}
 
-	void insertImpl(const T & v, const UInt32 hash)
-	{
- 		while (samples.size() + 1 >= sample_count)
-		{
-			if (++skip_degree > detail::MAX_SKIP_DEGREE)
-				throw DB::Exception{"skip_degree exceeds maximum value", DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED};
-			thinOut();
-		}
-
-		samples.emplace_back(v, hash);
-	}
-
-	void thinOut()
-	{
-		auto size = samples.size();
-		for (size_t i = 0; i < size;)
-		{
-			if (!good(samples[i].second))
-			{
-				/// swap current element with the last one
-				std::swap(samples[size - 1], samples[i]);
-				--size;
-			}
-			else
-				++i;
-		}
-
-		if (size != samples.size())
-		{
-			samples.resize(size);
-			sorted = false;
-		}
-	}
-
 	size_t size() const
 	{
 		return total_values;
@@ -119,6 +86,7 @@ public:
 
 	/** Если T не числовой тип, использование этого метода вызывает ошибку компиляции,
 	  *  но использование класса ошибки не вызывает. SFINAE.
+	  *  Не SFINAE. Функции члены шаблонов типов просто не проверяются, пока не используются.
 	  */
 	double quantileInterpolated(double level)
 	{
@@ -153,9 +121,9 @@ public:
 			thinOut();
 		}
 
-		for (size_t i = 0; i < b.samples.size(); ++i)
-			if (good(b.samples[i].second))
-				insertImpl(b.samples[i].first, b.samples[i].second);
+		for (const auto & sample : b.samples)
+			if (good(sample.second))
+				insertImpl(sample.first, sample.second);
 
 		total_values += b.total_values;
 	}
@@ -167,7 +135,7 @@ public:
 		samples.resize(std::min(total_values, sample_count));
 
 		for (size_t i = 0; i < samples.size(); ++i)
-			DB::readBinary(samples[i].first, buf);
+			DB::readPODBinary(samples[i], buf);
 
 		sorted = false;
 	}
@@ -178,7 +146,7 @@ public:
 		DB::writeIntBinary<size_t>(total_values, buf);
 
 		for (size_t i = 0; i < std::min(sample_count, total_values); ++i)
-			DB::writeBinary(samples[i].first, buf);
+			DB::writePODBinary(samples[i], buf);
 	}
 
 private:
@@ -190,6 +158,41 @@ private:
 	bool sorted{};
 	std::vector<std::pair<T, UInt32>> samples;
 	UInt8 skip_degree{};
+
+	void insertImpl(const T & v, const UInt32 hash)
+	{
+		/// @todo why + 1? I don't quite recall
+		while (samples.size() + 1 >= sample_count)
+		{
+			if (++skip_degree > detail::MAX_SKIP_DEGREE)
+				throw DB::Exception{"skip_degree exceeds maximum value", DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED};
+			thinOut();
+		}
+
+		samples.emplace_back(v, hash);
+	}
+
+	void thinOut()
+	{
+		auto size = samples.size();
+		for (size_t i = 0; i < size;)
+		{
+			if (!good(samples[i].second))
+			{
+				/// swap current element with the last one
+				std::swap(samples[size - 1], samples[i]);
+				--size;
+			}
+			else
+				++i;
+		}
+
+		if (size != samples.size())
+		{
+			samples.resize(size);
+			sorted = false;
+		}
+	}
 
 	void sortIfNeeded()
 	{

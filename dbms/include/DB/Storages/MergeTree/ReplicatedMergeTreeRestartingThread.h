@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Poco/Event.h>
-#include <Yandex/logger_useful.h>
+#include <common/logger_useful.h>
 #include <DB/Core/Types.h>
 #include <thread>
 
@@ -62,6 +62,12 @@ private:
 
 	/// Отметить в ZooKeeper, что эта реплика сейчас активна.
 	void activateReplica();
+
+	/// Удалить куски, для которых кворум пофейлился (за то время, когда реплика была неактивной).
+	void removeFailedQuorumParts();
+
+	/// Если есть недостигнутый кворум, и у нас есть кусок, то добавить эту реплику в кворум.
+	void updateQuorumIfWeHavePart();
 
 	void partialShutdown();
 

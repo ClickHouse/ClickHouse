@@ -3,7 +3,7 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/DNS.h>
 
-#include <statdaemons/PoolWithFailoverBase.h>
+#include <DB/Common/PoolWithFailoverBase.h>
 
 #include <DB/Common/getFQDNOrHostName.h>
 #include <DB/Client/ConnectionPool.h>

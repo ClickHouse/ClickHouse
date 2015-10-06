@@ -22,7 +22,7 @@ private:
 public:
 	DataTypeTuple(DataTypes elems_) : elems(elems_) {}
 
-	std::string getName() const
+	std::string getName() const override
 	{
 		std::stringstream s;
 
@@ -34,16 +34,16 @@ public:
 		return s.str();
 	}
 
-	SharedPtr<IDataType> clone() const { return new DataTypeTuple(elems); }
+	SharedPtr<IDataType> clone() const override { return new DataTypeTuple(elems); }
 
-	void serializeBinary(const Field & field, WriteBuffer & ostr) const
+	void serializeBinary(const Field & field, WriteBuffer & ostr) const override
 	{
 		const Array & arr = get<const Array &>(field);
 		for (size_t i = 0, size = elems.size(); i < size; ++i)
 			elems[i]->serializeBinary(arr[i], ostr);
 	}
 
-	void deserializeBinary(Field & field, ReadBuffer & istr) const
+	void deserializeBinary(Field & field, ReadBuffer & istr) const override
 	{
 		size_t size = elems.size();
 		field = Array(size);
@@ -52,7 +52,7 @@ public:
 			elems[i]->deserializeBinary(arr[i], istr);
 	}
 
-	void serializeText(const Field & field, WriteBuffer & ostr) const
+	void serializeText(const Field & field, WriteBuffer & ostr) const override
 	{
 		const Array & arr = get<const Array &>(field);
 		writeChar('(', ostr);
@@ -65,7 +65,7 @@ public:
 		writeChar(')', ostr);
 	}
 
-	void deserializeText(Field & field, ReadBuffer & istr) const
+	void deserializeText(Field & field, ReadBuffer & istr) const override
 	{
 		size_t size = elems.size();
 		field = Array(size);
@@ -80,27 +80,27 @@ public:
 		assertString(")", istr);
 	}
 
-	void serializeTextEscaped(const Field & field, WriteBuffer & ostr) const
+	void serializeTextEscaped(const Field & field, WriteBuffer & ostr) const override
 	{
 		serializeText(field, ostr);
 	}
 
-	void deserializeTextEscaped(Field & field, ReadBuffer & istr) const
+	void deserializeTextEscaped(Field & field, ReadBuffer & istr) const override
 	{
 		deserializeText(field, istr);
 	}
 
-	void serializeTextQuoted(const Field & field, WriteBuffer & ostr) const
+	void serializeTextQuoted(const Field & field, WriteBuffer & ostr) const override
 	{
 		serializeText(field, ostr);
 	}
 
-	void deserializeTextQuoted(Field & field, ReadBuffer & istr) const
+	void deserializeTextQuoted(Field & field, ReadBuffer & istr) const override
 	{
 		deserializeText(field, istr);
 	}
 
-	void serializeTextJSON(const Field & field, WriteBuffer & ostr) const
+	void serializeTextJSON(const Field & field, WriteBuffer & ostr) const override
 	{
 		const Array & arr = get<const Array &>(field);
 		writeChar('[', ostr);
@@ -113,7 +113,7 @@ public:
 		writeChar(']', ostr);
 	}
 
-	void serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset = 0, size_t limit = 0) const
+	void serializeBinary(const IColumn & column, WriteBuffer & ostr, size_t offset = 0, size_t limit = 0) const override
 	{
 		const ColumnTuple & real_column = static_cast<const ColumnTuple &>(column);
 		for (size_t i = 0, size = elems.size(); i < size; ++i)
@@ -124,14 +124,14 @@ public:
 	  * Именно из-за этого (невозможности читать меньший кусок записанных данных), Tuple не могут быть использованы для хранения данных в таблицах.
 	  * (Хотя могут быть использованы для передачи данных по сети в Native формате.)
 	  */
-	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
+	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override
 	{
 		ColumnTuple & real_column = static_cast<ColumnTuple &>(column);
 		for (size_t i = 0, size = elems.size(); i < size; ++i)
 			NativeBlockInputStream::readData(*elems[i], *real_column.getData().getByPosition(i).column, istr, limit);
 	}
 
-	ColumnPtr createColumn() const
+	ColumnPtr createColumn() const override
 	{
 		Block tuple_block;
 		for (size_t i = 0, size = elems.size(); i < size; ++i)
@@ -144,12 +144,12 @@ public:
 		return new ColumnTuple(tuple_block);
 	}
 
-	ColumnPtr createConstColumn(size_t size, const Field & field) const
+	ColumnPtr createConstColumn(size_t size, const Field & field) const override
 	{
 		return new ColumnConstArray(size, get<const Array &>(field), new DataTypeTuple(elems));
 	}
 
-	Field getDefault() const
+	Field getDefault() const override
 	{
 		size_t size = elems.size();
 		Array res(size);

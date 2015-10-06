@@ -6,7 +6,7 @@
 #include <DB/Common/HashTable/HashMap.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/Common/HashTable/HashMap.h>
-#include <statdaemons/ext/scope_guard.hpp>
+#include <ext/scope_guard.hpp>
 #include <Poco/RWLock.h>
 #include <cmath>
 #include <atomic>

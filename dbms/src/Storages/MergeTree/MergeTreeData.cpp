@@ -17,7 +17,7 @@
 #include <DB/Common/localBackup.h>
 #include <DB/Functions/FunctionFactory.h>
 #include <Poco/DirectoryIterator.h>
-#include <statdaemons/Increment.h>
+#include <DB/Common/Increment.h>
 
 #include <algorithm>
 #include <iomanip>
@@ -379,13 +379,24 @@ void MergeTreeData::setPath(const String & new_full_path, bool move_data)
 
 void MergeTreeData::dropAllData()
 {
+	LOG_TRACE(log, "dropAllData: waiting for locks.");
+
+	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
+	Poco::ScopedLock<Poco::FastMutex> lock_all(all_data_parts_mutex);
+
+	LOG_TRACE(log, "dropAllData: removing data from memory.");
+
 	data_parts.clear();
 	all_data_parts.clear();
 	column_sizes.clear();
 
 	context.resetCaches();
 
+	LOG_TRACE(log, "dropAllData: removing data from filesystem.");
+
 	Poco::File(full_path).remove(true);
+
+	LOG_TRACE(log, "dropAllData: done.");
 }
 
 
@@ -769,7 +780,7 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
 
 	if (obsolete)
 	{
-		LOG_WARNING(log, "Obsolete part " + part->name + " added");
+		LOG_WARNING(log, "Obsolete part " << part->name << " added");
 		part->remove_time = time(0);
 	}
 	else
@@ -783,8 +794,8 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
 	if (out_transaction)
 	{
 		out_transaction->data = this;
-		out_transaction->added_parts = res;
-		out_transaction->removed_parts = DataPartsVector(1, part);
+		out_transaction->parts_to_add_on_rollback = res;
+		out_transaction->parts_to_remove_on_rollback = DataPartsVector(1, part);
 	}
 
 	return res;
@@ -800,6 +811,7 @@ void MergeTreeData::replaceParts(const DataPartsVector & remove, const DataParts
 		removePartContributionToColumnSizes(part);
 		data_parts.erase(part);
 	}
+
 	for (const DataPartPtr & part : add)
 	{
 		data_parts.insert(part);
@@ -1255,8 +1267,11 @@ void MergeTreeData::addPartContributionToColumnSizes(const DataPartPtr & part)
 
 		auto & column_size = column_sizes[column.name];
 
-		if (files.count(bin_file_name)) column_size += files.find(bin_file_name)->second.file_size;
-		if (files.count(mrk_file_name)) column_size += files.find(mrk_file_name)->second.file_size;
+		if (files.count(bin_file_name))
+			column_size += files.find(bin_file_name)->second.file_size;
+
+		if (files.count(mrk_file_name))
+			column_size += files.find(mrk_file_name)->second.file_size;
 	}
 }
 
@@ -1272,8 +1287,11 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
 
 		auto & column_size = column_sizes[column.name];
 
-		if (files.count(bin_file_name)) column_size -= files.find(bin_file_name)->second.file_size;
-		if (files.count(mrk_file_name)) column_size -= files.find(mrk_file_name)->second.file_size;
+		if (files.count(bin_file_name))
+			column_size -= files.find(bin_file_name)->second.file_size;
+
+		if (files.count(mrk_file_name))
+			column_size -= files.find(mrk_file_name)->second.file_size;
 	}
 }
 
@@ -1295,7 +1313,7 @@ void MergeTreeData::freezePartition(const std::string & prefix)
 	{
 		if (0 == it.name().compare(0, prefix.size(), prefix))
 		{
-			LOG_DEBUG(log, "Freezing part " + it.name());
+			LOG_DEBUG(log, "Freezing part " << it.name());
 
 			String part_absolute_path = it.path().absolute().toString();
 			if (0 != part_absolute_path.compare(0, clickhouse_path.size(), clickhouse_path))

@@ -32,7 +32,12 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
 		return "SELECT name FROM system.databases" + format_or_nothing;
 
 	String database = query.from.empty() ? context.getCurrentDatabase() : query.from;
-	context.assertDatabaseExists(database);
+
+	/** Параметр check_database_access_rights сбрасывается при обработке запроса SHOW TABLES для того,
+	  * чтобы все клиенты могли видеть список всех БД и таблиц в них независимо от их прав доступа
+	  * к этим БД.
+	  */
+	context.assertDatabaseExists(database, false);
 
 	std::stringstream rewritten_query;
 	rewritten_query << "SELECT name FROM system.tables WHERE database = " << mysqlxx::quote << database;

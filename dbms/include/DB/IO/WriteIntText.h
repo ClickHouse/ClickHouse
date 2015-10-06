@@ -4,7 +4,7 @@
 #include <boost/type_traits.hpp>
 #include <boost/utility/enable_if.hpp>
 
-#include <Yandex/likely.h>
+#include <common/likely.h>
 
 #include <DB/Core/Types.h>
 #include <DB/IO/WriteBuffer.h>

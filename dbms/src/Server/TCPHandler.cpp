@@ -2,9 +2,9 @@
 
 #include <Poco/Net/NetException.h>
 
-#include <Yandex/Revision.h>
+#include <common/Revision.h>
 
-#include <statdaemons/Stopwatch.h>
+#include <DB/Common/Stopwatch.h>
 
 #include <DB/Core/ErrorCodes.h>
 #include <DB/Core/Progress.h>
@@ -28,7 +28,7 @@
 
 #include "TCPHandler.h"
 
-#include <statdaemons/NetException.h>
+#include <DB/Common/NetException.h>
 
 namespace DB
 {
@@ -570,7 +570,7 @@ bool TCPHandler::receiveData()
 				query_context.addExternalTable(external_table_name, storage);
 			}
 			/// Данные будем писать напрямую в таблицу.
-			state.io.out = storage->write(ASTPtr());
+			state.io.out = storage->write(ASTPtr(), query_context.getSettingsRef());
 		}
 		if (block)
 			state.io.out->write(block);

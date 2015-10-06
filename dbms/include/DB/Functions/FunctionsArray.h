@@ -17,7 +17,7 @@
 #include <DB/Functions/NumberTraits.h>
 #include <DB/Functions/FunctionsConditional.h>
 
-#include <statdaemons/ext/range.hpp>
+#include <ext/range.hpp>
 
 #include <unordered_map>
 
@@ -776,7 +776,7 @@ public:
 struct IndexToOne
 {
 	typedef UInt8 ResultType;
-	static inline bool apply(size_t j, ResultType & current) { current = 1; return false; }
+	static bool apply(size_t j, ResultType & current) { current = 1; return false; }
 };
 
 /// Для indexOf.
@@ -784,23 +784,29 @@ struct IndexIdentity
 {
 	typedef UInt64 ResultType;
 	/// Индекс возвращается начиная с единицы.
-	static inline bool apply(size_t j, ResultType & current) { current = j + 1; return false; }
+	static bool apply(size_t j, ResultType & current) { current = j + 1; return false; }
 };
 
 /// Для countEqual.
 struct IndexCount
 {
 	typedef UInt32 ResultType;
-	static inline bool apply(size_t j, ResultType & current) { ++current; return true; }
+	static bool apply(size_t j, ResultType & current) { ++current; return true; }
 };
 
 
 template <typename T, typename IndexConv>
 struct ArrayIndexNumImpl
 {
+	/// compares `lhs` against `i`-th element of `rhs`
+	static bool compare(const T & lhs, const PODArray<T> & rhs, const std::size_t i ) { return lhs == rhs[i]; }
+	/// compares `lhs against `rhs`, third argument unused
+	static bool compare(const T & lhs, const T & rhs, std::size_t) { return lhs == rhs; }
+
+	template <typename ScalarOrVector>
 	static void vector(
 		const PODArray<T> & data, const ColumnArray::Offsets_t & offsets,
-		const T value,
+		const ScalarOrVector & value,
 		PODArray<typename IndexConv::ResultType> & result)
 	{
 		size_t size = offsets.size();
@@ -814,7 +820,7 @@ struct ArrayIndexNumImpl
 
 			for (size_t j = 0; j < array_size; ++j)
 			{
-				if (data[current_offset + j] == value)
+				if (compare(data[current_offset + j], value, i))
 				{
 					if (!IndexConv::apply(j, current))
 						break;
@@ -830,19 +836,19 @@ struct ArrayIndexNumImpl
 template <typename IndexConv>
 struct ArrayIndexStringImpl
 {
-	static void vector(
+	static void vector_const(
 		const ColumnString::Chars_t & data, const ColumnArray::Offsets_t & offsets, const ColumnString::Offsets_t & string_offsets,
 		const String & value,
 		PODArray<typename IndexConv::ResultType> & result)
 	{
-		size_t size = offsets.size();
-		size_t value_size = value.size();
+		const auto size = offsets.size();
+		const auto value_size = value.size();
 		result.resize(size);
 
 		ColumnArray::Offset_t current_offset = 0;
 		for (size_t i = 0; i < size; ++i)
 		{
-			size_t array_size = offsets[i] - current_offset;
+			const auto array_size = offsets[i] - current_offset;
 			typename IndexConv::ResultType current = 0;
 
 			for (size_t j = 0; j < array_size; ++j)
@@ -854,6 +860,42 @@ struct ArrayIndexStringImpl
 				ColumnArray::Offset_t string_size = string_offsets[current_offset + j] - string_pos;
 
 				if (string_size == value_size + 1 && 0 == memcmp(value.data(), &data[string_pos], value_size))
+				{
+					if (!IndexConv::apply(j, current))
+						break;
+				}
+			}
+
+			result[i] = current;
+			current_offset = offsets[i];
+		}
+	}
+
+	static void vector_vector(
+		const ColumnString::Chars_t & data, const ColumnArray::Offsets_t & offsets, const ColumnString::Offsets_t & string_offsets,
+		const ColumnString::Chars_t & item_values, const ColumnString::Offsets_t & item_offsets,
+		PODArray<typename IndexConv::ResultType> & result)
+	{
+		const auto size = offsets.size();
+		result.resize(size);
+
+		ColumnArray::Offset_t current_offset = 0;
+		for (size_t i = 0; i < size; ++i)
+		{
+			const auto array_size = offsets[i] - current_offset;
+			typename IndexConv::ResultType current = 0;
+			const auto value_pos = 0 == i ? 0 : item_offsets[i - 1];
+			const auto value_size = item_offsets[i] - value_pos;
+
+			for (size_t j = 0; j < array_size; ++j)
+			{
+				ColumnArray::Offset_t string_pos = current_offset == 0 && j == 0
+												   ? 0
+												   : string_offsets[current_offset + j - 1];
+
+				ColumnArray::Offset_t string_size = string_offsets[current_offset + j] - string_pos;
+
+				if (string_size == value_size && 0 == memcmp(&item_values[value_pos], &data[string_pos], value_size))
 				{
 					if (!IndexConv::apply(j, current))
 						break;
@@ -878,7 +920,7 @@ private:
 	typedef ColumnVector<typename IndexConv::ResultType> ResultColumnType;
 
 	template <typename T>
-	bool executeNumber(Block & block, const ColumnNumbers & arguments, size_t result, const Field & value)
+	bool executeNumber(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		const ColumnArray * col_array = typeid_cast<const ColumnArray *>(&*block.getByPosition(arguments[0]).column);
 
@@ -890,19 +932,31 @@ private:
 		if (!col_nested)
 			return false;
 
-		ResultColumnType * col_res = new ResultColumnType;
-		block.getByPosition(result).column = col_res;
+		const auto item_arg = block.getByPosition(arguments[1]).column.get();
 
-		ArrayIndexNumImpl<T, IndexConv>::vector(
-			col_nested->getData(),
-			col_array->getOffsets(),
-			safeGet<typename NearestFieldType<T>::Type>(value),
-			col_res->getData());
+		if (const auto item_arg_const = typeid_cast<const ColumnConst<T> *>(item_arg))
+		{
+			const auto col_res = new ResultColumnType;
+			ColumnPtr col_ptr{col_res};
+			block.getByPosition(result).column = col_ptr;
+
+			ArrayIndexNumImpl<T, IndexConv>::vector(col_nested->getData(), col_array->getOffsets(),
+				item_arg_const->getData(), col_res->getData());
+		}
+		else if (const auto item_arg_vector = typeid_cast<const ColumnVector<T> *>(item_arg))
+		{
+			const auto col_res = new ResultColumnType;
+			ColumnPtr col_ptr{col_res};
+			block.getByPosition(result).column = col_ptr;
+
+			ArrayIndexNumImpl<T, IndexConv>::vector(col_nested->getData(), col_array->getOffsets(),
+				item_arg_vector->getData(), col_res->getData());
+		}
 
 		return true;
 	}
 
-	bool executeString(Block & block, const ColumnNumbers & arguments, size_t result, const Field & value)
+	bool executeString(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		const ColumnArray * col_array = typeid_cast<const ColumnArray *>(&*block.getByPosition(arguments[0]).column);
 
@@ -914,20 +968,32 @@ private:
 		if (!col_nested)
 			return false;
 
-		ResultColumnType * col_res = new ResultColumnType;
-		block.getByPosition(result).column = col_res;
+		const auto item_arg = block.getByPosition(arguments[1]).column.get();
 
-		ArrayIndexStringImpl<IndexConv>::vector(
-			col_nested->getChars(),
-			col_array->getOffsets(),
-			col_nested->getOffsets(),
-			safeGet<const String &>(value),
-			col_res->getData());
+		if (const auto item_arg_const = typeid_cast<const ColumnConst<String> *>(item_arg))
+		{
+			const auto col_res = new ResultColumnType;
+			ColumnPtr col_ptr{col_res};
+			block.getByPosition(result).column = col_ptr;
+
+			ArrayIndexStringImpl<IndexConv>::vector_const(col_nested->getChars(), col_array->getOffsets(),
+				col_nested->getOffsets(), item_arg_const->getData(), col_res->getData());
+		}
+		else if (const auto item_arg_vector = typeid_cast<const ColumnString *>(item_arg))
+		{
+			const auto col_res = new ResultColumnType;
+			ColumnPtr col_ptr{col_res};
+			block.getByPosition(result).column = col_ptr;
+
+			ArrayIndexStringImpl<IndexConv>::vector_vector(col_nested->getChars(), col_array->getOffsets(),
+				col_nested->getOffsets(), item_arg_vector->getChars(), item_arg_vector->getOffsets(),
+				col_res->getData());
+		}
 
 		return true;
 	}
 
-	bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & value)
+	bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
 		const ColumnConstArray * col_array = typeid_cast<const ColumnConstArray *>(&*block.getByPosition(arguments[0]).column);
 
@@ -936,22 +1002,47 @@ private:
 
 		const Array & arr = col_array->getData();
 
-		size_t i = 0;
-		size_t size = arr.size();
-		typename IndexConv::ResultType current = 0;
-
-		for (; i < size; ++i)
+		const auto item_arg = block.getByPosition(arguments[1]).column.get();
+		if (item_arg->isConst())
 		{
-			if (arr[i] == value)
+			typename IndexConv::ResultType current{};
+			const auto & value = (*item_arg)[0];
+
+			for (size_t i = 0, size = arr.size(); i < size; ++i)
 			{
-				if (!IndexConv::apply(i, current))
-					break;
+				if (arr[i] == value)
+				{
+					if (!IndexConv::apply(i, current))
+						break;
+				}
+			}
+
+			block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(
+				item_arg->size(),
+				static_cast<typename NearestFieldType<typename IndexConv::ResultType>::Type>(current));
+		}
+		else
+		{
+			const auto size = item_arg->size();
+			const auto col_res = new ResultColumnType{size, {}};
+			ColumnPtr col_ptr{col_res};
+			block.getByPosition(result).column = col_ptr;
+
+			auto & data = col_res->getData();
+
+			for (size_t row = 0; row < size; ++row)
+			{
+				const auto & value = (*item_arg)[row];
+				for (size_t i = 0, size = arr.size(); i < size; ++i)
+				{
+					if (arr[i] == value)
+					{
+						if (!IndexConv::apply(i, data[row]))
+							break;
+					}
+				}
 			}
 		}
-
-		block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(
-			block.rowsInFirstColumn(),
-			static_cast<typename NearestFieldType<typename IndexConv::ResultType>::Type>(current));
 
 		return true;
 	}
@@ -986,26 +1077,23 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (!block.getByPosition(arguments[1]).column->isConst())
-			throw Exception("Second argument for function " + getName() + " must be constant.", ErrorCodes::ILLEGAL_COLUMN);
-
-		Field value = (*block.getByPosition(arguments[1]).column)[0];
-
-		if (!(	executeNumber<UInt8>	(block, arguments, result, value)
-			||	executeNumber<UInt16>	(block, arguments, result, value)
-			||	executeNumber<UInt32>	(block, arguments, result, value)
-			||	executeNumber<UInt64>	(block, arguments, result, value)
-			||	executeNumber<Int8>		(block, arguments, result, value)
-			||	executeNumber<Int16>	(block, arguments, result, value)
-			||	executeNumber<Int32>	(block, arguments, result, value)
-			||	executeNumber<Int64>	(block, arguments, result, value)
-			||	executeNumber<Float32>	(block, arguments, result, value)
-			||	executeNumber<Float64>	(block, arguments, result, value)
-			||	executeConst			(block, arguments, result, value)
-			||	executeString			(block, arguments, result, value)))
-		   throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-					+ " of first argument of function " + getName(),
-				ErrorCodes::ILLEGAL_COLUMN);
+		if (!(executeNumber<UInt8>(block, arguments, result)
+			  || executeNumber<UInt16>(block, arguments, result)
+			  || executeNumber<UInt32>(block, arguments, result)
+			  || executeNumber<UInt64>(block, arguments, result)
+			  || executeNumber<Int8>(block, arguments, result)
+			  || executeNumber<Int16>(block, arguments, result)
+			  || executeNumber<Int32>(block, arguments, result)
+			  || executeNumber<Int64>(block, arguments, result)
+			  || executeNumber<Float32>(block, arguments, result)
+			  || executeNumber<Float64>(block, arguments, result)
+			  || executeConst(block, arguments, result)
+			  || executeString(block, arguments, result)))
+			throw Exception{
+				"Illegal column " + block.getByPosition(arguments[0]).column->getName()
+				+ " of first argument of function " + getName(),
+				ErrorCodes::ILLEGAL_COLUMN
+			};
 	}
 };
 

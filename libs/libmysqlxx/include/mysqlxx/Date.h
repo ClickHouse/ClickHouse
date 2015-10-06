@@ -2,7 +2,7 @@
 
 #include <string.h>
 #include <string>
-#include <Yandex/DateLUT.h>
+#include <common/DateLUT.h>
 
 #include <mysqlxx/Exception.h>
 

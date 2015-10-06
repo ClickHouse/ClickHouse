@@ -4,8 +4,8 @@
 #include <memory>
 #include <functional>
 
-#include <Yandex/logger_useful.h>
-#include <statdaemons/threadpool.hpp>
+#include <common/logger_useful.h>
+#include <common/threadpool.hpp>
 
 #include <DB/Core/StringRef.h>
 #include <DB/Common/Arena.h>
@@ -319,7 +319,7 @@ struct AggregationMethodKeysFixed
 };
 
 
-/// Для остальных случаев. Агрегирует по конкатенации ключей. (При этом, строки, содержащие нули посередине, могут склеиться.)
+/// Агрегирует по конкатенации ключей. (При этом, строки, содержащие нули посередине, могут склеиться.)
 template <typename TData>
 struct AggregationMethodConcat
 {
@@ -388,6 +388,70 @@ struct AggregationMethodConcat
 			for (size_t i = 0; i < keys_size; ++i)
 				key_columns[i]->insertDataWithTerminatingZero(key_refs[i].data, key_refs[i].size);
 		}
+	}
+};
+
+
+/** Агрегирует по конкатенации сериализованных значений ключей.
+  * Похож на AggregationMethodConcat, но подходит, например, для массивов строк или нескольких массивов.
+  * Сериализованное значение отличается тем, что позволяет однозначно его десериализовать, имея только позицию, с которой оно начинается.
+  * То есть, например, для строк, оно содержит сначала сериализованную длину строки, а потом байты.
+  * Поэтому, при агрегации по нескольким строкам, неоднозначностей не возникает.
+  */
+template <typename TData>
+struct AggregationMethodSerialized
+{
+	typedef TData Data;
+	typedef typename Data::key_type Key;
+	typedef typename Data::mapped_type Mapped;
+	typedef typename Data::iterator iterator;
+	typedef typename Data::const_iterator const_iterator;
+
+	Data data;
+
+	AggregationMethodSerialized() {}
+
+	template <typename Other>
+	AggregationMethodSerialized(const Other & other) : data(other.data) {}
+
+	struct State
+	{
+		void init(ConstColumnPlainPtrs & key_columns)
+		{
+		}
+
+		Key getKey(
+			const ConstColumnPlainPtrs & key_columns,
+			size_t keys_size,
+			size_t i,
+			const Sizes & key_sizes,
+			StringRefs & keys,
+			Arena & pool) const
+		{
+			return serializeKeysToPoolContiguous(i, keys_size, key_columns, keys, pool);
+		}
+	};
+
+	static AggregateDataPtr & getAggregateData(Mapped & value) 				{ return value; }
+	static const AggregateDataPtr & getAggregateData(const Mapped & value) 	{ return value; }
+
+	static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
+	{
+	}
+
+	static void onExistingKey(const Key & key, StringRefs & keys, Arena & pool)
+	{
+		pool.rollback(key.size);
+	}
+
+	/// Если ключ уже был, то он удаляется из пула (затирается), и сравнить с ним следующий ключ уже нельзя.
+	static const bool no_consecutive_keys_optimization = true;
+
+	static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
+	{
+		auto pos = value.first.data;
+		for (size_t i = 0; i < keys_size; ++i)
+			pos = key_columns[i]->deserializeAndInsertFromArena(pos);
 	}
 };
 
@@ -492,6 +556,7 @@ struct AggregatedDataVariants : private boost::noncopyable
 	std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256>> 					keys256;
 	std::unique_ptr<AggregationMethodHashed<AggregatedDataHashed>> 							hashed;
 	std::unique_ptr<AggregationMethodConcat<AggregatedDataWithStringKey>> 					concat;
+	std::unique_ptr<AggregationMethodSerialized<AggregatedDataWithStringKey>> 				serialized;
 
 	std::unique_ptr<AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64KeyTwoLevel>>	key32_two_level;
 	std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyTwoLevel>>	key64_two_level;
@@ -501,6 +566,7 @@ struct AggregatedDataVariants : private boost::noncopyable
 	std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel>> 				keys256_two_level;
 	std::unique_ptr<AggregationMethodHashed<AggregatedDataHashedTwoLevel>> 						hashed_two_level;
 	std::unique_ptr<AggregationMethodConcat<AggregatedDataWithStringKeyTwoLevel>> 				concat_two_level;
+	std::unique_ptr<AggregationMethodSerialized<AggregatedDataWithStringKeyTwoLevel>> 			serialized_two_level;
 
 	/// В этом и подобных макросах, вариант without_key не учитывается.
 	#define APPLY_FOR_AGGREGATED_VARIANTS(M) \
@@ -514,6 +580,7 @@ struct AggregatedDataVariants : private boost::noncopyable
 		M(keys256,				false) \
 		M(hashed,				false) \
 		M(concat,				false) \
+		M(serialized,			false) \
 		M(key32_two_level,				true) \
 		M(key64_two_level,				true) \
 		M(key_string_two_level,			true) \
@@ -521,7 +588,8 @@ struct AggregatedDataVariants : private boost::noncopyable
 		M(keys128_two_level,			true) \
 		M(keys256_two_level,			true) \
 		M(hashed_two_level,				true) \
-		M(concat_two_level,				true)
+		M(concat_two_level,				true) \
+		M(serialized_two_level,			true) \
 
 	enum class Type
 	{
@@ -636,7 +704,8 @@ struct AggregatedDataVariants : private boost::noncopyable
 		M(keys128)			\
 		M(keys256)			\
 		M(hashed)			\
-		M(concat)
+		M(concat)			\
+		M(serialized)		\
 
 	#define APPLY_FOR_VARIANTS_NOT_CONVERTIBLE_TO_TWO_LEVEL(M) \
 		M(key8)				\
@@ -667,7 +736,8 @@ struct AggregatedDataVariants : private boost::noncopyable
 			M(keys128_two_level)			\
 			M(keys256_two_level)			\
 			M(hashed_two_level)				\
-			M(concat_two_level)
+			M(concat_two_level)				\
+			M(serialized_two_level)
 };
 
 typedef SharedPtr<AggregatedDataVariants> AggregatedDataVariantsPtr;

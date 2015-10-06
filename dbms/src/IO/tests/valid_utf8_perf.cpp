@@ -1,6 +1,6 @@
 #include <DB/IO/WriteBufferValidUTF8.h>
 #include <DB/IO/WriteBufferFromString.h>
-#include <statdaemons/Stopwatch.h>
+#include <DB/Common/Stopwatch.h>
 #include <string>
 #include <streambuf>
 #include <iostream>

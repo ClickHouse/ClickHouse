@@ -138,8 +138,14 @@ public:
 	bool isTableExist(const String & database_name, const String & table_name) const;
 	bool isDatabaseExist(const String & database_name) const;
 	void assertTableExists(const String & database_name, const String & table_name) const;
-	void assertTableDoesntExist(const String & database_name, const String & table_name) const;
-	void assertDatabaseExists(const String & database_name) const;
+
+	/** Параметр check_database_access_rights существует, чтобы не проверить повторно права доступа к БД,
+	  * когда assertTableDoesnExist или assertDatabaseExists вызывается внутри другой функции, которая уже
+	  * сделала эту проверку.
+	  */
+	void assertTableDoesntExist(const String & database_name, const String & table_name, bool check_database_acccess_rights = true) const;
+	void assertDatabaseExists(const String & database_name, bool check_database_acccess_rights = true) const;
+
 	void assertDatabaseDoesntExist(const String & database_name) const;
 
 	Tables getExternalTables() const;
@@ -190,6 +196,8 @@ public:
 	/// Как другие серверы могут обратиться к этому для скачивания реплицируемых данных.
 	void setInterserverIOAddress(const String & host, UInt16 port);
 	std::pair<String, UInt16> getInterserverIOAddress() const;
+	/// Порт, который сервер слушает для выполнения SQL-запросов.
+	UInt16 getTCPPort() const;
 
 	/// Получить запрос на CREATE таблицы.
 	ASTPtr getCreateQuery(const String & database_name, const String & table_name) const;
@@ -264,6 +272,12 @@ public:
 	void shutdown();
 
 private:
+	/** Проверить, имеет ли текущий клиент доступ к заданной базе данных.
+	  * Если доступ запрещён, кинуть исключение.
+	  * NOTE: Этот метод надо всегда вызывать при захваченном мьютексе shared->mutex.
+	  */
+	void checkDatabaseAccessRights(const std::string & database_name) const;
+
 	const Dictionaries & getDictionariesImpl(bool throw_on_error) const;
 	const ExternalDictionaries & getExternalDictionariesImpl(bool throw_on_error) const;
 

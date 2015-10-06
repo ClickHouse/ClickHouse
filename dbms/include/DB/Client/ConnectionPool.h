@@ -1,6 +1,6 @@
 #pragma once
 
-#include <statdaemons/PoolBase.h>
+#include <DB/Common/PoolBase.h>
 
 #include <DB/Client/Connection.h>
 

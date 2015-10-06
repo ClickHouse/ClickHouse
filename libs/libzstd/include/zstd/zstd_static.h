@@ -74,9 +74,9 @@ size_t ZSTD_decompressContinue(ZSTD_Dctx* dctx, void* dst, size_t maxDstSize, co
 **************************************/
 #define ZSTD_LIST_ERRORS(ITEM) \
         ITEM(ZSTD_OK_NoError) ITEM(ZSTD_ERROR_GENERIC) \
-        ITEM(ZSTD_ERROR_wrongMagicNumber) \
-        ITEM(ZSTD_ERROR_wrongSrcSize) ITEM(ZSTD_ERROR_maxDstSize_tooSmall) \
-        ITEM(ZSTD_ERROR_wrongLBlockSize) \
+        ITEM(ZSTD_ERROR_MagicNumber) \
+        ITEM(ZSTD_ERROR_SrcSize) ITEM(ZSTD_ERROR_maxDstSize_tooSmall) \
+        ITEM(ZSTD_ERROR_corruption) \
         ITEM(ZSTD_ERROR_maxCode)
 
 #define ZSTD_GENERATE_ENUM(ENUM) ENUM,

@@ -2,7 +2,7 @@
 
 #include <DB/Common/HashTable/SmallTable.h>
 #include <DB/Common/HashTable/HashSet.h>
-#include <statdaemons/HyperLogLogCounter.h>
+#include <DB/Common/HyperLogLogCounter.h>
 #include <DB/Core/Defines.h>
 
 

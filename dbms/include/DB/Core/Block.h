@@ -8,7 +8,7 @@
 #include <DB/Core/BlockInfo.h>
 #include <DB/Core/ColumnWithTypeAndName.h>
 #include <DB/Core/NamesAndTypes.h>
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 #include "ColumnsWithTypeAndName.h"
 

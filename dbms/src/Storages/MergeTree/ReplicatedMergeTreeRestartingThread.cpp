@@ -1,6 +1,9 @@
 #include <DB/IO/Operators.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeRestartingThread.h>
+#include <DB/Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
+#include <DB/Storages/MergeTree/ReplicatedMergeTreeAddress.h>
+#include <DB/Common/setThreadName.h>
 
 
 namespace DB
@@ -30,6 +33,8 @@ void ReplicatedMergeTreeRestartingThread::run()
 {
 	constexpr auto retry_delay_ms = 10 * 1000;
 	constexpr auto check_delay_ms = 60 * 1000;
+
+	setThreadName("ReplMTRestart");
 
 	try
 	{
@@ -110,7 +115,9 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
 {
 	try
 	{
+		removeFailedQuorumParts();
 		activateReplica();
+		updateQuorumIfWeHavePart();
 
 		storage.leader_election = new zkutil::LeaderElection(
 			storage.zookeeper_path + "/leader_election",
@@ -165,33 +172,93 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
 }
 
 
+void ReplicatedMergeTreeRestartingThread::removeFailedQuorumParts()
+{
+	auto zookeeper = storage.getZooKeeper();
+
+	Strings failed_parts;
+	if (!zookeeper->tryGetChildren(storage.zookeeper_path + "/quorum/failed_parts", failed_parts))
+		return;
+
+	for (auto part_name : failed_parts)
+	{
+		auto part = storage.data.getPartIfExists(part_name);
+		if (part)
+		{
+			LOG_DEBUG(log, "Found part " << part_name << " with failed quorum. Moving to detached. This shouldn't happen often.");
+
+			zkutil::Ops ops;
+			storage.removePartFromZooKeeper(part_name, ops);
+			auto code = zookeeper->tryMulti(ops);
+			if (code == ZNONODE)
+				LOG_WARNING(log, "Part " << part_name << " with failed quorum is not in ZooKeeper. This shouldn't happen often.");
+
+			storage.data.renameAndDetachPart(part, "noquorum");
+		}
+	}
+}
+
+
+void ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart()
+{
+	auto zookeeper = storage.getZooKeeper();
+
+	String quorum_str;
+	if (zookeeper->tryGet(storage.zookeeper_path + "/quorum/status", quorum_str))
+	{
+		ReplicatedMergeTreeQuorumEntry quorum_entry;
+		quorum_entry.fromString(quorum_str);
+
+		if (!quorum_entry.replicas.count(storage.replica_name)
+			&& zookeeper->exists(storage.replica_path + "/parts/" + quorum_entry.part_name))
+		{
+			LOG_WARNING(log, "We have part " << quorum_entry.part_name
+				<< " but we is not in quorum. Updating quorum. This shouldn't happen often.");
+			storage.updateQuorum(quorum_entry.part_name);
+		}
+	}
+}
+
+
 void ReplicatedMergeTreeRestartingThread::activateReplica()
 {
 	auto host_port = storage.context.getInterserverIOAddress();
 	auto zookeeper = storage.getZooKeeper();
 
-	std::string address;
-	{
-		WriteBufferFromString address_buf(address);
-		address_buf
-			<< "host: " << host_port.first << '\n'
-			<< "port: " << host_port.second << '\n';
-	}
+	/// Как другие реплики могут обращаться к данной.
+	ReplicatedMergeTreeAddress address;
+	address.host = host_port.first;
+	address.replication_port = host_port.second;
+	address.queries_port = storage.context.getTCPPort();
+	address.database = storage.database_name;
+	address.table = storage.table_name;
+
+	String is_active_path = storage.replica_path + "/is_active";
 
 	/** Если нода отмечена как активная, но отметка сделана в этом же экземпляре, удалим ее.
 	  * Такое возможно только при истечении сессии в ZooKeeper.
-	  * Здесь есть небольшой race condition (можем удалить не ту ноду, для которой сделали tryGet),
-	  *  но он крайне маловероятен при нормальном использовании.
 	  */
 	String data;
-	if (zookeeper->tryGet(storage.replica_path + "/is_active", data) && data == active_node_identifier)
-		zookeeper->tryRemove(storage.replica_path + "/is_active");
+	Stat stat;
+	bool has_is_active = zookeeper->tryGet(is_active_path, data, &stat);
+	if (has_is_active && data == active_node_identifier)
+	{
+		auto code = zookeeper->tryRemove(is_active_path, stat.version);
+
+		if (code == ZBADVERSION)
+			throw Exception("Another instance of replica " + storage.replica_path + " was created just now."
+				" You shouldn't run multiple instances of same replica. You need to check configuration files.",
+				ErrorCodes::REPLICA_IS_ALREADY_ACTIVE);
+
+		if (code != ZOK && code != ZNONODE)
+			throw zkutil::KeeperException(code, is_active_path);
+	}
 
 	/// Одновременно объявим, что эта реплика активна, и обновим хост.
 	zkutil::Ops ops;
-	ops.push_back(new zkutil::Op::Create(storage.replica_path + "/is_active",
+	ops.push_back(new zkutil::Op::Create(is_active_path,
 		active_node_identifier, zookeeper->getDefaultACL(), zkutil::CreateMode::Ephemeral));
-	ops.push_back(new zkutil::Op::SetData(storage.replica_path + "/host", address, -1));
+	ops.push_back(new zkutil::Op::SetData(storage.replica_path + "/host", address.toString(), -1));
 
 	try
 	{
@@ -208,7 +275,7 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
 
 	/// current_zookeeper живёт в течение времени жизни replica_is_active_node,
 	///  так как до изменения current_zookeeper, объект replica_is_active_node уничтожается в методе partialShutdown.
-	storage.replica_is_active_node = zkutil::EphemeralNodeHolder::existing(storage.replica_path + "/is_active", *storage.current_zookeeper);
+	storage.replica_is_active_node = zkutil::EphemeralNodeHolder::existing(is_active_path, *storage.current_zookeeper);
 }
 
 
