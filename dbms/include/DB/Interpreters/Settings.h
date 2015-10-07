@@ -152,8 +152,20 @@ struct Settings
 	/** Логгировать запросы и писать лог в системную таблицу. */ \
 	M(SettingBool, log_queries, 0) \
 	\
+	/** Как выполняются распределённые подзапросы внутри секций IN или JOIN? */ \
+	M(SettingDistributedProductMode, distributed_product_mode, DistributedProductMode::DENY) \
+	\
 	/** Схема выполнения GLOBAL-подзапросов. */ \
 	M(SettingGlobalSubqueriesMethod, global_subqueries_method, GlobalSubqueriesMethod::PUSH) \
+	\
+	/** Максимальное количество одновременно выполняющихся запросов на одного user-а. */ \
+	M(SettingUInt64, max_concurrent_queries_for_user, 0) \
+	\
+	/** Для запросов INSERT в реплицируемую таблицу, ждать записи на указанное число реплик и лианеризовать добавление данных. 0 - отключено. */ \
+	M(SettingUInt64, insert_quorum, 0) \
+	/** Для запросов SELECT из реплицируемой таблицы, кидать исключение, если на реплике нет куска, записанного с кворумом; \
+	  * не читать куски, которые ещё не были записаны с кворумом. */ \
+	M(SettingUInt64, select_sequential_consistency, 0) \
 
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;
@@ -182,6 +194,9 @@ struct Settings
 	  * Профиль также может быть установлен с помощью функций set, как настройка profile.
 	  */
 	void setProfile(const String & profile_name, Poco::Util::AbstractConfiguration & config);
+
+	/// Загрузить настройки по пути из конфига
+	void loadSettingsFromConfig(const String & path, Poco::Util::AbstractConfiguration & config);
 
 	/// Прочитать настройки из буфера. Они записаны как набор name-value пар, идущих подряд, заканчивающихся пустым name.
 	/// Если в настройках выставлено readonly=1, то игнорировать настройки.

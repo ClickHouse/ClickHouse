@@ -46,8 +46,8 @@ extern "C" {
 *  Version
 **************************************/
 #define ZSTD_VERSION_MAJOR    0    /* for breaking interface changes  */
-#define ZSTD_VERSION_MINOR    0    /* for new (non-breaking) interface capabilities */
-#define ZSTD_VERSION_RELEASE  2    /* for tweaks, bug-fixes, or development */
+#define ZSTD_VERSION_MINOR    1    /* for new (non-breaking) interface capabilities */
+#define ZSTD_VERSION_RELEASE  0    /* for tweaks, bug-fixes, or development */
 #define ZSTD_VERSION_NUMBER  (ZSTD_VERSION_MAJOR *100*100 + ZSTD_VERSION_MINOR *100 + ZSTD_VERSION_RELEASE)
 unsigned ZSTD_versionNumber (void);
 
@@ -64,8 +64,8 @@ size_t ZSTD_decompress( void* dst, size_t maxOriginalSize,
 /*
 ZSTD_compress() :
     Compresses 'srcSize' bytes from buffer 'src' into buffer 'dst', of maximum size 'dstSize'.
-    Destination buffer should be sized to handle worst cases situations (input data not compressible).
-    Worst case size evaluation is provided by function ZSTD_compressBound().
+    Destination buffer must be already allocated.
+    Compression runs faster if maxDstSize >=  ZSTD_compressBound(srcSize).
     return : the number of bytes written into buffer 'dst'
              or an error code if it fails (which can be tested using ZSTD_isError())
 

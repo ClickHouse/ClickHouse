@@ -1,10 +1,10 @@
 #include <Poco/Net/NetException.h>
 
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 
 #include <DB/IO/ReadBufferFromPocoSocket.h>
-#include <statdaemons/NetException.h>
+#include <DB/Common/NetException.h>
 
 
 namespace DB

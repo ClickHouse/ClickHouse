@@ -8,19 +8,17 @@
 #include <Poco/Mutex.h>
 #include <Poco/RWLock.h>
 #include <Poco/Event.h>
+#include <Poco/SharedPtr.h>
 #include <DB/Core/Types.h>
-#include <DB/Core/Exception.h>
-#include <DB/Core/ErrorCodes.h>
-#include <DB/IO/WriteHelpers.h>
-#include <Yandex/logger_useful.h>
 
 namespace DB
 {
 
 /** Используя фиксированное количество потоков, выполнять произвольное количество задач в бесконечном цикле.
+  * При этом, одна задача может выполняться одновременно из разных потоков.
   * Предназначена для задач, выполняющих постоянную фоновую работу (например, слияния).
   * Задача - функция, возвращающая bool - сделала ли она какую-либо работу.
-  * Если сделала - надо выполнить ещё раз. Если нет - надо подождать несколько секунд, или до события wake, и выполнить ещё раз.
+  * Если не сделала, то в следующий раз будет выполнена позже.
   *
   * Также, задача во время выполнения может временно увеличить какой-либо счётчик, относящийся ко всем задачам
   *  - например, число одновременно идующих слияний.
@@ -61,20 +59,8 @@ public:
 	class TaskInfo
 	{
 	public:
-		/// Переставить таск в начало очереди и разбудить какой-нибудь поток.
-		void wake()
-		{
-			Poco::ScopedReadRWLock rlock(rwlock);
-			if (removed)
-				return;
-
-			std::unique_lock<std::mutex> lock(pool.mutex);
-			pool.tasks.splice(pool.tasks.begin(), pool.tasks, iterator);
-
-			/// Не очень надёжно: если все потоки сейчас выполняют работу, этот вызов никого не разбудит,
-			///  и все будут спать в конце итерации.
-			pool.wake_event.notify_one();
-		}
+		/// Разбудить какой-нибудь поток.
+		void wake();
 
 	private:
 		friend class BackgroundProcessingPool;
@@ -82,9 +68,10 @@ public:
 		BackgroundProcessingPool & pool;
 		Task function;
 
-		/// При выполнении задачи, держится read lock. Переменная removed меняется под write lock-ом.
+		/// При выполнении задачи, держится read lock.
 		Poco::RWLock rwlock;
 		volatile bool removed = false;
+		volatile time_t next_time_to_execute = 0;	/// Приоритет задачи. Для совпадающего времени в секундах берётся первая по списку задача.
 
 		std::list<std::shared_ptr<TaskInfo>>::iterator iterator;
 
@@ -94,77 +81,27 @@ public:
 	typedef std::shared_ptr<TaskInfo> TaskHandle;
 
 
-	BackgroundProcessingPool(int size_) : size(size_)
-	{
-		LOG_INFO(&Logger::get("BackgroundProcessingPool"), "Create BackgroundProcessingPool with " << size << " threads");
-
-		threads.resize(size);
-		for (auto & thread : threads)
-			 thread = std::thread([this] { threadFunction(); });
-	}
-
+	BackgroundProcessingPool(int size_);
 
 	size_t getNumberOfThreads() const
 	{
 		return size;
 	}
 
-	int getCounter(const String & name)
-	{
-		std::unique_lock<std::mutex> lock(mutex);
-		return counters[name];
-	}
+	int getCounter(const String & name);
 
-	TaskHandle addTask(const Task & task)
-	{
-		TaskHandle res(new TaskInfo(*this, task));
+	TaskHandle addTask(const Task & task);
+	void removeTask(const TaskHandle & task);
 
-		{
-			std::unique_lock<std::mutex> lock(mutex);
-			tasks.push_back(res);
-			res->iterator = --tasks.end();
-		}
-
-		wake_event.notify_all();
-
-		return res;
-	}
-
-	void removeTask(const TaskHandle & task)
-	{
-		/// Дождёмся завершения всех выполнений этой задачи.
-		{
-			Poco::ScopedWriteRWLock wlock(task->rwlock);
-			task->removed = true;
-		}
-
-		{
-			std::unique_lock<std::mutex> lock(mutex);
-			tasks.erase(task->iterator);
-		}
-	}
-
-	~BackgroundProcessingPool()
-	{
-		try
-		{
-			shutdown = true;
-			wake_event.notify_all();
-			for (std::thread & thread : threads)
-				thread.join();
-		}
-		catch (...)
-		{
-			tryLogCurrentException(__PRETTY_FUNCTION__);
-		}
-	}
+	~BackgroundProcessingPool();
 
 private:
 	typedef std::list<TaskHandle> Tasks;
 	typedef std::vector<std::thread> Threads;
 
 	const size_t size;
-	enum { sleep_seconds = 10 };
+	static constexpr double sleep_seconds = 10;
+	static constexpr double sleep_seconds_random_part = 1.0;
 
 	Tasks tasks; 		/// Задачи в порядке, в котором мы планируем их выполнять.
 	Counters counters;
@@ -176,77 +113,7 @@ private:
 	std::condition_variable wake_event;
 
 
-	void threadFunction()
-	{
-		while (!shutdown)
-		{
-			Counters counters_diff;
-			bool need_sleep = false;
-
-			try
-			{
-				TaskHandle task;
-
-				{
-					std::unique_lock<std::mutex> lock(mutex);
-
-					if (!tasks.empty())
-					{
-						need_sleep = true;
-						task = tasks.front();
-						tasks.splice(tasks.end(), tasks, tasks.begin());
-					}
-				}
-
-				if (shutdown)
-					break;
-
-				if (!task)
-				{
-					std::unique_lock<std::mutex> lock(mutex);
-					wake_event.wait_for(lock, std::chrono::duration<double>(sleep_seconds));
-					continue;
-				}
-
-				Poco::ScopedReadRWLock rlock(task->rwlock);
-				if (task->removed)
-					continue;
-
-				Context context(*this, counters_diff);
-
-				if (task->function(context))
-				{
-					/// Если у задачи получилось выполнить какую-то работу, запустим её снова без паузы.
-					need_sleep = false;
-
-					std::unique_lock<std::mutex> lock(mutex);
-					tasks.splice(tasks.begin(), tasks, task->iterator);
-				}
-			}
-			catch (...)
-			{
-				need_sleep = true;
-				tryLogCurrentException(__PRETTY_FUNCTION__);
-			}
-
-			/// Вычтем все счётчики обратно.
-			if (!counters_diff.empty())
-			{
-				std::unique_lock<std::mutex> lock(mutex);
-				for (const auto & it : counters_diff)
-					counters[it.first] -= it.second;
-			}
-
-			if (shutdown)
-				break;
-
-			if (need_sleep)
-			{
-				std::unique_lock<std::mutex> lock(mutex);
-				wake_event.wait_for(lock, std::chrono::duration<double>(sleep_seconds));
-			}
-		}
-	}
+	void threadFunction();
 };
 
 typedef Poco::SharedPtr<BackgroundProcessingPool> BackgroundProcessingPoolPtr;

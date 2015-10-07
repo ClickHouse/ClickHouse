@@ -1,4 +1,4 @@
-#include <statdaemons/Stopwatch.h>
+#include <DB/Common/Stopwatch.h>
 #include <DB/Parsers/ASTCreateQuery.h>
 #include <DB/Parsers/parseQuery.h>
 #include <DB/Parsers/ExpressionElementParsers.h>
@@ -15,6 +15,7 @@
 #include <DB/Interpreters/InterpreterCreateQuery.h>
 #include <DB/Interpreters/InterpreterRenameQuery.h>
 #include <DB/Interpreters/QueryLog.h>
+#include <DB/Common/setThreadName.h>
 
 
 namespace DB
@@ -116,6 +117,8 @@ QueryLog::~QueryLog()
 
 void QueryLog::threadFunction()
 {
+	setThreadName("QueryLogFlush");
+
 	Stopwatch time_after_last_write;
 	bool first = true;
 
@@ -261,7 +264,7 @@ void QueryLog::flush()
 			block.unsafeGetByPosition(i++).column.get()->insertData(elem.query_id.data(), elem.query_id.size());
 		}
 
-		BlockOutputStreamPtr stream = table->write(nullptr);
+		BlockOutputStreamPtr stream = table->write({}, {});
 
 		stream->writePrefix();
 		stream->write(block);

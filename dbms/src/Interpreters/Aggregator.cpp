@@ -4,10 +4,11 @@
 
 #include <cxxabi.h>
 
-#include <statdaemons/Stopwatch.h>
+#include <DB/Common/Stopwatch.h>
 
 #include <DB/DataTypes/DataTypeAggregateFunction.h>
 #include <DB/Columns/ColumnsNumber.h>
+#include <DB/Columns/ColumnArray.h>
 #include <DB/AggregateFunctions/AggregateFunctionCount.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 
@@ -323,16 +324,33 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
 
 	bool all_fixed = true;
 	size_t keys_bytes = 0;
+
+	size_t num_array_keys = 0;
+	bool has_arrays_of_non_fixed_elems = false;
+	bool all_non_array_keys_are_fixed = true;
+
 	key_sizes.resize(keys_size);
 	for (size_t j = 0; j < keys_size; ++j)
 	{
-		if (!key_columns[j]->isFixed())
+		if (key_columns[j]->isFixed())
+		{
+			key_sizes[j] = key_columns[j]->sizeOfField();
+			keys_bytes += key_sizes[j];
+		}
+		else
 		{
 			all_fixed = false;
-			break;
+
+			if (const ColumnArray * arr = typeid_cast<const ColumnArray *>(key_columns[j]))
+			{
+				++num_array_keys;
+
+				if (!arr->getData().isFixed())
+					has_arrays_of_non_fixed_elems = true;
+			}
+			else
+				all_non_array_keys_are_fixed = false;
 		}
-		key_sizes[j] = key_columns[j]->sizeOfField();
-		keys_bytes += key_sizes[j];
 	}
 
 	/// Если ключей нет
@@ -366,6 +384,13 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
 
 	if (keys_size == 1 && typeid_cast<const ColumnFixedString *>(key_columns[0]))
 		return AggregatedDataVariants::Type::key_fixed_string;
+
+	/** Если есть массивы.
+	  * Если есть не более одного массива из элементов фиксированной длины, и остальные ключи фиксированной длины,
+	  *  то всё ещё можно использовать метод concat. Иначе - serialized.
+	  */
+	if (num_array_keys > 1 || has_arrays_of_non_fixed_elems || (num_array_keys == 1 && !all_non_array_keys_are_fixed))
+		return AggregatedDataVariants::Type::serialized;
 
 	/// Иначе будем агрегировать по конкатенации ключей.
 	return AggregatedDataVariants::Type::concat;
@@ -1387,6 +1412,8 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 		mergeSingleLevelDataImpl<decltype(res->hashed)::element_type>(non_empty_data);
 	else if (res->type == AggregatedDataVariants::Type::concat)
 		mergeSingleLevelDataImpl<decltype(res->concat)::element_type>(non_empty_data);
+	else if (res->type == AggregatedDataVariants::Type::serialized)
+		mergeSingleLevelDataImpl<decltype(res->serialized)::element_type>(non_empty_data);
 	else if (res->type == AggregatedDataVariants::Type::key32_two_level)
 		mergeTwoLevelDataImpl<decltype(res->key32_two_level)::element_type>(non_empty_data, thread_pool.get());
 	else if (res->type == AggregatedDataVariants::Type::key64_two_level)
@@ -1403,6 +1430,8 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 		mergeTwoLevelDataImpl<decltype(res->hashed_two_level)::element_type>(non_empty_data, thread_pool.get());
 	else if (res->type == AggregatedDataVariants::Type::concat_two_level)
 		mergeTwoLevelDataImpl<decltype(res->concat_two_level)::element_type>(non_empty_data, thread_pool.get());
+	else if (res->type == AggregatedDataVariants::Type::serialized_two_level)
+		mergeTwoLevelDataImpl<decltype(res->serialized_two_level)::element_type>(non_empty_data, thread_pool.get());
 	else if (res->type != AggregatedDataVariants::Type::without_key)
 		throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 
@@ -1699,7 +1728,11 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
 
 	AggregateColumnsData aggregate_columns(aggregates_size);
 
-	initialize(blocks.front());
+	Block empty_block;
+	initialize(empty_block);
+
+	if (!sample)
+		sample = blocks.front().cloneEmpty();
 
 	/// Каким способом выполнять агрегацию?
 	for (size_t i = 0; i < keys_size; ++i)
@@ -1752,7 +1785,7 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
 
 		for (const auto & block : merged_blocks)
 		{
-			if (block && !block.info.is_overflows)
+			if (block && block.rowsInFirstColumn() && !block.info.is_overflows)
 				has_nonempty_nonoverflows = true;
 			else if (block.info.is_overflows)
 				has_overflows = true;
@@ -1773,7 +1806,7 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
 		{
 			for (auto it = merged_blocks.begin(); it != merged_blocks.end(); ++it)
 			{
-				if (!*it)
+				if (!*it || it->rowsInFirstColumn() == 0)
 				{
 					merged_blocks.erase(it);
 					break;
@@ -1810,6 +1843,9 @@ void NO_INLINE Aggregator::convertBlockToTwoLevelImpl(
 	size_t rows = source.rowsInFirstColumn();
 	size_t columns = source.columns();
 
+	/// Для каждого номера корзины создадим фильтр, где будут отмечены строки, относящиеся к этой корзине.
+	std::vector<IColumn::Filter> filters(destinations.size());
+
 	/// Для всех строчек.
 	for (size_t i = 0; i < rows; ++i)
 	{
@@ -1822,15 +1858,33 @@ void NO_INLINE Aggregator::convertBlockToTwoLevelImpl(
 		/// Этот ключ нам больше не нужен.
 		method.onExistingKey(key, keys, *pool);
 
+		auto & filter = filters[bucket];
+
+		if (unlikely(filter.empty()))
+			filter.resize_fill(rows);
+
+		filter[i] = 1;
+	}
+
+	for (size_t bucket = 0, size = destinations.size(); bucket < size; ++bucket)
+	{
+		const auto & filter = filters[bucket];
+
+		if (filter.empty())
+			continue;
+
 		Block & dst = destinations[bucket];
-		if (unlikely(!dst))
-		{
-			dst = source.cloneEmpty();
-			dst.info.bucket_num = bucket;
-		}
+		dst.info.bucket_num = bucket;
 
 		for (size_t j = 0; j < columns; ++j)
-			dst.unsafeGetByPosition(j).column.get()->insertFrom(*source.unsafeGetByPosition(j).column.get(), i);
+		{
+			const ColumnWithTypeAndName & src_col = source.unsafeGetByPosition(j);
+			dst.insert({src_col.column->filter(filter), src_col.type, src_col.name});
+
+			/** Вставленные в блок столбцы типа ColumnAggregateFunction будут владеть состояниями агрегатных функций
+			  *  путём удержания SharedPtr-а на исходный столбец. См. ColumnAggregateFunction.h
+			  */
+		}
 	}
 }
 
@@ -1840,7 +1894,12 @@ std::vector<Block> Aggregator::convertBlockToTwoLevel(const Block & block)
 	if (!block)
 		return {};
 
-	initialize(block);
+	Block empty_block;
+	initialize(empty_block);
+
+	if (!sample)
+		sample = block.cloneEmpty();
+
 	AggregatedDataVariants data;
 
 	StringRefs key(keys_size);
@@ -1852,6 +1911,8 @@ std::vector<Block> Aggregator::convertBlockToTwoLevel(const Block & block)
 		key_columns[i] = block.getByPosition(i).column;
 
 	AggregatedDataVariants::Type type = chooseAggregationMethod(key_columns, key_sizes);
+	data.keys_size = keys_size;
+	data.key_sizes = key_sizes;
 
 #define M(NAME) \
 	else if (type == AggregatedDataVariants::Type::NAME) \

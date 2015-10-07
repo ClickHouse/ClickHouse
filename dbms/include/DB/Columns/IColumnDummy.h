@@ -29,6 +29,16 @@ public:
 	StringRef getDataAt(size_t n) const override { throw Exception("Method getDataAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
 	void insertData(const char * pos, size_t length) override { throw Exception("Method insertData is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
 
+	StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override
+	{
+		throw Exception("Method serializeValueIntoArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+	}
+
+	const char * deserializeAndInsertFromArena(const char * pos) override
+	{
+		throw Exception("Method deserializeAndInsertFromArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+	}
+
 	void getExtremes(Field & min, Field & max) const override
 	{
 		throw Exception("Method getExtremes is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);

@@ -7,7 +7,7 @@
 #include <Poco/File.h>
 #include <Poco/UUIDGenerator.h>
 
-#include <Yandex/logger_useful.h>
+#include <common/logger_useful.h>
 
 #include <DB/Common/Macros.h>
 #include <DB/Common/escapeForFileName.h>
@@ -41,7 +41,7 @@
 #include <DB/Client/ConnectionPool.h>
 #include <DB/Client/ConnectionPoolWithFailover.h>
 
-#include <statdaemons/ConfigProcessor.h>
+#include <DB/Common/ConfigProcessor.h>
 #include <zkutil/ZooKeeper.h>
 
 
@@ -238,15 +238,31 @@ QuotaForIntervals & Context::getQuota()
 	return *quota;
 }
 
+void Context::checkDatabaseAccessRights(const std::string & database_name) const
+{
+	if (user.empty() || (database_name == "system"))
+	{
+		/// Безымянный пользователь, т.е. сервер, имеет доступ ко всем БД.
+		/// Все пользователи имеют доступ к БД system.
+		return;
+	}
+	if (!shared->users.isAllowedDatabase(user, database_name))
+		throw Exception("Access denied to database " + database_name, ErrorCodes::DATABASE_ACCESS_DENIED);
+}
+
 void Context::addDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	checkDatabaseAccessRights(from.first);
+	checkDatabaseAccessRights(where.first);
 	shared->view_dependencies[from].insert(where);
 }
 
 void Context::removeDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
+	checkDatabaseAccessRights(from.first);
+	checkDatabaseAccessRights(where.first);
 	shared->view_dependencies[from].erase(where);
 }
 
@@ -255,6 +271,7 @@ Dependencies Context::getDependencies(const String & database_name, const String
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 
 	String db = database_name.empty() ? current_database : database_name;
+	checkDatabaseAccessRights(db);
 
 	ViewDependencies::const_iterator iter = shared->view_dependencies.find(DatabaseAndTableName(db, table_name));
 	if (iter == shared->view_dependencies.end())
@@ -268,6 +285,7 @@ bool Context::isTableExist(const String & database_name, const String & table_na
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 
 	String db = database_name.empty() ? current_database : database_name;
+	checkDatabaseAccessRights(db);
 
 	Databases::const_iterator it;
 	return shared->databases.end() != (it = shared->databases.find(db))
@@ -279,6 +297,7 @@ bool Context::isDatabaseExist(const String & database_name) const
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 	String db = database_name.empty() ? current_database : database_name;
+	checkDatabaseAccessRights(db);
 	return shared->databases.end() != shared->databases.find(db);
 }
 
@@ -288,6 +307,7 @@ void Context::assertTableExists(const String & database_name, const String & tab
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 
 	String db = database_name.empty() ? current_database : database_name;
+	checkDatabaseAccessRights(db);
 
 	Databases::const_iterator it = shared->databases.find(db);
 	if (shared->databases.end() == it)
@@ -298,11 +318,13 @@ void Context::assertTableExists(const String & database_name, const String & tab
 }
 
 
-void Context::assertTableDoesntExist(const String & database_name, const String & table_name) const
+void Context::assertTableDoesntExist(const String & database_name, const String & table_name, bool check_database_access_rights) const
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 
 	String db = database_name.empty() ? current_database : database_name;
+	if (check_database_access_rights)
+		checkDatabaseAccessRights(db);
 
 	Databases::const_iterator it;
 	if (shared->databases.end() != (it = shared->databases.find(db))
@@ -311,11 +333,13 @@ void Context::assertTableDoesntExist(const String & database_name, const String 
 }
 
 
-void Context::assertDatabaseExists(const String & database_name) const
+void Context::assertDatabaseExists(const String & database_name, bool check_database_access_rights) const
 {
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 
 	String db = database_name.empty() ? current_database : database_name;
+	if (check_database_access_rights)
+		checkDatabaseAccessRights(db);
 
 	if (shared->databases.end() == shared->databases.find(db))
 		throw Exception("Database " + db + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
@@ -327,6 +351,7 @@ void Context::assertDatabaseDoesntExist(const String & database_name) const
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 
 	String db = database_name.empty() ? current_database : database_name;
+	checkDatabaseAccessRights(db);
 
 	if (shared->databases.end() != shared->databases.find(db))
 		throw Exception("Database " + db + " already exists.", ErrorCodes::DATABASE_ALREADY_EXISTS);
@@ -409,6 +434,7 @@ StoragePtr Context::getTableImpl(const String & database_name, const String & ta
 	}
 
 	String db = database_name.empty() ? current_database : database_name;
+	checkDatabaseAccessRights(db);
 
 	Databases::const_iterator it = shared->databases.find(db);
 	if (shared->databases.end() == it)
@@ -453,9 +479,10 @@ void Context::addTable(const String & database_name, const String & table_name, 
 	Poco::ScopedLock<Poco::Mutex> lock(shared->mutex);
 
 	String db = database_name.empty() ? current_database : database_name;
+	checkDatabaseAccessRights(db);
 
-	assertDatabaseExists(db);
-	assertTableDoesntExist(db, table_name);
+	assertDatabaseExists(db, false);
+	assertTableDoesntExist(db, table_name, false);
 	shared->databases[db][table_name] = table;
 }
 
@@ -824,6 +851,11 @@ std::pair<String, UInt16> Context::getInterserverIOAddress() const
 			ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
 	return { shared->interserver_io_host, shared->interserver_io_port };
+}
+
+UInt16 Context::getTCPPort() const
+{
+	return Poco::Util::Application::instance().config().getInt("tcp_port");
 }
 
 

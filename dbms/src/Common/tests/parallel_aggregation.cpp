@@ -15,8 +15,8 @@
 #include <DB/IO/ReadBufferFromFile.h>
 #include <DB/IO/CompressedReadBuffer.h>
 
-#include <statdaemons/Stopwatch.h>
-#include <statdaemons/threadpool.hpp>
+#include <DB/Common/Stopwatch.h>
+#include <common/threadpool.hpp>
 
 
 typedef UInt64 Key;

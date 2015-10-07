@@ -4,7 +4,7 @@
 #include <city.h>
 #include <openssl/md5.h>
 
-#include <statdaemons/Stopwatch.h>
+#include <DB/Common/Stopwatch.h>
 
 #include <DB/Common/SipHash.h>
 #include <DB/IO/ReadBufferFromFileDescriptor.h>

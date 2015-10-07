@@ -1,10 +1,10 @@
-#include <Yandex/DateLUT.h>
+#include <common/DateLUT.h>
 #include <Poco/DateTimeParser.h>
 #include <Poco/AutoPtr.h>
 
 #include "OLAPQueryParser.h"
 #include <DB/Core/ErrorCodes.h>
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
 

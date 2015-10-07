@@ -6,7 +6,7 @@
 #include <unordered_set>
 #include <future>
 #include <memory>
-#include <Yandex/logger_useful.h>
+#include <common/logger_useful.h>
 
 
 namespace zkutil
@@ -167,6 +167,10 @@ public:
 	  */
 	void tryRemoveRecursive(const std::string & path);
 
+	/** Подождать, пока нода перестанет существовать или вернуть сразу, если нода не существует.
+	  */
+	void waitForDisappear(const std::string & path);
+
 
 	/** Асинхронный интерфейс (реализовано небольшое подмножество операций).
 	  *
@@ -260,6 +264,10 @@ public:
 	GetChildrenFuture asyncGetChildren(const std::string & path);
 
 
+	using RemoveFuture = Future<void, int>;
+	RemoveFuture asyncRemove(const std::string & path);
+
+
 	static std::string error2string(int32_t code);
 
 	/// максимальный размер данных в узле в байтах
@@ -269,6 +277,10 @@ public:
 	/// Размер прибавляемого ZooKeeper суффикса при создании Sequential ноды
 	/// На самом деле размер меньше, но для удобства округлим в верхнюю сторону
 	static const size_t SEQUENTIAL_SUFFIX_SIZE = 64;
+
+
+	zhandle_t * getHandle() { return impl; }
+
 private:
 	friend struct WatchWithEvent;
 	friend class EphemeralNodeHolder;

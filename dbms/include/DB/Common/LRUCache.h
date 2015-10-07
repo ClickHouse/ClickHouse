@@ -7,7 +7,7 @@
 #include <Poco/ScopedLock.h>
 #include <Poco/Mutex.h>
 #include <DB/Core/ErrorCodes.h>
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 
 namespace DB
 {

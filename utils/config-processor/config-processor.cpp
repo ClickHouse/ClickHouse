@@ -1,4 +1,4 @@
-#include <statdaemons/ConfigProcessor.h>
+#include <DB/Common/ConfigProcessor.h>
 #include <iostream>
 
 int main(int argc, char ** argv)

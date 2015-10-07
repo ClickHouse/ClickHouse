@@ -1,8 +1,8 @@
 #include <string.h>
 #include <iostream>
-#include <statdaemons/threadpool.hpp>
+#include <common/threadpool.hpp>
 #include <functional>
-#include <Yandex/MultiVersion.h>
+#include <common/MultiVersion.h>
 
 
 typedef std::string T;

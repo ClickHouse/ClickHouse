@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Yandex/logger_useful.h>
+#include <common/logger_useful.h>
 
 #include <DB/Common/ConcurrentBoundedQueue.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
@@ -97,7 +97,7 @@ protected:
 
 		LOG_TRACE(log, "Waiting for threads to finish");
 
-		ExceptionPtr exception;
+		std::exception_ptr exception;
 		if (!all_read)
 		{
 			/** Прочитаем всё до конца, чтобы ParallelInputsProcessor не заблокировался при попытке вставить в очередь.
@@ -113,8 +113,8 @@ protected:
 				{
 					if (!exception)
 						exception = res.exception;
-					else if (DB::Exception * e = dynamic_cast<DB::Exception *>(&*exception))
-						e->addMessage("\n" + res.exception->displayText());
+					else if (Exception * e = exception_cast<Exception *>(exception))
+						e->addMessage("\n" + getExceptionMessage(res.exception, false));
 				}
 				else if (!res.block)
 					break;
@@ -128,7 +128,7 @@ protected:
 		LOG_TRACE(log, "Waited for threads to finish");
 
 		if (exception)
-			exception->rethrow();
+			std::rethrow_exception(exception);
 	}
 
 	/** Возможны следующие варианты:
@@ -157,7 +157,7 @@ protected:
 		output_queue.pop(res);
 
 		if (res.exception)
-			res.exception->rethrow();
+			std::rethrow_exception(res.exception);
 
 		if (!res.block)
 			all_read = true;
@@ -183,11 +183,11 @@ private:
 	struct OutputData
 	{
 		Block block;
-		ExceptionPtr exception;
+		std::exception_ptr exception;
 
 		OutputData() {}
 		OutputData(Block & block_) : block(block_) {}
-		OutputData(ExceptionPtr & exception_) : exception(exception_) {}
+		OutputData(std::exception_ptr & exception_) : exception(exception_) {}
 	};
 
 	/** Очередь готовых блоков. Также туда можно положить эксепшен вместо блока.
@@ -216,7 +216,7 @@ private:
 			parent.output_queue.push(OutputData());
 		}
 
-		void onException(ExceptionPtr & exception, size_t thread_num)
+		void onException(std::exception_ptr & exception, size_t thread_num)
 		{
 			//std::cerr << "pushing exception\n";
 

@@ -5,7 +5,7 @@
 #include <sys/mman.h>
 
 #include <DB/Common/MemoryTracker.h>
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 
 

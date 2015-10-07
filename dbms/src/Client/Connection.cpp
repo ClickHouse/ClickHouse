@@ -2,10 +2,10 @@
 
 #include <Poco/Net/NetException.h>
 
-#include <Yandex/Revision.h>
+#include <common/Revision.h>
 
 #include <DB/Core/Defines.h>
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 
 #include <DB/IO/CompressedReadBuffer.h>
@@ -21,7 +21,7 @@
 
 #include <DB/Client/Connection.h>
 
-#include <statdaemons/NetException.h>
+#include <DB/Common/NetException.h>
 
 
 namespace DB

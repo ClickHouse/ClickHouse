@@ -2,7 +2,7 @@
 #include <DB/Dictionaries/DictionaryFactory.h>
 #include <DB/Dictionaries/DictionaryStructure.h>
 #include <DB/Dictionaries/IDictionarySource.h>
-#include <statdaemons/ext/scope_guard.hpp>
+#include <ext/scope_guard.hpp>
 #include <Poco/Util/Application.h>
 #include <Poco/Glob.h>
 
@@ -48,7 +48,19 @@ void ExternalDictionaries::reloadImpl(const bool throw_on_error)
 	const auto config_paths = getDictionariesConfigPaths(Poco::Util::Application::instance().config());
 
 	for (const auto & config_path : config_paths)
-		reloadFromFile(config_path, throw_on_error);
+	{
+		try
+		{
+			reloadFromFile(config_path, throw_on_error);
+		}
+		catch (...)
+		{
+			tryLogCurrentException(log, "reloadFromFile has thrown while reading from " + config_path);
+
+			if (throw_on_error)
+				throw;
+		}
+	}
 
 	/// list of recreated dictionaries to perform delayed removal from unordered_map
 	std::list<std::string> recreated_failed_dictionaries;
@@ -101,6 +113,9 @@ void ExternalDictionaries::reloadImpl(const bool throw_on_error)
 		catch (...)
 		{
 			tryLogCurrentException(log, "Failed reloading '" + name + "' dictionary");
+
+			if (throw_on_error)
+				throw;
 		}
 	}
 
@@ -162,6 +177,9 @@ void ExternalDictionaries::reloadImpl(const bool throw_on_error)
 			dictionary.second.exception = std::current_exception();
 
 			tryLogCurrentException(log, "Cannot update external dictionary '" + name + "', leaving old version");
+
+			if (throw_on_error)
+				throw;
 		}
 	}
 }
