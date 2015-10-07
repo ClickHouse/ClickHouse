@@ -9,7 +9,7 @@
 
 //#define DBMS_HASH_MAP_DEBUG_RESIZES
 
-#include <statdaemons/Stopwatch.h>
+#include <DB/Common/Stopwatch.h>
 #include <stats/UniquesHashSet.h>
 
 #include <DB/Core/Types.h>

@@ -4,8 +4,9 @@
 
 #include <Poco/SharedPtr.h>
 
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/ErrorCodes.h>
+#include <DB/Common/Arena.h>
 
 #include <DB/Columns/IColumn.h>
 #include <DB/Columns/ColumnsNumber.h>
@@ -117,6 +118,33 @@ public:
 			throw Exception("Incorrect length argument for method ColumnArray::insertData", ErrorCodes::BAD_ARGUMENTS);
 
 		getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + elems);
+	}
+
+	StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override
+	{
+		size_t array_size = sizeAt(n);
+		size_t offset = offsetAt(n);
+
+		char * pos = arena.allocContinue(sizeof(array_size), begin);
+		memcpy(pos, &array_size, sizeof(array_size));
+
+		size_t values_size = 0;
+		for (size_t i = 0; i < array_size; ++i)
+			values_size += data->serializeValueIntoArena(offset + i, arena, begin).size;
+
+		return StringRef(begin, sizeof(array_size) + values_size);
+	}
+
+	const char * deserializeAndInsertFromArena(const char * pos) override
+	{
+		size_t array_size = *reinterpret_cast<const size_t *>(pos);
+		pos += sizeof(array_size);
+
+		for (size_t i = 0; i < array_size; ++i)
+			pos = data->deserializeAndInsertFromArena(pos);
+
+		getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + array_size);
+		return pos;
 	}
 
 	ColumnPtr cut(size_t start, size_t length) const override;

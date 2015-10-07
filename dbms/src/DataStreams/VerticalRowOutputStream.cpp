@@ -42,10 +42,21 @@ void VerticalRowOutputStream::writeField(const Field & field)
 	writeCString(": ", ostr);
 	writeString(pads[field_number], ostr);
 
-	data_types[field_number]->serializeTextEscaped(field, ostr);
+	writeValue(field);
 
 	writeChar('\n', ostr);
 	++field_number;
+}
+
+
+void VerticalRowOutputStream::writeValue(const Field & field) const
+{
+	data_types[field_number]->serializeTextEscaped(field, ostr);
+}
+
+void VerticalRawRowOutputStream::writeValue(const Field & field) const
+{
+	data_types[field_number]->serializeText(field, ostr);
 }
 
 

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <string>
-#include <Yandex/DateLUT.h>
+#include <common/DateLUT.h>
 
 #include <mysqlxx/Date.h>
 #include <iomanip>

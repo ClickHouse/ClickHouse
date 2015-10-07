@@ -44,7 +44,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	QueryProcessingStage::Enum & processed_stage,
 	const size_t max_block_size,
 	const unsigned threads,
-	size_t * part_index)
+	size_t * part_index,
+	Int64 max_block_number_to_read)
 {
 	size_t part_index_var = 0;
 	if (!part_index)
@@ -82,7 +83,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	if (settings.force_index_by_date && date_condition.alwaysUnknown())
 		throw Exception("Index by date is not used and setting 'force_index_by_date' is set.", ErrorCodes::INDEX_NOT_USED);
 
-	/// Выберем куски, в которых могут быть данные, удовлетворяющие date_condition, и которые подходят под условие на _part.
+	/// Выберем куски, в которых могут быть данные, удовлетворяющие date_condition, и которые подходят под условие на _part,
+	///  а также max_block_number_to_read.
 	{
 		auto prev_parts = parts;
 		parts.clear();
@@ -96,6 +98,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 			Field right = static_cast<UInt64>(part->right_date);
 
 			if (!date_condition.mayBeTrueInRange(&left, &right))
+				continue;
+
+			if (max_block_number_to_read && part->right > max_block_number_to_read)
 				continue;
 
 			parts.push_back(part);
@@ -132,12 +137,20 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 				MergeTreeData::DataPartPtr & part = parts[i];
 				MarkRanges ranges = markRangesFromPkRange(part->index, key_condition, settings);
 
+				/** Для того, чтобы получить оценку снизу количества строк, подходящих под условие на PK,
+				  *  учитываем только гарантированно полные засечки.
+				  * То есть, не учитываем первую и последнюю засечку, которые могут быть неполными.
+				  */
 				for (size_t j = 0; j < ranges.size(); ++j)
-					total_count += ranges[j].end - ranges[j].begin;
+					if (ranges[j].end - ranges[j].begin > 2)
+						total_count += ranges[j].end - ranges[j].begin - 2;
 			}
 			total_count *= data.index_granularity;
 
-			relative_sample_size = std::min(1., static_cast<double>(requested_count) / total_count);
+			if (total_count == 0)
+				relative_sample_size = 1;
+			else
+				relative_sample_size = std::min(1., static_cast<double>(requested_count) / total_count);
 
 			LOG_DEBUG(log, "Selected relative sample size: " << relative_sample_size);
 		}
@@ -288,6 +301,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	LOG_DEBUG(log, "Selected " << parts.size() << " parts by date, " << parts_with_ranges.size() << " parts by key, "
 		<< sum_marks << " marks to read from " << sum_ranges << " ranges");
 
+	if (parts_with_ranges.empty())
+		return {};
+
 	BlockInputStreams res;
 
 	if (select.final)
@@ -377,19 +393,23 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 			threads, sum_marks, min_marks_for_concurrent_read, parts, data, prewhere_actions, prewhere_column, true,
 			column_names);
 
+		/// Оценим общее количество строк - для прогресс-бара.
+		const std::size_t total_rows = data.index_granularity * sum_marks;
+		LOG_TRACE(log, "Reading approx. " << total_rows << " rows");
+
 		for (std::size_t i = 0; i < threads; ++i)
+		{
 			res.emplace_back(new MergeTreeThreadBlockInputStream{
-				i, pool, min_marks_for_concurrent_read, max_block_size, data, use_uncompressed_cache, prewhere_actions,
+				i, pool, min_marks_for_concurrent_read, max_block_size, data, use_uncompressed_cache,
+				prewhere_actions,
 				prewhere_column, settings, virt_columns
 			});
 
-		/// Оценим общее количество строк - для прогресс-бара.
-		const std::size_t total_rows = data.index_granularity * sum_marks;
 
-		/// Выставим приблизительное количество строк только для первого источника
-		static_cast<IProfilingBlockInputStream &>(*res.front()).setTotalRowsApprox(total_rows);
-
-		LOG_TRACE(log, "Reading approx. " << total_rows);
+			if (i == 0)
+				/// Выставим приблизительное количество строк только для первого источника
+				static_cast<IProfilingBlockInputStream &>(*res.front()).setTotalRowsApprox(total_rows);
+		}
 	}
 	else if (sum_marks > 0)
 	{
@@ -506,9 +526,17 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 
 	if (settings.merge_tree_uniform_read_distribution == 1)
 	{
+		/// Пусть отрезки будут перечислены справа налево, чтобы можно было выбрасывать самый левый отрезок с помощью pop_back().
+		for (auto & part : parts)
+			std::reverse(std::begin(part.ranges), std::end(part.ranges));
+
 		MergeTreeReadPoolPtr pool = std::make_shared<MergeTreeReadPool>(
 			parts.size(), sum_marks, min_marks_for_read_task, parts, data, prewhere_actions, prewhere_column, true,
 			column_names, true);
+
+		/// Оценим общее количество строк - для прогресс-бара.
+		const std::size_t total_rows = data.index_granularity * sum_marks;
+		LOG_TRACE(log, "Reading approx. " << total_rows << " rows");
 
 		for (const auto i : ext::range(0, parts.size()))
 		{
@@ -519,16 +547,12 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 				}
 			};
 
+			if (i == 0)
+				/// Выставим приблизительное количество строк только для первого источника
+				static_cast<IProfilingBlockInputStream &>(*source_stream).setTotalRowsApprox(total_rows);
+
 			to_merge.push_back(new ExpressionBlockInputStream(source_stream, data.getPrimaryExpression()));
 		}
-
-		/// Оценим общее количество строк - для прогресс-бара.
-		const std::size_t total_rows = data.index_granularity * sum_marks;
-
-		/// Выставим приблизительное количество строк только для первого источника
-		static_cast<IProfilingBlockInputStream &>(*to_merge.front()).setTotalRowsApprox(total_rows);
-
-		LOG_TRACE(log, "Reading approx. " << total_rows);
 	}
 	else
 	{
@@ -577,7 +601,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 		switch (data.mode)
 		{
 			case MergeTreeData::Ordinary:
-				throw Exception("Ordinary MergeTree doesn't support FINAL", ErrorCodes::LOGICAL_ERROR);
+				merged = new MergingSortedBlockInputStream(to_merge, data.getSortDescription(), max_block_size);
+				break;
 
 			case MergeTreeData::Collapsing:
 				merged = new CollapsingFinalBlockInputStream(to_merge, data.getSortDescription(), data.sign_column);

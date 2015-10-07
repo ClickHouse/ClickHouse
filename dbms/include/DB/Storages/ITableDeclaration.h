@@ -2,7 +2,7 @@
 
 #include <DB/Core/Names.h>
 #include <DB/Core/NamesAndTypes.h>
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/Block.h>
 #include <DB/Storages/ColumnDefault.h>
 

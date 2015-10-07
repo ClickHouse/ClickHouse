@@ -11,8 +11,9 @@ class OLAPHTTPHandler : public Poco::Net::HTTPRequestHandler
 {
 public:
 	OLAPHTTPHandler(Server & server_)
-	: server(server_)
-	, log(&Logger::get("OLAPHTTPHandler"))
+		: server(server_),
+		log(&Logger::get("OLAPHTTPHandler")),
+		profile(Poco::Util::Application::instance().config().getString("olap_compatibility.profile"))
 	{
 	}
 
@@ -20,8 +21,8 @@ public:
 
 private:
 	Server & server;
-
 	Logger * log;
+	const String profile;
 
 	void processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response);
 };

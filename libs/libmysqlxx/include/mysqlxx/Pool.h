@@ -12,9 +12,7 @@
 #include <Poco/Exception.h>
 #include <Poco/SharedPtr.h>
 
-#include <Yandex/logger_useful.h>
-#include <statdaemons/daemon.h>
-
+#include <common/logger_useful.h>
 #include <mysqlxx/Connection.h>
 
 
@@ -152,7 +150,7 @@ public:
 				if (first)
 					first = false;
 				else
-					Daemon::instance().sleep(MYSQLXX_POOL_SLEEP_ON_CONNECT_FAIL);
+					::sleep(MYSQLXX_POOL_SLEEP_ON_CONNECT_FAIL);
 
 				app.logger().information("MYSQL: Reconnecting to " + pool->description);
 				data->conn.connect(
@@ -307,7 +305,7 @@ public:
 			}
 
 			lock.unlock();
-			Daemon::instance().sleep(MYSQLXX_POOL_SLEEP_ON_CONNECT_FAIL);
+			::sleep(MYSQLXX_POOL_SLEEP_ON_CONNECT_FAIL);
 			lock.lock();
 		}
 	}
@@ -428,10 +426,6 @@ private:
 			else
 			{
 				app.logger().error(e.what());
-
-				if (Daemon::instance().isCancelled())
-					throw Poco::Exception("Daemon is cancelled while trying to connect to MySQL server.");
-
 				return nullptr;
 			}
 		}

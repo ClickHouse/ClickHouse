@@ -1,6 +1,6 @@
 #include <iomanip>
 
-#include <Yandex/logger_useful.h>
+#include <common/logger_useful.h>
 
 #include <DB/Common/SipHash.h>
 #include <DB/IO/ReadHelpers.h>
@@ -293,7 +293,7 @@ void Quotas::loadFromConfig(Poco::Util::AbstractConfiguration & config)
 	for (Poco::Util::AbstractConfiguration::Keys::const_iterator it = config_keys.begin(); it != config_keys.end(); ++it)
 	{
 		if (!cont[*it])
-			cont[*it] = new Quota();
+			cont[*it].reset(new Quota());
 		cont[*it]->loadFromConfig("quotas." + *it, *it, config, rng);
 	}
 }

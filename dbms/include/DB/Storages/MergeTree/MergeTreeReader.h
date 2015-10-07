@@ -11,7 +11,6 @@
 #include <DB/IO/CachedCompressedReadBuffer.h>
 #include <DB/IO/CompressedReadBufferFromFile.h>
 #include <DB/Columns/ColumnArray.h>
-#include <DB/Columns/ColumnNested.h>
 #include <DB/Interpreters/evaluateMissingDefaults.h>
 
 
@@ -24,31 +23,19 @@ namespace DB
   */
 class MergeTreeReader
 {
-	typedef std::map<std::string, ColumnPtr> OffsetColumns;
+	using OffsetColumns = std::map<std::string, ColumnPtr>;
+	using ValueSizeMap = std::map<std::string, double>;
 
 public:
-	MergeTreeReader(const String & path_, /// Путь к куску
-		const MergeTreeData::DataPartPtr & data_part, const NamesAndTypesList & columns_,
-		UncompressedCache * uncompressed_cache_, MarkCache * mark_cache_,
-		MergeTreeData & storage_, const MarkRanges & all_mark_ranges,
-		size_t aio_threshold_, size_t max_read_buffer_size_)
-		: uncompressed_cache(uncompressed_cache_), mark_cache(mark_cache_), storage(storage_),
-		  aio_threshold(aio_threshold_), max_read_buffer_size(max_read_buffer_size_)
+	MergeTreeReader(const String & path, /// Путь к куску
+		const MergeTreeData::DataPartPtr & data_part, const NamesAndTypesList & columns,
+		UncompressedCache * uncompressed_cache, MarkCache * mark_cache,
+		MergeTreeData & storage, const MarkRanges & all_mark_ranges,
+		size_t aio_threshold, size_t max_read_buffer_size, const ValueSizeMap & avg_value_size_hints = ValueSizeMap{})
+		: avg_value_size_hints(avg_value_size_hints), path(path), data_part(data_part), columns(columns),
+		  uncompressed_cache(uncompressed_cache), mark_cache(mark_cache), storage(storage),
+		  all_mark_ranges(all_mark_ranges), aio_threshold(aio_threshold), max_read_buffer_size(max_read_buffer_size)
 	{
-		reconf(path_, data_part, columns_, all_mark_ranges);
-	}
-
-	void reconf(
-		const String & path, const MergeTreeData::DataPartPtr & data_part, const NamesAndTypesList & columns,
-		const MarkRanges & all_mark_ranges)
-	{
-		this->path = path;
-		this->data_part = data_part;
-		this->part_name = data_part->name;
-		this->columns = columns;
-		this->all_mark_ranges = all_mark_ranges;
-		this->streams.clear();
-
 		try
 		{
 			if (!Poco::File(path).exists())
@@ -59,10 +46,12 @@ public:
 		}
 		catch (...)
 		{
-			storage.reportBrokenPart(part_name);
+			storage.reportBrokenPart(data_part->name);
 			throw;
 		}
 	}
+
+	const ValueSizeMap & getAvgValueSizeHints() const { return avg_value_size_hints; }
 
 	/** Если столбцов нет в блоке, добавляет их, если есть - добавляет прочитанные значения к ним в конец.
 	  * Не добавляет столбцы, для которых нет файлов. Чтобы их добавить, нужно вызвать fillMissingColumns.
@@ -119,7 +108,7 @@ public:
 		catch (const Exception & e)
 		{
 			if (e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
-				storage.reportBrokenPart(part_name);
+				storage.reportBrokenPart(data_part->name);
 
 			/// Более хорошая диагностика.
 			throw Exception(e.message() +  "\n(while reading from part " + path + " from mark " + toString(from_mark) + " to "
@@ -127,7 +116,7 @@ public:
 		}
 		catch (...)
 		{
-			storage.reportBrokenPart(part_name);
+			storage.reportBrokenPart(data_part->name);
 
 			throw;
 		}
@@ -284,10 +273,9 @@ private:
 	typedef std::map<std::string, std::unique_ptr<Stream> > FileStreams;
 
 	/// Используется в качестве подсказки, чтобы уменьшить количество реаллокаций при создании столбца переменной длины.
-	std::map<std::string, double> avg_value_size_hints;
+	ValueSizeMap avg_value_size_hints;
 	String path;
 	MergeTreeData::DataPartPtr data_part;
-	String part_name;
 	FileStreams streams;
 
 	/// Запрашиваемые столбцы.

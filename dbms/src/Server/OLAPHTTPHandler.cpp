@@ -12,7 +12,7 @@
 
 #include "OLAPHTTPHandler.h"
 
-#include <statdaemons/Stopwatch.h>
+#include <DB/Common/Stopwatch.h>
 #include <iomanip>
 
 
@@ -51,8 +51,9 @@ void OLAPHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco:
 	context.setGlobalContext(*server.global_context);
 
 	context.setUser(user, password, request.clientAddress().host(), quota_key);
+	context.setSetting("profile", profile);
 
-	context.setInterface(Context::Interface::HTTP);
+	context.setInterface(Context::Interface::OLAP_HTTP);
 	context.setHTTPMethod(Context::HTTPMethod::POST);
 
 	OLAP::QueryParseResult olap_query = server.olap_parser->parse(request_istream);

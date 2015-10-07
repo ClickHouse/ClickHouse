@@ -38,6 +38,15 @@ protected:
 				return Block();
 
 			children.push_back(input);
+
+			if (IProfilingBlockInputStream * p_input = dynamic_cast<IProfilingBlockInputStream *>(input.get()))
+			{
+				/// Они могли быть установлены раньше, но не были протащены в input.
+				if (progress_callback)
+					p_input->setProgressCallback(progress_callback);
+				if (process_list_elem)
+					p_input->setProcessListElement(process_list_elem);
+			}
 		}
 
 		return input->read();

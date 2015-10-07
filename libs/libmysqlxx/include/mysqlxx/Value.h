@@ -8,8 +8,8 @@
 #include <string>
 #include <limits>
 
-#include <Yandex/Common.h>
-#include <Yandex/DateLUT.h>
+#include <common/Common.h>
+#include <common/DateLUT.h>
 
 #include <mysqlxx/Types.h>
 

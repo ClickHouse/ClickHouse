@@ -83,6 +83,20 @@ void Settings::setProfile(const String & profile_name, Poco::Util::AbstractConfi
 	}
 }
 
+void Settings::loadSettingsFromConfig(const String & path, Poco::Util::AbstractConfiguration & config)
+{
+	if (!config.has(path))
+		throw Exception("There is no path '" + path + "' in configuration file.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+
+	Poco::Util::AbstractConfiguration::Keys config_keys;
+	config.keys(path, config_keys);
+
+	for (const std::string & key : config_keys)
+	{
+		set(key, config.getString(path + "." + key));
+	}
+}
+
 /// Прочитать настройки из буфера. Они записаны как набор name-value пар, идущих подряд, заканчивающихся пустым name.
 /// Если выставлен флаг check_readonly, в настройках выставлено readonly, но пришли какие-то изменения кинуть исключение.
 void Settings::deserialize(ReadBuffer & buf)

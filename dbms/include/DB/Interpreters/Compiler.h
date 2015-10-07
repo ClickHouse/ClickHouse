@@ -8,11 +8,11 @@
 #include <unordered_set>
 #include <unordered_map>
 
-#include <Yandex/logger_useful.h>
-#include <statdaemons/threadpool.hpp>
+#include <common/logger_useful.h>
+#include <common/threadpool.hpp>
 
 #include <DB/Core/Types.h>
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Common/UInt128.h>
 
 

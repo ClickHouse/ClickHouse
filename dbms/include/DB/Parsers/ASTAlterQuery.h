@@ -63,9 +63,9 @@ public:
 		void clone(Parameters & p) const
 		{
 			p = *this;
-			p.col_decl = col_decl->clone();
-			p.column = column->clone();
-			p.partition = partition->clone();
+			if (col_decl)	p.col_decl = col_decl->clone();
+			if (column)		p.column = column->clone();
+			if (partition)	p.partition = partition->clone();
 		}
 	};
 	typedef std::vector<Parameters> ParameterContainer;
@@ -95,9 +95,7 @@ public:
 	{
 		ASTAlterQuery * res = new ASTAlterQuery(*this);
 		for (ParameterContainer::size_type i = 0; i < parameters.size(); ++i)
-		{
 			parameters[i].clone(res->parameters[i]);
-		}
 		return res;
 	}
 

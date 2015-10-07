@@ -1,10 +1,11 @@
 #pragma once
 
 #include <DB/Dictionaries/IDictionary.h>
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/ErrorCodes.h>
-#include <Yandex/MultiVersion.h>
-#include <Yandex/logger_useful.h>
+#include <DB/Common/setThreadName.h>
+#include <common/MultiVersion.h>
+#include <common/logger_useful.h>
 #include <Poco/Event.h>
 #include <unistd.h>
 #include <time.h>
@@ -86,6 +87,8 @@ private:
 
 	void reloadPeriodically()
 	{
+		setThreadName("ExterDictReload");
+
 		while (true)
 		{
 			if (destroy.tryWait(check_period_sec * 1000))
@@ -107,7 +110,29 @@ public:
 	ExternalDictionaries(Context & context, const bool throw_on_error)
 		: context(context), log(&Logger::get("ExternalDictionaries"))
 	{
-		reloadImpl(throw_on_error);
+		{
+			/** При синхронной загрузки внешних словарей в момент выполнения запроса,
+			  *  не нужно использовать ограничение на расход памяти запросом.
+			  */
+			struct TemporarilyDisableMemoryTracker
+			{
+				MemoryTracker * memory_tracker;
+
+				TemporarilyDisableMemoryTracker()
+				{
+					memory_tracker = current_memory_tracker;
+					current_memory_tracker = nullptr;
+				}
+
+				~TemporarilyDisableMemoryTracker()
+				{
+					current_memory_tracker = memory_tracker;
+				}
+			} temporarily_disable_memory_tracker;
+
+			reloadImpl(throw_on_error);
+		}
+
 		reloading_thread = std::thread{&ExternalDictionaries::reloadPeriodically, this};
 	}
 

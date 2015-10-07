@@ -7,7 +7,7 @@
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/Columns/ColumnString.h>
-#include <statdaemons/ext/range.hpp>
+#include <ext/range.hpp>
 #include <mysqlxx/Query.h>
 #include <mysqlxx/PoolWithFailover.h>
 #include <vector>

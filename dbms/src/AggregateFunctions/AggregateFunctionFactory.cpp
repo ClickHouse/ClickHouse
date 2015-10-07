@@ -1,747 +1,156 @@
-#include <DB/AggregateFunctions/AggregateFunctionCount.h>
-#include <DB/AggregateFunctions/AggregateFunctionSum.h>
-#include <DB/AggregateFunctions/AggregateFunctionAvg.h>
-#include <DB/AggregateFunctions/AggregateFunctionsMinMaxAny.h>
-#include <DB/AggregateFunctions/AggregateFunctionsArgMinMax.h>
-#include <DB/AggregateFunctions/AggregateFunctionUniq.h>
-#include <DB/AggregateFunctions/AggregateFunctionUniqUpTo.h>
-#include <DB/AggregateFunctions/AggregateFunctionGroupArray.h>
-#include <DB/AggregateFunctions/AggregateFunctionGroupUniqArray.h>
-#include <DB/AggregateFunctions/AggregateFunctionQuantile.h>
-#include <DB/AggregateFunctions/AggregateFunctionQuantileTiming.h>
-#include <DB/AggregateFunctions/AggregateFunctionQuantileDeterministic.h>
-#include <DB/AggregateFunctions/AggregateFunctionIf.h>
-#include <DB/AggregateFunctions/AggregateFunctionArray.h>
-#include <DB/AggregateFunctions/AggregateFunctionState.h>
-#include <DB/AggregateFunctions/AggregateFunctionMerge.h>
-#include <DB/AggregateFunctions/AggregateFunctionSequenceMatch.h>
-#include <DB/AggregateFunctions/AggregateFunctionsStatistics.h>
-
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
-
-#include <DB/DataTypes/DataTypeDate.h>
-#include <DB/DataTypes/DataTypeDateTime.h>
-#include <DB/DataTypes/DataTypeString.h>
-#include <DB/DataTypes/DataTypeFixedString.h>
-
+#include <DB/DataTypes/DataTypeAggregateFunction.h>
+#include <DB/DataTypes/DataTypeArray.h>
 
 namespace DB
 {
 
+namespace
+{
+
+constexpr size_t strlen_constexpr(const char * in)
+{
+	return (*in == '\0') ? 0 : 1 + strlen_constexpr(in + 1);
+}
+
+struct SuffixState
+{
+	static constexpr auto name = "State";
+	static constexpr auto length = strlen_constexpr(name);
+};
+
+struct SuffixIf
+{
+	static constexpr auto name = "If";
+	static constexpr auto length = strlen_constexpr(name);
+};
+
+struct SuffixArray
+{
+	static constexpr auto name = "Array";
+	static constexpr auto length = strlen_constexpr(name);
+};
+
+struct SuffixMerge
+{
+	static constexpr auto name = "Merge";
+	static constexpr auto length = strlen_constexpr(name);
+};
+
+template <typename Suffix>
+inline bool endsWith(const std::string & in)
+{
+	return (in.length() > Suffix::length)
+		&& (in.compare(in.length() - Suffix::length, Suffix::length, Suffix::name) == 0);
+}
+
+/// Ничего не проверяет.
+template <typename Suffix>
+inline std::string trimRight(const std::string & in)
+{
+	return in.substr(0, in.length() - Suffix::length);
+}
+
+}
+
+void registerAggregateFunctionAvg(AggregateFunctionFactory & factory);
+void registerAggregateFunctionCount(AggregateFunctionFactory & factory);
+void registerAggregateFunctionGroupArray(AggregateFunctionFactory & factory);
+void registerAggregateFunctionGroupUniqArray(AggregateFunctionFactory & factory);
+void registerAggregateFunctionsQuantile(AggregateFunctionFactory & factory);
+void registerAggregateFunctionsQuantileDeterministic(AggregateFunctionFactory & factory);
+void registerAggregateFunctionsQuantileTiming(AggregateFunctionFactory & factory);
+void registerAggregateFunctionsSequenceMatch(AggregateFunctionFactory & factory);
+void registerAggregateFunctionsMinMaxAny(AggregateFunctionFactory & factory);
+void registerAggregateFunctionsStatistics(AggregateFunctionFactory & factory);
+void registerAggregateFunctionSum(AggregateFunctionFactory & factory);
+void registerAggregateFunctionsUniq(AggregateFunctionFactory & factory);
+void registerAggregateFunctionUniqUpTo(AggregateFunctionFactory & factory);
+
+AggregateFunctionPtr createAggregateFunctionArray(AggregateFunctionPtr & nested);
+AggregateFunctionPtr createAggregateFunctionIf(AggregateFunctionPtr & nested);
+AggregateFunctionPtr createAggregateFunctionState(AggregateFunctionPtr & nested);
+AggregateFunctionPtr createAggregateFunctionMerge(AggregateFunctionPtr & nested);
+
 
 AggregateFunctionFactory::AggregateFunctionFactory()
 {
+	registerAggregateFunctionAvg(*this);
+	registerAggregateFunctionCount(*this);
+	registerAggregateFunctionGroupArray(*this);
+	registerAggregateFunctionGroupUniqArray(*this);
+	registerAggregateFunctionsQuantile(*this);
+	registerAggregateFunctionsQuantileDeterministic(*this);
+	registerAggregateFunctionsQuantileTiming(*this);
+	registerAggregateFunctionsSequenceMatch(*this);
+	registerAggregateFunctionsMinMaxAny(*this);
+	registerAggregateFunctionsStatistics(*this);
+	registerAggregateFunctionSum(*this);
+	registerAggregateFunctionsUniq(*this);
+	registerAggregateFunctionUniqUpTo(*this);
 }
 
 
-/** Создать агрегатную функцию с числовым типом в параметре шаблона, в зависимости от типа аргумента.
-  */
-template <template <typename> class AggregateFunctionTemplate>
-static IAggregateFunction * createWithNumericType(const IDataType & argument_type)
+void AggregateFunctionFactory::registerFunction(const std::vector<std::string> & names, Creator creator)
 {
-	     if (typeid_cast<const DataTypeUInt8 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt8>;
-	else if (typeid_cast<const DataTypeUInt16 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt16>;
-	else if (typeid_cast<const DataTypeUInt32 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt32>;
-	else if (typeid_cast<const DataTypeUInt64 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt64>;
-	else if (typeid_cast<const DataTypeInt8 	*>(&argument_type))	return new AggregateFunctionTemplate<Int8>;
-	else if (typeid_cast<const DataTypeInt16 	*>(&argument_type))	return new AggregateFunctionTemplate<Int16>;
-	else if (typeid_cast<const DataTypeInt32 	*>(&argument_type))	return new AggregateFunctionTemplate<Int32>;
-	else if (typeid_cast<const DataTypeInt64 	*>(&argument_type))	return new AggregateFunctionTemplate<Int64>;
-	else if (typeid_cast<const DataTypeFloat32 *>(&argument_type))	return new AggregateFunctionTemplate<Float32>;
-	else if (typeid_cast<const DataTypeFloat64 *>(&argument_type))	return new AggregateFunctionTemplate<Float64>;
-	else
-		return nullptr;
-}
+	if (names.empty())
+		throw Exception("AggregateFunctionFactory: no name given for aggregate function", ErrorCodes::LOGICAL_ERROR);
+	if (creator == nullptr)
+		throw Exception("AggregateFunctionFactory: the aggregate function " + names[0] + " has been provided "
+			" a null constructor", ErrorCodes::LOGICAL_ERROR);
 
-template <template <typename, typename> class AggregateFunctionTemplate, class Data>
-static IAggregateFunction * createWithNumericType(const IDataType & argument_type)
-{
-	     if (typeid_cast<const DataTypeUInt8 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt8, Data>;
-	else if (typeid_cast<const DataTypeUInt16 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt16, Data>;
-	else if (typeid_cast<const DataTypeUInt32 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt32, Data>;
-	else if (typeid_cast<const DataTypeUInt64 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt64, Data>;
-	else if (typeid_cast<const DataTypeInt8 	*>(&argument_type))	return new AggregateFunctionTemplate<Int8, Data>;
-	else if (typeid_cast<const DataTypeInt16 	*>(&argument_type))	return new AggregateFunctionTemplate<Int16, Data>;
-	else if (typeid_cast<const DataTypeInt32 	*>(&argument_type))	return new AggregateFunctionTemplate<Int32, Data>;
-	else if (typeid_cast<const DataTypeInt64 	*>(&argument_type))	return new AggregateFunctionTemplate<Int64, Data>;
-	else if (typeid_cast<const DataTypeFloat32 *>(&argument_type))	return new AggregateFunctionTemplate<Float32, Data>;
-	else if (typeid_cast<const DataTypeFloat64 *>(&argument_type))	return new AggregateFunctionTemplate<Float64, Data>;
-	else
-		return nullptr;
-}
+	bool is_first = true;
 
+	for (const auto & name : names)
+	{
+		Descriptor desc;
+		desc.creator = creator;
+		desc.is_alias = !is_first;
 
-template <template <typename, typename> class AggregateFunctionTemplate, template <typename> class Data>
-static IAggregateFunction * createWithNumericType(const IDataType & argument_type)
-{
-	     if (typeid_cast<const DataTypeUInt8 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt8, Data<UInt8> >;
-	else if (typeid_cast<const DataTypeUInt16 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt16, Data<UInt16> >;
-	else if (typeid_cast<const DataTypeUInt32 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt32, Data<UInt32> >;
-	else if (typeid_cast<const DataTypeUInt64 	*>(&argument_type))	return new AggregateFunctionTemplate<UInt64, Data<UInt64> >;
-	else if (typeid_cast<const DataTypeInt8 	*>(&argument_type))	return new AggregateFunctionTemplate<Int8, Data<Int8> >;
-	else if (typeid_cast<const DataTypeInt16 	*>(&argument_type))	return new AggregateFunctionTemplate<Int16, Data<Int16> >;
-	else if (typeid_cast<const DataTypeInt32 	*>(&argument_type))	return new AggregateFunctionTemplate<Int32, Data<Int32> >;
-	else if (typeid_cast<const DataTypeInt64 	*>(&argument_type))	return new AggregateFunctionTemplate<Int64, Data<Int64> >;
-	else if (typeid_cast<const DataTypeFloat32 *>(&argument_type))	return new AggregateFunctionTemplate<Float32, Data<Float32> >;
-	else if (typeid_cast<const DataTypeFloat64 *>(&argument_type))	return new AggregateFunctionTemplate<Float64, Data<Float64> >;
-	else
-		return nullptr;
-}
+		auto res = aggregate_functions.emplace(name, desc);
+		if (!res.second)
+			throw Exception("AggregateFunctionFactory: the aggregate function name " + name + " is not unique",
+				ErrorCodes::LOGICAL_ERROR);
 
-
-/** Для шаблона с двумя аргументами.
-  */
-template <typename FirstType, template <typename, typename> class AggregateFunctionTemplate>
-static IAggregateFunction * createWithTwoNumericTypesSecond(const IDataType & second_type)
-{
-	     if (typeid_cast<const DataTypeUInt8 	*>(&second_type))	return new AggregateFunctionTemplate<FirstType, UInt8>;
-	else if (typeid_cast<const DataTypeUInt16 	*>(&second_type))	return new AggregateFunctionTemplate<FirstType, UInt16>;
-	else if (typeid_cast<const DataTypeUInt32 	*>(&second_type))	return new AggregateFunctionTemplate<FirstType, UInt32>;
-	else if (typeid_cast<const DataTypeUInt64 	*>(&second_type))	return new AggregateFunctionTemplate<FirstType, UInt64>;
-	else if (typeid_cast<const DataTypeInt8 	*>(&second_type))	return new AggregateFunctionTemplate<FirstType, Int8>;
-	else if (typeid_cast<const DataTypeInt16 	*>(&second_type))	return new AggregateFunctionTemplate<FirstType, Int16>;
-	else if (typeid_cast<const DataTypeInt32 	*>(&second_type))	return new AggregateFunctionTemplate<FirstType, Int32>;
-	else if (typeid_cast<const DataTypeInt64 	*>(&second_type))	return new AggregateFunctionTemplate<FirstType, Int64>;
-	else if (typeid_cast<const DataTypeFloat32 	*>(&second_type))	return new AggregateFunctionTemplate<FirstType, Float32>;
-	else if (typeid_cast<const DataTypeFloat64 	*>(&second_type))	return new AggregateFunctionTemplate<FirstType, Float64>;
-	else
-		return nullptr;
-}
-
-template <template <typename, typename> class AggregateFunctionTemplate>
-static IAggregateFunction * createWithTwoNumericTypes(const IDataType & first_type, const IDataType & second_type)
-{
-	     if (typeid_cast<const DataTypeUInt8 	*>(&first_type))	return createWithTwoNumericTypesSecond<UInt8, AggregateFunctionTemplate>(second_type);
-	else if (typeid_cast<const DataTypeUInt16 	*>(&first_type))	return createWithTwoNumericTypesSecond<UInt16, AggregateFunctionTemplate>(second_type);
-	else if (typeid_cast<const DataTypeUInt32 	*>(&first_type))	return createWithTwoNumericTypesSecond<UInt32, AggregateFunctionTemplate>(second_type);
-	else if (typeid_cast<const DataTypeUInt64 	*>(&first_type))	return createWithTwoNumericTypesSecond<UInt64, AggregateFunctionTemplate>(second_type);
-	else if (typeid_cast<const DataTypeInt8 	*>(&first_type))	return createWithTwoNumericTypesSecond<Int8, AggregateFunctionTemplate>(second_type);
-	else if (typeid_cast<const DataTypeInt16 	*>(&first_type))	return createWithTwoNumericTypesSecond<Int16, AggregateFunctionTemplate>(second_type);
-	else if (typeid_cast<const DataTypeInt32 	*>(&first_type))	return createWithTwoNumericTypesSecond<Int32, AggregateFunctionTemplate>(second_type);
-	else if (typeid_cast<const DataTypeInt64 	*>(&first_type))	return createWithTwoNumericTypesSecond<Int64, AggregateFunctionTemplate>(second_type);
-	else if (typeid_cast<const DataTypeFloat32 	*>(&first_type))	return createWithTwoNumericTypesSecond<Float32, AggregateFunctionTemplate>(second_type);
-	else if (typeid_cast<const DataTypeFloat64 	*>(&first_type))	return createWithTwoNumericTypesSecond<Float64, AggregateFunctionTemplate>(second_type);
-	else
-		return nullptr;
-}
-
-
-/// min, max, any, anyLast
-template <template <typename> class AggregateFunctionTemplate, template <typename> class Data>
-static IAggregateFunction * createAggregateFunctionSingleValue(const String & name, const DataTypes & argument_types)
-{
-	if (argument_types.size() != 1)
-		throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-	const IDataType & argument_type = *argument_types[0];
-
-	     if (typeid_cast<const DataTypeUInt8 	*>(&argument_type))	return new AggregateFunctionTemplate<Data<SingleValueDataFixed<UInt8>>>;
-	else if (typeid_cast<const DataTypeUInt16 	*>(&argument_type))	return new AggregateFunctionTemplate<Data<SingleValueDataFixed<UInt16>>>;
-	else if (typeid_cast<const DataTypeUInt32 	*>(&argument_type))	return new AggregateFunctionTemplate<Data<SingleValueDataFixed<UInt32>>>;
-	else if (typeid_cast<const DataTypeUInt64 	*>(&argument_type))	return new AggregateFunctionTemplate<Data<SingleValueDataFixed<UInt64>>>;
-	else if (typeid_cast<const DataTypeInt8 	*>(&argument_type))	return new AggregateFunctionTemplate<Data<SingleValueDataFixed<Int8>>>;
-	else if (typeid_cast<const DataTypeInt16 	*>(&argument_type))	return new AggregateFunctionTemplate<Data<SingleValueDataFixed<Int16>>>;
-	else if (typeid_cast<const DataTypeInt32 	*>(&argument_type))	return new AggregateFunctionTemplate<Data<SingleValueDataFixed<Int32>>>;
-	else if (typeid_cast<const DataTypeInt64 	*>(&argument_type))	return new AggregateFunctionTemplate<Data<SingleValueDataFixed<Int64>>>;
-	else if (typeid_cast<const DataTypeFloat32 *>(&argument_type))	return new AggregateFunctionTemplate<Data<SingleValueDataFixed<Float32>>>;
-	else if (typeid_cast<const DataTypeFloat64 *>(&argument_type))	return new AggregateFunctionTemplate<Data<SingleValueDataFixed<Float64>>>;
-	else if (typeid_cast<const DataTypeDate 	*>(&argument_type))
-		return new AggregateFunctionTemplate<Data<SingleValueDataFixed<DataTypeDate::FieldType>>>;
-	else if (typeid_cast<const DataTypeDateTime*>(&argument_type))
-		return new AggregateFunctionTemplate<Data<SingleValueDataFixed<DataTypeDateTime::FieldType>>>;
-	else if (typeid_cast<const DataTypeString*>(&argument_type))
-		return new AggregateFunctionTemplate<Data<SingleValueDataString>>;
-	else
-		return new AggregateFunctionTemplate<Data<SingleValueDataGeneric>>;
-}
-
-
-/// argMin, argMax
-template <template <typename> class MinMaxData, typename ResData>
-static IAggregateFunction * createAggregateFunctionArgMinMaxSecond(const String & name, const IDataType & val_type)
-{
-	     if (typeid_cast<const DataTypeUInt8 	*>(&val_type))
-		return new AggregateFunctionsArgMinMax<AggregateFunctionsArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<UInt8>>>>;
-	else if (typeid_cast<const DataTypeUInt16 	*>(&val_type))
-		return new AggregateFunctionsArgMinMax<AggregateFunctionsArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<UInt16>>>>;
-	else if (typeid_cast<const DataTypeUInt32 	*>(&val_type))
-		return new AggregateFunctionsArgMinMax<AggregateFunctionsArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<UInt32>>>>;
-	else if (typeid_cast<const DataTypeUInt64 	*>(&val_type))
-		return new AggregateFunctionsArgMinMax<AggregateFunctionsArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<UInt64>>>>;
-	else if (typeid_cast<const DataTypeInt8 	*>(&val_type))
-		return new AggregateFunctionsArgMinMax<AggregateFunctionsArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<Int8>>>>;
-	else if (typeid_cast<const DataTypeInt16 	*>(&val_type))
-		return new AggregateFunctionsArgMinMax<AggregateFunctionsArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<Int16>>>>;
-	else if (typeid_cast<const DataTypeInt32 	*>(&val_type))
-		return new AggregateFunctionsArgMinMax<AggregateFunctionsArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<Int32>>>>;
-	else if (typeid_cast<const DataTypeInt64 	*>(&val_type))
-		return new AggregateFunctionsArgMinMax<AggregateFunctionsArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<Int64>>>>;
-	else if (typeid_cast<const DataTypeFloat32  *>(&val_type))
-		return new AggregateFunctionsArgMinMax<AggregateFunctionsArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<Float32>>>>;
-	else if (typeid_cast<const DataTypeFloat64  *>(&val_type))
-		return new AggregateFunctionsArgMinMax<AggregateFunctionsArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<Float64>>>>;
-	else if (typeid_cast<const DataTypeDate 	*>(&val_type))
-		return new AggregateFunctionsArgMinMax<AggregateFunctionsArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<DataTypeDate::FieldType>>>>;
-	else if (typeid_cast<const DataTypeDateTime*>(&val_type))
-		return new AggregateFunctionsArgMinMax<AggregateFunctionsArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<DataTypeDateTime::FieldType>>>>;
-	else if (typeid_cast<const DataTypeString*>(&val_type))
-		return new AggregateFunctionsArgMinMax<AggregateFunctionsArgMinMaxData<ResData, MinMaxData<SingleValueDataString>>>;
-	else
-		return new AggregateFunctionsArgMinMax<AggregateFunctionsArgMinMaxData<ResData, MinMaxData<SingleValueDataGeneric>>>;
-}
-
-template <template <typename> class MinMaxData>
-static IAggregateFunction * createAggregateFunctionArgMinMax(const String & name, const DataTypes & argument_types)
-{
-	if (argument_types.size() != 2)
-		throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-	const IDataType & res_type = *argument_types[0];
-	const IDataType & val_type = *argument_types[1];
-
-	     if (typeid_cast<const DataTypeUInt8 	*>(&res_type))
-		return createAggregateFunctionArgMinMaxSecond<MinMaxData, SingleValueDataFixed<UInt8>>(name, val_type);
-	else if (typeid_cast<const DataTypeUInt16 	*>(&res_type))
-		return createAggregateFunctionArgMinMaxSecond<MinMaxData, SingleValueDataFixed<UInt16>>(name, val_type);
-	else if (typeid_cast<const DataTypeUInt32 	*>(&res_type))
-		return createAggregateFunctionArgMinMaxSecond<MinMaxData, SingleValueDataFixed<UInt32>>(name, val_type);
-	else if (typeid_cast<const DataTypeUInt64 	*>(&res_type))
-		return createAggregateFunctionArgMinMaxSecond<MinMaxData, SingleValueDataFixed<UInt64>>(name, val_type);
-	else if (typeid_cast<const DataTypeInt8 	*>(&res_type))
-		return createAggregateFunctionArgMinMaxSecond<MinMaxData, SingleValueDataFixed<Int8>>(name, val_type);
-	else if (typeid_cast<const DataTypeInt16 	*>(&res_type))
-		return createAggregateFunctionArgMinMaxSecond<MinMaxData, SingleValueDataFixed<Int16>>(name, val_type);
-	else if (typeid_cast<const DataTypeInt32 	*>(&res_type))
-		return createAggregateFunctionArgMinMaxSecond<MinMaxData, SingleValueDataFixed<Int32>>(name, val_type);
-	else if (typeid_cast<const DataTypeInt64 	*>(&res_type))
-		return createAggregateFunctionArgMinMaxSecond<MinMaxData, SingleValueDataFixed<Int64>>(name, val_type);
-	else if (typeid_cast<const DataTypeFloat32  *>(&res_type))
-		return createAggregateFunctionArgMinMaxSecond<MinMaxData, SingleValueDataFixed<Float32>>(name, val_type);
-	else if (typeid_cast<const DataTypeFloat64  *>(&res_type))
-		return createAggregateFunctionArgMinMaxSecond<MinMaxData, SingleValueDataFixed<Float64>>(name, val_type);
-	else if (typeid_cast<const DataTypeDate 	*>(&res_type))
-		return createAggregateFunctionArgMinMaxSecond<MinMaxData, SingleValueDataFixed<DataTypeDate::FieldType>>(name, val_type);
-	else if (typeid_cast<const DataTypeDateTime*>(&res_type))
-		return createAggregateFunctionArgMinMaxSecond<MinMaxData, SingleValueDataFixed<DataTypeDateTime::FieldType>>(name, val_type);
-	else if (typeid_cast<const DataTypeString*>(&res_type))
-		return createAggregateFunctionArgMinMaxSecond<MinMaxData, SingleValueDataString>(name, val_type);
-	else
-		return createAggregateFunctionArgMinMaxSecond<MinMaxData, SingleValueDataGeneric>(name, val_type);
+		is_first = false;
+	}
 }
 
 
 AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const DataTypes & argument_types, int recursion_level) const
 {
-	if (name == "count")
-		return new AggregateFunctionCount;
-	else if (name == "any")
-		return createAggregateFunctionSingleValue<AggregateFunctionsSingleValue, AggregateFunctionAnyData>(name, argument_types);
-	else if (name == "anyLast")
-		return createAggregateFunctionSingleValue<AggregateFunctionsSingleValue, AggregateFunctionAnyLastData>(name, argument_types);
-	else if (name == "min")
-		return createAggregateFunctionSingleValue<AggregateFunctionsSingleValue, AggregateFunctionMinData>(name, argument_types);
-	else if (name == "max")
-		return createAggregateFunctionSingleValue<AggregateFunctionsSingleValue, AggregateFunctionMaxData>(name, argument_types);
-	else if (name == "argMin")
-		return createAggregateFunctionArgMinMax<AggregateFunctionMinData>(name, argument_types);
-	else if (name == "argMax")
-		return createAggregateFunctionArgMinMax<AggregateFunctionMaxData>(name, argument_types);
-	else if (name == "groupArray")
-		return new AggregateFunctionGroupArray;
-	else if (name == "groupUniqArray")
+	auto it = aggregate_functions.find(name);
+	if (it != aggregate_functions.end())
 	{
-		if (argument_types.size() != 1)
-			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		const DataTypeArray * arr = typeid_cast<const DataTypeArray *>(&*argument_types[0]);
-
-		AggregateFunctionPtr res;
-
-		if (!arr)
-			res = createWithNumericType<AggregateFunctionGroupUniqArray>(*argument_types[0]);
-		else
-			res = createWithNumericType<AggregateFunctionGroupUniqArrays>(*arr->getNestedType());
-
-		if (!res)
-			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-		return res;
+		const auto & desc = it->second;
+		const auto & creator = desc.creator;
+		return creator(name, argument_types);
 	}
-	else if (name == "sum")
-	{
-		if (argument_types.size() != 1)
-			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionSum>(*argument_types[0]);
-
-		if (!res)
-			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-		return res;
-	}
-	else if (name == "avg")
-	{
-		if (argument_types.size() != 1)
-			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionAvg>(*argument_types[0]);
-
-		if (!res)
-			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-		return res;
-	}
-	else if (name == "uniq")
-	{
-		if (argument_types.size() != 1)
-			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		const IDataType & argument_type = *argument_types[0];
-
-		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionUniq, AggregateFunctionUniqUniquesHashSetData>(*argument_types[0]);
-
-		if (res)
-			return res;
-		else if (typeid_cast<const DataTypeDate 	*>(&argument_type))
-			return new AggregateFunctionUniq<DataTypeDate::FieldType, AggregateFunctionUniqUniquesHashSetData>;
-		else if (typeid_cast<const DataTypeDateTime*>(&argument_type))
-			return new AggregateFunctionUniq<DataTypeDateTime::FieldType, AggregateFunctionUniqUniquesHashSetData>;
-		else if (typeid_cast<const DataTypeString*>(&argument_type) || typeid_cast<const DataTypeFixedString*>(&argument_type))
-			return new AggregateFunctionUniq<String, AggregateFunctionUniqUniquesHashSetData>;
-		else
-			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-	}
-	else if (name == "uniqHLL12")
-	{
-		if (argument_types.size() != 1)
-			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		const IDataType & argument_type = *argument_types[0];
-
-		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionUniq, AggregateFunctionUniqHLL12Data>(*argument_types[0]);
-
-		if (res)
-			return res;
-		else if (typeid_cast<const DataTypeDate 	*>(&argument_type))
-			return new AggregateFunctionUniq<DataTypeDate::FieldType, AggregateFunctionUniqHLL12Data<DataTypeDate::FieldType>>;
-		else if (typeid_cast<const DataTypeDateTime*>(&argument_type))
-			return new AggregateFunctionUniq<DataTypeDateTime::FieldType, AggregateFunctionUniqHLL12Data<DataTypeDateTime::FieldType>>;
-		else if (typeid_cast<const DataTypeString*>(&argument_type) || typeid_cast<const DataTypeFixedString*>(&argument_type))
-			return new AggregateFunctionUniq<String, AggregateFunctionUniqHLL12Data<String>>;
-		else
-			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-	}
-	else if (name == "uniqExact")
-	{
-		if (argument_types.size() != 1)
-			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		const IDataType & argument_type = *argument_types[0];
-
-		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionUniq, AggregateFunctionUniqExactData>(*argument_types[0]);
-
-		if (res)
-			return res;
-		else if (typeid_cast<const DataTypeDate 	*>(&argument_type))
-			return new AggregateFunctionUniq<DataTypeDate::FieldType, AggregateFunctionUniqExactData<DataTypeDate::FieldType> >;
-		else if (typeid_cast<const DataTypeDateTime*>(&argument_type))
-			return new AggregateFunctionUniq<DataTypeDateTime::FieldType, AggregateFunctionUniqExactData<DataTypeDateTime::FieldType> >;
-		else if (typeid_cast<const DataTypeString*>(&argument_type) || typeid_cast<const DataTypeFixedString*>(&argument_type))
-			return new AggregateFunctionUniq<String, AggregateFunctionUniqExactData<String> >;
-		else
-			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-	}
-	else if (name == "uniqCombinedRaw")
-	{
-		if (argument_types.size() != 1)
-			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		const IDataType & argument_type = *argument_types[0];
-
-		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionUniq, AggregateFunctionUniqCombinedRawData>(*argument_types[0]);
-
-		if (res)
-			return res;
-		else if (typeid_cast<const DataTypeDate 	*>(&argument_type))
-			return new AggregateFunctionUniq<DataTypeDate::FieldType, AggregateFunctionUniqCombinedRawData<DataTypeDate::FieldType>>;
-		else if (typeid_cast<const DataTypeDateTime*>(&argument_type))
-			return new AggregateFunctionUniq<DataTypeDateTime::FieldType, AggregateFunctionUniqCombinedRawData<DataTypeDateTime::FieldType>>;
-		else if (typeid_cast<const DataTypeString*>(&argument_type) || typeid_cast<const DataTypeFixedString*>(&argument_type))
-			return new AggregateFunctionUniq<String, AggregateFunctionUniqCombinedRawData<String>>;
-		else
-			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-	}
-	else if (name == "uniqCombinedLinearCounting")
-	{
-		if (argument_types.size() != 1)
-			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		const IDataType & argument_type = *argument_types[0];
-
-		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionUniq,
-				AggregateFunctionUniqCombinedLinearCountingData>(*argument_types[0]);
-
-		if (res)
-			return res;
-		else if (typeid_cast<const DataTypeDate 	*>(&argument_type))
-			return new AggregateFunctionUniq<DataTypeDate::FieldType,
-				AggregateFunctionUniqCombinedLinearCountingData<DataTypeDate::FieldType>>;
-		else if (typeid_cast<const DataTypeDateTime*>(&argument_type))
-			return new AggregateFunctionUniq<DataTypeDateTime::FieldType,
-				AggregateFunctionUniqCombinedLinearCountingData<DataTypeDateTime::FieldType>>;
-		else if (typeid_cast<const DataTypeString*>(&argument_type) || typeid_cast<const DataTypeFixedString*>(&argument_type))
-			return new AggregateFunctionUniq<String, AggregateFunctionUniqCombinedLinearCountingData<String>>;
-		else
-			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-	}
-	else if (name == "uniqCombinedBiasCorrected")
-	{
-		if (argument_types.size() != 1)
-			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		const IDataType & argument_type = *argument_types[0];
-
-		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionUniq,
-			AggregateFunctionUniqCombinedBiasCorrectedData>(*argument_types[0]);
-
-		if (res)
-			return res;
-		else if (typeid_cast<const DataTypeDate 	*>(&argument_type))
-			return new AggregateFunctionUniq<DataTypeDate::FieldType,
-				AggregateFunctionUniqCombinedBiasCorrectedData<DataTypeDate::FieldType>>;
-		else if (typeid_cast<const DataTypeDateTime*>(&argument_type))
-			return new AggregateFunctionUniq<DataTypeDateTime::FieldType,
-				AggregateFunctionUniqCombinedBiasCorrectedData<DataTypeDateTime::FieldType>>;
-		else if (typeid_cast<const DataTypeString*>(&argument_type) || typeid_cast<const DataTypeFixedString*>(&argument_type))
-			return new AggregateFunctionUniq<String, AggregateFunctionUniqCombinedBiasCorrectedData<String>>;
-		else
-			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-	}
-	else if (name == "uniqCombined")
-	{
-		if (argument_types.size() != 1)
-			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		const IDataType & argument_type = *argument_types[0];
-
-		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionUniq, AggregateFunctionUniqCombinedData>(*argument_types[0]);
-
-		if (res)
-			return res;
-		else if (typeid_cast<const DataTypeDate 	*>(&argument_type))
-			return new AggregateFunctionUniq<DataTypeDate::FieldType, AggregateFunctionUniqCombinedData<DataTypeDate::FieldType>>;
-		else if (typeid_cast<const DataTypeDateTime*>(&argument_type))
-			return new AggregateFunctionUniq<DataTypeDateTime::FieldType, AggregateFunctionUniqCombinedData<DataTypeDateTime::FieldType>>;
-		else if (typeid_cast<const DataTypeString*>(&argument_type) || typeid_cast<const DataTypeFixedString*>(&argument_type))
-			return new AggregateFunctionUniq<String, AggregateFunctionUniqCombinedData<String>>;
-		else
-			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-	}
-	else if (name == "uniqUpTo")
-	{
-		if (argument_types.size() != 1)
-			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		const IDataType & argument_type = *argument_types[0];
-
-		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionUniqUpTo>(*argument_types[0]);
-
-		if (res)
-			return res;
-		else if (typeid_cast<const DataTypeDate 	*>(&argument_type))
-			return new AggregateFunctionUniqUpTo<DataTypeDate::FieldType>;
-		else if (typeid_cast<const DataTypeDateTime*>(&argument_type))
-			return new AggregateFunctionUniqUpTo<DataTypeDateTime::FieldType>;
-		else if (typeid_cast<const DataTypeString*>(&argument_type) || typeid_cast<const DataTypeFixedString*>(&argument_type))
-			return new AggregateFunctionUniqUpTo<String>;
-		else
-			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-	}
-	else if (name == "median" || name == "quantile")
-	{
-		if (argument_types.size() != 1)
-			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		const IDataType & argument_type = *argument_types[0];
-
-			 if (typeid_cast<const DataTypeUInt8 	*>(&argument_type))	return new AggregateFunctionQuantile<UInt8>;
-		else if (typeid_cast<const DataTypeUInt16 	*>(&argument_type))	return new AggregateFunctionQuantile<UInt16>;
-		else if (typeid_cast<const DataTypeUInt32 	*>(&argument_type))	return new AggregateFunctionQuantile<UInt32>;
-		else if (typeid_cast<const DataTypeUInt64 	*>(&argument_type))	return new AggregateFunctionQuantile<UInt64>;
-		else if (typeid_cast<const DataTypeInt8 	*>(&argument_type))	return new AggregateFunctionQuantile<Int8>;
-		else if (typeid_cast<const DataTypeInt16 	*>(&argument_type))	return new AggregateFunctionQuantile<Int16>;
-		else if (typeid_cast<const DataTypeInt32 	*>(&argument_type))	return new AggregateFunctionQuantile<Int32>;
-		else if (typeid_cast<const DataTypeInt64 	*>(&argument_type))	return new AggregateFunctionQuantile<Int64>;
-		else if (typeid_cast<const DataTypeFloat32 *>(&argument_type))	return new AggregateFunctionQuantile<Float32>;
-		else if (typeid_cast<const DataTypeFloat64 *>(&argument_type))	return new AggregateFunctionQuantile<Float64>;
-		else if (typeid_cast<const DataTypeDate 	*>(&argument_type)) return new AggregateFunctionQuantile<DataTypeDate::FieldType, false>;
-		else if (typeid_cast<const DataTypeDateTime*>(&argument_type)) return new AggregateFunctionQuantile<DataTypeDateTime::FieldType, false>;
-		else
-			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-	}
-	else if (name == "quantiles")
-	{
-		if (argument_types.size() != 1)
-			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		const IDataType & argument_type = *argument_types[0];
-
-			 if (typeid_cast<const DataTypeUInt8 	*>(&argument_type))	return new AggregateFunctionQuantiles<UInt8>;
-		else if (typeid_cast<const DataTypeUInt16 	*>(&argument_type))	return new AggregateFunctionQuantiles<UInt16>;
-		else if (typeid_cast<const DataTypeUInt32 	*>(&argument_type))	return new AggregateFunctionQuantiles<UInt32>;
-		else if (typeid_cast<const DataTypeUInt64 	*>(&argument_type))	return new AggregateFunctionQuantiles<UInt64>;
-		else if (typeid_cast<const DataTypeInt8 	*>(&argument_type))	return new AggregateFunctionQuantiles<Int8>;
-		else if (typeid_cast<const DataTypeInt16 	*>(&argument_type))	return new AggregateFunctionQuantiles<Int16>;
-		else if (typeid_cast<const DataTypeInt32 	*>(&argument_type))	return new AggregateFunctionQuantiles<Int32>;
-		else if (typeid_cast<const DataTypeInt64 	*>(&argument_type))	return new AggregateFunctionQuantiles<Int64>;
-		else if (typeid_cast<const DataTypeFloat32 *>(&argument_type))	return new AggregateFunctionQuantiles<Float32>;
-		else if (typeid_cast<const DataTypeFloat64 *>(&argument_type))	return new AggregateFunctionQuantiles<Float64>;
-		else if (typeid_cast<const DataTypeDate 	*>(&argument_type)) return new AggregateFunctionQuantiles<DataTypeDate::FieldType, false>;
-		else if (typeid_cast<const DataTypeDateTime*>(&argument_type)) return new AggregateFunctionQuantiles<DataTypeDateTime::FieldType, false>;
-		else
-			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-	}
-	else if (name == "medianTiming" || name == "quantileTiming")
-	{
-		if (argument_types.size() != 1)
-			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionQuantileTiming>(*argument_types[0]);
-
-		if (!res)
-			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-		return res;
-	}
-	else if (name == "quantilesTiming")
-	{
-		if (argument_types.size() != 1)
-			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionQuantilesTiming>(*argument_types[0]);
-
-		if (!res)
-			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-		return res;
-	}
-	else if (name == "medianTimingWeighted" || name == "quantileTimingWeighted")
-	{
-		if (argument_types.size() != 2)
-			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		AggregateFunctionPtr res = createWithTwoNumericTypes<AggregateFunctionQuantileTimingWeighted>(*argument_types[0], *argument_types[1]);
-
-		if (!res)
-			throw Exception("Illegal types " + argument_types[0]->getName() + " and " + argument_types[1]->getName()
-				+ " of arguments for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-		return res;
-	}
-	else if (name == "quantilesTimingWeighted")
-	{
-		if (argument_types.size() != 2)
-			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		AggregateFunctionPtr res = createWithTwoNumericTypes<AggregateFunctionQuantilesTimingWeighted>(*argument_types[0], *argument_types[1]);
-
-		if (!res)
-			throw Exception("Illegal types " + argument_types[0]->getName() + " and " + argument_types[1]->getName()
-				+ " of arguments for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-		return res;
-	}
-	else if (name == "medianDeterministic" || name == "quantileDeterministic")
-	{
-		if (argument_types.size() != 2)
-			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		const auto determinator_type = argument_types[1].get();
-		if (!typeid_cast<const DataTypeInt32 *>(determinator_type) &&
-			!typeid_cast<const DataTypeUInt32 *>(determinator_type) &&
-			!typeid_cast<const DataTypeInt64 *>(determinator_type) &&
-			!typeid_cast<const DataTypeUInt64 *>(determinator_type))
-		{
-			throw Exception{
-				"Illegal type " + determinator_type->getName() + " of second argument for aggregate function " + name +
-				", Int32, UInt32, Int64 or UInt64 required",
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-			};
-		}
-
-		const IDataType & argument_type = *argument_types[0];
-
-			 if (typeid_cast<const DataTypeUInt8 	*>(&argument_type))	return new AggregateFunctionQuantileDeterministic<UInt8>;
-		else if (typeid_cast<const DataTypeUInt16 	*>(&argument_type))	return new AggregateFunctionQuantileDeterministic<UInt16>;
-		else if (typeid_cast<const DataTypeUInt32 	*>(&argument_type))	return new AggregateFunctionQuantileDeterministic<UInt32>;
-		else if (typeid_cast<const DataTypeUInt64 	*>(&argument_type))	return new AggregateFunctionQuantileDeterministic<UInt64>;
-		else if (typeid_cast<const DataTypeInt8 	*>(&argument_type))	return new AggregateFunctionQuantileDeterministic<Int8>;
-		else if (typeid_cast<const DataTypeInt16 	*>(&argument_type))	return new AggregateFunctionQuantileDeterministic<Int16>;
-		else if (typeid_cast<const DataTypeInt32 	*>(&argument_type))	return new AggregateFunctionQuantileDeterministic<Int32>;
-		else if (typeid_cast<const DataTypeInt64 	*>(&argument_type))	return new AggregateFunctionQuantileDeterministic<Int64>;
-		else if (typeid_cast<const DataTypeFloat32 *>(&argument_type))	return new AggregateFunctionQuantileDeterministic<Float32>;
-		else if (typeid_cast<const DataTypeFloat64 *>(&argument_type))	return new AggregateFunctionQuantileDeterministic<Float64>;
-		else if (typeid_cast<const DataTypeDate 	*>(&argument_type)) return new AggregateFunctionQuantileDeterministic<DataTypeDate::FieldType, false>;
-		else if (typeid_cast<const DataTypeDateTime*>(&argument_type)) return new AggregateFunctionQuantileDeterministic<DataTypeDateTime::FieldType, false>;
-		else
-			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-	}
-	else if (name == "quantilesDeterministic")
-	{
-		if (argument_types.size() != 2)
-			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		const auto determinator_type = argument_types[1].get();
-		if (!typeid_cast<const DataTypeInt32 *>(determinator_type) &&
-			!typeid_cast<const DataTypeUInt32 *>(determinator_type) &&
-			!typeid_cast<const DataTypeInt64 *>(determinator_type) &&
-			!typeid_cast<const DataTypeUInt64 *>(determinator_type))
-		{
-			throw Exception{
-				"Illegal type " + determinator_type->getName() + " of second argument for aggregate function " + name +
-				", Int32, UInt32, Int64 or UInt64 required",
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-			};
-		}
-
-		const IDataType & argument_type = *argument_types[0];
-
-			 if (typeid_cast<const DataTypeUInt8 	*>(&argument_type))	return new AggregateFunctionQuantilesDeterministic<UInt8>;
-		else if (typeid_cast<const DataTypeUInt16 	*>(&argument_type))	return new AggregateFunctionQuantilesDeterministic<UInt16>;
-		else if (typeid_cast<const DataTypeUInt32 	*>(&argument_type))	return new AggregateFunctionQuantilesDeterministic<UInt32>;
-		else if (typeid_cast<const DataTypeUInt64 	*>(&argument_type))	return new AggregateFunctionQuantilesDeterministic<UInt64>;
-		else if (typeid_cast<const DataTypeInt8 	*>(&argument_type))	return new AggregateFunctionQuantilesDeterministic<Int8>;
-		else if (typeid_cast<const DataTypeInt16 	*>(&argument_type))	return new AggregateFunctionQuantilesDeterministic<Int16>;
-		else if (typeid_cast<const DataTypeInt32 	*>(&argument_type))	return new AggregateFunctionQuantilesDeterministic<Int32>;
-		else if (typeid_cast<const DataTypeInt64 	*>(&argument_type))	return new AggregateFunctionQuantilesDeterministic<Int64>;
-		else if (typeid_cast<const DataTypeFloat32 *>(&argument_type))	return new AggregateFunctionQuantilesDeterministic<Float32>;
-		else if (typeid_cast<const DataTypeFloat64 *>(&argument_type))	return new AggregateFunctionQuantilesDeterministic<Float64>;
-		else if (typeid_cast<const DataTypeDate 	*>(&argument_type)) return new AggregateFunctionQuantilesDeterministic<DataTypeDate::FieldType, false>;
-		else if (typeid_cast<const DataTypeDateTime*>(&argument_type)) return new AggregateFunctionQuantilesDeterministic<DataTypeDateTime::FieldType, false>;
-		else
-			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-	}
-	else if (name == "sequenceMatch")
-	{
-		if (!AggregateFunctionSequenceMatch::sufficientArgs(argument_types.size()))
-			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		return new AggregateFunctionSequenceMatch;
-	}
-	else if (name == "sequenceCount")
-	{
-		if (!AggregateFunctionSequenceCount::sufficientArgs(argument_types.size()))
-			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		return new AggregateFunctionSequenceCount;
-	}
-	else if (name == "varSamp")
-	{
-		if (argument_types.size() != 1)
-			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionVarSamp>(*argument_types[0]);
-
-		if (!res)
-			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-		return res;
-	}
-	else if (name == "varPop")
-	{
-		if (argument_types.size() != 1)
-			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionVarPop>(*argument_types[0]);
-
-		if (!res)
-			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-		return res;
-	}
-	else if (name == "stddevSamp")
-	{
-		if (argument_types.size() != 1)
-			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionStdDevSamp>(*argument_types[0]);
-
-		if (!res)
-			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-		return res;
-	}
-	else if (name == "stddevPop")
-	{
-		if (argument_types.size() != 1)
-			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		AggregateFunctionPtr res = createWithNumericType<AggregateFunctionStdDevPop>(*argument_types[0]);
-
-		if (!res)
-			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-		return res;
-	}
-	else if (name == "covarSamp")
-	{
-		if (argument_types.size() != 2)
-			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		AggregateFunctionPtr res = createWithTwoNumericTypes<AggregateFunctionCovarSamp>(*argument_types[0], *argument_types[1]);
-		if (!res)
-			throw Exception("Illegal types " + argument_types[0]->getName() + " and " + argument_types[1]->getName()
-				+ " of arguments for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-		return res;
-	}
-	else if (name == "covarPop")
-	{
-		if (argument_types.size() != 2)
-			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		AggregateFunctionPtr res = createWithTwoNumericTypes<AggregateFunctionCovarPop>(*argument_types[0], *argument_types[1]);
-		if (!res)
-			throw Exception("Illegal types " + argument_types[0]->getName() + " and " + argument_types[1]->getName()
-				+ " of arguments for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-		return res;
-	}
-	else if (name == "corr")
-	{
-		if (argument_types.size() != 2)
-			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		AggregateFunctionPtr res = createWithTwoNumericTypes<AggregateFunctionCorr>(*argument_types[0], *argument_types[1]);
-		if (!res)
-			throw Exception("Illegal types " + argument_types[0]->getName() + " and " + argument_types[1]->getName()
-				+ " of arguments for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-		return res;
-	}
-	else if (recursion_level == 0 && name.size() > strlen("State") && !(strcmp(name.data() + name.size() - strlen("State"), "State")))
+	else if ((recursion_level == 0) && endsWith<SuffixState>(name))
 	{
 		/// Для агрегатных функций вида aggState, где agg - имя другой агрегатной функции.
-		AggregateFunctionPtr nested = get(String(name.data(), name.size() - strlen("State")), argument_types, recursion_level + 1);
-		return new AggregateFunctionState(nested);
+		AggregateFunctionPtr nested = get(trimRight<SuffixState>(name), argument_types, recursion_level + 1);
+		return createAggregateFunctionState(nested);
 	}
-	else if (recursion_level <= 1 && name.size() > strlen("Merge") && !(strcmp(name.data() + name.size() - strlen("Merge"), "Merge")))
+	else if ((recursion_level <= 1) && endsWith<SuffixMerge>(name))
 	{
 		/// Для агрегатных функций вида aggMerge, где agg - имя другой агрегатной функции.
 		if (argument_types.size() != 1)
 			throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 		const DataTypeAggregateFunction * function = typeid_cast<const DataTypeAggregateFunction *>(&*argument_types[0]);
 		if (!function)
-			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name,
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		AggregateFunctionPtr nested = get(String(name.data(), name.size() - strlen("Merge")), function->getArgumentsDataTypes(), recursion_level + 1);
+		AggregateFunctionPtr nested = get(trimRight<SuffixMerge>(name), function->getArgumentsDataTypes(), recursion_level + 1);
 
 		if (nested->getName() != function->getFunctionName())
-			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name,
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new AggregateFunctionMerge(nested);
+		return createAggregateFunctionMerge(nested);
 	}
-	else if (recursion_level <= 2 && name.size() >= 3 && name[name.size() - 2] == 'I' && name[name.size() - 1] == 'f')
+	else if ((recursion_level <= 2) && endsWith<SuffixIf>(name))
 	{
 		if (argument_types.empty())
 			throw Exception{
@@ -752,10 +161,10 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 		/// Для агрегатных функций вида aggIf, где agg - имя другой агрегатной функции.
 		DataTypes nested_dt = argument_types;
 		nested_dt.pop_back();
-		AggregateFunctionPtr nested = get(String(name.data(), name.size() - 2), nested_dt, recursion_level + 1);
-		return new AggregateFunctionIf(nested);
+		AggregateFunctionPtr nested = get(trimRight<SuffixIf>(name), nested_dt, recursion_level + 1);
+		return createAggregateFunctionIf(nested);
 	}
-	else if (recursion_level <= 3 && name.size() > strlen("Array") && !(strcmp(name.data() + name.size() - strlen("Array"), "Array")))
+	else if ((recursion_level <= 3) && endsWith<SuffixArray>(name))
 	{
 		/// Для агрегатных функций вида aggArray, где agg - имя другой агрегатной функции.
 		size_t num_agruments = argument_types.size();
@@ -766,10 +175,12 @@ AggregateFunctionPtr AggregateFunctionFactory::get(const String & name, const Da
 			if (const DataTypeArray * array = typeid_cast<const DataTypeArray *>(&*argument_types[i]))
 				nested_arguments.push_back(array->getNestedType());
 			else
-				throw Exception("Illegal type " + argument_types[i]->getName() + " of argument #" + toString(i + 1) + " for aggregate function " + name + ". Must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+				throw Exception("Illegal type " + argument_types[i]->getName() + " of argument #" + toString(i + 1) +
+					" for aggregate function " + name + ". Must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 		}
-		AggregateFunctionPtr nested = get(String(name.data(), name.size() - strlen("Array")), nested_arguments, recursion_level + 3); /// + 3, чтобы ни один другой модификатор не мог идти перед Array
-		return new AggregateFunctionArray(nested);
+		/// + 3, чтобы ни один другой модификатор не мог идти перед Array
+		AggregateFunctionPtr nested = get(trimRight<SuffixArray>(name), nested_arguments, recursion_level + 3);
+		return createAggregateFunctionArray(nested);
 	}
 	else
 		throw Exception("Unknown aggregate function " + name, ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
@@ -780,78 +191,50 @@ AggregateFunctionPtr AggregateFunctionFactory::tryGet(const String & name, const
 {
 	return isAggregateFunctionName(name)
 		? get(name, argument_types)
-		: NULL;
+		: nullptr;
 }
 
-const AggregateFunctionFactory::FunctionNames & AggregateFunctionFactory::getFunctionNames() const
-{
-	static FunctionNames names
-	{
-		"count",
-		"any",
-		"anyLast",
-		"min",
-		"max",
-		"argMin",
-		"argMax",
-		"sum",
-		"avg",
-		"uniq",
-		"uniqHLL12",
-		"uniqExact",
-		"uniqCombinedRaw",
-		"uniqCombinedLinearCounting",
-		"uniqCombinedBiasCorrected",
-		"uniqCombined",
-		"uniqUpTo",
-		"groupArray",
-		"groupUniqArray",
-		"median",
-		"quantile",
-		"quantiles",
-		"medianTiming",
-		"quantileTiming",
-		"quantilesTiming",
-		"quantileTimingWeighted",
-		"quantilesTimingWeighted",
-		"medianTimingWeighted",
-		"medianDeterministic",
-		"quantileDeterministic",
-		"quantilesDeterministic",
-		"sequenceMatch",
-		"sequenceCount",
-		"varSamp",
-		"varPop",
-		"stddevSamp",
-		"stddevPop",
-		"covarSamp",
-		"covarPop",
-		"corr"
-	};
-
-	return names;
-}
 
 bool AggregateFunctionFactory::isAggregateFunctionName(const String & name, int recursion_level) const
 {
-	const auto & names = getFunctionNames();
-	if (std::find(names.begin(), names.end(), name) != names.end())
+	if (aggregate_functions.count(name) > 0)
 		return true;
-
 	/// Для агрегатных функций вида aggState, где agg - имя другой агрегатной функции.
-	if (recursion_level <= 0 && name.size() > strlen("State") && !(strcmp(name.data() + name.size() - strlen("State"), "State")))
-		return isAggregateFunctionName(String(name.data(), name.size() - strlen("State")), recursion_level + 1);
+	else if ((recursion_level <= 0) && endsWith<SuffixState>(name))
+		return isAggregateFunctionName(trimRight<SuffixState>(name), recursion_level + 1);
 	/// Для агрегатных функций вида aggMerge, где agg - имя другой агрегатной функции.
-	if (recursion_level <= 1 && name.size() > strlen("Merge") && !(strcmp(name.data() + name.size() - strlen("Merge"), "Merge")))
-		return isAggregateFunctionName(String(name.data(), name.size() - strlen("Merge")), recursion_level + 1);
+	else if ((recursion_level <= 1) && endsWith<SuffixMerge>(name))
+		return isAggregateFunctionName(trimRight<SuffixMerge>(name), recursion_level + 1);
 	/// Для агрегатных функций вида aggIf, где agg - имя другой агрегатной функции.
-	if (recursion_level <= 2 && name.size() >= 3 && name[name.size() - 2] == 'I' && name[name.size() - 1] == 'f')
-		return isAggregateFunctionName(String(name.data(), name.size() - 2), recursion_level + 1);
+	else if ((recursion_level <= 2) && endsWith<SuffixIf>(name))
+		return isAggregateFunctionName(trimRight<SuffixIf>(name), recursion_level + 1);
 	/// Для агрегатных функций вида aggArray, где agg - имя другой агрегатной функции.
-	if (recursion_level <= 3 && name.size() > strlen("Array") && !(strcmp(name.data() + name.size() - strlen("Array"), "Array")))
-		return isAggregateFunctionName(String(name.data(), name.size() - strlen("Array")), recursion_level + 3); /// + 3, чтобы ни один другой модификатор не мог идти перед Array
+	else if ((recursion_level <= 3) && endsWith<SuffixArray>(name))
+	{
+		/// + 3, чтобы ни один другой модификатор не мог идти перед Array
+		return isAggregateFunctionName(trimRight<SuffixArray>(name), recursion_level + 3);
+	}
+	else
+		return false;
+}
 
-	return false;
+
+AggregateFunctionFactory::Details AggregateFunctionFactory::getDetails(const AggregateFunctionFactory::AggregateFunctions::value_type & entry)
+{
+	const auto & desc = entry.second;
+	return {entry.first, desc.is_alias};
+}
+
+
+AggregateFunctionFactory::const_iterator AggregateFunctionFactory::begin() const
+{
+	return boost::make_transform_iterator(aggregate_functions.begin(), getDetails);
+}
+
+
+AggregateFunctionFactory::const_iterator AggregateFunctionFactory::end() const
+{
+	return boost::make_transform_iterator(aggregate_functions.end(), getDetails);
 }
 
 

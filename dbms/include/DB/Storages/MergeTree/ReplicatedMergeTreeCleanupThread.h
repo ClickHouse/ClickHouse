@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Yandex/logger_useful.h>
+#include <common/logger_useful.h>
 #include <thread>
 
 
@@ -39,6 +39,9 @@ private:
 
 	/// Удалить из ZooKeeper старые хеши блоков. Это делает ведущая реплика.
 	void clearOldBlocks();
+
+	/// TODO Удаление старых quorum/failed_parts
+	/// TODO Удаление старых nonincrement_block_numbers
 };
 
 

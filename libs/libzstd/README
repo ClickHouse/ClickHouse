@@ -1,1 +1,5 @@
-https://github.com/Cyan4973/zstd/tree/1eca5f52994434d3b0427c9014403cf01495f54a/
+https://github.com/Cyan4973/zstd/tree/v0.1.1
+
+Added
+#pragma GCC diagnostic ignored "-Warray-bounds"
+as noted here: http://fastcompression.blogspot.ru/2015/08/fuzz-testing-zstandard.html?showComment=1441763002674#c8204923539141394992
