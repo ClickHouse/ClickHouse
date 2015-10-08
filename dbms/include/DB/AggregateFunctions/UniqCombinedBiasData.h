@@ -27,7 +27,7 @@ namespace DB
   */
 struct UniqCombinedBiasData
 {
-	using InterpolatedData = std::array<double, 178>;
+	using InterpolatedData = std::array<double, 200>;
 
 	static double getThreshold();
 	/// Оценки количества уникальных значений по алгоритму HyperLogLog без применения каких-либо поправок.
