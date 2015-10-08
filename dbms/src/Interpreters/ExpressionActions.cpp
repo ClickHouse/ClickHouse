@@ -798,7 +798,6 @@ void ExpressionActions::finalize(const Names & output_columns)
 				new_actions.push_back(ExpressionAction::removeColumn(name));
 				if (sample_block.has(name))
 					sample_block.erase(name);
-				std::cerr << "Removing " << name << "\n";
 			}
 		};
 
