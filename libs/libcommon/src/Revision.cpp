@@ -1,4 +1,4 @@
-#include <Yandex/Revision.h>
+#include <common/Revision.h>
 #include "revision.h"
 
 namespace Revision

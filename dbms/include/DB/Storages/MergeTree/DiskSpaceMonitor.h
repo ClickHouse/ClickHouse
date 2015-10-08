@@ -2,8 +2,8 @@
 #include <Poco/Mutex.h>
 #include <sys/statvfs.h>
 #include <boost/noncopyable.hpp>
-#include <Yandex/logger_useful.h>
-#include <DB/Core/Exception.h>
+#include <common/logger_useful.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 #include <DB/IO/WriteHelpers.h>
 #include <DB/Common/formatReadable.h>

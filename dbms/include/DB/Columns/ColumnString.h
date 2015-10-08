@@ -7,6 +7,7 @@
 #include <DB/Columns/IColumn.h>
 #include <DB/Common/Collator.h>
 #include <DB/Common/PODArray.h>
+#include <DB/Common/Arena.h>
 
 
 namespace DB
@@ -113,6 +114,34 @@ public:
 		chars.resize(old_size + length);
 		memcpy(&chars[old_size], pos, length);
 		offsets.push_back((offsets.size() == 0 ? 0 : offsets.back()) + length);
+	}
+
+	StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override
+	{
+		size_t string_size = sizeAt(n);
+		size_t offset = offsetAt(n);
+
+		StringRef res;
+		res.size = sizeof(string_size) + string_size;
+		char * pos = arena.allocContinue(res.size, begin);
+		memcpy(pos, &string_size, sizeof(string_size));
+		memcpy(pos + sizeof(string_size), &chars[offset], string_size);
+		res.data = pos;
+
+		return res;
+	}
+
+	const char * deserializeAndInsertFromArena(const char * pos) override
+	{
+		size_t string_size = *reinterpret_cast<const size_t *>(pos);
+		pos += sizeof(string_size);
+
+		size_t old_size = chars.size();
+		chars.resize(old_size + string_size);
+		memcpy(&chars[old_size], pos, string_size);
+
+		offsets.push_back((offsets.size() == 0 ? 0 : offsets.back()) + string_size);
+		return pos + string_size;
 	}
 
 	ColumnPtr cut(size_t start, size_t length) const override

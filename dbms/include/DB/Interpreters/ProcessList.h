@@ -6,10 +6,10 @@
 #include <Poco/Mutex.h>
 #include <Poco/Condition.h>
 #include <Poco/Net/IPAddress.h>
-#include <statdaemons/Stopwatch.h>
+#include <DB/Common/Stopwatch.h>
 #include <DB/Core/Defines.h>
 #include <DB/Core/Progress.h>
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 #include <DB/Common/MemoryTracker.h>
 #include <DB/IO/WriteHelpers.h>
@@ -131,7 +131,7 @@ public:
 	  * Если времени не хватило - кинуть исключение.
 	  */
 	EntryPtr insert(const String & query_, const String & user_, const String & query_id_, const Poco::Net::IPAddress & ip_address_,
-		size_t max_memory_usage, size_t max_wait_milliseconds, bool replace_running_query, QueryPriorities::Priority priority);
+		const Settings & settings);
 
 	/// Количество одновременно выполняющихся запросов.
 	size_t size() const { return cur_size; }

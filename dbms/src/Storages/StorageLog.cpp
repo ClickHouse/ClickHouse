@@ -2,7 +2,7 @@
 
 #include <DB/Common/escapeForFileName.h>
 
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 
 #include <DB/IO/ReadBufferFromFile.h>
@@ -19,7 +19,6 @@
 #include <DB/DataStreams/IBlockOutputStream.h>
 
 #include <DB/Columns/ColumnArray.h>
-#include <DB/Columns/ColumnNested.h>
 
 #include <DB/Storages/StorageLog.h>
 
@@ -733,7 +732,7 @@ BlockInputStreams StorageLog::read(
 
 
 BlockOutputStreamPtr StorageLog::write(
-	ASTPtr query)
+	ASTPtr query, const Settings & settings)
 {
 	loadMarks();
 	return new LogBlockOutputStream(*this);

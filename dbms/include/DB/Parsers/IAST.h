@@ -8,10 +8,10 @@
 
 #include <Poco/SharedPtr.h>
 
-#include <Yandex/Common.h>
+#include <common/Common.h>
 
 #include <DB/Core/Types.h>
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 #include <DB/IO/WriteHelpers.h>
 #include <DB/Parsers/StringRange.h>
@@ -32,7 +32,35 @@ public:
 	typedef std::vector<SharedPtr<IAST> > ASTs;
 	ASTs children;
 	StringRange range;
-	bool is_visited = false;
+
+	/// Указатель на начало секции [NOT]IN или JOIN в которой включен этот узел,
+	/// если имеется такая секция.
+	IAST * enclosing_in_or_join = nullptr;
+
+	/// Атрибуты, которые нужны для некоторых алгоритмов на синтаксических деревьях.
+	using Attributes = UInt32;
+	Attributes attributes = 0;
+
+	/// Был ли узел посещён? (см. класс LogicalExpressionsOptimizer)
+	static constexpr Attributes IsVisited = 1U;
+	/// Был ли узел обработан? (см. класс InJoinSubqueriesPreprocessor)
+	static constexpr Attributes IsPreprocessedForInJoinSubqueries = 1U << 1;
+	/// Является ли узел секцией IN?
+	static constexpr Attributes IsIn = 1U << 2;
+	/// Является ли узел секцией NOT IN?
+	static constexpr Attributes IsNotIn = 1U << 3;
+	/// Является ли узел секцией JOIN?
+	static constexpr Attributes IsJoin = 1U << 4;
+	/// Имеет ли секция IN/NOT IN/JOIN атрибут GLOBAL?
+	static constexpr Attributes IsGlobal = 1U << 5;
+
+	/** Глубина одного узла N - это глубина того запроса, которому принадлежит N.
+	 *  Дальше глубина одного запроса определяется следующим образом:
+	 *  - если запрос Q является главным, то select_query_depth(Q) = 0
+	 *  - если запрос S является непосредственным подзапросом одного запроса R,
+	 *  то select_query_depth(S) = select_query_depth(R) + 1
+	 */
+	UInt32 select_query_depth = 0;
 
 	/** Строка с полным запросом.
 	  * Этот указатель не дает ее удалить, пока range в нее ссылается.
@@ -64,11 +92,12 @@ public:
 	/** Получить глубокую копию дерева. */
 	virtual SharedPtr<IAST> clone() const = 0;
 
-	void clearVisited()
+	/// Рекурсивно установить атрибуты в поддереве, корнем которого является текущий узел.
+	void setAttributes(Attributes attributes_)
 	{
-		is_visited = false;
-		for (ASTs::iterator it = children.begin(); it != children.end(); ++it)
-			(*it)->is_visited = false;
+		attributes |= attributes_;
+		for (auto it : children)
+			it->setAttributes(attributes_);
 	}
 
 	/** Получить текст, который идентифицирует этот элемент и всё поддерево.

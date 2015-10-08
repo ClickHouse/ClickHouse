@@ -91,6 +91,8 @@ struct Limits
 	\
 	/** Максимальная скорость обмена данными по сети в байтах в секунду. 0 - не ограничена. */ \
 	M(SettingUInt64, max_network_bandwidth, 0) \
+	/** Максимальное количество байт на приём или передачу по сети, в рамках запроса. */ \
+	M(SettingUInt64, max_network_bytes, 0) \
 
 #define DECLARE(TYPE, NAME, DEFAULT) \
 	TYPE NAME {DEFAULT};

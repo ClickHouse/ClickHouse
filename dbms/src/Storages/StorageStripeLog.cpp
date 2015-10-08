@@ -5,7 +5,7 @@
 
 #include <DB/Common/escapeForFileName.h>
 
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 
 #include <DB/IO/ReadBufferFromFile.h>
@@ -24,7 +24,6 @@
 #include <DB/DataStreams/NativeBlockOutputStream.h>
 
 #include <DB/Columns/ColumnArray.h>
-#include <DB/Columns/ColumnNested.h>
 
 #include <DB/Storages/StorageStripeLog.h>
 #include <Poco/DirectoryIterator.h>
@@ -40,13 +39,13 @@ class StripeLogBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	StripeLogBlockInputStream(const NameSet & column_names_, StorageStripeLog & storage_, size_t max_read_buffer_size_,
-		const Poco::SharedPtr<IndexForNativeFormat> & index_,
+		std::shared_ptr<const IndexForNativeFormat> & index_,
 		IndexForNativeFormat::Blocks::const_iterator index_begin_,
 		IndexForNativeFormat::Blocks::const_iterator index_end_)
 		: column_names(column_names_.begin(), column_names_.end()), storage(storage_),
 		index(index_), index_begin(index_begin_), index_end(index_end_),
-		data_in(storage.full_path() + "data.bin", 0, 0, max_read_buffer_size_),
-		block_in(data_in, 0, true, index_begin, index_end)
+		data_in(std::make_unique<CompressedReadBufferFromFile>(storage.full_path() + "data.bin", 0, 0, max_read_buffer_size_)),
+		block_in(std::make_unique<NativeBlockInputStream>(*data_in, 0, true, index_begin, index_end))
 	{
 	}
 
@@ -64,19 +63,37 @@ public:
 protected:
 	Block readImpl() override
 	{
-		return block_in.read();
+		Block res;
+
+		if (block_in)
+		{
+			res = block_in->read();
+
+			/// Освобождаем память раньше уничтожения объекта.
+			if (!res)
+			{
+				block_in.reset();
+				data_in.reset();
+				index.reset();
+			}
+		}
+
+		return res;
 	}
 
 private:
 	NameSet column_names;
 	StorageStripeLog & storage;
 
-	const Poco::SharedPtr<IndexForNativeFormat> index;
+	std::shared_ptr<const IndexForNativeFormat> index;
 	IndexForNativeFormat::Blocks::const_iterator index_begin;
 	IndexForNativeFormat::Blocks::const_iterator index_end;
 
-	CompressedReadBufferFromFile data_in;
-	NativeBlockInputStream block_in;
+	/** unique_ptr - чтобы удалять объекты (освобождать буферы) после исчерпания источника
+	  * - для экономии оперативки при использовании большого количества источников.
+	  */
+	std::unique_ptr<CompressedReadBufferFromFile> data_in;
+	std::unique_ptr<NativeBlockInputStream> block_in;
 };
 
 
@@ -216,7 +233,7 @@ BlockInputStreams StorageStripeLog::read(
 	NameSet column_names_set(column_names.begin(), column_names.end());
 
 	CompressedReadBufferFromFile index_in(full_path() + "index.mrk", 0, 0, INDEX_BUFFER_SIZE);
-	Poco::SharedPtr<IndexForNativeFormat> index = new IndexForNativeFormat(index_in, column_names_set);
+	std::shared_ptr<const IndexForNativeFormat> index{std::make_shared<IndexForNativeFormat>(index_in, column_names_set)};
 
 	BlockInputStreams res;
 
@@ -242,7 +259,7 @@ BlockInputStreams StorageStripeLog::read(
 
 
 BlockOutputStreamPtr StorageStripeLog::write(
-	ASTPtr query)
+	ASTPtr query, const Settings & settings)
 {
 	return new StripeLogBlockOutputStream(*this);
 }

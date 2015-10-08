@@ -1,6 +1,6 @@
 #include <iterator>
 
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 
 #include <DB/Core/Block.h>

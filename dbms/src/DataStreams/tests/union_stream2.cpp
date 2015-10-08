@@ -6,7 +6,7 @@
 
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
 
-#include <DB/Storages/StorageSystemNumbers.h>
+#include <DB/Storages/System/StorageSystemNumbers.h>
 
 #include <DB/DataStreams/LimitBlockInputStream.h>
 #include <DB/DataStreams/UnionBlockInputStream.h>
@@ -32,7 +32,7 @@ int main(int argc, char ** argv)
 		context.setPath("./");
 
 		DB::loadMetadata(context);
-		
+
 		DB::Names column_names;
 		column_names.push_back("WatchID");
 
@@ -43,7 +43,7 @@ int main(int argc, char ** argv)
 
 		for (size_t i = 0, size = streams.size(); i < size; ++i)
 			streams[i] = new DB::AsynchronousBlockInputStream(streams[i]);
-		
+
 		DB::BlockInputStreamPtr stream = new DB::UnionBlockInputStream(streams, nullptr, settings.max_threads);
 		stream = new DB::LimitBlockInputStream(stream, 10, 0);
 

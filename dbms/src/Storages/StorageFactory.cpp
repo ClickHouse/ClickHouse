@@ -17,8 +17,8 @@
 #include <DB/Storages/StorageMerge.h>
 #include <DB/Storages/StorageMergeTree.h>
 #include <DB/Storages/StorageDistributed.h>
-#include <DB/Storages/StorageSystemNumbers.h>
-#include <DB/Storages/StorageSystemOne.h>
+#include <DB/Storages/System/StorageSystemNumbers.h>
+#include <DB/Storages/System/StorageSystemOne.h>
 #include <DB/Storages/StorageFactory.h>
 #include <DB/Storages/StorageView.h>
 #include <DB/Storages/StorageMaterializedView.h>

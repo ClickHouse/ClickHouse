@@ -30,12 +30,13 @@ public:
 		ordered_names{column_names},
 		min_bytes_to_use_direct_io(min_bytes_to_use_direct_io_), max_read_buffer_size(max_read_buffer_size_)
 	{
+		/** @note можно было бы просто поменять местами reverse в if и else ветках MergeTreeDataSelectExecutor,
+		 *	а этот reverse убрать. */
 		std::reverse(remaining_mark_ranges.begin(), remaining_mark_ranges.end());
 
 		/// inject columns required for defaults evaluation
 		const auto injected_columns = injectRequiredColumns(column_names);
-		/// insert injected columns into ordered columns list to avoid exception about different block structures
-		ordered_names.insert(std::end(ordered_names), std::begin(injected_columns), std::end(injected_columns));
+		should_reorder = !injected_columns.empty();
 
 		Names pre_column_names;
 
@@ -43,10 +44,12 @@ public:
 		{
 			pre_column_names = prewhere_actions->getRequiredColumns();
 
-			injectRequiredColumns(pre_column_names);
-
 			if (pre_column_names.empty())
 				pre_column_names.push_back(column_names[0]);
+
+			const auto injected_pre_columns = injectRequiredColumns(pre_column_names);
+			if (!injected_pre_columns.empty())
+				should_reorder = true;
 
 			const NameSet pre_name_set(pre_column_names.begin(), pre_column_names.end());
 			/// Если выражение в PREWHERE - не столбец таблицы, не нужно отдавать наружу столбец с ним
@@ -135,13 +138,18 @@ protected:
 		NameSet required_columns{std::begin(columns), std::end(columns)};
 		NameSet injected_columns;
 
+		auto all_column_files_missing = true;
+
 		for (size_t i = 0; i < columns.size(); ++i)
 		{
 			const auto & column_name = columns[i];
 
 			/// column has files and hence does not require evaluation
 			if (owned_data_part->hasColumnFiles(column_name))
+			{
+				all_column_files_missing = false;
 				continue;
+			}
 
 			const auto default_it = storage.column_defaults.find(column_name);
 			/// columns has no explicit default expression
@@ -165,6 +173,14 @@ protected:
 					}
 				}
 			}
+		}
+
+		/// If all files are missing read at least one column to determine correct column sizes
+		if (all_column_files_missing)
+		{
+			const auto minimum_size_column_name = owned_data_part->getMinimumSizeColumnName();
+			columns.push_back(minimum_size_column_name);
+			injected_columns.insert(minimum_size_column_name);
 		}
 
 		return injected_columns;
@@ -216,7 +232,7 @@ protected:
 						remaining_mark_ranges.pop_back();
 				}
 				progressImpl(Progress(res.rowsInFirstColumn(), res.bytes()));
-				pre_reader->fillMissingColumns(res, ordered_names);
+				pre_reader->fillMissingColumns(res, ordered_names, should_reorder);
 
 				/// Вычислим выражение в PREWHERE.
 				prewhere_actions->execute(res);
@@ -326,7 +342,7 @@ protected:
 		else
 		{
 			size_t space_left = std::max(1LU, block_size / storage.index_granularity);
-			while (!remaining_mark_ranges.empty() && space_left)
+			while (!remaining_mark_ranges.empty() && space_left && !isCancelled())
 			{
 				MarkRange & range = remaining_mark_ranges.back();
 
@@ -382,6 +398,7 @@ private:
 
 	/// column names in specific order as expected by other stages
 	Names ordered_names;
+	bool should_reorder{false};
 
 	size_t min_bytes_to_use_direct_io;
 	size_t max_read_buffer_size;

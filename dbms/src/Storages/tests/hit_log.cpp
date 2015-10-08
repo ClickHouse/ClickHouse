@@ -123,7 +123,7 @@ int main(int argc, char ** argv)
 
 			RowInputStreamPtr in_ = new TabSeparatedRowInputStream(in_buf, sample);
 			BlockInputStreamFromRowInputStream in(in_, sample);
-			BlockOutputStreamPtr out = table->write(0);
+			BlockOutputStreamPtr out = table->write({}, {});
 			copyData(in, *out);
 		}
 

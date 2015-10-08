@@ -89,6 +89,9 @@ public:
 	/// Если не найдено - возвращается конец haystack.
 	const char * search(const char * haystack, size_t haystack_size) const
 	{
+		if (needle_size == 0)
+			return haystack;
+
 		const char * haystack_end = haystack + haystack_size;
 
 		if (needle_size == 1)

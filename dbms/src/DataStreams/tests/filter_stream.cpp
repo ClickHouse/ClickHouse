@@ -6,7 +6,7 @@
 
 #include <DB/IO/WriteBufferFromOStream.h>
 
-#include <DB/Storages/StorageSystemNumbers.h>
+#include <DB/Storages/System/StorageSystemNumbers.h>
 
 #include <DB/DataStreams/LimitBlockInputStream.h>
 #include <DB/DataStreams/ExpressionBlockInputStream.h>

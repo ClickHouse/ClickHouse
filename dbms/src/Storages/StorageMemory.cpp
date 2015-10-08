@@ -1,6 +1,6 @@
 #include <map>
 
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
@@ -158,7 +158,7 @@ BlockInputStreams StorageMemory::read(
 
 
 BlockOutputStreamPtr StorageMemory::write(
-	ASTPtr query)
+	ASTPtr query, const Settings & settings)
 {
 	return new MemoryBlockOutputStream(*this);
 }

@@ -1,5 +1,5 @@
 #include <iostream>
-#include <Yandex/DateLUT.h>
+#include <common/DateLUT.h>
 
 
 int main(int argc, char ** argv)
