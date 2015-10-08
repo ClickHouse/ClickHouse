@@ -6,7 +6,7 @@
 #include <DB/Storages/MergeTree/MergeTreeDataMerger.h>
 #include <DB/Storages/MergeTree/DiskSpaceMonitor.h>
 #include <DB/Storages/MergeTree/BackgroundProcessingPool.h>
-#include <statdaemons/Increment.h>
+#include <DB/Common/Increment.h>
 
 
 namespace DB
@@ -89,8 +89,8 @@ public:
 		return merge(settings.min_bytes_to_use_direct_io, true);
 	}
 
-	void dropPartition(const Field & partition, bool detach, bool unreplicated, const Settings & settings) override;
-	void attachPartition(const Field & partition, bool unreplicated, bool part, const Settings & settings) override;
+	void dropPartition(ASTPtr query, const Field & partition, bool detach, bool unreplicated, const Settings & settings) override;
+	void attachPartition(ASTPtr query, const Field & partition, bool unreplicated, bool part, const Settings & settings) override;
 	void freezePartition(const Field & partition, const Settings & settings) override;
 
 	void drop() override;

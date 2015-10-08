@@ -182,4 +182,19 @@ static inline StringRef ALWAYS_INLINE extractKeysAndPlaceInPoolContiguous(
 }
 
 
+/** Сериализовать ключи в непрерывный кусок памяти.
+  */
+static inline StringRef ALWAYS_INLINE serializeKeysToPoolContiguous(
+	size_t i, size_t keys_size, const ConstColumnPlainPtrs & key_columns, StringRefs & keys, Arena & pool)
+{
+	const char * begin = nullptr;
+
+	size_t sum_size = 0;
+	for (size_t j = 0; j < keys_size; ++j)
+		sum_size += key_columns[j]->serializeValueIntoArena(i, pool, begin).size;
+
+	return {begin, sum_size};
+}
+
+
 }

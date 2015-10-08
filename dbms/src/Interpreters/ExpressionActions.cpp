@@ -3,7 +3,6 @@
 #include <DB/Interpreters/Join.h>
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/Columns/ColumnArray.h>
-#include <DB/DataTypes/DataTypeNested.h>
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/Functions/IFunction.h>
 #include <DB/Functions/FunctionsArray.h>
@@ -376,7 +375,9 @@ std::string ExpressionAction::toString() const
 	switch (type)
 	{
 		case ADD_COLUMN:
-			ss << "ADD " << result_name << " " << result_type->getName() << " " << added_column->getName();
+			ss << "ADD " << result_name << " "
+				<< (result_type ? result_type->getName() : "(no type)") << " "
+				<< (added_column ? added_column->getName() : "(no column)");
 			break;
 
 		case REMOVE_COLUMN:
@@ -388,7 +389,9 @@ std::string ExpressionAction::toString() const
 			break;
 
 		case APPLY_FUNCTION:
-			ss << "FUNCTION " << result_name << " " << result_type->getName() << " = " << function->getName() << "(";
+			ss << "FUNCTION " << result_name << " "
+				<< (result_type ? result_type->getName() : "(no type)") << " = "
+				<< (function ? function->getName() : "(no function)") << "(";
 			for (size_t i = 0; i < argument_names.size(); ++i)
 			{
 				if (i)
@@ -457,9 +460,9 @@ void ExpressionActions::checkLimits(Block & block) const
 			std::stringstream list_of_non_const_columns;
 			for (size_t i = 0, size = block.columns(); i < size; ++i)
 				if (!block.getByPosition(i).column->isConst())
-					list_of_non_const_columns << (i == 0 ? "" : ", ") << block.getByPosition(i).name;
+					list_of_non_const_columns << "\n" << block.getByPosition(i).name;
 
-				throw Exception("Too many temporary non-const columns: " + list_of_non_const_columns.str()
+				throw Exception("Too many temporary non-const columns:" + list_of_non_const_columns.str()
 					+ ". Maximum: " + toString(limits.max_temporary_non_const_columns),
 					ErrorCodes::TOO_MUCH_TEMPORARY_NON_CONST_COLUMNS);
 		}
@@ -629,8 +632,6 @@ std::string ExpressionActions::getSmallestColumn(const NamesAndTypesList & colum
 
 void ExpressionActions::finalize(const Names & output_columns)
 {
-//	std::cerr << "finalize\n";
-
 	NameSet final_columns;
 	for (size_t i = 0; i < output_columns.size(); ++i)
 	{
@@ -757,12 +758,65 @@ void ExpressionActions::finalize(const Names & output_columns)
 		}
 	}
 
-	for (int i = static_cast<int>(sample_block.columns()) - 1; i >= 0; --i)
+/*	std::cerr << "\n";
+	for (const auto & action : actions)
+		std::cerr << action.toString() << "\n";
+	std::cerr << "\n";*/
+
+	/// Удаление ненужных временных столбцов.
+
+	/// Если у столбца после выполнения функции refcount = 0, то его можно удалить.
+	std::map<String, int> columns_refcount;
+
+	for (const auto & name : final_columns)
+		++columns_refcount[name];
+
+	for (const auto & action : actions)
 	{
-		const std::string & name = sample_block.getByPosition(i).name;
-		if (!final_columns.count(name))
-			add(ExpressionAction::removeColumn(name));
+		if (!action.source_name.empty())
+			++columns_refcount[action.source_name];
+
+		for (const auto & name : action.argument_names)
+			++columns_refcount[name];
+
+		for (const auto & name : action.prerequisite_names)
+			++columns_refcount[name];
 	}
+
+	Actions new_actions;
+	new_actions.reserve(actions.size());
+
+	for (const auto & action : actions)
+	{
+		new_actions.push_back(action);
+
+		auto process = [&] (const String & name)
+		{
+			auto refcount = --columns_refcount[name];
+			if (refcount <= 0)
+			{
+				new_actions.push_back(ExpressionAction::removeColumn(name));
+				if (sample_block.has(name))
+					sample_block.erase(name);
+			}
+		};
+
+		if (!action.source_name.empty())
+			process(action.source_name);
+
+		for (const auto & name : action.argument_names)
+			process(name);
+
+		for (const auto & name : action.prerequisite_names)
+			process(name);
+	}
+
+	actions.swap(new_actions);
+
+/*	std::cerr << "\n";
+	for (const auto & action : actions)
+		std::cerr << action.toString() << "\n";
+	std::cerr << "\n";*/
 
 	optimize();
 	checkLimits(sample_block);

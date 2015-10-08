@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 #include <DB/Core/Types.h>
 #include <DB/IO/WriteHelpers.h>
@@ -86,7 +86,7 @@ struct ReplicatedMergeTreeLogEntryData
 	/// Эти несколько полей имеют лишь информационный характер (для просмотра пользователем с помощью системных таблиц).
 	/// Доступ под queue_mutex.
 	size_t num_tries = 0;				/// Количество попыток выполнить действие (с момента старта сервера; включая выполняющееся).
-	ExceptionPtr exception;				/// Последний эксепшен, в случае безуспешной попытки выполнить действие.
+	std::exception_ptr exception;				/// Последний эксепшен, в случае безуспешной попытки выполнить действие.
 	time_t last_attempt_time = 0;		/// Время начала последней попытки выполнить действие.
 	size_t num_postponed = 0;			/// Количество раз, когда действие было отложено.
 	String postpone_reason;				/// Причина, по которой действие было отложено, если оно отложено.

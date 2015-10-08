@@ -12,10 +12,10 @@
 #include <Poco/Exception.h>
 #include <Poco/SharedPtr.h>
 
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 
-#include <statdaemons/threadpool.hpp>
-#include <statdaemons/Stopwatch.h>
+#include <common/threadpool.hpp>
+#include <DB/Common/Stopwatch.h>
 
 #include <stdlib.h>
 #include <malloc.h>
@@ -33,9 +33,6 @@ enum Mode
 	MODE_DIRECT = 8,
 	MODE_SYNC = 16,
 };
-
-
-typedef Poco::SharedPtr<Poco::Exception> ExceptionPtr;
 
 
 struct AlignedBuffer
@@ -58,7 +55,7 @@ struct AlignedBuffer
 	}
 };
 
-void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block_size, size_t count, ExceptionPtr & exception)
+void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block_size, size_t count, std::exception_ptr & exception)
 {
 	try
 	{
@@ -105,13 +102,9 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
 			}
 		}
 	}
-	catch (const Poco::Exception & e)
-	{
-		exception = e.clone();
-	}
 	catch (...)
 	{
-		exception = new Poco::Exception("Unknown exception");
+		exception = std::current_exception();
 	}
 }
 
@@ -171,7 +164,7 @@ int mainImpl(int argc, char ** argv)
 	if (-1 == fd)
 		throwFromErrno("Cannot open file");
 
-	typedef std::vector<ExceptionPtr> Exceptions;
+	typedef std::vector<std::exception_ptr> Exceptions;
 	Exceptions exceptions(threads);
 
 	Stopwatch watch;
@@ -184,7 +177,7 @@ int mainImpl(int argc, char ** argv)
 
 	for (size_t i = 0; i < threads; ++i)
 		if (exceptions[i])
-			exceptions[i]->rethrow();
+			std::rethrow_exception(exceptions[i]);
 
 	watch.stop();
 

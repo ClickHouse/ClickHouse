@@ -7,7 +7,7 @@
 #include <DB/Common/setThreadName.h>
 #include <Poco/Ext/ThreadNumber.h>
 
-#include <statdaemons/ext/range.hpp>
+#include <ext/range.hpp>
 
 
 namespace DB

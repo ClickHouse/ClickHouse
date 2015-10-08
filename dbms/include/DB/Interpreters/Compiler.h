@@ -9,10 +9,10 @@
 #include <unordered_map>
 
 #include <common/logger_useful.h>
-#include <statdaemons/threadpool.hpp>
+#include <common/threadpool.hpp>
 
 #include <DB/Core/Types.h>
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Common/UInt128.h>
 
 

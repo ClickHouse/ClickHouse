@@ -39,16 +39,16 @@ AggregateFunctionPtr createAggregateFunctionUniqExact(const std::string & name, 
 
 	const IDataType & argument_type = *argument_types[0];
 
-	AggregateFunctionPtr res = createWithNumericType<AggregateFunctionUniq, AggregateFunctionUniqUniquesHashSetData>(*argument_types[0]);
+	AggregateFunctionPtr res = createWithNumericType<AggregateFunctionUniq, AggregateFunctionUniqExactData>(*argument_types[0]);
 
 	if (res)
 		return res;
 	else if (typeid_cast<const DataTypeDate 	*>(&argument_type))
-		return new AggregateFunctionUniq<DataTypeDate::FieldType, AggregateFunctionUniqUniquesHashSetData>;
+		return new AggregateFunctionUniq<DataTypeDate::FieldType, AggregateFunctionUniqExactData<DataTypeDate::FieldType> >;
 	else if (typeid_cast<const DataTypeDateTime*>(&argument_type))
-		return new AggregateFunctionUniq<DataTypeDateTime::FieldType, AggregateFunctionUniqUniquesHashSetData>;
+		return new AggregateFunctionUniq<DataTypeDateTime::FieldType, AggregateFunctionUniqExactData<DataTypeDateTime::FieldType> >;
 	else if (typeid_cast<const DataTypeString*>(&argument_type) || typeid_cast<const DataTypeFixedString*>(&argument_type))
-		return new AggregateFunctionUniq<String, AggregateFunctionUniqUniquesHashSetData>;
+		return new AggregateFunctionUniq<String, AggregateFunctionUniqExactData<String> >;
 	else
 		throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name,
 			ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

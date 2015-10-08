@@ -11,7 +11,7 @@
 #include <Poco/String.h>
 
 #include <DB/Core/Types.h>
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/HexWriteBuffer.h>
@@ -23,6 +23,7 @@
 
 #include <common/logger_useful.h>
 
+#include <unordered_set>
 
 namespace DB
 {
@@ -214,7 +215,7 @@ public:
 class AddressPatterns
 {
 private:
-	typedef std::vector<SharedPtr<IAddressPattern> > Container;
+	typedef std::vector<std::unique_ptr<IAddressPattern>> Container;
 	Container patterns;
 
 public:
@@ -252,19 +253,19 @@ public:
 
 		for (Poco::Util::AbstractConfiguration::Keys::const_iterator it = config_keys.begin(); it != config_keys.end(); ++it)
 		{
-			SharedPtr<IAddressPattern> pattern;
+			Container::value_type pattern;
 			String value = config.getString(config_elem + "." + *it);
 
 			if (0 == it->compare(0, strlen("ip"), "ip"))
-				pattern = new IPAddressPattern(value);
+				pattern.reset(new IPAddressPattern(value));
 			else if (0 == it->compare(0, strlen("host_regexp"), "host_regexp"))
-				pattern = new HostRegexpPattern(value);
+				pattern.reset(new HostRegexpPattern(value));
 			else if (0 == it->compare(0, strlen("host"), "host"))
-				pattern = new HostExactPattern(value);
+				pattern.reset(new HostExactPattern(value));
 			else
 				throw Exception("Unknown address pattern type: " + *it, ErrorCodes::UNKNOWN_ADDRESS_PATTERN_TYPE);
 
-			patterns.push_back(pattern);
+			patterns.emplace_back(std::move(pattern));
 		}
 	}
 };
@@ -284,6 +285,10 @@ struct User
 	String quota;
 
 	AddressPatterns addresses;
+
+	/// Список разрешённых баз данных.
+	using DatabaseSet = std::unordered_set<std::string>;
+	DatabaseSet databases;
 
 	User(const String & name_, const String & config_elem, Poco::Util::AbstractConfiguration & config)
 		: name(name_)
@@ -312,6 +317,21 @@ struct User
 		quota 		= config.getString(config_elem + ".quota");
 
 		addresses.addFromConfig(config_elem + ".networks", config);
+
+		/// Заполнить список разрешённых баз данных.
+		const auto config_sub_elem = config_elem + ".allow_databases";
+		if (config.has(config_sub_elem))
+		{
+			Poco::Util::AbstractConfiguration::Keys config_keys;
+			config.keys(config_sub_elem, config_keys);
+
+			databases.reserve(config_keys.size());
+			for (const auto & key : config_keys)
+			{
+				const auto database_name = config.getString(config_sub_elem + "." + key);
+				databases.insert(database_name);
+			}
+		}
 	}
 
 	/// Для вставки в контейнер.
@@ -383,6 +403,17 @@ public:
 		}
 
 		return it->second;
+	}
+
+	/// Проверить, имеет ли заданный клиент доступ к заданной базе данных.
+	bool isAllowedDatabase(const std::string & user_name, const std::string & database_name) const
+	{
+		auto it = cont.find(user_name);
+		if (it == cont.end())
+			throw Exception("Unknown user " + user_name, ErrorCodes::UNKNOWN_USER);
+
+		const auto & user = it->second;
+		return user.databases.empty() || user.databases.count(database_name);
 	}
 };
 

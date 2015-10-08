@@ -7,7 +7,7 @@
 #include <DB/Common/AutoArray.h>
 #include <DB/IO/WriteHelpers.h>
 
-#include <statdaemons/Stopwatch.h>
+#include <DB/Common/Stopwatch.h>
 
 
 int main(int argc, char ** argv)

@@ -2,7 +2,7 @@
 
 #include <Poco/Mutex.h>
 
-#include <statdaemons/OptimizedRegularExpression.h>
+#include <DB/Common/OptimizedRegularExpression.h>
 #include <memory>
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
@@ -19,7 +19,7 @@
 
 #include <mutex>
 #include <stack>
-#include <statdaemons/ext/range.hpp>
+#include <ext/range.hpp>
 #include <Poco/Unicode.h>
 
 

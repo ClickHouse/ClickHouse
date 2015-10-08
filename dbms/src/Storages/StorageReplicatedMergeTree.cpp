@@ -1,4 +1,4 @@
-#include <statdaemons/ext/range.hpp>
+#include <ext/range.hpp>
 #include <DB/Storages/ColumnsDescription.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
@@ -7,6 +7,7 @@
 #include <DB/Storages/MergeTree/MergeTreePartChecker.h>
 #include <DB/Storages/MergeTree/MergeList.h>
 #include <DB/Storages/MergeTree/MergeTreeWhereOptimizer.h>
+#include <DB/Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <DB/Parsers/formatAST.h>
 #include <DB/IO/WriteBufferFromOStream.h>
 #include <DB/IO/ReadBufferFromString.h>
@@ -15,6 +16,9 @@
 #include <DB/Common/VirtualColumnUtils.h>
 #include <DB/Parsers/ASTInsertQuery.h>
 #include <DB/DataStreams/AddingConstColumnBlockInputStream.h>
+#include <DB/DataStreams/RemoteBlockInputStream.h>
+#include <DB/DataStreams/NullBlockOutputStream.h>
+#include <DB/DataStreams/copyData.h>
 #include <DB/Common/Macros.h>
 #include <DB/Common/formatReadable.h>
 #include <DB/Common/setThreadName.h>
@@ -1454,7 +1458,7 @@ bool StorageReplicatedMergeTree::queueTask(BackgroundProcessingPool::Context & p
 
 	bool was_exception = true;
 	bool success = false;
-	ExceptionPtr saved_exception;
+	std::exception_ptr saved_exception;
 
 	try
 	{
@@ -1474,7 +1478,7 @@ bool StorageReplicatedMergeTree::queueTask(BackgroundProcessingPool::Context & p
 		}
 		catch (...)
 		{
-			saved_exception = cloneCurrentException();
+			saved_exception = std::current_exception();
 			throw;
 		}
 
@@ -2415,15 +2419,9 @@ void StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 	if (!to_detached)
 		table_lock = lockStructure(true);
 
-	String host;
-	int port;
+	ReplicatedMergeTreeAddress address(zookeeper->get(replica_path + "/host"));
 
-	String host_port_str = zookeeper->get(replica_path + "/host");
-	ReadBufferFromString buf(host_port_str);
-	buf >> "host: " >> host >> "\n"
-		>> "port: " >> port >> "\n";
-
-	MergeTreeData::MutableDataPartPtr part = fetcher.fetchPart(part_name, replica_path, host, port, to_detached);
+	MergeTreeData::MutableDataPartPtr part = fetcher.fetchPart(part_name, replica_path, address.host, address.replication_port, to_detached);
 
 	if (!to_detached)
 	{
@@ -2809,21 +2807,52 @@ void StorageReplicatedMergeTree::dropUnreplicatedPartition(const Field & partiti
 }
 
 
-void StorageReplicatedMergeTree::dropPartition(const Field & field, bool detach, bool unreplicated, const Settings & settings)
+void StorageReplicatedMergeTree::dropPartition(ASTPtr query, const Field & field, bool detach, bool unreplicated, const Settings & settings)
 {
 	if (unreplicated)
 	{
 		dropUnreplicatedPartition(field, detach, settings);
-
 		return;
 	}
 
 	auto zookeeper = getZooKeeper();
 	String month_name = MergeTreeData::getMonthName(field);
 
-	/// TODO: Делать запрос в лидера по TCP.
 	if (!is_leader_node)
-		throw Exception(String(detach ? "DETACH" : "DROP") + " PARTITION can only be done on leader replica.", ErrorCodes::NOT_LEADER);
+	{
+		/// Проксируем запрос в лидера.
+
+		auto live_replicas = zookeeper->getChildren(zookeeper_path + "/leader_election");
+		if (live_replicas.empty())
+			throw Exception("No active replicas", ErrorCodes::NO_ACTIVE_REPLICAS);
+
+		const auto leader = zookeeper->get(zookeeper_path + "/leader_election/" + live_replicas.front());
+
+		if (leader == replica_name)
+			throw Exception("Leader was suddenly changed or logical error.", ErrorCodes::LEADERSHIP_CHANGED);
+
+		ReplicatedMergeTreeAddress leader_address(zookeeper->get(zookeeper_path + "/replicas/" + leader + "/host"));
+
+		auto new_query = query->clone();
+		auto & alter = typeid_cast<ASTAlterQuery &>(*new_query);
+
+		alter.database = leader_address.database;
+		alter.table = leader_address.table;
+
+		/// NOTE Работает только если есть доступ от пользователя default без пароля. Можно исправить с помощью добавления параметра в конфиг сервера.
+
+		Connection connection(
+			leader_address.host,
+			leader_address.queries_port,
+			leader_address.database,
+			"", "", "ClickHouse replica");
+
+		RemoteBlockInputStream stream(connection, formattedAST(new_query), &settings);
+		NullBlockOutputStream output;
+
+		copyData(stream, output);
+		return;
+	}
 
 	/** Пропустим один номер в block_numbers для удаляемого месяца, и будем удалять только куски до этого номера.
 	  * Это запретит мерджи удаляемых кусков с новыми вставляемыми данными.
@@ -2876,7 +2905,7 @@ void StorageReplicatedMergeTree::dropPartition(const Field & field, bool detach,
 }
 
 
-void StorageReplicatedMergeTree::attachPartition(const Field & field, bool unreplicated, bool attach_part, const Settings & settings)
+void StorageReplicatedMergeTree::attachPartition(ASTPtr query, const Field & field, bool unreplicated, bool attach_part, const Settings & settings)
 {
 	auto zookeeper = getZooKeeper();
 	String partition;

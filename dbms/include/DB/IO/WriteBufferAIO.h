@@ -4,7 +4,7 @@
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/BufferWithOwnMemory.h>
 #include <DB/Core/Defines.h>
-#include <statdaemons/AIO.h>
+#include <DB/Common/AIO.h>
 
 #include <string>
 #include <unistd.h>

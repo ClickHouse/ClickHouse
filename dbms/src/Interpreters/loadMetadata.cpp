@@ -2,7 +2,7 @@
 #include <thread>
 #include <future>
 
-#include <statdaemons/threadpool.hpp>
+#include <common/threadpool.hpp>
 
 #include <Poco/DirectoryIterator.h>
 #include <Poco/FileStream.h>
@@ -19,7 +19,7 @@
 #include <DB/IO/copyData.h>
 #include <DB/Common/escapeForFileName.h>
 
-#include <statdaemons/Stopwatch.h>
+#include <DB/Common/Stopwatch.h>
 
 
 namespace DB

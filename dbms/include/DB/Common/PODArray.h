@@ -12,7 +12,7 @@
 #include <common/strong_typedef.h>
 
 #include <DB/Common/Allocator.h>
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 
 

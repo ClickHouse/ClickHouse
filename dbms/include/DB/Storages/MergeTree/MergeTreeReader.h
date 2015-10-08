@@ -11,7 +11,6 @@
 #include <DB/IO/CachedCompressedReadBuffer.h>
 #include <DB/IO/CompressedReadBufferFromFile.h>
 #include <DB/Columns/ColumnArray.h>
-#include <DB/Columns/ColumnNested.h>
 #include <DB/Interpreters/evaluateMissingDefaults.h>
 
 

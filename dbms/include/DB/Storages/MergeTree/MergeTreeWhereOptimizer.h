@@ -10,8 +10,8 @@
 #include <DB/Parsers/ASTSet.h>
 #include <DB/Parsers/formatAST.h>
 #include <DB/Common/escapeForFileName.h>
-#include <statdaemons/ext/scope_guard.hpp>
-#include <statdaemons/ext/map.hpp>
+#include <ext/scope_guard.hpp>
+#include <ext/map.hpp>
 #include <memory>
 #include <unordered_map>
 #include <map>
