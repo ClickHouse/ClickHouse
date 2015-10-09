@@ -9,6 +9,7 @@
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
 #include <DB/Core/Defines.h>
+#include <DB/Core/ErrorCodes.h>
 
 #include <cmath>
 #include <cstring>
@@ -569,71 +570,54 @@ private:
 		}
 	}
 
-	template <HyperLogLogMode mode2 = mode>
-	inline double fixRawEstimate(double raw_estimate,
-		typename std::enable_if<(mode2 == HyperLogLogMode::Raw)
-			|| ((mode2 == HyperLogLogMode::BiasCorrected)
-				&& BiasEstimator::isTrivial())>::type * = nullptr) const
+	double fixRawEstimate(double raw_estimate) const
 	{
-		return raw_estimate;
-	}
-
-	template <HyperLogLogMode mode2 = mode>
-	inline double fixRawEstimate(double raw_estimate,
-		typename std::enable_if<(mode2 == HyperLogLogMode::LinearCounting)>::type * = nullptr) const
-	{
-		return applyLinearCorrection(raw_estimate);
-	}
-
-	template <HyperLogLogMode mode2 = mode>
-	inline double fixRawEstimate(double raw_estimate,
-		typename std::enable_if<(mode2 == HyperLogLogMode::BiasCorrected)
-			&& !BiasEstimator::isTrivial()>::type * = nullptr) const
-	{
-		return applyBiasCorrection(raw_estimate);
-	}
-
-	template <HyperLogLogMode mode2 = mode>
-	double fixRawEstimate(double raw_estimate,
-		typename std::enable_if<(mode2 == HyperLogLogMode::FullFeatured)>::type * = nullptr) const
-	{
-		static constexpr bool fix_big_cardinalities = std::is_same<HashValueType, UInt32>::value;
-		static constexpr double pow2_32 = 4294967296.0;
-
-		double fixed_estimate;
-
-		if (fix_big_cardinalities && (raw_estimate > (pow2_32 / 30.0)))
-			fixed_estimate = -pow2_32 * log(1.0 - raw_estimate / pow2_32);
-		else
-			fixed_estimate = applyCorrection(raw_estimate);
-
-		return fixed_estimate;
-	}
-
-	template <bool is_trivial = BiasEstimator::isTrivial()>
-	inline double applyCorrection(double raw_estimate, typename std::enable_if<is_trivial>::type * = nullptr) const
-	{
-		double fixed_estimate;
-
-		if (raw_estimate <= (2.5 * bucket_count))
+		if ((mode == HyperLogLogMode::Raw) || ((mode == HyperLogLogMode::BiasCorrected) && BiasEstimator::isTrivial()))
+			return raw_estimate;
+		else if (mode == HyperLogLogMode::LinearCounting)
+			return applyLinearCorrection(raw_estimate);
+		else if ((mode == HyperLogLogMode::BiasCorrected) && !BiasEstimator::isTrivial())
+			return applyBiasCorrection(raw_estimate);
+		else if (mode == HyperLogLogMode::FullFeatured)
 		{
-			/// Поправка в случае маленкой оценки.
-			fixed_estimate = applyLinearCorrection(raw_estimate);
+			static constexpr bool fix_big_cardinalities = std::is_same<HashValueType, UInt32>::value;
+			static constexpr double pow2_32 = 4294967296.0;
+
+			double fixed_estimate;
+
+			if (fix_big_cardinalities && (raw_estimate > (pow2_32 / 30.0)))
+				fixed_estimate = -pow2_32 * log(1.0 - raw_estimate / pow2_32);
+			else
+				fixed_estimate = applyCorrection(raw_estimate);
+
+			return fixed_estimate;
 		}
 		else
-			fixed_estimate = raw_estimate;
-
-		return fixed_estimate;
+			throw Poco::Exception("Internal error", DB::ErrorCodes::LOGICAL_ERROR);
 	}
 
-	template <bool is_trivial = BiasEstimator::isTrivial()>
-	inline double applyCorrection(double raw_estimate, typename std::enable_if<!is_trivial>::type * = nullptr) const
+	inline double applyCorrection(double raw_estimate) const
 	{
-		double fixed_estimate = applyBiasCorrection(raw_estimate);
-		double linear_estimate = applyLinearCorrection(fixed_estimate);
+		double fixed_estimate;
 
-		if (linear_estimate < BiasEstimator::getThreshold())
-			fixed_estimate = linear_estimate;
+		if (BiasEstimator::isTrivial())
+		{
+			if (raw_estimate <= (2.5 * bucket_count))
+			{
+				/// Поправка в случае маленкой оценки.
+				fixed_estimate = applyLinearCorrection(raw_estimate);
+			}
+			else
+				fixed_estimate = raw_estimate;
+		}
+		else
+		{
+			fixed_estimate = applyBiasCorrection(raw_estimate);
+			double linear_estimate = applyLinearCorrection(fixed_estimate);
+
+			if (linear_estimate < BiasEstimator::getThreshold())
+				fixed_estimate = linear_estimate;
+		}
 
 		return fixed_estimate;
 	}
