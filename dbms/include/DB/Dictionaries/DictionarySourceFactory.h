@@ -5,6 +5,7 @@
 #include <DB/Dictionaries/FileDictionarySource.h>
 #include <DB/Dictionaries/MySQLDictionarySource.h>
 #include <DB/Dictionaries/ClickHouseDictionarySource.h>
+#include <DB/Dictionaries/MongoDBDictionarySource.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <common/singleton.h>
 #include <memory>
@@ -82,6 +83,11 @@ public:
 		else if ("clickhouse" == source_type)
 		{
 			return std::make_unique<ClickHouseDictionarySource>(dict_struct, config, config_prefix + ".clickhouse",
+				sample_block, context);
+		}
+		else if ("mongodb" == source_type)
+		{
+			return std::make_unique<MongoDBDictionarySource>(dict_struct, config, config_prefix + ".mongodb",
 				sample_block, context);
 		}
 
