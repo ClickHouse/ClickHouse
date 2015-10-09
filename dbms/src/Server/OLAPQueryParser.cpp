@@ -100,7 +100,6 @@ QueryParseResult QueryParser::parse(std::istream & s)
 
 	result.cut_date_last = false;
 	result.cut_dates_for_goals = false;
-	result.overflow_mode = OVERFLOW_MODE_THROW;
 	result.concurrency = 0;
 	result.max_threads_per_counter = 0;
 	result.limit = 0;
@@ -152,9 +151,10 @@ QueryParseResult QueryParser::parse(std::istream & s)
 					throw Exception(std::string("Unknown overflow mode: ") + overflow_mode_str,
 					ErrorCodes::UNKNOWN_OVERFLOW_MODE);
 
+				result.has_overflow_mode = true;
 				result.overflow_mode = overflow_mode_str == "throw" ? OVERFLOW_MODE_THROW
-				: (overflow_mode_str == "break" ? OVERFLOW_MODE_BREAK
-				: OVERFLOW_MODE_ANY);
+					: (overflow_mode_str == "break" ? OVERFLOW_MODE_BREAK
+					: OVERFLOW_MODE_ANY);
 			}
 			else if (settings_child_nodes->item(i)->nodeName() == "concurrency")
 			{
