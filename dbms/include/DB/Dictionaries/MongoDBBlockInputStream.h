@@ -15,7 +15,7 @@
 namespace DB
 {
 
-/// Allows processing results of a MySQL query as a sequence of Blocks, simplifies chaining
+/// Allows processing results of a MongoDB query as a sequence of Blocks, simplifies chaining
 class MongoDBBlockInputStream final : public IProfilingBlockInputStream
 {
 	enum struct value_type_t
@@ -100,7 +100,6 @@ private:
 	{
 		if (!cursor->more())
 			return {};
-
 
 		auto block = sample_block.cloneEmpty();
 
