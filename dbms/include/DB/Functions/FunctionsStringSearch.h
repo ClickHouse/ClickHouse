@@ -75,7 +75,7 @@ struct PositionImpl
 		while (pos < end && end != (pos = searcher.search(pos, end - pos)))
 		{
 			/// Определим, к какому индексу оно относится.
-			while (begin + offsets[i] < pos)
+			while (begin + offsets[i] <= pos)
 			{
 				res[i] = 0;
 				++i;
@@ -163,7 +163,7 @@ struct PositionUTF8Impl
 		while (pos < end && end != (pos = searcher.search(pos, end - pos)))
 		{
 			/// Определим, к какому индексу оно относится.
-			while (begin + offsets[i] < pos)
+			while (begin + offsets[i] <= pos)
 			{
 				res[i] = 0;
 				++i;
@@ -364,7 +364,7 @@ public:
 		while (pos < end && end != (pos = searcher.find(pos, end)))
 		{
 			/// Определим, к какому индексу оно относится.
-			while (begin + offsets[i] < pos)
+			while (begin + offsets[i] <= pos)
 			{
 				res[i] = 0;
 				++i;
@@ -627,7 +627,7 @@ public:
 		while (pos < end && end != (pos = searcher.find(pos, end)))
 		{
 			/// Определим, к какому индексу оно относится.
-			while (begin + offsets[i] < pos)
+			while (begin + offsets[i] <= pos)
 			{
 				res[i] = 0;
 				++i;
@@ -898,7 +898,7 @@ struct MatchImpl
 			while (pos < end && end != (pos = searcher.search(pos, end - pos)))
 			{
 				/// Определим, к какому индексу оно относится.
-				while (begin + offsets[i] < pos)
+				while (begin + offsets[i] <= pos)
 				{
 					res[i] = revert;
 					++i;
@@ -965,7 +965,7 @@ struct MatchImpl
 				while (pos < end && end != (pos = searcher.search(pos, end - pos)))
 				{
 					/// Определим, к какому индексу оно относится.
-					while (begin + offsets[i] < pos)
+					while (begin + offsets[i] <= pos)
 					{
 						res[i] = revert;
 						++i;
@@ -1361,7 +1361,7 @@ struct ReplaceStringImpl
 			memcpy(&res_data[res_offset], pos, match - pos);
 
 			/// Определим, к какому индексу оно относится.
-			while (i < offsets.size() && begin + offsets[i] < match)
+			while (i < offsets.size() && begin + offsets[i] <= match)
 			{
 				res_offsets[i] = res_offset + ((begin + offsets[i]) - pos);
 				++i;
@@ -1398,6 +1398,7 @@ struct ReplaceStringImpl
 				res_offset += (begin + offsets[i] - pos);
 				res_offsets[i] = res_offset;
 				pos = begin + offsets[i];
+				++i;
 			}
 		}
 	}
@@ -1430,7 +1431,7 @@ struct ReplaceStringImpl
 			memcpy(&res_data[res_offset], pos, match - pos);
 
 			/// Определим, к какому индексу оно относится.
-			while (i < size && begin + n * (i + 1) < match)
+			while (i < size && begin + n * (i + 1) <= match)
 			{
 				res_offsets[i] = res_offset + ((begin + n * (i + 1)) - pos);
 				++i;
