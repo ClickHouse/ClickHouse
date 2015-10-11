@@ -770,13 +770,13 @@ public:
 	static IFunction * create(const Context & context) { return new FunctionStringOrArrayToT; }
 
 	/// Получить имя функции.
-	String getName() const
+	String getName() const override
 	{
 		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 1)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -792,7 +792,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const ColumnPtr column = block.getByPosition(arguments[0]).column;
 		if (const ColumnString * col = typeid_cast<const ColumnString *>(&*column))
@@ -866,13 +866,13 @@ public:
 	static IFunction * create(const Context & context) { return new FunctionStringToString; }
 
 	/// Получить имя функции.
-	String getName() const
+	String getName() const override
 	{
 		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 1)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -887,7 +887,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const ColumnPtr column = block.getByPosition(arguments[0]).column;
 		if (const ColumnString * col = typeid_cast<const ColumnString *>(&*column))
@@ -926,13 +926,13 @@ public:
 	static IFunction * create(const Context & context) { return new FunctionConcat; }
 
 	/// Получить имя функции.
-	String getName() const
+	String getName() const override
 	{
 		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
 	{
 		if (arguments.size() < 2)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -1397,13 +1397,13 @@ public:
 	static IFunction * create(const Context & context) { return new FunctionStringNumNumToString; }
 
 	/// Получить имя функции.
-	String getName() const
+	String getName() const override
 	{
 		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 3)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -1422,7 +1422,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const ColumnPtr column_string = block.getByPosition(arguments[0]).column;
 		const ColumnPtr column_start = block.getByPosition(arguments[1]).column;
@@ -1477,13 +1477,13 @@ public:
 	static constexpr auto name = "appendTrailingCharIfAbsent";
 	static IFunction * create(const Context & context) { return new FunctionAppendTrailingCharIfAbsent; }
 
-	String getName() const
+	String getName() const override
 	{
 		return name;
 	}
 
 private:
-	DataTypePtr getReturnType(const DataTypes & arguments) const
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 2)
 			throw Exception{

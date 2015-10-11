@@ -549,7 +549,7 @@ public:
 	static IFunction * create(const Context & context) { return new FunctionArrayMapped; };
 
 	/// Получить имя функции.
-	String getName() const
+	String getName() const override
 	{
 		return name;
 	}
@@ -588,7 +588,7 @@ public:
 
 	void getReturnTypeAndPrerequisites(const ColumnsWithTypeAndName & arguments,
 										DataTypePtr & out_return_type,
-										ExpressionActions::Actions & out_prerequisites)
+										ExpressionActions::Actions & out_prerequisites) override
 	{
 		size_t min_args = Impl::needExpression() ? 2 : 1;
 		if (arguments.size() < min_args)
