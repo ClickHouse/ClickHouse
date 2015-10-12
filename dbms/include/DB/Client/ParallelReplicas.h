@@ -3,7 +3,6 @@
 #include <DB/Common/Throttler.h>
 #include <DB/Client/Connection.h>
 #include <DB/Client/ConnectionPool.h>
-#include <DB/DataStreams/IBlockInputStream.h>
 #include <Poco/ScopedLock.h>
 #include <Poco/Mutex.h>
 
