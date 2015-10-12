@@ -1,3 +1,4 @@
+#include <DB/Core/FieldVisitors.h>
 #include <DB/Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <DB/Storages/MergeTree/MergeTreeBlockInputStream.h>
 #include <DB/Storages/MergeTree/MergeTreeReadPool.h>

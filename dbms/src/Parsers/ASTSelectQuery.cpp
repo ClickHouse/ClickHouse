@@ -1,3 +1,4 @@
+#include <DB/Core/FieldVisitors.h>
 #include <DB/Parsers/ASTSetQuery.h>
 #include <DB/Parsers/ASTSelectQuery.h>
 

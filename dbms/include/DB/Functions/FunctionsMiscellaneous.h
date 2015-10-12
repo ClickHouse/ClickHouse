@@ -4,6 +4,7 @@
 #include <common/Revision.h>
 
 #include <DB/Core/Defines.h>
+#include <DB/Core/FieldVisitors.h>
 #include <DB/IO/WriteBufferFromString.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>

@@ -1,5 +1,8 @@
 #include <Poco/SharedPtr.h>
 
+#include <DB/IO/WriteBuffer.h>
+#include <DB/IO/WriteHelpers.h>
+
 #include <DB/Columns/ColumnFixedString.h>
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/Columns/ColumnConst.h>
@@ -15,6 +18,12 @@ namespace DB
 {
 
 using Poco::SharedPtr;
+
+
+std::string DataTypeFixedString::getName() const
+{
+	return "FixedString(" + toString(n) + ")";
+}
 
 
 void DataTypeFixedString::serializeBinary(const Field & field, WriteBuffer & ostr) const

@@ -3,6 +3,8 @@
 #include <Poco/UTF8Encoding.h>
 #include <Poco/Unicode.h>
 
+#include <DB/Core/FieldVisitors.h>
+
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeFixedString.h>

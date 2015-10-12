@@ -1,4 +1,5 @@
 #include <DB/Core/Field.h>
+#include <DB/Core/FieldVisitors.h>
 
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnFixedString.h>
@@ -676,6 +677,25 @@ BoolMask Set::mayBeTrueInRange(const Range & range) const
 	}
 
 	return BoolMask(can_be_true, can_be_false);
+}
+
+
+std::string Set::describe() const
+{
+	if (!ordered_set_elements)
+		return "{}";
+
+	bool first = true;
+	std::stringstream ss;
+
+	ss << "{";
+	for (const Field & f : *ordered_set_elements)
+	{
+		ss << (first ? "" : ", ") << apply_visitor(FieldVisitorToString(), f);
+		first = false;
+	}
+	ss << "}";
+	return ss.str();
 }
 
 }

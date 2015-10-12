@@ -1,5 +1,7 @@
 #pragma once
 
+#include <DB/Core/FieldVisitors.h>
+
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeDate.h>
@@ -795,13 +797,18 @@ struct IndexCount
 };
 
 
-template <typename T, typename IndexConv>
+template <typename T, typename U, typename IndexConv>
 struct ArrayIndexNumImpl
 {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-compare"
+
 	/// compares `lhs` against `i`-th element of `rhs`
-	static bool compare(const T & lhs, const PODArray<T> & rhs, const std::size_t i ) { return lhs == rhs[i]; }
+	static bool compare(const T & lhs, const PODArray<U> & rhs, const std::size_t i ) { return lhs == rhs[i]; }
 	/// compares `lhs against `rhs`, third argument unused
-	static bool compare(const T & lhs, const T & rhs, std::size_t) { return lhs == rhs; }
+	static bool compare(const T & lhs, const U & rhs, std::size_t) { return lhs == rhs; }
+
+#pragma GCC diagnostic pop
 
 	template <typename ScalarOrVector>
 	static void vector(
@@ -922,6 +929,21 @@ private:
 	template <typename T>
 	bool executeNumber(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
+		return executeNumberNumber<T, UInt8>(block, arguments, result)
+			|| executeNumberNumber<T, UInt16>(block, arguments, result)
+			|| executeNumberNumber<T, UInt32>(block, arguments, result)
+			|| executeNumberNumber<T, UInt64>(block, arguments, result)
+			|| executeNumberNumber<T, Int8>(block, arguments, result)
+			|| executeNumberNumber<T, Int16>(block, arguments, result)
+			|| executeNumberNumber<T, Int32>(block, arguments, result)
+			|| executeNumberNumber<T, Int64>(block, arguments, result)
+			|| executeNumberNumber<T, Float32>(block, arguments, result)
+			|| executeNumberNumber<T, Float64>(block, arguments, result);
+	}
+
+	template <typename T, typename U>
+	bool executeNumberNumber(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
 		const ColumnArray * col_array = typeid_cast<const ColumnArray *>(&*block.getByPosition(arguments[0]).column);
 
 		if (!col_array)
@@ -934,24 +956,26 @@ private:
 
 		const auto item_arg = block.getByPosition(arguments[1]).column.get();
 
-		if (const auto item_arg_const = typeid_cast<const ColumnConst<T> *>(item_arg))
+		if (const auto item_arg_const = typeid_cast<const ColumnConst<U> *>(item_arg))
 		{
 			const auto col_res = new ResultColumnType;
 			ColumnPtr col_ptr{col_res};
 			block.getByPosition(result).column = col_ptr;
 
-			ArrayIndexNumImpl<T, IndexConv>::vector(col_nested->getData(), col_array->getOffsets(),
+			ArrayIndexNumImpl<T, U, IndexConv>::vector(col_nested->getData(), col_array->getOffsets(),
 				item_arg_const->getData(), col_res->getData());
 		}
-		else if (const auto item_arg_vector = typeid_cast<const ColumnVector<T> *>(item_arg))
+		else if (const auto item_arg_vector = typeid_cast<const ColumnVector<U> *>(item_arg))
 		{
 			const auto col_res = new ResultColumnType;
 			ColumnPtr col_ptr{col_res};
 			block.getByPosition(result).column = col_ptr;
 
-			ArrayIndexNumImpl<T, IndexConv>::vector(col_nested->getData(), col_array->getOffsets(),
+			ArrayIndexNumImpl<T, U, IndexConv>::vector(col_nested->getData(), col_array->getOffsets(),
 				item_arg_vector->getData(), col_res->getData());
 		}
+		else
+			return false;
 
 		return true;
 	}
@@ -1010,7 +1034,7 @@ private:
 
 			for (size_t i = 0, size = arr.size(); i < size; ++i)
 			{
-				if (arr[i] == value)
+				if (apply_visitor(FieldVisitorAccurateEquals(), arr[i], value))
 				{
 					if (!IndexConv::apply(i, current))
 						break;
@@ -1035,7 +1059,7 @@ private:
 				const auto & value = (*item_arg)[row];
 				for (size_t i = 0, size = arr.size(); i < size; ++i)
 				{
-					if (arr[i] == value)
+					if (apply_visitor(FieldVisitorAccurateEquals(), arr[i], value))
 					{
 						if (!IndexConv::apply(i, data[row]))
 							break;
@@ -1067,7 +1091,8 @@ public:
 		if (!array_type)
 			throw Exception("First argument for function " + getName() + " must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		if (array_type->getNestedType()->getName() != arguments[1]->getName())
+		if (!(array_type->getNestedType()->behavesAsNumber() && arguments[1]->behavesAsNumber())
+			&& array_type->getNestedType()->getName() != arguments[1]->getName())
 			throw Exception("Type of array elements and second argument for function " + getName() + " must be same."
 				" Passed: " + arguments[0]->getName() + " and " + arguments[1]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
