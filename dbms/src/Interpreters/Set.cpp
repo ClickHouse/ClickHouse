@@ -239,25 +239,16 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
   * Если не попадает - возвращается Field(Null).
   */
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wsign-compare"
-
 template <typename From, typename To>
 static Field convertNumericTypeImpl(const Field & from)
 {
 	From value = from.get<From>();
 
-	if (value != To(value)
-		|| (std::is_unsigned<From>::value && std::is_unsigned<To>::value && value > std::numeric_limits<To>::max())
-		|| (std::is_signed<From>::value && std::is_signed<To>::value && (value < std::numeric_limits<To>::min() || value > std::numeric_limits<To>::max()))
-		|| (std::is_signed<From>::value && std::is_unsigned<To>::value && (value < 0 || static_cast<To>(value) > std::numeric_limits<To>::max()))
-		|| (std::is_unsigned<From>::value && std::is_signed<To>::value && value > static_cast<From>(std::numeric_limits<To>::max())))
+	if (static_cast<long double>(value) != static_cast<long double>(To(value)))
 		return {};
 
 	return Field(typename NearestFieldType<To>::Type(value));
 }
-
-#pragma GCC diagnostic pop
 
 template <typename To>
 static Field convertNumericType(const Field & from, const IDataType & type)
@@ -270,7 +261,7 @@ static Field convertNumericType(const Field & from, const IDataType & type)
 		return convertNumericTypeImpl<Float64, To>(from);
 
 	throw Exception("Type mismatch in IN section: " + type.getName() + " at left, "
-		+ Field::Types::toString(from.getType()) + " at right");
+		+ Field::Types::toString(from.getType()) + " at right", ErrorCodes::TYPE_MISMATCH);
 }
 
 
@@ -329,7 +320,7 @@ static Field convertToType(const Field & src, const IDataType & type)
 		}
 
 		throw Exception("Type mismatch in IN section: " + type.getName() + " at left, "
-			+ Field::Types::toString(src.getType()) + " at right");
+			+ Field::Types::toString(src.getType()) + " at right", ErrorCodes::TYPE_MISMATCH);
 	}
 	else
 	{
@@ -343,7 +334,7 @@ static Field convertToType(const Field & src, const IDataType & type)
 			|| (src.getType() == Field::Types::Array
 				&& !typeid_cast<const DataTypeArray *>(&type)))
 			throw Exception("Type mismatch in IN section: " + type.getName() + " at left, "
-				+ Field::Types::toString(src.getType()) + " at right");
+				+ Field::Types::toString(src.getType()) + " at right", ErrorCodes::TYPE_MISMATCH);
 	}
 
 	return src;
