@@ -8,7 +8,7 @@
 #include <DB/Columns/ColumnExpression.h>
 
 #include <DB/Functions/IFunction.h>
-#include "FunctionsMiscellaneous.h"
+#include <DB/Functions/FunctionsMiscellaneous.h>
 
 
 namespace DB
