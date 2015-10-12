@@ -1,4 +1,6 @@
+#include <DB/Core/FieldVisitors.h>
 #include <DB/DataTypes/FieldToDataType.h>
+
 
 namespace DB
 {

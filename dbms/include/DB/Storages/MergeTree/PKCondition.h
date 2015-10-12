@@ -2,6 +2,7 @@
 
 #include <sstream>
 
+#include <DB/Core/FieldVisitors.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/Core/SortDescription.h>
 #include <DB/Parsers/ASTExpressionList.h>
