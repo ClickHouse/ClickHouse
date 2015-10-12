@@ -98,15 +98,15 @@ struct AggregateFunctionUniqExactData<String>
 template <typename T, HyperLogLogMode mode>
 struct BaseUniqCombinedData
 {
-	using Key = UInt64;
+	using Key = UInt32;
 	using Set = CombinedCardinalityEstimator<
 		Key,
-		HashSet<Key, DefaultHash<Key>, HashTableGrower<> >,
+		HashSet<Key, TrivialHash, HashTableGrower<> >,
 		16,
 		14,
 		17,
-		DefaultHash<Key>,
-		UInt64,
+		TrivialHash,
+		UInt32,
 		HyperLogLogBiasEstimator<UniqCombinedBiasData>,
 		mode
 	>;
@@ -195,6 +195,33 @@ template <> struct AggregateFunctionUniqTraits<Float64>
 	}
 };
 
+/** Хэш-функция для uniqCombined.
+  */
+template <typename T> struct AggregateFunctionUniqCombinedTraits
+{
+	static UInt32 hash(T x) { return static_cast<UInt32>(intHash64(x)); }
+};
+
+template <> struct AggregateFunctionUniqCombinedTraits<Float32>
+{
+	static UInt32 hash(Float32 x)
+	{
+		UInt64 res = 0;
+		memcpy(reinterpret_cast<char *>(&res), reinterpret_cast<char *>(&x), sizeof(x));
+		return static_cast<UInt32>(intHash64(res));
+	}
+};
+
+template <> struct AggregateFunctionUniqCombinedTraits<Float64>
+{
+	static UInt32 hash(Float64 x)
+	{
+		UInt64 res = 0;
+		memcpy(reinterpret_cast<char *>(&res), reinterpret_cast<char *>(&x), sizeof(x));
+		return static_cast<UInt32>(intHash64(res));
+	}
+};
+
 /** Структура для делегации работы по добавлению одного элемента в агрегатные функции uniq.
   * Используется для частичной специализации для добавления строк.
   */
@@ -204,7 +231,27 @@ struct OneAdder;
 template <typename T, typename Data>
 struct OneAdder<T, Data, typename std::enable_if<
 	std::is_same<Data, AggregateFunctionUniqUniquesHashSetData>::value ||
-	std::is_same<Data, AggregateFunctionUniqHLL12Data<T> >::value ||
+	std::is_same<Data, AggregateFunctionUniqHLL12Data<T> >::value>::type>
+{
+	template <typename T2 = T>
+	static void addOne(Data & data, const IColumn & column, size_t row_num,
+		typename std::enable_if<!std::is_same<T2, String>::value>::type * = nullptr)
+	{
+		const auto & value = static_cast<const ColumnVector<T2> &>(column).getData()[row_num];
+		data.set.insert(AggregateFunctionUniqTraits<T2>::hash(value));
+	}
+
+	template <typename T2 = T>
+	static void addOne(Data & data, const IColumn & column,	size_t row_num,
+		typename std::enable_if<std::is_same<T2, String>::value>::type * = nullptr)
+	{
+		StringRef value = column.getDataAt(row_num);
+		data.set.insert(CityHash64(value.data, value.size));
+	}
+};
+
+template <typename T, typename Data>
+struct OneAdder<T, Data, typename std::enable_if<
 	std::is_same<Data, AggregateFunctionUniqCombinedRawData<T> >::value ||
 	std::is_same<Data, AggregateFunctionUniqCombinedLinearCountingData<T> >::value ||
 	std::is_same<Data, AggregateFunctionUniqCombinedBiasCorrectedData<T> >::value ||
@@ -215,7 +262,7 @@ struct OneAdder<T, Data, typename std::enable_if<
 		typename std::enable_if<!std::is_same<T2, String>::value>::type * = nullptr)
 	{
 		const auto & value = static_cast<const ColumnVector<T2> &>(column).getData()[row_num];
-		data.set.insert(AggregateFunctionUniqTraits<T2>::hash(value));
+		data.set.insert(AggregateFunctionUniqCombinedTraits<T2>::hash(value));
 	}
 
 	template <typename T2 = T>
