@@ -646,13 +646,13 @@ private:
 		  * x >= y:  x1 > y1 || (x1 == y1 && (x2 > y2 || (x2 == y2 ... && xn >= yn))
 		  */
 
+		auto x = static_cast<const ColumnTuple *>(c0);
+		auto y = static_cast<const ColumnTuple *>(c1);
 		const size_t tuple_size = x->getData().columns();
 
 		if (0 == tuple_size)
 			throw Exception("Comparison of zero-sized tuples is not implemented.", ErrorCodes::NOT_IMPLEMENTED);
 
-		auto x = static_cast<const ColumnTuple *>(c0);
-		auto y = static_cast<const ColumnTuple *>(c1);
 		executeTupleImpl(block, result, x, y, tuple_size);
 	}
 
