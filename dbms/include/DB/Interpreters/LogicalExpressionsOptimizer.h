@@ -29,7 +29,7 @@ public:
 	/** Заменить все довольно длинные однородные OR-цепочки expr = x1 OR ... OR expr = xN
 	  * на выражения expr IN (x1, ..., xN).
 	  */
-	void optimizeDisjunctiveEqualityChains();
+	void perform();
 
 	LogicalExpressionsOptimizer(const LogicalExpressionsOptimizer &) = delete;
 	LogicalExpressionsOptimizer & operator=(const LogicalExpressionsOptimizer &) = delete;
@@ -83,7 +83,6 @@ private:
 private:
 	ASTSelectQuery * select_query;
 	const Settings & settings;
-	bool hasOptimizedDisjunctiveEqualityChains = false;
 	/// Информация про OR-цепочки внутри запроса.
 	DisjunctiveEqualityChainsMap disjunctive_equality_chains_map;
 	/// Количество обработанных OR-цепочек.

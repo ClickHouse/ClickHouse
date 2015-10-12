@@ -1,5 +1,5 @@
 #pragma once
-#include <statdaemons/Exception.h>
+#include <DB/Common/Exception.h>
 #include <zkutil/Types.h>
 #include <DB/Common/ProfileEvents.h>
 #include <DB/Core/ErrorCodes.h>

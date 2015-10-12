@@ -68,7 +68,7 @@ public:
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
 		unsigned threads = 1) override;
 
-	BlockOutputStreamPtr write(ASTPtr query) override;
+	BlockOutputStreamPtr write(ASTPtr query, const Settings & settings) override;
 
 	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
 

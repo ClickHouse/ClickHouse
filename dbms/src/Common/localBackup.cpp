@@ -7,7 +7,7 @@
 #include <Poco/DirectoryIterator.h>
 #include <Poco/File.h>
 
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 
 

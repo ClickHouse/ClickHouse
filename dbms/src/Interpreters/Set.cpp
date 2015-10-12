@@ -478,12 +478,17 @@ void Set::createFromAST(DataTypes & types, ASTPtr node, const Context & context,
 }
 
 
-void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result, bool negative) const
+ColumnPtr Set::execute(const Block & block, bool negative) const
 {
-	ColumnUInt8 * c_res = new ColumnUInt8;
-	block.getByPosition(result).column = c_res;
-	ColumnUInt8::Container_t & vec_res = c_res->getData();
-	vec_res.resize(block.getByPosition(arguments[0]).column->size());
+	size_t num_key_columns = block.columns();
+
+	if (0 == num_key_columns)
+		throw Exception("Logical error: no columns passed to Set::execute method.", ErrorCodes::LOGICAL_ERROR);
+
+	ColumnUInt8 * p_res = new ColumnUInt8;
+	ColumnPtr res = p_res;
+	ColumnUInt8::Container_t & vec_res = p_res->getData();
+	vec_res.resize(block.getByPosition(0).column->size());
 
 	Poco::ScopedReadRWLock lock(rwlock);
 
@@ -494,19 +499,19 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 			memset(&vec_res[0], 1, vec_res.size());
 		else
 			memset(&vec_res[0], 0, vec_res.size());
-		return;
+		return res;
 	}
 
-	DataTypeArray * array_type = typeid_cast<DataTypeArray *>(&*block.getByPosition(arguments[0]).type);
+	const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(&*block.getByPosition(0).type);
 
 	if (array_type)
 	{
-		if (data_types.size() != 1 || arguments.size() != 1)
+		if (data_types.size() != 1 || num_key_columns != 1)
 			throw Exception("Number of columns in section IN doesn't match.", ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
 		if (array_type->getNestedType()->getName() != data_types[0]->getName())
 			throw Exception(std::string() + "Types in section IN don't match: " + data_types[0]->getName() + " on the right, " + array_type->getNestedType()->getName() + " on the left.", ErrorCodes::TYPE_MISMATCH);
 
-		IColumn * in_column = &*block.getByPosition(arguments[0]).column;
+		const IColumn * in_column = &*block.getByPosition(0).column;
 
 		/// Константный столбец слева от IN поддерживается не напрямую. Для этого, он сначала материализуется.
 		ColumnPtr materialized_column;
@@ -516,24 +521,26 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 			in_column = materialized_column.get();
 		}
 
-		if (ColumnArray * col = typeid_cast<ColumnArray *>(in_column))
+		if (const ColumnArray * col = typeid_cast<const ColumnArray *>(in_column))
 			executeArray(col, vec_res, negative);
 		else
 			throw Exception("Unexpected array column type: " + in_column->getName(), ErrorCodes::ILLEGAL_COLUMN);
 	}
 	else
 	{
-		if (data_types.size() != arguments.size())
+		if (data_types.size() != num_key_columns)
 			throw Exception("Number of columns in section IN doesn't match.", ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
 
 		/// Запоминаем столбцы, с которыми будем работать. Также проверим, что типы данных правильные.
-		ConstColumnPlainPtrs key_columns(arguments.size());
-		for (size_t i = 0; i < arguments.size(); ++i)
+		ConstColumnPlainPtrs key_columns(num_key_columns);
+		for (size_t i = 0; i < num_key_columns; ++i)
 		{
-			key_columns[i] = block.getByPosition(arguments[i]).column;
+			key_columns[i] = block.getByPosition(i).column;
 
-			if (data_types[i]->getName() != block.getByPosition(arguments[i]).type->getName())
-				throw Exception("Types of column " + toString(i + 1) + " in section IN don't match: " + data_types[i]->getName() + " on the right, " + block.getByPosition(arguments[i]).type->getName() + " on the left.", ErrorCodes::TYPE_MISMATCH);
+			if (data_types[i]->getName() != block.getByPosition(i).type->getName())
+				throw Exception("Types of column " + toString(i + 1) + " in section IN don't match: "
+					+ data_types[i]->getName() + " on the right, " + block.getByPosition(i).type->getName() + " on the left.",
+					ErrorCodes::TYPE_MISMATCH);
 		}
 
 		/// Константные столбцы слева от IN поддерживается не напрямую. Для этого, они сначала материализуется.
@@ -549,6 +556,8 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 
 		executeOrdinary(key_columns, vec_res, negative);
 	}
+
+	return res;
 }
 
 

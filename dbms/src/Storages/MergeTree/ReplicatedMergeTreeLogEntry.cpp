@@ -1,5 +1,8 @@
+#include <zkutil/Types.h>
+
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
+#include <DB/IO/Operators.h>
 
 
 namespace DB
@@ -42,62 +45,81 @@ void ReplicatedMergeTreeLogEntry::tagPartAsFuture(StorageReplicatedMergeTree & s
 
 void ReplicatedMergeTreeLogEntry::writeText(WriteBuffer & out) const
 {
-	writeString("format version: 1\n", out);
-	writeString("source replica: ", out);
-	writeString(source_replica, out);
-	writeString("\n", out);
+	out << "format version: 3\n"
+		<< "create_time: " << mysqlxx::DateTime(create_time ? create_time : time(0)) << "\n"
+		<< "source replica: " << source_replica << '\n'
+		<< "block_id: " << escape << block_id << '\n';
+
 	switch (type)
 	{
 		case GET_PART:
-			writeString("get\n", out);
-			writeString(new_part_name, out);
+			out << "get\n" << new_part_name;
 			break;
+
 		case MERGE_PARTS:
-			writeString("merge\n", out);
+			out << "merge\n";
 			for (const String & s : parts_to_merge)
-			{
-				writeString(s, out);
-				writeString("\n", out);
-			}
-			writeString("into\n", out);
-			writeString(new_part_name, out);
+				out << s << '\n';
+			out << "into\n" << new_part_name;
 			break;
+
 		case DROP_RANGE:
 			if (detach)
-				writeString("detach\n", out);
+				out << "detach\n";
 			else
-				writeString("drop\n", out);
-			writeString(new_part_name, out);
+				out << "drop\n";
+			out << new_part_name;
 			break;
+
 		case ATTACH_PART:
-			writeString("attach\n", out);
+			out << "attach\n";
 			if (attach_unreplicated)
-				writeString("unreplicated\n", out);
+				out << "unreplicated\n";
 			else
-				writeString("detached\n", out);
-			writeString(source_part_name, out);
-			writeString("\ninto\n", out);
-			writeString(new_part_name, out);
+				out << "detached\n";
+			out << source_part_name << "\ninto\n" << new_part_name;
 			break;
+
+		default:
+			throw Exception("Unknown log entry type: " + DB::toString(type), ErrorCodes::LOGICAL_ERROR);
 	}
-	writeString("\n", out);
+
+	out << '\n';
+
+	if (quorum)
+		out << "quorum: " << quorum << '\n';
 }
 
 void ReplicatedMergeTreeLogEntry::readText(ReadBuffer & in)
 {
+	UInt8 format_version = 0;
 	String type_str;
 
-	assertString("format version: 1\n", in);
-	assertString("source replica: ", in);
-	readString(source_replica, in);
-	assertString("\n", in);
-	readString(type_str, in);
-	assertString("\n", in);
+	in >> "format version: " >> format_version >> "\n";
+
+	if (format_version != 1 && format_version != 2 && format_version != 3)
+		throw Exception("Unknown ReplicatedMergeTreeLogEntry format version: " + DB::toString(format_version), ErrorCodes::UNKNOWN_FORMAT_VERSION);
+
+	if (format_version >= 2)
+	{
+		mysqlxx::DateTime create_time_dt;
+		in >> "create_time: " >> create_time_dt >> "\n";
+		create_time = create_time_dt;
+	}
+
+	in >> "source replica: " >> source_replica >> "\n";
+
+	if (format_version >= 3)
+	{
+		in >> "block_id: " >> escape >> block_id >> "\n";
+	}
+
+	in >> type_str >> "\n";
 
 	if (type_str == "get")
 	{
 		type = GET_PART;
-		readString(new_part_name, in);
+		in >> new_part_name;
 	}
 	else if (type_str == "merge")
 	{
@@ -105,37 +127,38 @@ void ReplicatedMergeTreeLogEntry::readText(ReadBuffer & in)
 		while (true)
 		{
 			String s;
-			readString(s, in);
-			assertString("\n", in);
+			in >> s >> "\n";
 			if (s == "into")
 				break;
 			parts_to_merge.push_back(s);
 		}
-		readString(new_part_name, in);
+		in >> new_part_name;
 	}
 	else if (type_str == "drop" || type_str == "detach")
 	{
 		type = DROP_RANGE;
 		detach = type_str == "detach";
-		readString(new_part_name, in);
+		in >> new_part_name;
 	}
 	else if (type_str == "attach")
 	{
 		type = ATTACH_PART;
 		String source_type;
-		readString(source_type, in);
+		in >> source_type;
 		if (source_type == "unreplicated")
 			attach_unreplicated = true;
 		else if (source_type == "detached")
 			attach_unreplicated = false;
 		else
 			throw Exception("Bad format: expected 'unreplicated' or 'detached', found '" + source_type + "'", ErrorCodes::CANNOT_PARSE_TEXT);
-		assertString("\n", in);
-		readString(source_part_name, in);
-		assertString("\ninto\n", in);
-		readString(new_part_name, in);
+		in >> "\n" >> source_part_name >> "\ninto\n" >> new_part_name;
 	}
-	assertString("\n", in);
+
+	in >> "\n";
+
+	/// Необязательное поле.
+	if (!in.eof())
+		in >> "quorum: " >> quorum >> "\n";
 }
 
 String ReplicatedMergeTreeLogEntry::toString() const
@@ -148,12 +171,16 @@ String ReplicatedMergeTreeLogEntry::toString() const
 	return s;
 }
 
-ReplicatedMergeTreeLogEntry::Ptr ReplicatedMergeTreeLogEntry::parse(const String & s)
+ReplicatedMergeTreeLogEntry::Ptr ReplicatedMergeTreeLogEntry::parse(const String & s, const zkutil::Stat & stat)
 {
 	ReadBufferFromString in(s);
 	Ptr res = new ReplicatedMergeTreeLogEntry;
 	res->readText(in);
 	assertEOF(in);
+
+	if (!res->create_time)
+		res->create_time = stat.ctime / 1000;
+
 	return res;
 }
 

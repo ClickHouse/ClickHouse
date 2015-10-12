@@ -66,7 +66,7 @@ public:
 		size_t max_block_size = DEFAULT_BLOCK_SIZE,
 		unsigned threads = 1) override;
 
-	BlockOutputStreamPtr write(ASTPtr query) override;
+	BlockOutputStreamPtr write(ASTPtr query, const Settings & settings) override;
 
 	void drop() override {}
 	void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override { name = new_table_name; }
@@ -78,7 +78,10 @@ public:
 
 	const ExpressionActionsPtr & getShardingKeyExpr() const { return sharding_key_expr; }
 	const String & getShardingKeyColumnName() const { return sharding_key_column_name; }
+	size_t getShardCount() const;
 	const String & getPath() const { return path; }
+	std::string getRemoteDatabaseName() const { return remote_database; }
+	std::string getRemoteTableName() const { return remote_table; }
 
 
 private:

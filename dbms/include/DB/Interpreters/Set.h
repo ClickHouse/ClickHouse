@@ -2,7 +2,7 @@
 
 #include <set>
 
-#include <Yandex/logger_useful.h>
+#include <common/logger_useful.h>
 
 #include <DB/Core/ColumnNumbers.h>
 #include <DB/Common/Arena.h>
@@ -288,10 +288,10 @@ public:
 	// Возвращает false, если превышено какое-нибудь ограничение, и больше не нужно вставлять.
 	bool insertFromBlock(const Block & block, bool create_ordered_set = false);
 
-	/** Для указанных столбцов блока проверить принадлежность их значений множеству.
+	/** Для столбцов блока проверить принадлежность их значений множеству.
 	  * Записать результат в столбец в позиции result.
 	  */
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result, bool negative) const;
+	ColumnPtr execute(const Block & block, bool negative) const;
 
 	std::string describe() const
 	{

@@ -1,5 +1,5 @@
 #pragma once
-#include <Yandex/Common.h>
+#include <common/Common.h>
 #include <boost/function.hpp>
 #include <future>
 #include <boost/noncopyable.hpp>

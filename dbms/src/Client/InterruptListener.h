@@ -1,7 +1,7 @@
 #pragma once
 
 #include <signal.h>
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 
 

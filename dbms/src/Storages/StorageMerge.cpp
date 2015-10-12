@@ -1,4 +1,5 @@
 #include <DB/DataStreams/AddingConstColumnBlockInputStream.h>
+#include <DB/DataStreams/narrowBlockInputStreams.h>
 #include <DB/Storages/StorageMerge.h>
 #include <DB/Common/VirtualColumnUtils.h>
 #include <DB/Interpreters/InterpreterAlterQuery.h>
@@ -179,7 +180,7 @@ BlockInputStreams StorageMerge::read(
 			processed_stage = tmp_processed_stage;
 	}
 
-	return res;
+	return narrowBlockInputStreams(res, threads);
 }
 
 /// Построить блок состоящий только из возможных значений виртуальных столбцов

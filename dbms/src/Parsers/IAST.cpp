@@ -5,6 +5,13 @@
 namespace DB
 {
 
+constexpr IAST::Attributes IAST::IsVisited;
+constexpr IAST::Attributes IAST::IsPreprocessedForInJoinSubqueries;
+constexpr IAST::Attributes IAST::IsIn;
+constexpr IAST::Attributes IAST::IsNotIn;
+constexpr IAST::Attributes IAST::IsJoin;
+constexpr IAST::Attributes IAST::IsGlobal;
+
 const char * IAST::hilite_keyword 		= "\033[1m";
 const char * IAST::hilite_identifier 	= "\033[0;36m";
 const char * IAST::hilite_function 		= "\033[0;33m";

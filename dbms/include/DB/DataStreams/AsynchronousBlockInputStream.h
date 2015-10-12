@@ -1,10 +1,11 @@
 #pragma once
 
-#include <statdaemons/threadpool.hpp>
+#include <common/threadpool.hpp>
 
 #include <Poco/Event.h>
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
+#include <DB/Common/setThreadName.h>
 
 
 namespace DB
@@ -47,7 +48,7 @@ public:
 		{
 			pool.wait();
 			if (exception)
-				exception->rethrow();
+				std::rethrow_exception(exception);
 			children.back()->readSuffix();
 			started = false;
 		}
@@ -81,7 +82,7 @@ protected:
 	bool started = false;
 
 	Block block;
-	ExceptionPtr exception;
+	std::exception_ptr exception;
 
 
 	Block readImpl() override
@@ -96,7 +97,7 @@ protected:
 			pool.wait();
 
 		if (exception)
-			exception->rethrow();
+			std::rethrow_exception(exception);
 
 		Block res = block;
 		if (!res)
@@ -120,6 +121,7 @@ protected:
 	/// Вычисления, которые могут выполняться в отдельном потоке
 	void calculate(MemoryTracker * memory_tracker)
 	{
+		setThreadName("AsyncBlockInput");
 		current_memory_tracker = memory_tracker;
 
 		try
@@ -128,7 +130,7 @@ protected:
 		}
 		catch (...)
 		{
-			exception = cloneCurrentException();
+			exception = std::current_exception();
 		}
 
 		ready.set();

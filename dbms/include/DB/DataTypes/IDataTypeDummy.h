@@ -20,36 +20,36 @@ private:
 	}
 
 public:
-	void serializeBinary(const Field & field, WriteBuffer & ostr) const 								{ throwNoSerialization(); }
-	void deserializeBinary(Field & field, ReadBuffer & istr) const 										{ throwNoSerialization(); }
+	void serializeBinary(const Field & field, WriteBuffer & ostr) const override 						{ throwNoSerialization(); }
+	void deserializeBinary(Field & field, ReadBuffer & istr) const override 							{ throwNoSerialization(); }
 
 	void serializeBinary(const IColumn & column, WriteBuffer & ostr,
 		size_t offset = 0, size_t limit = 0) const														{ throwNoSerialization(); }
 
-	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const	{ throwNoSerialization(); }
+	void deserializeBinary(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override { throwNoSerialization(); }
 
-	void serializeText(const Field & field, WriteBuffer & ostr) const 									{ throwNoSerialization(); }
-	void deserializeText(Field & field, ReadBuffer & istr) const 										{ throwNoSerialization(); }
+	void serializeText(const Field & field, WriteBuffer & ostr) const override 							{ throwNoSerialization(); }
+	void deserializeText(Field & field, ReadBuffer & istr) const override 								{ throwNoSerialization(); }
 
-	void serializeTextEscaped(const Field & field, WriteBuffer & ostr) const 							{ throwNoSerialization(); }
-	void deserializeTextEscaped(Field & field, ReadBuffer & istr) const 								{ throwNoSerialization(); }
+	void serializeTextEscaped(const Field & field, WriteBuffer & ostr) const override 					{ throwNoSerialization(); }
+	void deserializeTextEscaped(Field & field, ReadBuffer & istr) const override 						{ throwNoSerialization(); }
 
-	void serializeTextQuoted(const Field & field, WriteBuffer & ostr) const 							{ throwNoSerialization(); }
-	void deserializeTextQuoted(Field & field, ReadBuffer & istr) const 									{ throwNoSerialization(); }
+	void serializeTextQuoted(const Field & field, WriteBuffer & ostr) const override 					{ throwNoSerialization(); }
+	void deserializeTextQuoted(Field & field, ReadBuffer & istr) const override 						{ throwNoSerialization(); }
 
-	void serializeTextJSON(const Field & field, WriteBuffer & ostr) const 							{ throwNoSerialization(); }
+	void serializeTextJSON(const Field & field, WriteBuffer & ostr) const override 						{ throwNoSerialization(); }
 
-	SharedPtr<IColumn> createColumn() const
+	SharedPtr<IColumn> createColumn() const override
 	{
 		throw Exception("Method createColumn() is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	SharedPtr<IColumn> createConstColumn(size_t size, const Field & field) const
+	SharedPtr<IColumn> createConstColumn(size_t size, const Field & field) const override
 	{
 		throw Exception("Method createConstColumn() is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	Field getDefault() const
+	Field getDefault() const override
 	{
 		throw Exception("Method getDefault() is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}

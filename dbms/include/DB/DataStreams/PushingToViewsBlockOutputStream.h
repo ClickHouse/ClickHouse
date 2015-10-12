@@ -22,6 +22,11 @@ public:
 		: context(context_), query_ptr(query_ptr_)
 	{
 		storage = context.getTable(database, table);
+
+		/** TODO Это очень важная строчка. При любой вставке в таблицу один из stream-ов должен владеть lock-ом.
+		  * Хотя сейчас любая вставка в таблицу делается через PushingToViewsBlockOutputStream,
+		  *  но ясно, что здесь - не лучшее место для этой функциональности.
+		  */
 		addTableLock(storage->lockStructure(true));
 
 		Dependencies dependencies = context.getDependencies(database, table);
@@ -32,7 +37,7 @@ public:
 		}
 
 		if (storage->getName() != "View")
-			output = storage->write(query_ptr);
+			output = storage->write(query_ptr, context.getSettingsRef());
 	}
 
 	void write(const Block & block) override

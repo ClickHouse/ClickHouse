@@ -9,13 +9,13 @@
 
 #include <boost/noncopyable.hpp>
 
-#include <Yandex/likely.h>
+#include <common/likely.h>
 
 #include <stats/IntHash.h>
 
 #include <DB/Core/Defines.h>
 #include <DB/Core/Types.h>
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 
 #include <DB/IO/WriteBuffer.h>
@@ -29,7 +29,7 @@
 #ifdef DBMS_HASH_MAP_DEBUG_RESIZES
 	#include <iostream>
 	#include <iomanip>
-	#include <statdaemons/Stopwatch.h>
+	#include <DB/Common/Stopwatch.h>
 #endif
 
 

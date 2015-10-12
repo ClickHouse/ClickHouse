@@ -43,11 +43,11 @@ BlockIO InterpreterAlterQuery::execute()
 		switch (command.type)
 		{
 			case PartitionCommand::DROP_PARTITION:
-				table->dropPartition(command.partition, command.detach, command.unreplicated, context.getSettingsRef());
+				table->dropPartition(query_ptr, command.partition, command.detach, command.unreplicated, context.getSettingsRef());
 				break;
 
 			case PartitionCommand::ATTACH_PARTITION:
-				table->attachPartition(command.partition, command.unreplicated, command.part, context.getSettingsRef());
+				table->attachPartition(query_ptr, command.partition, command.unreplicated, command.part, context.getSettingsRef());
 				break;
 
 			case PartitionCommand::FETCH_PARTITION:

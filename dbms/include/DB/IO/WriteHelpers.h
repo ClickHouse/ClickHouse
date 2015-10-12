@@ -5,14 +5,14 @@
 #include <limits>
 #include <algorithm>
 
-#include <Yandex/Common.h>
-#include <Yandex/DateLUT.h>
+#include <common/Common.h>
+#include <common/DateLUT.h>
 
 #include <mysqlxx/Row.h>
 #include <mysqlxx/Null.h>
 
 #include <DB/Core/Types.h>
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 
 #include <DB/IO/WriteBuffer.h>

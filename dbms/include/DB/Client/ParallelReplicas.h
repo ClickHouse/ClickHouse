@@ -70,6 +70,9 @@ private:
 	/// Внутренняя версия функции receivePacket без блокировки.
 	Connection::Packet receivePacketUnlocked();
 
+	/// Внутренняя версия функции dumpAddresses без блокировки.
+	std::string dumpAddressesUnlocked() const;
+
 	/// Получить реплику, на которой можно прочитать данные.
 	ReplicaMap::iterator getReplicaForReading();
 

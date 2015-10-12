@@ -345,7 +345,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 			if (!select_p.parse(pos, end, select_query->next_union_all, max_parsed_pos, expected))
 				return false;
 			auto next_select_query = static_cast<ASTSelectQuery *>(&*select_query->next_union_all);
-			next_select_query->prev_union_all = node;
+			next_select_query->prev_union_all = node.get();
 		}
 		else
 			return false;

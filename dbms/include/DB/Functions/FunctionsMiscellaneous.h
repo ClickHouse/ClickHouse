@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Poco/Net/DNS.h>
-#include <Yandex/Revision.h>
+#include <common/Revision.h>
 
 #include <DB/Core/Defines.h>
 #include <DB/IO/WriteBufferFromString.h>
@@ -24,7 +24,7 @@
 #include <DB/Common/UnicodeBar.h>
 #include <DB/Functions/IFunction.h>
 #include <DB/Interpreters/ExpressionActions.h>
-#include <statdaemons/ext/range.hpp>
+#include <ext/range.hpp>
 
 #include <cmath>
 
@@ -386,23 +386,16 @@ public:
 			throw Exception("Second argument for function '" + getName() + "' must be Set; found " + column_set_ptr->getName(),
 							ErrorCodes::ILLEGAL_COLUMN);
 
-		/// Столбцы, которые проверяются на принадлежность множеству.
-		ColumnNumbers left_arguments;
+		Block block_of_key_columns;
 
 		/// Первый аргумент может быть tuple или одиночным столбцом.
 		const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(&*block.getByPosition(arguments[0]).column);
 		if (tuple)
-		{
-			/// Находим в блоке столбцы из tuple.
-			const Block & tuple_elems = tuple->getData();
-			size_t tuple_size = tuple_elems.columns();
-			for (size_t i = 0; i < tuple_size; ++i)
-				left_arguments.push_back(block.getPositionByName(tuple_elems.getByPosition(i).name));
-		}
+			block_of_key_columns = tuple->getData();
 		else
-			left_arguments.push_back(arguments[0]);
+			block_of_key_columns.insert(block.getByPosition(arguments[0]));
 
-		column_set->getData()->execute(block, left_arguments, result, negative);
+		block.getByPosition(result).column = column_set->getData()->execute(block_of_key_columns, negative);
 	}
 };
 
@@ -422,8 +415,8 @@ public:
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnType(const DataTypes & arguments) const
 	{
-		if (arguments.size() < 2)
-			throw Exception("Function " + getName() + " requires at least two arguments.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+		if (arguments.size() < 1)
+			throw Exception("Function " + getName() + " requires at least one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 		return new DataTypeTuple(arguments);
 	}

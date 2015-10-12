@@ -15,7 +15,7 @@
 #include <DB/Columns/ColumnArray.h>
 
 #include <stats/IntHash.h>
-#include <statdaemons/ext/range.hpp>
+#include <ext/range.hpp>
 
 
 namespace DB

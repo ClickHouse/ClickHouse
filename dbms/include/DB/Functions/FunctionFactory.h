@@ -1,7 +1,7 @@
 #pragma once
 
 #include <DB/Functions/IFunction.h>
-#include <Yandex/singleton.h>
+#include <common/singleton.h>
 
 
 namespace DB
