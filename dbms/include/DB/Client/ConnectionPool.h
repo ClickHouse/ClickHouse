@@ -30,6 +30,7 @@ public:
 public:
 	virtual ~IConnectionPool() {}
 
+	/** Выделяет соединение для работы. */
 	Entry get(const Settings * settings = nullptr)
 	{
 		return doGet(settings);
@@ -118,7 +119,6 @@ protected:
 	}
 
 private:
-	/** Выделяет соединение для работы. */
 	Entry doGet(const Settings * settings) override
 	{
 		if (settings)
