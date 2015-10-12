@@ -9,7 +9,7 @@
 namespace DB
 {
 
-/// Allows loading dictionaries from a MySQL database
+/// Allows loading dictionaries from a MongoDB collection
 class MongoDBDictionarySource final : public IDictionarySource
 {
 	MongoDBDictionarySource(
@@ -25,6 +25,7 @@ class MongoDBDictionarySource final : public IDictionarySource
 
 		connection.connect(host + ':' + port);
 
+		/// @todo: should connection.auth be called after or before .connect ?
 		if (!user.empty())
 		{
 			std::string error;
@@ -45,6 +46,7 @@ class MongoDBDictionarySource final : public IDictionarySource
 		fields_to_query = builder.obj();
 	}
 
+	/// mongo-cxx driver requires global initialization before using any functionality
 	static void init()
 	{
 		static const auto mongo_init_status = mongo::client::initialize();
@@ -95,6 +97,7 @@ public:
 
 	BlockInputStreamPtr loadIds(const std::vector<std::uint64_t> & ids) override
 	{
+		/// @todo: convert ids to a BSONObj with $in and enumeration, pass as second argument to .query
 		return new MongoDBBlockInputStream{
 			connection.query(db + '.' + collection, {}, 0, 0, &fields_to_query),
 			sample_block, 8192

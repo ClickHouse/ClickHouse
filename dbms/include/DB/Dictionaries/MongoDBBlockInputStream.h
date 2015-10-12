@@ -15,7 +15,7 @@
 namespace DB
 {
 
-/// Allows processing results of a MySQL query as a sequence of Blocks, simplifies chaining
+/// Converts mongo::DBClientCursor to a stream of DB::Block`s
 class MongoDBBlockInputStream final : public IProfilingBlockInputStream
 {
 	enum struct value_type_t
@@ -40,11 +40,13 @@ public:
 		std::unique_ptr<mongo::DBClientCursor> cursor_, const Block & sample_block, const std::size_t max_block_size)
 		: cursor{std::move(cursor_)}, sample_block{sample_block}, max_block_size{max_block_size}
 	{
+		/// do nothing if cursor has no data
 		if (!cursor->more())
 			return;
 
 		types.reserve(sample_block.columns());
 
+		/// save types of each column to eliminate subsequent typeid_cast<> invocations
 		for (const auto idx : ext::range(0, sample_block.columns()))
 		{
 			const auto & column = sample_block.getByPosition(idx);
@@ -98,9 +100,9 @@ public:
 private:
 	Block readImpl() override
 	{
+		/// return an empty block if cursor has no data
 		if (!cursor->more())
 			return {};
-
 
 		auto block = sample_block.cloneEmpty();
 
