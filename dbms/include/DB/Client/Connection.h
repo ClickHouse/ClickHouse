@@ -174,6 +174,11 @@ public:
 	  */
 	void disconnect();
 
+	/** Заполнить информацию, которая необходима при получении блока для некоторых задач
+	  * (пока только для запроса DESCRIBE TABLE с Distributed-таблицами).
+	  */
+	void fillBlockExtraInfo(BlockExtraInfo & info) const;
+
 	size_t outBytesCount() const { return !out.isNull() ? out->count() : 0; }
 	size_t inBytesCount() const { return !in.isNull() ? in->count() : 0; }
 

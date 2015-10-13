@@ -11,16 +11,17 @@ ParallelReplicas::ParallelReplicas(Connection * connection_, const Settings * se
 	registerReplica(connection_);
 }
 
-ParallelReplicas::ParallelReplicas(IConnectionPool * pool_, const Settings * settings_, ThrottlerPtr throttler_)
+ParallelReplicas::ParallelReplicas(IConnectionPool * pool_, const Settings * settings_, ThrottlerPtr throttler_,
+	bool append_extra_info, bool get_all_replicas)
 	: settings(settings_), throttler(throttler_)
 {
 	if (pool_ == nullptr)
 		throw Exception("Null pool specified", ErrorCodes::LOGICAL_ERROR);
 
-	bool has_many_replicas = (settings != nullptr) && (settings->max_parallel_replicas > 1);
+	bool has_many_replicas = get_all_replicas || ((settings != nullptr) && (settings->max_parallel_replicas > 1));
 	if (has_many_replicas)
 	{
-		pool_entries = pool_->getMany(settings);
+		pool_entries = pool_->getMany(settings, get_all_replicas);
 		active_replica_count = pool_entries.size();
 		supports_parallel_execution = (active_replica_count > 1);
 
@@ -40,6 +41,9 @@ ParallelReplicas::ParallelReplicas(IConnectionPool * pool_, const Settings * set
 		if (!pool_entry.isNull())
 			registerReplica(&*pool_entry);
 	}
+
+	if (append_extra_info)
+		block_extra_info.reset(new BlockExtraInfo);
 }
 
 void ParallelReplicas::sendExternalTablesData(std::vector<ExternalTablesData> & data)
@@ -104,7 +108,23 @@ void ParallelReplicas::sendQuery(const String & query, const String & query_id, 
 Connection::Packet ParallelReplicas::receivePacket()
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(cancel_mutex);
-	return receivePacketUnlocked();
+	const auto & packet = receivePacketUnlocked();
+	if (block_extra_info)
+	{
+		if (packet.type == Protocol::Server::Data)
+			current_connection->fillBlockExtraInfo(*block_extra_info);
+		else
+			block_extra_info->is_valid = false;
+	}
+	return packet;
+}
+
+BlockExtraInfo ParallelReplicas::getBlockExtraInfo() const
+{
+	if (!block_extra_info)
+		throw Exception("ParallelReplicas object not configured for block extra info support",
+			ErrorCodes::LOGICAL_ERROR);
+	return *block_extra_info;
 }
 
 void ParallelReplicas::disconnect()
@@ -219,8 +239,8 @@ Connection::Packet ParallelReplicas::receivePacketUnlocked()
 	if (it == replica_map.end())
 		throw Exception("Logical error: no available replica", ErrorCodes::NO_AVAILABLE_REPLICA);
 
-	Connection * connection = it->second;
-	Connection::Packet packet = connection->receivePacket();
+	current_connection = it->second;
+	Connection::Packet packet = current_connection->receivePacket();
 
 	switch (packet.type)
 	{
@@ -237,7 +257,7 @@ Connection::Packet ParallelReplicas::receivePacketUnlocked()
 
 		case Protocol::Server::Exception:
 		default:
-			connection->disconnect();
+			current_connection->disconnect();
 			invalidateReplica(it);
 			break;
 	}

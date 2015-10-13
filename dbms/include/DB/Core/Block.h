@@ -130,6 +130,23 @@ typedef std::list<Block> BlocksList;
 /// Сравнить типы столбцов у блоков. Порядок столбцов имеет значение. Имена не имеют значения.
 bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs);
 
+/** Дополнительные данные к блокам. Они пока нужны только для запроса
+  * DESCRIBE TABLE с Distributed-таблицами.
+  */
+struct BlockExtraInfo
+{
+	BlockExtraInfo() {}
+	operator bool() const { return is_valid; }
+	bool operator!() const { return !is_valid; }
+
+	std::string host;
+	std::string resolved_address;
+	std::string user;
+	UInt16 port = 0;
+
+	bool is_valid = false;
+};
+
 }
 
 namespace std

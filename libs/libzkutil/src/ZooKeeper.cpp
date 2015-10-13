@@ -646,7 +646,11 @@ ZooKeeper::GetFuture ZooKeeper::asyncGet(const std::string & path)
 			if (rc != ZOK)
 				throw KeeperException(rc, path);
 
-			return ValueAndStat{ {value, size_t(value_len)}, *stat };
+			std::string value_str;
+			if (value_len > 0)	/// Может быть не так, если в ZK лежит NULL. Мы не отличаем его от пустой строки.
+				value_str = { value, size_t(value_len) };
+
+			return ValueAndStat{ value_str, stat ? *stat : Stat() };
 		}};
 
 	int32_t code = zoo_aget(
@@ -675,7 +679,11 @@ ZooKeeper::TryGetFuture ZooKeeper::asyncTryGet(const std::string & path)
 			if (rc != ZOK && rc != ZNONODE)
 				throw KeeperException(rc, path);
 
-			return ValueAndStatAndExists{ {value, size_t(value_len)}, stat ? *stat : Stat(), rc != ZNONODE };
+			std::string value_str;
+			if (value_len > 0)	/// Может быть не так, если в ZK лежит NULL. Мы не отличаем его от пустой строки.
+				value_str = { value, size_t(value_len) };
+
+			return ValueAndStatAndExists{ value_str, stat ? *stat : Stat(), rc != ZNONODE };
 		}};
 
 	int32_t code = zoo_aget(

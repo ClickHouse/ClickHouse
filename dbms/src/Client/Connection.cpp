@@ -536,5 +536,13 @@ BlockStreamProfileInfo Connection::receiveProfileInfo()
 	return profile_info;
 }
 
+void Connection::fillBlockExtraInfo(BlockExtraInfo & info) const
+{
+	info.is_valid = true;
+	info.host = host;
+	info.resolved_address = resolved_address.toString();
+	info.port = port;
+	info.user = user;
+}
 
 }

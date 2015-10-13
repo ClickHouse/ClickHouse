@@ -226,6 +226,18 @@ public:
 		{
 			return future.get();
 		}
+
+		Future(Future &&) = default;
+		Future & operator= (Future &&) = default;
+
+		~Future()
+		{
+			/** Если никто не дождался результата, то мы должны его дождаться перед уничтожением объекта,
+			  *  так как данные этого объекта могут всё ещё использоваться в колбэке.
+			  */
+			if (future.valid())
+				future.wait();
+		}
 	};
 
 

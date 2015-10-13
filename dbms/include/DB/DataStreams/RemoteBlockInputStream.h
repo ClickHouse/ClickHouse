@@ -119,6 +119,23 @@ public:
 			sendQuery();
 	}
 
+	/// Отправить запрос на все существующие реплики.
+	void reachAllReplicas()
+	{
+		reach_all_replicas = true;
+	}
+
+	/// Кроме блоков, получить информацию о блоках.
+	void appendExtraInfo()
+	{
+		append_extra_info = true;
+	}
+
+	BlockExtraInfo getBlockExtraInfo() const override
+	{
+		return parallel_replicas->getBlockExtraInfo();
+	}
+
 protected:
 	/// Отправить на удаленные серверы все временные таблицы.
 	void sendExternalTables()
@@ -264,7 +281,8 @@ protected:
 		if (connection != nullptr)
 			parallel_replicas = std::make_unique<ParallelReplicas>(connection, parallel_replicas_settings, throttler);
 		else
-			parallel_replicas = std::make_unique<ParallelReplicas>(pool, parallel_replicas_settings, throttler);
+			parallel_replicas = std::make_unique<ParallelReplicas>(pool, parallel_replicas_settings, throttler,
+				append_extra_info, reach_all_replicas);
 	}
 
 	/// Возвращает true, если запрос отправлен.
@@ -364,6 +382,9 @@ private:
 	  * просить прервать запрос на этой реплике не нужно.
 	  */
 	std::atomic<bool> got_unknown_packet_from_replica { false };
+
+	bool append_extra_info = false;
+	bool reach_all_replicas = false;
 
 	Logger * log = &Logger::get("RemoteBlockInputStream");
 };
