@@ -1,4 +1,5 @@
 #include <ext/range.hpp>
+#include <DB/Core/FieldVisitors.h>
 #include <DB/Storages/ColumnsDescription.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>

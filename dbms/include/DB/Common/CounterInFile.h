@@ -11,8 +11,6 @@
 #include <Poco/Mutex.h>
 #include <Poco/ScopedLock.h>
 
-#include <boost/function.hpp>
-
 #include <DB/Common/Exception.h>
 #include <DB/IO/ReadBufferFromFileDescriptor.h>
 #include <DB/IO/WriteBufferFromFileDescriptor.h>

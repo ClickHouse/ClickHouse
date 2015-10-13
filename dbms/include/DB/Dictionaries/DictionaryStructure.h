@@ -3,6 +3,8 @@
 #include <DB/Core/ErrorCodes.h>
 #include <DB/DataTypes/DataTypeFactory.h>
 #include <DB/IO/ReadBufferFromString.h>
+#include <DB/IO/WriteBuffer.h>
+#include <DB/IO/WriteHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <vector>
 #include <string>

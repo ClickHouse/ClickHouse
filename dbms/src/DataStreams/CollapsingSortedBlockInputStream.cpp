@@ -1,3 +1,4 @@
+#include <DB/Core/FieldVisitors.h>
 #include <DB/DataStreams/CollapsingSortedBlockInputStream.h>
 
 /// Максимальное количество сообщений о некорректных данных в логе.

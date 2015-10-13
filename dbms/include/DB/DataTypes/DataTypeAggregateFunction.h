@@ -28,29 +28,7 @@ public:
 
 	std::string getFunctionName() const { return function->getName(); }
 
-	std::string getName() const override
-	{
-		std::stringstream stream;
-		stream << "AggregateFunction(" << function->getName();
-
-		if (!parameters.empty())
-		{
-			stream << "(";
-			for (size_t i = 0; i < parameters.size(); ++i)
-			{
-				if (i)
-					stream << ", ";
-				stream << apply_visitor(DB::FieldVisitorToString(), parameters[i]);
-			}
-			stream << ")";
-		}
-
-		for (DataTypes::const_iterator it = argument_types.begin(); it != argument_types.end(); ++it)
-			stream << ", " << (*it)->getName();
-
-		stream << ")";
-		return stream.str();
-	}
+	std::string getName() const override;
 
 	DataTypePtr getReturnType() const { return function->getReturnType(); };
 	DataTypes getArgumentsDataTypes() const { return argument_types; }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DB/Core/Field.h>
+#include <DB/Core/FieldVisitors.h>
 #include <DB/Parsers/IAST.h>
 
 

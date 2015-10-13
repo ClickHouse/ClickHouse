@@ -316,13 +316,13 @@ public:
 	static IFunction * create(const Context & context) { return new FunctionTokens; }
 
 	/// Получить имя функции.
-	String getName() const
+	String getName() const override
 	{
 		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
 	{
 		Generator::checkArguments(arguments);
 
@@ -330,7 +330,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		Generator generator;
 		generator.init(block, arguments);

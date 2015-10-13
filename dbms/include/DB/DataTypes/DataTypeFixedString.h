@@ -25,10 +25,7 @@ public:
 			throw Exception("FixedString size must be positive", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 	}
 
-	std::string getName() const override
-	{
-		return "FixedString(" + toString(n) + ")";
-	}
+	std::string getName() const override;
 
 	DataTypePtr clone() const override
 	{

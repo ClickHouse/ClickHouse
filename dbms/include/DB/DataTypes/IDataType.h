@@ -1,7 +1,5 @@
 #pragma once
 
-#include <boost/function.hpp>
-
 #include <Poco/SharedPtr.h>
 
 #include <DB/Core/Field.h>

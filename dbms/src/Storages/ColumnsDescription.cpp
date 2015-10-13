@@ -1,4 +1,8 @@
 #include <DB/Parsers/ExpressionListParsers.h>
+#include <DB/IO/WriteBuffer.h>
+#include <DB/IO/WriteHelpers.h>
+#include <DB/IO/ReadBuffer.h>
+#include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteBufferFromString.h>
 #include <DB/Storages/ColumnsDescription.h>
 #include <DB/DataTypes/DataTypeFactory.h>

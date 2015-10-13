@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DB/Core/FieldVisitors.h>
 #include <DB/AggregateFunctions/IUnaryAggregateFunction.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 

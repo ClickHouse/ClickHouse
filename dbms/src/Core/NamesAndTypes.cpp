@@ -1,5 +1,9 @@
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/DataTypes/DataTypeFactory.h>
+#include <DB/IO/ReadBuffer.h>
+#include <DB/IO/WriteBuffer.h>
+#include <DB/IO/ReadHelpers.h>
+#include <DB/IO/WriteHelpers.h>
 
 
 namespace DB
