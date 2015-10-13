@@ -5,6 +5,8 @@
 #include <Poco/Timespan.h>
 #include <cpuid/libcpuid.h>
 #include <DB/IO/CompressedStream.h>
+#include <DB/IO/ReadHelpers.h>
+
 
 namespace DB
 {

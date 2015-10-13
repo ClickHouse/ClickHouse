@@ -6,6 +6,9 @@
 #include <DB/Core/ErrorCodes.h>
 #include <DB/Common/Arena.h>
 
+#include <DB/IO/WriteBuffer.h>
+#include <DB/IO/WriteHelpers.h>
+
 #include <DB/Columns/IColumn.h>
 
 

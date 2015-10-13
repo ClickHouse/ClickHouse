@@ -293,23 +293,7 @@ public:
 	  */
 	ColumnPtr execute(const Block & block, bool negative) const;
 
-	std::string describe() const
-	{
-		if (!ordered_set_elements)
-			return "{}";
-
-		bool first = true;
-		std::stringstream ss;
-
-		ss << "{";
-		for (const Field & f : *ordered_set_elements)
-		{
-			ss << (first ? "" : ", ") << apply_visitor(FieldVisitorToString(), f);
-			first = false;
-		}
-		ss << "}";
-		return ss.str();
-	}
+	std::string describe() const;
 
 	/// проверяет есть ли в Set элементы для заданного диапазона индекса
 	BoolMask mayBeTrueInRange(const Range & range) const;
