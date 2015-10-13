@@ -650,7 +650,7 @@ ZooKeeper::GetFuture ZooKeeper::asyncGet(const std::string & path)
 			if (value_len > 0)	/// Может быть не так, если в ZK лежит NULL. Мы не отличаем его от пустой строки.
 				value_str = { value, size_t(value_len) };
 
-			return ValueAndStat{ value_str, *stat };
+			return ValueAndStat{ value_str, stat ? *stat : Stat() };
 		}};
 
 	int32_t code = zoo_aget(
