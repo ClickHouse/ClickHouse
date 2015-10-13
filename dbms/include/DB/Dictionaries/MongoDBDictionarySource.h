@@ -97,9 +97,12 @@ public:
 
 	BlockInputStreamPtr loadIds(const std::vector<std::uint64_t> & ids) override
 	{
-		/// @todo: convert ids to a BSONObj with $in and enumeration, pass as second argument to .query
+		/// mongo::BSONObj has shitty design and does not use fixed width integral types
+		const std::vector<long long int> iids{std::begin(ids), std::end(ids)};
+		const auto ids_enumeration = BSON(dict_struct.id.name << BSON("$in" << iids));
+
 		return new MongoDBBlockInputStream{
-			connection.query(db + '.' + collection, {}, 0, 0, &fields_to_query),
+			connection.query(db + '.' + collection, ids_enumeration, 0, 0, &fields_to_query),
 			sample_block, 8192
 		};
 	}
