@@ -245,7 +245,6 @@ void LogicalExpressionsOptimizer::cleanupOrExpressions()
 	garbage_map.reserve(processed_count);
 	for (const auto & chain : disjunctive_equality_chains_map)
 	{
-		const auto & equalities = chain.second;
 		if (!chain.second.is_processed)
 			continue;
 

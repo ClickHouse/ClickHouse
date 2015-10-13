@@ -372,20 +372,24 @@ int32_t ZooKeeper::getImpl(const std::string & path, std::string & res, Stat * s
 
 std::string ZooKeeper::get(const std::string & path, Stat * stat, EventPtr watch)
 {
+	int code;
 	std::string res;
-	if (tryGet(path, res, stat, watch))
+	if (tryGet(path, res, stat, watch, &code))
 		return res;
 	else
-		throw KeeperException("Can't get data for node " + path + ": node doesn't exist");
+		throw KeeperException("Can't get data for node " + path + ": node doesn't exist", code);
 }
 
-bool ZooKeeper::tryGet(const std::string & path, std::string & res, Stat * stat_, EventPtr watch)
+bool ZooKeeper::tryGet(const std::string & path, std::string & res, Stat * stat_, EventPtr watch, int * return_code)
 {
 	int32_t code = retry(std::bind(&ZooKeeper::getImpl, this, std::ref(path), std::ref(res), stat_, watch));
 
 	if (!(code == ZOK ||
 			code == ZNONODE))
 		throw KeeperException(code, path);
+
+	if (return_code)
+		*return_code = code;
 
 	return code == ZOK;
 }
