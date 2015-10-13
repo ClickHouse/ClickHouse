@@ -1,4 +1,6 @@
 #include <DB/AggregateFunctions/AggregateFunctionFactory.h>
+#include <DB/IO/WriteBuffer.h>
+#include <DB/IO/WriteHelpers.h>
 #include <DB/DataTypes/DataTypeAggregateFunction.h>
 #include <DB/DataTypes/DataTypeArray.h>
 

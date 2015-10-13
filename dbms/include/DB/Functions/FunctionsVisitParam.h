@@ -306,7 +306,7 @@ struct ExtractParamImpl
 		while (pos < end && end != (pos = searcher.search(pos, end - pos)))
 		{
 			/// Определим, к какому индексу оно относится.
-			while (begin + offsets[i] < pos)
+			while (begin + offsets[i] <= pos)
 			{
 				res[i] = 0;
 				++i;
@@ -369,7 +369,7 @@ struct ExtractParamToStringImpl
 		while (pos < end && end != (pos = searcher.search(pos, end - pos)))
 		{
 			/// Определим, к какому индексу оно относится.
-			while (begin + offsets[i] < pos)
+			while (begin + offsets[i] <= pos)
 			{
 				res_data.push_back(0);
 				res_offsets[i] = res_data.size();

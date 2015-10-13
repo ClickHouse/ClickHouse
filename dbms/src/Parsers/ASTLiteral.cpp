@@ -1,4 +1,5 @@
 #include <DB/Common/SipHash.h>
+#include <DB/Core/FieldVisitors.h>
 #include <DB/Parsers/ASTLiteral.h>
 
 

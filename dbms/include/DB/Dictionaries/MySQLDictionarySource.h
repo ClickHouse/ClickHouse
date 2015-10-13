@@ -19,7 +19,7 @@ class MySQLDictionarySource final : public IDictionarySource
 public:
 	MySQLDictionarySource(const DictionaryStructure & dict_struct,
 		const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
-		Block & sample_block)
+		const Block & sample_block)
 		: dict_struct{dict_struct},
 		  db{config.getString(config_prefix + ".db", "")},
 		  table{config.getString(config_prefix + ".table")},
@@ -77,7 +77,6 @@ public:
 
 private:
 	Logger * log = &Logger::get("MySQLDictionarySource");
-
 
 	static std::string quoteForLike(const std::string s)
 	{
