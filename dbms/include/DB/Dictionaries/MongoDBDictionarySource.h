@@ -107,6 +107,7 @@ public:
 		};
 	}
 
+	/// @todo: for MongoDB, modification date can somehow be determined from the `_id` object field
 	bool isModified() const override { return false; }
 
 	DictionarySourcePtr clone() const override { return std::make_unique<MongoDBDictionarySource>(*this); }

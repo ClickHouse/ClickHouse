@@ -9,6 +9,8 @@
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <common/singleton.h>
 #include <memory>
+#include <DB/Core/FieldVisitors.h>
+
 
 namespace DB
 {
@@ -19,25 +21,21 @@ namespace
 Block createSampleBlock(const DictionaryStructure & dict_struct)
 {
 	Block block{
-		ColumnWithTypeAndName{
-			new ColumnUInt64,
-			new DataTypeUInt64,
-			dict_struct.id.name
-		}
+		ColumnWithTypeAndName{new ColumnUInt64{1}, new DataTypeUInt64, dict_struct.id.name}
 	};
 
 	if (dict_struct.range_min)
 		for (const auto & attribute : { dict_struct.range_min, dict_struct.range_max })
-			block.insert(ColumnWithTypeAndName{
-				new ColumnUInt16,
-				new DataTypeDate,
-				attribute->name
-			});
+			block.insert(
+				ColumnWithTypeAndName{new ColumnUInt16{1}, new DataTypeDate, attribute->name});
 
 	for (const auto & attribute : dict_struct.attributes)
-		block.insert(ColumnWithTypeAndName{
-			attribute.type->createColumn(), attribute.type, attribute.name
-		});
+	{
+		auto column = attribute.type->createColumn();
+		column->insert(attribute.null_value);
+
+		block.insert(ColumnWithTypeAndName{column, attribute.type, attribute.name});
+	}
 
 	return block;
 }

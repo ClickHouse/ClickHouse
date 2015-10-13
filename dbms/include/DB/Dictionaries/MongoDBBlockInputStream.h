@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DB/Core/Block.h>
+#include <DB/Dictionaries/DictionaryStructure.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>
@@ -11,6 +12,8 @@
 #include <mongo/client/dbclient.h>
 #include <vector>
 #include <string>
+#include <DB/Core/FieldVisitors.h>
+
 
 namespace DB
 {
@@ -37,17 +40,20 @@ class MongoDBBlockInputStream final : public IProfilingBlockInputStream
 
 public:
 	MongoDBBlockInputStream(
-		std::unique_ptr<mongo::DBClientCursor> cursor_, const Block & sample_block, const std::size_t max_block_size)
-		: cursor{std::move(cursor_)}, sample_block{sample_block}, max_block_size{max_block_size}
+		std::unique_ptr<mongo::DBClientCursor> cursor_, const Block & sample_block_, const std::size_t max_block_size)
+		: cursor{std::move(cursor_)}, sample_block{sample_block_}, max_block_size{max_block_size}
 	{
 		/// do nothing if cursor has no data
 		if (!cursor->more())
 			return;
 
-		types.reserve(sample_block.columns());
+		const auto num_columns = sample_block.columns();
+		types.reserve(num_columns);
+		names.reserve(num_columns);
+		sample_columns.reserve(num_columns);
 
 		/// save types of each column to eliminate subsequent typeid_cast<> invocations
-		for (const auto idx : ext::range(0, sample_block.columns()))
+		for (const auto idx : ext::range(0, num_columns))
 		{
 			const auto & column = sample_block.getByPosition(idx);
 			const auto type = column.type.get();
@@ -85,6 +91,7 @@ public:
 				};
 
 			names.emplace_back(column.name);
+			sample_columns.emplace_back(column.column.get());
 		}
 	}
 
@@ -124,7 +131,7 @@ private:
 				if (value.ok())
 					insertValue(columns[idx], types[idx], value);
 				else
-					insertDefaultValue(columns[idx], types[idx]);
+					insertDefaultValue(columns[idx], *sample_columns[idx]);
 			}
 
 			++num_rows;
@@ -287,25 +294,9 @@ private:
 		}
 	}
 
-	/// @todo insert default value from the dictionary attribute definition
-	static void insertDefaultValue(IColumn * const column, const value_type_t type)
+	static void insertDefaultValue(IColumn * const column, const IColumn & sample_column)
 	{
-		switch (type)
-		{
-			case value_type_t::UInt8: static_cast<ColumnUInt8 *>(column)->insertDefault(); break;
-			case value_type_t::UInt16: static_cast<ColumnUInt16 *>(column)->insertDefault(); break;
-			case value_type_t::UInt32: static_cast<ColumnUInt32 *>(column)->insertDefault(); break;
-			case value_type_t::UInt64: static_cast<ColumnUInt64 *>(column)->insertDefault(); break;
-			case value_type_t::Int8: static_cast<ColumnInt8 *>(column)->insertDefault(); break;
-			case value_type_t::Int16: static_cast<ColumnInt16 *>(column)->insertDefault(); break;
-			case value_type_t::Int32: static_cast<ColumnInt32 *>(column)->insertDefault(); break;
-			case value_type_t::Int64: static_cast<ColumnInt64 *>(column)->insertDefault(); break;
-			case value_type_t::Float32: static_cast<ColumnFloat32 *>(column)->insertDefault(); break;
-			case value_type_t::Float64: static_cast<ColumnFloat64 *>(column)->insertDefault(); break;
-			case value_type_t::String: static_cast<ColumnString *>(column)->insertDefault(); break;
-			case value_type_t::Date: static_cast<ColumnUInt16 *>(column)->insertDefault(); break;
-			case value_type_t::DateTime: static_cast<ColumnUInt32 *>(column)->insertDefault(); break;
-		}
+		column->insertFrom(sample_column, 0);
 	}
 
 	std::unique_ptr<mongo::DBClientCursor> cursor;
@@ -313,6 +304,7 @@ private:
 	const std::size_t max_block_size;
 	std::vector<value_type_t> types;
 	std::vector<mongo::StringData> names;
+	std::vector<const IColumn *> sample_columns;
 };
 
 }

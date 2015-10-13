@@ -37,12 +37,11 @@ class MySQLBlockInputStream final : public IProfilingBlockInputStream
 	};
 
 public:
-	MySQLBlockInputStream(const mysqlxx::PoolWithFailover::Entry & entry,
-		const std::string & query_str,
-		const Block & sample_block,
+	MySQLBlockInputStream(
+		const mysqlxx::PoolWithFailover::Entry & entry, const std::string & query_str, const Block & sample_block_,
 		const std::size_t max_block_size)
 		: entry{entry}, query{this->entry->query(query_str)}, result{query.use()},
-		  sample_block{sample_block}, max_block_size{max_block_size}
+		  sample_block{sample_block_}, max_block_size{max_block_size}
 	{
 		if (sample_block.columns() != result.getNumFields())
 			throw Exception{
@@ -51,11 +50,15 @@ public:
 				ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH
 			};
 
-		types.reserve(sample_block.columns());
+		const auto num_columns = sample_block.columns();
+		types.reserve(num_columns);
+		sample_columns.reserve(num_columns);
 
-		for (const auto idx : ext::range(0, sample_block.columns()))
+		for (const auto idx : ext::range(0, num_columns))
 		{
-			const auto type = sample_block.getByPosition(idx).type.get();
+			const auto & column = sample_block.getByPosition(idx);
+			const auto type = column.type.get();
+
 			if (typeid_cast<const DataTypeUInt8 *>(type))
 				types.push_back(value_type_t::UInt8);
 			else if (typeid_cast<const DataTypeUInt16 *>(type))
@@ -87,6 +90,8 @@ public:
 					"Unsupported type " + type->getName(),
 					ErrorCodes::UNKNOWN_TYPE
 				};
+
+			sample_columns.emplace_back(column.column.get());
 		}
 	}
 
@@ -120,7 +125,7 @@ private:
 				if (!value.isNull())
 					insertValue(columns[idx], types[idx], value);
 				else
-					insertDefaultValue(columns[idx], types[idx]);
+					insertDefaultValue(columns[idx], *sample_columns[idx]);
 			}
 
 			++num_rows;
@@ -158,24 +163,9 @@ private:
 		}
 	}
 
-	static void insertDefaultValue(IColumn * const column, const value_type_t type)
+	static void insertDefaultValue(IColumn * const column, const IColumn & sample_column)
 	{
-		switch (type)
-		{
-			case value_type_t::UInt8: static_cast<ColumnUInt8 *>(column)->insertDefault(); break;
-			case value_type_t::UInt16: static_cast<ColumnUInt16 *>(column)->insertDefault(); break;
-			case value_type_t::UInt32: static_cast<ColumnUInt32 *>(column)->insertDefault(); break;
-			case value_type_t::UInt64: static_cast<ColumnUInt64 *>(column)->insertDefault(); break;
-			case value_type_t::Int8: static_cast<ColumnInt8 *>(column)->insertDefault(); break;
-			case value_type_t::Int16: static_cast<ColumnInt16 *>(column)->insertDefault(); break;
-			case value_type_t::Int32: static_cast<ColumnInt32 *>(column)->insertDefault(); break;
-			case value_type_t::Int64: static_cast<ColumnInt64 *>(column)->insertDefault(); break;
-			case value_type_t::Float32: static_cast<ColumnFloat32 *>(column)->insertDefault(); break;
-			case value_type_t::Float64: static_cast<ColumnFloat64 *>(column)->insertDefault(); break;
-			case value_type_t::String: static_cast<ColumnString *>(column)->insertDefault(); break;
-			case value_type_t::Date: static_cast<ColumnUInt16 *>(column)->insertDefault(); break;
-			case value_type_t::DateTime: static_cast<ColumnUInt32 *>(column)->insertDefault(); break;
-		}
+		column->insertFrom(sample_column, 0);
 	}
 
 	mysqlxx::PoolWithFailover::Entry entry;
@@ -184,6 +174,7 @@ private:
 	Block sample_block;
 	const std::size_t max_block_size;
 	std::vector<value_type_t> types;
+	std::vector<const IColumn *> sample_columns;
 };
 
 }
