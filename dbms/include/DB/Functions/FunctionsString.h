@@ -921,11 +921,12 @@ public:
 };
 
 
-class FunctionConcat : public IFunction
+template <typename Name>
+class ConcatImpl : public IFunction
 {
 public:
-	static constexpr auto name = "concat";
-	static IFunction * create(const Context & context) { return new FunctionConcat; }
+	static constexpr auto name = Name::name;
+	static IFunction * create(const Context & context) { return new ConcatImpl; }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -1597,6 +1598,8 @@ struct NameReverse			{ static constexpr auto name = "reverse"; };
 struct NameReverseUTF8		{ static constexpr auto name = "reverseUTF8"; };
 struct NameSubstring		{ static constexpr auto name = "substring"; };
 struct NameSubstringUTF8	{ static constexpr auto name = "substringUTF8"; };
+struct NameConcat			{ static constexpr auto name = "concat"; };
+struct NameConcatAssumeInjective	{ static constexpr auto name = "concatAssumeInjective"; };
 
 typedef FunctionStringOrArrayToT<EmptyImpl<false>,		NameEmpty,		UInt8> 	FunctionEmpty;
 typedef FunctionStringOrArrayToT<EmptyImpl<true>, 		NameNotEmpty,	UInt8> 	FunctionNotEmpty;
@@ -1614,6 +1617,8 @@ typedef FunctionStringToString<ReverseImpl,				NameReverse>			FunctionReverse;
 typedef FunctionStringToString<ReverseUTF8Impl,			NameReverseUTF8>		FunctionReverseUTF8;
 typedef FunctionStringNumNumToString<SubstringImpl,		NameSubstring>			FunctionSubstring;
 typedef FunctionStringNumNumToString<SubstringUTF8Impl,	NameSubstringUTF8>		FunctionSubstringUTF8;
+using FunctionConcat = ConcatImpl<NameConcat>;
+using FunctionConcatAssumeInjective = ConcatImpl<NameConcatAssumeInjective>;
 
 
 }

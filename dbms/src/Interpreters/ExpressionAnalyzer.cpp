@@ -71,6 +71,7 @@ const std::unordered_set<String> injective_function_names
 	"bitmaskToArray",
 	"tuple",
 	"regionToName",
+	"concatAssumeInjective",
 };
 
 const std::unordered_set<String> possibly_injective_function_names
