@@ -142,7 +142,7 @@ private:
 	void run()
 	{
 		for (size_t i = 0; i < concurrency; ++i)
-			pool.schedule(std::bind(&Benchmark::thread, this, connections.get()));
+			pool.schedule(std::bind(&Benchmark::thread, this, connections.IConnectionPool::get()));
 
 		InterruptListener interrupt_listener;
 
