@@ -5,7 +5,7 @@
 #include <DB/Dictionaries/DictionaryStructure.h>
 #include <DB/Common/HashTable/HashMap.h>
 #include <DB/Columns/ColumnString.h>
-#include <statdaemons/ext/range.hpp>
+#include <ext/range.hpp>
 #include <atomic>
 #include <memory>
 #include <tuple>
@@ -267,7 +267,7 @@ private:
 			case AttributeUnderlyingType::Float64: createAttributeImpl<Float64>(attr, null_value); break;
 			case AttributeUnderlyingType::String:
 			{
-				const auto & null_value_ref = std::get<String>(attr.null_values) = null_value.get<String>();
+				std::get<String>(attr.null_values) = null_value.get<String>();
 				std::get<std::unique_ptr<HashMap<UInt64, StringRef>>>(attr.maps) =
 					std::make_unique<HashMap<UInt64, StringRef>>();
 				attr.string_arena = std::make_unique<Arena>();

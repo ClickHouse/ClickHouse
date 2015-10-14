@@ -6,10 +6,10 @@
 #include <Poco/Mutex.h>
 #include <Poco/Condition.h>
 #include <Poco/Net/IPAddress.h>
-#include <statdaemons/Stopwatch.h>
+#include <DB/Common/Stopwatch.h>
 #include <DB/Core/Defines.h>
 #include <DB/Core/Progress.h>
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 #include <DB/Common/MemoryTracker.h>
 #include <DB/IO/WriteHelpers.h>

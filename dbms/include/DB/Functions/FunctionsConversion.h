@@ -11,7 +11,7 @@
 #include <DB/Columns/ColumnFixedString.h>
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Functions/IFunction.h>
-#include <statdaemons/ext/range.hpp>
+#include <ext/range.hpp>
 
 
 namespace DB
@@ -896,19 +896,19 @@ public:
 	static IFunction * create(const Context & context) { return new FunctionConvert; }
 
 	/// Получить имя функции.
-	String getName() const
+	String getName() const override
 	{
 		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
 	{
 		return getReturnTypeImpl(arguments);
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		IDataType * from_type = &*block.getByPosition(arguments[0]).type;
 
@@ -1009,7 +1009,7 @@ public:
 	static IFunction * create(const Context & context) { return new FunctionToFixedString; };
 
 	/// Получить имя функции.
-	String getName() const
+	String getName() const override
 	{
 		return name;
 	}
@@ -1020,7 +1020,7 @@ public:
 	  */
 	void getReturnTypeAndPrerequisites(const ColumnsWithTypeAndName & arguments,
 		DataTypePtr & out_return_type,
-		std::vector<ExpressionAction> & out_prerequisites)
+		std::vector<ExpressionAction> & out_prerequisites) override
 	{
 		if (arguments.size() != 2)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -1038,7 +1038,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		ColumnPtr column = block.getByPosition(arguments[0]).column;
 		size_t n = getSize(block.getByPosition(arguments[1]));

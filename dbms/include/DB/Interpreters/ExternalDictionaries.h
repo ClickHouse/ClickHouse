@@ -1,7 +1,7 @@
 #pragma once
 
 #include <DB/Dictionaries/IDictionary.h>
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 #include <DB/Common/setThreadName.h>
 #include <common/MultiVersion.h>

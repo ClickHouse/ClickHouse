@@ -5,7 +5,7 @@
 #include <common/Revision.h>
 
 #include <DB/Core/Defines.h>
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 
 #include <DB/IO/CompressedReadBuffer.h>
@@ -21,7 +21,7 @@
 
 #include <DB/Client/Connection.h>
 
-#include <statdaemons/NetException.h>
+#include <DB/Common/NetException.h>
 
 
 namespace DB
@@ -536,5 +536,13 @@ BlockStreamProfileInfo Connection::receiveProfileInfo()
 	return profile_info;
 }
 
+void Connection::fillBlockExtraInfo(BlockExtraInfo & info) const
+{
+	info.is_valid = true;
+	info.host = host;
+	info.resolved_address = resolved_address.toString();
+	info.port = port;
+	info.user = user;
+}
 
 }

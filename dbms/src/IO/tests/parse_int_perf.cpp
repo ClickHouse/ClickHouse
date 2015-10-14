@@ -14,7 +14,7 @@
 #include <DB/IO/CompressedReadBuffer.h>
 #include <DB/IO/AsynchronousWriteBuffer.h>
 
-#include <statdaemons/Stopwatch.h>
+#include <DB/Common/Stopwatch.h>
 
 
 #if 0

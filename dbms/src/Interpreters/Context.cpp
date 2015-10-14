@@ -41,7 +41,7 @@
 #include <DB/Client/ConnectionPool.h>
 #include <DB/Client/ConnectionPoolWithFailover.h>
 
-#include <statdaemons/ConfigProcessor.h>
+#include <DB/Common/ConfigProcessor.h>
 #include <zkutil/ZooKeeper.h>
 
 

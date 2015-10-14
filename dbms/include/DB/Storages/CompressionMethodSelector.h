@@ -1,7 +1,7 @@
 #include <DB/IO/CompressedStream.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/Core/ErrorCodes.h>
-#include <statdaemons/Exception.h>
+#include <DB/Common/Exception.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 

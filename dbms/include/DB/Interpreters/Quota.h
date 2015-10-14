@@ -14,7 +14,7 @@
 #include <common/Common.h>
 
 #include <DB/Core/Types.h>
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 #include <DB/IO/WriteHelpers.h>
 
@@ -187,7 +187,7 @@ class Quotas
 {
 private:
 	/// Имя квоты -> квоты.
-	typedef std::unordered_map<String, SharedPtr<Quota> > Container;
+	typedef std::unordered_map<String, std::unique_ptr<Quota>> Container;
 	Container cont;
 
 public:

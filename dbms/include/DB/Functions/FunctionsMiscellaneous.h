@@ -4,6 +4,7 @@
 #include <common/Revision.h>
 
 #include <DB/Core/Defines.h>
+#include <DB/Core/FieldVisitors.h>
 #include <DB/IO/WriteBufferFromString.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>
@@ -24,7 +25,7 @@
 #include <DB/Common/UnicodeBar.h>
 #include <DB/Functions/IFunction.h>
 #include <DB/Interpreters/ExpressionActions.h>
-#include <statdaemons/ext/range.hpp>
+#include <ext/range.hpp>
 
 #include <cmath>
 
@@ -94,11 +95,11 @@ public:
 
 	explicit FunctionCurrentDatabase(const String & db_name) : db_name{db_name} {}
 
-	String getName() const {
+	String getName() const override {
 		return name;
 	}
 
-	DataTypePtr getReturnType(const DataTypes & arguments) const
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 0)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -125,13 +126,13 @@ public:
 	static IFunction * create(const Context & context) { return new FunctionHostName; }
 
 	/// Получить имя функции.
-	String getName() const
+	String getName() const override
 	{
 		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 0)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -143,7 +144,7 @@ public:
 
 	/** Выполнить функцию над блоком. convertToFullColumn вызывается для того, чтобы в случае
 	 *	распределенного выполнения запроса каждый сервер возвращал свое имя хоста. */
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		block.getByPosition(result).column = ColumnConstString(
 			block.rowsInFirstColumn(),
@@ -159,13 +160,13 @@ public:
 	static IFunction * create(const Context & context) { return new FunctionVisibleWidth; }
 
 	/// Получить имя функции.
-	String getName() const
+	String getName() const override
 	{
 		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 1)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -176,7 +177,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result);
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override;
 };
 
 
@@ -187,13 +188,13 @@ public:
 	static IFunction * create(const Context & context) { return new FunctionToTypeName; }
 
 	/// Получить имя функции.
-	String getName() const
+	String getName() const override
 	{
 		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 1)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -204,7 +205,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		block.getByPosition(result).column = new ColumnConstString(block.rowsInFirstColumn(), block.getByPosition(arguments[0]).type->getName());
 	}
@@ -218,13 +219,13 @@ public:
 	static IFunction * create(const Context & context) { return new FunctionBlockSize; }
 
 	/// Получить имя функции.
-	String getName() const
+	String getName() const override
 	{
 		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
 	{
 		if (!arguments.empty())
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -235,7 +236,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		size_t size = block.rowsInFirstColumn();
 		block.getByPosition(result).column = ColumnConstUInt64(size, size).convertToFullColumn();
@@ -250,13 +251,13 @@ public:
 	static IFunction * create(const Context & context) { return new FunctionSleep; }
 
 	/// Получить имя функции.
-	String getName() const
+	String getName() const override
 	{
 		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 1)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -276,7 +277,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		IColumn * col = &*block.getByPosition(arguments[0]).column;
 		double seconds;
@@ -319,13 +320,13 @@ public:
 	static IFunction * create(const Context & context) { return new FunctionMaterialize; }
 
 	/// Получить имя функции.
-	String getName() const
+	String getName() const override
 	{
 		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 1)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -336,7 +337,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const IColumn & argument = *block.getByPosition(arguments[0]).column;
 		if (!argument.isConst())
@@ -360,13 +361,13 @@ public:
 	static IFunction * create(const Context & context) { return new FunctionIn; }
 
 	/// Получить имя функции.
-	String getName() const
+	String getName() const override
 	{
 		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 2)
 			throw Exception("Number of arguments for function '" + getName() + "' doesn't match: passed "
@@ -377,7 +378,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		/// Второй аргумент - обязательно ColumnSet.
 		ColumnPtr column_set_ptr = block.getByPosition(arguments[1]).column;
@@ -386,23 +387,16 @@ public:
 			throw Exception("Second argument for function '" + getName() + "' must be Set; found " + column_set_ptr->getName(),
 							ErrorCodes::ILLEGAL_COLUMN);
 
-		/// Столбцы, которые проверяются на принадлежность множеству.
-		ColumnNumbers left_arguments;
+		Block block_of_key_columns;
 
 		/// Первый аргумент может быть tuple или одиночным столбцом.
 		const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(&*block.getByPosition(arguments[0]).column);
 		if (tuple)
-		{
-			/// Находим в блоке столбцы из tuple.
-			const Block & tuple_elems = tuple->getData();
-			size_t tuple_size = tuple_elems.columns();
-			for (size_t i = 0; i < tuple_size; ++i)
-				left_arguments.push_back(block.getPositionByName(tuple_elems.getByPosition(i).name));
-		}
+			block_of_key_columns = tuple->getData();
 		else
-			left_arguments.push_back(arguments[0]);
+			block_of_key_columns.insert(block.getByPosition(arguments[0]));
 
-		column_set->getData()->execute(block, left_arguments, result, negative);
+		block.getByPosition(result).column = column_set->getData()->execute(block_of_key_columns, negative);
 	}
 };
 
@@ -414,13 +408,13 @@ public:
 	static IFunction * create(const Context & context) { return new FunctionTuple; }
 
 	/// Получить имя функции.
-	String getName() const
+	String getName() const override
 	{
 		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
 	{
 		if (arguments.size() < 1)
 			throw Exception("Function " + getName() + " requires at least one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -429,7 +423,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		Block tuple_block;
 
@@ -448,14 +442,14 @@ public:
 	static IFunction * create(const Context & context) { return new FunctionTupleElement; }
 
 	/// Получить имя функции.
-	String getName() const
+	String getName() const override
 	{
 		return name;
 	}
 
 	void getReturnTypeAndPrerequisites(const ColumnsWithTypeAndName & arguments,
 										DataTypePtr & out_return_type,
-										ExpressionActions::Actions & out_prerequisites)
+										ExpressionActions::Actions & out_prerequisites) override
 	{
 		if (arguments.size() != 2)
 			throw Exception("Function " + getName() + " requires exactly two arguments: tuple and element index.",
@@ -483,7 +477,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const ColumnTuple * tuple_col = typeid_cast<const ColumnTuple *>(&*block.getByPosition(arguments[0]).column);
 		const ColumnConstUInt8 * index_col = typeid_cast<const ColumnConstUInt8 *>(&*block.getByPosition(arguments[1]).column);
@@ -515,19 +509,19 @@ public:
 	static IFunction * create(const Context & context) { return new FunctionIgnore; }
 
 	/// Получить имя функции.
-	String getName() const
+	String getName() const override
 	{
 		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
 	{
 		return new DataTypeUInt8;
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		block.getByPosition(result).column = new ColumnConstUInt8(block.rowsInFirstColumn(), 0);
 	}
@@ -541,13 +535,13 @@ public:
 	static IFunction * create(const Context & context) { return new FunctionIdentity; }
 
 	/// Получить имя функции.
-	String getName() const
+	String getName() const override
 	{
 		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 1)
 			throw Exception("Function " + getName() + " requires exactly one argument.",
@@ -557,7 +551,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		block.getByPosition(result).column = block.getByPosition(arguments.front()).column;
 	}
@@ -572,13 +566,13 @@ public:
 
 
 	/// Получить имя функции.
-	String getName() const
+	String getName() const override
 	{
 		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 1)
 			throw Exception("Function " + getName() + " requires exactly one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -591,7 +585,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		throw Exception("Function " + getName() + " must not be executed directly.", ErrorCodes::FUNCTION_IS_SPECIAL);
 	}
@@ -608,13 +602,13 @@ public:
 	static IFunction * create(const Context & context) { return new FunctionReplicate; }
 
 	/// Получить имя функции.
-	String getName() const
+	String getName() const override
 	{
 		return name;
 	}
 
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 2)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -629,7 +623,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		ColumnPtr first_column = block.getByPosition(arguments[0]).column;
 
@@ -659,13 +653,13 @@ public:
 	static IFunction * create(const Context & context) { return new FunctionBar; }
 
 	/// Получить имя функции.
-	String getName() const
+	String getName() const override
 	{
 		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 3 && arguments.size() != 4)
 			throw Exception("Function " + getName() + " requires from 3 or 4 parameters: value, min_value, max_value, [max_width_of_bar = 80]. Passed "
@@ -680,7 +674,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		Int64 min = extractConstant<Int64>(block, arguments, 1, "Second");	/// Уровень значения, при котором полоска имеет нулевую длину.
 		Int64 max = extractConstant<Int64>(block, arguments, 2, "Third");	/// Уровень значения, при котором полоска имеет максимальную длину.

@@ -4,6 +4,8 @@
 
 #include <DB/Common/MemoryTracker.h>
 
+#include <DB/Core/FieldVisitors.h>
+
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/ReadHelpers.h>
 
@@ -15,7 +17,7 @@
 #include <DB/Columns/ColumnArray.h>
 
 #include <stats/IntHash.h>
-#include <statdaemons/ext/range.hpp>
+#include <ext/range.hpp>
 
 
 namespace DB

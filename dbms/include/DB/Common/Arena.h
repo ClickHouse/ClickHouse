@@ -5,6 +5,7 @@
 #include <vector>
 #include <Poco/SharedPtr.h>
 #include <common/likely.h>
+#include <DB/Core/Defines.h>
 #include <DB/Common/ProfileEvents.h>
 #include <DB/Common/Allocator.h>
 
@@ -84,7 +85,7 @@ private:
 	}
 
 	/// Добавить следующий непрерывный кусок памяти размера не меньше заданного.
-	void addChunk(size_t min_size)
+	void NO_INLINE addChunk(size_t min_size)
 	{
 		head = new Chunk(nextSize(min_size), head);
 		size_in_bytes += head->size();
@@ -127,16 +128,15 @@ public:
 	  */
 	char * allocContinue(size_t size, char const *& begin)
 	{
-		if (unlikely(head->pos + size > head->end))
+		while (unlikely(head->pos + size > head->end))
 		{
 			char * prev_end = head->pos;
 			addChunk(size);
 
 			if (begin)
-			{
 				begin = insert(begin, prev_end - begin);
-				return allocContinue(size, begin);
-			}
+			else
+				break;
 		}
 
 		char * res = head->pos;

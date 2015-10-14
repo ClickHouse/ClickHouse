@@ -11,7 +11,7 @@
 #include <Poco/String.h>
 
 #include <DB/Core/Types.h>
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/HexWriteBuffer.h>
@@ -215,7 +215,7 @@ public:
 class AddressPatterns
 {
 private:
-	typedef std::vector<SharedPtr<IAddressPattern> > Container;
+	typedef std::vector<std::unique_ptr<IAddressPattern>> Container;
 	Container patterns;
 
 public:
@@ -253,19 +253,19 @@ public:
 
 		for (Poco::Util::AbstractConfiguration::Keys::const_iterator it = config_keys.begin(); it != config_keys.end(); ++it)
 		{
-			SharedPtr<IAddressPattern> pattern;
+			Container::value_type pattern;
 			String value = config.getString(config_elem + "." + *it);
 
 			if (0 == it->compare(0, strlen("ip"), "ip"))
-				pattern = new IPAddressPattern(value);
+				pattern.reset(new IPAddressPattern(value));
 			else if (0 == it->compare(0, strlen("host_regexp"), "host_regexp"))
-				pattern = new HostRegexpPattern(value);
+				pattern.reset(new HostRegexpPattern(value));
 			else if (0 == it->compare(0, strlen("host"), "host"))
-				pattern = new HostExactPattern(value);
+				pattern.reset(new HostExactPattern(value));
 			else
 				throw Exception("Unknown address pattern type: " + *it, ErrorCodes::UNKNOWN_ADDRESS_PATTERN_TYPE);
 
-			patterns.push_back(pattern);
+			patterns.emplace_back(std::move(pattern));
 		}
 	}
 };

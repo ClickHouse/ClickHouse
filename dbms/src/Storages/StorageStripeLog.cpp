@@ -5,7 +5,7 @@
 
 #include <DB/Common/escapeForFileName.h>
 
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 
 #include <DB/IO/ReadBufferFromFile.h>
@@ -24,7 +24,6 @@
 #include <DB/DataStreams/NativeBlockOutputStream.h>
 
 #include <DB/Columns/ColumnArray.h>
-#include <DB/Columns/ColumnNested.h>
 
 #include <DB/Storages/StorageStripeLog.h>
 #include <Poco/DirectoryIterator.h>

@@ -10,7 +10,7 @@
 #include <DB/Interpreters/InterpreterInsertQuery.h>
 #include <DB/Interpreters/Cluster.h>
 
-#include <statdaemons/Increment.h>
+#include <DB/Common/Increment.h>
 #include <memory>
 #include <common/Revision.h>
 

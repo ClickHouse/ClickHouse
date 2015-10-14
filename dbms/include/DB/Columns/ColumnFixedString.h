@@ -3,6 +3,7 @@
 #include <string.h> // memcpy
 
 #include <DB/Common/PODArray.h>
+#include <DB/Common/Arena.h>
 #include <DB/Columns/IColumn.h>
 
 
@@ -109,6 +110,21 @@ public:
 	void insertDefault() override
 	{
 		chars.resize_fill(chars.size() + n);
+	}
+
+	StringRef serializeValueIntoArena(size_t index, Arena & arena, char const *& begin) const override
+	{
+		auto pos = arena.allocContinue(n, begin);
+		memcpy(pos, &chars[n * index], n);
+		return StringRef(pos, n);
+	}
+
+	const char * deserializeAndInsertFromArena(const char * pos) override
+	{
+		size_t old_size = chars.size();
+		chars.resize(old_size + n);
+		memcpy(&chars[old_size], pos, n);
+		return pos + n;
 	}
 
 	int compareAt(size_t p1, size_t p2, const IColumn & rhs_, int nan_direction_hint) const override

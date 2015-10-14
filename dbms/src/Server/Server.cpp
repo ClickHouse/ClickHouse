@@ -9,8 +9,8 @@
 #include <common/ErrorHandlers.h>
 #include <common/Revision.h>
 
-#include <statdaemons/ConfigProcessor.h>
-#include <statdaemons/ext/scope_guard.hpp>
+#include <DB/Common/ConfigProcessor.h>
+#include <ext/scope_guard.hpp>
 
 #include <memory>
 #include <thread>

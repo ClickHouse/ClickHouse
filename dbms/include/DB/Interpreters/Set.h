@@ -288,28 +288,12 @@ public:
 	// Возвращает false, если превышено какое-нибудь ограничение, и больше не нужно вставлять.
 	bool insertFromBlock(const Block & block, bool create_ordered_set = false);
 
-	/** Для указанных столбцов блока проверить принадлежность их значений множеству.
+	/** Для столбцов блока проверить принадлежность их значений множеству.
 	  * Записать результат в столбец в позиции result.
 	  */
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result, bool negative) const;
+	ColumnPtr execute(const Block & block, bool negative) const;
 
-	std::string describe() const
-	{
-		if (!ordered_set_elements)
-			return "{}";
-
-		bool first = true;
-		std::stringstream ss;
-
-		ss << "{";
-		for (const Field & f : *ordered_set_elements)
-		{
-			ss << (first ? "" : ", ") << apply_visitor(FieldVisitorToString(), f);
-			first = false;
-		}
-		ss << "}";
-		return ss.str();
-	}
+	std::string describe() const;
 
 	/// проверяет есть ли в Set элементы для заданного диапазона индекса
 	BoolMask mayBeTrueInRange(const Range & range) const;

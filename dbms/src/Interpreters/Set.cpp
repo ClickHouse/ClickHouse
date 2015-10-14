@@ -1,4 +1,5 @@
 #include <DB/Core/Field.h>
+#include <DB/Core/FieldVisitors.h>
 
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnFixedString.h>
@@ -230,144 +231,97 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 }
 
 
-/** Чтобы корректно работали выражения вида 1.0 IN (1).
+/** Проверка попадания Field from, имеющим тип From в диапазон значений типа To.
+  * From и To - числовые типы. Могут быть типами с плавающей запятой.
+  * From - это одно из UInt64, Int64, Float64,
+  *  тогда как To может быть также 8, 16, 32 битным.
+  *
+  * Если попадает в диапазон, то from конвертируется в Field ближайшего к To типа.
+  * Если не попадает - возвращается Field(Null).
+  */
+
+template <typename From, typename To>
+static Field convertNumericTypeImpl(const Field & from)
+{
+	From value = from.get<From>();
+
+	if (static_cast<long double>(value) != static_cast<long double>(To(value)))
+		return {};
+
+	return Field(typename NearestFieldType<To>::Type(value));
+}
+
+template <typename To>
+static Field convertNumericType(const Field & from, const IDataType & type)
+{
+	if (from.getType() == Field::Types::UInt64)
+		return convertNumericTypeImpl<UInt64, To>(from);
+	if (from.getType() == Field::Types::Int64)
+		return convertNumericTypeImpl<Int64, To>(from);
+	if (from.getType() == Field::Types::Float64)
+		return convertNumericTypeImpl<Float64, To>(from);
+
+	throw Exception("Type mismatch in IN section: " + type.getName() + " at left, "
+		+ Field::Types::toString(from.getType()) + " at right", ErrorCodes::TYPE_MISMATCH);
+}
+
+
+/** Чтобы корректно работали выражения вида 1.0 IN (1) или чтобы 1 IN (1, 2.0, 2.5, -1) работало так же, как 1 IN (1, 2).
   * Проверяет совместимость типов, проверяет попадание значений в диапазон допустимых значений типа, делает преобразование типа.
-  * Код слегка дурацкий.
+  * Если значение не попадает в диапазон - возвращает Null.
   */
 static Field convertToType(const Field & src, const IDataType & type)
 {
 	if (type.isNumeric())
 	{
-		bool is_uint8 	= false;
-		bool is_uint16 	= false;
-		bool is_uint32 	= false;
-		bool is_uint64 	= false;
-		bool is_int8 	= false;
-		bool is_int16 	= false;
-		bool is_int32 	= false;
-		bool is_int64 	= false;
-		bool is_float32 = false;
-		bool is_float64 = false;
-		bool is_date	= false;
-		bool is_datetime = false;
+		if (typeid_cast<const DataTypeUInt8 *>(&type))		return convertNumericType<UInt8>(src, type);
+		if (typeid_cast<const DataTypeUInt16 *>(&type))		return convertNumericType<UInt16>(src, type);
+		if (typeid_cast<const DataTypeUInt32 *>(&type))		return convertNumericType<UInt32>(src, type);
+		if (typeid_cast<const DataTypeUInt64 *>(&type))		return convertNumericType<UInt64>(src, type);
+		if (typeid_cast<const DataTypeInt8 *>(&type))		return convertNumericType<Int8>(src, type);
+		if (typeid_cast<const DataTypeInt16 *>(&type))		return convertNumericType<Int16>(src, type);
+		if (typeid_cast<const DataTypeInt32 *>(&type))		return convertNumericType<Int32>(src, type);
+		if (typeid_cast<const DataTypeInt64 *>(&type))		return convertNumericType<Int64>(src, type);
+		if (typeid_cast<const DataTypeFloat32 *>(&type))	return convertNumericType<Float32>(src, type);
+		if (typeid_cast<const DataTypeFloat64 *>(&type))	return convertNumericType<Float64>(src, type);
 
-		false
-			|| (is_uint8 	= typeid_cast<const DataTypeUInt8 *		>(&type))
-			|| (is_uint16 	= typeid_cast<const DataTypeUInt16 *	>(&type))
-			|| (is_uint32 	= typeid_cast<const DataTypeUInt32 *	>(&type))
-			|| (is_uint64 	= typeid_cast<const DataTypeUInt64 *	>(&type))
-			|| (is_int8 	= typeid_cast<const DataTypeInt8 *		>(&type))
-			|| (is_int16 	= typeid_cast<const DataTypeInt16 *		>(&type))
-			|| (is_int32 	= typeid_cast<const DataTypeInt32 *		>(&type))
-			|| (is_int64 	= typeid_cast<const DataTypeInt64 *		>(&type))
-			|| (is_float32 	= typeid_cast<const DataTypeFloat32 *	>(&type))
-			|| (is_float64 	= typeid_cast<const DataTypeFloat64 *	>(&type))
-			|| (is_date 	= typeid_cast<const DataTypeDate *		>(&type))
-			|| (is_datetime	= typeid_cast<const DataTypeDateTime *	>(&type))
-			;
+		bool is_date = typeid_cast<const DataTypeDate *>(&type);
+		bool is_datetime = typeid_cast<const DataTypeDateTime *>(&type);
 
-		if (is_uint8 || is_uint16 || is_uint32 || is_uint64)
+		if (!is_date && !is_datetime)
+			throw Exception("Logical error: unknown numeric type " + type.getName(), ErrorCodes::LOGICAL_ERROR);
+
+		if (src.getType() == Field::Types::UInt64)
+			return src;
+
+		if (src.getType() == Field::Types::String)
 		{
-			if (src.getType() == Field::Types::Int64)
-				throw Exception("Type mismatch in IN section: " + type.getName() + " at left, signed at right");
+			/// Возможность сравнивать даты и даты-с-временем со строкой.
+			const String & str = src.get<const String &>();
+			ReadBufferFromString in(str);
 
-			if (src.getType() == Field::Types::Float64)
-				throw Exception("Type mismatch in IN section: " + type.getName() + " at left, floating point at right");
-
-			if (src.getType() == Field::Types::UInt64)
+			if (is_date)
 			{
-				UInt64 value = src.get<const UInt64 &>();
-				if ((is_uint8 && value > std::numeric_limits<uint8_t>::max())
-					|| (is_uint16 && value > std::numeric_limits<uint16_t>::max())
-					|| (is_uint32 && value > std::numeric_limits<uint32_t>::max()))
-					throw Exception("Value (" + toString(value) + ") in IN section is out of range of type " + type.getName() + " at left");
+				DayNum_t date{};
+				readDateText(date, in);
+				if (!in.eof())
+					throw Exception("String is too long for Date: " + str);
 
-				return src;
+				return Field(UInt64(date));
 			}
-
-			throw Exception("Type mismatch in IN section: " + type.getName() + " at left, "
-				+ Field::Types::toString(src.getType()) + " at right");
-		}
-		else if (is_int8 || is_int16 || is_int32 || is_int64)
-		{
-			if (src.getType() == Field::Types::Float64)
-				throw Exception("Type mismatch in IN section: " + type.getName() + " at left, floating point at right");
-
-			if (src.getType() == Field::Types::UInt64)
+			else
 			{
-				UInt64 value = src.get<const UInt64 &>();
+				time_t date_time{};
+				readDateTimeText(date_time, in);
+				if (!in.eof())
+					throw Exception("String is too long for DateTime: " + str);
 
-				if ((is_int8 && value > uint8_t(std::numeric_limits<int8_t>::max()))
-					|| (is_int16 && value > uint16_t(std::numeric_limits<int16_t>::max()))
-					|| (is_int32 && value > uint32_t(std::numeric_limits<int32_t>::max()))
-					|| (is_int64 && value > uint64_t(std::numeric_limits<int64_t>::max())))
-					throw Exception("Value (" + toString(value) + ") in IN section is out of range of type " + type.getName() + " at left");
-
-				return Field(Int64(value));
+				return Field(UInt64(date_time));
 			}
-
-			if (src.getType() == Field::Types::Int64)
-			{
-				Int64 value = src.get<const Int64 &>();
-				if ((is_int8 && (value < std::numeric_limits<int8_t>::min() || value > std::numeric_limits<int8_t>::max()))
-					|| (is_int16 && (value < std::numeric_limits<int16_t>::min() || value > std::numeric_limits<int16_t>::max()))
-					|| (is_int32 && (value < std::numeric_limits<int32_t>::min() || value > std::numeric_limits<int32_t>::max())))
-					throw Exception("Value (" + toString(value) + ") in IN section is out of range of type " + type.getName() + " at left");
-
-				return src;
-			}
-
-			throw Exception("Type mismatch in IN section: " + type.getName() + " at left, "
-				+ Field::Types::toString(src.getType()) + " at right");
 		}
-		else if (is_float32 || is_float64)
-		{
-			if (src.getType() == Field::Types::UInt64)
-				return Field(Float64(src.get<UInt64>()));
 
-			if (src.getType() == Field::Types::Int64)
-				return Field(Float64(src.get<Int64>()));
-
-			if (src.getType() == Field::Types::Float64)
-				return src;
-
-			throw Exception("Type mismatch in IN section: " + type.getName() + " at left, "
-				+ Field::Types::toString(src.getType()) + " at right");
-		}
-		else if (is_date || is_datetime)
-		{
-			if (src.getType() == Field::Types::UInt64)
-				return src;
-
-			if (src.getType() == Field::Types::String)
-			{
-				/// Возможность сравнивать даты и даты-с-временем со строкой.
-				const String & str = src.get<const String &>();
-				ReadBufferFromString in(str);
-
-				if (is_date)
-				{
-					DayNum_t date{};
-					readDateText(date, in);
-					if (!in.eof())
-						throw Exception("String is too long for Date: " + str);
-
-					return Field(UInt64(date));
-				}
-				else
-				{
-					time_t date_time{};
-					readDateTimeText(date_time, in);
-					if (!in.eof())
-						throw Exception("String is too long for DateTime: " + str);
-
-					return Field(UInt64(date_time));
-				}
-			}
-
-			throw Exception("Type mismatch in IN section: " + type.getName() + " at left, "
-				+ Field::Types::toString(src.getType()) + " at right");
-		}
+		throw Exception("Type mismatch in IN section: " + type.getName() + " at left, "
+			+ Field::Types::toString(src.getType()) + " at right", ErrorCodes::TYPE_MISMATCH);
 	}
 	else
 	{
@@ -381,7 +335,7 @@ static Field convertToType(const Field & src, const IDataType & type)
 			|| (src.getType() == Field::Types::Array
 				&& !typeid_cast<const DataTypeArray *>(&type)))
 			throw Exception("Type mismatch in IN section: " + type.getName() + " at left, "
-				+ Field::Types::toString(src.getType()) + " at right");
+				+ Field::Types::toString(src.getType()) + " at right", ErrorCodes::TYPE_MISMATCH);
 	}
 
 	return src;
@@ -448,7 +402,10 @@ void Set::createFromAST(DataTypes & types, ASTPtr node, const Context & context,
 	{
 		if (data_types.size() == 1)
 		{
-			block.getByPosition(0).column->insert(extractValueFromNode(*it, *data_types[0], context));
+			Field value = extractValueFromNode(*it, *data_types[0], context);
+
+			if (!value.isNull())
+				block.getByPosition(0).column->insert(value);
 		}
 		else if (ASTFunction * func = typeid_cast<ASTFunction *>(&**it))
 		{
@@ -461,7 +418,10 @@ void Set::createFromAST(DataTypes & types, ASTPtr node, const Context & context,
 
 			for (size_t j = 0; j < tuple_size; ++j)
 			{
-				block.getByPosition(j).column->insert(extractValueFromNode(func->arguments->children[j], *data_types[j], context));
+				Field value = extractValueFromNode(func->arguments->children[j], *data_types[j], context);
+
+				if (!value.isNull())
+					block.getByPosition(j).column->insert(value);
 			}
 		}
 		else
@@ -478,12 +438,17 @@ void Set::createFromAST(DataTypes & types, ASTPtr node, const Context & context,
 }
 
 
-void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result, bool negative) const
+ColumnPtr Set::execute(const Block & block, bool negative) const
 {
-	ColumnUInt8 * c_res = new ColumnUInt8;
-	block.getByPosition(result).column = c_res;
-	ColumnUInt8::Container_t & vec_res = c_res->getData();
-	vec_res.resize(block.getByPosition(arguments[0]).column->size());
+	size_t num_key_columns = block.columns();
+
+	if (0 == num_key_columns)
+		throw Exception("Logical error: no columns passed to Set::execute method.", ErrorCodes::LOGICAL_ERROR);
+
+	ColumnUInt8 * p_res = new ColumnUInt8;
+	ColumnPtr res = p_res;
+	ColumnUInt8::Container_t & vec_res = p_res->getData();
+	vec_res.resize(block.getByPosition(0).column->size());
 
 	Poco::ScopedReadRWLock lock(rwlock);
 
@@ -494,19 +459,19 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 			memset(&vec_res[0], 1, vec_res.size());
 		else
 			memset(&vec_res[0], 0, vec_res.size());
-		return;
+		return res;
 	}
 
-	DataTypeArray * array_type = typeid_cast<DataTypeArray *>(&*block.getByPosition(arguments[0]).type);
+	const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(&*block.getByPosition(0).type);
 
 	if (array_type)
 	{
-		if (data_types.size() != 1 || arguments.size() != 1)
+		if (data_types.size() != 1 || num_key_columns != 1)
 			throw Exception("Number of columns in section IN doesn't match.", ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
 		if (array_type->getNestedType()->getName() != data_types[0]->getName())
 			throw Exception(std::string() + "Types in section IN don't match: " + data_types[0]->getName() + " on the right, " + array_type->getNestedType()->getName() + " on the left.", ErrorCodes::TYPE_MISMATCH);
 
-		IColumn * in_column = &*block.getByPosition(arguments[0]).column;
+		const IColumn * in_column = &*block.getByPosition(0).column;
 
 		/// Константный столбец слева от IN поддерживается не напрямую. Для этого, он сначала материализуется.
 		ColumnPtr materialized_column;
@@ -516,24 +481,26 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 			in_column = materialized_column.get();
 		}
 
-		if (ColumnArray * col = typeid_cast<ColumnArray *>(in_column))
+		if (const ColumnArray * col = typeid_cast<const ColumnArray *>(in_column))
 			executeArray(col, vec_res, negative);
 		else
 			throw Exception("Unexpected array column type: " + in_column->getName(), ErrorCodes::ILLEGAL_COLUMN);
 	}
 	else
 	{
-		if (data_types.size() != arguments.size())
+		if (data_types.size() != num_key_columns)
 			throw Exception("Number of columns in section IN doesn't match.", ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
 
 		/// Запоминаем столбцы, с которыми будем работать. Также проверим, что типы данных правильные.
-		ConstColumnPlainPtrs key_columns(arguments.size());
-		for (size_t i = 0; i < arguments.size(); ++i)
+		ConstColumnPlainPtrs key_columns(num_key_columns);
+		for (size_t i = 0; i < num_key_columns; ++i)
 		{
-			key_columns[i] = block.getByPosition(arguments[i]).column;
+			key_columns[i] = block.getByPosition(i).column;
 
-			if (data_types[i]->getName() != block.getByPosition(arguments[i]).type->getName())
-				throw Exception("Types of column " + toString(i + 1) + " in section IN don't match: " + data_types[i]->getName() + " on the right, " + block.getByPosition(arguments[i]).type->getName() + " on the left.", ErrorCodes::TYPE_MISMATCH);
+			if (data_types[i]->getName() != block.getByPosition(i).type->getName())
+				throw Exception("Types of column " + toString(i + 1) + " in section IN don't match: "
+					+ data_types[i]->getName() + " on the right, " + block.getByPosition(i).type->getName() + " on the left.",
+					ErrorCodes::TYPE_MISMATCH);
 		}
 
 		/// Константные столбцы слева от IN поддерживается не напрямую. Для этого, они сначала материализуется.
@@ -549,6 +516,8 @@ void Set::execute(Block & block, const ColumnNumbers & arguments, size_t result,
 
 		executeOrdinary(key_columns, vec_res, negative);
 	}
+
+	return res;
 }
 
 
@@ -708,6 +677,25 @@ BoolMask Set::mayBeTrueInRange(const Range & range) const
 	}
 
 	return BoolMask(can_be_true, can_be_false);
+}
+
+
+std::string Set::describe() const
+{
+	if (!ordered_set_elements)
+		return "{}";
+
+	bool first = true;
+	std::stringstream ss;
+
+	ss << "{";
+	for (const Field & f : *ordered_set_elements)
+	{
+		ss << (first ? "" : ", ") << apply_visitor(FieldVisitorToString(), f);
+		first = false;
+	}
+	ss << "}";
+	return ss.str();
 }
 
 }

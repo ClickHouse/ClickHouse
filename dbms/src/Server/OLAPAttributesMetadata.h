@@ -1,16 +1,17 @@
 #pragma once
 
 #include <math.h>	// log2()
+#include <openssl/md5.h>
 
 #include <boost/algorithm/string.hpp>
 
 #include <Poco/NumberParser.h>
 #include <Poco/StringTokenizer.h>
+#include <Poco/ByteOrder.h>
 
 #include <DB/IO/WriteHelpers.h>
 
 #include <common/DateLUT.h>
-#include <strconvert/hash64.h>
 #include <statdaemons/RegionsHierarchy.h>
 #include <statdaemons/TechDataHierarchy.h>
 #include <statdaemons/Interests.h>
@@ -187,7 +188,18 @@ struct AttributeHashBase : public IAttributeMetadata
 {
 	BinaryData parse(const std::string & s) const
 	{
-		return strconvert::hash64(s);
+		union
+		{
+			unsigned char char_data[16];
+			Poco::UInt64 uint64_data;
+		} buf;
+
+		MD5_CTX ctx;
+		MD5_Init(&ctx);
+		MD5_Update(&ctx, reinterpret_cast<const unsigned char *>(s.data()), s.size());
+		MD5_Final(buf.char_data, &ctx);
+
+		return Poco::ByteOrder::flipBytes(buf.uint64_data);
 	}
 };
 

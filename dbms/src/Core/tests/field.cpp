@@ -3,8 +3,9 @@
 #include <sstream>
 
 #include <DB/Core/Field.h>
+#include <DB/Core/FieldVisitors.h>
 
-#include <statdaemons/Stopwatch.h>
+#include <DB/Common/Stopwatch.h>
 #include <DB/DataStreams/TabSeparatedRowOutputStream.h>
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
 #include <DB/DataTypes/DataTypeString.h>
@@ -13,7 +14,7 @@
 int main(int argc, char ** argv)
 {
 	DB::FieldVisitorToString to_string;
-	
+
 	DB::Field field = DB::UInt64(0);
 	std::cerr << DB::apply_visitor(to_string, field) << std::endl;
 
@@ -94,8 +95,8 @@ int main(int argc, char ** argv)
 		std::cerr << e.what() << ", " << e.displayText() << std::endl;
 		return 1;
 	}
-	
+
 	std::cerr << "sizeof(Field) = " << sizeof(DB::Field) << std::endl;
-	
+
 	return 0;
 }

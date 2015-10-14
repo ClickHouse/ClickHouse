@@ -5,7 +5,7 @@
 #include <DB/Core/Defines.h>
 #include <DB/Core/Names.h>
 #include <DB/Core/NamesAndTypes.h>
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/QueryProcessingStage.h>
 #include <DB/Parsers/IAST.h>
 #include <DB/Parsers/ASTAlterQuery.h>

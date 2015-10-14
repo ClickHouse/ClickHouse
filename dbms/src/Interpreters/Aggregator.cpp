@@ -4,10 +4,11 @@
 
 #include <cxxabi.h>
 
-#include <statdaemons/Stopwatch.h>
+#include <DB/Common/Stopwatch.h>
 
 #include <DB/DataTypes/DataTypeAggregateFunction.h>
 #include <DB/Columns/ColumnsNumber.h>
+#include <DB/Columns/ColumnArray.h>
 #include <DB/AggregateFunctions/AggregateFunctionCount.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 
@@ -323,16 +324,33 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
 
 	bool all_fixed = true;
 	size_t keys_bytes = 0;
+
+	size_t num_array_keys = 0;
+	bool has_arrays_of_non_fixed_elems = false;
+	bool all_non_array_keys_are_fixed = true;
+
 	key_sizes.resize(keys_size);
 	for (size_t j = 0; j < keys_size; ++j)
 	{
-		if (!key_columns[j]->isFixed())
+		if (key_columns[j]->isFixed())
+		{
+			key_sizes[j] = key_columns[j]->sizeOfField();
+			keys_bytes += key_sizes[j];
+		}
+		else
 		{
 			all_fixed = false;
-			break;
+
+			if (const ColumnArray * arr = typeid_cast<const ColumnArray *>(key_columns[j]))
+			{
+				++num_array_keys;
+
+				if (!arr->getData().isFixed())
+					has_arrays_of_non_fixed_elems = true;
+			}
+			else
+				all_non_array_keys_are_fixed = false;
 		}
-		key_sizes[j] = key_columns[j]->sizeOfField();
-		keys_bytes += key_sizes[j];
 	}
 
 	/// Если ключей нет
@@ -366,6 +384,13 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
 
 	if (keys_size == 1 && typeid_cast<const ColumnFixedString *>(key_columns[0]))
 		return AggregatedDataVariants::Type::key_fixed_string;
+
+	/** Если есть массивы.
+	  * Если есть не более одного массива из элементов фиксированной длины, и остальные ключи фиксированной длины,
+	  *  то всё ещё можно использовать метод concat. Иначе - serialized.
+	  */
+	if (num_array_keys > 1 || has_arrays_of_non_fixed_elems || (num_array_keys == 1 && !all_non_array_keys_are_fixed))
+		return AggregatedDataVariants::Type::serialized;
 
 	/// Иначе будем агрегировать по конкатенации ключей.
 	return AggregatedDataVariants::Type::concat;
@@ -1387,6 +1412,8 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 		mergeSingleLevelDataImpl<decltype(res->hashed)::element_type>(non_empty_data);
 	else if (res->type == AggregatedDataVariants::Type::concat)
 		mergeSingleLevelDataImpl<decltype(res->concat)::element_type>(non_empty_data);
+	else if (res->type == AggregatedDataVariants::Type::serialized)
+		mergeSingleLevelDataImpl<decltype(res->serialized)::element_type>(non_empty_data);
 	else if (res->type == AggregatedDataVariants::Type::key32_two_level)
 		mergeTwoLevelDataImpl<decltype(res->key32_two_level)::element_type>(non_empty_data, thread_pool.get());
 	else if (res->type == AggregatedDataVariants::Type::key64_two_level)
@@ -1403,6 +1430,8 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 		mergeTwoLevelDataImpl<decltype(res->hashed_two_level)::element_type>(non_empty_data, thread_pool.get());
 	else if (res->type == AggregatedDataVariants::Type::concat_two_level)
 		mergeTwoLevelDataImpl<decltype(res->concat_two_level)::element_type>(non_empty_data, thread_pool.get());
+	else if (res->type == AggregatedDataVariants::Type::serialized_two_level)
+		mergeTwoLevelDataImpl<decltype(res->serialized_two_level)::element_type>(non_empty_data, thread_pool.get());
 	else if (res->type != AggregatedDataVariants::Type::without_key)
 		throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 

@@ -1,7 +1,6 @@
 #include <DB/Storages/MergeTree/MergeTreeDataWriter.h>
 #include <DB/Storages/MergeTree/MergedBlockOutputStream.h>
 #include <DB/Common/escapeForFileName.h>
-#include <DB/DataTypes/DataTypeNested.h>
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/IO/HashingWriteBuffer.h>
 

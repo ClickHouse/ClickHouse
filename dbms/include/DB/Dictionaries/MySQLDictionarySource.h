@@ -2,10 +2,9 @@
 
 #include <DB/Dictionaries/IDictionarySource.h>
 #include <DB/Dictionaries/MySQLBlockInputStream.h>
-#include <statdaemons/ext/range.hpp>
+#include <ext/range.hpp>
 #include <mysqlxx/Pool.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <strconvert/escape.h>
 #include "writeParenthesisedString.h"
 
 
@@ -20,7 +19,7 @@ class MySQLDictionarySource final : public IDictionarySource
 public:
 	MySQLDictionarySource(const DictionaryStructure & dict_struct,
 		const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
-		Block & sample_block)
+		const Block & sample_block)
 		: dict_struct{dict_struct},
 		  db{config.getString(config_prefix + ".db", "")},
 		  table{config.getString(config_prefix + ".table")},
@@ -79,6 +78,27 @@ public:
 private:
 	Logger * log = &Logger::get("MySQLDictionarySource");
 
+	static std::string quoteForLike(const std::string s)
+	{
+		std::string tmp;
+		tmp.reserve(s.size());
+
+		for (auto c : s)
+		{
+			if (c == '%' || c == '_' || c == '\\')
+				tmp.push_back('\\');
+			tmp.push_back(c);
+		}
+
+		std::string res;
+		{
+			WriteBufferFromString out(res);
+			writeQuoted(tmp, out);
+		}
+		return res;
+	}
+
+
 	mysqlxx::DateTime getLastModification() const
 	{
 		mysqlxx::DateTime update_time{std::time(nullptr)};
@@ -89,7 +109,7 @@ private:
 		try
 		{
 			auto connection = pool.Get();
-			auto query = connection->query("SHOW TABLE STATUS LIKE '" + strconvert::escaped_for_like(table) + "'");
+			auto query = connection->query("SHOW TABLE STATUS LIKE " + quoteForLike(table));
 
 			LOG_TRACE(log, query.str());
 

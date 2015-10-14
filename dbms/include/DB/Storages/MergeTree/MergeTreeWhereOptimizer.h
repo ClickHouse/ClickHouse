@@ -10,8 +10,8 @@
 #include <DB/Parsers/ASTSet.h>
 #include <DB/Parsers/formatAST.h>
 #include <DB/Common/escapeForFileName.h>
-#include <statdaemons/ext/scope_guard.hpp>
-#include <statdaemons/ext/map.hpp>
+#include <ext/scope_guard.hpp>
+#include <ext/map.hpp>
 #include <memory>
 #include <unordered_map>
 #include <map>
@@ -225,6 +225,11 @@ private:
 
 	std::size_t getIdentifiersColumnSize(const IdentifierNameSet & identifiers) const
 	{
+		/** for expressions containing no columns (or where columns could not be determined otherwise) assume maximum
+		 *	possible size so they do not have priority in eligibility over other expressions. */
+		if (identifiers.empty())
+			return std::numeric_limits<std::size_t>::max();
+
 		std::size_t size{};
 
 		for (const auto & identifier : identifiers)

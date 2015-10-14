@@ -87,6 +87,8 @@ struct QueryParseResult
 	float sample;
 	
 	Format format;
+
+	bool has_overflow_mode = false;
 	OverflowMode overflow_mode;
 	
 	Poco::AutoPtr<Poco::XML::Document> query;

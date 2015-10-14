@@ -11,15 +11,15 @@
 #include <Poco/SharedPtr.h>
 #include <Poco/Util/Application.h>
 
-#include <statdaemons/Stopwatch.h>
-#include <statdaemons/threadpool.hpp>
+#include <DB/Common/Stopwatch.h>
+#include <common/threadpool.hpp>
 #include <stats/ReservoirSampler.h>
 
 #include <boost/program_options.hpp>
 
 #include <DB/Common/ConcurrentBoundedQueue.h>
 
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/Types.h>
 
 #include <DB/IO/ReadBufferFromFileDescriptor.h>
@@ -142,7 +142,7 @@ private:
 	void run()
 	{
 		for (size_t i = 0; i < concurrency; ++i)
-			pool.schedule(std::bind(&Benchmark::thread, this, connections.get()));
+			pool.schedule(std::bind(&Benchmark::thread, this, connections.IConnectionPool::get()));
 
 		InterruptListener interrupt_listener;
 

@@ -1273,13 +1273,13 @@ private:
 
 public:
 	/// Получить имя функции.
-	String getName() const
+	String getName() const override
 	{
 		return name;
 	}
 
 	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 3)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -1346,7 +1346,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const ColumnVector<UInt8> * cond_col = typeid_cast<const ColumnVector<UInt8> *>(&*block.getByPosition(arguments[0]).column);
 		const ColumnConst<UInt8> * cond_const_col = typeid_cast<const ColumnConst<UInt8> *>(&*block.getByPosition(arguments[0]).column);

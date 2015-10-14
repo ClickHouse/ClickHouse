@@ -120,7 +120,7 @@ public:
 	/** Не бросает исключение при следующих ошибках:
 	  *  - Такой ноды нет. В таком случае возвращает false.
 	  */
-	bool tryGet(const std::string & path, std::string & res, Stat * stat = nullptr, EventPtr watch = nullptr);
+	bool tryGet(const std::string & path, std::string & res, Stat * stat = nullptr, EventPtr watch = nullptr, int * code = nullptr);
 
 	void set(const std::string & path, const std::string & data,
 			int32_t version = -1, Stat * stat = nullptr);
@@ -225,6 +225,18 @@ public:
 		Result get()
 		{
 			return future.get();
+		}
+
+		Future(Future &&) = default;
+		Future & operator= (Future &&) = default;
+
+		~Future()
+		{
+			/** Если никто не дождался результата, то мы должны его дождаться перед уничтожением объекта,
+			  *  так как данные этого объекта могут всё ещё использоваться в колбэке.
+			  */
+			if (future.valid())
+				future.wait();
 		}
 	};
 

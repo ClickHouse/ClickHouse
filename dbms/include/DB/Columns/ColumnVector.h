@@ -2,8 +2,12 @@
 
 #include <string.h>
 
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 #include <DB/Core/ErrorCodes.h>
+#include <DB/Common/Arena.h>
+
+#include <DB/IO/WriteBuffer.h>
+#include <DB/IO/WriteHelpers.h>
 
 #include <DB/Columns/IColumn.h>
 
@@ -148,6 +152,19 @@ public:
 	void insertDefault() override
 	{
 		data.push_back(T());
+	}
+
+	StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override
+	{
+		auto pos = arena.allocContinue(sizeof(T), begin);
+		memcpy(pos, &data[n], sizeof(T));
+		return StringRef(pos, sizeof(T));
+	}
+
+	const char * deserializeAndInsertFromArena(const char * pos) override
+	{
+		data.push_back(*reinterpret_cast<const T *>(pos));
+		return pos + sizeof(T);
 	}
 
 	size_t byteSize() const override

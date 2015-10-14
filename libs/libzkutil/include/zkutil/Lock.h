@@ -2,7 +2,7 @@
 
 #include <zkutil/ZooKeeper.h>
 #include <common/logger_useful.h>
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 
 namespace zkutil
 {

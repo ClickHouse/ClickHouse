@@ -6,7 +6,7 @@
 
 #include <DB/IO/WriteHelpers.h>
 
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 
 
 namespace DB
@@ -18,30 +18,6 @@ void throwFromErrno(const std::string & s, int code, int e)
 	throw ErrnoException(s + ", errno: " + toString(e) + ", strerror: " + std::string(strerror_r(e, buf, sizeof(buf))), code, e);
 }
 
-
-ExceptionPtr cloneCurrentException()
-{
-	try
-	{
-		throw;
-	}
-	catch (const Exception & e)
-	{
-		return e.clone();
-	}
-	catch (const Poco::Exception & e)
-	{
-		return e.clone();
-	}
-	catch (const std::exception & e)
-	{
-		return new Exception(e.what(), ErrorCodes::STD_EXCEPTION);
-	}
-	catch (...)
-	{
-		return new Exception("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
-	}
-}
 
 inline std::string demangle(const char * const mangled, int & status)
 {
@@ -129,11 +105,73 @@ std::string getCurrentExceptionMessage(bool with_stacktrace)
 }
 
 
+Poco::SharedPtr<Poco::Exception> convertCurrentException()
+{
+	try
+	{
+		throw;
+	}
+	catch (const Exception & e)
+	{
+		return e.clone();
+	}
+	catch (const Poco::Exception & e)
+	{
+		return e.clone();
+	}
+	catch (const std::exception & e)
+	{
+		return new Exception(e.what(), ErrorCodes::STD_EXCEPTION);
+	}
+	catch (...)
+	{
+		return new Exception("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
+	}
+}
+
+
 void rethrowFirstException(Exceptions & exceptions)
 {
 	for (size_t i = 0, size = exceptions.size(); i < size; ++i)
 		if (exceptions[i])
-			exceptions[i]->rethrow();
+			std::rethrow_exception(exceptions[i]);
+}
+
+
+void tryLogException(std::exception_ptr e, const char * log_name, const std::string & start_of_message)
+{
+	try
+	{
+		std::rethrow_exception(e);
+	}
+	catch (...)
+	{
+		tryLogCurrentException(log_name, start_of_message);
+	}
+}
+
+void tryLogException(std::exception_ptr e, Poco::Logger * logger, const std::string & start_of_message)
+{
+	try
+	{
+		std::rethrow_exception(e);
+	}
+	catch (...)
+	{
+		tryLogCurrentException(logger, start_of_message);
+	}
+}
+
+std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace)
+{
+	try
+	{
+		std::rethrow_exception(e);
+	}
+	catch (...)
+	{
+		return getCurrentExceptionMessage(with_stacktrace);
+	}
 }
 
 

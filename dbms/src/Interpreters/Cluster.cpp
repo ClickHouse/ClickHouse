@@ -177,6 +177,7 @@ Cluster::Cluster(const Settings & settings, const String & cluster_name)
 				if (isLocal(replica))
 				{
 					has_local_replics = true;
+					local_addresses.push_back(replica);
 					break;
 				}
 				else
@@ -204,6 +205,7 @@ Cluster::Cluster(const Settings & settings, const String & cluster_name)
 		{
 			if (isLocal(address))
 			{
+				local_addresses.push_back(address);
 				++local_nodes_num;
 			}
 			else

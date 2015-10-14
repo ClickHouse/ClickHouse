@@ -1,4 +1,5 @@
-#include <statdaemons/ext/range.hpp>
+#include <ext/range.hpp>
+#include <DB/Core/FieldVisitors.h>
 #include <DB/Storages/ColumnsDescription.h>
 #include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
@@ -1458,7 +1459,7 @@ bool StorageReplicatedMergeTree::queueTask(BackgroundProcessingPool::Context & p
 
 	bool was_exception = true;
 	bool success = false;
-	ExceptionPtr saved_exception;
+	std::exception_ptr saved_exception;
 
 	try
 	{
@@ -1478,7 +1479,7 @@ bool StorageReplicatedMergeTree::queueTask(BackgroundProcessingPool::Context & p
 		}
 		catch (...)
 		{
-			saved_exception = cloneCurrentException();
+			saved_exception = std::current_exception();
 			throw;
 		}
 

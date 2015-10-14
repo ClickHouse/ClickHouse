@@ -48,7 +48,7 @@ void QueryConverter::OLAPServerQueryToClickHouse(const QueryParseResult & query,
 	if (query.format != FORMAT_TAB)
 		throw Exception("Only tab-separated output format is supported", ErrorCodes::UNSUPPORTED_PARAMETER);
 	
-	/// Учтем некоторые настройки (пока далеко не все).
+	/// Учтем некоторые настройки (далеко не все).
 	
 	Settings new_settings = inout_context.getSettings();
 	
@@ -61,17 +61,20 @@ void QueryConverter::OLAPServerQueryToClickHouse(const QueryParseResult & query,
 	if (query.max_result_size != 0)
 		new_settings.limits.max_rows_to_group_by = query.max_result_size;
 	
-	switch (query.overflow_mode)
+	if (query.has_overflow_mode)
 	{
-		case OLAP::OVERFLOW_MODE_THROW:
-			new_settings.limits.group_by_overflow_mode = DB::OverflowMode::THROW;
-			break;
-		case OLAP::OVERFLOW_MODE_BREAK:
-			new_settings.limits.group_by_overflow_mode = DB::OverflowMode::BREAK;
-			break;
-		case OLAP::OVERFLOW_MODE_ANY:
-			new_settings.limits.group_by_overflow_mode = DB::OverflowMode::ANY;
-			break;
+		switch (query.overflow_mode)
+		{
+			case OLAP::OVERFLOW_MODE_THROW:
+				new_settings.limits.group_by_overflow_mode = DB::OverflowMode::THROW;
+				break;
+			case OLAP::OVERFLOW_MODE_BREAK:
+				new_settings.limits.group_by_overflow_mode = DB::OverflowMode::BREAK;
+				break;
+			case OLAP::OVERFLOW_MODE_ANY:
+				new_settings.limits.group_by_overflow_mode = DB::OverflowMode::ANY;
+				break;
+		}
 	}
 	
 	inout_context.setSettings(new_settings);

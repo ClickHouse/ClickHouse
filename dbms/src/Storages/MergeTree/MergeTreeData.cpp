@@ -17,7 +17,7 @@
 #include <DB/Common/localBackup.h>
 #include <DB/Functions/FunctionFactory.h>
 #include <Poco/DirectoryIterator.h>
-#include <statdaemons/Increment.h>
+#include <DB/Common/Increment.h>
 
 #include <algorithm>
 #include <iomanip>

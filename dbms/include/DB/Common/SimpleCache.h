@@ -3,7 +3,7 @@
 #include <map>
 #include <tuple>
 #include <mutex>
-#include <statdaemons/ext/function_traits.hpp>
+#include <ext/function_traits.hpp>
 
 
 /** Простейший кэш для свободной функции.

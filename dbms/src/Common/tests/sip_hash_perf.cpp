@@ -5,7 +5,7 @@
 #include <DB/Common/SipHash.h>
 #include <DB/IO/ReadBufferFromFileDescriptor.h>
 #include <DB/IO/ReadHelpers.h>
-#include <statdaemons/Stopwatch.h>
+#include <DB/Common/Stopwatch.h>
 
 
 /** Тестировать так:

@@ -12,10 +12,10 @@
 #include <Poco/Exception.h>
 #include <Poco/SharedPtr.h>
 
-#include <DB/Core/Exception.h>
+#include <DB/Common/Exception.h>
 
-#include <statdaemons/threadpool.hpp>
-#include <statdaemons/Stopwatch.h>
+#include <common/threadpool.hpp>
+#include <DB/Common/Stopwatch.h>
 
 #include <stdlib.h>
 #include <malloc.h>
@@ -111,10 +111,8 @@ struct AioContext
 	}
 };
 
-typedef Poco::SharedPtr<Poco::Exception> ExceptionPtr;
 
-
-void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block_size, size_t buffers_count, size_t count, ExceptionPtr & exception)
+void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block_size, size_t buffers_count, size_t count, std::exception_ptr & exception)
 {
 	try
 	{
@@ -205,27 +203,10 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
 				buffer_used[b] = false;
 			}
 		}
-
-// 		iocb cb;
-// 		memset(&cb, 0, sizeof(cb));
-// 		cb.aio_lio_opcode = IOCB_CMD_FSYNC;
-// 		cb.aio_fildes = fd;
-// 		iocb *cbs = &cb;
-// 		if (io_submit(ctx.ctx, 1, &cbs) < 0)
-// 			throwFromErrno("io_submit of fdatasync failed");
-// 		io_event e;
-// 		if (io_getevents(ctx.ctx, 1, 1, &e, nullptr) < 0)
-// 			throwFromErrno("io_getevents failed");
-// 		if (e.res < 0)
-// 			throw Poco::Exception("sync failed");
-	}
-	catch (const Poco::Exception & e)
-	{
-		exception = e.clone();
 	}
 	catch (...)
 	{
-		exception = new Poco::Exception("Unknown exception");
+		exception = std::current_exception();
 	}
 }
 
@@ -261,7 +242,7 @@ int mainImpl(int argc, char ** argv)
 	if (-1 == fd)
 		throwFromErrno("Cannot open file");
 
-	typedef std::vector<ExceptionPtr> Exceptions;
+	typedef std::vector<std::exception_ptr> Exceptions;
 
 	boost::threadpool::pool pool(threads_count);
 	Exceptions exceptions(threads_count);
@@ -276,7 +257,7 @@ int mainImpl(int argc, char ** argv)
 
 	for (size_t i = 0; i < threads_count; ++i)
 		if (exceptions[i])
-			exceptions[i]->rethrow();
+			std::rethrow_exception(exceptions[i]);
 
 	if (0 != close(fd))
 		throwFromErrno("Cannot close file");

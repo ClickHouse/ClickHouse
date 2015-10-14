@@ -1,6 +1,6 @@
 #pragma once
 
-#include <statdaemons/threadpool.hpp>
+#include <common/threadpool.hpp>
 
 #include <Poco/Event.h>
 
@@ -48,7 +48,7 @@ public:
 		{
 			pool.wait();
 			if (exception)
-				exception->rethrow();
+				std::rethrow_exception(exception);
 			children.back()->readSuffix();
 			started = false;
 		}
@@ -82,7 +82,7 @@ protected:
 	bool started = false;
 
 	Block block;
-	ExceptionPtr exception;
+	std::exception_ptr exception;
 
 
 	Block readImpl() override
@@ -97,7 +97,7 @@ protected:
 			pool.wait();
 
 		if (exception)
-			exception->rethrow();
+			std::rethrow_exception(exception);
 
 		Block res = block;
 		if (!res)
@@ -130,7 +130,7 @@ protected:
 		}
 		catch (...)
 		{
-			exception = cloneCurrentException();
+			exception = std::current_exception();
 		}
 
 		ready.set();

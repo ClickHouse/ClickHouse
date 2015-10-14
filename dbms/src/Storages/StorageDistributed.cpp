@@ -1,5 +1,6 @@
 #include <DB/DataStreams/RemoteBlockInputStream.h>
 #include <DB/DataStreams/MaterializingBlockInputStream.h>
+#include <DB/DataStreams/BlockExtraInfoInputStream.h>
 
 #include <DB/Storages/StorageDistributed.h>
 #include <DB/Storages/VirtualColumnFactory.h>
@@ -8,9 +9,11 @@
 #include <DB/Common/escapeForFileName.h>
 #include <DB/Parsers/ASTInsertQuery.h>
 #include <DB/Parsers/ASTSelectQuery.h>
+#include <DB/Parsers/TablePropertiesQueriesASTs.h>
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/InterpreterAlterQuery.h>
+#include <DB/Interpreters/InterpreterDescribeQuery.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 
 #include <DB/Core/Field.h>
@@ -48,6 +51,17 @@ namespace
 		actual_query.select = nullptr;
 
 		return modified_query_ast;
+	}
+
+	BlockExtraInfo toBlockExtraInfo(const Cluster::Address & address)
+	{
+		BlockExtraInfo block_extra_info;
+		block_extra_info.host = address.host_name;
+		block_extra_info.resolved_address = address.resolved_address.toString();
+		block_extra_info.port = address.port;
+		block_extra_info.user = address.user;
+		block_extra_info.is_valid = true;
+		return block_extra_info;
 	}
 }
 
@@ -231,6 +245,60 @@ void StorageDistributed::alter(const AlterCommands & params, const String & data
 void StorageDistributed::shutdown()
 {
 	directory_monitors.clear();
+}
+
+BlockInputStreams StorageDistributed::describe(const Context & context, const Settings & settings)
+{
+	Settings new_settings = settings;
+	new_settings.queue_max_wait_ms = Cluster::saturate(new_settings.queue_max_wait_ms, settings.limits.max_execution_time);
+	/// Не имеет смысла на удалённых серверах, так как запрос отправляется обычно с другим user-ом.
+	new_settings.max_concurrent_queries_for_user = 0;
+
+	/// Создать запрос DESCRIBE TABLE.
+
+	auto describe_query = new ASTDescribeQuery;
+	describe_query->database = remote_database;
+	describe_query->table = remote_table;
+
+	ASTPtr ast = describe_query;
+	const auto query = queryToString(ast);
+
+	/// Ограничение сетевого трафика, если нужно.
+	ThrottlerPtr throttler;
+	if (settings.limits.max_network_bandwidth || settings.limits.max_network_bytes)
+		throttler.reset(new Throttler(
+			settings.limits.max_network_bandwidth,
+			settings.limits.max_network_bytes,
+			"Limit for bytes to send or receive over network exceeded."));
+
+	BlockInputStreams res;
+
+	/// Цикл по шардам.
+	for (auto & conn_pool : cluster.pools)
+	{
+		auto stream = new RemoteBlockInputStream{conn_pool, query, &new_settings, throttler};
+		stream->reachAllReplicas();
+		stream->appendExtraInfo();
+		res.emplace_back(stream);
+	}
+
+	/// Добавляем запросы к локальному ClickHouse.
+	if (cluster.getLocalNodesNum() > 0)
+	{
+		DB::Context new_context = context;
+		new_context.setSettings(new_settings);
+
+		const auto & local_addresses = cluster.getLocalShardsInfo();
+		for (const auto & address : local_addresses)
+		{
+			InterpreterDescribeQuery interpreter(ast, new_context);
+			BlockInputStreamPtr stream = new MaterializingBlockInputStream(interpreter.execute().in);
+			stream = new BlockExtraInfoInputStream(stream, toBlockExtraInfo(address));
+			res.emplace_back(stream);
+		}
+	}
+
+	return res;
 }
 
 NameAndTypePair StorageDistributed::getColumn(const String & column_name) const

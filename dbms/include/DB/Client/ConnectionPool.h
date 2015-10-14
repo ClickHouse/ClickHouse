@@ -1,6 +1,6 @@
 #pragma once
 
-#include <statdaemons/PoolBase.h>
+#include <DB/Common/PoolBase.h>
 
 #include <DB/Client/Connection.h>
 
@@ -26,18 +26,33 @@ class IConnectionPool : private boost::noncopyable
 {
 public:
 	typedef PoolBase<Connection>::Entry Entry;
-	virtual Entry get(const Settings * settings = nullptr) = 0;
+
+public:
+	virtual ~IConnectionPool() {}
+
+	/** Выделяет соединение для работы. */
+	Entry get(const Settings * settings = nullptr)
+	{
+		return doGet(settings);
+	}
 
 	/** Выделяет до указанного количества соединений для работы.
 	  * Соединения предоставляют доступ к разным репликам одного шарда.
+	  * Если флаг get_all установлен, все соединения достаются.
 	  * Выкидывает исключение, если не удалось выделить ни одного соединения.
 	  */
-	virtual std::vector<Entry> getMany(const Settings * settings = nullptr)
+	std::vector<Entry> getMany(const Settings * settings = nullptr, bool get_all = false)
+	{
+		return doGetMany(settings, get_all);
+	}
+
+protected:
+	virtual Entry doGet(const Settings * settings) = 0;
+
+	virtual std::vector<Entry> doGetMany(const Settings * settings, bool get_all)
 	{
 		return std::vector<Entry>{ get(settings) };
 	}
-
-	virtual ~IConnectionPool() {}
 };
 
 typedef SharedPtr<IConnectionPool> ConnectionPoolPtr;
@@ -87,16 +102,6 @@ public:
 	{
 	}
 
-
-	/** Выделяет соединение для работы. */
-	Entry get(const Settings * settings = nullptr) override
-	{
-		if (settings)
-			return Base::get(settings->queue_max_wait_ms.totalMilliseconds());
-		else
-			return Base::get(-1);
-	}
-
 	const std::string & getHost() const
 	{
 		return host;
@@ -111,6 +116,15 @@ protected:
 			default_database, user, password,
 			client_name, compression,
 			connect_timeout, receive_timeout, send_timeout);
+	}
+
+private:
+	Entry doGet(const Settings * settings) override
+	{
+		if (settings)
+			return Base::get(settings->queue_max_wait_ms.totalMilliseconds());
+		else
+			return Base::get(-1);
 	}
 
 private:

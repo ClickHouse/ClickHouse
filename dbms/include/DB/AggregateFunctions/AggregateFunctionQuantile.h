@@ -2,6 +2,8 @@
 
 #include <stats/ReservoirSampler.h>
 
+#include <DB/Core/FieldVisitors.h>
+
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/ReadHelpers.h>
 

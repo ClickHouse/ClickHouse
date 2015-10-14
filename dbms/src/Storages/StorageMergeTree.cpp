@@ -1,3 +1,4 @@
+#include <DB/Core/FieldVisitors.h>
 #include <DB/Storages/StorageMergeTree.h>
 #include <DB/Storages/MergeTree/MergeTreeBlockOutputStream.h>
 #include <DB/Storages/MergeTree/DiskSpaceMonitor.h>
