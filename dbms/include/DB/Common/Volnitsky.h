@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DB/Common/StringSearcher.h>
 #include <statdaemons/ext/range.hpp>
 #include <Poco/UTF8Encoding.h>
 #include <Poco/Unicode.h>
@@ -132,11 +133,13 @@ protected:
 };
 
 
-/// Primary template for case sensitive comparison
-template <bool CaseSensitive, bool ASCII> struct VolnitskyImpl : VolnitskyBase<VolnitskyImpl<CaseSensitive, ASCII>>
+template <bool CaseSensitive, bool ASCII> struct VolnitskyImpl;
+
+/// Case sensitive comparison
+template <bool ASCII> struct VolnitskyImpl<true, ASCII> : VolnitskyBase<VolnitskyImpl<true, ASCII>>
 {
 	VolnitskyImpl(const char * const needle, const size_t needle_size, const size_t haystack_size_hint = 0)
-		: VolnitskyBase<VolnitskyImpl<CaseSensitive, ASCII>>{needle, needle_size, haystack_size_hint},
+		: VolnitskyBase<VolnitskyImpl<true, ASCII>>{needle, needle_size, haystack_size_hint},
 		  fallback_searcher{needle, needle_size}
 	{
 	}
@@ -152,189 +155,12 @@ template <bool CaseSensitive, bool ASCII> struct VolnitskyImpl : VolnitskyBase<V
 		return fallback_searcher.compare(pos);
 	}
 
-	class Searcher
-	{
-		static constexpr auto n = sizeof(__m128i);
-
-		const int page_size = getpagesize();
-
-		/// string to be searched for
-		const char * const needle;
-		const std::size_t needle_size;
-		/// first character in `needle`
-		UInt8 first{};
-		/// vector filled `first` for determining leftmost position of the first symbol
-		__m128i pattern;
-		/// vector of first 16 characters of `needle`
-		__m128i cache = _mm_setzero_si128();
-		int cachemask{};
-
-		bool page_safe(const void * const ptr) const
-		{
-			return ((page_size - 1) & reinterpret_cast<std::uintptr_t>(ptr)) <= page_size - n;
-		}
-
-	public:
-		Searcher(const char * const needle, const std::size_t needle_size)
-			: needle{needle}, needle_size{needle_size}
-		{
-			if (0 == needle_size)
-				return;
-
-			auto needle_pos = needle;
-
-			first = *needle_pos;
-
-			pattern = _mm_set1_epi8(first);
-
-			const auto needle_end = needle_pos + needle_size;
-
-			for (const auto i : ext::range(0, n))
-			{
-				cache = _mm_srli_si128(cache, 1);
-
-				if (needle_pos != needle_end)
-				{
-					cache = _mm_insert_epi8(cache, *needle_pos, n - 1);
-					cachemask |= 1 << i;
-					++needle_pos;
-				}
-			}
-		}
-
-		bool compare(const UInt8 * pos) const
-		{
-			if (page_safe(pos))
-			{
-				const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos));
-				const auto v_against_cache = _mm_cmpeq_epi8(v_haystack, cache);
-				const auto mask = _mm_movemask_epi8(v_against_cache);
-
-				if (0xffff == cachemask)
-				{
-					if (mask == cachemask)
-					{
-						pos += n;
-						auto needle_pos = needle + n;
-						const auto needle_end = needle + needle_size;
-
-						while (needle_pos < needle_end && *pos == *needle_pos)
-							++pos, ++needle_pos;
-
-						if (needle_pos == needle_end)
-							return true;
-					}
-				}
-				else if ((mask & cachemask) == cachemask)
-					return true;
-
-				return false;
-			}
-
-			if (*pos == first)
-			{
-				++pos;
-				auto needle_pos = needle + 1;
-				const auto needle_end = needle + needle_size;
-
-				while (needle_pos < needle_end && *pos == *needle_pos)
-					++pos, ++needle_pos;
-
-				if (needle_pos == needle_end)
-					return true;
-			}
-
-			return false;
-		}
-
-		const UInt8 * find(const UInt8 * haystack, const UInt8 * const haystack_end) const
-		{
-			if (0 == needle_size)
-				return haystack;
-
-			const auto needle_begin = reinterpret_cast<const UInt8 *>(needle);
-			const auto needle_end = needle_begin + needle_size;
-
-			while (haystack < haystack_end)
-			{
-				/// @todo supposedly for long strings spanning across multiple pages. Why don't we use this technique in other places?
-				if (haystack + n <= haystack_end && page_safe(haystack))
-				{
-					/// find first character
-					const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
-					const auto v_against_pattern = _mm_cmpeq_epi8(v_haystack, pattern);
-
-					const auto mask = _mm_movemask_epi8(v_against_pattern);
-
-					/// first character not present in 16 octets starting at `haystack`
-					if (mask == 0)
-					{
-						haystack += n;
-						continue;
-					}
-
-					const auto offset = _bit_scan_forward(mask);
-					haystack += offset;
-
-					if (haystack < haystack_end && haystack + n <= haystack_end && page_safe(haystack))
-					{
-						/// check for first 16 octets
-						const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
-						const auto v_against_cache = _mm_cmpeq_epi8(v_haystack, cache);
-						const auto mask = _mm_movemask_epi8(v_against_cache);
-
-						if (0xffff == cachemask)
-						{
-							if (mask == cachemask)
-							{
-								auto haystack_pos = haystack + n;
-								auto needle_pos = needle_begin + n;
-
-								while (haystack_pos < haystack_end && needle_pos < needle_end &&
-									   *haystack_pos == *needle_pos)
-									++haystack_pos, ++needle_pos;
-
-								if (needle_pos == needle_end)
-									return haystack;
-							}
-						}
-						else if ((mask & cachemask) == cachemask)
-							return haystack;
-
-						++haystack;
-						continue;
-					}
-				}
-
-				if (haystack == haystack_end)
-					return haystack_end;
-
-				if (*haystack == first)
-				{
-					auto haystack_pos = haystack + 1;
-					auto needle_pos = needle_begin + 1;
-
-					while (haystack_pos < haystack_end && needle_pos < needle_end &&
-						   *haystack_pos == *needle_pos)
-						++haystack_pos, ++needle_pos;
-
-					if (needle_pos == needle_end)
-						return haystack;
-				}
-
-				++haystack;
-			}
-
-			return haystack_end;
-		}
-	};
-
-	Searcher fallback_searcher;
-
 	const UInt8 * search_fallback(const UInt8 * const haystack, const UInt8 * const haystack_end) const
 	{
-		return fallback_searcher.find(haystack, haystack_end);
+		return fallback_searcher.search(haystack, haystack_end);
 	}
+
+	DB::ASCIICaseSensitiveStringSearcher fallback_searcher;
 };
 
 /// Case-insensitive ASCII
@@ -400,197 +226,12 @@ template <> struct VolnitskyImpl<false, true> : VolnitskyBase<VolnitskyImpl<fals
 		return fallback_searcher.compare(pos);
 	}
 
-	class Searcher
-	{
-		static constexpr auto n = sizeof(__m128i);
-
-		const int page_size = getpagesize();
-
-		/// string to be searched for
-		const char * const needle;
-		const std::size_t needle_size;
-		/// lower and uppercase variants of the first character in `needle`
-		UInt8 l{};
-		UInt8 u{};
-		/// vectors filled with `l` and `u`, for determining leftmost position of the first symbol
-		__m128i patl, patu;
-		/// lower and uppercase vectors of first 16 characters of `needle`
-		__m128i cachel = _mm_setzero_si128(), cacheu = _mm_setzero_si128();
-		int cachemask{};
-
-		bool page_safe(const void * const ptr) const
-		{
-			return ((page_size - 1) & reinterpret_cast<std::uintptr_t>(ptr)) <= page_size - n;
-		}
-
-	public:
-		Searcher(const char * const needle, const std::size_t needle_size)
-		: needle{needle}, needle_size{needle_size}
-		{
-			if (0 == needle_size)
-				return;
-
-			auto needle_pos = needle;
-
-			l = std::tolower(*needle_pos);
-			u = std::toupper(*needle_pos);
-
-			patl = _mm_set1_epi8(l);
-			patu = _mm_set1_epi8(u);
-
-			const auto needle_end = needle_pos + needle_size;
-
-			for (const auto i : ext::range(0, n))
-			{
-				cachel = _mm_srli_si128(cachel, 1);
-				cacheu = _mm_srli_si128(cacheu, 1);
-
-				if (needle_pos != needle_end)
-				{
-					cachel = _mm_insert_epi8(cachel, std::tolower(*needle_pos), n - 1);
-					cacheu = _mm_insert_epi8(cacheu, std::toupper(*needle_pos), n - 1);
-					cachemask |= 1 << i;
-					++needle_pos;
-				}
-			}
-		}
-
-		bool compare(const UInt8 * pos) const
-		{
-			if (page_safe(pos))
-			{
-				const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos));
-				const auto v_against_l = _mm_cmpeq_epi8(v_haystack, cachel);
-				const auto v_against_u = _mm_cmpeq_epi8(v_haystack, cacheu);
-				const auto v_against_l_or_u = _mm_or_si128(v_against_l, v_against_u);
-				const auto mask = _mm_movemask_epi8(v_against_l_or_u);
-
-				if (0xffff == cachemask)
-				{
-					if (mask == cachemask)
-					{
-						pos += n;
-						auto needle_pos = needle + n;
-						const auto needle_end = needle + needle_size;
-
-						while (needle_pos < needle_end && std::tolower(*pos) == std::tolower(*needle_pos))
-							++pos, ++needle_pos;
-
-						if (needle_pos == needle_end)
-							return true;
-					}
-				}
-				else if ((mask & cachemask) == cachemask)
-					return true;
-
-				return false;
-			}
-
-			if (*pos == l || *pos == u)
-			{
-				++pos;
-				auto needle_pos = needle + 1;
-				const auto needle_end = needle + needle_size;
-
-				while (needle_pos < needle_end && std::tolower(*pos) == std::tolower(*needle_pos))
-					++pos, ++needle_pos;
-
-				if (needle_pos == needle_end)
-					return true;
-			}
-
-			return false;
-		}
-
-		const UInt8 * find(const UInt8 * haystack, const UInt8 * const haystack_end) const
-		{
-			if (0 == needle_size)
-				return haystack;
-
-			const auto needle_begin = reinterpret_cast<const UInt8 *>(needle);
-			const auto needle_end = needle_begin + needle_size;
-
-			while (haystack < haystack_end)
-			{
-				/// @todo supposedly for long strings spanning across multiple pages. Why don't we use this technique in other places?
-				if (haystack + n <= haystack_end && page_safe(haystack))
-				{
-					const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
-					const auto v_against_l = _mm_cmpeq_epi8(v_haystack, patl);
-					const auto v_against_u = _mm_cmpeq_epi8(v_haystack, patu);
-					const auto v_against_l_or_u = _mm_or_si128(v_against_l, v_against_u);
-
-					const auto mask = _mm_movemask_epi8(v_against_l_or_u);
-
-					if (mask == 0)
-					{
-						haystack += n;
-						continue;
-					}
-
-					const auto offset = _bit_scan_forward(mask);
-					haystack += offset;
-
-					if (haystack < haystack_end && haystack + n <= haystack_end && page_safe(haystack))
-					{
-						const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
-						const auto v_against_l = _mm_cmpeq_epi8(v_haystack, cachel);
-						const auto v_against_u = _mm_cmpeq_epi8(v_haystack, cacheu);
-						const auto v_against_l_or_u = _mm_or_si128(v_against_l, v_against_u);
-						const auto mask = _mm_movemask_epi8(v_against_l_or_u);
-
-						if (0xffff == cachemask)
-						{
-							if (mask == cachemask)
-							{
-								auto haystack_pos = haystack + n;
-								auto needle_pos = needle_begin + n;
-
-								while (haystack_pos < haystack_end && needle_pos < needle_end &&
-									   std::tolower(*haystack_pos) == std::tolower(*needle_pos))
-									++haystack_pos, ++needle_pos;
-
-								if (needle_pos == needle_end)
-									return haystack;
-							}
-						}
-						else if ((mask & cachemask) == cachemask)
-							return haystack;
-
-						++haystack;
-						continue;
-					}
-				}
-
-				if (haystack == haystack_end)
-					return haystack_end;
-
-				if (*haystack == l || *haystack == u)
-				{
-					auto haystack_pos = haystack + 1;
-					auto needle_pos = needle_begin + 1;
-
-					while (haystack_pos < haystack_end && needle_pos < needle_end &&
-						   std::tolower(*haystack_pos) == std::tolower(*needle_pos))
-						++haystack_pos, ++needle_pos;
-
-					if (needle_pos == needle_end)
-						return haystack;
-				}
-
-				++haystack;
-			}
-
-			return haystack_end;
-		}
-	};
-
-	Searcher fallback_searcher;
-
 	const UInt8 * search_fallback(const UInt8 * const haystack, const UInt8 * const haystack_end) const
 	{
-		return fallback_searcher.find(haystack, haystack_end);
+		return fallback_searcher.search(haystack, haystack_end);
 	}
+
+	DB::ASCIICaseInsensitiveStringSearcher fallback_searcher;
 };
 
 /// Case-sensitive UTF-8
@@ -660,11 +301,11 @@ template <> struct VolnitskyImpl<false, false> : VolnitskyBase<VolnitskyImpl<fal
 
 			static const Poco::UTF8Encoding utf8;
 
-			if (utf8_is_continuation_octet(c[1]))
+			if (DB::UTF8::isContinuationOctet(c[1]))
 			{
 				/// ngram is inside a sequence
 				auto seq_pos = pos;
-				utf8_sync_backward(seq_pos);
+				DB::UTF8::syncBackward(seq_pos);
 
 				const auto u32 = utf8.convert(seq_pos);
 				const auto l_u32 = Poco::Unicode::toLower(u32);
@@ -698,7 +339,7 @@ template <> struct VolnitskyImpl<false, false> : VolnitskyBase<VolnitskyImpl<fal
 				/// ngram is on the boundary of two sequences
 				/// first sequence may start before u_pos if it is not ASCII
 				auto first_seq_pos = pos;
-				utf8_sync_backward(first_seq_pos);
+				DB::UTF8::syncBackward(first_seq_pos);
 
 				const auto first_u32 = utf8.convert(first_seq_pos);
 				const auto first_l_u32 = Poco::Unicode::toLower(first_u32);
@@ -784,321 +425,17 @@ template <> struct VolnitskyImpl<false, false> : VolnitskyBase<VolnitskyImpl<fal
 		}
 	}
 
-	static const UInt8 utf8_continuation_octet_mask = 0b11000000u;
-	static const UInt8 utf8_continuation_octet = 0b10000000u;
-
-	/// return true if `octet` binary repr starts with 10 (octet is a UTF-8 sequence continuation)
-	static bool utf8_is_continuation_octet(const UInt8 octet)
-	{
-		return (octet & utf8_continuation_octet_mask) == utf8_continuation_octet;
-	}
-
-	/// moves `s` backward until either first non-continuation octet
-	static void utf8_sync_backward(const UInt8 * & s)
-	{
-		while (utf8_is_continuation_octet(*s))
-			--s;
-	}
-
-	/// moves `s` forward until either first non-continuation octet or string end is met
-	static void utf8_sync_forward(const UInt8 * & s, const UInt8 * const end = nullptr)
-	{
-		while (s < end && utf8_is_continuation_octet(*s))
-			++s;
-	}
-
-	/// returns UTF-8 code point sequence length judging by it's first octet
-	static std::size_t utf8_seq_length(const UInt8 first_octet)
-	{
-		if (first_octet < 0x80u)
-			return 1;
-
-		const std::size_t bits = 8;
-		const auto first_zero = _bit_scan_reverse(static_cast<UInt8>(~first_octet));
-
-		return bits - 1 - first_zero;
-	}
-
 	bool compare(const UInt8 * const pos) const
 	{
 		return fallback_searcher.compare(pos);
 	}
 
-	class Searcher
-	{
-		using UTF8SequenceBuffer = UInt8[6];
-
-		static constexpr auto n = sizeof(__m128i);
-
-		const int page_size = getpagesize();
-
-		/// string to be searched for
-		const char * const needle;
-		const std::size_t needle_size;
-		bool first_needle_symbol_is_ascii{};
-		/// lower and uppercase variants of the first octet of the first character in `needle`
-		UInt8 l{};
-		UInt8 u{};
-		/// vectors filled with `l` and `u`, for determining leftmost position of the first symbol
-		__m128i patl, patu;
-		/// lower and uppercase vectors of first 16 characters of `needle`
-		__m128i cachel = _mm_setzero_si128(), cacheu = _mm_setzero_si128();
-		int cachemask{};
-		std::size_t cache_valid_len{};
-		std::size_t cache_actual_len{};
-
-		bool page_safe(const void * const ptr) const
-		{
-			return ((page_size - 1) & reinterpret_cast<std::uintptr_t>(ptr)) <= page_size - n;
-		}
-
-	public:
-		Searcher(const char * const needle, const std::size_t needle_size)
-		: needle{needle}, needle_size{needle_size}
-		{
-			if (0 == needle_size)
-				return;
-
-			static const Poco::UTF8Encoding utf8;
-			UTF8SequenceBuffer l_seq, u_seq;
-
-			auto needle_pos = reinterpret_cast<const UInt8 *>(needle);
-			if (*needle_pos < 0x80u)
-			{
-				first_needle_symbol_is_ascii = true;
-				l = std::tolower(*needle_pos);
-				u = std::toupper(*needle_pos);
-			}
-			else
-			{
-				const auto first_u32 = utf8.convert(needle_pos);
-				const auto first_l_u32 = Poco::Unicode::toLower(first_u32);
-				const auto first_u_u32 = Poco::Unicode::toUpper(first_u32);
-
-				/// lower and uppercase variants of the first octet of the first character in `needle`
-				utf8.convert(first_l_u32, l_seq, sizeof(l_seq));
-				l = l_seq[0];
-				utf8.convert(first_u_u32, u_seq, sizeof(u_seq));
-				u = u_seq[0];
-			}
-
-			/// for detecting leftmost position of the first symbol
-			patl = _mm_set1_epi8(l);
-			patu = _mm_set1_epi8(u);
-			/// lower and uppercase vectors of first 16 octets of `needle`
-
-			const auto needle_end = needle_pos + needle_size;
-
-			for (std::size_t i = 0; i < n;)
-			{
-				if (needle_pos == needle_end)
-				{
-					cachel = _mm_srli_si128(cachel, 1);
-					cacheu = _mm_srli_si128(cacheu, 1);
-					++i;
-
-					continue;
-				}
-
-				const auto src_len = utf8_seq_length(*needle_pos);
-				const auto c_u32 = utf8.convert(needle_pos);
-
-				const auto c_l_u32 = Poco::Unicode::toLower(c_u32);
-				const auto c_u_u32 = Poco::Unicode::toUpper(c_u32);
-
-				const auto dst_l_len = static_cast<UInt8>(utf8.convert(c_l_u32, l_seq, sizeof(l_seq)));
-				const auto dst_u_len = static_cast<UInt8>(utf8.convert(c_u_u32, u_seq, sizeof(u_seq)));
-
-				/// @note Unicode standard states it is a rare but possible occasion
-				if (!(dst_l_len == dst_u_len && dst_u_len == src_len))
-					throw DB::Exception{
-						"UTF8 sequences with different lowercase and uppercase lengths are not supported",
-						DB::ErrorCodes::UNSUPPORTED_PARAMETER
-					};
-
-				cache_actual_len += src_len;
-				if (cache_actual_len < n)
-					cache_valid_len += src_len;
-
-				for (std::size_t j = 0; j < src_len && i < n; ++j, ++i)
-				{
-					cachel = _mm_srli_si128(cachel, 1);
-					cacheu = _mm_srli_si128(cacheu, 1);
-
-					if (needle_pos != needle_end)
-					{
-						cachel = _mm_insert_epi8(cachel, l_seq[j], n - 1);
-						cacheu = _mm_insert_epi8(cacheu, u_seq[j], n - 1);
-
-						cachemask |= 1 << i;
-						++needle_pos;
-					}
-				}
-			}
-		}
-
-		bool compare(const UInt8 * pos) const
-		{
-			static const Poco::UTF8Encoding utf8;
-
-			if (page_safe(pos))
-			{
-				const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos));
-				const auto v_against_l = _mm_cmpeq_epi8(v_haystack, cachel);
-				const auto v_against_u = _mm_cmpeq_epi8(v_haystack, cacheu);
-				const auto v_against_l_or_u = _mm_or_si128(v_against_l, v_against_u);
-				const auto mask = _mm_movemask_epi8(v_against_l_or_u);
-
-				if (0xffff == cachemask)
-				{
-					if (mask == cachemask)
-					{
-						pos += cache_valid_len;
-						auto needle_pos = needle + cache_valid_len;
-						const auto needle_end = needle + needle_size;
-
-						while (needle_pos < needle_end &&
-							   Poco::Unicode::toLower(utf8.convert(pos)) ==
-							   Poco::Unicode::toLower(utf8.convert(reinterpret_cast<const UInt8 *>(needle_pos))))
-						{
-							/// @note assuming sequences for lowercase and uppercase have exact same length
-							const auto len = utf8_seq_length(*pos);
-							pos += len, needle_pos += len;
-						}
-
-						if (needle_pos == needle_end)
-							return true;
-					}
-				}
-				else if ((mask & cachemask) == cachemask)
-					return true;
-
-				return false;
-			}
-
-			if (*pos == l || *pos == u)
-			{
-				pos += first_needle_symbol_is_ascii;
-				auto needle_pos = needle + first_needle_symbol_is_ascii;
-				const auto needle_end = needle + needle_size;
-
-				while (needle_pos < needle_end &&
-					   Poco::Unicode::toLower(utf8.convert(pos)) ==
-					   Poco::Unicode::toLower(utf8.convert(reinterpret_cast<const UInt8 *>(needle_pos))))
-				{
-					const auto len = utf8_seq_length(*pos);
-					pos += len, needle_pos += len;
-				}
-
-				if (needle_pos == needle_end)
-					return true;
-			}
-
-			return false;
-		}
-
-		const UInt8 * find(const UInt8 * haystack, const UInt8 * const haystack_end) const
-		{
-			if (0 == needle_size)
-				return haystack;
-
-			static const Poco::UTF8Encoding utf8;
-
-			const auto needle_begin = reinterpret_cast<const UInt8 *>(needle);
-			const auto needle_end = needle_begin + needle_size;
-
-			while (haystack < haystack_end)
-			{
-				if (haystack + n <= haystack_end && page_safe(haystack))
-				{
-					const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
-					const auto v_against_l = _mm_cmpeq_epi8(v_haystack, patl);
-					const auto v_against_u = _mm_cmpeq_epi8(v_haystack, patu);
-					const auto v_against_l_or_u = _mm_or_si128(v_against_l, v_against_u);
-
-					const auto mask = _mm_movemask_epi8(v_against_l_or_u);
-
-					if (mask == 0)
-					{
-						haystack += n;
-						utf8_sync_forward(haystack, haystack_end);
-						continue;
-					}
-
-					const auto offset = _bit_scan_forward(mask);
-					haystack += offset;
-
-					if (haystack < haystack_end && haystack + n <= haystack_end && page_safe(haystack))
-					{
-						const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
-						const auto v_against_l = _mm_cmpeq_epi8(v_haystack, cachel);
-						const auto v_against_u = _mm_cmpeq_epi8(v_haystack, cacheu);
-						const auto v_against_l_or_u = _mm_or_si128(v_against_l, v_against_u);
-						const auto mask = _mm_movemask_epi8(v_against_l_or_u);
-
-						if (0xffff == cachemask)
-						{
-							if (mask == cachemask)
-							{
-								auto haystack_pos = haystack + cache_valid_len;
-								auto needle_pos = needle_begin + cache_valid_len;
-
-								while (haystack_pos < haystack_end && needle_pos < needle_end &&
-									   Poco::Unicode::toLower(utf8.convert(haystack_pos)) ==
-									   Poco::Unicode::toLower(utf8.convert(needle_pos)))
-								{
-									/// @note assuming sequences for lowercase and uppercase have exact same length
-									const auto len = utf8_seq_length(*haystack_pos);
-									haystack_pos += len, needle_pos += len;
-								}
-
-								if (needle_pos == needle_end)
-									return haystack;
-							}
-						}
-						else if ((mask & cachemask) == cachemask)
-							return haystack;
-
-						/// first octet was ok, but not the first 16, move to start of next sequence and reapply
-						haystack += utf8_seq_length(*haystack);
-						continue;
-					}
-				}
-
-				if (haystack == haystack_end)
-					return haystack_end;
-
-				if (*haystack == l || *haystack == u)
-				{
-					auto haystack_pos = haystack + first_needle_symbol_is_ascii;
-					auto needle_pos = needle_begin + first_needle_symbol_is_ascii;
-
-					while (haystack_pos < haystack_end && needle_pos < needle_end &&
-						   Poco::Unicode::toLower(utf8.convert(haystack_pos)) ==
-						   Poco::Unicode::toLower(utf8.convert(needle_pos)))
-					{
-						const auto len = utf8_seq_length(*haystack_pos);
-						haystack_pos += len, needle_pos += len;
-					}
-
-					if (needle_pos == needle_end)
-						return haystack;
-				}
-
-				/// advance to the start of the next sequence
-				haystack += utf8_seq_length(*haystack);
-			}
-
-			return haystack_end;
-		}
-	};
-
-	Searcher fallback_searcher;
-
 	const UInt8 * search_fallback(const UInt8 * const haystack, const UInt8 * const haystack_end) const
 	{
-		return fallback_searcher.find(haystack, haystack_end);
+		return fallback_searcher.search(haystack, haystack_end);
 	}
+
+	DB::UTF8CaseInsensitiveStringSearcher fallback_searcher;
 };
 
 
