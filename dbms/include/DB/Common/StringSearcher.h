@@ -25,10 +25,11 @@ template <> class StringSearcher<false, false>
 	const int page_size = getpagesize();
 
 	/// string to be searched for
-	const char * const needle;
+	const UInt8 * const needle;
 	const std::size_t needle_size;
-	bool first_needle_symbol_is_ascii{};
+	const UInt8 * const needle_end = needle + needle_size;
 	/// lower and uppercase variants of the first octet of the first character in `needle`
+	bool first_needle_symbol_is_ascii{};
 	UInt8 l{};
 	UInt8 u{};
 	/// vectors filled with `l` and `u`, for determining leftmost position of the first symbol
@@ -45,8 +46,8 @@ template <> class StringSearcher<false, false>
 	}
 
 public:
-	StringSearcher(const char * const needle, const std::size_t needle_size)
-		: needle{needle}, needle_size{needle_size}
+	StringSearcher(const char * const needle_, const std::size_t needle_size)
+		: needle{reinterpret_cast<const UInt8 *>(needle_)}, needle_size{needle_size}
 	{
 		if (0 == needle_size)
 			return;
@@ -54,16 +55,15 @@ public:
 		static const Poco::UTF8Encoding utf8;
 		UTF8SequenceBuffer l_seq, u_seq;
 
-		auto needle_pos = reinterpret_cast<const UInt8 *>(needle);
-		if (*needle_pos < 0x80u)
+		if (*needle < 0x80u)
 		{
 			first_needle_symbol_is_ascii = true;
-			l = std::tolower(*needle_pos);
-			u = std::toupper(*needle_pos);
+			l = static_cast<const UInt8>(std::tolower(*needle));
+			u = static_cast<const UInt8>(std::toupper(*needle));
 		}
 		else
 		{
-			const auto first_u32 = utf8.convert(needle_pos);
+			const auto first_u32 = utf8.convert(needle);
 			const auto first_l_u32 = Poco::Unicode::toLower(first_u32);
 			const auto first_u_u32 = Poco::Unicode::toUpper(first_u32);
 
@@ -79,7 +79,7 @@ public:
 		patu = _mm_set1_epi8(u);
 		/// lower and uppercase vectors of first 16 octets of `needle`
 
-		const auto needle_end = needle_pos + needle_size;
+		auto needle_pos = needle;
 
 		for (std::size_t i = 0; i < n;)
 		{
@@ -147,11 +147,10 @@ public:
 				{
 					pos += cache_valid_len;
 					auto needle_pos = needle + cache_valid_len;
-					const auto needle_end = needle + needle_size;
 
 					while (needle_pos < needle_end &&
 						   Poco::Unicode::toLower(utf8.convert(pos)) ==
-						   Poco::Unicode::toLower(utf8.convert(reinterpret_cast<const UInt8 *>(needle_pos))))
+						   Poco::Unicode::toLower(utf8.convert(needle_pos)))
 					{
 						/// @note assuming sequences for lowercase and uppercase have exact same length
 						const auto len = DB::UTF8::seqLength(*pos);
@@ -172,11 +171,10 @@ public:
 		{
 			pos += first_needle_symbol_is_ascii;
 			auto needle_pos = needle + first_needle_symbol_is_ascii;
-			const auto needle_end = needle + needle_size;
 
 			while (needle_pos < needle_end &&
 				   Poco::Unicode::toLower(utf8.convert(pos)) ==
-				   Poco::Unicode::toLower(utf8.convert(reinterpret_cast<const UInt8 *>(needle_pos))))
+				   Poco::Unicode::toLower(utf8.convert(needle_pos)))
 			{
 				const auto len = DB::UTF8::seqLength(*pos);
 				pos += len, needle_pos += len;
@@ -195,9 +193,6 @@ public:
 			return haystack;
 
 		static const Poco::UTF8Encoding utf8;
-
-		const auto needle_begin = reinterpret_cast<const UInt8 *>(needle);
-		const auto needle_end = needle_begin + needle_size;
 
 		while (haystack < haystack_end)
 		{
@@ -233,7 +228,7 @@ public:
 						if (mask == cachemask)
 						{
 							auto haystack_pos = haystack + cache_valid_len;
-							auto needle_pos = needle_begin + cache_valid_len;
+							auto needle_pos = needle + cache_valid_len;
 
 							while (haystack_pos < haystack_end && needle_pos < needle_end &&
 								   Poco::Unicode::toLower(utf8.convert(haystack_pos)) ==
@@ -263,7 +258,7 @@ public:
 			if (*haystack == l || *haystack == u)
 			{
 				auto haystack_pos = haystack + first_needle_symbol_is_ascii;
-				auto needle_pos = needle_begin + first_needle_symbol_is_ascii;
+				auto needle_pos = needle + first_needle_symbol_is_ascii;
 
 				while (haystack_pos < haystack_end && needle_pos < needle_end &&
 					   Poco::Unicode::toLower(utf8.convert(haystack_pos)) ==
@@ -293,8 +288,9 @@ template <> class StringSearcher<false, true>
 	const int page_size = getpagesize();
 
 	/// string to be searched for
-	const char * const needle;
+	const UInt8 * const needle;
 	const std::size_t needle_size;
+	const UInt8 * const needle_end = needle + needle_size;
 	/// lower and uppercase variants of the first character in `needle`
 	UInt8 l{};
 	UInt8 u{};
@@ -310,21 +306,19 @@ template <> class StringSearcher<false, true>
 	}
 
 public:
-	StringSearcher(const char * const needle, const std::size_t needle_size)
-		: needle{needle}, needle_size{needle_size}
+	StringSearcher(const char * const needle_, const std::size_t needle_size)
+		: needle{reinterpret_cast<const UInt8 *>(needle_)}, needle_size{needle_size}
 	{
 		if (0 == needle_size)
 			return;
 
-		auto needle_pos = needle;
-
-		l = std::tolower(*needle_pos);
-		u = std::toupper(*needle_pos);
+		l = static_cast<UInt8>(std::tolower(*needle));
+		u = static_cast<UInt8>(std::toupper(*needle));
 
 		patl = _mm_set1_epi8(l);
 		patu = _mm_set1_epi8(u);
 
-		const auto needle_end = needle_pos + needle_size;
+		auto needle_pos = needle;
 
 		for (const auto i : ext::range(0, n))
 		{
@@ -357,7 +351,6 @@ public:
 				{
 					pos += n;
 					auto needle_pos = needle + n;
-					const auto needle_end = needle + needle_size;
 
 					while (needle_pos < needle_end && std::tolower(*pos) == std::tolower(*needle_pos))
 						++pos, ++needle_pos;
@@ -376,7 +369,6 @@ public:
 		{
 			++pos;
 			auto needle_pos = needle + 1;
-			const auto needle_end = needle + needle_size;
 
 			while (needle_pos < needle_end && std::tolower(*pos) == std::tolower(*needle_pos))
 				++pos, ++needle_pos;
@@ -392,9 +384,6 @@ public:
 	{
 		if (0 == needle_size)
 			return haystack;
-
-		const auto needle_begin = reinterpret_cast<const UInt8 *>(needle);
-		const auto needle_end = needle_begin + needle_size;
 
 		while (haystack < haystack_end)
 		{
@@ -429,7 +418,7 @@ public:
 						if (mask == cachemask)
 						{
 							auto haystack_pos = haystack + n;
-							auto needle_pos = needle_begin + n;
+							auto needle_pos = needle + n;
 
 							while (haystack_pos < haystack_end && needle_pos < needle_end &&
 								   std::tolower(*haystack_pos) == std::tolower(*needle_pos))
@@ -453,7 +442,7 @@ public:
 			if (*haystack == l || *haystack == u)
 			{
 				auto haystack_pos = haystack + 1;
-				auto needle_pos = needle_begin + 1;
+				auto needle_pos = needle + 1;
 
 				while (haystack_pos < haystack_end && needle_pos < needle_end &&
 					   std::tolower(*haystack_pos) == std::tolower(*needle_pos))
@@ -478,8 +467,9 @@ template <bool ASCII> class StringSearcher<true, ASCII>
 	const int page_size = getpagesize();
 
 	/// string to be searched for
-	const char * const needle;
+	const UInt8 * const needle;
 	const std::size_t needle_size;
+	const UInt8 * const needle_end = needle + needle_size;
 	/// first character in `needle`
 	UInt8 first{};
 	/// vector filled `first` for determining leftmost position of the first symbol
@@ -494,19 +484,16 @@ template <bool ASCII> class StringSearcher<true, ASCII>
 	}
 
 public:
-	StringSearcher(const char * const needle, const std::size_t needle_size)
-		: needle{needle}, needle_size{needle_size}
+	StringSearcher(const char * const needle_, const std::size_t needle_size)
+		: needle{reinterpret_cast<const UInt8 *>(needle_)}, needle_size{needle_size}
 	{
 		if (0 == needle_size)
 			return;
 
-		auto needle_pos = needle;
-
-		first = *needle_pos;
-
+		first = *needle;
 		pattern = _mm_set1_epi8(first);
 
-		const auto needle_end = needle_pos + needle_size;
+		auto needle_pos = needle;
 
 		for (const auto i : ext::range(0, n))
 		{
@@ -535,7 +522,6 @@ public:
 				{
 					pos += n;
 					auto needle_pos = needle + n;
-					const auto needle_end = needle + needle_size;
 
 					while (needle_pos < needle_end && *pos == *needle_pos)
 						++pos, ++needle_pos;
@@ -554,7 +540,6 @@ public:
 		{
 			++pos;
 			auto needle_pos = needle + 1;
-			const auto needle_end = needle + needle_size;
 
 			while (needle_pos < needle_end && *pos == *needle_pos)
 				++pos, ++needle_pos;
@@ -570,9 +555,6 @@ public:
 	{
 		if (0 == needle_size)
 			return haystack;
-
-		const auto needle_begin = reinterpret_cast<const UInt8 *>(needle);
-		const auto needle_end = needle_begin + needle_size;
 
 		while (haystack < haystack_end)
 		{
@@ -606,7 +588,7 @@ public:
 						if (mask == cachemask)
 						{
 							auto haystack_pos = haystack + n;
-							auto needle_pos = needle_begin + n;
+							auto needle_pos = needle + n;
 
 							while (haystack_pos < haystack_end && needle_pos < needle_end &&
 								   *haystack_pos == *needle_pos)
@@ -630,7 +612,7 @@ public:
 			if (*haystack == first)
 			{
 				auto haystack_pos = haystack + 1;
-				auto needle_pos = needle_begin + 1;
+				auto needle_pos = needle + 1;
 
 				while (haystack_pos < haystack_end && needle_pos < needle_end &&
 					   *haystack_pos == *needle_pos)
