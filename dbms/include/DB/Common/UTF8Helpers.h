@@ -29,7 +29,7 @@ inline void syncBackward(const UInt8 * & s)
 }
 
 /// moves `s` forward until either first non-continuation octet or string end is met
-inline void syncForward(const UInt8 * & s, const UInt8 * const end = nullptr)
+inline void syncForward(const UInt8 * & s, const UInt8 * const end)
 {
 	while (s < end && isContinuationOctet(*s))
 		++s;
