@@ -29,6 +29,11 @@
   * Используется невыровненный доступ к памяти.
   */
 
+
+namespace DB
+{
+
+
 /// @todo store lowercase needle to speed up in case there are numerous occurrences of bigrams from needle in haystack
 template <typename CRTP>
 class VolnitskyBase
@@ -160,7 +165,7 @@ template <bool ASCII> struct VolnitskyImpl<true, ASCII> : VolnitskyBase<Volnitsk
 		return fallback_searcher.search(haystack, haystack_end);
 	}
 
-	DB::ASCIICaseSensitiveStringSearcher fallback_searcher;
+	ASCIICaseSensitiveStringSearcher fallback_searcher;
 };
 
 /// Case-insensitive ASCII
@@ -231,7 +236,7 @@ template <> struct VolnitskyImpl<false, true> : VolnitskyBase<VolnitskyImpl<fals
 		return fallback_searcher.search(haystack, haystack_end);
 	}
 
-	DB::ASCIICaseInsensitiveStringSearcher fallback_searcher;
+	ASCIICaseInsensitiveStringSearcher fallback_searcher;
 };
 
 /// Case-sensitive UTF-8
@@ -301,11 +306,11 @@ template <> struct VolnitskyImpl<false, false> : VolnitskyBase<VolnitskyImpl<fal
 
 			static const Poco::UTF8Encoding utf8;
 
-			if (DB::UTF8::isContinuationOctet(c[1]))
+			if (UTF8::isContinuationOctet(c[1]))
 			{
 				/// ngram is inside a sequence
 				auto seq_pos = pos;
-				DB::UTF8::syncBackward(seq_pos);
+				UTF8::syncBackward(seq_pos);
 
 				const auto u32 = utf8.convert(seq_pos);
 				const auto l_u32 = Poco::Unicode::toLower(u32);
@@ -339,7 +344,7 @@ template <> struct VolnitskyImpl<false, false> : VolnitskyBase<VolnitskyImpl<fal
 				/// ngram is on the boundary of two sequences
 				/// first sequence may start before u_pos if it is not ASCII
 				auto first_seq_pos = pos;
-				DB::UTF8::syncBackward(first_seq_pos);
+				UTF8::syncBackward(first_seq_pos);
 
 				const auto first_u32 = utf8.convert(first_seq_pos);
 				const auto first_l_u32 = Poco::Unicode::toLower(first_u32);
@@ -435,7 +440,7 @@ template <> struct VolnitskyImpl<false, false> : VolnitskyBase<VolnitskyImpl<fal
 		return fallback_searcher.search(haystack, haystack_end);
 	}
 
-	DB::UTF8CaseInsensitiveStringSearcher fallback_searcher;
+	UTF8CaseInsensitiveStringSearcher fallback_searcher;
 };
 
 
@@ -443,3 +448,6 @@ using Volnitsky = VolnitskyImpl<true, true>;
 using VolnitskyUTF8 = VolnitskyImpl<true, false>;	/// exactly same as Volnitsky
 using VolnitskyCaseInsensitive = VolnitskyImpl<false, true>;	/// ignores non-ASCII bytes
 using VolnitskyCaseInsensitiveUTF8 = VolnitskyImpl<false, false>;
+
+
+}
