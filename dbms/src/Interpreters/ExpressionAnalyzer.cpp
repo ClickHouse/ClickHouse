@@ -141,12 +141,18 @@ void ExpressionAnalyzer::init()
 	/// Удалить ненужное из списка columns. Создать unknown_required_columns. Сформировать columns_added_by_join.
 	collectUsedColumns();
 
-	/// has_aggregation, aggregation_keys, aggregate_descriptions, aggregated_columns.
-	analyzeAggregation();
-
 	/// external_tables, subqueries_for_sets для глобальных подзапросов.
 	/// Заменяет глобальные подзапросы на сгенерированные имена временных таблиц, которые будут отправлены на удалённые серверы.
 	initGlobalSubqueriesAndExternalTables();
+
+	/// has_aggregation, aggregation_keys, aggregate_descriptions, aggregated_columns.
+	/// Этот анализ надо провести после обработки глобальных подзапросов, потому что в противном случае,
+	/// если агрегатная функция содержит глобальный подзапрос, то метод analyzeAggregation сохранит
+	/// в aggregate_descriptions информацию о параметрах этой агрегатной функции, среди которых окажется
+	/// глобальный подзапрос. Затем при вызове метода initGlobalSubqueriesAndExternalTables, этот
+	/// глобальный подзапрос будет заменён на временную таблицу, в результате чего aggregate_descriptions
+	/// будет содержать устаревшую информацию, что привидёт к ошибке при выполнении запроса.
+	analyzeAggregation();
 }
 
 
