@@ -13,10 +13,9 @@ namespace DB
 
 NamesAndTypesList ITableDeclaration::getColumnsList() const
 {
-	auto columns = getColumnsListImpl();
-	columns.insert(std::end(columns), std::begin(materialized_columns), std::end(materialized_columns));
+	const auto & range = getColumnsListIterator();
 
-	return columns;
+	return { std::begin(range), std::end(range) };
 }
 
 
