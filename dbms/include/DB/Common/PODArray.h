@@ -162,6 +162,8 @@ public:
 	iterator end() 					{ return t_end(); }
 	const_iterator begin() const	{ return t_start(); }
 	const_iterator end() const		{ return t_end(); }
+	const_iterator cbegin() const	{ return t_start(); }
+	const_iterator cend() const		{ return t_end(); }
 
 	void reserve(size_t n)
 	{
