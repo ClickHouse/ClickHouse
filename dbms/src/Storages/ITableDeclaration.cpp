@@ -23,8 +23,8 @@ ITableDeclaration::ColumnsListRange ITableDeclaration::getColumnsListIterator() 
 {
 	const auto & columns = getColumnsListImpl();
 	return boost::join(
-		boost::iterator_range<NamesAndTypesList::const_iterator>(columns.begin(), columns.end()),
-		boost::iterator_range<NamesAndTypesList::const_iterator>(std::begin(materialized_columns), std::end(materialized_columns)));
+		boost::make_iterator_range(std::begin(columns), std::end(columns)),
+		boost::make_iterator_range(std::begin(materialized_columns), std::end(materialized_columns)));
 }
 
 
