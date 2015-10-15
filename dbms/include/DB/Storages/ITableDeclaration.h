@@ -99,9 +99,7 @@ public:
 private:
 	virtual const NamesAndTypesList & getColumnsListImpl() const = 0;
 
-	using ColumnsListRange = boost::range::joined_range<
-		const boost::iterator_range<NamesAndTypesList::const_iterator>,
-		const boost::iterator_range<NamesAndTypesList::const_iterator>>;
+	using ColumnsListRange = boost::range::joined_range<const NamesAndTypesList, const NamesAndTypesList>;
 	ColumnsListRange getColumnsListIterator() const;
 };
 

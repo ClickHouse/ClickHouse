@@ -5,6 +5,7 @@
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTNameTypePair.h>
 #include <DB/Interpreters/Context.h>
+#include <ext/map.hpp>
 
 
 namespace DB
@@ -21,10 +22,7 @@ NamesAndTypesList ITableDeclaration::getColumnsList() const
 
 ITableDeclaration::ColumnsListRange ITableDeclaration::getColumnsListIterator() const
 {
-	const auto & columns = getColumnsListImpl();
-	return boost::join(
-		boost::make_iterator_range(std::begin(columns), std::end(columns)),
-		boost::make_iterator_range(std::begin(materialized_columns), std::end(materialized_columns)));
+	return boost::join(getColumnsListImpl(), materialized_columns);
 }
 
 
@@ -39,10 +37,7 @@ bool ITableDeclaration::hasRealColumn(const String & column_name) const
 
 Names ITableDeclaration::getColumnNamesList() const
 {
-	Names res;
-	for (auto & it : getColumnsListIterator())
-		res.push_back(it.name);
-	return res;
+	return ext::map<Names>(getColumnsListIterator(), [] (const auto & it) { return it.name; });
 }
 
 
