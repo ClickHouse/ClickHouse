@@ -67,7 +67,7 @@ Clusters::Clusters(const Settings & settings, const String & config_name)
 
 Cluster::Cluster(const Settings & settings, const String & cluster_name)
 {
-	/// Создать кластеры.
+	/// Создать кластер.
 
 	Poco::Util::AbstractConfiguration & config = Poco::Util::Application::instance().config();
 	Poco::Util::AbstractConfiguration::Keys config_keys;
