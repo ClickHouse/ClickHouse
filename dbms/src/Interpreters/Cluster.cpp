@@ -67,6 +67,8 @@ Clusters::Clusters(const Settings & settings, const String & config_name)
 
 Cluster::Cluster(const Settings & settings, const String & cluster_name)
 {
+	/// Создать кластеры.
+
 	Poco::Util::AbstractConfiguration & config = Poco::Util::Application::instance().config();
 	Poco::Util::AbstractConfiguration::Keys config_keys;
 	config.keys(cluster_name, config_keys);
@@ -161,27 +163,31 @@ Cluster::Cluster(const Settings & settings, const String & cluster_name)
 		++current_shard_num;
 	}
 
+	/// Создать соответствующие пулы соединений.
+
 	if (!addresses_with_failover.empty() && !addresses.empty())
 		throw Exception("There must be either 'node' or 'shard' elements in config", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
-	if (addresses_with_failover.size())
+	if (!addresses_with_failover.empty())
 	{
 		for (const auto & shard : addresses_with_failover)
 		{
 			ConnectionPools replicas;
 			replicas.reserve(shard.size());
 
-			bool has_local_replics = false;
+			bool has_local_replica = false;
+			bool has_remote_replica = false;
+
 			for (const auto & replica : shard)
 			{
 				if (isLocal(replica))
 				{
-					has_local_replics = true;
+					has_local_replica = true;
 					local_addresses.push_back(replica);
-					break;
 				}
 				else
 				{
+					has_remote_replica = true;
 					replicas.emplace_back(new ConnectionPool(
 						settings.distributed_connections_pool_size,
 						replica.host_name, replica.port, replica.resolved_address,
@@ -193,13 +199,13 @@ Cluster::Cluster(const Settings & settings, const String & cluster_name)
 				}
 			}
 
-			if (has_local_replics)
+			if (has_local_replica)
 				++local_nodes_num;
-			else
+			if (has_remote_replica)
 				pools.emplace_back(new ConnectionPoolWithFailover(replicas, settings.load_balancing, settings.connections_with_failover_max_tries));
 		}
 	}
-	else if (addresses.size())
+	else if (!addresses.empty())
 	{
 		for (const auto & address : addresses)
 		{
