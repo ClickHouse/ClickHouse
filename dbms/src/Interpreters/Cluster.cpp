@@ -176,7 +176,6 @@ Cluster::Cluster(const Settings & settings, const String & cluster_name)
 			replicas.reserve(shard.size());
 
 			bool has_local_replica = false;
-			bool has_remote_replica = false;
 
 			for (const auto & replica : shard)
 			{
@@ -184,10 +183,10 @@ Cluster::Cluster(const Settings & settings, const String & cluster_name)
 				{
 					has_local_replica = true;
 					local_addresses.push_back(replica);
+					break;
 				}
 				else
 				{
-					has_remote_replica = true;
 					replicas.emplace_back(new ConnectionPool(
 						settings.distributed_connections_pool_size,
 						replica.host_name, replica.port, replica.resolved_address,
@@ -201,7 +200,7 @@ Cluster::Cluster(const Settings & settings, const String & cluster_name)
 
 			if (has_local_replica)
 				++local_nodes_num;
-			if (has_remote_replica)
+			else
 				pools.emplace_back(new ConnectionPoolWithFailover(replicas, settings.load_balancing, settings.connections_with_failover_max_tries));
 		}
 	}
