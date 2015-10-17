@@ -781,6 +781,9 @@ void ExpressionActions::finalize(const Names & output_columns)
 
 		for (const auto & name : action.prerequisite_names)
 			++columns_refcount[name];
+
+		for (const auto & name_alias : action.projection)
+			++columns_refcount[name_alias.first];
 	}
 
 	Actions new_actions;
@@ -809,6 +812,8 @@ void ExpressionActions::finalize(const Names & output_columns)
 
 		for (const auto & name : action.prerequisite_names)
 			process(name);
+
+		/// Для projection тут нет уменьшения refcount, так как действие project заменяет имена у столбцов, по сути, уже удаляя их под старыми именами.
 	}
 
 	actions.swap(new_actions);

@@ -36,7 +36,7 @@ inline void evaluateMissingDefaults(Block & block,
 		return;
 
 	/** ExpressionAnalyzer eliminates "unused" columns, in order to ensure their safety
-	 *	we are going to operate on a copy instead of  the original block */
+	  * we are going to operate on a copy instead of the original block */
 	Block copy_block{block};
 	/// evaluate default values for defaulted columns
 	ExpressionAnalyzer{default_expr_list, context, {}, required_columns}.getActions(true)->execute(copy_block);

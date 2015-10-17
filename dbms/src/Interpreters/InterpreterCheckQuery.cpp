@@ -215,8 +215,8 @@ BlockIO InterpreterCheckQuery::execute()
 		{
 			status_column->insert(static_cast<UInt64>(status_value));
 			structure_class_column->insert(static_cast<UInt64>(desc.structure_class));
-			host_name_column->insert(desc.extra_info.resolved_address);
-			host_address_column->insert(desc.extra_info.host);
+			host_name_column->insert(desc.extra_info.host);
+			host_address_column->insert(desc.extra_info.resolved_address);
 			port_column->insert(static_cast<UInt64>(desc.extra_info.port));
 			user_column->insert(desc.extra_info.user);
 			structure_column->insert(desc.names_with_types);
