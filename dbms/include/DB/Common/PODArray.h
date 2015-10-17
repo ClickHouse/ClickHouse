@@ -67,7 +67,7 @@ private:
 		return n;
 	}
 
-	static size_t to_size(size_t n) { return byte_size(std::max(POD_ARRAY_INITIAL_SIZE, round_up_to_power_of_two(n))); }
+	static size_t to_size(size_t n) { return byte_size(round_up_to_power_of_two(n)); }
 
 	void alloc(size_t n)
 	{

@@ -11,6 +11,7 @@ bool ParserCheckQuery::parseImpl(IParser::Pos & pos, IParser::Pos end, ASTPtr & 
 	ParserWhiteSpaceOrComments ws;
 	ParserString s_check("CHECK", true, true);
 	ParserString s_table("TABLE", true, true);
+	ParserString s_format("FORMAT", true, true);
 	ParserString s_dot(".");
 
 	ParserIdentifier table_parser;
@@ -44,6 +45,22 @@ bool ParserCheckQuery::parseImpl(IParser::Pos & pos, IParser::Pos end, ASTPtr & 
 	{
 		table = database;
 		query->table = typeid_cast<ASTIdentifier &>(*table).name;
+	}
+
+	ws.ignore(pos, end);
+
+	/// FORMAT format_name
+	if (s_format.ignore(pos, end, max_parsed_pos, expected))
+	{
+		ws.ignore(pos, end);
+
+		ParserIdentifier format_p;
+
+		if (!format_p.parse(pos, end, query->format, max_parsed_pos, expected))
+			return false;
+		typeid_cast<ASTIdentifier &>(*query->format).kind = ASTIdentifier::Format;
+
+		ws.ignore(pos, end);
 	}
 
 	node = query;
