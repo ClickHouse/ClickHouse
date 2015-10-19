@@ -27,13 +27,13 @@ public:
 	static IFunction * create(const Context & context) { return new FunctionReinterpretAsStringImpl; };
 
 	/// Получить имя функции.
-	String getName() const
+	String getName() const override
 	{
 		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 1)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -97,7 +97,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		if (!(	executeType<UInt8>(block, arguments, result)
 			||	executeType<UInt16>(block, arguments, result)
@@ -125,13 +125,13 @@ public:
 	typedef typename ToDataType::FieldType ToFieldType;
 
 	/// Получить имя функции.
-	String getName() const
+	String getName() const override
 	{
 		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 1)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -147,7 +147,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		if (ColumnString * col_from = typeid_cast<ColumnString *>(&*block.getByPosition(arguments[0]).column))
 		{

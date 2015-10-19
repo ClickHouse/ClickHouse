@@ -1,3 +1,4 @@
+#include <DB/Core/FieldVisitors.h>
 #include <DB/Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <DB/Storages/MergeTree/MergeTreeBlockInputStream.h>
 #include <DB/Storages/MergeTree/MergeTreeReadPool.h>
@@ -389,6 +390,10 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 
 	if (sum_marks > 0 && settings.merge_tree_uniform_read_distribution == 1)
 	{
+		/// Уменьшим количество потоков, если данных мало.
+		if (sum_marks < threads * min_marks_for_concurrent_read && parts.size() < threads)
+			threads = std::max((sum_marks + min_marks_for_concurrent_read - 1) / min_marks_for_concurrent_read, parts.size());
+
 		MergeTreeReadPoolPtr pool = std::make_shared<MergeTreeReadPool>(
 			threads, sum_marks, min_marks_for_concurrent_read, parts, data, prewhere_actions, prewhere_column, true,
 			column_names);

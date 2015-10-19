@@ -25,7 +25,7 @@ public:
 	ClickHouseDictionarySource(const DictionaryStructure & dict_struct,
 		const Poco::Util::AbstractConfiguration & config,
 		const std::string & config_prefix,
-		Block & sample_block, Context & context)
+		const Block & sample_block, Context & context)
 		: dict_struct{dict_struct},
 		  host{config.getString(config_prefix + ".host")},
 		  port(config.getInt(config_prefix + ".port")),

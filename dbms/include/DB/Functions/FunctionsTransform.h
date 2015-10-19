@@ -2,6 +2,7 @@
 
 #include <mutex>
 
+#include <DB/Core/FieldVisitors.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeArray.h>

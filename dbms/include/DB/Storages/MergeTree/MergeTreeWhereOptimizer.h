@@ -225,6 +225,11 @@ private:
 
 	std::size_t getIdentifiersColumnSize(const IdentifierNameSet & identifiers) const
 	{
+		/** for expressions containing no columns (or where columns could not be determined otherwise) assume maximum
+		 *	possible size so they do not have priority in eligibility over other expressions. */
+		if (identifiers.empty())
+			return std::numeric_limits<std::size_t>::max();
+
 		std::size_t size{};
 
 		for (const auto & identifier : identifiers)

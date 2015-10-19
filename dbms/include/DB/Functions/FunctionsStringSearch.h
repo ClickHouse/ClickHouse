@@ -75,7 +75,7 @@ struct PositionImpl
 		while (pos < end && end != (pos = searcher.search(pos, end - pos)))
 		{
 			/// Определим, к какому индексу оно относится.
-			while (begin + offsets[i] < pos)
+			while (begin + offsets[i] <= pos)
 			{
 				res[i] = 0;
 				++i;
@@ -163,7 +163,7 @@ struct PositionUTF8Impl
 		while (pos < end && end != (pos = searcher.search(pos, end - pos)))
 		{
 			/// Определим, к какому индексу оно относится.
-			while (begin + offsets[i] < pos)
+			while (begin + offsets[i] <= pos)
 			{
 				res[i] = 0;
 				++i;
@@ -364,7 +364,7 @@ public:
 		while (pos < end && end != (pos = searcher.find(pos, end)))
 		{
 			/// Определим, к какому индексу оно относится.
-			while (begin + offsets[i] < pos)
+			while (begin + offsets[i] <= pos)
 			{
 				res[i] = 0;
 				++i;
@@ -627,7 +627,7 @@ public:
 		while (pos < end && end != (pos = searcher.find(pos, end)))
 		{
 			/// Определим, к какому индексу оно относится.
-			while (begin + offsets[i] < pos)
+			while (begin + offsets[i] <= pos)
 			{
 				res[i] = 0;
 				++i;
@@ -898,7 +898,7 @@ struct MatchImpl
 			while (pos < end && end != (pos = searcher.search(pos, end - pos)))
 			{
 				/// Определим, к какому индексу оно относится.
-				while (begin + offsets[i] < pos)
+				while (begin + offsets[i] <= pos)
 				{
 					res[i] = revert;
 					++i;
@@ -965,7 +965,7 @@ struct MatchImpl
 				while (pos < end && end != (pos = searcher.search(pos, end - pos)))
 				{
 					/// Определим, к какому индексу оно относится.
-					while (begin + offsets[i] < pos)
+					while (begin + offsets[i] <= pos)
 					{
 						res[i] = revert;
 						++i;
@@ -1361,7 +1361,7 @@ struct ReplaceStringImpl
 			memcpy(&res_data[res_offset], pos, match - pos);
 
 			/// Определим, к какому индексу оно относится.
-			while (i < offsets.size() && begin + offsets[i] < match)
+			while (i < offsets.size() && begin + offsets[i] <= match)
 			{
 				res_offsets[i] = res_offset + ((begin + offsets[i]) - pos);
 				++i;
@@ -1398,6 +1398,7 @@ struct ReplaceStringImpl
 				res_offset += (begin + offsets[i] - pos);
 				res_offsets[i] = res_offset;
 				pos = begin + offsets[i];
+				++i;
 			}
 		}
 	}
@@ -1430,7 +1431,7 @@ struct ReplaceStringImpl
 			memcpy(&res_data[res_offset], pos, match - pos);
 
 			/// Определим, к какому индексу оно относится.
-			while (i < size && begin + n * (i + 1) < match)
+			while (i < size && begin + n * (i + 1) <= match)
 			{
 				res_offsets[i] = res_offset + ((begin + n * (i + 1)) - pos);
 				++i;
@@ -1504,13 +1505,13 @@ public:
 	static IFunction * create(const Context & context) { return new FunctionStringReplace; }
 
 	/// Получить имя функции.
-	String getName() const
+	String getName() const override
 	{
 		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 3)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -1533,7 +1534,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const ColumnPtr column_src = block.getByPosition(arguments[0]).column;
 		const ColumnPtr column_needle = block.getByPosition(arguments[1]).column;
@@ -1591,13 +1592,13 @@ public:
 	static IFunction * create(const Context & context) { return new FunctionsStringSearch; }
 
 	/// Получить имя функции.
-	String getName() const
+	String getName() const override
 	{
 		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 2)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -1616,7 +1617,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		typedef typename Impl::ResultType ResultType;
 
@@ -1660,13 +1661,13 @@ public:
 	static IFunction * create(const Context & context) { return new FunctionsStringSearchToString; }
 
 	/// Получить имя функции.
-	String getName() const
+	String getName() const override
 	{
 		return name;
 	}
 
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	DataTypePtr getReturnType(const DataTypes & arguments) const
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
 	{
 		if (arguments.size() != 2)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -1685,7 +1686,7 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
 		const ColumnPtr column = block.getByPosition(arguments[0]).column;
 		const ColumnPtr column_needle = block.getByPosition(arguments[1]).column;
