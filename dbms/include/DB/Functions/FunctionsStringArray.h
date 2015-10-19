@@ -23,8 +23,9 @@ namespace DB
   * - нулевой subpattern (сматчившуюся часть, иначе);
   * - инача, пустой массив
   *
-  * join(sep, arr)
-  * join(arr)
+  * arrayStringConcat(arr)
+  * arrayStringConcat(arr, delimiter)
+  * - склеить массив строк в одну строку через разделитель.
   *
   * alphaTokens(s)			- выделить из строки подпоследовательности [a-zA-Z]+.
   *
