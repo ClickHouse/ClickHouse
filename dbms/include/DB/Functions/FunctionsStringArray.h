@@ -414,8 +414,142 @@ public:
 };
 
 
-typedef FunctionTokens<AlphaTokensImpl>	FunctionAlphaTokens;
-typedef FunctionTokens<SplitByCharImpl>	FunctionSplitByChar;
+/// Склеивает массив строк в одну строку через разделитель.
+class FunctionArrayStringConcat : public IFunction
+{
+private:
+	void executeImpl(
+		const ColumnString::Chars_t & src_chars,
+		const ColumnString::Offsets_t & src_string_offsets,
+		const ColumnArray::Offsets_t & src_array_offsets,
+		const char * delimiter, const size_t delimiter_size,
+		ColumnString::Chars_t & dst_chars,
+		ColumnString::Offsets_t & dst_string_offsets)
+	{
+		size_t size = src_array_offsets.size();
+
+		if (!size)
+			return;
+
+		/// С небольшим запасом - как будто разделитель идёт и после последней строки массива.
+		dst_chars.resize(
+			src_chars.size()
+			+ delimiter_size * src_string_offsets.size()	/// Разделители после каждой строки...
+			+ src_array_offsets.size() 					/// Нулевой байт после каждой склеенной строки
+			- src_string_offsets.size());				/// Бывший нулевой байт после каждой строки массива
+
+		/// Будет столько строк, сколько было массивов.
+		dst_string_offsets.resize(src_array_offsets.size());
+
+		ColumnArray::Offset_t current_src_array_offset = 0;
+		ColumnString::Offset_t current_src_string_offset = 0;
+
+		ColumnString::Offset_t current_dst_string_offset = 0;
+
+		/// Цикл по массивам строк.
+		for (size_t i = 0; i < size; ++i)
+		{
+			/// Цикл по строкам внутри массива. /// NOTE Можно всё сделать за одно копирование, если разделитель имеет размер 1.
+			for (auto next_src_array_offset = src_array_offsets[i]; current_src_array_offset < next_src_array_offset; ++current_src_array_offset)
+			{
+				size_t bytes_to_copy = src_string_offsets[current_src_array_offset] - current_src_string_offset - 1;
+
+				memcpy(&dst_chars[current_dst_string_offset], &src_chars[current_src_string_offset], bytes_to_copy);
+
+				current_src_string_offset = src_string_offsets[current_src_array_offset];
+				current_dst_string_offset += bytes_to_copy;
+
+				if (current_src_array_offset + 1 != next_src_array_offset)
+				{
+					memcpy(&dst_chars[current_dst_string_offset], delimiter, delimiter_size);
+					current_dst_string_offset += delimiter_size;
+				}
+			}
+
+			dst_chars[current_dst_string_offset] = 0;
+			++current_dst_string_offset;
+
+			dst_string_offsets[i] = current_dst_string_offset;
+		}
+
+		dst_chars.resize(dst_string_offsets.back());
+	}
+
+public:
+	static constexpr auto name = "arrayStringConcat";
+	static IFunction * create(const Context & context) { return new FunctionArrayStringConcat; }
+
+	/// Получить имя функции.
+	String getName() const override
+	{
+		return name;
+	}
+
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	{
+		if (arguments.size() != 1 && arguments.size() != 2)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ toString(arguments.size()) + ", should be 1 or 2.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
+		if (!array_type || !typeid_cast<const DataTypeString *>(array_type->getNestedType().get()))
+			throw Exception("First argument for function " + getName() + " must be array of strings.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		if (arguments.size() == 2
+			&& !typeid_cast<const DataTypeString *>(arguments[1].get()))
+			throw Exception("Second argument for function " + getName() + " must be constant string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		return new DataTypeString;
+	}
+
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	{
+		String delimiter;
+		if (arguments.size() == 2)
+		{
+			const ColumnConstString * col_delim = typeid_cast<const ColumnConstString *>(block.getByPosition(arguments[1]).column.get());
+			if (!col_delim)
+				throw Exception("Second argument for function " + getName() + " must be constant string.", ErrorCodes::ILLEGAL_COLUMN);
+
+			delimiter = col_delim->getData();
+		}
+
+		if (const ColumnConstArray * col_const_arr = typeid_cast<const ColumnConstArray *>(block.getByPosition(arguments[0]).column.get()))
+		{
+			ColumnConstString * col_res = new ColumnConstString(col_const_arr->size(), "");
+			block.getByPosition(result).column = col_res;
+
+			const Array & src_arr = col_const_arr->getData();
+			String & dst_str = col_res->getData();
+			for (size_t i = 0, size = src_arr.size(); i < size; ++i)
+			{
+				if (i != 0)
+					dst_str += delimiter;
+				dst_str += src_arr[i].get<const String &>();
+			}
+		}
+		else
+		{
+			const ColumnArray & col_arr = static_cast<const ColumnArray &>(*block.getByPosition(arguments[0]).column);
+			const ColumnString & col_string = static_cast<const ColumnString &>(col_arr.getData());
+
+			ColumnString * col_res = new ColumnString;
+			block.getByPosition(result).column = col_res;
+
+			executeImpl(
+				col_string.getChars(), col_string.getOffsets(), col_arr.getOffsets(),
+				delimiter.data(), delimiter.size(),
+				col_res->getChars(), col_res->getOffsets());
+		}
+	}
+};
+
+
+typedef FunctionTokens<AlphaTokensImpl>		FunctionAlphaTokens;
+typedef FunctionTokens<SplitByCharImpl>		FunctionSplitByChar;
 typedef FunctionTokens<SplitByStringImpl>	FunctionSplitByString;
 typedef FunctionTokens<ExtractAllImpl> 		FunctionExtractAll;
 
