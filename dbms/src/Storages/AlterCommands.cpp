@@ -8,12 +8,12 @@
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Parsers/ASTIdentifier.h>
 
+
 namespace DB
 {
-	void AlterCommand::apply(NamesAndTypesList & columns,
-			   NamesAndTypesList & materialized_columns,
-			   NamesAndTypesList & alias_columns,
-			   ColumnDefaults & column_defaults) const
+	void AlterCommand::apply(
+		NamesAndTypesList & columns, NamesAndTypesList & materialized_columns, NamesAndTypesList & alias_columns,
+		ColumnDefaults & column_defaults) const
 	{
 		if (type == ADD)
 		{
@@ -27,7 +27,7 @@ namespace DB
 				exists_in(alias_columns))
 			{
 				throw Exception{
-					"Cannot add column " + column_name + ": column with this name already exisits.",
+					"Cannot add column " + column_name + ": column with this name already exists",
 					DB::ErrorCodes::ILLEGAL_COLUMN
 				};
 			}
@@ -117,7 +117,7 @@ namespace DB
 				const auto it = std::find_if(columns.begin(), columns.end(),
 					std::bind(namesEqual, std::cref(column_name), std::placeholders::_1) );
 				if (it == columns.end())
-					throw Exception("Wrong column name. Cannot find column " + column_name + " to modify.",
+					throw Exception("Wrong column name. Cannot find column " + column_name + " to modify",
 									DB::ErrorCodes::ILLEGAL_COLUMN);
 
 				return it;
@@ -193,27 +193,39 @@ namespace DB
 		{
 			if (command.type == AlterCommand::ADD || command.type == AlterCommand::MODIFY)
 			{
-				if (command.type == AlterCommand::MODIFY)
+				const auto & column_name = command.column_name;
+				const auto column_it = std::find_if(std::begin(columns), std::end(columns),
+					std::bind(AlterCommand::namesEqual, std::cref(command.column_name), std::placeholders::_1));
+
+				if (command.type == AlterCommand::ADD)
 				{
-					const auto it = std::find_if(std::begin(columns), std::end(columns),
-						std::bind(AlterCommand::namesEqual, std::cref(command.column_name), std::placeholders::_1));
+					if (std::end(columns) != column_it)
+						throw Exception{
+							"Cannot add column " + column_name + ": column with this name already exisits",
+							DB::ErrorCodes::ILLEGAL_COLUMN
+						};
+				}
+				else if (command.type == AlterCommand::MODIFY)
+				{
 
-					if (it == std::end(columns))
-						throw Exception("Wrong column name. Cannot find column " + command.column_name + " to modify.",
-										DB::ErrorCodes::ILLEGAL_COLUMN);
+					if (std::end(columns) == column_it)
+						throw Exception{
+							"Wrong column name. Cannot find column " + column_name + " to modify",
+							DB::ErrorCodes::ILLEGAL_COLUMN
+						};
 
-					columns.erase(it);
-					defaults.erase(command.column_name);
+					columns.erase(column_it);
+					defaults.erase(column_name);
 				}
 
 				/// we're creating dummy DataTypeUInt8 in order to prevent the NullPointerException in ExpressionActions
-				columns.emplace_back(command.column_name, command.data_type ? command.data_type : new DataTypeUInt8);
+				columns.emplace_back(column_name, command.data_type ? command.data_type : new DataTypeUInt8);
 
 				if (command.default_expression)
 				{
 					if (command.data_type)
 					{
-						const auto & final_column_name = command.column_name;
+						const auto & final_column_name = column_name;
 						const auto tmp_column_name = final_column_name + "_tmp";
 						const auto data_type_ptr = command.data_type.get();
 
@@ -229,9 +241,14 @@ namespace DB
 									ASTPtr{new ASTLiteral{{}, fixed_string->getN()}}),
 								final_column_name));
 						}
+						else if (typeid_cast<const DataTypeArray *>(data_type_ptr))
+						{
+							/// do not perform conversion on arrays, require exact type match
+							default_expr_list->children.emplace_back(setAlias(
+								command.default_expression->clone(), final_column_name));
+						}
 						else
 						{
-							/// @todo fix for parametric types, results in broken codem, i.e. toArray(ElementType)(col)
 							const auto conversion_function_name = "to" + data_type_ptr->getName();
 
 							default_expr_list->children.emplace_back(setAlias(
@@ -241,14 +258,14 @@ namespace DB
 
 						default_expr_list->children.emplace_back(setAlias(command.default_expression->clone(), tmp_column_name));
 
-						defaulted_columns.emplace_back(command.column_name, &command);
+						defaulted_columns.emplace_back(column_name, &command);
 					}
 					else
 					{
 						default_expr_list->children.emplace_back(
 							setAlias(command.default_expression->clone(), command.column_name));
 
-						defaulted_columns.emplace_back(command.column_name, &command);
+						defaulted_columns.emplace_back(column_name, &command);
 					}
 				}
 			}
@@ -271,7 +288,7 @@ namespace DB
 						++it;
 
 				if (!found)
-					throw Exception("Wrong column name. Cannot find column " + command.column_name + " to drop.",
+					throw Exception("Wrong column name. Cannot find column " + command.column_name + " to drop",
 						DB::ErrorCodes::ILLEGAL_COLUMN);
 			}
 		}
@@ -285,11 +302,30 @@ namespace DB
 				return AlterCommand::namesEqual(column_name, name_type);
 			});
 			const auto tmp_column_name = column_name + "_tmp";
-			const auto conversion_function_name = "to" + column_it->type->getName();
+			const auto data_type_ptr = column_it->type.get();
 
-			default_expr_list->children.emplace_back(setAlias(
-				makeASTFunction(conversion_function_name, ASTPtr{new ASTIdentifier{{}, tmp_column_name}}),
-				column_name));
+			/// specific code for different data types, e.g. toFixedString(col, N) for DataTypeFixedString
+			if (const auto fixed_string = typeid_cast<const DataTypeFixedString *>(data_type_ptr))
+			{
+				default_expr_list->children.emplace_back(setAlias(
+					makeASTFunction("toFixedString",
+						ASTPtr{new ASTIdentifier{{}, tmp_column_name}},
+						ASTPtr{new ASTLiteral{{}, fixed_string->getN()}}),
+					column_name));
+			}
+			else if (typeid_cast<const DataTypeArray *>(data_type_ptr))
+			{
+				/// do not perform conversion on arrays, require exact type match
+				default_expr_list->children.emplace_back(setAlias(col_def.second.expression->clone(), column_name));
+			}
+			else
+			{
+				const auto conversion_function_name = "to" + column_it->type->getName();
+
+				default_expr_list->children.emplace_back(setAlias(
+					makeASTFunction(conversion_function_name, ASTPtr{new ASTIdentifier{{}, tmp_column_name}}),
+					column_name));
+			}
 
 			default_expr_list->children.emplace_back(setAlias(col_def.second.expression->clone(), tmp_column_name));
 
@@ -309,28 +345,75 @@ namespace DB
 			/// default expression on old column
 			if (!command_ptr)
 			{
+				const auto & explicit_type = column.type;
 				const auto & tmp_column = block.getByName(column_name + "_tmp");
+				const auto & deduced_type = tmp_column.type;
 
 				// column not specified explicitly in the ALTER query may require default_expression modification
-				if (column.type->getName() != tmp_column.type->getName())
+				if (explicit_type->getName() != deduced_type->getName())
 				{
 					const auto it = defaults.find(column_name);
+					const auto data_type_ptr = explicit_type.get();
+
+					ASTPtr new_default_expression;
+					if (const auto fixed_string = typeid_cast<const DataTypeFixedString *>(data_type_ptr))
+					{
+						new_default_expression = makeASTFunction("toFixedString", it->second.expression,
+							ASTPtr{new ASTLiteral{{}, fixed_string->getN()}});
+					}
+					else if (typeid_cast<const DataTypeArray *>(data_type_ptr))
+					{
+						/// @todo unreachable code because arrays types cannot be altered (only default expressions can be)
+						/// foolproof against defaulting array columns incorrectly
+						throw Exception{
+							"ALTER MODIFY COLUMN invalidates default expression on related column " + column_name +
+								" with type " + data_type_ptr->getName(),
+							ErrorCodes::TYPE_MISMATCH
+						};
+					}
+					else
+					{
+						new_default_expression = makeASTFunction("to" + explicit_type->getName(), it->second.expression);
+					}
+
 					this->push_back(AlterCommand{
-						AlterCommand::MODIFY, column_name, column.type, it->second.type,
-						makeASTFunction("to" + column.type->getName(), it->second.expression),
+						AlterCommand::MODIFY, column_name, explicit_type, it->second.type,
+						new_default_expression
 					});
 				}
 			}
-			else if (command_ptr && command_ptr->data_type)
+			else if (command_ptr->data_type)
 			{
+				const auto & explicit_type = command_ptr->data_type;
 				const auto & tmp_column = block.getByName(column_name + "_tmp");
+				const auto & deduced_type = tmp_column.type;
 
 				/// type mismatch between explicitly specified and deduced type, add conversion
-				if (column.type->getName() != tmp_column.type->getName())
+				if (explicit_type->getName() != deduced_type->getName())
 				{
-					command_ptr->default_expression = makeASTFunction(
-						"to" + column.type->getName(),
-						command_ptr->default_expression->clone());
+					const auto data_type_ptr = explicit_type.get();
+
+					if (const auto fixed_string = typeid_cast<const DataTypeFixedString *>(data_type_ptr))
+					{
+						command_ptr->default_expression = makeASTFunction("toFixedString",
+							command_ptr->default_expression->clone(),
+							ASTPtr{new ASTLiteral{{}, fixed_string->getN()}});
+					}
+					else if (typeid_cast<const DataTypeArray *>(data_type_ptr))
+					{
+						/// foolproof against defaulting array columns incorrectly
+						throw Exception{
+							"Default expression type mismatch for column " + column_name +
+								". Expected " + explicit_type->getName() + ", deduced " +
+								deduced_type->getName(),
+							ErrorCodes::TYPE_MISMATCH
+						};
+					}
+					else
+					{
+						command_ptr->default_expression = makeASTFunction("to" + explicit_type->getName(),
+							command_ptr->default_expression->clone());
+					}
 				}
 			}
 			else
