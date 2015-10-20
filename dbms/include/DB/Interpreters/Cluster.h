@@ -83,13 +83,14 @@ public:
 	/// Массив шардов. Для каждого шарда - массив адресов реплик (серверов, считающихся идентичными).
 	typedef std::vector<Addresses> AddressesWithFailover;
 
-public:
 	const Addresses & getShardsInfo() const { return addresses; }
 	const AddressesWithFailover & getShardsWithFailoverInfo() const { return addresses_with_failover; }
+	const Addresses & getLocalShardsInfo() const { return local_addresses; }
 
 private:
 	Addresses addresses;
 	AddressesWithFailover addresses_with_failover;
+	Addresses local_addresses;
 
 	size_t local_nodes_num = 0;
 };

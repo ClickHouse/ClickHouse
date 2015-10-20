@@ -230,10 +230,16 @@ public:
 		if (size == 0)
 			return res;
 
-		res_->getData().reserve(size);
+		auto & res_data = res_->getData();
+
+		res_data.reserve(size);
 		for (size_t i = 0; i < size; ++i)
 			if (filter[i])
-				res_->getData().push_back(getData()[i]);
+				res_data.push_back(getData()[i]);
+
+		/// Для экономии оперативки в случае слишком сильной фильтрации.
+		if (res_data.size() * 2 < res_data.capacity())
+			res_data = Container_t(res_data.cbegin(), res_data.cend());
 
 		return res;
 	}

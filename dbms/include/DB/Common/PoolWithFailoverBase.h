@@ -103,11 +103,16 @@ public:
 	/** Выделяет до указанного количества соединений для работы
 	  * Соединения предоставляют доступ к разным репликам одного шарда.
 	  */
-	std::vector<Entry> getMany(const DB::Settings * settings)
+	std::vector<Entry> getMany(const DB::Settings * settings, bool get_all)
 	{
 		ResourceTracker resource_tracker{nested_pools.size()};
 
-		UInt64 max_connections = settings ? UInt64(settings->max_parallel_replicas) : 1;
+		UInt64 max_connections;
+		if (get_all)
+			max_connections = nested_pools.size();
+		else
+			max_connections = settings ? UInt64(settings->max_parallel_replicas) : 1;
+
 		bool skip_unavailable = settings ? UInt64(settings->skip_unavailable_shards) : false;
 
 		std::vector<Entry> connections;
@@ -120,7 +125,7 @@ public:
 
 			if (getResource(entry, fail_messages, &resource_tracker, settings))
 				connections.push_back(entry);
-			else if (i == 0 && !skip_unavailable)
+			else if (get_all || ((i == 0) && !skip_unavailable))
 				throw DB::NetException("All connection tries failed. Log: \n\n" + fail_messages.str() + "\n", DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED);
 			else
 				break;
@@ -128,7 +133,6 @@ public:
 
 		return connections;
 	}
-
 
 protected:
 	struct PoolWithErrorCount

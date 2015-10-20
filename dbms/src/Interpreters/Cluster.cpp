@@ -1,11 +1,36 @@
 #include <DB/Interpreters/Cluster.h>
 #include <DB/Common/escapeForFileName.h>
 #include <DB/Common/isLocalAddress.h>
+#include <DB/Common/SimpleCache.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 
 namespace DB
 {
+
+
+/// Для кэширования DNS запросов.
+static Poco::Net::SocketAddress resolveSocketAddressImpl1(const String & host, UInt16 port)
+{
+	return Poco::Net::SocketAddress(host, port);
+}
+
+static Poco::Net::SocketAddress resolveSocketAddressImpl2(const String & host_and_port)
+{
+	return Poco::Net::SocketAddress(host_and_port);
+}
+
+static Poco::Net::SocketAddress resolveSocketAddress(const String & host, UInt16 port)
+{
+	static SimpleCache<decltype(resolveSocketAddressImpl1), &resolveSocketAddressImpl1> cache;
+	return cache(host, port);
+}
+
+static Poco::Net::SocketAddress resolveSocketAddress(const String & host_and_port)
+{
+	static SimpleCache<decltype(resolveSocketAddressImpl2), &resolveSocketAddressImpl2> cache;
+	return cache(host_and_port);
+}
 
 
 Cluster::Address::Address(const String & config_prefix)
@@ -14,10 +39,11 @@ Cluster::Address::Address(const String & config_prefix)
 
 	host_name = config.getString(config_prefix + ".host");
 	port = config.getInt(config_prefix + ".port");
-	resolved_address = Poco::Net::SocketAddress(host_name, port);
+	resolved_address = resolveSocketAddress(host_name, port);
 	user = config.getString(config_prefix + ".user", "default");
 	password = config.getString(config_prefix + ".password", "");
 }
+
 
 Cluster::Address::Address(const String & host_port_, const String & user_, const String & password_)
 	: user(user_), password(password_)
@@ -27,17 +53,18 @@ Cluster::Address::Address(const String & host_port_, const String & user_, const
 	/// Похоже на то, что строка host_port_ содержит порт. Если условие срабатывает - не обязательно значит, что порт есть (пример: [::]).
 	if (nullptr != strchr(host_port_.c_str(), ':') || !default_port)
 	{
-		resolved_address = Poco::Net::SocketAddress(host_port_);
+		resolved_address = resolveSocketAddress(host_port_);
 		host_name = host_port_.substr(0, host_port_.find(':'));
 		port = resolved_address.port();
 	}
 	else
 	{
-		resolved_address = Poco::Net::SocketAddress(host_port_, default_port);
+		resolved_address = resolveSocketAddress(host_port_, default_port);
 		host_name = host_port_;
 		port = default_port;
 	}
 }
+
 
 namespace
 {
@@ -67,6 +94,8 @@ Clusters::Clusters(const Settings & settings, const String & config_name)
 
 Cluster::Cluster(const Settings & settings, const String & cluster_name)
 {
+	/// Создать кластер.
+
 	Poco::Util::AbstractConfiguration & config = Poco::Util::Application::instance().config();
 	Poco::Util::AbstractConfiguration::Keys config_keys;
 	config.keys(cluster_name, config_keys);
@@ -161,22 +190,26 @@ Cluster::Cluster(const Settings & settings, const String & cluster_name)
 		++current_shard_num;
 	}
 
+	/// Создать соответствующие пулы соединений.
+
 	if (!addresses_with_failover.empty() && !addresses.empty())
 		throw Exception("There must be either 'node' or 'shard' elements in config", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
-	if (addresses_with_failover.size())
+	if (!addresses_with_failover.empty())
 	{
 		for (const auto & shard : addresses_with_failover)
 		{
 			ConnectionPools replicas;
 			replicas.reserve(shard.size());
 
-			bool has_local_replics = false;
+			bool has_local_replica = false;
+
 			for (const auto & replica : shard)
 			{
 				if (isLocal(replica))
 				{
-					has_local_replics = true;
+					has_local_replica = true;
+					local_addresses.push_back(replica);
 					break;
 				}
 				else
@@ -192,18 +225,19 @@ Cluster::Cluster(const Settings & settings, const String & cluster_name)
 				}
 			}
 
-			if (has_local_replics)
+			if (has_local_replica)
 				++local_nodes_num;
 			else
 				pools.emplace_back(new ConnectionPoolWithFailover(replicas, settings.load_balancing, settings.connections_with_failover_max_tries));
 		}
 	}
-	else if (addresses.size())
+	else if (!addresses.empty())
 	{
 		for (const auto & address : addresses)
 		{
 			if (isLocal(address))
 			{
+				local_addresses.push_back(address);
 				++local_nodes_num;
 			}
 			else
@@ -232,15 +266,13 @@ Cluster::Cluster(const Settings & settings, std::vector<std::vector<String>> nam
 		Addresses current;
 		for (auto & replica : shard)
 			current.emplace_back(replica, username, password);
+
 		addresses_with_failover.emplace_back(current);
-	}
 
-	for (const auto & shard : addresses_with_failover)
-	{
 		ConnectionPools replicas;
-		replicas.reserve(shard.size());
+		replicas.reserve(current.size());
 
-		for (const auto & replica : shard)
+		for (const auto & replica : current)
 		{
 			replicas.emplace_back(new ConnectionPool(
 				settings.distributed_connections_pool_size,

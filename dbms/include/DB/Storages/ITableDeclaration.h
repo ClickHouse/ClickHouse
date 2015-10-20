@@ -99,10 +99,9 @@ public:
 private:
 	virtual const NamesAndTypesList & getColumnsListImpl() const = 0;
 
-	using ColumnsListRange = boost::range::joined_range<
-		const boost::iterator_range<NamesAndTypesList::const_iterator>,
-		const boost::iterator_range<NamesAndTypesList::const_iterator>>;
-	ColumnsListRange getColumnsListIterator() const;
+	using ColumnsListRange = boost::range::joined_range<const NamesAndTypesList, const NamesAndTypesList>;
+	/// Returns a lazily joined range of table's ordinary and materialized columns, without unnecessary copying
+	ColumnsListRange getColumnsListRange() const;
 };
 
 }

@@ -76,6 +76,9 @@ public:
 
 	void shutdown() override;
 
+	/// От каждой реплики получить описание соответствующей локальной таблицы.
+	BlockInputStreams describe(const Context & context, const Settings & settings);
+
 	const ExpressionActionsPtr & getShardingKeyExpr() const { return sharding_key_expr; }
 	const String & getShardingKeyColumnName() const { return sharding_key_column_name; }
 	size_t getShardCount() const;
