@@ -13,6 +13,7 @@
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnFixedString.h>
 #include <DB/Columns/ColumnConst.h>
+#include <DB/Functions/FunctionsArray.h>
 #include <DB/Functions/IFunction.h>
 #include <ext/range.hpp>
 
@@ -44,7 +45,7 @@ namespace DB
   * Функции работы с URL расположены отдельно.
   * Функции кодирования строк, конвертации в другие типы расположены отдельно.
   *
-  * Функции length, empty, notEmpty также работают с массивами.
+  * Функции length, empty, notEmpty, reverse также работают с массивами.
   */
 
 
@@ -921,11 +922,78 @@ public:
 };
 
 
-class FunctionConcat : public IFunction
+/// Также работает над массивами.
+class FunctionReverse : public IFunction
 {
 public:
-	static constexpr auto name = "concat";
-	static IFunction * create(const Context & context) { return new FunctionConcat; }
+	static constexpr auto name = "reverse";
+	static IFunction * create(const Context & context) { return new FunctionReverse; }
+
+	/// Получить имя функции.
+	String getName() const override
+	{
+		return name;
+	}
+
+	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	{
+		if (arguments.size() != 1)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ toString(arguments.size()) + ", should be 1.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		if (!typeid_cast<const DataTypeString *>(&*arguments[0]) && !typeid_cast<const DataTypeFixedString *>(&*arguments[0])
+			&& !typeid_cast<const DataTypeArray *>(&*arguments[0]))
+			throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		return arguments[0]->clone();
+	}
+
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	{
+		const ColumnPtr column = block.getByPosition(arguments[0]).column;
+		if (const ColumnString * col = typeid_cast<const ColumnString *>(column.get()))
+		{
+			ColumnString * col_res = new ColumnString;
+			block.getByPosition(result).column = col_res;
+			ReverseImpl::vector(col->getChars(), col->getOffsets(),
+						 col_res->getChars(), col_res->getOffsets());
+		}
+		else if (const ColumnFixedString * col = typeid_cast<const ColumnFixedString *>(column.get()))
+		{
+			ColumnFixedString * col_res = new ColumnFixedString(col->getN());
+			block.getByPosition(result).column = col_res;
+			ReverseImpl::vector_fixed(col->getChars(), col->getN(),
+							   col_res->getChars());
+		}
+		else if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(column.get()))
+		{
+			String res;
+			ReverseImpl::constant(col->getData(), res);
+			ColumnConstString * col_res = new ColumnConstString(col->size(), res);
+			block.getByPosition(result).column = col_res;
+		}
+		else if (typeid_cast<const ColumnArray *>(column.get()) || typeid_cast<const ColumnConstArray *>(column.get()))
+		{
+			FunctionArrayReverse().execute(block, arguments, result);
+		}
+		else
+			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+				+ " of argument of function " + getName(),
+				ErrorCodes::ILLEGAL_COLUMN);
+	}
+};
+
+
+template <typename Name>
+class ConcatImpl : public IFunction
+{
+public:
+	static constexpr auto name = Name::name;
+	static IFunction * create(const Context & context) { return new ConcatImpl; }
 
 	/// Получить имя функции.
 	String getName() const override
@@ -1593,10 +1661,11 @@ struct NameLower 			{ static constexpr auto name = "lower"; };
 struct NameUpper 			{ static constexpr auto name = "upper"; };
 struct NameLowerUTF8		{ static constexpr auto name = "lowerUTF8"; };
 struct NameUpperUTF8		{ static constexpr auto name = "upperUTF8"; };
-struct NameReverse			{ static constexpr auto name = "reverse"; };
 struct NameReverseUTF8		{ static constexpr auto name = "reverseUTF8"; };
 struct NameSubstring		{ static constexpr auto name = "substring"; };
 struct NameSubstringUTF8	{ static constexpr auto name = "substringUTF8"; };
+struct NameConcat			{ static constexpr auto name = "concat"; };
+struct NameConcatAssumeInjective	{ static constexpr auto name = "concatAssumeInjective"; };
 
 typedef FunctionStringOrArrayToT<EmptyImpl<false>,		NameEmpty,		UInt8> 	FunctionEmpty;
 typedef FunctionStringOrArrayToT<EmptyImpl<true>, 		NameNotEmpty,	UInt8> 	FunctionNotEmpty;
@@ -1610,10 +1679,11 @@ typedef FunctionStringToString<
 typedef FunctionStringToString<
 	LowerUpperUTF8Impl<'a', 'z', Poco::Unicode::toUpper, UTF8CyrillicToCase<false>>,
 	NameUpperUTF8>	FunctionUpperUTF8;
-typedef FunctionStringToString<ReverseImpl,				NameReverse>			FunctionReverse;
 typedef FunctionStringToString<ReverseUTF8Impl,			NameReverseUTF8>		FunctionReverseUTF8;
 typedef FunctionStringNumNumToString<SubstringImpl,		NameSubstring>			FunctionSubstring;
 typedef FunctionStringNumNumToString<SubstringUTF8Impl,	NameSubstringUTF8>		FunctionSubstringUTF8;
+using FunctionConcat = ConcatImpl<NameConcat>;
+using FunctionConcatAssumeInjective = ConcatImpl<NameConcatAssumeInjective>;
 
 
 }

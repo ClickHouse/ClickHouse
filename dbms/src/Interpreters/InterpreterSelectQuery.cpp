@@ -1047,7 +1047,7 @@ void InterpreterSelectQuery::executeUnion()
 	/// Если до сих пор есть несколько потоков, то объединяем их в один
 	if (hasMoreThanOneStream())
 	{
-		streams[0] = new UnionBlockInputStream(streams, stream_with_non_joined_data, settings.max_threads);
+		streams[0] = new UnionBlockInputStream<>(streams, stream_with_non_joined_data, settings.max_threads);
 		stream_with_non_joined_data = nullptr;
 		streams.resize(1);
 		union_within_single_query = false;

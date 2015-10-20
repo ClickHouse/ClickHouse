@@ -17,6 +17,7 @@ void registerFunctionsString(FunctionFactory & factory)
 	factory.registerFunction<FunctionReverse>();
 	factory.registerFunction<FunctionReverseUTF8>();
 	factory.registerFunction<FunctionConcat>();
+	factory.registerFunction<FunctionConcatAssumeInjective>();
 	factory.registerFunction<FunctionSubstring>();
 	factory.registerFunction<FunctionSubstringUTF8>();
 	factory.registerFunction<FunctionAppendTrailingCharIfAbsent>();

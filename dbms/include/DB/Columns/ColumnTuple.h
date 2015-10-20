@@ -233,7 +233,13 @@ public:
 
 	void getExtremes(Field & min, Field & max) const override
 	{
-		throw Exception("Method getExtremes is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+		size_t tuple_size = columns.size();
+
+		min = Array(tuple_size);
+		max = Array(tuple_size);
+
+		for (size_t i = 0; i < tuple_size; ++i)
+			columns[i]->getExtremes(min.get<Array &>()[i], max.get<Array &>()[i]);
 	}
 
 
