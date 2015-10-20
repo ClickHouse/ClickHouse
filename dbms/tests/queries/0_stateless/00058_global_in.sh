@@ -25,7 +25,8 @@ cat "$CONFIG" | sed -r \
 	 s/<http_port>[0-9]+/<http_port>8124/;
 	 s/<tcp_port>[0-9]+/<tcp_port>9001/;
 	 s/<interserver_http_port>[0-9]+/<interserver_http_port>9010/;
-	 s/<use_olap_http_server>true/<use_olap_http_server>false/;
+	 s/<olap_compatibility>/<!-- <olap_compatibility>/;
+	 s/<\/olap_compatibility>/<\/olap_compatibility> -->/;
 	 s/users\.xml/users-preprocessed.xml/' > $CONFIG2
 
 cp ${CONFIG/config/users} .
