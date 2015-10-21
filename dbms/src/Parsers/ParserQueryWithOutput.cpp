@@ -20,11 +20,9 @@ bool ParserQueryWithOutput::parseFormat(ASTQueryWithOutput & query, Pos & pos, P
 		typeid_cast<ASTIdentifier &>(*(query.format)).kind = ASTIdentifier::Format;
 
 		ws.ignore(pos, end);
-
-		return true;
 	}
-	else
-		return true;
+
+	return true;
 }
 
 }
