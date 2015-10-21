@@ -211,13 +211,17 @@ void ExpressionAnalyzer::analyzeAggregation()
 				/// constant expressions have non-null column pointer at this stage
 				if (const auto is_constexpr = col.column)
 				{
-					if (i < group_asts.size() - 1)
-						group_asts[i] = std::move(group_asts.back());
+					/// but don't remove last key column if no aggregate functions, otherwise aggregation will not work
+					if (!aggregate_descriptions.empty() || group_asts.size() > 1)
+					{
+						if (i < group_asts.size() - 1)
+							group_asts[i] = std::move(group_asts.back());
 
-					group_asts.pop_back();
-					i -= 1;
+						group_asts.pop_back();
+						i -= 1;
 
-					continue;
+						continue;
+					}
 				}
 
 				NameAndTypePair key{column_name, col.type};
@@ -781,7 +785,26 @@ void ExpressionAnalyzer::optimizeGroupBy()
 	}
 
 	if (group_exprs.empty())
-		select_query->group_expression_list = nullptr;
+	{
+		/** Нельзя полностью убирать GROUP BY. Потому что если при этом даже агрегатных функций не было, то получится, что не будет агрегации.
+		  * Вместо этого оставим GROUP BY const.
+		  * Далее см. удаление констант в методе analyzeAggregation.
+		  */
+
+		/// Нужно вставить константу, которая не является именем столбца таблицы. Такой случай редкий, но бывает.
+		UInt64 unused_column = 0;
+		String unused_column_name = toString(unused_column);
+
+		while (columns.end() != std::find_if(columns.begin(), columns.end(),
+			[&unused_column_name](const NameAndTypePair & name_type) { return name_type.name == unused_column_name; }))
+		{
+			++unused_column;
+			unused_column_name = toString(unused_column);
+		}
+
+		select_query->group_expression_list = new ASTExpressionList;
+		select_query->group_expression_list->children.push_back(new ASTLiteral(StringRange(), UInt64(unused_column)));
+	}
 }
 
 
