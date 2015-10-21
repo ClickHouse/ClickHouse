@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DB/Parsers/IParserBase.h>
+#include <DB/Parsers/ParserQueryWithOutput.h>
 #include <DB/Parsers/ExpressionElementParsers.h>
 
 
@@ -9,7 +10,7 @@ namespace DB
 
 /** Запрос (EXISTS | SHOW CREATE | (DESCRIBE | DESC) ) [TABLE] [db.]name [FORMAT format]
   */
-class ParserTablePropertiesQuery : public IParserBase
+class ParserTablePropertiesQuery : public ParserQueryWithOutput
 {
 protected:
 	const char * getName() const { return "EXISTS, SHOW CREATE or DESCRIBE query"; }
