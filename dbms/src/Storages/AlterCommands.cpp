@@ -99,18 +99,14 @@ namespace DB
 		}
 		else if (type == MODIFY)
 		{
-			const auto it = column_defaults.find(column_name);
-			const auto had_default_expr = it != column_defaults.end();
-			const auto old_default_type = had_default_expr ? it->second.type : ColumnDefaultType{};
+			const auto default_it = column_defaults.find(column_name);
+			const auto had_default_expr = default_it != std::end(column_defaults);
+			const auto old_default_type = had_default_expr ? default_it->second.type : ColumnDefaultType{};
 
-			/// allow conversion between DEFAULT and MATERIALIZED
-			const auto default_materialized_conversion =
-				(old_default_type == ColumnDefaultType::Default && default_type == ColumnDefaultType::Materialized) ||
-				(old_default_type == ColumnDefaultType::Materialized && default_type == ColumnDefaultType::Default);
-
-			if (old_default_type != default_type && !default_materialized_conversion)
-				throw Exception{"Cannot change column default specifier from " + toString(old_default_type) +
-					" to " + toString(default_type), ErrorCodes::INCORRECT_QUERY};
+			/// target column list
+			auto & new_columns = default_type == ColumnDefaultType::Default ?
+				columns : default_type == ColumnDefaultType::Materialized ?
+				materialized_columns : alias_columns;
 
 			/// find column or throw exception
 			const auto find_column = [this] (NamesAndTypesList & columns) {
@@ -123,16 +119,17 @@ namespace DB
 				return it;
 			};
 
-			/// remove from the old list, add to the new list in case of DEFAULT <-> MATERIALIZED alteration
-			if (default_materialized_conversion)
+			/// if default types differ, remove column from the old list, then add to the new list
+			if (default_type != old_default_type)
 			{
-				const auto was_default = old_default_type == ColumnDefaultType::Default;
-				auto & old_columns = was_default ? columns : materialized_columns;
-				auto & new_columns = was_default ? materialized_columns : columns;
+				/// source column list
+				auto & old_columns = old_default_type == ColumnDefaultType::Default ?
+					columns : old_default_type == ColumnDefaultType::Materialized ?
+					materialized_columns : alias_columns;
 
-				const auto column_it = find_column(old_columns);
-				new_columns.emplace_back(*column_it);
-				old_columns.erase(column_it);
+				const auto old_column_it = find_column(old_columns);
+				new_columns.emplace_back(*old_column_it);
+				old_columns.erase(old_column_it);
 
 				/// do not forget to change the default type of old column
 				if (had_default_expr)
@@ -140,19 +137,17 @@ namespace DB
 			}
 
 			/// find column in one of three column lists
-			const auto column_it = find_column(
-				default_type == ColumnDefaultType::Default ? columns :
-				default_type == ColumnDefaultType::Materialized ? materialized_columns :
-				alias_columns);
-
+			const auto column_it = find_column(new_columns);
 			column_it->type = data_type;
 
-			/// remove, add or update default_expression
 			if (!default_expression && had_default_expr)
+				/// new column has no default expression, remove it from column_defaults along with it's type
 				column_defaults.erase(column_name);
 			else if (default_expression && !had_default_expr)
+				/// new column has a default expression while the old one had not, add it it column_defaults
 				column_defaults.emplace(column_name, ColumnDefault{default_type, default_expression});
 			else if (had_default_expr)
+				/// both old and new columns have default expression, update it
 				column_defaults[column_name].expression = default_expression;
 		}
 		else
@@ -184,7 +179,7 @@ namespace DB
 		columns.insert(std::end(columns), std::begin(table->alias_columns), std::end(table->alias_columns));
 		auto defaults = table->column_defaults;
 
-		std::vector<std::pair<String, AlterCommand *>> defaulted_columns{};
+		std::vector<std::pair<NameAndTypePair, AlterCommand *>> defaulted_columns{};
 
 		ASTPtr default_expr_list{new ASTExpressionList};
 		default_expr_list->children.reserve(defaults.size());
@@ -227,10 +222,10 @@ namespace DB
 					{
 						const auto & final_column_name = column_name;
 						const auto tmp_column_name = final_column_name + "_tmp";
-						const auto data_type_ptr = command.data_type.get();
+						const auto column_type_raw_ptr = command.data_type.get();
 
 						/// specific code for different data types, e.g. toFixedString(col, N) for DataTypeFixedString
-						if (const auto fixed_string = typeid_cast<const DataTypeFixedString *>(data_type_ptr))
+						if (const auto fixed_string = typeid_cast<const DataTypeFixedString *>(column_type_raw_ptr))
 						{
 							const auto conversion_function_name = "toFixedString";
 
@@ -241,7 +236,7 @@ namespace DB
 									ASTPtr{new ASTLiteral{{}, fixed_string->getN()}}),
 								final_column_name));
 						}
-						else if (typeid_cast<const DataTypeArray *>(data_type_ptr))
+						else if (typeid_cast<const DataTypeArray *>(column_type_raw_ptr))
 						{
 							/// do not perform conversion on arrays, require exact type match
 							default_expr_list->children.emplace_back(setAlias(
@@ -249,7 +244,7 @@ namespace DB
 						}
 						else
 						{
-							const auto conversion_function_name = "to" + data_type_ptr->getName();
+							const auto conversion_function_name = "to" + column_type_raw_ptr->getName();
 
 							default_expr_list->children.emplace_back(setAlias(
 								makeASTFunction(conversion_function_name, ASTPtr{new ASTIdentifier{{}, tmp_column_name}}),
@@ -258,14 +253,15 @@ namespace DB
 
 						default_expr_list->children.emplace_back(setAlias(command.default_expression->clone(), tmp_column_name));
 
-						defaulted_columns.emplace_back(column_name, &command);
+						defaulted_columns.emplace_back(NameAndTypePair{column_name, command.data_type}, &command);
 					}
 					else
 					{
+						/// no type explicitly specified, will deduce later
 						default_expr_list->children.emplace_back(
-							setAlias(command.default_expression->clone(), command.column_name));
+							setAlias(command.default_expression->clone(), column_name));
 
-						defaulted_columns.emplace_back(column_name, &command);
+						defaulted_columns.emplace_back(NameAndTypePair{column_name, nullptr}, &command);
 					}
 				}
 			}
@@ -302,10 +298,11 @@ namespace DB
 				return AlterCommand::namesEqual(column_name, name_type);
 			});
 			const auto tmp_column_name = column_name + "_tmp";
-			const auto data_type_ptr = column_it->type.get();
+			const auto & column_type_ptr = column_it->type;
+			const auto column_type_raw_ptr = column_type_ptr.get();
 
 			/// specific code for different data types, e.g. toFixedString(col, N) for DataTypeFixedString
-			if (const auto fixed_string = typeid_cast<const DataTypeFixedString *>(data_type_ptr))
+			if (const auto fixed_string = typeid_cast<const DataTypeFixedString *>(column_type_raw_ptr))
 			{
 				default_expr_list->children.emplace_back(setAlias(
 					makeASTFunction("toFixedString",
@@ -313,23 +310,26 @@ namespace DB
 						ASTPtr{new ASTLiteral{{}, fixed_string->getN()}}),
 					column_name));
 			}
-			else if (typeid_cast<const DataTypeArray *>(data_type_ptr))
+			else if (typeid_cast<const DataTypeArray *>(column_type_raw_ptr))
 			{
 				/// do not perform conversion on arrays, require exact type match
-				default_expr_list->children.emplace_back(setAlias(col_def.second.expression->clone(), column_name));
+				default_expr_list->children.emplace_back(setAlias(
+					col_def.second.expression->clone(),
+					column_name));
 			}
 			else
 			{
 				const auto conversion_function_name = "to" + column_it->type->getName();
 
 				default_expr_list->children.emplace_back(setAlias(
-					makeASTFunction(conversion_function_name, ASTPtr{new ASTIdentifier{{}, tmp_column_name}}),
+					makeASTFunction(conversion_function_name,
+						ASTPtr{new ASTIdentifier{{}, tmp_column_name}}),
 					column_name));
 			}
 
 			default_expr_list->children.emplace_back(setAlias(col_def.second.expression->clone(), tmp_column_name));
 
-			defaulted_columns.emplace_back(column_name, nullptr);
+			defaulted_columns.emplace_back(NameAndTypePair{column_name, column_type_ptr}, nullptr);
 		}
 
 		const auto actions = ExpressionAnalyzer{default_expr_list, context, {}, columns}.getActions(true);
@@ -338,74 +338,48 @@ namespace DB
 		/// set deduced types, modify default expression if necessary
 		for (auto & defaulted_column : defaulted_columns)
 		{
-			const auto & column_name = defaulted_column.first;
-			const auto command_ptr = defaulted_column.second;
-			const auto & column = block.getByName(column_name);
+			const auto & name_and_type = defaulted_column.first;
+			AlterCommand * & command_ptr = defaulted_column.second;
+
+			const auto & column_name = name_and_type.name;
+			const auto has_explicit_type = nullptr != name_and_type.type;
 
 			/// default expression on old column
-			if (!command_ptr)
+			if (has_explicit_type)
 			{
-				const auto & explicit_type = column.type;
+				const auto & explicit_type = name_and_type.type;
 				const auto & tmp_column = block.getByName(column_name + "_tmp");
 				const auto & deduced_type = tmp_column.type;
 
 				// column not specified explicitly in the ALTER query may require default_expression modification
 				if (explicit_type->getName() != deduced_type->getName())
 				{
-					const auto it = defaults.find(column_name);
-					const auto data_type_ptr = explicit_type.get();
+					const auto default_it = defaults.find(column_name);
 
-					ASTPtr new_default_expression;
-					if (const auto fixed_string = typeid_cast<const DataTypeFixedString *>(data_type_ptr))
+					/// column has no associated alter command, let's create it
+					if (!command_ptr)
 					{
-						new_default_expression = makeASTFunction("toFixedString", it->second.expression,
-							ASTPtr{new ASTLiteral{{}, fixed_string->getN()}});
-					}
-					else if (typeid_cast<const DataTypeArray *>(data_type_ptr))
-					{
-						/// @todo unreachable code because arrays types cannot be altered (only default expressions can be)
-						/// foolproof against defaulting array columns incorrectly
-						throw Exception{
-							"ALTER MODIFY COLUMN invalidates default expression on related column " + column_name +
-								" with type " + data_type_ptr->getName(),
-							ErrorCodes::TYPE_MISMATCH
-						};
-					}
-					else
-					{
-						new_default_expression = makeASTFunction("to" + explicit_type->getName(), it->second.expression);
+						/// add a new alter command to modify existing column
+						this->emplace_back(AlterCommand{
+							AlterCommand::MODIFY, column_name, explicit_type,
+							default_it->second.type, default_it->second.expression
+						});
+
+						command_ptr = &this->back();
 					}
 
-					this->push_back(AlterCommand{
-						AlterCommand::MODIFY, column_name, explicit_type, it->second.type,
-						new_default_expression
-					});
-				}
-			}
-			else if (command_ptr->data_type)
-			{
-				const auto & explicit_type = command_ptr->data_type;
-				const auto & tmp_column = block.getByName(column_name + "_tmp");
-				const auto & deduced_type = tmp_column.type;
-
-				/// type mismatch between explicitly specified and deduced type, add conversion
-				if (explicit_type->getName() != deduced_type->getName())
-				{
-					const auto data_type_ptr = explicit_type.get();
-
-					if (const auto fixed_string = typeid_cast<const DataTypeFixedString *>(data_type_ptr))
+					if (const auto fixed_string = typeid_cast<const DataTypeFixedString *>(explicit_type.get()))
 					{
 						command_ptr->default_expression = makeASTFunction("toFixedString",
 							command_ptr->default_expression->clone(),
 							ASTPtr{new ASTLiteral{{}, fixed_string->getN()}});
 					}
-					else if (typeid_cast<const DataTypeArray *>(data_type_ptr))
+					else if (typeid_cast<const DataTypeArray *>(explicit_type.get()))
 					{
 						/// foolproof against defaulting array columns incorrectly
 						throw Exception{
-							"Default expression type mismatch for column " + column_name +
-								". Expected " + explicit_type->getName() + ", deduced " +
-								deduced_type->getName(),
+							"Default expression type mismatch for column " + column_name + ". Expected " +
+								explicit_type->getName() + ", deduced " + deduced_type->getName(),
 							ErrorCodes::TYPE_MISMATCH
 						};
 					}
@@ -419,7 +393,7 @@ namespace DB
 			else
 			{
 				/// just set deduced type
-				command_ptr->data_type = column.type;
+				command_ptr->data_type = block.getByName(column_name).type;
 			}
 		}
 	}
