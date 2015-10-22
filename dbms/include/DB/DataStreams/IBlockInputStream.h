@@ -38,6 +38,13 @@ public:
 	  */
 	virtual Block read() = 0;
 
+	/** Получить информацию про последний полученный блок.
+	  */
+	virtual BlockExtraInfo getBlockExtraInfo() const
+	{
+		throw Exception("Method getBlockExtraInfo is not supported by the data stream " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+	}
+
 	/** Прочитать что-нибудь перед началом всех данных или после конца всех данных.
 	  * В функции readSuffix можно реализовать финализацию, которая может привести к исключению.
 	  * readPrefix() должна вызываться до первого вызова read().

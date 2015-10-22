@@ -26,14 +26,21 @@ static void __attribute__((__noinline__)) throwAtAssertionFailed(const char * s,
 }
 
 
-void assertString(const char * s, ReadBuffer & buf)
+bool checkString(const char * s, ReadBuffer & buf)
 {
 	for (; *s; ++s)
 	{
 		if (buf.eof() || *buf.position() != *s)
-			throwAtAssertionFailed(s, buf);
+			return false;
 		++buf.position();
 	}
+	return true;
+}
+
+void assertString(const char * s, ReadBuffer & buf)
+{
+	if (!checkString(s, buf))
+		throwAtAssertionFailed(s, buf);
 }
 
 void assertChar(char symbol, ReadBuffer & buf)
@@ -70,6 +77,20 @@ void readString(String & s, ReadBuffer & buf)
 	}
 }
 
+void readStringUntilEOF(String & s, ReadBuffer & buf)
+{
+	s = "";
+	while (!buf.eof())
+	{
+		size_t bytes = buf.buffer().end() - buf.position();
+
+		s.append(buf.position(), bytes);
+		buf.position() += bytes;
+
+		if (buf.hasPendingData())
+			return;
+	}
+}
 
 /** Позволяет найти в куске памяти следующий символ \t, \n или \\.
   * Функция похожа на strpbrk, но со следующими отличиями:

@@ -23,8 +23,13 @@ public:
 	/// Принимает готовое соединение.
 	ParallelReplicas(Connection * connection_, const Settings * settings_, ThrottlerPtr throttler_);
 
-	/// Принимает пул, из которого нужно будет достать одно или несколько соединений.
-	ParallelReplicas(IConnectionPool * pool_, const Settings * settings_, ThrottlerPtr throttler_);
+	/** Принимает пул, из которого нужно будет достать одно или несколько соединений.
+	  * Если флаг append_extra_info установлен, к каждому полученному блоку прилагается
+	  * дополнительная информация.
+	  * Если флаг get_all_replicas установлен, достаются все соединения.
+	  */
+	ParallelReplicas(IConnectionPool * pool_, const Settings * settings_, ThrottlerPtr throttler_,
+		bool append_extra_info = false, bool get_all_replicas = false);
 
 	/// Отправить на реплики всё содержимое внешних таблиц.
 	void sendExternalTablesData(std::vector<ExternalTablesData> & data);
@@ -35,6 +40,9 @@ public:
 
 	/// Получить пакет от какой-нибудь реплики.
 	Connection::Packet receivePacket();
+
+	/// Получить информацию про последний полученный пакет.
+	BlockExtraInfo getBlockExtraInfo() const;
 
 	/// Разорвать все действующие соединения.
 	void disconnect();
@@ -93,6 +101,11 @@ private:
 
 	std::vector<ConnectionPool::Entry> pool_entries;
 	ConnectionPool::Entry pool_entry;
+
+	/// Соединение, c которого был получен последний блок.
+	Connection * current_connection;
+	/// Информация про последний полученный блок, если поддерживается.
+	std::unique_ptr<BlockExtraInfo> block_extra_info;
 
 	/// Текущее количество действительных соединений к репликам.
 	size_t active_replica_count;
