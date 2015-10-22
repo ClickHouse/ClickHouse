@@ -715,6 +715,15 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 		result.convertToTwoLevel();
 
 	/// Проверка ограничений.
+	if (!checkLimits(result_size, no_more_keys))
+		return false;
+
+	return true;
+}
+
+
+bool Aggregator::checkLimits(size_t result_size, bool & no_more_keys) const
+{
 	if (!no_more_keys && max_rows_to_group_by && result_size > max_rows_to_group_by)
 	{
 		if (group_by_overflow_mode == OverflowMode::THROW)
@@ -1226,6 +1235,86 @@ void NO_INLINE Aggregator::mergeDataImpl(
 }
 
 
+template <typename Method, typename Table>
+void NO_INLINE Aggregator::mergeDataNoMoreKeysImpl(
+	Table & table_dst,
+	AggregatedDataWithoutKey & overflows,
+	Table & table_src) const
+{
+	for (auto it = table_src.begin(); it != table_src.end(); ++it)
+	{
+		decltype(it) res_it = table_dst.find(it->first, it.getHash());
+
+		AggregateDataPtr res_data = table_dst.end() == res_it
+			? overflows
+			: Method::getAggregateData(res_it->second);
+
+		for (size_t i = 0; i < aggregates_size; ++i)
+			aggregate_functions[i]->merge(
+				res_data + offsets_of_aggregate_states[i],
+				Method::getAggregateData(it->second) + offsets_of_aggregate_states[i]);
+
+		for (size_t i = 0; i < aggregates_size; ++i)
+			aggregate_functions[i]->destroy(
+				Method::getAggregateData(it->second) + offsets_of_aggregate_states[i]);
+
+		Method::getAggregateData(it->second) = nullptr;
+	}
+}
+
+template <typename Method, typename Table>
+void NO_INLINE Aggregator::mergeDataOnlyExistingKeysImpl(
+	Table & table_dst,
+	Table & table_src) const
+{
+	for (auto it = table_src.begin(); it != table_src.end(); ++it)
+	{
+		decltype(it) res_it = table_dst.find(it->first, it.getHash());
+
+		if (table_dst.end() == res_it)
+			continue;
+
+		AggregateDataPtr res_data = Method::getAggregateData(res_it->second);
+
+		for (size_t i = 0; i < aggregates_size; ++i)
+			aggregate_functions[i]->merge(
+				res_data + offsets_of_aggregate_states[i],
+				Method::getAggregateData(it->second) + offsets_of_aggregate_states[i]);
+
+		for (size_t i = 0; i < aggregates_size; ++i)
+			aggregate_functions[i]->destroy(
+				Method::getAggregateData(it->second) + offsets_of_aggregate_states[i]);
+
+		Method::getAggregateData(it->second) = nullptr;
+	}
+}
+
+template <typename Method, typename Table>
+void NO_INLINE Aggregator::mergeDataRemainingKeysToOverflowsImpl(
+	AggregatedDataWithoutKey & overflows,
+	Table & table_src) const
+{
+	for (auto it = table_src.begin(); it != table_src.end(); ++it)
+	{
+		if (Method::getAggregateData(it->second) == nullptr)
+			continue;
+
+		AggregateDataPtr res_data = overflows;
+
+		for (size_t i = 0; i < aggregates_size; ++i)
+			aggregate_functions[i]->merge(
+				res_data + offsets_of_aggregate_states[i],
+				Method::getAggregateData(it->second) + offsets_of_aggregate_states[i]);
+
+		for (size_t i = 0; i < aggregates_size; ++i)
+			aggregate_functions[i]->destroy(
+				Method::getAggregateData(it->second) + offsets_of_aggregate_states[i]);
+
+		Method::getAggregateData(it->second) = nullptr;
+	}
+}
+
+
 void NO_INLINE Aggregator::mergeWithoutKeyDataImpl(
 	ManyAggregatedDataVariants & non_empty_data) const
 {
@@ -1253,15 +1342,25 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
 	ManyAggregatedDataVariants & non_empty_data) const
 {
 	AggregatedDataVariantsPtr & res = non_empty_data[0];
+	bool no_more_keys = false;
 
 	/// Все результаты агрегации соединяем с первым.
 	for (size_t i = 1, size = non_empty_data.size(); i < size; ++i)
 	{
+		if (!checkLimits(res->sizeWithoutOverflowRow(), no_more_keys))
+			break;
+
 		AggregatedDataVariants & current = *non_empty_data[i];
 
-		mergeDataImpl<Method>(
-			getDataVariant<Method>(*res).data,
-			getDataVariant<Method>(current).data);
+		if (!no_more_keys)
+			mergeDataImpl<Method>(
+				getDataVariant<Method>(*res).data,
+				getDataVariant<Method>(current).data);
+		else
+			mergeDataNoMoreKeysImpl<Method>(
+				getDataVariant<Method>(*res).data,
+				res->without_key,
+				getDataVariant<Method>(current).data);
 
 		/// current не будет уничтожать состояния агрегатных функций в деструкторе
 		current.aggregator = nullptr;
@@ -1276,8 +1375,13 @@ void NO_INLINE Aggregator::mergeTwoLevelDataImpl(
 {
 	AggregatedDataVariantsPtr & res = non_empty_data[0];
 
+	/// В данном случае, no_more_keys будет выставлено, только если в первом (самом большом) состоянии достаточно много строк.
+	bool no_more_keys = false;
+	if (!checkLimits(res->sizeWithoutOverflowRow(), no_more_keys))
+		return;
+
 	/// Слияние распараллеливается по корзинам - первому уровню TwoLevelHashMap.
-	auto merge_bucket = [&non_empty_data, &res, this](size_t bucket, MemoryTracker * memory_tracker)
+	auto merge_bucket = [&non_empty_data, &res, no_more_keys, this](size_t bucket, MemoryTracker * memory_tracker)
 	{
 		current_memory_tracker = memory_tracker;
 
@@ -1286,12 +1390,18 @@ void NO_INLINE Aggregator::mergeTwoLevelDataImpl(
 		{
 			AggregatedDataVariants & current = *non_empty_data[i];
 
-			mergeDataImpl<Method>(
-				getDataVariant<Method>(*res).data.impls[bucket],
-				getDataVariant<Method>(current).data.impls[bucket]);
-
-			/// current не будет уничтожать состояния агрегатных функций в деструкторе
-			current.aggregator = nullptr;
+			if (!no_more_keys)
+			{
+				mergeDataImpl<Method>(
+					getDataVariant<Method>(*res).data.impls[bucket],
+					getDataVariant<Method>(current).data.impls[bucket]);
+			}
+			else
+			{
+				mergeDataOnlyExistingKeysImpl<Method>(
+					getDataVariant<Method>(*res).data.impls[bucket],
+					getDataVariant<Method>(current).data.impls[bucket]);
+			}
 		}
 	};
 
@@ -1326,6 +1436,25 @@ void NO_INLINE Aggregator::mergeTwoLevelDataImpl(
 	for (auto & task : tasks)
 		if (task.valid())
 			task.get_future().get();
+
+	if (no_more_keys)
+	{
+		for (size_t bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
+		{
+			for (size_t i = 1, size = non_empty_data.size(); i < size; ++i)
+			{
+				AggregatedDataVariants & current = *non_empty_data[i];
+
+				mergeDataRemainingKeysToOverflowsImpl<Method>(
+					res->without_key,
+					getDataVariant<Method>(current).data.impls[bucket]);
+			}
+		}
+	}
+
+	/// aggregator не будет уничтожать состояния агрегатных функций в деструкторе
+	for (size_t i = 1, size = non_empty_data.size(); i < size; ++i)
+		non_empty_data[i]->aggregator = nullptr;
 }
 
 
@@ -1349,6 +1478,13 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 
 	if (non_empty_data.size() == 1)
 		return non_empty_data[0];
+
+	/// Отсортируем состояния по убыванию размера, чтобы мердж был более эффективным (так как все состояния мерджатся в первое).
+	std::sort(non_empty_data.begin(), non_empty_data.end(),
+		[](const AggregatedDataVariantsPtr & lhs, const AggregatedDataVariantsPtr & rhs)
+		{
+			return lhs->sizeWithoutOverflowRow() > rhs->sizeWithoutOverflowRow();
+		});
 
 	/// Если хотя бы один из вариантов двухуровневый, то переконвертируем все варианты в двухуровневые, если есть не такие.
 	/// Замечание - возможно, было бы более оптимально не конвертировать одноуровневые варианты перед мерджем, а мерджить их отдельно, в конце.
