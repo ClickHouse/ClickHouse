@@ -148,9 +148,9 @@ void ExpressionAction::prepare(Block & sample_block)
 
 		case ARRAY_JOIN:
 		{
-			for (NameSet::iterator it = array_joined_columns.begin(); it != array_joined_columns.end(); ++it)
+			for (const auto & name : array_joined_columns)
 			{
-				ColumnWithTypeAndName & current = sample_block.getByName(*it);
+				ColumnWithTypeAndName & current = sample_block.getByName(name);
 				const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(&*current.type);
 				if (!array_type)
 					throw Exception("ARRAY JOIN requires array argument", ErrorCodes::TYPE_MISMATCH);
@@ -214,6 +214,7 @@ void ExpressionAction::prepare(Block & sample_block)
 	}
 }
 
+
 void ExpressionAction::execute(Block & block) const
 {
 //	std::cerr << "executing: " << toString() << std::endl;
@@ -261,9 +262,11 @@ void ExpressionAction::execute(Block & block) const
 		{
 			if (array_joined_columns.empty())
 				throw Exception("No arrays to join", ErrorCodes::LOGICAL_ERROR);
+
 			ColumnPtr any_array_ptr = block.getByName(*array_joined_columns.begin()).column;
 			if (any_array_ptr->isConst())
 				any_array_ptr = dynamic_cast<const IColumnConst &>(*any_array_ptr).convertToFullColumn();
+
 			const ColumnArray * any_array = typeid_cast<const ColumnArray *>(&*any_array_ptr);
 			if (!any_array)
 				throw Exception("ARRAY JOIN of not array: " + *array_joined_columns.begin(), ErrorCodes::TYPE_MISMATCH);

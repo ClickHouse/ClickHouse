@@ -1407,12 +1407,15 @@ void ExpressionAnalyzer::getArrayJoinedColumns()
 		{
 			const String nested_table_name = ast->getColumnName();
 			const String nested_table_alias = ast->getAliasOrColumnName();
+
 			if (nested_table_alias == nested_table_name && !typeid_cast<const ASTIdentifier *>(&*ast))
 				throw Exception("No alias for non-trivial value in ARRAY JOIN: " + nested_table_name, ErrorCodes::ALIAS_REQUIRED);
 
 			if (array_join_alias_to_name.count(nested_table_alias) || aliases.count(nested_table_alias))
 				throw Exception("Duplicate alias " + nested_table_alias, ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS);
+
 			array_join_alias_to_name[nested_table_alias] = nested_table_name;
+			array_join_name_to_alias[nested_table_name] = nested_table_alias;
 		}
 
 		ASTs & query_asts = select_query->children;
@@ -1455,6 +1458,7 @@ void ExpressionAnalyzer::getArrayJoinedColumns()
 }
 
 
+/// Заполняет array_join_result_to_source: по каким столбцам-массивам размножить, и как их после этого назвать.
 void ExpressionAnalyzer::getArrayJoinedColumnsImpl(ASTPtr ast)
 {
 	if (ASTIdentifier * node = typeid_cast<ASTIdentifier *>(&*ast))
@@ -1462,13 +1466,28 @@ void ExpressionAnalyzer::getArrayJoinedColumnsImpl(ASTPtr ast)
 		if (node->kind == ASTIdentifier::Column)
 		{
 			String table_name = DataTypeNested::extractNestedTableName(node->name);
+
 			if (array_join_alias_to_name.count(node->name))
-				array_join_result_to_source[node->name] = array_join_alias_to_name[node->name];
+			{
+				/// Был написан ARRAY JOIN со столбцом-массивом. Пример: SELECT K1 FROM ... ARRAY JOIN ParsedParams.Key1 AS K1
+				array_join_result_to_source[node->name] = array_join_alias_to_name[node->name];	/// K1 -> ParsedParams.Key1
+			}
 			else if (array_join_alias_to_name.count(table_name))
 			{
-				String nested_column = DataTypeNested::extractNestedColumnName(node->name);
-				array_join_result_to_source[node->name]
+				/// Был написан ARRAY JOIN с вложенной таблицей. Пример: SELECT PP.Key1 FROM ... ARRAY JOIN ParsedParams AS PP
+				String nested_column = DataTypeNested::extractNestedColumnName(node->name);	/// Key1
+				array_join_result_to_source[node->name]	/// PP.Key1 -> ParsedParams.Key1
 					= DataTypeNested::concatenateNestedName(array_join_alias_to_name[table_name], nested_column);
+			}
+			else if (array_join_name_to_alias.count(table_name))
+			{
+				/** Пример: SELECT ParsedParams.Key1 FROM ... ARRAY JOIN ParsedParams AS PP.
+				  * То есть, в запросе используется исходный массив, размноженный по самому себе.
+				  */
+
+				String nested_column = DataTypeNested::extractNestedColumnName(node->name);	/// Key1
+				array_join_result_to_source[	/// PP.Key1 -> ParsedParams.Key1
+					DataTypeNested::concatenateNestedName(array_join_name_to_alias[table_name], nested_column)] = node->name;
 			}
 		}
 	}
@@ -1511,10 +1530,12 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 		if (node->kind == ASTFunction::LAMBDA_EXPRESSION)
 			throw Exception("Unexpected expression", ErrorCodes::UNEXPECTED_EXPRESSION);
 
+		/// Функция arrayJoin.
 		if (node->kind == ASTFunction::ARRAY_JOIN)
 		{
 			if (node->arguments->children.size() != 1)
 				throw Exception("arrayJoin requires exactly 1 argument", ErrorCodes::TYPE_MISMATCH);
+
 			ASTPtr arg = node->arguments->children.at(0);
 			getActionsImpl(arg, no_subqueries, only_consts, actions_stack);
 			if (!only_consts)
@@ -1810,13 +1831,17 @@ void ExpressionAnalyzer::initChain(ExpressionActionsChain & chain, const NamesAn
 	}
 }
 
+/// "Большой" ARRAY JOIN.
 void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActionsPtr & actions) const
 {
 	NameSet result_columns;
 	for (const auto & result_source : array_join_result_to_source)
 	{
+		/// Дать столбцам новые имена, если надо.
 		if (result_source.first != result_source.second)
 			actions->add(ExpressionAction::copyColumn(result_source.second, result_source.first));
+
+		/// Сделать ARRAY JOIN (заменить массивы на их внутренности) для столбцов в этими новыми именами.
 		result_columns.insert(result_source.first);
 	}
 
