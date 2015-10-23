@@ -555,19 +555,22 @@ bool ExpressionActions::popUnusedArrayJoin(const Names & required_columns, Expre
 {
 	if (actions.empty() || actions.back().type != ExpressionAction::ARRAY_JOIN)
 		return false;
+
 	NameSet required_set(required_columns.begin(), required_columns.end());
+
 	for (const std::string & name : actions.back().array_joined_columns)
-	{
 		if (required_set.count(name))
 			return false;
-	}
+
 	for (const std::string & name : actions.back().array_joined_columns)
 	{
 		DataTypePtr & type = sample_block.getByName(name).type;
 		type = new DataTypeArray(type);
 	}
+
 	out_action = actions.back();
 	actions.pop_back();
+
 	return true;
 }
 
@@ -1018,7 +1021,11 @@ void ExpressionActionsChain::finalize()
 		steps[i].actions->finalize(required_output);
 	}
 
-	/// Когда возможно, перенесем ARRAY JOIN из более ранних шагов в более поздние.
+	/** Когда возможно, перенесем ARRAY JOIN из более ранних шагов в более поздние.
+	  * Замечание: обычно это полезно, так как ARRAY JOIN - сложная операция, которая, как правило, увеличивает объём данных.
+	  * Но не всегда - в случае, если большинство массивов пустые, ARRAY JOIN, наоборот, уменьшает объём данных,
+	  *  и его было бы полезно делать раньше. Этот случай не рассматривается.
+	  */
 	for (size_t i = 1; i < steps.size(); ++i)
 	{
 		ExpressionAction action;
