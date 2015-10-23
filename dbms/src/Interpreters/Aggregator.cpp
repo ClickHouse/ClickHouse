@@ -1437,7 +1437,7 @@ void NO_INLINE Aggregator::mergeTwoLevelDataImpl(
 		if (task.valid())
 			task.get_future().get();
 
-	if (no_more_keys)
+	if (no_more_keys && overflow_row)
 	{
 		for (size_t bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
 		{
@@ -1584,13 +1584,14 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 }
 
 
-template <typename Method, typename Table>
-void NO_INLINE Aggregator::mergeStreamsImpl(
+template <bool no_more_keys, typename Method, typename Table>
+void NO_INLINE Aggregator::mergeStreamsImplCase(
 	Block & block,
 	const Sizes & key_sizes,
 	Arena * aggregates_pool,
 	Method & method,
-	Table & data) const
+	Table & data,
+	AggregateDataPtr overflow_row) const
 {
 	ConstColumnPlainPtrs key_columns(keys_size);
 	AggregateColumnsData aggregate_columns(aggregates_size);
@@ -1611,13 +1612,33 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
 	for (size_t i = 0; i < rows; ++i)
 	{
 		typename Table::iterator it;
+
 		bool inserted;			/// Вставили новый ключ, или такой ключ уже был?
+		bool overflow = false;	/// Новый ключ не поместился в хэш-таблицу из-за no_more_keys.
 
 		/// Получаем ключ для вставки в хэш-таблицу.
 		auto key = state.getKey(key_columns, keys_size, i, key_sizes, keys, *aggregates_pool);
 
-		data.emplace(key, it, inserted);
+		if (!no_more_keys)
+		{
+			data.emplace(key, it, inserted);
+		}
+		else
+		{
+			inserted = false;
+			it = data.find(key);
+			if (data.end() == it)
+				overflow = true;
+		}
 
+		/// Если ключ не поместился, и данные не надо агрегировать в отдельную строку, то делать нечего.
+		if (no_more_keys && overflow && !overflow_row)
+		{
+			method.onExistingKey(key, keys, *aggregates_pool);
+			continue;
+		}
+
+		/// Если вставили новый ключ - инициализируем состояния агрегатных функций, и возможно, что-нибудь связанное с ключом.
 		if (inserted)
 		{
 			AggregateDataPtr & aggregate_data = Method::getAggregateData(it->second);
@@ -1632,16 +1653,35 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
 		else
 			method.onExistingKey(key, keys, *aggregates_pool);
 
+		AggregateDataPtr value = (!no_more_keys || !overflow) ? Method::getAggregateData(it->second) : overflow_row;
+
 		/// Мерджим состояния агрегатных функций.
 		for (size_t j = 0; j < aggregates_size; ++j)
 			aggregate_functions[j]->merge(
-				Method::getAggregateData(it->second) + offsets_of_aggregate_states[j],
+				value + offsets_of_aggregate_states[j],
 				(*aggregate_columns[j])[i]);
 	}
 
 	/// Пораньше освобождаем память.
 	block.clear();
 }
+
+template <typename Method, typename Table>
+void NO_INLINE Aggregator::mergeStreamsImpl(
+	Block & block,
+	const Sizes & key_sizes,
+	Arena * aggregates_pool,
+	Method & method,
+	Table & data,
+	AggregateDataPtr overflow_row,
+	bool no_more_keys) const
+{
+	if (!no_more_keys)
+		mergeStreamsImplCase<false>(block, key_sizes, aggregates_pool, method, data, overflow_row);
+	else
+		mergeStreamsImplCase<true>(block, key_sizes, aggregates_pool, method, data, overflow_row);
+}
+
 
 void NO_INLINE Aggregator::mergeWithoutKeyStreamsImpl(
 	Block & block,
@@ -1757,6 +1797,11 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 	/// Сначала параллельно мерджим для отдельных bucket-ов. Затем домердживаем данные, не распределённые по bucket-ам.
 	if (has_two_level)
 	{
+		/** В этом случае, no_more_keys не поддерживается в связи с тем, что
+		  *  из разных потоков трудно обновлять общее состояние для "остальных" ключей (overflows).
+		  * То есть, ключей в итоге может оказаться существенно больше, чем max_rows_to_group_by.
+		  */
+
 		LOG_TRACE(log, "Merging partially aggregated two-level data.");
 
 		auto merge_bucket = [&bucket_to_blocks, &result, &key_sizes, this](Int32 bucket, Arena * aggregates_pool, MemoryTracker * memory_tracker)
@@ -1770,7 +1815,7 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 
 			#define M(NAME) \
 				else if (result.type == AggregatedDataVariants::Type::NAME) \
-					mergeStreamsImpl(block, key_sizes, aggregates_pool, *result.NAME, result.NAME->data.impls[bucket]);
+					mergeStreamsImpl(block, key_sizes, aggregates_pool, *result.NAME, result.NAME->data.impls[bucket], nullptr, false);
 
 				if (false) {}
 					APPLY_FOR_VARIANTS_TWO_LEVEL(M)
@@ -1827,6 +1872,8 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 	{
 		LOG_TRACE(log, "Merging partially aggregated single-level data.");
 
+		bool no_more_keys = false;
+
 		BlocksList & blocks = bucket_to_blocks[-1];
 		for (Block & block : blocks)
 		{
@@ -1836,12 +1883,15 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 				return;
 			}
 
+			if (!checkLimits(result.sizeWithoutOverflowRow(), no_more_keys))
+				break;
+
 			if (result.type == AggregatedDataVariants::Type::without_key || block.info.is_overflows)
 				mergeWithoutKeyStreamsImpl(block, result);
 
 		#define M(NAME, IS_TWO_LEVEL) \
 			else if (result.type == AggregatedDataVariants::Type::NAME) \
-				mergeStreamsImpl(block, key_sizes, result.aggregates_pool, *result.NAME, result.NAME->data);
+				mergeStreamsImpl(block, key_sizes, result.aggregates_pool, *result.NAME, result.NAME->data, result.without_key, no_more_keys);
 
 			APPLY_FOR_AGGREGATED_VARIANTS(M)
 		#undef M
@@ -1896,7 +1946,7 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
 
 	#define M(NAME, IS_TWO_LEVEL) \
 		else if (result.type == AggregatedDataVariants::Type::NAME) \
-			mergeStreamsImpl(block, key_sizes, result.aggregates_pool, *result.NAME, result.NAME->data);
+			mergeStreamsImpl(block, key_sizes, result.aggregates_pool, *result.NAME, result.NAME->data, nullptr, false);
 
 		APPLY_FOR_AGGREGATED_VARIANTS(M)
 	#undef M

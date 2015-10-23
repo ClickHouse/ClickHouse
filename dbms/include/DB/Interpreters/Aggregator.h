@@ -1043,13 +1043,24 @@ protected:
 		bool final,
 		boost::threadpool::pool * thread_pool) const;
 
+	template <bool no_more_keys, typename Method, typename Table>
+	void mergeStreamsImplCase(
+		Block & block,
+		const Sizes & key_sizes,
+		Arena * aggregates_pool,
+		Method & method,
+		Table & data,
+		AggregateDataPtr overflow_row) const;
+
 	template <typename Method, typename Table>
 	void mergeStreamsImpl(
 		Block & block,
 		const Sizes & key_sizes,
 		Arena * aggregates_pool,
 		Method & method,
-		Table & data) const;
+		Table & data,
+		AggregateDataPtr overflow_row,
+		bool no_more_keys) const;
 
 	void mergeWithoutKeyStreamsImpl(
 		Block & block,
