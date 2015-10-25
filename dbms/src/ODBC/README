@@ -1,6 +1,6 @@
 Install unixodbc.
 
-g++ -std=gnu++1y -shared -fPIC -o odbc.so odbc.cpp
+g++ -std=gnu++1y -Wall -g -shared -fPIC -lPocoFoundation -lPocoNet -o odbc.so odbc.cpp
 
 ~/.odbc.ini:
 
