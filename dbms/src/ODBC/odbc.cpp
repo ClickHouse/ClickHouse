@@ -298,13 +298,13 @@ RETCODE freeEnv(SQLHENV environment)
 	return SQL_SUCCESS;
 }
 
-RETCODE freeConnect(SQLHENV connection)
+RETCODE freeConnect(SQLHDBC connection)
 {
 	delete reinterpret_cast<Connection *>(connection);
 	return SQL_SUCCESS;
 }
 
-RETCODE freeStmt(SQLHENV statement)
+RETCODE freeStmt(SQLHSTMT statement)
 {
 	delete reinterpret_cast<Statement *>(statement);
 	return SQL_SUCCESS;
@@ -843,6 +843,41 @@ SQLRowCount(HSTMT statement_handle,
 
 
 RETCODE SQL_API
+SQLMoreResults(HSTMT hstmt)
+{
+	mylog(__PRETTY_FUNCTION__);
+
+	return SQL_NO_DATA;
+}
+
+
+RETCODE SQL_API
+SQLFreeStmt(HSTMT statement_handle,
+			SQLUSMALLINT option)
+{
+	mylog(__PRETTY_FUNCTION__);
+
+	return freeStmt(statement_handle);
+}
+
+
+RETCODE SQL_API
+SQLDisconnect(HDBC connection_handle)
+{
+	mylog(__PRETTY_FUNCTION__);
+
+	if (nullptr == connection_handle)
+		return SQL_INVALID_HANDLE;
+
+	Connection & connection = *reinterpret_cast<Connection *>(connection_handle);
+
+	connection.session.reset();
+
+	return SQL_SUCCESS;
+}
+
+
+RETCODE SQL_API
 SQLBindCol(HSTMT StatementHandle,
 		   SQLUSMALLINT ColumnNumber, SQLSMALLINT TargetType,
 		   PTR TargetValue, SQLLEN BufferLength,
@@ -908,24 +943,6 @@ SQLDescribeCol(HSTMT StatementHandle,
 	mylog(__PRETTY_FUNCTION__);
 	return SQL_ERROR;
 }
-
-
-RETCODE SQL_API
-SQLDisconnect(HDBC ConnectionHandle)
-{
-	mylog(__PRETTY_FUNCTION__);
-	return SQL_ERROR;
-}
-
-
-/* Разве оно нужно?
-RETCODE SQL_API
-SQLFreeStmt(HSTMT StatementHandle,
-			SQLUSMALLINT Option)
-{
-	mylog(__PRETTY_FUNCTION__);
-	return SQL_ERROR;
-}*/
 
 
 RETCODE SQL_API
@@ -1093,14 +1110,6 @@ SQLForeignKeys(HSTMT hstmt,
 			   SQLSMALLINT cbFkSchemaName,
 			   SQLCHAR *szFkTableName,
 			   SQLSMALLINT cbFkTableName)
-{
-	mylog(__PRETTY_FUNCTION__);
-	return SQL_ERROR;
-}
-
-
-RETCODE SQL_API
-SQLMoreResults(HSTMT hstmt)
 {
 	mylog(__PRETTY_FUNCTION__);
 	return SQL_ERROR;
