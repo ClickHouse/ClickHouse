@@ -11,6 +11,9 @@
 
 #include <Poco/NumberParser.h>
 #include <Poco/Base64Encoder.h>
+#include <Poco/UTF8Encoding.h>
+#include <Poco/UTF16Encoding.h>
+#include <Poco/TextConverter.h>
 #include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
@@ -18,7 +21,7 @@
 
 static void mylog(const char * message)
 {
-/*	static struct Once
+	/*static struct Once
 	{
 		Once()
 		{
@@ -113,6 +116,10 @@ struct Environment
 		{"DateTime", 	{ .sql_type_name = "DATETIME", 	.display_size = 20,			.is_unsigned = true,  }},
 		{"Array", 		{ .sql_type_name = "TEXT", 		.display_size = 16777216,	.is_unsigned = true,  }},
 	};
+
+	Poco::UTF8Encoding utf8;
+	Poco::UTF16Encoding utf16;
+	Poco::TextConverter converter_utf8_to_utf16 {utf8, utf16};
 };
 
 
@@ -321,7 +328,7 @@ SQLAllocHandle(SQLSMALLINT handleType,
                SQLHANDLE inputHandle,
                SQLHANDLE *outputHandle)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 
 	switch (handleType)
 	{
@@ -340,7 +347,7 @@ SQLAllocHandle(SQLSMALLINT handleType,
 RETCODE SQL_API
 SQLFreeHandle(SQLSMALLINT handleType, SQLHANDLE handle)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 
 	switch (handleType)
 	{
@@ -357,16 +364,40 @@ SQLFreeHandle(SQLSMALLINT handleType, SQLHANDLE handle)
 
 
 RETCODE SQL_API
-SQLConnect(HDBC ConnectionHandle,
-		   SQLCHAR *ServerName, SQLSMALLINT NameLength1,
-		   SQLCHAR *UserName, SQLSMALLINT NameLength2,
-		   SQLCHAR *Authentication, SQLSMALLINT NameLength3)
+SQLConnect(HDBC connection_handle,
+		   SQLCHAR * server_name, SQLSMALLINT server_name_size,
+		   SQLCHAR * user, SQLSMALLINT user_size,
+		   SQLCHAR * password, SQLSMALLINT password_size)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 
-	std::cerr << ServerName << "\n";
+	if (nullptr == connection_handle)
+		return SQL_INVALID_HANDLE;
 
-	return SQL_ERROR;
+	Connection & connection = *reinterpret_cast<Connection *>(connection_handle);
+
+	if (connection.session.connected())
+		return SQL_ERROR;
+
+	if (user)
+	{
+		if (user_size < 0)
+			user_size = strlen(reinterpret_cast<const char *>(user));
+		connection.user.assign(reinterpret_cast<const char *>(user), static_cast<size_t>(user_size));
+	}
+
+	if (password)
+	{
+		if (password_size < 0)
+			password_size = strlen(reinterpret_cast<const char *>(password));
+		connection.password.assign(reinterpret_cast<const char *>(password), static_cast<size_t>(password_size));
+	}
+
+	connection.session.setHost(connection.host);
+	connection.session.setPort(connection.port);
+	connection.session.setKeepAlive(true);
+
+	return SQL_SUCCESS;
 }
 
 
@@ -380,7 +411,7 @@ SQLDriverConnect(HDBC connection_handle,
 				 SQLSMALLINT FAR * connection_str_out_size,
 				 SQLUSMALLINT driver_completion)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 
 	if (nullptr == connection_handle)
 		return SQL_INVALID_HANDLE;
@@ -443,7 +474,7 @@ SQLGetInfo(HDBC connection_handle,
 		   SQLUSMALLINT info_type, PTR out_info_value,
 		   SQLSMALLINT out_info_value_max_length, SQLSMALLINT * out_info_value_length)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 
 	StringRef res;
 
@@ -494,7 +525,7 @@ RETCODE SQL_API
 SQLPrepare(HSTMT statement_handle,
 		   SQLCHAR * statement_text, SQLINTEGER statement_text_size)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 
 	if (nullptr == statement_handle)
 		return SQL_INVALID_HANDLE;
@@ -521,7 +552,7 @@ SQLPrepare(HSTMT statement_handle,
 RETCODE SQL_API
 SQLExecute(HSTMT statement_handle)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 
 	if (nullptr == statement_handle)
 		return SQL_INVALID_HANDLE;
@@ -558,7 +589,7 @@ RETCODE SQL_API
 SQLExecDirect(HSTMT statement_handle,
 			  SQLCHAR * statement_text, SQLINTEGER statement_text_size)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 
 	RETCODE ret = SQLPrepare(statement_handle, statement_text, statement_text_size);
 	if (ret != SQL_SUCCESS)
@@ -572,7 +603,7 @@ RETCODE SQL_API
 SQLNumResultCols(HSTMT statement_handle,
 				 SQLSMALLINT * column_count)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 
 	if (nullptr == statement_handle)
 		return SQL_INVALID_HANDLE;
@@ -592,7 +623,7 @@ SQLColAttribute(HSTMT statement_handle, SQLUSMALLINT column_number, SQLUSMALLINT
 	SQLPOINTER out_string_value, SQLSMALLINT out_string_value_max_size, SQLSMALLINT * out_string_value_size,
 	SQLLEN * out_num_value)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 
 	if (nullptr == statement_handle)
 		return SQL_INVALID_HANDLE;
@@ -627,7 +658,7 @@ SQLColAttribute(HSTMT statement_handle, SQLUSMALLINT column_number, SQLUSMALLINT
 			num_value = statement.columns_info.size();
 			break;
 		case SQL_DESC_DISPLAY_SIZE:
-			num_value = statement.connection.environment.types_info.at(statement.columns_info[column_idx].type).display_size;
+			num_value = 0; //statement.connection.environment.types_info.at(statement.columns_info[column_idx].type).display_size;
 			break;
 		case SQL_DESC_FIXED_PREC_SCALE:
 			break;
@@ -695,7 +726,7 @@ SQLColAttribute(HSTMT statement_handle, SQLUSMALLINT column_number, SQLUSMALLINT
 RETCODE SQL_API
 SQLFetch(HSTMT statement_handle)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 
 	if (nullptr == statement_handle)
 		return SQL_INVALID_HANDLE;
@@ -714,7 +745,7 @@ SQLGetData(HSTMT statement_handle,
 		   PTR out_value, SQLLEN out_value_max_size,
 		   SQLLEN * out_value_size_or_indicator)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 
 	if (nullptr == statement_handle)
 		return SQL_INVALID_HANDLE;
@@ -727,6 +758,8 @@ SQLGetData(HSTMT statement_handle,
 	size_t column_idx = column_or_param_number - 1;
 
 	std::cerr << "column: " << column_idx << ", target_type: " << target_type << "\n";
+
+	const std::string & value = statement.current_row[column_idx];
 
 	union
 	{
@@ -751,57 +784,55 @@ SQLGetData(HSTMT statement_handle,
 		case SQL_C_TINYINT:
 		case SQL_C_STINYINT:
 			num_size = 1;
-			num.int_data = Statement::getInt(statement.current_row[column_idx]);
+			num.int_data = Statement::getInt(value);
 			break;
 		case SQL_C_UTINYINT:
 			num_size = 1;
-			num.uint_data = Statement::getUInt(statement.current_row[column_idx]);
+			num.uint_data = Statement::getUInt(value);
 			break;
 
 		case SQL_C_SHORT:
 		case SQL_C_SSHORT:
 			num_size = 2;
-			num.int_data = Statement::getInt(statement.current_row[column_idx]);
+			num.int_data = Statement::getInt(value);
 			break;
 		case SQL_C_USHORT:
 			num_size = 2;
-			num.uint_data = Statement::getUInt(statement.current_row[column_idx]);
+			num.uint_data = Statement::getUInt(value);
 			break;
 
 		case SQL_C_LONG:
 		case SQL_C_SLONG:
 			num_size = 4;
-			num.int_data = Statement::getInt(statement.current_row[column_idx]);
+			num.int_data = Statement::getInt(value);
 			break;
 		case SQL_C_ULONG:
 			num_size = 4;
-			num.uint_data = Statement::getUInt(statement.current_row[column_idx]);
+			num.uint_data = Statement::getUInt(value);
 			break;
 
 		case SQL_C_SBIGINT:
 			num_size = 8;
-			num.int_data = Statement::getInt(statement.current_row[column_idx]);
+			num.int_data = Statement::getInt(value);
 			break;
 		case SQL_C_UBIGINT:
 			num_size = 8;
-			num.uint_data = Statement::getUInt(statement.current_row[column_idx]);
+			num.uint_data = Statement::getUInt(value);
 			break;
 
 		case SQL_C_FLOAT:
 			num_size = 4;
-			num.float_data = Statement::getFloat(statement.current_row[column_idx]);
+			num.float_data = Statement::getFloat(value);
 			break;
 
 		case SQL_C_DOUBLE:
 			num_size = 8;
-			num.double_data = Statement::getDouble(statement.current_row[column_idx]);
+			num.double_data = Statement::getDouble(value);
 			break;
 
 		default:
 			return SQL_ERROR;
 	}
-
-	std::cerr << "!!!\n";
 
 	if (num_size)
 	{
@@ -815,9 +846,25 @@ SQLGetData(HSTMT statement_handle,
 	}
 	else
 	{
-		strncpy(reinterpret_cast<char *>(out_value), statement.current_row[column_idx].data(), out_value_max_size);
-		if (out_value_size_or_indicator)
-			*out_value_size_or_indicator =  statement.current_row[column_idx].size();
+		if (target_type == SQL_C_CHAR)
+		{
+			strncpy(reinterpret_cast<char *>(out_value), value.data(), out_value_max_size);
+			if (out_value_size_or_indicator)
+				*out_value_size_or_indicator = value.size();
+		}
+		else
+		{
+			std::string converted;
+			//statement.connection.environment.converter_utf8_to_utf16.convert(value.data(), converted);
+
+			converted.resize(value.size() * 2, '\xFF');
+			for (size_t i = 0, size = value.size(); i < size; ++i)
+				converted[i * 2] = value[i];
+
+			strncpy(reinterpret_cast<char *>(out_value), converted.data(), out_value_max_size);
+			if (out_value_size_or_indicator)
+				*out_value_size_or_indicator = converted.size();
+		}
 	}
 
 	return SQL_SUCCESS;
@@ -828,7 +875,7 @@ RETCODE SQL_API
 SQLRowCount(HSTMT statement_handle,
 			SQLLEN * out_row_count)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 
 	if (nullptr == statement_handle)
 		return SQL_INVALID_HANDLE;
@@ -845,7 +892,7 @@ SQLRowCount(HSTMT statement_handle,
 RETCODE SQL_API
 SQLMoreResults(HSTMT hstmt)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 
 	return SQL_NO_DATA;
 }
@@ -855,7 +902,7 @@ RETCODE SQL_API
 SQLFreeStmt(HSTMT statement_handle,
 			SQLUSMALLINT option)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 
 	return freeStmt(statement_handle);
 }
@@ -864,7 +911,7 @@ SQLFreeStmt(HSTMT statement_handle,
 RETCODE SQL_API
 SQLDisconnect(HDBC connection_handle)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 
 	if (nullptr == connection_handle)
 		return SQL_INVALID_HANDLE;
@@ -883,7 +930,7 @@ SQLBindCol(HSTMT StatementHandle,
 		   PTR TargetValue, SQLLEN BufferLength,
 		   SQLLEN *StrLen_or_Ind)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 	return SQL_ERROR;
 }
 
@@ -891,7 +938,7 @@ SQLBindCol(HSTMT StatementHandle,
 RETCODE SQL_API
 SQLCancel(HSTMT StatementHandle)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 	return SQL_ERROR;
 }
 
@@ -903,7 +950,7 @@ SQLColumns(HSTMT StatementHandle,
 		   SQLCHAR *TableName, SQLSMALLINT NameLength3,
 		   SQLCHAR *ColumnName, SQLSMALLINT NameLength4)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 	return SQL_ERROR;
 }
 
@@ -916,7 +963,7 @@ SQLBrowseConnect(HDBC hdbc,
 				 SQLSMALLINT cbConnStrOutMax,
 				 SQLSMALLINT *pcbConnStrOut)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 	return SQL_ERROR;
 }
 
@@ -928,7 +975,7 @@ SQLDataSources(HENV EnvironmentHandle,
 			   SQLCHAR *Description, SQLSMALLINT BufferLength2,
 			   SQLSMALLINT *NameLength2)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 	return SQL_ERROR;
 }
 
@@ -940,7 +987,7 @@ SQLDescribeCol(HSTMT StatementHandle,
 			   SQLSMALLINT *DataType, SQLULEN *ColumnSize,
 			   SQLSMALLINT *DecimalDigits, SQLSMALLINT *Nullable)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 	return SQL_ERROR;
 }
 
@@ -950,7 +997,7 @@ SQLGetCursorName(HSTMT StatementHandle,
 				 SQLCHAR *CursorName, SQLSMALLINT BufferLength,
 				 SQLSMALLINT *NameLength)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 	return SQL_ERROR;
 }
 
@@ -961,7 +1008,7 @@ RETCODE SQL_API
 SQLGetFunctions(HDBC ConnectionHandle,
 				SQLUSMALLINT FunctionId, SQLUSMALLINT *Supported)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 	return SQL_ERROR;
 }*/
 
@@ -970,7 +1017,7 @@ RETCODE SQL_API
 SQLGetTypeInfo(HSTMT StatementHandle,
 			   SQLSMALLINT DataType)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 	return SQL_ERROR;
 }
 
@@ -979,7 +1026,7 @@ RETCODE SQL_API
 SQLParamData(HSTMT StatementHandle,
 			 PTR *Value)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 	return SQL_ERROR;
 }
 
@@ -988,7 +1035,7 @@ RETCODE SQL_API
 SQLPutData(HSTMT StatementHandle,
 		   PTR Data, SQLLEN StrLen_or_Ind)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 	return SQL_ERROR;
 }
 
@@ -997,7 +1044,7 @@ RETCODE SQL_API
 SQLSetCursorName(HSTMT StatementHandle,
 				 SQLCHAR *CursorName, SQLSMALLINT NameLength)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 	return SQL_ERROR;
 }
 
@@ -1009,7 +1056,7 @@ SQLSetParam(HSTMT StatementHandle,
 			SQLSMALLINT ParameterScale, PTR ParameterValue,
 			SQLLEN *StrLen_or_Ind)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 	return SQL_ERROR;
 }
 
@@ -1022,7 +1069,7 @@ SQLSpecialColumns(HSTMT StatementHandle,
 				  SQLSMALLINT NameLength3, SQLUSMALLINT Scope,
 				  SQLUSMALLINT Nullable)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 	return SQL_ERROR;
 }
 
@@ -1034,7 +1081,7 @@ SQLStatistics(HSTMT StatementHandle,
 			  SQLCHAR *TableName, SQLSMALLINT NameLength3,
 			  SQLUSMALLINT Unique, SQLUSMALLINT Reserved)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 	return SQL_ERROR;
 }
 
@@ -1046,7 +1093,7 @@ SQLTables(HSTMT StatementHandle,
 		  SQLCHAR *TableName, SQLSMALLINT NameLength3,
 		  SQLCHAR *TableType, SQLSMALLINT NameLength4)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 	return SQL_ERROR;
 }
 
@@ -1062,7 +1109,7 @@ SQLColumnPrivileges(HSTMT hstmt,
 					SQLCHAR *szColumnName,
 					SQLSMALLINT cbColumnName)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 	return SQL_ERROR;
 }
 
@@ -1075,7 +1122,7 @@ SQLDescribeParam(HSTMT hstmt,
 				 SQLSMALLINT *pibScale,
 				 SQLSMALLINT *pfNullable)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 	return SQL_ERROR;
 }
 
@@ -1091,7 +1138,7 @@ SQLExtendedFetch(HSTMT hstmt,
 #endif /* WITH_UNIXODBC */
 				 SQLUSMALLINT *rgfRowStatus)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 	return SQL_ERROR;
 }
 
@@ -1111,7 +1158,7 @@ SQLForeignKeys(HSTMT hstmt,
 			   SQLCHAR *szFkTableName,
 			   SQLSMALLINT cbFkTableName)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 	return SQL_ERROR;
 }
 
@@ -1124,7 +1171,7 @@ SQLNativeSql(HDBC hdbc,
 			 SQLINTEGER cbSqlStrMax,
 			 SQLINTEGER *pcbSqlStr)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 	return SQL_ERROR;
 }
 
@@ -1133,7 +1180,7 @@ RETCODE SQL_API
 SQLNumParams(HSTMT hstmt,
 			 SQLSMALLINT *pcpar)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 	return SQL_ERROR;
 }
 
@@ -1147,7 +1194,7 @@ SQLPrimaryKeys(HSTMT hstmt,
 			   SQLCHAR *szTableName,
 			   SQLSMALLINT cbTableName)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 	return SQL_ERROR;
 }
 
@@ -1163,7 +1210,7 @@ SQLProcedureColumns(HSTMT hstmt,
 					SQLCHAR *szColumnName,
 					SQLSMALLINT cbColumnName)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 	return SQL_ERROR;
 }
 
@@ -1177,7 +1224,7 @@ SQLProcedures(HSTMT hstmt,
 			  SQLCHAR *szProcName,
 			  SQLSMALLINT cbProcName)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 	return SQL_ERROR;
 }
 
@@ -1188,7 +1235,7 @@ SQLSetPos(HSTMT hstmt,
 		  SQLUSMALLINT fOption,
 		  SQLUSMALLINT fLock)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 	return SQL_ERROR;
 }
 
@@ -1202,7 +1249,7 @@ SQLTablePrivileges(HSTMT hstmt,
 				   SQLCHAR *szTableName,
 				   SQLSMALLINT cbTableName)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 	return SQL_ERROR;
 }
 
@@ -1219,7 +1266,7 @@ SQLBindParameter(HSTMT hstmt,
 				 SQLLEN cbValueMax,
 				 SQLLEN *pcbValue)
 {
-	mylog(__PRETTY_FUNCTION__);
+	mylog(__FUNCTION__);
 	return SQL_ERROR;
 }
 
