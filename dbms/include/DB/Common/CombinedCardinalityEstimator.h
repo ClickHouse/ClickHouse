@@ -155,9 +155,15 @@ public:
 		if (container_type == details::ContainerType::SMALL)
 			small.read(in);
 		else if (container_type == details::ContainerType::MEDIUM)
+		{
+			toMedium();
 			getContainer<Medium>().read(in);
+		}
 		else if (container_type == details::ContainerType::LARGE)
+		{
+			toLarge();
 			getContainer<Large>().read(in);
+		}
 	}
 
 	void readAndMerge(DB::ReadBuffer & in)
