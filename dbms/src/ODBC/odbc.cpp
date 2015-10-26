@@ -21,7 +21,7 @@
 
 static void mylog(const char * message)
 {
-/*	static struct Once
+	static struct Once
 	{
 		Once()
 		{
@@ -29,7 +29,7 @@ static void mylog(const char * message)
 			if (!freopen(stderr_path.c_str(), "a+", stderr))
 				throw std::logic_error("Cannot freopen stderr.");
 		}
-	} once;*/
+	} once;
 
 	std::cerr << message << "\n";
 }
@@ -607,6 +607,28 @@ SQLGetInfo(HDBC connection_handle,
 		case SQL_DATA_SOURCE_NAME:
 			res = "ClickHouse";
 			break;
+
+		case SQL_MAX_COLUMNS_IN_SELECT:
+		case SQL_MAX_DRIVER_CONNECTIONS:
+		case SQL_MAX_CONCURRENT_ACTIVITIES:
+		case SQL_MAX_COLUMN_NAME_LEN:
+		case SQL_MAX_CURSOR_NAME_LEN:
+		case SQL_MAX_SCHEMA_NAME_LEN:
+		case SQL_MAX_CATALOG_NAME_LEN:
+		case SQL_MAX_TABLE_NAME_LEN:
+		case SQL_MAX_COLUMNS_IN_GROUP_BY:
+		case SQL_MAX_COLUMNS_IN_INDEX:
+		case SQL_MAX_COLUMNS_IN_ORDER_BY:
+		case SQL_MAX_COLUMNS_IN_TABLE:
+		case SQL_MAX_INDEX_SIZE:
+		case SQL_MAX_ROW_SIZE:
+		case SQL_MAX_STATEMENT_LEN:
+		case SQL_MAX_TABLES_IN_SELECT:
+		case SQL_MAX_USER_NAME_LEN:
+			res.assign("\0\0\0\0");
+			break;
+
+		case SQL_DATA_SOURCE_READ_ONLY: /// TODO Libreoffice
 		default:
 			std::cerr << "Unsupported info type: " << info_type << "\n";	/// TODO Унификация трассировки.
 			return SQL_ERROR;
@@ -1087,7 +1109,7 @@ SQLSetConnectAttr(SQLHDBC connection_handle, SQLINTEGER attribute,
 		case SQL_ATTR_CONNECTION_DEAD:
 		case SQL_ATTR_CONNECTION_TIMEOUT:
 		case SQL_ATTR_CURRENT_CATALOG:
-		case SQL_ATTR_LOGIN_TIMEOUT:
+		case SQL_ATTR_LOGIN_TIMEOUT: /// TODO
 		case SQL_ATTR_METADATA_ID:
 		case SQL_ATTR_ODBC_CURSORS:
 		case SQL_ATTR_PACKET_SIZE:
@@ -1170,6 +1192,18 @@ SQLGetDiagField(SQLSMALLINT handle_type, SQLHANDLE handle,
 		reinterpret_cast<SQLCHAR *>(out_mesage),
 		out_message_max_size,
 		out_message_size);
+}
+
+
+RETCODE SQL_API
+SQLTables(HSTMT StatementHandle,
+		  SQLCHAR *CatalogName, SQLSMALLINT NameLength1,
+		  SQLCHAR *SchemaName, SQLSMALLINT NameLength2,
+		  SQLCHAR *TableName, SQLSMALLINT NameLength3,
+		  SQLCHAR *TableType, SQLSMALLINT NameLength4)
+{
+	mylog(__FUNCTION__);
+	return SQL_ERROR;
 }
 
 
@@ -1329,18 +1363,6 @@ SQLStatistics(HSTMT StatementHandle,
 			  SQLCHAR *SchemaName, SQLSMALLINT NameLength2,
 			  SQLCHAR *TableName, SQLSMALLINT NameLength3,
 			  SQLUSMALLINT Unique, SQLUSMALLINT Reserved)
-{
-	mylog(__FUNCTION__);
-	return SQL_ERROR;
-}
-
-
-RETCODE SQL_API
-SQLTables(HSTMT StatementHandle,
-		  SQLCHAR *CatalogName, SQLSMALLINT NameLength1,
-		  SQLCHAR *SchemaName, SQLSMALLINT NameLength2,
-		  SQLCHAR *TableName, SQLSMALLINT NameLength3,
-		  SQLCHAR *TableType, SQLSMALLINT NameLength4)
 {
 	mylog(__FUNCTION__);
 	return SQL_ERROR;
