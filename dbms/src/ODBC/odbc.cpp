@@ -21,7 +21,7 @@
 
 static void mylog(const char * message)
 {
-	/*static struct Once
+	static struct Once
 	{
 		Once()
 		{
@@ -29,7 +29,7 @@ static void mylog(const char * message)
 			if (!freopen(stderr_path.c_str(), "a+", stderr))
 				throw std::logic_error("Cannot freopen stderr.");
 		}
-	} once;*/
+	} once;
 
 	std::cerr << message << "\n";
 }
@@ -324,23 +324,44 @@ extern "C"
 
 
 RETCODE SQL_API
-SQLAllocHandle(SQLSMALLINT handleType,
-               SQLHANDLE inputHandle,
-               SQLHANDLE *outputHandle)
+SQLAllocHandle(SQLSMALLINT handle_type,
+               SQLHANDLE input_handle,
+               SQLHANDLE * output_handle)
 {
 	mylog(__FUNCTION__);
 
-	switch (handleType)
+	switch (handle_type)
 	{
 		case SQL_HANDLE_ENV:
-			return allocEnv((SQLHENV *)outputHandle);
+			return allocEnv((SQLHENV *)output_handle);
 		case SQL_HANDLE_DBC:
-			return allocConnect((SQLHENV)inputHandle, (SQLHDBC *)outputHandle);
+			return allocConnect((SQLHENV)input_handle, (SQLHDBC *)output_handle);
 		case SQL_HANDLE_STMT:
-			return allocStmt((SQLHDBC)inputHandle, (SQLHSTMT *)outputHandle);
+			return allocStmt((SQLHDBC)input_handle, (SQLHSTMT *)output_handle);
 		default:
 			return SQL_ERROR;
 	}
+}
+
+RETCODE SQL_API
+SQLAllocEnv(SQLHDBC * output_handle)
+{
+	mylog(__FUNCTION__);
+	return allocEnv(output_handle);
+}
+
+RETCODE SQL_API
+SQLAllocConnect(SQLHENV input_handle, SQLHDBC * output_handle)
+{
+	mylog(__FUNCTION__);
+	return allocConnect(input_handle, output_handle);
+}
+
+RETCODE SQL_API
+SQLAllocStmt(SQLHDBC input_handle, SQLHSTMT * output_handle)
+{
+	mylog(__FUNCTION__);
+	return allocStmt(input_handle, output_handle);
 }
 
 
@@ -357,6 +378,42 @@ SQLFreeHandle(SQLSMALLINT handleType, SQLHANDLE handle)
 			return freeConnect((SQLHDBC)handle);
 		case SQL_HANDLE_STMT:
 			return freeStmt((SQLHDBC)handle);
+		default:
+			return SQL_ERROR;
+	}
+}
+
+
+RETCODE SQL_API
+SQLFreeEnv(HENV handle)
+{
+	mylog(__FUNCTION__);
+	return freeEnv(handle);
+}
+
+RETCODE SQL_API
+SQLFreeConnect(HDBC handle)
+{
+	mylog(__FUNCTION__);
+	return freeConnect(handle);
+}
+
+RETCODE SQL_API
+SQLFreeStmt(HSTMT statement_handle,
+			SQLUSMALLINT option)
+{
+	mylog(__FUNCTION__);
+
+	switch (option)
+	{
+		case SQL_DROP:
+			return freeStmt(statement_handle);
+
+		case SQL_CLOSE:				/// Закрыть курсор, проигнорировать оставшиеся результаты. Если курсора нет, то noop.
+		case SQL_UNBIND:
+		case SQL_RESET_PARAMS:
+			return SQL_SUCCESS;
+
 		default:
 			return SQL_ERROR;
 	}
@@ -476,6 +533,8 @@ SQLGetInfo(HDBC connection_handle,
 {
 	mylog(__FUNCTION__);
 
+	std::cerr << "GetInfo with info_type: " << info_type << ", out_info_value_max_length: " << out_info_value_max_length << ", out_info_value: " << (void*)out_info_value << "\n";
+
 	StringRef res;
 
 	switch (info_type)
@@ -484,10 +543,10 @@ SQLGetInfo(HDBC connection_handle,
 			res = "1.0";
 			break;
 		case SQL_DRIVER_ODBC_VER:
-			res = "1.0";
+			res = SQL_SPEC_STRING;
 			break;
 		case SQL_DRIVER_NAME:
-			res = "ClickHouse ODBC Driver";
+			res = "ClickHouse ODBC";
 			break;
 		case SQL_DBMS_NAME:
 			res = "ClickHouse";
@@ -857,7 +916,7 @@ SQLGetData(HSTMT statement_handle,
 			std::string converted;
 			//statement.connection.environment.converter_utf8_to_utf16.convert(value.data(), converted);
 
-			converted.resize(value.size() * 2, '\xFF');
+			converted.resize(value.size() * 2, '\xFF');		/// TODO Нулевой символ на конце.
 			for (size_t i = 0, size = value.size(); i < size; ++i)
 				converted[i * 2] = value[i];
 
@@ -899,16 +958,6 @@ SQLMoreResults(HSTMT hstmt)
 
 
 RETCODE SQL_API
-SQLFreeStmt(HSTMT statement_handle,
-			SQLUSMALLINT option)
-{
-	mylog(__FUNCTION__);
-
-	return freeStmt(statement_handle);
-}
-
-
-RETCODE SQL_API
 SQLDisconnect(HDBC connection_handle)
 {
 	mylog(__FUNCTION__);
@@ -921,6 +970,40 @@ SQLDisconnect(HDBC connection_handle)
 	connection.session.reset();
 
 	return SQL_SUCCESS;
+}
+
+
+RETCODE SQL_API
+SQLBrowseConnect(HDBC connection_handle,
+				 SQLCHAR *szConnStrIn,
+				 SQLSMALLINT cbConnStrIn,
+				 SQLCHAR *szConnStrOut,
+				 SQLSMALLINT cbConnStrOutMax,
+				 SQLSMALLINT *pcbConnStrOut)
+{
+	mylog(__FUNCTION__);
+	return SQL_ERROR;
+}
+
+
+RETCODE SQL_API
+SQLGetDiagRec(SQLSMALLINT nHandleType, SQLHANDLE hHandle,
+    SQLSMALLINT nRecordNumber, SQLCHAR * pszState, SQLINTEGER * pnNativeError,
+    SQLCHAR * pszMessageText, SQLSMALLINT nBufferLength,
+    SQLSMALLINT * pnStringLength)
+{
+	mylog(__FUNCTION__);
+
+	return SQL_ERROR;
+}
+
+RETCODE SQL_API
+SQLSetEnvAttr(SQLHENV EnvironmentHandle, SQLINTEGER Attribute,
+    SQLPOINTER Value, SQLINTEGER StringLength)
+{
+	mylog(__FUNCTION__);
+
+	return SQL_ERROR;
 }
 
 
@@ -949,19 +1032,6 @@ SQLColumns(HSTMT StatementHandle,
 		   SQLCHAR *SchemaName, SQLSMALLINT NameLength2,
 		   SQLCHAR *TableName, SQLSMALLINT NameLength3,
 		   SQLCHAR *ColumnName, SQLSMALLINT NameLength4)
-{
-	mylog(__FUNCTION__);
-	return SQL_ERROR;
-}
-
-
-RETCODE SQL_API
-SQLBrowseConnect(HDBC hdbc,
-				 SQLCHAR *szConnStrIn,
-				 SQLSMALLINT cbConnStrIn,
-				 SQLCHAR *szConnStrOut,
-				 SQLSMALLINT cbConnStrOutMax,
-				 SQLSMALLINT *pcbConnStrOut)
 {
 	mylog(__FUNCTION__);
 	return SQL_ERROR;
@@ -1265,6 +1335,230 @@ SQLBindParameter(HSTMT hstmt,
 				 PTR rgbValue,
 				 SQLLEN cbValueMax,
 				 SQLLEN *pcbValue)
+{
+	mylog(__FUNCTION__);
+	return SQL_ERROR;
+}
+
+/*
+RETCODE SQL_API
+SQLBulkOperations(
+     SQLHSTMT       StatementHandle,
+     SQLUSMALLINT   Operation)
+{
+	mylog(__FUNCTION__);
+	return SQL_ERROR;
+}*/
+
+
+RETCODE SQL_API
+SQLCancelHandle(
+      SQLSMALLINT  HandleType,
+      SQLHANDLE    Handle)
+{
+	mylog(__FUNCTION__);
+	return SQL_ERROR;
+}
+
+
+RETCODE SQL_API
+SQLCloseCursor(
+	SQLHSTMT     StatementHandle)
+{
+	mylog(__FUNCTION__);
+	return SQL_ERROR;
+}
+
+
+RETCODE SQL_API
+SQLCompleteAsync(
+      SQLSMALLINT HandleType,
+      SQLHANDLE   Handle,
+      RETCODE *   AsyncRetCodePtr)
+{
+	mylog(__FUNCTION__);
+	return SQL_ERROR;
+}
+
+
+RETCODE SQL_API
+SQLCopyDesc(
+     SQLHDESC     SourceDescHandle,
+     SQLHDESC     TargetDescHandle)
+{
+	mylog(__FUNCTION__);
+	return SQL_ERROR;
+}
+
+
+RETCODE SQL_API
+SQLEndTran(
+     SQLSMALLINT   HandleType,
+     SQLHANDLE     Handle,
+     SQLSMALLINT   CompletionType)
+{
+	mylog(__FUNCTION__);
+	return SQL_ERROR;
+}
+
+
+RETCODE SQL_API
+SQLError(SQLHENV hDrvEnv, SQLHDBC hDrvDbc, SQLHSTMT hDrvStmt,
+    SQLCHAR *szSqlState, SQLINTEGER *pfNativeError, SQLCHAR *szErrorMsg,
+    SQLSMALLINT nErrorMsgMax, SQLSMALLINT *pcbErrorMsg)
+{
+	mylog(__FUNCTION__);
+	return SQL_ERROR;
+}
+
+
+RETCODE SQL_API
+SQLFetchScroll(SQLHSTMT hDrvStmt, SQLSMALLINT nOrientation, SQLLEN nOffset)
+{
+	mylog(__FUNCTION__);
+	return SQL_ERROR;
+}
+
+
+RETCODE SQL_API
+SQLGetConnectAttr(SQLHDBC hDrvDbc, SQLINTEGER Attribute, SQLPOINTER Value,
+    SQLINTEGER BufferLength, SQLINTEGER *StringLength)
+{
+	mylog(__FUNCTION__);
+	return SQL_ERROR;
+}
+
+
+RETCODE SQL_API
+SQLGetConnectOption(SQLHDBC hDrvDbc, UWORD fOption, PTR pvParam)
+{
+	mylog(__FUNCTION__);
+	return SQL_ERROR;
+}
+
+
+RETCODE SQL_API
+SQLGetDescField(SQLHDESC DescriptorHandle, SQLSMALLINT RecordNumber,
+    SQLSMALLINT FieldIdentifier, SQLPOINTER Value, SQLINTEGER BufferLength,
+    SQLINTEGER *StringLength)
+{
+	mylog(__FUNCTION__);
+	return SQL_ERROR;
+}
+
+
+RETCODE SQL_API
+SQLGetDescRec(SQLHDESC DescriptorHandle, SQLSMALLINT RecordNumber,
+    SQLCHAR *Name, SQLSMALLINT BufferLength, SQLSMALLINT *StringLength,
+    SQLSMALLINT *Type, SQLSMALLINT *SubType, SQLLEN *Length,
+    SQLSMALLINT *Precision, SQLSMALLINT *Scale, SQLSMALLINT *Nullable)
+{
+	mylog(__FUNCTION__);
+	return SQL_ERROR;
+}
+
+
+RETCODE SQL_API
+SQLGetDiagField(SQLSMALLINT HandleType, SQLHANDLE Handle,
+    SQLSMALLINT RecordNumber, SQLSMALLINT DiagIdentifier, SQLPOINTER DiagInfo,
+    SQLSMALLINT BufferLength, SQLSMALLINT *StringLength)
+{
+	mylog(__FUNCTION__);
+	return SQL_ERROR;
+}
+
+
+RETCODE SQL_API
+SQLGetStmtAttr(SQLHSTMT hDrvStmt, SQLINTEGER Attribute, SQLPOINTER Value,
+    SQLINTEGER BufferLength, SQLINTEGER *StringLength)
+{
+	mylog(__FUNCTION__);
+	return SQL_ERROR;
+}
+
+
+RETCODE SQL_API
+SQLGetStmtOption(SQLHSTMT hDrvStmt, UWORD fOption, PTR pvParam)
+{
+	mylog(__FUNCTION__);
+	return SQL_ERROR;
+}
+
+
+RETCODE SQL_API
+SQLParamOptions(SQLHSTMT hDrvStmt, SQLULEN nRow, SQLULEN *pnRow)
+{
+	mylog(__FUNCTION__);
+	return SQL_ERROR;
+}
+
+
+RETCODE SQL_API
+SQLSetConnectAttr(SQLHDBC ConnectionHandle, SQLINTEGER Attribute,
+        SQLPOINTER ValuePtr, SQLINTEGER StringLength)
+{
+	mylog(__FUNCTION__);
+	return SQL_ERROR;
+}
+
+
+RETCODE SQL_API
+SQLSetConnectOption(SQLHDBC hDrvDbc, UWORD nOption, SQLULEN vParam)
+{
+	mylog(__FUNCTION__);
+	return SQL_ERROR;
+}
+
+
+RETCODE SQL_API
+SQLSetDescField(SQLHDESC DescriptorHandle, SQLSMALLINT RecordNumber,
+    SQLSMALLINT FieldIdentifier, SQLPOINTER Value, SQLINTEGER BufferLength)
+{
+	mylog(__FUNCTION__);
+	return SQL_ERROR;
+}
+
+
+RETCODE SQL_API
+SQLSetDescRec(SQLHDESC hDescriptorHandle, SQLSMALLINT nRecordNumber,
+    SQLSMALLINT nType, SQLSMALLINT nSubType, SQLLEN nLength,
+    SQLSMALLINT nPrecision, SQLSMALLINT nScale, SQLPOINTER pData,
+    SQLLEN *pnStringLength, SQLLEN *pnIndicator)
+{
+	mylog(__FUNCTION__);
+	return SQL_ERROR;
+}
+
+
+RETCODE SQL_API
+SQLSetScrollOptions(
+	SQLHSTMT hDrvStmt, SQLUSMALLINT fConcurrency, SQLLEN crowKeyset,
+    SQLUSMALLINT crowRowset)
+{
+	mylog(__FUNCTION__);
+	return SQL_ERROR;
+}
+
+
+RETCODE SQL_API
+SQLSetStmtAttr(SQLHSTMT hDrvStmt, SQLINTEGER Attribute, SQLPOINTER Value,
+    SQLINTEGER StringLength)
+{
+	mylog(__FUNCTION__);
+	return SQL_ERROR;
+}
+
+
+RETCODE SQL_API
+SQLSetStmtOption(SQLHSTMT hDrvStmt, UWORD fOption, SQLULEN vParam)
+{
+	mylog(__FUNCTION__);
+	return SQL_ERROR;
+}
+
+
+RETCODE SQL_API
+SQLTransact(SQLHENV hDrvEnv, SQLHDBC hDrvDbc, UWORD nType)
 {
 	mylog(__FUNCTION__);
 	return SQL_ERROR;
