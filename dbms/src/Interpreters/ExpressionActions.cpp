@@ -148,9 +148,9 @@ void ExpressionAction::prepare(Block & sample_block)
 
 		case ARRAY_JOIN:
 		{
-			for (NameSet::iterator it = array_joined_columns.begin(); it != array_joined_columns.end(); ++it)
+			for (const auto & name : array_joined_columns)
 			{
-				ColumnWithTypeAndName & current = sample_block.getByName(*it);
+				ColumnWithTypeAndName & current = sample_block.getByName(name);
 				const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(&*current.type);
 				if (!array_type)
 					throw Exception("ARRAY JOIN requires array argument", ErrorCodes::TYPE_MISMATCH);
@@ -214,6 +214,7 @@ void ExpressionAction::prepare(Block & sample_block)
 	}
 }
 
+
 void ExpressionAction::execute(Block & block) const
 {
 //	std::cerr << "executing: " << toString() << std::endl;
@@ -261,9 +262,11 @@ void ExpressionAction::execute(Block & block) const
 		{
 			if (array_joined_columns.empty())
 				throw Exception("No arrays to join", ErrorCodes::LOGICAL_ERROR);
+
 			ColumnPtr any_array_ptr = block.getByName(*array_joined_columns.begin()).column;
 			if (any_array_ptr->isConst())
 				any_array_ptr = dynamic_cast<const IColumnConst &>(*any_array_ptr).convertToFullColumn();
+
 			const ColumnArray * any_array = typeid_cast<const ColumnArray *>(&*any_array_ptr);
 			if (!any_array)
 				throw Exception("ARRAY JOIN of not array: " + *array_joined_columns.begin(), ErrorCodes::TYPE_MISMATCH);
@@ -552,19 +555,22 @@ bool ExpressionActions::popUnusedArrayJoin(const Names & required_columns, Expre
 {
 	if (actions.empty() || actions.back().type != ExpressionAction::ARRAY_JOIN)
 		return false;
+
 	NameSet required_set(required_columns.begin(), required_columns.end());
+
 	for (const std::string & name : actions.back().array_joined_columns)
-	{
 		if (required_set.count(name))
 			return false;
-	}
+
 	for (const std::string & name : actions.back().array_joined_columns)
 	{
 		DataTypePtr & type = sample_block.getByName(name).type;
 		type = new DataTypeArray(type);
 	}
+
 	out_action = actions.back();
 	actions.pop_back();
+
 	return true;
 }
 
@@ -1015,7 +1021,11 @@ void ExpressionActionsChain::finalize()
 		steps[i].actions->finalize(required_output);
 	}
 
-	/// Когда возможно, перенесем ARRAY JOIN из более ранних шагов в более поздние.
+	/** Когда возможно, перенесем ARRAY JOIN из более ранних шагов в более поздние.
+	  * Замечание: обычно это полезно, так как ARRAY JOIN - сложная операция, которая, как правило, увеличивает объём данных.
+	  * Но не всегда - в случае, если большинство массивов пустые, ARRAY JOIN, наоборот, уменьшает объём данных,
+	  *  и его было бы полезно делать раньше. Этот случай не рассматривается.
+	  */
 	for (size_t i = 1; i < steps.size(); ++i)
 	{
 		ExpressionAction action;

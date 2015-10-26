@@ -33,6 +33,7 @@
 #include <DB/DataTypes/DataTypeNested.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/DataTypes/DataTypeFactory.h>
+#include <DB/DataTypes/DataTypeArray.h>
 
 
 namespace DB
@@ -331,18 +332,21 @@ InterpreterCreateQuery::ColumnsAndDefaults InterpreterCreateQuery::parseColumns(
 				/// specific code for different data types, e.g. toFixedString(col, N) for DataTypeFixedString
 				if (const auto fixed_string = typeid_cast<const DataTypeFixedString *>(data_type_ptr))
 				{
-					const auto conversion_function_name = "toFixedString";
-
 					default_expr_list->children.emplace_back(setAlias(
 						makeASTFunction(
-							conversion_function_name,
+							"toFixedString",
 							ASTPtr{new ASTIdentifier{{}, tmp_column_name}},
 							ASTPtr{new ASTLiteral{{}, fixed_string->getN()}}),
 						final_column_name));
 				}
+				else if (typeid_cast<const DataTypeArray *>(data_type_ptr))
+				{
+					/// do not perform conversion on arrays, require exact type match
+					default_expr_list->children.emplace_back(setAlias(
+						col_decl.default_expression->clone(), final_column_name));
+				}
 				else
 				{
-					/// @todo fix for parametric types, results in broken code, i.e. toArray(ElementType)(col)
 					const auto conversion_function_name = "to" + data_type_ptr->getName();
 
 					default_expr_list->children.emplace_back(setAlias(
@@ -370,15 +374,29 @@ InterpreterCreateQuery::ColumnsAndDefaults InterpreterCreateQuery::parseColumns(
 			const auto name_and_type_ptr = column.first;
 			const auto col_decl_ptr = column.second;
 
-			if (col_decl_ptr->type)
-			{
-				const auto & tmp_column = block.getByName(col_decl_ptr->name + "_tmp");
+			const auto & column_name = col_decl_ptr->name;
+			const auto has_explicit_type = nullptr != col_decl_ptr->type;
+			auto & explicit_type = name_and_type_ptr->type;
 
-				/// type mismatch between explicitly specified and deduced type, add conversion
-				if (name_and_type_ptr->type->getName() != tmp_column.type->getName())
+			/// if column declaration contains explicit type, name_and_type_ptr->type is not null
+			if (has_explicit_type)
+			{
+				const auto & tmp_column = block.getByName(column_name + "_tmp");
+				const auto & deduced_type = tmp_column.type;
+
+				/// type mismatch between explicitly specified and deduced type, add conversion for non-array types
+				if (explicit_type->getName() != deduced_type->getName())
 				{
-					col_decl_ptr->default_expression = makeASTFunction(
-						"to" + name_and_type_ptr->type->getName(),
+					/// foolproof against defaulting array columns incorrectly
+					if (typeid_cast<const DataTypeArray *>(explicit_type.get()))
+						throw Exception{
+							"Default expression type mismatch for column " + column_name +
+								". Expected " + explicit_type->getName() + ", deduced " +
+								deduced_type->getName(),
+							ErrorCodes::TYPE_MISMATCH
+						};
+
+					col_decl_ptr->default_expression = makeASTFunction("to" + explicit_type->getName(),
 						col_decl_ptr->default_expression);
 
 					col_decl_ptr->children.clear();
@@ -387,9 +405,10 @@ InterpreterCreateQuery::ColumnsAndDefaults InterpreterCreateQuery::parseColumns(
 				}
 			}
 			else
-				name_and_type_ptr->type = block.getByName(name_and_type_ptr->name).type;
+				/// no explicit type, name_and_type_ptr->type is null, set to deduced type
+				explicit_type = block.getByName(column_name).type;
 
-			defaults.emplace(col_decl_ptr->name, ColumnDefault{
+			defaults.emplace(column_name, ColumnDefault{
 				columnDefaultTypeFromString(col_decl_ptr->default_specifier),
 				col_decl_ptr->default_expression
 			});

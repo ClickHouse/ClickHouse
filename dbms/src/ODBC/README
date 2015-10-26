@@ -1,0 +1,16 @@
+Install unixodbc.
+
+g++ -std=gnu++1y -Wall -g -shared -fPIC -lPocoFoundation -lPocoNet -o odbc.so odbc.cpp
+
+~/.odbc.ini:
+
+[ClickHouse]
+Driver = /home/milovidov/work/metrika-core/metrica/src/dbms/src/ODBC/odbc.so
+Description = ClickHouse driver
+DATABASE = default
+HOST = localhost
+PORT = 9000
+FRAMED = 0
+
+Run
+iusql -v ClickHouse

@@ -402,49 +402,8 @@ public:
 		return name;
 	}
 
-	DataTypePtr getReturnType(const DataTypes & arguments) const override
-	{
-		return getReturnTypeImpl(arguments);
-	}
-
-	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
-	{
-		IDataType * from_type = &*block.getByPosition(arguments[0]).type;
-
-		if (typeid_cast<const DataTypeDate *>(from_type))
-			DateTimeTransformImpl<DataTypeDate::FieldType, typename ToDataType::FieldType, Transform, Name>::execute(block, arguments, result);
-		else if (typeid_cast<const DataTypeDateTime * >(from_type))
-			DateTimeTransformImpl<DataTypeDateTime::FieldType, typename ToDataType::FieldType, Transform, Name>::execute(block, arguments, result);
-		else
-			throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-	}
-
-private:
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-
-	template<typename ToDataType2 = ToDataType, typename Transform2 = Transform>
-	DataTypePtr getReturnTypeImpl(const DataTypes & arguments,
-		typename std::enable_if<
-			!(std::is_same<ToDataType2, DataTypeDate>::value
-			|| (std::is_same<ToDataType2, DataTypeDateTime>::value && std::is_same<Transform2, ToTimeImpl>::value))
-		, void>::type * = nullptr) const
-	{
-		if (arguments.size() != 1)
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 1.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		return new ToDataType;
-	}
-
-	template<typename ToDataType2 = ToDataType, typename Transform2 = Transform>
-	DataTypePtr getReturnTypeImpl(const DataTypes & arguments,
-		typename std::enable_if<
-			std::is_same<ToDataType2, DataTypeDate>::value
-			|| (std::is_same<ToDataType2, DataTypeDateTime>::value && std::is_same<Transform2, ToTimeImpl>::value)
-		, void>::type * = nullptr) const
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
 	{
 		if ((arguments.size() < 1) || (arguments.size() > 2))
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -467,6 +426,20 @@ private:
 		}
 
 		return new ToDataType;
+	}
+
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	{
+		IDataType * from_type = &*block.getByPosition(arguments[0]).type;
+
+		if (typeid_cast<const DataTypeDate *>(from_type))
+			DateTimeTransformImpl<DataTypeDate::FieldType, typename ToDataType::FieldType, Transform, Name>::execute(block, arguments, result);
+		else if (typeid_cast<const DataTypeDateTime * >(from_type))
+			DateTimeTransformImpl<DataTypeDateTime::FieldType, typename ToDataType::FieldType, Transform, Name>::execute(block, arguments, result);
+		else
+			throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
 };
 

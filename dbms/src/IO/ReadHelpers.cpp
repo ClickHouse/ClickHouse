@@ -265,21 +265,28 @@ void readBackQuotedString(String & s, ReadBuffer & buf)
 
 void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf)
 {
-	char s[19];
+	static constexpr auto DATE_TIME_BROKEN_DOWN_LENGTH = 19;
+	static constexpr auto UNIX_TIMESTAMP_MAX_LENGTH = 10;
 
-	size_t size = buf.read(s, 10);
-	if (10 != size)
+	char s[DATE_TIME_BROKEN_DOWN_LENGTH];
+	char * s_pos = s;
+
+	/// Кусок, похожий на unix timestamp.
+	while (s_pos < s + UNIX_TIMESTAMP_MAX_LENGTH && !buf.eof() && *buf.position() >= '0' && *buf.position() <= '9')
 	{
-		s[size] = 0;
-		throw Exception(std::string("Cannot parse datetime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
+		*s_pos = *buf.position();
+		++s_pos;
+		++buf.position();
 	}
 
-	if (s[4] < '0' || s[4] > '9')
+	/// 2015-01-01 01:02:03
+	if (s_pos == s + 4 && !buf.eof() && (*buf.position() < '0' || *buf.position() > '9'))
 	{
-		size_t size = buf.read(&s[10], 9);
-		if (9 != size)
+		const size_t remaining_size = DATE_TIME_BROKEN_DOWN_LENGTH - (s_pos - s);
+		size_t size = buf.read(s_pos, remaining_size);
+		if (remaining_size != size)
 		{
-			s[10 + size] = 0;
+			s_pos[size] = 0;
 			throw Exception(std::string("Cannot parse datetime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
 		}
 
@@ -297,7 +304,7 @@ void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf)
 			datetime = DateLUT::instance().makeDateTime(year, month, day, hour, minute, second);
 	}
 	else
-		datetime = parse<time_t>(s, 10);
+		datetime = parse<time_t>(s, s_pos - s);
 }
 
 

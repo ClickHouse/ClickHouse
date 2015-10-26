@@ -13,7 +13,7 @@ namespace DB
 /// С локальными узлами соединение не устанавливается, а выполяется запрос напрямую.
 /// Поэтому храним только количество локальных узлов
 /// В конфиге кластер включает в себя узлы <node> или <shard>
-class Cluster : private boost::noncopyable
+class Cluster
 {
 public:
 	Cluster(const Settings & settings, const String & cluster_name);
@@ -22,28 +22,13 @@ public:
 	Cluster(const Settings & settings, std::vector<std::vector<String>> names,
 			const String & username, const String & password);
 
-	/// количество узлов clickhouse сервера, расположенных локально
-	/// к локальным узлам обращаемся напрямую
-	size_t getLocalNodesNum() const { return local_nodes_num; }
+	Cluster(const Cluster &) = delete;
+	Cluster & operator=(const Cluster &) = delete;
 
 	/// используеться для выставления ограничения на размер таймаута
 	static Poco::Timespan saturate(const Poco::Timespan & v, const Poco::Timespan & limit);
 
 public:
-	/// Соединения с удалёнными серверами.
-	ConnectionPools pools;
-
-	struct ShardInfo
-	{
-		/// contains names of directories for asynchronous write to StorageDistributed
-		std::vector<std::string> dir_names;
-		UInt32 shard_num;
-		int weight;
-		size_t num_local_nodes;
-	};
-	std::vector<ShardInfo> shard_info_vec;
-	std::vector<size_t> slot_to_shard;
-
 	struct Address
 	{
 		/** В конфиге адреса либо находятся в узлах <node>:
@@ -73,26 +58,59 @@ public:
 		Address(const String & host_port_, const String & user_, const String & password_);
 	};
 
-private:
-	static bool isLocal(const Address & address);
+	using Addresses = std::vector<Address>;
+	using AddressesWithFailover = std::vector<Addresses>;
+
+	struct ShardInfo
+	{
+	public:
+		bool isLocal() const { return !local_addresses.empty(); }
+		bool hasRemoteConnections() const { return !pool.isNull(); }
+		size_t getLocalNodeCount() const { return local_addresses.size(); }
+
+	public:
+		/// contains names of directories for asynchronous write to StorageDistributed
+		std::vector<std::string> dir_names;
+		UInt32 shard_num;
+		int weight;
+		Addresses local_addresses;
+		mutable ConnectionPoolPtr pool;
+	};
+
+	using ShardsInfo = std::vector<ShardInfo>;
 
 public:
-	/// Массив шардов. Каждый шард - адреса одного сервера.
-	typedef std::vector<Address> Addresses;
+	const ShardsInfo & getShardsInfo() const { return shards_info; }
+	const Addresses & getShardsAddresses() const { return addresses; }
+	const AddressesWithFailover & getShardsWithFailoverAddresses() const { return addresses_with_failover; }
 
-	/// Массив шардов. Для каждого шарда - массив адресов реплик (серверов, считающихся идентичными).
-	typedef std::vector<Addresses> AddressesWithFailover;
+	const ShardInfo * getAnyRemoteShardInfo() const { return any_remote_shard_info; }
 
-	const Addresses & getShardsInfo() const { return addresses; }
-	const AddressesWithFailover & getShardsWithFailoverInfo() const { return addresses_with_failover; }
-	const Addresses & getLocalShardsInfo() const { return local_addresses; }
+	/// Количество удалённых шардов.
+	size_t getRemoteShardCount() const { return remote_shard_count; }
+
+	/// Количество узлов clickhouse сервера, расположенных локально
+	/// к локальным узлам обращаемся напрямую.
+	size_t getLocalShardCount() const { return local_shard_count; }
+
+public:
+	std::vector<size_t> slot_to_shard;
 
 private:
-	Addresses addresses;
-	AddressesWithFailover addresses_with_failover;
-	Addresses local_addresses;
+	void initMisc();
 
-	size_t local_nodes_num = 0;
+private:
+	/// Описание шардов кластера.
+	ShardsInfo shards_info;
+	/// Любой удалённый шард.
+	ShardInfo * any_remote_shard_info = nullptr;
+	/// Массив шардов. Каждый шард - адреса одного сервера.
+	Addresses addresses;
+	/// Массив шардов. Для каждого шарда - массив адресов реплик (серверов, считающихся идентичными).
+	AddressesWithFailover addresses_with_failover;
+
+	size_t remote_shard_count = 0;
+	size_t local_shard_count = 0;
 };
 
 struct Clusters

@@ -427,7 +427,7 @@ void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf);
 inline void readDateTimeText(time_t & datetime, ReadBuffer & buf)
 {
 	/** Считываем 10 символов, которые могут быть unix timestamp.
-	  * При этом, поддерживается только unix timestamp из 10 символов - от 9 сентября 2001.
+	  * При этом, поддерживается только unix timestamp из 5-10 символов.
 	  * Потом смотрим на пятый символ. Если это число - парсим unix timestamp.
 	  * Если это не число - парсим YYYY-MM-DD hh:mm:ss.
 	  */
