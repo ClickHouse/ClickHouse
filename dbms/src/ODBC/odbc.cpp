@@ -21,7 +21,7 @@
 
 static void mylog(const char * message)
 {
-	static struct Once
+/*	static struct Once
 	{
 		Once()
 		{
@@ -29,7 +29,7 @@ static void mylog(const char * message)
 			if (!freopen(stderr_path.c_str(), "a+", stderr))
 				throw std::logic_error("Cannot freopen stderr.");
 		}
-	} once;
+	} once;*/
 
 	std::cerr << message << "\n";
 }
@@ -89,6 +89,49 @@ static const char * nextKeyValuePair(const char * data, const char * end, String
 }
 
 
+template <typename PTR, typename LENGTH>
+RETCODE fillOutputString(const char * value, size_t size_without_zero,
+	PTR out_value, LENGTH out_value_max_length, LENGTH * out_value_length)
+{
+	if (out_value_length)
+		*out_value_length = size_without_zero;
+
+	if (out_value_max_length < 0)
+		return SQL_ERROR;
+
+	bool res = SQL_SUCCESS;
+
+	if (out_value)
+	{
+		if (out_value_max_length >= static_cast<LENGTH>(size_without_zero + 1))
+		{
+			memcpy(out_value, value, size_without_zero + 1);
+		}
+		else
+		{
+			if (out_value_max_length > 0)
+			{
+				memcpy(out_value, value, out_value_max_length - 1);
+				reinterpret_cast<char *>(out_value)[out_value_max_length - 1] = 0;
+
+				std::cerr << (char*)(out_value) << "\n";
+			}
+			res = SQL_SUCCESS_WITH_INFO;
+		}
+	}
+
+	return res;
+}
+
+
+struct DiagnosticRecord
+{
+	SQLINTEGER native_error_code = 0;
+	std::string sql_state = "-----";
+	std::string message;
+};
+
+
 struct Environment
 {
 	struct TypeInfo
@@ -117,9 +160,12 @@ struct Environment
 		{"Array", 		{ .sql_type_name = "TEXT", 		.display_size = 16777216,	.is_unsigned = true,  }},
 	};
 
-	Poco::UTF8Encoding utf8;
+/*	Poco::UTF8Encoding utf8;
 	Poco::UTF16Encoding utf16;
-	Poco::TextConverter converter_utf8_to_utf16 {utf8, utf16};
+	Poco::TextConverter converter_utf8_to_utf16 {utf8, utf16};*/
+
+	int odbc_version = SQL_OV_ODBC3;
+	DiagnosticRecord diagnostic_record;
 };
 
 
@@ -135,6 +181,8 @@ struct Connection
 	std::string database = "default";
 
 	Poco::Net::HTTPClientSession session;
+
+	DiagnosticRecord diagnostic_record;
 };
 
 
@@ -147,6 +195,8 @@ struct Statement
 	Poco::Net::HTTPRequest request;
 	Poco::Net::HTTPResponse response;
 	std::istream * in;
+
+	DiagnosticRecord diagnostic_record;
 
 	struct ColumnInfo
 	{
@@ -528,14 +578,14 @@ SQLDriverConnect(HDBC connection_handle,
 
 RETCODE SQL_API
 SQLGetInfo(HDBC connection_handle,
-		   SQLUSMALLINT info_type, PTR out_info_value,
-		   SQLSMALLINT out_info_value_max_length, SQLSMALLINT * out_info_value_length)
+		   SQLUSMALLINT info_type,
+		   PTR out_info_value, SQLSMALLINT out_info_value_max_length, SQLSMALLINT * out_info_value_length)
 {
 	mylog(__FUNCTION__);
 
 	std::cerr << "GetInfo with info_type: " << info_type << ", out_info_value_max_length: " << out_info_value_max_length << ", out_info_value: " << (void*)out_info_value << "\n";
 
-	StringRef res;
+	std::string res;
 
 	switch (info_type)
 	{
@@ -543,7 +593,7 @@ SQLGetInfo(HDBC connection_handle,
 			res = "1.0";
 			break;
 		case SQL_DRIVER_ODBC_VER:
-			res = SQL_SPEC_STRING;
+			res = "03.80";
 			break;
 		case SQL_DRIVER_NAME:
 			res = "ClickHouse ODBC";
@@ -562,21 +612,7 @@ SQLGetInfo(HDBC connection_handle,
 			return SQL_ERROR;
 	}
 
-	if (out_info_value_length)
-		*out_info_value_length = res.size;
-
-	if (out_info_value)
-	{
-		if (out_info_value_max_length < 0)
-			return SQL_ERROR;
-
-		memcpy(out_info_value, res.data, std::min(static_cast<SQLSMALLINT>(res.size + 1), out_info_value_max_length));
-
-		if (res.size + 1 > static_cast<size_t>(out_info_value_max_length))	/// TODO Точно ли здесь надо учитывать терминирующий ноль?
-			return SQL_SUCCESS_WITH_INFO;
-	}
-
-	return SQL_SUCCESS;
+	return fillOutputString(res.data(), res.size(), out_info_value, out_info_value_max_length, out_info_value_length);
 }
 
 
@@ -772,13 +808,7 @@ SQLColAttribute(HSTMT statement_handle, SQLUSMALLINT column_number, SQLUSMALLINT
 	if (out_num_value)
 		*out_num_value = num_value;
 
-	strncpy(reinterpret_cast<char *>(out_string_value), str_value.data(), out_string_value_max_size);
-	if (out_string_value_size)
-		*out_string_value_size = str_value.size();
-
-	std::cerr << "Requested field_identifier " << field_identifier << ", got string value: " << str_value << ", num_value: " << num_value << "\n";
-
-	return SQL_SUCCESS;
+	return fillOutputString(str_value.data(), str_value.size(), out_string_value, out_string_value_max_size, out_string_value_size);
 }
 
 
@@ -907,22 +937,19 @@ SQLGetData(HSTMT statement_handle,
 	{
 		if (target_type == SQL_C_CHAR)
 		{
-			strncpy(reinterpret_cast<char *>(out_value), value.data(), out_value_max_size);
-			if (out_value_size_or_indicator)
-				*out_value_size_or_indicator = value.size();
+			return fillOutputString(value.data(), value.size(), out_value, out_value_max_size, out_value_size_or_indicator);
 		}
 		else
 		{
 			std::string converted;
 			//statement.connection.environment.converter_utf8_to_utf16.convert(value.data(), converted);
 
-			converted.resize(value.size() * 2, '\xFF');		/// TODO Нулевой символ на конце.
+			converted.resize(value.size() * 2 + 1, '\xFF');
+			converted[value.size() * 2] = '\0';
 			for (size_t i = 0, size = value.size(); i < size; ++i)
 				converted[i * 2] = value[i];
 
-			strncpy(reinterpret_cast<char *>(out_value), converted.data(), out_value_max_size);
-			if (out_value_size_or_indicator)
-				*out_value_size_or_indicator = converted.size();
+			return fillOutputString(converted.data(), converted.size(), out_value, out_value_max_size, out_value_size_or_indicator);
 		}
 	}
 
@@ -974,6 +1001,179 @@ SQLDisconnect(HDBC connection_handle)
 
 
 RETCODE SQL_API
+SQLSetEnvAttr(SQLHENV environment_handle, SQLINTEGER attribute,
+    SQLPOINTER value, SQLINTEGER value_length)
+{
+	mylog(__FUNCTION__);
+
+	if (nullptr == environment_handle)
+		return SQL_INVALID_HANDLE;
+
+	Environment & environment = *reinterpret_cast<Environment *>(environment_handle);
+
+	std::cerr << "attr: " << attribute << "\n";
+
+	switch (attribute)
+	{
+		case SQL_ATTR_CONNECTION_POOLING:
+		case SQL_ATTR_CP_MATCH:
+		case SQL_ATTR_OUTPUT_NTS:
+		default:
+			return SQL_ERROR;
+
+		case SQL_ATTR_ODBC_VERSION:
+			intptr_t int_value = reinterpret_cast<intptr_t>(value);
+			if (int_value != SQL_OV_ODBC2 && int_value != SQL_OV_ODBC3)
+				return SQL_ERROR;
+
+			environment.odbc_version = int_value;
+			std::cerr << "Set ODBC version to " << int_value << "\n";
+
+			return SQL_SUCCESS;
+	}
+}
+
+
+RETCODE SQL_API
+SQLGetEnvAttr(SQLHENV environment_handle, SQLINTEGER attribute,
+    SQLPOINTER out_value, SQLINTEGER out_value_max_length, SQLINTEGER * out_value_length)
+{
+	mylog(__FUNCTION__);
+
+	if (nullptr == environment_handle)
+		return SQL_INVALID_HANDLE;
+
+	Environment & environment = *reinterpret_cast<Environment *>(environment_handle);
+
+	std::cerr << "attr: " << attribute << "\n";
+
+	switch (attribute)
+	{
+		case SQL_ATTR_CONNECTION_POOLING:
+		case SQL_ATTR_CP_MATCH:
+		case SQL_ATTR_OUTPUT_NTS:
+		default:
+			return SQL_ERROR;
+
+		case SQL_ATTR_ODBC_VERSION:
+			*reinterpret_cast<intptr_t*>(out_value) = environment.odbc_version;
+			if (out_value_length)
+				*out_value_length = sizeof(SQLUINTEGER);
+
+			return SQL_SUCCESS;
+	}
+
+	return SQL_ERROR;
+}
+
+
+RETCODE SQL_API
+SQLSetConnectAttr(SQLHDBC connection_handle, SQLINTEGER attribute,
+        SQLPOINTER value, SQLINTEGER value_length)
+{
+	mylog(__FUNCTION__);
+
+	if (nullptr == connection_handle)
+		return SQL_INVALID_HANDLE;
+
+	std::cerr << "attr: " << attribute << "\n";
+
+	switch (attribute)
+	{
+		case SQL_ATTR_ACCESS_MODE:
+		case SQL_ATTR_ASYNC_ENABLE:
+		case SQL_ATTR_AUTO_IPD:
+		case SQL_ATTR_AUTOCOMMIT:
+		case SQL_ATTR_CONNECTION_DEAD:
+		case SQL_ATTR_CONNECTION_TIMEOUT:
+		case SQL_ATTR_CURRENT_CATALOG:
+		case SQL_ATTR_LOGIN_TIMEOUT:
+		case SQL_ATTR_METADATA_ID:
+		case SQL_ATTR_ODBC_CURSORS:
+		case SQL_ATTR_PACKET_SIZE:
+		case SQL_ATTR_QUIET_MODE:
+		case SQL_ATTR_TRACE:
+		case SQL_ATTR_TRACEFILE:
+		case SQL_ATTR_TRANSLATE_LIB:
+		case SQL_ATTR_TRANSLATE_OPTION:
+		case SQL_ATTR_TXN_ISOLATION:
+		default:
+			return SQL_ERROR;
+	}
+}
+
+
+RETCODE SQL_API
+SQLGetDiagRec(SQLSMALLINT handle_type, SQLHANDLE handle,
+    SQLSMALLINT record_number,
+	SQLCHAR * out_sqlstate,
+	SQLINTEGER * out_native_error_code,
+	SQLCHAR * out_mesage, SQLSMALLINT out_message_max_size, SQLSMALLINT * out_message_size)
+{
+	mylog(__FUNCTION__);
+
+	std::cerr << "handle_type: " << handle_type << ", record_number: " << record_number << ", out_message_max_size: " << out_message_max_size << "\n";
+
+	if (nullptr == handle)
+		return SQL_INVALID_HANDLE;
+
+	if (record_number <= 0 || out_message_max_size < 0)
+		return SQL_ERROR;
+
+	if (record_number > 1)
+		return SQL_NO_DATA;
+
+	DiagnosticRecord * diagnostic_record = nullptr;
+	switch (handle_type)
+	{
+		case SQL_HANDLE_ENV:
+			diagnostic_record = &reinterpret_cast<Environment *>(handle)->diagnostic_record;
+			break;
+		case SQL_HANDLE_DBC:
+			diagnostic_record = &reinterpret_cast<Connection *>(handle)->diagnostic_record;
+			break;
+		case SQL_HANDLE_STMT:
+			diagnostic_record = &reinterpret_cast<Statement *>(handle)->diagnostic_record;
+			break;
+		default:
+			return SQL_ERROR;
+	}
+
+	if (diagnostic_record->native_error_code == 0)
+		return SQL_NO_DATA;
+
+	/// Пятибуквенный SQLSTATE и завершающий ноль.
+	if (out_sqlstate)
+		strncpy(reinterpret_cast<char *>(out_sqlstate), diagnostic_record->sql_state.data(), 6);
+
+	if (out_native_error_code)
+		*out_native_error_code = diagnostic_record->native_error_code;
+
+	return fillOutputString(diagnostic_record->message.data(), diagnostic_record->message.size(), out_mesage, out_message_max_size, out_message_size);
+}
+
+
+RETCODE SQL_API
+SQLGetDiagField(SQLSMALLINT handle_type, SQLHANDLE handle,
+    SQLSMALLINT record_number,
+	SQLSMALLINT field_id,
+	SQLPOINTER out_mesage, SQLSMALLINT out_message_max_size, SQLSMALLINT * out_message_size)
+{
+	mylog(__FUNCTION__);
+
+	return SQLGetDiagRec(
+		handle_type,
+		handle,
+		record_number,
+		nullptr,
+		nullptr,
+		reinterpret_cast<SQLCHAR *>(out_mesage),
+		out_message_max_size,
+		out_message_size);
+}
+
+
+RETCODE SQL_API
 SQLBrowseConnect(HDBC connection_handle,
 				 SQLCHAR *szConnStrIn,
 				 SQLSMALLINT cbConnStrIn,
@@ -982,27 +1182,6 @@ SQLBrowseConnect(HDBC connection_handle,
 				 SQLSMALLINT *pcbConnStrOut)
 {
 	mylog(__FUNCTION__);
-	return SQL_ERROR;
-}
-
-
-RETCODE SQL_API
-SQLGetDiagRec(SQLSMALLINT nHandleType, SQLHANDLE hHandle,
-    SQLSMALLINT nRecordNumber, SQLCHAR * pszState, SQLINTEGER * pnNativeError,
-    SQLCHAR * pszMessageText, SQLSMALLINT nBufferLength,
-    SQLSMALLINT * pnStringLength)
-{
-	mylog(__FUNCTION__);
-
-	return SQL_ERROR;
-}
-
-RETCODE SQL_API
-SQLSetEnvAttr(SQLHENV EnvironmentHandle, SQLINTEGER Attribute,
-    SQLPOINTER Value, SQLINTEGER StringLength)
-{
-	mylog(__FUNCTION__);
-
 	return SQL_ERROR;
 }
 
@@ -1459,16 +1638,6 @@ SQLGetDescRec(SQLHDESC DescriptorHandle, SQLSMALLINT RecordNumber,
 
 
 RETCODE SQL_API
-SQLGetDiagField(SQLSMALLINT HandleType, SQLHANDLE Handle,
-    SQLSMALLINT RecordNumber, SQLSMALLINT DiagIdentifier, SQLPOINTER DiagInfo,
-    SQLSMALLINT BufferLength, SQLSMALLINT *StringLength)
-{
-	mylog(__FUNCTION__);
-	return SQL_ERROR;
-}
-
-
-RETCODE SQL_API
 SQLGetStmtAttr(SQLHSTMT hDrvStmt, SQLINTEGER Attribute, SQLPOINTER Value,
     SQLINTEGER BufferLength, SQLINTEGER *StringLength)
 {
@@ -1487,15 +1656,6 @@ SQLGetStmtOption(SQLHSTMT hDrvStmt, UWORD fOption, PTR pvParam)
 
 RETCODE SQL_API
 SQLParamOptions(SQLHSTMT hDrvStmt, SQLULEN nRow, SQLULEN *pnRow)
-{
-	mylog(__FUNCTION__);
-	return SQL_ERROR;
-}
-
-
-RETCODE SQL_API
-SQLSetConnectAttr(SQLHDBC ConnectionHandle, SQLINTEGER Attribute,
-        SQLPOINTER ValuePtr, SQLINTEGER StringLength)
 {
 	mylog(__FUNCTION__);
 	return SQL_ERROR;
