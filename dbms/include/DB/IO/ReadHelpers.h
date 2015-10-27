@@ -455,6 +455,7 @@ inline void readDateTimeText(time_t & datetime, ReadBuffer & buf)
 			buf.position() += 19;
 		}
 		else
+			/// Почему не readIntTextUnsafe? Дело в том, что для нужд AdFox, поддерживается парсинг unix timestamp с отбивкой нулями: 000...NNNN.
 			readIntText(datetime, buf);
 	}
 	else
