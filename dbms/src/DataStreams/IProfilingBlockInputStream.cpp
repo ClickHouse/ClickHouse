@@ -116,8 +116,8 @@ void IProfilingBlockInputStream::updateExtremes(Block & block)
 
 			ColumnPtr & column = extremes.getByPosition(i).column;
 
-			if (column->isConst())
-				column = dynamic_cast<const IColumnConst &>(*column).convertToFullColumn();
+			if (auto converted = column->convertToFullColumnIfConst())
+				column = converted;
 
 			column->insert(min_value);
 			column->insert(max_value);

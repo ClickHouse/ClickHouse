@@ -117,8 +117,8 @@ void Aggregator::initialize(const Block & block)
 		for (size_t i = 0; i < keys_size; ++i)
 		{
 			sample.insert(block.getByPosition(keys[i]).cloneEmpty());
-			if (sample.getByPosition(i).column->isConst())
-				sample.getByPosition(i).column = dynamic_cast<IColumnConst &>(*sample.getByPosition(i).column).convertToFullColumn();
+			if (auto converted = sample.getByPosition(i).column->convertToFullColumnIfConst())
+				sample.getByPosition(i).column = converted;
 		}
 
 		for (size_t i = 0; i < aggregates_size; ++i)
@@ -593,9 +593,9 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 	{
 		key_columns[i] = block.getByPosition(keys[i]).column;
 
-		if (const IColumnConst * column_const = dynamic_cast<const IColumnConst *>(key_columns[i]))
+		if (auto converted = key_columns[i]->convertToFullColumnIfConst())
 		{
-			materialized_columns.push_back(column_const->convertToFullColumn());
+			materialized_columns.push_back(converted);
 			key_columns[i] = materialized_columns.back().get();
 		}
 	}
@@ -606,9 +606,9 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 		{
 			aggregate_columns[i][j] = block.getByPosition(aggregates[i].arguments[j]).column;
 
-			if (const IColumnConst * column_const = dynamic_cast<const IColumnConst *>(aggregate_columns[i][j]))
+			if (auto converted = aggregate_columns[i][j]->convertToFullColumnIfConst())
 			{
-				materialized_columns.push_back(column_const->convertToFullColumn());
+				materialized_columns.push_back(converted);
 				aggregate_columns[i][j] = materialized_columns.back().get();
 			}
 		}
