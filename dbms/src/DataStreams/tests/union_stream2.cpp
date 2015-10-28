@@ -44,7 +44,7 @@ int main(int argc, char ** argv)
 		for (size_t i = 0, size = streams.size(); i < size; ++i)
 			streams[i] = new DB::AsynchronousBlockInputStream(streams[i]);
 
-		DB::BlockInputStreamPtr stream = new DB::UnionBlockInputStream(streams, nullptr, settings.max_threads);
+		DB::BlockInputStreamPtr stream = new DB::UnionBlockInputStream<>(streams, nullptr, settings.max_threads);
 		stream = new DB::LimitBlockInputStream(stream, 10, 0);
 
 		DB::FormatFactory format_factory;

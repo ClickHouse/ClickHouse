@@ -1,13 +1,13 @@
 #pragma once
 
-#include <DB/Parsers/IAST.h>
+#include <DB/Parsers/ASTQueryWithOutput.h>
 
 namespace DB
 {
 
-struct ASTCheckQuery : public IAST
+struct ASTCheckQuery : public ASTQueryWithOutput
 {
-	ASTCheckQuery(StringRange range_ = StringRange()) : IAST(range_) {};
+	ASTCheckQuery(StringRange range_ = StringRange()) : ASTQueryWithOutput(range_) {};
 
 	/** Получить текст, который идентифицирует этот элемент. */
 	String getID() const override { return ("CheckQuery_" + database + "_" + table); };

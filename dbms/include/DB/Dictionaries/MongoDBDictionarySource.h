@@ -9,7 +9,7 @@
 namespace DB
 {
 
-/// Allows loading dictionaries from a MySQL database
+/// Allows loading dictionaries from a MongoDB collection
 class MongoDBDictionarySource final : public IDictionarySource
 {
 	MongoDBDictionarySource(
@@ -25,6 +25,7 @@ class MongoDBDictionarySource final : public IDictionarySource
 
 		connection.connect(host + ':' + port);
 
+		/// @todo: should connection.auth be called after or before .connect ?
 		if (!user.empty())
 		{
 			std::string error;
@@ -45,6 +46,7 @@ class MongoDBDictionarySource final : public IDictionarySource
 		fields_to_query = builder.obj();
 	}
 
+	/// mongo-cxx driver requires global initialization before using any functionality
 	static void init()
 	{
 		static const auto mongo_init_status = mongo::client::initialize();
@@ -95,12 +97,17 @@ public:
 
 	BlockInputStreamPtr loadIds(const std::vector<std::uint64_t> & ids) override
 	{
+		/// mongo::BSONObj has shitty design and does not use fixed width integral types
+		const std::vector<long long int> iids{std::begin(ids), std::end(ids)};
+		const auto ids_enumeration = BSON(dict_struct.id.name << BSON("$in" << iids));
+
 		return new MongoDBBlockInputStream{
-			connection.query(db + '.' + collection, {}, 0, 0, &fields_to_query),
+			connection.query(db + '.' + collection, ids_enumeration, 0, 0, &fields_to_query),
 			sample_block, 8192
 		};
 	}
 
+	/// @todo: for MongoDB, modification date can somehow be determined from the `_id` object field
 	bool isModified() const override { return false; }
 
 	DictionarySourcePtr clone() const override { return std::make_unique<MongoDBDictionarySource>(*this); }

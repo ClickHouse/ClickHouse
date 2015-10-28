@@ -1,13 +1,13 @@
 #pragma once
 
-#include <DB/Parsers/IParserBase.h>
+#include <DB/Parsers/ParserQueryWithOutput.h>
 
 
 namespace DB
 {
 
 
-class ParserSelectQuery : public IParserBase
+class ParserSelectQuery : public ParserQueryWithOutput
 {
 protected:
 	const char * getName() const { return "SELECT query"; }

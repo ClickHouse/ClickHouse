@@ -182,6 +182,9 @@ private:
 	/// Например, для ARRAY JOIN [1,2] AS b сюда попадет "b" -> "array(1,2)".
 	NameToNameMap array_join_alias_to_name;
 
+	/// Обратное отображение для array_join_alias_to_name.
+	NameToNameMap array_join_name_to_alias;
+
 	/// Нужно ли подготавливать к выполнению глобальные подзапросы при анализировании запроса.
 	bool do_global;
 

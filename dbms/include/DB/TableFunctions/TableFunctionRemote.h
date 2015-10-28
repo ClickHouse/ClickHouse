@@ -24,9 +24,6 @@ namespace DB
 class TableFunctionRemote : public ITableFunction
 {
 public:
-	/// Максимальное количество различных шардов и максимальное количество реплик одного шарда
-	const size_t MAX_ADDRESSES = 1000;	/// TODO Перенести в Settings.
-
 	std::string getName() const override { return "remote"; }
 
 	StoragePtr execute(ASTPtr ast_function, Context & context) const override
@@ -109,11 +106,13 @@ public:
 			if (ASTIdentifier * id = typeid_cast<ASTIdentifier *>(arg.get()))
 				id->kind = ASTIdentifier::Table;
 
+		size_t max_addresses = context.getSettingsRef().table_function_remote_max_addresses;
+
 		std::vector<std::vector<String>> names;
-		std::vector<String> shards = parseDescription(description, 0, description.size(), ',');
+		std::vector<String> shards = parseDescription(description, 0, description.size(), ',', max_addresses);
 
 		for (size_t i = 0; i < shards.size(); ++i)
-			names.push_back(parseDescription(shards[i], 0, shards[i].size(), '|'));
+			names.push_back(parseDescription(shards[i], 0, shards[i].size(), '|', max_addresses));
 
 		if (names.empty())
 			throw Exception("Shard list is empty after parsing first argument", ErrorCodes::BAD_ARGUMENTS);
@@ -133,10 +132,15 @@ private:
 		Settings settings = context.getSettings();
 		NamesAndTypesList res;
 
-		/// Отправляем на первый попавшийся шард
+		/// Отправляем на первый попавшийся удалённый шард.
+		const auto shard_info = cluster.getAnyRemoteShardInfo();
+		if (shard_info == nullptr)
+			throw Exception("No remote shard found", ErrorCodes::NO_REMOTE_SHARD_FOUND);
+		ConnectionPoolPtr pool = shard_info->pool;
+
 		BlockInputStreamPtr input{
 			new RemoteBlockInputStream{
-				cluster.pools.front().get(), query, &settings, nullptr,
+				pool.get(), query, &settings, nullptr,
 				Tables(), QueryProcessingStage::Complete, context}
 		};
 		input->readPrefix();
@@ -164,7 +168,7 @@ private:
 	}
 
 	/// Декартово произведение двух множеств строк, результат записываем на место первого аргумента
-	void append(std::vector<String> & to, const std::vector<String> & what) const
+	void append(std::vector<String> & to, const std::vector<String> & what, size_t max_addresses) const
 	{
 		if (what.empty()) return;
 		if (to.empty())
@@ -172,7 +176,7 @@ private:
 			to = what;
 			return;
 		}
-		if (what.size() * to.size() > MAX_ADDRESSES)
+		if (what.size() * to.size() > max_addresses)
 			throw Exception("Storage Distributed, first argument generates too many result addresses",
 							ErrorCodes::BAD_ARGUMENTS);
 		std::vector<String> res;
@@ -209,7 +213,7 @@ private:
 	 * abc{1..9}de{f,g,h} - прямое произведение, 27 шардов.
 	 * abc{1..9}de{0|1} - прямое произведение, 9 шардов, в каждом 2 реплики.
 	 */
-	std::vector<String> parseDescription(const String & description, size_t l, size_t r, char separator) const
+	std::vector<String> parseDescription(const String & description, size_t l, size_t r, char separator, size_t max_addresses) const
 	{
 		std::vector<String> res;
 		std::vector<String> cur;
@@ -263,7 +267,7 @@ private:
 						throw Exception("Storage Distributed, incorrect argument in braces (left number is greater then right): "
 										+ description.substr(i, m - i + 1),
 										ErrorCodes::BAD_ARGUMENTS);
-					if (right - left + 1 >  MAX_ADDRESSES)
+					if (right - left + 1 >  max_addresses)
 						throw Exception("Storage Distributed, first argument generates too many result addresses",
 							ErrorCodes::BAD_ARGUMENTS);
 					bool add_leading_zeroes = false;
@@ -282,25 +286,29 @@ private:
 						buffer.push_back(cur);
 					}
 				} else if (have_splitter) /// Если внутри есть текущий разделитель, то сгенерировать множество получаемых строк
-					buffer = parseDescription(description, i + 1, m, separator);
+					buffer = parseDescription(description, i + 1, m, separator, max_addresses);
 				else 					/// Иначе просто скопировать, порождение произойдет при вызове с правильным разделителем
 					buffer.push_back(description.substr(i, m - i + 1));
 				/// К текущему множеству строк добавить все возможные полученные продолжения
-				append(cur, buffer);
+				append(cur, buffer, max_addresses);
 				i = m;
-			} else if (description[i] == separator) {
+			}
+			else if (description[i] == separator)
+			{
 				/// Если разделитель, то добавляем в ответ найденные строки
 				res.insert(res.end(), cur.begin(), cur.end());
 				cur.clear();
-			} else {
+			}
+			else
+			{
 				/// Иначе просто дописываем символ к текущим строкам
 				std::vector<String> buffer;
 				buffer.push_back(description.substr(i, 1));
-				append(cur, buffer);
+				append(cur, buffer, max_addresses);
 			}
 		}
 		res.insert(res.end(), cur.begin(), cur.end());
-		if (res.size() > MAX_ADDRESSES)
+		if (res.size() > max_addresses)
 			throw Exception("Storage Distributed, first argument generates too many result addresses",
 							ErrorCodes::BAD_ARGUMENTS);
 		return res;

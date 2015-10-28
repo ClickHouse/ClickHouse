@@ -53,7 +53,6 @@ namespace ext
 	*	with each element transformed by the application of `mapper`. */
 	template <template <typename...> class Collection, typename... Params, typename Mapper>
 	auto map(const Collection<Params...> & collection, const Mapper mapper)
-		-> Collection<unqualified_t<decltype(mapper(*std::begin(collection)))>>
 	{
 		using value_type = unqualified_t<decltype(mapper(*std::begin(collection)))>;
 
@@ -66,7 +65,6 @@ namespace ext
 	*	Allows conversion between different container-types, e.g. std::vector to std::list */
 	template <template <typename...> class ResultCollection, typename Collection, typename Mapper>
 	auto map(const Collection & collection, const Mapper mapper)
-		-> ResultCollection<unqualified_t<decltype(mapper(*std::begin(collection)))>>
 	{
 		using value_type = unqualified_t<decltype(mapper(*std::begin(collection)))>;
 
@@ -78,7 +76,7 @@ namespace ext
 	*	with each element transformed by the application of `mapper`.
 	*	Allows leveraging implicit conversion between the result of applying `mapper` and R::value_type. */
 	template <typename ResultCollection, typename Collection, typename Mapper>
-	ResultCollection map(const Collection & collection, const Mapper mapper)
+	auto map(const Collection & collection, const Mapper mapper)
 	{
 		return ResultCollection(ext::make_map_iterator(std::begin(collection), mapper),
 			ext::make_map_iterator(std::end(collection), mapper));

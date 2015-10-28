@@ -112,6 +112,11 @@ inline void assertString(const String & s, ReadBuffer & buf)
 	assertString(s.c_str(), buf);
 }
 
+bool checkString(const char * s, ReadBuffer & buf);
+inline bool checkString(const String & s, ReadBuffer & buf)
+{
+	return checkString(s.c_str(), buf);
+}
 
 inline void readBoolText(bool & x, ReadBuffer & buf)
 {
@@ -120,14 +125,20 @@ inline void readBoolText(bool & x, ReadBuffer & buf)
 	x = tmp != '0';
 }
 
-
-template <typename T>
-void readIntText(T & x, ReadBuffer & buf)
+template <typename T, typename ReturnType = void>
+ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
 {
+	static constexpr bool throw_exception = std::is_same<ReturnType, void>::value;
+
 	bool negative = false;
 	x = 0;
 	if (buf.eof())
-		throwReadAfterEOF();
+	{
+		if (throw_exception)
+			throwReadAfterEOF();
+		else
+			return ReturnType(false);
+	}
 
 	while (!buf.eof())
 	{
@@ -139,7 +150,7 @@ void readIntText(T & x, ReadBuffer & buf)
 			    if (std::is_signed<T>::value)
 					negative = true;
 				else
-					return;
+					return ReturnType(false);
 				break;
 			case '0':
 			case '1':
@@ -157,14 +168,27 @@ void readIntText(T & x, ReadBuffer & buf)
 			default:
 				if (negative)
 					x = -x;
-				return;
+				return ReturnType(true);
 		}
 		++buf.position();
 	}
 	if (negative)
 		x = -x;
+
+	return ReturnType(true);
 }
 
+template <typename T>
+void readIntText(T & x, ReadBuffer & buf)
+{
+	readIntTextImpl<T, void>(x, buf);
+}
+
+template <typename T>
+bool tryReadIntText(T & x, ReadBuffer & buf)
+{
+	return readIntTextImpl<T, bool>(x, buf);
+}
 
 /** Более оптимизированная версия (примерно в 1.5 раза на реальных данных).
   * Отличается тем, что:
@@ -211,18 +235,53 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
 		x = -x;
 }
 
+template <bool throw_exception, class ExcepFun, class NoExcepFun, class... Args>
+bool exceptionPolicySelector(ExcepFun && excep_f, NoExcepFun && no_excep_f, Args &&... args)
+{
+	if (throw_exception)
+	{
+		excep_f(std::forward<Args>(args)...);
+		return true;
+	}
+	else
+		return no_excep_f(std::forward<Args>(args)...);
+};
+
 
 /// грубо
-template <typename T>
-void readFloatText(T & x, ReadBuffer & buf)
+template <typename T, typename ReturnType>
+ReturnType readFloatTextImpl(T & x, ReadBuffer & buf)
 {
+	static constexpr bool throw_exception = std::is_same<ReturnType, void>::value;
+
 	bool negative = false;
 	x = 0;
 	bool after_point = false;
 	double power_of_ten = 1;
 
 	if (buf.eof())
-		throwReadAfterEOF();
+	{
+		if (throw_exception)
+			throwReadAfterEOF();
+		else
+			return ReturnType(false);
+	}
+
+	auto parse_special_value = [&buf, &x, &negative](const char * str, T value)
+	{
+		auto assert_str_lambda = [](const char * str, ReadBuffer & buf){ assertString(str, buf); };
+		auto check_str_lambda = [](const char * str, ReadBuffer & buf){ return checkString(str, buf); };
+
+		++buf.position();
+		bool result = exceptionPolicySelector<throw_exception>(assert_str_lambda, check_str_lambda, str, buf);
+		if (result)
+		{
+			x = value;
+			if (negative)
+				x = -x;
+		}
+		return result;
+	};
 
 	while (!buf.eof())
 	{
@@ -262,47 +321,51 @@ void readFloatText(T & x, ReadBuffer & buf)
 			{
 				++buf.position();
 				Int32 exponent = 0;
-				readIntText(exponent, buf);
-				x *= exp10(exponent);
-				if (negative)
-					x = -x;
-				return;
+				bool res = exceptionPolicySelector<throw_exception>(readIntText<Int32>, tryReadIntText<Int32>, exponent, buf);
+				if (res)
+				{
+					x *= exp10(exponent);
+					if (negative)
+						x = -x;
+				}
+				return ReturnType(res);
 			}
 			case 'i':
-				++buf.position();
-				assertString("nf", buf);
-				x = std::numeric_limits<T>::infinity();
-				if (negative)
-					x = -x;
-				return;
+				return ReturnType(parse_special_value("nf", std::numeric_limits<T>::infinity()));
+
 			case 'I':
-				++buf.position();
-				assertString("NF", buf);
-				x = std::numeric_limits<T>::infinity();
-				if (negative)
-					x = -x;
-				return;
+				return ReturnType(parse_special_value("NF", std::numeric_limits<T>::infinity()));
+
 			case 'n':
-				++buf.position();
-				assertString("an", buf);
-				x = std::numeric_limits<T>::quiet_NaN();
-				return;
+				return ReturnType(parse_special_value("an", std::numeric_limits<T>::quiet_NaN()));
+
 			case 'N':
-				++buf.position();
-				assertString("AN", buf);
-				x = std::numeric_limits<T>::quiet_NaN();
-				return;
+				return ReturnType(parse_special_value("AN", std::numeric_limits<T>::quiet_NaN()));
+
 			default:
 				if (negative)
 					x = -x;
-				return;
+				return ReturnType(true);
 		}
 		++buf.position();
 	}
 	if (negative)
 		x = -x;
+
+	return ReturnType(true);
 }
 
+template <class T>
+inline bool tryReadFloatText(T & x, ReadBuffer & buf)
+{
+	return readFloatTextImpl<T, bool>(x, buf);
+}
+
+template <class T>
+inline void readFloatText(T & x, ReadBuffer & buf)
+{
+	readFloatTextImpl<T, void>(x, buf);
+}
 
 /// грубо; всё до '\n' или '\t'
 void readString(String & s, ReadBuffer & buf);
@@ -314,6 +377,8 @@ void readQuotedString(String & s, ReadBuffer & buf);
 void readDoubleQuotedString(String & s, ReadBuffer & buf);
 
 void readBackQuotedString(String & s, ReadBuffer & buf);
+
+void readStringUntilEOF(String & s, ReadBuffer & buf);
 
 
 /// в формате YYYY-MM-DD
@@ -362,7 +427,7 @@ void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf);
 inline void readDateTimeText(time_t & datetime, ReadBuffer & buf)
 {
 	/** Считываем 10 символов, которые могут быть unix timestamp.
-	  * При этом, поддерживается только unix timestamp из 10 символов - от 9 сентября 2001.
+	  * При этом, поддерживается только unix timestamp из 5-10 символов.
 	  * Потом смотрим на пятый символ. Если это число - парсим unix timestamp.
 	  * Если это не число - парсим YYYY-MM-DD hh:mm:ss.
 	  */

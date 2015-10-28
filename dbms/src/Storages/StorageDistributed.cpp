@@ -1,5 +1,6 @@
 #include <DB/DataStreams/RemoteBlockInputStream.h>
 #include <DB/DataStreams/MaterializingBlockInputStream.h>
+#include <DB/DataStreams/BlockExtraInfoInputStream.h>
 
 #include <DB/Storages/StorageDistributed.h>
 #include <DB/Storages/VirtualColumnFactory.h>
@@ -8,9 +9,11 @@
 #include <DB/Common/escapeForFileName.h>
 #include <DB/Parsers/ASTInsertQuery.h>
 #include <DB/Parsers/ASTSelectQuery.h>
+#include <DB/Parsers/TablePropertiesQueriesASTs.h>
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/InterpreterAlterQuery.h>
+#include <DB/Interpreters/InterpreterDescribeQuery.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 
 #include <DB/Core/Field.h>
@@ -49,6 +52,17 @@ namespace
 
 		return modified_query_ast;
 	}
+
+	BlockExtraInfo toBlockExtraInfo(const Cluster::Address & address)
+	{
+		BlockExtraInfo block_extra_info;
+		block_extra_info.host = address.host_name;
+		block_extra_info.resolved_address = address.resolved_address.toString();
+		block_extra_info.port = address.port;
+		block_extra_info.user = address.user;
+		block_extra_info.is_valid = true;
+		return block_extra_info;
+	}
 }
 
 
@@ -66,7 +80,7 @@ StorageDistributed::StorageDistributed(
 	context(context_), cluster(cluster_),
 	sharding_key_expr(sharding_key_ ? ExpressionAnalyzer(sharding_key_, context, nullptr, *columns).getActions(false) : nullptr),
 	sharding_key_column_name(sharding_key_ ? sharding_key_->getColumnName() : String{}),
-	write_enabled(!data_path_.empty() && (cluster.getLocalNodesNum() + cluster.pools.size() < 2 || sharding_key_)),
+	write_enabled(!data_path_.empty() && (((cluster.getLocalShardCount() + cluster.getRemoteShardCount()) < 2) || sharding_key_)),
 	path(data_path_.empty() ? "" : (data_path_ + escapeForFileName(name) + '/'))
 {
 	createDirectoryMonitors();
@@ -90,7 +104,7 @@ StorageDistributed::StorageDistributed(
 	context(context_), cluster(cluster_),
 	sharding_key_expr(sharding_key_ ? ExpressionAnalyzer(sharding_key_, context, nullptr, *columns).getActions(false) : nullptr),
 	sharding_key_column_name(sharding_key_ ? sharding_key_->getColumnName() : String{}),
-	write_enabled(!data_path_.empty() && (cluster.getLocalNodesNum() + cluster.pools.size() < 2 || sharding_key_)),
+	write_enabled(!data_path_.empty() && (((cluster.getLocalShardCount() + cluster.getRemoteShardCount()) < 2) || sharding_key_)),
 	path(data_path_.empty() ? "" : (data_path_ + escapeForFileName(name) + '/'))
 {
 	createDirectoryMonitors();
@@ -154,7 +168,7 @@ BlockInputStreams StorageDistributed::read(
 	/// Не имеет смысла на удалённых серверах, так как запрос отправляется обычно с другим user-ом.
 	new_settings.max_concurrent_queries_for_user = 0;
 
-	size_t result_size = (cluster.pools.size() * settings.max_parallel_replicas) + cluster.getLocalNodesNum();
+	size_t result_size = (cluster.getRemoteShardCount() * settings.max_parallel_replicas) + cluster.getLocalShardCount();
 
 	processed_stage = result_size == 1 || settings.distributed_group_by_no_merge
 		? QueryProcessingStage::Complete
@@ -179,26 +193,31 @@ BlockInputStreams StorageDistributed::read(
 		external_tables = context.getExternalTables();
 
 	/// Цикл по шардам.
-	for (auto & conn_pool : cluster.pools)
-		res.emplace_back(new RemoteBlockInputStream{
-			conn_pool, modified_query, &new_settings, throttler,
-			external_tables, processed_stage, context});
-
-	/// Добавляем запросы к локальному ClickHouse.
-	if (cluster.getLocalNodesNum() > 0)
+	for (const auto & shard_info : cluster.getShardsInfo())
 	{
-		DB::Context new_context = context;
-		new_context.setSettings(new_settings);
-
-		for (size_t i = 0; i < cluster.getLocalNodesNum(); ++i)
+		if (shard_info.isLocal())
 		{
-			InterpreterSelectQuery interpreter(modified_query_ast, new_context, processed_stage);
+			/// Добавляем запросы к локальному ClickHouse.
 
-			/** Материализация нужна, так как с удалённых серверов константы приходят материализованными.
-			  * Если этого не делать, то в разных потоках будут получаться разные типы (Const и не-Const) столбцов,
-			  *  а это не разрешено, так как весь код исходит из допущения, что в потоке блоков все типы одинаковые.
-			  */
-			res.emplace_back(new MaterializingBlockInputStream(interpreter.execute().in));
+			DB::Context new_context = context;
+			new_context.setSettings(new_settings);
+
+			for (const auto & address : shard_info.local_addresses)
+			{
+				InterpreterSelectQuery interpreter(modified_query_ast, new_context, processed_stage);
+
+				/** Материализация нужна, так как с удалённых серверов константы приходят материализованными.
+				* Если этого не делать, то в разных потоках будут получаться разные типы (Const и не-Const) столбцов,
+				*  а это не разрешено, так как весь код исходит из допущения, что в потоке блоков все типы одинаковые.
+				*/
+				res.emplace_back(new MaterializingBlockInputStream(interpreter.execute().in));
+			}
+		}
+		else
+		{
+			res.emplace_back(new RemoteBlockInputStream{
+				shard_info.pool, modified_query, &new_settings, throttler,
+				external_tables, processed_stage, context});
 		}
 	}
 
@@ -231,6 +250,63 @@ void StorageDistributed::alter(const AlterCommands & params, const String & data
 void StorageDistributed::shutdown()
 {
 	directory_monitors.clear();
+}
+
+BlockInputStreams StorageDistributed::describe(const Context & context, const Settings & settings)
+{
+	Settings new_settings = settings;
+	new_settings.queue_max_wait_ms = Cluster::saturate(new_settings.queue_max_wait_ms, settings.limits.max_execution_time);
+	/// Не имеет смысла на удалённых серверах, так как запрос отправляется обычно с другим user-ом.
+	new_settings.max_concurrent_queries_for_user = 0;
+
+	/// Создать запрос DESCRIBE TABLE.
+
+	auto describe_query = new ASTDescribeQuery;
+	describe_query->database = remote_database;
+	describe_query->table = remote_table;
+
+	ASTPtr ast = describe_query;
+	const auto query = queryToString(ast);
+
+	/// Ограничение сетевого трафика, если нужно.
+	ThrottlerPtr throttler;
+	if (settings.limits.max_network_bandwidth || settings.limits.max_network_bytes)
+		throttler.reset(new Throttler(
+			settings.limits.max_network_bandwidth,
+			settings.limits.max_network_bytes,
+			"Limit for bytes to send or receive over network exceeded."));
+
+	BlockInputStreams res;
+
+	/// Цикл по шардам.
+	for (const auto & shard_info : cluster.getShardsInfo())
+	{
+		if (shard_info.isLocal())
+		{
+			/// Добавляем запросы к локальному ClickHouse.
+
+			DB::Context new_context = context;
+			new_context.setSettings(new_settings);
+
+			for (const auto & address : shard_info.local_addresses)
+			{
+				InterpreterDescribeQuery interpreter(ast, new_context);
+				BlockInputStreamPtr stream = new MaterializingBlockInputStream(interpreter.execute().in);
+				stream = new BlockExtraInfoInputStream(stream, toBlockExtraInfo(address));
+				res.emplace_back(stream);
+			}
+		}
+
+		if (shard_info.hasRemoteConnections())
+		{
+			auto stream = new RemoteBlockInputStream{shard_info.pool, query, &new_settings, throttler};
+			stream->reachAllReplicas();
+			stream->appendExtraInfo();
+			res.emplace_back(stream);
+		}
+	}
+
+	return res;
 }
 
 NameAndTypePair StorageDistributed::getColumn(const String & column_name) const
@@ -272,7 +348,7 @@ void StorageDistributed::requireDirectoryMonitor(const std::string & name)
 
 size_t StorageDistributed::getShardCount() const
 {
-	return cluster.pools.size();
+	return cluster.getRemoteShardCount();
 }
 
 }

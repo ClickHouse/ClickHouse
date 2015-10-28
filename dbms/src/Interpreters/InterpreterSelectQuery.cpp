@@ -471,6 +471,17 @@ void InterpreterSelectQuery::executeSingleQuery()
 			/// Если есть агрегация, выполняем выражения в SELECT и ORDER BY на инициировавшем сервере, иначе - на серверах-источниках.
 			query_analyzer->appendSelect(chain, need_aggregate ? !second_stage : !first_stage);
 			selected_columns = chain.getLastStep().required_output;
+
+			/** Если есть LIMIT, то ARRAY JOIN нельзя переносить позже ORDER BY
+			  * (так как он меняет количество строк и частичная сортировка ORDER с LIMIT-ом перестают правильно работать).
+			  */
+			if (query.order_expression_list && query.limit_length && query.array_join_expression_list)
+			{
+				/// Завершаем цепочку действий, в рамках которой ARRAY JOIN может переноситься.
+				chain.finalize();
+				chain.clear();
+			}
+
 			has_order_by = query_analyzer->appendOrderBy(chain, need_aggregate ? !second_stage : !first_stage);
 			before_order_and_select = chain.getLastActions();
 			chain.addStep();
@@ -1047,7 +1058,7 @@ void InterpreterSelectQuery::executeUnion()
 	/// Если до сих пор есть несколько потоков, то объединяем их в один
 	if (hasMoreThanOneStream())
 	{
-		streams[0] = new UnionBlockInputStream(streams, stream_with_non_joined_data, settings.max_threads);
+		streams[0] = new UnionBlockInputStream<>(streams, stream_with_non_joined_data, settings.max_threads);
 		stream_with_non_joined_data = nullptr;
 		streams.resize(1);
 		union_within_single_query = false;
