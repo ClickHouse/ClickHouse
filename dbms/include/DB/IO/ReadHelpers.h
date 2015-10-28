@@ -235,6 +235,7 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
 		x = -x;
 }
 
+
 template <bool throw_exception, class ExcepFun, class NoExcepFun, class... Args>
 bool exceptionPolicySelector(ExcepFun && excep_f, NoExcepFun && no_excep_f, Args &&... args)
 {
@@ -454,7 +455,8 @@ inline void readDateTimeText(time_t & datetime, ReadBuffer & buf)
 			buf.position() += 19;
 		}
 		else
-			readIntTextUnsafe(datetime, buf);
+			/// Почему не readIntTextUnsafe? Дело в том, что для нужд AdFox, поддерживается парсинг unix timestamp с отбивкой нулями: 000...NNNN.
+			readIntText(datetime, buf);
 	}
 	else
 		readDateTimeTextFallback(datetime, buf);
