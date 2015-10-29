@@ -96,7 +96,7 @@ void registerAggregateFunctionsUniq(AggregateFunctionFactory & factory)
 		createAggregateFunctionUniq<AggregateFunctionUniqUniquesHashSetData, AggregateFunctionUniqUniquesHashSetDataForVariadic>);
 
 	factory.registerFunction({"uniqHLL12"},
-		createAggregateFunctionUniq<AggregateFunctionUniqHLL12Data, AggregateFunctionUniqHLL12Data<UInt64>>);
+		createAggregateFunctionUniq<AggregateFunctionUniqHLL12Data, AggregateFunctionUniqHLL12DataForVariadic>);
 
 	factory.registerFunction({"uniqExact"},
 		createAggregateFunctionUniq<AggregateFunctionUniqExactData, AggregateFunctionUniqExactData<String>>);

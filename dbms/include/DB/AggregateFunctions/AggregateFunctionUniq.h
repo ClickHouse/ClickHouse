@@ -39,6 +39,7 @@ struct AggregateFunctionUniqUniquesHashSetData
 	static String getName() { return "uniq"; }
 };
 
+/// Для функции, принимающей несколько аргументов. Такая функция сама заранее их хэширует, поэтому здесь используется TrivialHash.
 struct AggregateFunctionUniqUniquesHashSetDataForVariadic
 {
 	typedef UniquesHashSet<TrivialHash> Set;
@@ -67,6 +68,15 @@ struct AggregateFunctionUniqHLL12Data<String>
 
 	static String getName() { return "uniqHLL12"; }
 };
+
+struct AggregateFunctionUniqHLL12DataForVariadic
+{
+	typedef HyperLogLogWithSmallSetOptimization<UInt64, 16, 12, TrivialHash> Set;
+	Set set;
+
+	static String getName() { return "uniqHLL12"; }
+};
+
 
 /// uniqExact
 
@@ -361,8 +371,6 @@ public:
 /** Для нескольких аргументов. Для вычисления, хэширует их.
   * Можно передать несколько аргументов как есть; также можно передать один аргумент - кортеж.
   * Но (для возможности эффективной реализации), нельзя передать несколько аргументов, среди которых есть кортежи.
-  *
-  * TODO В Data для uniqHLL12 и uniqCombined должен использоваться TrivialHash.
   */
 template <typename Data, bool argument_is_tuple>
 class AggregateFunctionUniqVariadic final : public IAggregateFunctionHelper<Data>
