@@ -11,6 +11,7 @@
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>
+#include <DB/DataTypes/DataTypeTuple.h>
 
 #include <DB/Interpreters/AggregationCommon.h>
 #include <DB/Common/HashTable/HashSet.h>
@@ -18,6 +19,7 @@
 #include <DB/Common/CombinedCardinalityEstimator.h>
 
 #include <DB/Columns/ColumnString.h>
+#include <DB/Columns/ColumnTuple.h>
 
 #include <DB/AggregateFunctions/IUnaryAggregateFunction.h>
 #include <DB/AggregateFunctions/UniqCombinedBiasData.h>
@@ -303,7 +305,7 @@ struct OneAdder<T, Data, typename std::enable_if<
 }
 
 
-/// Приближённо вычисляет количество различных значений.
+/// Приближённо или точно вычисляет количество различных значений.
 template <typename T, typename Data>
 class AggregateFunctionUniq final : public IUnaryAggregateFunction<Data, AggregateFunctionUniq<T, Data> >
 {
@@ -322,6 +324,81 @@ public:
 	void addOne(AggregateDataPtr place, const IColumn & column, size_t row_num) const
 	{
 		detail::OneAdder<T, Data>::addOne(this->data(place), column, row_num);
+	}
+
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
+	{
+		this->data(place).set.merge(this->data(rhs).set);
+	}
+
+	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
+	{
+		this->data(place).set.write(buf);
+	}
+
+	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
+	{
+		this->data(place).set.readAndMerge(buf);
+	}
+
+	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
+	{
+		static_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
+	}
+};
+
+
+/** Для нескольких аргументов.
+  * Для вычисления, хэширует их с использованием некриптографической 64-битной хэш-функции.
+  * Можно передать несколько аргументов как есть; также можно передать один аргумент - кортеж.
+  * Но, (для возможности эффективной реализации), нельзя передать несколько аргументов, среди которых есть кортежи.
+  */
+template <typename Data, bool argument_is_tuple>
+class AggregateFunctionUniqVariadic final : public IAggregateFunctionHelper<Data>
+{
+private:
+	size_t num_args = 0;
+
+public:
+	String getName() const { return Data::getName(); }
+
+	DataTypePtr getReturnType() const
+	{
+		return new DataTypeUInt64;
+	}
+
+	void setArguments(const DataTypes & arguments)
+	{
+		if (argument_is_tuple)
+			num_args = typeid_cast<const DataTypeTuple &>(*arguments[0]).getElements().size();
+		else
+			num_args = arguments.size();
+	}
+
+	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const
+	{
+		UInt64 hash = 0;
+
+		if (argument_is_tuple)
+		{
+			const Columns & tuple_columns = static_cast<const ColumnTuple *>(columns[0])->getColumns();
+			for (const auto & column : tuple_columns)
+			{
+				StringRef value = column.get()->getDataAt(row_num);
+				hash = Hash128to64(uint128(CityHash64(value.data, value.size), hash));
+			}
+		}
+		else
+		{
+			const IColumn ** columns_end = columns + num_args;
+			for (const IColumn ** column = columns; column < columns_end; ++column)
+			{
+				StringRef value = (*column)->getDataAt(row_num);
+				hash = Hash128to64(uint128(CityHash64(value.data, value.size), hash));
+			}
+		}
+
+		this->data(place).set.insert(hash);
 	}
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const

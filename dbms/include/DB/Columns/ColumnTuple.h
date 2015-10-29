@@ -255,6 +255,9 @@ public:
 
 	const Block & getData() const { return data; }
 	Block & getData() { return data; }
+
+	const Columns & getColumns() const { return columns; }
+	Columns & getColumns() { return columns; }
 };
 
 
