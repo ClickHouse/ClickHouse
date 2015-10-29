@@ -117,14 +117,17 @@ void ExpressionAnalyzer::init()
 	/// Оптимизирует логические выражения.
 	LogicalExpressionsOptimizer(select_query, settings).perform();
 
-	/// Добавляет в множество известных алиасов те, которые объявлены в структуре таблицы (ALIAS-столбцы).
-	addStorageAliases();
-
 	/// Создаёт словарь aliases: alias -> ASTPtr
 	addASTAliases(ast);
 
+	/// Добавляет ALIAS столбцы из стаблицы в aliases, если применимо.
+	addStorageAliases();
+
 	/// Common subexpression elimination. Rewrite rules.
 	normalizeTree();
+
+	/// ALIAS столбцы не должны подставляться вместо ASTAsterisk, добавим их теперь, после normalizeTree.
+	addAliasColumns();
 
 	/// Выполнение скалярных подзапросов - замена их на значения-константы.
 	executeScalarSubqueries();
@@ -317,12 +320,17 @@ NamesAndTypesList::iterator ExpressionAnalyzer::findColumn(const String & name, 
 
 void ExpressionAnalyzer::addStorageAliases()
 {
+	if (select_query && select_query->array_join_expression_list)
+		return;
+
 	if (!storage)
 		return;
 
 	/// @todo: consider storing default expressions with alias set to avoid cloning
+	/// Добавляем ALIAS из таблицы, только если такого ALIAS еще не объявлено в запросе.
 	for (const auto & alias : storage->alias_columns)
-		(aliases[alias.name] = storage->column_defaults[alias.name].expression->clone())->setAlias(alias.name);
+		if (!aliases.count(alias.name))
+			aliases[alias.name] = setAlias(storage->column_defaults[alias.name].expression->clone(), alias.name);
 }
 
 
@@ -563,6 +571,18 @@ void ExpressionAnalyzer::normalizeTreeImpl(
 	current_asts.erase(initial_ast);
 	current_asts.erase(ast);
 	finished_asts[initial_ast] = ast;
+}
+
+
+void ExpressionAnalyzer::addAliasColumns()
+{
+	if (!(select_query && select_query->array_join_expression_list))
+		return;
+
+	if (!storage)
+		return;
+
+	columns.insert(std::end(columns), std::begin(storage->alias_columns), std::end(storage->alias_columns));
 }
 
 
@@ -2242,19 +2262,6 @@ void ExpressionAnalyzer::collectUsedColumns()
 		required.insert(ExpressionActions::getSmallestColumn(columns));
 
 	unknown_required_columns = required;
-
-	for (NamesAndTypesList::iterator it = columns.begin(); it != columns.end();)
-	{
-		unknown_required_columns.erase(it->name);
-
-		if (!required.count(it->name))
-		{
-			required.erase(it->name);
-			columns.erase(it++);
-		}
-		else
-			++it;
-	}
 
 	for (NamesAndTypesList::iterator it = columns.begin(); it != columns.end();)
 	{
