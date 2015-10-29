@@ -14,6 +14,9 @@ public:
 	BlockIO execute() override;
 
 private:
+	Block getSampleBlock() const;
+
+private:
 	ASTPtr query_ptr;
 	Context context;
 	Block result;

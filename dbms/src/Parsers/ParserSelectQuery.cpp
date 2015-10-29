@@ -19,7 +19,6 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 	ASTSelectQuery * select_query = new ASTSelectQuery;
 	node = select_query;
 
-	ParserWhiteSpaceOrComments ws;
 	ParserString s_select("SELECT", true, true);
 	ParserString s_distinct("DISTINCT", true, true);
 	ParserString s_from("FROM", true, true);
@@ -39,7 +38,6 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 	ParserString s_order("ORDER", true, true);
 	ParserString s_limit("LIMIT", true, true);
 	ParserString s_settings("SETTINGS", true, true);
-	ParserString s_format("FORMAT", true, true);
 	ParserString s_union("UNION", true, true);
 	ParserString s_all("ALL", true, true);
 
@@ -310,22 +308,9 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 		ws.ignore(pos, end);
 	}
 
-	bool has_format = false;
-
 	/// FORMAT format_name
-	if (s_format.ignore(pos, end, max_parsed_pos, expected))
-	{
-		ws.ignore(pos, end);
-
-		ParserIdentifier format_p;
-
-		if (!format_p.parse(pos, end, select_query->format, max_parsed_pos, expected))
-			return false;
-		typeid_cast<ASTIdentifier &>(*select_query->format).kind = ASTIdentifier::Format;
-
-		ws.ignore(pos, end);
-		has_format = true;
-	}
+	if (!parseFormat(*select_query, pos, end, node, max_parsed_pos, expected))
+		return false;
 
 	// UNION ALL select query
 	if (s_union.ignore(pos, end, max_parsed_pos, expected))
@@ -334,7 +319,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 
 		if (s_all.ignore(pos, end, max_parsed_pos, expected))
 		{
-			if (has_format)
+			if (!select_query->format.isNull())
 			{
 				/// FORMAT может быть задан только в последнем запросе цепочки UNION ALL.
 				expected = "FORMAT only in the last SELECT of the UNION ALL chain";

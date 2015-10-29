@@ -5,6 +5,9 @@
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/ASTNameTypePair.h>
 #include <DB/Interpreters/Context.h>
+#include <ext/map.hpp>
+#include <ext/identity.hpp>
+#include <ext/collection_cast.hpp>
 
 
 namespace DB
@@ -12,25 +15,19 @@ namespace DB
 
 NamesAndTypesList ITableDeclaration::getColumnsList() const
 {
-	auto columns = getColumnsListImpl();
-	columns.insert(std::end(columns), std::begin(materialized_columns), std::end(materialized_columns));
-
-	return columns;
+	return ext::collection_cast<NamesAndTypesList>(getColumnsListRange());
 }
 
 
-ITableDeclaration::ColumnsListRange ITableDeclaration::getColumnsListIterator() const
+ITableDeclaration::ColumnsListRange ITableDeclaration::getColumnsListRange() const
 {
-	const auto & columns = getColumnsListImpl();
-	return boost::join(
-		boost::iterator_range<NamesAndTypesList::const_iterator>(columns.begin(), columns.end()),
-		boost::iterator_range<NamesAndTypesList::const_iterator>(std::begin(materialized_columns), std::end(materialized_columns)));
+	return boost::join(getColumnsListImpl(), materialized_columns);
 }
 
 
 bool ITableDeclaration::hasRealColumn(const String & column_name) const
 {
-	for (auto & it : getColumnsListIterator())
+	for (auto & it : getColumnsListRange())
 		if (it.name == column_name)
 			return true;
 	return false;
@@ -39,16 +36,13 @@ bool ITableDeclaration::hasRealColumn(const String & column_name) const
 
 Names ITableDeclaration::getColumnNamesList() const
 {
-	Names res;
-	for (auto & it : getColumnsListIterator())
-		res.push_back(it.name);
-	return res;
+	return ext::map<Names>(getColumnsListRange(), [] (const auto & it) { return it.name; });
 }
 
 
 NameAndTypePair ITableDeclaration::getRealColumn(const String & column_name) const
 {
-	for (auto & it : getColumnsListIterator())
+	for (auto & it : getColumnsListRange())
 		if (it.name == column_name)
 			return it;
 	throw Exception("There is no column " + column_name + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
@@ -85,7 +79,7 @@ NameAndTypePair ITableDeclaration::getColumn(const String & column_name) const
 
 const DataTypePtr ITableDeclaration::getDataTypeByName(const String & column_name) const
 {
-	for (const auto & column : getColumnsListIterator())
+	for (const auto & column : getColumnsListRange())
 		if (column.name == column_name)
 			return column.type;
 
@@ -97,7 +91,7 @@ Block ITableDeclaration::getSampleBlock() const
 {
 	Block res;
 
-	for (const auto & col : getColumnsListIterator())
+	for (const auto & col : getColumnsListRange())
 		res.insert({ col.type->createColumn(), col.type, col.name });
 
 	return res;

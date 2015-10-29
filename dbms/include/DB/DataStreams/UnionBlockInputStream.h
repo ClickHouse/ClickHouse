@@ -12,6 +12,38 @@ namespace DB
 
 using Poco::SharedPtr;
 
+namespace
+{
+
+template <StreamUnionMode mode>
+struct OutputData;
+
+/// Блок или эксепшен.
+template <>
+struct OutputData<StreamUnionMode::Basic>
+{
+	Block block;
+	std::exception_ptr exception;
+
+	OutputData() {}
+	OutputData(Block & block_) : block(block_) {}
+	OutputData(std::exception_ptr & exception_) : exception(exception_) {}
+};
+
+/// Блок + дополнительнцю информацию или эксепшен.
+template <>
+struct OutputData<StreamUnionMode::ExtraInfo>
+{
+	Block block;
+	BlockExtraInfo extra_info;
+	std::exception_ptr exception;
+
+	OutputData() {}
+	OutputData(Block & block_, BlockExtraInfo & extra_info_) : block(block_), extra_info(extra_info_) {}
+	OutputData(std::exception_ptr & exception_) : exception(exception_) {}
+};
+
+}
 
 /** Объединяет несколько источников в один.
   * Блоки из разных источников перемежаются друг с другом произвольным образом.
@@ -21,12 +53,17 @@ using Poco::SharedPtr;
   * Устроено так:
   * - с помощью ParallelInputsProcessor в нескольких потоках вынимает из источников блоки;
   * - полученные блоки складываются в ограниченную очередь готовых блоков;
-  * - основной поток вынимает готовые блоки из очереди готовых блоков.
+  * - основной поток вынимает готовые блоки из очереди готовых блоков;
+  * - если указан режим StreamUnionMode::ExtraInfo, в дополнение к блокам UnionBlockInputStream
+  *   вынимает информацию о блоках; в таком случае все источники должны поддержать такой режим.
   */
 
-
+template <StreamUnionMode mode = StreamUnionMode::Basic>
 class UnionBlockInputStream : public IProfilingBlockInputStream
 {
+private:
+	using Self = UnionBlockInputStream<mode>;
+
 public:
 	UnionBlockInputStream(BlockInputStreams inputs, BlockInputStreamPtr additional_input_at_end, size_t max_threads) :
 		output_queue(std::min(inputs.size(), max_threads)),
@@ -88,6 +125,10 @@ public:
 		processor.cancel();
 	}
 
+	BlockExtraInfo getBlockExtraInfo() const override
+	{
+		return doGetBlockExtraInfo();
+	}
 
 protected:
 	void finalize()
@@ -103,7 +144,7 @@ protected:
 			/** Прочитаем всё до конца, чтобы ParallelInputsProcessor не заблокировался при попытке вставить в очередь.
 			  * Может быть, в очереди есть ещё эксепшен.
 			  */
-			OutputData res;
+			OutputData<mode> res;
 			while (true)
 			{
 				//std::cerr << "popping\n";
@@ -141,9 +182,8 @@ protected:
 
 	Block readImpl() override
 	{
-		OutputData res;
 		if (all_read)
-			return res.block;
+			return received_payload.block;
 
 		/// Запускаем потоки, если это ещё не было сделано.
 		if (!started)
@@ -154,15 +194,15 @@ protected:
 
 		/// Будем ждать, пока будет готов следующий блок или будет выкинуто исключение.
 		//std::cerr << "popping\n";
-		output_queue.pop(res);
+		output_queue.pop(received_payload);
 
-		if (res.exception)
-			std::rethrow_exception(res.exception);
+		if (received_payload.exception)
+			std::rethrow_exception(received_payload.exception);
 
-		if (!res.block)
+		if (!received_payload.block)
 			all_read = true;
 
-		return res.block;
+		return received_payload.block;
 	}
 
 	/// Вызывается либо после того, как всё прочитано, либо после cancel-а.
@@ -179,41 +219,56 @@ protected:
 	}
 
 private:
-	/// Блок или эксепшен.
-	struct OutputData
+	template<StreamUnionMode mode2 = mode>
+	BlockExtraInfo doGetBlockExtraInfo(typename std::enable_if<mode2 == StreamUnionMode::ExtraInfo>::type * = nullptr) const
 	{
-		Block block;
-		std::exception_ptr exception;
+		return received_payload.extra_info;
+	}
 
-		OutputData() {}
-		OutputData(Block & block_) : block(block_) {}
-		OutputData(std::exception_ptr & exception_) : exception(exception_) {}
-	};
+	template<StreamUnionMode mode2 = mode>
+	BlockExtraInfo doGetBlockExtraInfo(typename std::enable_if<mode2 == StreamUnionMode::Basic>::type * = nullptr) const
+	{
+		throw Exception("Method getBlockExtraInfo is not supported for mode StreamUnionMode::Basic",
+			ErrorCodes::NOT_IMPLEMENTED);
+	}
 
+private:
+	using Payload = OutputData<mode>;
+	using OutputQueue = ConcurrentBoundedQueue<Payload>;
+
+private:
 	/** Очередь готовых блоков. Также туда можно положить эксепшен вместо блока.
 	  * Когда данные закончатся - в очередь вставляется пустой блок.
 	  * В очередь всегда (даже после исключения или отмены запроса) рано или поздно вставляется пустой блок.
 	  * Очередь всегда (даже после исключения или отмены запроса, даже в деструкторе) нужно дочитывать до пустого блока,
 	  *  иначе ParallelInputsProcessor может заблокироваться при вставке в очередь.
 	  */
-	typedef ConcurrentBoundedQueue<OutputData> OutputQueue;
 	OutputQueue output_queue;
-
 
 	struct Handler
 	{
-		Handler(UnionBlockInputStream & parent_) : parent(parent_) {}
+		Handler(Self & parent_) : parent(parent_) {}
 
-		void onBlock(Block & block, size_t thread_num)
+		template <StreamUnionMode mode2 = mode>
+		void onBlock(Block & block, size_t thread_num,
+			typename std::enable_if<mode2 == StreamUnionMode::Basic>::type * = nullptr)
 		{
 			//std::cerr << "pushing block\n";
-			parent.output_queue.push(block);
+			parent.output_queue.push(Payload(block));
+		}
+
+		template <StreamUnionMode mode2 = mode>
+		void onBlock(Block & block, BlockExtraInfo & extra_info, size_t thread_num,
+			typename std::enable_if<mode2 == StreamUnionMode::ExtraInfo>::type * = nullptr)
+		{
+			//std::cerr << "pushing block with extra info\n";
+			parent.output_queue.push(Payload(block, extra_info));
 		}
 
 		void onFinish()
 		{
 			//std::cerr << "pushing end\n";
-			parent.output_queue.push(OutputData());
+			parent.output_queue.push(Payload());
 		}
 
 		void onException(std::exception_ptr & exception, size_t thread_num)
@@ -228,11 +283,13 @@ private:
 			parent.cancel();	/// Не кидает исключений.
 		}
 
-		UnionBlockInputStream & parent;
+		Self & parent;
 	};
 
 	Handler handler;
-	ParallelInputsProcessor<Handler> processor;
+	ParallelInputsProcessor<Handler, mode> processor;
+
+	Payload received_payload;
 
 	bool started = false;
 	bool all_read = false;

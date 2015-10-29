@@ -968,6 +968,25 @@ protected:
 		Table & table_dst,
 		Table & table_src) const;
 
+	/// Слить данные из хэш-таблицы src в dst, но только для ключей, которые уже есть в dst. В остальных случаях, слить данные в overflows.
+	template <typename Method, typename Table>
+	void mergeDataNoMoreKeysImpl(
+		Table & table_dst,
+		AggregatedDataWithoutKey & overflows,
+		Table & table_src) const;
+
+	/// То же самое, но игнорирует остальные ключи.
+	template <typename Method, typename Table>
+	void mergeDataOnlyExistingKeysImpl(
+		Table & table_dst,
+		Table & table_src) const;
+
+	/// Слить все ключи, оставшиеся после предыдущего метода, в overflows.
+	template <typename Method, typename Table>
+	void mergeDataRemainingKeysToOverflowsImpl(
+		AggregatedDataWithoutKey & overflows,
+		Table & table_src) const;
+
 	void mergeWithoutKeyDataImpl(
 		ManyAggregatedDataVariants & non_empty_data) const;
 
@@ -1024,13 +1043,24 @@ protected:
 		bool final,
 		boost::threadpool::pool * thread_pool) const;
 
+	template <bool no_more_keys, typename Method, typename Table>
+	void mergeStreamsImplCase(
+		Block & block,
+		const Sizes & key_sizes,
+		Arena * aggregates_pool,
+		Method & method,
+		Table & data,
+		AggregateDataPtr overflow_row) const;
+
 	template <typename Method, typename Table>
 	void mergeStreamsImpl(
 		Block & block,
 		const Sizes & key_sizes,
 		Arena * aggregates_pool,
 		Method & method,
-		Table & data) const;
+		Table & data,
+		AggregateDataPtr overflow_row,
+		bool no_more_keys) const;
 
 	void mergeWithoutKeyStreamsImpl(
 		Block & block,
@@ -1049,6 +1079,15 @@ protected:
 	template <typename Method>
 	void destroyImpl(
 		Method & method) const;
+
+
+	/** Проверяет ограничения на максимальное количество ключей для агрегации.
+	  * Если оно превышено, то, в зависимости от group_by_overflow_mode, либо
+	  * - кидает исключение;
+	  * - возвращает false, что говорит о том, что выполнение нужно прервать;
+	  * - выставляет переменную no_more_keys в true.
+	  */
+	bool checkLimits(size_t result_size, bool & no_more_keys) const;
 };
 
 

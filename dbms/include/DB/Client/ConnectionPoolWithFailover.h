@@ -51,22 +51,6 @@ public:
 		}
 	}
 
-	/** Выделяет соединение для работы. */
-	Entry get(const Settings * settings = nullptr) override
-	{
-		applyLoadBalancing(settings);
-		return Base::get(settings);
-	}
-
-	/** Выделяет до указанного количества соединений для работы.
-	  * Соединения предоставляют доступ к разным репликам одного шарда.
-	  */
-	std::vector<Entry> getMany(const Settings * settings = nullptr) override
-	{
-		applyLoadBalancing(settings);
-		return Base::getMany(settings);
-	}
-
 protected:
 	bool tryGet(ConnectionPoolPtr pool, const Settings * settings, Entry & out_entry, std::stringstream & fail_message) override
 	{
@@ -87,8 +71,21 @@ protected:
 	}
 
 private:
-	std::vector<size_t> hostname_differences; /// Расстояния от имени этого хоста до имен хостов пулов.
-	LoadBalancing default_load_balancing;
+	/** Выделяет соединение для работы. */
+	Entry doGet(const Settings * settings) override
+	{
+		applyLoadBalancing(settings);
+		return Base::get(settings);
+	}
+
+	/** Выделяет до указанного количества соединений для работы.
+	  * Соединения предоставляют доступ к разным репликам одного шарда.
+	  */
+	std::vector<Entry> doGetMany(const Settings * settings, bool get_all) override
+	{
+		applyLoadBalancing(settings);
+		return Base::getMany(settings, get_all);
+	}
 
 	void applyLoadBalancing(const Settings * settings)
 	{
@@ -108,6 +105,10 @@ private:
 				throw Exception("Unknown load_balancing_mode: " + toString(static_cast<int>(load_balancing)), ErrorCodes::LOGICAL_ERROR);
 		}
 	}
+
+private:
+	std::vector<size_t> hostname_differences; /// Расстояния от имени этого хоста до имен хостов пулов.
+	LoadBalancing default_load_balancing;
 };
 
 

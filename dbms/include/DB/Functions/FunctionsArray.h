@@ -2101,6 +2101,225 @@ private:
 };
 
 
+class FunctionArrayReverse : public IFunction
+{
+public:
+	static constexpr auto name = "reverse";
+	static IFunction * create(const Context & context) { return new FunctionArrayReverse; }
+
+	/// Получить имя функции.
+	String getName() const override
+	{
+		return name;
+	}
+
+	/// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+	DataTypePtr getReturnType(const DataTypes & arguments) const override
+	{
+		if (arguments.size() != 1)
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ toString(arguments.size()) + ", should be 1.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
+		if (!array_type)
+			throw Exception("Argument for function " + getName() + " must be array.",
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+		return arguments[0]->clone();
+	}
+
+	/// Выполнить функцию над блоком.
+	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	{
+		if (executeConst(block, arguments, result))
+			return;
+
+		const ColumnArray * array = typeid_cast<const ColumnArray *>(block.getByPosition(arguments[0]).column.get());
+		if (!array)
+			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of first argument of function " + getName(),
+				ErrorCodes::ILLEGAL_COLUMN);
+
+		ColumnPtr res_ptr = array->cloneEmpty();
+		block.getByPosition(result).column = res_ptr;
+		ColumnArray & res = static_cast<ColumnArray &>(*res_ptr);
+
+		const IColumn & src_data = array->getData();
+		const ColumnArray::Offsets_t & offsets = array->getOffsets();
+		IColumn & res_data = res.getData();
+		res.getOffsetsColumn() = array->getOffsetsColumn();
+
+		if (!(	executeNumber<UInt8>	(src_data, offsets, res_data)
+			||	executeNumber<UInt16>	(src_data, offsets, res_data)
+			||	executeNumber<UInt32>	(src_data, offsets, res_data)
+			||	executeNumber<UInt64>	(src_data, offsets, res_data)
+			||	executeNumber<Int8>		(src_data, offsets, res_data)
+			||	executeNumber<Int16>	(src_data, offsets, res_data)
+			||	executeNumber<Int32>	(src_data, offsets, res_data)
+			||	executeNumber<Int64>	(src_data, offsets, res_data)
+			||	executeNumber<Float32>	(src_data, offsets, res_data)
+			||	executeNumber<Float64>	(src_data, offsets, res_data)
+			||	executeString			(src_data, offsets, res_data)
+			||	executeFixedString		(src_data, offsets, res_data)))
+			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+				+ " of first argument of function " + getName(),
+				ErrorCodes::ILLEGAL_COLUMN);
+	}
+
+private:
+	bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		if (const ColumnConstArray * const_array = typeid_cast<const ColumnConstArray *>(block.getByPosition(arguments[0]).column.get()))
+		{
+			const Array & arr = const_array->getData();
+
+			size_t size = arr.size();
+			Array res(size);
+
+			for (size_t i = 0; i < size; ++i)
+				res[i] = arr[size - i - 1];
+
+			block.getByPosition(result).column = new ColumnConstArray(
+				block.rowsInFirstColumn(),
+				res,
+				block.getByPosition(arguments[0]).type->clone());
+
+			return true;
+		}
+		else
+			return false;
+	}
+
+	template <typename T>
+	bool executeNumber(
+		const IColumn & src_data, const ColumnArray::Offsets_t & src_offsets,
+		IColumn & res_data_col)
+	{
+		if (const ColumnVector<T> * src_data_concrete = typeid_cast<const ColumnVector<T> *>(&src_data))
+		{
+			const PODArray<T> & src_data = src_data_concrete->getData();
+			PODArray<T> & res_data = typeid_cast<ColumnVector<T> &>(res_data_col).getData();
+			size_t size = src_offsets.size();
+			res_data.resize(src_data.size());
+
+			ColumnArray::Offset_t src_prev_offset = 0;
+
+			for (size_t i = 0; i < size; ++i)
+			{
+				const T * src = &src_data[src_prev_offset];
+				const T * src_end = &src_data[src_offsets[i]];
+
+				if (src == src_end)
+					continue;
+
+				T * dst = &res_data[src_offsets[i] - 1];
+
+				while (src < src_end)
+				{
+					*dst = *src;
+					++src;
+					--dst;
+				}
+
+				src_prev_offset = src_offsets[i];
+			}
+
+			return true;
+		}
+		else
+			return false;
+	}
+
+	bool executeFixedString(
+		const IColumn & src_data, const ColumnArray::Offsets_t & src_offsets,
+		IColumn & res_data_col)
+	{
+		if (const ColumnFixedString * src_data_concrete = typeid_cast<const ColumnFixedString *>(&src_data))
+		{
+			const size_t n = src_data_concrete->getN();
+			const ColumnFixedString::Chars_t & src_data = src_data_concrete->getChars();
+			ColumnFixedString::Chars_t & res_data = typeid_cast<ColumnFixedString &>(res_data_col).getChars();
+			size_t size = src_offsets.size();
+			res_data.resize(src_data.size());
+
+			ColumnArray::Offset_t src_prev_offset = 0;
+
+			for (size_t i = 0; i < size; ++i)
+			{
+				const UInt8 * src = &src_data[src_prev_offset * n];
+				const UInt8 * src_end = &src_data[src_offsets[i] * n];
+
+				if (src == src_end)
+					continue;
+
+				UInt8 * dst = &res_data[src_offsets[i] * n - n];
+
+				while (src < src_end)
+				{
+					memcpy(dst, src, n);
+					src += n;
+					dst -= n;
+				}
+
+				src_prev_offset = src_offsets[i];
+			}
+
+			return true;
+		}
+		else
+			return false;
+	}
+
+	bool executeString(
+		const IColumn & src_data, const ColumnArray::Offsets_t & src_array_offsets,
+		IColumn & res_data_col)
+	{
+		if (const ColumnString * src_data_concrete = typeid_cast<const ColumnString *>(&src_data))
+		{
+			const ColumnString::Offsets_t & src_string_offsets = src_data_concrete->getOffsets();
+			ColumnString::Offsets_t & res_string_offsets = typeid_cast<ColumnString &>(res_data_col).getOffsets();
+
+			const ColumnString::Chars_t & src_data = src_data_concrete->getChars();
+			ColumnString::Chars_t & res_data = typeid_cast<ColumnString &>(res_data_col).getChars();
+
+			size_t size = src_array_offsets.size();
+			res_string_offsets.resize(src_string_offsets.size());
+			res_data.resize(src_data.size());
+
+			ColumnArray::Offset_t src_array_prev_offset = 0;
+			ColumnString::Offset_t res_string_prev_offset = 0;
+
+			for (size_t i = 0; i < size; ++i)
+			{
+				if (src_array_offsets[i] != src_array_prev_offset)
+				{
+					size_t array_size = src_array_offsets[i] - src_array_prev_offset;
+
+					for (size_t j = 0; j < array_size; ++j)
+					{
+						size_t j_reversed = array_size - j - 1;
+
+						auto src_pos = src_array_prev_offset + j_reversed == 0 ? 0 : src_string_offsets[src_array_prev_offset + j_reversed - 1];
+						size_t string_size = src_string_offsets[src_array_prev_offset + j_reversed] - src_pos;
+
+						memcpy(&res_data[res_string_prev_offset], &src_data[src_pos], string_size);
+
+						res_string_prev_offset += string_size;
+						res_string_offsets[src_array_prev_offset + j] = res_string_prev_offset;
+					}
+				}
+
+				src_array_prev_offset = src_array_offsets[i];
+			}
+
+			return true;
+		}
+		else
+			return false;
+	}
+};
+
+
 struct NameHas			{ static constexpr auto name = "has"; };
 struct NameIndexOf		{ static constexpr auto name = "indexOf"; };
 struct NameCountEqual	{ static constexpr auto name = "countEqual"; };

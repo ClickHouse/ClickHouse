@@ -26,12 +26,22 @@
 namespace DB
 {
 
+/** Режим объединения.
+  */
+enum class StreamUnionMode
+{
+	Basic = 0, /// вынимать блоки
+	ExtraInfo  /// вынимать блоки + дополнительную информацию
+};
 
 /// Пример обработчика.
 struct ParallelInputsHandler
 {
 	/// Обработка блока данных.
 	void onBlock(Block & block, size_t thread_num) {}
+
+	/// Обработка блока данных + дополнительных информаций.
+	void onBlock(Block & block, BlockExtraInfo & extra_info, size_t thread_num) {}
 
 	/// Блоки закончились. Из-за того, что все источники иссякли или из-за отмены работы.
 	/// Этот метод всегда вызывается ровно один раз, в конце работы, если метод onException не кидает исключение.
@@ -42,7 +52,7 @@ struct ParallelInputsHandler
 };
 
 
-template <typename Handler>
+template <typename Handler, StreamUnionMode mode = StreamUnionMode::Basic>
 class ParallelInputsProcessor
 {
 public:
@@ -136,6 +146,20 @@ private:
 		InputData(BlockInputStreamPtr & in_, size_t i_) : in(in_), i(i_) {}
 	};
 
+	template <StreamUnionMode mode2 = mode>
+	void publishPayload(BlockInputStreamPtr & stream, Block & block, size_t thread_num,
+		typename std::enable_if<mode2 == StreamUnionMode::Basic>::type * = nullptr)
+	{
+		handler.onBlock(block, thread_num);
+	}
+
+	template <StreamUnionMode mode2 = mode>
+	void publishPayload(BlockInputStreamPtr & stream, Block & block, size_t thread_num,
+		typename std::enable_if<mode2 == StreamUnionMode::ExtraInfo>::type * = nullptr)
+	{
+		BlockExtraInfo extra_info = stream->getBlockExtraInfo();
+		handler.onBlock(block, extra_info, thread_num);
+	}
 
 	void thread(MemoryTracker * memory_tracker, size_t thread_num)
 	{
@@ -167,7 +191,7 @@ private:
 				try
 				{
 					while (Block block = additional_input_at_end->read())
-						handler.onBlock(block, thread_num);
+						publishPayload(additional_input_at_end, block, thread_num);
 				}
 				catch (...)
 				{
@@ -230,7 +254,7 @@ private:
 					break;
 
 				if (block)
-					handler.onBlock(block, thread_num);
+					publishPayload(input.in, block, thread_num);
 			}
 		}
 	}
