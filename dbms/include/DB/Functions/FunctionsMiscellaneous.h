@@ -339,11 +339,11 @@ public:
 	/// Выполнить функцию над блоком.
 	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
 	{
-		const IColumn & argument = *block.getByPosition(arguments[0]).column;
-		if (!argument.isConst())
-			throw Exception("Argument for function " + getName() + " must be constant.", ErrorCodes::ILLEGAL_COLUMN);
-
-		block.getByPosition(result).column = dynamic_cast<const IColumnConst &>(argument).convertToFullColumn();
+		const auto & src = block.getByPosition(arguments[0]).column;
+		if (auto converted = src->convertToFullColumnIfConst())
+			block.getByPosition(result).column = converted;
+		else
+			block.getByPosition(result).column = src;
 	}
 };
 
