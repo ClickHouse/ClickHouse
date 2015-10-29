@@ -351,7 +351,7 @@ public:
 /** Для нескольких аргументов.
   * Для вычисления, хэширует их с использованием некриптографической 64-битной хэш-функции.
   * Можно передать несколько аргументов как есть; также можно передать один аргумент - кортеж.
-  * Но, (для возможности эффективной реализации), нельзя передать несколько аргументов, среди которых есть кортежи.
+  * Но (для возможности эффективной реализации), нельзя передать несколько аргументов, среди которых есть кортежи.
   */
 template <typename Data, bool argument_is_tuple>
 class AggregateFunctionUniqVariadic final : public IAggregateFunctionHelper<Data>
@@ -377,24 +377,44 @@ public:
 
 	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const
 	{
-		UInt64 hash = 0;
+		UInt64 hash;
 
 		if (argument_is_tuple)
 		{
 			const Columns & tuple_columns = static_cast<const ColumnTuple *>(columns[0])->getColumns();
-			for (const auto & column : tuple_columns)
+
+			const ColumnPtr * column = tuple_columns.data();
+			const ColumnPtr * columns_end = column + num_args;
+
 			{
-				StringRef value = column.get()->getDataAt(row_num);
+				StringRef value = column->get()->getDataAt(row_num);
+				hash = CityHash64(value.data, value.size);
+				++column;
+			}
+
+			while (column < columns_end)
+			{
+				StringRef value = column->get()->getDataAt(row_num);
 				hash = Hash128to64(uint128(CityHash64(value.data, value.size), hash));
+				++column;
 			}
 		}
 		else
 		{
-			const IColumn ** columns_end = columns + num_args;
-			for (const IColumn ** column = columns; column < columns_end; ++column)
+			const IColumn ** column = columns;
+			const IColumn ** columns_end = column + num_args;
+
+			{
+				StringRef value = (*column)->getDataAt(row_num);
+				hash = CityHash64(value.data, value.size);
+				++column;
+			}
+
+			while (column < columns_end)
 			{
 				StringRef value = (*column)->getDataAt(row_num);
 				hash = Hash128to64(uint128(CityHash64(value.data, value.size), hash));
+				++column;
 			}
 		}
 
