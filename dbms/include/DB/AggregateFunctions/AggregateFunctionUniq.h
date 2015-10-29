@@ -23,7 +23,7 @@
 
 #include <DB/AggregateFunctions/IUnaryAggregateFunction.h>
 #include <DB/AggregateFunctions/UniqCombinedBiasData.h>
-#include <DB/AggregateFunctions/AggregateFunctionUniqVariadicHelpers.h>
+#include <DB/AggregateFunctions/UniqVariadicHash.h>
 
 
 namespace DB

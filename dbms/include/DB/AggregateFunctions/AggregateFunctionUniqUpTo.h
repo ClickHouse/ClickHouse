@@ -2,7 +2,7 @@
 
 #include <DB/Core/FieldVisitors.h>
 #include <DB/AggregateFunctions/IUnaryAggregateFunction.h>
-#include <DB/AggregateFunctions/AggregateFunctionUniqVariadicHelpers.h>
+#include <DB/AggregateFunctions/UniqVariadicHash.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeTuple.h>
 
