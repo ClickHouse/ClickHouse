@@ -68,7 +68,7 @@ struct AggregateFunctionUniqExactData
 	/// При создании, хэш-таблица должна быть небольшой.
 	typedef HashSet<
 		Key,
-		DefaultHash<Key>,
+		HashCRC32<Key>,
 		HashTableGrower<4>,
 		HashTableAllocatorWithStackMemory<sizeof(Key) * (1 << 4)>
 	> Set;
