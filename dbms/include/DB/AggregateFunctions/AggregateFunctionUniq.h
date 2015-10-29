@@ -23,6 +23,7 @@
 
 #include <DB/AggregateFunctions/IUnaryAggregateFunction.h>
 #include <DB/AggregateFunctions/UniqCombinedBiasData.h>
+#include <DB/AggregateFunctions/AggregateFunctionUniqVariadicHelpers.h>
 
 
 namespace DB
@@ -348,10 +349,12 @@ public:
 };
 
 
-/** Для нескольких аргументов.
-  * Для вычисления, хэширует их с использованием некриптографической 64-битной хэш-функции.
+/** Для нескольких аргументов. Для вычисления, хэширует их.
   * Можно передать несколько аргументов как есть; также можно передать один аргумент - кортеж.
   * Но (для возможности эффективной реализации), нельзя передать несколько аргументов, среди которых есть кортежи.
+  *
+  * TODO Использование exact варианта.
+  * TODO В Data должен использоваться TrivialHash.
   */
 template <typename Data, bool argument_is_tuple>
 class AggregateFunctionUniqVariadic final : public IAggregateFunctionHelper<Data>
@@ -377,48 +380,10 @@ public:
 
 	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const
 	{
-		UInt64 hash;
-
 		if (argument_is_tuple)
-		{
-			const Columns & tuple_columns = static_cast<const ColumnTuple *>(columns[0])->getColumns();
-
-			const ColumnPtr * column = tuple_columns.data();
-			const ColumnPtr * columns_end = column + num_args;
-
-			{
-				StringRef value = column->get()->getDataAt(row_num);
-				hash = CityHash64(value.data, value.size);
-				++column;
-			}
-
-			while (column < columns_end)
-			{
-				StringRef value = column->get()->getDataAt(row_num);
-				hash = Hash128to64(uint128(CityHash64(value.data, value.size), hash));
-				++column;
-			}
-		}
+			this->data(place).set.insert(uniqVariadicHashInexactTuple(num_args, columns, row_num));
 		else
-		{
-			const IColumn ** column = columns;
-			const IColumn ** columns_end = column + num_args;
-
-			{
-				StringRef value = (*column)->getDataAt(row_num);
-				hash = CityHash64(value.data, value.size);
-				++column;
-			}
-
-			while (column < columns_end)
-			{
-				StringRef value = (*column)->getDataAt(row_num);
-				hash = Hash128to64(uint128(CityHash64(value.data, value.size), hash));
-				++column;
-			}
-		}
-
-		this->data(place).set.insert(hash);
+			this->data(place).set.insert(uniqVariadicHashInexact(num_args, columns, row_num));
 	}
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const

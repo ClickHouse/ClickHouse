@@ -2,7 +2,9 @@
 
 #include <DB/Core/FieldVisitors.h>
 #include <DB/AggregateFunctions/IUnaryAggregateFunction.h>
+#include <DB/AggregateFunctions/AggregateFunctionUniqVariadicHelpers.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypeTuple.h>
 
 
 namespace DB
@@ -164,6 +166,77 @@ public:
 	void addOne(AggregateDataPtr place, const IColumn & column, size_t row_num) const
 	{
 		this->data(place).addOne(column, row_num, threshold);
+	}
+
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
+	{
+		this->data(place).merge(this->data(rhs), threshold);
+	}
+
+	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
+	{
+		this->data(place).write(buf, threshold);
+	}
+
+	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
+	{
+		this->data(place).readAndMerge(buf, threshold);
+	}
+
+	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
+	{
+		static_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).size());
+	}
+};
+
+
+/** Для нескольких аргументов. Для вычисления, хэширует их.
+  * Можно передать несколько аргументов как есть; также можно передать один аргумент - кортеж.
+  * Но (для возможности эффективной реализации), нельзя передать несколько аргументов, среди которых есть кортежи.
+  */
+template <bool argument_is_tuple>
+class AggregateFunctionUniqUpToVariadic final : public IAggregateFunctionHelper<AggregateFunctionUniqUpToData<UInt64>>
+{
+private:
+	size_t num_args = 0;
+	UInt8 threshold = 5;	/// Значение по-умолчанию, если параметр не указан.
+
+public:
+	String getName() const { return "uniqUpTo"; }
+
+	DataTypePtr getReturnType() const
+	{
+		return new DataTypeUInt64;
+	}
+
+	void setArguments(const DataTypes & arguments)
+	{
+		if (argument_is_tuple)
+			num_args = typeid_cast<const DataTypeTuple &>(*arguments[0]).getElements().size();
+		else
+			num_args = arguments.size();
+	}
+
+	void setParameters(const Array & params)
+	{
+		if (params.size() != 1)
+			throw Exception("Aggregate function " + getName() + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		UInt64 threshold_param = apply_visitor(FieldVisitorConvertToNumber<UInt64>(), params[0]);
+
+		if (threshold_param > uniq_upto_max_threshold)
+			throw Exception("Too large parameter for aggregate function " + getName() + ". Maximum: " + toString(uniq_upto_max_threshold),
+				ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+		threshold = threshold_param;
+	}
+
+	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const
+	{
+		if (argument_is_tuple)
+			this->data(place).insert(uniqVariadicHashInexactTuple(num_args, columns, row_num), threshold);
+		else
+			this->data(place).insert(uniqVariadicHashInexact(num_args, columns, row_num), threshold);
 	}
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
