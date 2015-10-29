@@ -233,10 +233,7 @@ public:
 
 	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const
 	{
-		if (argument_is_tuple)
-			this->data(place).insert(uniqVariadicHashInexactTuple(num_args, columns, row_num), threshold);
-		else
-			this->data(place).insert(uniqVariadicHashInexact(num_args, columns, row_num), threshold);
+		this->data(place).insert(UniqVariadicHash<false, argument_is_tuple>::apply(num_args, columns, row_num), threshold);
 	}
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const

@@ -8,7 +8,11 @@ namespace DB
 namespace
 {
 
-template <typename Data>
+/** DataForVariadic - структура с данными, которая будет использоваться для агрегатной функции uniq от множества аргументов.
+  * Отличается, например, тем, что использует тривиальную хэш-функцию, так как uniq от множества аргументов сначала самостоятельно их хэширует.
+  */
+
+template <typename Data, typename DataForVariadic>
 AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const DataTypes & argument_types)
 {
 	if (argument_types.size() == 1)
@@ -26,7 +30,7 @@ AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const
 		else if (typeid_cast<const DataTypeString *>(&argument_type) || typeid_cast<const DataTypeFixedString *>(&argument_type))
 			return new AggregateFunctionUniq<String, Data>;
 		else if (typeid_cast<const DataTypeTuple *>(&argument_type))
-			return new AggregateFunctionUniqVariadic<Data, true>;
+			return new AggregateFunctionUniqVariadic<DataForVariadic, true>;
 		else
 			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name,
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -39,14 +43,14 @@ AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const
 				throw Exception("Tuple argument of function " + name + " must be the only argument",
 					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new AggregateFunctionUniqVariadic<Data, false>;
+		return new AggregateFunctionUniqVariadic<DataForVariadic, false>;
 	}
 	else
 		throw Exception("Incorrect number of arguments for aggregate function " + name,
 			ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 }
 
-template <template <typename> class Data>
+template <template <typename> class Data, typename DataForVariadic>
 AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const DataTypes & argument_types)
 {
 	if (argument_types.size() == 1)
@@ -64,7 +68,7 @@ AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const
 		else if (typeid_cast<const DataTypeString *>(&argument_type) || typeid_cast<const DataTypeFixedString *>(&argument_type))
 			return new AggregateFunctionUniq<String, Data<String>>;
 		else if (typeid_cast<const DataTypeTuple *>(&argument_type))
-			return new AggregateFunctionUniqVariadic<Data<UInt64>, true>;
+			return new AggregateFunctionUniqVariadic<DataForVariadic, true>;
 		else
 			throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name,
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -77,7 +81,7 @@ AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const
 				throw Exception("Tuple argument of function " + name + " must be the only argument",
 					ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		return new AggregateFunctionUniqVariadic<Data<UInt64>, false>;
+		return new AggregateFunctionUniqVariadic<DataForVariadic, false>;
 	}
 	else
 		throw Exception("Incorrect number of arguments for aggregate function " + name,
@@ -88,13 +92,26 @@ AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const
 
 void registerAggregateFunctionsUniq(AggregateFunctionFactory & factory)
 {
-	factory.registerFunction({"uniq"}, createAggregateFunctionUniq<AggregateFunctionUniqUniquesHashSetData>);
-	factory.registerFunction({"uniqHLL12"}, createAggregateFunctionUniq<AggregateFunctionUniqHLL12Data>);
-	factory.registerFunction({"uniqExact"}, createAggregateFunctionUniq<AggregateFunctionUniqExactData>);
-	factory.registerFunction({"uniqCombinedRaw"}, createAggregateFunctionUniq<AggregateFunctionUniqCombinedRawData>);
-	factory.registerFunction({"uniqCombinedLinearCounting"}, createAggregateFunctionUniq<AggregateFunctionUniqCombinedLinearCountingData>);
-	factory.registerFunction({"uniqCombinedBiasCorrected"}, createAggregateFunctionUniq<AggregateFunctionUniqCombinedBiasCorrectedData>);
-	factory.registerFunction({"uniqCombined"}, createAggregateFunctionUniq<AggregateFunctionUniqCombinedData>);
+	factory.registerFunction({"uniq"},
+		createAggregateFunctionUniq<AggregateFunctionUniqUniquesHashSetData, AggregateFunctionUniqUniquesHashSetDataForVariadic>);
+
+	factory.registerFunction({"uniqHLL12"},
+		createAggregateFunctionUniq<AggregateFunctionUniqHLL12Data, AggregateFunctionUniqHLL12Data<UInt64>>);
+
+	factory.registerFunction({"uniqExact"},
+		createAggregateFunctionUniq<AggregateFunctionUniqExactData, AggregateFunctionUniqExactData<String>>);
+
+	factory.registerFunction({"uniqCombinedRaw"},
+		createAggregateFunctionUniq<AggregateFunctionUniqCombinedRawData, AggregateFunctionUniqCombinedRawData<UInt64>>);
+
+	factory.registerFunction({"uniqCombinedLinearCounting"},
+		createAggregateFunctionUniq<AggregateFunctionUniqCombinedLinearCountingData, AggregateFunctionUniqCombinedLinearCountingData<UInt64>>);
+
+	factory.registerFunction({"uniqCombinedBiasCorrected"},
+		createAggregateFunctionUniq<AggregateFunctionUniqCombinedBiasCorrectedData, AggregateFunctionUniqCombinedBiasCorrectedData<UInt64>>);
+
+	factory.registerFunction({"uniqCombined"},
+		createAggregateFunctionUniq<AggregateFunctionUniqCombinedData, AggregateFunctionUniqCombinedData<UInt64>>);
 }
 
 }

@@ -33,11 +33,20 @@ namespace DB
 
 struct AggregateFunctionUniqUniquesHashSetData
 {
-	typedef UniquesHashSet<DefaultHash<UInt64> > Set;
+	typedef UniquesHashSet<DefaultHash<UInt64>> Set;
 	Set set;
 
 	static String getName() { return "uniq"; }
 };
+
+struct AggregateFunctionUniqUniquesHashSetDataForVariadic
+{
+	typedef UniquesHashSet<TrivialHash> Set;
+	Set set;
+
+	static String getName() { return "uniq"; }
+};
+
 
 /// uniqHLL12
 
@@ -353,13 +362,14 @@ public:
   * Можно передать несколько аргументов как есть; также можно передать один аргумент - кортеж.
   * Но (для возможности эффективной реализации), нельзя передать несколько аргументов, среди которых есть кортежи.
   *
-  * TODO Использование exact варианта.
-  * TODO В Data должен использоваться TrivialHash.
+  * TODO В Data для uniqHLL12 и uniqCombined должен использоваться TrivialHash.
   */
 template <typename Data, bool argument_is_tuple>
 class AggregateFunctionUniqVariadic final : public IAggregateFunctionHelper<Data>
 {
 private:
+	static constexpr bool is_exact = std::is_same<Data, AggregateFunctionUniqExactData<String>>::value;
+
 	size_t num_args = 0;
 
 public:
@@ -380,10 +390,7 @@ public:
 
 	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const
 	{
-		if (argument_is_tuple)
-			this->data(place).set.insert(uniqVariadicHashInexactTuple(num_args, columns, row_num));
-		else
-			this->data(place).set.insert(uniqVariadicHashInexact(num_args, columns, row_num));
+		this->data(place).set.insert(UniqVariadicHash<is_exact, argument_is_tuple>::apply(num_args, columns, row_num));
 	}
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
