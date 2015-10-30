@@ -557,6 +557,8 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 	if (expression)
 	{
 		MarkRanges ranges(1, MarkRange(0, part->size));
+		/** @todo expression->getRequiedColumns may contain integer width columns for FixedString(N) type which after
+		 *	passing them to ITableDeclaration::check will trigger and exception about unknown column `N` */
 		BlockInputStreamPtr part_in = new MergeTreeBlockInputStream(full_path + part->name + '/',
 			DEFAULT_MERGE_BLOCK_SIZE, expression->getRequiredColumns(), *this, part, ranges, false, nullptr, "", false, 0, DBMS_DEFAULT_BUFFER_SIZE);
 		ExpressionBlockInputStream in(part_in, expression);

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DB/Parsers/IParserBase.h>
+#include <DB/Parsers/ParserQueryWithOutput.h>
 
 
 namespace DB
@@ -11,7 +11,7 @@ namespace DB
   * или
   * SHOW DATABASES.
   */
-class ParserShowTablesQuery : public IParserBase
+class ParserShowTablesQuery : public ParserQueryWithOutput
 {
 protected:
 	const char * getName() const { return "SHOW TABLES|DATABASES query"; }

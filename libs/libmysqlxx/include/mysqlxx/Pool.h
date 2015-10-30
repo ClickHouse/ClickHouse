@@ -1,6 +1,7 @@
 #pragma once
 
 #include <list>
+#include <memory>
 
 #include <mysql/mysqld_error.h>
 
@@ -396,9 +397,9 @@ private:
 	Connection * allocConnection(bool dont_throw_if_failed_first_time = false)
 	{
 		Poco::Util::Application & app = Poco::Util::Application::instance();
-		Connection * conn;
 
-		conn = new Connection();
+		std::unique_ptr<Connection> conn(new Connection);
+
 		try
 		{
 			app.logger().information("MYSQL: Connecting to " + description);
@@ -425,14 +426,14 @@ private:
 			else
 			{
 				app.logger().error(e.what());
-				delete conn;
 				return nullptr;
 			}
 		}
 
 		was_successful = true;
-		connections.push_back(conn);
-		return conn;
+		auto * connection = conn.release();
+		connections.push_back(connection);
+		return connection;
 	}
 };
 
