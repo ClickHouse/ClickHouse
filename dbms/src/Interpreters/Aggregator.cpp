@@ -1356,10 +1356,14 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
 			mergeDataImpl<Method>(
 				getDataVariant<Method>(*res).data,
 				getDataVariant<Method>(current).data);
-		else
+		else if (res->without_key)
 			mergeDataNoMoreKeysImpl<Method>(
 				getDataVariant<Method>(*res).data,
 				res->without_key,
+				getDataVariant<Method>(current).data);
+		else
+			mergeDataOnlyExistingKeysImpl<Method>(
+				getDataVariant<Method>(*res).data,
 				getDataVariant<Method>(current).data);
 
 		/// current не будет уничтожать состояния агрегатных функций в деструкторе
