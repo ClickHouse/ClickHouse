@@ -202,6 +202,11 @@ private:
 	UInt8 threshold = 5;	/// Значение по-умолчанию, если параметр не указан.
 
 public:
+	size_t sizeOfData() const
+	{
+		return sizeof(AggregateFunctionUniqUpToData<UInt64>) + sizeof(UInt64) * threshold;
+	}
+
 	String getName() const { return "uniqUpTo"; }
 
 	DataTypePtr getReturnType() const
