@@ -132,10 +132,15 @@ private:
 		Settings settings = context.getSettings();
 		NamesAndTypesList res;
 
-		/// Отправляем на первый попавшийся шард
+		/// Отправляем на первый попавшийся удалённый шард.
+		const auto shard_info = cluster.getAnyRemoteShardInfo();
+		if (shard_info == nullptr)
+			throw Exception("No remote shard found", ErrorCodes::NO_REMOTE_SHARD_FOUND);
+		ConnectionPoolPtr pool = shard_info->pool;
+
 		BlockInputStreamPtr input{
 			new RemoteBlockInputStream{
-				cluster.pools.front().get(), query, &settings, nullptr,
+				pool.get(), query, &settings, nullptr,
 				Tables(), QueryProcessingStage::Complete, context}
 		};
 		input->readPrefix();

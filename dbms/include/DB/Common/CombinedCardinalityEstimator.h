@@ -170,6 +170,14 @@ public:
 	{
 		auto container_type = getContainerType();
 
+		/// Если readAndMerge вызывается с пустым состоянием, просто десериализуем
+		/// состояние задано в качестве параметра.
+		if ((container_type == details::ContainerType::SMALL) && small.empty())
+		{
+			read(in);
+			return;
+		}
+
 		UInt8 v;
 		readBinary(v, in);
 		auto rhs_container_type = static_cast<details::ContainerType>(v);

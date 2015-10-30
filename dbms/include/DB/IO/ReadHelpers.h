@@ -235,6 +235,7 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
 		x = -x;
 }
 
+
 template <bool throw_exception, class ExcepFun, class NoExcepFun, class... Args>
 bool exceptionPolicySelector(ExcepFun && excep_f, NoExcepFun && no_excep_f, Args &&... args)
 {
@@ -427,7 +428,7 @@ void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf);
 inline void readDateTimeText(time_t & datetime, ReadBuffer & buf)
 {
 	/** Считываем 10 символов, которые могут быть unix timestamp.
-	  * При этом, поддерживается только unix timestamp из 10 символов - от 9 сентября 2001.
+	  * При этом, поддерживается только unix timestamp из 5-10 символов.
 	  * Потом смотрим на пятый символ. Если это число - парсим unix timestamp.
 	  * Если это не число - парсим YYYY-MM-DD hh:mm:ss.
 	  */
@@ -454,7 +455,8 @@ inline void readDateTimeText(time_t & datetime, ReadBuffer & buf)
 			buf.position() += 19;
 		}
 		else
-			readIntTextUnsafe(datetime, buf);
+			/// Почему не readIntTextUnsafe? Дело в том, что для нужд AdFox, поддерживается парсинг unix timestamp с отбивкой нулями: 000...NNNN.
+			readIntText(datetime, buf);
 	}
 	else
 		readDateTimeTextFallback(datetime, buf);

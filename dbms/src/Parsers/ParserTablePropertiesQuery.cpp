@@ -13,20 +13,17 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Po
 {
 	Pos begin = pos;
 
-	ParserWhiteSpaceOrComments ws;
 	ParserString s_exists("EXISTS", true, true);
 	ParserString s_describe("DESCRIBE", true, true);
 	ParserString s_desc("DESC", true, true);
 	ParserString s_show("SHOW", true, true);
 	ParserString s_create("CREATE", true, true);
 	ParserString s_table("TABLE", true, true);
-	ParserString s_format("FORMAT", true, true);
 	ParserString s_dot(".");
 	ParserIdentifier name_p;
 
 	ASTPtr database;
 	ASTPtr table;
-	ASTPtr format;
 	ASTPtr query_ptr;
 
 	ws.ignore(pos, end);
@@ -53,6 +50,7 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Po
 		return false;
 	}
 
+	ASTQueryWithTableAndOutput * query = dynamic_cast<ASTQueryWithTableAndOutput *>(&*query_ptr);
 
 	ws.ignore(pos, end);
 
@@ -76,20 +74,9 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Po
 
 	ws.ignore(pos, end);
 
-	if (s_format.ignore(pos, end, max_parsed_pos, expected))
-	{
-		ws.ignore(pos, end);
-
-		ParserIdentifier format_p;
-
-		if (!format_p.parse(pos, end, format, max_parsed_pos, expected))
-			return false;
-		typeid_cast<ASTIdentifier &>(*format).kind = ASTIdentifier::Format;
-
-		ws.ignore(pos, end);
-	}
-
-	ASTQueryWithTableAndOutput * query = dynamic_cast<ASTQueryWithTableAndOutput *>(&*query_ptr);
+	/// FORMAT format_name
+	if (!parseFormat(*query, pos, end, node, max_parsed_pos, expected))
+		return false;
 
 	query->range = StringRange(begin, pos);
 
@@ -97,11 +84,8 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Po
 		query->database = typeid_cast<ASTIdentifier &>(*database).name;
 	if (table)
 		query->table = typeid_cast<ASTIdentifier &>(*table).name;
-	if (format)
-	{
-		query->format = format;
-		query->children.push_back(format);
-	}
+	if (query->format)
+		query->children.push_back(query->format);
 
 	node = query_ptr;
 
