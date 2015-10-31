@@ -10,8 +10,9 @@
 #include "ResultSet.h"
 
 
-struct Statement
+class Statement
 {
+public:
 	Statement(Connection & conn_) : connection(conn_) {}
 
 	void sendRequest()

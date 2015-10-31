@@ -389,7 +389,7 @@ SQLColAttribute(HSTMT statement_handle, SQLUSMALLINT column_number, SQLUSMALLINT
 				num_value = statement.result.getNumColumns();
 				break;
 			case SQL_DESC_DISPLAY_SIZE:
-				num_value = 0; //statement.connection.environment.types_info.at(statement.columns_info[column_idx].type).display_size;
+				num_value = statement.result.getColumnInfo(column_idx).display_size;
 				break;
 			case SQL_DESC_FIXED_PREC_SCALE:
 				break;
