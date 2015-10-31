@@ -1,3 +1,3 @@
 #!/bin/sh
 
-g++ -std=gnu++1y -Wall -g -shared -fPIC -lPocoFoundation -lPocoNet -o odbc.so *.cpp
+g++ -std=c++11 -Wall -Werror -g -shared -fPIC -Wl,-rpath=/usr/local/lib:/usr/local/lib64 -lPocoFoundation -lPocoNet -o odbc.so *.cpp
