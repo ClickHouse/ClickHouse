@@ -46,7 +46,7 @@ struct Environment
 		{"String", 		{ .sql_type_name = "TEXT", 		.is_unsigned = true,  	.sql_type = SQL_VARCHAR, 	.column_size = 0xFFFFFF,}},
 		{"FixedString", { .sql_type_name = "TEXT", 		.is_unsigned = true,  	.sql_type = SQL_VARCHAR, 	.column_size = 0xFFFFFF,}},
 		{"Date", 		{ .sql_type_name = "DATE", 		.is_unsigned = true,  	.sql_type = SQL_TYPE_DATE, 		.column_size = 10, }},
-		{"DateTime", 	{ .sql_type_name = "DATETIME", 	.is_unsigned = true, 	.sql_type = SQL_TYPE_TIMESTAMP, .column_size = 19, }},
+		{"DateTime", 	{ .sql_type_name = "TIMESTAMP",	.is_unsigned = true, 	.sql_type = SQL_TYPE_TIMESTAMP, .column_size = 19, }},
 		{"Array", 		{ .sql_type_name = "TEXT", 		.is_unsigned = true,  	.sql_type = SQL_VARCHAR, 	.column_size = 0xFFFFFF,}},
 	};
 

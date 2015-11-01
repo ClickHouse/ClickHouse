@@ -211,6 +211,7 @@ SQLColAttribute(HSTMT statement_handle, SQLUSMALLINT column_number, SQLUSMALLINT
 			case SQL_DESC_SCHEMA_NAME:
 				break;
 			case SQL_DESC_SEARCHABLE:
+				num_value = SQL_SEARCHABLE;
 				break;
 			case SQL_DESC_TABLE_NAME:
 				break;
@@ -273,8 +274,8 @@ SQLDescribeCol(HSTMT statement_handle,
 }
 
 
-RETCODE SQL_API
-SQLFetch(HSTMT statement_handle)
+RETCODE
+impl_SQLFetch(HSTMT statement_handle)
 {
 	LOG(__FUNCTION__);
 
@@ -302,6 +303,28 @@ SQLFetch(HSTMT statement_handle)
 
 
 RETCODE SQL_API
+SQLFetch(HSTMT statement_handle)
+{
+	return impl_SQLFetch(statement_handle);
+}
+
+
+RETCODE SQL_API
+SQLFetchScroll(HSTMT statement_handle, SQLSMALLINT orientation, SQLLEN offset)
+{
+	LOG(__FUNCTION__);
+
+	return doWith<Statement>(statement_handle, [&](Statement & statement) -> RETCODE
+	{
+		if (orientation != SQL_FETCH_NEXT)
+			throw std::runtime_error("Fetch type out of range");	/// TODO sqlstate = HY106
+
+		return impl_SQLFetch(statement_handle);
+	});
+}
+
+
+RETCODE SQL_API
 SQLGetData(HSTMT statement_handle,
 		   SQLUSMALLINT column_or_param_number, SQLSMALLINT target_type,
 		   PTR out_value, SQLLEN out_value_max_size,
@@ -316,7 +339,7 @@ SQLGetData(HSTMT statement_handle,
 
 		size_t column_idx = column_or_param_number - 1;
 
-		LOG("column: " << column_idx << ", target_type: " << target_type);
+		LOG("column: " << column_idx << ", target_type: " << target_type << ", out_value_max_size: " << out_value_max_size);
 
 		const Field & field = statement.current_row.data[column_idx];
 
@@ -326,25 +349,20 @@ SQLGetData(HSTMT statement_handle,
 			case SQL_C_DEFAULT:
 				throw std::runtime_error("Unsupported type requested.");
 
-			case SQL_C_WCHAR:
 			case SQL_C_CHAR:
+			case SQL_C_BINARY:
+				return fillOutputString(field.data.data(), field.data.size(), out_value, out_value_max_size, out_value_size_or_indicator);
+
+			case SQL_C_WCHAR:
 			{
-				if (target_type == SQL_C_CHAR)
-				{
-					return fillOutputString(field.data.data(), field.data.size(), out_value, out_value_max_size, out_value_size_or_indicator);
-				}
-				else
-				{
-					std::string converted;
+				std::string converted;
 
-					converted.resize(field.data.size() * 2 + 1, '\xFF');
-					converted[field.data.size() * 2] = '\0';
-					for (size_t i = 0, size = field.data.size(); i < size; ++i)
-						converted[i * 2] = field.data[i];
+				converted.resize(field.data.size() * 2 + 1, '\xFF');
+				converted[field.data.size() * 2] = '\0';
+				for (size_t i = 0, size = field.data.size(); i < size; ++i)
+					converted[i * 2] = field.data[i];
 
-					return fillOutputString(converted.data(), converted.size(), out_value, out_value_max_size, out_value_size_or_indicator);
-				}
-				break;
+				return fillOutputString(converted.data(), converted.size(), out_value, out_value_max_size, out_value_size_or_indicator);
 			}
 
 			case SQL_C_TINYINT:
@@ -352,6 +370,7 @@ SQLGetData(HSTMT statement_handle,
 				return fillOutputNumber<int8_t>(field.getInt(), out_value, out_value_max_size, out_value_size_or_indicator);
 
 			case SQL_C_UTINYINT:
+			case SQL_C_BIT:
 				return fillOutputNumber<uint8_t>(field.getUInt(), out_value, out_value_max_size, out_value_size_or_indicator);
 
 			case SQL_C_SHORT:
@@ -379,6 +398,14 @@ SQLGetData(HSTMT statement_handle,
 
 			case SQL_C_DOUBLE:
 				return fillOutputNumber<double>(field.getDouble(), out_value, out_value_max_size, out_value_size_or_indicator);
+
+			case SQL_C_DATE:
+			case SQL_C_TYPE_DATE:
+				return fillOutputNumber<SQL_DATE_STRUCT>(field.getDate(), out_value, out_value_max_size, out_value_size_or_indicator);
+
+			case SQL_C_TIMESTAMP:
+			case SQL_C_TYPE_TIMESTAMP:
+				return fillOutputNumber<SQL_TIMESTAMP_STRUCT>(field.getDateTime(), out_value, out_value_max_size, out_value_size_or_indicator);
 
 			default:
 				throw std::runtime_error("Unknown type requested.");
@@ -624,6 +651,81 @@ SQLColumns(HSTMT statement_handle,
 
 
 RETCODE SQL_API
+SQLGetTypeInfo(HSTMT statement_handle,
+			   SQLSMALLINT type)
+{
+	LOG(__FUNCTION__);
+	LOG("type = " << type);
+
+	return doWith<Statement>(statement_handle, [&](Statement & statement)
+	{
+		std::stringstream query;
+		query << "SELECT * FROM (";
+
+		bool first = true;
+
+		auto add_query_for_type = [&](const std::string & name, const TypeInfo & info) mutable
+		{
+			if (type != SQL_ALL_TYPES && type != info.sql_type)
+				return;
+
+			if (!first)
+				query << " UNION ALL ";
+			first = false;
+
+			query << "SELECT"
+				" '" << info.sql_type_name << "' AS TYPE_NAME"
+				", toInt16(" << info.sql_type << ") AS DATA_TYPE"
+				", toInt32(" << info.column_size << ") AS COLUMN_SIZE"
+				", '' AS LITERAL_PREFIX"
+				", '' AS LITERAL_SUFFIX"
+				", '' AS CREATE_PARAMS"	/// TODO
+				", toInt16(" << SQL_NO_NULLS << ") AS NULLABLE"
+				", toInt16(" << SQL_TRUE << ") AS CASE_SENSITIVE"
+				", toInt16(" << SQL_SEARCHABLE << ") AS SEARCHABLE"
+				", toInt16(" << info.is_unsigned << ") AS UNSIGNED_ATTRIBUTE"
+				", toInt16(" << SQL_FALSE << ") AS FIXED_PREC_SCALE"
+				", toInt16(" << SQL_FALSE << ") AS AUTO_UNIQUE_VALUE"
+				", TYPE_NAME AS LOCAL_TYPE_NAME"
+				", toInt16(0) AS MINIMUM_SCALE"
+				", toInt16(0) AS MAXIMUM_SCALE"
+				", DATA_TYPE AS SQL_DATA_TYPE"
+				", toInt16(0) AS SQL_DATETIME_SUB"
+				", toInt32(10) AS NUM_PREC_RADIX"	/// TODO
+				", toInt16(0) AS INTERVAL_PRECISION"
+				;
+		};
+
+		for (const auto & name_info : statement.connection.environment.types_info)
+		{
+			add_query_for_type(name_info.first, name_info.second);
+		}
+
+		{
+			auto info = statement.connection.environment.types_info.at("Date");
+			info.sql_type = SQL_DATE;
+			add_query_for_type("Date", info);
+		}
+
+		{
+			auto info = statement.connection.environment.types_info.at("DateTime");
+			info.sql_type = SQL_TIMESTAMP;
+			add_query_for_type("DateTime", info);
+		}
+
+		query << ") ORDER BY DATA_TYPE";
+
+		if (first)
+			query.str("SELECT 1 WHERE 0");
+
+		statement.query = query.str();
+		statement.sendRequest();
+		return SQL_SUCCESS;
+	});
+}
+
+
+RETCODE SQL_API
 SQLNumParams(HSTMT statement_handle,
 			 SQLSMALLINT * out_params_count)
 {
@@ -707,15 +809,6 @@ SQLGetFunctions(HDBC ConnectionHandle,
 	LOG(__FUNCTION__);
 	return SQL_ERROR;
 }*/
-
-
-RETCODE SQL_API
-SQLGetTypeInfo(HSTMT StatementHandle,
-			   SQLSMALLINT DataType)
-{
-	LOG(__FUNCTION__);
-	return SQL_ERROR;
-}
 
 
 RETCODE SQL_API
@@ -998,14 +1091,6 @@ RETCODE SQL_API
 SQLError(SQLHENV hDrvEnv, SQLHDBC hDrvDbc, SQLHSTMT hDrvStmt,
     SQLCHAR *szSqlState, SQLINTEGER *pfNativeError, SQLCHAR *szErrorMsg,
     SQLSMALLINT nErrorMsgMax, SQLSMALLINT *pcbErrorMsg)
-{
-	LOG(__FUNCTION__);
-	return SQL_ERROR;
-}
-
-
-RETCODE SQL_API
-SQLFetchScroll(SQLHSTMT hDrvStmt, SQLSMALLINT nOrientation, SQLLEN nOffset)
 {
 	LOG(__FUNCTION__);
 	return SQL_ERROR;

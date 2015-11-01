@@ -16,11 +16,11 @@ extern "C"
 RETCODE SQL_API
 SQLGetInfo(HDBC connection_handle,
 		   SQLUSMALLINT info_type,
-		   PTR out_info_value, SQLSMALLINT out_info_value_max_length, SQLSMALLINT * out_info_value_length)
+		   PTR out_value, SQLSMALLINT out_value_max_length, SQLSMALLINT * out_value_length)
 {
 	LOG(__FUNCTION__);
 
-	LOG("GetInfo with info_type: " << info_type << ", out_info_value_max_length: " << out_info_value_max_length);
+	LOG("GetInfo with info_type: " << info_type << ", out_value_max_length: " << out_value_max_length);
 
 	/** Как выбираются все эти значения?
 	  * В части них приведена правдивая информация о возможностях СУБД.
@@ -34,22 +34,6 @@ SQLGetInfo(HDBC connection_handle,
 
 		switch (info_type)
 		{
-		#define CASE_FALLTHROUGH(NAME) \
-			case NAME: \
-				if (!name) name = #NAME;
-
-		#define CASE_STRING(NAME, VALUE) \
-			case NAME: \
-				if (!name) name = #NAME; \
-				LOG("GetInfo " << name << ", type: String, value: " << (VALUE)); \
-				return fillOutputString(VALUE, out_info_value, out_info_value_max_length, out_info_value_length);
-
-		#define CASE_NUM(NAME, TYPE, VALUE) \
-			case NAME: \
-				if (!name) name = #NAME; \
-				LOG("GetInfo " << name << ", type: " << #TYPE << ", value: " << #VALUE << " = " << (VALUE)); \
-				return fillOutputNumber<TYPE>(VALUE, out_info_value, out_info_value_max_length, out_info_value_length);
-
 			CASE_STRING(SQL_DRIVER_VER, "1.0")
 			CASE_STRING(SQL_DRIVER_ODBC_VER, "03.80")
 			CASE_STRING(SQL_DM_VER, "03.80.0000.0000")
@@ -278,5 +262,6 @@ SQLGetInfo(HDBC connection_handle,
 		}
 	});
 }
+
 
 }

@@ -139,18 +139,35 @@ RETCODE fillOutputNumber(NUM num,
 
 	if (out_value)
 	{
-		if (out_value_max_length >= static_cast<LENGTH>(sizeof(num)))
+		if (out_value_max_length == 0 || out_value_max_length >= static_cast<LENGTH>(sizeof(num)))
 		{
 			memcpy(out_value, &num, sizeof(num));
 		}
 		else
 		{
-			if (out_value_max_length > 0)
-				memcpy(out_value, &num, out_value_max_length);
-
+			memcpy(out_value, &num, out_value_max_length);
 			res = SQL_SUCCESS_WITH_INFO;
 		}
 	}
 
 	return res;
 }
+
+
+/// См. для примера info.cpp
+
+#define CASE_FALLTHROUGH(NAME) \
+	case NAME: \
+		if (!name) name = #NAME;
+
+#define CASE_STRING(NAME, VALUE) \
+	case NAME: \
+		if (!name) name = #NAME; \
+		LOG("GetInfo " << name << ", type: String, value: " << (VALUE)); \
+		return fillOutputString(VALUE, out_value, out_value_max_length, out_value_length);
+
+#define CASE_NUM(NAME, TYPE, VALUE) \
+	case NAME: \
+		if (!name) name = #NAME; \
+		LOG("GetInfo " << name << ", type: " << #TYPE << ", value: " << #VALUE << " = " << (VALUE)); \
+		return fillOutputNumber<TYPE>(VALUE, out_value, out_value_max_length, out_value_length);
