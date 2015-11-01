@@ -19,6 +19,11 @@
 #include "utils.h"
 
 
+/** Функции из ODBC интерфейса не могут напрямую вызывать другие функции.
+  * Потому что будет вызвана не функция из этой библиотеки, а обёртка из driver manager-а,
+  *  которая может неправильно работать, будучи вызванной изнутри другой функции.
+  */
+
 extern "C"
 {
 
@@ -102,11 +107,19 @@ SQLExecDirect(HSTMT statement_handle,
 {
 	LOG(__FUNCTION__);
 
-	RETCODE ret = SQLPrepare(statement_handle, statement_text, statement_text_size);
-	if (ret != SQL_SUCCESS)
-		return ret;
+	return doWith<Statement>(statement_handle, [&](Statement & statement)
+	{
+		if (!statement.query.empty())
+			throw std::runtime_error("ExecDirect called, but statement query is not empty.");
 
-	return SQLExecute(statement_handle);
+		statement.query = stringFromSQLChar(statement_text, statement_text_size);
+		if (statement.query.empty())
+			throw std::runtime_error("ExecDirect called with empty query.");
+
+		LOG(statement.query);
+		statement.sendRequest();
+		return SQL_SUCCESS;
+	});
 }
 
 
@@ -265,10 +278,25 @@ SQLFetch(HSTMT statement_handle)
 {
 	LOG(__FUNCTION__);
 
-	return doWith<Statement>(statement_handle, [&](Statement & statement)
+	return doWith<Statement>(statement_handle, [&](Statement & statement) -> RETCODE
 	{
-		bool res = statement.fetchRow();
-		return res ? SQL_SUCCESS : SQL_NO_DATA;
+		if (!statement.fetchRow())
+			return SQL_NO_DATA;
+
+		auto res = SQL_SUCCESS;
+
+		for (auto & col_num_binding : statement.bindings)
+		{
+			auto code = SQLGetData(statement_handle, col_num_binding.first, col_num_binding.second.target_type,
+				col_num_binding.second.out_value, col_num_binding.second.out_value_max_size, col_num_binding.second.out_value_size_or_indicator);
+
+			if (code == SQL_SUCCESS_WITH_INFO)
+				res = code;
+			else if (code != SQL_SUCCESS)
+				return code;
+		}
+
+		return res;
 	});
 }
 
@@ -421,8 +449,8 @@ SQLDisconnect(HDBC connection_handle)
 }
 
 
-RETCODE SQL_API
-SQLGetDiagRec(SQLSMALLINT handle_type, SQLHANDLE handle,
+RETCODE
+impl_SQLGetDiagRec(SQLSMALLINT handle_type, SQLHANDLE handle,
     SQLSMALLINT record_number,
 	SQLCHAR * out_sqlstate,
 	SQLINTEGER * out_native_error_code,
@@ -472,6 +500,17 @@ SQLGetDiagRec(SQLSMALLINT handle_type, SQLHANDLE handle,
 
 
 RETCODE SQL_API
+SQLGetDiagRec(SQLSMALLINT handle_type, SQLHANDLE handle,
+    SQLSMALLINT record_number,
+	SQLCHAR * out_sqlstate,
+	SQLINTEGER * out_native_error_code,
+	SQLCHAR * out_mesage, SQLSMALLINT out_message_max_size, SQLSMALLINT * out_message_size)
+{
+	return impl_SQLGetDiagRec(handle_type, handle, record_number, out_sqlstate, out_native_error_code, out_mesage, out_message_max_size, out_message_size);
+}
+
+
+RETCODE SQL_API
 SQLGetDiagField(SQLSMALLINT handle_type, SQLHANDLE handle,
     SQLSMALLINT record_number,
 	SQLSMALLINT field_id,
@@ -479,7 +518,7 @@ SQLGetDiagField(SQLSMALLINT handle_type, SQLHANDLE handle,
 {
 	LOG(__FUNCTION__);
 
-	return SQLGetDiagRec(
+	return impl_SQLGetDiagRec(
 		handle_type,
 		handle,
 		record_number,

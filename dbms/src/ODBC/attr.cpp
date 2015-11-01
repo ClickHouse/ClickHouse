@@ -13,8 +13,8 @@
 extern "C"
 {
 
-RETCODE SQL_API
-SQLSetEnvAttr(SQLHENV environment_handle, SQLINTEGER attribute,
+RETCODE
+impl_SQLSetEnvAttr(SQLHENV environment_handle, SQLINTEGER attribute,
     SQLPOINTER value, SQLINTEGER value_length)
 {
 	LOG(__FUNCTION__);
@@ -47,8 +47,8 @@ SQLSetEnvAttr(SQLHENV environment_handle, SQLINTEGER attribute,
 }
 
 
-RETCODE SQL_API
-SQLGetEnvAttr(SQLHENV environment_handle, SQLINTEGER attribute,
+RETCODE
+impl_SQLGetEnvAttr(SQLHENV environment_handle, SQLINTEGER attribute,
     SQLPOINTER out_value, SQLINTEGER out_value_max_length, SQLINTEGER * out_value_length)
 {
 	LOG(__FUNCTION__);
@@ -66,18 +66,15 @@ SQLGetEnvAttr(SQLHENV environment_handle, SQLINTEGER attribute,
 				throw std::runtime_error("Unsupported environment attribute.");
 
 			case SQL_ATTR_ODBC_VERSION:
-				*reinterpret_cast<intptr_t*>(out_value) = environment.odbc_version;
-				if (out_value_length)
-					*out_value_length = sizeof(SQLUINTEGER);
-
+				fillOutputNumber<SQLUINTEGER>(environment.odbc_version, out_value, out_value_max_length, out_value_length);
 				return SQL_SUCCESS;
 		}
 	});
 }
 
 
-RETCODE SQL_API
-SQLSetConnectAttr(SQLHDBC connection_handle, SQLINTEGER attribute,
+RETCODE
+impl_SQLSetConnectAttr(SQLHDBC connection_handle, SQLINTEGER attribute,
 	SQLPOINTER value, SQLINTEGER value_length)
 {
 	LOG(__FUNCTION__);
@@ -121,8 +118,8 @@ SQLSetConnectAttr(SQLHDBC connection_handle, SQLINTEGER attribute,
 }
 
 
-RETCODE SQL_API
-SQLGetConnectAttr(SQLHDBC connection_handle, SQLINTEGER attribute,
+RETCODE
+impl_SQLGetConnectAttr(SQLHDBC connection_handle, SQLINTEGER attribute,
 	SQLPOINTER out_value, SQLINTEGER out_value_max_length, SQLINTEGER * out_value_length)
 {
 	LOG(__FUNCTION__);
@@ -159,8 +156,8 @@ SQLGetConnectAttr(SQLHDBC connection_handle, SQLINTEGER attribute,
 }
 
 
-RETCODE SQL_API
-SQLSetStmtAttr(SQLHSTMT statement_handle, SQLINTEGER attribute,
+RETCODE
+impl_SQLSetStmtAttr(SQLHSTMT statement_handle, SQLINTEGER attribute,
 	SQLPOINTER value, SQLINTEGER value_length)
 {
 	LOG(__FUNCTION__);
@@ -212,8 +209,8 @@ SQLSetStmtAttr(SQLHSTMT statement_handle, SQLINTEGER attribute,
 }
 
 
-RETCODE SQL_API
-SQLGetStmtAttr(SQLHSTMT statement_handle, SQLINTEGER attribute,
+RETCODE
+impl_SQLGetStmtAttr(SQLHSTMT statement_handle, SQLINTEGER attribute,
     SQLPOINTER out_value, SQLINTEGER out_value_max_length, SQLINTEGER * out_value_length)
 {
 	LOG(__FUNCTION__);
@@ -228,6 +225,9 @@ SQLGetStmtAttr(SQLHSTMT statement_handle, SQLINTEGER attribute,
 			case SQL_ATTR_APP_PARAM_DESC:
 			case SQL_ATTR_IMP_ROW_DESC:
 			case SQL_ATTR_IMP_PARAM_DESC:
+				fillOutputNumber<SQLPOINTER>((void*)1, out_value, out_value_max_length, out_value_length);
+				return SQL_SUCCESS;
+
 			case SQL_ATTR_CURSOR_SCROLLABLE:
 			case SQL_ATTR_CURSOR_SENSITIVITY:
 			case SQL_ATTR_ASYNC_ENABLE:
@@ -266,12 +266,55 @@ SQLGetStmtAttr(SQLHSTMT statement_handle, SQLINTEGER attribute,
 
 
 RETCODE SQL_API
+SQLSetEnvAttr(SQLHENV handle, SQLINTEGER attribute,
+    SQLPOINTER value, SQLINTEGER value_length)
+{
+	return impl_SQLSetEnvAttr(handle, attribute, value, value_length);
+}
+
+RETCODE SQL_API
+SQLSetConnectAttr(SQLHENV handle, SQLINTEGER attribute,
+    SQLPOINTER value, SQLINTEGER value_length)
+{
+	return impl_SQLSetConnectAttr(handle, attribute, value, value_length);
+}
+
+RETCODE SQL_API
+SQLSetStmtAttr(SQLHENV handle, SQLINTEGER attribute,
+    SQLPOINTER value, SQLINTEGER value_length)
+{
+	return impl_SQLSetStmtAttr(handle, attribute, value, value_length);
+}
+
+RETCODE SQL_API
+SQLGetEnvAttr(SQLHSTMT handle, SQLINTEGER attribute,
+    SQLPOINTER out_value, SQLINTEGER out_value_max_length, SQLINTEGER * out_value_length)
+{
+	return impl_SQLGetEnvAttr(handle, attribute, out_value, out_value_max_length, out_value_length);
+}
+
+RETCODE SQL_API
+SQLGetConnectAttr(SQLHSTMT handle, SQLINTEGER attribute,
+    SQLPOINTER out_value, SQLINTEGER out_value_max_length, SQLINTEGER * out_value_length)
+{
+	return impl_SQLGetConnectAttr(handle, attribute, out_value, out_value_max_length, out_value_length);
+}
+
+RETCODE SQL_API
+SQLGetStmtAttr(SQLHSTMT handle, SQLINTEGER attribute,
+    SQLPOINTER out_value, SQLINTEGER out_value_max_length, SQLINTEGER * out_value_length)
+{
+	return impl_SQLGetStmtAttr(handle, attribute, out_value, out_value_max_length, out_value_length);
+}
+
+
+RETCODE SQL_API
 SQLGetConnectOption(SQLHDBC connection_handle, UWORD attribute, PTR out_value)
 {
 	LOG(__FUNCTION__);
 	SQLINTEGER value_max_length = 64;
 	SQLINTEGER value_length_unused = 0;
-	return SQLGetConnectAttr(connection_handle, attribute, out_value, value_max_length, &value_length_unused);
+	return impl_SQLGetConnectAttr(connection_handle, attribute, out_value, value_max_length, &value_length_unused);
 }
 
 RETCODE SQL_API
@@ -280,21 +323,21 @@ SQLGetStmtOption(SQLHSTMT statement_handle, UWORD attribute, PTR out_value)
 	LOG(__FUNCTION__);
 	SQLINTEGER value_max_length = 64;
 	SQLINTEGER value_length_unused = 0;
-	return SQLGetStmtAttr(statement_handle, attribute, out_value, value_max_length, &value_length_unused);
+	return impl_SQLGetStmtAttr(statement_handle, attribute, out_value, value_max_length, &value_length_unused);
 }
 
 RETCODE SQL_API
 SQLSetConnectOption(SQLHDBC connection_handle, UWORD attribute, SQLULEN value)
 {
 	LOG(__FUNCTION__);
-	return SQLSetConnectAttr(connection_handle, attribute, reinterpret_cast<void *>(value), sizeof(value));
+	return impl_SQLSetConnectAttr(connection_handle, attribute, reinterpret_cast<void *>(value), sizeof(value));
 }
 
 RETCODE SQL_API
 SQLSetStmtOption(SQLHSTMT statement_handle, UWORD attribute, SQLULEN value)
 {
 	LOG(__FUNCTION__);
-	return SQLSetConnectAttr(statement_handle, attribute, reinterpret_cast<void *>(value), sizeof(value));
+	return impl_SQLSetConnectAttr(statement_handle, attribute, reinterpret_cast<void *>(value), sizeof(value));
 }
 
 

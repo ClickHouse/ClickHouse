@@ -37,7 +37,7 @@ public:
 
 		request.setMethod(Poco::Net::HTTPRequest::HTTP_POST);
 		request.setCredentials("Basic", user_password_base64.str());
-		request.setURI("/?default_format=ODBC");	/// TODO Возможность передать настройки.
+		request.setURI("/?database=" + connection.database + "&default_format=ODBC");	/// TODO Возможность передать настройки. TODO эскейпинг
 
 		connection.session.sendRequest(request) << query;
 		in = &connection.session.receiveResponse(response);
