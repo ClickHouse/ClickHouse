@@ -6,6 +6,29 @@
 #include "Log.h"
 
 
+/** Проверяет handle. Ловит исключения и засовывает их в DiagnosticRecord.
+  */
+template <typename Handle, typename F>
+RETCODE doWith(SQLHANDLE handle_opaque, F && f)
+{
+	if (nullptr == handle_opaque)
+		return SQL_INVALID_HANDLE;
+
+	Handle & handle = *reinterpret_cast<Handle *>(handle_opaque);
+
+	try
+	{
+		handle.diagnostic_record.reset();
+		return f(handle);
+	}
+	catch (...)
+	{
+		handle.diagnostic_record.fromException();
+		return SQL_ERROR;
+	}
+}
+
+
 /// Парсит строку вида key1=value1;key2=value2... TODO Парсинг значений в фигурных скобках.
 static const char * nextKeyValuePair(const char * data, const char * end, StringRef & out_key, StringRef & out_value)
 {
