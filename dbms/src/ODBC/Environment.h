@@ -13,6 +13,15 @@
 #include "DiagnosticRecord.h"
 
 
+struct TypeInfo
+{
+	std::string sql_type_name;
+	bool is_unsigned;
+	SQLSMALLINT sql_type;
+	size_t column_size;
+};
+
+
 struct Environment
 {
 	Environment()
@@ -22,29 +31,23 @@ struct Environment
 			throw std::logic_error("Cannot freopen stderr.");
 	}
 
-	struct TypeInfo
-	{
-		std::string sql_type_name;
-		bool is_unsigned;
-	};
-
 	const std::map<std::string, TypeInfo> types_info =
 	{
-		{"UInt8", 		{ .sql_type_name = "TINYINT", 	.is_unsigned = true, }},
-		{"UInt16", 		{ .sql_type_name = "SMALLINT", 	.is_unsigned = true,  }},
-		{"UInt32", 		{ .sql_type_name = "INT", 		.is_unsigned = true,  }},
-		{"UInt64", 		{ .sql_type_name = "BIGINT", 	.is_unsigned = true,  }},
-		{"Int8",		{ .sql_type_name = "TINYINT", 	.is_unsigned = false,  }},
-		{"Int16", 		{ .sql_type_name = "SMALLINT", 	.is_unsigned = false,  }},
-		{"Int32", 		{ .sql_type_name = "INT", 		.is_unsigned = false,  }},
-		{"Int64", 		{ .sql_type_name = "BIGINT", 	.is_unsigned = false,  }},
-		{"Float32", 	{ .sql_type_name = "FLOAT", 	.is_unsigned = false,  }},
-		{"Float64", 	{ .sql_type_name = "DOUBLE", 	.is_unsigned = false,  }},
-		{"String", 		{ .sql_type_name = "TEXT", 		.is_unsigned = true,  }},
-		{"FixedString", { .sql_type_name = "TEXT", 		.is_unsigned = true,  }},
-		{"Date", 		{ .sql_type_name = "DATE", 		.is_unsigned = true,  }},
-		{"DateTime", 	{ .sql_type_name = "DATETIME", 	.is_unsigned = true,  }},
-		{"Array", 		{ .sql_type_name = "TEXT", 		.is_unsigned = true,  }},
+		{"UInt8", 		{ .sql_type_name = "TINYINT", 	.is_unsigned = true, 	.sql_type = SQL_TINYINT, 		.column_size = 3, }},
+		{"UInt16", 		{ .sql_type_name = "SMALLINT", 	.is_unsigned = true,  	.sql_type = SQL_SMALLINT, 		.column_size = 5, }},
+		{"UInt32", 		{ .sql_type_name = "INT", 		.is_unsigned = true,  	.sql_type = SQL_INTEGER, 		.column_size = 10,}},
+		{"UInt64", 		{ .sql_type_name = "BIGINT", 	.is_unsigned = true,  	.sql_type = SQL_BIGINT, 		.column_size = 19,}},
+		{"Int8",		{ .sql_type_name = "TINYINT", 	.is_unsigned = false,  	.sql_type = SQL_TINYINT, 		.column_size = 3, }},
+		{"Int16", 		{ .sql_type_name = "SMALLINT", 	.is_unsigned = false, 	.sql_type = SQL_SMALLINT, 		.column_size = 5, }},
+		{"Int32", 		{ .sql_type_name = "INT", 		.is_unsigned = false, 	.sql_type = SQL_INTEGER, 		.column_size = 10,}},
+		{"Int64", 		{ .sql_type_name = "BIGINT", 	.is_unsigned = false,  	.sql_type = SQL_BIGINT, 		.column_size = 20,}},
+		{"Float32", 	{ .sql_type_name = "REAL", 		.is_unsigned = false,  	.sql_type = SQL_REAL, 			.column_size = 7, }},
+		{"Float64", 	{ .sql_type_name = "DOUBLE", 	.is_unsigned = false,  	.sql_type = SQL_DOUBLE, 		.column_size = 15,}},
+		{"String", 		{ .sql_type_name = "TEXT", 		.is_unsigned = true,  	.sql_type = SQL_VARCHAR, 	.column_size = 0xFFFFFF,}},
+		{"FixedString", { .sql_type_name = "TEXT", 		.is_unsigned = true,  	.sql_type = SQL_VARCHAR, 	.column_size = 0xFFFFFF,}},
+		{"Date", 		{ .sql_type_name = "DATE", 		.is_unsigned = true,  	.sql_type = SQL_TYPE_DATE, 		.column_size = 10, }},
+		{"DateTime", 	{ .sql_type_name = "DATETIME", 	.is_unsigned = true, 	.sql_type = SQL_TYPE_TIMESTAMP, .column_size = 19, }},
+		{"Array", 		{ .sql_type_name = "TEXT", 		.is_unsigned = true,  	.sql_type = SQL_VARCHAR, 	.column_size = 0xFFFFFF,}},
 	};
 
 /*	Poco::UTF8Encoding utf8;

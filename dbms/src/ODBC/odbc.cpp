@@ -142,9 +142,13 @@ SQLColAttribute(HSTMT statement_handle, SQLUSMALLINT column_number, SQLUSMALLINT
 		SQLLEN num_value = 0;
 		std::string str_value;
 
+		const ColumnInfo & column_info = statement.result.getColumnInfo(column_idx);
+		const TypeInfo & type_info = statement.connection.environment.types_info.at(column_info.type);
+
 		switch (field_identifier)
 		{
 			case SQL_DESC_AUTO_UNIQUE_VALUE:
+				num_value = SQL_FALSE;
 				break;
 			case SQL_DESC_BASE_COLUMN_NAME:
 				break;
@@ -156,18 +160,18 @@ SQLColAttribute(HSTMT statement_handle, SQLUSMALLINT column_number, SQLUSMALLINT
 			case SQL_DESC_CATALOG_NAME:
 				break;
 			case SQL_DESC_CONCISE_TYPE:
-				// TODO
+				num_value = type_info.sql_type;
 				break;
 			case SQL_DESC_COUNT:
 				num_value = statement.result.getNumColumns();
 				break;
 			case SQL_DESC_DISPLAY_SIZE:
-				num_value = statement.result.getColumnInfo(column_idx).display_size;
+				num_value = column_info.display_size;
 				break;
 			case SQL_DESC_FIXED_PREC_SCALE:
 				break;
 			case SQL_DESC_LABEL:
-				str_value = statement.result.getColumnInfo(column_idx).name;
+				str_value = column_info.name;
 				break;
 			case SQL_DESC_LENGTH:
 				break;
@@ -178,7 +182,7 @@ SQLColAttribute(HSTMT statement_handle, SQLUSMALLINT column_number, SQLUSMALLINT
 			case SQL_DESC_LOCAL_TYPE_NAME:
 				break;
 			case SQL_DESC_NAME:
-				str_value = statement.result.getColumnInfo(column_idx).name;
+				str_value = column_info.name;
 				break;
 			case SQL_DESC_NULLABLE:
 				num_value = SQL_FALSE;
@@ -198,14 +202,16 @@ SQLColAttribute(HSTMT statement_handle, SQLUSMALLINT column_number, SQLUSMALLINT
 			case SQL_DESC_TABLE_NAME:
 				break;
 			case SQL_DESC_TYPE:
+				num_value = type_info.sql_type;
 				break;
 			case SQL_DESC_TYPE_NAME:
+				str_value = type_info.sql_type_name;
 				break;
 			case SQL_DESC_UNNAMED:
 				num_value = SQL_NAMED;
 				break;
 			case SQL_DESC_UNSIGNED:
-				num_value = statement.connection.environment.types_info.at(statement.result.getColumnInfo(column_idx).type).is_unsigned;
+				num_value = type_info.is_unsigned;
 				break;
 			case SQL_DESC_UPDATABLE:
 				num_value = SQL_FALSE;
@@ -218,6 +224,38 @@ SQLColAttribute(HSTMT statement_handle, SQLUSMALLINT column_number, SQLUSMALLINT
 			*out_num_value = num_value;
 
 		return fillOutputString(str_value, out_string_value, out_string_value_max_size, out_string_value_size);
+	});
+}
+
+
+RETCODE SQL_API
+SQLDescribeCol(HSTMT statement_handle,
+			   SQLUSMALLINT column_number,
+			   SQLCHAR * out_column_name, SQLSMALLINT out_column_name_max_size, SQLSMALLINT * out_column_name_size,
+			   SQLSMALLINT * out_type, SQLULEN * out_column_size, SQLSMALLINT * out_decimal_digits, SQLSMALLINT * out_is_nullable)
+{
+	LOG(__FUNCTION__);
+
+	return doWith<Statement>(statement_handle, [&](Statement & statement)
+	{
+		if (column_number < 1 || column_number > statement.result.getNumColumns())
+			throw std::runtime_error("Column number is out of range.");
+
+		size_t column_idx = column_number - 1;
+
+		const ColumnInfo & column_info = statement.result.getColumnInfo(column_idx);
+		const TypeInfo & type_info = statement.connection.environment.types_info.at(column_info.type);
+
+		if (out_type)
+			*out_type = type_info.sql_type;
+		if (out_column_size)
+			*out_column_size = type_info.column_size;
+		if (out_decimal_digits)
+			*out_decimal_digits = 0;
+		if (out_is_nullable)
+			*out_is_nullable = SQL_NO_NULLS;
+
+		return fillOutputString(column_info.name, out_column_name, out_column_name_max_size, out_column_name_size);;
 	});
 }
 
@@ -317,6 +355,31 @@ SQLGetData(HSTMT statement_handle,
 			default:
 				throw std::runtime_error("Unknown type requested.");
 		}
+	});
+}
+
+
+RETCODE SQL_API
+SQLBindCol(HSTMT statement_handle,
+		   SQLUSMALLINT column_number, SQLSMALLINT target_type,
+		   PTR out_value, SQLLEN out_value_max_size, SQLLEN * out_value_size_or_indicator)
+{
+	LOG(__FUNCTION__);
+
+	return doWith<Statement>(statement_handle, [&](Statement & statement)
+	{
+		if (column_number < 1 || column_number > statement.result.getNumColumns())
+			throw std::runtime_error("Column number is out of range.");
+
+		statement.bindings[column_number] = Binding
+		{
+			.target_type = target_type,
+			.out_value = out_value,
+			.out_value_max_size = out_value_max_size,
+			.out_value_size_or_indicator = out_value_size_or_indicator
+		};
+
+		return SQL_SUCCESS;
 	});
 }
 
@@ -439,21 +502,82 @@ SQLTables(HSTMT statement_handle,
 
 	return doWith<Statement>(statement_handle, [&](Statement & statement)
 	{
-		LOG(
-			stringFromSQLChar(catalog_name, catalog_name_length)
-			<< ", " << stringFromSQLChar(schema_name, schema_name_length)
-			<< ", " << stringFromSQLChar(table_name, table_name_length)
-			<< ", " << stringFromSQLChar(table_type, table_type_length));
+		std::stringstream query;
 
-		statement.query = "SELECT"
-				" 'TABLE' AS TABLE_TYPE,"
-				" '' AS TABLE_CAT,"
-				" database AS TABLE_SCHEM,"
-				" name AS TABLE_NAME,"
-				" '' AS REMARKS"
+		query << "SELECT"
+				" 'TABLE' AS TABLE_TYPE"
+				", database AS TABLE_CAT"
+				", '' AS TABLE_SCHEM"
+				", name AS TABLE_NAME"
+				", '' AS REMARKS"
 			" FROM system.tables"
-			" ORDER BY  TABLE_TYPE, TABLE_CAT, TABLE_SCHEM, TABLE_NAME";
+			" WHERE 1";
 
+		if (catalog_name)
+			query << " AND TABLE_CAT = '" << stringFromSQLChar(catalog_name, catalog_name_length) << "'";
+		if (schema_name)
+			query << " AND TABLE_SCHEM = '" << stringFromSQLChar(schema_name, schema_name_length) << "'";
+		if (table_name)
+			query << " AND TABLE_NAME = '" << stringFromSQLChar(table_name, table_name_length) << "'";
+		if (table_type)
+			query << " AND TABLE_TYPE = '" << stringFromSQLChar(table_type, table_type_length) << "'";
+
+		query << " ORDER BY TABLE_TYPE, TABLE_CAT, TABLE_SCHEM, TABLE_NAME";
+
+		statement.query = query.str();
+		statement.sendRequest();
+		return SQL_SUCCESS;
+	});
+}
+
+
+RETCODE SQL_API
+SQLColumns(HSTMT statement_handle,
+		   SQLCHAR * catalog_name, SQLSMALLINT catalog_name_length,
+		   SQLCHAR * schema_name, SQLSMALLINT schema_name_length,
+		   SQLCHAR * table_name, SQLSMALLINT table_name_length,
+		   SQLCHAR * column_name, SQLSMALLINT column_name_length)
+{
+	LOG(__FUNCTION__);
+
+	return doWith<Statement>(statement_handle, [&](Statement & statement)
+	{
+		std::stringstream query;
+
+		query << "SELECT"
+				" database AS TABLE_CAT"
+				", '' AS TABLE_SCHEM"
+				", table AS TABLE_NAME"
+				", name AS COLUMN_NAME"
+				", 0 AS DATA_TYPE"	/// TODO
+				", 0 AS TYPE_NAME"
+				", 0 AS COLUMN_SIZE"
+				", 0 AS BUFFER_LENGTH"
+				", 0 AS DECIMAL_DIGITS"
+				", 0 AS NUM_PREC_RADIX"
+				", 0 AS NULLABLE"
+				", 0 AS REMARKS"
+				", 0 AS COLUMN_DEF"
+				", 0 AS SQL_DATA_TYPE "
+				", 0 AS SQL_DATETIME_SUB"
+				", 0 AS CHAR_OCTET_LENGTH"
+				", 0 AS ORDINAL_POSITION"
+				", 0 AS IS_NULLABLE"
+			" FROM system.columns"
+			" WHERE 1";
+
+		if (catalog_name)
+			query << " AND TABLE_CAT = '" << stringFromSQLChar(catalog_name, catalog_name_length) << "'";
+		if (schema_name)
+			query << " AND TABLE_SCHEM = '" << stringFromSQLChar(schema_name, schema_name_length) << "'";
+		if (table_name)
+			query << " AND TABLE_NAME = '" << stringFromSQLChar(table_name, table_name_length) << "'";
+		if (column_name)
+			query << " AND COLUMN_NAME = '" << stringFromSQLChar(column_name, column_name_length) << "'";
+
+		query << " ORDER BY TABLE_CAT, TABLE_SCHEM, TABLE_NAME, ORDINAL_POSITION";
+
+		statement.query = query.str();
 		statement.sendRequest();
 		return SQL_SUCCESS;
 	});
@@ -475,6 +599,21 @@ SQLNumParams(HSTMT statement_handle,
 
 
 RETCODE SQL_API
+SQLNativeSql(HDBC connection_handle,
+			 SQLCHAR * query, SQLINTEGER query_length,
+			 SQLCHAR * out_query, SQLINTEGER out_query_max_length, SQLINTEGER * out_query_length)
+{
+	LOG(__FUNCTION__);
+
+	return doWith<Connection>(connection_handle, [&](Connection & connection)
+	{
+		std::string query_str = stringFromSQLChar(query, query_length);
+		return fillOutputString(query_str, out_query, out_query_max_length, out_query_length);
+	});
+}
+
+
+RETCODE SQL_API
 SQLBrowseConnect(HDBC connection_handle,
 				 SQLCHAR *szConnStrIn,
 				 SQLSMALLINT cbConnStrIn,
@@ -487,31 +626,11 @@ SQLBrowseConnect(HDBC connection_handle,
 }
 
 
-RETCODE SQL_API
-SQLBindCol(HSTMT StatementHandle,
-		   SQLUSMALLINT ColumnNumber, SQLSMALLINT TargetType,
-		   PTR TargetValue, SQLLEN BufferLength,
-		   SQLLEN *StrLen_or_Ind)
-{
-	LOG(__FUNCTION__);
-	return SQL_ERROR;
-}
+/// Не реализовано.
 
 
 RETCODE SQL_API
 SQLCancel(HSTMT StatementHandle)
-{
-	LOG(__FUNCTION__);
-	return SQL_ERROR;
-}
-
-
-RETCODE SQL_API
-SQLColumns(HSTMT StatementHandle,
-		   SQLCHAR *CatalogName, SQLSMALLINT NameLength1,
-		   SQLCHAR *SchemaName, SQLSMALLINT NameLength2,
-		   SQLCHAR *TableName, SQLSMALLINT NameLength3,
-		   SQLCHAR *ColumnName, SQLSMALLINT NameLength4)
 {
 	LOG(__FUNCTION__);
 	return SQL_ERROR;
@@ -524,18 +643,6 @@ SQLDataSources(HENV EnvironmentHandle,
 			   SQLSMALLINT BufferLength1, SQLSMALLINT *NameLength1,
 			   SQLCHAR *Description, SQLSMALLINT BufferLength2,
 			   SQLSMALLINT *NameLength2)
-{
-	LOG(__FUNCTION__);
-	return SQL_ERROR;
-}
-
-
-RETCODE SQL_API
-SQLDescribeCol(HSTMT StatementHandle,
-			   SQLUSMALLINT ColumnNumber, SQLCHAR *ColumnName,
-			   SQLSMALLINT BufferLength, SQLSMALLINT *NameLength,
-			   SQLSMALLINT *DataType, SQLULEN *ColumnSize,
-			   SQLSMALLINT *DecimalDigits, SQLSMALLINT *Nullable)
 {
 	LOG(__FUNCTION__);
 	return SQL_ERROR;
@@ -695,19 +802,6 @@ SQLForeignKeys(HSTMT hstmt,
 			   SQLSMALLINT cbFkSchemaName,
 			   SQLCHAR *szFkTableName,
 			   SQLSMALLINT cbFkTableName)
-{
-	LOG(__FUNCTION__);
-	return SQL_ERROR;
-}
-
-
-RETCODE SQL_API
-SQLNativeSql(HDBC hdbc,
-			 SQLCHAR *szSqlStrIn,
-			 SQLINTEGER cbSqlStrIn,
-			 SQLCHAR *szSqlStr,
-			 SQLINTEGER cbSqlStrMax,
-			 SQLINTEGER *pcbSqlStr)
 {
 	LOG(__FUNCTION__);
 	return SQL_ERROR;

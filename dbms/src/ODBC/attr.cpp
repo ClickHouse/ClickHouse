@@ -28,6 +28,8 @@ SQLSetEnvAttr(SQLHENV environment_handle, SQLINTEGER attribute,
 			case SQL_ATTR_CONNECTION_POOLING:
 			case SQL_ATTR_CP_MATCH:
 			case SQL_ATTR_OUTPUT_NTS:
+				return SQL_SUCCESS;
+
 			default:
 				throw std::runtime_error("Unsupported environment attribute.");
 
@@ -92,7 +94,7 @@ SQLSetConnectAttr(SQLHDBC connection_handle, SQLINTEGER attribute,
 				auto timeout = static_cast<SQLUSMALLINT>(reinterpret_cast<intptr_t>(value));
 				LOG("Timeout: " << timeout);
 				connection.session.setTimeout(Poco::Timespan(timeout));
-				break;
+				return SQL_SUCCESS;
 			}
 
 			case SQL_ATTR_ACCESS_MODE:
@@ -110,11 +112,11 @@ SQLSetConnectAttr(SQLHDBC connection_handle, SQLINTEGER attribute,
 			case SQL_ATTR_TRANSLATE_LIB:
 			case SQL_ATTR_TRANSLATE_OPTION:
 			case SQL_ATTR_TXN_ISOLATION:
+				return SQL_SUCCESS;
+
 			default:
 				throw std::runtime_error("Unsupported connection attribute.");
 		}
-
-		return SQL_SUCCESS;
 	});
 }
 
@@ -169,6 +171,12 @@ SQLSetStmtAttr(SQLHSTMT statement_handle, SQLINTEGER attribute,
 
 		switch (attribute)
 		{
+			case SQL_ATTR_APP_ROW_DESC:
+			case SQL_ATTR_APP_PARAM_DESC:
+			case SQL_ATTR_IMP_ROW_DESC:
+			case SQL_ATTR_IMP_PARAM_DESC:
+			case SQL_ATTR_CURSOR_SCROLLABLE:
+			case SQL_ATTR_CURSOR_SENSITIVITY:
 			case SQL_ATTR_ASYNC_ENABLE:
 			case SQL_ATTR_CONCURRENCY:
 			case SQL_ATTR_CURSOR_TYPE:
@@ -195,11 +203,11 @@ SQLSetStmtAttr(SQLHSTMT statement_handle, SQLINTEGER attribute,
 			case SQL_ATTR_ROW_ARRAY_SIZE:
 			case SQL_ATTR_SIMULATE_CURSOR:
 			case SQL_ATTR_USE_BOOKMARKS:
+				return SQL_SUCCESS;
+
 			default:
 				throw std::runtime_error("Unsupported statement attribute.");
 		}
-
-		return SQL_SUCCESS;
 	});
 }
 
@@ -216,6 +224,12 @@ SQLGetStmtAttr(SQLHSTMT statement_handle, SQLINTEGER attribute,
 
 		switch (attribute)
 		{
+			case SQL_ATTR_APP_ROW_DESC:
+			case SQL_ATTR_APP_PARAM_DESC:
+			case SQL_ATTR_IMP_ROW_DESC:
+			case SQL_ATTR_IMP_PARAM_DESC:
+			case SQL_ATTR_CURSOR_SCROLLABLE:
+			case SQL_ATTR_CURSOR_SENSITIVITY:
 			case SQL_ATTR_ASYNC_ENABLE:
 			case SQL_ATTR_CONCURRENCY:
 			case SQL_ATTR_CURSOR_TYPE:

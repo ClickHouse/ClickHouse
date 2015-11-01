@@ -10,6 +10,16 @@
 #include "ResultSet.h"
 
 
+/// Информация, куда и как складывать значения при чтении.
+struct Binding
+{
+	SQLSMALLINT target_type;
+	PTR out_value;
+	SQLLEN out_value_max_size;
+	SQLLEN * out_value_size_or_indicator;
+};
+
+
 class Statement
 {
 public:
@@ -64,4 +74,6 @@ public:
 
 	ResultSet result;
 	Row current_row;
+
+	std::map<SQLUSMALLINT, Binding> bindings;
 };
