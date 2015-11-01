@@ -156,7 +156,7 @@ SQLColAttribute(HSTMT statement_handle, SQLUSMALLINT column_number, SQLUSMALLINT
 		std::string str_value;
 
 		const ColumnInfo & column_info = statement.result.getColumnInfo(column_idx);
-		const TypeInfo & type_info = statement.connection.environment.types_info.at(column_info.type);
+		const TypeInfo & type_info = statement.connection.environment.types_info.at(column_info.type_without_parameters);
 
 		switch (field_identifier)
 		{
@@ -258,7 +258,7 @@ SQLDescribeCol(HSTMT statement_handle,
 		size_t column_idx = column_number - 1;
 
 		const ColumnInfo & column_info = statement.result.getColumnInfo(column_idx);
-		const TypeInfo & type_info = statement.connection.environment.types_info.at(column_info.type);
+		const TypeInfo & type_info = statement.connection.environment.types_info.at(column_info.type_without_parameters);
 
 		if (out_type)
 			*out_type = type_info.sql_type;

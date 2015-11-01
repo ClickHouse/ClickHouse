@@ -22,6 +22,11 @@ void ResultSet::init(Statement & statement_)
 	{
 		readString(columns_info[i].name, in());
 		readString(columns_info[i].type, in());
+
+		columns_info[i].type_without_parameters = columns_info[i].type;
+		auto pos = columns_info[i].type_without_parameters.find('(');
+		if (std::string::npos != pos)
+			columns_info[i].type_without_parameters.resize(pos);
 	}
 
 	readNextBlock();

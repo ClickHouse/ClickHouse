@@ -73,6 +73,7 @@ struct ColumnInfo
 {
 	std::string name;
 	std::string type;
+	std::string type_without_parameters;
 	size_t display_size = 0;
 };
 
