@@ -25,7 +25,7 @@ struct Connection
 	{
 		session.setHost(host);
 		session.setPort(port);
-		session.setKeepAlive(true);
+	//	session.setKeepAlive(true);
 
 		/// TODO Таймаут.
 	}

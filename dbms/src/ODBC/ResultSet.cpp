@@ -7,12 +7,12 @@ void ResultSet::init(Statement & statement_)
 {
 	statement = &statement_;
 
+	if (in().peek() == EOF)
+		return;
+
 	/// Заголовок: количество столбцов, их имена и типы.
 	uint64_t num_columns = 0;
 	readSize(num_columns, in());
-
-	if (!in().good())
-		return;
 
 	if (!num_columns)
 		return;

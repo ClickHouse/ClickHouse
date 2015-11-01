@@ -580,13 +580,13 @@ SQLTables(HSTMT statement_handle,
 			" WHERE 1";
 
 		if (catalog_name)
-			query << " AND TABLE_CAT = '" << stringFromSQLChar(catalog_name, catalog_name_length) << "'";
+			query << " AND TABLE_CAT LIKE '" << stringFromSQLChar(catalog_name, catalog_name_length) << "'";
 		if (schema_name)
-			query << " AND TABLE_SCHEM = '" << stringFromSQLChar(schema_name, schema_name_length) << "'";
+			query << " AND TABLE_SCHEM LIKE '" << stringFromSQLChar(schema_name, schema_name_length) << "'";
 		if (table_name)
-			query << " AND TABLE_NAME = '" << stringFromSQLChar(table_name, table_name_length) << "'";
-		if (table_type)
-			query << " AND TABLE_TYPE = '" << stringFromSQLChar(table_type, table_type_length) << "'";
+			query << " AND TABLE_NAME LIKE '" << stringFromSQLChar(table_name, table_name_length) << "'";
+	/*	if (table_type)
+			query << " AND TABLE_TYPE = '" << stringFromSQLChar(table_type, table_type_length) << "'";*/
 
 		query << " ORDER BY TABLE_TYPE, TABLE_CAT, TABLE_SCHEM, TABLE_NAME";
 
@@ -633,13 +633,13 @@ SQLColumns(HSTMT statement_handle,
 			" WHERE 1";
 
 		if (catalog_name)
-			query << " AND TABLE_CAT = '" << stringFromSQLChar(catalog_name, catalog_name_length) << "'";
+			query << " AND TABLE_CAT LIKE '" << stringFromSQLChar(catalog_name, catalog_name_length) << "'";
 		if (schema_name)
-			query << " AND TABLE_SCHEM = '" << stringFromSQLChar(schema_name, schema_name_length) << "'";
+			query << " AND TABLE_SCHEM LIKE '" << stringFromSQLChar(schema_name, schema_name_length) << "'";
 		if (table_name)
-			query << " AND TABLE_NAME = '" << stringFromSQLChar(table_name, table_name_length) << "'";
+			query << " AND TABLE_NAME LIKE '" << stringFromSQLChar(table_name, table_name_length) << "'";
 		if (column_name)
-			query << " AND COLUMN_NAME = '" << stringFromSQLChar(column_name, column_name_length) << "'";
+			query << " AND COLUMN_NAME LIKE '" << stringFromSQLChar(column_name, column_name_length) << "'";
 
 		query << " ORDER BY TABLE_CAT, TABLE_SCHEM, TABLE_NAME, ORDINAL_POSITION";
 

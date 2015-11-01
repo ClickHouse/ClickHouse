@@ -35,17 +35,24 @@ public:
 		base64_encoder << connection.user << ":" << connection.password;
 		base64_encoder.close();
 
+	//	request.setChunkedTransferEncoding(true);
 		request.setMethod(Poco::Net::HTTPRequest::HTTP_POST);
 		request.setCredentials("Basic", user_password_base64.str());
 		request.setURI("/?database=" + connection.database + "&default_format=ODBC");	/// TODO Возможность передать настройки. TODO эскейпинг
 
 		connection.session.sendRequest(request) << query;
+
+		LOG("Receiving !");
 		in = &connection.session.receiveResponse(response);
+		LOG("Receiving !!");
 
 		Poco::Net::HTTPResponse::HTTPStatus status = response.getStatus();
+		LOG("Receiving !!!");
 
 		if (status != Poco::Net::HTTPResponse::HTTP_OK)
 		{
+			LOG("Receiving !!!!");
+
 			std::stringstream error_message;
 			error_message
 				<< "Received error:" << std::endl
@@ -55,6 +62,7 @@ public:
 			throw std::runtime_error(error_message.str());
 		}
 
+		LOG("Receiving ! !");
 		result.init(*this);
 	}
 
