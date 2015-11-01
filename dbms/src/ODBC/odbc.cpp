@@ -24,7 +24,7 @@
 /** Проверяет handle. Ловит исключения и засовывает их в DiagnosticRecord.
   */
 template <typename Handle, typename F>
-RETCODE doWith(HDBC handle_opaque, F && f)
+RETCODE doWith(SQLHANDLE handle_opaque, F && f)
 {
 	if (nullptr == handle_opaque)
 		return SQL_INVALID_HANDLE;
@@ -33,6 +33,7 @@ RETCODE doWith(HDBC handle_opaque, F && f)
 
 	try
 	{
+		handle.diagnostic_record.reset();
 		return f(handle);
 	}
 	catch (...)
@@ -49,7 +50,6 @@ RETCODE allocEnv(SQLHENV * out_environment)
 		return SQL_INVALID_HANDLE;
 
 	*out_environment = new Environment;
-
 	return SQL_SUCCESS;
 }
 
@@ -59,7 +59,6 @@ RETCODE allocConnect(SQLHENV environment, SQLHDBC * out_connection)
 		return SQL_INVALID_HANDLE;
 
 	*out_connection = new Connection(*reinterpret_cast<Environment *>(environment));
-
 	return SQL_SUCCESS;
 }
 
@@ -69,7 +68,6 @@ RETCODE allocStmt(SQLHDBC connection, SQLHSTMT * out_statement)
 		return SQL_INVALID_HANDLE;
 
 	*out_statement = new Statement(*reinterpret_cast<Connection *>(connection));
-
 	return SQL_SUCCESS;
 }
 
@@ -240,47 +238,160 @@ SQLGetInfo(HDBC connection_handle,
 {
 	LOG(__FUNCTION__);
 
-	LOG("GetInfo with info_type: " << info_type << ", out_info_value_max_length: " << out_info_value_max_length << ", out_info_value: " << (void*)out_info_value);
+	LOG("GetInfo with info_type: " << info_type << ", out_info_value_max_length: " << out_info_value_max_length);
 
 	return doWith<Connection>(connection_handle, [&](Connection & connection)
 	{
+		const char * name = nullptr;
+
 		switch (info_type)
 		{
-			case SQL_DRIVER_VER:
-				return fillOutputString("1.0", out_info_value, out_info_value_max_length, out_info_value_length);
-				break;
-			case SQL_DRIVER_ODBC_VER:
-				return fillOutputString("03.80", out_info_value, out_info_value_max_length, out_info_value_length);
-			case SQL_DRIVER_NAME:
-				return fillOutputString("ClickHouse ODBC", out_info_value, out_info_value_max_length, out_info_value_length);
-			case SQL_DBMS_NAME:
-				return fillOutputString("ClickHouse", out_info_value, out_info_value_max_length, out_info_value_length);
-			case SQL_SERVER_NAME:
-				return fillOutputString("ClickHouse", out_info_value, out_info_value_max_length, out_info_value_length);
-			case SQL_DATA_SOURCE_NAME:
-				return fillOutputString("ClickHouse", out_info_value, out_info_value_max_length, out_info_value_length);
+		#define CASE_FALLTHROUGH(NAME) \
+			case NAME: \
+				if (!name) name = #NAME;
 
-			case SQL_MAX_COLUMNS_IN_SELECT:
-			case SQL_MAX_DRIVER_CONNECTIONS:
-			case SQL_MAX_CONCURRENT_ACTIVITIES:
-			case SQL_MAX_COLUMN_NAME_LEN:
-			case SQL_MAX_CURSOR_NAME_LEN:
-			case SQL_MAX_SCHEMA_NAME_LEN:
-			case SQL_MAX_CATALOG_NAME_LEN:
-			case SQL_MAX_TABLE_NAME_LEN:
-			case SQL_MAX_COLUMNS_IN_GROUP_BY:
-			case SQL_MAX_COLUMNS_IN_INDEX:
-			case SQL_MAX_COLUMNS_IN_ORDER_BY:
-			case SQL_MAX_COLUMNS_IN_TABLE:
-			case SQL_MAX_INDEX_SIZE:
-			case SQL_MAX_ROW_SIZE:
-			case SQL_MAX_STATEMENT_LEN:
-			case SQL_MAX_TABLES_IN_SELECT:
-			case SQL_MAX_USER_NAME_LEN:
+		#define CASE_STRING(NAME, VALUE) \
+			case NAME: \
+				if (!name) name = #NAME; \
+				LOG("GetInfo " << name << ", type: String, value: " << #VALUE << " = " << (VALUE)); \
+				return fillOutputString(VALUE, out_info_value, out_info_value_max_length, out_info_value_length);
+
+		#define CASE_NUM(NAME, TYPE, VALUE) \
+			case NAME: \
+				if (!name) name = #NAME; \
+				LOG("GetInfo " << name << ", type: " << #TYPE << ", value: " << #VALUE << " = " << (VALUE)); \
+				return fillOutputNumber<TYPE>(VALUE, out_info_value, out_info_value_max_length, out_info_value_length);
+
+			CASE_STRING(SQL_DRIVER_VER, "1.0")
+			CASE_STRING(SQL_DRIVER_ODBC_VER, "03.80")
+			CASE_STRING(SQL_DM_VER, "03.80.0000.0000")
+			CASE_STRING(SQL_DRIVER_NAME, "ClickHouse ODBC")
+			CASE_STRING(SQL_DBMS_NAME, "ClickHouse")
+			CASE_STRING(SQL_DBMS_VER, "01.00.0000")
+			CASE_STRING(SQL_SERVER_NAME, connection.host)
+			CASE_STRING(SQL_DATA_SOURCE_NAME, "ClickHouse")
+			CASE_STRING(SQL_CATALOG_TERM, "catalog")
+			CASE_STRING(SQL_COLLATION_SEQ, "UTF-8")
+			CASE_STRING(SQL_DATABASE_NAME, connection.database)
+
+			CASE_FALLTHROUGH(SQL_DATA_SOURCE_READ_ONLY)
+			CASE_FALLTHROUGH(SQL_ACCESSIBLE_PROCEDURES)
+			CASE_FALLTHROUGH(SQL_ACCESSIBLE_TABLES)
+			CASE_FALLTHROUGH(SQL_CATALOG_NAME)
+			CASE_FALLTHROUGH(SQL_EXPRESSIONS_IN_ORDERBY)
+			CASE_STRING(SQL_COLUMN_ALIAS, "Y")
+
+			CASE_FALLTHROUGH(SQL_ORDER_BY_COLUMNS_IN_SELECT)
+			CASE_STRING(SQL_DESCRIBE_PARAMETER, "N")
+
+			CASE_STRING(SQL_CATALOG_NAME_SEPARATOR, ".")
+			CASE_STRING(SQL_IDENTIFIER_QUOTE_CHAR, "`")
+
+			/// UINTEGER одиночные значения
+			CASE_NUM(SQL_ODBC_INTERFACE_CONFORMANCE, SQLUINTEGER, SQL_OIC_CORE)
+			CASE_NUM(SQL_ASYNC_MODE, SQLUINTEGER, SQL_AM_NONE)
+			CASE_NUM(SQL_ASYNC_NOTIFICATION, SQLUINTEGER, SQL_ASYNC_NOTIFICATION_NOT_CAPABLE)
+			CASE_NUM(SQL_DEFAULT_TXN_ISOLATION, SQLUINTEGER, SQL_TXN_SERIALIZABLE)
+			CASE_NUM(SQL_DRIVER_AWARE_POOLING_SUPPORTED, SQLUINTEGER, SQL_DRIVER_AWARE_POOLING_CAPABLE)
+
+			/// USMALLINT одиночные значения
+			CASE_NUM(SQL_GROUP_BY, SQLUSMALLINT, SQL_GB_NO_RELATION)
+			CASE_NUM(SQL_CATALOG_LOCATION, SQLUSMALLINT, SQL_CL_START)
+			CASE_NUM(SQL_FILE_USAGE, SQLUSMALLINT, SQL_FILE_NOT_SUPPORTED)
+			CASE_NUM(SQL_IDENTIFIER_CASE, SQLUSMALLINT, SQL_IC_SENSITIVE)
+			CASE_NUM(SQL_QUOTED_IDENTIFIER_CASE, SQLUSMALLINT, SQL_IC_SENSITIVE)
+			CASE_NUM(SQL_CONCAT_NULL_BEHAVIOR, SQLUSMALLINT, SQL_CB_NULL)
+			CASE_NUM(SQL_CORRELATION_NAME, SQLUSMALLINT, SQL_CN_ANY)
+			CASE_FALLTHROUGH(SQL_CURSOR_COMMIT_BEHAVIOR)
+			CASE_NUM(SQL_CURSOR_ROLLBACK_BEHAVIOR, SQLUSMALLINT, SQL_CB_PRESERVE)
+			CASE_NUM(SQL_CURSOR_SENSITIVITY, SQLUSMALLINT, SQL_INSENSITIVE)
+
+			/// UINTEGER непустые битмаски
+			CASE_NUM(SQL_CATALOG_USAGE, SQLUINTEGER, SQL_CU_DML_STATEMENTS | SQL_CU_TABLE_DEFINITION)
+			CASE_NUM(SQL_AGGREGATE_FUNCTIONS, SQLUINTEGER, SQL_AF_ALL | SQL_AF_AVG | SQL_AF_COUNT | SQL_AF_DISTINCT | SQL_AF_MAX | SQL_AF_MIN | SQL_AF_SUM)
+			CASE_NUM(SQL_ALTER_TABLE, SQLUINTEGER, SQL_AT_ADD_COLUMN_DEFAULT | SQL_AT_ADD_COLUMN_SINGLE | SQL_AT_DROP_COLUMN_DEFAULT | SQL_AT_SET_COLUMN_DEFAULT)
+			CASE_NUM(SQL_CONVERT_FUNCTIONS, SQLUINTEGER, SQL_FN_CVT_CAST | SQL_FN_CVT_CONVERT)
+			CASE_NUM(SQL_CREATE_TABLE, SQLUINTEGER, SQL_CT_CREATE_TABLE)
+			CASE_NUM(SQL_CREATE_VIEW, SQLUINTEGER, SQL_CV_CREATE_VIEW)
+			CASE_NUM(SQL_DROP_TABLE, SQLUINTEGER, SQL_DT_DROP_TABLE)
+			CASE_NUM(SQL_DROP_VIEW, SQLUINTEGER, SQL_DT_DROP_VIEW)
+			CASE_NUM(SQL_DATETIME_LITERALS, SQLUINTEGER, SQL_DL_SQL92_DATE | SQL_DL_SQL92_TIMESTAMP)
+			CASE_NUM(SQL_GETDATA_EXTENSIONS, SQLUINTEGER, SQL_GD_ANY_COLUMN | SQL_GD_ANY_ORDER | SQL_GD_BOUND)
+			CASE_NUM(SQL_INDEX_KEYWORDS, SQLUINTEGER, SQL_IK_NONE)
+
+			CASE_FALLTHROUGH(SQL_CONVERT_BIGINT)
+			CASE_FALLTHROUGH(SQL_CONVERT_BINARY)
+			CASE_FALLTHROUGH(SQL_CONVERT_BIT)
+			CASE_FALLTHROUGH(SQL_CONVERT_CHAR)
+			CASE_FALLTHROUGH(SQL_CONVERT_GUID)
+			CASE_FALLTHROUGH(SQL_CONVERT_DATE)
+			CASE_FALLTHROUGH(SQL_CONVERT_DECIMAL)
+			CASE_FALLTHROUGH(SQL_CONVERT_DOUBLE)
+			CASE_FALLTHROUGH(SQL_CONVERT_FLOAT)
+			CASE_FALLTHROUGH(SQL_CONVERT_INTEGER)
+			CASE_FALLTHROUGH(SQL_CONVERT_INTERVAL_YEAR_MONTH)
+			CASE_FALLTHROUGH(SQL_CONVERT_INTERVAL_DAY_TIME)
+			CASE_FALLTHROUGH(SQL_CONVERT_LONGVARBINARY)
+			CASE_FALLTHROUGH(SQL_CONVERT_LONGVARCHAR)
+			CASE_FALLTHROUGH(SQL_CONVERT_NUMERIC)
+			CASE_FALLTHROUGH(SQL_CONVERT_REAL)
+			CASE_FALLTHROUGH(SQL_CONVERT_SMALLINT)
+			CASE_FALLTHROUGH(SQL_CONVERT_TIME)
+			CASE_FALLTHROUGH(SQL_CONVERT_TIMESTAMP)
+			CASE_FALLTHROUGH(SQL_CONVERT_TINYINT)
+			CASE_FALLTHROUGH(SQL_CONVERT_VARBINARY)
+			CASE_NUM(SQL_CONVERT_VARCHAR, SQLUINTEGER,
+				SQL_CVT_BIGINT | SQL_CVT_BINARY | SQL_CVT_BIT |  SQL_CVT_GUID | SQL_CVT_CHAR |  SQL_CVT_DATE | SQL_CVT_DECIMAL | SQL_CVT_DOUBLE
+				| SQL_CVT_FLOAT | SQL_CVT_INTEGER /*| SQL_CVT_INTERVAL_YEAR_MONTH | SQL_CVT_INTERVAL_DAY_TIME*/ | SQL_CVT_LONGVARBINARY
+				| SQL_CVT_LONGVARCHAR | SQL_CVT_NUMERIC | SQL_CVT_REAL | SQL_CVT_SMALLINT | SQL_CVT_TIME | SQL_CVT_TIMESTAMP | SQL_CVT_TINYINT
+				| SQL_CVT_VARBINARY | SQL_CVT_VARCHAR)
+
+			/// UINTEGER пустые битмаски
+			CASE_FALLTHROUGH(SQL_OWNER_USAGE)
+			CASE_FALLTHROUGH(SQL_ALTER_DOMAIN)
+			CASE_FALLTHROUGH(SQL_BATCH_ROW_COUNT)
+			CASE_FALLTHROUGH(SQL_BATCH_SUPPORT)
+			CASE_FALLTHROUGH(SQL_BOOKMARK_PERSISTENCE)
+			CASE_FALLTHROUGH(SQL_CREATE_ASSERTION)
+			CASE_FALLTHROUGH(SQL_CREATE_CHARACTER_SET)
+			CASE_FALLTHROUGH(SQL_CREATE_COLLATION)
+			CASE_FALLTHROUGH(SQL_CREATE_DOMAIN)
+			CASE_FALLTHROUGH(SQL_CREATE_SCHEMA)
+			CASE_FALLTHROUGH(SQL_CREATE_TRANSLATION)
+			CASE_FALLTHROUGH(SQL_DROP_ASSERTION)
+			CASE_FALLTHROUGH(SQL_DROP_CHARACTER_SET)
+			CASE_FALLTHROUGH(SQL_DROP_COLLATION)
+			CASE_FALLTHROUGH(SQL_DROP_DOMAIN)
+			CASE_FALLTHROUGH(SQL_DROP_SCHEMA)
+			CASE_FALLTHROUGH(SQL_DROP_TRANSLATION)
+			CASE_FALLTHROUGH(SQL_DYNAMIC_CURSOR_ATTRIBUTES1)
+			CASE_FALLTHROUGH(SQL_DYNAMIC_CURSOR_ATTRIBUTES2)
+			CASE_FALLTHROUGH(SQL_FORWARD_ONLY_CURSOR_ATTRIBUTES1)
+			CASE_FALLTHROUGH(SQL_FORWARD_ONLY_CURSOR_ATTRIBUTES2)
+			CASE_NUM(SQL_DDL_INDEX, SQLUINTEGER, 0)
+
+			/// Ограничения на максимальное число.
+			CASE_FALLTHROUGH(SQL_ACTIVE_ENVIRONMENTS)
+
+			/// Ограничения на максимальное число.
+			CASE_FALLTHROUGH(SQL_MAX_COLUMNS_IN_SELECT)
+			CASE_FALLTHROUGH(SQL_MAX_DRIVER_CONNECTIONS)
+			CASE_FALLTHROUGH(SQL_MAX_CONCURRENT_ACTIVITIES)
+			CASE_FALLTHROUGH(SQL_MAX_COLUMN_NAME_LEN)
+			CASE_FALLTHROUGH(SQL_MAX_CURSOR_NAME_LEN)
+			CASE_FALLTHROUGH(SQL_MAX_SCHEMA_NAME_LEN)
+			CASE_FALLTHROUGH(SQL_MAX_CATALOG_NAME_LEN)
+			CASE_FALLTHROUGH(SQL_MAX_TABLE_NAME_LEN)
+			CASE_FALLTHROUGH(SQL_MAX_COLUMNS_IN_GROUP_BY)
+			CASE_FALLTHROUGH(SQL_MAX_COLUMNS_IN_INDEX)
+			CASE_FALLTHROUGH(SQL_MAX_COLUMNS_IN_ORDER_BY)
+			CASE_FALLTHROUGH(SQL_MAX_COLUMNS_IN_TABLE)
+			CASE_FALLTHROUGH(SQL_MAX_INDEX_SIZE)
+			CASE_FALLTHROUGH(SQL_MAX_ROW_SIZE)
+			CASE_FALLTHROUGH(SQL_MAX_STATEMENT_LEN)
+			CASE_FALLTHROUGH(SQL_MAX_TABLES_IN_SELECT)
+			CASE_FALLTHROUGH(SQL_MAX_USER_NAME_LEN)
 				return fillOutputNumber(uint32_t(0), out_info_value, out_info_value_max_length, out_info_value_length);
-				break;
-
-			case SQL_DATA_SOURCE_READ_ONLY: /// TODO Libreoffice
 
 			default:
 				throw std::runtime_error("Unsupported info type: " + Poco::NumberFormatter::format(info_type));
@@ -658,6 +769,14 @@ SQLSetConnectAttr(SQLHDBC connection_handle, SQLINTEGER attribute,
 
 		switch (attribute)
 		{
+			case SQL_ATTR_LOGIN_TIMEOUT:
+			{
+				auto timeout = static_cast<SQLUSMALLINT>(reinterpret_cast<intptr_t>(value));
+				LOG("Timeout: " << timeout);
+				connection.session.setTimeout(Poco::Timespan(timeout));
+				break;
+			}
+
 			case SQL_ATTR_ACCESS_MODE:
 			case SQL_ATTR_ASYNC_ENABLE:
 			case SQL_ATTR_AUTO_IPD:
@@ -665,7 +784,6 @@ SQLSetConnectAttr(SQLHDBC connection_handle, SQLINTEGER attribute,
 			case SQL_ATTR_CONNECTION_DEAD:
 			case SQL_ATTR_CONNECTION_TIMEOUT:
 			case SQL_ATTR_CURRENT_CATALOG:
-			case SQL_ATTR_LOGIN_TIMEOUT: /// TODO
 			case SQL_ATTR_METADATA_ID:
 			case SQL_ATTR_ODBC_CURSORS:
 			case SQL_ATTR_PACKET_SIZE:
@@ -755,14 +873,34 @@ SQLGetDiagField(SQLSMALLINT handle_type, SQLHANDLE handle,
 
 
 RETCODE SQL_API
-SQLTables(HSTMT StatementHandle,
-		  SQLCHAR *CatalogName, SQLSMALLINT NameLength1,
-		  SQLCHAR *SchemaName, SQLSMALLINT NameLength2,
-		  SQLCHAR *TableName, SQLSMALLINT NameLength3,
-		  SQLCHAR *TableType, SQLSMALLINT NameLength4)
+SQLTables(HSTMT statement_handle,
+		  SQLCHAR * catalog_name, SQLSMALLINT catalog_name_length,
+		  SQLCHAR * schema_name, SQLSMALLINT schema_name_length,
+		  SQLCHAR * table_name, SQLSMALLINT table_name_length,
+		  SQLCHAR * table_type, SQLSMALLINT table_type_length)
 {
 	LOG(__FUNCTION__);
-	return SQL_ERROR;
+
+	return doWith<Statement>(statement_handle, [&](Statement & statement)
+	{
+		LOG(
+			stringFromSQLChar(catalog_name, catalog_name_length)
+			<< ", " << stringFromSQLChar(schema_name, schema_name_length)
+			<< ", " << stringFromSQLChar(table_name, table_name_length)
+			<< ", " << stringFromSQLChar(table_type, table_type_length));
+
+		statement.query = "SELECT"
+				" 'TABLE' AS TABLE_TYPE,"
+				" '' AS TABLE_CAT,"
+				" database AS TABLE_SCHEM,"
+				" name AS TABLE_NAME,"
+				" '' AS REMARKS"
+			" FROM system.tables"
+			" ORDER BY  TABLE_TYPE, TABLE_CAT, TABLE_SCHEM, TABLE_NAME";
+
+		statement.sendRequest();
+		return SQL_SUCCESS;
+	});
 }
 
 

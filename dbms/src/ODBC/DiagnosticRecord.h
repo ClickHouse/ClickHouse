@@ -31,4 +31,11 @@ struct DiagnosticRecord
 
 		LOG(message);
 	}
+
+	void reset()
+	{
+		native_error_code = 0;
+		sql_state = "-----";
+		message.clear();
+	}
 };

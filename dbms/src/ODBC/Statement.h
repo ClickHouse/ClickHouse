@@ -32,6 +32,19 @@ public:
 		connection.session.sendRequest(request) << query;
 		in = &connection.session.receiveResponse(response);
 
+		Poco::Net::HTTPResponse::HTTPStatus status = response.getStatus();
+
+		if (status != Poco::Net::HTTPResponse::HTTP_OK)
+		{
+			std::stringstream error_message;
+			error_message
+				<< "Received error:" << std::endl
+				<< in->rdbuf() << std::endl
+				<< "HTTP status code: " << status << ".";
+
+			throw std::runtime_error(error_message.str());
+		}
+
 		result.init(*this);
 	}
 
