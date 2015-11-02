@@ -1153,7 +1153,7 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 			return;
 		}
 
-		ast_set->set = new Set(settings.limits);
+		ast_set->set = std::make_shared<Set>(settings.limits);
 
 		/** Для GLOBAL IN-ов происходит следующее:
 		  * - в функции addExternalStorage подзапрос IN (SELECT ...) заменяется на IN _data1,
@@ -1293,7 +1293,7 @@ void ExpressionAnalyzer::makeExplicitSet(ASTFunction * node, const Block & sampl
 
 	ASTSet * ast_set = new ASTSet(arg->getColumnName());
 	ASTPtr ast_set_ptr = ast_set;
-	ast_set->set = new Set(settings.limits);
+	ast_set->set = std::make_shared<Set>(settings.limits);
 	ast_set->is_explicit = true;
 	ast_set->set->createFromAST(set_element_types, elements_ast, context, create_ordered_set);
 	arg = ast_set_ptr;
@@ -1938,7 +1938,7 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 
 	if (!subquery_for_set.join)
 	{
-		JoinPtr join = new Join(join_key_names_left, join_key_names_right, settings.limits, ast_join.kind, ast_join.strictness);
+		JoinPtr join = std::make_shared<Join>(join_key_names_left, join_key_names_right, settings.limits, ast_join.kind, ast_join.strictness);
 
 		Names required_joined_columns(join_key_names_right.begin(), join_key_names_right.end());
 		for (const auto & name_type : columns_added_by_join)

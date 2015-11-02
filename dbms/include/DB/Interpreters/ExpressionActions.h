@@ -69,7 +69,7 @@ public:
 	bool array_join_is_left;
 
 	/// Для JOIN
-	const Join * join = nullptr;
+	std::shared_ptr<const Join> join;
 	NamesAndTypesList columns_added_by_join;
 
 	/// Для PROJECT.
@@ -134,7 +134,7 @@ public:
 		return a;
 	}
 
-	static ExpressionAction ordinaryJoin(const Join * join_, const NamesAndTypesList & columns_added_by_join_)
+	static ExpressionAction ordinaryJoin(std::shared_ptr<const Join> join_, const NamesAndTypesList & columns_added_by_join_)
 	{
 		ExpressionAction a;
 		a.type = JOIN;
