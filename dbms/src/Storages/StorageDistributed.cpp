@@ -202,7 +202,7 @@ BlockInputStreams StorageDistributed::read(
 			DB::Context new_context = context;
 			new_context.setSettings(new_settings);
 
-			for (const auto & address : shard_info.local_addresses)
+			for (size_t i = 0; i < shard_info.local_addresses.size(); ++i)
 			{
 				InterpreterSelectQuery interpreter(modified_query_ast, new_context, processed_stage);
 
