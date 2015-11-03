@@ -125,10 +125,13 @@ class AIOContextPool : public Singleton<AIOContextPool>
 
 				/// submit a batch of requests
 				while ((num_requests = io_submit(aio_context.ctx, queued_requests.size(), queued_requests.data())) < 0)
-					if (errno != EINTR)
+					if (!(errno == EINTR || errno == EAGAIN))
 						throwFromErrno("io_submit: Failed to submit batch of " +
 							std::to_string(queued_requests.size()) + " requests for asynchronous IO",
 							ErrorCodes::AIO_SUBMIT_ERROR, errno);
+
+				if (num_requests <= 0)
+					continue;
 
 				/// erase submitted requests
 				queued_requests.erase(std::begin(queued_requests),
