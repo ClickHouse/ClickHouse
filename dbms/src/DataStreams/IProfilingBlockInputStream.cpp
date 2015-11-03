@@ -36,7 +36,8 @@ Block IProfilingBlockInputStream::read()
 	if (is_cancelled.load(std::memory_order_seq_cst))
 		return res;
 
-	res = readImpl();
+	if (!limit_exceeded_need_break)
+		res = readImpl();
 
 /*	if (res)
 	{
@@ -65,10 +66,7 @@ Block IProfilingBlockInputStream::read()
 			updateExtremes(res);
 
 		if (!checkLimits())
-		{
-			res.clear();
-			return res;
-		}
+			limit_exceeded_need_break = true;
 
 		if (quota != nullptr)
 			checkQuota(res);
