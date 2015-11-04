@@ -120,7 +120,7 @@ void ExpressionAnalyzer::init()
 	/// Создаёт словарь aliases: alias -> ASTPtr
 	addASTAliases(ast);
 
-	/// Добавляет ALIAS столбцы из стаблицы в aliases, если применимо.
+	/// Добавляет ALIAS столбцы из таблицы в aliases, если применимо.
 	addStorageAliases();
 
 	/// Common subexpression elimination. Rewrite rules.
@@ -262,11 +262,11 @@ void ExpressionAnalyzer::analyzeAggregation()
 
 void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables()
 {
-	/// Преобразует GLOBAL-подзапросы во внешние таблицы; кладёт их в словарь external_tables: name -> StoragePtr.
-	initGlobalSubqueries(ast);
-
 	/// Добавляет уже существующие внешние таблицы (не подзапросы) в словарь external_tables.
 	findExternalTables(ast);
+
+	/// Преобразует GLOBAL-подзапросы во внешние таблицы; кладёт их в словарь external_tables: name -> StoragePtr.
+	initGlobalSubqueries(ast);
 }
 
 
@@ -305,9 +305,119 @@ void ExpressionAnalyzer::findExternalTables(ASTPtr & ast)
 	StoragePtr external_storage;
 
 	if (ASTIdentifier * node = typeid_cast<ASTIdentifier *>(&*ast))
-		if (node->kind == ASTIdentifier::Kind::Table)
+		if (node->kind == ASTIdentifier::Table)
 			if ((external_storage = context.tryGetExternalTable(node->name)))
 				external_tables[node->name] = external_storage;
+}
+
+
+static SharedPtr<InterpreterSelectQuery> interpretSubquery(
+	ASTPtr & subquery_or_table_name, const Context & context, size_t subquery_depth, const Names & required_columns);
+
+
+void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name)
+{
+	/// При нераспределённых запросах, создание временных таблиц не имеет смысла.
+	if (!(storage && storage->isRemote()))
+		return;
+
+	if (const ASTIdentifier * table = typeid_cast<const ASTIdentifier *>(&*subquery_or_table_name))
+	{
+		/// Если это уже внешняя таблица, ничего заполять не нужно. Просто запоминаем ее наличие.
+		if (external_tables.end() != external_tables.find(table->name))
+			return;
+	}
+
+	/// Сгенерируем имя для внешней таблицы.
+	String external_table_name = "_data" + toString(external_table_id);
+	while (external_tables.count(external_table_name))
+	{
+		++external_table_id;
+		external_table_name = "_data" + toString(external_table_id);
+	}
+
+	SharedPtr<InterpreterSelectQuery> interpreter = interpretSubquery(subquery_or_table_name, context, subquery_depth + 1, {});
+
+	Block sample = interpreter->getSampleBlock();
+	NamesAndTypesListPtr columns = new NamesAndTypesList(sample.getColumnsList());
+
+	StoragePtr external_storage = StorageMemory::create(external_table_name, columns);
+
+	/** Есть два способа выполнения распределённых GLOBAL-подзапросов.
+	  *
+	  * Способ push:
+	  * Данные подзапроса отправляются на все удалённые серверы, где они затем используются.
+	  * Для этого способа, данные отправляются в виде "внешних таблиц" и будут доступны на каждом удалённом сервере по имени типа _data1.
+	  * Заменяем в запросе подзапрос на это имя.
+	  *
+	  * Способ pull:
+	  * Удалённые серверы скачивают данные подзапроса с сервера-инициатора запроса.
+	  * Для этого способа, заменяем подзапрос на другой подзапрос вида (SELECT * FROM remote('host:port', _query_QUERY_ID, _data1))
+	  * Этот подзапрос, по факту, говорит - "надо скачать данные оттуда".
+	  *
+	  * Способ pull имеет преимущество, потому что в нём удалённый сервер может решить, что ему не нужны данные и не скачивать их в таких случаях.
+	  */
+
+	if (settings.global_subqueries_method == GlobalSubqueriesMethod::PUSH)
+	{
+		/** Заменяем подзапрос на имя временной таблицы.
+		  * Именно в таком виде, запрос отправится на удалённый сервер.
+		  * На удалённый сервер отправится эта временная таблица, и на его стороне,
+		  *  вместо выполнения подзапроса, надо будет просто из неё прочитать.
+		  */
+
+		subquery_or_table_name = new ASTIdentifier(StringRange(), external_table_name, ASTIdentifier::Table);
+	}
+	else if (settings.global_subqueries_method == GlobalSubqueriesMethod::PULL)
+	{
+		String host_port = getFQDNOrHostName() + ":" + toString(context.getTCPPort());
+		String database = "_query_" + context.getCurrentQueryId();
+
+		auto subquery = new ASTSubquery;
+		subquery_or_table_name = subquery;
+
+		auto select = new ASTSelectQuery;
+		subquery->children.push_back(select);
+
+		auto exp_list = new ASTExpressionList;
+		select->select_expression_list = exp_list;
+		select->children.push_back(select->select_expression_list);
+
+		Names column_names = external_storage->getColumnNamesList();
+		for (const auto & name : column_names)
+			exp_list->children.push_back(new ASTIdentifier({}, name));
+
+		auto table_func = new ASTFunction;
+		select->table = table_func;
+		select->children.push_back(select->table);
+
+		table_func->name = "remote";
+		auto args = new ASTExpressionList;
+		table_func->arguments = args;
+		table_func->children.push_back(table_func->arguments);
+
+		auto address_lit = new ASTLiteral({}, host_port);
+		args->children.push_back(address_lit);
+
+		auto database_lit = new ASTLiteral({}, database);
+		args->children.push_back(database_lit);
+
+		auto table_lit = new ASTLiteral({}, external_table_name);
+		args->children.push_back(table_lit);
+	}
+	else
+		throw Exception("Unknown global subqueries execution method", ErrorCodes::UNKNOWN_GLOBAL_SUBQUERIES_METHOD);
+
+	external_tables[external_table_name] = external_storage;
+	subqueries_for_sets[external_table_name].source = interpreter->execute().in;
+	subqueries_for_sets[external_table_name].source_sample = interpreter->getSampleBlock();
+	subqueries_for_sets[external_table_name].table = external_storage;
+
+	/** NOTE Если было написано IN tmp_table - существующая временная (но не внешняя) таблица,
+	  *  то здесь будет создана новая временная таблица (например, _data1),
+	  *  и данные будут затем в неё скопированы.
+	  * Может быть, этого можно избежать.
+	  */
 }
 
 
@@ -895,7 +1005,7 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(ASTPtr & node, const Block & sampl
 
 
 static SharedPtr<InterpreterSelectQuery> interpretSubquery(
-	ASTPtr & subquery_or_table_name, const Context & context, size_t subquery_depth, const Names & required_columns = Names())
+	ASTPtr & subquery_or_table_name, const Context & context, size_t subquery_depth, const Names & required_columns)
 {
 	/// Подзапрос или имя таблицы. Имя таблицы аналогично подзапросу SELECT * FROM t.
 	const ASTSubquery * subquery = typeid_cast<const ASTSubquery *>(&*subquery_or_table_name);
@@ -991,116 +1101,6 @@ static SharedPtr<InterpreterSelectQuery> interpretSubquery(
 }
 
 
-void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name)
-{
-	/// При нераспределённых запросах, создание временных таблиц не имеет смысла.
-	if (!(storage && storage->isRemote()))
-		return;
-
-	if (const ASTIdentifier * table = typeid_cast<const ASTIdentifier *>(&*subquery_or_table_name))
-	{
-		/// Если это уже внешняя таблица, ничего заполять не нужно. Просто запоминаем ее наличие.
-		if (StoragePtr existing_storage = context.tryGetExternalTable(table->name))
-		{
-			external_tables[table->name] = existing_storage;
-			return;
-		}
-	}
-
-	/// Сгенерируем имя для внешней таблицы.
-	String external_table_name = "_data" + toString(external_table_id);
-	while (context.tryGetExternalTable(external_table_name)
-		|| external_tables.count(external_table_name))
-	{
-		++external_table_id;
-		external_table_name = "_data" + toString(external_table_id);
-	}
-
-	SharedPtr<InterpreterSelectQuery> interpreter = interpretSubquery(subquery_or_table_name, context, subquery_depth + 1);
-
-	Block sample = interpreter->getSampleBlock();
-	NamesAndTypesListPtr columns = new NamesAndTypesList(sample.getColumnsList());
-
-	StoragePtr external_storage = StorageMemory::create(external_table_name, columns);
-
-	/** Есть два способа выполнения распределённых GLOBAL-подзапросов.
-	  *
-	  * Способ push:
-	  * Данные подзапроса отправляются на все удалённые серверы, где они затем используются.
-	  * Для этого способа, данные отправляются в виде "внешних таблиц" и будут доступны на каждом удалённом сервере по имени типа _data1.
-	  * Заменяем в запросе подзапрос на это имя.
-	  *
-	  * Способ pull:
-	  * Удалённые серверы скачивают данные подзапроса с сервера-инициатора запроса.
-	  * Для этого способа, заменяем подзапрос на другой подзапрос вида (SELECT * FROM remote('host:port', _query_QUERY_ID, _data1))
-	  * Этот подзапрос, по факту, говорит - "надо скачать данные оттуда".
-	  *
-	  * Способ pull имеет преимущество, потому что в нём удалённый сервер может решить, что ему не нужны данные и не скачивать их в таких случаях.
-	  */
-
-	if (settings.global_subqueries_method == GlobalSubqueriesMethod::PUSH)
-	{
-		/** Заменяем подзапрос на имя временной таблицы.
-		  * Именно в таком виде, запрос отправится на удалённый сервер.
-		  * На удалённый сервер отправится эта временная таблица, и на его стороне,
-		  *  вместо выполнения подзапроса, надо будет просто из неё прочитать.
-		  */
-
-		subquery_or_table_name = new ASTIdentifier(StringRange(), external_table_name, ASTIdentifier::Table);
-	}
-	else if (settings.global_subqueries_method == GlobalSubqueriesMethod::PULL)
-	{
-		String host_port = getFQDNOrHostName() + ":" + toString(context.getTCPPort());
-		String database = "_query_" + context.getCurrentQueryId();
-
-		auto subquery = new ASTSubquery;
-		subquery_or_table_name = subquery;
-
-		auto select = new ASTSelectQuery;
-		subquery->children.push_back(select);
-
-		auto exp_list = new ASTExpressionList;
-		select->select_expression_list = exp_list;
-		select->children.push_back(select->select_expression_list);
-
-		Names column_names = external_storage->getColumnNamesList();
-		for (const auto & name : column_names)
-			exp_list->children.push_back(new ASTIdentifier({}, name));
-
-		auto table_func = new ASTFunction;
-		select->table = table_func;
-		select->children.push_back(select->table);
-
-		table_func->name = "remote";
-		auto args = new ASTExpressionList;
-		table_func->arguments = args;
-		table_func->children.push_back(table_func->arguments);
-
-		auto address_lit = new ASTLiteral({}, host_port);
-		args->children.push_back(address_lit);
-
-		auto database_lit = new ASTLiteral({}, database);
-		args->children.push_back(database_lit);
-
-		auto table_lit = new ASTLiteral({}, external_table_name);
-		args->children.push_back(table_lit);
-	}
-	else
-		throw Exception("Unknown global subqueries execution method", ErrorCodes::UNKNOWN_GLOBAL_SUBQUERIES_METHOD);
-
-	external_tables[external_table_name] = external_storage;
-	subqueries_for_sets[external_table_name].source = interpreter->execute().in;
-	subqueries_for_sets[external_table_name].source_sample = interpreter->getSampleBlock();
-	subqueries_for_sets[external_table_name].table = external_storage;
-
-	/** NOTE Если было написано IN tmp_table - существующая временная (но не внешняя) таблица,
-	  *  то здесь будет создана новая временная таблица (например, _data1),
-	  *  и данные будут затем в неё скопированы.
-	  * Может быть, этого можно избежать.
-	  */
-}
-
-
 void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 {
 	/** Нужно преобразовать правый аргумент в множество.
@@ -1162,7 +1162,7 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 		  */
 		if (!subquery_for_set.source)
 		{
-			auto interpreter = interpretSubquery(arg, context, subquery_depth);
+			auto interpreter = interpretSubquery(arg, context, subquery_depth, {});
 			subquery_for_set.source = new LazyBlockInputStream([interpreter]() mutable { return interpreter->execute().in; });
 			subquery_for_set.source_sample = interpreter->getSampleBlock();
 
