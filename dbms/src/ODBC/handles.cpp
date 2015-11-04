@@ -130,19 +130,29 @@ SQLFreeStmt(HSTMT statement_handle,
 {
 	LOG(__FUNCTION__);
 
-	switch (option)
+	return doWith<Statement>(statement_handle, [&](Statement & statement) -> RETCODE
 	{
-		case SQL_DROP:
-			return freeHandle<Statement>(statement_handle);
+		std::cerr << "option: " << option << "\n";
 
-		case SQL_CLOSE:				/// Закрыть курсор, проигнорировать оставшиеся результаты. Если курсора нет, то noop.
-		case SQL_UNBIND:
-		case SQL_RESET_PARAMS:
-			return SQL_SUCCESS;
+		switch (option)
+		{
+			case SQL_DROP:
+				return freeHandle<Statement>(statement_handle);
 
-		default:
-			return SQL_ERROR;
-	}
+			case SQL_CLOSE:				/// Закрыть курсор, проигнорировать оставшиеся результаты. Если курсора нет, то noop.
+				statement.reset();
+
+			case SQL_UNBIND:
+				statement.bindings.clear();
+				return SQL_SUCCESS;
+
+			case SQL_RESET_PARAMS:
+				return SQL_SUCCESS;
+
+			default:
+				return SQL_ERROR;
+		}
+	});
 }
 
 }

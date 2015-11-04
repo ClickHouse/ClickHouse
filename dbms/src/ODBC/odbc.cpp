@@ -571,10 +571,10 @@ SQLTables(HSTMT statement_handle,
 		std::stringstream query;
 
 		query << "SELECT"
-				" 'TABLE' AS TABLE_TYPE"
-				", database AS TABLE_CAT"
+				" database AS TABLE_CAT"
 				", '' AS TABLE_SCHEM"
 				", name AS TABLE_NAME"
+				", 'TABLE' AS TABLE_TYPE"
 				", '' AS REMARKS"
 			" FROM system.tables"
 			" WHERE 1";
@@ -750,6 +750,20 @@ SQLNativeSql(HDBC connection_handle,
 	{
 		std::string query_str = stringFromSQLChar(query, query_length);
 		return fillOutputString(query_str, out_query, out_query_max_length, out_query_length);
+	});
+}
+
+
+RETCODE SQL_API
+SQLCloseCursor(
+	HSTMT statement_handle)
+{
+	LOG(__FUNCTION__);
+
+	return doWith<Statement>(statement_handle, [&](Statement & statement) -> RETCODE
+	{
+		statement.reset();
+		return SQL_SUCCESS;
 	});
 }
 
@@ -1040,15 +1054,6 @@ RETCODE SQL_API
 SQLCancelHandle(
       SQLSMALLINT  HandleType,
       SQLHANDLE    Handle)
-{
-	LOG(__FUNCTION__);
-	return SQL_ERROR;
-}
-
-
-RETCODE SQL_API
-SQLCloseCursor(
-	SQLHSTMT     StatementHandle)
 {
 	LOG(__FUNCTION__);
 	return SQL_ERROR;

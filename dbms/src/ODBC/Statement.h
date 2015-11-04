@@ -1,6 +1,7 @@
 #pragma once
 
 #include <sstream>
+#include <memory>
 
 #include <Poco/Base64Encoder.h>
 #include <Poco/Net/HTTPRequest.h>
@@ -35,18 +36,26 @@ public:
 		base64_encoder << connection.user << ":" << connection.password;
 		base64_encoder.close();
 
-	//	request.setChunkedTransferEncoding(true);
+		Poco::Net::HTTPRequest request;
+
 		request.setMethod(Poco::Net::HTTPRequest::HTTP_POST);
+		request.setVersion(Poco::Net::HTTPRequest::HTTP_1_1);
+		request.setKeepAlive(true);
+		request.setChunkedTransferEncoding(true);
 		request.setCredentials("Basic", user_password_base64.str());
 		request.setURI("/?database=" + connection.database + "&default_format=ODBC");	/// TODO Возможность передать настройки. TODO эскейпинг
+
+//		if (in && in->peek() != EOF)
+			connection.session.reset();
 
 		connection.session.sendRequest(request) << query;
 
 		LOG("Receiving !");
-		in = &connection.session.receiveResponse(response);
+		response.reset(new Poco::Net::HTTPResponse);
+		in = &connection.session.receiveResponse(*response);
 		LOG("Receiving !!");
 
-		Poco::Net::HTTPResponse::HTTPStatus status = response.getStatus();
+		Poco::Net::HTTPResponse::HTTPStatus status = response->getStatus();
 		LOG("Receiving !!!");
 
 		if (status != Poco::Net::HTTPResponse::HTTP_OK)
@@ -72,11 +81,19 @@ public:
 		return current_row;
 	}
 
+	void reset()
+	{
+		in = nullptr;
+		response.reset();
+		connection.session.reset();
+		diagnostic_record.reset();
+		result = ResultSet();
+	}
+
 	Connection & connection;
 	std::string query;
-	Poco::Net::HTTPRequest request;
-	Poco::Net::HTTPResponse response;
-	std::istream * in;
+	std::unique_ptr<Poco::Net::HTTPResponse> response;
+	std::istream * in = nullptr;
 
 	DiagnosticRecord diagnostic_record;
 
