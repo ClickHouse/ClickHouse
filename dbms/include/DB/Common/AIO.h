@@ -2,7 +2,9 @@
 
 #include <DB/Core/ErrorCodes.h>
 #include <DB/Common/Exception.h>
+#include <common/logger_useful.h>
 #include <common/singleton.h>
+#include <Poco/Logger.h>
 #include <boost/range/iterator_range.hpp>
 #include <boost/noncopyable.hpp>
 #include <condition_variable>
@@ -80,7 +82,7 @@ class AIOContextPool : public Singleton<AIOContextPool>
 	std::map<id_t, std::promise<bytes_read_t>> promises;
 
 	std::atomic<bool> cancelled{false};
-	std::thread io_completion_monitor{&AIOContextPool::monitorForCompletion, this};
+	std::thread io_completion_monitor{&AIOContextPool::doMonitor, this};
 
 	~AIOContextPool()
 	{
@@ -88,26 +90,33 @@ class AIOContextPool : public Singleton<AIOContextPool>
 		io_completion_monitor.join();
 	}
 
-	void monitorForCompletion()
+	void doMonitor()
+	{
+		/// continue checking for events unless cancelled
+		while (!cancelled.load(std::memory_order_relaxed))
+			waitForCompletion();
+
+		/// wait until all requests have been completed
+		while (!promises.empty())
+			waitForCompletion();
+	}
+
+	void waitForCompletion()
 	{
 		/// array to hold completion events
 		io_event events[max_concurrent_events];
 
-		/// continue checking for events unless cancelled
-		while (!cancelled.load(std::memory_order_relaxed))
+		try
 		{
-			try
-			{
-				const auto num_events = getCompletionEvents(events, max_concurrent_events);
-				fulfillPromises(events, num_events);
-				notifyProducers(num_events);
-			}
-			catch (...)
-			{
-				/// there was an error, log it, return to any producer and continue
-				reportExceptionToAnyProducer();
-				tryLogCurrentException("AIOContextPool::fulfill_promises()");
-			}
+			const auto num_events = getCompletionEvents(events, max_concurrent_events);
+			fulfillPromises(events, num_events);
+			notifyProducers(num_events);
+		}
+		catch (...)
+		{
+			/// there was an error, log it, return to any producer and continue
+			reportExceptionToAnyProducer();
+			tryLogCurrentException("AIOContextPool::waitForCompletion()");
 		}
 	}
 
@@ -128,6 +137,9 @@ class AIOContextPool : public Singleton<AIOContextPool>
 
 	void fulfillPromises(const io_event events[], const int num_events)
 	{
+		if (num_events == 0)
+			return;
+
 		const std::lock_guard<std::mutex> lock{mutex};
 
 		/// look at returned events and find corresponding promise, set result and erase promise from map
@@ -138,6 +150,12 @@ class AIOContextPool : public Singleton<AIOContextPool>
 
 			/// set value via promise and release it
 			const auto it = promises.find(id);
+			if (it == std::end(promises))
+			{
+				LOG_CRITICAL(&Poco::Logger::get("AIOcontextPool"), "Found io_event with unknown id " << id);
+				continue;
+			}
+
 			it->second.set_value(event.res);
 			promises.erase(it);
 		}
