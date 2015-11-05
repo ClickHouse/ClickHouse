@@ -73,6 +73,9 @@ private:
 
 	/// Запретить запись в таблицу и завершить все фоновые потоки.
 	void goReadOnlyPermanently();
+
+	/// Получить информацию об отставании реплик.
+	void checkReplicationDelays(time_t & out_absolute_delay, time_t & out_relative_delay);
 };
 
 
