@@ -31,19 +31,27 @@ ReplicatedMergeTreeRestartingThread::ReplicatedMergeTreeRestartingThread(Storage
 
 void ReplicatedMergeTreeRestartingThread::run()
 {
-	constexpr auto retry_delay_ms = 10 * 1000;
-	constexpr auto check_delay_ms = 60 * 1000;
+	constexpr auto retry_period_ms = 10 * 1000;
+
+	/// Периодичность проверки истечения сессии в ZK.
+	time_t check_period_ms = 60 * 1000;
+
+	/// Периодичность проверки величины отставания реплики.
+	if (check_period_ms > static_cast<time_t>(storage.data.settings.check_delay_period) * 1000)
+		check_period_ms = storage.data.settings.check_delay_period * 1000;
 
 	setThreadName("ReplMTRestart");
 
 	try
 	{
-		bool first_time = true;
+		bool first_time = true;					/// Активация реплики в первый раз.
+		bool need_restart = false;				/// Перезапуск по собственной инициативе, чтобы отдать лидерство.
+		time_t prev_time_of_check_delay = 0;
 
 		/// Запуск реплики при старте сервера/создании таблицы. Перезапуск реплики при истечении сессии с ZK.
 		while (!need_stop)
 		{
-			if (first_time || storage.getZooKeeper()->expired())
+			if (first_time || need_restart || storage.getZooKeeper()->expired())
 			{
 				if (first_time)
 				{
@@ -51,7 +59,10 @@ void ReplicatedMergeTreeRestartingThread::run()
 				}
 				else
 				{
-					LOG_WARNING(log, "ZooKeeper session has expired. Switching to a new session.");
+					if (need_restart)
+						LOG_WARNING(log, "Will reactivate replica.");
+					else
+						LOG_WARNING(log, "ZooKeeper session has expired. Switching to a new session.");
 
 					storage.is_readonly = true;
 					partialShutdown();
@@ -68,13 +79,13 @@ void ReplicatedMergeTreeRestartingThread::run()
 						/// Исключение при попытке zookeeper_init обычно бывает, если не работает DNS. Будем пытаться сделать это заново.
 						tryLogCurrentException(__PRETTY_FUNCTION__);
 
-						wakeup_event.tryWait(retry_delay_ms);
+						wakeup_event.tryWait(retry_period_ms);
 						continue;
 					}
 
 					if (!need_stop && !tryStartup())
 					{
-						wakeup_event.tryWait(retry_delay_ms);
+						wakeup_event.tryWait(retry_period_ms);
 						continue;
 					}
 
@@ -83,14 +94,35 @@ void ReplicatedMergeTreeRestartingThread::run()
 
 				storage.is_readonly = false;
 				first_time = false;
+				need_restart = false;
 			}
 
-			/// Выясняем отставания реплик.
-			time_t absolute_delay = 0;
-			time_t relative_delay = 0;
-			checkReplicationDelays(absolute_delay, relative_delay);
+			time_t current_time = time(0);
+			if (current_time >= prev_time_of_check_delay + static_cast<time_t>(storage.data.settings.check_delay_period))
+			{
+				/// Выясняем отставания реплик.
+				time_t new_absolute_delay = 0;
+				time_t new_relative_delay = 0;
 
-			wakeup_event.tryWait(check_delay_ms);
+				checkReplicationDelays(new_absolute_delay, new_relative_delay);
+
+				absolute_delay.store(new_absolute_delay, std::memory_order_relaxed);
+				relative_delay.store(new_relative_delay, std::memory_order_relaxed);
+
+				prev_time_of_check_delay = current_time;
+
+				/// Уступаем лидерство, если относительное отставание больше порога.
+				if (storage.is_leader_node && new_relative_delay > static_cast<time_t>(storage.data.settings.min_relative_delay_to_yield_leadership))
+				{
+					LOG_INFO(log, "Relative replica delay (" << new_relative_delay << " seconds) is bigger than threshold ("
+						<< storage.data.settings.min_relative_delay_to_yield_leadership << "). Will yield leadership.");
+
+					need_restart = true;
+					continue;
+				}
+			}
+
+			wakeup_event.tryWait(check_period_ms);
 		}
 	}
 	catch (...)
@@ -381,6 +413,9 @@ void ReplicatedMergeTreeRestartingThread::checkReplicationDelays(time_t & out_ab
 	  * - не отвечать Ok на некоторую ручку проверки реплик для балансировщика;
 	  * - не принимать соединения для обработки запросов.
 	  * Это делается в других местах.
+	  *
+	  * NOTE Реализация громоздкая, так как нужные значения вынимаются путём обхода списка узлов.
+	  * Могут быть проблемы в случае разрастания лога до большого размера.
 	  */
 
 	out_absolute_delay = 0;
