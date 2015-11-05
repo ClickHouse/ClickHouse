@@ -3330,6 +3330,15 @@ void StorageReplicatedMergeTree::getQueue(LogEntriesData & res, String & replica
 }
 
 
+void StorageReplicatedMergeTree::getReplicaDelays(time_t & out_absolute_delay, time_t & out_relative_delay) const
+{
+	if (!restarting_thread)
+		throw Exception("Table was shutted down or is in readonly mode.", ErrorCodes::TABLE_IS_READ_ONLY);
+
+	restarting_thread->getReplicaDelays(out_absolute_delay, out_relative_delay);
+}
+
+
 void StorageReplicatedMergeTree::fetchPartition(const Field & partition, const String & from_, const Settings & settings)
 {
 	auto zookeeper = getZooKeeper();

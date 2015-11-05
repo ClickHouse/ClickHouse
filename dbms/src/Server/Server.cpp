@@ -160,41 +160,72 @@ private:
 	void run();
 };
 
-/// Отвечает "Ok.\n", если получен любой GET запрос. Используется для проверки живости.
+
+/// Отвечает "Ok.\n". Используется для проверки живости.
 class PingRequestHandler : public Poco::Net::HTTPRequestHandler
 {
 public:
-	PingRequestHandler()
+	void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
 	{
-	    LOG_TRACE((&Logger::get("PingRequestHandler")), "Ping request.");
+		try
+		{
+			const char * data = "Ok.\n";
+			response.sendBuffer(data, strlen(data));
+		}
+		catch (...)
+		{
+			tryLogCurrentException("PingRequestHandler");
+		}
+	}
+};
+
+
+/// Отвечает "Ok.\n", если все реплики на этом сервере не слишком сильно отстают.
+class ReplicasStatusHandler : public Poco::Net::HTTPRequestHandler
+{
+public:
+	ReplicasStatusHandler()
+	{
+		// TODO
 	}
 
 	void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
 	{
 		try
 		{
-			if (request.getURI() == "/" || request.getURI() == "/ping")
-			{
-				const char * data = "Ok.\n";
-				response.sendBuffer(data, strlen(data));
-			}
-			else
-			{
-				response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
-				response.send() << "There is no handle " << request.getURI() << "\n\n"
-					<< "Use / or /ping for health checks.\n"
-					<< "Send queries from your program with POST method or GET /?query=...\n\n"
-					<< "Use clickhouse-client:\n\n"
-					<< "For interactive data analysis:\n"
-					<< "    clickhouse-client\n\n"
-					<< "For batch query processing:\n"
-					<< "    clickhouse-client --query='SELECT 1' > result\n"
-					<< "    clickhouse-client < query > result\n";
-			}
+			// TODO
 		}
 		catch (...)
 		{
-			tryLogCurrentException("PingRequestHandler");
+			tryLogCurrentException("ReplicasStatusHandler");
+		}
+	}
+};
+
+
+/// Отвечает 404 с подробным объяснением.
+class NotFoundHandler : public Poco::Net::HTTPRequestHandler
+{
+public:
+	void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+	{
+		try
+		{
+			response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
+			response.send() << "There is no handle " << request.getURI() << "\n\n"
+				<< "Use / or /ping for health checks.\n"
+				<< "Or /replicas_status for more sophisticated health checks.\n\n"
+				<< "Send queries from your program with POST method or GET /?query=...\n\n"
+				<< "Use clickhouse-client:\n\n"
+				<< "For interactive data analysis:\n"
+				<< "    clickhouse-client\n\n"
+				<< "For batch query processing:\n"
+				<< "    clickhouse-client --query='SELECT 1' > result\n"
+				<< "    clickhouse-client < query > result\n";
+		}
+		catch (...)
+		{
+			tryLogCurrentException("NotFoundHandler");
 		}
 	}
 };
@@ -219,7 +250,9 @@ public:
 			<< ", Address: " << request.clientAddress().toString()
 			<< ", User-Agent: " << (request.has("User-Agent") ? request.get("User-Agent") : "none"));
 
-		if (request.getURI().find('?') != std::string::npos
+		const auto & uri = request.getURI();
+
+		if (uri.find('?') != std::string::npos
 			|| request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
 		{
 			return new HandlerType(server);
@@ -227,7 +260,12 @@ public:
 		else if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
 			|| request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD)
 		{
-			return new PingRequestHandler();
+			if (uri == "/" || uri == "/ping")
+				return new PingRequestHandler;
+			else if (uri == "/replicas_status")
+				return new ReplicasStatusHandler;
+			else
+				return new NotFoundHandler;
 		}
 		else
 			return nullptr;
