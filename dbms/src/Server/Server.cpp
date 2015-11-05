@@ -38,6 +38,7 @@
 #include <DB/Storages/System/StorageSystemColumns.h>
 #include <DB/Storages/System/StorageSystemFunctions.h>
 #include <DB/Storages/System/StorageSystemClusters.h>
+#include <DB/Storages/StorageReplicatedMergeTree.h>
 
 #include <DB/IO/copyData.h>
 #include <DB/IO/LimitReadBuffer.h>
@@ -180,23 +181,69 @@ public:
 };
 
 
-/// Отвечает "Ok.\n", если все реплики на этом сервере не слишком сильно отстают.
+/// Отвечает "Ok.\n", если все реплики на этом сервере не слишком сильно отстают. Иначе выводит информацию об отставании. TODO Вынести в отдельный файл.
 class ReplicasStatusHandler : public Poco::Net::HTTPRequestHandler
 {
+private:
+	Context & context;
+
 public:
-	ReplicasStatusHandler()
+	ReplicasStatusHandler(Context & context_)
+		: context(context_)
 	{
-		// TODO
 	}
 
 	void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
 	{
 		try
 		{
-			// TODO
+			/// Собираем набор реплицируемых таблиц.
+			Databases replicated_tables;
+			{
+				Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
+
+				for (const auto & db : context.getDatabases())
+					for (const auto & table : db.second)
+						if (typeid_cast<const StorageReplicatedMergeTree *>(table.second.get()))
+							replicated_tables[db.first][table.first] = table.second;
+			}
+
+			const MergeTreeSettings & settings = context.getMergeTreeSettings();
+
+			bool ok = true;
+			std::stringstream message;
+
+			for (const auto & db : replicated_tables)
+			{
+				for (const auto & table : db.second)
+				{
+					time_t absolute_delay = 0;
+					time_t relative_delay = 0;
+
+					static_cast<const StorageReplicatedMergeTree &>(*table.second).getReplicaDelays(absolute_delay, relative_delay);
+
+					if ((settings.min_absolute_delay_to_close && absolute_delay >= static_cast<time_t>(settings.min_absolute_delay_to_close))
+						|| (settings.min_relative_delay_to_close && relative_delay >= static_cast<time_t>(settings.min_relative_delay_to_close)))
+						ok = false;
+
+					message << backQuoteIfNeed(db.first) << "." << backQuoteIfNeed(table.first)
+						<< "\tAbsolute delay: " << absolute_delay << ". Relative delay: " << relative_delay << ".\n";
+				}
+			}
+
+			if (ok)
+			{
+				const char * data = "Ok.\n";
+				response.sendBuffer(data, strlen(data));
+			}
+			else
+			{
+				response.send() << message.rdbuf();
+			}
 		}
 		catch (...)
 		{
+			/// TODO Отправлять клиенту.
 			tryLogCurrentException("ReplicasStatusHandler");
 		}
 	}
@@ -263,7 +310,7 @@ public:
 			if (uri == "/" || uri == "/ping")
 				return new PingRequestHandler;
 			else if (uri == "/replicas_status")
-				return new ReplicasStatusHandler;
+				return new ReplicasStatusHandler(*server.global_context);
 			else
 				return new NotFoundHandler;
 		}
