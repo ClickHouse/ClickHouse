@@ -1440,8 +1440,14 @@ void ExpressionAnalyzer::getArrayJoinedColumns()
 
 		ASTs & query_asts = select_query->children;
 		for (const auto & ast : query_asts)
+		{
+			/// Не опускаемся в подзапросы и UNION.
+			if (typeid_cast<const ASTSelectQuery *>(ast.get()))
+				continue;
+
 			if (ast != select_query->array_join_expression_list)
 				getArrayJoinedColumnsImpl(ast);
+		}
 
 		/// Если результат ARRAY JOIN не используется, придется все равно по-ARRAY-JOIN-ить какой-нибудь столбец,
 		/// чтобы получить правильное количество строк.
@@ -1514,7 +1520,7 @@ void ExpressionAnalyzer::getArrayJoinedColumnsImpl(ASTPtr ast)
 	else
 	{
 		for (auto & child : ast->children)
-			if (!typeid_cast<ASTSelectQuery *>(&*child))
+			if (!typeid_cast<const ASTSelectQuery *>(&*child))
 				getArrayJoinedColumnsImpl(child);
 	}
 }
