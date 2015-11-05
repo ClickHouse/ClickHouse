@@ -66,15 +66,18 @@ class AIOContextPool : public Singleton<AIOContextPool>
 	friend class Singleton<AIOContextPool>;
 
 	static const auto max_concurrent_events = 128;
-	static const auto max_timeout_sec = 1;
-	static const auto max_timeout_nsec = 0;
+	static const auto timeout_sec = 1;
 
 	AIOContext aio_context{max_concurrent_events};
 
-	std::size_t id{};
+	using id_t = size_t;
+	using bytes_read_t = ssize_t;
+
+	/// Autoincremental id used to identify completed requests
+	id_t id{};
 	mutable std::mutex mutex;
 	mutable std::condition_variable have_resources;
-	std::map<std::size_t, std::promise<ssize_t>> promises;
+	std::map<id_t, std::promise<bytes_read_t>> promises;
 
 	std::atomic<bool> cancelled{false};
 	std::thread io_completion_monitor{&AIOContextPool::monitorForCompletion, this};
@@ -110,11 +113,11 @@ class AIOContextPool : public Singleton<AIOContextPool>
 
 	int getCompletionEvents(io_event events[], const int max_events)
 	{
-		timespec timeout{max_timeout_sec, max_timeout_nsec};
+		timespec timeout{timeout_sec};
 
 		auto num_events = 0;
 
-		/// request 1 to `max_concurrent_events` events
+		/// request 1 to `max_events` events
 		while ((num_events = io_getevents(aio_context.ctx, 1, max_events, events, &timeout)) < 0)
 			if (errno != EINTR)
 				throwFromErrno("io_getevents: Failed to wait for asynchronous IO completion",
@@ -160,7 +163,8 @@ class AIOContextPool : public Singleton<AIOContextPool>
 	}
 
 public:
-	std::future<ssize_t> post(struct iocb & iocb)
+	/// Request AIO read operation for iocb, returns a future with number of bytes read
+	std::future<bytes_read_t> post(struct iocb & iocb)
 	{
 		std::unique_lock<std::mutex> lock{mutex};
 
@@ -168,7 +172,7 @@ public:
 		const auto request_id = id++;
 
 		/// create a promise and put request in "queue"
-		promises.emplace(request_id, std::promise<ssize_t>{});
+		promises.emplace(request_id, std::promise<bytes_read_t>{});
 		/// store id in AIO request for further identification
 		iocb.aio_data = request_id;
 
