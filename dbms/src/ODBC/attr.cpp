@@ -90,7 +90,7 @@ impl_SQLSetConnectAttr(SQLHDBC connection_handle, SQLINTEGER attribute,
 			{
 				auto timeout = static_cast<SQLUSMALLINT>(reinterpret_cast<intptr_t>(value));
 				LOG("Timeout: " << timeout);
-				connection.session.setTimeout(Poco::Timespan(timeout));
+				connection.session.setTimeout(Poco::Timespan(timeout, 0));
 				return SQL_SUCCESS;
 			}
 
@@ -176,7 +176,7 @@ impl_SQLSetStmtAttr(SQLHSTMT statement_handle, SQLINTEGER attribute,
 			case SQL_ATTR_CURSOR_SENSITIVITY:
 			case SQL_ATTR_ASYNC_ENABLE:
 			case SQL_ATTR_CONCURRENCY:
-			case SQL_ATTR_CURSOR_TYPE:
+			case SQL_ATTR_CURSOR_TYPE:			/// Libreoffice Base
 			case SQL_ATTR_ENABLE_AUTO_IPD:
 			case SQL_ATTR_FETCH_BOOKMARK_PTR:
 			case SQL_ATTR_KEYSET_SIZE:
@@ -195,7 +195,7 @@ impl_SQLSetStmtAttr(SQLHSTMT statement_handle, SQLINTEGER attribute,
 			case SQL_ATTR_ROW_BIND_TYPE:
 			case SQL_ATTR_ROW_NUMBER:
 			case SQL_ATTR_ROW_OPERATION_PTR:
-			case SQL_ATTR_ROW_STATUS_PTR:
+			case SQL_ATTR_ROW_STATUS_PTR:		/// Libreoffice Base
 			case SQL_ATTR_ROWS_FETCHED_PTR:
 			case SQL_ATTR_ROW_ARRAY_SIZE:
 			case SQL_ATTR_SIMULATE_CURSOR:
@@ -257,7 +257,7 @@ impl_SQLGetStmtAttr(SQLHSTMT statement_handle, SQLINTEGER attribute,
 			case SQL_ATTR_ROWS_FETCHED_PTR:
 			case SQL_ATTR_ROW_ARRAY_SIZE:
 			case SQL_ATTR_SIMULATE_CURSOR:
-			case SQL_ATTR_USE_BOOKMARKS:
+			case SQL_ATTR_USE_BOOKMARKS:	/// Libreoffice Base
 			default:
 				throw std::runtime_error("Unsupported statement attribute.");
 		}

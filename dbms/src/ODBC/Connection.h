@@ -25,7 +25,8 @@ struct Connection
 	{
 		session.setHost(host);
 		session.setPort(port);
-	//	session.setKeepAlive(true);
+		session.setKeepAlive(true);
+		session.setKeepAliveTimeout(Poco::Timespan(86400, 0));
 
 		/// TODO Таймаут.
 	}
