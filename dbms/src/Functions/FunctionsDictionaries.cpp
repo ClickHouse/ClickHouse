@@ -36,6 +36,7 @@ void registerFunctionsDictionaries(FunctionFactory & factory)
 	factory.registerFunction<FunctionDictGetString>();
 	factory.registerFunction<FunctionDictGetHierarchy>();
 	factory.registerFunction<FunctionDictIsIn>();
+	factory.registerFunction<FunctionDictGetStringOrDefault>();
 }
-	
+
 }

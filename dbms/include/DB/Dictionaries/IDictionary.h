@@ -92,6 +92,19 @@ struct IDictionary : IDictionaryBase
 	virtual void getFloat32(const std::string & attr_name, const PODArray<id_t> & ids, PODArray<Float32> & out) const = 0;
 	virtual void getFloat64(const std::string & attr_name, const PODArray<id_t> & ids, PODArray<Float64> & out) const = 0;
 	virtual void getString(const std::string & attr_name, const PODArray<id_t> & ids, ColumnString * out) const = 0;
+
+	/// return mapped values for a collection of identifiers with explicit default values
+	virtual void getUInt8(const std::string & attr_name, const PODArray<id_t> & ids, const PODArray<UInt8> & def, PODArray<UInt8> & out) const = 0;
+	virtual void getUInt16(const std::string & attr_name, const PODArray<id_t> & ids, const PODArray<UInt16> & def, PODArray<UInt16> & out) const = 0;
+	virtual void getUInt32(const std::string & attr_name, const PODArray<id_t> & ids, const PODArray<UInt32> & def, PODArray<UInt32> & out) const = 0;
+	virtual void getUInt64(const std::string & attr_name, const PODArray<id_t> & ids, const PODArray<UInt64> & def, PODArray<UInt64> & out) const = 0;
+	virtual void getInt8(const std::string & attr_name, const PODArray<id_t> & ids, const PODArray<Int8> & def, PODArray<Int8> & out) const = 0;
+	virtual void getInt16(const std::string & attr_name, const PODArray<id_t> & ids, const PODArray<Int16> & def, PODArray<Int16> & out) const = 0;
+	virtual void getInt32(const std::string & attr_name, const PODArray<id_t> & ids, const PODArray<Int32> & def, PODArray<Int32> & out) const = 0;
+	virtual void getInt64(const std::string & attr_name, const PODArray<id_t> & ids, const PODArray<Int64> & def, PODArray<Int64> & out) const = 0;
+	virtual void getFloat32(const std::string & attr_name, const PODArray<id_t> & ids, const PODArray<Float32> & def, PODArray<Float32> & out) const = 0;
+	virtual void getFloat64(const std::string & attr_name, const PODArray<id_t> & ids, const PODArray<Float64> & def, PODArray<Float64> & out) const = 0;
+	virtual void getString(const std::string & attr_name, const PODArray<id_t> & ids, const ColumnString * def, ColumnString * out) const = 0;
 };
 
 }

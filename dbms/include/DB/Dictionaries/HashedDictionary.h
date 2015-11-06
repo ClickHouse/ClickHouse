@@ -118,12 +118,60 @@ public:
 			};
 
 		const auto & attr = *std::get<std::unique_ptr<HashMap<UInt64, StringRef>>>(attribute.maps);
-		const auto & null_value = std::get<String>(attribute.null_values);
+		const auto & null_value = StringRef{std::get<String>(attribute.null_values)};
 
 		for (const auto i : ext::range(0, ids.size()))
 		{
 			const auto it = attr.find(ids[i]);
-			const auto string_ref = it != attr.end() ? it->second : StringRef{null_value};
+			const auto string_ref = it != attr.end() ? it->second : null_value;
+			out->insertData(string_ref.data, string_ref.size);
+		}
+
+		query_count.fetch_add(ids.size(), std::memory_order_relaxed);
+	}
+
+#define DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(TYPE)\
+	void get##TYPE(\
+		const std::string & attribute_name, const PODArray<id_t> & ids, const PODArray<TYPE> & def,\
+		PODArray<TYPE> & out) const override\
+	{\
+		const auto & attribute = getAttribute(attribute_name);\
+		if (attribute.type != AttributeUnderlyingType::TYPE)\
+			throw Exception{\
+				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
+				ErrorCodes::TYPE_MISMATCH\
+			};\
+		\
+		getItems<TYPE>(attribute, ids, def, out);\
+	}
+	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(UInt8)
+	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(UInt16)
+	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(UInt32)
+	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(UInt64)
+	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Int8)
+	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Int16)
+	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Int32)
+	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Int64)
+	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Float32)
+	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Float64)
+#undef DECLARE_MULTIPLE_GETTER_WITH_DEFAULT
+	void getString(
+		const std::string & attribute_name, const PODArray<id_t> & ids, const ColumnString * const def,
+		ColumnString * const out) const override
+	{
+		const auto & attribute = getAttribute(attribute_name);
+		if (attribute.type != AttributeUnderlyingType::String)
+			throw Exception{
+				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
+				ErrorCodes::TYPE_MISMATCH
+			};
+
+		const auto & attr = *std::get<std::unique_ptr<HashMap<UInt64, StringRef>>>(attribute.maps);
+
+		for (const auto i : ext::range(0, ids.size()))
+		{
+			const auto it = attr.find(ids[i]);
+			const auto string_ref = it != attr.end() ? it->second : def->getDataAt(i);
 			out->insertData(string_ref.data, string_ref.size);
 		}
 
@@ -288,6 +336,20 @@ private:
 		{
 			const auto it = attr.find(ids[i]);
 			out[i] = it != attr.end() ? it->second : null_value;
+		}
+
+		query_count.fetch_add(ids.size(), std::memory_order_relaxed);
+	}
+
+	template <typename T>
+	void getItems(const attribute_t & attribute, const PODArray<id_t> & ids, const PODArray<T> & def, PODArray<T> & out) const
+	{
+		const auto & attr = *std::get<std::unique_ptr<HashMap<UInt64, T>>>(attribute.maps);
+
+		for (const auto i : ext::range(0, ids.size()))
+		{
+			const auto it = attr.find(ids[i]);
+			out[i] = it != attr.end() ? it->second : def[i];
 		}
 
 		query_count.fetch_add(ids.size(), std::memory_order_relaxed);
