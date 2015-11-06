@@ -373,11 +373,10 @@ static time_t extractTimeOfLogEntryIfGetPart(zkutil::ZooKeeperPtr & zookeeper, c
 	if (!zookeeper->tryGet(path + "/" + name, content, &stat))
 		return 0;	/// Узел уже успел удалиться.
 
-	ReplicatedMergeTreeLogEntry entry;
-	entry.parse(content, stat);
+	ReplicatedMergeTreeLogEntry::Ptr entry = ReplicatedMergeTreeLogEntry::parse(content, stat);
 
-	if (entry.type == ReplicatedMergeTreeLogEntry::GET_PART)
-		return entry.create_time;
+	if (entry->type == ReplicatedMergeTreeLogEntry::GET_PART)
+		return entry->create_time;
 
 	return 0;
 }
