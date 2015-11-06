@@ -7,6 +7,8 @@
 #include <DB/Columns/ColumnString.h>
 #include <DB/Common/HashTable/HashMap.h>
 #include <ext/scope_guard.hpp>
+#include <ext/bit_cast.hpp>
+#include <ext/map.hpp>
 #include <Poco/RWLock.h>
 #include <cmath>
 #include <atomic>
@@ -127,11 +129,65 @@ public:
 		getItems(attribute, ids, out);
 	}
 
+#define DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(TYPE)\
+	void get##TYPE(\
+		const std::string & attribute_name, const PODArray<id_t> & ids, const PODArray<TYPE> & def,\
+		PODArray<TYPE> & out) const override\
+	{\
+		auto & attribute = getAttribute(attribute_name);\
+		if (attribute.type != AttributeUnderlyingType::TYPE)\
+			throw Exception{\
+				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
+				ErrorCodes::TYPE_MISMATCH\
+			};\
+		\
+		getItems<TYPE>(attribute, ids, out, &def);\
+	}
+	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(UInt8)
+	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(UInt16)
+	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(UInt32)
+	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(UInt64)
+	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Int8)
+	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Int16)
+	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Int32)
+	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Int64)
+	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Float32)
+	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Float64)
+#undef DECLARE_MULTIPLE_GETTER_WITH_DEFAULT
+	void getString(
+		const std::string & attribute_name, const PODArray<id_t> & ids, const ColumnString * const def,
+		ColumnString * const out) const override
+	{
+		auto & attribute = getAttribute(attribute_name);
+		if (attribute.type != AttributeUnderlyingType::String)
+			throw Exception{
+				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
+				ErrorCodes::TYPE_MISMATCH
+			};
+
+		getItems(attribute, ids, out, def);
+	}
+
 private:
 	struct cell_metadata_t final
 	{
+		using time_point_t = std::chrono::system_clock::time_point;
+		using time_point_rep_t = time_point_t::rep;
+		using time_point_urep_t = std::make_unsigned_t<time_point_rep_t>;
+
+		static constexpr std::uint64_t EXPIRES_AT_MASK = std::numeric_limits<time_point_rep_t>::max();
+		static constexpr std::uint64_t IS_DEFAULT_MASK = ~EXPIRES_AT_MASK;
+
 		std::uint64_t id;
-		std::chrono::system_clock::time_point expires_at;
+		/// Stores both expiration time and `is_default` flag in the most significant bit
+		time_point_urep_t data;
+
+		/// Sets expiration time, resets `is_default` flag to false
+		time_point_t expiresAt() const { return ext::safe_bit_cast<time_point_t>(data & EXPIRES_AT_MASK); }
+		void setExpiresAt(const time_point_t & t) { data = ext::safe_bit_cast<time_point_urep_t>(t); }
+
+		bool isDefault() const { return (data & IS_DEFAULT_MASK) == IS_DEFAULT_MASK; }
+		void setDefault() { data |= IS_DEFAULT_MASK; }
 	};
 
 	struct attribute_t final
@@ -247,8 +303,11 @@ private:
 	}
 
 	template <typename T>
-	void getItems(attribute_t & attribute, const PODArray<id_t> & ids, PODArray<T> & out) const
+	void getItems(
+		attribute_t & attribute, const PODArray<id_t> & ids, PODArray<T> & out,
+		const PODArray<T> * const def = nullptr) const
 	{
+		/// Mapping: <id> -> { all indices `i` of `ids` such that `ids[i]` = <id> }
 		HashMap<id_t, std::vector<std::size_t>> outdated_ids;
 		auto & attribute_array = std::get<std::unique_ptr<T[]>>(attribute.arrays);
 
@@ -260,18 +319,17 @@ private:
 			for (const auto i : ext::range(0, ids.size()))
 			{
 				const auto id = ids[i];
-				if (id == 0)
-				{
-					out[i] = std::get<T>(attribute.null_values);
-					continue;
-				}
-
 				const auto cell_idx = getCellIdx(id);
 				const auto & cell = cells[cell_idx];
 
-				if (cell.id != id || cell.expires_at < now)
+				/** cell should be updated if either:
+				 *	1. ids do not match,
+				 *	2. cell has expired,
+				 *	3. explicit defaults were specified and cell was set default. */
+				if (cell.id != id || cell.expiresAt() < now || (def && cell.isDefault()))
 				{
-					out[i] = std::get<T>(attribute.null_values);
+					/// @note redundant assignment, these values will be set by a call to update anyways
+//					out[i] = def ? (*def)[i] : std::get<T>(attribute.null_values);
 					outdated_ids[id].push_back(i);
 				}
 				else
@@ -290,8 +348,18 @@ private:
 		std::transform(std::begin(outdated_ids), std::end(outdated_ids), std::begin(required_ids),
 			[] (auto & pair) { return pair.first; });
 
+		/// request new values; passed closure will be called only for `id`s returned from source
 		update(required_ids, [&] (const auto id, const auto cell_idx) {
 			const auto attribute_value = attribute_array[cell_idx];
+
+			/// set missing values to out
+			for (const auto out_idx : outdated_ids[id])
+				out[out_idx] = attribute_value;
+		}, [&] (const auto id, const auto cell_idx) {
+			auto & attribute_value = attribute_array[cell_idx];
+
+			if (def)
+				attribute_value = (*def)[outdated_ids[id].front()];
 
 			/// set missing values to out
 			for (const auto out_idx : outdated_ids[id])
@@ -299,7 +367,9 @@ private:
 		});
 	}
 
-	void getItems(attribute_t & attribute, const PODArray<id_t> & ids, ColumnString * out) const
+	void getItems(
+		attribute_t & attribute, const PODArray<id_t> & ids, ColumnString * out,
+		const ColumnString * const def = nullptr) const
 	{
 		/// save on some allocations
 		out->getOffsets().reserve(ids.size());
@@ -320,7 +390,7 @@ private:
 				const auto cell_idx = getCellIdx(id);
 				const auto & cell = cells[cell_idx];
 
-				if (cell.id != id || cell.expires_at < now)
+				if (cell.id != id || cell.expiresAt() < now || (def && cell.isDefault()))
 				{
 					found_outdated_values = true;
 					break;
@@ -341,12 +411,12 @@ private:
 			return;
 		}
 
-		/// now onto the pessimistic one, discard possibly partial results from the optimistic path
+		/// now onto the pessimistic one, discard possible partial results from the optimistic path
 		out->getChars().resize_assume_reserved(0);
 		out->getOffsets().resize_assume_reserved(0);
 
-		/// outdated ids joined number of times they've been requested
-		HashMap<id_t, std::size_t> outdated_ids;
+		/// Mapping: <id> -> { all indices `i` of `ids` such that `ids[i]` = <id> }
+		HashMap<id_t, std::vector<std::size_t>> outdated_ids;
 		/// we are going to store every string separately
 		HashMap<id_t, String> map;
 
@@ -361,8 +431,8 @@ private:
 				const auto cell_idx = getCellIdx(id);
 				const auto & cell = cells[cell_idx];
 
-				if (cell.id != id || cell.expires_at < now)
-					outdated_ids[id] += 1;
+				if (cell.id != id || cell.expiresAt() < now || (def && cell.isDefault()))
+					outdated_ids[id].push_back(i);
 				else
 				{
 					const auto string_ref = attribute_array[cell_idx];
@@ -386,28 +456,37 @@ private:
 				const auto attribute_value = attribute_array[cell_idx];
 
 				map[id] = String{attribute_value};
-				total_length += (attribute_value.size + 1) * outdated_ids[id];
+				total_length += (attribute_value.size + 1) * outdated_ids[id].size();
+			}, [&] (const auto id, const auto cell_idx) {
+				auto attribute_value = def ? def->getDataAt(outdated_ids[id].front()) : attribute_array[cell_idx];
+				map[id] = String{attribute_value};
+				total_length += (attribute_value.size + 1) * outdated_ids[id].size();
 			});
 		}
 
 		out->getChars().reserve(total_length);
 
+		const auto & null_value = std::get<String>(attribute.null_values);
+
 		for (const auto id : ids)
 		{
 			const auto it = map.find(id);
-			const auto string = it != map.end() ? it->second : std::get<String>(attribute.null_values);
+			/// @note check seems redundant, null_values are explicitly stored in the `map`
+			const auto & string = it != map.end() ? it->second : null_value;
 			out->insertData(string.data(), string.size());
 		}
 	}
 
-	template <typename F>
-	void update(const std::vector<id_t> ids, F && on_cell_updated) const
+	template <typename PresentIdHandler, typename AbsentIdHandler>
+	void update(
+		const std::vector<id_t> & requested_ids, PresentIdHandler && on_cell_updated,
+		AbsentIdHandler && on_id_not_found) const
 	{
-		auto stream = source_ptr->loadIds(ids);
+		auto stream = source_ptr->loadIds(requested_ids);
 		stream->readPrefix();
 
-		HashMap<UInt64, UInt8> remaining_ids{ids.size()};
-		for (const auto id : ids)
+		HashMap<UInt64, UInt8> remaining_ids{requested_ids.size()};
+		for (const auto id : requested_ids)
 			remaining_ids.insert({ id, 0 });
 
 		std::uniform_int_distribution<std::uint64_t> distribution{
@@ -429,9 +508,9 @@ private:
 			const auto & ids = id_column->getData();
 
 			/// cache column pointers
-			std::vector<const IColumn *> column_ptrs(attributes.size());
-			for (const auto i : ext::range(0, attributes.size()))
-				column_ptrs[i] = block.getByPosition(i + 1).column.get();
+			const auto column_ptrs = ext::map<std::vector>(ext::range(0, attributes.size()), [&block] (const auto & i) {
+				return block.getByPosition(i + 1).column.get();
+			});
 
 			for (const auto i : ext::range(0, ids.size()))
 			{
@@ -453,17 +532,20 @@ private:
 
 				cell.id = id;
 				if (dict_lifetime.min_sec != 0 && dict_lifetime.max_sec != 0)
-					cell.expires_at = std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
+					cell.setExpiresAt(std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)});
 				else
-					cell.expires_at = std::chrono::time_point<std::chrono::system_clock>::max();
+					cell.setExpiresAt(std::chrono::time_point<std::chrono::system_clock>::max());
 
+				/// inform caller
 				on_cell_updated(id, cell_idx);
+				/// mark corresponding id as found
 				remaining_ids[id] = 1;
 			}
 		}
 
 		stream->readSuffix();
 
+		/// Check which ids have not been found and require setting null_value
 		for (const auto id_found_pair : remaining_ids)
 		{
 			if (id_found_pair.second)
@@ -473,19 +555,24 @@ private:
 			const auto cell_idx = getCellIdx(id);
 			auto & cell = cells[cell_idx];
 
+			/// Set null_value for each attribute
 			for (auto & attribute : attributes)
 				setDefaultAttributeValue(attribute, cell_idx);
 
+			/// Check if cell had not been occupied before and increment element counter if it hadn't
 			if (cell.id == 0 && cell_idx != zero_cell_idx)
 				element_count.fetch_add(1, std::memory_order_relaxed);
 
 			cell.id = id;
 			if (dict_lifetime.min_sec != 0 && dict_lifetime.max_sec != 0)
-				cell.expires_at = std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
+				cell.setExpiresAt(std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)});
 			else
-				cell.expires_at = std::chrono::time_point<std::chrono::system_clock>::max();
+				cell.setExpiresAt(std::chrono::time_point<std::chrono::system_clock>::max());
 
-			on_cell_updated(id, cell_idx);
+			cell.setDefault();
+
+			/// inform caller that the cell has not been found
+			on_id_not_found(id, cell_idx);
 		}
 	}
 
