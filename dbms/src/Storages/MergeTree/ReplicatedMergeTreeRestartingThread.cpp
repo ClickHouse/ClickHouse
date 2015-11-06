@@ -169,10 +169,6 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
 		storage.shutdown_called = false;
 		storage.shutdown_event.reset();
 
-		storage.merger.uncancelAll();
-		if (storage.unreplicated_merger)
-			storage.unreplicated_merger->uncancelAll();
-
 		storage.queue_updating_thread = std::thread(&StorageReplicatedMergeTree::queueUpdatingThread, &storage);
 		storage.cleanup_thread.reset(new ReplicatedMergeTreeCleanupThread(storage));
 		storage.alter_thread = std::thread(&StorageReplicatedMergeTree::alterThread, &storage);
@@ -180,6 +176,10 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
 		storage.queue_task_handle = storage.context.getBackgroundPool().addTask(
 			std::bind(&StorageReplicatedMergeTree::queueTask, &storage, std::placeholders::_1));
 		storage.queue_task_handle->wake();
+
+		storage.merger.uncancel();
+		if (storage.unreplicated_merger)
+			storage.unreplicated_merger->uncancel();
 
 		return true;
 	}
@@ -328,9 +328,9 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
 	storage.parts_to_check_event.set();
 	storage.replica_is_active_node = nullptr;
 
-	storage.merger.cancelAll();
+	storage.merger.cancel();
 	if (storage.unreplicated_merger)
-		storage.unreplicated_merger->cancelAll();
+		storage.unreplicated_merger->cancel();
 
 	LOG_TRACE(log, "Waiting for threads to finish");
 	if (storage.is_leader_node)
