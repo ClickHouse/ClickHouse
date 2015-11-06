@@ -57,7 +57,7 @@ protected:
 
 typedef SharedPtr<IConnectionPool> ConnectionPoolPtr;
 typedef std::vector<ConnectionPoolPtr> ConnectionPools;
-
+typedef SharedPtr<ConnectionPools> ConnectionPoolsPtr;
 
 
 /** Обычный пул соединений, без отказоустойчивости.
