@@ -89,6 +89,15 @@ protected:
 	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 };
 
+/** Беззнаковое целое число, используется в качестве правой части оператора взятия элемента кортежа (x.1).
+  */
+class ParserUnsignedInteger : public IParserBase
+{
+protected:
+	const char * getName() const { return "unsigned integer"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+};
+
 
 /** Строка в одинарных кавычках.
   */

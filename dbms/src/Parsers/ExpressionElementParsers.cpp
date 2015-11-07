@@ -357,6 +357,29 @@ bool ParserNumber::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed
 }
 
 
+bool ParserUnsignedInteger::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+{
+	Field res;
+
+	Pos begin = pos;
+	if (pos == end)
+		return false;
+
+	UInt64 x = 0;
+	ReadBuffer in(const_cast<char *>(pos), end - pos, 0);
+	if (!tryReadIntText(x, in) || in.offset() == 0)
+	{
+		expected = "unsigned integer";
+		return false;
+	}
+
+	res = x;
+	pos += in.offset();
+	node = new ASTLiteral(StringRange(begin, pos), res);
+	return true;
+}
+
+
 bool ParserStringLiteral::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	Pos begin = pos;
@@ -473,7 +496,7 @@ bool ParserLiteral::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parse
 	if (str_p.parse(pos, end, node, max_parsed_pos, expected))
 		return true;
 
-	expected = "literal: one of nullptr, number, single quoted string";
+	expected = "literal: one of NULL, number, single quoted string";
 	return false;
 }
 

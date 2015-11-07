@@ -58,10 +58,15 @@ const char * ParserLogicalNotExpression::operators[] =
 	nullptr
 };
 
-const char * ParserAccessExpression::operators[] =
+const char * ParserArrayElementExpression::operators[] =
+{
+	"[", 	"arrayElement",
+	nullptr
+};
+
+const char * ParserTupleElementExpression::operators[] =
 {
 	".", 	"tupleElement",
-	"[", 	"arrayElement",
 	nullptr
 };
 
@@ -460,12 +465,22 @@ bool ParserUnaryMinusExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Po
 }
 
 
-bool ParserAccessExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected &expected)
+bool ParserArrayElementExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected &expected)
 {
 	return ParserLeftAssociativeBinaryOperatorList{
 		operators,
 		ParserPtr(new ParserExpressionElement),
 		ParserPtr(new ParserExpressionWithOptionalAlias)
+	}.parse(pos, end, node, max_parsed_pos, expected);
+}
+
+
+bool ParserTupleElementExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected &expected)
+{
+	return ParserLeftAssociativeBinaryOperatorList{
+		operators,
+		ParserPtr(new ParserArrayElementExpression),
+		ParserPtr(new ParserUnsignedInteger)
 	}.parse(pos, end, node, max_parsed_pos, expected);
 }
 
