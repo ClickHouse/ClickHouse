@@ -501,6 +501,7 @@ const char * ParserAlias::restricted_keywords[] =
 	"ALL",
 	"ON",
 	"USING",
+	"PREWHERE",
 	"WHERE",
 	"GROUP",
 	"WITH",
