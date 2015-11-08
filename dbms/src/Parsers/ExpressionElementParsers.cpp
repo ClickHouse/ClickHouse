@@ -18,6 +18,7 @@
 #include <DB/Parsers/ParserSelectQuery.h>
 
 #include <DB/Parsers/ExpressionElementParsers.h>
+#include <DB/Parsers/formatAST.h>
 
 
 namespace DB
@@ -165,44 +166,27 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos 
 {
 	Pos begin = pos;
 
-	/// Идентификатор в обратных кавычках
-	if (pos != end && *pos == '`')
-	{
-		ReadBuffer buf(const_cast<char *>(pos), end - pos, 0);
-		String s;
-		readBackQuotedString(s, buf);
-		pos += buf.count();
-		node = new ASTIdentifier(StringRange(begin, pos), s);
-		return true;
-	}
-	else
-	{
-		while (pos != end)
-		{
-			while (pos != end
-				&& ((*pos >= 'a' && *pos <= 'z')
-					|| (*pos >= 'A' && *pos <= 'Z')
-					|| (*pos == '_')
-					|| (pos != begin && *pos >= '0' && *pos <= '9')))
-				++pos;
+	ASTPtr id_list;
+	if (!ParserList(ParserPtr(new ParserIdentifier), ParserPtr(new ParserString(".")), false)
+		.parse(pos, end, id_list, max_parsed_pos, expected))
+		return false;
 
-			/// Если следующий символ - точка '.' и за ней следует, не цифра,
-			/// то продолжаем парсинг имени идентификатора
-			if (pos != begin && pos + 1 < end && *pos == '.' &&
-				!(*(pos + 1) >= '0' && *(pos + 1) <= '9'))
-				++pos;
-			else
-				break;
-		}
-
-		if (pos != begin)
-		{
-			node = new ASTIdentifier(StringRange(begin, pos), String(begin, pos - begin));
-			return true;
-		}
-		else
-			return false;
+	String name;
+	const ASTExpressionList & list = static_cast<const ASTExpressionList &>(*id_list.get());
+	for (const auto & child : list.children)
+	{
+		if (!name.empty())
+			name += '.';
+		name += static_cast<const ASTIdentifier &>(*child.get()).name;
 	}
+
+	node = new ASTIdentifier(StringRange(begin, pos), name);
+
+	/// В children запомним идентификаторы-составляющие, если их больше одного.
+	if (list.children.size() > 1)
+		node->children.insert(node->children.end(), list.children.begin(), list.children.end());
+
+	return true;
 }
 
 
