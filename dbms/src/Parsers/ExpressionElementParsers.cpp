@@ -493,6 +493,8 @@ const char * ParserAlias::restricted_keywords[] =
 	"INNER",
 	"CROSS",
 	"JOIN",
+	"ANY",
+	"ALL",
 	"ON",
 	"USING",
 	"WHERE",
