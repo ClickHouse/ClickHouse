@@ -29,8 +29,8 @@ bool ParserJoin::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_p
 	ParserString s_join("JOIN", true, true);
 	ParserString s_using("USING", true, true);
 
-	ParserNotEmptyExpressionList exp_list;
-	ParserWithOptionalAlias subquery(ParserPtr(new ParserSubquery));
+	ParserNotEmptyExpressionList exp_list(false);
+	ParserWithOptionalAlias subquery(ParserPtr(new ParserSubquery), true);
 	ParserIdentifier identifier;
 
 	ws.ignore(pos, end);

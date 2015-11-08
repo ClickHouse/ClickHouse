@@ -9,6 +9,7 @@
 #include <DB/Common/escapeForFileName.h>
 #include <DB/Parsers/ASTInsertQuery.h>
 #include <DB/Parsers/ASTSelectQuery.h>
+#include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/TablePropertiesQueriesASTs.h>
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>

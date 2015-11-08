@@ -470,7 +470,7 @@ bool ParserArrayElementExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, 
 	return ParserLeftAssociativeBinaryOperatorList{
 		operators,
 		ParserPtr(new ParserExpressionElement),
-		ParserPtr(new ParserExpressionWithOptionalAlias)
+		ParserPtr(new ParserExpressionWithOptionalAlias(false))
 	}.parse(pos, end, node, max_parsed_pos, expected);
 }
 
@@ -485,15 +485,15 @@ bool ParserTupleElementExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, 
 }
 
 
-ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias()
-	: impl(new ParserWithOptionalAlias(ParserPtr(new ParserLambdaExpression)))
+ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias(bool allow_alias_without_as_keyword)
+	: impl(new ParserWithOptionalAlias(ParserPtr(new ParserLambdaExpression), allow_alias_without_as_keyword))
 {
 }
 
 
 bool ParserExpressionList::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
-	return ParserList(ParserPtr(new ParserExpressionWithOptionalAlias), ParserPtr(new ParserString(","))).parse(pos, end, node, max_parsed_pos, expected);
+	return ParserList(ParserPtr(new ParserExpressionWithOptionalAlias(allow_alias_without_as_keyword)), ParserPtr(new ParserString(","))).parse(pos, end, node, max_parsed_pos, expected);
 }
 
 

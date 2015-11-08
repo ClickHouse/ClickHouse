@@ -41,8 +41,9 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 	ParserString s_union("UNION", true, true);
 	ParserString s_all("ALL", true, true);
 
-	ParserNotEmptyExpressionList exp_list;
-	ParserExpressionWithOptionalAlias exp_elem;
+	ParserNotEmptyExpressionList exp_list(false);
+	ParserNotEmptyExpressionList exp_list_for_select_clause(true);	/// Разрешает алиасы без слова AS.
+	ParserExpressionWithOptionalAlias exp_elem(false);
 	ParserJoin join;
 	ParserOrderByExpressionList order_list;
 
@@ -61,7 +62,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 			ws.ignore(pos, end);
 		}
 
-		if (!exp_list.parse(pos, end, select_query->select_expression_list, max_parsed_pos, expected))
+		if (!exp_list_for_select_clause.parse(pos, end, select_query->select_expression_list, max_parsed_pos, expected))
 			return false;
 
 		ws.ignore(pos, end);
@@ -127,7 +128,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 			return false;
 
 		/// Может быть указан алиас. На данный момент, он ничего не значит и не используется.
-		ParserAlias().ignore(pos, end);
+		ParserAlias(true).ignore(pos, end);
 		ws.ignore(pos, end);
 	}
 
