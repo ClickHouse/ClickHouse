@@ -488,6 +488,7 @@ bool ParserLiteral::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parse
 const char * ParserAlias::restricted_keywords[] =
 {
 	"FROM",
+	"ARRAY",
 	"LEFT",
 	"RIGHT",
 	"INNER",
