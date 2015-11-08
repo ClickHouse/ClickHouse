@@ -113,6 +113,9 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 				if (s_dot.ignore(pos, end, max_parsed_pos, expected))
 				{
 					select_query->database = select_query->table;
+
+					ws.ignore(pos, end);
+
 					if (!ident.parse(pos, end, select_query->table, max_parsed_pos, expected))
 						return false;
 
