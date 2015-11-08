@@ -487,7 +487,6 @@ bool ParserLiteral::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parse
 
 const char * ParserAlias::restricted_keywords[] =
 {
-	"AS",
 	"FROM",
 	"LEFT",
 	"RIGHT",
@@ -514,7 +513,8 @@ bool ParserAlias::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_
 	ParserString s_as("AS", true, true);
 	ParserIdentifier id_p;
 
-	if (!allow_alias_without_as_keyword && !s_as.parse(pos, end, node, max_parsed_pos, expected))
+	bool res = s_as.parse(pos, end, node, max_parsed_pos, expected);
+	if (!allow_alias_without_as_keyword && !res)
 		return false;
 
 	ws.ignore(pos, end);
