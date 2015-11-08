@@ -107,14 +107,14 @@ bool ParserJoin::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_p
 			if (!exp_list.parse(pos, end, join->using_expr_list, max_parsed_pos, expected))
 				return false;
 
-			ws.ignore(pos, end);
-
 			if (in_parens)
 			{
 				ws.ignore(pos, end);
 				if (!ParserString(")").ignore(pos, end))
 					return false;
 			}
+
+			ws.ignore(pos, end);
 		}
 		else if (s_on.ignore(pos, end, max_parsed_pos, expected))
 		{
