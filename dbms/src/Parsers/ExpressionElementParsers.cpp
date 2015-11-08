@@ -520,8 +520,8 @@ bool ParserAlias::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_
 	ParserString s_as("AS", true, true);
 	ParserIdentifier id_p;
 
-	bool res = s_as.parse(pos, end, node, max_parsed_pos, expected);
-	if (!allow_alias_without_as_keyword && !res)
+	bool has_as_word = s_as.parse(pos, end, node, max_parsed_pos, expected);
+	if (!allow_alias_without_as_keyword && !has_as_word)
 		return false;
 
 	ws.ignore(pos, end);
@@ -529,7 +529,7 @@ bool ParserAlias::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_
 	if (!id_p.parse(pos, end, node, max_parsed_pos, expected))
 		return false;
 
-	if (allow_alias_without_as_keyword)
+	if (!has_as_word)
 	{
 		/** В этом случае алиас не может совпадать с ключевым словом - для того,
 		  *  чтобы в запросе "SELECT x FROM t", слово FROM не считалось алиасом,
