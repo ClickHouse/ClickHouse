@@ -929,7 +929,7 @@ Block Aggregator::prepareBlockAndFill(
 }
 
 
-BlocksList Aggregator::prepareBlocksAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final) const
+BlocksList Aggregator::prepareBlocksAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const
 {
 	size_t rows = 1;
 
@@ -957,7 +957,8 @@ BlocksList Aggregator::prepareBlocksAndFillWithoutKey(AggregatedDataVariants & d
 	};
 
 	Block block = prepareBlockAndFill(data_variants, final, rows, filler);
-	if (overflow_row)
+
+	if (is_overflows)
 		block.info.is_overflows = true;
 
 	BlocksList blocks;
@@ -1143,7 +1144,8 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
 			return BlocksList();
 
 		if (data_variants.type == AggregatedDataVariants::Type::without_key || overflow_row)
-			blocks.splice(blocks.end(), prepareBlocksAndFillWithoutKey(data_variants, final));
+			blocks.splice(blocks.end(), prepareBlocksAndFillWithoutKey(
+				data_variants, final, data_variants.type != AggregatedDataVariants::Type::without_key));
 
 		if (isCancelled())
 			return BlocksList();
