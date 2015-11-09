@@ -162,6 +162,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 		checkParts(skip_sanity_checks);
 	}
 
+	createNewZooKeeperNodes();
+
 	initVirtualParts();
 
 	String unreplicated_path = full_path + "unreplicated/";
@@ -191,6 +193,20 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
 	/// В этом потоке реплика будет активирована.
 	restarting_thread.reset(new ReplicatedMergeTreeRestartingThread(*this));
+}
+
+
+void StorageReplicatedMergeTree::createNewZooKeeperNodes()
+{
+	auto zookeeper = getZooKeeper();
+
+	/// Работа с кворумом.
+	zookeeper->createIfNotExists(zookeeper_path + "/quorum", "");
+	zookeeper->createIfNotExists(zookeeper_path + "/quorum/last_part", "");
+	zookeeper->createIfNotExists(zookeeper_path + "/quorum/failed_parts", "");
+
+	/// Отслеживание отставания реплик.
+	zookeeper->createIfNotExists(replica_path + "/min_unprocessed_insert_time", "");
 }
 
 
