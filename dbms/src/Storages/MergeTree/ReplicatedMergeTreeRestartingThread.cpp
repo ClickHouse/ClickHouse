@@ -367,35 +367,6 @@ void ReplicatedMergeTreeRestartingThread::goReadOnlyPermanently()
 }
 
 
-static time_t extractTimeOfLogEntryIfGetPart(zkutil::ZooKeeperPtr & zookeeper, const String & name, const String & path)
-{
-	String content;
-	zkutil::Stat stat;
-	if (!zookeeper->tryGet(path + "/" + name, content, &stat))
-		return 0;	/// Узел уже успел удалиться.
-
-	ReplicatedMergeTreeLogEntry::Ptr entry = ReplicatedMergeTreeLogEntry::parse(content, stat);
-
-	if (entry->type == ReplicatedMergeTreeLogEntry::GET_PART)
-		return entry->create_time;
-
-	return 0;
-}
-
-/// В массиве имён узлов - элементов очереди/лога находит первый, имеющий тип GET_PART и возвращает его время; либо ноль, если не нашёл.
-static time_t findFirstGetPartEntry(zkutil::ZooKeeperPtr & zookeeper, const Strings & nodes, const String & path)
-{
-	for (const auto & name : nodes)
-	{
-		time_t res = extractTimeOfLogEntryIfGetPart(zookeeper, name, path);
-		if (res)
-			return res;
-	}
-
-	return 0;
-}
-
-
 void ReplicatedMergeTreeRestartingThread::checkReplicationDelays(time_t & out_absolute_delay, time_t & out_relative_delay)
 {
 	out_absolute_delay = 0;
