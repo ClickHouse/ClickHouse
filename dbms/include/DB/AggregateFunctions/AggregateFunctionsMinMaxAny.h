@@ -5,6 +5,7 @@
 
 #include <DB/Columns/ColumnVector.h>
 #include <DB/Columns/ColumnString.h>
+#include <DB/DataTypes/DataTypeAggregateFunction.h>
 
 #include <DB/AggregateFunctions/IUnaryAggregateFunction.h>
 
@@ -541,6 +542,9 @@ public:
 	void setArgument(const DataTypePtr & argument)
 	{
 		type = argument;
+
+		if (typeid_cast<const DataTypeAggregateFunction *>(type.get()))
+			throw Exception("Illegal type " + type->getName() + " of argument of aggregate function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
 
 
