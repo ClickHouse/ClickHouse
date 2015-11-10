@@ -186,6 +186,9 @@ public:
 	{
 		IAggregateFunction * function = holder.get()->func;
 
+		if (unlikely(arenas.empty()))
+			arenas.emplace_back(new Arena);
+
 		getData().push_back(arenas.back().get()->alloc(function->sizeOfData()));
 		function->create(getData().back());
 		ReadBufferFromString read_buffer(x.get<const String &>());
