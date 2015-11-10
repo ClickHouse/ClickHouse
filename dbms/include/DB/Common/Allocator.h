@@ -21,7 +21,6 @@ private:
 	/** См. комментарий в HashTableAllocator.h
 	  */
 	static constexpr size_t MMAP_THRESHOLD = 64 * (1 << 20);
-	static constexpr size_t HUGE_PAGE_SIZE = 2 * (1 << 20);
 	static constexpr size_t MMAP_MIN_ALIGNMENT = 4096;
 	static constexpr size_t MALLOC_MIN_ALIGNMENT = 8;
 
@@ -42,10 +41,6 @@ public:
 			buf = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 			if (MAP_FAILED == buf)
 				DB::throwFromErrno("Allocator: Cannot mmap.", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
-
-			/// См. комментарий в HashTableAllocator.h
-			if (size >= HUGE_PAGE_SIZE && 0 != madvise(buf, size, MADV_HUGEPAGE))
-				DB::throwFromErrno("HashTableAllocator: Cannot madvise with MADV_HUGEPAGE.", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 		}
 		else
 		{
