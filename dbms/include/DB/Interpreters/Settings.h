@@ -168,6 +168,8 @@ struct Settings
 	M(SettingUInt64, select_sequential_consistency, 0) \
 	/** Максимальное количество различных шардов и максимальное количество реплик одного шарда в функции remote. */ \
 	M(SettingUInt64, table_function_remote_max_addresses, 1000) \
+	/** Маскимальное количество потоков при распределённой обработке одного запроса **/ \
+	M(SettingUInt64, max_distributed_processing_threads, 8) \
 
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;

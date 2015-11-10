@@ -162,6 +162,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 		checkParts(skip_sanity_checks);
 	}
 
+	createNewZooKeeperNodes();
+
 	initVirtualParts();
 
 	String unreplicated_path = full_path + "unreplicated/";
@@ -191,6 +193,20 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
 	/// В этом потоке реплика будет активирована.
 	restarting_thread.reset(new ReplicatedMergeTreeRestartingThread(*this));
+}
+
+
+void StorageReplicatedMergeTree::createNewZooKeeperNodes()
+{
+	auto zookeeper = getZooKeeper();
+
+	/// Работа с кворумом.
+	zookeeper->createIfNotExists(zookeeper_path + "/quorum", "");
+	zookeeper->createIfNotExists(zookeeper_path + "/quorum/last_part", "");
+	zookeeper->createIfNotExists(zookeeper_path + "/quorum/failed_parts", "");
+
+	/// Отслеживание отставания реплик.
+	zookeeper->createIfNotExists(replica_path + "/min_unprocessed_insert_time", "");
 }
 
 
@@ -1801,139 +1817,153 @@ void StorageReplicatedMergeTree::alterThread()
 
 			bool changed_version = (stat.version != columns_version);
 
-			MergeTreeData::DataParts parts;
-
-			/// Если описание столбцов изменилось, обновим структуру таблицы локально.
-			if (changed_version)
 			{
-				LOG_INFO(log, "Changed version of 'columns' node in ZooKeeper. Waiting for structure write lock.");
+				/// Если потребуется блокировать структуру таблицы, то приостановим мерджи.
+				std::unique_ptr<MergeTreeMergeBlocker> merge_blocker;
+				std::unique_ptr<MergeTreeMergeBlocker> unreplicated_merge_blocker;
 
-				auto table_lock = lockStructureForAlter();
-
-				const auto columns_changed = columns != data.getColumnsListNonMaterialized();
-				const auto materialized_columns_changed = materialized_columns != data.materialized_columns;
-				const auto alias_columns_changed = alias_columns != data.alias_columns;
-				const auto column_defaults_changed = column_defaults != data.column_defaults;
-
-				if (columns_changed || materialized_columns_changed || alias_columns_changed ||
-					column_defaults_changed)
+				if (changed_version || force_recheck_parts)
 				{
-					LOG_INFO(log, "Columns list changed in ZooKeeper. Applying changes locally.");
-
-					InterpreterAlterQuery::updateMetadata(database_name, table_name, columns,
-						materialized_columns, alias_columns, column_defaults, context);
-
-					if (columns_changed)
-					{
-						data.setColumnsList(columns);
-
-						if (unreplicated_data)
-							unreplicated_data->setColumnsList(columns);
-					}
-
-					if (materialized_columns_changed)
-					{
-						this->materialized_columns = materialized_columns;
-						data.materialized_columns = std::move(materialized_columns);
-					}
-
-					if (alias_columns_changed)
-					{
-						this->alias_columns = alias_columns;
-						data.alias_columns = std::move(alias_columns);
-					}
-
-					if (column_defaults_changed)
-					{
-						this->column_defaults = column_defaults;
-						data.column_defaults = std::move(column_defaults);
-					}
-
-					LOG_INFO(log, "Applied changes to table.");
-				}
-				else
-				{
-					LOG_INFO(log, "Columns version changed in ZooKeeper, but data wasn't changed. It's like cyclic ALTERs.");
+					merge_blocker = std::make_unique<MergeTreeMergeBlocker>(merger);
+					if (unreplicated_merger)
+						unreplicated_merge_blocker = std::make_unique<MergeTreeMergeBlocker>(*unreplicated_merger);
 				}
 
-				/// Нужно получить список кусков под блокировкой таблицы, чтобы избежать race condition с мерджем.
-				parts = data.getDataParts();
+				MergeTreeData::DataParts parts;
 
-				columns_version = stat.version;
-			}
-
-			/// Обновим куски.
-			if (changed_version || force_recheck_parts)
-			{
-				auto table_lock = lockStructure(false);
-
+				/// Если описание столбцов изменилось, обновим структуру таблицы локально.
 				if (changed_version)
-					LOG_INFO(log, "ALTER-ing parts");
+				{
+					LOG_INFO(log, "Changed version of 'columns' node in ZooKeeper. Waiting for structure write lock.");
 
-				int changed_parts = 0;
+					auto table_lock = lockStructureForAlter();
 
-				if (!changed_version)
+					const auto columns_changed = columns != data.getColumnsListNonMaterialized();
+					const auto materialized_columns_changed = materialized_columns != data.materialized_columns;
+					const auto alias_columns_changed = alias_columns != data.alias_columns;
+					const auto column_defaults_changed = column_defaults != data.column_defaults;
+
+					if (columns_changed || materialized_columns_changed || alias_columns_changed ||
+						column_defaults_changed)
+					{
+						LOG_INFO(log, "Columns list changed in ZooKeeper. Applying changes locally.");
+
+						InterpreterAlterQuery::updateMetadata(database_name, table_name, columns,
+							materialized_columns, alias_columns, column_defaults, context);
+
+						if (columns_changed)
+						{
+							data.setColumnsList(columns);
+
+							if (unreplicated_data)
+								unreplicated_data->setColumnsList(columns);
+						}
+
+						if (materialized_columns_changed)
+						{
+							this->materialized_columns = materialized_columns;
+							data.materialized_columns = std::move(materialized_columns);
+						}
+
+						if (alias_columns_changed)
+						{
+							this->alias_columns = alias_columns;
+							data.alias_columns = std::move(alias_columns);
+						}
+
+						if (column_defaults_changed)
+						{
+							this->column_defaults = column_defaults;
+							data.column_defaults = std::move(column_defaults);
+						}
+
+						LOG_INFO(log, "Applied changes to table.");
+					}
+					else
+					{
+						LOG_INFO(log, "Columns version changed in ZooKeeper, but data wasn't changed. It's like cyclic ALTERs.");
+					}
+
+					/// Нужно получить список кусков под блокировкой таблицы, чтобы избежать race condition с мерджем.
 					parts = data.getDataParts();
 
-				const auto columns_plus_materialized = data.getColumnsList();
-
-				for (const MergeTreeData::DataPartPtr & part : parts)
-				{
-					/// Обновим кусок и запишем результат во временные файлы.
-					/// TODO: Можно пропускать проверку на слишком большие изменения, если в ZooKeeper есть, например,
-					///  нода /flags/force_alter.
-					auto transaction = data.alterDataPart(part, columns_plus_materialized);
-
-					if (!transaction)
-						continue;
-
-					++changed_parts;
-
-					/// Обновим метаданные куска в ZooKeeper.
-					zkutil::Ops ops;
-					ops.push_back(new zkutil::Op::SetData(
-						replica_path + "/parts/" + part->name + "/columns", transaction->getNewColumns().toString(), -1));
-					ops.push_back(new zkutil::Op::SetData(
-						replica_path + "/parts/" + part->name + "/checksums", transaction->getNewChecksums().toString(), -1));
-					zookeeper->multi(ops);
-
-					/// Применим изменения файлов.
-					transaction->commit();
+					columns_version = stat.version;
 				}
 
-				/// То же самое для нереплицируемых данных.
-				if (unreplicated_data)
+				/// Обновим куски.
+				if (changed_version || force_recheck_parts)
 				{
-					parts = unreplicated_data->getDataParts();
+					auto table_lock = lockStructure(false);
+
+					if (changed_version)
+						LOG_INFO(log, "ALTER-ing parts");
+
+					int changed_parts = 0;
+
+					if (!changed_version)
+						parts = data.getDataParts();
+
+					const auto columns_plus_materialized = data.getColumnsList();
 
 					for (const MergeTreeData::DataPartPtr & part : parts)
 					{
-						auto transaction = unreplicated_data->alterDataPart(part, columns_plus_materialized);
+						/// Обновим кусок и запишем результат во временные файлы.
+						/// TODO: Можно пропускать проверку на слишком большие изменения, если в ZooKeeper есть, например,
+						///  нода /flags/force_alter.
+						auto transaction = data.alterDataPart(part, columns_plus_materialized);
 
 						if (!transaction)
 							continue;
 
 						++changed_parts;
 
+						/// Обновим метаданные куска в ZooKeeper.
+						zkutil::Ops ops;
+						ops.push_back(new zkutil::Op::SetData(
+							replica_path + "/parts/" + part->name + "/columns", transaction->getNewColumns().toString(), -1));
+						ops.push_back(new zkutil::Op::SetData(
+							replica_path + "/parts/" + part->name + "/checksums", transaction->getNewChecksums().toString(), -1));
+						zookeeper->multi(ops);
+
+						/// Применим изменения файлов.
 						transaction->commit();
 					}
+
+					/// То же самое для нереплицируемых данных.
+					if (unreplicated_data)
+					{
+						parts = unreplicated_data->getDataParts();
+
+						for (const MergeTreeData::DataPartPtr & part : parts)
+						{
+							auto transaction = unreplicated_data->alterDataPart(part, columns_plus_materialized);
+
+							if (!transaction)
+								continue;
+
+							++changed_parts;
+
+							transaction->commit();
+						}
+					}
+
+					/// Список столбцов для конкретной реплики.
+					zookeeper->set(replica_path + "/columns", columns_str);
+
+					if (changed_version)
+					{
+						if (changed_parts != 0)
+							LOG_INFO(log, "ALTER-ed " << changed_parts << " parts");
+						else
+							LOG_INFO(log, "No parts ALTER-ed");
+					}
+
+					force_recheck_parts = false;
 				}
 
-				/// Список столбцов для конкретной реплики.
-				zookeeper->set(replica_path + "/columns", columns_str);
-
-				if (changed_version)
-				{
-					if (changed_parts != 0)
-						LOG_INFO(log, "ALTER-ed " << changed_parts << " parts");
-					else
-						LOG_INFO(log, "No parts ALTER-ed");
-				}
-
-				force_recheck_parts = false;
+				/// Важно, что уничтожается parts и merge_blocker перед wait-ом.
 			}
 
-			parts.clear();
 			alter_thread_event->wait();
 		}
 		catch (...)

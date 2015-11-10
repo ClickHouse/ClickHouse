@@ -322,7 +322,7 @@ private:
 			{
 				const auto & null_value_ref = std::get<String>(attr.null_values) = null_value.get<String>();
 				std::get<std::unique_ptr<PODArray<StringRef>>>(attr.arrays) =
-					std::make_unique<PODArray<StringRef>>(initial_array_size, null_value_ref);
+					std::make_unique<PODArray<StringRef>>(initial_array_size, StringRef{null_value_ref});
 				attr.string_arena = std::make_unique<Arena>();
 				break;
 			}
@@ -393,7 +393,7 @@ private:
 			{
 				auto & array = *std::get<std::unique_ptr<PODArray<StringRef>>>(attribute.arrays);
 				if (id >= array.size())
-					array.resize_fill(id + 1, std::get<String>(attribute.null_values));
+					array.resize_fill(id + 1, StringRef{std::get<String>(attribute.null_values)});
 				const auto & string = value.get<String>();
 				const auto string_in_arena = attribute.string_arena->insert(string.data(), string.size());
 				array[id] = StringRef{string_in_arena, string.size()};
