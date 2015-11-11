@@ -213,7 +213,7 @@ BlockInputStreams StorageDistributed::read(
 		thread_count = std::min(remote_count, static_cast<size_t>(settings.max_distributed_processing_threads));
 
 	size_t pools_per_thread = (thread_count > 0) ? (remote_count / thread_count) : 0;
-	size_t remainder = (thread_count > 0) ?  (remote_count % thread_count) : 0;
+	size_t remainder = (thread_count > 0) ? (remote_count % thread_count) : 0;
 
 	ConnectionPoolsPtr pools;
 	bool do_init = true;
