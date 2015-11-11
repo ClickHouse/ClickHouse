@@ -100,6 +100,7 @@ public:
 	/// Аггрегатная функция или состояние аггрегатной функции.
 	bool isState() const { return true; }
 
+	AggregateFunctionPtr getNestedFunction() const { return nested_func_owner; }
 };
 
 }
