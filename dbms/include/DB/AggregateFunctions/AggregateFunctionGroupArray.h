@@ -26,14 +26,14 @@ private:
 	DataTypePtr type;
 
 public:
-	String getName() const { return "groupArray"; }
+	String getName() const override { return "groupArray"; }
 
-	DataTypePtr getReturnType() const
+	DataTypePtr getReturnType() const override
 	{
 		return new DataTypeArray(type);
 	}
 
-	void setArgument(const DataTypePtr & argument)
+	void setArgument(const DataTypePtr & argument) override
 	{
 		type = argument;
 	}
@@ -45,12 +45,12 @@ public:
 		column.get(row_num, data(place).value.back());
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
 	{
 		data(place).value.insert(data(place).value.end(), data(rhs).value.begin(), data(rhs).value.end());
 	}
 
-	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
+	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
 	{
 		const Array & value = data(place).value;
 		size_t size = value.size();
@@ -59,7 +59,7 @@ public:
 			type->serializeBinary(value[i], buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
+	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
 		size_t size = 0;
 		readVarUInt(size, buf);
@@ -75,7 +75,7 @@ public:
 			type->deserializeBinary(value[old_size + i], buf);
 	}
 
-	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
+	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
 	{
 		to.insert(data(place).value);
 	}

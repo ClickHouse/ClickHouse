@@ -46,9 +46,9 @@ private:
 public:
 	AggregateFunctionQuantileDeterministic(double level_ = 0.5) : level(level_) {}
 
-	String getName() const { return "quantileDeterministic"; }
+	String getName() const override { return "quantileDeterministic"; }
 
-	DataTypePtr getReturnType() const
+	DataTypePtr getReturnType() const override
 	{
 		return type;
 	}
@@ -65,7 +65,7 @@ public:
 			};
 	}
 
-	void setParameters(const Array & params)
+	void setParameters(const Array & params) override
 	{
 		if (params.size() != 1)
 			throw Exception("Aggregate function " + getName() + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -74,30 +74,30 @@ public:
 	}
 
 
-	void addOne(AggregateDataPtr place, const IColumn & column, const IColumn & determinator, size_t row_num) const
+	void addTwo(AggregateDataPtr place, const IColumn & column, const IColumn & determinator, size_t row_num) const
 	{
 		this->data(place).sample.insert(static_cast<const ColumnVector<ArgumentFieldType> &>(column).getData()[row_num],
 			determinator.get64(row_num));
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
 	{
 		this->data(place).sample.merge(this->data(rhs).sample);
 	}
 
-	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
+	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
 	{
 		this->data(place).sample.write(buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
+	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
 		Sample tmp_sample;
 		tmp_sample.read(buf);
 		this->data(place).sample.merge(tmp_sample);
 	}
 
-	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
+	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
 	{
 		/// Sample может отсортироваться при получении квантиля, но в этом контексте можно не считать это нарушением константности.
 		Sample & sample = const_cast<Sample &>(this->data(place).sample);
@@ -128,9 +128,9 @@ private:
 	DataTypePtr type;
 
 public:
-	String getName() const { return "quantilesDeterministic"; }
+	String getName() const override { return "quantilesDeterministic"; }
 
-	DataTypePtr getReturnType() const
+	DataTypePtr getReturnType() const override
 	{
 		return new DataTypeArray(type);
 	}
@@ -147,7 +147,7 @@ public:
 			};
 	}
 
-	void setParameters(const Array & params)
+	void setParameters(const Array & params) override
 	{
 		if (params.empty())
 			throw Exception("Aggregate function " + getName() + " requires at least one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -160,30 +160,30 @@ public:
 	}
 
 
-	void addOne(AggregateDataPtr place, const IColumn & column, const IColumn & determinator, size_t row_num) const
+	void addTwo(AggregateDataPtr place, const IColumn & column, const IColumn & determinator, size_t row_num) const
 	{
 		this->data(place).sample.insert(static_cast<const ColumnVector<ArgumentFieldType> &>(column).getData()[row_num],
 			determinator.get64(row_num));
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
 	{
 		this->data(place).sample.merge(this->data(rhs).sample);
 	}
 
-	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
+	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
 	{
 		this->data(place).sample.write(buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
+	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
 		Sample tmp_sample;
 		tmp_sample.read(buf);
 		this->data(place).sample.merge(tmp_sample);
 	}
 
-	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
+	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
 	{
 		/// Sample может отсортироваться при получении квантиля, но в этом контексте можно не считать это нарушением константности.
 		Sample & sample = const_cast<Sample &>(this->data(place).sample);
