@@ -156,35 +156,58 @@ private:
 			WriteBufferFromString out{query};
 			writeString("SELECT ", out);
 
-			if (!dict_struct.id.expression.empty())
+			if (dict_struct.id)
 			{
-				writeParenthesisedString(dict_struct.id.expression, out);
-				writeString(" AS ", out);
+				if (!dict_struct.id->expression.empty())
+				{
+					writeParenthesisedString(dict_struct.id->expression, out);
+					writeString(" AS ", out);
+				}
+
+				writeProbablyBackQuotedString(dict_struct.id->name, out);
+
+				if (dict_struct.range_min && dict_struct.range_max)
+				{
+					writeString(", ", out);
+
+					if (!dict_struct.range_min->expression.empty())
+					{
+						writeParenthesisedString(dict_struct.range_min->expression, out);
+						writeString(" AS ", out);
+					}
+
+					writeProbablyBackQuotedString(dict_struct.range_min->name, out);
+
+					writeString(", ", out);
+
+					if (!dict_struct.range_max->expression.empty())
+					{
+						writeParenthesisedString(dict_struct.range_max->expression, out);
+						writeString(" AS ", out);
+					}
+
+					writeProbablyBackQuotedString(dict_struct.range_max->name, out);
+				}
 			}
-
-			writeProbablyBackQuotedString(dict_struct.id.name, out);
-
-			if (dict_struct.range_min && dict_struct.range_max)
+			else if (dict_struct.key)
 			{
-				writeString(", ", out);
-
-				if (!dict_struct.range_min->expression.empty())
+				auto first = true;
+				for (const auto & key : *dict_struct.key)
 				{
-					writeParenthesisedString(dict_struct.range_min->expression, out);
-					writeString(" AS ", out);
+					if (!first)
+					{
+						writeString(", ", out);
+						first = false;
+					}
+
+					if (!key.expression.empty())
+					{
+						writeParenthesisedString(key.expression, out);
+						writeString(" AS ", out);
+					}
+
+					writeProbablyBackQuotedString(key.name, out);
 				}
-
-				writeProbablyBackQuotedString(dict_struct.range_min->name, out);
-
-				writeString(", ", out);
-
-				if (!dict_struct.range_max->expression.empty())
-				{
-					writeParenthesisedString(dict_struct.range_max->expression, out);
-					writeString(" AS ", out);
-				}
-
-				writeProbablyBackQuotedString(dict_struct.range_max->name, out);
 			}
 
 			for (const auto & attr : dict_struct.attributes)
@@ -222,19 +245,22 @@ private:
 
 	std::string composeLoadIdsQuery(const std::vector<std::uint64_t> & ids)
 	{
+		if (dict_struct.key)
+			throw Exception{"Complex key not supported", ErrorCodes::UNSUPPORTED_METHOD};
+
 		std::string query;
 
 		{
 			WriteBufferFromString out{query};
 			writeString("SELECT ", out);
 
-			if (!dict_struct.id.expression.empty())
+			if (!dict_struct.id->expression.empty())
 			{
-				writeParenthesisedString(dict_struct.id.expression, out);
+				writeParenthesisedString(dict_struct.id->expression, out);
 				writeString(" AS ", out);
 			}
 
-			writeProbablyBackQuotedString(dict_struct.id.name, out);
+			writeProbablyBackQuotedString(dict_struct.id->name, out);
 
 			for (const auto & attr : dict_struct.attributes)
 			{
@@ -265,7 +291,7 @@ private:
 				writeString(" AND ", out);
 			}
 
-			writeProbablyBackQuotedString(dict_struct.id.name, out);
+			writeProbablyBackQuotedString(dict_struct.id->name, out);
 			writeString(" IN (", out);
 
 			auto first = true;

@@ -4,6 +4,7 @@
 #include <DB/Dictionaries/MongoDBBlockInputStream.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <mongo/client/dbclient.h>
+#include <ext/collection_cast.hpp>
 
 
 namespace DB
@@ -53,8 +54,8 @@ class MongoDBDictionarySource final : public IDictionarySource
 
 		if (!mongo_init_status.isOK())
 			throw DB::Exception{
-					"mongo::client::initialize() failed: " + mongo_init_status.toString(),
-					ErrorCodes::MONGODB_INIT_FAILED
+				"mongo::client::initialize() failed: " + mongo_init_status.toString(),
+				ErrorCodes::MONGODB_INIT_FAILED
 			};
 
 		LOG_TRACE(&Logger::get("MongoDBDictionarySource"), "mongo::client::initialize() ok");
@@ -97,9 +98,12 @@ public:
 
 	BlockInputStreamPtr loadIds(const std::vector<std::uint64_t> & ids) override
 	{
+		if (dict_struct.key)
+			throw Exception{"Complex key not supported", ErrorCodes::UNSUPPORTED_METHOD};
+
 		/// mongo::BSONObj has shitty design and does not use fixed width integral types
-		const std::vector<long long int> iids{std::begin(ids), std::end(ids)};
-		const auto ids_enumeration = BSON(dict_struct.id.name << BSON("$in" << iids));
+		const auto ids_enumeration = BSON(
+			dict_struct.id->name << BSON("$in" << ext::collection_cast<std::vector<long long int>>(ids)));
 
 		return new MongoDBBlockInputStream{
 			connection.query(db + '.' + collection, ids_enumeration, 0, 0, &fields_to_query),
