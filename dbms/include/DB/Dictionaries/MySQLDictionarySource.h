@@ -195,10 +195,9 @@ private:
 				for (const auto & key : *dict_struct.key)
 				{
 					if (!first)
-					{
 						writeString(", ", out);
-						first = false;
-					}
+
+					first = false;
 
 					if (!key.expression.empty())
 					{

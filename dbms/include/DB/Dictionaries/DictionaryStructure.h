@@ -155,7 +155,7 @@ struct DictionaryStructure final
 			id.emplace(config, config_prefix + ".id");
 		else if (has_key)
 		{
-			key.emplace(getAttributes(config, config_prefix + ".key", false));
+			key.emplace(getAttributes(config, config_prefix + ".key", false, false));
 			if (key->empty())
 				throw Exception{"Empty 'key' supplied", ErrorCodes::BAD_ARGUMENTS};
 		}
@@ -187,7 +187,7 @@ struct DictionaryStructure final
 private:
 	std::vector<DictionaryAttribute> getAttributes(
 		const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
-		const bool hierarchy_allowed = true)
+		const bool hierarchy_allowed = true, const bool allow_null_values = true)
 	{
 		Poco::Util::AbstractConfiguration::Keys keys;
 		config.keys(config_prefix, keys);
@@ -211,19 +211,22 @@ private:
 			if (!expression.empty())
 				has_expressions = true;
 
-			const auto null_value_string = config.getString(prefix + "null_value");
 			Field null_value;
-			try
+			if (allow_null_values)
 			{
-				ReadBufferFromString null_value_buffer{null_value_string};
-				type->deserializeText(null_value, null_value_buffer);
-			}
-			catch (const std::exception & e)
-			{
-				throw Exception{
-					std::string{"Error parsing null_value: "} + e.what(),
-					ErrorCodes::BAD_ARGUMENTS
-				};
+				const auto null_value_string = config.getString(prefix + "null_value");
+				try
+				{
+					ReadBufferFromString null_value_buffer{null_value_string};
+					type->deserializeText(null_value, null_value_buffer);
+				}
+				catch (const std::exception & e)
+				{
+					throw Exception{
+						std::string{"Error parsing null_value: "} + e.what(),
+						ErrorCodes::BAD_ARGUMENTS
+					};
+				}
 			}
 
 			const auto hierarchical = config.getBool(prefix + "hierarchical", false);

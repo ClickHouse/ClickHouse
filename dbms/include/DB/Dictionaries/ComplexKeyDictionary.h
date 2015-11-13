@@ -22,7 +22,7 @@ public:
 		const std::string & name, const DictionaryStructure & dict_struct, DictionarySourcePtr source_ptr,
 		const DictionaryLifetime dict_lifetime, bool require_nonempty)
 	: name{name}, dict_struct(dict_struct), source_ptr{std::move(source_ptr)}, dict_lifetime(dict_lifetime),
-	  require_nonempty(require_nonempty)
+	  require_nonempty(require_nonempty), key_description{createKeyDescription(dict_struct)}
 	{
 		createAttributes();
 
@@ -42,6 +42,8 @@ public:
 	ComplexKeyDictionary(const ComplexKeyDictionary & other)
 		: ComplexKeyDictionary{other.name, other.dict_struct, other.source_ptr->clone(), other.dict_lifetime, other.require_nonempty}
 	{}
+
+	std::string getKeyDescription() const { return key_description; };
 
 	std::exception_ptr getCreationException() const override { return creation_exception; }
 
@@ -79,9 +81,13 @@ public:
 		return dict_struct.attributes[&getAttribute(attribute_name) - attributes.data()].injective;
 	}
 
-/*#define DECLARE_MULTIPLE_GETTER(TYPE)\
-	void get##TYPE(const std::string & attribute_name, const PODArray<id_t> & ids, PODArray<TYPE> & out) const override\
+#define DECLARE_MULTIPLE_GETTER(TYPE)\
+	void get##TYPE(\
+		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
+		PODArray<TYPE> & out) const\
 	{\
+		validateKeyColumns(key_types);\
+		\
 		const auto & attribute = getAttribute(attribute_name);\
 		if (attribute.type != AttributeUnderlyingType::TYPE)\
 			throw Exception{\
@@ -89,7 +95,7 @@ public:
 				ErrorCodes::TYPE_MISMATCH\
 			};\
 		\
-		getItems<TYPE>(attribute, ids, out);\
+		getItems<TYPE>(attribute, key_columns, out);\
 	}
 	DECLARE_MULTIPLE_GETTER(UInt8)
 	DECLARE_MULTIPLE_GETTER(UInt16)
@@ -102,8 +108,12 @@ public:
 	DECLARE_MULTIPLE_GETTER(Float32)
 	DECLARE_MULTIPLE_GETTER(Float64)
 #undef DECLARE_MULTIPLE_GETTER
-	void getString(const std::string & attribute_name, const PODArray<id_t> & ids, ColumnString * out) const override
+	void getString(
+		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,
+		ColumnString * out) const
 	{
+		validateKeyColumns(key_types);
+
 		const auto & attribute = getAttribute(attribute_name);
 		if (attribute.type != AttributeUnderlyingType::String)
 			throw Exception{
@@ -114,21 +124,32 @@ public:
 		const auto & attr = *std::get<MapPointerType<StringRef>>(attribute.maps);
 		const auto & null_value = StringRef{std::get<String>(attribute.null_values)};
 
-		for (const auto i : ext::range(0, ids.size()))
+		const auto keys_size = key_columns.size();
+		StringRefs keys(keys_size);
+		Arena temporary_keys_pool;
+
+		const auto rows = key_columns.front()->size();
+		for (const auto i : ext::range(0, rows))
 		{
-			const auto it = attr.find(ids[i]);
+			const auto key = placeKeysInPool(i, key_columns, keys, temporary_keys_pool);
+
+			const auto it = attr.find(key);
 			const auto string_ref = it != attr.end() ? it->second : null_value;
 			out->insertData(string_ref.data, string_ref.size);
+
+			temporary_keys_pool.rollback(key.size);
 		}
 
-		query_count.fetch_add(ids.size(), std::memory_order_relaxed);
+		query_count.fetch_add(rows, std::memory_order_relaxed);
 	}
 
 #define DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(TYPE)\
 	void get##TYPE(\
-		const std::string & attribute_name, const PODArray<id_t> & ids, const PODArray<TYPE> & def,\
-		PODArray<TYPE> & out) const override\
+		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
+		const PODArray<TYPE> & def, PODArray<TYPE> & out) const\
 	{\
+ 		validateKeyColumns(key_types);\
+ 		\
 		const auto & attribute = getAttribute(attribute_name);\
 		if (attribute.type != AttributeUnderlyingType::TYPE)\
 			throw Exception{\
@@ -136,7 +157,7 @@ public:
 				ErrorCodes::TYPE_MISMATCH\
 			};\
 		\
-		getItems<TYPE>(attribute, ids, def, out);\
+		getItems<TYPE>(attribute, key_columns, def, out);\
 	}
 	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(UInt8)
 	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(UInt16)
@@ -150,9 +171,11 @@ public:
 	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Float64)
 #undef DECLARE_MULTIPLE_GETTER_WITH_DEFAULT
 	void getString(
-		const std::string & attribute_name, const PODArray<id_t> & ids, const ColumnString * const def,
-		ColumnString * const out) const override
+		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,
+		const ColumnString * const def, ColumnString * const out) const
 	{
+ 		validateKeyColumns(key_types);
+
 		const auto & attribute = getAttribute(attribute_name);
 		if (attribute.type != AttributeUnderlyingType::String)
 			throw Exception{
@@ -160,17 +183,26 @@ public:
 				ErrorCodes::TYPE_MISMATCH
 			};
 
-		const auto & attr = *std::get<std::unique_ptr<HashMapWithSavedHash<StringRef, StringRef>>>(attribute.maps);
+		const auto & attr = *std::get<MapPointerType<StringRef>>(attribute.maps);
 
-		for (const auto i : ext::range(0, ids.size()))
+		const auto keys_size = key_columns.size();
+		StringRefs keys(keys_size);
+		Arena temporary_keys_pool;
+
+		const auto rows = key_columns.front()->size();
+		for (const auto i : ext::range(0, rows))
 		{
-			const auto it = attr.find(ids[i]);
+			const auto key = placeKeysInPool(i, key_columns, keys, temporary_keys_pool);
+
+			const auto it = attr.find(key);
 			const auto string_ref = it != attr.end() ? it->second : def->getDataAt(i);
 			out->insertData(string_ref.data, string_ref.size);
+
+			temporary_keys_pool.rollback(key.size);
 		}
 
-		query_count.fetch_add(ids.size(), std::memory_order_relaxed);
-	}*/
+		query_count.fetch_add(rows, std::memory_order_relaxed);
+	}
 
 private:
 	template <typename Value> using MapType = HashMapWithSavedHash<StringRef, Value, StringRefHash>;
@@ -239,7 +271,7 @@ private:
 			for (const auto row_idx : ext::range(0, rows))
 			{
 				/// calculate key once per row
-				const auto key = placeKeysInPool(row_idx, key_column_ptrs, keys);
+				const auto key = placeKeysInPool(row_idx, key_column_ptrs, keys, keys_pool);
 
 				auto should_rollback = false;
 
@@ -254,7 +286,7 @@ private:
 
 				/// @note on multiple equal keys the mapped value for the first one is stored
 				if (should_rollback)
-					keys_pool.rollback(key.size + keys_size * sizeof(StringRef));
+					keys_pool.rollback(key.size);
 			}
 
 		}
@@ -339,35 +371,103 @@ private:
 
 		return attr;
 	}
-/*
+
+	static std::string createKeyDescription(const DictionaryStructure & dict_struct)
+	{
+		std::ostringstream out;
+
+		out << '(';
+
+		auto first = true;
+		for (const auto & key : *dict_struct.key)
+		{
+			if (!first)
+				out << ", ";
+
+			first = false;
+
+			out << key.type->getName();
+		}
+
+		out << ')';
+
+		return out.str();
+	}
+
+	void validateKeyColumns(const DataTypes & key_types) const
+	{
+		if (key_types.size() != dict_struct.key->size())
+			throw Exception{
+				"Key structure does not match, expected " + key_description,
+				ErrorCodes::TYPE_MISMATCH
+			};
+
+		for (const auto i : ext::range(0, key_types.size()))
+		{
+			const auto & expected_type = (*dict_struct.key)[i].type->getName();
+			const auto & actual_type = key_types[i]->getName();
+
+			if (expected_type != actual_type)
+				throw Exception{
+					"Key type at position " + std::to_string(i) + " does not match, expected " + expected_type +
+						", found " + actual_type,
+					ErrorCodes::TYPE_MISMATCH
+				};
+		}
+	}
+
 	template <typename T>
-	void getItems(const attribute_t & attribute, const PODArray<id_t> & ids, PODArray<T> & out) const
+	void getItems(const attribute_t & attribute, const ConstColumnPlainPtrs & key_columns, PODArray<T> & out) const
 	{
 		const auto & attr = *std::get<MapPointerType<T>>(attribute.maps);
 		const auto null_value = std::get<T>(attribute.null_values);
 
-		for (const auto i : ext::range(0, ids.size()))
+		const auto keys_size = key_columns.size();
+		StringRefs keys(keys_size);
+		Arena temporary_keys_pool;
+
+		const auto rows = key_columns.front()->size();
+		for (const auto i : ext::range(0, rows))
 		{
-			const auto it = attr.find(ids[i]);
+			/// copy key data to arena so it is contiguous and return StringRef to it
+			const auto key = placeKeysInPool(i, key_columns, keys, temporary_keys_pool);
+
+			const auto it = attr.find(key);
 			out[i] = it != attr.end() ? it->second : null_value;
+
+			/// free memory allocated for key
+			temporary_keys_pool.rollback(key.size);
 		}
 
-		query_count.fetch_add(ids.size(), std::memory_order_relaxed);
+		query_count.fetch_add(rows, std::memory_order_relaxed);
 	}
 
 	template <typename T>
-	void getItems(const attribute_t & attribute, const PODArray<id_t> & ids, const PODArray<T> & def, PODArray<T> & out) const
+	void getItems(
+ 		const attribute_t & attribute, const ConstColumnPlainPtrs & key_columns, const PODArray<T> & def,
+ 		PODArray<T> & out) const
 	{
 		const auto & attr = *std::get<MapPointerType<T>>(attribute.maps);
 
-		for (const auto i : ext::range(0, ids.size()))
+		const auto keys_size = key_columns.size();
+		StringRefs keys(keys_size);
+		Arena temporary_keys_pool;
+
+		const auto rows = key_columns.front()->size();
+		for (const auto i : ext::range(0, rows))
 		{
-			const auto it = attr.find(ids[i]);
+			/// copy key data to arena so it is contiguous and return StringRef to it
+			const auto key = placeKeysInPool(i, key_columns, keys, temporary_keys_pool);
+
+			const auto it = attr.find(key);
 			out[i] = it != attr.end() ? it->second : def[i];
+
+			/// free memory allocated for key
+			temporary_keys_pool.rollback(key.size);
 		}
 
-		query_count.fetch_add(ids.size(), std::memory_order_relaxed);
-	}*/
+		query_count.fetch_add(rows, std::memory_order_relaxed);
+	}
 
 	template <typename T>
 	bool setAttributeValueImpl(attribute_t & attribute, const StringRef key, const T value)
@@ -416,7 +516,8 @@ private:
 		return attributes[it->second];
 	}
 
-	StringRef placeKeysInPool(const std::size_t row, const ConstColumnPlainPtrs & key_columns, StringRefs & keys)
+	static StringRef placeKeysInPool(
+		const std::size_t row, const ConstColumnPlainPtrs & key_columns, StringRefs & keys, Arena & pool)
 	{
 		const auto keys_size = key_columns.size();
 		size_t sum_keys_size{};
@@ -426,18 +527,14 @@ private:
 			sum_keys_size += keys[i].size;
 		}
 
-		const auto res = keys_pool.alloc(sum_keys_size + keys_size * sizeof(StringRef));
+		const auto res = pool.alloc(sum_keys_size);
 		auto place = res;
 
 		for (size_t j = 0; j < keys_size; ++j)
 		{
 			memcpy(place, keys[j].data, keys[j].size);
-			keys[j].data = place;
 			place += keys[j].size;
 		}
-
-		/// Размещаем в пуле StringRef-ы на только что скопированные ключи.
-		memcpy(place, &keys[0], keys_size * sizeof(StringRef));
 
 		return { res, sum_keys_size };
 	}
@@ -447,6 +544,7 @@ private:
 	const DictionarySourcePtr source_ptr;
 	const DictionaryLifetime dict_lifetime;
 	const bool require_nonempty;
+	const std::string key_description;
 
 	std::map<std::string, std::size_t> attribute_index_by_name;
 	std::vector<attribute_t> attributes;
@@ -461,5 +559,6 @@ private:
 
 	std::exception_ptr creation_exception;
 };
+
 
 }
