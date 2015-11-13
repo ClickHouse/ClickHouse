@@ -354,6 +354,7 @@ private:
 		for (const auto i : ext::range(0, ids.size()))
 		{
 			const auto id = ids[i];
+			/// @todo only works for out-of-bounds values, other defaults are explicitly stored.
 			out[i] = id < attr.size() ? attr[id] : def[i];
 		}
 

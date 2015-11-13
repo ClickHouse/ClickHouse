@@ -95,7 +95,11 @@ public:
 				ErrorCodes::TYPE_MISMATCH\
 			};\
 		\
-		getItems<TYPE>(attribute, key_columns, out);\
+		const auto null_value = std::get<TYPE>(attribute.null_values);\
+		\
+		getItems<TYPE>(attribute, key_columns,\
+			[&] (const std::size_t row, const auto value) { out[row] = value; },\
+			[&] (const std::size_t) { return null_value; });\
 	}
 	DECLARE_MULTIPLE_GETTER(UInt8)
 	DECLARE_MULTIPLE_GETTER(UInt16)
@@ -121,26 +125,11 @@ public:
 				ErrorCodes::TYPE_MISMATCH
 			};
 
-		const auto & attr = *std::get<MapPointerType<StringRef>>(attribute.maps);
 		const auto & null_value = StringRef{std::get<String>(attribute.null_values)};
 
-		const auto keys_size = key_columns.size();
-		StringRefs keys(keys_size);
-		Arena temporary_keys_pool;
-
-		const auto rows = key_columns.front()->size();
-		for (const auto i : ext::range(0, rows))
-		{
-			const auto key = placeKeysInPool(i, key_columns, keys, temporary_keys_pool);
-
-			const auto it = attr.find(key);
-			const auto string_ref = it != attr.end() ? it->second : null_value;
-			out->insertData(string_ref.data, string_ref.size);
-
-			temporary_keys_pool.rollback(key.size);
-		}
-
-		query_count.fetch_add(rows, std::memory_order_relaxed);
+		getItems<StringRef>(attribute, key_columns,
+			[&] (const std::size_t row, const StringRef value) { out->insertData(value.data, value.size); },
+			[&] (const std::size_t) { return null_value; });
 	}
 
 #define DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(TYPE)\
@@ -157,7 +146,9 @@ public:
 				ErrorCodes::TYPE_MISMATCH\
 			};\
 		\
-		getItems<TYPE>(attribute, key_columns, def, out);\
+		getItems<TYPE>(attribute, key_columns,\
+			[&] (const std::size_t row, const auto value) { out[row] = value; },\
+			[&] (const std::size_t row) { return def[row]; });\
 	}
 	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(UInt8)
 	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(UInt16)
@@ -183,25 +174,9 @@ public:
 				ErrorCodes::TYPE_MISMATCH
 			};
 
-		const auto & attr = *std::get<MapPointerType<StringRef>>(attribute.maps);
-
-		const auto keys_size = key_columns.size();
-		StringRefs keys(keys_size);
-		Arena temporary_keys_pool;
-
-		const auto rows = key_columns.front()->size();
-		for (const auto i : ext::range(0, rows))
-		{
-			const auto key = placeKeysInPool(i, key_columns, keys, temporary_keys_pool);
-
-			const auto it = attr.find(key);
-			const auto string_ref = it != attr.end() ? it->second : def->getDataAt(i);
-			out->insertData(string_ref.data, string_ref.size);
-
-			temporary_keys_pool.rollback(key.size);
-		}
-
-		query_count.fetch_add(rows, std::memory_order_relaxed);
+		getItems<StringRef>(attribute, key_columns,
+			[&] (const std::size_t row, const StringRef value) { out->insertData(value.data, value.size); },
+			[&] (const std::size_t row) { return def->getDataAt(row); });
 	}
 
 private:
@@ -418,36 +393,10 @@ private:
 		}
 	}
 
-	template <typename T>
-	void getItems(const attribute_t & attribute, const ConstColumnPlainPtrs & key_columns, PODArray<T> & out) const
-	{
-		const auto & attr = *std::get<MapPointerType<T>>(attribute.maps);
-		const auto null_value = std::get<T>(attribute.null_values);
-
-		const auto keys_size = key_columns.size();
-		StringRefs keys(keys_size);
-		Arena temporary_keys_pool;
-
-		const auto rows = key_columns.front()->size();
-		for (const auto i : ext::range(0, rows))
-		{
-			/// copy key data to arena so it is contiguous and return StringRef to it
-			const auto key = placeKeysInPool(i, key_columns, keys, temporary_keys_pool);
-
-			const auto it = attr.find(key);
-			out[i] = it != attr.end() ? it->second : null_value;
-
-			/// free memory allocated for key
-			temporary_keys_pool.rollback(key.size);
-		}
-
-		query_count.fetch_add(rows, std::memory_order_relaxed);
-	}
-
-	template <typename T>
+	template <typename T, typename ValueSetter, typename DefaultGetter>
 	void getItems(
- 		const attribute_t & attribute, const ConstColumnPlainPtrs & key_columns, const PODArray<T> & def,
- 		PODArray<T> & out) const
+		const attribute_t & attribute, const ConstColumnPlainPtrs & key_columns, ValueSetter && set_value,
+		DefaultGetter && get_default) const
 	{
 		const auto & attr = *std::get<MapPointerType<T>>(attribute.maps);
 
@@ -462,7 +411,7 @@ private:
 			const auto key = placeKeysInPool(i, key_columns, keys, temporary_keys_pool);
 
 			const auto it = attr.find(key);
-			out[i] = it != attr.end() ? it->second : def[i];
+			set_value(i, it != attr.end() ? it->second : get_default(i));
 
 			/// free memory allocated for key
 			temporary_keys_pool.rollback(key.size);
