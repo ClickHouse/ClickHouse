@@ -335,6 +335,8 @@ private:
 				}
 			}
 		}
+
+		bytes_allocated += keys_pool.size();
 	}
 
 	template <typename T>
