@@ -198,7 +198,7 @@ BlockInputStreams StorageDistributed::read(
 	size_t remote_count = cluster.getRemoteShardCount();
 
 	/// Отключаем мультиплексирование шардов, если есть ORDER BY без GROUP BY.
-	const ASTSelectQuery & ast = *(static_cast<const ASTSelectQuery *>(modified_query_ast.get()));
+	//const ASTSelectQuery & ast = *(static_cast<const ASTSelectQuery *>(modified_query_ast.get()));
 
 	/** Функциональность shard_multiplexing не доделана - выключаем её.
 	  * (Потому что установка соединений с разными шардами в рамках одного потока выполняется не параллельно.)
