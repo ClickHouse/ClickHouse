@@ -19,8 +19,8 @@
 #include <DB/Dictionaries/FlatDictionary.h>
 #include <DB/Dictionaries/HashedDictionary.h>
 #include <DB/Dictionaries/CacheDictionary.h>
+#include <DB/Dictionaries/ComplexKeyHashedDictionary.h>
 #include <DB/Dictionaries/RangeHashedDictionary.h>
-#include <DB/Dictionaries/ComplexKeyDictionary.h>
 
 #include <ext/range.hpp>
 
@@ -883,7 +883,7 @@ private:
 	bool executeDispatchComplex(
 		Block & block, const ColumnNumbers & arguments, const size_t result, const IDictionaryBase * const dictionary)
 	{
-		const auto dict = typeid_cast<const ComplexKeyDictionary *>(dictionary);
+		const auto dict = typeid_cast<const ComplexKeyHashedDictionary *>(dictionary);
 		if (!dict)
 			return false;
 
@@ -1425,7 +1425,7 @@ private:
 	bool executeDispatchComplex(
 		Block & block, const ColumnNumbers & arguments, const size_t result, const IDictionaryBase * const dictionary)
 	{
-		const auto dict = typeid_cast<const ComplexKeyDictionary *>(dictionary);
+		const auto dict = typeid_cast<const ComplexKeyHashedDictionary *>(dictionary);
 		if (!dict)
 			return false;
 

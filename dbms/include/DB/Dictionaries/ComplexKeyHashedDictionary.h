@@ -15,10 +15,10 @@
 namespace DB
 {
 
-class ComplexKeyDictionary final : public IDictionaryBase
+class ComplexKeyHashedDictionary final : public IDictionaryBase
 {
 public:
-	ComplexKeyDictionary(
+	ComplexKeyHashedDictionary(
 		const std::string & name, const DictionaryStructure & dict_struct, DictionarySourcePtr source_ptr,
 		const DictionaryLifetime dict_lifetime, bool require_nonempty)
 	: name{name}, dict_struct(dict_struct), source_ptr{std::move(source_ptr)}, dict_lifetime(dict_lifetime),
@@ -39,8 +39,8 @@ public:
 		creation_time = std::chrono::system_clock::now();
 	}
 
-	ComplexKeyDictionary(const ComplexKeyDictionary & other)
-		: ComplexKeyDictionary{other.name, other.dict_struct, other.source_ptr->clone(), other.dict_lifetime, other.require_nonempty}
+	ComplexKeyHashedDictionary(const ComplexKeyHashedDictionary & other)
+		: ComplexKeyHashedDictionary{other.name, other.dict_struct, other.source_ptr->clone(), other.dict_lifetime, other.require_nonempty}
 	{}
 
 	std::string getKeyDescription() const { return key_description; };
@@ -49,7 +49,7 @@ public:
 
 	std::string getName() const override { return name; }
 
-	std::string getTypeName() const override { return "ComplexKey"; }
+	std::string getTypeName() const override { return "ComplexKeyHashed"; }
 
 	std::size_t getBytesAllocated() const override { return bytes_allocated; }
 
@@ -63,7 +63,7 @@ public:
 
 	bool isCached() const override { return false; }
 
-	DictionaryPtr clone() const override { return std::make_unique<ComplexKeyDictionary>(*this); }
+	DictionaryPtr clone() const override { return std::make_unique<ComplexKeyHashedDictionary>(*this); }
 
 	const IDictionarySource * getSource() const override { return source_ptr.get(); }
 
