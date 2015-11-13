@@ -12,7 +12,7 @@ template <typename T, typename Derived>
 class IUnaryAggregateFunction : public IAggregateFunctionHelper<T>
 {
 public:
-	void setArguments(const DataTypes & arguments)
+	void setArguments(const DataTypes & arguments) override
 	{
 		if (arguments.size() != 1)
 			throw Exception("Passed " + toString(arguments.size()) + " arguments to unary aggregate function " + this->getName(),
@@ -23,7 +23,7 @@ public:
 	virtual void setArgument(const DataTypePtr & argument) = 0;
 
 	/// Добавить значение.
-	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const
+	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const override
 	{
 		static_cast<const Derived &>(*this).addOne(place, *columns[0], row_num);
 	}

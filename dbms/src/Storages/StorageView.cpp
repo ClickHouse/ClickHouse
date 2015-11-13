@@ -80,6 +80,8 @@ BlockInputStreams StorageView::read(
 	const size_t max_block_size,
 	const unsigned threads)
 {
+	processed_stage = QueryProcessingStage::FetchColumns;
+
 	ASTPtr inner_query_clone = getInnerQuery();
 	ASTSelectQuery & inner_select = static_cast<ASTSelectQuery &>(*inner_query_clone);
 	const ASTSelectQuery & outer_select = typeid_cast<const ASTSelectQuery &>(*query);

@@ -4,6 +4,7 @@
 #include <DB/Dictionaries/HashedDictionary.h>
 #include <DB/Dictionaries/CacheDictionary.h>
 #include <DB/Dictionaries/RangeHashedDictionary.h>
+#include <DB/Dictionaries/ComplexKeyHashedDictionary.h>
 #include <DB/Dictionaries/DictionaryStructure.h>
 #include <memory>
 
@@ -37,7 +38,13 @@ DictionaryPtr DictionaryFactory::create(const std::string & name, Poco::Util::Ab
 
 	if ("range_hashed" == layout_type)
 	{
-		if (!dict_struct.range_min || !dict_struct.range_min)
+		if (dict_struct.key)
+			throw Exception{
+				"'key' is not supported for dictionary of layout 'range_hashed'",
+				ErrorCodes::UNSUPPORTED_METHOD
+			};
+
+		if (!dict_struct.range_min || !dict_struct.range_max)
 			throw Exception{
 				name + ": dictionary of layout 'range_hashed' requires .structure.range_min and .structure.range_max",
 				ErrorCodes::BAD_ARGUMENTS
@@ -45,9 +52,25 @@ DictionaryPtr DictionaryFactory::create(const std::string & name, Poco::Util::Ab
 
 		return std::make_unique<RangeHashedDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
 	}
+	else if ("complex_key_hashed" == layout_type)
+	{
+		if (!dict_struct.key)
+			throw Exception{
+				"'key' is required for dictionary of layout 'complex_key_hashed'",
+				ErrorCodes::BAD_ARGUMENTS
+			};
+
+		return std::make_unique<ComplexKeyHashedDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
+	}
 	else
 	{
-		if (dict_struct.range_min || dict_struct.range_min)
+		if (dict_struct.key)
+			throw Exception{
+				"'key' is not supported for dictionary of layout '" + layout_type + "'",
+				ErrorCodes::UNSUPPORTED_METHOD
+			};
+
+		if (dict_struct.range_min || dict_struct.range_max)
 			throw Exception{
 				name + ": elements .structure.range_min and .structure.range_max should be defined only "
 					"for a dictionary of layout 'range_hashed'",

@@ -5,6 +5,7 @@
 
 #include <DB/Columns/ColumnVector.h>
 #include <DB/Columns/ColumnString.h>
+#include <DB/DataTypes/DataTypeAggregateFunction.h>
 
 #include <DB/AggregateFunctions/IUnaryAggregateFunction.h>
 
@@ -531,16 +532,19 @@ private:
 	DataTypePtr type;
 
 public:
-	String getName() const { return Data::name(); }
+	String getName() const override { return Data::name(); }
 
-	DataTypePtr getReturnType() const
+	DataTypePtr getReturnType() const override
 	{
 		return type;
 	}
 
-	void setArgument(const DataTypePtr & argument)
+	void setArgument(const DataTypePtr & argument) override
 	{
 		type = argument;
+
+		if (typeid_cast<const DataTypeAggregateFunction *>(type.get()))
+			throw Exception("Illegal type " + type->getName() + " of argument of aggregate function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
 
 
@@ -549,17 +553,17 @@ public:
 		this->data(place).changeIfBetter(column, row_num);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
 	{
 		this->data(place).changeIfBetter(this->data(rhs));
 	}
 
-	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
+	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
 	{
 		this->data(place).write(buf, *type.get());
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
+	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
 		Data rhs;	/// Для строчек не очень оптимально, так как может делаться одна лишняя аллокация.
 		rhs.read(buf, *type.get());
@@ -567,7 +571,7 @@ public:
 		this->data(place).changeIfBetter(rhs);
 	}
 
-	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
+	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
 	{
 		this->data(place).insertResultInto(to);
 	}

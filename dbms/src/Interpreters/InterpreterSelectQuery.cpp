@@ -28,7 +28,6 @@
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/InterpreterSetQuery.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
-#include <DB/Storages/StorageView.h>
 #include <DB/TableFunctions/ITableFunction.h>
 #include <DB/TableFunctions/TableFunctionFactory.h>
 

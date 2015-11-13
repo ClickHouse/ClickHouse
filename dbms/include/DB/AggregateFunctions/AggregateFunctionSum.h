@@ -19,20 +19,20 @@ struct AggregateFunctionSumData
 	AggregateFunctionSumData() : sum(0) {}
 };
 
-	
+
 /// Считает сумму чисел.
 template <typename T>
 class AggregateFunctionSum final : public IUnaryAggregateFunction<AggregateFunctionSumData<typename NearestFieldType<T>::Type>, AggregateFunctionSum<T> >
 {
 public:
-	String getName() const { return "sum"; }
+	String getName() const override { return "sum"; }
 
-	DataTypePtr getReturnType() const
+	DataTypePtr getReturnType() const override
 	{
 		return new typename DataTypeFromFieldType<typename NearestFieldType<T>::Type>::Type;
 	}
 
-	void setArgument(const DataTypePtr & argument)
+	void setArgument(const DataTypePtr & argument) override
 	{
 		if (!argument->isNumeric())
 			throw Exception("Illegal type " + argument->getName() + " of argument for aggregate function " + getName(),
@@ -45,24 +45,24 @@ public:
 		this->data(place).sum += static_cast<const ColumnVector<T> &>(column).getData()[row_num];
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
 	{
 		this->data(place).sum += this->data(rhs).sum;
 	}
 
-	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
+	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
 	{
 		writeBinary(this->data(place).sum, buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
+	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
 		typename NearestFieldType<T>::Type tmp;
 		readBinary(tmp, buf);
 		this->data(place).sum += tmp;
 	}
 
-	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
+	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
 	{
 		static_cast<ColumnVector<typename NearestFieldType<T>::Type> &>(to).getData().push_back(this->data(place).sum);
 	}

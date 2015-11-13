@@ -297,7 +297,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 	}
 	catch (...)
 	{
-		onExceptionBeforeStart(query, context, current_time);
+		if (!internal)
+			onExceptionBeforeStart(query, context, current_time);
+
 		throw;
 	}
 

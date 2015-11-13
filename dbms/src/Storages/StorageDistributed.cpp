@@ -199,7 +199,13 @@ BlockInputStreams StorageDistributed::read(
 
 	/// Отключаем мультиплексирование шардов, если есть ORDER BY без GROUP BY.
 	const ASTSelectQuery & ast = *(static_cast<const ASTSelectQuery *>(modified_query_ast.get()));
-	bool enable_shard_multiplexing = !(ast.order_expression_list && !ast.group_expression_list);
+
+	/** Функциональность shard_multiplexing не доделана - выключаем её.
+	  * (Потому что установка соединений с разными шардами в рамках одного потока выполняется не параллельно.)
+	  * Подробнее смотрите в https://███████████.yandex-team.ru/METR-18300
+	  */
+	//bool enable_shard_multiplexing = !(ast.order_expression_list && !ast.group_expression_list);
+	bool enable_shard_multiplexing = false;
 
 	size_t thread_count;
 
@@ -213,7 +219,7 @@ BlockInputStreams StorageDistributed::read(
 		thread_count = std::min(remote_count, static_cast<size_t>(settings.max_distributed_processing_threads));
 
 	size_t pools_per_thread = (thread_count > 0) ? (remote_count / thread_count) : 0;
-	size_t remainder = (thread_count > 0) ?  (remote_count % thread_count) : 0;
+	size_t remainder = (thread_count > 0) ? (remote_count % thread_count) : 0;
 
 	ConnectionPoolsPtr pools;
 	bool do_init = true;
@@ -341,12 +347,19 @@ BlockInputStreams StorageDistributed::describe(const Context & context, const Se
 
 	size_t thread_count;
 
-	if (remote_count == 0)
+	/** Функциональность shard_multiplexing не доделана - выключаем её.
+	  * (Потому что установка соединений с разными шардами в рамках одного потока выполняется не параллельно.)
+	  * Подробнее смотрите в https://███████████.yandex-team.ru/METR-18300
+	  */
+
+/*	if (remote_count == 0)
 		thread_count = 0;
 	else if (settings.max_distributed_processing_threads == 0)
 		thread_count = 1;
 	else
 		thread_count = std::min(remote_count, static_cast<size_t>(settings.max_distributed_processing_threads));
+	*/
+	thread_count = remote_count;
 
 	size_t pools_per_thread = (thread_count > 0) ? (remote_count / thread_count) : 0;
 	size_t remainder = (thread_count > 0) ?  (remote_count % thread_count) : 0;

@@ -34,7 +34,7 @@ public:
 		QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
 		const Context & context_ = getDefaultContext());
 
-	/// Принимает пулы - один для каждого шарда -, из которых нужно будет достать одно или несколько соединений.
+	/// Принимает пулы - один для каждого шарда, из которых нужно будет достать одно или несколько соединений.
 	RemoteBlockInputStream(ConnectionPoolsPtr & pools_, const String & query_, const Settings * settings_,
 		ThrottlerPtr throttler_ = nullptr, const Tables & external_tables_ = Tables(),
 		QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,

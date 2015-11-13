@@ -595,15 +595,39 @@ bool ParserExpressionElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos &
 bool ParserWithOptionalAlias::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	ParserWhiteSpaceOrComments ws;
-	ParserAlias alias_p(allow_alias_without_as_keyword);
 
 	if (!elem_parser->parse(pos, end, node, max_parsed_pos, expected))
 		return false;
 
+	/** Маленький хак.
+	  *
+	  * В секции SELECT мы разрешаем парсить алиасы без указания ключевого слова AS.
+	  * Эти алиасы не могут совпадать с ключевыми словами запроса.
+	  * А само выражение может быть идентификатором, совпадающем с ключевым словом.
+	  * Например, столбец может называться where. И в запросе может быть написано SELECT where AS x FROM table или даже SELECT where x FROM table.
+	  * Даже может быть написано SELECT where AS from FROM table, но не может быть написано SELECT where from FROM table.
+	  * Смотрите подробнее в реализации ParserAlias.
+	  *
+	  * Но возникает небольшая проблема - неудобное сообщение об ошибке, если в секции SELECT в конце есть лишняя запятая.
+	  * Хотя такая ошибка очень распространена. Пример: SELECT x, y, z, FROM tbl
+	  * Если ничего не предпринять, то это парсится как выбор столбца с именем FROM и алиасом tbl.
+	  * Чтобы избежать такой ситуации, мы не разрешаем парсить алиас без ключевого слова AS для идентификатора с именем FROM.
+	  *
+	  * Замечание: это также фильтрует случай, когда идентификатор квотирован.
+	  * Пример: SELECT x, y, z, `FROM` tbl. Но такой случай можно было бы разрешить.
+	  *
+	  * В дальнейшем было бы проще запретить неквотированные идентификаторы, совпадающие с ключевыми словами.
+	  */
+	bool allow_alias_without_as_keyword_now = allow_alias_without_as_keyword;
+	if (allow_alias_without_as_keyword)
+		if (const ASTIdentifier * id = typeid_cast<const ASTIdentifier *>(node.get()))
+			if (0 == strcasecmp(id->name.data(), "FROM"))
+				allow_alias_without_as_keyword_now = false;
+
 	ws.ignore(pos, end);
 
 	ASTPtr alias_node;
-	if (alias_p.parse(pos, end, alias_node, max_parsed_pos, expected))
+	if (ParserAlias(allow_alias_without_as_keyword_now).parse(pos, end, alias_node, max_parsed_pos, expected))
 	{
 		String alias_name = typeid_cast<ASTIdentifier &>(*alias_node).name;
 

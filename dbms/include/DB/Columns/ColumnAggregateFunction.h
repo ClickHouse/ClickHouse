@@ -103,30 +103,9 @@ public:
 		arenas.push_back(arena_);
 	}
 
-	ColumnPtr convertToValues() const
-	{
-		const IAggregateFunction * function = holder->func;
-		ColumnPtr res = function->getReturnType()->createColumn();
-
-		/** Если агрегатная функция возвращает нефинализированное состояние,
-		  * то надо просто скопировать указатели на него а также разделяемое владение аренами.
-		  */
-		if (typeid_cast<const ColumnAggregateFunction *>(res.get()))
-		{
-			ColumnAggregateFunction * res_ = new ColumnAggregateFunction(*this);
-			res = res_;
-			res_->getData().assign(getData().begin(), getData().end());
-			return res;
-		}
-
-		IColumn & column = *res;
-		res->reserve(getData().size());
-
-		for (auto val : getData())
-			function->insertResultInto(val, column);
-
-		return res;
-	}
+	/** Преобразовать столбец состояний агрегатной функции в столбец с готовыми значениями результатов.
+	  */
+	ColumnPtr convertToValues() const;
 
 	std::string getName() const override { return "ColumnAggregateFunction"; }
 
@@ -185,6 +164,9 @@ public:
 	void insert(const Field & x) override
 	{
 		IAggregateFunction * function = holder.get()->func;
+
+		if (unlikely(arenas.empty()))
+			arenas.emplace_back(new Arena);
 
 		getData().push_back(arenas.back().get()->alloc(function->sizeOfData()));
 		function->create(getData().back());

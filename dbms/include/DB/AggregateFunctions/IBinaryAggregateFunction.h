@@ -12,7 +12,7 @@ class IBinaryAggregateFunction : public IAggregateFunctionHelper<T>
 	const Derived & getDerived() const { return static_cast<const Derived &>(*this); }
 
 public:
-	void setArguments(const DataTypes & arguments)
+	void setArguments(const DataTypes & arguments) override
 	{
 		if (arguments.size() != 2)
 			throw Exception{
@@ -23,9 +23,9 @@ public:
 		getDerived().setArgumentsImpl(arguments);
 	}
 
-	void add(AggregateDataPtr place, const IColumn ** columns, const size_t row_num) const
+	void add(AggregateDataPtr place, const IColumn ** columns, const size_t row_num) const override
 	{
-		getDerived().addOne(place, *columns[0], *columns[1], row_num);
+		getDerived().addTwo(place, *columns[0], *columns[1], row_num);
 	}
 };
 
