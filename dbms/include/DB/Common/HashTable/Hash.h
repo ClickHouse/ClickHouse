@@ -135,8 +135,8 @@ struct TrivialHash
   *  а в другом месте, в агрегатной функции, в хэш таблице использовался такой же хэш,
   *  в результате чего, эта агрегатная функция чудовищно тормозила из-за коллизий.
   */
-template <UInt64 salt>
-inline UInt32 intHash32(UInt64 key)
+template <DB::UInt64 salt>
+inline DB::UInt32 intHash32(DB::UInt64 key)
 {
 	key ^= salt;
 
@@ -152,7 +152,7 @@ inline UInt32 intHash32(UInt64 key)
 
 
 /// Для контейнеров.
-template <typename T, UInt64 salt = 0>
+template <typename T, DB::UInt64 salt = 0>
 struct IntHash32
 {
 	size_t operator() (const T & key) const
