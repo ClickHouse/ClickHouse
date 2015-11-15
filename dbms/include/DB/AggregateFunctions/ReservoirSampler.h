@@ -186,6 +186,9 @@ public:
 	}
 
 private:
+	friend void qdigest_test(int normal_size, UInt64 value_limit, const std::vector<UInt64> & values, int queries_count, bool verbose);
+	friend void rs_perf_test();
+
 	/// Будем выделять немного памяти на стеке - чтобы избежать аллокаций, когда есть много объектов с маленьким количеством элементов.
 	static constexpr size_t bytes_on_stack = 64;
 	using Array = DB::PODArray<T, bytes_on_stack / sizeof(T), AllocatorWithStackMemory<Allocator<false>, bytes_on_stack>>;

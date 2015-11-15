@@ -265,7 +265,7 @@ public:
 		c_end += bytes_to_copy;
 	}
 
-	void swap(PODArray<T> & rhs)
+	void swap(PODArray & rhs)
 	{
 		std::swap(c_start, rhs.c_start);
 		std::swap(c_end, rhs.c_end);
@@ -290,13 +290,13 @@ public:
 		c_end = c_start + bytes_to_copy;
 	}
 
-	void assign(const PODArray<T> & from)
+	void assign(const PODArray & from)
 	{
 		assign(from.begin(), from.end());
 	}
 
 
-	bool operator== (const PODArray<T> & other) const
+	bool operator== (const PODArray & other) const
 	{
 		if (size() != other.size())
 			return false;
@@ -316,7 +316,7 @@ public:
 		return true;
 	}
 
-	bool operator!= (const PODArray<T> & other) const
+	bool operator!= (const PODArray & other) const
 	{
 		return !operator==(other);
 	}
