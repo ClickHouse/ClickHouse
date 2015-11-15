@@ -29,14 +29,13 @@ namespace DB
   * Поддерживается только часть интерфейса std::vector.
   *
   * Конструктор по-умолчанию создаёт пустой объект, который не выделяет память.
-  * Затем выделяется память минимум под POD_ARRAY_INITIAL_SIZE элементов.
+  * Затем выделяется память минимум под INITIAL_SIZE элементов.
   *
   * Если вставлять элементы push_back-ом, не делая reserve, то PODArray примерно в 2.5 раза быстрее std::vector.
   */
-#define POD_ARRAY_INITIAL_SIZE 4096UL
 
-template <typename T>
-class PODArray : private boost::noncopyable, private Allocator	/// empty base optimization
+template <typename T, size_t INITIAL_SIZE = 4096, typename TAllocator = Allocator<false>>
+class PODArray : private boost::noncopyable, private TAllocator	/// empty base optimization
 {
 private:
 	char * c_start;
@@ -79,7 +78,7 @@ private:
 
 		size_t bytes_to_alloc = to_size(n);
 
-		c_start = c_end = reinterpret_cast<char *>(Allocator::alloc(bytes_to_alloc));
+		c_start = c_end = reinterpret_cast<char *>(TAllocator::alloc(bytes_to_alloc));
 		c_end_of_storage = c_start + bytes_to_alloc;
 	}
 
@@ -88,7 +87,7 @@ private:
 		if (c_start == nullptr)
 			return;
 
-		Allocator::free(c_start, storage_size());
+		TAllocator::free(c_start, storage_size());
 	}
 
 	void realloc(size_t n)
@@ -102,7 +101,7 @@ private:
 		ptrdiff_t end_diff = c_end - c_start;
 		size_t bytes_to_alloc = to_size(n);
 
-		c_start = reinterpret_cast<char *>(Allocator::realloc(c_start, storage_size(), bytes_to_alloc));
+		c_start = reinterpret_cast<char *>(TAllocator::realloc(c_start, storage_size(), bytes_to_alloc));
 
 		c_end = c_start + end_diff;
 		c_end_of_storage = c_start + bytes_to_alloc;
@@ -174,7 +173,7 @@ public:
 	void reserve()
 	{
 		if (size() == 0)
-			realloc(POD_ARRAY_INITIAL_SIZE);
+			realloc(INITIAL_SIZE);
 		else
 			realloc(size() * 2);
 	}
