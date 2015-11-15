@@ -17,7 +17,6 @@
 
 #include <DB/Columns/ColumnArray.h>
 
-#include <stats/IntHash.h>
 #include <ext/range.hpp>
 
 

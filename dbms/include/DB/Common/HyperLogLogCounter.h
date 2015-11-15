@@ -1,9 +1,9 @@
 #pragma once
 
 #include <common/Common.h>
-#include <stats/IntHash.h>
 #include <DB/Common/HyperLogLogBiasEstimator.h>
 #include <DB/Common/CompactArray.h>
+#include <DB/Common/HashTable/Hash.h>
 
 #include <DB/IO/ReadBuffer.h>
 #include <DB/IO/WriteBuffer.h>

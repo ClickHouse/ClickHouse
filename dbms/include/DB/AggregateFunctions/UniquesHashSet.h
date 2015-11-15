@@ -13,8 +13,6 @@
 #include <DB/Common/HashTable/HashTableAllocator.h>
 #include <DB/Common/HashTable/Hash.h>
 
-#include <stats/IntHash.h>
-
 
 /** Приближённый рассчёт чего-угодно, как правило, построен по следующей схеме:
   * - для рассчёта значения X используется некоторая структура данных;
@@ -304,7 +302,7 @@ public:
 		m_size = rhs.m_size;
 		skip_degree = rhs.skip_degree;
 		has_zero = rhs.has_zero;
-		
+
 		memcpy(buf, rhs.buf, buf_size() * sizeof(buf[0]));
 
 		return *this;
@@ -314,13 +312,13 @@ public:
 	{
 		free();
 	}
-	
+
 	void insert(Value_t x)
 	{
 		HashValue_t hash_value = hash(x);
 		if (!good(hash_value))
 			return;
-		
+
 		insertImpl(hash_value);
 		shrinkIfNeed();
 	}
@@ -377,7 +375,7 @@ public:
 	{
 		if (m_size > UNIQUES_HASH_MAX_SIZE)
 			throw Poco::Exception("Cannot write UniquesHashSet: too large size_degree.");
-		
+
 		DB::writeIntBinary(skip_degree, wb);
 		DB::writeVarUInt(m_size, wb);
 
@@ -395,7 +393,7 @@ public:
 	void read(DB::ReadBuffer & rb)
 	{
 		has_zero = false;
-		
+
 		DB::readIntBinary(skip_degree, rb);
 		DB::readVarUInt(m_size, rb);
 
@@ -403,7 +401,7 @@ public:
 			throw Poco::Exception("Cannot read UniquesHashSet: too large size_degree.");
 
 		free();
-		
+
 		UInt8 new_size_degree = m_size <= 1
 			 ? UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE
 			 : std::max(UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE, static_cast<int>(log2(m_size - 1)) + 2);
@@ -455,7 +453,7 @@ public:
 	static void skip(DB::ReadBuffer & rb)
 	{
 		size_t size = 0;
-		
+
 		rb.ignore();
 		DB::readVarUInt(size, rb);
 
@@ -469,14 +467,14 @@ public:
 	{
 		if (m_size > UNIQUES_HASH_MAX_SIZE)
 			throw Poco::Exception("Cannot write UniquesHashSet: too large size_degree.");
-		
+
 		DB::writeIntText(skip_degree, wb);
 		wb.write(",", 1);
 		DB::writeIntText(m_size, wb);
 
 		if (has_zero)
 			wb.write(",0", 2);
-				
+
 		for (size_t i = 0; i < buf_size(); ++i)
 		{
 			if (buf[i])
@@ -490,7 +488,7 @@ public:
 	void readText(DB::ReadBuffer & rb)
 	{
 		has_zero = false;
-		
+
 		DB::readIntText(skip_degree, rb);
 		DB::assertString(",", rb);
 		DB::readIntText(m_size, rb);
