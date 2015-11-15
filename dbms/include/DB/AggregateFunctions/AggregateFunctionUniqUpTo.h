@@ -145,7 +145,7 @@ public:
 		return new DataTypeUInt64;
 	}
 
-	void setArgument(const DataTypePtr & argument) override
+	void setArgument(const DataTypePtr & argument)
 	{
 	}
 

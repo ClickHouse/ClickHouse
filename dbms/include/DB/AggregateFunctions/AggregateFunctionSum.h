@@ -32,7 +32,7 @@ public:
 		return new typename DataTypeFromFieldType<typename NearestFieldType<T>::Type>::Type;
 	}
 
-	void setArgument(const DataTypePtr & argument) override
+	void setArgument(const DataTypePtr & argument)
 	{
 		if (!argument->isNumeric())
 			throw Exception("Illegal type " + argument->getName() + " of argument for aggregate function " + getName(),

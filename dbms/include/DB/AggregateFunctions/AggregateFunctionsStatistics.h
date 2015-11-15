@@ -122,7 +122,7 @@ public:
 		return new DataTypeFloat64;
 	}
 
-	void setArgument(const DataTypePtr & argument) override
+	void setArgument(const DataTypePtr & argument)
 	{
 		if (!argument->behavesAsNumber())
 			throw Exception("Illegal type " + argument->getName() + " of argument for aggregate function " + getName(),

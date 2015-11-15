@@ -539,7 +539,7 @@ public:
 		return type;
 	}
 
-	void setArgument(const DataTypePtr & argument) override
+	void setArgument(const DataTypePtr & argument)
 	{
 		type = argument;
 

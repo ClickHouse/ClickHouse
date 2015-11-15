@@ -61,6 +61,7 @@ void registerAggregateFunctionGroupArray(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupUniqArray(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsQuantile(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsQuantileExact(AggregateFunctionFactory & factory);
+void registerAggregateFunctionsQuantileExactWeighted(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsQuantileDeterministic(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsQuantileTiming(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsSequenceMatch(AggregateFunctionFactory & factory);
@@ -83,6 +84,8 @@ AggregateFunctionFactory::AggregateFunctionFactory()
 	registerAggregateFunctionGroupArray(*this);
 	registerAggregateFunctionGroupUniqArray(*this);
 	registerAggregateFunctionsQuantile(*this);
+	registerAggregateFunctionsQuantileExact(*this);
+	registerAggregateFunctionsQuantileExactWeighted(*this);
 	registerAggregateFunctionsQuantileDeterministic(*this);
 	registerAggregateFunctionsQuantileTiming(*this);
 	registerAggregateFunctionsSequenceMatch(*this);
@@ -91,7 +94,6 @@ AggregateFunctionFactory::AggregateFunctionFactory()
 	registerAggregateFunctionSum(*this);
 	registerAggregateFunctionsUniq(*this);
 	registerAggregateFunctionUniqUpTo(*this);
-	registerAggregateFunctionsQuantileExact(*this);
 }
 
 

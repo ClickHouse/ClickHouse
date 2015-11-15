@@ -49,7 +49,7 @@ public:
 		return new DataTypeArray(new typename DataTypeFromFieldType<T>::Type);
 	}
 
-	void setArgument(const DataTypePtr & argument) override
+	void setArgument(const DataTypePtr & argument)
 	{
 	}
 

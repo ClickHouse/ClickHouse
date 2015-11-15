@@ -557,7 +557,7 @@ public:
 		return new DataTypeFloat32;
 	}
 
-	void setArgument(const DataTypePtr & argument) override
+	void setArgument(const DataTypePtr & argument)
 	{
 	}
 
@@ -676,7 +676,7 @@ public:
 		return new DataTypeArray(new DataTypeFloat32);
 	}
 
-	void setArgument(const DataTypePtr & argument) override
+	void setArgument(const DataTypePtr & argument)
 	{
 	}
 

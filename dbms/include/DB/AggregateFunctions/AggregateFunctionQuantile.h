@@ -51,7 +51,7 @@ public:
 		return type;
 	}
 
-	void setArgument(const DataTypePtr & argument) override
+	void setArgument(const DataTypePtr & argument)
 	{
 		if (returns_float)
 			type = new DataTypeFloat64;
@@ -126,7 +126,7 @@ public:
 		return new DataTypeArray(type);
 	}
 
-	void setArgument(const DataTypePtr & argument) override
+	void setArgument(const DataTypePtr & argument)
 	{
 		if (returns_float)
 			type = new DataTypeFloat64;
