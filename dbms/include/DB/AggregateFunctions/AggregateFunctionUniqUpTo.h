@@ -104,7 +104,7 @@ struct __attribute__((__packed__)) AggregateFunctionUniqUpToData
 	}
 
 
-	void addOne(const IColumn & column, size_t row_num, UInt8 threshold)
+	void addImpl(const IColumn & column, size_t row_num, UInt8 threshold)
 	{
 		insert(static_cast<const ColumnVector<T> &>(column).getData()[row_num], threshold);
 	}
@@ -115,7 +115,7 @@ struct __attribute__((__packed__)) AggregateFunctionUniqUpToData
 template <>
 struct AggregateFunctionUniqUpToData<String> : AggregateFunctionUniqUpToData<UInt64>
 {
-	void addOne(const IColumn & column, size_t row_num, UInt8 threshold)
+	void addImpl(const IColumn & column, size_t row_num, UInt8 threshold)
 	{
 		/// Имейте ввиду, что вычисление приближённое.
 		StringRef value = column.getDataAt(row_num);
@@ -163,9 +163,9 @@ public:
 		threshold = threshold_param;
 	}
 
-	void addOne(AggregateDataPtr place, const IColumn & column, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const
 	{
-		this->data(place).addOne(column, row_num, threshold);
+		this->data(place).addImpl(column, row_num, threshold);
 	}
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override

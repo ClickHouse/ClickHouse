@@ -23,11 +23,11 @@ public:
 	/// Добавить значение.
 	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const override
 	{
-		static_cast<const Derived &>(*this).addZero(place);
+		static_cast<const Derived &>(*this).addImpl(place);
 	}
 
 	/** Реализуйте это в классе-наследнике:
-	  * void addZero(AggregateDataPtr place) const;
+	  * void addImpl(AggregateDataPtr place) const;
 	  */
 };
 

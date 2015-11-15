@@ -129,7 +129,7 @@ public:
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
 
-	void addOne(AggregateDataPtr place, const IColumn & column, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const
 	{
 		this->data(place).update(column, row_num);
 	}
@@ -400,7 +400,7 @@ public:
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
 
-	void addTwo(AggregateDataPtr place, const IColumn & column_left, const IColumn & column_right, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column_left, const IColumn & column_right, size_t row_num) const
 	{
 		this->data(place).update(column_left, column_right, row_num);
 	}

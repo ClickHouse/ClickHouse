@@ -25,7 +25,7 @@ public:
 
 	void add(AggregateDataPtr place, const IColumn ** columns, const size_t row_num) const override
 	{
-		getDerived().addTwo(place, *columns[0], *columns[1], row_num);
+		getDerived().addImpl(place, *columns[0], *columns[1], row_num);
 	}
 };
 

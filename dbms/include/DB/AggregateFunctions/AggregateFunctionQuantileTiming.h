@@ -570,7 +570,7 @@ public:
 	}
 
 
-	void addOne(AggregateDataPtr place, const IColumn & column, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const
 	{
 		this->data(place).insert(static_cast<const ColumnVector<ArgumentFieldType> &>(column).getData()[row_num]);
 	}
@@ -693,7 +693,7 @@ public:
 	}
 
 
-	void addOne(AggregateDataPtr place, const IColumn & column, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const
 	{
 		this->data(place).insert(static_cast<const ColumnVector<ArgumentFieldType> &>(column).getData()[row_num]);
 	}
@@ -762,7 +762,7 @@ public:
 			levels[i] = apply_visitor(FieldVisitorConvertToNumber<Float64>(), params[i]);
 	}
 
-	void addTwo(AggregateDataPtr place, const IColumn & column_value, const IColumn & column_weight, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column_value, const IColumn & column_weight, size_t row_num) const
 	{
 		this->data(place).insertWeighted(
 			static_cast<const ColumnVector<ArgumentFieldType> &>(column_value).getData()[row_num],

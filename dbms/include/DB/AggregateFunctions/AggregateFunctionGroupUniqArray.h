@@ -54,7 +54,7 @@ public:
 	}
 
 
-	void addOne(AggregateDataPtr place, const IColumn & column, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const
 	{
 		this->data(place).value.insert(static_cast<const ColumnVector<T> &>(column).getData()[row_num]);
 	}
@@ -106,7 +106,7 @@ template <typename T>
 class AggregateFunctionGroupUniqArrays final : public AggregateFunctionGroupUniqArray<T>
 {
 public:
-	void addOne(AggregateDataPtr place, const IColumn & column, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const
 	{
 		const ColumnArray & arr = static_cast<const ColumnArray &>(column);
 		const ColumnArray::Offsets_t & offsets = arr.getOffsets();

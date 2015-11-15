@@ -25,11 +25,11 @@ public:
 	/// Добавить значение.
 	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const override
 	{
-		static_cast<const Derived &>(*this).addOne(place, *columns[0], row_num);
+		static_cast<const Derived &>(*this).addImpl(place, *columns[0], row_num);
 	}
 
 	/** Реализуйте это в классе-наследнике:
-	  * void addOne(AggregateDataPtr place, const IColumn & column, size_t row_num) const;
+	  * void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const;
 	  */
 };
 
