@@ -25,8 +25,6 @@
 
 #include <ext/range.hpp>
 
-#include <stats/IntHash.h>
-
 
 namespace DB
 {
