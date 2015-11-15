@@ -3,6 +3,7 @@
 #include <limits>
 
 #include <DB/Common/MemoryTracker.h>
+#include <DB/Common/HashTable/Hash.h>
 
 #include <DB/Core/FieldVisitors.h>
 
