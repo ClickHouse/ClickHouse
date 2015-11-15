@@ -26,7 +26,10 @@ namespace DB
 template <typename T>
 struct AggregateFunctionQuantileExactData
 {
-	using Array = PODArray<T>;
+	/// Сразу будет выделена память на несколько элементов так, чтобы состояние занимало 64 байта.
+	static constexpr size_t bytes_in_arena = 64 - sizeof(PODArray<T>);
+
+	using Array = PODArray<T, bytes_in_arena / sizeof(T), AllocatorWithStackMemory<Allocator<false>, bytes_in_arena>>;
 	Array array;
 };
 
