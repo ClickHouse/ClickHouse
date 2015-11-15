@@ -13,6 +13,7 @@
 #include <DB/DataTypes/DataTypeArray.h>
 
 #include <DB/AggregateFunctions/IUnaryAggregateFunction.h>
+#include <DB/AggregateFunctions/IBinaryAggregateFunction.h>
 
 #include <DB/Columns/ColumnArray.h>
 
@@ -730,7 +731,8 @@ public:
 
 
 template <typename ArgumentFieldType, typename WeightFieldType>
-class AggregateFunctionQuantilesTimingWeighted final : public IAggregateFunctionHelper<QuantileTiming>
+class AggregateFunctionQuantilesTimingWeighted final
+	: public IBinaryAggregateFunction<QuantileTiming, AggregateFunctionQuantilesTimingWeighted<ArgumentFieldType, WeightFieldType>>
 {
 private:
 	using Levels = std::vector<double>;
@@ -744,7 +746,7 @@ public:
 		return new DataTypeArray(new DataTypeFloat32);
 	}
 
-	void setArguments(const DataTypes & arguments) override
+	void setArgumentsImpl(const DataTypes & arguments)
 	{
 	}
 
@@ -760,11 +762,11 @@ public:
 			levels[i] = apply_visitor(FieldVisitorConvertToNumber<Float64>(), params[i]);
 	}
 
-	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const override
+	void addTwo(AggregateDataPtr place, const IColumn & column_value, const IColumn & column_weight, size_t row_num) const
 	{
 		this->data(place).insertWeighted(
-			static_cast<const ColumnVector<ArgumentFieldType> &>(*columns[0]).getData()[row_num],
-			static_cast<const ColumnVector<WeightFieldType> &>(*columns[1]).getData()[row_num]);
+			static_cast<const ColumnVector<ArgumentFieldType> &>(column_value).getData()[row_num],
+			static_cast<const ColumnVector<WeightFieldType> &>(column_weight).getData()[row_num]);
 	}
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override

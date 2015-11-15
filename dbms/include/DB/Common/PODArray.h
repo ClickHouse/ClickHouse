@@ -132,7 +132,17 @@ public:
     PODArray(const_iterator from_begin, const_iterator from_end) { alloc(from_end - from_begin); insert(from_begin, from_end); }
     ~PODArray() { dealloc(); }
 
-	PODArray(PODArray && other) { *this = std::move(other); }
+	PODArray(PODArray && other)
+	{
+		c_start = other.c_start;
+		c_end = other.c_end;
+		c_end_of_storage = other.c_end_of_storage;
+
+		other.c_start = nullptr;
+		other.c_end = nullptr;
+		other.c_end_of_storage = nullptr;
+	}
+
 	PODArray & operator=(PODArray && other)
 	{
 		std::swap(c_start, other.c_start);
@@ -223,6 +233,16 @@ public:
 			reserve();
 
 		*t_end() = x;
+		c_end += byte_size(1);
+	}
+
+	template <typename... Args>
+	void emplace_back(Args &&... args)
+	{
+		if (unlikely(c_end == c_end_of_storage))
+			reserve();
+
+		new (t_end()) T(std::forward<Args>(args)...);
 		c_end += byte_size(1);
 	}
 

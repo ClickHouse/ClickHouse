@@ -1,7 +1,6 @@
 #pragma once
 
 #include <limits>
-#include <vector>
 #include <algorithm>
 #include <climits>
 #include <sstream>
@@ -11,6 +10,7 @@
 #include <DB/IO/ReadBuffer.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
+#include <DB/Common/PODArray.h>
 #include <Poco/Exception.h>
 #include <boost/random.hpp>
 
@@ -150,13 +150,15 @@ public:
 	}
 
 private:
-	friend void rs_perf_test();
-	friend void qdigest_test(int, UInt64, const std::vector<UInt64> &, int, bool);
+	/// Будем выделять немного памяти на стеке - чтобы избежать аллокаций, когда есть много объектов с маленьким количеством элементов.
+	static constexpr size_t bytes_on_stack = 64;
+	using Element = std::pair<T, UInt32>;
+	using Array = DB::PODArray<Element, bytes_on_stack / sizeof(Element), AllocatorWithStackMemory<Allocator<false>, bytes_on_stack>>;
 
 	size_t sample_count;
 	size_t total_values{};
 	bool sorted{};
-	std::vector<std::pair<T, UInt32>> samples;
+	Array samples;
 	UInt8 skip_degree{};
 
 	void insertImpl(const T & v, const UInt32 hash)
