@@ -15,7 +15,7 @@ namespace DB
 
 struct AggregateFunctionGroupArrayData
 {
-	Array value;	/// TODO Добавить MemoryTracker
+	Array value;	/// TODO Добавить MemoryTracker /// TODO Оптимизация для распространённых типов.
 };
 
 

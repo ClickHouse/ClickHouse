@@ -123,7 +123,7 @@ class AggregateFunctionQuantilesDeterministic final
 private:
 	using Sample = typename AggregateFunctionQuantileDeterministicData<ArgumentFieldType>::Sample;
 
-	typedef std::vector<double> Levels;
+	using Levels = std::vector<double>;
 	Levels levels;
 	DataTypePtr type;
 
@@ -199,14 +199,14 @@ public:
 			ColumnFloat64::Container_t & data_to = static_cast<ColumnFloat64 &>(arr_to.getData()).getData();
 
 			for (size_t i = 0; i < size; ++i)
-				 data_to.push_back(sample.quantileInterpolated(levels[i]));
+				data_to.push_back(sample.quantileInterpolated(levels[i]));
 		}
 		else
 		{
 			typename ColumnVector<ArgumentFieldType>::Container_t & data_to = static_cast<ColumnVector<ArgumentFieldType> &>(arr_to.getData()).getData();
 
 			for (size_t i = 0; i < size; ++i)
-				 data_to.push_back(sample.quantileInterpolated(levels[i]));
+				data_to.push_back(sample.quantileInterpolated(levels[i]));
 		}
 	}
 };

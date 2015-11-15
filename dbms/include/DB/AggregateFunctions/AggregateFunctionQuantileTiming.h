@@ -733,7 +733,7 @@ template <typename ArgumentFieldType, typename WeightFieldType>
 class AggregateFunctionQuantilesTimingWeighted final : public IAggregateFunctionHelper<QuantileTiming>
 {
 private:
-	typedef std::vector<double> Levels;
+	using Levels = std::vector<double>;
 	Levels levels;
 
 public:
