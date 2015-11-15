@@ -4,9 +4,7 @@
 #include <algorithm>
 #include <climits>
 #include <sstream>
-#include <DB/AggregateFunctions/ReservoirSampler.h>
 #include <common/Common.h>
-#include <DB/Common/HashTable/Hash.h>
 #include <DB/IO/ReadBuffer.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/WriteHelpers.h>
@@ -20,32 +18,43 @@
 /// Вызов quantile занимает O(sample_count log sample_count), если после предыдущего вызова quantile был хотя бы один вызов insert. Иначе, O(1).
 /// То есть, имеет смысл сначала добавлять, потом получать квантили, не добавляя.
 
-namespace detail
-{
 const size_t DEFAULT_SAMPLE_COUNT = 8192;
-const auto MAX_SKIP_DEGREE = sizeof(UInt32) * 8;
-}
 
 /// Что делать, если нет ни одного значения - кинуть исключение, или вернуть 0 или NaN в случае double?
-enum class ReservoirSamplerDeterministicOnEmpty
+namespace ReservoirSamplerOnEmpty
 {
-	THROW,
-	RETURN_NAN_OR_ZERO,
+	enum Enum
+	{
+		THROW,
+		RETURN_NAN_OR_ZERO,
+	};
+}
+
+template<typename ResultType, bool IsFloatingPoint>
+struct NanLikeValueConstructor
+{
+	static ResultType getValue()
+	{
+		return std::numeric_limits<ResultType>::quiet_NaN();
+	}
+};
+template<typename ResultType>
+struct NanLikeValueConstructor<ResultType, false>
+{
+	static ResultType getValue()
+	{
+		return ResultType();
+	}
 };
 
-template <typename T,
-	ReservoirSamplerDeterministicOnEmpty OnEmpty = ReservoirSamplerDeterministicOnEmpty::THROW>
-class ReservoirSamplerDeterministic
+template<typename T, ReservoirSamplerOnEmpty::Enum OnEmpty = ReservoirSamplerOnEmpty::THROW, typename Comparer = std::less<T> >
+class ReservoirSampler
 {
-	bool good(const UInt32 hash)
-	{
-		return hash == ((hash >> skip_degree) << skip_degree);
-	}
-
 public:
-	ReservoirSamplerDeterministic(const size_t sample_count = DEFAULT_SAMPLE_COUNT)
-		: sample_count{sample_count}
+	ReservoirSampler(size_t sample_count_ = DEFAULT_SAMPLE_COUNT)
+		: sample_count(sample_count_)
 	{
+		rng.seed(123456);
 	}
 
 	void clear()
@@ -53,17 +62,23 @@ public:
 		samples.clear();
 		sorted = false;
 		total_values = 0;
+		rng.seed(123456);
 	}
 
-	void insert(const T & v, const UInt64 determinator)
+	void insert(const T & v)
 	{
-		const UInt32 hash = intHash64(determinator);
-		if (!good(hash))
-			return;
-
-		insertImpl(v, hash);
 		sorted = false;
 		++total_values;
+		if (samples.size() < sample_count)
+		{
+			samples.push_back(v);
+		}
+		else
+		{
+			UInt64 rnd = genRandom(total_values);
+			if (rnd < sample_count)
+				samples[rnd] = v;
+		}
 	}
 
 	size_t size() const
@@ -81,12 +96,11 @@ public:
 		double index = level * (samples.size() - 1);
 		size_t int_index = static_cast<size_t>(index + 0.5);
 		int_index = std::max(0LU, std::min(samples.size() - 1, int_index));
-		return samples[int_index].first;
+		return samples[int_index];
 	}
 
 	/** Если T не числовой тип, использование этого метода вызывает ошибку компиляции,
 	  *  но использование класса ошибки не вызывает. SFINAE.
-	  *  Не SFINAE. Функции члены шаблонов типов просто не проверяются, пока не используются.
 	  */
 	double quantileInterpolated(double level)
 	{
@@ -95,37 +109,50 @@ public:
 
 		sortIfNeeded();
 
-		const double index = std::max(0., std::min(samples.size() - 1., level * (samples.size() - 1)));
+		double index = std::max(0., std::min(samples.size() - 1., level * (samples.size() - 1)));
 
 		/// Чтобы получить значение по дробному индексу линейно интерполируем между соседними значениями.
 		size_t left_index = static_cast<size_t>(index);
 		size_t right_index = left_index + 1;
 		if (right_index == samples.size())
-			return samples[left_index].first;
+			return samples[left_index];
 
-		const double left_coef = right_index - index;
-		const double right_coef = index - left_index;
+		double left_coef = right_index - index;
+		double right_coef = index - left_index;
 
-		return samples[left_index].first * left_coef + samples[right_index].first * right_coef;
+		return samples[left_index] * left_coef + samples[right_index] * right_coef;
 	}
 
-	void merge(const ReservoirSamplerDeterministic & b)
+	void merge(const ReservoirSampler<T, OnEmpty> & b)
 	{
 		if (sample_count != b.sample_count)
-			throw Poco::Exception("Cannot merge ReservoirSamplerDeterministic's with different sample_count");
+			throw Poco::Exception("Cannot merge ReservoirSampler's with different sample_count");
 		sorted = false;
 
-		if (b.skip_degree > skip_degree)
+		if (b.total_values <= sample_count)
 		{
-			skip_degree = b.skip_degree;
-			thinOut();
+			for (size_t i = 0; i < b.samples.size(); ++i)
+				insert(b.samples[i]);
 		}
-
-		for (const auto & sample : b.samples)
-			if (good(sample.second))
-				insertImpl(sample.first, sample.second);
-
-		total_values += b.total_values;
+		else if (total_values <= sample_count)
+		{
+			Array from = std::move(samples);
+			samples.assign(b.samples.begin(), b.samples.end());
+			total_values = b.total_values;
+			for (size_t i = 0; i < from.size(); ++i)
+				insert(from[i]);
+		}
+		else
+		{
+			randomShuffle(samples);
+			total_values += b.total_values;
+			for (size_t i = 0; i < sample_count; ++i)
+			{
+				UInt64 rnd = genRandom(total_values);
+				if (rnd < b.total_values)
+					samples[i] = b.samples[i];
+			}
+		}
 	}
 
 	void read(DB::ReadBuffer & buf)
@@ -134,8 +161,13 @@ public:
 		DB::readIntBinary<size_t>(total_values, buf);
 		samples.resize(std::min(total_values, sample_count));
 
+		std::string rng_string;
+		DB::readStringBinary(rng_string, buf);
+		std::istringstream rng_stream(rng_string);
+		rng_stream >> rng;
+
 		for (size_t i = 0; i < samples.size(); ++i)
-			DB::readPODBinary(samples[i], buf);
+			DB::readBinary(samples[i], buf);
 
 		sorted = false;
 	}
@@ -145,54 +177,41 @@ public:
 		DB::writeIntBinary<size_t>(sample_count, buf);
 		DB::writeIntBinary<size_t>(total_values, buf);
 
+		std::ostringstream rng_stream;
+		rng_stream << rng;
+		DB::writeStringBinary(rng_stream.str(), buf);
+
 		for (size_t i = 0; i < std::min(sample_count, total_values); ++i)
-			DB::writePODBinary(samples[i], buf);
+			DB::writeBinary(samples[i], buf);
 	}
 
 private:
 	/// Будем выделять немного памяти на стеке - чтобы избежать аллокаций, когда есть много объектов с маленьким количеством элементов.
 	static constexpr size_t bytes_on_stack = 64;
-	using Element = std::pair<T, UInt32>;
-	using Array = DB::PODArray<Element, bytes_on_stack / sizeof(Element), AllocatorWithStackMemory<Allocator<false>, bytes_on_stack>>;
+	using Array = DB::PODArray<T, bytes_on_stack / sizeof(T), AllocatorWithStackMemory<Allocator<false>, bytes_on_stack>>;
 
 	size_t sample_count;
-	size_t total_values{};
-	bool sorted{};
+	size_t total_values = 0;
 	Array samples;
-	UInt8 skip_degree{};
+	boost::taus88 rng;
+	bool sorted = false;
 
-	void insertImpl(const T & v, const UInt32 hash)
+
+	UInt64 genRandom(size_t lim)
 	{
-		/// @todo why + 1? I don't quite recall
-		while (samples.size() + 1 >= sample_count)
-		{
-			if (++skip_degree > detail::MAX_SKIP_DEGREE)
-				throw DB::Exception{"skip_degree exceeds maximum value", DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED};
-			thinOut();
-		}
-
-		samples.emplace_back(v, hash);
+		/// При большом количестве значений будем генерировать случайные числа в несколько раз медленнее.
+		if (lim <= static_cast<UInt64>(rng.max()))
+			return static_cast<UInt32>(rng()) % static_cast<UInt32>(lim);
+		else
+			return (static_cast<UInt64>(rng()) * (static_cast<UInt64>(rng.max()) + 1ULL) + static_cast<UInt64>(rng())) % lim;
 	}
 
-	void thinOut()
+	void randomShuffle(Array & v)
 	{
-		auto size = samples.size();
-		for (size_t i = 0; i < size;)
+		for (size_t i = 1; i < v.size(); ++i)
 		{
-			if (!good(samples[i].second))
-			{
-				/// swap current element with the last one
-				std::swap(samples[size - 1], samples[i]);
-				--size;
-			}
-			else
-				++i;
-		}
-
-		if (size != samples.size())
-		{
-			samples.resize(size);
-			sorted = false;
+			size_t j = genRandom(i + 1);
+			std::swap(v[i], v[j]);
 		}
 	}
 
@@ -201,16 +220,14 @@ private:
 		if (sorted)
 			return;
 		sorted = true;
-		std::sort(samples.begin(), samples.end(), [] (const std::pair<T, UInt32> & lhs, const std::pair<T, UInt32> & rhs) {
-			return lhs.first < rhs.first;
-		});
+		std::sort(samples.begin(), samples.end(), Comparer());
 	}
 
 	template <typename ResultType>
 	ResultType onEmpty() const
 	{
-		if (OnEmpty == ReservoirSamplerDeterministicOnEmpty::THROW)
-			throw Poco::Exception("Quantile of empty ReservoirSamplerDeterministic");
+		if (OnEmpty == ReservoirSamplerOnEmpty::THROW)
+			throw Poco::Exception("Quantile of empty ReservoirSampler");
 		else
 			return NanLikeValueConstructor<ResultType, std::is_floating_point<ResultType>::value>::getValue();
 	}

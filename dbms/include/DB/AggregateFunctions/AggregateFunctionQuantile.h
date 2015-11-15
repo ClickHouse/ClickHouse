@@ -1,6 +1,6 @@
 #pragma once
 
-#include <stats/ReservoirSampler.h>
+#include <DB/AggregateFunctions/ReservoirSampler.h>
 
 #include <DB/Core/FieldVisitors.h>
 
