@@ -3,7 +3,7 @@
 #include <city.h>
 #include <type_traits>
 
-#include <stats/UniquesHashSet.h>
+#include <DB/AggregateFunctions/UniquesHashSet.h>
 
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/ReadHelpers.h>
