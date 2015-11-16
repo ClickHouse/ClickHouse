@@ -121,7 +121,7 @@ public:
 
 		/// Копируем данные во временный массив, чтобы получить нужный по порядку элемент.
 		using Pair = typename AggregateFunctionQuantileExactWeightedData<ValueType>::Map::value_type;
-		std::unique_ptr<Pair> array_holder(new Pair[size]);
+		std::unique_ptr<Pair[]> array_holder(new Pair[size]);
 		Pair * array = array_holder.get();
 
 		size_t i = 0;
