@@ -66,7 +66,7 @@ Block SummingSortedBlockInputStream::readImpl()
 			ColumnWithTypeAndName & column = merged_block.getByPosition(i);
 
 			/// Discover nested Maps and find columns for summation
-			if (const auto array_type = typeid_cast<const DataTypeArray *>(column.type.get()))
+			if (typeid_cast<const DataTypeArray *>(column.type.get()))
 			{
 				const auto map_name = DataTypeNested::extractNestedTableName(column.name);
 				/// if nested table name ends with `Map` it is a possible candidate for special handling

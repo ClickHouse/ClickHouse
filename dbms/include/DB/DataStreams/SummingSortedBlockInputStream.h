@@ -136,7 +136,7 @@ private:
 		/// merge nested maps
 		for (const auto & map : maps_to_sum)
 		{
-			const auto val_count = map.val_col_nums.size();
+			const size_t val_count = map.val_col_nums.size();
 
 			/// fetch key array reference from accumulator-row
 			auto & key_array_lhs = row[map.key_col_num].get<Array>();
@@ -184,7 +184,7 @@ private:
 				val_array_result.reserve(max_size);
 
 			/// discard first element
-			auto discard_prev = true;
+			bool discard_prev = true;
 
 			/// either insert or merge new element
 			const auto insert_or_sum = [&] (std::size_t & index, const std::vector<std::size_t> & key_pos,
