@@ -16,6 +16,10 @@ namespace DB
   */
 struct Settings
 {
+	/// Для того, чтобы инициализация из пустого initializer-list была value initialization, а не aggregate initialization в С++14.
+	/// http://en.cppreference.com/w/cpp/language/aggregate_initialization
+	Settings() {}
+
 	/** Перечисление настроек: тип, имя, значение по-умолчанию.
 	  *
 	  * Это сделано несколько неудобно, чтобы не перечислять настройки во многих разных местах.

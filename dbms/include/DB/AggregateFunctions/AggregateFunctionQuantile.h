@@ -1,6 +1,6 @@
 #pragma once
 
-#include <stats/ReservoirSampler.h>
+#include <DB/AggregateFunctions/ReservoirSampler.h>
 
 #include <DB/Core/FieldVisitors.h>
 
@@ -51,7 +51,7 @@ public:
 		return type;
 	}
 
-	void setArgument(const DataTypePtr & argument) override
+	void setArgument(const DataTypePtr & argument)
 	{
 		if (returns_float)
 			type = new DataTypeFloat64;
@@ -68,7 +68,7 @@ public:
 	}
 
 
-	void addOne(AggregateDataPtr place, const IColumn & column, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const
 	{
 		this->data(place).sample.insert(static_cast<const ColumnVector<ArgumentFieldType> &>(column).getData()[row_num]);
 	}
@@ -114,7 +114,7 @@ class AggregateFunctionQuantiles final
 private:
 	using Sample = typename AggregateFunctionQuantileData<ArgumentFieldType>::Sample;
 
-	typedef std::vector<double> Levels;
+	using Levels = std::vector<double>;
 	Levels levels;
 	DataTypePtr type;
 
@@ -126,7 +126,7 @@ public:
 		return new DataTypeArray(type);
 	}
 
-	void setArgument(const DataTypePtr & argument) override
+	void setArgument(const DataTypePtr & argument)
 	{
 		if (returns_float)
 			type = new DataTypeFloat64;
@@ -147,7 +147,7 @@ public:
 	}
 
 
-	void addOne(AggregateDataPtr place, const IColumn & column, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const
 	{
 		this->data(place).sample.insert(static_cast<const ColumnVector<ArgumentFieldType> &>(column).getData()[row_num]);
 	}
@@ -185,14 +185,14 @@ public:
 			ColumnFloat64::Container_t & data_to = static_cast<ColumnFloat64 &>(arr_to.getData()).getData();
 
 			for (size_t i = 0; i < size; ++i)
-				 data_to.push_back(sample.quantileInterpolated(levels[i]));
+				data_to.push_back(sample.quantileInterpolated(levels[i]));
 		}
 		else
 		{
 			typename ColumnVector<ArgumentFieldType>::Container_t & data_to = static_cast<ColumnVector<ArgumentFieldType> &>(arr_to.getData()).getData();
 
 			for (size_t i = 0; i < size; ++i)
-				 data_to.push_back(sample.quantileInterpolated(levels[i]));
+				data_to.push_back(sample.quantileInterpolated(levels[i]));
 		}
 	}
 };

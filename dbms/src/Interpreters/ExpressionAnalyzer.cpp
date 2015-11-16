@@ -704,9 +704,13 @@ void ExpressionAnalyzer::executeScalarSubqueries()
 	{
 		for (auto & child : ast->children)
 		{
-			/// Не опускаемся в FROM и JOIN.
-			if (child.get() != select_query->table.get() && child.get() != select_query->join.get())
+			/// Не опускаемся в FROM, JOIN, UNION.
+			if (child.get() != select_query->table.get()
+				&& child.get() != select_query->join.get()
+				&& child.get() != select_query->next_union_all.get())
+			{
 				executeScalarSubqueriesImpl(child);
+			}
 		}
 	}
 }
@@ -814,6 +818,7 @@ void ExpressionAnalyzer::executeScalarSubqueriesImpl(ASTPtr & ast)
 		  * Но если аргумент - не подзапрос, то глубже внутри него могут быть подзапросы, и в них надо опускаться.
 		  */
 		ASTFunction * func = typeid_cast<ASTFunction *>(ast.get());
+
 		if (func && func->kind == ASTFunction::FUNCTION
 			&& functionIsInOrGlobalInOperator(func->name))
 		{

@@ -33,17 +33,29 @@
 
 #include <assert.h>
 #ifndef ASSERT
-/// @todo return original define when NDEBUG is properly defined during compilation
-/* #define ASSERT(condition)					\
-   assert(condition);*/
-#define ASSERT(condition) ((void)0)
+#define ASSERT(condition)         \
+    assert(condition);
 #endif
 #ifndef UNIMPLEMENTED
 #define UNIMPLEMENTED() (abort())
 #endif
+#ifndef DOUBLE_CONVERSION_NO_RETURN
+#ifdef _MSC_VER
+#define DOUBLE_CONVERSION_NO_RETURN __declspec(noreturn)
+#else
+#define DOUBLE_CONVERSION_NO_RETURN __attribute__((noreturn))
+#endif
+#endif
 #ifndef UNREACHABLE
+#ifdef _MSC_VER
+void DOUBLE_CONVERSION_NO_RETURN abort_noreturn();
+inline void abort_noreturn() { abort(); }
+#define UNREACHABLE()   (abort_noreturn())
+#else
 #define UNREACHABLE()   (abort())
 #endif
+#endif
+
 
 // Double operations detection based on target architecture.
 // Linux uses a 80bit wide floating point stack on x86. This induces double
@@ -60,7 +72,7 @@
     defined(__hppa__) || defined(__ia64__) || \
     defined(__mips__) || \
     defined(__powerpc__) || defined(__ppc__) || defined(__ppc64__) || \
-    defined(_POWER) || defined(_ARC_PPC) || \
+    defined(_POWER) || defined(_ARCH_PPC) || defined(_ARCH_PPC64) || \
     defined(__sparc__) || defined(__sparc) || defined(__s390__) || \
     defined(__SH4__) || defined(__alpha__) || \
     defined(_MIPS_ARCH_MIPS32R2) || \

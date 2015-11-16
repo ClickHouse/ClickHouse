@@ -74,7 +74,7 @@ public:
 	}
 
 
-	void addTwo(AggregateDataPtr place, const IColumn & column, const IColumn & determinator, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column, const IColumn & determinator, size_t row_num) const
 	{
 		this->data(place).sample.insert(static_cast<const ColumnVector<ArgumentFieldType> &>(column).getData()[row_num],
 			determinator.get64(row_num));
@@ -123,7 +123,7 @@ class AggregateFunctionQuantilesDeterministic final
 private:
 	using Sample = typename AggregateFunctionQuantileDeterministicData<ArgumentFieldType>::Sample;
 
-	typedef std::vector<double> Levels;
+	using Levels = std::vector<double>;
 	Levels levels;
 	DataTypePtr type;
 
@@ -160,7 +160,7 @@ public:
 	}
 
 
-	void addTwo(AggregateDataPtr place, const IColumn & column, const IColumn & determinator, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column, const IColumn & determinator, size_t row_num) const
 	{
 		this->data(place).sample.insert(static_cast<const ColumnVector<ArgumentFieldType> &>(column).getData()[row_num],
 			determinator.get64(row_num));
@@ -199,14 +199,14 @@ public:
 			ColumnFloat64::Container_t & data_to = static_cast<ColumnFloat64 &>(arr_to.getData()).getData();
 
 			for (size_t i = 0; i < size; ++i)
-				 data_to.push_back(sample.quantileInterpolated(levels[i]));
+				data_to.push_back(sample.quantileInterpolated(levels[i]));
 		}
 		else
 		{
 			typename ColumnVector<ArgumentFieldType>::Container_t & data_to = static_cast<ColumnVector<ArgumentFieldType> &>(arr_to.getData()).getData();
 
 			for (size_t i = 0; i < size; ++i)
-				 data_to.push_back(sample.quantileInterpolated(levels[i]));
+				data_to.push_back(sample.quantileInterpolated(levels[i]));
 		}
 	}
 };

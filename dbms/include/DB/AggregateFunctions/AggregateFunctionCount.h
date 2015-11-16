@@ -31,7 +31,7 @@ public:
 	}
 
 
-	void addZero(AggregateDataPtr place) const
+	void addImpl(AggregateDataPtr place) const
 	{
 		++data(place).count;
 	}

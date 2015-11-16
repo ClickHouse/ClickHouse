@@ -3,7 +3,7 @@
 #include <city.h>
 #include <type_traits>
 
-#include <stats/UniquesHashSet.h>
+#include <DB/AggregateFunctions/UniquesHashSet.h>
 
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/ReadHelpers.h>
@@ -256,7 +256,7 @@ struct OneAdder<T, Data, typename std::enable_if<
 	std::is_same<Data, AggregateFunctionUniqHLL12Data<T> >::value>::type>
 {
 	template <typename T2 = T>
-	static void addOne(Data & data, const IColumn & column, size_t row_num,
+	static void addImpl(Data & data, const IColumn & column, size_t row_num,
 		typename std::enable_if<!std::is_same<T2, String>::value>::type * = nullptr)
 	{
 		const auto & value = static_cast<const ColumnVector<T2> &>(column).getData()[row_num];
@@ -264,7 +264,7 @@ struct OneAdder<T, Data, typename std::enable_if<
 	}
 
 	template <typename T2 = T>
-	static void addOne(Data & data, const IColumn & column,	size_t row_num,
+	static void addImpl(Data & data, const IColumn & column,	size_t row_num,
 		typename std::enable_if<std::is_same<T2, String>::value>::type * = nullptr)
 	{
 		StringRef value = column.getDataAt(row_num);
@@ -280,7 +280,7 @@ struct OneAdder<T, Data, typename std::enable_if<
 	std::is_same<Data, AggregateFunctionUniqCombinedData<T> >::value>::type>
 {
 	template <typename T2 = T>
-	static void addOne(Data & data, const IColumn & column, size_t row_num,
+	static void addImpl(Data & data, const IColumn & column, size_t row_num,
 		typename std::enable_if<!std::is_same<T2, String>::value>::type * = nullptr)
 	{
 		const auto & value = static_cast<const ColumnVector<T2> &>(column).getData()[row_num];
@@ -288,7 +288,7 @@ struct OneAdder<T, Data, typename std::enable_if<
 	}
 
 	template <typename T2 = T>
-	static void addOne(Data & data, const IColumn & column,	size_t row_num,
+	static void addImpl(Data & data, const IColumn & column,	size_t row_num,
 		typename std::enable_if<std::is_same<T2, String>::value>::type * = nullptr)
 	{
 		StringRef value = column.getDataAt(row_num);
@@ -301,14 +301,14 @@ struct OneAdder<T, Data, typename std::enable_if<
 	std::is_same<Data, AggregateFunctionUniqExactData<T> >::value>::type>
 {
 	template <typename T2 = T>
-	static void addOne(Data & data, const IColumn & column, size_t row_num,
+	static void addImpl(Data & data, const IColumn & column, size_t row_num,
 		typename std::enable_if<!std::is_same<T2, String>::value>::type * = nullptr)
 	{
 		data.set.insert(static_cast<const ColumnVector<T2> &>(column).getData()[row_num]);
 	}
 
 	template <typename T2 = T>
-	static void addOne(Data & data, const IColumn & column, size_t row_num,
+	static void addImpl(Data & data, const IColumn & column, size_t row_num,
 		typename std::enable_if<std::is_same<T2, String>::value>::type * = nullptr)
 	{
 		StringRef value = column.getDataAt(row_num);
@@ -337,13 +337,13 @@ public:
 		return new DataTypeUInt64;
 	}
 
-	void setArgument(const DataTypePtr & argument) override
+	void setArgument(const DataTypePtr & argument)
 	{
 	}
 
-	void addOne(AggregateDataPtr place, const IColumn & column, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const
 	{
-		detail::OneAdder<T, Data>::addOne(this->data(place), column, row_num);
+		detail::OneAdder<T, Data>::addImpl(this->data(place), column, row_num);
 	}
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override

@@ -13,7 +13,7 @@
 
 #include <DB/Common/Stopwatch.h>
 #include <common/threadpool.hpp>
-#include <stats/ReservoirSampler.h>
+#include <DB/AggregateFunctions/ReservoirSampler.h>
 
 #include <boost/program_options.hpp>
 
