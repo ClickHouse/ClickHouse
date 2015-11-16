@@ -86,7 +86,7 @@ public:
 		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
 		PODArray<TYPE> & out) const\
 	{\
-		validateKeyColumns(key_types);\
+		validateKeyTypes(key_types);\
 		\
 		const auto & attribute = getAttribute(attribute_name);\
 		if (attribute.type != AttributeUnderlyingType::TYPE)\
@@ -116,7 +116,7 @@ public:
 		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,
 		ColumnString * out) const
 	{
-		validateKeyColumns(key_types);
+		validateKeyTypes(key_types);
 
 		const auto & attribute = getAttribute(attribute_name);
 		if (attribute.type != AttributeUnderlyingType::String)
@@ -137,7 +137,7 @@ public:
 		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
 		const PODArray<TYPE> & def, PODArray<TYPE> & out) const\
 	{\
- 		validateKeyColumns(key_types);\
+ 		validateKeyTypes(key_types);\
  		\
 		const auto & attribute = getAttribute(attribute_name);\
 		if (attribute.type != AttributeUnderlyingType::TYPE)\
@@ -165,7 +165,7 @@ public:
 		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,
 		const ColumnString * const def, ColumnString * const out) const
 	{
- 		validateKeyColumns(key_types);
+ 		validateKeyTypes(key_types);
 
 		const auto & attribute = getAttribute(attribute_name);
 		if (attribute.type != AttributeUnderlyingType::String)
@@ -371,7 +371,7 @@ private:
 		return out.str();
 	}
 
-	void validateKeyColumns(const DataTypes & key_types) const
+	void validateKeyTypes(const DataTypes & key_types) const
 	{
 		if (key_types.size() != dict_struct.key->size())
 			throw Exception{
