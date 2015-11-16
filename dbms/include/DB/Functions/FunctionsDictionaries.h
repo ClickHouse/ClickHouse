@@ -20,6 +20,7 @@
 #include <DB/Dictionaries/HashedDictionary.h>
 #include <DB/Dictionaries/CacheDictionary.h>
 #include <DB/Dictionaries/ComplexKeyHashedDictionary.h>
+#include <DB/Dictionaries/ComplexKeyCacheDictionary.h>
 #include <DB/Dictionaries/RangeHashedDictionary.h>
 
 #include <ext/range.hpp>
@@ -820,7 +821,8 @@ private:
 		if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
 			!executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
 			!executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr) &&
-			!executeDispatchComplex(block, arguments, result, dict_ptr) &&
+			!executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict_ptr) &&
+			!executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict_ptr) &&
 			!executeDispatchRange<RangeHashedDictionary>(block, arguments, result, dict_ptr))
 			throw Exception{
 				"Unsupported dictionary type " + dict_ptr->getTypeName(),
@@ -880,10 +882,11 @@ private:
 		return true;
 	}
 
+	template <typename DictionaryType>
 	bool executeDispatchComplex(
 		Block & block, const ColumnNumbers & arguments, const size_t result, const IDictionaryBase * const dictionary)
 	{
-		const auto dict = typeid_cast<const ComplexKeyHashedDictionary *>(dictionary);
+		const auto dict = typeid_cast<const DictionaryType *>(dictionary);
 		if (!dict)
 			return false;
 
@@ -1360,7 +1363,8 @@ private:
 		if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
 			!executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
 			!executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr) &&
-			!executeDispatchComplex(block, arguments, result, dict_ptr) &&
+			!executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict_ptr) &&
+			!executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict_ptr) &&
 			!executeDispatchRange<RangeHashedDictionary>(block, arguments, result, dict_ptr))
 			throw Exception{
 				"Unsupported dictionary type " + dict_ptr->getTypeName(),
@@ -1422,10 +1426,11 @@ private:
 		return true;
 	}
 
+	template <typename DictionaryType>
 	bool executeDispatchComplex(
 		Block & block, const ColumnNumbers & arguments, const size_t result, const IDictionaryBase * const dictionary)
 	{
-		const auto dict = typeid_cast<const ComplexKeyHashedDictionary *>(dictionary);
+		const auto dict = typeid_cast<const DictionaryType *>(dictionary);
 		if (!dict)
 			return false;
 

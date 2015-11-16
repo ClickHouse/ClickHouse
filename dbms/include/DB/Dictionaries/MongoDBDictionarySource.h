@@ -111,6 +111,12 @@ public:
 		};
 	}
 
+	BlockInputStreamPtr loadKeys(
+		const ConstColumnPlainPtrs & key_columns, const std::vector<std::size_t> & requested_rows) override
+	{
+		throw Exception{"Method unsupported", ErrorCodes::NOT_IMPLEMENTED};
+	}
+
 	/// @todo: for MongoDB, modification date can somehow be determined from the `_id` object field
 	bool isModified() const override { return false; }
 

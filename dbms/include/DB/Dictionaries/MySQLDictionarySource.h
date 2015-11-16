@@ -58,6 +58,15 @@ public:
 		return new MySQLBlockInputStream{pool.Get(), query, sample_block, max_block_size};
 	}
 
+	BlockInputStreamPtr loadKeys(
+		const ConstColumnPlainPtrs & key_columns, const std::vector<std::size_t> & requested_rows) override
+	{
+		/// Здесь не логгируем и не обновляем время модификации, так как запрос может быть большим, и часто задаваться.
+
+		const auto query = composeLoadKeysQuery(key_columns, requested_rows);
+		return new MySQLBlockInputStream{pool.Get(), query, sample_block, max_block_size};
+	}
+
 	bool isModified() const override
 	{
 		if (dont_check_update_time)
@@ -307,6 +316,13 @@ private:
 		}
 
 		return query;
+	}
+
+	std::string composeLoadKeysQuery(
+		const ConstColumnPlainPtrs & key_columns, const std::vector<std::size_t> & requested_rows)
+	{
+		/// @todo implement
+		return {};
 	}
 
 	const DictionaryStructure dict_struct;
