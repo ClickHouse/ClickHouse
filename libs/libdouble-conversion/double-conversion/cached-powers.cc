@@ -148,7 +148,7 @@ void PowersOfTenCache::GetCachedPowerForBinaryExponentRange(
   int foo = kCachedPowersOffset;
   int index =
       (foo + static_cast<int>(k) - 1) / kDecimalExponentDistance + 1;
-  ASSERT(0 <= index && index < kCachedPowersLength);
+  ASSERT(0 <= index && index < static_cast<int>(ARRAY_SIZE(kCachedPowers)));
   CachedPower cached_power = kCachedPowers[index];
   ASSERT(min_exponent <= cached_power.binary_exponent);
   (void) max_exponent;  // Mark variable as used.
