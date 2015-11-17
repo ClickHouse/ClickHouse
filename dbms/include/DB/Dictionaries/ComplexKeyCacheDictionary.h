@@ -3,6 +3,8 @@
 #include <DB/Dictionaries/IDictionary.h>
 #include <DB/Dictionaries/IDictionarySource.h>
 #include <DB/Dictionaries/DictionaryStructure.h>
+#include <DB/Common/Arena.h>
+#include <DB/Common/ArenaWithFreeLists.h>
 #include <DB/Common/HashTable/HashMap.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/Core/StringRef.h>
@@ -599,15 +601,15 @@ private:
 				/// handle memory allocated for old key
 				if (key == cell.key)
 				{
-					/// new key is same as old key, rollback memory allocated for the new key
-					keys_pool.rollback(key.size);
+					keys_pool.free(key.data, key.size);
 					key = cell.key;
 				}
 				else
 				{
 					/// new key is different from the old one
-					/// @todo need a pool capable of deallocations
-					/*keys_pool.dealloc(cell.key.data, cell.key.size);*/
+					if (cell.key.data)
+						keys_pool.free(cell.key.data, cell.key.size);
+
 					cell.key = key;
 				}
 
@@ -650,8 +652,9 @@ private:
 				key = cell.key;
 			else
 			{
-				/// @todo need a pool capable of deallocations
-				/*keys_pool.dealloc(cell.key.data, cell.key.size);*/
+				if (cell.key.data)
+					keys_pool.free(cell.key.data, cell.key.size);
+
 				/// copy key from temporary pool to `keys_pool`
 				key = copyKeyToPool(key, keys_pool);
 				cell.key = key;
@@ -786,6 +789,7 @@ private:
 		return ts.tv_nsec ^ getpid();
 	}
 
+	template <typename Arena>
 	static StringRef placeKeysInPool(
 		const std::size_t row, const ConstColumnPlainPtrs & key_columns, StringRefs & keys, Arena & pool)
 	{
@@ -809,6 +813,7 @@ private:
 		return { res, sum_keys_size };
 	}
 
+	template <typename Arena>
 	static StringRef copyKeyToPool(const StringRef key, Arena & pool)
 	{
 		const auto res = pool.alloc(key.size);
@@ -829,7 +834,7 @@ private:
 	std::map<std::string, std::size_t> attribute_index_by_name;
 	mutable std::vector<attribute_t> attributes;
 	mutable std::vector<cell_metadata_t> cells;
-	mutable Arena keys_pool;
+	mutable ArenaWithFreeLists keys_pool;
 
 	mutable std::mt19937_64 rnd_engine{getSeed()};
 

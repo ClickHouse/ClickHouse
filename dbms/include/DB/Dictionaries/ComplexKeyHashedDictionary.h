@@ -6,6 +6,7 @@
 #include <DB/Core/StringRef.h>
 #include <DB/Common/HashTable/HashMap.h>
 #include <DB/Columns/ColumnString.h>
+#include <DB/Common/Arena.h>
 #include <ext/range.hpp>
 #include <atomic>
 #include <memory>
