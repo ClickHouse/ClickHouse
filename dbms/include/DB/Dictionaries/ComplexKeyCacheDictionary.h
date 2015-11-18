@@ -5,6 +5,7 @@
 #include <DB/Dictionaries/DictionaryStructure.h>
 #include <DB/Common/Arena.h>
 #include <DB/Common/ArenaWithFreeLists.h>
+#include <DB/Common/SmallObjectPool.h>
 #include <DB/Common/HashTable/HashMap.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/Core/StringRef.h>
@@ -32,7 +33,7 @@ public:
 		DictionarySourcePtr source_ptr, const DictionaryLifetime dict_lifetime,
 		const std::size_t size)
 		: name{name}, dict_struct(dict_struct), source_ptr{std::move(source_ptr)}, dict_lifetime(dict_lifetime),
-		  key_description{createKeyDescription(dict_struct)}, size{round_up_to_power_of_two(size)}, cells{this->size}
+		  size{round_up_to_power_of_two(size)}
 	{
 		if (!this->source_ptr->supportsSelectiveLoad())
 			throw Exception{
@@ -55,7 +56,10 @@ public:
 
 	std::string getTypeName() const override { return "ComplexKeyCache"; }
 
-	std::size_t getBytesAllocated() const override { return bytes_allocated; }
+	std::size_t getBytesAllocated() const override
+	{
+		return bytes_allocated + key_size_is_fixed ? fixed_size_keys_pool->size() : keys_pool->size();
+	}
 
 	std::size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
 
@@ -581,7 +585,7 @@ private:
 
 			for (const auto row : ext::range(0, rows))
 			{
-				auto key = placeKeysInPool(row, key_columns, keys, keys_pool);
+				auto key = allocKey(row, key_columns, keys);
 				const auto hash = StringRefHash{}(key);
 				const auto cell_idx = hash & (size - 1);
 				auto & cell = cells[cell_idx];
@@ -601,14 +605,14 @@ private:
 				/// handle memory allocated for old key
 				if (key == cell.key)
 				{
-					keys_pool.free(key.data, key.size);
+					freeKey(key);
 					key = cell.key;
 				}
 				else
 				{
 					/// new key is different from the old one
 					if (cell.key.data)
-						keys_pool.free(cell.key.data, cell.key.size);
+						freeKey(cell.key);
 
 					cell.key = key;
 				}
@@ -653,10 +657,10 @@ private:
 			else
 			{
 				if (cell.key.data)
-					keys_pool.free(cell.key.data, cell.key.size);
+					freeKey(cell.key);
 
-				/// copy key from temporary pool to `keys_pool`
-				key = copyKeyToPool(key, keys_pool);
+				/// copy key from temporary pool
+				key = copyKey(key);
 				cell.key = key;
 			}
 
@@ -768,6 +772,22 @@ private:
 		return attributes[it->second];
 	}
 
+	StringRef allocKey(const std::size_t row, const ConstColumnPlainPtrs & key_columns, StringRefs & keys) const
+	{
+		if (key_size_is_fixed)
+			return placeKeysInFixedSizePool(row, key_columns);
+
+		return placeKeysInPool(row, key_columns, keys, *keys_pool);
+	}
+
+	void freeKey(const StringRef key) const
+	{
+		if (key_size_is_fixed)
+			fixed_size_keys_pool->free(key.data);
+		else
+			keys_pool->free(key.data, key.size);
+	}
+
 	static std::size_t round_up_to_power_of_two(std::size_t n)
 	{
 		--n;
@@ -813,10 +833,25 @@ private:
 		return { res, sum_keys_size };
 	}
 
-	template <typename Arena>
-	static StringRef copyKeyToPool(const StringRef key, Arena & pool)
+	StringRef placeKeysInFixedSizePool(
+		const std::size_t row, const ConstColumnPlainPtrs & key_columns) const
 	{
-		const auto res = pool.alloc(key.size);
+		const auto res = fixed_size_keys_pool->alloc();
+		auto place = res;
+
+		for (const auto & key_column : key_columns)
+		{
+			const auto key = key_column->getDataAt(row);
+			memcpy(place, key.data, key.size);
+			place += key.size;
+		}
+
+		return { res, key_size };
+	}
+
+	StringRef copyKey(const StringRef key) const
+	{
+		const auto res = key_size_is_fixed ? fixed_size_keys_pool->alloc() : keys_pool->alloc(key.size);
 		memcpy(res, key.data, key.size);
 
 		return { res, key.size };
@@ -826,15 +861,20 @@ private:
 	const DictionaryStructure dict_struct;
 	const DictionarySourcePtr source_ptr;
 	const DictionaryLifetime dict_lifetime;
-	const std::string key_description;
+	const std::string key_description{createKeyDescription(dict_struct)};
 
 	mutable Poco::RWLock rw_lock;
 	const std::size_t size;
 	const std::uint64_t zero_cell_idx{getCellIdx(StringRef{})};
 	std::map<std::string, std::size_t> attribute_index_by_name;
 	mutable std::vector<attribute_t> attributes;
-	mutable std::vector<cell_metadata_t> cells;
-	mutable ArenaWithFreeLists keys_pool;
+	mutable std::vector<cell_metadata_t> cells{size};
+	const bool key_size_is_fixed{dict_struct.isKeySizeFixed()};
+	std::size_t key_size{key_size_is_fixed ? dict_struct.getKeySize() : 0};
+	std::unique_ptr<ArenaWithFreeLists> keys_pool = key_size_is_fixed ? nullptr :
+		std::make_unique<ArenaWithFreeLists>();
+	std::unique_ptr<SmallObjectPool> fixed_size_keys_pool = key_size_is_fixed ?
+		std::make_unique<SmallObjectPool>(key_size) : nullptr;
 
 	mutable std::mt19937_64 rnd_engine{getSeed()};
 

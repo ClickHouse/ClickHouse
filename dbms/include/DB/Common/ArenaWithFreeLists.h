@@ -2,8 +2,6 @@
 
 #include <cstdlib>
 #include <memory>
-#include <vector>
-#include <Poco/SharedPtr.h>
 #include <common/likely.h>
 #include <DB/Core/Defines.h>
 #include <DB/Common/ProfileEvents.h>
@@ -182,6 +180,13 @@ public:
 	{
 		putBlock(ptr, size);
 	}
+
+	/// Размер выделенного пула в байтах
+	size_t size() const
+	{
+		return size_in_bytes;
+	}
+
 };
 
 

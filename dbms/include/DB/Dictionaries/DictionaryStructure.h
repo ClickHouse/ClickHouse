@@ -184,6 +184,24 @@ struct DictionaryStructure final
 			throw Exception{"Dictionary has no attributes defined", ErrorCodes::BAD_ARGUMENTS};
 	}
 
+	bool isKeySizeFixed() const
+	{
+		if (!key)
+			return true;
+
+		for (const auto key_i : * key)
+			if (key_i.underlying_type == AttributeUnderlyingType::String)
+				return false;
+
+		return true;
+	}
+
+	std::size_t getKeySize() const
+	{
+		return std::accumulate(std::begin(*key), std::end(*key), std::size_t{},
+			[] (const auto running_size, const auto & key_i) {return running_size + key_i.type->getSizeOfField(); });
+	}
+
 private:
 	std::vector<DictionaryAttribute> getAttributes(
 		const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
