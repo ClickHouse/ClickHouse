@@ -30,6 +30,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 	ParserString s_where("WHERE", true, true);
 	ParserString s_final("FINAL", true, true);
 	ParserString s_sample("SAMPLE", true, true);
+	ParserString s_offset("OFFSET", true, true);
 	ParserString s_group("GROUP", true, true);
 	ParserString s_by("BY", true, true);
 	ParserString s_with("WITH", true, true);
@@ -161,6 +162,19 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 				return false;
 
 			ws.ignore(pos, end);
+
+			/// OFFSET number
+			if (s_offset.ignore(pos, end, max_parsed_pos, expected))
+			{
+				ws.ignore(pos, end);
+
+				ParserNumber num;
+
+				if (!num.parse(pos, end, select_query->sample_offset, max_parsed_pos, expected))
+					return false;
+
+				ws.ignore(pos, end);
+			}
 		}
 
 		return true;
@@ -355,6 +369,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 		select_query->children.push_back(select_query->join);
 	if (select_query->sample_size)
 		select_query->children.push_back(select_query->sample_size);
+	if (select_query->sample_offset)
+		select_query->children.push_back(select_query->sample_offset);
 	if (select_query->prewhere_expression)
 		select_query->children.push_back(select_query->prewhere_expression);
 	if (select_query->where_expression)
