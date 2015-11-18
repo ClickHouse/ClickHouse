@@ -1074,12 +1074,15 @@ private:
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
 			};
 
-		if (!typeid_cast<const DataTypeUInt64 *>(arguments[2].get()))
+		if (!typeid_cast<const DataTypeUInt64 *>(arguments[2].get()) &&
+			!typeid_cast<const DataTypeTuple *>(arguments[2].get()))
+		{
 			throw Exception{
-				"Illegal type " + arguments[2]->getName() + " of third argument of function " + getName() +
-					", must be UInt64.",
+				"Illegal type " + arguments[2]->getName() + " of third argument of function " + getName()
+					+ ", must be UInt64 or tuple(...).",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
 			};
+		}
 
 		if (!typeid_cast<const DataTypeString *>(arguments[3].get()))
 			throw Exception{
@@ -1105,7 +1108,9 @@ private:
 
 		if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
 			!executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
-			!executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr))
+			!executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr) &&
+			!executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict_ptr) &&
+			!executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict_ptr))
 			throw Exception{
 				"Unsupported dictionary type " + dict_ptr->getTypeName(),
 				ErrorCodes::UNKNOWN_TYPE
@@ -1221,6 +1226,60 @@ private:
 				"Fourth argument of function " + getName() + " must be String",
 				ErrorCodes::ILLEGAL_COLUMN
 			};
+	}
+
+	template <typename DictionaryType>
+	bool executeDispatchComplex(
+		Block & block, const ColumnNumbers & arguments, const size_t result, const IDictionaryBase * const dictionary)
+	{
+		const auto dict = typeid_cast<const DictionaryType *>(dictionary);
+		if (!dict)
+			return false;
+
+		if (arguments.size() != 4)
+			throw Exception{
+				"Function " + getName() + " for dictionary of type " + dict->getTypeName() +
+					" requires exactly 4 arguments",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
+			};
+
+		const auto attr_name_col = typeid_cast<const ColumnConst<String> *>(block.getByPosition(arguments[1]).column.get());
+		if (!attr_name_col)
+			throw Exception{
+				"Second argument of function " + getName() + " must be a constant string",
+					ErrorCodes::ILLEGAL_COLUMN
+			};
+
+		const auto & attr_name = attr_name_col->getData();
+
+		const auto key_col_with_type = block.getByPosition(arguments[2]);
+		const auto & key_col = typeid_cast<const ColumnTuple &>(*key_col_with_type.column);
+		const auto key_columns = ext::map<ConstColumnPlainPtrs>(key_col.getColumns(), [] (const ColumnPtr & ptr) {
+			return ptr.get();
+		});
+		const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
+
+		const auto out = new ColumnString;
+		block.getByPosition(result).column = out;
+
+		const auto default_col_untyped = block.getByPosition(arguments[3]).column.get();
+		if (const auto default_col = typeid_cast<const ColumnString *>(default_col_untyped))
+			dict->getString(attr_name, key_columns, key_types, default_col, out);
+		else if (const auto default_col = typeid_cast<const ColumnConst<String> *>(default_col_untyped))
+		{
+			/// @todo avoid materialization
+			const auto default_col_materialized = default_col->convertToFullColumn();
+
+			dict->getString(attr_name, key_columns, key_types,
+				static_cast<const ColumnString *>(default_col_materialized.get()), out);
+		}
+		else
+			throw Exception{
+				"Fourth argument of function " + getName() + " must be String",
+				ErrorCodes::ILLEGAL_COLUMN
+			};
+
+		return true;
 	}
 
 	const ExternalDictionaries & dictionaries;
@@ -1691,7 +1750,9 @@ private:
 
 		if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
 			!executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
-			!executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr))
+			!executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr) &&
+			!executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict_ptr) &&
+			!executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict_ptr))
 			throw Exception{
 				"Unsupported dictionary type " + dict_ptr->getTypeName(),
 				ErrorCodes::UNKNOWN_TYPE
@@ -1812,6 +1873,67 @@ private:
 				"Fourth argument of function " + getName() + " must be " + DataType{}.getName(),
 				ErrorCodes::ILLEGAL_COLUMN
 			};
+	}
+
+	template <typename DictionaryType>
+	bool executeDispatchComplex(
+		Block & block, const ColumnNumbers & arguments, const size_t result, const IDictionaryBase * const dictionary)
+	{
+		const auto dict = typeid_cast<const DictionaryType *>(dictionary);
+		if (!dict)
+			return false;
+
+		if (arguments.size() != 4)
+			throw Exception{
+				"Function " + getName() + " for dictionary of type " + dict->getTypeName() +
+					" requires exactly 4 arguments",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
+			};
+
+		const auto attr_name_col = typeid_cast<const ColumnConst<String> *>(block.getByPosition(arguments[1]).column.get());
+		if (!attr_name_col)
+			throw Exception{
+				"Second argument of function " + getName() + " must be a constant string",
+				ErrorCodes::ILLEGAL_COLUMN
+			};
+
+		const auto & attr_name = attr_name_col->getData();
+
+		const auto key_col_with_type = block.getByPosition(arguments[2]);
+		const auto & key_col = typeid_cast<const ColumnTuple &>(*key_col_with_type.column);
+		const auto key_columns = ext::map<ConstColumnPlainPtrs>(key_col.getColumns(), [] (const ColumnPtr & ptr) {
+			return ptr.get();
+		});
+		const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
+
+		/// @todo detect when all key columns are constant
+		const auto rows = key_col.size();
+		const auto out = new ColumnVector<Type>(rows);
+		block.getByPosition(result).column = out;
+		auto & data = out->getData();
+
+		const auto default_col_untyped = block.getByPosition(arguments[3]).column.get();
+		if (const auto default_col = typeid_cast<const ColumnVector<Type> *>(default_col_untyped))
+		{
+			/// const defaults
+			const auto & defs = default_col->getData();
+
+			DictGetTraits<DataType>::getOrDefault(dict, attr_name, key_columns, key_types, defs, data);
+		}
+		else if (const auto default_col = typeid_cast<const ColumnConst<Type> *>(default_col_untyped))
+		{
+			/// @todo avoid materialization
+			const PODArray<Type> defs(rows, default_col->getData());
+
+			DictGetTraits<DataType>::getOrDefault(dict, attr_name, key_columns, key_types, defs, data);
+		}
+		else
+			throw Exception{
+				"Fourth argument of function " + getName() + " must be " + DataType{}.getName(),
+				ErrorCodes::ILLEGAL_COLUMN
+			};
+
+		return true;
 	}
 
 	const ExternalDictionaries & dictionaries;

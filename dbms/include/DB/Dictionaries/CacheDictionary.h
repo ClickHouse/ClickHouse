@@ -356,7 +356,7 @@ private:
 			for (const auto out_idx : outdated_ids[id])
 				out[out_idx] = attribute_value;
 		}, [&] (const auto id, const auto cell_idx) {
-			auto & attribute_value = attribute_array[cell_idx];
+			auto attribute_value = attribute_array[cell_idx];
 
 			if (def)
 				attribute_value = (*def)[outdated_ids[id].front()];

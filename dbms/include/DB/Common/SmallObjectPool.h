@@ -21,7 +21,7 @@ private:
 
 	const std::size_t object_size;
 	Arena pool;
-	Block * free_list;
+	Block * free_list{};
 
 public:
 	SmallObjectPool(
@@ -34,6 +34,9 @@ public:
 				"Can't make allocations smaller than sizeof(Block) = " + std::to_string(sizeof(Block)),
 				ErrorCodes::LOGICAL_ERROR
 			};
+
+		if (pool.size() < object_size)
+			return;
 
 		const auto num_objects = pool.size() / object_size;
 		auto head = free_list = ext::bit_cast<Block *>(pool.alloc(num_objects * object_size));
