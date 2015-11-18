@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DB/Dictionaries/IDictionarySource.h>
+#include <DB/Dictionaries/DictionaryStructure.h>
 #include <DB/Client/ConnectionPool.h>
 #include <DB/DataStreams/RemoteBlockInputStream.h>
 #include <DB/Interpreters/executeQuery.h>
