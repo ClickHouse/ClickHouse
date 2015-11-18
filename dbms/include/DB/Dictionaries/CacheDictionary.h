@@ -356,10 +356,7 @@ private:
 			for (const auto out_idx : outdated_ids[id])
 				out[out_idx] = attribute_value;
 		}, [&] (const auto id, const auto cell_idx) {
-			auto attribute_value = attribute_array[cell_idx];
-
-			if (def)
-				attribute_value = (*def)[outdated_ids[id].front()];
+			const auto attribute_value = !def ? attribute_array[cell_idx] : (*def)[outdated_ids[id].front()];
 
 			/// set missing values to out
 			for (const auto out_idx : outdated_ids[id])

@@ -412,10 +412,7 @@ private:
 			for (const auto out_idx : outdated_keys[key])
 				out[out_idx] = attribute_value;
 		}, [&] (const auto key, const auto cell_idx) {
-			auto attribute_value = attribute_array[cell_idx];
-
-			if (def)
-				attribute_value = (*def)[outdated_keys[key].front()];
+			const auto attribute_value = !def ? attribute_array[cell_idx] : (*def)[outdated_keys[key].front()];
 
 			/// set missing values to out
 			for (const auto out_idx : outdated_keys[key])
