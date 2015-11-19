@@ -180,9 +180,31 @@ public:
 			[&] (const std::size_t row) { return def->getDataAt(row); });
 	}
 
+	void has(const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types, PODArray<UInt8> & out) const
+	{
+		validateKeyTypes(key_types);
+
+		const auto & attribute = attributes.front();
+
+		switch (attribute.type)
+		{
+			case AttributeUnderlyingType::UInt8: has<UInt8>(attribute, key_columns, out); break;
+			case AttributeUnderlyingType::UInt16: has<UInt16>(attribute, key_columns, out); break;
+			case AttributeUnderlyingType::UInt32: has<UInt32>(attribute, key_columns, out); break;
+			case AttributeUnderlyingType::UInt64: has<UInt64>(attribute, key_columns, out); break;
+			case AttributeUnderlyingType::Int8: has<Int8>(attribute, key_columns, out); break;
+			case AttributeUnderlyingType::Int16: has<Int16>(attribute, key_columns, out); break;
+			case AttributeUnderlyingType::Int32: has<Int32>(attribute, key_columns, out); break;
+			case AttributeUnderlyingType::Int64: has<Int64>(attribute, key_columns, out); break;
+			case AttributeUnderlyingType::Float32: has<Float32>(attribute, key_columns, out); break;
+			case AttributeUnderlyingType::Float64: has<Float64>(attribute, key_columns, out); break;
+			case AttributeUnderlyingType::String: has<StringRef>(attribute, key_columns, out); break;
+		}
+	}
+
 private:
-	template <typename Value> using MapType = HashMapWithSavedHash<StringRef, Value, StringRefHash>;
-	template <typename Value> using MapPointerType = std::unique_ptr<MapType<Value>>;
+	template <typename Value> using ContainerType = HashMapWithSavedHash<StringRef, Value, StringRefHash>;
+	template <typename Value> using ContainerPtrType = std::unique_ptr<ContainerType<Value>>;
 
 	struct attribute_t final
 	{
@@ -193,10 +215,10 @@ private:
 			Float32, Float64,
 			String> null_values;
 		std::tuple<
-			MapPointerType<UInt8>, MapPointerType<UInt16>, MapPointerType<UInt32>, MapPointerType<UInt64>,
-			MapPointerType<Int8>, MapPointerType<Int16>, MapPointerType<Int32>, MapPointerType<Int64>,
-			MapPointerType<Float32>, MapPointerType<Float64>,
-			MapPointerType<StringRef>> maps;
+			ContainerPtrType<UInt8>, ContainerPtrType<UInt16>, ContainerPtrType<UInt32>, ContainerPtrType<UInt64>,
+			ContainerPtrType<Int8>, ContainerPtrType<Int16>, ContainerPtrType<Int32>, ContainerPtrType<Int64>,
+			ContainerPtrType<Float32>, ContainerPtrType<Float64>,
+			ContainerPtrType<StringRef>> maps;
 		std::unique_ptr<Arena> string_arena;
 	};
 
@@ -279,8 +301,8 @@ private:
 	template <typename T>
 	void addAttributeSize(const attribute_t & attribute)
 	{
-		const auto & map_ref = std::get<MapPointerType<T>>(attribute.maps);
-		bytes_allocated += sizeof(MapType<T>) + map_ref->getBufferSizeInBytes();
+		const auto & map_ref = std::get<ContainerPtrType<T>>(attribute.maps);
+		bytes_allocated += sizeof(ContainerType<T>) + map_ref->getBufferSizeInBytes();
 		bucket_count = map_ref->getBufferSizeInCells();
 	}
 
@@ -319,7 +341,7 @@ private:
 	void createAttributeImpl(attribute_t & attribute, const Field & null_value)
 	{
 		std::get<T>(attribute.null_values) = null_value.get<typename NearestFieldType<T>::Type>();
-		std::get<MapPointerType<T>>(attribute.maps) = std::make_unique<MapType<T>>();
+		std::get<ContainerPtrType<T>>(attribute.maps) = std::make_unique<ContainerType<T>>();
 	}
 
 	attribute_t createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
@@ -341,7 +363,7 @@ private:
 			case AttributeUnderlyingType::String:
 			{
 				std::get<String>(attr.null_values) = null_value.get<String>();
-				std::get<MapPointerType<StringRef>>(attr.maps) = std::make_unique<MapType<StringRef>>();
+				std::get<ContainerPtrType<StringRef>>(attr.maps) = std::make_unique<ContainerType<StringRef>>();
 				attr.string_arena = std::make_unique<Arena>();
 				break;
 			}
@@ -399,7 +421,7 @@ private:
 		const attribute_t & attribute, const ConstColumnPlainPtrs & key_columns, ValueSetter && set_value,
 		DefaultGetter && get_default) const
 	{
-		const auto & attr = *std::get<MapPointerType<T>>(attribute.maps);
+		const auto & attr = *std::get<ContainerPtrType<T>>(attribute.maps);
 
 		const auto keys_size = key_columns.size();
 		StringRefs keys(keys_size);
@@ -414,7 +436,7 @@ private:
 			const auto it = attr.find(key);
 			set_value(i, it != attr.end() ? it->second : get_default(i));
 
-			/// free memory allocated for key
+			/// free memory allocated for the key
 			temporary_keys_pool.rollback(key.size);
 		}
 
@@ -424,7 +446,7 @@ private:
 	template <typename T>
 	bool setAttributeValueImpl(attribute_t & attribute, const StringRef key, const T value)
 	{
-		auto & map = *std::get<MapPointerType<T>>(attribute.maps);
+		auto & map = *std::get<ContainerPtrType<T>>(attribute.maps);
 		const auto pair = map.insert({ key, value });
 		return pair.second;
 	}
@@ -445,7 +467,7 @@ private:
 			case AttributeUnderlyingType::Float64: return setAttributeValueImpl<Float64>(attribute, key, value.get<Float64>());
 			case AttributeUnderlyingType::String:
 			{
-				auto & map = *std::get<MapPointerType<StringRef>>(attribute.maps);
+				auto & map = *std::get<ContainerPtrType<StringRef>>(attribute.maps);
 				const auto & string = value.get<String>();
 				const auto string_in_arena = attribute.string_arena->insert(string.data(), string.size());
 				const auto pair = map.insert({ key, StringRef{string_in_arena, string.size()} });
@@ -489,6 +511,30 @@ private:
 		}
 
 		return { res, sum_keys_size };
+	}
+
+	template <typename T>
+	void has(const attribute_t & attribute, const ConstColumnPlainPtrs & key_columns, PODArray<UInt8> & out) const
+	{
+		const auto & attr = *std::get<ContainerPtrType<T>>(attribute.maps);
+		const auto keys_size = key_columns.size();
+		StringRefs keys(keys_size);
+		Arena temporary_keys_pool;
+		const auto rows = key_columns.front()->size();
+
+		for (const auto i : ext::range(0, rows))
+		{
+			/// copy key data to arena so it is contiguous and return StringRef to it
+			const auto key = placeKeysInPool(i, key_columns, keys, temporary_keys_pool);
+
+			const auto it = attr.find(key);
+			out[i] = it != attr.end();
+
+			/// free memory allocated for the key
+			temporary_keys_pool.rollback(key.size);
+		}
+
+		query_count.fetch_add(rows, std::memory_order_relaxed);
 	}
 
 	const std::string name;

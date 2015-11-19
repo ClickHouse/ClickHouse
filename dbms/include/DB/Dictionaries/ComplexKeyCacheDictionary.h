@@ -182,6 +182,63 @@ public:
 		getItems(attribute, key_columns, out, def);
 	}
 
+	void has(const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types, PODArray<UInt8> & out) const
+	{
+		validateKeyTypes(key_types);
+
+		/// Mapping: <key> -> { all indices `i` of `key_columns` such that `key_columns[i]` = <key> }
+		MapType<std::vector<std::size_t>> outdated_keys;
+
+		const auto rows = key_columns.front()->size();
+		const auto keys_size = dict_struct.key->size();
+		StringRefs keys(keys_size);
+		Arena temporary_keys_pool;
+		PODArray<StringRef> keys_array(rows);
+
+		{
+			const Poco::ScopedReadRWLock read_lock{rw_lock};
+
+			const auto now = std::chrono::system_clock::now();
+			/// fetch up-to-date values, decide which ones require update
+			for (const auto row : ext::range(0, rows))
+			{
+				const auto key = placeKeysInPool(row, key_columns, keys, temporary_keys_pool);
+				keys_array[row] = key;
+				const auto hash = StringRefHash{}(key);
+				const auto cell_idx = hash & (size - 1);
+				const auto & cell = cells[cell_idx];
+
+				/** cell should be updated if either:
+				 *	1. keys (or hash) do not match,
+				 *	2. cell has expired,
+				 *	3. explicit defaults were specified and cell was set default. */
+				if (cell.hash != hash || cell.key != key || cell.expiresAt() < now)
+					outdated_keys[key].push_back(row);
+				else
+					out[row] = !cell.isDefault();
+			}
+		}
+
+		query_count.fetch_add(rows, std::memory_order_relaxed);
+		hit_count.fetch_add(rows - outdated_keys.size(), std::memory_order_release);
+
+		if (outdated_keys.empty())
+			return;
+
+		std::vector<std::size_t> required_rows(outdated_keys.size());
+		std::transform(std::begin(outdated_keys), std::end(outdated_keys), std::begin(required_rows),
+			[] (auto & pair) { return pair.second.front(); });
+
+		/// request new values
+		update(key_columns, keys_array, required_rows, [&] (const auto key, const auto) {
+			for (const auto out_idx : outdated_keys[key])
+				out[out_idx] = true;
+		}, [&] (const auto key, const auto) {
+			for (const auto out_idx : outdated_keys[key])
+				out[out_idx] = false;
+		});
+	}
+
 private:
 	template <typename Value> using MapType = HashMapWithSavedHash<StringRef, Value, StringRefHash>;
 	template <typename Value> using ContainerType = Value[];
@@ -387,10 +444,10 @@ private:
 				 *	1. keys (or hash) do not match,
 				 *	2. cell has expired,
 				 *	3. explicit defaults were specified and cell was set default. */
-				if (cell.hash != hash || cell.key != key || cell.expiresAt() < now || (def && cell.isDefault()))
+				if (cell.hash != hash || cell.key != key || cell.expiresAt() < now)
 					outdated_keys[key].push_back(row);
 				else
-					out[row] = attribute_array[cell_idx];
+					out[row] =  def && cell.isDefault() ? (*def)[row] : attribute_array[cell_idx];
 			}
 		}
 
@@ -404,17 +461,15 @@ private:
 		std::transform(std::begin(outdated_keys), std::end(outdated_keys), std::begin(required_rows),
 			[] (auto & pair) { return pair.second.front(); });
 
-		/// request new values;
+		/// request new values
 		update(key_columns, keys_array, required_rows, [&] (const auto key, const auto cell_idx) {
 			const auto attribute_value = attribute_array[cell_idx];
 
-			/// set missing values to out
 			for (const auto out_idx : outdated_keys[key])
 				out[out_idx] = attribute_value;
 		}, [&] (const auto key, const auto cell_idx) {
 			const auto attribute_value = !def ? attribute_array[cell_idx] : (*def)[outdated_keys[key].front()];
 
-			/// set missing values to out
 			for (const auto out_idx : outdated_keys[key])
 				out[out_idx] = attribute_value;
 		});
@@ -450,14 +505,14 @@ private:
 				const auto cell_idx = hash & (size - 1);
 				const auto & cell = cells[cell_idx];
 
-				if (cell.hash != hash || cell.key != key || cell.expiresAt() < now || (def && cell.isDefault()))
+				if (cell.hash != hash || cell.key != key || cell.expiresAt() < now)
 				{
 					found_outdated_values = true;
 					break;
 				}
 				else
 				{
-					const auto string_ref = attribute_array[cell_idx];
+					const auto string_ref =  def && cell.isDefault() ? def->getDataAt(row) : attribute_array[cell_idx];
 					out->insertData(string_ref.data, string_ref.size);
 				}
 			}
@@ -494,11 +549,11 @@ private:
 				const auto cell_idx = hash & (size - 1);
 				const auto & cell = cells[cell_idx];
 
-				if (cell.hash != hash || cell.key != key || cell.expiresAt() < now || (def && cell.isDefault()))
+				if (cell.hash != hash || cell.key != key || cell.expiresAt() < now)
 					outdated_keys[key].push_back(row);
 				else
 				{
-					const auto string_ref = attribute_array[cell_idx];
+					const auto string_ref =  def && cell.isDefault() ? def->getDataAt(row) : attribute_array[cell_idx];
 					map[key] = String{string_ref};
 					total_length += string_ref.size + 1;
 				}

@@ -105,6 +105,8 @@ struct IDictionary : IDictionaryBase
 	virtual void getFloat32(const std::string & attr_name, const PODArray<id_t> & ids, const PODArray<Float32> & def, PODArray<Float32> & out) const = 0;
 	virtual void getFloat64(const std::string & attr_name, const PODArray<id_t> & ids, const PODArray<Float64> & def, PODArray<Float64> & out) const = 0;
 	virtual void getString(const std::string & attr_name, const PODArray<id_t> & ids, const ColumnString * def, ColumnString * out) const = 0;
+
+	virtual void has(const PODArray<id_t> & ids, PODArray<UInt8> & out) const = 0;
 };
 
 }
