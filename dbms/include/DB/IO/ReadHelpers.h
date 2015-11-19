@@ -118,6 +118,14 @@ inline bool checkString(const String & s, ReadBuffer & buf)
 	return checkString(s.c_str(), buf);
 }
 
+inline bool checkChar(char c, ReadBuffer & buf)
+{
+	if (buf.eof() || *buf.position() != c)
+		return false;
+	++buf.position();
+	return true;
+}
+
 inline void readBoolText(bool & x, ReadBuffer & buf)
 {
 	char tmp = '0';
@@ -250,7 +258,7 @@ bool exceptionPolicySelector(ExcepFun && excep_f, NoExcepFun && no_excep_f, Args
 
 
 /// грубо
-template <typename T, typename ReturnType>
+template <typename T, typename ReturnType, char point_symbol = '.'>
 ReturnType readFloatTextImpl(T & x, ReadBuffer & buf)
 {
 	static constexpr bool throw_exception = std::is_same<ReturnType, void>::value;
@@ -292,9 +300,6 @@ ReturnType readFloatTextImpl(T & x, ReadBuffer & buf)
 				break;
 			case '-':
 				negative = true;
-				break;
-			case '.':
-				after_point = true;
 				break;
 			case '0':
 			case '1':
@@ -344,6 +349,12 @@ ReturnType readFloatTextImpl(T & x, ReadBuffer & buf)
 				return ReturnType(parse_special_value("AN", std::numeric_limits<T>::quiet_NaN()));
 
 			default:
+				if (point_symbol == *buf.position())
+				{
+					after_point = true;
+					break;
+				}
+
 				if (negative)
 					x = -x;
 				return ReturnType(true);
@@ -360,6 +371,12 @@ template <class T>
 inline bool tryReadFloatText(T & x, ReadBuffer & buf)
 {
 	return readFloatTextImpl<T, bool>(x, buf);
+}
+
+template <class T>
+inline bool tryReadFloatTextUnderscore(T & x, ReadBuffer & buf)
+{
+	return readFloatTextImpl<T, bool, '_'>(x, buf);
 }
 
 template <class T>
