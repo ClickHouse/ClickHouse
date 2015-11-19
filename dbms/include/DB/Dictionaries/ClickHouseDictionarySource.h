@@ -42,7 +42,7 @@ public:
 			  "ClickHouseDictionarySource")
 		  },
 		  load_all_query{composeLoadAllQuery()},
-		  key_tuple_definition{composeKeyTupleDefinition()}
+		  key_tuple_definition{dict_struct.key ? composeKeyTupleDefinition() : std::string{}}
 	{}
 
 	/// copy-constructor is provided in order to support cloneability
@@ -318,6 +318,9 @@ private:
 
 	std::string composeKeyTupleDefinition() const
 	{
+		if (!dict_struct.key)
+			throw Exception{"Composite key required for method", ErrorCodes::UNSUPPORTED_METHOD};
+
 		std::string result{"("};
 
 		auto first = true;
