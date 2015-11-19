@@ -233,6 +233,11 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	  *        ^ - offset
 	  *        <------> - size
 	  *        <--><--> - кусочки для разных parallel_replica_offset, выбираем второй.
+	  *
+	  * TODO
+	  * Очень важно, чтобы интервалы для разных parallel_replica_offset покрывали весь диапазон без пропусков и перекрытий.
+	  * Также важно, чтобы весь юнивёрсум можно было покрыть, используя SAMPLE 0.1 OFFSET 0, ... OFFSET 0.9 и похожие десятичные дроби.
+	  * Сейчас это не гарантируется.
 	  */
 
 	bool use_sampling = relative_sample_size > 0 || settings.parallel_replicas_count > 1;
@@ -240,17 +245,17 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 	if (use_sampling)
 	{
-		RelativeSize sampling_column_max = 0;
+		RelativeSize size_of_universum = 0;
 		DataTypePtr type = data.getPrimaryExpression()->getSampleBlock().getByName(data.sampling_expression->getColumnName()).type;
 
-		if (type->getName() == "UInt64")
-			sampling_column_max = std::numeric_limits<UInt64>::max();
-		else if (type->getName() == "UInt32")
-			sampling_column_max = std::numeric_limits<UInt32>::max();
-		else if (type->getName() == "UInt16")
-			sampling_column_max = std::numeric_limits<UInt16>::max();
-		else if (type->getName() == "UInt8")
-			sampling_column_max = std::numeric_limits<UInt8>::max();
+		if (typeid_cast<const DataTypeUInt64 *>(type.get()))
+			size_of_universum = RelativeSize(std::numeric_limits<UInt64>::max()) + 1;
+		else if (typeid_cast<const DataTypeUInt32 *>(type.get()))
+			size_of_universum = RelativeSize(std::numeric_limits<UInt32>::max()) + 1;
+		else if (typeid_cast<const DataTypeUInt16 *>(type.get()))
+			size_of_universum = RelativeSize(std::numeric_limits<UInt16>::max()) + 1;
+		else if (typeid_cast<const DataTypeUInt8 *>(type.get()))
+			size_of_universum = RelativeSize(std::numeric_limits<UInt8>::max()) + 1;
 		else
 			throw Exception("Invalid sampling column type in storage parameters: " + type->getName() + ". Must be unsigned integer type.", ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
 
@@ -260,27 +265,36 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 			relative_sample_offset += relative_sample_size * settings.parallel_replica_offset;
 		}
 
-		no_data =
-			relative_sample_size * sampling_column_max < 1
-			|| relative_sample_offset >= 1;
+		if (relative_sample_offset >= 1)
+			no_data = true;
 
 		/// Вычисляем полуинтервал [lower, upper) значений столбца.
 		bool has_lower_limit = false;
 		bool has_upper_limit = false;
 
-		UInt64 lower = 0;
-		UInt64 upper = 0;
+		RelativeSize lower_limit_float = relative_sample_offset * size_of_universum;
+		RelativeSize upper_limit_float = (relative_sample_offset + relative_sample_size) * size_of_universum;
 
-		lower = relative_sample_offset * sampling_column_max;
+		UInt64 lower = lower_limit_float;
+		UInt64 upper = upper_limit_float;
+
 		if (lower > 0)
 			has_lower_limit = true;
 
-		RelativeSize upper_limit_float = (relative_sample_offset + relative_sample_size) * sampling_column_max;
-		if (upper_limit_float < sampling_column_max)
-		{
-			upper = upper_limit_float;
+		if (upper_limit_float <= size_of_universum)
 			has_upper_limit = true;
-		}
+
+/*		std::cerr << std::fixed << std::setprecision(100)
+			<< "relative_sample_size: " << relative_sample_size << "\n"
+			<< "relative_sample_offset: " << relative_sample_offset << "\n"
+			<< "lower_limit_float: " << lower_limit_float << "\n"
+			<< "upper_limit_float: " << upper_limit_float << "\n"
+			<< "lower: " << lower << "\n"
+			<< "upper: " << upper << "\n";*/
+
+		if ((has_upper_limit && upper == 0)
+			|| (has_lower_limit && has_upper_limit && lower == upper))
+			no_data = true;
 
 		if (no_data || (!has_lower_limit && !has_upper_limit))
 		{
