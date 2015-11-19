@@ -279,7 +279,7 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
 
 		if (sample_offset)
 		{
-			s.ostr << (s.hilite ? hilite_keyword : "") << ' ' << indent_str << "OFFSET " << (s.hilite ? hilite_none : "");
+			s.ostr << (s.hilite ? hilite_keyword : "") << ' ' << "OFFSET " << (s.hilite ? hilite_none : "");
 			sample_offset->formatImpl(s, state, frame);
 		}
 	}
