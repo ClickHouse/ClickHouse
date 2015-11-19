@@ -63,15 +63,22 @@ private:
 	Chunk * head;
 	size_t size_in_bytes;
 
-	static constexpr std::size_t sizes[] {
-		16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536,
-		std::numeric_limits<std::size_t>::max()
-	};
-	static_assert(sizes[0] >= sizeof(Block), "Can't make allocations smaller than sizeof(Block)");
-	static constexpr auto min_bucket_num = 3;
+	static const std::size_t (&getSizes())[14]
+	{
+		static constexpr std::size_t sizes[] {
+			16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536,
+			std::numeric_limits<std::size_t>::max()
+		};
+
+		static_assert(sizes[0] >= sizeof(Block), "Can't make allocations smaller than sizeof(Block)");
+
+		return sizes;
+	}
+
+	static constexpr auto getMinBucketNum() { return 3; }
 	static constexpr auto max_fixed_block_size = 65536;
 
-	Block * free_lists[ext::size(sizes)] {};
+	std::unique_ptr<Block * []> free_lists = std::make_unique<Block * []>(ext::size(getSizes()));
 
 	/// Если размер чанка меньше linear_growth_threshold, то рост экспоненциальный, иначе - линейный, для уменьшения потребления памяти.
 	size_t nextSize(size_t min_next_size) const
@@ -102,12 +109,12 @@ private:
 	{
 		/// last free list is for any blocks > 64k
 		if (size > max_fixed_block_size)
-			return ext::size(sizes) - 1;
+			return ext::size(getSizes()) - 1;
 
 		/// shift powers of two into previous bucket by subtracting 1
 		const auto bucket_num = _bit_scan_reverse(size - 1);
 
-		return std::max(bucket_num, min_bucket_num) - min_bucket_num;
+		return std::max(bucket_num, getMinBucketNum()) - getMinBucketNum();
 	}
 
 	/// @todo coalesce blocks
@@ -162,7 +169,7 @@ public:
 	char * alloc(const std::size_t size)
 	{
 		/// find existing list of required size, possibly split a larger one
-		for (const auto list_idx : ext::range(findFreeListIndex(size), ext::size(free_lists)))
+		for (const auto list_idx : ext::range(findFreeListIndex(size), ext::size(getSizes())))
 			/// reference to a pointer to head of corresponding free list
 			if (auto & block = free_lists[list_idx])
 				return splitBlock(block, size);
