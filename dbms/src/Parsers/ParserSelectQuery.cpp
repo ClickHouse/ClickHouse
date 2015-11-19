@@ -6,6 +6,7 @@
 #include <DB/Parsers/ExpressionListParsers.h>
 #include <DB/Parsers/ParserJoin.h>
 #include <DB/Parsers/ParserSetQuery.h>
+#include <DB/Parsers/ParserSampleRatio.h>
 #include <DB/Parsers/ParserSelectQuery.h>
 
 namespace DB
@@ -156,9 +157,9 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 		{
 			ws.ignore(pos, end);
 
-			ParserNumber num;
+			ParserSampleRatio ratio;
 
-			if (!num.parse(pos, end, select_query->sample_size, max_parsed_pos, expected))
+			if (!ratio.parse(pos, end, select_query->sample_size, max_parsed_pos, expected))
 				return false;
 
 			ws.ignore(pos, end);
@@ -168,9 +169,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 			{
 				ws.ignore(pos, end);
 
-				ParserNumber num;
-
-				if (!num.parse(pos, end, select_query->sample_offset, max_parsed_pos, expected))
+				if (!ratio.parse(pos, end, select_query->sample_offset, max_parsed_pos, expected))
 					return false;
 
 				ws.ignore(pos, end);
