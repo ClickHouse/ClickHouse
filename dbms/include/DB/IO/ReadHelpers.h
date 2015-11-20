@@ -301,6 +301,9 @@ ReturnType readFloatTextImpl(T & x, ReadBuffer & buf)
 			case '-':
 				negative = true;
 				break;
+			case point_symbol:
+				after_point = true;
+				break;
 			case '0':
 			case '1':
 			case '2':
@@ -349,12 +352,6 @@ ReturnType readFloatTextImpl(T & x, ReadBuffer & buf)
 				return ReturnType(parse_special_value("AN", std::numeric_limits<T>::quiet_NaN()));
 
 			default:
-				if (point_symbol == *buf.position())
-				{
-					after_point = true;
-					break;
-				}
-
 				if (negative)
 					x = -x;
 				return ReturnType(true);
