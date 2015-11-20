@@ -101,7 +101,7 @@ public:
 		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
 		PODArray<TYPE> & out) const\
 	{\
-		validateKeyTypes(key_types);\
+		dict_struct.validateKeyTypes(key_types);\
 		\
 		auto & attribute = getAttribute(attribute_name);\
 		if (attribute.type != AttributeUnderlyingType::TYPE)\
@@ -129,7 +129,7 @@ public:
 		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,
 		ColumnString * out) const
 	{
-		validateKeyTypes(key_types);
+		dict_struct.validateKeyTypes(key_types);
 
 		auto & attribute = getAttribute(attribute_name);
 		if (attribute.type != AttributeUnderlyingType::String)
@@ -148,7 +148,7 @@ public:
 		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
 		const PODArray<TYPE> & def, PODArray<TYPE> & out) const\
 	{\
-		validateKeyTypes(key_types);\
+		dict_struct.validateKeyTypes(key_types);\
 		\
 		auto & attribute = getAttribute(attribute_name);\
 		if (attribute.type != AttributeUnderlyingType::TYPE)\
@@ -174,7 +174,7 @@ public:
 		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,
 		const ColumnString * const def, ColumnString * const out) const
 	{
-		validateKeyTypes(key_types);
+		dict_struct.validateKeyTypes(key_types);
 
 		auto & attribute = getAttribute(attribute_name);
 		if (attribute.type != AttributeUnderlyingType::String)
@@ -191,7 +191,7 @@ public:
 		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
 		const TYPE def, PODArray<TYPE> & out) const\
 	{\
-		validateKeyTypes(key_types);\
+		dict_struct.validateKeyTypes(key_types);\
 		\
 		auto & attribute = getAttribute(attribute_name);\
 		if (attribute.type != AttributeUnderlyingType::TYPE)\
@@ -217,7 +217,7 @@ public:
 		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,
 		const String & def, ColumnString * const out) const
 	{
-		validateKeyTypes(key_types);
+		dict_struct.validateKeyTypes(key_types);
 
 		auto & attribute = getAttribute(attribute_name);
 		if (attribute.type != AttributeUnderlyingType::String)
@@ -231,7 +231,7 @@ public:
 
 	void has(const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types, PODArray<UInt8> & out) const
 	{
-		validateKeyTypes(key_types);
+		dict_struct.validateKeyTypes(key_types);
 
 		/// Mapping: <key> -> { all indices `i` of `key_columns` such that `key_columns[i]` = <key> }
 		MapType<std::vector<std::size_t>> outdated_keys;
@@ -413,50 +413,6 @@ private:
 		}
 
 		return attr;
-	}
-
-	static std::string createKeyDescription(const DictionaryStructure & dict_struct)
-	{
-		std::ostringstream out;
-
-		out << '(';
-
-		auto first = true;
-		for (const auto & key : *dict_struct.key)
-		{
-			if (!first)
-				out << ", ";
-
-			first = false;
-
-			out << key.type->getName();
-		}
-
-		out << ')';
-
-		return out.str();
-	}
-
-	void validateKeyTypes(const DataTypes & key_types) const
-	{
-		if (key_types.size() != dict_struct.key->size())
-			throw Exception{
-				"Key structure does not match, expected " + key_description,
-				ErrorCodes::TYPE_MISMATCH
-			};
-
-		for (const auto i : ext::range(0, key_types.size()))
-		{
-			const auto & expected_type = (*dict_struct.key)[i].type->getName();
-			const auto & actual_type = key_types[i]->getName();
-
-			if (expected_type != actual_type)
-				throw Exception{
-					"Key type at position " + std::to_string(i) + " does not match, expected " + expected_type +
-						", found " + actual_type,
-					ErrorCodes::TYPE_MISMATCH
-				};
-		}
 	}
 
 	template <typename T, typename DefaultGetter>
@@ -954,7 +910,7 @@ private:
 	const DictionaryStructure dict_struct;
 	const DictionarySourcePtr source_ptr;
 	const DictionaryLifetime dict_lifetime;
-	const std::string key_description{createKeyDescription(dict_struct)};
+	const std::string key_description{dict_struct.getKeyDescription()};
 
 	mutable Poco::RWLock rw_lock;
 	const std::size_t size;
