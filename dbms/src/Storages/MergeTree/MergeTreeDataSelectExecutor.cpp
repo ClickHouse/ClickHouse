@@ -292,7 +292,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 		if (lower > 0)
 			has_lower_limit = true;
 
-		if (lower_limit_rational <= size_of_universum)
+		if (upper_limit_rational < size_of_universum)
 			has_upper_limit = true;
 
 /*		std::cerr << std::fixed << std::setprecision(100)
