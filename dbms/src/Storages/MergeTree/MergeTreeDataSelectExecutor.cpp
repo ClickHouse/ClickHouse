@@ -286,8 +286,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 		RelativeSize lower_limit_rational = relative_sample_offset * size_of_universum;
 		RelativeSize upper_limit_rational = (relative_sample_offset + relative_sample_size) * size_of_universum;
 
-		UInt64 lower = boost::rational_cast<UInt64>(lower_limit_rational);
-		UInt64 upper = boost::rational_cast<UInt64>(upper_limit_rational);
+		UInt64 lower = boost::rational_cast<ASTSampleRatio::BigNum>(lower_limit_rational);
+		UInt64 upper = boost::rational_cast<ASTSampleRatio::BigNum>(upper_limit_rational);
 
 		if (lower > 0)
 			has_lower_limit = true;
@@ -295,7 +295,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 		if (upper_limit_rational < size_of_universum)
 			has_upper_limit = true;
 
-/*		std::cerr << std::fixed << std::setprecision(100)
+		/*std::cerr << std::fixed << std::setprecision(100)
 			<< "relative_sample_size: " << relative_sample_size << "\n"
 			<< "relative_sample_offset: " << relative_sample_offset << "\n"
 			<< "lower_limit_float: " << lower_limit_rational << "\n"
