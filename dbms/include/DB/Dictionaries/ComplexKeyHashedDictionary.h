@@ -82,7 +82,7 @@ public:
 		return dict_struct.attributes[&getAttribute(attribute_name) - attributes.data()].injective;
 	}
 
-#define DECLARE_MULTIPLE_GETTER(TYPE)\
+#define DECLARE(TYPE)\
 	void get##TYPE(\
 		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
 		PODArray<TYPE> & out) const\
@@ -102,17 +102,17 @@ public:
 			[&] (const std::size_t row, const auto value) { out[row] = value; },\
 			[&] (const std::size_t) { return null_value; });\
 	}
-	DECLARE_MULTIPLE_GETTER(UInt8)
-	DECLARE_MULTIPLE_GETTER(UInt16)
-	DECLARE_MULTIPLE_GETTER(UInt32)
-	DECLARE_MULTIPLE_GETTER(UInt64)
-	DECLARE_MULTIPLE_GETTER(Int8)
-	DECLARE_MULTIPLE_GETTER(Int16)
-	DECLARE_MULTIPLE_GETTER(Int32)
-	DECLARE_MULTIPLE_GETTER(Int64)
-	DECLARE_MULTIPLE_GETTER(Float32)
-	DECLARE_MULTIPLE_GETTER(Float64)
-#undef DECLARE_MULTIPLE_GETTER
+	DECLARE(UInt8)
+	DECLARE(UInt16)
+	DECLARE(UInt32)
+	DECLARE(UInt64)
+	DECLARE(Int8)
+	DECLARE(Int16)
+	DECLARE(Int32)
+	DECLARE(Int64)
+	DECLARE(Float32)
+	DECLARE(Float64)
+#undef DECLARE
 	void getString(
 		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,
 		ColumnString * out) const
@@ -133,7 +133,7 @@ public:
 			[&] (const std::size_t) { return null_value; });
 	}
 
-#define DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(TYPE)\
+#define DECLARE(TYPE)\
 	void get##TYPE(\
 		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
 		const PODArray<TYPE> & def, PODArray<TYPE> & out) const\
@@ -151,17 +151,17 @@ public:
 			[&] (const std::size_t row, const auto value) { out[row] = value; },\
 			[&] (const std::size_t row) { return def[row]; });\
 	}
-	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(UInt8)
-	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(UInt16)
-	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(UInt32)
-	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(UInt64)
-	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Int8)
-	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Int16)
-	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Int32)
-	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Int64)
-	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Float32)
-	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Float64)
-#undef DECLARE_MULTIPLE_GETTER_WITH_DEFAULT
+	DECLARE(UInt8)
+	DECLARE(UInt16)
+	DECLARE(UInt32)
+	DECLARE(UInt64)
+	DECLARE(Int8)
+	DECLARE(Int16)
+	DECLARE(Int32)
+	DECLARE(Int64)
+	DECLARE(Float32)
+	DECLARE(Float64)
+#undef DECLARE
 	void getString(
 		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,
 		const ColumnString * const def, ColumnString * const out) const
@@ -178,6 +178,53 @@ public:
 		getItems<StringRef>(attribute, key_columns,
 			[&] (const std::size_t row, const StringRef value) { out->insertData(value.data, value.size); },
 			[&] (const std::size_t row) { return def->getDataAt(row); });
+	}
+
+#define DECLARE(TYPE)\
+	void get##TYPE(\
+		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
+		const TYPE def, PODArray<TYPE> & out) const\
+	{\
+ 		validateKeyTypes(key_types);\
+ 		\
+		const auto & attribute = getAttribute(attribute_name);\
+		if (attribute.type != AttributeUnderlyingType::TYPE)\
+			throw Exception{\
+				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
+				ErrorCodes::TYPE_MISMATCH\
+			};\
+		\
+		getItems<TYPE>(attribute, key_columns,\
+			[&] (const std::size_t row, const auto value) { out[row] = value; },\
+			[&] (const std::size_t) { return def; });\
+	}
+	DECLARE(UInt8)
+	DECLARE(UInt16)
+	DECLARE(UInt32)
+	DECLARE(UInt64)
+	DECLARE(Int8)
+	DECLARE(Int16)
+	DECLARE(Int32)
+	DECLARE(Int64)
+	DECLARE(Float32)
+	DECLARE(Float64)
+#undef DECLARE
+	void getString(
+		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,
+		const String & def, ColumnString * const out) const
+	{
+ 		validateKeyTypes(key_types);
+
+		const auto & attribute = getAttribute(attribute_name);
+		if (attribute.type != AttributeUnderlyingType::String)
+			throw Exception{
+				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
+				ErrorCodes::TYPE_MISMATCH
+			};
+
+		getItems<StringRef>(attribute, key_columns,
+			[&] (const std::size_t row, const StringRef value) { out->insertData(value.data, value.size); },
+			[&] (const std::size_t) { return StringRef{def}; });
 	}
 
 	void has(const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types, PODArray<UInt8> & out) const

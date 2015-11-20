@@ -96,7 +96,7 @@ public:
 		return dict_struct.attributes[&getAttribute(attribute_name) - attributes.data()].injective;
 	}
 
-#define DECLARE_MULTIPLE_GETTER(TYPE)\
+#define DECLARE(TYPE)\
 	void get##TYPE(\
 		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
 		PODArray<TYPE> & out) const\
@@ -110,19 +110,21 @@ public:
 				ErrorCodes::TYPE_MISMATCH\
 			};\
 		\
-		getItems<TYPE>(attribute, key_columns, out);\
+		const auto null_value = std::get<TYPE>(attribute.null_values);\
+		\
+		getItems<TYPE>(attribute, key_columns, out, [&] (const std::size_t) { return null_value; });\
 	}
-	DECLARE_MULTIPLE_GETTER(UInt8)
-	DECLARE_MULTIPLE_GETTER(UInt16)
-	DECLARE_MULTIPLE_GETTER(UInt32)
-	DECLARE_MULTIPLE_GETTER(UInt64)
-	DECLARE_MULTIPLE_GETTER(Int8)
-	DECLARE_MULTIPLE_GETTER(Int16)
-	DECLARE_MULTIPLE_GETTER(Int32)
-	DECLARE_MULTIPLE_GETTER(Int64)
-	DECLARE_MULTIPLE_GETTER(Float32)
-	DECLARE_MULTIPLE_GETTER(Float64)
-#undef DECLARE_MULTIPLE_GETTER
+	DECLARE(UInt8)
+	DECLARE(UInt16)
+	DECLARE(UInt32)
+	DECLARE(UInt64)
+	DECLARE(Int8)
+	DECLARE(Int16)
+	DECLARE(Int32)
+	DECLARE(Int64)
+	DECLARE(Float32)
+	DECLARE(Float64)
+#undef DECLARE
 	void getString(
 		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,
 		ColumnString * out) const
@@ -136,10 +138,12 @@ public:
 				ErrorCodes::TYPE_MISMATCH
 			};
 
-		getItems(attribute, key_columns, out);
+		const auto null_value = StringRef{std::get<String>(attribute.null_values)};
+
+		getItems(attribute, key_columns, out, [&] (const std::size_t) { return null_value; });
 	}
 
-#define DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(TYPE)\
+#define DECLARE(TYPE)\
 	void get##TYPE(\
 		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
 		const PODArray<TYPE> & def, PODArray<TYPE> & out) const\
@@ -153,19 +157,19 @@ public:
 				ErrorCodes::TYPE_MISMATCH\
 			};\
 		\
-		getItems<TYPE>(attribute, key_columns, out, &def);\
+		getItems<TYPE>(attribute, key_columns, out, [&] (const std::size_t row) { return def[row]; });\
 	}
-	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(UInt8)
-	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(UInt16)
-	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(UInt32)
-	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(UInt64)
-	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Int8)
-	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Int16)
-	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Int32)
-	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Int64)
-	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Float32)
-	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Float64)
-#undef DECLARE_MULTIPLE_GETTER_WITH_DEFAULT
+	DECLARE(UInt8)
+	DECLARE(UInt16)
+	DECLARE(UInt32)
+	DECLARE(UInt64)
+	DECLARE(Int8)
+	DECLARE(Int16)
+	DECLARE(Int32)
+	DECLARE(Int64)
+	DECLARE(Float32)
+	DECLARE(Float64)
+#undef DECLARE
 	void getString(
 		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,
 		const ColumnString * const def, ColumnString * const out) const
@@ -179,7 +183,50 @@ public:
 				ErrorCodes::TYPE_MISMATCH
 			};
 
-		getItems(attribute, key_columns, out, def);
+		getItems(attribute, key_columns, out, [&] (const std::size_t row) { return def->getDataAt(row); });
+	}
+
+#define DECLARE(TYPE)\
+	void get##TYPE(\
+		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
+		const TYPE def, PODArray<TYPE> & out) const\
+	{\
+		validateKeyTypes(key_types);\
+		\
+		auto & attribute = getAttribute(attribute_name);\
+		if (attribute.type != AttributeUnderlyingType::TYPE)\
+			throw Exception{\
+				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
+				ErrorCodes::TYPE_MISMATCH\
+			};\
+		\
+		getItems<TYPE>(attribute, key_columns, out, [&] (const std::size_t) { return def; });\
+	}
+	DECLARE(UInt8)
+	DECLARE(UInt16)
+	DECLARE(UInt32)
+	DECLARE(UInt64)
+	DECLARE(Int8)
+	DECLARE(Int16)
+	DECLARE(Int32)
+	DECLARE(Int64)
+	DECLARE(Float32)
+	DECLARE(Float64)
+#undef DECLARE
+	void getString(
+		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,
+		const String & def, ColumnString * const out) const
+	{
+		validateKeyTypes(key_types);
+
+		auto & attribute = getAttribute(attribute_name);
+		if (attribute.type != AttributeUnderlyingType::String)
+			throw Exception{
+				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
+				ErrorCodes::TYPE_MISMATCH
+			};
+
+		getItems(attribute, key_columns, out, [&] (const std::size_t) { return StringRef{def}; });
 	}
 
 	void has(const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types, PODArray<UInt8> & out) const
@@ -412,10 +459,10 @@ private:
 		}
 	}
 
-	template <typename T>
+	template <typename T, typename DefaultGetter>
 	void getItems(
 		attribute_t & attribute, const ConstColumnPlainPtrs & key_columns, PODArray<T> & out,
-		const PODArray<T> * const def = nullptr) const
+		DefaultGetter && get_default) const
 	{
 		/// Mapping: <key> -> { all indices `i` of `key_columns` such that `key_columns[i]` = <key> }
 		MapType<std::vector<std::size_t>> outdated_keys;
@@ -447,7 +494,7 @@ private:
 				if (cell.hash != hash || cell.key != key || cell.expiresAt() < now)
 					outdated_keys[key].push_back(row);
 				else
-					out[row] =  def && cell.isDefault() ? (*def)[row] : attribute_array[cell_idx];
+					out[row] =  cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
 			}
 		}
 
@@ -463,21 +510,18 @@ private:
 
 		/// request new values
 		update(key_columns, keys_array, required_rows, [&] (const auto key, const auto cell_idx) {
-			const auto attribute_value = attribute_array[cell_idx];
-
-			for (const auto out_idx : outdated_keys[key])
-				out[out_idx] = attribute_value;
+			for (const auto row : outdated_keys[key])
+				out[row] = attribute_array[cell_idx];
 		}, [&] (const auto key, const auto cell_idx) {
-			const auto attribute_value = !def ? attribute_array[cell_idx] : (*def)[outdated_keys[key].front()];
-
-			for (const auto out_idx : outdated_keys[key])
-				out[out_idx] = attribute_value;
+			for (const auto row : outdated_keys[key])
+				out[row] = get_default(row);
 		});
 	}
 
+	template <typename DefaultGetter>
 	void getItems(
 		attribute_t & attribute, const ConstColumnPlainPtrs & key_columns, ColumnString * out,
-		const ColumnString * const def = nullptr) const
+		DefaultGetter && get_default) const
 	{
 		const auto rows = key_columns.front()->size();
 		/// save on some allocations
@@ -512,7 +556,7 @@ private:
 				}
 				else
 				{
-					const auto string_ref =  def && cell.isDefault() ? def->getDataAt(row) : attribute_array[cell_idx];
+					const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
 					out->insertData(string_ref.data, string_ref.size);
 				}
 			}
@@ -553,7 +597,7 @@ private:
 					outdated_keys[key].push_back(row);
 				else
 				{
-					const auto string_ref =  def && cell.isDefault() ? def->getDataAt(row) : attribute_array[cell_idx];
+					const auto string_ref =  cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
 					map[key] = String{string_ref};
 					total_length += string_ref.size + 1;
 				}
@@ -576,22 +620,19 @@ private:
 				map[key] = String{attribute_value};
 				total_length += (attribute_value.size + 1) * outdated_keys[key].size();
 			}, [&] (const auto key, const auto cell_idx) {
-				auto attribute_value = def ? def->getDataAt(outdated_keys[key].front()) : attribute_array[cell_idx];
-				map[key] = String{attribute_value};
-				total_length += (attribute_value.size + 1) * outdated_keys[key].size();
+				for (const auto row : outdated_keys[key])
+					total_length += get_default(row).size + 1;
 			});
 		}
 
 		out->getChars().reserve(total_length);
 
-		const auto & null_value = std::get<String>(attribute.null_values);
-
-		for (const auto key : keys_array)
+		for (const auto row : ext::range(0, ext::size(keys_array)))
 		{
+			const auto key = keys_array[row];
 			const auto it = map.find(key);
-			/// @note check seems redundant, null_values are explicitly stored in the `map`
-			const auto & string = it != map.end() ? it->second : null_value;
-			out->insertData(string.data(), string.size());
+			const auto string_ref = it != std::end(map) ? StringRef{it->second} : get_default(row);
+			out->insertData(string_ref.data, string_ref.size);
 		}
 	}
 
