@@ -1,13 +1,39 @@
 DROP TABLE IF EXISTS test.sample;
 
+SET max_block_size = 10;
+
 CREATE TABLE test.sample (d Date DEFAULT '2000-01-01', x UInt8) ENGINE = MergeTree(d, x, x, 10);
 INSERT INTO test.sample (x) SELECT toUInt8(number) AS x FROM system.numbers LIMIT 256;
 
-SELECT x FROM test.sample;
-SELECT x FROM test.sample SAMPLE 1;
-SELECT x FROM test.sample SAMPLE 0.1;
+SELECT count(), min(x), max(x), sum(x), uniqExact(x) FROM test.sample;
+SELECT count(), min(x), max(x), sum(x), uniqExact(x) FROM test.sample SAMPLE 1;
+SELECT count(), min(x), max(x), sum(x), uniqExact(x) FROM test.sample SAMPLE 0.1;
+SELECT count(), min(x), max(x), sum(x), uniqExact(x) FROM test.sample SAMPLE 1/10;
+SELECT count(), min(x), max(x), sum(x), uniqExact(x) FROM test.sample SAMPLE 1/1e1;
+SELECT count(), min(x), max(x), sum(x), uniqExact(x) FROM test.sample SAMPLE 1e1/1e2;
+SELECT count(), min(x), max(x), sum(x), uniqExact(x) FROM test.sample SAMPLE 1e-1;
+SELECT count(), min(x), max(x), sum(x), uniqExact(x) FROM test.sample SAMPLE 2e-2;
+SELECT count(), min(x), max(x), sum(x), uniqExact(x) FROM test.sample SAMPLE 1/10 OFFSET 1/10;
+SELECT count(), min(x), max(x), sum(x), uniqExact(x) FROM test.sample SAMPLE 1/10 OFFSET 9/10;
+SELECT count(), min(x), max(x), sum(x), uniqExact(x) FROM test.sample SAMPLE 1/10 OFFSET 10/10;
+SELECT count(), min(x), max(x), sum(x), uniqExact(x) FROM test.sample SAMPLE 1/10 OFFSET 19/20;
 
-SELECT x FROM
+SELECT count() >= 100 FROM test.sample SAMPLE 100;
+SELECT count(), min(x), max(x), sum(x), uniqExact(x) FROM test.sample SAMPLE 1000;
+
+SELECT count(), min(x), max(x), sum(x), uniqExact(x) FROM test.sample SAMPLE 1/2;
+SELECT count(), min(x), max(x), sum(x), uniqExact(x) FROM test.sample SAMPLE 1/2 OFFSET 1/2;
+SELECT count(), min(x), max(x), sum(x), uniqExact(x) FROM test.sample SAMPLE 1/2 SETTINGS parallel_replicas_count = 3;
+SELECT count(), min(x), max(x), sum(x), uniqExact(x) FROM test.sample SAMPLE 1/2 SETTINGS parallel_replicas_count = 3, parallel_replica_offset = 0;
+SELECT count(), min(x), max(x), sum(x), uniqExact(x) FROM test.sample SAMPLE 1/2 SETTINGS parallel_replicas_count = 3, parallel_replica_offset = 1;
+SELECT count(), min(x), max(x), sum(x), uniqExact(x) FROM test.sample SAMPLE 1/2 SETTINGS parallel_replicas_count = 3, parallel_replica_offset = 2;
+SELECT count(), min(x), max(x), sum(x), uniqExact(x) FROM test.sample SAMPLE 1/2 OFFSET 1/2 SETTINGS parallel_replicas_count = 3;
+SELECT count(), min(x), max(x), sum(x), uniqExact(x) FROM test.sample SAMPLE 1/2 OFFSET 1/2 SETTINGS parallel_replicas_count = 3, parallel_replica_offset = 0;
+SELECT count(), min(x), max(x), sum(x), uniqExact(x) FROM test.sample SAMPLE 1/2 OFFSET 1/2 SETTINGS parallel_replicas_count = 3, parallel_replica_offset = 1;
+SELECT count(), min(x), max(x), sum(x), uniqExact(x) FROM test.sample SAMPLE 1/2 OFFSET 1/2 SETTINGS parallel_replicas_count = 3, parallel_replica_offset = 2;
+
+
+SELECT count(), min(x), max(x), sum(x), uniqExact(x) FROM
 (
           SELECT x FROM test.sample SAMPLE 0.1 OFFSET 0.0
 UNION ALL SELECT x FROM test.sample SAMPLE 0.1 OFFSET 0.1
@@ -19,11 +45,10 @@ UNION ALL SELECT x FROM test.sample SAMPLE 0.1 OFFSET 0.6
 UNION ALL SELECT x FROM test.sample SAMPLE 0.1 OFFSET 0.7
 UNION ALL SELECT x FROM test.sample SAMPLE 0.1 OFFSET 0.8
 UNION ALL SELECT x FROM test.sample SAMPLE 0.1 OFFSET 0.9
-)
-ORDER BY x;
+);
 
-SELECT x FROM test.sample SAMPLE 0.05 OFFSET 0.35;
-SELECT x FROM test.sample SAMPLE 0.05 OFFSET 0.4;
+SELECT count(), min(x), max(x), sum(x), uniqExact(x) FROM test.sample SAMPLE 0.05 OFFSET 0.35;
+SELECT count(), min(x), max(x), sum(x), uniqExact(x) FROM test.sample SAMPLE 0.05 OFFSET 0.4;
 
 SELECT count()
 FROM 
@@ -141,6 +166,7 @@ FROM
 
 DROP TABLE test.sample;
 
+SET max_block_size = 8192;
 
 CREATE TABLE test.sample (d Date DEFAULT '2000-01-01', x UInt16) ENGINE = MergeTree(d, x, x, 10);
 INSERT INTO test.sample (x) SELECT toUInt16(number) AS x FROM system.numbers LIMIT 65536;

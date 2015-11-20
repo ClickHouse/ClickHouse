@@ -269,6 +269,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 		if (settings.parallel_replicas_count > 1)
 		{
+			if (relative_sample_size == 0)
+				relative_sample_size = 1;
+
 			relative_sample_size /= settings.parallel_replicas_count;
 			relative_sample_offset += relative_sample_size * settings.parallel_replica_offset;
 		}
@@ -295,8 +298,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 /*		std::cerr << std::fixed << std::setprecision(100)
 			<< "relative_sample_size: " << relative_sample_size << "\n"
 			<< "relative_sample_offset: " << relative_sample_offset << "\n"
-			<< "lower_limit_float: " << lower_limit_float << "\n"
-			<< "upper_limit_float: " << upper_limit_float << "\n"
+			<< "lower_limit_float: " << lower_limit_rational << "\n"
+			<< "upper_limit_float: " << upper_limit_rational << "\n"
 			<< "lower: " << lower << "\n"
 			<< "upper: " << upper << "\n";*/
 
