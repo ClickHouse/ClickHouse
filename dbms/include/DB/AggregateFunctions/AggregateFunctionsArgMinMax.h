@@ -41,10 +41,10 @@ public:
 		type_val = arguments[1];
 	}
 
-	void addImpl(AggregateDataPtr place, const IColumn & columns_arg, const IColumn & column_max, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column_arg, const IColumn & column_max, size_t row_num) const
 	{
-		if (this->data(place).value.changeIfBetter(columns_max, row_num))
-			this->data(place).result.change(columns_arg, row_num);
+		if (this->data(place).value.changeIfBetter(column_max, row_num))
+			this->data(place).result.change(column_arg, row_num);
 	}
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
