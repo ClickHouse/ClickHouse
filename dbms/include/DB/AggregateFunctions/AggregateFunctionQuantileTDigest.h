@@ -11,6 +11,7 @@
 #include <DB/Common/RadixSort.h>
 #include <DB/Common/PODArray.h>
 #include <DB/AggregateFunctions/IUnaryAggregateFunction.h>
+#include <DB/AggregateFunctions/IBinaryAggregateFunction.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 
 
@@ -289,13 +290,14 @@ struct AggregateFunctionQuantileTDigestData
 };
 
 
-template <typename T>
+template <typename T, bool returns_float = true>
 class AggregateFunctionQuantileTDigest final
 	: public IUnaryAggregateFunction<AggregateFunctionQuantileTDigestData, AggregateFunctionQuantileTDigest<T>>
 {
 private:
 	double level;
 	tdigest::Params<Float32> params;
+	DataTypePtr type;
 
 public:
 	AggregateFunctionQuantileTDigest(double level_ = 0.5) : level(level_) {}
@@ -304,11 +306,15 @@ public:
 
 	DataTypePtr getReturnType() const override
 	{
-		return new DataTypeFloat64;
+		return type;
 	}
 
 	void setArgument(const DataTypePtr & argument)
 	{
+		if (returns_float)
+			type = new DataTypeFloat32;
+		else
+			type = argument;
 	}
 
 	void setParameters(const Array & params) override
@@ -341,8 +347,81 @@ public:
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
 	{
-		static_cast<ColumnFloat64 &>(to).getData().push_back(
-			this->data(const_cast<AggregateDataPtr>(place)).digest.quantile(params, level));
+		auto quantile = this->data(const_cast<AggregateDataPtr>(place)).digest.quantile(params, level);
+
+		if (returns_float)
+			static_cast<ColumnFloat32 &>(to).getData().push_back(quantile);
+		else
+			static_cast<ColumnVector<T> &>(to).getData().push_back(quantile);
+	}
+};
+
+
+template <typename T, typename Weight, bool returns_float = true>
+class AggregateFunctionQuantileTDigestWeighted final
+	: public IBinaryAggregateFunction<AggregateFunctionQuantileTDigestData, AggregateFunctionQuantileTDigestWeighted<T, Weight>>
+{
+private:
+	double level;
+	tdigest::Params<Float32> params;
+	DataTypePtr type;
+
+public:
+	AggregateFunctionQuantileTDigestWeighted(double level_ = 0.5) : level(level_) {}
+
+	String getName() const override { return "quantileTDigestWeighted"; }
+
+	DataTypePtr getReturnType() const override
+	{
+		return type;
+	}
+
+	void setArgumentsImpl(const DataTypes & arguments)
+	{
+		if (returns_float)
+			type = new DataTypeFloat32;
+		else
+			type = arguments.at(0);
+	}
+
+	void setParameters(const Array & params) override
+	{
+		if (params.size() != 1)
+			throw Exception("Aggregate function " + getName() + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		level = apply_visitor(FieldVisitorConvertToNumber<Float64>(), params[0]);
+	}
+
+	void addImpl(AggregateDataPtr place, const IColumn & column_value, const IColumn & column_weight, size_t row_num) const
+	{
+		this->data(place).digest.add(params,
+			static_cast<const ColumnVector<T> &>(column_value).getData()[row_num],
+			static_cast<const ColumnVector<Weight> &>(column_weight).getData()[row_num]);
+	}
+
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	{
+		this->data(place).digest.merge(params, this->data(rhs).digest);
+	}
+
+	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
+	{
+		this->data(const_cast<AggregateDataPtr>(place)).digest.write(params, buf);
+	}
+
+	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
+	{
+		this->data(place).digest.readAndMerge(params, buf);
+	}
+
+	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+	{
+		auto quantile = this->data(const_cast<AggregateDataPtr>(place)).digest.quantile(params, level);
+
+		if (returns_float)
+			static_cast<ColumnFloat32 &>(to).getData().push_back(quantile);
+		else
+			static_cast<ColumnVector<T> &>(to).getData().push_back(quantile);
 	}
 };
 
