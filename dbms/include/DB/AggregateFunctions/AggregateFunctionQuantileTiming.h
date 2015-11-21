@@ -665,7 +665,7 @@ template <typename ArgumentFieldType>
 class AggregateFunctionQuantilesTiming final : public IUnaryAggregateFunction<QuantileTiming, AggregateFunctionQuantilesTiming<ArgumentFieldType> >
 {
 private:
-	typedef std::vector<double> Levels;
+	using Levels = std::vector<double>;
 	Levels levels;
 
 public:

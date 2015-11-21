@@ -10,13 +10,15 @@
 #include <DB/Core/FieldVisitors.h>
 #include <DB/Common/RadixSort.h>
 #include <DB/Common/PODArray.h>
+#include <DB/Columns/ColumnArray.h>
 #include <DB/AggregateFunctions/IUnaryAggregateFunction.h>
 #include <DB/AggregateFunctions/IBinaryAggregateFunction.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypeArray.h>
 
 
 /** Алгоритм реализовал Алексей Борзенков https://███████████.yandex-team.ru/snaury
-  * Ему принадлежит авторство кода и комментариев в данном namespace,
+  * Ему принадлежит авторство кода и половины комментариев в данном namespace,
   *  за исключением слияния, сериализации и сортировки, а также выбора типов и других изменений.
   * Мы благодарим Алексея Борзенкова за написание изначального кода.
   */
@@ -210,7 +212,7 @@ public:
 	/** Вычисляет квантиль q [0, 1] на основе дайджеста
 	  * Для пустого дайджеста возвращает NaN.
 	  */
-	Value quantile(const Params & params, Value q)
+	Value getQuantile(const Params & params, Value q)
 	{
 		if (summary.empty())
 			return NAN;
@@ -232,7 +234,7 @@ public:
 			if (index <= b_index)
 				break;
 
-			sum += summary[i-1].count;
+			sum += summary[i - 1].count;
 			a_mean = b_mean;
 			a_index = b_index;
 			b_mean = summary[i].mean;
@@ -240,6 +242,58 @@ public:
 		}
 
 		return interpolate(index, a_index, a_mean, b_index, b_mean);
+	}
+
+	template <typename ResultType>
+	void getManyQuantiles(const Params & params, const Value * levels, size_t size, ResultType * result)
+	{
+		if (summary.empty())
+		{
+			for (size_t result_num = 0; result_num < size; ++result_num)
+				result[result_num] = std::is_floating_point<ResultType>::value ? NAN : 0;
+			return;
+		}
+
+		compress(params);
+
+		if (summary.size() == 1)
+		{
+			for (size_t result_num = 0; result_num < size; ++result_num)
+				result[result_num] = summary[0].mean;
+			return;
+		}
+
+		Value index = levels[0] * count;
+		TotalCount sum = 1;
+		Value a_mean = summary[0].mean;
+		Value a_index = 0.0;
+		Value b_mean = summary[0].mean;
+		Value b_index = sum + (summary[0].count - 1) * 0.5;
+
+		size_t result_num = 0;
+		for (size_t i = 1; i < summary.size(); ++i)
+		{
+			while (index <= b_index)
+			{
+				result[result_num] = interpolate(index, a_index, a_mean, b_index, b_mean);
+
+				++result_num;
+				if (result_num >= size)
+					return;
+
+				index = levels[result_num] * count;
+			}
+
+			sum += summary[i - 1].count;
+			a_mean = b_mean;
+			a_index = b_index;
+			b_mean = summary[i].mean;
+			b_index = sum + (summary[i].count - 1) * 0.5;
+		}
+
+		auto res_of_results = interpolate(index, a_index, a_mean, b_index, b_mean);
+		for (; result_num < size; ++result_num)
+			result[result_num] = res_of_results;
 	}
 
 	/** Объединить с другим состоянием.
@@ -295,7 +349,7 @@ class AggregateFunctionQuantileTDigest final
 	: public IUnaryAggregateFunction<AggregateFunctionQuantileTDigestData, AggregateFunctionQuantileTDigest<T>>
 {
 private:
-	double level;
+	Float32 level;
 	tdigest::Params<Float32> params;
 	DataTypePtr type;
 
@@ -322,7 +376,7 @@ public:
 		if (params.size() != 1)
 			throw Exception("Aggregate function " + getName() + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		level = apply_visitor(FieldVisitorConvertToNumber<Float64>(), params[0]);
+		level = apply_visitor(FieldVisitorConvertToNumber<Float32>(), params[0]);
 	}
 
 	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const
@@ -347,7 +401,7 @@ public:
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
 	{
-		auto quantile = this->data(const_cast<AggregateDataPtr>(place)).digest.quantile(params, level);
+		auto quantile = this->data(const_cast<AggregateDataPtr>(place)).digest.getQuantile(params, level);
 
 		if (returns_float)
 			static_cast<ColumnFloat32 &>(to).getData().push_back(quantile);
@@ -359,10 +413,10 @@ public:
 
 template <typename T, typename Weight, bool returns_float = true>
 class AggregateFunctionQuantileTDigestWeighted final
-	: public IBinaryAggregateFunction<AggregateFunctionQuantileTDigestData, AggregateFunctionQuantileTDigestWeighted<T, Weight>>
+	: public IBinaryAggregateFunction<AggregateFunctionQuantileTDigestData, AggregateFunctionQuantileTDigestWeighted<T, Weight, returns_float>>
 {
 private:
-	double level;
+	Float32 level;
 	tdigest::Params<Float32> params;
 	DataTypePtr type;
 
@@ -389,7 +443,7 @@ public:
 		if (params.size() != 1)
 			throw Exception("Aggregate function " + getName() + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		level = apply_visitor(FieldVisitorConvertToNumber<Float64>(), params[0]);
+		level = apply_visitor(FieldVisitorConvertToNumber<Float32>(), params[0]);
 	}
 
 	void addImpl(AggregateDataPtr place, const IColumn & column_value, const IColumn & column_weight, size_t row_num) const
@@ -416,12 +470,186 @@ public:
 
 	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
 	{
-		auto quantile = this->data(const_cast<AggregateDataPtr>(place)).digest.quantile(params, level);
+		auto quantile = this->data(const_cast<AggregateDataPtr>(place)).digest.getQuantile(params, level);
 
 		if (returns_float)
 			static_cast<ColumnFloat32 &>(to).getData().push_back(quantile);
 		else
 			static_cast<ColumnVector<T> &>(to).getData().push_back(quantile);
+	}
+};
+
+
+template <typename T, bool returns_float = true>
+class AggregateFunctionQuantilesTDigest final
+	: public IUnaryAggregateFunction<AggregateFunctionQuantileTDigestData, AggregateFunctionQuantilesTDigest<T>>
+{
+private:
+	using Levels = std::vector<Float32>;
+	Levels levels;
+	tdigest::Params<Float32> params;
+	DataTypePtr type;
+
+public:
+	String getName() const override { return "quantilesTDigest"; }
+
+	DataTypePtr getReturnType() const override
+	{
+		return new DataTypeArray(type);
+	}
+
+	void setArgument(const DataTypePtr & argument)
+	{
+		if (returns_float)
+			type = new DataTypeFloat32;
+		else
+			type = argument;
+	}
+
+	void setParameters(const Array & params) override
+	{
+		if (params.empty())
+			throw Exception("Aggregate function " + getName() + " requires at least one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		size_t size = params.size();
+		levels.resize(size);
+
+		for (size_t i = 0; i < size; ++i)
+			levels[i] = apply_visitor(FieldVisitorConvertToNumber<Float32>(), params[i]);
+	}
+
+	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const
+	{
+		this->data(place).digest.add(params, static_cast<const ColumnVector<T> &>(column).getData()[row_num]);
+	}
+
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	{
+		this->data(place).digest.merge(params, this->data(rhs).digest);
+	}
+
+	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
+	{
+		this->data(const_cast<AggregateDataPtr>(place)).digest.write(params, buf);
+	}
+
+	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
+	{
+		this->data(place).digest.readAndMerge(params, buf);
+	}
+
+	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+	{
+		ColumnArray & arr_to = static_cast<ColumnArray &>(to);
+		ColumnArray::Offsets_t & offsets_to = arr_to.getOffsets();
+
+		size_t size = levels.size();
+		offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + size);
+
+		if (returns_float)
+		{
+			typename ColumnFloat32::Container_t & data_to = static_cast<ColumnFloat32 &>(arr_to.getData()).getData();
+			size_t old_size = data_to.size();
+			data_to.resize(data_to.size() + size);
+
+			this->data(const_cast<AggregateDataPtr>(place)).digest.getManyQuantiles(params, &levels[0], size, &data_to[old_size]);
+		}
+		else
+		{
+			typename ColumnVector<T>::Container_t & data_to = static_cast<ColumnVector<T> &>(arr_to.getData()).getData();
+			size_t old_size = data_to.size();
+			data_to.resize(data_to.size() + size);
+
+			this->data(const_cast<AggregateDataPtr>(place)).digest.getManyQuantiles(params, &levels[0], size, &data_to[old_size]);
+		}
+	}
+};
+
+
+template <typename T, typename Weight, bool returns_float = true>
+class AggregateFunctionQuantilesTDigestWeighted final
+	: public IBinaryAggregateFunction<AggregateFunctionQuantileTDigestData, AggregateFunctionQuantilesTDigestWeighted<T, Weight, returns_float>>
+{
+private:
+	using Levels = std::vector<Float32>;
+	Levels levels;
+	tdigest::Params<Float32> params;
+	DataTypePtr type;
+
+public:
+	String getName() const override { return "quantilesTDigest"; }
+
+	DataTypePtr getReturnType() const override
+	{
+		return new DataTypeArray(type);
+	}
+
+	void setArgumentsImpl(const DataTypes & arguments)
+	{
+		if (returns_float)
+			type = new DataTypeFloat32;
+		else
+			type = arguments.at(0);
+	}
+
+	void setParameters(const Array & params) override
+	{
+		if (params.empty())
+			throw Exception("Aggregate function " + getName() + " requires at least one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		size_t size = params.size();
+		levels.resize(size);
+
+		for (size_t i = 0; i < size; ++i)
+			levels[i] = apply_visitor(FieldVisitorConvertToNumber<Float32>(), params[i]);
+	}
+
+	void addImpl(AggregateDataPtr place, const IColumn & column_value, const IColumn & column_weight, size_t row_num) const
+	{
+		this->data(place).digest.add(params,
+			static_cast<const ColumnVector<T> &>(column_value).getData()[row_num],
+			static_cast<const ColumnVector<Weight> &>(column_weight).getData()[row_num]);
+	}
+
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	{
+		this->data(place).digest.merge(params, this->data(rhs).digest);
+	}
+
+	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
+	{
+		this->data(const_cast<AggregateDataPtr>(place)).digest.write(params, buf);
+	}
+
+	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
+	{
+		this->data(place).digest.readAndMerge(params, buf);
+	}
+
+	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+	{
+		ColumnArray & arr_to = static_cast<ColumnArray &>(to);
+		ColumnArray::Offsets_t & offsets_to = arr_to.getOffsets();
+
+		size_t size = levels.size();
+		offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + size);
+
+		if (returns_float)
+		{
+			typename ColumnFloat32::Container_t & data_to = static_cast<ColumnFloat32 &>(arr_to.getData()).getData();
+			size_t old_size = data_to.size();
+			data_to.resize(data_to.size() + size);
+
+			this->data(const_cast<AggregateDataPtr>(place)).digest.getManyQuantiles(params, &levels[0], size, &data_to[old_size]);
+		}
+		else
+		{
+			typename ColumnVector<T>::Container_t & data_to = static_cast<ColumnVector<T> &>(arr_to.getData()).getData();
+			size_t old_size = data_to.size();
+			data_to.resize(data_to.size() + size);
+
+			this->data(const_cast<AggregateDataPtr>(place)).digest.getManyQuantiles(params, &levels[0], size, &data_to[old_size]);
+		}
 	}
 };
 
