@@ -7,6 +7,7 @@
 #include <DB/Core/ErrorCodes.h>
 #include <DB/Columns/ColumnVector.h>
 #include <DB/Columns/IColumn.h>
+#include <DB/Columns/ColumnsCommon.h>
 #include <DB/DataTypes/IDataType.h>
 
 

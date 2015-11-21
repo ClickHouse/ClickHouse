@@ -1,4 +1,5 @@
 #include <DB/Columns/ColumnsNumber.h>
+#include <DB/Columns/ColumnsCommon.h>
 
 #include <DB/DataStreams/FilterBlockInputStream.h>
 
