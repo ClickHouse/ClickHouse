@@ -600,7 +600,8 @@ public:
 /** То же самое, но с двумя аргументами. Второй аргумент - "вес" (целое число) - сколько раз учитывать значение.
   */
 template <typename ArgumentFieldType, typename WeightFieldType>
-class AggregateFunctionQuantileTimingWeighted final : public IAggregateFunctionHelper<QuantileTiming>
+class AggregateFunctionQuantileTimingWeighted final
+	: public IBinaryAggregateFunction<QuantileTiming, AggregateFunctionQuantileTimingWeighted<ArgumentFieldType, WeightFieldType>>
 {
 private:
 	double level;
@@ -615,7 +616,7 @@ public:
 		return new DataTypeFloat32;
 	}
 
-	void setArguments(const DataTypes & arguments) override
+	void setArgumentsImpl(const DataTypes & arguments)
 	{
 	}
 
@@ -627,12 +628,11 @@ public:
 		level = apply_visitor(FieldVisitorConvertToNumber<Float64>(), params[0]);
 	}
 
-
-	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const override
+	void addImpl(AggregateDataPtr place, const IColumn & column_value, const IColumn & column_weight, size_t row_num) const
 	{
 		this->data(place).insertWeighted(
-			static_cast<const ColumnVector<ArgumentFieldType> &>(*columns[0]).getData()[row_num],
-			static_cast<const ColumnVector<WeightFieldType> &>(*columns[1]).getData()[row_num]);
+			static_cast<const ColumnVector<ArgumentFieldType> &>(column_value).getData()[row_num],
+			static_cast<const ColumnVector<WeightFieldType> &>(column_weight).getData()[row_num]);
 	}
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
