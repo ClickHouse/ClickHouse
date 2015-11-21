@@ -64,6 +64,7 @@ void registerAggregateFunctionsQuantileExact(AggregateFunctionFactory & factory)
 void registerAggregateFunctionsQuantileExactWeighted(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsQuantileDeterministic(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsQuantileTiming(AggregateFunctionFactory & factory);
+void registerAggregateFunctionsQuantileTDigest(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsSequenceMatch(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsMinMaxAny(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsStatistics(AggregateFunctionFactory & factory);
@@ -88,6 +89,7 @@ AggregateFunctionFactory::AggregateFunctionFactory()
 	registerAggregateFunctionsQuantileExactWeighted(*this);
 	registerAggregateFunctionsQuantileDeterministic(*this);
 	registerAggregateFunctionsQuantileTiming(*this);
+	registerAggregateFunctionsQuantileTDigest(*this);
 	registerAggregateFunctionsSequenceMatch(*this);
 	registerAggregateFunctionsMinMaxAny(*this);
 	registerAggregateFunctionsStatistics(*this);
