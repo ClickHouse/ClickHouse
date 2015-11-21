@@ -548,7 +548,7 @@ private:
 
 		out->getChars().reserve(total_length);
 
-		const auto & null_value = std::get<String>(attribute.null_values);
+	//	const auto & null_value = std::get<String>(attribute.null_values);
 
 		for (const auto row : ext::range(0, ext::size(ids)))
 		{
