@@ -67,7 +67,7 @@ struct RadixSortFloatTraits
 
 	static constexpr size_t PART_SIZE_BITS = 8;	/// Какими кусочками ключа в количестве бит делать один проход - перестановку массива.
 
-	/// Преобразования ключа в KeyBitsType такое, что отношение порядка над ключём соответствует отношению порядка над KeyBitsType.
+	/// Преобразования ключа в KeyBits такое, что отношение порядка над ключём соответствует отношению порядка над KeyBits.
 	using Transform = RadixSortFloatTransform<KeyBits>;
 
 	/// Объект с функциями allocate и deallocate.
