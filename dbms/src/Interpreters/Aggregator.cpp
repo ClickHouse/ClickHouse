@@ -432,7 +432,7 @@ void NO_INLINE Aggregator::executeImpl(
 	Arena * aggregates_pool,
 	size_t rows,
 	ConstColumnPlainPtrs & key_columns,
-	AggregateColumns & aggregate_columns,
+	AggregateFunctionInstruction * aggregate_instructions,
 	const Sizes & key_sizes,
 	StringRefs & keys,
 	bool no_more_keys,
@@ -442,9 +442,9 @@ void NO_INLINE Aggregator::executeImpl(
 	state.init(key_columns);
 
 	if (!no_more_keys)
-		executeImplCase<false>(method, state, aggregates_pool, rows, key_columns, aggregate_columns, key_sizes, keys, overflow_row);
+		executeImplCase<false>(method, state, aggregates_pool, rows, key_columns, aggregate_instructions, key_sizes, keys, overflow_row);
 	else
-		executeImplCase<true>(method, state, aggregates_pool, rows, key_columns, aggregate_columns, key_sizes, keys, overflow_row);
+		executeImplCase<true>(method, state, aggregates_pool, rows, key_columns, aggregate_instructions, key_sizes, keys, overflow_row);
 }
 
 #ifndef __clang__
@@ -459,7 +459,7 @@ void NO_INLINE Aggregator::executeImplCase(
 	Arena * aggregates_pool,
 	size_t rows,
 	ConstColumnPlainPtrs & key_columns,
-	AggregateColumns & aggregate_columns,
+	AggregateFunctionInstruction * aggregate_instructions,
 	const Sizes & key_sizes,
 	StringRefs & keys,
 	AggregateDataPtr overflow_row) const
@@ -486,8 +486,8 @@ void NO_INLINE Aggregator::executeImplCase(
 				{
 					/// Добавляем значения в агрегатные функции.
 					AggregateDataPtr value = Method::getAggregateData(it->second);
-					for (size_t j = 0; j < aggregates_size; ++j)	/// NOTE: Заменить индекс на два указателя?
-						aggregate_functions[j]->add(value + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
+					for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
+						(*inst->func)(inst->that, value + inst->state_offset, inst->arguments, i);
 
 					method.onExistingKey(key, keys, *aggregates_pool);
 					continue;
@@ -534,8 +534,8 @@ void NO_INLINE Aggregator::executeImplCase(
 		AggregateDataPtr value = (!no_more_keys || !overflow) ? Method::getAggregateData(it->second) : overflow_row;
 
 		/// Добавляем значения в агрегатные функции.
-		for (size_t j = 0; j < aggregates_size; ++j)
-			aggregate_functions[j]->add(value + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
+		for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
+			(*inst->func)(inst->that, value + inst->state_offset, inst->arguments, i);
 	}
 }
 
@@ -546,7 +546,7 @@ void NO_INLINE Aggregator::executeImplCase(
 void NO_INLINE Aggregator::executeWithoutKeyImpl(
 	AggregatedDataWithoutKey & res,
 	size_t rows,
-	AggregateColumns & aggregate_columns) const
+	AggregateFunctionInstruction * aggregate_instructions) const
 {
 	/// Оптимизация в случае единственной агрегатной функции count.
 	AggregateFunctionCount * agg_count = aggregates_size == 1
@@ -560,8 +560,8 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
 		for (size_t i = 0; i < rows; ++i)
 		{
 			/// Добавляем значения
-			for (size_t j = 0; j < aggregates_size; ++j)
-				aggregate_functions[j]->add(res + offsets_of_aggregate_states[j], &aggregate_columns[j][0], i);
+			for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
+				(*inst->func)(inst->that, res + inst->state_offset, inst->arguments, i);
 		}
 	}
 }
@@ -600,6 +600,9 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 		}
 	}
 
+	AggregateFunctionInstructions aggregate_functions_instructions(aggregates_size + 1);
+	aggregate_functions_instructions[aggregates_size].that = nullptr;
+
 	for (size_t i = 0; i < aggregates_size; ++i)
 	{
 		for (size_t j = 0; j < aggregate_columns[i].size(); ++j)
@@ -612,6 +615,11 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 				aggregate_columns[i][j] = materialized_columns.back().get();
 			}
 		}
+
+		aggregate_functions_instructions[i].that = aggregate_functions[i];
+		aggregate_functions_instructions[i].func = aggregate_functions[i]->getAddressOfAddFunction();
+		aggregate_functions_instructions[i].state_offset = offsets_of_aggregate_states[i];
+		aggregate_functions_instructions[i].arguments = &aggregate_columns[i][0];
 	}
 
 	if (isCancelled())
@@ -654,7 +662,7 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 					(compiled_data->compiled_method_ptr)(*this, result.without_key, rows, aggregate_columns);
 		}
 		else
-			executeWithoutKeyImpl(result.without_key, rows, aggregate_columns);
+			executeWithoutKeyImpl(result.without_key, rows, &aggregate_functions_instructions[0]);
 	}
 	else
 	{
@@ -700,7 +708,7 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 		{
 		#define M(NAME, IS_TWO_LEVEL) \
 			else if (result.type == AggregatedDataVariants::Type::NAME) \
-				executeImpl(*result.NAME, result.aggregates_pool, rows, key_columns, aggregate_columns, \
+				executeImpl(*result.NAME, result.aggregates_pool, rows, key_columns, &aggregate_functions_instructions[0], \
 					result.key_sizes, key, no_more_keys, overflow_row_ptr);
 
 			if (false) {}
