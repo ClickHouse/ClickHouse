@@ -27,7 +27,13 @@ private:
 		return sizes;
 	}
 
-	static auto getMinBucketNum() { return 3; }
+	static auto sizeToPreviousPowerOfTwo(const int size) { return _bit_scan_reverse(size - 1); }
+
+	static auto getMinBucketNum()
+	{
+		static const auto val = sizeToPreviousPowerOfTwo(getSizes().front());
+		return val;
+	}
 	static auto getMaxFixedBlockSize() { return getSizes().back(); }
 
 	Arena pool;
@@ -36,7 +42,7 @@ private:
 	static std::size_t findFreeListIndex(const std::size_t size)
 	{
 		/// shift powers of two into previous bucket by subtracting 1
-		const auto bucket_num = _bit_scan_reverse(size - 1);
+		const auto bucket_num = sizeToPreviousPowerOfTwo(size);
 
 		return std::max(bucket_num, getMinBucketNum()) - getMinBucketNum();
 	}
