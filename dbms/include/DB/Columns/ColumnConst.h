@@ -21,6 +21,7 @@ class IColumnConst : public IColumn
 public:
 	bool isConst() const override { return true; }
 	virtual ColumnPtr convertToFullColumn() const = 0;
+	ColumnPtr convertToFullColumnIfConst() const override { return convertToFullColumn(); }
 };
 
 

@@ -185,9 +185,9 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 		key_columns[i] = block.getByPosition(i).column;
 		data_types[i] = block.getByPosition(i).type;
 
-		if (key_columns[i]->isConst())
+		if (auto converted = key_columns[i]->convertToFullColumnIfConst())
 		{
-			materialized_columns.emplace_back(static_cast<const IColumnConst *>(key_columns[i])->convertToFullColumn());
+			materialized_columns.emplace_back(converted);
 			key_columns[i] = materialized_columns.back().get();
 		}
 	}
@@ -475,11 +475,8 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 
 		/// Константный столбец слева от IN поддерживается не напрямую. Для этого, он сначала материализуется.
 		ColumnPtr materialized_column;
-		if (in_column->isConst())
-		{
-			materialized_column = static_cast<const IColumnConst *>(in_column)->convertToFullColumn();
+		if (materialized_column = in_column->convertToFullColumnIfConst())
 			in_column = materialized_column.get();
-		}
 
 		if (const ColumnArray * col = typeid_cast<const ColumnArray *>(in_column))
 			executeArray(col, vec_res, negative);
@@ -507,9 +504,9 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 		Columns materialized_columns;
 		for (auto & column_ptr : key_columns)
 		{
-			if (column_ptr->isConst())
+			if (auto converted = column_ptr->convertToFullColumnIfConst())
 			{
-				materialized_columns.emplace_back(static_cast<const IColumnConst *>(column_ptr)->convertToFullColumn());
+				materialized_columns.emplace_back(converted);
 				column_ptr = materialized_columns.back().get();
 			}
 		}

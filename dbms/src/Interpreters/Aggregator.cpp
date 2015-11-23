@@ -117,8 +117,8 @@ void Aggregator::initialize(const Block & block)
 		for (size_t i = 0; i < keys_size; ++i)
 		{
 			sample.insert(block.getByPosition(keys[i]).cloneEmpty());
-			if (sample.getByPosition(i).column->isConst())
-				sample.getByPosition(i).column = dynamic_cast<IColumnConst &>(*sample.getByPosition(i).column).convertToFullColumn();
+			if (auto converted = sample.getByPosition(i).column->convertToFullColumnIfConst())
+				sample.getByPosition(i).column = converted;
 		}
 
 		for (size_t i = 0; i < aggregates_size; ++i)
@@ -593,9 +593,9 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 	{
 		key_columns[i] = block.getByPosition(keys[i]).column;
 
-		if (const IColumnConst * column_const = dynamic_cast<const IColumnConst *>(key_columns[i]))
+		if (auto converted = key_columns[i]->convertToFullColumnIfConst())
 		{
-			materialized_columns.push_back(column_const->convertToFullColumn());
+			materialized_columns.push_back(converted);
 			key_columns[i] = materialized_columns.back().get();
 		}
 	}
@@ -606,9 +606,9 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 		{
 			aggregate_columns[i][j] = block.getByPosition(aggregates[i].arguments[j]).column;
 
-			if (const IColumnConst * column_const = dynamic_cast<const IColumnConst *>(aggregate_columns[i][j]))
+			if (auto converted = aggregate_columns[i][j]->convertToFullColumnIfConst())
 			{
-				materialized_columns.push_back(column_const->convertToFullColumn());
+				materialized_columns.push_back(converted);
 				aggregate_columns[i][j] = materialized_columns.back().get();
 			}
 		}
@@ -929,7 +929,7 @@ Block Aggregator::prepareBlockAndFill(
 }
 
 
-BlocksList Aggregator::prepareBlocksAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final) const
+BlocksList Aggregator::prepareBlocksAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const
 {
 	size_t rows = 1;
 
@@ -957,7 +957,8 @@ BlocksList Aggregator::prepareBlocksAndFillWithoutKey(AggregatedDataVariants & d
 	};
 
 	Block block = prepareBlockAndFill(data_variants, final, rows, filler);
-	if (overflow_row)
+
+	if (is_overflows)
 		block.info.is_overflows = true;
 
 	BlocksList blocks;
@@ -1143,7 +1144,8 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
 			return BlocksList();
 
 		if (data_variants.type == AggregatedDataVariants::Type::without_key || overflow_row)
-			blocks.splice(blocks.end(), prepareBlocksAndFillWithoutKey(data_variants, final));
+			blocks.splice(blocks.end(), prepareBlocksAndFillWithoutKey(
+				data_variants, final, data_variants.type != AggregatedDataVariants::Type::without_key));
 
 		if (isCancelled())
 			return BlocksList();
@@ -1356,10 +1358,14 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
 			mergeDataImpl<Method>(
 				getDataVariant<Method>(*res).data,
 				getDataVariant<Method>(current).data);
-		else
+		else if (res->without_key)
 			mergeDataNoMoreKeysImpl<Method>(
 				getDataVariant<Method>(*res).data,
 				res->without_key,
+				getDataVariant<Method>(current).data);
+		else
+			mergeDataOnlyExistingKeysImpl<Method>(
+				getDataVariant<Method>(*res).data,
 				getDataVariant<Method>(current).data);
 
 		/// current не будет уничтожать состояния агрегатных функций в деструкторе

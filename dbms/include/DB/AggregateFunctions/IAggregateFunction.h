@@ -104,28 +104,28 @@ protected:
 	static const Data & data(ConstAggregateDataPtr place) 	{ return *reinterpret_cast<const Data*>(place); }
 
 public:
-	void create(AggregateDataPtr place) const
+	void create(AggregateDataPtr place) const override
 	{
 		new (place) Data;
 	}
 
-	void destroy(AggregateDataPtr place) const noexcept
+	void destroy(AggregateDataPtr place) const noexcept override
 	{
 		data(place).~Data();
 	}
 
-	bool hasTrivialDestructor() const
+	bool hasTrivialDestructor() const override
 	{
 		return __has_trivial_destructor(Data);
 	}
 
-	size_t sizeOfData() const
+	size_t sizeOfData() const override
 	{
 		return sizeof(Data);
 	}
 
 	/// NOTE: Сейчас не используется (структуры с состоянием агрегации кладутся без выравнивания).
-	size_t alignOfData() const
+	size_t alignOfData() const override
 	{
 		return __alignof__(Data);
 	}

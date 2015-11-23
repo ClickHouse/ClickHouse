@@ -42,6 +42,8 @@ public:
 	void setTotals(const Block & totals_) override { totals = totals_; }
 	void setExtremes(const Block & extremes_) override { extremes = extremes_; }
 
+	String getContentType() const override { return "application/json; charset=UTF-8"; }
+
 protected:
 
 	void writeRowsBeforeLimitAtLeast();

@@ -24,17 +24,17 @@ private:
 public:
 	AggregateFunctionMerge(AggregateFunctionPtr nested_) : nested_func_owner(nested_), nested_func(nested_func_owner.get()) {}
 
-	String getName() const
+	String getName() const override
 	{
 		return nested_func->getName() + "Merge";
 	}
 
-	DataTypePtr getReturnType() const
+	DataTypePtr getReturnType() const override
 	{
 		return nested_func->getReturnType();
 	}
 
-	void setArguments(const DataTypes & arguments)
+	void setArguments(const DataTypes & arguments) override
 	{
 		if (arguments.size() != 1)
 			throw Exception("Passed " + toString(arguments.size()) + " arguments to unary aggregate function " + this->getName(),
@@ -49,57 +49,57 @@ public:
 		nested_func->setArguments(data_type->getArgumentsDataTypes());
 	}
 
-	void setParameters(const Array & params)
+	void setParameters(const Array & params) override
 	{
 		nested_func->setParameters(params);
 	}
 
-	void create(AggregateDataPtr place) const
+	void create(AggregateDataPtr place) const override
 	{
 		nested_func->create(place);
 	}
 
-	void destroy(AggregateDataPtr place) const noexcept
+	void destroy(AggregateDataPtr place) const noexcept override
 	{
 		nested_func->destroy(place);
 	}
 
-	bool hasTrivialDestructor() const
+	bool hasTrivialDestructor() const override
 	{
 		return nested_func->hasTrivialDestructor();
 	}
 
-	size_t sizeOfData() const
+	size_t sizeOfData() const override
 	{
 		return nested_func->sizeOfData();
 	}
 
-	size_t alignOfData() const
+	size_t alignOfData() const override
 	{
 		return nested_func->alignOfData();
 	}
 
-	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const
+	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const override
 	{
 		nested_func->merge(place, static_cast<const ColumnAggregateFunction &>(*columns[0]).getData()[row_num]);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
 	{
 		nested_func->merge(place, rhs);
 	}
 
-	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
+	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
 	{
 		nested_func->serialize(place, buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
+	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
 		nested_func->deserializeMerge(place, buf);
 	}
 
-	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
+	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
 	{
 		nested_func->insertResultInto(place, to);
 	}

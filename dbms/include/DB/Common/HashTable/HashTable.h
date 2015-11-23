@@ -11,8 +11,6 @@
 
 #include <common/likely.h>
 
-#include <stats/IntHash.h>
-
 #include <DB/Core/Defines.h>
 #include <DB/Core/Types.h>
 #include <DB/Common/Exception.h>
