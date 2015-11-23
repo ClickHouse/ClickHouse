@@ -9,6 +9,7 @@
 #include <DB/Common/HashTable/HashMap.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/Core/StringRef.h>
+#include <ext/enumerate.hpp>
 #include <ext/scope_guard.hpp>
 #include <ext/bit_cast.hpp>
 #include <ext/range.hpp>
@@ -20,7 +21,6 @@
 #include <vector>
 #include <map>
 #include <tuple>
-#include <DB/DataStreams/NullBlockInputStream.h>
 
 
 namespace DB
@@ -58,7 +58,7 @@ public:
 
 	std::size_t getBytesAllocated() const override
 	{
-		return bytes_allocated + key_size_is_fixed ? fixed_size_keys_pool->size() : keys_pool->size();
+		return bytes_allocated + (key_size_is_fixed ? fixed_size_keys_pool->size() : keys_pool->size());
 	}
 
 	std::size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
@@ -553,7 +553,7 @@ private:
 					outdated_keys[key].push_back(row);
 				else
 				{
-					const auto string_ref =  cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
+					const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
 					map[key] = String{string_ref};
 					total_length += string_ref.size + 1;
 				}
@@ -601,9 +601,9 @@ private:
 		auto stream = source_ptr->loadKeys(in_key_columns, in_requested_rows);
 		stream->readPrefix();
 
-		MapType<UInt8> remaining_keys{in_requested_rows.size()};
+		MapType<bool> remaining_keys{in_requested_rows.size()};
 		for (const auto row : in_requested_rows)
-			remaining_keys.insert({ in_keys[row], 0 });
+			remaining_keys.insert({ in_keys[row], false });
 
 		std::uniform_int_distribution<std::uint64_t> distribution{
 			dict_lifetime.min_sec,
@@ -676,7 +676,7 @@ private:
 				/// inform caller
 				on_cell_updated(key, cell_idx);
 				/// mark corresponding id as found
-				remaining_keys[key] = 1;
+				remaining_keys[key] = true;
 			}
 		}
 
