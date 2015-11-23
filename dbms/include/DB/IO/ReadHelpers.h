@@ -371,12 +371,6 @@ inline bool tryReadFloatText(T & x, ReadBuffer & buf)
 }
 
 template <class T>
-inline bool tryReadFloatTextUnderscore(T & x, ReadBuffer & buf)
-{
-	return readFloatTextImpl<T, bool, '_'>(x, buf);
-}
-
-template <class T>
 inline void readFloatText(T & x, ReadBuffer & buf)
 {
 	readFloatTextImpl<T, void>(x, buf);
