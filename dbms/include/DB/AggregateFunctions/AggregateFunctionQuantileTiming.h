@@ -5,8 +5,6 @@
 #include <DB/Common/MemoryTracker.h>
 #include <DB/Common/HashTable/Hash.h>
 
-#include <DB/Core/FieldVisitors.h>
-
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/ReadHelpers.h>
 
@@ -15,6 +13,7 @@
 
 #include <DB/AggregateFunctions/IUnaryAggregateFunction.h>
 #include <DB/AggregateFunctions/IBinaryAggregateFunction.h>
+#include <DB/AggregateFunctions/QuantilesCommon.h>
 
 #include <DB/Columns/ColumnArray.h>
 
@@ -235,15 +234,10 @@ namespace detail
 		}
 
 		/// Получить значения size квантилей уровней levels. Записать size результатов начиная с адреса result.
+		/// indices - массив индексов levels такой, что соответствующие элементы будут идти в порядке по возрастанию.
 		template <typename ResultType>
-		void getMany(const double * levels, size_t size, ResultType * result) const
+		void getMany(const double * levels, const size_t * indices, size_t size, ResultType * result) const
 		{
-			std::size_t indices[size];
-			std::copy(ext::range_iterator<size_t>{}, ext::make_range_iterator(size), indices);
-			std::sort(indices, indices + size, [levels] (auto i1, auto i2) {
-				return levels[i1] < levels[i2];
-			});
-
 			const auto indices_end = indices + size;
 			auto index = indices;
 
@@ -311,10 +305,10 @@ namespace detail
 				: std::numeric_limits<float>::quiet_NaN();
 		}
 
-		void getManyFloat(const double * levels, size_t size, float * result) const
+		void getManyFloat(const double * levels, const size_t * levels_permutation, size_t size, float * result) const
 		{
 			if (count)
-				getMany(levels, size, result);
+				getMany(levels, levels_permutation, size, result);
 			else
 				for (size_t i = 0; i < size; ++i)
 					result[i] = std::numeric_limits<float>::quiet_NaN();
@@ -503,11 +497,11 @@ public:
 
 	/// Получить значения size квантилей уровней levels. Записать size результатов начиная с адреса result.
 	template <typename ResultType>
-	void getMany(const double * levels, size_t size, ResultType * result) const
+	void getMany(const double * levels, const size_t * levels_permutation, size_t size, ResultType * result) const
 	{
 		if (isLarge())
 		{
-			return large->getMany(levels, size, result);
+			return large->getMany(levels, levels_permutation, size, result);
 		}
 		else
 		{
@@ -524,10 +518,10 @@ public:
 			: std::numeric_limits<float>::quiet_NaN();
 	}
 
-	void getManyFloat(const double * levels, size_t size, float * result) const
+	void getManyFloat(const double * levels, const size_t * levels_permutation, size_t size, float * result) const
 	{
 		if (tiny.count)
-			getMany(levels, size, result);
+			getMany(levels, levels_permutation, size, result);
 		else
 			for (size_t i = 0; i < size; ++i)
 				result[i] = std::numeric_limits<float>::quiet_NaN();
@@ -665,8 +659,7 @@ template <typename ArgumentFieldType>
 class AggregateFunctionQuantilesTiming final : public IUnaryAggregateFunction<QuantileTiming, AggregateFunctionQuantilesTiming<ArgumentFieldType> >
 {
 private:
-	using Levels = std::vector<double>;
-	Levels levels;
+	QuantileLevels<double> levels;
 
 public:
 	String getName() const override { return "quantilesTiming"; }
@@ -682,14 +675,7 @@ public:
 
 	void setParameters(const Array & params) override
 	{
-		if (params.empty())
-			throw Exception("Aggregate function " + getName() + " requires at least one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		size_t size = params.size();
-		levels.resize(size);
-
-		for (size_t i = 0; i < size; ++i)
-			levels[i] = apply_visitor(FieldVisitorConvertToNumber<Float64>(), params[i]);
+		levels.set(params);
 	}
 
 
@@ -725,7 +711,7 @@ public:
 		size_t old_size = data_to.size();
 		data_to.resize(data_to.size() + size);
 
-		this->data(place).getManyFloat(&levels[0], size, &data_to[old_size]);
+		this->data(place).getManyFloat(&levels.levels[0], &levels.permutation[0], size, &data_to[old_size]);
 	}
 };
 
@@ -735,8 +721,7 @@ class AggregateFunctionQuantilesTimingWeighted final
 	: public IBinaryAggregateFunction<QuantileTiming, AggregateFunctionQuantilesTimingWeighted<ArgumentFieldType, WeightFieldType>>
 {
 private:
-	using Levels = std::vector<double>;
-	Levels levels;
+	QuantileLevels<double> levels;
 
 public:
 	String getName() const override { return "quantilesTimingWeighted"; }
@@ -752,14 +737,7 @@ public:
 
 	void setParameters(const Array & params) override
 	{
-		if (params.empty())
-			throw Exception("Aggregate function " + getName() + " requires at least one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		size_t size = params.size();
-		levels.resize(size);
-
-		for (size_t i = 0; i < size; ++i)
-			levels[i] = apply_visitor(FieldVisitorConvertToNumber<Float64>(), params[i]);
+		levels.set(params);
 	}
 
 	void addImpl(AggregateDataPtr place, const IColumn & column_value, const IColumn & column_weight, size_t row_num) const
@@ -796,7 +774,7 @@ public:
 		size_t old_size = data_to.size();
 		data_to.resize(data_to.size() + size);
 
-		this->data(place).getManyFloat(&levels[0], size, &data_to[old_size]);
+		this->data(place).getManyFloat(&levels.levels[0], &levels.permutation[0], size, &data_to[old_size]);
 	}
 };
 

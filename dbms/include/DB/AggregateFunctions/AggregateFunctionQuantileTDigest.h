@@ -7,12 +7,12 @@
 #include <vector>
 #include <algorithm>
 
-#include <DB/Core/FieldVisitors.h>
 #include <DB/Common/RadixSort.h>
 #include <DB/Common/PODArray.h>
 #include <DB/Columns/ColumnArray.h>
 #include <DB/AggregateFunctions/IUnaryAggregateFunction.h>
 #include <DB/AggregateFunctions/IBinaryAggregateFunction.h>
+#include <DB/AggregateFunctions/QuantilesCommon.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeArray.h>
 
@@ -244,8 +244,13 @@ public:
 		return interpolate(index, a_index, a_mean, b_index, b_mean);
 	}
 
+	/** Получить несколько квантилей (size штук).
+	  * levels - массив уровней нужных квантилей. Они идут в произвольном порядке.
+	  * levels_permutation - массив-перестановка уровней. На i-ой позиции будет лежать индекс i-го по возрастанию уровня в массиве levels.
+	  * result - массив, куда сложить результаты, в порядке levels,
+	  */
 	template <typename ResultType>
-	void getManyQuantiles(const Params & params, const Value * levels, size_t size, ResultType * result)
+	void getManyQuantiles(const Params & params, const Value * levels, const size_t * levels_permutation, size_t size, ResultType * result)
 	{
 		if (summary.empty())
 		{
@@ -263,7 +268,7 @@ public:
 			return;
 		}
 
-		Value index = levels[0] * count;
+		Value index = levels[levels_permutation[0]] * count;
 		TotalCount sum = 1;
 		Value a_mean = summary[0].mean;
 		Value a_index = 0.0;
@@ -275,13 +280,13 @@ public:
 		{
 			while (index <= b_index)
 			{
-				result[result_num] = interpolate(index, a_index, a_mean, b_index, b_mean);
+				result[levels_permutation[result_num]] = interpolate(index, a_index, a_mean, b_index, b_mean);
 
 				++result_num;
 				if (result_num >= size)
 					return;
 
-				index = levels[result_num] * count;
+				index = levels[levels_permutation[result_num]] * count;
 			}
 
 			sum += summary[i - 1].count;
@@ -293,7 +298,7 @@ public:
 
 		auto res_of_results = interpolate(index, a_index, a_mean, b_index, b_mean);
 		for (; result_num < size; ++result_num)
-			result[result_num] = res_of_results;
+			result[levels_permutation[result_num]] = res_of_results;
 	}
 
 	/** Объединить с другим состоянием.
@@ -485,8 +490,7 @@ class AggregateFunctionQuantilesTDigest final
 	: public IUnaryAggregateFunction<AggregateFunctionQuantileTDigestData, AggregateFunctionQuantilesTDigest<T>>
 {
 private:
-	using Levels = std::vector<Float32>;
-	Levels levels;
+	QuantileLevels<Float32> levels;
 	tdigest::Params<Float32> params;
 	DataTypePtr type;
 
@@ -508,14 +512,7 @@ public:
 
 	void setParameters(const Array & params) override
 	{
-		if (params.empty())
-			throw Exception("Aggregate function " + getName() + " requires at least one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		size_t size = params.size();
-		levels.resize(size);
-
-		for (size_t i = 0; i < size; ++i)
-			levels[i] = apply_visitor(FieldVisitorConvertToNumber<Float32>(), params[i]);
+		levels.set(params);
 	}
 
 	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const
@@ -552,7 +549,8 @@ public:
 			size_t old_size = data_to.size();
 			data_to.resize(data_to.size() + size);
 
-			this->data(const_cast<AggregateDataPtr>(place)).digest.getManyQuantiles(params, &levels[0], size, &data_to[old_size]);
+			this->data(const_cast<AggregateDataPtr>(place)).digest.getManyQuantiles(
+				params, &levels.levels[0], &levels.permutation[0], size, &data_to[old_size]);
 		}
 		else
 		{
@@ -560,7 +558,8 @@ public:
 			size_t old_size = data_to.size();
 			data_to.resize(data_to.size() + size);
 
-			this->data(const_cast<AggregateDataPtr>(place)).digest.getManyQuantiles(params, &levels[0], size, &data_to[old_size]);
+			this->data(const_cast<AggregateDataPtr>(place)).digest.getManyQuantiles(
+				params, &levels.levels[0], &levels.permutation[0], size, &data_to[old_size]);
 		}
 	}
 };
@@ -571,8 +570,7 @@ class AggregateFunctionQuantilesTDigestWeighted final
 	: public IBinaryAggregateFunction<AggregateFunctionQuantileTDigestData, AggregateFunctionQuantilesTDigestWeighted<T, Weight, returns_float>>
 {
 private:
-	using Levels = std::vector<Float32>;
-	Levels levels;
+	QuantileLevels<Float32> levels;
 	tdigest::Params<Float32> params;
 	DataTypePtr type;
 
@@ -594,14 +592,7 @@ public:
 
 	void setParameters(const Array & params) override
 	{
-		if (params.empty())
-			throw Exception("Aggregate function " + getName() + " requires at least one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		size_t size = params.size();
-		levels.resize(size);
-
-		for (size_t i = 0; i < size; ++i)
-			levels[i] = apply_visitor(FieldVisitorConvertToNumber<Float32>(), params[i]);
+		levels.set(params);
 	}
 
 	void addImpl(AggregateDataPtr place, const IColumn & column_value, const IColumn & column_weight, size_t row_num) const
@@ -640,7 +631,8 @@ public:
 			size_t old_size = data_to.size();
 			data_to.resize(data_to.size() + size);
 
-			this->data(const_cast<AggregateDataPtr>(place)).digest.getManyQuantiles(params, &levels[0], size, &data_to[old_size]);
+			this->data(const_cast<AggregateDataPtr>(place)).digest.getManyQuantiles(
+				params, &levels.levels[0], &levels.permutation[0], size, &data_to[old_size]);
 		}
 		else
 		{
@@ -648,7 +640,8 @@ public:
 			size_t old_size = data_to.size();
 			data_to.resize(data_to.size() + size);
 
-			this->data(const_cast<AggregateDataPtr>(place)).digest.getManyQuantiles(params, &levels[0], size, &data_to[old_size]);
+			this->data(const_cast<AggregateDataPtr>(place)).digest.getManyQuantiles(
+				params, &levels.levels[0], &levels.permutation[0], size, &data_to[old_size]);
 		}
 	}
 };

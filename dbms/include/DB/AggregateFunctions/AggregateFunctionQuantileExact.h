@@ -2,8 +2,6 @@
 
 #include <DB/Common/PODArray.h>
 
-#include <DB/Core/FieldVisitors.h>
-
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/ReadHelpers.h>
 
@@ -11,6 +9,7 @@
 #include <DB/DataTypes/DataTypeArray.h>
 
 #include <DB/AggregateFunctions/IUnaryAggregateFunction.h>
+#include <DB/AggregateFunctions/QuantilesCommon.h>
 
 #include <DB/Columns/ColumnArray.h>
 
@@ -131,8 +130,7 @@ class AggregateFunctionQuantilesExact final
 	: public IUnaryAggregateFunction<AggregateFunctionQuantileExactData<T>, AggregateFunctionQuantilesExact<T>>
 {
 private:
-	using Levels = std::vector<double>;
-	Levels levels;
+	QuantileLevels<double> levels;
 	DataTypePtr type;
 
 public:
@@ -150,14 +148,7 @@ public:
 
 	void setParameters(const Array & params) override
 	{
-		if (params.empty())
-			throw Exception("Aggregate function " + getName() + " requires at least one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		size_t size = params.size();
-		levels.resize(size);
-
-		for (size_t i = 0; i < size; ++i)
-			levels[i] = apply_visitor(FieldVisitorConvertToNumber<Float64>(), params[i]);
+		levels.set(params);
 	}
 
 	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const
@@ -202,26 +193,30 @@ public:
 		offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + num_levels);
 
 		typename ColumnVector<T>::Container_t & data_to = static_cast<ColumnVector<T> &>(arr_to.getData()).getData();
+		size_t old_size = data_to.size();
+		data_to.resize(old_size + num_levels);
 
 		if (!array.empty())
 		{
 			size_t prev_n = 0;
-			for (const auto & level : levels)
+			for (auto level_index : levels.permutation)
 			{
+				auto level = levels.levels[level_index];
+
 				size_t n = level < 1
 					? level * array.size()
 					: (array.size() - 1);
 
 				std::nth_element(array.begin() + prev_n, array.begin() + n, array.end());
 
-				data_to.push_back(array[n]);
+				data_to[old_size + level_index] = array[n];
 				prev_n = n;
 			}
 		}
 		else
 		{
 			for (size_t i = 0; i < num_levels; ++i)
-				data_to.push_back(T());
+				data_to[old_size + i] = T();
 		}
 	}
 };
