@@ -9,6 +9,7 @@
 #include <DB/Common/HashTable/HashMap.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/Core/StringRef.h>
+#include <ext/enumerate.hpp>
 #include <ext/scope_guard.hpp>
 #include <ext/bit_cast.hpp>
 #include <ext/range.hpp>
@@ -20,7 +21,6 @@
 #include <vector>
 #include <map>
 #include <tuple>
-#include <DB/DataStreams/NullBlockInputStream.h>
 
 
 namespace DB
@@ -58,7 +58,8 @@ public:
 
 	std::size_t getBytesAllocated() const override
 	{
-		return bytes_allocated + key_size_is_fixed ? fixed_size_keys_pool->size() : keys_pool->size();
+		return bytes_allocated + (key_size_is_fixed ? fixed_size_keys_pool->size() : keys_pool->size()) +
+			(string_arena ? string_arena->size() : 0);
 	}
 
 	std::size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
@@ -409,6 +410,8 @@ private:
 				std::get<String>(attr.null_values) = null_value.get<String>();
 				std::get<ContainerPtrType<StringRef>>(attr.arrays) = std::make_unique<ContainerType<StringRef>>(size);
 				bytes_allocated += size * sizeof(StringRef);
+				if (!string_arena)
+					string_arena = std::make_unique<ArenaWithFreeLists>();
 				break;
 		}
 
@@ -553,7 +556,7 @@ private:
 					outdated_keys[key].push_back(row);
 				else
 				{
-					const auto string_ref =  cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
+					const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
 					map[key] = String{string_ref};
 					total_length += string_ref.size + 1;
 				}
@@ -601,9 +604,9 @@ private:
 		auto stream = source_ptr->loadKeys(in_key_columns, in_requested_rows);
 		stream->readPrefix();
 
-		MapType<UInt8> remaining_keys{in_requested_rows.size()};
+		MapType<bool> remaining_keys{in_requested_rows.size()};
 		for (const auto row : in_requested_rows)
-			remaining_keys.insert({ in_keys[row], 0 });
+			remaining_keys.insert({ in_keys[row], false });
 
 		std::uniform_int_distribution<std::uint64_t> distribution{
 			dict_lifetime.min_sec,
@@ -676,7 +679,7 @@ private:
 				/// inform caller
 				on_cell_updated(key, cell_idx);
 				/// mark corresponding id as found
-				remaining_keys[key] = 1;
+				remaining_keys[key] = true;
 			}
 		}
 
@@ -752,14 +755,14 @@ private:
 			{
 				const auto & null_value_ref = std::get<String>(attribute.null_values);
 				auto & string_ref = std::get<ContainerPtrType<StringRef>>(attribute.arrays)[idx];
-				if (string_ref.data == null_value_ref.data())
-					return;
 
-				if (string_ref.size != 0)
-					bytes_allocated -= string_ref.size + 1;
-				const std::unique_ptr<const char[]> deleter{string_ref.data};
+				if (string_ref.data != null_value_ref.data())
+				{
+					if (string_ref.data)
+						string_arena->free(string_ref.data, string_ref.size);
 
-				string_ref = StringRef{null_value_ref};
+					string_ref = StringRef{null_value_ref};
+				}
 
 				break;
 			}
@@ -785,21 +788,17 @@ private:
 				const auto & string = value.get<String>();
 				auto & string_ref = std::get<ContainerPtrType<StringRef>>(attribute.arrays)[idx];
 				const auto & null_value_ref = std::get<String>(attribute.null_values);
-				if (string_ref.data != null_value_ref.data())
-				{
-					if (string_ref.size != 0)
-						bytes_allocated -= string_ref.size + 1;
-					/// avoid explicit delete, let unique_ptr handle it
-					const std::unique_ptr<const char[]> deleter{string_ref.data};
-				}
+
+				/// free memory unless it points to a null_value
+				if (string_ref.data && string_ref.data != null_value_ref.data())
+					string_arena->free(string_ref.data, string_ref.size);
 
 				const auto size = string.size();
 				if (size != 0)
 				{
-					auto string_ptr = std::make_unique<char[]>(size + 1);
-					std::copy(string.data(), string.data() + size + 1, string_ptr.get());
-					string_ref = StringRef{string_ptr.release(), size};
-					bytes_allocated += size + 1;
+					auto string_ptr = string_arena->alloc(size + 1);
+					std::copy(string.data(), string.data() + size + 1, string_ptr);
+					string_ref = StringRef{string_ptr, size};
 				}
 				else
 					string_ref = {};
@@ -924,6 +923,7 @@ private:
 		std::make_unique<ArenaWithFreeLists>();
 	std::unique_ptr<SmallObjectPool> fixed_size_keys_pool = key_size_is_fixed ?
 		std::make_unique<SmallObjectPool>(key_size) : nullptr;
+	std::unique_ptr<ArenaWithFreeLists> string_arena;
 
 	mutable std::mt19937_64 rnd_engine{getSeed()};
 

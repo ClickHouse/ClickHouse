@@ -90,7 +90,7 @@ class MergingDigest
 	using Centroid = tdigest::Centroid<Value, CentroidCount>;
 
 	/// Сразу будет выделена память на несколько элементов так, чтобы состояние занимало 64 байта.
-	static constexpr size_t bytes_in_arena = 64 - sizeof(DB::PODArray<Centroid>) - sizeof(TotalCount) * 2;
+	static constexpr size_t bytes_in_arena = 64 - sizeof(DB::PODArray<Centroid>) - sizeof(TotalCount) - sizeof(uint32_t);
 
 	using Summary = DB::PODArray<Centroid, bytes_in_arena / sizeof(Centroid), AllocatorWithStackMemory<Allocator<false>, bytes_in_arena>>;
 
@@ -115,7 +115,7 @@ class MergingDigest
 		using CountType = uint32_t;
 		using KeyBits = uint32_t;
 
-		static constexpr size_t PART_SIZE_BITS = 11;
+		static constexpr size_t PART_SIZE_BITS = 8;
 
 		using Transform = RadixSortFloatTransform<KeyBits>;
 		using Allocator = RadixSortMallocAllocator;
@@ -151,10 +151,10 @@ public:
 	{
 		if (unmerged > 0)
 		{
+			RadixSort<RadixSortTraits>::execute(&summary[0], summary.size());
+
 			if (summary.size() > 3)
 			{
-				RadixSort<RadixSortTraits>::execute(&summary[0], summary.size());
-
 				/// Пара подряд идущих столбиков гистограммы.
 				auto l = summary.begin();
 				auto r = std::next(l);
@@ -296,9 +296,9 @@ public:
 			b_index = sum + (summary[i].count - 1) * 0.5;
 		}
 
-		auto res_of_results = interpolate(index, a_index, a_mean, b_index, b_mean);
+		auto rest_of_results = interpolate(index, a_index, a_mean, b_index, b_mean);
 		for (; result_num < size; ++result_num)
-			result[levels_permutation[result_num]] = res_of_results;
+			result[levels_permutation[result_num]] = rest_of_results;
 	}
 
 	/** Объединить с другим состоянием.

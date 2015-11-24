@@ -4,6 +4,7 @@
 #include <DB/Dictionaries/IDictionarySource.h>
 #include <DB/Dictionaries/DictionaryStructure.h>
 #include <DB/Common/HashTable/HashMap.h>
+#include <DB/Common/ArenaWithFreeLists.h>
 #include <DB/Columns/ColumnString.h>
 #include <ext/scope_guard.hpp>
 #include <ext/bit_cast.hpp>
@@ -52,7 +53,7 @@ public:
 
 	std::string getTypeName() const override { return "Cache"; }
 
-	std::size_t getBytesAllocated() const override { return bytes_allocated; }
+	std::size_t getBytesAllocated() const override { return bytes_allocated + (string_arena ? string_arena->size() : 0); }
 
 	std::size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
 
@@ -389,6 +390,8 @@ private:
 				std::get<String>(attr.null_values) = null_value.get<String>();
 				std::get<ContainerPtrType<StringRef>>(attr.arrays) = std::make_unique<ContainerType<StringRef>>(size);
 				bytes_allocated += size * sizeof(StringRef);
+				if (!string_arena)
+					string_arena = std::make_unique<ArenaWithFreeLists>();
 				break;
 		}
 
@@ -684,14 +687,14 @@ private:
 			{
 				const auto & null_value_ref = std::get<String>(attribute.null_values);
 				auto & string_ref = std::get<ContainerPtrType<StringRef>>(attribute.arrays)[idx];
-				if (string_ref.data == null_value_ref.data())
-					return;
 
-				if (string_ref.size != 0)
-					bytes_allocated -= string_ref.size + 1;
-				const std::unique_ptr<const char[]> deleter{string_ref.data};
+				if (string_ref.data != null_value_ref.data())
+				{
+					if (string_ref.data)
+						string_arena->free(string_ref.data, string_ref.size);
 
-				string_ref = StringRef{null_value_ref};
+					string_ref = StringRef{null_value_ref};
+				}
 
 				break;
 			}
@@ -717,21 +720,17 @@ private:
 				const auto & string = value.get<String>();
 				auto & string_ref = std::get<ContainerPtrType<StringRef>>(attribute.arrays)[idx];
 				const auto & null_value_ref = std::get<String>(attribute.null_values);
-				if (string_ref.data != null_value_ref.data())
-				{
-					if (string_ref.size != 0)
-						bytes_allocated -= string_ref.size + 1;
-					/// avoid explicit delete, let unique_ptr handle it
-					const std::unique_ptr<const char[]> deleter{string_ref.data};
-				}
+
+				/// free memory unless it points to a null_value
+				if (string_ref.data && string_ref.data != null_value_ref.data())
+					string_arena->free(string_ref.data, string_ref.size);
 
 				const auto size = string.size();
 				if (size != 0)
 				{
-					auto string_ptr = std::make_unique<char[]>(size + 1);
-					std::copy(string.data(), string.data() + size + 1, string_ptr.get());
-					string_ref = StringRef{string_ptr.release(), size};
-					bytes_allocated += size + 1;
+					auto string_ptr = string_arena->alloc(size + 1);
+					std::copy(string.data(), string.data() + size + 1, string_ptr);
+					string_ref = StringRef{string_ptr, size};
 				}
 				else
 					string_ref = {};
@@ -786,6 +785,7 @@ private:
 	mutable std::vector<attribute_t> attributes;
 	mutable std::vector<cell_metadata_t> cells;
 	attribute_t * hierarchical_attribute = nullptr;
+	std::unique_ptr<ArenaWithFreeLists> string_arena;
 
 	mutable std::mt19937_64 rnd_engine{getSeed()};
 
