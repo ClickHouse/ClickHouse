@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DB/Common/Arena.h>
+#include <ext/bit_cast.hpp>
 #include <ext/size.hpp>
 #include <cstdlib>
 #include <memory>
