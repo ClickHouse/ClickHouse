@@ -5,7 +5,6 @@
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/Functions/IFunction.h>
 #include <DB/Common/HashTable/Hash.h>
-#include <stats/IntHash.h>
 
 
 namespace DB

@@ -905,21 +905,21 @@ void MergeTreeData::detachPartInPlace(const DataPartPtr & part)
 	renameAndDetachPart(part, "", false, false);
 }
 
-MergeTreeData::DataParts MergeTreeData::getDataParts()
+MergeTreeData::DataParts MergeTreeData::getDataParts() const
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 
 	return data_parts;
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector()
+MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector() const
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 
 	return DataPartsVector(std::begin(data_parts), std::end(data_parts));
 }
 
-size_t MergeTreeData::getTotalActiveSizeInBytes()
+size_t MergeTreeData::getTotalActiveSizeInBytes() const
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 
@@ -930,14 +930,14 @@ size_t MergeTreeData::getTotalActiveSizeInBytes()
 	return res;
 }
 
-MergeTreeData::DataParts MergeTreeData::getAllDataParts()
+MergeTreeData::DataParts MergeTreeData::getAllDataParts() const
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(all_data_parts_mutex);
 
 	return all_data_parts;
 }
 
-size_t MergeTreeData::getMaxPartsCountForMonth()
+size_t MergeTreeData::getMaxPartsCountForMonth() const
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 

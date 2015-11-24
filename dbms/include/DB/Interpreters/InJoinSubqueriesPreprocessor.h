@@ -61,6 +61,21 @@ std::string getNameFromInSubqueryAttributes(IAST::Attributes attributes)
 	return name;
 }
 
+/// Проверить, указана ли таблица в секции FROM.
+bool isQueryFromTable(const ASTSelectQuery & query)
+{
+	if (query.table)
+	{
+		if (typeid_cast<const ASTSelectQuery *>(query.table.get()) != nullptr)
+			return false;
+		else if (typeid_cast<const ASTFunction *>(query.table.get()) != nullptr)
+			return false;
+		else
+			return true;
+	}
+	return false;
+}
+
 /// Проверить, является ли движок распределённым с количеством шардов более одного.
 template <typename TStorageDistributed>
 bool isEligibleStorageForInJoinPreprocessing(const StoragePtr & storage)
@@ -175,7 +190,8 @@ public:
 			else if ((node != static_cast<IAST *>(select_query))
 				&& ((sub_select_query = typeid_cast<ASTSelectQuery *>(node)) != nullptr))
 			{
-				++node->select_query_depth;
+				if (isQueryFromTable(*sub_select_query))
+					++node->select_query_depth;
 				if (sub_select_query->enclosing_in_or_join != nullptr)
 				{
 					/// Найден подзапрос внутри секции IN или JOIN.

@@ -55,6 +55,7 @@ public:
 	ASTPtr join;						/// Обычный (не ARRAY) JOIN.
 	bool final = false;
 	ASTPtr sample_size;
+	ASTPtr sample_offset;
 	ASTPtr prewhere_expression;
 	ASTPtr where_expression;
 	ASTPtr group_expression_list;

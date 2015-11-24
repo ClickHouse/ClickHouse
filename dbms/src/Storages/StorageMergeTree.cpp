@@ -100,7 +100,7 @@ void StorageMergeTree::shutdown()
 	if (shutdown_called)
 		return;
 	shutdown_called = true;
-	merger.cancelAll();
+	merger.cancel();
 	background_pool.removeTask(merge_task_handle);
 }
 

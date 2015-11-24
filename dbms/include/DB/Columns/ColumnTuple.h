@@ -242,9 +242,22 @@ public:
 			columns[i]->getExtremes(min.get<Array &>()[i], max.get<Array &>()[i]);
 	}
 
+	ColumnPtr convertToFullColumnIfConst() const override
+	{
+		Block materialized = data;
+		for (size_t i = 0, size = materialized.columns(); i < size; ++i)
+			if (auto converted = materialized.unsafeGetByPosition(i).column->convertToFullColumnIfConst())
+				materialized.unsafeGetByPosition(i).column = converted;
+
+		return new ColumnTuple(materialized);
+	}
+
 
 	const Block & getData() const { return data; }
 	Block & getData() { return data; }
+
+	const Columns & getColumns() const { return columns; }
+	Columns & getColumns() { return columns; }
 };
 
 
