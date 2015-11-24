@@ -5,8 +5,9 @@
 #include <DB/Dictionaries/DictionaryStructure.h>
 #include <DB/Common/HashTable/HashMap.h>
 #include <DB/Columns/ColumnString.h>
-#include <DB/Common/HashTable/HashMap.h>
 #include <ext/scope_guard.hpp>
+#include <ext/bit_cast.hpp>
+#include <ext/map.hpp>
 #include <Poco/RWLock.h>
 #include <cmath>
 #include <atomic>
@@ -127,31 +128,132 @@ public:
 		getItems(attribute, ids, out);
 	}
 
+#define DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(TYPE)\
+	void get##TYPE(\
+		const std::string & attribute_name, const PODArray<id_t> & ids, const PODArray<TYPE> & def,\
+		PODArray<TYPE> & out) const override\
+	{\
+		auto & attribute = getAttribute(attribute_name);\
+		if (attribute.type != AttributeUnderlyingType::TYPE)\
+			throw Exception{\
+				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
+				ErrorCodes::TYPE_MISMATCH\
+			};\
+		\
+		getItems<TYPE>(attribute, ids, out, &def);\
+	}
+	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(UInt8)
+	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(UInt16)
+	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(UInt32)
+	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(UInt64)
+	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Int8)
+	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Int16)
+	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Int32)
+	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Int64)
+	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Float32)
+	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Float64)
+#undef DECLARE_MULTIPLE_GETTER_WITH_DEFAULT
+	void getString(
+		const std::string & attribute_name, const PODArray<id_t> & ids, const ColumnString * const def,
+		ColumnString * const out) const override
+	{
+		auto & attribute = getAttribute(attribute_name);
+		if (attribute.type != AttributeUnderlyingType::String)
+			throw Exception{
+				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
+				ErrorCodes::TYPE_MISMATCH
+			};
+
+		getItems(attribute, ids, out, def);
+	}
+
+	void has(const PODArray<id_t> & ids, PODArray<UInt8> & out) const override
+	{
+		/// Mapping: <id> -> { all indices `i` of `ids` such that `ids[i]` = <id> }
+		MapType<std::vector<std::size_t>> outdated_ids;
+
+		const auto rows = ext::size(ids);
+		{
+			const Poco::ScopedReadRWLock read_lock{rw_lock};
+
+			const auto now = std::chrono::system_clock::now();
+			/// fetch up-to-date values, decide which ones require update
+			for (const auto i : ext::range(0, rows))
+			{
+				const auto id = ids[i];
+				const auto cell_idx = getCellIdx(id);
+				const auto & cell = cells[cell_idx];
+
+				/** cell should be updated if either:
+				 *	1. ids do not match,
+				 *	2. cell has expired,
+				 *	3. explicit defaults were specified and cell was set default. */
+				if (cell.id != id || cell.expiresAt() < now)
+					outdated_ids[id].push_back(i);
+				else
+					out[i] = !cell.isDefault();
+			}
+		}
+
+		query_count.fetch_add(rows, std::memory_order_relaxed);
+		hit_count.fetch_add(rows - outdated_ids.size(), std::memory_order_release);
+
+		if (outdated_ids.empty())
+			return;
+
+		std::vector<id_t> required_ids(outdated_ids.size());
+		std::transform(std::begin(outdated_ids), std::end(outdated_ids), std::begin(required_ids),
+			[] (auto & pair) { return pair.first; });
+
+		/// request new values
+		update(required_ids, [&] (const auto id, const auto) {
+			for (const auto out_idx : outdated_ids[id])
+				out[out_idx] = true;
+		}, [&] (const auto id, const auto) {
+			for (const auto out_idx : outdated_ids[id])
+				out[out_idx] = false;
+		});
+	}
+
 private:
+	template <typename Value> using MapType = HashMap<id_t, Value>;
+	template <typename Value> using ContainerType = Value[];
+	template <typename Value> using ContainerPtrType = std::unique_ptr<ContainerType<Value>>;
+
 	struct cell_metadata_t final
 	{
+		using time_point_t = std::chrono::system_clock::time_point;
+		using time_point_rep_t = time_point_t::rep;
+		using time_point_urep_t = std::make_unsigned_t<time_point_rep_t>;
+
+		static constexpr std::uint64_t EXPIRES_AT_MASK = std::numeric_limits<time_point_rep_t>::max();
+		static constexpr std::uint64_t IS_DEFAULT_MASK = ~EXPIRES_AT_MASK;
+
 		std::uint64_t id;
-		std::chrono::system_clock::time_point expires_at;
+		/// Stores both expiration time and `is_default` flag in the most significant bit
+		time_point_urep_t data;
+
+		/// Sets expiration time, resets `is_default` flag to false
+		time_point_t expiresAt() const { return ext::safe_bit_cast<time_point_t>(data & EXPIRES_AT_MASK); }
+		void setExpiresAt(const time_point_t & t) { data = ext::safe_bit_cast<time_point_urep_t>(t); }
+
+		bool isDefault() const { return (data & IS_DEFAULT_MASK) == IS_DEFAULT_MASK; }
+		void setDefault() { data |= IS_DEFAULT_MASK; }
 	};
 
 	struct attribute_t final
 	{
 		AttributeUnderlyingType type;
-		std::tuple<UInt8, UInt16, UInt32, UInt64,
+		std::tuple<
+			UInt8, UInt16, UInt32, UInt64,
 			Int8, Int16, Int32, Int64,
 			Float32, Float64,
 			String> null_values;
-		std::tuple<std::unique_ptr<UInt8[]>,
-			std::unique_ptr<UInt16[]>,
-			std::unique_ptr<UInt32[]>,
-			std::unique_ptr<UInt64[]>,
-			std::unique_ptr<Int8[]>,
-			std::unique_ptr<Int16[]>,
-			std::unique_ptr<Int32[]>,
-			std::unique_ptr<Int64[]>,
-			std::unique_ptr<Float32[]>,
-			std::unique_ptr<Float64[]>,
-			std::unique_ptr<StringRef[]>> arrays;
+		std::tuple<
+			ContainerPtrType<UInt8>, ContainerPtrType<UInt16>, ContainerPtrType<UInt32>, ContainerPtrType<UInt64>,
+			ContainerPtrType<Int8>, ContainerPtrType<Int16>, ContainerPtrType<Int32>, ContainerPtrType<Int64>,
+			ContainerPtrType<Float32>, ContainerPtrType<Float64>,
+			ContainerPtrType<StringRef>> arrays;
 	};
 
 	void createAttributes()
@@ -188,57 +290,57 @@ private:
 		{
 			case AttributeUnderlyingType::UInt8:
 				std::get<UInt8>(attr.null_values) = null_value.get<UInt64>();
-				std::get<std::unique_ptr<UInt8[]>>(attr.arrays) = std::make_unique<UInt8[]>(size);
+				std::get<ContainerPtrType<UInt8>>(attr.arrays) = std::make_unique<ContainerType<UInt8>>(size);
 				bytes_allocated += size * sizeof(UInt8);
 				break;
 			case AttributeUnderlyingType::UInt16:
 				std::get<UInt16>(attr.null_values) = null_value.get<UInt64>();
-				std::get<std::unique_ptr<UInt16[]>>(attr.arrays) = std::make_unique<UInt16[]>(size);
+				std::get<ContainerPtrType<UInt16>>(attr.arrays) = std::make_unique<ContainerType<UInt16>>(size);
 				bytes_allocated += size * sizeof(UInt16);
 				break;
 			case AttributeUnderlyingType::UInt32:
 				std::get<UInt32>(attr.null_values) = null_value.get<UInt64>();
-				std::get<std::unique_ptr<UInt32[]>>(attr.arrays) = std::make_unique<UInt32[]>(size);
+				std::get<ContainerPtrType<UInt32>>(attr.arrays) = std::make_unique<ContainerType<UInt32>>(size);
 				bytes_allocated += size * sizeof(UInt32);
 				break;
 			case AttributeUnderlyingType::UInt64:
 				std::get<UInt64>(attr.null_values) = null_value.get<UInt64>();
-				std::get<std::unique_ptr<UInt64[]>>(attr.arrays) = std::make_unique<UInt64[]>(size);
+				std::get<ContainerPtrType<UInt64>>(attr.arrays) = std::make_unique<ContainerType<UInt64>>(size);
 				bytes_allocated += size * sizeof(UInt64);
 				break;
 			case AttributeUnderlyingType::Int8:
 				std::get<Int8>(attr.null_values) = null_value.get<Int64>();
-				std::get<std::unique_ptr<Int8[]>>(attr.arrays) = std::make_unique<Int8[]>(size);
+				std::get<ContainerPtrType<Int8>>(attr.arrays) = std::make_unique<ContainerType<Int8>>(size);
 				bytes_allocated += size * sizeof(Int8);
 				break;
 			case AttributeUnderlyingType::Int16:
 				std::get<Int16>(attr.null_values) = null_value.get<Int64>();
-				std::get<std::unique_ptr<Int16[]>>(attr.arrays) = std::make_unique<Int16[]>(size);
+				std::get<ContainerPtrType<Int16>>(attr.arrays) = std::make_unique<ContainerType<Int16>>(size);
 				bytes_allocated += size * sizeof(Int16);
 				break;
 			case AttributeUnderlyingType::Int32:
 				std::get<Int32>(attr.null_values) = null_value.get<Int64>();
-				std::get<std::unique_ptr<Int32[]>>(attr.arrays) = std::make_unique<Int32[]>(size);
+				std::get<ContainerPtrType<Int32>>(attr.arrays) = std::make_unique<ContainerType<Int32>>(size);
 				bytes_allocated += size * sizeof(Int32);
 				break;
 			case AttributeUnderlyingType::Int64:
 				std::get<Int64>(attr.null_values) = null_value.get<Int64>();
-				std::get<std::unique_ptr<Int64[]>>(attr.arrays) = std::make_unique<Int64[]>(size);
+				std::get<ContainerPtrType<Int64>>(attr.arrays) = std::make_unique<ContainerType<Int64>>(size);
 				bytes_allocated += size * sizeof(Int64);
 				break;
 			case AttributeUnderlyingType::Float32:
 				std::get<Float32>(attr.null_values) = null_value.get<Float64>();
-				std::get<std::unique_ptr<Float32[]>>(attr.arrays) = std::make_unique<Float32[]>(size);
+				std::get<ContainerPtrType<Float32>>(attr.arrays) = std::make_unique<ContainerType<Float32>>(size);
 				bytes_allocated += size * sizeof(Float32);
 				break;
 			case AttributeUnderlyingType::Float64:
 				std::get<Float64>(attr.null_values) = null_value.get<Float64>();
-				std::get<std::unique_ptr<Float64[]>>(attr.arrays) = std::make_unique<Float64[]>(size);
+				std::get<ContainerPtrType<Float64>>(attr.arrays) = std::make_unique<ContainerType<Float64>>(size);
 				bytes_allocated += size * sizeof(Float64);
 				break;
 			case AttributeUnderlyingType::String:
 				std::get<String>(attr.null_values) = null_value.get<String>();
-				std::get<std::unique_ptr<StringRef[]>>(attr.arrays) = std::make_unique<StringRef[]>(size);
+				std::get<ContainerPtrType<StringRef>>(attr.arrays) = std::make_unique<ContainerType<StringRef>>(size);
 				bytes_allocated += size * sizeof(StringRef);
 				break;
 		}
@@ -247,51 +349,56 @@ private:
 	}
 
 	template <typename T>
-	void getItems(attribute_t & attribute, const PODArray<id_t> & ids, PODArray<T> & out) const
+	void getItems(
+		attribute_t & attribute, const PODArray<id_t> & ids, PODArray<T> & out,
+		const PODArray<T> * const def = nullptr) const
 	{
-		HashMap<id_t, std::vector<std::size_t>> outdated_ids;
-		auto & attribute_array = std::get<std::unique_ptr<T[]>>(attribute.arrays);
+		/// Mapping: <id> -> { all indices `i` of `ids` such that `ids[i]` = <id> }
+		MapType<std::vector<std::size_t>> outdated_ids;
+		auto & attribute_array = std::get<ContainerPtrType<T>>(attribute.arrays);
+		const auto rows = ext::size(ids);
 
 		{
 			const Poco::ScopedReadRWLock read_lock{rw_lock};
 
 			const auto now = std::chrono::system_clock::now();
 			/// fetch up-to-date values, decide which ones require update
-			for (const auto i : ext::range(0, ids.size()))
+			for (const auto i : ext::range(0, rows))
 			{
 				const auto id = ids[i];
-				if (id == 0)
-				{
-					out[i] = std::get<T>(attribute.null_values);
-					continue;
-				}
-
 				const auto cell_idx = getCellIdx(id);
 				const auto & cell = cells[cell_idx];
 
-				if (cell.id != id || cell.expires_at < now)
-				{
-					out[i] = std::get<T>(attribute.null_values);
+				/** cell should be updated if either:
+				 *	1. ids do not match,
+				 *	2. cell has expired,
+				 *	3. explicit defaults were specified and cell was set default. */
+				if (cell.id != id || cell.expiresAt() < now)
 					outdated_ids[id].push_back(i);
-				}
 				else
-					out[i] = attribute_array[cell_idx];
+					out[i] = def && cell.isDefault() ? (*def)[i] : attribute_array[cell_idx];
 			}
 		}
 
-		query_count.fetch_add(ids.size(), std::memory_order_relaxed);
-		hit_count.fetch_add(ids.size() - outdated_ids.size(), std::memory_order_release);
+		query_count.fetch_add(rows, std::memory_order_relaxed);
+		hit_count.fetch_add(rows - outdated_ids.size(), std::memory_order_release);
 
 		if (outdated_ids.empty())
 			return;
 
-		/// request new values
 		std::vector<id_t> required_ids(outdated_ids.size());
 		std::transform(std::begin(outdated_ids), std::end(outdated_ids), std::begin(required_ids),
 			[] (auto & pair) { return pair.first; });
 
+		/// request new values
 		update(required_ids, [&] (const auto id, const auto cell_idx) {
 			const auto attribute_value = attribute_array[cell_idx];
+
+			/// set missing values to out
+			for (const auto out_idx : outdated_ids[id])
+				out[out_idx] = attribute_value;
+		}, [&] (const auto id, const auto cell_idx) {
+			const auto attribute_value = !def ? attribute_array[cell_idx] : (*def)[outdated_ids[id].front()];
 
 			/// set missing values to out
 			for (const auto out_idx : outdated_ids[id])
@@ -299,12 +406,16 @@ private:
 		});
 	}
 
-	void getItems(attribute_t & attribute, const PODArray<id_t> & ids, ColumnString * out) const
+	void getItems(
+		attribute_t & attribute, const PODArray<id_t> & ids, ColumnString * out,
+		const ColumnString * const def = nullptr) const
 	{
-		/// save on some allocations
-		out->getOffsets().reserve(ids.size());
+		const auto rows = ext::size(ids);
 
-		auto & attribute_array = std::get<std::unique_ptr<StringRef[]>>(attribute.arrays);
+		/// save on some allocations
+		out->getOffsets().reserve(rows);
+
+		auto & attribute_array = std::get<ContainerPtrType<StringRef>>(attribute.arrays);
 
 		auto found_outdated_values = false;
 
@@ -314,20 +425,20 @@ private:
 
 			const auto now = std::chrono::system_clock::now();
 			/// fetch up-to-date values, discard on fail
-			for (const auto i : ext::range(0, ids.size()))
+			for (const auto i : ext::range(0, rows))
 			{
 				const auto id = ids[i];
 				const auto cell_idx = getCellIdx(id);
 				const auto & cell = cells[cell_idx];
 
-				if (cell.id != id || cell.expires_at < now)
+				if (cell.id != id || cell.expiresAt() < now)
 				{
 					found_outdated_values = true;
 					break;
 				}
 				else
 				{
-					const auto string_ref = attribute_array[cell_idx];
+					const auto string_ref = def && cell.isDefault() ? def->getDataAt(i) : attribute_array[cell_idx];
 					out->insertData(string_ref.data, string_ref.size);
 				}
 			}
@@ -336,19 +447,19 @@ private:
 		/// optimistic code completed successfully
 		if (!found_outdated_values)
 		{
-			query_count.fetch_add(ids.size(), std::memory_order_relaxed);
-			hit_count.fetch_add(ids.size(), std::memory_order_release);
+			query_count.fetch_add(rows, std::memory_order_relaxed);
+			hit_count.fetch_add(rows, std::memory_order_release);
 			return;
 		}
 
-		/// now onto the pessimistic one, discard possibly partial results from the optimistic path
+		/// now onto the pessimistic one, discard possible partial results from the optimistic path
 		out->getChars().resize_assume_reserved(0);
 		out->getOffsets().resize_assume_reserved(0);
 
-		/// outdated ids joined number of times they've been requested
-		HashMap<id_t, std::size_t> outdated_ids;
+		/// Mapping: <id> -> { all indices `i` of `ids` such that `ids[i]` = <id> }
+		MapType<std::vector<std::size_t>> outdated_ids;
 		/// we are going to store every string separately
-		HashMap<id_t, String> map;
+		MapType<String> map;
 
 		std::size_t total_length = 0;
 		{
@@ -361,19 +472,19 @@ private:
 				const auto cell_idx = getCellIdx(id);
 				const auto & cell = cells[cell_idx];
 
-				if (cell.id != id || cell.expires_at < now)
-					outdated_ids[id] += 1;
+				if (cell.id != id || cell.expiresAt() < now)
+					outdated_ids[id].push_back(i);
 				else
 				{
-					const auto string_ref = attribute_array[cell_idx];
+					const auto string_ref = def && cell.isDefault() ? def->getDataAt(i) : attribute_array[cell_idx];
 					map[id] = String{string_ref};
 					total_length += string_ref.size + 1;
 				}
 			}
 		}
 
-		query_count.fetch_add(ids.size(), std::memory_order_relaxed);
-		hit_count.fetch_add(ids.size() - outdated_ids.size(), std::memory_order_release);
+		query_count.fetch_add(rows, std::memory_order_relaxed);
+		hit_count.fetch_add(rows - outdated_ids.size(), std::memory_order_release);
 
 		/// request new values
 		if (!outdated_ids.empty())
@@ -386,28 +497,37 @@ private:
 				const auto attribute_value = attribute_array[cell_idx];
 
 				map[id] = String{attribute_value};
-				total_length += (attribute_value.size + 1) * outdated_ids[id];
+				total_length += (attribute_value.size + 1) * outdated_ids[id].size();
+			}, [&] (const auto id, const auto cell_idx) {
+				auto attribute_value = def ? def->getDataAt(outdated_ids[id].front()) : attribute_array[cell_idx];
+				map[id] = String{attribute_value};
+				total_length += (attribute_value.size + 1) * outdated_ids[id].size();
 			});
 		}
 
 		out->getChars().reserve(total_length);
 
+		const auto & null_value = std::get<String>(attribute.null_values);
+
 		for (const auto id : ids)
 		{
 			const auto it = map.find(id);
-			const auto string = it != map.end() ? it->second : std::get<String>(attribute.null_values);
+			/// @note check seems redundant, null_values are explicitly stored in the `map`
+			const auto & string = it != map.end() ? it->second : null_value;
 			out->insertData(string.data(), string.size());
 		}
 	}
 
-	template <typename F>
-	void update(const std::vector<id_t> ids, F && on_cell_updated) const
+	template <typename PresentIdHandler, typename AbsentIdHandler>
+	void update(
+		const std::vector<id_t> & requested_ids, PresentIdHandler && on_cell_updated,
+		AbsentIdHandler && on_id_not_found) const
 	{
-		auto stream = source_ptr->loadIds(ids);
+		auto stream = source_ptr->loadIds(requested_ids);
 		stream->readPrefix();
 
-		HashMap<UInt64, UInt8> remaining_ids{ids.size()};
-		for (const auto id : ids)
+		MapType<UInt8> remaining_ids{requested_ids.size()};
+		for (const auto id : requested_ids)
 			remaining_ids.insert({ id, 0 });
 
 		std::uniform_int_distribution<std::uint64_t> distribution{
@@ -429,9 +549,9 @@ private:
 			const auto & ids = id_column->getData();
 
 			/// cache column pointers
-			std::vector<const IColumn *> column_ptrs(attributes.size());
-			for (const auto i : ext::range(0, attributes.size()))
-				column_ptrs[i] = block.getByPosition(i + 1).column.get();
+			const auto column_ptrs = ext::map<std::vector>(ext::range(0, attributes.size()), [&block] (const auto & i) {
+				return block.getByPosition(i + 1).column.get();
+			});
 
 			for (const auto i : ext::range(0, ids.size()))
 			{
@@ -453,17 +573,20 @@ private:
 
 				cell.id = id;
 				if (dict_lifetime.min_sec != 0 && dict_lifetime.max_sec != 0)
-					cell.expires_at = std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
+					cell.setExpiresAt(std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)});
 				else
-					cell.expires_at = std::chrono::time_point<std::chrono::system_clock>::max();
+					cell.setExpiresAt(std::chrono::time_point<std::chrono::system_clock>::max());
 
+				/// inform caller
 				on_cell_updated(id, cell_idx);
+				/// mark corresponding id as found
 				remaining_ids[id] = 1;
 			}
 		}
 
 		stream->readSuffix();
 
+		/// Check which ids have not been found and require setting null_value
 		for (const auto id_found_pair : remaining_ids)
 		{
 			if (id_found_pair.second)
@@ -473,19 +596,24 @@ private:
 			const auto cell_idx = getCellIdx(id);
 			auto & cell = cells[cell_idx];
 
+			/// Set null_value for each attribute
 			for (auto & attribute : attributes)
 				setDefaultAttributeValue(attribute, cell_idx);
 
+			/// Check if cell had not been occupied before and increment element counter if it hadn't
 			if (cell.id == 0 && cell_idx != zero_cell_idx)
 				element_count.fetch_add(1, std::memory_order_relaxed);
 
 			cell.id = id;
 			if (dict_lifetime.min_sec != 0 && dict_lifetime.max_sec != 0)
-				cell.expires_at = std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
+				cell.setExpiresAt(std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)});
 			else
-				cell.expires_at = std::chrono::time_point<std::chrono::system_clock>::max();
+				cell.setExpiresAt(std::chrono::time_point<std::chrono::system_clock>::max());
 
-			on_cell_updated(id, cell_idx);
+			cell.setDefault();
+
+			/// inform caller that the cell has not been found
+			on_id_not_found(id, cell_idx);
 		}
 	}
 
@@ -500,20 +628,20 @@ private:
 	{
 		switch (attribute.type)
 		{
-			case AttributeUnderlyingType::UInt8: std::get<std::unique_ptr<UInt8[]>>(attribute.arrays)[idx] = std::get<UInt8>(attribute.null_values); break;
-			case AttributeUnderlyingType::UInt16: std::get<std::unique_ptr<UInt16[]>>(attribute.arrays)[idx] = std::get<UInt16>(attribute.null_values); break;
-			case AttributeUnderlyingType::UInt32: std::get<std::unique_ptr<UInt32[]>>(attribute.arrays)[idx] = std::get<UInt32>(attribute.null_values); break;
-			case AttributeUnderlyingType::UInt64: std::get<std::unique_ptr<UInt64[]>>(attribute.arrays)[idx] = std::get<UInt64>(attribute.null_values); break;
-			case AttributeUnderlyingType::Int8: std::get<std::unique_ptr<Int8[]>>(attribute.arrays)[idx] = std::get<Int8>(attribute.null_values); break;
-			case AttributeUnderlyingType::Int16: std::get<std::unique_ptr<Int16[]>>(attribute.arrays)[idx] = std::get<Int16>(attribute.null_values); break;
-			case AttributeUnderlyingType::Int32: std::get<std::unique_ptr<Int32[]>>(attribute.arrays)[idx] = std::get<Int32>(attribute.null_values); break;
-			case AttributeUnderlyingType::Int64: std::get<std::unique_ptr<Int64[]>>(attribute.arrays)[idx] = std::get<Int64>(attribute.null_values); break;
-			case AttributeUnderlyingType::Float32: std::get<std::unique_ptr<Float32[]>>(attribute.arrays)[idx] = std::get<Float32>(attribute.null_values); break;
-			case AttributeUnderlyingType::Float64: std::get<std::unique_ptr<Float64[]>>(attribute.arrays)[idx] = std::get<Float64>(attribute.null_values); break;
+			case AttributeUnderlyingType::UInt8: std::get<ContainerPtrType<UInt8>>(attribute.arrays)[idx] = std::get<UInt8>(attribute.null_values); break;
+			case AttributeUnderlyingType::UInt16: std::get<ContainerPtrType<UInt16>>(attribute.arrays)[idx] = std::get<UInt16>(attribute.null_values); break;
+			case AttributeUnderlyingType::UInt32: std::get<ContainerPtrType<UInt32>>(attribute.arrays)[idx] = std::get<UInt32>(attribute.null_values); break;
+			case AttributeUnderlyingType::UInt64: std::get<ContainerPtrType<UInt64>>(attribute.arrays)[idx] = std::get<UInt64>(attribute.null_values); break;
+			case AttributeUnderlyingType::Int8: std::get<ContainerPtrType<Int8>>(attribute.arrays)[idx] = std::get<Int8>(attribute.null_values); break;
+			case AttributeUnderlyingType::Int16: std::get<ContainerPtrType<Int16>>(attribute.arrays)[idx] = std::get<Int16>(attribute.null_values); break;
+			case AttributeUnderlyingType::Int32: std::get<ContainerPtrType<Int32>>(attribute.arrays)[idx] = std::get<Int32>(attribute.null_values); break;
+			case AttributeUnderlyingType::Int64: std::get<ContainerPtrType<Int64>>(attribute.arrays)[idx] = std::get<Int64>(attribute.null_values); break;
+			case AttributeUnderlyingType::Float32: std::get<ContainerPtrType<Float32>>(attribute.arrays)[idx] = std::get<Float32>(attribute.null_values); break;
+			case AttributeUnderlyingType::Float64: std::get<ContainerPtrType<Float64>>(attribute.arrays)[idx] = std::get<Float64>(attribute.null_values); break;
 			case AttributeUnderlyingType::String:
 			{
 				const auto & null_value_ref = std::get<String>(attribute.null_values);
-				auto & string_ref = std::get<std::unique_ptr<StringRef[]>>(attribute.arrays)[idx];
+				auto & string_ref = std::get<ContainerPtrType<StringRef>>(attribute.arrays)[idx];
 				if (string_ref.data == null_value_ref.data())
 					return;
 
@@ -532,20 +660,20 @@ private:
 	{
 		switch (attribute.type)
 		{
-			case AttributeUnderlyingType::UInt8: std::get<std::unique_ptr<UInt8[]>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
-			case AttributeUnderlyingType::UInt16: std::get<std::unique_ptr<UInt16[]>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
-			case AttributeUnderlyingType::UInt32: std::get<std::unique_ptr<UInt32[]>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
-			case AttributeUnderlyingType::UInt64: std::get<std::unique_ptr<UInt64[]>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
-			case AttributeUnderlyingType::Int8: std::get<std::unique_ptr<Int8[]>>(attribute.arrays)[idx] = value.get<Int64>(); break;
-			case AttributeUnderlyingType::Int16: std::get<std::unique_ptr<Int16[]>>(attribute.arrays)[idx] = value.get<Int64>(); break;
-			case AttributeUnderlyingType::Int32: std::get<std::unique_ptr<Int32[]>>(attribute.arrays)[idx] = value.get<Int64>(); break;
-			case AttributeUnderlyingType::Int64: std::get<std::unique_ptr<Int64[]>>(attribute.arrays)[idx] = value.get<Int64>(); break;
-			case AttributeUnderlyingType::Float32: std::get<std::unique_ptr<Float32[]>>(attribute.arrays)[idx] = value.get<Float64>(); break;
-			case AttributeUnderlyingType::Float64: std::get<std::unique_ptr<Float64[]>>(attribute.arrays)[idx] = value.get<Float64>(); break;
+			case AttributeUnderlyingType::UInt8: std::get<ContainerPtrType<UInt8>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
+			case AttributeUnderlyingType::UInt16: std::get<ContainerPtrType<UInt16>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
+			case AttributeUnderlyingType::UInt32: std::get<ContainerPtrType<UInt32>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
+			case AttributeUnderlyingType::UInt64: std::get<ContainerPtrType<UInt64>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
+			case AttributeUnderlyingType::Int8: std::get<ContainerPtrType<Int8>>(attribute.arrays)[idx] = value.get<Int64>(); break;
+			case AttributeUnderlyingType::Int16: std::get<ContainerPtrType<Int16>>(attribute.arrays)[idx] = value.get<Int64>(); break;
+			case AttributeUnderlyingType::Int32: std::get<ContainerPtrType<Int32>>(attribute.arrays)[idx] = value.get<Int64>(); break;
+			case AttributeUnderlyingType::Int64: std::get<ContainerPtrType<Int64>>(attribute.arrays)[idx] = value.get<Int64>(); break;
+			case AttributeUnderlyingType::Float32: std::get<ContainerPtrType<Float32>>(attribute.arrays)[idx] = value.get<Float64>(); break;
+			case AttributeUnderlyingType::Float64: std::get<ContainerPtrType<Float64>>(attribute.arrays)[idx] = value.get<Float64>(); break;
 			case AttributeUnderlyingType::String:
 			{
 				const auto & string = value.get<String>();
-				auto & string_ref = std::get<std::unique_ptr<StringRef[]>>(attribute.arrays)[idx];
+				auto & string_ref = std::get<ContainerPtrType<StringRef>>(attribute.arrays)[idx];
 				const auto & null_value_ref = std::get<String>(attribute.null_values);
 				if (string_ref.data != null_value_ref.data())
 				{

@@ -38,9 +38,10 @@ protected:
 		size_t columns = res.columns();
 		for (size_t i = 0; i < columns; ++i)
 		{
-			ColumnPtr col = res.getByPosition(i).column;
-			if (col->isConst())
-				res.getByPosition(i).column = dynamic_cast<IColumnConst &>(*col).convertToFullColumn();
+			auto & src = res.getByPosition(i).column;
+			ColumnPtr converted = src->convertToFullColumnIfConst();
+			if (converted)
+				src = converted;
 		}
 
 		return res;

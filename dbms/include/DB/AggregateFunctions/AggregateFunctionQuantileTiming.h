@@ -3,6 +3,7 @@
 #include <limits>
 
 #include <DB/Common/MemoryTracker.h>
+#include <DB/Common/HashTable/Hash.h>
 
 #include <DB/Core/FieldVisitors.h>
 
@@ -13,10 +14,10 @@
 #include <DB/DataTypes/DataTypeArray.h>
 
 #include <DB/AggregateFunctions/IUnaryAggregateFunction.h>
+#include <DB/AggregateFunctions/IBinaryAggregateFunction.h>
 
 #include <DB/Columns/ColumnArray.h>
 
-#include <stats/IntHash.h>
 #include <ext/range.hpp>
 
 
@@ -549,9 +550,9 @@ private:
 public:
 	AggregateFunctionQuantileTiming(double level_ = 0.5) : level(level_) {}
 
-	String getName() const { return "quantileTiming"; }
+	String getName() const override { return "quantileTiming"; }
 
-	DataTypePtr getReturnType() const
+	DataTypePtr getReturnType() const override
 	{
 		return new DataTypeFloat32;
 	}
@@ -560,7 +561,7 @@ public:
 	{
 	}
 
-	void setParameters(const Array & params)
+	void setParameters(const Array & params) override
 	{
 		if (params.size() != 1)
 			throw Exception("Aggregate function " + getName() + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -569,27 +570,27 @@ public:
 	}
 
 
-	void addOne(AggregateDataPtr place, const IColumn & column, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const
 	{
 		this->data(place).insert(static_cast<const ColumnVector<ArgumentFieldType> &>(column).getData()[row_num]);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
 	{
 		this->data(place).merge(this->data(rhs));
 	}
 
-	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
+	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
 	{
 		this->data(place).serialize(buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
+	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
 		this->data(place).deserializeMerge(buf);
 	}
 
-	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
+	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
 	{
 		static_cast<ColumnFloat32 &>(to).getData().push_back(this->data(place).getFloat(level));
 	}
@@ -607,18 +608,18 @@ private:
 public:
 	AggregateFunctionQuantileTimingWeighted(double level_ = 0.5) : level(level_) {}
 
-	String getName() const { return "quantileTimingWeighted"; }
+	String getName() const override { return "quantileTimingWeighted"; }
 
-	DataTypePtr getReturnType() const
+	DataTypePtr getReturnType() const override
 	{
 		return new DataTypeFloat32;
 	}
 
-	void setArguments(const DataTypes & arguments)
+	void setArguments(const DataTypes & arguments) override
 	{
 	}
 
-	void setParameters(const Array & params)
+	void setParameters(const Array & params) override
 	{
 		if (params.size() != 1)
 			throw Exception("Aggregate function " + getName() + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -627,29 +628,29 @@ public:
 	}
 
 
-	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const
+	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const override
 	{
 		this->data(place).insertWeighted(
 			static_cast<const ColumnVector<ArgumentFieldType> &>(*columns[0]).getData()[row_num],
 			static_cast<const ColumnVector<WeightFieldType> &>(*columns[1]).getData()[row_num]);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
 	{
 		this->data(place).merge(this->data(rhs));
 	}
 
-	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
+	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
 	{
 		this->data(place).serialize(buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
+	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
 		this->data(place).deserializeMerge(buf);
 	}
 
-	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
+	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
 	{
 		static_cast<ColumnFloat32 &>(to).getData().push_back(this->data(place).getFloat(level));
 	}
@@ -668,9 +669,9 @@ private:
 	Levels levels;
 
 public:
-	String getName() const { return "quantilesTiming"; }
+	String getName() const override { return "quantilesTiming"; }
 
-	DataTypePtr getReturnType() const
+	DataTypePtr getReturnType() const override
 	{
 		return new DataTypeArray(new DataTypeFloat32);
 	}
@@ -679,7 +680,7 @@ public:
 	{
 	}
 
-	void setParameters(const Array & params)
+	void setParameters(const Array & params) override
 	{
 		if (params.empty())
 			throw Exception("Aggregate function " + getName() + " requires at least one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -692,27 +693,27 @@ public:
 	}
 
 
-	void addOne(AggregateDataPtr place, const IColumn & column, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const
 	{
 		this->data(place).insert(static_cast<const ColumnVector<ArgumentFieldType> &>(column).getData()[row_num]);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
 	{
 		this->data(place).merge(this->data(rhs));
 	}
 
-	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
+	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
 	{
 		this->data(place).serialize(buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
+	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
 		this->data(place).deserializeMerge(buf);
 	}
 
-	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
+	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
 	{
 		ColumnArray & arr_to = static_cast<ColumnArray &>(to);
 		ColumnArray::Offsets_t & offsets_to = arr_to.getOffsets();
@@ -730,25 +731,26 @@ public:
 
 
 template <typename ArgumentFieldType, typename WeightFieldType>
-class AggregateFunctionQuantilesTimingWeighted final : public IAggregateFunctionHelper<QuantileTiming>
+class AggregateFunctionQuantilesTimingWeighted final
+	: public IBinaryAggregateFunction<QuantileTiming, AggregateFunctionQuantilesTimingWeighted<ArgumentFieldType, WeightFieldType>>
 {
 private:
-	typedef std::vector<double> Levels;
+	using Levels = std::vector<double>;
 	Levels levels;
 
 public:
-	String getName() const { return "quantilesTimingWeighted"; }
+	String getName() const override { return "quantilesTimingWeighted"; }
 
-	DataTypePtr getReturnType() const
+	DataTypePtr getReturnType() const override
 	{
 		return new DataTypeArray(new DataTypeFloat32);
 	}
 
-	void setArguments(const DataTypes & arguments)
+	void setArgumentsImpl(const DataTypes & arguments)
 	{
 	}
 
-	void setParameters(const Array & params)
+	void setParameters(const Array & params) override
 	{
 		if (params.empty())
 			throw Exception("Aggregate function " + getName() + " requires at least one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -760,29 +762,29 @@ public:
 			levels[i] = apply_visitor(FieldVisitorConvertToNumber<Float64>(), params[i]);
 	}
 
-	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column_value, const IColumn & column_weight, size_t row_num) const
 	{
 		this->data(place).insertWeighted(
-			static_cast<const ColumnVector<ArgumentFieldType> &>(*columns[0]).getData()[row_num],
-			static_cast<const ColumnVector<WeightFieldType> &>(*columns[1]).getData()[row_num]);
+			static_cast<const ColumnVector<ArgumentFieldType> &>(column_value).getData()[row_num],
+			static_cast<const ColumnVector<WeightFieldType> &>(column_weight).getData()[row_num]);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
 	{
 		this->data(place).merge(this->data(rhs));
 	}
 
-	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
+	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
 	{
 		this->data(place).serialize(buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
+	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
 		this->data(place).deserializeMerge(buf);
 	}
 
-	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
+	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
 	{
 		ColumnArray & arr_to = static_cast<ColumnArray &>(to);
 		ColumnArray::Offsets_t & offsets_to = arr_to.getOffsets();

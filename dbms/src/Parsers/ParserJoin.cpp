@@ -28,9 +28,11 @@ bool ParserJoin::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_p
 	ParserString s_outer("OUTER", true, true);
 	ParserString s_join("JOIN", true, true);
 	ParserString s_using("USING", true, true);
+	ParserString s_on("ON", true, true);
 
-	ParserNotEmptyExpressionList exp_list;
-	ParserWithOptionalAlias subquery(ParserPtr(new ParserSubquery));
+	ParserNotEmptyExpressionList exp_list(false);
+	ParserLogicalOrExpression exp_elem;
+	ParserWithOptionalAlias subquery(ParserPtr(new ParserSubquery), true);
 	ParserIdentifier identifier;
 
 	ws.ignore(pos, end);
@@ -93,15 +95,41 @@ bool ParserJoin::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_p
 
 	if (join->kind != ASTJoin::Cross)
 	{
-		if (!s_using.ignore(pos, end, max_parsed_pos, expected))
+		if (s_using.ignore(pos, end, max_parsed_pos, expected))
+		{
+			ws.ignore(pos, end);
+
+			/// Выражение для USING можно указать как в скобках, так и без них.
+			bool in_parens = ParserString("(").ignore(pos, end);
+			if (in_parens)
+				ws.ignore(pos, end);
+
+			if (!exp_list.parse(pos, end, join->using_expr_list, max_parsed_pos, expected))
+				return false;
+
+			if (in_parens)
+			{
+				ws.ignore(pos, end);
+				if (!ParserString(")").ignore(pos, end))
+					return false;
+			}
+
+			ws.ignore(pos, end);
+		}
+		else if (s_on.ignore(pos, end, max_parsed_pos, expected))
+		{
+			ws.ignore(pos, end);
+
+			if (!exp_elem.parse(pos, end, join->on_expr, max_parsed_pos, expected))
+				return false;
+
+			ws.ignore(pos, end);
+		}
+		else
+		{
+			expected = "USING or ON";
 			return false;
-
-		ws.ignore(pos, end);
-
-		if (!exp_list.parse(pos, end, join->using_expr_list, max_parsed_pos, expected))
-			return false;
-
-		ws.ignore(pos, end);
+		}
 	}
 
 	join->children.push_back(join->table);

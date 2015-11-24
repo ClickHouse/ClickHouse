@@ -10,7 +10,7 @@
 //#define DBMS_HASH_MAP_DEBUG_RESIZES
 
 #include <DB/Common/Stopwatch.h>
-#include <stats/UniquesHashSet.h>
+#include <DB/AggregateFunctions/UniquesHashSet.h>
 
 #include <DB/Core/Types.h>
 #include <DB/IO/ReadBufferFromFile.h>

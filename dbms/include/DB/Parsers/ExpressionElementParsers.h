@@ -89,6 +89,15 @@ protected:
 	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 };
 
+/** Беззнаковое целое число, используется в качестве правой части оператора взятия элемента кортежа (x.1).
+  */
+class ParserUnsignedInteger : public IParserBase
+{
+protected:
+	const char * getName() const { return "unsigned integer"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+};
+
 
 /** Строка в одинарных кавычках.
   */
@@ -128,7 +137,13 @@ protected:
   */
 class ParserAlias : public IParserBase
 {
+public:
+	ParserAlias(bool allow_alias_without_as_keyword_)
+		: allow_alias_without_as_keyword(allow_alias_without_as_keyword_) {}
 protected:
+	bool allow_alias_without_as_keyword;
+	static const char * restricted_keywords[];
+
 	const char * getName() const { return "alias"; }
 	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 };
@@ -149,9 +164,11 @@ protected:
 class ParserWithOptionalAlias : public IParserBase
 {
 public:
-	ParserWithOptionalAlias(ParserPtr && elem_parser_) : elem_parser(std::move(elem_parser_)) {}
+	ParserWithOptionalAlias(ParserPtr && elem_parser_, bool allow_alias_without_as_keyword_)
+		: elem_parser(std::move(elem_parser_)), allow_alias_without_as_keyword(allow_alias_without_as_keyword_) {}
 protected:
 	ParserPtr elem_parser;
+	bool allow_alias_without_as_keyword;
 
 	const char * getName() const { return "element of expression with optional alias"; }
 	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);

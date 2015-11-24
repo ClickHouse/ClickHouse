@@ -743,6 +743,18 @@ struct AggregatedDataVariants : private boost::noncopyable
 typedef SharedPtr<AggregatedDataVariants> AggregatedDataVariantsPtr;
 typedef std::vector<AggregatedDataVariantsPtr> ManyAggregatedDataVariants;
 
+/** Как считаются "тотальные" значения при наличии WITH TOTALS?
+  * (Более подробно смотрите в TotalsHavingBlockInputStream.)
+  *
+  * В случае отсутствия group_by_overflow_mode = 'any', данные агрегируются как обычно, но состояния агрегатных функций не финализируются.
+  * Позже, состояния агрегатных функций для всех строк (прошедших через HAVING) мерджатся в одну - это и будет TOTALS.
+  *
+  * В случае наличия group_by_overflow_mode = 'any', данные агрегируются как обычно, кроме ключей, не поместившихся в max_rows_to_group_by.
+  * Для этих ключей, данные агрегируются в одну дополнительную строку - далее см. под названиями overflow_row, overflows...
+  * Позже, состояния агрегатных функций для всех строк (прошедших через HAVING) мерджатся в одну,
+  *  а также к ним прибавляется или не прибавляется (в зависимости от настройки totals_mode) также overflow_row - это и будет TOTALS.
+  */
+
 
 /** Агрегирует источник блоков.
   */
@@ -1032,7 +1044,7 @@ protected:
 		size_t rows,
 		Filler && filler) const;
 
-	BlocksList prepareBlocksAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final) const;
+	BlocksList prepareBlocksAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;
 	BlocksList prepareBlocksAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final) const;
 	BlocksList prepareBlocksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final, boost::threadpool::pool * thread_pool) const;
 

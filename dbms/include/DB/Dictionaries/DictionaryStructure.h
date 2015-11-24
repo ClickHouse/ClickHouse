@@ -136,34 +136,82 @@ struct DictionarySpecialAttribute final
 /// Name of identifier plus list of attributes
 struct DictionaryStructure final
 {
-	DictionarySpecialAttribute id;
+	std::experimental::optional<DictionarySpecialAttribute> id;
+	std::experimental::optional<std::vector<DictionaryAttribute>> key;
 	std::vector<DictionaryAttribute> attributes;
 	std::experimental::optional<DictionarySpecialAttribute> range_min;
 	std::experimental::optional<DictionarySpecialAttribute> range_max;
 	bool has_expressions = false;
 
 	DictionaryStructure(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
-		: id{config, config_prefix + ".id"}
 	{
-		if (id.name.empty())
-			throw Exception{
-				"No 'id' specified for dictionary",
-				ErrorCodes::BAD_ARGUMENTS
-			};
+		const auto has_id = config.has(config_prefix + ".id");
+		const auto has_key = config.has(config_prefix + ".key");
 
-		if (config.has(config_prefix + ".range_min"))
-			range_min.emplace(config, config_prefix + ".range_min");
+		if (has_key && has_id)
+			throw Exception{"Only one of 'id' and 'key' should be specified", ErrorCodes::BAD_ARGUMENTS};
 
-		if (config.has(config_prefix + ".range_max"))
-			range_max.emplace(config, config_prefix + ".range_max");
+		if (has_id)
+			id.emplace(config, config_prefix + ".id");
+		else if (has_key)
+		{
+			key.emplace(getAttributes(config, config_prefix + ".key", false, false));
+			if (key->empty())
+				throw Exception{"Empty 'key' supplied", ErrorCodes::BAD_ARGUMENTS};
+		}
+		else
+			throw Exception{"Dictionary structure should specify either 'id' or 'key'", ErrorCodes::BAD_ARGUMENTS};
 
-		if (!id.expression.empty() ||
-			(range_min && !range_min->expression.empty()) || (range_max && !range_max->expression.empty()))
-			has_expressions = true;
+		if (id)
+		{
+			if (id->name.empty())
+				throw Exception{"'id' cannot be empty", ErrorCodes::BAD_ARGUMENTS};
 
+			if (config.has(config_prefix + ".range_min"))
+				range_min.emplace(config, config_prefix + ".range_min");
+
+			if (config.has(config_prefix + ".range_max"))
+				range_max.emplace(config, config_prefix + ".range_max");
+
+			if (!id->expression.empty() ||
+				(range_min && !range_min->expression.empty()) ||
+				(range_max && !range_max->expression.empty()))
+				has_expressions = true;
+		}
+
+		attributes = getAttributes(config, config_prefix);
+		if (attributes.empty())
+			throw Exception{"Dictionary has no attributes defined", ErrorCodes::BAD_ARGUMENTS};
+	}
+
+	bool isKeySizeFixed() const
+	{
+		if (!key)
+			return true;
+
+		for (const auto key_i : * key)
+			if (key_i.underlying_type == AttributeUnderlyingType::String)
+				return false;
+
+		return true;
+	}
+
+	std::size_t getKeySize() const
+	{
+		return std::accumulate(std::begin(*key), std::end(*key), std::size_t{},
+			[] (const auto running_size, const auto & key_i) {return running_size + key_i.type->getSizeOfField(); });
+	}
+
+private:
+	std::vector<DictionaryAttribute> getAttributes(
+		const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
+		const bool hierarchy_allowed = true, const bool allow_null_values = true)
+	{
 		Poco::Util::AbstractConfiguration::Keys keys;
 		config.keys(config_prefix, keys);
 		auto has_hierarchy = false;
+
+		std::vector<DictionaryAttribute> attributes;
 
 		for (const auto & key : keys)
 		{
@@ -181,19 +229,22 @@ struct DictionaryStructure final
 			if (!expression.empty())
 				has_expressions = true;
 
-			const auto null_value_string = config.getString(prefix + "null_value");
 			Field null_value;
-			try
+			if (allow_null_values)
 			{
-				ReadBufferFromString null_value_buffer{null_value_string};
-				type->deserializeText(null_value, null_value_buffer);
-			}
-			catch (const std::exception & e)
-			{
-				throw Exception{
-					std::string{"Error parsing null_value: "} + e.what(),
-					ErrorCodes::BAD_ARGUMENTS
-				};
+				const auto null_value_string = config.getString(prefix + "null_value");
+				try
+				{
+					ReadBufferFromString null_value_buffer{null_value_string};
+					type->deserializeText(null_value, null_value_buffer);
+				}
+				catch (const std::exception & e)
+				{
+					throw Exception{
+						std::string{"Error parsing null_value: "} + e.what(),
+						ErrorCodes::BAD_ARGUMENTS
+					};
+				}
 			}
 
 			const auto hierarchical = config.getBool(prefix + "hierarchical", false);
@@ -201,6 +252,12 @@ struct DictionaryStructure final
 			if (name.empty())
 				throw Exception{
 					"Properties 'name' and 'type' of an attribute cannot be empty",
+					ErrorCodes::BAD_ARGUMENTS
+				};
+
+			if (has_hierarchy && !hierarchy_allowed)
+				throw Exception{
+					"Hierarchy not allowed in '" + prefix,
 					ErrorCodes::BAD_ARGUMENTS
 				};
 
@@ -217,11 +274,7 @@ struct DictionaryStructure final
 			});
 		}
 
-		if (attributes.empty())
-			throw Exception{
-				"Dictionary has no attributes defined",
-				ErrorCodes::BAD_ARGUMENTS
-			};
+		return attributes;
 	}
 };
 

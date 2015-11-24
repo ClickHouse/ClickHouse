@@ -46,7 +46,7 @@ int main(int argc, char ** argv)
 		DB::WriteBufferFromOStream out(std::cout);
 		DB::BlockInputStreamPtr query_plan;
 
-		DB::executeQuery(in, out, context, query_plan);
+		DB::executeQuery(in, out, context, query_plan, {});
 
 		if (query_plan)
 		{

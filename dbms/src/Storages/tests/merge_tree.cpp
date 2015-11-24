@@ -39,7 +39,7 @@ int main(int argc, char ** argv)
 		const char * begin = primary_expr_str.data();
 		const char * end = begin + primary_expr_str.size();
 		const char * max_parsed_pos = begin;
-		ParserExpressionList parser;
+		ParserExpressionList parser(false);
 		if (!parser.parse(begin, end, primary_expr, max_parsed_pos, expected))
 			throw Poco::Exception("Cannot parse " + primary_expr_str);
 

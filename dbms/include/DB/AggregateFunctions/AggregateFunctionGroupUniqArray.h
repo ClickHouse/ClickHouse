@@ -40,11 +40,11 @@ class AggregateFunctionGroupUniqArray : public IUnaryAggregateFunction<Aggregate
 {
 private:
 	typedef AggregateFunctionGroupUniqArrayData<T> State;
-	
-public:
-	String getName() const { return "groupUniqArray"; }
 
-	DataTypePtr getReturnType() const
+public:
+	String getName() const override { return "groupUniqArray"; }
+
+	DataTypePtr getReturnType() const override
 	{
 		return new DataTypeArray(new typename DataTypeFromFieldType<T>::Type);
 	}
@@ -54,17 +54,17 @@ public:
 	}
 
 
-	void addOne(AggregateDataPtr place, const IColumn & column, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const
 	{
 		this->data(place).value.insert(static_cast<const ColumnVector<T> &>(column).getData()[row_num]);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
 	{
 		this->data(place).value.merge(this->data(rhs).value);
 	}
 
-	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
+	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
 	{
 		const typename State::Set & set = this->data(place).value;
 		size_t size = set.size();
@@ -73,12 +73,12 @@ public:
 			writeIntBinary(*it, buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
+	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
 		this->data(place).value.readAndMerge(buf);
 	}
 
-	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
+	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
 	{
 		ColumnArray & arr_to = static_cast<ColumnArray &>(to);
 		ColumnArray::Offsets_t & offsets_to = arr_to.getOffsets();
@@ -106,7 +106,7 @@ template <typename T>
 class AggregateFunctionGroupUniqArrays final : public AggregateFunctionGroupUniqArray<T>
 {
 public:
-	void addOne(AggregateDataPtr place, const IColumn & column, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const
 	{
 		const ColumnArray & arr = static_cast<const ColumnArray &>(column);
 		const ColumnArray::Offsets_t & offsets = arr.getOffsets();

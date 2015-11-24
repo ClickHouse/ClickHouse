@@ -25,81 +25,82 @@ private:
 public:
 	AggregateFunctionState(AggregateFunctionPtr nested_) : nested_func_owner(nested_), nested_func(nested_func_owner.get()) {}
 
-	String getName() const
+	String getName() const override
 	{
 		return nested_func->getName() + "State";
 	}
 
-	DataTypePtr getReturnType() const
+	DataTypePtr getReturnType() const override
 	{
 		return new DataTypeAggregateFunction(nested_func_owner, arguments, params);
 	}
 
-	void setArguments(const DataTypes & arguments_)
+	void setArguments(const DataTypes & arguments_) override
 	{
 		arguments = arguments_;
 		nested_func->setArguments(arguments);
 	}
 
-	void setParameters(const Array & params_)
+	void setParameters(const Array & params_) override
 	{
 		params = params_;
 		nested_func->setParameters(params);
 	}
 
-	void create(AggregateDataPtr place) const
+	void create(AggregateDataPtr place) const override
 	{
 		nested_func->create(place);
 	}
 
-	void destroy(AggregateDataPtr place) const noexcept
+	void destroy(AggregateDataPtr place) const noexcept override
 	{
 		nested_func->destroy(place);
 	}
 
-	bool hasTrivialDestructor() const
+	bool hasTrivialDestructor() const override
 	{
 		return nested_func->hasTrivialDestructor();
 	}
 
-	size_t sizeOfData() const
+	size_t sizeOfData() const override
 	{
 		return nested_func->sizeOfData();
 	}
 
-	size_t alignOfData() const
+	size_t alignOfData() const override
 	{
 		return nested_func->alignOfData();
 	}
 
-	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const
+	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const override
 	{
 		nested_func->add(place, columns, row_num);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
 	{
 		nested_func->merge(place, rhs);
 	}
 
-	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
+	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
 	{
 		nested_func->serialize(place, buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
+	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
 		nested_func->deserializeMerge(place, buf);
 	}
 
-	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
+	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
 	{
 		static_cast<ColumnAggregateFunction &>(to).getData().push_back(const_cast<AggregateDataPtr>(place));
 	}
 
 	/// Аггрегатная функция или состояние аггрегатной функции.
-	bool isState() const { return true; }
+	bool isState() const override { return true; }
 
+	AggregateFunctionPtr getNestedFunction() const { return nested_func_owner; }
 };
 
 }
