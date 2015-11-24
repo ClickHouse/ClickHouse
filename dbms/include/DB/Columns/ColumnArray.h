@@ -266,6 +266,25 @@ public:
 
 	ColumnPtr replicate(const Offsets_t & replicate_offsets) const override;
 
+
+	ColumnPtr convertToFullColumnIfConst() const override
+	{
+		ColumnPtr new_data;
+		ColumnPtr new_offsets;
+
+		if (auto full_column = data->convertToFullColumnIfConst())
+			new_data = full_column;
+		else
+			new_data = data;
+
+		if (auto full_column = offsets->convertToFullColumnIfConst())
+			new_offsets = full_column;
+		else
+			new_offsets = offsets;
+
+		return new ColumnArray(new_data, new_offsets);
+	}
+
 private:
 	ColumnPtr data;
 	ColumnPtr offsets;	/// Смещения могут быть разделяемыми для нескольких столбцов - для реализации вложенных структур данных.

@@ -77,6 +77,20 @@ struct MergeTreeSettings
 	/// Если отношение количества ошибок к общему количеству кусков меньше указанного значения, то всё-равно можно запускаться.
 	double replicated_max_ratio_of_wrong_parts = 0.05;
 
+	/** Настройки проверки отставания реплик. */
+
+	/// Периодичность для проверки отставания и сравнения его с другими репликами.
+	size_t check_delay_period = 60;
+
+	/// Минимальное отставание от других реплик, при котором нужно уступить лидерство. Здесь и далее, если 0 - не ограничено.
+	size_t min_relative_delay_to_yield_leadership = 120;
+
+	/// Минимальное отставание от других реплик, при котором нужно закрыться от запросов и не выдавать Ok для проверки статуса.
+	size_t min_relative_delay_to_close = 300;
+
+	/// Минимальное абсолютное отставание, при котором нужно закрыться от запросов и не выдавать Ok для проверки статуса.
+	size_t min_absolute_delay_to_close = 0;
+
 
 	void loadFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config)
 	{
@@ -106,6 +120,10 @@ struct MergeTreeSettings
 		SET_SIZE_T(replicated_max_missing_obsolete_parts);
 		SET_SIZE_T(replicated_max_missing_active_parts);
 		SET_DOUBLE(replicated_max_ratio_of_wrong_parts);
+		SET_SIZE_T(check_delay_period);
+		SET_SIZE_T(min_relative_delay_to_yield_leadership);
+		SET_SIZE_T(min_relative_delay_to_close);
+		SET_SIZE_T(min_absolute_delay_to_close);
 
 	#undef SET_SIZE_T
 	#undef SET_DOUBLE

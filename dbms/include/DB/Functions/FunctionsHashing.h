@@ -19,12 +19,11 @@
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Columns/ColumnFixedString.h>
 #include <DB/Columns/ColumnArray.h>
+#include <DB/Columns/ColumnTuple.h>
 #include <DB/Common/HashTable/Hash.h>
 #include <DB/Functions/IFunction.h>
 
 #include <ext/range.hpp>
-
-#include <stats/IntHash.h>
 
 
 namespace DB
@@ -399,6 +398,9 @@ UInt64 toInteger<Float64>(Float64 x)
 }
 
 
+/** Используются хэш-функции под названием CityHash, FarmHash, MetroHash.
+  * В связи с этим, этот шаблон назван со словами NeighbourhoodHash.
+  */
 template <typename Impl>
 class FunctionNeighbourhoodHash64 : public IFunction
 {
@@ -565,6 +567,29 @@ private:
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
 
+	void executeForArgument(const IDataType * type, const IColumn * column, ColumnUInt64::Container_t & vec_to, bool & is_first)
+	{
+		/// Раскрытие кортежей.
+		if (const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(column))
+		{
+			const Block & tuple_data = tuple->getData();
+			for (size_t i = 0, size = tuple_data.columns(); i < size; ++i)
+			{
+				const ColumnWithTypeAndName & col = tuple_data.unsafeGetByPosition(i);
+				executeForArgument(col.type.get(), col.column.get(), vec_to, is_first);
+			}
+		}
+		else
+		{
+			if (is_first)
+				executeAny<true>(type, column, vec_to);
+			else
+				executeAny<false>(type, column, vec_to);
+		}
+
+		is_first = false;
+	}
+
 public:
 	/// Получить имя функции.
 	String getName() const override
@@ -589,20 +614,17 @@ public:
 
 		if (arguments.empty())
 		{
-			/// Случайное число из /dev/urandom используется как хеш пустого кортежа.
+			/// Случайное число из /dev/urandom используется как хеш пустого количества аргументов.
 			vec_to.assign(rows, 0xe28dbde7fe22e41c);
 		}
 
+		/// Функция поддерживает произвольное количество аргументов всевозможных типов.
+
+		bool is_first_argument = true;
 		for (size_t i = 0; i < arguments.size(); ++i)
 		{
-			const ColumnWithTypeAndName & column = block.getByPosition(arguments[i]);
-			const IDataType * from_type = &*column.type;
-			const IColumn * icolumn = &*column.column;
-
-			if (i == 0)
-				executeAny<true>(from_type, icolumn, vec_to);
-			else
-				executeAny<false>(from_type, icolumn, vec_to);
+			const ColumnWithTypeAndName & col = block.getByPosition(arguments[i]);
+			executeForArgument(col.type.get(), col.column.get(), vec_to, is_first_argument);
 		}
 	}
 };

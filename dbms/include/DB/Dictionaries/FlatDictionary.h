@@ -6,9 +6,11 @@
 #include <DB/Columns/ColumnString.h>
 #include <DB/Common/Arena.h>
 #include <ext/range.hpp>
+#include <ext/size.hpp>
 #include <atomic>
 #include <vector>
 #include <tuple>
+
 
 namespace DB
 {
@@ -84,7 +86,11 @@ public:
 
 	void toParent(const PODArray<id_t> & ids, PODArray<id_t> & out) const override
 	{
-		getItems<UInt64>(*hierarchical_attribute, ids, out);
+		const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
+
+		getItems<UInt64>(*hierarchical_attribute, ids,
+			[&] (const std::size_t row, const UInt64 value) { out[row] = value; },
+			[&] (const std::size_t) { return null_value; });
 	}
 
 #define DECLARE_MULTIPLE_GETTER(TYPE)\
@@ -97,7 +103,11 @@ public:
 				ErrorCodes::TYPE_MISMATCH\
 			};\
 		\
-		getItems<TYPE>(attribute, ids, out);\
+		const auto null_value = std::get<TYPE>(attribute.null_values);\
+		\
+		getItems<TYPE>(attribute, ids,\
+			[&] (const std::size_t row, const auto value) { out[row] = value; },\
+			[&] (const std::size_t) { return null_value; });\
 	}
 	DECLARE_MULTIPLE_GETTER(UInt8)
 	DECLARE_MULTIPLE_GETTER(UInt16)
@@ -119,38 +129,93 @@ public:
 				ErrorCodes::TYPE_MISMATCH
 			};
 
-		const auto & attr = *std::get<std::unique_ptr<PODArray<StringRef>>>(attribute.arrays);
-		const auto & null_value = std::get<String>(attribute.null_values);
+		const auto & null_value = StringRef{std::get<String>(attribute.null_values)};
 
-		for (const auto i : ext::range(0, ids.size()))
+		getItems<StringRef>(attribute, ids,
+			[&] (const std::size_t row, const StringRef value) { out->insertData(value.data, value.size); },
+			[&] (const std::size_t) { return null_value; });
+	}
+
+#define DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(TYPE)\
+	void get##TYPE(\
+		const std::string & attribute_name, const PODArray<id_t> & ids, const PODArray<TYPE> & def,\
+		PODArray<TYPE> & out) const override\
+	{\
+		const auto & attribute = getAttribute(attribute_name);\
+		if (attribute.type != AttributeUnderlyingType::TYPE)\
+			throw Exception{\
+				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
+				ErrorCodes::TYPE_MISMATCH\
+			};\
+		\
+		getItems<TYPE>(attribute, ids,\
+			[&] (const std::size_t row, const auto value) { out[row] = value; },\
+			[&] (const std::size_t row) { return def[row]; });\
+	}
+	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(UInt8)
+	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(UInt16)
+	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(UInt32)
+	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(UInt64)
+	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Int8)
+	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Int16)
+	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Int32)
+	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Int64)
+	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Float32)
+	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Float64)
+#undef DECLARE_MULTIPLE_GETTER_WITH_DEFAULT
+	void getString(
+		const std::string & attribute_name, const PODArray<id_t> & ids, const ColumnString * const def,
+		ColumnString * const out) const override
+	{
+		const auto & attribute = getAttribute(attribute_name);
+		if (attribute.type != AttributeUnderlyingType::String)
+			throw Exception{
+				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
+				ErrorCodes::TYPE_MISMATCH
+			};
+
+		getItems<StringRef>(attribute, ids,
+			[&] (const std::size_t row, const StringRef value) { out->insertData(value.data, value.size); },
+			[&] (const std::size_t row) { return def->getDataAt(row); });
+	}
+
+	void has(const PODArray<id_t> & ids, PODArray<UInt8> & out) const override
+	{
+		const auto & attribute = attributes.front();
+
+		switch (attribute.type)
 		{
-			const auto id = ids[i];
-			const auto string_ref = id < attr.size() ? attr[id] : StringRef{null_value};
-			out->insertData(string_ref.data, string_ref.size);
+			case AttributeUnderlyingType::UInt8: has<UInt8>(attribute, ids, out); break;
+			case AttributeUnderlyingType::UInt16: has<UInt16>(attribute, ids, out); break;
+			case AttributeUnderlyingType::UInt32: has<UInt32>(attribute, ids, out); break;
+			case AttributeUnderlyingType::UInt64: has<UInt64>(attribute, ids, out); break;
+			case AttributeUnderlyingType::Int8: has<Int8>(attribute, ids, out); break;
+			case AttributeUnderlyingType::Int16: has<Int16>(attribute, ids, out); break;
+			case AttributeUnderlyingType::Int32: has<Int32>(attribute, ids, out); break;
+			case AttributeUnderlyingType::Int64: has<Int64>(attribute, ids, out); break;
+			case AttributeUnderlyingType::Float32: has<Float32>(attribute, ids, out); break;
+			case AttributeUnderlyingType::Float64: has<Float64>(attribute, ids, out); break;
+			case AttributeUnderlyingType::String: has<String>(attribute, ids, out); break;
 		}
-
-		query_count.fetch_add(ids.size(), std::memory_order_relaxed);
 	}
 
 private:
+	template <typename Value> using ContainerType = PODArray<Value>;
+	template <typename Value> using ContainerPtrType = std::unique_ptr<ContainerType<Value>>;
+
 	struct attribute_t final
 	{
 		AttributeUnderlyingType type;
-		std::tuple<UInt8, UInt16, UInt32, UInt64,
+		std::tuple<
+			UInt8, UInt16, UInt32, UInt64,
 			Int8, Int16, Int32, Int64,
 			Float32, Float64,
 			String> null_values;
-		std::tuple<std::unique_ptr<PODArray<UInt8>>,
-			std::unique_ptr<PODArray<UInt16>>,
-			std::unique_ptr<PODArray<UInt32>>,
-			std::unique_ptr<PODArray<UInt64>>,
-			std::unique_ptr<PODArray<Int8>>,
-			std::unique_ptr<PODArray<Int16>>,
-			std::unique_ptr<PODArray<Int32>>,
-			std::unique_ptr<PODArray<Int64>>,
-			std::unique_ptr<PODArray<Float32>>,
-			std::unique_ptr<PODArray<Float64>>,
-			std::unique_ptr<PODArray<StringRef>>> arrays;
+		std::tuple<
+			ContainerPtrType<UInt8>, ContainerPtrType<UInt16>, ContainerPtrType<UInt32>, ContainerPtrType<UInt64>,
+			ContainerPtrType<Int8>, ContainerPtrType<Int16>, ContainerPtrType<Int32>, ContainerPtrType<Int64>,
+			ContainerPtrType<Float32>, ContainerPtrType<Float64>,
+			ContainerPtrType<StringRef>> arrays;
 		std::unique_ptr<Arena> string_arena;
 	};
 
@@ -210,7 +275,7 @@ private:
 	template <typename T>
 	void addAttributeSize(const attribute_t & attribute)
 	{
-		const auto & array_ref = std::get<std::unique_ptr<PODArray<T>>>(attribute.arrays);
+		const auto & array_ref = std::get<ContainerPtrType<T>>(attribute.arrays);
 		bytes_allocated += sizeof(PODArray<T>) + array_ref->storage_size();
 		bucket_count = array_ref->capacity();
 	}
@@ -249,8 +314,8 @@ private:
 	{
 		const auto & null_value_ref = std::get<T>(attribute.null_values) =
 			null_value.get<typename NearestFieldType<T>::Type>();
-		std::get<std::unique_ptr<PODArray<T>>>(attribute.arrays) =
-			std::make_unique<PODArray<T>>(initial_array_size, null_value_ref);
+		std::get<ContainerPtrType<T>>(attribute.arrays) =
+			std::make_unique<ContainerType<T>>(initial_array_size, null_value_ref);
 	}
 
 	attribute_t createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
@@ -272,8 +337,8 @@ private:
 			case AttributeUnderlyingType::String:
 			{
 				const auto & null_value_ref = std::get<String>(attr.null_values) = null_value.get<String>();
-				std::get<std::unique_ptr<PODArray<StringRef>>>(attr.arrays) =
-					std::make_unique<PODArray<StringRef>>(initial_array_size, null_value_ref);
+				std::get<ContainerPtrType<StringRef>>(attr.arrays) =
+					std::make_unique<ContainerType<StringRef>>(initial_array_size, StringRef{null_value_ref});
 				attr.string_arena = std::make_unique<Arena>();
 				break;
 			}
@@ -282,25 +347,27 @@ private:
 		return attr;
 	}
 
-	template <typename T>
-	void getItems(const attribute_t & attribute, const PODArray<id_t> & ids, PODArray<T> & out) const
+	template <typename T, typename ValueSetter, typename DefaultGetter>
+	void getItems(
+		const attribute_t & attribute, const PODArray<id_t> & ids, ValueSetter && set_value,
+		DefaultGetter && get_default) const
 	{
-		const auto & attr = *std::get<std::unique_ptr<PODArray<T>>>(attribute.arrays);
-		const auto null_value = std::get<T>(attribute.null_values);
+		const auto & attr = *std::get<ContainerPtrType<T>>(attribute.arrays);
+		const auto rows = ext::size(ids);
 
-		for (const auto i : ext::range(0, ids.size()))
+		for (const auto i : ext::range(0, rows))
 		{
 			const auto id = ids[i];
-			out[i] = id < attr.size() ? attr[id] : null_value;
+			set_value(i, id < attr.size() ? attr[id] : get_default(i));
 		}
 
-		query_count.fetch_add(ids.size(), std::memory_order_relaxed);
+		query_count.fetch_add(rows, std::memory_order_relaxed);
 	}
 
 	template <typename T>
 	void setAttributeValueImpl(attribute_t & attribute, const id_t id, const T value)
 	{
-		auto & array = *std::get<std::unique_ptr<PODArray<T>>>(attribute.arrays);
+		auto & array = *std::get<ContainerPtrType<T>>(attribute.arrays);
 		if (id >= array.size())
 			array.resize_fill(id + 1, std::get<T>(attribute.null_values));
 		array[id] = value;
@@ -328,9 +395,9 @@ private:
 			case AttributeUnderlyingType::Float64: setAttributeValueImpl<Float64>(attribute, id, value.get<Float64>()); break;
 			case AttributeUnderlyingType::String:
 			{
-				auto & array = *std::get<std::unique_ptr<PODArray<StringRef>>>(attribute.arrays);
+				auto & array = *std::get<ContainerPtrType<StringRef>>(attribute.arrays);
 				if (id >= array.size())
-					array.resize_fill(id + 1, std::get<String>(attribute.null_values));
+					array.resize_fill(id + 1, StringRef{std::get<String>(attribute.null_values)});
 				const auto & string = value.get<String>();
 				const auto string_in_arena = attribute.string_arena->insert(string.data(), string.size());
 				array[id] = StringRef{string_in_arena, string.size()};
@@ -349,6 +416,23 @@ private:
 			};
 
 		return attributes[it->second];
+	}
+
+	template <typename T>
+	void has(const attribute_t & attribute, const PODArray<id_t> & ids, PODArray<UInt8> & out) const
+	{
+		using stored_type = std::conditional_t<std::is_same<T, String>::value, StringRef, T>;
+		const auto & attr = *std::get<ContainerPtrType<stored_type>>(attribute.arrays);
+		const auto & null_value = std::get<T>(attribute.null_values);
+		const auto rows = ext::size(ids);
+
+		for (const auto i : ext::range(0, rows))
+		{
+			const auto id = ids[i];
+			out[i] = id < ext::size(attr) && attr[id] != null_value;
+		}
+
+		query_count.fetch_add(rows, std::memory_order_relaxed);
 	}
 
 	const std::string name;

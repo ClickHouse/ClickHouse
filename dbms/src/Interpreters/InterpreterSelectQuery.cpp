@@ -28,11 +28,11 @@
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/InterpreterSetQuery.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
-#include <DB/Storages/StorageView.h>
 #include <DB/TableFunctions/ITableFunction.h>
 #include <DB/TableFunctions/TableFunctionFactory.h>
 
 #include <DB/Core/Field.h>
+
 
 namespace DB
 {
@@ -123,11 +123,6 @@ void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_)
 
 			storage = context.getTable(database_name, table_name);
 		}
-
-		if (!storage->supportsParallelReplicas() && (settings.parallel_replicas_count > 0))
-			throw Exception("Storage engine " + storage->getName()
-							+ " does not support parallel execution on several replicas",
-							ErrorCodes::STORAGE_DOESNT_SUPPORT_PARALLEL_REPLICAS);
 
 		table_lock = storage->lockStructure(false);
 		if (table_column_names.empty())
@@ -650,6 +645,37 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
 
 	/// Список столбцов, которых нужно прочитать, чтобы выполнить запрос.
 	Names required_columns = query_analyzer->getRequiredColumns();
+	/// Действия для вычисления ALIAS, если потребуется.
+	ExpressionActionsPtr alias_actions;
+	/// Требуются ли ALIAS столбцы для выполнения запроса?
+	auto alias_columns_required = false;
+
+	if (storage && !storage->alias_columns.empty())
+	{
+		for (const auto & column : required_columns)
+		{
+			const auto default_it = storage->column_defaults.find(column);
+			if (default_it != std::end(storage->column_defaults) && default_it->second.type == ColumnDefaultType::Alias)
+			{
+				alias_columns_required = true;
+				break;
+			}
+		}
+
+		if (alias_columns_required)
+		{
+			/// Составим выражение для возврата всех запрошенных столбцов, с вычислением требуемых ALIAS столбцов.
+			ASTPtr required_columns_expr_list{new ASTExpressionList};
+
+			for (const auto & column : required_columns)
+				required_columns_expr_list->children.emplace_back(new ASTIdentifier{{}, column});
+
+			alias_actions = ExpressionAnalyzer{required_columns_expr_list, context, storage, table_column_names}.getActions(true);
+
+			/// Множество требуемых столбцов могло быть дополнено в результате добавления действия для вычисления ALIAS.
+			required_columns = alias_actions->getRequiredColumns();
+		}
+	}
 
 	if (query.table && typeid_cast<ASTSelectQuery *>(query.table.get()))
 	{
@@ -760,6 +786,13 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
 		streams = storage->read(required_columns, actual_query_ptr,
 			context, settings_for_storage, from_stage,
 			settings.max_block_size, max_streams);
+
+		if (alias_actions)
+			/// Обернем каждый поток, возвращенный из таблицы, с целью вычисления и добавления ALIAS столбцов
+			transformStreams([&] (auto & stream)
+			{
+				stream = new ExpressionBlockInputStream{stream, alias_actions};
+			});
 
 		transformStreams([&](auto & stream)
 		{

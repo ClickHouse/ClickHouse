@@ -30,11 +30,6 @@ public:
 		children.push_back(input_);
 	}
 
-	AddingDefaultBlockInputStream(BlockInputStreamPtr input_, NamesAndTypesListPtr required_columns_, const Context & context_)
-		: AddingDefaultBlockInputStream{input_, required_columns_, ColumnDefaults{}, context_}
-	{
-	}
-
 	String getName() const override { return "AddingDefault"; }
 
 	String getID() const override
@@ -65,7 +60,7 @@ protected:
 
 private:
 	NamesAndTypesListPtr required_columns;
-	const ColumnDefaults & column_defaults;
+	const ColumnDefaults column_defaults;
 	Context context;
 };
 

@@ -351,48 +351,48 @@ void run()
 		/// Секция JOIN / глубина 1
 
 		{
-			"SELECT UserID FROM visits_all ALL INNER JOIN (SELECT UserID FROM visits_all) USING UserID",
-			"SELECT UserID FROM visits_all ALL INNER JOIN (SELECT UserID FROM visits_all) USING UserID",
+			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM test.visits_all) USING UserID",
+			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM test.visits_all) USING UserID",
 			2,
 			DB::DistributedProductMode::ALLOW,
 			true
 		},
 
 		{
-			"SELECT UserID FROM visits_all ALL INNER JOIN (SELECT UserID FROM visits_all) USING UserID",
-			"SELECT UserID FROM visits_all ALL INNER JOIN (SELECT UserID FROM visits_all) USING UserID",
+			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM test.visits_all) USING UserID",
+			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM test.visits_all) USING UserID",
 			2,
 			DB::DistributedProductMode::DENY,
 			false
 		},
 
 		{
-			"SELECT UserID FROM visits_all ALL INNER JOIN (SELECT UserID FROM visits_all) USING UserID",
-			"SELECT UserID FROM visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM visits_all) USING UserID",
+			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM test.visits_all) USING UserID",
+			"SELECT UserID FROM test.visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM test.visits_all) USING UserID",
 			2,
 			DB::DistributedProductMode::GLOBAL,
 			true
 		},
 
 		{
-			"SELECT UserID FROM visits_all ALL INNER JOIN (SELECT UserID FROM remote_db.remote_visits) USING UserID",
-			"SELECT UserID FROM visits_all ALL INNER JOIN (SELECT UserID FROM remote_db.remote_visits) USING UserID",
+			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM remote_db.remote_visits) USING UserID",
+			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM remote_db.remote_visits) USING UserID",
 			2,
 			DB::DistributedProductMode::GLOBAL,
 			true
 		},
 
 		{
-			"SELECT UserID FROM visits_all ALL INNER JOIN (SELECT UserID FROM visits_all) USING UserID",
-			"SELECT UserID FROM visits_all ALL INNER JOIN (SELECT UserID FROM remote_db.remote_visits) USING UserID",
+			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM test.visits_all) USING UserID",
+			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM remote_db.remote_visits) USING UserID",
 			2,
 			DB::DistributedProductMode::LOCAL,
 			true
 		},
 
 		{
-			"SELECT UserID FROM visits_all ALL INNER JOIN (SELECT UserID FROM remote_db.remote_visits) USING UserID",
-			"SELECT UserID FROM visits_all ALL INNER JOIN (SELECT UserID FROM remote_db.remote_visits) USING UserID",
+			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM remote_db.remote_visits) USING UserID",
+			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM remote_db.remote_visits) USING UserID",
 			2,
 			DB::DistributedProductMode::LOCAL,
 			true
@@ -401,32 +401,32 @@ void run()
 		/// Секция GLOBAL JOIN / глубина 1
 
 		{
-			"SELECT UserID FROM visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM visits_all) USING UserID",
-			"SELECT UserID FROM visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM visits_all) USING UserID",
+			"SELECT UserID FROM test.visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM test.visits_all) USING UserID",
+			"SELECT UserID FROM test.visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM test.visits_all) USING UserID",
 			2,
 			DB::DistributedProductMode::ALLOW,
 			true
 		},
 
 		{
-			"SELECT UserID FROM visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM visits_all) USING UserID",
-			"SELECT UserID FROM visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM visits_all) USING UserID",
+			"SELECT UserID FROM test.visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM test.visits_all) USING UserID",
+			"SELECT UserID FROM test.visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM test.visits_all) USING UserID",
 			2,
 			DB::DistributedProductMode::DENY,
 			true
 		},
 
 		{
-			"SELECT UserID FROM visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM visits_all) USING UserID",
-			"SELECT UserID FROM visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM visits_all) USING UserID",
+			"SELECT UserID FROM test.visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM test.visits_all) USING UserID",
+			"SELECT UserID FROM test.visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM test.visits_all) USING UserID",
 			2,
 			DB::DistributedProductMode::GLOBAL,
 			true
 		},
 
 		{
-			"SELECT UserID FROM visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM visits_all) USING UserID",
-			"SELECT UserID FROM visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM visits_all) USING UserID",
+			"SELECT UserID FROM test.visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM test.visits_all) USING UserID",
+			"SELECT UserID FROM test.visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM test.visits_all) USING UserID",
 			2,
 			DB::DistributedProductMode::LOCAL,
 			true
@@ -435,40 +435,40 @@ void run()
 		/// Секция JOIN / глубина 1 / 2 подзапроса.
 
 		{
-			"SELECT UserID FROM (SELECT UserID FROM visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT UserID FROM visits_all WHERE RegionID = 2) USING UserID",
-			"SELECT UserID FROM (SELECT UserID FROM visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT UserID FROM visits_all WHERE RegionID = 2) USING UserID",
+			"SELECT UserID FROM (SELECT UserID FROM test.visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT UserID FROM test.visits_all WHERE RegionID = 2) USING UserID",
+			"SELECT UserID FROM (SELECT UserID FROM test.visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT UserID FROM test.visits_all WHERE RegionID = 2) USING UserID",
 			2,
 			DB::DistributedProductMode::ALLOW,
 			true
 		},
 
 		{
-			"SELECT UserID FROM (SELECT UserID FROM visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT UserID FROM remote_db.remote_visits WHERE RegionID = 2) USING UserID",
-			"SELECT UserID FROM (SELECT UserID FROM visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT UserID FROM remote_db.remote_visits WHERE RegionID = 2) USING UserID",
+			"SELECT UserID FROM (SELECT UserID FROM test.visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT UserID FROM remote_db.remote_visits WHERE RegionID = 2) USING UserID",
+			"SELECT UserID FROM (SELECT UserID FROM test.visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT UserID FROM remote_db.remote_visits WHERE RegionID = 2) USING UserID",
 			2,
 			DB::DistributedProductMode::DENY,
 			true
 		},
 
 		{
-			"SELECT UserID FROM (SELECT UserID FROM visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT UserID FROM visits_all WHERE RegionID = 2) USING UserID",
-			"SELECT UserID FROM (SELECT UserID FROM visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT UserID FROM visits_all WHERE RegionID = 2) USING UserID",
+			"SELECT UserID FROM (SELECT UserID FROM test.visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT UserID FROM test.visits_all WHERE RegionID = 2) USING UserID",
+			"SELECT UserID FROM (SELECT UserID FROM test.visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT UserID FROM test.visits_all WHERE RegionID = 2) USING UserID",
 			2,
 			DB::DistributedProductMode::DENY,
 			false
 		},
 
 		{
-			"SELECT UserID FROM (SELECT UserID FROM visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT UserID FROM visits_all WHERE RegionID = 2) USING UserID",
-			"SELECT UserID FROM (SELECT UserID FROM visits_all WHERE RegionID = 1) GLOBAL ALL INNER JOIN (SELECT UserID FROM visits_all WHERE RegionID = 2) USING UserID",
+			"SELECT UserID FROM (SELECT UserID FROM test.visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT UserID FROM test.visits_all WHERE RegionID = 2) USING UserID",
+			"SELECT UserID FROM (SELECT UserID FROM test.visits_all WHERE RegionID = 1) GLOBAL ALL INNER JOIN (SELECT UserID FROM test.visits_all WHERE RegionID = 2) USING UserID",
 			2,
 			DB::DistributedProductMode::GLOBAL,
 			true
 		},
 
 		{
-			"SELECT UserID FROM (SELECT UserID FROM visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT UserID FROM visits_all WHERE RegionID = 2) USING UserID",
-			"SELECT UserID FROM (SELECT UserID FROM visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT UserID FROM remote_db.remote_visits WHERE RegionID = 2) USING UserID",
+			"SELECT UserID FROM (SELECT UserID FROM test.visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT UserID FROM test.visits_all WHERE RegionID = 2) USING UserID",
+			"SELECT UserID FROM (SELECT UserID FROM test.visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT UserID FROM remote_db.remote_visits WHERE RegionID = 2) USING UserID",
 			2,
 			DB::DistributedProductMode::LOCAL,
 			true
@@ -524,51 +524,119 @@ void run()
 			true
 		},
 
-		/// Секция JOIN / глубина 1 / таблица на уровне 2
+		/// Секция GLOBAL IN / глубина 1 / таблица на уровне 2
 
 		{
-			"SELECT UserID FROM visits_all ALL INNER JOIN (SELECT UserID FROM (SELECT UserID FROM visits_all)) USING UserID",
-			"SELECT UserID FROM visits_all ALL INNER JOIN (SELECT UserID FROM (SELECT UserID FROM visits_all)) USING UserID",
+			"SELECT UserID FROM test.visits_all WHERE UserID GLOBAL IN (SELECT UserID FROM (SELECT UserID FROM test.visits_all))",
+			"SELECT UserID FROM test.visits_all WHERE UserID GLOBAL IN (SELECT UserID FROM (SELECT UserID FROM test.visits_all))",
 			2,
 			DB::DistributedProductMode::ALLOW,
 			true
 		},
 
 		{
-			"SELECT UserID FROM visits_all ALL INNER JOIN (SELECT UserID FROM (SELECT UserID FROM visits_all)) USING UserID",
-			"SELECT UserID FROM visits_all ALL INNER JOIN (SELECT UserID FROM (SELECT UserID FROM visits_all)) USING UserID",
+			"SELECT UserID FROM test.visits_all WHERE UserID GLOBAL IN (SELECT UserID FROM (SELECT UserID FROM test.visits_all))",
+			"SELECT UserID FROM test.visits_all WHERE UserID GLOBAL IN (SELECT UserID FROM (SELECT UserID FROM test.visits_all))",
+			2,
+			DB::DistributedProductMode::DENY,
+			true
+		},
+
+		{
+			"SELECT UserID FROM test.visits_all WHERE UserID GLOBAL IN (SELECT UserID FROM (SELECT UserID FROM test.visits_all))",
+			"SELECT UserID FROM test.visits_all WHERE UserID GLOBAL IN (SELECT UserID FROM (SELECT UserID FROM test.visits_all))",
+			2,
+			DB::DistributedProductMode::GLOBAL,
+			true
+		},
+
+		{
+			"SELECT UserID FROM test.visits_all WHERE UserID GLOBAL IN (SELECT UserID FROM (SELECT UserID FROM test.visits_all))",
+			"SELECT UserID FROM test.visits_all WHERE UserID GLOBAL IN (SELECT UserID FROM (SELECT UserID FROM test.visits_all))",
+			2,
+			DB::DistributedProductMode::LOCAL,
+			true
+		},
+
+		/// Секция IN на уровне 1, секция GLOBAL IN на уровне 2.
+
+		{
+			"SELECT UserID FROM test.visits_all WHERE UserID IN (SELECT UserID FROM remote_db.remote_visits WHERE UserID GLOBAL IN (SELECT UserID FROM (SELECT UserID FROM test.visits_all)))",
+			"SELECT UserID FROM test.visits_all WHERE UserID IN (SELECT UserID FROM remote_db.remote_visits WHERE UserID GLOBAL IN (SELECT UserID FROM (SELECT UserID FROM test.visits_all)))",
+			2,
+			DB::DistributedProductMode::ALLOW,
+			true
+		},
+
+		{
+			"SELECT UserID FROM test.visits_all WHERE UserID IN (SELECT UserID FROM remote_db.remote_visits WHERE UserID GLOBAL IN (SELECT UserID FROM (SELECT UserID FROM test.visits_all)))",
+			"SELECT UserID FROM test.visits_all WHERE UserID IN (SELECT UserID FROM remote_db.remote_visits WHERE UserID GLOBAL IN (SELECT UserID FROM (SELECT UserID FROM test.visits_all)))",
 			2,
 			DB::DistributedProductMode::DENY,
 			false
 		},
 
 		{
-			"SELECT UserID FROM visits_all ALL INNER JOIN (SELECT UserID FROM (SELECT UserID FROM visits_all)) USING UserID",
-			"SELECT UserID FROM visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM (SELECT UserID FROM visits_all)) USING UserID",
+			"SELECT UserID FROM test.visits_all WHERE UserID IN (SELECT UserID FROM remote_db.remote_visits WHERE UserID GLOBAL IN (SELECT UserID FROM (SELECT UserID FROM test.visits_all)))",
+			"SELECT UserID FROM test.visits_all WHERE UserID IN (SELECT UserID FROM remote_db.remote_visits WHERE UserID GLOBAL IN (SELECT UserID FROM (SELECT UserID FROM test.visits_all)))",
 			2,
 			DB::DistributedProductMode::GLOBAL,
 			true
 		},
 
 		{
-			"SELECT UserID FROM visits_all ALL INNER JOIN (SELECT UserID FROM (SELECT UserID FROM remote_db.remote_visits)) USING UserID",
-			"SELECT UserID FROM visits_all ALL INNER JOIN (SELECT UserID FROM (SELECT UserID FROM remote_db.remote_visits)) USING UserID",
+			"SELECT UserID FROM test.visits_all WHERE UserID IN (SELECT UserID FROM remote_db.remote_visits WHERE UserID GLOBAL IN (SELECT UserID FROM (SELECT UserID FROM test.visits_all)))",
+			"SELECT UserID FROM test.visits_all WHERE UserID IN (SELECT UserID FROM remote_db.remote_visits WHERE UserID GLOBAL IN (SELECT UserID FROM (SELECT UserID FROM remote_db.remote_visits)))",
+			2,
+			DB::DistributedProductMode::LOCAL,
+			true
+		},
+
+		/// Секция JOIN / глубина 1 / таблица на уровне 2
+
+		{
+			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM (SELECT UserID FROM test.visits_all)) USING UserID",
+			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM (SELECT UserID FROM test.visits_all)) USING UserID",
+			2,
+			DB::DistributedProductMode::ALLOW,
+			true
+		},
+
+		{
+			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM (SELECT UserID FROM test.visits_all)) USING UserID",
+			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM (SELECT UserID FROM test.visits_all)) USING UserID",
+			2,
+			DB::DistributedProductMode::DENY,
+			false
+		},
+
+		{
+			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM (SELECT UserID FROM test.visits_all)) USING UserID",
+			"SELECT UserID FROM test.visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM (SELECT UserID FROM test.visits_all)) USING UserID",
 			2,
 			DB::DistributedProductMode::GLOBAL,
 			true
 		},
 
 		{
-			"SELECT UserID FROM visits_all ALL INNER JOIN (SELECT UserID FROM (SELECT UserID FROM visits_all)) USING UserID",
-			"SELECT UserID FROM visits_all ALL INNER JOIN (SELECT UserID FROM (SELECT UserID FROM remote_db.remote_visits)) USING UserID",
+			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM (SELECT UserID FROM remote_db.remote_visits)) USING UserID",
+			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM (SELECT UserID FROM remote_db.remote_visits)) USING UserID",
+			2,
+			DB::DistributedProductMode::GLOBAL,
+			true
+		},
+
+		{
+			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM (SELECT UserID FROM test.visits_all)) USING UserID",
+			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM (SELECT UserID FROM remote_db.remote_visits)) USING UserID",
 			2,
 			DB::DistributedProductMode::LOCAL,
 			true
 		},
 
 		{
-			"SELECT UserID FROM visits_all ALL INNER JOIN (SELECT UserID FROM (SELECT UserID FROM remote_db.remote_visits)) USING UserID",
-			"SELECT UserID FROM visits_all ALL INNER JOIN (SELECT UserID FROM (SELECT UserID FROM remote_db.remote_visits)) USING UserID",
+			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM (SELECT UserID FROM remote_db.remote_visits)) USING UserID",
+			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM (SELECT UserID FROM remote_db.remote_visits)) USING UserID",
 			2,
 			DB::DistributedProductMode::LOCAL,
 			true
@@ -577,72 +645,72 @@ void run()
 		/// Секция IN / глубина 2
 
 		{
-			"SELECT UserID, RegionID FROM visits_all WHERE CounterID IN (SELECT CounterID FROM visits_all WHERE BrowserID IN (SELECT BrowserID FROM visits_all WHERE OtherID = 1))",
-			"SELECT UserID, RegionID FROM visits_all WHERE CounterID IN (SELECT CounterID FROM visits_all WHERE BrowserID IN (SELECT BrowserID FROM visits_all WHERE OtherID = 1))",
+			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID IN (SELECT CounterID FROM test.visits_all WHERE BrowserID IN (SELECT BrowserID FROM test.visits_all WHERE OtherID = 1))",
+			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID IN (SELECT CounterID FROM test.visits_all WHERE BrowserID IN (SELECT BrowserID FROM test.visits_all WHERE OtherID = 1))",
 			2,
 			DB::DistributedProductMode::ALLOW,
 			true
 		},
 
 		{
-			"SELECT UserID, RegionID FROM visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM visits_all WHERE BrowserID IN (SELECT BrowserID FROM remote_db.remote_visits WHERE OtherID = 1))",
-			"SELECT UserID, RegionID FROM visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM visits_all WHERE BrowserID IN (SELECT BrowserID FROM remote_db.remote_visits WHERE OtherID = 1))",
+			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM test.visits_all WHERE BrowserID IN (SELECT BrowserID FROM remote_db.remote_visits WHERE OtherID = 1))",
+			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM test.visits_all WHERE BrowserID IN (SELECT BrowserID FROM remote_db.remote_visits WHERE OtherID = 1))",
 			2,
 			DB::DistributedProductMode::DENY,
 			true
 		},
 
 		{
-			"SELECT UserID, RegionID FROM visits_all WHERE CounterID IN (SELECT CounterID FROM visits_all WHERE BrowserID IN (SELECT BrowserID FROM visits_all WHERE OtherID = 1))",
-			"SELECT UserID, RegionID FROM visits_all WHERE CounterID IN (SELECT CounterID FROM visits_all WHERE BrowserID IN (SELECT BrowserID FROM visits_all WHERE OtherID = 1))",
-			2,
-			DB::DistributedProductMode::DENY,
-			false
-		},
-
-		{
-			"SELECT UserID, RegionID FROM visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM visits_all WHERE BrowserID IN (SELECT BrowserID FROM visits_all WHERE OtherID = 1))",
-			"SELECT UserID, RegionID FROM visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM visits_all WHERE BrowserID IN (SELECT BrowserID FROM visits_all WHERE OtherID = 1))",
+			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID IN (SELECT CounterID FROM test.visits_all WHERE BrowserID IN (SELECT BrowserID FROM test.visits_all WHERE OtherID = 1))",
+			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID IN (SELECT CounterID FROM test.visits_all WHERE BrowserID IN (SELECT BrowserID FROM test.visits_all WHERE OtherID = 1))",
 			2,
 			DB::DistributedProductMode::DENY,
 			false
 		},
 
 		{
-			"SELECT UserID, RegionID FROM visits_all WHERE CounterID IN (SELECT CounterID FROM visits_all WHERE BrowserID IN (SELECT BrowserID FROM visits_all WHERE OtherID = 1))",
-			"SELECT UserID, RegionID FROM visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM visits_all WHERE BrowserID GLOBAL IN (SELECT BrowserID FROM visits_all WHERE OtherID = 1))",
+			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM test.visits_all WHERE BrowserID IN (SELECT BrowserID FROM test.visits_all WHERE OtherID = 1))",
+			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM test.visits_all WHERE BrowserID IN (SELECT BrowserID FROM test.visits_all WHERE OtherID = 1))",
+			2,
+			DB::DistributedProductMode::DENY,
+			false
+		},
+
+		{
+			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID IN (SELECT CounterID FROM test.visits_all WHERE BrowserID IN (SELECT BrowserID FROM test.visits_all WHERE OtherID = 1))",
+			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM test.visits_all WHERE BrowserID GLOBAL IN (SELECT BrowserID FROM test.visits_all WHERE OtherID = 1))",
 			2,
 			DB::DistributedProductMode::GLOBAL,
 			true
 		},
 
 		{
-			"SELECT UserID, RegionID FROM visits_all WHERE CounterID IN (SELECT CounterID FROM visits_all WHERE BrowserID IN (SELECT BrowserID FROM remote_db.remote_visits WHERE OtherID = 1))",
-			"SELECT UserID, RegionID FROM visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM visits_all WHERE BrowserID IN (SELECT BrowserID FROM remote_db.remote_visits WHERE OtherID = 1))",
+			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID IN (SELECT CounterID FROM test.visits_all WHERE BrowserID IN (SELECT BrowserID FROM remote_db.remote_visits WHERE OtherID = 1))",
+			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM test.visits_all WHERE BrowserID IN (SELECT BrowserID FROM remote_db.remote_visits WHERE OtherID = 1))",
 			2,
 			DB::DistributedProductMode::GLOBAL,
 			true
 		},
 
 		{
-			"SELECT UserID, RegionID FROM visits_all WHERE CounterID IN (SELECT CounterID FROM visits_all WHERE BrowserID IN (SELECT BrowserID FROM visits_all WHERE OtherID = 1))",
-			"SELECT UserID, RegionID FROM visits_all WHERE CounterID IN (SELECT CounterID FROM remote_db.remote_visits WHERE BrowserID IN (SELECT BrowserID FROM remote_db.remote_visits WHERE OtherID = 1))",
+			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID IN (SELECT CounterID FROM test.visits_all WHERE BrowserID IN (SELECT BrowserID FROM test.visits_all WHERE OtherID = 1))",
+			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID IN (SELECT CounterID FROM remote_db.remote_visits WHERE BrowserID IN (SELECT BrowserID FROM remote_db.remote_visits WHERE OtherID = 1))",
 			2,
 			DB::DistributedProductMode::LOCAL,
 			true
 		},
 
 		{
-			"SELECT UserID, RegionID FROM visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM visits_all WHERE BrowserID IN (SELECT BrowserID FROM visits_all WHERE OtherID = 1))",
-			"SELECT UserID, RegionID FROM visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM visits_all WHERE BrowserID IN (SELECT BrowserID FROM remote_db.remote_visits WHERE OtherID = 1))",
+			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM test.visits_all WHERE BrowserID IN (SELECT BrowserID FROM test.visits_all WHERE OtherID = 1))",
+			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM test.visits_all WHERE BrowserID IN (SELECT BrowserID FROM remote_db.remote_visits WHERE OtherID = 1))",
 			2,
 			DB::DistributedProductMode::LOCAL,
 			true
 		},
 
 		{
-			"SELECT UserID, RegionID FROM visits_all WHERE CounterID IN (SELECT CounterID FROM visits_all WHERE BrowserID IN (SELECT BrowserID FROM remote_db.remote_visits WHERE OtherID = 1))",
-			"SELECT UserID, RegionID FROM visits_all WHERE CounterID IN (SELECT CounterID FROM remote_db.remote_visits WHERE BrowserID IN (SELECT BrowserID FROM remote_db.remote_visits WHERE OtherID = 1))",
+			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID IN (SELECT CounterID FROM test.visits_all WHERE BrowserID IN (SELECT BrowserID FROM remote_db.remote_visits WHERE OtherID = 1))",
+			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID IN (SELECT CounterID FROM remote_db.remote_visits WHERE BrowserID IN (SELECT BrowserID FROM remote_db.remote_visits WHERE OtherID = 1))",
 			2,
 			DB::DistributedProductMode::LOCAL,
 			true
@@ -651,40 +719,40 @@ void run()
 		/// Секция JOIN / глубина 2
 
 		{
-			"SELECT UserID, RegionID FROM visits_all WHERE CounterID IN (SELECT CounterID FROM visits_all ALL INNER JOIN (SELECT CounterID FROM (SELECT CounterID FROM visits_all)) USING CounterID)",
-			"SELECT UserID, RegionID FROM visits_all WHERE CounterID IN (SELECT CounterID FROM visits_all ALL INNER JOIN (SELECT CounterID FROM (SELECT CounterID FROM visits_all)) USING CounterID)",
+			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID IN (SELECT CounterID FROM test.visits_all ALL INNER JOIN (SELECT CounterID FROM (SELECT CounterID FROM test.visits_all)) USING CounterID)",
+			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID IN (SELECT CounterID FROM test.visits_all ALL INNER JOIN (SELECT CounterID FROM (SELECT CounterID FROM test.visits_all)) USING CounterID)",
 			2,
 			DB::DistributedProductMode::ALLOW,
 			true
 		},
 
 		{
-			"SELECT UserID, RegionID FROM visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM visits_all ALL INNER JOIN (SELECT CounterID FROM (SELECT CounterID FROM remote_db.remote_visits)) USING CounterID)",
-			"SELECT UserID, RegionID FROM visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM visits_all ALL INNER JOIN (SELECT CounterID FROM (SELECT CounterID FROM remote_db.remote_visits)) USING CounterID)",
+			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM test.visits_all ALL INNER JOIN (SELECT CounterID FROM (SELECT CounterID FROM remote_db.remote_visits)) USING CounterID)",
+			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM test.visits_all ALL INNER JOIN (SELECT CounterID FROM (SELECT CounterID FROM remote_db.remote_visits)) USING CounterID)",
 			2,
 			DB::DistributedProductMode::DENY,
 			true
 		},
 
 		{
-			"SELECT UserID, RegionID FROM visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM visits_all ALL INNER JOIN (SELECT CounterID FROM (SELECT CounterID FROM visits_all)) USING CounterID)",
-			"SELECT UserID, RegionID FROM visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM visits_all ALL INNER JOIN (SELECT CounterID FROM (SELECT CounterID FROM visits_all)) USING CounterID)",
+			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM test.visits_all ALL INNER JOIN (SELECT CounterID FROM (SELECT CounterID FROM test.visits_all)) USING CounterID)",
+			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM test.visits_all ALL INNER JOIN (SELECT CounterID FROM (SELECT CounterID FROM test.visits_all)) USING CounterID)",
 			2,
 			DB::DistributedProductMode::DENY,
 			false
 		},
 
 		{
-			"SELECT UserID, RegionID FROM visits_all WHERE CounterID IN (SELECT CounterID FROM visits_all ALL INNER JOIN (SELECT CounterID FROM (SELECT CounterID FROM visits_all)) USING CounterID)",
-			"SELECT UserID, RegionID FROM visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM visits_all GLOBAL ALL INNER JOIN (SELECT CounterID FROM (SELECT CounterID FROM visits_all)) USING CounterID)",
+			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID IN (SELECT CounterID FROM test.visits_all ALL INNER JOIN (SELECT CounterID FROM (SELECT CounterID FROM test.visits_all)) USING CounterID)",
+			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM test.visits_all GLOBAL ALL INNER JOIN (SELECT CounterID FROM (SELECT CounterID FROM test.visits_all)) USING CounterID)",
 			2,
 			DB::DistributedProductMode::GLOBAL,
 			true
 		},
 
 		{
-			"SELECT UserID, RegionID FROM visits_all WHERE CounterID IN (SELECT CounterID FROM visits_all ALL INNER JOIN (SELECT CounterID FROM (SELECT CounterID FROM visits_all)) USING CounterID)",
-			"SELECT UserID, RegionID FROM visits_all WHERE CounterID IN (SELECT CounterID FROM remote_db.remote_visits ALL INNER JOIN (SELECT CounterID FROM (SELECT CounterID FROM remote_db.remote_visits)) USING CounterID)",
+			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID IN (SELECT CounterID FROM test.visits_all ALL INNER JOIN (SELECT CounterID FROM (SELECT CounterID FROM test.visits_all)) USING CounterID)",
+			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID IN (SELECT CounterID FROM remote_db.remote_visits ALL INNER JOIN (SELECT CounterID FROM (SELECT CounterID FROM remote_db.remote_visits)) USING CounterID)",
 			2,
 			DB::DistributedProductMode::LOCAL,
 			true
@@ -693,48 +761,48 @@ void run()
 		/// Секция JOIN / глубина 2
 
 		{
-			"SELECT UserID FROM visits_all WHERE OtherID IN (SELECT OtherID FROM (SELECT OtherID FROM visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT OtherID FROM visits_all WHERE RegionID = 2) USING OtherID)",
-			"SELECT UserID FROM visits_all WHERE OtherID IN (SELECT OtherID FROM (SELECT OtherID FROM visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT OtherID FROM visits_all WHERE RegionID = 2) USING OtherID)",
+			"SELECT UserID FROM test.visits_all WHERE OtherID IN (SELECT OtherID FROM (SELECT OtherID FROM test.visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT OtherID FROM test.visits_all WHERE RegionID = 2) USING OtherID)",
+			"SELECT UserID FROM test.visits_all WHERE OtherID IN (SELECT OtherID FROM (SELECT OtherID FROM test.visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT OtherID FROM test.visits_all WHERE RegionID = 2) USING OtherID)",
 			2,
 			DB::DistributedProductMode::ALLOW,
 			true
 		},
 
 		{
-			"SELECT UserID FROM visits_all WHERE OtherID GLOBAL IN (SELECT OtherID FROM (SELECT OtherID FROM visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT OtherID FROM remote_db.remote_visits WHERE RegionID = 2) USING OtherID)",
-			"SELECT UserID FROM visits_all WHERE OtherID GLOBAL IN (SELECT OtherID FROM (SELECT OtherID FROM visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT OtherID FROM remote_db.remote_visits WHERE RegionID = 2) USING OtherID)",
+			"SELECT UserID FROM test.visits_all WHERE OtherID GLOBAL IN (SELECT OtherID FROM (SELECT OtherID FROM test.visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT OtherID FROM remote_db.remote_visits WHERE RegionID = 2) USING OtherID)",
+			"SELECT UserID FROM test.visits_all WHERE OtherID GLOBAL IN (SELECT OtherID FROM (SELECT OtherID FROM test.visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT OtherID FROM remote_db.remote_visits WHERE RegionID = 2) USING OtherID)",
+			2,
+			DB::DistributedProductMode::DENY,
+			true
+		},
+
+		{
+			"SELECT UserID FROM test.visits_all WHERE OtherID GLOBAL IN (SELECT OtherID FROM (SELECT OtherID FROM test.visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT OtherID FROM test.visits_all WHERE RegionID = 2) USING OtherID)",
+			"SELECT UserID FROM test.visits_all WHERE OtherID GLOBAL IN (SELECT OtherID FROM (SELECT OtherID FROM test.visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT OtherID FROM test.visits_all WHERE RegionID = 2) USING OtherID)",
 			2,
 			DB::DistributedProductMode::DENY,
 			false
 		},
 
 		{
-			"SELECT UserID FROM visits_all WHERE OtherID GLOBAL IN (SELECT OtherID FROM (SELECT OtherID FROM visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT OtherID FROM visits_all WHERE RegionID = 2) USING OtherID)",
-			"SELECT UserID FROM visits_all WHERE OtherID GLOBAL IN (SELECT OtherID FROM (SELECT OtherID FROM visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT OtherID FROM visits_all WHERE RegionID = 2) USING OtherID)",
+			"SELECT UserID FROM test.visits_all WHERE OtherID IN (SELECT OtherID FROM (SELECT OtherID FROM test.visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT OtherID FROM test.visits_all WHERE RegionID = 2) USING OtherID)",
+			"SELECT UserID FROM test.visits_all WHERE OtherID IN (SELECT OtherID FROM (SELECT OtherID FROM test.visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT OtherID FROM test.visits_all WHERE RegionID = 2) USING OtherID)",
 			2,
 			DB::DistributedProductMode::DENY,
 			false
 		},
 
 		{
-			"SELECT UserID FROM visits_all WHERE OtherID IN (SELECT OtherID FROM (SELECT OtherID FROM visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT OtherID FROM visits_all WHERE RegionID = 2) USING OtherID)",
-			"SELECT UserID FROM visits_all WHERE OtherID IN (SELECT OtherID FROM (SELECT OtherID FROM visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT OtherID FROM visits_all WHERE RegionID = 2) USING OtherID)",
-			2,
-			DB::DistributedProductMode::DENY,
-			false
-		},
-
-		{
-			"SELECT UserID FROM visits_all WHERE OtherID IN (SELECT OtherID FROM (SELECT OtherID FROM visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT OtherID FROM visits_all WHERE RegionID = 2) USING OtherID)",
-			"SELECT UserID FROM visits_all WHERE OtherID GLOBAL IN (SELECT OtherID FROM (SELECT OtherID FROM visits_all WHERE RegionID = 1) GLOBAL ALL INNER JOIN (SELECT OtherID FROM visits_all WHERE RegionID = 2) USING OtherID)",
+			"SELECT UserID FROM test.visits_all WHERE OtherID IN (SELECT OtherID FROM (SELECT OtherID FROM test.visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT OtherID FROM test.visits_all WHERE RegionID = 2) USING OtherID)",
+			"SELECT UserID FROM test.visits_all WHERE OtherID GLOBAL IN (SELECT OtherID FROM (SELECT OtherID FROM test.visits_all WHERE RegionID = 1) GLOBAL ALL INNER JOIN (SELECT OtherID FROM test.visits_all WHERE RegionID = 2) USING OtherID)",
 			2,
 			DB::DistributedProductMode::GLOBAL,
 			true
 		},
 
 		{
-			"SELECT UserID FROM visits_all WHERE OtherID IN (SELECT OtherID FROM (SELECT OtherID FROM visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT OtherID FROM visits_all WHERE RegionID = 2) USING OtherID)",
-			"SELECT UserID FROM visits_all WHERE OtherID IN (SELECT OtherID FROM (SELECT OtherID FROM remote_db.remote_visits WHERE RegionID = 1) ALL INNER JOIN (SELECT OtherID FROM remote_db.remote_visits WHERE RegionID = 2) USING OtherID)",
+			"SELECT UserID FROM test.visits_all WHERE OtherID IN (SELECT OtherID FROM (SELECT OtherID FROM test.visits_all WHERE RegionID = 1) ALL INNER JOIN (SELECT OtherID FROM test.visits_all WHERE RegionID = 2) USING OtherID)",
+			"SELECT UserID FROM test.visits_all WHERE OtherID IN (SELECT OtherID FROM (SELECT OtherID FROM remote_db.remote_visits WHERE RegionID = 1) ALL INNER JOIN (SELECT OtherID FROM remote_db.remote_visits WHERE RegionID = 2) USING OtherID)",
 			2,
 			DB::DistributedProductMode::LOCAL,
 			true
@@ -743,48 +811,48 @@ void run()
 		/// Секция JOIN / секция IN
 
 		{
-			"SELECT UserID FROM visits_all ALL INNER JOIN (SELECT UserID FROM visits_all WHERE OtherID IN (SELECT OtherID FROM visits_all WHERE RegionID = 2)) USING UserID",
-			"SELECT UserID FROM visits_all ALL INNER JOIN (SELECT UserID FROM visits_all WHERE OtherID IN (SELECT OtherID FROM visits_all WHERE RegionID = 2)) USING UserID",
+			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM test.visits_all WHERE OtherID IN (SELECT OtherID FROM test.visits_all WHERE RegionID = 2)) USING UserID",
+			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM test.visits_all WHERE OtherID IN (SELECT OtherID FROM test.visits_all WHERE RegionID = 2)) USING UserID",
 			2,
 			DB::DistributedProductMode::ALLOW,
 			true
 		},
 
 		{
-			"SELECT UserID FROM visits_all ALL INNER JOIN (SELECT UserID FROM visits_all WHERE OtherID IN (SELECT OtherID FROM visits_all WHERE RegionID = 2)) USING UserID",
-			"SELECT UserID FROM visits_all ALL INNER JOIN (SELECT UserID FROM visits_all WHERE OtherID IN (SELECT OtherID FROM visits_all WHERE RegionID = 2)) USING UserID",
+			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM test.visits_all WHERE OtherID IN (SELECT OtherID FROM test.visits_all WHERE RegionID = 2)) USING UserID",
+			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM test.visits_all WHERE OtherID IN (SELECT OtherID FROM test.visits_all WHERE RegionID = 2)) USING UserID",
 			2,
 			DB::DistributedProductMode::DENY,
 			false
 		},
 
 		{
-			"SELECT UserID FROM visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM visits_all WHERE OtherID IN (SELECT OtherID FROM visits_all WHERE RegionID = 2)) USING UserID",
-			"SELECT UserID FROM visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM visits_all WHERE OtherID IN (SELECT OtherID FROM visits_all WHERE RegionID = 2)) USING UserID",
+			"SELECT UserID FROM test.visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM test.visits_all WHERE OtherID IN (SELECT OtherID FROM test.visits_all WHERE RegionID = 2)) USING UserID",
+			"SELECT UserID FROM test.visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM test.visits_all WHERE OtherID IN (SELECT OtherID FROM test.visits_all WHERE RegionID = 2)) USING UserID",
 			2,
 			DB::DistributedProductMode::DENY,
 			false
 		},
 
 		{
-			"SELECT UserID FROM visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM visits_all WHERE OtherID IN (SELECT OtherID FROM remote_db.remote_visits WHERE RegionID = 2)) USING UserID",
-			"SELECT UserID FROM visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM visits_all WHERE OtherID IN (SELECT OtherID FROM remote_db.remote_visits WHERE RegionID = 2)) USING UserID",
+			"SELECT UserID FROM test.visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM test.visits_all WHERE OtherID IN (SELECT OtherID FROM remote_db.remote_visits WHERE RegionID = 2)) USING UserID",
+			"SELECT UserID FROM test.visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM test.visits_all WHERE OtherID IN (SELECT OtherID FROM remote_db.remote_visits WHERE RegionID = 2)) USING UserID",
 			2,
 			DB::DistributedProductMode::DENY,
 			true
 		},
 
 		{
-			"SELECT UserID FROM visits_all ALL INNER JOIN (SELECT UserID FROM visits_all WHERE OtherID IN (SELECT OtherID FROM visits_all WHERE RegionID = 2)) USING UserID",
-			"SELECT UserID FROM visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM visits_all WHERE OtherID GLOBAL IN (SELECT OtherID FROM visits_all WHERE RegionID = 2)) USING UserID",
+			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM test.visits_all WHERE OtherID IN (SELECT OtherID FROM test.visits_all WHERE RegionID = 2)) USING UserID",
+			"SELECT UserID FROM test.visits_all GLOBAL ALL INNER JOIN (SELECT UserID FROM test.visits_all WHERE OtherID GLOBAL IN (SELECT OtherID FROM test.visits_all WHERE RegionID = 2)) USING UserID",
 			2,
 			DB::DistributedProductMode::GLOBAL,
 			true
 		},
 
 		{
-			"SELECT UserID FROM visits_all ALL INNER JOIN (SELECT UserID FROM visits_all WHERE OtherID IN (SELECT OtherID FROM visits_all WHERE RegionID = 2)) USING UserID",
-			"SELECT UserID FROM visits_all ALL INNER JOIN (SELECT UserID FROM remote_db.remote_visits WHERE OtherID IN (SELECT OtherID FROM remote_db.remote_visits WHERE RegionID = 2)) USING UserID",
+			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM test.visits_all WHERE OtherID IN (SELECT OtherID FROM test.visits_all WHERE RegionID = 2)) USING UserID",
+			"SELECT UserID FROM test.visits_all ALL INNER JOIN (SELECT UserID FROM remote_db.remote_visits WHERE OtherID IN (SELECT OtherID FROM remote_db.remote_visits WHERE RegionID = 2)) USING UserID",
 			2,
 			DB::DistributedProductMode::LOCAL,
 			true
@@ -851,16 +919,16 @@ void run()
 		/// Секция IN / глубина 2 / две распределённые таблицы
 
 		{
-			"SELECT UserID, RegionID FROM visits_all WHERE CounterID IN (SELECT CounterID FROM hits_all WHERE BrowserID IN (SELECT BrowserID FROM visits_all WHERE OtherID = 1))",
-			"SELECT UserID, RegionID FROM visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM hits_all WHERE BrowserID GLOBAL IN (SELECT BrowserID FROM visits_all WHERE OtherID = 1))",
+			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID IN (SELECT CounterID FROM test.hits_all WHERE BrowserID IN (SELECT BrowserID FROM test.visits_all WHERE OtherID = 1))",
+			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID GLOBAL IN (SELECT CounterID FROM test.hits_all WHERE BrowserID GLOBAL IN (SELECT BrowserID FROM test.visits_all WHERE OtherID = 1))",
 			2,
 			DB::DistributedProductMode::GLOBAL,
 			true
 		},
 
 		{
-			"SELECT UserID, RegionID FROM visits_all WHERE CounterID IN (SELECT CounterID FROM hits_all WHERE BrowserID IN (SELECT BrowserID FROM visits_all WHERE OtherID = 1))",
-			"SELECT UserID, RegionID FROM visits_all WHERE CounterID IN (SELECT CounterID FROM distant_db.distant_hits WHERE BrowserID IN (SELECT BrowserID FROM remote_db.remote_visits WHERE OtherID = 1))",
+			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID IN (SELECT CounterID FROM test.hits_all WHERE BrowserID IN (SELECT BrowserID FROM test.visits_all WHERE OtherID = 1))",
+			"SELECT UserID, RegionID FROM test.visits_all WHERE CounterID IN (SELECT CounterID FROM distant_db.distant_hits WHERE BrowserID IN (SELECT BrowserID FROM remote_db.remote_visits WHERE OtherID = 1))",
 			2,
 			DB::DistributedProductMode::LOCAL,
 			true
@@ -869,52 +937,52 @@ void run()
 		/// Агрегатная функция.
 
 		{
-			"SELECT sum(RegionID IN (SELECT RegionID from hits_all)) FROM visits_all",
-			"SELECT sum(RegionID IN (SELECT RegionID from hits_all)) FROM visits_all",
+			"SELECT sum(RegionID IN (SELECT RegionID from test.hits_all)) FROM test.visits_all",
+			"SELECT sum(RegionID IN (SELECT RegionID from test.hits_all)) FROM test.visits_all",
 			2,
 			DB::DistributedProductMode::ALLOW,
 			true
 		},
 
 		{
-			"SELECT sum(RegionID IN (SELECT RegionID from hits_all)) FROM visits_all",
-			"SELECT sum(RegionID IN (SELECT RegionID from hits_all)) FROM visits_all",
+			"SELECT sum(RegionID IN (SELECT RegionID from test.hits_all)) FROM test.visits_all",
+			"SELECT sum(RegionID IN (SELECT RegionID from test.hits_all)) FROM test.visits_all",
 			2,
 			DB::DistributedProductMode::DENY,
 			false
 		},
 
 		{
-			"SELECT sum(RegionID GLOBAL IN (SELECT RegionID from hits_all)) FROM visits_all",
-			"SELECT sum(RegionID GLOBAL IN (SELECT RegionID from hits_all)) FROM visits_all",
+			"SELECT sum(RegionID GLOBAL IN (SELECT RegionID from test.hits_all)) FROM test.visits_all",
+			"SELECT sum(RegionID GLOBAL IN (SELECT RegionID from test.hits_all)) FROM test.visits_all",
 			2,
 			DB::DistributedProductMode::DENY,
 			true
 		},
 
 		{
-			"SELECT sum(RegionID IN (SELECT RegionID from hits_all)) FROM visits_all",
-			"SELECT sum(RegionID GLOBAL IN (SELECT RegionID from hits_all)) FROM visits_all",
+			"SELECT sum(RegionID IN (SELECT RegionID from test.hits_all)) FROM test.visits_all",
+			"SELECT sum(RegionID GLOBAL IN (SELECT RegionID from test.hits_all)) FROM test.visits_all",
 			2,
 			DB::DistributedProductMode::GLOBAL,
 			true
 		},
 
 		{
-			"SELECT sum(RegionID GLOBAL IN (SELECT RegionID from hits_all)) FROM visits_all",
-			"SELECT sum(RegionID GLOBAL IN (SELECT RegionID from hits_all)) FROM visits_all",
+			"SELECT sum(RegionID GLOBAL IN (SELECT RegionID from test.hits_all)) FROM test.visits_all",
+			"SELECT sum(RegionID GLOBAL IN (SELECT RegionID from test.hits_all)) FROM test.visits_all",
 			2,
 			DB::DistributedProductMode::LOCAL,
 			true
 		},
 
 		{
-			"SELECT sum(RegionID IN (SELECT RegionID from hits_all)) FROM visits_all",
-			"SELECT sum(RegionID IN (SELECT RegionID from distant_db.distant_hits)) FROM visits_all",
+			"SELECT sum(RegionID IN (SELECT RegionID from test.hits_all)) FROM test.visits_all",
+			"SELECT sum(RegionID IN (SELECT RegionID from distant_db.distant_hits)) FROM test.visits_all",
 			2,
 			DB::DistributedProductMode::LOCAL,
 			true
-		}
+		},
 	};
 
 	performTests(entries);
