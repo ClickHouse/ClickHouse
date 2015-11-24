@@ -151,10 +151,10 @@ public:
 	{
 		if (unmerged > 0)
 		{
+			RadixSort<RadixSortTraits>::execute(&summary[0], summary.size());
+
 			if (summary.size() > 3)
 			{
-				RadixSort<RadixSortTraits>::execute(&summary[0], summary.size());
-
 				/// Пара подряд идущих столбиков гистограммы.
 				auto l = summary.begin();
 				auto r = std::next(l);
