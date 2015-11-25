@@ -102,10 +102,8 @@ class MergingDigest
 	  */
 	static Value interpolate(Value x, Value x1, Value y1, Value x2, Value y2)
 	{
-		Value delta = x2 - x1;
-		Value w1 = (x2 - x) / delta;
-		Value w2 = (x - x1) / delta;
-		return w1 * y1 + w2 * y2;
+		double k = (x - x1) / (x2 - x1);
+		return y1 + k * (y2 - y1);
 	}
 
 	struct RadixSortTraits
@@ -159,17 +157,17 @@ public:
 				auto l = summary.begin();
 				auto r = std::next(l);
 
-				TotalCount sum = 1;
+				TotalCount sum = 0;
 				while (r != summary.end())
 				{
 					// we use quantile which gives us the smallest error
 
 					/// Отношение части гистограммы до l, включая половинку l ко всей гистограмме. То есть, какого уровня квантиль в позиции l.
-					Value ql = (sum + (l->count - 1) * 0.5) / count;
+					Value ql = (sum + l->count * 0.5) / count;
 					Value err = ql * (1 - ql);
 
 					/// Отношение части гистограммы до l, включая l и половинку r ко всей гистограмме. То есть, какого уровня квантиль в позиции r.
-					Value qr = (sum + l->count + (r->count - 1) * 0.5) / count;
+					Value qr = (sum + l->count + r->count * 0.5) / count;
 					Value err2 = qr * (1 - qr);
 
 					if (err > err2)
@@ -220,28 +218,26 @@ public:
 		compress(params);
 
 		if (summary.size() == 1)
-			return summary[0].mean;
+			return summary.front().mean;
 
-		Value index = q * count;
-		TotalCount sum = 1;
-		Value a_mean = summary[0].mean;
-		Value a_index = 0.0;
-		Value b_mean = summary[0].mean;
-		Value b_index = sum + (summary[0].count - 1) * 0.5;
+		Value x = q * count;
+		TotalCount sum = 0;
+		Value prev_mean = summary.front().mean;
+		Value prev_x = 0;
 
-		for (size_t i = 1; i < summary.size(); ++i)
+		for (const auto & c : summary)
 		{
-			if (index <= b_index)
-				break;
+			Value current_x = sum + c.count * 0.5;
 
-			sum += summary[i - 1].count;
-			a_mean = b_mean;
-			a_index = b_index;
-			b_mean = summary[i].mean;
-			b_index = sum + (summary[i].count - 1) * 0.5;
+			if (current_x >= x)
+				return interpolate(x, prev_x, prev_mean, current_x, c.mean);
+
+			sum += c.count;
+			prev_mean = c.mean;
+			prev_x = current_x;
 		}
 
-		return interpolate(index, a_index, a_mean, b_index, b_mean);
+		return summary.back().mean;
 	}
 
 	/** Получить несколько квантилей (size штук).
@@ -264,39 +260,37 @@ public:
 		if (summary.size() == 1)
 		{
 			for (size_t result_num = 0; result_num < size; ++result_num)
-				result[result_num] = summary[0].mean;
+				result[result_num] = summary.front().mean;
 			return;
 		}
 
-		Value index = levels[levels_permutation[0]] * count;
-		TotalCount sum = 1;
-		Value a_mean = summary[0].mean;
-		Value a_index = 0.0;
-		Value b_mean = summary[0].mean;
-		Value b_index = sum + (summary[0].count - 1) * 0.5;
+		Value x = levels[levels_permutation[0]] * count;
+		TotalCount sum = 0;
+		Value prev_mean = summary.front().mean;
+		Value prev_x = 0;
 
 		size_t result_num = 0;
-		for (size_t i = 1; i < summary.size(); ++i)
+		for (const auto & c : summary)
 		{
-			while (index <= b_index)
+			Value current_x = sum + c.count * 0.5;
+
+			while (current_x >= x)
 			{
-				result[levels_permutation[result_num]] = interpolate(index, a_index, a_mean, b_index, b_mean);
+				result[levels_permutation[result_num]] = interpolate(x, prev_x, prev_mean, current_x, c.mean);
 
 				++result_num;
 				if (result_num >= size)
 					return;
 
-				index = levels[levels_permutation[result_num]] * count;
+				x = levels[levels_permutation[result_num]] * count;
 			}
 
-			sum += summary[i - 1].count;
-			a_mean = b_mean;
-			a_index = b_index;
-			b_mean = summary[i].mean;
-			b_index = sum + (summary[i].count - 1) * 0.5;
+			sum += c.count;
+			prev_mean = c.mean;
+			prev_x = current_x;
 		}
 
-		auto rest_of_results = interpolate(index, a_index, a_mean, b_index, b_mean);
+		auto rest_of_results = summary.back().mean;
 		for (; result_num < size; ++result_num)
 			result[levels_permutation[result_num]] = rest_of_results;
 	}
