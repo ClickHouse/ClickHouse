@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DB/AggregateFunctions/AggregateFunctionsMinMaxAny.h>
+#include <DB/AggregateFunctions/IBinaryAggregateFunction.h>
 
 
 namespace DB
@@ -20,7 +21,7 @@ struct AggregateFunctionsArgMinMaxData
 
 /// Возвращает первое попавшееся значение arg для минимального/максимального value. Пример: argMax(arg, value).
 template <typename Data>
-class AggregateFunctionsArgMinMax final : public IAggregateFunctionHelper<Data>
+class AggregateFunctionsArgMinMax final : public IBinaryAggregateFunction<Data, AggregateFunctionsArgMinMax<Data>>
 {
 private:
 	DataTypePtr type_res;
@@ -34,19 +35,16 @@ public:
 		return type_res;
 	}
 
-	void setArguments(const DataTypes & arguments) override
+	void setArgumentsImpl(const DataTypes & arguments)
 	{
-		if (arguments.size() != 2)
-			throw Exception("Aggregate function " + getName() + " requires exactly two arguments.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
 		type_res = arguments[0];
 		type_val = arguments[1];
 	}
 
-	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const override
+	void addImpl(AggregateDataPtr place, const IColumn & column_arg, const IColumn & column_max, size_t row_num) const
 	{
-		if (this->data(place).value.changeIfBetter(*columns[1], row_num))
-			this->data(place).result.change(*columns[0], row_num);
+		if (this->data(place).value.changeIfBetter(column_max, row_num))
+			this->data(place).result.change(column_arg, row_num);
 	}
 
 	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override

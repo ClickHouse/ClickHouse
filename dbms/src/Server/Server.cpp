@@ -210,7 +210,7 @@ public:
 
 			const MergeTreeSettings & settings = context.getMergeTreeSettings();
 
-			bool ok = true;
+			bool ok = /*true*/false;
 			std::stringstream message;
 
 			for (const auto & db : replicated_tables)

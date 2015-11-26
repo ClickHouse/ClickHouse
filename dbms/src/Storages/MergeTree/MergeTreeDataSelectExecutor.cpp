@@ -1,9 +1,12 @@
+#include <boost/rational.hpp>	/// Для вычислений, связанных с коэффициентами сэмплирования.
+
 #include <DB/Core/FieldVisitors.h>
 #include <DB/Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <DB/Storages/MergeTree/MergeTreeBlockInputStream.h>
 #include <DB/Storages/MergeTree/MergeTreeReadPool.h>
 #include <DB/Storages/MergeTree/MergeTreeThreadBlockInputStream.h>
 #include <DB/Parsers/ASTIdentifier.h>
+#include <DB/Parsers/ASTSampleRatio.h>
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
 #include <DB/DataStreams/FilterBlockInputStream.h>
 #include <DB/DataStreams/CollapsingFinalBlockInputStream.h>
@@ -65,10 +68,13 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
 }
 
 
-/** Пожалуй, наиболее удобный способ разбить диапазон 64-битных целых чисел на интервалы по их относительной величине
-  * - использовать для этого long double. Это некроссплатформенно. Надо, чтобы long double содержал хотя бы 64 бита мантиссы.
-  */
-using RelativeSize = long double;
+using RelativeSize = boost::rational<ASTSampleRatio::BigNum>;
+
+static std::ostream & operator<<(std::ostream & ostr, const RelativeSize & x)
+{
+	ostr << ASTSampleRatio::toString(x.numerator()) << "/" << ASTSampleRatio::toString(x.denominator());
+	return ostr;
+}
 
 
 /// Переводит размер сэмпла в приблизительном количестве строк (вида SAMPLE 1000000) в относительную величину (вида SAMPLE 0.1).
@@ -77,8 +83,10 @@ static RelativeSize convertAbsoluteSampleSizeToRelative(const ASTPtr & node, siz
 	if (approx_total_rows == 0)
 		return 1;
 
-	size_t absolute_sample_size = apply_visitor(FieldVisitorConvertToNumber<UInt64>(), typeid_cast<const ASTLiteral &>(*node).value);
-	return std::min(RelativeSize(1.0), RelativeSize(absolute_sample_size) / approx_total_rows);
+	const ASTSampleRatio & node_sample = typeid_cast<const ASTSampleRatio &>(*node);
+
+	auto absolute_sample_size = node_sample.ratio.numerator / node_sample.ratio.denominator;
+	return std::min(RelativeSize(1), RelativeSize(absolute_sample_size) / approx_total_rows);
 }
 
 
@@ -166,16 +174,18 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 	if (select.sample_size)
 	{
-		relative_sample_size = apply_visitor(FieldVisitorConvertToNumber<RelativeSize>(),
-			typeid_cast<ASTLiteral&>(*select.sample_size).value);
+		relative_sample_size.assign(
+			typeid_cast<const ASTSampleRatio &>(*select.sample_size).ratio.numerator,
+			typeid_cast<const ASTSampleRatio &>(*select.sample_size).ratio.denominator);
 
 		if (relative_sample_size < 0)
 			throw Exception("Negative sample size", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
 		relative_sample_offset = 0;
 		if (select.sample_offset)
-			relative_sample_offset = apply_visitor(FieldVisitorConvertToNumber<RelativeSize>(),
-				typeid_cast<ASTLiteral&>(*select.sample_offset).value);
+			relative_sample_offset.assign(
+				typeid_cast<const ASTSampleRatio &>(*select.sample_offset).ratio.numerator,
+				typeid_cast<const ASTSampleRatio &>(*select.sample_offset).ratio.denominator);
 
 		if (relative_sample_offset < 0)
 			throw Exception("Negative sample offset", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
@@ -234,10 +244,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	  *        <------> - size
 	  *        <--><--> - кусочки для разных parallel_replica_offset, выбираем второй.
 	  *
-	  * TODO
 	  * Очень важно, чтобы интервалы для разных parallel_replica_offset покрывали весь диапазон без пропусков и перекрытий.
 	  * Также важно, чтобы весь юнивёрсум можно было покрыть, используя SAMPLE 0.1 OFFSET 0, ... OFFSET 0.9 и похожие десятичные дроби.
-	  * Сейчас это не гарантируется.
 	  */
 
 	bool use_sampling = relative_sample_size > 0 || settings.parallel_replicas_count > 1;
@@ -261,6 +269,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 		if (settings.parallel_replicas_count > 1)
 		{
+			if (relative_sample_size == 0)
+				relative_sample_size = 1;
+
 			relative_sample_size /= settings.parallel_replicas_count;
 			relative_sample_offset += relative_sample_size * settings.parallel_replica_offset;
 		}
@@ -272,23 +283,23 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 		bool has_lower_limit = false;
 		bool has_upper_limit = false;
 
-		RelativeSize lower_limit_float = relative_sample_offset * size_of_universum;
-		RelativeSize upper_limit_float = (relative_sample_offset + relative_sample_size) * size_of_universum;
+		RelativeSize lower_limit_rational = relative_sample_offset * size_of_universum;
+		RelativeSize upper_limit_rational = (relative_sample_offset + relative_sample_size) * size_of_universum;
 
-		UInt64 lower = lower_limit_float;
-		UInt64 upper = upper_limit_float;
+		UInt64 lower = boost::rational_cast<ASTSampleRatio::BigNum>(lower_limit_rational);
+		UInt64 upper = boost::rational_cast<ASTSampleRatio::BigNum>(upper_limit_rational);
 
 		if (lower > 0)
 			has_lower_limit = true;
 
-		if (upper_limit_float <= size_of_universum)
+		if (upper_limit_rational < size_of_universum)
 			has_upper_limit = true;
 
-/*		std::cerr << std::fixed << std::setprecision(100)
+		/*std::cerr << std::fixed << std::setprecision(100)
 			<< "relative_sample_size: " << relative_sample_size << "\n"
 			<< "relative_sample_offset: " << relative_sample_offset << "\n"
-			<< "lower_limit_float: " << lower_limit_float << "\n"
-			<< "upper_limit_float: " << upper_limit_float << "\n"
+			<< "lower_limit_float: " << lower_limit_rational << "\n"
+			<< "upper_limit_float: " << upper_limit_rational << "\n"
 			<< "lower: " << lower << "\n"
 			<< "upper: " << upper << "\n";*/
 

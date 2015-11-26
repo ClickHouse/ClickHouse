@@ -2,12 +2,11 @@
 
 #include <DB/Common/HashTable/HashMap.h>
 
-#include <DB/Core/FieldVisitors.h>
-
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeArray.h>
 
 #include <DB/AggregateFunctions/IBinaryAggregateFunction.h>
+#include <DB/AggregateFunctions/QuantilesCommon.h>
 
 #include <DB/Columns/ColumnArray.h>
 
@@ -165,8 +164,7 @@ class AggregateFunctionQuantilesExactWeighted final
 		AggregateFunctionQuantilesExactWeighted<ValueType, WeightType>>
 {
 private:
-	using Levels = std::vector<double>;
-	Levels levels;
+	QuantileLevels<double> levels;
 	DataTypePtr type;
 
 public:
@@ -184,14 +182,7 @@ public:
 
 	void setParameters(const Array & params) override
 	{
-		if (params.empty())
-			throw Exception("Aggregate function " + getName() + " requires at least one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		size_t size = params.size();
-		levels.resize(size);
-
-		for (size_t i = 0; i < size; ++i)
-			levels[i] = apply_visitor(FieldVisitorConvertToNumber<Float64>(), params[i]);
+		levels.set(params);
 	}
 
 	void addImpl(AggregateDataPtr place, const IColumn & column_value, const IColumn & column_weight, size_t row_num) const
@@ -240,10 +231,13 @@ public:
 
 		typename ColumnVector<ValueType>::Container_t & data_to = static_cast<ColumnVector<ValueType> &>(arr_to.getData()).getData();
 
+		size_t old_size = data_to.size();
+		data_to.resize(old_size + num_levels);
+
 		if (0 == size)
 		{
 			for (size_t i = 0; i < num_levels; ++i)
-				data_to.push_back(ValueType());
+				data_to[old_size + i] = ValueType();
 			return;
 		}
 
@@ -268,9 +262,9 @@ public:
 		const Pair * it = array;
 		const Pair * end = array + size;
 
-		for (const auto & level : levels)
+		for (auto level_index : levels.permutation)
 		{
-			UInt64 threshold = sum_weight * level;
+			UInt64 threshold = sum_weight * levels.levels[level_index];
 
 			while (it < end && accumulated < threshold)
 			{
@@ -278,7 +272,7 @@ public:
 				++it;
 			}
 
-			data_to.push_back(it < end ? it->first : it[-1].first);
+			data_to[old_size + level_index] = it < end ? it->first : it[-1].first;
 		}
 	}
 };

@@ -86,9 +86,6 @@ struct Settings
 	M(SettingTotalsMode, totals_mode, TotalsMode::AFTER_HAVING_EXCLUSIVE) \
 	M(SettingFloat, totals_auto_threshold, 0.5) \
 	\
-	/** Сэмплирование по умолчанию. Если равно 1, то отключено. */ \
-	M(SettingFloat, default_sample, 1.0) \
-	\
 	/** Включена ли компиляция запросов. */ \
 	M(SettingBool, compile, false) \
 	/** Количество одинаковых по структуре запросов перед тем, как инициируется их компиляция. */ \

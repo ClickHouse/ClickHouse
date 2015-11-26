@@ -123,36 +123,65 @@ void MergingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std:
 {
 	size_t merged_rows = 0;
 
+	/** Увеличить счётчики строк.
+	  * Вернуть true, если пора закончить формировать текущий блок данных.
+	  */
+	auto count_row_and_check_limit = [&, this]()
+	{
+		++total_merged_rows;
+		if (limit && total_merged_rows == limit)
+		{
+			cancel();
+			finished = true;
+			return true;
+		}
+
+		++merged_rows;
+		if (merged_rows == max_block_size)
+			return true;
+
+		return false;
+	};
+
 	/// Вынимаем строки в нужном порядке и кладём в merged_block, пока строк не больше max_block_size
 	while (!queue.empty())
 	{
 		TSortCursor current = queue.top();
 		queue.pop();
 
-		for (size_t i = 0; i < num_columns; ++i)
-			merged_columns[i]->insertFrom(*current->all_columns[i], current->pos);
-
-		if (!current->isLast())
+		while (true)
 		{
-			current->next();
-			queue.push(current);
-		}
-		else
-		{
-			/// Достаём из соответствующего источника следующий блок, если есть.
-			fetchNextBlock(current, queue);
+			for (size_t i = 0; i < num_columns; ++i)
+				merged_columns[i]->insertFrom(*current->all_columns[i], current->pos);
+
+			if (!current->isLast())
+			{
+				current->next();
+
+				if (!queue.empty() && !(current < queue.top()))
+				{
+					if (count_row_and_check_limit())
+					{
+						queue.push(current);
+						return;
+					}
+
+					/// Не кладём курсор обратно в очередь, а продолжаем работать с текущим курсором.
+					continue;
+				}
+				else
+					queue.push(current);
+			}
+			else
+			{
+				/// Достаём из соответствующего источника следующий блок, если есть.
+				fetchNextBlock(current, queue);
+			}
+
+			break;
 		}
 
-		++total_merged_rows;
-		if (limit && total_merged_rows == limit)
-		{
-			cancel();
-			finished = true;
-			return;
-		}
-
-		++merged_rows;
-		if (merged_rows == max_block_size)
+		if (count_row_and_check_limit())
 			return;
 	}
 

@@ -23,6 +23,7 @@ StorageSystemDictionaries::StorageSystemDictionaries(const std::string & name)
 		  { "name", new DataTypeString },
 		  { "origin", new DataTypeString },
 		  { "type", new DataTypeString },
+		  { "key", new DataTypeString },
 		  { "attribute.names", new DataTypeArray{new DataTypeString} },
 		  { "attribute.types", new DataTypeArray{new DataTypeString} },
 		  { "bytes_allocated", new DataTypeUInt64 },
@@ -57,6 +58,7 @@ BlockInputStreams StorageSystemDictionaries::read(
 	ColumnWithTypeAndName col_name{new ColumnString, new DataTypeString, "name"};
 	ColumnWithTypeAndName col_origin{new ColumnString, new DataTypeString, "origin"};
 	ColumnWithTypeAndName col_type{new ColumnString, new DataTypeString, "type"};
+	ColumnWithTypeAndName col_key{new ColumnString, new DataTypeString, "key"};
 	ColumnWithTypeAndName col_attribute_names{
 		new ColumnArray{new ColumnString},
 		new DataTypeArray{new DataTypeString},
@@ -92,6 +94,8 @@ BlockInputStreams StorageSystemDictionaries::read(
 			col_type.column->insert(dict_ptr->getTypeName());
 
 			const auto & dict_struct = dict_ptr->getStructure();
+			col_key.column->insert(dict_struct.getKeyDescription());
+
 			col_attribute_names.column->insert(ext::map<Array>(dict_struct.attributes, [] (auto & attr) -> decltype(auto) {
 				return attr.name;
 			}));
@@ -109,6 +113,7 @@ BlockInputStreams StorageSystemDictionaries::read(
 		else
 		{
 			col_type.column->insertDefault();
+			col_key.column->insertDefault();
 			col_attribute_names.column->insertDefault();
 			col_attribute_types.column->insertDefault();
 			col_bytes_allocated.column->insertDefault();
@@ -152,6 +157,7 @@ BlockInputStreams StorageSystemDictionaries::read(
 		col_name,
 		col_origin,
 		col_type,
+		col_key,
 		col_attribute_names,
 		col_attribute_types,
 		col_bytes_allocated,

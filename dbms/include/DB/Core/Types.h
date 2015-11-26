@@ -60,7 +60,4 @@ template <> struct TypeName<Float32> 	{ static std::string get() { return "Float
 template <> struct TypeName<Float64> 	{ static std::string get() { return "Float64"; 	} };
 template <> struct TypeName<String> 	{ static std::string get() { return "String"; 	} };
 
-/// Эти типы не поддерживаются СУБД. Но используются в других местах.
-template <> struct TypeName<long double>{ static std::string get() { return "long double"; } };
-
 }
