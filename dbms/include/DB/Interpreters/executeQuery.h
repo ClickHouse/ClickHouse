@@ -15,8 +15,8 @@ void executeQuery(
 	WriteBuffer & ostr,					/// Куда писать результат
 	Context & context,					/// БД, таблицы, типы данных, движки таблиц, функции, агрегатные функции...
 	BlockInputStreamPtr & query_plan,	/// Сюда может быть записано описание, как выполнялся запрос
-	bool internal = false,				/// Если true - значит запрос порождён из другого запроса, и не нужно его регистировать в ProcessList-е.
-	QueryProcessingStage::Enum stage = QueryProcessingStage::Complete);	/// До какой стадии выполнять SELECT запрос.
+	std::function<void(const String &)> set_content_type /// Может быть передан колбэк, с помощью которого может быть сообщён Content-Type формата.
+	);
 
 
 /** Более низкоуровневая функция для межсерверного взаимодействия.
@@ -35,8 +35,9 @@ void executeQuery(
   */
 BlockIO executeQuery(
 	const String & query,	/// Текст запроса, без данных INSERT-а (если есть). Данные INSERT-а следует писать в BlockIO::out.
-	Context & context,
-	bool internal = false,
-	QueryProcessingStage::Enum stage = QueryProcessingStage::Complete);
+	Context & context,		/// БД, таблицы, типы данных, движки таблиц, функции, агрегатные функции...
+	bool internal = false,	/// Если true - значит запрос порождён из другого запроса, и не нужно его регистировать в ProcessList-е.
+	QueryProcessingStage::Enum stage = QueryProcessingStage::Complete	/// До какой стадии выполнять SELECT запрос.
+	);
 
 }

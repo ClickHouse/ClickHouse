@@ -11,9 +11,13 @@ namespace DB
 template <typename T, typename Derived>
 class INullaryAggregateFunction : public IAggregateFunctionHelper<T>
 {
+private:
+	Derived & getDerived() { return static_cast<Derived &>(*this); }
+	const Derived & getDerived() const { return static_cast<const Derived &>(*this); }
+
 public:
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-	void setArguments(const DataTypes & arguments)
+	void setArguments(const DataTypes & arguments) override final
 	{
 		if (arguments.size() != 0)
 			throw Exception("Passed " + toString(arguments.size()) + " arguments to nullary aggregate function " + this->getName(),
@@ -21,13 +25,13 @@ public:
 	}
 
 	/// Добавить значение.
-	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const
+	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const override final
 	{
-		static_cast<const Derived &>(*this).addZero(place);
+		getDerived().addImpl(place);
 	}
 
 	/** Реализуйте это в классе-наследнике:
-	  * void addZero(AggregateDataPtr place) const;
+	  * void addImpl(AggregateDataPtr place) const;
 	  */
 };
 

@@ -27,9 +27,9 @@ template <typename T>
 class AggregateFunctionAvg final : public IUnaryAggregateFunction<AggregateFunctionAvgData<typename NearestFieldType<T>::Type>, AggregateFunctionAvg<T> >
 {
 public:
-	String getName() const { return "avg"; }
+	String getName() const override { return "avg"; }
 
-	DataTypePtr getReturnType() const
+	DataTypePtr getReturnType() const override
 	{
 		return new DataTypeFloat64;
 	}
@@ -42,25 +42,25 @@ public:
 	}
 
 
-	void addOne(AggregateDataPtr place, const IColumn & column, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const
 	{
 		this->data(place).sum += static_cast<const ColumnVector<T> &>(column).getData()[row_num];
 		++this->data(place).count;
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
 	{
 		this->data(place).sum += this->data(rhs).sum;
 		this->data(place).count += this->data(rhs).count;
 	}
 
-	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
+	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
 	{
 		writeBinary(this->data(place).sum, buf);
 		writeVarUInt(this->data(place).count, buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
+	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
 		typename NearestFieldType<T>::Type tmp_sum = 0;
 		UInt64 tmp_count = 0;
@@ -70,7 +70,7 @@ public:
 		this->data(place).count += tmp_count;
 	}
 
-	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
+	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
 	{
 		static_cast<ColumnFloat64 &>(to).getData().push_back(
 			static_cast<Float64>(this->data(place).sum) / this->data(place).count);

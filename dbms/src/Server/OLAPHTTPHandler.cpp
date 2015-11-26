@@ -67,7 +67,7 @@ void OLAPHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco:
 	WriteBufferFromHTTPServerResponse out(response);
 
 	Stopwatch watch;
-	executeQuery(in, out, context, query_plan);
+	executeQuery(in, out, context, query_plan, [&response] (const String & content_type) { response.setContentType(content_type); });
 	watch.stop();
 
 	/// Если не было эксепшена и данные ещё не отправлены - отправляются HTTP заголовки с кодом 200.

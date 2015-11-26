@@ -2,7 +2,6 @@
 
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/IInterpreter.h>
-#include <DB/Parsers/ASTIdentifier.h>
 
 namespace DB
 {

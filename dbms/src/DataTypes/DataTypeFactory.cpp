@@ -69,7 +69,7 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 			DataTypes argument_types;
 			Array params_row;
 
-			ParserExpressionList args_parser;
+			ParserExpressionList args_parser(false);
 			ASTPtr args_ast = parseQuery(args_parser, parameters.data(), parameters.data() + parameters.size(), "parameters for data type " + name);
 			ASTExpressionList & args_list = typeid_cast<ASTExpressionList &>(*args_ast);
 
@@ -136,7 +136,7 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 
 		if (base_name == "Tuple")
 		{
-			ParserExpressionList columns_p;
+			ParserExpressionList columns_p(false);
 			ASTPtr columns_ast = parseQuery(columns_p, parameters.data(), parameters.data() + parameters.size(), "parameters for data type " + name);
 
 			DataTypes elems;

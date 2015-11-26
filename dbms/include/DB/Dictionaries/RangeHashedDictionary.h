@@ -117,7 +117,7 @@ public:
 				const auto val_it = std::find_if(std::begin(ranges_and_values), std::end(ranges_and_values),
 					[date] (const value_t<StringRef> & v) { return v.range.contains(date); });
 
-				const auto string_ref = val_it != std::end(ranges_and_values) ? val_it->value : null_value;
+				const auto string_ref = val_it != std::end(ranges_and_values) ? val_it->value : StringRef{null_value};
 				out->insertData(string_ref.data, string_ref.size);
 			}
 			else

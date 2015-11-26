@@ -112,6 +112,7 @@ public:
 	template <class T>
 	T get() const PURE;
 
+	/// если значения нет, или тип неверный, то возвращает дефолтное значение
 	template <class T>
 	T getWithDefault(const std::string & key, const T & default_ = T()) const PURE;
 
@@ -184,14 +185,25 @@ private:
 	/// Найти name-value пару с заданным именем в объекте.
 	Pos searchField(const std::string & name) const PURE { return searchField(name.data(), name.size()); }
 	Pos searchField(const char * data, size_t size) const PURE;
+
+	template <class T>
+	bool isType() const PURE;
 };
 
 template <class T>
 T JSON::getWithDefault(const std::string & key, const T & default_) const
 {
 	if (has(key))
-		return (*this)[key].get<T>();
+	{
+		JSON key_json = (*this)[key];
+
+		if (key_json.isType<T>())
+			return key_json.get<T>();
+		else
+			return default_;
+	}
 	else
 		return default_;
 }
+
 #undef PURE

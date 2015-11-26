@@ -12,51 +12,64 @@ namespace DB
 const PKCondition::AtomMap PKCondition::atom_map{
 	{
 		"notEquals",
-		[] (RPNElement & out, const Field & value, ASTPtr &) {
+		[] (RPNElement & out, const Field & value, ASTPtr &)
+		{
 			out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
 			out.range = Range(value);
 		}
 	},
 	{
 		"equals",
-		[] (RPNElement & out, const Field & value, ASTPtr &) {
+		[] (RPNElement & out, const Field & value, ASTPtr &)
+		{
+			out.function = RPNElement::FUNCTION_IN_RANGE;
 			out.range = Range(value);
 		}
 	},
 	{
 		"less",
-		[] (RPNElement & out, const Field & value, ASTPtr &) {
+		[] (RPNElement & out, const Field & value, ASTPtr &)
+		{
+			out.function = RPNElement::FUNCTION_IN_RANGE;
 			out.range = Range::createRightBounded(value, false);
 		}
-},
-{
+	},
+	{
 		"greater",
-		[] (RPNElement & out, const Field & value, ASTPtr &) {
+		[] (RPNElement & out, const Field & value, ASTPtr &)
+		{
+			out.function = RPNElement::FUNCTION_IN_RANGE;
 			out.range = Range::createLeftBounded(value, false);
 		}
 	},
 	{
 		"lessOrEquals",
-		[] (RPNElement & out, const Field & value, ASTPtr &) {
+		[] (RPNElement & out, const Field & value, ASTPtr &)
+		{
+			out.function = RPNElement::FUNCTION_IN_RANGE;
 			out.range = Range::createRightBounded(value, true);
 		}
 	},
 	{
 		"greaterOrEquals",
-		[] (RPNElement & out, const Field & value, ASTPtr &) {
+		[] (RPNElement & out, const Field & value, ASTPtr &)
+		{
+			out.function = RPNElement::FUNCTION_IN_RANGE;
 			out.range = Range::createLeftBounded(value, true);
 		}
 	},
 	{
 		"in",
-		[] (RPNElement & out, const Field & value, ASTPtr & node) {
+		[] (RPNElement & out, const Field & value, ASTPtr & node)
+		{
 			out.function = RPNElement::FUNCTION_IN_SET;
 			out.in_function = node;
 		}
 	},
 	{
 		"notIn",
-		[] (RPNElement & out, const Field & value, ASTPtr & node) {
+		[] (RPNElement & out, const Field & value, ASTPtr & node)
+		{
 			out.function = RPNElement::FUNCTION_NOT_IN_SET;
 			out.in_function = node;
 		}
@@ -131,8 +144,8 @@ bool PKCondition::addCondition(const String & column, const Range & range)
 }
 
 /** Получить значение константного выражения.
- * Вернуть false, если выражение не константно.
- */
+  * Вернуть false, если выражение не константно.
+  */
 static bool getConstant(ASTPtr & expr, Block & block_with_constants, Field & value)
 {
 	String column_name = expr->getColumnName();
@@ -187,7 +200,7 @@ void PKCondition::traverseAST(ASTPtr & node, Block & block_with_constants)
 
 bool PKCondition::atomFromAST(ASTPtr & node, Block & block_with_constants, RPNElement & out)
 {
-	/// Фнукции < > = != <= >= in , у которых один агрумент константа, другой - один из столбцов первичного ключа.
+	/// Фнукции < > = != <= >= in notIn, у которых один агрумент константа, другой - один из столбцов первичного ключа.
 	if (ASTFunction * func = typeid_cast<ASTFunction *>(&*node))
 	{
 		ASTs & args = typeid_cast<ASTExpressionList &>(*func->arguments).children;
@@ -231,9 +244,13 @@ bool PKCondition::atomFromAST(ASTPtr & node, Block & block_with_constants, RPNEl
 				func_name = "lessOrEquals";
 			else if (func_name == "lessOrEquals")
 				func_name = "greaterOrEquals";
+			else if (func_name == "in" || func_name == "notIn")
+			{
+				/// const IN x не имеет смысла (в отличие от x IN const).
+				return false;
+			}
 		}
 
-		out.function = RPNElement::FUNCTION_IN_RANGE;
 		out.key_column = column;
 
 		const auto atom_it = atom_map.find(func_name);
@@ -384,13 +401,11 @@ bool PKCondition::mayBeTrueAfter(const Field * left_pk) const
 	return mayBeTrueInRange(left_pk, nullptr, false);
 }
 
-const ASTSet * PKCondition::RPNElement::inFunctionToSet() const
+static const ASTSet & inFunctionToSet(const ASTPtr & in_function)
 {
-	auto in_func = typeid_cast<const ASTFunction *>(in_function.get());
-	if (!in_func)
-		return nullptr;
-	const ASTs & args = typeid_cast<const ASTExpressionList &>(*in_func->arguments).children;
-	auto ast_set = typeid_cast<const ASTSet *>(args[1].get());
+	const auto & in_func = typeid_cast<const ASTFunction &>(*in_function);
+	const auto & args = typeid_cast<const ASTExpressionList &>(*in_func.arguments).children;
+	const auto & ast_set = typeid_cast<const ASTSet &>(*args[1]);
 	return ast_set;
 }
 
@@ -410,7 +425,8 @@ String PKCondition::RPNElement::toString() const
 		case FUNCTION_NOT_IN_SET:
 		case FUNCTION_IN_SET:
 		{
-			ss << "(column " << key_column << (function == FUNCTION_IN_SET ? " in " : " notIn ") << inFunctionToSet()->set->describe() << ")";
+			ss << "(column " << key_column << (function == FUNCTION_IN_SET ? " in " : " notIn ")
+				<< inFunctionToSet(in_function).set->describe() << ")";
 			return ss.str();
 		}
 		case FUNCTION_IN_RANGE:
@@ -420,7 +436,7 @@ String PKCondition::RPNElement::toString() const
 			return ss.str();
 		}
 		default:
-			return "ERROR";
+			throw Exception("Unknown function in RPNElement", ErrorCodes::LOGICAL_ERROR);
 	}
 }
 

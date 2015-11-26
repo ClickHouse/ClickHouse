@@ -38,6 +38,7 @@
 #include <DB/Storages/System/StorageSystemColumns.h>
 #include <DB/Storages/System/StorageSystemFunctions.h>
 #include <DB/Storages/System/StorageSystemClusters.h>
+#include <DB/Storages/StorageReplicatedMergeTree.h>
 
 #include <DB/IO/copyData.h>
 #include <DB/IO/LimitReadBuffer.h>
@@ -160,41 +161,118 @@ private:
 	void run();
 };
 
-/// Отвечает "Ok.\n", если получен любой GET запрос. Используется для проверки живости.
+
+/// Отвечает "Ok.\n". Используется для проверки живости.
 class PingRequestHandler : public Poco::Net::HTTPRequestHandler
 {
 public:
-	PingRequestHandler()
+	void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
 	{
-	    LOG_TRACE((&Logger::get("PingRequestHandler")), "Ping request.");
+		try
+		{
+			const char * data = "Ok.\n";
+			response.sendBuffer(data, strlen(data));
+		}
+		catch (...)
+		{
+			tryLogCurrentException("PingRequestHandler");
+		}
+	}
+};
+
+
+/// Отвечает "Ok.\n", если все реплики на этом сервере не слишком сильно отстают. Иначе выводит информацию об отставании. TODO Вынести в отдельный файл.
+class ReplicasStatusHandler : public Poco::Net::HTTPRequestHandler
+{
+private:
+	Context & context;
+
+public:
+	ReplicasStatusHandler(Context & context_)
+		: context(context_)
+	{
 	}
 
 	void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
 	{
 		try
 		{
-			if (request.getURI() == "/" || request.getURI() == "/ping")
+			/// Собираем набор реплицируемых таблиц.
+			Databases replicated_tables;
+			{
+				Poco::ScopedLock<Poco::Mutex> lock(context.getMutex());
+
+				for (const auto & db : context.getDatabases())
+					for (const auto & table : db.second)
+						if (typeid_cast<const StorageReplicatedMergeTree *>(table.second.get()))
+							replicated_tables[db.first][table.first] = table.second;
+			}
+
+			const MergeTreeSettings & settings = context.getMergeTreeSettings();
+
+			bool ok = true;
+			std::stringstream message;
+
+			for (const auto & db : replicated_tables)
+			{
+				for (const auto & table : db.second)
+				{
+					time_t absolute_delay = 0;
+					time_t relative_delay = 0;
+
+					static_cast<const StorageReplicatedMergeTree &>(*table.second).getReplicaDelays(absolute_delay, relative_delay);
+
+					if ((settings.min_absolute_delay_to_close && absolute_delay >= static_cast<time_t>(settings.min_absolute_delay_to_close))
+						|| (settings.min_relative_delay_to_close && relative_delay >= static_cast<time_t>(settings.min_relative_delay_to_close)))
+						ok = false;
+
+					message << backQuoteIfNeed(db.first) << "." << backQuoteIfNeed(table.first)
+						<< "\tAbsolute delay: " << absolute_delay << ". Relative delay: " << relative_delay << ".\n";
+				}
+			}
+
+			if (ok)
 			{
 				const char * data = "Ok.\n";
 				response.sendBuffer(data, strlen(data));
 			}
 			else
 			{
-				response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
-				response.send() << "There is no handle " << request.getURI() << "\n\n"
-					<< "Use / or /ping for health checks.\n"
-					<< "Send queries from your program with POST method or GET /?query=...\n\n"
-					<< "Use clickhouse-client:\n\n"
-					<< "For interactive data analysis:\n"
-					<< "    clickhouse-client\n\n"
-					<< "For batch query processing:\n"
-					<< "    clickhouse-client --query='SELECT 1' > result\n"
-					<< "    clickhouse-client < query > result\n";
+				response.send() << message.rdbuf();
 			}
 		}
 		catch (...)
 		{
-			tryLogCurrentException("PingRequestHandler");
+			/// TODO Отправлять клиенту.
+			tryLogCurrentException("ReplicasStatusHandler");
+		}
+	}
+};
+
+
+/// Отвечает 404 с подробным объяснением.
+class NotFoundHandler : public Poco::Net::HTTPRequestHandler
+{
+public:
+	void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+	{
+		try
+		{
+			response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
+			response.send() << "There is no handle " << request.getURI() << "\n\n"
+				<< "Use / or /ping for health checks.\n"
+				<< "Or /replicas_status for more sophisticated health checks.\n\n"
+				<< "Send queries from your program with POST method or GET /?query=...\n\n"
+				<< "Use clickhouse-client:\n\n"
+				<< "For interactive data analysis:\n"
+				<< "    clickhouse-client\n\n"
+				<< "For batch query processing:\n"
+				<< "    clickhouse-client --query='SELECT 1' > result\n"
+				<< "    clickhouse-client < query > result\n";
+		}
+		catch (...)
+		{
+			tryLogCurrentException("NotFoundHandler");
 		}
 	}
 };
@@ -219,7 +297,9 @@ public:
 			<< ", Address: " << request.clientAddress().toString()
 			<< ", User-Agent: " << (request.has("User-Agent") ? request.get("User-Agent") : "none"));
 
-		if (request.getURI().find('?') != std::string::npos
+		const auto & uri = request.getURI();
+
+		if (uri.find('?') != std::string::npos
 			|| request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
 		{
 			return new HandlerType(server);
@@ -227,7 +307,12 @@ public:
 		else if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
 			|| request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD)
 		{
-			return new PingRequestHandler();
+			if (uri == "/" || uri == "/ping")
+				return new PingRequestHandler;
+			else if (uri == "/replicas_status")
+				return new ReplicasStatusHandler(*server.global_context);
+			else
+				return new NotFoundHandler;
 		}
 		else
 			return nullptr;

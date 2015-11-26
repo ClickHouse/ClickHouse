@@ -111,13 +111,25 @@ protected:
 };
 
 
-class ParserAccessExpression : public IParserBase
+class ParserTupleElementExpression : public IParserBase
 {
 private:
 	static const char * operators[];
 
 protected:
-	const char * getName() const { return "access expression"; }
+	const char * getName() const { return "tuple element expression"; }
+
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+};
+
+
+class ParserArrayElementExpression : public IParserBase
+{
+private:
+	static const char * operators[];
+
+protected:
+	const char * getName() const { return "array element expression"; }
 
 	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 };
@@ -127,7 +139,7 @@ class ParserUnaryMinusExpression : public IParserBase
 {
 private:
 	static const char * operators[];
-	ParserPrefixUnaryOperatorExpression operator_parser {operators, ParserPtr(new ParserAccessExpression)};
+	ParserPrefixUnaryOperatorExpression operator_parser {operators, ParserPtr(new ParserTupleElementExpression)};
 
 protected:
 	const char * getName() const { return "unary minus expression"; }
@@ -270,7 +282,7 @@ protected:
 class ParserExpressionWithOptionalAlias : public IParserBase
 {
 public:
-	ParserExpressionWithOptionalAlias();
+	ParserExpressionWithOptionalAlias(bool allow_alias_without_as_keyword);
 protected:
 	ParserPtr impl;
 
@@ -286,7 +298,13 @@ protected:
 /** Список выражений, разделённых запятыми, возможно пустой. */
 class ParserExpressionList : public IParserBase
 {
+public:
+	ParserExpressionList(bool allow_alias_without_as_keyword_)
+		: allow_alias_without_as_keyword(allow_alias_without_as_keyword_) {}
+
 protected:
+	bool allow_alias_without_as_keyword;
+
 	const char * getName() const { return "list of expressions"; }
 	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 };
@@ -294,6 +312,9 @@ protected:
 
 class ParserNotEmptyExpressionList : public IParserBase
 {
+public:
+	ParserNotEmptyExpressionList(bool allow_alias_without_as_keyword)
+		: nested_parser(allow_alias_without_as_keyword) {}
 private:
 	ParserExpressionList nested_parser;
 protected:

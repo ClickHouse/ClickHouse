@@ -37,9 +37,12 @@ void NativeBlockOutputStream::writeData(const IDataType & type, const ColumnPtr 
 	/** Если есть столбцы-константы - то материализуем их.
 	  * (Так как тип данных не умеет сериализовывать/десериализовывать константы.)
 	  */
-	ColumnPtr full_column = column->isConst()
-		? static_cast<const IColumnConst &>(*column).convertToFullColumn()
-		: column;
+	ColumnPtr full_column;
+
+	if (auto converted = column->convertToFullColumnIfConst())
+		full_column = converted;
+	else
+		full_column = column;
 
 	/** Для массивов требуется сначала сериализовать смещения, а потом значения.
 	  */

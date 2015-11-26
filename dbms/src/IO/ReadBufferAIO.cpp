@@ -85,13 +85,14 @@ bool ReadBufferAIO::nextImpl()
 	request.aio_offset = region_aligned_begin;
 
 	/// Отправить запрос.
-	while (io_submit(aio_context.ctx, request_ptrs.size(), &request_ptrs[0]) < 0)
+	try
 	{
-		if (errno != EINTR)
-		{
-			aio_failed = true;
-			throw Exception("Cannot submit request for asynchronous IO on file " + filename, ErrorCodes::AIO_SUBMIT_ERROR);
-		}
+		future_bytes_read = AIOContextPool::instance().post(request);
+	}
+	catch (...)
+	{
+		aio_failed = true;
+		throw;
 	}
 
 	is_pending_read = true;
@@ -169,7 +170,8 @@ void ReadBufferAIO::skip()
 
 	is_aio = false;
 
-	bytes_read = events[0].res;
+	/// @todo I presume this assignment is redundant since waitForAIOCompletion() performs a similar one
+//	bytes_read = future_bytes_read.get();
 	if ((bytes_read < 0) || (static_cast<size_t>(bytes_read) < region_left_padding))
 		throw Exception("Asynchronous read error on file " + filename, ErrorCodes::AIO_READ_ERROR);
 }
@@ -179,17 +181,8 @@ bool ReadBufferAIO::waitForAIOCompletion()
 	if (is_eof || !is_pending_read)
 		return false;
 
-	while (io_getevents(aio_context.ctx, events.size(), events.size(), &events[0], nullptr) < 0)
-	{
-		if (errno != EINTR)
-		{
-			aio_failed = true;
-			throw Exception("Failed to wait for asynchronous IO completion on file " + filename, ErrorCodes::AIO_COMPLETION_ERROR);
-		}
-	}
-
+	bytes_read = future_bytes_read.get();
 	is_pending_read = false;
-	bytes_read = events[0].res;
 
 	ProfileEvents::increment(ProfileEvents::ReadBufferAIORead);
 	ProfileEvents::increment(ProfileEvents::ReadBufferAIOReadBytes, bytes_read);

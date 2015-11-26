@@ -8,7 +8,7 @@
 namespace DB
 {
 
-/** Идентификатор (столбца или алиас, или именованый элемент кортежа)
+/** Идентификатор (столбца или алиас)
   */
 class ASTIdentifier : public ASTWithAlias
 {
@@ -21,7 +21,7 @@ public:
 		Format,
 	};
 
-	/// имя
+	/// имя. У составного идентификатора здесь будет конкатенированное имя (вида a.b.c), а отдельные составляюшие будут доступны внутри children.
 	String name;
 
 	/// чего идентифицирует этот идентификатор
@@ -44,16 +44,7 @@ public:
 	}
 
 protected:
-	void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
-	{
-		settings.ostr << (settings.hilite ? hilite_identifier : "");
-
-		WriteBufferFromOStream wb(settings.ostr, 32);
-		writeProbablyBackQuotedString(name, wb);
-		wb.next();
-
-		settings.ostr << (settings.hilite ? hilite_none : "");
-	}
+	void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
 }

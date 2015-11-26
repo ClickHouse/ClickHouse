@@ -9,7 +9,11 @@
 #define MAX_SUBPATTERNS 5
 
 template <bool b>
-void OptimizedRegularExpressionImpl<b>::analyze(const std::string & regexp, std::string & required_substring, bool & is_trivial, bool & required_substring_is_prefix)
+void OptimizedRegularExpressionImpl<b>::analyze(
+	const std::string & regexp,
+	std::string & required_substring,
+	bool & is_trivial,
+	bool & required_substring_is_prefix)
 {
 	/** Выражение тривиально, если в нём все метасимволы эскейплены.
 	  * Безальтернативная строка - это
@@ -44,6 +48,7 @@ void OptimizedRegularExpressionImpl<b>::analyze(const std::string & regexp, std:
 			case '\0':
 				pos = end;
 				break;
+
 			case '\\':
 			{
 				++pos;
@@ -74,6 +79,7 @@ void OptimizedRegularExpressionImpl<b>::analyze(const std::string & regexp, std:
 				++pos;
 				break;
 			}
+
 			case '|':
 				if (depth == 0)
 					has_alternative_on_depth_0 = true;
@@ -85,6 +91,7 @@ void OptimizedRegularExpressionImpl<b>::analyze(const std::string & regexp, std:
 				}
 				++pos;
 				break;
+
 			case '(':
 				if (!in_square_braces)
 				{
@@ -98,6 +105,7 @@ void OptimizedRegularExpressionImpl<b>::analyze(const std::string & regexp, std:
 				}
 				++pos;
 				break;
+
 			case '[':
 				in_square_braces = true;
 				++depth;
@@ -109,7 +117,11 @@ void OptimizedRegularExpressionImpl<b>::analyze(const std::string & regexp, std:
 				}
 				++pos;
 				break;
+
 			case ']':
+				if (!in_square_braces)
+					goto ordinary;
+
 				in_square_braces = false;
 				--depth;
 				is_trivial = false;
@@ -120,6 +132,7 @@ void OptimizedRegularExpressionImpl<b>::analyze(const std::string & regexp, std:
 				}
 				++pos;
 				break;
+
 			case ')':
 				if (!in_square_braces)
 				{
@@ -133,6 +146,7 @@ void OptimizedRegularExpressionImpl<b>::analyze(const std::string & regexp, std:
 				}
 				++pos;
 				break;
+
 			case '^': case '$': case '.': case '+':
 				is_trivial = false;
 				if (!last_substring->first.empty() && !in_square_braces)
@@ -142,6 +156,7 @@ void OptimizedRegularExpressionImpl<b>::analyze(const std::string & regexp, std:
 				}
 				++pos;
 				break;
+
 			/// Квантификаторы, допускающие нулевое количество.
 			case '{':
 				in_curly_braces = true;
@@ -155,10 +170,16 @@ void OptimizedRegularExpressionImpl<b>::analyze(const std::string & regexp, std:
 				}
 				++pos;
 				break;
+
 			case '}':
+				if (!in_curly_braces)
+					goto ordinary;
+
 				in_curly_braces = false;
 				++pos;
 				break;
+
+			ordinary:	/// Обычный, не заэскейпленный символ.
 			default:
 				if (depth == 0 && !in_curly_braces && !in_square_braces)
 				{

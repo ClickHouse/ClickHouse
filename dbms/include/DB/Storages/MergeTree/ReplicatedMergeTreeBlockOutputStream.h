@@ -159,14 +159,6 @@ public:
 			  */
 			if (quorum)
 			{
-				static std::once_flag once_flag;
-				std::call_once(once_flag, [&]
-				{
-					zookeeper->createIfNotExists(storage.zookeeper_path + "/quorum", "");
-					zookeeper->createIfNotExists(storage.zookeeper_path + "/quorum/last_part", "");
-					zookeeper->createIfNotExists(storage.zookeeper_path + "/quorum/failed_parts", "");
-				});
-
 				ReplicatedMergeTreeQuorumEntry quorum_entry;
 				quorum_entry.part_name = part_name;
 				quorum_entry.required_number_of_replicas = quorum;
