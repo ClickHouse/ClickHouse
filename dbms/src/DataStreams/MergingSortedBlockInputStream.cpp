@@ -131,6 +131,7 @@ void MergingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std:
 		++total_merged_rows;
 		if (limit && total_merged_rows == limit)
 		{
+	//		std::cerr << "Limit reached\n";
 			cancel();
 			finished = true;
 			return true;
@@ -138,7 +139,10 @@ void MergingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std:
 
 		++merged_rows;
 		if (merged_rows == max_block_size)
+		{
+	//		std::cerr << "max_block_size reached\n";
 			return true;
+		}
 
 		return false;
 	};
@@ -151,30 +155,39 @@ void MergingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std:
 
 		while (true)
 		{
+	//		std::cerr << "total_merged_rows: " << total_merged_rows << ", merged_rows: " << merged_rows << "\n";
+	//		std::cerr << "Inserting row\n";
 			for (size_t i = 0; i < num_columns; ++i)
 				merged_columns[i]->insertFrom(*current->all_columns[i], current->pos);
 
 			if (!current->isLast())
 			{
+	//			std::cerr << "moving to next row\n";
 				current->next();
 
-				if (!queue.empty() && !(current < queue.top()))
+				if (queue.empty() || !(current < queue.top()))
 				{
 					if (count_row_and_check_limit())
 					{
+	//					std::cerr << "pushing back to queue\n";
 						queue.push(current);
 						return;
 					}
 
 					/// Не кладём курсор обратно в очередь, а продолжаем работать с текущим курсором.
+	//				std::cerr << "current is still on top, using current row\n";
 					continue;
 				}
 				else
+				{
+	//				std::cerr << "next row is not least, pushing back to queue\n";
 					queue.push(current);
+				}
 			}
 			else
 			{
 				/// Достаём из соответствующего источника следующий блок, если есть.
+	//			std::cerr << "It was last row, fetching next block\n";
 				fetchNextBlock(current, queue);
 			}
 
