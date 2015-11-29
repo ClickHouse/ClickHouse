@@ -111,15 +111,15 @@ Block MergingSortedBlockInputStream::readImpl()
 		return Block();
 
 	if (has_collation)
-		merge(merged_columns, queue_with_collation);
+		merge(merged_block, merged_columns, queue_with_collation);
 	else
-		merge(merged_columns, queue);
+		merge(merged_block, merged_columns, queue);
 
 	return merged_block;
 }
 
 template <typename TSortCursor>
-void MergingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
+void MergingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
 {
 	size_t merged_rows = 0;
 
@@ -155,6 +155,57 @@ void MergingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std:
 
 		while (true)
 		{
+			/** А вдруг для текущего курсора блок целиком меньше или равен, чем остальные?
+			  * Или в очереди остался только один источник данных? Тогда можно целиком взять блок текущего курсора.
+			  */
+			if (queue.empty() || (current.impl->isFirst() && current.totallyLessOrEquals(queue.top())))
+			{
+	//			std::cerr << "current block is totally less or equals\n";
+
+				/// Если в текущем блоке уже есть данные, то сначала вернём его. Мы попадём сюда снова при следующем вызове функции merge.
+				if (merged_rows != 0)
+				{
+	//				std::cerr << "merged rows is non-zero\n";
+					queue.push(current);
+					return;
+				}
+
+				size_t source_num = 0;
+				size_t size = cursors.size();
+				for (; source_num < size; ++source_num)
+					if (&cursors[source_num] == current.impl)
+						break;
+
+				if (source_num == size)
+					throw Exception("Logical error in MergingSortedBlockInputStream", ErrorCodes::LOGICAL_ERROR);
+
+				for (size_t i = 0; i < num_columns; ++i)
+					merged_block.unsafeGetByPosition(i).column = source_blocks[source_num].unsafeGetByPosition(i).column;
+
+	//			std::cerr << "copied columns\n";
+
+				size_t merged_rows = merged_block.rows();
+
+				if (limit && total_merged_rows + merged_rows > limit)
+				{
+					merged_rows = limit - total_merged_rows;
+					for (size_t i = 0; i < num_columns; ++i)
+					{
+						auto & column = merged_block.unsafeGetByPosition(i).column;
+						column = column->cut(0, merged_rows);
+					}
+
+					cancel();
+					finished = true;
+				}
+
+	//			std::cerr << "fetching next block\n";
+
+				total_merged_rows += merged_rows;
+				fetchNextBlock(current, queue);
+				return;
+			}
+
 	//		std::cerr << "total_merged_rows: " << total_merged_rows << ", merged_rows: " << merged_rows << "\n";
 	//		std::cerr << "Inserting row\n";
 			for (size_t i = 0; i < num_columns; ++i)
@@ -165,7 +216,7 @@ void MergingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std:
 	//			std::cerr << "moving to next row\n";
 				current->next();
 
-				if (queue.empty() || !(current < queue.top()))
+				if (queue.empty() || !(current.greater(queue.top())))
 				{
 					if (count_row_and_check_limit())
 					{
