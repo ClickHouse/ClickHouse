@@ -45,9 +45,9 @@ public:
 		throw Exception("Method getExtremes is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	ColumnPtr cut(size_t start, size_t length) const override
+	void insertRangeFrom(const IColumn & src, size_t start, size_t length) override
 	{
-		return cloneDummy(length);
+		s += length;
 	}
 
 	ColumnPtr filter(const Filter & filt) const override

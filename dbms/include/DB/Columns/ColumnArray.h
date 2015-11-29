@@ -147,7 +147,7 @@ public:
 		return pos;
 	}
 
-	ColumnPtr cut(size_t start, size_t length) const override;
+	void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
 	void insert(const Field & x) override
 	{

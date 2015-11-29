@@ -145,39 +145,37 @@ public:
 		return pos + string_size;
 	}
 
-	ColumnPtr cut(size_t start, size_t length) const override
+	void insertRangeFrom(const IColumn & src, size_t start, size_t length) override
 	{
 		if (length == 0)
-			return new ColumnString;
+			return;
 
-		if (start + length > offsets.size())
-			throw Exception("Parameter out of bound in IColumnString::cut() method.",
+		const ColumnString & src_concrete = static_cast<const ColumnString &>(src);
+
+		if (start + length > src_concrete.offsets.size())
+			throw Exception("Parameter out of bound in IColumnString::insertRangeFrom method.",
 				ErrorCodes::PARAMETER_OUT_OF_BOUND);
 
-		size_t nested_offset = offsetAt(start);
-		size_t nested_length = offsets[start + length - 1] - nested_offset;
+		size_t nested_offset = src_concrete.offsetAt(start);
+		size_t nested_length = src_concrete.offsets[start + length - 1] - nested_offset;
 
-		ColumnString * res_ = new ColumnString;
-		ColumnPtr res = res_;
+		size_t old_chars_size = chars.size();
+		chars.resize(old_chars_size + nested_length);
+		memcpy(&chars[old_chars_size], &src_concrete.chars[nested_offset], nested_length);
 
-		res_->chars.resize(nested_length);
-		memcpy(&res_->chars[0], &chars[nested_offset], nested_length);
-
-		Offsets_t & res_offsets = res_->offsets;
-
-		if (start == 0)
+		if (start == 0 && offsets.empty())
 		{
-			res_offsets.assign(offsets.begin(), offsets.begin() + length);
+			offsets.assign(src_concrete.offsets.begin(), src_concrete.offsets.begin() + length);
 		}
 		else
 		{
-			res_offsets.resize(length);
+			size_t old_size = offsets.size();
+			size_t prev_max_offset = old_size ? offsets.back() : 0;
+			offsets.resize(old_size + length);
 
 			for (size_t i = 0; i < length; ++i)
-				res_offsets[i] = offsets[start + i] - nested_offset;
+				offsets[old_size + i] = src_concrete.offsets[start + i] - nested_offset + prev_max_offset;
 		}
-
-		return res;
 	}
 
 	ColumnPtr filter(const Filter & filt) const override
