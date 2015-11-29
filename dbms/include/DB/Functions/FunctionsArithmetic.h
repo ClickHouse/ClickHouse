@@ -826,7 +826,7 @@ public:
 		return FunctionUnaryArithmeticMonotonicity<Name>::has();
 	}
 
-	Monotonicity getMonotonicityForRange(const Field & left, const Field & right) const override
+	Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
 	{
 		return FunctionUnaryArithmeticMonotonicity<Name>::get(left, right);
 	}
@@ -856,7 +856,7 @@ typedef FunctionBinaryArithmetic<MinusImpl, 			NameMinus> 				FunctionMinus;
 typedef FunctionBinaryArithmetic<MultiplyImpl,			NameMultiply> 			FunctionMultiply;
 typedef FunctionBinaryArithmetic<DivideFloatingImpl, 	NameDivideFloating>	 	FunctionDivideFloating;
 typedef FunctionBinaryArithmetic<DivideIntegralImpl, 	NameDivideIntegral> 	FunctionDivideIntegral;
-typedef FunctionBinaryArithmetic<DivideIntegralOrZeroImpl, 	NameDivideIntegralOrZero> 	FunctionDivideIntegralOrZero;
+typedef FunctionBinaryArithmetic<DivideIntegralOrZeroImpl, NameDivideIntegralOrZero> FunctionDivideIntegralOrZero;
 typedef FunctionBinaryArithmetic<ModuloImpl, 			NameModulo> 			FunctionModulo;
 typedef FunctionUnaryArithmetic<NegateImpl, 			NameNegate> 			FunctionNegate;
 typedef FunctionUnaryArithmetic<AbsImpl,	 			NameAbs>	 			FunctionAbs;
@@ -876,7 +876,7 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameNegate>
 	static bool has() { return true; }
 	static IFunction::Monotonicity get(const Field & left, const Field & right)
 	{
-		return IFunction::Monotonicity{ .is_monotonic = true, .is_positive = false };
+		return { true, false };
 	}
 };
 
@@ -885,13 +885,13 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameAbs>
 	static bool has() { return true; }
 	static IFunction::Monotonicity get(const Field & left, const Field & right)
 	{
-		Float64 left_float = apply_visitor(FieldVisitorConvertToNumber<Float64>(), left);
-		Float64 right_float = apply_visitor(FieldVisitorConvertToNumber<Float64>(), right);
+		Float64 left_float = left.isNull() ? -std::numeric_limits<Float64>::infinity() : apply_visitor(FieldVisitorConvertToNumber<Float64>(), left);
+		Float64 right_float = right.isNull() ? std::numeric_limits<Float64>::infinity() : apply_visitor(FieldVisitorConvertToNumber<Float64>(), right);
 
 		if ((left_float < 0 && right_float > 0) || (left_float > 0 && right_float < 0))
 			return {};
 
-		return IFunction::Monotonicity{ .is_monotonic = true, .is_positive = (left_float > 0) };
+		return { true, (left_float > 0) };
 	}
 };
 

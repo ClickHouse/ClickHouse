@@ -1037,9 +1037,9 @@ namespace
 			return true;
 		}
 
-		Monotonicity getMonotonicityForRange(const Field & left, const Field & right) const override
+		Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
 		{
-			return Monotonicity{ .is_monotonic = true, .is_positive = true };
+			return { true };
 		}
 	};
 
@@ -1063,7 +1063,7 @@ namespace
 		static bool has() { return true; }
 		static IFunction::Monotonicity get(const Field & left, const Field & right)
 		{
-			return IFunction::Monotonicity{ .is_monotonic = true, .is_positive = true };
+			return { true };
 		}
 	};
 

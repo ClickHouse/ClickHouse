@@ -215,13 +215,9 @@ bool PKCondition::isPrimaryKeyPossiblyWrappedByMonotonicFunctions(
 
 	for (auto it = chain_not_tested_for_monotonicity.rbegin(); it != chain_not_tested_for_monotonicity.rend(); ++it)
 	{
-		std::cerr << "!!\n";
-
 		FunctionPtr func = FunctionFactory::instance().tryGet((*it)->name, context);
 		if (!func || !func->hasInformationAboutMonotonicity())
 			return false;
-
-		std::cerr << "!!!\n";
 
 		out_functions_chain.push_back(func);
 	}
@@ -440,7 +436,14 @@ bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk
 				for (auto & func : element.monotonic_functions_chain)
 				{
 					/// Проверяем монотонность каждой функции на конкретном диапазоне.
-					IFunction::Monotonicity monotonicity = func->getMonotonicityForRange(key_range_transformed.left, key_range_transformed.right);
+					IFunction::Monotonicity monotonicity = func->getMonotonicityForRange(
+						*current_type.get(), key_range_transformed.left, key_range_transformed.right);
+
+				/*	std::cerr << "Function " << func->getName() << " is " << (monotonicity.is_monotonic ? "" : "not ")
+						<< "monotonic " << (monotonicity.is_monotonic ? (monotonicity.is_positive ? "(positive) " : "(negative) ") : "")
+						<< "in range "
+						<< "[" << apply_visitor(FieldVisitorToString(), key_range_transformed.left)
+						<< ", " << apply_visitor(FieldVisitorToString(), key_range_transformed.right) << "]\n";*/
 
 					if (!monotonicity.is_monotonic)
 					{
@@ -450,8 +453,10 @@ bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk
 
 					/// Вычисляем функцию.
 					DataTypePtr new_type;
-					applyFunction(func, current_type, key_range_transformed.left, new_type, key_range_transformed.left);
-					applyFunction(func, current_type, key_range_transformed.right, new_type, key_range_transformed.right);
+					if (!key_range_transformed.left.isNull())
+						applyFunction(func, current_type, key_range_transformed.left, new_type, key_range_transformed.left);
+					if (!key_range_transformed.right.isNull())
+						applyFunction(func, current_type, key_range_transformed.right, new_type, key_range_transformed.right);
 					current_type.swap(new_type);
 
 					if (!monotonicity.is_positive)

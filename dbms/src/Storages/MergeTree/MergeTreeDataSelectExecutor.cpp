@@ -54,7 +54,7 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
 	for (size_t i = 0; i < parts.size(); ++i)
 	{
 		const MergeTreeData::DataPartPtr & part = parts[i];
-		MarkRanges ranges = markRangesFromPkRange(part->index, key_condition, settings);
+		MarkRanges ranges = markRangesFromPKRange(part->index, key_condition, settings);
 
 		/** Для того, чтобы получить оценку снизу количества строк, подходящих под условие на PK,
 		  *  учитываем только гарантированно полные засечки.
@@ -417,7 +417,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 		RangesInDataPart ranges(part, (*part_index)++);
 
 		if (data.mode != MergeTreeData::Unsorted)
-			ranges.ranges = markRangesFromPkRange(part->index, key_condition, settings);
+			ranges.ranges = markRangesFromPKRange(part->index, key_condition, settings);
 		else
 			ranges.ranges = MarkRanges{MarkRange{0, part->size}};
 
@@ -795,7 +795,7 @@ void MergeTreeDataSelectExecutor::createPositiveSignCondition(ExpressionActionsP
 }
 
 /// Получает набор диапазонов засечек, вне которых не могут находиться ключи из заданного диапазона.
-MarkRanges MergeTreeDataSelectExecutor::markRangesFromPkRange(
+MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 	const MergeTreeData::DataPart::Index & index, const PKCondition & key_condition, const Settings & settings) const
 {
 	size_t min_marks_for_seek = (settings.merge_tree_min_rows_for_seek + data.index_granularity - 1) / data.index_granularity;

@@ -97,10 +97,15 @@ public:
 	{
 		bool is_monotonic = false;	/// Является ли функция монотонной (неубывающей или невозрастающей).
 		bool is_positive = true;	/// true, если функция неубывающая, false, если невозрастающая. Если is_monotonic = false, то не важно.
+
+		Monotonicity(bool is_monotonic_ = false, bool is_positive_ = true)
+			: is_monotonic(is_monotonic_), is_positive(is_positive_) {}
 	};
 
-	/// Получить информацию о монотонности на отрезке значений. Вызывайте только если hasInformationAboutMonotonicity.
-	virtual Monotonicity getMonotonicityForRange(const Field & left, const Field & right) const
+	/** Получить информацию о монотонности на отрезке значений. Вызывайте только если hasInformationAboutMonotonicity.
+	  * В качестве одного из аргументов может быть передан NULL. Это значит, что соответствующий диапазон неограничен слева или справа.
+	  */
+	virtual Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const
 	{
 		throw Exception("Function " + getName() + " has no information about its monotonicity.", ErrorCodes::NOT_IMPLEMENTED);
 	}
