@@ -2231,7 +2231,7 @@ void StorageReplicatedMergeTree::checkPart(const String & part_name)
 				settings.setRequireChecksums(true);
 				settings.setRequireColumnFiles(true);
 				MergeTreePartChecker::checkDataPart(
-					data.getFullPath() + part_name, settings, data.primary_key_sample);
+					data.getFullPath() + part_name, settings, data.primary_key_data_types);
 
 				LOG_INFO(log, "Checker: Part " << part_name << " looks good.");
 			}

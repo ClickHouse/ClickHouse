@@ -11,6 +11,7 @@
 #include <DB/Columns/ColumnFixedString.h>
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Functions/IFunction.h>
+#include <DB/Core/FieldVisitors.h>
 #include <ext/range.hpp>
 
 
@@ -996,7 +997,7 @@ struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
 /// Предварительное объявление.
 struct NameToDate			{ static constexpr auto name = "toDate"; };
 
-template <typename ToDataType, typename Name>
+template <typename ToDataType, typename Name, typename Monotonic>
 class FunctionConvert : public IFunction
 {
 public:
@@ -1037,6 +1038,16 @@ public:
 		else
 			throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+	}
+
+	bool hasInformationAboutMonotonicity() const override
+	{
+		return Monotonic::has();
+	}
+
+	Monotonicity getMonotonicityForRange(const Field & left, const Field & right) const override
+	{
+		return Monotonic::get(left, right);
 	}
 
 private:
@@ -1260,6 +1271,52 @@ private:
 };
 
 
+/// Монотонность.
+
+struct PositiveMonotonic
+{
+	static bool has() { return true; }
+	static IFunction::Monotonicity get(const Field & left, const Field & right)
+	{
+		return IFunction::Monotonicity{ .is_monotonic = true, .is_positive = true };
+	}
+};
+
+struct NotMonotonic
+{
+	static bool has() { return false; }
+	static IFunction::Monotonicity get(const Field & left, const Field & right)
+	{
+		return {};
+	}
+};
+
+template <typename T>
+struct ToIntMonotonic
+{
+	static bool has() { return true; }
+	static IFunction::Monotonicity get(const Field & left, const Field & right)
+	{
+		long double left_ld = apply_visitor(FieldVisitorConvertToNumber<long double>(), left);
+		long double right_ld = apply_visitor(FieldVisitorConvertToNumber<long double>(), right);
+
+		/// Числа должны быть одного знака или одно из них должно быть равно нулю. На самом деле, это слишком строгое условие.
+		if ((left_ld < 0 && right_ld > 0) || (left_ld > 0 && right_ld < 0))
+			return {};
+
+		/// Числа должны помещаться в результирующий тип данных. Тоже слишком строгое условие.
+		if (left_ld < std::numeric_limits<T>::lowest()
+			|| left_ld > std::numeric_limits<T>::max()
+			|| right_ld < std::numeric_limits<T>::lowest()
+			|| right_ld > std::numeric_limits<T>::max())
+			return {};
+
+		return IFunction::Monotonicity{ .is_monotonic = true, .is_positive = true };
+	}
+};
+
+
+
 struct NameToUInt8 			{ static constexpr auto name = "toUInt8"; };
 struct NameToUInt16 		{ static constexpr auto name = "toUInt16"; };
 struct NameToUInt32 		{ static constexpr auto name = "toUInt32"; };
@@ -1273,19 +1330,19 @@ struct NameToFloat64		{ static constexpr auto name = "toFloat64"; };
 struct NameToDateTime		{ static constexpr auto name = "toDateTime"; };
 struct NameToString			{ static constexpr auto name = "toString"; };
 
-typedef FunctionConvert<DataTypeUInt8,		NameToUInt8> 		FunctionToUInt8;
-typedef FunctionConvert<DataTypeUInt16,		NameToUInt16> 		FunctionToUInt16;
-typedef FunctionConvert<DataTypeUInt32,		NameToUInt32> 		FunctionToUInt32;
-typedef FunctionConvert<DataTypeUInt64,		NameToUInt64> 		FunctionToUInt64;
-typedef FunctionConvert<DataTypeInt8,		NameToInt8> 		FunctionToInt8;
-typedef FunctionConvert<DataTypeInt16,		NameToInt16> 		FunctionToInt16;
-typedef FunctionConvert<DataTypeInt32,		NameToInt32> 		FunctionToInt32;
-typedef FunctionConvert<DataTypeInt64,		NameToInt64> 		FunctionToInt64;
-typedef FunctionConvert<DataTypeFloat32,	NameToFloat32> 		FunctionToFloat32;
-typedef FunctionConvert<DataTypeFloat64,	NameToFloat64> 		FunctionToFloat64;
-typedef FunctionConvert<DataTypeDate,		NameToDate> 		FunctionToDate;
-typedef FunctionConvert<DataTypeDateTime,	NameToDateTime> 	FunctionToDateTime;
-typedef FunctionConvert<DataTypeString,		NameToString> 		FunctionToString;
-typedef FunctionConvert<DataTypeInt32,		NameToUnixTimestamp> FunctionToUnixTimestamp;
+typedef FunctionConvert<DataTypeUInt8,		NameToUInt8,	ToIntMonotonic<UInt8>> 	FunctionToUInt8;
+typedef FunctionConvert<DataTypeUInt16,		NameToUInt16,	ToIntMonotonic<UInt16>> FunctionToUInt16;
+typedef FunctionConvert<DataTypeUInt32,		NameToUInt32,	ToIntMonotonic<UInt32>> FunctionToUInt32;
+typedef FunctionConvert<DataTypeUInt64,		NameToUInt64,	ToIntMonotonic<UInt64>> FunctionToUInt64;
+typedef FunctionConvert<DataTypeInt8,		NameToInt8,		ToIntMonotonic<Int8>> 	FunctionToInt8;
+typedef FunctionConvert<DataTypeInt16,		NameToInt16,	ToIntMonotonic<Int16>> 	FunctionToInt16;
+typedef FunctionConvert<DataTypeInt32,		NameToInt32,	ToIntMonotonic<Int32>> 	FunctionToInt32;
+typedef FunctionConvert<DataTypeInt64,		NameToInt64,	ToIntMonotonic<Int64>> 	FunctionToInt64;
+typedef FunctionConvert<DataTypeFloat32,	NameToFloat32,	PositiveMonotonic> 		FunctionToFloat32;
+typedef FunctionConvert<DataTypeFloat64,	NameToFloat64,	PositiveMonotonic> 		FunctionToFloat64;
+typedef FunctionConvert<DataTypeDate,		NameToDate,		PositiveMonotonic> 		FunctionToDate;
+typedef FunctionConvert<DataTypeDateTime,	NameToDateTime,	PositiveMonotonic> 		FunctionToDateTime;
+typedef FunctionConvert<DataTypeString,		NameToString, 	NotMonotonic> 			FunctionToString;
+typedef FunctionConvert<DataTypeInt32,		NameToUnixTimestamp, PositiveMonotonic> FunctionToUnixTimestamp;
 
 }

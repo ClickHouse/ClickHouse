@@ -5,6 +5,7 @@
 #include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/Functions/IFunction.h>
 #include <DB/Functions/NumberTraits.h>
+#include <DB/Core/FieldVisitors.h>
 
 
 namespace DB
@@ -713,6 +714,10 @@ public:
 };
 
 
+template <typename FunctionName>
+struct FunctionUnaryArithmeticMonotonicity;
+
+
 template <template <typename> class Op, typename Name>
 class FunctionUnaryArithmetic : public IFunction
 {
@@ -815,6 +820,16 @@ public:
 				+ " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_COLUMN);
 	}
+
+	bool hasInformationAboutMonotonicity() const override
+	{
+		return FunctionUnaryArithmeticMonotonicity<Name>::has();
+	}
+
+	Monotonicity getMonotonicityForRange(const Field & left, const Field & right) const override
+	{
+		return FunctionUnaryArithmeticMonotonicity<Name>::get(left, right);
+	}
 };
 
 
@@ -853,6 +868,41 @@ typedef FunctionBinaryArithmetic<BitShiftLeftImpl,		NameBitShiftLeft> 		Function
 typedef FunctionBinaryArithmetic<BitShiftRightImpl,		NameBitShiftRight> 		FunctionBitShiftRight;
 typedef FunctionBinaryArithmetic<LeastImpl,				NameLeast> 				FunctionLeast;
 typedef FunctionBinaryArithmetic<GreatestImpl,			NameGreatest> 			FunctionGreatest;
+
+/// Свойства монотонности для некоторых функций.
+
+template <> struct FunctionUnaryArithmeticMonotonicity<NameNegate>
+{
+	static bool has() { return true; }
+	static IFunction::Monotonicity get(const Field & left, const Field & right)
+	{
+		return IFunction::Monotonicity{ .is_monotonic = true, .is_positive = false };
+	}
+};
+
+template <> struct FunctionUnaryArithmeticMonotonicity<NameAbs>
+{
+	static bool has() { return true; }
+	static IFunction::Monotonicity get(const Field & left, const Field & right)
+	{
+		Float64 left_float = apply_visitor(FieldVisitorConvertToNumber<Float64>(), left);
+		Float64 right_float = apply_visitor(FieldVisitorConvertToNumber<Float64>(), right);
+
+		if ((left_float < 0 && right_float > 0) || (left_float > 0 && right_float < 0))
+			return {};
+
+		return IFunction::Monotonicity{ .is_monotonic = true, .is_positive = (left_float > 0) };
+	}
+};
+
+template <> struct FunctionUnaryArithmeticMonotonicity<NameBitNot>
+{
+	static bool has() { return false; }
+	static IFunction::Monotonicity get(const Field & left, const Field & right)
+	{
+		return {};
+	}
+};
 
 
 /// Оптимизации для целочисленного деления на константу.

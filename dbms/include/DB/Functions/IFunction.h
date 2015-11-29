@@ -85,6 +85,26 @@ public:
 		execute(block, arguments, result);
 	}
 
+	/** Позволяет узнать, является ли функция монотонной в некотором диапазоне значений.
+	  * Это используется для работы с индексом в сортированном куске данных.
+	  * И позволяет использовать индекс не только, когда написано, например date >= const, но и, например, toMonth(date) >= 11.
+	  * Всё это рассматривается только для функций одного аргумента.
+	  */
+	virtual bool hasInformationAboutMonotonicity() const { return false; }
+
+	/// Свойство монотонности на некотором диапазоне.
+	struct Monotonicity
+	{
+		bool is_monotonic = false;	/// Является ли функция монотонной (неубывающей или невозрастающей).
+		bool is_positive = true;	/// true, если функция неубывающая, false, если невозрастающая. Если is_monotonic = false, то не важно.
+	};
+
+	/// Получить информацию о монотонности на отрезке значений. Вызывайте только если hasInformationAboutMonotonicity.
+	virtual Monotonicity getMonotonicityForRange(const Field & left, const Field & right) const
+	{
+		throw Exception("Function " + getName() + " has no information about its monotonicity.", ErrorCodes::NOT_IMPLEMENTED);
+	}
+
 	virtual ~IFunction() {}
 };
 

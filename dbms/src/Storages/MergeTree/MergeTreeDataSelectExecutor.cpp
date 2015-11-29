@@ -16,6 +16,7 @@
 #include <DB/DataStreams/SummingSortedBlockInputStream.h>
 #include <DB/DataStreams/AggregatingSortedBlockInputStream.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypeDate.h>
 #include <DB/Common/VirtualColumnUtils.h>
 
 
@@ -134,12 +135,17 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	PKCondition key_condition(query, context, data.getColumnsList(), data.getSortDescription());
 	PKCondition date_condition(query, context, data.getColumnsList(), SortDescription(1, SortColumnDescription(data.date_column_name, 1)));
 
+	if (settings.force_primary_key && key_condition.alwaysUnknown())
+		throw Exception("Primary key is not used and setting 'force_primary_key' is set.", ErrorCodes::INDEX_NOT_USED);
+
 	if (settings.force_index_by_date && date_condition.alwaysUnknown())
 		throw Exception("Index by date is not used and setting 'force_index_by_date' is set.", ErrorCodes::INDEX_NOT_USED);
 
 	/// Выберем куски, в которых могут быть данные, удовлетворяющие date_condition, и которые подходят под условие на _part,
 	///  а также max_block_number_to_read.
 	{
+		const DataTypes data_types_date { new DataTypeDate };
+
 		auto prev_parts = parts;
 		parts.clear();
 
@@ -151,7 +157,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 			Field left = static_cast<UInt64>(part->left_date);
 			Field right = static_cast<UInt64>(part->right_date);
 
-			if (!date_condition.mayBeTrueInRange(&left, &right))
+			if (!date_condition.mayBeTrueInRange(&left, &right, data_types_date))
 				continue;
 
 			if (max_block_number_to_read && part->right > max_block_number_to_read)
@@ -820,9 +826,9 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPkRange(
 
 			bool may_be_true;
 			if (range.end == marks_count)
-				may_be_true = key_condition.mayBeTrueAfter(&index[range.begin * key_size]);
+				may_be_true = key_condition.mayBeTrueAfter(&index[range.begin * key_size], data.primary_key_data_types);
 			else
-				may_be_true = key_condition.mayBeTrueInRange(&index[range.begin * key_size], &index[range.end * key_size]);
+				may_be_true = key_condition.mayBeTrueInRange(&index[range.begin * key_size], &index[range.end * key_size], data.primary_key_data_types);
 
 			if (!may_be_true)
 				continue;
