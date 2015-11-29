@@ -489,9 +489,7 @@ bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk
 				auto ast_set = typeid_cast<const ASTSet *>(args[1].get());
 				if (in_func && ast_set)
 				{
-					const Range & key_range = key_ranges[element.key_column];
-
-					rpn_stack.push_back(ast_set->set->mayBeTrueInRange(key_range));
+					rpn_stack.push_back(ast_set->set->mayBeTrueInRange(*key_range));
 					if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
 						rpn_stack.back() = !rpn_stack.back();
 				}
