@@ -158,7 +158,7 @@ void MergingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs 
 			/** А вдруг для текущего курсора блок целиком меньше или равен, чем остальные?
 			  * Или в очереди остался только один источник данных? Тогда можно целиком взять блок текущего курсора.
 			  */
-			if (queue.empty() || (current.impl->isFirst() && current.totallyLessOrEquals(queue.top())))
+			if (current.impl->isFirst() && (queue.empty() || current.totallyLessOrEquals(queue.top())))
 			{
 	//			std::cerr << "current block is totally less or equals\n";
 
