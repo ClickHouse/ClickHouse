@@ -837,6 +837,26 @@ protected:
 	Names key_names;
 	AggregateDescriptions aggregates;
 	AggregateFunctionsPlainPtrs aggregate_functions;
+
+	/** Данный массив служит для двух целей.
+	  *
+	  * 1. Аргументы функции собраны рядом, и их не нужно собирать из разных мест. Также массив сделан zero-terminated.
+	  * Внутренний цикл (для случая without_key) получается почти в два раза компактнее; прирост производительности около 30%.
+	  *
+	  * 2. Вызов по указателю на функцию лучше, чем виртуальный вызов, потому что в случае виртуального вызова,
+	  *  GCC 5.1.2 генерирует код, который на каждой итерации цикла заново грузит из памяти в регистр адрес функции
+	  *  (значение по смещению в таблице виртуальных функций).
+	  */
+	struct AggregateFunctionInstruction
+	{
+		const IAggregateFunction * that;
+		IAggregateFunction::AddFunc func;
+		size_t state_offset;
+		const IColumn ** arguments;
+	};
+
+	using AggregateFunctionInstructions = std::vector<AggregateFunctionInstruction>;
+
 	size_t keys_size;
 	size_t aggregates_size;
 	/// Нужно ли класть в AggregatedDataVariants::without_key агрегаты для ключей, не попавших в max_rows_to_group_by.
@@ -915,7 +935,7 @@ protected:
 		Arena * aggregates_pool,
 		size_t rows,
 		ConstColumnPlainPtrs & key_columns,
-		AggregateColumns & aggregate_columns,
+		AggregateFunctionInstruction * aggregate_instructions,
 		const Sizes & key_sizes,
 		StringRefs & keys,
 		bool no_more_keys,
@@ -929,7 +949,7 @@ protected:
 		Arena * aggregates_pool,
 		size_t rows,
 		ConstColumnPlainPtrs & key_columns,
-		AggregateColumns & aggregate_columns,
+		AggregateFunctionInstruction * aggregate_instructions,
 		const Sizes & key_sizes,
 		StringRefs & keys,
 		AggregateDataPtr overflow_row) const;
@@ -938,7 +958,7 @@ protected:
 	void executeWithoutKeyImpl(
 		AggregatedDataWithoutKey & res,
 		size_t rows,
-		AggregateColumns & aggregate_columns) const;
+		AggregateFunctionInstruction * aggregate_instructions) const;
 
 public:
 	/// Шаблоны, инстанцирующиеся путём динамической компиляции кода - см. SpecializedAggregator.h

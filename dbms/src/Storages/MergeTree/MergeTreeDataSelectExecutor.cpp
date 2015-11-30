@@ -1,9 +1,12 @@
+#include <boost/rational.hpp>	/// Для вычислений, связанных с коэффициентами сэмплирования.
+
 #include <DB/Core/FieldVisitors.h>
 #include <DB/Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <DB/Storages/MergeTree/MergeTreeBlockInputStream.h>
 #include <DB/Storages/MergeTree/MergeTreeReadPool.h>
 #include <DB/Storages/MergeTree/MergeTreeThreadBlockInputStream.h>
 #include <DB/Parsers/ASTIdentifier.h>
+#include <DB/Parsers/ASTSampleRatio.h>
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
 #include <DB/DataStreams/FilterBlockInputStream.h>
 #include <DB/DataStreams/CollapsingFinalBlockInputStream.h>
@@ -13,6 +16,7 @@
 #include <DB/DataStreams/SummingSortedBlockInputStream.h>
 #include <DB/DataStreams/AggregatingSortedBlockInputStream.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypeDate.h>
 #include <DB/Common/VirtualColumnUtils.h>
 
 
@@ -50,7 +54,7 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
 	for (size_t i = 0; i < parts.size(); ++i)
 	{
 		const MergeTreeData::DataPartPtr & part = parts[i];
-		MarkRanges ranges = markRangesFromPkRange(part->index, key_condition, settings);
+		MarkRanges ranges = markRangesFromPKRange(part->index, key_condition, settings);
 
 		/** Для того, чтобы получить оценку снизу количества строк, подходящих под условие на PK,
 		  *  учитываем только гарантированно полные засечки.
@@ -65,10 +69,13 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
 }
 
 
-/** Пожалуй, наиболее удобный способ разбить диапазон 64-битных целых чисел на интервалы по их относительной величине
-  * - использовать для этого long double. Это некроссплатформенно. Надо, чтобы long double содержал хотя бы 64 бита мантиссы.
-  */
-using RelativeSize = long double;
+using RelativeSize = boost::rational<ASTSampleRatio::BigNum>;
+
+static std::ostream & operator<<(std::ostream & ostr, const RelativeSize & x)
+{
+	ostr << ASTSampleRatio::toString(x.numerator()) << "/" << ASTSampleRatio::toString(x.denominator());
+	return ostr;
+}
 
 
 /// Переводит размер сэмпла в приблизительном количестве строк (вида SAMPLE 1000000) в относительную величину (вида SAMPLE 0.1).
@@ -77,8 +84,10 @@ static RelativeSize convertAbsoluteSampleSizeToRelative(const ASTPtr & node, siz
 	if (approx_total_rows == 0)
 		return 1;
 
-	size_t absolute_sample_size = apply_visitor(FieldVisitorConvertToNumber<UInt64>(), typeid_cast<const ASTLiteral &>(*node).value);
-	return std::min(RelativeSize(1.0), RelativeSize(absolute_sample_size) / approx_total_rows);
+	const ASTSampleRatio & node_sample = typeid_cast<const ASTSampleRatio &>(*node);
+
+	auto absolute_sample_size = node_sample.ratio.numerator / node_sample.ratio.denominator;
+	return std::min(RelativeSize(1), RelativeSize(absolute_sample_size) / approx_total_rows);
 }
 
 
@@ -126,12 +135,17 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	PKCondition key_condition(query, context, data.getColumnsList(), data.getSortDescription());
 	PKCondition date_condition(query, context, data.getColumnsList(), SortDescription(1, SortColumnDescription(data.date_column_name, 1)));
 
+	if (settings.force_primary_key && key_condition.alwaysUnknown())
+		throw Exception("Primary key is not used and setting 'force_primary_key' is set.", ErrorCodes::INDEX_NOT_USED);
+
 	if (settings.force_index_by_date && date_condition.alwaysUnknown())
 		throw Exception("Index by date is not used and setting 'force_index_by_date' is set.", ErrorCodes::INDEX_NOT_USED);
 
 	/// Выберем куски, в которых могут быть данные, удовлетворяющие date_condition, и которые подходят под условие на _part,
 	///  а также max_block_number_to_read.
 	{
+		const DataTypes data_types_date { new DataTypeDate };
+
 		auto prev_parts = parts;
 		parts.clear();
 
@@ -143,7 +157,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 			Field left = static_cast<UInt64>(part->left_date);
 			Field right = static_cast<UInt64>(part->right_date);
 
-			if (!date_condition.mayBeTrueInRange(&left, &right))
+			if (!date_condition.mayBeTrueInRange(&left, &right, data_types_date))
 				continue;
 
 			if (max_block_number_to_read && part->right > max_block_number_to_read)
@@ -166,16 +180,18 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 	if (select.sample_size)
 	{
-		relative_sample_size = apply_visitor(FieldVisitorConvertToNumber<RelativeSize>(),
-			typeid_cast<ASTLiteral&>(*select.sample_size).value);
+		relative_sample_size.assign(
+			typeid_cast<const ASTSampleRatio &>(*select.sample_size).ratio.numerator,
+			typeid_cast<const ASTSampleRatio &>(*select.sample_size).ratio.denominator);
 
 		if (relative_sample_size < 0)
 			throw Exception("Negative sample size", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
 		relative_sample_offset = 0;
 		if (select.sample_offset)
-			relative_sample_offset = apply_visitor(FieldVisitorConvertToNumber<RelativeSize>(),
-				typeid_cast<ASTLiteral&>(*select.sample_offset).value);
+			relative_sample_offset.assign(
+				typeid_cast<const ASTSampleRatio &>(*select.sample_offset).ratio.numerator,
+				typeid_cast<const ASTSampleRatio &>(*select.sample_offset).ratio.denominator);
 
 		if (relative_sample_offset < 0)
 			throw Exception("Negative sample offset", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
@@ -234,10 +250,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	  *        <------> - size
 	  *        <--><--> - кусочки для разных parallel_replica_offset, выбираем второй.
 	  *
-	  * TODO
 	  * Очень важно, чтобы интервалы для разных parallel_replica_offset покрывали весь диапазон без пропусков и перекрытий.
 	  * Также важно, чтобы весь юнивёрсум можно было покрыть, используя SAMPLE 0.1 OFFSET 0, ... OFFSET 0.9 и похожие десятичные дроби.
-	  * Сейчас это не гарантируется.
 	  */
 
 	bool use_sampling = relative_sample_size > 0 || settings.parallel_replicas_count > 1;
@@ -261,6 +275,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 		if (settings.parallel_replicas_count > 1)
 		{
+			if (relative_sample_size == 0)
+				relative_sample_size = 1;
+
 			relative_sample_size /= settings.parallel_replicas_count;
 			relative_sample_offset += relative_sample_size * settings.parallel_replica_offset;
 		}
@@ -272,23 +289,23 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 		bool has_lower_limit = false;
 		bool has_upper_limit = false;
 
-		RelativeSize lower_limit_float = relative_sample_offset * size_of_universum;
-		RelativeSize upper_limit_float = (relative_sample_offset + relative_sample_size) * size_of_universum;
+		RelativeSize lower_limit_rational = relative_sample_offset * size_of_universum;
+		RelativeSize upper_limit_rational = (relative_sample_offset + relative_sample_size) * size_of_universum;
 
-		UInt64 lower = lower_limit_float;
-		UInt64 upper = upper_limit_float;
+		UInt64 lower = boost::rational_cast<ASTSampleRatio::BigNum>(lower_limit_rational);
+		UInt64 upper = boost::rational_cast<ASTSampleRatio::BigNum>(upper_limit_rational);
 
 		if (lower > 0)
 			has_lower_limit = true;
 
-		if (upper_limit_float <= size_of_universum)
+		if (upper_limit_rational < size_of_universum)
 			has_upper_limit = true;
 
-/*		std::cerr << std::fixed << std::setprecision(100)
+		/*std::cerr << std::fixed << std::setprecision(100)
 			<< "relative_sample_size: " << relative_sample_size << "\n"
 			<< "relative_sample_offset: " << relative_sample_offset << "\n"
-			<< "lower_limit_float: " << lower_limit_float << "\n"
-			<< "upper_limit_float: " << upper_limit_float << "\n"
+			<< "lower_limit_float: " << lower_limit_rational << "\n"
+			<< "upper_limit_float: " << upper_limit_rational << "\n"
 			<< "lower: " << lower << "\n"
 			<< "upper: " << upper << "\n";*/
 
@@ -400,7 +417,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 		RangesInDataPart ranges(part, (*part_index)++);
 
 		if (data.mode != MergeTreeData::Unsorted)
-			ranges.ranges = markRangesFromPkRange(part->index, key_condition, settings);
+			ranges.ranges = markRangesFromPKRange(part->index, key_condition, settings);
 		else
 			ranges.ranges = MarkRanges{MarkRange{0, part->size}};
 
@@ -778,7 +795,7 @@ void MergeTreeDataSelectExecutor::createPositiveSignCondition(ExpressionActionsP
 }
 
 /// Получает набор диапазонов засечек, вне которых не могут находиться ключи из заданного диапазона.
-MarkRanges MergeTreeDataSelectExecutor::markRangesFromPkRange(
+MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 	const MergeTreeData::DataPart::Index & index, const PKCondition & key_condition, const Settings & settings) const
 {
 	size_t min_marks_for_seek = (settings.merge_tree_min_rows_for_seek + data.index_granularity - 1) / data.index_granularity;
@@ -809,9 +826,9 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPkRange(
 
 			bool may_be_true;
 			if (range.end == marks_count)
-				may_be_true = key_condition.mayBeTrueAfter(&index[range.begin * key_size]);
+				may_be_true = key_condition.mayBeTrueAfter(&index[range.begin * key_size], data.primary_key_data_types);
 			else
-				may_be_true = key_condition.mayBeTrueInRange(&index[range.begin * key_size], &index[range.end * key_size]);
+				may_be_true = key_condition.mayBeTrueInRange(&index[range.begin * key_size], &index[range.end * key_size], data.primary_key_data_types);
 
 			if (!may_be_true)
 				continue;

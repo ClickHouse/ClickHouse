@@ -23,7 +23,7 @@ public:
 		const std::string & name, const DictionaryStructure & dict_struct, DictionarySourcePtr source_ptr,
 		const DictionaryLifetime dict_lifetime, bool require_nonempty)
 	: name{name}, dict_struct(dict_struct), source_ptr{std::move(source_ptr)}, dict_lifetime(dict_lifetime),
-	  require_nonempty(require_nonempty), key_description{createKeyDescription(dict_struct)}
+	  require_nonempty(require_nonempty)
 	{
 		createAttributes();
 
@@ -82,12 +82,12 @@ public:
 		return dict_struct.attributes[&getAttribute(attribute_name) - attributes.data()].injective;
 	}
 
-#define DECLARE_MULTIPLE_GETTER(TYPE)\
+#define DECLARE(TYPE)\
 	void get##TYPE(\
 		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
 		PODArray<TYPE> & out) const\
 	{\
-		validateKeyTypes(key_types);\
+		dict_struct.validateKeyTypes(key_types);\
 		\
 		const auto & attribute = getAttribute(attribute_name);\
 		if (attribute.type != AttributeUnderlyingType::TYPE)\
@@ -102,22 +102,22 @@ public:
 			[&] (const std::size_t row, const auto value) { out[row] = value; },\
 			[&] (const std::size_t) { return null_value; });\
 	}
-	DECLARE_MULTIPLE_GETTER(UInt8)
-	DECLARE_MULTIPLE_GETTER(UInt16)
-	DECLARE_MULTIPLE_GETTER(UInt32)
-	DECLARE_MULTIPLE_GETTER(UInt64)
-	DECLARE_MULTIPLE_GETTER(Int8)
-	DECLARE_MULTIPLE_GETTER(Int16)
-	DECLARE_MULTIPLE_GETTER(Int32)
-	DECLARE_MULTIPLE_GETTER(Int64)
-	DECLARE_MULTIPLE_GETTER(Float32)
-	DECLARE_MULTIPLE_GETTER(Float64)
-#undef DECLARE_MULTIPLE_GETTER
+	DECLARE(UInt8)
+	DECLARE(UInt16)
+	DECLARE(UInt32)
+	DECLARE(UInt64)
+	DECLARE(Int8)
+	DECLARE(Int16)
+	DECLARE(Int32)
+	DECLARE(Int64)
+	DECLARE(Float32)
+	DECLARE(Float64)
+#undef DECLARE
 	void getString(
 		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,
 		ColumnString * out) const
 	{
-		validateKeyTypes(key_types);
+		dict_struct.validateKeyTypes(key_types);
 
 		const auto & attribute = getAttribute(attribute_name);
 		if (attribute.type != AttributeUnderlyingType::String)
@@ -133,12 +133,12 @@ public:
 			[&] (const std::size_t) { return null_value; });
 	}
 
-#define DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(TYPE)\
+#define DECLARE(TYPE)\
 	void get##TYPE(\
 		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
 		const PODArray<TYPE> & def, PODArray<TYPE> & out) const\
 	{\
- 		validateKeyTypes(key_types);\
+ 		dict_struct.validateKeyTypes(key_types);\
  		\
 		const auto & attribute = getAttribute(attribute_name);\
 		if (attribute.type != AttributeUnderlyingType::TYPE)\
@@ -151,22 +151,22 @@ public:
 			[&] (const std::size_t row, const auto value) { out[row] = value; },\
 			[&] (const std::size_t row) { return def[row]; });\
 	}
-	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(UInt8)
-	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(UInt16)
-	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(UInt32)
-	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(UInt64)
-	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Int8)
-	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Int16)
-	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Int32)
-	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Int64)
-	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Float32)
-	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Float64)
-#undef DECLARE_MULTIPLE_GETTER_WITH_DEFAULT
+	DECLARE(UInt8)
+	DECLARE(UInt16)
+	DECLARE(UInt32)
+	DECLARE(UInt64)
+	DECLARE(Int8)
+	DECLARE(Int16)
+	DECLARE(Int32)
+	DECLARE(Int64)
+	DECLARE(Float32)
+	DECLARE(Float64)
+#undef DECLARE
 	void getString(
 		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,
 		const ColumnString * const def, ColumnString * const out) const
 	{
- 		validateKeyTypes(key_types);
+ 		dict_struct.validateKeyTypes(key_types);
 
 		const auto & attribute = getAttribute(attribute_name);
 		if (attribute.type != AttributeUnderlyingType::String)
@@ -180,9 +180,56 @@ public:
 			[&] (const std::size_t row) { return def->getDataAt(row); });
 	}
 
+#define DECLARE(TYPE)\
+	void get##TYPE(\
+		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
+		const TYPE def, PODArray<TYPE> & out) const\
+	{\
+ 		dict_struct.validateKeyTypes(key_types);\
+ 		\
+		const auto & attribute = getAttribute(attribute_name);\
+		if (attribute.type != AttributeUnderlyingType::TYPE)\
+			throw Exception{\
+				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
+				ErrorCodes::TYPE_MISMATCH\
+			};\
+		\
+		getItems<TYPE>(attribute, key_columns,\
+			[&] (const std::size_t row, const auto value) { out[row] = value; },\
+			[&] (const std::size_t) { return def; });\
+	}
+	DECLARE(UInt8)
+	DECLARE(UInt16)
+	DECLARE(UInt32)
+	DECLARE(UInt64)
+	DECLARE(Int8)
+	DECLARE(Int16)
+	DECLARE(Int32)
+	DECLARE(Int64)
+	DECLARE(Float32)
+	DECLARE(Float64)
+#undef DECLARE
+	void getString(
+		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,
+		const String & def, ColumnString * const out) const
+	{
+ 		dict_struct.validateKeyTypes(key_types);
+
+		const auto & attribute = getAttribute(attribute_name);
+		if (attribute.type != AttributeUnderlyingType::String)
+			throw Exception{
+				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
+				ErrorCodes::TYPE_MISMATCH
+			};
+
+		getItems<StringRef>(attribute, key_columns,
+			[&] (const std::size_t row, const StringRef value) { out->insertData(value.data, value.size); },
+			[&] (const std::size_t) { return StringRef{def}; });
+	}
+
 	void has(const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types, PODArray<UInt8> & out) const
 	{
-		validateKeyTypes(key_types);
+		dict_struct.validateKeyTypes(key_types);
 
 		const auto & attribute = attributes.front();
 
@@ -372,50 +419,6 @@ private:
 		return attr;
 	}
 
-	static std::string createKeyDescription(const DictionaryStructure & dict_struct)
-	{
-		std::ostringstream out;
-
-		out << '(';
-
-		auto first = true;
-		for (const auto & key : *dict_struct.key)
-		{
-			if (!first)
-				out << ", ";
-
-			first = false;
-
-			out << key.type->getName();
-		}
-
-		out << ')';
-
-		return out.str();
-	}
-
-	void validateKeyTypes(const DataTypes & key_types) const
-	{
-		if (key_types.size() != dict_struct.key->size())
-			throw Exception{
-				"Key structure does not match, expected " + key_description,
-				ErrorCodes::TYPE_MISMATCH
-			};
-
-		for (const auto i : ext::range(0, key_types.size()))
-		{
-			const auto & expected_type = (*dict_struct.key)[i].type->getName();
-			const auto & actual_type = key_types[i]->getName();
-
-			if (expected_type != actual_type)
-				throw Exception{
-					"Key type at position " + std::to_string(i) + " does not match, expected " + expected_type +
-						", found " + actual_type,
-					ErrorCodes::TYPE_MISMATCH
-				};
-		}
-	}
-
 	template <typename T, typename ValueSetter, typename DefaultGetter>
 	void getItems(
 		const attribute_t & attribute, const ConstColumnPlainPtrs & key_columns, ValueSetter && set_value,
@@ -542,7 +545,7 @@ private:
 	const DictionarySourcePtr source_ptr;
 	const DictionaryLifetime dict_lifetime;
 	const bool require_nonempty;
-	const std::string key_description;
+	const std::string key_description{dict_struct.getKeyDescription()};
 
 	std::map<std::string, std::size_t> attribute_index_by_name;
 	std::vector<attribute_t> attributes;

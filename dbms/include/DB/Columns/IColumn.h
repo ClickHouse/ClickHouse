@@ -111,7 +111,12 @@ public:
 	/** Удалить всё кроме диапазона элементов.
 	  * Используется, например, для операции LIMIT.
 	  */
-	virtual SharedPtr<IColumn> cut(size_t start, size_t length) const = 0;
+	virtual SharedPtr<IColumn> cut(size_t start, size_t length) const
+	{
+		SharedPtr<IColumn> res = cloneEmpty();
+		res.get()->insertRangeFrom(*this, start, length);
+		return res;
+	}
 
 	/** Вставить значение в конец столбца (количество значений увеличится на 1).
 	  * Используется для преобразования из строк в блоки (например, при чтении значений из текстового дампа)
@@ -122,6 +127,11 @@ public:
 	  * Используется для merge-sort. Может быть реализована оптимальнее, чем реализация по-умолчанию.
 	  */
 	virtual void insertFrom(const IColumn & src, size_t n) { insert(src[n]); }
+
+	/** Вставить в конец столбца диапазон элементов из другого столбца.
+	  * Может использоваться для склейки столбцов.
+	  */
+	virtual void insertRangeFrom(const IColumn & src, size_t start, size_t length) = 0;
 
 	/** Вставить данные, расположенные в указанном куске памяти, если возможно.
 	  * (если не реализуемо - кидает исключение)
@@ -225,10 +235,6 @@ public:
 
 	virtual ~IColumn() {}
 };
-
-
-/// Считает, сколько байт в filt больше нуля.
-size_t countBytesInFilter(const IColumn::Filter & filt);
 
 
 }

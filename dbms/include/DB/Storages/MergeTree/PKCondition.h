@@ -10,6 +10,7 @@
 #include <DB/Parsers/ASTFunction.h>
 #include <DB/Parsers/ASTLiteral.h>
 #include <DB/Storages/MergeTree/BoolMask.h>
+#include <DB/Functions/IFunction.h>
 
 
 namespace DB
@@ -142,6 +143,13 @@ public:
 		return true;
 	}
 
+	void swapLeftAndRight()
+	{
+		std::swap(left, right);
+		std::swap(left_bounded, right_bounded);
+		std::swap(left_included, right_included);
+	}
+
 	String toString() const
 	{
 		std::stringstream str;
@@ -181,15 +189,16 @@ public:
 	static const AtomMap atom_map;
 
 	/// Не учитывает секцию SAMPLE. all_columns - набор всех столбцов таблицы.
-	PKCondition(ASTPtr query, const Context & context, const NamesAndTypesList & all_columns, const SortDescription & sort_descr);
+	PKCondition(ASTPtr & query, const Context & context, const NamesAndTypesList & all_columns, const SortDescription & sort_descr);
 
 	/// Выполнимо ли условие в диапазоне ключей.
 	/// left_pk и right_pk должны содержать все поля из sort_descr в соответствующем порядке.
-	bool mayBeTrueInRange(const Field * left_pk, const Field * right_pk) const;
+	/// data_types - типы столбцов первичного ключа.
+	bool mayBeTrueInRange(const Field * left_pk, const Field * right_pk, const DataTypes & data_types) const;
 
 	/// Выполнимо ли условие в полубесконечном (не ограниченном справа) диапазоне ключей.
 	/// left_pk должен содержать все поля из sort_descr в соответствующем порядке.
-	bool mayBeTrueAfter(const Field * left_pk) const;
+	bool mayBeTrueAfter(const Field * left_pk, const DataTypes & data_types) const;
 
 	/// Проверяет, что индекс не может быть использован.
 	bool alwaysUnknown() const;
@@ -236,18 +245,41 @@ private:
 		/// Для FUNCTION_IN_RANGE и FUNCTION_NOT_IN_RANGE.
 		Range range;
 		size_t key_column;
-		/// Для FUNCTION_IN_SET
+		/// Для FUNCTION_IN_SET, FUNCTION_NOT_IN_SET
 		ASTPtr in_function;
+
+		/** Цепочка возможно-монотонных функций.
+		  * Если столбец первичного ключа завёрнут в функции, которые могут быть монотонными в некоторых диапазонах значений
+		  * (например: -toFloat64(toDayOfWeek(date))), то здесь будут расположены функции: toDayOfWeek, toFloat64, negate.
+		  */
+		using MonotonicFunctionsChain = std::vector<FunctionPtr>;
+		mutable MonotonicFunctionsChain monotonic_functions_chain;	/// Выполнение функции не нарушает константность.
 	};
 
 	typedef std::vector<RPNElement> RPN;
 	typedef std::map<String, size_t> ColumnIndices;
 
-	bool mayBeTrueInRange(const Field * left_pk, const Field * right_pk, bool right_bounded) const;
+	bool mayBeTrueInRange(const Field * left_pk, const Field * right_pk, const DataTypes & data_types, bool right_bounded) const;
 
-	void traverseAST(ASTPtr & node, Block & block_with_constants);
-	bool atomFromAST(ASTPtr & node, Block & block_with_constants, RPNElement & out);
-	bool operatorFromAST(ASTFunction * func, RPNElement & out);
+	void traverseAST(ASTPtr & node, const Context & context, Block & block_with_constants);
+	bool atomFromAST(ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out);
+	bool operatorFromAST(const ASTFunction * func, RPNElement & out);
+
+	/** Является ли node столбцом первичного ключа
+	  *  или выражением, в котором столбец первичного ключа завёрнут в цепочку функций,
+	  *  которые могут быть монотонными на некоторых диапазонах.
+	  * Если да - вернуть номер этого столбца в первичном ключе, а также заполнить цепочку возможно-монотонных функций.
+	  */
+	bool isPrimaryKeyPossiblyWrappedByMonotonicFunctions(
+		const ASTPtr & node,
+		const Context & context,
+		size_t & out_primary_key_column_num,
+		RPNElement::MonotonicFunctionsChain & out_functions_chain);
+
+	bool isPrimaryKeyPossiblyWrappedByMonotonicFunctionsImpl(
+		const ASTPtr & node,
+		size_t & out_primary_key_column_num,
+		std::vector<const ASTFunction *> & out_functions_chain);
 
 	RPN rpn;
 

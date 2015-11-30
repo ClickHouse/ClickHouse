@@ -229,6 +229,13 @@ public:
 		static_cast<ColumnUInt8 &>(to).getData().push_back(match(events_it, events_end));
 	}
 
+	static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num)
+	{
+		return static_cast<const AggregateFunctionSequenceMatch &>(*that).add(place, columns, row_num);
+	}
+
+	IAggregateFunction::AddFunc getAddressOfAddFunction() const override final { return &addFree; }
+
 private:
 	enum class PatternActionType
 	{

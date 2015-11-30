@@ -252,7 +252,7 @@ static size_t checkColumn(const String & path, const String & name, DataTypePtr 
 void MergeTreePartChecker::checkDataPart(
 	String path,
 	const Settings & settings,
-	const Block & primary_key_sample,
+	const DataTypes & primary_key_data_types,
 	MergeTreeData::DataPart::Checksums * out_checksums)
 {
 	if (!path.empty() && path.back() != '/')
@@ -284,15 +284,15 @@ void MergeTreePartChecker::checkDataPart(
 		ReadBufferFromFile file_buf(path + "primary.idx");
 		HashingReadBuffer hashing_buf(file_buf);
 
-		if (primary_key_sample)
+		if (!primary_key_data_types.empty())
 		{
 			Field tmp_field;
-			size_t key_size = primary_key_sample.columns();
+			size_t key_size = primary_key_data_types.size();
 			while (!hashing_buf.eof())
 			{
 				++marks_in_primary_key;
 				for (size_t j = 0; j < key_size; ++j)
-					primary_key_sample.unsafeGetByPosition(j).type->deserializeBinary(tmp_field, hashing_buf);
+					primary_key_data_types[j].get()->deserializeBinary(tmp_field, hashing_buf);
 			}
 		}
 		else
@@ -363,7 +363,7 @@ void MergeTreePartChecker::checkDataPart(
 	if (rows == Stream::UNKNOWN)
 		throw Exception("No columns", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
 
-	if (primary_key_sample)
+	if (!primary_key_data_types.empty())
 	{
 		const size_t expected_marks = (rows - 1) / settings.index_granularity + 1;
 		if (expected_marks != marks_in_primary_key)

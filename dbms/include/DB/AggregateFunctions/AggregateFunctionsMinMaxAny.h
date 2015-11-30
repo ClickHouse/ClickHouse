@@ -139,7 +139,7 @@ struct SingleValueDataFixed
 /** Для строк. Короткие строки хранятся в самой структуре, а длинные выделяются отдельно.
   * NOTE Могло бы подойти также для массивов чисел.
   */
-struct __attribute__((__packed__)) SingleValueDataString
+struct __attribute__((__packed__, __aligned__(1))) SingleValueDataString
 {
 	typedef SingleValueDataString Self;
 
@@ -148,10 +148,10 @@ struct __attribute__((__packed__)) SingleValueDataString
 	static constexpr Int32 AUTOMATIC_STORAGE_SIZE = 64;
 	static constexpr Int32 MAX_SMALL_STRING_SIZE = AUTOMATIC_STORAGE_SIZE - sizeof(size);
 
-	union __attribute__((__aligned__(1)))
+	union __attribute__((__packed__, __aligned__(1)))
 	{
 		char small_data[MAX_SMALL_STRING_SIZE];	/// Включая завершающий ноль.
-		char * __attribute__((__aligned__(1))) large_data;
+		char * __attribute__((__packed__, __aligned__(1))) large_data;
 	};
 
 	~SingleValueDataString()
@@ -335,6 +335,10 @@ struct __attribute__((__packed__)) SingleValueDataString
 			return false;
 	}
 };
+
+static_assert(
+	sizeof(SingleValueDataString) == SingleValueDataString::AUTOMATIC_STORAGE_SIZE,
+	"Incorrect size of SingleValueDataString struct");
 
 
 /// Для любых других типов значений.
