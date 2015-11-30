@@ -23,14 +23,10 @@ public:
 	  */
 	ParallelAggregatingBlockInputStream(
 		BlockInputStreams inputs, BlockInputStreamPtr additional_input_at_end,
-		const Names & key_names, const AggregateDescriptions & aggregates,
-		bool overflow_row_, bool final_, size_t max_threads_,
-		size_t max_rows_to_group_by_, OverflowMode group_by_overflow_mode_,
-		Compiler * compiler_, UInt32 min_count_to_compile_, size_t group_by_two_level_threshold_)
-		: aggregator(key_names, aggregates, overflow_row_, max_rows_to_group_by_, group_by_overflow_mode_,
-			compiler_, min_count_to_compile_, group_by_two_level_threshold_),
+		const Aggregator::Params & params, bool final_, size_t max_threads_)
+		: aggregator(params),
 		final(final_), max_threads(std::min(inputs.size(), max_threads_)),
-		keys_size(aggregator.getNumberOfKeys()), aggregates_size(aggregator.getNumberOfAggregates()),
+		keys_size(params.keys_size), aggregates_size(params.aggregates_size),
 		handler(*this), processor(inputs, additional_input_at_end, max_threads, handler)
 	{
 		children = inputs;

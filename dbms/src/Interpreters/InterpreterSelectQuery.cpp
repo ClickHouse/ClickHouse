@@ -852,12 +852,15 @@ void InterpreterSelectQuery::executeAggregation(ExpressionActionsPtr expression,
 	AggregateDescriptions aggregates;
 	query_analyzer->getAggregateInfo(key_names, aggregates);
 
+	Aggregator::Params params(key_names, aggregates,
+		overflow_row, settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode,
+		settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile,
+		streams.size() > 1 ? settings.group_by_two_level_threshold : SettingUInt64(0));
+
 	/// Если источников несколько, то выполняем параллельную агрегацию
 	if (streams.size() > 1)
 	{
-		streams[0] = new ParallelAggregatingBlockInputStream(streams, stream_with_non_joined_data, key_names, aggregates, overflow_row, final,
-			settings.max_threads, settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode,
-			settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile, settings.group_by_two_level_threshold);
+		streams[0] = new ParallelAggregatingBlockInputStream(streams, stream_with_non_joined_data, params, final, settings.max_threads);
 
 		stream_with_non_joined_data = nullptr;
 		streams.resize(1);
@@ -873,9 +876,7 @@ void InterpreterSelectQuery::executeAggregation(ExpressionActionsPtr expression,
 		if (stream_with_non_joined_data)
 			inputs.push_back(stream_with_non_joined_data);
 
-		streams[0] = new AggregatingBlockInputStream(new ConcatBlockInputStream(inputs), key_names, aggregates, overflow_row, final,
-			settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode,
-			settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile, 0);
+		streams[0] = new AggregatingBlockInputStream(new ConcatBlockInputStream(inputs), params, final);
 
 		stream_with_non_joined_data = nullptr;
 	}
@@ -903,17 +904,19 @@ void InterpreterSelectQuery::executeMergeAggregated(bool overflow_row, bool fina
 	  *  но при этом может работать медленнее.
 	  */
 
+	Aggregator::Params params(key_names, aggregates, overflow_row);
+
 	if (!settings.distributed_aggregation_memory_efficient)
 	{
 		/// Склеим несколько источников в один, распараллеливая работу.
 		executeUnion();
 
 		/// Теперь объединим агрегированные блоки
-		streams[0] = new MergingAggregatedBlockInputStream(streams[0], key_names, aggregates, overflow_row, final, original_max_threads);
+		streams[0] = new MergingAggregatedBlockInputStream(streams[0], params, final, original_max_threads);
 	}
 	else
 	{
-		streams[0] = new MergingAggregatedMemoryEfficientBlockInputStream(streams, key_names, aggregates, overflow_row, final);
+		streams[0] = new MergingAggregatedMemoryEfficientBlockInputStream(streams, params, final);
 		streams.resize(1);
 	}
 }

@@ -6,11 +6,8 @@ namespace DB
 
 
 MergingAggregatedMemoryEfficientBlockInputStream::MergingAggregatedMemoryEfficientBlockInputStream(
-	BlockInputStreams inputs_, const Names & keys_names_,
-	const AggregateDescriptions & aggregates_, bool overflow_row_, bool final_)
-	: aggregator(keys_names_, aggregates_, overflow_row_, 0, OverflowMode::THROW, nullptr, 0, 0),
-	final(final_),
-	inputs(inputs_.begin(), inputs_.end())
+	BlockInputStreams inputs_, const Aggregator::Params & params, bool final_)
+	: aggregator(params), final(final_), inputs(inputs_.begin(), inputs_.end())
 {
 	children = inputs_;
 }

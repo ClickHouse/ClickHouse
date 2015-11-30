@@ -29,8 +29,7 @@ namespace DB
 class MergingAggregatedMemoryEfficientBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	MergingAggregatedMemoryEfficientBlockInputStream(BlockInputStreams inputs_, const Names & keys_names_,
-		const AggregateDescriptions & aggregates_, bool overflow_row_, bool final_);
+	MergingAggregatedMemoryEfficientBlockInputStream(BlockInputStreams inputs_, const Aggregator::Params & params, bool final_);
 
 	String getName() const override { return "MergingAggregatedMemoryEfficient"; }
 
