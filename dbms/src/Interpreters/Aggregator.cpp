@@ -11,8 +11,12 @@
 #include <DB/Columns/ColumnArray.h>
 #include <DB/AggregateFunctions/AggregateFunctionCount.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
+#include <DB/DataStreams/NativeBlockOutputStream.h>
+#include <DB/IO/WriteBufferFromFile.h>
+#include <DB/IO/CompressedWriteBuffer.h>
 
 #include <DB/Interpreters/Aggregator.h>
+#include <common/Revision.h>
 
 
 namespace DB
@@ -83,6 +87,8 @@ void Aggregator::initialize(const Block & block)
 		return;
 
 	initialized = true;
+
+	memory_usage_before_aggregation = current_memory_tracker->get();
 
 	aggregate_functions.resize(params.aggregates_size);
 	for (size_t i = 0; i < params.aggregates_size; ++i)
@@ -724,15 +730,94 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 	}
 
 	size_t result_size = result.sizeWithoutOverflowRow();
+	auto current_memory_usage = current_memory_tracker->get();
+	auto result_size_bytes = current_memory_usage - memory_usage_before_aggregation;
 
-	if (params.group_by_two_level_threshold && result.isConvertibleToTwoLevel() && result_size >= params.group_by_two_level_threshold)
+	/** Преобразование в двухуровневую структуру данных.
+	  * Она позволяет делать, в последующем, эффективный мердж - либо экономный по памяти, либо распараллеленный.
+	  */
+	if (result.isConvertibleToTwoLevel()
+		&& ((params.group_by_two_level_threshold && result_size >= params.group_by_two_level_threshold)
+			|| (params.group_by_two_level_threshold_bytes && result_size_bytes >= static_cast<Int64>(params.group_by_two_level_threshold_bytes))))
+	{
 		result.convertToTwoLevel();
+	}
 
 	/// Проверка ограничений.
 	if (!checkLimits(result_size, no_more_keys))
 		return false;
 
+	/** Сброс данных на диск, если потребляется слишком много оперативки.
+	  * Данные можно сбросить на диск только если используется двухуровневая структура агрегации.
+	  */
+	if (params.max_bytes_before_external_group_by
+		&& result.isTwoLevel()
+		&& current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by))
+		writeToTemporaryFile(result);
+
 	return true;
+}
+
+
+void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants)
+{
+	auto file = std::make_unique<Poco::TemporaryFile>(params.tmp_path);
+	const std::string & path = file->path();
+	WriteBufferFromFile file_buf(path);
+	CompressedWriteBuffer compressed_buf(file_buf);
+	NativeBlockOutputStream block_out(compressed_buf, Revision::get());
+
+	/// Сбрасываем только двухуровневые данные.
+
+	#define M(NAME) \
+	else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
+		return writeToTemporaryFileImpl(data_variants, *data_variants.NAME, block_out, path);
+
+	if (false) {}
+	APPLY_FOR_VARIANTS_TWO_LEVEL(M)
+#undef M
+	else
+		throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+
+	std::lock_guard<std::mutex> lock(temporary_files_mutex);
+	temporary_files.emplace_back(std::move(file));
+}
+
+
+template <typename Method>
+void Aggregator::writeToTemporaryFileImpl(
+	AggregatedDataVariants & data_variants,
+	Method & method,
+	IBlockOutputStream & out,
+	const String & path)
+{
+	LOG_DEBUG(log, "Writing part of aggregation data into temporary file " << path << ".");
+
+	for (size_t bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
+	{
+		if (method.data.impls[bucket].empty())
+			continue;
+
+		Block block = prepareBlockAndFill(data_variants, false, method.data.impls[bucket].size(),
+			[bucket, &method, this] (
+				ColumnPlainPtrs & key_columns,
+				AggregateColumnsData & aggregate_columns,
+				ColumnPlainPtrs & final_aggregate_columns,
+				const Sizes & key_sizes,
+				bool final)
+			{
+				convertToBlockImpl(method, method.data.impls[bucket],
+					key_columns, aggregate_columns, final_aggregate_columns, key_sizes, final);
+			});
+
+		block.info.bucket_num = bucket;
+		out.write(block);
+	}
+
+	/// NOTE Вместо освобождения памяти и создания новых хэш-таблиц и арены, можно переиспользовать старые.
+	data_variants.init(data_variants.type);
+	data_variants.aggregates_pools = Arenas(1, new Arena);
+	data_variants.aggregates_pool = data_variants.aggregates_pools.back().get();
 }
 
 
@@ -756,8 +841,6 @@ bool Aggregator::checkLimits(size_t result_size, bool & no_more_keys) const
 }
 
 
-/** Результат хранится в оперативке и должен полностью помещаться в оперативку.
-  */
 void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & result)
 {
 	if (isCancelled())

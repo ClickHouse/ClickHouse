@@ -32,6 +32,7 @@ struct Limits
 	\
 	M(SettingUInt64, max_rows_to_group_by, 0) \
 	M(SettingOverflowMode<true>, group_by_overflow_mode, OverflowMode::THROW) \
+	M(SettingUInt64, max_bytes_before_external_group_by, 0) \
 	\
 	M(SettingUInt64, max_rows_to_sort, 0) \
 	M(SettingUInt64, max_bytes_to_sort, 0) \

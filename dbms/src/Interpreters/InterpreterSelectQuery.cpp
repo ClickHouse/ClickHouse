@@ -855,7 +855,9 @@ void InterpreterSelectQuery::executeAggregation(ExpressionActionsPtr expression,
 	Aggregator::Params params(key_names, aggregates,
 		overflow_row, settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode,
 		settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile,
-		streams.size() > 1 ? settings.group_by_two_level_threshold : SettingUInt64(0));
+		streams.size() > 1 ? settings.group_by_two_level_threshold : SettingUInt64(0),
+		streams.size() > 1 ? settings.group_by_two_level_threshold_bytes : SettingUInt64(0),
+		settings.limits.max_bytes_before_external_group_by, context.getTemporaryPath());
 
 	/// Если источников несколько, то выполняем параллельную агрегацию
 	if (streams.size() > 1)
