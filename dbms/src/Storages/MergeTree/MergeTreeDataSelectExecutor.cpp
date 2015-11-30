@@ -16,6 +16,7 @@
 #include <DB/DataStreams/SummingSortedBlockInputStream.h>
 #include <DB/DataStreams/AggregatingSortedBlockInputStream.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypeDate.h>
 #include <DB/Common/VirtualColumnUtils.h>
 
 
@@ -53,7 +54,7 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
 	for (size_t i = 0; i < parts.size(); ++i)
 	{
 		const MergeTreeData::DataPartPtr & part = parts[i];
-		MarkRanges ranges = markRangesFromPkRange(part->index, key_condition, settings);
+		MarkRanges ranges = markRangesFromPKRange(part->index, key_condition, settings);
 
 		/** Для того, чтобы получить оценку снизу количества строк, подходящих под условие на PK,
 		  *  учитываем только гарантированно полные засечки.
@@ -134,12 +135,17 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	PKCondition key_condition(query, context, data.getColumnsList(), data.getSortDescription());
 	PKCondition date_condition(query, context, data.getColumnsList(), SortDescription(1, SortColumnDescription(data.date_column_name, 1)));
 
+	if (settings.force_primary_key && key_condition.alwaysUnknown())
+		throw Exception("Primary key is not used and setting 'force_primary_key' is set.", ErrorCodes::INDEX_NOT_USED);
+
 	if (settings.force_index_by_date && date_condition.alwaysUnknown())
 		throw Exception("Index by date is not used and setting 'force_index_by_date' is set.", ErrorCodes::INDEX_NOT_USED);
 
 	/// Выберем куски, в которых могут быть данные, удовлетворяющие date_condition, и которые подходят под условие на _part,
 	///  а также max_block_number_to_read.
 	{
+		const DataTypes data_types_date { new DataTypeDate };
+
 		auto prev_parts = parts;
 		parts.clear();
 
@@ -151,7 +157,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 			Field left = static_cast<UInt64>(part->left_date);
 			Field right = static_cast<UInt64>(part->right_date);
 
-			if (!date_condition.mayBeTrueInRange(&left, &right))
+			if (!date_condition.mayBeTrueInRange(&left, &right, data_types_date))
 				continue;
 
 			if (max_block_number_to_read && part->right > max_block_number_to_read)
@@ -411,7 +417,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 		RangesInDataPart ranges(part, (*part_index)++);
 
 		if (data.mode != MergeTreeData::Unsorted)
-			ranges.ranges = markRangesFromPkRange(part->index, key_condition, settings);
+			ranges.ranges = markRangesFromPKRange(part->index, key_condition, settings);
 		else
 			ranges.ranges = MarkRanges{MarkRange{0, part->size}};
 
@@ -789,7 +795,7 @@ void MergeTreeDataSelectExecutor::createPositiveSignCondition(ExpressionActionsP
 }
 
 /// Получает набор диапазонов засечек, вне которых не могут находиться ключи из заданного диапазона.
-MarkRanges MergeTreeDataSelectExecutor::markRangesFromPkRange(
+MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 	const MergeTreeData::DataPart::Index & index, const PKCondition & key_condition, const Settings & settings) const
 {
 	size_t min_marks_for_seek = (settings.merge_tree_min_rows_for_seek + data.index_granularity - 1) / data.index_granularity;
@@ -820,9 +826,9 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPkRange(
 
 			bool may_be_true;
 			if (range.end == marks_count)
-				may_be_true = key_condition.mayBeTrueAfter(&index[range.begin * key_size]);
+				may_be_true = key_condition.mayBeTrueAfter(&index[range.begin * key_size], data.primary_key_data_types);
 			else
-				may_be_true = key_condition.mayBeTrueInRange(&index[range.begin * key_size], &index[range.end * key_size]);
+				may_be_true = key_condition.mayBeTrueInRange(&index[range.begin * key_size], &index[range.end * key_size], data.primary_key_data_types);
 
 			if (!may_be_true)
 				continue;

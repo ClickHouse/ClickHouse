@@ -6,37 +6,38 @@ namespace DB
 {
 
 
-ColumnPtr ColumnArray::cut(size_t start, size_t length) const
+void ColumnArray::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
 	if (length == 0)
-		return new ColumnArray(data);
+		return;
 
-	if (start + length > getOffsets().size())
-		throw Exception("Parameter out of bound in IColumnArray::cut() method.",
+	const ColumnArray & src_concrete = static_cast<const ColumnArray &>(src);
+
+	if (start + length > src_concrete.getOffsets().size())
+		throw Exception("Parameter out of bound in ColumnArray::insertRangeFrom method.",
 			ErrorCodes::PARAMETER_OUT_OF_BOUND);
 
-	size_t nested_offset = offsetAt(start);
-	size_t nested_length = getOffsets()[start + length - 1] - nested_offset;
+	size_t nested_offset = src_concrete.offsetAt(start);
+	size_t nested_length = src_concrete.getOffsets()[start + length - 1] - nested_offset;
 
-	ColumnArray * res_ = new ColumnArray(data);
-	ColumnPtr res = res_;
+	data->insertRangeFrom(src_concrete.getData(), nested_offset, nested_length);
 
-	res_->data = data->cut(nested_offset, nested_length);
-	Offsets_t & res_offsets = res_->getOffsets();
+	Offsets_t & cur_offsets = getOffsets();
+	const Offsets_t & src_offsets = src_concrete.getOffsets();
 
-	if (start == 0)
+	if (start == 0 && cur_offsets.empty())
 	{
-		res_offsets.assign(getOffsets().begin(), getOffsets().begin() + length);
+		cur_offsets.assign(src_offsets.begin(), src_offsets.begin() + length);
 	}
 	else
 	{
-		res_offsets.resize(length);
+		size_t old_size = cur_offsets.size();
+		size_t prev_max_offset = old_size ? cur_offsets.back() : 0;
+		cur_offsets.resize(old_size + length);
 
 		for (size_t i = 0; i < length; ++i)
-			res_offsets[i] = getOffsets()[start + i] - nested_offset;
+			cur_offsets[old_size + i] = src_offsets[start + i] - nested_offset + prev_max_offset;
 	}
-
-	return res;
 }
 
 

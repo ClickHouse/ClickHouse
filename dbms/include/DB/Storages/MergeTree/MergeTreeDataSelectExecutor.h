@@ -71,7 +71,7 @@ private:
 		String & out_column,
 		const Context & context) const;
 
-	MarkRanges markRangesFromPkRange(
+	MarkRanges markRangesFromPKRange(
 		const MergeTreeData::DataPart::Index & index,
 		const PKCondition & key_condition,
 		const Settings & settings) const;

@@ -63,9 +63,13 @@ public:
 	Field operator[](size_t n) const override { return FieldType(getDataFromHolder()); }
 	void get(size_t n, Field & res) const override { res = FieldType(getDataFromHolder()); }
 
-	ColumnPtr cut(size_t start, size_t length) const override
+	void insertRangeFrom(const IColumn & src, size_t start, size_t length) override
 	{
-		return new Derived(length, data, data_type);
+		if (getDataFromHolder() != static_cast<const Derived &>(src).getDataFromHolder())
+			throw Exception("Cannot insert different element into constant column " + getName(),
+				ErrorCodes::CANNOT_INSERT_ELEMENT_INTO_CONSTANT_COLUMN);
+
+		s += length;
 	}
 
 	void insert(const Field & x) override
