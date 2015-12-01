@@ -924,7 +924,7 @@ void InterpreterSelectQuery::executeMergeAggregated(bool overflow_row, bool fina
 	}
 	else
 	{
-		streams[0] = new MergingAggregatedMemoryEfficientBlockInputStream(streams, params, final);
+		streams[0] = new MergingAggregatedMemoryEfficientBlockInputStream(streams, params, final, original_max_threads);
 		streams.resize(1);
 	}
 }

@@ -1,3 +1,5 @@
+#include <future>
+#include <DB/Common/setThreadName.h>
 #include <DB/DataStreams/MergingAggregatedMemoryEfficientBlockInputStream.h>
 
 
@@ -6,8 +8,8 @@ namespace DB
 
 
 MergingAggregatedMemoryEfficientBlockInputStream::MergingAggregatedMemoryEfficientBlockInputStream(
-	BlockInputStreams inputs_, const Aggregator::Params & params, bool final_)
-	: aggregator(params), final(final_), inputs(inputs_.begin(), inputs_.end())
+	BlockInputStreams inputs_, const Aggregator::Params & params, bool final_, size_t threads_)
+	: aggregator(params), final(final_), threads(threads_), inputs(inputs_.begin(), inputs_.end())
 {
 	children = inputs_;
 }
@@ -24,17 +26,115 @@ String MergingAggregatedMemoryEfficientBlockInputStream::getID() const
 
 Block MergingAggregatedMemoryEfficientBlockInputStream::readImpl()
 {
-	/// Если child - RemoteBlockInputStream, то отправляет запрос на все удалённые серверы, инициируя вычисления.
-	/** NOTE: Если соединения ещё не установлены, то устанавливает их последовательно.
-	  * И отправляет запрос последовательно. Это медленно.
-	  */
-	if (!started)
+	if (threads == 1)
 	{
-		started = true;
-		for (auto & child : children)
-			child->readPrefix();
-	}
+		/// Если child - RemoteBlockInputStream, то отправляет запрос на все удалённые серверы, инициируя вычисления.
+		/** NOTE: Если соединения ещё не установлены, то устанавливает их последовательно.
+		  * И отправляет запрос последовательно. Это медленно.
+		  */
+		if (!started)
+		{
+			started = true;
+			for (auto & child : children)
+				child->readPrefix();
+		}
 
+		if (BlocksToMerge blocks_to_merge = getNextBlocksToMerge())
+			return aggregator.mergeBlocks(*blocks_to_merge, final);
+		return {};
+	}
+	else
+	{
+		/** Создадим несколько потоков. Каждый из них в цикле будет доставать следующий набор блоков для мерджа,
+		  * затем мерджить их и класть результат в очередь, откуда мы будем читать готовые результаты.
+		  */
+
+		if (!parallel_merge_data)
+		{
+			parallel_merge_data.reset(new ParallelMergeData(threads));
+
+			auto & pool = parallel_merge_data->pool;
+
+			/** Если child - RemoteBlockInputStream, то соединения и отправку запроса тоже будем делать параллельно.
+			  */
+			started = true;
+			size_t num_children = children.size();
+			std::vector<std::packaged_task<void()>> tasks(num_children);
+			for (size_t i = 0; i < num_children; ++i)
+			{
+				auto & child = children[i];
+				auto & task = tasks[i];
+
+				task = std::packaged_task<void()>([&child] { child->readPrefix(); });
+				pool.schedule([&task] { task(); });
+			}
+
+			pool.wait();
+			for (auto & task : tasks)
+				task.get_future().get();
+
+			/** Создаём потоки, которые будут получать и мерджить данные.
+			  */
+
+			for (size_t i = 0; i < threads; ++i)
+				pool.schedule(std::bind(&MergingAggregatedMemoryEfficientBlockInputStream::mergeThread,
+					this, current_memory_tracker));
+		}
+
+		OutputData res;
+		parallel_merge_data->result_queue.pop(res);
+
+		if (res.exception)
+			std::rethrow_exception(res.exception);
+
+		if (!res.block)
+			parallel_merge_data->pool.wait();
+
+		return res.block;
+	}
+}
+
+
+void MergingAggregatedMemoryEfficientBlockInputStream::mergeThread(MemoryTracker * memory_tracker)
+{
+	setThreadName("MrgAggMemEffThr");
+	current_memory_tracker = memory_tracker;
+
+	try
+	{
+		while (true)
+		{
+			/// Получение следующих блоков делается последовательно, а мердж - параллельно.
+			BlocksToMerge blocks_to_merge;
+
+			{
+				std::lock_guard<std::mutex> lock(parallel_merge_data->get_next_blocks_mutex);
+
+				if (parallel_merge_data->exhausted)
+					break;
+
+				blocks_to_merge = getNextBlocksToMerge();
+
+				if (!blocks_to_merge)
+				{
+					parallel_merge_data->exhausted = true;
+					parallel_merge_data->result_queue.push(Block());
+					break;
+				}
+			}
+
+			parallel_merge_data->result_queue.push(aggregator.mergeBlocks(*blocks_to_merge, final));
+		}
+	}
+	catch (...)
+	{
+		parallel_merge_data->result_queue.push(std::current_exception());
+	}
+}
+
+
+MergingAggregatedMemoryEfficientBlockInputStream::BlocksToMerge MergingAggregatedMemoryEfficientBlockInputStream::getNextBlocksToMerge()
+{
 	/** Имеем несколько источников.
 		* Из каждого из них могут приходить следующие данные:
 		*
@@ -120,13 +220,13 @@ Block MergingAggregatedMemoryEfficientBlockInputStream::readImpl()
 //				std::cerr << "merging overflows\n";
 
 				has_overflows = false;
-				BlocksList blocks_to_merge;
+				BlocksToMerge blocks_to_merge = new BlocksList;
 
 				for (auto & input : inputs)
 					if (input.overflow_block)
-						blocks_to_merge.emplace_back(std::move(input.overflow_block));
+						blocks_to_merge->emplace_back(std::move(input.overflow_block));
 
-				return aggregator.mergeBlocks(blocks_to_merge, final);
+				return blocks_to_merge;
 			}
 			else
 				return {};
@@ -180,7 +280,7 @@ Block MergingAggregatedMemoryEfficientBlockInputStream::readImpl()
 				continue;
 
 			/// Теперь собираем блоки для current_bucket_num, чтобы их померджить.
-			BlocksList blocks_to_merge;
+			BlocksToMerge blocks_to_merge = new BlocksList;
 
 			for (auto & input : inputs)
 			{
@@ -188,33 +288,33 @@ Block MergingAggregatedMemoryEfficientBlockInputStream::readImpl()
 				{
 //					std::cerr << "having block for current_bucket_num\n";
 
-					blocks_to_merge.emplace_back(std::move(input.block));
+					blocks_to_merge->emplace_back(std::move(input.block));
 					input.block = Block();
 				}
 				else if (!input.splitted_blocks.empty() && input.splitted_blocks[min_bucket_num])
 				{
 //					std::cerr << "having splitted data for bucket\n";
 
-					blocks_to_merge.emplace_back(std::move(input.splitted_blocks[min_bucket_num]));
+					blocks_to_merge->emplace_back(std::move(input.splitted_blocks[min_bucket_num]));
 					input.splitted_blocks[min_bucket_num] = Block();
 				}
 			}
 
-			return aggregator.mergeBlocks(blocks_to_merge, final);
+			return blocks_to_merge;
 		}
 		else
 		{
 			/// Есть только одноуровневые данные. Просто мерджим их.
 //			std::cerr << "don't have two level\n";
 
-			BlocksList blocks_to_merge;
+			BlocksToMerge blocks_to_merge = new BlocksList;
 
 			for (auto & input : inputs)
 				if (input.block)
-					blocks_to_merge.emplace_back(std::move(input.block));
+					blocks_to_merge->emplace_back(std::move(input.block));
 
 			current_bucket_num = NUM_BUCKETS;
-			return aggregator.mergeBlocks(blocks_to_merge, final);
+			return blocks_to_merge;
 		}
 	}
 }

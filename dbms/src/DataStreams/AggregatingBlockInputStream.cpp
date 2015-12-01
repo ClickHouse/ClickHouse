@@ -47,7 +47,7 @@ Block AggregatingBlockInputStream::readImpl()
 				<< (files.sum_size_compressed / 1048576.0) << " MiB compressed, "
 				<< (files.sum_size_uncompressed / 1048576.0) << " MiB uncompressed.");
 
-			impl.reset(new MergingAggregatedMemoryEfficientBlockInputStream(input_streams, params, final));
+			impl.reset(new MergingAggregatedMemoryEfficientBlockInputStream(input_streams, params, final, 1));
 		}
 	}
 
