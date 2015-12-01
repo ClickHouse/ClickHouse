@@ -34,10 +34,10 @@ String FieldVisitorDump::operator() (const Array 	& x) const
 
 String FieldVisitorToString::formatFloat(const Float64 x)
 {
-	DoubleConverter<false>::BufferType buffer;
+	DoubleConverter<true>::BufferType buffer;
 	double_conversion::StringBuilder builder{buffer, sizeof(buffer)};
 
-	const auto result = DoubleConverter<false>::instance().ToShortest(x, &builder);
+	const auto result = DoubleConverter<true>::instance().ToShortest(x, &builder);
 
 	if (!result)
 		throw Exception("Cannot print float or double number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
