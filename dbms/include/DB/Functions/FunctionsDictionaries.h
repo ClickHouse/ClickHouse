@@ -1317,19 +1317,21 @@ private:
 			/// vector ids, vector defaults
 			const auto out = new ColumnString;
 			block.getByPosition(result).column = out;
-			dictionary->getString(attr_name, id_col->getData(), default_col, out);
+
+			const auto & ids = id_col->getData();
+
+			dictionary->getString(attr_name, ids, default_col, out);
 		}
-		else if (const auto default_col =  typeid_cast<const ColumnConst<String> *>(default_col_untyped))
+		else if (const auto default_col = typeid_cast<const ColumnConst<String> *>(default_col_untyped))
 		{
 			/// vector ids, const defaults
 			const auto out = new ColumnString;
 			block.getByPosition(result).column = out;
 
-			/// @todo avoid materialization
-			const auto default_col_materialized = default_col->convertToFullColumn();
+			const auto & ids = id_col->getData();
+			const auto & def = default_col->getData();
 
-			dictionary->getString(attr_name, id_col->getData(),
-				static_cast<const ColumnString *>(default_col_materialized.get()), out);
+			dictionary->getString(attr_name, ids, def, out);
 		}
 		else
 			throw Exception{
@@ -1361,11 +1363,9 @@ private:
 			const PODArray<UInt64> ids(1, id_col->getData());
 			auto out = std::make_unique<ColumnString>();
 
-			/// create ColumnString with default
-			const auto defs = std::make_unique<ColumnString>();
-			defs->insert(Field{default_col->getData()});
+			const auto & def = default_col->getData();
 
-			dictionary->getString(attr_name, ids, defs.get(), out.get());
+			dictionary->getString(attr_name, ids, def, out.get());
 
 			block.getByPosition(result).column = new ColumnConst<String>{
 				id_col->size(), out->getDataAt(0).toString()
@@ -1417,11 +1417,8 @@ private:
 			dict->getString(attr_name, key_columns, key_types, default_col, out);
 		else if (const auto default_col = typeid_cast<const ColumnConst<String> *>(default_col_untyped))
 		{
-			/// @todo avoid materialization
-			const auto default_col_materialized = default_col->convertToFullColumn();
-
-			dict->getString(attr_name, key_columns, key_types,
-				static_cast<const ColumnString *>(default_col_materialized.get()), out);
+			const auto & def = default_col->getData();
+			dict->getString(attr_name, key_columns, key_types, def, out);
 		}
 		else
 			throw Exception{
@@ -1461,17 +1458,17 @@ template <> struct DictGetTraits<DATA_TYPE>\
 	{\
 		dict->get##TYPE(name, ids, dates, out);\
 	}\
-	template <typename DictionaryType>\
+	template <typename DictionaryType, typename DefaultsType>\
 	static void getOrDefault(\
 		const DictionaryType * const dict, const std::string & name, const PODArray<UInt64> & ids,\
-		const PODArray<TYPE> & def, PODArray<TYPE> & out)\
+		const DefaultsType & def, PODArray<TYPE> & out)\
 	{\
 		dict->get##TYPE(name, ids, def, out);\
 	}\
-	template <typename DictionaryType>\
+	template <typename DictionaryType, typename DefaultsType>\
 	static void getOrDefault(\
 		const DictionaryType * const dict, const std::string & name, const ConstColumnPlainPtrs & key_columns,\
-		const DataTypes & key_types, const PODArray<TYPE> & def, PODArray<TYPE> & out)\
+		const DataTypes & key_types, const DefaultsType & def, PODArray<TYPE> & out)\
 	{\
 		dict->get##TYPE(name, key_columns, key_types, def, out);\
 	}\
@@ -1974,11 +1971,9 @@ private:
 
 			const auto & ids = id_col->getData();
 			auto & data = out->getData();
+			const auto def = default_col->getData();
 
-			/// @todo avoid materialization
-			const PODArray<Type> defs(id_col->size(), default_col->getData());
-
-			DictGetTraits<DataType>::getOrDefault(dictionary, attr_name, ids, defs, data);
+			DictGetTraits<DataType>::getOrDefault(dictionary, attr_name, ids, def, data);
 		}
 		else
 			throw Exception{
@@ -2013,8 +2008,9 @@ private:
 			/// const ids, const defaults
 			const PODArray<UInt64> ids(1, id_col->getData());
 			PODArray<Type> data(1);
-			const PODArray<Type> defs(1, default_col->getData());
-			DictGetTraits<DataType>::getOrDefault(dictionary, attr_name, ids, defs, data);
+			const auto & def = default_col->getData();
+
+			DictGetTraits<DataType>::getOrDefault(dictionary, attr_name, ids, def, data);
 
 			block.getByPosition(result).column = new ColumnConst<Type>{id_col->size(), data.front()};
 		}
@@ -2072,10 +2068,9 @@ private:
 		}
 		else if (const auto default_col = typeid_cast<const ColumnConst<Type> *>(default_col_untyped))
 		{
-			/// @todo avoid materialization
-			const PODArray<Type> defs(rows, default_col->getData());
+			const auto def = default_col->getData();
 
-			DictGetTraits<DataType>::getOrDefault(dict, attr_name, key_columns, key_types, defs, data);
+			DictGetTraits<DataType>::getOrDefault(dict, attr_name, key_columns, key_types, def, data);
 		}
 		else
 			throw Exception{

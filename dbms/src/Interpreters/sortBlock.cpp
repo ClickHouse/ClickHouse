@@ -172,6 +172,50 @@ void stableGetPermutation(const Block & block, const SortDescription & descripti
 }
 
 
+bool isAlreadySorted(const Block & block, const SortDescription & description)
+{
+	if (!block)
+		return true;
+
+	size_t rows = block.rows();
+
+	ColumnsWithSortDescriptions columns_with_sort_desc;
+
+	for (size_t i = 0, size = description.size(); i < size; ++i)
+	{
+		const IColumn * column = !description[i].column_name.empty()
+			? block.getByName(description[i].column_name).column
+			: block.getByPosition(description[i].column_number).column;
+
+		columns_with_sort_desc.push_back(std::make_pair(column, description[i]));
+	}
+
+	PartialSortingLess less(columns_with_sort_desc);
+
+	/** Если строк не слишком мало, то предпримем быструю попытку проверить, что блок не сортирован.
+	  * Константы - наугад.
+	  */
+	static constexpr size_t num_rows_to_try = 10;
+	if (rows > num_rows_to_try * 5)
+	{
+		for (size_t i = 1; i < num_rows_to_try; ++i)
+		{
+			size_t prev_position = rows * (i - 1) / num_rows_to_try;
+			size_t curr_position = rows * i / num_rows_to_try;
+
+			if (less(curr_position, prev_position))
+				return false;
+		}
+	}
+
+	for (size_t i = 1; i < rows; ++i)
+		if (less(i, i - 1))
+			return false;
+
+	return true;
+}
+
+
 void stableSortBlock(Block & block, const SortDescription & description)
 {
 	if (!block)

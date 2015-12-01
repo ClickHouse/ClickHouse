@@ -5,6 +5,8 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <mongo/client/dbclient.h>
 #include <ext/collection_cast.hpp>
+#include <ext/enumerate.hpp>
+#include <ext/size.hpp>
 
 
 namespace DB
@@ -13,6 +15,8 @@ namespace DB
 /// Allows loading dictionaries from a MongoDB collection
 class MongoDBDictionarySource final : public IDictionarySource
 {
+	static const auto max_block_size = 8192;
+
 	MongoDBDictionarySource(
 		const DictionaryStructure & dict_struct, const std::string & host, const std::string & port,
 		const std::string & user, const std::string & password,
@@ -90,7 +94,7 @@ public:
 	{
 		return new MongoDBBlockInputStream{
 			connection.query(db + '.' + collection, {}, 0, 0, &fields_to_query),
-			sample_block, 8192
+			sample_block, max_block_size
 		};
 	}
 
@@ -98,23 +102,63 @@ public:
 
 	BlockInputStreamPtr loadIds(const std::vector<std::uint64_t> & ids) override
 	{
-		if (dict_struct.key)
-			throw Exception{"Complex key not supported", ErrorCodes::UNSUPPORTED_METHOD};
+		if (!dict_struct.id)
+			throw Exception{"'id' is required for selective loading", ErrorCodes::UNSUPPORTED_METHOD};
 
 		/// mongo::BSONObj has shitty design and does not use fixed width integral types
-		const auto ids_enumeration = BSON(
+		const auto query = BSON(
 			dict_struct.id->name << BSON("$in" << ext::collection_cast<std::vector<long long int>>(ids)));
 
 		return new MongoDBBlockInputStream{
-			connection.query(db + '.' + collection, ids_enumeration, 0, 0, &fields_to_query),
-			sample_block, 8192
+			connection.query(db + '.' + collection, query, 0, 0, &fields_to_query),
+			sample_block, max_block_size
 		};
 	}
 
 	BlockInputStreamPtr loadKeys(
 		const ConstColumnPlainPtrs & key_columns, const std::vector<std::size_t> & requested_rows) override
 	{
-		throw Exception{"Method unsupported", ErrorCodes::NOT_IMPLEMENTED};
+		if (!dict_struct.key)
+			throw Exception{"'key' is required for selective loading", ErrorCodes::UNSUPPORTED_METHOD};
+
+		std::string query_string;
+
+		{
+			WriteBufferFromString out{query_string};
+
+			writeString("{$or:[", out);
+
+			auto first = true;
+
+			for (const auto row : requested_rows)
+			{
+				if (!first)
+					writeChar(',', out);
+
+				first = false;
+
+				writeChar('{', out);
+
+				for (const auto idx_key : ext::enumerate(*dict_struct.key))
+				{
+					if (idx_key.first != 0)
+						writeChar(',', out);
+
+					writeString(idx_key.second.name, out);
+					writeChar(':', out);
+					idx_key.second.type->serializeTextQuoted((*key_columns[idx_key.first])[row], out);
+				}
+
+				writeChar('}', out);
+			}
+
+			writeString("]}", out);
+		}
+
+		return new MongoDBBlockInputStream{
+			connection.query(db + '.' + collection, query_string, 0, 0, &fields_to_query),
+			sample_block, max_block_size
+		};
 	}
 
 	/// @todo: for MongoDB, modification date can somehow be determined from the `_id` object field

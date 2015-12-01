@@ -9,6 +9,7 @@
 #include <DB/Common/HashTable/HashMap.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/Core/StringRef.h>
+#include <ext/enumerate.hpp>
 #include <ext/scope_guard.hpp>
 #include <ext/bit_cast.hpp>
 #include <ext/range.hpp>
@@ -20,7 +21,6 @@
 #include <vector>
 #include <map>
 #include <tuple>
-#include <DB/DataStreams/NullBlockInputStream.h>
 
 
 namespace DB
@@ -58,7 +58,8 @@ public:
 
 	std::size_t getBytesAllocated() const override
 	{
-		return bytes_allocated + key_size_is_fixed ? fixed_size_keys_pool->size() : keys_pool->size();
+		return bytes_allocated + (key_size_is_fixed ? fixed_size_keys_pool->size() : keys_pool->size()) +
+			(string_arena ? string_arena->size() : 0);
 	}
 
 	std::size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
@@ -96,12 +97,12 @@ public:
 		return dict_struct.attributes[&getAttribute(attribute_name) - attributes.data()].injective;
 	}
 
-#define DECLARE_MULTIPLE_GETTER(TYPE)\
+#define DECLARE(TYPE)\
 	void get##TYPE(\
 		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
 		PODArray<TYPE> & out) const\
 	{\
-		validateKeyTypes(key_types);\
+		dict_struct.validateKeyTypes(key_types);\
 		\
 		auto & attribute = getAttribute(attribute_name);\
 		if (attribute.type != AttributeUnderlyingType::TYPE)\
@@ -110,24 +111,26 @@ public:
 				ErrorCodes::TYPE_MISMATCH\
 			};\
 		\
-		getItems<TYPE>(attribute, key_columns, out);\
+		const auto null_value = std::get<TYPE>(attribute.null_values);\
+		\
+		getItems<TYPE>(attribute, key_columns, out, [&] (const std::size_t) { return null_value; });\
 	}
-	DECLARE_MULTIPLE_GETTER(UInt8)
-	DECLARE_MULTIPLE_GETTER(UInt16)
-	DECLARE_MULTIPLE_GETTER(UInt32)
-	DECLARE_MULTIPLE_GETTER(UInt64)
-	DECLARE_MULTIPLE_GETTER(Int8)
-	DECLARE_MULTIPLE_GETTER(Int16)
-	DECLARE_MULTIPLE_GETTER(Int32)
-	DECLARE_MULTIPLE_GETTER(Int64)
-	DECLARE_MULTIPLE_GETTER(Float32)
-	DECLARE_MULTIPLE_GETTER(Float64)
-#undef DECLARE_MULTIPLE_GETTER
+	DECLARE(UInt8)
+	DECLARE(UInt16)
+	DECLARE(UInt32)
+	DECLARE(UInt64)
+	DECLARE(Int8)
+	DECLARE(Int16)
+	DECLARE(Int32)
+	DECLARE(Int64)
+	DECLARE(Float32)
+	DECLARE(Float64)
+#undef DECLARE
 	void getString(
 		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,
 		ColumnString * out) const
 	{
-		validateKeyTypes(key_types);
+		dict_struct.validateKeyTypes(key_types);
 
 		auto & attribute = getAttribute(attribute_name);
 		if (attribute.type != AttributeUnderlyingType::String)
@@ -136,15 +139,17 @@ public:
 				ErrorCodes::TYPE_MISMATCH
 			};
 
-		getItems(attribute, key_columns, out);
+		const auto null_value = StringRef{std::get<String>(attribute.null_values)};
+
+		getItems(attribute, key_columns, out, [&] (const std::size_t) { return null_value; });
 	}
 
-#define DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(TYPE)\
+#define DECLARE(TYPE)\
 	void get##TYPE(\
 		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
 		const PODArray<TYPE> & def, PODArray<TYPE> & out) const\
 	{\
-		validateKeyTypes(key_types);\
+		dict_struct.validateKeyTypes(key_types);\
 		\
 		auto & attribute = getAttribute(attribute_name);\
 		if (attribute.type != AttributeUnderlyingType::TYPE)\
@@ -153,24 +158,24 @@ public:
 				ErrorCodes::TYPE_MISMATCH\
 			};\
 		\
-		getItems<TYPE>(attribute, key_columns, out, &def);\
+		getItems<TYPE>(attribute, key_columns, out, [&] (const std::size_t row) { return def[row]; });\
 	}
-	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(UInt8)
-	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(UInt16)
-	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(UInt32)
-	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(UInt64)
-	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Int8)
-	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Int16)
-	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Int32)
-	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Int64)
-	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Float32)
-	DECLARE_MULTIPLE_GETTER_WITH_DEFAULT(Float64)
-#undef DECLARE_MULTIPLE_GETTER_WITH_DEFAULT
+	DECLARE(UInt8)
+	DECLARE(UInt16)
+	DECLARE(UInt32)
+	DECLARE(UInt64)
+	DECLARE(Int8)
+	DECLARE(Int16)
+	DECLARE(Int32)
+	DECLARE(Int64)
+	DECLARE(Float32)
+	DECLARE(Float64)
+#undef DECLARE
 	void getString(
 		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,
 		const ColumnString * const def, ColumnString * const out) const
 	{
-		validateKeyTypes(key_types);
+		dict_struct.validateKeyTypes(key_types);
 
 		auto & attribute = getAttribute(attribute_name);
 		if (attribute.type != AttributeUnderlyingType::String)
@@ -179,12 +184,55 @@ public:
 				ErrorCodes::TYPE_MISMATCH
 			};
 
-		getItems(attribute, key_columns, out, def);
+		getItems(attribute, key_columns, out, [&] (const std::size_t row) { return def->getDataAt(row); });
+	}
+
+#define DECLARE(TYPE)\
+	void get##TYPE(\
+		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
+		const TYPE def, PODArray<TYPE> & out) const\
+	{\
+		dict_struct.validateKeyTypes(key_types);\
+		\
+		auto & attribute = getAttribute(attribute_name);\
+		if (attribute.type != AttributeUnderlyingType::TYPE)\
+			throw Exception{\
+				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
+				ErrorCodes::TYPE_MISMATCH\
+			};\
+		\
+		getItems<TYPE>(attribute, key_columns, out, [&] (const std::size_t) { return def; });\
+	}
+	DECLARE(UInt8)
+	DECLARE(UInt16)
+	DECLARE(UInt32)
+	DECLARE(UInt64)
+	DECLARE(Int8)
+	DECLARE(Int16)
+	DECLARE(Int32)
+	DECLARE(Int64)
+	DECLARE(Float32)
+	DECLARE(Float64)
+#undef DECLARE
+	void getString(
+		const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,
+		const String & def, ColumnString * const out) const
+	{
+		dict_struct.validateKeyTypes(key_types);
+
+		auto & attribute = getAttribute(attribute_name);
+		if (attribute.type != AttributeUnderlyingType::String)
+			throw Exception{
+				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
+				ErrorCodes::TYPE_MISMATCH
+			};
+
+		getItems(attribute, key_columns, out, [&] (const std::size_t) { return StringRef{def}; });
 	}
 
 	void has(const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types, PODArray<UInt8> & out) const
 	{
-		validateKeyTypes(key_types);
+		dict_struct.validateKeyTypes(key_types);
 
 		/// Mapping: <key> -> { all indices `i` of `key_columns` such that `key_columns[i]` = <key> }
 		MapType<std::vector<std::size_t>> outdated_keys;
@@ -362,60 +410,18 @@ private:
 				std::get<String>(attr.null_values) = null_value.get<String>();
 				std::get<ContainerPtrType<StringRef>>(attr.arrays) = std::make_unique<ContainerType<StringRef>>(size);
 				bytes_allocated += size * sizeof(StringRef);
+				if (!string_arena)
+					string_arena = std::make_unique<ArenaWithFreeLists>();
 				break;
 		}
 
 		return attr;
 	}
 
-	static std::string createKeyDescription(const DictionaryStructure & dict_struct)
-	{
-		std::ostringstream out;
-
-		out << '(';
-
-		auto first = true;
-		for (const auto & key : *dict_struct.key)
-		{
-			if (!first)
-				out << ", ";
-
-			first = false;
-
-			out << key.type->getName();
-		}
-
-		out << ')';
-
-		return out.str();
-	}
-
-	void validateKeyTypes(const DataTypes & key_types) const
-	{
-		if (key_types.size() != dict_struct.key->size())
-			throw Exception{
-				"Key structure does not match, expected " + key_description,
-				ErrorCodes::TYPE_MISMATCH
-			};
-
-		for (const auto i : ext::range(0, key_types.size()))
-		{
-			const auto & expected_type = (*dict_struct.key)[i].type->getName();
-			const auto & actual_type = key_types[i]->getName();
-
-			if (expected_type != actual_type)
-				throw Exception{
-					"Key type at position " + std::to_string(i) + " does not match, expected " + expected_type +
-						", found " + actual_type,
-					ErrorCodes::TYPE_MISMATCH
-				};
-		}
-	}
-
-	template <typename T>
+	template <typename T, typename DefaultGetter>
 	void getItems(
 		attribute_t & attribute, const ConstColumnPlainPtrs & key_columns, PODArray<T> & out,
-		const PODArray<T> * const def = nullptr) const
+		DefaultGetter && get_default) const
 	{
 		/// Mapping: <key> -> { all indices `i` of `key_columns` such that `key_columns[i]` = <key> }
 		MapType<std::vector<std::size_t>> outdated_keys;
@@ -447,7 +453,7 @@ private:
 				if (cell.hash != hash || cell.key != key || cell.expiresAt() < now)
 					outdated_keys[key].push_back(row);
 				else
-					out[row] =  def && cell.isDefault() ? (*def)[row] : attribute_array[cell_idx];
+					out[row] =  cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
 			}
 		}
 
@@ -463,21 +469,18 @@ private:
 
 		/// request new values
 		update(key_columns, keys_array, required_rows, [&] (const auto key, const auto cell_idx) {
-			const auto attribute_value = attribute_array[cell_idx];
-
-			for (const auto out_idx : outdated_keys[key])
-				out[out_idx] = attribute_value;
+			for (const auto row : outdated_keys[key])
+				out[row] = attribute_array[cell_idx];
 		}, [&] (const auto key, const auto cell_idx) {
-			const auto attribute_value = !def ? attribute_array[cell_idx] : (*def)[outdated_keys[key].front()];
-
-			for (const auto out_idx : outdated_keys[key])
-				out[out_idx] = attribute_value;
+			for (const auto row : outdated_keys[key])
+				out[row] = get_default(row);
 		});
 	}
 
+	template <typename DefaultGetter>
 	void getItems(
 		attribute_t & attribute, const ConstColumnPlainPtrs & key_columns, ColumnString * out,
-		const ColumnString * const def = nullptr) const
+		DefaultGetter && get_default) const
 	{
 		const auto rows = key_columns.front()->size();
 		/// save on some allocations
@@ -512,7 +515,7 @@ private:
 				}
 				else
 				{
-					const auto string_ref =  def && cell.isDefault() ? def->getDataAt(row) : attribute_array[cell_idx];
+					const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
 					out->insertData(string_ref.data, string_ref.size);
 				}
 			}
@@ -553,7 +556,7 @@ private:
 					outdated_keys[key].push_back(row);
 				else
 				{
-					const auto string_ref =  def && cell.isDefault() ? def->getDataAt(row) : attribute_array[cell_idx];
+					const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
 					map[key] = String{string_ref};
 					total_length += string_ref.size + 1;
 				}
@@ -576,22 +579,19 @@ private:
 				map[key] = String{attribute_value};
 				total_length += (attribute_value.size + 1) * outdated_keys[key].size();
 			}, [&] (const auto key, const auto cell_idx) {
-				auto attribute_value = def ? def->getDataAt(outdated_keys[key].front()) : attribute_array[cell_idx];
-				map[key] = String{attribute_value};
-				total_length += (attribute_value.size + 1) * outdated_keys[key].size();
+				for (const auto row : outdated_keys[key])
+					total_length += get_default(row).size + 1;
 			});
 		}
 
 		out->getChars().reserve(total_length);
 
-		const auto & null_value = std::get<String>(attribute.null_values);
-
-		for (const auto key : keys_array)
+		for (const auto row : ext::range(0, ext::size(keys_array)))
 		{
+			const auto key = keys_array[row];
 			const auto it = map.find(key);
-			/// @note check seems redundant, null_values are explicitly stored in the `map`
-			const auto & string = it != map.end() ? it->second : null_value;
-			out->insertData(string.data(), string.size());
+			const auto string_ref = it != std::end(map) ? StringRef{it->second} : get_default(row);
+			out->insertData(string_ref.data, string_ref.size);
 		}
 	}
 
@@ -604,9 +604,9 @@ private:
 		auto stream = source_ptr->loadKeys(in_key_columns, in_requested_rows);
 		stream->readPrefix();
 
-		MapType<UInt8> remaining_keys{in_requested_rows.size()};
+		MapType<bool> remaining_keys{in_requested_rows.size()};
 		for (const auto row : in_requested_rows)
-			remaining_keys.insert({ in_keys[row], 0 });
+			remaining_keys.insert({ in_keys[row], false });
 
 		std::uniform_int_distribution<std::uint64_t> distribution{
 			dict_lifetime.min_sec,
@@ -679,7 +679,7 @@ private:
 				/// inform caller
 				on_cell_updated(key, cell_idx);
 				/// mark corresponding id as found
-				remaining_keys[key] = 1;
+				remaining_keys[key] = true;
 			}
 		}
 
@@ -755,14 +755,14 @@ private:
 			{
 				const auto & null_value_ref = std::get<String>(attribute.null_values);
 				auto & string_ref = std::get<ContainerPtrType<StringRef>>(attribute.arrays)[idx];
-				if (string_ref.data == null_value_ref.data())
-					return;
 
-				if (string_ref.size != 0)
-					bytes_allocated -= string_ref.size + 1;
-				const std::unique_ptr<const char[]> deleter{string_ref.data};
+				if (string_ref.data != null_value_ref.data())
+				{
+					if (string_ref.data)
+						string_arena->free(string_ref.data, string_ref.size);
 
-				string_ref = StringRef{null_value_ref};
+					string_ref = StringRef{null_value_ref};
+				}
 
 				break;
 			}
@@ -788,21 +788,17 @@ private:
 				const auto & string = value.get<String>();
 				auto & string_ref = std::get<ContainerPtrType<StringRef>>(attribute.arrays)[idx];
 				const auto & null_value_ref = std::get<String>(attribute.null_values);
-				if (string_ref.data != null_value_ref.data())
-				{
-					if (string_ref.size != 0)
-						bytes_allocated -= string_ref.size + 1;
-					/// avoid explicit delete, let unique_ptr handle it
-					const std::unique_ptr<const char[]> deleter{string_ref.data};
-				}
+
+				/// free memory unless it points to a null_value
+				if (string_ref.data && string_ref.data != null_value_ref.data())
+					string_arena->free(string_ref.data, string_ref.size);
 
 				const auto size = string.size();
 				if (size != 0)
 				{
-					auto string_ptr = std::make_unique<char[]>(size + 1);
-					std::copy(string.data(), string.data() + size + 1, string_ptr.get());
-					string_ref = StringRef{string_ptr.release(), size};
-					bytes_allocated += size + 1;
+					auto string_ptr = string_arena->alloc(size + 1);
+					std::copy(string.data(), string.data() + size + 1, string_ptr);
+					string_ref = StringRef{string_ptr, size};
 				}
 				else
 					string_ref = {};
@@ -913,7 +909,7 @@ private:
 	const DictionaryStructure dict_struct;
 	const DictionarySourcePtr source_ptr;
 	const DictionaryLifetime dict_lifetime;
-	const std::string key_description{createKeyDescription(dict_struct)};
+	const std::string key_description{dict_struct.getKeyDescription()};
 
 	mutable Poco::RWLock rw_lock;
 	const std::size_t size;
@@ -927,6 +923,7 @@ private:
 		std::make_unique<ArenaWithFreeLists>();
 	std::unique_ptr<SmallObjectPool> fixed_size_keys_pool = key_size_is_fixed ?
 		std::make_unique<SmallObjectPool>(key_size) : nullptr;
+	std::unique_ptr<ArenaWithFreeLists> string_arena;
 
 	mutable std::mt19937_64 rnd_engine{getSeed()};
 
