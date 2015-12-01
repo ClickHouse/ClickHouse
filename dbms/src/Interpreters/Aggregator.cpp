@@ -795,14 +795,16 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
 	compressed_buf.next();
 	file_buf.next();
 
-	{
-		std::lock_guard<std::mutex> lock(temporary_files_mutex);
-		temporary_files.emplace_back(std::move(file));
-	}
-
 	double elapsed_seconds = watch.elapsedSeconds();
 	double compressed_bytes = file_buf.count();
 	double uncompressed_bytes = compressed_buf.count();
+
+	{
+		std::lock_guard<std::mutex> lock(temporary_files.mutex);
+		temporary_files.files.emplace_back(std::move(file));
+		temporary_files.sum_size_uncompressed += uncompressed_bytes;
+		temporary_files.sum_size_compressed += compressed_bytes;
+	}
 
 	LOG_TRACE(log, std::fixed << std::setprecision(3)
 		<< "Written part in " << elapsed_seconds << " sec., "
@@ -856,6 +858,9 @@ void Aggregator::writeToTemporaryFileImpl(
 		if (block_size_bytes > max_temporary_block_size_bytes)
 			max_temporary_block_size_bytes = block_size_bytes;
 	}
+
+	/// data_variants не будет уничтожать состояния агрегатных функций в деструкторе. Теперь состояниями владеют ColumnAggregateFunction.
+	data_variants.aggregator = nullptr;
 
 	LOG_TRACE(log, std::fixed << std::setprecision(3)
 		<< "Max size of temporary block: " << max_temporary_block_size_rows << " rows, "

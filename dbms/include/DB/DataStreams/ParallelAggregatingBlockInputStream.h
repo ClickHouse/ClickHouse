@@ -112,13 +112,16 @@ protected:
 
 				const auto & files = aggregator.getTemporaryFiles();
 				BlockInputStreams input_streams;
-				for (const auto & file : files)
+				for (const auto & file : files.files)
 				{
 					temporary_inputs.emplace_back(new TemporaryFileStream(file->path()));
 					input_streams.emplace_back(temporary_inputs.back()->block_in);
 				}
 
-				LOG_TRACE(log, "Will merge " << files.size() << " temporary files.");
+				LOG_TRACE(log, "Will merge " << files.files.size() << " temporary files of size "
+					<< (files.sum_size_compressed / 1048576.0) << " MiB compressed, "
+					<< (files.sum_size_uncompressed / 1048576.0) << " MiB uncompressed.");
+
 				impl.reset(new MergingAggregatedMemoryEfficientBlockInputStream(input_streams, params, final));
 			}
 		}
