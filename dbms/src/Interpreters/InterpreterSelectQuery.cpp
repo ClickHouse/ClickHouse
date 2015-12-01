@@ -852,11 +852,17 @@ void InterpreterSelectQuery::executeAggregation(ExpressionActionsPtr expression,
 	AggregateDescriptions aggregates;
 	query_analyzer->getAggregateInfo(key_names, aggregates);
 
+	/** Двухуровневая агрегация полезна в двух случаях:
+	  * 1. Делается параллельная агрегация, и результаты надо параллельно мерджить.
+	  * 2. Делается агрегация с сохранением временных данных на диск, и их нужно мерджить эффективно по памяти.
+	  */
+	bool allow_to_use_two_level_group_by = streams.size() > 1 || settings.limits.max_bytes_before_external_group_by != 0;
+
 	Aggregator::Params params(key_names, aggregates,
 		overflow_row, settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode,
 		settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile,
-		streams.size() > 1 ? settings.group_by_two_level_threshold : SettingUInt64(0),
-		streams.size() > 1 ? settings.group_by_two_level_threshold_bytes : SettingUInt64(0),
+		allow_to_use_two_level_group_by ? settings.group_by_two_level_threshold : SettingUInt64(0),
+		allow_to_use_two_level_group_by ? settings.group_by_two_level_threshold_bytes : SettingUInt64(0),
 		settings.limits.max_bytes_before_external_group_by, context.getTemporaryPath());
 
 	/// Если источников несколько, то выполняем параллельную агрегацию

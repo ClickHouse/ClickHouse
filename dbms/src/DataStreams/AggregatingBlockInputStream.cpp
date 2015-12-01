@@ -1,5 +1,5 @@
-#include <DB/Columns/ColumnsNumber.h>
-
+#include <DB/DataStreams/BlocksListBlockInputStream.h>
+#include <DB/DataStreams/MergingAggregatedMemoryEfficientBlockInputStream.h>
 #include <DB/DataStreams/AggregatingBlockInputStream.h>
 
 
@@ -18,18 +18,41 @@ Block AggregatingBlockInputStream::readImpl()
 		aggregator.setCancellationHook(hook);
 
 		aggregator.execute(children.back(), data_variants);
-		blocks = aggregator.convertToBlocks(data_variants, final, 1);
-		it = blocks.begin();
+
+		if (!aggregator.hasTemporaryFiles())
+		{
+			impl.reset(new BlocksListBlockInputStream(
+				aggregator.convertToBlocks(data_variants, final, 1)));
+		}
+		else
+		{
+			/** Если есть временные файлы с частично-агрегированными данными на диске,
+			  *  то читаем и мерджим их, расходуя минимальное количество памяти.
+			  */
+
+			/// Сбросим имеющиеся в оперативке данные тоже на диск. Так проще.
+			size_t rows = data_variants.sizeWithoutOverflowRow();
+			if (rows)
+				aggregator.writeToTemporaryFile(data_variants, rows);
+
+			const auto & files = aggregator.getTemporaryFiles();
+			BlockInputStreams input_streams;
+			for (const auto & file : files)
+			{
+				temporary_inputs.emplace_back(new TemporaryFileStream(file->path()));
+				input_streams.emplace_back(temporary_inputs.back()->block_in);
+			}
+
+			LOG_TRACE(log, "Will merge " << files.size() << " temporary files.");
+			impl.reset(new MergingAggregatedMemoryEfficientBlockInputStream(input_streams, params, final));
+		}
 	}
 
 	Block res;
-	if (isCancelled() || it == blocks.end())
+	if (isCancelled() || !impl)
 		return res;
 
-	res = *it;
-	++it;
-
-	return res;
+	return impl->read();
 }
 
 

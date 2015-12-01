@@ -118,6 +118,7 @@ protected:
 					input_streams.emplace_back(temporary_inputs.back()->block_in);
 				}
 
+				LOG_TRACE(log, "Will merge " << files.size() << " temporary files.");
 				impl.reset(new MergingAggregatedMemoryEfficientBlockInputStream(input_streams, params, final));
 			}
 		}
