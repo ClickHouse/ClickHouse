@@ -297,7 +297,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 	}
 	catch (...)
 	{
-		onExceptionBeforeStart(query, context, current_time);
+		if (!internal)
+			onExceptionBeforeStart(query, context, current_time);
+
 		throw;
 	}
 
@@ -322,8 +324,7 @@ void executeQuery(
 	WriteBuffer & ostr,
 	Context & context,
 	BlockInputStreamPtr & query_plan,
-	bool internal,
-	QueryProcessingStage::Enum stage)
+	std::function<void(const String &)> set_content_type)
 {
 	PODArray<char> parse_buf;
 	const char * begin;
@@ -354,7 +355,7 @@ void executeQuery(
 	ASTPtr ast;
 	BlockIO streams;
 
-	std::tie(ast, streams) = executeQueryImpl(begin, end, context, internal, stage);
+	std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete);
 
 	try
 	{
@@ -400,6 +401,9 @@ void executeQuery(
 				: context.getDefaultFormat();
 
 			BlockOutputStreamPtr out = context.getFormatFactory().getOutput(format_name, ostr, streams.in_sample);
+
+			if (set_content_type)
+				set_content_type(out->getContentType());
 
 			copyData(*streams.in, *out);
 		}

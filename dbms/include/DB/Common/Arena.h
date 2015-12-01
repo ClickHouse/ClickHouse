@@ -26,7 +26,7 @@ class Arena
 {
 private:
 	/// Непрерывный кусок памяти и указатель на свободное место в нём. Односвязный список.
-	struct Chunk : private Allocator	/// empty base optimization
+	struct Chunk : private Allocator<false>	/// empty base optimization
 	{
 		char * begin;
 		char * pos;

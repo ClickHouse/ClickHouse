@@ -260,7 +260,7 @@ private:
 	void checkTypesOfKeys(const Block & block_left, const Block & block_right) const;
 };
 
-typedef Poco::SharedPtr<Join> JoinPtr;
+typedef std::shared_ptr<Join> JoinPtr;
 typedef std::vector<JoinPtr> Joins;
 
 

@@ -32,7 +32,8 @@ namespace DB
 				};
 			}
 
-			const auto add_column = [this] (NamesAndTypesList & columns) {
+			const auto add_column = [this] (NamesAndTypesList & columns)
+			{
 				auto insert_it = columns.end();
 
 				if (!after_column.empty())
@@ -44,7 +45,7 @@ namespace DB
 						std::bind(namesEqual, std::cref(after_column), std::placeholders::_1));
 
 					if (reverse_insert_it == columns.rend())
-						throw Exception("Wrong column name. Cannot find column " + column_name + " to insert after",
+						throw Exception("Wrong column name. Cannot find column " + after_column + " to insert after",
 										DB::ErrorCodes::ILLEGAL_COLUMN);
 					else
 					{

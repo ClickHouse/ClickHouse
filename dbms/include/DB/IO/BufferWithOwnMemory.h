@@ -18,7 +18,7 @@ namespace DB
   * Отличается тем, что не делает лишний memset. (И почти ничего не делает.)
   * Также можно попросить выделять выровненный кусок памяти.
   */
-struct Memory : boost::noncopyable, Allocator
+struct Memory : boost::noncopyable, Allocator<false>
 {
 	size_t m_capacity = 0;
 	size_t m_size = 0;

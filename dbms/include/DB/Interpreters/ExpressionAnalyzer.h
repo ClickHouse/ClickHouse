@@ -208,6 +208,9 @@ private:
 	  */
 	void collectJoinedColumns(NameSet & joined_columns, NamesAndTypesList & joined_columns_name_type);
 
+	/** Добавляет ALIAS столбцы из storage в aliases, если запрос не является SELECT с ARRAY JOIN. При наличии
+	  * ARRAY JOIN их добавлять нельзя, иначе ломается логика его выполнения.
+	  */
 	void addStorageAliases();
 
 	/** Создать словарь алиасов.
@@ -228,6 +231,9 @@ private:
 
 	/// Превратить перечисление значений или подзапрос в ASTSet. node - функция in или notIn.
 	void makeSet(ASTFunction * node, const Block & sample_block);
+
+	/// Добавляет список ALIAS столбцов из таблицы
+	void addAliasColumns();
 
 	/// Замена скалярных подзапросов на значения-константы.
 	void executeScalarSubqueries();

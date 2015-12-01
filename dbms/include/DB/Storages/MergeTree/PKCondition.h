@@ -231,15 +231,13 @@ private:
 
 		String toString() const;
 
-		Function function;
+		Function function = FUNCTION_UNKNOWN;
 
 		/// Для FUNCTION_IN_RANGE и FUNCTION_NOT_IN_RANGE.
 		Range range;
 		size_t key_column;
 		/// Для FUNCTION_IN_SET
 		ASTPtr in_function;
-
-		const ASTSet * inFunctionToSet() const;
 	};
 
 	typedef std::vector<RPNElement> RPN;

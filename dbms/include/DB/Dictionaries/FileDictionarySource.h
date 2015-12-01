@@ -41,10 +41,13 @@ public:
 
 	BlockInputStreamPtr loadIds(const std::vector<std::uint64_t> & ids) override
 	{
-		throw Exception{
-			"Method unsupported",
-			ErrorCodes::NOT_IMPLEMENTED
-		};
+		throw Exception{"Method unsupported", ErrorCodes::NOT_IMPLEMENTED};
+	}
+
+	BlockInputStreamPtr loadKeys(
+		const ConstColumnPlainPtrs & key_columns, const std::vector<std::size_t> & requested_rows) override
+	{
+		throw Exception{"Method unsupported", ErrorCodes::NOT_IMPLEMENTED};
 	}
 
 	bool isModified() const override { return getLastModification() > last_modification; }

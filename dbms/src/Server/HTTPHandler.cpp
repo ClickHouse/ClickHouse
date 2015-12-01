@@ -146,7 +146,8 @@ void HTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net
 
 	context.setHTTPMethod(http_method);
 
-	executeQuery(*in, *used_output.out_maybe_compressed, context, query_plan);
+	executeQuery(*in, *used_output.out_maybe_compressed, context, query_plan,
+		[&response] (const String & content_type) { response.setContentType(content_type); });
 
 	/// Если не было эксепшена и данные ещё не отправлены - отправляются HTTP заголовки с кодом 200.
 	used_output.out->finalize();
@@ -209,16 +210,7 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
 
 	try
 	{
-		bool is_browser = false;
-		if (request.has("Accept"))
-		{
-			String accept = request.get("Accept");
-			if (0 == strncmp(accept.c_str(), "text/html", strlen("text/html")))
-				is_browser = true;
-		}
-
-		if (is_browser)
-			response.setContentType("text/plain; charset=UTF-8");
+		response.setContentType("text/plain; charset=UTF-8");
 
 		/// Для того, чтобы работал keep-alive.
 		if (request.getVersion() == Poco::Net::HTTPServerRequest::HTTP_1_1)

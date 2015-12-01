@@ -1,3 +1,9 @@
+/// Баг в GCC: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=59124
+#if !__clang__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
+#endif
+
 #include <DB/Common/CompactArray.h>
 #include <DB/IO/WriteBufferFromFile.h>
 #include <DB/IO/ReadBufferFromFile.h>
@@ -86,6 +92,7 @@ struct Test
 			std::cout << "Test width=" << width << " bucket_count=" << bucket_count << " passed\n";
 	}
 };
+
 
 template <typename Generator>
 struct TestSet
@@ -259,3 +266,7 @@ int main()
 	runTests();
 	return 0;
 }
+
+#if !__clang__
+#pragma GCC diagnostic pop
+#endif
