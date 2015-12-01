@@ -6,6 +6,7 @@
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/WriteHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <ext/range.hpp>
 #include <vector>
 #include <string>
 #include <map>
@@ -182,6 +183,53 @@ struct DictionaryStructure final
 		attributes = getAttributes(config, config_prefix);
 		if (attributes.empty())
 			throw Exception{"Dictionary has no attributes defined", ErrorCodes::BAD_ARGUMENTS};
+	}
+
+	void validateKeyTypes(const DataTypes & key_types) const
+	{
+		if (key_types.size() != key->size())
+			throw Exception{
+				"Key structure does not match, expected " + getKeyDescription(),
+				ErrorCodes::TYPE_MISMATCH
+			};
+
+		for (const auto i : ext::range(0, key_types.size()))
+		{
+			const auto & expected_type = (*key)[i].type->getName();
+			const auto & actual_type = key_types[i]->getName();
+
+			if (expected_type != actual_type)
+				throw Exception{
+					"Key type at position " + std::to_string(i) + " does not match, expected " + expected_type +
+						", found " + actual_type,
+					ErrorCodes::TYPE_MISMATCH
+				};
+		}
+	}
+
+	std::string getKeyDescription() const
+	{
+		if (id)
+			return "UInt64";
+
+		std::ostringstream out;
+
+		out << '(';
+
+		auto first = true;
+		for (const auto & key_i : *key)
+		{
+			if (!first)
+				out << ", ";
+
+			first = false;
+
+			out << key_i.type->getName();
+		}
+
+		out << ')';
+
+		return out.str();
 	}
 
 	bool isKeySizeFixed() const

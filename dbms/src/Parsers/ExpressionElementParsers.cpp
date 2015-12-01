@@ -375,40 +375,21 @@ bool ParserStringLiteral::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max
 		return false;
 	}
 
-	++pos;
+	ReadBuffer in(const_cast<char *>(pos), end - pos, 0);
 
-	while (pos != end)
+	try
 	{
-		size_t bytes = 0;
-		for (; pos + bytes != end; ++bytes)
-			if (pos[bytes] == '\\' || pos[bytes] == '\'')
-				break;
-
-		s.append(pos, bytes);
-		pos += bytes;
-
-		if (*pos == '\'')
-		{
-			++pos;
-			node = new ASTLiteral(StringRange(begin, pos), s);
-			return true;
-		}
-
-		if (*pos == '\\')
-		{
-			++pos;
-			if (pos == end)
-			{
-				expected = "escape sequence";
-				return false;
-			}
-			s += parseEscapeSequence(*pos);
-			++pos;
-		}
+		readQuotedString(s, in);
+	}
+	catch (const Exception & e)
+	{
+		expected = "string literal";
+		return false;
 	}
 
-	expected = "closing single quote";
-	return false;
+	pos += in.count();
+	node = new ASTLiteral(StringRange(begin, pos), s);
+	return true;
 }
 
 
@@ -497,6 +478,7 @@ const char * ParserAlias::restricted_keywords[] =
 	"FULL",
 	"CROSS",
 	"JOIN",
+	"GLOBAL",
 	"ANY",
 	"ALL",
 	"ON",

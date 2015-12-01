@@ -31,7 +31,7 @@ public:
 	static void checkDataPart(
 		String path,
 		const Settings & settings,
-		const Block & primary_key_sample,	/// Проверять первичный ключ. Если не надо - передайте пустой Block.
+		const DataTypes & primary_key_data_types,	/// Проверять первичный ключ. Если не надо - передайте пустой массив.
 		MergeTreeData::DataPart::Checksums * out_checksums = nullptr);
 };
 

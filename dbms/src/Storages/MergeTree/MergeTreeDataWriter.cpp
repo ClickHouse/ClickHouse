@@ -109,8 +109,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 	IColumn::Permutation perm;
 	if (data.mode != MergeTreeData::Unsorted)
 	{
-		stableGetPermutation(block, sort_descr, perm);
-		perm_ptr = &perm;
+		if (!isAlreadySorted(block, sort_descr))
+		{
+			stableGetPermutation(block, sort_descr, perm);
+			perm_ptr = &perm;
+		}
 	}
 
 	NamesAndTypesList columns = data.getColumnsList().filter(block.getColumnsList().getNames());

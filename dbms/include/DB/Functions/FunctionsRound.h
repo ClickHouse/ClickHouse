@@ -1031,6 +1031,16 @@ namespace
 						ErrorCodes::ILLEGAL_COLUMN);
 			}
 		}
+
+		bool hasInformationAboutMonotonicity() const override
+		{
+			return true;
+		}
+
+		Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
+		{
+			return { true };
+		}
 	};
 
 	struct NameRoundToExp2		{ static constexpr auto name = "roundToExp2"; };
@@ -1046,4 +1056,18 @@ namespace
 	typedef FunctionRounding<NameRound,	_MM_FROUND_NINT>	FunctionRound;
 	typedef FunctionRounding<NameCeil,	_MM_FROUND_CEIL>	FunctionCeil;
 	typedef FunctionRounding<NameFloor,	_MM_FROUND_FLOOR>	FunctionFloor;
+
+
+	struct PositiveMonotonicity
+	{
+		static bool has() { return true; }
+		static IFunction::Monotonicity get(const Field & left, const Field & right)
+		{
+			return { true };
+		}
+	};
+
+	template <> struct FunctionUnaryArithmeticMonotonicity<NameRoundToExp2> : PositiveMonotonicity {};
+	template <> struct FunctionUnaryArithmeticMonotonicity<NameRoundDuration> : PositiveMonotonicity {};
+	template <> struct FunctionUnaryArithmeticMonotonicity<NameRoundAge> : PositiveMonotonicity {};
 }

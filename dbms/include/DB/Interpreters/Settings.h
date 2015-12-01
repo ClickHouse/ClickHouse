@@ -86,9 +86,6 @@ struct Settings
 	M(SettingTotalsMode, totals_mode, TotalsMode::AFTER_HAVING_EXCLUSIVE) \
 	M(SettingFloat, totals_auto_threshold, 0.5) \
 	\
-	/** Сэмплирование по умолчанию. Если равно 1, то отключено. */ \
-	M(SettingFloat, default_sample, 1.0) \
-	\
 	/** Включена ли компиляция запросов. */ \
 	M(SettingBool, compile, false) \
 	/** Количество одинаковых по структуре запросов перед тем, как инициируется их компиляция. */ \
@@ -132,8 +129,9 @@ struct Settings
 	/** Минимальное количество байт для операций ввода/ввывода минуя кэш страниц. 0 - отключено. */ \
 	M(SettingUInt64, min_bytes_to_use_direct_io, 0) \
 	\
-	/** Кидать исключение, если есть индекс по дате, и он не используется. */ \
+	/** Кидать исключение, если есть индекс, и он не используется. */ \
 	M(SettingBool, force_index_by_date, 0) \
+	M(SettingBool, force_primary_key, 0) \
 	\
 	/** В запросе INSERT с указанием столбцов, заполнять значения по-умолчанию только для столбцов с явными DEFAULT-ами. */ \
 	M(SettingBool, strict_insert_defaults, 0) \

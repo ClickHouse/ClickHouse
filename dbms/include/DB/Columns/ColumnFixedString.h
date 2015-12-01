@@ -5,6 +5,7 @@
 #include <DB/Common/PODArray.h>
 #include <DB/Common/Arena.h>
 #include <DB/Columns/IColumn.h>
+#include <DB/IO/ReadHelpers.h>
 
 
 namespace DB
@@ -172,13 +173,20 @@ public:
 		}
 	}
 
-	ColumnPtr cut(size_t start, size_t length) const override
+	void insertRangeFrom(const IColumn & src, size_t start, size_t length) override
 	{
-		ColumnFixedString * res_ = new ColumnFixedString(n);
-		ColumnPtr res = res_;
-		res_->chars.resize(n * length);
-		memcpy(&res_->chars[0], &chars[n * start], n * length);
-		return res;
+		const ColumnFixedString & src_concrete = static_cast<const ColumnFixedString &>(src);
+
+		if (start + length > src_concrete.size())
+			throw Exception("Parameters start = "
+				+ toString(start) + ", length = "
+				+ toString(length) + " are out of bound in ColumnFixedString::insertRangeFrom method"
+				" (size() = " + toString(src_concrete.size()) + ").",
+				ErrorCodes::PARAMETER_OUT_OF_BOUND);
+
+		size_t old_size = chars.size();
+		chars.resize(old_size + length * n);
+		memcpy(&chars[old_size], &src_concrete.chars[start * n], length * n);
 	}
 
 	ColumnPtr filter(const IColumn::Filter & filt) const override

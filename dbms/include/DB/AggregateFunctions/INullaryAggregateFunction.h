@@ -30,6 +30,13 @@ public:
 		getDerived().addImpl(place);
 	}
 
+	static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num)
+	{
+		return static_cast<const Derived &>(*that).addImpl(place);
+	}
+
+	IAggregateFunction::AddFunc getAddressOfAddFunction() const override final { return &addFree; }
+
 	/** Реализуйте это в классе-наследнике:
 	  * void addImpl(AggregateDataPtr place) const;
 	  */
