@@ -880,14 +880,20 @@ public:
 	/// Для внешней агрегации.
 	void writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t rows);
 
-	bool hasTemporaryFiles() const { return !temporary_files.files.empty(); }
+	bool hasTemporaryFiles() const { return !temporary_files.empty(); }
 
 	struct TemporaryFiles
 	{
 		std::vector<std::unique_ptr<Poco::TemporaryFile>> files;
 		size_t sum_size_uncompressed = 0;
 		size_t sum_size_compressed = 0;
-		std::mutex mutex;
+		mutable std::mutex mutex;
+
+		bool empty() const
+		{
+			std::lock_guard<std::mutex> lock(mutex);
+			return files.empty();
+		}
 	};
 
 	const TemporaryFiles & getTemporaryFiles() const { return temporary_files; }

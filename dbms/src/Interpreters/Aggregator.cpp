@@ -2087,7 +2087,7 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
 	result.keys_size = params.keys_size;
 	result.key_sizes = key_sizes;
 
-	LOG_TRACE(log, "Merging partially aggregated blocks.");
+	LOG_TRACE(log, "Merging partially aggregated blocks (bucket = " << blocks.front().info.bucket_num << ").");
 
 	for (Block & block : blocks)
 	{

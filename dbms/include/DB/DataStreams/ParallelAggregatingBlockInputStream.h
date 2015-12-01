@@ -102,14 +102,6 @@ protected:
 				  *  то читаем и мерджим их, расходуя минимальное количество памяти.
 				  */
 
-				/// Сбросим имеющиеся в оперативке данные тоже на диск. Так проще. NOTE Это можно делать параллельно.
-				for (AggregatedDataVariantsPtr & data : many_data)
-				{
-					size_t rows = data->sizeWithoutOverflowRow();
-					if (rows)
-						aggregator.writeToTemporaryFile(*data, rows);
-				}
-
 				const auto & files = aggregator.getTemporaryFiles();
 				BlockInputStreams input_streams;
 				for (const auto & file : files.files)
@@ -211,8 +203,31 @@ private:
 			parent.threads_data[thread_num].src_bytes += block.bytes();
 		}
 
+		void onFinishThread(size_t thread_num)
+		{
+			if (parent.aggregator.hasTemporaryFiles())
+			{
+				/// Сбросим имеющиеся в оперативке данные тоже на диск. Так проще их потом объединять.
+				auto & data = *parent.many_data[thread_num];
+				size_t rows = data.sizeWithoutOverflowRow();
+				if (rows)
+					parent.aggregator.writeToTemporaryFile(data, rows);
+			}
+		}
+
 		void onFinish()
 		{
+			if (parent.aggregator.hasTemporaryFiles())
+			{
+				/// Может так получиться, что какие-то данные ещё не сброшены на диск,
+				///  потому что во время вызова onFinishThread ещё никакие данные не были сброшены на диск, а потом какие-то - были.
+				for (auto & data : parent.many_data)
+				{
+					size_t rows = data->sizeWithoutOverflowRow();
+					if (rows)
+						parent.aggregator.writeToTemporaryFile(*data, rows);
+				}
+			}
 		}
 
 		void onException(std::exception_ptr & exception, size_t thread_num)
