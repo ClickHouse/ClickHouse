@@ -731,17 +731,17 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 
 	size_t result_size = result.sizeWithoutOverflowRow();
 	auto current_memory_usage = current_memory_tracker->get();
-	auto result_size_bytes = current_memory_usage - memory_usage_before_aggregation;
+	auto result_size_bytes = current_memory_usage - memory_usage_before_aggregation;	/// Здесь учитываются все результаты в сумме, из разных потоков.
+
+	bool worth_convert_to_two_level
+		= (params.group_by_two_level_threshold && result_size >= params.group_by_two_level_threshold)
+		|| (params.group_by_two_level_threshold_bytes && result_size_bytes >= static_cast<Int64>(params.group_by_two_level_threshold_bytes));
 
 	/** Преобразование в двухуровневую структуру данных.
 	  * Она позволяет делать, в последующем, эффективный мердж - либо экономный по памяти, либо распараллеленный.
 	  */
-	if (result.isConvertibleToTwoLevel()
-		&& ((params.group_by_two_level_threshold && result_size >= params.group_by_two_level_threshold)
-			|| (params.group_by_two_level_threshold_bytes && result_size_bytes >= static_cast<Int64>(params.group_by_two_level_threshold_bytes))))
-	{
+	if (result.isConvertibleToTwoLevel() && worth_convert_to_two_level)
 		result.convertToTwoLevel();
-	}
 
 	/// Проверка ограничений.
 	if (!checkLimits(result_size, no_more_keys))
@@ -752,26 +752,33 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 	  */
 	if (params.max_bytes_before_external_group_by
 		&& result.isTwoLevel()
-		&& current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by))
-		writeToTemporaryFile(result);
+		&& current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by)
+		&& worth_convert_to_two_level)
+	{
+		writeToTemporaryFile(result, result_size);
+	}
 
 	return true;
 }
 
 
-void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants)
+void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t rows)
 {
+	Stopwatch watch;
+
 	auto file = std::make_unique<Poco::TemporaryFile>(params.tmp_path);
 	const std::string & path = file->path();
 	WriteBufferFromFile file_buf(path);
 	CompressedWriteBuffer compressed_buf(file_buf);
 	NativeBlockOutputStream block_out(compressed_buf, Revision::get());
 
+	LOG_DEBUG(log, "Writing part of aggregation data into temporary file " << path << ".");
+
 	/// Сбрасываем только двухуровневые данные.
 
-	#define M(NAME) \
+#define M(NAME) \
 	else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
-		return writeToTemporaryFileImpl(data_variants, *data_variants.NAME, block_out, path);
+		writeToTemporaryFileImpl(data_variants, *data_variants.NAME, block_out, path);
 
 	if (false) {}
 	APPLY_FOR_VARIANTS_TWO_LEVEL(M)
@@ -779,8 +786,35 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants)
 	else
 		throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 
-	std::lock_guard<std::mutex> lock(temporary_files_mutex);
-	temporary_files.emplace_back(std::move(file));
+	/// NOTE Вместо освобождения памяти и создания новых хэш-таблиц и арены, можно переиспользовать старые.
+	data_variants.init(data_variants.type);
+	data_variants.aggregates_pools = Arenas(1, new Arena);
+	data_variants.aggregates_pool = data_variants.aggregates_pools.back().get();
+
+	block_out.flush();
+	compressed_buf.next();
+	file_buf.next();
+
+	{
+		std::lock_guard<std::mutex> lock(temporary_files_mutex);
+		temporary_files.emplace_back(std::move(file));
+	}
+
+	double elapsed_seconds = watch.elapsedSeconds();
+	double compressed_bytes = file_buf.count();
+	double uncompressed_bytes = compressed_buf.count();
+
+	LOG_TRACE(log, std::fixed << std::setprecision(3)
+		<< "Written part in " << elapsed_seconds << " sec., "
+		<< rows << " rows, "
+		<< (uncompressed_bytes / 1048576.0) << " MiB uncompressed, "
+		<< (compressed_bytes / 1048576.0) << " MiB compressed, "
+		<< (uncompressed_bytes / rows) << " uncompressed bytes per row, "
+		<< (compressed_bytes / rows) << " compressed bytes per row, "
+		<< "compression rate: " << (uncompressed_bytes / compressed_bytes)
+		<< " (" << (rows / elapsed_seconds) << " rows/sec., "
+		<< (uncompressed_bytes / elapsed_seconds / 1048576.0) << " MiB/sec. uncompressed, "
+		<< (compressed_bytes / elapsed_seconds / 1048576.0) << " MiB/sec. compressed)");
 }
 
 
@@ -791,7 +825,8 @@ void Aggregator::writeToTemporaryFileImpl(
 	IBlockOutputStream & out,
 	const String & path)
 {
-	LOG_DEBUG(log, "Writing part of aggregation data into temporary file " << path << ".");
+	size_t max_temporary_block_size_rows = 0;
+	size_t max_temporary_block_size_bytes = 0;
 
 	for (size_t bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
 	{
@@ -812,12 +847,19 @@ void Aggregator::writeToTemporaryFileImpl(
 
 		block.info.bucket_num = bucket;
 		out.write(block);
+
+		size_t block_size_rows = block.rowsInFirstColumn();
+		size_t block_size_bytes = block.bytes();
+
+		if (block_size_rows > max_temporary_block_size_rows)
+			max_temporary_block_size_rows = block.rowsInFirstColumn();
+		if (block_size_bytes > max_temporary_block_size_bytes)
+			max_temporary_block_size_bytes = block_size_bytes;
 	}
 
-	/// NOTE Вместо освобождения памяти и создания новых хэш-таблиц и арены, можно переиспользовать старые.
-	data_variants.init(data_variants.type);
-	data_variants.aggregates_pools = Arenas(1, new Arena);
-	data_variants.aggregates_pool = data_variants.aggregates_pools.back().get();
+	LOG_TRACE(log, std::fixed << std::setprecision(3)
+		<< "Max size of temporary block: " << max_temporary_block_size_rows << " rows, "
+		<< (max_temporary_block_size_bytes / 1048576.0) << " MiB.");
 }
 
 

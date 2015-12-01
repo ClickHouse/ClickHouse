@@ -877,6 +877,14 @@ public:
 	/// Для IBlockInputStream.
 	String getID() const;
 
+	void writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t rows);
+
+	bool hasTemporaryFiles() const { return !temporary_files.empty(); }
+
+	using TemporaryFiles = std::vector<std::unique_ptr<Poco::TemporaryFile>>;
+
+	const TemporaryFiles & getTemporaryFiles() const { return temporary_files; }
+
 protected:
 	friend struct AggregatedDataVariants;
 
@@ -942,9 +950,8 @@ protected:
 	CancellationHook isCancelled;
 
 	/// Для внешней агрегации.
-	std::vector<std::unique_ptr<Poco::TemporaryFile>> temporary_files;
+	TemporaryFiles temporary_files;
 	std::mutex temporary_files_mutex;
-	bool hasTemporaryFiles() const { return !temporary_files.empty(); }
 
 	/** Если заданы только имена столбцов (key_names, а также aggregates[i].column_name), то вычислить номера столбцов.
 	  * Сформировать блок - пример результата.
@@ -995,8 +1002,6 @@ protected:
 		AggregatedDataWithoutKey & res,
 		size_t rows,
 		AggregateFunctionInstruction * aggregate_instructions) const;
-
-	void writeToTemporaryFile(AggregatedDataVariants & data_variants);
 
 	template <typename Method>
 	void writeToTemporaryFileImpl(
