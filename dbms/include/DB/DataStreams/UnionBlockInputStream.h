@@ -271,6 +271,10 @@ private:
 			parent.output_queue.push(Payload());
 		}
 
+		void onFinishThread(size_t thread_num)
+		{
+		}
+
 		void onException(std::exception_ptr & exception, size_t thread_num)
 		{
 			//std::cerr << "pushing exception\n";

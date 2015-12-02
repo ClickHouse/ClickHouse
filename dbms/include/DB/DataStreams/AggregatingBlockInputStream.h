@@ -1,7 +1,11 @@
 #pragma once
 
 #include <DB/Interpreters/Aggregator.h>
+#include <DB/IO/ReadBufferFromFile.h>
+#include <DB/IO/CompressedReadBuffer.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
+#include <DB/DataStreams/NativeBlockInputStream.h>
+#include <common/Revision.h>
 
 
 namespace DB
@@ -22,12 +26,8 @@ public:
 	  * Агрегатные функции ищутся везде в выражении.
 	  * Столбцы, соответствующие keys и аргументам агрегатных функций, уже должны быть вычислены.
 	  */
-	AggregatingBlockInputStream(BlockInputStreamPtr input_, const Names & key_names, const AggregateDescriptions & aggregates,
-		bool overflow_row_, bool final_, size_t max_rows_to_group_by_, OverflowMode group_by_overflow_mode_,
-		Compiler * compiler_, UInt32 min_count_to_compile_, size_t group_by_two_level_threshold_)
-		: aggregator(key_names, aggregates, overflow_row_, max_rows_to_group_by_, group_by_overflow_mode_,
-			compiler_, min_count_to_compile_, group_by_two_level_threshold_),
-		final(final_)
+	AggregatingBlockInputStream(BlockInputStreamPtr input_, const Aggregator::Params & params_, bool final_)
+		: params(params_), aggregator(params), final(final_)
 	{
 		children.push_back(input_);
 	}
@@ -44,12 +44,28 @@ public:
 protected:
 	Block readImpl() override;
 
+	Aggregator::Params params;
 	Aggregator aggregator;
 	bool final;
 
 	bool executed = false;
-	BlocksList blocks;
-	BlocksList::iterator it;
+
+	/// Для чтения сброшенных во временный файл данных.
+	struct TemporaryFileStream
+	{
+		ReadBufferFromFile file_in;
+		CompressedReadBuffer compressed_in;
+		BlockInputStreamPtr block_in;
+
+		TemporaryFileStream(const std::string & path)
+			: file_in(path), compressed_in(file_in), block_in(new NativeBlockInputStream(compressed_in, Revision::get())) {}
+	};
+	std::vector<std::unique_ptr<TemporaryFileStream>> temporary_inputs;
+
+	/** Отсюда будем доставать готовые блоки после агрегации. */
+	std::unique_ptr<IBlockInputStream> impl;
+
+	Logger * log = &Logger::get("AggregatingBlockInputStream");
 };
 
 }
