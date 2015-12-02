@@ -18,16 +18,18 @@
 
 int main(int argc, char ** argv)
 {
+	using namespace DB;
+
 	try
 	{
 		size_t n = argc == 2 ? atoi(argv[1]) : 10;
 
-		DB::Block block;
+		Block block;
 
-		DB::ColumnWithTypeAndName column_x;
+		ColumnWithTypeAndName column_x;
 		column_x.name = "x";
-		column_x.type = new DB::DataTypeInt16;
-		DB::ColumnInt16 * x = new DB::ColumnInt16;
+		column_x.type = new DataTypeInt16;
+		ColumnInt16 * x = new ColumnInt16;
 		column_x.column = x;
 		auto & vec_x = x->getData();
 
@@ -39,41 +41,42 @@ int main(int argc, char ** argv)
 
 		const char * strings[] = {"abc", "def", "abcd", "defg", "ac"};
 
-		DB::ColumnWithTypeAndName column_s1;
+		ColumnWithTypeAndName column_s1;
 		column_s1.name = "s1";
-		column_s1.type = new DB::DataTypeString;
-		column_s1.column = new DB::ColumnString;
+		column_s1.type = new DataTypeString;
+		column_s1.column = new ColumnString;
 
 		for (size_t i = 0; i < n; ++i)
 			column_s1.column->insert(std::string(strings[i % 5]));
 
 		block.insert(column_s1);
 
-		DB::ColumnWithTypeAndName column_s2;
+		ColumnWithTypeAndName column_s2;
 		column_s2.name = "s2";
-		column_s2.type = new DB::DataTypeString;
-		column_s2.column = new DB::ColumnString;
+		column_s2.type = new DataTypeString;
+		column_s2.column = new ColumnString;
 
 		for (size_t i = 0; i < n; ++i)
 			column_s2.column->insert(std::string(strings[i % 3]));
 
 		block.insert(column_s2);
 
-		DB::BlockInputStreamPtr stream = new DB::OneBlockInputStream(block);
-		DB::AggregatedDataVariants aggregated_data_variants;
+		BlockInputStreamPtr stream = new OneBlockInputStream(block);
+		AggregatedDataVariants aggregated_data_variants;
 
-		DB::Names key_column_names;
+		Names key_column_names;
 		key_column_names.emplace_back("x");
 		key_column_names.emplace_back("s1");
 
-		DB::AggregateFunctionFactory factory;
+		AggregateFunctionFactory factory;
 
-		DB::AggregateDescriptions aggregate_descriptions(1);
+		AggregateDescriptions aggregate_descriptions(1);
 
-		DB::DataTypes empty_list_of_types;
+		DataTypes empty_list_of_types;
 		aggregate_descriptions[0].function = factory.get("count", empty_list_of_types);
 
-		DB::Aggregator aggregator(key_column_names, aggregate_descriptions, false, 0, DB::OverflowMode::THROW, nullptr, 0, 0);
+		Aggregator::Params params(key_column_names, aggregate_descriptions, false);
+		Aggregator aggregator(params);
 
 		{
 			Poco::Stopwatch stopwatch;
@@ -88,7 +91,7 @@ int main(int argc, char ** argv)
 				<< std::endl;
 		}
 	}
-	catch (const DB::Exception & e)
+	catch (const Exception & e)
 	{
 		std::cerr << e.displayText() << std::endl;
 	}
