@@ -101,6 +101,13 @@ public:
 	bool isState() const override { return true; }
 
 	AggregateFunctionPtr getNestedFunction() const { return nested_func_owner; }
+
+	static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num)
+	{
+		return static_cast<const AggregateFunctionState &>(*that).add(place, columns, row_num);
+	}
+
+	IAggregateFunction::AddFunc getAddressOfAddFunction() const override final { return &addFree; }
 };
 
 }

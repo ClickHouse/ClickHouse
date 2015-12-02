@@ -194,22 +194,21 @@ public:
 		return getData().size() * sizeof(getData()[0]);
 	}
 
-	ColumnPtr cut(size_t start, size_t length) const override
+	void insertRangeFrom(const IColumn & src, size_t start, size_t length) override
 	{
-		if (start + length > getData().size())
+		const ColumnAggregateFunction & src_concrete = static_cast<const ColumnAggregateFunction &>(src);
+
+		if (start + length > src_concrete.getData().size())
 			throw Exception("Parameters start = "
 				+ toString(start) + ", length = "
-				+ toString(length) + " are out of bound in ColumnAggregateFunction::cut() method"
-				" (data.size() = " + toString(getData().size()) + ").",
+				+ toString(length) + " are out of bound in ColumnAggregateFunction::insertRangeFrom method"
+				" (data.size() = " + toString(src_concrete.getData().size()) + ").",
 				ErrorCodes::PARAMETER_OUT_OF_BOUND);
 
-		ColumnAggregateFunction * res_ = new ColumnAggregateFunction(*this);
-		ColumnPtr res = res_;
-
-		res_->getData().resize(length);
-		for (size_t i = 0; i < length; ++i)
-			res_->getData()[i] = getData()[start + i];
-		return res;
+		auto & data = getData();
+		size_t old_size = data.size();
+		data.resize(old_size + length);
+		memcpy(&data[old_size], &src_concrete.getData()[start], length * sizeof(data[0]));
 	}
 
 	ColumnPtr filter(const Filter & filter) const override

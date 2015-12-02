@@ -14,15 +14,15 @@ static void formatReadable(double size, DB::WriteBuffer & out, int precision, co
 	for (; i + 1 < units_size && fabs(size) >= delimiter; ++i)
 		size /= delimiter;
 
-	char tmp[25];
-	double_conversion::StringBuilder builder{tmp, sizeof(tmp)};
+	DB::DoubleConverter<false>::BufferType buffer;
+	double_conversion::StringBuilder builder{buffer, sizeof(buffer)};
 
-	const auto result = DB::getDoubleToStringConverter<false>().ToFixed(size, precision, &builder);
+	const auto result = DB::DoubleConverter<false>::instance().ToFixed(size, precision, &builder);
 
 	if (!result)
 		throw DB::Exception("Cannot print float or double number", DB::ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
 
-	out.write(tmp, builder.position());
+	out.write(buffer, builder.position());
 	writeCString(units[i], out);
 }
 
