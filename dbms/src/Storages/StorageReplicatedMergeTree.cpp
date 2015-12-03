@@ -2857,6 +2857,7 @@ void StorageReplicatedMergeTree::dropPartition(ASTPtr query, const Field & field
 		if (live_replicas.empty())
 			throw Exception("No active replicas", ErrorCodes::NO_ACTIVE_REPLICAS);
 
+		std::sort(live_replicas.begin(), live_replicas.end());
 		const auto leader = zookeeper->get(zookeeper_path + "/leader_election/" + live_replicas.front());
 
 		if (leader == replica_name)
