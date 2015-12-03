@@ -29,9 +29,9 @@ public:
 	  */
 	ParallelAggregatingBlockInputStream(
 		BlockInputStreams inputs, BlockInputStreamPtr additional_input_at_end,
-		const Aggregator::Params & params_, bool final_, size_t max_threads_)
+		const Aggregator::Params & params_, bool final_, size_t max_threads_, size_t temporary_data_merge_threads_)
 		: params(params_), aggregator(params),
-		final(final_), max_threads(std::min(inputs.size(), max_threads_)),
+		final(final_), max_threads(std::min(inputs.size(), max_threads_)), temporary_data_merge_threads(temporary_data_merge_threads_),
 		keys_size(params.keys_size), aggregates_size(params.aggregates_size),
 		handler(*this), processor(inputs, additional_input_at_end, max_threads, handler)
 	{
@@ -114,7 +114,7 @@ protected:
 					<< (files.sum_size_compressed / 1048576.0) << " MiB compressed, "
 					<< (files.sum_size_uncompressed / 1048576.0) << " MiB uncompressed.");
 
-				impl.reset(new MergingAggregatedMemoryEfficientBlockInputStream(input_streams, params, final, max_threads));
+				impl.reset(new MergingAggregatedMemoryEfficientBlockInputStream(input_streams, params, final, temporary_data_merge_threads));
 			}
 		}
 
@@ -130,6 +130,7 @@ private:
 	Aggregator aggregator;
 	bool final;
 	size_t max_threads;
+	size_t temporary_data_merge_threads;
 
 	size_t keys_size;
 	size_t aggregates_size;

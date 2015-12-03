@@ -868,7 +868,12 @@ void InterpreterSelectQuery::executeAggregation(ExpressionActionsPtr expression,
 	/// Если источников несколько, то выполняем параллельную агрегацию
 	if (streams.size() > 1)
 	{
-		streams[0] = new ParallelAggregatingBlockInputStream(streams, stream_with_non_joined_data, params, final, settings.max_threads);
+		streams[0] = new ParallelAggregatingBlockInputStream(
+			streams, stream_with_non_joined_data, params, final,
+			settings.max_threads,
+			settings.aggregation_memory_efficient_merge_threads
+				? settings.aggregation_memory_efficient_merge_threads
+				: settings.max_threads);
 
 		stream_with_non_joined_data = nullptr;
 		streams.resize(1);
@@ -924,7 +929,11 @@ void InterpreterSelectQuery::executeMergeAggregated(bool overflow_row, bool fina
 	}
 	else
 	{
-		streams[0] = new MergingAggregatedMemoryEfficientBlockInputStream(streams, params, final, original_max_threads);
+		streams[0] = new MergingAggregatedMemoryEfficientBlockInputStream(streams, params, final,
+			settings.aggregation_memory_efficient_merge_threads
+				? size_t(settings.aggregation_memory_efficient_merge_threads)
+				: original_max_threads);
+
 		streams.resize(1);
 	}
 }
