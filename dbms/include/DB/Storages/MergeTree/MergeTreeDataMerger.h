@@ -55,9 +55,9 @@ public:
 	  * Все новые вызовы будут бросать исключения, пока не будет вызван uncancel().
 	  * Считает количество таких вызовов для поддержки нескольких наложенных друг на друга отмен.
 	  */
-	void cancel() 	{ cancelled.fetch_add(1); }
-	void uncancel() { cancelled.fetch_sub(1); }
-	bool isCancelled() const { return cancelled.load() > 0; }
+	void cancel() 	{ ++cancelled; }
+	void uncancel() { --cancelled; }
+	bool isCancelled() const { return cancelled > 0; }
 
 private:
 	MergeTreeData & data;
@@ -76,8 +76,8 @@ private:
 class MergeTreeMergeBlocker
 {
 public:
-	MergeTreeMergeBlocker(MergeTreeDataMerger & merger)
-		: merger(merger)
+	MergeTreeMergeBlocker(MergeTreeDataMerger & merger_)
+		: merger(merger_)
 	{
 		merger.cancel();
 	}

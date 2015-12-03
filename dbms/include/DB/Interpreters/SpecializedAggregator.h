@@ -192,7 +192,7 @@ void NO_INLINE Aggregator::executeSpecializedCase(
 		bool overflow = false;	/// Новый ключ не поместился в хэш-таблицу из-за no_more_keys.
 
 		/// Получаем ключ для вставки в хэш-таблицу.
-		typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes, keys, *aggregates_pool);
+		typename Method::Key key = state.getKey(key_columns, params.keys_size, i, key_sizes, keys, *aggregates_pool);
 
 		if (!no_more_keys)	/// Вставляем.
 		{
@@ -238,7 +238,7 @@ void NO_INLINE Aggregator::executeSpecializedCase(
 			AggregateDataPtr & aggregate_data = Method::getAggregateData(it->second);
 			aggregate_data = nullptr;
 
-			method.onNewKey(*it, keys_size, i, keys, *aggregates_pool);
+			method.onNewKey(*it, params.keys_size, i, keys, *aggregates_pool);
 
 			AggregateDataPtr place = aggregates_pool->alloc(total_size_of_aggregate_states);
 
@@ -267,7 +267,7 @@ void NO_INLINE Aggregator::executeSpecializedWithoutKey(
 	AggregateColumns & aggregate_columns) const
 {
 	/// Оптимизация в случае единственной агрегатной функции count.
-	AggregateFunctionCount * agg_count = aggregates_size == 1
+	AggregateFunctionCount * agg_count = params.aggregates_size == 1
 		? typeid_cast<AggregateFunctionCount *>(aggregate_functions[0])
 		: NULL;
 

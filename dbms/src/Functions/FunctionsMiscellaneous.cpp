@@ -35,10 +35,10 @@ static void numWidthConstant(T a, UInt64 & c)
 
 inline UInt64 floatWidth(const double x)
 {
-	char tmp[25];
-	double_conversion::StringBuilder builder{tmp, sizeof(tmp)};
+	DoubleConverter<false>::BufferType buffer;
+	double_conversion::StringBuilder builder{buffer, sizeof(buffer)};
 
-	const auto result = getDoubleToStringConverter<false>().ToShortest(x, &builder);
+	const auto result = DoubleConverter<false>::instance().ToShortest(x, &builder);
 
 	if (!result)
 		throw Exception("Cannot print double number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
@@ -48,10 +48,10 @@ inline UInt64 floatWidth(const double x)
 
 inline UInt64 floatWidth(const float x)
 {
-	char tmp[25];
-	double_conversion::StringBuilder builder{tmp, sizeof(tmp)};
+	DoubleConverter<false>::BufferType buffer;
+	double_conversion::StringBuilder builder{buffer, sizeof(buffer)};
 
-	const auto result = getDoubleToStringConverter<false>().ToShortestSingle(x, &builder);
+	const auto result = DoubleConverter<false>::instance().ToShortestSingle(x, &builder);
 
 	if (!result)
 		throw Exception("Cannot print float number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);

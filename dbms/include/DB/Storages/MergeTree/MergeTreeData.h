@@ -395,7 +395,7 @@ public:
 
 				for (size_t i = 0; i < size; ++i)
 					for (size_t j = 0; j < key_size; ++j)
-						storage.primary_key_sample.getByPosition(j).type->deserializeBinary(index[i * key_size + j], index_file);
+						storage.primary_key_data_types[j].get()->deserializeBinary(index[i * key_size + j], index_file);
 
 				if (!index_file.eof())
 					throw Exception("index file " + index_path + " is unexpectedly long", ErrorCodes::EXPECTED_END_OF_FILE);
@@ -858,6 +858,7 @@ public:
 
 	const ASTPtr primary_expr_ast;
 	Block primary_key_sample;
+	DataTypes primary_key_data_types;
 
 private:
 	bool require_part_metadata;

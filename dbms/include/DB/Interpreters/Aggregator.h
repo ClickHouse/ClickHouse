@@ -4,6 +4,8 @@
 #include <memory>
 #include <functional>
 
+#include <Poco/TemporaryFile.h>
+
 #include <common/logger_useful.h>
 #include <common/threadpool.hpp>
 
@@ -602,7 +604,7 @@ struct AggregatedDataVariants : private boost::noncopyable
 	};
 	Type type = Type::EMPTY;
 
-	AggregatedDataVariants() : aggregates_pools(1, new Arena), aggregates_pool(&*aggregates_pools.back()) {}
+	AggregatedDataVariants() : aggregates_pools(1, new Arena), aggregates_pool(aggregates_pools.back().get()) {}
 	bool empty() const { return type == Type::EMPTY; }
 	void invalidate() { type = Type::EMPTY; }
 
@@ -627,6 +629,7 @@ struct AggregatedDataVariants : private boost::noncopyable
 		type = type_;
 	}
 
+	/// Количество строк (разных ключей).
 	size_t size() const
 	{
 		switch (type)
@@ -761,18 +764,65 @@ typedef std::vector<AggregatedDataVariantsPtr> ManyAggregatedDataVariants;
 class Aggregator
 {
 public:
-	Aggregator(const Names & key_names_, const AggregateDescriptions & aggregates_, bool overflow_row_,
-		size_t max_rows_to_group_by_, OverflowMode group_by_overflow_mode_, Compiler * compiler_, UInt32 min_count_to_compile_,
-		size_t group_by_two_level_threshold_)
-		: key_names(key_names_), aggregates(aggregates_), aggregates_size(aggregates.size()),
-		overflow_row(overflow_row_),
-		max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
-		compiler(compiler_), min_count_to_compile(min_count_to_compile_), group_by_two_level_threshold(group_by_two_level_threshold_),
+	struct Params
+	{
+		/// Что считать.
+		Names key_names;
+		ColumnNumbers keys;			/// Номера столбцов - вычисляются позже.
+		AggregateDescriptions aggregates;
+		size_t keys_size;
+		size_t aggregates_size;
+
+		/// Настройки приближённого вычисления GROUP BY.
+		const bool overflow_row;	/// Нужно ли класть в AggregatedDataVariants::without_key агрегаты для ключей, не попавших в max_rows_to_group_by.
+		const size_t max_rows_to_group_by;
+		const OverflowMode group_by_overflow_mode;
+
+		/// Для динамической компиляции.
+		Compiler * compiler;
+		const UInt32 min_count_to_compile;
+
+		/// Настройки двухуровневой агрегации (используется для большого количества ключей).
+		/** При каком количестве ключей или размере состояния агрегации в байтах,
+		  *  начинает использоваться двухуровневая агрегация. Достаточно срабатывания хотя бы одного из порогов.
+		  * 0 - соответствующий порог не задан.
+		  */
+		const size_t group_by_two_level_threshold;
+		const size_t group_by_two_level_threshold_bytes;
+
+		/// Настройки для сброса временных данных в файловую систему (внешняя агрегация).
+		const size_t max_bytes_before_external_group_by;		/// 0 - не использовать внешнюю агрегацию.
+		const std::string tmp_path;
+
+		Params(
+			const Names & key_names_, const AggregateDescriptions & aggregates_,
+			bool overflow_row_, size_t max_rows_to_group_by_, OverflowMode group_by_overflow_mode_,
+			Compiler * compiler_, UInt32 min_count_to_compile_,
+			size_t group_by_two_level_threshold_, size_t group_by_two_level_threshold_bytes_,
+			size_t max_bytes_before_external_group_by_, const std::string & tmp_path_)
+			: key_names(key_names_), aggregates(aggregates_), aggregates_size(aggregates.size()),
+			overflow_row(overflow_row_), max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
+			compiler(compiler_), min_count_to_compile(min_count_to_compile_),
+			group_by_two_level_threshold(group_by_two_level_threshold_), group_by_two_level_threshold_bytes(group_by_two_level_threshold_bytes_),
+			max_bytes_before_external_group_by(max_bytes_before_external_group_by_), tmp_path(tmp_path_)
+		{
+			std::sort(key_names.begin(), key_names.end());
+			key_names.erase(std::unique(key_names.begin(), key_names.end()), key_names.end());
+			keys_size = key_names.size();
+		}
+
+		/// Только параметры, имеющие значение при мердже.
+		Params(const Names & key_names_, const AggregateDescriptions & aggregates_, bool overflow_row_)
+			: Params(key_names_, aggregates_, overflow_row_, 0, OverflowMode::THROW, nullptr, 0, 0, 0, 0, "") {}
+
+		/// Вычислить номера столбцов в keys и aggregates.
+		void calculateColumnNumbers(const Block & block);
+	};
+
+	Aggregator(const Params & params_)
+		: params(params_),
 		isCancelled([]() { return false; })
 	{
-		std::sort(key_names.begin(), key_names.end());
-		key_names.erase(std::unique(key_names.begin(), key_names.end()), key_names.end());
-		keys_size = key_names.size();
 	}
 
 	/// Агрегировать источник. Получить результат в виде одной из структур данных.
@@ -827,15 +877,32 @@ public:
 	/// Для IBlockInputStream.
 	String getID() const;
 
-	size_t getNumberOfKeys() const { return keys_size; }
-	size_t getNumberOfAggregates() const { return aggregates_size; }
+	/// Для внешней агрегации.
+	void writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t rows);
+
+	bool hasTemporaryFiles() const { return !temporary_files.empty(); }
+
+	struct TemporaryFiles
+	{
+		std::vector<std::unique_ptr<Poco::TemporaryFile>> files;
+		size_t sum_size_uncompressed = 0;
+		size_t sum_size_compressed = 0;
+		mutable std::mutex mutex;
+
+		bool empty() const
+		{
+			std::lock_guard<std::mutex> lock(mutex);
+			return files.empty();
+		}
+	};
+
+	const TemporaryFiles & getTemporaryFiles() const { return temporary_files; }
 
 protected:
 	friend struct AggregatedDataVariants;
 
-	ColumnNumbers keys;
-	Names key_names;
-	AggregateDescriptions aggregates;
+	Params params;
+
 	AggregateFunctionsPlainPtrs aggregate_functions;
 
 	/** Данный массив служит для двух целей.
@@ -857,30 +924,20 @@ protected:
 
 	using AggregateFunctionInstructions = std::vector<AggregateFunctionInstruction>;
 
-	size_t keys_size;
-	size_t aggregates_size;
-	/// Нужно ли класть в AggregatedDataVariants::without_key агрегаты для ключей, не попавших в max_rows_to_group_by.
-	bool overflow_row;
-
 	Sizes offsets_of_aggregate_states;	/// Смещение до n-ой агрегатной функции в строке из агрегатных функций.
 	size_t total_size_of_aggregate_states = 0;	/// Суммарный размер строки из агрегатных функций.
 	bool all_aggregates_has_trivial_destructor = false;
+
+	/// Сколько было использовано оперативки для обработки запроса до начала обработки первого блока.
+	Int64 memory_usage_before_aggregation = 0;
 
 	/// Для инициализации от первого блока при конкуррентном использовании.
 	bool initialized = false;
 	std::mutex mutex;
 
-	size_t max_rows_to_group_by;
-	OverflowMode group_by_overflow_mode;
-
 	Block sample;
 
 	Logger * log = &Logger::get("Aggregator");
-
-
-	/** Для динамической компиляции, если предусмотрено. */
-	Compiler * compiler = nullptr;
-	UInt32 min_count_to_compile;
 
 	/** Динамически скомпилированная библиотека для агрегации, если есть.
 	  * Смысл динамической компиляции в том, чтобы специализировать код
@@ -902,13 +959,11 @@ protected:
 	bool compiled_if_possible = false;
 	void compileIfPossible(AggregatedDataVariants::Type type);
 
-	/** При каком количестве ключей, начинает использоваться двухуровневая агрегация.
-	  * 0 - никогда не использовать.
-	  */
-	size_t group_by_two_level_threshold;
-
 	/// Возвращает true, если можно прервать текущую задачу.
 	CancellationHook isCancelled;
+
+	/// Для внешней агрегации.
+	TemporaryFiles temporary_files;
 
 	/** Если заданы только имена столбцов (key_names, а также aggregates[i].column_name), то вычислить номера столбцов.
 	  * Сформировать блок - пример результата.
@@ -959,6 +1014,13 @@ protected:
 		AggregatedDataWithoutKey & res,
 		size_t rows,
 		AggregateFunctionInstruction * aggregate_instructions) const;
+
+	template <typename Method>
+	void writeToTemporaryFileImpl(
+		AggregatedDataVariants & data_variants,
+		Method & method,
+		IBlockOutputStream & out,
+		const String & path);
 
 public:
 	/// Шаблоны, инстанцирующиеся путём динамической компиляции кода - см. SpecializedAggregator.h

@@ -522,7 +522,10 @@ private:
 				else
 				{
 					const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
-					map[id] = String{string_ref};
+
+					if (!cell.isDefault())
+						map[id] = String{string_ref};
+
 					total_length += string_ref.size + 1;
 				}
 			}
@@ -550,8 +553,6 @@ private:
 		}
 
 		out->getChars().reserve(total_length);
-
-	//	const auto & null_value = std::get<String>(attribute.null_values);
 
 		for (const auto row : ext::range(0, ext::size(ids)))
 		{

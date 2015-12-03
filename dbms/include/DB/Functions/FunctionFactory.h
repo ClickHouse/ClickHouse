@@ -25,7 +25,8 @@ private:
 public:
 	FunctionFactory();
 
-	FunctionPtr get(const String & name, const Context & context) const;
+	FunctionPtr get(const String & name, const Context & context) const;	/// Кидает исключение, если не нашлось.
+	FunctionPtr tryGet(const String & name, const Context & context) const;	/// Возвращает nullptr, если не нашлось.
 
 	template <typename F> void registerFunction()
 	{
