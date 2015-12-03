@@ -30,6 +30,8 @@ Block AggregatingBlockInputStream::readImpl()
 			  *  то читаем и мерджим их, расходуя минимальное количество памяти.
 			  */
 
+			ProfileEvents::increment(ProfileEvents::ExternalAggregationMerge);
+
 			/// Сбросим имеющиеся в оперативке данные тоже на диск. Так проще.
 			size_t rows = data_variants.sizeWithoutOverflowRow();
 			if (rows)

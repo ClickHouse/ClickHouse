@@ -773,6 +773,7 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
 	NativeBlockOutputStream block_out(compressed_buf, Revision::get());
 
 	LOG_DEBUG(log, "Writing part of aggregation data into temporary file " << path << ".");
+	ProfileEvents::increment(ProfileEvents::ExternalAggregationWritePart);
 
 	/// Сбрасываем только двухуровневые данные.
 
@@ -805,6 +806,9 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
 		temporary_files.sum_size_uncompressed += uncompressed_bytes;
 		temporary_files.sum_size_compressed += compressed_bytes;
 	}
+
+	ProfileEvents::increment(ProfileEvents::ExternalAggregationCompressedBytes, compressed_bytes);
+	ProfileEvents::increment(ProfileEvents::ExternalAggregationUncompressedBytes, uncompressed_bytes);
 
 	LOG_TRACE(log, std::fixed << std::setprecision(3)
 		<< "Written part in " << elapsed_seconds << " sec., "

@@ -102,6 +102,8 @@ protected:
 				  *  то читаем и мерджим их, расходуя минимальное количество памяти.
 				  */
 
+				ProfileEvents::increment(ProfileEvents::ExternalAggregationMerge);
+
 				const auto & files = aggregator.getTemporaryFiles();
 				BlockInputStreams input_streams;
 				for (const auto & file : files.files)
