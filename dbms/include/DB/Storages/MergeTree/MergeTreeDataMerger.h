@@ -76,8 +76,8 @@ private:
 class MergeTreeMergeBlocker
 {
 public:
-	MergeTreeMergeBlocker(MergeTreeDataMerger & merger)
-		: merger(merger)
+	MergeTreeMergeBlocker(MergeTreeDataMerger & merger_)
+		: merger(merger_)
 	{
 		merger.cancel();
 	}
