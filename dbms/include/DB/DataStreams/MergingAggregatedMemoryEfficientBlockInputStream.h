@@ -82,8 +82,9 @@ private:
 		std::mutex get_next_blocks_mutex;
 		ConcurrentBoundedQueue<OutputData> result_queue;
 		bool exhausted = false;
+		std::atomic<size_t> active_threads;
 
-		ParallelMergeData(size_t max_threads) : pool(max_threads), result_queue(max_threads) {}
+		ParallelMergeData(size_t max_threads) : pool(max_threads), result_queue(max_threads), active_threads(max_threads) {}
 	};
 
 	std::unique_ptr<ParallelMergeData> parallel_merge_data;

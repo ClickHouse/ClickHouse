@@ -115,10 +115,9 @@ void MergingAggregatedMemoryEfficientBlockInputStream::mergeThread(MemoryTracker
 
 				blocks_to_merge = getNextBlocksToMerge();
 
-				if (!blocks_to_merge)
+				if (!blocks_to_merge || blocks_to_merge->empty())
 				{
 					parallel_merge_data->exhausted = true;
-					parallel_merge_data->result_queue.push(Block());
 					break;
 				}
 			}
@@ -129,7 +128,12 @@ void MergingAggregatedMemoryEfficientBlockInputStream::mergeThread(MemoryTracker
 	catch (...)
 	{
 		parallel_merge_data->result_queue.push(std::current_exception());
+		return;
 	}
+
+	/// Последний поток при выходе сообщает, что данных больше нет.
+	if (0 == --parallel_merge_data->active_threads)
+		parallel_merge_data->result_queue.push(Block());
 }
 
 
