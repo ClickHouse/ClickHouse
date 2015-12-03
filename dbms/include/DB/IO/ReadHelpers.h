@@ -133,6 +133,14 @@ inline bool checkString(const String & s, ReadBuffer & buf)
 	return checkString(s.c_str(), buf);
 }
 
+inline bool checkChar(char c, ReadBuffer & buf)
+{
+	if (buf.eof() || *buf.position() != c)
+		return false;
+	++buf.position();
+	return true;
+}
+
 inline void readBoolText(bool & x, ReadBuffer & buf)
 {
 	char tmp = '0';
@@ -265,7 +273,7 @@ bool exceptionPolicySelector(ExcepFun && excep_f, NoExcepFun && no_excep_f, Args
 
 
 /// грубо
-template <typename T, typename ReturnType>
+template <typename T, typename ReturnType, char point_symbol = '.'>
 ReturnType readFloatTextImpl(T & x, ReadBuffer & buf)
 {
 	static constexpr bool throw_exception = std::is_same<ReturnType, void>::value;
@@ -308,7 +316,7 @@ ReturnType readFloatTextImpl(T & x, ReadBuffer & buf)
 			case '-':
 				negative = true;
 				break;
-			case '.':
+			case point_symbol:
 				after_point = true;
 				break;
 			case '0':
