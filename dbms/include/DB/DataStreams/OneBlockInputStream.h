@@ -1,17 +1,13 @@
 #pragma once
 
-#include <Poco/SharedPtr.h>
-
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 
 
 namespace DB
 {
 
-using Poco::SharedPtr;
-
-
 /** Поток блоков, из которого можно прочитать один блок.
+  * Также смотрите BlocksListBlockInputStream.
   */
 class OneBlockInputStream : public IProfilingBlockInputStream
 {

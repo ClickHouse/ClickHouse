@@ -557,7 +557,10 @@ private:
 				else
 				{
 					const auto string_ref = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
-					map[key] = String{string_ref};
+
+					if (!cell.isDefault())
+						map[key] = String{string_ref};
+
 					total_length += string_ref.size + 1;
 				}
 			}

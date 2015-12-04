@@ -1,7 +1,9 @@
 #pragma once
 
+#include <common/threadpool.hpp>
 #include <DB/Interpreters/Aggregator.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
+#include <DB/Common/ConcurrentBoundedQueue.h>
 
 
 namespace DB
@@ -19,18 +21,14 @@ namespace DB
   *  удалённых серверов делаются последовательно, при этом, чтение упирается в CPU.
   * Это несложно исправить.
   *
-  * Также, чтения и вычисления (слияние состояний) делаются по очереди.
-  * Есть возможность делать чтения асинхронно - при этом будет расходоваться в два раза больше памяти, но всё-равно немного.
-  * Это можно сделать с помощью UnionBlockInputStream.
-  *
   * Можно держать в памяти не по одному блоку из каждого источника, а по несколько, и распараллелить мердж.
   * При этом будет расходоваться кратно больше оперативки.
   */
 class MergingAggregatedMemoryEfficientBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	MergingAggregatedMemoryEfficientBlockInputStream(BlockInputStreams inputs_, const Names & keys_names_,
-		const AggregateDescriptions & aggregates_, bool overflow_row_, bool final_);
+	MergingAggregatedMemoryEfficientBlockInputStream(
+		BlockInputStreams inputs_, const Aggregator::Params & params, bool final_, size_t threads_);
 
 	String getName() const override { return "MergingAggregatedMemoryEfficient"; }
 
@@ -42,6 +40,7 @@ protected:
 private:
 	Aggregator aggregator;
 	bool final;
+	size_t threads;
 
 	bool started = false;
 	bool has_two_level = false;
@@ -60,6 +59,36 @@ private:
 	};
 
 	std::vector<Input> inputs;
+
+	using BlocksToMerge = Poco::SharedPtr<BlocksList>;
+
+	/// Получить блоки, которые можно мерджить. Это позволяет мерджить их параллельно в отдельных потоках.
+	BlocksToMerge getNextBlocksToMerge();
+
+	/// Для параллельного мерджа.
+	struct OutputData
+	{
+		Block block;
+		std::exception_ptr exception;
+
+		OutputData() {}
+		OutputData(Block && block_) : block(std::move(block_)) {}
+		OutputData(std::exception_ptr && exception_) : exception(std::move(exception_)) {}
+	};
+
+	struct ParallelMergeData
+	{
+		boost::threadpool::pool pool;
+		std::mutex get_next_blocks_mutex;
+		ConcurrentBoundedQueue<OutputData> result_queue;
+		bool exhausted = false;
+
+		ParallelMergeData(size_t max_threads) : pool(max_threads), result_queue(max_threads) {}
+	};
+
+	std::unique_ptr<ParallelMergeData> parallel_merge_data;
+
+	void mergeThread(MemoryTracker * memory_tracker);
 };
 
 }

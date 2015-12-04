@@ -91,9 +91,10 @@ int main(int argc, char ** argv)
 			sample.insert(col);
 		}
 
+		Aggregator::Params params(key_column_names, aggregate_descriptions, false);
+
 		BlockInputStreamPtr stream = new OneBlockInputStream(block);
-		stream = new AggregatingBlockInputStream(stream, key_column_names, aggregate_descriptions, false, true,
-													 0, OverflowMode::THROW, nullptr, 0, 0);
+		stream = new AggregatingBlockInputStream(stream, params, true);
 
 		WriteBufferFromOStream ob(std::cout);
 		RowOutputStreamPtr row_out = new TabSeparatedRowOutputStream(ob, sample);
