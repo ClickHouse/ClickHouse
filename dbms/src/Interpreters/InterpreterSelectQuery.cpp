@@ -1142,8 +1142,18 @@ void InterpreterSelectQuery::executeLimit()
 		  *  если нет WITH TOTALS и есть подзапрос в FROM, и там на одном из уровней есть WITH TOTALS,
 		  *  то при использовании LIMIT-а следует читать данные до конца, а не отменять выполнение запроса раньше,
 		  *  потому что при отмене выполнения запроса, мы не получим данные для totals с удалённого сервера.
+		  *
+		  * Ещё случай:
+		  *  если есть WITH TOTALS и нет ORDER BY, то читать данные до конца,
+		  *  иначе TOTALS посчитается по неполным данным.
 		  */
 		bool always_read_till_end = false;
+
+		if (query.group_by_with_totals && !query.order_expression_list)
+		{
+			always_read_till_end = true;
+		}
+
 		if (!query.group_by_with_totals && query.table && typeid_cast<const ASTSelectQuery *>(query.table.get()))
 		{
 			const ASTSelectQuery * subquery = static_cast<const ASTSelectQuery *>(query.table.get());
