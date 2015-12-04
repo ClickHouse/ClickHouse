@@ -41,6 +41,7 @@ Block MergeSortingBlockInputStream::readImpl()
 				MergeSortingBlocksBlockInputStream block_in(blocks, description, max_merged_block_size, limit);
 
 				LOG_INFO(log, "Sorting and writing part of data into temporary file " + path);
+				ProfileEvents::increment(ProfileEvents::ExternalSortWritePart);
 				copyData(block_in, block_out, &is_cancelled);	/// NOTE. Возможно, ограничение на потребление места на дисках.
 				LOG_INFO(log, "Done writing part of data into temporary file " + path);
 
@@ -59,6 +60,7 @@ Block MergeSortingBlockInputStream::readImpl()
 		else
 		{
 			/// Если были сброшены временные данные в файлы.
+			ProfileEvents::increment(ProfileEvents::ExternalSortMerge);
 
 			LOG_INFO(log, "There are " << temporary_files.size() << " temporary sorted parts to merge.");
 

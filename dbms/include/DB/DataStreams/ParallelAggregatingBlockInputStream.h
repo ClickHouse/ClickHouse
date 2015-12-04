@@ -1,8 +1,14 @@
 #pragma once
 
 #include <DB/Interpreters/Aggregator.h>
+#include <DB/IO/ReadBufferFromFile.h>
+#include <DB/IO/CompressedReadBuffer.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
+#include <DB/DataStreams/BlocksListBlockInputStream.h>
+#include <DB/DataStreams/NativeBlockInputStream.h>
+#include <DB/DataStreams/MergingAggregatedMemoryEfficientBlockInputStream.h>
 #include <DB/DataStreams/ParallelInputsProcessor.h>
+#include <common/Revision.h>
 
 
 namespace DB
@@ -23,14 +29,10 @@ public:
 	  */
 	ParallelAggregatingBlockInputStream(
 		BlockInputStreams inputs, BlockInputStreamPtr additional_input_at_end,
-		const Names & key_names, const AggregateDescriptions & aggregates,
-		bool overflow_row_, bool final_, size_t max_threads_,
-		size_t max_rows_to_group_by_, OverflowMode group_by_overflow_mode_,
-		Compiler * compiler_, UInt32 min_count_to_compile_, size_t group_by_two_level_threshold_)
-		: aggregator(key_names, aggregates, overflow_row_, max_rows_to_group_by_, group_by_overflow_mode_,
-			compiler_, min_count_to_compile_, group_by_two_level_threshold_),
-		final(final_), max_threads(std::min(inputs.size(), max_threads_)),
-		keys_size(aggregator.getNumberOfKeys()), aggregates_size(aggregator.getNumberOfAggregates()),
+		const Aggregator::Params & params_, bool final_, size_t max_threads_, size_t temporary_data_merge_threads_)
+		: params(params_), aggregator(params),
+		final(final_), max_threads(std::min(inputs.size(), max_threads_)), temporary_data_merge_threads(temporary_data_merge_threads_),
+		keys_size(params.keys_size), aggregates_size(params.aggregates_size),
 		handler(*this), processor(inputs, additional_input_at_end, max_threads, handler)
 	{
 		children = inputs;
@@ -78,28 +80,59 @@ protected:
 			Aggregator::CancellationHook hook = [&]() { return this->isCancelled(); };
 			aggregator.setCancellationHook(hook);
 
-			AggregatedDataVariantsPtr data_variants = executeAndMerge();
+			execute();
 
-			if (data_variants)
-				blocks = aggregator.convertToBlocks(*data_variants, final, max_threads);
+			if (isCancelled())
+				return {};
 
-			it = blocks.begin();
+			if (!aggregator.hasTemporaryFiles())
+			{
+				/** Если все частично-агрегированные данные в оперативке, то мерджим их параллельно, тоже в оперативке.
+				  * NOTE Если израсходовано больше половины допустимой памяти, то мерджить следовало бы более экономно.
+				  */
+				AggregatedDataVariantsPtr data_variants = aggregator.merge(many_data, max_threads);
+
+				if (data_variants)
+					impl.reset(new BlocksListBlockInputStream(
+						aggregator.convertToBlocks(*data_variants, final, max_threads)));
+			}
+			else
+			{
+				/** Если есть временные файлы с частично-агрегированными данными на диске,
+				  *  то читаем и мерджим их, расходуя минимальное количество памяти.
+				  */
+
+				ProfileEvents::increment(ProfileEvents::ExternalAggregationMerge);
+
+				const auto & files = aggregator.getTemporaryFiles();
+				BlockInputStreams input_streams;
+				for (const auto & file : files.files)
+				{
+					temporary_inputs.emplace_back(new TemporaryFileStream(file->path()));
+					input_streams.emplace_back(temporary_inputs.back()->block_in);
+				}
+
+				LOG_TRACE(log, "Will merge " << files.files.size() << " temporary files of size "
+					<< (files.sum_size_compressed / 1048576.0) << " MiB compressed, "
+					<< (files.sum_size_uncompressed / 1048576.0) << " MiB uncompressed.");
+
+				impl.reset(new MergingAggregatedMemoryEfficientBlockInputStream(input_streams, params, final, temporary_data_merge_threads));
+			}
 		}
 
 		Block res;
-		if (isCancelled() || it == blocks.end())
+		if (isCancelled() || !impl)
 			return res;
 
-		res = *it;
-		++it;
-
-		return res;
+		return impl->read();
 	}
 
 private:
+	Aggregator::Params params;
 	Aggregator aggregator;
 	bool final;
 	size_t max_threads;
+	size_t temporary_data_merge_threads;
 
 	size_t keys_size;
 	size_t aggregates_size;
@@ -112,8 +145,22 @@ private:
 	bool no_more_keys = false;
 
 	bool executed = false;
-	BlocksList blocks;
-	BlocksList::iterator it;
+
+	/// Для чтения сброшенных во временный файл данных.
+	struct TemporaryFileStream
+	{
+		ReadBufferFromFile file_in;
+		CompressedReadBuffer compressed_in;
+		BlockInputStreamPtr block_in;
+
+		TemporaryFileStream(const std::string & path)
+			: file_in(path), compressed_in(file_in), block_in(new NativeBlockInputStream(compressed_in, Revision::get())) {}
+	};
+	std::vector<std::unique_ptr<TemporaryFileStream>> temporary_inputs;
+
+	/** Отсюда будем доставать готовые блоки после агрегации.
+	  */
+	std::unique_ptr<IBlockInputStream> impl;
 
 	Logger * log = &Logger::get("ParallelAggregatingBlockInputStream");
 
@@ -159,8 +206,31 @@ private:
 			parent.threads_data[thread_num].src_bytes += block.bytes();
 		}
 
+		void onFinishThread(size_t thread_num)
+		{
+			if (parent.aggregator.hasTemporaryFiles())
+			{
+				/// Сбросим имеющиеся в оперативке данные тоже на диск. Так проще их потом объединять.
+				auto & data = *parent.many_data[thread_num];
+				size_t rows = data.sizeWithoutOverflowRow();
+				if (rows)
+					parent.aggregator.writeToTemporaryFile(data, rows);
+			}
+		}
+
 		void onFinish()
 		{
+			if (parent.aggregator.hasTemporaryFiles())
+			{
+				/// Может так получиться, что какие-то данные ещё не сброшены на диск,
+				///  потому что во время вызова onFinishThread ещё никакие данные не были сброшены на диск, а потом какие-то - были.
+				for (auto & data : parent.many_data)
+				{
+					size_t rows = data->sizeWithoutOverflowRow();
+					if (rows)
+						parent.aggregator.writeToTemporaryFile(*data, rows);
+				}
+			}
 		}
 
 		void onException(std::exception_ptr & exception, size_t thread_num)
@@ -176,7 +246,7 @@ private:
 	ParallelInputsProcessor<Handler> processor;
 
 
-	AggregatedDataVariantsPtr executeAndMerge()
+	void execute()
 	{
 		many_data.resize(max_threads);
 		exceptions.resize(max_threads);
@@ -197,7 +267,7 @@ private:
 		rethrowFirstException(exceptions);
 
 		if (isCancelled())
-			return nullptr;
+			return;
 
 		double elapsed_seconds = watch.elapsedSeconds();
 
@@ -220,11 +290,6 @@ private:
 			<< "Total aggregated. " << total_src_rows << " rows (from " << total_src_bytes / 1048576.0 << " MiB)"
 			<< " in " << elapsed_seconds << " sec."
 			<< " (" << total_src_rows / elapsed_seconds << " rows/sec., " << total_src_bytes / elapsed_seconds / 1048576.0 << " MiB/sec.)");
-
-		if (isCancelled())
-			return nullptr;
-
-		return aggregator.merge(many_data, max_threads);
 	}
 };
 

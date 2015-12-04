@@ -786,3 +786,27 @@ bool JSON::get<bool>() const
 	return getBool();
 }
 
+template <>
+bool JSON::isType<std::string>() const
+{
+	return isString();
+}
+
+template <>
+bool JSON::isType<UInt64>() const
+{
+	return isNumber();
+}
+
+template <>
+bool JSON::isType<Int64>() const
+{
+	return isNumber();
+}
+
+template <>
+bool JSON::isType<bool>() const
+{
+	return isBool();
+}
+

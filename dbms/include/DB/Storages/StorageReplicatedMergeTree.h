@@ -180,6 +180,8 @@ public:
 	using LogEntriesData = std::vector<ReplicatedMergeTreeLogEntryData>;
 	void getQueue(LogEntriesData & res, String & replica_name);
 
+	void getReplicaDelays(time_t & out_absolute_delay, time_t & out_relative_delay) const;
+
 private:
 	void dropUnreplicatedPartition(const Field & partition, bool detach, const Settings & settings);
 
@@ -341,6 +343,10 @@ private:
 	/** Создает реплику в ZooKeeper и добавляет в очередь все, что нужно, чтобы догнать остальные реплики.
 	  */
 	void createReplica();
+
+	/** Создать узлы в ZK, которые должны быть всегда, но которые могли не существовать при работе старых версий сервера.
+	  */
+	void createNewZooKeeperNodes();
 
 	/** Проверить, что список столбцов и настройки таблицы совпадают с указанными в ZK (/metadata).
 	  * Если нет - бросить исключение.

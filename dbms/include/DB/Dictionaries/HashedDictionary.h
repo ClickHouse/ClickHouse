@@ -19,8 +19,7 @@ class HashedDictionary final : public IDictionary
 public:
 	HashedDictionary(const std::string & name, const DictionaryStructure & dict_struct,
 		DictionarySourcePtr source_ptr, const DictionaryLifetime dict_lifetime, bool require_nonempty)
-		: name{name}, dict_struct(dict_struct),
-		  source_ptr{std::move(source_ptr)}, dict_lifetime(dict_lifetime),
+		: name{name}, dict_struct(dict_struct), source_ptr{std::move(source_ptr)}, dict_lifetime(dict_lifetime),
 		  require_nonempty(require_nonempty)
 	{
 		createAttributes();
@@ -82,11 +81,15 @@ public:
 
 	void toParent(const PODArray<id_t> & ids, PODArray<id_t> & out) const override
 	{
-		getItems<UInt64>(*hierarchical_attribute, ids, out);
+		const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
+
+		getItems<UInt64>(*hierarchical_attribute, ids,
+			[&] (const std::size_t row, const UInt64 value) { out[row] = value; },
+			[&] (const std::size_t) { return null_value; });
 	}
 
-#define DECLARE_MULTIPLE_GETTER(TYPE)\
-	void get##TYPE(const std::string & attribute_name, const PODArray<id_t> & ids, PODArray<TYPE> & out) const override\
+#define DECLARE(TYPE)\
+	void get##TYPE(const std::string & attribute_name, const PODArray<id_t> & ids, PODArray<TYPE> & out) const\
 	{\
 		const auto & attribute = getAttribute(attribute_name);\
 		if (attribute.type != AttributeUnderlyingType::TYPE)\
@@ -95,20 +98,24 @@ public:
 				ErrorCodes::TYPE_MISMATCH\
 			};\
 		\
-		getItems<TYPE>(attribute, ids, out);\
+		const auto null_value = std::get<TYPE>(attribute.null_values);\
+		\
+		getItems<TYPE>(attribute, ids,\
+			[&] (const std::size_t row, const auto value) { out[row] = value; },\
+			[&] (const std::size_t) { return null_value; });\
 	}
-	DECLARE_MULTIPLE_GETTER(UInt8)
-	DECLARE_MULTIPLE_GETTER(UInt16)
-	DECLARE_MULTIPLE_GETTER(UInt32)
-	DECLARE_MULTIPLE_GETTER(UInt64)
-	DECLARE_MULTIPLE_GETTER(Int8)
-	DECLARE_MULTIPLE_GETTER(Int16)
-	DECLARE_MULTIPLE_GETTER(Int32)
-	DECLARE_MULTIPLE_GETTER(Int64)
-	DECLARE_MULTIPLE_GETTER(Float32)
-	DECLARE_MULTIPLE_GETTER(Float64)
-#undef DECLARE_MULTIPLE_GETTER
-	void getString(const std::string & attribute_name, const PODArray<id_t> & ids, ColumnString * out) const override
+	DECLARE(UInt8)
+	DECLARE(UInt16)
+	DECLARE(UInt32)
+	DECLARE(UInt64)
+	DECLARE(Int8)
+	DECLARE(Int16)
+	DECLARE(Int32)
+	DECLARE(Int64)
+	DECLARE(Float32)
+	DECLARE(Float64)
+#undef DECLARE
+	void getString(const std::string & attribute_name, const PODArray<id_t> & ids, ColumnString * out) const
 	{
 		const auto & attribute = getAttribute(attribute_name);
 		if (attribute.type != AttributeUnderlyingType::String)
@@ -117,38 +124,135 @@ public:
 				ErrorCodes::TYPE_MISMATCH
 			};
 
-		const auto & attr = *std::get<std::unique_ptr<HashMap<UInt64, StringRef>>>(attribute.maps);
-		const auto & null_value = std::get<String>(attribute.null_values);
+		const auto & null_value = StringRef{std::get<String>(attribute.null_values)};
 
-		for (const auto i : ext::range(0, ids.size()))
+		getItems<StringRef>(attribute, ids,
+			[&] (const std::size_t row, const StringRef value) { out->insertData(value.data, value.size); },
+			[&] (const std::size_t) { return null_value; });
+	}
+
+#define DECLARE(TYPE)\
+	void get##TYPE(\
+		const std::string & attribute_name, const PODArray<id_t> & ids, const PODArray<TYPE> & def,\
+		PODArray<TYPE> & out) const\
+	{\
+		const auto & attribute = getAttribute(attribute_name);\
+		if (attribute.type != AttributeUnderlyingType::TYPE)\
+			throw Exception{\
+				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
+				ErrorCodes::TYPE_MISMATCH\
+			};\
+		\
+		getItems<TYPE>(attribute, ids,\
+			[&] (const std::size_t row, const auto value) { out[row] = value; },\
+			[&] (const std::size_t row) { return def[row]; });\
+	}
+	DECLARE(UInt8)
+	DECLARE(UInt16)
+	DECLARE(UInt32)
+	DECLARE(UInt64)
+	DECLARE(Int8)
+	DECLARE(Int16)
+	DECLARE(Int32)
+	DECLARE(Int64)
+	DECLARE(Float32)
+	DECLARE(Float64)
+#undef DECLARE
+	void getString(
+		const std::string & attribute_name, const PODArray<id_t> & ids, const ColumnString * const def,
+		ColumnString * const out) const
+	{
+		const auto & attribute = getAttribute(attribute_name);
+		if (attribute.type != AttributeUnderlyingType::String)
+			throw Exception{
+				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
+				ErrorCodes::TYPE_MISMATCH
+			};
+
+		getItems<StringRef>(attribute, ids,
+			[&] (const std::size_t row, const StringRef value) { out->insertData(value.data, value.size); },
+			[&] (const std::size_t row) { return def->getDataAt(row); });
+	}
+
+#define DECLARE(TYPE)\
+	void get##TYPE(\
+		const std::string & attribute_name, const PODArray<id_t> & ids, const TYPE & def, PODArray<TYPE> & out) const\
+	{\
+		const auto & attribute = getAttribute(attribute_name);\
+		if (attribute.type != AttributeUnderlyingType::TYPE)\
+			throw Exception{\
+				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
+				ErrorCodes::TYPE_MISMATCH\
+			};\
+		\
+		getItems<TYPE>(attribute, ids,\
+			[&] (const std::size_t row, const auto value) { out[row] = value; },\
+			[&] (const std::size_t) { return def; });\
+	}
+	DECLARE(UInt8)
+	DECLARE(UInt16)
+	DECLARE(UInt32)
+	DECLARE(UInt64)
+	DECLARE(Int8)
+	DECLARE(Int16)
+	DECLARE(Int32)
+	DECLARE(Int64)
+	DECLARE(Float32)
+	DECLARE(Float64)
+#undef DECLARE
+	void getString(
+		const std::string & attribute_name, const PODArray<id_t> & ids, const String & def,
+		ColumnString * const out) const
+	{
+		const auto & attribute = getAttribute(attribute_name);
+		if (attribute.type != AttributeUnderlyingType::String)
+			throw Exception{
+				name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
+				ErrorCodes::TYPE_MISMATCH
+			};
+
+		getItems<StringRef>(attribute, ids,
+			[&] (const std::size_t row, const StringRef value) { out->insertData(value.data, value.size); },
+			[&] (const std::size_t) { return StringRef{def}; });
+	}
+
+	void has(const PODArray<id_t> & ids, PODArray<UInt8> & out) const override
+	{
+		const auto & attribute = attributes.front();
+
+		switch (attribute.type)
 		{
-			const auto it = attr.find(ids[i]);
-			const auto string_ref = it != attr.end() ? it->second : StringRef{null_value};
-			out->insertData(string_ref.data, string_ref.size);
+			case AttributeUnderlyingType::UInt8: has<UInt8>(attribute, ids, out); break;
+			case AttributeUnderlyingType::UInt16: has<UInt16>(attribute, ids, out); break;
+			case AttributeUnderlyingType::UInt32: has<UInt32>(attribute, ids, out); break;
+			case AttributeUnderlyingType::UInt64: has<UInt64>(attribute, ids, out); break;
+			case AttributeUnderlyingType::Int8: has<Int8>(attribute, ids, out); break;
+			case AttributeUnderlyingType::Int16: has<Int16>(attribute, ids, out); break;
+			case AttributeUnderlyingType::Int32: has<Int32>(attribute, ids, out); break;
+			case AttributeUnderlyingType::Int64: has<Int64>(attribute, ids, out); break;
+			case AttributeUnderlyingType::Float32: has<Float32>(attribute, ids, out); break;
+			case AttributeUnderlyingType::Float64: has<Float64>(attribute, ids, out); break;
+			case AttributeUnderlyingType::String: has<StringRef>(attribute, ids, out); break;
 		}
-
-		query_count.fetch_add(ids.size(), std::memory_order_relaxed);
 	}
 
 private:
+	template <typename Value> using CollectionType = HashMap<UInt64, Value>;
+	template <typename Value> using CollectionPtrType = std::unique_ptr<CollectionType<Value>>;
+
 	struct attribute_t final
 	{
 		AttributeUnderlyingType type;
-		std::tuple<UInt8, UInt16, UInt32, UInt64,
+		std::tuple<
+			UInt8, UInt16, UInt32, UInt64,
 			Int8, Int16, Int32, Int64,
 			Float32, Float64,
 			String> null_values;
-		std::tuple<std::unique_ptr<HashMap<UInt64, UInt8>>,
-			std::unique_ptr<HashMap<UInt64, UInt16>>,
-			std::unique_ptr<HashMap<UInt64, UInt32>>,
-			std::unique_ptr<HashMap<UInt64, UInt64>>,
-			std::unique_ptr<HashMap<UInt64, Int8>>,
-			std::unique_ptr<HashMap<UInt64, Int16>>,
-			std::unique_ptr<HashMap<UInt64, Int32>>,
-			std::unique_ptr<HashMap<UInt64, Int64>>,
-			std::unique_ptr<HashMap<UInt64, Float32>>,
-			std::unique_ptr<HashMap<UInt64, Float64>>,
-			std::unique_ptr<HashMap<UInt64, StringRef>>> maps;
+		std::tuple<
+			CollectionPtrType<UInt8>, CollectionPtrType<UInt16>, CollectionPtrType<UInt32>, CollectionPtrType<UInt64>,
+			CollectionPtrType<Int8>, CollectionPtrType<Int16>, CollectionPtrType<Int32>, CollectionPtrType<Int64>,
+			CollectionPtrType<Float32>, CollectionPtrType<Float64>,
+			CollectionPtrType<StringRef>> maps;
 		std::unique_ptr<Arena> string_arena;
 	};
 
@@ -208,8 +312,8 @@ private:
 	template <typename T>
 	void addAttributeSize(const attribute_t & attribute)
 	{
-		const auto & map_ref = std::get<std::unique_ptr<HashMap<UInt64, T>>>(attribute.maps);
-		bytes_allocated += sizeof(HashMap<UInt64, T>) + map_ref->getBufferSizeInBytes();
+		const auto & map_ref = std::get<CollectionPtrType<T>>(attribute.maps);
+		bytes_allocated += sizeof(CollectionType<T>) + map_ref->getBufferSizeInBytes();
 		bucket_count = map_ref->getBufferSizeInCells();
 	}
 
@@ -246,7 +350,7 @@ private:
 	void createAttributeImpl(attribute_t & attribute, const Field & null_value)
 	{
 		std::get<T>(attribute.null_values) = null_value.get<typename NearestFieldType<T>::Type>();
-		std::get<std::unique_ptr<HashMap<UInt64, T>>>(attribute.maps) = std::make_unique<HashMap<UInt64, T>>();
+		std::get<CollectionPtrType<T>>(attribute.maps) = std::make_unique<CollectionType<T>>();
 	}
 
 	attribute_t createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
@@ -268,8 +372,7 @@ private:
 			case AttributeUnderlyingType::String:
 			{
 				std::get<String>(attr.null_values) = null_value.get<String>();
-				std::get<std::unique_ptr<HashMap<UInt64, StringRef>>>(attr.maps) =
-					std::make_unique<HashMap<UInt64, StringRef>>();
+				std::get<CollectionPtrType<StringRef>>(attr.maps) = std::make_unique<CollectionType<StringRef>>();
 				attr.string_arena = std::make_unique<Arena>();
 				break;
 			}
@@ -278,25 +381,27 @@ private:
 		return attr;
 	}
 
-	template <typename T>
-	void getItems(const attribute_t & attribute, const PODArray<id_t> & ids, PODArray<T> & out) const
+	template <typename T, typename ValueSetter, typename DefaultGetter>
+	void getItems(
+		const attribute_t & attribute, const PODArray<id_t> & ids, ValueSetter && set_value,
+		DefaultGetter && get_default) const
 	{
-		const auto & attr = *std::get<std::unique_ptr<HashMap<UInt64, T>>>(attribute.maps);
-		const auto null_value = std::get<T>(attribute.null_values);
+		const auto & attr = *std::get<CollectionPtrType<T>>(attribute.maps);
+		const auto rows = ext::size(ids);
 
-		for (const auto i : ext::range(0, ids.size()))
+		for (const auto i : ext::range(0, rows))
 		{
 			const auto it = attr.find(ids[i]);
-			out[i] = it != attr.end() ? it->second : null_value;
+			set_value(i, it != attr.end() ? it->second : get_default(i));
 		}
 
-		query_count.fetch_add(ids.size(), std::memory_order_relaxed);
+		query_count.fetch_add(rows, std::memory_order_relaxed);
 	}
 
 	template <typename T>
 	void setAttributeValueImpl(attribute_t & attribute, const id_t id, const T value)
 	{
-		auto & map = *std::get<std::unique_ptr<HashMap<UInt64, T>>>(attribute.maps);
+		auto & map = *std::get<CollectionPtrType<T>>(attribute.maps);
 		map.insert({ id, value });
 	}
 
@@ -316,7 +421,7 @@ private:
 			case AttributeUnderlyingType::Float64: setAttributeValueImpl<Float64>(attribute, id, value.get<Float64>()); break;
 			case AttributeUnderlyingType::String:
 			{
-				auto & map = *std::get<std::unique_ptr<HashMap<UInt64, StringRef>>>(attribute.maps);
+				auto & map = *std::get<CollectionPtrType<StringRef>>(attribute.maps);
 				const auto & string = value.get<String>();
 				const auto string_in_arena = attribute.string_arena->insert(string.data(), string.size());
 				map.insert({ id, StringRef{string_in_arena, string.size()} });
@@ -335,6 +440,18 @@ private:
 			};
 
 		return attributes[it->second];
+	}
+
+	template <typename T>
+	void has(const attribute_t & attribute, const PODArray<id_t> & ids, PODArray<UInt8> & out) const
+	{
+		const auto & attr = *std::get<CollectionPtrType<T>>(attribute.maps);
+		const auto rows = ext::size(ids);
+
+		for (const auto i : ext::range(0, rows))
+			out[i] = attr.find(ids[i]) != std::end(attr);
+
+		query_count.fetch_add(rows, std::memory_order_relaxed);
 	}
 
 	const std::string name;

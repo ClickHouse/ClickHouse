@@ -32,7 +32,7 @@ StorageJoin::StorageJoin(
 				"Key column (" + key + ") does not exist in table declaration.",
 				ErrorCodes::NO_SUCH_COLUMN_IN_TABLE};
 
-	join = new Join(key_names, key_names, Limits(), kind, strictness);
+	join = std::make_shared<Join>(key_names, key_names, Limits(), kind, strictness);
 	join->setSampleBlock(getSampleBlock());
 	restore();
 }

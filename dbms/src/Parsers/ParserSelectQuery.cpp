@@ -6,6 +6,7 @@
 #include <DB/Parsers/ExpressionListParsers.h>
 #include <DB/Parsers/ParserJoin.h>
 #include <DB/Parsers/ParserSetQuery.h>
+#include <DB/Parsers/ParserSampleRatio.h>
 #include <DB/Parsers/ParserSelectQuery.h>
 
 namespace DB
@@ -30,6 +31,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 	ParserString s_where("WHERE", true, true);
 	ParserString s_final("FINAL", true, true);
 	ParserString s_sample("SAMPLE", true, true);
+	ParserString s_offset("OFFSET", true, true);
 	ParserString s_group("GROUP", true, true);
 	ParserString s_by("BY", true, true);
 	ParserString s_with("WITH", true, true);
@@ -41,8 +43,9 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 	ParserString s_union("UNION", true, true);
 	ParserString s_all("ALL", true, true);
 
-	ParserNotEmptyExpressionList exp_list;
-	ParserExpressionWithOptionalAlias exp_elem;
+	ParserNotEmptyExpressionList exp_list(false);
+	ParserNotEmptyExpressionList exp_list_for_select_clause(true);	/// Разрешает алиасы без слова AS.
+	ParserExpressionWithOptionalAlias exp_elem(false);
 	ParserJoin join;
 	ParserOrderByExpressionList order_list;
 
@@ -61,7 +64,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 			ws.ignore(pos, end);
 		}
 
-		if (!exp_list.parse(pos, end, select_query->select_expression_list, max_parsed_pos, expected))
+		if (!exp_list_for_select_clause.parse(pos, end, select_query->select_expression_list, max_parsed_pos, expected))
 			return false;
 
 		ws.ignore(pos, end);
@@ -112,6 +115,9 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 				if (s_dot.ignore(pos, end, max_parsed_pos, expected))
 				{
 					select_query->database = select_query->table;
+
+					ws.ignore(pos, end);
+
 					if (!ident.parse(pos, end, select_query->table, max_parsed_pos, expected))
 						return false;
 
@@ -127,7 +133,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 			return false;
 
 		/// Может быть указан алиас. На данный момент, он ничего не значит и не используется.
-		ParserAlias().ignore(pos, end);
+		ParserAlias(true).ignore(pos, end);
 		ws.ignore(pos, end);
 	}
 
@@ -151,12 +157,23 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 		{
 			ws.ignore(pos, end);
 
-			ParserNumber num;
+			ParserSampleRatio ratio;
 
-			if (!num.parse(pos, end, select_query->sample_size, max_parsed_pos, expected))
+			if (!ratio.parse(pos, end, select_query->sample_size, max_parsed_pos, expected))
 				return false;
 
 			ws.ignore(pos, end);
+
+			/// OFFSET number
+			if (s_offset.ignore(pos, end, max_parsed_pos, expected))
+			{
+				ws.ignore(pos, end);
+
+				if (!ratio.parse(pos, end, select_query->sample_offset, max_parsed_pos, expected))
+					return false;
+
+				ws.ignore(pos, end);
+			}
 		}
 
 		return true;
@@ -351,6 +368,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 		select_query->children.push_back(select_query->join);
 	if (select_query->sample_size)
 		select_query->children.push_back(select_query->sample_size);
+	if (select_query->sample_offset)
+		select_query->children.push_back(select_query->sample_offset);
 	if (select_query->prewhere_expression)
 		select_query->children.push_back(select_query->prewhere_expression);
 	if (select_query->where_expression)

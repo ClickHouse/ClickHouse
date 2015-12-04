@@ -4,6 +4,7 @@
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/Storages/StorageBuffer.h>
 #include <DB/Parsers/ASTInsertQuery.h>
+#include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Common/setThreadName.h>
 #include <Poco/Ext/ThreadNumber.h>
 
@@ -150,11 +151,7 @@ static void appendBlock(const Block & from, Block & to)
 			throw Exception("Cannot append block to another: different type of columns at index " + toString(column_no)
 				+ ". Block 1: " + from.dumpStructure() + ". Block 2: " + to.dumpStructure(), ErrorCodes::BLOCKS_HAS_DIFFERENT_STRUCTURE);
 
-		if (col_to.empty())
-			to.getByPosition(column_no).column = col_from.clone();
-		else
-			for (size_t row_no = 0; row_no < rows; ++row_no)
-				col_to.insertFrom(col_from, row_no);
+		col_to.insertRangeFrom(col_from, 0, rows);
 	}
 }
 

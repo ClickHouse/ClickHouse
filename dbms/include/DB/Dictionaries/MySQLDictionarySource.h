@@ -58,6 +58,15 @@ public:
 		return new MySQLBlockInputStream{pool.Get(), query, sample_block, max_block_size};
 	}
 
+	BlockInputStreamPtr loadKeys(
+		const ConstColumnPlainPtrs & key_columns, const std::vector<std::size_t> & requested_rows) override
+	{
+		/// Здесь не логгируем и не обновляем время модификации, так как запрос может быть большим, и часто задаваться.
+
+		const auto query = composeLoadKeysQuery(key_columns, requested_rows);
+		return new MySQLBlockInputStream{pool.Get(), query, sample_block, max_block_size};
+	}
+
 	bool isModified() const override
 	{
 		if (dont_check_update_time)
@@ -156,35 +165,57 @@ private:
 			WriteBufferFromString out{query};
 			writeString("SELECT ", out);
 
-			if (!dict_struct.id.expression.empty())
+			if (dict_struct.id)
 			{
-				writeParenthesisedString(dict_struct.id.expression, out);
-				writeString(" AS ", out);
+				if (!dict_struct.id->expression.empty())
+				{
+					writeParenthesisedString(dict_struct.id->expression, out);
+					writeString(" AS ", out);
+				}
+
+				writeProbablyBackQuotedString(dict_struct.id->name, out);
+
+				if (dict_struct.range_min && dict_struct.range_max)
+				{
+					writeString(", ", out);
+
+					if (!dict_struct.range_min->expression.empty())
+					{
+						writeParenthesisedString(dict_struct.range_min->expression, out);
+						writeString(" AS ", out);
+					}
+
+					writeProbablyBackQuotedString(dict_struct.range_min->name, out);
+
+					writeString(", ", out);
+
+					if (!dict_struct.range_max->expression.empty())
+					{
+						writeParenthesisedString(dict_struct.range_max->expression, out);
+						writeString(" AS ", out);
+					}
+
+					writeProbablyBackQuotedString(dict_struct.range_max->name, out);
+				}
 			}
-
-			writeProbablyBackQuotedString(dict_struct.id.name, out);
-
-			if (dict_struct.range_min && dict_struct.range_max)
+			else if (dict_struct.key)
 			{
-				writeString(", ", out);
-
-				if (!dict_struct.range_min->expression.empty())
+				auto first = true;
+				for (const auto & key : *dict_struct.key)
 				{
-					writeParenthesisedString(dict_struct.range_min->expression, out);
-					writeString(" AS ", out);
+					if (!first)
+						writeString(", ", out);
+
+					first = false;
+
+					if (!key.expression.empty())
+					{
+						writeParenthesisedString(key.expression, out);
+						writeString(" AS ", out);
+					}
+
+					writeProbablyBackQuotedString(key.name, out);
 				}
-
-				writeProbablyBackQuotedString(dict_struct.range_min->name, out);
-
-				writeString(", ", out);
-
-				if (!dict_struct.range_max->expression.empty())
-				{
-					writeParenthesisedString(dict_struct.range_max->expression, out);
-					writeString(" AS ", out);
-				}
-
-				writeProbablyBackQuotedString(dict_struct.range_max->name, out);
 			}
 
 			for (const auto & attr : dict_struct.attributes)
@@ -222,19 +253,22 @@ private:
 
 	std::string composeLoadIdsQuery(const std::vector<std::uint64_t> & ids)
 	{
+		if (!dict_struct.id)
+			throw Exception{"Simple key required for method", ErrorCodes::UNSUPPORTED_METHOD};
+
 		std::string query;
 
 		{
 			WriteBufferFromString out{query};
 			writeString("SELECT ", out);
 
-			if (!dict_struct.id.expression.empty())
+			if (!dict_struct.id->expression.empty())
 			{
-				writeParenthesisedString(dict_struct.id.expression, out);
+				writeParenthesisedString(dict_struct.id->expression, out);
 				writeString(" AS ", out);
 			}
 
-			writeProbablyBackQuotedString(dict_struct.id.name, out);
+			writeProbablyBackQuotedString(dict_struct.id->name, out);
 
 			for (const auto & attr : dict_struct.attributes)
 			{
@@ -265,7 +299,7 @@ private:
 				writeString(" AND ", out);
 			}
 
-			writeProbablyBackQuotedString(dict_struct.id.name, out);
+			writeProbablyBackQuotedString(dict_struct.id->name, out);
 			writeString(" IN (", out);
 
 			auto first = true;
@@ -282,6 +316,92 @@ private:
 		}
 
 		return query;
+	}
+
+	std::string composeLoadKeysQuery(
+		const ConstColumnPlainPtrs & key_columns, const std::vector<std::size_t> & requested_rows)
+	{
+		if (!dict_struct.key)
+			throw Exception{"Composite key required for method", ErrorCodes::UNSUPPORTED_METHOD};
+
+		std::string query;
+
+		{
+			WriteBufferFromString out{query};
+			writeString("SELECT ", out);
+
+			auto first = true;
+			for (const auto & key_or_attribute : boost::join(*dict_struct.key, dict_struct.attributes))
+			{
+				if (!first)
+					writeString(", ", out);
+
+				first = false;
+
+				if (!key_or_attribute.expression.empty())
+				{
+					writeParenthesisedString(key_or_attribute.expression, out);
+					writeString(" AS ", out);
+				}
+
+				writeProbablyBackQuotedString(key_or_attribute.name, out);
+			}
+
+			writeString(" FROM ", out);
+			if (!db.empty())
+			{
+				writeProbablyBackQuotedString(db, out);
+				writeChar('.', out);
+			}
+			writeProbablyBackQuotedString(table, out);
+
+			writeString(" WHERE ", out);
+
+			if (!where.empty())
+			{
+				writeString(where, out);
+				writeString(" AND ", out);
+			}
+
+			first = true;
+			for (const auto row : requested_rows)
+			{
+				if (!first)
+					writeString(" OR ", out);
+
+				first = false;
+				composeKeyCondition(key_columns, row, out);
+			}
+
+			writeString(";", out);
+		}
+
+		return query;
+	}
+
+	void composeKeyCondition(const ConstColumnPlainPtrs & key_columns, const std::size_t row, WriteBuffer & out) const
+	{
+		writeString("(", out);
+
+		const auto keys_size = key_columns.size();
+		auto first = true;
+		for (const auto i : ext::range(0, keys_size))
+		{
+			if (!first)
+				writeString(" AND ", out);
+
+			first = false;
+
+			const auto & key_description = (*dict_struct.key)[i];
+			const auto & value = (*key_columns[i])[row];
+
+			/// key_i=value_i
+			writeString(key_description.name, out);
+			writeString("=", out);
+			key_description.type->serializeTextQuoted(value, out);
+		}
+
+		writeString(")", out);
 	}
 
 	const DictionaryStructure dict_struct;

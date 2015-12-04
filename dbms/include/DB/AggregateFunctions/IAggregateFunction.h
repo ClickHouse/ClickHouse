@@ -90,6 +90,16 @@ public:
 	  * Они выполняются как другие агрегатные функции, но не финализируются (возвращают состояние агрегации, которое может быть объединено с другим).
 	  */
 	virtual bool isState() const { return false; }
+
+
+	/** Внутренний цикл, использующий указатель на функцию, получается лучше, чем использующий виртуальную функцию.
+	  * Причина в том, что в случае виртуальных функций, GCC 5.1.2 генерирует код,
+	  *  который на каждой итерации цикла заново грузит из памяти в регистр адрес функции (значение по смещению в таблице виртуальных функций).
+	  * Это даёт падение производительности на простых запросах в районе 12%.
+	  * После появления более хороших компиляторов, код можно будет убрать.
+	  */
+	using AddFunc = void (*)(const IAggregateFunction *, AggregateDataPtr, const IColumn **, size_t);
+	virtual AddFunc getAddressOfAddFunction() const = 0;
 };
 
 
@@ -104,28 +114,28 @@ protected:
 	static const Data & data(ConstAggregateDataPtr place) 	{ return *reinterpret_cast<const Data*>(place); }
 
 public:
-	void create(AggregateDataPtr place) const
+	void create(AggregateDataPtr place) const override
 	{
 		new (place) Data;
 	}
 
-	void destroy(AggregateDataPtr place) const noexcept
+	void destroy(AggregateDataPtr place) const noexcept override
 	{
 		data(place).~Data();
 	}
 
-	bool hasTrivialDestructor() const
+	bool hasTrivialDestructor() const override
 	{
 		return __has_trivial_destructor(Data);
 	}
 
-	size_t sizeOfData() const
+	size_t sizeOfData() const override
 	{
 		return sizeof(Data);
 	}
 
 	/// NOTE: Сейчас не используется (структуры с состоянием агрегации кладутся без выравнивания).
-	size_t alignOfData() const
+	size_t alignOfData() const override
 	{
 		return __alignof__(Data);
 	}

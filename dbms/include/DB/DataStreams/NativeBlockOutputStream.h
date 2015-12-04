@@ -30,6 +30,8 @@ public:
 
 	static void writeData(const IDataType & type, const ColumnPtr & column, WriteBuffer & ostr, size_t offset, size_t limit);
 
+	String getContentType() const override { return "application/octet-stream"; }
+
 private:
 	WriteBuffer & ostr;
 	UInt64 client_revision;

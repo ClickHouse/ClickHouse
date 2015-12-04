@@ -69,6 +69,11 @@ void aggregate1(Map & map, Source::const_iterator begin, Source::const_iterator 
 		++map[*it];
 }
 
+#if !__clang__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
+
 void aggregate12(Map & map, Source::const_iterator begin, Source::const_iterator end)
 {
 	Map::iterator found;
@@ -93,11 +98,6 @@ void aggregate2(MapTwoLevel & map, Source::const_iterator begin, Source::const_i
 	for (auto it = begin; it != end; ++it)
 		++map[*it];
 }
-
-#if !__clang__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#endif
 
 void aggregate22(MapTwoLevel & map, Source::const_iterator begin, Source::const_iterator end)
 {

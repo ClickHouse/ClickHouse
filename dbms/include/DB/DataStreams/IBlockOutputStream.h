@@ -42,6 +42,10 @@ public:
 	virtual void setTotals(const Block & totals) {}
 	virtual void setExtremes(const Block & extremes) {}
 
+	/** Выставлять такой Content-Type при отдаче по HTTP.
+	  */
+	virtual String getContentType() const { return "text/plain; charset=UTF-8"; }
+
 	virtual ~IBlockOutputStream() {}
 
 	/** Не давать изменить таблицу, пока жив поток блоков.

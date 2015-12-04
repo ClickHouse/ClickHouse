@@ -25,7 +25,7 @@ int main(int argc, char ** argv)
 		settings.setRequireColumnFiles(argv[2][0] == '1');
 		settings.setVerbose(true);
 
-		MergeTreePartChecker::checkDataPart(argv[1], settings, Block());
+		MergeTreePartChecker::checkDataPart(argv[1], settings, {});
 	}
 	catch (...)
 	{

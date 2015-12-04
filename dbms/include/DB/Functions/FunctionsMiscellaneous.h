@@ -865,7 +865,7 @@ public:
 	}
 
 	template <typename T>
-	bool execute(Block & block, const IColumn * in_untyped, const size_t result) override
+	bool execute(Block & block, const IColumn * in_untyped, const size_t result)
 	{
 		if (const auto in = typeid_cast<const ColumnVector<T> *>(in_untyped))
 		{

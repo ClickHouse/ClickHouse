@@ -107,6 +107,11 @@ MergeTreeData::MergeTreeData(
 
 		ExpressionActionsPtr projected_expr = ExpressionAnalyzer(primary_expr_ast, context, nullptr, getColumnsList()).getActions(true);
 		primary_key_sample = projected_expr->getSampleBlock();
+
+		size_t primary_key_size = primary_key_sample.columns();
+		primary_key_data_types.resize(primary_key_size);
+		for (size_t i = 0; i < primary_key_size; ++i)
+			primary_key_data_types[i] = primary_key_sample.unsafeGetByPosition(i).type;
 	}
 	else if (mode != Unsorted)
 		throw Exception("Primary key could be empty only for UnsortedMergeTree", ErrorCodes::BAD_ARGUMENTS);
@@ -905,21 +910,21 @@ void MergeTreeData::detachPartInPlace(const DataPartPtr & part)
 	renameAndDetachPart(part, "", false, false);
 }
 
-MergeTreeData::DataParts MergeTreeData::getDataParts()
+MergeTreeData::DataParts MergeTreeData::getDataParts() const
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 
 	return data_parts;
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector()
+MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector() const
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 
 	return DataPartsVector(std::begin(data_parts), std::end(data_parts));
 }
 
-size_t MergeTreeData::getTotalActiveSizeInBytes()
+size_t MergeTreeData::getTotalActiveSizeInBytes() const
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 
@@ -930,14 +935,14 @@ size_t MergeTreeData::getTotalActiveSizeInBytes()
 	return res;
 }
 
-MergeTreeData::DataParts MergeTreeData::getAllDataParts()
+MergeTreeData::DataParts MergeTreeData::getAllDataParts() const
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(all_data_parts_mutex);
 
 	return all_data_parts;
 }
 
-size_t MergeTreeData::getMaxPartsCountForMonth()
+size_t MergeTreeData::getMaxPartsCountForMonth() const
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(data_parts_mutex);
 
@@ -1054,7 +1059,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const St
 		MergeTreePartChecker::Settings settings;
 		settings.setIndexGranularity(index_granularity);
 		settings.setRequireColumnFiles(true);
-		MergeTreePartChecker::checkDataPart(full_path + relative_path, settings, primary_key_sample, &part->checksums);
+		MergeTreePartChecker::checkDataPart(full_path + relative_path, settings, primary_key_data_types, &part->checksums);
 
 		{
 			WriteBufferFromFile out(full_path + relative_path + "/checksums.txt.tmp", 4096);

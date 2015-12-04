@@ -147,7 +147,7 @@ public:
 		return pos;
 	}
 
-	ColumnPtr cut(size_t start, size_t length) const override;
+	void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
 	void insert(const Field & x) override
 	{
@@ -293,9 +293,9 @@ private:
 	size_t ALWAYS_INLINE sizeAt(size_t i) const		{ return i == 0 ? getOffsets()[0] : (getOffsets()[i] - getOffsets()[i - 1]); }
 
 
-	/// Размножить значения, если вложенный столбец - ColumnArray<T>.
+	/// Размножить значения, если вложенный столбец - ColumnVector<T>.
 	template <typename T>
-	ColumnPtr replicate(const Offsets_t & replicate_offsets) const;
+	ColumnPtr replicateNumber(const Offsets_t & replicate_offsets) const;
 
 	/// Размножить значения, если вложенный столбец - ColumnString. Код слишком сложный.
 	ColumnPtr replicateString(const Offsets_t & replicate_offsets) const;
@@ -306,6 +306,14 @@ private:
 	  * Только ради неё сделана реализация метода replicate для ColumnArray(ColumnConst).
 	  */
 	ColumnPtr replicateConst(const Offsets_t & replicate_offsets) const;
+
+
+	/// Специализации для функции filter.
+	template <typename T>
+	ColumnPtr filterNumber(const Filter & filt) const;
+
+	ColumnPtr filterString(const Filter & filt) const;
+	ColumnPtr filterGeneric(const Filter & filt) const;
 };
 
 

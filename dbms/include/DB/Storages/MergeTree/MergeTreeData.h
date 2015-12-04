@@ -395,7 +395,7 @@ public:
 
 				for (size_t i = 0; i < size; ++i)
 					for (size_t j = 0; j < key_size; ++j)
-						storage.primary_key_sample.getByPosition(j).type->deserializeBinary(index[i * key_size + j], index_file);
+						storage.primary_key_data_types[j].get()->deserializeBinary(index[i * key_size + j], index_file);
 
 				if (!index_file.eof())
 					throw Exception("index file " + index_path + " is unexpectedly long", ErrorCodes::EXPECTED_END_OF_FILE);
@@ -710,17 +710,17 @@ public:
 
 	/** Возвращает копию списка, чтобы снаружи можно было не заботиться о блокировках.
 	  */
-	DataParts getDataParts();
-	DataPartsVector getDataPartsVector();
-	DataParts getAllDataParts();
+	DataParts getDataParts() const;
+	DataPartsVector getDataPartsVector() const;
+	DataParts getAllDataParts() const;
 
 	/** Размер активной части в количестве байт.
 	  */
-	size_t getTotalActiveSizeInBytes();
+	size_t getTotalActiveSizeInBytes() const;
 
 	/** Максимальное количество кусков в одном месяце.
 	  */
-	size_t getMaxPartsCountForMonth();
+	size_t getMaxPartsCountForMonth() const;
 
 	/** Если в таблице слишком много активных кусков, спит некоторое время, чтобы дать им возможность смерджиться.
 	  * Если передано until - проснуться раньше, если наступило событие.
@@ -858,6 +858,7 @@ public:
 
 	const ASTPtr primary_expr_ast;
 	Block primary_key_sample;
+	DataTypes primary_key_data_types;
 
 private:
 	bool require_part_metadata;
@@ -885,7 +886,7 @@ private:
 	  * То есть, если количество ссылок равно 1 - то кусок не актуален и не используется прямо сейчас, и его можно удалить.
 	  */
 	DataParts all_data_parts;
-	Poco::FastMutex all_data_parts_mutex;
+	mutable Poco::FastMutex all_data_parts_mutex;
 
 	/** Выражение, преобразующее типы столбцов.
 	  * Если преобразований типов нет, out_expression=nullptr.

@@ -104,7 +104,7 @@ struct __attribute__((__packed__)) AggregateFunctionUniqUpToData
 	}
 
 
-	void addOne(const IColumn & column, size_t row_num, UInt8 threshold)
+	void addImpl(const IColumn & column, size_t row_num, UInt8 threshold)
 	{
 		insert(static_cast<const ColumnVector<T> &>(column).getData()[row_num], threshold);
 	}
@@ -115,7 +115,7 @@ struct __attribute__((__packed__)) AggregateFunctionUniqUpToData
 template <>
 struct AggregateFunctionUniqUpToData<String> : AggregateFunctionUniqUpToData<UInt64>
 {
-	void addOne(const IColumn & column, size_t row_num, UInt8 threshold)
+	void addImpl(const IColumn & column, size_t row_num, UInt8 threshold)
 	{
 		/// Имейте ввиду, что вычисление приближённое.
 		StringRef value = column.getDataAt(row_num);
@@ -133,14 +133,14 @@ private:
 	UInt8 threshold = 5;	/// Значение по-умолчанию, если параметр не указан.
 
 public:
-	size_t sizeOfData() const
+	size_t sizeOfData() const override
 	{
 		return sizeof(AggregateFunctionUniqUpToData<T>) + sizeof(T) * threshold;
 	}
 
-	String getName() const { return "uniqUpTo"; }
+	String getName() const override { return "uniqUpTo"; }
 
-	DataTypePtr getReturnType() const
+	DataTypePtr getReturnType() const override
 	{
 		return new DataTypeUInt64;
 	}
@@ -149,7 +149,7 @@ public:
 	{
 	}
 
-	void setParameters(const Array & params)
+	void setParameters(const Array & params) override
 	{
 		if (params.size() != 1)
 			throw Exception("Aggregate function " + getName() + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -163,27 +163,27 @@ public:
 		threshold = threshold_param;
 	}
 
-	void addOne(AggregateDataPtr place, const IColumn & column, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const
 	{
-		this->data(place).addOne(column, row_num, threshold);
+		this->data(place).addImpl(column, row_num, threshold);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
 	{
 		this->data(place).merge(this->data(rhs), threshold);
 	}
 
-	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
+	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
 	{
 		this->data(place).write(buf, threshold);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
+	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
 		this->data(place).readAndMerge(buf, threshold);
 	}
 
-	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
+	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
 	{
 		static_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).size());
 	}
@@ -202,14 +202,19 @@ private:
 	UInt8 threshold = 5;	/// Значение по-умолчанию, если параметр не указан.
 
 public:
-	String getName() const { return "uniqUpTo"; }
+	size_t sizeOfData() const override
+	{
+		return sizeof(AggregateFunctionUniqUpToData<UInt64>) + sizeof(UInt64) * threshold;
+	}
 
-	DataTypePtr getReturnType() const
+	String getName() const override { return "uniqUpTo"; }
+
+	DataTypePtr getReturnType() const override
 	{
 		return new DataTypeUInt64;
 	}
 
-	void setArguments(const DataTypes & arguments)
+	void setArguments(const DataTypes & arguments) override
 	{
 		if (argument_is_tuple)
 			num_args = typeid_cast<const DataTypeTuple &>(*arguments[0]).getElements().size();
@@ -217,7 +222,7 @@ public:
 			num_args = arguments.size();
 	}
 
-	void setParameters(const Array & params)
+	void setParameters(const Array & params) override
 	{
 		if (params.size() != 1)
 			throw Exception("Aggregate function " + getName() + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -231,30 +236,37 @@ public:
 		threshold = threshold_param;
 	}
 
-	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const
+	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const override
 	{
 		this->data(place).insert(UniqVariadicHash<false, argument_is_tuple>::apply(num_args, columns, row_num), threshold);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
 	{
 		this->data(place).merge(this->data(rhs), threshold);
 	}
 
-	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
+	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
 	{
 		this->data(place).write(buf, threshold);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
+	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
 		this->data(place).readAndMerge(buf, threshold);
 	}
 
-	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
+	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
 	{
 		static_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).size());
 	}
+
+	static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num)
+	{
+		return static_cast<const AggregateFunctionUniqUpToVariadic &>(*that).add(place, columns, row_num);
+	}
+
+	IAggregateFunction::AddFunc getAddressOfAddFunction() const override final { return &addFree; }
 };
 
 

@@ -1,9 +1,12 @@
+#include <boost/rational.hpp>	/// Для вычислений, связанных с коэффициентами сэмплирования.
+
 #include <DB/Core/FieldVisitors.h>
 #include <DB/Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <DB/Storages/MergeTree/MergeTreeBlockInputStream.h>
 #include <DB/Storages/MergeTree/MergeTreeReadPool.h>
 #include <DB/Storages/MergeTree/MergeTreeThreadBlockInputStream.h>
 #include <DB/Parsers/ASTIdentifier.h>
+#include <DB/Parsers/ASTSampleRatio.h>
 #include <DB/DataStreams/ExpressionBlockInputStream.h>
 #include <DB/DataStreams/FilterBlockInputStream.h>
 #include <DB/DataStreams/CollapsingFinalBlockInputStream.h>
@@ -13,6 +16,7 @@
 #include <DB/DataStreams/SummingSortedBlockInputStream.h>
 #include <DB/DataStreams/AggregatingSortedBlockInputStream.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
+#include <DB/DataTypes/DataTypeDate.h>
 #include <DB/Common/VirtualColumnUtils.h>
 
 
@@ -23,6 +27,7 @@ MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(MergeTreeData & data_)
 	: data(data_), log(&Logger::get(data.getLogName() + " (SelectExecutor)"))
 {
 }
+
 
 /// Построить блок состоящий только из возможных значений виртуальных столбцов
 static Block getBlockWithVirtualColumns(const MergeTreeData::DataPartsVector & parts)
@@ -37,6 +42,55 @@ static Block getBlockWithVirtualColumns(const MergeTreeData::DataPartsVector & p
 	return res;
 }
 
+
+size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
+	const MergeTreeData::DataPartsVector & parts, const PKCondition & key_condition, const Settings & settings) const
+{
+	size_t full_marks_count = 0;
+
+	/// Узнаем, сколько строк мы бы прочли без семплирования.
+	LOG_DEBUG(log, "Preliminary index scan with condition: " << key_condition.toString());
+
+	for (size_t i = 0; i < parts.size(); ++i)
+	{
+		const MergeTreeData::DataPartPtr & part = parts[i];
+		MarkRanges ranges = markRangesFromPKRange(part->index, key_condition, settings);
+
+		/** Для того, чтобы получить оценку снизу количества строк, подходящих под условие на PK,
+		  *  учитываем только гарантированно полные засечки.
+		  * То есть, не учитываем первую и последнюю засечку, которые могут быть неполными.
+		  */
+		for (size_t j = 0; j < ranges.size(); ++j)
+			if (ranges[j].end - ranges[j].begin > 2)
+				full_marks_count += ranges[j].end - ranges[j].begin - 2;
+	}
+
+	return full_marks_count * data.index_granularity;
+}
+
+
+using RelativeSize = boost::rational<ASTSampleRatio::BigNum>;
+
+static std::ostream & operator<<(std::ostream & ostr, const RelativeSize & x)
+{
+	ostr << ASTSampleRatio::toString(x.numerator()) << "/" << ASTSampleRatio::toString(x.denominator());
+	return ostr;
+}
+
+
+/// Переводит размер сэмпла в приблизительном количестве строк (вида SAMPLE 1000000) в относительную величину (вида SAMPLE 0.1).
+static RelativeSize convertAbsoluteSampleSizeToRelative(const ASTPtr & node, size_t approx_total_rows)
+{
+	if (approx_total_rows == 0)
+		return 1;
+
+	const ASTSampleRatio & node_sample = typeid_cast<const ASTSampleRatio &>(*node);
+
+	auto absolute_sample_size = node_sample.ratio.numerator / node_sample.ratio.denominator;
+	return std::min(RelativeSize(1), RelativeSize(absolute_sample_size) / approx_total_rows);
+}
+
+
 BlockInputStreams MergeTreeDataSelectExecutor::read(
 	const Names & column_names_to_return,
 	ASTPtr query,
@@ -46,7 +100,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	const size_t max_block_size,
 	const unsigned threads,
 	size_t * part_index,
-	Int64 max_block_number_to_read)
+	Int64 max_block_number_to_read) const
 {
 	size_t part_index_var = 0;
 	if (!part_index)
@@ -81,12 +135,17 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	PKCondition key_condition(query, context, data.getColumnsList(), data.getSortDescription());
 	PKCondition date_condition(query, context, data.getColumnsList(), SortDescription(1, SortColumnDescription(data.date_column_name, 1)));
 
+	if (settings.force_primary_key && key_condition.alwaysUnknown())
+		throw Exception("Primary key is not used and setting 'force_primary_key' is set.", ErrorCodes::INDEX_NOT_USED);
+
 	if (settings.force_index_by_date && date_condition.alwaysUnknown())
 		throw Exception("Index by date is not used and setting 'force_index_by_date' is set.", ErrorCodes::INDEX_NOT_USED);
 
 	/// Выберем куски, в которых могут быть данные, удовлетворяющие date_condition, и которые подходят под условие на _part,
 	///  а также max_block_number_to_read.
 	{
+		const DataTypes data_types_date { new DataTypeDate };
+
 		auto prev_parts = parts;
 		parts.clear();
 
@@ -98,7 +157,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 			Field left = static_cast<UInt64>(part->left_date);
 			Field right = static_cast<UInt64>(part->right_date);
 
-			if (!date_condition.mayBeTrueInRange(&left, &right))
+			if (!date_condition.mayBeTrueInRange(&left, &right, data_types_date))
 				continue;
 
 			if (max_block_number_to_read && part->right > max_block_number_to_read)
@@ -113,145 +172,218 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 	typedef Poco::SharedPtr<ASTFunction> ASTFunctionPtr;
 	ASTFunctionPtr filter_function;
 	ExpressionActionsPtr filter_expression;
-	double relative_sample_size = 0;
+
+	RelativeSize relative_sample_size = 0;
+	RelativeSize relative_sample_offset = 0;
 
 	ASTSelectQuery & select = *typeid_cast<ASTSelectQuery*>(&*query);
 
 	if (select.sample_size)
 	{
-		relative_sample_size = apply_visitor(FieldVisitorConvertToNumber<double>(),
-			typeid_cast<ASTLiteral&>(*select.sample_size).value);
+		relative_sample_size.assign(
+			typeid_cast<const ASTSampleRatio &>(*select.sample_size).ratio.numerator,
+			typeid_cast<const ASTSampleRatio &>(*select.sample_size).ratio.denominator);
 
 		if (relative_sample_size < 0)
 			throw Exception("Negative sample size", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
+		relative_sample_offset = 0;
+		if (select.sample_offset)
+			relative_sample_offset.assign(
+				typeid_cast<const ASTSampleRatio &>(*select.sample_offset).ratio.numerator,
+				typeid_cast<const ASTSampleRatio &>(*select.sample_offset).ratio.denominator);
+
+		if (relative_sample_offset < 0)
+			throw Exception("Negative sample offset", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
 		/// Переводим абсолютную величину сэмплирования (вида SAMPLE 1000000 - сколько строк прочитать) в относительную (какую долю данных читать).
+		size_t approx_total_rows = 0;
+		if (relative_sample_size > 1 || relative_sample_offset > 1)
+			approx_total_rows = getApproximateTotalRowsToRead(parts, key_condition, settings);
+
 		if (relative_sample_size > 1)
 		{
-			size_t requested_count = apply_visitor(FieldVisitorConvertToNumber<UInt64>(), typeid_cast<ASTLiteral&>(*select.sample_size).value);
-
-			/// Узнаем, сколько строк мы бы прочли без семплирования.
-			LOG_DEBUG(log, "Preliminary index scan with condition: " << key_condition.toString());
-			size_t total_count = 0;
-			for (size_t i = 0; i < parts.size(); ++i)
-			{
-				MergeTreeData::DataPartPtr & part = parts[i];
-				MarkRanges ranges = markRangesFromPkRange(part->index, key_condition, settings);
-
-				/** Для того, чтобы получить оценку снизу количества строк, подходящих под условие на PK,
-				  *  учитываем только гарантированно полные засечки.
-				  * То есть, не учитываем первую и последнюю засечку, которые могут быть неполными.
-				  */
-				for (size_t j = 0; j < ranges.size(); ++j)
-					if (ranges[j].end - ranges[j].begin > 2)
-						total_count += ranges[j].end - ranges[j].begin - 2;
-			}
-			total_count *= data.index_granularity;
-
-			if (total_count == 0)
-				relative_sample_size = 1;
-			else
-				relative_sample_size = std::min(1., static_cast<double>(requested_count) / total_count);
-
+			relative_sample_size = convertAbsoluteSampleSizeToRelative(select.sample_size, approx_total_rows);
 			LOG_DEBUG(log, "Selected relative sample size: " << relative_sample_size);
 		}
 
 		/// SAMPLE 1 - то же, что и отсутствие SAMPLE.
 		if (relative_sample_size == 1)
 			relative_sample_size = 0;
+
+		if (relative_sample_offset > 0 && 0 == relative_sample_size)
+			throw Exception("Sampling offset is incorrect because no sampling", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+		if (relative_sample_offset > 1)
+		{
+			relative_sample_offset = convertAbsoluteSampleSizeToRelative(select.sample_offset, approx_total_rows);
+			LOG_DEBUG(log, "Selected relative sample offset: " << relative_sample_offset);
+		}
 	}
 
-	if ((settings.parallel_replicas_count > 1) && !data.sampling_expression.isNull() && (relative_sample_size == 0))
-		relative_sample_size = 1;
+	/** Какой диапазон значений ключа сэмплирования нужно читать?
+	  * Сначала во всём диапазоне ("юнивёрсум") выбераем интервал
+	  *  относительного размера relative_sample_size, смещённый от начала на relative_sample_offset.
+	  *
+	  * Пример: SAMPLE 0.4 OFFSET 0.3:
+	  *
+	  * [------********------]
+	  *        ^ - offset
+	  *        <------> - size
+	  *
+	  * Если интервал переходит через конец юнивёрсума, то срезаем его правую часть.
+	  *
+	  * Пример: SAMPLE 0.4 OFFSET 0.8:
+	  *
+	  * [----------------****]
+	  *                  ^ - offset
+	  *                  <------> - size
+	  *
+	  * Далее, если выставлены настройки parallel_replicas_count, parallel_replica_offset,
+	  *  то необходимо разбить полученный интервал ещё на кусочки в количестве parallel_replicas_count,
+	  *  и выбрать из них кусочек с номером parallel_replica_offset (от нуля).
+	  *
+	  * Пример: SAMPLE 0.4 OFFSET 0.3, parallel_replicas_count = 2, parallel_replica_offset = 1:
+	  *
+	  * [----------****------]
+	  *        ^ - offset
+	  *        <------> - size
+	  *        <--><--> - кусочки для разных parallel_replica_offset, выбираем второй.
+	  *
+	  * Очень важно, чтобы интервалы для разных parallel_replica_offset покрывали весь диапазон без пропусков и перекрытий.
+	  * Также важно, чтобы весь юнивёрсум можно было покрыть, используя SAMPLE 0.1 OFFSET 0, ... OFFSET 0.9 и похожие десятичные дроби.
+	  */
 
-	if (relative_sample_size != 0)
+	bool use_sampling = relative_sample_size > 0 || settings.parallel_replicas_count > 1;
+	bool no_data = false;	/// После сэмплирования ничего не остаётся.
+
+	if (use_sampling)
 	{
-		UInt64 sampling_column_max = 0;
+		RelativeSize size_of_universum = 0;
 		DataTypePtr type = data.getPrimaryExpression()->getSampleBlock().getByName(data.sampling_expression->getColumnName()).type;
 
-		if (type->getName() == "UInt64")
-			sampling_column_max = std::numeric_limits<UInt64>::max();
-		else if (type->getName() == "UInt32")
-			sampling_column_max = std::numeric_limits<UInt32>::max();
-		else if (type->getName() == "UInt16")
-			sampling_column_max = std::numeric_limits<UInt16>::max();
-		else if (type->getName() == "UInt8")
-			sampling_column_max = std::numeric_limits<UInt8>::max();
+		if (typeid_cast<const DataTypeUInt64 *>(type.get()))
+			size_of_universum = RelativeSize(std::numeric_limits<UInt64>::max()) + 1;
+		else if (typeid_cast<const DataTypeUInt32 *>(type.get()))
+			size_of_universum = RelativeSize(std::numeric_limits<UInt32>::max()) + 1;
+		else if (typeid_cast<const DataTypeUInt16 *>(type.get()))
+			size_of_universum = RelativeSize(std::numeric_limits<UInt16>::max()) + 1;
+		else if (typeid_cast<const DataTypeUInt8 *>(type.get()))
+			size_of_universum = RelativeSize(std::numeric_limits<UInt8>::max()) + 1;
 		else
 			throw Exception("Invalid sampling column type in storage parameters: " + type->getName() + ". Must be unsigned integer type.", ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
 
-		UInt64 sampling_column_value_lower_limit;
-		UInt64 sampling_column_value_upper_limit;
-		UInt64 upper_limit = static_cast<long double>(relative_sample_size) * sampling_column_max;
-
 		if (settings.parallel_replicas_count > 1)
 		{
-			sampling_column_value_lower_limit = (static_cast<long double>(settings.parallel_replica_offset) / settings.parallel_replicas_count) * upper_limit;
-			if ((settings.parallel_replica_offset + 1) < settings.parallel_replicas_count)
-				sampling_column_value_upper_limit = (static_cast<long double>(settings.parallel_replica_offset + 1) / settings.parallel_replicas_count) * upper_limit;
-			else
-				sampling_column_value_upper_limit = (upper_limit < sampling_column_max) ? (upper_limit + 1) : upper_limit;
+			if (relative_sample_size == 0)
+				relative_sample_size = 1;
+
+			relative_sample_size /= settings.parallel_replicas_count;
+			relative_sample_offset += relative_sample_size * settings.parallel_replica_offset;
+		}
+
+		if (relative_sample_offset >= 1)
+			no_data = true;
+
+		/// Вычисляем полуинтервал [lower, upper) значений столбца.
+		bool has_lower_limit = false;
+		bool has_upper_limit = false;
+
+		RelativeSize lower_limit_rational = relative_sample_offset * size_of_universum;
+		RelativeSize upper_limit_rational = (relative_sample_offset + relative_sample_size) * size_of_universum;
+
+		UInt64 lower = boost::rational_cast<ASTSampleRatio::BigNum>(lower_limit_rational);
+		UInt64 upper = boost::rational_cast<ASTSampleRatio::BigNum>(upper_limit_rational);
+
+		if (lower > 0)
+			has_lower_limit = true;
+
+		if (upper_limit_rational < size_of_universum)
+			has_upper_limit = true;
+
+		/*std::cerr << std::fixed << std::setprecision(100)
+			<< "relative_sample_size: " << relative_sample_size << "\n"
+			<< "relative_sample_offset: " << relative_sample_offset << "\n"
+			<< "lower_limit_float: " << lower_limit_rational << "\n"
+			<< "upper_limit_float: " << upper_limit_rational << "\n"
+			<< "lower: " << lower << "\n"
+			<< "upper: " << upper << "\n";*/
+
+		if ((has_upper_limit && upper == 0)
+			|| (has_lower_limit && has_upper_limit && lower == upper))
+			no_data = true;
+
+		if (no_data || (!has_lower_limit && !has_upper_limit))
+		{
+			use_sampling = false;
 		}
 		else
 		{
-			sampling_column_value_lower_limit = 0;
-			sampling_column_value_upper_limit = (upper_limit < sampling_column_max) ? (upper_limit + 1) : upper_limit;
+			/// Добавим условия, чтобы отсечь еще что-нибудь при повторном просмотре индекса и при обработке запроса.
+
+			ASTFunctionPtr lower_function;
+			ASTFunctionPtr upper_function;
+
+			if (has_lower_limit)
+			{
+				if (!key_condition.addCondition(data.sampling_expression->getColumnName(), Range::createLeftBounded(lower, true)))
+					throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
+
+				ASTPtr args = new ASTExpressionList;
+				args->children.push_back(data.sampling_expression);
+				args->children.push_back(new ASTLiteral(StringRange(), lower));
+
+				lower_function = new ASTFunction;
+				lower_function->name = "greaterOrEquals";
+				lower_function->arguments = args;
+				lower_function->children.push_back(lower_function->arguments);
+
+				filter_function = lower_function;
+			}
+
+			if (has_upper_limit)
+			{
+				if (!key_condition.addCondition(data.sampling_expression->getColumnName(), Range::createRightBounded(upper, false)))
+					throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
+
+				ASTPtr args = new ASTExpressionList;
+				args->children.push_back(data.sampling_expression);
+				args->children.push_back(new ASTLiteral(StringRange(), upper));
+
+				upper_function = new ASTFunction;
+				upper_function->name = "less";
+				upper_function->arguments = args;
+				upper_function->children.push_back(upper_function->arguments);
+
+				filter_function = upper_function;
+			}
+
+			if (has_lower_limit && has_upper_limit)
+			{
+				ASTPtr args = new ASTExpressionList;
+				args->children.push_back(lower_function);
+				args->children.push_back(upper_function);
+
+				filter_function = new ASTFunction;
+				filter_function->name = "and";
+				filter_function->arguments = args;
+				filter_function->children.push_back(filter_function->arguments);
+			}
+
+			filter_expression = ExpressionAnalyzer(filter_function, context, nullptr, data.getColumnsList()).getActions(false);
+
+			/// Добавим столбцы, нужные для sampling_expression.
+			std::vector<String> add_columns = filter_expression->getRequiredColumns();
+			column_names_to_read.insert(column_names_to_read.end(), add_columns.begin(), add_columns.end());
+			std::sort(column_names_to_read.begin(), column_names_to_read.end());
+			column_names_to_read.erase(std::unique(column_names_to_read.begin(), column_names_to_read.end()), column_names_to_read.end());
 		}
+	}
 
-		/// Добавим условие, чтобы отсечь еще что-нибудь при повторном просмотре индекса.
-		if (sampling_column_value_lower_limit > 0)
-			if (!key_condition.addCondition(data.sampling_expression->getColumnName(),
-				Range::createLeftBounded(sampling_column_value_lower_limit, true)))
-				throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
-
-		if (!key_condition.addCondition(data.sampling_expression->getColumnName(),
-			Range::createRightBounded(sampling_column_value_upper_limit, false)))
-			throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
-
-		ASTPtr upper_filter_args = new ASTExpressionList;
-		upper_filter_args->children.push_back(data.sampling_expression);
-		upper_filter_args->children.push_back(new ASTLiteral(StringRange(), sampling_column_value_upper_limit));
-
-		ASTFunctionPtr upper_filter_function = new ASTFunction;
-		upper_filter_function->name = "less";
-		upper_filter_function->arguments = upper_filter_args;
-		upper_filter_function->children.push_back(upper_filter_function->arguments);
-
-		if (sampling_column_value_lower_limit > 0)
-		{
-			/// Выражение для фильтрации: sampling_expression in [sampling_column_value_lower_limit, sampling_column_value_upper_limit)
-
-			ASTPtr lower_filter_args = new ASTExpressionList;
-			lower_filter_args->children.push_back(data.sampling_expression);
-			lower_filter_args->children.push_back(new ASTLiteral(StringRange(), sampling_column_value_lower_limit));
-
-			ASTFunctionPtr lower_filter_function = new ASTFunction;
-			lower_filter_function->name = "greaterOrEquals";
-			lower_filter_function->arguments = lower_filter_args;
-			lower_filter_function->children.push_back(lower_filter_function->arguments);
-
-			ASTPtr filter_function_args = new ASTExpressionList;
-			filter_function_args->children.push_back(lower_filter_function);
-			filter_function_args->children.push_back(upper_filter_function);
-
-			filter_function = new ASTFunction;
-			filter_function->name = "and";
-			filter_function->arguments = filter_function_args;
-			filter_function->children.push_back(filter_function->arguments);
-		}
-		else
-		{
-			/// Выражение для фильтрации: sampling_expression < sampling_column_value_upper_limit
-			filter_function = upper_filter_function;
-		}
-
-		filter_expression = ExpressionAnalyzer(filter_function, context, nullptr, data.getColumnsList()).getActions(false);
-
-		/// Добавим столбцы, нужные для sampling_expression.
-		std::vector<String> add_columns = filter_expression->getRequiredColumns();
-		column_names_to_read.insert(column_names_to_read.end(), add_columns.begin(), add_columns.end());
-		std::sort(column_names_to_read.begin(), column_names_to_read.end());
-		column_names_to_read.erase(std::unique(column_names_to_read.begin(), column_names_to_read.end()), column_names_to_read.end());
+	if (no_data)
+	{
+		LOG_DEBUG(log, "Sampling yields no data.");
+		return {};
 	}
 
 	LOG_DEBUG(log, "Key condition: " << key_condition.toString());
@@ -285,7 +417,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 		RangesInDataPart ranges(part, (*part_index)++);
 
 		if (data.mode != MergeTreeData::Unsorted)
-			ranges.ranges = markRangesFromPkRange(part->index, key_condition, settings);
+			ranges.ranges = markRangesFromPKRange(part->index, key_condition, settings);
 		else
 			ranges.ranges = MarkRanges{MarkRange{0, part->size}};
 
@@ -345,7 +477,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 			settings);
 	}
 
-	if (relative_sample_size != 0)
+	if (use_sampling)
 		for (auto & stream : res)
 			stream = new FilterBlockInputStream(new ExpressionBlockInputStream(stream, filter_expression), filter_function->getColumnName());
 
@@ -362,7 +494,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 	ExpressionActionsPtr prewhere_actions,
 	const String & prewhere_column,
 	const Names & virt_columns,
-	const Settings & settings)
+	const Settings & settings) const
 {
 	const std::size_t min_marks_for_concurrent_read =
 		(settings.merge_tree_min_rows_for_concurrent_read + data.index_granularity - 1) / data.index_granularity;
@@ -512,7 +644,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 	const String & prewhere_column,
 	const Names & virt_columns,
 	const Settings & settings,
-	const Context & context)
+	const Context & context) const
 {
 	const size_t max_marks_to_use_cache =
 		(settings.merge_tree_max_rows_to_use_cache + data.index_granularity - 1) / data.index_granularity;
@@ -631,7 +763,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 	return res;
 }
 
-void MergeTreeDataSelectExecutor::createPositiveSignCondition(ExpressionActionsPtr & out_expression, String & out_column, const Context & context)
+void MergeTreeDataSelectExecutor::createPositiveSignCondition(ExpressionActionsPtr & out_expression, String & out_column, const Context & context) const
 {
 	ASTFunction * function = new ASTFunction;
 	ASTPtr function_ptr = function;
@@ -663,8 +795,8 @@ void MergeTreeDataSelectExecutor::createPositiveSignCondition(ExpressionActionsP
 }
 
 /// Получает набор диапазонов засечек, вне которых не могут находиться ключи из заданного диапазона.
-MarkRanges MergeTreeDataSelectExecutor::markRangesFromPkRange(
-	const MergeTreeData::DataPart::Index & index, PKCondition & key_condition, const Settings & settings)
+MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
+	const MergeTreeData::DataPart::Index & index, const PKCondition & key_condition, const Settings & settings) const
 {
 	size_t min_marks_for_seek = (settings.merge_tree_min_rows_for_seek + data.index_granularity - 1) / data.index_granularity;
 
@@ -694,9 +826,9 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPkRange(
 
 			bool may_be_true;
 			if (range.end == marks_count)
-				may_be_true = key_condition.mayBeTrueAfter(&index[range.begin * key_size]);
+				may_be_true = key_condition.mayBeTrueAfter(&index[range.begin * key_size], data.primary_key_data_types);
 			else
-				may_be_true = key_condition.mayBeTrueInRange(&index[range.begin * key_size], &index[range.end * key_size]);
+				may_be_true = key_condition.mayBeTrueInRange(&index[range.begin * key_size], &index[range.end * key_size], data.primary_key_data_types);
 
 			if (!may_be_true)
 				continue;

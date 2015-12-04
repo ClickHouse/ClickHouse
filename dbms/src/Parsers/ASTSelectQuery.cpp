@@ -190,6 +190,7 @@ ASTPtr ASTSelectQuery::cloneImpl(bool traverse_union_all) const
 	CLONE(array_join_expression_list)
 	CLONE(join)
 	CLONE(sample_size)
+	CLONE(sample_offset)
 	CLONE(prewhere_expression)
 	CLONE(where_expression)
 	CLONE(group_expression_list)
@@ -275,6 +276,12 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
 	{
 		s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "SAMPLE " << (s.hilite ? hilite_none : "");
 		sample_size->formatImpl(s, state, frame);
+
+		if (sample_offset)
+		{
+			s.ostr << (s.hilite ? hilite_keyword : "") << ' ' << "OFFSET " << (s.hilite ? hilite_none : "");
+			sample_offset->formatImpl(s, state, frame);
+		}
 	}
 
 	if (array_join_expression_list)

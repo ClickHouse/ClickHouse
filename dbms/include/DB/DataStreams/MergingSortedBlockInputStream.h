@@ -136,7 +136,7 @@ private:
 	void initQueue(std::priority_queue<TSortCursor> & queue);
 
 	template <typename TSortCursor>
-	void merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
+	void merge(Block & merged_block, ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
 
 	Logger * log = &Logger::get("MergingSortedBlockInputStream");
 
