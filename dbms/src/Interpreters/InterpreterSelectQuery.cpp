@@ -930,6 +930,7 @@ void InterpreterSelectQuery::executeMergeAggregated(bool overflow_row, bool fina
 	else
 	{
 		streams[0] = new MergingAggregatedMemoryEfficientBlockInputStream(streams, params, final,
+			settings.max_threads,
 			settings.aggregation_memory_efficient_merge_threads
 				? size_t(settings.aggregation_memory_efficient_merge_threads)
 				: original_max_threads);

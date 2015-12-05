@@ -10,25 +10,17 @@ namespace DB
 {
 
 
-/** Доагрегирует потоки блоков, держа в оперативной памяти только по одному блоку из каждого потока.
+/** Доагрегирует потоки блоков, держа в оперативной памяти только по одному или несколько (до merging_threads) блоков из каждого источника.
   * Это экономит оперативку в случае использования двухуровневой агрегации, где в каждом потоке будет до 256 блоков с частями результата.
   *
   * Агрегатные функции в блоках не должны быть финализированы, чтобы их состояния можно было объединить.
-  *
-  * Замечания:
-  *
-  * На хорошей сети (10Gbit) может работать заметно медленнее, так как чтения блоков с разных
-  *  удалённых серверов делаются последовательно, при этом, чтение упирается в CPU.
-  * Это несложно исправить.
-  *
-  * Можно держать в памяти не по одному блоку из каждого источника, а по несколько, и распараллелить мердж.
-  * При этом будет расходоваться кратно больше оперативки.
   */
 class MergingAggregatedMemoryEfficientBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 	MergingAggregatedMemoryEfficientBlockInputStream(
-		BlockInputStreams inputs_, const Aggregator::Params & params, bool final_, size_t threads_);
+		BlockInputStreams inputs_, const Aggregator::Params & params, bool final_,
+		size_t reading_threads_, size_t merging_threads_);
 
 	~MergingAggregatedMemoryEfficientBlockInputStream();
 
@@ -36,17 +28,21 @@ public:
 
 	String getID() const override;
 
+	/// Отправляет запрос (инициирует вычисления) раньше, чем read.
+	void readPrefix() override;
+
 protected:
 	Block readImpl() override;
 
 private:
 	Aggregator aggregator;
 	bool final;
-	size_t threads;
+	size_t reading_threads;
+	size_t merging_threads;
 
 	bool started = false;
-	bool has_two_level = false;
-	bool has_overflows = false;
+	volatile bool has_two_level = false;
+	volatile bool has_overflows = false;
 	int current_bucket_num = -1;
 
 	struct Input
@@ -64,8 +60,12 @@ private:
 
 	using BlocksToMerge = Poco::SharedPtr<BlocksList>;
 
+	void start();
+
 	/// Получить блоки, которые можно мерджить. Это позволяет мерджить их параллельно в отдельных потоках.
 	BlocksToMerge getNextBlocksToMerge();
+
+	std::unique_ptr<boost::threadpool::pool> reading_pool;
 
 	/// Для параллельного мерджа.
 	struct OutputData

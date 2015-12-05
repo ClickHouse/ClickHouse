@@ -116,7 +116,8 @@ protected:
 					<< (files.sum_size_compressed / 1048576.0) << " MiB compressed, "
 					<< (files.sum_size_uncompressed / 1048576.0) << " MiB uncompressed.");
 
-				impl.reset(new MergingAggregatedMemoryEfficientBlockInputStream(input_streams, params, final, temporary_data_merge_threads));
+				impl.reset(new MergingAggregatedMemoryEfficientBlockInputStream(
+					input_streams, params, final, temporary_data_merge_threads, temporary_data_merge_threads));
 			}
 		}
 
