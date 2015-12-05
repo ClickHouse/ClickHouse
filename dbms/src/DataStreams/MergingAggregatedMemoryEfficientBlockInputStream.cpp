@@ -95,6 +95,17 @@ Block MergingAggregatedMemoryEfficientBlockInputStream::readImpl()
 }
 
 
+MergingAggregatedMemoryEfficientBlockInputStream::~MergingAggregatedMemoryEfficientBlockInputStream()
+{
+	if (parallel_merge_data)
+	{
+		LOG_TRACE((&Logger::get("MergingAggregatedMemoryEfficientBlockInputStream")), "Waiting for threads to finish");
+		parallel_merge_data->result_queue.clear();
+		parallel_merge_data->pool.wait();
+	}
+}
+
+
 void MergingAggregatedMemoryEfficientBlockInputStream::mergeThread(MemoryTracker * memory_tracker)
 {
 	setThreadName("MrgAggMemEffThr");

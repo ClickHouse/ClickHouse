@@ -30,6 +30,8 @@ public:
 	MergingAggregatedMemoryEfficientBlockInputStream(
 		BlockInputStreams inputs_, const Aggregator::Params & params, bool final_, size_t threads_);
 
+	~MergingAggregatedMemoryEfficientBlockInputStream();
+
 	String getName() const override { return "MergingAggregatedMemoryEfficient"; }
 
 	String getID() const override;
