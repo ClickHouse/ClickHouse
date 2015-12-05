@@ -175,7 +175,7 @@ public:
 		getOffsets().push_back(getOffsets().size() == 0 ? 0 : getOffsets().back());
 	}
 
-	ColumnPtr filter(const Filter & filt) const override;
+	ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
 
 	ColumnPtr permute(const Permutation & perm, size_t limit) const override;
 
@@ -310,10 +310,10 @@ private:
 
 	/// Специализации для функции filter.
 	template <typename T>
-	ColumnPtr filterNumber(const Filter & filt) const;
+	ColumnPtr filterNumber(const Filter & filt, ssize_t result_size_hint) const;
 
-	ColumnPtr filterString(const Filter & filt) const;
-	ColumnPtr filterGeneric(const Filter & filt) const;
+	ColumnPtr filterString(const Filter & filt, ssize_t result_size_hint) const;
+	ColumnPtr filterGeneric(const Filter & filt, ssize_t result_size_hint) const;
 };
 
 

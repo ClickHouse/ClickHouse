@@ -123,12 +123,12 @@ public:
 				start, length);
 	}
 
-	ColumnPtr filter(const Filter & filt) const override
+	ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
 	{
 		Block res_block = data.cloneEmpty();
 
 		for (size_t i = 0; i < columns.size(); ++i)
-			res_block.unsafeGetByPosition(i).column = data.unsafeGetByPosition(i).column->filter(filt);
+			res_block.unsafeGetByPosition(i).column = data.unsafeGetByPosition(i).column->filter(filt, result_size_hint);
 
 		return new ColumnTuple(res_block);
 	}

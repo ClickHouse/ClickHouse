@@ -176,9 +176,12 @@ public:
 
 	/** Оставить только значения, соответствующие фильтру.
 	  * Используется для операции WHERE / HAVING.
+	  * Если result_size_hint > 0, то сделать reserve этого размера у результата;
+	  *  если 0, то не делать reserve,
+	  *  иначе сделать reserve по размеру исходного столбца.
 	  */
 	typedef PODArray<UInt8> Filter;
-	virtual SharedPtr<IColumn> filter(const Filter & filt) const = 0;
+	virtual SharedPtr<IColumn> filter(const Filter & filt, ssize_t result_size_hint) const = 0;
 
 	/** Переставить значения местами, используя указанную перестановку.
 	  * Используется при сортировке.

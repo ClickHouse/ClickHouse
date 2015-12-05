@@ -2206,6 +2206,9 @@ void NO_INLINE Aggregator::convertBlockToTwoLevelImpl(
 		filter[i] = 1;
 	}
 
+	ssize_t size_hint = ((source.rowsInFirstColumn() + method.data.NUM_BUCKETS - 1)
+		/ method.data.NUM_BUCKETS) * 1.1;	/// Число 1.1 выбрано наугад.
+
 	for (size_t bucket = 0, size = destinations.size(); bucket < size; ++bucket)
 	{
 		const auto & filter = filters[bucket];
@@ -2219,7 +2222,7 @@ void NO_INLINE Aggregator::convertBlockToTwoLevelImpl(
 		for (size_t j = 0; j < columns; ++j)
 		{
 			const ColumnWithTypeAndName & src_col = source.unsafeGetByPosition(j);
-			dst.insert({src_col.column->filter(filter), src_col.type, src_col.name});
+			dst.insert({src_col.column->filter(filter, size_hint), src_col.type, src_col.name});
 
 			/** Вставленные в блок столбцы типа ColumnAggregateFunction будут владеть состояниями агрегатных функций
 			  *  путём удержания SharedPtr-а на исходный столбец. См. ColumnAggregateFunction.h

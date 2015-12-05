@@ -169,7 +169,7 @@ bool filterBlockWithQuery(ASTPtr query, Block & block, const Context & context)
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
 		ColumnPtr & column = block.getByPosition(i).column;
-		column = column->filter(filter);
+		column = column->filter(filter, -1);
 	}
 
 	return true;

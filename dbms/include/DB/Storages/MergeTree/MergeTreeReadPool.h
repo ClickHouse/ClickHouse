@@ -150,7 +150,7 @@ public:
 			per_part_remove_prewhere_column[part_idx], per_part_should_reorder[part_idx]);
 	}
 
-public:
+private:
 	std::vector<std::size_t> fillPerPartInfo(
 		RangesInDataParts & parts, const ExpressionActionsPtr & prewhere_actions, const String & prewhere_column_name,
 		const bool check_columns)

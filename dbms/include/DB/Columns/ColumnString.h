@@ -178,7 +178,7 @@ public:
 		}
 	}
 
-	ColumnPtr filter(const Filter & filt) const override
+	ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
 	{
 		if (offsets.size() == 0)
 			return new ColumnString;
@@ -189,7 +189,7 @@ public:
 		Chars_t & res_chars = res->chars;
 		Offsets_t & res_offsets = res->offsets;
 
-		filterArraysImpl<UInt8>(chars, offsets, res_chars, res_offsets, filt);
+		filterArraysImpl<UInt8>(chars, offsets, res_chars, res_offsets, filt, result_size_hint);
 		return res_;
 	}
 

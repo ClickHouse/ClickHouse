@@ -41,24 +41,24 @@ void ColumnArray::insertRangeFrom(const IColumn & src, size_t start, size_t leng
 }
 
 
-ColumnPtr ColumnArray::filter(const Filter & filt) const
+ColumnPtr ColumnArray::filter(const Filter & filt, ssize_t result_size_hint) const
 {
-	if (typeid_cast<const ColumnUInt8 *>(data.get()))		return filterNumber<UInt8>(filt);
-	if (typeid_cast<const ColumnUInt16 *>(data.get()))		return filterNumber<UInt16>(filt);
-	if (typeid_cast<const ColumnUInt32 *>(data.get()))		return filterNumber<UInt32>(filt);
-	if (typeid_cast<const ColumnUInt64 *>(data.get()))		return filterNumber<UInt64>(filt);
-	if (typeid_cast<const ColumnInt8 *>(data.get()))		return filterNumber<Int8>(filt);
-	if (typeid_cast<const ColumnInt16 *>(data.get()))		return filterNumber<Int16>(filt);
-	if (typeid_cast<const ColumnInt32 *>(data.get()))		return filterNumber<Int32>(filt);
-	if (typeid_cast<const ColumnInt64 *>(data.get()))		return filterNumber<Int64>(filt);
-	if (typeid_cast<const ColumnFloat32 *>(data.get()))		return filterNumber<Float32>(filt);
-	if (typeid_cast<const ColumnFloat64 *>(data.get()))		return filterNumber<Float64>(filt);
-	if (typeid_cast<const ColumnString *>(data.get()))		return filterString(filt);
-	return filterGeneric(filt);
+	if (typeid_cast<const ColumnUInt8 *>(data.get()))		return filterNumber<UInt8>(filt, result_size_hint);
+	if (typeid_cast<const ColumnUInt16 *>(data.get()))		return filterNumber<UInt16>(filt, result_size_hint);
+	if (typeid_cast<const ColumnUInt32 *>(data.get()))		return filterNumber<UInt32>(filt, result_size_hint);
+	if (typeid_cast<const ColumnUInt64 *>(data.get()))		return filterNumber<UInt64>(filt, result_size_hint);
+	if (typeid_cast<const ColumnInt8 *>(data.get()))		return filterNumber<Int8>(filt, result_size_hint);
+	if (typeid_cast<const ColumnInt16 *>(data.get()))		return filterNumber<Int16>(filt, result_size_hint);
+	if (typeid_cast<const ColumnInt32 *>(data.get()))		return filterNumber<Int32>(filt, result_size_hint);
+	if (typeid_cast<const ColumnInt64 *>(data.get()))		return filterNumber<Int64>(filt, result_size_hint);
+	if (typeid_cast<const ColumnFloat32 *>(data.get()))		return filterNumber<Float32>(filt, result_size_hint);
+	if (typeid_cast<const ColumnFloat64 *>(data.get()))		return filterNumber<Float64>(filt, result_size_hint);
+	if (typeid_cast<const ColumnString *>(data.get()))		return filterString(filt, result_size_hint);
+	return filterGeneric(filt, result_size_hint);
 }
 
 template <typename T>
-ColumnPtr ColumnArray::filterNumber(const Filter & filt) const
+ColumnPtr ColumnArray::filterNumber(const Filter & filt, ssize_t result_size_hint) const
 {
 	if (getOffsets().size() == 0)
 		return new ColumnArray(data);
@@ -69,11 +69,11 @@ ColumnPtr ColumnArray::filterNumber(const Filter & filt) const
 	PODArray<T> & res_elems = static_cast<ColumnVector<T> &>(res->getData()).getData();
 	Offsets_t & res_offsets = res->getOffsets();
 
-	filterArraysImpl<T>(static_cast<const ColumnVector<T> &>(*data).getData(), getOffsets(), res_elems, res_offsets, filt);
+	filterArraysImpl<T>(static_cast<const ColumnVector<T> &>(*data).getData(), getOffsets(), res_elems, res_offsets, filt, result_size_hint);
 	return res_;
 }
 
-ColumnPtr ColumnArray::filterString(const Filter & filt) const
+ColumnPtr ColumnArray::filterString(const Filter & filt, ssize_t result_size_hint) const
 {
 	size_t col_size = getOffsets().size();
 	if (col_size != filt.size())
@@ -94,9 +94,12 @@ ColumnPtr ColumnArray::filterString(const Filter & filt) const
 	Offsets_t & res_string_offsets = typeid_cast<ColumnString &>(res->getData()).getOffsets();
 	Offsets_t & res_offsets = res->getOffsets();
 
-	res_chars.reserve(src_chars.size());
-	res_string_offsets.reserve(src_string_offsets.size());
-	res_offsets.reserve(col_size);
+	if (result_size_hint < 0)	/// Остальные случаи не рассматриваем.
+	{
+		res_chars.reserve(src_chars.size());
+		res_string_offsets.reserve(src_string_offsets.size());
+		res_offsets.reserve(col_size);
+	}
 
 	Offset_t prev_src_offset = 0;
 	Offset_t prev_src_string_offset = 0;
@@ -139,7 +142,7 @@ ColumnPtr ColumnArray::filterString(const Filter & filt) const
 	return res_;
 }
 
-ColumnPtr ColumnArray::filterGeneric(const Filter & filt) const
+ColumnPtr ColumnArray::filterGeneric(const Filter & filt, ssize_t result_size_hint) const
 {
 	size_t size = getOffsets().size();
 	if (size != filt.size())
@@ -159,10 +162,18 @@ ColumnPtr ColumnArray::filterGeneric(const Filter & filt) const
 
 	ColumnArray * res_ = new ColumnArray(data);
 	ColumnPtr res = res_;
-	res_->data = data->filter(nested_filt);
+
+	ssize_t nested_result_size_hint = 0;
+	if (result_size_hint < 0)
+		nested_result_size_hint = result_size_hint;
+	else if (result_size_hint && result_size_hint < 1000000000 && data->size() < 1000000000)	/// Избегаем переполнения.
+		nested_result_size_hint = result_size_hint * data->size() / size;
+
+	res_->data = data->filter(nested_filt, nested_result_size_hint);
 
 	Offsets_t & res_offsets = res_->getOffsets();
-	res_offsets.reserve(size);
+	if (result_size_hint)
+		res_offsets.reserve(result_size_hint > 0 ? result_size_hint : size);
 
 	size_t current_offset = 0;
 	for (size_t i = 0; i < size; ++i)

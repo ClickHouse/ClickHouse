@@ -740,7 +740,7 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 	/// Если ANY INNER|RIGHT JOIN - фильтруем все столбцы кроме новых.
 	if (filter)
 		for (size_t i = 0; i < existing_columns; ++i)
-			block.getByPosition(i).column = block.getByPosition(i).column->filter(*filter);
+			block.getByPosition(i).column = block.getByPosition(i).column->filter(*filter, -1);
 
 	/// Если ALL ... JOIN - размножаем все столбцы кроме новых.
 	if (offsets_to_replicate)

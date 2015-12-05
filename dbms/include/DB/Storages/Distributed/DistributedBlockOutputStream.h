@@ -124,12 +124,15 @@ private:
 		auto filters = createFilters(block);
 
 		const auto num_shards = storage.cluster.getShardsInfo().size();
+
+		ssize_t size_hint = ((block.rowsInFirstColumn() + num_shards - 1) / num_shards) * 1.1;	/// Число 1.1 выбрано наугад.
+
 		for (size_t i = 0; i < num_shards; ++i)
 		{
 			auto target_block = block.cloneEmpty();
 
 			for (size_t col = 0; col < num_cols; ++col)
-				target_block.getByPosition(col).column = columns[col]->filter(filters[i]);
+				target_block.getByPosition(col).column = columns[col]->filter(filters[i], size_hint);
 
 			if (target_block.rowsInFirstColumn())
 				writeImpl(target_block, i);

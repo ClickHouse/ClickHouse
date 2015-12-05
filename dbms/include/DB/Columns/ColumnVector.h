@@ -270,7 +270,7 @@ public:
 		memcpy(&data[old_size], &src_vec.data[start], length * sizeof(data[0]));
 	}
 
-	ColumnPtr filter(const IColumn::Filter & filt) const override
+	ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override
 	{
 		size_t size = data.size();
 		if (size != filt.size())
@@ -279,7 +279,9 @@ public:
 		Self * res_ = new Self;
 		ColumnPtr res = res_;
 		typename Self::Container_t & res_data = res_->getData();
-		res_data.reserve(size);
+
+		if (result_size_hint)
+			res_data.reserve(result_size_hint > 0 ? result_size_hint : size);
 
 		/** Чуть более оптимизированная версия.
 		  * Исходит из допущения, что часто куски последовательно идущих значений

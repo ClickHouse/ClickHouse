@@ -211,7 +211,7 @@ public:
 		memcpy(&data[old_size], &src_concrete.getData()[start], length * sizeof(data[0]));
 	}
 
-	ColumnPtr filter(const Filter & filter) const override
+	ColumnPtr filter(const Filter & filter, ssize_t result_size_hint) const override
 	{
 		size_t size = getData().size();
 		if (size != filter.size())
@@ -225,7 +225,9 @@ public:
 
 		auto & res_data = res_->getData();
 
-		res_data.reserve(size);
+		if (result_size_hint)
+			res_data.reserve(result_size_hint > 0 ? result_size_hint : size);
+
 		for (size_t i = 0; i < size; ++i)
 			if (filter[i])
 				res_data.push_back(getData()[i]);

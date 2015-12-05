@@ -153,7 +153,7 @@ Block CollapsingFinalBlockInputStream::readImpl()
 		Block block = merging_block->block;
 
 		for (size_t i = 0; i < block.columns(); ++i)
-			block.getByPosition(i).column = block.getByPosition(i).column->filter(merging_block->filter);
+			block.getByPosition(i).column = block.getByPosition(i).column->filter(merging_block->filter, -1);
 
 		output_blocks.pop_back();
 		delete merging_block;
