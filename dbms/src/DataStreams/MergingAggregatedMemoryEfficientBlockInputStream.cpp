@@ -265,14 +265,12 @@ MergingAggregatedMemoryEfficientBlockInputStream::BlocksToMerge MergingAggregate
 		std::vector<std::packaged_task<void()>> tasks;
 		tasks.reserve(num_inputs);
 
-		for (size_t i = 0; i < num_inputs; ++i)
+		for (auto & input : inputs)
 		{
-			auto & input = inputs[i];
-			auto & task = tasks[i];
-
 			if (need_that_input(input))
 			{
 				tasks.emplace_back([&input, &read_from_input] { read_from_input(input); });
+				auto & task = tasks.back();
 				reading_pool->schedule([&task] { task(); });
 			}
 		}
