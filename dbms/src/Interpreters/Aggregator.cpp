@@ -1780,6 +1780,9 @@ protected:
 			if (current_bucket_num > 0)
 				return {};
 
+			if (first->type == AggregatedDataVariants::Type::without_key)
+				return {};
+
 			++current_bucket_num;
 
 		#define M(NAME) \
@@ -1788,7 +1791,7 @@ protected:
 			if (false) {}
 			APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
 		#undef M
-			else if (first->type != AggregatedDataVariants::Type::without_key)
+			else
 				throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 
 			return aggregator.prepareBlocksAndFillSingleLevel(*first, final).front();
