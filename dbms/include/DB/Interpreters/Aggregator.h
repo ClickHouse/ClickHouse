@@ -858,6 +858,10 @@ public:
 	  */
 	AggregatedDataVariantsPtr merge(ManyAggregatedDataVariants & data_variants, size_t max_threads);
 
+	/** Объединить несколько структур данных агрегации и выдать результат в виде потока блоков.
+	  */
+	std::unique_ptr<IBlockInputStream> mergeAndConvertToBlocks(ManyAggregatedDataVariants & data_variants, bool final, size_t max_threads);
+
 	/** Объединить поток частично агрегированных блоков в одну структуру данных.
 	  * (Доагрегировать несколько блоков, которые представляют собой результат независимых агрегаций с удалённых серверов.)
 	  */
@@ -904,6 +908,7 @@ public:
 
 protected:
 	friend struct AggregatedDataVariants;
+	friend class MergingAndConvertingBlockInputStream;
 
 	Params params;
 
@@ -1170,6 +1175,10 @@ protected:
 	void mergeWithoutKeyStreamsImpl(
 		Block & block,
 		AggregatedDataVariants & result) const;
+
+	template <typename Method>
+	void mergeBucketImpl(
+		ManyAggregatedDataVariants & data, Int32 bucket) const;
 
 	template <typename Method>
 	void convertBlockToTwoLevelImpl(

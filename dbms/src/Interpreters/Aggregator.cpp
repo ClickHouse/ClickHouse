@@ -5,6 +5,7 @@
 #include <cxxabi.h>
 
 #include <DB/Common/Stopwatch.h>
+#include <DB/Common/setThreadName.h>
 
 #include <DB/DataTypes/DataTypeAggregateFunction.h>
 #include <DB/Columns/ColumnsNumber.h>
@@ -12,6 +13,7 @@
 #include <DB/AggregateFunctions/AggregateFunctionCount.h>
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/DataStreams/NativeBlockOutputStream.h>
+#include <DB/DataStreams/NullBlockInputStream.h>
 #include <DB/IO/WriteBufferFromFile.h>
 #include <DB/IO/CompressedWriteBuffer.h>
 
@@ -1696,6 +1698,265 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 		<< " (" << rows / elapsed_seconds << " rows/sec.)");
 
 	return res;
+}
+
+
+template <typename Method>
+void NO_INLINE Aggregator::mergeBucketImpl(
+	ManyAggregatedDataVariants & data, Int32 bucket) const
+{
+	/// Все результаты агрегации соединяем с первым.
+	AggregatedDataVariantsPtr & res = data[0];
+	for (size_t i = 1, size = data.size(); i < size; ++i)
+	{
+		AggregatedDataVariants & current = *data[i];
+
+		mergeDataImpl<Method>(
+			getDataVariant<Method>(*res).data.impls[bucket],
+			getDataVariant<Method>(current).data.impls[bucket]);
+	}
+}
+
+
+/** Объединят вместе состояния агрегации, превращает их в блоки и выдаёт потоково.
+  * Если состояния агрегации двухуровневые, то выдаёт блоки строго по порядку bucket_num.
+  * (Это важно при распределённой обработке.)
+  * При этом, может обрабатывать разные bucket-ы параллельно, используя до threads потоков.
+  *
+  * TODO Удалить обычную функцию Aggregator::merge и связанные с ней, в случае невостребованности.
+  */
+class MergingAndConvertingBlockInputStream : public IProfilingBlockInputStream
+{
+public:
+	/** На вход подаётся набор непустых множеств частично агрегированных данных,
+	  *  которые все либо являются одноуровневыми, либо являются двухуровневыми.
+	  */
+	MergingAndConvertingBlockInputStream(Aggregator & aggregator_, ManyAggregatedDataVariants & data_, bool final_, size_t threads_)
+		: aggregator(aggregator_), data(data_), final(final_), threads(threads_) {}
+
+	String getName() const override { return "MergingAndConverting"; }
+
+	String getID() const override
+	{
+		std::stringstream res;
+		res << this;
+		return res.str();
+	}
+
+	~MergingAndConvertingBlockInputStream()
+	{
+		if (parallel_merge_data)
+		{
+			LOG_TRACE(&Logger::get(__PRETTY_FUNCTION__), "Waiting for threads to finish");
+			parallel_merge_data->pool.wait();
+		}
+	}
+
+protected:
+	Block readImpl() override
+	{
+		if (data.empty())
+			return {};
+
+		if (current_bucket_num >= NUM_BUCKETS)
+			return {};
+
+		AggregatedDataVariantsPtr & first = data[0];
+
+		if (current_bucket_num == -1)
+		{
+			++current_bucket_num;
+
+			if (first->type == AggregatedDataVariants::Type::without_key || aggregator.params.overflow_row)
+			{
+				aggregator.mergeWithoutKeyDataImpl(data);
+				return aggregator.prepareBlocksAndFillWithoutKey(
+					*first, final, first->type != AggregatedDataVariants::Type::without_key).front();
+			}
+		}
+
+		if (!first->isTwoLevel())
+		{
+			if (current_bucket_num > 0)
+				return {};
+
+			++current_bucket_num;
+
+		#define M(NAME) \
+			else if (first->type == AggregatedDataVariants::Type::NAME) \
+				aggregator.mergeSingleLevelDataImpl<decltype(first->NAME)::element_type>(data);
+			if (false) {}
+			APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
+		#undef M
+			else if (first->type != AggregatedDataVariants::Type::without_key)
+				throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+
+			return aggregator.prepareBlocksAndFillSingleLevel(*first, final).front();
+		}
+		else
+		{
+			if (!parallel_merge_data)
+			{
+				parallel_merge_data.reset(new ParallelMergeData(threads));
+				for (size_t i = 0; i < threads; ++i)
+					scheduleThreadForNextBucket();
+			}
+
+			Block res;
+
+			while (true)
+			{
+				std::unique_lock<std::mutex> lock(parallel_merge_data->mutex);
+
+				if (parallel_merge_data->exception)
+					std::rethrow_exception(parallel_merge_data->exception);
+
+				auto it = parallel_merge_data->ready_blocks.find(current_bucket_num);
+				if (it != parallel_merge_data->ready_blocks.end())
+				{
+					++current_bucket_num;
+					scheduleThreadForNextBucket();
+
+					if (it->second)
+					{
+						res.swap(it->second);
+						break;
+					}
+					else if (current_bucket_num >= NUM_BUCKETS)
+						break;
+				}
+
+				parallel_merge_data->condvar.wait(lock);
+			}
+
+			return res;
+		}
+	}
+
+private:
+	Aggregator & aggregator;
+	ManyAggregatedDataVariants data;
+	bool final;
+	size_t threads;
+
+	Int32 current_bucket_num = -1;
+	Int32 max_scheduled_bucket_num = -1;
+	static constexpr Int32 NUM_BUCKETS = 256;
+
+	struct ParallelMergeData
+	{
+		boost::threadpool::pool pool;
+		std::map<Int32, Block> ready_blocks;
+		std::exception_ptr exception;
+		std::mutex mutex;
+		std::condition_variable condvar;
+
+		ParallelMergeData(size_t threads) : pool(threads) {}
+	};
+
+	std::unique_ptr<ParallelMergeData> parallel_merge_data;
+
+	void scheduleThreadForNextBucket()
+	{
+		++max_scheduled_bucket_num;
+		if (max_scheduled_bucket_num >= NUM_BUCKETS)
+			return;
+
+		parallel_merge_data->pool.schedule(std::bind(&MergingAndConvertingBlockInputStream::thread, this,
+			max_scheduled_bucket_num, current_memory_tracker));
+	}
+
+	void thread(Int32 bucket_num, MemoryTracker * memory_tracker)
+	{
+		current_memory_tracker = memory_tracker;
+		setThreadName("MergingAggregtd");
+
+		try
+		{
+			/// TODO Возможно, поддержать no_more_keys
+
+			auto & merged_data = *data[0];
+			auto method = merged_data.type;
+			Block block;
+
+			if (false) {}
+		#define M(NAME) \
+			else if (method == AggregatedDataVariants::Type::NAME) \
+			{ \
+				aggregator.mergeBucketImpl<decltype(merged_data.NAME)::element_type>(data, bucket_num); \
+				block = aggregator.convertOneBucketToBlock(merged_data, *merged_data.NAME, final, bucket_num); \
+			}
+
+			APPLY_FOR_VARIANTS_TWO_LEVEL(M)
+		#undef M
+
+			std::lock_guard<std::mutex> lock(parallel_merge_data->mutex);
+			parallel_merge_data->ready_blocks[bucket_num] = std::move(block);
+		}
+		catch (...)
+		{
+			std::lock_guard<std::mutex> lock(parallel_merge_data->mutex);
+			parallel_merge_data->exception = std::current_exception();
+		}
+
+		parallel_merge_data->condvar.notify_all();
+	}
+};
+
+
+std::unique_ptr<IBlockInputStream> Aggregator::mergeAndConvertToBlocks(ManyAggregatedDataVariants & data_variants, bool final, size_t max_threads)
+{
+	if (data_variants.empty())
+		throw Exception("Empty data passed to Aggregator::mergeAndConvertToBlocks.", ErrorCodes::EMPTY_DATA_PASSED);
+
+	LOG_TRACE(log, "Merging aggregated data");
+
+	Stopwatch watch;
+
+	ManyAggregatedDataVariants non_empty_data;
+	non_empty_data.reserve(data_variants.size());
+	for (auto & data : data_variants)
+		if (!data->empty())
+			non_empty_data.push_back(data);
+
+	if (non_empty_data.empty())
+		return std::unique_ptr<IBlockInputStream>(new NullBlockInputStream);
+
+	if (non_empty_data.size() > 1)
+	{
+		/// Отсортируем состояния по убыванию размера, чтобы мердж был более эффективным (так как все состояния мерджатся в первое).
+		std::sort(non_empty_data.begin(), non_empty_data.end(),
+			[](const AggregatedDataVariantsPtr & lhs, const AggregatedDataVariantsPtr & rhs)
+			{
+				return lhs->sizeWithoutOverflowRow() > rhs->sizeWithoutOverflowRow();
+			});
+	}
+
+	/// Если хотя бы один из вариантов двухуровневый, то переконвертируем все варианты в двухуровневые, если есть не такие.
+	/// Замечание - возможно, было бы более оптимально не конвертировать одноуровневые варианты перед мерджем, а мерджить их отдельно, в конце.
+
+	bool has_at_least_one_two_level = false;
+	for (const auto & variant : non_empty_data)
+	{
+		if (variant->isTwoLevel())
+		{
+			has_at_least_one_two_level = true;
+			break;
+		}
+	}
+
+	if (has_at_least_one_two_level)
+		for (auto & variant : non_empty_data)
+			if (!variant->isTwoLevel())
+				variant->convertToTwoLevel();
+
+	AggregatedDataVariantsPtr & first = non_empty_data[0];
+
+	for (size_t i = 1, size = non_empty_data.size(); i < size; ++i)
+		if (first->type != non_empty_data[i]->type)
+			throw Exception("Cannot merge different aggregated data variants.", ErrorCodes::CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS);
+
+	return std::unique_ptr<IBlockInputStream>(new MergingAndConvertingBlockInputStream(*this, non_empty_data, final, max_threads));
 }
 
 

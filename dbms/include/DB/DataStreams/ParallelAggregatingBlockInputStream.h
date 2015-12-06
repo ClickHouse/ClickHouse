@@ -88,13 +88,8 @@ protected:
 			if (!aggregator.hasTemporaryFiles())
 			{
 				/** Если все частично-агрегированные данные в оперативке, то мерджим их параллельно, тоже в оперативке.
-				  * NOTE Если израсходовано больше половины допустимой памяти, то мерджить следовало бы более экономно.
 				  */
-				AggregatedDataVariantsPtr data_variants = aggregator.merge(many_data, max_threads);
-
-				if (data_variants)
-					impl.reset(new BlocksListBlockInputStream(
-						aggregator.convertToBlocks(*data_variants, final, max_threads)));
+				impl = aggregator.mergeAndConvertToBlocks(many_data, final, max_threads);
 			}
 			else
 			{
