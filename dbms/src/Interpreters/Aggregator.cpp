@@ -847,6 +847,7 @@ Block Aggregator::convertOneBucketToBlock(
 
 	/** Для того, чтобы в случае исключения, агрегатор не уничтожал состояния агрегатных функций, владение которыми уже передано в block;
 	  * А также для того, чтобы пораньше освободить память.
+	  * TODO Правильно действовать в случае final.
 	  */
 	method.data.impls[bucket].clearAndShrink();
 
@@ -1913,8 +1914,6 @@ std::unique_ptr<IBlockInputStream> Aggregator::mergeAndConvertToBlocks(ManyAggre
 		throw Exception("Empty data passed to Aggregator::mergeAndConvertToBlocks.", ErrorCodes::EMPTY_DATA_PASSED);
 
 	LOG_TRACE(log, "Merging aggregated data");
-
-	Stopwatch watch;
 
 	ManyAggregatedDataVariants non_empty_data;
 	non_empty_data.reserve(data_variants.size());
