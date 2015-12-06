@@ -1130,6 +1130,13 @@ protected:
 		size_t rows,
 		Filler && filler) const;
 
+	template <typename Method>
+	Block convertOneBucketToBlock(
+		AggregatedDataVariants & data_variants,
+		Method & method,
+		bool final,
+		size_t bucket) const;
+
 	BlocksList prepareBlocksAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;
 	BlocksList prepareBlocksAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final) const;
 	BlocksList prepareBlocksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final, boost::threadpool::pool * thread_pool) const;

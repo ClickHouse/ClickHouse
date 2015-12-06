@@ -302,7 +302,11 @@ protected:
 
 	void free()
 	{
-		Allocator::free(buf, getBufferSizeInBytes());
+		if (buf)
+		{
+			Allocator::free(buf, getBufferSizeInBytes());
+			buf = nullptr;
+		}
 	}
 
 
@@ -397,6 +401,14 @@ protected:
 	}
 
 
+	void destroyElements()
+	{
+		if (!__has_trivial_destructor(Cell))
+			for (iterator it = begin(); it != end(); ++it)
+				it.ptr->~Cell();
+	}
+
+
 public:
 	typedef Key key_type;
 	typedef typename Cell::value_type value_type;
@@ -421,10 +433,7 @@ public:
 
 	~HashTable()
 	{
-		if (!__has_trivial_destructor(Cell))
-			for (iterator it = begin(); it != end(); ++it)
-				it.ptr->~Cell();
-
+		destroyElements();
 		free();
 	}
 
@@ -789,6 +798,7 @@ public:
 	{
 		Cell::State::read(rb);
 
+		destroyElements();
 		this->clearHasZero();
 		m_size = 0;
 
@@ -812,6 +822,7 @@ public:
 	{
 		Cell::State::readText(rb);
 
+		destroyElements();
 		this->clearHasZero();
 		m_size = 0;
 
@@ -845,12 +856,23 @@ public:
 
 	void clear()
 	{
-		if (!__has_trivial_destructor(Cell))
-			for (iterator it = begin(); it != end(); ++it)
-				it.ptr->~Cell();
+		destroyElements();
+		this->clearHasZero();
+		m_size = 0;
 
 		memset(buf, 0, grower.bufSize() * sizeof(*buf));
+	}
+
+	void clearAndShrink()
+	{
+		destroyElements();
+		this->clearHasZero();
 		m_size = 0;
+
+		free();
+		Grower new_grower = grower;
+		new_grower.set(0);
+		alloc(new_grower);
 	}
 
 	size_t getBufferSizeInBytes() const

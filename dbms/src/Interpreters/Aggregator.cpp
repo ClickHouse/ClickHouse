@@ -825,6 +825,35 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
 
 
 template <typename Method>
+Block Aggregator::convertOneBucketToBlock(
+	AggregatedDataVariants & data_variants,
+	Method & method,
+	bool final,
+	size_t bucket) const
+{
+	Block block = prepareBlockAndFill(data_variants, final, method.data.impls[bucket].size(),
+		[bucket, &method, this] (
+			ColumnPlainPtrs & key_columns,
+			AggregateColumnsData & aggregate_columns,
+			ColumnPlainPtrs & final_aggregate_columns,
+			const Sizes & key_sizes,
+			bool final)
+		{
+			convertToBlockImpl(method, method.data.impls[bucket],
+				key_columns, aggregate_columns, final_aggregate_columns, key_sizes, final);
+		});
+
+	/** Для того, чтобы в случае исключения, агрегатор не уничтожал состояния агрегатных функций, владение которыми уже передано в block;
+	  * А также для того, чтобы пораньше освободить память.
+	  */
+	method.data.impls[bucket].clearAndShrink();
+
+	block.info.bucket_num = bucket;
+	return block;
+}
+
+
+template <typename Method>
 void Aggregator::writeToTemporaryFileImpl(
 	AggregatedDataVariants & data_variants,
 	Method & method,
@@ -839,19 +868,7 @@ void Aggregator::writeToTemporaryFileImpl(
 		if (method.data.impls[bucket].empty())
 			continue;
 
-		Block block = prepareBlockAndFill(data_variants, false, method.data.impls[bucket].size(),
-			[bucket, &method, this] (
-				ColumnPlainPtrs & key_columns,
-				AggregateColumnsData & aggregate_columns,
-				ColumnPlainPtrs & final_aggregate_columns,
-				const Sizes & key_sizes,
-				bool final)
-			{
-				convertToBlockImpl(method, method.data.impls[bucket],
-					key_columns, aggregate_columns, final_aggregate_columns, key_sizes, final);
-			});
-
-		block.info.bucket_num = bucket;
+		Block block = convertOneBucketToBlock(data_variants, method, false, bucket);
 		out.write(block);
 
 		size_t block_size_rows = block.rowsInFirstColumn();
@@ -1164,35 +1181,10 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
 	bool final,
 	boost::threadpool::pool * thread_pool) const
 {
-	auto filler = [&method, this](
-		ColumnPlainPtrs & key_columns,
-		AggregateColumnsData & aggregate_columns,
-		ColumnPlainPtrs & final_aggregate_columns,
-		const Sizes & key_sizes,
-		bool final,
-		size_t bucket)
-	{
-		convertToBlockImpl(method, method.data.impls[bucket],
-			key_columns, aggregate_columns, final_aggregate_columns, key_sizes, final);
-	};
-
 	auto converter = [&](size_t bucket, MemoryTracker * memory_tracker)
 	{
 		current_memory_tracker = memory_tracker;
-
-		Block block = prepareBlockAndFill(data_variants, final, method.data.impls[bucket].size(),
-			[bucket, &filler] (
-				ColumnPlainPtrs & key_columns,
-				AggregateColumnsData & aggregate_columns,
-				ColumnPlainPtrs & final_aggregate_columns,
-				const Sizes & key_sizes,
-				bool final)
-			{
-				filler(key_columns, aggregate_columns, final_aggregate_columns, key_sizes, final, bucket);
-			});
-
-		block.info.bucket_num = bucket;
-		return block;
+		return convertOneBucketToBlock(data_variants, method, final, bucket);
 	};
 
 	/// packaged_task используются, чтобы исключения автоматически прокидывались в основной поток.
@@ -1615,7 +1607,7 @@ void NO_INLINE Aggregator::mergeTwoLevelDataImpl(
 AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_variants, size_t max_threads)
 {
 	if (data_variants.empty())
- 		throw Exception("Empty data passed to Aggregator::merge().", ErrorCodes::EMPTY_DATA_PASSED);
+		throw Exception("Empty data passed to Aggregator::merge.", ErrorCodes::EMPTY_DATA_PASSED);
 
 	LOG_TRACE(log, "Merging aggregated data");
 
