@@ -1190,9 +1190,13 @@ protected:
 		const Block & source,
 		std::vector<Block> & destinations) const;
 
-	template <typename Method>
+	template <typename Method, typename Table>
 	void destroyImpl(
-		Method & method) const;
+		Method & method,
+		Table & data) const;
+
+	void destroyWithoutKey(
+		AggregatedDataVariants & result) const;
 
 
 	/** Проверяет ограничения на максимальное количество ключей для агрегации.

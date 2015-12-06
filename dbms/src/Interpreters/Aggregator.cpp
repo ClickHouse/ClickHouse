@@ -845,12 +845,6 @@ Block Aggregator::convertOneBucketToBlock(
 				key_columns, aggregate_columns, final_aggregate_columns, key_sizes, final);
 		});
 
-	/** Для того, чтобы в случае исключения, агрегатор не уничтожал состояния агрегатных функций, владение которыми уже передано в block;
-	  * А также для того, чтобы пораньше освободить память.
-	  * TODO Правильно действовать в случае final.
-	  */
-	method.data.impls[bucket].clearAndShrink();
-
 	block.info.bucket_num = bucket;
 	return block;
 }
@@ -974,6 +968,9 @@ void Aggregator::convertToBlockImpl(
 		convertToBlockImplFinal(method, data, key_columns, final_aggregate_columns, key_sizes);
 	else
 		convertToBlockImplNotFinal(method, data, key_columns, aggregate_columns, key_sizes);
+
+	/// Для того, чтобы пораньше освободить память.
+	data.clearAndShrink();
 }
 
 
@@ -994,6 +991,8 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
 				Method::getAggregateData(it->second) + offsets_of_aggregate_states[i],
 				*final_aggregate_columns[i]);
 	}
+
+	destroyImpl(method, data);		/// NOTE Можно сделать лучше.
 }
 
 template <typename Method, typename Table>
@@ -1129,6 +1128,11 @@ BlocksList Aggregator::prepareBlocksAndFillWithoutKey(AggregatedDataVariants & d
 	if (is_overflows)
 		block.info.is_overflows = true;
 
+	if (final)
+		destroyWithoutKey(data_variants);
+	else
+		data_variants.without_key = nullptr;
+
 	BlocksList blocks;
 	blocks.emplace_back(std::move(block));
 	return blocks;
@@ -1145,13 +1149,13 @@ BlocksList Aggregator::prepareBlocksAndFillSingleLevel(AggregatedDataVariants & 
 		const Sizes & key_sizes,
 		bool final)
 	{
-	#define M(NAME, IS_TWO_LEVEL) \
+	#define M(NAME) \
 		else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
 			convertToBlockImpl(*data_variants.NAME, data_variants.NAME->data, \
 				key_columns, aggregate_columns, final_aggregate_columns, data_variants.key_sizes, final);
 
 		if (false) {}
-		APPLY_FOR_AGGREGATED_VARIANTS(M)
+		APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
 	#undef M
 		else
 			throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
@@ -1513,6 +1517,7 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
 
 		/// current не будет уничтожать состояния агрегатных функций в деструкторе
 		current.aggregator = nullptr;
+		getDataVariant<Method>(current).data.clearAndShrink();
 	}
 }
 
@@ -1544,6 +1549,8 @@ void NO_INLINE Aggregator::mergeTwoLevelDataImpl(
 				mergeDataImpl<Method>(
 					getDataVariant<Method>(*res).data.impls[bucket],
 					getDataVariant<Method>(current).data.impls[bucket]);
+
+				getDataVariant<Method>(current).data.impls[bucket].clearAndShrink();
 			}
 			else
 			{
@@ -2522,13 +2529,14 @@ std::vector<Block> Aggregator::convertBlockToTwoLevel(const Block & block)
 }
 
 
-template <typename Method>
+template <typename Method, typename Table>
 void NO_INLINE Aggregator::destroyImpl(
-	Method & method) const
+	Method & method,
+	Table & data) const
 {
-	for (typename Method::const_iterator it = method.data.begin(); it != method.data.end(); ++it)
+	for (auto elem : data)
 	{
-		char * data = Method::getAggregateData(it->second);
+		char * data = Method::getAggregateData(elem.second);
 
 		/** Если исключение (обычно нехватка памяти, кидается MemoryTracker-ом) возникло
 		  *  после вставки ключа в хэш-таблицу, но до создания всех состояний агрегатных функций,
@@ -2540,6 +2548,23 @@ void NO_INLINE Aggregator::destroyImpl(
 		for (size_t i = 0; i < params.aggregates_size; ++i)
 			if (!aggregate_functions[i]->isState())
 				aggregate_functions[i]->destroy(data + offsets_of_aggregate_states[i]);
+
+		data = nullptr;
+	}
+}
+
+
+void Aggregator::destroyWithoutKey(AggregatedDataVariants & result) const
+{
+	AggregatedDataWithoutKey & res_data = result.without_key;
+
+	if (nullptr != res_data)
+	{
+		for (size_t i = 0; i < params.aggregates_size; ++i)
+			if (!aggregate_functions[i]->isState())
+				aggregate_functions[i]->destroy(res_data + offsets_of_aggregate_states[i]);
+
+		res_data = nullptr;
 	}
 }
 
@@ -2553,18 +2578,11 @@ void Aggregator::destroyAllAggregateStates(AggregatedDataVariants & result)
 
 	/// В какой структуре данных агрегированы данные?
 	if (result.type == AggregatedDataVariants::Type::without_key || params.overflow_row)
-	{
-		AggregatedDataWithoutKey & res_data = result.without_key;
-
-		if (nullptr != res_data)
-			for (size_t i = 0; i < params.aggregates_size; ++i)
-				if (!aggregate_functions[i]->isState())
-					aggregate_functions[i]->destroy(res_data + offsets_of_aggregate_states[i]);
-	}
+		destroyWithoutKey(result);
 
 #define M(NAME, IS_TWO_LEVEL) \
 	else if (result.type == AggregatedDataVariants::Type::NAME) \
-		destroyImpl(*result.NAME);
+		destroyImpl(*result.NAME, result.NAME->data);
 
 	if (false) {}
 	APPLY_FOR_AGGREGATED_VARIANTS(M)
