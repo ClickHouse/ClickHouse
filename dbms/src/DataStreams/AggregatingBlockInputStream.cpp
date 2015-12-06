@@ -32,10 +32,13 @@ Block AggregatingBlockInputStream::readImpl()
 
 			ProfileEvents::increment(ProfileEvents::ExternalAggregationMerge);
 
-			/// Сбросим имеющиеся в оперативке данные тоже на диск. Так проще.
-			size_t rows = data_variants.sizeWithoutOverflowRow();
-			if (rows)
-				aggregator.writeToTemporaryFile(data_variants, rows);
+			if (!isCancelled())
+			{
+				/// Сбросим имеющиеся в оперативке данные тоже на диск. Так проще.
+				size_t rows = data_variants.sizeWithoutOverflowRow();
+				if (rows)
+					aggregator.writeToTemporaryFile(data_variants, rows);
+			}
 
 			const auto & files = aggregator.getTemporaryFiles();
 			BlockInputStreams input_streams;

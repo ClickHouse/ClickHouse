@@ -211,7 +211,7 @@ private:
 				}
 			}
 
-			handler.onFinish();
+			handler.onFinish();		/// TODO Если в onFinish или onFinishThread эксепшен, то вызывается std::terminate.
 		}
 	}
 

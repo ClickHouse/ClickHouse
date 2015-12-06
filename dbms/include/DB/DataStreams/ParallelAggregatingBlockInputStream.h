@@ -209,10 +209,14 @@ private:
 
 		void onFinishThread(size_t thread_num)
 		{
-			if (parent.aggregator.hasTemporaryFiles())
+			if (!parent.isCancelled() && parent.aggregator.hasTemporaryFiles())
 			{
 				/// Сбросим имеющиеся в оперативке данные тоже на диск. Так проще их потом объединять.
 				auto & data = *parent.many_data[thread_num];
+
+				if (data.isConvertibleToTwoLevel())
+					data.convertToTwoLevel();
+
 				size_t rows = data.sizeWithoutOverflowRow();
 				if (rows)
 					parent.aggregator.writeToTemporaryFile(data, rows);
@@ -221,12 +225,15 @@ private:
 
 		void onFinish()
 		{
-			if (parent.aggregator.hasTemporaryFiles())
+			if (!parent.isCancelled() && parent.aggregator.hasTemporaryFiles())
 			{
 				/// Может так получиться, что какие-то данные ещё не сброшены на диск,
 				///  потому что во время вызова onFinishThread ещё никакие данные не были сброшены на диск, а потом какие-то - были.
 				for (auto & data : parent.many_data)
 				{
+					if (data->isConvertibleToTwoLevel())
+						data->convertToTwoLevel();
+
 					size_t rows = data->sizeWithoutOverflowRow();
 					if (rows)
 						parent.aggregator.writeToTemporaryFile(*data, rows);
