@@ -1677,51 +1677,20 @@ AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_va
 		mergeWithoutKeyDataImpl(non_empty_data);
 
 	std::unique_ptr<boost::threadpool::pool> thread_pool;
-	if (max_threads > 1 && rows > 100000	/// TODO Сделать настраиваемый порог.
-		&& res->isTwoLevel())
+	if (max_threads > 1 && res->isTwoLevel())
 		thread_pool.reset(new boost::threadpool::pool(max_threads));
 
-	/// TODO Упростить.
-	if (res->type == AggregatedDataVariants::Type::key8)
-		mergeSingleLevelDataImpl<decltype(res->key8)::element_type>(non_empty_data);
-	else if (res->type == AggregatedDataVariants::Type::key16)
-		mergeSingleLevelDataImpl<decltype(res->key16)::element_type>(non_empty_data);
-	else if (res->type == AggregatedDataVariants::Type::key32)
-		mergeSingleLevelDataImpl<decltype(res->key32)::element_type>(non_empty_data);
-	else if (res->type == AggregatedDataVariants::Type::key64)
-		mergeSingleLevelDataImpl<decltype(res->key64)::element_type>(non_empty_data);
-	else if (res->type == AggregatedDataVariants::Type::key_string)
-		mergeSingleLevelDataImpl<decltype(res->key_string)::element_type>(non_empty_data);
-	else if (res->type == AggregatedDataVariants::Type::key_fixed_string)
-		mergeSingleLevelDataImpl<decltype(res->key_fixed_string)::element_type>(non_empty_data);
-	else if (res->type == AggregatedDataVariants::Type::keys128)
-		mergeSingleLevelDataImpl<decltype(res->keys128)::element_type>(non_empty_data);
-	else if (res->type == AggregatedDataVariants::Type::keys256)
-		mergeSingleLevelDataImpl<decltype(res->keys256)::element_type>(non_empty_data);
-	else if (res->type == AggregatedDataVariants::Type::hashed)
-		mergeSingleLevelDataImpl<decltype(res->hashed)::element_type>(non_empty_data);
-	else if (res->type == AggregatedDataVariants::Type::concat)
-		mergeSingleLevelDataImpl<decltype(res->concat)::element_type>(non_empty_data);
-	else if (res->type == AggregatedDataVariants::Type::serialized)
-		mergeSingleLevelDataImpl<decltype(res->serialized)::element_type>(non_empty_data);
-	else if (res->type == AggregatedDataVariants::Type::key32_two_level)
-		mergeTwoLevelDataImpl<decltype(res->key32_two_level)::element_type>(non_empty_data, thread_pool.get());
-	else if (res->type == AggregatedDataVariants::Type::key64_two_level)
-		mergeTwoLevelDataImpl<decltype(res->key64_two_level)::element_type>(non_empty_data, thread_pool.get());
-	else if (res->type == AggregatedDataVariants::Type::key_string_two_level)
-		mergeTwoLevelDataImpl<decltype(res->key_string_two_level)::element_type>(non_empty_data, thread_pool.get());
-	else if (res->type == AggregatedDataVariants::Type::key_fixed_string_two_level)
-		mergeTwoLevelDataImpl<decltype(res->key_fixed_string_two_level)::element_type>(non_empty_data, thread_pool.get());
-	else if (res->type == AggregatedDataVariants::Type::keys128_two_level)
-		mergeTwoLevelDataImpl<decltype(res->keys128_two_level)::element_type>(non_empty_data, thread_pool.get());
-	else if (res->type == AggregatedDataVariants::Type::keys256_two_level)
-		mergeTwoLevelDataImpl<decltype(res->keys256_two_level)::element_type>(non_empty_data, thread_pool.get());
-	else if (res->type == AggregatedDataVariants::Type::hashed_two_level)
-		mergeTwoLevelDataImpl<decltype(res->hashed_two_level)::element_type>(non_empty_data, thread_pool.get());
-	else if (res->type == AggregatedDataVariants::Type::concat_two_level)
-		mergeTwoLevelDataImpl<decltype(res->concat_two_level)::element_type>(non_empty_data, thread_pool.get());
-	else if (res->type == AggregatedDataVariants::Type::serialized_two_level)
-		mergeTwoLevelDataImpl<decltype(res->serialized_two_level)::element_type>(non_empty_data, thread_pool.get());
+	if (false) {}
+#define M(NAME) \
+	else if (res->type == AggregatedDataVariants::Type::NAME) \
+		mergeSingleLevelDataImpl<decltype(res->NAME)::element_type>(non_empty_data);
+	APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
+#undef M
+#define M(NAME) \
+	else if (res->type == AggregatedDataVariants::Type::NAME) \
+		mergeTwoLevelDataImpl<decltype(res->NAME)::element_type>(non_empty_data, thread_pool.get());
+	APPLY_FOR_VARIANTS_TWO_LEVEL(M)
+#undef M
 	else if (res->type != AggregatedDataVariants::Type::without_key)
 		throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 

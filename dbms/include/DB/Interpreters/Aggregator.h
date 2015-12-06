@@ -714,6 +714,10 @@ struct AggregatedDataVariants : private boost::noncopyable
 		M(key8)				\
 		M(key16)			\
 
+	#define APPLY_FOR_VARIANTS_SINGLE_LEVEL(M) \
+		APPLY_FOR_VARIANTS_NOT_CONVERTIBLE_TO_TWO_LEVEL(M) \
+		APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M) \
+
 	bool isConvertibleToTwoLevel() const
 	{
 		switch (type)
