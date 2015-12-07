@@ -14,10 +14,13 @@ namespace DB
 {
 
 
+/** Can allocate memory objects of fixed size with deletion support.
+ *	For `object_size` less than `min_allocation_size` still allocates `min_allocation_size` bytes. */
 class SmallObjectPool
 {
 private:
 	struct Block { Block * next; };
+	static constexpr auto min_allocation_size = sizeof(Block);
 
 	const std::size_t object_size;
 	Arena pool;
@@ -25,16 +28,11 @@ private:
 
 public:
 	SmallObjectPool(
-		const std::size_t object_size, const std::size_t initial_size = 4096, const std::size_t growth_factor = 2,
+		const std::size_t object_size_, const std::size_t initial_size = 4096, const std::size_t growth_factor = 2,
 		const std::size_t linear_growth_threshold = 128 * 1024 * 1024)
-		: object_size{object_size}, pool{initial_size, growth_factor, linear_growth_threshold}
+		: object_size{std::max(object_size_, min_allocation_size)},
+		  pool{initial_size, growth_factor, linear_growth_threshold}
 	{
-		if (object_size < sizeof(Block))
-			throw Exception{
-				"Can't make allocations smaller than sizeof(Block) = " + std::to_string(sizeof(Block)),
-				ErrorCodes::LOGICAL_ERROR
-			};
-
 		if (pool.size() < object_size)
 			return;
 
