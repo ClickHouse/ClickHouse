@@ -62,7 +62,6 @@ void MergingAggregatedMemoryEfficientBlockInputStream::start()
 			auto memory_tracker = current_memory_tracker;
 			task = std::packaged_task<void()>([&child, memory_tracker]
 			{
-				/// memory_tracker и имя потока устанавливается здесь. Далее для всех задач в reading_pool это уже не требуется.
 				current_memory_tracker = memory_tracker;
 				setThreadName("MergeAggReadThr");
 				child->readPrefix();
@@ -276,7 +275,13 @@ MergingAggregatedMemoryEfficientBlockInputStream::BlocksToMerge MergingAggregate
 		{
 			if (need_that_input(input))
 			{
-				tasks.emplace_back([&input, &read_from_input] { read_from_input(input); });
+				auto memory_tracker = current_memory_tracker;
+				tasks.emplace_back([&input, &read_from_input, memory_tracker]
+				{
+					current_memory_tracker = memory_tracker;
+					setThreadName("MergeAggReadThr");
+					read_from_input(input);
+				});
 				auto & task = tasks.back();
 				reading_pool->schedule([&task] { task(); });
 			}

@@ -90,7 +90,8 @@ void Aggregator::initialize(const Block & block)
 
 	initialized = true;
 
-	memory_usage_before_aggregation = current_memory_tracker->get();
+	if (current_memory_tracker)
+		memory_usage_before_aggregation = current_memory_tracker->get();
 
 	aggregate_functions.resize(params.aggregates_size);
 	for (size_t i = 0; i < params.aggregates_size; ++i)
@@ -732,7 +733,10 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 	}
 
 	size_t result_size = result.sizeWithoutOverflowRow();
-	auto current_memory_usage = current_memory_tracker->get();
+	Int64 current_memory_usage = 0;
+	if (current_memory_tracker)
+		current_memory_usage = current_memory_tracker->get();
+
 	auto result_size_bytes = current_memory_usage - memory_usage_before_aggregation;	/// Здесь учитываются все результаты в сумме, из разных потоков.
 
 	bool worth_convert_to_two_level
