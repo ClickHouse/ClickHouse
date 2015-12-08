@@ -128,6 +128,12 @@ MergingAggregatedMemoryEfficientBlockInputStream::~MergingAggregatedMemoryEffici
 	if (parallel_merge_data)
 	{
 		LOG_TRACE((&Logger::get("MergingAggregatedMemoryEfficientBlockInputStream")), "Waiting for threads to finish");
+
+		{
+			std::lock_guard<std::mutex> lock(parallel_merge_data->get_next_blocks_mutex);
+			parallel_merge_data->exhausted = true;
+		}
+
 		parallel_merge_data->result_queue.clear();
 		parallel_merge_data->pool.wait();
 	}
