@@ -1269,7 +1269,7 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
 }
 
 
-BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, bool final, size_t max_threads)
+BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, bool final, size_t max_threads) const
 {
 	if (isCancelled())
 		return BlocksList();
@@ -1618,7 +1618,7 @@ void NO_INLINE Aggregator::mergeTwoLevelDataImpl(
 }
 
 
-AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_variants, size_t max_threads)
+AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_variants, size_t max_threads) const
 {
 	if (data_variants.empty())
 		throw Exception("Empty data passed to Aggregator::merge.", ErrorCodes::EMPTY_DATA_PASSED);
@@ -1743,7 +1743,7 @@ public:
 	/** На вход подаётся набор непустых множеств частично агрегированных данных,
 	  *  которые все либо являются одноуровневыми, либо являются двухуровневыми.
 	  */
-	MergingAndConvertingBlockInputStream(Aggregator & aggregator_, ManyAggregatedDataVariants & data_, bool final_, size_t threads_)
+	MergingAndConvertingBlockInputStream(const Aggregator & aggregator_, ManyAggregatedDataVariants & data_, bool final_, size_t threads_)
 		: aggregator(aggregator_), data(data_), final(final_), threads(threads_) {}
 
 	String getName() const override { return "MergingAndConverting"; }
@@ -1849,7 +1849,7 @@ protected:
 	}
 
 private:
-	Aggregator & aggregator;
+	const Aggregator & aggregator;
 	ManyAggregatedDataVariants data;
 	bool final;
 	size_t threads;
@@ -1919,7 +1919,7 @@ private:
 };
 
 
-std::unique_ptr<IBlockInputStream> Aggregator::mergeAndConvertToBlocks(ManyAggregatedDataVariants & data_variants, bool final, size_t max_threads)
+std::unique_ptr<IBlockInputStream> Aggregator::mergeAndConvertToBlocks(ManyAggregatedDataVariants & data_variants, bool final, size_t max_threads) const
 {
 	if (data_variants.empty())
 		throw Exception("Empty data passed to Aggregator::mergeAndConvertToBlocks.", ErrorCodes::EMPTY_DATA_PASSED);
@@ -2306,8 +2306,11 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
 	Block empty_block;
 	initialize(empty_block);
 
-	if (!sample)
-		sample = blocks.front().cloneEmpty();
+	{
+		std::lock_guard<std::mutex> lock(mutex);
+		if (!sample)
+			sample = blocks.front().cloneEmpty();
+	}
 
 	/// Каким способом выполнять агрегацию?
 	for (size_t i = 0; i < params.keys_size; ++i)
