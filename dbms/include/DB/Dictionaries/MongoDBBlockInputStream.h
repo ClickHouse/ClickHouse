@@ -76,7 +76,7 @@ public:
 				types.push_back(value_type_t::Int64);
 			else if (typeid_cast<const DataTypeFloat32 *>(type))
 				types.push_back(value_type_t::Float32);
-			else if (typeid_cast<const DataTypeInt64 *>(type))
+			else if (typeid_cast<const DataTypeFloat64 *>(type))
 				types.push_back(value_type_t::Float64);
 			else if (typeid_cast<const DataTypeString *>(type))
 				types.push_back(value_type_t::String);
