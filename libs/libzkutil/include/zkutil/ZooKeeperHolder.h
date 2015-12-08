@@ -12,16 +12,16 @@ protected:
 	class UnstorableZookeeperHandler;
 
 public:
+	ZooKeeperHolder() = default;
+
 	/// вызывать из одного потока - не thread safe
 	template <class... Args>
-	static void create(Args&&... args);
+	void init(Args&&... args);
 
-	static ZooKeeperHolder & getInstance();
+	UnstorableZookeeperHandler getZooKeeper();
+	bool replaceZooKeeperSessionToNewOne();
 
-	static UnstorableZookeeperHandler getZooKeeper();
-	static bool replaceZooKeeperSessionToNewOne();
-
-	static bool isSessionExpired();
+	bool isSessionExpired() const;
 
 protected:
 	/** Хендлер для подсчета количества используемых ссылок на ZooKeeper
@@ -34,6 +34,10 @@ protected:
 	public:
 		UnstorableZookeeperHandler(ZooKeeper::Ptr zk_ptr_);
 
+		explicit operator bool() const { return bool(zk_ptr); }
+		bool operator==(nullptr_t) const { return zk_ptr == nullptr; }
+		bool operator!=(nullptr_t) const { return !(*this == nullptr); }
+
 		ZooKeeper * operator->() { return zk_ptr.get(); }
 		const ZooKeeper * operator->() const { return zk_ptr.get(); }
 		ZooKeeper & operator*() { return *zk_ptr; }
@@ -43,29 +47,15 @@ protected:
 		ZooKeeper::Ptr zk_ptr;
 	};
 
-protected:
-	template <class... Args>
-	ZooKeeperHolder(Args&&... args);
-
 private:
-	static std::unique_ptr<ZooKeeperHolder> instance;
-
 	mutable std::mutex mutex;
 	ZooKeeper::Ptr ptr;
 };
 
 template <class... Args>
-ZooKeeperHolder::ZooKeeperHolder(Args&&... args)
-	: ptr(std::make_shared<ZooKeeper>(std::forward<Args>(args)...))
+void ZooKeeperHolder::init(Args&&... args)
 {
-}
-
-template <class... Args>
-void ZooKeeperHolder::create(Args&&... args)
-{
-	if (instance)
-		throw DB::Exception("Initialization is called twice");
-	instance.reset(new ZooKeeperHolder(std::forward<Args>(args)...));
+	ptr = std::make_shared<ZooKeeper>(std::forward<Args>(args)...);
 }
 
 }; /*namespace zkutil*/

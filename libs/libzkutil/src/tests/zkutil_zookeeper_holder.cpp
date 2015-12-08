@@ -1,22 +1,32 @@
 #include <zkutil/ZooKeeperHolder.h>
 #include <iostream>
+#include <statdaemons/Test.h>
+
+#include <Poco/Util/Application.h>
 
 int main()
 {
-	zkutil::ZooKeeperHolder::create("localhost:2181");
+	Test::initLogger();
+
+	zkutil::ZooKeeperHolder zk_holder;
+	zk_holder.init("localhost:2181");
 
 	{
-		auto zk_handler = zkutil::ZooKeeperHolder::getInstance().getZooKeeper();
-		bool started_new_session = zkutil::ZooKeeperHolder::getInstance().replaceZooKeeperSessionToNewOne();
-		std::cerr << "Started new session: " << started_new_session << "\n";
-		std::cerr << "get / " << zk_handler->get("/") << "\n";
+		auto zk_handler = zk_holder.getZooKeeper();
+		if (zk_handler)
+		{
+			bool started_new_session = zk_holder.replaceZooKeeperSessionToNewOne();
+			std::cerr << "Started new session: " << started_new_session << "\n";
+			std::cerr << "get / " << zk_handler->get("/") << "\n";
+		}
 	}
 
 	{
-		bool started_new_session = zkutil::ZooKeeperHolder::getInstance().replaceZooKeeperSessionToNewOne();
+		bool started_new_session = zk_holder.replaceZooKeeperSessionToNewOne();
 		std::cerr << "Started new session: " << started_new_session << "\n";
-		auto zk_handler = zkutil::ZooKeeperHolder::getInstance().getZooKeeper();
-		std::cerr << "get / " << zk_handler->get("/") << "\n";
+		auto zk_handler = zk_holder.getZooKeeper();
+		if (zk_handler != nullptr)
+			std::cerr << "get / " << zk_handler->get("/") << "\n";
 	}
 
 	return 0;

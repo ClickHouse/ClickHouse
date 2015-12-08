@@ -2,38 +2,27 @@
 
 using namespace zkutil;
 
-std::unique_ptr<ZooKeeperHolder> ZooKeeperHolder::instance;
-
-ZooKeeperHolder & ZooKeeperHolder::getInstance()
-{
-	if (!instance)
-		throw DB::Exception("ZooKeeperHolder should be initialized before getInstance is called.");
-	return *instance;
-}
-
 ZooKeeperHolder::UnstorableZookeeperHandler ZooKeeperHolder::getZooKeeper()
 {
-	auto & inst = getInstance();
-	std::unique_lock<std::mutex> lock(inst.mutex);
-	return UnstorableZookeeperHandler(inst.ptr);
+	std::unique_lock<std::mutex> lock(mutex);
+	return UnstorableZookeeperHandler(ptr);
 }
 
 bool ZooKeeperHolder::replaceZooKeeperSessionToNewOne()
 {
-	auto & inst = getInstance();
-	std::unique_lock<std::mutex> lock(inst.mutex);
+	std::unique_lock<std::mutex> lock(mutex);
 
-	if (inst.ptr.unique())
+	if (ptr.unique())
 	{
-		inst.ptr = inst.ptr->startNewSession();
+		ptr = ptr->startNewSession();
 		return true;
 	}
 		return false;
 }
 
-bool ZooKeeperHolder::isSessionExpired()
+bool ZooKeeperHolder::isSessionExpired() const
 {
-	return getZooKeeper()->expired();
+	return ptr ? ptr->expired() : false;
 }
 
 ZooKeeperHolder::UnstorableZookeeperHandler::UnstorableZookeeperHandler(ZooKeeper::Ptr zk_ptr_)
