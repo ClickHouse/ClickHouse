@@ -128,7 +128,8 @@ private:
 	void flushAllBuffers(bool check_thresholds = true);
 	/// Сбросить буфер. Если выставлено check_thresholds - сбрасывает только если превышены пороги.
 	void flushBuffer(Buffer & buffer, bool check_thresholds);
-	bool checkThresholds(Buffer & buffer, time_t current_time, size_t additional_rows = 0, size_t additional_bytes = 0);
+	bool checkThresholds(const Buffer & buffer, time_t current_time, size_t additional_rows = 0, size_t additional_bytes = 0) const;
+	bool checkThresholdsImpl(size_t rows, size_t bytes, time_t time_passed) const;
 
 	/// Аргумент table передаётся, так как иногда вычисляется заранее. Он должен соответствовать destination-у.
 	void writeBlockToDestination(const Block & block, StoragePtr table);
