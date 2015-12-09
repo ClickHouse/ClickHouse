@@ -306,14 +306,9 @@ bool StorageBuffer::checkThresholds(Buffer & buffer, time_t current_time, size_t
 	size_t rows = buffer.data.rowsInFirstColumn() + additional_rows;
 	size_t bytes = buffer.data.bytes() + additional_bytes;
 
-	bool res =
+	return
 	       (time_passed > min_thresholds.time && rows > min_thresholds.rows && bytes > min_thresholds.bytes)
 		|| (time_passed > max_thresholds.time || rows > max_thresholds.rows || bytes > max_thresholds.bytes);
-
-	if (res)
-		LOG_TRACE(log, "Flushing buffer with " << rows << " rows, " << bytes << " bytes, age " << time_passed << " seconds.");
-
-	return res;
 }
 
 
@@ -329,6 +324,10 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds)
 	Block block_to_write = buffer.data.cloneEmpty();
 	time_t current_time = check_thresholds ? time(0) : 0;
 
+	size_t rows = 0;
+	size_t bytes = 0;
+	time_t time_passed = 0;
+
 	/** Довольно много проблем из-за того, что хотим блокировать буфер лишь на короткое время.
 	  * Под блокировкой, получаем из буфера блок, и заменяем в нём блок на новый пустой.
 	  * Затем пытаемся записать полученный блок в подчинённую таблицу.
@@ -338,6 +337,11 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds)
 	{
 		std::lock_guard<std::mutex> lock(buffer.mutex);
 
+		rows = buffer.data.rowsInFirstColumn();
+		bytes = buffer.data.bytes();
+		if (buffer.first_write_time)
+			time_passed = current_time - buffer.first_write_time;
+
 		if (check_thresholds)
 		{
 			if (!checkThresholds(buffer, current_time))
@@ -345,13 +349,15 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds)
 		}
 		else
 		{
-			if (buffer.data.rowsInFirstColumn() == 0)
+			if (rows == 0)
 				return;
 		}
 
 		buffer.data.swap(block_to_write);
 		buffer.first_write_time = 0;
 	}
+
+	LOG_TRACE(log, "Flushing buffer with " << rows << " rows, " << bytes << " bytes, age " << time_passed << " seconds.");
 
 	if (no_destination)
 		return;
