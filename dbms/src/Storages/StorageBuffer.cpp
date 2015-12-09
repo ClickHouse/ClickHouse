@@ -243,7 +243,6 @@ private:
 
 		if (!buffer.data)
 		{
-			buffer.first_write_time = time(0);
 			buffer.data = sorted_block.cloneEmpty();
 		}
 		else if (storage.checkThresholds(buffer, time(0), sorted_block.rowsInFirstColumn(), sorted_block.bytes()))
@@ -257,6 +256,9 @@ private:
 			storage.flushBuffer(buffer, false);
 			lock.lock();
 		}
+
+		if (!buffer.first_write_time)
+			buffer.first_write_time = time(0);
 
 		appendBlock(sorted_block, buffer.data);
 	}
