@@ -53,11 +53,10 @@ public:
 
 	/** Отменяет все мерджи. Все выполняющиеся сейчас вызовы mergeParts скоро бросят исключение.
 	  * Все новые вызовы будут бросать исключения, пока не будет вызван uncancel().
-	  * Считает количество таких вызовов для поддержки нескольких наложенных друг на друга отмен.
 	  */
-	void cancel() 	{ ++cancelled; }
-	void uncancel() { --cancelled; }
-	bool isCancelled() const { return cancelled > 0; }
+	void cancel() 	{ cancelled = true; }
+	void uncancel() { cancelled = false; }
+	bool isCancelled() const { return cancelled; }
 
 private:
 	MergeTreeData & data;
@@ -67,7 +66,7 @@ private:
 	/// Когда в последний раз писали в лог, что место на диске кончилось (чтобы не писать об этом слишком часто).
 	time_t disk_space_warning_time = 0;
 
-	std::atomic<int> cancelled {0};
+	std::atomic<bool> cancelled {false};
 };
 
 
