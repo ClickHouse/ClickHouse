@@ -127,9 +127,10 @@ private:
 
 			for (const auto idx : ext::range(0, size))
 			{
-				const auto value = row[names[idx]];
+				const auto & name = names[idx];
+				const auto value = row[name];
 				if (value.ok())
-					insertValue(columns[idx], types[idx], value);
+					insertValue(columns[idx], types[idx], value, name);
 				else
 					insertDefaultValue(columns[idx], *sample_columns[idx]);
 			}
@@ -142,26 +143,29 @@ private:
 		return block;
 	}
 
-	static void insertValue(IColumn * const column, const value_type_t type, const mongo::BSONElement & value)
+	static void insertValue(
+		IColumn * const column, const value_type_t type, const mongo::BSONElement & value, const mongo::StringData & name)
 	{
 		switch (type)
 		{
 			case value_type_t::UInt8:
 			{
-				if (value.type() != mongo::Bool)
+				if (!value.isNumber() && value.type() != mongo::Bool)
 					throw Exception{
-						"Type mismatch, expected Bool, got " + std::string{mongo::typeName(value.type())},
+						"Type mismatch, expected a number or Bool, got " + std::string{mongo::typeName(value.type())} +
+							" for column " + name.toString(),
 						ErrorCodes::TYPE_MISMATCH
 					};
 
-				static_cast<ColumnFloat64 *>(column)->insert(value.boolean());
+				static_cast<ColumnUInt8 *>(column)->insert(value.isNumber() ? value.numberInt() : value.boolean());
 				break;
 			}
 			case value_type_t::UInt16:
 			{
 				if (!value.isNumber())
 					throw Exception{
-						"Type mismatch, expected a number, got " + std::string{mongo::typeName(value.type())},
+						"Type mismatch, expected a number, got " + std::string{mongo::typeName(value.type())} +
+							" for column " + name.toString(),
 						ErrorCodes::TYPE_MISMATCH
 					};
 
@@ -172,7 +176,8 @@ private:
 			{
 				if (!value.isNumber())
 					throw Exception{
-						"Type mismatch, expected a number, got " + std::string{mongo::typeName(value.type())},
+						"Type mismatch, expected a number, got " + std::string{mongo::typeName(value.type())} +
+							" for column " + name.toString(),
 						ErrorCodes::TYPE_MISMATCH
 					};
 
@@ -183,7 +188,8 @@ private:
 			{
 				if (!value.isNumber())
 					throw Exception{
-						"Type mismatch, expected a number, got " + std::string{mongo::typeName(value.type())},
+						"Type mismatch, expected a number, got " + std::string{mongo::typeName(value.type())} +
+							" for column " + name.toString(),
 						ErrorCodes::TYPE_MISMATCH
 					};
 
@@ -192,20 +198,22 @@ private:
 			}
 			case value_type_t::Int8:
 			{
-				if (!value.isNumber())
+				if (!value.isNumber() && value.type() != mongo::Bool)
 					throw Exception{
-						"Type mismatch, expected a number, got " + std::string{mongo::typeName(value.type())},
+						"Type mismatch, expected a number or Bool, got " + std::string{mongo::typeName(value.type())} +
+							" for column " + name.toString(),
 						ErrorCodes::TYPE_MISMATCH
 					};
 
-				static_cast<ColumnInt8 *>(column)->insert(value.numberInt());
+				static_cast<ColumnInt8 *>(column)->insert(value.isNumber() ? value.numberInt() : value.numberInt());
 				break;
 			}
 			case value_type_t::Int16:
 			{
 				if (!value.isNumber())
 					throw Exception{
-						"Type mismatch, expected a number, got " + std::string{mongo::typeName(value.type())},
+						"Type mismatch, expected a number, got " + std::string{mongo::typeName(value.type())} +
+							" for column " + name.toString(),
 						ErrorCodes::TYPE_MISMATCH
 					};
 
@@ -216,7 +224,8 @@ private:
 			{
 				if (!value.isNumber())
 					throw Exception{
-						"Type mismatch, expected a number, got " + std::string{mongo::typeName(value.type())},
+						"Type mismatch, expected a number, got " + std::string{mongo::typeName(value.type())} +
+							" for column " + name.toString(),
 						ErrorCodes::TYPE_MISMATCH
 					};
 
@@ -227,7 +236,8 @@ private:
 			{
 				if (!value.isNumber())
 					throw Exception{
-						"Type mismatch, expected a number, got " + std::string{mongo::typeName(value.type())},
+						"Type mismatch, expected a number, got " + std::string{mongo::typeName(value.type())} +
+							" for column " + name.toString(),
 						ErrorCodes::TYPE_MISMATCH
 					};
 
@@ -238,7 +248,8 @@ private:
 			{
 				if (!value.isNumber())
 					throw Exception{
-						"Type mismatch, expected a number, got " + std::string{mongo::typeName(value.type())},
+						"Type mismatch, expected a number, got " + std::string{mongo::typeName(value.type())} +
+							" for column " + name.toString(),
 						ErrorCodes::TYPE_MISMATCH
 					};
 
@@ -249,7 +260,8 @@ private:
 			{
 				if (!value.isNumber())
 					throw Exception{
-						"Type mismatch, expected a number, got " + std::string{mongo::typeName(value.type())},
+						"Type mismatch, expected a number, got " + std::string{mongo::typeName(value.type())} +
+							" for column " + name.toString(),
 						ErrorCodes::TYPE_MISMATCH
 					};
 
@@ -260,7 +272,8 @@ private:
 			{
 				if (value.type() != mongo::String)
 					throw Exception{
-						"Type mismatch, expected String, got " + std::string{mongo::typeName(value.type())},
+						"Type mismatch, expected String, got " + std::string{mongo::typeName(value.type())} +
+							" for column " + name.toString(),
 						ErrorCodes::TYPE_MISMATCH
 					};
 
@@ -272,7 +285,8 @@ private:
 			{
 				if (value.type() != mongo::Date)
 					throw Exception{
-						"Type mismatch, expected Date, got " + std::string{mongo::typeName(value.type())},
+						"Type mismatch, expected Date, got " + std::string{mongo::typeName(value.type())} +
+							" for column " + name.toString(),
 						ErrorCodes::TYPE_MISMATCH
 					};
 
@@ -284,7 +298,8 @@ private:
 			{
 				if (value.type() != mongo::Date)
 					throw Exception{
-						"Type mismatch, expected Date, got " + std::string{mongo::typeName(value.type())},
+						"Type mismatch, expected Date, got " + std::string{mongo::typeName(value.type())} +
+							" for column " + name.toString(),
 						ErrorCodes::TYPE_MISMATCH
 					};
 
