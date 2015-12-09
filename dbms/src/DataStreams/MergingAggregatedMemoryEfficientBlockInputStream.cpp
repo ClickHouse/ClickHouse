@@ -131,7 +131,7 @@ MergingAggregatedMemoryEfficientBlockInputStream::~MergingAggregatedMemoryEffici
 
 		{
 			std::lock_guard<std::mutex> lock(parallel_merge_data->get_next_blocks_mutex);
-			parallel_merge_data->exhausted = true;
+			parallel_merge_data->finish = true;
 		}
 
 		parallel_merge_data->result_queue.clear();
@@ -161,7 +161,7 @@ void MergingAggregatedMemoryEfficientBlockInputStream::mergeThread(MemoryTracker
 			{
 				std::lock_guard<std::mutex> lock(parallel_merge_data->get_next_blocks_mutex);
 
-				if (parallel_merge_data->exhausted)
+				if (parallel_merge_data->exhausted || parallel_merge_data->finish)
 					break;
 
 				blocks_to_merge = getNextBlocksToMerge();
@@ -178,7 +178,7 @@ void MergingAggregatedMemoryEfficientBlockInputStream::mergeThread(MemoryTracker
 			{
 				std::lock_guard<std::mutex> lock(parallel_merge_data->get_next_blocks_mutex);
 
-				if (parallel_merge_data->exhausted)
+				if (parallel_merge_data->finish)
 					break;
 
 				parallel_merge_data->result_queue.push(OutputData(std::move(res)));

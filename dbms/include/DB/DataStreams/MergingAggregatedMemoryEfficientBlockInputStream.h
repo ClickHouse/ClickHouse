@@ -83,7 +83,8 @@ private:
 		boost::threadpool::pool pool;
 		std::mutex get_next_blocks_mutex;
 		ConcurrentBoundedQueue<OutputData> result_queue;
-		bool exhausted = false;
+		bool exhausted = false;	/// Данных больше нет.
+		bool finish = false;	/// Нужно завершить работу раньше, чем данные закончились.
 		std::atomic<size_t> active_threads;
 
 		ParallelMergeData(size_t max_threads) : pool(max_threads), result_queue(max_threads), active_threads(max_threads) {}
