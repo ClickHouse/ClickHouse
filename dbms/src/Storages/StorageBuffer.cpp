@@ -141,6 +141,9 @@ BlockInputStreams StorageBuffer::read(
 
 static void appendBlock(const Block & from, Block & to)
 {
+	if (!to)
+		throw Exception("Cannot append to empty block", ErrorCodes::LOGICAL_ERROR);
+
 	size_t rows = from.rows();
 	for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
 	{
@@ -243,13 +246,13 @@ private:
 			buffer.first_write_time = time(0);
 			buffer.data = sorted_block.cloneEmpty();
 		}
-
-		/** Если после вставки в буфер, ограничения будут превышены, то будем сбрасывать буфер.
-		  * Это также защищает от неограниченного потребления оперативки, так как в случае невозможности записать в таблицу,
-		  *  будет выкинуто исключение, а новые данные не будут добавлены в буфер.
-		  */
-		if (storage.checkThresholds(buffer, time(0), sorted_block.rowsInFirstColumn(), sorted_block.bytes()))
+		else if (storage.checkThresholds(buffer, time(0), sorted_block.rowsInFirstColumn(), sorted_block.bytes()))
 		{
+			/** Если после вставки в буфер, ограничения будут превышены, то будем сбрасывать буфер.
+			  * Это также защищает от неограниченного потребления оперативки, так как в случае невозможности записать в таблицу,
+			  *  будет выкинуто исключение, а новые данные не будут добавлены в буфер.
+			  */
+
 			lock.unlock();
 			storage.flushBuffer(buffer, false);
 			lock.lock();
@@ -321,7 +324,7 @@ void StorageBuffer::flushAllBuffers(const bool check_thresholds)
 
 void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds)
 {
-	Block block_to_write;
+	Block block_to_write = buffer.data.cloneEmpty();
 	time_t current_time = check_thresholds ? time(0) : 0;
 
 	/** Довольно много проблем из-за того, что хотим блокировать буфер лишь на короткое время.
