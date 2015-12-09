@@ -173,7 +173,16 @@ void MergingAggregatedMemoryEfficientBlockInputStream::mergeThread(MemoryTracker
 				}
 			}
 
-			parallel_merge_data->result_queue.push(aggregator.mergeBlocks(*blocks_to_merge, final));
+			Block res = aggregator.mergeBlocks(*blocks_to_merge, final);
+
+			{
+				std::lock_guard<std::mutex> lock(parallel_merge_data->get_next_blocks_mutex);
+
+				if (parallel_merge_data->exhausted)
+					break;
+
+				parallel_merge_data->result_queue.push(OutputData(std::move(res)));
+			}
 		}
 	}
 	catch (...)
