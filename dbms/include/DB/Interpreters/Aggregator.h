@@ -851,10 +851,6 @@ public:
 	  */
 	BlocksList convertToBlocks(AggregatedDataVariants & data_variants, bool final, size_t max_threads) const;
 
-	/** Объединить несколько структур данных агрегации в одну. (В первый непустой элемент массива.)
-	  */
-	AggregatedDataVariantsPtr merge(ManyAggregatedDataVariants & data_variants, size_t max_threads) const;
-
 	/** Объединить несколько структур данных агрегации и выдать результат в виде потока блоков.
 	  */
 	std::unique_ptr<IBlockInputStream> mergeAndConvertToBlocks(ManyAggregatedDataVariants & data_variants, bool final, size_t max_threads) const;
@@ -1081,23 +1077,12 @@ protected:
 		Table & table_dst,
 		Table & table_src) const;
 
-	/// Слить все ключи, оставшиеся после предыдущего метода, в overflows.
-	template <typename Method, typename Table>
-	void mergeDataRemainingKeysToOverflowsImpl(
-		AggregatedDataWithoutKey & overflows,
-		Table & table_src) const;
-
 	void mergeWithoutKeyDataImpl(
 		ManyAggregatedDataVariants & non_empty_data) const;
 
 	template <typename Method>
 	void mergeSingleLevelDataImpl(
 		ManyAggregatedDataVariants & non_empty_data) const;
-
-	template <typename Method>
-	void mergeTwoLevelDataImpl(
-		ManyAggregatedDataVariants & many_data,
-		boost::threadpool::pool * thread_pool) const;
 
 	template <typename Method, typename Table>
 	void convertToBlockImpl(

@@ -12,17 +12,17 @@ Block AggregatingBlockInputStream::readImpl()
 	if (!executed)
 	{
 		executed = true;
-		AggregatedDataVariants data_variants;
+		AggregatedDataVariantsPtr data_variants = new AggregatedDataVariants;
 
 		Aggregator::CancellationHook hook = [&]() { return this->isCancelled(); };
 		aggregator.setCancellationHook(hook);
 
-		aggregator.execute(children.back(), data_variants);
+		aggregator.execute(children.back(), *data_variants);
 
 		if (!aggregator.hasTemporaryFiles())
 		{
-			impl.reset(new BlocksListBlockInputStream(
-				aggregator.convertToBlocks(data_variants, final, 1)));
+			ManyAggregatedDataVariants many_data { data_variants };
+			impl = aggregator.mergeAndConvertToBlocks(many_data, final, 1);
 		}
 		else
 		{
@@ -35,9 +35,9 @@ Block AggregatingBlockInputStream::readImpl()
 			if (!isCancelled())
 			{
 				/// Сбросим имеющиеся в оперативке данные тоже на диск. Так проще.
-				size_t rows = data_variants.sizeWithoutOverflowRow();
+				size_t rows = data_variants->sizeWithoutOverflowRow();
 				if (rows)
-					aggregator.writeToTemporaryFile(data_variants, rows);
+					aggregator.writeToTemporaryFile(*data_variants, rows);
 			}
 
 			const auto & files = aggregator.getTemporaryFiles();
