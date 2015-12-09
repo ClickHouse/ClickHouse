@@ -968,9 +968,14 @@ protected:
 	TemporaryFiles temporary_files;
 
 	/** Если заданы только имена столбцов (key_names, а также aggregates[i].column_name), то вычислить номера столбцов.
-	  * Сформировать блок - пример результата.
+	  * Сформировать блок - пример результата. Он используется в методах convertToBlocks, mergeAndConvertToBlocks.
 	  */
 	void initialize(const Block & block);
+
+	/** Установить блок - пример результата,
+	  *  только если он ещё не был установлен.
+	  */
+	void setSampleBlock(const Block & block);
 
 	/** Выбрать способ агрегации на основе количества и типов ключей. */
 	AggregatedDataVariants::Type chooseAggregationMethod(const ConstColumnPlainPtrs & key_columns, Sizes & key_sizes);

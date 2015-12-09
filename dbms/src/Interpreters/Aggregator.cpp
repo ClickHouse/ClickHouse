@@ -155,6 +155,15 @@ void Aggregator::initialize(const Block & block)
 }
 
 
+void Aggregator::setSampleBlock(const Block & block)
+{
+	std::lock_guard<std::mutex> lock(mutex);
+
+	if (!sample)
+		sample = block.cloneEmpty();
+}
+
+
 void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 {
 	std::lock_guard<std::mutex> lock(mutex);
@@ -1895,8 +1904,7 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 
 	AggregateColumnsData aggregate_columns(params.aggregates_size);
 
-	Block empty_block;
-	initialize(empty_block);
+	initialize({});
 
 	if (isCancelled())
 		return;
@@ -1929,8 +1937,7 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 	if (bucket_to_blocks.empty())
 		return;
 
-	if (!sample)
-		sample = bucket_to_blocks.begin()->second.front().cloneEmpty();
+	setSampleBlock(bucket_to_blocks.begin()->second.front());
 
 	/// Каким способом выполнять агрегацию?
 	for (size_t i = 0; i < params.keys_size; ++i)
@@ -2089,14 +2096,8 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
 
 	AggregateColumnsData aggregate_columns(params.aggregates_size);
 
-	Block empty_block;
-	initialize(empty_block);
-
-	{
-		std::lock_guard<std::mutex> lock(mutex);
-		if (!sample)
-			sample = blocks.front().cloneEmpty();
-	}
+	initialize({});
+	setSampleBlock(blocks.front());
 
 	/// Каким способом выполнять агрегацию?
 	for (size_t i = 0; i < params.keys_size; ++i)
@@ -2261,11 +2262,8 @@ std::vector<Block> Aggregator::convertBlockToTwoLevel(const Block & block)
 	if (!block)
 		return {};
 
-	Block empty_block;
-	initialize(empty_block);
-
-	if (!sample)
-		sample = block.cloneEmpty();
+	initialize({});
+	setSampleBlock(block);
 
 	AggregatedDataVariants data;
 
