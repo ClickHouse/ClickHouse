@@ -8,11 +8,14 @@ namespace DB
 
 
 MergingAggregatedMemoryEfficientBlockInputStream::MergingAggregatedMemoryEfficientBlockInputStream(
-	BlockInputStreams inputs_, const Aggregator::Params & params, bool final_, size_t threads_)
-	: aggregator(params), final(final_), threads(threads_), inputs(inputs_.begin(), inputs_.end())
+	BlockInputStreams inputs_, const Aggregator::Params & params, bool final_, size_t reading_threads_, size_t merging_threads_)
+	: aggregator(params), final(final_),
+	reading_threads(std::min(reading_threads_, inputs_.size())), merging_threads(merging_threads_),
+	inputs(inputs_.begin(), inputs_.end())
 {
 	children = inputs_;
 }
+
 
 String MergingAggregatedMemoryEfficientBlockInputStream::getID() const
 {
@@ -24,21 +27,61 @@ String MergingAggregatedMemoryEfficientBlockInputStream::getID() const
 	return res.str();
 }
 
-Block MergingAggregatedMemoryEfficientBlockInputStream::readImpl()
+
+void MergingAggregatedMemoryEfficientBlockInputStream::readPrefix()
 {
-	if (threads == 1)
+	start();
+}
+
+
+void MergingAggregatedMemoryEfficientBlockInputStream::start()
+{
+	if (started)
+		return;
+
+	started = true;
+
+	/// Если child - RemoteBlockInputStream, то child->readPrefix() отправляет запрос на удалённый сервер, инициируя вычисления.
+
+	if (reading_threads == 1)
 	{
-		/// Если child - RemoteBlockInputStream, то отправляет запрос на все удалённые серверы, инициируя вычисления.
-		/** NOTE: Если соединения ещё не установлены, то устанавливает их последовательно.
-		  * И отправляет запрос последовательно. Это медленно.
-		  */
-		if (!started)
+		for (auto & child : children)
+			child->readPrefix();
+	}
+	else
+	{
+		reading_pool.reset(new boost::threadpool::pool(reading_threads));
+
+		size_t num_children = children.size();
+		std::vector<std::packaged_task<void()>> tasks(num_children);
+		for (size_t i = 0; i < num_children; ++i)
 		{
-			started = true;
-			for (auto & child : children)
+			auto & child = children[i];
+			auto & task = tasks[i];
+
+			auto memory_tracker = current_memory_tracker;
+			task = std::packaged_task<void()>([&child, memory_tracker]
+			{
+				current_memory_tracker = memory_tracker;
+				setThreadName("MergeAggReadThr");
 				child->readPrefix();
+			});
+			reading_pool->schedule([&task] { task(); });
 		}
 
+		reading_pool->wait();
+		for (auto & task : tasks)
+			task.get_future().get();
+	}
+}
+
+
+Block MergingAggregatedMemoryEfficientBlockInputStream::readImpl()
+{
+	start();
+
+	if (merging_threads == 1)
+	{
 		if (BlocksToMerge blocks_to_merge = getNextBlocksToMerge())
 			return aggregator.mergeBlocks(*blocks_to_merge, final);
 		return {};
@@ -51,32 +94,14 @@ Block MergingAggregatedMemoryEfficientBlockInputStream::readImpl()
 
 		if (!parallel_merge_data)
 		{
-			parallel_merge_data.reset(new ParallelMergeData(threads));
+			parallel_merge_data.reset(new ParallelMergeData(merging_threads));
 
 			auto & pool = parallel_merge_data->pool;
-
-			/** Если child - RemoteBlockInputStream, то соединения и отправку запроса тоже будем делать параллельно.
-			  */
-			started = true;
-			size_t num_children = children.size();
-			std::vector<std::packaged_task<void()>> tasks(num_children);
-			for (size_t i = 0; i < num_children; ++i)
-			{
-				auto & child = children[i];
-				auto & task = tasks[i];
-
-				task = std::packaged_task<void()>([&child] { child->readPrefix(); });
-				pool.schedule([&task] { task(); });
-			}
-
-			pool.wait();
-			for (auto & task : tasks)
-				task.get_future().get();
 
 			/** Создаём потоки, которые будут получать и мерджить данные.
 			  */
 
-			for (size_t i = 0; i < threads; ++i)
+			for (size_t i = 0; i < merging_threads; ++i)
 				pool.schedule(std::bind(&MergingAggregatedMemoryEfficientBlockInputStream::mergeThread,
 					this, current_memory_tracker));
 		}
@@ -95,22 +120,48 @@ Block MergingAggregatedMemoryEfficientBlockInputStream::readImpl()
 }
 
 
+MergingAggregatedMemoryEfficientBlockInputStream::~MergingAggregatedMemoryEfficientBlockInputStream()
+{
+	if (reading_pool)
+		reading_pool->wait();
+
+	if (parallel_merge_data)
+	{
+		LOG_TRACE((&Logger::get("MergingAggregatedMemoryEfficientBlockInputStream")), "Waiting for threads to finish");
+
+		{
+			std::lock_guard<std::mutex> lock(parallel_merge_data->get_next_blocks_mutex);
+			parallel_merge_data->finish = true;
+		}
+
+		parallel_merge_data->result_queue.clear();
+		parallel_merge_data->pool.wait();
+	}
+}
+
+
 void MergingAggregatedMemoryEfficientBlockInputStream::mergeThread(MemoryTracker * memory_tracker)
 {
-	setThreadName("MrgAggMemEffThr");
+	setThreadName("MergeAggMergThr");
 	current_memory_tracker = memory_tracker;
 
 	try
 	{
 		while (true)
 		{
-			/// Получение следующих блоков делается последовательно, а мердж - параллельно.
+			/** Получение следующих блоков делается в одном пуле потоков, а мердж - в другом.
+			  * Это весьма сложное взаимодействие.
+			  * Каждый раз,
+			  * - reading_threads читают по одному следующему блоку из каждого источника;
+			  * - из этих блоков составляется группа блоков для слияния;
+			  * - один из merging_threads выполняет слияние этой группы блоков;
+			  */
 			BlocksToMerge blocks_to_merge;
 
 			{
 				std::lock_guard<std::mutex> lock(parallel_merge_data->get_next_blocks_mutex);
 
-				if (parallel_merge_data->exhausted)
+				if (parallel_merge_data->exhausted || parallel_merge_data->finish)
 					break;
 
 				blocks_to_merge = getNextBlocksToMerge();
@@ -122,7 +173,16 @@ void MergingAggregatedMemoryEfficientBlockInputStream::mergeThread(MemoryTracker
 				}
 			}
 
-			parallel_merge_data->result_queue.push(aggregator.mergeBlocks(*blocks_to_merge, final));
+			Block res = aggregator.mergeBlocks(*blocks_to_merge, final);
+
+			{
+				std::lock_guard<std::mutex> lock(parallel_merge_data->get_next_blocks_mutex);
+
+				if (parallel_merge_data->finish)
+					break;
+
+				parallel_merge_data->result_queue.push(OutputData(std::move(res)));
+			}
 		}
 	}
 	catch (...)
@@ -162,14 +222,16 @@ MergingAggregatedMemoryEfficientBlockInputStream::BlocksToMerge MergingAggregate
 
 	++current_bucket_num;
 
-	for (auto & input : inputs)
+	/// Получить из источника следующий блок с номером корзины не больше current_bucket_num.
+
+	auto need_that_input = [this] (Input & input)
 	{
-		if (input.is_exhausted)
-			continue;
+		return !input.is_exhausted
+			&& input.block.info.bucket_num < current_bucket_num;
+	};
 
-		if (input.block.info.bucket_num >= current_bucket_num)
-			continue;
-
+	auto read_from_input = [this] (Input & input)
+	{
 		/// Если придёт блок не с основными данными, а с overflows, то запомним его и повторим чтение.
 		while (true)
 		{
@@ -210,6 +272,39 @@ MergingAggregatedMemoryEfficientBlockInputStream::BlocksToMerge MergingAggregate
 
 			break;
 		}
+	};
+
+	if (reading_threads == 1)
+	{
+		for (auto & input : inputs)
+			if (need_that_input(input))
+				read_from_input(input);
+	}
+	else
+	{
+		size_t num_inputs = inputs.size();
+		std::vector<std::packaged_task<void()>> tasks;
+		tasks.reserve(num_inputs);
+
+		for (auto & input : inputs)
+		{
+			if (need_that_input(input))
+			{
+				auto memory_tracker = current_memory_tracker;
+				tasks.emplace_back([&input, &read_from_input, memory_tracker]
+				{
+					current_memory_tracker = memory_tracker;
+					setThreadName("MergeAggReadThr");
+					read_from_input(input);
+				});
+				auto & task = tasks.back();
+				reading_pool->schedule([&task] { task(); });
+			}
+		}
+
+		reading_pool->wait();
+		for (auto & task : tasks)
+			task.get_future().get();
 	}
 
 	while (true)

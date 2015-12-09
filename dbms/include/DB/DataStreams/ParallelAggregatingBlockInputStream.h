@@ -88,13 +88,8 @@ protected:
 			if (!aggregator.hasTemporaryFiles())
 			{
 				/** Если все частично-агрегированные данные в оперативке, то мерджим их параллельно, тоже в оперативке.
-				  * NOTE Если израсходовано больше половины допустимой памяти, то мерджить следовало бы более экономно.
 				  */
-				AggregatedDataVariantsPtr data_variants = aggregator.merge(many_data, max_threads);
-
-				if (data_variants)
-					impl.reset(new BlocksListBlockInputStream(
-						aggregator.convertToBlocks(*data_variants, final, max_threads)));
+				impl = aggregator.mergeAndConvertToBlocks(many_data, final, max_threads);
 			}
 			else
 			{
@@ -116,7 +111,8 @@ protected:
 					<< (files.sum_size_compressed / 1048576.0) << " MiB compressed, "
 					<< (files.sum_size_uncompressed / 1048576.0) << " MiB uncompressed.");
 
-				impl.reset(new MergingAggregatedMemoryEfficientBlockInputStream(input_streams, params, final, temporary_data_merge_threads));
+				impl.reset(new MergingAggregatedMemoryEfficientBlockInputStream(
+					input_streams, params, final, temporary_data_merge_threads, temporary_data_merge_threads));
 			}
 		}
 
@@ -208,10 +204,14 @@ private:
 
 		void onFinishThread(size_t thread_num)
 		{
-			if (parent.aggregator.hasTemporaryFiles())
+			if (!parent.isCancelled() && parent.aggregator.hasTemporaryFiles())
 			{
 				/// Сбросим имеющиеся в оперативке данные тоже на диск. Так проще их потом объединять.
 				auto & data = *parent.many_data[thread_num];
+
+				if (data.isConvertibleToTwoLevel())
+					data.convertToTwoLevel();
+
 				size_t rows = data.sizeWithoutOverflowRow();
 				if (rows)
 					parent.aggregator.writeToTemporaryFile(data, rows);
@@ -220,12 +220,15 @@ private:
 
 		void onFinish()
 		{
-			if (parent.aggregator.hasTemporaryFiles())
+			if (!parent.isCancelled() && parent.aggregator.hasTemporaryFiles())
 			{
 				/// Может так получиться, что какие-то данные ещё не сброшены на диск,
 				///  потому что во время вызова onFinishThread ещё никакие данные не были сброшены на диск, а потом какие-то - были.
 				for (auto & data : parent.many_data)
 				{
+					if (data->isConvertibleToTwoLevel())
+						data->convertToTwoLevel();
+
 					size_t rows = data->sizeWithoutOverflowRow();
 					if (rows)
 						parent.aggregator.writeToTemporaryFile(*data, rows);

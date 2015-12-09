@@ -77,7 +77,7 @@ Block FilterBlockInputStream::readImpl()
 		if (first_non_constant_column != static_cast<size_t>(filter_column))
 		{
 			ColumnWithTypeAndName & current_column = res.getByPosition(first_non_constant_column);
-			current_column.column = current_column.column->filter(filter);
+			current_column.column = current_column.column->filter(filter, -1);
 			filtered_rows = current_column.column->size();
 		}
 		else
@@ -116,7 +116,7 @@ Block FilterBlockInputStream::readImpl()
 			if (current_column.column->isConst())
 				current_column.column = current_column.column->cut(0, filtered_rows);
 			else
-				current_column.column = current_column.column->filter(filter);
+				current_column.column = current_column.column->filter(filter, -1);
 		}
 
 		return res;

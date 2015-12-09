@@ -47,14 +47,21 @@ template <typename T>
 void filterArraysImpl(
 	const PODArray<T> & src_elems, const IColumn::Offsets_t & src_offsets,
 	PODArray<T> & res_elems, IColumn::Offsets_t & res_offsets,
-	const IColumn::Filter & filt)
+	const IColumn::Filter & filt, ssize_t result_size_hint)
 {
 	const size_t size = src_offsets.size();
 	if (size != filt.size())
 		throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-	res_elems.reserve(src_elems.size());
-	res_offsets.reserve(size);
+	if (result_size_hint)
+	{
+		res_offsets.reserve(result_size_hint > 0 ? result_size_hint : size);
+
+		if (result_size_hint < 0)
+			res_elems.reserve(src_elems.size());
+		else if (result_size_hint < 1000000000 && src_elems.size() < 1000000000)	/// Избегаем переполнения.
+			res_elems.reserve(result_size_hint * src_elems.size() / size);
+	}
 
 	IColumn::Offset_t current_src_offset = 0;
 
@@ -150,24 +157,24 @@ void filterArraysImpl(
 
 /// Явные инстанцирования - чтобы не размещать реализацию функции выше в заголовочном файле.
 template void filterArraysImpl<UInt8>(
-	const PODArray<UInt8> &, const IColumn::Offsets_t &, PODArray<UInt8> &, IColumn::Offsets_t &, const IColumn::Filter &);
+	const PODArray<UInt8> &, const IColumn::Offsets_t &, PODArray<UInt8> &, IColumn::Offsets_t &, const IColumn::Filter &, ssize_t);
 template void filterArraysImpl<UInt16>(
-	const PODArray<UInt16> &, const IColumn::Offsets_t &, PODArray<UInt16> &, IColumn::Offsets_t &, const IColumn::Filter &);
+	const PODArray<UInt16> &, const IColumn::Offsets_t &, PODArray<UInt16> &, IColumn::Offsets_t &, const IColumn::Filter &, ssize_t);
 template void filterArraysImpl<UInt32>(
-	const PODArray<UInt32> &, const IColumn::Offsets_t &, PODArray<UInt32> &, IColumn::Offsets_t &, const IColumn::Filter &);
+	const PODArray<UInt32> &, const IColumn::Offsets_t &, PODArray<UInt32> &, IColumn::Offsets_t &, const IColumn::Filter &, ssize_t);
 template void filterArraysImpl<UInt64>(
-	const PODArray<UInt64> &, const IColumn::Offsets_t &, PODArray<UInt64> &, IColumn::Offsets_t &, const IColumn::Filter &);
+	const PODArray<UInt64> &, const IColumn::Offsets_t &, PODArray<UInt64> &, IColumn::Offsets_t &, const IColumn::Filter &, ssize_t);
 template void filterArraysImpl<Int8>(
-	const PODArray<Int8> &, const IColumn::Offsets_t &, PODArray<Int8> &, IColumn::Offsets_t &, const IColumn::Filter &);
+	const PODArray<Int8> &, const IColumn::Offsets_t &, PODArray<Int8> &, IColumn::Offsets_t &, const IColumn::Filter &, ssize_t);
 template void filterArraysImpl<Int16>(
-	const PODArray<Int16> &, const IColumn::Offsets_t &, PODArray<Int16> &, IColumn::Offsets_t &, const IColumn::Filter &);
+	const PODArray<Int16> &, const IColumn::Offsets_t &, PODArray<Int16> &, IColumn::Offsets_t &, const IColumn::Filter &, ssize_t);
 template void filterArraysImpl<Int32>(
-	const PODArray<Int32> &, const IColumn::Offsets_t &, PODArray<Int32> &, IColumn::Offsets_t &, const IColumn::Filter &);
+	const PODArray<Int32> &, const IColumn::Offsets_t &, PODArray<Int32> &, IColumn::Offsets_t &, const IColumn::Filter &, ssize_t);
 template void filterArraysImpl<Int64>(
-	const PODArray<Int64> &, const IColumn::Offsets_t &, PODArray<Int64> &, IColumn::Offsets_t &, const IColumn::Filter &);
+	const PODArray<Int64> &, const IColumn::Offsets_t &, PODArray<Int64> &, IColumn::Offsets_t &, const IColumn::Filter &, ssize_t);
 template void filterArraysImpl<Float32>(
-	const PODArray<Float32> &, const IColumn::Offsets_t &, PODArray<Float32> &, IColumn::Offsets_t &, const IColumn::Filter &);
+	const PODArray<Float32> &, const IColumn::Offsets_t &, PODArray<Float32> &, IColumn::Offsets_t &, const IColumn::Filter &, ssize_t);
 template void filterArraysImpl<Float64>(
-	const PODArray<Float64> &, const IColumn::Offsets_t &, PODArray<Float64> &, IColumn::Offsets_t &, const IColumn::Filter &);
+	const PODArray<Float64> &, const IColumn::Offsets_t &, PODArray<Float64> &, IColumn::Offsets_t &, const IColumn::Filter &, ssize_t);
 
 }

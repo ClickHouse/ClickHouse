@@ -189,7 +189,7 @@ public:
 		memcpy(&chars[old_size], &src_concrete.chars[start * n], length * n);
 	}
 
-	ColumnPtr filter(const IColumn::Filter & filt) const override
+	ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override
 	{
 		size_t col_size = size();
 		if (col_size != filt.size())
@@ -197,7 +197,9 @@ public:
 
 		ColumnFixedString * res_ = new ColumnFixedString(n);
 		ColumnPtr res = res_;
-		res_->chars.reserve(chars.size());
+
+		if (result_size_hint)
+			res_->chars.reserve(result_size_hint > 0 ? result_size_hint * n : chars.size());
 
 		size_t offset = 0;
 		for (size_t i = 0; i < col_size; ++i, offset += n)
@@ -275,6 +277,11 @@ public:
 		min = String();
 		max = String();
 	}
+
+	void reserve(size_t size) override
+	{
+		chars.reserve(n * size);
+	};
 
 
 	Chars_t & getChars() { return chars; }

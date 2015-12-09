@@ -50,7 +50,7 @@ public:
 		s += length;
 	}
 
-	ColumnPtr filter(const Filter & filt) const override
+	ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
 	{
 		return cloneDummy(countBytesInFilter(filt));
 	}

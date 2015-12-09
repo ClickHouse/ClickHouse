@@ -17,6 +17,6 @@ template <typename T>
 void filterArraysImpl(
 	const PODArray<T> & src_elems, const IColumn::Offsets_t & src_offsets,
 	PODArray<T> & res_elems, IColumn::Offsets_t & res_offsets,
-	const IColumn::Filter & filt);
+	const IColumn::Filter & filt, ssize_t result_size_hint);
 
 }

@@ -16,6 +16,7 @@
 #include <DB/Interpreters/InterpreterRenameQuery.h>
 #include <DB/Interpreters/QueryLog.h>
 #include <DB/Common/setThreadName.h>
+#include <common/Revision.h>
 
 
 namespace DB
@@ -203,6 +204,7 @@ Block QueryLog::createBlock()
 		{new ColumnFixedString(16), new DataTypeFixedString(16), "ip_address"},
 		{new ColumnString, 	new DataTypeString, 	"user"},
 		{new ColumnString, 	new DataTypeString, 	"query_id"},
+		{new ColumnUInt32, 	new DataTypeUInt32, 	"revision"},
 	};
 }
 
@@ -262,6 +264,8 @@ void QueryLog::flush()
 
 			block.unsafeGetByPosition(i++).column.get()->insertData(elem.user.data(), elem.user.size());
 			block.unsafeGetByPosition(i++).column.get()->insertData(elem.query_id.data(), elem.query_id.size());
+
+			block.unsafeGetByPosition(i++).column.get()->insert(static_cast<UInt64>(Revision::get()));
 		}
 
 		BlockOutputStreamPtr stream = table->write({}, {});

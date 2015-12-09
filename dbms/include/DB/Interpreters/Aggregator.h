@@ -714,6 +714,10 @@ struct AggregatedDataVariants : private boost::noncopyable
 		M(key8)				\
 		M(key16)			\
 
+	#define APPLY_FOR_VARIANTS_SINGLE_LEVEL(M) \
+		APPLY_FOR_VARIANTS_NOT_CONVERTIBLE_TO_TWO_LEVEL(M) \
+		APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M) \
+
 	bool isConvertibleToTwoLevel() const
 	{
 		switch (type)
@@ -845,14 +849,11 @@ public:
 	  *  которые могут быть затем объединены с другими состояниями (для распределённой обработки запроса).
 	  * Если final = true, то в качестве столбцов-агрегатов создаются столбцы с готовыми значениями.
 	  */
-	BlocksList convertToBlocks(AggregatedDataVariants & data_variants, bool final, size_t max_threads);
+	BlocksList convertToBlocks(AggregatedDataVariants & data_variants, bool final, size_t max_threads) const;
 
-	/** Объединить несколько структур данных агрегации в одну. (В первый непустой элемент массива.)
-	  * После объединения, все стркутуры агрегации (а не только те, в которую они будут слиты) должны жить,
-	  *  пока не будет вызвана функция convertToBlocks.
-	  * Это нужно, так как в слитом результате могут остаться указатели на память в пуле, которым владеют другие структуры агрегации.
+	/** Объединить несколько структур данных агрегации и выдать результат в виде потока блоков.
 	  */
-	AggregatedDataVariantsPtr merge(ManyAggregatedDataVariants & data_variants, size_t max_threads);
+	std::unique_ptr<IBlockInputStream> mergeAndConvertToBlocks(ManyAggregatedDataVariants & data_variants, bool final, size_t max_threads) const;
 
 	/** Объединить поток частично агрегированных блоков в одну структуру данных.
 	  * (Доагрегировать несколько блоков, которые представляют собой результат независимых агрегаций с удалённых серверов.)
@@ -900,6 +901,7 @@ public:
 
 protected:
 	friend struct AggregatedDataVariants;
+	friend class MergingAndConvertingBlockInputStream;
 
 	Params params;
 
@@ -966,9 +968,14 @@ protected:
 	TemporaryFiles temporary_files;
 
 	/** Если заданы только имена столбцов (key_names, а также aggregates[i].column_name), то вычислить номера столбцов.
-	  * Сформировать блок - пример результата.
+	  * Сформировать блок - пример результата. Он используется в методах convertToBlocks, mergeAndConvertToBlocks.
 	  */
 	void initialize(const Block & block);
+
+	/** Установить блок - пример результата,
+	  *  только если он ещё не был установлен.
+	  */
+	void setSampleBlock(const Block & block);
 
 	/** Выбрать способ агрегации на основе количества и типов ключей. */
 	AggregatedDataVariants::Type chooseAggregationMethod(const ConstColumnPlainPtrs & key_columns, Sizes & key_sizes);
@@ -1075,23 +1082,12 @@ protected:
 		Table & table_dst,
 		Table & table_src) const;
 
-	/// Слить все ключи, оставшиеся после предыдущего метода, в overflows.
-	template <typename Method, typename Table>
-	void mergeDataRemainingKeysToOverflowsImpl(
-		AggregatedDataWithoutKey & overflows,
-		Table & table_src) const;
-
 	void mergeWithoutKeyDataImpl(
 		ManyAggregatedDataVariants & non_empty_data) const;
 
 	template <typename Method>
 	void mergeSingleLevelDataImpl(
 		ManyAggregatedDataVariants & non_empty_data) const;
-
-	template <typename Method>
-	void mergeTwoLevelDataImpl(
-		ManyAggregatedDataVariants & many_data,
-		boost::threadpool::pool * thread_pool) const;
 
 	template <typename Method, typename Table>
 	void convertToBlockImpl(
@@ -1125,6 +1121,13 @@ protected:
 		bool final,
 		size_t rows,
 		Filler && filler) const;
+
+	template <typename Method>
+	Block convertOneBucketToBlock(
+		AggregatedDataVariants & data_variants,
+		Method & method,
+		bool final,
+		size_t bucket) const;
 
 	BlocksList prepareBlocksAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;
 	BlocksList prepareBlocksAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final) const;
@@ -1161,6 +1164,10 @@ protected:
 		AggregatedDataVariants & result) const;
 
 	template <typename Method>
+	void mergeBucketImpl(
+		ManyAggregatedDataVariants & data, Int32 bucket) const;
+
+	template <typename Method>
 	void convertBlockToTwoLevelImpl(
 		Method & method,
 		Arena * pool,
@@ -1170,9 +1177,13 @@ protected:
 		const Block & source,
 		std::vector<Block> & destinations) const;
 
-	template <typename Method>
+	template <typename Method, typename Table>
 	void destroyImpl(
-		Method & method) const;
+		Method & method,
+		Table & data) const;
+
+	void destroyWithoutKey(
+		AggregatedDataVariants & result) const;
 
 
 	/** Проверяет ограничения на максимальное количество ключей для агрегации.

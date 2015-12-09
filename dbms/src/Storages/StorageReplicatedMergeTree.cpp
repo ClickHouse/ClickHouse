@@ -770,12 +770,19 @@ void StorageReplicatedMergeTree::loadQueue()
 
 	Strings children = zookeeper->getChildren(replica_path + "/queue");
 	std::sort(children.begin(), children.end());
+
+	std::vector<std::pair<String, zkutil::ZooKeeper::GetFuture>> futures;
+	futures.reserve(children.size());
+
 	for (const String & child : children)
+		futures.emplace_back(child, zookeeper->asyncGet(replica_path + "/queue/" + child));
+
+	for (auto & future : futures)
 	{
-		zkutil::Stat stat;
-		String s = zookeeper->get(replica_path + "/queue/" + child, &stat);
-		LogEntryPtr entry = LogEntry::parse(s, stat);
-		entry->znode_name = child;
+		zkutil::ZooKeeper::ValueAndStat res = future.second.get();
+		LogEntryPtr entry = LogEntry::parse(res.value, res.stat);
+
+		entry->znode_name = future.first;
 		entry->addResultToVirtualParts(*this);
 		queue.push_back(entry);
 	}
@@ -3047,9 +3054,9 @@ void StorageReplicatedMergeTree::drop()
 	if (is_readonly)
 		throw Exception("Can't drop readonly replicated table (need to drop data in ZooKeeper as well)", ErrorCodes::TABLE_IS_READ_ONLY);
 
-	auto zookeeper = getZooKeeper();
-
 	shutdown();
+
+	auto zookeeper = getZooKeeper();
 
 	LOG_INFO(log, "Removing replica " << replica_path);
 	replica_is_active_node = nullptr;

@@ -77,7 +77,7 @@ struct ArrayFilterImpl
 		}
 
 		const IColumn::Filter & filter = column_filter->getData();
-		ColumnPtr filtered = array->getData().filter(filter);
+		ColumnPtr filtered = array->getData().filter(filter, -1);
 
 		const IColumn::Offsets_t & in_offsets = array->getOffsets();
 		ColumnArray::ColumnOffsets_t * column_offsets = new ColumnArray::ColumnOffsets_t(in_offsets.size());

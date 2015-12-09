@@ -255,7 +255,7 @@ private:
 						if (col.name == prewhere_column && res.columns() > 1)
 							continue;
 						col.column =
-							col.column->filter(task->column_name_set.count(col.name) ? post_filter : pre_filter);
+							col.column->filter(task->column_name_set.count(col.name) ? post_filter : pre_filter, -1);
 						rows = col.column->size();
 					}
 
