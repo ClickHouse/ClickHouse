@@ -62,7 +62,6 @@ void MergingAggregatedMemoryEfficientBlockInputStream::start()
 			auto memory_tracker = current_memory_tracker;
 			task = std::packaged_task<void()>([&child, memory_tracker]
 			{
-				/// memory_tracker и имя потока устанавливается здесь. Далее для всех задач в reading_pool это уже не требуется.
 				current_memory_tracker = memory_tracker;
 				setThreadName("MergeAggReadThr");
 				child->readPrefix();
@@ -129,6 +128,12 @@ MergingAggregatedMemoryEfficientBlockInputStream::~MergingAggregatedMemoryEffici
 	if (parallel_merge_data)
 	{
 		LOG_TRACE((&Logger::get("MergingAggregatedMemoryEfficientBlockInputStream")), "Waiting for threads to finish");
+
+		{
+			std::lock_guard<std::mutex> lock(parallel_merge_data->get_next_blocks_mutex);
+			parallel_merge_data->finish = true;
+		}
+
 		parallel_merge_data->result_queue.clear();
 		parallel_merge_data->pool.wait();
 	}
@@ -156,7 +161,7 @@ void MergingAggregatedMemoryEfficientBlockInputStream::mergeThread(MemoryTracker
 			{
 				std::lock_guard<std::mutex> lock(parallel_merge_data->get_next_blocks_mutex);
 
-				if (parallel_merge_data->exhausted)
+				if (parallel_merge_data->exhausted || parallel_merge_data->finish)
 					break;
 
 				blocks_to_merge = getNextBlocksToMerge();
@@ -168,7 +173,16 @@ void MergingAggregatedMemoryEfficientBlockInputStream::mergeThread(MemoryTracker
 				}
 			}
 
-			parallel_merge_data->result_queue.push(aggregator.mergeBlocks(*blocks_to_merge, final));
+			Block res = aggregator.mergeBlocks(*blocks_to_merge, final);
+
+			{
+				std::lock_guard<std::mutex> lock(parallel_merge_data->get_next_blocks_mutex);
+
+				if (parallel_merge_data->finish)
+					break;
+
+				parallel_merge_data->result_queue.push(OutputData(std::move(res)));
+			}
 		}
 	}
 	catch (...)
@@ -276,7 +290,13 @@ MergingAggregatedMemoryEfficientBlockInputStream::BlocksToMerge MergingAggregate
 		{
 			if (need_that_input(input))
 			{
-				tasks.emplace_back([&input, &read_from_input] { read_from_input(input); });
+				auto memory_tracker = current_memory_tracker;
+				tasks.emplace_back([&input, &read_from_input, memory_tracker]
+				{
+					current_memory_tracker = memory_tracker;
+					setThreadName("MergeAggReadThr");
+					read_from_input(input);
+				});
 				auto & task = tasks.back();
 				reading_pool->schedule([&task] { task(); });
 			}

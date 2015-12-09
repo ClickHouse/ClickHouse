@@ -90,7 +90,8 @@ void Aggregator::initialize(const Block & block)
 
 	initialized = true;
 
-	memory_usage_before_aggregation = current_memory_tracker->get();
+	if (current_memory_tracker)
+		memory_usage_before_aggregation = current_memory_tracker->get();
 
 	aggregate_functions.resize(params.aggregates_size);
 	for (size_t i = 0; i < params.aggregates_size; ++i)
@@ -151,6 +152,15 @@ void Aggregator::initialize(const Block & block)
 			sample.insert(col);
 		}
 	}
+}
+
+
+void Aggregator::setSampleBlock(const Block & block)
+{
+	std::lock_guard<std::mutex> lock(mutex);
+
+	if (!sample)
+		sample = block.cloneEmpty();
 }
 
 
@@ -732,7 +742,10 @@ bool Aggregator::executeOnBlock(Block & block, AggregatedDataVariants & result,
 	}
 
 	size_t result_size = result.sizeWithoutOverflowRow();
-	auto current_memory_usage = current_memory_tracker->get();
+	Int64 current_memory_usage = 0;
+	if (current_memory_tracker)
+		current_memory_usage = current_memory_tracker->get();
+
 	auto result_size_bytes = current_memory_usage - memory_usage_before_aggregation;	/// Здесь учитываются все результаты в сумме, из разных потоков.
 
 	bool worth_convert_to_two_level
@@ -1265,7 +1278,7 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
 }
 
 
-BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, bool final, size_t max_threads)
+BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, bool final, size_t max_threads) const
 {
 	if (isCancelled())
 		return BlocksList();
@@ -1438,31 +1451,6 @@ void NO_INLINE Aggregator::mergeDataOnlyExistingKeysImpl(
 	}
 }
 
-template <typename Method, typename Table>
-void NO_INLINE Aggregator::mergeDataRemainingKeysToOverflowsImpl(
-	AggregatedDataWithoutKey & overflows,
-	Table & table_src) const
-{
-	for (auto it = table_src.begin(); it != table_src.end(); ++it)
-	{
-		if (Method::getAggregateData(it->second) == nullptr)
-			continue;
-
-		AggregateDataPtr res_data = overflows;
-
-		for (size_t i = 0; i < params.aggregates_size; ++i)
-			aggregate_functions[i]->merge(
-				res_data + offsets_of_aggregate_states[i],
-				Method::getAggregateData(it->second) + offsets_of_aggregate_states[i]);
-
-		for (size_t i = 0; i < params.aggregates_size; ++i)
-			aggregate_functions[i]->destroy(
-				Method::getAggregateData(it->second) + offsets_of_aggregate_states[i]);
-
-		Method::getAggregateData(it->second) = nullptr;
-	}
-}
-
 
 void NO_INLINE Aggregator::mergeWithoutKeyDataImpl(
 	ManyAggregatedDataVariants & non_empty_data) const
@@ -1523,193 +1511,6 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
 
 
 template <typename Method>
-void NO_INLINE Aggregator::mergeTwoLevelDataImpl(
-	ManyAggregatedDataVariants & non_empty_data,
-	boost::threadpool::pool * thread_pool) const
-{
-	AggregatedDataVariantsPtr & res = non_empty_data[0];
-
-	/// В данном случае, no_more_keys будет выставлено, только если в первом (самом большом) состоянии достаточно много строк.
-	bool no_more_keys = false;
-	if (!checkLimits(res->sizeWithoutOverflowRow(), no_more_keys))
-		return;
-
-	/// Слияние распараллеливается по корзинам - первому уровню TwoLevelHashMap.
-	auto merge_bucket = [&non_empty_data, &res, no_more_keys, this](size_t bucket, MemoryTracker * memory_tracker)
-	{
-		current_memory_tracker = memory_tracker;
-
-		/// Все результаты агрегации соединяем с первым.
-		for (size_t i = 1, size = non_empty_data.size(); i < size; ++i)
-		{
-			AggregatedDataVariants & current = *non_empty_data[i];
-
-			if (!no_more_keys)
-			{
-				mergeDataImpl<Method>(
-					getDataVariant<Method>(*res).data.impls[bucket],
-					getDataVariant<Method>(current).data.impls[bucket]);
-
-				getDataVariant<Method>(current).data.impls[bucket].clearAndShrink();
-			}
-			else
-			{
-				mergeDataOnlyExistingKeysImpl<Method>(
-					getDataVariant<Method>(*res).data.impls[bucket],
-					getDataVariant<Method>(current).data.impls[bucket]);
-			}
-		}
-	};
-
-	/// packaged_task используются, чтобы исключения автоматически прокидывались в основной поток.
-
-	std::vector<std::packaged_task<void()>> tasks(Method::Data::NUM_BUCKETS);
-
-	try
-	{
-		for (size_t bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
-		{
-			tasks[bucket] = std::packaged_task<void()>(std::bind(merge_bucket, bucket, current_memory_tracker));
-
-			if (thread_pool)
-				thread_pool->schedule([bucket, &tasks] { tasks[bucket](); });
-			else
-				tasks[bucket]();
-		}
-	}
-	catch (...)
-	{
-		/// Если этого не делать, то в случае исключения, tasks уничтожится раньше завершения потоков, и будет плохо.
-		if (thread_pool)
-			thread_pool->wait();
-
-		throw;
-	}
-
-	if (thread_pool)
-		thread_pool->wait();
-
-	for (auto & task : tasks)
-		if (task.valid())
-			task.get_future().get();
-
-	if (no_more_keys && params.overflow_row)
-	{
-		for (size_t bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
-		{
-			for (size_t i = 1, size = non_empty_data.size(); i < size; ++i)
-			{
-				AggregatedDataVariants & current = *non_empty_data[i];
-
-				mergeDataRemainingKeysToOverflowsImpl<Method>(
-					res->without_key,
-					getDataVariant<Method>(current).data.impls[bucket]);
-			}
-		}
-	}
-
-	/// aggregator не будет уничтожать состояния агрегатных функций в деструкторе
-	for (size_t i = 1, size = non_empty_data.size(); i < size; ++i)
-		non_empty_data[i]->aggregator = nullptr;
-}
-
-
-AggregatedDataVariantsPtr Aggregator::merge(ManyAggregatedDataVariants & data_variants, size_t max_threads)
-{
-	if (data_variants.empty())
-		throw Exception("Empty data passed to Aggregator::merge.", ErrorCodes::EMPTY_DATA_PASSED);
-
-	LOG_TRACE(log, "Merging aggregated data");
-
-	Stopwatch watch;
-
-	ManyAggregatedDataVariants non_empty_data;
-	non_empty_data.reserve(data_variants.size());
-	for (auto & data : data_variants)
-		if (!data->empty())
-			non_empty_data.push_back(data);
-
-	if (non_empty_data.empty())
-		return data_variants[0];
-
-	if (non_empty_data.size() == 1)
-		return non_empty_data[0];
-
-	/// Отсортируем состояния по убыванию размера, чтобы мердж был более эффективным (так как все состояния мерджатся в первое).
-	std::sort(non_empty_data.begin(), non_empty_data.end(),
-		[](const AggregatedDataVariantsPtr & lhs, const AggregatedDataVariantsPtr & rhs)
-		{
-			return lhs->sizeWithoutOverflowRow() > rhs->sizeWithoutOverflowRow();
-		});
-
-	/// Если хотя бы один из вариантов двухуровневый, то переконвертируем все варианты в двухуровневые, если есть не такие.
-	/// Замечание - возможно, было бы более оптимально не конвертировать одноуровневые варианты перед мерджем, а мерджить их отдельно, в конце.
-
-	bool has_at_least_one_two_level = false;
-	for (const auto & variant : non_empty_data)
-	{
-		if (variant->isTwoLevel())
-		{
-			has_at_least_one_two_level = true;
-			break;
-		}
-	}
-
-	if (has_at_least_one_two_level)
-		for (auto & variant : non_empty_data)
-			if (!variant->isTwoLevel())
-				variant->convertToTwoLevel();
-
-	AggregatedDataVariantsPtr & res = non_empty_data[0];
-
-	size_t rows = res->size();
-	for (size_t i = 1, size = non_empty_data.size(); i < size; ++i)
-	{
-		rows += non_empty_data[i]->size();
-		AggregatedDataVariants & current = *non_empty_data[i];
-
-		if (res->type != current.type)
-			throw Exception("Cannot merge different aggregated data variants.", ErrorCodes::CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS);
-
-		res->aggregates_pools.insert(res->aggregates_pools.end(), current.aggregates_pools.begin(), current.aggregates_pools.end());
-	}
-
-	/// В какой структуре данных агрегированы данные?
-	if (res->type == AggregatedDataVariants::Type::without_key || params.overflow_row)
-		mergeWithoutKeyDataImpl(non_empty_data);
-
-	std::unique_ptr<boost::threadpool::pool> thread_pool;
-	if (max_threads > 1 && res->isTwoLevel())
-		thread_pool.reset(new boost::threadpool::pool(max_threads));
-
-	if (false) {}
-#define M(NAME) \
-	else if (res->type == AggregatedDataVariants::Type::NAME) \
-		mergeSingleLevelDataImpl<decltype(res->NAME)::element_type>(non_empty_data);
-	APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
-#undef M
-#define M(NAME) \
-	else if (res->type == AggregatedDataVariants::Type::NAME) \
-		mergeTwoLevelDataImpl<decltype(res->NAME)::element_type>(non_empty_data, thread_pool.get());
-	APPLY_FOR_VARIANTS_TWO_LEVEL(M)
-#undef M
-	else if (res->type != AggregatedDataVariants::Type::without_key)
-		throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
-
-	double elapsed_seconds = watch.elapsedSeconds();
-	size_t res_rows = res->size();
-
-	LOG_TRACE(log, std::fixed << std::setprecision(3)
-		<< "Merged aggregated data. "
-		<< "From " << rows << " to " << res_rows << " rows (efficiency: " << static_cast<double>(rows) / res_rows << ")"
-		<< " in " << elapsed_seconds << " sec."
-		<< " (" << rows / elapsed_seconds << " rows/sec.)");
-
-	return res;
-}
-
-
-template <typename Method>
 void NO_INLINE Aggregator::mergeBucketImpl(
 	ManyAggregatedDataVariants & data, Int32 bucket) const
 {
@@ -1730,8 +1531,6 @@ void NO_INLINE Aggregator::mergeBucketImpl(
   * Если состояния агрегации двухуровневые, то выдаёт блоки строго по порядку bucket_num.
   * (Это важно при распределённой обработке.)
   * При этом, может обрабатывать разные bucket-ы параллельно, используя до threads потоков.
-  *
-  * TODO Удалить обычную функцию Aggregator::merge и связанные с ней, в случае невостребованности.
   */
 class MergingAndConvertingBlockInputStream : public IProfilingBlockInputStream
 {
@@ -1739,7 +1538,7 @@ public:
 	/** На вход подаётся набор непустых множеств частично агрегированных данных,
 	  *  которые все либо являются одноуровневыми, либо являются двухуровневыми.
 	  */
-	MergingAndConvertingBlockInputStream(Aggregator & aggregator_, ManyAggregatedDataVariants & data_, bool final_, size_t threads_)
+	MergingAndConvertingBlockInputStream(const Aggregator & aggregator_, ManyAggregatedDataVariants & data_, bool final_, size_t threads_)
 		: aggregator(aggregator_), data(data_), final(final_), threads(threads_) {}
 
 	String getName() const override { return "MergingAndConverting"; }
@@ -1845,7 +1644,7 @@ protected:
 	}
 
 private:
-	Aggregator & aggregator;
+	const Aggregator & aggregator;
 	ManyAggregatedDataVariants data;
 	bool final;
 	size_t threads;
@@ -1915,7 +1714,7 @@ private:
 };
 
 
-std::unique_ptr<IBlockInputStream> Aggregator::mergeAndConvertToBlocks(ManyAggregatedDataVariants & data_variants, bool final, size_t max_threads)
+std::unique_ptr<IBlockInputStream> Aggregator::mergeAndConvertToBlocks(ManyAggregatedDataVariants & data_variants, bool final, size_t max_threads) const
 {
 	if (data_variants.empty())
 		throw Exception("Empty data passed to Aggregator::mergeAndConvertToBlocks.", ErrorCodes::EMPTY_DATA_PASSED);
@@ -2105,8 +1904,7 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 
 	AggregateColumnsData aggregate_columns(params.aggregates_size);
 
-	Block empty_block;
-	initialize(empty_block);
+	initialize({});
 
 	if (isCancelled())
 		return;
@@ -2139,8 +1937,7 @@ void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants 
 	if (bucket_to_blocks.empty())
 		return;
 
-	if (!sample)
-		sample = bucket_to_blocks.begin()->second.front().cloneEmpty();
+	setSampleBlock(bucket_to_blocks.begin()->second.front());
 
 	/// Каким способом выполнять агрегацию?
 	for (size_t i = 0; i < params.keys_size; ++i)
@@ -2299,11 +2096,8 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
 
 	AggregateColumnsData aggregate_columns(params.aggregates_size);
 
-	Block empty_block;
-	initialize(empty_block);
-
-	if (!sample)
-		sample = blocks.front().cloneEmpty();
+	initialize({});
+	setSampleBlock(blocks.front());
 
 	/// Каким способом выполнять агрегацию?
 	for (size_t i = 0; i < params.keys_size; ++i)
@@ -2468,11 +2262,8 @@ std::vector<Block> Aggregator::convertBlockToTwoLevel(const Block & block)
 	if (!block)
 		return {};
 
-	Block empty_block;
-	initialize(empty_block);
-
-	if (!sample)
-		sample = block.cloneEmpty();
+	initialize({});
+	setSampleBlock(block);
 
 	AggregatedDataVariants data;
 

@@ -26,6 +26,29 @@ public:
 };
 
 
+namespace ColumnConstDetails
+{
+	template <typename T>
+	inline bool equals(const T & x, const T & y)
+	{
+		return x == y;
+	}
+
+	/// Проверяет побитовую идентичность элементов, даже если они являются NaN-ами.
+	template <>
+	inline bool equals(const Float32 & x, const Float32 & y)
+	{
+		return 0 == memcmp(&x, &y, sizeof(x));
+	}
+
+	template <>
+	inline bool equals(const Float64 & x, const Float64 & y)
+	{
+		return 0 == memcmp(&x, &y, sizeof(x));
+	}
+}
+
+
 /** Столбец-константа может содержать внутри себя само значение,
   *  или, в случае массивов, SharedPtr от значения-массива,
   *  чтобы избежать проблем производительности при копировании очень больших массивов.
@@ -65,7 +88,7 @@ public:
 
 	void insertRangeFrom(const IColumn & src, size_t start, size_t length) override
 	{
-		if (getDataFromHolder() != static_cast<const Derived &>(src).getDataFromHolder())
+		if (!ColumnConstDetails::equals(getDataFromHolder(), static_cast<const Derived &>(src).getDataFromHolder()))
 			throw Exception("Cannot insert different element into constant column " + getName(),
 				ErrorCodes::CANNOT_INSERT_ELEMENT_INTO_CONSTANT_COLUMN);
 
@@ -74,7 +97,7 @@ public:
 
 	void insert(const Field & x) override
 	{
-		if (x.get<FieldType>() != FieldType(getDataFromHolder()))
+		if (!ColumnConstDetails::equals(x.get<FieldType>(), FieldType(getDataFromHolder())))
 			throw Exception("Cannot insert different element into constant column " + getName(),
 				ErrorCodes::CANNOT_INSERT_ELEMENT_INTO_CONSTANT_COLUMN);
 		++s;
@@ -87,7 +110,7 @@ public:
 
 	void insertFrom(const IColumn & src, size_t n) override
 	{
-		if (getDataFromHolder() != static_cast<const Derived &>(src).getDataFromHolder())
+		if (!ColumnConstDetails::equals(getDataFromHolder(), static_cast<const Derived &>(src).getDataFromHolder()))
 			throw Exception("Cannot insert different element into constant column " + getName(),
 				ErrorCodes::CANNOT_INSERT_ELEMENT_INTO_CONSTANT_COLUMN);
 		++s;

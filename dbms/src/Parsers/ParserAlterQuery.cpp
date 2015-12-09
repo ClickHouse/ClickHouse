@@ -90,7 +90,8 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
 				return false;
 			ws.ignore(pos, end);
 
-			parser_col_decl.parse(pos, end, params.col_decl, max_parsed_pos, expected);
+			if (!parser_col_decl.parse(pos, end, params.col_decl, max_parsed_pos, expected))
+				return false;
 
 			ws.ignore(pos, end);
 			if (s_after.ignore(pos, end, max_parsed_pos, expected))

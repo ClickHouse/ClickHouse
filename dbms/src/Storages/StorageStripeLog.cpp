@@ -22,6 +22,7 @@
 #include <DB/DataStreams/IBlockOutputStream.h>
 #include <DB/DataStreams/NativeBlockInputStream.h>
 #include <DB/DataStreams/NativeBlockOutputStream.h>
+#include <DB/DataStreams/NullBlockInputStream.h>
 
 #include <DB/Columns/ColumnArray.h>
 
@@ -231,6 +232,9 @@ BlockInputStreams StorageStripeLog::read(
 	processed_stage = QueryProcessingStage::FetchColumns;
 
 	NameSet column_names_set(column_names.begin(), column_names.end());
+
+	if (!Poco::File(full_path() + "index.mrk").exists())
+		return { new NullBlockInputStream };
 
 	CompressedReadBufferFromFile index_in(full_path() + "index.mrk", 0, 0, INDEX_BUFFER_SIZE);
 	std::shared_ptr<const IndexForNativeFormat> index{std::make_shared<IndexForNativeFormat>(index_in, column_names_set)};

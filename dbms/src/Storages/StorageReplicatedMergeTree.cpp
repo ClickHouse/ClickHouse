@@ -3054,9 +3054,9 @@ void StorageReplicatedMergeTree::drop()
 	if (is_readonly)
 		throw Exception("Can't drop readonly replicated table (need to drop data in ZooKeeper as well)", ErrorCodes::TABLE_IS_READ_ONLY);
 
-	auto zookeeper = getZooKeeper();
-
 	shutdown();
+
+	auto zookeeper = getZooKeeper();
 
 	LOG_INFO(log, "Removing replica " << replica_path);
 	replica_is_active_node = nullptr;

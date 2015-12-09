@@ -457,6 +457,13 @@ bool PKCondition::mayBeTrueInRange(const Field * left_pk, const Field * right_pk
 						applyFunction(func, current_type, key_range_transformed.left, new_type, key_range_transformed.left);
 					if (!key_range_transformed.right.isNull())
 						applyFunction(func, current_type, key_range_transformed.right, new_type, key_range_transformed.right);
+
+					if (!new_type)
+					{
+						evaluation_is_not_possible = true;
+						break;
+					}
+
 					current_type.swap(new_type);
 
 					if (!monotonicity.is_positive)
