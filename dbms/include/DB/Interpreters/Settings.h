@@ -98,8 +98,8 @@ struct Settings
 	/** Включён ли экономный по памяти режим распределённой агрегации. */ \
 	M(SettingBool, distributed_aggregation_memory_efficient, false) \
 	/** Сколько потоков использовать для мерджа результатов в режиме, экономном по памяти. Чем больше, чем больше памяти расходуется. \
-	  * По-умолчанию - 0, означает - столько же, сколько max_threads. */ \
-	M(SettingUInt64, aggregation_memory_efficient_merge_threads, 0) \
+	  * 0, означает - столько же, сколько max_threads. Временно выставленно в 1, так как реализация некорректна. */ \
+	M(SettingUInt64, aggregation_memory_efficient_merge_threads, 1) \
 	\
 	/** Максимальное количество используемых реплик каждого шарда при выполнении запроса */ \
 	M(SettingUInt64, max_parallel_replicas, 1) \
