@@ -4,6 +4,8 @@ using namespace zkutil;
 
 bool Lock::tryLock()
 {
+	auto zookeeper = zookeeper_holder->getZooKeeper();
+
 	if (locked)
 	{
 		/// проверим, что нода создана и я ее владелец
@@ -43,6 +45,8 @@ bool Lock::tryLock()
 
 void Lock::unlock()
 {
+	auto zookeeper = zookeeper_holder->getZooKeeper();
+
 	if (locked)
 	{
 		/// проверим, что до сих пор мы владельцы ноды
@@ -76,6 +80,8 @@ Lock::Status Lock::check()
 
 Lock::Status Lock::checkImpl()
 {
+	auto zookeeper = zookeeper_holder->getZooKeeper();
+	
 	Stat stat;
 	std::string dummy;
 	bool result = zookeeper->tryGet(lock_path, dummy, &stat);
@@ -101,3 +107,4 @@ std::string Lock::status2String(Status status)
 	static const char * names[] = {"Unlocked", "Locked by me", "Locked by other"};
 	return names[status];
 }
+
