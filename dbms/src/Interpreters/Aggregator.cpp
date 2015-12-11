@@ -875,9 +875,6 @@ void Aggregator::writeToTemporaryFileImpl(
 
 	for (size_t bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
 	{
-		if (method.data.impls[bucket].empty())
-			continue;
-
 		Block block = convertOneBucketToBlock(data_variants, method, false, bucket);
 		out.write(block);
 
@@ -1630,7 +1627,7 @@ protected:
 					++current_bucket_num;
 					scheduleThreadForNextBucket();
 
-					if (it->second && it->second.rowsInFirstColumn() != 0)
+					if (it->second)
 					{
 						res.swap(it->second);
 						break;
