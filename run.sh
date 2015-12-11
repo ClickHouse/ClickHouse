@@ -1,7 +1,7 @@
-#/bin/sh
+#!/bin/sh
 
 # MySQL
-if [ -z $(which mysqld) ]; then
+if [ -z $(which mysqld) ] || [ -z $(which mysqld) ]; then
     echo 'Installing MySQL'
     sudo debconf-set-selections <<< 'mysql-server mysql-server/root_password password '
     sudo debconf-set-selections <<< 'mysql-server mysql-server/root_password_again password '
@@ -44,7 +44,7 @@ else
 fi
 
 # MongoDB
-if [ -z $(which mongod) ]; then
+if [ -z $(which mongod) ] || [ -z $(which mongo) ]; then
     echo 'Installing MongoDB'
     MONGODB_ORG_VERSION=3.0.6
     sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 7F0CEB10 &>/dev/null
