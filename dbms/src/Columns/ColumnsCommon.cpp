@@ -60,7 +60,7 @@ void filterArraysImpl(
 		if (result_size_hint < 0)
 			res_elems.reserve(src_elems.size());
 		else if (result_size_hint < 1000000000 && src_elems.size() < 1000000000)	/// Избегаем переполнения.
-			res_elems.reserve(result_size_hint * src_elems.size() / size);
+			res_elems.reserve((result_size_hint * src_elems.size() + size - 1) / size);
 	}
 
 	IColumn::Offset_t current_src_offset = 0;
