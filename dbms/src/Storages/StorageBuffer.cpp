@@ -329,7 +329,7 @@ void StorageBuffer::flushAllBuffers(const bool check_thresholds)
 
 void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds)
 {
-	Block block_to_write = buffer.data.cloneEmpty();
+	Block block_to_write;
 	time_t current_time = time(0);
 
 	size_t rows = 0;
@@ -344,6 +344,8 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds)
 	  */
 	{
 		std::lock_guard<std::mutex> lock(buffer.mutex);
+
+		block_to_write = buffer.data.cloneEmpty();
 
 		rows = buffer.data.rowsInFirstColumn();
 		bytes = buffer.data.bytes();
