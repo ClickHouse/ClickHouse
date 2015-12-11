@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 # MySQL
 if [ -z $(which mysqld) ] || [ -z $(which mysqld) ]; then
