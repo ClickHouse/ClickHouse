@@ -181,7 +181,7 @@ private:
 						ErrorCodes::TYPE_MISMATCH
 					};
 
-				static_cast<ColumnUInt32 *>(column)->insert(value.numberInt());
+				static_cast<ColumnUInt32 *>(column)->insert(value.numberLong());
 				break;
 			}
 			case value_type_t::UInt64:
