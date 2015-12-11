@@ -86,7 +86,7 @@ void filterArraysImpl(
 		res_offsets.push_back(current_src_offset);
 
 		const auto elems_size_old = res_elems.size();
-		res_elems.resize_assume_reserved(elems_size_old + size);
+		res_elems.resize(elems_size_old + size);
 		memcpy(&res_elems[elems_size_old], &src_elems[offset], size * sizeof(T));
 	};
 
