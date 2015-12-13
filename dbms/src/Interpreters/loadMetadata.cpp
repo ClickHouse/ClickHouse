@@ -153,8 +153,12 @@ void loadMetadata(Context & context)
 			if (jt.name().at(0) == '.')
 				continue;
 
-			/// Файлы имеют имена вида table_name.sql
-			if (jt.name().compare(jt.name().size() - 4, 4, ".sql"))
+			/// Есть файлы .sql.bak - пропускаем.
+			if (jt.name().compare(jt.name().size() - strlen(".sql.bak"), strlen(".sql.bak"), ".sql.bak"))
+				continue;
+
+			/// Нужные файлы имеют имена вида table_name.sql
+			if (jt.name().compare(jt.name().size() - strlen(".sql"), strlen(".sql"), ".sql"))
 				throw Exception("Incorrect file extension: " + jt.name() + " in metadata directory " + it->path(), ErrorCodes::INCORRECT_FILE_NAME);
 
 			file_names.push_back(jt.name());
