@@ -111,6 +111,12 @@ static void loadTable(Context & context, const String & path, const Table & tabl
 }
 
 
+static bool endsWith(const String & s, const char * suffix)
+{
+	return s.size() >= strlen(suffix) && 0 == s.compare(s.size() - strlen(suffix), strlen(suffix), suffix);
+}
+
+
 void loadMetadata(Context & context)
 {
 	Logger * log = &Logger::get("loadMetadata");
@@ -154,14 +160,14 @@ void loadMetadata(Context & context)
 				continue;
 
 			/// Есть файлы .sql.bak - пропускаем.
-			if (jt.name().compare(jt.name().size() - strlen(".sql.bak"), strlen(".sql.bak"), ".sql.bak"))
+			if (endsWith(jt.name(), ".sql.bak"))
 				continue;
 
 			/// Нужные файлы имеют имена вида table_name.sql
-			if (jt.name().compare(jt.name().size() - strlen(".sql"), strlen(".sql"), ".sql"))
+			if (endsWith(jt.name(), ".sql"))
+				file_names.push_back(jt.name());
+			else
 				throw Exception("Incorrect file extension: " + jt.name() + " in metadata directory " + it->path(), ErrorCodes::INCORRECT_FILE_NAME);
-
-			file_names.push_back(jt.name());
 		}
 
 		/** Таблицы быстрее грузятся, если их грузить в сортированном (по именам) порядке.
