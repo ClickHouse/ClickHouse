@@ -127,6 +127,23 @@ private:
 			return res;
 		}
 	}
+
+
+	/// При условии, что файловый дескриптор позволяет использовать select, проверяет в течение таймаута, есть ли данные для чтения.
+	bool poll(size_t timeout_microseconds)
+	{
+		fd_set fds;
+		FD_ZERO(&fds);
+		FD_SET(fd, &fds);
+		timeval timeout = { time_t(timeout_microseconds / 1000000), time_t(timeout_microseconds % 1000000) };
+
+		int res = select(1, &fds, 0, 0, &timeout);
+
+		if (-1 == res)
+			throwFromErrno("Cannot select", ErrorCodes::CANNOT_SELECT);
+
+		return res > 0;
+	}
 };
 
 }
