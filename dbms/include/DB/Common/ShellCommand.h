@@ -31,7 +31,7 @@ private:
 	ShellCommand(pid_t pid, int in_fd, int out_fd, int err_fd)
 		: pid(pid), in(in_fd), out(out_fd), err(err_fd) {};
 
-	static std::unique_ptr<ShellCommand> executeImpl(const char * filename, char * const argv[], char * const envp[]);
+	static std::unique_ptr<ShellCommand> executeImpl(const char * filename, char * const argv[]);
 
 public:
 	WriteBufferFromFile in;		/// Если команда читает из stdin, то не забудьте вызвать in.close() после записи туда всех данных.

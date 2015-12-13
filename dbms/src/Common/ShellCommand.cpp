@@ -54,7 +54,7 @@ namespace DB
 {
 
 
-std::unique_ptr<ShellCommand> ShellCommand::executeImpl(const char * filename, char * const argv[], char * const envp[])
+std::unique_ptr<ShellCommand> ShellCommand::executeImpl(const char * filename, char * const argv[])
 {
 	/** Тут написано, что при обычном вызове vfork, есть шанс deadlock-а в многопоточных программах,
 	  *  из-за резолвинга символов в shared-библиотеке:
@@ -92,8 +92,8 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(const char * filename, c
 		if (STDERR_FILENO != dup2(pipe_stderr.write_fd, STDERR_FILENO))
 			_exit(int(ReturnCodes::CANNOT_DUP_STDERR));
 
-		execve(filename, argv, envp);
-		/// Если процесс запущен, то execve не возвращает сюда.
+		execv(filename, argv);
+		/// Если процесс запущен, то execv не возвращает сюда.
 
 		_exit(int(ReturnCodes::CANNOT_EXEC));
 	}
@@ -111,16 +111,15 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(const char * filename, c
 
 std::unique_ptr<ShellCommand> ShellCommand::execute(const std::string & command)
 {
-	/// Аргументы в неконстантных кусках памяти (как требуется для execve).
+	/// Аргументы в неконстантных кусках памяти (как требуется для execv).
 	/// Причём, их копирование должно быть совершено раньше вызова vfork, чтобы после vfork делать минимум вещей.
 	std::vector<char> argv0("sh", "sh" + strlen("sh") + 1);
 	std::vector<char> argv1("-c", "-c" + strlen("-c") + 1);
 	std::vector<char> argv2(command.data(), command.data() + command.size() + 1);
 
 	char * const argv[] = { argv0.data(), argv1.data(), argv2.data(), nullptr };
-	char * const envp[] = { nullptr };
 
-	return executeImpl("/bin/sh", argv, envp);
+	return executeImpl("/bin/sh", argv);
 }
 
 
@@ -145,8 +144,7 @@ std::unique_ptr<ShellCommand> ShellCommand::executeDirect(const std::string & pa
 
 	argv[arguments.size() + 1] = nullptr;
 
-	char * const envp[] = { nullptr };
-	return executeImpl(path.data(), argv.data(), envp);
+	return executeImpl(path.data(), argv.data());
 }
 
 
@@ -184,7 +182,7 @@ void ShellCommand::wait()
 			case int(ReturnCodes::CANNOT_DUP_STDERR):
 				throw Exception("Cannot dup2 stderr of child process", ErrorCodes::CANNOT_CREATE_CHILD_PROCESS);
 			case int(ReturnCodes::CANNOT_EXEC):
-				throw Exception("Cannot execve in child process", ErrorCodes::CANNOT_CREATE_CHILD_PROCESS);
+				throw Exception("Cannot execv in child process", ErrorCodes::CANNOT_CREATE_CHILD_PROCESS);
 			default:
 				throw Exception("Child process was exited with return code " + toString(retcode), ErrorCodes::CHILD_WAS_NOT_EXITED_NORMALLY);
 		}
