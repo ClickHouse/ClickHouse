@@ -34,6 +34,53 @@ void MergingAggregatedMemoryEfficientBlockInputStream::readPrefix()
 }
 
 
+void MergingAggregatedMemoryEfficientBlockInputStream::readSuffix()
+{
+	if (!all_read && !is_cancelled.load(std::memory_order_seq_cst))
+		throw Exception("readSuffix called before all data is read", ErrorCodes::LOGICAL_ERROR);
+
+	finalize();
+
+	for (size_t i = 0; i < children.size(); ++i)
+		children[i]->readSuffix();
+}
+
+
+void MergingAggregatedMemoryEfficientBlockInputStream::cancel()
+{
+	bool old_val = false;
+	if (!is_cancelled.compare_exchange_strong(old_val, true, std::memory_order_seq_cst, std::memory_order_relaxed))
+		return;
+
+	if (parallel_merge_data)
+	{
+		std::unique_lock<std::mutex> lock(parallel_merge_data->merged_blocks_mutex);
+
+		parallel_merge_data->finish = true;
+		parallel_merge_data->merged_blocks_changed.notify_one();
+	}
+
+	for (auto & input : inputs)
+	{
+		if (IProfilingBlockInputStream * child = dynamic_cast<IProfilingBlockInputStream *>(input.stream.get()))
+		{
+			try
+			{
+				child->cancel();
+			}
+			catch (...)
+			{
+				/** Если не удалось попросить остановиться одного или несколько источников.
+				  * (например, разорвано соединение при распределённой обработке запроса)
+				  * - то пофиг.
+				  */
+				LOG_ERROR(log, "Exception while cancelling " << child->getName());
+			}
+		}
+	}
+}
+
+
 void MergingAggregatedMemoryEfficientBlockInputStream::start()
 {
 	if (started)
@@ -73,6 +120,23 @@ void MergingAggregatedMemoryEfficientBlockInputStream::start()
 		for (auto & task : tasks)
 			task.get_future().get();
 	}
+
+	if (merging_threads > 1)
+	{
+		/** Создадим несколько потоков. Каждый из них в цикле будет доставать следующий набор блоков для мерджа,
+		  * затем мерджить их и класть результат в очередь, откуда мы будем читать готовые результаты.
+		  */
+		parallel_merge_data.reset(new ParallelMergeData(merging_threads));
+
+		auto & pool = parallel_merge_data->pool;
+
+		/** Создаём потоки, которые будут получать и мерджить данные.
+			*/
+
+		for (size_t i = 0; i < merging_threads; ++i)
+			pool.schedule(std::bind(&MergingAggregatedMemoryEfficientBlockInputStream::mergeThread,
+				this, current_memory_tracker));
+	}
 }
 
 
@@ -88,55 +152,74 @@ Block MergingAggregatedMemoryEfficientBlockInputStream::readImpl()
 	}
 	else
 	{
-		/** Создадим несколько потоков. Каждый из них в цикле будет доставать следующий набор блоков для мерджа,
-		  * затем мерджить их и класть результат в очередь, откуда мы будем читать готовые результаты.
-		  */
+		Block res;
 
-		if (!parallel_merge_data)
+		while (true)
 		{
-			parallel_merge_data.reset(new ParallelMergeData(merging_threads));
+			std::unique_lock<std::mutex> lock(parallel_merge_data->merged_blocks_mutex);
 
-			auto & pool = parallel_merge_data->pool;
+			if (parallel_merge_data->exception)
+				std::rethrow_exception(parallel_merge_data->exception);
 
-			/** Создаём потоки, которые будут получать и мерджить данные.
-			  */
+			if (parallel_merge_data->finish)
+				break;
 
-			for (size_t i = 0; i < merging_threads; ++i)
-				pool.schedule(std::bind(&MergingAggregatedMemoryEfficientBlockInputStream::mergeThread,
-					this, current_memory_tracker));
+			if (!parallel_merge_data->merged_blocks.empty())
+			{
+				auto it = parallel_merge_data->merged_blocks.begin();
+
+				if (it->second)
+				{
+					res.swap(it->second);
+					parallel_merge_data->merged_blocks.erase(it);
+					parallel_merge_data->have_space.notify_one();
+					break;
+				}
+			}
+			else if (parallel_merge_data->exhausted)
+				break;
+
+			parallel_merge_data->merged_blocks_changed.wait(lock);
 		}
 
-		OutputData res;
-		parallel_merge_data->result_queue.pop(res);
+		if (!res)
+			all_read = true;
 
-		if (res.exception)
-			std::rethrow_exception(res.exception);
-
-		if (!res.block)
-			parallel_merge_data->pool.wait();
-
-		return res.block;
+		return res;
 	}
 }
 
 
 MergingAggregatedMemoryEfficientBlockInputStream::~MergingAggregatedMemoryEfficientBlockInputStream()
 {
+	try
+	{
+		if (!all_read)
+			cancel();
+
+		finalize();
+	}
+	catch (...)
+	{
+		tryLogCurrentException(__PRETTY_FUNCTION__);
+	}
+}
+
+
+void MergingAggregatedMemoryEfficientBlockInputStream::finalize()
+{
+	if (!started)
+		return;
+
+	LOG_TRACE(log, "Waiting for threads to finish");
+
 	if (reading_pool)
 		reading_pool->wait();
 
 	if (parallel_merge_data)
-	{
-		LOG_TRACE((&Logger::get("MergingAggregatedMemoryEfficientBlockInputStream")), "Waiting for threads to finish");
-
-		{
-			std::lock_guard<std::mutex> lock(parallel_merge_data->get_next_blocks_mutex);
-			parallel_merge_data->finish = true;
-		}
-
-		parallel_merge_data->result_queue.clear();
 		parallel_merge_data->pool.wait();
-	}
+
+	LOG_TRACE(log, "Waited for threads to finish");
 }
 
 
@@ -147,7 +230,7 @@ void MergingAggregatedMemoryEfficientBlockInputStream::mergeThread(MemoryTracker
 
 	try
 	{
-		while (true)
+		while (!parallel_merge_data->finish)
 		{
 			/** Получение следующих блоков делается в одном пуле потоков, а мердж - в другом.
 			  * Это весьма сложное взаимодействие.
@@ -157,6 +240,7 @@ void MergingAggregatedMemoryEfficientBlockInputStream::mergeThread(MemoryTracker
 			  * - один из merging_threads выполняет слияние этой группы блоков;
 			  */
 			BlocksToMerge blocks_to_merge;
+			int output_order = -1;
 
 			{
 				std::lock_guard<std::mutex> lock(parallel_merge_data->get_next_blocks_mutex);
@@ -168,32 +252,53 @@ void MergingAggregatedMemoryEfficientBlockInputStream::mergeThread(MemoryTracker
 
 				if (!blocks_to_merge || blocks_to_merge->empty())
 				{
+					std::unique_lock<std::mutex> lock(parallel_merge_data->merged_blocks_mutex);
+
 					parallel_merge_data->exhausted = true;
+					parallel_merge_data->merged_blocks_changed.notify_one();
 					break;
+				}
+
+				output_order = blocks_to_merge->front().info.is_overflows
+					? NUM_BUCKETS 	/// Блоки "переполнений" отдаются функцией getNextBlocksToMerge позже всех остальных.
+					: blocks_to_merge->front().info.bucket_num;
+
+				{
+					std::unique_lock<std::mutex> lock(parallel_merge_data->merged_blocks_mutex);
+
+					while (parallel_merge_data->merged_blocks.size() >= merging_threads)
+						parallel_merge_data->have_space.wait(lock);
+
+					/** Кладём пустой блок, что означает обещание его заполнить.
+					  * Основной поток должен возвращать результаты строго в порядке output_order, поэтому это важно.
+					  */
+					parallel_merge_data->merged_blocks[output_order];
 				}
 			}
 
 			Block res = aggregator.mergeBlocks(*blocks_to_merge, final);
 
 			{
-				std::lock_guard<std::mutex> lock(parallel_merge_data->get_next_blocks_mutex);
+				std::lock_guard<std::mutex> lock(parallel_merge_data->merged_blocks_mutex);
 
 				if (parallel_merge_data->finish)
 					break;
 
-				parallel_merge_data->result_queue.push(OutputData(std::move(res)));
+				parallel_merge_data->merged_blocks[output_order] = res;
+				parallel_merge_data->merged_blocks_changed.notify_one();
 			}
 		}
 	}
 	catch (...)
 	{
-		parallel_merge_data->result_queue.push(std::current_exception());
-		return;
-	}
+		{
+			std::lock_guard<std::mutex> lock(parallel_merge_data->merged_blocks_mutex);
+			parallel_merge_data->exception = std::current_exception();
+			parallel_merge_data->merged_blocks_changed.notify_one();
+		}
 
-	/// Последний поток при выходе сообщает, что данных больше нет.
-	if (0 == --parallel_merge_data->active_threads)
-		parallel_merge_data->result_queue.push(Block());
+		cancel();
+	}
 }
 
 
@@ -217,9 +322,6 @@ MergingAggregatedMemoryEfficientBlockInputStream::BlocksToMerge MergingAggregate
 		* Это дополнительные данные для строк, не прошедших через max_rows_to_group_by.
 		* Они должны объединяться друг с другом отдельно.
 		*/
-
-	constexpr size_t NUM_BUCKETS = 256;
-
 	++current_bucket_num;
 
 	/// Получить из источника следующий блок с номером корзины не больше current_bucket_num.
