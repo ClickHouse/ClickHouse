@@ -205,7 +205,7 @@ public:
 	  */
 	void profileFeedback(const ReadBufferFromFileBase::ProfileInfo info)
 	{
-		if (backoff_settings.min_read_latency_ms == 0)
+		if (backoff_settings.min_read_latency_ms == 0 || do_not_steal_tasks)
 			return;
 
 		if (info.nanoseconds < backoff_settings.min_read_latency_ms * 1000000)
@@ -238,7 +238,6 @@ public:
 
 		backoff_state.num_events = 0;
 		--backoff_state.current_threads;
-		do_not_steal_tasks = false;
 
 		ProfileEvents::increment(ProfileEvents::ReadBackoff);
 		LOG_DEBUG(log, "Will lower number of threads to " << backoff_state.current_threads);
