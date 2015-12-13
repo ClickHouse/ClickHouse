@@ -2423,6 +2423,11 @@ public:
 			}
 
 			aggregate_function = AggregateFunctionFactory().get(aggregate_function_name, argument_types);
+
+			/// Потому что владение состояниями агрегатных функций никуда не отдаётся.
+			if (aggregate_function->isState())
+				throw Exception("Using aggregate function with -State modifier in function arrayReduce is not supported", ErrorCodes::BAD_ARGUMENTS);
+
 			if (has_parameters)
 				aggregate_function->setParameters(params_row);
 			aggregate_function->setArguments(argument_types);
@@ -2436,7 +2441,7 @@ public:
 	{
 		IAggregateFunction & agg_func = *aggregate_function.get();
 		std::unique_ptr<char[]> place_holder { new char[agg_func.sizeOfData()] };
-		char * place = place_holder.get();
+		AggregateDataPtr place = place_holder.get();
 
 		size_t rows = block.rowsInFirstColumn();
 
