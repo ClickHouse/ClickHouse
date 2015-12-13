@@ -2,8 +2,12 @@
 
 #include <unistd.h>
 #include <errno.h>
+#include <time.h>
+
+#include <experimental/optional>
 
 #include <DB/Common/ProfileEvents.h>
+#include <DB/Common/Stopwatch.h>
 
 #include <DB/Common/Exception.h>
 #include <DB/Core/ErrorCodes.h>
@@ -32,6 +36,10 @@ protected:
 		{
 			ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorRead);
 
+			std::experimental::optional<Stopwatch> watch;
+			if (profile_callback)
+				watch.emplace(clock_type);
+
 			ssize_t res = ::read(fd, internal_buffer.begin(), internal_buffer.size());
 			if (!res)
 				break;
@@ -41,6 +49,15 @@ protected:
 
 			if (res > 0)
 				bytes_read += res;
+
+			if (profile_callback)
+			{
+				ProfileInfo info;
+				info.bytes_requested = internal_buffer.size();
+				info.bytes_read = res;
+				info.nanoseconds = watch->elapsed();
+				profile_callback(info);
+			}
 		}
 
 		pos_in_file += bytes_read;
@@ -76,7 +93,9 @@ public:
 		return pos_in_file - (working_buffer.end() - pos);
 	}
 
+
 private:
+
 	/// Если offset такой маленький, что мы не выйдем за пределы буфера, настоящий seek по файлу не делается.
 	off_t doSeek(off_t offset, int whence) override
 	{
