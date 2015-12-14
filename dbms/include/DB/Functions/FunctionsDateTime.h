@@ -587,17 +587,27 @@ public:
 				+ toString(arguments.size()) + ", should be 1 or 2.",
 				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-		if (typeid_cast<const DataTypeDateTime *>(&*arguments[0]) == nullptr)
+		if (typeid_cast<const DataTypeDate *>(&*arguments[0]) != nullptr)
 		{
-			if (arguments.size() != 1)
+			if (arguments.size() > 1)
 				throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
 					+ toString(arguments.size()) + ", should be 1.",
 					ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 		}
-		else if ((arguments.size()) == 2 && typeid_cast<const DataTypeString *>(&*arguments[1]) == nullptr)
+		else if (typeid_cast<const DataTypeDateTime *>(&*arguments[0]) != nullptr)
+		{
+			/// Ничего не делаем.
+		}
+		else
+			throw Exception{
+				"Illegal type " + arguments[0]->getName() + " of argument 1 of function " + getName(),
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+			};
+
+		if ((arguments.size() == 2) && (typeid_cast<const DataTypeString *>(&*arguments[1]) == nullptr))
 		{
 			throw Exception{
-				"Illegal type " + arguments[1]->getName() + " of argument of function " + getName(),
+				"Illegal type " + arguments[1]->getName() + " of argument 2 of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
 			};
 		}
