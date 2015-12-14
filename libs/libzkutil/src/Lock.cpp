@@ -5,13 +5,14 @@ using namespace zkutil;
 bool Lock::tryLock()
 {
 	auto zookeeper = zookeeper_holder->getZooKeeper();
-
 	if (locked)
 	{
 		/// проверим, что нода создана и я ее владелец
-		check();
+		if (tryCheck() != Status::LOCKED_BY_ME)
+			locked = false;
 	}
-	else
+
+	if (!locked)
 	{
 		size_t attempt;
 		std::string dummy;
@@ -49,55 +50,53 @@ void Lock::unlock()
 
 	if (locked)
 	{
-		/// проверим, что до сих пор мы владельцы ноды
-		check();
-
-		size_t attempt;
-		int32_t code = zookeeper->tryRemoveWithRetries(lock_path, -1, &attempt);
-		if (attempt)
+		if (tryCheck() == Status::LOCKED_BY_ME)
 		{
-			if (code != ZOK)
-				throw zkutil::KeeperException(code);
-		}
-		else
-		{
-			if (code == ZNONODE)
-				LOG_ERROR(log, "Node " << lock_path << " has been already removed. Probably due to network error.");
-			else if (code != ZOK)
-				throw zkutil::KeeperException(code);
+			size_t attempt;
+			int32_t code = zookeeper->tryRemoveWithRetries(lock_path, -1, &attempt);
+			if (attempt)
+			{
+				if (code != ZOK)
+					throw zkutil::KeeperException(code);
+			}
+			else
+			{
+				if (code == ZNONODE)
+					LOG_ERROR(log, "Node " << lock_path << " has been already removed. Probably due to network error.");
+				else if (code != ZOK)
+					throw zkutil::KeeperException(code);
+			}
 		}
 		locked = false;
 	}
 }
 
-Lock::Status Lock::check()
-{
-	Status status = checkImpl();
-	if ((locked && status != LOCKED_BY_ME) || (!locked && (status != UNLOCKED && status != LOCKED_BY_OTHER)))
-		throw zkutil::KeeperException(std::string("Incompability of local state and state in zookeeper. Local is ") + (locked ? "locked" : "unlocked") + ". Zookeeper state is " + status2String(status));
-	return status;
-}
-
-Lock::Status Lock::checkImpl()
+Lock::Status Lock::tryCheck() const
 {
 	auto zookeeper = zookeeper_holder->getZooKeeper();
 	
+	Status lock_status;
 	Stat stat;
 	std::string dummy;
 	bool result = zookeeper->tryGet(lock_path, dummy, &stat);
 	if (!result)
-		return UNLOCKED;
+		lock_status = UNLOCKED;
 	else
 	{
 		if (stat.ephemeralOwner == zookeeper->getClientID())
 		{
-			return LOCKED_BY_ME;
+			lock_status = LOCKED_BY_ME;
 		}
 		else
 		{
-			return LOCKED_BY_OTHER;
+			lock_status = LOCKED_BY_OTHER;
 		}
 	}
+
+	if (locked && lock_status != LOCKED_BY_ME)
+		LOG_WARNING(log, "Lock is lost. It is normal if session was reinitialized. Path: " << lock_path << "/" << lock_message);
+
+	return lock_status;
 }
 
 std::string Lock::status2String(Status status)

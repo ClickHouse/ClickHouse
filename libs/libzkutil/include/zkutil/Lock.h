@@ -55,9 +55,7 @@ namespace zkutil
 		std::string status2String(Status status);
 
 		/// проверяет создана ли эфемерная нода и кто ее владелец.
-		/// если мы сами создавали эфемерную ноду, то надо вызывать этот метод, чтобы убедится,
-		/// что сессия с зукипером не порвалось
-		Status check();
+		Status tryCheck() const;
 
 		void unlock();
 
@@ -65,9 +63,6 @@ namespace zkutil
 
 		/// путь к ноде блокировки в zookeeper
 		const std::string & getPath() { return lock_path; }
-
-	private:
-		Status checkImpl();
 
 	private:
 		zkutil::ZooKeeperHolderPtr zookeeper_holder;
