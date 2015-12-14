@@ -528,7 +528,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreads(
 
 		MergeTreeReadPoolPtr pool = std::make_shared<MergeTreeReadPool>(
 			threads, sum_marks, min_marks_for_concurrent_read, parts, data, prewhere_actions, prewhere_column, true,
-			column_names);
+			column_names, MergeTreeReadPool::BackoffSettings(settings));
 
 		/// Оценим общее количество строк - для прогресс-бара.
 		const std::size_t total_rows = data.index_granularity * sum_marks;
@@ -669,7 +669,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongThreadsFinal
 
 		MergeTreeReadPoolPtr pool = std::make_shared<MergeTreeReadPool>(
 			parts.size(), sum_marks, min_marks_for_read_task, parts, data, prewhere_actions, prewhere_column, true,
-			column_names, true);
+			column_names, MergeTreeReadPool::BackoffSettings{}, true);
 
 		/// Оценим общее количество строк - для прогресс-бара.
 		const std::size_t total_rows = data.index_granularity * sum_marks;

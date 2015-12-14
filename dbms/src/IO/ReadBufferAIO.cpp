@@ -1,10 +1,14 @@
 #include <DB/IO/ReadBufferAIO.h>
 #include <DB/Common/ProfileEvents.h>
+#include <DB/Common/Stopwatch.h>
 #include <DB/Core/ErrorCodes.h>
 #include <DB/Core/Defines.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
+
+#include <experimental/optional>
+
 
 namespace DB
 {
@@ -61,6 +65,10 @@ bool ReadBufferAIO::nextImpl()
 	if (is_eof)
 		return false;
 
+	std::experimental::optional<Stopwatch> watch;
+	if (profile_callback)
+		watch.emplace(clock_type);
+
 	if (!is_aio)
 	{
 		synchronousRead();
@@ -68,6 +76,15 @@ bool ReadBufferAIO::nextImpl()
 	}
 	else
 		receive();
+
+	if (profile_callback)
+	{
+		ProfileInfo info;
+		info.bytes_requested = requested_byte_count;
+		info.bytes_read = bytes_read;
+		info.nanoseconds = watch->elapsed();
+		profile_callback(info);
+	}
 
 	is_started = true;
 

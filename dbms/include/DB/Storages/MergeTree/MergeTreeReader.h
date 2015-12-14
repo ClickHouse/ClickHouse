@@ -24,14 +24,17 @@ namespace DB
 class MergeTreeReader
 {
 	using OffsetColumns = std::map<std::string, ColumnPtr>;
-	using ValueSizeMap = std::map<std::string, double>;
 
 public:
+	using ValueSizeMap = std::map<std::string, double>;
+
 	MergeTreeReader(const String & path, /// Путь к куску
 		const MergeTreeData::DataPartPtr & data_part, const NamesAndTypesList & columns,
 		UncompressedCache * uncompressed_cache, MarkCache * mark_cache,
 		MergeTreeData & storage, const MarkRanges & all_mark_ranges,
-		size_t aio_threshold, size_t max_read_buffer_size, const ValueSizeMap & avg_value_size_hints = ValueSizeMap{})
+		size_t aio_threshold, size_t max_read_buffer_size, const ValueSizeMap & avg_value_size_hints = ValueSizeMap{},
+		const ReadBufferFromFileBase::ProfileCallback & profile_callback = ReadBufferFromFileBase::ProfileCallback{},
+		clockid_t clock_type = CLOCK_MONOTONIC_COARSE)
 		: avg_value_size_hints(avg_value_size_hints), path(path), data_part(data_part), columns(columns),
 		  uncompressed_cache(uncompressed_cache), mark_cache(mark_cache), storage(storage),
 		  all_mark_ranges(all_mark_ranges), aio_threshold(aio_threshold), max_read_buffer_size(max_read_buffer_size)
@@ -42,7 +45,7 @@ public:
 				throw Exception("Part " + path + " is missing", ErrorCodes::NOT_FOUND_EXPECTED_DATA_PART);
 
 			for (const NameAndTypePair & column : columns)
-				addStream(column.name, *column.type, all_mark_ranges);
+				addStream(column.name, *column.type, all_mark_ranges, profile_callback, clock_type);
 		}
 		catch (...)
 		{
@@ -151,7 +154,8 @@ private:
 
 		Stream(
 			const String & path_prefix_, UncompressedCache * uncompressed_cache, MarkCache * mark_cache,
-			const MarkRanges & all_mark_ranges, size_t aio_threshold, size_t max_read_buffer_size)
+			const MarkRanges & all_mark_ranges, size_t aio_threshold, size_t max_read_buffer_size,
+			const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
 			: path_prefix(path_prefix_)
 		{
 			loadMarks(mark_cache);
@@ -205,12 +209,20 @@ private:
 			{
 				cached_buffer = std::make_unique<CachedCompressedReadBuffer>(
 					path_prefix + ".bin", uncompressed_cache, estimated_size, aio_threshold, buffer_size);
+
+				if (profile_callback)
+					cached_buffer->setProfileCallback(profile_callback, clock_type);
+
 				data_buffer = cached_buffer.get();
 			}
 			else
 			{
 				non_cached_buffer = std::make_unique<CompressedReadBufferFromFile>(
 					path_prefix + ".bin", estimated_size, aio_threshold, buffer_size);
+
+				if (profile_callback)
+					non_cached_buffer->setProfileCallback(profile_callback, clock_type);
+
 				data_buffer = non_cached_buffer.get();
 			}
 		}
@@ -289,7 +301,9 @@ private:
 	size_t aio_threshold;
 	size_t max_read_buffer_size;
 
-	void addStream(const String & name, const IDataType & type, const MarkRanges & all_mark_ranges, size_t level = 0)
+	void addStream(const String & name, const IDataType & type, const MarkRanges & all_mark_ranges,
+		const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type,
+		size_t level = 0)
 	{
 		String escaped_column_name = escapeForFileName(name);
 
@@ -310,14 +324,14 @@ private:
 			if (!streams.count(size_name))
 				streams.emplace(size_name, std::make_unique<Stream>(
 					path + escaped_size_name, uncompressed_cache, mark_cache,
-					all_mark_ranges, aio_threshold, max_read_buffer_size));
+					all_mark_ranges, aio_threshold, max_read_buffer_size, profile_callback, clock_type));
 
-			addStream(name, *type_arr->getNestedType(), all_mark_ranges, level + 1);
+			addStream(name, *type_arr->getNestedType(), all_mark_ranges, profile_callback, clock_type, level + 1);
 		}
 		else
 			streams.emplace(name, std::make_unique<Stream>(
 				path + escaped_column_name, uncompressed_cache, mark_cache,
-				all_mark_ranges, aio_threshold, max_read_buffer_size));
+				all_mark_ranges, aio_threshold, max_read_buffer_size, profile_callback, clock_type));
 	}
 
 

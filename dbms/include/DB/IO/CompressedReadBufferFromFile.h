@@ -120,6 +120,11 @@ public:
 
 		return bytes_read;
 	}
+
+	void setProfileCallback(const ReadBufferFromFileBase::ProfileCallback & profile_callback_, clockid_t clock_type_ = CLOCK_MONOTONIC_COARSE)
+	{
+		file_in.setProfileCallback(profile_callback_, clock_type_);
+	}
 };
 
 }

@@ -48,19 +48,64 @@ using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;
 /**	Provides read tasks for MergeTreeThreadBlockInputStream`s in fine-grained batches, allowing for more
  *	uniform distribution of work amongst multiple threads. All parts and their ranges are divided into `threads`
  *	workloads with at most `sum_marks / threads` marks. Then, threads are performing reads from these workloads
- *	in "sequential" manner, requesting work in small batches. As soon as some thread some thread has exhausted
+ *	in "sequential" manner, requesting work in small batches. As soon as some thread has exhausted
  *	it's workload, it either is signaled that no more work is available (`do_not_steal_tasks == false`) or
  *	continues taking small batches from other threads' workloads (`do_not_steal_tasks == true`).
  */
 class MergeTreeReadPool
 {
 public:
+	/** Пул может динамически уменьшать количество потоков, если чтения происходят медленно.
+	  * Настройки порогов для такого уменьшения.
+	  */
+	struct BackoffSettings
+	{
+		/// Обращать внимания только на чтения, занявшие не меньше такого количества времени. Если выставлено в 0 - значит backoff выключен.
+		size_t min_read_latency_ms = 1000;
+		/// Считать события, когда пропускная способность меньше стольки байт в секунду.
+		size_t max_throughput = 1048576;
+		/// Не обращать внимания на событие, если от предыдущего прошло меньше стольки-то времени.
+		size_t min_interval_between_events_ms = 1000;
+		/// Количество событий, после которого количество потоков будет уменьшено.
+		size_t min_events = 2;
+
+		/// Константы выше приведены лишь в качестве примера.
+		BackoffSettings(const Settings & settings)
+			: min_read_latency_ms(settings.read_backoff_min_latency_ms.totalMilliseconds()),
+			max_throughput(settings.read_backoff_max_throughput),
+			min_interval_between_events_ms(settings.read_backoff_min_interval_between_events_ms.totalMilliseconds()),
+			min_events(settings.read_backoff_min_events)
+		{
+		}
+
+		BackoffSettings() : min_read_latency_ms(0) {}
+	};
+
+	BackoffSettings backoff_settings;
+
+private:
+	/** Состояние для отслеживания скорости чтений.
+	  */
+	struct BackoffState
+	{
+		size_t current_threads;
+		Stopwatch time_since_prev_event {CLOCK_MONOTONIC_COARSE};
+		size_t num_events = 0;
+
+		BackoffState(size_t threads) : current_threads(threads) {}
+	};
+
+	BackoffState backoff_state;
+
+public:
 	MergeTreeReadPool(
 		const std::size_t threads, const std::size_t sum_marks, const std::size_t min_marks_for_concurrent_read,
 		RangesInDataParts parts, MergeTreeData & data, const ExpressionActionsPtr & prewhere_actions,
 		const String & prewhere_column_name, const bool check_columns, const Names & column_names,
+		const BackoffSettings & backoff_settings,
 		const bool do_not_steal_tasks = false)
-		: data{data}, column_names{column_names}, do_not_steal_tasks{do_not_steal_tasks}
+		: backoff_settings{backoff_settings}, backoff_state{threads},
+		data{data}, column_names{column_names}, do_not_steal_tasks{do_not_steal_tasks}
 	{
 		const auto per_part_sum_marks = fillPerPartInfo(parts, prewhere_actions, prewhere_column_name, check_columns);
 		fillPerThreadInfo(threads, sum_marks, per_part_sum_marks, parts, min_marks_for_concurrent_read);
@@ -72,6 +117,10 @@ public:
 	MergeTreeReadTaskPtr getTask(const std::size_t min_marks_to_read, const std::size_t thread)
 	{
 		const std::lock_guard<std::mutex> lock{mutex};
+
+		/// Если количество потоков было уменьшено из-за backoff, то не будем отдавать задачи для более чем backoff_state.current_threads потоков.
+		if (thread >= backoff_state.current_threads)
+			return nullptr;
 
 		if (remaining_thread_tasks.empty())
 			return nullptr;
@@ -148,6 +197,50 @@ public:
 			part.data_part, ranges_to_get_from_part, part.part_index_in_query, column_names,
 			per_part_column_name_set[part_idx], per_part_columns[part_idx], per_part_pre_columns[part_idx],
 			per_part_remove_prewhere_column[part_idx], per_part_should_reorder[part_idx]);
+	}
+
+	/** Каждый обработчик задач может вызвать этот метод, передав в него информацию о скорости чтения.
+	  * Если скорость чтения слишком низкая, то пул может принять решение уменьшить число потоков - не отдавать больше задач в некоторые потоки.
+	  * Это позволяет бороться с чрезмерной нагрузкой на дисковую подсистему в случаях, когда чтения осуществляются не из page cache.
+	  */
+	void profileFeedback(const ReadBufferFromFileBase::ProfileInfo info)
+	{
+		if (backoff_settings.min_read_latency_ms == 0 || do_not_steal_tasks)
+			return;
+
+		if (info.nanoseconds < backoff_settings.min_read_latency_ms * 1000000)
+			return;
+
+		std::lock_guard<std::mutex> lock(mutex);
+
+		if (backoff_state.current_threads <= 1)
+			return;
+
+		size_t throughput = info.bytes_read * 1000000000 / info.nanoseconds;
+
+		if (throughput >= backoff_settings.max_throughput)
+			return;
+
+		if (backoff_state.time_since_prev_event.elapsed() < backoff_settings.min_interval_between_events_ms * 1000000)
+			return;
+
+		backoff_state.time_since_prev_event.restart();
+		++backoff_state.num_events;
+
+		ProfileEvents::increment(ProfileEvents::SlowRead);
+		LOG_DEBUG(log, std::fixed << std::setprecision(3)
+			<< "Slow read, event №" << backoff_state.num_events
+			<< ": read " << info.bytes_read << " bytes in " << info.nanoseconds / 1000000000.0 << " sec., "
+			<< info.bytes_read * 1000.0 / info.nanoseconds << " MB/s.");
+
+		if (backoff_state.num_events < backoff_settings.min_events)
+			return;
+
+		backoff_state.num_events = 0;
+		--backoff_state.current_threads;
+
+		ProfileEvents::increment(ProfileEvents::ReadBackoff);
+		LOG_DEBUG(log, "Will lower number of threads to " << backoff_state.current_threads);
 	}
 
 private:
@@ -381,7 +474,7 @@ private:
 	std::vector<std::unique_ptr<Poco::ScopedReadRWLock>> per_part_columns_lock;
 	MergeTreeData & data;
 	Names column_names;
-	const bool do_not_steal_tasks;
+	bool do_not_steal_tasks;
 	std::vector<NameSet> per_part_column_name_set;
 	std::vector<NamesAndTypesList> per_part_columns;
 	std::vector<NamesAndTypesList> per_part_pre_columns;
@@ -414,6 +507,8 @@ private:
 	std::set<std::size_t> remaining_thread_tasks;
 
 	mutable std::mutex mutex;
+
+	Logger * log = &Logger::get("MergeTreeReadPool");
 };
 
 using MergeTreeReadPoolPtr = std::shared_ptr<MergeTreeReadPool>;
