@@ -595,9 +595,17 @@ public:
 		{
 			std::string error_msg;
 
-			if (typeid_cast<const DataTypeDateTime *>(&*arguments[0]) == nullptr)
+			if (typeid_cast<const DataTypeDate *>(&*arguments[0]) != nullptr)
 				error_msg += "Illegal type " + arguments[0]->getName() + " of argument 1."
 					" Should be a date with time (timezones are not supported for dates)";
+			else if (typeid_cast<const DataTypeDateTime *>(&*arguments[0]) != nullptr)
+			{
+				/// Ничего не делаем.
+			}
+			else
+				error_msg += "Illegal type " + arguments[0]->getName() + " of argument 1."
+					" Should be a date with time";
+	
 			if (typeid_cast<const DataTypeString *>(&*arguments[1]) == nullptr)
 			{
 				if (!error_msg.empty())
