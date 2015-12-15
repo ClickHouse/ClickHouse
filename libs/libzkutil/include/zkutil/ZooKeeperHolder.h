@@ -56,6 +56,8 @@ private:
 	mutable std::mutex mutex;
 	ZooKeeper::Ptr ptr;
 
+	Logger * log = &Logger::get("ZooKeeperHolder");
+
 	static std::string nullptr_exception_message;
 };
 

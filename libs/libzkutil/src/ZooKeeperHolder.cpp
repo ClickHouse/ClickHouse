@@ -17,7 +17,11 @@ bool ZooKeeperHolder::replaceZooKeeperSessionToNewOne()
 		ptr = ptr->startNewSession();
 		return true;
 	}
+	else
+	{
+		LOG_ERROR(log, "replaceZooKeeperSessionToNewOne(): Fail to replace zookeeper session to new one because handlers for old zookeeper session still exists.");
 		return false;
+	}
 }
 
 bool ZooKeeperHolder::isSessionExpired() const
