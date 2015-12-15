@@ -120,9 +120,6 @@ void ExpressionAnalyzer::init()
 	/// Создаёт словарь aliases: alias -> ASTPtr
 	addASTAliases(ast);
 
-	/// Добавляет ALIAS столбцы из таблицы в aliases, если применимо.
-	addStorageAliases();
-
 	/// Common subexpression elimination. Rewrite rules.
 	normalizeTree();
 
@@ -428,22 +425,6 @@ NamesAndTypesList::iterator ExpressionAnalyzer::findColumn(const String & name, 
 }
 
 
-void ExpressionAnalyzer::addStorageAliases()
-{
-	if (select_query && select_query->array_join_expression_list)
-		return;
-
-	if (!storage)
-		return;
-
-	/// @todo: consider storing default expressions with alias set to avoid cloning
-	/// Добавляем ALIAS из таблицы, только если такого ALIAS еще не объявлено в запросе.
-	for (const auto & alias : storage->alias_columns)
-		if (!aliases.count(alias.name))
-			aliases[alias.name] = setAlias(storage->column_defaults[alias.name].expression->clone(), alias.name);
-}
-
-
 /// ignore_levels - алиасы в скольки верхних уровнях поддерева нужно игнорировать.
 /// Например, при ignore_levels=1 ast не может быть занесен в словарь, но его дети могут.
 void ExpressionAnalyzer::addASTAliases(ASTPtr & ast, int ignore_levels)
@@ -686,7 +667,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(
 
 void ExpressionAnalyzer::addAliasColumns()
 {
-	if (!(select_query && select_query->array_join_expression_list))
+	if (!select_query)
 		return;
 
 	if (!storage)
