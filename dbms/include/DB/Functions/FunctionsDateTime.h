@@ -582,35 +582,39 @@ public:
 	/// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
 	DataTypePtr getReturnType(const DataTypes & arguments) const override
 	{
-		if ((arguments.size() < 1) || (arguments.size() > 2))
-			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-				+ toString(arguments.size()) + ", should be 1 or 2.",
-				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		if (typeid_cast<const DataTypeDate *>(&*arguments[0]) != nullptr)
+		if (arguments.size() == 1)
 		{
-			if (arguments.size() > 1)
-				throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-					+ toString(arguments.size()) + ", should be 1.",
-					ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+			if ((typeid_cast<const DataTypeDate *>(&*arguments[0]) == nullptr) &&
+				(typeid_cast<const DataTypeDateTime *>(&*arguments[0]) == nullptr))
+				throw Exception{
+					"Illegal type " + arguments[0]->getName() + " of argument of function " + getName() +
+					". Should be a date or a date with time", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+				};
 		}
-		else if (typeid_cast<const DataTypeDateTime *>(&*arguments[0]) != nullptr)
+		else if (arguments.size() == 2)
 		{
-			/// Ничего не делаем.
+			std::string error_msg;
+
+			if (typeid_cast<const DataTypeDateTime *>(&*arguments[0]) == nullptr)
+				error_msg += "Illegal type " + arguments[0]->getName() + " of argument 1."
+					" Should be a date with time (timezones are not supported for dates)";
+			if (typeid_cast<const DataTypeString *>(&*arguments[1]) == nullptr)
+			{
+				if (!error_msg.empty())
+					error_msg += ". ";
+				error_msg += "Illegal type " + arguments[1]->getName() + " of argument 2."
+					" Should be a string describing a timezone";
+			}
+
+			if (!error_msg.empty())
+				throw Exception{
+					"In function " + getName() + ": " + error_msg, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+				};
 		}
 		else
-			throw Exception{
-				"Illegal type " + arguments[0]->getName() + " of argument 1 of function " + getName(),
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-			};
-
-		if ((arguments.size() == 2) && (typeid_cast<const DataTypeString *>(&*arguments[1]) == nullptr))
-		{
-			throw Exception{
-				"Illegal type " + arguments[1]->getName() + " of argument 2 of function " + getName(),
-				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-			};
-		}
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ toString(arguments.size()) + ", should be 1 or 2",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 		return new ToDataType;
 	}
