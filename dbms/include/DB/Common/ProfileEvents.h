@@ -77,6 +77,9 @@
 	M(ExternalAggregationCompressedBytes) \
 	M(ExternalAggregationUncompressedBytes) \
 	\
+	M(SlowRead) \
+	M(ReadBackoff) \
+	\
 	M(END)
 
 namespace ProfileEvents

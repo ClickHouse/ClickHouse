@@ -238,6 +238,21 @@ private:
 	}
 
 
+	/// Стоит ли сделать хоть что-нибудь ради праздника.
+	bool isNewYearMode()
+	{
+		time_t current_time = time(0);
+
+		/// Плохо быть навязчивым.
+		if (current_time % 3 != 0)
+			return false;
+
+		mysqlxx::Date now(current_time);
+		return (now.month() == 12 && now.day() >= 20)
+			|| (now.month() == 1 && now.day() <= 5);
+	}
+
+
 	int mainImpl(const std::vector<std::string> & args)
 	{
 		/** Будем работать в batch режиме, если выполнено одно из следующих условий:
@@ -305,7 +320,7 @@ private:
 
 			loop();
 
-			std::cout << "Bye." << std::endl;
+			std::cout << (isNewYearMode() ? "Happy new year." : "Bye.") << std::endl;
 
 			return 0;
 		}

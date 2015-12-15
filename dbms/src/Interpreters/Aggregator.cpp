@@ -875,9 +875,6 @@ void Aggregator::writeToTemporaryFileImpl(
 
 	for (size_t bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
 	{
-		if (method.data.impls[bucket].empty())
-			continue;
-
 		Block block = convertOneBucketToBlock(data_variants, method, false, bucket);
 		out.write(block);
 
@@ -977,6 +974,9 @@ void Aggregator::convertToBlockImpl(
 	const Sizes & key_sizes,
 	bool final) const
 {
+	if (data.empty())
+		return;
+
 	if (final)
 		convertToBlockImplFinal(method, data, key_columns, final_aggregate_columns, key_sizes);
 	else
@@ -2116,7 +2116,8 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
 	result.keys_size = params.keys_size;
 	result.key_sizes = key_sizes;
 
-	LOG_TRACE(log, "Merging partially aggregated blocks (bucket = " << blocks.front().info.bucket_num << ").");
+	auto bucket_num = blocks.front().info.bucket_num;
+	LOG_TRACE(log, "Merging partially aggregated blocks (bucket = " << bucket_num << ").");
 
 	for (Block & block : blocks)
 	{
@@ -2188,7 +2189,9 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
 	if (merged_blocks.empty())
 		return {};
 
-	return merged_blocks.front();
+	auto res = std::move(merged_blocks.front());
+	res.info.bucket_num = bucket_num;
+	return res;
 }
 
 

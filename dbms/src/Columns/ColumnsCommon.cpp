@@ -60,7 +60,7 @@ void filterArraysImpl(
 		if (result_size_hint < 0)
 			res_elems.reserve(src_elems.size());
 		else if (result_size_hint < 1000000000 && src_elems.size() < 1000000000)	/// Избегаем переполнения.
-			res_elems.reserve(result_size_hint * src_elems.size() / size);
+			res_elems.reserve((result_size_hint * src_elems.size() + size - 1) / size);
 	}
 
 	IColumn::Offset_t current_src_offset = 0;
@@ -86,7 +86,7 @@ void filterArraysImpl(
 		res_offsets.push_back(current_src_offset);
 
 		const auto elems_size_old = res_elems.size();
-		res_elems.resize_assume_reserved(elems_size_old + size);
+		res_elems.resize(elems_size_old + size);
 		memcpy(&res_elems[elems_size_old], &src_elems[offset], size * sizeof(T));
 	};
 

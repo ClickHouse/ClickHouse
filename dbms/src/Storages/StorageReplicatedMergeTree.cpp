@@ -3058,6 +3058,9 @@ void StorageReplicatedMergeTree::drop()
 
 	auto zookeeper = getZooKeeper();
 
+	if (zookeeper->expired())
+		throw Exception("Table was not dropped because ZooKeeper session has been expired.", ErrorCodes::TABLE_WAS_NOT_DROPPED);
+
 	LOG_INFO(log, "Removing replica " << replica_path);
 	replica_is_active_node = nullptr;
 	zookeeper->tryRemoveRecursive(replica_path);

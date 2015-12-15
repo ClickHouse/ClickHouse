@@ -98,8 +98,8 @@ struct Settings
 	/** Включён ли экономный по памяти режим распределённой агрегации. */ \
 	M(SettingBool, distributed_aggregation_memory_efficient, false) \
 	/** Сколько потоков использовать для мерджа результатов в режиме, экономном по памяти. Чем больше, чем больше памяти расходуется. \
-	  * По-умолчанию - 0, означает - столько же, сколько max_threads. */ \
-	M(SettingUInt64, aggregation_memory_efficient_merge_threads, 0) \
+	  * 0, означает - столько же, сколько max_threads. Временно выставленно в 1, так как реализация некорректна. */ \
+	M(SettingUInt64, aggregation_memory_efficient_merge_threads, 1) \
 	\
 	/** Максимальное количество используемых реплик каждого шарда при выполнении запроса */ \
 	M(SettingUInt64, max_parallel_replicas, 1) \
@@ -176,8 +176,18 @@ struct Settings
 	M(SettingUInt64, select_sequential_consistency, 0) \
 	/** Максимальное количество различных шардов и максимальное количество реплик одного шарда в функции remote. */ \
 	M(SettingUInt64, table_function_remote_max_addresses, 1000) \
-	/** Маскимальное количество потоков при распределённой обработке одного запроса **/ \
+	/** Маскимальное количество потоков при распределённой обработке одного запроса */ \
 	M(SettingUInt64, max_distributed_processing_threads, 8) \
+	\
+	/** Настройки понижения числа потоков в случае медленных чтений. */ \
+	/** Обращать внимания только на чтения, занявшие не меньше такого количества времени. */ \
+	M(SettingMilliseconds, 	read_backoff_min_latency_ms, 1000) \
+	/** Считать события, когда пропускная способность меньше стольки байт в секунду. */ \
+	M(SettingUInt64, 		read_backoff_max_throughput, 1048576) \
+	/** Не обращать внимания на событие, если от предыдущего прошло меньше стольки-то времени. */ \
+	M(SettingMilliseconds, 	read_backoff_min_interval_between_events_ms, 1000) \
+	/** Количество событий, после которого количество потоков будет уменьшено. */ \
+	M(SettingUInt64, 		read_backoff_min_events, 2) \
 
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;
