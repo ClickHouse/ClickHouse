@@ -202,4 +202,6 @@ protected:
 	void collectAndSendTotalRowsApprox();
 };
 
+typedef SharedPtr<IProfilingBlockInputStream> ProfilingBlockInputStreamPtr;
+
 }
