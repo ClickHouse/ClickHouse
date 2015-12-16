@@ -1,4 +1,5 @@
 #include <map>
+#include <experimental/optional>
 
 #include <Poco/Path.h>
 #include <Poco/Util/XMLConfiguration.h>
@@ -66,11 +67,11 @@ protected:
 		{
 			started = true;
 
-			data_in = std::make_unique<CompressedReadBufferFromFile>(
+			data_in.emplace(
 				storage.full_path() + "data.bin", 0, 0,
 				std::min(max_read_buffer_size, Poco::File(storage.full_path() + "data.bin").getSize()));
 
-			block_in = std::make_unique<NativeBlockInputStream>(*data_in, 0, true, index_begin, index_end);
+			block_in.emplace(*data_in, 0, true, index_begin, index_end);
 		}
 
 		if (block_in)
@@ -80,8 +81,8 @@ protected:
 			/// Освобождаем память раньше уничтожения объекта.
 			if (!res)
 			{
-				block_in.reset();
-				data_in.reset();
+				block_in = std::experimental::nullopt;
+				data_in = std::experimental::nullopt;
 				index.reset();
 			}
 		}
@@ -97,13 +98,13 @@ private:
 	IndexForNativeFormat::Blocks::const_iterator index_begin;
 	IndexForNativeFormat::Blocks::const_iterator index_end;
 
-	/** unique_ptr - чтобы создавать объекты только при первом чтении
+	/** optional - чтобы создавать объекты только при первом чтении
 	 *  и удалять объекты (освобождать буферы) после исчерпания источника
 	  * - для экономии оперативки при использовании большого количества источников.
 	  */
 	bool started = false;
-	std::unique_ptr<CompressedReadBufferFromFile> data_in;
-	std::unique_ptr<NativeBlockInputStream> block_in;
+	std::experimental::optional<CompressedReadBufferFromFile> data_in;
+	std::experimental::optional<NativeBlockInputStream> block_in;
 };
 
 
