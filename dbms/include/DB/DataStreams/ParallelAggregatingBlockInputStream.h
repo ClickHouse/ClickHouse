@@ -67,7 +67,10 @@ public:
 		if (!is_cancelled.compare_exchange_strong(old_val, true, std::memory_order_seq_cst, std::memory_order_relaxed))
 			return;
 
-		processor.cancel();
+		if (!executed)
+			processor.cancel();
+		else if (impl)
+			static_cast<IProfilingBlockInputStream *>(impl.get())->cancel();
 	}
 
 protected:
@@ -75,8 +78,6 @@ protected:
 	{
 		if (!executed)
 		{
-			executed = true;
-
 			Aggregator::CancellationHook hook = [&]() { return this->isCancelled(); };
 			aggregator.setCancellationHook(hook);
 
@@ -114,6 +115,8 @@ protected:
 				impl.reset(new MergingAggregatedMemoryEfficientBlockInputStream(
 					input_streams, params, final, temporary_data_merge_threads, temporary_data_merge_threads));
 			}
+
+			executed = true;
 		}
 
 		Block res;
@@ -140,7 +143,7 @@ private:
 	  */
 	bool no_more_keys = false;
 
-	bool executed = false;
+	std::atomic<bool> executed = false;
 
 	/// Для чтения сброшенных во временный файл данных.
 	struct TemporaryFileStream
@@ -153,10 +156,6 @@ private:
 			: file_in(path), compressed_in(file_in), block_in(new NativeBlockInputStream(compressed_in, Revision::get())) {}
 	};
 	std::vector<std::unique_ptr<TemporaryFileStream>> temporary_inputs;
-
-	/** Отсюда будем доставать готовые блоки после агрегации.
-	  */
-	std::unique_ptr<IBlockInputStream> impl;
 
 	Logger * log = &Logger::get("ParallelAggregatingBlockInputStream");
 
@@ -294,6 +293,11 @@ private:
 			<< " in " << elapsed_seconds << " sec."
 			<< " (" << total_src_rows / elapsed_seconds << " rows/sec., " << total_src_bytes / elapsed_seconds / 1048576.0 << " MiB/sec.)");
 	}
+
+
+	/** Отсюда будем доставать готовые блоки после агрегации.
+	  */
+	std::unique_ptr<IBlockInputStream> impl;
 };
 
 }
