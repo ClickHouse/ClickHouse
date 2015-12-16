@@ -143,7 +143,7 @@ private:
 	  */
 	bool no_more_keys = false;
 
-	std::atomic<bool> executed = false;
+	std::atomic<bool> executed {false};
 
 	/// Для чтения сброшенных во временный файл данных.
 	struct TemporaryFileStream
