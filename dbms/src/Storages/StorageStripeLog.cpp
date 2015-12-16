@@ -43,10 +43,8 @@ public:
 		std::shared_ptr<const IndexForNativeFormat> & index_,
 		IndexForNativeFormat::Blocks::const_iterator index_begin_,
 		IndexForNativeFormat::Blocks::const_iterator index_end_)
-		: column_names(column_names_.begin(), column_names_.end()), storage(storage_),
-		index(index_), index_begin(index_begin_), index_end(index_end_),
-		data_in(std::make_unique<CompressedReadBufferFromFile>(storage.full_path() + "data.bin", 0, 0, max_read_buffer_size_)),
-		block_in(std::make_unique<NativeBlockInputStream>(*data_in, 0, true, index_begin, index_end))
+		: storage(storage_), max_read_buffer_size(max_read_buffer_size_),
+		index(index_), index_begin(index_begin_), index_end(index_end_)
 	{
 	}
 
@@ -55,9 +53,7 @@ public:
 	String getID() const override
 	{
 		std::stringstream s;
-		s << "StripeLog";
-		for (const auto & name : column_names)
-			s << ", " << name;	/// NOTE Отсутствует эскейпинг.
+		s << this;
 		return s.str();
 	}
 
@@ -65,6 +61,17 @@ protected:
 	Block readImpl() override
 	{
 		Block res;
+
+		if (!started)
+		{
+			started = true;
+
+			data_in = std::make_unique<CompressedReadBufferFromFile>(
+				storage.full_path() + "data.bin", 0, 0,
+				std::min(max_read_buffer_size, Poco::File(storage.full_path() + "data.bin").getSize()));
+
+			block_in = std::make_unique<NativeBlockInputStream>(*data_in, 0, true, index_begin, index_end);
+		}
 
 		if (block_in)
 		{
@@ -83,16 +90,18 @@ protected:
 	}
 
 private:
-	NameSet column_names;
 	StorageStripeLog & storage;
+	size_t max_read_buffer_size;
 
 	std::shared_ptr<const IndexForNativeFormat> index;
 	IndexForNativeFormat::Blocks::const_iterator index_begin;
 	IndexForNativeFormat::Blocks::const_iterator index_end;
 
-	/** unique_ptr - чтобы удалять объекты (освобождать буферы) после исчерпания источника
+	/** unique_ptr - чтобы создавать объекты только при первом чтении
+	 *  и удалять объекты (освобождать буферы) после исчерпания источника
 	  * - для экономии оперативки при использовании большого количества источников.
 	  */
+	bool started = false;
 	std::unique_ptr<CompressedReadBufferFromFile> data_in;
 	std::unique_ptr<NativeBlockInputStream> block_in;
 };
