@@ -69,8 +69,6 @@ public:
 
 		if (!executed)
 			processor.cancel();
-		else if (impl)
-			static_cast<IProfilingBlockInputStream *>(impl.get())->cancel();
 	}
 
 protected:
