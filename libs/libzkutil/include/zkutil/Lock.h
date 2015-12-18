@@ -66,10 +66,13 @@ namespace zkutil
 
 	private:
 		zkutil::ZooKeeperHolderPtr zookeeper_holder;
+		/// пока храним указатель на хендлер, никто не может переиницализировать сессию с zookeeper
+		using ZooKeeperHandler = zkutil::ZooKeeperHolder::UnstorableZookeeperHandler;
+		std::unique_ptr<ZooKeeperHandler> locked;
 
 		std::string lock_path;
 		std::string lock_message;
 		Logger * log;
-		bool locked = false;
+
 	};
 }

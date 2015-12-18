@@ -9,7 +9,7 @@ bool Lock::tryLock()
 	{
 		/// проверим, что нода создана и я ее владелец
 		if (tryCheck() != Status::LOCKED_BY_ME)
-			locked = false;
+			locked.reset(nullptr);
 	}
 
 	if (!locked)
@@ -21,20 +21,20 @@ bool Lock::tryLock()
 		if (code == ZNODEEXISTS)
 		{
 			if (attempt == 0)
-				locked = false;
+				locked.reset(nullptr);
 			else
 			{
 				zkutil::Stat stat;
 				zookeeper->get(lock_path, &stat);
 				if (stat.ephemeralOwner == zookeeper->getClientID())
-					locked = true;
+					locked.reset(new ZooKeeperHandler(zookeeper));
 				else
-					locked = false;
+					locked.reset(nullptr);
 			}
 		}
 		else if (code == ZOK)
 		{
-			locked = true;
+			locked.reset(new ZooKeeperHandler(zookeeper));
 		}
 		else
 		{
@@ -67,7 +67,7 @@ void Lock::unlock()
 					throw zkutil::KeeperException(code);
 			}
 		}
-		locked = false;
+		locked.reset(nullptr);
 	}
 }
 

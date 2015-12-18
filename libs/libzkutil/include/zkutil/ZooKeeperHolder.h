@@ -9,6 +9,8 @@ namespace zkutil
 
 class ZooKeeperHolder : public boost::noncopyable
 {
+	friend class zkutil::Lock;
+
 protected:
 	class UnstorableZookeeperHandler;
 
@@ -29,8 +31,16 @@ public:
 protected:
 	/** Хендлер для подсчета количества используемых ссылок на ZooKeeper
 	*
-	*  Специально поддерживает только хранение на стеке.
-	*  Что вынуждает перед каждым использованием явно запросить хэндлер у ZooKeeperHolder
+	*   Запрещается переинициализировать ZooKeeper пока, хранится хотя бы один хендлер на него.
+	*   Большинство классов должны хранить хендлер на стеке и не хранить как член класса.
+	*   Т.е. хранить holder и запрашивать хендлер перед каждым использованием.
+	*   Поэтому класс специально объявлен, как protected.
+	*
+	*   Исключение - классы, работающие с эфимерными нодами. Пример: zkutil::Lock
+	*
+	*   Как использовать:
+	*   auto zookeeper = zookeeper_holder->getZooKeeper();
+	*   zookeeper->get(path);
 	*/
 	class UnstorableZookeeperHandler
 	{
