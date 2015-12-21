@@ -50,22 +50,32 @@ void Lock::unlock()
 
 	if (locked)
 	{
-		if (tryCheck() == Status::LOCKED_BY_ME)
+		try
 		{
-			size_t attempt;
-			int32_t code = zookeeper->tryRemoveWithRetries(lock_path, -1, &attempt);
-			if (attempt)
+			if (tryCheck() == Status::LOCKED_BY_ME)
 			{
-				if (code != ZOK)
-					throw zkutil::KeeperException(code);
+				size_t attempt;
+				int32_t code = zookeeper->tryRemoveWithRetries(lock_path, -1, &attempt);
+				if (attempt)
+				{
+					if (code != ZOK)
+						throw zkutil::KeeperException(code);
+				}
+				else
+				{
+					if (code == ZNONODE)
+						LOG_ERROR(log, "Node " << lock_path << " has been already removed. Probably due to network error.");
+					else if (code != ZOK)
+						throw zkutil::KeeperException(code);
+				}
 			}
-			else
-			{
-				if (code == ZNONODE)
-					LOG_ERROR(log, "Node " << lock_path << " has been already removed. Probably due to network error.");
-				else if (code != ZOK)
-					throw zkutil::KeeperException(code);
-			}
+		}
+		catch (const zkutil::KeeperException & e)
+		{
+			/// если сессия находится в невостанавливаемом состоянии, то эфимерные ноды нам больше не принадлежат
+			/// и лок через таймаут будет отпущен
+			if (!e.isUnrecoverable())
+				throw;
 		}
 		locked.reset(nullptr);
 	}
