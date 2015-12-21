@@ -351,14 +351,14 @@ bool ParserUnsignedInteger::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & m
 
 	UInt64 x = 0;
 	ReadBuffer in(const_cast<char *>(pos), end - pos, 0);
-	if (!tryReadIntText(x, in) || in.offset() == 0)
+	if (!tryReadIntText(x, in) || in.count() == 0)
 	{
 		expected = "unsigned integer";
 		return false;
 	}
 
 	res = x;
-	pos += in.offset();
+	pos += in.count();
 	node = new ASTLiteral(StringRange(begin, pos), res);
 	return true;
 }
