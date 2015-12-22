@@ -83,13 +83,19 @@ public:
 		fillMap();
 	}
 
-	std::string getName() const override
-	{
-		return name;
-	}
+	std::string getName() const override { return name; }
+
+	bool isNumeric() const override { return true; }
+
+	bool behavesAsNumber() const override { return true; }
 
 	/// Returns length of textual name for an enum element (used in FunctionVisibleWidth)
 	std::size_t getNameLength(const FieldType & value) const
+	{
+		return getNameForValue(value).size();
+	}
+
+	std::string getNameForValue(const FieldType & value) const
 	{
 		const auto it = std::lower_bound(std::begin(values), std::end(values), value, [] (const auto & left, const auto & right) {
 			return left.second < right;
@@ -101,7 +107,19 @@ public:
 				ErrorCodes::LOGICAL_ERROR
 			};
 
-		return it->first.size();
+		return it->first;
+	}
+
+	FieldType getValue(const std::string & name) const
+	{
+		const auto it = map.find(StringRef{name});
+		if (it == std::end(map))
+			throw Exception{
+				"Unknown string '" + name + "' for " + getName(),
+				ErrorCodes::LOGICAL_ERROR
+			};
+
+		return it->second;
 	}
 
 	DataTypePtr clone() const override
@@ -124,115 +142,43 @@ public:
 	void serializeText(const Field & field, WriteBuffer & ostr) const override
 	{
 		const FieldType x = get<typename NearestFieldType<FieldType>::Type>(field);
-
-		const auto it = std::lower_bound(std::begin(values), std::end(values), x, [] (const auto & left, const auto & right) {
-			return left.second < right;
-		});
-
-		if (it == std::end(values) || it->second != x)
-			throw Exception{
-				"Unexpected value " + toString(x) + " for " + getName(),
-				ErrorCodes::LOGICAL_ERROR
-			};
-
-		writeString(it->first, ostr);
+		writeString(getNameForValue(x), ostr);
 	}
 	void deserializeText(Field & field, ReadBuffer & istr) const override
 	{
 		std::string name;
 		readString(name, istr);
-
-		const auto it = map.find(StringRef{name});
-		if (it == std::end(map))
-			throw Exception{
-				"Unknown string '" + name + "' for " + getName(),
-				ErrorCodes::LOGICAL_ERROR
-			};
-
-		field = nearestFieldType(it->second);
+		field = nearestFieldType(getValue(name));
 	}
 
 	void serializeTextEscaped(const Field & field, WriteBuffer & ostr) const override
 	{
 		const FieldType x = get<typename NearestFieldType<FieldType>::Type>(field);
-
-		const auto it = std::lower_bound(std::begin(values), std::end(values), x, [] (const auto & left, const auto & right) {
-			return left.second < right;
-		});
-
-		if (it == std::end(values) || it->second != x)
-			throw Exception{
-				"Unexpected value " + toString(x) + " for " + getName(),
-				ErrorCodes::LOGICAL_ERROR
-			};
-
-		writeEscapedString(it->first, ostr);
+		writeEscapedString(getNameForValue(x), ostr);
 	}
 	void deserializeTextEscaped(Field & field, ReadBuffer & istr) const override
 	{
-		field.assignString("", 0);
-
 		std::string name;
 		readEscapedString(name, istr);
-
-		const auto it = map.find(StringRef{name});
-		if (it == std::end(map))
-			throw Exception{
-				"Unknown string '" + name + "' for " + getName(),
-				ErrorCodes::LOGICAL_ERROR
-			};
-
-		field = nearestFieldType(it->second);
+		field = nearestFieldType(getValue(name));
 	}
 
 	void serializeTextQuoted(const Field & field, WriteBuffer & ostr) const override
 	{
 		const FieldType x = get<typename NearestFieldType<FieldType>::Type>(field);
-
-		const auto it = std::lower_bound(std::begin(values), std::end(values), x, [] (const auto & left, const auto & right) {
-			return left.second < right;
-		});
-
-		if (it == std::end(values) || it->second != x)
-			throw Exception{
-				"Unexpected value " + toString(x) + " for " + getName(),
-				ErrorCodes::LOGICAL_ERROR
-			};
-
-		writeQuotedString(it->first, ostr);
+		writeQuotedString(getNameForValue(x), ostr);
 	}
 	void deserializeTextQuoted(Field & field, ReadBuffer & istr) const override
 	{
-		field.assignString("", 0);
-
 		std::string name;
 		readQuotedString(name, istr);
-
-		const auto it = map.find(StringRef{name});
-		if (it == std::end(map))
-			throw Exception{
-				"Unknown string '" + name + "' for " + getName(),
-				ErrorCodes::LOGICAL_ERROR
-			};
-
-		field = nearestFieldType(it->second);
+		field = nearestFieldType(getValue(name));
 	}
 
 	void serializeTextJSON(const Field & field, WriteBuffer & ostr) const override
 	{
 		const FieldType x = get<typename NearestFieldType<FieldType>::Type>(field);
-
-		const auto it = std::lower_bound(std::begin(values), std::end(values), x, [] (const auto & left, const auto & right) {
-			return left.second < right;
-		});
-
-		if (it == std::end(values) || it->second != x)
-			throw Exception{
-				"Unexpected value " + toString(x) + " for " + getName(),
-				ErrorCodes::LOGICAL_ERROR
-			};
-
-		writeJSONString(it->first, ostr);
+		writeJSONString(getNameForValue(x), ostr);
 	}
 
 	/** Потоковая сериализация массивов устроена по-особенному:

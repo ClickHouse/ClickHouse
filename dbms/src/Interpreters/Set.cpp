@@ -22,6 +22,7 @@
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
+#include <DB/DataTypes/DataTypeEnum.h>
 
 
 namespace DB
@@ -285,11 +286,19 @@ static Field convertToType(const Field & src, const IDataType & type)
 		if (typeid_cast<const DataTypeFloat32 *>(&type))	return convertNumericType<Float32>(src, type);
 		if (typeid_cast<const DataTypeFloat64 *>(&type))	return convertNumericType<Float64>(src, type);
 
-		bool is_date = typeid_cast<const DataTypeDate *>(&type);
-		bool is_datetime = typeid_cast<const DataTypeDateTime *>(&type);
+		const bool is_date = typeid_cast<const DataTypeDate *>(&type);
+		bool is_datetime = false;
+		bool is_enum8 = false;
+		bool is_enum16 = false;
 
-		if (!is_date && !is_datetime)
-			throw Exception("Logical error: unknown numeric type " + type.getName(), ErrorCodes::LOGICAL_ERROR);
+		if (!is_date)
+			if (!(is_datetime = typeid_cast<const DataTypeDateTime *>(&type)))
+				if (!(is_enum8 = typeid_cast<const DataTypeEnum8 *>(&type)))
+					if (!(is_enum16 = typeid_cast<const DataTypeEnum16 *>(&type)))
+						throw Exception{
+							"Logical error: unknown numeric type " + type.getName(),
+							ErrorCodes::LOGICAL_ERROR
+						};
 
 		if (src.getType() == Field::Types::UInt64)
 			return src;
@@ -309,7 +318,7 @@ static Field convertToType(const Field & src, const IDataType & type)
 
 				return Field(UInt64(date));
 			}
-			else
+			else if (is_datetime)
 			{
 				time_t date_time{};
 				readDateTimeText(date_time, in);
@@ -318,6 +327,10 @@ static Field convertToType(const Field & src, const IDataType & type)
 
 				return Field(UInt64(date_time));
 			}
+			else if (is_enum8)
+				return Field(UInt64(static_cast<const DataTypeEnum8 &>(type).getValue(str)));
+			else if (is_enum16)
+				return Field(UInt64(static_cast<const DataTypeEnum16 &>(type).getValue(str)));
 		}
 
 		throw Exception("Type mismatch in IN section: " + type.getName() + " at left, "

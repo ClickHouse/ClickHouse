@@ -132,7 +132,8 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 			}
 
 			for (size_t i = 1; i < args_list.children.size(); ++i)
-				argument_types.push_back(get(args_list.children[i]->getColumnName()));
+				argument_types.push_back(get(
+					std::string{args_list.children[i]->range.first, args_list.children[i]->range.second}));
 
 			function = AggregateFunctionFactory().get(function_name, argument_types);
 			if (!params_row.empty())
@@ -181,12 +182,11 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 			return new DataTypeTuple(elems);
 		}
 
-		/// @todo ParserUnsignedInteger fails if number is at the end of line, append space
 		if (base_name == "Enum8")
-			return parseEnum<DataTypeEnum8>(name, base_name, parameters + ' ');
+			return parseEnum<DataTypeEnum8>(name, base_name, parameters);
 
 		if (base_name == "Enum16")
-			return parseEnum<DataTypeEnum16>(name, base_name, parameters + ' ');
+			return parseEnum<DataTypeEnum16>(name, base_name, parameters);
 
 		throw Exception("Unknown type " + base_name, ErrorCodes::UNKNOWN_TYPE);
 	}
