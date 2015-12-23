@@ -869,6 +869,8 @@ public:
 		memset(buf, 0, grower.bufSize() * sizeof(*buf));
 	}
 
+	/// После выполнения этой функции, таблицу можно только уничтожить,
+	///  а также можно использовать методы size, empty, begin, end.
 	void clearAndShrink()
 	{
 		destroyElements();
