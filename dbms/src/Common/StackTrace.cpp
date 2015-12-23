@@ -26,12 +26,12 @@ std::string StackTrace::toString() const
 		for (size_t i = 0, size = frames_size; i < size; ++i)
 		{
 			/// Делаем demangling имён. Имя находится в скобках, до символа '+'.
-			
+
 			char * name_start = nullptr;
 			char * name_end = nullptr;
 			char * demangled_name = nullptr;
 			int status = 0;
-			
+
 			if (nullptr != (name_start = strchr(symbols[i], '('))
 				&& nullptr != (name_end = strchr(name_start, '+')))
 			{
@@ -44,7 +44,7 @@ std::string StackTrace::toString() const
 			try
 			{
 				res << i << ". ";
-				
+
 				if (nullptr != demangled_name && 0 == status)
 				{
 					res.write(symbols[i], name_start - symbols[i]);
@@ -68,7 +68,7 @@ std::string StackTrace::toString() const
 		free(symbols);
 		throw;
 	}
-	
+
 	free(symbols);
 	return res.str();
 }
