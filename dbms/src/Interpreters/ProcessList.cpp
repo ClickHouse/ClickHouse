@@ -45,7 +45,9 @@ ProcessList::EntryPtr ProcessList::insert(
 		++cur_size;
 
 		res.reset(new Entry(*this, cont.emplace(cont.end(),
-			query_, user_, query_id_, ip_address_, settings.limits.max_memory_usage, priorities.insert(settings.priority))));
+			query_, user_, query_id_, ip_address_,
+			settings.limits.max_memory_usage, settings.memory_tracker_fault_probability,
+			priorities.insert(settings.priority))));
 
 		if (!query_id_.empty())
 			user_to_queries[user_][query_id_] = &res->get();

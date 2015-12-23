@@ -17,6 +17,16 @@ void MemoryTracker::alloc(Int64 size)
 {
 	Int64 will_be = __sync_add_and_fetch(&amount, size);
 
+	/// Используется непотокобезопасный генератор случайных чисел. Совместное распределение в разных потоках не будет равномерным.
+	/// В данном случае, это нормально.
+	if (unlikely(fault_probability && drand48() < fault_probability))
+	{
+		free(size);
+		throw DB::Exception("Memory tracker: fault injected. Would use " + formatReadableSizeWithBinarySuffix(will_be) + ""
+			" (attempt to allocate chunk of " + DB::toString(size) + " bytes)"
+			", maximum: " + formatReadableSizeWithBinarySuffix(limit), DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED);
+	}
+
 	if (unlikely(limit && will_be > limit))
 	{
 		free(size);
