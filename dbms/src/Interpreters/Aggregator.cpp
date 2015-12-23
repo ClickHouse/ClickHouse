@@ -1053,7 +1053,8 @@ Block Aggregator::prepareBlockAndFill(
 			if (!final)
 			{
 				/// Столбец ColumnAggregateFunction захватывает разделяемое владение ареной с состояниями агрегатных функций.
-				ColumnAggregateFunction & column_aggregate_func = static_cast<ColumnAggregateFunction &>(*res.getByPosition(i + params.keys_size).column);
+				ColumnAggregateFunction & column_aggregate_func = static_cast<ColumnAggregateFunction &>(
+					*res.getByPosition(i + params.keys_size).column);
 
 				for (size_t j = 0; j < data_variants.aggregates_pools.size(); ++j)
 					column_aggregate_func.addArena(data_variants.aggregates_pools[j]);
@@ -1394,6 +1395,8 @@ void NO_INLINE Aggregator::mergeDataImpl(
 
 		Method::getAggregateData(it->second) = nullptr;
 	}
+
+	table_src.clearAndShrink();
 }
 
 
@@ -1422,6 +1425,8 @@ void NO_INLINE Aggregator::mergeDataNoMoreKeysImpl(
 
 		Method::getAggregateData(it->second) = nullptr;
 	}
+
+	table_src.clearAndShrink();
 }
 
 template <typename Method, typename Table>
@@ -1449,6 +1454,8 @@ void NO_INLINE Aggregator::mergeDataOnlyExistingKeysImpl(
 
 		Method::getAggregateData(it->second) = nullptr;
 	}
+
+	table_src.clearAndShrink();
 }
 
 
@@ -1505,7 +1512,6 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
 
 		/// current не будет уничтожать состояния агрегатных функций в деструкторе
 		current.aggregator = nullptr;
-		getDataVariant<Method>(current).data.clearAndShrink();
 	}
 }
 
@@ -1706,7 +1712,8 @@ private:
 		catch (...)
 		{
 			std::lock_guard<std::mutex> lock(parallel_merge_data->mutex);
-			parallel_merge_data->exception = std::current_exception();
+			if (!parallel_merge_data->exception)
+				parallel_merge_data->exception = std::current_exception();
 		}
 
 		parallel_merge_data->condvar.notify_all();
