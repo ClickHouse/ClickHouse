@@ -18,6 +18,8 @@ struct AggregateFunctionDebugData
 			std::cerr << "Bug!";
 			abort();
 		}
+
+		ptr.reset();
 	}
 };
 
