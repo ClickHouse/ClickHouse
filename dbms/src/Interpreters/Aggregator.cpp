@@ -2334,9 +2334,9 @@ std::vector<Block> Aggregator::convertBlockToTwoLevel(const Block & block)
 template <typename Method, typename Table>
 void NO_INLINE Aggregator::destroyImpl(
 	Method & method,
-	Table & data) const
+	Table & table) const
 {
-	for (auto elem : data)
+	for (auto elem : table)
 	{
 		AggregateDataPtr & data = Method::getAggregateData(elem.second);
 
