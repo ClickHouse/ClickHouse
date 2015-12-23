@@ -700,20 +700,18 @@ void ExpressionAnalyzer::executeScalarSubqueries()
 
 static ASTPtr addTypeConversion(ASTLiteral * ast_, const String & type_name)
 {
-	if (0 == type_name.compare(0, strlen("Array"), "Array"))
-		return ast_;	/// Преобразование типов для массивов пока не поддерживаем.
-
 	auto ast = std::unique_ptr<ASTLiteral>(ast_);
 	ASTFunction * func = new ASTFunction(ast->range);
 	ASTPtr res = func;
 	func->alias = ast->alias;
 	ast->alias.clear();
 	func->kind = ASTFunction::FUNCTION;
-	func->name = "to" + type_name;
+	func->name = "CAST";
 	ASTExpressionList * exp_list = new ASTExpressionList(ast->range);
 	func->arguments = exp_list;
 	func->children.push_back(func->arguments);
-	exp_list->children.push_back(ast.release());
+	exp_list->children.emplace_back(ast.release());
+	exp_list->children.emplace_back(new ASTLiteral{{}, type_name});
 	return res;
 }
 

@@ -2,8 +2,6 @@
 #include <DB/Storages/IStorage.h>
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeNested.h>
-#include <DB/DataTypes/DataTypeArray.h>
-#include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
 #include <DB/Parsers/ASTIdentifier.h>
@@ -225,32 +223,10 @@ namespace DB
 						const auto tmp_column_name = final_column_name + "_tmp";
 						const auto column_type_raw_ptr = command.data_type.get();
 
-						/// specific code for different data types, e.g. toFixedString(col, N) for DataTypeFixedString
-						if (const auto fixed_string = typeid_cast<const DataTypeFixedString *>(column_type_raw_ptr))
-						{
-							const auto conversion_function_name = "toFixedString";
-
-							default_expr_list->children.emplace_back(setAlias(
-								makeASTFunction(
-									conversion_function_name,
-									ASTPtr{new ASTIdentifier{{}, tmp_column_name}},
-									ASTPtr{new ASTLiteral{{}, fixed_string->getN()}}),
-								final_column_name));
-						}
-						else if (typeid_cast<const DataTypeArray *>(column_type_raw_ptr))
-						{
-							/// do not perform conversion on arrays, require exact type match
-							default_expr_list->children.emplace_back(setAlias(
-								command.default_expression->clone(), final_column_name));
-						}
-						else
-						{
-							const auto conversion_function_name = "to" + column_type_raw_ptr->getName();
-
-							default_expr_list->children.emplace_back(setAlias(
-								makeASTFunction(conversion_function_name, ASTPtr{new ASTIdentifier{{}, tmp_column_name}}),
-								final_column_name));
-						}
+						default_expr_list->children.emplace_back(setAlias(
+							makeASTFunction("CAST", ASTPtr{new ASTIdentifier{{}, tmp_column_name}},
+								ASTPtr{new ASTLiteral{{}, column_type_raw_ptr->getName()}}),
+							final_column_name));
 
 						default_expr_list->children.emplace_back(setAlias(command.default_expression->clone(), tmp_column_name));
 
@@ -300,33 +276,11 @@ namespace DB
 			});
 			const auto tmp_column_name = column_name + "_tmp";
 			const auto & column_type_ptr = column_it->type;
-			const auto column_type_raw_ptr = column_type_ptr.get();
-
-			/// specific code for different data types, e.g. toFixedString(col, N) for DataTypeFixedString
-			if (const auto fixed_string = typeid_cast<const DataTypeFixedString *>(column_type_raw_ptr))
-			{
-				default_expr_list->children.emplace_back(setAlias(
-					makeASTFunction("toFixedString",
-						ASTPtr{new ASTIdentifier{{}, tmp_column_name}},
-						ASTPtr{new ASTLiteral{{}, fixed_string->getN()}}),
-					column_name));
-			}
-			else if (typeid_cast<const DataTypeArray *>(column_type_raw_ptr))
-			{
-				/// do not perform conversion on arrays, require exact type match
-				default_expr_list->children.emplace_back(setAlias(
-					col_def.second.expression->clone(),
-					column_name));
-			}
-			else
-			{
-				const auto conversion_function_name = "to" + column_it->type->getName();
 
 				default_expr_list->children.emplace_back(setAlias(
-					makeASTFunction(conversion_function_name,
-						ASTPtr{new ASTIdentifier{{}, tmp_column_name}}),
+					makeASTFunction("CAST", ASTPtr{new ASTIdentifier{{}, tmp_column_name}},
+					    ASTPtr{new ASTLiteral{{}, column_type_ptr->getName()}}),
 					column_name));
-			}
 
 			default_expr_list->children.emplace_back(setAlias(col_def.second.expression->clone(), tmp_column_name));
 
@@ -369,26 +323,8 @@ namespace DB
 						command_ptr = &this->back();
 					}
 
-					if (const auto fixed_string = typeid_cast<const DataTypeFixedString *>(explicit_type.get()))
-					{
-						command_ptr->default_expression = makeASTFunction("toFixedString",
-							command_ptr->default_expression->clone(),
-							ASTPtr{new ASTLiteral{{}, fixed_string->getN()}});
-					}
-					else if (typeid_cast<const DataTypeArray *>(explicit_type.get()))
-					{
-						/// foolproof against defaulting array columns incorrectly
-						throw Exception{
-							"Default expression type mismatch for column " + column_name + ". Expected " +
-								explicit_type->getName() + ", deduced " + deduced_type->getName(),
-							ErrorCodes::TYPE_MISMATCH
-						};
-					}
-					else
-					{
-						command_ptr->default_expression = makeASTFunction("to" + explicit_type->getName(),
-							command_ptr->default_expression->clone());
-					}
+					command_ptr->default_expression = makeASTFunction("CAST", command_ptr->default_expression->clone(),
+						ASTPtr{new ASTLiteral{{}, explicit_type->getName()}});
 				}
 			}
 			else

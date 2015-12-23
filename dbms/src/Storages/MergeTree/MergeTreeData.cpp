@@ -505,24 +505,17 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 
 				Names out_names;
 
-				if (const auto fixed_string = typeid_cast<const DataTypeFixedString *>(new_type))
-				{
-					const auto width = fixed_string->getN();
-					const auto string_width_column = toString(width);
-					out_expression->addInput({ new ColumnConstUInt64{1, width}, new DataTypeUInt64, string_width_column });
+				/// @todo invent the name more safely
+				const auto new_type_name_column = '#' + new_type_name + "_column";
+				out_expression->add(ExpressionAction::addColumn(
+					{ new ColumnConstString{1, new_type_name}, new DataTypeString, new_type_name_column }));
 
-					const auto function = FunctionFactory::instance().get("toFixedString", context);
-					out_expression->add(ExpressionAction::applyFunction(function, Names{
-						column.name, string_width_column
-					}), out_names);
+				const FunctionPtr & function = FunctionFactory::instance().get("CAST", context);
+				out_expression->add(ExpressionAction::applyFunction(function, Names{
+					column.name, new_type_name_column
+				}), out_names);
 
-					out_expression->add(ExpressionAction::removeColumn(string_width_column));
-				}
-				else
-				{
-					const FunctionPtr & function = FunctionFactory::instance().get("to" + new_type_name, context);
-					out_expression->add(ExpressionAction::applyFunction(function, Names{column.name}), out_names);
-				}
+				out_expression->add(ExpressionAction::removeColumn(new_type_name_column));
 
 				out_expression->add(ExpressionAction::removeColumn(column.name));
 
