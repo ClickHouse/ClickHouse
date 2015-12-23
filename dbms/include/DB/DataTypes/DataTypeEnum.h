@@ -215,6 +215,8 @@ public:
 		x.resize(initial_size + size / sizeof(FieldType));
 	}
 
+	size_t getSizeOfField() const override { return sizeof(FieldType); }
+
 	ColumnPtr createColumn() const override { return new ColumnType; }
 	ColumnPtr createConstColumn(const size_t size, const Field & field) const override
 	{

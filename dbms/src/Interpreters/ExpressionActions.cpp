@@ -618,6 +618,7 @@ std::string ExpressionActions::getSmallestColumn(const NamesAndTypesList & colum
 	if (it == columns.end())
 		throw Exception("No available columns", ErrorCodes::LOGICAL_ERROR);
 
+	/// @todo resolve evil constant
 	size_t min_size = it->type->isNumeric() ? it->type->getSizeOfField() : 100;
 	String res = it->name;
 	for (; it != columns.end(); ++it)

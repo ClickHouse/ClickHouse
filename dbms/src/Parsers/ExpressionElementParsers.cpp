@@ -265,6 +265,26 @@ bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pars
 	function_node->arguments = expr_list_args;
 	function_node->children.push_back(function_node->arguments);
 
+	if (function_node->name == "CAST")
+	{
+		/// Convert CAST(expression AS type) to CAST(expression, 'type')
+		if (expr_list_args->children.size() == 1)
+		{
+			const auto alias = expr_list_args->children.front()->tryGetAlias();
+			if (alias.empty())
+				throw Exception{
+					"CAST expression has to be in form CAST(expression AS type)",
+					ErrorCodes::SYNTAX_ERROR
+				};
+
+			expr_list_args->children.emplace_back(
+				new ASTLiteral{{}, alias}
+			);
+
+			expr_list_args->children.front()->setAlias({});
+		}
+	}
+
 	if (expr_list_params)
 	{
 		function_node->parameters = expr_list_params;

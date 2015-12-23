@@ -45,6 +45,7 @@
 #include <DB/Functions/FunctionFactory.h>
 
 #include <ext/range.hpp>
+#include <DB/DataTypes/DataTypeFactory.h>
 
 
 namespace DB
