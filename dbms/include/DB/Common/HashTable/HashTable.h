@@ -559,6 +559,9 @@ public:
 
 	const_iterator begin() const
 	{
+		if (!buf)
+			return end();
+
 		if (this->hasZero())
 			return iteratorToZero();
 
@@ -571,6 +574,9 @@ public:
 
 	iterator begin()
 	{
+		if (!buf)
+			return end();
+
 		if (this->hasZero())
 			return iteratorToZero();
 
@@ -868,11 +874,7 @@ public:
 		destroyElements();
 		this->clearHasZero();
 		m_size = 0;
-
 		free();
-		Grower new_grower = grower;
-		new_grower.set(0);
-		alloc(new_grower);
 	}
 
 	size_t getBufferSizeInBytes() const
