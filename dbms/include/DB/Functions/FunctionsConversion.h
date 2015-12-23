@@ -19,6 +19,10 @@
 #include <DB/Interpreters/ExpressionActions.h>
 #include <DB/DataTypes/DataTypeArray.h>
 #include <DB/Columns/ColumnArray.h>
+#include <DB/DataTypes/DataTypeTuple.h>
+#include <ext/enumerate.hpp>
+#include <ext/collection_cast.hpp>
+#include "FunctionsMiscellaneous.h"
 
 
 namespace DB
@@ -1509,20 +1513,18 @@ struct CastToFixedStringImpl
 
 class FunctionCast : public IFunction
 {
+	using WrapperType = std::function<void(Block &, const ColumnNumbers &, size_t)>;
 	const Context & context;
-	std::function<void(Block &, const ColumnNumbers &, size_t)> wrapper_function;
+	WrapperType wrapper_function;
 
 	FunctionCast(const Context & context) : context(context) {}
 
-	template <typename FunctionType>
-	static auto createWrapper(const Context & context, const ColumnsWithTypeAndName & arguments)
+	template <typename FunctionType> auto createWrapper(const DataTypePtr & from_type)
 	{
 		std::shared_ptr<FunctionType> function{static_cast<FunctionType *>(FunctionType::create(context))};
 
 		/// Check conversion using underlying function
-		DataTypePtr unused_type;
-		std::vector<ExpressionAction> unused_prerequisites;
-		function->getReturnTypeAndPrerequisites(arguments, unused_type, unused_prerequisites);
+		(void) function->getReturnType({ from_type });
 
 		return [function] (Block & block, const ColumnNumbers & arguments, const size_t result) {
 			/// drop second argument, pass others
@@ -1534,9 +1536,10 @@ class FunctionCast : public IFunction
 		};
 	}
 
-	static auto createFixedStringWrapper(const IDataType * from_type, const size_t N)
+	static auto createFixedStringWrapper(const DataTypePtr & from_type, const size_t N)
 	{
-		if (!typeid_cast<const DataTypeString *>(from_type) && !typeid_cast<const DataTypeFixedString *>(from_type))
+		if (!typeid_cast<const DataTypeString *>(from_type.get()) &&
+			!typeid_cast<const DataTypeFixedString *>(from_type.get()))
 			throw Exception{
 				"CAST AS FixedString is only implemented for types String and FixedString",
 				ErrorCodes::NOT_IMPLEMENTED
@@ -1566,22 +1569,13 @@ class FunctionCast : public IFunction
 		/// both from_type and to_type should be nullptr now is array types had same dimensions
 		if (from_type || to_type)
 			throw Exception{
-				"CAST AS Array can only convert between same-dimensional array types",
+				"CAST AS Array can only be performed between same-dimensional array types",
 				ErrorCodes::TYPE_MISMATCH
 			};
 
-		/// check that conversion between nested types is valid
-		DataTypePtr unused_type;
-		std::vector<ExpressionAction> unused_prerequisites;
+		/// Prepare nested type conversion
+		const auto nested_function = prepare(from_nested_type, to_nested_type.get());
 
-		const ColumnsWithTypeAndName nested_args{
-			{ nullptr, from_nested_type, "" },
-			{ new ColumnConstString{0, to_nested_type->getName()}, new DataTypeString, "" }
-		};
-
-		getReturnTypeAndPrerequisites(nested_args, unused_type, unused_prerequisites);
-
-		auto nested_function = wrapper_function;
 		return [nested_function, from_nested_type, to_nested_type] (
 			Block & block, const ColumnNumbers & arguments, const size_t result)
 		{
@@ -1621,10 +1615,112 @@ class FunctionCast : public IFunction
 //				column_array = col_const_array->convertToFullColumn();
 			else
 				throw Exception{
-						"Illegal column " + array_arg.column->getName() + " for function CAST AS Array",
+					"Illegal column " + array_arg.column->getName() + " for function CAST AS Array",
 					ErrorCodes::LOGICAL_ERROR
 				};
 		};
+	}
+
+	auto createTupleWrapper(const IDataType * const from_type_untyped, const DataTypeTuple * to_type)
+	{
+		const auto from_type = typeid_cast<const DataTypeTuple *>(from_type_untyped);
+		if (!from_type)
+			throw Exception{
+				"CAST AS Tuple can only be performed between tuple types.\nLeft type: " + from_type_untyped->getName() +
+					", right type: " + to_type->getName(),
+				ErrorCodes::TYPE_MISMATCH
+			};
+
+		if (from_type->getElements().size() != to_type->getElements().size())
+			throw Exception{
+				"CAST AS Tuple can only be performed between tuple types with the same number of elements.\n"
+					"Left type: " + from_type->getName() + ", right type: " + to_type->getName(),
+				 ErrorCodes::TYPE_MISMATCH
+			};
+
+		const auto & from_element_types = from_type->getElements();
+		const auto & to_element_types = to_type->getElements();
+		std::vector<WrapperType> element_wrappers;
+		element_wrappers.reserve(from_element_types.size());
+
+		/// Create conversion wrapper for each element in tuple
+		for (const auto & idx_type : ext::enumerate(from_type->getElements()))
+			element_wrappers.push_back(prepare(idx_type.second, to_element_types[idx_type.first].get()));
+
+		std::shared_ptr<FunctionTuple> function_tuple{static_cast<FunctionTuple *>(FunctionTuple::create(context))};
+		return [element_wrappers, function_tuple, from_element_types, to_element_types]
+			(Block & block, const ColumnNumbers & arguments, const size_t result)
+		{
+			/// copy tuple elements to a separate block
+			Block element_block = typeid_cast<const ColumnTuple &>(
+				*block.getByPosition(arguments.front()).column).getData();
+
+			/// create columns for converted elements
+			for (const auto & to_element_type : to_element_types)
+				element_block.insert({ nullptr, to_element_type, "" });
+
+			/// store position for converted tuple
+			const auto converted_tuple_pos = element_block.columns();
+
+			/// insert column for converted tuple
+			element_block.insert({ nullptr, new DataTypeTuple{to_element_types}, "" });
+
+			const auto converted_element_offset = from_element_types.size();
+
+			/// invoke conversion for each element
+			for (const auto & idx_element_wrapper : ext::enumerate(element_wrappers))
+				idx_element_wrapper.second(element_block, { idx_element_wrapper.first },
+						converted_element_offset + idx_element_wrapper.first);
+
+			/// form tuple from converted elements using FunctionTuple
+			function_tuple->execute(element_block,
+				ext::collection_cast<ColumnNumbers>(ext::range(converted_element_offset, 2 * converted_element_offset)),
+				converted_tuple_pos);
+
+			/// copy FunctionTuple's result from element_block to resulting block
+			block.getByPosition(result).column = element_block.getByPosition(converted_tuple_pos).column;
+		};
+	}
+
+	WrapperType prepare(const DataTypePtr & from_type, const IDataType * to_type)
+	{
+		if (typeid_cast<const DataTypeUInt8 *>(to_type))
+			return createWrapper<FunctionToUInt8>(from_type);
+		else if (typeid_cast<const DataTypeUInt16 *>(to_type))
+			return createWrapper<FunctionToUInt16>(from_type);
+		else if (typeid_cast<const DataTypeUInt32 *>(to_type))
+			return createWrapper<FunctionToUInt32>(from_type);
+		else if (typeid_cast<const DataTypeUInt64 *>(to_type))
+			return createWrapper<FunctionToUInt64>(from_type);
+		else if (typeid_cast<const DataTypeInt8 *>(to_type))
+			return createWrapper<FunctionToInt8>(from_type);
+		else if (typeid_cast<const DataTypeInt16 *>(to_type))
+			return createWrapper<FunctionToInt16>(from_type);
+		else if (typeid_cast<const DataTypeInt32 *>(to_type))
+			return createWrapper<FunctionToInt32>(from_type);
+		else if (typeid_cast<const DataTypeInt64 *>(to_type))
+			return createWrapper<FunctionToInt64>(from_type);
+		else if (typeid_cast<const DataTypeFloat32 *>(to_type))
+			return createWrapper<FunctionToFloat32>(from_type);
+		else if (typeid_cast<const DataTypeFloat64 *>(to_type))
+			return createWrapper<FunctionToFloat64>(from_type);
+		else if (typeid_cast<const DataTypeDate *>(to_type))
+			return createWrapper<FunctionToDate>(from_type);
+		else if (typeid_cast<const DataTypeDateTime *>(to_type))
+			return createWrapper<FunctionToDateTime>(from_type);
+		else if (typeid_cast<const DataTypeString *>(to_type))
+			return createWrapper<FunctionToString>(from_type);
+		else if (const auto type_fixed_string = typeid_cast<const DataTypeFixedString *>(to_type))
+			return createFixedStringWrapper(from_type, type_fixed_string->getN());
+		else if (const auto type_array = typeid_cast<const DataTypeArray *>(to_type))
+			return createArrayWrapper(from_type, type_array);
+		else if (const auto type_tuple = typeid_cast<const DataTypeTuple *>(to_type))
+			return createTupleWrapper(from_type, type_tuple);
+		else
+			throw Exception{
+				"Not yet implemented CAST for type " + from_type->getName(),
+				ErrorCodes::NOT_IMPLEMENTED
+			};
 	}
 
 public:
@@ -1647,46 +1743,9 @@ public:
 			throw Exception("Second argument to " + getName() + " must be a constant string describing type",
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-		const auto & type_name = type_col->getData();
-		out_return_type = DataTypeFactory::instance().get(type_name);
-		const auto type = out_return_type.get();
+		out_return_type = DataTypeFactory::instance().get(type_col->getData());
 
-		ColumnsWithTypeAndName new_args{arguments.front()};
-		if (typeid_cast<const DataTypeUInt8 *>(type))
-			wrapper_function = createWrapper<FunctionToUInt8>(context, new_args);
-		else if (typeid_cast<const DataTypeUInt16 *>(type))
-			wrapper_function = createWrapper<FunctionToUInt16>(context, new_args);
-		else if (typeid_cast<const DataTypeUInt32 *>(type))
-			wrapper_function = createWrapper<FunctionToUInt32>(context, new_args);
-		else if (typeid_cast<const DataTypeUInt64 *>(type))
-			wrapper_function = createWrapper<FunctionToUInt64>(context, new_args);
-		else if (typeid_cast<const DataTypeInt8 *>(type))
-			wrapper_function = createWrapper<FunctionToInt8>(context, new_args);
-		else if (typeid_cast<const DataTypeInt16 *>(type))
-			wrapper_function = createWrapper<FunctionToInt16>(context, new_args);
-		else if (typeid_cast<const DataTypeInt32 *>(type))
-			wrapper_function = createWrapper<FunctionToInt32>(context, new_args);
-		else if (typeid_cast<const DataTypeInt64 *>(type))
-			wrapper_function = createWrapper<FunctionToInt64>(context, new_args);
-		else if (typeid_cast<const DataTypeFloat32 *>(type))
-			wrapper_function = createWrapper<FunctionToFloat32>(context, new_args);
-		else if (typeid_cast<const DataTypeFloat64 *>(type))
-			wrapper_function = createWrapper<FunctionToFloat64>(context, new_args);
-		else if (typeid_cast<const DataTypeDate *>(type))
-			wrapper_function = createWrapper<FunctionToDate>(context, new_args);
-		else if (typeid_cast<const DataTypeDateTime *>(type))
-			wrapper_function = createWrapper<FunctionToDateTime>(context, new_args);
-		else if (typeid_cast<const DataTypeString *>(type))
-			wrapper_function = createWrapper<FunctionToString>(context, new_args);
-		else if (const auto type_fixed_string = typeid_cast<const DataTypeFixedString *>(type))
-			wrapper_function = createFixedStringWrapper(arguments[0].type.get(), type_fixed_string->getN());
-		else if (const auto type_array = typeid_cast<const DataTypeArray *>(type))
-			wrapper_function = createArrayWrapper(arguments[0].type.get(), type_array);
-		else
-			throw Exception{
-				"Not yet implemented CAST for type " + type_name,
-				ErrorCodes::NOT_IMPLEMENTED
-			};
+		wrapper_function = prepare(arguments.front().type, out_return_type.get());
 	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, const size_t result)
