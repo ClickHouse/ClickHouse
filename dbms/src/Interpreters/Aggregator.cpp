@@ -2330,7 +2330,7 @@ void NO_INLINE Aggregator::destroyImpl(
 {
 	for (auto elem : data)
 	{
-		char * data = Method::getAggregateData(elem.second);
+		AggregateDataPtr & data = Method::getAggregateData(elem.second);
 
 		/** Если исключение (обычно нехватка памяти, кидается MemoryTracker-ом) возникло
 		  *  после вставки ключа в хэш-таблицу, но до создания всех состояний агрегатных функций,
