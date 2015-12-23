@@ -1761,8 +1761,16 @@ std::unique_ptr<IBlockInputStream> Aggregator::mergeAndConvertToBlocks(ManyAggre
 	AggregatedDataVariantsPtr & first = non_empty_data[0];
 
 	for (size_t i = 1, size = non_empty_data.size(); i < size; ++i)
+	{
 		if (first->type != non_empty_data[i]->type)
 			throw Exception("Cannot merge different aggregated data variants.", ErrorCodes::CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS);
+
+		/** В первое множество данных могут быть перемещены элементы из остальных множеств.
+		  * Поэтому, оно должно владеть всеми аренами всех остальных множеств.
+		  */
+		first->aggregates_pools.insert(first->aggregates_pools.end(),
+			non_empty_data[i]->aggregates_pools.begin(), non_empty_data[i]->aggregates_pools.end());
+	}
 
 	return std::unique_ptr<IBlockInputStream>(new MergingAndConvertingBlockInputStream(*this, non_empty_data, final, max_threads));
 }
