@@ -1498,15 +1498,6 @@ public:
 		return res.str();
 	}
 
-	~MergingAndConvertingBlockInputStream()
-	{
-		if (parallel_merge_data)
-		{
-			LOG_TRACE(&Logger::get(__PRETTY_FUNCTION__), "Waiting for threads to finish");
-			parallel_merge_data->pool.wait();
-		}
-	}
-
 protected:
 	Block readImpl() override
 	{
@@ -1610,6 +1601,12 @@ private:
 		std::condition_variable condvar;
 
 		ParallelMergeData(size_t threads) : pool(threads) {}
+
+		~ParallelMergeData()
+		{
+			LOG_TRACE(&Logger::get(__PRETTY_FUNCTION__), "Waiting for threads to finish");
+			pool.wait();
+		}
 	};
 
 	std::unique_ptr<ParallelMergeData> parallel_merge_data;
