@@ -88,6 +88,20 @@ bool ParserIdentifierWithOptionalParameters::parseImpl(Pos & pos, Pos end, ASTPt
 	return false;
 }
 
+bool ParserTypeInCastExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+{
+	if (ParserIdentifierWithOptionalParameters::parseImpl(pos, end, node, max_parsed_pos, expected))
+	{
+		const auto & id_with_params = typeid_cast<const ASTFunction &>(*node);
+
+		node = new ASTIdentifier{id_with_params.range, { id_with_params.range.first, id_with_params.range.second }};
+
+		return true;
+	}
+
+	return false;
+}
+
 bool ParserNameTypePairList::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	return ParserList(ParserPtr(new ParserNameTypePair), ParserPtr(new ParserString(",")), false).parse(pos, end, node, max_parsed_pos, expected);

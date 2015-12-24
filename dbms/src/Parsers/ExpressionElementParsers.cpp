@@ -18,7 +18,7 @@
 #include <DB/Parsers/ParserSelectQuery.h>
 
 #include <DB/Parsers/ExpressionElementParsers.h>
-#include <DB/Parsers/formatAST.h>
+#include <DB/Parsers/ParserCreateQuery.h>
 
 
 namespace DB
@@ -260,30 +260,11 @@ bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pars
 	}
 
 	ASTFunction * function_node = new ASTFunction(StringRange(begin, pos));
+	ASTPtr node_holder{function_node};
 	function_node->name = typeid_cast<ASTIdentifier &>(*identifier).name;
 
 	function_node->arguments = expr_list_args;
 	function_node->children.push_back(function_node->arguments);
-
-	if (function_node->name == "CAST")
-	{
-		/// Convert CAST(expression AS type) to CAST(expression, 'type')
-		if (expr_list_args->children.size() == 1)
-		{
-			const auto alias = expr_list_args->children.front()->tryGetAlias();
-			if (alias.empty())
-				throw Exception{
-					"CAST expression has to be in form CAST(expression AS type)",
-					ErrorCodes::SYNTAX_ERROR
-				};
-
-			expr_list_args->children.emplace_back(
-				new ASTLiteral{{}, alias}
-			);
-
-			expr_list_args->children.front()->setAlias({});
-		}
-	}
 
 	if (expr_list_params)
 	{
@@ -291,7 +272,112 @@ bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pars
 		function_node->children.push_back(function_node->parameters);
 	}
 
-	node = function_node;
+	node = node_holder;
+	return true;
+}
+
+
+bool ParserCastExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+{
+	const auto begin = pos;
+
+	ParserIdentifier id_parser;
+
+	ASTPtr identifier;
+
+	if (!id_parser.parse(pos, end, identifier, max_parsed_pos, expected))
+		return false;
+
+	const auto & id = typeid_cast<const ASTIdentifier &>(*identifier).name;
+	if (id.length() != strlen(name) || 0 != strcasecmp(id.c_str(), name))
+		/// Parse as a simple ASTFunction
+		return ParserFunction{}.parse(pos = begin, end, node, max_parsed_pos, expected);
+
+	/// Parse as CAST(expression AS type)
+	ParserString open("("), close(")"), comma(",");
+	ParserExpressionInCastExpression expression_and_type(false);
+	ParserWhiteSpaceOrComments ws;
+
+	ASTPtr expr_list_args;
+
+	ws.ignore(pos, end);
+
+	if (!open.ignore(pos, end, max_parsed_pos, expected))
+		return false;
+
+	ws.ignore(pos, end);
+
+	const auto contents_begin = pos;
+	ASTPtr first_argument;
+	if (!expression_and_type.parse(pos, end, first_argument, max_parsed_pos, expected))
+		return false;
+
+	ws.ignore(pos, end);
+
+	/// check for subsequent comma ","
+	if (!comma.ignore(pos, end, max_parsed_pos, expected))
+	{
+		/// CAST(expression AS type)
+		const auto type = first_argument->tryGetAlias();
+		if (type.empty())
+		{
+			/// there is only one argument and it has no alias
+			expected = "type identifier";
+			return false;
+		}
+
+		expr_list_args = new ASTExpressionList{StringRange{contents_begin, end}};
+		first_argument->setAlias({});
+		expr_list_args->children.push_back(first_argument);
+		expr_list_args->children.emplace_back(new ASTLiteral{{}, type});
+	}
+	else
+	{
+		/// CAST(expression, 'type')
+		/// Reparse argument list from scratch
+		max_parsed_pos = pos = contents_begin;
+
+		ParserExpressionWithOptionalAlias expression{false};
+		if (!expression.parse(pos, end, first_argument, max_parsed_pos, expected))
+			return false;
+
+		ws.ignore(pos, end, max_parsed_pos, expected);
+
+		if (!comma.ignore(pos, end, max_parsed_pos, expected))
+			return false;
+
+		ws.ignore(pos, end, max_parsed_pos, expected);
+
+		ParserStringLiteral p_type;
+		ASTPtr type_as_literal;
+
+		if (!p_type.parse(pos, end, type_as_literal, max_parsed_pos, expected))
+		{
+			expected = "string literal depicting type";
+			return false;
+		}
+
+		expr_list_args = new ASTExpressionList{StringRange{contents_begin, end}};
+		expr_list_args->children.push_back(first_argument);
+		expr_list_args->children.push_back(type_as_literal);
+	}
+
+	ws.ignore(pos, end);
+
+	if (!close.ignore(pos, end, max_parsed_pos, expected))
+	{
+		expected = ")";
+		return false;
+	}
+
+	const auto function_node = new ASTFunction(StringRange(begin, pos));
+	ASTPtr node_holder{function_node};
+	function_node->name = name;
+
+	function_node->arguments = expr_list_args;
+	function_node->children.push_back(function_node->arguments);
+
+	node = node_holder;
 	return true;
 }
 
@@ -486,7 +572,7 @@ bool ParserLiteral::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parse
 }
 
 
-const char * ParserAlias::restricted_keywords[] =
+const char * ParserAliasBase::restricted_keywords[] =
 {
 	"FROM",
 	"FINAL",
@@ -516,7 +602,8 @@ const char * ParserAlias::restricted_keywords[] =
 	nullptr
 };
 
-bool ParserAlias::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+template <typename ParserIdentifier>
+bool ParserAliasImpl<ParserIdentifier>::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	ParserWhiteSpaceOrComments ws;
 	ParserString s_as("AS", true, true);
@@ -548,6 +635,9 @@ bool ParserAlias::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_
 	return true;
 }
 
+template class ParserAliasImpl<ParserIdentifier>;
+template class ParserAliasImpl<ParserTypeInCastExpression>;
+
 
 bool ParserExpressionElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
@@ -558,7 +648,7 @@ bool ParserExpressionElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos &
 	ParserArray array_p;
 	ParserArrayOfLiterals array_lite_p;
 	ParserLiteral lit_p;
-	ParserFunction fun_p;
+	ParserCastExpression fun_p;
 	ParserCompoundIdentifier id_p;
 	ParserString asterisk_p("*");
 
@@ -589,12 +679,14 @@ bool ParserExpressionElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos &
 		return true;
 	}
 
-	expected = "expression element: one of array, literal, function, identifier, asterisk, parenthised expression, subquery";
+	if (!expected)
+		expected = "expression element: one of array, literal, function, identifier, asterisk, parenthesised expression, subquery";
 	return false;
 }
 
 
-bool ParserWithOptionalAlias::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+template <typename ParserAlias>
+bool ParserWithOptionalAliasImpl<ParserAlias>::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	ParserWhiteSpaceOrComments ws;
 
@@ -644,6 +736,9 @@ bool ParserWithOptionalAlias::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos &
 
 	return true;
 }
+
+template class ParserWithOptionalAliasImpl<ParserAlias>;
+template class ParserWithOptionalAliasImpl<ParserCastExpressionAlias>;
 
 
 bool ParserOrderByElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)

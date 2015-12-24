@@ -170,14 +170,10 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 			ParserExpressionList columns_p(false);
 			ASTPtr columns_ast = parseQuery(columns_p, parameters.data(), parameters.data() + parameters.size(), "parameters for data type " + name);
 
-			DataTypes elems;
-
-			ASTExpressionList & columns_list = typeid_cast<ASTExpressionList &>(*columns_ast);
-			for (ASTs::iterator it = columns_list.children.begin(); it != columns_list.children.end(); ++it)
-			{
-				StringRange range = (*it)->range;
-				elems.push_back(get(String(range.first, range.second - range.first)));
-			}
+			auto & columns_list = typeid_cast<ASTExpressionList &>(*columns_ast);
+			const auto elems = ext::map<DataTypes>(columns_list.children, [this] (const ASTPtr & elem_ast) {
+				return get(String(elem_ast->range.first, elem_ast->range.second));
+			});
 
 			return new DataTypeTuple(elems);
 		}

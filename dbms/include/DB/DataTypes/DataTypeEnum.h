@@ -220,7 +220,7 @@ public:
 	ColumnPtr createColumn() const override { return new ColumnType; }
 	ColumnPtr createConstColumn(const size_t size, const Field & field) const override
 	{
-		return new ColumnConst<FieldType>(size, get<typename NearestFieldType<FieldType>::Type>(field));;
+		return new ColumnConst<FieldType>(size, get<typename NearestFieldType<FieldType>::Type>(field));
 	}
 
 	Field getDefault() const override

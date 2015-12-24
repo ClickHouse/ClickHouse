@@ -1222,12 +1222,17 @@ public:
 	}
 
 	/// Выполнить функцию над блоком.
-	void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
-		ColumnPtr column = block.getByPosition(arguments[0]).column;
-		size_t n = getSize(block.getByPosition(arguments[1]));
+		const auto n = getSize(block.getByPosition(arguments[1]));
+		return execute(block, arguments, result, n);
+	}
 
-		if (const ColumnConstString * column_const = typeid_cast<const ColumnConstString *>(&*column))
+	static void execute(Block & block, const ColumnNumbers & arguments, const size_t result, const size_t n)
+	{
+		const auto & column = block.getByPosition(arguments[0]).column;
+
+		if (const auto column_const = typeid_cast<const ColumnConstString *>(&*column))
 		{
 			if (column_const->getData().size() > n)
 				throw Exception("String too long for type FixedString(" + toString(n) + ")",
@@ -1236,25 +1241,31 @@ public:
 			auto resized_string = column_const->getData();
 			resized_string.resize(n);
 
-			block.getByPosition(result).column = new ColumnConst<String>(column_const->size(), std::move(resized_string), new DataTypeFixedString(n));
+			block.getByPosition(result).column = new ColumnConst<String>{
+				column_const->size(), std::move(resized_string), new DataTypeFixedString(n)
+			};
 		}
-		else if (const ColumnString * column_string = typeid_cast<const ColumnString *>(&*column))
+		else if (const auto column_string = typeid_cast<const ColumnString *>(&*column))
 		{
-			ColumnFixedString * column_fixed = new ColumnFixedString(n);
+			const auto column_fixed = new ColumnFixedString(n);
 			ColumnPtr result_ptr = column_fixed;
-			ColumnFixedString::Chars_t & out_chars = column_fixed->getChars();
-			const ColumnString::Chars_t & in_chars = column_string->getChars();
-			const ColumnString::Offsets_t & in_offsets = column_string->getOffsets();
+
+			auto & out_chars = column_fixed->getChars();
+			const auto & in_chars = column_string->getChars();
+			const auto & in_offsets = column_string->getOffsets();
+
 			out_chars.resize_fill(in_offsets.size() * n);
+
 			for (size_t i = 0; i < in_offsets.size(); ++i)
 			{
-				size_t off = i ? in_offsets[i - 1] : 0;
-				size_t len = in_offsets[i] - off - 1;
+				const size_t off = i ? in_offsets[i - 1] : 0;
+				const size_t len = in_offsets[i] - off - 1;
 				if (len > n)
 					throw Exception("String too long for type FixedString(" + toString(n) + ")",
 						ErrorCodes::TOO_LARGE_STRING_SIZE);
 				memcpy(&out_chars[i * n], &in_chars[off], len);
 			}
+
 			block.getByPosition(result).column = result_ptr;
 		}
 		else if (const auto column_fixed_string = typeid_cast<const ColumnFixedString *>(column.get()))
@@ -1449,67 +1460,6 @@ typedef FunctionConvert<DataTypeDateTime,	NameToDateTime,	ToIntMonotonicity<UInt
 typedef FunctionConvert<DataTypeString,		NameToString, 	ToStringMonotonicity> 		FunctionToString;
 typedef FunctionConvert<DataTypeInt32,		NameToUnixTimestamp, ToIntMonotonicity<UInt32>> FunctionToUnixTimestamp;
 
-struct CastToFixedStringImpl
-{
-	static void execute(Block & block, const ColumnNumbers & arguments, const size_t result, const size_t n)
-	{
-		ColumnPtr column = block.getByPosition(arguments[0]).column;
-
-		if (const auto column_const = typeid_cast<const ColumnConstString *>(&*column))
-		{
-			if (column_const->getData().size() > n)
-				throw Exception("String too long for type FixedString(" + toString(n) + ")",
-					ErrorCodes::TOO_LARGE_STRING_SIZE);
-
-			auto resized_string = column_const->getData();
-			resized_string.resize(n);
-
-			block.getByPosition(result).column = new ColumnConst<String>(
-				column_const->size(), std::move(resized_string), new DataTypeFixedString(n));
-		}
-		else if (const ColumnString * column_string = typeid_cast<const ColumnString *>(&*column))
-		{
-			ColumnFixedString * column_fixed = new ColumnFixedString(n);
-			ColumnPtr result_ptr = column_fixed;
-			ColumnFixedString::Chars_t & out_chars = column_fixed->getChars();
-			const ColumnString::Chars_t & in_chars = column_string->getChars();
-			const ColumnString::Offsets_t & in_offsets = column_string->getOffsets();
-			out_chars.resize_fill(in_offsets.size() * n);
-			for (size_t i = 0; i < in_offsets.size(); ++i)
-			{
-				size_t off = i ? in_offsets[i - 1] : 0;
-				size_t len = in_offsets[i] - off - 1;
-				if (len > n)
-					throw Exception("String too long for type FixedString(" + toString(n) + ")",
-						ErrorCodes::TOO_LARGE_STRING_SIZE);
-				memcpy(&out_chars[i * n], &in_chars[off], len);
-			}
-			block.getByPosition(result).column = result_ptr;
-		}
-		else if (const auto column_fixed_string = typeid_cast<const ColumnFixedString *>(column.get()))
-		{
-			const auto src_n = column_fixed_string->getN();
-			if (src_n > n)
-				throw Exception{
-					"String too long for type FixedString(" + toString(n) + ")",
-					ErrorCodes::TOO_LARGE_STRING_SIZE
-				};
-
-			const auto column_fixed = new ColumnFixedString{n};
-			block.getByPosition(result).column = column_fixed;
-
-			auto & out_chars = column_fixed->getChars();
-			const auto & in_chars = column_fixed_string->getChars();
-			const auto size = column_fixed_string->size();
-			out_chars.resize_fill(size * n);
-
-			for (const auto i : ext::range(0, size))
-				memcpy(&out_chars[i * n], &in_chars[i * src_n], src_n);
-		}
-		else
-			throw Exception("Unexpected column: " + column->getName(), ErrorCodes::ILLEGAL_COLUMN);
-	}
-};
 
 class FunctionCast : public IFunction
 {
@@ -1547,7 +1497,7 @@ class FunctionCast : public IFunction
 
 		return [N] (Block & block, const ColumnNumbers & arguments, const size_t result)
 		{
-			CastToFixedStringImpl::execute(block, arguments, result, N);
+			FunctionToFixedString::execute(block, arguments, result, N);
 		};
 	}
 
@@ -1579,8 +1529,11 @@ class FunctionCast : public IFunction
 		return [nested_function, from_nested_type, to_nested_type] (
 			Block & block, const ColumnNumbers & arguments, const size_t result)
 		{
+			auto array_arg = block.getByPosition(arguments[0]);
+
 			/// @todo add const variant which retains array constness
-			const auto array_arg = block.getByPosition(arguments[0]);
+			if (const auto col_const_array = typeid_cast<const ColumnConstArray *>(array_arg.column.get()))
+				array_arg.column = col_const_array->convertToFullColumn();
 
 			if (auto col_array = typeid_cast<const ColumnArray *>(array_arg.column.get()))
 			{
@@ -1610,9 +1563,6 @@ class FunctionCast : public IFunction
 				/// set converted nested column to result
 				res->getDataPtr() = nested_block.getByPosition(nested_result).column;
 			}
-			else if (const auto col_const_array = typeid_cast<const ColumnConstArray *>(array_arg.column.get()))
-				throw Exception{"NYI", ErrorCodes::NOT_IMPLEMENTED};
-//				column_array = col_const_array->convertToFullColumn();
 			else
 				throw Exception{
 					"Illegal column " + array_arg.column->getName() + " for function CAST AS Array",
