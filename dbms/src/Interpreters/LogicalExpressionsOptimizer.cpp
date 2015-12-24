@@ -173,7 +173,7 @@ bool LogicalExpressionsOptimizer::mayOptimizeDisjunctiveEqualityChain(const Disj
 		auto & operands = getFunctionOperands(equality_functions[i]);
 		auto literal = static_cast<ASTLiteral *>(&*operands[1]);
 
-		if (literal->type != first_literal->type)
+		if (literal->value.getType() != first_literal->value.getType())
 			return false;
 	}
 	return true;
