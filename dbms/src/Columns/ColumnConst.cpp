@@ -119,20 +119,13 @@ ColumnPtr ColumnConst<Tuple>::convertToFullColumn() const
 
 	/// Ask data_type to create ColumnTuple of corresponding type
 	ColumnPtr res = type->createColumn();
-	const auto col_tuple = static_cast<ColumnTuple *>(res.get());
-
-	/// populate ColumnTuple with constant tuple's values
-	const auto & tuple = getDataFromHolderImpl().t;
-	for (const auto & idx_column : ext::enumerate(col_tuple->getColumns()))
-		for (size_t i = 0; i < s; ++i)
-			idx_column.second->insert(tuple[idx_column.first]);
+	static_cast<ColumnTuple &>(*res).insert(getDataFromHolderImpl());
 
 	return res;
 }
 
 void ColumnConst<Tuple>::getExtremes(Field & min, Field & max) const
 {
-	/// @todo form empty tuple
 	min = data_type->getDefault();
 	max = data_type->getDefault();
 }
