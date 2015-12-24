@@ -1651,9 +1651,16 @@ class FunctionCast : public IFunction
 		return [element_wrappers, function_tuple, from_element_types, to_element_types]
 			(Block & block, const ColumnNumbers & arguments, const size_t result)
 		{
+			const auto col = block.getByPosition(arguments.front()).column.get();
+
 			/// copy tuple elements to a separate block
-			Block element_block = typeid_cast<const ColumnTuple &>(
-				*block.getByPosition(arguments.front()).column).getData();
+			Block element_block;
+
+			/// @todo retain constness
+			if (const auto column_tuple = typeid_cast<const ColumnTuple *>(col))
+				element_block = column_tuple->getData();
+			else if (const auto column_const_tuple = typeid_cast<const ColumnConstTuple *>(col))
+				element_block = static_cast<const ColumnTuple &>(*column_const_tuple->convertToFullColumn()).getData();
 
 			/// create columns for converted elements
 			for (const auto & to_element_type : to_element_types)
@@ -1670,7 +1677,7 @@ class FunctionCast : public IFunction
 			/// invoke conversion for each element
 			for (const auto & idx_element_wrapper : ext::enumerate(element_wrappers))
 				idx_element_wrapper.second(element_block, { idx_element_wrapper.first },
-						converted_element_offset + idx_element_wrapper.first);
+					converted_element_offset + idx_element_wrapper.first);
 
 			/// form tuple from converted elements using FunctionTuple
 			function_tuple->execute(element_block,

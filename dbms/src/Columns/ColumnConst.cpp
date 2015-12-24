@@ -6,6 +6,8 @@
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Columns/ColumnArray.h>
 #include <DB/Columns/ColumnFixedString.h>
+#include <DB/DataTypes/DataTypeTuple.h>
+#include <ext/enumerate.hpp>
 
 
 namespace DB
@@ -101,6 +103,51 @@ UInt64 ColumnConst<Array>::get64(size_t n) const
 }
 
 StringRef ColumnConst<Array>::getDataAtWithTerminatingZero(size_t n) const
+{
+	throw Exception("Method getDataAt is not supported for " + this->getName(), ErrorCodes::NOT_IMPLEMENTED);
+}
+
+
+ColumnPtr ColumnConst<Tuple>::convertToFullColumn() const
+{
+	if (!data_type)
+		throw Exception("No data type specified for ColumnConstTuple", ErrorCodes::LOGICAL_ERROR);
+
+	const DataTypeTuple * type = typeid_cast<const DataTypeTuple *>(&*data_type);
+	if (!type)
+		throw Exception("Non-Tuple data type specified for ColumnConstTuple", ErrorCodes::LOGICAL_ERROR);
+
+	/// Ask data_type to create ColumnTuple of corresponding type
+	ColumnPtr res = type->createColumn();
+	const auto col_tuple = static_cast<ColumnTuple *>(res.get());
+
+	/// populate ColumnTuple with constant tuple's values
+	const auto & tuple = getDataFromHolderImpl().t;
+	for (const auto & idx_column : ext::enumerate(col_tuple->getColumns()))
+		for (size_t i = 0; i < s; ++i)
+			idx_column.second->insert(tuple[idx_column.first]);
+
+	return res;
+}
+
+void ColumnConst<Tuple>::getExtremes(Field & min, Field & max) const
+{
+	/// @todo form empty tuple
+	min = data_type->getDefault();
+	max = data_type->getDefault();
+}
+
+StringRef ColumnConst<Tuple>::getDataAt(size_t n) const
+{
+	throw Exception("Method getDataAt is not supported for " + this->getName(), ErrorCodes::NOT_IMPLEMENTED);
+}
+
+UInt64 ColumnConst<Tuple>::get64(size_t n) const
+{
+	throw Exception("Method get64 is not supported for " + this->getName(), ErrorCodes::NOT_IMPLEMENTED);
+}
+
+StringRef ColumnConst<Tuple>::getDataAtWithTerminatingZero(size_t n) const
 {
 	throw Exception("Method getDataAt is not supported for " + this->getName(), ErrorCodes::NOT_IMPLEMENTED);
 }

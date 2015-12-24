@@ -9,13 +9,16 @@
 #include <DB/Common/Exception.h>
 #include <DB/Core/ErrorCodes.h>
 #include <DB/Core/Types.h>
+#include <common/strong_typedef.h>
 
 
 namespace DB
 {
 
 class Field;
-typedef std::vector<Field> Array; /// Значение типа "массив"
+using Array = std::vector<Field>; /// Значение типа "массив"
+using TupleBackend = std::vector<Field>;
+STRONG_TYPEDEF(TupleBackend, Tuple); /// Значение типа "кортеж"
 
 
 using Poco::SharedPtr;
@@ -51,6 +54,7 @@ public:
 
 			String				= 16,
 			Array				= 17,
+			Tuple				= 18,
 		};
 
 		static const int MIN_NON_POD = 16;
@@ -65,6 +69,7 @@ public:
 				case Float64: 			return "Float64";
 				case String: 			return "String";
 				case Array: 			return "Array";
+				case Tuple: 			return "Tuple";
 
 				default:
 					throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -192,6 +197,7 @@ public:
 			case Types::Float64: 			return get<Float64>() 				< rhs.get<Float64>();
 			case Types::String: 			return get<String>() 				< rhs.get<String>();
 			case Types::Array: 				return get<Array>() 				< rhs.get<Array>();
+			case Types::Tuple: 				return get<Tuple>() 				< rhs.get<Tuple>();
 
 			default:
 				throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -218,6 +224,7 @@ public:
 			case Types::Float64: 			return get<Float64>() 				<= rhs.get<Float64>();
 			case Types::String: 			return get<String>() 				<= rhs.get<String>();
 			case Types::Array: 				return get<Array>() 				<= rhs.get<Array>();
+			case Types::Tuple: 				return get<Tuple>() 				<= rhs.get<Tuple>();
 
 			default:
 				throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -242,6 +249,7 @@ public:
 			case Types::Float64:			return get<UInt64>() 				== rhs.get<UInt64>();
 			case Types::String: 			return get<String>() 				== rhs.get<String>();
 			case Types::Array: 				return get<Array>() 				== rhs.get<Array>();
+			case Types::Tuple: 				return get<Tuple>() 				== rhs.get<Tuple>();
 
 			default:
 				throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -263,6 +271,7 @@ private:
 	BOOST_STATIC_ASSERT(storage_size >= sizeof(Float64));
 	BOOST_STATIC_ASSERT(storage_size >= sizeof(String));
 	BOOST_STATIC_ASSERT(storage_size >= sizeof(Array));
+	BOOST_STATIC_ASSERT(storage_size >= sizeof(Tuple));
 
 	char storage[storage_size] __attribute__((aligned(8)));
 	Types::Which which;
@@ -291,6 +300,7 @@ private:
 			case Types::Float64: 			create(x.get<Float64>());				break;
 			case Types::String: 			create(x.get<String>());				break;
 			case Types::Array: 				create(x.get<Array>());					break;
+			case Types::Tuple: 				create(x.get<Tuple>());					break;
 		}
 	}
 
@@ -320,6 +330,9 @@ private:
 			case Types::Array:
 				destroy<Array>();
 				break;
+			case Types::Tuple:
+				destroy<Tuple>();
+				break;
 			default:
  				break;
 		}
@@ -342,6 +355,7 @@ template <> struct Field::TypeToEnum<Int64> 							{ static const Types::Which v
 template <> struct Field::TypeToEnum<Float64> 							{ static const Types::Which value = Types::Float64; };
 template <> struct Field::TypeToEnum<String> 							{ static const Types::Which value = Types::String; };
 template <> struct Field::TypeToEnum<Array> 							{ static const Types::Which value = Types::Array; };
+template <> struct Field::TypeToEnum<Tuple> 							{ static const Types::Which value = Types::Tuple; };
 
 template <> struct Field::EnumToType<Field::Types::Null> 				{ typedef Null 						Type; };
 template <> struct Field::EnumToType<Field::Types::UInt64> 				{ typedef UInt64 					Type; };
@@ -349,6 +363,7 @@ template <> struct Field::EnumToType<Field::Types::Int64> 				{ typedef Int64 		
 template <> struct Field::EnumToType<Field::Types::Float64> 			{ typedef Float64 					Type; };
 template <> struct Field::EnumToType<Field::Types::String> 				{ typedef String 					Type; };
 template <> struct Field::EnumToType<Field::Types::Array> 				{ typedef Array 					Type; };
+template <> struct Field::EnumToType<Field::Types::Tuple> 				{ typedef Tuple 					Type; };
 
 
 template <typename T>
@@ -377,6 +392,7 @@ T safeGet(Field & field)
 
 
 template <> struct TypeName<Array> { static std::string get() { return "Array"; } };
+template <> struct TypeName<Tuple> { static std::string get() { return "Tuple"; } };
 
 
 template <typename T> struct NearestFieldType;
@@ -393,6 +409,7 @@ template <> struct NearestFieldType<Float32> 	{ typedef Float64 	Type; };
 template <> struct NearestFieldType<Float64> 	{ typedef Float64 	Type; };
 template <> struct NearestFieldType<String> 	{ typedef String 	Type; };
 template <> struct NearestFieldType<Array> 		{ typedef Array 	Type; };
+template <> struct NearestFieldType<Tuple> 		{ typedef Tuple		Type; };
 template <> struct NearestFieldType<bool> 		{ typedef UInt64 	Type; };
 
 
@@ -414,6 +431,11 @@ namespace mysqlxx
 	std::ostream & operator<< (mysqlxx::QuoteManipResult res, const DB::Array & value);
 	std::istream & operator>> (mysqlxx::UnEscapeManipResult res, DB::Array & value);
 	std::istream & operator>> (mysqlxx::UnQuoteManipResult res, DB::Array & value);
+
+	std::ostream & operator<< (mysqlxx::EscapeManipResult res, const DB::Tuple & value);
+	std::ostream & operator<< (mysqlxx::QuoteManipResult res, const DB::Tuple & value);
+	std::istream & operator>> (mysqlxx::UnEscapeManipResult res, DB::Tuple & value);
+	std::istream & operator>> (mysqlxx::UnQuoteManipResult res, DB::Tuple & value);
 }
 
 
@@ -434,4 +456,18 @@ namespace DB
 	void writeText(const Array & x, WriteBuffer & buf);
 
 	inline void writeQuoted(const Array & x, WriteBuffer & buf) { throw Exception("Cannot write Array quoted.", ErrorCodes::NOT_IMPLEMENTED); }
+}
+
+namespace DB
+{
+	void readBinary(Tuple & x, ReadBuffer & buf);
+
+	inline void readText(Tuple & x, ReadBuffer & buf) 			{ throw Exception("Cannot read Tuple.", ErrorCodes::NOT_IMPLEMENTED); }
+	inline void readQuoted(Tuple & x, ReadBuffer & buf) 		{ throw Exception("Cannot read Tuple.", ErrorCodes::NOT_IMPLEMENTED); }
+
+	void writeBinary(const Tuple & x, WriteBuffer & buf);
+
+	void writeText(const Tuple & x, WriteBuffer & buf);
+
+	inline void writeQuoted(const Tuple & x, WriteBuffer & buf) { throw Exception("Cannot write Tuple quoted.", ErrorCodes::NOT_IMPLEMENTED); }
 }

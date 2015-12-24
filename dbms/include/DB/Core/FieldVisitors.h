@@ -36,6 +36,7 @@ typename Visitor::ResultType apply_visitor_impl(Visitor & visitor, F & field)
 		case Field::Types::Float64: 			return visitor(field.template get<Float64>());
 		case Field::Types::String: 				return visitor(field.template get<String>());
 		case Field::Types::Array: 				return visitor(field.template get<Array>());
+		case Field::Types::Tuple: 				return visitor(field.template get<Tuple>());
 
 		default:
 			throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -82,6 +83,7 @@ typename Visitor::ResultType apply_binary_visitor_impl2(Visitor & visitor, F1 & 
 		case Field::Types::Float64: 			return visitor(field1, field2.template get<Float64>());
 		case Field::Types::String: 				return visitor(field1, field2.template get<String>());
 		case Field::Types::Array: 				return visitor(field1, field2.template get<Array>());
+		case Field::Types::Tuple: 				return visitor(field1, field2.template get<Tuple>());
 
 		default:
 			throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -99,6 +101,7 @@ typename Visitor::ResultType apply_binary_visitor_impl1(Visitor & visitor, F1 & 
 		case Field::Types::Float64: 			return apply_binary_visitor_impl2(visitor, field1.template get<Float64>(), 	field2);
 		case Field::Types::String: 				return apply_binary_visitor_impl2(visitor, field1.template get<String>(), 	field2);
 		case Field::Types::Array: 				return apply_binary_visitor_impl2(visitor, field1.template get<Array>(), field2);
+		case Field::Types::Tuple: 				return apply_binary_visitor_impl2(visitor, field1.template get<Tuple>(), field2);
 
 		default:
 			throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -174,6 +177,7 @@ public:
 	String operator() (const Float64 	& x) const { return formatQuotedWithPrefix(x, "Float64_"); }
 	String operator() (const String 	& x) const;
 	String operator() (const Array 		& x) const;
+	String operator() (const Tuple 		& x) const;
 };
 
 
@@ -206,6 +210,7 @@ public:
 	String operator() (const Float64 	& x) const { return formatFloat(x); }
 	String operator() (const String 	& x) const { return formatQuoted(x); }
 	String operator() (const Array 		& x) const;
+	String operator() (const Tuple 		& x) const;
 };
 
 
@@ -227,6 +232,11 @@ public:
 	T operator() (const Array & x) const
 	{
 		throw Exception("Cannot convert Array to " + TypeName<T>::get(), ErrorCodes::CANNOT_CONVERT_TYPE);
+	}
+
+	T operator() (const Tuple & x) const
+	{
+		throw Exception("Cannot convert Tuple to " + TypeName<T>::get(), ErrorCodes::CANNOT_CONVERT_TYPE);
 	}
 
 	T operator() (const UInt64 	& x) const { return x; }
@@ -256,6 +266,7 @@ public:
 	bool operator() (const Null & l, const Float64 & r)     const { return false; }
 	bool operator() (const Null & l, const String & r)      const { return false; }
 	bool operator() (const Null & l, const Array & r)       const { return false; }
+	bool operator() (const Null & l, const Tuple & r)       const { return false; }
 
 	bool operator() (const UInt64 & l, const Null & r)      const { return false; }
 	bool operator() (const UInt64 & l, const UInt64 & r)    const { return l == r; }
@@ -263,6 +274,7 @@ public:
 	bool operator() (const UInt64 & l, const Float64 & r)   const { return l == r; }
 	bool operator() (const UInt64 & l, const String & r)    const { return l == stringToDateOrDateTime(r); }
 	bool operator() (const UInt64 & l, const Array & r)     const { return false; }
+	bool operator() (const UInt64 & l, const Tuple & r)     const { return false; }
 
 	bool operator() (const Int64 & l, const Null & r)       const { return false; }
 	bool operator() (const Int64 & l, const UInt64 & r)     const { return l == r; }
@@ -270,6 +282,7 @@ public:
 	bool operator() (const Int64 & l, const Float64 & r)    const { return l == r; }
 	bool operator() (const Int64 & l, const String & r)     const { return false; }
 	bool operator() (const Int64 & l, const Array & r)      const { return false; }
+	bool operator() (const Int64 & l, const Tuple & r)      const { return false; }
 
 	bool operator() (const Float64 & l, const Null & r)     const { return false; }
 	bool operator() (const Float64 & l, const UInt64 & r)   const { return l == r; }
@@ -277,6 +290,7 @@ public:
 	bool operator() (const Float64 & l, const Float64 & r)  const { return l == r; }
 	bool operator() (const Float64 & l, const String & r)   const { return false; }
 	bool operator() (const Float64 & l, const Array & r)    const { return false; }
+	bool operator() (const Float64 & l, const Tuple & r)    const { return false; }
 
 	bool operator() (const String & l, const Null & r)      const { return false; }
 	bool operator() (const String & l, const UInt64 & r)    const { return stringToDateOrDateTime(l) == r; }
@@ -284,6 +298,7 @@ public:
 	bool operator() (const String & l, const Float64 & r)   const { return false; }
 	bool operator() (const String & l, const String & r)    const { return l == r; }
 	bool operator() (const String & l, const Array & r)     const { return false; }
+	bool operator() (const String & l, const Tuple & r)     const { return false; }
 
 	bool operator() (const Array & l, const Null & r)       const { return false; }
 	bool operator() (const Array & l, const UInt64 & r)     const { return false; }
@@ -291,6 +306,15 @@ public:
 	bool operator() (const Array & l, const Float64 & r)    const { return false; }
 	bool operator() (const Array & l, const String & r)     const { return false; }
 	bool operator() (const Array & l, const Array & r)      const { return l == r; }
+	bool operator() (const Array & l, const Tuple & r)      const { return false; }
+
+	bool operator() (const Tuple & l, const Null & r)       const { return false; }
+	bool operator() (const Tuple & l, const UInt64 & r)     const { return false; }
+	bool operator() (const Tuple & l, const Int64 & r)      const { return false; }
+	bool operator() (const Tuple & l, const Float64 & r)    const { return false; }
+	bool operator() (const Tuple & l, const String & r)     const { return false; }
+	bool operator() (const Tuple & l, const Array & r)      const { return false; }
+	bool operator() (const Tuple & l, const Tuple & r)      const { return l == r; }
 };
 
 class FieldVisitorAccurateLess : public StaticVisitor<bool>
@@ -302,6 +326,7 @@ public:
 	bool operator() (const Null & l, const Float64 & r)     const { return true; }
 	bool operator() (const Null & l, const String & r)      const { return true; }
 	bool operator() (const Null & l, const Array & r)       const { return true; }
+	bool operator() (const Null & l, const Tuple & r)       const { return true; }
 
 	bool operator() (const UInt64 & l, const Null & r)      const { return false; }
 	bool operator() (const UInt64 & l, const UInt64 & r)    const { return l < r; }
@@ -309,6 +334,7 @@ public:
 	bool operator() (const UInt64 & l, const Float64 & r)   const { return l < r; }
 	bool operator() (const UInt64 & l, const String & r)    const { return l < stringToDateOrDateTime(r); }
 	bool operator() (const UInt64 & l, const Array & r)     const { return true; }
+	bool operator() (const UInt64 & l, const Tuple & r)     const { return true; }
 
 	bool operator() (const Int64 & l, const Null & r)       const { return false; }
 	bool operator() (const Int64 & l, const UInt64 & r)     const { return l < r; }
@@ -316,6 +342,7 @@ public:
 	bool operator() (const Int64 & l, const Float64 & r)    const { return l < r; }
 	bool operator() (const Int64 & l, const String & r)     const { return true; }
 	bool operator() (const Int64 & l, const Array & r)      const { return true; }
+	bool operator() (const Int64 & l, const Tuple & r)      const { return true; }
 
 	bool operator() (const Float64 & l, const Null & r)     const { return false; }
 	bool operator() (const Float64 & l, const UInt64 & r)   const { return l < r; }
@@ -323,6 +350,7 @@ public:
 	bool operator() (const Float64 & l, const Float64 & r)  const { return l < r; }
 	bool operator() (const Float64 & l, const String & r)   const { return true; }
 	bool operator() (const Float64 & l, const Array & r)    const { return true; }
+	bool operator() (const Float64 & l, const Tuple & r)    const { return true; }
 
 	bool operator() (const String & l, const Null & r)      const { return false; }
 	bool operator() (const String & l, const UInt64 & r)    const { return stringToDateOrDateTime(l) < r; }
@@ -330,6 +358,7 @@ public:
 	bool operator() (const String & l, const Float64 & r)   const { return false; }
 	bool operator() (const String & l, const String & r)    const { return l < r; }
 	bool operator() (const String & l, const Array & r)     const { return true; }
+	bool operator() (const String & l, const Tuple & r)     const { return true; }
 
 	bool operator() (const Array & l, const Null & r)       const { return false; }
 	bool operator() (const Array & l, const UInt64 & r)     const { return false; }
@@ -337,6 +366,15 @@ public:
 	bool operator() (const Array & l, const Float64 & r)    const { return false; }
 	bool operator() (const Array & l, const String & r)     const { return false; }
 	bool operator() (const Array & l, const Array & r)      const { return l < r; }
+	bool operator() (const Array & l, const Tuple & r)      const { return false; }
+
+	bool operator() (const Tuple & l, const Null & r)       const { return false; }
+	bool operator() (const Tuple & l, const UInt64 & r)     const { return false; }
+	bool operator() (const Tuple & l, const Int64 & r)      const { return false; }
+	bool operator() (const Tuple & l, const Float64 & r)    const { return false; }
+	bool operator() (const Tuple & l, const String & r)     const { return false; }
+	bool operator() (const Tuple & l, const Array & r)      const { return false; }
+	bool operator() (const Tuple & l, const Tuple & r)      const { return l < r; }
 };
 
 #pragma GCC diagnostic pop
