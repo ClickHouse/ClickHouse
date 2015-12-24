@@ -1,0 +1,15 @@
+/var/log/clickhouse-server/clickhouse-server*.log {
+	rotate 20
+	size 20M
+	compress
+	missingok
+	sharedscripts
+	nocreate
+	delaycompress
+	postrotate
+	PROGRAM=clickhouse-server
+	PIDDIR=/var/run/$PROGRAM
+	PIDFILE_RE="$PIDDIR/$PROGRAM[0-9]*.pid"
+	for PIDFILE in $(find $PIDDIR -regex "$PIDFILE_RE"); do kill -s USR1 `cat $PIDFILE`; done
+	endscript
+}
