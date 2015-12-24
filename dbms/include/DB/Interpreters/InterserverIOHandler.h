@@ -4,6 +4,7 @@
 #include <DB/IO/WriteBuffer.h>
 #include <DB/Core/Types.h>
 #include <map>
+#include <atomic>
 #include <Poco/Net/HTMLForm.h>
 
 namespace DB
@@ -15,8 +16,13 @@ class InterserverIOEndpoint
 {
 public:
 	virtual void processQuery(const Poco::Net::HTMLForm & params, WriteBuffer & out) = 0;
-
 	virtual ~InterserverIOEndpoint() {}
+
+	void cancel() { is_cancelled = true; }
+
+protected:
+	/// Нужно остановить передачу данных.
+	std::atomic<bool> is_cancelled {false};
 };
 
 typedef Poco::SharedPtr<InterserverIOEndpoint> InterserverIOEndpointPtr;
@@ -85,6 +91,8 @@ public:
 			tryLogCurrentException("~InterserverIOEndpointHolder");
 		}
 	}
+
+	void cancel() { endpoint->cancel(); }
 
 private:
 	String name;

@@ -7,6 +7,9 @@ namespace DB
 
 void ReplicatedMergeTreePartsServer::processQuery(const Poco::Net::HTMLForm & params, WriteBuffer & out)
 {
+	if (is_cancelled)
+		throw Exception("Transferring part to replica was cancelled", ErrorCodes::ABORTED);
+
 	String part_name = params.get("part");
 	LOG_TRACE(log, "Sending part " << part_name);
 
@@ -39,7 +42,10 @@ void ReplicatedMergeTreePartsServer::processQuery(const Poco::Net::HTMLForm & pa
 
 			ReadBufferFromFile file_in(path);
 			HashingWriteBuffer hashing_out(out);
-			copyData(file_in, hashing_out);
+			copyData(file_in, hashing_out, is_cancelled);
+
+			if (is_cancelled)
+				throw Exception("Transferring part to replica was cancelled", ErrorCodes::ABORTED);
 
 			if (hashing_out.count() != size)
 				throw Exception("Unexpected size of file " + path, ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
@@ -105,7 +111,15 @@ MergeTreeData::MutableDataPartPtr ReplicatedMergeTreePartsFetcher::fetchPart(
 
 		WriteBufferFromFile file_out(part_path + file_name);
 		HashingWriteBuffer hashing_out(file_out);
-		copyData(in, hashing_out, file_size);
+		copyData(in, hashing_out, file_size, is_cancelled);
+
+		if (is_cancelled)
+		{
+			/// NOTE Флаг is_cancelled также имеет смысл проверять при каждом чтении по сети, осуществляя poll с не очень большим таймаутом.
+			/// А сейчас мы проверяем его только между прочитанными кусками (в функции copyData).
+			part_file.remove(true);
+			throw Exception("Fetching of part was cancelled", ErrorCodes::ABORTED);
+		}
 
 		uint128 expected_hash;
 		readBinary(expected_hash, in);
