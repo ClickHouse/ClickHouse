@@ -6,6 +6,7 @@
 
 namespace zkutil
 {
+class Lock;
 
 class ZooKeeperHolder : public boost::noncopyable
 {

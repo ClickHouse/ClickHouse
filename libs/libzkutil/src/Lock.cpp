@@ -41,7 +41,7 @@ bool Lock::tryLock()
 			throw zkutil::KeeperException(code);
 		}
 	}
-	return locked;
+	return bool(locked);
 }
 
 void Lock::unlock()
