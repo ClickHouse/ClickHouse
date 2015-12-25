@@ -27,7 +27,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 			settings.ostr <<  (settings.hilite ? hilite_keyword : "") << " AS "
 				<< (settings.hilite ? hilite_none : "");
 
-			settings.ostr << (settings.hilite ? hilite_identifier : "")
+			settings.ostr << (settings.hilite ? hilite_function : "")
 				<< typeid_cast<const ASTLiteral &>(*arguments->children.back()).value.safeGet<String>()
 				<< (settings.hilite ? hilite_none : "");
 

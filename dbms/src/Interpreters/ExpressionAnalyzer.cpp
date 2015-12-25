@@ -769,8 +769,6 @@ void ExpressionAnalyzer::executeScalarSubqueriesImpl(ASTPtr & ast)
 		if (columns == 1)
 		{
 			ASTLiteral * lit = new ASTLiteral(ast->range, (*block.getByPosition(0).column)[0]);
-			std::cout << "type: " << block.getByPosition(0).type->getName() << " column: " << block.getByPosition(0).column->getName() << std::endl;
-			std::cout << "field: " << lit->value.getTypeName() << std::endl;
 			lit->alias = subquery->alias;
 			ast = addTypeConversion(lit, block.getByPosition(0).type->getName());
 		}

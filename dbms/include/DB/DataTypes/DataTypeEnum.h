@@ -19,6 +19,7 @@ class DataTypeEnum final : public IDataType
 public:
 	using FieldType = Type;
 	using ColumnType = ColumnVector<FieldType>;
+	using ConstColumnType = ColumnConst<FieldType>;
 	using Values = std::vector<std::pair<std::string, FieldType>>;
 	using Map = HashMap<StringRef, FieldType, StringRefHash>;
 
@@ -95,7 +96,7 @@ public:
 		return getNameForValue(value).size();
 	}
 
-	std::string getNameForValue(const FieldType & value) const
+	const std::string & getNameForValue(const FieldType & value) const
 	{
 		const auto it = std::lower_bound(std::begin(values), std::end(values), value, [] (const auto & left, const auto & right) {
 			return left.second < right;
@@ -220,7 +221,7 @@ public:
 	ColumnPtr createColumn() const override { return new ColumnType; }
 	ColumnPtr createConstColumn(const size_t size, const Field & field) const override
 	{
-		return new ColumnConst<FieldType>(size, get<typename NearestFieldType<FieldType>::Type>(field));
+		return new ConstColumnType(size, get<typename NearestFieldType<FieldType>::Type>(field));
 	}
 
 	Field getDefault() const override

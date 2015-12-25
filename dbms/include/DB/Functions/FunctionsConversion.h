@@ -1501,10 +1501,10 @@ class FunctionCast : public IFunction
 		};
 	}
 
-	auto createArrayWrapper(const IDataType * const from_type_untyped, const DataTypeArray * to_type)
+	auto createArrayWrapper(const DataTypePtr & from_type_untyped, const DataTypeArray * to_type)
 	{
 		DataTypePtr from_nested_type, to_nested_type;
-		auto from_type = typeid_cast<const DataTypeArray *>(from_type_untyped);
+		auto from_type = typeid_cast<const DataTypeArray *>(from_type_untyped.get());
 
 		/// get the most nested type
 		while (from_type && to_type)
@@ -1571,9 +1571,9 @@ class FunctionCast : public IFunction
 		};
 	}
 
-	auto createTupleWrapper(const IDataType * const from_type_untyped, const DataTypeTuple * to_type)
+	auto createTupleWrapper(const DataTypePtr & from_type_untyped, const DataTypeTuple * to_type)
 	{
-		const auto from_type = typeid_cast<const DataTypeTuple *>(from_type_untyped);
+		const auto from_type = typeid_cast<const DataTypeTuple *>(from_type_untyped.get());
 		if (!from_type)
 			throw Exception{
 				"CAST AS Tuple can only be performed between tuple types.\nLeft type: " + from_type_untyped->getName() +
@@ -1639,6 +1639,102 @@ class FunctionCast : public IFunction
 		};
 	}
 
+	template <typename FieldType>
+	WrapperType createEnumWrapper(const DataTypePtr & from_type, const DataTypeEnum<FieldType> * to_type)
+	{
+		using EnumType = DataTypeEnum<FieldType>;
+
+		if (const auto from_enum8 = typeid_cast<const DataTypeEnum8 *>(from_type.get()))
+		{
+			/// ensure the intersection of sets has same values
+			throw Exception{"", ErrorCodes::NOT_IMPLEMENTED};
+		}
+		else if (const auto from_enum16 = typeid_cast<const DataTypeEnum16 *>(from_type.get()))
+		{
+			/// ensure intersection of sets has same values
+			throw Exception{"", ErrorCodes::NOT_IMPLEMENTED};
+		}
+
+		if (const auto type_string = typeid_cast<const DataTypeString *>(from_type.get()))
+		{
+			return [] (Block & block, const ColumnNumbers & arguments, const size_t result) {
+				const auto first_col = block.getByPosition(arguments.front()).column.get();
+
+				auto & col_with_type_and_name = block.getByPosition(result);
+				auto & result_col = col_with_type_and_name.column;
+				const auto & result_type = typeid_cast<EnumType &>(*col_with_type_and_name.type);
+
+				if (const auto col = typeid_cast<const ColumnString *>(first_col))
+				{
+					const auto size = col->size();
+
+					const auto res = result_type.createColumn();
+					auto & out_data = static_cast<typename EnumType::ColumnType &>(*result_col).getData();
+					out_data.resize(size);
+
+					for (const auto i : ext::range(0, size))
+						out_data[i] = result_type.getValue(col->getDataAt(i).toString());
+
+					result_col = res;
+				}
+				else if (const auto const_col = typeid_cast<const ColumnConstString *>(first_col))
+				{
+					result_col = result_type.createConstColumn(const_col->size(),
+						nearestFieldType(result_type.getValue(const_col->getData())));
+				}
+				else
+					throw Exception{
+						"Unexpected column " + first_col->getName() + " as first argument of function " +
+							name,
+						ErrorCodes::LOGICAL_ERROR
+					};
+			};
+		}
+		else if (from_type->behavesAsNumber())
+		{
+			using Function = FunctionToUInt8;
+			std::shared_ptr<Function> function{static_cast<Function *>(Function::create(context))};
+
+			/// Check conversion using underlying function
+			(void) function->getReturnType({ from_type });
+
+			return [function] (Block & block, const ColumnNumbers & arguments, const size_t result) {
+				/// drop second argument, pass others
+				ColumnNumbers new_args{arguments.front()};
+				if (arguments.size() > 2)
+					new_args.insert(std::end(new_args), std::next(std::begin(arguments), 2), std::end(arguments));
+
+				function->execute(block, new_args, result);
+
+				const auto & col_with_type_and_name = block.getByPosition(result);
+				const auto & result_col = col_with_type_and_name.column;
+				const auto & result_type = typeid_cast<const EnumType &>(*col_with_type_and_name.type);
+
+				/// Check that values after conversion belong to the element set
+				if (const auto col = typeid_cast<const typename EnumType::ColumnType *>(result_col.get()))
+				{
+					for (const auto & value : col->getData())
+						(void) result_type.getNameForValue(value);
+				}
+				else if (const auto const_col = typeid_cast<const typename EnumType::ConstColumnType *>(result_col.get()))
+				{
+					(void) result_type.getNameForValue(const_col->getData());
+				}
+				else
+					throw Exception{
+						"Unexpected type of column returned from " + function->getName(),
+						ErrorCodes::LOGICAL_ERROR
+					};
+			};
+		}
+
+		throw Exception{
+			"Conversion from " + from_type->getName() + " to " + to_type->getName() +
+			" is not supported",
+			ErrorCodes::CANNOT_CONVERT_TYPE
+		};
+	}
+
 	WrapperType prepare(const DataTypePtr & from_type, const IDataType * to_type)
 	{
 		if (typeid_cast<const DataTypeUInt8 *>(to_type))
@@ -1673,11 +1769,16 @@ class FunctionCast : public IFunction
 			return createArrayWrapper(from_type, type_array);
 		else if (const auto type_tuple = typeid_cast<const DataTypeTuple *>(to_type))
 			return createTupleWrapper(from_type, type_tuple);
-		else
-			throw Exception{
-				"Not yet implemented CAST for type " + from_type->getName(),
-				ErrorCodes::NOT_IMPLEMENTED
-			};
+		else if (const auto type_enum = typeid_cast<const DataTypeEnum8 *>(to_type))
+			return createEnumWrapper(from_type, type_enum);
+		else if (const auto type_enum = typeid_cast<const DataTypeEnum16 *>(to_type))
+			return createEnumWrapper(from_type, type_enum);
+
+		throw Exception{
+			"Conversion from " + from_type->getName() + " to " + to_type->getName() +
+				" is not supported",
+			ErrorCodes::CANNOT_CONVERT_TYPE
+		};
 	}
 
 public:
