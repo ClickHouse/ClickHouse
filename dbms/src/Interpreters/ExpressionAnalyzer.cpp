@@ -120,9 +120,6 @@ void ExpressionAnalyzer::init()
 	/// Создаёт словарь aliases: alias -> ASTPtr
 	addASTAliases(ast);
 
-	/// Добавляет ALIAS столбцы из таблицы в aliases, если применимо.
-	addStorageAliases();
-
 	/// Common subexpression elimination. Rewrite rules.
 	normalizeTree();
 
@@ -336,7 +333,7 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name)
 		external_table_name = "_data" + toString(external_table_id);
 	}
 
-	SharedPtr<InterpreterSelectQuery> interpreter = interpretSubquery(subquery_or_table_name, context, subquery_depth + 1, {});
+	SharedPtr<InterpreterSelectQuery> interpreter = interpretSubquery(subquery_or_table_name, context, subquery_depth, {});
 
 	Block sample = interpreter->getSampleBlock();
 	NamesAndTypesListPtr columns = new NamesAndTypesList(sample.getColumnsList());
@@ -425,22 +422,6 @@ NamesAndTypesList::iterator ExpressionAnalyzer::findColumn(const String & name, 
 {
 	return std::find_if(cols.begin(), cols.end(),
 		[&](const NamesAndTypesList::value_type & val) { return val.name == name; });
-}
-
-
-void ExpressionAnalyzer::addStorageAliases()
-{
-	if (select_query && select_query->array_join_expression_list)
-		return;
-
-	if (!storage)
-		return;
-
-	/// @todo: consider storing default expressions with alias set to avoid cloning
-	/// Добавляем ALIAS из таблицы, только если такого ALIAS еще не объявлено в запросе.
-	for (const auto & alias : storage->alias_columns)
-		if (!aliases.count(alias.name))
-			aliases[alias.name] = setAlias(storage->column_defaults[alias.name].expression->clone(), alias.name);
 }
 
 
@@ -686,7 +667,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(
 
 void ExpressionAnalyzer::addAliasColumns()
 {
-	if (!(select_query && select_query->array_join_expression_list))
+	if (!select_query)
 		return;
 
 	if (!storage)

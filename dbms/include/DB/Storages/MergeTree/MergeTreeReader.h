@@ -413,6 +413,9 @@ private:
 
 	void fillMissingColumnsImpl(Block & res, const Names & ordered_names, bool always_reorder)
 	{
+		if (!res)
+			throw Exception("Empty block passed to fillMissingColumnsImpl", ErrorCodes::LOGICAL_ERROR);
+
 		try
 		{
 			/** Для недостающих столбцов из вложенной структуры нужно создавать не столбец пустых массивов, а столбец массивов

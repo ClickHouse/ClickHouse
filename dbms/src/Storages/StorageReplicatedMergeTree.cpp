@@ -1517,8 +1517,8 @@ bool StorageReplicatedMergeTree::queueTask(BackgroundProcessingPool::Context & p
 		}
 		else if (e.code() == ErrorCodes::ABORTED)
 		{
-			/// Прерванный мердж - не ошибка.
-			LOG_INFO(log, "Merge cancelled");
+			/// Прерванный мердж или скачивание куска - не ошибка.
+			LOG_INFO(log, e.message());
 		}
 		else
 			tryLogCurrentException(__PRETTY_FUNCTION__);
@@ -2506,6 +2506,7 @@ void StorageReplicatedMergeTree::shutdown()
 	}
 
 	endpoint_holder = nullptr;
+	fetcher.cancel();
 }
 
 

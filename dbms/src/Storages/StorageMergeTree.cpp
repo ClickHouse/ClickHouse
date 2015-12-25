@@ -266,7 +266,7 @@ bool StorageMergeTree::mergeTask(BackgroundProcessingPool::Context & background_
 	{
 		if (e.code() == ErrorCodes::ABORTED)
 		{
-			LOG_INFO(log, "Merge cancelled");
+			LOG_INFO(log, e.message());
 			return false;
 		}
 

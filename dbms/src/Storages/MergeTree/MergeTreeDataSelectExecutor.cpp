@@ -787,7 +787,6 @@ void MergeTreeDataSelectExecutor::createPositiveSignCondition(ExpressionActionsP
 	sign->name = data.sign_column;
 	sign->kind = ASTIdentifier::Column;
 
-	one->type = new DataTypeInt8;
 	one->value = Field(static_cast<Int64>(1));
 
 	out_expression = ExpressionAnalyzer(function_ptr, context, {}, data.getColumnsList()).getActions(false);

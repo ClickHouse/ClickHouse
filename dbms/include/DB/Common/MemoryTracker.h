@@ -13,6 +13,9 @@ class MemoryTracker
 	Int64 peak = 0;
 	Int64 limit = 0;
 
+	/// В целях тестирования exception safety - кидать исключение при каждом выделении памяти с указанной вероятностью.
+	double fault_probability = 0;
+
 public:
 	MemoryTracker(Int64 limit_) : limit(limit_) {}
 
@@ -42,6 +45,11 @@ public:
 	Int64 getPeak() const
 	{
 		return peak;
+	}
+
+	void setFaultProbability(double value)
+	{
+		fault_probability = value;
 	}
 };
 

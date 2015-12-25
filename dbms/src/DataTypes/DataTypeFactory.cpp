@@ -18,7 +18,10 @@
 #include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Parsers/ASTNameTypePair.h>
 #include <DB/Parsers/ASTLiteral.h>
+#include <DB/Parsers/ParserEnumElement.h>
 #include <DB/Parsers/parseQuery.h>
+#include <DB/DataTypes/DataTypeEnum.h>
+
 
 namespace DB
 {
@@ -41,6 +44,33 @@ DataTypeFactory::DataTypeFactory()
 		{"String",				new DataTypeString},
 	}
 {
+}
+
+
+template <typename DataTypeEnum>
+inline DataTypePtr parseEnum(const String & name, const String & base_name, const String & parameters)
+{
+	ParserList parser{std::make_unique<ParserEnumElement>(), std::make_unique<ParserString>(","), false};
+
+	ASTPtr elements = parseQuery(parser, parameters.data(), parameters.data() + parameters.size(), "parameters for enum type " + name);
+
+	typename DataTypeEnum::Values values;
+	values.reserve(elements->children.size());
+
+	for (const auto & element : typeid_cast<const ASTExpressionList &>(*elements).children)
+	{
+		const auto & e = static_cast<const ASTEnumElement &>(*element);
+
+		if (e.value > std::numeric_limits<typename DataTypeEnum::FieldType>::max())
+			throw Exception{
+				"Value " + toString(e.value) + " for element '" + e.name + "' exceeds range of " + base_name,
+				ErrorCodes::ARGUMENT_OUT_OF_BOUND
+			};
+
+		values.emplace_back(e.name, e.value);
+	}
+
+	return new DataTypeEnum{values};
 }
 
 
@@ -102,7 +132,8 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 			}
 
 			for (size_t i = 1; i < args_list.children.size(); ++i)
-				argument_types.push_back(get(args_list.children[i]->getColumnName()));
+				argument_types.push_back(get(
+					std::string{args_list.children[i]->range.first, args_list.children[i]->range.second}));
 
 			function = AggregateFunctionFactory().get(function_name, argument_types);
 			if (!params_row.empty())
@@ -150,6 +181,12 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 
 			return new DataTypeTuple(elems);
 		}
+
+		if (base_name == "Enum8")
+			return parseEnum<DataTypeEnum8>(name, base_name, parameters);
+
+		if (base_name == "Enum16")
+			return parseEnum<DataTypeEnum16>(name, base_name, parameters);
 
 		throw Exception("Unknown type " + base_name, ErrorCodes::UNKNOWN_TYPE);
 	}
