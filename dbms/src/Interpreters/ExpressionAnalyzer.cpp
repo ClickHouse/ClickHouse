@@ -333,7 +333,7 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name)
 		external_table_name = "_data" + toString(external_table_id);
 	}
 
-	SharedPtr<InterpreterSelectQuery> interpreter = interpretSubquery(subquery_or_table_name, context, subquery_depth + 1, {});
+	SharedPtr<InterpreterSelectQuery> interpreter = interpretSubquery(subquery_or_table_name, context, subquery_depth, {});
 
 	Block sample = interpreter->getSampleBlock();
 	NamesAndTypesListPtr columns = new NamesAndTypesList(sample.getColumnsList());
