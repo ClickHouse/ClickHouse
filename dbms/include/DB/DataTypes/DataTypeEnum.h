@@ -20,12 +20,15 @@ public:
 	using FieldType = Type;
 	using ColumnType = ColumnVector<FieldType>;
 	using ConstColumnType = ColumnConst<FieldType>;
-	using Values = std::vector<std::pair<std::string, FieldType>>;
+	using Value = std::pair<std::string, FieldType>;
+	using Values = std::vector<Value>;
 	using Map = HashMap<StringRef, FieldType, StringRefHash>;
 
 	Values values;
 	std::string name;
 	Map map;
+
+	const Values & getValues() const { return values; }
 
 	static std::string generateName(const Values & values)
 	{

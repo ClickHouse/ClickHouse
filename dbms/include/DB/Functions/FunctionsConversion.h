@@ -1460,8 +1460,21 @@ typedef FunctionConvert<DataTypeDateTime,	NameToDateTime,	ToIntMonotonicity<UInt
 typedef FunctionConvert<DataTypeString,		NameToString, 	ToStringMonotonicity> 		FunctionToString;
 typedef FunctionConvert<DataTypeInt32,		NameToUnixTimestamp, ToIntMonotonicity<UInt32>> FunctionToUnixTimestamp;
 
+template <typename FieldType> struct ToPrimitiveType;
+template <> struct ToPrimitiveType<UInt8> { using Type = FunctionToUInt8; };
+template <> struct ToPrimitiveType<UInt16> { using Type = FunctionToUInt16; };
+template <> struct ToPrimitiveType<UInt32> { using Type = FunctionToUInt32; };
+template <> struct ToPrimitiveType<UInt64> { using Type = FunctionToUInt64; };
+template <> struct ToPrimitiveType<Int8> { using Type = FunctionToInt8; };
+template <> struct ToPrimitiveType<Int16> { using Type = FunctionToInt16; };
+template <> struct ToPrimitiveType<Int32> { using Type = FunctionToInt32; };
+template <> struct ToPrimitiveType<Int64> { using Type = FunctionToInt64; };
+template <> struct ToPrimitiveType<Float32> { using Type = FunctionToFloat32; };
+template <> struct ToPrimitiveType<Float64> { using Type = FunctionToFloat64; };
+template <> struct ToPrimitiveType<String> { using Type = FunctionToString; };
 
-class FunctionCast : public IFunction
+
+class FunctionCast final : public IFunction
 {
 	using WrapperType = std::function<void(Block &, const ColumnNumbers &, size_t)>;
 	const Context & context;
@@ -1477,12 +1490,7 @@ class FunctionCast : public IFunction
 		(void) function->getReturnType({ from_type });
 
 		return [function] (Block & block, const ColumnNumbers & arguments, const size_t result) {
-			/// drop second argument, pass others
-			ColumnNumbers new_args{arguments.front()};
-			if (arguments.size() > 2)
-				new_args.insert(std::end(new_args), std::next(std::begin(arguments), 2), std::end(arguments));
-
-			function->execute(block, new_args, result);
+			function->execute(block, arguments, result);
 		};
 	}
 
@@ -1529,7 +1537,7 @@ class FunctionCast : public IFunction
 		return [nested_function, from_nested_type, to_nested_type] (
 			Block & block, const ColumnNumbers & arguments, const size_t result)
 		{
-			auto array_arg = block.getByPosition(arguments[0]);
+			auto array_arg = block.getByPosition(arguments.front());
 
 			/// @todo add const variant which retains array constness
 			if (const auto col_const_array = typeid_cast<const ColumnConstArray *>(array_arg.column.get()))
@@ -1639,72 +1647,29 @@ class FunctionCast : public IFunction
 		};
 	}
 
-	template <typename FieldType>
+	template <typename Function, typename FieldType>
 	WrapperType createEnumWrapper(const DataTypePtr & from_type, const DataTypeEnum<FieldType> * to_type)
 	{
 		using EnumType = DataTypeEnum<FieldType>;
 
 		if (const auto from_enum8 = typeid_cast<const DataTypeEnum8 *>(from_type.get()))
-		{
-			/// ensure the intersection of sets has same values
-			throw Exception{"", ErrorCodes::NOT_IMPLEMENTED};
-		}
+			checkEnumToEnumConversion(from_enum8, to_type);
 		else if (const auto from_enum16 = typeid_cast<const DataTypeEnum16 *>(from_type.get()))
-		{
-			/// ensure intersection of sets has same values
-			throw Exception{"", ErrorCodes::NOT_IMPLEMENTED};
-		}
+			checkEnumToEnumConversion(from_enum16, to_type);
 
-		if (const auto type_string = typeid_cast<const DataTypeString *>(from_type.get()))
-		{
-			return [] (Block & block, const ColumnNumbers & arguments, const size_t result) {
-				const auto first_col = block.getByPosition(arguments.front()).column.get();
-
-				auto & col_with_type_and_name = block.getByPosition(result);
-				auto & result_col = col_with_type_and_name.column;
-				const auto & result_type = typeid_cast<EnumType &>(*col_with_type_and_name.type);
-
-				if (const auto col = typeid_cast<const ColumnString *>(first_col))
-				{
-					const auto size = col->size();
-
-					const auto res = result_type.createColumn();
-					auto & out_data = static_cast<typename EnumType::ColumnType &>(*result_col).getData();
-					out_data.resize(size);
-
-					for (const auto i : ext::range(0, size))
-						out_data[i] = result_type.getValue(col->getDataAt(i).toString());
-
-					result_col = res;
-				}
-				else if (const auto const_col = typeid_cast<const ColumnConstString *>(first_col))
-				{
-					result_col = result_type.createConstColumn(const_col->size(),
-						nearestFieldType(result_type.getValue(const_col->getData())));
-				}
-				else
-					throw Exception{
-						"Unexpected column " + first_col->getName() + " as first argument of function " +
-							name,
-						ErrorCodes::LOGICAL_ERROR
-					};
-			};
-		}
+		if (typeid_cast<const DataTypeString *>(from_type.get()))
+			return createStringToEnumWrapper<ColumnString, EnumType>();
+		else if (typeid_cast<const DataTypeFixedString *>(from_type.get()))
+			return createStringToEnumWrapper<ColumnFixedString, EnumType>();
 		else if (from_type->behavesAsNumber())
 		{
-			using Function = FunctionToUInt8;
 			std::shared_ptr<Function> function{static_cast<Function *>(Function::create(context))};
 
 			/// Check conversion using underlying function
 			(void) function->getReturnType({ from_type });
 
 			return [function] (Block & block, const ColumnNumbers & arguments, const size_t result) {
-				/// drop second argument, pass others
-				ColumnNumbers new_args{arguments.front()};
-				if (arguments.size() > 2)
-					new_args.insert(std::end(new_args), std::next(std::begin(arguments), 2), std::end(arguments));
-
-				function->execute(block, new_args, result);
+				function->execute(block, arguments, result);
 
 				const auto & col_with_type_and_name = block.getByPosition(result);
 				const auto & result_col = col_with_type_and_name.column;
@@ -1727,11 +1692,84 @@ class FunctionCast : public IFunction
 					};
 			};
 		}
+		else
+			throw Exception{
+				"Conversion from " + from_type->getName() + " to " + to_type->getName() +
+					" is not supported",
+				ErrorCodes::CANNOT_CONVERT_TYPE
+			};
+	}
 
-		throw Exception{
-			"Conversion from " + from_type->getName() + " to " + to_type->getName() +
-			" is not supported",
-			ErrorCodes::CANNOT_CONVERT_TYPE
+	template <typename EnumTypeFrom, typename EnumTypeTo>
+	void checkEnumToEnumConversion(const EnumTypeFrom * const from_type, const EnumTypeTo * const to_type)
+	{
+		const auto & from_values = from_type->getValues();
+		const auto & to_values = to_type->getValues();
+
+		using ValueType = std::common_type_t<typename EnumTypeFrom::FieldType, typename EnumTypeTo::FieldType>;
+		using NameValuePair = std::pair<std::string, ValueType>;
+
+		struct CompareNameValuePairSecond final
+		{
+			bool operator()(const NameValuePair & lhs, const NameValuePair & rhs) const
+			{
+				return lhs.second < rhs.second;
+			}
+		};
+
+		std::set<NameValuePair, CompareNameValuePairSecond> isection;
+		std::set_intersection(std::begin(from_values), std::end(from_values),
+			std::begin(to_values), std::end(to_values), std::inserter(isection, std::end(isection)),
+			CompareNameValuePairSecond{});
+
+		if (!isection.empty())
+			for (const auto & name_value : isection)
+			{
+				const auto & old_name = from_type->getNameForValue(name_value.second);
+				const auto & new_name = to_type->getNameForValue(name_value.second);
+				if (old_name != new_name)
+					throw Exception{
+						"Enum conversion changes name for value " + toString(name_value.second) +
+							" from " + old_name + " to " + new_name,
+						ErrorCodes::CANNOT_CONVERT_TYPE
+					};
+			}
+	};
+
+	template <typename ColumnStringType, typename EnumType>
+	auto createStringToEnumWrapper()
+	{
+		return [] (Block & block, const ColumnNumbers & arguments, const size_t result) {
+			const auto first_col = block.getByPosition(arguments.front()).column.get();
+
+			auto & col_with_type_and_name = block.getByPosition(result);
+			auto & result_col = col_with_type_and_name.column;
+			const auto & result_type = typeid_cast<EnumType &>(*col_with_type_and_name.type);
+
+			if (const auto col = typeid_cast<const ColumnStringType *>(first_col))
+			{
+				const auto size = col->size();
+
+				const auto res = result_type.createColumn();
+				auto & out_data = static_cast<typename EnumType::ColumnType &>(*result_col).getData();
+				out_data.resize(size);
+
+				for (const auto i : ext::range(0, size))
+					out_data[i] = result_type.getValue(col->getDataAt(i).toString());
+
+				result_col = res;
+			}
+			else if (const auto const_col = typeid_cast<const ColumnConstString *>(first_col))
+			{
+				result_col = result_type.createConstColumn(const_col->size(),
+					nearestFieldType(result_type.getValue(const_col->getData())));
+			}
+			else
+				throw Exception{
+					"Unexpected column " + first_col->getName() + " as first argument of function " +
+						name,
+					ErrorCodes::LOGICAL_ERROR
+				};
 		};
 	}
 
@@ -1770,9 +1808,9 @@ class FunctionCast : public IFunction
 		else if (const auto type_tuple = typeid_cast<const DataTypeTuple *>(to_type))
 			return createTupleWrapper(from_type, type_tuple);
 		else if (const auto type_enum = typeid_cast<const DataTypeEnum8 *>(to_type))
-			return createEnumWrapper(from_type, type_enum);
+			return createEnumWrapper<ToPrimitiveType<UInt8>::Type>(from_type, type_enum);
 		else if (const auto type_enum = typeid_cast<const DataTypeEnum16 *>(to_type))
-			return createEnumWrapper(from_type, type_enum);
+			return createEnumWrapper<ToPrimitiveType<UInt16>::Type>(from_type, type_enum);
 
 		throw Exception{
 			"Conversion from " + from_type->getName() + " to " + to_type->getName() +
@@ -1806,8 +1844,13 @@ public:
 		wrapper_function = prepare(arguments.front().type, out_return_type.get());
 	}
 
-	void execute(Block & block, const ColumnNumbers & arguments, const size_t result)
+	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
 	{
+		/// drop second argument, pass others
+		ColumnNumbers new_arguments{arguments.front()};
+		if (arguments.size() > 2)
+			new_arguments.insert(std::end(new_arguments), std::next(std::begin(arguments), 2), std::end(arguments));
+
 		wrapper_function(block, arguments, result);
 	}
 };
