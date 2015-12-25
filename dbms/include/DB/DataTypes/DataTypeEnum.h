@@ -62,7 +62,32 @@ public:
 	void fillMap()
 	{
 		for (const auto & name_and_value : values )
-			map.insert({ StringRef{name_and_value.first}, name_and_value.second });
+		{
+			const auto pair = map.insert({ StringRef{name_and_value.first}, name_and_value.second });
+			if (!pair.second)
+				throw Exception{
+					"Duplicate names in enum: '" + name_and_value.first + "' = " + toString(name_and_value.second)
+						+ " and '" + pair.first->first.toString() + "' = " + toString(pair.first->second),
+					ErrorCodes::SYNTAX_ERROR
+				};
+		}
+	}
+
+	static void sortAndUnique(Values & values)
+	{
+		std::sort(std::begin(values), std::end(values), [] (auto & left, auto & right) {
+			return left.second < right.second;
+		});
+
+		const auto unique_it = std::unique(std::begin(values), std::end(values), [] (auto & left, auto & right) {
+			return left.second == right.second;
+		});
+
+		if (unique_it != std::end(values))
+			throw Exception{
+				"Duplicate values in enum: '" + unique_it->first + "' = " + toString(unique_it->second),
+				ErrorCodes::SYNTAX_ERROR
+			};
 	}
 
 public:
@@ -74,9 +99,8 @@ public:
 				ErrorCodes::EMPTY_DATA_PASSED
 			};
 
-		std::sort(std::begin(values), std::end(values), [] (auto & left, auto & right) {
-			return left.second < right.second;
-		});
+		sortAndUnique(values);
+
 		name = generateName(values);
 
 		fillMap();
