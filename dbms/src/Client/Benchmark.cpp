@@ -150,6 +150,15 @@ private:
 	}
 
 
+	void printNumberOfQueriesExecuted(size_t num)
+	{
+		std::cerr << "\nQueries executed: " << num;
+		if (queries.size() > 1)
+			std::cerr << " (" << (num * 100.0 / queries.size()) << "%)";
+		std::cerr << ".\n";
+	}
+
+
 	void run()
 	{
 		for (size_t i = 0; i < concurrency; ++i)
@@ -170,6 +179,13 @@ private:
 
 			if (watch.elapsedSeconds() > delay)
 			{
+				auto total_queries = 0;
+				{
+					Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+					total_queries = info_total.queries;
+				}
+				printNumberOfQueriesExecuted(total_queries);
+
 				report(info_per_interval);
 				watch.restart();
 			}
@@ -181,7 +197,7 @@ private:
 
 		pool.wait();
 
-		std::cerr << "\nTotal queries executed: " << info_total.queries << "\n";
+		printNumberOfQueriesExecuted(info_total.queries);
 		report(info_total);
 	}
 
