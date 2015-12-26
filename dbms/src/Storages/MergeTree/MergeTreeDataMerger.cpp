@@ -330,7 +330,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 
 		auto input = std::make_unique<MergeTreeBlockInputStream>(
 			data.getFullPath() + parts[i]->name + '/', DEFAULT_MERGE_BLOCK_SIZE, union_column_names, data,
-			parts[i], ranges, false, nullptr, "", true, aio_threshold, DBMS_DEFAULT_BUFFER_SIZE);
+			parts[i], ranges, false, nullptr, "", true, aio_threshold, DBMS_DEFAULT_BUFFER_SIZE, false);
 
 		input->setProgressCallback([&merge_entry, rows_total] (const Progress & value)
 			{

@@ -2,7 +2,6 @@
 
 #include <DB/Storages/MergeTree/MergeTreeData.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
-#include <DB/Storages/MergeTree/MergeTreeReader.h>
 #include <DB/Storages/MergeTree/MergeTreeBlockInputStream.h>
 #include <DB/Storages/MergeTree/MergedBlockOutputStream.h>
 #include <DB/Storages/MergeTree/MergeTreePartChecker.h>
@@ -558,7 +557,9 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 		/** @todo expression->getRequiedColumns may contain integer width columns for FixedString(N) type which after
 		 *	passing them to ITableDeclaration::check will trigger and exception about unknown column `N` */
 		BlockInputStreamPtr part_in = new MergeTreeBlockInputStream(full_path + part->name + '/',
-			DEFAULT_MERGE_BLOCK_SIZE, expression->getRequiredColumns(), *this, part, ranges, false, nullptr, "", false, 0, DBMS_DEFAULT_BUFFER_SIZE);
+			DEFAULT_MERGE_BLOCK_SIZE, expression->getRequiredColumns(), *this, part, ranges,
+			false, nullptr, "", false, 0, DBMS_DEFAULT_BUFFER_SIZE, false);
+
 		ExpressionBlockInputStream in(part_in, expression);
 		MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/', true, CompressionMethod::LZ4);
 		in.readPrefix();
