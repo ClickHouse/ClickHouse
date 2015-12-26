@@ -50,12 +50,22 @@ class Benchmark
 public:
 	Benchmark(unsigned concurrency_, double delay_,
 			const String & host_, UInt16 port_, const String & default_database_,
-			const String & user_, const String & password_, const Settings & settings_)
+			const String & user_, const String & password_, const String & stage,
+			const Settings & settings_)
 		: concurrency(concurrency_), delay(delay_), queue(concurrency),
 		connections(concurrency, host_, port_, default_database_, user_, password_),
 		settings(settings_), pool(concurrency)
 	{
 		std::cerr << std::fixed << std::setprecision(3);
+
+		if (stage == "complete")
+			query_processing_stage = QueryProcessingStage::Complete;
+		else if (stage == "fetch_columns")
+			query_processing_stage = QueryProcessingStage::FetchColumns;
+		else if (stage == "with_mergeable_state")
+			query_processing_stage = QueryProcessingStage::WithMergeableState;
+		else
+			throw Exception("Unknown query processing stage: " + stage, ErrorCodes::BAD_ARGUMENTS);
 
 		readQueries();
 		run();
@@ -75,6 +85,7 @@ private:
 
 	ConnectionPool connections;
 	Settings settings;
+	QueryProcessingStage::Enum query_processing_stage;
 
 	struct Stats
 	{
@@ -233,7 +244,7 @@ private:
 	void execute(ConnectionPool::Entry & connection, Query & query)
 	{
 		Stopwatch watch;
-		RemoteBlockInputStream stream(connection, query, &settings);
+		RemoteBlockInputStream stream(connection, query, &settings, nullptr, Tables(), query_processing_stage);
 
 		Progress progress;
 		stream.setProgressCallback([&progress](const Progress & value) { progress.incrementPiecewiseAtomically(value); });
@@ -300,6 +311,7 @@ int main(int argc, char ** argv)
 			("user", boost::program_options::value<std::string>()->default_value("default"), "")
 			("password", boost::program_options::value<std::string>()->default_value(""), "")
 			("database", boost::program_options::value<std::string>()->default_value("default"), "")
+			("stage", boost::program_options::value<std::string>()->default_value("complete"), "request query processing up to specified stage")
 		#define DECLARE_SETTING(TYPE, NAME, DEFAULT) (#NAME, boost::program_options::value<std::string> (), "Settings.h")
 		#define DECLARE_LIMIT(TYPE, NAME, DEFAULT) (#NAME, boost::program_options::value<std::string> (), "Limits.h")
 			APPLY_FOR_SETTINGS(DECLARE_SETTING)
@@ -336,6 +348,7 @@ int main(int argc, char ** argv)
 			options["database"].as<std::string>(),
 			options["user"].as<std::string>(),
 			options["password"].as<std::string>(),
+			options["stage"].as<std::string>(),
 			settings);
 	}
 	catch (const Exception & e)
