@@ -146,7 +146,7 @@ private:
 		if (queries.empty())
 			throw Exception("Empty list of queries.");
 
-		std::cerr << "Loaded " << queries.size() << " queries." << std::endl;
+		std::cerr << "Loaded " << queries.size() << " queries.\n";
 	}
 
 
@@ -181,61 +181,69 @@ private:
 
 		pool.wait();
 
-		std::cerr << "\nTotal queries executed: " << info_total.queries << std::endl;
+		std::cerr << "\nTotal queries executed: " << info_total.queries << "\n";
 		report(info_total);
 	}
 
 
 	void thread(ConnectionPool::Entry connection)
 	{
+		Query query;
+
 		try
 		{
-			/// В этих потоках не будем принимать сигнал INT.
-			sigset_t sig_set;
-			if (sigemptyset(&sig_set)
-				|| sigaddset(&sig_set, SIGINT)
-				|| pthread_sigmask(SIG_BLOCK, &sig_set, nullptr))
-				throwFromErrno("Cannot block signal.", ErrorCodes::CANNOT_BLOCK_SIGNAL);
-
-			Query query;
-
-			while (true)
+			try
 			{
-				queue.pop(query);
+				/// В этих потоках не будем принимать сигнал INT.
+				sigset_t sig_set;
+				if (sigemptyset(&sig_set)
+					|| sigaddset(&sig_set, SIGINT)
+					|| pthread_sigmask(SIG_BLOCK, &sig_set, nullptr))
+					throwFromErrno("Cannot block signal.", ErrorCodes::CANNOT_BLOCK_SIGNAL);
 
-				/// Пустой запрос обозначает конец работы.
-				if (query.empty())
-					break;
+				while (true)
+				{
+					queue.pop(query);
 
-				execute(connection, query);
+					/// Пустой запрос обозначает конец работы.
+					if (query.empty())
+						break;
+
+					execute(connection, query);
+				}
 			}
-		}
-		catch (const Exception & e)
-		{
-			std::string text = e.displayText();
+			catch (const Exception & e)
+			{
+				std::string text = e.displayText();
 
-			std::cerr << "Code: " << e.code() << ". " << text << std::endl << std::endl;
+				std::cerr << "Code: " << e.code() << ". " << text << "\n\n";
 
-			/// Если есть стек-трейс на сервере, то не будем писать стек-трейс на клиенте.
-			if (std::string::npos == text.find("Stack trace"))
-				std::cerr << "Stack trace:" << std::endl
-					<< e.getStackTrace().toString();
+				/// Если есть стек-трейс на сервере, то не будем писать стек-трейс на клиенте.
+				if (std::string::npos == text.find("Stack trace"))
+					std::cerr << "Stack trace:\n"
+						<< e.getStackTrace().toString();
 
-			throw;
-		}
-		catch (const Poco::Exception & e)
-		{
-			std::cerr << "Poco::Exception: " << e.displayText() << std::endl;
-			throw;
-		}
-		catch (const std::exception & e)
-		{
-			std::cerr << "std::exception: " << e.what() << std::endl;
-			throw;
+				throw;
+			}
+			catch (const Poco::Exception & e)
+			{
+				std::cerr << "Poco::Exception: " << e.displayText() << "\n";
+				throw;
+			}
+			catch (const std::exception & e)
+			{
+				std::cerr << "std::exception: " << e.what() << "\n";
+				throw;
+			}
+			catch (...)
+			{
+				std::cerr << "Unknown exception\n";
+				throw;
+			}
 		}
 		catch (...)
 		{
-			std::cerr << "Unknown exception" << std::endl;
+			std::cerr << "On query:\n" << query << "\n";
 			throw;
 		}
 	}
@@ -271,22 +279,22 @@ private:
 		double seconds = info.watch.elapsedSeconds();
 
 		std::cerr
-			<< std::endl
+			<< "\n"
 			<< "QPS: " << (info.queries / seconds) << ", "
 			<< "RPS: " << (info.read_rows / seconds) << ", "
 			<< "MiB/s: " << (info.read_bytes / seconds / 1048576) << ", "
 			<< "result RPS: " << (info.result_rows / seconds) << ", "
 			<< "result MiB/s: " << (info.result_bytes / seconds / 1048576) << "."
-			<< std::endl;
+			<< "\n";
 
 		for (size_t percent = 0; percent <= 90; percent += 10)
 			std::cerr << percent << "%\t" << info.sampler.quantileInterpolated(percent / 100.0) << " sec." << std::endl;
 
-		std::cerr << "95%\t" 	<< info.sampler.quantileInterpolated(0.95) 	<< " sec." << std::endl;
-		std::cerr << "99%\t" 	<< info.sampler.quantileInterpolated(0.99) 	<< " sec." << std::endl;
-		std::cerr << "99.9%\t" 	<< info.sampler.quantileInterpolated(0.999) 	<< " sec." << std::endl;
-		std::cerr << "99.99%\t" << info.sampler.quantileInterpolated(0.9999) << " sec." << std::endl;
-		std::cerr << "100%\t" 	<< info.sampler.quantileInterpolated(1) 		<< " sec." << std::endl;
+		std::cerr << "95%\t" 	<< info.sampler.quantileInterpolated(0.95) 	<< " sec.\n";
+		std::cerr << "99%\t" 	<< info.sampler.quantileInterpolated(0.99) 	<< " sec.\n";
+		std::cerr << "99.9%\t" 	<< info.sampler.quantileInterpolated(0.999) 	<< " sec.\n";
+		std::cerr << "99.99%\t" << info.sampler.quantileInterpolated(0.9999) << " sec.\n";
+		std::cerr << "100%\t" 	<< info.sampler.quantileInterpolated(1) 		<< " sec.\n";
 
 		info.clear();
 	}
@@ -325,8 +333,8 @@ int main(int argc, char ** argv)
 
 		if (options.count("help"))
 		{
-			std::cout << "Usage: " << argv[0] << " [options] < queries.txt" << std::endl;
-			std::cout << desc << std::endl;
+			std::cout << "Usage: " << argv[0] << " [options] < queries.txt\n";
+			std::cout << desc << "\n";
 			return 1;
 		}
 
@@ -355,28 +363,28 @@ int main(int argc, char ** argv)
 	{
 		std::string text = e.displayText();
 
-		std::cerr << "Code: " << e.code() << ". " << text << std::endl << std::endl;
+		std::cerr << "Code: " << e.code() << ". " << text << "\n\n";
 
 		/// Если есть стек-трейс на сервере, то не будем писать стек-трейс на клиенте.
 		if (std::string::npos == text.find("Stack trace"))
-			std::cerr << "Stack trace:" << std::endl
+			std::cerr << "Stack trace:\n"
 				<< e.getStackTrace().toString();
 
 		return e.code();
 	}
 	catch (const Poco::Exception & e)
 	{
-		std::cerr << "Poco::Exception: " << e.displayText() << std::endl;
+		std::cerr << "Poco::Exception: " << e.displayText() << "\n";
 		return ErrorCodes::POCO_EXCEPTION;
 	}
 	catch (const std::exception & e)
 	{
-		std::cerr << "std::exception: " << e.what() << std::endl;
+		std::cerr << "std::exception: " << e.what() << "\n";
 		return ErrorCodes::STD_EXCEPTION;
 	}
 	catch (...)
 	{
-		std::cerr << "Unknown exception" << std::endl;
+		std::cerr << "Unknown exception\n";
 		return ErrorCodes::UNKNOWN_EXCEPTION;
 	}
 }
