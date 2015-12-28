@@ -1,5 +1,5 @@
-#include <DB/Storages/MarkCache.h>
 #include <DB/Storages/MergeTree/MergeTreePartChecker.h>
+#include <DB/DataStreams/MarkInCompressedFile.h>
 #include <DB/DataTypes/DataTypeString.h>
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
