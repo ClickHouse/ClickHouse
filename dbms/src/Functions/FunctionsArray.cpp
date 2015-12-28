@@ -29,6 +29,7 @@ void registerFunctionsArray(FunctionFactory & factory)
 	factory.registerFunction<FunctionEmptyArrayString>();
 	factory.registerFunction<FunctionEmptyArrayToSingle>();
 	factory.registerFunction<FunctionRange>();
+	factory.registerFunction<FunctionArrayReduce>();
 }
 
 }

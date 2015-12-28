@@ -147,7 +147,7 @@ public:
 		return pos;
 	}
 
-	ColumnPtr cut(size_t start, size_t length) const override;
+	void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
 	void insert(const Field & x) override
 	{
@@ -175,7 +175,7 @@ public:
 		getOffsets().push_back(getOffsets().size() == 0 ? 0 : getOffsets().back());
 	}
 
-	ColumnPtr filter(const Filter & filt) const override;
+	ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
 
 	ColumnPtr permute(const Permutation & perm, size_t limit) const override;
 
@@ -266,6 +266,25 @@ public:
 
 	ColumnPtr replicate(const Offsets_t & replicate_offsets) const override;
 
+
+	ColumnPtr convertToFullColumnIfConst() const override
+	{
+		ColumnPtr new_data;
+		ColumnPtr new_offsets;
+
+		if (auto full_column = data->convertToFullColumnIfConst())
+			new_data = full_column;
+		else
+			new_data = data;
+
+		if (auto full_column = offsets->convertToFullColumnIfConst())
+			new_offsets = full_column;
+		else
+			new_offsets = offsets;
+
+		return new ColumnArray(new_data, new_offsets);
+	}
+
 private:
 	ColumnPtr data;
 	ColumnPtr offsets;	/// Смещения могут быть разделяемыми для нескольких столбцов - для реализации вложенных структур данных.
@@ -274,9 +293,9 @@ private:
 	size_t ALWAYS_INLINE sizeAt(size_t i) const		{ return i == 0 ? getOffsets()[0] : (getOffsets()[i] - getOffsets()[i - 1]); }
 
 
-	/// Размножить значения, если вложенный столбец - ColumnArray<T>.
+	/// Размножить значения, если вложенный столбец - ColumnVector<T>.
 	template <typename T>
-	ColumnPtr replicate(const Offsets_t & replicate_offsets) const;
+	ColumnPtr replicateNumber(const Offsets_t & replicate_offsets) const;
 
 	/// Размножить значения, если вложенный столбец - ColumnString. Код слишком сложный.
 	ColumnPtr replicateString(const Offsets_t & replicate_offsets) const;
@@ -287,6 +306,14 @@ private:
 	  * Только ради неё сделана реализация метода replicate для ColumnArray(ColumnConst).
 	  */
 	ColumnPtr replicateConst(const Offsets_t & replicate_offsets) const;
+
+
+	/// Специализации для функции filter.
+	template <typename T>
+	ColumnPtr filterNumber(const Filter & filt, ssize_t result_size_hint) const;
+
+	ColumnPtr filterString(const Filter & filt, ssize_t result_size_hint) const;
+	ColumnPtr filterGeneric(const Filter & filt, ssize_t result_size_hint) const;
 };
 
 

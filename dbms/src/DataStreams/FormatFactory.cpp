@@ -19,6 +19,7 @@
 #include <DB/DataStreams/JSONCompactRowOutputStream.h>
 #include <DB/DataStreams/TSKVRowOutputStream.h>
 #include <DB/DataStreams/PrettyCompactMonoBlockOutputStream.h>
+#include <DB/DataStreams/ODBCBlockOutputStream.h>
 #include <DB/DataStreams/FormatFactory.h>
 
 
@@ -54,7 +55,8 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
 		|| name == "Null"
 		|| name == "JSON"
 		|| name == "JSONCompact"
-		|| name == "TSKV")
+		|| name == "TSKV"
+		|| name == "ODBC")
 		throw Exception("Format " + name + " is not suitable for input", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT);
 	else
 		throw Exception("Unknown format " + name, ErrorCodes::UNKNOWN_FORMAT);
@@ -104,6 +106,8 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer &
 		return new BlockOutputStreamFromRowOutputStream(new JSONCompactRowOutputStream(buf, sample));
 	else if (name == "TSKV")
 		return new BlockOutputStreamFromRowOutputStream(new TSKVRowOutputStream(buf, sample));
+	else if (name == "ODBC")
+		return new ODBCBlockOutputStream(buf);
 	else if (name == "Null")
 		return new NullBlockOutputStream;
 	else

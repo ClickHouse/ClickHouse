@@ -14,7 +14,7 @@ class ReadBufferFromFile : public ReadBufferFromFileDescriptor
 {
 private:
 	std::string file_name;
-	
+
 public:
 	ReadBufferFromFile(const std::string & file_name_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, int flags = -1,
 		char * existing_memory = nullptr, size_t alignment = 0)
@@ -28,9 +28,28 @@ public:
 			throwFromErrno("Cannot open file " + file_name, errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
 	}
 
+	/// Использовать уже открытый файл.
+	ReadBufferFromFile(int fd, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, int flags = -1,
+		char * existing_memory = nullptr, size_t alignment = 0)
+		: ReadBufferFromFileDescriptor(fd, buf_size, existing_memory, alignment), file_name("(fd = " + toString(fd) + ")")
+	{
+	}
+
 	virtual ~ReadBufferFromFile()
 	{
-		close(fd);
+		if (fd < 0)
+			return;
+
+		::close(fd);
+	}
+
+	/// Закрыть файл раньше вызова деструктора.
+	void close()
+	{
+		if (0 != ::close(fd))
+			throw Exception("Cannot close file", ErrorCodes::CANNOT_CLOSE_FILE);
+
+		fd = -1;
 	}
 
 	virtual std::string getFileName()

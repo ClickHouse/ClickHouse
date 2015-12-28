@@ -9,6 +9,7 @@
 #include <DB/Common/escapeForFileName.h>
 #include <DB/Parsers/ASTInsertQuery.h>
 #include <DB/Parsers/ASTSelectQuery.h>
+#include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Parsers/TablePropertiesQueriesASTs.h>
 
 #include <DB/Interpreters/InterpreterSelectQuery.h>
@@ -80,7 +81,7 @@ StorageDistributed::StorageDistributed(
 	context(context_), cluster(cluster_),
 	sharding_key_expr(sharding_key_ ? ExpressionAnalyzer(sharding_key_, context, nullptr, *columns).getActions(false) : nullptr),
 	sharding_key_column_name(sharding_key_ ? sharding_key_->getColumnName() : String{}),
-	write_enabled(!data_path_.empty() && (cluster.getLocalNodesNum() + cluster.pools.size() < 2 || sharding_key_)),
+	write_enabled(!data_path_.empty() && (((cluster.getLocalShardCount() + cluster.getRemoteShardCount()) < 2) || sharding_key_)),
 	path(data_path_.empty() ? "" : (data_path_ + escapeForFileName(name) + '/'))
 {
 	createDirectoryMonitors();
@@ -104,7 +105,7 @@ StorageDistributed::StorageDistributed(
 	context(context_), cluster(cluster_),
 	sharding_key_expr(sharding_key_ ? ExpressionAnalyzer(sharding_key_, context, nullptr, *columns).getActions(false) : nullptr),
 	sharding_key_column_name(sharding_key_ ? sharding_key_->getColumnName() : String{}),
-	write_enabled(!data_path_.empty() && (cluster.getLocalNodesNum() + cluster.pools.size() < 2 || sharding_key_)),
+	write_enabled(!data_path_.empty() && (((cluster.getLocalShardCount() + cluster.getRemoteShardCount()) < 2) || sharding_key_)),
 	path(data_path_.empty() ? "" : (data_path_ + escapeForFileName(name) + '/'))
 {
 	createDirectoryMonitors();
@@ -168,7 +169,7 @@ BlockInputStreams StorageDistributed::read(
 	/// Не имеет смысла на удалённых серверах, так как запрос отправляется обычно с другим user-ом.
 	new_settings.max_concurrent_queries_for_user = 0;
 
-	size_t result_size = (cluster.pools.size() * settings.max_parallel_replicas) + cluster.getLocalNodesNum();
+	size_t result_size = (cluster.getRemoteShardCount() * settings.max_parallel_replicas) + cluster.getLocalShardCount();
 
 	processed_stage = result_size == 1 || settings.distributed_group_by_no_merge
 		? QueryProcessingStage::Complete
@@ -192,27 +193,89 @@ BlockInputStreams StorageDistributed::read(
 	if (settings.global_subqueries_method == GlobalSubqueriesMethod::PUSH)
 		external_tables = context.getExternalTables();
 
+	/// Распределить шарды равномерно по потокам.
+
+	size_t remote_count = cluster.getRemoteShardCount();
+
+	/// Отключаем мультиплексирование шардов, если есть ORDER BY без GROUP BY.
+	//const ASTSelectQuery & ast = *(static_cast<const ASTSelectQuery *>(modified_query_ast.get()));
+
+	/** Функциональность shard_multiplexing не доделана - выключаем её.
+	  * (Потому что установка соединений с разными шардами в рамках одного потока выполняется не параллельно.)
+	  * Подробнее смотрите в https://███████████.yandex-team.ru/METR-18300
+	  */
+	//bool enable_shard_multiplexing = !(ast.order_expression_list && !ast.group_expression_list);
+	bool enable_shard_multiplexing = false;
+
+	size_t thread_count;
+
+	if (!enable_shard_multiplexing)
+		thread_count = remote_count;
+	else if (remote_count == 0)
+		thread_count = 0;
+	else if (settings.max_distributed_processing_threads == 0)
+		thread_count = 1;
+	else
+		thread_count = std::min(remote_count, static_cast<size_t>(settings.max_distributed_processing_threads));
+
+	size_t pools_per_thread = (thread_count > 0) ? (remote_count / thread_count) : 0;
+	size_t remainder = (thread_count > 0) ? (remote_count % thread_count) : 0;
+
+	ConnectionPoolsPtr pools;
+	bool do_init = true;
+
 	/// Цикл по шардам.
-	for (auto & conn_pool : cluster.pools)
-		res.emplace_back(new RemoteBlockInputStream{
-			conn_pool, modified_query, &new_settings, throttler,
-			external_tables, processed_stage, context});
-
-	/// Добавляем запросы к локальному ClickHouse.
-	if (cluster.getLocalNodesNum() > 0)
+	size_t current_thread = 0;
+	for (const auto & shard_info : cluster.getShardsInfo())
 	{
-		DB::Context new_context = context;
-		new_context.setSettings(new_settings);
-
-		for (size_t i = 0; i < cluster.getLocalNodesNum(); ++i)
+		if (shard_info.isLocal())
 		{
-			InterpreterSelectQuery interpreter(modified_query_ast, new_context, processed_stage);
+			/// Добавляем запросы к локальному ClickHouse.
 
-			/** Материализация нужна, так как с удалённых серверов константы приходят материализованными.
-			  * Если этого не делать, то в разных потоках будут получаться разные типы (Const и не-Const) столбцов,
-			  *  а это не разрешено, так как весь код исходит из допущения, что в потоке блоков все типы одинаковые.
-			  */
-			res.emplace_back(new MaterializingBlockInputStream(interpreter.execute().in));
+			DB::Context new_context = context;
+			new_context.setSettings(new_settings);
+
+			for (size_t i = 0; i < shard_info.local_addresses.size(); ++i)
+			{
+				InterpreterSelectQuery interpreter(modified_query_ast, new_context, processed_stage);
+
+				/** Материализация нужна, так как с удалённых серверов константы приходят материализованными.
+				  * Если этого не делать, то в разных потоках будут получаться разные типы (Const и не-Const) столбцов,
+				  * а это не разрешено, так как весь код исходит из допущения, что в потоке блоков все типы одинаковые.
+				  */
+				res.emplace_back(new MaterializingBlockInputStream(interpreter.execute().in));
+			}
+		}
+		else
+		{
+			size_t excess = (current_thread < remainder) ? 1 : 0;
+			size_t actual_pools_per_thread = pools_per_thread + excess;
+
+			if (actual_pools_per_thread == 1)
+			{
+				res.emplace_back(new RemoteBlockInputStream{
+					shard_info.pool, modified_query, &new_settings, throttler,
+					external_tables, processed_stage, context});
+				++current_thread;
+			}
+			else
+			{
+				if (do_init)
+				{
+					pools = new ConnectionPools;
+					do_init = false;
+				}
+
+				pools->push_back(shard_info.pool);
+				if (pools->size() == actual_pools_per_thread)
+				{
+					res.emplace_back(new RemoteBlockInputStream{
+						pools, modified_query, &new_settings, throttler,
+						external_tables, processed_stage, context});
+					do_init = true;
+					++current_thread;
+				}
+			}
 		}
 	}
 
@@ -273,28 +336,90 @@ BlockInputStreams StorageDistributed::describe(const Context & context, const Se
 
 	BlockInputStreams res;
 
-	/// Цикл по шардам.
-	for (auto & conn_pool : cluster.pools)
+	/// Распределить шарды равномерно по потокам.
+
+	size_t remote_count = 0;
+	for (const auto & shard_info : cluster.getShardsInfo())
 	{
-		auto stream = new RemoteBlockInputStream{conn_pool, query, &new_settings, throttler};
-		stream->reachAllReplicas();
-		stream->appendExtraInfo();
-		res.emplace_back(stream);
+		if (shard_info.hasRemoteConnections())
+			++remote_count;
 	}
 
-	/// Добавляем запросы к локальному ClickHouse.
-	if (cluster.getLocalNodesNum() > 0)
-	{
-		DB::Context new_context = context;
-		new_context.setSettings(new_settings);
+	size_t thread_count;
 
-		const auto & local_addresses = cluster.getLocalShardsInfo();
-		for (const auto & address : local_addresses)
+	/** Функциональность shard_multiplexing не доделана - выключаем её.
+	  * (Потому что установка соединений с разными шардами в рамках одного потока выполняется не параллельно.)
+	  * Подробнее смотрите в https://███████████.yandex-team.ru/METR-18300
+	  */
+
+/*	if (remote_count == 0)
+		thread_count = 0;
+	else if (settings.max_distributed_processing_threads == 0)
+		thread_count = 1;
+	else
+		thread_count = std::min(remote_count, static_cast<size_t>(settings.max_distributed_processing_threads));
+	*/
+	thread_count = remote_count;
+
+	size_t pools_per_thread = (thread_count > 0) ? (remote_count / thread_count) : 0;
+	size_t remainder = (thread_count > 0) ?  (remote_count % thread_count) : 0;
+
+	ConnectionPoolsPtr pools;
+	bool do_init = true;
+
+	/// Цикл по шардам.
+	size_t current_thread = 0;
+	for (const auto & shard_info : cluster.getShardsInfo())
+	{
+		if (shard_info.isLocal())
 		{
-			InterpreterDescribeQuery interpreter(ast, new_context);
-			BlockInputStreamPtr stream = new MaterializingBlockInputStream(interpreter.execute().in);
-			stream = new BlockExtraInfoInputStream(stream, toBlockExtraInfo(address));
-			res.emplace_back(stream);
+			/// Добавляем запросы к локальному ClickHouse.
+
+			DB::Context new_context = context;
+			new_context.setSettings(new_settings);
+
+			for (const auto & address : shard_info.local_addresses)
+			{
+				InterpreterDescribeQuery interpreter(ast, new_context);
+				BlockInputStreamPtr stream = new MaterializingBlockInputStream(interpreter.execute().in);
+				stream = new BlockExtraInfoInputStream(stream, toBlockExtraInfo(address));
+				res.emplace_back(stream);
+			}
+		}
+
+		if (shard_info.hasRemoteConnections())
+		{
+			size_t excess = (current_thread < remainder) ? 1 : 0;
+			size_t actual_pools_per_thread = pools_per_thread + excess;
+
+			if (actual_pools_per_thread == 1)
+			{
+				auto stream = new RemoteBlockInputStream{shard_info.pool, query, &new_settings, throttler};
+				stream->doBroadcast();
+				stream->appendExtraInfo();
+				res.emplace_back(stream);
+				++current_thread;
+			}
+			else
+			{
+				if (do_init)
+				{
+					pools = new ConnectionPools;
+					do_init = false;
+				}
+
+				pools->push_back(shard_info.pool);
+				if (pools->size() == actual_pools_per_thread)
+				{
+					auto stream = new RemoteBlockInputStream{pools, query, &new_settings, throttler};
+					stream->doBroadcast();
+					stream->appendExtraInfo();
+					res.emplace_back(stream);
+
+					do_init = true;
+					++current_thread;
+				}
+			}
 		}
 	}
 
@@ -340,7 +465,7 @@ void StorageDistributed::requireDirectoryMonitor(const std::string & name)
 
 size_t StorageDistributed::getShardCount() const
 {
-	return cluster.pools.size();
+	return cluster.getRemoteShardCount();
 }
 
 }

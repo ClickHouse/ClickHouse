@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <DB/IO/createReadBufferFromFileBase.h>
 #include <DB/IO/CompressedReadBufferBase.h>
 #include <DB/IO/UncompressedCache.h>
@@ -23,8 +24,7 @@ private:
 	size_t estimated_size;
 	size_t aio_threshold;
 
-	/// SharedPtr - для ленивой инициализации (только в случае кэш-промаха).
-	Poco::SharedPtr<ReadBufferFromFileBase> file_in;
+	std::unique_ptr<ReadBufferFromFileBase> file_in;
 	size_t file_pos;
 
 	/// Кусок данных из кэша, или кусок считанных данных, который мы положим в кэш.
@@ -34,8 +34,11 @@ private:
 	{
 		if (!file_in)
 		{
-			file_in = createReadBufferFromFileBase(path, estimated_size, aio_threshold, buf_size);
+			file_in.reset(createReadBufferFromFileBase(path, estimated_size, aio_threshold, buf_size));
 			compressed_in = &*file_in;
+
+			if (profile_callback)
+				file_in->setProfileCallback(profile_callback, clock_type);
 		}
 	}
 
@@ -81,6 +84,11 @@ private:
 		return true;
 	}
 
+
+	/// Передаётся в file_in.
+	ReadBufferFromFileBase::ProfileCallback profile_callback;
+	clockid_t clock_type;
+
 public:
 	CachedCompressedReadBuffer(
 		const std::string & path_, UncompressedCache * cache_, size_t estimated_size_, size_t aio_threshold_,
@@ -114,6 +122,13 @@ public:
 			pos = working_buffer.begin() + offset_in_decompressed_block;
 			bytes -= offset();
 		}
+	}
+
+
+	void setProfileCallback(const ReadBufferFromFileBase::ProfileCallback & profile_callback_, clockid_t clock_type_ = CLOCK_MONOTONIC_COARSE)
+	{
+		profile_callback = profile_callback_;
+		clock_type = clock_type_;
 	}
 };
 

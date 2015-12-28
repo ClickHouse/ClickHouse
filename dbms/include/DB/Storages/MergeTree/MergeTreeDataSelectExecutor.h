@@ -29,7 +29,7 @@ public:
 		size_t max_block_size,
 		unsigned threads,
 		size_t * inout_part_index,
-		Int64 max_block_number_to_read);
+		Int64 max_block_number_to_read) const;
 
 private:
 	MergeTreeData & data;
@@ -45,7 +45,7 @@ private:
 		ExpressionActionsPtr prewhere_actions,
 		const String & prewhere_column,
 		const Names & virt_columns,
-		const Settings & settings);
+		const Settings & settings) const;
 
 	BlockInputStreams spreadMarkRangesAmongThreadsFinal(
 		RangesInDataParts parts,
@@ -57,12 +57,24 @@ private:
 		const String & prewhere_column,
 		const Names & virt_columns,
 		const Settings & settings,
-		const Context & context);
+		const Context & context) const;
+
+	/// Получить приблизительное значение (оценку снизу - только по полным засечкам) количества строк, попадающего под индекс.
+	size_t getApproximateTotalRowsToRead(
+		const MergeTreeData::DataPartsVector & parts,
+		const PKCondition & key_condition,
+		const Settings & settings) const;
 
 	/// Создать выражение "Sign == 1".
-	void createPositiveSignCondition(ExpressionActionsPtr & out_expression, String & out_column, const Context & context);
+	void createPositiveSignCondition(
+		ExpressionActionsPtr & out_expression,
+		String & out_column,
+		const Context & context) const;
 
-	MarkRanges markRangesFromPkRange(const MergeTreeData::DataPart::Index & index, PKCondition & key_condition, const Settings & settings);
+	MarkRanges markRangesFromPKRange(
+		const MergeTreeData::DataPart::Index & index,
+		const PKCondition & key_condition,
+		const Settings & settings) const;
 };
 
 }

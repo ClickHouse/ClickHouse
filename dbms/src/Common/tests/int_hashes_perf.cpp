@@ -4,7 +4,6 @@
 #include <iomanip>
 
 #include <DB/Common/HashTable/Hash.h>
-#include <stats/IntHash.h>
 
 #include <DB/Common/Stopwatch.h>
 

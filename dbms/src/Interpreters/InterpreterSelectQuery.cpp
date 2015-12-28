@@ -28,11 +28,11 @@
 #include <DB/Interpreters/InterpreterSelectQuery.h>
 #include <DB/Interpreters/InterpreterSetQuery.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
-#include <DB/Storages/StorageView.h>
 #include <DB/TableFunctions/ITableFunction.h>
 #include <DB/TableFunctions/TableFunctionFactory.h>
 
 #include <DB/Core/Field.h>
+
 
 namespace DB
 {
@@ -123,11 +123,6 @@ void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_)
 
 			storage = context.getTable(database_name, table_name);
 		}
-
-		if (!storage->supportsParallelReplicas() && (settings.parallel_replicas_count > 0))
-			throw Exception("Storage engine " + storage->getName()
-							+ " does not support parallel execution on several replicas",
-							ErrorCodes::STORAGE_DOESNT_SUPPORT_PARALLEL_REPLICAS);
 
 		table_lock = storage->lockStructure(false);
 		if (table_column_names.empty())
@@ -650,6 +645,43 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
 
 	/// Список столбцов, которых нужно прочитать, чтобы выполнить запрос.
 	Names required_columns = query_analyzer->getRequiredColumns();
+	/// Действия для вычисления ALIAS, если потребуется.
+	ExpressionActionsPtr alias_actions;
+	/// Требуются ли ALIAS столбцы для выполнения запроса?
+	auto alias_columns_required = false;
+
+	if (storage && !storage->alias_columns.empty())
+	{
+		for (const auto & column : required_columns)
+		{
+			const auto default_it = storage->column_defaults.find(column);
+			if (default_it != std::end(storage->column_defaults) && default_it->second.type == ColumnDefaultType::Alias)
+			{
+				alias_columns_required = true;
+				break;
+			}
+		}
+
+		if (alias_columns_required)
+		{
+			/// Составим выражение для возврата всех запрошенных столбцов, с вычислением требуемых ALIAS столбцов.
+			ASTPtr required_columns_expr_list{new ASTExpressionList};
+
+			for (const auto & column : required_columns)
+			{
+				const auto default_it = storage->column_defaults.find(column);
+				if (default_it != std::end(storage->column_defaults) && default_it->second.type == ColumnDefaultType::Alias)
+					required_columns_expr_list->children.emplace_back(setAlias(default_it->second.expression->clone(), column));
+				else
+					required_columns_expr_list->children.emplace_back(new ASTIdentifier{{}, column});
+			}
+
+			alias_actions = ExpressionAnalyzer{required_columns_expr_list, context, storage, table_column_names}.getActions(true);
+
+			/// Множество требуемых столбцов могло быть дополнено в результате добавления действия для вычисления ALIAS.
+			required_columns = alias_actions->getRequiredColumns();
+		}
+	}
 
 	if (query.table && typeid_cast<ASTSelectQuery *>(query.table.get()))
 	{
@@ -671,12 +703,6 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
 		if (query_analyzer->hasAggregation())
 			interpreter_subquery->ignoreWithTotals();
 	}
-
-	/// если в настройках установлен default_sample != 1, то все запросы выполняем с сэмплингом
-	/// если таблица не поддерживает сэмплинг получим исключение
-	/// поэтому запросы типа SHOW TABLES работать с включенном default_sample не будут
-	if (!query.sample_size && settings.default_sample != 1)
-		query.sample_size = new ASTLiteral(StringRange(), Float64(settings.default_sample));
 
 	if (query.sample_size && (!storage || !storage->supportsSampling()))
 		throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
@@ -761,6 +787,13 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
 			context, settings_for_storage, from_stage,
 			settings.max_block_size, max_streams);
 
+		if (alias_actions)
+			/// Обернем каждый поток, возвращенный из таблицы, с целью вычисления и добавления ALIAS столбцов
+			transformStreams([&] (auto & stream)
+			{
+				stream = new ExpressionBlockInputStream{stream, alias_actions};
+			});
+
 		transformStreams([&](auto & stream)
 		{
 			stream->addTableLock(table_lock);
@@ -825,12 +858,28 @@ void InterpreterSelectQuery::executeAggregation(ExpressionActionsPtr expression,
 	AggregateDescriptions aggregates;
 	query_analyzer->getAggregateInfo(key_names, aggregates);
 
+	/** Двухуровневая агрегация полезна в двух случаях:
+	  * 1. Делается параллельная агрегация, и результаты надо параллельно мерджить.
+	  * 2. Делается агрегация с сохранением временных данных на диск, и их нужно мерджить эффективно по памяти.
+	  */
+	bool allow_to_use_two_level_group_by = streams.size() > 1 || settings.limits.max_bytes_before_external_group_by != 0;
+
+	Aggregator::Params params(key_names, aggregates,
+		overflow_row, settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode,
+		settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile,
+		allow_to_use_two_level_group_by ? settings.group_by_two_level_threshold : SettingUInt64(0),
+		allow_to_use_two_level_group_by ? settings.group_by_two_level_threshold_bytes : SettingUInt64(0),
+		settings.limits.max_bytes_before_external_group_by, context.getTemporaryPath());
+
 	/// Если источников несколько, то выполняем параллельную агрегацию
 	if (streams.size() > 1)
 	{
-		streams[0] = new ParallelAggregatingBlockInputStream(streams, stream_with_non_joined_data, key_names, aggregates, overflow_row, final,
-			settings.max_threads, settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode,
-			settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile, settings.group_by_two_level_threshold);
+		streams[0] = new ParallelAggregatingBlockInputStream(
+			streams, stream_with_non_joined_data, params, final,
+			settings.max_threads,
+			settings.aggregation_memory_efficient_merge_threads
+				? settings.aggregation_memory_efficient_merge_threads
+				: settings.max_threads);
 
 		stream_with_non_joined_data = nullptr;
 		streams.resize(1);
@@ -846,9 +895,7 @@ void InterpreterSelectQuery::executeAggregation(ExpressionActionsPtr expression,
 		if (stream_with_non_joined_data)
 			inputs.push_back(stream_with_non_joined_data);
 
-		streams[0] = new AggregatingBlockInputStream(new ConcatBlockInputStream(inputs), key_names, aggregates, overflow_row, final,
-			settings.limits.max_rows_to_group_by, settings.limits.group_by_overflow_mode,
-			settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile, 0);
+		streams[0] = new AggregatingBlockInputStream(new ConcatBlockInputStream(inputs), params, final);
 
 		stream_with_non_joined_data = nullptr;
 	}
@@ -876,17 +923,24 @@ void InterpreterSelectQuery::executeMergeAggregated(bool overflow_row, bool fina
 	  *  но при этом может работать медленнее.
 	  */
 
+	Aggregator::Params params(key_names, aggregates, overflow_row);
+
 	if (!settings.distributed_aggregation_memory_efficient)
 	{
 		/// Склеим несколько источников в один, распараллеливая работу.
 		executeUnion();
 
 		/// Теперь объединим агрегированные блоки
-		streams[0] = new MergingAggregatedBlockInputStream(streams[0], key_names, aggregates, overflow_row, final, original_max_threads);
+		streams[0] = new MergingAggregatedBlockInputStream(streams[0], params, final, original_max_threads);
 	}
 	else
 	{
-		streams[0] = new MergingAggregatedMemoryEfficientBlockInputStream(streams, key_names, aggregates, overflow_row, final);
+		streams[0] = new MergingAggregatedMemoryEfficientBlockInputStream(streams, params, final,
+			settings.max_threads,
+			settings.aggregation_memory_efficient_merge_threads
+				? size_t(settings.aggregation_memory_efficient_merge_threads)
+				: original_max_threads);
+
 		streams.resize(1);
 	}
 }
@@ -1095,8 +1149,18 @@ void InterpreterSelectQuery::executeLimit()
 		  *  если нет WITH TOTALS и есть подзапрос в FROM, и там на одном из уровней есть WITH TOTALS,
 		  *  то при использовании LIMIT-а следует читать данные до конца, а не отменять выполнение запроса раньше,
 		  *  потому что при отмене выполнения запроса, мы не получим данные для totals с удалённого сервера.
+		  *
+		  * Ещё случай:
+		  *  если есть WITH TOTALS и нет ORDER BY, то читать данные до конца,
+		  *  иначе TOTALS посчитается по неполным данным.
 		  */
 		bool always_read_till_end = false;
+
+		if (query.group_by_with_totals && !query.order_expression_list)
+		{
+			always_read_till_end = true;
+		}
+
 		if (!query.group_by_with_totals && query.table && typeid_cast<const ASTSelectQuery *>(query.table.get()))
 		{
 			const ASTSelectQuery * subquery = static_cast<const ASTSelectQuery *>(query.table.get());

@@ -102,6 +102,9 @@ private:
 
 		const auto path = storage.getFullPath() + task->data_part->name + '/';
 
+		/// Позволяет пулу уменьшать количество потоков в случае слишком медленных чтений.
+		auto profile_callback = [this](ReadBufferFromFileBase::ProfileInfo info) { pool->profileFeedback(info); };
+
 		if (!reader)
 		{
 			if (use_uncompressed_cache)
@@ -111,13 +114,13 @@ private:
 
 			reader = std::make_unique<MergeTreeReader>(
 				path, task->data_part, task->columns, owned_uncompressed_cache.get(), owned_mark_cache.get(),
-				storage, task->mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size);
+				storage, task->mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size, MergeTreeReader::ValueSizeMap{}, profile_callback);
 
 			if (prewhere_actions)
 				pre_reader = std::make_unique<MergeTreeReader>(
 					path, task->data_part, task->pre_columns, owned_uncompressed_cache.get(),
 					owned_mark_cache.get(), storage, task->mark_ranges, min_bytes_to_use_direct_io,
-					max_read_buffer_size);
+					max_read_buffer_size, MergeTreeReader::ValueSizeMap{}, profile_callback);
 		}
 		else
 		{
@@ -125,13 +128,13 @@ private:
 			reader = std::make_unique<MergeTreeReader>(
 				path, task->data_part, task->columns, owned_uncompressed_cache.get(), owned_mark_cache.get(),
 				storage, task->mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size,
-				reader->getAvgValueSizeHints());
+				reader->getAvgValueSizeHints(), profile_callback);
 
 			if (prewhere_actions)
 				pre_reader = std::make_unique<MergeTreeReader>(
 					path, task->data_part, task->pre_columns, owned_uncompressed_cache.get(),
 					owned_mark_cache.get(), storage, task->mark_ranges, min_bytes_to_use_direct_io,
-					max_read_buffer_size, pre_reader->getAvgValueSizeHints());
+					max_read_buffer_size, pre_reader->getAvgValueSizeHints(), profile_callback);
 		}
 
 		return true;
@@ -255,7 +258,7 @@ private:
 						if (col.name == prewhere_column && res.columns() > 1)
 							continue;
 						col.column =
-							col.column->filter(task->column_name_set.count(col.name) ? post_filter : pre_filter);
+							col.column->filter(task->column_name_set.count(col.name) ? post_filter : pre_filter, -1);
 						rows = col.column->size();
 					}
 

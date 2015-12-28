@@ -129,7 +129,7 @@ public:
 		const ColumnConstArray * array_from = typeid_cast<const ColumnConstArray *>(&*block.getByPosition(arguments[1]).column);
 		const ColumnConstArray * array_to = typeid_cast<const ColumnConstArray *>(&*block.getByPosition(arguments[2]).column);
 
-		if (!array_from && !array_to)
+		if (!array_from || !array_to)
 			throw Exception("Second and third arguments of function " + getName() + " must be constant arrays.", ErrorCodes::ILLEGAL_COLUMN);
 
 		prepare(array_from->getData(), array_to->getData(), block, arguments);

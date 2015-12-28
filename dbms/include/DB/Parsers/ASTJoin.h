@@ -42,6 +42,7 @@ public:
 
 	ASTPtr table;				/// "Правая" таблица для соединения - подзапрос или имя таблицы.
 	ASTPtr using_expr_list;		/// По каким столбцам выполнять соединение.
+	ASTPtr on_expr;				/// Условие соединения. Поддерживается либо USING либо ON, но не одновременно.
 
 	ASTJoin() = default;
 	ASTJoin(const StringRange range_) : IAST(range_) {}
@@ -108,10 +109,15 @@ protected:
 
 		table->formatImpl(settings, state, frame);
 
-		if (kind != ASTJoin::Cross)
+		if (using_expr_list)
 		{
 			settings.ostr << (settings.hilite ? hilite_keyword : "") << " USING " << (settings.hilite ? hilite_none : "");
 			using_expr_list->formatImpl(settings, state, frame);
+		}
+		else if (on_expr)
+		{
+			settings.ostr << (settings.hilite ? hilite_keyword : "") << " ON " << (settings.hilite ? hilite_none : "");
+			on_expr->formatImpl(settings, state, frame);
 		}
 	}
 };

@@ -418,9 +418,9 @@ bool Join::insertFromBlock(const Block & block)
 	{
 		key_columns[i] = block.getByName(key_names_right[i]).column;
 
-		if (auto * col_const = dynamic_cast<const IColumnConst *>(key_columns[i]))
+		if (auto converted = key_columns[i]->convertToFullColumnIfConst())
 		{
-			materialized_columns.emplace_back(col_const->convertToFullColumn());
+			materialized_columns.emplace_back(converted);
 			key_columns[i] = materialized_columns.back();
 		}
 	}
@@ -456,8 +456,8 @@ bool Join::insertFromBlock(const Block & block)
 	for (size_t i = 0, size = stored_block->columns(); i < size; ++i)
 	{
 		ColumnPtr col = stored_block->getByPosition(i).column;
-		if (auto * col_const = dynamic_cast<const IColumnConst *>(col.get()))
-			stored_block->getByPosition(i).column = col_const->convertToFullColumn();
+		if (auto converted = col->convertToFullColumnIfConst())
+			stored_block->getByPosition(i).column = converted;
 	}
 
 	if (kind != ASTJoin::Cross)
@@ -604,9 +604,9 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 	{
 		key_columns[i] = block.getByName(key_names_left[i]).column;
 
-		if (auto * col_const = dynamic_cast<const IColumnConst *>(key_columns[i]))
+		if (auto converted = key_columns[i]->convertToFullColumnIfConst())
 		{
-			materialized_columns.emplace_back(col_const->convertToFullColumn());
+			materialized_columns.emplace_back(converted);
 			key_columns[i] = materialized_columns.back();
 		}
 	}
@@ -623,8 +623,8 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 		{
 			auto & col = block.getByPosition(i).column;
 
-			if (auto * col_const = dynamic_cast<IColumnConst *>(col.get()))
-				col = col_const->convertToFullColumn();
+			if (auto converted = col->convertToFullColumnIfConst())
+				col = converted;
 		}
 	}
 
@@ -740,7 +740,7 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 	/// Если ANY INNER|RIGHT JOIN - фильтруем все столбцы кроме новых.
 	if (filter)
 		for (size_t i = 0; i < existing_columns; ++i)
-			block.getByPosition(i).column = block.getByPosition(i).column->filter(*filter);
+			block.getByPosition(i).column = block.getByPosition(i).column->filter(*filter, -1);
 
 	/// Если ALL ... JOIN - размножаем все столбцы кроме новых.
 	if (offsets_to_replicate)

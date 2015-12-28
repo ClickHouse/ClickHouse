@@ -16,6 +16,10 @@ namespace DB
   */
 struct Settings
 {
+	/// Для того, чтобы инициализация из пустого initializer-list была value initialization, а не aggregate initialization в С++14.
+	/// http://en.cppreference.com/w/cpp/language/aggregate_initialization
+	Settings() {}
+
 	/** Перечисление настроек: тип, имя, значение по-умолчанию.
 	  *
 	  * Это сделано несколько неудобно, чтобы не перечислять настройки во многих разных местах.
@@ -82,17 +86,20 @@ struct Settings
 	M(SettingTotalsMode, totals_mode, TotalsMode::AFTER_HAVING_EXCLUSIVE) \
 	M(SettingFloat, totals_auto_threshold, 0.5) \
 	\
-	/** Сэмплирование по умолчанию. Если равно 1, то отключено. */ \
-	M(SettingFloat, default_sample, 1.0) \
-	\
 	/** Включена ли компиляция запросов. */ \
 	M(SettingBool, compile, false) \
 	/** Количество одинаковых по структуре запросов перед тем, как инициируется их компиляция. */ \
 	M(SettingUInt64, min_count_to_compile, 3) \
-	/** При каком количестве ключей, начинает использоваться двухуровневая агрегация. 0 - никогда не использовать. */ \
+	/** При каком количестве ключей, начинает использоваться двухуровневая агрегация. 0 - порог не выставлен. */ \
 	M(SettingUInt64, group_by_two_level_threshold, 100000) \
+	/** При каком размере состояния агрегации в байтах, начинает использоваться двухуровневая агрегация. 0 - порог не выставлен. \
+	  * Двухуровневая агрегация начинает использоваться при срабатывании хотя бы одного из порогов. */ \
+	M(SettingUInt64, group_by_two_level_threshold_bytes, 100000000) \
 	/** Включён ли экономный по памяти режим распределённой агрегации. */ \
 	M(SettingBool, distributed_aggregation_memory_efficient, false) \
+	/** Сколько потоков использовать для мерджа результатов в режиме, экономном по памяти. Чем больше, чем больше памяти расходуется. \
+	  * 0, означает - столько же, сколько max_threads. Временно выставленно в 1, так как реализация некорректна. */ \
+	M(SettingUInt64, aggregation_memory_efficient_merge_threads, 1) \
 	\
 	/** Максимальное количество используемых реплик каждого шарда при выполнении запроса */ \
 	M(SettingUInt64, max_parallel_replicas, 1) \
@@ -128,8 +135,9 @@ struct Settings
 	/** Минимальное количество байт для операций ввода/ввывода минуя кэш страниц. 0 - отключено. */ \
 	M(SettingUInt64, min_bytes_to_use_direct_io, 0) \
 	\
-	/** Кидать исключение, если есть индекс по дате, и он не используется. */ \
+	/** Кидать исключение, если есть индекс, и он не используется. */ \
 	M(SettingBool, force_index_by_date, 0) \
+	M(SettingBool, force_primary_key, 0) \
 	\
 	/** В запросе INSERT с указанием столбцов, заполнять значения по-умолчанию только для столбцов с явными DEFAULT-ами. */ \
 	M(SettingBool, strict_insert_defaults, 0) \
@@ -168,6 +176,18 @@ struct Settings
 	M(SettingUInt64, select_sequential_consistency, 0) \
 	/** Максимальное количество различных шардов и максимальное количество реплик одного шарда в функции remote. */ \
 	M(SettingUInt64, table_function_remote_max_addresses, 1000) \
+	/** Маскимальное количество потоков при распределённой обработке одного запроса */ \
+	M(SettingUInt64, max_distributed_processing_threads, 8) \
+	\
+	/** Настройки понижения числа потоков в случае медленных чтений. */ \
+	/** Обращать внимания только на чтения, занявшие не меньше такого количества времени. */ \
+	M(SettingMilliseconds, 	read_backoff_min_latency_ms, 1000) \
+	/** Считать события, когда пропускная способность меньше стольки байт в секунду. */ \
+	M(SettingUInt64, 		read_backoff_max_throughput, 1048576) \
+	/** Не обращать внимания на событие, если от предыдущего прошло меньше стольки-то времени. */ \
+	M(SettingMilliseconds, 	read_backoff_min_interval_between_events_ms, 1000) \
+	/** Количество событий, после которого количество потоков будет уменьшено. */ \
+	M(SettingUInt64, 		read_backoff_min_events, 2) \
 
 	/// Всевозможные ограничения на выполнение запроса.
 	Limits limits;

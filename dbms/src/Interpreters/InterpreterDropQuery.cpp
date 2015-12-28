@@ -72,7 +72,7 @@ BlockIO InterpreterDropQuery::execute()
 		String current_table_name = table->getTableName();
 
 		/// Удаляем информацию о таблице из оперативки
-		context.detachTable(database_name, current_table_name);
+		StoragePtr detached = context.detachTable(database_name, current_table_name);
 
 		/// Удаляем данные таблицы
 		if (!drop.detach)
@@ -81,11 +81,39 @@ BlockIO InterpreterDropQuery::execute()
 			String current_metadata_path = metadata_path + escapeForFileName(current_table_name) + ".sql";
 
 			/// Для таблиц типа ChunkRef, файла с метаданными не существует.
-			if (Poco::File(current_metadata_path).exists())
-				Poco::File(current_metadata_path).remove();
+			bool metadata_file_exists = Poco::File(current_metadata_path).exists();
+			if (metadata_file_exists)
+			{
+				if (Poco::File(current_metadata_path + ".bak").exists())
+					Poco::File(current_metadata_path + ".bak").remove();
 
-			table->drop();
+				Poco::File(current_metadata_path).renameTo(current_metadata_path + ".bak");
+			}
+
+			try
+			{
+				table->drop();
+			}
+			catch (const Exception & e)
+			{
+				/// Такая ошибка означает, что таблицу невозможно удалить, и данные пока ещё консистентны. Можно вернуть таблицу на место.
+				/// NOTE Таблица будет оставаться в состоянии после shutdown - не производить всевозможной фоновой работы.
+				if (e.code() == ErrorCodes::TABLE_WAS_NOT_DROPPED)
+				{
+					if (metadata_file_exists)
+						Poco::File(current_metadata_path + ".bak").renameTo(current_metadata_path);
+
+					context.addTable(database_name, current_table_name, detached);
+					throw;
+				}
+				else
+					throw;
+			}
+
 			table->is_dropped = true;
+
+			if (metadata_file_exists)
+				Poco::File(current_metadata_path + ".bak").remove();
 
 			if (Poco::File(current_data_path).exists())
 				Poco::File(current_data_path).remove(true);
@@ -114,6 +142,7 @@ BlockIO InterpreterDropQuery::execute()
 
 	return {};
 }
+
 
 void InterpreterDropQuery::dropDetachedTable(String database_name, StoragePtr table, Context & context)
 {

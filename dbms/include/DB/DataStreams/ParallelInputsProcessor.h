@@ -43,6 +43,11 @@ struct ParallelInputsHandler
 	/// Обработка блока данных + дополнительных информаций.
 	void onBlock(Block & block, BlockExtraInfo & extra_info, size_t thread_num) {}
 
+	/// Вызывается для каждого потока, когда потоку стало больше нечего делать.
+	/// Из-за того, что иссякла часть источников, и сейчас источников осталось меньше, чем потоков.
+	/// Вызывается, если метод onException не кидает исключение; вызывается до метода onFinish.
+	void onFinishThread(size_t thread_num) {}
+
 	/// Блоки закончились. Из-за того, что все источники иссякли или из-за отмены работы.
 	/// Этот метод всегда вызывается ровно один раз, в конце работы, если метод onException не кидает исключение.
 	void onFinish() {}
@@ -182,6 +187,8 @@ private:
 			handler.onException(exception, thread_num);
 		}
 
+		handler.onFinishThread(thread_num);
+
 		/// Последний поток при выходе сообщает, что данных больше нет.
 		if (0 == --active_threads)
 		{
@@ -204,7 +211,7 @@ private:
 				}
 			}
 
-			handler.onFinish();
+			handler.onFinish();		/// TODO Если в onFinish или onFinishThread эксепшен, то вызывается std::terminate.
 		}
 	}
 

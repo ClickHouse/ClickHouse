@@ -42,6 +42,15 @@ public:
 	  */
 	virtual bool isConst() const { return false; }
 
+	/** Если столбец не константа - возвращает nullptr (либо может вернуть самого себя).
+	  * Если столбец константа, то превращает его в полноценный столбец (если тип столбца предполагает такую возможность) и возвращает его.
+	  * Отдельный случай:
+	  * Если столбец состоит из нескольких других столбцов (пример: кортеж),
+	  *  и он может содержать как константные, так и полноценные столбцы,
+	  *  то превратить в нём все константные столбцы в полноценные, и вернуть результат.
+	  */
+	virtual SharedPtr<IColumn> convertToFullColumnIfConst() const { return {}; }
+
 	/** Значения имеют фиксированную длину.
 	  */
 	virtual bool isFixed() const { return false; }
@@ -102,7 +111,12 @@ public:
 	/** Удалить всё кроме диапазона элементов.
 	  * Используется, например, для операции LIMIT.
 	  */
-	virtual SharedPtr<IColumn> cut(size_t start, size_t length) const = 0;
+	virtual SharedPtr<IColumn> cut(size_t start, size_t length) const
+	{
+		SharedPtr<IColumn> res = cloneEmpty();
+		res.get()->insertRangeFrom(*this, start, length);
+		return res;
+	}
 
 	/** Вставить значение в конец столбца (количество значений увеличится на 1).
 	  * Используется для преобразования из строк в блоки (например, при чтении значений из текстового дампа)
@@ -113,6 +127,11 @@ public:
 	  * Используется для merge-sort. Может быть реализована оптимальнее, чем реализация по-умолчанию.
 	  */
 	virtual void insertFrom(const IColumn & src, size_t n) { insert(src[n]); }
+
+	/** Вставить в конец столбца диапазон элементов из другого столбца.
+	  * Может использоваться для склейки столбцов.
+	  */
+	virtual void insertRangeFrom(const IColumn & src, size_t start, size_t length) = 0;
 
 	/** Вставить данные, расположенные в указанном куске памяти, если возможно.
 	  * (если не реализуемо - кидает исключение)
@@ -157,9 +176,12 @@ public:
 
 	/** Оставить только значения, соответствующие фильтру.
 	  * Используется для операции WHERE / HAVING.
+	  * Если result_size_hint > 0, то сделать reserve этого размера у результата;
+	  *  если 0, то не делать reserve,
+	  *  иначе сделать reserve по размеру исходного столбца.
 	  */
 	typedef PODArray<UInt8> Filter;
-	virtual SharedPtr<IColumn> filter(const Filter & filt) const = 0;
+	virtual SharedPtr<IColumn> filter(const Filter & filt, ssize_t result_size_hint) const = 0;
 
 	/** Переставить значения местами, используя указанную перестановку.
 	  * Используется при сортировке.
@@ -216,10 +238,6 @@ public:
 
 	virtual ~IColumn() {}
 };
-
-
-/// Считает, сколько байт в filt больше нуля.
-size_t countBytesInFilter(const IColumn::Filter & filt);
 
 
 }

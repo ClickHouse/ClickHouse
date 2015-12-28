@@ -182,6 +182,9 @@ private:
 	/// Например, для ARRAY JOIN [1,2] AS b сюда попадет "b" -> "array(1,2)".
 	NameToNameMap array_join_alias_to_name;
 
+	/// Обратное отображение для array_join_alias_to_name.
+	NameToNameMap array_join_name_to_alias;
+
 	/// Нужно ли подготавливать к выполнению глобальные подзапросы при анализировании запроса.
 	bool do_global;
 
@@ -205,8 +208,6 @@ private:
 	  */
 	void collectJoinedColumns(NameSet & joined_columns, NamesAndTypesList & joined_columns_name_type);
 
-	void addStorageAliases();
-
 	/** Создать словарь алиасов.
 	  */
 	void addASTAliases(ASTPtr & ast, int ignore_levels = 0);
@@ -225,6 +226,9 @@ private:
 
 	/// Превратить перечисление значений или подзапрос в ASTSet. node - функция in или notIn.
 	void makeSet(ASTFunction * node, const Block & sample_block);
+
+	/// Добавляет список ALIAS столбцов из таблицы
+	void addAliasColumns();
 
 	/// Замена скалярных подзапросов на значения-константы.
 	void executeScalarSubqueries();

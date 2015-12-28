@@ -145,7 +145,7 @@ BlockIO InterpreterCheckQuery::execute()
 		const auto settings = context.getSettings();
 
 		BlockInputStreams streams = distributed_table->describe(context, settings);
-		streams[0] = new UnionBlockInputStream<StreamUnionMode::ExtraInfo>(streams, nullptr, settings.max_threads);
+		streams[0] = new UnionBlockInputStream<StreamUnionMode::ExtraInfo>(streams, nullptr, settings.max_distributed_connections);
 		streams.resize(1);
 
 		auto stream_ptr = dynamic_cast<IProfilingBlockInputStream *>(&*streams[0]);

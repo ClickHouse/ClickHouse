@@ -118,6 +118,9 @@ void BackgroundProcessingPool::threadFunction()
 					/// O(n), n - число задач. По сути, количество таблиц. Обычно их мало.
 					for (const auto & handle : tasks)
 					{
+						if (handle->removed)
+							continue;
+
 						time_t next_time_to_execute = handle->next_time_to_execute;
 
 						if (next_time_to_execute < min_time)
@@ -143,9 +146,6 @@ void BackgroundProcessingPool::threadFunction()
 						+ std::uniform_real_distribution<double>(0, sleep_seconds_random_part)(rng)));
 				continue;
 			}
-
-			if (task->removed)
-				continue;
 
 			/// Лучшей задачи не нашлось, а эта задача в прошлый раз ничего не сделала, и поэтому ей назначено некоторое время спать.
 			time_t current_time = time(0);

@@ -103,18 +103,9 @@ public:
 		arenas.push_back(arena_);
 	}
 
-	ColumnPtr convertToValues() const
-	{
-		const IAggregateFunction * function = holder->func;
-		ColumnPtr res = function->getReturnType()->createColumn();
-		IColumn & column = *res;
-		res->reserve(getData().size());
-
-		for (auto val : getData())
-			function->insertResultInto(val, column);
-
-		return res;
-	}
+	/** Преобразовать столбец состояний агрегатной функции в столбец с готовыми значениями результатов.
+	  */
+	ColumnPtr convertToValues() const;
 
 	std::string getName() const override { return "ColumnAggregateFunction"; }
 
@@ -174,6 +165,9 @@ public:
 	{
 		IAggregateFunction * function = holder.get()->func;
 
+		if (unlikely(arenas.empty()))
+			arenas.emplace_back(new Arena);
+
 		getData().push_back(arenas.back().get()->alloc(function->sizeOfData()));
 		function->create(getData().back());
 		ReadBufferFromString read_buffer(x.get<const String &>());
@@ -200,25 +194,24 @@ public:
 		return getData().size() * sizeof(getData()[0]);
 	}
 
-	ColumnPtr cut(size_t start, size_t length) const override
+	void insertRangeFrom(const IColumn & src, size_t start, size_t length) override
 	{
-		if (start + length > getData().size())
+		const ColumnAggregateFunction & src_concrete = static_cast<const ColumnAggregateFunction &>(src);
+
+		if (start + length > src_concrete.getData().size())
 			throw Exception("Parameters start = "
 				+ toString(start) + ", length = "
-				+ toString(length) + " are out of bound in ColumnAggregateFunction::cut() method"
-				" (data.size() = " + toString(getData().size()) + ").",
+				+ toString(length) + " are out of bound in ColumnAggregateFunction::insertRangeFrom method"
+				" (data.size() = " + toString(src_concrete.getData().size()) + ").",
 				ErrorCodes::PARAMETER_OUT_OF_BOUND);
 
-		ColumnAggregateFunction * res_ = new ColumnAggregateFunction(*this);
-		ColumnPtr res = res_;
-
-		res_->getData().resize(length);
-		for (size_t i = 0; i < length; ++i)
-			res_->getData()[i] = getData()[start + i];
-		return res;
+		auto & data = getData();
+		size_t old_size = data.size();
+		data.resize(old_size + length);
+		memcpy(&data[old_size], &src_concrete.getData()[start], length * sizeof(data[0]));
 	}
 
-	ColumnPtr filter(const Filter & filter) const override
+	ColumnPtr filter(const Filter & filter, ssize_t result_size_hint) const override
 	{
 		size_t size = getData().size();
 		if (size != filter.size())
@@ -232,7 +225,9 @@ public:
 
 		auto & res_data = res_->getData();
 
-		res_data.reserve(size);
+		if (result_size_hint)
+			res_data.reserve(result_size_hint > 0 ? result_size_hint : size);
+
 		for (size_t i = 0; i < size; ++i)
 			if (filter[i])
 				res_data.push_back(getData()[i]);

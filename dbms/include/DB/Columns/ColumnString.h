@@ -5,6 +5,7 @@
 #include <DB/Core/Defines.h>
 
 #include <DB/Columns/IColumn.h>
+#include <DB/Columns/ColumnsCommon.h>
 #include <DB/Common/Collator.h>
 #include <DB/Common/PODArray.h>
 #include <DB/Common/Arena.h>
@@ -144,48 +145,42 @@ public:
 		return pos + string_size;
 	}
 
-	ColumnPtr cut(size_t start, size_t length) const override
+	void insertRangeFrom(const IColumn & src, size_t start, size_t length) override
 	{
 		if (length == 0)
-			return new ColumnString;
+			return;
 
-		if (start + length > offsets.size())
-			throw Exception("Parameter out of bound in IColumnString::cut() method.",
+		const ColumnString & src_concrete = static_cast<const ColumnString &>(src);
+
+		if (start + length > src_concrete.offsets.size())
+			throw Exception("Parameter out of bound in IColumnString::insertRangeFrom method.",
 				ErrorCodes::PARAMETER_OUT_OF_BOUND);
 
-		size_t nested_offset = offsetAt(start);
-		size_t nested_length = offsets[start + length - 1] - nested_offset;
+		size_t nested_offset = src_concrete.offsetAt(start);
+		size_t nested_length = src_concrete.offsets[start + length - 1] - nested_offset;
 
-		ColumnString * res_ = new ColumnString;
-		ColumnPtr res = res_;
+		size_t old_chars_size = chars.size();
+		chars.resize(old_chars_size + nested_length);
+		memcpy(&chars[old_chars_size], &src_concrete.chars[nested_offset], nested_length);
 
-		res_->chars.resize(nested_length);
-		memcpy(&res_->chars[0], &chars[nested_offset], nested_length);
-
-		Offsets_t & res_offsets = res_->offsets;
-
-		if (start == 0)
+		if (start == 0 && offsets.empty())
 		{
-			res_offsets.assign(offsets.begin(), offsets.begin() + length);
+			offsets.assign(src_concrete.offsets.begin(), src_concrete.offsets.begin() + length);
 		}
 		else
 		{
-			res_offsets.resize(length);
+			size_t old_size = offsets.size();
+			size_t prev_max_offset = old_size ? offsets.back() : 0;
+			offsets.resize(old_size + length);
 
 			for (size_t i = 0; i < length; ++i)
-				res_offsets[i] = offsets[start + i] - nested_offset;
+				offsets[old_size + i] = src_concrete.offsets[start + i] - nested_offset + prev_max_offset;
 		}
-
-		return res;
 	}
 
-	ColumnPtr filter(const Filter & filt) const override
+	ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
 	{
-		const size_t size = offsets.size();
-		if (size != filt.size())
-			throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
-
-		if (size == 0)
+		if (offsets.size() == 0)
 			return new ColumnString;
 
 		auto res = new ColumnString;
@@ -193,96 +188,8 @@ public:
 
 		Chars_t & res_chars = res->chars;
 		Offsets_t & res_offsets = res->offsets;
-		res_chars.reserve(chars.size());
-		res_offsets.reserve(size);
 
-		Offset_t current_offset = 0;
-
-		const UInt8 * filt_pos = &filt[0];
-		const auto filt_end = filt_pos + size;
-		const auto filt_end_aligned = filt_pos + size / 16 * 16;
-
-		auto offsets_pos = &offsets[0];
-		const auto offsets_begin = offsets_pos;
-
-		const __m128i zero16 = _mm_setzero_si128();
-
-		/// copy string ending at *end_offset_ptr
-		const auto copy_string = [&] (const Offset_t * offset_ptr) {
-			const auto offset = offset_ptr == offsets_begin ? 0 : offset_ptr[-1];
-			const auto size = *offset_ptr - offset;
-
-			current_offset += size;
-			res_offsets.push_back(current_offset);
-
-			const auto chars_size_old = res_chars.size();
-			res_chars.resize_assume_reserved(chars_size_old + size);
-			memcpy(&res_chars[chars_size_old], &chars[offset], size);
-		};
-
-		while (filt_pos < filt_end_aligned)
-		{
-			const auto mask = _mm_movemask_epi8(_mm_cmpgt_epi8(
-				_mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos)),
-				zero16));
-
-			if (mask == 0)
-			{
-				/// 16 consecutive rows do not pass the filter
-			}
-			else if (mask == 0xffff)
-			{
-				/// 16 consecutive rows pass the filter
-				const auto first = offsets_pos == offsets_begin;
-
-				const auto chunk_offset = first ? 0 : offsets_pos[-1];
-				const auto chunk_size = offsets_pos[16 - 1] - chunk_offset;
-
-				const auto offsets_size_old = res_offsets.size();
-				res_offsets.resize(offsets_size_old + 16);
-				memcpy(&res_offsets[offsets_size_old], offsets_pos, 16 * sizeof(Offset_t));
-
-				if (!first)
-				{
-					/// difference between current and actual offset
-					const auto diff_offset = chunk_offset - current_offset;
-
-					if (diff_offset > 0)
-					{
-						const auto res_offsets_pos = &res_offsets[offsets_size_old];
-
-						/// adjust offsets
-						for (size_t i = 0; i < 16; ++i)
-							res_offsets_pos[i] -= diff_offset;
-					}
-				}
-				current_offset += chunk_size;
-
-				/// copy characters for 16 strings at once
-				const auto chars_size_old = res_chars.size();
-				res_chars.resize(chars_size_old + chunk_size);
-				memcpy(&res_chars[chars_size_old], &chars[chunk_offset], chunk_size);
-			}
-			else
-			{
-				for (size_t i = 0; i < 16; ++i)
-					if (filt_pos[i])
-						copy_string(offsets_pos + i);
-			}
-
-			filt_pos += 16;
-			offsets_pos += 16;
-		}
-
-		while (filt_pos < filt_end)
-		{
-			if (*filt_pos)
-				copy_string(offsets_pos);
-
-			++filt_pos;
-			++offsets_pos;
-		}
-
+		filterArraysImpl<UInt8>(chars, offsets, res_chars, res_offsets, filt, result_size_hint);
 		return res_;
 	}
 

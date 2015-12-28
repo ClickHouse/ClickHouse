@@ -1,10 +1,9 @@
-#include <stdio.h>
-
 #include <Poco/DirectoryIterator.h>
 #include <common/Revision.h>
 #include <ext/unlock_guard.hpp>
 
 #include <DB/Common/SipHash.h>
+#include <DB/Common/ShellCommand.h>
 
 #include <DB/IO/Operators.h>
 #include <DB/IO/WriteBufferFromString.h>
@@ -155,35 +154,6 @@ SharedLibraryPtr Compiler::getOrCount(
 }
 
 
-struct Pipe : private boost::noncopyable
-{
-	FILE * f;
-
-	Pipe(const std::string & command)
-	{
-		errno = 0;
-		f = popen(command.c_str(), "r");
-
-		if (!f)
-			throwFromErrno("Cannot popen");
-	}
-
-	~Pipe()
-	{
-		try
-		{
-			errno = 0;
-			if (f && -1 == pclose(f))
-				throwFromErrno("Cannot pclose");
-		}
-		catch (...)
-		{
-			tryLogCurrentException("Pipe");
-		}
-	}
-};
-
-
 void Compiler::compile(
 	HashedKey hashed_key,
 	std::string file_name,
@@ -231,18 +201,14 @@ void Compiler::compile(
 	std::string compile_result;
 
 	{
-		Pipe pipe(command.str());
-
-		int pipe_fd = fileno(pipe.f);
-		if (-1 == pipe_fd)
-			throwFromErrno("Cannot fileno");
+		auto process = ShellCommand::execute(command.str());
 
 		{
-			ReadBufferFromFileDescriptor command_output(pipe_fd);
 			WriteBufferFromString res(compile_result);
-
-			copyData(command_output, res);
+			copyData(process->out, res);
 		}
+
+		process->wait();
 	}
 
 	if (!compile_result.empty())

@@ -67,7 +67,8 @@ public:
 	{
 		try
 		{
-			next();
+			if (fd >= 0)
+				next();
 		}
 		catch (...)
 		{

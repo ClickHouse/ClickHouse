@@ -70,6 +70,16 @@
 	M(CompileAttempt) \
 	M(CompileSuccess) \
 	\
+	M(ExternalSortWritePart) \
+	M(ExternalSortMerge) \
+	M(ExternalAggregationWritePart) \
+	M(ExternalAggregationMerge) \
+	M(ExternalAggregationCompressedBytes) \
+	M(ExternalAggregationUncompressedBytes) \
+	\
+	M(SlowRead) \
+	M(ReadBackoff) \
+	\
 	M(END)
 
 namespace ProfileEvents

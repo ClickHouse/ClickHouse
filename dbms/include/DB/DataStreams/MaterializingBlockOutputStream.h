@@ -23,9 +23,10 @@ public:
 
 		for (const auto i : ext::range(0, block.columns()))
 		{
-			ColumnPtr & col = block.getByPosition(i).column;
-			if (col->isConst())
-				col = dynamic_cast<IColumnConst &>(*col).convertToFullColumn();
+			auto & src = block.getByPosition(i).column;
+			ColumnPtr converted = src->convertToFullColumnIfConst();
+			if (converted)
+				src = converted;
 		}
 
 		output->write(block);

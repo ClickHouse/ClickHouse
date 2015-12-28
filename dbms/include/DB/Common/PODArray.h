@@ -29,14 +29,13 @@ namespace DB
   * Поддерживается только часть интерфейса std::vector.
   *
   * Конструктор по-умолчанию создаёт пустой объект, который не выделяет память.
-  * Затем выделяется память минимум под POD_ARRAY_INITIAL_SIZE элементов.
+  * Затем выделяется память минимум под INITIAL_SIZE элементов.
   *
   * Если вставлять элементы push_back-ом, не делая reserve, то PODArray примерно в 2.5 раза быстрее std::vector.
   */
-#define POD_ARRAY_INITIAL_SIZE 4096UL
 
-template <typename T>
-class PODArray : private boost::noncopyable, private Allocator	/// empty base optimization
+template <typename T, size_t INITIAL_SIZE = 4096, typename TAllocator = Allocator<false>>
+class PODArray : private boost::noncopyable, private TAllocator	/// empty base optimization
 {
 private:
 	char * c_start;
@@ -79,7 +78,7 @@ private:
 
 		size_t bytes_to_alloc = to_size(n);
 
-		c_start = c_end = reinterpret_cast<char *>(Allocator::alloc(bytes_to_alloc));
+		c_start = c_end = reinterpret_cast<char *>(TAllocator::alloc(bytes_to_alloc));
 		c_end_of_storage = c_start + bytes_to_alloc;
 	}
 
@@ -88,7 +87,7 @@ private:
 		if (c_start == nullptr)
 			return;
 
-		Allocator::free(c_start, storage_size());
+		TAllocator::free(c_start, storage_size());
 	}
 
 	void realloc(size_t n)
@@ -102,7 +101,7 @@ private:
 		ptrdiff_t end_diff = c_end - c_start;
 		size_t bytes_to_alloc = to_size(n);
 
-		c_start = reinterpret_cast<char *>(Allocator::realloc(c_start, storage_size(), bytes_to_alloc));
+		c_start = reinterpret_cast<char *>(TAllocator::realloc(c_start, storage_size(), bytes_to_alloc));
 
 		c_end = c_start + end_diff;
 		c_end_of_storage = c_start + bytes_to_alloc;
@@ -133,7 +132,17 @@ public:
     PODArray(const_iterator from_begin, const_iterator from_end) { alloc(from_end - from_begin); insert(from_begin, from_end); }
     ~PODArray() { dealloc(); }
 
-	PODArray(PODArray && other) { *this = std::move(other); }
+	PODArray(PODArray && other)
+	{
+		c_start = other.c_start;
+		c_end = other.c_end;
+		c_end_of_storage = other.c_end_of_storage;
+
+		other.c_start = nullptr;
+		other.c_end = nullptr;
+		other.c_end_of_storage = nullptr;
+	}
+
 	PODArray & operator=(PODArray && other)
 	{
 		std::swap(c_start, other.c_start);
@@ -174,7 +183,7 @@ public:
 	void reserve()
 	{
 		if (size() == 0)
-			realloc(POD_ARRAY_INITIAL_SIZE);
+			realloc(INITIAL_SIZE);
 		else
 			realloc(size() * 2);
 	}
@@ -227,6 +236,16 @@ public:
 		c_end += byte_size(1);
 	}
 
+	template <typename... Args>
+	void emplace_back(Args &&... args)
+	{
+		if (unlikely(c_end == c_end_of_storage))
+			reserve();
+
+		new (t_end()) T(std::forward<Args>(args)...);
+		c_end += byte_size(1);
+	}
+
 	/// Не вставляйте в массив кусок самого себя. Потому что при ресайзе, итераторы на самого себя могут инвалидироваться.
 	template <typename It1, typename It2>
 	void insert(It1 from_begin, It2 from_end)
@@ -246,7 +265,7 @@ public:
 		c_end += bytes_to_copy;
 	}
 
-	void swap(PODArray<T> & rhs)
+	void swap(PODArray & rhs)
 	{
 		std::swap(c_start, rhs.c_start);
 		std::swap(c_end, rhs.c_end);
@@ -271,13 +290,13 @@ public:
 		c_end = c_start + bytes_to_copy;
 	}
 
-	void assign(const PODArray<T> & from)
+	void assign(const PODArray & from)
 	{
 		assign(from.begin(), from.end());
 	}
 
 
-	bool operator== (const PODArray<T> & other) const
+	bool operator== (const PODArray & other) const
 	{
 		if (size() != other.size())
 			return false;
@@ -297,7 +316,7 @@ public:
 		return true;
 	}
 
-	bool operator!= (const PODArray<T> & other) const
+	bool operator!= (const PODArray & other) const
 	{
 		return !operator==(other);
 	}

@@ -107,7 +107,7 @@ Block DistinctBlockInputStream::readImpl()
 
 		size_t all_columns = block.columns();
 		for (size_t i = 0; i < all_columns; ++i)
-			block.getByPosition(i).column = block.getByPosition(i).column->filter(filter);
+			block.getByPosition(i).column = block.getByPosition(i).column->filter(filter, -1);
 
 		return block;
 	}

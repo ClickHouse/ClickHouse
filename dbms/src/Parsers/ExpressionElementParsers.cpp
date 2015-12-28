@@ -18,6 +18,7 @@
 #include <DB/Parsers/ParserSelectQuery.h>
 
 #include <DB/Parsers/ExpressionElementParsers.h>
+#include <DB/Parsers/formatAST.h>
 
 
 namespace DB
@@ -29,7 +30,7 @@ bool ParserArray::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_
 	Pos begin = pos;
 	ASTPtr contents_node;
 	ParserString open("["), close("]");
-	ParserExpressionList contents;
+	ParserExpressionList contents(false);
 	ParserWhiteSpaceOrComments ws;
 
 	if (!open.ignore(pos, end, max_parsed_pos, expected))
@@ -58,7 +59,7 @@ bool ParserParenthesisExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, P
 	Pos begin = pos;
 	ASTPtr contents_node;
 	ParserString open("("), close(")");
-	ParserExpressionList contents;
+	ParserExpressionList contents(false);
 	ParserWhiteSpaceOrComments ws;
 
 	if (!open.ignore(pos, end, max_parsed_pos, expected))
@@ -165,44 +166,27 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos 
 {
 	Pos begin = pos;
 
-	/// Идентификатор в обратных кавычках
-	if (pos != end && *pos == '`')
-	{
-		ReadBuffer buf(const_cast<char *>(pos), end - pos, 0);
-		String s;
-		readBackQuotedString(s, buf);
-		pos += buf.count();
-		node = new ASTIdentifier(StringRange(begin, pos), s);
-		return true;
-	}
-	else
-	{
-		while (pos != end)
-		{
-			while (pos != end
-				&& ((*pos >= 'a' && *pos <= 'z')
-					|| (*pos >= 'A' && *pos <= 'Z')
-					|| (*pos == '_')
-					|| (pos != begin && *pos >= '0' && *pos <= '9')))
-				++pos;
+	ASTPtr id_list;
+	if (!ParserList(ParserPtr(new ParserIdentifier), ParserPtr(new ParserString(".")), false)
+		.parse(pos, end, id_list, max_parsed_pos, expected))
+		return false;
 
-			/// Если следующий символ - точка '.' и за ней следует, не цифра,
-			/// то продолжаем парсинг имени идентификатора
-			if (pos != begin && pos + 1 < end && *pos == '.' &&
-				!(*(pos + 1) >= '0' && *(pos + 1) <= '9'))
-				++pos;
-			else
-				break;
-		}
-
-		if (pos != begin)
-		{
-			node = new ASTIdentifier(StringRange(begin, pos), String(begin, pos - begin));
-			return true;
-		}
-		else
-			return false;
+	String name;
+	const ASTExpressionList & list = static_cast<const ASTExpressionList &>(*id_list.get());
+	for (const auto & child : list.children)
+	{
+		if (!name.empty())
+			name += '.';
+		name += static_cast<const ASTIdentifier &>(*child.get()).name;
 	}
+
+	node = new ASTIdentifier(StringRange(begin, pos), name);
+
+	/// В children запомним идентификаторы-составляющие, если их больше одного.
+	if (list.children.size() > 1)
+		node->children.insert(node->children.end(), list.children.begin(), list.children.end());
+
+	return true;
 }
 
 
@@ -212,7 +196,7 @@ bool ParserFunction::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pars
 
 	ParserIdentifier id_parser;
 	ParserString open("("), close(")");
-	ParserExpressionList contents;
+	ParserExpressionList contents(false);
 	ParserWhiteSpaceOrComments ws;
 
 	ASTPtr identifier;
@@ -357,6 +341,29 @@ bool ParserNumber::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed
 }
 
 
+bool ParserUnsignedInteger::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+{
+	Field res;
+
+	Pos begin = pos;
+	if (pos == end)
+		return false;
+
+	UInt64 x = 0;
+	ReadBuffer in(const_cast<char *>(pos), end - pos, 0);
+	if (!tryReadIntText(x, in) || in.offset() == 0)
+	{
+		expected = "unsigned integer";
+		return false;
+	}
+
+	res = x;
+	pos += in.offset();
+	node = new ASTLiteral(StringRange(begin, pos), res);
+	return true;
+}
+
+
 bool ParserStringLiteral::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	Pos begin = pos;
@@ -368,40 +375,21 @@ bool ParserStringLiteral::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max
 		return false;
 	}
 
-	++pos;
+	ReadBuffer in(const_cast<char *>(pos), end - pos, 0);
 
-	while (pos != end)
+	try
 	{
-		size_t bytes = 0;
-		for (; pos + bytes != end; ++bytes)
-			if (pos[bytes] == '\\' || pos[bytes] == '\'')
-				break;
-
-		s.append(pos, bytes);
-		pos += bytes;
-
-		if (*pos == '\'')
-		{
-			++pos;
-			node = new ASTLiteral(StringRange(begin, pos), s);
-			return true;
-		}
-
-		if (*pos == '\\')
-		{
-			++pos;
-			if (pos == end)
-			{
-				expected = "escape sequence";
-				return false;
-			}
-			s += parseEscapeSequence(*pos);
-			++pos;
-		}
+		readQuotedString(s, in);
+	}
+	catch (const Exception & e)
+	{
+		expected = "string literal";
+		return false;
 	}
 
-	expected = "closing single quote";
-	return false;
+	pos += in.count();
+	node = new ASTLiteral(StringRange(begin, pos), s);
+	return true;
 }
 
 
@@ -473,10 +461,40 @@ bool ParserLiteral::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parse
 	if (str_p.parse(pos, end, node, max_parsed_pos, expected))
 		return true;
 
-	expected = "literal: one of nullptr, number, single quoted string";
+	expected = "literal: one of NULL, number, single quoted string";
 	return false;
 }
 
+
+const char * ParserAlias::restricted_keywords[] =
+{
+	"FROM",
+	"FINAL",
+	"SAMPLE",
+	"ARRAY",
+	"LEFT",
+	"RIGHT",
+	"INNER",
+	"FULL",
+	"CROSS",
+	"JOIN",
+	"GLOBAL",
+	"ANY",
+	"ALL",
+	"ON",
+	"USING",
+	"PREWHERE",
+	"WHERE",
+	"GROUP",
+	"WITH",
+	"HAVING",
+	"ORDER",
+	"LIMIT",
+	"SETTINGS",
+	"FORMAT",
+	"UNION",
+	nullptr
+};
 
 bool ParserAlias::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
@@ -484,13 +502,28 @@ bool ParserAlias::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_
 	ParserString s_as("AS", true, true);
 	ParserIdentifier id_p;
 
-	if (!s_as.parse(pos, end, node, max_parsed_pos, expected))
+	bool has_as_word = s_as.parse(pos, end, node, max_parsed_pos, expected);
+	if (!allow_alias_without_as_keyword && !has_as_word)
 		return false;
 
 	ws.ignore(pos, end);
 
 	if (!id_p.parse(pos, end, node, max_parsed_pos, expected))
 		return false;
+
+	if (!has_as_word)
+	{
+		/** В этом случае алиас не может совпадать с ключевым словом - для того,
+		  *  чтобы в запросе "SELECT x FROM t", слово FROM не считалось алиасом,
+		  *  а в запросе "SELECT x FRO FROM t", слово FRO считалось алиасом.
+		  */
+
+		const String & name = static_cast<const ASTIdentifier &>(*node.get()).name;
+
+		for (const char ** keyword = restricted_keywords; *keyword != nullptr; ++keyword)
+			if (0 == strcasecmp(name.data(), *keyword))
+				return false;
+	}
 
 	return true;
 }
@@ -544,15 +577,39 @@ bool ParserExpressionElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos &
 bool ParserWithOptionalAlias::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
 {
 	ParserWhiteSpaceOrComments ws;
-	ParserAlias alias_p;
 
 	if (!elem_parser->parse(pos, end, node, max_parsed_pos, expected))
 		return false;
 
+	/** Маленький хак.
+	  *
+	  * В секции SELECT мы разрешаем парсить алиасы без указания ключевого слова AS.
+	  * Эти алиасы не могут совпадать с ключевыми словами запроса.
+	  * А само выражение может быть идентификатором, совпадающем с ключевым словом.
+	  * Например, столбец может называться where. И в запросе может быть написано SELECT where AS x FROM table или даже SELECT where x FROM table.
+	  * Даже может быть написано SELECT where AS from FROM table, но не может быть написано SELECT where from FROM table.
+	  * Смотрите подробнее в реализации ParserAlias.
+	  *
+	  * Но возникает небольшая проблема - неудобное сообщение об ошибке, если в секции SELECT в конце есть лишняя запятая.
+	  * Хотя такая ошибка очень распространена. Пример: SELECT x, y, z, FROM tbl
+	  * Если ничего не предпринять, то это парсится как выбор столбца с именем FROM и алиасом tbl.
+	  * Чтобы избежать такой ситуации, мы не разрешаем парсить алиас без ключевого слова AS для идентификатора с именем FROM.
+	  *
+	  * Замечание: это также фильтрует случай, когда идентификатор квотирован.
+	  * Пример: SELECT x, y, z, `FROM` tbl. Но такой случай можно было бы разрешить.
+	  *
+	  * В дальнейшем было бы проще запретить неквотированные идентификаторы, совпадающие с ключевыми словами.
+	  */
+	bool allow_alias_without_as_keyword_now = allow_alias_without_as_keyword;
+	if (allow_alias_without_as_keyword)
+		if (const ASTIdentifier * id = typeid_cast<const ASTIdentifier *>(node.get()))
+			if (0 == strcasecmp(id->name.data(), "FROM"))
+				allow_alias_without_as_keyword_now = false;
+
 	ws.ignore(pos, end);
 
 	ASTPtr alias_node;
-	if (alias_p.parse(pos, end, alias_node, max_parsed_pos, expected))
+	if (ParserAlias(allow_alias_without_as_keyword_now).parse(pos, end, alias_node, max_parsed_pos, expected))
 	{
 		String alias_name = typeid_cast<ASTIdentifier &>(*alias_node).name;
 
@@ -574,7 +631,7 @@ bool ParserOrderByElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & ma
 	Pos begin = pos;
 
 	ParserWhiteSpaceOrComments ws;
-	ParserExpressionWithOptionalAlias elem_p;
+	ParserExpressionWithOptionalAlias elem_p(false);
 	ParserString ascending("ASCENDING", true, true);
 	ParserString descending("DESCENDING", true, true);
 	ParserString asc("ASC", true, true);

@@ -39,7 +39,7 @@ public:
 
 	void write(const Block & block) override
 	{
-		if (storage.getShardingKeyExpr() && storage.cluster.shard_info_vec.size() > 1)
+		if (storage.getShardingKeyExpr() && (storage.cluster.getShardsInfo().size() > 1))
 			return writeSplit(block);
 
 		writeImpl(block);
@@ -50,7 +50,7 @@ private:
 	static std::vector<IColumn::Filter> createFiltersImpl(const size_t num_rows, const IColumn * column, const Cluster & cluster)
 	{
 		const auto total_weight = cluster.slot_to_shard.size();
-		const auto num_shards = cluster.shard_info_vec.size();
+		const auto num_shards = cluster.getShardsInfo().size();
 		std::vector<IColumn::Filter> filters(num_shards);
 
 		/** Деление отрицательного числа с остатком на положительное, в C++ даёт отрицательный остаток.
@@ -123,13 +123,16 @@ private:
 
 		auto filters = createFilters(block);
 
-		const auto num_shards = storage.cluster.shard_info_vec.size();
+		const auto num_shards = storage.cluster.getShardsInfo().size();
+
+		ssize_t size_hint = ((block.rowsInFirstColumn() + num_shards - 1) / num_shards) * 1.1;	/// Число 1.1 выбрано наугад.
+
 		for (size_t i = 0; i < num_shards; ++i)
 		{
 			auto target_block = block.cloneEmpty();
 
 			for (size_t col = 0; col < num_cols; ++col)
-				target_block.getByPosition(col).column = columns[col]->filter(filters[i]);
+				target_block.getByPosition(col).column = columns[col]->filter(filters[i], size_hint);
 
 			if (target_block.rowsInFirstColumn())
 				writeImpl(target_block, i);
@@ -138,9 +141,9 @@ private:
 
 	void writeImpl(const Block & block, const size_t shard_id = 0)
 	{
-		const auto & shard_info = storage.cluster.shard_info_vec[shard_id];
-		if (shard_info.num_local_nodes)
-			writeToLocal(block, shard_info.num_local_nodes);
+		const auto & shard_info = storage.cluster.getShardsInfo()[shard_id];
+		if (shard_info.getLocalNodeCount() > 0)
+			writeToLocal(block, shard_info.getLocalNodeCount());
 
 		/// dir_names is empty if shard has only local addresses
 		if (!shard_info.dir_names.empty())

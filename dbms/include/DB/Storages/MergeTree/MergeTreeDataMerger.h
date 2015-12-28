@@ -52,11 +52,11 @@ public:
 	static size_t estimateDiskSpaceForMerge(const MergeTreeData::DataPartsVector & parts);
 
 	/** Отменяет все мерджи. Все выполняющиеся сейчас вызовы mergeParts скоро бросят исключение.
-	  * Все новые вызовы будут бросать исключения, пока не будет вызван uncancelAll().
+	  * Все новые вызовы будут бросать исключения, пока не будет вызван uncancel().
 	  */
-	bool cancelAll() { return cancelled.exchange(true, std::memory_order_relaxed); }
-	bool uncancelAll() { return cancelled.exchange(false, std::memory_order_relaxed); }
-	bool isCancelled() const { return cancelled.load(std::memory_order_relaxed); }
+	void cancel() 	{ cancelled = true; }
+	void uncancel() { cancelled = false; }
+	bool isCancelled() const { return cancelled; }
 
 private:
 	MergeTreeData & data;
@@ -66,24 +66,28 @@ private:
 	/// Когда в последний раз писали в лог, что место на диске кончилось (чтобы не писать об этом слишком часто).
 	time_t disk_space_warning_time = 0;
 
-	std::atomic<bool> cancelled{false};
+	std::atomic<bool> cancelled {false};
 };
 
+
+/** Временно приостанавливает мерджи.
+  */
 class MergeTreeMergeBlocker
 {
 public:
-	MergeTreeMergeBlocker(MergeTreeDataMerger & merger)
-		: merger(merger), was_cancelled{!merger.cancelAll()} {}
+	MergeTreeMergeBlocker(MergeTreeDataMerger & merger_)
+		: merger(merger_)
+	{
+		merger.cancel();
+	}
 
 	~MergeTreeMergeBlocker()
 	{
-		if (was_cancelled)
-			merger.uncancelAll();
+		merger.uncancel();
 	}
 
 private:
 	MergeTreeDataMerger & merger;
-	const bool was_cancelled;
 };
 
 }

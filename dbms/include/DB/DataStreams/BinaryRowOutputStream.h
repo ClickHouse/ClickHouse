@@ -22,6 +22,8 @@ public:
 
 	void flush() override { ostr.next(); }
 
+	String getContentType() const override { return "application/octet-stream"; }
+
 protected:
 	WriteBuffer & ostr;
 	const Block sample;

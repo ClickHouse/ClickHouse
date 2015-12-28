@@ -117,14 +117,14 @@ void ExpressionAnalyzer::init()
 	/// Оптимизирует логические выражения.
 	LogicalExpressionsOptimizer(select_query, settings).perform();
 
-	/// Добавляет в множество известных алиасов те, которые объявлены в структуре таблицы (ALIAS-столбцы).
-	addStorageAliases();
-
 	/// Создаёт словарь aliases: alias -> ASTPtr
 	addASTAliases(ast);
 
 	/// Common subexpression elimination. Rewrite rules.
 	normalizeTree();
+
+	/// ALIAS столбцы не должны подставляться вместо ASTAsterisk, добавим их теперь, после normalizeTree.
+	addAliasColumns();
 
 	/// Выполнение скалярных подзапросов - замена их на значения-константы.
 	executeScalarSubqueries();
@@ -211,13 +211,17 @@ void ExpressionAnalyzer::analyzeAggregation()
 				/// constant expressions have non-null column pointer at this stage
 				if (const auto is_constexpr = col.column)
 				{
-					if (i < group_asts.size() - 1)
-						group_asts[i] = std::move(group_asts.back());
+					/// but don't remove last key column if no aggregate functions, otherwise aggregation will not work
+					if (!aggregate_descriptions.empty() || group_asts.size() > 1)
+					{
+						if (i < group_asts.size() - 1)
+							group_asts[i] = std::move(group_asts.back());
 
-					group_asts.pop_back();
-					i -= 1;
+						group_asts.pop_back();
+						i -= 1;
 
-					continue;
+						continue;
+					}
 				}
 
 				NameAndTypePair key{column_name, col.type};
@@ -255,11 +259,11 @@ void ExpressionAnalyzer::analyzeAggregation()
 
 void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables()
 {
-	/// Преобразует GLOBAL-подзапросы во внешние таблицы; кладёт их в словарь external_tables: name -> StoragePtr.
-	initGlobalSubqueries(ast);
-
 	/// Добавляет уже существующие внешние таблицы (не подзапросы) в словарь external_tables.
 	findExternalTables(ast);
+
+	/// Преобразует GLOBAL-подзапросы во внешние таблицы; кладёт их в словарь external_tables: name -> StoragePtr.
+	initGlobalSubqueries(ast);
 }
 
 
@@ -298,9 +302,119 @@ void ExpressionAnalyzer::findExternalTables(ASTPtr & ast)
 	StoragePtr external_storage;
 
 	if (ASTIdentifier * node = typeid_cast<ASTIdentifier *>(&*ast))
-		if (node->kind == ASTIdentifier::Kind::Table)
+		if (node->kind == ASTIdentifier::Table)
 			if ((external_storage = context.tryGetExternalTable(node->name)))
 				external_tables[node->name] = external_storage;
+}
+
+
+static SharedPtr<InterpreterSelectQuery> interpretSubquery(
+	ASTPtr & subquery_or_table_name, const Context & context, size_t subquery_depth, const Names & required_columns);
+
+
+void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name)
+{
+	/// При нераспределённых запросах, создание временных таблиц не имеет смысла.
+	if (!(storage && storage->isRemote()))
+		return;
+
+	if (const ASTIdentifier * table = typeid_cast<const ASTIdentifier *>(&*subquery_or_table_name))
+	{
+		/// Если это уже внешняя таблица, ничего заполять не нужно. Просто запоминаем ее наличие.
+		if (external_tables.end() != external_tables.find(table->name))
+			return;
+	}
+
+	/// Сгенерируем имя для внешней таблицы.
+	String external_table_name = "_data" + toString(external_table_id);
+	while (external_tables.count(external_table_name))
+	{
+		++external_table_id;
+		external_table_name = "_data" + toString(external_table_id);
+	}
+
+	SharedPtr<InterpreterSelectQuery> interpreter = interpretSubquery(subquery_or_table_name, context, subquery_depth + 1, {});
+
+	Block sample = interpreter->getSampleBlock();
+	NamesAndTypesListPtr columns = new NamesAndTypesList(sample.getColumnsList());
+
+	StoragePtr external_storage = StorageMemory::create(external_table_name, columns);
+
+	/** Есть два способа выполнения распределённых GLOBAL-подзапросов.
+	  *
+	  * Способ push:
+	  * Данные подзапроса отправляются на все удалённые серверы, где они затем используются.
+	  * Для этого способа, данные отправляются в виде "внешних таблиц" и будут доступны на каждом удалённом сервере по имени типа _data1.
+	  * Заменяем в запросе подзапрос на это имя.
+	  *
+	  * Способ pull:
+	  * Удалённые серверы скачивают данные подзапроса с сервера-инициатора запроса.
+	  * Для этого способа, заменяем подзапрос на другой подзапрос вида (SELECT * FROM remote('host:port', _query_QUERY_ID, _data1))
+	  * Этот подзапрос, по факту, говорит - "надо скачать данные оттуда".
+	  *
+	  * Способ pull имеет преимущество, потому что в нём удалённый сервер может решить, что ему не нужны данные и не скачивать их в таких случаях.
+	  */
+
+	if (settings.global_subqueries_method == GlobalSubqueriesMethod::PUSH)
+	{
+		/** Заменяем подзапрос на имя временной таблицы.
+		  * Именно в таком виде, запрос отправится на удалённый сервер.
+		  * На удалённый сервер отправится эта временная таблица, и на его стороне,
+		  *  вместо выполнения подзапроса, надо будет просто из неё прочитать.
+		  */
+
+		subquery_or_table_name = new ASTIdentifier(StringRange(), external_table_name, ASTIdentifier::Table);
+	}
+	else if (settings.global_subqueries_method == GlobalSubqueriesMethod::PULL)
+	{
+		String host_port = getFQDNOrHostName() + ":" + toString(context.getTCPPort());
+		String database = "_query_" + context.getCurrentQueryId();
+
+		auto subquery = new ASTSubquery;
+		subquery_or_table_name = subquery;
+
+		auto select = new ASTSelectQuery;
+		subquery->children.push_back(select);
+
+		auto exp_list = new ASTExpressionList;
+		select->select_expression_list = exp_list;
+		select->children.push_back(select->select_expression_list);
+
+		Names column_names = external_storage->getColumnNamesList();
+		for (const auto & name : column_names)
+			exp_list->children.push_back(new ASTIdentifier({}, name));
+
+		auto table_func = new ASTFunction;
+		select->table = table_func;
+		select->children.push_back(select->table);
+
+		table_func->name = "remote";
+		auto args = new ASTExpressionList;
+		table_func->arguments = args;
+		table_func->children.push_back(table_func->arguments);
+
+		auto address_lit = new ASTLiteral({}, host_port);
+		args->children.push_back(address_lit);
+
+		auto database_lit = new ASTLiteral({}, database);
+		args->children.push_back(database_lit);
+
+		auto table_lit = new ASTLiteral({}, external_table_name);
+		args->children.push_back(table_lit);
+	}
+	else
+		throw Exception("Unknown global subqueries execution method", ErrorCodes::UNKNOWN_GLOBAL_SUBQUERIES_METHOD);
+
+	external_tables[external_table_name] = external_storage;
+	subqueries_for_sets[external_table_name].source = interpreter->execute().in;
+	subqueries_for_sets[external_table_name].source_sample = interpreter->getSampleBlock();
+	subqueries_for_sets[external_table_name].table = external_storage;
+
+	/** NOTE Если было написано IN tmp_table - существующая временная (но не внешняя) таблица,
+	  *  то здесь будет создана новая временная таблица (например, _data1),
+	  *  и данные будут затем в неё скопированы.
+	  * Может быть, этого можно избежать.
+	  */
 }
 
 
@@ -308,17 +422,6 @@ NamesAndTypesList::iterator ExpressionAnalyzer::findColumn(const String & name, 
 {
 	return std::find_if(cols.begin(), cols.end(),
 		[&](const NamesAndTypesList::value_type & val) { return val.name == name; });
-}
-
-
-void ExpressionAnalyzer::addStorageAliases()
-{
-	if (!storage)
-		return;
-
-	/// @todo: consider storing default expressions with alias set to avoid cloning
-	for (const auto & alias : storage->alias_columns)
-		(aliases[alias.name] = storage->column_defaults[alias.name].expression->clone())->setAlias(alias.name);
 }
 
 
@@ -562,6 +665,18 @@ void ExpressionAnalyzer::normalizeTreeImpl(
 }
 
 
+void ExpressionAnalyzer::addAliasColumns()
+{
+	if (!select_query)
+		return;
+
+	if (!storage)
+		return;
+
+	columns.insert(std::end(columns), std::begin(storage->alias_columns), std::end(storage->alias_columns));
+}
+
+
 void ExpressionAnalyzer::executeScalarSubqueries()
 {
 	if (!select_query)
@@ -570,9 +685,13 @@ void ExpressionAnalyzer::executeScalarSubqueries()
 	{
 		for (auto & child : ast->children)
 		{
-			/// Не опускаемся в FROM и JOIN.
-			if (child.get() != select_query->table.get() && child.get() != select_query->join.get())
+			/// Не опускаемся в FROM, JOIN, UNION.
+			if (child.get() != select_query->table.get()
+				&& child.get() != select_query->join.get()
+				&& child.get() != select_query->next_union_all.get())
+			{
 				executeScalarSubqueriesImpl(child);
+			}
 		}
 	}
 }
@@ -680,6 +799,7 @@ void ExpressionAnalyzer::executeScalarSubqueriesImpl(ASTPtr & ast)
 		  * Но если аргумент - не подзапрос, то глубже внутри него могут быть подзапросы, и в них надо опускаться.
 		  */
 		ASTFunction * func = typeid_cast<ASTFunction *>(ast.get());
+
 		if (func && func->kind == ASTFunction::FUNCTION
 			&& functionIsInOrGlobalInOperator(func->name))
 		{
@@ -781,7 +901,26 @@ void ExpressionAnalyzer::optimizeGroupBy()
 	}
 
 	if (group_exprs.empty())
-		select_query->group_expression_list = nullptr;
+	{
+		/** Нельзя полностью убирать GROUP BY. Потому что если при этом даже агрегатных функций не было, то получится, что не будет агрегации.
+		  * Вместо этого оставим GROUP BY const.
+		  * Далее см. удаление констант в методе analyzeAggregation.
+		  */
+
+		/// Нужно вставить константу, которая не является именем столбца таблицы. Такой случай редкий, но бывает.
+		UInt64 unused_column = 0;
+		String unused_column_name = toString(unused_column);
+
+		while (columns.end() != std::find_if(columns.begin(), columns.end(),
+			[&unused_column_name](const NameAndTypePair & name_type) { return name_type.name == unused_column_name; }))
+		{
+			++unused_column;
+			unused_column_name = toString(unused_column);
+		}
+
+		select_query->group_expression_list = new ASTExpressionList;
+		select_query->group_expression_list->children.push_back(new ASTLiteral(StringRange(), UInt64(unused_column)));
+	}
 }
 
 
@@ -852,7 +991,7 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(ASTPtr & node, const Block & sampl
 
 
 static SharedPtr<InterpreterSelectQuery> interpretSubquery(
-	ASTPtr & subquery_or_table_name, const Context & context, size_t subquery_depth, const Names & required_columns = Names())
+	ASTPtr & subquery_or_table_name, const Context & context, size_t subquery_depth, const Names & required_columns)
 {
 	/// Подзапрос или имя таблицы. Имя таблицы аналогично подзапросу SELECT * FROM t.
 	const ASTSubquery * subquery = typeid_cast<const ASTSubquery *>(&*subquery_or_table_name);
@@ -948,116 +1087,6 @@ static SharedPtr<InterpreterSelectQuery> interpretSubquery(
 }
 
 
-void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name)
-{
-	/// При нераспределённых запросах, создание временных таблиц не имеет смысла.
-	if (!(storage && storage->isRemote()))
-		return;
-
-	if (const ASTIdentifier * table = typeid_cast<const ASTIdentifier *>(&*subquery_or_table_name))
-	{
-		/// Если это уже внешняя таблица, ничего заполять не нужно. Просто запоминаем ее наличие.
-		if (StoragePtr existing_storage = context.tryGetExternalTable(table->name))
-		{
-			external_tables[table->name] = existing_storage;
-			return;
-		}
-	}
-
-	/// Сгенерируем имя для внешней таблицы.
-	String external_table_name = "_data" + toString(external_table_id);
-	while (context.tryGetExternalTable(external_table_name)
-		|| external_tables.count(external_table_name))
-	{
-		++external_table_id;
-		external_table_name = "_data" + toString(external_table_id);
-	}
-
-	SharedPtr<InterpreterSelectQuery> interpreter = interpretSubquery(subquery_or_table_name, context, subquery_depth + 1);
-
-	Block sample = interpreter->getSampleBlock();
-	NamesAndTypesListPtr columns = new NamesAndTypesList(sample.getColumnsList());
-
-	StoragePtr external_storage = StorageMemory::create(external_table_name, columns);
-
-	/** Есть два способа выполнения распределённых GLOBAL-подзапросов.
-	  *
-	  * Способ push:
-	  * Данные подзапроса отправляются на все удалённые серверы, где они затем используются.
-	  * Для этого способа, данные отправляются в виде "внешних таблиц" и будут доступны на каждом удалённом сервере по имени типа _data1.
-	  * Заменяем в запросе подзапрос на это имя.
-	  *
-	  * Способ pull:
-	  * Удалённые серверы скачивают данные подзапроса с сервера-инициатора запроса.
-	  * Для этого способа, заменяем подзапрос на другой подзапрос вида (SELECT * FROM remote('host:port', _query_QUERY_ID, _data1))
-	  * Этот подзапрос, по факту, говорит - "надо скачать данные оттуда".
-	  *
-	  * Способ pull имеет преимущество, потому что в нём удалённый сервер может решить, что ему не нужны данные и не скачивать их в таких случаях.
-	  */
-
-	if (settings.global_subqueries_method == GlobalSubqueriesMethod::PUSH)
-	{
-		/** Заменяем подзапрос на имя временной таблицы.
-		  * Именно в таком виде, запрос отправится на удалённый сервер.
-		  * На удалённый сервер отправится эта временная таблица, и на его стороне,
-		  *  вместо выполнения подзапроса, надо будет просто из неё прочитать.
-		  */
-
-		subquery_or_table_name = new ASTIdentifier(StringRange(), external_table_name, ASTIdentifier::Table);
-	}
-	else if (settings.global_subqueries_method == GlobalSubqueriesMethod::PULL)
-	{
-		String host_port = getFQDNOrHostName() + ":" + toString(context.getTCPPort());
-		String database = "_query_" + context.getCurrentQueryId();
-
-		auto subquery = new ASTSubquery;
-		subquery_or_table_name = subquery;
-
-		auto select = new ASTSelectQuery;
-		subquery->children.push_back(select);
-
-		auto exp_list = new ASTExpressionList;
-		select->select_expression_list = exp_list;
-		select->children.push_back(select->select_expression_list);
-
-		Names column_names = external_storage->getColumnNamesList();
-		for (const auto & name : column_names)
-			exp_list->children.push_back(new ASTIdentifier({}, name));
-
-		auto table_func = new ASTFunction;
-		select->table = table_func;
-		select->children.push_back(select->table);
-
-		table_func->name = "remote";
-		auto args = new ASTExpressionList;
-		table_func->arguments = args;
-		table_func->children.push_back(table_func->arguments);
-
-		auto address_lit = new ASTLiteral({}, host_port);
-		args->children.push_back(address_lit);
-
-		auto database_lit = new ASTLiteral({}, database);
-		args->children.push_back(database_lit);
-
-		auto table_lit = new ASTLiteral({}, external_table_name);
-		args->children.push_back(table_lit);
-	}
-	else
-		throw Exception("Unknown global subqueries execution method", ErrorCodes::UNKNOWN_GLOBAL_SUBQUERIES_METHOD);
-
-	external_tables[external_table_name] = external_storage;
-	subqueries_for_sets[external_table_name].source = interpreter->execute().in;
-	subqueries_for_sets[external_table_name].source_sample = interpreter->getSampleBlock();
-	subqueries_for_sets[external_table_name].table = external_storage;
-
-	/** NOTE Если было написано IN tmp_table - существующая временная (но не внешняя) таблица,
-	  *  то здесь будет создана новая временная таблица (например, _data1),
-	  *  и данные будут затем в неё скопированы.
-	  * Может быть, этого можно избежать.
-	  */
-}
-
-
 void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 {
 	/** Нужно преобразовать правый аргумент в множество.
@@ -1110,7 +1139,7 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 			return;
 		}
 
-		ast_set->set = new Set(settings.limits);
+		ast_set->set = std::make_shared<Set>(settings.limits);
 
 		/** Для GLOBAL IN-ов происходит следующее:
 		  * - в функции addExternalStorage подзапрос IN (SELECT ...) заменяется на IN _data1,
@@ -1119,7 +1148,7 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 		  */
 		if (!subquery_for_set.source)
 		{
-			auto interpreter = interpretSubquery(arg, context, subquery_depth);
+			auto interpreter = interpretSubquery(arg, context, subquery_depth, {});
 			subquery_for_set.source = new LazyBlockInputStream([interpreter]() mutable { return interpreter->execute().in; });
 			subquery_for_set.source_sample = interpreter->getSampleBlock();
 
@@ -1250,7 +1279,7 @@ void ExpressionAnalyzer::makeExplicitSet(ASTFunction * node, const Block & sampl
 
 	ASTSet * ast_set = new ASTSet(arg->getColumnName());
 	ASTPtr ast_set_ptr = ast_set;
-	ast_set->set = new Set(settings.limits);
+	ast_set->set = std::make_shared<Set>(settings.limits);
 	ast_set->is_explicit = true;
 	ast_set->set->createFromAST(set_element_types, elements_ast, context, create_ordered_set);
 	arg = ast_set_ptr;
@@ -1384,18 +1413,27 @@ void ExpressionAnalyzer::getArrayJoinedColumns()
 		{
 			const String nested_table_name = ast->getColumnName();
 			const String nested_table_alias = ast->getAliasOrColumnName();
+
 			if (nested_table_alias == nested_table_name && !typeid_cast<const ASTIdentifier *>(&*ast))
 				throw Exception("No alias for non-trivial value in ARRAY JOIN: " + nested_table_name, ErrorCodes::ALIAS_REQUIRED);
 
 			if (array_join_alias_to_name.count(nested_table_alias) || aliases.count(nested_table_alias))
 				throw Exception("Duplicate alias " + nested_table_alias, ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS);
+
 			array_join_alias_to_name[nested_table_alias] = nested_table_name;
+			array_join_name_to_alias[nested_table_name] = nested_table_alias;
 		}
 
 		ASTs & query_asts = select_query->children;
 		for (const auto & ast : query_asts)
+		{
+			/// Не опускаемся в подзапросы и UNION.
+			if (typeid_cast<const ASTSelectQuery *>(ast.get()))
+				continue;
+
 			if (ast != select_query->array_join_expression_list)
 				getArrayJoinedColumnsImpl(ast);
+		}
 
 		/// Если результат ARRAY JOIN не используется, придется все равно по-ARRAY-JOIN-ить какой-нибудь столбец,
 		/// чтобы получить правильное количество строк.
@@ -1432,6 +1470,7 @@ void ExpressionAnalyzer::getArrayJoinedColumns()
 }
 
 
+/// Заполняет array_join_result_to_source: по каким столбцам-массивам размножить, и как их после этого назвать.
 void ExpressionAnalyzer::getArrayJoinedColumnsImpl(ASTPtr ast)
 {
 	if (ASTIdentifier * node = typeid_cast<ASTIdentifier *>(&*ast))
@@ -1439,20 +1478,35 @@ void ExpressionAnalyzer::getArrayJoinedColumnsImpl(ASTPtr ast)
 		if (node->kind == ASTIdentifier::Column)
 		{
 			String table_name = DataTypeNested::extractNestedTableName(node->name);
+
 			if (array_join_alias_to_name.count(node->name))
-				array_join_result_to_source[node->name] = array_join_alias_to_name[node->name];
+			{
+				/// Был написан ARRAY JOIN со столбцом-массивом. Пример: SELECT K1 FROM ... ARRAY JOIN ParsedParams.Key1 AS K1
+				array_join_result_to_source[node->name] = array_join_alias_to_name[node->name];	/// K1 -> ParsedParams.Key1
+			}
 			else if (array_join_alias_to_name.count(table_name))
 			{
-				String nested_column = DataTypeNested::extractNestedColumnName(node->name);
-				array_join_result_to_source[node->name]
+				/// Был написан ARRAY JOIN с вложенной таблицей. Пример: SELECT PP.Key1 FROM ... ARRAY JOIN ParsedParams AS PP
+				String nested_column = DataTypeNested::extractNestedColumnName(node->name);	/// Key1
+				array_join_result_to_source[node->name]	/// PP.Key1 -> ParsedParams.Key1
 					= DataTypeNested::concatenateNestedName(array_join_alias_to_name[table_name], nested_column);
+			}
+			else if (array_join_name_to_alias.count(table_name))
+			{
+				/** Пример: SELECT ParsedParams.Key1 FROM ... ARRAY JOIN ParsedParams AS PP.
+				  * То есть, в запросе используется исходный массив, размноженный по самому себе.
+				  */
+
+				String nested_column = DataTypeNested::extractNestedColumnName(node->name);	/// Key1
+				array_join_result_to_source[	/// PP.Key1 -> ParsedParams.Key1
+					DataTypeNested::concatenateNestedName(array_join_name_to_alias[table_name], nested_column)] = node->name;
 			}
 		}
 	}
 	else
 	{
 		for (auto & child : ast->children)
-			if (!typeid_cast<ASTSelectQuery *>(&*child))
+			if (!typeid_cast<const ASTSelectQuery *>(&*child))
 				getArrayJoinedColumnsImpl(child);
 	}
 }
@@ -1488,10 +1542,12 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
 		if (node->kind == ASTFunction::LAMBDA_EXPRESSION)
 			throw Exception("Unexpected expression", ErrorCodes::UNEXPECTED_EXPRESSION);
 
+		/// Функция arrayJoin.
 		if (node->kind == ASTFunction::ARRAY_JOIN)
 		{
 			if (node->arguments->children.size() != 1)
 				throw Exception("arrayJoin requires exactly 1 argument", ErrorCodes::TYPE_MISMATCH);
+
 			ASTPtr arg = node->arguments->children.at(0);
 			getActionsImpl(arg, no_subqueries, only_consts, actions_stack);
 			if (!only_consts)
@@ -1787,13 +1843,17 @@ void ExpressionAnalyzer::initChain(ExpressionActionsChain & chain, const NamesAn
 	}
 }
 
+/// "Большой" ARRAY JOIN.
 void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActionsPtr & actions) const
 {
 	NameSet result_columns;
 	for (const auto & result_source : array_join_result_to_source)
 	{
+		/// Дать столбцам новые имена, если надо.
 		if (result_source.first != result_source.second)
 			actions->add(ExpressionAction::copyColumn(result_source.second, result_source.first));
+
+		/// Сделать ARRAY JOIN (заменить массивы на их внутренности) для столбцов в этими новыми именами.
 		result_columns.insert(result_source.first);
 	}
 
@@ -1870,7 +1930,7 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 
 	if (!subquery_for_set.join)
 	{
-		JoinPtr join = new Join(join_key_names_left, join_key_names_right, settings.limits, ast_join.kind, ast_join.strictness);
+		JoinPtr join = std::make_shared<Join>(join_key_names_left, join_key_names_right, settings.limits, ast_join.kind, ast_join.strictness);
 
 		Names required_joined_columns(join_key_names_right.begin(), join_key_names_right.end());
 		for (const auto & name_type : columns_added_by_join)
@@ -2194,19 +2254,6 @@ void ExpressionAnalyzer::collectUsedColumns()
 		required.insert(ExpressionActions::getSmallestColumn(columns));
 
 	unknown_required_columns = required;
-
-	for (NamesAndTypesList::iterator it = columns.begin(); it != columns.end();)
-	{
-		unknown_required_columns.erase(it->name);
-
-		if (!required.count(it->name))
-		{
-			required.erase(it->name);
-			columns.erase(it++);
-		}
-		else
-			++it;
-	}
 
 	for (NamesAndTypesList::iterator it = columns.begin(); it != columns.end();)
 	{

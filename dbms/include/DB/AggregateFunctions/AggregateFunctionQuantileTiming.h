@@ -3,8 +3,7 @@
 #include <limits>
 
 #include <DB/Common/MemoryTracker.h>
-
-#include <DB/Core/FieldVisitors.h>
+#include <DB/Common/HashTable/Hash.h>
 
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/ReadHelpers.h>
@@ -13,10 +12,11 @@
 #include <DB/DataTypes/DataTypeArray.h>
 
 #include <DB/AggregateFunctions/IUnaryAggregateFunction.h>
+#include <DB/AggregateFunctions/IBinaryAggregateFunction.h>
+#include <DB/AggregateFunctions/QuantilesCommon.h>
 
 #include <DB/Columns/ColumnArray.h>
 
-#include <stats/IntHash.h>
 #include <ext/range.hpp>
 
 
@@ -234,15 +234,10 @@ namespace detail
 		}
 
 		/// Получить значения size квантилей уровней levels. Записать size результатов начиная с адреса result.
+		/// indices - массив индексов levels такой, что соответствующие элементы будут идти в порядке по возрастанию.
 		template <typename ResultType>
-		void getMany(const double * levels, size_t size, ResultType * result) const
+		void getMany(const double * levels, const size_t * indices, size_t size, ResultType * result) const
 		{
-			std::size_t indices[size];
-			std::copy(ext::range_iterator<size_t>{}, ext::make_range_iterator(size), indices);
-			std::sort(indices, indices + size, [levels] (auto i1, auto i2) {
-				return levels[i1] < levels[i2];
-			});
-
 			const auto indices_end = indices + size;
 			auto index = indices;
 
@@ -310,10 +305,10 @@ namespace detail
 				: std::numeric_limits<float>::quiet_NaN();
 		}
 
-		void getManyFloat(const double * levels, size_t size, float * result) const
+		void getManyFloat(const double * levels, const size_t * levels_permutation, size_t size, float * result) const
 		{
 			if (count)
-				getMany(levels, size, result);
+				getMany(levels, levels_permutation, size, result);
 			else
 				for (size_t i = 0; i < size; ++i)
 					result[i] = std::numeric_limits<float>::quiet_NaN();
@@ -502,11 +497,11 @@ public:
 
 	/// Получить значения size квантилей уровней levels. Записать size результатов начиная с адреса result.
 	template <typename ResultType>
-	void getMany(const double * levels, size_t size, ResultType * result) const
+	void getMany(const double * levels, const size_t * levels_permutation, size_t size, ResultType * result) const
 	{
 		if (isLarge())
 		{
-			return large->getMany(levels, size, result);
+			return large->getMany(levels, levels_permutation, size, result);
 		}
 		else
 		{
@@ -523,10 +518,10 @@ public:
 			: std::numeric_limits<float>::quiet_NaN();
 	}
 
-	void getManyFloat(const double * levels, size_t size, float * result) const
+	void getManyFloat(const double * levels, const size_t * levels_permutation, size_t size, float * result) const
 	{
 		if (tiny.count)
-			getMany(levels, size, result);
+			getMany(levels, levels_permutation, size, result);
 		else
 			for (size_t i = 0; i < size; ++i)
 				result[i] = std::numeric_limits<float>::quiet_NaN();
@@ -549,9 +544,9 @@ private:
 public:
 	AggregateFunctionQuantileTiming(double level_ = 0.5) : level(level_) {}
 
-	String getName() const { return "quantileTiming"; }
+	String getName() const override { return "quantileTiming"; }
 
-	DataTypePtr getReturnType() const
+	DataTypePtr getReturnType() const override
 	{
 		return new DataTypeFloat32;
 	}
@@ -560,7 +555,7 @@ public:
 	{
 	}
 
-	void setParameters(const Array & params)
+	void setParameters(const Array & params) override
 	{
 		if (params.size() != 1)
 			throw Exception("Aggregate function " + getName() + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -569,27 +564,27 @@ public:
 	}
 
 
-	void addOne(AggregateDataPtr place, const IColumn & column, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const
 	{
 		this->data(place).insert(static_cast<const ColumnVector<ArgumentFieldType> &>(column).getData()[row_num]);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
 	{
 		this->data(place).merge(this->data(rhs));
 	}
 
-	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
+	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
 	{
 		this->data(place).serialize(buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
+	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
 		this->data(place).deserializeMerge(buf);
 	}
 
-	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
+	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
 	{
 		static_cast<ColumnFloat32 &>(to).getData().push_back(this->data(place).getFloat(level));
 	}
@@ -599,7 +594,8 @@ public:
 /** То же самое, но с двумя аргументами. Второй аргумент - "вес" (целое число) - сколько раз учитывать значение.
   */
 template <typename ArgumentFieldType, typename WeightFieldType>
-class AggregateFunctionQuantileTimingWeighted final : public IAggregateFunctionHelper<QuantileTiming>
+class AggregateFunctionQuantileTimingWeighted final
+	: public IBinaryAggregateFunction<QuantileTiming, AggregateFunctionQuantileTimingWeighted<ArgumentFieldType, WeightFieldType>>
 {
 private:
 	double level;
@@ -607,18 +603,18 @@ private:
 public:
 	AggregateFunctionQuantileTimingWeighted(double level_ = 0.5) : level(level_) {}
 
-	String getName() const { return "quantileTimingWeighted"; }
+	String getName() const override { return "quantileTimingWeighted"; }
 
-	DataTypePtr getReturnType() const
+	DataTypePtr getReturnType() const override
 	{
 		return new DataTypeFloat32;
 	}
 
-	void setArguments(const DataTypes & arguments)
+	void setArgumentsImpl(const DataTypes & arguments)
 	{
 	}
 
-	void setParameters(const Array & params)
+	void setParameters(const Array & params) override
 	{
 		if (params.size() != 1)
 			throw Exception("Aggregate function " + getName() + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -626,30 +622,29 @@ public:
 		level = apply_visitor(FieldVisitorConvertToNumber<Float64>(), params[0]);
 	}
 
-
-	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column_value, const IColumn & column_weight, size_t row_num) const
 	{
 		this->data(place).insertWeighted(
-			static_cast<const ColumnVector<ArgumentFieldType> &>(*columns[0]).getData()[row_num],
-			static_cast<const ColumnVector<WeightFieldType> &>(*columns[1]).getData()[row_num]);
+			static_cast<const ColumnVector<ArgumentFieldType> &>(column_value).getData()[row_num],
+			static_cast<const ColumnVector<WeightFieldType> &>(column_weight).getData()[row_num]);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
 	{
 		this->data(place).merge(this->data(rhs));
 	}
 
-	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
+	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
 	{
 		this->data(place).serialize(buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
+	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
 		this->data(place).deserializeMerge(buf);
 	}
 
-	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
+	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
 	{
 		static_cast<ColumnFloat32 &>(to).getData().push_back(this->data(place).getFloat(level));
 	}
@@ -664,13 +659,12 @@ template <typename ArgumentFieldType>
 class AggregateFunctionQuantilesTiming final : public IUnaryAggregateFunction<QuantileTiming, AggregateFunctionQuantilesTiming<ArgumentFieldType> >
 {
 private:
-	typedef std::vector<double> Levels;
-	Levels levels;
+	QuantileLevels<double> levels;
 
 public:
-	String getName() const { return "quantilesTiming"; }
+	String getName() const override { return "quantilesTiming"; }
 
-	DataTypePtr getReturnType() const
+	DataTypePtr getReturnType() const override
 	{
 		return new DataTypeArray(new DataTypeFloat32);
 	}
@@ -679,40 +673,33 @@ public:
 	{
 	}
 
-	void setParameters(const Array & params)
+	void setParameters(const Array & params) override
 	{
-		if (params.empty())
-			throw Exception("Aggregate function " + getName() + " requires at least one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		size_t size = params.size();
-		levels.resize(size);
-
-		for (size_t i = 0; i < size; ++i)
-			levels[i] = apply_visitor(FieldVisitorConvertToNumber<Float64>(), params[i]);
+		levels.set(params);
 	}
 
 
-	void addOne(AggregateDataPtr place, const IColumn & column, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const
 	{
 		this->data(place).insert(static_cast<const ColumnVector<ArgumentFieldType> &>(column).getData()[row_num]);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
 	{
 		this->data(place).merge(this->data(rhs));
 	}
 
-	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
+	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
 	{
 		this->data(place).serialize(buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
+	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
 		this->data(place).deserializeMerge(buf);
 	}
 
-	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
+	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
 	{
 		ColumnArray & arr_to = static_cast<ColumnArray &>(to);
 		ColumnArray::Offsets_t & offsets_to = arr_to.getOffsets();
@@ -724,65 +711,58 @@ public:
 		size_t old_size = data_to.size();
 		data_to.resize(data_to.size() + size);
 
-		this->data(place).getManyFloat(&levels[0], size, &data_to[old_size]);
+		this->data(place).getManyFloat(&levels.levels[0], &levels.permutation[0], size, &data_to[old_size]);
 	}
 };
 
 
 template <typename ArgumentFieldType, typename WeightFieldType>
-class AggregateFunctionQuantilesTimingWeighted final : public IAggregateFunctionHelper<QuantileTiming>
+class AggregateFunctionQuantilesTimingWeighted final
+	: public IBinaryAggregateFunction<QuantileTiming, AggregateFunctionQuantilesTimingWeighted<ArgumentFieldType, WeightFieldType>>
 {
 private:
-	typedef std::vector<double> Levels;
-	Levels levels;
+	QuantileLevels<double> levels;
 
 public:
-	String getName() const { return "quantilesTimingWeighted"; }
+	String getName() const override { return "quantilesTimingWeighted"; }
 
-	DataTypePtr getReturnType() const
+	DataTypePtr getReturnType() const override
 	{
 		return new DataTypeArray(new DataTypeFloat32);
 	}
 
-	void setArguments(const DataTypes & arguments)
+	void setArgumentsImpl(const DataTypes & arguments)
 	{
 	}
 
-	void setParameters(const Array & params)
+	void setParameters(const Array & params) override
 	{
-		if (params.empty())
-			throw Exception("Aggregate function " + getName() + " requires at least one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-		size_t size = params.size();
-		levels.resize(size);
-
-		for (size_t i = 0; i < size; ++i)
-			levels[i] = apply_visitor(FieldVisitorConvertToNumber<Float64>(), params[i]);
+		levels.set(params);
 	}
 
-	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column_value, const IColumn & column_weight, size_t row_num) const
 	{
 		this->data(place).insertWeighted(
-			static_cast<const ColumnVector<ArgumentFieldType> &>(*columns[0]).getData()[row_num],
-			static_cast<const ColumnVector<WeightFieldType> &>(*columns[1]).getData()[row_num]);
+			static_cast<const ColumnVector<ArgumentFieldType> &>(column_value).getData()[row_num],
+			static_cast<const ColumnVector<WeightFieldType> &>(column_weight).getData()[row_num]);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
 	{
 		this->data(place).merge(this->data(rhs));
 	}
 
-	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
+	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
 	{
 		this->data(place).serialize(buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
+	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
 		this->data(place).deserializeMerge(buf);
 	}
 
-	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
+	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
 	{
 		ColumnArray & arr_to = static_cast<ColumnArray &>(to);
 		ColumnArray::Offsets_t & offsets_to = arr_to.getOffsets();
@@ -794,7 +774,7 @@ public:
 		size_t old_size = data_to.size();
 		data_to.resize(data_to.size() + size);
 
-		this->data(place).getManyFloat(&levels[0], size, &data_to[old_size]);
+		this->data(place).getManyFloat(&levels.levels[0], &levels.permutation[0], size, &data_to[old_size]);
 	}
 };
 

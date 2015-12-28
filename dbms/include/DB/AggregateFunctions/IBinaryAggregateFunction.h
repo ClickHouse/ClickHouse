@@ -8,11 +8,12 @@ namespace DB
 template <typename T, typename Derived>
 class IBinaryAggregateFunction : public IAggregateFunctionHelper<T>
 {
+private:
 	Derived & getDerived() { return static_cast<Derived &>(*this); }
 	const Derived & getDerived() const { return static_cast<const Derived &>(*this); }
 
 public:
-	void setArguments(const DataTypes & arguments)
+	void setArguments(const DataTypes & arguments) override final
 	{
 		if (arguments.size() != 2)
 			throw Exception{
@@ -23,10 +24,17 @@ public:
 		getDerived().setArgumentsImpl(arguments);
 	}
 
-	void add(AggregateDataPtr place, const IColumn ** columns, const size_t row_num) const
+	void add(AggregateDataPtr place, const IColumn ** columns, const size_t row_num) const override final
 	{
-		getDerived().addOne(place, *columns[0], *columns[1], row_num);
+		getDerived().addImpl(place, *columns[0], *columns[1], row_num);
 	}
+
+	static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num)
+	{
+		return static_cast<const Derived &>(*that).addImpl(place, *columns[0], *columns[1], row_num);
+	}
+
+	IAggregateFunction::AddFunc getAddressOfAddFunction() const override final { return &addFree; }
 };
 
 }

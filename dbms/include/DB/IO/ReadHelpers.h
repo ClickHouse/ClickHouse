@@ -28,7 +28,7 @@ namespace DB
 
 /// Функции-помошники для форматированного чтения
 
-static inline char parseEscapeSequence(char c)
+inline char parseEscapeSequence(char c)
 {
 	switch(c)
 	{
@@ -46,6 +46,21 @@ static inline char parseEscapeSequence(char c)
 			return '\0';
 		default:
 			return c;
+	}
+}
+
+inline char unhex(char c)
+{
+	switch (c)
+	{
+		case '0' ... '9':
+			return c - '0';
+		case 'a' ... 'f':
+			return c - 'a' + 10;
+		case 'A' ... 'F':
+			return c - 'A' + 10;
+		default:
+			return 0;
 	}
 }
 
@@ -116,6 +131,14 @@ bool checkString(const char * s, ReadBuffer & buf);
 inline bool checkString(const String & s, ReadBuffer & buf)
 {
 	return checkString(s.c_str(), buf);
+}
+
+inline bool checkChar(char c, ReadBuffer & buf)
+{
+	if (buf.eof() || *buf.position() != c)
+		return false;
+	++buf.position();
+	return true;
 }
 
 inline void readBoolText(bool & x, ReadBuffer & buf)
@@ -235,6 +258,7 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
 		x = -x;
 }
 
+
 template <bool throw_exception, class ExcepFun, class NoExcepFun, class... Args>
 bool exceptionPolicySelector(ExcepFun && excep_f, NoExcepFun && no_excep_f, Args &&... args)
 {
@@ -249,7 +273,7 @@ bool exceptionPolicySelector(ExcepFun && excep_f, NoExcepFun && no_excep_f, Args
 
 
 /// грубо
-template <typename T, typename ReturnType>
+template <typename T, typename ReturnType, char point_symbol = '.'>
 ReturnType readFloatTextImpl(T & x, ReadBuffer & buf)
 {
 	static constexpr bool throw_exception = std::is_same<ReturnType, void>::value;
@@ -292,7 +316,7 @@ ReturnType readFloatTextImpl(T & x, ReadBuffer & buf)
 			case '-':
 				negative = true;
 				break;
-			case '.':
+			case point_symbol:
 				after_point = true;
 				break;
 			case '0':
@@ -427,7 +451,7 @@ void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf);
 inline void readDateTimeText(time_t & datetime, ReadBuffer & buf)
 {
 	/** Считываем 10 символов, которые могут быть unix timestamp.
-	  * При этом, поддерживается только unix timestamp из 10 символов - от 9 сентября 2001.
+	  * При этом, поддерживается только unix timestamp из 5-10 символов.
 	  * Потом смотрим на пятый символ. Если это число - парсим unix timestamp.
 	  * Если это не число - парсим YYYY-MM-DD hh:mm:ss.
 	  */
@@ -454,7 +478,8 @@ inline void readDateTimeText(time_t & datetime, ReadBuffer & buf)
 			buf.position() += 19;
 		}
 		else
-			readIntTextUnsafe(datetime, buf);
+			/// Почему не readIntTextUnsafe? Дело в том, что для нужд AdFox, поддерживается парсинг unix timestamp с отбивкой нулями: 000...NNNN.
+			readIntText(datetime, buf);
 	}
 	else
 		readDateTimeTextFallback(datetime, buf);

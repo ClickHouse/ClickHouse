@@ -366,7 +366,8 @@ private:
 		size_t rows) const;
 };
 
-typedef Poco::SharedPtr<Set> SetPtr;
+typedef std::shared_ptr<Set> SetPtr;
+typedef std::shared_ptr<const Set> ConstSetPtr;
 typedef std::vector<SetPtr> Sets;
 
 

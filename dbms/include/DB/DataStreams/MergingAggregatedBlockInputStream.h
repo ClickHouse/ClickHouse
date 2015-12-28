@@ -16,10 +16,8 @@ using Poco::SharedPtr;
 class MergingAggregatedBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-	MergingAggregatedBlockInputStream(BlockInputStreamPtr input_, const Names & keys_names_,
-		const AggregateDescriptions & aggregates_, bool overflow_row_, bool final_, size_t max_threads_)
-		: aggregator(keys_names_, aggregates_, overflow_row_, 0, OverflowMode::THROW, nullptr, 0, 0),
-		final(final_), max_threads(max_threads_)
+	MergingAggregatedBlockInputStream(BlockInputStreamPtr input_, const Aggregator::Params & params, bool final_, size_t max_threads_)
+		: aggregator(params), final(final_), max_threads(max_threads_)
 	{
 		children.push_back(input_);
 	}

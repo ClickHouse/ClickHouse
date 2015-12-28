@@ -23,7 +23,7 @@ public:
 		size_t size = data.columns();
 		columns.resize(size);
 		for (size_t i = 0; i < size; ++i)
-			columns[i] = data.getByPosition(i).column;
+			columns[i] = data.unsafeGetByPosition(i).column;
 	}
 
 	std::string getName() const override { return "Tuple"; }
@@ -115,23 +115,20 @@ public:
 		return pos;
 	}
 
-
-	ColumnPtr cut(size_t start, size_t length) const override
+	void insertRangeFrom(const IColumn & src, size_t start, size_t length) override
 	{
-		Block res_block = data.cloneEmpty();
-
 		for (size_t i = 0; i < columns.size(); ++i)
-			res_block.getByPosition(i).column = data.getByPosition(i).column->cut(start, length);
-
-		return new ColumnTuple(res_block);
+			data.unsafeGetByPosition(i).column->insertRangeFrom(
+				*static_cast<const ColumnTuple &>(src).data.unsafeGetByPosition(i).column.get(),
+				start, length);
 	}
 
-	ColumnPtr filter(const Filter & filt) const override
+	ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
 	{
 		Block res_block = data.cloneEmpty();
 
 		for (size_t i = 0; i < columns.size(); ++i)
-			res_block.getByPosition(i).column = data.getByPosition(i).column->filter(filt);
+			res_block.unsafeGetByPosition(i).column = data.unsafeGetByPosition(i).column->filter(filt, result_size_hint);
 
 		return new ColumnTuple(res_block);
 	}
@@ -141,7 +138,7 @@ public:
 		Block res_block = data.cloneEmpty();
 
 		for (size_t i = 0; i < columns.size(); ++i)
-			res_block.getByPosition(i).column = data.getByPosition(i).column->permute(perm, limit);
+			res_block.unsafeGetByPosition(i).column = data.unsafeGetByPosition(i).column->permute(perm, limit);
 
 		return new ColumnTuple(res_block);
 	}
@@ -151,7 +148,7 @@ public:
 		Block res_block = data.cloneEmpty();
 
 		for (size_t i = 0; i < columns.size(); ++i)
-			res_block.getByPosition(i).column = data.getByPosition(i).column->replicate(offsets);
+			res_block.unsafeGetByPosition(i).column = data.unsafeGetByPosition(i).column->replicate(offsets);
 
 		return new ColumnTuple(res_block);
 	}
@@ -242,9 +239,22 @@ public:
 			columns[i]->getExtremes(min.get<Array &>()[i], max.get<Array &>()[i]);
 	}
 
+	ColumnPtr convertToFullColumnIfConst() const override
+	{
+		Block materialized = data;
+		for (size_t i = 0, size = materialized.columns(); i < size; ++i)
+			if (auto converted = materialized.unsafeGetByPosition(i).column->convertToFullColumnIfConst())
+				materialized.unsafeGetByPosition(i).column = converted;
+
+		return new ColumnTuple(materialized);
+	}
+
 
 	const Block & getData() const { return data; }
 	Block & getData() { return data; }
+
+	const Columns & getColumns() const { return columns; }
+	Columns & getColumns() { return columns; }
 };
 
 

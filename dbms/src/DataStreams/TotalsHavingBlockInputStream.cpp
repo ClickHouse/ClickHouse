@@ -107,7 +107,7 @@ Block TotalsHavingBlockInputStream::readImpl()
 			for (size_t i = 0; i < columns; ++i)
 			{
 				ColumnWithTypeAndName & current_column = finalized.getByPosition(i);
-				current_column.column = current_column.column->filter(filter);
+				current_column.column = current_column.column->filter(filter, -1);
 				if (current_column.column->empty())
 				{
 					finalized.clear();

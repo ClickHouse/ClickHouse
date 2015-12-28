@@ -3,7 +3,7 @@
 #include <city.h>
 #include <type_traits>
 
-#include <stats/UniquesHashSet.h>
+#include <DB/AggregateFunctions/UniquesHashSet.h>
 
 #include <DB/IO/WriteHelpers.h>
 #include <DB/IO/ReadHelpers.h>
@@ -11,6 +11,7 @@
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeString.h>
+#include <DB/DataTypes/DataTypeTuple.h>
 
 #include <DB/Interpreters/AggregationCommon.h>
 #include <DB/Common/HashTable/HashSet.h>
@@ -18,9 +19,11 @@
 #include <DB/Common/CombinedCardinalityEstimator.h>
 
 #include <DB/Columns/ColumnString.h>
+#include <DB/Columns/ColumnTuple.h>
 
 #include <DB/AggregateFunctions/IUnaryAggregateFunction.h>
 #include <DB/AggregateFunctions/UniqCombinedBiasData.h>
+#include <DB/AggregateFunctions/UniqVariadicHash.h>
 
 
 namespace DB
@@ -30,11 +33,21 @@ namespace DB
 
 struct AggregateFunctionUniqUniquesHashSetData
 {
-	typedef UniquesHashSet<DefaultHash<UInt64> > Set;
+	typedef UniquesHashSet<DefaultHash<UInt64>> Set;
 	Set set;
 
 	static String getName() { return "uniq"; }
 };
+
+/// Для функции, принимающей несколько аргументов. Такая функция сама заранее их хэширует, поэтому здесь используется TrivialHash.
+struct AggregateFunctionUniqUniquesHashSetDataForVariadic
+{
+	typedef UniquesHashSet<TrivialHash> Set;
+	Set set;
+
+	static String getName() { return "uniq"; }
+};
+
 
 /// uniqHLL12
 
@@ -56,6 +69,15 @@ struct AggregateFunctionUniqHLL12Data<String>
 	static String getName() { return "uniqHLL12"; }
 };
 
+struct AggregateFunctionUniqHLL12DataForVariadic
+{
+	typedef HyperLogLogWithSmallSetOptimization<UInt64, 16, 12, TrivialHash> Set;
+	Set set;
+
+	static String getName() { return "uniqHLL12"; }
+};
+
+
 /// uniqExact
 
 template <typename T>
@@ -66,7 +88,7 @@ struct AggregateFunctionUniqExactData
 	/// При создании, хэш-таблица должна быть небольшой.
 	typedef HashSet<
 		Key,
-		DefaultHash<Key>,
+		HashCRC32<Key>,
 		HashTableGrower<4>,
 		HashTableAllocatorWithStackMemory<sizeof(Key) * (1 << 4)>
 	> Set;
@@ -234,7 +256,7 @@ struct OneAdder<T, Data, typename std::enable_if<
 	std::is_same<Data, AggregateFunctionUniqHLL12Data<T> >::value>::type>
 {
 	template <typename T2 = T>
-	static void addOne(Data & data, const IColumn & column, size_t row_num,
+	static void addImpl(Data & data, const IColumn & column, size_t row_num,
 		typename std::enable_if<!std::is_same<T2, String>::value>::type * = nullptr)
 	{
 		const auto & value = static_cast<const ColumnVector<T2> &>(column).getData()[row_num];
@@ -242,7 +264,7 @@ struct OneAdder<T, Data, typename std::enable_if<
 	}
 
 	template <typename T2 = T>
-	static void addOne(Data & data, const IColumn & column,	size_t row_num,
+	static void addImpl(Data & data, const IColumn & column,	size_t row_num,
 		typename std::enable_if<std::is_same<T2, String>::value>::type * = nullptr)
 	{
 		StringRef value = column.getDataAt(row_num);
@@ -258,7 +280,7 @@ struct OneAdder<T, Data, typename std::enable_if<
 	std::is_same<Data, AggregateFunctionUniqCombinedData<T> >::value>::type>
 {
 	template <typename T2 = T>
-	static void addOne(Data & data, const IColumn & column, size_t row_num,
+	static void addImpl(Data & data, const IColumn & column, size_t row_num,
 		typename std::enable_if<!std::is_same<T2, String>::value>::type * = nullptr)
 	{
 		const auto & value = static_cast<const ColumnVector<T2> &>(column).getData()[row_num];
@@ -266,7 +288,7 @@ struct OneAdder<T, Data, typename std::enable_if<
 	}
 
 	template <typename T2 = T>
-	static void addOne(Data & data, const IColumn & column,	size_t row_num,
+	static void addImpl(Data & data, const IColumn & column,	size_t row_num,
 		typename std::enable_if<std::is_same<T2, String>::value>::type * = nullptr)
 	{
 		StringRef value = column.getDataAt(row_num);
@@ -279,14 +301,14 @@ struct OneAdder<T, Data, typename std::enable_if<
 	std::is_same<Data, AggregateFunctionUniqExactData<T> >::value>::type>
 {
 	template <typename T2 = T>
-	static void addOne(Data & data, const IColumn & column, size_t row_num,
+	static void addImpl(Data & data, const IColumn & column, size_t row_num,
 		typename std::enable_if<!std::is_same<T2, String>::value>::type * = nullptr)
 	{
 		data.set.insert(static_cast<const ColumnVector<T2> &>(column).getData()[row_num]);
 	}
 
 	template <typename T2 = T>
-	static void addOne(Data & data, const IColumn & column, size_t row_num,
+	static void addImpl(Data & data, const IColumn & column, size_t row_num,
 		typename std::enable_if<std::is_same<T2, String>::value>::type * = nullptr)
 	{
 		StringRef value = column.getDataAt(row_num);
@@ -303,14 +325,14 @@ struct OneAdder<T, Data, typename std::enable_if<
 }
 
 
-/// Приближённо вычисляет количество различных значений.
+/// Приближённо или точно вычисляет количество различных значений.
 template <typename T, typename Data>
 class AggregateFunctionUniq final : public IUnaryAggregateFunction<Data, AggregateFunctionUniq<T, Data> >
 {
 public:
-	String getName() const { return Data::getName(); }
+	String getName() const override { return Data::getName(); }
 
-	DataTypePtr getReturnType() const
+	DataTypePtr getReturnType() const override
 	{
 		return new DataTypeUInt64;
 	}
@@ -319,30 +341,92 @@ public:
 	{
 	}
 
-	void addOne(AggregateDataPtr place, const IColumn & column, size_t row_num) const
+	void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num) const
 	{
-		detail::OneAdder<T, Data>::addOne(this->data(place), column, row_num);
+		detail::OneAdder<T, Data>::addImpl(this->data(place), column, row_num);
 	}
 
-	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
 	{
 		this->data(place).set.merge(this->data(rhs).set);
 	}
 
-	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const
+	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
 	{
 		this->data(place).set.write(buf);
 	}
 
-	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const
+	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
 	{
 		this->data(place).set.readAndMerge(buf);
 	}
 
-	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const
+	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
 	{
 		static_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
 	}
+};
+
+
+/** Для нескольких аргументов. Для вычисления, хэширует их.
+  * Можно передать несколько аргументов как есть; также можно передать один аргумент - кортеж.
+  * Но (для возможности эффективной реализации), нельзя передать несколько аргументов, среди которых есть кортежи.
+  */
+template <typename Data, bool argument_is_tuple>
+class AggregateFunctionUniqVariadic final : public IAggregateFunctionHelper<Data>
+{
+private:
+	static constexpr bool is_exact = std::is_same<Data, AggregateFunctionUniqExactData<String>>::value;
+
+	size_t num_args = 0;
+
+public:
+	String getName() const override { return Data::getName(); }
+
+	DataTypePtr getReturnType() const override
+	{
+		return new DataTypeUInt64;
+	}
+
+	void setArguments(const DataTypes & arguments) override
+	{
+		if (argument_is_tuple)
+			num_args = typeid_cast<const DataTypeTuple &>(*arguments[0]).getElements().size();
+		else
+			num_args = arguments.size();
+	}
+
+	void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num) const override
+	{
+		this->data(place).set.insert(UniqVariadicHash<is_exact, argument_is_tuple>::apply(num_args, columns, row_num));
+	}
+
+	void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs) const override
+	{
+		this->data(place).set.merge(this->data(rhs).set);
+	}
+
+	void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
+	{
+		this->data(place).set.write(buf);
+	}
+
+	void deserializeMerge(AggregateDataPtr place, ReadBuffer & buf) const override
+	{
+		this->data(place).set.readAndMerge(buf);
+	}
+
+	void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+	{
+		static_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
+	}
+
+	static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num)
+	{
+		return static_cast<const AggregateFunctionUniqVariadic &>(*that).add(place, columns, row_num);
+	}
+
+	IAggregateFunction::AddFunc getAddressOfAddFunction() const override final { return &addFree; }
 };
 
 

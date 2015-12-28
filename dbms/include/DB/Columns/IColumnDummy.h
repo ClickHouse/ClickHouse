@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DB/Columns/IColumn.h>
+#include <DB/Columns/ColumnsCommon.h>
 
 
 namespace DB
@@ -44,12 +45,12 @@ public:
 		throw Exception("Method getExtremes is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	ColumnPtr cut(size_t start, size_t length) const override
+	void insertRangeFrom(const IColumn & src, size_t start, size_t length) override
 	{
-		return cloneDummy(length);
+		s += length;
 	}
 
-	ColumnPtr filter(const Filter & filt) const override
+	ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
 	{
 		return cloneDummy(countBytesInFilter(filt));
 	}

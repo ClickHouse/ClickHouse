@@ -11,7 +11,9 @@
 #include <DB/Columns/ColumnFixedString.h>
 #include <DB/Columns/ColumnConst.h>
 #include <DB/Functions/IFunction.h>
+#include <DB/Core/FieldVisitors.h>
 #include <ext/range.hpp>
+#include <type_traits>
 
 
 namespace DB
@@ -97,43 +99,195 @@ struct ConvertImpl<DataTypeDate, DataTypeDateTime, Name>
 	}
 };
 
+/// Реализация функции toDate.
 
-/** Преобразование даты-с-временем в дату: отбрасывание времени.
-  */
-template <typename Name>
-struct ConvertImpl<DataTypeDateTime, DataTypeDate, Name>
+namespace details { namespace {
+
+template<typename FromType, typename ToType, template <typename, typename> class Transformation>
+class Transformer
 {
-	typedef DataTypeDateTime::FieldType FromFieldType;
-	typedef DataTypeDate::FieldType ToFieldType;
+private:
+	using Op = Transformation<FromType, ToType>;
 
-	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+public:
+	static void vector_vector(const PODArray<FromType> & vec_from, const ColumnString::Chars_t & data,
+							  const ColumnString::Offsets_t & offsets, PODArray<ToType> & vec_to)
 	{
-		const auto & date_lut = DateLUT::instance();
+		ColumnString::Offset_t prev_offset = 0;
 
-		if (const ColumnVector<FromFieldType> * col_from = typeid_cast<const ColumnVector<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
+		for (size_t i = 0; i < vec_from.size(); ++i)
 		{
-			ColumnVector<ToFieldType> * col_to = new ColumnVector<ToFieldType>;
-			block.getByPosition(result).column = col_to;
-
-			const typename ColumnVector<FromFieldType>::Container_t & vec_from = col_from->getData();
-			typename ColumnVector<ToFieldType>::Container_t & vec_to = col_to->getData();
-			size_t size = vec_from.size();
-			vec_to.resize(size);
-
-			for (size_t i = 0; i < size; ++i)
-				vec_to[i] = date_lut.toDayNum(vec_from[i]);
+			ColumnString::Offset_t cur_offset = offsets[i];
+			const std::string time_zone(reinterpret_cast<const char *>(&data[prev_offset]), cur_offset - prev_offset - 1);
+			const auto & remote_date_lut = DateLUT::instance(time_zone);
+			vec_to[i] = Op::execute(vec_from[i], remote_date_lut);
+			prev_offset = cur_offset;
 		}
-		else if (const ColumnConst<FromFieldType> * col_from = typeid_cast<const ColumnConst<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
+	}
+
+	static void vector_constant(const PODArray<FromType> & vec_from, const std::string & data,
+								PODArray<ToType> & vec_to)
+	{
+		const auto & remote_date_lut = DateLUT::instance(data);
+		for (size_t i = 0; i < vec_from.size(); ++i)
+			vec_to[i] = Op::execute(vec_from[i], remote_date_lut);
+	}
+
+	static void vector_constant(const PODArray<FromType> & vec_from, PODArray<ToType> & vec_to)
+	{
+		const auto & local_date_lut = DateLUT::instance();
+		for (size_t i = 0; i < vec_from.size(); ++i)
+			vec_to[i] = Op::execute(vec_from[i], local_date_lut);
+	}
+
+	static void constant_vector(const FromType & from, const ColumnString::Chars_t & data,
+								const ColumnString::Offsets_t & offsets, PODArray<ToType> & vec_to)
+	{
+		ColumnString::Offset_t prev_offset = 0;
+
+		for (size_t i = 0; i < offsets.size(); ++i)
 		{
-			block.getByPosition(result).column = new ColumnConst<ToFieldType>(col_from->size(), date_lut.toDayNum(col_from->getData()));
+			ColumnString::Offset_t cur_offset = offsets[i];
+			const std::string time_zone(reinterpret_cast<const char *>(&data[prev_offset]), cur_offset - prev_offset - 1);
+			const auto & remote_date_lut = DateLUT::instance(time_zone);
+			vec_to[i] = Op::execute(from, remote_date_lut);
+			prev_offset = cur_offset;
 		}
-		else
-			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-					+ " of first argument of function " + Name::name,
-				ErrorCodes::ILLEGAL_COLUMN);
+	}
+
+	static void constant_constant(const FromType & from, const std::string & data, ToType & to)
+	{
+		const auto & remote_date_lut = DateLUT::instance(data);
+		to = Op::execute(from, remote_date_lut);
+	}
+
+	static void constant_constant(const FromType & from, ToType & to)
+	{
+		const auto & local_date_lut = DateLUT::instance();
+		to = Op::execute(from, local_date_lut);
 	}
 };
 
+template <typename FromType, template <typename, typename> class Transformation, typename Name>
+class ToDateConverter
+{
+private:
+	using FromFieldType = typename FromType::FieldType;
+	using ToFieldType = typename DataTypeDate::FieldType;
+	using Op = Transformer<FromFieldType, ToFieldType, Transformation>;
+
+public:
+	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		const ColumnPtr source_col = block.getByPosition(arguments[0]).column;
+		const auto * sources = typeid_cast<const ColumnVector<FromFieldType> *>(&*source_col);
+		const auto * const_source = typeid_cast<const ColumnConst<FromFieldType> *>(&*source_col);
+
+		if (arguments.size() == 1)
+		{
+			if (sources)
+			{
+				auto * col_to = new ColumnVector<ToFieldType>;
+				block.getByPosition(result).column = col_to;
+
+				const auto & vec_from = sources->getData();
+				auto & vec_to = col_to->getData();
+				size_t size = vec_from.size();
+				vec_to.resize(size);
+
+				Op::vector_constant(vec_from, vec_to);
+			}
+			else if (const_source)
+			{
+				ToFieldType res;
+				Op::constant_constant(const_source->getData(), res);
+				block.getByPosition(result).column = new ColumnConst<ToFieldType>(const_source->size(), res);
+			}
+			else
+				throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+						+ " of argument of function " + Name::name,
+					ErrorCodes::ILLEGAL_COLUMN);
+		}
+		else if (arguments.size() == 2)
+		{
+			const ColumnPtr time_zone_col = block.getByPosition(arguments[1]).column;
+			const auto * time_zones = typeid_cast<const ColumnString *>(&*time_zone_col);
+			const auto * const_time_zone = typeid_cast<const ColumnConstString *>(&*time_zone_col);
+
+			if (sources)
+			{
+				auto * col_to = new ColumnVector<ToFieldType>;
+				block.getByPosition(result).column = col_to;
+
+				auto & vec_from = sources->getData();
+				auto & vec_to = col_to->getData();
+				vec_to.resize(vec_from.size());
+
+				if (time_zones)
+					Op::vector_vector(vec_from, time_zones->getChars(), time_zones->getOffsets(), vec_to);
+				else if (const_time_zone)
+					Op::vector_constant(vec_from, const_time_zone->getData(), vec_to);
+				else
+					throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
+							+ " of second argument of function " + Name::name,
+						ErrorCodes::ILLEGAL_COLUMN);
+			}
+			else if (const_source)
+			{
+				if (time_zones)
+				{
+					auto * col_to = new ColumnVector<ToFieldType>;
+					block.getByPosition(result).column = col_to;
+
+					auto & vec_to = col_to->getData();
+					vec_to.resize(time_zones->getOffsets().size());
+
+					Op::constant_vector(const_source->getData(), time_zones->getChars(), time_zones->getOffsets(), vec_to);
+				}
+				else if (const_time_zone)
+				{
+					ToFieldType res;
+					Op::constant_constant(const_source->getData(), const_time_zone->getData(), res);
+					block.getByPosition(result).column = new ColumnConst<ToFieldType>(const_source->size(), res);
+				}
+				else
+					throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
+							+ " of second argument of function " + Name::name,
+						ErrorCodes::ILLEGAL_COLUMN);
+			}
+			else
+				throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+						+ " of first argument of function " + Name::name,
+					ErrorCodes::ILLEGAL_COLUMN);
+		}
+		else
+			throw Exception("FunctionsConversion: Internal error", ErrorCodes::LOGICAL_ERROR);
+	}
+};
+
+template <typename FromType, typename ToType>
+struct ToDateTransform
+{
+	static inline ToType execute(const FromType & from, const DateLUTImpl & date_lut)
+	{
+		return date_lut.toDayNum(from);
+	}
+};
+
+template <typename FromType, typename ToType>
+struct ToDateTransform32Or64
+{
+	static inline ToType execute(const FromType & from, const DateLUTImpl & date_lut)
+	{
+		return (from < 0xFFFF) ? from : date_lut.toDayNum(from);
+	}
+};
+
+}}
+
+/** Преобразование даты-с-временем в дату: отбрасывание времени.
+  */
+template <typename Name> struct ConvertImpl<DataTypeDateTime, DataTypeDate, Name> : details::ToDateConverter<DataTypeDateTime, details::ToDateTransform, Name> {};
 
 /** Отдельный случай для преобразования (U)Int32 или (U)Int64 в Date.
   * Если число меньше 65536, то оно понимается, как DayNum, а если больше или равно - как unix timestamp.
@@ -142,56 +296,10 @@ struct ConvertImpl<DataTypeDateTime, DataTypeDate, Name>
   *  когда пользователь пишет toDate(UInt32), ожидая, что это - перевод unix timestamp в дату
   *  (иначе такое использование было бы распространённой ошибкой).
   */
-template <typename FromDataType, typename Name>
-struct ConvertImpl32Or64ToDate
-{
-	typedef typename FromDataType::FieldType FromFieldType;
-	typedef DataTypeDate::FieldType ToFieldType;
-
-	template <typename To, typename From>
-	static To convert(const From & from, const DateLUTImpl & date_lut)
-	{
-		return from < 0xFFFF
-			? from
-			: date_lut.toDayNum(from);
-	}
-
-	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
-	{
-		const auto & date_lut = DateLUT::instance();
-
-		if (const ColumnVector<FromFieldType> * col_from
-			= typeid_cast<const ColumnVector<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
-		{
-			ColumnVector<ToFieldType> * col_to = new ColumnVector<ToFieldType>;
-			block.getByPosition(result).column = col_to;
-
-			const typename ColumnVector<FromFieldType>::Container_t & vec_from = col_from->getData();
-			typename ColumnVector<ToFieldType>::Container_t & vec_to = col_to->getData();
-			size_t size = vec_from.size();
-			vec_to.resize(size);
-
-			for (size_t i = 0; i < size; ++i)
-				vec_to[i] = convert<ToFieldType>(vec_from[i], date_lut);
-		}
-		else if (const ColumnConst<FromFieldType> * col_from
-			= typeid_cast<const ColumnConst<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
-		{
-			block.getByPosition(result).column = new ColumnConst<ToFieldType>(col_from->size(),
-				convert<ToFieldType>(col_from->getData(), date_lut));
-		}
-		else
-			throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-					+ " of first argument of function " + Name::name,
-				ErrorCodes::ILLEGAL_COLUMN);
-	}
-};
-
-template <typename Name> struct ConvertImpl<DataTypeUInt32, DataTypeDate, Name> : ConvertImpl32Or64ToDate<DataTypeUInt32, Name> {};
-template <typename Name> struct ConvertImpl<DataTypeUInt64, DataTypeDate, Name> : ConvertImpl32Or64ToDate<DataTypeUInt64, Name> {};
-template <typename Name> struct ConvertImpl<DataTypeInt32, DataTypeDate, Name> : ConvertImpl32Or64ToDate<DataTypeInt32, Name> {};
-template <typename Name> struct ConvertImpl<DataTypeInt64, DataTypeDate, Name> : ConvertImpl32Or64ToDate<DataTypeInt64, Name> {};
-
+template <typename Name> struct ConvertImpl<DataTypeUInt32, DataTypeDate, Name> : details::ToDateConverter<DataTypeUInt32, details::ToDateTransform32Or64, Name> {};
+template <typename Name> struct ConvertImpl<DataTypeUInt64, DataTypeDate, Name> : details::ToDateConverter<DataTypeUInt64, details::ToDateTransform32Or64, Name> {};
+template <typename Name> struct ConvertImpl<DataTypeInt32, DataTypeDate, Name> : details::ToDateConverter<DataTypeInt32, details::ToDateTransform32Or64, Name> {};
+template <typename Name> struct ConvertImpl<DataTypeInt64, DataTypeDate, Name> : details::ToDateConverter<DataTypeInt64, details::ToDateTransform32Or64, Name> {};
 
 /** Преобразование чисел, дат, дат-с-временем в строки: через форматирование.
   */
@@ -887,8 +995,10 @@ struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
 	}
 };
 
+/// Предварительное объявление.
+struct NameToDate			{ static constexpr auto name = "toDate"; };
 
-template <typename ToDataType, typename Name>
+template <typename ToDataType, typename Name, typename Monotonic>
 class FunctionConvert : public IFunction
 {
 public:
@@ -931,10 +1041,22 @@ public:
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}
 
+	bool hasInformationAboutMonotonicity() const override
+	{
+		return Monotonic::has();
+	}
+
+	Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
+	{
+		return Monotonic::get(type, left, right);
+	}
+
 private:
 	template<typename ToDataType2 = ToDataType, typename Name2 = Name>
 	DataTypePtr getReturnTypeImpl(const DataTypes & arguments,
-		typename std::enable_if<!(std::is_same<ToDataType2, DataTypeString>::value || std::is_same<Name2, NameToUnixTimestamp>::value), void>::type * = nullptr) const
+		typename std::enable_if<!(std::is_same<ToDataType2, DataTypeString>::value ||
+			std::is_same<Name2, NameToUnixTimestamp>::value ||
+			std::is_same<Name2, NameToDate>::value)>::type * = nullptr) const
 	{
 		if (arguments.size() != 1)
 			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -960,7 +1082,7 @@ private:
 					+ toString(arguments.size()) + ", should be 1.",
 					ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 		}
-		else if ((arguments.size()) == 2 && typeid_cast<const DataTypeString *>(&*arguments[1]) == nullptr)
+		else if ((arguments.size() == 2) && (typeid_cast<const DataTypeString *>(&*arguments[1]) == nullptr))
 		{
 			throw Exception{
 				"Illegal type " + arguments[1]->getName() + " of argument of function " + getName(),
@@ -987,10 +1109,30 @@ private:
 					+ toString(arguments.size()) + ", should be 1.",
 					ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 		}
-		else if ((arguments.size()) == 2 && typeid_cast<const DataTypeString *>(&*arguments[1]) == nullptr)
+		else if ((arguments.size() == 2) && (typeid_cast<const DataTypeString *>(&*arguments[1]) == nullptr))
 		{
 			throw Exception{
 				"Illegal type " + arguments[1]->getName() + " of argument of function " + getName(),
+				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+			};
+		}
+
+		return new ToDataType2;
+	}
+
+	template<typename ToDataType2 = ToDataType, typename Name2 = Name>
+	DataTypePtr getReturnTypeImpl(const DataTypes & arguments,
+		typename std::enable_if<std::is_same<Name2, NameToDate>::value>::type * = nullptr) const
+	{
+		if ((arguments.size() < 1) || (arguments.size() > 2))
+			throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+				+ toString(arguments.size()) + ", should be 1 or 2.",
+				ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+		if ((arguments.size() == 2) && (typeid_cast<const DataTypeString *>(&*arguments[1]) == nullptr))
+		{
+			throw Exception{
+				"Illegal type " + arguments[1]->getName() + " of 2nd argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
 			};
 		}
@@ -1130,6 +1272,113 @@ private:
 };
 
 
+/// Монотонность.
+
+struct PositiveMonotonicity
+{
+	static bool has() { return true; }
+	static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
+	{
+		return { true };
+	}
+};
+
+template <typename T>
+struct ToIntMonotonicity
+{
+	static bool has() { return true; }
+
+	template <typename T2 = T>
+	static UInt64 divideByRangeOfType(typename std::enable_if_t<sizeof(T2) != sizeof(UInt64), UInt64> x) { return x >> (sizeof(T) * 8); };
+
+	template <typename T2 = T>
+	static UInt64 divideByRangeOfType(typename std::enable_if_t<sizeof(T2) == sizeof(UInt64), UInt64> x) { return 0; };
+
+	static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
+	{
+		size_t size_of_type = type.getSizeOfField();
+
+		/// Если тип расширяется, то функция монотонна.
+		if (sizeof(T) > size_of_type)
+			return { true };
+
+		/// Если тип совпадает - тоже.
+		if (typeid_cast<const typename DataTypeFromFieldType<T>::Type *>(&type))
+			return { true };
+
+		/// В других случаях, для неограниченного диапазона не знаем, будет ли функция монотонной.
+		if (left.isNull() || right.isNull())
+			return {};
+
+		/// Если преобразуем из float, то аргументы должны помещаться в тип результата.
+		if (typeid_cast<const DataTypeFloat32 *>(&type)
+			|| typeid_cast<const DataTypeFloat64 *>(&type))
+		{
+			Float64 left_float = left.get<Float64>();
+			Float64 right_float = right.get<Float64>();
+
+			if (left_float >= std::numeric_limits<T>::min() && left_float <= std::numeric_limits<T>::max()
+				&& right_float >= std::numeric_limits<T>::min() && right_float <= std::numeric_limits<T>::max())
+				return { true };
+
+			return {};
+		}
+
+		/// Если меняем знаковость типа или преобразуем из даты, даты-времени, то аргумент должен быть из одной половинки.
+		/// На всякий случай, в остальных случаях тоже будем этого требовать.
+		if ((left.get<Int64>() >= 0) != (right.get<Int64>() >= 0))
+			return {};
+
+		/// Если уменьшаем тип, то все биты кроме тех, которые в него помещаются, должны совпадать.
+		if (divideByRangeOfType(left.get<UInt64>()) != divideByRangeOfType(right.get<UInt64>()))
+			return {};
+
+		return { true };
+	}
+};
+
+/** Монотонность для функции toString определяем, в основном, для тестовых целей.
+  * Всерьёз вряд ли кто-нибудь рассчитывает на оптимизацию запросов с условиями toString(CounterID) = 34.
+  */
+struct ToStringMonotonicity
+{
+	static bool has() { return true; }
+
+	static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
+	{
+		IFunction::Monotonicity positive = { .is_monotonic = true, .is_positive = true };
+		IFunction::Monotonicity not_monotonic;
+
+		/// Функция toString монотонна, если аргумент - Date или DateTime, или неотрицательные числа с одинаковым количеством знаков.
+
+		if (typeid_cast<const DataTypeDate *>(&type)
+			|| typeid_cast<const DataTypeDateTime *>(&type))
+			return positive;
+
+		if (left.isNull() || right.isNull())
+			return {};
+
+		if (left.getType() == Field::Types::UInt64
+			&& right.getType() == Field::Types::UInt64)
+		{
+			return (left.get<Int64>() == 0 && right.get<Int64>() == 0)
+				|| (floor(log10(left.get<UInt64>())) == floor(log10(right.get<UInt64>())))
+				? positive : not_monotonic;
+		}
+
+		if (left.getType() == Field::Types::Int64
+			&& right.getType() == Field::Types::Int64)
+		{
+			return (left.get<Int64>() == 0 && right.get<Int64>() == 0)
+				|| (left.get<Int64>() > 0 && right.get<Int64>() > 0 && floor(log10(left.get<Int64>())) == floor(log10(right.get<Int64>())))
+				? positive : not_monotonic;
+		}
+
+		return not_monotonic;
+	}
+};
+
+
 struct NameToUInt8 			{ static constexpr auto name = "toUInt8"; };
 struct NameToUInt16 		{ static constexpr auto name = "toUInt16"; };
 struct NameToUInt32 		{ static constexpr auto name = "toUInt32"; };
@@ -1140,23 +1389,22 @@ struct NameToInt32			{ static constexpr auto name = "toInt32"; };
 struct NameToInt64			{ static constexpr auto name = "toInt64"; };
 struct NameToFloat32		{ static constexpr auto name = "toFloat32"; };
 struct NameToFloat64		{ static constexpr auto name = "toFloat64"; };
-struct NameToDate			{ static constexpr auto name = "toDate"; };
 struct NameToDateTime		{ static constexpr auto name = "toDateTime"; };
 struct NameToString			{ static constexpr auto name = "toString"; };
 
-typedef FunctionConvert<DataTypeUInt8,		NameToUInt8> 		FunctionToUInt8;
-typedef FunctionConvert<DataTypeUInt16,		NameToUInt16> 		FunctionToUInt16;
-typedef FunctionConvert<DataTypeUInt32,		NameToUInt32> 		FunctionToUInt32;
-typedef FunctionConvert<DataTypeUInt64,		NameToUInt64> 		FunctionToUInt64;
-typedef FunctionConvert<DataTypeInt8,		NameToInt8> 		FunctionToInt8;
-typedef FunctionConvert<DataTypeInt16,		NameToInt16> 		FunctionToInt16;
-typedef FunctionConvert<DataTypeInt32,		NameToInt32> 		FunctionToInt32;
-typedef FunctionConvert<DataTypeInt64,		NameToInt64> 		FunctionToInt64;
-typedef FunctionConvert<DataTypeFloat32,	NameToFloat32> 		FunctionToFloat32;
-typedef FunctionConvert<DataTypeFloat64,	NameToFloat64> 		FunctionToFloat64;
-typedef FunctionConvert<DataTypeDate,		NameToDate> 		FunctionToDate;
-typedef FunctionConvert<DataTypeDateTime,	NameToDateTime> 	FunctionToDateTime;
-typedef FunctionConvert<DataTypeString,		NameToString> 		FunctionToString;
-typedef FunctionConvert<DataTypeInt32,		NameToUnixTimestamp> FunctionToUnixTimestamp;
+typedef FunctionConvert<DataTypeUInt8,		NameToUInt8,	ToIntMonotonicity<UInt8>> 	FunctionToUInt8;
+typedef FunctionConvert<DataTypeUInt16,		NameToUInt16,	ToIntMonotonicity<UInt16>> FunctionToUInt16;
+typedef FunctionConvert<DataTypeUInt32,		NameToUInt32,	ToIntMonotonicity<UInt32>> FunctionToUInt32;
+typedef FunctionConvert<DataTypeUInt64,		NameToUInt64,	ToIntMonotonicity<UInt64>> FunctionToUInt64;
+typedef FunctionConvert<DataTypeInt8,		NameToInt8,		ToIntMonotonicity<Int8>> 	FunctionToInt8;
+typedef FunctionConvert<DataTypeInt16,		NameToInt16,	ToIntMonotonicity<Int16>> 	FunctionToInt16;
+typedef FunctionConvert<DataTypeInt32,		NameToInt32,	ToIntMonotonicity<Int32>> 	FunctionToInt32;
+typedef FunctionConvert<DataTypeInt64,		NameToInt64,	ToIntMonotonicity<Int64>> 	FunctionToInt64;
+typedef FunctionConvert<DataTypeFloat32,	NameToFloat32,	PositiveMonotonicity> 		FunctionToFloat32;
+typedef FunctionConvert<DataTypeFloat64,	NameToFloat64,	PositiveMonotonicity> 		FunctionToFloat64;
+typedef FunctionConvert<DataTypeDate,		NameToDate,		ToIntMonotonicity<UInt16>> FunctionToDate;
+typedef FunctionConvert<DataTypeDateTime,	NameToDateTime,	ToIntMonotonicity<UInt32>> FunctionToDateTime;
+typedef FunctionConvert<DataTypeString,		NameToString, 	ToStringMonotonicity> 		FunctionToString;
+typedef FunctionConvert<DataTypeInt32,		NameToUnixTimestamp, ToIntMonotonicity<UInt32>> FunctionToUnixTimestamp;
 
 }

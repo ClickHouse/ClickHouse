@@ -7,6 +7,7 @@
 #include <DB/Core/ErrorCodes.h>
 #include <DB/Columns/ColumnVector.h>
 #include <DB/Columns/IColumn.h>
+#include <DB/Columns/ColumnsCommon.h>
 #include <DB/DataTypes/IDataType.h>
 
 
@@ -21,7 +22,31 @@ class IColumnConst : public IColumn
 public:
 	bool isConst() const override { return true; }
 	virtual ColumnPtr convertToFullColumn() const = 0;
+	ColumnPtr convertToFullColumnIfConst() const override { return convertToFullColumn(); }
 };
+
+
+namespace ColumnConstDetails
+{
+	template <typename T>
+	inline bool equals(const T & x, const T & y)
+	{
+		return x == y;
+	}
+
+	/// Проверяет побитовую идентичность элементов, даже если они являются NaN-ами.
+	template <>
+	inline bool equals(const Float32 & x, const Float32 & y)
+	{
+		return 0 == memcmp(&x, &y, sizeof(x));
+	}
+
+	template <>
+	inline bool equals(const Float64 & x, const Float64 & y)
+	{
+		return 0 == memcmp(&x, &y, sizeof(x));
+	}
+}
 
 
 /** Столбец-константа может содержать внутри себя само значение,
@@ -61,14 +86,18 @@ public:
 	Field operator[](size_t n) const override { return FieldType(getDataFromHolder()); }
 	void get(size_t n, Field & res) const override { res = FieldType(getDataFromHolder()); }
 
-	ColumnPtr cut(size_t start, size_t length) const override
+	void insertRangeFrom(const IColumn & src, size_t start, size_t length) override
 	{
-		return new Derived(length, data, data_type);
+		if (!ColumnConstDetails::equals(getDataFromHolder(), static_cast<const Derived &>(src).getDataFromHolder()))
+			throw Exception("Cannot insert different element into constant column " + getName(),
+				ErrorCodes::CANNOT_INSERT_ELEMENT_INTO_CONSTANT_COLUMN);
+
+		s += length;
 	}
 
 	void insert(const Field & x) override
 	{
-		if (x.get<FieldType>() != FieldType(getDataFromHolder()))
+		if (!ColumnConstDetails::equals(x.get<FieldType>(), FieldType(getDataFromHolder())))
 			throw Exception("Cannot insert different element into constant column " + getName(),
 				ErrorCodes::CANNOT_INSERT_ELEMENT_INTO_CONSTANT_COLUMN);
 		++s;
@@ -81,7 +110,7 @@ public:
 
 	void insertFrom(const IColumn & src, size_t n) override
 	{
-		if (getDataFromHolder() != static_cast<const Derived &>(src).getDataFromHolder())
+		if (!ColumnConstDetails::equals(getDataFromHolder(), static_cast<const Derived &>(src).getDataFromHolder()))
 			throw Exception("Cannot insert different element into constant column " + getName(),
 				ErrorCodes::CANNOT_INSERT_ELEMENT_INTO_CONSTANT_COLUMN);
 		++s;
@@ -99,7 +128,7 @@ public:
 		throw Exception("Method deserializeAndInsertFromArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 	}
 
-	ColumnPtr filter(const Filter & filt) const override
+	ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
 	{
 		if (s != filt.size())
 			throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);

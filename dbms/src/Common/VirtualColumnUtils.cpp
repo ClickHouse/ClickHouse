@@ -159,8 +159,8 @@ bool filterBlockWithQuery(ASTPtr query, Block & block, const Context & context)
 	/// Отфильтруем блок.
 	String filter_column_name = expression_ast->getColumnName();
 	ColumnPtr filter_column = block.getByName(filter_column_name).column;
-	if (IColumnConst * const_column = dynamic_cast<IColumnConst *>(&*filter_column))
-		filter_column = const_column->convertToFullColumn();
+	if (auto converted = filter_column->convertToFullColumnIfConst())
+		filter_column = converted;
 	const IColumn::Filter & filter = dynamic_cast<ColumnUInt8 &>(*filter_column).getData();
 
 	if (std::accumulate(filter.begin(), filter.end(), 0ul) == filter.size())
@@ -169,7 +169,7 @@ bool filterBlockWithQuery(ASTPtr query, Block & block, const Context & context)
 	for (size_t i = 0; i < block.columns(); ++i)
 	{
 		ColumnPtr & column = block.getByPosition(i).column;
-		column = column->filter(filter);
+		column = column->filter(filter, -1);
 	}
 
 	return true;

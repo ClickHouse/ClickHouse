@@ -23,4 +23,10 @@ void stableSortBlock(Block & block, const SortDescription & description);
   */
 void stableGetPermutation(const Block & block, const SortDescription & description, IColumn::Permutation & out_permutation);
 
+
+/** Быстро проверить, является ли блок уже отсортированным. Если блок не отсортирован - возвращает false максимально быстро.
+  * Не поддерживаются collations.
+  */
+bool isAlreadySorted(const Block & block, const SortDescription & description);
+
 }

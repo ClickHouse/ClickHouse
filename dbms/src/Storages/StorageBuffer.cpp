@@ -4,6 +4,7 @@
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/Storages/StorageBuffer.h>
 #include <DB/Parsers/ASTInsertQuery.h>
+#include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Common/setThreadName.h>
 #include <Poco/Ext/ThreadNumber.h>
 
@@ -140,6 +141,9 @@ BlockInputStreams StorageBuffer::read(
 
 static void appendBlock(const Block & from, Block & to)
 {
+	if (!to)
+		throw Exception("Cannot append to empty block", ErrorCodes::LOGICAL_ERROR);
+
 	size_t rows = from.rows();
 	for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
 	{
@@ -150,11 +154,7 @@ static void appendBlock(const Block & from, Block & to)
 			throw Exception("Cannot append block to another: different type of columns at index " + toString(column_no)
 				+ ". Block 1: " + from.dumpStructure() + ". Block 2: " + to.dumpStructure(), ErrorCodes::BLOCKS_HAS_DIFFERENT_STRUCTURE);
 
-		if (col_to.empty())
-			to.getByPosition(column_no).column = col_from.clone();
-		else
-			for (size_t row_no = 0; row_no < rows; ++row_no)
-				col_to.insertFrom(col_from, row_no);
+		col_to.insertRangeFrom(col_from, 0, rows);
 	}
 }
 
@@ -238,25 +238,29 @@ private:
 
 	void insertIntoBuffer(const Block & block, StorageBuffer::Buffer & buffer, std::unique_lock<std::mutex> && lock)
 	{
+		time_t current_time = time(0);
+
 		/// Сортируем столбцы в блоке. Это нужно, чтобы было проще потом конкатенировать блоки.
 		Block sorted_block = block.sortColumns();
 
 		if (!buffer.data)
 		{
-			buffer.first_write_time = time(0);
 			buffer.data = sorted_block.cloneEmpty();
 		}
-
-		/** Если после вставки в буфер, ограничения будут превышены, то будем сбрасывать буфер.
-		  * Это также защищает от неограниченного потребления оперативки, так как в случае невозможности записать в таблицу,
-		  *  будет выкинуто исключение, а новые данные не будут добавлены в буфер.
-		  */
-		if (storage.checkThresholds(buffer, time(0), sorted_block.rowsInFirstColumn(), sorted_block.bytes()))
+		else if (storage.checkThresholds(buffer, current_time, sorted_block.rowsInFirstColumn(), sorted_block.bytes()))
 		{
+			/** Если после вставки в буфер, ограничения будут превышены, то будем сбрасывать буфер.
+			  * Это также защищает от неограниченного потребления оперативки, так как в случае невозможности записать в таблицу,
+			  *  будет выкинуто исключение, а новые данные не будут добавлены в буфер.
+			  */
+
 			lock.unlock();
 			storage.flushBuffer(buffer, false);
 			lock.lock();
 		}
+
+		if (!buffer.first_write_time)
+			buffer.first_write_time = current_time;
 
 		appendBlock(sorted_block, buffer.data);
 	}
@@ -295,7 +299,7 @@ bool StorageBuffer::optimize(const Settings & settings)
 }
 
 
-bool StorageBuffer::checkThresholds(Buffer & buffer, time_t current_time, size_t additional_rows, size_t additional_bytes)
+bool StorageBuffer::checkThresholds(const Buffer & buffer, time_t current_time, size_t additional_rows, size_t additional_bytes) const
 {
 	time_t time_passed = 0;
 	if (buffer.first_write_time)
@@ -304,14 +308,15 @@ bool StorageBuffer::checkThresholds(Buffer & buffer, time_t current_time, size_t
 	size_t rows = buffer.data.rowsInFirstColumn() + additional_rows;
 	size_t bytes = buffer.data.bytes() + additional_bytes;
 
-	bool res =
+	return checkThresholdsImpl(rows, bytes, time_passed);
+}
+
+
+bool StorageBuffer::checkThresholdsImpl(size_t rows, size_t bytes, time_t time_passed) const
+{
+	return
 	       (time_passed > min_thresholds.time && rows > min_thresholds.rows && bytes > min_thresholds.bytes)
 		|| (time_passed > max_thresholds.time || rows > max_thresholds.rows || bytes > max_thresholds.bytes);
-
-	if (res)
-		LOG_TRACE(log, "Flushing buffer with " << rows << " rows, " << bytes << " bytes, age " << time_passed << " seconds.");
-
-	return res;
 }
 
 
@@ -325,7 +330,11 @@ void StorageBuffer::flushAllBuffers(const bool check_thresholds)
 void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds)
 {
 	Block block_to_write;
-	time_t current_time = check_thresholds ? time(0) : 0;
+	time_t current_time = time(0);
+
+	size_t rows = 0;
+	size_t bytes = 0;
+	time_t time_passed = 0;
 
 	/** Довольно много проблем из-за того, что хотим блокировать буфер лишь на короткое время.
 	  * Под блокировкой, получаем из буфера блок, и заменяем в нём блок на новый пустой.
@@ -336,20 +345,29 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds)
 	{
 		std::lock_guard<std::mutex> lock(buffer.mutex);
 
+		block_to_write = buffer.data.cloneEmpty();
+
+		rows = buffer.data.rowsInFirstColumn();
+		bytes = buffer.data.bytes();
+		if (buffer.first_write_time)
+			time_passed = current_time - buffer.first_write_time;
+
 		if (check_thresholds)
 		{
-			if (!checkThresholds(buffer, current_time))
+			if (!checkThresholdsImpl(rows, bytes, time_passed))
 				return;
 		}
 		else
 		{
-			if (buffer.data.rowsInFirstColumn() == 0)
+			if (rows == 0)
 				return;
 		}
 
 		buffer.data.swap(block_to_write);
 		buffer.first_write_time = 0;
 	}
+
+	LOG_TRACE(log, "Flushing buffer with " << rows << " rows, " << bytes << " bytes, age " << time_passed << " seconds.");
 
 	if (no_destination)
 		return;

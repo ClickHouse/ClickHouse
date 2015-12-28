@@ -254,21 +254,23 @@ public:
 		data.push_back(DB::get<typename NearestFieldType<T>::Type>(x));
 	}
 
-	ColumnPtr cut(size_t start, size_t length) const override
+	void insertRangeFrom(const IColumn & src, size_t start, size_t length) override
 	{
-		if (start + length > data.size())
+		const ColumnVector & src_vec = static_cast<const ColumnVector &>(src);
+
+		if (start + length > src_vec.data.size())
 			throw Exception("Parameters start = "
 				+ toString(start) + ", length = "
-				+ toString(length) + " are out of bound in IColumnVector<T>::cut() method"
-				" (data.size() = " + toString(data.size()) + ").",
+				+ toString(length) + " are out of bound in ColumnVector::insertRangeFrom method"
+				" (data.size() = " + toString(src_vec.data.size()) + ").",
 				ErrorCodes::PARAMETER_OUT_OF_BOUND);
 
-		Self * res = new Self(length);
-		memcpy(&res->getData()[0], &data[start], length * sizeof(data[0]));
-		return res;
+		size_t old_size = data.size();
+		data.resize(old_size + length);
+		memcpy(&data[old_size], &src_vec.data[start], length * sizeof(data[0]));
 	}
 
-	ColumnPtr filter(const IColumn::Filter & filt) const override
+	ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override
 	{
 		size_t size = data.size();
 		if (size != filt.size())
@@ -277,7 +279,9 @@ public:
 		Self * res_ = new Self;
 		ColumnPtr res = res_;
 		typename Self::Container_t & res_data = res_->getData();
-		res_data.reserve(size);
+
+		if (result_size_hint)
+			res_data.reserve(result_size_hint > 0 ? result_size_hint : size);
 
 		/** Чуть более оптимизированная версия.
 		  * Исходит из допущения, что часто куски последовательно идущих значений

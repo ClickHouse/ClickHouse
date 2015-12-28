@@ -11,8 +11,6 @@
 
 #include <common/likely.h>
 
-#include <stats/IntHash.h>
-
 #include <DB/Core/Defines.h>
 #include <DB/Core/Types.h>
 #include <DB/Common/Exception.h>
@@ -304,7 +302,11 @@ protected:
 
 	void free()
 	{
-		Allocator::free(buf, getBufferSizeInBytes());
+		if (buf)
+		{
+			Allocator::free(buf, getBufferSizeInBytes());
+			buf = nullptr;
+		}
 	}
 
 
@@ -399,6 +401,14 @@ protected:
 	}
 
 
+	void destroyElements()
+	{
+		if (!__has_trivial_destructor(Cell))
+			for (iterator it = begin(); it != end(); ++it)
+				it.ptr->~Cell();
+	}
+
+
 public:
 	typedef Key key_type;
 	typedef typename Cell::value_type value_type;
@@ -423,10 +433,7 @@ public:
 
 	~HashTable()
 	{
-		if (!__has_trivial_destructor(Cell))
-			for (iterator it = begin(); it != end(); ++it)
-				it.ptr->~Cell();
-
+		destroyElements();
 		free();
 	}
 
@@ -791,6 +798,7 @@ public:
 	{
 		Cell::State::read(rb);
 
+		destroyElements();
 		this->clearHasZero();
 		m_size = 0;
 
@@ -806,7 +814,7 @@ public:
 		{
 			Cell x;
 			x.read(rb);
-			insert(x);
+			insert(Cell::getKey(x.getValue()));
 		}
 	}
 
@@ -814,6 +822,7 @@ public:
 	{
 		Cell::State::readText(rb);
 
+		destroyElements();
 		this->clearHasZero();
 		m_size = 0;
 
@@ -830,7 +839,7 @@ public:
 			Cell x;
 			DB::assertString(",", rb);
 			x.readText(rb);
-			insert(x);
+			insert(Cell::getKey(x.getValue()));
 		}
 	}
 
@@ -847,12 +856,23 @@ public:
 
 	void clear()
 	{
-		if (!__has_trivial_destructor(Cell))
-			for (iterator it = begin(); it != end(); ++it)
-				it.ptr->~Cell();
+		destroyElements();
+		this->clearHasZero();
+		m_size = 0;
 
 		memset(buf, 0, grower.bufSize() * sizeof(*buf));
+	}
+
+	void clearAndShrink()
+	{
+		destroyElements();
+		this->clearHasZero();
 		m_size = 0;
+
+		free();
+		Grower new_grower = grower;
+		new_grower.set(0);
+		alloc(new_grower);
 	}
 
 	size_t getBufferSizeInBytes() const

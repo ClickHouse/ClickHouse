@@ -24,6 +24,8 @@ public:
 	void setTotals(const Block & totals) override;
 	void setExtremes(const Block & extremes) override;
 
+	String getContentType() const override { return row_output->getContentType(); }
+
 private:
 	RowOutputStreamPtr row_output;
 	bool first_row;

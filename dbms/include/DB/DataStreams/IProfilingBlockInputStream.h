@@ -169,6 +169,9 @@ protected:
 	/// Информация о приблизительном общем количестве строк собрана в родительском источнике.
 	bool collected_total_rows_approx = false;
 
+	/// Превышено ограничение на количество строк/байт, и нужно прекратить выполнение на следующем вызове read, как будто поток иссяк.
+	bool limit_exceeded_need_break = false;
+
 	/// Ограничения и квоты.
 
 	LocalLimits limits;
@@ -198,5 +201,7 @@ protected:
 	  */
 	void collectAndSendTotalRowsApprox();
 };
+
+typedef SharedPtr<IProfilingBlockInputStream> ProfilingBlockInputStreamPtr;
 
 }

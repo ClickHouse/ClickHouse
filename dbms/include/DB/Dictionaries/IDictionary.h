@@ -59,6 +59,10 @@ struct IDictionary : IDictionaryBase
 {
 	virtual bool hasHierarchy() const = 0;
 
+	virtual void toParent(const PODArray<id_t> & ids, PODArray<id_t> & out) const = 0;
+
+	virtual void has(const PODArray<id_t> & ids, PODArray<UInt8> & out) const = 0;
+
 	/// do not call unless you ensure that hasHierarchy() returns true
 	id_t toParent(id_t id) const
 	{
@@ -70,8 +74,6 @@ struct IDictionary : IDictionaryBase
 		return out.front();
 	}
 
-	virtual void toParent(const PODArray<id_t> & ids, PODArray<id_t> & out) const = 0;
-
 	bool in(id_t child_id, const id_t ancestor_id) const
 	{
 		while (child_id != 0 && child_id != ancestor_id)
@@ -79,19 +81,6 @@ struct IDictionary : IDictionaryBase
 
 		return child_id != 0;
 	}
-
-	/// return mapped values for a collection of identifiers
-	virtual void getUInt8(const std::string & attr_name, const PODArray<id_t> & ids, PODArray<UInt8> & out) const = 0;
-	virtual void getUInt16(const std::string & attr_name, const PODArray<id_t> & ids, PODArray<UInt16> & out) const = 0;
-	virtual void getUInt32(const std::string & attr_name, const PODArray<id_t> & ids, PODArray<UInt32> & out) const = 0;
-	virtual void getUInt64(const std::string & attr_name, const PODArray<id_t> & ids, PODArray<UInt64> & out) const = 0;
-	virtual void getInt8(const std::string & attr_name, const PODArray<id_t> & ids, PODArray<Int8> & out) const = 0;
-	virtual void getInt16(const std::string & attr_name, const PODArray<id_t> & ids, PODArray<Int16> & out) const = 0;
-	virtual void getInt32(const std::string & attr_name, const PODArray<id_t> & ids, PODArray<Int32> & out) const = 0;
-	virtual void getInt64(const std::string & attr_name, const PODArray<id_t> & ids, PODArray<Int64> & out) const = 0;
-	virtual void getFloat32(const std::string & attr_name, const PODArray<id_t> & ids, PODArray<Float32> & out) const = 0;
-	virtual void getFloat64(const std::string & attr_name, const PODArray<id_t> & ids, PODArray<Float64> & out) const = 0;
-	virtual void getString(const std::string & attr_name, const PODArray<id_t> & ids, ColumnString * out) const = 0;
 };
 
 }

@@ -15,20 +15,17 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & m
 {
 	Pos begin = pos;
 
-	ParserWhiteSpaceOrComments ws;
 	ParserString s_show("SHOW", true, true);
 	ParserString s_tables("TABLES", true, true);
 	ParserString s_databases("DATABASES", true, true);
 	ParserString s_from("FROM", true, true);
 	ParserString s_not("NOT", true, true);
 	ParserString s_like("LIKE", true, true);
-	ParserString s_format("FORMAT", true, true);
 	ParserStringLiteral like_p;
 	ParserIdentifier name_p;
 
 	ASTPtr like;
 	ASTPtr database;
-	ASTPtr format;
 
 	ASTShowTablesQuery * query = new ASTShowTablesQuery;
 	ASTPtr query_ptr = query;
@@ -80,18 +77,9 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & m
 
 	ws.ignore(pos, end);
 
-	if (s_format.ignore(pos, end, max_parsed_pos, expected))
-	{
-		ws.ignore(pos, end);
-
-		ParserIdentifier format_p;
-
-		if (!format_p.parse(pos, end, format, max_parsed_pos, expected))
-			return false;
-		typeid_cast<ASTIdentifier &>(*format).kind = ASTIdentifier::Format;
-
-		ws.ignore(pos, end);
-	}
+	/// FORMAT format_name
+	if (!parseFormat(*query, pos, end, node, max_parsed_pos, expected))
+		return false;
 
 	query->range = StringRange(begin, pos);
 
@@ -99,11 +87,8 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & m
 		query->from = typeid_cast<ASTIdentifier &>(*database).name;
 	if (like)
 		query->like = safeGet<const String &>(typeid_cast<ASTLiteral &>(*like).value);
-	if (format)
-	{
-		query->format = format;
-		query->children.push_back(format);
-	}
+	if (query->format)
+		query->children.push_back(query->format);
 
 	node = query_ptr;
 

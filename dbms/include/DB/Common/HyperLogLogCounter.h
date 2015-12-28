@@ -1,8 +1,9 @@
 #pragma once
 
 #include <common/Common.h>
-#include <stats/IntHash.h>
 #include <DB/Common/HyperLogLogBiasEstimator.h>
+#include <DB/Common/CompactArray.h>
+#include <DB/Common/HashTable/Hash.h>
 
 #include <DB/IO/ReadBuffer.h>
 #include <DB/IO/WriteBuffer.h>
@@ -59,154 +60,6 @@ template<UInt64 MaxValue> struct MinCounterType
 		(MaxValue >= 1 << 16) +
 		(MaxValue >= 1ULL << 32)
 		>::Type Type;
-};
-
-/** Компактный массив для хранения данных, размер L, в битах, которых составляет меньше одного байта.
-  * Вместо того, чтобы хранить каждое значение в 8-битную ячейку памяти, что приводит к растрате
-  * 37.5% пространства для L=5, CompactArray хранит смежные L-битные значения, именно компактные
-  * ячейки в массиве байтов, т.е. фактически CompactArray симулирует массив L-битных значений.
-  */
-template<typename BucketIndex, UInt8 content_width, size_t bucket_count>
-class __attribute__ ((packed)) CompactArray final
-{
-public:
-	class Locus;
-
-public:
-	CompactArray() = default;
-
-	UInt8 ALWAYS_INLINE operator[](BucketIndex bucket_index) const
-	{
-		Locus locus(bucket_index);
-
-		if (locus.index_l == locus.index_r)
-			return locus.read(bitset[locus.index_l]);
-		else
-			return locus.read(bitset[locus.index_l], bitset[locus.index_r]);
-	}
-
-	Locus ALWAYS_INLINE operator[](BucketIndex bucket_index)
-	{
-		Locus locus(bucket_index);
-
-		locus.content_l = &bitset[locus.index_l];
-
-		if (locus.index_l == locus.index_r)
-			locus.content_r = locus.content_l;
-		else
-			locus.content_r = &bitset[locus.index_r];
-
-		return locus;
-	}
-
-	void readText(DB::ReadBuffer & in)
-	{
-		for (size_t i = 0; i < BITSET_SIZE; ++i)
-		{
-			if (i != 0)
-				DB::assertString(",", in);
-			DB::readIntText(bitset[i], in);
-		}
-	}
-
-	void writeText(DB::WriteBuffer & out) const
-	{
-		for (size_t i = 0; i < BITSET_SIZE; ++i)
-		{
-			if (i != 0)
-				writeCString(",", out);
-			DB::writeIntText(bitset[i], out);
-		}
-	}
-
-private:
-	/// число байт в битсете
-	static constexpr size_t BITSET_SIZE = (static_cast<size_t>(bucket_count) * content_width + 7) / 8;
-	UInt8 bitset[BITSET_SIZE] = { 0 };
-};
-
-/** Структура Locus содержит необходимую информацию, чтобы найти для каждой компактной ячейки
-  * соответствующие физическую ячейку и смещение, в битах, от начала ячейки. Поскольку в общем
-  * случае размер одной физической ячейки не делится на размер одной компактной ячейки, возможны
-  * случаи, когда одна компактная ячейка перекрывает две физические ячейки. Поэтому структура
-  * Locus содержит две пары (индекс, смещение).
-  */
-template<typename BucketIndex, UInt8 content_width, size_t bucket_count>
-class CompactArray<BucketIndex, content_width, bucket_count>::Locus final
-{
-	friend class CompactArray;
-
-public:
-	ALWAYS_INLINE operator UInt8() const
-	{
-		if (content_l == content_r)
-			return read(*content_l);
-		else
-			return read(*content_l, *content_r);
-	}
-
-	Locus ALWAYS_INLINE & operator=(UInt8 content)
-	{
-		if ((index_l == index_r) || (index_l == (BITSET_SIZE - 1)))
-		{
-			/// Компактная ячейка полностью влезает в одну физическую ячейку.
-			*content_l &= ~(((1 << content_width) - 1) << offset_l);
-			*content_l |= content << offset_l;
-		}
-		else
-		{
-			/// Компактная ячейка перекрывает две физические ячейки.
-			size_t left = 8 - offset_l;
-
-			*content_l &= ~(((1 << left) - 1) << offset_l);
-			*content_l |= (content & ((1 << left) - 1)) << offset_l;
-
-			*content_r &= ~((1 << offset_r) - 1);
-			*content_r |= content >> left;
-		}
-
-		return *this;
-	}
-
-private:
-	Locus() = default;
-
-	Locus(BucketIndex bucket_index)
-	{
-		size_t l = static_cast<size_t>(bucket_index) * content_width;
-		index_l = l >> 3;
-		offset_l = l & 7;
-
-		size_t r = static_cast<size_t>(bucket_index + 1) * content_width;
-		index_r = r >> 3;
-		offset_r = r & 7;
-	}
-
-	UInt8 ALWAYS_INLINE read(UInt8 value_l) const
-	{
-		/// Компактная ячейка полностью влезает в одну физическую ячейку.
-		return (value_l >> offset_l) & ((1 << content_width) - 1);
-	}
-
-	UInt8 ALWAYS_INLINE read(UInt8 value_l, UInt8 value_r) const
-	{
-		/// Компактная ячейка перекрывает две физические ячейки.
-		return ((value_l >> offset_l) & ((1 << (8 - offset_l)) - 1))
-			| ((value_r & ((1 << offset_r) - 1)) << (8 - offset_l));
-	}
-
-private:
-	size_t index_l;
-	size_t offset_l;
-	size_t index_r;
-	size_t offset_r;
-
-	UInt8 * content_l;
-	UInt8 * content_r;
-
-	/// Проверки
-	static_assert((content_width > 0) && (content_width < 8), "Invalid parameter value");
-	static_assert(bucket_count <= (std::numeric_limits<size_t>::max() / content_width), "Invalid parameter value");
 };
 
 /** Знаменатель формулы алгоритма HyperLogLog
@@ -422,7 +275,7 @@ private:
 
 private:
 	using Value_t = UInt64;
-	using RankStore = details::CompactArray<HashValueType, rank_width, bucket_count>;
+	using RankStore = DB::CompactArray<HashValueType, rank_width, bucket_count>;
 
 public:
 	void insert(Value_t value)
@@ -476,12 +329,11 @@ public:
 
 	void readAndMerge(DB::ReadBuffer & in)
 	{
-		RankStore other;
-		in.readStrict(reinterpret_cast<char *>(&other), sizeof(RankStore));
-		for (HashValueType bucket = 0; bucket < bucket_count; ++bucket)
+		typename RankStore::Reader reader(in);
+		while (reader.next())
 		{
-			UInt8 rank = other[bucket];
-			update(bucket, rank);
+			const auto & data = reader.get();
+			update(data.first, data.second);
 		}
 
 		in.ignore(sizeof(DenominatorCalculatorType) + sizeof(ZerosCounterType));
