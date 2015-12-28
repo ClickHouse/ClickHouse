@@ -1152,7 +1152,7 @@ private:
 					ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 		}
 		else if ((arguments.size() == 2) && (typeid_cast<const DataTypeString *>(&*arguments[1]) == nullptr))
-		{
+		{F
 			throw Exception{
 				"Illegal type " + arguments[1]->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
@@ -1670,26 +1670,6 @@ class FunctionCast final : public IFunction
 
 			return [function] (Block & block, const ColumnNumbers & arguments, const size_t result) {
 				function->execute(block, arguments, result);
-
-				const auto & col_with_type_and_name = block.getByPosition(result);
-				const auto & result_col = col_with_type_and_name.column;
-				const auto & result_type = typeid_cast<const EnumType &>(*col_with_type_and_name.type);
-
-				/// Check that values after conversion belong to the element set
-				if (const auto col = typeid_cast<const typename EnumType::ColumnType *>(result_col.get()))
-				{
-					for (const auto & value : col->getData())
-						(void) result_type.getNameForValue(value);
-				}
-				else if (const auto const_col = typeid_cast<const typename EnumType::ConstColumnType *>(result_col.get()))
-				{
-					(void) result_type.getNameForValue(const_col->getData());
-				}
-				else
-					throw Exception{
-						"Unexpected type of column returned from " + function->getName(),
-						ErrorCodes::LOGICAL_ERROR
-					};
 			};
 		}
 		else
@@ -1851,7 +1831,7 @@ public:
 		if (arguments.size() > 2)
 			new_arguments.insert(std::end(new_arguments), std::next(std::begin(arguments), 2), std::end(arguments));
 
-		wrapper_function(block, arguments, result);
+		wrapper_function(block, new_arguments, result);
 	}
 };
 
