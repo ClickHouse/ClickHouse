@@ -10,8 +10,8 @@ namespace DB
 
 
 template <typename FieldType> struct EnumName;
-template <> struct EnumName<UInt8> { static constexpr auto value = "Enum8"; };
-template <> struct EnumName<UInt16> { static constexpr auto value = "Enum16"; };
+template <> struct EnumName<Int8> { static constexpr auto value = "Enum8"; };
+template <> struct EnumName<Int16> { static constexpr auto value = "Enum16"; };
 
 template <typename Type>
 class DataTypeEnum final : public IDataType
@@ -258,8 +258,8 @@ public:
 };
 
 
-using DataTypeEnum8 = DataTypeEnum<UInt8>;
-using DataTypeEnum16 = DataTypeEnum<UInt16>;
+using DataTypeEnum8 = DataTypeEnum<Int8>;
+using DataTypeEnum16 = DataTypeEnum<Int16>;
 
 
 }

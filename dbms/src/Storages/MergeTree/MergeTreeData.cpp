@@ -13,6 +13,7 @@
 #include <DB/IO/CompressedReadBuffer.h>
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
+#include <DB/DataTypes/DataTypeEnum.h>
 #include <DB/Common/localBackup.h>
 #include <DB/Functions/FunctionFactory.h>
 #include <Poco/DirectoryIterator.h>
@@ -491,8 +492,13 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 		{
 			const auto new_type = new_types[column.name].get();
 			const String new_type_name = new_type->getName();
+			const auto & old_type = column.type;
 
-			if (new_type_name != column.type->getName() &&
+			/// if this is not a check (part != nullptr) and alter does not change enum underlying type - do nothing
+			if (part && typeid(*new_type) == typeid(*old_type) &&
+				(typeid_cast<const DataTypeEnum8 *>(new_type) || typeid_cast<const DataTypeEnum16 *>(new_type)))
+				continue;
+			else if (new_type_name != old_type->getName() &&
 				(!part || part->hasColumnFiles(column.name)))
 			{
 				/// Нужно изменить тип столбца.
@@ -554,8 +560,6 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 	if (expression)
 	{
 		MarkRanges ranges(1, MarkRange(0, part->size));
-		/** @todo expression->getRequiedColumns may contain integer width columns for FixedString(N) type which after
-		 *	passing them to ITableDeclaration::check will trigger and exception about unknown column `N` */
 		BlockInputStreamPtr part_in = new MergeTreeBlockInputStream(full_path + part->name + '/',
 			DEFAULT_MERGE_BLOCK_SIZE, expression->getRequiredColumns(), *this, part, ranges,
 			false, nullptr, "", false, 0, DBMS_DEFAULT_BUFFER_SIZE, false);
