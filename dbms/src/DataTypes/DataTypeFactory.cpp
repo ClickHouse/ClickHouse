@@ -57,17 +57,20 @@ inline DataTypePtr parseEnum(const String & name, const String & base_name, cons
 	typename DataTypeEnum::Values values;
 	values.reserve(elements->children.size());
 
+	using FieldType = typename DataTypeEnum::FieldType;
+
 	for (const auto & element : typeid_cast<const ASTExpressionList &>(*elements).children)
 	{
 		const auto & e = static_cast<const ASTEnumElement &>(*element);
+		const auto value = e.value.get<typename NearestFieldType<FieldType>::Type>();
 
-		if (e.value > std::numeric_limits<typename DataTypeEnum::FieldType>::max())
+		if (value > std::numeric_limits<FieldType>::max() || value < std::numeric_limits<FieldType>::min())
 			throw Exception{
-				"Value " + toString(e.value) + " for element '" + e.name + "' exceeds range of " + base_name,
+				"Value " + apply_visitor(FieldVisitorToString{}, e.value) + " for element '" + e.name + "' exceeds range of " + base_name,
 				ErrorCodes::ARGUMENT_OUT_OF_BOUND
 			};
 
-		values.emplace_back(e.name, e.value);
+		values.emplace_back(e.name, value);
 	}
 
 	return new DataTypeEnum{values};

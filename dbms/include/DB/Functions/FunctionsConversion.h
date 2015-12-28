@@ -1788,9 +1788,9 @@ class FunctionCast final : public IFunction
 		else if (const auto type_tuple = typeid_cast<const DataTypeTuple *>(to_type))
 			return createTupleWrapper(from_type, type_tuple);
 		else if (const auto type_enum = typeid_cast<const DataTypeEnum8 *>(to_type))
-			return createEnumWrapper<ToPrimitiveType<UInt8>::Type>(from_type, type_enum);
+			return createEnumWrapper<ToPrimitiveType<DataTypeEnum8::FieldType>::Type>(from_type, type_enum);
 		else if (const auto type_enum = typeid_cast<const DataTypeEnum16 *>(to_type))
-			return createEnumWrapper<ToPrimitiveType<UInt16>::Type>(from_type, type_enum);
+			return createEnumWrapper<ToPrimitiveType<DataTypeEnum16::FieldType>::Type>(from_type, type_enum);
 
 		throw Exception{
 			"Conversion from " + from_type->getName() + " to " + to_type->getName() +

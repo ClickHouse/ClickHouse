@@ -131,12 +131,12 @@ namespace VisibleWidth
 			return false;
 	}
 
-	template <typename T>
+	template <typename DataTypeEnum>
 	static bool executeEnum(Block & block, const DataTypePtr & type_ptr, const ColumnPtr & column, const size_t result)
 	{
-		if (const auto type = typeid_cast<const DataTypeEnum<T> *>(type_ptr.get()))
+		if (const auto type = typeid_cast<const DataTypeEnum *>(type_ptr.get()))
 		{
-			if (const auto col = typeid_cast<const ColumnVector<T> *>(column.get()))
+			if (const auto col = typeid_cast<const typename DataTypeEnum::ColumnType *>(column.get()))
 			{
 				const auto res = new ColumnUInt64(col->size());
 				ColumnPtr res_ptr{res};
@@ -150,7 +150,7 @@ namespace VisibleWidth
 
 				return true;
 			}
-			else if (const auto col = typeid_cast<const ColumnConst<T> *>(column.get()))
+			else if (const auto col = typeid_cast<const typename DataTypeEnum::ConstColumnType *>(column.get()))
 			{
 				block.getByPosition(result).column = new ColumnConstUInt64{
 					col->size(), type->getNameLength(col->getData())
@@ -179,8 +179,8 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 	{
 		block.getByPosition(result).column = new ColumnConstUInt64(rows, strlen("0000-00-00 00:00:00"));
 	}
-	else if (VisibleWidth::executeEnum<UInt8>(block, type, column, result)
-		|| VisibleWidth::executeEnum<UInt16>(block, type, column, result))
+	else if (VisibleWidth::executeEnum<DataTypeEnum8>(block, type, column, result)
+		|| VisibleWidth::executeEnum<DataTypeEnum16>(block, type, column, result))
 	{
 	}
 	else if (VisibleWidth::executeConstNumber<UInt8>(block, column, result)
