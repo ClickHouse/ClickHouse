@@ -435,18 +435,20 @@ void MergeTreeData::checkAlter(const AlterCommands & params)
 	/// Проверим, что преобразования типов возможны.
 	ExpressionActionsPtr unused_expression;
 	NameToNameMap unused_map;
+	bool unused_bool;
 
 	/// augment plain columns with materialized columns for convert expression creation
 	new_columns.insert(std::end(new_columns),
 		std::begin(new_materialized_columns), std::end(new_materialized_columns));
-	createConvertExpression(nullptr, getColumnsList(), new_columns, unused_expression, unused_map);
+	createConvertExpression(nullptr, getColumnsList(), new_columns, unused_expression, unused_map, unused_bool);
 }
 
 void MergeTreeData::createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
-	ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map)
+	ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map, bool & out_force_update_metadata)
 {
 	out_expression = nullptr;
-	out_rename_map.clear();
+	out_rename_map = {};
+	out_force_update_metadata = false;
 
 	typedef std::map<String, DataTypePtr> NameToType;
 	NameToType new_types;
@@ -494,15 +496,17 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 			const String new_type_name = new_type->getName();
 			const auto & old_type = column.type;
 
-			/// if this is not a check (part != nullptr) and alter does not change enum underlying type - do nothing
-			if (part && typeid(*new_type) == typeid(*old_type) &&
-				(typeid_cast<const DataTypeEnum8 *>(new_type) || typeid_cast<const DataTypeEnum16 *>(new_type)))
-				continue;
-			else if (new_type_name != old_type->getName() &&
-				(!part || part->hasColumnFiles(column.name)))
+			if (new_type_name != old_type->getName() && (!part || part->hasColumnFiles(column.name)))
 			{
-				/// Нужно изменить тип столбца.
+				// При ALTER между Enum с одинаковым подлежащим типом столбцы не трогаем, лишь просим обновить columns.txt
+				if (part && typeid(*new_type) == typeid(*old_type) &&
+					(typeid_cast<const DataTypeEnum8 *>(new_type) || typeid_cast<const DataTypeEnum16 *>(new_type)))
+				{
+					out_force_update_metadata = true;
+					continue;
+				}
 
+				/// Нужно изменить тип столбца.
 				if (!out_expression)
 					out_expression = new ExpressionActions(NamesAndTypesList(), context.getSettingsRef());
 
@@ -538,7 +542,8 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 {
 	ExpressionActionsPtr expression;
 	AlterDataPartTransactionPtr transaction(new AlterDataPartTransaction(part)); /// Блокирует изменение куска.
-	createConvertExpression(part, part->columns, new_columns, expression, transaction->rename_map);
+	bool force_update_metadata;
+	createConvertExpression(part, part->columns, new_columns, expression, transaction->rename_map, force_update_metadata);
 
 	if (!skip_sanity_checks && transaction->rename_map.size() > 5)
 	{
@@ -548,7 +553,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 						+ ". Aborting just in case");
 	}
 
-	if (transaction->rename_map.empty())
+	if (transaction->rename_map.empty() && !force_update_metadata)
 	{
 		transaction->clear();
 		return nullptr;

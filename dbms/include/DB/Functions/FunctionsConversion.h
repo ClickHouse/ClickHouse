@@ -22,7 +22,7 @@
 #include <DB/DataTypes/DataTypeTuple.h>
 #include <ext/enumerate.hpp>
 #include <ext/collection_cast.hpp>
-#include "FunctionsMiscellaneous.h"
+#include <DB/Functions/FunctionsMiscellaneous.h>
 
 
 namespace DB
@@ -1688,32 +1688,41 @@ class FunctionCast final : public IFunction
 
 		using ValueType = std::common_type_t<typename EnumTypeFrom::FieldType, typename EnumTypeTo::FieldType>;
 		using NameValuePair = std::pair<std::string, ValueType>;
+		using EnumValues = std::vector<NameValuePair>;
 
-		struct CompareNameValuePairSecond final
-		{
-			bool operator()(const NameValuePair & lhs, const NameValuePair & rhs) const
-			{
-				return lhs.second < rhs.second;
-			}
-		};
+//		EnumValues value_intersection;
+//		std::set_intersection(std::begin(from_values), std::end(from_values),
+//			std::begin(to_values), std::end(to_values), std::back_inserter(value_intersection),
+//			[] (auto && from, auto && to) { return from.second < to.second; });
+//
+//		for (const auto & name_value : value_intersection)
+//		{
+//			const auto & old_name = name_value.first;
+//			const auto & new_name = to_type->getNameForValue(name_value.second);
+//			if (old_name != new_name)
+//				throw Exception{
+//					"Enum conversion changes name for value " + toString(name_value.second) +
+//						" from '" + old_name + "' to '" + new_name + "'",
+//					ErrorCodes::CANNOT_CONVERT_TYPE
+//				};
+//		}
 
-		std::set<NameValuePair, CompareNameValuePairSecond> isection;
+		EnumValues name_intersection;
 		std::set_intersection(std::begin(from_values), std::end(from_values),
-			std::begin(to_values), std::end(to_values), std::inserter(isection, std::end(isection)),
-			CompareNameValuePairSecond{});
+			std::begin(to_values), std::end(to_values), std::back_inserter(name_intersection),
+			[] (auto && from, auto && to) { return from.first < to.first; });
 
-		if (!isection.empty())
-			for (const auto & name_value : isection)
-			{
-				const auto & old_name = from_type->getNameForValue(name_value.second);
-				const auto & new_name = to_type->getNameForValue(name_value.second);
-				if (old_name != new_name)
-					throw Exception{
-						"Enum conversion changes name for value " + toString(name_value.second) +
-							" from " + old_name + " to " + new_name,
-						ErrorCodes::CANNOT_CONVERT_TYPE
-					};
-			}
+		for (const auto & name_value : name_intersection)
+		{
+			const auto & old_value = name_value.second;
+			const auto & new_value = to_type->getValue(name_value.first);
+			if (old_value != new_value)
+				throw Exception{
+					"Enum conversion changes value for element '" + name_value.first +
+						"' from " + toString(old_value) + " to " + toString(new_value),
+					ErrorCodes::CANNOT_CONVERT_TYPE
+				};
+		}
 	};
 
 	template <typename ColumnStringType, typename EnumType>
