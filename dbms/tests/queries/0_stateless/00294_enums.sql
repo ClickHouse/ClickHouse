@@ -1,3 +1,4 @@
+set max_threads = 1;
 drop table if exists test.enums;
 
 create table test.enums (
