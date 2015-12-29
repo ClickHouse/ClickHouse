@@ -1038,10 +1038,12 @@ struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
 /// Предварительное объявление.
 struct NameToDate			{ static constexpr auto name = "toDate"; };
 
-template <typename ToDataType, typename Name, typename Monotonic>
+template <typename ToDataType, typename Name, typename MonotonicityImpl>
 class FunctionConvert : public IFunction
 {
 public:
+	using Monotonic = MonotonicityImpl;
+
 	static constexpr auto name = Name::name;
 	static IFunction * create(const Context & context) { return new FunctionConvert; }
 
@@ -1355,8 +1357,9 @@ struct ToIntMonotonicity
 		if (sizeof(T) > size_of_type)
 			return { true };
 
-		/// Если тип совпадает - тоже.
-		if (typeid_cast<const typename DataTypeFromFieldType<T>::Type *>(&type))
+		/// Если тип совпадает - тоже. (Enum обрабатываем отдельно, так как он имеет другой тип)
+		if (typeid_cast<const typename DataTypeFromFieldType<T>::Type *>(&type) ||
+			typeid_cast<const DataTypeEnum<T> *>(&type))
 			return { true };
 
 		/// В других случаях, для неограниченного диапазона не знаем, будет ли функция монотонной.
@@ -1460,18 +1463,25 @@ typedef FunctionConvert<DataTypeDateTime,	NameToDateTime,	ToIntMonotonicity<UInt
 typedef FunctionConvert<DataTypeString,		NameToString, 	ToStringMonotonicity> 		FunctionToString;
 typedef FunctionConvert<DataTypeInt32,		NameToUnixTimestamp, ToIntMonotonicity<UInt32>> FunctionToUnixTimestamp;
 
-template <typename FieldType> struct ToPrimitiveType;
-template <> struct ToPrimitiveType<UInt8> { using Type = FunctionToUInt8; };
-template <> struct ToPrimitiveType<UInt16> { using Type = FunctionToUInt16; };
-template <> struct ToPrimitiveType<UInt32> { using Type = FunctionToUInt32; };
-template <> struct ToPrimitiveType<UInt64> { using Type = FunctionToUInt64; };
-template <> struct ToPrimitiveType<Int8> { using Type = FunctionToInt8; };
-template <> struct ToPrimitiveType<Int16> { using Type = FunctionToInt16; };
-template <> struct ToPrimitiveType<Int32> { using Type = FunctionToInt32; };
-template <> struct ToPrimitiveType<Int64> { using Type = FunctionToInt64; };
-template <> struct ToPrimitiveType<Float32> { using Type = FunctionToFloat32; };
-template <> struct ToPrimitiveType<Float64> { using Type = FunctionToFloat64; };
-template <> struct ToPrimitiveType<String> { using Type = FunctionToString; };
+template <typename DataType> struct FunctionTo;
+template <> struct FunctionTo<DataTypeUInt8> { using Type = FunctionToUInt8; };
+template <> struct FunctionTo<DataTypeUInt16> { using Type = FunctionToUInt16; };
+template <> struct FunctionTo<DataTypeUInt32> { using Type = FunctionToUInt32; };
+template <> struct FunctionTo<DataTypeUInt64> { using Type = FunctionToUInt64; };
+template <> struct FunctionTo<DataTypeInt8> { using Type = FunctionToInt8; };
+template <> struct FunctionTo<DataTypeInt16> { using Type = FunctionToInt16; };
+template <> struct FunctionTo<DataTypeInt32> { using Type = FunctionToInt32; };
+template <> struct FunctionTo<DataTypeInt64> { using Type = FunctionToInt64; };
+template <> struct FunctionTo<DataTypeFloat32> { using Type = FunctionToFloat32; };
+template <> struct FunctionTo<DataTypeFloat64> { using Type = FunctionToFloat64; };
+template <> struct FunctionTo<DataTypeDate> { using Type = FunctionToDate; };
+template <> struct FunctionTo<DataTypeDateTime> { using Type = FunctionToDateTime; };
+template <> struct FunctionTo<DataTypeString> { using Type = FunctionToString; };
+template <> struct FunctionTo<DataTypeFixedString> { using Type = FunctionToFixedString; };
+template <typename FieldType> struct FunctionTo<DataTypeEnum<FieldType>>
+	: FunctionTo<typename DataTypeFromFieldType<FieldType>::Type>
+{
+};
 
 
 class FunctionCast final : public IFunction
@@ -1479,11 +1489,14 @@ class FunctionCast final : public IFunction
 	using WrapperType = std::function<void(Block &, const ColumnNumbers &, size_t)>;
 	const Context & context;
 	WrapperType wrapper_function;
+	std::function<Monotonicity(const IDataType &, const Field &, const Field &)> monotonicity_for_range;
 
 	FunctionCast(const Context & context) : context(context) {}
 
-	template <typename FunctionType> auto createWrapper(const DataTypePtr & from_type)
+	template <typename DataType> auto createWrapper(const DataTypePtr & from_type, const DataType * const)
 	{
+		using FunctionType = typename FunctionTo<DataType>::Type;
+
 		std::shared_ptr<FunctionType> function{static_cast<FunctionType *>(FunctionType::create(context))};
 
 		/// Check conversion using underlying function
@@ -1647,10 +1660,11 @@ class FunctionCast final : public IFunction
 		};
 	}
 
-	template <typename Function, typename FieldType>
+	template <typename FieldType>
 	WrapperType createEnumWrapper(const DataTypePtr & from_type, const DataTypeEnum<FieldType> * to_type)
 	{
 		using EnumType = DataTypeEnum<FieldType>;
+		using Function = typename FunctionTo<EnumType>::Type;
 
 		if (const auto from_enum8 = typeid_cast<const DataTypeEnum8 *>(from_type.get()))
 			checkEnumToEnumConversion(from_enum8, to_type);
@@ -1762,34 +1776,34 @@ class FunctionCast final : public IFunction
 		};
 	}
 
-	WrapperType prepare(const DataTypePtr & from_type, const IDataType * to_type)
+	WrapperType prepare(const DataTypePtr & from_type, const IDataType * const to_type)
 	{
-		if (typeid_cast<const DataTypeUInt8 *>(to_type))
-			return createWrapper<FunctionToUInt8>(from_type);
-		else if (typeid_cast<const DataTypeUInt16 *>(to_type))
-			return createWrapper<FunctionToUInt16>(from_type);
-		else if (typeid_cast<const DataTypeUInt32 *>(to_type))
-			return createWrapper<FunctionToUInt32>(from_type);
-		else if (typeid_cast<const DataTypeUInt64 *>(to_type))
-			return createWrapper<FunctionToUInt64>(from_type);
-		else if (typeid_cast<const DataTypeInt8 *>(to_type))
-			return createWrapper<FunctionToInt8>(from_type);
-		else if (typeid_cast<const DataTypeInt16 *>(to_type))
-			return createWrapper<FunctionToInt16>(from_type);
-		else if (typeid_cast<const DataTypeInt32 *>(to_type))
-			return createWrapper<FunctionToInt32>(from_type);
-		else if (typeid_cast<const DataTypeInt64 *>(to_type))
-			return createWrapper<FunctionToInt64>(from_type);
-		else if (typeid_cast<const DataTypeFloat32 *>(to_type))
-			return createWrapper<FunctionToFloat32>(from_type);
-		else if (typeid_cast<const DataTypeFloat64 *>(to_type))
-			return createWrapper<FunctionToFloat64>(from_type);
-		else if (typeid_cast<const DataTypeDate *>(to_type))
-			return createWrapper<FunctionToDate>(from_type);
-		else if (typeid_cast<const DataTypeDateTime *>(to_type))
-			return createWrapper<FunctionToDateTime>(from_type);
-		else if (typeid_cast<const DataTypeString *>(to_type))
-			return createWrapper<FunctionToString>(from_type);
+		if (const auto to_actual_type = typeid_cast<const DataTypeUInt8 *>(to_type))
+			return createWrapper(from_type, to_actual_type);
+		else if (const auto to_actual_type = typeid_cast<const DataTypeUInt16 *>(to_type))
+			return createWrapper(from_type, to_actual_type);
+		else if (const auto to_actual_type = typeid_cast<const DataTypeUInt32 *>(to_type))
+			return createWrapper(from_type, to_actual_type);
+		else if (const auto to_actual_type = typeid_cast<const DataTypeUInt64 *>(to_type))
+			return createWrapper(from_type, to_actual_type);
+		else if (const auto to_actual_type = typeid_cast<const DataTypeInt8 *>(to_type))
+			return createWrapper(from_type, to_actual_type);
+		else if (const auto to_actual_type = typeid_cast<const DataTypeInt16 *>(to_type))
+			return createWrapper(from_type, to_actual_type);
+		else if (const auto to_actual_type = typeid_cast<const DataTypeInt32 *>(to_type))
+			return createWrapper(from_type, to_actual_type);
+		else if (const auto to_actual_type = typeid_cast<const DataTypeInt64 *>(to_type))
+			return createWrapper(from_type, to_actual_type);
+		else if (const auto to_actual_type = typeid_cast<const DataTypeFloat32 *>(to_type))
+			return createWrapper(from_type, to_actual_type);
+		else if (const auto to_actual_type = typeid_cast<const DataTypeFloat64 *>(to_type))
+			return createWrapper(from_type, to_actual_type);
+		else if (const auto to_actual_type = typeid_cast<const DataTypeDate *>(to_type))
+			return createWrapper(from_type, to_actual_type);
+		else if (const auto to_actual_type = typeid_cast<const DataTypeDateTime *>(to_type))
+			return createWrapper(from_type, to_actual_type);
+		else if (const auto to_actual_type = typeid_cast<const DataTypeString *>(to_type))
+			return createWrapper(from_type, to_actual_type);
 		else if (const auto type_fixed_string = typeid_cast<const DataTypeFixedString *>(to_type))
 			return createFixedStringWrapper(from_type, type_fixed_string->getN());
 		else if (const auto type_array = typeid_cast<const DataTypeArray *>(to_type))
@@ -1797,15 +1811,58 @@ class FunctionCast final : public IFunction
 		else if (const auto type_tuple = typeid_cast<const DataTypeTuple *>(to_type))
 			return createTupleWrapper(from_type, type_tuple);
 		else if (const auto type_enum = typeid_cast<const DataTypeEnum8 *>(to_type))
-			return createEnumWrapper<ToPrimitiveType<DataTypeEnum8::FieldType>::Type>(from_type, type_enum);
+			return createEnumWrapper(from_type, type_enum);
 		else if (const auto type_enum = typeid_cast<const DataTypeEnum16 *>(to_type))
-			return createEnumWrapper<ToPrimitiveType<DataTypeEnum16::FieldType>::Type>(from_type, type_enum);
+			return createEnumWrapper(from_type, type_enum);
 
 		throw Exception{
 			"Conversion from " + from_type->getName() + " to " + to_type->getName() +
 				" is not supported",
 			ErrorCodes::CANNOT_CONVERT_TYPE
 		};
+	}
+
+	template <typename DataType> static auto monotonicityForType(const DataType * const)
+	{
+		return FunctionTo<DataType>::Type::Monotonic::get;
+	}
+
+	void prepareMonotonicityInformation(const DataTypePtr & from_type, const IDataType * to_type)
+	{
+		if (const auto type = typeid_cast<const DataTypeUInt8 *>(to_type))
+			monotonicity_for_range = monotonicityForType(type);
+		else if (const auto type = typeid_cast<const DataTypeUInt16 *>(to_type))
+			monotonicity_for_range = monotonicityForType(type);
+		else if (const auto type = typeid_cast<const DataTypeUInt32 *>(to_type))
+			monotonicity_for_range = monotonicityForType(type);
+		else if (const auto type = typeid_cast<const DataTypeUInt64 *>(to_type))
+			monotonicity_for_range = monotonicityForType(type);
+		else if (const auto type = typeid_cast<const DataTypeInt8 *>(to_type))
+			monotonicity_for_range = monotonicityForType(type);
+		else if (const auto type = typeid_cast<const DataTypeInt16 *>(to_type))
+			monotonicity_for_range = monotonicityForType(type);
+		else if (const auto type = typeid_cast<const DataTypeInt32 *>(to_type))
+			monotonicity_for_range = monotonicityForType(type);
+		else if (const auto type = typeid_cast<const DataTypeInt64 *>(to_type))
+			monotonicity_for_range = monotonicityForType(type);
+		else if (const auto type = typeid_cast<const DataTypeFloat32 *>(to_type))
+			monotonicity_for_range = monotonicityForType(type);
+		else if (const auto type = typeid_cast<const DataTypeFloat64 *>(to_type))
+			monotonicity_for_range = monotonicityForType(type);
+		else if (const auto type = typeid_cast<const DataTypeDate *>(to_type))
+			monotonicity_for_range = monotonicityForType(type);
+		else if (const auto type = typeid_cast<const DataTypeDateTime *>(to_type))
+			monotonicity_for_range = monotonicityForType(type);
+		else if (const auto type = typeid_cast<const DataTypeString *>(to_type))
+			monotonicity_for_range = monotonicityForType(type);
+		else if (from_type->isNumeric())
+		{
+			if (const auto type = typeid_cast<const DataTypeEnum8 *>(to_type))
+				monotonicity_for_range = monotonicityForType(type);
+			else if (const auto type = typeid_cast<const DataTypeEnum16 *>(to_type))
+				monotonicity_for_range = monotonicityForType(type);
+		}
+		/// other types like FixedString, Array and Tuple have no monotonicity defined
 	}
 
 public:
@@ -1831,6 +1888,8 @@ public:
 		out_return_type = DataTypeFactory::instance().get(type_col->getData());
 
 		wrapper_function = prepare(arguments.front().type, out_return_type.get());
+
+		prepareMonotonicityInformation(arguments.front().type, out_return_type.get());
 	}
 
 	void execute(Block & block, const ColumnNumbers & arguments, const size_t result) override
@@ -1841,6 +1900,16 @@ public:
 			new_arguments.insert(std::end(new_arguments), std::next(std::begin(arguments), 2), std::end(arguments));
 
 		wrapper_function(block, new_arguments, result);
+	}
+
+	bool hasInformationAboutMonotonicity() const override
+	{
+		return static_cast<bool>(monotonicity_for_range);
+	}
+
+	Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
+	{
+		return monotonicity_for_range(type, left, right);
 	}
 };
 
