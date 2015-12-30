@@ -70,6 +70,10 @@ ProcessListEntry::~ProcessListEntry()
 			ProcessList::QueryToElement::iterator element = queries->second.find(it->query_id);
 			if (element != queries->second.end())
 				queries->second.erase(element);
+
+			/// Если запросов для пользователя больше нет, то удаляем запись
+			if (queries->second.empty())
+				parent.user_to_queries.erase(queries);
 		}
 	}
 

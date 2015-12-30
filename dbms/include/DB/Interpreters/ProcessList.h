@@ -48,7 +48,8 @@ struct ProcessListElement
 
 	ProcessListElement(const String & query_, const String & user_,
 		const String & query_id_, const Poco::Net::IPAddress & ip_address_,
-		size_t max_memory_usage, double memory_tracker_fault_probability, QueryPriorities::Handle && priority_handle_)
+		size_t max_memory_usage, double memory_tracker_fault_probability,
+		QueryPriorities::Handle && priority_handle_)
 		: query(query_), user(user_), query_id(query_id_), ip_address(ip_address_), memory_tracker(max_memory_usage),
 		priority_handle(std::move(priority_handle_))
 	{
@@ -72,6 +73,15 @@ struct ProcessListElement
 
 		return !is_cancelled;
 	}
+};
+
+
+/// Данные о запросах одного пользователя.
+struct ProcessListForUser
+{
+	/// Query_id -> ProcessListElement *
+	using QueryToElement = std::unordered_map<String, ProcessListElement *>;
+	QueryToElement queries;
 };
 
 

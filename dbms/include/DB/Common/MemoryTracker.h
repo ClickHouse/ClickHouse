@@ -16,6 +16,12 @@ class MemoryTracker
 	/// В целях тестирования exception safety - кидать исключение при каждом выделении памяти с указанной вероятностью.
 	double fault_probability = 0;
 
+	/// Односвязный список. Вся информация будет передаваться в следующие MemoryTracker-ы тоже.
+	MemoryTracker * next = nullptr;
+
+	/// Если задано (например, "for user") - в сообщениях в логе будет указываться это описание.
+	const char * description = nullptr;
+
 public:
 	MemoryTracker(Int64 limit_) : limit(limit_) {}
 
@@ -32,10 +38,7 @@ public:
 
 	/** А эту функцию имеет смысл вызывать после освобождения памяти.
 	  */
-	void free(Int64 size)
-	{
-		__sync_sub_and_fetch(&amount, size);
-	}
+	void free(Int64 size);
 
 	Int64 get() const
 	{
@@ -51,6 +54,22 @@ public:
 	{
 		fault_probability = value;
 	}
+
+	void setNext(MemoryTracker * next_)
+	{
+		next = next_;
+	}
+
+	void setDescription(const char * description_)
+	{
+		description = description_;
+	}
+
+	/// Обнулить накопленные данные.
+	void reset();
+
+	/// Вывести в лог информацию о пиковом потреблении памяти.
+	void logPeakMemoryUsage() const;
 };
 
 
