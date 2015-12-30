@@ -340,9 +340,22 @@ template <typename FieldType> struct FormatImpl<DataTypeEnum<FieldType>>
 {
 	static void execute(const FieldType x, WriteBuffer & wb, const DataTypeEnum<FieldType> & type)
 	{
-		writeText(type.getNameForValue(x), wb);
+		/// @todo should we escape the string here? Presumably no as it will be escaped twice otherwise
+		writeString(type.getNameForValue(x), wb);
 	}
 };
+
+
+/// DataTypeEnum<T> to DataType<T> free conversion
+template <typename FieldType, typename Name>
+struct ConvertImpl<DataTypeEnum<FieldType>, typename DataTypeFromFieldType<FieldType>::Type, Name>
+{
+	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+	{
+		block.getByPosition(result).column = block.getByPosition(arguments[0]).column;
+	}
+};
+
 
 template <typename FromDataType, typename Name>
 struct ConvertImpl<FromDataType, DataTypeString, Name>
@@ -1712,7 +1725,7 @@ class FunctionCast final : public IFunction
 //		for (const auto & name_value : value_intersection)
 //		{
 //			const auto & old_name = name_value.first;
-//			const auto & new_name = to_type->getNameForValue(name_value.second);
+//			const auto & new_name = to_type->getNameForValue(name_value.second).toString();
 //			if (old_name != new_name)
 //				throw Exception{
 //					"Enum conversion changes name for value " + toString(name_value.second) +
