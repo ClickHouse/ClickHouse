@@ -17,6 +17,9 @@
 #include <iostream>
 #include <type_traits>
 
+#define LIBDIVIDE_USE_SSE2 1
+#include <libdivide.h>
+
 
 namespace DB
 {
@@ -70,13 +73,20 @@ private:
 		}
 		else
 		{
+			/// libdivide поддерживает только UInt32 или UInt64.
+			using TUInt32Or64 = typename std::conditional<sizeof(UnsignedT) <= 4, UInt32, UInt64>::type;
+
+			libdivide::divider<TUInt32Or64> divider(total_weight);
+
 			const auto & data = typeid_cast<const ColumnVector<T> *>(column)->getData();
 
+			/// NOTE Может быть, стоит поменять местами циклы.
 			for (size_t i = 0; i < num_shards; ++i)
 			{
 				filters[i].resize(num_rows);
 				for (size_t j = 0; j < num_rows; ++j)
-					filters[i][j] = cluster.slot_to_shard[static_cast<UnsignedT>(data[j]) % total_weight] == i;
+					filters[i][j] = cluster.slot_to_shard[
+						static_cast<TUInt32Or64>(data[j]) - (static_cast<TUInt32Or64>(data[j]) / divider) * total_weight] == i;
 			}
 		}
 
