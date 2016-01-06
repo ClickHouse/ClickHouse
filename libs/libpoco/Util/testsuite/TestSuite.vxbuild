@@ -1,0 +1,34 @@
+#
+# TestSuite.vxbuild
+#
+# $Id$
+#
+TARGET=UtilTestSuite
+CFLAGS="-I../../../../Foundation/include \\
+	-I../../../../XML/include \\
+	-I../../../../Util/include \\
+	-I../../../../CppUnit/include"
+SOURCES="
+	AbstractConfigurationTest.cpp
+	ConfigurationMapperTest.cpp
+	ConfigurationTestSuite.cpp
+	ConfigurationViewTest.cpp
+	Driver.cpp
+	FilesystemConfigurationTest.cpp
+	HelpFormatterTest.cpp
+	IniFileConfigurationTest.cpp
+	LayeredConfigurationTest.cpp
+	LoggingConfiguratorTest.cpp
+	MapConfigurationTest.cpp
+	OptionProcessorTest.cpp
+	OptionSetTest.cpp
+	OptionTest.cpp
+	OptionsTestSuite.cpp
+	PropertyFileConfigurationTest.cpp
+	SystemConfigurationTest.cpp
+	TimerTest.cpp
+	TimerTestSuite.cpp
+	UtilTestSuite.cpp
+	ValidatorTest.cpp
+	XMLConfigurationTest.cpp
+"

@@ -1,0 +1,32 @@
+#
+# TestSuite.vxbuild
+#
+# $Id$
+#
+TARGET=XMLTestSuite
+CFLAGS="-I../../../../Foundation/include \\
+	-I../../../../XML/include \\
+	-I../../../../CppUnit/include"
+SOURCES="
+	AttributesImplTest.cpp
+	ChildNodesTest.cpp
+	DOMTestSuite.cpp
+	DocumentTest.cpp
+	DocumentTypeTest.cpp
+	Driver.cpp
+	ElementTest.cpp
+	EventTest.cpp
+	NamePoolTest.cpp
+	NameTest.cpp
+	NamespaceSupportTest.cpp
+	NodeAppenderTest.cpp
+	NodeIteratorTest.cpp
+	NodeTest.cpp
+	ParserWriterTest.cpp
+	SAXParserTest.cpp
+	SAXTestSuite.cpp
+	TextTest.cpp
+	TreeWalkerTest.cpp
+	XMLTestSuite.cpp
+	XMLWriterTest.cpp
+"

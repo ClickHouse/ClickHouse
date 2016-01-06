@@ -1,0 +1,337 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Project DefaultTargets="Build" ToolsVersion="12.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="debug_shared|SDK_AM335X_SK_WEC2013_V310">
+      <Configuration>debug_shared</Configuration>
+      <Platform>SDK_AM335X_SK_WEC2013_V310</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="debug_static_md|SDK_AM335X_SK_WEC2013_V310">
+      <Configuration>debug_static_md</Configuration>
+      <Platform>SDK_AM335X_SK_WEC2013_V310</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="debug_static_mt|SDK_AM335X_SK_WEC2013_V310">
+      <Configuration>debug_static_mt</Configuration>
+      <Platform>SDK_AM335X_SK_WEC2013_V310</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="release_shared|SDK_AM335X_SK_WEC2013_V310">
+      <Configuration>release_shared</Configuration>
+      <Platform>SDK_AM335X_SK_WEC2013_V310</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="release_static_md|SDK_AM335X_SK_WEC2013_V310">
+      <Configuration>release_static_md</Configuration>
+      <Platform>SDK_AM335X_SK_WEC2013_V310</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="release_static_mt|SDK_AM335X_SK_WEC2013_V310">
+      <Configuration>release_static_mt</Configuration>
+      <Platform>SDK_AM335X_SK_WEC2013_V310</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectName>Util</ProjectName>
+    <ProjectGuid>{6FF56CDB-787A-4714-A28C-919003F9FA6C}</ProjectGuid>
+    <DefaultLanguage>en-US</DefaultLanguage>
+    <MinimumVisualStudioVersion>11.0</MinimumVisualStudioVersion>
+    <EnableRedirectPlatform>true</EnableRedirectPlatform>
+    <RedirectPlatformValue>SDK_AM335X_SK_WEC2013_V310</RedirectPlatformValue>
+    <PlatformToolset>CE800</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props"/>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='release_static_md|SDK_AM335X_SK_WEC2013_V310'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <CharacterSet>Unicode</CharacterSet>
+    <PlatformToolset>CE800</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='debug_static_md|SDK_AM335X_SK_WEC2013_V310'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <CharacterSet>Unicode</CharacterSet>
+    <PlatformToolset>CE800</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='release_static_mt|SDK_AM335X_SK_WEC2013_V310'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <CharacterSet>Unicode</CharacterSet>
+    <PlatformToolset>CE800</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='debug_static_mt|SDK_AM335X_SK_WEC2013_V310'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <CharacterSet>Unicode</CharacterSet>
+    <PlatformToolset>CE800</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='release_shared|SDK_AM335X_SK_WEC2013_V310'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <CharacterSet>Unicode</CharacterSet>
+    <PlatformToolset>CE800</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='debug_shared|SDK_AM335X_SK_WEC2013_V310'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <CharacterSet>Unicode</CharacterSet>
+    <PlatformToolset>CE800</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props"/>
+  <ImportGroup Label="ExtensionSettings"/>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='release_static_md|SDK_AM335X_SK_WEC2013_V310'" Label="PropertySheets">
+    <Import Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props"/>
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='debug_static_md|SDK_AM335X_SK_WEC2013_V310'" Label="PropertySheets">
+    <Import Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props"/>
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='release_static_mt|SDK_AM335X_SK_WEC2013_V310'" Label="PropertySheets">
+    <Import Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props"/>
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='debug_static_mt|SDK_AM335X_SK_WEC2013_V310'" Label="PropertySheets">
+    <Import Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props"/>
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='release_shared|SDK_AM335X_SK_WEC2013_V310'" Label="PropertySheets">
+    <Import Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props"/>
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='debug_shared|SDK_AM335X_SK_WEC2013_V310'" Label="PropertySheets">
+    <Import Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props"/>
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros"/>
+  <PropertyGroup>
+    <_ProjectFileVersion>12.0.30501.0</_ProjectFileVersion>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='debug_shared|SDK_AM335X_SK_WEC2013_V310'">PocoUtild</TargetName>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='debug_static_md|SDK_AM335X_SK_WEC2013_V310'">PocoUtilmdd</TargetName>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='debug_static_mt|SDK_AM335X_SK_WEC2013_V310'">PocoUtilmtd</TargetName>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='release_shared|SDK_AM335X_SK_WEC2013_V310'">PocoUtil</TargetName>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='release_static_md|SDK_AM335X_SK_WEC2013_V310'">PocoUtilmd</TargetName>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='release_static_mt|SDK_AM335X_SK_WEC2013_V310'">PocoUtilmt</TargetName>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='debug_shared|SDK_AM335X_SK_WEC2013_V310'">
+    <OutDir>..\bin\$(Platform)\</OutDir>
+    <IntDir>obj\Util\$(Platform)\$(Configuration)\</IntDir>
+    <LinkIncremental>true</LinkIncremental>
+    <GenerateManifest>true</GenerateManifest>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='release_shared|SDK_AM335X_SK_WEC2013_V310'">
+    <OutDir>..\bin\$(Platform)\</OutDir>
+    <IntDir>obj\Util\$(Platform)\$(Configuration)\</IntDir>
+    <LinkIncremental>false</LinkIncremental>
+    <GenerateManifest>true</GenerateManifest>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='debug_static_mt|SDK_AM335X_SK_WEC2013_V310'">
+    <OutDir>..\lib\$(Platform)\</OutDir>
+    <IntDir>obj\Util\$(Platform)\$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='release_static_mt|SDK_AM335X_SK_WEC2013_V310'">
+    <OutDir>..\lib\$(Platform)\</OutDir>
+    <IntDir>obj\Util\$(Platform)\$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='debug_static_md|SDK_AM335X_SK_WEC2013_V310'">
+    <OutDir>..\lib\$(Platform)\</OutDir>
+    <IntDir>obj\Util\$(Platform)\$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='release_static_md|SDK_AM335X_SK_WEC2013_V310'">
+    <OutDir>..\lib\$(Platform)\</OutDir>
+    <IntDir>obj\Util\$(Platform)\$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='debug_shared|SDK_AM335X_SK_WEC2013_V310'">
+    <ClCompile>
+      <Optimization>Disabled</Optimization>
+      <AdditionalIncludeDirectories>.\include;..\Foundation\include;..\XML\include;..\JSON\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>_DEBUG;$(ProjectName)_EXPORTS;_CRT_SECURE_NO_DEPRECATE;_CRT_SECURE_NO_WARNINGS;Util_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <StringPooling>true</StringPooling>
+      <MinimalRebuild>false</MinimalRebuild>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <BufferSecurityCheck>true</BufferSecurityCheck>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+    </ClCompile>
+    <Link>
+      <OutputFile>..\bin\$(Platform)\PocoUtild.dll</OutputFile>
+      <AdditionalLibraryDirectories>..\lib\$(Platform);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <ProgramDatabaseFile>..\bin\$(Platform)\PocoUtild.pdb</ProgramDatabaseFile>
+      <OptimizeReferences/>
+      <EnableCOMDATFolding/>
+      <ImportLibrary>..\lib\$(Platform)\PocoUtild.lib</ImportLibrary>
+      <SubSystem>WindowsCE</SubSystem>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='release_shared|SDK_AM335X_SK_WEC2013_V310'">
+    <ClCompile>
+      <Optimization>MaxSpeed</Optimization>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <AdditionalIncludeDirectories>.\include;..\Foundation\include;..\XML\include;..\JSON\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>NDEBUG;$(ProjectName)_EXPORTS;_CRT_SECURE_NO_DEPRECATE;_CRT_SECURE_NO_WARNINGS;Util_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <StringPooling>true</StringPooling>
+      <MinimalRebuild>false</MinimalRebuild>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+    </ClCompile>
+    <Link>
+      <OutputFile>..\bin\$(Platform)\PocoUtil.dll</OutputFile>
+      <AdditionalLibraryDirectories>..\lib\$(Platform);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <ProgramDatabaseFile/>
+      <OptimizeReferences/>
+      <EnableCOMDATFolding/>
+      <ImportLibrary>..\lib\$(Platform)\PocoUtil.lib</ImportLibrary>
+      <SubSystem>WindowsCE</SubSystem>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='debug_static_mt|SDK_AM335X_SK_WEC2013_V310'">
+    <ClCompile>
+      <Optimization>Disabled</Optimization>
+      <AdditionalIncludeDirectories>.\include;..\Foundation\include;..\XML\include;..\JSON\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>_DEBUG;POCO_STATIC;_CRT_SECURE_NO_DEPRECATE;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <StringPooling>true</StringPooling>
+      <MinimalRebuild>false</MinimalRebuild>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <BufferSecurityCheck>true</BufferSecurityCheck>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <PrecompiledHeader/>
+      <ProgramDataBaseFileName>..\lib\$(Platform)\PocoUtilmtd.pdb</ProgramDataBaseFileName>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <CompileAs>Default</CompileAs>
+    </ClCompile>
+    <Lib>
+      <OutputFile>..\lib\$(Platform)\PocoUtilmtd.lib</OutputFile>
+    </Lib>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='release_static_mt|SDK_AM335X_SK_WEC2013_V310'">
+    <ClCompile>
+      <Optimization>MaxSpeed</Optimization>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <AdditionalIncludeDirectories>.\include;..\Foundation\include;..\XML\include;..\JSON\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>NDEBUG;POCO_STATIC;_CRT_SECURE_NO_DEPRECATE;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <StringPooling>true</StringPooling>
+      <MinimalRebuild>false</MinimalRebuild>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <PrecompiledHeader/>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <CompileAs>Default</CompileAs>
+    </ClCompile>
+    <Lib>
+      <OutputFile>..\lib\$(Platform)\PocoUtilmt.lib</OutputFile>
+    </Lib>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='debug_static_md|SDK_AM335X_SK_WEC2013_V310'">
+    <ClCompile>
+      <Optimization>Disabled</Optimization>
+      <AdditionalIncludeDirectories>.\include;..\Foundation\include;..\XML\include;..\JSON\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>_DEBUG;POCO_STATIC;_CRT_SECURE_NO_DEPRECATE;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <StringPooling>true</StringPooling>
+      <MinimalRebuild>false</MinimalRebuild>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <BufferSecurityCheck>true</BufferSecurityCheck>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <PrecompiledHeader/>
+      <ProgramDataBaseFileName>..\lib\$(Platform)\PocoUtilmdd.pdb</ProgramDataBaseFileName>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <CompileAs>Default</CompileAs>
+    </ClCompile>
+    <Lib>
+      <OutputFile>..\lib\$(Platform)\PocoUtilmdd.lib</OutputFile>
+    </Lib>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='release_static_md|SDK_AM335X_SK_WEC2013_V310'">
+    <ClCompile>
+      <Optimization>MaxSpeed</Optimization>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <AdditionalIncludeDirectories>.\include;..\Foundation\include;..\XML\include;..\JSON\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>NDEBUG;POCO_STATIC;_CRT_SECURE_NO_DEPRECATE;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <StringPooling>true</StringPooling>
+      <MinimalRebuild>false</MinimalRebuild>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <PrecompiledHeader/>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <CompileAs>Default</CompileAs>
+    </ClCompile>
+    <Lib>
+      <OutputFile>..\lib\$(Platform)\PocoUtilmd.lib</OutputFile>
+    </Lib>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClInclude Include="include\Poco\Util\AbstractConfiguration.h"/>
+    <ClInclude Include="include\Poco\Util\Application.h"/>
+    <ClInclude Include="include\Poco\Util\ConfigurationMapper.h"/>
+    <ClInclude Include="include\Poco\Util\ConfigurationView.h"/>
+    <ClInclude Include="include\Poco\Util\FilesystemConfiguration.h"/>
+    <ClInclude Include="include\Poco\Util\HelpFormatter.h"/>
+    <ClInclude Include="include\Poco\Util\IniFileConfiguration.h"/>
+    <ClInclude Include="include\Poco\Util\IntValidator.h"/>
+    <ClInclude Include="include\Poco\Util\JSONConfiguration.h"/>
+    <ClInclude Include="include\Poco\Util\LayeredConfiguration.h"/>
+    <ClInclude Include="include\Poco\Util\LoggingConfigurator.h"/>
+    <ClInclude Include="include\Poco\Util\LoggingSubsystem.h"/>
+    <ClInclude Include="include\Poco\Util\MapConfiguration.h"/>
+    <ClInclude Include="include\Poco\Util\Option.h"/>
+    <ClInclude Include="include\Poco\Util\OptionCallback.h"/>
+    <ClInclude Include="include\Poco\Util\OptionException.h"/>
+    <ClInclude Include="include\Poco\Util\OptionProcessor.h"/>
+    <ClInclude Include="include\Poco\Util\OptionSet.h"/>
+    <ClInclude Include="include\Poco\Util\PropertyFileConfiguration.h"/>
+    <ClInclude Include="include\Poco\Util\RegExpValidator.h"/>
+    <ClInclude Include="include\Poco\Util\ServerApplication.h"/>
+    <ClInclude Include="include\Poco\Util\Subsystem.h"/>
+    <ClInclude Include="include\Poco\Util\SystemConfiguration.h"/>
+    <ClInclude Include="include\Poco\Util\Timer.h"/>
+    <ClInclude Include="include\Poco\Util\TimerTask.h"/>
+    <ClInclude Include="include\Poco\Util\TimerTaskAdapter.h"/>
+    <ClInclude Include="include\Poco\Util\Util.h"/>
+    <ClInclude Include="include\Poco\Util\Validator.h"/>
+    <ClInclude Include="include\Poco\Util\WinRegistryConfiguration.h"/>
+    <ClInclude Include="include\Poco\Util\WinRegistryKey.h"/>
+    <ClInclude Include="include\Poco\Util\WinService.h"/>
+    <ClInclude Include="include\Poco\Util\XMLConfiguration.h"/>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\AbstractConfiguration.cpp"/>
+    <ClCompile Include="src\Application.cpp"/>
+    <ClCompile Include="src\ConfigurationMapper.cpp"/>
+    <ClCompile Include="src\ConfigurationView.cpp"/>
+    <ClCompile Include="src\FilesystemConfiguration.cpp"/>
+    <ClCompile Include="src\HelpFormatter.cpp"/>
+    <ClCompile Include="src\IniFileConfiguration.cpp"/>
+    <ClCompile Include="src\IntValidator.cpp"/>
+    <ClCompile Include="src\JSONConfiguration.cpp"/>
+    <ClCompile Include="src\LayeredConfiguration.cpp"/>
+    <ClCompile Include="src\LoggingConfigurator.cpp"/>
+    <ClCompile Include="src\LoggingSubsystem.cpp"/>
+    <ClCompile Include="src\MapConfiguration.cpp"/>
+    <ClCompile Include="src\Option.cpp"/>
+    <ClCompile Include="src\OptionCallback.cpp"/>
+    <ClCompile Include="src\OptionException.cpp"/>
+    <ClCompile Include="src\OptionProcessor.cpp"/>
+    <ClCompile Include="src\OptionSet.cpp"/>
+    <ClCompile Include="src\PropertyFileConfiguration.cpp"/>
+    <ClCompile Include="src\RegExpValidator.cpp"/>
+    <ClCompile Include="src\ServerApplication.cpp"/>
+    <ClCompile Include="src\Subsystem.cpp"/>
+    <ClCompile Include="src\SystemConfiguration.cpp"/>
+    <ClCompile Include="src\Timer.cpp"/>
+    <ClCompile Include="src\TimerTask.cpp"/>
+    <ClCompile Include="src\Validator.cpp"/>
+    <ClCompile Include="src\WinRegistryConfiguration.cpp"/>
+    <ClCompile Include="src\WinRegistryKey.cpp"/>
+    <ClCompile Include="src\WinService.cpp"/>
+    <ClCompile Include="src\XMLConfiguration.cpp"/>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="..\DLLVersion.rc">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='debug_shared|SDK_AM335X_SK_WEC2013_V310'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='debug_static_md|SDK_AM335X_SK_WEC2013_V310'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='debug_static_mt|SDK_AM335X_SK_WEC2013_V310'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='release_shared|SDK_AM335X_SK_WEC2013_V310'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='release_static_md|SDK_AM335X_SK_WEC2013_V310'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='release_static_mt|SDK_AM335X_SK_WEC2013_V310'">true</ExcludedFromBuild>
+    </ResourceCompile>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets"/>
+  <ImportGroup Label="ExtensionTargets"/>
+</Project>

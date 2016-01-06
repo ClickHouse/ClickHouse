@@ -1,0 +1,12 @@
+vc.project.guid = D5EFBF27-B934-4B8D-8AE5-6EC00374819C
+vc.project.name = TestSuite
+vc.project.target = TestSuite
+vc.project.type = testsuite
+vc.project.pocobase = ..\\..
+vc.project.platforms = Win32, x64, WinCE
+vc.project.configurations = debug_shared, release_shared, debug_static_mt, release_static_mt, debug_static_md, release_static_md
+vc.project.prototype = TestSuite_vs90.vcproj
+vc.project.compiler.include = ..\\..\\Foundation\\include
+vc.project.linker.dependencies.Win32 = ws2_32.lib iphlpapi.lib
+vc.project.linker.dependencies.x64 = ws2_32.lib iphlpapi.lib
+vc.project.linker.dependencies.WinCE = ws2.lib iphlpapi.lib

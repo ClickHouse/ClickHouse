@@ -1,0 +1,60 @@
+Microsoft Visual Studio Solution File, Format Version 14.00
+# Visual Studio 2015
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "NetSSL_OpenSSL", "NetSSL_OpenSSL_x64_vs140.vcxproj", "{5AECC55E-A469-11DA-8DA6-005056C00008}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "TestSuite", "testsuite\TestSuite_x64_vs140.vcxproj", "{B2B88092-5BCE-4AC0-941E-88167138B4A7}"
+	ProjectSection(ProjectDependencies) = postProject
+		{5AECC55E-A469-11DA-8DA6-005056C00008} = {5AECC55E-A469-11DA-8DA6-005056C00008}
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		debug_shared|x64 = debug_shared|x64
+		release_shared|x64 = release_shared|x64
+		debug_static_mt|x64 = debug_static_mt|x64
+		release_static_mt|x64 = release_static_mt|x64
+		debug_static_md|x64 = debug_static_md|x64
+		release_static_md|x64 = release_static_md|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{5AECC55E-A469-11DA-8DA6-005056C00008}.debug_shared|x64.ActiveCfg = debug_shared|x64
+		{5AECC55E-A469-11DA-8DA6-005056C00008}.debug_shared|x64.Build.0 = debug_shared|x64
+		{5AECC55E-A469-11DA-8DA6-005056C00008}.debug_shared|x64.Deploy.0 = debug_shared|x64
+		{5AECC55E-A469-11DA-8DA6-005056C00008}.release_shared|x64.ActiveCfg = release_shared|x64
+		{5AECC55E-A469-11DA-8DA6-005056C00008}.release_shared|x64.Build.0 = release_shared|x64
+		{5AECC55E-A469-11DA-8DA6-005056C00008}.release_shared|x64.Deploy.0 = release_shared|x64
+		{5AECC55E-A469-11DA-8DA6-005056C00008}.debug_static_mt|x64.ActiveCfg = debug_static_mt|x64
+		{5AECC55E-A469-11DA-8DA6-005056C00008}.debug_static_mt|x64.Build.0 = debug_static_mt|x64
+		{5AECC55E-A469-11DA-8DA6-005056C00008}.debug_static_mt|x64.Deploy.0 = debug_static_mt|x64
+		{5AECC55E-A469-11DA-8DA6-005056C00008}.release_static_mt|x64.ActiveCfg = release_static_mt|x64
+		{5AECC55E-A469-11DA-8DA6-005056C00008}.release_static_mt|x64.Build.0 = release_static_mt|x64
+		{5AECC55E-A469-11DA-8DA6-005056C00008}.release_static_mt|x64.Deploy.0 = release_static_mt|x64
+		{5AECC55E-A469-11DA-8DA6-005056C00008}.debug_static_md|x64.ActiveCfg = debug_static_md|x64
+		{5AECC55E-A469-11DA-8DA6-005056C00008}.debug_static_md|x64.Build.0 = debug_static_md|x64
+		{5AECC55E-A469-11DA-8DA6-005056C00008}.debug_static_md|x64.Deploy.0 = debug_static_md|x64
+		{5AECC55E-A469-11DA-8DA6-005056C00008}.release_static_md|x64.ActiveCfg = release_static_md|x64
+		{5AECC55E-A469-11DA-8DA6-005056C00008}.release_static_md|x64.Build.0 = release_static_md|x64
+		{5AECC55E-A469-11DA-8DA6-005056C00008}.release_static_md|x64.Deploy.0 = release_static_md|x64
+		{B2B88092-5BCE-4AC0-941E-88167138B4A7}.debug_shared|x64.ActiveCfg = debug_shared|x64
+		{B2B88092-5BCE-4AC0-941E-88167138B4A7}.debug_shared|x64.Build.0 = debug_shared|x64
+		{B2B88092-5BCE-4AC0-941E-88167138B4A7}.debug_shared|x64.Deploy.0 = debug_shared|x64
+		{B2B88092-5BCE-4AC0-941E-88167138B4A7}.release_shared|x64.ActiveCfg = release_shared|x64
+		{B2B88092-5BCE-4AC0-941E-88167138B4A7}.release_shared|x64.Build.0 = release_shared|x64
+		{B2B88092-5BCE-4AC0-941E-88167138B4A7}.release_shared|x64.Deploy.0 = release_shared|x64
+		{B2B88092-5BCE-4AC0-941E-88167138B4A7}.debug_static_mt|x64.ActiveCfg = debug_static_mt|x64
+		{B2B88092-5BCE-4AC0-941E-88167138B4A7}.debug_static_mt|x64.Build.0 = debug_static_mt|x64
+		{B2B88092-5BCE-4AC0-941E-88167138B4A7}.debug_static_mt|x64.Deploy.0 = debug_static_mt|x64
+		{B2B88092-5BCE-4AC0-941E-88167138B4A7}.release_static_mt|x64.ActiveCfg = release_static_mt|x64
+		{B2B88092-5BCE-4AC0-941E-88167138B4A7}.release_static_mt|x64.Build.0 = release_static_mt|x64
+		{B2B88092-5BCE-4AC0-941E-88167138B4A7}.release_static_mt|x64.Deploy.0 = release_static_mt|x64
+		{B2B88092-5BCE-4AC0-941E-88167138B4A7}.debug_static_md|x64.ActiveCfg = debug_static_md|x64
+		{B2B88092-5BCE-4AC0-941E-88167138B4A7}.debug_static_md|x64.Build.0 = debug_static_md|x64
+		{B2B88092-5BCE-4AC0-941E-88167138B4A7}.debug_static_md|x64.Deploy.0 = debug_static_md|x64
+		{B2B88092-5BCE-4AC0-941E-88167138B4A7}.release_static_md|x64.ActiveCfg = release_static_md|x64
+		{B2B88092-5BCE-4AC0-941E-88167138B4A7}.release_static_md|x64.Build.0 = release_static_md|x64
+		{B2B88092-5BCE-4AC0-941E-88167138B4A7}.release_static_md|x64.Deploy.0 = release_static_md|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

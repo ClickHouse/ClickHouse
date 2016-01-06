@@ -1,0 +1,57 @@
+Microsoft Visual Studio Solution File, Format Version 14.00
+# Visual Studio 2015
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "zip", "zip\zip_x64_vs140.vcxproj", "{7F3AD0E5-A150-3AE7-9041-9086C45020C0}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "unzip", "unzip\unzip_x64_vs140.vcxproj", "{9FE5275A-E14A-30C2-9C5B-AEBDE780608F}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		debug_shared|x64 = debug_shared|x64
+		release_shared|x64 = release_shared|x64
+		debug_static_mt|x64 = debug_static_mt|x64
+		release_static_mt|x64 = release_static_mt|x64
+		debug_static_md|x64 = debug_static_md|x64
+		release_static_md|x64 = release_static_md|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{7F3AD0E5-A150-3AE7-9041-9086C45020C0}.debug_shared|x64.ActiveCfg = debug_shared|x64
+		{7F3AD0E5-A150-3AE7-9041-9086C45020C0}.debug_shared|x64.Build.0 = debug_shared|x64
+		{7F3AD0E5-A150-3AE7-9041-9086C45020C0}.debug_shared|x64.Deploy.0 = debug_shared|x64
+		{7F3AD0E5-A150-3AE7-9041-9086C45020C0}.release_shared|x64.ActiveCfg = release_shared|x64
+		{7F3AD0E5-A150-3AE7-9041-9086C45020C0}.release_shared|x64.Build.0 = release_shared|x64
+		{7F3AD0E5-A150-3AE7-9041-9086C45020C0}.release_shared|x64.Deploy.0 = release_shared|x64
+		{7F3AD0E5-A150-3AE7-9041-9086C45020C0}.debug_static_mt|x64.ActiveCfg = debug_static_mt|x64
+		{7F3AD0E5-A150-3AE7-9041-9086C45020C0}.debug_static_mt|x64.Build.0 = debug_static_mt|x64
+		{7F3AD0E5-A150-3AE7-9041-9086C45020C0}.debug_static_mt|x64.Deploy.0 = debug_static_mt|x64
+		{7F3AD0E5-A150-3AE7-9041-9086C45020C0}.release_static_mt|x64.ActiveCfg = release_static_mt|x64
+		{7F3AD0E5-A150-3AE7-9041-9086C45020C0}.release_static_mt|x64.Build.0 = release_static_mt|x64
+		{7F3AD0E5-A150-3AE7-9041-9086C45020C0}.release_static_mt|x64.Deploy.0 = release_static_mt|x64
+		{7F3AD0E5-A150-3AE7-9041-9086C45020C0}.debug_static_md|x64.ActiveCfg = debug_static_md|x64
+		{7F3AD0E5-A150-3AE7-9041-9086C45020C0}.debug_static_md|x64.Build.0 = debug_static_md|x64
+		{7F3AD0E5-A150-3AE7-9041-9086C45020C0}.debug_static_md|x64.Deploy.0 = debug_static_md|x64
+		{7F3AD0E5-A150-3AE7-9041-9086C45020C0}.release_static_md|x64.ActiveCfg = release_static_md|x64
+		{7F3AD0E5-A150-3AE7-9041-9086C45020C0}.release_static_md|x64.Build.0 = release_static_md|x64
+		{7F3AD0E5-A150-3AE7-9041-9086C45020C0}.release_static_md|x64.Deploy.0 = release_static_md|x64
+		{9FE5275A-E14A-30C2-9C5B-AEBDE780608F}.debug_shared|x64.ActiveCfg = debug_shared|x64
+		{9FE5275A-E14A-30C2-9C5B-AEBDE780608F}.debug_shared|x64.Build.0 = debug_shared|x64
+		{9FE5275A-E14A-30C2-9C5B-AEBDE780608F}.debug_shared|x64.Deploy.0 = debug_shared|x64
+		{9FE5275A-E14A-30C2-9C5B-AEBDE780608F}.release_shared|x64.ActiveCfg = release_shared|x64
+		{9FE5275A-E14A-30C2-9C5B-AEBDE780608F}.release_shared|x64.Build.0 = release_shared|x64
+		{9FE5275A-E14A-30C2-9C5B-AEBDE780608F}.release_shared|x64.Deploy.0 = release_shared|x64
+		{9FE5275A-E14A-30C2-9C5B-AEBDE780608F}.debug_static_mt|x64.ActiveCfg = debug_static_mt|x64
+		{9FE5275A-E14A-30C2-9C5B-AEBDE780608F}.debug_static_mt|x64.Build.0 = debug_static_mt|x64
+		{9FE5275A-E14A-30C2-9C5B-AEBDE780608F}.debug_static_mt|x64.Deploy.0 = debug_static_mt|x64
+		{9FE5275A-E14A-30C2-9C5B-AEBDE780608F}.release_static_mt|x64.ActiveCfg = release_static_mt|x64
+		{9FE5275A-E14A-30C2-9C5B-AEBDE780608F}.release_static_mt|x64.Build.0 = release_static_mt|x64
+		{9FE5275A-E14A-30C2-9C5B-AEBDE780608F}.release_static_mt|x64.Deploy.0 = release_static_mt|x64
+		{9FE5275A-E14A-30C2-9C5B-AEBDE780608F}.debug_static_md|x64.ActiveCfg = debug_static_md|x64
+		{9FE5275A-E14A-30C2-9C5B-AEBDE780608F}.debug_static_md|x64.Build.0 = debug_static_md|x64
+		{9FE5275A-E14A-30C2-9C5B-AEBDE780608F}.debug_static_md|x64.Deploy.0 = debug_static_md|x64
+		{9FE5275A-E14A-30C2-9C5B-AEBDE780608F}.release_static_md|x64.ActiveCfg = release_static_md|x64
+		{9FE5275A-E14A-30C2-9C5B-AEBDE780608F}.release_static_md|x64.Build.0 = release_static_md|x64
+		{9FE5275A-E14A-30C2-9C5B-AEBDE780608F}.release_static_md|x64.Deploy.0 = release_static_md|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

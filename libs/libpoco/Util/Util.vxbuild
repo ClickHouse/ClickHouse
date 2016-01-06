@@ -1,0 +1,36 @@
+#
+# Util.vxbuild
+#
+# $Id: //poco/1.4/Util/Util.vxbuild#1 $
+#
+TARGET=pocoUtil
+CFLAGS="-I../../../Foundation/include \\
+	-I../../../XML/include"
+SOURCES="
+	AbstractConfiguration.cpp
+	Application.cpp
+	ConfigurationMapper.cpp
+	ConfigurationView.cpp
+	FilesystemConfiguration.cpp
+	HelpFormatter.cpp
+	IniFileConfiguration.cpp
+	IntValidator.cpp
+	LayeredConfiguration.cpp
+	LoggingConfigurator.cpp
+	LoggingSubsystem.cpp
+	MapConfiguration.cpp
+	Option.cpp
+	OptionCallback.cpp
+	OptionException.cpp
+	OptionProcessor.cpp
+	OptionSet.cpp
+	PropertyFileConfiguration.cpp
+	RegExpValidator.cpp
+	ServerApplication.cpp
+	Subsystem.cpp
+	SystemConfiguration.cpp
+	Timer.cpp
+	TimerTask.cpp
+	Validator.cpp
+	XMLConfiguration.cpp
+"

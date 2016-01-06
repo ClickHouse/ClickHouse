@@ -1,0 +1,32 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 14.00
+# Visual Studio 2015
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "CppUnit", "CppUnit_vs140.vcxproj", "{138BB448-808A-4FE5-A66D-78D1F8770F59}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		debug_shared|Win32 = debug_shared|Win32
+		debug_static_md|Win32 = debug_static_md|Win32
+		debug_static_mt|Win32 = debug_static_mt|Win32
+		release_shared|Win32 = release_shared|Win32
+		release_static_md|Win32 = release_static_md|Win32
+		release_static_mt|Win32 = release_static_mt|Win32
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{138BB448-808A-4FE5-A66D-78D1F8770F59}.debug_shared|Win32.ActiveCfg = debug_shared|Win32
+		{138BB448-808A-4FE5-A66D-78D1F8770F59}.debug_shared|Win32.Build.0 = debug_shared|Win32
+		{138BB448-808A-4FE5-A66D-78D1F8770F59}.debug_static_md|Win32.ActiveCfg = debug_static_md|Win32
+		{138BB448-808A-4FE5-A66D-78D1F8770F59}.debug_static_md|Win32.Build.0 = debug_static_md|Win32
+		{138BB448-808A-4FE5-A66D-78D1F8770F59}.debug_static_mt|Win32.ActiveCfg = debug_static_mt|Win32
+		{138BB448-808A-4FE5-A66D-78D1F8770F59}.debug_static_mt|Win32.Build.0 = debug_static_mt|Win32
+		{138BB448-808A-4FE5-A66D-78D1F8770F59}.release_shared|Win32.ActiveCfg = release_shared|Win32
+		{138BB448-808A-4FE5-A66D-78D1F8770F59}.release_shared|Win32.Build.0 = release_shared|Win32
+		{138BB448-808A-4FE5-A66D-78D1F8770F59}.release_static_md|Win32.ActiveCfg = release_static_md|Win32
+		{138BB448-808A-4FE5-A66D-78D1F8770F59}.release_static_md|Win32.Build.0 = release_static_md|Win32
+		{138BB448-808A-4FE5-A66D-78D1F8770F59}.release_static_mt|Win32.ActiveCfg = release_static_mt|Win32
+		{138BB448-808A-4FE5-A66D-78D1F8770F59}.release_static_mt|Win32.Build.0 = release_static_mt|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

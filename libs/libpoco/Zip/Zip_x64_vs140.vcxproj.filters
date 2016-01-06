@@ -1,0 +1,165 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Zip">
+      <UniqueIdentifier>{d36a4659-98ba-485f-91b2-a4115f68f3f5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zip\Header Files">
+      <UniqueIdentifier>{85300353-282e-40b8-84de-25e771799d2a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zip\Source Files">
+      <UniqueIdentifier>{af6984b5-3df1-4331-ba41-2e64dc15dc94}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Manipulation">
+      <UniqueIdentifier>{61090b44-c9bf-465f-947f-6148f9980f18}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Manipulation\Header Files">
+      <UniqueIdentifier>{f8074bd7-23d6-4571-898c-928e6b80d7ba}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Manipulation\Source Files">
+      <UniqueIdentifier>{9da1cef9-7afa-4ed6-ba83-3bfc88c702db}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="include\Poco\Zip\AutoDetectStream.h">
+      <Filter>Zip\Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Poco\Zip\Compress.h">
+      <Filter>Zip\Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Poco\Zip\Decompress.h">
+      <Filter>Zip\Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Poco\Zip\ParseCallback.h">
+      <Filter>Zip\Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Poco\Zip\PartialStream.h">
+      <Filter>Zip\Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Poco\Zip\SkipCallback.h">
+      <Filter>Zip\Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Poco\Zip\Zip.h">
+      <Filter>Zip\Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Poco\Zip\ZipArchive.h">
+      <Filter>Zip\Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Poco\Zip\ZipArchiveInfo.h">
+      <Filter>Zip\Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Poco\Zip\ZipCommon.h">
+      <Filter>Zip\Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Poco\Zip\ZipDataInfo.h">
+      <Filter>Zip\Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Poco\Zip\ZipException.h">
+      <Filter>Zip\Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Poco\Zip\ZipFileInfo.h">
+      <Filter>Zip\Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Poco\Zip\ZipLocalFileHeader.h">
+      <Filter>Zip\Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Poco\Zip\ZipStream.h">
+      <Filter>Zip\Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Poco\Zip\ZipUtil.h">
+      <Filter>Zip\Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Poco\Zip\Add.h">
+      <Filter>Manipulation\Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Poco\Zip\Delete.h">
+      <Filter>Manipulation\Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Poco\Zip\Keep.h">
+      <Filter>Manipulation\Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Poco\Zip\Rename.h">
+      <Filter>Manipulation\Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Poco\Zip\Replace.h">
+      <Filter>Manipulation\Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Poco\Zip\ZipManipulator.h">
+      <Filter>Manipulation\Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Poco\Zip\ZipOperation.h">
+      <Filter>Manipulation\Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\AutoDetectStream.cpp">
+      <Filter>Zip\Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Compress.cpp">
+      <Filter>Zip\Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Decompress.cpp">
+      <Filter>Zip\Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ParseCallback.cpp">
+      <Filter>Zip\Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\PartialStream.cpp">
+      <Filter>Zip\Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\SkipCallback.cpp">
+      <Filter>Zip\Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ZipArchive.cpp">
+      <Filter>Zip\Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ZipArchiveInfo.cpp">
+      <Filter>Zip\Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ZipCommon.cpp">
+      <Filter>Zip\Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ZipDataInfo.cpp">
+      <Filter>Zip\Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ZipException.cpp">
+      <Filter>Zip\Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ZipFileInfo.cpp">
+      <Filter>Zip\Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ZipLocalFileHeader.cpp">
+      <Filter>Zip\Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ZipStream.cpp">
+      <Filter>Zip\Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ZipUtil.cpp">
+      <Filter>Zip\Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Add.cpp">
+      <Filter>Manipulation\Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Delete.cpp">
+      <Filter>Manipulation\Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Keep.cpp">
+      <Filter>Manipulation\Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Rename.cpp">
+      <Filter>Manipulation\Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Replace.cpp">
+      <Filter>Manipulation\Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ZipManipulator.cpp">
+      <Filter>Manipulation\Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ZipOperation.cpp">
+      <Filter>Manipulation\Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="..\DLLVersion.rc" />
+  </ItemGroup>
+</Project>

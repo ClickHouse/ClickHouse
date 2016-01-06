@@ -1,0 +1,436 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="debug_shared|SDK_AM335X_SK_WEC2013_V300">
+      <Configuration>debug_shared</Configuration>
+      <Platform>SDK_AM335X_SK_WEC2013_V300</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="debug_static_md|SDK_AM335X_SK_WEC2013_V300">
+      <Configuration>debug_static_md</Configuration>
+      <Platform>SDK_AM335X_SK_WEC2013_V300</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="debug_static_mt|SDK_AM335X_SK_WEC2013_V300">
+      <Configuration>debug_static_mt</Configuration>
+      <Platform>SDK_AM335X_SK_WEC2013_V300</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="release_shared|SDK_AM335X_SK_WEC2013_V300">
+      <Configuration>release_shared</Configuration>
+      <Platform>SDK_AM335X_SK_WEC2013_V300</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="release_static_md|SDK_AM335X_SK_WEC2013_V300">
+      <Configuration>release_static_md</Configuration>
+      <Platform>SDK_AM335X_SK_WEC2013_V300</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="release_static_mt|SDK_AM335X_SK_WEC2013_V300">
+      <Configuration>release_static_mt</Configuration>
+      <Platform>SDK_AM335X_SK_WEC2013_V300</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectName>TestSuite</ProjectName>
+    <ProjectGuid>{D5EFBF27-B934-4B8D-8AE5-6EC00374819C}</ProjectGuid>
+    <DefaultLanguage>en-US</DefaultLanguage>
+    <MinimumVisualStudioVersion>11.0</MinimumVisualStudioVersion>
+    <EnableRedirectPlatform>true</EnableRedirectPlatform>
+    <RedirectPlatformValue>SDK_AM335X_SK_WEC2013_V300</RedirectPlatformValue>
+    <PlatformToolset>CE800</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props"/>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='release_static_md|SDK_AM335X_SK_WEC2013_V300'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <CharacterSet>Unicode</CharacterSet>
+    <PlatformToolset>CE800</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='debug_static_md|SDK_AM335X_SK_WEC2013_V300'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <CharacterSet>Unicode</CharacterSet>
+    <PlatformToolset>CE800</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='release_static_mt|SDK_AM335X_SK_WEC2013_V300'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <CharacterSet>Unicode</CharacterSet>
+    <PlatformToolset>CE800</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='debug_static_mt|SDK_AM335X_SK_WEC2013_V300'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <CharacterSet>Unicode</CharacterSet>
+    <PlatformToolset>CE800</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='release_shared|SDK_AM335X_SK_WEC2013_V300'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <CharacterSet>Unicode</CharacterSet>
+    <PlatformToolset>CE800</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='debug_shared|SDK_AM335X_SK_WEC2013_V300'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <CharacterSet>Unicode</CharacterSet>
+    <PlatformToolset>CE800</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props"/>
+  <ImportGroup Label="ExtensionSettings"/>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='release_static_md|SDK_AM335X_SK_WEC2013_V300'" Label="PropertySheets">
+    <Import Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props"/>
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='debug_static_md|SDK_AM335X_SK_WEC2013_V300'" Label="PropertySheets">
+    <Import Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props"/>
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='release_static_mt|SDK_AM335X_SK_WEC2013_V300'" Label="PropertySheets">
+    <Import Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props"/>
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='debug_static_mt|SDK_AM335X_SK_WEC2013_V300'" Label="PropertySheets">
+    <Import Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props"/>
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='release_shared|SDK_AM335X_SK_WEC2013_V300'" Label="PropertySheets">
+    <Import Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props"/>
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='debug_shared|SDK_AM335X_SK_WEC2013_V300'" Label="PropertySheets">
+    <Import Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props"/>
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros"/>
+  <PropertyGroup>
+    <_ProjectFileVersion>11.0.61030.0</_ProjectFileVersion>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='debug_shared|SDK_AM335X_SK_WEC2013_V300'">TestSuited</TargetName>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='debug_static_md|SDK_AM335X_SK_WEC2013_V300'">TestSuited</TargetName>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='debug_static_mt|SDK_AM335X_SK_WEC2013_V300'">TestSuited</TargetName>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='release_shared|SDK_AM335X_SK_WEC2013_V300'">TestSuite</TargetName>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='release_static_md|SDK_AM335X_SK_WEC2013_V300'">TestSuite</TargetName>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='release_static_mt|SDK_AM335X_SK_WEC2013_V300'">TestSuite</TargetName>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='debug_shared|SDK_AM335X_SK_WEC2013_V300'">
+    <OutDir>bin\$(Platform)\shared\</OutDir>
+    <IntDir>obj\TestSuite\$(Platform)\$(Configuration)\</IntDir>
+    <LinkIncremental>true</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='release_shared|SDK_AM335X_SK_WEC2013_V300'">
+    <OutDir>bin\$(Platform)\shared\</OutDir>
+    <IntDir>obj\TestSuite\$(Platform)\$(Configuration)\</IntDir>
+    <LinkIncremental>false</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='debug_static_mt|SDK_AM335X_SK_WEC2013_V300'">
+    <OutDir>bin\$(Platform)\static_mt\</OutDir>
+    <IntDir>obj\TestSuite\$(Platform)\$(Configuration)\</IntDir>
+    <LinkIncremental>true</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='release_static_mt|SDK_AM335X_SK_WEC2013_V300'">
+    <OutDir>bin\$(Platform)\static_mt\</OutDir>
+    <IntDir>obj\TestSuite\$(Platform)\$(Configuration)\</IntDir>
+    <LinkIncremental>false</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='debug_static_md|SDK_AM335X_SK_WEC2013_V300'">
+    <OutDir>bin\$(Platform)\static_md\</OutDir>
+    <IntDir>obj\TestSuite\$(Platform)\$(Configuration)\</IntDir>
+    <LinkIncremental>true</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='release_static_md|SDK_AM335X_SK_WEC2013_V300'">
+    <OutDir>bin\$(Platform)\static_md\</OutDir>
+    <IntDir>obj\TestSuite\$(Platform)\$(Configuration)\</IntDir>
+    <LinkIncremental>false</LinkIncremental>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='debug_shared|SDK_AM335X_SK_WEC2013_V300'">
+    <Midl>
+      <TargetEnvironment>Win32</TargetEnvironment>
+    </Midl>
+    <ClCompile>
+      <Optimization>Disabled</Optimization>
+      <AdditionalIncludeDirectories>..\include;..\..\CppUnit\include;..\..\Foundation\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>_DEBUG;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <StringPooling>true</StringPooling>
+      <MinimalRebuild>false</MinimalRebuild>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <BufferSecurityCheck>true</BufferSecurityCheck>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <PrecompiledHeader/>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <CompileAs>Default</CompileAs>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>CppUnitd.lib;ws2.lib;iphlpapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <OutputFile>bin\$(Platform)\shared\TestSuited.exe</OutputFile>
+      <AdditionalLibraryDirectories>..\..\lib\$(Platform);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <ProgramDatabaseFile>bin\$(Platform)\shared\TestSuited.pdb</ProgramDatabaseFile>
+      <EntryPointSymbol>wmainCRTStartup</EntryPointSymbol>
+      <SubSystem>WindowsCE</SubSystem>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='release_shared|SDK_AM335X_SK_WEC2013_V300'">
+    <Midl>
+      <TargetEnvironment>Win32</TargetEnvironment>
+    </Midl>
+    <ClCompile>
+      <Optimization>MaxSpeed</Optimization>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <AdditionalIncludeDirectories>..\include;..\..\CppUnit\include;..\..\Foundation\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>NDEBUG;$(ProjectName)_EXPORTS;_CRT_SECURE_NO_DEPRECATE;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <StringPooling>true</StringPooling>
+      <MinimalRebuild>false</MinimalRebuild>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>CppUnit.lib;ws2.lib;iphlpapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <OutputFile>bin\$(Platform)\shared\TestSuite.exe</OutputFile>
+      <AdditionalLibraryDirectories>..\..\lib\$(Platform);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <ProgramDatabaseFile/>
+      <OptimizeReferences>true</OptimizeReferences>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <EntryPointSymbol>wmainCRTStartup</EntryPointSymbol>
+      <SubSystem>WindowsCE</SubSystem>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='debug_static_mt|SDK_AM335X_SK_WEC2013_V300'">
+    <Midl>
+      <TargetEnvironment>Win32</TargetEnvironment>
+    </Midl>
+    <ClCompile>
+      <Optimization>Disabled</Optimization>
+      <AdditionalIncludeDirectories>..\include;..\..\CppUnit\include;..\..\Foundation\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>_DEBUG;POCO_STATIC;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <StringPooling>true</StringPooling>
+      <MinimalRebuild>false</MinimalRebuild>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <BufferSecurityCheck>true</BufferSecurityCheck>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <PrecompiledHeader/>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <CompileAs>Default</CompileAs>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>CppUnitmtd.lib;iphlpapi.lib;ws2.lib;iphlpapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <OutputFile>bin\$(Platform)\static_mt\TestSuited.exe</OutputFile>
+      <AdditionalLibraryDirectories>..\..\lib\$(Platform);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <ProgramDatabaseFile>bin\$(Platform)\static_mt\TestSuited.pdb</ProgramDatabaseFile>
+      <EntryPointSymbol>wmainCRTStartup</EntryPointSymbol>
+      <SubSystem>WindowsCE</SubSystem>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='release_static_mt|SDK_AM335X_SK_WEC2013_V300'">
+    <Midl>
+      <TargetEnvironment>Win32</TargetEnvironment>
+    </Midl>
+    <ClCompile>
+      <Optimization>MaxSpeed</Optimization>
+      <InlineFunctionExpansion>Default</InlineFunctionExpansion>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <AdditionalIncludeDirectories>..\include;..\..\CppUnit\include;..\..\Foundation\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>NDEBUG;POCO_STATIC;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <StringPooling>true</StringPooling>
+      <MinimalRebuild>false</MinimalRebuild>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <PrecompiledHeader/>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <CompileAs>Default</CompileAs>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>CppUnitmt.lib;iphlpapi.lib;ws2.lib;iphlpapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <OutputFile>bin\$(Platform)\static_mt\TestSuite.exe</OutputFile>
+      <AdditionalLibraryDirectories>..\..\lib\$(Platform);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <ProgramDatabaseFile/>
+      <OptimizeReferences>true</OptimizeReferences>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <EntryPointSymbol>wmainCRTStartup</EntryPointSymbol>
+      <SubSystem>WindowsCE</SubSystem>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='debug_static_md|SDK_AM335X_SK_WEC2013_V300'">
+    <Midl>
+      <TargetEnvironment>Win32</TargetEnvironment>
+    </Midl>
+    <ClCompile>
+      <Optimization>Disabled</Optimization>
+      <AdditionalIncludeDirectories>..\include;..\..\CppUnit\include;..\..\Foundation\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>_DEBUG;POCO_STATIC;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <StringPooling>true</StringPooling>
+      <MinimalRebuild>false</MinimalRebuild>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <BufferSecurityCheck>true</BufferSecurityCheck>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <PrecompiledHeader/>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <CompileAs>Default</CompileAs>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>CppUnitmdd.lib;iphlpapi.lib;ws2.lib;iphlpapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <OutputFile>bin\$(Platform)\static_md\TestSuited.exe</OutputFile>
+      <AdditionalLibraryDirectories>..\..\lib\$(Platform);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <ProgramDatabaseFile>bin\$(Platform)\static_md\TestSuited.pdb</ProgramDatabaseFile>
+      <EntryPointSymbol>wmainCRTStartup</EntryPointSymbol>
+      <SubSystem>WindowsCE</SubSystem>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='release_static_md|SDK_AM335X_SK_WEC2013_V300'">
+    <Midl>
+      <TargetEnvironment>Win32</TargetEnvironment>
+    </Midl>
+    <ClCompile>
+      <Optimization>MaxSpeed</Optimization>
+      <InlineFunctionExpansion>Default</InlineFunctionExpansion>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <AdditionalIncludeDirectories>..\include;..\..\CppUnit\include;..\..\Foundation\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>NDEBUG;POCO_STATIC;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <StringPooling>true</StringPooling>
+      <MinimalRebuild>false</MinimalRebuild>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <PrecompiledHeader/>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <CompileAs>Default</CompileAs>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>CppUnitmd.lib;iphlpapi.lib;ws2.lib;iphlpapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <OutputFile>bin\$(Platform)\static_md\TestSuite.exe</OutputFile>
+      <AdditionalLibraryDirectories>..\..\lib\$(Platform);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <ProgramDatabaseFile/>
+      <OptimizeReferences>true</OptimizeReferences>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <EntryPointSymbol>wmainCRTStartup</EntryPointSymbol>
+      <SubSystem>WindowsCE</SubSystem>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClInclude Include="src\DNSTest.h"/>
+    <ClInclude Include="src\IPAddressTest.h"/>
+    <ClInclude Include="src\NetCoreTestSuite.h"/>
+    <ClInclude Include="src\NetworkInterfaceTest.h"/>
+    <ClInclude Include="src\SocketAddressTest.h"/>
+    <ClInclude Include="src\NetTestSuite.h"/>
+    <ClInclude Include="src\DatagramSocketTest.h"/>
+    <ClInclude Include="src\DialogServer.h"/>
+    <ClInclude Include="src\DialogSocketTest.h"/>
+    <ClInclude Include="src\EchoServer.h"/>
+    <ClInclude Include="src\MulticastEchoServer.h"/>
+    <ClInclude Include="src\MulticastSocketTest.h"/>
+    <ClInclude Include="src\RawSocketTest.h"/>
+    <ClInclude Include="src\SocketsTestSuite.h"/>
+    <ClInclude Include="src\SocketStreamTest.h"/>
+    <ClInclude Include="src\SocketTest.h"/>
+    <ClInclude Include="src\UDPEchoServer.h"/>
+    <ClInclude Include="src\MediaTypeTest.h"/>
+    <ClInclude Include="src\MessageHeaderTest.h"/>
+    <ClInclude Include="src\MessagesTestSuite.h"/>
+    <ClInclude Include="src\MultipartReaderTest.h"/>
+    <ClInclude Include="src\MultipartWriterTest.h"/>
+    <ClInclude Include="src\NameValueCollectionTest.h"/>
+    <ClInclude Include="src\QuotedPrintableTest.h"/>
+    <ClInclude Include="src\HTTPCookieTest.h"/>
+    <ClInclude Include="src\HTTPCredentialsTest.h"/>
+    <ClInclude Include="src\HTTPRequestTest.h"/>
+    <ClInclude Include="src\HTTPResponseTest.h"/>
+    <ClInclude Include="src\HTTPTestServer.h"/>
+    <ClInclude Include="src\HTTPTestSuite.h"/>
+    <ClInclude Include="src\TCPServerTest.h"/>
+    <ClInclude Include="src\TCPServerTestSuite.h"/>
+    <ClInclude Include="src\HTTPServerTest.h"/>
+    <ClInclude Include="src\HTTPServerTestSuite.h"/>
+    <ClInclude Include="src\HTMLFormTest.h"/>
+    <ClInclude Include="src\HTMLTestSuite.h"/>
+    <ClInclude Include="src\HTTPClientSessionTest.h"/>
+    <ClInclude Include="src\HTTPClientTestSuite.h"/>
+    <ClInclude Include="src\HTTPStreamFactoryTest.h"/>
+    <ClInclude Include="src\FTPClientSessionTest.h"/>
+    <ClInclude Include="src\FTPClientTestSuite.h"/>
+    <ClInclude Include="src\FTPStreamFactoryTest.h"/>
+    <ClInclude Include="src\ReactorTestSuite.h"/>
+    <ClInclude Include="src\SocketReactorTest.h"/>
+    <ClInclude Include="src\MailMessageTest.h"/>
+    <ClInclude Include="src\MailStreamTest.h"/>
+    <ClInclude Include="src\MailTestSuite.h"/>
+    <ClInclude Include="src\POP3ClientSessionTest.h"/>
+    <ClInclude Include="src\SMTPClientSessionTest.h"/>
+    <ClInclude Include="src\ICMPClientTest.h"/>
+    <ClInclude Include="src\ICMPClientTestSuite.h"/>
+    <ClInclude Include="src\ICMPSocketTest.h"/>
+    <ClInclude Include="src\NTPClientTest.h"/>
+    <ClInclude Include="src\NTPClientTestSuite.h"/>
+    <ClInclude Include="src\SyslogTest.h"/>
+    <ClInclude Include="src\WebSocketTest.h"/>
+    <ClInclude Include="src\WebSocketTestSuite.h"/>
+    <ClInclude Include="src\OAuth10CredentialsTest.h"/>
+    <ClInclude Include="src\OAuth20CredentialsTest.h"/>
+    <ClInclude Include="src\OAuthTestSuite.h"/>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\DNSTest.cpp"/>
+    <ClCompile Include="src\IPAddressTest.cpp"/>
+    <ClCompile Include="src\NetCoreTestSuite.cpp"/>
+    <ClCompile Include="src\NetworkInterfaceTest.cpp"/>
+    <ClCompile Include="src\SocketAddressTest.cpp"/>
+    <ClCompile Include="src\NetTestSuite.cpp"/>
+    <ClCompile Include="src\WinCEDriver.cpp"/>
+    <ClCompile Include="src\DatagramSocketTest.cpp"/>
+    <ClCompile Include="src\DialogServer.cpp"/>
+    <ClCompile Include="src\DialogSocketTest.cpp"/>
+    <ClCompile Include="src\EchoServer.cpp"/>
+    <ClCompile Include="src\MulticastEchoServer.cpp"/>
+    <ClCompile Include="src\MulticastSocketTest.cpp"/>
+    <ClCompile Include="src\RawSocketTest.cpp"/>
+    <ClCompile Include="src\SocketsTestSuite.cpp"/>
+    <ClCompile Include="src\SocketStreamTest.cpp"/>
+    <ClCompile Include="src\SocketTest.cpp"/>
+    <ClCompile Include="src\UDPEchoServer.cpp"/>
+    <ClCompile Include="src\MediaTypeTest.cpp"/>
+    <ClCompile Include="src\MessageHeaderTest.cpp"/>
+    <ClCompile Include="src\MessagesTestSuite.cpp"/>
+    <ClCompile Include="src\MultipartReaderTest.cpp"/>
+    <ClCompile Include="src\MultipartWriterTest.cpp"/>
+    <ClCompile Include="src\NameValueCollectionTest.cpp"/>
+    <ClCompile Include="src\QuotedPrintableTest.cpp"/>
+    <ClCompile Include="src\HTTPCookieTest.cpp"/>
+    <ClCompile Include="src\HTTPCredentialsTest.cpp"/>
+    <ClCompile Include="src\HTTPRequestTest.cpp"/>
+    <ClCompile Include="src\HTTPResponseTest.cpp"/>
+    <ClCompile Include="src\HTTPTestServer.cpp"/>
+    <ClCompile Include="src\HTTPTestSuite.cpp"/>
+    <ClCompile Include="src\TCPServerTest.cpp"/>
+    <ClCompile Include="src\TCPServerTestSuite.cpp"/>
+    <ClCompile Include="src\HTTPServerTest.cpp"/>
+    <ClCompile Include="src\HTTPServerTestSuite.cpp"/>
+    <ClCompile Include="src\HTMLFormTest.cpp"/>
+    <ClCompile Include="src\HTMLTestSuite.cpp"/>
+    <ClCompile Include="src\HTTPClientSessionTest.cpp"/>
+    <ClCompile Include="src\HTTPClientTestSuite.cpp"/>
+    <ClCompile Include="src\HTTPStreamFactoryTest.cpp"/>
+    <ClCompile Include="src\FTPClientSessionTest.cpp"/>
+    <ClCompile Include="src\FTPClientTestSuite.cpp"/>
+    <ClCompile Include="src\FTPStreamFactoryTest.cpp"/>
+    <ClCompile Include="src\ReactorTestSuite.cpp"/>
+    <ClCompile Include="src\SocketReactorTest.cpp"/>
+    <ClCompile Include="src\MailMessageTest.cpp"/>
+    <ClCompile Include="src\MailStreamTest.cpp"/>
+    <ClCompile Include="src\MailTestSuite.cpp"/>
+    <ClCompile Include="src\POP3ClientSessionTest.cpp"/>
+    <ClCompile Include="src\SMTPClientSessionTest.cpp"/>
+    <ClCompile Include="src\ICMPClientTest.cpp"/>
+    <ClCompile Include="src\ICMPClientTestSuite.cpp"/>
+    <ClCompile Include="src\ICMPSocketTest.cpp"/>
+    <ClCompile Include="src\NTPClientTest.cpp"/>
+    <ClCompile Include="src\NTPClientTestSuite.cpp"/>
+    <ClCompile Include="src\SyslogTest.cpp"/>
+    <ClCompile Include="src\WebSocketTest.cpp"/>
+    <ClCompile Include="src\WebSocketTestSuite.cpp"/>
+    <ClCompile Include="src\OAuth10CredentialsTest.cpp"/>
+    <ClCompile Include="src\OAuth20CredentialsTest.cpp"/>
+    <ClCompile Include="src\OAuthTestSuite.cpp"/>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets"/>
+  <ImportGroup Label="ExtensionTargets"/>
+</Project>

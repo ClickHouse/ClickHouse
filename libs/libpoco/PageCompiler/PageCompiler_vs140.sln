@@ -1,0 +1,37 @@
+Microsoft Visual Studio Solution File, Format Version 14.00
+# Visual Studio 2015
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "PageCompiler", "PageCompiler_vs140.vcxproj", "{E12E5C71-79A4-495A-848F-F1710111E610}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		debug_shared|Win32 = debug_shared|Win32
+		release_shared|Win32 = release_shared|Win32
+		debug_static_mt|Win32 = debug_static_mt|Win32
+		release_static_mt|Win32 = release_static_mt|Win32
+		debug_static_md|Win32 = debug_static_md|Win32
+		release_static_md|Win32 = release_static_md|Win32
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{E12E5C71-79A4-495A-848F-F1710111E610}.debug_shared|Win32.ActiveCfg = debug_shared|Win32
+		{E12E5C71-79A4-495A-848F-F1710111E610}.debug_shared|Win32.Build.0 = debug_shared|Win32
+		{E12E5C71-79A4-495A-848F-F1710111E610}.debug_shared|Win32.Deploy.0 = debug_shared|Win32
+		{E12E5C71-79A4-495A-848F-F1710111E610}.release_shared|Win32.ActiveCfg = release_shared|Win32
+		{E12E5C71-79A4-495A-848F-F1710111E610}.release_shared|Win32.Build.0 = release_shared|Win32
+		{E12E5C71-79A4-495A-848F-F1710111E610}.release_shared|Win32.Deploy.0 = release_shared|Win32
+		{E12E5C71-79A4-495A-848F-F1710111E610}.debug_static_mt|Win32.ActiveCfg = debug_static_mt|Win32
+		{E12E5C71-79A4-495A-848F-F1710111E610}.debug_static_mt|Win32.Build.0 = debug_static_mt|Win32
+		{E12E5C71-79A4-495A-848F-F1710111E610}.debug_static_mt|Win32.Deploy.0 = debug_static_mt|Win32
+		{E12E5C71-79A4-495A-848F-F1710111E610}.release_static_mt|Win32.ActiveCfg = release_static_mt|Win32
+		{E12E5C71-79A4-495A-848F-F1710111E610}.release_static_mt|Win32.Build.0 = release_static_mt|Win32
+		{E12E5C71-79A4-495A-848F-F1710111E610}.release_static_mt|Win32.Deploy.0 = release_static_mt|Win32
+		{E12E5C71-79A4-495A-848F-F1710111E610}.debug_static_md|Win32.ActiveCfg = debug_static_md|Win32
+		{E12E5C71-79A4-495A-848F-F1710111E610}.debug_static_md|Win32.Build.0 = debug_static_md|Win32
+		{E12E5C71-79A4-495A-848F-F1710111E610}.debug_static_md|Win32.Deploy.0 = debug_static_md|Win32
+		{E12E5C71-79A4-495A-848F-F1710111E610}.release_static_md|Win32.ActiveCfg = release_static_md|Win32
+		{E12E5C71-79A4-495A-848F-F1710111E610}.release_static_md|Win32.Build.0 = release_static_md|Win32
+		{E12E5C71-79A4-495A-848F-F1710111E610}.release_static_md|Win32.Deploy.0 = release_static_md|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

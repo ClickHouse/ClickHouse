@@ -1,0 +1,16 @@
+vc.project.guid = C1B1BB96-5198-48EB-AB48-9A0A0B54FB15
+vc.project.name = TestSuite
+vc.project.target = TestSuite
+vc.project.type = testsuite
+vc.project.pocobase = ..\\..
+vc.project.platforms = Win32, x64, WinCE
+vc.project.configurations = debug_shared, release_shared, debug_static_mt, release_static_mt, debug_static_md, release_static_md
+vc.project.prototype = TestSuite_vs90.vcproj
+vc.project.compiler.include = ..\\..\\Foundation\\include
+vc.project.linker.dependencies = ws2_32.lib iphlpapi.lib
+vc.project.linker.dependencies.debug_shared = libeay32.lib ssleay32.lib
+vc.project.linker.dependencies.release_shared = libeay32.lib ssleay32.lib
+vc.project.linker.dependencies.debug_static_md = libeay32.lib ssleay32.lib
+vc.project.linker.dependencies.release_static_md = libeay32.lib ssleay32.lib
+vc.project.linker.dependencies.debug_static_mt = libeay32mtd.lib ssleay32mtd.lib Crypt32.lib
+vc.project.linker.dependencies.release_static_mt = libeay32mt.lib ssleay32mt.lib Crypt32.lib

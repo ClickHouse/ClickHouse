@@ -1,0 +1,67 @@
+#
+# TestSuite.vxbuild
+#
+# $Id$
+#
+TARGET=NetTestSuite
+CFLAGS="-I../../../../Foundation/include \\
+	-I../../../../Net/include \\
+	-I../../../../XML/include \\
+	-I../../../../Util/include \\
+	-I../../../../CppUnit/include"
+SOURCES="
+	DNSTest.cpp
+	DatagramSocketTest.cpp
+	DialogServer.cpp
+	DialogSocketTest.cpp
+	Driver.cpp
+	EchoServer.cpp
+	FTPClientSessionTest.cpp
+	FTPClientTestSuite.cpp
+	FTPStreamFactoryTest.cpp
+	HTMLFormTest.cpp
+	HTMLTestSuite.cpp
+	HTTPClientSessionTest.cpp
+	HTTPClientTestSuite.cpp
+	HTTPCookieTest.cpp
+	HTTPCredentialsTest.cpp
+	HTTPRequestTest.cpp
+	HTTPResponseTest.cpp
+	HTTPServerTest.cpp
+	HTTPServerTestSuite.cpp
+	HTTPStreamFactoryTest.cpp
+	HTTPTestServer.cpp
+	HTTPTestSuite.cpp
+	ICMPClientTest.cpp
+	ICMPClientTestSuite.cpp
+	ICMPSocketTest.cpp
+	IPAddressTest.cpp
+	MailMessageTest.cpp
+	MailStreamTest.cpp
+	MailTestSuite.cpp
+	MediaTypeTest.cpp
+	MessageHeaderTest.cpp
+	MessagesTestSuite.cpp
+	MulticastEchoServer.cpp
+	MulticastSocketTest.cpp
+	MultipartReaderTest.cpp
+	MultipartWriterTest.cpp
+	NameValueCollectionTest.cpp
+	NetCoreTestSuite.cpp
+	NetTestSuite.cpp
+	NetworkInterfaceTest.cpp
+	POP3ClientSessionTest.cpp
+	QuotedPrintableTest.cpp
+	RawSocketTest.cpp
+	ReactorTestSuite.cpp
+	SMTPClientSessionTest.cpp
+	SocketAddressTest.cpp
+	SocketReactorTest.cpp
+	SocketStreamTest.cpp
+	SocketTest.cpp
+	SocketsTestSuite.cpp
+	SyslogTest.cpp
+	TCPServerTest.cpp
+	TCPServerTestSuite.cpp
+	UDPEchoServer.cpp
+"

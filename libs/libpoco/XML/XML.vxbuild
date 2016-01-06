@@ -1,0 +1,82 @@
+#
+# XML.vxbuild
+#
+# $Id: //poco/1.4/XML/XML.vxbuild#1 $
+#
+TARGET=pocoXML
+CFLAGS="-I../../../Foundation/include \\
+	-DXML_NS \\
+	-DXML_DTD \\
+	-DHAVE_EXPAT_CONFIG_H"
+SOURCES="
+	AbstractContainerNode.cpp
+	AbstractNode.cpp
+	Attr.cpp
+	AttrMap.cpp
+	Attributes.cpp
+	AttributesImpl.cpp
+	CDATASection.cpp
+	CharacterData.cpp
+	ChildNodesList.cpp
+	Comment.cpp
+	ContentHandler.cpp
+	DOMBuilder.cpp
+	DOMException.cpp
+	DOMImplementation.cpp
+	DOMObject.cpp
+	DOMParser.cpp
+	DOMSerializer.cpp
+	DOMWriter.cpp
+	DTDHandler.cpp
+	DTDMap.cpp
+	DeclHandler.cpp
+	DefaultHandler.cpp
+	Document.cpp
+	DocumentEvent.cpp
+	DocumentFragment.cpp
+	DocumentType.cpp
+	Element.cpp
+	ElementsByTagNameList.cpp
+	Entity.cpp
+	EntityReference.cpp
+	EntityResolver.cpp
+	EntityResolverImpl.cpp
+	ErrorHandler.cpp
+	Event.cpp
+	EventDispatcher.cpp
+	EventException.cpp
+	EventListener.cpp
+	EventTarget.cpp
+	InputSource.cpp
+	LexicalHandler.cpp
+	Locator.cpp
+	LocatorImpl.cpp
+	MutationEvent.cpp
+	Name.cpp
+	NamePool.cpp
+	NamedNodeMap.cpp
+	NamespaceStrategy.cpp
+	NamespaceSupport.cpp
+	Node.cpp
+	NodeAppender.cpp
+	NodeFilter.cpp
+	NodeIterator.cpp
+	NodeList.cpp
+	Notation.cpp
+	ParserEngine.cpp
+	ProcessingInstruction.cpp
+	SAXException.cpp
+	SAXParser.cpp
+	Text.cpp
+	TreeWalker.cpp
+	WhitespaceFilter.cpp
+	XMLException.cpp
+	XMLFilter.cpp
+	XMLFilterImpl.cpp
+	XMLReader.cpp
+	XMLString.cpp
+	XMLWriter.cpp
+	xmlparse.cpp
+	xmlrole.c
+	xmltok.c
+"

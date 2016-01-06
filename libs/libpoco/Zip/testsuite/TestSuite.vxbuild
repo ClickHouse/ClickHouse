@@ -1,0 +1,16 @@
+#
+# TestSuite.vxbuild
+#
+# $Id$
+#
+TARGET=ZipTestSuite
+CFLAGS="-I../../../../Foundation/include \\
+	-I../../../../Zip/include \\
+	-I../../../../CppUnit/include"
+SOURCES="
+CompressTest.cpp
+Driver.cpp
+PartialStreamTest.cpp
+ZipTest.cpp
+ZipTestSuite.cpp
+"

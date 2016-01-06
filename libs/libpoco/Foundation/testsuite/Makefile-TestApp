@@ -1,0 +1,17 @@
+#
+# Makefile
+#
+# $Id: //poco/1.4/Foundation/testsuite/Makefile-TestApp#1 $
+#
+# Makefile for Poco TestApp
+#
+
+include $(POCO_BASE)/build/rules/global
+
+objects = TestApp
+
+target         = TestApp
+target_version = 1
+target_libs    = PocoFoundation
+
+include $(POCO_BASE)/build/rules/exec

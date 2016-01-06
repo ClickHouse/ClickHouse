@@ -1,0 +1,501 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Project DefaultTargets="Build" ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="debug_shared|Win32">
+      <Configuration>debug_shared</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="debug_static_md|Win32">
+      <Configuration>debug_static_md</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="debug_static_mt|Win32">
+      <Configuration>debug_static_mt</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="release_shared|Win32">
+      <Configuration>release_shared</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="release_static_md|Win32">
+      <Configuration>release_static_md</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="release_static_mt|Win32">
+      <Configuration>release_static_mt</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectName>Net</ProjectName>
+    <ProjectGuid>{B057A1FE-09F7-465E-B8B5-E1B659051D76}</ProjectGuid>
+    <RootNamespace>Net</RootNamespace>
+    <Keyword>Win32Proj</Keyword>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props"/>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='release_static_md|Win32'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v140</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='debug_static_md|Win32'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v140</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='release_static_mt|Win32'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v140</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='debug_static_mt|Win32'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v140</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='release_shared|Win32'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v140</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='debug_shared|Win32'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v140</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props"/>
+  <ImportGroup Label="ExtensionSettings"/>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='release_static_md|Win32'" Label="PropertySheets">
+    <Import Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props"/>
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='debug_static_md|Win32'" Label="PropertySheets">
+    <Import Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props"/>
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='release_static_mt|Win32'" Label="PropertySheets">
+    <Import Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props"/>
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='debug_static_mt|Win32'" Label="PropertySheets">
+    <Import Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props"/>
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='release_shared|Win32'" Label="PropertySheets">
+    <Import Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props"/>
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='debug_shared|Win32'" Label="PropertySheets">
+    <Import Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props"/>
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros"/>
+  <PropertyGroup>
+    <_ProjectFileVersion>14.0.23107.0</_ProjectFileVersion>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='debug_shared|Win32'">PocoNetd</TargetName>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='debug_static_md|Win32'">PocoNetmdd</TargetName>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='debug_static_mt|Win32'">PocoNetmtd</TargetName>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='release_shared|Win32'">PocoNet</TargetName>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='release_static_md|Win32'">PocoNetmd</TargetName>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='release_static_mt|Win32'">PocoNetmt</TargetName>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='debug_shared|Win32'">
+    <OutDir>..\bin\</OutDir>
+    <IntDir>obj\Net\$(Configuration)\</IntDir>
+    <LinkIncremental>true</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='release_shared|Win32'">
+    <OutDir>..\bin\</OutDir>
+    <IntDir>obj\Net\$(Configuration)\</IntDir>
+    <LinkIncremental>false</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='debug_static_mt|Win32'">
+    <OutDir>..\lib\</OutDir>
+    <IntDir>obj\Net\$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='release_static_mt|Win32'">
+    <OutDir>..\lib\</OutDir>
+    <IntDir>obj\Net\$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='debug_static_md|Win32'">
+    <OutDir>..\lib\</OutDir>
+    <IntDir>obj\Net\$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='release_static_md|Win32'">
+    <OutDir>..\lib\</OutDir>
+    <IntDir>obj\Net\$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='debug_shared|Win32'">
+    <ClCompile>
+      <Optimization>Disabled</Optimization>
+      <AdditionalIncludeDirectories>.\include;..\Foundation\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;_USRDLL;Net_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <StringPooling>true</StringPooling>
+      <MinimalRebuild>true</MinimalRebuild>
+      <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <BufferSecurityCheck>true</BufferSecurityCheck>
+      <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
+      <ForceConformanceInForLoopScope>true</ForceConformanceInForLoopScope>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <PrecompiledHeader/>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <CompileAs>Default</CompileAs>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>ws2_32.lib;iphlpapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <OutputFile>..\bin\PocoNetd.dll</OutputFile>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <ProgramDatabaseFile>..\bin\PocoNetd.pdb</ProgramDatabaseFile>
+      <AdditionalLibraryDirectories>..\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <SubSystem>Console</SubSystem>
+      <ImportLibrary>..\lib\PocoNetd.lib</ImportLibrary>
+      <TargetMachine>MachineX86</TargetMachine>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='release_shared|Win32'">
+    <ClCompile>
+      <Optimization>MaxSpeed</Optimization>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <OmitFramePointers>true</OmitFramePointers>
+      <AdditionalIncludeDirectories>.\include;..\Foundation\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;_USRDLL;Net_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <StringPooling>true</StringPooling>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
+      <ForceConformanceInForLoopScope>true</ForceConformanceInForLoopScope>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <PrecompiledHeader/>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat/>
+      <CompileAs>Default</CompileAs>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>ws2_32.lib;iphlpapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <OutputFile>..\bin\PocoNet.dll</OutputFile>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>..\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <SubSystem>Console</SubSystem>
+      <OptimizeReferences>true</OptimizeReferences>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <ImportLibrary>..\lib\PocoNet.lib</ImportLibrary>
+      <TargetMachine>MachineX86</TargetMachine>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='debug_static_mt|Win32'">
+    <ClCompile>
+      <Optimization>Disabled</Optimization>
+      <AdditionalIncludeDirectories>.\include;..\Foundation\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;POCO_STATIC;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <StringPooling>true</StringPooling>
+      <MinimalRebuild>true</MinimalRebuild>
+      <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <BufferSecurityCheck>true</BufferSecurityCheck>
+      <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
+      <ForceConformanceInForLoopScope>true</ForceConformanceInForLoopScope>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <PrecompiledHeader/>
+      <ProgramDataBaseFileName>..\lib\PocoNetmtd.pdb</ProgramDataBaseFileName>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <CompileAs>Default</CompileAs>
+    </ClCompile>
+    <Lib>
+      <OutputFile>..\lib\PocoNetmtd.lib</OutputFile>
+    </Lib>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='release_static_mt|Win32'">
+    <ClCompile>
+      <Optimization>MaxSpeed</Optimization>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <OmitFramePointers>true</OmitFramePointers>
+      <AdditionalIncludeDirectories>.\include;..\Foundation\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;POCO_STATIC;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <StringPooling>true</StringPooling>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
+      <ForceConformanceInForLoopScope>true</ForceConformanceInForLoopScope>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <PrecompiledHeader/>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat/>
+      <CompileAs>Default</CompileAs>
+    </ClCompile>
+    <Lib>
+      <OutputFile>..\lib\PocoNetmt.lib</OutputFile>
+    </Lib>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='debug_static_md|Win32'">
+    <ClCompile>
+      <Optimization>Disabled</Optimization>
+      <AdditionalIncludeDirectories>.\include;..\Foundation\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;POCO_STATIC;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <StringPooling>true</StringPooling>
+      <MinimalRebuild>true</MinimalRebuild>
+      <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <BufferSecurityCheck>true</BufferSecurityCheck>
+      <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
+      <ForceConformanceInForLoopScope>true</ForceConformanceInForLoopScope>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <PrecompiledHeader/>
+      <ProgramDataBaseFileName>..\lib\PocoNetmdd.pdb</ProgramDataBaseFileName>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <CompileAs>Default</CompileAs>
+    </ClCompile>
+    <Lib>
+      <OutputFile>..\lib\PocoNetmdd.lib</OutputFile>
+    </Lib>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='release_static_md|Win32'">
+    <ClCompile>
+      <Optimization>MaxSpeed</Optimization>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <OmitFramePointers>true</OmitFramePointers>
+      <AdditionalIncludeDirectories>.\include;..\Foundation\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;POCO_STATIC;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <StringPooling>true</StringPooling>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
+      <ForceConformanceInForLoopScope>true</ForceConformanceInForLoopScope>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <PrecompiledHeader/>
+      <ProgramDataBaseFileName>..\lib\PocoNetmd.pdb</ProgramDataBaseFileName>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat/>
+      <CompileAs>Default</CompileAs>
+    </ClCompile>
+    <Lib>
+      <AdditionalDependencies>ws2_32.lib;iphlpapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <OutputFile>..\lib\PocoNetmd.lib</OutputFile>
+    </Lib>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClInclude Include="include\Poco\Net\AbstractHTTPRequestHandler.h"/>
+    <ClInclude Include="include\Poco\Net\DatagramSocket.h"/>
+    <ClInclude Include="include\Poco\Net\DatagramSocketImpl.h"/>
+    <ClInclude Include="include\Poco\Net\DialogSocket.h"/>
+    <ClInclude Include="include\Poco\Net\DNS.h"/>
+    <ClInclude Include="include\Poco\Net\FilePartSource.h"/>
+    <ClInclude Include="include\Poco\Net\FTPClientSession.h"/>
+    <ClInclude Include="include\Poco\Net\FTPStreamFactory.h"/>
+    <ClInclude Include="include\Poco\Net\HostEntry.h"/>
+    <ClInclude Include="include\Poco\Net\HTMLForm.h"/>
+    <ClInclude Include="include\Poco\Net\HTTPAuthenticationParams.h"/>
+    <ClInclude Include="include\Poco\Net\HTTPBasicCredentials.h"/>
+    <ClInclude Include="include\Poco\Net\HTTPBasicStreamBuf.h"/>
+    <ClInclude Include="include\Poco\Net\HTTPBufferAllocator.h"/>
+    <ClInclude Include="include\Poco\Net\HTTPChunkedStream.h"/>
+    <ClInclude Include="include\Poco\Net\HTTPClientSession.h"/>
+    <ClInclude Include="include\Poco\Net\HTTPCookie.h"/>
+    <ClInclude Include="include\Poco\Net\HTTPCredentials.h"/>
+    <ClInclude Include="include\Poco\Net\HTTPDigestCredentials.h"/>
+    <ClInclude Include="include\Poco\Net\HTTPFixedLengthStream.h"/>
+    <ClInclude Include="include\Poco\Net\HTTPHeaderStream.h"/>
+    <ClInclude Include="include\Poco\Net\HTTPIOStream.h"/>
+    <ClInclude Include="include\Poco\Net\HTTPMessage.h"/>
+    <ClInclude Include="include\Poco\Net\HTTPRequest.h"/>
+    <ClInclude Include="include\Poco\Net\HTTPRequestHandler.h"/>
+    <ClInclude Include="include\Poco\Net\HTTPRequestHandlerFactory.h"/>
+    <ClInclude Include="include\Poco\Net\HTTPResponse.h"/>
+    <ClInclude Include="include\Poco\Net\HTTPServer.h"/>
+    <ClInclude Include="include\Poco\Net\HTTPServerConnection.h"/>
+    <ClInclude Include="include\Poco\Net\HTTPServerConnectionFactory.h"/>
+    <ClInclude Include="include\Poco\Net\HTTPServerParams.h"/>
+    <ClInclude Include="include\Poco\Net\HTTPServerRequest.h"/>
+    <ClInclude Include="include\Poco\Net\HTTPServerRequestImpl.h"/>
+    <ClInclude Include="include\Poco\Net\HTTPServerResponse.h"/>
+    <ClInclude Include="include\Poco\Net\HTTPServerResponseImpl.h"/>
+    <ClInclude Include="include\Poco\Net\HTTPServerSession.h"/>
+    <ClInclude Include="include\Poco\Net\HTTPSession.h"/>
+    <ClInclude Include="include\Poco\Net\HTTPSessionFactory.h"/>
+    <ClInclude Include="include\Poco\Net\HTTPSessionInstantiator.h"/>
+    <ClInclude Include="include\Poco\Net\HTTPStream.h"/>
+    <ClInclude Include="include\Poco\Net\HTTPStreamFactory.h"/>
+    <ClInclude Include="include\Poco\Net\ICMPClient.h"/>
+    <ClInclude Include="include\Poco\Net\ICMPEventArgs.h"/>
+    <ClInclude Include="include\Poco\Net\ICMPPacket.h"/>
+    <ClInclude Include="include\Poco\Net\ICMPPacketImpl.h"/>
+    <ClInclude Include="include\Poco\Net\ICMPSocket.h"/>
+    <ClInclude Include="include\Poco\Net\ICMPSocketImpl.h"/>
+    <ClInclude Include="include\Poco\Net\ICMPv4PacketImpl.h"/>
+    <ClInclude Include="include\Poco\Net\IPAddress.h"/>
+    <ClInclude Include="include\Poco\Net\IPAddressImpl.h"/>
+    <ClInclude Include="include\Poco\Net\MailMessage.h"/>
+    <ClInclude Include="include\Poco\Net\MailRecipient.h"/>
+    <ClInclude Include="include\Poco\Net\MailStream.h"/>
+    <ClInclude Include="include\Poco\Net\MediaType.h"/>
+    <ClInclude Include="include\Poco\Net\MessageHeader.h"/>
+    <ClInclude Include="include\Poco\Net\MulticastSocket.h"/>
+    <ClInclude Include="include\Poco\Net\MultipartReader.h"/>
+    <ClInclude Include="include\Poco\Net\MultipartWriter.h"/>
+    <ClInclude Include="include\Poco\Net\NameValueCollection.h"/>
+    <ClInclude Include="include\Poco\Net\Net.h"/>
+    <ClInclude Include="include\Poco\Net\NetException.h"/>
+    <ClInclude Include="include\Poco\Net\NetworkInterface.h"/>
+    <ClInclude Include="include\Poco\Net\NTPClient.h"/>
+    <ClInclude Include="include\Poco\Net\NTPEventArgs.h"/>
+    <ClInclude Include="include\Poco\Net\NTPPacket.h"/>
+    <ClInclude Include="include\Poco\Net\NullPartHandler.h"/>
+    <ClInclude Include="include\Poco\Net\OAuth10Credentials.h"/>
+    <ClInclude Include="include\Poco\Net\OAuth20Credentials.h"/>
+    <ClInclude Include="include\Poco\Net\ParallelSocketAcceptor.h"/>
+    <ClInclude Include="include\Poco\Net\ParallelSocketReactor.h"/>
+    <ClInclude Include="include\Poco\Net\PartHandler.h"/>
+    <ClInclude Include="include\Poco\Net\PartSource.h"/>
+    <ClInclude Include="include\Poco\Net\PartStore.h"/>
+    <ClInclude Include="include\Poco\Net\POP3ClientSession.h"/>
+    <ClInclude Include="include\Poco\Net\QuotedPrintableDecoder.h"/>
+    <ClInclude Include="include\Poco\Net\QuotedPrintableEncoder.h"/>
+    <ClInclude Include="include\Poco\Net\RawSocket.h"/>
+    <ClInclude Include="include\Poco\Net\RawSocketImpl.h"/>
+    <ClInclude Include="include\Poco\Net\RemoteSyslogChannel.h"/>
+    <ClInclude Include="include\Poco\Net\RemoteSyslogListener.h"/>
+    <ClInclude Include="include\Poco\Net\ServerSocket.h"/>
+    <ClInclude Include="include\Poco\Net\ServerSocketImpl.h"/>
+    <ClInclude Include="include\Poco\Net\SMTPChannel.h"/>
+    <ClInclude Include="include\Poco\Net\SMTPClientSession.h"/>
+    <ClInclude Include="include\Poco\Net\Socket.h"/>
+    <ClInclude Include="include\Poco\Net\SocketAcceptor.h"/>
+    <ClInclude Include="include\Poco\Net\SocketAddress.h"/>
+    <ClInclude Include="include\Poco\Net\SocketAddressImpl.h"/>
+    <ClInclude Include="include\Poco\Net\SocketConnector.h"/>
+    <ClInclude Include="include\Poco\Net\SocketDefs.h"/>
+    <ClInclude Include="include\Poco\Net\SocketImpl.h"/>
+    <ClInclude Include="include\Poco\Net\SocketNotification.h"/>
+    <ClInclude Include="include\Poco\Net\SocketNotifier.h"/>
+    <ClInclude Include="include\Poco\Net\SocketReactor.h"/>
+    <ClInclude Include="include\Poco\Net\SocketStream.h"/>
+    <ClInclude Include="include\Poco\Net\StreamSocket.h"/>
+    <ClInclude Include="include\Poco\Net\StreamSocketImpl.h"/>
+    <ClInclude Include="include\Poco\Net\StringPartSource.h"/>
+    <ClInclude Include="include\Poco\Net\TCPServer.h"/>
+    <ClInclude Include="include\Poco\Net\TCPServerConnection.h"/>
+    <ClInclude Include="include\Poco\Net\TCPServerConnectionFactory.h"/>
+    <ClInclude Include="include\Poco\Net\TCPServerDispatcher.h"/>
+    <ClInclude Include="include\Poco\Net\TCPServerParams.h"/>
+    <ClInclude Include="include\Poco\Net\WebSocket.h"/>
+    <ClInclude Include="include\Poco\Net\WebSocketImpl.h"/>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\AbstractHTTPRequestHandler.cpp"/>
+    <ClCompile Include="src\DatagramSocket.cpp"/>
+    <ClCompile Include="src\DatagramSocketImpl.cpp"/>
+    <ClCompile Include="src\DialogSocket.cpp"/>
+    <ClCompile Include="src\DNS.cpp"/>
+    <ClCompile Include="src\FilePartSource.cpp"/>
+    <ClCompile Include="src\FTPClientSession.cpp"/>
+    <ClCompile Include="src\FTPStreamFactory.cpp"/>
+    <ClCompile Include="src\HostEntry.cpp"/>
+    <ClCompile Include="src\HTMLForm.cpp"/>
+    <ClCompile Include="src\HTTPAuthenticationParams.cpp"/>
+    <ClCompile Include="src\HTTPBasicCredentials.cpp"/>
+    <ClCompile Include="src\HTTPBufferAllocator.cpp"/>
+    <ClCompile Include="src\HTTPChunkedStream.cpp"/>
+    <ClCompile Include="src\HTTPClientSession.cpp"/>
+    <ClCompile Include="src\HTTPCookie.cpp"/>
+    <ClCompile Include="src\HTTPCredentials.cpp"/>
+    <ClCompile Include="src\HTTPDigestCredentials.cpp"/>
+    <ClCompile Include="src\HTTPFixedLengthStream.cpp"/>
+    <ClCompile Include="src\HTTPHeaderStream.cpp"/>
+    <ClCompile Include="src\HTTPIOStream.cpp"/>
+    <ClCompile Include="src\HTTPMessage.cpp"/>
+    <ClCompile Include="src\HTTPRequest.cpp"/>
+    <ClCompile Include="src\HTTPRequestHandler.cpp"/>
+    <ClCompile Include="src\HTTPRequestHandlerFactory.cpp"/>
+    <ClCompile Include="src\HTTPResponse.cpp"/>
+    <ClCompile Include="src\HTTPServer.cpp"/>
+    <ClCompile Include="src\HTTPServerConnection.cpp"/>
+    <ClCompile Include="src\HTTPServerConnectionFactory.cpp"/>
+    <ClCompile Include="src\HTTPServerParams.cpp"/>
+    <ClCompile Include="src\HTTPServerRequest.cpp"/>
+    <ClCompile Include="src\HTTPServerRequestImpl.cpp"/>
+    <ClCompile Include="src\HTTPServerResponse.cpp"/>
+    <ClCompile Include="src\HTTPServerResponseImpl.cpp"/>
+    <ClCompile Include="src\HTTPServerSession.cpp"/>
+    <ClCompile Include="src\HTTPSession.cpp"/>
+    <ClCompile Include="src\HTTPSessionFactory.cpp"/>
+    <ClCompile Include="src\HTTPSessionInstantiator.cpp"/>
+    <ClCompile Include="src\HTTPStream.cpp"/>
+    <ClCompile Include="src\HTTPStreamFactory.cpp"/>
+    <ClCompile Include="src\ICMPClient.cpp"/>
+    <ClCompile Include="src\ICMPEventArgs.cpp"/>
+    <ClCompile Include="src\ICMPPacket.cpp"/>
+    <ClCompile Include="src\ICMPPacketImpl.cpp"/>
+    <ClCompile Include="src\ICMPSocket.cpp"/>
+    <ClCompile Include="src\ICMPSocketImpl.cpp"/>
+    <ClCompile Include="src\ICMPv4PacketImpl.cpp"/>
+    <ClCompile Include="src\IPAddress.cpp"/>
+    <ClCompile Include="src\IPAddressImpl.cpp"/>
+    <ClCompile Include="src\MailMessage.cpp"/>
+    <ClCompile Include="src\MailRecipient.cpp"/>
+    <ClCompile Include="src\MailStream.cpp"/>
+    <ClCompile Include="src\MediaType.cpp"/>
+    <ClCompile Include="src\MessageHeader.cpp"/>
+    <ClCompile Include="src\MulticastSocket.cpp"/>
+    <ClCompile Include="src\MultipartReader.cpp"/>
+    <ClCompile Include="src\MultipartWriter.cpp"/>
+    <ClCompile Include="src\NameValueCollection.cpp"/>
+    <ClCompile Include="src\Net.cpp"/>
+    <ClCompile Include="src\NetException.cpp"/>
+    <ClCompile Include="src\NetworkInterface.cpp"/>
+    <ClCompile Include="src\NTPClient.cpp"/>
+    <ClCompile Include="src\NTPEventArgs.cpp"/>
+    <ClCompile Include="src\NTPPacket.cpp"/>
+    <ClCompile Include="src\NullPartHandler.cpp"/>
+    <ClCompile Include="src\OAuth10Credentials.cpp"/>
+    <ClCompile Include="src\OAuth20Credentials.cpp"/>
+    <ClCompile Include="src\PartHandler.cpp"/>
+    <ClCompile Include="src\PartSource.cpp"/>
+    <ClCompile Include="src\PartStore.cpp"/>
+    <ClCompile Include="src\POP3ClientSession.cpp"/>
+    <ClCompile Include="src\QuotedPrintableDecoder.cpp"/>
+    <ClCompile Include="src\QuotedPrintableEncoder.cpp"/>
+    <ClCompile Include="src\RawSocket.cpp"/>
+    <ClCompile Include="src\RawSocketImpl.cpp"/>
+    <ClCompile Include="src\RemoteSyslogChannel.cpp"/>
+    <ClCompile Include="src\RemoteSyslogListener.cpp"/>
+    <ClCompile Include="src\ServerSocket.cpp"/>
+    <ClCompile Include="src\ServerSocketImpl.cpp"/>
+    <ClCompile Include="src\SMTPChannel.cpp"/>
+    <ClCompile Include="src\SMTPClientSession.cpp"/>
+    <ClCompile Include="src\Socket.cpp"/>
+    <ClCompile Include="src\SocketAddress.cpp"/>
+    <ClCompile Include="src\SocketAddressImpl.cpp"/>
+    <ClCompile Include="src\SocketImpl.cpp"/>
+    <ClCompile Include="src\SocketNotification.cpp"/>
+    <ClCompile Include="src\SocketNotifier.cpp"/>
+    <ClCompile Include="src\SocketReactor.cpp"/>
+    <ClCompile Include="src\SocketStream.cpp"/>
+    <ClCompile Include="src\StreamSocket.cpp"/>
+    <ClCompile Include="src\StreamSocketImpl.cpp"/>
+    <ClCompile Include="src\StringPartSource.cpp"/>
+    <ClCompile Include="src\TCPServer.cpp"/>
+    <ClCompile Include="src\TCPServerConnection.cpp"/>
+    <ClCompile Include="src\TCPServerConnectionFactory.cpp"/>
+    <ClCompile Include="src\TCPServerDispatcher.cpp"/>
+    <ClCompile Include="src\TCPServerParams.cpp"/>
+    <ClCompile Include="src\WebSocket.cpp"/>
+    <ClCompile Include="src\WebSocketImpl.cpp"/>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="..\DLLVersion.rc">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='debug_shared|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='debug_static_md|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='debug_static_mt|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='release_shared|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='release_static_md|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='release_static_mt|Win32'">true</ExcludedFromBuild>
+    </ResourceCompile>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets"/>
+  <ImportGroup Label="ExtensionTargets"/>
+</Project>

@@ -1,0 +1,31 @@
+#
+# Zip.vxbuild
+#
+# $Id: //poco/1.4/Zip/Zip.vxbuild#1 $
+#
+TARGET=pocoZip
+CFLAGS="-I../../../Foundation/include"
+SOURCES="
+	Add.cpp
+	AutoDetectStream.cpp
+	Compress.cpp
+	Decompress.cpp
+	Delete.cpp
+	Keep.cpp
+	ParseCallback.cpp
+	PartialStream.cpp
+	Rename.cpp
+	Replace.cpp
+	SkipCallback.cpp
+	ZipArchive.cpp
+	ZipArchiveInfo.cpp
+	ZipCommon.cpp
+	ZipDataInfo.cpp
+	ZipException.cpp
+	ZipFileInfo.cpp
+	ZipLocalFileHeader.cpp
+	ZipManipulator.cpp
+	ZipOperation.cpp
+	ZipStream.cpp
+	ZipUtil.cpp
+"

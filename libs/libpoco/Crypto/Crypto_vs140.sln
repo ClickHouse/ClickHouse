@@ -1,0 +1,60 @@
+Microsoft Visual Studio Solution File, Format Version 14.00
+# Visual Studio 2015
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Crypto", "Crypto_vs140.vcxproj", "{EEEE7259-32E9-4D56-B023-C733940AB2A0}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "TestSuite", "testsuite\TestSuite_vs140.vcxproj", "{C1B1BB96-5198-48EB-AB48-9A0A0B54FB15}"
+	ProjectSection(ProjectDependencies) = postProject
+		{EEEE7259-32E9-4D56-B023-C733940AB2A0} = {EEEE7259-32E9-4D56-B023-C733940AB2A0}
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		debug_shared|Win32 = debug_shared|Win32
+		release_shared|Win32 = release_shared|Win32
+		debug_static_mt|Win32 = debug_static_mt|Win32
+		release_static_mt|Win32 = release_static_mt|Win32
+		debug_static_md|Win32 = debug_static_md|Win32
+		release_static_md|Win32 = release_static_md|Win32
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{EEEE7259-32E9-4D56-B023-C733940AB2A0}.debug_shared|Win32.ActiveCfg = debug_shared|Win32
+		{EEEE7259-32E9-4D56-B023-C733940AB2A0}.debug_shared|Win32.Build.0 = debug_shared|Win32
+		{EEEE7259-32E9-4D56-B023-C733940AB2A0}.debug_shared|Win32.Deploy.0 = debug_shared|Win32
+		{EEEE7259-32E9-4D56-B023-C733940AB2A0}.release_shared|Win32.ActiveCfg = release_shared|Win32
+		{EEEE7259-32E9-4D56-B023-C733940AB2A0}.release_shared|Win32.Build.0 = release_shared|Win32
+		{EEEE7259-32E9-4D56-B023-C733940AB2A0}.release_shared|Win32.Deploy.0 = release_shared|Win32
+		{EEEE7259-32E9-4D56-B023-C733940AB2A0}.debug_static_mt|Win32.ActiveCfg = debug_static_mt|Win32
+		{EEEE7259-32E9-4D56-B023-C733940AB2A0}.debug_static_mt|Win32.Build.0 = debug_static_mt|Win32
+		{EEEE7259-32E9-4D56-B023-C733940AB2A0}.debug_static_mt|Win32.Deploy.0 = debug_static_mt|Win32
+		{EEEE7259-32E9-4D56-B023-C733940AB2A0}.release_static_mt|Win32.ActiveCfg = release_static_mt|Win32
+		{EEEE7259-32E9-4D56-B023-C733940AB2A0}.release_static_mt|Win32.Build.0 = release_static_mt|Win32
+		{EEEE7259-32E9-4D56-B023-C733940AB2A0}.release_static_mt|Win32.Deploy.0 = release_static_mt|Win32
+		{EEEE7259-32E9-4D56-B023-C733940AB2A0}.debug_static_md|Win32.ActiveCfg = debug_static_md|Win32
+		{EEEE7259-32E9-4D56-B023-C733940AB2A0}.debug_static_md|Win32.Build.0 = debug_static_md|Win32
+		{EEEE7259-32E9-4D56-B023-C733940AB2A0}.debug_static_md|Win32.Deploy.0 = debug_static_md|Win32
+		{EEEE7259-32E9-4D56-B023-C733940AB2A0}.release_static_md|Win32.ActiveCfg = release_static_md|Win32
+		{EEEE7259-32E9-4D56-B023-C733940AB2A0}.release_static_md|Win32.Build.0 = release_static_md|Win32
+		{EEEE7259-32E9-4D56-B023-C733940AB2A0}.release_static_md|Win32.Deploy.0 = release_static_md|Win32
+		{C1B1BB96-5198-48EB-AB48-9A0A0B54FB15}.debug_shared|Win32.ActiveCfg = debug_shared|Win32
+		{C1B1BB96-5198-48EB-AB48-9A0A0B54FB15}.debug_shared|Win32.Build.0 = debug_shared|Win32
+		{C1B1BB96-5198-48EB-AB48-9A0A0B54FB15}.debug_shared|Win32.Deploy.0 = debug_shared|Win32
+		{C1B1BB96-5198-48EB-AB48-9A0A0B54FB15}.release_shared|Win32.ActiveCfg = release_shared|Win32
+		{C1B1BB96-5198-48EB-AB48-9A0A0B54FB15}.release_shared|Win32.Build.0 = release_shared|Win32
+		{C1B1BB96-5198-48EB-AB48-9A0A0B54FB15}.release_shared|Win32.Deploy.0 = release_shared|Win32
+		{C1B1BB96-5198-48EB-AB48-9A0A0B54FB15}.debug_static_mt|Win32.ActiveCfg = debug_static_mt|Win32
+		{C1B1BB96-5198-48EB-AB48-9A0A0B54FB15}.debug_static_mt|Win32.Build.0 = debug_static_mt|Win32
+		{C1B1BB96-5198-48EB-AB48-9A0A0B54FB15}.debug_static_mt|Win32.Deploy.0 = debug_static_mt|Win32
+		{C1B1BB96-5198-48EB-AB48-9A0A0B54FB15}.release_static_mt|Win32.ActiveCfg = release_static_mt|Win32
+		{C1B1BB96-5198-48EB-AB48-9A0A0B54FB15}.release_static_mt|Win32.Build.0 = release_static_mt|Win32
+		{C1B1BB96-5198-48EB-AB48-9A0A0B54FB15}.release_static_mt|Win32.Deploy.0 = release_static_mt|Win32
+		{C1B1BB96-5198-48EB-AB48-9A0A0B54FB15}.debug_static_md|Win32.ActiveCfg = debug_static_md|Win32
+		{C1B1BB96-5198-48EB-AB48-9A0A0B54FB15}.debug_static_md|Win32.Build.0 = debug_static_md|Win32
+		{C1B1BB96-5198-48EB-AB48-9A0A0B54FB15}.debug_static_md|Win32.Deploy.0 = debug_static_md|Win32
+		{C1B1BB96-5198-48EB-AB48-9A0A0B54FB15}.release_static_md|Win32.ActiveCfg = release_static_md|Win32
+		{C1B1BB96-5198-48EB-AB48-9A0A0B54FB15}.release_static_md|Win32.Build.0 = release_static_md|Win32
+		{C1B1BB96-5198-48EB-AB48-9A0A0B54FB15}.release_static_md|Win32.Deploy.0 = release_static_md|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

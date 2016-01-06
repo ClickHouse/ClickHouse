@@ -1,0 +1,16 @@
+vc.project.guid = 9E211743-85FE-4977-82F3-4F04B40C912D
+vc.project.name = XML
+vc.project.target = Poco${vc.project.name}
+vc.project.type = library
+vc.project.pocobase = ..
+vc.project.outdir = ${vc.project.pocobase}
+vc.project.platforms = Win32, x64, WinCE
+vc.project.configurations = debug_shared, release_shared, debug_static_mt, release_static_mt, debug_static_md, release_static_md
+vc.project.prototype = ${vc.project.name}_vs90.vcproj
+vc.project.compiler.include = ..\\Foundation\\include
+vc.project.compiler.defines = XML_STATIC;XML_NS;XML_DTD;HAVE_EXPAT_CONFIG_H
+vc.project.compiler.defines.shared = ${vc.project.name}_EXPORTS
+vc.project.compiler.defines.debug_shared = ${vc.project.compiler.defines.shared}
+vc.project.compiler.defines.release_shared = ${vc.project.compiler.defines.shared}
+vc.solution.create = true
+vc.solution.include = testsuite\\TestSuite

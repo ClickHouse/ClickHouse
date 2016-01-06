@@ -1,0 +1,37 @@
+Microsoft Visual Studio Solution File, Format Version 14.00
+# Visual Studio 2015
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "HTTPTimeServer", "HTTPTimeServer\HTTPTimeServer_x64_vs140.vcxproj", "{18A0143A-444A-38E3-838C-1ACFBE4EE18C}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		debug_shared|x64 = debug_shared|x64
+		release_shared|x64 = release_shared|x64
+		debug_static_mt|x64 = debug_static_mt|x64
+		release_static_mt|x64 = release_static_mt|x64
+		debug_static_md|x64 = debug_static_md|x64
+		release_static_md|x64 = release_static_md|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{18A0143A-444A-38E3-838C-1ACFBE4EE18C}.debug_shared|x64.ActiveCfg = debug_shared|x64
+		{18A0143A-444A-38E3-838C-1ACFBE4EE18C}.debug_shared|x64.Build.0 = debug_shared|x64
+		{18A0143A-444A-38E3-838C-1ACFBE4EE18C}.debug_shared|x64.Deploy.0 = debug_shared|x64
+		{18A0143A-444A-38E3-838C-1ACFBE4EE18C}.release_shared|x64.ActiveCfg = release_shared|x64
+		{18A0143A-444A-38E3-838C-1ACFBE4EE18C}.release_shared|x64.Build.0 = release_shared|x64
+		{18A0143A-444A-38E3-838C-1ACFBE4EE18C}.release_shared|x64.Deploy.0 = release_shared|x64
+		{18A0143A-444A-38E3-838C-1ACFBE4EE18C}.debug_static_mt|x64.ActiveCfg = debug_static_mt|x64
+		{18A0143A-444A-38E3-838C-1ACFBE4EE18C}.debug_static_mt|x64.Build.0 = debug_static_mt|x64
+		{18A0143A-444A-38E3-838C-1ACFBE4EE18C}.debug_static_mt|x64.Deploy.0 = debug_static_mt|x64
+		{18A0143A-444A-38E3-838C-1ACFBE4EE18C}.release_static_mt|x64.ActiveCfg = release_static_mt|x64
+		{18A0143A-444A-38E3-838C-1ACFBE4EE18C}.release_static_mt|x64.Build.0 = release_static_mt|x64
+		{18A0143A-444A-38E3-838C-1ACFBE4EE18C}.release_static_mt|x64.Deploy.0 = release_static_mt|x64
+		{18A0143A-444A-38E3-838C-1ACFBE4EE18C}.debug_static_md|x64.ActiveCfg = debug_static_md|x64
+		{18A0143A-444A-38E3-838C-1ACFBE4EE18C}.debug_static_md|x64.Build.0 = debug_static_md|x64
+		{18A0143A-444A-38E3-838C-1ACFBE4EE18C}.debug_static_md|x64.Deploy.0 = debug_static_md|x64
+		{18A0143A-444A-38E3-838C-1ACFBE4EE18C}.release_static_md|x64.ActiveCfg = release_static_md|x64
+		{18A0143A-444A-38E3-838C-1ACFBE4EE18C}.release_static_md|x64.Build.0 = release_static_md|x64
+		{18A0143A-444A-38E3-838C-1ACFBE4EE18C}.release_static_md|x64.Deploy.0 = release_static_md|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

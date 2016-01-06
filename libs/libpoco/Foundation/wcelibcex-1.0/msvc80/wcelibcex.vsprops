@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="windows-1250"?>
+<VisualStudioPropertySheet
+	ProjectType="Visual C++"
+	Version="8.00"
+	Name="wcelibcex"
+	>
+	<Tool
+		Name="VCCLCompilerTool"
+		AdditionalIncludeDirectories="$(WCELIBCEX_DIR)"
+	/>
+	<UserMacro
+		Name="WCELIBCEX_DIR"
+		Value="$(ProjectDir)..\src"
+	/>
+</VisualStudioPropertySheet>

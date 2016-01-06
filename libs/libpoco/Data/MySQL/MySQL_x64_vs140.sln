@@ -1,0 +1,60 @@
+Microsoft Visual Studio Solution File, Format Version 14.00
+# Visual Studio 2015
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MySQL", "MySQL_x64_vs140.vcxproj", "{73E19FDE-1570-488C-B3DB-72A60FADD408}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "TestSuite", "testsuite\TestSuite_x64_vs140.vcxproj", "{4D6E42AE-EB6A-47EB-A186-B8A183FABCF7}"
+	ProjectSection(ProjectDependencies) = postProject
+		{73E19FDE-1570-488C-B3DB-72A60FADD408} = {73E19FDE-1570-488C-B3DB-72A60FADD408}
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		debug_shared|x64 = debug_shared|x64
+		release_shared|x64 = release_shared|x64
+		debug_static_mt|x64 = debug_static_mt|x64
+		release_static_mt|x64 = release_static_mt|x64
+		debug_static_md|x64 = debug_static_md|x64
+		release_static_md|x64 = release_static_md|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{73E19FDE-1570-488C-B3DB-72A60FADD408}.debug_shared|x64.ActiveCfg = debug_shared|x64
+		{73E19FDE-1570-488C-B3DB-72A60FADD408}.debug_shared|x64.Build.0 = debug_shared|x64
+		{73E19FDE-1570-488C-B3DB-72A60FADD408}.debug_shared|x64.Deploy.0 = debug_shared|x64
+		{73E19FDE-1570-488C-B3DB-72A60FADD408}.release_shared|x64.ActiveCfg = release_shared|x64
+		{73E19FDE-1570-488C-B3DB-72A60FADD408}.release_shared|x64.Build.0 = release_shared|x64
+		{73E19FDE-1570-488C-B3DB-72A60FADD408}.release_shared|x64.Deploy.0 = release_shared|x64
+		{73E19FDE-1570-488C-B3DB-72A60FADD408}.debug_static_mt|x64.ActiveCfg = debug_static_mt|x64
+		{73E19FDE-1570-488C-B3DB-72A60FADD408}.debug_static_mt|x64.Build.0 = debug_static_mt|x64
+		{73E19FDE-1570-488C-B3DB-72A60FADD408}.debug_static_mt|x64.Deploy.0 = debug_static_mt|x64
+		{73E19FDE-1570-488C-B3DB-72A60FADD408}.release_static_mt|x64.ActiveCfg = release_static_mt|x64
+		{73E19FDE-1570-488C-B3DB-72A60FADD408}.release_static_mt|x64.Build.0 = release_static_mt|x64
+		{73E19FDE-1570-488C-B3DB-72A60FADD408}.release_static_mt|x64.Deploy.0 = release_static_mt|x64
+		{73E19FDE-1570-488C-B3DB-72A60FADD408}.debug_static_md|x64.ActiveCfg = debug_static_md|x64
+		{73E19FDE-1570-488C-B3DB-72A60FADD408}.debug_static_md|x64.Build.0 = debug_static_md|x64
+		{73E19FDE-1570-488C-B3DB-72A60FADD408}.debug_static_md|x64.Deploy.0 = debug_static_md|x64
+		{73E19FDE-1570-488C-B3DB-72A60FADD408}.release_static_md|x64.ActiveCfg = release_static_md|x64
+		{73E19FDE-1570-488C-B3DB-72A60FADD408}.release_static_md|x64.Build.0 = release_static_md|x64
+		{73E19FDE-1570-488C-B3DB-72A60FADD408}.release_static_md|x64.Deploy.0 = release_static_md|x64
+		{4D6E42AE-EB6A-47EB-A186-B8A183FABCF7}.debug_shared|x64.ActiveCfg = debug_shared|x64
+		{4D6E42AE-EB6A-47EB-A186-B8A183FABCF7}.debug_shared|x64.Build.0 = debug_shared|x64
+		{4D6E42AE-EB6A-47EB-A186-B8A183FABCF7}.debug_shared|x64.Deploy.0 = debug_shared|x64
+		{4D6E42AE-EB6A-47EB-A186-B8A183FABCF7}.release_shared|x64.ActiveCfg = release_shared|x64
+		{4D6E42AE-EB6A-47EB-A186-B8A183FABCF7}.release_shared|x64.Build.0 = release_shared|x64
+		{4D6E42AE-EB6A-47EB-A186-B8A183FABCF7}.release_shared|x64.Deploy.0 = release_shared|x64
+		{4D6E42AE-EB6A-47EB-A186-B8A183FABCF7}.debug_static_mt|x64.ActiveCfg = debug_static_mt|x64
+		{4D6E42AE-EB6A-47EB-A186-B8A183FABCF7}.debug_static_mt|x64.Build.0 = debug_static_mt|x64
+		{4D6E42AE-EB6A-47EB-A186-B8A183FABCF7}.debug_static_mt|x64.Deploy.0 = debug_static_mt|x64
+		{4D6E42AE-EB6A-47EB-A186-B8A183FABCF7}.release_static_mt|x64.ActiveCfg = release_static_mt|x64
+		{4D6E42AE-EB6A-47EB-A186-B8A183FABCF7}.release_static_mt|x64.Build.0 = release_static_mt|x64
+		{4D6E42AE-EB6A-47EB-A186-B8A183FABCF7}.release_static_mt|x64.Deploy.0 = release_static_mt|x64
+		{4D6E42AE-EB6A-47EB-A186-B8A183FABCF7}.debug_static_md|x64.ActiveCfg = debug_static_md|x64
+		{4D6E42AE-EB6A-47EB-A186-B8A183FABCF7}.debug_static_md|x64.Build.0 = debug_static_md|x64
+		{4D6E42AE-EB6A-47EB-A186-B8A183FABCF7}.debug_static_md|x64.Deploy.0 = debug_static_md|x64
+		{4D6E42AE-EB6A-47EB-A186-B8A183FABCF7}.release_static_md|x64.ActiveCfg = release_static_md|x64
+		{4D6E42AE-EB6A-47EB-A186-B8A183FABCF7}.release_static_md|x64.Build.0 = release_static_md|x64
+		{4D6E42AE-EB6A-47EB-A186-B8A183FABCF7}.release_static_md|x64.Deploy.0 = release_static_md|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

@@ -1,0 +1,17 @@
+vc.project.guid = 240E83C3-368D-11DB-9FBC-00123FC423B5
+vc.project.name = Data
+vc.project.target = Poco${vc.project.name}
+vc.project.type = library
+vc.project.pocobase = ..
+vc.project.outdir = ${vc.project.pocobase}
+vc.project.platforms = Win32, x64, WinCE
+vc.project.configurations = debug_shared, release_shared, debug_static_mt, release_static_mt, debug_static_md, release_static_md
+vc.project.prototype = ${vc.project.name}_vs90.vcproj
+vc.project.compiler.include = ..\\Foundation\\include
+vc.project.compiler.defines = 
+vc.project.compiler.defines.shared = ${vc.project.name}_EXPORTS
+vc.project.compiler.defines.debug_shared = ${vc.project.compiler.defines.shared}
+vc.project.compiler.defines.release_shared = ${vc.project.compiler.defines.shared}
+vc.project.compiler.additionalOptions.x64 = /bigobj
+vc.solution.create = true
+vc.solution.include = testsuite\\TestSuite

@@ -1,0 +1,60 @@
+Microsoft Visual Studio Solution File, Format Version 14.00
+# Visual Studio 2015
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MongoDB", "MongoDB_x64_vs140.vcxproj", "{4FF2F34B-7F37-3ACD-AFBC-F21D6D426199}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "TestSuite", "testsuite\TestSuite_x64_vs140.vcxproj", "{96CF3103-E49E-3F5E-A11D-6DBCDA043053}"
+	ProjectSection(ProjectDependencies) = postProject
+		{4FF2F34B-7F37-3ACD-AFBC-F21D6D426199} = {4FF2F34B-7F37-3ACD-AFBC-F21D6D426199}
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		debug_shared|x64 = debug_shared|x64
+		release_shared|x64 = release_shared|x64
+		debug_static_mt|x64 = debug_static_mt|x64
+		release_static_mt|x64 = release_static_mt|x64
+		debug_static_md|x64 = debug_static_md|x64
+		release_static_md|x64 = release_static_md|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{4FF2F34B-7F37-3ACD-AFBC-F21D6D426199}.debug_shared|x64.ActiveCfg = debug_shared|x64
+		{4FF2F34B-7F37-3ACD-AFBC-F21D6D426199}.debug_shared|x64.Build.0 = debug_shared|x64
+		{4FF2F34B-7F37-3ACD-AFBC-F21D6D426199}.debug_shared|x64.Deploy.0 = debug_shared|x64
+		{4FF2F34B-7F37-3ACD-AFBC-F21D6D426199}.release_shared|x64.ActiveCfg = release_shared|x64
+		{4FF2F34B-7F37-3ACD-AFBC-F21D6D426199}.release_shared|x64.Build.0 = release_shared|x64
+		{4FF2F34B-7F37-3ACD-AFBC-F21D6D426199}.release_shared|x64.Deploy.0 = release_shared|x64
+		{4FF2F34B-7F37-3ACD-AFBC-F21D6D426199}.debug_static_mt|x64.ActiveCfg = debug_static_mt|x64
+		{4FF2F34B-7F37-3ACD-AFBC-F21D6D426199}.debug_static_mt|x64.Build.0 = debug_static_mt|x64
+		{4FF2F34B-7F37-3ACD-AFBC-F21D6D426199}.debug_static_mt|x64.Deploy.0 = debug_static_mt|x64
+		{4FF2F34B-7F37-3ACD-AFBC-F21D6D426199}.release_static_mt|x64.ActiveCfg = release_static_mt|x64
+		{4FF2F34B-7F37-3ACD-AFBC-F21D6D426199}.release_static_mt|x64.Build.0 = release_static_mt|x64
+		{4FF2F34B-7F37-3ACD-AFBC-F21D6D426199}.release_static_mt|x64.Deploy.0 = release_static_mt|x64
+		{4FF2F34B-7F37-3ACD-AFBC-F21D6D426199}.debug_static_md|x64.ActiveCfg = debug_static_md|x64
+		{4FF2F34B-7F37-3ACD-AFBC-F21D6D426199}.debug_static_md|x64.Build.0 = debug_static_md|x64
+		{4FF2F34B-7F37-3ACD-AFBC-F21D6D426199}.debug_static_md|x64.Deploy.0 = debug_static_md|x64
+		{4FF2F34B-7F37-3ACD-AFBC-F21D6D426199}.release_static_md|x64.ActiveCfg = release_static_md|x64
+		{4FF2F34B-7F37-3ACD-AFBC-F21D6D426199}.release_static_md|x64.Build.0 = release_static_md|x64
+		{4FF2F34B-7F37-3ACD-AFBC-F21D6D426199}.release_static_md|x64.Deploy.0 = release_static_md|x64
+		{96CF3103-E49E-3F5E-A11D-6DBCDA043053}.debug_shared|x64.ActiveCfg = debug_shared|x64
+		{96CF3103-E49E-3F5E-A11D-6DBCDA043053}.debug_shared|x64.Build.0 = debug_shared|x64
+		{96CF3103-E49E-3F5E-A11D-6DBCDA043053}.debug_shared|x64.Deploy.0 = debug_shared|x64
+		{96CF3103-E49E-3F5E-A11D-6DBCDA043053}.release_shared|x64.ActiveCfg = release_shared|x64
+		{96CF3103-E49E-3F5E-A11D-6DBCDA043053}.release_shared|x64.Build.0 = release_shared|x64
+		{96CF3103-E49E-3F5E-A11D-6DBCDA043053}.release_shared|x64.Deploy.0 = release_shared|x64
+		{96CF3103-E49E-3F5E-A11D-6DBCDA043053}.debug_static_mt|x64.ActiveCfg = debug_static_mt|x64
+		{96CF3103-E49E-3F5E-A11D-6DBCDA043053}.debug_static_mt|x64.Build.0 = debug_static_mt|x64
+		{96CF3103-E49E-3F5E-A11D-6DBCDA043053}.debug_static_mt|x64.Deploy.0 = debug_static_mt|x64
+		{96CF3103-E49E-3F5E-A11D-6DBCDA043053}.release_static_mt|x64.ActiveCfg = release_static_mt|x64
+		{96CF3103-E49E-3F5E-A11D-6DBCDA043053}.release_static_mt|x64.Build.0 = release_static_mt|x64
+		{96CF3103-E49E-3F5E-A11D-6DBCDA043053}.release_static_mt|x64.Deploy.0 = release_static_mt|x64
+		{96CF3103-E49E-3F5E-A11D-6DBCDA043053}.debug_static_md|x64.ActiveCfg = debug_static_md|x64
+		{96CF3103-E49E-3F5E-A11D-6DBCDA043053}.debug_static_md|x64.Build.0 = debug_static_md|x64
+		{96CF3103-E49E-3F5E-A11D-6DBCDA043053}.debug_static_md|x64.Deploy.0 = debug_static_md|x64
+		{96CF3103-E49E-3F5E-A11D-6DBCDA043053}.release_static_md|x64.ActiveCfg = release_static_md|x64
+		{96CF3103-E49E-3F5E-A11D-6DBCDA043053}.release_static_md|x64.Build.0 = release_static_md|x64
+		{96CF3103-E49E-3F5E-A11D-6DBCDA043053}.release_static_md|x64.Deploy.0 = release_static_md|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

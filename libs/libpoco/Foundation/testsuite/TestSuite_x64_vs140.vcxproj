@@ -1,0 +1,593 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="debug_shared|x64">
+      <Configuration>debug_shared</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="debug_static_md|x64">
+      <Configuration>debug_static_md</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="debug_static_mt|x64">
+      <Configuration>debug_static_mt</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="release_shared|x64">
+      <Configuration>release_shared</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="release_static_md|x64">
+      <Configuration>release_static_md</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="release_static_mt|x64">
+      <Configuration>release_static_mt</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectName>TestSuite</ProjectName>
+    <ProjectGuid>{F1EE93DF-347F-4CB3-B191-C4E63F38E972}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='release_static_mt|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseOfMfc>false</UseOfMfc>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v140</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='debug_static_mt|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseOfMfc>false</UseOfMfc>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v140</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='debug_static_md|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseOfMfc>false</UseOfMfc>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v140</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='release_static_md|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseOfMfc>false</UseOfMfc>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v140</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='release_shared|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseOfMfc>false</UseOfMfc>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v140</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='debug_shared|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseOfMfc>false</UseOfMfc>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v140</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='release_static_mt|x64'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='debug_static_mt|x64'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='debug_static_md|x64'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='release_static_md|x64'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='release_shared|x64'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='debug_shared|x64'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <_ProjectFileVersion>10.0.30319.1</_ProjectFileVersion>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='debug_shared|x64'">bin64\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='debug_shared|x64'">obj64\TestSuite\$(Configuration)\</IntDir>
+    <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='debug_shared|x64'">true</LinkIncremental>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='release_shared|x64'">bin64\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='release_shared|x64'">obj64\TestSuite\$(Configuration)\</IntDir>
+    <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='release_shared|x64'">false</LinkIncremental>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='release_static_md|x64'">bin64\static_md\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='release_static_md|x64'">obj64\TestSuite\$(Configuration)\</IntDir>
+    <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='release_static_md|x64'">false</LinkIncremental>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='debug_static_md|x64'">bin64\static_md\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='debug_static_md|x64'">obj64\TestSuite\$(Configuration)\</IntDir>
+    <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='debug_static_md|x64'">true</LinkIncremental>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='debug_static_mt|x64'">bin64\static_mt\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='debug_static_mt|x64'">obj64\TestSuite\$(Configuration)\</IntDir>
+    <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='debug_static_mt|x64'">true</LinkIncremental>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='release_static_mt|x64'">bin64\static_mt\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='release_static_mt|x64'">obj64\TestSuite\$(Configuration)\</IntDir>
+    <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='release_static_mt|x64'">false</LinkIncremental>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='debug_shared|x64'">TestSuited</TargetName>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='debug_static_md|x64'">TestSuited</TargetName>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='debug_static_mt|x64'">TestSuited</TargetName>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='release_shared|x64'">TestSuite</TargetName>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='release_static_md|x64'">TestSuite</TargetName>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='release_static_mt|x64'">TestSuite</TargetName>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='debug_shared|x64'">
+    <ClCompile>
+      <Optimization>Disabled</Optimization>
+      <AdditionalIncludeDirectories>..\include;..\..\CppUnit\include;..\..\CppUnit\WinTestRunner\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;WINVER=0x0600;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <MinimalRebuild>true</MinimalRebuild>
+      <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <BufferSecurityCheck>true</BufferSecurityCheck>
+      <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
+      <ForceConformanceInForLoopScope>true</ForceConformanceInForLoopScope>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <PrecompiledHeader>
+      </PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <AdditionalOptions>/FS</AdditionalOptions>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>CppUnitd.lib;PocoFoundationd.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <OutputFile>bin64\TestSuited.exe</OutputFile>
+      <AdditionalLibraryDirectories>..\..\lib64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <ProgramDatabaseFile>bin64\TestSuited.pdb</ProgramDatabaseFile>
+      <SubSystem>Console</SubSystem>
+      <TargetMachine>MachineX64</TargetMachine>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='release_shared|x64'">
+    <ClCompile>
+      <Optimization>Custom</Optimization>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <OmitFramePointers>true</OmitFramePointers>
+      <AdditionalIncludeDirectories>..\include;..\..\CppUnit\include;..\..\CppUnit\WinTestRunner\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;WINVER=0x0600;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <StringPooling>true</StringPooling>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
+      <ForceConformanceInForLoopScope>true</ForceConformanceInForLoopScope>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <PrecompiledHeader>
+      </PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat>
+      </DebugInformationFormat>
+      <AdditionalOptions>/FS</AdditionalOptions>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>CppUnit.lib;PocoFoundation.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <OutputFile>bin64\TestSuite.exe</OutputFile>
+      <AdditionalLibraryDirectories>..\..\lib64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <ProgramDatabaseFile>
+      </ProgramDatabaseFile>
+      <SubSystem>Console</SubSystem>
+      <OptimizeReferences>true</OptimizeReferences>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <TargetMachine>MachineX64</TargetMachine>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='release_static_md|x64'">
+    <ClCompile>
+      <Optimization>Custom</Optimization>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <OmitFramePointers>true</OmitFramePointers>
+      <AdditionalIncludeDirectories>..\include;..\..\CppUnit\include;..\..\CppUnit\WinTestRunner\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;WINVER=0x0600;POCO_STATIC;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <StringPooling>true</StringPooling>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
+      <ForceConformanceInForLoopScope>true</ForceConformanceInForLoopScope>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <PrecompiledHeader>
+      </PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat>
+      </DebugInformationFormat>
+      <AdditionalOptions>/FS</AdditionalOptions>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>CppUnitmd.lib;PocoFoundationmd.lib;iphlpapi.lib;winmm.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <OutputFile>bin64\static_md\TestSuite.exe</OutputFile>
+      <AdditionalLibraryDirectories>..\..\lib64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <ProgramDatabaseFile>
+      </ProgramDatabaseFile>
+      <SubSystem>Console</SubSystem>
+      <OptimizeReferences>true</OptimizeReferences>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <TargetMachine>MachineX64</TargetMachine>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='debug_static_md|x64'">
+    <ClCompile>
+      <Optimization>Disabled</Optimization>
+      <AdditionalIncludeDirectories>..\include;..\..\CppUnit\include;..\..\CppUnit\WinTestRunner\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;WINVER=0x0600;POCO_STATIC;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <MinimalRebuild>true</MinimalRebuild>
+      <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <BufferSecurityCheck>true</BufferSecurityCheck>
+      <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
+      <ForceConformanceInForLoopScope>true</ForceConformanceInForLoopScope>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <PrecompiledHeader>
+      </PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <AdditionalOptions>/FS</AdditionalOptions>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>CppUnitmdd.lib;PocoFoundationmdd.lib;iphlpapi.lib;winmm.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <OutputFile>bin64\static_md\TestSuited.exe</OutputFile>
+      <AdditionalLibraryDirectories>..\..\lib64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <ProgramDatabaseFile>bin64\static_md\TestSuited.pdb</ProgramDatabaseFile>
+      <SubSystem>Console</SubSystem>
+      <TargetMachine>MachineX64</TargetMachine>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='debug_static_mt|x64'">
+    <ClCompile>
+      <Optimization>Disabled</Optimization>
+      <AdditionalIncludeDirectories>..\include;..\..\CppUnit\include;..\..\CppUnit\WinTestRunner\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;WINVER=0x0600;POCO_STATIC;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <MinimalRebuild>true</MinimalRebuild>
+      <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <BufferSecurityCheck>true</BufferSecurityCheck>
+      <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
+      <ForceConformanceInForLoopScope>true</ForceConformanceInForLoopScope>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <PrecompiledHeader>
+      </PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <AdditionalOptions>/FS</AdditionalOptions>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>CppUnitmtd.lib;PocoFoundationmtd.lib;iphlpapi.lib;winmm.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <OutputFile>bin64\static_mt\TestSuited.exe</OutputFile>
+      <AdditionalLibraryDirectories>..\..\lib64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <ProgramDatabaseFile>bin64\static_mt\TestSuited.pdb</ProgramDatabaseFile>
+      <SubSystem>Console</SubSystem>
+      <TargetMachine>MachineX64</TargetMachine>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='release_static_mt|x64'">
+    <ClCompile>
+      <Optimization>Custom</Optimization>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <OmitFramePointers>true</OmitFramePointers>
+      <AdditionalIncludeDirectories>..\include;..\..\CppUnit\include;..\..\CppUnit\WinTestRunner\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;WINVER=0x0600;POCO_STATIC;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <StringPooling>true</StringPooling>
+      <MinimalRebuild>false</MinimalRebuild>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
+      <ForceConformanceInForLoopScope>true</ForceConformanceInForLoopScope>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <PrecompiledHeader>
+      </PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat>
+      </DebugInformationFormat>
+      <AdditionalOptions>/FS</AdditionalOptions>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>CppUnitmt.lib;PocoFoundationmt.lib;iphlpapi.lib;winmm.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <OutputFile>bin64\static_mt\TestSuite.exe</OutputFile>
+      <AdditionalLibraryDirectories>..\..\lib64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <ProgramDatabaseFile>
+      </ProgramDatabaseFile>
+      <SubSystem>Console</SubSystem>
+      <OptimizeReferences>true</OptimizeReferences>
+      <EnableCOMDATFolding>false</EnableCOMDATFolding>
+      <TargetMachine>MachineX64</TargetMachine>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="src\AnyTest.cpp" />
+    <ClCompile Include="src\ArrayTest.cpp" />
+    <ClCompile Include="src\AutoPtrTest.cpp" />
+    <ClCompile Include="src\AutoReleasePoolTest.cpp" />
+    <ClCompile Include="src\ByteOrderTest.cpp" />
+    <ClCompile Include="src\CoreTest.cpp" />
+    <ClCompile Include="src\CoreTestSuite.cpp" />
+    <ClCompile Include="src\DirectoryIteratorsTest.cpp" />
+    <ClCompile Include="src\DirectoryWatcherTest.cpp" />
+    <ClCompile Include="src\Driver.cpp" />
+    <ClCompile Include="src\DynamicFactoryTest.cpp" />
+    <ClCompile Include="src\FIFOBufferStreamTest.cpp" />
+    <ClCompile Include="src\FormatTest.cpp" />
+    <ClCompile Include="src\FPETest.cpp" />
+    <ClCompile Include="src\ListMapTest.cpp" />
+    <ClCompile Include="src\MemoryPoolTest.cpp" />
+    <ClCompile Include="src\NamedTuplesTest.cpp" />
+    <ClCompile Include="src\NDCTest.cpp" />
+    <ClCompile Include="src\NumberFormatterTest.cpp" />
+    <ClCompile Include="src\NumberParserTest.cpp" />
+    <ClCompile Include="src\ObjectPoolTest.cpp" />
+    <ClCompile Include="src\PBKDF2EngineTest.cpp" />
+    <ClCompile Include="src\RegularExpressionTest.cpp" />
+    <ClCompile Include="src\SharedPtrTest.cpp" />
+    <ClCompile Include="src\StringTest.cpp" />
+    <ClCompile Include="src\StringTokenizerTest.cpp" />
+    <ClCompile Include="src\TuplesTest.cpp" />
+    <ClCompile Include="src\TypeListTest.cpp" />
+    <ClCompile Include="src\Base32Test.cpp" />
+    <ClCompile Include="src\Base64Test.cpp" />
+    <ClCompile Include="src\BinaryReaderWriterTest.cpp" />
+    <ClCompile Include="src\CountingStreamTest.cpp" />
+    <ClCompile Include="src\FileStreamTest.cpp" />
+    <ClCompile Include="src\HexBinaryTest.cpp" />
+    <ClCompile Include="src\LineEndingConverterTest.cpp" />
+    <ClCompile Include="src\MemoryStreamTest.cpp" />
+    <ClCompile Include="src\NullStreamTest.cpp" />
+    <ClCompile Include="src\StreamCopierTest.cpp" />
+    <ClCompile Include="src\StreamsTestSuite.cpp" />
+    <ClCompile Include="src\StreamTokenizerTest.cpp" />
+    <ClCompile Include="src\TeeStreamTest.cpp" />
+    <ClCompile Include="src\VarTest.cpp" />
+    <ClCompile Include="src\ZLibTest.cpp" />
+    <ClCompile Include="src\CryptTestSuite.cpp" />
+    <ClCompile Include="src\DigestStreamTest.cpp" />
+    <ClCompile Include="src\HMACEngineTest.cpp" />
+    <ClCompile Include="src\MD4EngineTest.cpp" />
+    <ClCompile Include="src\MD5EngineTest.cpp" />
+    <ClCompile Include="src\RandomStreamTest.cpp" />
+    <ClCompile Include="src\RandomTest.cpp" />
+    <ClCompile Include="src\SHA1EngineTest.cpp" />
+    <ClCompile Include="src\NotificationCenterTest.cpp" />
+    <ClCompile Include="src\NotificationQueueTest.cpp" />
+    <ClCompile Include="src\NotificationsTestSuite.cpp" />
+    <ClCompile Include="src\PriorityNotificationQueueTest.cpp" />
+    <ClCompile Include="src\TimedNotificationQueueTest.cpp" />
+    <ClCompile Include="src\ActiveDispatcherTest.cpp" />
+    <ClCompile Include="src\ActiveMethodTest.cpp" />
+    <ClCompile Include="src\ActivityTest.cpp" />
+    <ClCompile Include="src\ConditionTest.cpp" />
+    <ClCompile Include="src\RWLockTest.cpp" />
+    <ClCompile Include="src\SemaphoreTest.cpp" />
+    <ClCompile Include="src\ThreadingTestSuite.cpp" />
+    <ClCompile Include="src\ThreadLocalTest.cpp" />
+    <ClCompile Include="src\ThreadPoolTest.cpp" />
+    <ClCompile Include="src\ThreadTest.cpp" />
+    <ClCompile Include="src\TimerTest.cpp" />
+    <ClCompile Include="src\ClassLoaderTest.cpp" />
+    <ClCompile Include="src\ManifestTest.cpp" />
+    <ClCompile Include="src\SharedLibraryTest.cpp" />
+    <ClCompile Include="src\SharedLibraryTestSuite.cpp" />
+    <ClCompile Include="src\TestPlugin.cpp" />
+    <ClCompile Include="src\ChannelTest.cpp" />
+    <ClCompile Include="src\FileChannelTest.cpp" />
+    <ClCompile Include="src\LoggerTest.cpp" />
+    <ClCompile Include="src\LoggingFactoryTest.cpp" />
+    <ClCompile Include="src\LoggingRegistryTest.cpp" />
+    <ClCompile Include="src\LoggingTestSuite.cpp" />
+    <ClCompile Include="src\LogStreamTest.cpp" />
+    <ClCompile Include="src\PatternFormatterTest.cpp" />
+    <ClCompile Include="src\SimpleFileChannelTest.cpp" />
+    <ClCompile Include="src\TestChannel.cpp" />
+    <ClCompile Include="src\FilesystemTestSuite.cpp" />
+    <ClCompile Include="src\FileTest.cpp" />
+    <ClCompile Include="src\GlobTest.cpp" />
+    <ClCompile Include="src\PathTest.cpp" />
+    <ClCompile Include="src\UUIDGeneratorTest.cpp" />
+    <ClCompile Include="src\UUIDTest.cpp" />
+    <ClCompile Include="src\UUIDTestSuite.cpp" />
+    <ClCompile Include="src\ClockTest.cpp" />
+    <ClCompile Include="src\DateTimeFormatterTest.cpp" />
+    <ClCompile Include="src\DateTimeParserTest.cpp" />
+    <ClCompile Include="src\DateTimeTest.cpp" />
+    <ClCompile Include="src\DateTimeTestSuite.cpp" />
+    <ClCompile Include="src\LocalDateTimeTest.cpp" />
+    <ClCompile Include="src\StopwatchTest.cpp" />
+    <ClCompile Include="src\TimespanTest.cpp" />
+    <ClCompile Include="src\TimestampTest.cpp" />
+    <ClCompile Include="src\TimezoneTest.cpp" />
+    <ClCompile Include="src\StreamConverterTest.cpp" />
+    <ClCompile Include="src\TextBufferIteratorTest.cpp" />
+    <ClCompile Include="src\TextConverterTest.cpp" />
+    <ClCompile Include="src\TextEncodingTest.cpp" />
+    <ClCompile Include="src\TextIteratorTest.cpp" />
+    <ClCompile Include="src\TextTestSuite.cpp" />
+    <ClCompile Include="src\UnicodeConverterTest.cpp" />
+    <ClCompile Include="src\UTF8StringTest.cpp" />
+    <ClCompile Include="src\URIStreamOpenerTest.cpp" />
+    <ClCompile Include="src\URITest.cpp" />
+    <ClCompile Include="src\URITestSuite.cpp" />
+    <ClCompile Include="src\FoundationTestSuite.cpp" />
+    <ClCompile Include="src\NamedEventTest.cpp" />
+    <ClCompile Include="src\NamedMutexTest.cpp" />
+    <ClCompile Include="src\ProcessesTestSuite.cpp" />
+    <ClCompile Include="src\ProcessTest.cpp" />
+    <ClCompile Include="src\SharedMemoryTest.cpp" />
+    <ClCompile Include="src\TaskManagerTest.cpp" />
+    <ClCompile Include="src\TaskTest.cpp" />
+    <ClCompile Include="src\TaskTestSuite.cpp" />
+    <ClCompile Include="src\BasicEventTest.cpp" />
+    <ClCompile Include="src\DummyDelegate.cpp" />
+    <ClCompile Include="src\EventTestSuite.cpp" />
+    <ClCompile Include="src\FIFOEventTest.cpp" />
+    <ClCompile Include="src\PriorityEventTest.cpp" />
+    <ClCompile Include="src\CacheTestSuite.cpp" />
+    <ClCompile Include="src\ExpireCacheTest.cpp" />
+    <ClCompile Include="src\ExpireLRUCacheTest.cpp" />
+    <ClCompile Include="src\LRUCacheTest.cpp" />
+    <ClCompile Include="src\UniqueExpireCacheTest.cpp" />
+    <ClCompile Include="src\UniqueExpireLRUCacheTest.cpp" />
+    <ClCompile Include="src\HashingTestSuite.cpp" />
+    <ClCompile Include="src\HashMapTest.cpp" />
+    <ClCompile Include="src\HashSetTest.cpp" />
+    <ClCompile Include="src\HashTableTest.cpp" />
+    <ClCompile Include="src\LinearHashTableTest.cpp" />
+    <ClCompile Include="src\SimpleHashTableTest.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\AnyTest.h" />
+    <ClInclude Include="src\ArrayTest.h" />
+    <ClInclude Include="src\AutoPtrTest.h" />
+    <ClInclude Include="src\AutoReleasePoolTest.h" />
+    <ClInclude Include="src\ByteOrderTest.h" />
+    <ClInclude Include="src\CoreTest.h" />
+    <ClInclude Include="src\CoreTestSuite.h" />
+    <ClInclude Include="src\DirectoryIteratorsTest.h" />
+    <ClInclude Include="src\DirectoryWatcherTest.h" />
+    <ClInclude Include="src\DynamicAnyTest.h" />
+    <ClInclude Include="src\DynamicFactoryTest.h" />
+    <ClInclude Include="src\FIFOBufferStreamTest.h" />
+    <ClInclude Include="src\FormatTest.h" />
+    <ClInclude Include="src\FPETest.h" />
+    <ClInclude Include="src\ListMapTest.h" />
+    <ClInclude Include="src\MemoryPoolTest.h" />
+    <ClInclude Include="src\NamedTuplesTest.h" />
+    <ClInclude Include="src\NDCTest.h" />
+    <ClInclude Include="src\NumberFormatterTest.h" />
+    <ClInclude Include="src\NumberParserTest.h" />
+    <ClInclude Include="src\ObjectPoolTest.h" />
+    <ClInclude Include="src\PBKDF2EngineTest.h" />
+    <ClInclude Include="src\RegularExpressionTest.h" />
+    <ClInclude Include="src\SharedPtrTest.h" />
+    <ClInclude Include="src\StringTest.h" />
+    <ClInclude Include="src\StringTokenizerTest.h" />
+    <ClInclude Include="src\TuplesTest.h" />
+    <ClInclude Include="src\TypeListTest.h" />
+    <ClInclude Include="src\Base32Test.h" />
+    <ClInclude Include="src\Base64Test.h" />
+    <ClInclude Include="src\BinaryReaderWriterTest.h" />
+    <ClInclude Include="src\CountingStreamTest.h" />
+    <ClInclude Include="src\FileStreamTest.h" />
+    <ClInclude Include="src\HexBinaryTest.h" />
+    <ClInclude Include="src\LineEndingConverterTest.h" />
+    <ClInclude Include="src\MemoryStreamTest.h" />
+    <ClInclude Include="src\NullStreamTest.h" />
+    <ClInclude Include="src\StreamCopierTest.h" />
+    <ClInclude Include="src\StreamsTestSuite.h" />
+    <ClInclude Include="src\StreamTokenizerTest.h" />
+    <ClInclude Include="src\TeeStreamTest.h" />
+    <ClInclude Include="src\VarTest.h" />
+    <ClInclude Include="src\ZLibTest.h" />
+    <ClInclude Include="src\CryptTestSuite.h" />
+    <ClInclude Include="src\DigestStreamTest.h" />
+    <ClInclude Include="src\HMACEngineTest.h" />
+    <ClInclude Include="src\MD4EngineTest.h" />
+    <ClInclude Include="src\MD5EngineTest.h" />
+    <ClInclude Include="src\RandomStreamTest.h" />
+    <ClInclude Include="src\RandomTest.h" />
+    <ClInclude Include="src\SHA1EngineTest.h" />
+    <ClInclude Include="src\NotificationCenterTest.h" />
+    <ClInclude Include="src\NotificationQueueTest.h" />
+    <ClInclude Include="src\NotificationsTestSuite.h" />
+    <ClInclude Include="src\PriorityNotificationQueueTest.h" />
+    <ClInclude Include="src\TimedNotificationQueueTest.h" />
+    <ClInclude Include="src\ActiveDispatcherTest.h" />
+    <ClInclude Include="src\ActiveMethodTest.h" />
+    <ClInclude Include="src\ActivityTest.h" />
+    <ClInclude Include="src\ConditionTest.h" />
+    <ClInclude Include="src\RWLockTest.h" />
+    <ClInclude Include="src\SemaphoreTest.h" />
+    <ClInclude Include="src\ThreadingTestSuite.h" />
+    <ClInclude Include="src\ThreadLocalTest.h" />
+    <ClInclude Include="src\ThreadPoolTest.h" />
+    <ClInclude Include="src\ThreadTest.h" />
+    <ClInclude Include="src\TimerTest.h" />
+    <ClInclude Include="src\ClassLoaderTest.h" />
+    <ClInclude Include="src\ManifestTest.h" />
+    <ClInclude Include="src\SharedLibraryTest.h" />
+    <ClInclude Include="src\SharedLibraryTestSuite.h" />
+    <ClInclude Include="src\TestPlugin.h" />
+    <ClInclude Include="src\ChannelTest.h" />
+    <ClInclude Include="src\FileChannelTest.h" />
+    <ClInclude Include="src\LoggerTest.h" />
+    <ClInclude Include="src\LoggingFactoryTest.h" />
+    <ClInclude Include="src\LoggingRegistryTest.h" />
+    <ClInclude Include="src\LoggingTestSuite.h" />
+    <ClInclude Include="src\LogStreamTest.h" />
+    <ClInclude Include="src\PatternFormatterTest.h" />
+    <ClInclude Include="src\SimpleFileChannelTest.h" />
+    <ClInclude Include="src\TestChannel.h" />
+    <ClInclude Include="src\FilesystemTestSuite.h" />
+    <ClInclude Include="src\FileTest.h" />
+    <ClInclude Include="src\GlobTest.h" />
+    <ClInclude Include="src\PathTest.h" />
+    <ClInclude Include="src\UUIDGeneratorTest.h" />
+    <ClInclude Include="src\UUIDTest.h" />
+    <ClInclude Include="src\UUIDTestSuite.h" />
+    <ClInclude Include="src\ClockTest.h" />
+    <ClInclude Include="src\DateTimeFormatterTest.h" />
+    <ClInclude Include="src\DateTimeParserTest.h" />
+    <ClInclude Include="src\DateTimeTest.h" />
+    <ClInclude Include="src\DateTimeTestSuite.h" />
+    <ClInclude Include="src\LocalDateTimeTest.h" />
+    <ClInclude Include="src\StopwatchTest.h" />
+    <ClInclude Include="src\TimespanTest.h" />
+    <ClInclude Include="src\TimestampTest.h" />
+    <ClInclude Include="src\TimezoneTest.h" />
+    <ClInclude Include="src\StreamConverterTest.h" />
+    <ClInclude Include="src\TextBufferIteratorTest.h" />
+    <ClInclude Include="src\TextConverterTest.h" />
+    <ClInclude Include="src\TextEncodingTest.h" />
+    <ClInclude Include="src\TextIteratorTest.h" />
+    <ClInclude Include="src\TextTestSuite.h" />
+    <ClInclude Include="src\UnicodeConverterTest.h" />
+    <ClInclude Include="src\UTF8StringTest.h" />
+    <ClInclude Include="src\URIStreamOpenerTest.h" />
+    <ClInclude Include="src\URITest.h" />
+    <ClInclude Include="src\URITestSuite.h" />
+    <ClInclude Include="src\FoundationTestSuite.h" />
+    <ClInclude Include="src\NamedEventTest.h" />
+    <ClInclude Include="src\NamedMutexTest.h" />
+    <ClInclude Include="src\ProcessesTestSuite.h" />
+    <ClInclude Include="src\ProcessTest.h" />
+    <ClInclude Include="src\SharedMemoryTest.h" />
+    <ClInclude Include="src\TaskManagerTest.h" />
+    <ClInclude Include="src\TaskTest.h" />
+    <ClInclude Include="src\TaskTestSuite.h" />
+    <ClInclude Include="src\BasicEventTest.h" />
+    <ClInclude Include="src\DummyDelegate.h" />
+    <ClInclude Include="src\EventTestSuite.h" />
+    <ClInclude Include="src\FIFOEventTest.h" />
+    <ClInclude Include="src\PriorityEventTest.h" />
+    <ClInclude Include="src\CacheTestSuite.h" />
+    <ClInclude Include="src\ExpireCacheTest.h" />
+    <ClInclude Include="src\ExpireLRUCacheTest.h" />
+    <ClInclude Include="src\LRUCacheTest.h" />
+    <ClInclude Include="src\UniqueExpireCacheTest.h" />
+    <ClInclude Include="src\UniqueExpireLRUCacheTest.h" />
+    <ClInclude Include="src\HashingTestSuite.h" />
+    <ClInclude Include="src\HashMapTest.h" />
+    <ClInclude Include="src\HashSetTest.h" />
+    <ClInclude Include="src\HashTableTest.h" />
+    <ClInclude Include="src\LinearHashTableTest.h" />
+    <ClInclude Include="src\SimpleHashTableTest.h" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

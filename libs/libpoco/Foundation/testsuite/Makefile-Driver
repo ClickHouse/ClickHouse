@@ -1,0 +1,52 @@
+#
+# Makefile
+#
+# $Id: //poco/1.4/Foundation/testsuite/Makefile-Driver#2 $
+#
+# Makefile for Poco Foundation testsuite
+#
+
+include $(POCO_BASE)/build/rules/global
+
+objects = ActiveMethodTest ActivityTest ActiveDispatcherTest \
+	AutoPtrTest ArrayTest SharedPtrTest AutoReleasePoolTest \
+	Base32Test Base64Test BinaryReaderWriterTest LineEndingConverterTest \
+	ByteOrderTest ChannelTest ClassLoaderTest ClockTest CoreTest CoreTestSuite \
+	CountingStreamTest CryptTestSuite DateTimeFormatterTest \
+	DateTimeParserTest DateTimeTest LocalDateTimeTest DateTimeTestSuite DigestStreamTest \
+	Driver DynamicFactoryTest FPETest FileChannelTest FileTest GlobTest FilesystemTestSuite \
+	FIFOBufferStreamTest FoundationTestSuite HMACEngineTest HexBinaryTest LoggerTest \
+	ListMapTest LoggingFactoryTest LoggingRegistryTest LoggingTestSuite LogStreamTest \
+	NamedEventTest NamedMutexTest ProcessesTestSuite ProcessTest \
+	MemoryPoolTest MD4EngineTest MD5EngineTest ManifestTest \
+	NDCTest NotificationCenterTest NotificationQueueTest \
+	PriorityNotificationQueueTest TimedNotificationQueueTest \
+	NotificationsTestSuite NullStreamTest NumberFormatterTest \
+	NumberParserTest PathTest PatternFormatterTest PBKDF2EngineTest RWLockTest \
+	RandomStreamTest RandomTest RegularExpressionTest SHA1EngineTest \
+	SemaphoreTest ConditionTest SharedLibraryTest SharedLibraryTestSuite \
+	SimpleFileChannelTest StopwatchTest \
+	StreamConverterTest StreamCopierTest StreamTokenizerTest \
+	StreamsTestSuite StringTest StringTokenizerTest TaskTestSuite TaskTest \
+	TaskManagerTest TestChannel TeeStreamTest UTF8StringTest \
+	TextConverterTest TextIteratorTest TextBufferIteratorTest TextTestSuite TextEncodingTest \
+	ThreadLocalTest ThreadPoolTest ThreadTest ThreadingTestSuite TimerTest \
+	TimespanTest TimestampTest TimezoneTest URIStreamOpenerTest URITest \
+	URITestSuite UUIDGeneratorTest UUIDTest UUIDTestSuite ZLibTest \
+	TestPlugin DummyDelegate BasicEventTest FIFOEventTest PriorityEventTest EventTestSuite \
+	LRUCacheTest ExpireCacheTest ExpireLRUCacheTest CacheTestSuite AnyTest FormatTest \
+	HashingTestSuite HashTableTest SimpleHashTableTest LinearHashTableTest \
+	HashSetTest HashMapTest SharedMemoryTest \
+	UniqueExpireCacheTest UniqueExpireLRUCacheTest UnicodeConverterTest \
+	TuplesTest NamedTuplesTest TypeListTest VarTest DynamicTestSuite FileStreamTest \
+	MemoryStreamTest ObjectPoolTest DirectoryWatcherTest DirectoryIteratorsTest
+
+target         = testrunner
+target_version = 1
+target_libs    = PocoFoundation CppUnit
+
+include $(POCO_BASE)/build/rules/exec
+
+ifdef POCO_UNBUNDLED
+        SYSLIBS += -lz -lpcre
+endif

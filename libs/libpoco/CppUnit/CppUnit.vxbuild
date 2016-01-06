@@ -1,0 +1,16 @@
+#
+# CppUnit.vxbuild
+#
+# $Id: //poco/1.4/CppUnit/CppUnit.vxbuild#2 $
+#
+TARGET=cppUnit
+SOURCES="
+	CppUnitException.cpp
+	TestCase.cpp
+	TestDecorator.cpp
+	TestFailure.cpp
+	TestResult.cpp
+	TestRunner.cpp
+	TestSuite.cpp
+	TextTestResult.cpp
+"

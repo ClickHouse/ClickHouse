@@ -1,0 +1,9 @@
+vc.project.guid = ${vc.project.guidFromName}
+vc.project.name = TestSuite
+vc.project.target = TestSuite
+vc.project.type = testsuite
+vc.project.pocobase = ..\\..
+vc.project.platforms = Win32, x64, WinCE
+vc.project.configurations = debug_shared, release_shared, debug_static_mt, release_static_mt, debug_static_md, release_static_md
+vc.project.prototype = TestSuite_vs90.vcproj
+vc.project.compiler.include = ..\\..\\Foundation\\include
