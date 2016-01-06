@@ -305,7 +305,7 @@ public:
 			}
 			else if (0xFFFF == mask)
 			{
-				res_data.insert_assume_reserved(data_pos, data_pos + 16);
+				res_data.insert(data_pos, data_pos + 16);
 			}
 			else
 			{
