@@ -98,32 +98,41 @@ void TCPServerDispatcher::release()
 
 void TCPServerDispatcher::run()
 {
-	AutoPtr<TCPServerDispatcher> guard(this, true); // ensure object stays alive
-
-	int idleTime = (int) _pParams->getThreadIdleTime().totalMilliseconds();
-
-	for (;;)
+	try
 	{
-		AutoPtr<Notification> pNf = _queue.waitDequeueNotification(idleTime);
-		if (pNf)
+		AutoPtr<TCPServerDispatcher> guard(this, true); // ensure object stays alive
+
+		int idleTime = (int) _pParams->getThreadIdleTime().totalMilliseconds();
+
+		for (;;)
 		{
-			TCPConnectionNotification* pCNf = dynamic_cast<TCPConnectionNotification*>(pNf.get());
-			if (pCNf)
+			AutoPtr<Notification> pNf = _queue.waitDequeueNotification(idleTime);
+			if (pNf)
 			{
-				std::unique_ptr<TCPServerConnection> pConnection(_pConnectionFactory->createConnection(pCNf->socket()));
-				poco_check_ptr(pConnection.get());
-				beginConnection();
-				pConnection->start();
-				endConnection();
+				TCPConnectionNotification* pCNf = dynamic_cast<TCPConnectionNotification*>(pNf.get());
+				if (pCNf)
+				{
+					std::unique_ptr<TCPServerConnection> pConnection(_pConnectionFactory->createConnection(pCNf->socket()));
+					poco_check_ptr(pConnection.get());
+					beginConnection();
+					pConnection->start();	/// doesn't throw
+					endConnection();
+				}
+			}
+
+			FastMutex::ScopedLock lock(_mutex);
+			if (_stopped || (_currentThreads > 1 && _queue.empty()))
+			{
+				--_currentThreads;
+				break;
 			}
 		}
-
+	}
+	catch (...)
+	{
 		FastMutex::ScopedLock lock(_mutex);
-		if (_stopped || (_currentThreads > 1 && _queue.empty()))
-		{
-			--_currentThreads;
-			break;
-		}
+		--_currentThreads;
+		throw;
 	}
 }
 
