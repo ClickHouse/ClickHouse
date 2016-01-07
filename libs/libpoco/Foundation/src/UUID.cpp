@@ -24,8 +24,8 @@
 namespace Poco {
 
 
-UUID::UUID(): 
-	_timeLow(0), 
+UUID::UUID():
+	_timeLow(0),
 	_timeMid(0),
 	_timeHiAndVersion(0),
 	_clockSeq(0)
@@ -35,7 +35,7 @@ UUID::UUID():
 
 
 UUID::UUID(const UUID& uuid):
-	_timeLow(uuid._timeLow), 
+	_timeLow(uuid._timeLow),
 	_timeMid(uuid._timeMid),
 	_timeHiAndVersion(uuid._timeHiAndVersion),
 	_clockSeq(uuid._clockSeq)
@@ -49,7 +49,7 @@ UUID::UUID(const std::string& uuid)
 	parse(uuid);
 }
 
-	
+
 UUID::UUID(const char* uuid)
 {
 	poco_check_ptr (uuid);
@@ -125,7 +125,7 @@ void UUID::parse(const std::string& uuid)
 {
 	if (!tryParse(uuid))
 		throw SyntaxException(uuid);
-}	
+}
 
 
 bool UUID::tryParse(const std::string& uuid)
@@ -136,12 +136,12 @@ bool UUID::tryParse(const std::string& uuid)
 	bool haveHyphens = false;
 	if (uuid[8] == '-' && uuid[13] == '-' && uuid[18] == '-' && uuid[23] == '-')
 	{
-		if (uuid.size() >= 36) 
+		if (uuid.size() >= 36)
 			haveHyphens = true;
 		else
 			return false;
 	}
-	
+
 	UUID newUUID;
 	std::string::const_iterator it = uuid.begin();
 	newUUID._timeLow = 0;
@@ -183,7 +183,7 @@ bool UUID::tryParse(const std::string& uuid)
 		Int16 n2 = nibble(*it++);
 		if (n2 < 0) return false;
 
-		newUUID._node[i] = (n1 << 4) | n2;			
+		newUUID._node[i] = (n1 << 4) | n2;
 	}
 	swap(newUUID);
 
@@ -203,7 +203,7 @@ std::string UUID::toString() const
 	result += '-';
 	appendHex(result, _clockSeq);
 	result += '-';
-	for (int i = 0; i < sizeof(_node); ++i)
+	for (size_t i = 0; i < sizeof(_node); ++i)
 		appendHex(result, _node[i]);
 	return result;
 }
@@ -265,18 +265,18 @@ int UUID::compare(const UUID& uuid) const
 	if (_timeMid != uuid._timeMid) return _timeMid < uuid._timeMid ? -1 : 1;
 	if (_timeHiAndVersion != uuid._timeHiAndVersion) return _timeHiAndVersion < uuid._timeHiAndVersion ? -1 : 1;
 	if (_clockSeq != uuid._clockSeq) return _clockSeq < uuid._clockSeq ? -1 : 1;
-	for (int i = 0; i < sizeof(_node); ++i)
+	for (size_t i = 0; i < sizeof(_node); ++i)
 	{
-		if (_node[i] < uuid._node[i]) 
+		if (_node[i] < uuid._node[i])
 			return -1;
 		else if (_node[i] > uuid._node[i])
-			return 1;	
+			return 1;
 	}
 	return 0;
 }
 
 
-void UUID::appendHex(std::string& str, UInt8 n) 
+void UUID::appendHex(std::string& str, UInt8 n)
 {
 	static const char* digits = "0123456789abcdef";
 	str += digits[(n >> 4) & 0xF];
@@ -350,7 +350,7 @@ const UUID& UUID::dns()
 	return uuidDNS;
 }
 
-	
+
 const UUID& UUID::uri()
 {
 	return uuidURI;

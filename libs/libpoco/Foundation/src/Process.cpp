@@ -18,17 +18,17 @@
 #include "Poco/Environment.h"
 
 
-namespace 
+namespace
 {
 	std::vector<char> getEnvironmentVariablesBuffer(const Poco::Process::Env& env)
-	{   
+	{
 		std::vector<char> envbuf;
-		std::size_t pos = 0; 
-		
+		std::size_t pos = 0;
+
 		for (Poco::Process::Env::const_iterator it = env.begin(); it != env.end(); ++it)
 		{
 			std::size_t envlen = it->first.length() + it->second.length() + 1;
-	
+
 			envbuf.resize(pos + envlen + 1);
 			std::copy(it->first.begin(), it->first.end(), &envbuf[pos]);
 			pos += it->first.length();
@@ -36,24 +36,25 @@ namespace
 			++pos;
 			std::copy(it->second.begin(), it->second.end(), &envbuf[pos]);
 			pos += it->second.length();
-		
+
 			envbuf[pos] = '\0';
 			++pos;
 		}
-	 
+
 		envbuf.resize(pos + 1);
 		envbuf[pos] = '\0';
-	
+
 		return envbuf;
 	}
-	
-	void setEnvironmentVariables(const Poco::Process::Env& env)
+
+// unused
+/*	void setEnvironmentVariables(const Poco::Process::Env& env)
 	{
 		for (Poco::Process::Env::const_iterator it = env.begin(); it != env.end(); ++it)
 		{
 			Poco::Environment::set(it->first, it->second);
 		}
-	}
+	}*/
 }
 
 
@@ -86,7 +87,7 @@ ProcessHandle::ProcessHandle(const ProcessHandle& handle):
 	_pImpl->duplicate();
 }
 
-	
+
 ProcessHandle::~ProcessHandle()
 {
 	_pImpl->release();
@@ -111,13 +112,13 @@ ProcessHandle& ProcessHandle::operator = (const ProcessHandle& handle)
 	return *this;
 }
 
-	
+
 ProcessHandle::PID ProcessHandle::id() const
 {
 	return _pImpl->id();
 }
 
-	
+
 int ProcessHandle::wait() const
 {
 	return _pImpl->wait();
@@ -172,8 +173,8 @@ ProcessHandle Process::launch(const std::string& command, const Args& args, cons
 	poco_assert (inPipe == 0 || (inPipe != outPipe && inPipe != errPipe));
 	return ProcessHandle(launchImpl(command, args, initialDirectory, inPipe, outPipe, errPipe, env));
 }
-	
-	
+
+
 int Process::wait(const ProcessHandle& handle)
 {
 	return handle.wait();

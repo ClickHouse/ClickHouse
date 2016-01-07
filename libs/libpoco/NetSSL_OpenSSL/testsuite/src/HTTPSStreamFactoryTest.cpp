@@ -49,7 +49,7 @@ void HTTPSStreamFactoryTest::testNoRedirect()
 	HTTPSStreamFactory factory;
 	URI uri("https://localhost/large");
 	uri.setPort(server.port());
-	std::auto_ptr<std::istream> pStr(factory.open(uri));
+	std::unique_ptr<std::istream> pStr(factory.open(uri));
 	std::ostringstream ostr;
 	StreamCopier::copyStream(*pStr.get(), ostr);
 	assert (ostr.str() == HTTPSTestServer::LARGE_BODY);
@@ -62,7 +62,7 @@ void HTTPSStreamFactoryTest::testEmptyPath()
 	HTTPSStreamFactory factory;
 	URI uri("https://localhost");
 	uri.setPort(server.port());
-	std::auto_ptr<std::istream> pStr(factory.open(uri));
+	std::unique_ptr<std::istream> pStr(factory.open(uri));
 	std::ostringstream ostr;
 	StreamCopier::copyStream(*pStr.get(), ostr);
 	assert (ostr.str() == HTTPSTestServer::SMALL_BODY);
@@ -75,7 +75,7 @@ void HTTPSStreamFactoryTest::testRedirect()
 	HTTPSStreamFactory factory;
 	URI uri("https://localhost/redirect");
 	uri.setPort(server.port());
-	std::auto_ptr<std::istream> pStr(factory.open(uri));
+	std::unique_ptr<std::istream> pStr(factory.open(uri));
 	std::ostringstream ostr;
 	StreamCopier::copyStream(*pStr.get(), ostr);
 	assert (ostr.str() == HTTPSTestServer::LARGE_BODY);
@@ -86,11 +86,11 @@ void HTTPSStreamFactoryTest::testProxy()
 {
 	HTTPSTestServer server;
 	HTTPSStreamFactory factory(
-		Application::instance().config().getString("testsuite.proxy.host"), 
+		Application::instance().config().getString("testsuite.proxy.host"),
 		Application::instance().config().getInt("testsuite.proxy.port")
 	);
 	URI uri("https://secure.appinf.com/public/poco/NetSSL.txt");
-	std::auto_ptr<std::istream> pStr(factory.open(uri));
+	std::unique_ptr<std::istream> pStr(factory.open(uri));
 	std::ostringstream ostr;
 	StreamCopier::copyStream(*pStr.get(), ostr);
 	assert (ostr.str().length() > 0);

@@ -108,7 +108,7 @@ void PurgeByCountStrategy::purge(const std::string& path)
 {
 	std::vector<File> files;
 	list(path, files);
-	while (files.size() > _count)
+	while (files.size() > (size_t)_count)
 	{
 		std::vector<File>::iterator it = files.begin();
 		std::vector<File>::iterator purgeIt = it;

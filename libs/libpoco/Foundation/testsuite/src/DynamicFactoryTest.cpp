@@ -30,16 +30,16 @@ namespace
 		Base()
 		{
 		}
-		
+
 		virtual ~Base()
 		{
 		}
 	};
-	
+
 	class A: public Base
 	{
 	};
-	
+
 	class B: public Base
 	{
 	};
@@ -59,21 +59,21 @@ DynamicFactoryTest::~DynamicFactoryTest()
 void DynamicFactoryTest::testDynamicFactory()
 {
 	DynamicFactory<Base> dynFactory;
-	
+
 	dynFactory.registerClass<A>("A");
 	dynFactory.registerClass<B>("B");
-	
+
 	assert (dynFactory.isClass("A"));
 	assert (dynFactory.isClass("B"));
-	
+
 	assert (!dynFactory.isClass("C"));
-	
-	std::auto_ptr<A> a(dynamic_cast<A*>(dynFactory.createInstance("A")));
-	std::auto_ptr<B> b(dynamic_cast<B*>(dynFactory.createInstance("B")));
-	
+
+	std::unique_ptr<A> a(dynamic_cast<A*>(dynFactory.createInstance("A")));
+	std::unique_ptr<B> b(dynamic_cast<B*>(dynFactory.createInstance("B")));
+
 	assertNotNull(a.get());
 	assertNotNull(b.get());
-	
+
 	try
 	{
 		dynFactory.registerClass<A>("A");
@@ -82,14 +82,14 @@ void DynamicFactoryTest::testDynamicFactory()
 	catch (Poco::ExistsException&)
 	{
 	}
-	
+
 	dynFactory.unregisterClass("B");
 	assert (dynFactory.isClass("A"));
 	assert (!dynFactory.isClass("B"));
-	
+
 	try
 	{
-		std::auto_ptr<B> b(dynamic_cast<B*>(dynFactory.createInstance("B")));
+		std::unique_ptr<B> b(dynamic_cast<B*>(dynFactory.createInstance("B")));
 		fail("unregistered - must throw");
 	}
 	catch (Poco::NotFoundException&)

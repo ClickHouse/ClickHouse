@@ -44,7 +44,7 @@ public:
 	}
 
 	~DynamicFactory()
-		/// Destroys the DynamicFactory and deletes the instantiators for 
+		/// Destroys the DynamicFactory and deletes the instantiators for
 		/// all registered classes.
 	{
 		for (typename FactoryMap::iterator it = _map.begin(); it != _map.end(); ++it)
@@ -52,7 +52,7 @@ public:
 			delete it->second;
 		}
 	}
-	
+
 	Base* createInstance(const std::string& className) const
 		/// Creates a new instance of the class with the given name.
 		/// The class must have been registered with registerClass.
@@ -66,8 +66,8 @@ public:
 		else
 			throw NotFoundException(className);
 	}
-	
-	template <class C> 
+
+	template <class C>
 	void registerClass(const std::string& className)
 		/// Registers the instantiator for the given class with the DynamicFactory.
 		/// The DynamicFactory takes ownership of the instantiator and deletes
@@ -77,7 +77,7 @@ public:
 	{
 		registerClass(className, new Instantiator<C, Base>);
 	}
-	
+
 	void registerClass(const std::string& className, AbstractFactory* pAbstractFactory)
 		/// Registers the instantiator for the given class with the DynamicFactory.
 		/// The DynamicFactory takes ownership of the instantiator and deletes
@@ -89,14 +89,14 @@ public:
 
 		FastMutex::ScopedLock lock(_mutex);
 
-		std::auto_ptr<AbstractFactory> ptr(pAbstractFactory);
+		std::unique_ptr<AbstractFactory> ptr(pAbstractFactory);
 		typename FactoryMap::iterator it = _map.find(className);
 		if (it == _map.end())
 			_map[className] = ptr.release();
 		else
 			throw ExistsException(className);
 	}
-	
+
 	void unregisterClass(const std::string& className)
 		/// Unregisters the given class and deletes the instantiator
 		/// for the class.
@@ -112,7 +112,7 @@ public:
 		}
 		else throw NotFoundException(className);
 	}
-	
+
 	bool isClass(const std::string& className) const
 		/// Returns true iff the given class has been registered.
 	{
@@ -126,7 +126,7 @@ private:
 	DynamicFactory& operator = (const DynamicFactory&);
 
 	typedef std::map<std::string, AbstractFactory*> FactoryMap;
-	
+
 	FactoryMap _map;
 	mutable FastMutex _mutex;
 };

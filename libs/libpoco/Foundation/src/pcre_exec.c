@@ -41,8 +41,12 @@ POSSIBILITY OF SUCH DAMAGE.
 pattern matching using an NFA algorithm, trying to mimic Perl as closely as
 possible. There are also some static supporting functions. */
 
+#ifdef _MSC_VER
+
 #pragma warning( disable : 4127)  // conditional expression is constant
 #pragma warning( disable : 4244)  // conversion from 'int' to 'unsigned short', possible loss of data
+
+#endif
 
 #include "pcre_config.h"
 

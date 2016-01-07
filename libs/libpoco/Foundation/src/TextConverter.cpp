@@ -57,7 +57,7 @@ int TextConverter::convert(const std::string& source, std::string& destination, 
 		c = trans(c);
 		int n = _outEncoding.convert(c, buffer, sizeof(buffer));
 		if (n == 0) n = _outEncoding.convert(_defaultChar, buffer, sizeof(buffer));
-		poco_assert (n <= sizeof(buffer));
+		poco_assert (n <= (int)sizeof(buffer));
 		destination.append((const char*) buffer, n);
 		++it;
 	}
@@ -73,7 +73,7 @@ int TextConverter::convert(const void* source, int length, std::string& destinat
 	const unsigned char* it  = (const unsigned char*) source;
 	const unsigned char* end = (const unsigned char*) source + length;
 	unsigned char buffer[TextEncoding::MAX_SEQUENCE_LENGTH];
-	
+
 	while (it < end)
 	{
 		int n = _inEncoding.queryConvert(it, 1);
@@ -108,7 +108,7 @@ int TextConverter::convert(const void* source, int length, std::string& destinat
 		uc = trans(uc);
 		n = _outEncoding.convert(uc, buffer, sizeof(buffer));
 		if (n == 0) n = _outEncoding.convert(_defaultChar, buffer, sizeof(buffer));
-		poco_assert (n <= sizeof(buffer));
+		poco_assert (n <= (int)sizeof(buffer));
 		destination.append((const char*) buffer, n);
 	}
 	return errors;

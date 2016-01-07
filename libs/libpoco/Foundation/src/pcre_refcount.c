@@ -37,7 +37,11 @@ POSSIBILITY OF SUCH DAMAGE.
 -----------------------------------------------------------------------------
 */
 
+#ifdef _MSC_VER
+
 #pragma warning( disable : 4244)  // conversion from 'int' to 'unsigned short', possible loss of data
+
+#endif
 
 /* This module contains the external function pcre_refcount(), which is an
 auxiliary function that can be used to maintain a reference count in a compiled

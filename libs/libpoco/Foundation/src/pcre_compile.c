@@ -37,11 +37,15 @@ POSSIBILITY OF SUCH DAMAGE.
 -----------------------------------------------------------------------------
 */
 
+#ifdef _MSC_VER
+
 #pragma warning( disable : 4018)  // '<' : signed/unsigned mismatch
 #pragma warning( disable : 4127)  // conditional expression is constant
 #pragma warning( disable : 4244)  // conversion from 'int' to 'unsigned short', possible loss of data
 #pragma warning( disable : 4701)  // local variable 'othercase' may be used without having been initialized
 #pragma warning( disable : 4702)  // unreachable code
+
+#endif
 
 /* This module contains the external function pcre_compile(), along with
 supporting internal functions that are not used by other modules. */

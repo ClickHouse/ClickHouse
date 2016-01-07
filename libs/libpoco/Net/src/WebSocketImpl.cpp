@@ -53,13 +53,13 @@ WebSocketImpl::~WebSocketImpl()
 	}
 }
 
-	
+
 int WebSocketImpl::sendBytes(const void* buffer, int length, int flags)
 {
 	Poco::Buffer<char> frame(length + MAX_HEADER_LENGTH);
 	Poco::MemoryOutputStream ostr(frame.begin(), frame.size());
 	Poco::BinaryWriter writer(ostr, Poco::BinaryWriter::NETWORK_BYTE_ORDER);
-	
+
 	if (flags == 0) flags = WebSocket::FRAME_BINARY;
 	flags &= 0xff;
 	writer << static_cast<Poco::UInt8>(flags);
@@ -103,7 +103,7 @@ int WebSocketImpl::sendBytes(const void* buffer, int length, int flags)
 	return length;
 }
 
-	
+
 int WebSocketImpl::receiveBytes(void* buffer, int length, int)
 {
 	char header[MAX_HEADER_LENGTH];
@@ -143,7 +143,7 @@ int WebSocketImpl::receiveBytes(void* buffer, int length, int)
 	{
 		Poco::UInt64 l;
 		reader >> l;
-		if (l > length) throw WebSocketException(Poco::format("Insufficient buffer for payload size %Lu", l), WebSocket::WS_ERR_PAYLOAD_TOO_BIG);
+		if (l > (size_t)length) throw WebSocketException(Poco::format("Insufficient buffer for payload size %Lu", l), WebSocket::WS_ERR_PAYLOAD_TOO_BIG);
 		payloadLength = static_cast<int>(l);
 		payloadOffset += 8;
 	}
@@ -151,14 +151,14 @@ int WebSocketImpl::receiveBytes(void* buffer, int length, int)
 	{
 		Poco::UInt16 l;
 		reader >> l;
-		if (l > length) throw WebSocketException(Poco::format("Insufficient buffer for payload size %hu", l), WebSocket::WS_ERR_PAYLOAD_TOO_BIG);
+		if (l > (size_t)length) throw WebSocketException(Poco::format("Insufficient buffer for payload size %hu", l), WebSocket::WS_ERR_PAYLOAD_TOO_BIG);
 		payloadLength = static_cast<int>(l);
 		payloadOffset += 2;
 	}
 	else
 	{
 		Poco::UInt8 l = lengthByte & 0x7f;
-		if (l > length) throw WebSocketException(Poco::format("Insufficient buffer for payload size %u", unsigned(l)), WebSocket::WS_ERR_PAYLOAD_TOO_BIG);
+		if (l > (size_t)length) throw WebSocketException(Poco::format("Insufficient buffer for payload size %u", unsigned(l)), WebSocket::WS_ERR_PAYLOAD_TOO_BIG);
 		payloadLength = static_cast<int>(l);
 	}
 	if (lengthByte & FRAME_FLAG_MASK)
@@ -268,7 +268,7 @@ void WebSocketImpl::shutdownSend()
 	_pStreamSocketImpl->shutdownSend();
 }
 
-	
+
 void WebSocketImpl::shutdown()
 {
 	_pStreamSocketImpl->shutdown();
@@ -322,5 +322,5 @@ Poco::Timespan WebSocketImpl::getReceiveTimeout()
 	return _pStreamSocketImpl->getReceiveTimeout();
 }
 
-	
+
 } } // namespace Poco::Net

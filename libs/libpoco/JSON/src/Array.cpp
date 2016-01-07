@@ -122,7 +122,7 @@ void Array::stringify(std::ostream& out, unsigned int indent, int step) const
 
 	for (ValueVec::const_iterator it = _values.begin(); it != _values.end();)
 	{
-		for(int i = 0; i < indent; i++) out << ' ';
+		for(unsigned i = 0; i < indent; i++) out << ' ';
 
 		Stringifier::stringify(*it, out, indent + step, step);
 
@@ -135,9 +135,9 @@ void Array::stringify(std::ostream& out, unsigned int indent, int step) const
 
 	if (step > 0) out << '\n';
 
-	if (indent >= step) indent -= step;
+	if (indent >= (unsigned)step) indent -= step;
 
-	for (int i = 0; i < indent; i++)
+	for (unsigned i = 0; i < indent; i++)
 		out << ' ';
 
 	out << "]";

@@ -52,7 +52,7 @@ public:
 	{
 		Poco::Net::initializeSSL();
 	}
-	
+
 	~SSLInitializer()
 	{
 		Poco::Net::uninitializeSSL();
@@ -66,7 +66,7 @@ int main(int argc, char** argv)
 	HTTPStreamFactory::registerFactory();
 	HTTPSStreamFactory::registerFactory();
 	FTPStreamFactory::registerFactory();
-	
+
 	if (argc != 2)
 	{
 		Path p(argv[0]);
@@ -76,7 +76,7 @@ int main(int argc, char** argv)
 		return 1;
 	}
 
-	// Note: we must create the passphrase handler prior Context 
+	// Note: we must create the passphrase handler prior Context
 	SharedPtr<InvalidCertificateHandler> ptrCert = new ConsoleCertificateHandler(false); // ask the user via console
 	Context::Ptr ptrContext = new Context(Context::CLIENT_USE, "", "", "rootcert.pem", Context::VERIFY_RELAXED, 9, false, "ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH");
 	SSLManager::instance().initializeClient(0, ptrCert, ptrContext);
@@ -84,7 +84,7 @@ int main(int argc, char** argv)
 	try
 	{
 		URI uri(argv[1]);
-		std::auto_ptr<std::istream> pStr(URIStreamOpener::defaultOpener().open(uri));
+		std::unique_ptr<std::istream> pStr(URIStreamOpener::defaultOpener().open(uri));
 		StreamCopier::copyStream(*pStr.get(), std::cout);
 	}
 	catch (Exception& exc)
@@ -92,6 +92,6 @@ int main(int argc, char** argv)
 		std::cerr << exc.displayText() << std::endl;
 		return 1;
 	}
-		
+
 	return 0;
 }

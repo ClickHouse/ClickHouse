@@ -837,7 +837,7 @@ NetworkInterface NetworkInterface::forAddress(const IPAddress& addr)
 	for (; it != end; ++it)
 	{
 		const std::size_t count = it->second.addressList().size();
-		for (int i = 0; i < count; ++i)
+		for (unsigned i = 0; i < count; ++i)
 		{
 			if (it->second.address(i) == addr)
 				return it->second;
@@ -1081,7 +1081,7 @@ NetworkInterface::Map NetworkInterface::map(bool ipOnly, bool upOnly)
 			throw SystemException(format("An error occurred while trying to obtain list of network interfaces: [%s]", Error::getMessage(dwRetVal)));
 		else
 			break;
-	} 
+	}
 	while ((ERROR_BUFFER_OVERFLOW == dwRetVal) && (++iterations <= 2));
 
 	poco_assert (NO_ERROR == dwRetVal);
@@ -1263,7 +1263,7 @@ NetworkInterface::Map NetworkInterface::map(bool ipOnly, bool upOnly)
 					{
 						ifIt->second.addAddress(address);
 					}
-				} 
+				}
 				break;
 #if defined(POCO_HAVE_IPv6)
 				case AF_INET6:

@@ -133,7 +133,7 @@ JSON::Object::Ptr JSONConfiguration::findStart(const std::string& key, std::stri
 	StringTokenizer tokenizer(key, ".");
 	lastPart = tokenizer[tokenizer.count() - 1];
 
-	for(int i = 0; i < tokenizer.count() - 1; ++i)
+	for(size_t i = 0; i < tokenizer.count() - 1; ++i)
 	{
 		std::vector<int> indexes;
 		std::string name = tokenizer[i];
@@ -245,15 +245,15 @@ void JSONConfiguration::setValue(const std::string& key, const Poco::DynamicAny&
 {
 
 	std::string sValue;
-	
+
 	value.convert<std::string>(sValue);
 	KeyValue kv(key, sValue);
-	
+
 	if (eventsEnabled())
 	{
 		propertyChanging(this, kv);
 	}
-	
+
 	std::string lastPart;
 	JSON::Object::Ptr parentObject = findStart(key, lastPart);
 
@@ -354,7 +354,7 @@ void JSONConfiguration::save(std::ostream& ostr, unsigned int indent) const
 void JSONConfiguration::removeRaw(const std::string& key)
 
 {
-	
+
 	std::string lastPart;
 	JSON::Object::Ptr parentObject = findStart(key, lastPart);
 	std::vector<int> indexes;

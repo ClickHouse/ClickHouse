@@ -59,7 +59,7 @@ void pad(std::string& str, int precision, int width, char prefix = ' ', char dec
 	std::string::size_type frac = str.length() - decSepPos - 1;
 
 	std::string::size_type ePos = str.find_first_of("eE");
-	std::auto_ptr<std::string> eStr;
+	std::unique_ptr<std::string> eStr;
 	if (ePos != std::string::npos)
 	{
 		eStr.reset(new std::string(str.substr(ePos, std::string::npos)));
@@ -67,17 +67,17 @@ void pad(std::string& str, int precision, int width, char prefix = ' ', char dec
 		str = str.substr(0, str.length() - eStr->length());
 	}
 
-	if (frac != precision)
+	if (frac != (size_t)precision)
 	{
-		if (frac < precision)
+		if (frac < (size_t)precision)
 			str.append(precision - frac, '0');
-		else if ((frac > precision) && (decSepPos != std::string::npos)) 
+		else if ((frac > (size_t)precision) && (decSepPos != std::string::npos))
 			str = str.substr(0, decSepPos + 1 + precision);
 	}
 
 	if (eStr.get()) str += *eStr;
 
-	if (width && (str.length() < width)) str.insert(str.begin(), width - str.length(), prefix);
+	if (width && (str.length() < (size_t)width)) str.insert(str.begin(), width - str.length(), prefix);
 }
 
 
@@ -148,7 +148,7 @@ std::string& floatToStr(std::string& str, float value, int precision, int width,
 	char buffer[POCO_MAX_FLT_STRING_LEN];
 	floatToStr(buffer, POCO_MAX_FLT_STRING_LEN, value);
 	str = buffer;
-	
+
 	if (decSep && (decSep != '.') && (str.find('.') != std::string::npos))
 		replaceInPlace(str, '.', decSep);
 
@@ -179,7 +179,7 @@ std::string& doubleToStr(std::string& str, double value, int precision, int widt
 	char buffer[POCO_MAX_FLT_STRING_LEN];
 	doubleToStr(buffer, POCO_MAX_FLT_STRING_LEN, value);
 	str = buffer;
-	
+
 	if (decSep && (decSep != '.') && (str.find('.') != std::string::npos))
 		replaceInPlace(str, '.', decSep);
 

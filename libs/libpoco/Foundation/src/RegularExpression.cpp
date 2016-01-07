@@ -231,7 +231,7 @@ std::string::size_type RegularExpression::substOne(std::string& subject, std::st
 	std::string::size_type rp = std::string::npos;
 	while (pos < len)
 	{
-		if (ovec[0] == pos)
+		if ((size_t)ovec[0] == pos)
 		{
 			std::string::const_iterator it  = replacement.begin();
 			std::string::const_iterator end = replacement.end();

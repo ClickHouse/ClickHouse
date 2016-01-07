@@ -51,7 +51,7 @@ namespace
 			try
 			{
 				WebSocket ws(request, response);
-				std::auto_ptr<char> pBuffer(new char[_bufSize]);
+				std::unique_ptr<char[]> pBuffer(new char[_bufSize]);
 				int flags;
 				int n;
 				do
@@ -82,7 +82,7 @@ namespace
 	private:
 		std::size_t _bufSize;
 	};
-	
+
 	class WebSocketRequestHandlerFactory: public Poco::Net::HTTPRequestHandlerFactory
 	{
 	public:
@@ -116,9 +116,9 @@ void WebSocketTest::testWebSocket()
 	Poco::Net::ServerSocket ss(0);
 	Poco::Net::HTTPServer server(new WebSocketRequestHandlerFactory, ss, new Poco::Net::HTTPServerParams);
 	server.start();
-	
+
 	Poco::Thread::sleep(200);
-	
+
 	HTTPClientSession cs("localhost", ss.address().port());
 	HTTPRequest request(HTTPRequest::HTTP_GET, "/ws");
 	HTTPResponse response;
@@ -159,19 +159,19 @@ void WebSocketTest::testWebSocket()
 	assert (n == payload.size());
 	assert (payload.compare(0, payload.size(), buffer, 0, n) == 0);
 	assert (flags == WebSocket::FRAME_TEXT);
-	
+
 	payload = "Hello, universe!";
 	ws.sendFrame(payload.data(), (int) payload.size(), WebSocket::FRAME_BINARY);
 	n = ws.receiveFrame(buffer, sizeof(buffer), flags);
 	assert (n == payload.size());
 	assert (payload.compare(0, payload.size(), buffer, 0, n) == 0);
-	assert (flags == WebSocket::FRAME_BINARY);	
-	
+	assert (flags == WebSocket::FRAME_BINARY);
+
 	ws.shutdown();
 	n = ws.receiveFrame(buffer, sizeof(buffer), flags);
 	assert (n == 2);
 	assert ((flags & WebSocket::FRAME_OP_BITMASK) == WebSocket::FRAME_OP_CLOSE);
-	
+
 	server.stop();
 }
 
@@ -183,9 +183,9 @@ void WebSocketTest::testWebSocketLarge()
 	Poco::Net::ServerSocket ss(0);
 	Poco::Net::HTTPServer server(new WebSocketRequestHandlerFactory(msgSize), ss, new Poco::Net::HTTPServerParams);
 	server.start();
-	
+
 	Poco::Thread::sleep(200);
-	
+
 	HTTPClientSession cs("localhost", ss.address().port());
 	HTTPRequest request(HTTPRequest::HTTP_GET, "/ws");
 	HTTPResponse response;

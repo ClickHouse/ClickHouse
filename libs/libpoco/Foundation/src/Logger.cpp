@@ -75,7 +75,7 @@ void Logger::setProperty(const std::string& name, const std::string& value)
 		setChannel(LoggingRegistry::defaultRegistry().channelForName(value));
 	else if (name == "level")
 		setLevel(value);
-	else 
+	else
 		Channel::setProperty(name, value);
 }
 
@@ -121,7 +121,7 @@ void Logger::setLevel(const std::string& name, int level)
 		std::string::size_type len = name.length();
 		for (LoggerMap::iterator it = _pLoggerMap->begin(); it != _pLoggerMap->end(); ++it)
 		{
-			if (len == 0 || 
+			if (len == 0 ||
 				(it->first.compare(0, len, name) == 0 && (it->first.length() == len || it->first[len] == '.')))
 			{
 				it->second->setLevel(level);
@@ -254,7 +254,7 @@ void Logger::formatDump(std::string& message, const void* buffer, std::size_t le
 	message.reserve(message.size() + length*6);
 	if (!message.empty()) message.append("\n");
 	unsigned char* base = (unsigned char*) buffer;
-	int addr = 0;
+	size_t addr = 0;
 	while (addr < length)
 	{
 		if (addr > 0) message.append("\n");

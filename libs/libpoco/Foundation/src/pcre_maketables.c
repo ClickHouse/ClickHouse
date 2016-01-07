@@ -43,7 +43,11 @@ character tables for PCRE in the current locale. The file is compiled on its
 own as part of the PCRE library. However, it is also included in the
 compilation of dftables.c, in which case the macro DFTABLES is defined. */
 
+#ifdef _MSC_VER
+
 #pragma warning( disable : 4244)  // conversion from 'int' to 'unsigned short', possible loss of data
+
+#endif
 
 #ifndef DFTABLES
 #  include "pcre_config.h"

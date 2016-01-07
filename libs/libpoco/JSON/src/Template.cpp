@@ -247,7 +247,7 @@ public:
 
 	void render(const Var& data, std::ostream& out) const
 	{
-		int count = 0;
+		unsigned count = 0;
 		for(std::vector<SharedPtr<LogicQuery> >::const_iterator it = _queries.begin(); it != _queries.end(); ++it, ++count)
 		{
 			if( (*it)->apply(data) && _parts.size() > count )
@@ -284,7 +284,7 @@ public:
 			Array::Ptr array = query.findArray(_query);
 			if ( ! array.isNull() )
 			{
-				for(int i = 0; i < array->size(); i++)
+				for(unsigned i = 0; i < array->size(); i++)
 				{
 					Var value = array->get(i);
 					dataObject->set(_name, value);

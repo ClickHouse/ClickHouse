@@ -70,8 +70,12 @@ only once - I suspect this was the cause of the problems with the tests.)
 Overall, I concluded that the gains in some cases did not outweigh the losses
 in others, so I abandoned this code. */
 
+#ifdef _MSC_VER
+
 #pragma warning( disable : 4244)  // conversion from 'int' to 'unsigned short', possible loss of data
 #pragma warning( disable : 4146)  // unary minus operator applied to unsigned type, result still unsigned
+
+#endif
 
 #include "pcre_config.h"
 

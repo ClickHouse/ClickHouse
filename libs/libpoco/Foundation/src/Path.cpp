@@ -79,51 +79,51 @@ Path::Path(const char* path, Style style)
 }
 
 
-Path::Path(const Path& path): 
-	_node(path._node), 
+Path::Path(const Path& path):
+	_node(path._node),
 	_device(path._device),
 	_name(path._name),
 	_version(path._version),
 	_dirs(path._dirs),
 	_absolute(path._absolute)
-{	
+{
 }
 
 
 Path::Path(const Path& parent, const std::string& fileName):
-	_node(parent._node), 
+	_node(parent._node),
 	_device(parent._device),
 	_name(parent._name),
 	_version(parent._version),
 	_dirs(parent._dirs),
 	_absolute(parent._absolute)
-{	
+{
 	makeDirectory();
 	_name = fileName;
 }
 
 
 Path::Path(const Path& parent, const char* fileName):
-	_node(parent._node), 
+	_node(parent._node),
 	_device(parent._device),
 	_name(parent._name),
 	_version(parent._version),
 	_dirs(parent._dirs),
 	_absolute(parent._absolute)
-{	
+{
 	makeDirectory();
 	_name = fileName;
 }
 
 
 Path::Path(const Path& parent, const Path& relative):
-	_node(parent._node), 
+	_node(parent._node),
 	_device(parent._device),
 	_name(parent._name),
 	_version(parent._version),
 	_dirs(parent._dirs),
 	_absolute(parent._absolute)
-{	
+{
 	resolve(relative);
 }
 
@@ -132,13 +132,13 @@ Path::~Path()
 {
 }
 
-	
+
 Path& Path::operator = (const Path& path)
 {
 	return assign(path);
 }
 
-	
+
 Path& Path::operator = (const std::string& path)
 {
 	return assign(path);
@@ -190,7 +190,7 @@ Path& Path::assign(const std::string& path)
 	return *this;
 }
 
-	
+
 Path& Path::assign(const std::string& path, Style style)
 {
 	switch (style)
@@ -234,7 +234,7 @@ std::string Path::toString() const
 #endif
 }
 
-	
+
 std::string Path::toString(Style style) const
 {
 	switch (style)
@@ -441,7 +441,7 @@ Path& Path::setNode(const std::string& node)
 	return *this;
 }
 
-	
+
 Path& Path::setDevice(const std::string& device)
 {
 	_device   = device;
@@ -449,29 +449,29 @@ Path& Path::setDevice(const std::string& device)
 	return *this;
 }
 
-	
+
 const std::string& Path::directory(int n) const
 {
-	poco_assert (0 <= n && n <= _dirs.size());
-	
-	if (n < _dirs.size())
+	poco_assert (0 <= n && (size_t)n <= _dirs.size());
+
+	if ((size_t)n < _dirs.size())
 		return _dirs[n];
 	else
-		return _name;	
+		return _name;
 }
 
 
 const std::string& Path::operator [] (int n) const
 {
-	poco_assert (0 <= n && n <= _dirs.size());
-	
-	if (n < _dirs.size())
+	poco_assert (0 <= n && (size_t)n <= _dirs.size());
+
+	if ((size_t)n < _dirs.size())
 		return _dirs[n];
 	else
-		return _name;	
+		return _name;
 }
 
-	
+
 Path& Path::pushDirectory(const std::string& dir)
 {
 	if (!dir.empty() && dir != ".")
@@ -499,11 +499,11 @@ Path& Path::pushDirectory(const std::string& dir)
 	return *this;
 }
 
-	
+
 Path& Path::popDirectory()
 {
 	poco_assert (!_dirs.empty());
-	
+
 	_dirs.pop_back();
 	return *this;
 }
@@ -512,13 +512,13 @@ Path& Path::popDirectory()
 Path& Path::popFrontDirectory()
 {
 	poco_assert (!_dirs.empty());
-	
+
 	StringVec::iterator it = _dirs.begin();
 	_dirs.erase(it);
 	return *this;
 }
 
-	
+
 Path& Path::setFileName(const std::string& name)
 {
 	_name = name;
@@ -560,7 +560,7 @@ Path& Path::setExtension(const std::string& extension)
 	return *this;
 }
 
-			
+
 std::string Path::getExtension() const
 {
 	std::string::size_type pos = _name.rfind('.');
@@ -588,13 +588,13 @@ std::string Path::current()
 	return PathImpl::currentImpl();
 }
 
-	
+
 std::string Path::home()
 {
 	return PathImpl::homeImpl();
 }
 
-	
+
 std::string Path::temp()
 {
 	return PathImpl::tempImpl();
@@ -606,7 +606,7 @@ std::string Path::null()
 	return PathImpl::nullImpl();
 }
 
-	
+
 std::string Path::expand(const std::string& path)
 {
 	return PathImpl::expandImpl(path);
@@ -663,7 +663,7 @@ void Path::parseUnix(const std::string& path)
 
 	if (it != end)
 	{
-		if (*it == '/') 
+		if (*it == '/')
 		{
 			_absolute = true; ++it;
 		}
@@ -793,7 +793,7 @@ void Path::parseVMS(const std::string& path)
 						}
 					}
 				}
-			}			
+			}
 			if (name.empty())
 			{
 				if (it != end && *it == '[')
@@ -819,7 +819,7 @@ void Path::parseVMS(const std::string& path)
 								{
 									if (_dirs.empty() || _dirs.back() == "..")
 										_dirs.push_back("..");
-									else 
+									else
 										_dirs.pop_back();
 								}
 								else _dirs.push_back(name);
@@ -845,7 +845,7 @@ void Path::parseVMS(const std::string& path)
 								{
 									if (name == "-")
 									{
-										if (_dirs.size() > d)
+										if (_dirs.size() > (size_t)d)
 											_dirs.pop_back();
 									}
 									else _dirs.push_back(name);
@@ -890,7 +890,7 @@ void Path::parseGuess(const std::string& path)
 			case '\\': hasBackslash = true; break;
 			case '/':  hasSlash = true; break;
 			case '[':  hasOpenBracket = true;
-			case ']':  hasClosBracket = hasOpenBracket; 
+			case ']':  hasClosBracket = hasOpenBracket;
 			case ';':  semiIt = it; break;
 			}
 		}

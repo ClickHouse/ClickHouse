@@ -45,7 +45,7 @@ const UInt8 ICMPv4PacketImpl::TIME_EXCEEDED_TYPE                 = 11;
 const Poco::UInt8 ICMPv4PacketImpl::PARAMETER_PROBLEM_TYPE = 12;
 
 
-const std::string ICMPv4PacketImpl::MESSAGE_TYPE[] = 
+const std::string ICMPv4PacketImpl::MESSAGE_TYPE[] =
 {
 	"Echo Reply",
 	"ICMP 1",
@@ -68,7 +68,7 @@ const std::string ICMPv4PacketImpl::MESSAGE_TYPE[] =
 };
 
 
-const std::string ICMPv4PacketImpl::DESTINATION_UNREACHABLE_CODE[] = 
+const std::string ICMPv4PacketImpl::DESTINATION_UNREACHABLE_CODE[] =
 {
 	"Net unreachable",
 	"Host unreachable",
@@ -80,7 +80,7 @@ const std::string ICMPv4PacketImpl::DESTINATION_UNREACHABLE_CODE[] =
 };
 
 
-const std::string ICMPv4PacketImpl::REDIRECT_MESSAGE_CODE[] = 
+const std::string ICMPv4PacketImpl::REDIRECT_MESSAGE_CODE[] =
 {
 	"Redirect datagrams for the network",
 	"Redirect datagrams for the host",
@@ -90,7 +90,7 @@ const std::string ICMPv4PacketImpl::REDIRECT_MESSAGE_CODE[] =
 };
 
 
-const std::string ICMPv4PacketImpl::TIME_EXCEEDED_CODE[] = 
+const std::string ICMPv4PacketImpl::TIME_EXCEEDED_CODE[] =
 {
 	"Time to live exceeded in transit",
 	"Fragment reassembly time exceeded",
@@ -98,7 +98,7 @@ const std::string ICMPv4PacketImpl::TIME_EXCEEDED_CODE[] =
 };
 
 
-const std::string ICMPv4PacketImpl::PARAMETER_PROBLEM_CODE[] = 
+const std::string ICMPv4PacketImpl::PARAMETER_PROBLEM_CODE[] =
 {
 	"Pointer indicates the error",
 	"Unknown code"
@@ -171,7 +171,7 @@ ICMPv4PacketImpl::Header* ICMPv4PacketImpl::header(Poco::UInt8* buffer, int leng
 	poco_check_ptr (buffer);
 
 	int offset = (buffer[0] & 0x0F) * 4;
-	if ((offset + sizeof(Header)) > length) return 0;
+	if ((offset + sizeof(Header)) > (size_t)length) return 0;
 
 	buffer += offset;
 	return (Header *) buffer;
@@ -221,13 +221,13 @@ std::string ICMPv4PacketImpl::errorDescription(unsigned char* buffer, int length
 		else
 			err << DESTINATION_UNREACHABLE_CODE[DESTINATION_UNREACHABLE_UNKNOWN];
 		break;
-	
-	case SOURCE_QUENCH_TYPE:		
+
+	case SOURCE_QUENCH_TYPE:
 		err << "Source quench";
 		break;
-	
+
 	case REDIRECT_MESSAGE_TYPE:
-		if (code >= REDIRECT_NETWORK && code < REDIRECT_MESSAGE_UNKNOWN) 
+		if (code >= REDIRECT_NETWORK && code < REDIRECT_MESSAGE_UNKNOWN)
 			err << REDIRECT_MESSAGE_CODE[code];
 		else
 			err << REDIRECT_MESSAGE_CODE[REDIRECT_MESSAGE_UNKNOWN];
@@ -239,13 +239,13 @@ std::string ICMPv4PacketImpl::errorDescription(unsigned char* buffer, int length
 		else
 			err << TIME_EXCEEDED_CODE[TIME_EXCEEDED_UNKNOWN];
 		break;
-	
+
 	case PARAMETER_PROBLEM_TYPE:
 		if (POINTER_INDICATES_THE_ERROR != code)
 			code = PARAMETER_PROBLEM_UNKNOWN;
 		err << PARAMETER_PROBLEM_CODE[code] << ": error in octet #" << pointer;
 		break;
-	
+
 	default:
 		err << "Unknown type.";
 		break;

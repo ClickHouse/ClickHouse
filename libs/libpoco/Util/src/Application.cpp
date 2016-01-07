@@ -98,12 +98,12 @@ Application::~Application()
 void Application::setup()
 {
 	poco_assert (_pInstance == 0);
-	
+
 	_pConfig->add(new SystemConfiguration, PRIO_SYSTEM, false, false);
 	_pConfig->add(new MapConfiguration, PRIO_APPLICATION, true, false);
-	
+
 	addSubsystem(new LoggingSubsystem);
-	
+
 #if defined(POCO_OS_FAMILY_UNIX) && !defined(POCO_VXWORKS)
 	_workingDirAtLaunch = Path::current();
 
@@ -187,7 +187,7 @@ void Application::initialize(Application& self)
 	_initialized = true;
 }
 
-	
+
 void Application::uninitialize()
 {
 	if (_initialized)
@@ -374,12 +374,12 @@ void Application::setArgs(int argc, char* argv[])
 void Application::setArgs(const ArgVec& args)
 {
 	poco_assert (!args.empty());
-	
+
 	_command = args[0];
 	_pConfig->setInt("application.argc", (int) args.size());
 	_unprocessedArgs = args;
 	std::string argvKey = "application.argv[";
-	for (int i = 0; i < args.size(); ++i)
+	for (unsigned i = 0; i < args.size(); ++i)
 	{
 		_pConfig->setString(argvKey + NumberFormatter::format(i) + "]", args[i]);
 	}
@@ -463,7 +463,7 @@ void Application::getApplicationPath(Poco::Path& appPath) const
 bool Application::findFile(Poco::Path& path) const
 {
 	if (path.isAbsolute()) return true;
-	
+
 	Path appPath;
 	getApplicationPath(appPath);
 	Path base = appPath.parent();

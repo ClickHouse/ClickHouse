@@ -37,7 +37,11 @@ POSSIBILITY OF SUCH DAMAGE.
 -----------------------------------------------------------------------------
 */
 
+#ifdef _MSC_VER
+
 #pragma warning( disable : 4244)  // conversion from 'int' to 'unsigned short', possible loss of data
+
+#endif
 
 /* This file contains a private PCRE function that converts an ordinal
 character value into a UTF8 string. */

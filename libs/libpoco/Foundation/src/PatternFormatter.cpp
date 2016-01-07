@@ -103,9 +103,9 @@ void PatternFormatter::format(const Message& msg, std::string& text)
 		case 'Z': text.append(DateTimeFormatter::tzdRFC(localTime ? Timezone::tzd() : DateTimeFormatter::UTC)); break;
 		case 'E': NumberFormatter::append(text, msg.getTime().epochTime()); break;
 		case 'v':
-			if (ip->length > msg.getSource().length())	//append spaces
+			if ((size_t)ip->length > msg.getSource().length())	//append spaces
 				text.append(msg.getSource()).append(ip->length - msg.getSource().length(), ' ');
-			else if (ip->length && ip->length < msg.getSource().length()) // crop
+			else if (ip->length && (size_t)ip->length < msg.getSource().length()) // crop
 				text.append(msg.getSource(), msg.getSource().length()-ip->length, ip->length);
 			else
 				text.append(msg.getSource());
@@ -191,7 +191,7 @@ void PatternFormatter::parsePattern()
 	}
 }
 
-	
+
 void PatternFormatter::setProperty(const std::string& name, const std::string& value)
 {
 	if (name == PROP_PATTERN)
@@ -203,7 +203,7 @@ void PatternFormatter::setProperty(const std::string& name, const std::string& v
 	{
 		_localTime = (value == "local");
 	}
-	else 
+	else
 	{
 		Formatter::setProperty(name, value);
 	}
@@ -223,7 +223,7 @@ std::string PatternFormatter::getProperty(const std::string& name) const
 
 namespace
 {
-	static std::string priorities[] = 
+	static std::string priorities[] =
 	{
 		"",
 		"Fatal",
@@ -240,7 +240,7 @@ namespace
 
 const std::string& PatternFormatter::getPriorityName(int prio)
 {
-	poco_assert (1 <= prio && prio <= 8);	
+	poco_assert (1 <= prio && prio <= 8);
 	return priorities[prio];
 }
 
