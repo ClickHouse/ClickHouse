@@ -24,8 +24,8 @@
 #elif defined(POCO_HAVE_FD_POLL)
 #include "Poco/SharedPtr.h"
 #include <poll.h>
-typedef Poco::SharedPtr<pollfd, 
-	Poco::ReferenceCounter, 
+typedef Poco::SharedPtr<pollfd,
+	Poco::ReferenceCounter,
 	Poco::ReleaseArrayPolicy<pollfd> > SharedPollArray;
 #endif
 
@@ -55,7 +55,7 @@ Socket::Socket(const Socket& socket):
 	_pImpl->duplicate();
 }
 
-	
+
 Socket& Socket::operator = (const Socket& socket)
 {
 	if (&socket != this)
@@ -151,7 +151,8 @@ int Socket::select(SocketList& readList, SocketList& writeList, SocketList& exce
 		if (epollfd < 0)
 		{
 			char buf[1024];
-			strerror_r(errno, buf, sizeof(buf));
+			auto res = strerror_r(errno, buf, sizeof(buf));
+			(void)res;
 			SocketImpl::error(std::string("Can't create epoll queue: ") + buf);
 		}
 
@@ -163,7 +164,8 @@ int Socket::select(SocketList& readList, SocketList& writeList, SocketList& exce
 				if (epoll_ctl(epollfd, EPOLL_CTL_ADD, sockfd, e) < 0)
 				{
 					char buf[1024];
-					strerror_r(errno, buf, sizeof(buf));
+					auto res = strerror_r(errno, buf, sizeof(buf));
+					(void)res;
 					::close(epollfd);
 					SocketImpl::error(std::string("Can't insert socket to epoll queue: ") + buf);
 				}
@@ -231,7 +233,7 @@ int Socket::select(SocketList& readList, SocketList& writeList, SocketList& exce
 	for (SocketList::iterator it = writeList.begin(); it != writeList.end(); ++it)
 	{
 		SocketList::iterator pos = std::find(begR, endR, *it);
-		if (pos != endR) 
+		if (pos != endR)
 		{
 			pPollArr[pos-begR].events |= POLLOUT;
 			--nfd;
@@ -355,7 +357,7 @@ int Socket::select(SocketList& readList, SocketList& writeList, SocketList& exce
 	}
 	while (rc < 0 && SocketImpl::lastError() == POCO_EINTR);
 	if (rc < 0) SocketImpl::error();
-	
+
 	SocketList readyReadList;
 	for (SocketList::const_iterator it = readList.begin(); it != readList.end(); ++it)
 	{
@@ -388,8 +390,8 @@ int Socket::select(SocketList& readList, SocketList& writeList, SocketList& exce
 				readyExceptList.push_back(*it);
 		}
 	}
-	std::swap(exceptList, readyExceptList);	
-	return rc; 
+	std::swap(exceptList, readyExceptList);
+	return rc;
 
 #endif // POCO_HAVE_FD_EPOLL
 }

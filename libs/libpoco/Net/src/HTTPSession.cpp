@@ -32,7 +32,9 @@ HTTPSession::HTTPSession():
 	_pCurrent(0),
 	_pEnd(0),
 	_keepAlive(false),
-	_timeout(HTTP_DEFAULT_TIMEOUT),
+	_connection_timeout(HTTP_DEFAULT_CONNECTION_TIMEOUT),
+	_receive_timeout(HTTP_DEFAULT_TIMEOUT),
+	_send_timeout(HTTP_DEFAULT_TIMEOUT),
 	_pException(0)
 {
 }
@@ -44,7 +46,9 @@ HTTPSession::HTTPSession(const StreamSocket& socket):
 	_pCurrent(0),
 	_pEnd(0),
 	_keepAlive(false),
-	_timeout(HTTP_DEFAULT_TIMEOUT),
+	_connection_timeout(HTTP_DEFAULT_CONNECTION_TIMEOUT),
+	_receive_timeout(HTTP_DEFAULT_TIMEOUT),
+	_send_timeout(HTTP_DEFAULT_TIMEOUT),
 	_pException(0)
 {
 }
@@ -56,7 +60,9 @@ HTTPSession::HTTPSession(const StreamSocket& socket, bool keepAlive):
 	_pCurrent(0),
 	_pEnd(0),
 	_keepAlive(keepAlive),
-	_timeout(HTTP_DEFAULT_TIMEOUT),
+	_connection_timeout(HTTP_DEFAULT_CONNECTION_TIMEOUT),
+	_receive_timeout(HTTP_DEFAULT_TIMEOUT),
+	_send_timeout(HTTP_DEFAULT_TIMEOUT),
 	_pException(0)
 {
 }
@@ -91,7 +97,15 @@ void HTTPSession::setKeepAlive(bool keepAlive)
 
 void HTTPSession::setTimeout(const Poco::Timespan& timeout)
 {
-	_timeout = timeout;
+	setTimeout(timeout, timeout, timeout);
+}
+
+
+void HTTPSession::setTimeout(const Poco::Timespan& connection_timeout, const Poco::Timespan& send_timeout, const Poco::Timespan& receive_timeout)
+{
+	 _connection_timeout = connection_timeout;
+	 _send_timeout = send_timeout;
+	 _receive_timeout = receive_timeout;
 }
 
 
@@ -99,14 +113,14 @@ int HTTPSession::get()
 {
 	if (_pCurrent == _pEnd)
 		refill();
-	
+
 	if (_pCurrent < _pEnd)
 		return *_pCurrent++;
 	else
 		return std::char_traits<char>::eof();
 }
 
-	
+
 int HTTPSession::peek()
 {
 	if (_pCurrent == _pEnd)
@@ -118,7 +132,7 @@ int HTTPSession::peek()
 		return std::char_traits<char>::eof();
 }
 
-	
+
 int HTTPSession::read(char* buffer, std::streamsize length)
 {
 	if (_pCurrent < _pEnd)
@@ -181,8 +195,9 @@ bool HTTPSession::connected() const
 
 void HTTPSession::connect(const SocketAddress& address)
 {
-	_socket.connect(address, _timeout);
-	_socket.setReceiveTimeout(_timeout);
+	_socket.connect(address, _connection_timeout);
+	_socket.setReceiveTimeout(_receive_timeout);
+	_socket.setSendTimeout(_send_timeout);
 	_socket.setNoDelay(true);
 	// There may be leftover data from a previous (failed) request in the buffer,
 	// so we clear it.

@@ -48,14 +48,17 @@ public:
 		///
 		/// If the keep-alive flag is enabled, persistent
 		/// HTTP/1.1 connections are supported.
-		
+
 	bool getKeepAlive() const;
 		/// Returns the value of the keep-alive flag for
 		/// this session.
 
 	void setTimeout(const Poco::Timespan& timeout);
 		/// Sets the timeout for the HTTP session.
-		
+
+	void setTimeout(const Poco::Timespan& connection_timeout, const Poco::Timespan& send_timeout, const Poco::Timespan& receive_timeout);
+		/// Sets different timeouts for the HTTP session.
+
 	Poco::Timespan getTimeout() const;
 		/// Returns the timeout for the HTTP session.
 
@@ -65,23 +68,23 @@ public:
 	virtual void abort();
 		/// Aborts a session in progress by shutting down
 		/// and closing the underlying socket.
-		
+
 	const Poco::Exception* networkException() const;
 		/// If sending or receiving data over the underlying
 		/// socket connection resulted in an exception, a
 		/// pointer to this exception is returned.
-		/// 
+		///
 		/// Otherwise, NULL is returned.
 
 	void attachSessionData(const Poco::Any& data);
-		/// Allows to attach an application-specific data 
+		/// Allows to attach an application-specific data
 		/// item to the session.
 		///
 		/// On the server side, this can be used to manage
 		/// data that must be maintained over the entire
 		/// lifetime of a persistent connection (that is,
 		/// multiple requests sent over the same connection).
-	
+
 	const Poco::Any& sessionData() const;
 		/// Returns the data attached with attachSessionData(),
 		/// or an empty Poco::Any if no user data has been
@@ -91,7 +94,7 @@ public:
 	{
 		HTTP_PORT = 80
 	};
-	
+
 	StreamSocket detachSocket();
 		/// Detaches the socket from the session.
 		///
@@ -126,42 +129,42 @@ protected:
 		/// Returns the next byte in the buffer.
 		/// Reads more data from the socket if there are
 		/// no bytes left in the buffer.
-		
+
 	int peek();
 		/// Peeks at the next character in the buffer.
 		/// Reads more data from the socket if there are
 		/// no bytes left in the buffer.
-		
+
 	virtual int read(char* buffer, std::streamsize length);
 		/// Reads up to length bytes.
 		///
 		/// If there is data in the buffer, this data
 		/// is returned. Otherwise, data is read from
 		/// the socket to avoid unnecessary buffering.
-	
+
 	virtual int write(const char* buffer, std::streamsize length);
 		/// Writes data to the socket.
 
 	int receive(char* buffer, int length);
 		/// Reads up to length bytes.
-		
+
 	int buffered() const;
 		/// Returns the number of bytes in the buffer.
 
 	void refill();
 		/// Refills the internal buffer.
-		
+
 	virtual void connect(const SocketAddress& address);
 		/// Connects the underlying socket to the given address
-		/// and sets the socket's receive timeout.	
-		
+		/// and sets the socket's receive timeout.
+
 	void attachSocket(const StreamSocket& socket);
 		/// Attaches a socket to the session, replacing the
 		/// previously attached socket.
 
 	void close();
 		/// Closes the underlying socket.
-		
+
 	void setException(const Poco::Exception& exc);
 		/// Stores a clone of the exception.
 
@@ -171,21 +174,24 @@ protected:
 private:
 	enum
 	{
-		HTTP_DEFAULT_TIMEOUT = 60000000
+		HTTP_DEFAULT_TIMEOUT = 60000000,
+		HTTP_DEFAULT_CONNECTION_TIMEOUT = 1000000
 	};
-	
+
 	HTTPSession(const HTTPSession&);
 	HTTPSession& operator = (const HTTPSession&);
-	
+
 	StreamSocket     _socket;
 	char*            _pBuffer;
 	char*            _pCurrent;
 	char*            _pEnd;
 	bool             _keepAlive;
-	Poco::Timespan   _timeout;
+	Poco::Timespan   _connection_timeout;
+	Poco::Timespan   _receive_timeout;
+	Poco::Timespan   _send_timeout;
 	Poco::Exception* _pException;
 	Poco::Any        _data;
-	
+
 	friend class HTTPStreamBuf;
 	friend class HTTPHeaderStreamBuf;
 	friend class HTTPFixedLengthStreamBuf;
@@ -204,7 +210,7 @@ inline bool HTTPSession::getKeepAlive() const
 
 inline Poco::Timespan HTTPSession::getTimeout() const
 {
-	return _timeout;
+	return _receive_timeout;
 }
 
 
