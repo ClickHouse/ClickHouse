@@ -4,13 +4,13 @@
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/Columns/ColumnArray.h>
 #include <DB/DataTypes/DataTypeArray.h>
-#include <DB/Functions/IFunction.h>
 #include <DB/Functions/FunctionsArray.h>
 #include <set>
 
 
 namespace DB
 {
+
 
 Names ExpressionAction::getNeededColumns() const
 {
@@ -28,7 +28,7 @@ Names ExpressionAction::getNeededColumns() const
 	return res;
 }
 
-ExpressionAction ExpressionAction::applyFunction(FunctionPtr function_,
+ExpressionAction ExpressionAction::applyFunction(const FunctionPtr & function_,
 	const std::vector<std::string> & argument_names_,
 	std::string result_name_)
 {
