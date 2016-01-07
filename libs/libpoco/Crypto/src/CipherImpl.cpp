@@ -30,7 +30,7 @@ namespace
 	{
 		unsigned long err;
 		std::string msg;
-		
+
 		while ((err = ERR_get_error()))
 		{
 			if (!msg.empty())
@@ -60,17 +60,17 @@ namespace
 			Direction         dir);
 
 		~CryptoTransformImpl();
-		
+
 		std::size_t blockSize() const;
 
-		int setPadding(int padding);	
+		int setPadding(int padding);
 
 		std::streamsize transform(
 			const unsigned char* input,
 			std::streamsize      inputLength,
 			unsigned char*       output,
 			std::streamsize      outputLength);
-		
+
 		std::streamsize finalize(
 			unsigned char*  output,
 			std::streamsize length);
@@ -112,12 +112,12 @@ namespace
 		return EVP_CIPHER_CTX_block_size(&_ctx);
 	}
 
-	
+
 	int CryptoTransformImpl::setPadding(int padding)
 	{
 		return EVP_CIPHER_CTX_set_padding(&_ctx, padding);
 	}
-	
+
 
 	std::streamsize CryptoTransformImpl::transform(
 		const unsigned char* input,
@@ -125,7 +125,7 @@ namespace
 		unsigned char*       output,
 		std::streamsize      outputLength)
 	{
-		poco_assert (outputLength >= (inputLength + blockSize() - 1));
+		poco_assert (outputLength >= std::streamsize(inputLength + blockSize() - 1));
 
 		int outLen = static_cast<int>(outputLength);
 		int rc = EVP_CipherUpdate(
@@ -146,8 +146,8 @@ namespace
 		unsigned char*	output,
 		std::streamsize length)
 	{
-		poco_assert (length >= blockSize());
-		
+		poco_assert (length >= (std::streamsize)blockSize());
+
 		int len = static_cast<int>(length);
 
 		// Use the '_ex' version that does not perform implicit cleanup since we
@@ -157,7 +157,7 @@ namespace
 
 		if (rc == 0)
 			throwError();
-			
+
 		return static_cast<std::streamsize>(len);
 	}
 }

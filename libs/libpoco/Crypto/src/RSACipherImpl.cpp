@@ -32,7 +32,7 @@ namespace
 	{
 		unsigned long err;
 		std::string msg;
-		
+
 		while ((err = ERR_get_error()))
 		{
 			if (!msg.empty())
@@ -68,7 +68,7 @@ namespace
 	public:
 		RSAEncryptImpl(const RSA* pRSA, RSAPaddingMode paddingMode);
 		~RSAEncryptImpl();
-		
+
 		std::size_t blockSize() const;
 		std::size_t maxDataSize() const;
 
@@ -77,7 +77,7 @@ namespace
 			std::streamsize		 inputLength,
 			unsigned char*		 output,
 			std::streamsize		 outputLength);
-		
+
 		std::streamsize finalize(unsigned char*	output, std::streamsize length);
 
 	private:
@@ -156,7 +156,7 @@ namespace
 				output += n;
 				outputLength -= n;
 				_pos = 0;
-				
+
 			}
 			else
 			{
@@ -175,8 +175,8 @@ namespace
 
 	std::streamsize RSAEncryptImpl::finalize(unsigned char*	output, std::streamsize length)
 	{
-		poco_assert (length >= blockSize());
-		poco_assert (_pos <= maxDataSize());
+		poco_assert ((size_t)length >= blockSize());
+		poco_assert ((size_t)_pos <= maxDataSize());
 		int rc = 0;
 		if (_pos > 0)
 		{
@@ -192,7 +192,7 @@ namespace
 	public:
 		RSADecryptImpl(const RSA* pRSA, RSAPaddingMode paddingMode);
 		~RSADecryptImpl();
-		
+
 		std::size_t blockSize() const;
 
 		std::streamsize transform(
@@ -200,7 +200,7 @@ namespace
 			std::streamsize		 inputLength,
 			unsigned char*		 output,
 			std::streamsize		 outputLength);
-		
+
 		std::streamsize finalize(
 			unsigned char*	output,
 			std::streamsize length);
@@ -241,7 +241,7 @@ namespace
 		unsigned char*		 output,
 		std::streamsize		 outputLength)
 	{
-		
+
 		// always fill up the buffer before decrypting!
 		std::streamsize rsaSize = static_cast<std::streamsize>(blockSize());
 		poco_assert_dbg(_pos <= rsaSize);
@@ -261,7 +261,7 @@ namespace
 				output += tmp;
 				outputLength -= tmp;
 				_pos = 0;
-				
+
 			}
 			else
 			{
@@ -280,7 +280,7 @@ namespace
 
 	std::streamsize RSADecryptImpl::finalize(unsigned char*	output, std::streamsize length)
 	{
-		poco_assert (length >= blockSize());
+		poco_assert ((size_t)length >= blockSize());
 		int rc = 0;
 		if (_pos > 0)
 		{

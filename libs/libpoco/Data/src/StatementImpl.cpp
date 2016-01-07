@@ -133,15 +133,15 @@ std::size_t StatementImpl::executeWithLimit()
 	do
 	{
 		bind();
-		while (count < limit && hasNext()) 
+		while (count < limit && hasNext())
 			count += next();
 	} while (count < limit && canBind());
 
-	if (!canBind() && (!hasNext() || limit == 0)) 
+	if (!canBind() && (!hasNext() || limit == 0))
 		_state = ST_DONE;
 	else if (hasNext() && limit == count && _extrLimit.isHardLimit())
 		throw LimitException("HardLimit reached (retrieved more data than requested).");
-	else 
+	else
 		_state = ST_PAUSED;
 
 	int affectedRows = affectedRowCount();
@@ -179,8 +179,8 @@ std::size_t StatementImpl::executeWithoutLimit()
 
 void StatementImpl::compile()
 {
-	if (_state == ST_INITIALIZED || 
-		_state == ST_RESET || 
+	if (_state == ST_INITIALIZED ||
+		_state == ST_RESET ||
 		_state == ST_BOUND)
 	{
 		compileImpl();
@@ -300,7 +300,7 @@ void StatementImpl::setStorage(const std::string& storage)
 	if (0 == icompare(DEQUE, storage))
 		_storage = STORAGE_DEQUE_IMPL;
 	else if (0 == icompare(VECTOR, storage))
-		_storage = STORAGE_VECTOR_IMPL; 
+		_storage = STORAGE_VECTOR_IMPL;
 	else if (0 == icompare(LIST, storage))
 		_storage = STORAGE_LIST_IMPL;
 	else if (0 == icompare(UNKNOWN, storage))
@@ -312,38 +312,38 @@ void StatementImpl::setStorage(const std::string& storage)
 
 void StatementImpl::makeExtractors(std::size_t count)
 {
-	for (int i = 0; i < count; ++i)
+	for (std::size_t i = 0; i < count; ++i)
 	{
 		const MetaColumn& mc = metaColumn(i);
 		switch (mc.type())
 		{
 			case MetaColumn::FDT_BOOL:
 				addInternalExtract<bool>(mc); break;
-			case MetaColumn::FDT_INT8:  
+			case MetaColumn::FDT_INT8:
 				addInternalExtract<Int8>(mc); break;
-			case MetaColumn::FDT_UINT8:  
+			case MetaColumn::FDT_UINT8:
 				addInternalExtract<UInt8>(mc); break;
-			case MetaColumn::FDT_INT16:  
+			case MetaColumn::FDT_INT16:
 				addInternalExtract<Int16>(mc); break;
-			case MetaColumn::FDT_UINT16: 
+			case MetaColumn::FDT_UINT16:
 				addInternalExtract<UInt16>(mc); break;
-			case MetaColumn::FDT_INT32:  
+			case MetaColumn::FDT_INT32:
 				addInternalExtract<Int32>(mc); break;
-			case MetaColumn::FDT_UINT32: 
+			case MetaColumn::FDT_UINT32:
 				addInternalExtract<UInt32>(mc); break;
-			case MetaColumn::FDT_INT64:  
+			case MetaColumn::FDT_INT64:
 				addInternalExtract<Int64>(mc); break;
-			case MetaColumn::FDT_UINT64: 
+			case MetaColumn::FDT_UINT64:
 				addInternalExtract<UInt64>(mc); break;
-			case MetaColumn::FDT_FLOAT:  
+			case MetaColumn::FDT_FLOAT:
 				addInternalExtract<float>(mc); break;
-			case MetaColumn::FDT_DOUBLE: 
+			case MetaColumn::FDT_DOUBLE:
 				addInternalExtract<double>(mc); break;
-			case MetaColumn::FDT_STRING: 
+			case MetaColumn::FDT_STRING:
 				addInternalExtract<std::string>(mc); break;
 			case MetaColumn::FDT_WSTRING:
 				addInternalExtract<Poco::UTF16String>(mc); break;
-			case MetaColumn::FDT_BLOB:   
+			case MetaColumn::FDT_BLOB:
 				addInternalExtract<BLOB>(mc); break;
 			case MetaColumn::FDT_DATE:
 				addInternalExtract<Date>(mc); break;
@@ -393,7 +393,7 @@ void StatementImpl::addExtract(AbstractExtraction::Ptr pExtraction)
 {
 	poco_check_ptr (pExtraction);
 	std::size_t pos = pExtraction->position();
-	if (pos >= _extractors.size()) 
+	if (pos >= _extractors.size())
 		_extractors.resize(pos + 1);
 
 	pExtraction->setEmptyStringIsNull(
@@ -413,7 +413,7 @@ void StatementImpl::removeBind(const std::string& name)
 	AbstractBindingVec::iterator it = _bindings.begin();
 	for (; it != _bindings.end();)
 	{
-		if ((*it)->name() == name) 
+		if ((*it)->name() == name)
 		{
 			it = _bindings.erase(it);
 			found = true;
@@ -431,7 +431,7 @@ std::size_t StatementImpl::columnsExtracted(int dataSet) const
 	if (USE_CURRENT_DATA_SET == dataSet) dataSet = static_cast<int>(_curDataSet);
 	if (_columnsExtracted.size() > 0)
 	{
-		poco_assert (dataSet >= 0 && dataSet < _columnsExtracted.size());
+		poco_assert (dataSet >= 0 && (size_t)dataSet < _columnsExtracted.size());
 		return _columnsExtracted[dataSet];
 	}
 
@@ -444,11 +444,11 @@ std::size_t StatementImpl::rowsExtracted(int dataSet) const
 	if (USE_CURRENT_DATA_SET == dataSet) dataSet = static_cast<int>(_curDataSet);
 	if (extractions().size() > 0)
 	{
-		poco_assert (dataSet >= 0 && dataSet < _extractors.size());
+		poco_assert (dataSet >= 0 && (size_t)dataSet < _extractors.size());
 		if (_extractors[dataSet].size() > 0)
 			return _extractors[dataSet][0]->numOfRowsHandled();
 	}
-	
+
 	return 0;
 }
 
@@ -458,10 +458,10 @@ std::size_t StatementImpl::subTotalRowCount(int dataSet) const
 	if (USE_CURRENT_DATA_SET == dataSet) dataSet = static_cast<int>(_curDataSet);
 	if (_subTotalRowCount.size() > 0)
 	{
-		poco_assert (dataSet >= 0 && dataSet < _subTotalRowCount.size());
+		poco_assert (dataSet >= 0 && (size_t)dataSet < _subTotalRowCount.size());
 		return _subTotalRowCount[dataSet];
 	}
-	
+
 	return 0;
 }
 

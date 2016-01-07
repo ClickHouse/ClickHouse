@@ -48,7 +48,7 @@ SQLiteStatementImpl::SQLiteStatementImpl(Poco::Data::SessionImpl& rSession, sqli
 {
 	_columns.resize(1);
 }
-	
+
 
 SQLiteStatementImpl::~SQLiteStatementImpl()
 {
@@ -161,7 +161,7 @@ void SQLiteStatementImpl::bindImpl()
 
 	int paramCount = sqlite3_bind_parameter_count(_pStmt);
 	BindIt bindEnd = bindings().end();
-	if (0 == paramCount || bindEnd == _bindBegin) 
+	if (0 == paramCount || bindEnd == _bindBegin)
 	{
 		_canBind = false;
 		return;
@@ -173,7 +173,7 @@ void SQLiteStatementImpl::bindImpl()
 	for (; it != bindEnd; ++it)
 	{
 		availableCount += (*it)->numOfColumnsHandled();
-		if (availableCount <= paramCount) ++bindCount;
+		if (availableCount <= (size_t)paramCount) ++bindCount;
 		else break;
 	}
 
@@ -259,7 +259,7 @@ std::size_t SQLiteStatementImpl::next()
 {
 	if (SQLITE_ROW == _nextResponse)
 	{
-		poco_assert (columnsReturned() == sqlite3_column_count(_pStmt));
+		poco_assert (columnsReturned() == (size_t)sqlite3_column_count(_pStmt));
 
 		Extractions& extracts = extractions();
 		Extractions::iterator it    = extracts.begin();
@@ -283,7 +283,7 @@ std::size_t SQLiteStatementImpl::next()
 	{
 		Utility::throwException(_nextResponse, std::string("Iterator Error: trying to access the next value"));
 	}
-	
+
 	return 1u;
 }
 

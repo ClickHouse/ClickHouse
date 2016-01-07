@@ -18,6 +18,7 @@
 
 
 // +++ double conversion +++
+#define double_conversion poco_double_conversion	// don't collide with standalone double_conversion library
 #define UNREACHABLE poco_bugcheck
 #define UNIMPLEMENTED poco_bugcheck
 #include "diy-fp.cc"

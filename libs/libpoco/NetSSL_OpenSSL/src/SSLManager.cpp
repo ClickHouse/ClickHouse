@@ -121,7 +121,7 @@ void SSLManager::initializeClient(PrivateKeyPassphraseHandlerPtr ptrPassphraseHa
 Context::Ptr SSLManager::defaultServerContext()
 {
 	Poco::FastMutex::ScopedLock lock(_mutex);
-	
+
 	if (!_ptrDefaultServerContext)
 		initDefaultContext(true);
 
@@ -212,7 +212,7 @@ int SSLManager::privateKeyPassphraseCallback(char* pBuf, int size, int flag, voi
 
 	strncpy(pBuf, (char *)(pwd.c_str()), size);
 	pBuf[size - 1] = '\0';
-	if (size > pwd.length())
+	if ((size_t)size > pwd.length())
 		size = (int) pwd.length();
 
 	return size;
@@ -240,7 +240,7 @@ void SSLManager::initDefaultContext(bool server)
 
 	// mandatory options
 	std::string privKeyFile = config.getString(prefix + CFG_PRIV_KEY_FILE, "");
-	std::string certFile = config.getString(prefix + CFG_CERTIFICATE_FILE, privKeyFile);	
+	std::string certFile = config.getString(prefix + CFG_CERTIFICATE_FILE, privKeyFile);
 	std::string caLocation = config.getString(prefix + CFG_CA_LOCATION, "");
 
 	if (server && certFile.empty() && privKeyFile.empty())
@@ -263,7 +263,7 @@ void SSLManager::initDefaultContext(bool server)
 	bool requireTLSv1_1 = config.getBool(prefix + CFG_REQUIRE_TLSV1_1, false);
 	bool requireTLSv1_2 = config.getBool(prefix + CFG_REQUIRE_TLSV1_2, false);
 	Context::Usage usage;
-	
+
 	if (server)
 	{
 		if (requireTLSv1_2)
@@ -288,8 +288,8 @@ void SSLManager::initDefaultContext(bool server)
 			usage = Context::CLIENT_USE;
 		_ptrDefaultClientContext = new Context(usage, privKeyFile, certFile, caLocation, verMode, verDepth, loadDefCA, cipherList);
 	}
-	
-		
+
+
 	bool cacheSessions = config.getBool(prefix + CFG_CACHE_SESSIONS, false);
 	if (server)
 	{
@@ -329,7 +329,7 @@ void SSLManager::initPassphraseHandler(bool server)
 {
 	if (server && _ptrServerPassphraseHandler) return;
 	if (!server && _ptrClientPassphraseHandler) return;
-	
+
 	std::string prefix = server ? CFG_SERVER_PREFIX : CFG_CLIENT_PREFIX;
 	Poco::Util::AbstractConfiguration& config = appConfig();
 
@@ -350,7 +350,7 @@ void SSLManager::initPassphraseHandler(bool server)
 	}
 	else throw Poco::Util::UnknownOptionException(std::string("No passphrase handler known with the name ") + className);
 }
-	
+
 
 void SSLManager::initCertificateHandler(bool server)
 {

@@ -27,8 +27,8 @@ namespace Poco {
 namespace Crypto {
 
 
-CipherKeyImpl::CipherKeyImpl(const std::string& name, 
-	const std::string& passphrase, 
+CipherKeyImpl::CipherKeyImpl(const std::string& name,
+	const std::string& passphrase,
 	const std::string& salt,
 	int iterationCount):
 	_pCipher(0),
@@ -48,8 +48,8 @@ CipherKeyImpl::CipherKeyImpl(const std::string& name,
 }
 
 
-CipherKeyImpl::CipherKeyImpl(const std::string& name, 
-	const ByteVec& key, 
+CipherKeyImpl::CipherKeyImpl(const std::string& name,
+	const ByteVec& key,
 	const ByteVec& iv):
 	_pCipher(0),
 	_name(name),
@@ -64,7 +64,7 @@ CipherKeyImpl::CipherKeyImpl(const std::string& name,
 		throw Poco::NotFoundException("Cipher " + name + " was not found");
 }
 
-	
+
 CipherKeyImpl::CipherKeyImpl(const std::string& name):
 	_pCipher(0),
 	_name(name),
@@ -117,7 +117,7 @@ void CipherKeyImpl::generateKey()
 
 	getRandomBytes(vec, keySize());
 	setKey(vec);
-	
+
 	getRandomBytes(vec, ivSize());
 	setIV(vec);
 }
@@ -126,11 +126,11 @@ void CipherKeyImpl::generateKey()
 void CipherKeyImpl::getRandomBytes(ByteVec& vec, std::size_t count)
 {
 	Poco::RandomInputStream random;
-	
+
 	vec.clear();
 	vec.reserve(count);
 
-	for (int i = 0; i < count; ++i)
+	for (std::size_t i = 0; i < count; ++i)
 		vec.push_back(static_cast<unsigned char>(random.get()));
 }
 

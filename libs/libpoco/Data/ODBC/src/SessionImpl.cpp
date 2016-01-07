@@ -33,7 +33,7 @@ SessionImpl::SessionImpl(const std::string& connect,
 	std::size_t loginTimeout,
 	std::size_t maxFieldSize,
 	bool autoBind,
-	bool autoExtract): 
+	bool autoExtract):
 	Poco::Data::AbstractSessionImpl<SessionImpl>(connect, loginTimeout),
 		_connector(Connector::KEY),
 		_maxFieldSize(maxFieldSize),
@@ -50,7 +50,7 @@ SessionImpl::SessionImpl(const std::string& connect,
 
 
 SessionImpl::SessionImpl(const std::string& connect,
-	Poco::Any maxFieldSize, 
+	Poco::Any maxFieldSize,
 	bool enforceCapability,
 	bool autoBind,
 	bool autoExtract): Poco::Data::AbstractSessionImpl<SessionImpl>(connect),
@@ -136,20 +136,20 @@ void SessionImpl::open(const std::string& connect)
 	}
 
 	_dataTypes.fillTypeInfo(_db);
-		addProperty("dataTypeInfo", 
-		&SessionImpl::setDataTypeInfo, 
+		addProperty("dataTypeInfo",
+		&SessionImpl::setDataTypeInfo,
 		&SessionImpl::dataTypeInfo);
 
-	addFeature("autoCommit", 
-		&SessionImpl::autoCommit, 
+	addFeature("autoCommit",
+		&SessionImpl::autoCommit,
 		&SessionImpl::isAutoCommit);
 
-	addFeature("autoBind", 
-		&SessionImpl::autoBind, 
+	addFeature("autoBind",
+		&SessionImpl::autoBind,
 		&SessionImpl::isAutoBind);
 
-	addFeature("autoExtract", 
-		&SessionImpl::autoExtract, 
+	addFeature("autoExtract",
+		&SessionImpl::autoExtract,
 		&SessionImpl::isAutoExtract);
 
 	addProperty("maxFieldSize",
@@ -210,11 +210,11 @@ bool SessionImpl::canTransact()
 	if (ODBC_TXN_CAPABILITY_UNKNOWN == _canTransact)
 	{
 		SQLUSMALLINT ret;
-		checkError(Poco::Data::ODBC::SQLGetInfo(_db, SQL_TXN_CAPABLE, &ret, 0, 0), 
+		checkError(Poco::Data::ODBC::SQLGetInfo(_db, SQL_TXN_CAPABLE, &ret, 0, 0),
 			"Failed to obtain transaction capability info.");
 
-		_canTransact = (SQL_TC_NONE != ret) ? 
-			ODBC_TXN_CAPABILITY_TRUE : 
+		_canTransact = (SQL_TC_NONE != ret) ?
+			ODBC_TXN_CAPABILITY_TRUE :
 			ODBC_TXN_CAPABILITY_FALSE;
 	}
 
@@ -238,7 +238,7 @@ void SessionImpl::setTransactionIsolation(Poco::UInt32 ti)
 	if (ti & Session::TRANSACTION_SERIALIZABLE)
 		isolation |= SQL_TXN_SERIALIZABLE;
 
-	checkError(SQLSetConnectAttr(_db, SQL_ATTR_TXN_ISOLATION, (SQLPOINTER) isolation, 0));
+	checkError(SQLSetConnectAttr(_db, SQL_ATTR_TXN_ISOLATION, (SQLPOINTER) (intptr_t)isolation, 0));
 }
 
 
@@ -307,10 +307,10 @@ Poco::UInt32 SessionImpl::transactionIsolation(SQLULEN isolation)
 
 void SessionImpl::autoCommit(const std::string&, bool val)
 {
-	checkError(Poco::Data::ODBC::SQLSetConnectAttr(_db, 
-		SQL_ATTR_AUTOCOMMIT, 
-		val ? (SQLPOINTER) SQL_AUTOCOMMIT_ON : 
-			(SQLPOINTER) SQL_AUTOCOMMIT_OFF, 
+	checkError(Poco::Data::ODBC::SQLSetConnectAttr(_db,
+		SQL_ATTR_AUTOCOMMIT,
+		val ? (SQLPOINTER) SQL_AUTOCOMMIT_ON :
+			(SQLPOINTER) SQL_AUTOCOMMIT_OFF,
 		SQL_IS_UINTEGER), "Failed to set automatic commit.");
 }
 
@@ -402,7 +402,7 @@ int SessionImpl::maxStatementLength()
 		0,
 		0)))
 	{
-		throw ConnectionException(_db, 
+		throw ConnectionException(_db,
 			"SQLGetInfo(SQL_MAXIMUM_STATEMENT_LENGTH)");
 	}
 

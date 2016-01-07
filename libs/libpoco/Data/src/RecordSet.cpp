@@ -36,7 +36,7 @@ const std::size_t RecordSet::UNKNOWN_TOTAL_ROW_COUNT = std::numeric_limits<std::
 
 
 RecordSet::RecordSet(const Statement& rStatement,
-	RowFormatter::Ptr pRowFormatter): 
+	RowFormatter::Ptr pRowFormatter):
 	Statement(rStatement),
 	_currentRow(0),
 	_pBegin(new RowIterator(this, 0 == rowsExtracted())),
@@ -48,9 +48,9 @@ RecordSet::RecordSet(const Statement& rStatement,
 }
 
 
-RecordSet::RecordSet(Session& rSession, 
-	const std::string& query, 
-	RowFormatter::Ptr pRowFormatter): 
+RecordSet::RecordSet(Session& rSession,
+	const std::string& query,
+	RowFormatter::Ptr pRowFormatter):
 	Statement((rSession << query, now)),
 	_currentRow(0),
 	_pBegin(new RowIterator(this, 0 == rowsExtracted())),
@@ -170,7 +170,7 @@ Row& RecordSet::row(std::size_t pos)
 	{
 		if (_rowMap.size())
 		{
-			//reuse first row column names and sorting fields to save some memory 
+			//reuse first row column names and sorting fields to save some memory
 			pRow = new Row(_rowMap.begin()->second->names(),
 				_rowMap.begin()->second->getSortMap(),
 				getRowFormatter());
@@ -178,7 +178,7 @@ Row& RecordSet::row(std::size_t pos)
 			for (std::size_t col = 0; col < columns; ++col)
 				pRow->set(col, value(col, pos));
 		}
-		else 
+		else
 		{
 			pRow = new Row;
 			pRow->setFormatter(getRowFormatter());
@@ -188,7 +188,7 @@ Row& RecordSet::row(std::size_t pos)
 
 		_rowMap.insert(RowMap::value_type(pos, pRow));
 	}
-	else 
+	else
 	{
 		pRow = it->second;
 		poco_check_ptr (pRow);
@@ -205,7 +205,7 @@ std::size_t RecordSet::rowCount() const
 	if (!isFiltered()) return rc;
 
 	std::size_t counter = 0;
-	for (int row = 0; row < rc; ++row)
+	for (std::size_t row = 0; row < rc; ++row)
 	{
 		if (isAllowed(row)) ++counter;
 	}

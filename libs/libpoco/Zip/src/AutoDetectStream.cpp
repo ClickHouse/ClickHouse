@@ -73,7 +73,7 @@ int AutoDetectStreamBuf::readFromDevice(char* buffer, std::streamsize length)
 
 	if (!_prefix.empty())
 	{
-		std::streamsize tmp = (_prefix.size() > length)? length: static_cast<std::streamsize>(_prefix.size());
+		std::streamsize tmp = (_prefix.size() > (size_t)length)? length: static_cast<std::streamsize>(_prefix.size());
 		std::memcpy(buffer, _prefix.c_str(), tmp);
 		_prefix = _prefix.substr(tmp);
 		return tmp;
@@ -83,7 +83,7 @@ int AutoDetectStreamBuf::readFromDevice(char* buffer, std::streamsize length)
 	{
 		if (!_postfix.empty())
 		{
-			std::streamsize tmp = (_postfix.size() > length)? length: static_cast<std::streamsize>(_postfix.size());
+			std::streamsize tmp = (_postfix.size() > (size_t)length)? length: static_cast<std::streamsize>(_postfix.size());
 			std::memcpy(buffer, _postfix.c_str(), tmp);
 			_postfix = _postfix.substr(tmp);
 			return tmp;
@@ -99,7 +99,7 @@ int AutoDetectStreamBuf::readFromDevice(char* buffer, std::streamsize length)
 	std::streamsize tempPos = 0;
 	static std::istream::int_type eof = std::istream::traits_type::eof();
 	while (_pIstr->good() && !_pIstr->eof() && (tempPos+4) < length)
-	{ 
+	{
 		std::istream::int_type c = _pIstr->get();
 		if (c != eof)
 		{
@@ -125,13 +125,13 @@ int AutoDetectStreamBuf::readFromDevice(char* buffer, std::streamsize length)
 				//the upper 2 bytes differ: the lower one must be in range 1,3,5,7, the upper must be one larger: 2,4,6,8
 				if (_matchCnt == 2)
 				{
-					if (ZipLocalFileHeader::HEADER[2] == c || 
-						ZipArchiveInfo::HEADER[2] == c || 
-						ZipFileInfo::HEADER[2] == c || 
+					if (ZipLocalFileHeader::HEADER[2] == c ||
+						ZipArchiveInfo::HEADER[2] == c ||
+						ZipFileInfo::HEADER[2] == c ||
 						ZipDataInfo::HEADER[2] == c)
 					{
 						byte3 = static_cast<char>(c);;
-						_matchCnt++; 
+						_matchCnt++;
 					}
 					else
 					{
@@ -218,7 +218,7 @@ AutoDetectInputStream::~AutoDetectInputStream()
 
 
 AutoDetectOutputStream::AutoDetectOutputStream(std::ostream& ostr):
-	AutoDetectIOS(ostr), 
+	AutoDetectIOS(ostr),
 	std::ostream(&_buf)
 {
 }

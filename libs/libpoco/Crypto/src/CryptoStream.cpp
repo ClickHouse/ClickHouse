@@ -43,7 +43,7 @@ CryptoStreamBuf::CryptoStreamBuf(std::istream& istr, CryptoTransform* pTransform
 	_buffer(static_cast<std::size_t>(bufferSize))
 {
 	poco_check_ptr (pTransform);
-	poco_assert (bufferSize > 2 * pTransform->blockSize());
+	poco_assert ((size_t)bufferSize > 2 * pTransform->blockSize());
 }
 
 
@@ -56,7 +56,7 @@ CryptoStreamBuf::CryptoStreamBuf(std::ostream& ostr, CryptoTransform* pTransform
 	_buffer(static_cast<std::size_t>(bufferSize))
 {
 	poco_check_ptr (pTransform);
-	poco_assert (bufferSize > 2 * pTransform->blockSize());
+	poco_assert ((size_t)bufferSize > 2 * pTransform->blockSize());
 }
 
 
@@ -88,10 +88,10 @@ void CryptoStreamBuf::close()
 		// thrown.
 		std::ostream* pOstr = _pOstr;
 		_pOstr = 0;
-		
+
 		// Finalize transformation.
 		std::streamsize n = _pTransform->finalize(_buffer.begin(), static_cast<std::streamsize>(_buffer.size()));
-		
+
 		if (n > 0)
 		{
 			pOstr->write(reinterpret_cast<char*>(_buffer.begin()), n);
@@ -159,7 +159,7 @@ int CryptoStreamBuf::writeToDevice(const char* buffer, std::streamsize length)
 	std::size_t maxChunkSize = _buffer.size()/2;
 	std::size_t count = 0;
 
-	while (count < length)
+	while (count < (size_t)length)
 	{
 		// Truncate chunk size so that the maximum output fits into _buffer.
 		std::size_t n = static_cast<std::size_t>(length) - count;
