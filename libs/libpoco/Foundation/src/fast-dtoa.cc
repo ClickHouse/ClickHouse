@@ -251,7 +251,7 @@ static void BiggestPowerTen(uint32_t number,
   // TODO(floitsch): can we change the 'while' into an 'if'? We definitely see
   // number < (2^number_bits - 1), but I haven't encountered
   // number < (2^number_bits - 2) yet.
-  while (number < kSmallPowersOfTen[exponent_plus_one_guess]) {
+  while (number < kSmallPowersOfTen[exponent_plus_one_guess] && exponent_plus_one_guess > 0) {
     exponent_plus_one_guess--;
   }
   *power = kSmallPowersOfTen[exponent_plus_one_guess];
