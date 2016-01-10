@@ -124,7 +124,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
 	/// Не будем трогать последние replicated_logs_to_keep записей.
 	entries.erase(entries.end() - std::min(entries.size(), storage.data.settings.replicated_logs_to_keep), entries.end());
 	/// Не будем трогать записи, не меньшие min_pointer.
-	entries.erase(std::lower_bound(entries.begin(), entries.end(), "log-" + storage.padIndex(min_pointer)), entries.end());
+	entries.erase(std::lower_bound(entries.begin(), entries.end(), "log-" + padIndex(min_pointer)), entries.end());
 
 	if (entries.empty())
 		return;
