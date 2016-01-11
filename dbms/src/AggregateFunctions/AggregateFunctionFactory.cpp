@@ -71,6 +71,7 @@ void registerAggregateFunctionsStatistics(AggregateFunctionFactory & factory);
 void registerAggregateFunctionSum(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsUniq(AggregateFunctionFactory & factory);
 void registerAggregateFunctionUniqUpTo(AggregateFunctionFactory & factory);
+void registerAggregateFunctionDebug(AggregateFunctionFactory & factory);
 
 AggregateFunctionPtr createAggregateFunctionArray(AggregateFunctionPtr & nested);
 AggregateFunctionPtr createAggregateFunctionIf(AggregateFunctionPtr & nested);
@@ -96,6 +97,7 @@ AggregateFunctionFactory::AggregateFunctionFactory()
 	registerAggregateFunctionSum(*this);
 	registerAggregateFunctionsUniq(*this);
 	registerAggregateFunctionUniqUpTo(*this);
+	registerAggregateFunctionDebug(*this);
 }
 
 

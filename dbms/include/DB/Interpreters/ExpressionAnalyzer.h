@@ -208,11 +208,6 @@ private:
 	  */
 	void collectJoinedColumns(NameSet & joined_columns, NamesAndTypesList & joined_columns_name_type);
 
-	/** Добавляет ALIAS столбцы из storage в aliases, если запрос не является SELECT с ARRAY JOIN. При наличии
-	  * ARRAY JOIN их добавлять нельзя, иначе ломается логика его выполнения.
-	  */
-	void addStorageAliases();
-
 	/** Создать словарь алиасов.
 	  */
 	void addASTAliases(ASTPtr & ast, int ignore_levels = 0);

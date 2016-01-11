@@ -3,6 +3,8 @@
 #include <DB/Functions/FunctionFactory.h>
 #include <DB/Functions/FunctionsArithmetic.h>
 #include <DB/Functions/FunctionsMiscellaneous.h>
+#include <DB/DataTypes/DataTypeEnum.h>
+#include <ext/enumerate.hpp>
 
 
 namespace DB
@@ -128,6 +130,38 @@ namespace VisibleWidth
 		else
 			return false;
 	}
+
+	template <typename T>
+	static bool executeEnum(Block & block, const DataTypePtr & type_ptr, const ColumnPtr & column, const size_t result)
+	{
+		if (const auto type = typeid_cast<const DataTypeEnum<T> *>(type_ptr.get()))
+		{
+			if (const auto col = typeid_cast<const ColumnVector<T> *>(column.get()))
+			{
+				const auto res = new ColumnUInt64(col->size());
+				ColumnPtr res_ptr{res};
+				block.getByPosition(result).column = res_ptr;
+
+				const auto & in = col->getData();
+				auto & out = res->getData();
+
+				for (const auto & idx_num : ext::enumerate(in))
+					out[idx_num.first] = type->getNameLength(idx_num.second);
+
+				return true;
+			}
+			else if (const auto col = typeid_cast<const ColumnConst<T> *>(column.get()))
+			{
+				block.getByPosition(result).column = new ColumnConstUInt64{
+					col->size(), type->getNameLength(col->getData())
+				};
+
+				return true;
+			}
+		}
+
+		return false;
+	}
 }
 
 
@@ -144,6 +178,10 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 	else if (typeid_cast<const DataTypeDateTime *>(&*type))
 	{
 		block.getByPosition(result).column = new ColumnConstUInt64(rows, strlen("0000-00-00 00:00:00"));
+	}
+	else if (VisibleWidth::executeEnum<UInt8>(block, type, column, result)
+		|| VisibleWidth::executeEnum<UInt16>(block, type, column, result))
+	{
 	}
 	else if (VisibleWidth::executeConstNumber<UInt8>(block, column, result)
 		|| VisibleWidth::executeConstNumber<UInt16>(block, column, result)

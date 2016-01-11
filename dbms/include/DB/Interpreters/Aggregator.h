@@ -1180,7 +1180,7 @@ protected:
 	template <typename Method, typename Table>
 	void destroyImpl(
 		Method & method,
-		Table & data) const;
+		Table & table) const;
 
 	void destroyWithoutKey(
 		AggregatedDataVariants & result) const;

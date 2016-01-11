@@ -668,7 +668,13 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
 			ASTPtr required_columns_expr_list{new ASTExpressionList};
 
 			for (const auto & column : required_columns)
-				required_columns_expr_list->children.emplace_back(new ASTIdentifier{{}, column});
+			{
+				const auto default_it = storage->column_defaults.find(column);
+				if (default_it != std::end(storage->column_defaults) && default_it->second.type == ColumnDefaultType::Alias)
+					required_columns_expr_list->children.emplace_back(setAlias(default_it->second.expression->clone(), column));
+				else
+					required_columns_expr_list->children.emplace_back(new ASTIdentifier{{}, column});
+			}
 
 			alias_actions = ExpressionAnalyzer{required_columns_expr_list, context, storage, table_column_names}.getActions(true);
 

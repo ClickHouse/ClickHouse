@@ -7,6 +7,7 @@
 #include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
+#include <DB/DataTypes/DataTypeEnum.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnFixedString.h>
 #include <DB/Columns/ColumnConst.h>
@@ -24,7 +25,7 @@ namespace DB
   */
 
 
-/** Преобразование чисел друг в друга, дат/дат-с-временем в числа и наоборот: делается обычным присваиванием.
+/** Преобразование чисел друг в друга, перечислений в числа, дат/дат-с-временем в числа и наоборот: делается обычным присваиванием.
   *  (дата внутри хранится как количество дней с какого-то, дата-с-временем - как unix timestamp)
   */
 template <typename FromDataType, typename ToDataType, typename Name>
@@ -303,9 +304,37 @@ template <typename Name> struct ConvertImpl<DataTypeInt64, DataTypeDate, Name> :
 
 /** Преобразование чисел, дат, дат-с-временем в строки: через форматирование.
   */
-template <typename DataType> void formatImpl(typename DataType::FieldType x, WriteBuffer & wb) { writeText(x, wb); }
-template <> inline void formatImpl<DataTypeDate>(DataTypeDate::FieldType x, WriteBuffer & wb) { writeDateText(DayNum_t(x), wb); }
-template <> inline void formatImpl<DataTypeDateTime>(DataTypeDateTime::FieldType x, WriteBuffer & wb) { writeDateTimeText(x, wb); }
+template <typename DataType> struct FormatImpl
+{
+	static void execute(const typename DataType::FieldType x, WriteBuffer & wb, const DataType & type = DataType{})
+	{
+		writeText(x, wb);
+	}
+};
+
+template <> struct FormatImpl<DataTypeDate>
+{
+	static void execute(const DataTypeDate::FieldType x, WriteBuffer & wb, const DataTypeDate & type = DataTypeDate{})
+	{
+		writeDateText(DayNum_t(x), wb);
+	}
+};
+
+template <> struct FormatImpl<DataTypeDateTime>
+{
+	static void execute(const DataTypeDateTime::FieldType x, WriteBuffer & wb, const DataTypeDateTime &type = DataTypeDateTime{})
+	{
+		writeDateTimeText(x, wb);
+	}
+};
+
+template <typename FieldType> struct FormatImpl<DataTypeEnum<FieldType>>
+{
+	static void execute(const FieldType x, WriteBuffer & wb, const DataTypeEnum<FieldType> & type)
+	{
+		writeText(type.getNameForValue(x), wb);
+	}
+};
 
 template <typename FromDataType, typename Name>
 struct ConvertImpl<FromDataType, DataTypeString, Name>
@@ -314,7 +343,10 @@ struct ConvertImpl<FromDataType, DataTypeString, Name>
 
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (const ColumnVector<FromFieldType> * col_from = typeid_cast<const ColumnVector<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
+		const auto & col_with_name_and_type = block.getByPosition(arguments[0]);
+		const auto & type = static_cast<const FromDataType &>(*col_with_name_and_type.type);
+
+		if (const auto col_from = typeid_cast<const ColumnVector<FromFieldType> *>(&*col_with_name_and_type.column))
 		{
 			ColumnString * col_to = new ColumnString;
 			block.getByPosition(result).column = col_to;
@@ -330,17 +362,17 @@ struct ConvertImpl<FromDataType, DataTypeString, Name>
 
 			for (size_t i = 0; i < size; ++i)
 			{
-				formatImpl<FromDataType>(vec_from[i], write_buffer);
+				FormatImpl<FromDataType>::execute(vec_from[i], write_buffer, type);
 				writeChar(0, write_buffer);
 				offsets_to[i] = write_buffer.count();
 			}
 			data_to.resize(write_buffer.count());
 		}
-		else if (const ColumnConst<FromFieldType> * col_from = typeid_cast<const ColumnConst<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
+		else if (const auto col_from = typeid_cast<const ColumnConst<FromFieldType> *>(&*col_with_name_and_type.column))
 		{
 			std::vector<char> buf;
 			WriteBufferFromVector<std::vector<char> > write_buffer(buf);
-			formatImpl<FromDataType>(col_from->getData(), write_buffer);
+			FormatImpl<FromDataType>::execute(col_from->getData(), write_buffer, type);
 			block.getByPosition(result).column = new ColumnConstString(col_from->size(), std::string(&buf[0], write_buffer.count()));
 		}
 		else
@@ -398,7 +430,7 @@ struct DateTimeToStringConverter
 			const auto & remote_date_lut = DateLUT::instance(time_zone);
 
 			auto ti = convertTimestamp(vec_from[i], remote_date_lut, local_date_lut);
-			formatImpl<DataTypeDateTime>(ti, write_buffer);
+			FormatImpl<DataTypeDateTime>::execute(ti, write_buffer);
 			writeChar(0, write_buffer);
 			offsets_to[i] = write_buffer.count();
 
@@ -424,7 +456,7 @@ struct DateTimeToStringConverter
 		for (size_t i = 0; i < size; ++i)
 		{
 			auto ti = convertTimestamp(vec_from[i], remote_date_lut, local_date_lut);
-			formatImpl<DataTypeDateTime>(ti, write_buffer);
+			FormatImpl<DataTypeDateTime>::execute(ti, write_buffer);
 			writeChar(0, write_buffer);
 			offsets_to[i] = write_buffer.count();
 		}
@@ -443,7 +475,7 @@ struct DateTimeToStringConverter
 
 		for (size_t i = 0; i < size; ++i)
 		{
-			formatImpl<DataTypeDateTime>(vec_from[i], write_buffer);
+			FormatImpl<DataTypeDateTime>::execute(vec_from[i], write_buffer);
 			writeChar(0, write_buffer);
 			offsets_to[i] = write_buffer.count();
 		}
@@ -473,7 +505,7 @@ struct DateTimeToStringConverter
 			const auto & remote_date_lut = DateLUT::instance(time_zone);
 
 			auto ti = convertTimestamp(from, remote_date_lut, local_date_lut);
-			formatImpl<DataTypeDateTime>(ti, write_buffer);
+			FormatImpl<DataTypeDateTime>::execute(ti, write_buffer);
 			writeChar(0, write_buffer);
 			offsets_to[i] = write_buffer.count();
 
@@ -490,7 +522,7 @@ struct DateTimeToStringConverter
 		std::vector<char> buf;
 		WriteBufferFromVector<std::vector<char> > write_buffer(buf);
 		auto ti = convertTimestamp(from, remote_date_lut, local_date_lut);
-		formatImpl<DataTypeDateTime>(ti, write_buffer);
+		FormatImpl<DataTypeDateTime>::execute(ti, write_buffer);
 		to = std::string(&buf[0], write_buffer.count());
 	}
 
@@ -498,7 +530,7 @@ struct DateTimeToStringConverter
 	{
 		std::vector<char> buf;
 		WriteBufferFromVector<std::vector<char> > write_buffer(buf);
-		formatImpl<DataTypeDateTime>(from, write_buffer);
+		FormatImpl<DataTypeDateTime>::execute(from, write_buffer);
 		to = std::string(&buf[0], write_buffer.count());
 	}
 };
@@ -1036,6 +1068,8 @@ public:
 		else if (typeid_cast<const DataTypeDateTime *	>(from_type)) ConvertImpl<DataTypeDateTime,	ToDataType, Name>::execute(block, arguments, result);
 		else if (typeid_cast<const DataTypeString *		>(from_type)) ConvertImpl<DataTypeString, 	ToDataType, Name>::execute(block, arguments, result);
 		else if (typeid_cast<const DataTypeFixedString *>(from_type)) ConvertImpl<DataTypeFixedString, ToDataType, Name>::execute(block, arguments, result);
+		else if (typeid_cast<const DataTypeEnum8 *>(from_type))		  ConvertImpl<DataTypeEnum8, ToDataType, Name>::execute(block, arguments, result);
+		else if (typeid_cast<const DataTypeEnum16 *>(from_type))	  ConvertImpl<DataTypeEnum16, ToDataType, Name>::execute(block, arguments, result);
 		else
 			throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

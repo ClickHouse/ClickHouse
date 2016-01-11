@@ -218,7 +218,7 @@ protected:
 				/// Прочитаем полный блок столбцов, нужных для вычисления выражения в PREWHERE.
 				size_t space_left = std::max(1LU, block_size / storage.index_granularity);
 				MarkRanges ranges_to_read;
-				while (!remaining_mark_ranges.empty() && space_left)
+				while (!remaining_mark_ranges.empty() && space_left && !isCancelled())
 				{
 					MarkRange & range = remaining_mark_ranges.back();
 
@@ -231,6 +231,11 @@ protected:
 					if (range.begin == range.end)
 						remaining_mark_ranges.pop_back();
 				}
+
+				/// В случае isCancelled.
+				if (!res)
+					return res;
+
 				progressImpl(Progress(res.rowsInFirstColumn(), res.bytes()));
 				pre_reader->fillMissingColumns(res, ordered_names, should_reorder);
 
@@ -335,7 +340,8 @@ protected:
 				else
 					throw Exception("Illegal type " + column->getName() + " of column for filter. Must be ColumnUInt8 or ColumnConstUInt8.", ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
 
-				reader->fillMissingColumnsAndReorder(res, ordered_names);
+				if (res)
+					reader->fillMissingColumnsAndReorder(res, ordered_names);
 			}
 			while (!remaining_mark_ranges.empty() && !res && !isCancelled());
 		}
@@ -355,8 +361,11 @@ protected:
 					remaining_mark_ranges.pop_back();
 			}
 
-			progressImpl(Progress(res.rowsInFirstColumn(), res.bytes()));
+			/// В случае isCancelled.
+			if (!res)
+				return res;
 
+			progressImpl(Progress(res.rowsInFirstColumn(), res.bytes()));
 			reader->fillMissingColumns(res, ordered_names);
 		}
 

@@ -56,6 +56,8 @@ public:
 //			res << ", " << all_mark_ranges[i].begin << ", " << all_mark_ranges[i].end;
 //
 //		res << ")";
+
+		res << static_cast<const void *>(this);
 		return res.str();
 	}
 
@@ -151,7 +153,8 @@ private:
 				/// Прочитаем полный блок столбцов, нужных для вычисления выражения в PREWHERE.
 				size_t space_left = std::max(1LU, block_size_marks);
 				MarkRanges ranges_to_read;
-				while (!task->mark_ranges.empty() && space_left)
+
+				while (!task->mark_ranges.empty() && space_left && !isCancelled())
 				{
 					auto & range = task->mark_ranges.back();
 
@@ -164,6 +167,11 @@ private:
 					if (range.begin == range.end)
 						task->mark_ranges.pop_back();
 				}
+
+				/// В случае isCancelled.
+				if (!res)
+					return res;
+
 				progressImpl({ res.rowsInFirstColumn(), res.bytes() });
 				pre_reader->fillMissingColumns(res, task->ordered_names, task->should_reorder);
 
@@ -272,7 +280,8 @@ private:
 						ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER
 					};
 
-				reader->fillMissingColumnsAndReorder(res, task->ordered_names);
+				if (res)
+					reader->fillMissingColumnsAndReorder(res, task->ordered_names);
 			}
 			while (!task->mark_ranges.empty() && !res && !isCancelled());
 		}
@@ -293,8 +302,11 @@ private:
 					task->mark_ranges.pop_back();
 			}
 
-			progressImpl({ res.rowsInFirstColumn(), res.bytes() });
+			/// В случае isCancelled.
+			if (!res)
+				return res;
 
+			progressImpl({ res.rowsInFirstColumn(), res.bytes() });
 			reader->fillMissingColumns(res, task->ordered_names, task->should_reorder);
 		}
 
