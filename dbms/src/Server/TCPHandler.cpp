@@ -48,6 +48,12 @@ void TCPHandler::runImpl()
 	in = new ReadBufferFromPocoSocket(socket());
 	out = new WriteBufferFromPocoSocket(socket());
 
+	if (in->eof())
+	{
+		LOG_WARNING(log, "Client has not sent any data.");
+		return;
+	}
+
 	try
 	{
 		receiveHello();
@@ -57,6 +63,12 @@ void TCPHandler::runImpl()
 		if (e.code() == ErrorCodes::CLIENT_HAS_CONNECTED_TO_WRONG_PORT)
 		{
 			LOG_DEBUG(log, "Client has connected to wrong port.");
+			return;
+		}
+
+		if (e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
+		{
+			LOG_WARNING(log, "Client has gone away.");
 			return;
 		}
 

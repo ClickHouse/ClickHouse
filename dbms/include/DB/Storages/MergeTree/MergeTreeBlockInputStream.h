@@ -18,7 +18,8 @@ public:
 		MergeTreeData & storage_, const MergeTreeData::DataPartPtr & owned_data_part_,
 		const MarkRanges & mark_ranges_, bool use_uncompressed_cache_,
 		ExpressionActionsPtr prewhere_actions_, String prewhere_column_, bool check_columns,
-		size_t min_bytes_to_use_direct_io_, size_t max_read_buffer_size_)
+		size_t min_bytes_to_use_direct_io_, size_t max_read_buffer_size_,
+		bool save_marks_in_cache_)
 		:
 		path(path_), block_size(block_size_),
 		storage(storage_), owned_data_part(owned_data_part_),
@@ -28,7 +29,8 @@ public:
 		prewhere_actions(prewhere_actions_), prewhere_column(prewhere_column_),
 		log(&Logger::get("MergeTreeBlockInputStream")),
 		ordered_names{column_names},
-		min_bytes_to_use_direct_io(min_bytes_to_use_direct_io_), max_read_buffer_size(max_read_buffer_size_)
+		min_bytes_to_use_direct_io(min_bytes_to_use_direct_io_), max_read_buffer_size(max_read_buffer_size_),
+		save_marks_in_cache(save_marks_in_cache_)
 	{
 		/** @note можно было бы просто поменять местами reverse в if и else ветках MergeTreeDataSelectExecutor,
 		 *	а этот reverse убрать. */
@@ -202,12 +204,14 @@ protected:
 			owned_mark_cache = storage.context.getMarkCache();
 
 			reader.reset(new MergeTreeReader(
-				path, owned_data_part, columns, owned_uncompressed_cache.get(), owned_mark_cache.get(), storage,
+				path, owned_data_part, columns, owned_uncompressed_cache.get(),
+				owned_mark_cache.get(), save_marks_in_cache, storage,
 				all_mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size));
 
 			if (prewhere_actions)
 				pre_reader.reset(new MergeTreeReader(
-					path, owned_data_part, pre_columns, owned_uncompressed_cache.get(), owned_mark_cache.get(), storage,
+					path, owned_data_part, pre_columns, owned_uncompressed_cache.get(),
+					owned_mark_cache.get(), save_marks_in_cache, storage,
 					all_mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size));
 		}
 
@@ -414,6 +418,8 @@ private:
 
 	UncompressedCachePtr owned_uncompressed_cache;
 	MarkCachePtr owned_mark_cache;
+	/// Если выставлено в false - при отсутствии засечек в кэше, считавать засечки, но не сохранять их в кэш, чтобы не вымывать оттуда другие данные.
+	bool save_marks_in_cache;
 };
 
 }

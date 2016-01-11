@@ -31,9 +31,7 @@
 
 #include <DB/DataTypes/DataTypesNumberFixed.h>
 #include <DB/DataTypes/DataTypeNested.h>
-#include <DB/DataTypes/DataTypeFixedString.h>
 #include <DB/DataTypes/DataTypeFactory.h>
-#include <DB/DataTypes/DataTypeArray.h>
 
 
 namespace DB
@@ -329,37 +327,13 @@ InterpreterCreateQuery::ColumnsAndDefaults InterpreterCreateQuery::parseColumns(
 				const auto tmp_column_name = final_column_name + "_tmp";
 				const auto data_type_ptr = columns.back().type.get();
 
-				/// specific code for different data types, e.g. toFixedString(col, N) for DataTypeFixedString
-				if (const auto fixed_string = typeid_cast<const DataTypeFixedString *>(data_type_ptr))
-				{
-					default_expr_list->children.emplace_back(setAlias(
-						makeASTFunction(
-							"toFixedString",
-							ASTPtr{new ASTIdentifier{{}, tmp_column_name}},
-							ASTPtr{new ASTLiteral{{}, fixed_string->getN()}}),
-						final_column_name));
-				}
-				else if (typeid_cast<const DataTypeArray *>(data_type_ptr))
-				{
-					/// do not perform conversion on arrays, require exact type match
-					default_expr_list->children.emplace_back(setAlias(
-						col_decl.default_expression->clone(), final_column_name));
-				}
-				else
-				{
-					const auto conversion_function_name = "to" + data_type_ptr->getName();
-
-					default_expr_list->children.emplace_back(setAlias(
-						makeASTFunction(conversion_function_name, ASTPtr{new ASTIdentifier{{}, tmp_column_name}}),
-						final_column_name));
-				}
-
+				default_expr_list->children.emplace_back(setAlias(
+					makeASTFunction("CAST", ASTPtr{new ASTIdentifier{{}, tmp_column_name}},
+						ASTPtr{new ASTLiteral{{}, data_type_ptr->getName()}}), final_column_name));
 				default_expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), tmp_column_name));
 			}
 			else
-			{
 				default_expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), col_decl.name));
-			}
 		}
 	}
 
@@ -387,17 +361,8 @@ InterpreterCreateQuery::ColumnsAndDefaults InterpreterCreateQuery::parseColumns(
 				/// type mismatch between explicitly specified and deduced type, add conversion for non-array types
 				if (explicit_type->getName() != deduced_type->getName())
 				{
-					/// foolproof against defaulting array columns incorrectly
-					if (typeid_cast<const DataTypeArray *>(explicit_type.get()))
-						throw Exception{
-							"Default expression type mismatch for column " + column_name +
-								". Expected " + explicit_type->getName() + ", deduced " +
-								deduced_type->getName(),
-							ErrorCodes::TYPE_MISMATCH
-						};
-
-					col_decl_ptr->default_expression = makeASTFunction("to" + explicit_type->getName(),
-						col_decl_ptr->default_expression);
+					col_decl_ptr->default_expression = makeASTFunction("CAST", col_decl_ptr->default_expression,
+						new ASTLiteral{{}, explicit_type->getName()});
 
 					col_decl_ptr->children.clear();
 					col_decl_ptr->children.push_back(col_decl_ptr->type);

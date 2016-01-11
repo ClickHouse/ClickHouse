@@ -195,6 +195,7 @@ private:
 
 public:
 	/// Для ColumnConst<Array> data_type_ должен быть ненулевым.
+	/// Для ColumnConst<Tuple> data_type_ должен быть ненулевым.
 	/// Для ColumnConst<String> data_type_ должен быть ненулевым, если тип данных FixedString.
 	ColumnConst(size_t s_, const T & data_, DataTypePtr data_type_ = DataTypePtr())
 		: ColumnConstBase<T, T, ColumnConst<T>>(s_, data_, data_type_) {}
@@ -253,8 +254,40 @@ public:
 };
 
 
+template <>
+class ColumnConst<Tuple> final : public ColumnConstBase<Tuple, SharedPtr<Tuple>, ColumnConst<Tuple>>
+{
+private:
+	friend class ColumnConstBase<Tuple, SharedPtr<Tuple>, ColumnConst<Tuple>>;
+
+	Tuple & getDataFromHolderImpl() { return *data; }
+	const Tuple & getDataFromHolderImpl() const { return *data; }
+
+public:
+	/// data_type_ должен быть ненулевым.
+	ColumnConst(size_t s_, const Tuple & data_, DataTypePtr data_type_ = DataTypePtr())
+		: ColumnConstBase<Tuple, SharedPtr<Tuple>, ColumnConst<Tuple>>(s_, new Tuple(data_), data_type_) {}
+
+	ColumnConst(size_t s_, const SharedPtr<Tuple> & data_, DataTypePtr data_type_ = DataTypePtr())
+		: ColumnConstBase<Tuple, SharedPtr<Tuple>, ColumnConst<Tuple>>(s_, data_, data_type_) {}
+
+	StringRef getDataAt(size_t n) const override;
+	StringRef getDataAtWithTerminatingZero(size_t n) const override;
+	UInt64 get64(size_t n) const override;
+
+	/** Более эффективные методы манипуляции */
+	const Tuple & getData() const { return *data; }
+
+	/** Преобразование из константы в полноценный столбец */
+	ColumnPtr convertToFullColumn() const override;
+
+	void getExtremes(Field & min, Field & max) const override;
+};
+
+
 typedef ColumnConst<String> ColumnConstString;
 typedef ColumnConst<Array> ColumnConstArray;
+typedef ColumnConst<Tuple> ColumnConstTuple;
 
 
 template <typename T> ColumnPtr ColumnConst<T>::convertToFullColumn() const

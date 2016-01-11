@@ -69,6 +69,16 @@ protected:
 	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 };
 
+class ParserCastExpression : public IParserBase
+{
+	/// this name is used for identifying CAST expression among other function calls
+	static constexpr auto name = "CAST";
+
+protected:
+	const char * getName() const { return name; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected) override;
+};
+
 
 /** NULL.
   */
@@ -135,18 +145,32 @@ protected:
 
 /** Алиас - идентификатор, перед которым идёт AS. Например: AS x_yz123.
   */
-class ParserAlias : public IParserBase
+struct ParserAliasBase
+{
+	static const char * restricted_keywords[];
+};
+
+template <typename ParserIdentifier>
+class ParserAliasImpl : public IParserBase, ParserAliasBase
 {
 public:
-	ParserAlias(bool allow_alias_without_as_keyword_)
+	ParserAliasImpl(bool allow_alias_without_as_keyword_)
 		: allow_alias_without_as_keyword(allow_alias_without_as_keyword_) {}
 protected:
 	bool allow_alias_without_as_keyword;
-	static const char * restricted_keywords[];
 
 	const char * getName() const { return "alias"; }
 	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 };
+
+
+class ParserTypeInCastExpression;
+
+extern template class ParserAliasImpl<ParserIdentifier>;
+extern template class ParserAliasImpl<ParserTypeInCastExpression>;
+
+using ParserAlias = ParserAliasImpl<ParserIdentifier>;
+using ParserCastExpressionAlias = ParserAliasImpl<ParserTypeInCastExpression>;
 
 
 /** Элемент выражения - одно из: выражение в круглых скобках, массив, литерал, функция, идентификатор, звёздочка.
@@ -161,10 +185,11 @@ protected:
 
 /** Элемент выражения, возможно, с алиасом, если уместно.
   */
-class ParserWithOptionalAlias : public IParserBase
+template <typename ParserAlias>
+class ParserWithOptionalAliasImpl : public IParserBase
 {
 public:
-	ParserWithOptionalAlias(ParserPtr && elem_parser_, bool allow_alias_without_as_keyword_)
+	ParserWithOptionalAliasImpl(ParserPtr && elem_parser_, bool allow_alias_without_as_keyword_)
 		: elem_parser(std::move(elem_parser_)), allow_alias_without_as_keyword(allow_alias_without_as_keyword_) {}
 protected:
 	ParserPtr elem_parser;
@@ -173,6 +198,12 @@ protected:
 	const char * getName() const { return "element of expression with optional alias"; }
 	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 };
+
+extern template class ParserWithOptionalAliasImpl<ParserAlias>;
+extern template class ParserWithOptionalAliasImpl<ParserCastExpressionAlias>;
+
+using ParserWithOptionalAlias = ParserWithOptionalAliasImpl<ParserAlias>;
+using ParserCastExpressionWithOptionalAlias = ParserWithOptionalAliasImpl<ParserCastExpressionAlias>;
 
 
 /** Элемент выражения ORDER BY - то же самое, что и элемент выражения, но после него ещё может быть указано ASC[ENDING] | DESC[ENDING]

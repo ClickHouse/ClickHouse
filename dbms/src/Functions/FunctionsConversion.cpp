@@ -21,6 +21,7 @@ void registerFunctionsConversion(FunctionFactory & factory)
 	factory.registerFunction<FunctionToString>();
 	factory.registerFunction<FunctionToFixedString>();
 	factory.registerFunction<FunctionToUnixTimestamp>();
+	factory.registerFunction<FunctionCast>();
 }
 
 }

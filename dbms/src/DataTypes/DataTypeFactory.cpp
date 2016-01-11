@@ -57,17 +57,20 @@ inline DataTypePtr parseEnum(const String & name, const String & base_name, cons
 	typename DataTypeEnum::Values values;
 	values.reserve(elements->children.size());
 
+	using FieldType = typename DataTypeEnum::FieldType;
+
 	for (const auto & element : typeid_cast<const ASTExpressionList &>(*elements).children)
 	{
 		const auto & e = static_cast<const ASTEnumElement &>(*element);
+		const auto value = e.value.get<typename NearestFieldType<FieldType>::Type>();
 
-		if (e.value > std::numeric_limits<typename DataTypeEnum::FieldType>::max())
+		if (value > std::numeric_limits<FieldType>::max() || value < std::numeric_limits<FieldType>::min())
 			throw Exception{
-				"Value " + toString(e.value) + " for element '" + e.name + "' exceeds range of " + base_name,
+				"Value " + apply_visitor(FieldVisitorToString{}, e.value) + " for element '" + e.name + "' exceeds range of " + base_name,
 				ErrorCodes::ARGUMENT_OUT_OF_BOUND
 			};
 
-		values.emplace_back(e.name, e.value);
+		values.emplace_back(e.name, value);
 	}
 
 	return new DataTypeEnum{values};
@@ -170,14 +173,10 @@ DataTypePtr DataTypeFactory::get(const String & name) const
 			ParserExpressionList columns_p(false);
 			ASTPtr columns_ast = parseQuery(columns_p, parameters.data(), parameters.data() + parameters.size(), "parameters for data type " + name);
 
-			DataTypes elems;
-
-			ASTExpressionList & columns_list = typeid_cast<ASTExpressionList &>(*columns_ast);
-			for (ASTs::iterator it = columns_list.children.begin(); it != columns_list.children.end(); ++it)
-			{
-				StringRange range = (*it)->range;
-				elems.push_back(get(String(range.first, range.second - range.first)));
-			}
+			auto & columns_list = typeid_cast<ASTExpressionList &>(*columns_ast);
+			const auto elems = ext::map<DataTypes>(columns_list.children, [this] (const ASTPtr & elem_ast) {
+				return get(String(elem_ast->range.first, elem_ast->range.second));
+			});
 
 			return new DataTypeTuple(elems);
 		}

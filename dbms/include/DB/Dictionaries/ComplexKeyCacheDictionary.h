@@ -762,7 +762,7 @@ private:
 				if (string_ref.data != null_value_ref.data())
 				{
 					if (string_ref.data)
-						string_arena->free(string_ref.data, string_ref.size);
+						string_arena->free(const_cast<char *>(string_ref.data), string_ref.size);
 
 					string_ref = StringRef{null_value_ref};
 				}
@@ -794,7 +794,7 @@ private:
 
 				/// free memory unless it points to a null_value
 				if (string_ref.data && string_ref.data != null_value_ref.data())
-					string_arena->free(string_ref.data, string_ref.size);
+					string_arena->free(const_cast<char *>(string_ref.data), string_ref.size);
 
 				const auto size = string.size();
 				if (size != 0)
@@ -834,9 +834,9 @@ private:
 	void freeKey(const StringRef key) const
 	{
 		if (key_size_is_fixed)
-			fixed_size_keys_pool->free(key.data);
+			fixed_size_keys_pool->free(const_cast<char *>(key.data));
 		else
-			keys_pool->free(key.data, key.size);
+			keys_pool->free(const_cast<char *>(key.data), key.size);
 	}
 
 	static std::size_t round_up_to_power_of_two(std::size_t n)

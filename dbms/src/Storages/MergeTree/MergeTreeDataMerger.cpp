@@ -330,7 +330,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 
 		auto input = std::make_unique<MergeTreeBlockInputStream>(
 			data.getFullPath() + parts[i]->name + '/', DEFAULT_MERGE_BLOCK_SIZE, union_column_names, data,
-			parts[i], ranges, false, nullptr, "", true, aio_threshold, DBMS_DEFAULT_BUFFER_SIZE);
+			parts[i], ranges, false, nullptr, "", true, aio_threshold, DBMS_DEFAULT_BUFFER_SIZE, false);
 
 		input->setProgressCallback([&merge_entry, rows_total] (const Progress & value)
 			{
@@ -448,7 +448,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 		  *   затем попадаем сюда.
 		  * Ситуация - было заменено M > N кусков тоже нормальная.
 		  *
-		  * Хотя это должно предотвращаться проверкой в методе StorageReplicatedMergeTree::shouldExecuteLogEntry.
+		  * Хотя это должно предотвращаться проверкой в методе ReplicatedMergeTreeQueue::shouldExecuteLogEntry.
 		  */
 		LOG_WARNING(log, "Unexpected number of parts removed when adding " << new_data_part->name << ": " << replaced_parts.size()
 			<< " instead of " << parts.size());

@@ -137,6 +137,7 @@ void ReplicatedMergeTreeRestartingThread::run()
 
 	try
 	{
+		storage.endpoint_holder->cancel();
 		storage.endpoint_holder = nullptr;
 		partialShutdown();
 	}

@@ -17,23 +17,7 @@ namespace DB
 
 class ReadBuffer;
 class WriteBuffer;
-class StorageReplicatedMergeTree;
-
-
-/** Добавляет кусок в множество future_parts; в деструкторе убирает.
-  * future_parts - множество кусков, которые будут созданы после выполнения
-  *  выполняющихся в данный момент элементов очереди.
-  */
-struct FuturePartTagger
-{
-	String part;
-	StorageReplicatedMergeTree & storage;
-
-	FuturePartTagger(const String & part_, StorageReplicatedMergeTree & storage_);
-	~FuturePartTagger();
-};
-
-typedef Poco::SharedPtr<FuturePartTagger> FuturePartTaggerPtr;
+class ReplicatedMergeTreeQueue;
 
 
 /// Запись о том, что нужно сделать. Только данные (их можно копировать).
@@ -81,12 +65,12 @@ struct ReplicatedMergeTreeLogEntryData
 	/// Нужно переносить из директории unreplicated, а не detached.
 	bool attach_unreplicated = false;
 
-	/// Доступ под queue_mutex.
+	/// Доступ под queue_mutex, см. ReplicatedMergeTreeQueue.
 	bool currently_executing = false;	/// Выполняется ли действие сейчас.
 	/// Эти несколько полей имеют лишь информационный характер (для просмотра пользователем с помощью системных таблиц).
-	/// Доступ под queue_mutex.
+	/// Доступ под queue_mutex, см. ReplicatedMergeTreeQueue.
 	size_t num_tries = 0;				/// Количество попыток выполнить действие (с момента старта сервера; включая выполняющееся).
-	std::exception_ptr exception;				/// Последний эксепшен, в случае безуспешной попытки выполнить действие.
+	std::exception_ptr exception;		/// Последний эксепшен, в случае безуспешной попытки выполнить действие.
 	time_t last_attempt_time = 0;		/// Время начала последней попытки выполнить действие.
 	size_t num_postponed = 0;			/// Количество раз, когда действие было отложено.
 	String postpone_reason;				/// Причина, по которой действие было отложено, если оно отложено.
@@ -104,11 +88,7 @@ struct ReplicatedMergeTreeLogEntry : ReplicatedMergeTreeLogEntryData
 {
 	typedef Poco::SharedPtr<ReplicatedMergeTreeLogEntry> Ptr;
 
-	FuturePartTaggerPtr future_part_tagger;
 	std::condition_variable execution_complete; /// Пробуждается когда currently_executing становится false.
-
-	void addResultToVirtualParts(StorageReplicatedMergeTree & storage);
-	void tagPartAsFuture(StorageReplicatedMergeTree & storage);
 
 	void writeText(WriteBuffer & out) const;
 	void readText(ReadBuffer & in);

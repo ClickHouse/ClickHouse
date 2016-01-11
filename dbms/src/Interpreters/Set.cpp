@@ -300,7 +300,10 @@ static Field convertToType(const Field & src, const IDataType & type)
 							ErrorCodes::LOGICAL_ERROR
 						};
 
-		if (src.getType() == Field::Types::UInt64)
+		const auto is_enum = is_enum8 || is_enum16;
+
+		/// Numeric values for Enums should not be used directly in IN section
+		if (src.getType() == Field::Types::UInt64 && !is_enum)
 			return src;
 
 		if (src.getType() == Field::Types::String)

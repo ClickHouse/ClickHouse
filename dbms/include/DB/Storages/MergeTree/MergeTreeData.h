@@ -891,11 +891,13 @@ private:
 	/** Выражение, преобразующее типы столбцов.
 	  * Если преобразований типов нет, out_expression=nullptr.
 	  * out_rename_map отображает файлы-столбцы на выходе выражения в новые файлы таблицы.
+	  * out_force_update_metadata показывает, нужно ли обновить метаданные даже если out_rename_map пуста (используется
+	  * 	для бесплатного изменения списка значений Enum).
 	  * Файлы, которые нужно удалить, в out_rename_map отображаются в пустую строку.
 	  * Если !part, просто проверяет, что все нужные преобразования типов допустимы.
 	  */
 	void createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
-		ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map);
+		ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map, bool & out_force_update_metadata);
 
 	/// Рассчитывает размеры столбцов в сжатом виде для текущего состояния data_parts
 	void calculateColumnSizes();

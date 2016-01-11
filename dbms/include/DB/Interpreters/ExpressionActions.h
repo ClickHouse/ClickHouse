@@ -6,6 +6,7 @@
 #include <DB/Core/Names.h>
 #include <DB/Core/ColumnWithTypeAndName.h>
 #include <DB/Core/Block.h>
+#include <DB/Functions/IFunction.h>
 
 #include <unordered_set>
 #include <unordered_map>
@@ -13,9 +14,6 @@
 
 namespace DB
 {
-
-class IFunction;
-typedef Poco::SharedPtr<IFunction> FunctionPtr;
 
 typedef std::pair<std::string, std::string> NameWithAlias;
 typedef std::vector<NameWithAlias> NamesWithAliases;
@@ -76,7 +74,8 @@ public:
 	NamesWithAliases projection;
 
 	/// Если result_name_ == "", в качестве имени используется "имя_функции(аргументы через запятую)".
-	static ExpressionAction applyFunction(FunctionPtr function_, const std::vector<std::string> & argument_names_, std::string result_name_ = "");
+	static ExpressionAction applyFunction(
+		const FunctionPtr & function_, const std::vector<std::string> & argument_names_, std::string result_name_ = "");
 
 	static ExpressionAction addColumn(ColumnWithTypeAndName added_column_)
 	{

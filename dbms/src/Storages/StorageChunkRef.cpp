@@ -1,6 +1,7 @@
 #include <DB/Parsers/ASTCreateQuery.h>
 #include <DB/Parsers/ASTIdentifier.h>
 #include <DB/Storages/StorageChunkRef.h>
+#include <DB/DataStreams/IBlockInputStream.h>
 
 
 namespace DB

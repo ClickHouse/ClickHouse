@@ -14,6 +14,7 @@
 #include <DB/Core/Types.h>
 #include <DB/Common/Exception.h>
 #include <DB/Core/ErrorCodes.h>
+#include <DB/Core/StringRef.h>
 
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/WriteIntText.h>
@@ -120,6 +121,11 @@ inline void writeString(const String & s, WriteBuffer & buf)
 inline void writeString(const char * data, size_t size, WriteBuffer & buf)
 {
 	buf.write(data, size);
+}
+
+inline void writeString(const StringRef & ref, WriteBuffer & buf)
+{
+	writeString(ref.data, ref.size, buf);
 }
 
 
@@ -257,6 +263,12 @@ inline void writeJSONString(const String & s, WriteBuffer & buf)
 }
 
 
+inline void writeJSONString(const StringRef & ref, WriteBuffer & buf)
+{
+	writeJSONString(ref.data, ref.data + ref.size, buf);
+}
+
+
 template <char c>
 void writeAnyEscapedString(const String & s, WriteBuffer & buf)
 {
@@ -280,6 +292,12 @@ inline void writeEscapedString(const String & s, WriteBuffer & buf)
 }
 
 
+inline void writeEscapedString(const StringRef & ref, WriteBuffer & buf)
+{
+	writeEscapedString(ref.data, ref.size, buf);
+}
+
+
 template <char c>
 void writeAnyQuotedString(const char * begin, const char * end, WriteBuffer & buf)
 {
@@ -297,9 +315,22 @@ void writeAnyQuotedString(const String & s, WriteBuffer & buf)
 }
 
 
+template <char c>
+void writeAnyQuotedString(const StringRef & ref, WriteBuffer & buf)
+{
+	writeAnyQuotedString<c>(ref.data, ref.data + ref.size, buf);
+}
+
+
 inline void writeQuotedString(const String & s, WriteBuffer & buf)
 {
 	writeAnyQuotedString<'\''>(s, buf);
+}
+
+
+inline void writeQuotedString(const StringRef & ref, WriteBuffer & buf)
+{
+	writeAnyQuotedString<'\''>(ref, buf);
 }
 
 inline void writeDoubleQuotedString(const String & s, WriteBuffer & buf)

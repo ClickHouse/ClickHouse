@@ -30,13 +30,13 @@ public:
 
 	MergeTreeReader(const String & path, /// Путь к куску
 		const MergeTreeData::DataPartPtr & data_part, const NamesAndTypesList & columns,
-		UncompressedCache * uncompressed_cache, MarkCache * mark_cache,
+		UncompressedCache * uncompressed_cache, MarkCache * mark_cache, bool save_marks_in_cache,
 		MergeTreeData & storage, const MarkRanges & all_mark_ranges,
 		size_t aio_threshold, size_t max_read_buffer_size, const ValueSizeMap & avg_value_size_hints = ValueSizeMap{},
 		const ReadBufferFromFileBase::ProfileCallback & profile_callback = ReadBufferFromFileBase::ProfileCallback{},
 		clockid_t clock_type = CLOCK_MONOTONIC_COARSE)
 		: avg_value_size_hints(avg_value_size_hints), path(path), data_part(data_part), columns(columns),
-		  uncompressed_cache(uncompressed_cache), mark_cache(mark_cache), storage(storage),
+		  uncompressed_cache(uncompressed_cache), mark_cache(mark_cache), save_marks_in_cache(save_marks_in_cache), storage(storage),
 		  all_mark_ranges(all_mark_ranges), aio_threshold(aio_threshold), max_read_buffer_size(max_read_buffer_size)
 	{
 		try
@@ -153,12 +153,13 @@ private:
 		size_t max_mark_range;
 
 		Stream(
-			const String & path_prefix_, UncompressedCache * uncompressed_cache, MarkCache * mark_cache,
+			const String & path_prefix_, UncompressedCache * uncompressed_cache,
+			MarkCache * mark_cache, bool save_marks_in_cache,
 			const MarkRanges & all_mark_ranges, size_t aio_threshold, size_t max_read_buffer_size,
 			const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
 			: path_prefix(path_prefix_)
 		{
-			loadMarks(mark_cache);
+			loadMarks(mark_cache, save_marks_in_cache);
 			size_t max_mark_range = 0;
 
 			for (size_t i = 0; i < all_mark_ranges.size(); ++i)
@@ -227,7 +228,7 @@ private:
 			}
 		}
 
-		void loadMarks(MarkCache * cache)
+		void loadMarks(MarkCache * cache, bool save_in_cache)
 		{
 			std::string path = path_prefix + ".mrk";
 
@@ -251,7 +252,7 @@ private:
 				marks->push_back(mark);
 			}
 
-			if (cache)
+			if (cache && save_in_cache)
 				cache->set(key, marks);
 		}
 
@@ -295,6 +296,8 @@ private:
 
 	UncompressedCache * uncompressed_cache;
 	MarkCache * mark_cache;
+	/// Если выставлено в false - при отсутствии засечек в кэше, считавать засечки, но не сохранять их в кэш, чтобы не вымывать оттуда другие данные.
+	bool save_marks_in_cache;
 
 	MergeTreeData & storage;
 	MarkRanges all_mark_ranges;
@@ -323,14 +326,14 @@ private:
 
 			if (!streams.count(size_name))
 				streams.emplace(size_name, std::make_unique<Stream>(
-					path + escaped_size_name, uncompressed_cache, mark_cache,
+					path + escaped_size_name, uncompressed_cache, mark_cache, save_marks_in_cache,
 					all_mark_ranges, aio_threshold, max_read_buffer_size, profile_callback, clock_type));
 
 			addStream(name, *type_arr->getNestedType(), all_mark_ranges, profile_callback, clock_type, level + 1);
 		}
 		else
 			streams.emplace(name, std::make_unique<Stream>(
-				path + escaped_column_name, uncompressed_cache, mark_cache,
+				path + escaped_column_name, uncompressed_cache, mark_cache, save_marks_in_cache,
 				all_mark_ranges, aio_threshold, max_read_buffer_size, profile_callback, clock_type));
 	}
 

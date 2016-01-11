@@ -151,14 +151,28 @@ void IProfilingBlockInputStream::updateExtremes(Block & block)
 bool IProfilingBlockInputStream::checkLimits()
 {
 	/// Проверка ограничений.
-	if ((limits.max_rows_to_read && info.rows > limits.max_rows_to_read)
-		|| (limits.max_bytes_to_read && info.bytes > limits.max_bytes_to_read))
+	if (limits.max_rows_to_read && info.rows > limits.max_rows_to_read)
 	{
 		if (limits.read_overflow_mode == OverflowMode::THROW)
 			throw Exception(std::string("Limit for ")
 				+ (limits.mode == LIMITS_CURRENT ? "result rows" : "rows to read")
 				+ " exceeded: read " + toString(info.rows)
 				+ " rows, maximum: " + toString(limits.max_rows_to_read),
+				ErrorCodes::TOO_MUCH_ROWS);
+
+		if (limits.read_overflow_mode == OverflowMode::BREAK)
+			return false;
+
+		throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
+	}
+
+	if (limits.max_bytes_to_read && info.bytes > limits.max_bytes_to_read)
+	{
+		if (limits.read_overflow_mode == OverflowMode::THROW)
+			throw Exception(std::string("Limit for ")
+				+ (limits.mode == LIMITS_CURRENT ? "result bytes (uncompressed)" : "(uncompressed) bytes to read")
+				+ " exceeded: read " + toString(info.bytes)
+				+ " bytes, maximum: " + toString(limits.max_bytes_to_read),
 				ErrorCodes::TOO_MUCH_ROWS);
 
 		if (limits.read_overflow_mode == OverflowMode::BREAK)

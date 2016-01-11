@@ -528,7 +528,7 @@ private:
 				while (isWhitespace(*begin) || *begin == ';')
 					++begin;
 
-				if (!processSingleQuery(query, ast))
+				if (!processSingleQuery(query, ast) || got_exception)
 					return false;
 			}
 

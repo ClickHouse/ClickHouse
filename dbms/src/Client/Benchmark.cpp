@@ -50,12 +50,22 @@ class Benchmark
 public:
 	Benchmark(unsigned concurrency_, double delay_,
 			const String & host_, UInt16 port_, const String & default_database_,
-			const String & user_, const String & password_, const Settings & settings_)
+			const String & user_, const String & password_, const String & stage,
+			const Settings & settings_)
 		: concurrency(concurrency_), delay(delay_), queue(concurrency),
 		connections(concurrency, host_, port_, default_database_, user_, password_),
 		settings(settings_), pool(concurrency)
 	{
 		std::cerr << std::fixed << std::setprecision(3);
+
+		if (stage == "complete")
+			query_processing_stage = QueryProcessingStage::Complete;
+		else if (stage == "fetch_columns")
+			query_processing_stage = QueryProcessingStage::FetchColumns;
+		else if (stage == "with_mergeable_state")
+			query_processing_stage = QueryProcessingStage::WithMergeableState;
+		else
+			throw Exception("Unknown query processing stage: " + stage, ErrorCodes::BAD_ARGUMENTS);
 
 		readQueries();
 		run();
@@ -75,6 +85,7 @@ private:
 
 	ConnectionPool connections;
 	Settings settings;
+	QueryProcessingStage::Enum query_processing_stage;
 
 	struct Stats
 	{
@@ -135,7 +146,16 @@ private:
 		if (queries.empty())
 			throw Exception("Empty list of queries.");
 
-		std::cerr << "Loaded " << queries.size() << " queries." << std::endl;
+		std::cerr << "Loaded " << queries.size() << " queries.\n";
+	}
+
+
+	void printNumberOfQueriesExecuted(size_t num)
+	{
+		std::cerr << "\nQueries executed: " << num;
+		if (queries.size() > 1)
+			std::cerr << " (" << (num * 100.0 / queries.size()) << "%)";
+		std::cerr << ".\n";
 	}
 
 
@@ -159,6 +179,13 @@ private:
 
 			if (watch.elapsedSeconds() > delay)
 			{
+				auto total_queries = 0;
+				{
+					Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+					total_queries = info_total.queries;
+				}
+				printNumberOfQueriesExecuted(total_queries);
+
 				report(info_per_interval);
 				watch.restart();
 			}
@@ -170,61 +197,69 @@ private:
 
 		pool.wait();
 
-		std::cerr << "\nTotal queries executed: " << info_total.queries << std::endl;
+		printNumberOfQueriesExecuted(info_total.queries);
 		report(info_total);
 	}
 
 
 	void thread(ConnectionPool::Entry connection)
 	{
+		Query query;
+
 		try
 		{
-			/// В этих потоках не будем принимать сигнал INT.
-			sigset_t sig_set;
-			if (sigemptyset(&sig_set)
-				|| sigaddset(&sig_set, SIGINT)
-				|| pthread_sigmask(SIG_BLOCK, &sig_set, nullptr))
-				throwFromErrno("Cannot block signal.", ErrorCodes::CANNOT_BLOCK_SIGNAL);
-
-			Query query;
-
-			while (true)
+			try
 			{
-				queue.pop(query);
+				/// В этих потоках не будем принимать сигнал INT.
+				sigset_t sig_set;
+				if (sigemptyset(&sig_set)
+					|| sigaddset(&sig_set, SIGINT)
+					|| pthread_sigmask(SIG_BLOCK, &sig_set, nullptr))
+					throwFromErrno("Cannot block signal.", ErrorCodes::CANNOT_BLOCK_SIGNAL);
 
-				/// Пустой запрос обозначает конец работы.
-				if (query.empty())
-					break;
+				while (true)
+				{
+					queue.pop(query);
 
-				execute(connection, query);
+					/// Пустой запрос обозначает конец работы.
+					if (query.empty())
+						break;
+
+					execute(connection, query);
+				}
 			}
-		}
-		catch (const Exception & e)
-		{
-			std::string text = e.displayText();
+			catch (const Exception & e)
+			{
+				std::string text = e.displayText();
 
-			std::cerr << "Code: " << e.code() << ". " << text << std::endl << std::endl;
+				std::cerr << "Code: " << e.code() << ". " << text << "\n\n";
 
-			/// Если есть стек-трейс на сервере, то не будем писать стек-трейс на клиенте.
-			if (std::string::npos == text.find("Stack trace"))
-				std::cerr << "Stack trace:" << std::endl
-					<< e.getStackTrace().toString();
+				/// Если есть стек-трейс на сервере, то не будем писать стек-трейс на клиенте.
+				if (std::string::npos == text.find("Stack trace"))
+					std::cerr << "Stack trace:\n"
+						<< e.getStackTrace().toString();
 
-			throw;
-		}
-		catch (const Poco::Exception & e)
-		{
-			std::cerr << "Poco::Exception: " << e.displayText() << std::endl;
-			throw;
-		}
-		catch (const std::exception & e)
-		{
-			std::cerr << "std::exception: " << e.what() << std::endl;
-			throw;
+				throw;
+			}
+			catch (const Poco::Exception & e)
+			{
+				std::cerr << "Poco::Exception: " << e.displayText() << "\n";
+				throw;
+			}
+			catch (const std::exception & e)
+			{
+				std::cerr << "std::exception: " << e.what() << "\n";
+				throw;
+			}
+			catch (...)
+			{
+				std::cerr << "Unknown exception\n";
+				throw;
+			}
 		}
 		catch (...)
 		{
-			std::cerr << "Unknown exception" << std::endl;
+			std::cerr << "On query:\n" << query << "\n";
 			throw;
 		}
 	}
@@ -233,7 +268,7 @@ private:
 	void execute(ConnectionPool::Entry & connection, Query & query)
 	{
 		Stopwatch watch;
-		RemoteBlockInputStream stream(connection, query, &settings);
+		RemoteBlockInputStream stream(connection, query, &settings, nullptr, Tables(), query_processing_stage);
 
 		Progress progress;
 		stream.setProgressCallback([&progress](const Progress & value) { progress.incrementPiecewiseAtomically(value); });
@@ -260,22 +295,22 @@ private:
 		double seconds = info.watch.elapsedSeconds();
 
 		std::cerr
-			<< std::endl
+			<< "\n"
 			<< "QPS: " << (info.queries / seconds) << ", "
 			<< "RPS: " << (info.read_rows / seconds) << ", "
 			<< "MiB/s: " << (info.read_bytes / seconds / 1048576) << ", "
 			<< "result RPS: " << (info.result_rows / seconds) << ", "
 			<< "result MiB/s: " << (info.result_bytes / seconds / 1048576) << "."
-			<< std::endl;
+			<< "\n";
 
 		for (size_t percent = 0; percent <= 90; percent += 10)
 			std::cerr << percent << "%\t" << info.sampler.quantileInterpolated(percent / 100.0) << " sec." << std::endl;
 
-		std::cerr << "95%\t" 	<< info.sampler.quantileInterpolated(0.95) 	<< " sec." << std::endl;
-		std::cerr << "99%\t" 	<< info.sampler.quantileInterpolated(0.99) 	<< " sec." << std::endl;
-		std::cerr << "99.9%\t" 	<< info.sampler.quantileInterpolated(0.999) 	<< " sec." << std::endl;
-		std::cerr << "99.99%\t" << info.sampler.quantileInterpolated(0.9999) << " sec." << std::endl;
-		std::cerr << "100%\t" 	<< info.sampler.quantileInterpolated(1) 		<< " sec." << std::endl;
+		std::cerr << "95%\t" 	<< info.sampler.quantileInterpolated(0.95) 	<< " sec.\n";
+		std::cerr << "99%\t" 	<< info.sampler.quantileInterpolated(0.99) 	<< " sec.\n";
+		std::cerr << "99.9%\t" 	<< info.sampler.quantileInterpolated(0.999) 	<< " sec.\n";
+		std::cerr << "99.99%\t" << info.sampler.quantileInterpolated(0.9999) << " sec.\n";
+		std::cerr << "100%\t" 	<< info.sampler.quantileInterpolated(1) 		<< " sec.\n";
 
 		info.clear();
 	}
@@ -300,6 +335,7 @@ int main(int argc, char ** argv)
 			("user", boost::program_options::value<std::string>()->default_value("default"), "")
 			("password", boost::program_options::value<std::string>()->default_value(""), "")
 			("database", boost::program_options::value<std::string>()->default_value("default"), "")
+			("stage", boost::program_options::value<std::string>()->default_value("complete"), "request query processing up to specified stage")
 		#define DECLARE_SETTING(TYPE, NAME, DEFAULT) (#NAME, boost::program_options::value<std::string> (), "Settings.h")
 		#define DECLARE_LIMIT(TYPE, NAME, DEFAULT) (#NAME, boost::program_options::value<std::string> (), "Limits.h")
 			APPLY_FOR_SETTINGS(DECLARE_SETTING)
@@ -313,8 +349,8 @@ int main(int argc, char ** argv)
 
 		if (options.count("help"))
 		{
-			std::cout << "Usage: " << argv[0] << " [options] < queries.txt" << std::endl;
-			std::cout << desc << std::endl;
+			std::cout << "Usage: " << argv[0] << " [options] < queries.txt\n";
+			std::cout << desc << "\n";
 			return 1;
 		}
 
@@ -336,34 +372,35 @@ int main(int argc, char ** argv)
 			options["database"].as<std::string>(),
 			options["user"].as<std::string>(),
 			options["password"].as<std::string>(),
+			options["stage"].as<std::string>(),
 			settings);
 	}
 	catch (const Exception & e)
 	{
 		std::string text = e.displayText();
 
-		std::cerr << "Code: " << e.code() << ". " << text << std::endl << std::endl;
+		std::cerr << "Code: " << e.code() << ". " << text << "\n\n";
 
 		/// Если есть стек-трейс на сервере, то не будем писать стек-трейс на клиенте.
 		if (std::string::npos == text.find("Stack trace"))
-			std::cerr << "Stack trace:" << std::endl
+			std::cerr << "Stack trace:\n"
 				<< e.getStackTrace().toString();
 
 		return e.code();
 	}
 	catch (const Poco::Exception & e)
 	{
-		std::cerr << "Poco::Exception: " << e.displayText() << std::endl;
+		std::cerr << "Poco::Exception: " << e.displayText() << "\n";
 		return ErrorCodes::POCO_EXCEPTION;
 	}
 	catch (const std::exception & e)
 	{
-		std::cerr << "std::exception: " << e.what() << std::endl;
+		std::cerr << "std::exception: " << e.what() << "\n";
 		return ErrorCodes::STD_EXCEPTION;
 	}
 	catch (...)
 	{
-		std::cerr << "Unknown exception" << std::endl;
+		std::cerr << "Unknown exception\n";
 		return ErrorCodes::UNKNOWN_EXCEPTION;
 	}
 }

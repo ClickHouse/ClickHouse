@@ -51,6 +51,8 @@ public:
 	}
 
 	DataTypePtr operator() (Array 	& x) const;
+
+	DataTypePtr operator() (Tuple 	& x) const;
 };
 
 }
