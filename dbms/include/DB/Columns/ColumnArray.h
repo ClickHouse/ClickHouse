@@ -5,7 +5,6 @@
 #include <Poco/SharedPtr.h>
 
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 #include <DB/Common/Arena.h>
 
 #include <DB/Columns/IColumn.h>
@@ -15,6 +14,13 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int ILLEGAL_COLUMN;
+	extern const int NOT_IMPLEMENTED;
+	extern const int BAD_ARGUMENTS;
+}
 
 using Poco::SharedPtr;
 

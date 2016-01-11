@@ -7,13 +7,19 @@
 #include <boost/static_assert.hpp>
 
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 #include <DB/Core/Types.h>
 #include <common/strong_typedef.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int BAD_TYPE_OF_FIELD;
+	extern const int BAD_GET;
+	extern const int NOT_IMPLEMENTED;
+}
 
 class Field;
 using Array = std::vector<Field>; /// Значение типа "массив"

@@ -16,6 +16,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int PARAMETER_OUT_OF_BOUND;
+	extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+}
+
 
 /** Столбец состояний агрегатных функций.
   * Представлен в виде массива указателей на состояния агрегатных функций (data).

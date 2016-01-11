@@ -51,6 +51,23 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int MULTIPLE_EXPRESSIONS_FOR_ALIAS;
+	extern const int UNKNOWN_IDENTIFIER;
+	extern const int CYCLIC_ALIASES;
+	extern const int INCORRECT_RESULT_OF_SCALAR_SUBQUERY;
+	extern const int TOO_MUCH_ROWS;
+	extern const int NOT_FOUND_COLUMN_IN_BLOCK;
+	extern const int INCORRECT_ELEMENT_OF_SET;
+	extern const int ALIAS_REQUIRED;
+	extern const int EMPTY_NESTED_TABLE;
+	extern const int NOT_AN_AGGREGATE;
+	extern const int UNEXPECTED_EXPRESSION;
+	extern const int PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS;
+	extern const int DUPLICATE_COLUMN;
+}
+
 
 /** Calls to these functions in the GROUP BY statement would be
   * replaced by their immediate argument.

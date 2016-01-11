@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 #include <DB/Core/Types.h>
 #include <DB/IO/WriteHelpers.h>
 
@@ -18,6 +17,13 @@ namespace DB
 class ReadBuffer;
 class WriteBuffer;
 class ReplicatedMergeTreeQueue;
+
+namespace ErrorCodes
+{
+	extern const int LOGICAL_ERROR;
+	extern const int UNKNOWN_FORMAT_VERSION;
+	extern const int CANNOT_PARSE_TEXT;
+}
 
 
 /// Запись о том, что нужно сделать. Только данные (их можно копировать).

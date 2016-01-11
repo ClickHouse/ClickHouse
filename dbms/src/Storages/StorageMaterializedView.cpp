@@ -11,6 +11,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int LOGICAL_ERROR;
+}
+
+
 StoragePtr StorageMaterializedView::create(
 	const String & table_name_,
 	const String & database_name_,

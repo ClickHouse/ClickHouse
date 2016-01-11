@@ -7,11 +7,16 @@
 #include <DB/DataTypes/DataTypeArray.h>
 
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int NOT_IMPLEMENTED;
+}
+
 
 /** Для заданного значения Field возвращает минимальный тип данных, позволяющий хранить значение этого типа.
   * В случае, если Field - массив, конвертирует все элементы к общему типу.

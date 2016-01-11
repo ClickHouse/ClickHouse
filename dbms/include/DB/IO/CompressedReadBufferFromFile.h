@@ -10,6 +10,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int ARGUMENT_OUT_OF_BOUND;
+}
+
+
 /// В отличие от CompressedReadBuffer, умеет делать seek.
 class CompressedReadBufferFromFile : public CompressedReadBufferBase, public BufferWithOwnMemory<ReadBuffer>
 {

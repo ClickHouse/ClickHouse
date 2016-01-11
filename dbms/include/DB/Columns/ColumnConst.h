@@ -4,7 +4,6 @@
 
 #include <DB/Core/Field.h>
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 #include <DB/Columns/ColumnVector.h>
 #include <DB/Columns/IColumn.h>
 #include <DB/Columns/ColumnsCommon.h>
@@ -13,6 +12,14 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int CANNOT_INSERT_ELEMENT_INTO_CONSTANT_COLUMN;
+	extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+	extern const int NOT_IMPLEMENTED;
+	extern const int LOGICAL_ERROR;
+}
 
 using Poco::SharedPtr;
 

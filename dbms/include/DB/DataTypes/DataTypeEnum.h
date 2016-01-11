@@ -9,6 +9,13 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int SYNTAX_ERROR;
+	extern const int LOGICAL_ERROR;
+	extern const int EMPTY_DATA_PASSED;
+}
+
 
 template <typename FieldType> struct EnumName;
 template <> struct EnumName<Int8> { static constexpr auto value = "Enum8"; };

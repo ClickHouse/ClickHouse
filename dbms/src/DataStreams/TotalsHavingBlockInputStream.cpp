@@ -5,6 +5,13 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int ILLEGAL_COLUMN;
+	extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
+}
+
+
 static void finalize(Block & block)
 {
 	for (size_t i = 0; i < block.columns(); ++i)

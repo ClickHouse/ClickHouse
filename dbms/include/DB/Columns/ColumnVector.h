@@ -3,7 +3,6 @@
 #include <string.h>
 
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 #include <DB/Common/Arena.h>
 
 #include <DB/IO/WriteBuffer.h>
@@ -14,6 +13,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int PARAMETER_OUT_OF_BOUND;
+	extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+}
 
 
 /** Штука для сравнения чисел.

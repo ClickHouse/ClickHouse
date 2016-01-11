@@ -6,7 +6,6 @@
 
 #include <DB/Core/Defines.h>
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 
 #include <DB/IO/CompressedReadBuffer.h>
 #include <DB/IO/CompressedWriteBuffer.h>
@@ -26,6 +25,16 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int NETWORK_ERROR;
+	extern const int SOCKET_TIMEOUT;
+	extern const int SERVER_REVISION_IS_TOO_OLD;
+	extern const int UNEXPECTED_PACKET_FROM_SERVER;
+	extern const int UNKNOWN_PACKET_FROM_SERVER;
+}
+
 
 void Connection::connect()
 {

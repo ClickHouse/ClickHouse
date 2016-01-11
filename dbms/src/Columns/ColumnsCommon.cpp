@@ -43,6 +43,12 @@ size_t countBytesInFilter(const IColumn::Filter & filt)
 }
 
 
+namespace ErrorCodes
+{
+	extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+}
+
+
 template <typename T>
 void filterArraysImpl(
 	const PODArray<T> & src_elems, const IColumn::Offsets_t & src_offsets,

@@ -5,12 +5,17 @@
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ASTLiteral.h>
 
-#include <DB/Core/ErrorCodes.h>
-
 #include <deque>
+
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int LOGICAL_ERROR;
+}
+
 
 LogicalExpressionsOptimizer::OrWithExpression::OrWithExpression(ASTFunction * or_function_, const std::string & expression_)
 	: or_function(or_function_), expression(expression_)

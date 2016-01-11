@@ -9,6 +9,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int CANNOT_CLOCK_GETTIME;
+	extern const int REPLICA_IS_ALREADY_ACTIVE;
+}
+
 
 /// Используется для проверки, выставили ли ноду is_active мы, или нет.
 static String generateActiveNodeIdentifier()

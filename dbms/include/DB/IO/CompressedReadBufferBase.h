@@ -10,7 +10,6 @@
 #include <DB/Common/PODArray.h>
 #include <DB/Common/ProfileEvents.h>
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 #include <DB/IO/ReadBuffer.h>
 #include <DB/IO/BufferWithOwnMemory.h>
 #include <DB/IO/CompressedStream.h>
@@ -19,6 +18,15 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int UNKNOWN_COMPRESSION_METHOD;
+	extern const int TOO_LARGE_SIZE_COMPRESSED;
+	extern const int CHECKSUM_DOESNT_MATCH;
+	extern const int CANNOT_DECOMPRESS;
+}
+
 
 class CompressedReadBufferBase
 {

@@ -7,6 +7,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
+}
+
 
 FilterBlockInputStream::FilterBlockInputStream(BlockInputStreamPtr input_, ssize_t filter_column_)
 	: filter_column(filter_column_)

@@ -9,7 +9,6 @@
 #include <DB/Core/ColumnWithTypeAndName.h>
 #include <DB/Core/NamesAndTypes.h>
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 #include "ColumnsWithTypeAndName.h"
 
 

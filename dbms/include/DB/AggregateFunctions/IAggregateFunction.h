@@ -12,9 +12,14 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int AGGREGATE_FUNCTION_DOESNT_ALLOW_PARAMETERS;
+	extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
 
-typedef char * AggregateDataPtr;
-typedef const char * ConstAggregateDataPtr;
+using AggregateDataPtr = char *;
+using ConstAggregateDataPtr = const char *;
 
 
 /** Интерфейс для агрегатных функций.

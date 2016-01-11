@@ -31,6 +31,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int UNKNOWN_AGGREGATED_DATA_VARIANT;
+}
+
 
 /** Разные структуры данных, которые могут использоваться для агрегации
   * Для эффективности, сами данные для агрегации кладутся в пул.

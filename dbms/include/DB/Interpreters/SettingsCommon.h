@@ -11,6 +11,19 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int CPUID_ERROR;
+	extern const int TYPE_MISMATCH;
+	extern const int UNKNOWN_LOAD_BALANCING;
+	extern const int UNKNOWN_OVERFLOW_MODE;
+	extern const int ILLEGAL_OVERFLOW_MODE;
+	extern const int UNKNOWN_TOTALS_MODE;
+	extern const int UNKNOWN_COMPRESSION_METHOD;
+	extern const int UNKNOWN_DISTRIBUTED_PRODUCT_MODE;
+	extern const int UNKNOWN_GLOBAL_SUBQUERIES_METHOD;
+}
+
 
 /** Одна настройка какого-либо типа.
   * Хранит внутри себя значение, а также флаг - было ли значение изменено.
@@ -348,7 +361,7 @@ struct SettingLoadBalancing
 	{
 		const char * strings[] = {"random", "nearest_hostname", "in_order"};
 		if (value < LoadBalancing::RANDOM || value > LoadBalancing::IN_ORDER)
-			throw Exception("Unknown load balancing mode", ErrorCodes::UNKNOWN_OVERFLOW_MODE);
+			throw Exception("Unknown load balancing mode", ErrorCodes::UNKNOWN_LOAD_BALANCING);
 		return strings[static_cast<size_t>(value)];
 	}
 
@@ -424,7 +437,7 @@ struct SettingTotalsMode
 			case TotalsMode::AFTER_HAVING_AUTO:			return "after_having_auto";
 
 			default:
-				throw Exception("Unknown TotalsMode enum value", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+				throw Exception("Unknown TotalsMode enum value", ErrorCodes::UNKNOWN_TOTALS_MODE);
 		}
 	}
 
@@ -633,7 +646,7 @@ struct SettingDistributedProductMode
 	{
 		const char * strings[] = {"deny", "local", "global", "allow"};
 		if (value < DistributedProductMode::DENY || value > DistributedProductMode::ALLOW)
-			throw Exception("Unknown distributed product mode", ErrorCodes::UNKNOWN_OVERFLOW_MODE);
+			throw Exception("Unknown distributed product mode", ErrorCodes::UNKNOWN_DISTRIBUTED_PRODUCT_MODE);
 		return strings[static_cast<size_t>(value)];
 	}
 

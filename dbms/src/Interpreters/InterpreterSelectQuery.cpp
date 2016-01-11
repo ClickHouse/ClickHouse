@@ -37,6 +37,18 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int TOO_DEEP_SUBQUERIES;
+	extern const int THERE_IS_NO_COLUMN;
+	extern const int UNION_ALL_RESULT_STRUCTURES_MISMATCH;
+	extern const int SAMPLING_NOT_SUPPORTED;
+	extern const int ILLEGAL_FINAL;
+	extern const int ILLEGAL_PREWHERE;
+	extern const int TOO_MUCH_COLUMNS;
+}
+
+
 InterpreterSelectQuery::~InterpreterSelectQuery() = default;
 
 

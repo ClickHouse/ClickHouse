@@ -8,6 +8,15 @@
 #include <DB/Common/MemoryTracker.h>
 
 
+namespace DB
+{
+namespace ErrorCodes
+{
+	extern const int MEMORY_LIMIT_EXCEEDED;
+}
+}
+
+
 MemoryTracker::~MemoryTracker()
 {
 	LOG_DEBUG(&Logger::get("MemoryTracker"), "Peak memory usage for query: " << formatReadableSizeWithBinarySuffix(peak) << ".");

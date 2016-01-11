@@ -3,6 +3,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int TOO_MUCH_SIMULTANEOUS_QUERIES;
+	extern const int QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING;
+}
+
 
 ProcessList::EntryPtr ProcessList::insert(
 	const String & query_, const String & user_, const String & query_id_, const Poco::Net::IPAddress & ip_address_,

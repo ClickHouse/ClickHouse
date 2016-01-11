@@ -24,6 +24,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int STORAGE_REQUIRES_PARAMETER;
+}
+
+
 namespace
 {
 	/// select query has database and table names as AST pointers

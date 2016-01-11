@@ -13,7 +13,6 @@
 
 #include <DB/Core/Types.h>
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 #include <DB/Core/StringRef.h>
 
 #include <DB/IO/WriteBuffer.h>
@@ -26,6 +25,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER;
+}
 
 /// Функции-помошники для форматированной записи
 

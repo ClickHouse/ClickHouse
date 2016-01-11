@@ -30,6 +30,30 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int NO_ZOOKEEPER;
+	extern const int INCORRECT_DATA;
+	extern const int INCOMPATIBLE_COLUMNS;
+	extern const int REPLICA_IS_ALREADY_EXIST;
+	extern const int NO_SUCH_REPLICA;
+	extern const int NO_REPLICA_HAS_PART;
+	extern const int LOGICAL_ERROR;
+	extern const int TOO_MANY_UNEXPECTED_DATA_PARTS;
+	extern const int ABORTED;
+	extern const int REPLICA_IS_NOT_IN_QUORUM;
+	extern const int TABLE_IS_READ_ONLY;
+	extern const int NOT_FOUND_NODE;
+	extern const int NO_ACTIVE_REPLICAS;
+	extern const int LEADERSHIP_CHANGED;
+	extern const int TABLE_IS_READ_ONLY;
+	extern const int TABLE_WAS_NOT_DROPPED;
+	extern const int PARTITION_ALREADY_EXISTS;
+	extern const int TOO_MUCH_RETRIES_TO_FETCH_PARTS;
+	extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
+	extern const int PARTITION_DOESNT_EXIST;
+}
+
 
 const auto ERROR_SLEEP_MS = 1000;
 const auto MERGE_SELECTING_SLEEP_MS = 5 * 1000;
