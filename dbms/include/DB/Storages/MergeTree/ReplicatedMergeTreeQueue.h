@@ -82,6 +82,7 @@ public:
 	/** Скопировать новые записи из общего лога в очередь этой реплики. Установить log_pointer в соответствующее значение.
 	  * Если next_update_event != nullptr, вызовет это событие, когда в логе появятся новые записи.
 	  * Возвращает true, если новые записи были.
+	  * В один момент времени вызывайте только один раз.
 	  */
 	bool pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, zkutil::EventPtr next_update_event);
 
