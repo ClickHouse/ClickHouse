@@ -16,6 +16,7 @@ namespace DB
 	extern const int NOT_FOUND_NODE;
 	extern const int FOUND_MORE_THAN_ONE_NODE;
 	extern const int SYNTAX_ERROR;
+	extern const int UNKNOWN_FORMAT;
 	extern const int FIRST_DATE_IS_BIGGER_THAN_LAST_DATE;
 	extern const int UNKNOWN_OVERFLOW_MODE;
 	extern const int NOT_FOUND_FUNCTION_ELEMENT_FOR_AGGREGATE;

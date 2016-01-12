@@ -28,6 +28,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int CANNOT_PARSE_NUMBER;
+}
+
 /** Функции преобразования типов.
   * toType - преобразование "естественным образом";
   */

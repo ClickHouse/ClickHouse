@@ -11,6 +11,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int UNSUPPORTED_METHOD;
+}
+
 /// Allows loading dictionaries from a MySQL database
 class MySQLDictionarySource final : public IDictionarySource
 {
