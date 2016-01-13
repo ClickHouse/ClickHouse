@@ -2,11 +2,19 @@
 
 #include <signal.h>
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int CANNOT_MANIPULATE_SIGSET;
+	extern const int CANNOT_WAIT_FOR_SIGNAL;
+	extern const int CANNOT_BLOCK_SIGNAL;
+	extern const int CANNOT_UNBLOCK_SIGNAL;
+}
+
 
 /** Пока существует объект этого класса - блокирует сигнал INT, при этом позволяет узнать, не пришёл ли он.
   * Это нужно, чтобы можно было прервать выполнение запроса с помощью Ctrl+C.

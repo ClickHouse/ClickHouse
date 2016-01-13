@@ -15,6 +15,15 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int TYPE_MISMATCH;
+	extern const int ARGUMENT_OUT_OF_BOUND;
+	extern const int BAD_ARGUMENTS;
+	extern const int DICTIONARY_IS_EMPTY;
+}
+
+
 const auto initial_array_size = 1024;
 const auto max_array_size = 500000;
 

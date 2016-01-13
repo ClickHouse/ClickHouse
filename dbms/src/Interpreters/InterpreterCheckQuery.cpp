@@ -15,6 +15,13 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int INVALID_BLOCK_EXTRA_INFO;
+	extern const int RECEIVED_EMPTY_DATA;
+}
+
+
 namespace
 {
 

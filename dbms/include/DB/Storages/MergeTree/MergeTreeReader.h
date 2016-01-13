@@ -18,6 +18,13 @@ namespace DB
 {
 
 
+namespace ErrorCodes
+{
+	extern const int NOT_FOUND_EXPECTED_DATA_PART;
+	extern const int MEMORY_LIMIT_EXCEEDED;
+}
+
+
 /** Умеет читать данные между парой засечек из одного куска. При чтении последовательных отрезков не делает лишних seek-ов.
   * При чтении почти последовательных отрезков делает seek-и быстро, не выбрасывая содержимое буфера.
   */

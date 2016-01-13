@@ -10,7 +10,6 @@
 #include <DB/Core/Defines.h>
 #include <DB/Core/Progress.h>
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 #include <DB/Common/MemoryTracker.h>
 #include <DB/IO/WriteHelpers.h>
 #include <DB/Interpreters/QueryPriorities.h>

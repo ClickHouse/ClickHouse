@@ -10,6 +10,13 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int DUPLICATE_INTERSERVER_IO_ENDPOINT;
+	extern const int NO_SUCH_INTERSERVER_IO_ENDPOINT;
+}
+
+
 /** Обработчик запросов от других серверов.
   */
 class InterserverIOEndpoint

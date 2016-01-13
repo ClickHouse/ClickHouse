@@ -10,6 +10,13 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int UNEXPECTED_PACKET_FROM_SERVER;
+	extern const int LOGICAL_ERROR;
+}
+
+
 /** Позволяет выполнить запрос INSERT на удалённом сервере и отправить данные.
   */
 class RemoteBlockOutputStream : public IBlockOutputStream

@@ -9,6 +9,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
+}
+
+
 /// Для чтения из одного куска. Для чтения сразу из многих, Storage использует сразу много таких объектов.
 class MergeTreeBlockInputStream : public IProfilingBlockInputStream
 {

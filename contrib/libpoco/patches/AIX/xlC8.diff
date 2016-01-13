@@ -1,0 +1,439 @@
+This patch fixes some template declarations for use
+with IBM xlC 8, which apparently has issues with default
+template arguments, as well as namespace lookup.
+
+
+==== //poco/1.3/Foundation/include/Poco/Delegate.h#2 - /ws/poco-1.3/Foundation/include/Poco/Delegate.h ====
+Index: Foundation/include/Poco/Delegate.h
+--- Foundation/include/Poco/Delegate.h.~1~	Fri Mar 20 11:19:53 2009
++++ Foundation/include/Poco/Delegate.h	Fri Mar 20 11:19:53 2009
+@@ -205,7 +205,7 @@
+ template <class TArgs>
+ static Expire<TArgs> delegate(void (*NotifyMethod)(TArgs&), Timestamp::TimeDiff expireMillisecs)
+ {
+-	return Expire<TArgs>(FunctionDelegate<TArgs, false>( NotifyMethod), expireMillisecs);
++	return Expire<TArgs>(FunctionDelegate<TArgs, false, false>( NotifyMethod), expireMillisecs);
+ }
+ 
+ 
+@@ -224,9 +224,9 @@
+ 
+ 
+ template <class TArgs>
+-static FunctionDelegate<TArgs, false> delegate(void (*NotifyMethod)(TArgs&))
++static FunctionDelegate<TArgs, false, false> delegate(void (*NotifyMethod)(TArgs&))
+ {
+-	return FunctionDelegate<TArgs, false>(NotifyMethod);
++	return FunctionDelegate<TArgs, false, false>(NotifyMethod);
+ }
+ 
+ 
+==== //poco/1.3/Foundation/include/Poco/LinearHashTable.h#5 - /ws/poco-1.3/Foundation/include/Poco/LinearHashTable.h ====
+Index: Foundation/include/Poco/LinearHashTable.h
+--- Foundation/include/Poco/LinearHashTable.h.~1~	Fri Mar 20 11:19:53 2009
++++ Foundation/include/Poco/LinearHashTable.h	Fri Mar 20 11:19:53 2009
+@@ -441,10 +441,9 @@
+ 		++_split;
+ 		for (BucketIterator it = tmp.begin(); it != tmp.end(); ++it)
+ 		{
+-			using std::swap;
+ 			std::size_t addr = bucketAddress(*it);
+ 			_buckets[addr].push_back(Value());
+-			swap(*it, _buckets[addr].back());
++			std::swap(*it, _buckets[addr].back());
+ 		}
+ 	}
+ 	
+@@ -461,10 +460,9 @@
+ 		_buckets.pop_back();
+ 		for (BucketIterator it = tmp.begin(); it != tmp.end(); ++it)
+ 		{
+-			using std::swap;
+ 			std::size_t addr = bucketAddress(*it);
+ 			_buckets[addr].push_back(Value());
+-			swap(*it, _buckets[addr].back());
++			std::swap(*it, _buckets[addr].back());
+ 		}
+ 	}
+
+ 	
+==== //poco/1.3/Foundation/include/Poco/NamedTuple.h#3 - /ws/poco-1.3/Foundation/include/Poco/NamedTuple.h ====
+Index: Foundation/include/Poco/NamedTuple.h
+--- Foundation/include/Poco/NamedTuple.h.~1~	Fri Mar 20 11:19:53 2009
++++ Foundation/include/Poco/NamedTuple.h	Fri Mar 20 11:19:53 2009
+@@ -654,7 +654,7 @@
+     class T15,
+     class T16,
+     class T17>
+-struct NamedTuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,T14,T15,T16,T17,NullTypeList>:
++struct NamedTuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,T14,T15,T16,T17,NullTypeList,NullTypeList>:
+ 	public Tuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,T14,T15,T16,T17>
+ {
+ 	typedef Tuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,T14,T15,T16,T17> TupleType;
+@@ -934,7 +934,7 @@
+     class T14,
+     class T15,
+     class T16>
+-struct NamedTuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,T14,T15,T16,NullTypeList>:
++struct NamedTuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,T14,T15,T16,NullTypeList,NullTypeList,NullTypeList>:
+ 	public Tuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,T14,T15,T16>
+ {
+ 	typedef Tuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,T14,T15,T16> TupleType;
+@@ -1206,7 +1206,7 @@
+     class T13,
+     class T14,
+     class T15>
+-struct NamedTuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,T14,T15,NullTypeList>:
++struct NamedTuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,T14,T15,NullTypeList,NullTypeList,NullTypeList,NullTypeList>:
+ 	public Tuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,T14,T15>
+ {
+ 	typedef Tuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,T14,T15> TupleType;
+@@ -1471,7 +1471,7 @@
+     class T12,
+     class T13,
+     class T14>
+-struct NamedTuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,T14,NullTypeList>:
++struct NamedTuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,T14,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList>:
+ 	public Tuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,T14>
+ {
+ 	typedef Tuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,T14> TupleType;
+@@ -1728,7 +1728,7 @@
+     class T11,
+     class T12,
+     class T13>
+-struct NamedTuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,NullTypeList>:
++struct NamedTuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList>:
+ 	public Tuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13>
+ {
+ 	typedef Tuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13> TupleType;
+@@ -1977,7 +1977,7 @@
+     class T10,
+     class T11,
+     class T12>
+-struct NamedTuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,NullTypeList>:
++struct NamedTuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList>:
+ 	public Tuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12>
+ {
+ 	typedef Tuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12> TupleType;
+@@ -2217,7 +2217,7 @@
+     class T9,
+     class T10,
+     class T11>
+-struct NamedTuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,NullTypeList>:
++struct NamedTuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList>:
+ 	public Tuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11>
+ {
+ 	typedef Tuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11> TupleType;
+@@ -2450,7 +2450,7 @@
+     class T8,
+     class T9,
+     class T10>
+-struct NamedTuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,NullTypeList>:
++struct NamedTuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList>:
+ 	public Tuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10>
+ {
+ 	typedef Tuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10> TupleType;
+@@ -2674,7 +2674,7 @@
+     class T7, 
+     class T8,
+     class T9>
+-struct NamedTuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,NullTypeList>:
++struct NamedTuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList>:
+ 	public Tuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9>
+ {
+ 	typedef Tuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9> TupleType;
+@@ -2891,7 +2891,7 @@
+     class T6,
+     class T7, 
+     class T8>
+-struct NamedTuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,NullTypeList>:
++struct NamedTuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList>:
+ 	public Tuple<T0,T1,T2,T3,T4,T5,T6,T7,T8>
+ {
+ 	typedef Tuple<T0,T1,T2,T3,T4,T5,T6,T7,T8> TupleType;
+@@ -3100,7 +3100,7 @@
+     class T5,
+     class T6,
+     class T7>
+-struct NamedTuple<T0,T1,T2,T3,T4,T5,T6,T7,NullTypeList>:
++struct NamedTuple<T0,T1,T2,T3,T4,T5,T6,T7,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList>:
+ 	public Tuple<T0,T1,T2,T3,T4,T5,T6,T7>
+ {
+ 	typedef Tuple<T0,T1,T2,T3,T4,T5,T6,T7> TupleType;
+@@ -3301,7 +3301,7 @@
+     class T4,
+     class T5,
+     class T6>
+-struct NamedTuple<T0,T1,T2,T3,T4,T5,T6,NullTypeList>:
++struct NamedTuple<T0,T1,T2,T3,T4,T5,T6,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList>:
+ 	public Tuple<T0,T1,T2,T3,T4,T5,T6>
+ {
+ 	typedef Tuple<T0,T1,T2,T3,T4,T5,T6> TupleType;
+@@ -3492,7 +3492,7 @@
+     class T3,
+     class T4,
+     class T5>
+-struct NamedTuple<T0,T1,T2,T3,T4,T5,NullTypeList>:
++struct NamedTuple<T0,T1,T2,T3,T4,T5,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList>:
+ 	public Tuple<T0,T1,T2,T3,T4,T5>
+ {
+ 	typedef Tuple<T0,T1,T2,T3,T4,T5> TupleType;
+@@ -3675,7 +3675,7 @@
+     class T2,
+     class T3,
+     class T4>
+-struct NamedTuple<T0,T1,T2,T3,T4,NullTypeList>:
++struct NamedTuple<T0,T1,T2,T3,T4,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList>:
+ 	public Tuple<T0,T1,T2,T3,T4>
+ {
+ 	typedef Tuple<T0,T1,T2,T3,T4> TupleType;
+@@ -3852,7 +3852,7 @@
+     class T1,
+     class T2,
+     class T3>
+-struct NamedTuple<T0,T1,T2,T3,NullTypeList>:
++struct NamedTuple<T0,T1,T2,T3,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList>:
+ 	public Tuple<T0,T1,T2,T3>
+ {
+ 	typedef Tuple<T0,T1,T2,T3> TupleType;
+@@ -4020,7 +4020,7 @@
+ template<class T0, 
+     class T1,
+     class T2>
+-struct NamedTuple<T0,T1,T2,NullTypeList>:
++struct NamedTuple<T0,T1,T2,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList>:
+ 	public Tuple<T0,T1,T2>
+ {
+ 	typedef Tuple<T0,T1,T2> TupleType;
+@@ -4181,7 +4181,7 @@
+ 
+ template<class T0, 
+     class T1>
+-struct NamedTuple<T0,T1,NullTypeList>:
++struct NamedTuple<T0,T1,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList>:
+ 	public Tuple<T0,T1>
+ {
+ 	typedef Tuple<T0,T1> TupleType;
+@@ -4334,7 +4334,7 @@
+ 
+ 
+ template<class T0>
+-struct NamedTuple<T0,NullTypeList>:
++struct NamedTuple<T0,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList>:
+ 	public Tuple<T0>
+ {
+ 	typedef Tuple<T0> TupleType;
+
+
+==== //poco/1.3/Foundation/include/Poco/PriorityDelegate.h#2 - /ws/poco-1.3/Foundation/include/Poco/PriorityDelegate.h ====
+Index: Foundation/include/Poco/PriorityDelegate.h
+--- Foundation/include/Poco/PriorityDelegate.h.~1~	Fri Mar 20 11:19:53 2009
++++ Foundation/include/Poco/PriorityDelegate.h	Fri Mar 20 11:19:53 2009
+@@ -207,7 +207,7 @@
+ template <class TArgs>
+ static PriorityExpire<TArgs> priorityDelegate(void (*NotifyMethod)(TArgs&), int prio, Timestamp::TimeDiff expireMilliSec)
+ {
+-	return PriorityExpire<TArgs>(FunctionPriorityDelegate<TArgs, false>(NotifyMethod, prio), expireMilliSec);
++	return PriorityExpire<TArgs>(FunctionPriorityDelegate<TArgs, false, true>(NotifyMethod, prio), expireMilliSec);
+ }
+ 
+ 
+@@ -226,9 +226,9 @@
+ 
+ 
+ template <class TArgs>
+-static FunctionPriorityDelegate<TArgs, false> priorityDelegate(void (*NotifyMethod)(TArgs&), int prio)
++static FunctionPriorityDelegate<TArgs, false, true> priorityDelegate(void (*NotifyMethod)(TArgs&), int prio)
+ {
+-	return FunctionPriorityDelegate<TArgs, false>(NotifyMethod, prio);
++	return FunctionPriorityDelegate<TArgs, false, true>(NotifyMethod, prio);
+ }
+ 
+ 
+==== //poco/1.3/Foundation/include/Poco/Tuple.h#7 - /ws/poco-1.3/Foundation/include/Poco/Tuple.h ====
+Index: Foundation/include/Poco/Tuple.h
+--- Foundation/include/Poco/Tuple.h.~1~	Fri Mar 20 11:19:53 2009
++++ Foundation/include/Poco/Tuple.h	Fri Mar 20 11:19:53 2009
+@@ -297,7 +297,7 @@
+ 	class T15,
+ 	class T16,
+ 	class T17>
+-struct Tuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,T14,T15,T16,T17,NullTypeList>
++struct Tuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,T14,T15,T16,T17,NullTypeList,NullTypeList>
+ {
+ 	typedef typename TypeListType<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,T14,T15,T16,T17>::HeadType Type;
+ 
+@@ -404,7 +404,7 @@
+ 	class T14,
+ 	class T15,
+ 	class T16>
+-struct Tuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,T14,T15,T16,NullTypeList>
++struct Tuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,T14,T15,T16,NullTypeList,NullTypeList,NullTypeList>
+ {
+ 	typedef typename TypeListType<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,T14,T15,T16>::HeadType Type;
+ 
+@@ -508,7 +508,7 @@
+ 	class T13,
+ 	class T14,
+ 	class T15>
+-struct Tuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,T14,T15,NullTypeList>
++struct Tuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,T14,T15,NullTypeList,NullTypeList,NullTypeList,NullTypeList>
+ {
+ 	typedef typename TypeListType<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,T14,T15>::HeadType Type;
+ 
+@@ -609,7 +609,7 @@
+ 	class T12,
+ 	class T13,
+ 	class T14>
+-struct Tuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,T14,NullTypeList>
++struct Tuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,T14,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList>
+ {
+ 	typedef typename TypeListType<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,T14>::HeadType Type;
+ 
+@@ -707,7 +707,7 @@
+ 	class T11,
+ 	class T12,
+ 	class T13>
+-struct Tuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,NullTypeList>
++struct Tuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList>
+ {
+ 	typedef typename TypeListType<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13>::HeadType Type;
+ 
+@@ -802,7 +802,7 @@
+ 	class T10,
+ 	class T11,
+ 	class T12>
+-struct Tuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12, NullTypeList>
++struct Tuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList>
+ {
+ 	typedef typename TypeListType<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12>::HeadType Type;
+ 
+@@ -894,7 +894,7 @@
+ 	class T9,
+ 	class T10,
+ 	class T11>
+-struct Tuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,NullTypeList>
++struct Tuple<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList>
+ {
+ 	typedef typename TypeListType<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11>::HeadType Type;
+ 
+@@ -983,7 +983,7 @@
+ 	class T8,
+ 	class T9,
+ 	class T10>
+-struct Tuple<T0, T1,T2,T3,T4,T5,T6,T7,T8,T9,T10, NullTypeList>
++struct Tuple<T0, T1,T2,T3,T4,T5,T6,T7,T8,T9,T10, NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList>
+ {
+ 	typedef typename TypeListType<T0,T1,T2,T3,T4,T5,T6,T7,T8,T9,T10>::HeadType Type;
+ 
+@@ -1069,7 +1069,7 @@
+ 	class T7,
+ 	class T8,
+ 	class T9>
+-struct Tuple<T0, T1,T2,T3,T4,T5,T6,T7,T8,T9, NullTypeList>
++struct Tuple<T0, T1,T2,T3,T4,T5,T6,T7,T8,T9, NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList>
+ {
+ 	typedef typename TypeListType<T0, T1,T2,T3,T4,T5,T6,T7,T8,T9>::HeadType Type;
+ 
+@@ -1152,7 +1152,7 @@
+ 	class T6,
+ 	class T7,
+ 	class T8>
+-struct Tuple<T0, T1,T2,T3,T4,T5,T6,T7,T8, NullTypeList>
++struct Tuple<T0, T1,T2,T3,T4,T5,T6,T7,T8, NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList>
+ {
+ 	typedef typename TypeListType<T0,T1,T2,T3,T4,T5,T6,T7,T8>::HeadType Type;
+ 
+@@ -1232,7 +1232,7 @@
+ 	class T5,
+ 	class T6,
+ 	class T7>
+-struct Tuple<T0, T1,T2,T3,T4,T5,T6,T7, NullTypeList>
++struct Tuple<T0, T1,T2,T3,T4,T5,T6,T7, NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList>
+ {
+ 	typedef typename TypeListType<T0,T1,T2,T3,T4,T5,T6,T7>::HeadType Type;
+ 
+@@ -1309,7 +1309,7 @@
+ 	class T4,
+ 	class T5,
+ 	class T6>
+-struct Tuple<T0, T1,T2,T3,T4,T5,T6, NullTypeList>
++struct Tuple<T0, T1,T2,T3,T4,T5,T6, NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList>
+ {
+ 	typedef typename TypeListType<T0,T1,T2,T3,T4,T5,T6>::HeadType Type;
+ 
+@@ -1383,7 +1383,7 @@
+ 	class T3,
+ 	class T4,
+ 	class T5>
+-struct Tuple<T0, T1,T2,T3,T4,T5, NullTypeList>
++struct Tuple<T0, T1,T2,T3,T4,T5, NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList>
+ {
+ 	typedef typename TypeListType<T0,T1,T2,T3,T4,T5>::HeadType Type;
+ 
+@@ -1454,7 +1454,7 @@
+ 	class T2,
+ 	class T3,
+ 	class T4>
+-struct Tuple<T0, T1,T2,T3,T4, NullTypeList>
++struct Tuple<T0, T1,T2,T3,T4, NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList>
+ {
+ 	typedef typename TypeListType<T0,T1,T2,T3,T4>::HeadType Type;
+ 
+@@ -1522,7 +1522,7 @@
+ 	class T1,
+ 	class T2,
+ 	class T3>
+-struct Tuple<T0, T1,T2,T3, NullTypeList>
++struct Tuple<T0, T1,T2,T3, NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList>
+ {
+ 	typedef typename TypeListType<T0,T1,T2,T3>::HeadType Type;
+ 
+@@ -1587,7 +1587,7 @@
+ template <class T0,
+ 	class T1,
+ 	class T2>
+-struct Tuple<T0, T1,T2, NullTypeList>
++struct Tuple<T0, T1,T2, NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList>
+ {
+ 	typedef typename TypeListType<T0,T1,T2>::HeadType Type;
+ 
+@@ -1649,7 +1649,7 @@
+ 
+ template <class T0,
+ 	class T1>
+-struct Tuple<T0, T1, NullTypeList>
++struct Tuple<T0, T1, NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList>
+ {
+ 	typedef typename TypeListType<T0,T1>::HeadType Type;
+ 
+@@ -1707,7 +1707,7 @@
+ 
+ 
+ template <class T0>
+-struct Tuple<T0, NullTypeList>
++struct Tuple<T0, NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList,NullTypeList>
+ {
+ 	typedef TypeList<T0, NullTypeList> Type;
+
+ 	
+==== //poco/1.3/Foundation/src/pcre_internal.h#2 - /ws/poco-1.3/Foundation/src/pcre_internal.h ====
+Index: Foundation/src/pcre_internal.h
+--- Foundation/src/pcre_internal.h.~1~	Fri Mar 20 11:19:53 2009
++++ Foundation/src/pcre_internal.h	Fri Mar 20 11:19:53 2009
+@@ -562,10 +562,14 @@
+ /* Miscellaneous definitions. The #ifndef is to pacify compiler warnings in
+ environments where these macros are defined elsewhere. */
+ 
+-#ifndef FALSE
++#ifndef BOOL
+ typedef int BOOL;
++#endif
+ 
++#ifndef FALSE
+ #define FALSE   0
++#endif
++#ifndef TRUE
+ #define TRUE    1
+ #endif
+End of Patch.

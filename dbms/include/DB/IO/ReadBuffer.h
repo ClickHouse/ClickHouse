@@ -4,12 +4,17 @@
 #include <algorithm>
 
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 #include <DB/IO/BufferBase.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int ATTEMPT_TO_READ_AFTER_EOF;
+	extern const int CANNOT_READ_ALL_DATA;
+}
 
 /** Простой абстрактный класс для буферизованного чтения данных (последовательности char) откуда-нибудь.
   * В отличие от std::istream, предоставляет доступ к внутреннему буферу,

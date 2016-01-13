@@ -4,13 +4,24 @@
 #include <DB/Columns/ColumnsNumber.h>
 #include <DB/Columns/ColumnArray.h>
 #include <DB/DataTypes/DataTypeArray.h>
-#include <DB/Functions/IFunction.h>
 #include <DB/Functions/FunctionsArray.h>
 #include <set>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int DUPLICATE_COLUMN;
+	extern const int UNKNOWN_IDENTIFIER;
+	extern const int UNKNOWN_ACTION;
+	extern const int NOT_FOUND_COLUMN_IN_BLOCK;
+	extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
+	extern const int TOO_MUCH_TEMPORARY_COLUMNS;
+	extern const int TOO_MUCH_TEMPORARY_NON_CONST_COLUMNS;
+}
+
 
 Names ExpressionAction::getNeededColumns() const
 {
@@ -28,7 +39,7 @@ Names ExpressionAction::getNeededColumns() const
 	return res;
 }
 
-ExpressionAction ExpressionAction::applyFunction(FunctionPtr function_,
+ExpressionAction ExpressionAction::applyFunction(const FunctionPtr & function_,
 	const std::vector<std::string> & argument_names_,
 	std::string result_name_)
 {
@@ -1002,7 +1013,7 @@ void ExpressionActionsChain::addStep()
 		throw Exception("Cannot add action to empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
 
 	ColumnsWithTypeAndName columns = steps.back().actions->getSampleBlock().getColumns();
-	steps.push_back(Step(new ExpressionActions(columns, settings)));
+	steps.push_back(Step(std::make_shared<ExpressionActions>(columns, settings)));
 }
 
 void ExpressionActionsChain::finalize()

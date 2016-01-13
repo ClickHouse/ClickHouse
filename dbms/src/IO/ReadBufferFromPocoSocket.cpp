@@ -1,7 +1,6 @@
 #include <Poco/Net/NetException.h>
 
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 
 #include <DB/IO/ReadBufferFromPocoSocket.h>
 #include <DB/Common/NetException.h>
@@ -9,6 +8,14 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int NETWORK_ERROR;
+	extern const int SOCKET_TIMEOUT;
+	extern const int CANNOT_READ_FROM_SOCKET;
+}
+
 
 bool ReadBufferFromPocoSocket::nextImpl()
 {

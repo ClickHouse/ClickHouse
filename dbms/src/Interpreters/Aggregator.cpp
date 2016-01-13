@@ -24,6 +24,14 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int CANNOT_COMPILE_CODE;
+	extern const int TOO_MUCH_ROWS;
+	extern const int EMPTY_DATA_PASSED;
+	extern const int CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS;
+}
+
 
 AggregatedDataVariants::~AggregatedDataVariants()
 {

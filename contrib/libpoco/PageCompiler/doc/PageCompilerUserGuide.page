@@ -1,0 +1,399 @@
+POCO C++ Server Page Compiler User Guide
+POCO PageCompiler
+
+!!!Introduction
+PageCompiler is a command line tool that translates HTML files (and other kinds of files) into
+C++ code, more precisely, subclasses of Poco::Net::HTTPRequestHandler.
+The source files can contain special directives that allow embedding of C++ code. 
+The syntax of these directives is based on the syntax used for 
+Java Server Pages (JSP) and Active Server Pages (ASP).
+
+The following introductory sample shows the code for a simple page that displays the
+current date and time.
+
+    <%@ page class="TimeHandler" %>
+    <%!
+        #include "Poco/DateTime.h"
+        #include "Poco/DateTimeFormatter.h"
+        #include "Poco/DateTimeFormat.h"
+        
+        
+        using Poco::DateTime;
+        using Poco::DateTimeFormatter;
+        using Poco::DateTimeFormat;
+    %>
+    
+    <%
+        DateTime now;
+        std::string dt(DateTimeFormatter::format(now, DateTimeFormat::SORTABLE_FORMAT));
+    %>
+    <html>
+    <head>
+    <title>Time Sample</title>
+    </head>
+    <body>
+    <h1>Time Sample</h1>
+    <p><%= dt %></p>
+    </body>
+    </html>
+----    
+
+Sending the above code to the page compiler will generate two files, a header file
+(<[TimeHandler.h]>) and an implementation file (<[TimeHandler.cpp]>).
+The files define a subclass of Poco::Net::HTTPRequestHandler named <[TimeHandler]>.
+The generated <[handleRequest]> member function contains code to send the HTML
+code contained in the source file to the client, as well as the C++ code fragments found 
+in between the Scriptlet tags. 
+
+
+!!!C++ Server Page Syntax
+
+The following special tags are supported in a C++ server page (CPSP) file.
+
+!!Hidden Comment
+
+A hidden comment documents the CPSP file, but is not sent to the client.
+
+    <%-- <comment> --%>
+----
+
+!!Implementation Declaration
+
+An implementation declaration is copied to the implementation file immediately after
+the block containing the standard <[#include]> directives.
+It is used to include additional header files and <[using]> declarations,
+as well as to define classes needed later on.
+
+    <%!
+        <declaration>
+        ...
+    %>
+----
+
+!!Header Declaration
+
+A header declaration is copied to the header file immediately after the
+block containing the standard <[#include]> directives.
+It is usually used to include the header file containing the definition
+of the base class for the request handler, if a custom base class
+is required.
+
+    <%!!
+        <declaration>
+        ...
+    %>
+----
+
+!!Expression
+
+The result of any valid C++ expression can be directly inserted into the page,
+provided the result can be written to an output stream. Note that the expression
+must not end with a semicolon.
+
+    <%= <expression> %>
+----
+
+!!Scriptlet
+
+Arbitrary C++ code fragments can be included using the Scriptlet directive.
+
+    <%
+        <statement>
+        ...
+    %>
+----
+
+!!Pre-Response Scriptlet
+
+This is similar to an ordinary scriptlet, except that it will be executed
+before the HTTP response is sent. This can be used to manipulate the HTTP response
+object.
+
+    <%%
+        <statement>
+        ...
+    %>
+
+The main feature of this directive is that it allows to send a redirect response to
+the client if a certain condition is true.
+
+Example:
+    <%%
+        if (!loggedIn)
+        {
+        	return response.redirect("/");
+        }
+    %>
+ 
+!!Include Directive
+
+Another CPSP file can be included into the current file using the Include
+Directive.
+
+    <%@ include page="<path>" %>
+----
+
+!!C++ Header Include Directive
+
+Include a C++ header file in the generated header file.
+    <%@ header include="<path>" %>
+
+This corresponds to:
+    <%!! #include "<path>" %>
+    
+A variant of this directive is:
+    <%@ header sinclude="<path>" %>
+
+This corresponds to:
+    <%!! #include <<path>> %>
+
+
+!!C++ Implementation Include Directive
+
+Include a C++ header file in the generated implementation file.
+    <%@ impl include="<path>" %>
+
+This corresponds to:
+    <%! #include "<path>" %>
+    
+A variant of this directive is:
+    <%@ impl sinclude="<path>" %>
+
+This corresponds to:
+    <%! #include <<path>> %>
+
+
+!!Page Directive
+
+The Page Directive allows the definition of attributes that control
+various aspects of C++ code generation.
+
+    <%@ page <attr>="<value>" ... %>
+----
+
+The following page attributes are supported:
+
+!class
+
+Specifies the name of the generated class.
+Defaults to the base name of the source file with the word "Handler" appended.
+
+!namespace
+
+If specified, sets the namespace where the generated classes will be in.
+No namespace will be used if omitted.
+
+!baseClass
+
+Specifies the name of the class used as the base class for the generated 
+request handler class.
+Defaults to Poco::Net::HTTPRequestHandler. Do not forget to add a Header Declaration
+containing an <[#include]> directive for the header file containing the definition
+of that class, otherwise the generated code won't compile.
+
+!context
+
+Allows passing of a context object to the request handler's constructor.
+The context object is stored in the request handler object and can be
+obtained by calling the context() object.
+
+The class of the context object must be specified.
+Cannot be used together with <[ctorArg]>.
+
+!ctorArg
+
+Allows to specify the type of a single argument being passed to the constructor
+of the generated request handler class. Can only be used together with <[baseClass]>.
+The argument is passed on to the constructor of the base class, therefore, one of the 
+constructors of the base class must also accept a single argument of the specified type.
+
+Cannot be used together with <[context]>.
+
+!export
+
+Allows to specify a DLL import/export directive that is being added to the request
+handler class definition. Useful for exporting a request handler class from a
+Windows DLL.
+
+!form
+
+Enable or disable automatic form handling. If enabled, which is the default,
+a Poco::Net::HTMLForm object is automatically created in the request handler
+and accessible through a variable named <[form]>.
+Set the value to <[false]> to disable form handling.
+
+!formPartHandler
+
+Allows you to pass a Poco::Net::PartHandler object to the form object for 
+processing file uploads. A subclass of Poco::Net::PartHandler must be
+defined (using an Implementation Declaration), and the constructor of the part 
+handler must take a (const) reference to the request handler instance as argument.
+
+!contentType
+
+Allows you to specify the MIME content type for the page. Defaults to text/html.
+
+!contentLanguage
+
+Allows to specify a language tag (e.g., "en") that will be sent in the
+response Content-Language header if the client sends an Accept-Language 
+header in the request.
+
+!chunked
+
+Allows you to specify whether the response is sent using chunked transfer encoding.
+Defaults to <[true]>.
+Set the value to <[false]> to disable chunked transfer encoding.
+
+!compressed
+
+Enables or disables response body compression. If set to <[true]>, and the client supports
+the "gzip" content encoding (indicated by the "Accept-Encoding" header),
+the response body will be compressed using the "gzip" format and the
+"Content-Encoding" header will be set accordingly. 
+Defaults to <[false]>. Cannot be enabled together with response buffering.
+
+!compressionLevel
+
+Specify the compression level, if response body compression is enabled.
+Valid values are 1 (fastest) to 9 (best compression). Defaults to 1.
+
+!buffered
+
+Enables or disables response buffering. Response buffering is disabled by default.
+Set to <[true]> to enable buffering, or to <[false]> to disable it.
+If response buffering is enabled, everything written to the response stream
+is actually written to a string stream (<[std::ostringstream]>).
+Sending of the HTTP response back to the client is deferred to 
+when the page is complete.
+
+!session (OSP only)
+
+For use with the POCO Open Service Platform only.
+
+Specifies the identifier of the session obtained from the OSP Web Session Manager.
+If specified, a Poco::OSP::Web::WebSession object will be available in the
+request handler through a variable named <[session]>. The variable is of type
+Poco::OSP::Web::WebSession::Ptr. If the identifier starts with an asterisk
+('@'), the identifier is considered to be a bundle property name, and the
+session identifier is read from the respective bundle property.
+
+!sessionTimeout (OSP only)
+
+For use with the POCO Open Service Platform only.
+
+Specifies the session timeout in minutes.
+If the argument is a string, it is considered to be a bundle property name
+and the timeout value is read from the respective bundle property.
+
+!createSession (OSP only)
+
+For use with the POCO Open Service Platform only.
+
+If set to <[true]>, which is the default if the attribute is not specified, 
+a new session will be created if the request does not contain a (valid) session cookie.
+If set to <[false]> and there is no existing session that matches the session
+cookie. the <[session]> variable will be null. 
+
+!precondition
+
+Allows to specify a C++ boolean expression which will be evaluated before processing
+of the page begins. If the expression evaluates to false, processing of the
+page is immediately terminated and no response is sent to the client.
+
+The expression can be a call to a member function defined in the handler base class.
+If that function returns false, it can send its own response to the client.
+
+Example:
+    <%@ page precondition="checkCredentials(request, response)" %>
+----
+
+!path
+
+Specify a server path for the page. If specified, the generated handler class
+will contain a public static <[const std::string]> member variable named <[PATH]>
+containing the specified path.
+
+Example:
+    <%@ page path="/index.html" %>
+----
+
+
+!!Implicit Objects
+
+The following objects are available in the handler code.
+
+!request
+
+The HTTP request object - an instance of Poco::Net::HTTPServerRequest.
+
+!response
+
+The HTTP response object - an instance of Poco::Net::HTTPServerRequest.
+
+!responseStream
+
+The output stream where the response body is written to.
+
+!form
+
+An instance of Poco::Net::HTMLForm for processing form arguments.
+Only available if form processing has not been disabled by
+setting the <[form]> page attribute to <[false]>.
+
+!session (OSP only)
+
+An instance of Poco::OSP::Web::WebSession::Ptr for accessing the
+Poco::OSP::Web::WebSession object for the current session.
+Only available with the POCO Open Service Platform, and if the
+<[session]> page attribute has been specified. May be null if
+the <[createSession]> attribute is false and no session exists.
+
+
+!!!Invoking the Page Compiler
+
+The Page Compiler is invoked from the command line. The file names of the
+CPSP files to be compiled are specified as arguments.
+
+A number of options control the code generation. Options are specified
+using the usual command-line option syntax for the current operating
+system (e.g., <[/help]> on Windows, <[--help]> or <[-h]> on Unix).
+
+  * help (h): display usage information
+  * define (D): define a configuration property
+  * config-file (f): load configuration properties from a file
+  * osp (O): add factory class definition/implementation for use with OSP
+  * apache (A): add factory class definition/implementation and shared library manifest for use with ApacheConnector
+
+!!Configuration Properties
+
+The Page Compiler supports one configuration property, named
+<[PageCompiler.fileHeader]>, to optionally specify a header that is 
+included in every generated file.
+
+The file header can contain references to other configuration properties,
+using the usual property syntax: <[${property}]>.
+
+For example, invoking the Page Compiler with the following configuration
+file:
+
+    PageCompiler.fileHeader = //\n// ${outputFileName}\n//\n
+----
+
+places the following header at the beginning of each generated file
+(<[<filename>]> is replaced with the actual name of the file):
+
+    //
+    // <filename>
+    //
+----
+
+The following pre-defined properties can be used in the file header:
+
+  * <[${inputFileName}]>: the name of the input file (with directories removed)
+  * <[${inputFilePath}]>: the complete path of the input file
+  * <[${dateTime}]>: the current date and time (YYYY-MM-DD HH:MM:SS)
+  * <[${outputFileName}]>: the name of the current output file (header or implementation file), with
+    directories removed
+  * <[${outputFilePath}]>: the complete path of the current output file
+

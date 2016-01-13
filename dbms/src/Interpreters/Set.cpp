@@ -28,6 +28,18 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int UNKNOWN_SET_DATA_VARIANT;
+	extern const int LOGICAL_ERROR;
+	extern const int SET_SIZE_LIMIT_EXCEEDED;
+	extern const int TYPE_MISMATCH;
+	extern const int BAD_ARGUMENTS;
+	extern const int INCORRECT_ELEMENT_OF_SET;
+	extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
+}
+
+
 void SetVariants::init(Type type_)
 {
 	type = type_;
@@ -42,7 +54,7 @@ void SetVariants::init(Type type_)
 	#undef M
 
 		default:
-			throw Exception("Unknown Set variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+			throw Exception("Unknown Set variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
 	}
 }
 
@@ -59,7 +71,7 @@ size_t SetVariants::getTotalRowCount() const
 	#undef M
 
 		default:
-			throw Exception("Unknown Set variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+			throw Exception("Unknown Set variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
 	}
 }
 
@@ -76,7 +88,7 @@ size_t SetVariants::getTotalByteCount() const
 	#undef M
 
 		default:
-			throw Exception("Unknown Set variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+			throw Exception("Unknown Set variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
 	}
 }
 

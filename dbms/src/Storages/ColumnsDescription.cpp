@@ -11,6 +11,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int CANNOT_PARSE_TEXT;
+}
+
 
 template <bool store>
 String ColumnsDescription<store>::toString() const

@@ -12,7 +12,6 @@
 
 #include <DB/Core/Types.h>
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 #include <DB/IO/WriteHelpers.h>
 #include <DB/Parsers/StringRange.h>
 
@@ -20,8 +19,17 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int NOT_A_COLUMN;
+	extern const int TOO_BIG_AST;
+	extern const int TOO_DEEP_AST;
+	extern const int UNKNOWN_TYPE_OF_AST_NODE;
+	extern const int UNKNOWN_ELEMENT_IN_AST;
+}
+
 using Poco::SharedPtr;
-typedef std::set<String> IdentifierNameSet;
+using IdentifierNameSet = std::set<String>;
 
 
 /** Элемент синтаксического дерева (в дальнейшем - направленного ациклического графа с элементами семантики)
@@ -29,7 +37,7 @@ typedef std::set<String> IdentifierNameSet;
 class IAST
 {
 public:
-	typedef std::vector<SharedPtr<IAST> > ASTs;
+	using ASTs = std::vector<SharedPtr<IAST>>;
 	ASTs children;
 	StringRange range;
 
@@ -240,8 +248,8 @@ private:
 };
 
 
-typedef SharedPtr<IAST> ASTPtr;
-typedef std::vector<ASTPtr> ASTs;
+using ASTPtr = SharedPtr<IAST>;
+using ASTs = std::vector<ASTPtr>;
 
 
 /// Квотировать идентификатор обратными кавычками, если это требуется.

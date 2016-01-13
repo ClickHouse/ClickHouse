@@ -6,10 +6,19 @@
 #include <DB/Common/Arena.h>
 #include <DB/Columns/IColumn.h>
 #include <DB/IO/ReadHelpers.h>
+#include <DB/IO/WriteHelpers.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int TOO_LARGE_STRING_SIZE;
+	extern const int SIZE_OF_ARRAY_DOESNT_MATCH_SIZE_OF_FIXEDARRAY_COLUMN;
+	extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+	extern const int PARAMETER_OUT_OF_BOUND;
+}
 
 /** Cтолбeц значений типа "строка фиксированной длины".
   * Если вставить строку меньшей длины, то она будет дополнена нулевыми байтами.

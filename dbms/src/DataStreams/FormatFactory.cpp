@@ -26,6 +26,13 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int FORMAT_IS_NOT_SUITABLE_FOR_INPUT;
+	extern const int UNKNOWN_FORMAT;
+}
+
+
 BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & buf,
 	const Block & sample, size_t max_block_size) const
 {

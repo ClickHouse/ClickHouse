@@ -13,6 +13,14 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
+	extern const int UNKNOWN_ELEMENT_IN_CONFIG;
+	extern const int UNSUPPORTED_METHOD;
+	extern const int TOO_SMALL_BUFFER_SIZE;
+}
+
 
 DictionaryPtr DictionaryFactory::create(const std::string & name, Poco::Util::AbstractConfiguration & config,
 	const std::string & config_prefix, Context & context) const

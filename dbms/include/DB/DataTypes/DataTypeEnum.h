@@ -3,10 +3,18 @@
 #include <DB/DataTypes/IDataType.h>
 #include <DB/Common/HashTable/HashMap.h>
 #include <vector>
+#include <unordered_map>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int SYNTAX_ERROR;
+	extern const int LOGICAL_ERROR;
+	extern const int EMPTY_DATA_PASSED;
+}
 
 
 template <typename FieldType> struct EnumName;
@@ -22,13 +30,14 @@ public:
 	using ConstColumnType = ColumnConst<FieldType>;
 	using Value = std::pair<std::string, FieldType>;
 	using Values = std::vector<Value>;
-	using Map = HashMap<StringRef, FieldType, StringRefHash>;
+	using NameToValueMap = HashMap<StringRef, FieldType, StringRefHash>;
+	using ValueToNameMap = std::unordered_map<FieldType, StringRef>;
 
+private:
 	Values values;
+	NameToValueMap name_to_value_map;
+	ValueToNameMap value_to_name_map;
 	std::string name;
-	Map map;
-
-	const Values & getValues() const { return values; }
 
 	static std::string generateName(const Values & values)
 	{
@@ -59,35 +68,30 @@ public:
 		return name;
 	}
 
-	void fillMap()
+	void fillMaps()
 	{
 		for (const auto & name_and_value : values )
 		{
-			const auto pair = map.insert({ StringRef{name_and_value.first}, name_and_value.second });
-			if (!pair.second)
+			const auto name_to_value_pair = name_to_value_map.insert(
+				{ StringRef{name_and_value.first}, name_and_value.second });
+			if (!name_to_value_pair.second)
 				throw Exception{
 					"Duplicate names in enum: '" + name_and_value.first + "' = " + toString(name_and_value.second)
-						+ " and '" + pair.first->first.toString() + "' = " + toString(pair.first->second),
+						+ " and '" + name_to_value_pair.first->first.toString() + "' = " + toString(
+							name_to_value_pair.first->second),
+					ErrorCodes::SYNTAX_ERROR
+				};
+
+			const auto value_to_name_pair = value_to_name_map.insert(
+				{ name_and_value.second, StringRef{name_and_value.first} });
+			if (!value_to_name_pair.second)
+				throw Exception{
+					"Duplicate values in enum: '" + name_and_value.first + "' = " + toString(name_and_value.second)
+						+ " and '" + value_to_name_pair.first->second.toString() + "' = " + toString(
+							value_to_name_pair.first->first),
 					ErrorCodes::SYNTAX_ERROR
 				};
 		}
-	}
-
-	static void sortAndUnique(Values & values)
-	{
-		std::sort(std::begin(values), std::end(values), [] (auto & left, auto & right) {
-			return left.second < right.second;
-		});
-
-		const auto unique_it = std::unique(std::begin(values), std::end(values), [] (auto & left, auto & right) {
-			return left.second == right.second;
-		});
-
-		if (unique_it != std::end(values))
-			throw Exception{
-				"Duplicate values in enum: '" + unique_it->first + "' = " + toString(unique_it->second),
-				ErrorCodes::SYNTAX_ERROR
-			};
 	}
 
 public:
@@ -99,17 +103,21 @@ public:
 				ErrorCodes::EMPTY_DATA_PASSED
 			};
 
-		sortAndUnique(values);
+		fillMaps();
+
+		std::sort(std::begin(values), std::end(values), [] (auto & left, auto & right) {
+			return left.second < right.second;
+		});
 
 		name = generateName(values);
-
-		fillMap();
 	}
 
 	DataTypeEnum(const DataTypeEnum & other) : values{other.values}, name{other.name}
 	{
-		fillMap();
+		fillMaps();
 	}
+
+	const Values & getValues() const { return values; }
 
 	std::string getName() const override { return name; }
 
@@ -120,30 +128,28 @@ public:
 	/// Returns length of textual name for an enum element (used in FunctionVisibleWidth)
 	std::size_t getNameLength(const FieldType & value) const
 	{
-		return getNameForValue(value).size();
+		/// @todo length of escaped string should be calculated here
+		return getNameForValue(value).size;
 	}
 
-	const std::string & getNameForValue(const FieldType & value) const
+	const StringRef & getNameForValue(const FieldType & value) const
 	{
-		const auto it = std::lower_bound(std::begin(values), std::end(values), value, [] (const auto & left, const auto & right) {
-			return left.second < right;
-		});
-
-		if (it == std::end(values) || it->second != value)
+		const auto it = value_to_name_map.find(value);
+		if (it == std::end(value_to_name_map))
 			throw Exception{
-				"Unexpected value " + toString(value) + " for " + getName(),
+				"Unexpected value " + toString(value) + " for type " + getName(),
 				ErrorCodes::LOGICAL_ERROR
 			};
 
-		return it->first;
+		return it->second;
 	}
 
 	FieldType getValue(const std::string & name) const
 	{
-		const auto it = map.find(StringRef{name});
-		if (it == std::end(map))
+		const auto it = name_to_value_map.find(StringRef{name});
+		if (it == std::end(name_to_value_map))
 			throw Exception{
-				"Unknown string '" + name + "' for " + getName(),
+				"Unknown element '" + name + "' for type " + getName(),
 				ErrorCodes::LOGICAL_ERROR
 			};
 

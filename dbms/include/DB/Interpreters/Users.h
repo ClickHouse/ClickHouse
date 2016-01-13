@@ -12,7 +12,6 @@
 
 #include <DB/Core/Types.h>
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 #include <DB/IO/ReadHelpers.h>
 #include <DB/IO/HexWriteBuffer.h>
 #include <DB/IO/WriteBufferFromString.h>
@@ -27,6 +26,16 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int DNS_ERROR;
+	extern const int UNKNOWN_ADDRESS_PATTERN_TYPE;
+	extern const int UNKNOWN_USER;
+	extern const int REQUIRED_PASSWORD;
+	extern const int WRONG_PASSWORD;
+	extern const int IP_ADDRESS_NOT_ALLOWED;
+}
 
 
 /// Позволяет проверить соответствие адреса шаблону.

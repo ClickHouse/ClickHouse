@@ -15,6 +15,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int ABORTED;
+}
+
 /// Не будем соглашаться мерджить куски, если места на диске менее чем во столько раз больше суммарного размера кусков.
 static const double DISK_USAGE_COEFFICIENT_TO_SELECT = 1.6;
 
@@ -448,7 +453,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMerger::mergeParts(
 		  *   затем попадаем сюда.
 		  * Ситуация - было заменено M > N кусков тоже нормальная.
 		  *
-		  * Хотя это должно предотвращаться проверкой в методе StorageReplicatedMergeTree::shouldExecuteLogEntry.
+		  * Хотя это должно предотвращаться проверкой в методе ReplicatedMergeTreeQueue::shouldExecuteLogEntry.
 		  */
 		LOG_WARNING(log, "Unexpected number of parts removed when adding " << new_data_part->name << ": " << replaced_parts.size()
 			<< " instead of " << parts.size());

@@ -37,6 +37,17 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int DIRECTORY_DOESNT_EXIST;
+	extern const int DIRECTORY_ALREADY_EXISTS;
+	extern const int TABLE_ALREADY_EXISTS;
+	extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
+	extern const int INCORRECT_QUERY;
+	extern const int ENGINE_REQUIRED;
+	extern const int TABLE_METADATA_ALREADY_EXISTS;
+}
+
 
 InterpreterCreateQuery::InterpreterCreateQuery(ASTPtr query_ptr_, Context & context_)
 	: query_ptr(query_ptr_), context(context_)
