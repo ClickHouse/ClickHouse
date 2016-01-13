@@ -3,7 +3,9 @@
 #include <DB/Core/Field.h>
 #include <DB/IO/WriteHelpers.h>
 #include <Poco/Timespan.h>
-#include <cpuid/libcpuid.h>
+
+#include <DB/Common/getNumberOfPhysicalCPUCores.h>
+
 #include <DB/IO/CompressedStream.h>
 #include <DB/IO/ReadHelpers.h>
 
@@ -13,7 +15,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-	extern const int CPUID_ERROR;
 	extern const int TYPE_MISMATCH;
 	extern const int UNKNOWN_LOAD_BALANCING;
 	extern const int UNKNOWN_OVERFLOW_MODE;
@@ -151,15 +152,7 @@ struct SettingMaxThreads
 	/// Выполняется один раз за всё время. Выполняется из одного потока.
 	UInt64 getAutoValueImpl() const
 	{
-		cpu_raw_data_t raw_data;
-		if (0 != cpuid_get_raw_data(&raw_data))
-			throw Exception("Cannot cpuid_get_raw_data: " + String(cpuid_error()), ErrorCodes::CPUID_ERROR);
-
-		cpu_id_t data;
-		if (0 != cpu_identify(&raw_data, &data))
-			throw Exception("Cannot cpu_identify: " + String(cpuid_error()), ErrorCodes::CPUID_ERROR);
-
-		return data.num_cores * data.total_logical_cpus / data.num_logical_cpus;
+		return getNumberOfPhysicalCPUCores();
 	}
 };
 
