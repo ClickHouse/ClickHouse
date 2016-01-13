@@ -82,6 +82,7 @@ struct ProcessListForUser
 	using QueryToElement = std::unordered_map<String, ProcessListElement *>;
 	QueryToElement queries;
 
+	/// Ограничение и счётчик памяти на все одновременно выполняющиеся запросы одного пользователя.
 	MemoryTracker user_memory_tracker;
 };
 
@@ -133,10 +134,13 @@ private:
 	UserToQueries user_to_queries;
 	QueryPriorities priorities;
 
+	/// Ограничение и счётчик памяти на все одновременно выполняющиеся запросы.
+	MemoryTracker total_memory_tracker;
+
 public:
 	ProcessList(size_t max_size_ = 0) : cur_size(0), max_size(max_size_) {}
 
-	typedef std::shared_ptr<ProcessListEntry> EntryPtr;
+	using EntryPtr = std::shared_ptr<ProcessListEntry>;
 
 	/** Зарегистрировать выполняющийся запрос. Возвращает refcounted объект, который удаляет запрос из списка при уничтожении.
 	  * Если выполняющихся запросов сейчас слишком много - ждать не более указанного времени.

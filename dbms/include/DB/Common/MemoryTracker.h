@@ -16,7 +16,7 @@ class MemoryTracker
 	/// В целях тестирования exception safety - кидать исключение при каждом выделении памяти с указанной вероятностью.
 	double fault_probability = 0;
 
-	/// Односвязный список. Вся информация будет передаваться в следующие MemoryTracker-ы тоже.
+	/// Односвязный список. Вся информация будет передаваться в следующие MemoryTracker-ы тоже. Они должны жить во время жизни данного MemoryTracker.
 	MemoryTracker * next = nullptr;
 
 	/// Если задано (например, "for user") - в сообщениях в логе будет указываться это описание.
@@ -61,9 +61,9 @@ public:
 		fault_probability = value;
 	}
 
-	void setNext(MemoryTracker * next_)
+	void setNext(MemoryTracker * elem)
 	{
-		next = next_;
+		next = elem;
 	}
 
 	void setDescription(const char * description_)

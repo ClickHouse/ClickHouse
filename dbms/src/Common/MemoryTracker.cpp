@@ -19,7 +19,8 @@ namespace ErrorCodes
 
 MemoryTracker::~MemoryTracker()
 {
-	logPeakMemoryUsage();
+	if (peak)
+		logPeakMemoryUsage();
 }
 
 

@@ -46,8 +46,6 @@ ProcessList::EntryPtr ProcessList::insert(
 						element->second->is_cancelled = true;
 						/// В случае если запрос отменяется, данные о нем удаляются из мапа в момент отмены.
 						user_process_list->second.queries.erase(element);
-						if (user_process_list->second.queries.empty())
-							user_to_queries.erase(user_process_list);
 					}
 				}
 			}
@@ -71,6 +69,11 @@ ProcessList::EntryPtr ProcessList::insert(
 				user_process_list.user_memory_tracker.setLimit(settings.limits.max_memory_usage_for_user);
 				user_process_list.user_memory_tracker.setDescription("(for user)");
 				current_memory_tracker->setNext(&user_process_list.user_memory_tracker);
+
+				/// Отслеживаем суммарное потребление оперативки на все одновременно выполняющиеся запросы.
+				total_memory_tracker.setLimit(settings.limits.max_memory_usage_for_all_queries);
+				total_memory_tracker.setDescription("(total)");
+				user_process_list.user_memory_tracker.setNext(&total_memory_tracker);
 			}
 		}
 	}
@@ -83,28 +86,42 @@ ProcessListEntry::~ProcessListEntry()
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(parent.mutex);
 
-	/// В случае, если запрос отменяется, данные о нем удаляются из мапа в момент отмены, а не здесь.
-	if (!it->is_cancelled && !it->query_id.empty())
+	/// Важен порядок удаления memory_tracker-ов.
+
+	/// Здесь удаляется memory_tracker одного запроса.
+	parent.cont.erase(it);
+
+	ProcessList::UserToQueries::iterator user_process_list = parent.user_to_queries.find(it->user);
+	if (user_process_list != parent.user_to_queries.end())
 	{
-		ProcessList::UserToQueries::iterator user_process_list = parent.user_to_queries.find(it->user);
-		if (user_process_list != parent.user_to_queries.end())
+		/// В случае, если запрос отменяется, данные о нем удаляются из мапа в момент отмены, а не здесь.
+		if (!it->is_cancelled && !it->query_id.empty())
 		{
 			ProcessListForUser::QueryToElement::iterator element = user_process_list->second.queries.find(it->query_id);
 			if (element != user_process_list->second.queries.end())
 				user_process_list->second.queries.erase(element);
-
-			/// Если запросов для пользователя больше нет, то удаляем запись.
-			/// При этом также очищается MemoryTracker на пользователя, и сообщение о потреблении памяти выводится в лог.
-			/// Важно иногда сбрасывать MemoryTracker, так как в нём может накапливаться смещённость
-			///  в следствие того, что есть случаи, когда память может быть выделена при обработке запроса, а освобождена - позже.
-			if (user_process_list->second.queries.empty())
-				parent.user_to_queries.erase(user_process_list);
 		}
+
+		/// Здесь удаляется memory_tracker на пользователя. В это время, ссылающийся на него memory_tracker одного запроса не живёт.
+
+		/// Если запросов для пользователя больше нет, то удаляем запись.
+		/// При этом также очищается MemoryTracker на пользователя, и сообщение о потреблении памяти выводится в лог.
+		/// Важно иногда сбрасывать MemoryTracker, так как в нём может накапливаться смещённость
+		///  в следствие того, что есть случаи, когда память может быть выделена при обработке запроса, а освобождена - позже.
+		if (user_process_list->second.queries.empty())
+			parent.user_to_queries.erase(user_process_list);
 	}
 
-	parent.cont.erase(it);
 	--parent.cur_size;
 	parent.have_space.signal();
+
+	/// Здесь удаляется memory_tracker на все запросы. В это время никакие другие memory_tracker-ы не живут.
+	if (parent.cur_size == 0)
+	{
+		/// Сбрасываем MemoryTracker, аналогично (см. выше).
+		parent.total_memory_tracker.logPeakMemoryUsage();
+		parent.total_memory_tracker.reset();
+	}
 }
 
 

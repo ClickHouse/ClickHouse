@@ -91,6 +91,8 @@ struct Limits
 	M(SettingUInt64, max_memory_usage, 0) /* На один запрос */ \
 	/* Суммарно на одновременно выполняющиеся запросы одного пользователя */ \
 	M(SettingUInt64, max_memory_usage_for_user, 0) \
+	/* Суммарно на все одновременно выполняющиеся запросы */ \
+	M(SettingUInt64, max_memory_usage_for_all_queries, 0) \
 	\
 	/** Максимальная скорость обмена данными по сети в байтах в секунду. 0 - не ограничена. */ \
 	M(SettingUInt64, max_network_bandwidth, 0) \
