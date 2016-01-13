@@ -129,6 +129,8 @@ bool ReplicatedMergeTreeQueue::remove(zkutil::ZooKeeperPtr zookeeper, const Stri
 
 bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, zkutil::EventPtr next_update_event)
 {
+	std::lock_guard<std::mutex> lock(pull_logs_to_queue_mutex);
+
 	String index_str = zookeeper->get(replica_path + "/log_pointer");
 	UInt64 index;
 
