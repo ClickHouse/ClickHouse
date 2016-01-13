@@ -52,6 +52,7 @@ struct ProcessListElement
 		: query(query_), user(user_), query_id(query_id_), ip_address(ip_address_), memory_tracker(max_memory_usage),
 		priority_handle(std::move(priority_handle_))
 	{
+		memory_tracker.setDescription("(for query)");
 		current_memory_tracker = &memory_tracker;
 
 		if (memory_tracker_fault_probability)
