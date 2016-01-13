@@ -5,10 +5,7 @@
 	#include <cpuid/libcpuid.h>
 	#include <DB/Common/Exception.h>
 
-	namespace ErrorCodes
-	{
-		extern const int CPUID_ERROR;
-	}
+	namespace DB { namespace ErrorCodes { extern const int CPUID_ERROR; }}
 
 #elif defined(__aarch64__)
 
