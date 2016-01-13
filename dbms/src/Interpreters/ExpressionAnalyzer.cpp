@@ -67,6 +67,7 @@ namespace ErrorCodes
 	extern const int UNEXPECTED_EXPRESSION;
 	extern const int PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS;
 	extern const int DUPLICATE_COLUMN;
+	extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
 }
 
 
@@ -676,6 +677,10 @@ void ExpressionAnalyzer::normalizeTreeImpl(
 		{
 			node->kind = ASTFunction::FUNCTION;
 		}
+
+		if (node->parameters && node->kind != ASTFunction::AGGREGATE_FUNCTION)
+			throw Exception("The only parametric functions (functions with two separate parenthesis pairs) are aggregate functions"
+				", and '" + node->name + "' is not an aggregate function.", ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS);
 	}
 
 	current_asts.erase(initial_ast);

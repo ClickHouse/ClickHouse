@@ -312,6 +312,7 @@ namespace ErrorCodes
 	extern const int TOO_DEEP_RECURSION = 306;
 	extern const int TOO_MUCH_BYTES = 307;
 	extern const int UNEXPECTED_NODE_IN_ZOOKEEPER = 308;
+	extern const int FUNCTION_CANNOT_HAVE_PARAMETERS = 309;
 
 	extern const int KEEPER_EXCEPTION = 999;
 	extern const int POCO_EXCEPTION = 1000;
