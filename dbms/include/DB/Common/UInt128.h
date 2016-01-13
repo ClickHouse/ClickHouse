@@ -107,7 +107,15 @@ struct UInt256HashCRC32
 #else
 
 /// На других платформах используем не обязательно CRC32. NOTE Это может сбить с толку.
-struct UInt256HashCRC32 : public UInt256Hash {};
+struct UInt256HashCRC32
+{
+	DefaultHash<UInt64> hash64;
+	size_t operator()(UInt256 x) const
+	{
+		/// TODO Это не оптимально.
+		return hash64(hash64(hash64(hash64(x.a) ^ x.b) ^ x.c) ^ x.d);
+	}
+}
 
 #endif
 
