@@ -29,6 +29,8 @@ struct UInt128Hash
 	size_t operator()(UInt128 x) const { return hash64(hash64(x.first) ^ x.second); }
 };
 
+#if defined(__x86_64__)
+
 struct UInt128HashCRC32
 {
 	size_t operator()(UInt128 x) const
@@ -39,6 +41,13 @@ struct UInt128HashCRC32
 		return crc;
 	}
 };
+
+#else
+
+/// На других платформах используем не обязательно CRC32. NOTE Это может сбить с толку.
+struct UInt128HashCRC32 : public UInt128Hash {};
+
+#endif
 
 struct UInt128TrivialHash
 {
@@ -80,6 +89,8 @@ struct UInt256
 	UInt256 & operator= (const UInt64 rhs) { a = rhs; b = 0; c = 0; d = 0; return *this; }
 };
 
+#if defined(__x86_64__)
+
 struct UInt256HashCRC32
 {
 	size_t operator()(UInt256 x) const
@@ -92,6 +103,13 @@ struct UInt256HashCRC32
 		return crc;
 	}
 };
+
+#else
+
+/// На других платформах используем не обязательно CRC32. NOTE Это может сбить с толку.
+struct UInt256HashCRC32 : public UInt256Hash {};
+
+#endif
 
 inline void readBinary(UInt256 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void writeBinary(const UInt256 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
