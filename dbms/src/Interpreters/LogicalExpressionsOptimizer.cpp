@@ -5,12 +5,17 @@
 #include <DB/Parsers/ASTSelectQuery.h>
 #include <DB/Parsers/ASTLiteral.h>
 
-#include <DB/Core/ErrorCodes.h>
-
 #include <deque>
+
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int LOGICAL_ERROR;
+}
+
 
 LogicalExpressionsOptimizer::OrWithExpression::OrWithExpression(ASTFunction * or_function_, const std::string & expression_)
 	: or_function(or_function_), expression(expression_)
@@ -173,7 +178,7 @@ bool LogicalExpressionsOptimizer::mayOptimizeDisjunctiveEqualityChain(const Disj
 		auto & operands = getFunctionOperands(equality_functions[i]);
 		auto literal = static_cast<ASTLiteral *>(&*operands[1]);
 
-		if (literal->type != first_literal->type)
+		if (literal->value.getType() != first_literal->value.getType())
 			return false;
 	}
 	return true;

@@ -17,6 +17,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int TOO_LARGE_ARRAY_SIZE;
+}
+
 
 /// Частный случай - реализация для числовых типов.
 template <typename T>

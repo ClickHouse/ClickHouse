@@ -10,6 +10,16 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int TOO_LESS_LIVE_REPLICAS;
+	extern const int UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE;
+	extern const int CHECKSUM_DOESNT_MATCH;
+	extern const int UNEXPECTED_ZOOKEEPER_ERROR;
+	extern const int NO_ZOOKEEPER;
+}
+
+
 class ReplicatedMergeTreeBlockOutputStream : public IBlockOutputStream
 {
 public:

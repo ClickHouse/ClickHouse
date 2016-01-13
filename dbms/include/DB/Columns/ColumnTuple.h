@@ -1,10 +1,18 @@
 #pragma once
 
 #include <DB/Core/Block.h>
+#include <ext/map.hpp>
+#include <ext/range.hpp>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int NOT_IMPLEMENTED;
+	extern const int CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE;
+}
 
 
 /** Столбец, который всего лишь группирует вместе несколько других столбцов.
@@ -40,20 +48,15 @@ public:
 
 	Field operator[](size_t n) const override
 	{
-		Array res;
-
-		for (const auto & column : columns)
-			res.push_back((*column)[n]);
-
-		return res;
+		return Tuple{ext::map<TupleBackend>(columns, [n] (const auto & column) { return (*column)[n]; })};
 	}
 
 	void get(size_t n, Field & res) const override
 	{
-		size_t size = columns.size();
-		res = Array(size);
-		Array & res_arr = DB::get<Array &>(res);
-		for (size_t i = 0; i < size; ++i)
+		const size_t size = columns.size();
+		res = Tuple(TupleBackend(size));
+		TupleBackend & res_arr = DB::get<Tuple &>(res).t;
+		for (const auto i : ext::range(0, size))
 			columns[i]->get(n, res_arr[i]);
 	}
 
@@ -69,14 +72,14 @@ public:
 
 	void insert(const Field & x) override
 	{
-		const Array & arr = DB::get<const Array &>(x);
+		const TupleBackend & tuple = DB::get<const Tuple &>(x).t;
 
-		size_t size = columns.size();
-		if (arr.size() != size)
+		const size_t size = columns.size();
+		if (tuple.size() != size)
 			throw Exception("Cannot insert value of different size into tuple", ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE);
 
 		for (size_t i = 0; i < size; ++i)
-			columns[i]->insert(arr[i]);
+			columns[i]->insert(tuple[i]);
 	}
 
 	void insertFrom(const IColumn & src_, size_t n) override
@@ -230,13 +233,16 @@ public:
 
 	void getExtremes(Field & min, Field & max) const override
 	{
-		size_t tuple_size = columns.size();
+		const size_t tuple_size = columns.size();
 
-		min = Array(tuple_size);
-		max = Array(tuple_size);
+		min = Tuple(TupleBackend(tuple_size));
+		max = Tuple(TupleBackend(tuple_size));
 
-		for (size_t i = 0; i < tuple_size; ++i)
-			columns[i]->getExtremes(min.get<Array &>()[i], max.get<Array &>()[i]);
+		auto & min_backend = min.get<Tuple &>().t;
+		auto & max_backend = max.get<Tuple &>().t;
+
+		for (const auto i : ext::range(0, tuple_size))
+			columns[i]->getExtremes(min_backend[i], max_backend[i]);
 	}
 
 	ColumnPtr convertToFullColumnIfConst() const override

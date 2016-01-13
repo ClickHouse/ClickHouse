@@ -1,4 +1,5 @@
 #include <map>
+#include <experimental/optional>
 
 #include <Poco/Path.h>
 #include <Poco/Util/XMLConfiguration.h>
@@ -6,7 +7,6 @@
 #include <DB/Common/escapeForFileName.h>
 
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 
 #include <DB/IO/ReadBufferFromFile.h>
 #include <DB/IO/WriteBufferFromFile.h>
@@ -35,6 +35,12 @@ namespace DB
 
 #define INDEX_BUFFER_SIZE 4096
 
+namespace ErrorCodes
+{
+	extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
+	extern const int CANNOT_CREATE_DIRECTORY;
+}
+
 
 class StripeLogBlockInputStream : public IProfilingBlockInputStream
 {
@@ -43,10 +49,8 @@ public:
 		std::shared_ptr<const IndexForNativeFormat> & index_,
 		IndexForNativeFormat::Blocks::const_iterator index_begin_,
 		IndexForNativeFormat::Blocks::const_iterator index_end_)
-		: column_names(column_names_.begin(), column_names_.end()), storage(storage_),
-		index(index_), index_begin(index_begin_), index_end(index_end_),
-		data_in(std::make_unique<CompressedReadBufferFromFile>(storage.full_path() + "data.bin", 0, 0, max_read_buffer_size_)),
-		block_in(std::make_unique<NativeBlockInputStream>(*data_in, 0, true, index_begin, index_end))
+		: storage(storage_), max_read_buffer_size(max_read_buffer_size_),
+		index(index_), index_begin(index_begin_), index_end(index_end_)
 	{
 	}
 
@@ -55,9 +59,7 @@ public:
 	String getID() const override
 	{
 		std::stringstream s;
-		s << "StripeLog";
-		for (const auto & name : column_names)
-			s << ", " << name;	/// NOTE Отсутствует эскейпинг.
+		s << this;
 		return s.str();
 	}
 
@@ -66,6 +68,17 @@ protected:
 	{
 		Block res;
 
+		if (!started)
+		{
+			started = true;
+
+			data_in.emplace(
+				storage.full_path() + "data.bin", 0, 0,
+				std::min(max_read_buffer_size, Poco::File(storage.full_path() + "data.bin").getSize()));
+
+			block_in.emplace(*data_in, 0, true, index_begin, index_end);
+		}
+
 		if (block_in)
 		{
 			res = block_in->read();
@@ -73,8 +86,8 @@ protected:
 			/// Освобождаем память раньше уничтожения объекта.
 			if (!res)
 			{
-				block_in.reset();
-				data_in.reset();
+				block_in = std::experimental::nullopt;
+				data_in = std::experimental::nullopt;
 				index.reset();
 			}
 		}
@@ -83,18 +96,20 @@ protected:
 	}
 
 private:
-	NameSet column_names;
 	StorageStripeLog & storage;
+	size_t max_read_buffer_size;
 
 	std::shared_ptr<const IndexForNativeFormat> index;
 	IndexForNativeFormat::Blocks::const_iterator index_begin;
 	IndexForNativeFormat::Blocks::const_iterator index_end;
 
-	/** unique_ptr - чтобы удалять объекты (освобождать буферы) после исчерпания источника
+	/** optional - чтобы создавать объекты только при первом чтении
+	 *  и удалять объекты (освобождать буферы) после исчерпания источника
 	  * - для экономии оперативки при использовании большого количества источников.
 	  */
-	std::unique_ptr<CompressedReadBufferFromFile> data_in;
-	std::unique_ptr<NativeBlockInputStream> block_in;
+	bool started = false;
+	std::experimental::optional<CompressedReadBufferFromFile> data_in;
+	std::experimental::optional<NativeBlockInputStream> block_in;
 };
 
 

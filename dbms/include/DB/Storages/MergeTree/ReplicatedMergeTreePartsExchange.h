@@ -48,8 +48,13 @@ public:
 		int port,
 		bool to_detached = false);
 
+	void cancel() { is_cancelled = true; }
+
 private:
 	MergeTreeData & data;
+
+	/// Нужно остановить передачу данных.
+	std::atomic<bool> is_cancelled {false};
 
 	Logger * log;
 };

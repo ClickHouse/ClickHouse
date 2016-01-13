@@ -1,0 +1,36 @@
+CMAKE Files contributed by Andrew J. P. Maclean <a.maclean@optusnet.com.au>
+
+
+Put the following files in the directory where your source code is:
+  CMakeLists.txt
+  PocoConfig.cmake.
+
+Edit CMakeLists.txt to include your source and header files. The sections of interest are:
+# Add any source files here.
+SET( EXE_SRCS
+ "My File.cpp"
+)
+# Add any include files here.
+SET( EXE_INCS
+  "My File.h"
+)
+
+Then create a subdirectory called build.
+In Linux:
+cd build
+ccmake ..
+or
+ccmake -GKDevelop3 ..
+(This will set up everything so you can use KDevelop3).
+
+In Windows:
+run CMakeSetup.exe and set the source code directory and where to build the libraries.
+
+If CMake cannot find Poco, you will see that the variable Poco_INCLUDE_DIR has the value Poco_INCLUDE_DIR-NOTFOUND. Just set this value to the top level direcotry of where the Poco includes are.
+
+If there is a different version of Poco, you may have to add edit the variables SUFFIX_FOR_INCLUDE_PATH, and  SUFFIX_FOR_LIBRARY_PATH adding in the new Poco version in a similar manner to the existing ones in the file PocoConfig.cmake.
+
+Finally:
+In Linux
+  Either type "make" or if you are using KDevelop, click on the <ProjectName>.kdevelop file.
+In Windows just use your IDE or nmake if you use nmake.

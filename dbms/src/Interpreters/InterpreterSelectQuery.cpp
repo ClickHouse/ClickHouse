@@ -37,6 +37,18 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int TOO_DEEP_SUBQUERIES;
+	extern const int THERE_IS_NO_COLUMN;
+	extern const int UNION_ALL_RESULT_STRUCTURES_MISMATCH;
+	extern const int SAMPLING_NOT_SUPPORTED;
+	extern const int ILLEGAL_FINAL;
+	extern const int ILLEGAL_PREWHERE;
+	extern const int TOO_MUCH_COLUMNS;
+}
+
+
 InterpreterSelectQuery::~InterpreterSelectQuery() = default;
 
 
@@ -960,11 +972,8 @@ void InterpreterSelectQuery::executeTotalsAndHaving(bool has_having, ExpressionA
 {
 	executeUnion();
 
-	Names key_names;
-	AggregateDescriptions aggregates;
-	query_analyzer->getAggregateInfo(key_names, aggregates);
 	streams[0] = new TotalsHavingBlockInputStream(
-		streams[0], key_names, aggregates, overflow_row, expression,
+		streams[0], overflow_row, expression,
 		has_having ? query.having_expression->getColumnName() : "", settings.totals_mode, settings.totals_auto_threshold);
 }
 

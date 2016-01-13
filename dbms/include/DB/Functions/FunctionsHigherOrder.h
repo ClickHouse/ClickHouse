@@ -14,6 +14,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
+}
+
 /** Функции высшего порядка для массивов:
   *
   * arrayMap(x1,...,xn -> expression, array1,...,arrayn) - применить выражение к каждому элементу массива (или набора параллельных массивов).

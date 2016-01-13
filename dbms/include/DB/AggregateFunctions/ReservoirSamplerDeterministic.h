@@ -20,6 +20,16 @@
 /// Вызов quantile занимает O(sample_count log sample_count), если после предыдущего вызова quantile был хотя бы один вызов insert. Иначе, O(1).
 /// То есть, имеет смысл сначала добавлять, потом получать квантили, не добавляя.
 
+
+namespace DB
+{
+namespace ErrorCodes
+{
+	extern const int MEMORY_LIMIT_EXCEEDED;
+}
+}
+
+
 namespace detail
 {
 const size_t DEFAULT_SAMPLE_COUNT = 8192;

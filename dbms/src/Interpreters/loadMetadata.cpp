@@ -25,6 +25,13 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int TABLE_ALREADY_EXISTS;
+	extern const int CANNOT_CREATE_TABLE_FROM_METADATA;
+	extern const int INCORRECT_FILE_NAME;
+}
+
 
 static void executeCreateQuery(const String & query, Context & context, const String & database, const String & file_name)
 {

@@ -11,6 +11,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int ILLEGAL_DIVISION;
+}
+
+
 /** Арифметические функции: +, -, *, /, %,
   * intDiv (целочисленное деление), унарный минус.
   * Битовые функции: |, &, ^, ~.

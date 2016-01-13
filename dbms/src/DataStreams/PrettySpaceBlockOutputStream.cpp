@@ -1,8 +1,6 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 
-#include <DB/Functions/FunctionsMiscellaneous.h>
-
 #include <DB/DataStreams/PrettySpaceBlockOutputStream.h>
 
 

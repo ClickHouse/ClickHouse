@@ -18,6 +18,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
+}
+
+
 /** Делает указанный HTTP-запрос и отдает ответ.
   */
 class ReadBufferFromHTTP : public ReadBuffer

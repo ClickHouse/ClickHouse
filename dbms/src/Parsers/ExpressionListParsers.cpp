@@ -6,6 +6,7 @@
 #include <DB/Parsers/ExpressionElementParsers.h>
 
 #include <DB/Parsers/ExpressionListParsers.h>
+#include <DB/Parsers/ParserCreateQuery.h>
 
 
 namespace DB
@@ -487,6 +488,12 @@ bool ParserTupleElementExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, 
 
 ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias(bool allow_alias_without_as_keyword)
 	: impl(new ParserWithOptionalAlias(ParserPtr(new ParserLambdaExpression), allow_alias_without_as_keyword))
+{
+}
+
+
+ParserExpressionInCastExpression::ParserExpressionInCastExpression(bool allow_alias_without_as_keyword)
+	: impl(new ParserCastExpressionWithOptionalAlias(ParserPtr(new ParserLambdaExpression), allow_alias_without_as_keyword))
 {
 }
 

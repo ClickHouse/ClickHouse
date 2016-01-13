@@ -10,6 +10,7 @@
 #include <DB/Parsers/ASTSet.h>
 #include <DB/Parsers/formatAST.h>
 #include <DB/Common/escapeForFileName.h>
+#include <DB/DataTypes/DataTypeNested.h>
 #include <ext/scope_guard.hpp>
 #include <ext/map.hpp>
 #include <memory>

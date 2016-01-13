@@ -12,6 +12,14 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int QUOTA_EXPIRED;
+	extern const int QUOTA_DOESNT_ALLOW_KEYS;
+	extern const int UNKNOWN_QUOTA;
+}
+
+
 void QuotaValues::initFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config)
 {
 	queries 		= parse<UInt64>(config.getString(config_elem + ".queries", 		"0"));

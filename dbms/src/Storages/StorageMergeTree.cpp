@@ -8,8 +8,16 @@
 #include <DB/Interpreters/InterpreterAlterQuery.h>
 #include <Poco/DirectoryIterator.h>
 
+
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int ABORTED;
+	extern const int BAD_ARGUMENTS;
+}
+
 
 StorageMergeTree::StorageMergeTree(
 	const String & path_,
@@ -266,7 +274,7 @@ bool StorageMergeTree::mergeTask(BackgroundProcessingPool::Context & background_
 	{
 		if (e.code() == ErrorCodes::ABORTED)
 		{
-			LOG_INFO(log, "Merge cancelled");
+			LOG_INFO(log, e.message());
 			return false;
 		}
 

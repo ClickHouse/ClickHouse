@@ -22,6 +22,7 @@
 #include <DB/DataStreams/copyData.h>
 
 #include <DB/Interpreters/ExpressionAnalyzer.h>
+#include <DB/Interpreters/ExpressionActions.h>
 
 
 int main(int argc, char ** argv)

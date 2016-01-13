@@ -6,8 +6,9 @@
 #include <chrono>
 #include <Poco/ScopedLock.h>
 #include <Poco/Mutex.h>
-#include <DB/Core/ErrorCodes.h>
 #include <DB/Common/Exception.h>
+#include <common/logger_useful.h>
+
 
 namespace DB
 {
@@ -178,8 +179,10 @@ private:
 
 			auto it = cells.find(key);
 			if (it == cells.end())
-				throw Exception("LRUCache became inconsistent. There must be a bug in it. Clearing it for now.",
-					ErrorCodes::LOGICAL_ERROR);
+			{
+				LOG_ERROR(&Logger::get("LRUCache"), "LRUCache became inconsistent. There must be a bug in it.");
+				abort();
+			}
 
 			const auto & cell = it->second;
 			if (!cell.expired(last_timestamp, expiration_delay))
@@ -195,11 +198,8 @@ private:
 
 		if (current_size > (1ull << 63))
 		{
-			queue.clear();
-			cells.clear();
-			current_size = 0;
-			throw Exception("LRUCache became inconsistent. There must be a bug in it. Clearing it for now.",
-				ErrorCodes::LOGICAL_ERROR);
+			LOG_ERROR(&Logger::get("LRUCache"), "LRUCache became inconsistent. There must be a bug in it.");
+			abort();
 		}
 	}
 };

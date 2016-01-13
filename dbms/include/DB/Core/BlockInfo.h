@@ -2,7 +2,6 @@
 
 #include <DB/Core/Types.h>
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 #include <DB/IO/ReadBuffer.h>
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/VarInt.h>
@@ -12,6 +11,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int UNKNOWN_BLOCK_INFO_FIELD;
+}
 
 /** Дополнительная информация о блоке.
   */

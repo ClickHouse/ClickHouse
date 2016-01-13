@@ -12,6 +12,12 @@ namespace DB
 {
 
 
+namespace ErrorCodes
+{
+	extern const int UNSUPPORTED_PARAMETER;
+}
+
+
 /// Performs case-sensitive and case-insensitive search of UTF-8 strings
 template <bool CaseSensitive, bool ASCII> class StringSearcher;
 

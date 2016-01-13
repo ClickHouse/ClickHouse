@@ -34,7 +34,7 @@ public:
 
 	void setArgument(const DataTypePtr & argument)
 	{
-		if (!argument->isNumeric())
+		if (!argument->behavesAsNumber())
 			throw Exception("Illegal type " + argument->getName() + " of argument for aggregate function " + getName(),
 				ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 	}

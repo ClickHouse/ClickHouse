@@ -21,6 +21,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int CANNOT_WRITE_TO_OSTREAM;
+	extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
+}
+
 /** Позволяет писать файл на удалённый сервер.
   */
 class RemoteWriteBuffer : public WriteBuffer
@@ -63,7 +69,7 @@ public:
 	{
 		Poco::URI::encode(path, "&#", encoded_path);
 		Poco::URI::encode(tmp_path, "&#", encoded_tmp_path);
-		
+
 		std::stringstream uri;
 		uri << "http://" << host << ":" << port
 			<< "/?action=write"
@@ -76,14 +82,14 @@ public:
 		session.setHost(host);
 		session.setPort(port);
 		session.setKeepAlive(true);
-		
+
 		/// устанавливаем таймаут
 		session.setTimeout(connection_timeout, send_timeout, receive_timeout);
-		
+
 		Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_POST, uri_str, Poco::Net::HTTPRequest::HTTP_1_1);
-		
+
 		request.setChunkedTransferEncoding(true);
-		
+
 		for (unsigned i = 0; i < connection_retries; ++i)
 		{
 			LOG_TRACE((&Logger::get("RemoteWriteBuffer")), "Sending write request to " << host << ":" << port << uri_str);
@@ -126,7 +132,7 @@ public:
 
 		/// Для корректной работы с AsynchronousWriteBuffer, который подменяет буферы.
 		impl->set(buffer().begin(), buffer().size());
-		
+
 		impl->position() = pos;
 
 		try
@@ -145,7 +151,7 @@ public:
 	{
 		if (finalized)
 			return;
-		
+
 		next();
 		checkStatus();
 
@@ -193,7 +199,7 @@ private:
 			throw Exception(error_message.str(), ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER);
 		}
 	}
-	
+
 	void rename()
 	{
 		std::stringstream uri;
@@ -203,9 +209,9 @@ private:
 			<< "&to=" << encoded_path;
 
 		uri_str = Poco::URI(uri.str()).getPathAndQuery();
-		
+
 		Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, uri_str, Poco::Net::HTTPRequest::HTTP_1_1);
-		
+
 		for (unsigned i = 0; i < connection_retries; ++i)
 		{
 			LOG_TRACE((&Logger::get("RemoteWriteBuffer")), "Sending rename request to " << host << ":" << port << uri_str);
@@ -219,7 +225,7 @@ private:
 			{
 				if (i + 1 == connection_retries)
 					throw;
-				
+
 				LOG_WARNING((&Logger::get("RemoteWriteBuffer")), e.what() << ", message: " << e.displayText()
 					<< ", URL: " << host << ":" << port << uri_str << ", try No " << i + 1 << ".");
 				session.reset();
@@ -229,7 +235,7 @@ private:
 			{
 				if (i + 1 == connection_retries)
 					throw;
-				
+
 				LOG_WARNING((&Logger::get("RemoteWriteBuffer")), "Connection timeout from " << host << ":" << port << uri_str << ", try No " << i + 1 << ".");
 				session.reset();
 				continue;

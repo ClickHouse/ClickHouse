@@ -5,6 +5,13 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int UNKNOWN_PACKET_FROM_SERVER;
+	extern const int LOGICAL_ERROR;
+}
+
+
 RemoteBlockInputStream::RemoteBlockInputStream(Connection & connection_, const String & query_,
 	const Settings * settings_, ThrottlerPtr throttler_, const Tables & external_tables_,
 	QueryProcessingStage::Enum stage_, const Context & context_)

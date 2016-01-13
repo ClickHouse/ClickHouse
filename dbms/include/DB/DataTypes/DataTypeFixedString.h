@@ -12,6 +12,11 @@ namespace DB
 
 using Poco::SharedPtr;
 
+namespace ErrorCodes
+{
+	extern const int ARGUMENT_OUT_OF_BOUND;
+}
+
 
 class DataTypeFixedString final : public IDataType
 {

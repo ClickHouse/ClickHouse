@@ -3,6 +3,8 @@
 #include <DB/Functions/FunctionFactory.h>
 #include <DB/Functions/FunctionsArithmetic.h>
 #include <DB/Functions/FunctionsMiscellaneous.h>
+#include <DB/DataTypes/DataTypeEnum.h>
+#include <ext/enumerate.hpp>
 
 
 namespace DB
@@ -128,6 +130,56 @@ namespace VisibleWidth
 		else
 			return false;
 	}
+
+	template <typename DataTypeEnum>
+	static bool executeEnum(Block & block, const DataTypePtr & type_ptr, const ColumnPtr & column, const size_t result)
+	{
+		if (const auto type = typeid_cast<const DataTypeEnum *>(type_ptr.get()))
+		{
+			if (const auto col = typeid_cast<const typename DataTypeEnum::ColumnType *>(column.get()))
+			{
+				const auto res = new ColumnUInt64(col->size());
+				ColumnPtr res_ptr{res};
+				block.getByPosition(result).column = res_ptr;
+
+				const auto & in = col->getData();
+				auto & out = res->getData();
+
+				String str;
+				
+				for (const auto & idx_num : ext::enumerate(in))
+				{
+					/// escape name to calculate correct length
+					{
+						WriteBufferFromString out{str};
+						writeEscapedString(type->getNameForValue(idx_num.second), out);
+					}
+					
+					out[idx_num.first] = str.size();
+				}
+
+				return true;
+			}
+			else if (const auto col = typeid_cast<const typename DataTypeEnum::ConstColumnType *>(column.get()))
+			{
+				String str;
+
+				/// escape name to calculate correct length
+				{
+					WriteBufferFromString out{str};
+					writeEscapedString(type->getNameForValue(col->getData()), out);
+				}
+
+				block.getByPosition(result).column = new ColumnConstUInt64{
+					col->size(), str.size()
+				};
+
+				return true;
+			}
+		}
+
+		return false;
+	}
 }
 
 
@@ -144,6 +196,10 @@ void FunctionVisibleWidth::execute(Block & block, const ColumnNumbers & argument
 	else if (typeid_cast<const DataTypeDateTime *>(&*type))
 	{
 		block.getByPosition(result).column = new ColumnConstUInt64(rows, strlen("0000-00-00 00:00:00"));
+	}
+	else if (VisibleWidth::executeEnum<DataTypeEnum8>(block, type, column, result)
+		|| VisibleWidth::executeEnum<DataTypeEnum16>(block, type, column, result))
+	{
 	}
 	else if (VisibleWidth::executeConstNumber<UInt8>(block, column, result)
 		|| VisibleWidth::executeConstNumber<UInt16>(block, column, result)

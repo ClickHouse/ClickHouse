@@ -4,7 +4,6 @@
 #include <errno.h>
 
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 #include <DB/Common/ProfileEvents.h>
 
 #include <DB/IO/WriteBufferFromFileBase.h>
@@ -15,6 +14,14 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
+	extern const int CANNOT_FSYNC;
+	extern const int CANNOT_SEEK_THROUGH_FILE;
+	extern const int CANNOT_TRUNCATE_FILE;
+}
 
 /** Работает с готовым файловым дескриптором. Не открывает и не закрывает файл.
   */

@@ -6,12 +6,18 @@
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 #include <DB/Core/ColumnNumbers.h>
 
-/*#include <DB/DataStreams/TabSeparatedBlockOutputStream.h>
- *#include <DB/IO/WriteBufferFromFileDescriptor.h>*/
-
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int UNKNOWN_SET_DATA_VARIANT;
+	extern const int LOGICAL_ERROR;
+	extern const int SET_SIZE_LIMIT_EXCEEDED;
+	extern const int TYPE_MISMATCH;
+	extern const int ILLEGAL_COLUMN;
+}
 
 
 Join::Type Join::chooseMethod(const ConstColumnPlainPtrs & key_columns, bool & keys_fit_128_bits, Sizes & key_sizes)
@@ -67,7 +73,7 @@ static void initImpl(Maps & maps, Join::Type type)
 		case Join::Type::CROSS:																	break;
 
 		default:
-			throw Exception("Unknown JOIN keys variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
+			throw Exception("Unknown JOIN keys variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
 	}
 }
 

@@ -1,8 +1,8 @@
 #pragma once
 
 #include <DB/Storages/MergeTree/MergeTreeData.h>
-#include <DB/Storages/MergeTree/MergeTreeReader.h>
 #include <DB/Storages/MergeTree/RangesInDataPart.h>
+#include <DB/Storages/MergeTree/PKCondition.h>
 
 
 namespace DB

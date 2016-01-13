@@ -1,7 +1,6 @@
 #include <map>
 
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 
 #include <DB/DataStreams/IProfilingBlockInputStream.h>
 
