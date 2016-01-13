@@ -115,7 +115,7 @@ struct UInt256HashCRC32
 		/// TODO Это не оптимально.
 		return hash64(hash64(hash64(hash64(x.a) ^ x.b) ^ x.c) ^ x.d);
 	}
-}
+};
 
 #endif
 
