@@ -1,9 +1,17 @@
 #include <DB/Core/FieldVisitors.h>
 #include <DB/DataTypes/FieldToDataType.h>
+#include <DB/DataTypes/DataTypeTuple.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int EMPTY_DATA_PASSED;
+	extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+	extern const int NOT_IMPLEMENTED;
+}
 
 
 template <typename T>
@@ -31,6 +39,7 @@ DataTypePtr FieldToDataType::operator() (Array & x) const
 	bool has_string = false;
 	bool has_array = false;
 	bool has_float = false;
+	bool has_tuple = false;
 	int max_bits = 0;
 	int max_signed_bits = 0;
 	int max_unsigned_bits = 0;
@@ -82,6 +91,11 @@ DataTypePtr FieldToDataType::operator() (Array & x) const
 				has_array = true;
 				break;
 			}
+			case Field::Types::Tuple:
+			{
+				has_tuple = true;
+				break;
+			}
 			case Field::Types::Null:
 			{
 				throw Exception("NULL literals are not implemented yet", ErrorCodes::NOT_IMPLEMENTED);
@@ -95,6 +109,9 @@ DataTypePtr FieldToDataType::operator() (Array & x) const
 
 	if (has_array)
 		throw Exception("Type inference of multidimensional arrays is not supported", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+	if (has_tuple)
+		throw Exception("Type inference of array of tuples is not supported", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
 	if (has_string)
 		return new DataTypeArray(new DataTypeString);
@@ -166,6 +183,22 @@ DataTypePtr FieldToDataType::operator() (Array & x) const
 	}
 
 	throw Exception("Incompatible types of elements of array", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+}
+
+
+DataTypePtr FieldToDataType::operator() (Tuple & x) const
+{
+	auto & tuple = static_cast<TupleBackend &>(x);
+	if (tuple.empty())
+		throw Exception("Cannot infer type of an empty tuple", ErrorCodes::EMPTY_DATA_PASSED);
+
+	DataTypes element_types;
+	element_types.reserve(ext::size(tuple));
+
+	for (auto & element : tuple)
+		element_types.push_back(apply_visitor(FieldToDataType{}, element));
+
+	return new DataTypeTuple{element_types};
 }
 
 

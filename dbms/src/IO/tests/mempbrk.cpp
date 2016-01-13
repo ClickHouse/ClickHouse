@@ -12,6 +12,14 @@
 #include <DB/IO/ReadBufferFromFileDescriptor.h>
 #include <DB/IO/WriteBufferFromFileDescriptor.h>
 
+namespace DB
+{
+namespace ErrorCodes
+{
+	extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
+}
+}
+
 
 namespace test
 {
@@ -108,7 +116,7 @@ int main(int argc, char ** argv)
 		{
 			test::readEscapedString(s, in);
 			in.ignore();
-			
+
 			++rows;
 
 /*			DB::writeEscapedString(s, out);

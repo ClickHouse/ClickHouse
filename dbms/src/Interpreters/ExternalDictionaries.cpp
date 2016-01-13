@@ -18,6 +18,13 @@ namespace
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int LOGICAL_ERROR;
+	extern const int BAD_ARGUMENTS;
+}
+
+
 namespace
 {
 	std::set<std::string> getDictionariesConfigPaths(const Poco::Util::AbstractConfiguration & config)

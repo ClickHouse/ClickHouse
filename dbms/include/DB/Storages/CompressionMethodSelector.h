@@ -1,12 +1,18 @@
 #include <DB/IO/CompressedStream.h>
 #include <DB/IO/ReadHelpers.h>
-#include <DB/Core/ErrorCodes.h>
 #include <DB/Common/Exception.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int UNKNOWN_COMPRESSION_METHOD;
+	extern const int UNKNOWN_ELEMENT_IN_CONFIG;
+}
+
 
 /** Позволяет выбрать метод сжатия по указанным в конфигурационном файле условиям.
   * Конфиг выглядит примерно так:

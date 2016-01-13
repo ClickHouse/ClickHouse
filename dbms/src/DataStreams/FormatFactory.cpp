@@ -19,12 +19,19 @@
 #include <DB/DataStreams/JSONCompactRowOutputStream.h>
 #include <DB/DataStreams/TSKVRowOutputStream.h>
 #include <DB/DataStreams/PrettyCompactMonoBlockOutputStream.h>
-#include <DB/DataStreams/ODBCBlockOutputStream.h>
+#include <DB/DataStreams/ODBCDriverBlockOutputStream.h>
 #include <DB/DataStreams/FormatFactory.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int FORMAT_IS_NOT_SUITABLE_FOR_INPUT;
+	extern const int UNKNOWN_FORMAT;
+}
+
 
 BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & buf,
 	const Block & sample, size_t max_block_size) const
@@ -56,7 +63,7 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
 		|| name == "JSON"
 		|| name == "JSONCompact"
 		|| name == "TSKV"
-		|| name == "ODBC")
+		|| name == "ODBCDriver")
 		throw Exception("Format " + name + " is not suitable for input", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT);
 	else
 		throw Exception("Unknown format " + name, ErrorCodes::UNKNOWN_FORMAT);
@@ -106,8 +113,8 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer &
 		return new BlockOutputStreamFromRowOutputStream(new JSONCompactRowOutputStream(buf, sample));
 	else if (name == "TSKV")
 		return new BlockOutputStreamFromRowOutputStream(new TSKVRowOutputStream(buf, sample));
-	else if (name == "ODBC")
-		return new ODBCBlockOutputStream(buf);
+	else if (name == "ODBCDriver")
+		return new ODBCDriverBlockOutputStream(buf);
 	else if (name == "Null")
 		return new NullBlockOutputStream;
 	else

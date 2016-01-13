@@ -82,3 +82,9 @@
 
 #define ALWAYS_INLINE 	__attribute__((__always_inline__))
 #define NO_INLINE 		__attribute__((__noinline__))
+
+#define PLATFORM_NOT_SUPPORTED	"The only supported platforms are x86_64 and AArch64 (work in progress)"
+
+#if !defined(__x86_64__) && !defined(__aarch64__)
+	#error PLATFORM_NOT_SUPPORTED
+#endif

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <DB/Core/ErrorCodes.h>
 #include <DB/Common/Exception.h>
 #include <common/logger_useful.h>
 #include <common/singleton.h>
@@ -59,8 +58,15 @@ struct AIOContext : private boost::noncopyable
 	}
 };
 
+
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int AIO_COMPLETION_ERROR;
+	extern const int AIO_SUBMIT_ERROR;
+}
 
 
 class AIOContextPool : public Singleton<AIOContextPool>

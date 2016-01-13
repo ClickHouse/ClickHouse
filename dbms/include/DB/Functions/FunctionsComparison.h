@@ -631,25 +631,25 @@ private:
 				left_is_num ? &parsed_const_date_time : col_right_untyped);
 		}
 		else if (is_enum8)
-			executeEnumWithConstString<DataTypeUInt8::FieldType>(block, result, column_number, column_string,
+			executeEnumWithConstString<DataTypeEnum8>(block, result, column_number, column_string,
 				number_type, left_is_num);
 		else if (is_enum16)
-			executeEnumWithConstString<DataTypeEnum16::FieldType>(block, result, column_number, column_string,
+			executeEnumWithConstString<DataTypeEnum16>(block, result, column_number, column_string,
 				number_type, left_is_num);
 	}
 
 	/// Comparison between DataTypeEnum<T> and string constant containing the name of an enum element
-	template <typename FieldType>
+	template <typename EnumType>
 	void executeEnumWithConstString(
 		Block & block, const size_t result, const IColumn * column_number, const ColumnConstString * column_string,
 		const IDataType * type_untyped, const bool left_is_num)
 	{
-		const auto type = static_cast<const DataTypeEnum<FieldType> *>(type_untyped);
+		const auto type = static_cast<const EnumType *>(type_untyped);
 
 		const Field x = nearestFieldType(type->getValue(column_string->getData()));
 		const auto enum_col = type->createConstColumn(block.rowsInFirstColumn(), x);
 
-		executeNumLeftType<FieldType>(block, result,
+		executeNumLeftType<typename EnumType::FieldType>(block, result,
 			left_is_num ? column_number : enum_col.get(),
 			left_is_num ? enum_col.get() : column_number);
 	}
@@ -809,7 +809,7 @@ public:
 
 		const bool right_is_enum = right_is_enum8 || right_is_enum16;
 
-		if (!(	(arguments[0]->behavesAsNumber() && arguments[1]->behavesAsNumber())
+		if (!(	(arguments[0]->behavesAsNumber() && arguments[1]->behavesAsNumber() && !(left_is_enum ^ right_is_enum))
 			||	((left_is_string || left_is_fixed_string) && (right_is_string || right_is_fixed_string))
 			||	(left_is_date && right_is_date)
 			||	(left_is_date && right_is_string)	/// Можно сравнивать дату, дату-с-временем и перечисление с константной строкой.

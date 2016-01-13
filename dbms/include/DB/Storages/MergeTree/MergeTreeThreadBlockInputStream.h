@@ -115,27 +115,27 @@ private:
 			owned_mark_cache = storage.context.getMarkCache();
 
 			reader = std::make_unique<MergeTreeReader>(
-				path, task->data_part, task->columns, owned_uncompressed_cache.get(), owned_mark_cache.get(),
+				path, task->data_part, task->columns, owned_uncompressed_cache.get(), owned_mark_cache.get(), true,
 				storage, task->mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size, MergeTreeReader::ValueSizeMap{}, profile_callback);
 
 			if (prewhere_actions)
 				pre_reader = std::make_unique<MergeTreeReader>(
-					path, task->data_part, task->pre_columns, owned_uncompressed_cache.get(),
-					owned_mark_cache.get(), storage, task->mark_ranges, min_bytes_to_use_direct_io,
+					path, task->data_part, task->pre_columns, owned_uncompressed_cache.get(), owned_mark_cache.get(), true,
+					storage, task->mark_ranges, min_bytes_to_use_direct_io,
 					max_read_buffer_size, MergeTreeReader::ValueSizeMap{}, profile_callback);
 		}
 		else
 		{
 			/// retain avg_value_size_hints
 			reader = std::make_unique<MergeTreeReader>(
-				path, task->data_part, task->columns, owned_uncompressed_cache.get(), owned_mark_cache.get(),
+				path, task->data_part, task->columns, owned_uncompressed_cache.get(), owned_mark_cache.get(), true,
 				storage, task->mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size,
 				reader->getAvgValueSizeHints(), profile_callback);
 
 			if (prewhere_actions)
 				pre_reader = std::make_unique<MergeTreeReader>(
-					path, task->data_part, task->pre_columns, owned_uncompressed_cache.get(),
-					owned_mark_cache.get(), storage, task->mark_ranges, min_bytes_to_use_direct_io,
+					path, task->data_part, task->pre_columns, owned_uncompressed_cache.get(), owned_mark_cache.get(), true,
+					storage, task->mark_ranges, min_bytes_to_use_direct_io,
 					max_read_buffer_size, pre_reader->getAvgValueSizeHints(), profile_callback);
 		}
 

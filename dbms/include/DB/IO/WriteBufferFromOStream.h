@@ -3,7 +3,6 @@
 #include <iostream>
 
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/BufferWithOwnMemory.h>
@@ -11,6 +10,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int CANNOT_WRITE_TO_OSTREAM;
+}
 
 class WriteBufferFromOStream : public BufferWithOwnMemory<WriteBuffer>
 {

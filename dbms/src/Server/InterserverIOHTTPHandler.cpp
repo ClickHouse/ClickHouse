@@ -7,6 +7,14 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int ABORTED;
+	extern const int POCO_EXCEPTION;
+	extern const int STD_EXCEPTION;
+	extern const int UNKNOWN_EXCEPTION;
+}
+
 
 void InterserverIOHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
 {

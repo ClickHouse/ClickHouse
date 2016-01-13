@@ -14,6 +14,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int INFINITE_LOOP;
+	extern const int BLOCKS_HAS_DIFFERENT_STRUCTURE;
+}
+
 
 StoragePtr StorageBuffer::create(const std::string & name_, NamesAndTypesListPtr columns_,
 	const NamesAndTypesList & materialized_columns_,

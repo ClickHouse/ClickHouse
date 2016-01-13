@@ -1,47 +1,13 @@
 #include <zkutil/Types.h>
 
 #include <DB/Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
-#include <DB/Storages/StorageReplicatedMergeTree.h>
 #include <DB/IO/Operators.h>
+#include <DB/IO/ReadBufferFromString.h>
 
 
 namespace DB
 {
 
-
-FuturePartTagger::FuturePartTagger(const String & part_, StorageReplicatedMergeTree & storage_)
-	: part(part_), storage(storage_)
-{
-	if (!storage.future_parts.insert(part).second)
-		throw Exception("Tagging already tagged future part " + part + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
-}
-
-FuturePartTagger::~FuturePartTagger()
-{
-	try
-	{
-		std::unique_lock<std::mutex> lock(storage.queue_mutex);
-		if (!storage.future_parts.erase(part))
-			throw Exception("Untagging already untagged future part " + part + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
-	}
-	catch (...)
-	{
-		tryLogCurrentException(__PRETTY_FUNCTION__);
-	}
-}
-
-
-void ReplicatedMergeTreeLogEntry::addResultToVirtualParts(StorageReplicatedMergeTree & storage)
-{
-	if (type == MERGE_PARTS || type == GET_PART || type == DROP_RANGE || type == ATTACH_PART)
-		storage.virtual_parts.add(new_part_name);
-}
-
-void ReplicatedMergeTreeLogEntry::tagPartAsFuture(StorageReplicatedMergeTree & storage)
-{
-	if (type == MERGE_PARTS || type == GET_PART || type == ATTACH_PART)
-		future_part_tagger = new FuturePartTagger(new_part_name, storage);
-}
 
 void ReplicatedMergeTreeLogEntry::writeText(WriteBuffer & out) const
 {

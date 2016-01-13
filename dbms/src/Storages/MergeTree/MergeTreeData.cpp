@@ -2,7 +2,6 @@
 
 #include <DB/Storages/MergeTree/MergeTreeData.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
-#include <DB/Storages/MergeTree/MergeTreeReader.h>
 #include <DB/Storages/MergeTree/MergeTreeBlockInputStream.h>
 #include <DB/Storages/MergeTree/MergedBlockOutputStream.h>
 #include <DB/Storages/MergeTree/MergeTreePartChecker.h>
@@ -14,6 +13,7 @@
 #include <DB/IO/CompressedReadBuffer.h>
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeFixedString.h>
+#include <DB/DataTypes/DataTypeEnum.h>
 #include <DB/Common/localBackup.h>
 #include <DB/Functions/FunctionFactory.h>
 #include <Poco/DirectoryIterator.h>
@@ -435,18 +435,20 @@ void MergeTreeData::checkAlter(const AlterCommands & params)
 	/// Проверим, что преобразования типов возможны.
 	ExpressionActionsPtr unused_expression;
 	NameToNameMap unused_map;
+	bool unused_bool;
 
 	/// augment plain columns with materialized columns for convert expression creation
 	new_columns.insert(std::end(new_columns),
 		std::begin(new_materialized_columns), std::end(new_materialized_columns));
-	createConvertExpression(nullptr, getColumnsList(), new_columns, unused_expression, unused_map);
+	createConvertExpression(nullptr, getColumnsList(), new_columns, unused_expression, unused_map, unused_bool);
 }
 
 void MergeTreeData::createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
-	ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map)
+	ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map, bool & out_force_update_metadata)
 {
 	out_expression = nullptr;
-	out_rename_map.clear();
+	out_rename_map = {};
+	out_force_update_metadata = false;
 
 	typedef std::map<String, DataTypePtr> NameToType;
 	NameToType new_types;
@@ -492,37 +494,37 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 		{
 			const auto new_type = new_types[column.name].get();
 			const String new_type_name = new_type->getName();
+			const auto & old_type = column.type;
 
-			if (new_type_name != column.type->getName() &&
-				(!part || part->hasColumnFiles(column.name)))
+			if (new_type_name != old_type->getName() && (!part || part->hasColumnFiles(column.name)))
 			{
-				/// Нужно изменить тип столбца.
+				// При ALTER между Enum с одинаковым подлежащим типом столбцы не трогаем, лишь просим обновить columns.txt
+				if (part && typeid(*new_type) == typeid(*old_type) &&
+					(typeid_cast<const DataTypeEnum8 *>(new_type) || typeid_cast<const DataTypeEnum16 *>(new_type)))
+				{
+					out_force_update_metadata = true;
+					continue;
+				}
 
+				/// Нужно изменить тип столбца.
 				if (!out_expression)
-					out_expression = new ExpressionActions(NamesAndTypesList(), context.getSettingsRef());
+					out_expression = std::make_shared<ExpressionActions>(NamesAndTypesList(), context.getSettingsRef());
 
 				out_expression->addInput(ColumnWithTypeAndName(nullptr, column.type, column.name));
 
 				Names out_names;
 
-				if (const auto fixed_string = typeid_cast<const DataTypeFixedString *>(new_type))
-				{
-					const auto width = fixed_string->getN();
-					const auto string_width_column = toString(width);
-					out_expression->addInput({ new ColumnConstUInt64{1, width}, new DataTypeUInt64, string_width_column });
+				/// @todo invent the name more safely
+				const auto new_type_name_column = '#' + new_type_name + "_column";
+				out_expression->add(ExpressionAction::addColumn(
+					{ new ColumnConstString{1, new_type_name}, new DataTypeString, new_type_name_column }));
 
-					const auto function = FunctionFactory::instance().get("toFixedString", context);
-					out_expression->add(ExpressionAction::applyFunction(function, Names{
-						column.name, string_width_column
-					}), out_names);
+				const FunctionPtr & function = FunctionFactory::instance().get("CAST", context);
+				out_expression->add(ExpressionAction::applyFunction(function, Names{
+					column.name, new_type_name_column
+				}), out_names);
 
-					out_expression->add(ExpressionAction::removeColumn(string_width_column));
-				}
-				else
-				{
-					const FunctionPtr & function = FunctionFactory::instance().get("to" + new_type_name, context);
-					out_expression->add(ExpressionAction::applyFunction(function, Names{column.name}), out_names);
-				}
+				out_expression->add(ExpressionAction::removeColumn(new_type_name_column));
 
 				out_expression->add(ExpressionAction::removeColumn(column.name));
 
@@ -540,7 +542,8 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 {
 	ExpressionActionsPtr expression;
 	AlterDataPartTransactionPtr transaction(new AlterDataPartTransaction(part)); /// Блокирует изменение куска.
-	createConvertExpression(part, part->columns, new_columns, expression, transaction->rename_map);
+	bool force_update_metadata;
+	createConvertExpression(part, part->columns, new_columns, expression, transaction->rename_map, force_update_metadata);
 
 	if (!skip_sanity_checks && transaction->rename_map.size() > 5)
 	{
@@ -550,7 +553,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 						+ ". Aborting just in case");
 	}
 
-	if (transaction->rename_map.empty())
+	if (transaction->rename_map.empty() && !force_update_metadata)
 	{
 		transaction->clear();
 		return nullptr;
@@ -562,10 +565,10 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 	if (expression)
 	{
 		MarkRanges ranges(1, MarkRange(0, part->size));
-		/** @todo expression->getRequiedColumns may contain integer width columns for FixedString(N) type which after
-		 *	passing them to ITableDeclaration::check will trigger and exception about unknown column `N` */
 		BlockInputStreamPtr part_in = new MergeTreeBlockInputStream(full_path + part->name + '/',
-			DEFAULT_MERGE_BLOCK_SIZE, expression->getRequiredColumns(), *this, part, ranges, false, nullptr, "", false, 0, DBMS_DEFAULT_BUFFER_SIZE);
+			DEFAULT_MERGE_BLOCK_SIZE, expression->getRequiredColumns(), *this, part, ranges,
+			false, nullptr, "", false, 0, DBMS_DEFAULT_BUFFER_SIZE, false);
+
 		ExpressionBlockInputStream in(part_in, expression);
 		MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/', true, CompressionMethod::LZ4);
 		in.readPrefix();

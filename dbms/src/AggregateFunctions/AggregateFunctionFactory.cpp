@@ -7,6 +7,14 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int UNKNOWN_AGGREGATE_FUNCTION;
+	extern const int LOGICAL_ERROR;
+	extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
+
 namespace
 {
 

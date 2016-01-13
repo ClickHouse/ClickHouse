@@ -8,10 +8,29 @@
 #include <DB/Common/MemoryTracker.h>
 
 
+namespace DB
+{
+namespace ErrorCodes
+{
+	extern const int MEMORY_LIMIT_EXCEEDED;
+}
+}
+
+
 MemoryTracker::~MemoryTracker()
 {
-	LOG_DEBUG(&Logger::get("MemoryTracker"), "Peak memory usage for query: " << formatReadableSizeWithBinarySuffix(peak) << ".");
+	if (peak)
+		logPeakMemoryUsage();
 }
+
+
+void MemoryTracker::logPeakMemoryUsage() const
+{
+	LOG_DEBUG(&Logger::get("MemoryTracker"),
+		"Peak memory usage" << (description ? " " + std::string(description) : "")
+		<< ": " << formatReadableSizeWithBinarySuffix(peak) << ".");
+}
+
 
 void MemoryTracker::alloc(Int64 size)
 {
@@ -22,21 +41,55 @@ void MemoryTracker::alloc(Int64 size)
 	if (unlikely(fault_probability && drand48() < fault_probability))
 	{
 		free(size);
-		throw DB::Exception("Memory tracker: fault injected. Would use " + formatReadableSizeWithBinarySuffix(will_be) + ""
-			" (attempt to allocate chunk of " + DB::toString(size) + " bytes)"
-			", maximum: " + formatReadableSizeWithBinarySuffix(limit), DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED);
+
+		std::stringstream message;
+		message << "Memory tracker";
+		if (description)
+			message << " " << description;
+		message << ": fault injected. Would use " << formatReadableSizeWithBinarySuffix(will_be)
+			<< " (attempt to allocate chunk of " << size << " bytes)"
+			<< ", maximum: " << formatReadableSizeWithBinarySuffix(limit);
+
+		throw DB::Exception(message.str(), DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED);
 	}
 
 	if (unlikely(limit && will_be > limit))
 	{
 		free(size);
-		throw DB::Exception("Memory limit exceeded: would use " + formatReadableSizeWithBinarySuffix(will_be) + ""
-			" (attempt to allocate chunk of " + DB::toString(size) + " bytes)"
-			", maximum: " + formatReadableSizeWithBinarySuffix(limit), DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED);
+
+		std::stringstream message;
+		message << "Memory limit";
+		if (description)
+			message << " " << description;
+		message << " exceeded: would use " << formatReadableSizeWithBinarySuffix(will_be)
+			<< " (attempt to allocate chunk of " << size << " bytes)"
+			<< ", maximum: " << formatReadableSizeWithBinarySuffix(limit);
+
+		throw DB::Exception(message.str(), DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED);
 	}
 
 	if (will_be > peak)
 		peak = will_be;
+
+	if (next)
+		next->alloc(size);
+}
+
+
+void MemoryTracker::free(Int64 size)
+{
+	__sync_sub_and_fetch(&amount, size);
+
+	if (next)
+		next->free(size);
+}
+
+
+void MemoryTracker::reset()
+{
+	amount = 0;
+	peak = 0;
+	limit = 0;
 }
 
 

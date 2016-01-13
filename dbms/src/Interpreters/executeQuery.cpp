@@ -24,6 +24,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int LOGICAL_ERROR;
+	extern const int QUERY_IS_TOO_LARGE;
+}
+
 
 static void checkLimits(const IAST & ast, const Limits & limits)
 {

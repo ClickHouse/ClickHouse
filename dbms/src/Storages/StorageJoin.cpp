@@ -4,6 +4,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int NO_SUCH_COLUMN_IN_TABLE;
+	extern const int INCOMPATIBLE_TYPE_OF_JOIN;
+}
+
 
 StorageJoin::StorageJoin(
 	const String & path_,

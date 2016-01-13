@@ -7,12 +7,17 @@
 
 #include <DB/Core/Field.h>
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 #include <DB/Core/StringRef.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int CANNOT_GET_SIZE_OF_FIELD;
+	extern const int NOT_IMPLEMENTED;
+}
 
 using Poco::SharedPtr;
 

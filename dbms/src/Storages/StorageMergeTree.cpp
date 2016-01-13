@@ -8,8 +8,16 @@
 #include <DB/Interpreters/InterpreterAlterQuery.h>
 #include <Poco/DirectoryIterator.h>
 
+
 namespace DB
 {
+
+namespace ErrorCodes
+{
+	extern const int ABORTED;
+	extern const int BAD_ARGUMENTS;
+}
+
 
 StorageMergeTree::StorageMergeTree(
 	const String & path_,

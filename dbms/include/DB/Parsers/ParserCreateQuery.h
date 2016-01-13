@@ -47,6 +47,13 @@ protected:
 	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
 };
 
+class ParserTypeInCastExpression : public ParserIdentifierWithOptionalParameters
+{
+protected:
+	const char * getName() const { return "type in cast expression"; }
+	bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+};
+
 
 template <class NameParser>
 class IParserNameTypePair : public IParserBase

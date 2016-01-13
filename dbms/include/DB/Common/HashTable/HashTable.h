@@ -14,7 +14,6 @@
 #include <DB/Core/Defines.h>
 #include <DB/Core/Types.h>
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 
 #include <DB/IO/WriteBuffer.h>
 #include <DB/IO/WriteHelpers.h>
@@ -29,6 +28,16 @@
 	#include <iomanip>
 	#include <DB/Common/Stopwatch.h>
 #endif
+
+
+namespace DB
+{
+namespace ErrorCodes
+{
+	extern const int LOGICAL_ERROR;
+	extern const int NO_AVAILABLE_DATA;
+}
+}
 
 
 /** Состояние хэш-таблицы, которое влияет на свойства её ячеек.

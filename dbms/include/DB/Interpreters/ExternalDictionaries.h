@@ -2,7 +2,6 @@
 
 #include <DB/Dictionaries/IDictionary.h>
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 #include <DB/Common/setThreadName.h>
 #include <common/MultiVersion.h>
 #include <common/logger_useful.h>

@@ -18,6 +18,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int NO_SUCH_COLUMN_IN_TABLE;
+}
+
 
 InterpreterInsertQuery::InterpreterInsertQuery(ASTPtr query_ptr_, Context & context_)
 	: query_ptr(query_ptr_), context(context_)

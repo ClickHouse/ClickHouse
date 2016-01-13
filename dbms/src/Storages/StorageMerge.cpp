@@ -13,6 +13,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+	extern const int ILLEGAL_PREWHERE;
+}
+
+
 StorageMerge::StorageMerge(
 	const std::string & name_,
 	NamesAndTypesListPtr columns_,

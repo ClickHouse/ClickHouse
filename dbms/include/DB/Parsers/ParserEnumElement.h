@@ -11,7 +11,7 @@ namespace DB
 class ParserEnumElement : public IParserBase
 {
 	ParserStringLiteral name_parser;
-	ParserUnsignedInteger value_parser;
+	ParserNumber value_parser;
 
 protected:
 	const char * getName() const override { return "enum element"; }
@@ -39,7 +39,7 @@ protected:
 		node = new ASTEnumElement{
 			{ begin, pos },
 			static_cast<const ASTLiteral &>(*name).value.get<String>(),
-			static_cast<const ASTLiteral &>(*value).value.get<UInt64>()
+			static_cast<const ASTLiteral &>(*value).value
 		};
 
 		return true;

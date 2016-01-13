@@ -10,7 +10,6 @@
 #include <DB/Core/Defines.h>
 #include <DB/Core/Progress.h>
 #include <DB/Common/Exception.h>
-#include <DB/Core/ErrorCodes.h>
 #include <DB/Common/MemoryTracker.h>
 #include <DB/IO/WriteHelpers.h>
 #include <DB/Interpreters/QueryPriorities.h>
@@ -48,10 +47,12 @@ struct ProcessListElement
 
 	ProcessListElement(const String & query_, const String & user_,
 		const String & query_id_, const Poco::Net::IPAddress & ip_address_,
-		size_t max_memory_usage, double memory_tracker_fault_probability, QueryPriorities::Handle && priority_handle_)
+		size_t max_memory_usage, double memory_tracker_fault_probability,
+		QueryPriorities::Handle && priority_handle_)
 		: query(query_), user(user_), query_id(query_id_), ip_address(ip_address_), memory_tracker(max_memory_usage),
 		priority_handle(std::move(priority_handle_))
 	{
+		memory_tracker.setDescription("(for query)");
 		current_memory_tracker = &memory_tracker;
 
 		if (memory_tracker_fault_probability)
@@ -72,6 +73,18 @@ struct ProcessListElement
 
 		return !is_cancelled;
 	}
+};
+
+
+/// Данные о запросах одного пользователя.
+struct ProcessListForUser
+{
+	/// Query_id -> ProcessListElement *
+	using QueryToElement = std::unordered_map<String, ProcessListElement *>;
+	QueryToElement queries;
+
+	/// Ограничение и счётчик памяти на все одновременно выполняющиеся запросы одного пользователя.
+	MemoryTracker user_memory_tracker;
 };
 
 
@@ -109,10 +122,8 @@ public:
 
 	/// list, чтобы итераторы не инвалидировались. NOTE: можно заменить на cyclic buffer, но почти незачем.
 	using Container = std::list<Element>;
-	/// Query_id -> Element *
-	using QueryToElement = std::unordered_map<String, Element *>;
-	/// User -> Query_id -> Element *
-	using UserToQueries = std::unordered_map<String, QueryToElement>;
+	/// User -> queries
+	using UserToQueries = std::unordered_map<String, ProcessListForUser>;
 
 private:
 	mutable Poco::FastMutex mutex;
@@ -124,10 +135,13 @@ private:
 	UserToQueries user_to_queries;
 	QueryPriorities priorities;
 
+	/// Ограничение и счётчик памяти на все одновременно выполняющиеся запросы.
+	MemoryTracker total_memory_tracker;
+
 public:
 	ProcessList(size_t max_size_ = 0) : cur_size(0), max_size(max_size_) {}
 
-	typedef std::shared_ptr<ProcessListEntry> EntryPtr;
+	using EntryPtr = std::shared_ptr<ProcessListEntry>;
 
 	/** Зарегистрировать выполняющийся запрос. Возвращает refcounted объект, который удаляет запрос из списка при уничтожении.
 	  * Если выполняющихся запросов сейчас слишком много - ждать не более указанного времени.
