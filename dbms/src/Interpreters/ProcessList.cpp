@@ -23,27 +23,32 @@ ProcessList::EntryPtr ProcessList::insert(
 			&& (!settings.queue_max_wait_ms.totalMilliseconds() || !have_space.tryWait(mutex, settings.queue_max_wait_ms.totalMilliseconds())))
 			throw Exception("Too much simultaneous queries. Maximum: " + toString(max_size), ErrorCodes::TOO_MUCH_SIMULTANEOUS_QUERIES);
 
-		UserToQueries::iterator queries = user_to_queries.find(user_);
-
-		if (queries != user_to_queries.end())
 		{
-			if (settings.max_concurrent_queries_for_user && queries->second.size() >= settings.max_concurrent_queries_for_user)
-				throw Exception("Too much simultaneous queries for user " + user_
-					+ ". Current: " + toString(queries->second.size())
-					+ ", maximum: " + toString(settings.max_concurrent_queries_for_user),
-					ErrorCodes::TOO_MUCH_SIMULTANEOUS_QUERIES);
+			UserToQueries::iterator user_process_list = user_to_queries.find(user_);
 
-			if (!query_id_.empty())
+			if (user_process_list != user_to_queries.end())
 			{
-				QueryToElement::iterator element = queries->second.find(query_id_);
-				if (element != queries->second.end())
+				if (settings.max_concurrent_queries_for_user && user_process_list->second.queries.size() >= settings.max_concurrent_queries_for_user)
+					throw Exception("Too much simultaneous queries for user " + user_
+						+ ". Current: " + toString(user_process_list->second.queries.size())
+						+ ", maximum: " + toString(settings.max_concurrent_queries_for_user),
+						ErrorCodes::TOO_MUCH_SIMULTANEOUS_QUERIES);
+
+				if (!query_id_.empty())
 				{
-					if (!settings.replace_running_query)
-						throw Exception("Query with id = " + query_id_ + " is already running.",
-							ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING);
-					element->second->is_cancelled = true;
-					/// В случае если запрос отменяется, данные о нем удаляются из мапа в момент отмены.
-					queries->second.erase(element);
+					ProcessListForUser::QueryToElement::iterator element = user_process_list->second.queries.find(query_id_);
+					if (element != user_process_list->second.queries.end())
+					{
+						if (!settings.replace_running_query)
+							throw Exception("Query with id = " + query_id_ + " is already running.",
+								ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING);
+
+						element->second->is_cancelled = true;
+						/// В случае если запрос отменяется, данные о нем удаляются из мапа в момент отмены.
+						user_process_list->second.queries.erase(element);
+						if (user_process_list->second.queries.empty())
+							user_to_queries.erase(user_process_list);
+					}
 				}
 			}
 		}
@@ -56,7 +61,18 @@ ProcessList::EntryPtr ProcessList::insert(
 			priorities.insert(settings.priority))));
 
 		if (!query_id_.empty())
-			user_to_queries[user_][query_id_] = &res->get();
+		{
+			ProcessListForUser & user_process_list = user_to_queries[user_];
+			user_process_list.queries[query_id_] = &res->get();
+
+			if (current_memory_tracker)
+			{
+				/// Отслеживаем суммарное потребление оперативки на одновременно выполняющиеся запросы одного пользователя.
+				user_process_list.user_memory_tracker.setLimit(settings.limits.max_memory_usage_for_user);
+				user_process_list.user_memory_tracker.setDescription("(for user)");
+				current_memory_tracker->setNext(&user_process_list.user_memory_tracker);
+			}
+		}
 	}
 
 	return res;
@@ -67,19 +83,22 @@ ProcessListEntry::~ProcessListEntry()
 {
 	Poco::ScopedLock<Poco::FastMutex> lock(parent.mutex);
 
-	/// В случае, если запрос отменяется, данные о нем удаляются из мапа в момент отмены.
+	/// В случае, если запрос отменяется, данные о нем удаляются из мапа в момент отмены, а не здесь.
 	if (!it->is_cancelled && !it->query_id.empty())
 	{
-		ProcessList::UserToQueries::iterator queries = parent.user_to_queries.find(it->user);
-		if (queries != parent.user_to_queries.end())
+		ProcessList::UserToQueries::iterator user_process_list = parent.user_to_queries.find(it->user);
+		if (user_process_list != parent.user_to_queries.end())
 		{
-			ProcessList::QueryToElement::iterator element = queries->second.find(it->query_id);
-			if (element != queries->second.end())
-				queries->second.erase(element);
+			ProcessListForUser::QueryToElement::iterator element = user_process_list->second.queries.find(it->query_id);
+			if (element != user_process_list->second.queries.end())
+				user_process_list->second.queries.erase(element);
 
-			/// Если запросов для пользователя больше нет, то удаляем запись
-			if (queries->second.empty())
-				parent.user_to_queries.erase(queries);
+			/// Если запросов для пользователя больше нет, то удаляем запись.
+			/// При этом также очищается MemoryTracker на пользователя, и сообщение о потреблении памяти выводится в лог.
+			/// Важно иногда сбрасывать MemoryTracker, так как в нём может накапливаться смещённость
+			///  в следствие того, что есть случаи, когда память может быть выделена при обработке запроса, а освобождена - позже.
+			if (user_process_list->second.queries.empty())
+				parent.user_to_queries.erase(user_process_list);
 		}
 	}
 
@@ -104,8 +123,8 @@ StoragePtr ProcessList::tryGetTemporaryTable(const String & query_id, const Stri
 	/// NOTE Ищем по всем user-ам. То есть, нет изоляции, и сложность O(users).
 	for (const auto & user_queries : user_to_queries)
 	{
-		auto it = user_queries.second.find(query_id);
-		if (user_queries.second.end() == it)
+		auto it = user_queries.second.queries.find(query_id);
+		if (user_queries.second.queries.end() == it)
 			continue;
 
 		auto jt = (*it->second).temporary_tables.find(table_name);

@@ -81,6 +81,8 @@ struct ProcessListForUser
 	/// Query_id -> ProcessListElement *
 	using QueryToElement = std::unordered_map<String, ProcessListElement *>;
 	QueryToElement queries;
+
+	MemoryTracker user_memory_tracker;
 };
 
 
@@ -118,10 +120,8 @@ public:
 
 	/// list, чтобы итераторы не инвалидировались. NOTE: можно заменить на cyclic buffer, но почти незачем.
 	using Container = std::list<Element>;
-	/// Query_id -> Element *
-	using QueryToElement = std::unordered_map<String, Element *>;
-	/// User -> Query_id -> Element *
-	using UserToQueries = std::unordered_map<String, QueryToElement>;
+	/// User -> queries
+	using UserToQueries = std::unordered_map<String, ProcessListForUser>;
 
 private:
 	mutable Poco::FastMutex mutex;

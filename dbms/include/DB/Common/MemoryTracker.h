@@ -23,6 +23,7 @@ class MemoryTracker
 	const char * description = nullptr;
 
 public:
+	MemoryTracker() {}
 	MemoryTracker(Int64 limit_) : limit(limit_) {}
 
 	~MemoryTracker();
@@ -48,6 +49,11 @@ public:
 	Int64 getPeak() const
 	{
 		return peak;
+	}
+
+	void setLimit(Int64 limit_)
+	{
+		limit = limit_;
 	}
 
 	void setFaultProbability(double value)
