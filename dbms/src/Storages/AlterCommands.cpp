@@ -4,6 +4,7 @@
 #include <DB/DataTypes/DataTypeNested.h>
 #include <DB/Interpreters/Context.h>
 #include <DB/Interpreters/ExpressionAnalyzer.h>
+#include <DB/Interpreters/ExpressionActions.h>
 #include <DB/Parsers/ASTIdentifier.h>
 
 

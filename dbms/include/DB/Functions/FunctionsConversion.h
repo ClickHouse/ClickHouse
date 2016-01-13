@@ -1,5 +1,10 @@
 #pragma once
 
+#include <ext/enumerate.hpp>
+#include <ext/collection_cast.hpp>
+#include <ext/range.hpp>
+#include <type_traits>
+
 #include <DB/IO/WriteBufferFromVector.h>
 #include <DB/IO/ReadBufferFromString.h>
 #include <DB/DataTypes/DataTypeFactory.h>
@@ -9,19 +14,15 @@
 #include <DB/DataTypes/DataTypeDate.h>
 #include <DB/DataTypes/DataTypeDateTime.h>
 #include <DB/DataTypes/DataTypeEnum.h>
+#include <DB/DataTypes/DataTypeArray.h>
+#include <DB/DataTypes/DataTypeTuple.h>
 #include <DB/Columns/ColumnString.h>
 #include <DB/Columns/ColumnFixedString.h>
 #include <DB/Columns/ColumnConst.h>
-#include <DB/Functions/IFunction.h>
-#include <DB/Core/FieldVisitors.h>
-#include <ext/range.hpp>
-#include <type_traits>
-#include <DB/Interpreters/ExpressionActions.h>
-#include <DB/DataTypes/DataTypeArray.h>
 #include <DB/Columns/ColumnArray.h>
-#include <DB/DataTypes/DataTypeTuple.h>
-#include <ext/enumerate.hpp>
-#include <ext/collection_cast.hpp>
+#include <DB/Core/FieldVisitors.h>
+#include <DB/Interpreters/ExpressionActions.h>
+#include <DB/Functions/IFunction.h>
 #include <DB/Functions/FunctionsMiscellaneous.h>
 
 
@@ -49,7 +50,8 @@ struct ConvertImpl
 
 	static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
 	{
-		if (const ColumnVector<FromFieldType> * col_from = typeid_cast<const ColumnVector<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
+		if (const ColumnVector<FromFieldType> * col_from
+			= typeid_cast<const ColumnVector<FromFieldType> *>(&*block.getByPosition(arguments[0]).column))
 		{
 			ColumnVector<ToFieldType> * col_to = new ColumnVector<ToFieldType>;
 			block.getByPosition(result).column = col_to;

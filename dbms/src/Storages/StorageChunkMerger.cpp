@@ -3,11 +3,14 @@
 #include <DB/Storages/StorageChunkRef.h>
 #include <DB/Interpreters/executeQuery.h>
 #include <DB/Interpreters/InterpreterDropQuery.h>
+#include <DB/Interpreters/ExpressionActions.h>
 #include <DB/DataStreams/ConcatBlockInputStream.h>
 #include <DB/DataStreams/AddingDefaultBlockInputStream.h>
 #include <DB/DataStreams/AddingConstColumnBlockInputStream.h>
 #include <DB/DataStreams/narrowBlockInputStreams.h>
 #include <DB/Parsers/ASTIdentifier.h>
+#include <DB/Parsers/ASTSelectQuery.h>
+#include <DB/Parsers/ASTExpressionList.h>
 #include <DB/Parsers/formatAST.h>
 #include <DB/Common/VirtualColumnUtils.h>
 #include <DB/DataTypes/DataTypeString.h>
