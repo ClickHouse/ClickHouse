@@ -17,7 +17,10 @@
 #include <iostream>
 #include <type_traits>
 
-#define LIBDIVIDE_USE_SSE2 1
+#if defined(__x86_64__)
+	#define LIBDIVIDE_USE_SSE2 1
+#endif
+
 #include <libdivide.h>
 
 
